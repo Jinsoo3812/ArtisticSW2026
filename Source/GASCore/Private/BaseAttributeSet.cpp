@@ -7,6 +7,9 @@
 
 UBaseAttributeSet::UBaseAttributeSet()
 {
+	// 생성되었을 떄, 체력은 100
+	MaxHealth = 100.0f;
+	Health = 100.0f;
 }
 
 void UBaseAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -42,6 +45,12 @@ void UBaseAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallba
 	{
 		SetHealth(FMath::Clamp(GetHealth(), 0.0f, GetMaxHealth()));
 	}
+}
+
+void UBaseAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribute, float OldValue, float NewValue)
+{
+	Super::PostAttributeChange(Attribute, OldValue, NewValue);
+	
 }
 
 void UBaseAttributeSet::OnRep_Health(const FGameplayAttributeData& OldHealth)

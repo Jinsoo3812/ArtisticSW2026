@@ -13,6 +13,11 @@ public class Enemy: ModuleRules
 
         PublicDependencyModuleNames.AddRange(new string[] {
             // 모듈 내 클래스의 헤더 파일에서부터 사용될 모듈 의존성을 추가
+            "GameplayAbilities",
+            "GameplayTasks",
+            "GameplayTags",
+            "InputCore",
+            "AIModule"
         });
 
         PublicIncludePaths.AddRange(new string[] {
