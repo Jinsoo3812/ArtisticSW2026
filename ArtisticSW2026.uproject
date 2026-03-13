@@ -29,7 +29,8 @@
 			"Type": "Runtime",
 			"LoadingPhase": "Default",
 			"AdditionalDependencies": [
-				"Engine"
+				"Engine",
+				"GASCore"
 			]
 		},
 		{
@@ -60,8 +61,8 @@
 			"Enabled": true
 		},
 		{
-        "Name": "GameplayAbilities",
-        "Enabled": true
-    	}
+			"Name": "GameplayAbilities",
+			"Enabled": true
+		}
 	]
 }

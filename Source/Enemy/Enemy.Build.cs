@@ -17,13 +17,18 @@ public class Enemy: ModuleRules
             "GameplayTasks",
             "GameplayTags",
             "InputCore",
-            "AIModule"
+            "AIModule",
+            "GASCore"
         });
 
         PublicIncludePaths.AddRange(new string[] {
             // 새로 추가된 파일 경로를 추가하여 include 시 클래스 이름만 사용할 수 있게
 			"Enemy",
-			"Enemy/Public"
+			"Enemy/Public",
+            "Enemy/AI",
+            "Enemy/GAS",
+            "Enemy/Data",
+            "Enemy/Interface"
 		});
     }
 }
