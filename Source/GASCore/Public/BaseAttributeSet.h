@@ -36,7 +36,10 @@ public:
 	* @param Data - GameplayEffect의 적용에 대한 정보가 담긴 구조체 (어떤 Attribute가 변경되었는지 등)
 	*/
 	virtual void PostGameplayEffectExecute(const struct FGameplayEffectModCallbackData& Data) override;
-
+	
+	//Attribute 값이 변경된 후에 호출
+	virtual void PostAttributeChange(const FGameplayAttribute& Attribute, float OldValue, float NewValue) override;
+	
 	/* --- Attributes --- */
 
 	// 체력
