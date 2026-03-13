@@ -8,11 +8,15 @@ public class ArtisticSWCore: ModuleRules
             // 모듈 내 클래스의 소스 파일에서만 사용할 모듈 의존성을 추가
             "Core",
             "CoreUObject",
-            "Engine"
+            "Engine",
+            "InputCore"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
             // 모듈 내 클래스의 헤더 파일에서부터 사용될 모듈 의존성을 추가
+            "GameplayAbilities",
+            "GameplayTags",
+            "GameplayTasks"
         });
 
         PublicIncludePaths.AddRange(new string[] {

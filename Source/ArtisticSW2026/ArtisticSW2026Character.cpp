@@ -11,6 +11,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
 #include "ArtisticSW2026.h"
+#include "Item/BaseItem.h"
 
 AArtisticSW2026Character::AArtisticSW2026Character()
 {
@@ -65,7 +66,14 @@ void AArtisticSW2026Character::SetupPlayerInputComponent(UInputComponent* Player
 
 		// Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AArtisticSW2026Character::Look);
+
+		//줍기 입력 액션 바인딩
+		if (InteractAction)
+		{
+			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AArtisticSW2026Character::Interact);
+		}
 	}
+	
 	else
 	{
 		UE_LOG(LogArtisticSW2026, Error, TEXT("'%s' Failed to find an Enhanced Input component! This template is built to use the Enhanced Input system. If you intend to use the legacy system, then you will need to update this C++ file."), *GetNameSafe(this));
@@ -130,4 +138,29 @@ void AArtisticSW2026Character::DoJumpEnd()
 {
 	// signal the character to stop jumping
 	StopJumping();
+}
+
+
+// F키(줍기) 로직 구현
+void AArtisticSW2026Character::Interact()
+{
+	// 이미 장착한 무기가 있다면 줍지 않음 (필요에 따라 교체 로직으로 바꿀 수 있음)
+	if (EquippedItem != nullptr) return;
+
+	// 캐릭터 주변에 오버랩된(겹친) 액터들을 찾아서 배열에 담음
+	TArray<AActor*> OverlappingActors;
+	GetOverlappingActors(OverlappingActors, ABaseItem::StaticClass());
+
+	// 겹친 액터 중 첫 번째 BaseItem을 찾아서 줍기
+	for (AActor* Actor : OverlappingActors)
+	{
+		if (ABaseItem* Item = Cast<ABaseItem>(Actor))
+		{
+			Item->PickUpItem(this); // BaseItem에 만들어둔 줍기 API 호출!
+			EquippedItem = Item;    // 캐릭터의 손에 들린 아이템으로 기억
+
+			// 하나만 주우면 되므로 반복문 탈출
+			break;
+		}
+	}
 }

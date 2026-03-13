@@ -49,6 +49,10 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Input")
 	UInputAction* MouseLookAction;
 
+	// F키 눌러서 상호작용 하는 입력 액션 변수
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	class UInputAction* InteractAction;
+
 public:
 
 	/** Constructor */
@@ -67,6 +71,9 @@ protected:
 	/** Called for looking input */
 	void Look(const FInputActionValue& Value);
 
+
+	// 입력(F)이 들어왔을 때 실행할 함수
+	void Interact();
 public:
 
 	/** Handles move inputs from either controls or UI interfaces */
@@ -84,6 +91,10 @@ public:
 	/** Handles jump pressed inputs from either controls or UI interfaces */
 	UFUNCTION(BlueprintCallable, Category="Input")
 	virtual void DoJumpEnd();
+
+	// 현재 캐릭터가 장착하고 있는 아이템을 기억할 포인터
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
+	class ABaseItem* EquippedItem;
 
 public:
 

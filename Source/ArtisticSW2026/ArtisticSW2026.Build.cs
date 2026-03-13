@@ -18,8 +18,9 @@ public class ArtisticSW2026 : ModuleRules
 			"StateTreeModule",
 			"GameplayStateTreeModule",
 			"UMG",
-			"Slate"
-		});
+			"Slate",
+            "ArtisticSWCore"
+        });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
