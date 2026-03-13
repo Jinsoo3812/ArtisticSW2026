@@ -21,7 +21,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AbilitySystem")
 	UAbilitySystemComponent* AbilitySystemComponent;
 
-	// 공통 AttributeSet,.h에서는 상위 Class 선언 cpp에서 실제 BaseAttributeSet으로 DownCast
+	// 공통 AttributeSet.h에서는 상위 Class 선언 cpp에서 실제 BaseAttributeSet으로 DownCast
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AbilitySystem")
 	class UBaseAttributeSet* BasicAttributes;
 
