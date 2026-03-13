@@ -22,6 +22,7 @@ public:
 	UAbilitySystemComponent* AbilitySystemComponent;
 
 	// 공통 AttributeSet,.h에서는 상위 Class 선언 cpp에서 실제 BaseAttributeSet으로 DownCast
+	// Player와 Enemy가 각자의 .cpp에서 AttributeSet을 등록 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AbilitySystem")
 	class UBaseAttributeSet* BasicAttributes;
 
