@@ -11,5 +11,9 @@ UE_DEFINE_GAMEPLAY_TAG(Team_Enemy, "Team.Enemy");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Active, "GameplayAbility.Active");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Dead, "GameplayAbility.Dead");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_HitReaction, "GameplayAbility.HitReaction");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_TestHit, "GameplayAbility.TestHit");
 // Event
 UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Changed, "Event.Ability.Changed");
+// Data
+UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");
+UE_DEFINE_GAMEPLAY_TAG(Data_Heal, "Data.Heal");
