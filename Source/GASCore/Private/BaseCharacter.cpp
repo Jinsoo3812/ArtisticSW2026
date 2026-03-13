@@ -6,7 +6,6 @@
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "AbilitySystemComponent.h"
-
 #include "AbilitySystemBlueprintLibrary.h"
 
 
@@ -57,11 +56,14 @@ void ABaseCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 
+	// BasePlayer는 ASC를 초기화하지 않으므로 이 로직은 BaseEnemy로 가져가는게 좋을 듯
+	/*
 	if (AbilitySystemComponent)
 	{
 		AbilitySystemComponent->InitAbilityActorInfo(this, this);
 		GrantAbilities(StartingAbilities);
 	}
+	*/
 		
 }
 
