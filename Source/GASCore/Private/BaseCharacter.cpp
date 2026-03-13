@@ -7,6 +7,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
+#include "BaseGameplayTags.h"
 
 
 // Sets default values
@@ -41,7 +42,7 @@ ABaseCharacter::ABaseCharacter()
 	// BasicAttributes = CreateDefaultSubobject<UBaseAttributeSet>(TEXT("BasicAttributeSet"));
 
 	// ASC Owner가 State.Dead tag를 가질 때, OnDeadTagChanged함수를 Call
-	AbilitySystemComponent->RegisterGameplayTagEvent(FGameplayTag::RequestGameplayTag("State.Dead"))
+	AbilitySystemComponent->RegisterGameplayTagEvent(State_Dead)
 		.AddUObject(this, &ABaseCharacter::OnDeadTagChanged);
 }
 
@@ -55,15 +56,6 @@ void ABaseCharacter::BeginPlay()
 void ABaseCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
-
-	// BasePlayer는 ASC를 초기화하지 않으므로 이 로직은 BaseEnemy로 가져가는게 좋을 듯
-	/*
-	if (AbilitySystemComponent)
-	{
-		AbilitySystemComponent->InitAbilityActorInfo(this, this);
-		GrantAbilities(StartingAbilities);
-	}
-	*/
 		
 }
 
@@ -119,7 +111,7 @@ void ABaseCharacter::RemoveAbilities(TArray<FGameplayAbilitySpecHandle> AbilityH
 void ABaseCharacter::SendAbilitiesChangedEvent()
 {
 	FGameplayEventData EventData;
-	EventData.EventTag = FGameplayTag::RequestGameplayTag(FName("Event.Ability.Changed"));
+	EventData.EventTag = Event_Ability_Changed;
 	EventData.Instigator = this;
 	EventData.Target = this;
 
