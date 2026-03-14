@@ -16,7 +16,11 @@ public class ClassFeature: ModuleRules
             // 紐⑤뱢 ???대옒?ㅼ쓽 ?ㅻ뜑 ?뚯씪?먯꽌遺???ъ슜??紐⑤뱢 ?섏〈?깆쓣 異붽?\
             "GameplayAbilities",
 			"GameplayTags",
-			"GameplayTasks"
+			"GameplayTasks",
+            "EnhancedInput",    // <--- InputActionValue.h 등을 위해 필요
+            "GASCore",          // <--- BaseCharacter, GASInputID.h를 위해 필요
+            "ArtisticSWCore",   // <--- BaseItem.h를 위해 필요
+            "InputCore"
         });
 
         PublicIncludePaths.AddRange(new string[] {
