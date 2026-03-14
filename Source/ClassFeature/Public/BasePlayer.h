@@ -16,12 +16,12 @@ class CLASSFEATURE_API ABasePlayer : public ABaseCharacter
 	
 	ABasePlayer();
 
-	// ?쒕쾭?먯꽌 鍮숈쓽????ASC 珥덇린??
+	// 서버에서 빙의될 때 ASC 초기화
 	virtual void PossessedBy(AController* NewController) override;
 
-	// ?대씪?댁뼵?몄뿉??PlayerState媛 蹂듭젣 ?꾨즺?섏뿀????ASC 珥덇린??
+	// 클라이언트에서 PlayerState가 복제 완료되었을 때 ASC 초기화
 	virtual void OnRep_PlayerState() override;
 
-	// ?뚮젅?댁뼱 ?낅젰 諛붿씤??
+	// 플레이어 입력 바인딩
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 };

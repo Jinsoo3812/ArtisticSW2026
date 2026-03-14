@@ -7,24 +7,24 @@
 
 ABasePlayer::ABasePlayer()
 {
-	// 移대찓?쇰굹 ?ㅽ봽留곸븫 媛숈? ?뚮젅?댁뼱 ?꾩슜 而댄룷?뚰듃 珥덇린??
+	// 카메라나 스프링암 같은 플레이어 전용 컴포넌트 초기화
 }
 
 void ABasePlayer::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 
-	// ?쒕쾭 痢?ASC 珥덇린??(InitAbilityActorInfo)
+	// 서버 측 ASC 초기화 (InitAbilityActorInfo)
 	ABasePlayerState* PS = GetPlayerState<ABasePlayerState>();
 	if (PS)
 	{
-		// Owner??PlayerState, Avatar????Character 媛앹껜濡??ㅼ젙
+		// Owner는 PlayerState, Avatar는 이 Character 객체로 설정
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
 
-		// PlayerState濡?遺??ASC ?ъ씤??媛?몄???罹먯떛
+		// PlayerState로 부터 ASC 포인터 가져와서 캐싱
 		AbilitySystemComponent = PS->GetAbilitySystemComponent();
 
-		// 遺紐??대옒?ㅼ뿉 援ы쁽???대퉴由ы떚 遺???⑥닔 ?몄텧 (?쒕쾭?먯꽌留?
+		// 부모 클래스에 구현된 어빌리티 부여 함수 호출 (서버에서만)
 		GrantAbilities(StartingAbilities);
 	}
 }
@@ -33,14 +33,14 @@ void ABasePlayer::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
 
-	// ?대씪?댁뼵??痢?ASC 珥덇린??(PlayerState媛 ?대씪濡?蹂듭젣?섏뿀?뚯쓣 蹂댁옣?섎뒗 ??대컢)
+	// 클라이언트 측 ASC 초기화 (PlayerState가 클라로 복제되었음을 보장하는 타이밍)
 	ABasePlayerState* PS = GetPlayerState<ABasePlayerState>();
 	if (PS)
 	{
-		// ?대씪?댁뼵?몄뿉?쒕룄 Owner? Avatar瑜??곌껐?댁쨲
+		// 클라이언트에서도 Owner와 Avatar를 연결해줌
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
 
-		// ?대씪?댁뼵??痢??ъ씤??媛깆떊
+		// 클라이언트 측 포인터 갱신
 		AbilitySystemComponent = PS->GetAbilitySystemComponent();
 	}
 }
@@ -49,5 +49,5 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	// 李⑦썑 Enhanced Input怨?ASC??BindAbilityActivationToInputComponent瑜??곌껐??遺遺?
+	// 차후 Enhanced Input과 ASC의 BindAbilityActivationToInputComponent를 연결할 부분
 }

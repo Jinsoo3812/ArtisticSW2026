@@ -11,7 +11,7 @@ class UAbilitySystemComponent;
 class UBaseAttributeSet;
 
 /*
- * Player媛 二쎌뼱??洹??뺣낫瑜??좎??섏뿬 Player瑜??ㅼ떆 ?뚰솚?섍퀬 ?곹깭瑜?愿由ы븯??PlayerState
+ * Player가 죽어도 그 정보를 유지하여 Player를 다시 소환하고 상태를 관리하는 PlayerState
  */
 UCLASS(Config = Game)
 class CLASSFEATURE_API ABasePlayerState : public APlayerState, public IAbilitySystemInterface
@@ -21,21 +21,21 @@ class CLASSFEATURE_API ABasePlayerState : public APlayerState, public IAbilitySy
 public:
 	ABasePlayerState();
 
-	// IAbilitySystemInterface ?ㅻ쾭?쇱씠??
+	// IAbilitySystemInterface 오버라이드
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
 	class UBaseAttributeSet* GetAttributeSet() const;
 
 protected:
-	// PlayerState媛 ?뚯쑀??AbilitySystemComponent
+	// PlayerState가 소유할 AbilitySystemComponent
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AbilitySystem")
 	UAbilitySystemComponent* AbilitySystemComponent;
 
-	// PlayerState媛 ?뚯쑀??AttributeSet
+	// PlayerState가 소유할 AttributeSet
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AbilitySystem")
 	UBaseAttributeSet* BasicAttributes;
 
-	// INI ?뚯씪(DefaultGame.ini)?먯꽌 媛믪쓣 ?쒖뼱?????덉쓬
+	// INI 파일(DefaultGame.ini)에서 값을 제어할 수 있음
 	UPROPERTY(Config)
 	float BaseNetUpdateFrequency = 100.0f;
 };

@@ -7,19 +7,19 @@
 
 ABasePlayerState::ABasePlayerState()
 {
-	// ?쒕쾭? ?대씪?댁뼵??媛꾩쓽 ?곗씠??媛깆떊 二쇨린 ?ㅼ젙
-	// ?곸쓳??NetUpdateFrequency瑜??ъ슜??理쒖쟻??媛?ν븿
+	// 서버와 클라이언트 간의 데이터 갱신 주기 설정
+	// 적응형 NetUpdateFrequency를 사용해 최적화 가능함
 	NetUpdateFrequency = BaseNetUpdateFrequency;
 
 	// Ability System Component ?앹꽦
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
 
-	// Mixed: ?먯떊??GE, Tags, Gameplay Cues 蹂듭젣
-	// ?먯떊??諛붾씪蹂대뒗 ??몄? ?먯떊??GE源뚯? 蹂듭젣?섏????딆쓬
+	// Mixed: 자신의 GE, Tags, Gameplay Cues 복제
+	// 자신을 바라보는 타인은 자신의 GE까지 복제하지는 않음
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 
-	// Basic Attribute Set ?앹꽦
+	// Basic Attribute Set 생성
 	BasicAttributes = CreateDefaultSubobject<UBaseAttributeSet>(TEXT("BasicAttributeSet"));
 }
 
