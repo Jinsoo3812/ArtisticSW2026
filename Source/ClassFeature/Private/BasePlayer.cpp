@@ -4,10 +4,28 @@
 #include "BasePlayer.h"
 #include "BasePlayerState.h"
 #include "AbilitySystemComponent.h"
+#include "Camera/CameraComponent.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "InputActionValue.h"
+#include "Item/BaseItem.h" // 아이템 상호작용을 위해 필요
 
 ABasePlayer::ABasePlayer()
 {
-	// 카메라나 스프링암 같은 플레이어 전용 컴포넌트 초기화
+	// 카메라 붐(SpringArm) 생성 및 설정
+	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	CameraBoom->SetupAttachment(RootComponent);
+	CameraBoom->TargetArmLength = 400.0f;
+	CameraBoom->bUsePawnControlRotation = true;
+
+	// Follow 카메라 생성 및 설정
+	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
+	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
+	FollowCamera->bUsePawnControlRotation = false;
+
+	// 아이템 포인터 초기화
+	EquippedItem = nullptr;
 }
 
 void ABasePlayer::PossessedBy(AController* NewController)
@@ -49,5 +67,99 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	// 차후 Enhanced Input과 ASC의 BindAbilityActivationToInputComponent를 연결할 부분
+	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
+	{
+		// Jumping
+		if (JumpAction)
+		{
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ABasePlayer::DoJumpStart);
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ABasePlayer::DoJumpEnd);
+		}
+
+		// Moving
+		if (MoveAction)
+		{
+			EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ABasePlayer::Move);
+		}
+
+		// Looking
+		if (LookAction)
+		{
+			EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ABasePlayer::Look);
+		}
+		if (MouseLookAction)
+		{
+			EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &ABasePlayer::Look);
+		}
+
+		// Interact (아이템 줍기)
+		if (InteractAction)
+		{
+			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &ABasePlayer::Interact);
+		}
+	}
+}
+
+void ABasePlayer::Move(const FInputActionValue& Value)
+{
+	FVector2D MovementVector = Value.Get<FVector2D>();
+	DoMove(MovementVector.X, MovementVector.Y);
+}
+
+void ABasePlayer::Look(const FInputActionValue& Value)
+{
+	FVector2D LookAxisVector = Value.Get<FVector2D>();
+	DoLook(LookAxisVector.X, LookAxisVector.Y);
+}
+
+void ABasePlayer::DoMove(float Right, float Forward)
+{
+	if (GetController() != nullptr)
+	{
+		const FRotator Rotation = GetController()->GetControlRotation();
+		const FRotator YawRotation(0, Rotation.Yaw, 0);
+
+		const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+
+		AddMovementInput(ForwardDirection, Forward);
+		AddMovementInput(RightDirection, Right);
+	}
+}
+
+void ABasePlayer::DoLook(float Yaw, float Pitch)
+{
+	if (GetController() != nullptr)
+	{
+		AddControllerYawInput(Yaw);
+		AddControllerPitchInput(Pitch);
+	}
+}
+
+void ABasePlayer::DoJumpStart()
+{
+	Jump();
+}
+
+void ABasePlayer::DoJumpEnd()
+{
+	StopJumping();
+}
+
+void ABasePlayer::Interact()
+{
+	if (EquippedItem != nullptr) return;
+
+	TArray<AActor*> OverlappingActors;
+	GetOverlappingActors(OverlappingActors, ABaseItem::StaticClass());
+
+	for (AActor* Actor : OverlappingActors)
+	{
+		if (ABaseItem* Item = Cast<ABaseItem>(Actor))
+		{
+			Item->PickUpItem(this);
+			EquippedItem = Item;
+			break;
+		}
+	}
 }
