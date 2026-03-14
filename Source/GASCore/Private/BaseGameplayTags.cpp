@@ -1,4 +1,4 @@
-#include "BaseGameplayTags.h"
+﻿#include "BaseGameplayTags.h"
 
 // State
 UE_DEFINE_GAMEPLAY_TAG(State_Attacking, "State.Attacking");

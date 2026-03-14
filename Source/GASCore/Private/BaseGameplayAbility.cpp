@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "BaseGameplayAbility.h"
@@ -6,12 +6,12 @@
 
 UBaseGameplayAbility::UBaseGameplayAbility()
 {
-	// GA 인스턴스 정책
-	// InstancedPerActor: 액터마다 하나의 GA 인스턴스를 생성 및 관리
+	// GA ?몄뒪?댁뒪 ?뺤콉
+	// InstancedPerActor: ?≫꽣留덈떎 ?섎굹??GA ?몄뒪?댁뒪瑜??앹꽦 諛?愿由?
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
-	// 네트워크 실행 정책. 
-	// LocalPredicted: 클라이언트에서 입력 즉시 예측 실행 후 서버에서 검증
+	// ?ㅽ듃?뚰겕 ?ㅽ뻾 ?뺤콉. 
+	// LocalPredicted: ?대씪?댁뼵?몄뿉???낅젰 利됱떆 ?덉륫 ?ㅽ뻾 ???쒕쾭?먯꽌 寃利?
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 }
 
@@ -22,7 +22,7 @@ void UBaseGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Hand
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 	
-	// GA 시전 후 의 공통 로직
+	// GA ?쒖쟾 ????怨듯넻 濡쒖쭅
 }
 
 void UBaseGameplayAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
@@ -30,7 +30,7 @@ void UBaseGameplayAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	bool bReplicateEndAbility, bool bWasCancelled)
 {
-	// GA 종료 전의 공통 로직
+	// GA 醫낅즺 ?꾩쓽 怨듯넻 濡쒖쭅
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -52,16 +52,16 @@ TArray<FActiveGameplayEffectHandle> UBaseGameplayAbility::ApplyEffectToTargetDat
 		return AppliedEffects;
 	}
 
-	// GE Spec Context 생성
+	// GE Spec Context ?앹꽦
 	FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
 	ContextHandle.AddInstigator(GetAvatarActorFromActorInfo(), GetAvatarActorFromActorInfo());
 
-	// GE Spec 생성
+	// GE Spec ?앹꽦
 	FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(EffectClass, EffectLevel, ContextHandle);
 
 	if (SpecHandle.IsValid())
 	{
-		// 생성된 Spec을 바탕으로 TargetData에게 일괄적으로 GE를 적용합니다.
+		// ?앹꽦??Spec??諛뷀깢?쇰줈 TargetData?먭쾶 ?쇨큵?곸쑝濡?GE瑜??곸슜?⑸땲??
 		AppliedEffects = K2_ApplyGameplayEffectSpecToTarget(SpecHandle, TargetData);
 	}
 
@@ -81,16 +81,16 @@ FActiveGameplayEffectHandle UBaseGameplayAbility::ApplyEffectToOwner(TSubclassOf
 		return FActiveGameplayEffectHandle();
 	}
 
-	// GE Spec Context 생성
+	// GE Spec Context ?앹꽦
 	FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
 	ContextHandle.AddInstigator(GetAvatarActorFromActorInfo(), GetAvatarActorFromActorInfo());
 
-	// GE Spec 생성
+	// GE Spec ?앹꽦
 	FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(EffectClass, EffectLevel, ContextHandle);
 
 	if (SpecHandle.IsValid())
 	{
-		// 자신(ASC)에게 직접 GE를 적용합니다.
+		// ?먯떊(ASC)?먭쾶 吏곸젒 GE瑜??곸슜?⑸땲??
 		return ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 	}
 

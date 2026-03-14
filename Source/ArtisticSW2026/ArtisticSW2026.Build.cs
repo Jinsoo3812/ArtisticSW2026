@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
 
@@ -18,8 +18,9 @@ public class ArtisticSW2026 : ModuleRules
 			"StateTreeModule",
 			"GameplayStateTreeModule",
 			"UMG",
-			"Slate"
-		});
+			"Slate",
+            "ArtisticSWCore"
+        });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
