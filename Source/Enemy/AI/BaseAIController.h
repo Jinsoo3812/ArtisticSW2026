@@ -14,8 +14,11 @@ class ENEMY_API ABaseAIController : public AAIController
 public:
 	ABaseAIController();
 
-public:
-	virtual void Tick(float DeltaTime) override;
+protected:
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;
+
+public:
+	virtual void Tick(float DeltaTime) override;
+	
 };
