@@ -1,25 +1,25 @@
-using UnrealBuildTool;
+﻿using UnrealBuildTool;
 
 public class GASCore: ModuleRules
 {
     public GASCore(ReadOnlyTargetRules Target) : base(Target)
     {
         PrivateDependencyModuleNames.AddRange(new string[] {
-            // 모듈 내 클래스의 소스 파일에서만 사용할 모듈 의존성을 추가
+            // 紐⑤뱢 ???대옒?ㅼ쓽 ?뚯뒪 ?뚯씪?먯꽌留??ъ슜??紐⑤뱢 ?섏〈?깆쓣 異붽?
             "Core",
             "CoreUObject",
             "Engine"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
-            // 모듈 내 클래스의 헤더 파일에서부터 사용될 모듈 의존성을 추가
+            // 紐⑤뱢 ???대옒?ㅼ쓽 ?ㅻ뜑 ?뚯씪?먯꽌遺???ъ슜??紐⑤뱢 ?섏〈?깆쓣 異붽?
             "GameplayAbilities",
             "GameplayTasks",
             "GameplayTags"
         });
 
         PublicIncludePaths.AddRange(new string[] {
-            // 새로 추가된 파일 경로를 추가하여 include 시 클래스 이름만 사용할 수 있게
+            // ?덈줈 異붽????뚯씪 寃쎈줈瑜?異붽??섏뿬 include ???대옒???대쫫留??ъ슜?????덇쾶
 			"GASCore",
 			"GASCore/Public"
 		});

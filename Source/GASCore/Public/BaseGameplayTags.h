@@ -1,16 +1,16 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "NativeGameplayTags.h"
 
-// 프로젝트에서 사용될 모든 태그를 선언
+// ?꾨줈?앺듃?먯꽌 ?ъ슜??紐⑤뱺 ?쒓렇瑜??좎뼵
 
-// State (상태 관련 태그)
+// State (?곹깭 愿???쒓렇)
 GASCORE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Attacking);
 GASCORE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dead);
 GASCORE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Damaged);
 
-// Team  (피아 구분 관련 태그 - 타겟팅 필터링용)
+// Team  (?쇱븘 援щ텇 愿???쒓렇 - ?寃잜똿 ?꾪꽣留곸슜)
 GASCORE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Team_Player);
 GASCORE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Team_Enemy);
 
@@ -20,7 +20,7 @@ GASCORE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayAbility_Dead);
 GASCORE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayAbility_HitReaction);
 GASCORE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayAbility_TestHit);
 
-// Event (이벤트 관련 태그)
+// Event (?대깽??愿???쒓렇)
 GASCORE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Ability_Changed);
 
 // Data

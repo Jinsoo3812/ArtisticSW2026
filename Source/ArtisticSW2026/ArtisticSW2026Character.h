@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+ï»¿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -49,7 +49,7 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Input")
 	UInputAction* MouseLookAction;
 
-	// FÅ° ´­·¯¼­ »óÈ£ÀÛ¿ë ÇÏ´Â ÀÔ·Â ¾×¼Ç º¯¼ö
+	// Fí‚¤ ëˆŒëŸ¬ì„œ ìƒí˜¸ì‘ìš© í•˜ëŠ” ì…ë ¥ ì•¡ì…˜ ë³€ìˆ˜
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	class UInputAction* InteractAction;
 
@@ -72,7 +72,7 @@ protected:
 	void Look(const FInputActionValue& Value);
 
 
-	// ÀÔ·Â(F)ÀÌ µé¾î¿ÔÀ» ¶§ ½ÇÇàÇÒ ÇÔ¼ö
+	// ì…ë ¥(F)ì´ ë“¤ì–´ì™”ì„ ë•Œ ì‹¤í–‰í•  í•¨ìˆ˜
 	void Interact();
 public:
 
@@ -92,7 +92,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Input")
 	virtual void DoJumpEnd();
 
-	// ÇöÀç Ä³¸¯ÅÍ°¡ ÀåÂøÇÏ°í ÀÖ´Â ¾ÆÀÌÅÛÀ» ±â¾ïÇÒ Æ÷ÀÎÅÍ
+	// í˜„ì¬ ìºë¦­í„°ê°€ ì¥ì°©í•˜ê³  ìˆëŠ” ì•„ì´í…œì„ ê¸°ì–µí•  í¬ì¸í„°
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
 	class ABaseItem* EquippedItem;
 

@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -14,13 +14,13 @@ class GASCORE_API UBaseGameplayAbility : public UGameplayAbility
 public:
 	UBaseGameplayAbility();
 
-	// GA의 시작 지점 함수
+	// GA???쒖옉 吏???⑥닔
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		const FGameplayEventData* TriggerEventData) override;
 
-	// GA의 종료 지점 함수
+	// GA??醫낅즺 吏???⑥닔
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo,
@@ -28,11 +28,11 @@ public:
 
 protected:
 	/*
-	* 대상에게 GE를 적용하는 함수
-	* @param TargetData - GE를 적용할 대상 정보
-	* @param EffectClass - 적용할 GE 클래스
-	* @param EffectLevel - GE의 레벨 (옵션, 기본값은 1)
-	* @return 적용된 GE 핸들의 배열 (여러 대상에게 적용할 경우 활용)
+	* ??곸뿉寃?GE瑜??곸슜?섎뒗 ?⑥닔
+	* @param TargetData - GE瑜??곸슜??????뺣낫
+	* @param EffectClass - ?곸슜??GE ?대옒??
+	* @param EffectLevel - GE???덈꺼 (?듭뀡, 湲곕낯媛믪? 1)
+	* @return ?곸슜??GE ?몃뱾??諛곗뿴 (?щ윭 ??곸뿉寃??곸슜??寃쎌슦 ?쒖슜)
 	*/
 	UFUNCTION(BlueprintCallable, Category = "Ability|Effect")
 	virtual TArray<FActiveGameplayEffectHandle> ApplyEffectToTargetData(
@@ -40,10 +40,10 @@ protected:
 		TSubclassOf<class UGameplayEffect> EffectClass, int32 EffectLevel = 1);
 
 	/*
-	* 자신에게 GE를 적용할 때 사용하는 헬퍼 함수
-	* @param EffectClass - 적용할 GE 클래스
-	* @param EffectLevel - GE의 레벨 (옵션, 기본값은 1)
-	* @return 적용된 GE 핸들
+	* ?먯떊?먭쾶 GE瑜??곸슜?????ъ슜?섎뒗 ?ы띁 ?⑥닔
+	* @param EffectClass - ?곸슜??GE ?대옒??
+	* @param EffectLevel - GE???덈꺼 (?듭뀡, 湲곕낯媛믪? 1)
+	* @return ?곸슜??GE ?몃뱾
 	*/
 	UFUNCTION(BlueprintCallable, Category = "Ability|Effect")
 	virtual FActiveGameplayEffectHandle ApplyEffectToOwner(TSubclassOf<class UGameplayEffect> EffectClass, int32 EffectLevel = 1);
