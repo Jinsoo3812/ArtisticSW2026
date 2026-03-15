@@ -11,6 +11,8 @@
 #include "InputActionValue.h"
 #include "Item/BaseItem.h"
 #include "CrafterComponent.h"
+#include "BaseGameplayTags.h"
+#include "Net/UnrealNetwork.h"
 
 ABasePlayer::ABasePlayer()
 {
@@ -27,11 +29,43 @@ ABasePlayer::ABasePlayer()
 
 	// 아이템 포인터 초기화
 	EquippedItem = nullptr;
+}
 
-	// SlotInputConfig에 설정된 수 만큼 ItemSlot 배열 초기화
+void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// 배열과 장착 아이템 포인터를 클라이언트로 복제
+	DOREPLIFETIME(ABasePlayer, ItemSlots);
+	DOREPLIFETIME(ABasePlayer, EquippedItem);
+}
+
+void ABasePlayer::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// 캐시 테이블 초기화
 	if (SlotInputConfig)
 	{
-		ItemSlots.SetNumZeroed(SlotInputConfig->ItemSlotCount);
+		// 배열 크기 미리 할당
+		ItemSlots.SetNum(SlotInputConfig->ItemSlotCount);
+		IndexToItemSlotTagArray.SetNum(SlotInputConfig->ItemSlotCount);
+
+		int32 CurrentItemSlotIndex = 0;
+		for (const FSlotInputAction& Action : SlotInputConfig->SlotInputActions)
+		{
+			// Item 관련 슬롯 태그만 추출 (Slot.Item)
+			if (Action.SlotTag.IsValid() && Action.SlotTag.MatchesTag(Slot_Item))
+			{
+				if (IndexToItemSlotTagArray.IsValidIndex(CurrentItemSlotIndex))
+				{
+					// 양방향 캐싱 등록
+					ItemSlotTagToIndexMap.Add(Action.SlotTag, CurrentItemSlotIndex);
+					IndexToItemSlotTagArray[CurrentItemSlotIndex] = Action.SlotTag;
+					CurrentItemSlotIndex++;
+				}
+			}
+		}
 	}
 }
 
@@ -217,6 +251,11 @@ void ABasePlayer::Interact()
 		{
 			Item->PickUpItem(this);
 			EquippedItem = Item;
+
+			ItemSlots[0] = Item; // 임시로 첫 번째 슬롯에 장착
+
+			GrantAbilityToSlot(Slot_Item_1, Item->GrantedAbilityClass); // 임시로 첫 번째 슬롯에 장착
+
 			break;
 		}
 	}
@@ -336,4 +375,60 @@ void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 	}
 
 	// AbilityLock 소멸
+}
+
+void ABasePlayer::ThrowEquippedItem()
+{
+	// 서버 권한 및 장착 아이템 유효성 검사
+	if (!HasAuthority() || EquippedItem == nullptr)
+	{
+		return;
+	}
+
+	// 장착된 아이템이 ItemSlots 배열의 몇 번째 인덱스에 있는지 탐색
+	int32 EquippedIndex = ItemSlots.Find(EquippedItem);
+
+	if (EquippedIndex != INDEX_NONE)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[ThrowEquippedItem] 아이템 투척 완료! 기존 슬롯 인덱스: %d"), EquippedIndex);
+
+		EquippedItem->Destroy(); // 던지기 구현 전에 일단 임시로 제거
+
+		// 손에 들고 있는 장착 상태 해제
+		EquippedItem = nullptr;
+
+		// ItemSlot Index를 이용해 SlotTag를 찾아내기
+		const FGameplayTag* FoundTag = ItemSlotTagToIndexMap.FindKey(EquippedIndex);
+		if (FoundTag)
+		{
+			// ItemSlot 정리 및 GA 회수
+			RemoveItemFromSlot(*FoundTag);
+		}
+	}
+}
+
+void ABasePlayer::RemoveItemFromSlot(FGameplayTag SlotTag)
+{
+	// [서버]
+	if (!HasAuthority()) return;
+
+	int32 SlotIndex = GetItemSlotIndexByTag(SlotTag);
+
+	if (ItemSlots.IsValidIndex(SlotIndex) && ItemSlots[SlotIndex] != nullptr)
+	{
+		// ItemSlot 배열에서 제거
+		ItemSlots[SlotIndex] = nullptr;
+
+		// GA 회수
+		RemoveAbilityFromSlot(SlotTag);
+	}
+}
+
+int32 ABasePlayer::GetItemSlotIndexByTag(const FGameplayTag& SlotTag) const
+{
+	if (const int32* FoundIndex = ItemSlotTagToIndexMap.Find(SlotTag))
+	{
+		return *FoundIndex;
+	}
+	return INDEX_NONE;
 }

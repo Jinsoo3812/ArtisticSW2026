@@ -27,8 +27,13 @@ class CLASSFEATURE_API ABasePlayer : public ABaseCharacter
 public:
 	ABasePlayer();
 
+	virtual void BeginPlay() override;
+
 	/* --- 네트워크 초기화 ---*/
 public:
+	// 네트워크 복제 변수 등록
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 	// 서버에서 빙의될 때 ASC 초기화
 	virtual void PossessedBy(AController* NewController) override;
 
@@ -109,9 +114,33 @@ protected:
 
 	/* --- ItemSlot ---  */
 public:
-	// 소유하고 있는 Item 배열
+	// 현재 캐릭터가 장착하고 있는 아이템
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
+
+	TWeakObjectPtr<ABaseItem> EquippedItem;
+
+	// 소유하고 있는 Item 배열
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	TArray<TObjectPtr<ABaseItem>> ItemSlots;
+
+	// 특정 슬롯의 Item을 제거하고 부여된 GA를 회수
+	UFUNCTION()
+	void RemoveItemFromSlot(FGameplayTag SlotTag);
+
+	UFUNCTION()
+	void ThrowEquippedItem();
+
+protected:
+	// ItemSlot Tag에 해당하는 ItemSlot index 매핑
+	UPROPERTY(Transient)
+	TMap<FGameplayTag, int32> ItemSlotTagToIndexMap;
+
+	// ItemSlot index에 해당하는 ItemSlot Tag 매핑
+	UPROPERTY(Transient)
+	TArray<FGameplayTag> IndexToItemSlotTagArray;
+
+	// Slot Tag를 ItemSlot index로 변환
+	int32 GetItemSlotIndexByTag(const FGameplayTag& SlotTag) const;
 
 	/* --- 카메라 ---*/
 public:
@@ -123,10 +152,4 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCameraComponent> FollowCamera;
-
-	/* 아이템 */
-public:
-	// 현재 캐릭터가 장착하고 있는 아이템
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
-	TObjectPtr<ABaseItem> EquippedItem;
 };

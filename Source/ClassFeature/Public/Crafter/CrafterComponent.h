@@ -13,6 +13,7 @@ class UInputAction;
 struct FInputActionValue;
 class UInputTagConfig;
 class ABasePlayer;
+class ABaseItem;
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class CLASSFEATURE_API UCrafterComponent : public UActorComponent
@@ -57,4 +58,7 @@ protected:
 	// Crafter 전용 어빌리티와 고정 Slot Tag의 매핑 정보 (ex. Crafer가 되면 F는 무조건 제작 GA)
 	UPROPERTY(EditDefaultsOnly, Category = "Crafter|Abilities")
 	TMap<FGameplayTag, TSubclassOf<UGameplayAbility>> CrafterAbilities;
+
+	/* --- Crafter가 제작한 item 관리 --- */
+public:
 };
