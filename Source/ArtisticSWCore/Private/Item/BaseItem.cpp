@@ -73,19 +73,17 @@ void ABaseItem::PickUpItem(AActor* Picker)
     ItemMesh->SetSimulatePhysics(false);
     ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-    // 2. Picker(플레이어)를 ABaseCharacter로 변환
+
     ABaseCharacter* BaseChar = Cast<ABaseCharacter>(Picker);
     if (BaseChar)
     {
-        // 플레이어의 손 소켓(GripPoint)에 아이템 부착
-        // (사용하시는 마네킹의 소켓 이름에 맞게 "GripPoint"를 변경하세요 예: "hand_rSocket")
-        AttachToComponent(BaseChar->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("GripPoint"));
+        // 2. 설정한 소켓(AttachmentSocketName)에 아이템 부착!
+        AttachToComponent(BaseChar->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, AttachmentSocketName);
 
         // 3. GAS 시스템에 스킬 부여 (핵심)
         UAbilitySystemComponent* ASC = BaseChar->GetAbilitySystemComponent();
         if (ASC && GrantedAbilityClass)
         {
-            // 이 아이템의 스킬을 'EGASInputID::UseSkill (3번 = Q키)'와 연결해서 플레이어에게 줌!
             FGameplayAbilitySpec Spec(GrantedAbilityClass, 1, static_cast<int32>(EGASInputID::UseSkill), this);
             GrantedAbilityHandle = ASC->GiveAbility(Spec);
         }

@@ -41,6 +41,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Item|Action")
     virtual void PickUpItem(AActor* Picker);
 
+    // 장착 시 부착될 스켈레탈 메쉬의 소켓 이름 (기본값: hand_r)
+    UPROPERTY(EditDefaultsOnly, Category = "Item|Equip")
+    FName AttachmentSocketName = FName("hand_r");
+
 protected:
     virtual void BeginPlay() override;
 

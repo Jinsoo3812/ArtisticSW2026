@@ -8,6 +8,9 @@
 #include "Item/BaseItem.h" 
 #include "AbilitySystemComponent.h"
 #include "GASInputID.h"    
+#include "Kismet/GameplayStatics.h"
+#include "AbilitySystemBlueprintLibrary.h"
+
 
 AAttacker::AAttacker()
 {
@@ -46,6 +49,10 @@ void AAttacker::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
+    // 부울 변수 대신 ASC의 태그를 직접 확인합니다.
+    UAbilitySystemComponent* ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(this);
+    bool bIsAimingTagActive = ASC && ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(FName("State.Aiming")));
+
     // 카메라 조준 줌인/줌아웃 보간
     if (CameraBoom)
     {
@@ -54,6 +61,41 @@ void AAttacker::Tick(float DeltaTime)
 
         CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetOffset, DeltaTime, CameraInterpSpeed);
         CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
+    }
+
+    // ==========================================
+    // 조준 중일 때 포물선 궤적 그리기
+    // ==========================================
+    if (bIsAiming && EquippedItem)
+    {
+        // 수류탄이 생성될 대략적인 시작 위치
+        FVector StartLoc = GetActorLocation() + (GetActorForwardVector() * 50.f) + FVector(0, 0, 50.f);
+
+        // 카메라가 바라보는 곳(목표 지점) 계산
+        FVector CamLoc;
+        FRotator CamRot;
+        GetController()->GetPlayerViewPoint(CamLoc, CamRot);
+        FVector TraceEnd = CamLoc + (CamRot.Vector() * 10000.f);
+
+        FHitResult HitResult;
+        FCollisionQueryParams Params;
+        Params.AddIgnoredActor(this);
+        GetWorld()->LineTraceSingleByChannel(HitResult, CamLoc, TraceEnd, ECC_Visibility, Params);
+        FVector TargetLoc = HitResult.bBlockingHit ? HitResult.Location : TraceEnd;
+
+        // 던질 방향과 힘(속도) 계산
+        FVector LaunchDir = (TargetLoc - GetActorLocation()).GetSafeNormal();
+        LaunchDir.Z += 0.15f; // 살짝 위로 던지게
+        FVector LaunchVelocity = LaunchDir.GetSafeNormal() * 1500.f; // 1500은 ThrowForce
+
+        // 언리얼 내장 포물선 예측 및 그리기 함수
+        FPredictProjectilePathParams PredictParams(15.0f, StartLoc, LaunchVelocity, 3.0f, ECollisionChannel::ECC_Visibility, this);
+        PredictParams.DrawDebugType = EDrawDebugTrace::ForOneFrame; // 매 프레임 초록/빨간 선으로 그려줌
+        PredictParams.DrawDebugTime = DeltaTime;
+        PredictParams.bTraceWithCollision = true;
+
+        FPredictProjectilePathResult PredictResult;
+        UGameplayStatics::PredictProjectilePath(this, PredictParams, PredictResult);
     }
 }
 
@@ -80,37 +122,32 @@ void AAttacker::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 void AAttacker::UseSkillPressed()
 {
 
-    // 정상 실행
     if (EquippedItem && AbilitySystemComponent)
     {
+        // 1. 카메라 조준 모드 ON 및 캐릭터 회전
         bIsAiming = true;
+        bUseControllerRotationYaw = true;
+        GetCharacterMovement()->bOrientRotationToMovement = false;
 
-        // ==========================================
-        // 캐릭터 회전 방식 변경 (마우스 방향 바라보기)
-        // ==========================================
-        bUseControllerRotationYaw = true; // 컨트롤러(마우스)의 좌우 회전을 캐릭터에 적용
-        GetCharacterMovement()->bOrientRotationToMovement = false; // 이동 방향으로 캐릭터가 자동으로 도는 기능 끄기
-
-
+        // 2. 스킬 발동 및 "키 눌림" 신호 전달 (유저님 원래 코드 방식!)
         AbilitySystemComponent->TryActivateAbilitiesByTag(FGameplayTagContainer(EquippedItem->ItemTag), true);
-        AbilitySystemComponent->AbilityLocalInputPressed(static_cast<int32>(EGASInputID::UseSkill));
 
-        if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, TEXT("Success"));
+        // 이 한 줄이 WaitInputRelease에게 "야, 버튼 눌렀다!" 라고 알려주는 핵심입니다.
+        AbilitySystemComponent->AbilityLocalInputPressed(static_cast<int32>(EGASInputID::UseSkill));
     }
 }
 
 void AAttacker::UseSkillReleased()
 {
+    // 1. 카메라 조준 모드 OFF 및 캐릭터 회전 원상복구
     bIsAiming = false;
-
-    // ==========================================
-    // 캐릭터 회전 방식 원상복구 (원래 3인칭 상태)
-    // ==========================================
-    bUseControllerRotationYaw = false; // 컨트롤러 좌우 회전 적용 끄기
-    GetCharacterMovement()->bOrientRotationToMovement = true; // 다시 이동하는 방향을 자연스럽게 쳐다보도록 켜기
+    bUseControllerRotationYaw = false;
+    GetCharacterMovement()->bOrientRotationToMovement = true;
 
     if (AbilitySystemComponent)
     {
+        // 2. "키 뗐음" 신호 전달 (유저님 원래 코드 방식!)
+        // 이 함수가 호출되는 순간, GA 안에 멈춰있던 WaitInputRelease가 즉시 반응합니다!
         AbilitySystemComponent->AbilityLocalInputReleased(static_cast<int32>(EGASInputID::UseSkill));
     }
 }
