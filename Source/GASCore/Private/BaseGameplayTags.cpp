@@ -10,6 +10,7 @@ UE_DEFINE_GAMEPLAY_TAG(Team_Enemy, "Team.Enemy");
 // GameplayAbility
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Active, "GameplayAbility.Active");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Dead, "GameplayAbility.Dead");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_BasicAttack, "GameplayAbility.BasicAttack");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_HitReaction, "GameplayAbility.HitReaction");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_TestHit, "GameplayAbility.TestHit");
 // Event

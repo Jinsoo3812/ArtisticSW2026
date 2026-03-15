@@ -3,37 +3,41 @@
 
 #include "BaseEnemy.h"
 
-#include "BaseCharacter.h"
+// Player Folder
+#include "BasePlayer.h"
 
+// Enemy Folder
 #include "BaseAIController.h"
 #include "EnemyAttributeSet.h"
+#include "BehaviorTree/BehaviorTree.h"
+
+// Unreal
 #include "Blueprint/AIBlueprintHelperLibrary.h"
-#include "Kismet/GameplayStatics.h"
 
 ABaseEnemy::ABaseEnemy()
 {
 	PrimaryActorTick.bCanEverTick = true;
-
+	
 	ASCReplicationMode = EGameplayEffectReplicationMode::Minimal;
+	
 	BasicAttributes = CreateDefaultSubobject<UEnemyAttributeSet>(TEXT("BasicAttributeSet"));
+	BehaviorTree = CreateDefaultSubobject<UBehaviorTree>(TEXT("BehaviorTree"));
 }
 
 void ABaseEnemy::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// AIController 변수 Cast해주기
 	AIController = Cast<ABaseAIController>(UAIBlueprintHelperLibrary::GetAIController(this));
-	BasePlayerClass = Cast<ABaseCharacter>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0));
 }
 
+
+/*
 void ABaseEnemy::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (GetAIController() && GetBasePlayerClass())
-	{
-		UAIBlueprintHelperLibrary::SimpleMoveToActor(GetAIController(), GetBasePlayerClass());
-	}
-}
+} */
 
 

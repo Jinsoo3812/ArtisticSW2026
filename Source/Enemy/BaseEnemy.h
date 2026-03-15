@@ -7,6 +7,7 @@
 
 #include "BaseEnemy.generated.h"
 
+class UBehaviorTree;
 class ABaseAIController;
 class ABasePlayer;
 
@@ -16,11 +17,14 @@ class ENEMY_API ABaseEnemy : public ABaseCharacter
 	GENERATED_BODY()
 
 protected:
+	// Enemy에게 장착된 AI Controller
 	UPROPERTY()
 	TObjectPtr<ABaseAIController> AIController;
+	// Enemy가 사용할 Behavior Tree
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI | Behavior Tree")
+	TObjectPtr<UBehaviorTree> BehaviorTree;
 
-	UPROPERTY()
-	TObjectPtr<ABaseCharacter> BasePlayerClass;
+	
 public:
 	ABaseEnemy();
 
@@ -28,10 +32,11 @@ protected:
 	virtual void BeginPlay() override;
 
 public:
-	virtual void Tick(float DeltaTime) override;
+	//virtual void Tick(float DeltaTime) override;
 
 	
-public: // Getters
+public:
+	// Getters
 	FORCEINLINE TObjectPtr<ABaseAIController> GetAIController() const { check(AIController) return AIController; }
-	FORCEINLINE TObjectPtr<ABaseCharacter> GetBasePlayerClass() const { check(BasePlayerClass) return BasePlayerClass; }
+	FORCEINLINE TObjectPtr<UBehaviorTree> GetBehaviorTree() const { check(BehaviorTree) return BehaviorTree; }
 };
