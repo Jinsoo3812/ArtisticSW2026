@@ -48,10 +48,6 @@ public:
 
 	/* --- Player에게 부여하는 GA 관리 --- */
 protected:
-	// 캐싱된 소유자 플레이어
-	UPROPERTY()
-	TObjectPtr<ABasePlayer> OwnerPlayer;
-
 	// 서버에서 어빌리티를 부여할 때 호출합니다.
 	void GrantCrafterAbilities();
 

@@ -24,14 +24,13 @@ UCrafterComponent::UCrafterComponent()
 void UCrafterComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	OwnerPlayer = Cast<ABasePlayer>(GetOwner());
 
-	if (OwnerPlayer)
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetOwner()))
 	{
 		// [서버] Comppnent 초기화 로직 수행
-		if (OwnerPlayer->HasAuthority())
+		if (Player->HasAuthority())
 		{
-			if (OwnerPlayer->GetAbilitySystemComponent())
+			if (Player->GetAbilitySystemComponent())
 			{
 				// 이미 ASC가 준비되어 있다면 즉시 부여
 				GrantCrafterAbilities();
@@ -39,7 +38,7 @@ void UCrafterComponent::BeginPlay()
 			else
 			{
 				// 아직 ASC 준비가 안 되었다면, 델리게이트 구독하고 대기
-				OwnerPlayer->OnAbilitySystemInitialized.AddUObject(this, &UCrafterComponent::GrantCrafterAbilities);
+				Player->OnAbilitySystemInitialized.AddUObject(this, &UCrafterComponent::GrantCrafterAbilities);
 			}
 		}
 	}
@@ -47,10 +46,12 @@ void UCrafterComponent::BeginPlay()
 
 void UCrafterComponent::AddCrafterMappingContext()
 {
-	if (!OwnerPlayer) return;
+	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
+
+	if (!Player) return;
 
 	// OwnerPlayer의 Controller를 가져와서 PlayerController로 캐스팅
-	if (APlayerController* PC = Cast<APlayerController>(OwnerPlayer->GetController()))
+	if (APlayerController* PC = Cast<APlayerController>(Player->GetController()))
 	{
 		// 로컬 플레이어의 Enhanced Input Subsystem 획득
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
@@ -66,9 +67,11 @@ void UCrafterComponent::AddCrafterMappingContext()
 
 void UCrafterComponent::RemoveCrafterMappingContext()
 {
-	if (!OwnerPlayer) return;
+	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
 
-	if (APlayerController* PC = Cast<APlayerController>(OwnerPlayer->GetController()))
+	if (!Player) return;
+
+	if (APlayerController* PC = Cast<APlayerController>(Player->GetController()))
 	{
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
 		{
@@ -83,7 +86,9 @@ void UCrafterComponent::RemoveCrafterMappingContext()
 
 void UCrafterComponent::BindCrafterInput(UEnhancedInputComponent* EnhancedInputComponent)
 {
-	if (!EnhancedInputComponent || !CrafterInputConfig || !OwnerPlayer) return;
+	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
+
+	if (!EnhancedInputComponent || !CrafterInputConfig || !Player) return;
 
 	for (const FSlotInputAction& Action : CrafterInputConfig->SlotInputActions)
 	{
@@ -91,31 +96,35 @@ void UCrafterComponent::BindCrafterInput(UEnhancedInputComponent* EnhancedInputC
 		{
 			// Crafter의 IA와 SlotTag 매핑을 Player에게 적용
 			// IMC 우선순위로 인해 동일 키입력에 대해 우선 적용
-			EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, OwnerPlayer.Get(), &ABasePlayer::OnAbilityInputPressed, Action.SlotTag);
-			EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, OwnerPlayer.Get(), &ABasePlayer::OnAbilityInputReleased, Action.SlotTag);
+			EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, Player, &ABasePlayer::OnAbilityInputPressed, Action.SlotTag);
+			EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, Player, &ABasePlayer::OnAbilityInputReleased, Action.SlotTag);
 		}
 	}
 }
 
 void UCrafterComponent::GrantCrafterAbilities()
 {
-	if (!OwnerPlayer || !OwnerPlayer->HasAuthority()) return;
+	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
+
+	if (!Player || !Player->HasAuthority()) return;
 
 	// 설정용 Map을 순회하면서 Player의 탄탄한 Grant 함수를 호출만 해줌
 	for (const auto& SlotGAPair : CrafterAbilities)
 	{
-		OwnerPlayer->GrantAbilityToSlot(SlotGAPair.Key, SlotGAPair.Value);
+		Player->GrantAbilityToSlot(SlotGAPair.Key, SlotGAPair.Value);
 	}
 }
 
 void UCrafterComponent::RemoveCrafterAbilities()
 {
-	if (!OwnerPlayer || !OwnerPlayer->HasAuthority()) return;
+	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
+
+	if (!Player || !Player->HasAuthority()) return;
 
 	// 설정용 Map을 순회하면서 해당 태그의 어빌리티만 지워달라고 요청
 	for (const auto& SlotGAPair : CrafterAbilities)
 	{
-		OwnerPlayer->RemoveAbilityFromSlot(SlotGAPair.Key);
+		Player->RemoveAbilityFromSlot(SlotGAPair.Key);
 	}
 }
 

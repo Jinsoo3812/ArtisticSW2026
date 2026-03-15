@@ -80,7 +80,7 @@ void ABasePlayer::PawnClientRestart()
 	// 현재 폰을 조종하는 컨트롤러
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
-		// 해당 컨트롤러의 로컬 플레이어에 붙어있는 Enhanced Input 서브시스템
+		// BasePlayer의 Item IMC
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
 		{
 			// ItemIMC 등록
@@ -89,6 +89,12 @@ void ABasePlayer::PawnClientRestart()
 				Subsystem->AddMappingContext(ItemIMC, ItemIMCPriority);
 			}
 		}
+
+		// Crafter 전용 IMC
+		if (UCrafterComponent* CrafterComp = FindComponentByClass<UCrafterComponent>())
+		{
+			CrafterComp->AddCrafterMappingContext();
+		}
 	}
 }
 
@@ -96,14 +102,12 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
 		// CrafterComponent가 있다면 Crafter 전용 입력 바인딩
 		if (UCrafterComponent* CrafterComp = FindComponentByClass<UCrafterComponent>())
 		{
 			CrafterComp->BindCrafterInput(EnhancedInputComponent);
-			CrafterComp->AddCrafterMappingContext();
 		}
 
 		// Jumping
@@ -272,6 +276,7 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag SlotTag)
 
 void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
+	UE_LOG(LogTemp, Log, TEXT("OnAbilityInputPressed called with InputTag: %s"), *InputTag.ToString());
 	if (!AbilitySystemComponent || !InputTag.IsValid())
 	{
 		return;
@@ -299,6 +304,7 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 				AbilitySystemComponent->TryActivateAbility(Spec.Handle);
 			}
 		}
+		else UE_LOG(LogTemp, Warning, TEXT("AbilitySpec does not have the required InputTag %s"), *InputTag.ToString());
 	}
 
 	// AbilityLock 소멸
