@@ -68,8 +68,13 @@ void AAttacker::Tick(float DeltaTime)
     // ==========================================
     if (bIsAiming && EquippedItem)
     {
-        // 수류탄이 생성될 대략적인 시작 위치
-        FVector StartLoc = GetActorLocation() + (GetActorForwardVector() * 50.f) + FVector(0, 0, 50.f);
+
+        // 포물선의 시작 위치를 손 소켓으로
+        FVector StartLoc = GetActorLocation(); // 기본값
+        if (GetMesh())
+        {
+            StartLoc = GetMesh()->GetSocketLocation(FName("hand_r"));
+        }
 
         // 카메라가 바라보는 곳(목표 지점) 계산
         FVector CamLoc;

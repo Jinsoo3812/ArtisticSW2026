@@ -59,7 +59,7 @@ void ABaseItem::OnMeshSleep(UPrimitiveComponent* SleepingComponent, FName BoneNa
         ItemMesh->SetSimulatePhysics(false);
     }
 
-    HoverBaseLoc = GetActorLocation(); // 멈춘 위치 기억
+    HoverBaseLoc = GetActorLocation() + FVector(0.f, 0.f, 40.f); // 멈춘 위치 기억
     bIsHovering = true;                // 둥둥 뜨기 시작
 }
 
