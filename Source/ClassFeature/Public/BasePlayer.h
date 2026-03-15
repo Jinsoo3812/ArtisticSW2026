@@ -4,13 +4,18 @@
 
 #include "CoreMinimal.h"
 #include "BaseCharacter.h"
+#include "GameplayTagContainer.h"
+#include "InputTagConfig.h"
 #include "BasePlayer.generated.h"
+
+DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
 
 class USpringArmComponent;
 class UCameraComponent;
 class UInputAction;
 struct FInputActionValue;
 class ABaseItem;
+class UInputTagConfig;
 
 /**
  * 
@@ -30,7 +35,10 @@ public:
 	// 클라이언트에서 PlayerState가 복제 완료되었을 때 ASC 초기화
 	virtual void OnRep_PlayerState() override;
 
-	/* --- 입력 초기화 ---*/
+	// ASC 초기화 완료를 알리는 델리게이트 (컴포넌트에게 알리기 위함)
+	FOnAbilitySystemInitializedDelegate OnAbilitySystemInitialized;
+
+	/* --- 기본 입력 초기화 ---*/
 public:
 	// 플레이어 입력 바인딩
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
@@ -49,6 +57,17 @@ public:
 	virtual void DoJumpEnd();
 
 protected:
+	// 서버에 의해 로컬에서 Controller가 조종하는 Pawn이 지정될 때 호출되는 함수.
+	virtual void PawnClientRestart() override;
+
+	// Item IMC
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<class UInputMappingContext> ItemIMC;
+
+	// Item IMC의 우선순위
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	int32 ItemIMCPriority = 1;
+
 	// Input Action
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> JumpAction;
@@ -68,6 +87,31 @@ protected:
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void Interact();
+
+	/* --- 키 입력으로 실행되는 GA 공통 로직 ---  */
+public:
+	// 특정 슬롯에 GA를 부여하는 함수 (서버에서 실행)
+	UFUNCTION(BlueprintCallable, Category = "Abilities")
+	void GrantAbilityToSlot(FGameplayTag SlotTag, TSubclassOf<UGameplayAbility> AbilityClass);
+
+	// 특정 슬롯에서 GA를 회수하는 함수 (서버에서 실행)
+	UFUNCTION(BlueprintCallable, Category = "Abilities")
+	void RemoveAbilityFromSlot(FGameplayTag SlotTag);
+
+	// 매핑된 Tag를 받아 ASC에 어빌리티 실행 요청을 보내는 콜백
+	void OnAbilityInputPressed(FGameplayTag InputTag);
+	void OnAbilityInputReleased(FGameplayTag InputTag);
+
+protected:
+	// IA와 Slot Tag의 Mapping 정보가 담긴 DataAsset (BP 주입)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputTagConfig> SlotInputConfig;
+
+	/* --- ItemSlot ---  */
+public:
+	// 소유하고 있는 Item 배열
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
+	TArray<TObjectPtr<ABaseItem>> ItemSlots;
 
 	/* --- 카메라 ---*/
 public:
