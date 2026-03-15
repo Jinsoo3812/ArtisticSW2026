@@ -51,7 +51,7 @@ void AGrenadeProjectile::Explode()
     // 나중에 여기에 파티클(나이아가라) 생성, 사운드 재생, 데미지 처리(GAS) 로직이 들어갑니다.
 
     // 디버그용 출력
-    GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, TEXT("수류탄 폭발 펑!!!!"));
+    GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, TEXT("Grenade BOOOOOM!!!"));
 
     // 수류탄 액터 파괴
     Destroy();
