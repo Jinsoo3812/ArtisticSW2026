@@ -18,6 +18,7 @@ UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Changed, "Event.Ability.Changed");
 UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");
 UE_DEFINE_GAMEPLAY_TAG(Data_Heal, "Data.Heal");
 
+
 /* Player */
 
 // ItemSlot Tag
@@ -31,4 +32,14 @@ UE_DEFINE_GAMEPLAY_TAG(Slot_Crafter_R, "Slot.Crafter.R");
 
 
 /* Item */
+// Item 식별 Tag
 UE_DEFINE_GAMEPLAY_TAG(Item_TestCrafted, "Item.TestCrafted");
+
+
+/* Input */
+// GameplayEvent로 사용할 Tag
+UE_DEFINE_GAMEPLAY_TAG(Input_MouseLeftClick, "Input.MouseLeftClick");
+
+
+/* Cue Tag */
+// GameplayCue로 사용할 Tag

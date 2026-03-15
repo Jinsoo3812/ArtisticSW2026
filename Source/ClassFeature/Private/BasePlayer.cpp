@@ -117,6 +117,12 @@ void ABasePlayer::PawnClientRestart()
 		// BasePlayer의 Item IMC
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
 		{
+			// DefaultIMC 등록
+			if(DefaultIMC)
+			{
+				Subsystem->AddMappingContext(DefaultIMC, DefaultIMCPriority);
+			}
+
 			// ItemIMC 등록
 			if (ItemIMC)
 			{
@@ -343,7 +349,15 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 				AbilitySystemComponent->TryActivateAbility(Spec.Handle);
 			}
 		}
-		else UE_LOG(LogTemp, Warning, TEXT("AbilitySpec does not have the required InputTag %s"), *InputTag.ToString());
+		else {
+			// GA 실행과 엮인 Tag가 아닐 때는 ASC에 GameplayEvent로서 전달
+			FGameplayEventData EventData;
+			EventData.Instigator = this;
+			EventData.Target = nullptr;
+
+			// 활성화된 모든 어빌리티 중, 이 태그를 기다리는(WaitGameplayEvent) 어빌리티에게 신호가 갑니다.
+			AbilitySystemComponent->HandleGameplayEvent(InputTag, &EventData);
+		}
 	}
 
 	// AbilityLock 소멸
@@ -369,7 +383,7 @@ void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 			if (Spec.IsActive())
 			{
 				// 실행 중인 GA에 키를 뗐다는 이벤트 통지
-				AbilitySystemComponent->AbilitySpecInputReleased(Spec);
+				AbilitySystemComponent->AbilitySpecInputReleased(Spec);	
 			}
 		}
 	}
@@ -377,7 +391,7 @@ void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 	// AbilityLock 소멸
 }
 
-void ABasePlayer::ThrowEquippedItem()
+void ABasePlayer::UseEquippedItem()
 {
 	// 서버 권한 및 장착 아이템 유효성 검사
 	if (!HasAuthority() || EquippedItem == nullptr)
@@ -386,14 +400,13 @@ void ABasePlayer::ThrowEquippedItem()
 	}
 
 	// 장착된 아이템이 ItemSlots 배열의 몇 번째 인덱스에 있는지 탐색
-	int32 EquippedIndex = ItemSlots.Find(EquippedItem);
+	int32 EquippedIndex = ItemSlots.Find(EquippedItem.Get());
 
 	if (EquippedIndex != INDEX_NONE)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[ThrowEquippedItem] 아이템 투척 완료! 기존 슬롯 인덱스: %d"), EquippedIndex);
+		UE_LOG(LogTemp, Log, TEXT("[UseEquippedItem] 아이템 사용 완료! 기존 슬롯 인덱스: %d"), EquippedIndex);
 
-		EquippedItem->Destroy(); // 던지기 구현 전에 일단 임시로 제거
-
+		EquippedItem->Destroy(); // 아이템 액터 제거
 		// 손에 들고 있는 장착 상태 해제
 		EquippedItem = nullptr;
 

@@ -65,6 +65,14 @@ protected:
 	// 서버에 의해 로컬에서 Controller가 조종하는 Pawn이 지정될 때 호출되는 함수.
 	virtual void PawnClientRestart() override;
 
+	// Default IMC (마우스 등)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<class UInputMappingContext> DefaultIMC;
+
+	// Default IMC의 우선순위
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	int32 DefaultIMCPriority = 1;
+
 	// Item IMC
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<class UInputMappingContext> ItemIMC;
@@ -112,6 +120,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputTagConfig> SlotInputConfig;
 
+
+
 	/* --- ItemSlot ---  */
 public:
 	// 현재 캐릭터가 장착하고 있는 아이템
@@ -128,7 +138,7 @@ public:
 	void RemoveItemFromSlot(FGameplayTag SlotTag);
 
 	UFUNCTION()
-	void ThrowEquippedItem();
+	void UseEquippedItem();
 
 protected:
 	// ItemSlot Tag에 해당하는 ItemSlot index 매핑
