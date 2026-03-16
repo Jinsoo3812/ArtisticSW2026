@@ -9,7 +9,7 @@ ABasePlayerState::ABasePlayerState()
 {
 	// 서버와 클라이언트 간의 데이터 갱신 주기 설정
 	// 적응형 NetUpdateFrequency를 사용해 최적화 가능함
-	NetUpdateFrequency = BaseNetUpdateFrequency;
+	SetNetUpdateFrequency(BaseNetUpdateFrequency);
 
 	// Ability System Component ?앹꽦
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));

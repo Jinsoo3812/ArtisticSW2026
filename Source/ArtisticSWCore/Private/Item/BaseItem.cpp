@@ -1,91 +1,171 @@
 ﻿#include "Item/BaseItem.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SphereComponent.h"
-#include "GASInputID.h" // GASCore 모듈의 Enum 사용
-#include "BaseCharacter.h" // 플레이어의 ASC를 가져오기 위해 캐스팅용으로 사용
-#include "AbilitySystemComponent.h"
+#include "ItemData.h"
+#include "GameFramework/Character.h"
+#include "Net/UnrealNetwork.h"
 
 ABaseItem::ABaseItem()
 {
-    PrimaryActorTick.bCanEverTick = true;
+	// 둥둥 뜰 때만 Tick 켜기
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 
-    // 메쉬 설정 (기본적으로 물리 연산을 켜서 땅에 굴러가게 함)
-    ItemMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ItemMesh"));
-    RootComponent = ItemMesh;
-    ItemMesh->SetSimulatePhysics(true);
-    ItemMesh->SetGenerateOverlapEvents(true); // 카오스 물리 웨이크 이벤트 활성화
+	// 실제 물리 연산을 하는 것은 DA로부터 받아온 Mesh
+	ItemMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ItemMesh"));
+	RootComponent = ItemMesh;
 
-    // 상호작용(줍기) 범위 설정
-    InteractSphere = CreateDefaultSubobject<USphereComponent>(TEXT("InteractSphere"));
-    InteractSphere->SetupAttachment(RootComponent);
-    InteractSphere->SetSphereRadius(150.f);
-    InteractSphere->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+	// Mesh보다 큰 범위에서 Player와의 상호작용을 감지하는 Sphere Collider
+	InteractSphere = CreateDefaultSubobject<USphereComponent>(TEXT("InteractSphere"));
+	InteractSphere->SetupAttachment(RootComponent);
+	InteractSphere->SetSphereRadius(150.f);
+	InteractSphere->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
 
-    bIsHovering = false;
+	bReplicates = true;
+	bIsHovering = false;
+}
+
+TSubclassOf<UGameplayAbility> ABaseItem::GetGrantedAbilityClass() const
+{
+	if (MyDefinition && !MyDefinition->GrantedAbilityClass.IsNull())
+	{
+		// SoftClassPtr에서 동기 로드하여 반환 (이미 로드된 경우 O(1) 캐시 반환)
+		return MyDefinition->GrantedAbilityClass.LoadSynchronous();
+	}
+	return nullptr;
+}
+TSubclassOf<ABaseItem> ABaseItem::GetSpawnClass() const
+{
+	if (MyDefinition && !MyDefinition->SpawnClass.IsNull())
+	{
+		return MyDefinition->SpawnClass.LoadSynchronous();
+	}
+	return nullptr;
+}
+
+void ABaseItem::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// ItemTag만 동기화하고 각 클라이언트가 Tag를 통해 알아서 처리
+	DOREPLIFETIME(ABaseItem, ItemTag);
 }
 
 void ABaseItem::BeginPlay()
 {
-    Super::BeginPlay();
+	Super::BeginPlay();
 
-    // 메쉬가 바닥에 굴러가다 완전히 멈추면 OnMeshSleep 함수 실행되도록 바인딩
-    if (ItemMesh)
-    {
-        ItemMesh->OnComponentSleep.AddDynamic(this, &ABaseItem::OnMeshSleep);
-    }
+	if (HasAuthority()) {
+		InitializeItem();
+
+		// 물리 수면 이벤트(물리 연산을 더이상 하지 않는 최적화 모드로 들어감) 바인딩
+		// 서버에서만 바인딩하고 호버링을 클라가 따라하면 됨.
+		if (ItemMesh)
+		{
+			ItemMesh->OnComponentSleep.AddDynamic(this, &ABaseItem::OnMeshSleep);
+		}
+	}
+}
+
+void ABaseItem::OnRep_ItemTag()
+{
+	InitializeItem();
 }
 
 void ABaseItem::Tick(float DeltaTime)
 {
-    Super::Tick(DeltaTime);
+	Super::Tick(DeltaTime);
 
-    // 물리가 멈추면 실행되는 둥둥 뜨기 + 회전 연산
-    if (bIsHovering)
-    {
-        // Y축(Yaw)을 기준으로 빙글빙글 회전
-        AddActorLocalRotation(FRotator(0.f, 45.f * DeltaTime, 0.f));
+	// Tick 켜졌다는 것은 OnMeshSleep이 호출되었다는 것. 필요하면 조건문으로 처리할 것.
 
-        // Z축(위아래)으로 싸인 곡선을 그리며 둥둥 뜸
-        float NewZ = HoverBaseLoc.Z + (FMath::Sin(GetGameTimeSinceCreation() * 3.f) * 10.f);
-        SetActorLocation(FVector(HoverBaseLoc.X, HoverBaseLoc.Y, NewZ));
-    }
+	AddActorLocalRotation(FRotator(0.f, HoverSpeed * DeltaTime, 0.f));
+
+	float NewZ = HoverBaseLoc.Z + (FMath::Sin(GetGameTimeSinceCreation() * 3.f) * 10.f);
+	SetActorLocation(FVector(GetActorLocation().X, GetActorLocation().Y, NewZ));
 }
 
 void ABaseItem::OnMeshSleep(UPrimitiveComponent* SleepingComponent, FName BoneName)
 {
-    // 최적화를 위해 무거운 물리 연산을 끔
-    if (ItemMesh)
-    {
-        ItemMesh->SetSimulatePhysics(false);
-    }
 
-    HoverBaseLoc = GetActorLocation() + FVector(0.f, 0.f, 40.f); // 멈춘 위치 기억
-    bIsHovering = true;                // 둥둥 뜨기 시작
+	// 호버링 중에는 물리 법칙을 무시하고 둥둥 뜨니까
+	if (ItemMesh)
+	{
+		ItemMesh->SetSimulatePhysics(false);
+	}
+
+	HoverBaseLoc = GetActorLocation() + FVector(0.f, 0.f, 40.f);
+
+	// 둥둥 뜨기 시작할 때만 Tick 활성화
+	bIsHovering = true;
+	SetActorTickEnabled(true);
 }
 
 void ABaseItem::PickUpItem(AActor* Picker)
 {
-    if (!Picker) return;
+	if (!Picker) return;
 
-    // 1. 둥둥 뜨는 연산 정지 및 충돌체 끄기
-    bIsHovering = false;
-    InteractSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    ItemMesh->SetSimulatePhysics(false);
-    ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// 호버링 끄기
+	bIsHovering = false;
+	SetActorTickEnabled(false);
 
+	// 각종 물리 옵션 끄기
+	InteractSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ItemMesh->SetSimulatePhysics(false);
+	ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-    ABaseCharacter* BaseChar = Cast<ABaseCharacter>(Picker);
-    if (BaseChar)
-    {
-        // 2. 설정한 소켓(AttachmentSocketName)에 아이템 부착!
-        AttachToComponent(BaseChar->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, AttachmentSocketName);
+	// 플레이어에게 부착
+	AttachToComponent(Cast<ACharacter>(Picker)->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, MyDefinition->AttachmentSocketName);
+}
 
-        // 3. GAS 시스템에 스킬 부여 (핵심)
-        UAbilitySystemComponent* ASC = BaseChar->GetAbilitySystemComponent();
-        if (ASC && GrantedAbilityClass)
-        {
-            FGameplayAbilitySpec Spec(GrantedAbilityClass, 1, static_cast<int32>(EGASInputID::UseSkill), this);
-            GrantedAbilityHandle = ASC->GiveAbility(Spec);
-        }
-    }
+void ABaseItem::InitializeItem()
+{
+	if (ItemDataAsset && ItemTag.IsValid())
+	{
+		if (const FItemDefinition* Def = ItemDataAsset->FindItemDefinition(ItemTag))
+		{
+			MyDefinition = Def;
+
+			if (UStaticMesh* LoadedMesh = MyDefinition->ItemMesh.LoadSynchronous())
+			{
+				ItemMesh->SetStaticMesh(LoadedMesh);
+
+				ItemMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+
+				// 메쉬와 충돌체가 준비되었으니 이제 중력과 물리를 킴
+				ItemMesh->SetSimulatePhysics(true);
+				ItemMesh->SetGenerateOverlapEvents(true);
+
+				// Slepp 이벤트를 받기 위함
+				ItemMesh->BodyInstance.bGenerateWakeEvents = true;
+			}
+		}
+	}
+}
+
+void ABaseItem::OnThrown(FVector LaunchVelocity, AActor* Thrower)
+{
+	// 플레이어 손에서 분리
+	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+
+	// 상호작용(Overlap) 콜리전 복구
+	if (InteractSphere)
+	{
+		InteractSphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	}
+
+	// 메쉬 물리 및 충돌 복구
+	if (ItemMesh)
+	{
+		ItemMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		ItemMesh->SetSimulatePhysics(true);
+
+		// 던진 직후 플레이어와 충돌해서 튕겨나가는 것 방지
+		if (Thrower)
+		{
+			ItemMesh->MoveIgnoreActors.Add(Thrower);
+		}
+
+		// 방향 벡터(속도) 가하기
+		ItemMesh->AddImpulse(LaunchVelocity, NAME_None, true);
+	}
 }

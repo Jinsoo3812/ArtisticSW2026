@@ -8,7 +8,8 @@
 
 class UStaticMeshComponent;
 class USphereComponent;
-class UAbilitySystemComponent;
+class UItemData;
+struct FItemDefinition;
 
 UCLASS()
 class ARTISTICSWCORE_API ABaseItem : public AActor
@@ -16,57 +17,72 @@ class ARTISTICSWCORE_API ABaseItem : public AActor
     GENERATED_BODY()
 
 public:
-    ABaseItem();
+	ABaseItem();
+	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaTime) override;
 
-    virtual void Tick(float DeltaTime) override;
+	/* 네트워크 설정 */
+public:
+	// 복제할 멤버 변수 설정
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-    // ==========================================
-    // [아이템 데이터] 블루프린트에서 할당할 값들
-    // ==========================================
-
-    // 1. 아이템 종류 식별용 태그 (예: Item.Weapon.Grenade)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Data")
-    FGameplayTag ItemTag;
-
-    // 2. 이 아이템을 주웠을 때 플레이어에게 부여할 GAS 스킬 (투척 스킬 등)
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item|Data")
-    TSubclassOf<UGameplayAbility> GrantedAbilityClass;
-
-
-    // ==========================================
-    // [주요 함수]
-    // ==========================================
-
-    // 플레이어가 F키를 눌러서 주울 때 호출됨
-    UFUNCTION(BlueprintCallable, Category = "Item|Action")
-    virtual void PickUpItem(AActor* Picker);
-
-    // 장착 시 부착될 스켈레탈 메쉬의 소켓 이름 (기본값: hand_r)
-    UPROPERTY(EditDefaultsOnly, Category = "Item|Equip")
-    FName AttachmentSocketName = FName("hand_r");
+	UFUNCTION()
+	virtual void OnRep_ItemTag();
 
 protected:
-    virtual void BeginPlay() override;
+	// BeginPlay 및 OnRep으로 Tag가 도착했을 때 Item 초기화 함수
+	void InitializeItem();
 
-    // --- 컴포넌트 ---
-    // 에디터에서 외형(메쉬)을 바꿀 수 있도록 VisibleAnywhere 설정
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Components")
-    UStaticMeshComponent* ItemMesh;
+	/* Item 핵심 멤버 */
+public:
+	// Item 식별 Gameplay Tag
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_ItemTag, Category = "Item|Data")
+	FGameplayTag ItemTag;
 
-    // F키로 상호작용(줍기)할 수 있는 범위를 나타내는 투명한 구체
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Components")
-    USphereComponent* InteractSphere;
+	// DA로부터 가져온 본인의 정의 구조체
+	const FItemDefinition* MyDefinition;
 
+protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Components")
+	UStaticMeshComponent* ItemMesh;
 
-    // --- 물리 및 둥둥 뜨기 관련 ---
-    // 물리 엔진이 멈췄을 때(Sleep) 호출되어 둥둥 뜨기로 전환하는 함수
-    UFUNCTION()
-    void OnMeshSleep(UPrimitiveComponent* SleepingComponent, FName BoneName);
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Components")
+	USphereComponent* InteractSphere;
 
-    bool bIsHovering;      // 현재 둥둥 떠있는 상태인지?
-    FVector HoverBaseLoc;  // 둥둥 뜰 때의 기준 높이(Z) 위치
+	// ItemData DA 캐시
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Data")
+	TObjectPtr<UItemData> ItemDataAsset;
 
-private:
-    // 플레이어에게 부여한 스킬의 식별표 (나중에 버릴 때 스킬을 뺏기 위해 저장해둠)
-    FGameplayAbilitySpecHandle GrantedAbilityHandle;
+	/* API for Player */
+public:
+	// Player가 Item을 주워 자신의 손/ItemSlot/Inventory에 저장하기 위한 함수.
+	UFUNCTION(BlueprintCallable, Category = "Item|Action")
+	virtual void PickUpItem(AActor* Picker);
+
+	// Item이 부여하는 GA Class 반환 함수
+	UFUNCTION(BlueprintCallable, Category = "Item|Ability")
+	TSubclassOf<UGameplayAbility> GetGrantedAbilityClass() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Item|Data")
+	TSubclassOf<ABaseItem> GetSpawnClass() const;
+
+	// 던져졌을 때 물리 및 충돌 상태를 복구하는 함수
+	UFUNCTION(BlueprintCallable, Category = "Item|Action")
+	virtual void OnThrown(FVector LaunchVelocity, AActor* Thrower);
+
+	/* Hovering */
+protected:
+	bool bIsHovering;
+
+	FVector HoverBaseLoc;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Hover")
+	float HoverHeight = 40.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Hover")
+	float HoverSpeed = 45.f;
+
+	// 물리 연산이 꺼진 상태에 발동되어 Hovering 시작
+	UFUNCTION()
+	void OnMeshSleep(UPrimitiveComponent* SleepingComponent, FName BoneName);
 };

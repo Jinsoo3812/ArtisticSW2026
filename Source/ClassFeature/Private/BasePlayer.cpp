@@ -9,11 +9,12 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
-#include "Item/BaseItem.h"
+#include "BaseItem.h"
 #include "CrafterComponent.h"
 #include "BaseGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "ItemData.h"
 
 /* --- FItemSlot ---*/
 
@@ -276,6 +277,8 @@ void ABasePlayer::DoJumpEnd()
 
 void ABasePlayer::Interact()
 {
+	// 지금은 단순히 PickUp의 역할만 하지만 추후 특정 방법(어댑터 등)을 통해 모든 상호작용에 사용가능한 함수로 확장해야 함.
+
 	TArray<AActor*> OverlappingActors;
 	GetOverlappingActors(OverlappingActors, ABaseItem::StaticClass());
 
@@ -315,7 +318,7 @@ void ABasePlayer::Interact()
 					Item->SetActorHiddenInGame(false); // 보이게 처리
 
 					// 손에 쥐어졌으니 GA도 부여
-					GrantAbilityToSlot(Ability_Item_Equipped, EquippedItem->GrantedAbilityClass);
+					GrantAbilityToSlot(Ability_Item_Equipped, EquippedItem->GetGrantedAbilityClass());
 
 					UE_LOG(LogTemp, Log, TEXT("ABasePlayer::Interact : Equipped newly picked item to Slot [%d]."), EmptySlotIndex);
 				}
@@ -448,7 +451,7 @@ void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 	// AbilityLock 소멸
 }
 
-void ABasePlayer::UseEquippedItem()
+void ABasePlayer::UseEquippedItem(bool bDestroy)
 {
 	// 서버 권한 및 장착 아이템 유효성 검사
 	if (!HasAuthority() || EquippedItem == nullptr)
@@ -463,7 +466,10 @@ void ABasePlayer::UseEquippedItem()
 	{
 		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::UseEquippedItem : Item used! Slot index: %d"), EquippedIndex);
 
-		EquippedItem->Destroy(); // 아이템 액터 제거
+		if (bDestroy) {
+			EquippedItem->Destroy(); // 아이템 액터 제거
+		}
+		
 		// 손에 들고 있는 장착 상태 해제
 		EquippedItem = nullptr;
 
@@ -519,7 +525,7 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag SlotTag)
 			EquippedItem->SetActorHiddenInGame(false);
 
 			// 마우스 왼클릭에 반응하는 동적 어빌리티 부여
-			GrantAbilityToSlot(Ability_Item_Equipped, EquippedItem->GrantedAbilityClass);
+			GrantAbilityToSlot(Ability_Item_Equipped, EquippedItem->GetGrantedAbilityClass());
 		}
 	}
 }

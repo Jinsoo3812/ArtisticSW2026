@@ -3,15 +3,12 @@
 
 #include "ThrowItem.h"
 #include "BasePlayer.h"
-#include "BaseGameplayTags.h"
+#include "BaseItem.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
-#include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
-#include "Item/BaseItem.h"
 #include "Kismet/GameplayStatics.h"
 #include "DrawDebugHelpers.h"
-#include "GameFramework/ProjectileMovementComponent.h"
-#include "Components/BoxComponent.h"
-#include "Item/BaseProjectile.h"
+#include "Components/PrimitiveComponent.h"
+#include "BaseGameplayTags.h"
 
 void UThrowItem::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -71,44 +68,27 @@ void UThrowItem::OnConfirmEventReceived(FGameplayEventData Payload)
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	if (!Player) return;
 
-	// [서버] 투척물 생성 및 투척 
+	// [서버] Item을 손에서 분리한 후 투척
 	if (Player->HasAuthority())
 	{
-		FVector StartLoc = IsValid(Player->EquippedItem) ? Player->EquippedItem->GetActorLocation() : Player->GetActorLocation();
+		ABaseItem* ItemToThrow = Player->EquippedItem;
 
-		// 서버와 클라이언트 간의 차이가 없는 카메라가 바라보는 방향벡터
-		FVector LaunchDir = Player->GetBaseAimRotation().Vector();
-		LaunchDir.Z += Upper;
-		LaunchDir.Normalize();
-
-		FVector LaunchVelocity = LaunchDir * ThrowSpeed;
-
-		Player->UseEquippedItem();
-
-		if (ProjectileClass)
+		if (IsValid(ItemToThrow))
 		{
-			FTransform SpawnTransform(LaunchDir.Rotation(), StartLoc);
-			ABaseProjectile* SpawnedProjectile = GetWorld()->SpawnActorDeferred<ABaseProjectile>(
-				ProjectileClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn
-			);
+			// 서버와 클라이언트가 오차없이 공유하는 카메라의 현재 방향 벡터
+			FVector LaunchDir = Player->GetBaseAimRotation().Vector();
+			LaunchDir.Z += Upper; // 직구 방지 (살짝 들어올림)
+			LaunchDir.Normalize();
+			FVector LaunchVelocity = LaunchDir * ThrowSpeed;
 
-			if (SpawnedProjectile)
-			{
-				if (UPrimitiveComponent* RootPrim = SpawnedProjectile->GetCollisionComp())
-				{
-					RootPrim->IgnoreActorWhenMoving(Player, true);
-				}
+			// 장착 Item을 손 및 해당 ItemSlot에서도 제거
+			Player->UseEquippedItem(false);
 
-				if (UProjectileMovementComponent* PMC = SpawnedProjectile->GetProjectileMovement())
-				{
-					PMC->InitialSpeed = ThrowSpeed;
-					PMC->MaxSpeed = ThrowSpeed;
-					PMC->bInitialVelocityInLocalSpace = true;
-					PMC->Velocity = FVector::ForwardVector; // FVector(1.f, 0.f, 0.f)
-				}
+			// 손에서 분리
+			ItemToThrow->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
-				UGameplayStatics::FinishSpawningActor(SpawnedProjectile, SpawnTransform);
-			}
+			// Item 투척
+			ItemToThrow->OnThrown(LaunchVelocity, Player);
 		}
 	}
 

@@ -174,7 +174,7 @@ public:
 	void RemoveItemFromSlot(FGameplayTag SlotTag);
 
 	UFUNCTION()
-	void UseEquippedItem();
+	void UseEquippedItem(bool bDestroy = true);
 
 protected:
 	// 슬롯 키를 눌렀을 때 아이템을 장착하는 함수

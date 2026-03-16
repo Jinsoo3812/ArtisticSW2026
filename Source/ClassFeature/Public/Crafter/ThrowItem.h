@@ -53,10 +53,6 @@ protected:
 	UPROPERTY(Config, EditDefaultsOnly, Category = "Throw")
 	float ProjectileNetUpdateFrequency = 20.f;
 
-	// 대체 소환할 투척용 발사체 클래스 (BP에서 주입, 임시임)
-	UPROPERTY(EditDefaultsOnly, Category = "Throw")
-	TSubclassOf<ABaseProjectile> ProjectileClass;
-
 	// 궤적 타이머 핸들
 	FTimerHandle TrajectoryTimerHandle;
 
