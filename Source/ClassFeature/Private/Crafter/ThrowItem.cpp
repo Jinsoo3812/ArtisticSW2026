@@ -19,15 +19,15 @@ void UThrowItem::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
 	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo())) {
-		if (!Player->EquippedItem.IsValid())
+		if (!IsValid(Player->EquippedItem))
 		{
-			UE_LOG(LogTemp, Warning, TEXT("투척 실패: 장착된 아이템이 없습니다."));
+			UE_LOG(LogTemp, Warning, TEXT("UThrowItem::ActivateAbility : No Equipped Item. Throw Fail."));
 			EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 			return;
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("투척 시작: 조준 모드로 진입합니다."));
+	UE_LOG(LogTemp, Log, TEXT("UThrowItem::ActivateAbility: StartAiming"));
 	bIsConfirmed = false; // 초기화
 	StartAiming();
 
@@ -46,6 +46,11 @@ void UThrowItem::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		WaitConfirm->EventReceived.AddDynamic(this, &UThrowItem::OnConfirmEventReceived);
 		WaitConfirm->ReadyForActivation();
 	}
+
+	// 서버는 클라이언트가 보낸 TargetData를 받을 준비
+	GetAbilitySystemComponentFromActorInfo()->AbilityTargetDataSetDelegate(
+		CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey()
+	).AddUObject(this, &UThrowItem::OnTargetDataReadyCallback);
 }
 
 void UThrowItem::EndAbility(const FGameplayAbilitySpecHandle Handle,
@@ -81,7 +86,7 @@ bool UThrowItem::TraceUnderCrosshairs(FHitResult& OutHitResult, float TraceDista
 	QueryParams.AddIgnoredActor(GetAvatarActorFromActorInfo());
 
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
-	if (Player && Player->EquippedItem.IsValid())
+	if (Player && IsValid(Player->EquippedItem))
 	{
 		QueryParams.AddIgnoredActor(Player->EquippedItem.Get());
 	}
@@ -102,7 +107,7 @@ void UThrowItem::DrawTrajectory()
 
 	// 발사 시작 위치는 Item이 달려있는 현재 위치
 	FVector StartLocation = Player->GetActorLocation() + FVector(0, 0, 50.f); // 실패 시 임시 위치
-	if (Player->EquippedItem.IsValid())
+	if (IsValid(Player->EquippedItem))
 	{
 		StartLocation = Player->EquippedItem.Get()->GetActorLocation();
 	}
@@ -146,11 +151,6 @@ void UThrowItem::OnConfirmEventReceived(FGameplayEventData Payload)
 	// 발사 확정 처리
 	bIsConfirmed = true;
 
-	// 서버는 클라이언트가 보낸 TargetData를 받을 준비
-	GetAbilitySystemComponentFromActorInfo()->AbilityTargetDataSetDelegate(
-		CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey()
-	).AddUObject(this, &UThrowItem::OnTargetDataReadyCallback);
-
 	// [클라이언트] 발사
 	if (GetActorInfo().IsLocallyControlled())
 	{
@@ -188,31 +188,46 @@ void UThrowItem::OnTargetDataReadyCallback(const FGameplayAbilityTargetDataHandl
 
 			FGameplayAbilityTargetData_LocationInfo* LocationInfo = static_cast<FGameplayAbilityTargetData_LocationInfo*>(Data.Data[0].Get());
 			FVector TargetLocation = LocationInfo->TargetLocation.LiteralTransform.GetLocation();
-			FVector StartLocation = Player->EquippedItem.IsValid() ? Player->EquippedItem->GetActorLocation() : Player->GetActorLocation() + FVector(0, 0, 50.f);
+			FVector StartLocation = IsValid(Player->EquippedItem) ? Player->EquippedItem->GetActorLocation() : Player->GetActorLocation() + FVector(0, 0, 50.f);
 
 			// 서버가 클라이언트가 넘겨준 타겟 지점을 바탕으로 발사 벡터를 직접 계산
 			FVector LaunchVelocity;
 			UGameplayStatics::SuggestProjectileVelocity_CustomArc(
 				this, LaunchVelocity, StartLocation, TargetLocation, GetWorld()->GetGravityZ(), 0.5f);
 
-			// 복제되는 투사체 스폰
-			FActorSpawnParameters SpawnParams;
-			SpawnParams.Instigator = Player;
-			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			// 스폰 트랜스폼 설정
+			FTransform SpawnTransform(LaunchVelocity.Rotation(), StartLocation);
 
-			AActor* Projectile = GetWorld()->SpawnActor<AActor>(ReplicatedProjectileClass, StartLocation, LaunchVelocity.Rotation(), SpawnParams);
+			// 지연 생성을 사용하여 속도 등의 값 주입을 보장
+			AActor* Projectile = GetWorld()->SpawnActorDeferred<AActor>(
+				ReplicatedProjectileClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+
 
 			if (Projectile)
 			{
 				Projectile->SetNetUpdateFrequency(ProjectileNetUpdateFrequency);
 
+				// 충돌 무시 로직
+				UPrimitiveComponent* CollisionComp = Cast<UPrimitiveComponent>(Projectile->GetRootComponent());
+				if (CollisionComp)
+				{
+					CollisionComp->IgnoreActorWhenMoving(Player, true);
+					if (IsValid(Player->EquippedItem))
+					{
+						CollisionComp->IgnoreActorWhenMoving(Player->EquippedItem, true);
+					}
+				}
 
-				// 투사체 컴포넌트에 서버가 계산한 속도 주입
+				// 속도 주입
 				UProjectileMovementComponent* ProjComp = Projectile->FindComponentByClass<UProjectileMovementComponent>();
 				if (ProjComp)
 				{
 					ProjComp->Velocity = LaunchVelocity;
+					// LaunchVelocity 로그 출력
+					UE_LOG(LogTemp, Warning, TEXT("LaunchVelocity: %s"), *LaunchVelocity.ToString());
 				}
+
+				Projectile->FinishSpawning(SpawnTransform);
 			}
 
 			// 아이템 사용 처리

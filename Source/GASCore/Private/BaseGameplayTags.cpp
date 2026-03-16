@@ -19,16 +19,16 @@ UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");
 UE_DEFINE_GAMEPLAY_TAG(Data_Heal, "Data.Heal");
 
 
-/* Player */
+/* Keyboard Input */
 
-// ItemSlot Tag
-UE_DEFINE_GAMEPLAY_TAG(Slot_Item, "Slot.Item");
-UE_DEFINE_GAMEPLAY_TAG(Slot_Item_1, "Slot.Item.1");
-UE_DEFINE_GAMEPLAY_TAG(Slot_Item_2, "Slot.Item.2");
-UE_DEFINE_GAMEPLAY_TAG(Slot_Item_3, "Slot.Item.3");
+// ItemSlot
+UE_DEFINE_GAMEPLAY_TAG(Key_Item, "Key.Item");
+UE_DEFINE_GAMEPLAY_TAG(Key_Item_1, "Key.Item.1");
+UE_DEFINE_GAMEPLAY_TAG(Key_Item_2, "Key.Item.2");
+UE_DEFINE_GAMEPLAY_TAG(Key_Item_3, "Key.Item.3");
 
-// Crafter Slot Tag
-UE_DEFINE_GAMEPLAY_TAG(Slot_Crafter_R, "Slot.Crafter.R");
+// Crafter only
+UE_DEFINE_GAMEPLAY_TAG(Key_Crafter_R, "Key.Crafter.R");
 
 
 /* Item */
@@ -36,7 +36,7 @@ UE_DEFINE_GAMEPLAY_TAG(Slot_Crafter_R, "Slot.Crafter.R");
 UE_DEFINE_GAMEPLAY_TAG(Item_TestCrafted, "Item.TestCrafted");
 
 
-/* Input */
+/* Mouse Input */
 // GameplayEvent로 사용할 Tag
 UE_DEFINE_GAMEPLAY_TAG(Input_MouseLeftClick, "Input.MouseLeftClick");
 

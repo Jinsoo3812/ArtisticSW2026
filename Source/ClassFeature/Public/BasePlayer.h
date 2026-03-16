@@ -17,6 +17,29 @@ struct FInputActionValue;
 class ABaseItem;
 class UInputTagConfig;
 
+// Item Slot 관리 구조체
+USTRUCT(BlueprintType)
+struct FItemSlot
+{
+	GENERATED_BODY()
+
+	// 슬롯에 할당된 GameplayTag (예: key.Item.1)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ItemSlot")
+	FGameplayTag SlotTag;
+
+	// 해당 슬롯에 장착된 아이템 객체 포인터
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ItemSlot")
+	TObjectPtr<ABaseItem> Item;
+
+	FItemSlot(const FGameplayTag& InTag = FGameplayTag::EmptyTag, ABaseItem* InItem = nullptr);
+
+	// Tag로 배열에서 바로 찾기 위한 연산자 오버로딩
+	bool operator==(const FGameplayTag& OtherTag) const;
+
+	// Item 포인터로 배열에서 바로 찾기 위한 연산자 오버로딩
+	bool operator==(const ABaseItem* OtherItem) const;
+};
+
 /**
  * 
  */
@@ -133,13 +156,17 @@ protected:
 	/* --- ItemSlot ---  */
 public:
 	// 현재 캐릭터가 장착하고 있는 아이템
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_EquippedItem, Category = "Equipment")
 
-	TWeakObjectPtr<ABaseItem> EquippedItem;
+	TObjectPtr<ABaseItem> EquippedItem;
 
-	// 소유하고 있는 Item 배열
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
-	TArray<TObjectPtr<ABaseItem>> ItemSlots;
+	// EquippedItem의 변경이 복제되었을 때 호출되는 함수
+	UFUNCTION()
+	void OnRep_EquippedItem(ABaseItem* OldItem);
+
+	// ItemSlot 구조체 배열 (복제)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category = "Item")
+	TArray<FItemSlot> ItemSlots;
 
 	// 특정 슬롯의 Item을 제거하고 부여된 GA를 회수
 	UFUNCTION()
@@ -149,17 +176,6 @@ public:
 	void UseEquippedItem();
 
 protected:
-	// ItemSlot Tag에 해당하는 ItemSlot index 매핑
-	UPROPERTY(Transient)
-	TMap<FGameplayTag, int32> ItemSlotTagToIndexMap;
-
-	// ItemSlot index에 해당하는 ItemSlot Tag 매핑
-	UPROPERTY(Transient)
-	TArray<FGameplayTag> IndexToItemSlotTagArray;
-
-	// Slot Tag를 ItemSlot index로 변환
-	int32 GetItemSlotIndexByTag(const FGameplayTag& SlotTag) const;
-
 	// 슬롯 키를 눌렀을 때 아이템을 장착하는 함수
 	void EquipItemFromSlot(FGameplayTag SlotTag);
 
