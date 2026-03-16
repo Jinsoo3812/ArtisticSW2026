@@ -10,6 +10,7 @@
 #include "GASInputID.h"    
 #include "Kismet/GameplayStatics.h"
 #include "AbilitySystemBlueprintLibrary.h"
+#include "BaseGameplayTags.h"
 
 
 AAttacker::AAttacker()
@@ -49,34 +50,50 @@ void AAttacker::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
-    // 부울 변수 대신 ASC의 태그를 직접 확인합니다.
-    UAbilitySystemComponent* ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(this);
-    bool bIsAimingTagActive = ASC && ASC->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(FName("State.Aiming")));
+    // 1. 현재 조준 상태인지 확인 (C++ 네이티브 태그 사용)
+    bool bIsAimingState = false;
+    if (AbilitySystemComponent)
+    {
+        bIsAimingState = AbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
+    }
 
-    // 카메라 조준 줌인/줌아웃 보간
+    // 캐릭터 회전 설정
+    bUseControllerRotationYaw = bIsAimingState;
+    GetCharacterMovement()->bOrientRotationToMovement = !bIsAimingState;
+
+    // ==========================================
+    // 카메라 줌인/줌아웃 (수치 직접 입력)
+    // ==========================================
     if (CameraBoom)
     {
-        FVector TargetOffset = bIsAiming ? AimingSocketOffset : DefaultSocketOffset;
-        float TargetArmLength = bIsAiming ? AimingTargetArmLength : DefaultTargetArmLength;
+        // 변수 이름 앞에 Local_ 을 붙여서 헤더 파일의 변수와 이름이 겹치지 않게 수정!
+        float Local_DefaultArmLength = 400.0f;     // 평소 카메라 거리
+        float Local_AimingArmLength = 150.0f;      // 조준 시 카메라 거리
 
-        CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetOffset, DeltaTime, CameraInterpSpeed);
-        CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
+        FVector Local_DefaultOffset = FVector(0.f, 0.f, 0.f);
+        FVector Local_AimingOffset = FVector(0.f, 60.f, 50.f); // 우측 어깨 너머
+
+        float CameraSpeed = 10.0f; // 카메라 이동 속도
+
+        // 목표값 정하기
+        float TargetArmLength = bIsAimingState ? Local_AimingArmLength : Local_DefaultArmLength;
+        FVector TargetSocketOffset = bIsAimingState ? Local_AimingOffset : Local_DefaultOffset;
+
+        // 부드럽게 이동 (보간)
+        CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraSpeed);
+        CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CameraSpeed);
     }
 
     // ==========================================
-    // 조준 중일 때 포물선 궤적 그리기
+    // 포물선은 일단 '조준 중' + '수류탄 들고 있을 때'만!
     // ==========================================
-    if (bIsAiming && EquippedItem)
+    // BaseGameplayTags.h 에 정의한 Item_Weapon_Grenade 네이티브 태그를 사용해 검사합니다.
+    if (bIsAimingState && EquippedItem && EquippedItem->ItemTag == Item_Weapon_Grenade)
     {
+        // 포물선 시작 위치
+        FVector StartLoc = GetActorLocation();
+        if (GetMesh()) StartLoc = GetMesh()->GetSocketLocation(FName("hand_r"));
 
-        // 포물선의 시작 위치를 손 소켓으로
-        FVector StartLoc = GetActorLocation(); // 기본값
-        if (GetMesh())
-        {
-            StartLoc = GetMesh()->GetSocketLocation(FName("hand_r"));
-        }
-
-        // 카메라가 바라보는 곳(목표 지점) 계산
         FVector CamLoc;
         FRotator CamRot;
         GetController()->GetPlayerViewPoint(CamLoc, CamRot);
@@ -85,19 +102,25 @@ void AAttacker::Tick(float DeltaTime)
         FHitResult HitResult;
         FCollisionQueryParams Params;
         Params.AddIgnoredActor(this);
+
+        TArray<AActor*> AttachedActors;
+        GetAttachedActors(AttachedActors);
+        Params.AddIgnoredActors(AttachedActors);
+
         GetWorld()->LineTraceSingleByChannel(HitResult, CamLoc, TraceEnd, ECC_Visibility, Params);
         FVector TargetLoc = HitResult.bBlockingHit ? HitResult.Location : TraceEnd;
 
-        // 던질 방향과 힘(속도) 계산
-        FVector LaunchDir = (TargetLoc - GetActorLocation()).GetSafeNormal();
-        LaunchDir.Z += 0.15f; // 살짝 위로 던지게
-        FVector LaunchVelocity = LaunchDir.GetSafeNormal() * 1500.f; // 1500은 ThrowForce
+        // 발사 속도 계산
+        FVector LaunchDir = (TargetLoc - StartLoc).GetSafeNormal();
+        LaunchDir.Z += 0.15f;
+        FVector LaunchVelocity = LaunchDir.GetSafeNormal() * 1500.f;
 
-        // 언리얼 내장 포물선 예측 및 그리기 함수
-        FPredictProjectilePathParams PredictParams(15.0f, StartLoc, LaunchVelocity, 3.0f, ECollisionChannel::ECC_Visibility, this);
-        PredictParams.DrawDebugType = EDrawDebugTrace::ForOneFrame; // 매 프레임 초록/빨간 선으로 그려줌
+        // 가상의 공 던지기 설정
+        FPredictProjectilePathParams PredictParams(5.0f, StartLoc, LaunchVelocity, 3.0f, ECollisionChannel::ECC_Visibility, this);
+        PredictParams.DrawDebugType = EDrawDebugTrace::ForOneFrame;
         PredictParams.DrawDebugTime = DeltaTime;
         PredictParams.bTraceWithCollision = true;
+        PredictParams.ActorsToIgnore.Append(AttachedActors);
 
         FPredictProjectilePathResult PredictResult;
         UGameplayStatics::PredictProjectilePath(this, PredictParams, PredictResult);
@@ -129,10 +152,6 @@ void AAttacker::UseSkillPressed()
 
     if (EquippedItem && AbilitySystemComponent)
     {
-        // 1. 카메라 조준 모드 ON 및 캐릭터 회전
-        bIsAiming = true;
-        bUseControllerRotationYaw = true;
-        GetCharacterMovement()->bOrientRotationToMovement = false;
 
         // 2. 스킬 발동 및 "키 눌림" 신호 전달 (유저님 원래 코드 방식!)
         AbilitySystemComponent->TryActivateAbilitiesByTag(FGameplayTagContainer(EquippedItem->ItemTag), true);
@@ -144,10 +163,6 @@ void AAttacker::UseSkillPressed()
 
 void AAttacker::UseSkillReleased()
 {
-    // 1. 카메라 조준 모드 OFF 및 캐릭터 회전 원상복구
-    bIsAiming = false;
-    bUseControllerRotationYaw = false;
-    GetCharacterMovement()->bOrientRotationToMovement = true;
 
     if (AbilitySystemComponent)
     {

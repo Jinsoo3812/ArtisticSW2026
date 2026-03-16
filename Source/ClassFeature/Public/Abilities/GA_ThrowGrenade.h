@@ -20,6 +20,11 @@ protected:
 	UFUNCTION()
 	void OnInputReleased(float TimeHeld);
 
+
+	/** 스킬이 종료될 때 호출되는 함수 (성공/취소 모두 포함) */
+	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
+		bool bReplicateEndAbility, bool bWasCancelled) override;
+
 	// 발사 속도 및 방향 계산
 	FVector CalculateLaunchVelocity(class ACharacter* AvatarChar);
 

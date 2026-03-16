@@ -6,6 +6,8 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Components/SphereComponent.h"
+#include "BaseGameplayTags.h"
+
 
 // TODO: BasePlayer 관련 헤더가 필요하다면 추후 주석 해제하세요.
 // #include "BasePlayer.h"
@@ -14,16 +16,34 @@ UGA_ThrowGrenade::UGA_ThrowGrenade()
 {
     InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
     ThrowForce = 1500.f;
-    ActivationOwnedTags.AddTag(FGameplayTag::RequestGameplayTag(FName("State.Aiming")));
+    /*ActivationOwnedTags.AddTag(State_Aiming);*/
 }
 
 void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
 {
     Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
+    // 1. 스킬이 켜질 때 내 몸에 조준(Aiming) 태그를 수동으로 콱 박아줍니다!
+    if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+    {
+        ASC->AddLooseGameplayTag(State_Aiming);
+    }
+
+    // 2. 키 뗌 대기 태스크 실행
     UAbilityTask_WaitInputRelease* WaitInputTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this);
     WaitInputTask->OnRelease.AddDynamic(this, &UGA_ThrowGrenade::OnInputReleased);
     WaitInputTask->ReadyForActivation();
+}
+
+void UGA_ThrowGrenade::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
+{
+    // 3. 스킬이 끝날 때(던지거나 취소될 때) 조준 태그를 다시 뺏어옵니다.
+    if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+    {
+        ASC->RemoveLooseGameplayTag(State_Aiming);
+    }
+
+    Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
 void UGA_ThrowGrenade::OnInputReleased(float TimeHeld)
