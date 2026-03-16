@@ -42,16 +42,4 @@ protected:
     // [카메라 조준 연출 변수]
     // ==========================================
     bool bIsAiming;
-    FVector DefaultSocketOffset;
-    float DefaultTargetArmLength;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Aim")
-    FVector AimingSocketOffset;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Aim")
-    float AimingTargetArmLength;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Aim")
-    float CameraInterpSpeed;
-
 };

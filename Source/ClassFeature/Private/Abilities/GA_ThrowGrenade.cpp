@@ -7,6 +7,7 @@
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Components/SphereComponent.h"
 #include "BaseGameplayTags.h"
+#include "BasePlayer.h"
 
 
 // TODO: BasePlayer 관련 헤더가 필요하다면 추후 주석 해제하세요.
@@ -101,6 +102,10 @@ void UGA_ThrowGrenade::OnInputReleased(float TimeHeld)
 
                 Grenade->FinishSpawning(SpawnTransform);
             }
+
+			ABasePlayer* Player = Cast<ABasePlayer>(AvatarChar);
+            Player->UseEquippedItem();
+
         }
     }
 

@@ -13,6 +13,7 @@
 #include "CrafterComponent.h"
 #include "BaseGameplayTags.h"
 #include "Net/UnrealNetwork.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 /* --- FItemSlot ---*/
 
@@ -67,6 +68,32 @@ void ABasePlayer::BeginPlay()
 				ItemSlots.Add(FItemSlot(Action.SlotTag));
 			}
 		}
+	}
+}
+
+void ABasePlayer::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	// 조준 상태 확인 (GA에서 State_Aiming 태그를 부여했다고 가정)
+	bool bIsAimingState = false;
+	if (AbilitySystemComponent)
+	{
+		bIsAimingState = AbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
+	}
+
+	// 캐릭터 회전 설정
+	bUseControllerRotationYaw = bIsAimingState;
+	GetCharacterMovement()->bOrientRotationToMovement = !bIsAimingState;
+
+	// 카메라 보간 로직
+	if (CameraBoom)
+	{
+		float TargetArmLength = bIsAimingState ? AimingTargetArmLength : DefaultTargetArmLength;
+		FVector TargetSocketOffset = bIsAimingState ? AimingSocketOffset : DefaultSocketOffset;
+
+		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
+		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CameraInterpSpeed);
 	}
 }
 
@@ -324,6 +351,7 @@ void ABasePlayer::GrantAbilityToSlot(FGameplayTag SlotTag, TSubclassOf<UGameplay
 
 	// ASC에 GA 부여
 	AbilitySystemComponent->GiveAbility(Spec);
+	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::GrantAbilityToSlot : Granted ability %s to SlotTag %s"), *AbilityClass->GetName(), *SlotTag.ToString());
 }
 
 void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag SlotTag)

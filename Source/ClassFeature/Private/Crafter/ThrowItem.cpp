@@ -10,6 +10,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "Components/BoxComponent.h"
+#include "Item/BaseProjectile.h"
 
 void UThrowItem::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -18,18 +20,23 @@ void UThrowItem::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
-	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo())) {
+	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+	if (Player)
+	{	
+		// 손에 든 물건이 있는지 확인
 		if (!IsValid(Player->EquippedItem))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("UThrowItem::ActivateAbility : No Equipped Item. Throw Fail."));
 			EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 			return;
 		}
-	}
 
-	UE_LOG(LogTemp, Log, TEXT("UThrowItem::ActivateAbility: StartAiming"));
-	bIsConfirmed = false; // 초기화
-	StartAiming();
+		// [클라이언트] 궤적 그리기 타이머 시작
+		if (Player->IsLocallyControlled())
+		{
+			GetWorld()->GetTimerManager().SetTimer(TrajectoryTimerHandle, this, &UThrowItem::DrawTrajectory, TrajectoryFrequency, true);
+		}
+	}
 
 	// 입력 대기 (좌클릭)
 	UAbilityTask_WaitGameplayEvent* WaitConfirm = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
@@ -46,11 +53,6 @@ void UThrowItem::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		WaitConfirm->EventReceived.AddDynamic(this, &UThrowItem::OnConfirmEventReceived);
 		WaitConfirm->ReadyForActivation();
 	}
-
-	// 서버는 클라이언트가 보낸 TargetData를 받을 준비
-	GetAbilitySystemComponentFromActorInfo()->AbilityTargetDataSetDelegate(
-		CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey()
-	).AddUObject(this, &UThrowItem::OnTargetDataReadyCallback);
 }
 
 void UThrowItem::EndAbility(const FGameplayAbilitySpecHandle Handle,
@@ -58,183 +60,59 @@ void UThrowItem::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	bool bReplicateEndAbility, bool bWasCancelled)
 {
-	// 궤적 그리기 타이머 정리
+	// 종료 시 궤적 타이머 해제
 	GetWorld()->GetTimerManager().ClearTimer(TrajectoryTimerHandle);
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
-void UThrowItem::StartAiming()
-{
-	// 시전자 클라이언트에만 궤적을 그림
-	if (GetActorInfo().IsLocallyControlled())
-	{
-		GetWorld()->GetTimerManager().SetTimer(TrajectoryTimerHandle, this, &UThrowItem::DrawTrajectory, TrajectoryFrequency, true);
-	}
-}
-
-bool UThrowItem::TraceUnderCrosshairs(FHitResult& OutHitResult, float TraceDistance)
-{
-	APlayerController* PC = Cast<APlayerController>(GetActorInfo().PlayerController.Get());
-	if (!PC || !PC->PlayerCameraManager) return false;
-
-	FVector Start = PC->PlayerCameraManager->GetCameraLocation();
-	FVector ForwardDir = PC->PlayerCameraManager->GetCameraRotation().Vector();
-	FVector End = Start + (ForwardDir * TraceDistance);
-
-	FCollisionQueryParams QueryParams;
-	QueryParams.AddIgnoredActor(GetAvatarActorFromActorInfo());
-
-	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
-	if (Player && IsValid(Player->EquippedItem))
-	{
-		QueryParams.AddIgnoredActor(Player->EquippedItem.Get());
-	}
-
-	bool bHit = GetWorld()->LineTraceSingleByChannel(OutHitResult, Start, End, ECC_Visibility, QueryParams);
-	if (!bHit)
-	{
-		OutHitResult.Location = End;
-	}
-
-	return true;
-}
-
-void UThrowItem::DrawTrajectory()
+void UThrowItem::OnConfirmEventReceived(FGameplayEventData Payload)
 {
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	if (!Player) return;
 
-	// 발사 시작 위치는 Item이 달려있는 현재 위치
-	FVector StartLocation = Player->GetActorLocation() + FVector(0, 0, 50.f); // 실패 시 임시 위치
-	if (IsValid(Player->EquippedItem))
+	// [서버] 투척물 생성 및 투척 
+	if (Player->HasAuthority())
 	{
-		StartLocation = Player->EquippedItem.Get()->GetActorLocation();
-	}
+		FVector StartLoc = IsValid(Player->EquippedItem) ? Player->EquippedItem->GetActorLocation() : Player->GetActorLocation();
 
-	// 카메라가 바라보는 방향으로 목표 지점 트레이스
-	FHitResult HitResult;
-	TraceUnderCrosshairs(HitResult, 5000.f);
-	FVector EndLocation = HitResult.Location;
+		// 서버와 클라이언트 간의 차이가 없는 카메라가 바라보는 방향벡터
+		FVector LaunchDir = Player->GetBaseAimRotation().Vector();
+		LaunchDir.Z += Upper;
+		LaunchDir.Normalize();
 
-	// 목표 지점을 향한 발사 벡터(Velocity) 계산
-	FVector LaunchVelocity;
-	bool bHasValidTrajectory = UGameplayStatics::SuggestProjectileVelocity_CustomArc(
-		this,
-		LaunchVelocity,
-		StartLocation,
-		EndLocation,
-		GetWorld()->GetGravityZ(),
-		0.5f // 포물선 곡률 높이 (시간)
-	);
+		FVector LaunchVelocity = LaunchDir * ThrowSpeed;
 
-	if (bHasValidTrajectory)
-	{
-		// 포물선 궤적 예측 및 디버그 라인 그리기
-		FPredictProjectilePathParams PredictParams(
-			5.f, // 투사체 반경
-			StartLocation,
-			LaunchVelocity,
-			2.0f, // 시뮬레이션 최대 시간
-			ECollisionChannel::ECC_Visibility,
-			Player
-		);
-		PredictParams.DrawDebugType = EDrawDebugTrace::ForOneFrame; // 매 프레임 갱신
+		Player->UseEquippedItem();
 
-		FPredictProjectilePathResult PredictResult;
-		UGameplayStatics::PredictProjectilePath(GetWorld(), PredictParams, PredictResult);
-	}
-}
-
-void UThrowItem::OnConfirmEventReceived(FGameplayEventData Payload)
-{
-	// 발사 확정 처리
-	bIsConfirmed = true;
-
-	// [클라이언트] 발사
-	if (GetActorInfo().IsLocallyControlled())
-	{
-		// 조준 중지
-		GetWorld()->GetTimerManager().ClearTimer(TrajectoryTimerHandle);
-
-		FHitResult HitResult;
-		TraceUnderCrosshairs(HitResult, 5000.f);
-
-		// TargetLocation을 TargetData로 포장하여 네트워크 최적화
-		FGameplayAbilityTargetData_LocationInfo* TargetData = new FGameplayAbilityTargetData_LocationInfo();
-		TargetData->TargetLocation.LocationType = EGameplayAbilityTargetingLocationType::LiteralTransform;
-		TargetData->TargetLocation.LiteralTransform = FTransform(HitResult.Location);
-
-		FGameplayAbilityTargetDataHandle TargetDataHandle;
-		TargetDataHandle.Add(TargetData);
-
-		GetAbilitySystemComponentFromActorInfo()->CallServerSetReplicatedTargetData(
-			CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey(), TargetDataHandle, FGameplayTag(), GetAbilitySystemComponentFromActorInfo()->ScopedPredictionKey);
-	}
-}
-
-void UThrowItem::OnTargetDataReadyCallback(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag)
-{
-	// 캐시 데이터 및 바인딩 정리
-	GetAbilitySystemComponentFromActorInfo()->ConsumeClientReplicatedTargetData(CurrentSpecHandle, CurrentActivationInfo.GetActivationPredictionKey());
-
-	// [서버] 실제 투척 및 스폰은 서버에서만 진행
-	if (HasAuthority(&CurrentActivationInfo))
-	{
-		ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
-		if (Player && Data.Data.Num() > 0 && ReplicatedProjectileClass)
+		if (ProjectileClass)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Server received TargetData with %d entries"), Data.Data.Num());
+			FTransform SpawnTransform(LaunchDir.Rotation(), StartLoc);
+			ABaseProjectile* SpawnedProjectile = GetWorld()->SpawnActorDeferred<ABaseProjectile>(
+				ProjectileClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn
+			);
 
-			FGameplayAbilityTargetData_LocationInfo* LocationInfo = static_cast<FGameplayAbilityTargetData_LocationInfo*>(Data.Data[0].Get());
-			FVector TargetLocation = LocationInfo->TargetLocation.LiteralTransform.GetLocation();
-			FVector StartLocation = IsValid(Player->EquippedItem) ? Player->EquippedItem->GetActorLocation() : Player->GetActorLocation() + FVector(0, 0, 50.f);
-
-			// 서버가 클라이언트가 넘겨준 타겟 지점을 바탕으로 발사 벡터를 직접 계산
-			FVector LaunchVelocity;
-			UGameplayStatics::SuggestProjectileVelocity_CustomArc(
-				this, LaunchVelocity, StartLocation, TargetLocation, GetWorld()->GetGravityZ(), 0.5f);
-
-			// 스폰 트랜스폼 설정
-			FTransform SpawnTransform(LaunchVelocity.Rotation(), StartLocation);
-
-			// 지연 생성을 사용하여 속도 등의 값 주입을 보장
-			AActor* Projectile = GetWorld()->SpawnActorDeferred<AActor>(
-				ReplicatedProjectileClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
-
-
-			if (Projectile)
+			if (SpawnedProjectile)
 			{
-				Projectile->SetNetUpdateFrequency(ProjectileNetUpdateFrequency);
-
-				// 충돌 무시 로직
-				UPrimitiveComponent* CollisionComp = Cast<UPrimitiveComponent>(Projectile->GetRootComponent());
-				if (CollisionComp)
+				if (UPrimitiveComponent* RootPrim = SpawnedProjectile->GetCollisionComp())
 				{
-					CollisionComp->IgnoreActorWhenMoving(Player, true);
-					if (IsValid(Player->EquippedItem))
-					{
-						CollisionComp->IgnoreActorWhenMoving(Player->EquippedItem, true);
-					}
+					RootPrim->IgnoreActorWhenMoving(Player, true);
 				}
 
-				// 속도 주입
-				UProjectileMovementComponent* ProjComp = Projectile->FindComponentByClass<UProjectileMovementComponent>();
-				if (ProjComp)
+				if (UProjectileMovementComponent* PMC = SpawnedProjectile->GetProjectileMovement())
 				{
-					ProjComp->Velocity = LaunchVelocity;
-					// LaunchVelocity 로그 출력
-					UE_LOG(LogTemp, Warning, TEXT("LaunchVelocity: %s"), *LaunchVelocity.ToString());
+					PMC->InitialSpeed = ThrowSpeed;
+					PMC->MaxSpeed = ThrowSpeed;
+					PMC->bInitialVelocityInLocalSpace = true;
+					PMC->Velocity = FVector::ForwardVector; // FVector(1.f, 0.f, 0.f)
 				}
 
-				Projectile->FinishSpawning(SpawnTransform);
+				UGameplayStatics::FinishSpawningActor(SpawnedProjectile, SpawnTransform);
 			}
-
-			// 아이템 사용 처리
-			Player->UseEquippedItem();
 		}
 	}
 
+	// 투척 후 어빌리티 정상 종료
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
@@ -242,14 +120,39 @@ void UThrowItem::InputReleased(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo)
 {
-	Super::InputReleased(Handle, ActorInfo, ActivationInfo);
-
-	UE_LOG(LogTemp, Warning, TEXT("Input Released"));
-
-	// 발사가 이미 확정된 상태가 아니라면 스킬을 취소
-	if (!bIsConfirmed)
+	// 키를 떼었을 때 어빌리티를 취소 처리
+	if (ActorInfo != nullptr && ActorInfo->AvatarActor != nullptr)
 	{
-		// Cancle로 처리
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		CancelAbility(Handle, ActorInfo, ActivationInfo, true);
 	}
+
+	Super::InputReleased(Handle, ActorInfo, ActivationInfo);
+}
+
+void UThrowItem::DrawTrajectory()
+{
+	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+	if (!Player || !IsValid(Player->EquippedItem)) return;
+
+	// 투척 시작 위치
+	FVector StartLoc = Player->EquippedItem->GetActorLocation();
+
+	// 카메라가 보고 있는 방향 벡터
+	FVector LaunchDir = Player->GetBaseAimRotation().Vector();
+
+	// 직구가 안되게 살짝 들어올림
+	LaunchDir.Z += Upper;
+	LaunchDir.Normalize();
+
+	// 투척 초기 속도: 방향 * 힘
+	FVector LaunchVelocity = LaunchDir * ThrowSpeed;
+
+	// 가상의 궤적 표시 
+	FPredictProjectilePathParams PredictParams(5.0f, StartLoc, LaunchVelocity, 3.0f, ECollisionChannel::ECC_Visibility, Player);
+	PredictParams.DrawDebugType = EDrawDebugTrace::ForOneFrame;
+	PredictParams.DrawDebugTime = TrajectoryFrequency;
+	PredictParams.bTraceWithCollision = true;
+
+	FPredictProjectilePathResult PredictResult;
+	UGameplayStatics::PredictProjectilePath(Player, PredictParams, PredictResult);
 }

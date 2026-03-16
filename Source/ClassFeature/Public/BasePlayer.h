@@ -51,6 +51,7 @@ public:
 	ABasePlayer();
 
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaTime) override;
 
 	/* --- 네트워크 초기화 ---*/
 public:
@@ -189,4 +190,24 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCameraComponent> FollowCamera;
+
+	// 평상시 카메라 거리
+	UPROPERTY(EditDefaultsOnly, Category = "Camera")
+	float DefaultTargetArmLength = 400.f;
+
+	// 조준 시 카메라 거리
+	UPROPERTY(EditDefaultsOnly, Category = "Camera")
+	float AimingTargetArmLength = 150.f;
+
+	// 평상시 카메라 오프셋
+	UPROPERTY(EditDefaultsOnly, Category = "Camera")
+	FVector DefaultSocketOffset = FVector(0.f, 0.f, 0.f);
+
+	// 조준 시 카메라 오프셋
+	UPROPERTY(EditDefaultsOnly, Category = "Camera")
+	FVector AimingSocketOffset = FVector(0.f, 60.f, 50.f);
+
+	// 카메라 전환 보간 속도
+	UPROPERTY(EditDefaultsOnly, Category = "Camera")
+	float CameraInterpSpeed = 10.f;
 };
