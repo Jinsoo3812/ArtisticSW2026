@@ -21,11 +21,13 @@ void UThrowItem::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo())) {
 		if (!Player->EquippedItem.IsValid())
 		{
+			UE_LOG(LogTemp, Warning, TEXT("투척 실패: 장착된 아이템이 없습니다."));
 			EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 			return;
 		}
 	}
 
+	UE_LOG(LogTemp, Log, TEXT("투척 시작: 조준 모드로 진입합니다."));
 	bIsConfirmed = false; // 초기화
 	StartAiming();
 
@@ -43,14 +45,6 @@ void UThrowItem::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	{
 		WaitConfirm->EventReceived.AddDynamic(this, &UThrowItem::OnConfirmEventReceived);
 		WaitConfirm->ReadyForActivation();
-	}
-
-	// 입력 해제 대기 (스킬 키 떼기 취소)
-	UAbilityTask_WaitInputRelease* WaitRelease = UAbilityTask_WaitInputRelease::WaitInputRelease(this, false);
-	if (WaitRelease)
-	{
-		WaitRelease->OnRelease.AddDynamic(this, &UThrowItem::OnInputReleased);
-		WaitRelease->ReadyForActivation();
 	}
 }
 
@@ -190,6 +184,8 @@ void UThrowItem::OnTargetDataReadyCallback(const FGameplayAbilityTargetDataHandl
 		ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 		if (Player && Data.Data.Num() > 0 && ReplicatedProjectileClass)
 		{
+			UE_LOG(LogTemp, Warning, TEXT("Server received TargetData with %d entries"), Data.Data.Num());
+
 			FGameplayAbilityTargetData_LocationInfo* LocationInfo = static_cast<FGameplayAbilityTargetData_LocationInfo*>(Data.Data[0].Get());
 			FVector TargetLocation = LocationInfo->TargetLocation.LiteralTransform.GetLocation();
 			FVector StartLocation = Player->EquippedItem.IsValid() ? Player->EquippedItem->GetActorLocation() : Player->GetActorLocation() + FVector(0, 0, 50.f);
@@ -227,9 +223,14 @@ void UThrowItem::OnTargetDataReadyCallback(const FGameplayAbilityTargetDataHandl
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
-void UThrowItem::OnInputReleased(float TimeHeld)
+void UThrowItem::InputReleased(const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo)
 {
-	UE_LOG(LogTemp, Warning, TEXT("Input Released after holding for %f seconds"), TimeHeld);
+	Super::InputReleased(Handle, ActorInfo, ActivationInfo);
+
+	UE_LOG(LogTemp, Warning, TEXT("Input Released"));
+
 	// 발사가 이미 확정된 상태가 아니라면 스킬을 취소
 	if (!bIsConfirmed)
 	{

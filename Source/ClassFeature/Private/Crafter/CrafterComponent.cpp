@@ -108,7 +108,7 @@ void UCrafterComponent::GrantCrafterAbilities()
 
 	if (!Player || !Player->HasAuthority()) return;
 
-	// 설정용 Map을 순회하면서 Player의 탄탄한 Grant 함수를 호출만 해줌
+	// 설정용 Map을 순회하면서 Player의 Grant 함수를 호출
 	for (const auto& SlotGAPair : CrafterAbilities)
 	{
 		Player->GrantAbilityToSlot(SlotGAPair.Key, SlotGAPair.Value);

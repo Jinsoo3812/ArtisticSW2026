@@ -182,18 +182,20 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 		// ItemSlot 입력 바인딩
 		if (SlotInputConfig)
 		{
-			// 모든 IA를 하나의 콜백 함수에 바인딩 (Tag로 Event 구분)
 			for (const FSlotInputAction& Action : SlotInputConfig->SlotInputActions)
 			{
 				if (Action.InputAction && Action.SlotTag.IsValid())
 				{
-					// 키를 눌렀을 때 (Started) -> Tag를 인자로 담아 OnAbilityInputPressed 호출
-					EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::OnAbilityInputPressed, Action.SlotTag);
-
-					// 키를 뗐을 때 (Completed) -> 차징 스킬 등을 위해
-					EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, this, &ABasePlayer::OnAbilityInputReleased, Action.SlotTag);
+					EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::EquipItemFromSlot, Action.SlotTag);
 				}
 			}
+		}
+
+		//  마우스 왼클릭 바인딩
+		if (MouseLeftAction)
+		{
+			EnhancedInputComponent->BindAction(MouseLeftAction, ETriggerEvent::Started, this, &ABasePlayer::OnMouseLeftPressed);
+			EnhancedInputComponent->BindAction(MouseLeftAction, ETriggerEvent::Completed, this, &ABasePlayer::OnMouseLeftReleased);
 		}
 	}
 }
@@ -255,14 +257,28 @@ void ABasePlayer::Interact()
 	{
 		if (ABaseItem* Item = Cast<ABaseItem>(Actor))
 		{
-			Item->PickUpItem(this);
-			EquippedItem = Item;
+			// ItemSlots 배열에서 빈 슬롯(nullptr)의 인덱스를 찾음
+			int32 EmptySlotIndex = ItemSlots.IndexOfByKey(nullptr);
 
-			ItemSlots[0] = Item; // 임시로 첫 번째 슬롯에 장착
+			if (EmptySlotIndex != INDEX_NONE)
+			{
+				Item->PickUpItem(this);
+				ItemSlots[EmptySlotIndex] = Item; // 빈 슬롯에 저장
 
-			GrantAbilityToSlot(Slot_Item_1, Item->GrantedAbilityClass); // 임시로 첫 번째 슬롯에 장착
+				// 손에 든게 없으면 즉시 장착
+				if (!EquippedItem.IsValid())
+				{
+					EquippedItem = Item;
+				}
 
-			break;
+				break;
+			}
+			else
+			{
+				// 인벤토리가 꽉 찼을 경우
+				UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::Interact : ItemSlot is Full."));
+				break;
+			}
 		}
 	}
 }
@@ -335,6 +351,7 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 		// 입력 처리 시에는 Tag가 정확히 일치하는 GA만 실행
 		if (Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
 		{
+			UE_LOG(LogTemp, Log, TEXT("Matching Spec found for InputTag: %s, Ability: %s"), *InputTag.ToString(), *Spec.Ability->GetName());
 			// 로컬 입력 상태를 눌림(Pressed)으로 수동 변경
 			Spec.InputPressed = true;
 
@@ -348,15 +365,6 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 				// 실행 중이 아니라면 GA 활성화 시도
 				AbilitySystemComponent->TryActivateAbility(Spec.Handle);
 			}
-		}
-		else {
-			// GA 실행과 엮인 Tag가 아닐 때는 ASC에 GameplayEvent로서 전달
-			FGameplayEventData EventData;
-			EventData.Instigator = this;
-			EventData.Target = nullptr;
-
-			// 활성화된 모든 어빌리티 중, 이 태그를 기다리는(WaitGameplayEvent) 어빌리티에게 신호가 갑니다.
-			AbilitySystemComponent->HandleGameplayEvent(InputTag, &EventData);
 		}
 	}
 
@@ -382,6 +390,7 @@ void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 
 			if (Spec.IsActive())
 			{
+				UE_LOG(LogTemp, Log, TEXT("OnAbilityInputReleased: Notifying AbilitySpecInputReleased for Spec with Ability %s"), *Spec.Ability->GetName());
 				// 실행 중인 GA에 키를 뗐다는 이벤트 통지
 				AbilitySystemComponent->AbilitySpecInputReleased(Spec);	
 			}
@@ -420,6 +429,45 @@ void ABasePlayer::UseEquippedItem()
 	}
 }
 
+void ABasePlayer::EquipItemFromSlot(FGameplayTag SlotTag)
+{
+	// [서버]
+	if (!HasAuthority()) return;
+
+	int32 SlotIndex = GetItemSlotIndexByTag(SlotTag);
+
+	// 유효한 인덱스이고, 해당 슬롯에 아이템이 있다면
+	if (ItemSlots.IsValidIndex(SlotIndex) && ItemSlots[SlotIndex] != nullptr)
+	{
+		if (EquippedItem.Get() == ItemSlots[SlotIndex])
+		{
+			UE_LOG(LogTemp, Log, TEXT("ABasePlayer::EquipItemFromSlot : Slot %d's item is already equipped."), SlotIndex);
+			return; // 이미 장착된 아이템이면 아무 작업도 하지 않음
+		}
+		// 이미 장착된 아이템이 있다면 기존 GA를 회수
+		if (EquippedItem.IsValid())
+		{
+			// BaseGameplayTags에 추가 필요
+			RemoveAbilityFromSlot(Ability_Item_Equipped);
+
+			EquippedItem->Destroy(); // 아이템 액터 제거
+			// 손에 들고 있는 장착 상태 해제
+			EquippedItem = nullptr;
+		}
+
+		// 장착 아이템 갱신
+		EquippedItem = ItemSlots[SlotIndex];
+
+		// 새 어빌리티 부여
+		GrantAbilityToSlot(Ability_Item_Equipped, EquippedItem->GrantedAbilityClass);
+
+		UE_LOG(LogTemp, Log, TEXT("슬롯 %d의 아이템 장착 완료"), SlotIndex);
+		// 추가 구현: 새 무기 모델링 손에 스폰 및 부착 등
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::EquipItemFromSlot : Invalid SlotTag or No Item in Slot %d."), SlotIndex);
+}
+
 void ABasePlayer::RemoveItemFromSlot(FGameplayTag SlotTag)
 {
 	// [서버]
@@ -444,4 +492,60 @@ int32 ABasePlayer::GetItemSlotIndexByTag(const FGameplayTag& SlotTag) const
 		return *FoundIndex;
 	}
 	return INDEX_NONE;
+}
+
+void ABasePlayer::OnMouseLeftPressed()
+{
+	if (!AbilitySystemComponent) return;
+
+	FScopedAbilityListLock AbilityLock(*AbilitySystemComponent);
+
+	for (FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+	{
+		// Ability_Item_Equipped 가 부여된 GA Spec을 찾아 실행
+		if (Spec.GetDynamicSpecSourceTags().HasTagExact(Ability_Item_Equipped))
+		{
+			Spec.InputPressed = true;
+
+			if (Spec.IsActive())
+			{
+				AbilitySystemComponent->AbilitySpecInputPressed(Spec);
+			}
+			else
+			{
+				AbilitySystemComponent->TryActivateAbility(Spec.Handle);
+			}
+			break;
+		}
+	}
+
+	// ASC에 GameplayEvent로서 전달
+	FGameplayEventData EventData;
+	EventData.Instigator = this;
+	EventData.Target = nullptr;
+
+	// 활성화된 모든 어빌리티 중, 이 태그를 기다리는(WaitGameplayEvent) 어빌리티에게 신호가 갑니다.
+	AbilitySystemComponent->HandleGameplayEvent(Input_MouseLeftClick, &EventData);
+}
+
+void ABasePlayer::OnMouseLeftReleased()
+{
+	if (!AbilitySystemComponent) return;
+
+	FScopedAbilityListLock AbilityLock(*AbilitySystemComponent);
+
+	for (FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+	{
+		// Ability_Item_Equipped 가 부여된 GA Spec을 찾아 Released 처리
+		if (Spec.GetDynamicSpecSourceTags().HasTagExact(Ability_Item_Equipped))
+		{
+			Spec.InputPressed = false;
+
+			if (Spec.IsActive())
+			{
+				AbilitySystemComponent->AbilitySpecInputReleased(Spec);
+			}
+			break;
+		}
+	}
 }

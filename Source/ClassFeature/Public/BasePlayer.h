@@ -97,21 +97,29 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> InteractAction;
 
+	// 마우스 왼클릭 IA 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> MouseLeftAction;
+
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void Interact();
 
+	// 마우스 왼클릭 시 실행될 함수
+	void OnMouseLeftPressed();
+	void OnMouseLeftReleased();
+
 	/* --- 키 입력으로 실행되는 GA 공통 로직 ---  */
 public:
-	// 특정 슬롯에 GA를 부여하는 함수 (서버에서 실행)
+	// 특정 슬롯에 GA를 부여하는 함수
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
 	void GrantAbilityToSlot(FGameplayTag SlotTag, TSubclassOf<UGameplayAbility> AbilityClass);
 
-	// 특정 슬롯에서 GA를 회수하는 함수 (서버에서 실행)
+	// 특정 슬롯에서 GA를 회수하는 함수
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
 	void RemoveAbilityFromSlot(FGameplayTag SlotTag);
 
-	// 매핑된 Tag를 받아 ASC에 어빌리티 실행 요청을 보내는 콜백
+	// 즉발형 GA에 대해 SlotTag에 매핑된 GA를 실행하는 함수
 	void OnAbilityInputPressed(FGameplayTag InputTag);
 	void OnAbilityInputReleased(FGameplayTag InputTag);
 
@@ -151,6 +159,9 @@ protected:
 
 	// Slot Tag를 ItemSlot index로 변환
 	int32 GetItemSlotIndexByTag(const FGameplayTag& SlotTag) const;
+
+	// 슬롯 키를 눌렀을 때 아이템을 장착하는 함수
+	void EquipItemFromSlot(FGameplayTag SlotTag);
 
 	/* --- 카메라 ---*/
 public:

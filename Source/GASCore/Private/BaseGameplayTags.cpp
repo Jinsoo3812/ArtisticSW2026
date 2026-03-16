@@ -41,5 +41,5 @@ UE_DEFINE_GAMEPLAY_TAG(Item_TestCrafted, "Item.TestCrafted");
 UE_DEFINE_GAMEPLAY_TAG(Input_MouseLeftClick, "Input.MouseLeftClick");
 
 
-/* Cue Tag */
-// GameplayCue로 사용할 Tag
+/* Ability */
+UE_DEFINE_GAMEPLAY_TAG(Ability_Item_Equipped, "Ability.Item.Equipped");

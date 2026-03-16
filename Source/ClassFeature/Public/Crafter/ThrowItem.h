@@ -14,7 +14,7 @@ class CLASSFEATURE_API UThrowItem : public UBaseGameplayAbility
 {
 	GENERATED_BODY()
 	
-	/* --- GA 생명 주기 관리 --- */
+	/* --- GA 가상함수 --- */
 public:
 	// GA의 시작 지점 함수
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle,
@@ -27,6 +27,11 @@ public:
 		const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		bool bReplicateEndAbility, bool bWasCancelled) override;
+
+	// 스킬 키 입력이 해제되었을 때 호출될 함수
+	virtual void InputReleased(const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayAbilityActivationInfo ActivationInfo) override;
 
 	/* --- Item 투척 관련 --- */
 protected:
@@ -67,10 +72,6 @@ protected:
 	// 마우스 좌클릭 이벤트 수신 시 호출되는 함수 (투척)
 	UFUNCTION()
 	void OnConfirmEventReceived(FGameplayEventData Payload);
-
-	// 스킬 키 입력이 해제되었을 때 호출될 함수
-	UFUNCTION()
-	void OnInputReleased(float TimeHeld);
 
 	// 클라이언트에서 계산된 타겟 위치를 서버로 전송하는 함수
 	UFUNCTION()
