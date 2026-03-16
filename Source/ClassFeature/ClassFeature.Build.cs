@@ -19,7 +19,11 @@ public class ClassFeature: ModuleRules
             // 모듈 내 클래스의 헤더 파일에서부터 사용될 모듈 의존성을 추가
             "GameplayAbilities",
 			"GameplayTags",
-			"GameplayTasks"
+			"GameplayTasks",
+            "EnhancedInput",    // <--- InputActionValue.h 등을 위해 필요
+            "GASCore",          // <--- BaseCharacter, GASInputID.h를 위해 필요
+            "ArtisticSWCore",   // <--- BaseItem.h를 위해 필요
+            "InputCore"
         });
 
         PublicIncludePaths.AddRange(new string[] {

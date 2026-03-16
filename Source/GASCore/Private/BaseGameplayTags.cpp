@@ -4,6 +4,8 @@
 UE_DEFINE_GAMEPLAY_TAG(State_Attacking, "State.Attacking");
 UE_DEFINE_GAMEPLAY_TAG(State_Dead, "State.Dead");
 UE_DEFINE_GAMEPLAY_TAG(State_Damaged, "State.Damaged");
+UE_DEFINE_GAMEPLAY_TAG(State_Aiming, "State.Aiming");
+
 // Team
 UE_DEFINE_GAMEPLAY_TAG(Team_Player, "Team.Player");
 UE_DEFINE_GAMEPLAY_TAG(Team_Enemy, "Team.Enemy");
@@ -34,6 +36,8 @@ UE_DEFINE_GAMEPLAY_TAG(Key_Crafter_R, "Key.Crafter.R");
 /* Item */
 // Item 식별 Tag
 UE_DEFINE_GAMEPLAY_TAG(Item_TestCrafted, "Item.TestCrafted");
+
+UE_DEFINE_GAMEPLAY_TAG(Item_Weapon_Grenade, "Item.Weapon.Grenade");
 
 
 /* Mouse Input */
