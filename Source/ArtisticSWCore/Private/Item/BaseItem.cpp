@@ -34,13 +34,30 @@ TSubclassOf<UGameplayAbility> ABaseItem::GetGrantedAbilityClass() const
 	}
 	return nullptr;
 }
-TSubclassOf<ABaseItem> ABaseItem::GetSpawnClass() const
+TSubclassOf<AActor> ABaseItem::GetSpawnClass() const
 {
 	if (MyDefinition && !MyDefinition->SpawnClass.IsNull())
 	{
+		// SpawnClass 출력
 		return MyDefinition->SpawnClass.LoadSynchronous();
 	}
 	return nullptr;
+}
+UStaticMesh* ABaseItem::GetStaticMesh() const
+{
+	if (MyDefinition && !MyDefinition->ItemMesh.IsNull())
+	{
+		return MyDefinition->ItemMesh.LoadSynchronous();
+	}
+	return nullptr;
+}
+TArray<FGameplayTag> ABaseItem::GetCanUseAbilityList() const
+{
+	if (MyDefinition)
+	{
+		return MyDefinition->CanUseAbilityList;
+	}
+	return TArray<FGameplayTag>();
 }
 
 void ABaseItem::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

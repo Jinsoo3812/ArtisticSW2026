@@ -1,11 +1,9 @@
 #include "Projectiles/GrenadeProjectile.h"
-#include "Components/SphereComponent.h"
-#include "Components/StaticMeshComponent.h"
-#include "GameFramework/ProjectileMovementComponent.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "GameFramework/Character.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Components/PrimitiveComponent.h"
 
 AGrenadeProjectile::AGrenadeProjectile()
 {
@@ -13,51 +11,20 @@ AGrenadeProjectile::AGrenadeProjectile()
     bReplicates = true;
     SetReplicateMovement(true);
 
-    // 1. 충돌체 생성
-    CollisionComp = CreateDefaultSubobject<USphereComponent>(TEXT("SphereComp"));
-
-    // 생성 성공 여부 확인 후 설정 진행
-    if (CollisionComp)
-    {
-        CollisionComp->InitSphereRadius(15.0f);
-        CollisionComp->SetCollisionProfileName(TEXT("BlockAllDynamic"));
-
-        // 지난번에 추가한 Pawn 충돌 무시 코드 (안전하게 감싸기)
-        CollisionComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-
-        RootComponent = CollisionComp;
-    }
-
-    // 2. 외형 생성
+    // 메시 컴포넌트 생성 및 루트 등록 
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
-    if (MeshComp)
-    {
-        MeshComp->SetupAttachment(RootComponent);
-        MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    }
+    RootComponent = MeshComp;
 
-    // 3. 발사체 컴포넌트 생성
-    ProjectileMovementComp = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovementComp"));
-    if (ProjectileMovementComp)
-    {
-        ProjectileMovementComp->UpdatedComponent = CollisionComp;
-        ProjectileMovementComp->InitialSpeed = 1500.f;
-        ProjectileMovementComp->MaxSpeed = 3000.f;
-        ProjectileMovementComp->bRotationFollowsVelocity = true;
-        ProjectileMovementComp->bShouldBounce = true;
-        ProjectileMovementComp->ProjectileGravityScale = 1.2f;
-    }
-
-    // 기본 폭발 세팅
-    ExplosionDelay = 3.0f;
-    ExplosionRadius = 500.f;
+    // 충돌 및 물리
+    MeshComp->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+    MeshComp->SetSimulatePhysics(false);
 }
 
 void AGrenadeProjectile::BeginPlay()
 {
     Super::BeginPlay();
 
-    // 서버에서만 폭발 타이머를 작동시킵니다. (클라이언트가 맘대로 터뜨리면 안 되니까요!)
+    // 서버에서만 폭발 타이머 작동
     if (HasAuthority())
     {
         FTimerHandle ExplodeTimerHandle;
@@ -65,41 +32,55 @@ void AGrenadeProjectile::BeginPlay()
     }
 }
 
+void AGrenadeProjectile::LaunchProjectile(const FVector& LaunchVelocity)
+{
+    // BP에서 설정된 RootComponent(물리가 켜진 StaticMesh 등)를 가져와 즉시 속도 적용
+    if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(GetRootComponent()))
+    {
+        PrimComp->SetSimulatePhysics(true);
+        PrimComp->SetPhysicsLinearVelocity(LaunchVelocity);
+    }
+}
+
+// 지연 생성 단계에서 메시 에셋을 채워넣는 함수
+void AGrenadeProjectile::SetGrenadeMesh(UStaticMesh* InMesh)
+{
+    if (MeshComp && InMesh)
+    {
+        MeshComp->SetStaticMesh(InMesh);
+    }
+}
+
 void AGrenadeProjectile::Explode()
 {
-    // 1. 폭발 반경(ExplosionRadius) 내에 있는 모든 '캐릭터(ACharacter)'를 찾습니다.
     TArray<AActor*> ActorsToIgnore;
-    ActorsToIgnore.Add(this); // 자기 자신은 제외
+    ActorsToIgnore.Add(this);
     TArray<AActor*> OverlappedActors;
 
+    // 반경 내 캐릭터 스캔
     UKismetSystemLibrary::SphereOverlapActors(
         this,
         GetActorLocation(),
         ExplosionRadius,
         TArray<TEnumAsByte<EObjectTypeQuery>>(),
-        ACharacter::StaticClass(), // 캐릭터만 걸러냄
+        ACharacter::StaticClass(),
         ActorsToIgnore,
         OverlappedActors
     );
 
-    // 2. 찾아낸 적들에게 데미지(GE) 주기
+    // 스캔된 캐릭터들에게 데미지(GE) 입히기
     if (DamageEffectSpecHandle.IsValid())
     {
         for (AActor* TargetActor : OverlappedActors)
         {
-            // 대상의 몸에서 스킬 시스템(ASC)을 찾습니다.
-            UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor);
-            if (TargetASC)
+            if (UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor))
             {
-                // GA가 쥐어줬던 데미지 보따리를 터뜨려서 대상에게 입힙니다!
                 TargetASC->ApplyGameplayEffectSpecToSelf(*DamageEffectSpecHandle.Data.Get());
             }
         }
     }
 
-    // TODO: 여기에 펑! 터지는 나이아가라 파티클 생성 함수를 넣으시면 됩니다.
     if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, TEXT("Grenade Exploded!"));
 
-    // 터졌으니 수류탄 객체를 월드에서 지웁니다.
     Destroy();
 }

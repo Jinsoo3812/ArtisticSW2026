@@ -30,7 +30,8 @@ public class ClassFeature: ModuleRules
             // 새로 추가된 파일 경로를 추가하여 include 시 클래스 이름만 사용할 수 있게
 			"ClassFeature",
 			"ClassFeature/Public",
-            "ClassFeature/Public/Crafter"
+            "ClassFeature/Public/Crafter",
+            "ClassFeature/Public/Attacker"
 		});
     }
 }

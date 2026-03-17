@@ -9,6 +9,7 @@ UE_DEFINE_GAMEPLAY_TAG(State_Aiming, "State.Aiming");
 // Team
 UE_DEFINE_GAMEPLAY_TAG(Team_Player, "Team.Player");
 UE_DEFINE_GAMEPLAY_TAG(Team_Enemy, "Team.Enemy");
+
 // GameplayAbility
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Active, "GameplayAbility.Active");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Dead, "GameplayAbility.Dead");
@@ -43,7 +44,13 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Weapon_Grenade, "Item.Weapon.Grenade");
 /* Mouse Input */
 // GameplayEvent로 사용할 Tag
 UE_DEFINE_GAMEPLAY_TAG(Input_MouseLeftClick, "Input.MouseLeftClick");
+UE_DEFINE_GAMEPLAY_TAG(Input_MouseRightClick, "Input.MouseRightClick");
 
 
 /* Ability */
 UE_DEFINE_GAMEPLAY_TAG(Ability_Item_Equipped, "Ability.Item.Equipped");
+
+
+/* Feature Class */
+UE_DEFINE_GAMEPLAY_TAG(Class_Crafter, "Class.Crafter");
+UE_DEFINE_GAMEPLAY_TAG(Class_Attacker, "Class.Attacker");

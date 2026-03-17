@@ -118,12 +118,17 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> MouseLookAction;
 
+	// 상호작용 IA (F)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> InteractAction;
 
 	// 마우스 왼클릭 IA 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> MouseLeftAction;
+
+	// 마우스 우클릭 IA 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> MouseRightAction;
 
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
@@ -133,13 +138,16 @@ protected:
 	void OnMouseLeftPressed();
 	void OnMouseLeftReleased();
 
+	// 마우스 우클릭 시 실행될 함수
+	void OnMouseRightPressed();
+
 	/* --- 키 입력으로 실행되는 GA 공통 로직 ---  */
 public:
-	// 특정 슬롯에 GA를 부여하는 함수
+	// GA와 그 GA가 어떤 키 입력(Tag)에 반응할지 함께 적용하는 함수.
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
 	void GrantAbilityToSlot(FGameplayTag SlotTag, TSubclassOf<UGameplayAbility> AbilityClass);
 
-	// 특정 슬롯에서 GA를 회수하는 함수
+	// 키보드 & 마우스 입력 Tag와 함께 등록된 GA 해제
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
 	void RemoveAbilityFromSlot(FGameplayTag SlotTag);
 

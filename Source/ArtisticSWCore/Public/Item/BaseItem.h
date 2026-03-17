@@ -60,11 +60,17 @@ public:
 	virtual void PickUpItem(AActor* Picker);
 
 	// Item이 부여하는 GA Class 반환 함수
-	UFUNCTION(BlueprintCallable, Category = "Item|Ability")
+	UFUNCTION(BlueprintCallable, Category = "Item|Data")
 	TSubclassOf<UGameplayAbility> GetGrantedAbilityClass() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Item|Data")
-	TSubclassOf<ABaseItem> GetSpawnClass() const;
+	TSubclassOf<AActor> GetSpawnClass() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Item|Data")
+	UStaticMesh* GetStaticMesh() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Item|Data")
+	TArray<FGameplayTag> GetCanUseAbilityList() const;
 
 	// 던져졌을 때 물리 및 충돌 상태를 복구하는 함수
 	UFUNCTION(BlueprintCallable, Category = "Item|Action")

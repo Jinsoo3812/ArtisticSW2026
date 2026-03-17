@@ -226,6 +226,11 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 			EnhancedInputComponent->BindAction(MouseLeftAction, ETriggerEvent::Started, this, &ABasePlayer::OnMouseLeftPressed);
 			EnhancedInputComponent->BindAction(MouseLeftAction, ETriggerEvent::Completed, this, &ABasePlayer::OnMouseLeftReleased);
 		}
+
+		if (MouseRightAction)
+		{
+			EnhancedInputComponent->BindAction(MouseRightAction, ETriggerEvent::Started, this, &ABasePlayer::OnMouseRightPressed);
+		}
 	}
 }
 
@@ -309,18 +314,12 @@ void ABasePlayer::Interact()
 					// 이미 손에 든 게 있는 경우
 					// PickUpItem 때문에 방금 주운 아이템이 손에 붙어버렸으므로 렌더링을 꺼서 안 보이게 처리
 					Item->SetActorHiddenInGame(true);
-					UE_LOG(LogTemp, Log, TEXT("ABasePlayer::Interact : Added to Slot [%d]. EquippedItem remains in hand."), EmptySlotIndex);
 				}
 				else
 				{
 					// 손에 든 게 없는 경우
-					EquippedItem = Item;
+					EquipItemFromSlot(ItemSlots[EmptySlotIndex].SlotTag);
 					Item->SetActorHiddenInGame(false); // 보이게 처리
-
-					// 손에 쥐어졌으니 GA도 부여
-					GrantAbilityToSlot(Ability_Item_Equipped, EquippedItem->GetGrantedAbilityClass());
-
-					UE_LOG(LogTemp, Log, TEXT("ABasePlayer::Interact : Equipped newly picked item to Slot [%d]."), EmptySlotIndex);
 				}
 				// 한 번의 상호작용으로 하나의 아이템만 줍도록 루프 종료
 				break;
@@ -524,8 +523,32 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag SlotTag)
 			// 숨겨뒀던 아이템의 렌더링을 켬
 			EquippedItem->SetActorHiddenInGame(false);
 
-			// 마우스 왼클릭에 반응하는 동적 어빌리티 부여
-			GrantAbilityToSlot(Ability_Item_Equipped, EquippedItem->GetGrantedAbilityClass());
+			bool bShouldGrantAbility = false;
+			const TArray<FGameplayTag>& RequiredTags = EquippedItem->GetCanUseAbilityList();
+
+			// 필요 직업 태그가 없다면 그냥 부여
+			if (RequiredTags.IsEmpty())
+			{
+				bShouldGrantAbility = true;
+			}
+			else if (AbilitySystemComponent)
+			{
+				// 요구 태그를 하나라도 가지고 있으면 부여
+				for (const FGameplayTag& Tag : RequiredTags)
+				{
+					if (AbilitySystemComponent->HasMatchingGameplayTag(Tag))
+					{
+						bShouldGrantAbility = true;
+						break;
+					}
+				}
+			}
+
+			// 조건 만족 시에만 GA 부여
+			if (bShouldGrantAbility)
+			{
+				GrantAbilityToSlot(Ability_Item_Equipped, EquippedItem->GetGrantedAbilityClass());
+			}
 		}
 	}
 }
@@ -548,26 +571,8 @@ void ABasePlayer::OnMouseLeftPressed()
 {
 	if (!AbilitySystemComponent) return;
 
-	FScopedAbilityListLock AbilityLock(*AbilitySystemComponent);
-
-	for (FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
-	{
-		// Ability_Item_Equipped 가 부여된 GA Spec을 찾아 실행
-		if (Spec.GetDynamicSpecSourceTags().HasTagExact(Ability_Item_Equipped))
-		{
-			Spec.InputPressed = true;
-
-			if (Spec.IsActive())
-			{
-				AbilitySystemComponent->AbilitySpecInputPressed(Spec);
-			}
-			else
-			{
-				AbilitySystemComponent->TryActivateAbility(Spec.Handle);
-			}
-			break;
-		}
-	}
+	// 현재 장착된 Item이 있다면 그 GA 실행
+	OnAbilityInputPressed(Ability_Item_Equipped);
 
 	// ASC에 GameplayEvent로서 전달
 	FGameplayEventData EventData;
@@ -582,22 +587,17 @@ void ABasePlayer::OnMouseLeftReleased()
 {
 	if (!AbilitySystemComponent) return;
 
-	FScopedAbilityListLock AbilityLock(*AbilitySystemComponent);
+	OnAbilityInputReleased(Ability_Item_Equipped);
+}
 
-	for (FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
-	{
-		// Ability_Item_Equipped 가 부여된 GA Spec을 찾아 Released 처리
-		if (Spec.GetDynamicSpecSourceTags().HasTagExact(Ability_Item_Equipped))
-		{
-			Spec.InputPressed = false;
+void ABasePlayer::OnMouseRightPressed() {
+	// ASC에 GameplayEvent로서 전달
+	FGameplayEventData EventData;
+	EventData.Instigator = this;
+	EventData.Target = nullptr;
 
-			if (Spec.IsActive())
-			{
-				AbilitySystemComponent->AbilitySpecInputReleased(Spec);
-			}
-			break;
-		}
-	}
+	// 활성화된 모든 어빌리티 중, 이 태그를 기다리는(WaitGameplayEvent) GA에게 신호.
+	AbilitySystemComponent->HandleGameplayEvent(Input_MouseRightClick, &EventData);
 }
 
 void ABasePlayer::OnRep_EquippedItem(ABaseItem* OldItem)
