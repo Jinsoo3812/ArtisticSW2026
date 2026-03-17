@@ -9,7 +9,8 @@ public class ArtisticSWCore: ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
-            "InputCore"
+            "InputCore",
+            "GASCore"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
@@ -23,6 +24,7 @@ public class ArtisticSWCore: ModuleRules
             // ?덈줈 異붽????뚯씪 寃쎈줈瑜?異붽??섏뿬 include ???대옒???대쫫留??ъ슜?????덇쾶
 			"ArtisticSWCore",
 			"ArtisticSWCore/Public",
+            "ArtisticSWCore/Public/Item",
             "ArtisticSWCore/Public/GameFramework"
         });
     }
