@@ -15,10 +15,12 @@ ABaseCharacter::ABaseCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
+	/* Player는 PlayerState에 ASC가 존재하므로 주석 처리
 	// Ability System Component 추가
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
 	AbilitySystemComponent->SetReplicationMode(ASCReplicationMode);
+	*/
 
 	GetCapsuleComponent()->InitCapsuleSize(35.f, 90.f);
 
@@ -41,9 +43,12 @@ ABaseCharacter::ABaseCharacter()
 	// Basic Attribute Set 추가
 	// BasicAttributes = CreateDefaultSubobject<UBaseAttributeSet>(TEXT("BasicAttributeSet"));
 
+	/* Player는 PlayerState에 ASC가 존재하므로 주석 처리
+	* 시점을 다른 곳으로 옮긴 후 ASC 확인하고 넣으면 될듯 ?
 	// ASC Owner가 State.Dead tag를 가질 때, OnDeadTagChanged함수를 Call
 	AbilitySystemComponent->RegisterGameplayTagEvent(State_Dead)
 		.AddUObject(this, &ABaseCharacter::OnDeadTagChanged);
+	*/
 }
 
 
