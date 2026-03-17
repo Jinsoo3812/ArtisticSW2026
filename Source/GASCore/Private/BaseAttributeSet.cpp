@@ -5,6 +5,8 @@
 #include "Net/UnrealNetwork.h"
 #include "GameplayEffectExtension.h"
 
+#include "Engine/Engine.h"
+
 UBaseAttributeSet::UBaseAttributeSet()
 {
 	// ?앹꽦?섏뿀???? 泥대젰? 100
