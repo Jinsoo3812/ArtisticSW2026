@@ -4,6 +4,7 @@
 #include "ItemData.h"
 #include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h"
+#include "InteractableComponent.h"
 
 ABaseItem::ABaseItem()
 {
@@ -15,14 +16,20 @@ ABaseItem::ABaseItem()
 	ItemMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ItemMesh"));
 	RootComponent = ItemMesh;
 
+	InteractableComponent = CreateDefaultSubobject<UInteractableComponent>(TEXT("InteractableComponent"));
+	InteractableComponent->SetupAttachment(RootComponent);
+
+	bReplicates = true;
+	bIsHovering = false;
+
+	/* ------------------------- LAGACY -------------------------*/
+	/*
 	// Mesh보다 큰 범위에서 Player와의 상호작용을 감지하는 Sphere Collider
 	InteractSphere = CreateDefaultSubobject<USphereComponent>(TEXT("InteractSphere"));
 	InteractSphere->SetupAttachment(RootComponent);
 	InteractSphere->SetSphereRadius(150.f);
 	InteractSphere->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
-
-	bReplicates = true;
-	bIsHovering = false;
+	*/
 }
 
 TSubclassOf<UGameplayAbility> ABaseItem::GetGrantedAbilityClass() const
@@ -72,6 +79,7 @@ void ABaseItem::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// [서버]
 	if (HasAuthority()) {
 		InitializeItem();
 
@@ -81,6 +89,12 @@ void ABaseItem::BeginPlay()
 		{
 			ItemMesh->OnComponentSleep.AddDynamic(this, &ABaseItem::OnMeshSleep);
 		}
+	}
+
+	// 상호작용 이벤트 바인딩 (Interact GA 이관 전 임시로 클라도 바인딩)
+	if (InteractableComponent)
+	{
+		InteractableComponent->OnInteracted.AddDynamic(this, &ABaseItem::OnInteractableTriggered);
 	}
 }
 
@@ -126,12 +140,20 @@ void ABaseItem::PickUpItem(AActor* Picker)
 	SetActorTickEnabled(false);
 
 	// 각종 물리 옵션 끄기
-	InteractSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// InteractSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision); LAGACY
+
+	InteractableComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ItemMesh->SetSimulatePhysics(false);
 	ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	// 플레이어에게 부착
 	AttachToComponent(Cast<ACharacter>(Picker)->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, MyDefinition->AttachmentSocketName);
+}
+
+void ABaseItem::OnInteractableTriggered(AActor* Interactor)
+{
+	// 방송이 들어오면 기존의 PickUpItem을 실행하여 로직 재사용
+	PickUpItem(Interactor);
 }
 
 void ABaseItem::InitializeItem()
@@ -164,10 +186,17 @@ void ABaseItem::OnThrown(FVector LaunchVelocity, AActor* Thrower)
 	// 플레이어 손에서 분리
 	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
+	/* LAGACY
 	// 상호작용(Overlap) 콜리전 복구
 	if (InteractSphere)
 	{
 		InteractSphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	}
+	*/
+
+	if (InteractableComponent)
+	{
+		InteractableComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	}
 
 	// 메쉬 물리 및 충돌 복구

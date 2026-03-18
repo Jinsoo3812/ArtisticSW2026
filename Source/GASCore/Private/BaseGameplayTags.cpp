@@ -54,3 +54,9 @@ UE_DEFINE_GAMEPLAY_TAG(Ability_Item_Equipped, "Ability.Item.Equipped");
 /* Feature Class */
 UE_DEFINE_GAMEPLAY_TAG(Class_Crafter, "Class.Crafter");
 UE_DEFINE_GAMEPLAY_TAG(Class_Attacker, "Class.Attacker");
+
+
+/* Interaction */
+UE_DEFINE_GAMEPLAY_TAG(Interaction, "Interaction");
+UE_DEFINE_GAMEPLAY_TAG(Interaction_PickUp, "Interaction.PickUp");
+UE_DEFINE_GAMEPLAY_TAG(Interaction_Craft, "Interaction.Craft");

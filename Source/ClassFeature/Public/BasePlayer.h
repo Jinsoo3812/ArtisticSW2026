@@ -188,6 +188,9 @@ protected:
 	// 슬롯 키를 눌렀을 때 아이템을 장착하는 함수
 	void EquipItemFromSlot(FGameplayTag SlotTag);
 
+	// 아이템 슬롯에 아이템을 저장하고 장착 상태를 관리
+	bool TryPutItemInSlot(ABaseItem* Item);
+
 	/* --- 카메라 ---*/
 public:
 	FORCEINLINE USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
@@ -218,4 +221,11 @@ protected:
 	// 카메라 전환 보간 속도
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float CameraInterpSpeed = 10.f;
+
+	/* --- Interact를 위한 Trace 범위 ---*/
+	UPROPERTY(EditDefaultsOnly, Category = "Interaction")
+	float InteractTraceDistance = 500.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Interaction")
+	float InteractTraceRadius = 50.f;
 };

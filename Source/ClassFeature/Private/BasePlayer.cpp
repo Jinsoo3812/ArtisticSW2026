@@ -15,6 +15,9 @@
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "ItemData.h"
+#include "Interactable.h"
+#include "CollisionChannels.h"
+#include "BaseGameplayTags.h"
 
 /* --- FItemSlot ---*/
 
@@ -282,8 +285,66 @@ void ABasePlayer::DoJumpEnd()
 
 void ABasePlayer::Interact()
 {
-	// 지금은 단순히 PickUp의 역할만 하지만 추후 특정 방법(어댑터 등)을 통해 모든 상호작용에 사용가능한 함수로 확장해야 함.
+	if (!FollowCamera) return;
 
+	FVector StartLoc = GetActorLocation();
+
+	// 캐릭터가 바라보는 정면 방향으로 짧은 거리만큼 쏨
+	FVector EndLoc = StartLoc + (FollowCamera->GetForwardVector() * InteractTraceDistance);
+
+	FHitResult HitResult;
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this); // 내 자신은 스캔에서 제외
+
+	// 구체 형태의 Sweep 발사
+	bool bHit = GetWorld()->SweepSingleByChannel(
+		HitResult,
+		StartLoc,
+		EndLoc,
+		FQuat::Identity,
+		ECC_Interactable, // 프로젝트 세팅의 ECC_Interactable 실제 채널로 변경
+		FCollisionShape::MakeSphere(InteractTraceRadius), // 
+		QueryParams
+	);
+
+#if ENABLE_DRAW_DEBUG
+	FColor DrawColor = bHit ? FColor::Green : FColor::Red;
+
+	// 시작점과 끝점을 잇는 원통(캡슐) 형태로 직관적으로 한 번에 그리기
+	FVector TraceCenter = StartLoc + (EndLoc - StartLoc) * 0.5f;
+	float TraceHalfHeight = (EndLoc - StartLoc).Size() * 0.5f;
+	FQuat TraceRotation = FRotationMatrix::MakeFromZ(EndLoc - StartLoc).ToQuat();
+
+	DrawDebugCapsule(GetWorld(), TraceCenter, TraceHalfHeight, InteractTraceRadius, TraceRotation, DrawColor, false, 2.0f);
+#endif
+
+	if (bHit && HitResult.GetComponent())
+	{
+		// 타겟이 인터페이스를 구현했는지 확인
+		if (IInteractable* InteractableComp = Cast<IInteractable>(HitResult.GetComponent()))
+		{
+			// 상호 작용 호출 (상호 작용 객체의 내부 처리)
+			InteractableComp->Interact(this);
+
+			// Player의 처리는 Tag를 기반으로 분기
+			FGameplayTag TargetTag = InteractableComp->GetInteractionTag();
+
+			// 분기해야 할 Tag의 종류가 많아지면 Switch 문 등으로 리팩토링 고려
+			if (TargetTag.MatchesTag(Interaction_PickUp))
+			{
+				if (ABaseItem* HitItem = Cast<ABaseItem>(HitResult.GetActor()))
+				{
+					// 손에 붙이는 것 까지는 이미 수행된 상태이므로, 슬롯에 넣는 시도만 수행
+					TryPutItemInSlot(HitItem);
+				}
+			}
+		}
+	}
+	
+
+	/* ------------------ LAGACY ----------------------*/
+	/*
+	// 모든 Item 및 기타 상호작용 가능 객체가 UInterface를 구현하였을 때 삭제 예정
 	TArray<AActor*> OverlappingActors;
 	GetOverlappingActors(OverlappingActors, ABaseItem::StaticClass());
 
@@ -331,6 +392,42 @@ void ABasePlayer::Interact()
 				break;
 			}
 		}
+	}
+	*/
+}
+
+bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
+{
+	if (!IsValid(Item)) return false;
+
+	// 빈 ItemSlot Index 찾기
+	int32 EmptySlotIndex = ItemSlots.IndexOfByPredicate([](const FItemSlot& Slot)
+		{
+			return !IsValid(Slot.Item);
+		});
+
+	if (EmptySlotIndex != INDEX_NONE)
+	{
+		// 빈 슬롯에 저장
+		ItemSlots[EmptySlotIndex].Item = Item;
+ 
+		if (IsValid(EquippedItem))
+		{
+			// 이미 손에 무언가 들려있으면 새로 주운 아이템은 보이지 않게
+			Item->SetActorHiddenInGame(true);
+		}
+		else
+		{
+			// 손이 비어있으면 새로 주운 아이템 바로 장착
+			EquipItemFromSlot(ItemSlots[EmptySlotIndex].SlotTag);
+			Item->SetActorHiddenInGame(false);
+		}
+		return true; // 성공적으로 슬롯에 넣음
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::TryPutItemInSlot : ItemSlot is Full."));
+		return false; // 인벤토리 꽉 참
 	}
 }
 

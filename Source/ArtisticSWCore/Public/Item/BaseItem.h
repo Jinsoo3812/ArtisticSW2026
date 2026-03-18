@@ -4,12 +4,15 @@
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "Abilities/GameplayAbility.h"
+#include "Interactable.h"
+#include "BaseGameplayTags.h"
 #include "BaseItem.generated.h"
 
 class UStaticMeshComponent;
 class USphereComponent;
 class UItemData;
 struct FItemDefinition;
+class UInteractableComponent;
 
 UCLASS()
 class ARTISTICSWCORE_API ABaseItem : public AActor
@@ -46,16 +49,28 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Components")
 	UStaticMeshComponent* ItemMesh;
 
+	// Interact Interface를 통한 상호작용 컴포넌트
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Components")
+	UInteractableComponent* InteractableComponent;
+
+	/* ------------------------- LAGACY -------------------------*/
+	/*
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Components")
 	USphereComponent* InteractSphere;
+	*/
 
 	// ItemData DA 캐시
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Data")
 	TObjectPtr<UItemData> ItemDataAsset;
 
+	// 상호작용 컴포넌트의 OnInteracted 방송을 들었을 때 실행될 콜백 함수
+	UFUNCTION()
+	void OnInteractableTriggered(AActor* Interactor);
+
 	/* API for Player */
 public:
 	// Player가 Item을 주워 자신의 손/ItemSlot/Inventory에 저장하기 위한 함수.
+	// Interact 함수에서 호출되며 캡슐화되어야 하지만 PR이후 리팩토링 고려
 	UFUNCTION(BlueprintCallable, Category = "Item|Action")
 	virtual void PickUpItem(AActor* Picker);
 
