@@ -9,10 +9,10 @@
 // Enemy Folder
 #include "BaseAIController.h"
 #include "EnemyAttributeSet.h"
-#include "BehaviorTree/BehaviorTree.h"
 
 // Unreal
 #include "Blueprint/AIBlueprintHelperLibrary.h"
+#include "BehaviorTree/BehaviorTree.h"
 
 ABaseEnemy::ABaseEnemy()
 {
