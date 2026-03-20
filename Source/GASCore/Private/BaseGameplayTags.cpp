@@ -43,12 +43,13 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Weapon_Grenade, "Item.Weapon.Grenade");
 
 /* Mouse Input */
 // GameplayEvent로 사용할 Tag
-UE_DEFINE_GAMEPLAY_TAG(Input_MouseLeftClick, "Input.MouseLeftClick");
-UE_DEFINE_GAMEPLAY_TAG(Input_MouseRightClick, "Input.MouseRightClick");
+UE_DEFINE_GAMEPLAY_TAG(Event_Input_MouseLeftClick, "Event.Input.MouseLeftClick");
+UE_DEFINE_GAMEPLAY_TAG(Event_Input_MouseRightClick, "Event.Input.MouseRightClick");
 
 
 /* Ability */
-UE_DEFINE_GAMEPLAY_TAG(Ability_Item_Equipped, "Ability.Item.Equipped");
+UE_DEFINE_GAMEPLAY_TAG(Key_Default_MouseLeftClick, "Key.Default.MouseLeftClick");
+UE_DEFINE_GAMEPLAY_TAG(Key_Default_F, "Key.Default.F");
 
 
 /* Feature Class */

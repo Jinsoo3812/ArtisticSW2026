@@ -91,14 +91,14 @@ void UCrafterComponent::BindCrafterInput(UEnhancedInputComponent* EnhancedInputC
 
 	if (!EnhancedInputComponent || !CrafterInputConfig || !Player) return;
 
-	for (const FSlotInputAction& Action : CrafterInputConfig->SlotInputActions)
+	for (const FKeyInputAction& Action : CrafterInputConfig->KeyInputActions)
 	{
-		if (Action.InputAction && Action.SlotTag.IsValid())
+		if (Action.InputAction && Action.KeyTag.IsValid())
 		{
-			// Crafter의 IA와 SlotTag 매핑을 Player에게 적용
+			// Crafter의 IA와 KeyTag 매핑을 Player에게 적용
 			// IMC 우선순위로 인해 동일 키입력에 대해 우선 적용
-			EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, Player, &ABasePlayer::OnAbilityInputPressed, Action.SlotTag);
-			EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, Player, &ABasePlayer::OnAbilityInputReleased, Action.SlotTag);
+			EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, Player, &ABasePlayer::OnAbilityInputPressed, Action.KeyTag);
+			EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, Player, &ABasePlayer::OnAbilityInputReleased, Action.KeyTag);
 		}
 	}
 }

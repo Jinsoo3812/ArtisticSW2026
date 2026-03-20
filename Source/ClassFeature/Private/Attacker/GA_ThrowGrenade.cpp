@@ -37,7 +37,7 @@ void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	// 입력 대기 (좌클릭)
 	UAbilityTask_WaitGameplayEvent* WaitCancle = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
 		this,
-		Input_MouseRightClick,
+		Event_Input_MouseRightClick,
 		nullptr,
 		false,
 		false

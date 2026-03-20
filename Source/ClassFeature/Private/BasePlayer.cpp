@@ -22,9 +22,9 @@
 /* --- FItemSlot ---*/
 
 FItemSlot::FItemSlot(const FGameplayTag& InTag, ABaseItem* InItem)
-	: SlotTag(InTag), Item(InItem) {}
+	: KeyTag(InTag), Item(InItem) {}
 
-bool FItemSlot::operator==(const FGameplayTag& OtherTag) const { return SlotTag == OtherTag; }
+bool FItemSlot::operator==(const FGameplayTag& OtherTag) const { return KeyTag == OtherTag; }
 
 bool FItemSlot::operator==(const ABaseItem* OtherItem) const { return Item.Get() == OtherItem; }
 
@@ -63,13 +63,13 @@ void ABasePlayer::BeginPlay()
 	Super::BeginPlay();
 
 	// ItemSlot 배열 초기화: TMap 등록 없이 구조체 배열에 순서대로 Add
-	if (SlotInputConfig)
+	if (ItemInputConfig)
 	{
-		for (const FSlotInputAction& Action : SlotInputConfig->SlotInputActions)
+		for (const FKeyInputAction& Action : ItemInputConfig->KeyInputActions)
 		{
-			if (Action.SlotTag.IsValid() && Action.SlotTag.MatchesTag(Key_Item))
+			if (Action.KeyTag.IsValid() && Action.KeyTag.MatchesTag(Key_Item))
 			{
-				ItemSlots.Add(FItemSlot(Action.SlotTag));
+				ItemSlots.Add(FItemSlot(Action.KeyTag));
 			}
 		}
 	}
@@ -212,13 +212,26 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 		}
 
 		// ItemSlot 입력 바인딩
-		if (SlotInputConfig)
+		if (DefaultInputConfig)
 		{
-			for (const FSlotInputAction& Action : SlotInputConfig->SlotInputActions)
+			for (const FKeyInputAction& Action : DefaultInputConfig->KeyInputActions)
 			{
-				if (Action.InputAction && Action.SlotTag.IsValid())
+				if (Action.InputAction && Action.KeyTag.IsValid())
 				{
-					EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::EquipItemFromSlot, Action.SlotTag);
+					EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::OnAbilityInputPressed, Action.KeyTag);
+					EnhancedInputComponent->BindAction(MouseLeftAction, ETriggerEvent::Completed, this, &ABasePlayer::OnAbilityInputReleased, Action.KeyTag);
+				}
+			}
+		}
+
+		// ItemSlot 입력 바인딩
+		if (ItemInputConfig)
+		{
+			for (const FKeyInputAction& Action : ItemInputConfig->KeyInputActions)
+			{
+				if (Action.InputAction && Action.KeyTag.IsValid())
+				{
+					EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::EquipItemFromSlot, Action.KeyTag);
 				}
 			}
 		}
@@ -379,7 +392,7 @@ void ABasePlayer::Interact()
 				else
 				{
 					// 손에 든 게 없는 경우
-					EquipItemFromSlot(ItemSlots[EmptySlotIndex].SlotTag);
+					EquipItemFromSlot(ItemSlots[EmptySlotIndex].KeyTag);
 					Item->SetActorHiddenInGame(false); // 보이게 처리
 				}
 				// 한 번의 상호작용으로 하나의 아이템만 줍도록 루프 종료
@@ -419,7 +432,7 @@ bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
 		else
 		{
 			// 손이 비어있으면 새로 주운 아이템 바로 장착
-			EquipItemFromSlot(ItemSlots[EmptySlotIndex].SlotTag);
+			EquipItemFromSlot(ItemSlots[EmptySlotIndex].KeyTag);
 			Item->SetActorHiddenInGame(false);
 		}
 		return true; // 성공적으로 슬롯에 넣음
@@ -431,31 +444,31 @@ bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
 	}
 }
 
-void ABasePlayer::GrantAbilityToSlot(FGameplayTag SlotTag, TSubclassOf<UGameplayAbility> AbilityClass)
+void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayAbility> AbilityClass)
 {
 	// 서버에서만 실행되며, 유효성 검사 수행
-	if (!HasAuthority() || !AbilitySystemComponent || !AbilityClass || !SlotTag.IsValid())
+	if (!HasAuthority() || !AbilitySystemComponent || !AbilityClass || !KeyTag.IsValid())
 	{
 		return;
 	}
 
 	// 해당 슬롯에 이미 부여된 어빌리티가 있다면 교체
-	RemoveAbilityFromSlot(SlotTag);
+	RemoveAbilityFromSlot(KeyTag);
 
 	// GA Spec 생성
 	FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, this);
 
-	// GA Spec에 SlotTag를 동적 추가
-	Spec.GetDynamicSpecSourceTags().AddTag(SlotTag);
+	// GA Spec에 KeyTag를 동적 추가
+	Spec.GetDynamicSpecSourceTags().AddTag(KeyTag);
 
 	// ASC에 GA 부여
 	AbilitySystemComponent->GiveAbility(Spec);
-	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::GrantAbilityToSlot : Granted ability %s to SlotTag %s"), *AbilityClass->GetName(), *SlotTag.ToString());
+	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::GrantAbilityToSlot : Granted ability %s to KeyTag %s"), *AbilityClass->GetName(), *KeyTag.ToString());
 }
 
-void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag SlotTag)
+void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 {
-	if (!HasAuthority() || !AbilitySystemComponent || !SlotTag.IsValid())
+	if (!HasAuthority() || !AbilitySystemComponent || !KeyTag.IsValid())
 	{
 		return;
 	}
@@ -468,8 +481,8 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag SlotTag)
 	// ASC의 모든 GA Spec 순회
 	for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
 	{
-		// 부여할 때 심어둔 동적 SlotTag를 포함하는지 확인
-		if (Spec.GetDynamicSpecSourceTags().HasTag(SlotTag))
+		// 부여할 때 심어둔 동적 KeyTag를 포함하는지 확인
+		if (Spec.GetDynamicSpecSourceTags().HasTag(KeyTag))
 		{
 			HandlesToRemove.Add(Spec.Handle);
 		}
@@ -569,16 +582,21 @@ void ABasePlayer::UseEquippedItem(bool bDestroy)
 		// 손에 들고 있는 장착 상태 해제
 		EquippedItem = nullptr;
 
-		RemoveItemFromSlot(ItemSlots[EquippedIndex].SlotTag);
+		RemoveItemFromSlot(ItemSlots[EquippedIndex].KeyTag);
 	}
 }
 
-void ABasePlayer::EquipItemFromSlot(FGameplayTag SlotTag)
+void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 {
+	// 현재는 장착형 아이템이기 때문에 ItemSlot에 대한 키 입력이 들어올 경우 손에 장착하는 로직만 있지만
+	// 추후에 즉발형 아이템의 경우 Item 자체의 Tag로 분기하여 손에 들지않고 즉시 사용되도록 추가해야 함.
+	// OnAbilityInputPressed으로 바로 넘기면 될 듯? 그게 즉발형을 위한 바인딩 함수니까.
+
+
 	// [서버]
 	if (!HasAuthority()) return;
 
-	int32 SlotIndex = ItemSlots.IndexOfByKey(SlotTag);
+	int32 SlotIndex = ItemSlots.IndexOfByKey(KeyTag);
 
 	if (ItemSlots.IsValidIndex(SlotIndex))
 	{
@@ -589,7 +607,7 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag SlotTag)
 		{
 			if (IsValid(EquippedItem))
 			{
-				RemoveAbilityFromSlot(Ability_Item_Equipped);
+				RemoveAbilityFromSlot(Key_Default_MouseLeftClick);
 				EquippedItem->SetActorHiddenInGame(true);
 				EquippedItem = nullptr;
 			}
@@ -605,7 +623,7 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag SlotTag)
 		// 기존 장착 아이템 해제 (파괴하지 않고 숨김 처리)
 		if (IsValid(EquippedItem))
 		{
-			RemoveAbilityFromSlot(Ability_Item_Equipped);
+			RemoveAbilityFromSlot(Key_Default_MouseLeftClick);
 			EquippedItem->SetActorHiddenInGame(true);
 		}
 
@@ -644,23 +662,23 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag SlotTag)
 			// 조건 만족 시에만 GA 부여
 			if (bShouldGrantAbility)
 			{
-				GrantAbilityToSlot(Ability_Item_Equipped, EquippedItem->GetGrantedAbilityClass());
+				GrantAbilityToSlot(Key_Default_MouseLeftClick, EquippedItem->GetGrantedAbilityClass());
 			}
 		}
 	}
 }
 
-void ABasePlayer::RemoveItemFromSlot(FGameplayTag SlotTag)
+void ABasePlayer::RemoveItemFromSlot(FGameplayTag KeyTag)
 {
 	// [서버]
 	if (!HasAuthority()) return;
 
-	int32 SlotIndex = ItemSlots.IndexOfByKey(SlotTag);
+	int32 SlotIndex = ItemSlots.IndexOfByKey(KeyTag);
 
 	if (ItemSlots.IsValidIndex(SlotIndex) && IsValid(ItemSlots[SlotIndex].Item))
 	{
 		ItemSlots[SlotIndex].Item = nullptr;
-		RemoveAbilityFromSlot(SlotTag);
+		RemoveAbilityFromSlot(KeyTag);
 	}
 }
 
@@ -669,7 +687,7 @@ void ABasePlayer::OnMouseLeftPressed()
 	if (!AbilitySystemComponent) return;
 
 	// 현재 장착된 Item이 있다면 그 GA 실행
-	OnAbilityInputPressed(Ability_Item_Equipped);
+	OnAbilityInputPressed(Key_Default_MouseLeftClick);
 
 	// ASC에 GameplayEvent로서 전달
 	FGameplayEventData EventData;
@@ -677,14 +695,14 @@ void ABasePlayer::OnMouseLeftPressed()
 	EventData.Target = nullptr;
 
 	// 활성화된 모든 어빌리티 중, 이 태그를 기다리는(WaitGameplayEvent) GA에게 신호.
-	AbilitySystemComponent->HandleGameplayEvent(Input_MouseLeftClick, &EventData);
+	AbilitySystemComponent->HandleGameplayEvent(Event_Input_MouseLeftClick, &EventData);
 }
 
 void ABasePlayer::OnMouseLeftReleased()
 {
 	if (!AbilitySystemComponent) return;
 
-	OnAbilityInputReleased(Ability_Item_Equipped);
+	OnAbilityInputReleased(Key_Default_MouseLeftClick);
 }
 
 void ABasePlayer::OnMouseRightPressed() {
@@ -694,7 +712,7 @@ void ABasePlayer::OnMouseRightPressed() {
 	EventData.Target = nullptr;
 
 	// 활성화된 모든 어빌리티 중, 이 태그를 기다리는(WaitGameplayEvent) GA에게 신호.
-	AbilitySystemComponent->HandleGameplayEvent(Input_MouseRightClick, &EventData);
+	AbilitySystemComponent->HandleGameplayEvent(Event_Input_MouseRightClick, &EventData);
 }
 
 void ABasePlayer::OnRep_EquippedItem(ABaseItem* OldItem)

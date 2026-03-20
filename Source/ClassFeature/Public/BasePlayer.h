@@ -25,7 +25,7 @@ struct FItemSlot
 
 	// 슬롯에 할당된 GameplayTag (예: key.Item.1)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ItemSlot")
-	FGameplayTag SlotTag;
+	FGameplayTag KeyTag;
 
 	// 해당 슬롯에 장착된 아이템 객체 포인터
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ItemSlot")
@@ -97,13 +97,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	int32 DefaultIMCPriority = 1;
 
-	// Item IMC
+	// Default IA - Tag 매핑 DA
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<class UInputMappingContext> ItemIMC;
-
-	// Item IMC의 우선순위
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	int32 ItemIMCPriority = 1;
+	TObjectPtr<UInputTagConfig> DefaultInputConfig;
 
 	// Input Action
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
@@ -158,7 +154,15 @@ public:
 protected:
 	// IA와 Slot Tag의 Mapping 정보가 담긴 DataAsset (BP 주입)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputTagConfig> SlotInputConfig;
+	TObjectPtr<UInputTagConfig> ItemInputConfig;
+
+	// Item IMC
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<class UInputMappingContext> ItemIMC;
+
+	// Item IMC의 우선순위
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	int32 ItemIMCPriority = 1;
 
 
 

@@ -38,7 +38,7 @@ void UThrowItem::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	// 입력 대기 (좌클릭)
 	UAbilityTask_WaitGameplayEvent* WaitConfirm = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
 		this,
-		Input_MouseLeftClick,
+		Event_Input_MouseLeftClick,
 		nullptr,
 		false,
 		false

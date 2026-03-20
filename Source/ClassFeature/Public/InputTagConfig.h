@@ -11,7 +11,7 @@ class UInputAction;
 
 // IA와 Slot Tag의 Mapping 정보
 USTRUCT(BlueprintType)
-struct FSlotInputAction
+struct FKeyInputAction
 {
 	GENERATED_BODY()
 
@@ -19,7 +19,7 @@ struct FSlotInputAction
 	TObjectPtr<const UInputAction> InputAction = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (Categories = "InputTag"))
-	FGameplayTag SlotTag;
+	FGameplayTag KeyTag;
 };
 
 /**
@@ -30,10 +30,7 @@ class CLASSFEATURE_API UInputTagConfig : public UDataAsset
 {
 	GENERATED_BODY()
 public:
-	// 슬롯에 매핑할 IA와 Tag 목록
+	// IA와 Tag 목록
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	TArray<FSlotInputAction> SlotInputActions;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	int32 ItemSlotCount = 3;
+	TArray<FKeyInputAction> KeyInputActions;
 };
