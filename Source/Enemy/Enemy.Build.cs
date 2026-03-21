@@ -5,30 +5,31 @@ public class Enemy: ModuleRules
     public Enemy(ReadOnlyTargetRules Target) : base(Target)
     {
         PrivateDependencyModuleNames.AddRange(new string[] {
-            // 紐⑤뱢 ???대옒?ㅼ쓽 ?뚯뒪 ?뚯씪?먯꽌留??ъ슜??紐⑤뱢 ?섏〈?깆쓣 異붽?
+            // 소스파일에서 사용할 모듈을 작성하는 곳
             "Core",
             "CoreUObject",
-            "Engine"
+            "Engine",
+            "GASCore",
+            "ClassFeature",
+            "ArtisticSWCore"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
-            // 紐⑤뱢 ???대옒?ㅼ쓽 ?ㅻ뜑 ?뚯씪?먯꽌遺???ъ슜??紐⑤뱢 ?섏〈?깆쓣 異붽?
+            // 헤더파일에서부터 사용할 모듈을 작성하는 곳
             "GameplayAbilities",
             "GameplayTasks",
             "GameplayTags",
             "InputCore",
             "AIModule",
-            "GASCore"
+            "ArtisticSWCore"
         });
 
         PublicIncludePaths.AddRange(new string[] {
-            // ?덈줈 異붽????뚯씪 寃쎈줈瑜?異붽??섏뿬 include ???대옒???대쫫留??ъ슜?????덇쾶
+            // Enemy 내 파일 접근을 용이하게 하기 위해서 include 경로 추가
 			"Enemy",
 			"Enemy/Public",
             "Enemy/AI",
-            "Enemy/GAS",
-            "Enemy/Data",
-            "Enemy/Interface"
+            "Enemy/GAS"
 		});
     }
 }

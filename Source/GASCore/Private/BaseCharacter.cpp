@@ -61,7 +61,16 @@ void ABaseCharacter::BeginPlay()
 void ABaseCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
-		
+
+	if (AbilitySystemComponent && HasAuthority())
+	{
+		AbilitySystemComponent->InitAbilityActorInfo(this, this);
+
+		if (StartingAbilities.Num() > 0)
+		{
+			GrantAbilities(StartingAbilities);
+		}
+	}
 }
 
 void ABaseCharacter::Tick(float DeltaTime)
@@ -77,6 +86,7 @@ UAbilitySystemComponent* ABaseCharacter::GetAbilitySystemComponent() const
 TArray<FGameplayAbilitySpecHandle> ABaseCharacter::GrantAbilities(
 	TArray<TSubclassOf<UGameplayAbility>> AbilitiesToGrant)
 {
+	UE_LOG(LogTemp, Warning, TEXT("ABaseCharacter::GrantAbilities"));
 	// 모든 능력을 for loop를 통해서 일일히 Grant 해줌
 	if (!AbilitySystemComponent || !HasAuthority())// HasAuthority는 서버에 있는 지 확인하는 함수
 		// GrantAbilities는 서버에서만 동작하므로, 서버에서 클라로 보내는 것은 충돌 일어날 수 있다. 따라서 서버에서만 동작하도록 한다.
