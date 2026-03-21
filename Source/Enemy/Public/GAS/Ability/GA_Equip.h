@@ -8,6 +8,7 @@
 
 class ABaseEnemy;
 class ABaseItem;
+class UAnimMontage;
 
 UCLASS()
 class ENEMY_API UGA_Equip : public UBaseGameplayAbility
@@ -17,6 +18,28 @@ class ENEMY_API UGA_Equip : public UBaseGameplayAbility
 public:
 	UGA_Equip();
 
+protected:
+	// 장착 Montage
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EquipMontage")
+	TObjectPtr<UAnimMontage> EquipMontage;
+
+	// 장착될 무기
+	UPROPERTY()
+	TObjectPtr<ABaseItem> PendingWeaponToEquip;
+
+public:
+	UFUNCTION()
+	void OnEquipMontageCompleted();
+
+	UFUNCTION()
+	void OnEquipMontageInterrupted();
+
+	UFUNCTION()
+	void OnEquipMontageCancelled();
+
+	// Montage이후 EndAbility로 이어지는 Helper함수
+	void FinishEquip(bool bWasCancelled);
+	
 protected:
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,

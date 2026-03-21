@@ -21,12 +21,16 @@ protected:
 	// Enemy에게 장착된 AI Controller
 	UPROPERTY()
 	TObjectPtr<ABaseAIController> AIController;
+	
 	// Enemy가 사용할 Behavior Tree
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI | Behavior Tree")
 	TObjectPtr<UBehaviorTree> BehaviorTree;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon")
-	TObjectPtr<ABaseItem> DefaultWeapon;
+	TSubclassOf<ABaseItem> DefaultWeaponClass;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_CurrentWeapon, Category="Weapon")
+	TObjectPtr<ABaseItem> CurrentWeapon = nullptr;
 	
 public:
 	ABaseEnemy();
@@ -34,6 +38,9 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	UFUNCTION()
+	void OnRep_CurrentWeapon();
+	
 public:
 	//virtual void Tick(float DeltaTime) override;
 	
@@ -42,5 +49,6 @@ public:
 	// Getters
 	FORCEINLINE TObjectPtr<ABaseAIController> GetAIController() const { check(AIController) return AIController; }
 	FORCEINLINE TObjectPtr<UBehaviorTree> GetBehaviorTree() const { check(BehaviorTree) return BehaviorTree; }
-	FORCEINLINE ABaseItem* GetDefaultWeapon() const { check(DefaultWeapon) return DefaultWeapon; }
+	FORCEINLINE ABaseItem* GetCurrentWeapon() const {  check(CurrentWeapon)return CurrentWeapon; }
+
 };
