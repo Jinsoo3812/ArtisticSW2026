@@ -8,7 +8,10 @@ public class Enemy: ModuleRules
             // 소스파일에서 사용할 모듈을 작성하는 곳
             "Core",
             "CoreUObject",
-            "Engine"
+            "Engine",
+            "GASCore",
+            "ClassFeature",
+            "ArtisticSWCore"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
@@ -18,8 +21,7 @@ public class Enemy: ModuleRules
             "GameplayTags",
             "InputCore",
             "AIModule",
-            "GASCore",
-            "ClassFeature"
+            "ArtisticSWCore"
         });
 
         PublicIncludePaths.AddRange(new string[] {
@@ -27,9 +29,7 @@ public class Enemy: ModuleRules
 			"Enemy",
 			"Enemy/Public",
             "Enemy/AI",
-            "Enemy/GAS",
-            "Enemy/Data",
-            "Enemy/Interface"
+            "Enemy/GAS"
 		});
     }
 }

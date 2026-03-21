@@ -10,6 +10,7 @@
 class UBehaviorTree;
 class ABaseAIController;
 class ABasePlayer;
+class ABaseItem;
 
 UCLASS()
 class ENEMY_API ABaseEnemy : public ABaseCharacter
@@ -24,6 +25,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI | Behavior Tree")
 	TObjectPtr<UBehaviorTree> BehaviorTree;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon")
+	TObjectPtr<ABaseItem> DefaultWeapon;
 	
 public:
 	ABaseEnemy();
@@ -33,10 +36,11 @@ protected:
 
 public:
 	//virtual void Tick(float DeltaTime) override;
-
+	
 	
 public:
 	// Getters
 	FORCEINLINE TObjectPtr<ABaseAIController> GetAIController() const { check(AIController) return AIController; }
 	FORCEINLINE TObjectPtr<UBehaviorTree> GetBehaviorTree() const { check(BehaviorTree) return BehaviorTree; }
+	FORCEINLINE ABaseItem* GetDefaultWeapon() const { check(DefaultWeapon) return DefaultWeapon; }
 };
