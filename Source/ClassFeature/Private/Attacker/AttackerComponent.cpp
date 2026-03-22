@@ -83,13 +83,13 @@ void UAttackerComponent::BindAttackerInput(UEnhancedInputComponent* EnhancedInpu
 
 	if (!EnhancedInputComponent || !AttackerInputConfig || !Player) return;
 
-	for (const FSlotInputAction& Action : AttackerInputConfig->SlotInputActions)
+	for (const FKeyInputAction& Action : AttackerInputConfig->KeyInputActions)
 	{
-		if (Action.InputAction && Action.SlotTag.IsValid())
+		if (Action.InputAction && Action.KeyTag.IsValid())
 		{
 			// BasePlayer의 OnAbilityInputPressed/Released를 활용하여 깔끔하게 태그 기반으로 라우팅
-			EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, Player, &ABasePlayer::OnAbilityInputPressed, Action.SlotTag);
-			EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, Player, &ABasePlayer::OnAbilityInputReleased, Action.SlotTag);
+			EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, Player, &ABasePlayer::OnAbilityInputPressed, Action.KeyTag);
+			EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, Player, &ABasePlayer::OnAbilityInputReleased, Action.KeyTag);
 		}
 	}
 }

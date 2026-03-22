@@ -4,6 +4,7 @@
 #include "BasePlayer.h"
 #include "BaseItem.h"
 #include "Projectiles/GrenadeProjectile.h"
+#include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "AbilitySystemComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -34,20 +35,20 @@ void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		}
 	}
 
-	// 입력 대기 (좌클릭)
-	UAbilityTask_WaitGameplayEvent* WaitCancle = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
-		this,
-		Input_MouseRightClick,
-		nullptr,
-		false,
-		false
-	);
-
-	// 좌클릭 이벤트 대기 (투척 확정)
-	if (WaitCancle)
+	// 좌클릭 해제(투척 확정) 대기
+	UAbilityTask_WaitInputRelease* WaitReleaseTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this);
+	if (WaitReleaseTask)
 	{
-		WaitCancle->EventReceived.AddDynamic(this, &UGA_ThrowGrenade::OnCancelEventReceived);
-		WaitCancle->ReadyForActivation();
+		WaitReleaseTask->OnRelease.AddDynamic(this, &UGA_ThrowGrenade::OnInputReleased);
+		WaitReleaseTask->ReadyForActivation();
+	}
+
+	// 우클릭 입력(스킬 취소) 대기
+	UAbilityTask_WaitGameplayEvent* WaitRightClickTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Key_Default_Mouse_RightClick);
+	if (WaitRightClickTask)
+	{
+		WaitRightClickTask->EventReceived.AddDynamic(this, &UGA_ThrowGrenade::OnRightClickCancelled);
+		WaitRightClickTask->ReadyForActivation();
 	}
 }
 
@@ -62,13 +63,9 @@ void UGA_ThrowGrenade::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
-void UGA_ThrowGrenade::InputReleased(const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo,
-	const FGameplayAbilityActivationInfo ActivationInfo)
+void UGA_ThrowGrenade::OnInputReleased(float TimeHeld)
 {
-	Super::InputReleased(Handle, ActorInfo, ActivationInfo);
-
-	// 이미 우클릭으로 취소되어 어빌리티가 종료된 상태라면 투척 로직을 무시
+	// 어빌리티가 이미 취소되었거나 종료되었다면 무시
 	if (!IsActive())
 	{
 		return;
@@ -79,14 +76,13 @@ void UGA_ThrowGrenade::InputReleased(const FGameplayAbilitySpecHandle Handle,
 
 	if (!Player || !ASC || !IsValid(Player->EquippedItem))
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
 	}
 
 	// [서버] 수류탄 스폰 및 투척
 	if (Player->HasAuthority())
 	{
-		// EquippedItem에서 SpawnClass를 가져오고 형변환 체크
 		UClass* SpawnClass = Player->EquippedItem->GetSpawnClass();
 		UStaticMesh* ItemMesh = Player->EquippedItem->GetStaticMesh();
 
@@ -96,23 +92,19 @@ void UGA_ThrowGrenade::InputReleased(const FGameplayAbilitySpecHandle Handle,
 			return;
 		}
 
-		// 서버와 클라이언트가 오차 없이 공유하는 카메라의 현재 방향 벡터
 		FVector LaunchDir = Player->GetBaseAimRotation().Vector();
-		LaunchDir.Z += Upper; // 직구 방지
+		LaunchDir.Z += Upper;
 		LaunchDir.Normalize();
 		FVector LaunchVelocity = LaunchDir * ThrowSpeed;
 
-		// 스폰 위치 (손 소켓 기준)
 		FVector SpawnLocation = Player->GetActorLocation();
 		if (Player->GetMesh())
 		{
 			SpawnLocation = Player->GetMesh()->GetSocketLocation(FName("hand_r"));
 		}
 
-		// 회전값은 발사 방향에 맞춰줌
 		FTransform SpawnTransform(LaunchVelocity.Rotation(), SpawnLocation);
 
-		// 데미지 GE Spec 생성
 		FGameplayEffectSpecHandle DamageSpecHandle;
 		if (DamageEffectClass)
 		{
@@ -121,7 +113,6 @@ void UGA_ThrowGrenade::InputReleased(const FGameplayAbilitySpecHandle Handle,
 			DamageSpecHandle = ASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
 		}
 
-		// 지연 생성
 		AGrenadeProjectile* Grenade = GetWorld()->SpawnActorDeferred<AGrenadeProjectile>(
 			SpawnClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 
@@ -130,16 +121,12 @@ void UGA_ThrowGrenade::InputReleased(const FGameplayAbilitySpecHandle Handle,
 			Grenade->SetInstigator(Player);
 			Grenade->SetOwner(Player);
 			Grenade->DamageEffectSpecHandle = DamageSpecHandle;
-
 			Grenade->SetGrenadeMesh(ItemMesh);
-
 			Grenade->FinishSpawning(SpawnTransform);
-
-			// 3. 스폰 직후 단순 물리 힘을 가해 던짐
 			Grenade->LaunchProjectile(LaunchVelocity);
 		}
 
-		// 장착 Item(들고 있던 수류탄) 소비 및 파괴 처리 (true)
+		// 장착 Item 소비 및 파괴
 		Player->UseEquippedItem(true);
 	}
 
@@ -175,8 +162,19 @@ void UGA_ThrowGrenade::DrawTrajectory()
 	UGameplayStatics::PredictProjectilePath(Player, PredictParams, PredictResult);
 }
 
-void UGA_ThrowGrenade::OnCancelEventReceived(FGameplayEventData Payload)
+void UGA_ThrowGrenade::OnRightClickCancelled(FGameplayEventData Payload)
 {
-	// 마우스 우클릭 이벤트 수신 시 어빌리티 취소 처리
-	CancelAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true);
+	UE_LOG(LogTemp, Log, TEXT("UGA_ThrowGrenade: Right Click Event Received. Canceling Ability."));
+
+	// 이미 취소되었거나 종료되었다면 무시
+	if (!IsActive()) return;
+
+	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+	if (!Player) return;
+
+	// [서버] Item을 손에서 분리한 후 투척
+	if (Player->HasAuthority())
+	{
+		CancelAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true);
+	}
 }

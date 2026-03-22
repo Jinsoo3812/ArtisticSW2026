@@ -25,7 +25,7 @@ struct FItemSlot
 
 	// 슬롯에 할당된 GameplayTag (예: key.Item.1)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ItemSlot")
-	FGameplayTag SlotTag;
+	FGameplayTag KeyTag;
 
 	// 해당 슬롯에 장착된 아이템 객체 포인터
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ItemSlot")
@@ -85,9 +85,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	virtual void DoJumpEnd();
 
+	// 모든 Config를 순회하며 ID를 부여하는 함수
+	void InitializeInputIDMap();
+
+	// 태그를 넣으면 통합 맵에서 ID를 반환하는 헬퍼
+	int32 GetInputIDFromTag(const FGameplayTag& Tag) const;
+
 protected:
 	// 서버에 의해 로컬에서 Controller가 조종하는 Pawn이 지정될 때 호출되는 함수.
 	virtual void PawnClientRestart() override;
+
+	// 모든 Config의 태그를 통합하여 InputID를 부여할 맵
+	UPROPERTY()
+	TMap<FGameplayTag, int32> InputTagToIDMap;
 
 	// Default IMC (마우스 등)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -97,13 +107,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	int32 DefaultIMCPriority = 1;
 
-	// Item IMC
+	// Default IA - Tag 매핑 DA
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<class UInputMappingContext> ItemIMC;
-
-	// Item IMC의 우선순위
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	int32 ItemIMCPriority = 1;
+	TObjectPtr<UInputTagConfig> DefaultInputConfig;
 
 	// Input Action
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
@@ -118,31 +124,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> MouseLookAction;
 
-	// 상호작용 IA (F)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputAction> InteractAction;
-
-	// 마우스 왼클릭 IA 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputAction> MouseLeftAction;
-
-	// 마우스 우클릭 IA 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputAction> MouseRightAction;
-
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
-	void Interact();
 
-	// 마우스 왼클릭 시 실행될 함수
-	void OnMouseLeftPressed();
-	void OnMouseLeftReleased();
-
-	// 마우스 우클릭 시 실행될 함수
-	void OnMouseRightPressed();
-
-	/* --- 키 입력으로 실행되는 GA 공통 로직 ---  */
+	/* --- 키 입력으로 실행되는 GA ---  */
 public:
+	// Default GA가 어느 Key(Tag)에 매핑될지 설정하는 Map
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
+	TMap<FGameplayTag, TSubclassOf<UGameplayAbility>> DefaultAbilityMap;
+
 	// GA와 그 GA가 어떤 키 입력(Tag)에 반응할지 함께 적용하는 함수.
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
 	void GrantAbilityToSlot(FGameplayTag SlotTag, TSubclassOf<UGameplayAbility> AbilityClass);
@@ -155,14 +145,15 @@ public:
 	void OnAbilityInputPressed(FGameplayTag InputTag);
 	void OnAbilityInputReleased(FGameplayTag InputTag);
 
-protected:
-	// IA와 Slot Tag의 Mapping 정보가 담긴 DataAsset (BP 주입)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputTagConfig> SlotInputConfig;
+	// 마우스 입력에 대한 활용을 위해 따로 OnAbilityInput과 분리
+	void OnMouseInputPressed(FGameplayTag InputTag);
+	void OnMouseInputReleased(FGameplayTag InputTag);
 
+	// 서버의 GA에게 GameplayEvent를 보내는 함수 (예: 마우스 입력에 반응하는 GA에게 신호 보내기)
+	UFUNCTION(Server, Reliable)
+	void ServerRPC_SendGameplayEvent(FGameplayTag EventTag, FGameplayEventData Payload);
 
-
-	/* --- ItemSlot ---  */
+	/* --- ItemSlot ---  */ 
 public:
 	// 현재 캐릭터가 장착하고 있는 아이템
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_EquippedItem, Category = "Equipment")
@@ -171,7 +162,7 @@ public:
 
 	// EquippedItem의 변경이 복제되었을 때 호출되는 함수
 	UFUNCTION()
-	void OnRep_EquippedItem(ABaseItem* OldItem);
+	void OnRep_EquippedItem();
 
 	// ItemSlot 구조체 배열 (복제)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category = "Item")
@@ -185,8 +176,30 @@ public:
 	void UseEquippedItem(bool bDestroy = true);
 
 protected:
+	// IA와 Slot Tag의 Mapping 정보가 담긴 DataAsset (BP 주입)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputTagConfig> ItemInputConfig;
+
+	// Item IMC
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<class UInputMappingContext> ItemIMC;
+
+	// Item IMC의 우선순위
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	int32 ItemIMCPriority = 1;
+
 	// 슬롯 키를 눌렀을 때 아이템을 장착하는 함수
 	void EquipItemFromSlot(FGameplayTag SlotTag);
+
+	// 서버에서 먼저 ItemSlot 처리를 해준 후 클라이언트가 수행하기 위해
+	UFUNCTION(Server, Reliable)
+	void Server_EquipItemFromSlot(FGameplayTag KeyTag);
+
+	// 아이템 슬롯에 아이템을 저장하고 장착 상태를 관리
+	bool TryPutItemInSlot(ABaseItem* Item);
+
+	// 공용 Interact GA가 보내준 PickUp 이벤트를 처리하는 함수
+	void HandlePickUpEvent(const FGameplayEventData* Payload);
 
 	/* --- 카메라 ---*/
 public:

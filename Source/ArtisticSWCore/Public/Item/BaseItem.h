@@ -4,17 +4,29 @@
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "Abilities/GameplayAbility.h"
+#include "Interactable.h"
+#include "BaseGameplayTags.h"
 #include "BaseItem.generated.h"
 
 class UStaticMeshComponent;
 class USphereComponent;
 class UItemData;
 struct FItemDefinition;
+class UInteractableComponent;
+
+UENUM(BlueprintType)
+enum class EItemState : uint8
+{
+	Dropped_Simulating, // 땅에 던져져서 물리 연산 중인 상태
+	Dropped_Hovering,   // 물리 연산이 끝나고 둥둥 떠있는 상태
+	Equipped,           // 플레이어 손에 장착된 상태 (숨김 해제, 콜리전/물리 꺼짐)
+	InItemSlot         // 인벤토리에 들어간 상태 (숨김, 콜리전/물리 꺼짐)
+};
 
 UCLASS()
 class ARTISTICSWCORE_API ABaseItem : public AActor
 {
-    GENERATED_BODY()
+	GENERATED_BODY()
 
 public:
 	ABaseItem();
@@ -27,7 +39,10 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	UFUNCTION()
-	virtual void OnRep_ItemTag();
+	void OnRep_ItemTag();
+
+	UFUNCTION()
+	void OnRep_ItemState();
 
 protected:
 	// BeginPlay 및 OnRep으로 Tag가 도착했을 때 Item 초기화 함수
@@ -42,20 +57,31 @@ public:
 	// DA로부터 가져온 본인의 정의 구조체
 	const FItemDefinition* MyDefinition;
 
+	void SetItemState(EItemState NewState);
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Components")
 	UStaticMeshComponent* ItemMesh;
 
+	// Interact Interface를 통한 상호작용 컴포넌트
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Components")
-	USphereComponent* InteractSphere;
+	UInteractableComponent* InteractableComponent;
 
 	// ItemData DA 캐시
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Data")
 	TObjectPtr<UItemData> ItemDataAsset;
 
+	UPROPERTY(ReplicatedUsing = OnRep_ItemState)
+	EItemState ItemState;
+
+	// 상호작용 컴포넌트의 OnInteracted 방송을 들었을 때 실행될 콜백 함수
+	UFUNCTION()
+	void OnInteractableTriggered(AActor* Interactor);
+
 	/* API for Player */
 public:
 	// Player가 Item을 주워 자신의 손/ItemSlot/Inventory에 저장하기 위한 함수.
+	// Interact 함수에서 호출되며 캡슐화되어야 하지만 PR이후 리팩토링 고려
 	UFUNCTION(BlueprintCallable, Category = "Item|Action")
 	virtual void PickUpItem(AActor* Picker);
 
@@ -78,8 +104,6 @@ public:
 
 	/* Hovering */
 protected:
-	bool bIsHovering;
-
 	FVector HoverBaseLoc;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Hover")
