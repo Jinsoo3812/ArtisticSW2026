@@ -28,19 +28,10 @@ void UCrafterComponent::BeginPlay()
 
 	if (ABasePlayer* Player = Cast<ABasePlayer>(GetOwner()))
 	{
-		// [서버] Comppnent 초기화 로직 수행
+		// [서버] Component 초기화 로직 수행
 		if (Player->HasAuthority())
 		{
-			if (Player->GetAbilitySystemComponent())
-			{
-				// 이미 ASC가 준비되어 있다면 즉시 부여
-				GrantCrafterAbilities();
-			}
-			else
-			{
-				// 아직 ASC 준비가 안 되었다면, 델리게이트 구독하고 대기
-				Player->OnAbilitySystemInitialized.AddUObject(this, &UCrafterComponent::GrantCrafterAbilities);
-			}
+			Player->OnAbilitySystemInitialized.AddUObject(this, &UCrafterComponent::GrantCrafterAbilities);
 		}
 	}
 }

@@ -30,11 +30,6 @@ public:
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		bool bReplicateEndAbility, bool bWasCancelled) override;
 
-	// 스킬 키 입력이 해제되었을 때 호출될 함수
-	virtual void InputReleased(const FGameplayAbilitySpecHandle Handle,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo) override;
-
 	/* --- Item 투척 관련 --- */
 protected:
 	// 투척 힘 (초기 속도)
@@ -60,7 +55,11 @@ protected:
 	UFUNCTION()
 	void DrawTrajectory();
 
-	// 마우스 좌클릭 이벤트 수신 시 호출되는 함수 (투척 확정)
+	// 마우스 좌클릭 수신 시 호출되는 함수
 	UFUNCTION()
 	void OnConfirmEventReceived(FGameplayEventData Payload);
+
+	// 스킬 키를 뗐을 때 취소 처리할 함수
+	UFUNCTION()
+	void OnInputReleased(float TimeHeld);
 };

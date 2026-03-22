@@ -18,6 +18,7 @@
 #include "Interactable.h"
 #include "CollisionChannels.h"
 #include "BaseGameplayTags.h"
+#include "AbilitySystemBlueprintLibrary.h"
 
 /* --- FItemSlot ---*/
 
@@ -63,6 +64,9 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 void ABasePlayer::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 모든 KeyTag와 InputID를 매핑
+	InitializeInputIDMap();
 
 	// ItemSlot 배열 초기화: TMap 등록 없이 구조체 배열에 순서대로 Add
 	if (ItemInputConfig)
@@ -229,8 +233,18 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 			{
 				if (Action.InputAction && Action.KeyTag.IsValid())
 				{
-					EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::OnAbilityInputPressed, Action.KeyTag);
-					EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, this, &ABasePlayer::OnAbilityInputReleased, Action.KeyTag);
+					// Key.Default.Mouse 태그 혹은 그 하위 태그인지 확인
+					if (Action.KeyTag.MatchesTag(Key_Default_Mouse))
+					{
+						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::OnMouseInputPressed, Action.KeyTag);
+						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, this, &ABasePlayer::OnMouseInputReleased, Action.KeyTag);
+					}
+					else
+					{
+						// 일반 키보드 입력
+						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::OnAbilityInputPressed, Action.KeyTag);
+						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, this, &ABasePlayer::OnAbilityInputReleased, Action.KeyTag);
+					}
 				}
 			}
 		}
@@ -246,19 +260,47 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 				}
 			}
 		}
+	}
+}
 
-		//  마우스 바인딩
-		if (MouseLeftAction)
-		{
-			EnhancedInputComponent->BindAction(MouseLeftAction, ETriggerEvent::Started, this, &ABasePlayer::OnMouseLeftPressed);
-			EnhancedInputComponent->BindAction(MouseLeftAction, ETriggerEvent::Completed, this, &ABasePlayer::OnMouseLeftReleased);
-		}
+void ABasePlayer::InitializeInputIDMap()
+{
+	InputTagToIDMap.Empty();
+	int32 NextID = 0;
 
-		if (MouseRightAction)
+	// 모든 Config를 하나의 배열로 통합
+	TArray<UInputTagConfig*> Configs;
+	if (DefaultInputConfig) Configs.Add(DefaultInputConfig);
+	if (ItemInputConfig) Configs.Add(ItemInputConfig);
+
+	if (UCrafterComponent* CrafterComp = FindComponentByClass<UCrafterComponent>())
+	{
+		if (UInputTagConfig* CrafterConfig = CrafterComp->CrafterInputConfig)
 		{
-			EnhancedInputComponent->BindAction(MouseRightAction, ETriggerEvent::Started, this, &ABasePlayer::OnMouseRightPressed);
+			Configs.Add(CrafterConfig);
 		}
 	}
+
+	// 각 Config를 순회하며 태그에 고유 ID 할당
+	for (UInputTagConfig* Config : Configs)
+	{
+		for (const FKeyInputAction& Action : Config->KeyInputActions)
+		{
+			if (Action.KeyTag.IsValid() && !InputTagToIDMap.Contains(Action.KeyTag))
+			{
+				UE_LOG(LogTemp, Log, TEXT("ABasePlayer::InitializeInputIDMap : Assigning InputID %d to KeyTag: %s"), NextID, *Action.KeyTag.ToString());
+				InputTagToIDMap.Add(Action.KeyTag, NextID++);
+			}
+		}
+	}
+
+
+}
+
+int32 ABasePlayer::GetInputIDFromTag(const FGameplayTag& Tag) const
+{
+	const int32* FoundID = InputTagToIDMap.Find(Tag);
+	return FoundID ? *FoundID : INDEX_NONE;
 }
 
 bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
@@ -308,15 +350,12 @@ void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayA
 	// 해당 슬롯에 이미 부여된 어빌리티가 있다면 교체
 	RemoveAbilityFromSlot(KeyTag);
 
-	// GA Spec 생성
-	FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, this);
+	// 통합 맵에서 이 태그에 할당된 ID를 가져옴
+	int32 AssignedID = GetInputIDFromTag(KeyTag);
 
-	// GA Spec에 KeyTag를 동적 추가
-	Spec.GetDynamicSpecSourceTags().AddTag(KeyTag);
-
-	// ASC에 GA 부여
+	// GA Spec 생성 시 해당 ID 주입
+	FGameplayAbilitySpec Spec(AbilityClass, 1, AssignedID, this);
 	AbilitySystemComponent->GiveAbility(Spec);
-	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::GrantAbilityToSlot : Granted ability %s to KeyTag %s"), *AbilityClass->GetName(), *KeyTag.ToString());
 }
 
 void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
@@ -326,91 +365,74 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 		return;
 	}
 
-	// Spec 배열 순회중 제거 작업 등이 일어나면 안되므로 Scope Lock 사용
-	FScopedAbilityListLock AbilityLock(*AbilitySystemComponent);
+	int32 TargetInputID = GetInputIDFromTag(KeyTag);
+	if (TargetInputID == INDEX_NONE) return;
 
+	// GAS 내부의 부여된 어빌리티 목록을 순회하며 매핑된 InputID를 가진 어빌리티 수집 및 제거
 	TArray<FGameplayAbilitySpecHandle> HandlesToRemove;
-
-	// ASC의 모든 GA Spec 순회
 	for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
 	{
-		// 부여할 때 심어둔 동적 KeyTag를 포함하는지 확인
-		if (Spec.GetDynamicSpecSourceTags().HasTag(KeyTag))
+		// Spec.InputID가 우리가 제거하려는 ID와 일치한다면
+		if (Spec.InputID == TargetInputID)
 		{
 			HandlesToRemove.Add(Spec.Handle);
 		}
 	}
 
-	// 수집된 Handle 일괄 제거
 	for (const FGameplayAbilitySpecHandle& Handle : HandlesToRemove)
 	{
+		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::RemoveAbilityFromSlot : Removing ability with KeyTag: %s"), *KeyTag.ToString());
 		AbilitySystemComponent->ClearAbility(Handle);
 	}
-	
-	// AbilityLock 소멸
 }
 
 void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
-	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed : called with InputTag: %s"), *InputTag.ToString());
-	if (!AbilitySystemComponent || !InputTag.IsValid())
+	if (!AbilitySystemComponent || !InputTag.IsValid()) return;
+
+	int32 InputID = GetInputIDFromTag(InputTag);
+	if (InputID != INDEX_NONE)
 	{
-		return;
+		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed : Input pressed with KeyTag: %s, InputID: %d"), *InputTag.ToString(), InputID);
+		AbilitySystemComponent->AbilityLocalInputPressed(InputID);
 	}
-
-	// Spec 배열 순회중 제거 작업 등이 일어나면 안되므로 Scope Lock 사용
-	FScopedAbilityListLock AbilityLock(*AbilitySystemComponent);
-
-	for (FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
-	{
-		// 입력 처리 시에는 Tag가 정확히 일치하는 GA만 실행
-		if (Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
-		{
-			// 로컬 입력 상태를 눌림(Pressed)으로 수동 변경
-			Spec.InputPressed = true;
-
-			if (Spec.IsActive())
-			{
-				// 이미 실행 중인 GA라면 InputPressed 이벤트 통지
-				AbilitySystemComponent->AbilitySpecInputPressed(Spec);
-			}
-			else
-			{
-				// 실행 중이 아니라면 GA 활성화 시도
-				AbilitySystemComponent->TryActivateAbility(Spec.Handle);
-			}
-		}
-	}
-
-	// AbilityLock 소멸
 }
 
 void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 {
-	if (!AbilitySystemComponent || !InputTag.IsValid())
+	if (!AbilitySystemComponent || !InputTag.IsValid()) return;
+
+	int32 InputID = GetInputIDFromTag(InputTag);
+	if (InputID != INDEX_NONE)
 	{
-		return;
+		AbilitySystemComponent->AbilityLocalInputReleased(InputID);
 	}
+}
 
-	// Spec 배열 순회중 제거 작업 등이 일어나면 안되므로 Scope Lock 사용
-	FScopedAbilityListLock AbilityLock(*AbilitySystemComponent);
+void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
+{
+	if (!AbilitySystemComponent || !InputTag.IsValid()) return;
 
-	for (FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+	// 공통 GAS 입력 해제 처리
+	OnAbilityInputPressed(InputTag);
+
+	// ASC에 GameplayEvent로서 전달
+	FGameplayEventData EventData;
+	EventData.Instigator = this;
+	EventData.Target = nullptr;
+
+	if (!HasAuthority())
 	{
-		if (Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
-		{
-			// 로컬 입력 상태를 뗌(Released)으로 수동 변경
-			Spec.InputPressed = false;
-
-			if (Spec.IsActive())
-			{
-				// 실행 중인 GA에 키를 뗐다는 이벤트 통지
-				AbilitySystemComponent->AbilitySpecInputReleased(Spec);	
-			}
-		}
+		ServerRPC_SendGameplayEvent(InputTag, EventData);
 	}
+}
 
-	// AbilityLock 소멸
+void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
+{
+	// 공통 GAS 입력 해제 처리
+	OnAbilityInputReleased(InputTag);
+
+	// 여기는 Tag에 Released를 붙여야 하는데 귀찮아서 아직 안함
 }
 
 void ABasePlayer::HandlePickUpEvent(const FGameplayEventData* Payload)
@@ -478,7 +500,7 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 		// 기존 아이템은 안보이게 넣음
 		if (IsValid(EquippedItem))
 		{
-			RemoveAbilityFromSlot(Key_Default_MouseLeftClick);
+			RemoveAbilityFromSlot(Key_Default_Mouse_LeftClick);
 			EquippedItem->SetItemState(EItemState::InItemSlot);
 		}
 
@@ -515,7 +537,7 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 
 		if (bShouldGrantAbility)
 		{
-			GrantAbilityToSlot(Key_Default_MouseLeftClick, EquippedItem->GetGrantedAbilityClass());
+			GrantAbilityToSlot(Key_Default_Mouse_LeftClick, EquippedItem->GetGrantedAbilityClass());
 		}
 	}
 }
@@ -540,37 +562,10 @@ void ABasePlayer::RemoveItemFromSlot(FGameplayTag KeyTag)
 	}
 }
 
-void ABasePlayer::OnMouseLeftPressed()
+void ABasePlayer::ServerRPC_SendGameplayEvent_Implementation(FGameplayTag EventTag, FGameplayEventData Payload)
 {
-	if (!AbilitySystemComponent) return;
-
-	// 현재 장착된 Item이 있다면 그 GA 실행
-	OnAbilityInputPressed(Key_Default_MouseLeftClick);
-
-	// ASC에 GameplayEvent로서 전달
-	FGameplayEventData EventData;
-	EventData.Instigator = this;
-	EventData.Target = nullptr;
-
-	// 활성화된 모든 어빌리티 중, 이 태그를 기다리는(WaitGameplayEvent) GA에게 신호.
-	AbilitySystemComponent->HandleGameplayEvent(Event_Input_MouseLeftClick, &EventData);
-}
-
-void ABasePlayer::OnMouseLeftReleased()
-{
-	if (!AbilitySystemComponent) return;
-
-	OnAbilityInputReleased(Key_Default_MouseLeftClick);
-}
-
-void ABasePlayer::OnMouseRightPressed() {
-	// ASC에 GameplayEvent로서 전달
-	FGameplayEventData EventData;
-	EventData.Instigator = this;
-	EventData.Target = nullptr;
-
-	// 활성화된 모든 어빌리티 중, 이 태그를 기다리는(WaitGameplayEvent) GA에게 신호.
-	AbilitySystemComponent->HandleGameplayEvent(Event_Input_MouseRightClick, &EventData);
+	// 서버의 ASC에서 이벤트를 발생시켜 WaitGameplayEvent 태스크를 깨웁니다.
+	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, EventTag, Payload);
 }
 
 void ABasePlayer::OnRep_EquippedItem()

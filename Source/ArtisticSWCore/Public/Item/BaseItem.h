@@ -26,7 +26,7 @@ enum class EItemState : uint8
 UCLASS()
 class ARTISTICSWCORE_API ABaseItem : public AActor
 {
-    GENERATED_BODY()
+	GENERATED_BODY()
 
 public:
 	ABaseItem();
