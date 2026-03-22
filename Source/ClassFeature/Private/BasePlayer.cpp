@@ -460,6 +460,9 @@ void ABasePlayer::UseEquippedItem(bool bDestroy)
 	if (EquippedIndex != INDEX_NONE)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::UseEquippedItem : Item used! Slot index: %d"), EquippedIndex);
+		// 현재는 마우스로 사용하는 Item밖에 없으므로 이렇게 하지만 추후에는 Tag로 분기할 것
+		RemoveItemFromSlot(ItemSlots[EquippedIndex].KeyTag);
+		RemoveAbilityFromSlot(Key_Default_Mouse_LeftClick);
 
 		if (bDestroy) {
 			EquippedItem->Destroy(); // 아이템 액터 제거
@@ -467,8 +470,6 @@ void ABasePlayer::UseEquippedItem(bool bDestroy)
 		
 		// 손에 들고 있는 장착 상태 해제
 		EquippedItem = nullptr;
-
-		RemoveItemFromSlot(ItemSlots[EquippedIndex].KeyTag);
 	}
 }
 
@@ -552,9 +553,7 @@ void ABasePlayer::RemoveItemFromSlot(FGameplayTag KeyTag)
 {
 	// [서버]
 	if (!HasAuthority()) return;
-
 	int32 SlotIndex = ItemSlots.IndexOfByKey(KeyTag);
-
 	if (ItemSlots.IsValidIndex(SlotIndex) && IsValid(ItemSlots[SlotIndex].Item))
 	{
 		ItemSlots[SlotIndex].Item = nullptr;
