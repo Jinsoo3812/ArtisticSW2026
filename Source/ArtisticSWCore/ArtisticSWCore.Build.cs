@@ -16,7 +16,8 @@ public class ArtisticSWCore: ModuleRules
             // 紐⑤뱢 ???대옒?ㅼ쓽 ?ㅻ뜑 ?뚯씪?먯꽌遺???ъ슜??紐⑤뱢 ?섏〈?깆쓣 異붽?
             "GameplayAbilities",
             "GameplayTags",
-            "GameplayTasks"
+            "GameplayTasks",
+            "GASCore"
         });
 
         PublicIncludePaths.AddRange(new string[] {
@@ -24,7 +25,9 @@ public class ArtisticSWCore: ModuleRules
 			"ArtisticSWCore",
 			"ArtisticSWCore/Public",
             "ArtisticSWCore/Public/Item",
-            "ArtisticSWCore/Public/GameFramework"
+            "ArtisticSWCore/Public/GameFramework",
+            "ArtisticSWCore/Public/GameplayAbility",
+            "ArtisticSWCore/Public/AnimNotify",
         });
     }
 }
