@@ -128,7 +128,6 @@ protected:
 
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
-	void Interact();
 
 	// 마우스 왼클릭 시 실행될 함수
 	void OnMouseLeftPressed();
@@ -137,8 +136,12 @@ protected:
 	// 마우스 우클릭 시 실행될 함수
 	void OnMouseRightPressed();
 
-	/* --- 키 입력으로 실행되는 GA 공통 로직 ---  */
+	/* --- 키 입력으로 실행되는 GA ---  */
 public:
+	// Default GA가 어느 Key(Tag)에 매핑될지 설정하는 Map
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
+	TMap<FGameplayTag, TSubclassOf<UGameplayAbility>> DefaultAbilityMap;
+
 	// GA와 그 GA가 어떤 키 입력(Tag)에 반응할지 함께 적용하는 함수.
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
 	void GrantAbilityToSlot(FGameplayTag SlotTag, TSubclassOf<UGameplayAbility> AbilityClass);
@@ -166,7 +169,7 @@ protected:
 
 
 
-	/* --- ItemSlot ---  */
+	/* --- ItemSlot ---  */ 
 public:
 	// 현재 캐릭터가 장착하고 있는 아이템
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_EquippedItem, Category = "Equipment")
@@ -175,7 +178,7 @@ public:
 
 	// EquippedItem의 변경이 복제되었을 때 호출되는 함수
 	UFUNCTION()
-	void OnRep_EquippedItem(ABaseItem* OldItem);
+	void OnRep_EquippedItem();
 
 	// ItemSlot 구조체 배열 (복제)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category = "Item")
@@ -192,8 +195,14 @@ protected:
 	// 슬롯 키를 눌렀을 때 아이템을 장착하는 함수
 	void EquipItemFromSlot(FGameplayTag SlotTag);
 
+	UFUNCTION(Server, Reliable)
+	void Server_EquipItemFromSlot(FGameplayTag KeyTag);
+
 	// 아이템 슬롯에 아이템을 저장하고 장착 상태를 관리
 	bool TryPutItemInSlot(ABaseItem* Item);
+
+	// PickUp 이벤트를 처리하는 함수
+	void HandlePickUpEvent(const FGameplayEventData* Payload);
 
 	/* --- 카메라 ---*/
 public:
@@ -225,11 +234,4 @@ protected:
 	// 카메라 전환 보간 속도
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float CameraInterpSpeed = 10.f;
-
-	/* --- Interact를 위한 Trace 범위 ---*/
-	UPROPERTY(EditDefaultsOnly, Category = "Interaction")
-	float InteractTraceDistance = 500.f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Interaction")
-	float InteractTraceRadius = 50.f;
 };

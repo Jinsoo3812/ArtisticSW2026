@@ -9,8 +9,7 @@ public class ArtisticSWCore: ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
-            "InputCore",
-            "GASCore"
+            "InputCore"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {

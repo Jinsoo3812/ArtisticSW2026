@@ -8,7 +8,8 @@ public class GASCore: ModuleRules
             // 紐⑤뱢 ???대옒?ㅼ쓽 ?뚯뒪 ?뚯씪?먯꽌留??ъ슜??紐⑤뱢 ?섏〈?깆쓣 異붽?
             "Core",
             "CoreUObject",
-            "Engine"
+            "Engine",
+            "ArtisticSWCore"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
