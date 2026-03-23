@@ -9,16 +9,14 @@ public class ArtisticSWCore: ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
-            "InputCore",
-            "GASCore"
+            "InputCore"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
             // 紐⑤뱢 ???대옒?ㅼ쓽 ?ㅻ뜑 ?뚯씪?먯꽌遺???ъ슜??紐⑤뱢 ?섏〈?깆쓣 異붽?
             "GameplayAbilities",
             "GameplayTags",
-            "GameplayTasks",
-            "GASCore"
+            "GameplayTasks"
         });
 
         PublicIncludePaths.AddRange(new string[] {

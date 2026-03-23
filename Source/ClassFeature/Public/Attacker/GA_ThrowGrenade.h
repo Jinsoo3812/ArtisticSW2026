@@ -32,11 +32,6 @@ public:
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		bool bReplicateEndAbility, bool bWasCancelled) override;
 
-	// 스킬 키 입력이 해제되었을 때 호출될 함수 (투척 확정)
-	virtual void InputReleased(const FGameplayAbilitySpecHandle Handle,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo) override;
-
 	/* --- 수류탄 투척 관련 --- */
 protected:
 	// 수류탄 데미지 이펙트 (GE)
@@ -62,7 +57,11 @@ protected:
 	UFUNCTION()
 	void DrawTrajectory();
 
-	// 마우스 우클릭 이벤트 수신 시 호출되는 함수 (조준 취소)
+	// 입력 해제(좌클릭 뗌) 시 호출될 함수
 	UFUNCTION()
-	void OnCancelEventReceived(FGameplayEventData Payload);
+	void OnInputReleased(float TimeHeld);
+
+	// 취소 이벤트(우클릭) 수신 시 호출될 함수
+	UFUNCTION()
+	void OnRightClickCancelled(FGameplayEventData Payload);
 };

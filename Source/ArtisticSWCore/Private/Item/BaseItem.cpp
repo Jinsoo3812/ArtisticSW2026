@@ -4,6 +4,7 @@
 #include "ItemData.h"
 #include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h"
+#include "InteractableComponent.h"
 
 ABaseItem::ABaseItem()
 {
@@ -15,14 +16,12 @@ ABaseItem::ABaseItem()
 	ItemMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ItemMesh"));
 	RootComponent = ItemMesh;
 
-	// Mesh보다 큰 범위에서 Player와의 상호작용을 감지하는 Sphere Collider
-	InteractSphere = CreateDefaultSubobject<USphereComponent>(TEXT("InteractSphere"));
-	InteractSphere->SetupAttachment(RootComponent);
-	InteractSphere->SetSphereRadius(150.f);
-	InteractSphere->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+	InteractableComponent = CreateDefaultSubobject<UInteractableComponent>(TEXT("InteractableComponent"));
+	InteractableComponent->SetupAttachment(RootComponent);
 
 	bReplicates = true;
-	bIsHovering = false;
+	SetReplicateMovement(true);
+	ItemState = EItemState::Dropped_Simulating;
 }
 
 TSubclassOf<UGameplayAbility> ABaseItem::GetGrantedAbilityClass() const
@@ -64,14 +63,15 @@ void ABaseItem::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetim
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	// ItemTag만 동기화하고 각 클라이언트가 Tag를 통해 알아서 처리
 	DOREPLIFETIME(ABaseItem, ItemTag);
+	DOREPLIFETIME(ABaseItem, ItemState);
 }
 
 void ABaseItem::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// [서버]
 	if (HasAuthority()) {
 		InitializeItem();
 
@@ -82,56 +82,55 @@ void ABaseItem::BeginPlay()
 			ItemMesh->OnComponentSleep.AddDynamic(this, &ABaseItem::OnMeshSleep);
 		}
 	}
-}
 
-void ABaseItem::OnRep_ItemTag()
-{
-	InitializeItem();
+	// 상호작용 이벤트 바인딩 (Interact GA 이관 전 임시로 클라도 바인딩)
+	if (InteractableComponent)
+	{
+		InteractableComponent->OnInteracted.AddDynamic(this, &ABaseItem::OnInteractableTriggered);
+	}
 }
 
 void ABaseItem::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Tick 켜졌다는 것은 OnMeshSleep이 호출되었다는 것. 필요하면 조건문으로 처리할 것.
+	if (ItemState == EItemState::Dropped_Hovering)
+	{
+		AddActorLocalRotation(FRotator(0.f, HoverSpeed * DeltaTime, 0.f));
+		float NewZ = HoverBaseLoc.Z + (FMath::Sin(GetGameTimeSinceCreation() * 3.f) * 10.f);
+		SetActorLocation(FVector(GetActorLocation().X, GetActorLocation().Y, NewZ));
+	}
+}
 
-	AddActorLocalRotation(FRotator(0.f, HoverSpeed * DeltaTime, 0.f));
-
-	float NewZ = HoverBaseLoc.Z + (FMath::Sin(GetGameTimeSinceCreation() * 3.f) * 10.f);
-	SetActorLocation(FVector(GetActorLocation().X, GetActorLocation().Y, NewZ));
+void ABaseItem::SetItemState(EItemState NewState)
+{
+	if (HasAuthority() && ItemState != NewState)
+	{
+		ItemState = NewState;
+		OnRep_ItemState(); // 서버 로컬 적용
+	}
 }
 
 void ABaseItem::OnMeshSleep(UPrimitiveComponent* SleepingComponent, FName BoneName)
 {
-
-	// 호버링 중에는 물리 법칙을 무시하고 둥둥 뜨니까
-	if (ItemMesh)
+	// 수면 상태 진입 시 호버링 상태로 전환
+	if (HasAuthority() && ItemState == EItemState::Dropped_Simulating)
 	{
-		ItemMesh->SetSimulatePhysics(false);
+		SetItemState(EItemState::Dropped_Hovering);
 	}
-
-	HoverBaseLoc = GetActorLocation() + FVector(0.f, 0.f, 40.f);
-
-	// 둥둥 뜨기 시작할 때만 Tick 활성화
-	bIsHovering = true;
-	SetActorTickEnabled(true);
 }
 
 void ABaseItem::PickUpItem(AActor* Picker)
 {
 	if (!Picker) return;
 
-	// 호버링 끄기
-	bIsHovering = false;
-	SetActorTickEnabled(false);
-
-	// 각종 물리 옵션 끄기
-	InteractSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	ItemMesh->SetSimulatePhysics(false);
-	ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-	// 플레이어에게 부착
 	AttachToComponent(Cast<ACharacter>(Picker)->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, MyDefinition->AttachmentSocketName);
+}
+
+void ABaseItem::OnInteractableTriggered(AActor* Interactor)
+{
+	// 방송이 들어오면 기존의 PickUpItem을 실행하여 로직 재사용
+	PickUpItem(Interactor);
 }
 
 void ABaseItem::InitializeItem()
@@ -161,28 +160,74 @@ void ABaseItem::InitializeItem()
 
 void ABaseItem::OnThrown(FVector LaunchVelocity, AActor* Thrower)
 {
-	// 플레이어 손에서 분리
 	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
-	// 상호작용(Overlap) 콜리전 복구
-	if (InteractSphere)
-	{
-		InteractSphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	}
+	SetItemState(EItemState::Dropped_Simulating);
 
-	// 메쉬 물리 및 충돌 복구
 	if (ItemMesh)
 	{
-		ItemMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		ItemMesh->SetSimulatePhysics(true);
-
-		// 던진 직후 플레이어와 충돌해서 튕겨나가는 것 방지
 		if (Thrower)
 		{
 			ItemMesh->MoveIgnoreActors.Add(Thrower);
 		}
-
-		// 방향 벡터(속도) 가하기
 		ItemMesh->AddImpulse(LaunchVelocity, NAME_None, true);
+	}
+}
+
+void ABaseItem::OnRep_ItemTag()
+{
+	InitializeItem();
+}
+
+void ABaseItem::OnRep_ItemState()
+{
+	switch (ItemState)
+	{
+	case EItemState::Dropped_Simulating:
+		SetActorHiddenInGame(false);
+		SetActorTickEnabled(false);
+		if (InteractableComponent) InteractableComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		if (ItemMesh)
+		{
+			ItemMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			ItemMesh->SetSimulatePhysics(true);
+		}
+		break;
+
+	case EItemState::Dropped_Hovering:
+		SetActorHiddenInGame(false);
+		SetActorTickEnabled(true);
+		HoverBaseLoc = GetActorLocation() + FVector(0.f, 0.f, 40.f);
+		if (InteractableComponent) InteractableComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		if (ItemMesh)
+		{
+			ItemMesh->SetSimulatePhysics(false);
+			// 주울 수 있어야 하므로 메쉬 콜리전은 켜두되 카메라 채널 등은 무시하도록 프로파일 설정 요망
+			ItemMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		}
+		break;
+
+	case EItemState::Equipped:
+		// 시점 버그 완벽 차단: 콜리전을 NoCollision으로 설정
+		SetActorHiddenInGame(false);
+		SetActorTickEnabled(false);
+		if (InteractableComponent) InteractableComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		if (ItemMesh)
+		{
+			ItemMesh->SetSimulatePhysics(false);
+			ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+		break;
+
+	case EItemState::InItemSlot:
+		SetActorHiddenInGame(true);
+		SetActorTickEnabled(false);
+		if (InteractableComponent) InteractableComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		if (ItemMesh)
+		{
+			ItemMesh->SetSimulatePhysics(false);
+			ItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+		break;
 	}
 }

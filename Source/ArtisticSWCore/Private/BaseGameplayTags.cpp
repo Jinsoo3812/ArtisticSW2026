@@ -48,14 +48,24 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Weapon_Sword, "Item.Weapon.Sword");
 
 /* Mouse Input */
 // GameplayEvent로 사용할 Tag
-UE_DEFINE_GAMEPLAY_TAG(Input_MouseLeftClick, "Input.MouseLeftClick");
-UE_DEFINE_GAMEPLAY_TAG(Input_MouseRightClick, "Input.MouseRightClick");
+UE_DEFINE_GAMEPLAY_TAG(Event_Input_MouseLeftClick, "Event.Input.MouseLeftClick");
+UE_DEFINE_GAMEPLAY_TAG(Event_Input_MouseLeftClick_Released, "Event.Input.MouseLeftClick.Released");
+UE_DEFINE_GAMEPLAY_TAG(Event_Input_MouseRightClick, "Event.Input.MouseRightClick");
 
 
-/* Ability */
-UE_DEFINE_GAMEPLAY_TAG(Ability_Item_Equipped, "Ability.Item.Equipped");
+/* Key Input */
+UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse, "Key.Default.Mouse");
+UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_LeftClick, "Key.Default.Mouse.LeftClick");
+UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_RightClick, "Key.Default.Mouse.RightClick");
+UE_DEFINE_GAMEPLAY_TAG(Key_Default_F, "Key.Default.F");
 
 
 /* Feature Class */
 UE_DEFINE_GAMEPLAY_TAG(Class_Crafter, "Class.Crafter");
 UE_DEFINE_GAMEPLAY_TAG(Class_Attacker, "Class.Attacker");
+
+
+/* Interaction */
+UE_DEFINE_GAMEPLAY_TAG(Interaction, "Interaction");
+UE_DEFINE_GAMEPLAY_TAG(Interaction_PickUp, "Interaction.PickUp");
+UE_DEFINE_GAMEPLAY_TAG(Interaction_Craft, "Interaction.Craft");

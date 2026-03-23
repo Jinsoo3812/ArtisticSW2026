@@ -4,6 +4,7 @@
 #include "ThrowItem.h"
 #include "BasePlayer.h"
 #include "BaseItem.h"
+#include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Kismet/GameplayStatics.h"
 #include "DrawDebugHelpers.h"
@@ -35,20 +36,20 @@ void UThrowItem::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		}
 	}
 
-	// 입력 대기 (좌클릭)
-	UAbilityTask_WaitGameplayEvent* WaitConfirm = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
-		this,
-		Input_MouseLeftClick,
-		nullptr,
-		false,
-		false
-	);
-
-	// 좌클릭 이벤트 대기 (투척 확정)
-	if (WaitConfirm)
+	// 입력 해제 대기
+	UAbilityTask_WaitInputRelease* WaitReleaseTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this);
+	if (WaitReleaseTask)
 	{
-		WaitConfirm->EventReceived.AddDynamic(this, &UThrowItem::OnConfirmEventReceived);
-		WaitConfirm->ReadyForActivation();
+		WaitReleaseTask->OnRelease.AddDynamic(this, &UThrowItem::OnInputReleased);
+		WaitReleaseTask->ReadyForActivation();
+	}
+
+	// 마우스 좌클릭(발사 확정) 대기
+	UAbilityTask_WaitGameplayEvent* WaitClickTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Key_Default_Mouse_LeftClick);
+	if (WaitClickTask)
+	{
+		WaitClickTask->EventReceived.AddDynamic(this, &UThrowItem::OnConfirmEventReceived);
+		WaitClickTask->ReadyForActivation();
 	}
 }
 
@@ -63,8 +64,21 @@ void UThrowItem::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
+void UThrowItem::OnInputReleased(float TimeHeld)
+{
+	UE_LOG(LogTemp, Log, TEXT("UThrowItem: Skill Key Released. Canceling throw."));
+
+	if (IsActive())
+	{
+		CancelAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true);
+	}
+}
+
 void UThrowItem::OnConfirmEventReceived(FGameplayEventData Payload)
 {
+	// 이미 취소되었거나 종료되었다면 무시
+	if (!IsActive()) return;
+
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	if (!Player) return;
 
@@ -75,38 +89,19 @@ void UThrowItem::OnConfirmEventReceived(FGameplayEventData Payload)
 
 		if (IsValid(ItemToThrow))
 		{
-			// 서버와 클라이언트가 오차없이 공유하는 카메라의 현재 방향 벡터
 			FVector LaunchDir = Player->GetBaseAimRotation().Vector();
-			LaunchDir.Z += Upper; // 직구 방지 (살짝 들어올림)
+			LaunchDir.Z += Upper;
 			LaunchDir.Normalize();
 			FVector LaunchVelocity = LaunchDir * ThrowSpeed;
 
-			// 장착 Item을 손 및 해당 ItemSlot에서도 제거
 			Player->UseEquippedItem(false);
-
-			// 손에서 분리
 			ItemToThrow->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-
-			// Item 투척
 			ItemToThrow->OnThrown(LaunchVelocity, Player);
 		}
 	}
 
 	// 투척 후 어빌리티 정상 종료
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
-}
-
-void UThrowItem::InputReleased(const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo,
-	const FGameplayAbilityActivationInfo ActivationInfo)
-{
-	// 키를 떼었을 때 어빌리티를 취소 처리
-	if (ActorInfo != nullptr && ActorInfo->AvatarActor != nullptr)
-	{
-		CancelAbility(Handle, ActorInfo, ActivationInfo, true);
-	}
-
-	Super::InputReleased(Handle, ActorInfo, ActivationInfo);
 }
 
 void UThrowItem::DrawTrajectory()
