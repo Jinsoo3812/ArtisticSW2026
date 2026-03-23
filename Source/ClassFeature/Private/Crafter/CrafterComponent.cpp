@@ -31,7 +31,16 @@ void UCrafterComponent::BeginPlay()
 		// [서버] Component 초기화 로직 수행
 		if (Player->HasAuthority())
 		{
-			Player->OnAbilitySystemInitialized.AddUObject(this, &UCrafterComponent::GrantCrafterAbilities);
+			// 이미 ASC가 초기화되어 있다면 대기하지 않고 즉시 어빌리티 부여 (StandAlone 대응)
+			if (Player->GetAbilitySystemComponent())
+			{
+				GrantCrafterAbilities();
+			}
+			else
+			{
+				// 아직 셋업되지 않았다면 델리게이트 바인딩 (Dedicated Server 대응)
+				Player->OnAbilitySystemInitialized.AddUObject(this, &UCrafterComponent::GrantCrafterAbilities);
+			}
 		}
 	}
 }

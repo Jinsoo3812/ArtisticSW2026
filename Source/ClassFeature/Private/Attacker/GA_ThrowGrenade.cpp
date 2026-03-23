@@ -172,7 +172,7 @@ void UGA_ThrowGrenade::OnRightClickCancelled(FGameplayEventData Payload)
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	if (!Player) return;
 
-	// [서버] Item을 손에서 분리한 후 투척
+	// [서버]
 	if (Player->HasAuthority())
 	{
 		CancelAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true);

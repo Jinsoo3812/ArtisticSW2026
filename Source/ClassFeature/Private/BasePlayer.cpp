@@ -61,12 +61,17 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	DOREPLIFETIME(ABasePlayer, EquippedItem);
 }
 
-void ABasePlayer::BeginPlay()
+void ABasePlayer::PostInitializeComponents()
 {
-	Super::BeginPlay();
+	Super::PostInitializeComponents();
 
 	// 모든 KeyTag와 InputID를 매핑
 	InitializeInputIDMap();
+}
+
+void ABasePlayer::BeginPlay()
+{
+	Super::BeginPlay();
 
 	// ItemSlot 배열 초기화: TMap 등록 없이 구조체 배열에 순서대로 Add
 	if (ItemInputConfig)
@@ -87,9 +92,9 @@ void ABasePlayer::Tick(float DeltaTime)
 
 	// 조준 상태 확인 (GA에서 State_Aiming 태그를 부여했다고 가정)
 	bool bIsAimingState = false;
-	if (AbilitySystemComponent)
+	if (CachedAbilitySystemComponent.Get())
 	{
-		bIsAimingState = AbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
+		bIsAimingState = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
 	}
 
 	// 캐릭터 회전 설정
@@ -119,9 +124,10 @@ void ABasePlayer::PossessedBy(AController* NewController)
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
 
 		// PlayerState로 부터 ASC 포인터 가져와서 캐싱
-		AbilitySystemComponent = PS->GetAbilitySystemComponent();
-		if(AbilitySystemComponent) {
-			AbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
+		CachedAbilitySystemComponent = PS->GetAbilitySystemComponent();
+
+		if(CachedAbilitySystemComponent.IsValid()) {
+			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
 
 			// Map에 등록된 기본 어빌리티 순회 및 슬롯에 부여
 			for (const auto& AbilityPair : DefaultAbilityMap)
@@ -153,9 +159,9 @@ void ABasePlayer::OnRep_PlayerState()
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
 
 		// 클라이언트 측 포인터 갱신
-		AbilitySystemComponent = PS->GetAbilitySystemComponent();
-		if (AbilitySystemComponent) {
-			//AbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
+		CachedAbilitySystemComponent = PS->GetAbilitySystemComponent();
+		if (CachedAbilitySystemComponent.Get()) {
+			//CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
 		}
 	}
 }
@@ -342,7 +348,7 @@ bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
 void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayAbility> AbilityClass)
 {
 	// 서버에서만 실행되며, 유효성 검사 수행
-	if (!HasAuthority() || !AbilitySystemComponent || !AbilityClass || !KeyTag.IsValid())
+	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass || !KeyTag.IsValid())
 	{
 		return;
 	}
@@ -355,12 +361,12 @@ void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayA
 
 	// GA Spec 생성 시 해당 ID 주입
 	FGameplayAbilitySpec Spec(AbilityClass, 1, AssignedID, this);
-	AbilitySystemComponent->GiveAbility(Spec);
+	CachedAbilitySystemComponent->GiveAbility(Spec);
 }
 
 void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 {
-	if (!HasAuthority() || !AbilitySystemComponent || !KeyTag.IsValid())
+	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !KeyTag.IsValid())
 	{
 		return;
 	}
@@ -370,7 +376,7 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 
 	// GAS 내부의 부여된 어빌리티 목록을 순회하며 매핑된 InputID를 가진 어빌리티 수집 및 제거
 	TArray<FGameplayAbilitySpecHandle> HandlesToRemove;
-	for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+	for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent.Get()->GetActivatableAbilities())
 	{
 		// Spec.InputID가 우리가 제거하려는 ID와 일치한다면
 		if (Spec.InputID == TargetInputID)
@@ -382,36 +388,36 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 	for (const FGameplayAbilitySpecHandle& Handle : HandlesToRemove)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::RemoveAbilityFromSlot : Removing ability with KeyTag: %s"), *KeyTag.ToString());
-		AbilitySystemComponent->ClearAbility(Handle);
+		CachedAbilitySystemComponent->ClearAbility(Handle);
 	}
 }
 
 void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
-	if (!AbilitySystemComponent || !InputTag.IsValid()) return;
+	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 
 	int32 InputID = GetInputIDFromTag(InputTag);
 	if (InputID != INDEX_NONE)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed : Input pressed with KeyTag: %s, InputID: %d"), *InputTag.ToString(), InputID);
-		AbilitySystemComponent->AbilityLocalInputPressed(InputID);
+		CachedAbilitySystemComponent->AbilityLocalInputPressed(InputID);
 	}
 }
 
 void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 {
-	if (!AbilitySystemComponent || !InputTag.IsValid()) return;
+	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 
 	int32 InputID = GetInputIDFromTag(InputTag);
 	if (InputID != INDEX_NONE)
 	{
-		AbilitySystemComponent->AbilityLocalInputReleased(InputID);
+		CachedAbilitySystemComponent->AbilityLocalInputReleased(InputID);
 	}
 }
 
 void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 {
-	if (!AbilitySystemComponent || !InputTag.IsValid()) return;
+	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 
 	// 공통 GAS 입력 해제 처리
 	OnAbilityInputPressed(InputTag);
@@ -420,6 +426,8 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 	FGameplayEventData EventData;
 	EventData.Instigator = this;
 	EventData.Target = nullptr;
+
+	CachedAbilitySystemComponent->HandleGameplayEvent(InputTag, &EventData);
 
 	if (!HasAuthority())
 	{
@@ -524,11 +532,11 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 		{
 			bShouldGrantAbility = true;
 		}
-		else if (AbilitySystemComponent)
+		else if (CachedAbilitySystemComponent.Get())
 		{
 			for (const FGameplayTag& Tag : RequiredTags)
 			{
-				if (AbilitySystemComponent->HasMatchingGameplayTag(Tag))
+				if (CachedAbilitySystemComponent->HasMatchingGameplayTag(Tag))
 				{
 					bShouldGrantAbility = true;
 					break;

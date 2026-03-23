@@ -52,6 +52,15 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
+	virtual void PostInitializeComponents() override;
+
+	/* --- GAS 초기화 ---*/
+public:
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return CachedAbilitySystemComponent.Get(); };
+
+protected:
+	UPROPERTY()
+	TWeakObjectPtr<class UAbilitySystemComponent> CachedAbilitySystemComponent;
 
 	/* --- 네트워크 초기화 ---*/
 public:
