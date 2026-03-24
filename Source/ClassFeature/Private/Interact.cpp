@@ -7,6 +7,7 @@
 #include "Camera/CameraComponent.h"
 #include "AbilitySystemComponent.h"
 #include "DrawDebugHelpers.h"
+#include "BasePlayer.h"
 
 void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -24,16 +25,36 @@ void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	// [클라] 로컬에서 Trace 수행 후 서버로 TargetData 전송
 	if (bIsLocallyControlled)
 	{
-		// Trace 수행
-		FHitResult HitResult;
-		PerformLocalTrace(HitResult);
+		TArray<FHitResult> HitResults;
+		ABasePlayer* PlayerAvatar = Cast<ABasePlayer>(ActorInfo->AvatarActor.Get());
 
-		// Trace 결과를 TargetData로 패키징
-		if (HitResult.bBlockingHit)
+		if (PlayerAvatar && PlayerAvatar->PerformInteractTrace(HitResults) && HitResults.Num() > 0)
 		{
-			FGameplayAbilityTargetData_SingleTargetHit* TargetData = new FGameplayAbilityTargetData_SingleTargetHit();
-			TargetData->HitResult = HitResult;
-			TargetDataHandle.Add(TargetData);
+			FVector StartLoc = PlayerAvatar->GetActorLocation();
+			float ClosestDistanceSq = MAX_flt;
+			FHitResult BestHit;
+			bool bFoundValidHit = false;
+
+			// 반환된 모든 히트 결과를 순회하며 최단 거리 객체 판별
+			for (const FHitResult& Hit : HitResults)
+			{
+				
+				float DistSq = FVector::DistSquared(StartLoc, Hit.ImpactPoint);
+				if (DistSq < ClosestDistanceSq)
+				{
+					ClosestDistanceSq = DistSq;
+					BestHit = Hit;
+					bFoundValidHit = true;
+				}
+			}
+
+			// 가장 가까운 객체 하나만 TargetData로 패키징
+			if (bFoundValidHit)
+			{
+				FGameplayAbilityTargetData_SingleTargetHit* TargetData = new FGameplayAbilityTargetData_SingleTargetHit();
+				TargetData->HitResult = BestHit;
+				TargetDataHandle.Add(TargetData);
+			}
 		}
 
 		// 서버로 TargetData 전송

@@ -19,6 +19,8 @@
 #include "CollisionChannels.h"
 #include "BaseGameplayTags.h"
 #include "AbilitySystemBlueprintLibrary.h"
+#include "Components/WidgetComponent.h"
+#include "InteractableComponent.h"
 
 /* --- FItemSlot ---*/
 
@@ -126,6 +128,8 @@ void ABasePlayer::PossessedBy(AController* NewController)
 		// PlayerState로 부터 ASC 포인터 가져와서 캐싱
 		CachedAbilitySystemComponent = PS->GetAbilitySystemComponent();
 
+		// Interact GA에 의해 발생한 Gameplay Event를 처리할 콜백 함수 등록
+		// 현재는 Event 별로 따로 바인딩하지만 더 좋은 방법이 있을까?
 		if(CachedAbilitySystemComponent.IsValid()) {
 			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
 
@@ -194,6 +198,9 @@ void ABasePlayer::PawnClientRestart()
 		{
 			CrafterComp->AddCrafterMappingContext();
 		}
+
+		// Interactable Object를 감지하기 위한 Trace 시작
+		StartInteractionScan();
 	}
 }
 
@@ -581,6 +588,131 @@ void ABasePlayer::OnRep_EquippedItem()
 	if (IsValid(EquippedItem) && EquippedItem->MyDefinition)
 	{
 		EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, EquippedItem->MyDefinition->AttachmentSocketName);
+	}
+}
+
+void ABasePlayer::StartInteractionScan()
+{
+	// [클라/로컬]
+	if (IsLocallyControlled())
+	{
+		// 설정값이 0 이하일 경우를 대비한 방어 코드
+		float ScanInterval = InteractionScanInterval > 0.f ? InteractionScanInterval : 0.1f;
+
+		GetWorldTimerManager().SetTimer(
+			InteractionScanTimerHandle,
+			this,
+			&ABasePlayer::PerformInteractionScan,
+			ScanInterval,
+			true // 반복 실행(Loop)
+		);
+	}
+}
+
+bool ABasePlayer::PerformInteractTrace(TArray<FHitResult>& OutHitResults) const
+{
+	OutHitResults.Empty();
+
+	FVector StartLoc = GetActorLocation();
+	FVector EndLoc = StartLoc + (GetActorForwardVector() * InteractTraceDistance);
+
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this); // 자기 자신 스캔 제외
+
+	TArray<FHitResult> HitResults;
+
+	bool bHit = GetWorld()->SweepMultiByChannel(
+		OutHitResults,
+		StartLoc,
+		EndLoc,
+		FQuat::Identity,
+		ECC_Interactable,
+		FCollisionShape::MakeSphere(InteractTraceRadius),
+		QueryParams
+	);
+
+#if ENABLE_DRAW_DEBUG
+	FColor DrawColor = bHit ? FColor::Green : FColor::Red;
+	FVector TraceCenter = StartLoc + (EndLoc - StartLoc) * 0.5f;
+	float TraceHalfHeight = (EndLoc - StartLoc).Size() * 0.5f;
+	FQuat TraceRotation = FRotationMatrix::MakeFromZ(EndLoc - StartLoc).ToQuat();
+
+	// 타이머 주기에 맞춰 그려지도록 LifeTime을 짧게 설정 (예: 0.1초)
+	DrawDebugCapsule(GetWorld(), TraceCenter, TraceHalfHeight, InteractTraceRadius, TraceRotation, DrawColor, false, 0.1f);
+#endif
+
+	return bHit;
+}
+
+void ABasePlayer::PerformInteractionScan()
+{
+	TArray<FHitResult> HitResults;
+	PerformInteractTrace(HitResults);
+
+	TArray<UWidgetComponent*> CurrentHoveredWidgets;
+
+	// 현재 트레이스에 걸린 모든 위젯 수집
+	for (const FHitResult& Hit : HitResults)
+	{
+		if (AActor* HitActor = Hit.GetActor())
+		{
+			if (UWidgetComponent* WidgetComp = HitActor->FindComponentByClass<UWidgetComponent>())
+			{
+				CurrentHoveredWidgets.AddUnique(WidgetComp);
+			}
+		}
+	}
+
+	// 기존 캐시에는 있지만 현재 스캔되지 않은 위젯은 숨김 처리 후 캐시에서 제거
+	for (int32 i = CachedHoveredWidgets.Num() - 1; i >= 0; --i)
+	{
+		if (CachedHoveredWidgets[i].IsValid())
+		{
+			UWidgetComponent* CachedWidget = CachedHoveredWidgets[i].Get();
+			if (!CurrentHoveredWidgets.Contains(CachedWidget))
+			{
+				CachedWidget->SetHiddenInGame(true);
+				CachedHoveredWidgets.RemoveAt(i);
+			}
+		}
+		else
+		{
+			// 유효하지 않은 포인터 정리
+			CachedHoveredWidgets.RemoveAt(i);
+		}
+	}
+
+	// 새로 스캔된 위젯 표시 및 캐시에 등록
+	for (UWidgetComponent* Widget : CurrentHoveredWidgets)
+	{
+		if (Widget)
+		{
+			bool bAlreadyCached = false;
+			for (const auto& Cached : CachedHoveredWidgets)
+			{
+				if (Cached.Get() == Widget)
+				{
+					bAlreadyCached = true;
+					break;
+				}
+			}
+
+			if (!bAlreadyCached)
+			{
+				Widget->SetHiddenInGame(false);
+				CachedHoveredWidgets.Add(Widget);
+
+				// Object에 맞는 UI 정보 출력
+				if (AActor* OwnerActor = Widget->GetOwner())
+				{
+					if (UInteractableComponent* InteractComp = OwnerActor->FindComponentByClass<UInteractableComponent>())
+					{
+						// 블루프린트 이벤트 호출 및 구조체 데이터 전달
+						InteractComp->OnUpdateInteractUI(InteractComp->InteractUIInfo);
+					}
+				}
+			}
+		}
 	}
 }
 

@@ -5,6 +5,7 @@
 #include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h"
 #include "InteractableComponent.h"
+#include "CollisionChannels.h"
 
 ABaseItem::ABaseItem()
 {
@@ -54,7 +55,7 @@ TArray<FGameplayTag> ABaseItem::GetCanUseAbilityList() const
 {
 	if (MyDefinition)
 	{
-		return MyDefinition->CanUseAbilityList;
+		return MyDefinition->CanUseClassList;
 	}
 	return TArray<FGameplayTag>();
 }
@@ -146,6 +147,7 @@ void ABaseItem::InitializeItem()
 				ItemMesh->SetStaticMesh(LoadedMesh);
 
 				ItemMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+				ItemMesh->SetCollisionResponseToChannel(ECC_Interactable, ECR_Ignore);
 
 				// 메쉬와 충돌체가 준비되었으니 이제 중력과 물리를 킴
 				ItemMesh->SetSimulatePhysics(true);
