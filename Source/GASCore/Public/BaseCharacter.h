@@ -4,8 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
-#include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
+#include "AbilitySystemComponent.h"
 #include "BaseCharacter.generated.h"
 
 UCLASS()
@@ -19,10 +19,10 @@ public:
 	// 공통 AbilitySystemComponent
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AbilitySystem")
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
-	/*
+
 	// 공통 AttributeSet.h에서는 상위 Class 선언 cpp에서 실제 BaseAttributeSet으로 DownCast
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AbilitySystem")
-	TObjectPtr<class UBaseAttributeSet> BasicAttributes;*/
+	TObjectPtr<class UBaseAttributeSet> BasicAttributes;
 
 protected:
 	/*
@@ -33,13 +33,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AbilitySystem")
 	EGameplayEffectReplicationMode ASCReplicationMode = EGameplayEffectReplicationMode::Mixed;
 
-	/*// Character가 공통으로 가지는 Ability (사망, 피격)
+	// Character가 공통으로 가지는 Ability (사망, 피격)
 	// Blueprint에서 GrantAbility함수를 만들어서 사용했을 때, Server에서만 작동하는 문제가 있어서 C++에서 미리 선언해두는 방식으로 변경
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AbilitySystem")
-	TArray<TSubclassOf<UGameplayAbility>> StartingAbilities;*/
+	TArray<TSubclassOf<UGameplayAbility>> StartingAbilities;
 
 protected:
-	/*// Ability를 ASC Owner에 부여하는 함수
+	// Ability를 ASC Owner에 부여하는 함수
 	UFUNCTION(BlueprintCallable, Category = "AbilitySystem")
 	TArray<FGameplayAbilitySpecHandle> GrantAbilities(TArray<TSubclassOf<UGameplayAbility>> AbilitiesToGrant);
 
@@ -57,20 +57,19 @@ protected:
 	
 	// ASC Owner가 죽었을 때 OnDeadTagChanged에서 호출되는 함수
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Damage")
-	void HandleDeath();*/
+	void HandleDeath();
 
 	
-	/*// 죽음과 관련된 Tag가 변경될 때마다 호출되는 함수
+	// 죽음과 관련된 Tag가 변경될 때마다 호출되는 함수
 	// 공통으로 가지는 요소만 구현, 디테일은 override
 	virtual void OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
-	*/
 	
 public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 	
 public:
 	virtual void BeginPlay() override;
-	// virtual void PossessedBy(AController* NewController) override;
+	virtual void PossessedBy(AController* NewController) override;
 	virtual void Tick(float DeltaTime) override;
 	
 	

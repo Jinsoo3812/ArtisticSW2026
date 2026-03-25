@@ -2,38 +2,30 @@
 
 
 #include "BaseEnemy.h"
-#include "Weapon/BaseWeapon.h"
-#include "Weapon/WeaponDataAsset.h"
-#include "Weapon/BaseWeaponComponent.h"
+
+// Core
+#include "ArtisticSWCore/Public/Item/BaseItem.h"
+
+// Player Folder
+#include "BasePlayer.h"
 
 // Enemy Folder
 #include "BaseAIController.h"
 #include "EnemyAttributeSet.h"
 
 // Unreal
-#include "AbilitySystemComponent.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
-#include "Components/CapsuleComponent.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "BehaviorTree/BehaviorTree.h"
+#include "Net/UnrealNetwork.h"
 
 ABaseEnemy::ABaseEnemy()
 {
 	PrimaryActorTick.bCanEverTick = true;
-	// ASC
-	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
-	AbilitySystemComponent->SetIsReplicated(true);
-	ASCReplicationMode = EGameplayEffectReplicationMode::Minimal;
-	AbilitySystemComponent->SetReplicationMode(ASCReplicationMode);
 	
-	// GAS
+	ASCReplicationMode = EGameplayEffectReplicationMode::Minimal;
+	
 	BasicAttributes = CreateDefaultSubobject<UEnemyAttributeSet>(TEXT("BasicAttributeSet"));
-
-	// Component
-	WeaponComponent = CreateDefaultSubobject<UBaseWeaponComponent>(TEXT("WeaponComponent"));
-
-	// State_Dead Tag를 감지하는 Delegate 등록
-	AbilitySystemComponent->RegisterGameplayTagEvent(State_Dead)
-		.AddUObject(this, &ABaseEnemy::OnDeadTagChanged);
+	BehaviorTree = CreateDefaultSubobject<UBehaviorTree>(TEXT("BehaviorTree"));
 }
 
 void ABaseEnemy::BeginPlay()
@@ -42,78 +34,48 @@ void ABaseEnemy::BeginPlay()
 
 	// AIController 변수 Cast해주기
 	AIController = Cast<ABaseAIController>(UAIBlueprintHelperLibrary::GetAIController(this));
-	if (AIController && BehaviorTree)
-	{
-		AIController->RunBehaviorTree(BehaviorTree);
-	}
 
-	// StartingAbilities 능력 등록
-	if (AbilitySystemComponent && HasAuthority())
+	if (HasAuthority() && DefaultWeaponClass && !CurrentWeapon)
 	{
-		AbilitySystemComponent->InitAbilityActorInfo(this, this);
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.Owner = this;
+		SpawnParams.Instigator = this;
+		SpawnParams.SpawnCollisionHandlingOverride =
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-		if (StartingAbilities.Num() > 0)
+		CurrentWeapon = GetWorld()->SpawnActor<ABaseItem>(
+			DefaultWeaponClass,
+			GetActorLocation(),
+			GetActorRotation(),
+			SpawnParams
+		);
+
+		if (CurrentWeapon)
 		{
-			GrantAbilities(StartingAbilities);
-		}
-		// 무기 관리
-		if (WeaponComponent && DefaultWeaponTag.IsValid())
-		{
-			WeaponComponent->InitializeLoadout(DefaultWeaponTag);
+			CurrentWeapon->SetOwner(this);
+			// 여기서 바로 붙이지 않고, GA_Equip에서 PickUpItem(this) 하게 둘 수 있음
 		}
 	}
 }
 
-TArray<FGameplayAbilitySpecHandle> ABaseEnemy::GrantAbilities(TArray<TSubclassOf<UGameplayAbility>> AbilitiesToGrant)
+void ABaseEnemy::OnRep_CurrentWeapon()
 {
-	// 모든 능력을 for loop를 통해서 일일히 Grant 해줌
-	// HasAuthority는 서버에 있는 지 확인하는 함수
-	if (!AbilitySystemComponent || !HasAuthority())
-		// GrantAbilities는 서버에서만 동작하므로, 서버에서 클라로 보내는 것은 충돌 일어날 수 있다. 따라서 서버에서만 동작하도록 한다.
-	{
-		return TArray<FGameplayAbilitySpecHandle>();
-	}
-
-	TArray<FGameplayAbilitySpecHandle> AbilitiesHandles;
 	
-	for (TSubclassOf<UGameplayAbility> Ability : AbilitiesToGrant)
-	{
-		FGameplayAbilitySpecHandle SpecHandle= AbilitySystemComponent->GiveAbility(FGameplayAbilitySpec
-			(Ability, 1, -1, this));
-		
-		AbilitiesHandles.Add(SpecHandle);
-	}
-
-	// SendAbilitiesChangedEvent();
-	return AbilitiesHandles;
 }
 
-void ABaseEnemy::HandleDeath_Implementation()
+void ABaseEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
-	// 사망 시 Death 처리
-	GetMesh()->SetSimulatePhysics(true);
-	GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	GetCharacterMovement()->DisableMovement();
-	// Actor의 뒤와 위로 Impulse를 줘서 날아가도록 한다.
-	FVector Impulse = GetActorForwardVector() * -20000.f;
-	Impulse.Z = 15000.f;
-	GetMesh()->AddImpulseAtLocation(Impulse, GetActorLocation());
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(ABaseEnemy, CurrentWeapon);
 }
 
-void ABaseEnemy::OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
+
+/*
+void ABaseEnemy::Tick(float DeltaTime)
 {
-	if (NewCount > 0)
-	{
-		// 죽었을 때
-		HandleDeath();
-	}
-	else
-	{
-		// 캐릭터가 부활했을 때 처리할 로직을 여기에 작성
-	}
-}
+	Super::Tick(DeltaTime);
 
-
+} */
 
 

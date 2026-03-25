@@ -24,6 +24,4 @@ ABaseWeapon::ABaseWeapon()
 void ABaseWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-
-	DOREPLIFETIME(ABaseWeapon, WeaponTag);
 }

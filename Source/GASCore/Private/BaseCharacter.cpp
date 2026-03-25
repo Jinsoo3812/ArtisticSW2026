@@ -5,10 +5,9 @@
 
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
-/*
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
-#include "BaseGameplayTags.h"*/
+#include "BaseGameplayTags.h"
 
 
 // Sets default values
@@ -59,7 +58,7 @@ void ABaseCharacter::BeginPlay()
 	
 }
 
-/*void ABaseCharacter::PossessedBy(AController* NewController)
+void ABaseCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 
@@ -72,7 +71,7 @@ void ABaseCharacter::BeginPlay()
 			GrantAbilities(StartingAbilities);
 		}
 	}
-}*/
+}
 
 void ABaseCharacter::Tick(float DeltaTime)
 {
@@ -83,11 +82,11 @@ UAbilitySystemComponent* ABaseCharacter::GetAbilitySystemComponent() const
 {
 	return AbilitySystemComponent;
 }
-/*
+
 TArray<FGameplayAbilitySpecHandle> ABaseCharacter::GrantAbilities(
 	TArray<TSubclassOf<UGameplayAbility>> AbilitiesToGrant)
 {
-	// UE_LOG(LogTemp, Warning, TEXT("ABaseCharacter::GrantAbilities"));
+	UE_LOG(LogTemp, Warning, TEXT("ABaseCharacter::GrantAbilities"));
 	// 모든 능력을 for loop를 통해서 일일히 Grant 해줌
 	if (!AbilitySystemComponent || !HasAuthority())// HasAuthority는 서버에 있는 지 확인하는 함수
 		// GrantAbilities는 서버에서만 동작하므로, 서버에서 클라로 보내는 것은 충돌 일어날 수 있다. 따라서 서버에서만 동작하도록 한다.
@@ -162,4 +161,4 @@ void ABaseCharacter::OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewC
 	{
 		// 캐릭터가 부활했을 때 처리할 로직을 여기에 작성
 	}
-}*/
+}

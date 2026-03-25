@@ -1,5 +1,4 @@
-﻿/*
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "GAS/Ability/GA_Equip.h"
@@ -128,4 +127,3 @@ void UGA_Equip::FinishEquip(bool bWasCancelled)
 
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, bWasCancelled);
 }
-*/

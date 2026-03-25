@@ -24,14 +24,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<USkeletalMeshComponent> WeaponMesh;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category = "Weapon")
-	FGameplayTag WeaponTag;;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UWeaponDataAsset> WeaponData;
 
 public:
 	FORCEINLINE USkeletalMeshComponent* GetWeaponMesh() const { return WeaponMesh; }
-	FORCEINLINE const FGameplayTag& GetWeaponTag() const { return WeaponTag; }
+	FORCEINLINE UWeaponDataAsset* GetWeaponData() const { return WeaponData; }
 
-	void SetWeaponTag(FGameplayTag InWeaponTag) { WeaponTag = InWeaponTag; }
+	void SetWeaponData(UWeaponDataAsset* InWeaponData) { WeaponData = InWeaponData; }
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 };

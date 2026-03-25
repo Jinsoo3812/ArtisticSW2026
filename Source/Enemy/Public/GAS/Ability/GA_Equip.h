@@ -1,5 +1,4 @@
-﻿/*
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -48,7 +47,6 @@ protected:
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		const FGameplayEventData* TriggerEventData) override;
 
-	/** TriggerEventData의 OptionalObject 또는 Enemy의 DefaultWeapon에서 장착할 무기를 찾는다 #1#
+	/** TriggerEventData의 OptionalObject 또는 Enemy의 DefaultWeapon에서 장착할 무기를 찾는다 */
 	virtual ABaseItem* ResolveWeaponToEquip(ABaseEnemy* EnemyOwner, const FGameplayEventData* TriggerEventData) const;
 };
-*/
