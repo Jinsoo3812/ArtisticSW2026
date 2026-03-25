@@ -17,7 +17,6 @@
 #include "ItemData.h"
 #include "Interactable.h"
 #include "CollisionChannels.h"
-#include "BaseGameplayTags.h"
 #include "AbilitySystemBlueprintLibrary.h"
 
 /* --- FItemSlot ---*/
@@ -51,13 +50,19 @@ ABasePlayer::ABasePlayer()
 
 	CameraBoom->bDoCollisionTest = false;
 
-	// 1. 캐릭터가 컨트롤러(마우스)의 좌우 회전(Yaw)을 똑같이 따라가도록 설정
-	bUseControllerRotationYaw = true;
+	// 1. 캐릭터가 빠른 속도로 마우스에 몸을 맞추는 강제 회전 끄기!
+	bUseControllerRotationYaw = false;
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationRoll = false;
 
 	// 2. 캐릭터가 이동하는 방향(WASD)으로 몸을 홱 돌려버리는 기능 끄기
 	GetCharacterMovement()->bOrientRotationToMovement = false;
+
+	// 3. 카메라가 보는 방향으로 "스무스하게" 몸을 돌리기 켜기!
+	GetCharacterMovement()->bUseControllerDesiredRotation = true;
+
+	// 4. 얼마나 빠르게 몸을 돌릴지 회전 속도 세팅 (Z값이 좌우 회전 속도입니다. 수치 조절 가능!)
+	GetCharacterMovement()->RotationRate = FRotator(0.0f, 500.0f, 0.0f);
 }
 
 void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -101,7 +106,6 @@ void ABasePlayer::Tick(float DeltaTime)
 	}
 
 	// 캐릭터 회전 설정 모션 매칭 작업을 위해 off
-
 	/*bUseControllerRotationYaw = bIsAimingState;
 	GetCharacterMovement()->bOrientRotationToMovement = !bIsAimingState;*/
 
