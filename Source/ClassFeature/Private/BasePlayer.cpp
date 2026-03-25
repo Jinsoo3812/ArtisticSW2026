@@ -133,8 +133,8 @@ void ABasePlayer::PossessedBy(AController* NewController)
 			}
 		}
 
-		// 부모 클래스에 구현된 어빌리티 부여 함수 호출 (서버에서만)
-		GrantAbilities(StartingAbilities);
+		/*// 부모 클래스에 구현된 어빌리티 부여 함수 호출 (서버에서만)
+		GrantAbilities(StartingAbilities);*/
 	}
 
 	// ASC 초기화 완료 알림 방송
