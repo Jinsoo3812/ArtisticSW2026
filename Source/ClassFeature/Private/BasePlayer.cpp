@@ -50,6 +50,14 @@ ABasePlayer::ABasePlayer()
 	EquippedItem = nullptr;
 
 	CameraBoom->bDoCollisionTest = false;
+
+	// 1. 캐릭터가 컨트롤러(마우스)의 좌우 회전(Yaw)을 똑같이 따라가도록 설정
+	bUseControllerRotationYaw = true;
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationRoll = false;
+
+	// 2. 캐릭터가 이동하는 방향(WASD)으로 몸을 홱 돌려버리는 기능 끄기
+	GetCharacterMovement()->bOrientRotationToMovement = false;
 }
 
 void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -92,9 +100,10 @@ void ABasePlayer::Tick(float DeltaTime)
 		bIsAimingState = AbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
 	}
 
-	// 캐릭터 회전 설정
-	bUseControllerRotationYaw = bIsAimingState;
-	GetCharacterMovement()->bOrientRotationToMovement = !bIsAimingState;
+	// 캐릭터 회전 설정 모션 매칭 작업을 위해 off
+
+	/*bUseControllerRotationYaw = bIsAimingState;
+	GetCharacterMovement()->bOrientRotationToMovement = !bIsAimingState;*/
 
 	// 카메라 보간 로직
 	if (CameraBoom)
