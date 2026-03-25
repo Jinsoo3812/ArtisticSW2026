@@ -28,6 +28,7 @@ public class ArtisticSWCore: ModuleRules
             "ArtisticSWCore/Public/GameFramework",
             "ArtisticSWCore/Public/GameplayAbility",
             "ArtisticSWCore/Public/AnimNotify",
+            "ArtisticSWCore/Public/Interactable"
         });
     }
 }

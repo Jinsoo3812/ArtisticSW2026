@@ -89,6 +89,19 @@ void ABaseItem::BeginPlay()
 	{
 		InteractableComponent->OnInteracted.AddDynamic(this, &ABaseItem::OnInteractableTriggered);
 	}
+
+	if (ItemDataAsset && ItemTag.IsValid())
+	{
+		if (const FItemDefinition* Def = ItemDataAsset->FindItemDefinition(ItemTag))
+		{
+			// InteractComp에 UI 정보 세팅
+			if (UInteractableComponent* InteractComp = FindComponentByClass<UInteractableComponent>())
+			{
+				InteractComp->InteractUIInfo.ObjectName = Def->ItemName;
+				InteractComp->InteractUIInfo.ActionText = Def->HowToInteractText;
+			}
+		}
+	}
 }
 
 void ABaseItem::Tick(float DeltaTime)

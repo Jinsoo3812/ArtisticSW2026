@@ -21,6 +21,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Components/WidgetComponent.h"
 #include "InteractableComponent.h"
+#include "InteractUserWidget.h"
 
 /* --- FItemSlot ---*/
 
@@ -702,13 +703,17 @@ void ABasePlayer::PerformInteractionScan()
 				Widget->SetHiddenInGame(false);
 				CachedHoveredWidgets.Add(Widget);
 
-				// Object에 맞는 UI 정보 출력
 				if (AActor* OwnerActor = Widget->GetOwner())
 				{
+					// InteractableComponent
 					if (UInteractableComponent* InteractComp = OwnerActor->FindComponentByClass<UInteractableComponent>())
 					{
-						// 블루프린트 이벤트 호출 및 구조체 데이터 전달
-						InteractComp->OnUpdateInteractUI(InteractComp->InteractUIInfo);
+						// InteractUserWidget으로 캐스팅
+						if (UInteractUserWidget* InteractWidget = Cast<UInteractUserWidget>(Widget->GetUserWidgetObject()))
+						{
+							// BP에서 구현된 UI 업데이트 함수 호출
+							InteractWidget->OnUpdateInteractUI(InteractComp->InteractUIInfo);
+						}
 					}
 				}
 			}
