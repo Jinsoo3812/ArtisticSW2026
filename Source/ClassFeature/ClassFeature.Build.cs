@@ -32,7 +32,9 @@ public class ClassFeature: ModuleRules
 			"ClassFeature",
 			"ClassFeature/Public",
             "ClassFeature/Public/Crafter",
-            "ClassFeature/Public/Attacker"
-		});
+            "ClassFeature/Public/Attacker",
+            "ClassFeature/Public/Inventory",
+            "ClassFeature/Public/UI"
+        });
     }
 }

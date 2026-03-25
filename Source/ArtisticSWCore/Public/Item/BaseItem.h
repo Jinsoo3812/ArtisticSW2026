@@ -13,6 +13,8 @@ class USphereComponent;
 class UItemData;
 struct FItemDefinition;
 class UInteractableComponent;
+class UTexture2D;
+class UItemData;
 
 UENUM(BlueprintType)
 enum class EItemState : uint8
@@ -115,4 +117,10 @@ protected:
 	// 물리 연산이 꺼진 상태에 발동되어 Hovering 시작
 	UFUNCTION()
 	void OnMeshSleep(UPrimitiveComponent* SleepingComponent, FName BoneName);
+
+public:
+	// DA에서 아이콘 Getter
+	UTexture2D* GetItemIcon() const;
+	// DA에서 이름 Getter
+	FText GetItemNameText() const;
 };

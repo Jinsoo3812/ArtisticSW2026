@@ -9,6 +9,7 @@
 #include "BasePlayer.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
+DECLARE_MULTICAST_DELEGATE(FOnItemSlotsChangedDelegate);
 
 class USpringArmComponent;
 class UCameraComponent;
@@ -16,6 +17,7 @@ class UInputAction;
 struct FInputActionValue;
 class ABaseItem;
 class UInputTagConfig;
+class UInventoryComponent;
 
 // Item Slot 관리 구조체
 USTRUCT(BlueprintType)
@@ -270,4 +272,19 @@ protected:
 	// 카메라 전환 보간 속도
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float CameraInterpSpeed = 10.f;
+
+	/* --- 인벤토리 ---*/
+protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	TObjectPtr<UInventoryComponent> InventoryComponent;
+
+public:
+
+	UFUNCTION()
+	void OnRep_ItemSlots();
+
+	FOnItemSlotsChangedDelegate OnItemSlotsChanged;
+
+	UFUNCTION(BlueprintPure, Category = "Inventory")
+	UInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
 };

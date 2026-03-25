@@ -47,6 +47,11 @@ UE_DEFINE_GAMEPLAY_TAG(Item_TestCrafted, "Item.TestCrafted");
 UE_DEFINE_GAMEPLAY_TAG(Item_Weapon_Grenade, "Item.Weapon.Grenade");
 UE_DEFINE_GAMEPLAY_TAG(Item_Weapon_Sword, "Item.Weapon.Sword");
 
+UE_DEFINE_GAMEPLAY_TAG(Item_Material, "Item.Material");
+UE_DEFINE_GAMEPLAY_TAG(Item_Material_Ore, "Item.Material.Ore");
+UE_DEFINE_GAMEPLAY_TAG(Item_Material_Cloths, "Item.Material.Woods");
+UE_DEFINE_GAMEPLAY_TAG(Item_Material_Woods, "Item.Material.Cloths");
+
 /* Mouse Input */
 
 
