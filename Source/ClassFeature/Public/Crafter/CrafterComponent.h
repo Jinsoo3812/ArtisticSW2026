@@ -14,6 +14,8 @@ struct FInputActionValue;
 class UInputTagConfig;
 class ABasePlayer;
 class ABaseItem;
+struct FGameplayEventData;
+class UUserWidget;
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class CLASSFEATURE_API UCrafterComponent : public UActorComponent
@@ -25,6 +27,9 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+
+	// ASC 초기화 완료 시 호출될 Crafter 시스템 초기화 함수
+	void SetupCrafterSystem();
 
 	/* --- IMC 추가 및 입력 바인딩 --- */
 public:
@@ -47,6 +52,7 @@ public:
 	void AddCrafterMappingContext();
 	void RemoveCrafterMappingContext();
 
+
 	/* --- Player에게 부여하는 GA 관리 --- */
 protected:
 	// 서버에서 어빌리티를 부여할 때 호출합니다.
@@ -55,10 +61,42 @@ protected:
 	// 컴포넌트 제거 시 부여된 어빌리티를 회수합니다.
 	void RemoveCrafterAbilities();
 
-	// Crafter 전용 어빌리티와 고정 Slot Tag의 매핑 정보 (ex. Crafer가 되면 F는 무조건 제작 GA)
+	// Crafter 전용 어빌리티와 고정 Slot Tag의 매핑 정보 (ex. Crafer가 되면 R은 무조건 투척 GA)
 	UPROPERTY(EditDefaultsOnly, Category = "Crafter|Abilities")
 	TMap<FGameplayTag, TSubclassOf<UGameplayAbility>> CrafterAbilities;
 
-	/* --- Crafter가 제작한 item 관리 --- */
+
+	/* --- WorkTable 관리 --- */
 public:
+	
+
+protected:
+	UPROPERTY(EditDefaultsOnly, Category = "Crafter|WorkTable")
+	UInputMappingContext* WorkTableIMC;
+
+	UPROPERTY()
+	TObjectPtr<UUserWidget> ActiveCraftingUI;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Crafter|WorkTable")
+	float WorkTableIMCPriority = 10;
+
+	// 스타포스 진행상태 추적
+	bool bIsPlayingStarforce = false;
+
+	// WorkTable UI를 띄우는 함수
+	void ShowCraftingUI(AActor* TargetActor);
+
+	// 서버가 클라이언트에게 호출하는 RPC (WorkTable UI를 띄우라고)
+	UFUNCTION(Client, Reliable)
+	void ClientRPC_OpenCraftingUI(AActor* TargetActor);
+
+	// WorkTable과의 상호작용 이벤트 처리(서버/클라 분리) 함수
+	void HandleCraftEvent(const FGameplayEventData* Payload);
+
+	// ESC 입력 시 UI를 닫고 입력을 되돌리는 함수
+	void EndCrafting();
+
+	// 스페이스바 입력 시 호출될 함수 (스타포스 플레이)
+	UFUNCTION(BlueprintCallable, Category = "Interaction|Craft")
+	void SpaceBarAction();
 };

@@ -19,6 +19,9 @@
 #include "CollisionChannels.h"
 #include "BaseGameplayTags.h"
 #include "AbilitySystemBlueprintLibrary.h"
+#include "Components/WidgetComponent.h"
+#include "InteractableComponent.h"
+#include "InteractUserWidget.h"
 
 /* --- FItemSlot ---*/
 
@@ -61,12 +64,17 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	DOREPLIFETIME(ABasePlayer, EquippedItem);
 }
 
-void ABasePlayer::BeginPlay()
+void ABasePlayer::PostInitializeComponents()
 {
-	Super::BeginPlay();
+	Super::PostInitializeComponents();
 
 	// 모든 KeyTag와 InputID를 매핑
 	InitializeInputIDMap();
+}
+
+void ABasePlayer::BeginPlay()
+{
+	Super::BeginPlay();
 
 	// ItemSlot 배열 초기화: TMap 등록 없이 구조체 배열에 순서대로 Add
 	if (ItemInputConfig)
@@ -87,9 +95,9 @@ void ABasePlayer::Tick(float DeltaTime)
 
 	// 조준 상태 확인 (GA에서 State_Aiming 태그를 부여했다고 가정)
 	bool bIsAimingState = false;
-	if (AbilitySystemComponent)
+	if (CachedAbilitySystemComponent.Get())
 	{
-		bIsAimingState = AbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
+		bIsAimingState = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
 	}
 
 	// 캐릭터 회전 설정
@@ -119,9 +127,12 @@ void ABasePlayer::PossessedBy(AController* NewController)
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
 
 		// PlayerState로 부터 ASC 포인터 가져와서 캐싱
-		AbilitySystemComponent = PS->GetAbilitySystemComponent();
-		if(AbilitySystemComponent) {
-			AbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
+		CachedAbilitySystemComponent = PS->GetAbilitySystemComponent();
+
+		// Interact GA에 의해 발생한 Gameplay Event를 처리할 콜백 함수 등록
+		// 현재는 Event 별로 따로 바인딩하지만 더 좋은 방법이 있을까?
+		if(CachedAbilitySystemComponent.IsValid()) {
+			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
 
 			// Map에 등록된 기본 어빌리티 순회 및 슬롯에 부여
 			for (const auto& AbilityPair : DefaultAbilityMap)
@@ -153,9 +164,9 @@ void ABasePlayer::OnRep_PlayerState()
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
 
 		// 클라이언트 측 포인터 갱신
-		AbilitySystemComponent = PS->GetAbilitySystemComponent();
-		if (AbilitySystemComponent) {
-			//AbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
+		CachedAbilitySystemComponent = PS->GetAbilitySystemComponent();
+		if (CachedAbilitySystemComponent.Get()) {
+			//CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
 		}
 	}
 }
@@ -188,6 +199,9 @@ void ABasePlayer::PawnClientRestart()
 		{
 			CrafterComp->AddCrafterMappingContext();
 		}
+
+		// Interactable Object를 감지하기 위한 Trace 시작
+		StartInteractionScan();
 	}
 }
 
@@ -342,7 +356,7 @@ bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
 void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayAbility> AbilityClass)
 {
 	// 서버에서만 실행되며, 유효성 검사 수행
-	if (!HasAuthority() || !AbilitySystemComponent || !AbilityClass || !KeyTag.IsValid())
+	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass || !KeyTag.IsValid())
 	{
 		return;
 	}
@@ -355,12 +369,12 @@ void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayA
 
 	// GA Spec 생성 시 해당 ID 주입
 	FGameplayAbilitySpec Spec(AbilityClass, 1, AssignedID, this);
-	AbilitySystemComponent->GiveAbility(Spec);
+	CachedAbilitySystemComponent->GiveAbility(Spec);
 }
 
 void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 {
-	if (!HasAuthority() || !AbilitySystemComponent || !KeyTag.IsValid())
+	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !KeyTag.IsValid())
 	{
 		return;
 	}
@@ -370,7 +384,7 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 
 	// GAS 내부의 부여된 어빌리티 목록을 순회하며 매핑된 InputID를 가진 어빌리티 수집 및 제거
 	TArray<FGameplayAbilitySpecHandle> HandlesToRemove;
-	for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+	for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent.Get()->GetActivatableAbilities())
 	{
 		// Spec.InputID가 우리가 제거하려는 ID와 일치한다면
 		if (Spec.InputID == TargetInputID)
@@ -382,36 +396,36 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 	for (const FGameplayAbilitySpecHandle& Handle : HandlesToRemove)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::RemoveAbilityFromSlot : Removing ability with KeyTag: %s"), *KeyTag.ToString());
-		AbilitySystemComponent->ClearAbility(Handle);
+		CachedAbilitySystemComponent->ClearAbility(Handle);
 	}
 }
 
 void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
-	if (!AbilitySystemComponent || !InputTag.IsValid()) return;
+	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 
 	int32 InputID = GetInputIDFromTag(InputTag);
 	if (InputID != INDEX_NONE)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed : Input pressed with KeyTag: %s, InputID: %d"), *InputTag.ToString(), InputID);
-		AbilitySystemComponent->AbilityLocalInputPressed(InputID);
+		CachedAbilitySystemComponent->AbilityLocalInputPressed(InputID);
 	}
 }
 
 void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 {
-	if (!AbilitySystemComponent || !InputTag.IsValid()) return;
+	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 
 	int32 InputID = GetInputIDFromTag(InputTag);
 	if (InputID != INDEX_NONE)
 	{
-		AbilitySystemComponent->AbilityLocalInputReleased(InputID);
+		CachedAbilitySystemComponent->AbilityLocalInputReleased(InputID);
 	}
 }
 
 void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 {
-	if (!AbilitySystemComponent || !InputTag.IsValid()) return;
+	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 
 	// 공통 GAS 입력 해제 처리
 	OnAbilityInputPressed(InputTag);
@@ -420,6 +434,8 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 	FGameplayEventData EventData;
 	EventData.Instigator = this;
 	EventData.Target = nullptr;
+
+	CachedAbilitySystemComponent->HandleGameplayEvent(InputTag, &EventData);
 
 	if (!HasAuthority())
 	{
@@ -524,11 +540,11 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 		{
 			bShouldGrantAbility = true;
 		}
-		else if (AbilitySystemComponent)
+		else if (CachedAbilitySystemComponent.Get())
 		{
 			for (const FGameplayTag& Tag : RequiredTags)
 			{
-				if (AbilitySystemComponent->HasMatchingGameplayTag(Tag))
+				if (CachedAbilitySystemComponent->HasMatchingGameplayTag(Tag))
 				{
 					bShouldGrantAbility = true;
 					break;
@@ -573,6 +589,135 @@ void ABasePlayer::OnRep_EquippedItem()
 	if (IsValid(EquippedItem) && EquippedItem->MyDefinition)
 	{
 		EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, EquippedItem->MyDefinition->AttachmentSocketName);
+	}
+}
+
+void ABasePlayer::StartInteractionScan()
+{
+	// [클라/로컬]
+	if (IsLocallyControlled())
+	{
+		// 설정값이 0 이하일 경우를 대비한 방어 코드
+		float ScanInterval = InteractionScanInterval > 0.f ? InteractionScanInterval : 0.1f;
+
+		GetWorldTimerManager().SetTimer(
+			InteractionScanTimerHandle,
+			this,
+			&ABasePlayer::PerformInteractionScan,
+			ScanInterval,
+			true // 반복 실행(Loop)
+		);
+	}
+}
+
+bool ABasePlayer::PerformInteractTrace(TArray<FHitResult>& OutHitResults) const
+{
+	OutHitResults.Empty();
+
+	FVector StartLoc = GetActorLocation();
+	FVector EndLoc = StartLoc + (GetActorForwardVector() * InteractTraceDistance);
+
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this); // 자기 자신 스캔 제외
+
+	TArray<FHitResult> HitResults;
+
+	bool bHit = GetWorld()->SweepMultiByChannel(
+		OutHitResults,
+		StartLoc,
+		EndLoc,
+		FQuat::Identity,
+		ECC_Interactable,
+		FCollisionShape::MakeSphere(InteractTraceRadius),
+		QueryParams
+	);
+
+#if ENABLE_DRAW_DEBUG
+	FColor DrawColor = bHit ? FColor::Green : FColor::Red;
+	FVector TraceCenter = StartLoc + (EndLoc - StartLoc) * 0.5f;
+	float TraceHalfHeight = (EndLoc - StartLoc).Size() * 0.5f;
+	FQuat TraceRotation = FRotationMatrix::MakeFromZ(EndLoc - StartLoc).ToQuat();
+
+	// 타이머 주기에 맞춰 그려지도록 LifeTime을 짧게 설정 (예: 0.1초)
+	DrawDebugCapsule(GetWorld(), TraceCenter, TraceHalfHeight, InteractTraceRadius, TraceRotation, DrawColor, false, 0.1f);
+#endif
+
+	return bHit;
+}
+
+void ABasePlayer::PerformInteractionScan()
+{
+	TArray<FHitResult> HitResults;
+	PerformInteractTrace(HitResults);
+
+	TArray<UWidgetComponent*> CurrentHoveredWidgets;
+
+	// 현재 트레이스에 걸린 모든 위젯 수집
+	for (const FHitResult& Hit : HitResults)
+	{
+		if (AActor* HitActor = Hit.GetActor())
+		{
+			if (UWidgetComponent* WidgetComp = HitActor->FindComponentByClass<UWidgetComponent>())
+			{
+				CurrentHoveredWidgets.AddUnique(WidgetComp);
+			}
+		}
+	}
+
+	// 기존 캐시에는 있지만 현재 스캔되지 않은 위젯은 숨김 처리 후 캐시에서 제거
+	for (int32 i = CachedHoveredWidgets.Num() - 1; i >= 0; --i)
+	{
+		if (CachedHoveredWidgets[i].IsValid())
+		{
+			UWidgetComponent* CachedWidget = CachedHoveredWidgets[i].Get();
+			if (!CurrentHoveredWidgets.Contains(CachedWidget))
+			{
+				CachedWidget->SetHiddenInGame(true);
+				CachedHoveredWidgets.RemoveAt(i);
+			}
+		}
+		else
+		{
+			// 유효하지 않은 포인터 정리
+			CachedHoveredWidgets.RemoveAt(i);
+		}
+	}
+
+	// 새로 스캔된 위젯 표시 및 캐시에 등록
+	for (UWidgetComponent* Widget : CurrentHoveredWidgets)
+	{
+		if (Widget)
+		{
+			bool bAlreadyCached = false;
+			for (const auto& Cached : CachedHoveredWidgets)
+			{
+				if (Cached.Get() == Widget)
+				{
+					bAlreadyCached = true;
+					break;
+				}
+			}
+
+			if (!bAlreadyCached)
+			{
+				Widget->SetHiddenInGame(false);
+				CachedHoveredWidgets.Add(Widget);
+
+				if (AActor* OwnerActor = Widget->GetOwner())
+				{
+					// InteractableComponent
+					if (UInteractableComponent* InteractComp = OwnerActor->FindComponentByClass<UInteractableComponent>())
+					{
+						// InteractUserWidget으로 캐스팅
+						if (UInteractUserWidget* InteractWidget = Cast<UInteractUserWidget>(Widget->GetUserWidgetObject()))
+						{
+							// BP에서 구현된 UI 업데이트 함수 호출
+							InteractWidget->OnUpdateInteractUI(InteractComp->InteractUIInfo);
+						}
+					}
+				}
+			}
+		}
 	}
 }
 
