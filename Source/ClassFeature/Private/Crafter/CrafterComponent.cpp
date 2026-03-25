@@ -11,6 +11,9 @@
 #include "InputTagConfig.h"
 #include "BasePlayer.h"
 #include "BaseGameplayTags.h"
+#include "InteractableComponent.h"
+#include "BaseGameplayTags.h"
+#include "StarForceWidget.h"
 
 UCrafterComponent::UCrafterComponent()
 {
@@ -34,14 +37,28 @@ void UCrafterComponent::BeginPlay()
 			// 이미 ASC가 초기화되어 있다면 대기하지 않고 즉시 어빌리티 부여 (StandAlone 대응)
 			if (Player->GetAbilitySystemComponent())
 			{
-				GrantCrafterAbilities();
+				SetupCrafterSystem();
+				UE_LOG(LogTemp, Log, TEXT("CrafterComponent: ASC already initialized, setting up immediately for %s"), *Player->GetName());
 			}
 			else
 			{
-				// 아직 셋업되지 않았다면 델리게이트 바인딩 (Dedicated Server 대응)
-				Player->OnAbilitySystemInitialized.AddUObject(this, &UCrafterComponent::GrantCrafterAbilities);
+				// 아직 ASC가 셋업되지 않았다면 델리게이트 바인딩
+				Player->OnAbilitySystemInitialized.AddUObject(this, &UCrafterComponent::SetupCrafterSystem);
+				UE_LOG(LogTemp, Log, TEXT("CrafterComponent: ASC not initialized yet, binding delegate for %s"), *Player->GetName());
 			}
 		}
+	}
+}
+
+void UCrafterComponent::SetupCrafterSystem()
+{
+	GrantCrafterAbilities();
+
+	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
+	if (Player && Player->GetAbilitySystemComponent())
+	{
+		// 서버 측 이벤트 바인딩
+		Player->GetAbilitySystemComponent()->GenericGameplayEventCallbacks.FindOrAdd(Interaction_Craft).AddUObject(this, &UCrafterComponent::HandleCraftEvent);
 	}
 }
 
@@ -91,14 +108,24 @@ void UCrafterComponent::BindCrafterInput(UEnhancedInputComponent* EnhancedInputC
 
 	if (!EnhancedInputComponent || !CrafterInputConfig || !Player) return;
 
+	// IMC 우선순위로 인해 동일 키입력에 대해 우선 적용
 	for (const FKeyInputAction& Action : CrafterInputConfig->KeyInputActions)
 	{
 		if (Action.InputAction && Action.KeyTag.IsValid())
 		{
-			// Crafter의 IA와 KeyTag 매핑을 Player에게 적용
-			// IMC 우선순위로 인해 동일 키입력에 대해 우선 적용
+			// Crafter GA에 대한 바인딩
 			EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, Player, &ABasePlayer::OnAbilityInputPressed, Action.KeyTag);
 			EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, Player, &ABasePlayer::OnAbilityInputReleased, Action.KeyTag);
+
+			// ESC 키에 대한 별도 바인딩 (Crafting 종료)
+			if (Action.KeyTag == Key_Default_ESC) {
+				EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &UCrafterComponent::EndCrafting);
+			}
+
+			// Space 키에 대한 별도 바인딩 (스타포스 플레이)
+			if (Action.KeyTag == Key_Default_Space) {
+				EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &UCrafterComponent::SpaceBarAction);
+			}
 		}
 	}
 }
@@ -141,3 +168,149 @@ void UCrafterComponent::RemoveCrafterAbilities()
 	}
 }
 
+void UCrafterComponent::HandleCraftEvent(const FGameplayEventData* Payload)
+{
+	if (!Payload || !Payload->Target) return;
+
+	AActor* TargetActor = const_cast<AActor*>(Cast<AActor>(Payload->Target));
+	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
+
+	if (!TargetActor || !Player) return;
+
+	// [서버]에서 이벤트를 받았다면 클라이언트에게 UI를 띄우라고 RPC 전송
+	if (Player->HasAuthority())
+	{
+		ClientRPC_OpenCraftingUI(TargetActor);
+	}
+	// [클라이언트]에서 직접 이벤트를 받았다면 (로컬 예측 등) 바로 UI 띄움
+	else if (Player->IsLocallyControlled())
+	{
+		ShowCraftingUI(TargetActor);
+	}
+}
+
+void UCrafterComponent::ShowCraftingUI(AActor* TargetActor)
+{
+	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
+	if (!Player) return;
+
+	// InteractableComp로부터 UI 클래스 획득
+	UInteractableComponent* InteractComp = TargetActor->FindComponentByClass<UInteractableComponent>();
+	if (!InteractComp || !InteractComp->InteractPopupUIClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UCrafterComponent::HandleCraftEvent : Can't find InteractableComponent or UI Class is not assigned."));
+		return;
+	}
+
+	if (APlayerController* PC = Cast<APlayerController>(Player->GetController())) {
+		// 기존에 띄워진 UI가 있다면 제거하여 중복 생성 방지
+		if (ActiveCraftingUI)
+		{
+			ActiveCraftingUI->RemoveFromParent();
+			ActiveCraftingUI = nullptr;
+		}
+
+		// UI 위젯 생성
+		ActiveCraftingUI = CreateWidget<UUserWidget>(PC, InteractComp->InteractPopupUIClass);
+		if (ActiveCraftingUI)
+		{
+			// 화면에 위젯 추가
+			ActiveCraftingUI->AddToViewport();
+
+			// 상태 태그 부여
+			if (UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent())
+			{
+				ASC->AddLooseGameplayTag(State_Crafting);
+			}
+
+			// 입력 모드 변경 (UI와 게임 뷰포트 모두 입력 허용)
+			FInputModeGameAndUI InputMode;
+			InputMode.SetHideCursorDuringCapture(false);
+			InputMode.SetWidgetToFocus(ActiveCraftingUI->TakeWidget()); // 생성한 위젯으로 포커스 이동
+			PC->SetInputMode(InputMode);
+			PC->bShowMouseCursor = true;
+
+			// WorkTable 전용 IMC 추가 (우선순위 높음)
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+			{
+				if (WorkTableIMC)
+				{
+					Subsystem->AddMappingContext(WorkTableIMC, WorkTableIMCPriority);
+				}
+			}
+		}
+	}
+}
+
+void UCrafterComponent::ClientRPC_OpenCraftingUI_Implementation(AActor* TargetActor)
+{
+	// 서버의 명령을 받아 클라이언트에서 실행됨
+	ShowCraftingUI(TargetActor);
+}
+
+void UCrafterComponent::EndCrafting()
+{
+	UE_LOG(LogTemp, Log, TEXT("UCrafterComponent::EndCrafting called."));
+	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
+	if (!Player) return;
+
+	if (APlayerController* PC = Cast<APlayerController>(Player->GetController()))
+	{
+		// [로컬/클라] UI 제거 및 입력 모드 복구
+		if (PC->IsLocalPlayerController())
+		{
+			// 화면에 띄워진 UI 제거 및 포인터 초기화
+			if (ActiveCraftingUI)
+			{
+				ActiveCraftingUI->RemoveFromParent();
+				ActiveCraftingUI = nullptr;
+			}
+
+			// WorkTableIMC 제거
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+			{
+				if (WorkTableIMC)
+				{
+					Subsystem->RemoveMappingContext(WorkTableIMC);
+				}
+			}
+
+			// 입력 모드를 게임 전용으로 복구 및 마우스 커서 비활성화
+			FInputModeGameOnly InputMode;
+			PC->SetInputMode(InputMode);
+			PC->bShowMouseCursor = false;
+
+			// 상태 태그 해제
+			if (UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent())
+			{
+				ASC->RemoveLooseGameplayTag(State_Crafting);
+			}
+
+			// 스타포스 플레이 플래그 초기화
+			bIsPlayingStarforce = false;
+		}
+	}
+}
+
+void UCrafterComponent::SpaceBarAction()
+{
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetOwner())) {
+		if(Player->IsLocallyControlled()) {
+			// 띄워진 UI가 StarForceWidget인지 캐스팅하여 확인
+			UStarForceWidget* StarForceUI = Cast<UStarForceWidget>(ActiveCraftingUI);
+			if (!StarForceUI) return;
+
+			// 상태에 따라 Start / Stop 분기
+			if (bIsPlayingStarforce)
+			{
+				StarForceUI->StopStarForce();
+				bIsPlayingStarforce = false;
+			}
+			else
+			{
+				StarForceUI->StartStarForce();
+				bIsPlayingStarforce = true;
+			}
+		}
+	}
+}
