@@ -5,6 +5,7 @@
 #include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h"
 #include "InteractableComponent.h"
+#include "CollisionChannels.h"
 
 ABaseItem::ABaseItem()
 {
@@ -54,7 +55,7 @@ TArray<FGameplayTag> ABaseItem::GetCanUseAbilityList() const
 {
 	if (MyDefinition)
 	{
-		return MyDefinition->CanUseAbilityList;
+		return MyDefinition->CanUseClassList;
 	}
 	return TArray<FGameplayTag>();
 }
@@ -87,6 +88,19 @@ void ABaseItem::BeginPlay()
 	if (InteractableComponent)
 	{
 		InteractableComponent->OnInteracted.AddDynamic(this, &ABaseItem::OnInteractableTriggered);
+	}
+
+	if (ItemDataAsset && ItemTag.IsValid())
+	{
+		if (const FItemDefinition* Def = ItemDataAsset->FindItemDefinition(ItemTag))
+		{
+			// InteractComp에 UI 정보 세팅
+			if (UInteractableComponent* InteractComp = FindComponentByClass<UInteractableComponent>())
+			{
+				InteractComp->InteractUIInfo.ObjectName = Def->ItemName;
+				InteractComp->InteractUIInfo.ActionText = Def->HowToInteractText;
+			}
+		}
 	}
 }
 
@@ -146,6 +160,7 @@ void ABaseItem::InitializeItem()
 				ItemMesh->SetStaticMesh(LoadedMesh);
 
 				ItemMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+				ItemMesh->SetCollisionResponseToChannel(ECC_Interactable, ECR_Ignore);
 
 				// 메쉬와 충돌체가 준비되었으니 이제 중력과 물리를 킴
 				ItemMesh->SetSimulatePhysics(true);

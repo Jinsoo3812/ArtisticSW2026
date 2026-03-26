@@ -9,7 +9,8 @@ public class ArtisticSWCore: ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
-            "InputCore"
+            "InputCore",
+            "UMG"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
@@ -27,6 +28,7 @@ public class ArtisticSWCore: ModuleRules
             "ArtisticSWCore/Public/GameFramework",
             "ArtisticSWCore/Public/GameplayAbility",
             "ArtisticSWCore/Public/AnimNotify",
+            "ArtisticSWCore/Public/Interactable"
         });
     }
 }

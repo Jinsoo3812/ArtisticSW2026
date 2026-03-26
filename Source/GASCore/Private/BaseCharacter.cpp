@@ -63,16 +63,20 @@ void ABaseCharacter::BeginPlay()
 {
 	Super::PossessedBy(NewController);
 
-	if (AbilitySystemComponent && HasAuthority())
-	{
-		AbilitySystemComponent->InitAbilityActorInfo(this, this);
+	// 이 곳에서 ASC를 초기화 하면 안됩니다.
+	// Player는 PlayerState로 부터 ASC를 캐시해 와야 하는데 이곳에서 자체적으로 ASC를 초기화하면 안됩니다.
+	// 추가로, PossededBy는 서버에서만 호출되는 함수이므로 권한 검사가 필요하지는 않습니다.
 
-		if (StartingAbilities.Num() > 0)
-		{
-			GrantAbilities(StartingAbilities);
-		}
-	}
-}*/
+	//if (AbilitySystemComponent && HasAuthority())
+	//{
+	//	AbilitySystemComponent->InitAbilityActorInfo(this, this);
+
+	//	if (StartingAbilities.Num() > 0)
+	//	{
+	//		GrantAbilities(StartingAbilities);
+	//	}
+	//}
+}
 
 void ABaseCharacter::Tick(float DeltaTime)
 {

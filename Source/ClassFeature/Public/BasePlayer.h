@@ -43,7 +43,7 @@ struct FItemSlot
 /**
  * 
  */
-UCLASS()
+UCLASS(Config = Game)
 class CLASSFEATURE_API ABasePlayer : public ABaseCharacter
 {
 	GENERATED_BODY()
@@ -52,6 +52,15 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
+	virtual void PostInitializeComponents() override;
+
+	/* --- GAS 초기화 ---*/
+public:
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return CachedAbilitySystemComponent.Get(); };
+
+protected:
+	UPROPERTY()
+	TWeakObjectPtr<class UAbilitySystemComponent> CachedAbilitySystemComponent;
 
 	/* --- 네트워크 초기화 ---*/
 public:
@@ -200,6 +209,36 @@ protected:
 
 	// 공용 Interact GA가 보내준 PickUp 이벤트를 처리하는 함수
 	void HandlePickUpEvent(const FGameplayEventData* Payload);
+
+
+	/* --- Interactable Object Trace ---*/
+public:
+	// Interactable Object 감지를 위한 범위 함수 (범위 내의 모든 HitResult를 반환하므로 알아서 걸러 쓸 것)
+	bool PerformInteractTrace(TArray<FHitResult>& OutHitResults) const;
+
+protected:
+	// DefaultGame.ini에서 제어할 스캔 주기 (단위: 초)
+	UPROPERTY(Config, EditAnywhere, Category = "Interaction")
+	float InteractionScanInterval = 0.1f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Interaction")
+	float InteractTraceDistance = 100.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Interaction")
+	float InteractTraceRadius = 30.0f;
+
+	// 스캔 타이머 핸들
+	FTimerHandle InteractionScanTimerHandle;
+
+	// 현재 화면에 띄운 Interactable Obj의 WidgetComp들을 캐시 (WeakPtr)
+	TArray<TWeakObjectPtr<class UWidgetComponent>> CachedHoveredWidgets;
+
+	// 스캔 시작 함수
+	void StartInteractionScan();
+
+	// 타이머에 의해 반복 호출될 실제 UI 갱신 로직
+	void PerformInteractionScan();
+
 
 	/* --- 카메라 ---*/
 public:
