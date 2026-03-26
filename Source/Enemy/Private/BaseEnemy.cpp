@@ -78,6 +78,9 @@ TArray<FGameplayAbilitySpecHandle> ABaseEnemy::GrantAbilities(TArray<TSubclassOf
 	
 	for (TSubclassOf<UGameplayAbility> Ability : AbilitiesToGrant)
 	{
+		if (!Ability)
+			continue;
+		
 		FGameplayAbilitySpecHandle SpecHandle= AbilitySystemComponent->GiveAbility(FGameplayAbilitySpec
 			(Ability, 1, -1, this));
 		

@@ -85,10 +85,9 @@ void UBaseWeaponComponent::InitializeLoadout(FGameplayTag InWeaponTag)
 	// CurrentWeapon 변수의 Owner와 WeaponData를 Set해주기
 	CurrentWeaponTag = InWeaponTag;
 	CurrentWeapon->SetOwner(OwnerEnemy);
-	CurrentWeapon->SetWeaponTag(CurrentWeaponTag);
 	// 무기의 초기 상태 지정
 	WeaponState = EEnemyWeaponState::Holstered;
-	AttachWeaponToBack();
+	EquipCurrentWeapon();
 }
 
 void UBaseWeaponComponent::EquipCurrentWeapon()

@@ -86,6 +86,7 @@ protected:
 	virtual void OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 public:
 	// Getters
+	// 일단 개발 중이므로, check를 넣었지만, 일부 BeginPlay 이전에는 nullptr 날 수 있음
 	FORCEINLINE TObjectPtr<ABaseAIController> GetAIController() const { check(AIController) return AIController; }
 	FORCEINLINE TObjectPtr<UBehaviorTree> GetBehaviorTree() const { check(BehaviorTree) return BehaviorTree; }
 	FORCEINLINE FGameplayTag GetDefaultWeaponTag() const { return DefaultWeaponTag; }
