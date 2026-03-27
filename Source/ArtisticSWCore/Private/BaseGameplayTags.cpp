@@ -47,6 +47,9 @@ UE_DEFINE_GAMEPLAY_TAG(Item_TestCrafted, "Item.TestCrafted");
 UE_DEFINE_GAMEPLAY_TAG(Item_Weapon_Grenade, "Item.Weapon.Grenade");
 UE_DEFINE_GAMEPLAY_TAG(Item_Weapon_Sword, "Item.Weapon.Sword");
 
+// Enemy
+UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Sword, "Item.EnemyWeapon.Sword");
+
 /* Mouse Input */
 
 
