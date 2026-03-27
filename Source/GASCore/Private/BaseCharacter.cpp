@@ -59,6 +59,16 @@ void ABaseCharacter::BeginPlay()
 	
 }
 
+void ABaseCharacter::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+}
+
+UAbilitySystemComponent* ABaseCharacter::GetAbilitySystemComponent() const
+{
+	return AbilitySystemComponent;
+}
+
 /*void ABaseCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
@@ -78,15 +88,7 @@ void ABaseCharacter::BeginPlay()
 	//}
 }
 
-void ABaseCharacter::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-}
 
-UAbilitySystemComponent* ABaseCharacter::GetAbilitySystemComponent() const
-{
-	return AbilitySystemComponent;
-}
 /*
 TArray<FGameplayAbilitySpecHandle> ABaseCharacter::GrantAbilities(
 	TArray<TSubclassOf<UGameplayAbility>> AbilitiesToGrant)
