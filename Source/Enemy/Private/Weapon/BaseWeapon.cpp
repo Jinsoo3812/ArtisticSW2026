@@ -171,7 +171,8 @@ void ABaseWeapon::ApplyEffectToTarget(AActor* TargetActor) const
 	{
 		return;
 	}
-
+	
+	// UE_LOG(LogTemp, Log, TEXT("Applying effect to target: %s"), *TargetActor->GetName());
 	TargetASC->ApplyGameplayEffectSpecToSelf(*CachedEffectSpecHandle.Data.Get());
 }
 
