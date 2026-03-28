@@ -10,7 +10,7 @@
  * 
  */
 UCLASS()
-class GASCORE_API UInteract : public UBaseGameplayAbility
+class CLASSFEATURE_API UInteract : public UBaseGameplayAbility
 {
 	GENERATED_BODY()
 	
@@ -23,11 +23,11 @@ protected:
 	// 로컬에서 Trace 수행
 	void PerformLocalTrace(FHitResult& OutHitResult);
 
-	// 서버에서 클라이언트의 TargetData를 수신했을 때 호출되는 콜백
+	// [서버]에서 클라이언트의 TargetData를 수신했을 때 호출되는 콜백
 	UFUNCTION()
 	void OnTargetDataReadyCallback(const FGameplayAbilityTargetDataHandle& InData, FGameplayTag ApplicationTag);
 
-	// 수신 및 검증이 완료된 후 실제 Interact 수행 함수
+	// [서버] 수신 및 검증이 완료된 후 실제 Interact 수행 함수
 	void ProcessInteract(const FGameplayAbilityTargetDataHandle& InData);
 
 	// 상호작용 광선(Sweep) 길이

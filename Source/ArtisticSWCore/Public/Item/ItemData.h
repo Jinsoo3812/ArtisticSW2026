@@ -19,6 +19,15 @@ struct FItemDefinition
 	* TSubclassOf : A 클래스가 B 클래스를 TSubclassOf로 들고 있다면, A 클래스 객체가 로드될 때 B도 같이 로드된다.
 	* TSoftObjectPtr : A 클래스가 B 클래스를 TSoftClassPtr로 들고 있다면, B는 실제로 사용될 때 로드된다. (초기 로딩 감소)
 	*/
+
+	// 아이템의 이름 (For UI)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
+	FText ItemName;
+
+	// 아이템의 사용법 (For UI)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
+	FText HowToInteractText;
+
 	// 아이템의 외형
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	TSoftObjectPtr<UStaticMesh> ItemMesh;
@@ -35,7 +44,7 @@ struct FItemDefinition
 	FName AttachmentSocketName = FName("GripPoint");
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
-	TArray<FGameplayTag> CanUseAbilityList;
+	TArray<FGameplayTag> CanUseClassList;
 
 	// 필요하다면 아이템 이름, 아이콘(UI용 UTexture2D) 등도 여기에 추가
 };

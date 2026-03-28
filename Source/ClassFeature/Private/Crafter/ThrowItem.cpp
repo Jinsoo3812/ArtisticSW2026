@@ -97,11 +97,11 @@ void UThrowItem::OnConfirmEventReceived(FGameplayEventData Payload)
 			Player->UseEquippedItem(false);
 			ItemToThrow->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 			ItemToThrow->OnThrown(LaunchVelocity, Player);
+
+			// 투척 후 어빌리티 정상 종료
+			EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 		}
 	}
-
-	// 투척 후 어빌리티 정상 종료
-	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
 void UThrowItem::DrawTrajectory()

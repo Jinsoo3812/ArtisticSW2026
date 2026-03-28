@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+ï»¿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "BasePlayer.h"
@@ -17,7 +17,11 @@
 #include "ItemData.h"
 #include "Interactable.h"
 #include "CollisionChannels.h"
+#include "BaseGameplayTags.h"
 #include "AbilitySystemBlueprintLibrary.h"
+#include "Components/WidgetComponent.h"
+#include "InteractableComponent.h"
+#include "InteractUserWidget.h"
 
 /* --- FItemSlot ---*/
 
@@ -34,49 +38,45 @@ bool FItemSlot::operator==(const ABaseItem* OtherItem) const { return Item.Get()
 
 ABasePlayer::ABasePlayer()
 {
-	// Ä«¸Ş¶ó ºÕ(SpringArm) »ı¼º ¹× ¼³Á¤
+	// ì¹´ë©”ë¼ ë¶(SpringArm) ìƒì„± ë° ì„¤ì •
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->TargetArmLength = 400.0f;
 	CameraBoom->bUsePawnControlRotation = true;
 
-	// Follow Ä«¸Ş¶ó »ı¼º ¹× ¼³Á¤
+	// Follow ì¹´ë©”ë¼ ìƒì„± ë° ì„¤ì •
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
-	// ¾ÆÀÌÅÛ Æ÷ÀÎÅÍ ÃÊ±âÈ­
+	// ì•„ì´í…œ í¬ì¸í„° ì´ˆê¸°í™”
 	EquippedItem = nullptr;
 
 	CameraBoom->bDoCollisionTest = false;
-
-	// 2. Ä³¸¯ÅÍ°¡ ÀÌµ¿ÇÏ´Â ¹æÇâ(WASD)À¸·Î ¸öÀ» È´ µ¹·Á¹ö¸®´Â ±â´É ²ô±â
-	GetCharacterMovement()->bOrientRotationToMovement = false;
-
-	// 3. Ä«¸Ş¶ó°¡ º¸´Â ¹æÇâÀ¸·Î "½º¹«½ºÇÏ°Ô" ¸öÀ» µ¹¸®±â ÄÑ±â!
-	GetCharacterMovement()->bUseControllerDesiredRotation = true;
-
-	// 4. ¾ó¸¶³ª ºü¸£°Ô ¸öÀ» µ¹¸±Áö È¸Àü ¼Óµµ ¼¼ÆÃ (Z°ªÀÌ ÁÂ¿ì È¸Àü ¼ÓµµÀÔ´Ï´Ù. ¼öÄ¡ Á¶Àı °¡´É!)
-	GetCharacterMovement()->RotationRate = FRotator(0.0f, 500.0f, 0.0f);
 }
 
 void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	// ¹è¿­°ú ÀåÂø ¾ÆÀÌÅÛ Æ÷ÀÎÅÍ¸¦ Å¬¶óÀÌ¾ğÆ®·Î º¹Á¦
+	// ë°°ì—´ê³¼ ì¥ì°© ì•„ì´í…œ í¬ì¸í„°ë¥¼ í´ë¼ì´ì–¸íŠ¸ë¡œ ë³µì œ
 	DOREPLIFETIME(ABasePlayer, ItemSlots);
 	DOREPLIFETIME(ABasePlayer, EquippedItem);
+}
+
+void ABasePlayer::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+
+	// ëª¨ë“  KeyTagì™€ InputIDë¥¼ ë§¤í•‘
+	InitializeInputIDMap();
 }
 
 void ABasePlayer::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// ¸ğµç KeyTag¿Í InputID¸¦ ¸ÅÇÎ
-	InitializeInputIDMap();
-
-	// ItemSlot ¹è¿­ ÃÊ±âÈ­: TMap µî·Ï ¾øÀÌ ±¸Á¶Ã¼ ¹è¿­¿¡ ¼ø¼­´ë·Î Add
+	// ItemSlot ë°°ì—´ ì´ˆê¸°í™”: TMap ë“±ë¡ ì—†ì´ êµ¬ì¡°ì²´ ë°°ì—´ì— ìˆœì„œëŒ€ë¡œ Add
 	if (ItemInputConfig)
 	{
 		for (const FKeyInputAction& Action : ItemInputConfig->KeyInputActions)
@@ -93,18 +93,18 @@ void ABasePlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Á¶ÁØ »óÅÂ È®ÀÎ (GA¿¡¼­ State_Aiming ÅÂ±×¸¦ ºÎ¿©Çß´Ù°í °¡Á¤)
+	// ì¡°ì¤€ ìƒíƒœ í™•ì¸ (GAì—ì„œ State_Aiming íƒœê·¸ë¥¼ ë¶€ì—¬í–ˆë‹¤ê³  ê°€ì •)
 	bool bIsAimingState = false;
-	if (AbilitySystemComponent)
+	if (CachedAbilitySystemComponent.Get())
 	{
-		bIsAimingState = AbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
+		bIsAimingState = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
 	}
 
-	// Ä³¸¯ÅÍ È¸Àü ¼³Á¤ ¸ğ¼Ç ¸ÅÄª ÀÛ¾÷À» À§ÇØ off
-	/*bUseControllerRotationYaw = bIsAimingState;
-	GetCharacterMovement()->bOrientRotationToMovement = !bIsAimingState;*/
+	// ìºë¦­í„° íšŒì „ ì„¤ì •
+	bUseControllerRotationYaw = bIsAimingState;
+	GetCharacterMovement()->bOrientRotationToMovement = !bIsAimingState;
 
-	// Ä«¸Ş¶ó º¸°£ ·ÎÁ÷
+	// ì¹´ë©”ë¼ ë³´ê°„ ë¡œì§
 	if (CameraBoom)
 	{
 		float TargetArmLength = bIsAimingState ? AimingTargetArmLength : DefaultTargetArmLength;
@@ -119,19 +119,22 @@ void ABasePlayer::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 
-	// ¼­¹ö Ãø ASC ÃÊ±âÈ­ (InitAbilityActorInfo)
+	// ì„œë²„ ì¸¡ ASC ì´ˆê¸°í™” (InitAbilityActorInfo)
 	ABasePlayerState* PS = GetPlayerState<ABasePlayerState>();
 	if (PS)
 	{
-		// Owner´Â PlayerState, Avatar´Â ÀÌ Character °´Ã¼·Î ¼³Á¤
+		// OwnerëŠ” PlayerState, AvatarëŠ” ì´ Character ê°ì²´ë¡œ ì„¤ì •
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
 
-		// PlayerState·Î ºÎÅÍ ASC Æ÷ÀÎÅÍ °¡Á®¿Í¼­ Ä³½Ì
-		AbilitySystemComponent = PS->GetAbilitySystemComponent();
-		if(AbilitySystemComponent) {
-			AbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
+		// PlayerStateë¡œ ë¶€í„° ASC í¬ì¸í„° ê°€ì ¸ì™€ì„œ ìºì‹±
+		CachedAbilitySystemComponent = PS->GetAbilitySystemComponent();
 
-			// Map¿¡ µî·ÏµÈ ±âº» ¾îºô¸®Æ¼ ¼øÈ¸ ¹× ½½·Ô¿¡ ºÎ¿©
+		// Interact GAì— ì˜í•´ ë°œìƒí•œ Gameplay Eventë¥¼ ì²˜ë¦¬í•  ì½œë°± í•¨ìˆ˜ ë“±ë¡
+		// í˜„ì¬ëŠ” Event ë³„ë¡œ ë”°ë¡œ ë°”ì¸ë”©í•˜ì§€ë§Œ ë” ì¢‹ì€ ë°©ë²•ì´ ìˆì„ê¹Œ?
+		if(CachedAbilitySystemComponent.IsValid()) {
+			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
+
+			// Mapì— ë“±ë¡ëœ ê¸°ë³¸ ì–´ë¹Œë¦¬í‹° ìˆœíšŒ ë° ìŠ¬ë¡¯ì— ë¶€ì—¬
 			for (const auto& AbilityPair : DefaultAbilityMap)
 			{
 				if (AbilityPair.Value)
@@ -141,11 +144,11 @@ void ABasePlayer::PossessedBy(AController* NewController)
 			}
 		}
 
-		// ºÎ¸ğ Å¬·¡½º¿¡ ±¸ÇöµÈ ¾îºô¸®Æ¼ ºÎ¿© ÇÔ¼ö È£Ãâ (¼­¹ö¿¡¼­¸¸)
-		GrantAbilities(StartingAbilities);
+		/*// ë¶€ëª¨ í´ë˜ìŠ¤ì— êµ¬í˜„ëœ ì–´ë¹Œë¦¬í‹° ë¶€ì—¬ í•¨ìˆ˜ í˜¸ì¶œ (ì„œë²„ì—ì„œë§Œ)
+		GrantAbilities(StartingAbilities);*/
 	}
 
-	// ASC ÃÊ±âÈ­ ¿Ï·á ¾Ë¸² ¹æ¼Û
+	// ASC ì´ˆê¸°í™” ì™„ë£Œ ì•Œë¦¼ ë°©ì†¡
 	OnAbilitySystemInitialized.Broadcast();
 }
 
@@ -153,17 +156,17 @@ void ABasePlayer::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
 
-	// Å¬¶óÀÌ¾ğÆ® Ãø ASC ÃÊ±âÈ­ (PlayerState°¡ Å¬¶ó·Î º¹Á¦µÇ¾úÀ½À» º¸ÀåÇÏ´Â Å¸ÀÌ¹Ö)
+	// í´ë¼ì´ì–¸íŠ¸ ì¸¡ ASC ì´ˆê¸°í™” (PlayerStateê°€ í´ë¼ë¡œ ë³µì œë˜ì—ˆìŒì„ ë³´ì¥í•˜ëŠ” íƒ€ì´ë°)
 	ABasePlayerState* PS = GetPlayerState<ABasePlayerState>();
 	if (PS)
 	{
-		// Å¬¶óÀÌ¾ğÆ®¿¡¼­µµ Owner¿Í Avatar¸¦ ¿¬°áÇØÁÜ
+		// í´ë¼ì´ì–¸íŠ¸ì—ì„œë„ Ownerì™€ Avatarë¥¼ ì—°ê²°í•´ì¤Œ
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
 
-		// Å¬¶óÀÌ¾ğÆ® Ãø Æ÷ÀÎÅÍ °»½Å
-		AbilitySystemComponent = PS->GetAbilitySystemComponent();
-		if (AbilitySystemComponent) {
-			//AbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
+		// í´ë¼ì´ì–¸íŠ¸ ì¸¡ í¬ì¸í„° ê°±ì‹ 
+		CachedAbilitySystemComponent = PS->GetAbilitySystemComponent();
+		if (CachedAbilitySystemComponent.Get()) {
+			//CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
 		}
 	}
 }
@@ -172,30 +175,33 @@ void ABasePlayer::PawnClientRestart()
 {
 	Super::PawnClientRestart();
 
-	// ÇöÀç ÆùÀ» Á¶Á¾ÇÏ´Â ÄÁÆ®·Ñ·¯
+	// í˜„ì¬ í°ì„ ì¡°ì¢…í•˜ëŠ” ì»¨íŠ¸ë¡¤ëŸ¬
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
-		// BasePlayerÀÇ Item IMC
+		// BasePlayerì˜ Item IMC
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
 		{
-			// DefaultIMC µî·Ï
+			// DefaultIMC ë“±ë¡
 			if(DefaultIMC)
 			{
 				Subsystem->AddMappingContext(DefaultIMC, DefaultIMCPriority);
 			}
 
-			// ItemIMC µî·Ï
+			// ItemIMC ë“±ë¡
 			if (ItemIMC)
 			{
 				Subsystem->AddMappingContext(ItemIMC, ItemIMCPriority);
 			}
 		}
 
-		// Crafter Àü¿ë IMC
+		// Crafter ì „ìš© IMC
 		if (UCrafterComponent* CrafterComp = FindComponentByClass<UCrafterComponent>())
 		{
 			CrafterComp->AddCrafterMappingContext();
 		}
+
+		// Interactable Objectë¥¼ ê°ì§€í•˜ê¸° ìœ„í•œ Trace ì‹œì‘
+		StartInteractionScan();
 	}
 }
 
@@ -205,7 +211,7 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
-		// CrafterComponent°¡ ÀÖ´Ù¸é Crafter Àü¿ë ÀÔ·Â ¹ÙÀÎµù
+		// CrafterComponentê°€ ìˆë‹¤ë©´ Crafter ì „ìš© ì…ë ¥ ë°”ì¸ë”©
 		if (UCrafterComponent* CrafterComp = FindComponentByClass<UCrafterComponent>())
 		{
 			CrafterComp->BindCrafterInput(EnhancedInputComponent);
@@ -234,14 +240,14 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 			EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &ABasePlayer::Look);
 		}
 
-		// Default ÀÔ·Â ¹ÙÀÎµù
+		// Default ì…ë ¥ ë°”ì¸ë”©
 		if (DefaultInputConfig)
 		{
 			for (const FKeyInputAction& Action : DefaultInputConfig->KeyInputActions)
 			{
 				if (Action.InputAction && Action.KeyTag.IsValid())
 				{
-					// Key.Default.Mouse ÅÂ±× È¤Àº ±× ÇÏÀ§ ÅÂ±×ÀÎÁö È®ÀÎ
+					// Key.Default.Mouse íƒœê·¸ í˜¹ì€ ê·¸ í•˜ìœ„ íƒœê·¸ì¸ì§€ í™•ì¸
 					if (Action.KeyTag.MatchesTag(Key_Default_Mouse))
 					{
 						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::OnMouseInputPressed, Action.KeyTag);
@@ -249,7 +255,7 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 					}
 					else
 					{
-						// ÀÏ¹İ Å°º¸µå ÀÔ·Â
+						// ì¼ë°˜ í‚¤ë³´ë“œ ì…ë ¥
 						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::OnAbilityInputPressed, Action.KeyTag);
 						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, this, &ABasePlayer::OnAbilityInputReleased, Action.KeyTag);
 					}
@@ -257,7 +263,7 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 			}
 		}
 
-		// ItemSlot ÀÔ·Â ¹ÙÀÎµù
+		// ItemSlot ì…ë ¥ ë°”ì¸ë”©
 		if (ItemInputConfig)
 		{
 			for (const FKeyInputAction& Action : ItemInputConfig->KeyInputActions)
@@ -276,7 +282,7 @@ void ABasePlayer::InitializeInputIDMap()
 	InputTagToIDMap.Empty();
 	int32 NextID = 0;
 
-	// ¸ğµç Config¸¦ ÇÏ³ªÀÇ ¹è¿­·Î ÅëÇÕ
+	// ëª¨ë“  Configë¥¼ í•˜ë‚˜ì˜ ë°°ì—´ë¡œ í†µí•©
 	TArray<UInputTagConfig*> Configs;
 	if (DefaultInputConfig) Configs.Add(DefaultInputConfig);
 	if (ItemInputConfig) Configs.Add(ItemInputConfig);
@@ -289,7 +295,7 @@ void ABasePlayer::InitializeInputIDMap()
 		}
 	}
 
-	// °¢ Config¸¦ ¼øÈ¸ÇÏ¸ç ÅÂ±×¿¡ °íÀ¯ ID ÇÒ´ç
+	// ê° Configë¥¼ ìˆœíšŒí•˜ë©° íƒœê·¸ì— ê³ ìœ  ID í• ë‹¹
 	for (UInputTagConfig* Config : Configs)
 	{
 		for (const FKeyInputAction& Action : Config->KeyInputActions)
@@ -315,7 +321,7 @@ bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
 {
 	if (!IsValid(Item)) return false;
 
-	// ºó ItemSlot Index Ã£±â
+	// ë¹ˆ ItemSlot Index ì°¾ê¸°
 	int32 EmptySlotIndex = ItemSlots.IndexOfByPredicate([](const FItemSlot& Slot)
 		{
 			return !IsValid(Slot.Item);
@@ -323,52 +329,52 @@ bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
 
 	if (EmptySlotIndex != INDEX_NONE)
 	{
-		// ºó ½½·Ô¿¡ ÀúÀå
+		// ë¹ˆ ìŠ¬ë¡¯ì— ì €ì¥
 		ItemSlots[EmptySlotIndex].Item = Item;
 
 		Item->PickUpItem(this);
 		
 		if (IsValid(EquippedItem))
 		{
-			// ÀÌ¹Ì ¼Õ¿¡ ¹«¾ğ°¡ µé·ÁÀÖÀ¸¸é »õ·Î ÁÖ¿î ¾ÆÀÌÅÛÀº º¸ÀÌÁö ¾Ê°Ô
+			// ì´ë¯¸ ì†ì— ë¬´ì–¸ê°€ ë“¤ë ¤ìˆìœ¼ë©´ ìƒˆë¡œ ì£¼ìš´ ì•„ì´í…œì€ ë³´ì´ì§€ ì•Šê²Œ
 			Item->SetItemState(EItemState::InItemSlot);
 		}
 		else
 		{
-			// ¼ÕÀÌ ºñ¾îÀÖÀ¸¸é »õ·Î ÁÖ¿î ¾ÆÀÌÅÛ ¹Ù·Î ÀåÂø
+			// ì†ì´ ë¹„ì–´ìˆìœ¼ë©´ ìƒˆë¡œ ì£¼ìš´ ì•„ì´í…œ ë°”ë¡œ ì¥ì°©
 			EquipItemFromSlot(ItemSlots[EmptySlotIndex].KeyTag);
 		}
-		return true; // ¼º°øÀûÀ¸·Î ½½·Ô¿¡ ³ÖÀ½
+		return true; // ì„±ê³µì ìœ¼ë¡œ ìŠ¬ë¡¯ì— ë„£ìŒ
 	}
 	else
 	{
 		UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::TryPutItemInSlot : ItemSlot is Full."));
-		return false; // ¾ÆÀÌÅÛ ½½·Ô ²Ë Âü
+		return false; // ì•„ì´í…œ ìŠ¬ë¡¯ ê½‰ ì°¸
 	}
 }
 
 void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayAbility> AbilityClass)
 {
-	// ¼­¹ö¿¡¼­¸¸ ½ÇÇàµÇ¸ç, À¯È¿¼º °Ë»ç ¼öÇà
-	if (!HasAuthority() || !AbilitySystemComponent || !AbilityClass || !KeyTag.IsValid())
+	// ì„œë²„ì—ì„œë§Œ ì‹¤í–‰ë˜ë©°, ìœ íš¨ì„± ê²€ì‚¬ ìˆ˜í–‰
+	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass || !KeyTag.IsValid())
 	{
 		return;
 	}
 
-	// ÇØ´ç ½½·Ô¿¡ ÀÌ¹Ì ºÎ¿©µÈ ¾îºô¸®Æ¼°¡ ÀÖ´Ù¸é ±³Ã¼
+	// í•´ë‹¹ ìŠ¬ë¡¯ì— ì´ë¯¸ ë¶€ì—¬ëœ ì–´ë¹Œë¦¬í‹°ê°€ ìˆë‹¤ë©´ êµì²´
 	RemoveAbilityFromSlot(KeyTag);
 
-	// ÅëÇÕ ¸Ê¿¡¼­ ÀÌ ÅÂ±×¿¡ ÇÒ´çµÈ ID¸¦ °¡Á®¿È
+	// í†µí•© ë§µì—ì„œ ì´ íƒœê·¸ì— í• ë‹¹ëœ IDë¥¼ ê°€ì ¸ì˜´
 	int32 AssignedID = GetInputIDFromTag(KeyTag);
 
-	// GA Spec »ı¼º ½Ã ÇØ´ç ID ÁÖÀÔ
+	// GA Spec ìƒì„± ì‹œ í•´ë‹¹ ID ì£¼ì…
 	FGameplayAbilitySpec Spec(AbilityClass, 1, AssignedID, this);
-	AbilitySystemComponent->GiveAbility(Spec);
+	CachedAbilitySystemComponent->GiveAbility(Spec);
 }
 
 void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 {
-	if (!HasAuthority() || !AbilitySystemComponent || !KeyTag.IsValid())
+	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !KeyTag.IsValid())
 	{
 		return;
 	}
@@ -376,11 +382,11 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 	int32 TargetInputID = GetInputIDFromTag(KeyTag);
 	if (TargetInputID == INDEX_NONE) return;
 
-	// GAS ³»ºÎÀÇ ºÎ¿©µÈ ¾îºô¸®Æ¼ ¸ñ·ÏÀ» ¼øÈ¸ÇÏ¸ç ¸ÅÇÎµÈ InputID¸¦ °¡Áø ¾îºô¸®Æ¼ ¼öÁı ¹× Á¦°Å
+	// GAS ë‚´ë¶€ì˜ ë¶€ì—¬ëœ ì–´ë¹Œë¦¬í‹° ëª©ë¡ì„ ìˆœíšŒí•˜ë©° ë§¤í•‘ëœ InputIDë¥¼ ê°€ì§„ ì–´ë¹Œë¦¬í‹° ìˆ˜ì§‘ ë° ì œê±°
 	TArray<FGameplayAbilitySpecHandle> HandlesToRemove;
-	for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
+	for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent.Get()->GetActivatableAbilities())
 	{
-		// Spec.InputID°¡ ¿ì¸®°¡ Á¦°ÅÇÏ·Á´Â ID¿Í ÀÏÄ¡ÇÑ´Ù¸é
+		// Spec.InputIDê°€ ìš°ë¦¬ê°€ ì œê±°í•˜ë ¤ëŠ” IDì™€ ì¼ì¹˜í•œë‹¤ë©´
 		if (Spec.InputID == TargetInputID)
 		{
 			HandlesToRemove.Add(Spec.Handle);
@@ -390,44 +396,46 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 	for (const FGameplayAbilitySpecHandle& Handle : HandlesToRemove)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::RemoveAbilityFromSlot : Removing ability with KeyTag: %s"), *KeyTag.ToString());
-		AbilitySystemComponent->ClearAbility(Handle);
+		CachedAbilitySystemComponent->ClearAbility(Handle);
 	}
 }
 
 void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
-	if (!AbilitySystemComponent || !InputTag.IsValid()) return;
+	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 
 	int32 InputID = GetInputIDFromTag(InputTag);
 	if (InputID != INDEX_NONE)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed : Input pressed with KeyTag: %s, InputID: %d"), *InputTag.ToString(), InputID);
-		AbilitySystemComponent->AbilityLocalInputPressed(InputID);
+		CachedAbilitySystemComponent->AbilityLocalInputPressed(InputID);
 	}
 }
 
 void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 {
-	if (!AbilitySystemComponent || !InputTag.IsValid()) return;
+	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 
 	int32 InputID = GetInputIDFromTag(InputTag);
 	if (InputID != INDEX_NONE)
 	{
-		AbilitySystemComponent->AbilityLocalInputReleased(InputID);
+		CachedAbilitySystemComponent->AbilityLocalInputReleased(InputID);
 	}
 }
 
 void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 {
-	if (!AbilitySystemComponent || !InputTag.IsValid()) return;
+	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 
-	// °øÅë GAS ÀÔ·Â ÇØÁ¦ Ã³¸®
+	// ê³µí†µ GAS ì…ë ¥ í•´ì œ ì²˜ë¦¬
 	OnAbilityInputPressed(InputTag);
 
-	// ASC¿¡ GameplayEvent·Î¼­ Àü´Ş
+	// ASCì— GameplayEventë¡œì„œ ì „ë‹¬
 	FGameplayEventData EventData;
 	EventData.Instigator = this;
 	EventData.Target = nullptr;
+
+	CachedAbilitySystemComponent->HandleGameplayEvent(InputTag, &EventData);
 
 	if (!HasAuthority())
 	{
@@ -437,10 +445,10 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 
 void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
 {
-	// °øÅë GAS ÀÔ·Â ÇØÁ¦ Ã³¸®
+	// ê³µí†µ GAS ì…ë ¥ í•´ì œ ì²˜ë¦¬
 	OnAbilityInputReleased(InputTag);
 
-	// ¿©±â´Â Tag¿¡ Released¸¦ ºÙ¿©¾ß ÇÏ´Âµ¥ ±ÍÂú¾Æ¼­ ¾ÆÁ÷ ¾ÈÇÔ
+	// ì—¬ê¸°ëŠ” Tagì— Releasedë¥¼ ë¶™ì—¬ì•¼ í•˜ëŠ”ë° ê·€ì°®ì•„ì„œ ì•„ì§ ì•ˆí•¨
 }
 
 void ABasePlayer::HandlePickUpEvent(const FGameplayEventData* Payload)
@@ -456,75 +464,75 @@ void ABasePlayer::HandlePickUpEvent(const FGameplayEventData* Payload)
 
 void ABasePlayer::UseEquippedItem(bool bDestroy)
 {
-	// ¼­¹ö ±ÇÇÑ ¹× ÀåÂø ¾ÆÀÌÅÛ À¯È¿¼º °Ë»ç
+	// ì„œë²„ ê¶Œí•œ ë° ì¥ì°© ì•„ì´í…œ ìœ íš¨ì„± ê²€ì‚¬
 	if (!HasAuthority() || EquippedItem == nullptr)
 	{
 		return;
 	}
 
-	// ÀåÂøµÈ ¾ÆÀÌÅÛÀÌ ItemSlots ¹è¿­ÀÇ ¸î ¹øÂ° ÀÎµ¦½º¿¡ ÀÖ´ÂÁö Å½»ö
+	// ì¥ì°©ëœ ì•„ì´í…œì´ ItemSlots ë°°ì—´ì˜ ëª‡ ë²ˆì§¸ ì¸ë±ìŠ¤ì— ìˆëŠ”ì§€ íƒìƒ‰
 	int32 EquippedIndex = ItemSlots.IndexOfByKey(EquippedItem.Get());
 
 	if (EquippedIndex != INDEX_NONE)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::UseEquippedItem : Item used! Slot index: %d"), EquippedIndex);
-		// ÇöÀç´Â ¸¶¿ì½º·Î »ç¿ëÇÏ´Â Item¹Û¿¡ ¾øÀ¸¹Ç·Î ÀÌ·¸°Ô ÇÏÁö¸¸ ÃßÈÄ¿¡´Â Tag·Î ºĞ±âÇÒ °Í
+		// í˜„ì¬ëŠ” ë§ˆìš°ìŠ¤ë¡œ ì‚¬ìš©í•˜ëŠ” Itemë°–ì— ì—†ìœ¼ë¯€ë¡œ ì´ë ‡ê²Œ í•˜ì§€ë§Œ ì¶”í›„ì—ëŠ” Tagë¡œ ë¶„ê¸°í•  ê²ƒ
 		RemoveItemFromSlot(ItemSlots[EquippedIndex].KeyTag);
 		RemoveAbilityFromSlot(Key_Default_Mouse_LeftClick);
 
 		if (bDestroy) {
-			EquippedItem->Destroy(); // ¾ÆÀÌÅÛ ¾×ÅÍ Á¦°Å
+			EquippedItem->Destroy(); // ì•„ì´í…œ ì•¡í„° ì œê±°
 		}
 		
-		// ¼Õ¿¡ µé°í ÀÖ´Â ÀåÂø »óÅÂ ÇØÁ¦
+		// ì†ì— ë“¤ê³  ìˆëŠ” ì¥ì°© ìƒíƒœ í•´ì œ
 		EquippedItem = nullptr;
 	}
 }
 
 void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 {
-	// ÇöÀç´Â ÀåÂøÇü ¾ÆÀÌÅÛÀÌ±â ¶§¹®¿¡ ItemSlot¿¡ ´ëÇÑ Å° ÀÔ·ÂÀÌ µé¾î¿Ã °æ¿ì ¼Õ¿¡ ÀåÂøÇÏ´Â ·ÎÁ÷¸¸ ÀÖÁö¸¸
-	// ÃßÈÄ¿¡ Áï¹ßÇü ¾ÆÀÌÅÛÀÇ °æ¿ì Item ÀÚÃ¼ÀÇ Tag·Î ºĞ±âÇÏ¿© ¼Õ¿¡ µéÁö¾Ê°í Áï½Ã »ç¿ëµÇµµ·Ï Ãß°¡ÇØ¾ß ÇÔ.
-	// OnAbilityInputPressedÀ¸·Î ¹Ù·Î ³Ñ±â¸é µÉ µí? ±×°Ô Áï¹ßÇüÀ» À§ÇÑ ¹ÙÀÎµù ÇÔ¼ö´Ï±î.
+	// í˜„ì¬ëŠ” ì¥ì°©í˜• ì•„ì´í…œì´ê¸° ë•Œë¬¸ì— ItemSlotì— ëŒ€í•œ í‚¤ ì…ë ¥ì´ ë“¤ì–´ì˜¬ ê²½ìš° ì†ì— ì¥ì°©í•˜ëŠ” ë¡œì§ë§Œ ìˆì§€ë§Œ
+	// ì¶”í›„ì— ì¦‰ë°œí˜• ì•„ì´í…œì˜ ê²½ìš° Item ìì²´ì˜ Tagë¡œ ë¶„ê¸°í•˜ì—¬ ì†ì— ë“¤ì§€ì•Šê³  ì¦‰ì‹œ ì‚¬ìš©ë˜ë„ë¡ ì¶”ê°€í•´ì•¼ í•¨.
+	// OnAbilityInputPressedìœ¼ë¡œ ë°”ë¡œ ë„˜ê¸°ë©´ ë  ë“¯? ê·¸ê²Œ ì¦‰ë°œí˜•ì„ ìœ„í•œ ë°”ì¸ë”© í•¨ìˆ˜ë‹ˆê¹Œ.
 
-	// [Å¬¶óÀÌ¾ğÆ®] ±ÇÇÑÀÌ ¾ø´Ù¸é ¼­¹ö·Î RPC ¿äÃ»
+	// [í´ë¼ì´ì–¸íŠ¸] ê¶Œí•œì´ ì—†ë‹¤ë©´ ì„œë²„ë¡œ RPC ìš”ì²­
 	if (!HasAuthority())
 	{
 		Server_EquipItemFromSlot(KeyTag);
-		// UI µî ·ÎÄÃ ¿¹ÃøÀ» ÇÏ°í ½Í´Ù¸é ¿©±â¼­
+		// UI ë“± ë¡œì»¬ ì˜ˆì¸¡ì„ í•˜ê³  ì‹¶ë‹¤ë©´ ì—¬ê¸°ì„œ
 		return;
 	}
 
-	// [¼­¹ö]
+	// [ì„œë²„]
 	int32 SlotIndex = ItemSlots.IndexOfByKey(KeyTag);
 
 	if (ItemSlots.IsValidIndex(SlotIndex))
 	{
 		ABaseItem* SlotItem = ItemSlots[SlotIndex].Item;
 
-		// ÀÌ¹Ì ¼Õ¿¡ µé°í ÀÖ´Â ItemÀÌ¶ó¸é ¾Æ¹« ÀÛ¾÷µµ ÇÏÁö ¾ÊÀ½
+		// ì´ë¯¸ ì†ì— ë“¤ê³  ìˆëŠ” Itemì´ë¼ë©´ ì•„ë¬´ ì‘ì—…ë„ í•˜ì§€ ì•ŠìŒ
 		if (EquippedItem == SlotItem) return;
 
 
-		// ±âÁ¸ ¾ÆÀÌÅÛÀº ¾Èº¸ÀÌ°Ô ³ÖÀ½
+		// ê¸°ì¡´ ì•„ì´í…œì€ ì•ˆë³´ì´ê²Œ ë„£ìŒ
 		if (IsValid(EquippedItem))
 		{
 			RemoveAbilityFromSlot(Key_Default_Mouse_LeftClick);
 			EquippedItem->SetItemState(EItemState::InItemSlot);
 		}
 
-		// »õ ¾ÆÀÌÅÛÀÌ ¾ø´Ù¸é ¸Ç¼ÕÀ¸·Î ¸¸µé°í Á¾·á
+		// ìƒˆ ì•„ì´í…œì´ ì—†ë‹¤ë©´ ë§¨ì†ìœ¼ë¡œ ë§Œë“¤ê³  ì¢…ë£Œ
 		if (!IsValid(SlotItem))
 		{
 			EquippedItem = nullptr;
 			return;
 		}
 
-		// ÀåÂø ¾ÆÀÌÅÛ °»½Å
+		// ì¥ì°© ì•„ì´í…œ ê°±ì‹ 
 		EquippedItem = SlotItem;
 		EquippedItem->SetItemState(EItemState::Equipped);
 
-		// »õ ¾ÆÀÌÅÛ GA ºÎ¿© ·ÎÁ÷
+		// ìƒˆ ì•„ì´í…œ GA ë¶€ì—¬ ë¡œì§
 		bool bShouldGrantAbility = false;
 		const TArray<FGameplayTag>& RequiredTags = EquippedItem->GetCanUseAbilityList();
 
@@ -532,11 +540,11 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 		{
 			bShouldGrantAbility = true;
 		}
-		else if (AbilitySystemComponent)
+		else if (CachedAbilitySystemComponent.Get())
 		{
 			for (const FGameplayTag& Tag : RequiredTags)
 			{
-				if (AbilitySystemComponent->HasMatchingGameplayTag(Tag))
+				if (CachedAbilitySystemComponent->HasMatchingGameplayTag(Tag))
 				{
 					bShouldGrantAbility = true;
 					break;
@@ -553,13 +561,13 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 
 void ABasePlayer::Server_EquipItemFromSlot_Implementation(FGameplayTag KeyTag)
 {
-	// ¼­¹ö°¡ ´Ù½Ã º»·¡ÀÇ ÇÔ¼ö¸¦ È£ÃâÇÏ¿© ±ÇÇÑ(HasAuthority)À» Åë°ú½ÃÅ°°í ½ÇÁ¦ ·ÎÁ÷À» ½ÇÇà
+	// ì„œë²„ê°€ ë‹¤ì‹œ ë³¸ë˜ì˜ í•¨ìˆ˜ë¥¼ í˜¸ì¶œí•˜ì—¬ ê¶Œí•œ(HasAuthority)ì„ í†µê³¼ì‹œí‚¤ê³  ì‹¤ì œ ë¡œì§ì„ ì‹¤í–‰
 	EquipItemFromSlot(KeyTag);
 }
 
 void ABasePlayer::RemoveItemFromSlot(FGameplayTag KeyTag)
 {
-	// [¼­¹ö]
+	// [ì„œë²„]
 	if (!HasAuthority()) return;
 	int32 SlotIndex = ItemSlots.IndexOfByKey(KeyTag);
 	if (ItemSlots.IsValidIndex(SlotIndex) && IsValid(ItemSlots[SlotIndex].Item))
@@ -571,16 +579,145 @@ void ABasePlayer::RemoveItemFromSlot(FGameplayTag KeyTag)
 
 void ABasePlayer::ServerRPC_SendGameplayEvent_Implementation(FGameplayTag EventTag, FGameplayEventData Payload)
 {
-	// ¼­¹öÀÇ ASC¿¡¼­ ÀÌº¥Æ®¸¦ ¹ß»ı½ÃÄÑ WaitGameplayEvent ÅÂ½ºÅ©¸¦ ±ú¿ó´Ï´Ù.
+	// ì„œë²„ì˜ ASCì—ì„œ ì´ë²¤íŠ¸ë¥¼ ë°œìƒì‹œì¼œ WaitGameplayEvent íƒœìŠ¤í¬ë¥¼ ê¹¨ì›ë‹ˆë‹¤.
 	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, EventTag, Payload);
 }
 
 void ABasePlayer::OnRep_EquippedItem()
 {
-	// »õ ¾ÆÀÌÅÛÀÌ À¯È¿ÇÏ´Ù¸é ¼Õ ¼ÒÄÏ¿¡ ºÎÂø
+	// ìƒˆ ì•„ì´í…œì´ ìœ íš¨í•˜ë‹¤ë©´ ì† ì†Œì¼“ì— ë¶€ì°©
 	if (IsValid(EquippedItem) && EquippedItem->MyDefinition)
 	{
 		EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, EquippedItem->MyDefinition->AttachmentSocketName);
+	}
+}
+
+void ABasePlayer::StartInteractionScan()
+{
+	// [í´ë¼/ë¡œì»¬]
+	if (IsLocallyControlled())
+	{
+		// ì„¤ì •ê°’ì´ 0 ì´í•˜ì¼ ê²½ìš°ë¥¼ ëŒ€ë¹„í•œ ë°©ì–´ ì½”ë“œ
+		float ScanInterval = InteractionScanInterval > 0.f ? InteractionScanInterval : 0.1f;
+
+		GetWorldTimerManager().SetTimer(
+			InteractionScanTimerHandle,
+			this,
+			&ABasePlayer::PerformInteractionScan,
+			ScanInterval,
+			true // ë°˜ë³µ ì‹¤í–‰(Loop)
+		);
+	}
+}
+
+bool ABasePlayer::PerformInteractTrace(TArray<FHitResult>& OutHitResults) const
+{
+	OutHitResults.Empty();
+
+	FVector StartLoc = GetActorLocation();
+	FVector EndLoc = StartLoc + (GetActorForwardVector() * InteractTraceDistance);
+
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this); // ìê¸° ìì‹  ìŠ¤ìº” ì œì™¸
+
+	TArray<FHitResult> HitResults;
+
+	bool bHit = GetWorld()->SweepMultiByChannel(
+		OutHitResults,
+		StartLoc,
+		EndLoc,
+		FQuat::Identity,
+		ECC_Interactable,
+		FCollisionShape::MakeSphere(InteractTraceRadius),
+		QueryParams
+	);
+
+#if ENABLE_DRAW_DEBUG
+	FColor DrawColor = bHit ? FColor::Green : FColor::Red;
+	FVector TraceCenter = StartLoc + (EndLoc - StartLoc) * 0.5f;
+	float TraceHalfHeight = (EndLoc - StartLoc).Size() * 0.5f;
+	FQuat TraceRotation = FRotationMatrix::MakeFromZ(EndLoc - StartLoc).ToQuat();
+
+	// íƒ€ì´ë¨¸ ì£¼ê¸°ì— ë§ì¶° ê·¸ë ¤ì§€ë„ë¡ LifeTimeì„ ì§§ê²Œ ì„¤ì • (ì˜ˆ: 0.1ì´ˆ)
+	DrawDebugCapsule(GetWorld(), TraceCenter, TraceHalfHeight, InteractTraceRadius, TraceRotation, DrawColor, false, 0.1f);
+#endif
+
+	return bHit;
+}
+
+void ABasePlayer::PerformInteractionScan()
+{
+	TArray<FHitResult> HitResults;
+	PerformInteractTrace(HitResults);
+
+	TArray<UWidgetComponent*> CurrentHoveredWidgets;
+
+	// í˜„ì¬ íŠ¸ë ˆì´ìŠ¤ì— ê±¸ë¦° ëª¨ë“  ìœ„ì ¯ ìˆ˜ì§‘
+	for (const FHitResult& Hit : HitResults)
+	{
+		if (AActor* HitActor = Hit.GetActor())
+		{
+			if (UWidgetComponent* WidgetComp = HitActor->FindComponentByClass<UWidgetComponent>())
+			{
+				CurrentHoveredWidgets.AddUnique(WidgetComp);
+			}
+		}
+	}
+
+	// ê¸°ì¡´ ìºì‹œì—ëŠ” ìˆì§€ë§Œ í˜„ì¬ ìŠ¤ìº”ë˜ì§€ ì•Šì€ ìœ„ì ¯ì€ ìˆ¨ê¹€ ì²˜ë¦¬ í›„ ìºì‹œì—ì„œ ì œê±°
+	for (int32 i = CachedHoveredWidgets.Num() - 1; i >= 0; --i)
+	{
+		if (CachedHoveredWidgets[i].IsValid())
+		{
+			UWidgetComponent* CachedWidget = CachedHoveredWidgets[i].Get();
+			if (!CurrentHoveredWidgets.Contains(CachedWidget))
+			{
+				CachedWidget->SetHiddenInGame(true);
+				CachedHoveredWidgets.RemoveAt(i);
+			}
+		}
+		else
+		{
+			// ìœ íš¨í•˜ì§€ ì•Šì€ í¬ì¸í„° ì •ë¦¬
+			CachedHoveredWidgets.RemoveAt(i);
+		}
+	}
+
+	// ìƒˆë¡œ ìŠ¤ìº”ëœ ìœ„ì ¯ í‘œì‹œ ë° ìºì‹œì— ë“±ë¡
+	for (UWidgetComponent* Widget : CurrentHoveredWidgets)
+	{
+		if (Widget)
+		{
+			bool bAlreadyCached = false;
+			for (const auto& Cached : CachedHoveredWidgets)
+			{
+				if (Cached.Get() == Widget)
+				{
+					bAlreadyCached = true;
+					break;
+				}
+			}
+
+			if (!bAlreadyCached)
+			{
+				Widget->SetHiddenInGame(false);
+				CachedHoveredWidgets.Add(Widget);
+
+				if (AActor* OwnerActor = Widget->GetOwner())
+				{
+					// InteractableComponent
+					if (UInteractableComponent* InteractComp = OwnerActor->FindComponentByClass<UInteractableComponent>())
+					{
+						// InteractUserWidgetìœ¼ë¡œ ìºìŠ¤íŒ…
+						if (UInteractUserWidget* InteractWidget = Cast<UInteractUserWidget>(Widget->GetUserWidgetObject()))
+						{
+							// BPì—ì„œ êµ¬í˜„ëœ UI ì—…ë°ì´íŠ¸ í•¨ìˆ˜ í˜¸ì¶œ
+							InteractWidget->OnUpdateInteractUI(InteractComp->InteractUIInfo);
+						}
+					}
+				}
+			}
+		}
 	}
 }
 

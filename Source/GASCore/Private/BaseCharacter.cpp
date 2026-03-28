@@ -5,9 +5,10 @@
 
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+/*
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
-#include "BaseGameplayTags.h"
+#include "BaseGameplayTags.h"*/
 
 
 // Sets default values
@@ -58,21 +59,6 @@ void ABaseCharacter::BeginPlay()
 	
 }
 
-void ABaseCharacter::PossessedBy(AController* NewController)
-{
-	Super::PossessedBy(NewController);
-
-	if (AbilitySystemComponent && HasAuthority())
-	{
-		AbilitySystemComponent->InitAbilityActorInfo(this, this);
-
-		if (StartingAbilities.Num() > 0)
-		{
-			GrantAbilities(StartingAbilities);
-		}
-	}
-}
-
 void ABaseCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -83,10 +69,31 @@ UAbilitySystemComponent* ABaseCharacter::GetAbilitySystemComponent() const
 	return AbilitySystemComponent;
 }
 
+/*void ABaseCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	// 이 곳에서 ASC를 초기화 하면 안됩니다.
+	// Player는 PlayerState로 부터 ASC를 캐시해 와야 하는데 이곳에서 자체적으로 ASC를 초기화하면 안됩니다.
+	// 추가로, PossededBy는 서버에서만 호출되는 함수이므로 권한 검사가 필요하지는 않습니다.
+
+	//if (AbilitySystemComponent && HasAuthority())
+	//{
+	//	AbilitySystemComponent->InitAbilityActorInfo(this, this);
+
+	//	if (StartingAbilities.Num() > 0)
+	//	{
+	//		GrantAbilities(StartingAbilities);
+	//	}
+	//}
+}
+
+
+/*
 TArray<FGameplayAbilitySpecHandle> ABaseCharacter::GrantAbilities(
 	TArray<TSubclassOf<UGameplayAbility>> AbilitiesToGrant)
 {
-	UE_LOG(LogTemp, Warning, TEXT("ABaseCharacter::GrantAbilities"));
+	// UE_LOG(LogTemp, Warning, TEXT("ABaseCharacter::GrantAbilities"));
 	// 모든 능력을 for loop를 통해서 일일히 Grant 해줌
 	if (!AbilitySystemComponent || !HasAuthority())// HasAuthority는 서버에 있는 지 확인하는 함수
 		// GrantAbilities는 서버에서만 동작하므로, 서버에서 클라로 보내는 것은 충돌 일어날 수 있다. 따라서 서버에서만 동작하도록 한다.
@@ -161,4 +168,4 @@ void ABaseCharacter::OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewC
 	{
 		// 캐릭터가 부활했을 때 처리할 로직을 여기에 작성
 	}
-}
+}*/
