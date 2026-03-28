@@ -249,6 +249,7 @@ void UBaseWeaponComponent::GrantWeaponAbilities()
 
 		const FGameplayAbilitySpecHandle SpecHandle = ASC->GiveAbility(AbilitySpec);
 		GrantedAbilityHandles.Add(SpecHandle);
+		// UE_LOG(LogTemp, Warning, TEXT("GrantedAbilityHandles"));
 	}
 }
 
