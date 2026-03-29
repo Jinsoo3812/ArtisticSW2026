@@ -82,12 +82,13 @@ EBTNodeResult::Type UBTT_EnemyBasicAttack::AbortTask(UBehaviorTreeComponent& Own
 	return Super::AbortTask(OwnerComp, NodeMemory);
 }
 
-FString UBTT_EnemyBasicAttack::GetStaticDescription() const
+// Debug용 코드
+/*FString UBTT_EnemyBasicAttack::GetStaticDescription() const
 {
     return FString::Printf(TEXT("AbilityAssetTag: %s\nAttackStateTag: %s"),
         *AttackAbilityAssetTag.ToString(),
         *AttackStateTag.ToString());
-}
+}*/
 
 bool UBTT_EnemyBasicAttack::ActivateCurrentWeaponAbilityByAssetTag(ABaseEnemy* Enemy, const FGameplayTag& AbilityAssetTag) const
 {

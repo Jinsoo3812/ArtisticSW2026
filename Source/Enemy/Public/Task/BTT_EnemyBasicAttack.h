@@ -28,7 +28,7 @@ public:
 public:
 	virtual EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
 	virtual EBTNodeResult::Type AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
-	virtual FString GetStaticDescription() const override;
+	// virtual FString GetStaticDescription() const override;
 
 protected:
 	bool ActivateCurrentWeaponAbilityByAssetTag(class ABaseEnemy* Enemy, const FGameplayTag& AbilityAssetTag) const;
