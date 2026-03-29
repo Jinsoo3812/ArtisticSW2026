@@ -14,7 +14,7 @@ class UUserWidget;
  *  Manages input mappings
  */
 UCLASS(abstract)
-class AArtisticSW2026PlayerController : public APlayerController
+class ARTISTICSW2026_API AArtisticSW2026PlayerController : public APlayerController
 {
 	GENERATED_BODY()
 	

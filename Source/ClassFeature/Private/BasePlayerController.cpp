@@ -10,11 +10,25 @@
 #include "InputMappingContext.h"
 #include "Blueprint/UserWidget.h"
 #include "Widgets/Input/SVirtualJoystick.h"
+#include "BaseGameplayTags.h"
 
 
 void ABasePlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// [클라/로컬]
+	if (IsLocalPlayerController())
+	{
+		// UI IMC 등록
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
+		{
+			for (UInputMappingContext* Context : UIIMC)
+			{
+				Subsystem->AddMappingContext(Context, UIIMCPriority);
+			}
+		}
+	}
 
 	if (IsLocalController() && PlayerHUDWidgetClass)
 	{
@@ -25,36 +39,41 @@ void ABasePlayerController::BeginPlay()
 			PlayerHUDWidget->SetInventoryVisible(false);
 		}
 	}
-
-	BindHUDToCurrentPlayer();
 }
 
 void ABasePlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
 
-	if (!IsLocalPlayerController())
+	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent))
+	{
+		if (UIInputConfig)
+		{
+			for (const FKeyInputAction& Action : UIInputConfig->KeyInputActions)
+			{
+				if (Action.InputAction && Action.KeyTag.IsValid())
+				{
+					EnhancedInput->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayerController::OnUIInputPressed, Action.KeyTag);
+				}
+			}
+		}
+	}
+}
+
+void ABasePlayerController::OnUIInputPressed(FGameplayTag InputTag)
+{
+	// [클라/로컬]
+	if (!IsLocalController() || !PlayerHUDWidget)
 	{
 		return;
 	}
 
-	// Add Input Mapping Contexts
-	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
+	if (InputTag.MatchesTagExact(Key_UI_I))
 	{
-		for (UInputMappingContext* CurrentContext : DefaultMappingContexts)
-		{
-			Subsystem->AddMappingContext(CurrentContext, 0);
-		}
+		const bool bOpen = !PlayerHUDWidget->IsInventoryVisible();
+		PlayerHUDWidget->SetInventoryVisible(bOpen);
+		ApplyInventoryInputMode(bOpen);
 	}
-
-	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent))
-	{
-		if (ToggleInventoryAction)
-		{
-			EnhancedInput->BindAction(ToggleInventoryAction, ETriggerEvent::Started, this, &ABasePlayerController::ToggleInventory);
-		}
-	}
-
 }
 
 void ABasePlayerController::OnPossess(APawn* InPawn)
@@ -71,7 +90,8 @@ void ABasePlayerController::OnRep_Pawn()
 
 void ABasePlayerController::BindHUDToCurrentPlayer()
 {
-	if (!PlayerHUDWidget)
+	// [클라/로컬] HUD 위젯은 로컬 플레이어에게만
+	if (!IsLocalController() || !PlayerHUDWidget)
 	{
 		return;
 	}

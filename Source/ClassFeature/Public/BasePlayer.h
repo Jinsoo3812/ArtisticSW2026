@@ -186,6 +186,13 @@ public:
 	UFUNCTION()
 	void UseEquippedItem(bool bDestroy = true);
 
+	// 빈 아이템 슬롯이 하나라도 있는지 확인
+	UFUNCTION()
+	bool HasEmptyItemSlot() const;
+
+	// 아이템 슬롯에 아이템을 저장하고 장착 상태를 관리
+	bool TryPutItemInSlot(ABaseItem* Item);
+
 protected:
 	// IA와 Slot Tag의 Mapping 정보가 담긴 DataAsset (BP 주입)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -205,9 +212,6 @@ protected:
 	// 서버에서 먼저 ItemSlot 처리를 해준 후 클라이언트가 수행하기 위해
 	UFUNCTION(Server, Reliable)
 	void Server_EquipItemFromSlot(FGameplayTag KeyTag);
-
-	// 아이템 슬롯에 아이템을 저장하고 장착 상태를 관리
-	bool TryPutItemInSlot(ABaseItem* Item);
 
 	// 공용 Interact GA가 보내준 PickUp 이벤트를 처리하는 함수
 	void HandlePickUpEvent(const FGameplayEventData* Payload);
@@ -279,7 +283,6 @@ protected:
 	TObjectPtr<UInventoryComponent> InventoryComponent;
 
 public:
-
 	UFUNCTION()
 	void OnRep_ItemSlots();
 
