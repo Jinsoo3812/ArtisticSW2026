@@ -50,6 +50,11 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Weapon_Sword, "Item.Weapon.Sword");
 // Enemy
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Sword, "Item.EnemyWeapon.Sword");
 
+// Enemy Type
+// 적 구분 태그
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Animal_Test, "Enemy.Type.Animal.Test");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Undead_Test, "Enemy.Type.Undead.Test");
+
 /* Mouse Input */
 
 

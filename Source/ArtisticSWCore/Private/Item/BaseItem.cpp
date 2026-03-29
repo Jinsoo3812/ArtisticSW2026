@@ -9,6 +9,15 @@
 
 ABaseItem::ABaseItem()
 {
+	// Item Data 애셋을 고정으로 할당 -> 추후 BaseItem의 BP가 생성되어 있지 않아도 DA 참조를 위함
+	static ConstructorHelpers::FObjectFinder<UItemData> ItemDataFinder(TEXT("/Game/Blueprints/Item/DA_ItemData.DA_ItemData")
+	);
+
+	if (ItemDataFinder.Succeeded())
+	{
+		ItemDataAsset = ItemDataFinder.Object;
+	}
+
 	// 둥둥 뜰 때만 Tick 켜기
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
@@ -22,7 +31,7 @@ ABaseItem::ABaseItem()
 
 	bReplicates = true;
 	SetReplicateMovement(true);
-	ItemState = EItemState::Dropped_Simulating;
+	ItemState = EItemState::Dropped_Simulating;	
 }
 
 TSubclassOf<UGameplayAbility> ABaseItem::GetGrantedAbilityClass() const

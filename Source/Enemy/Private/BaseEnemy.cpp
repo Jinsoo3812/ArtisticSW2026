@@ -6,6 +6,9 @@
 #include "Weapon/WeaponDataAsset.h"
 #include "Weapon/BaseWeaponComponent.h"
 
+// ArtisticSWCore
+#include "BaseItem.h"
+
 // Enemy Folder
 #include "BaseAIController.h"
 #include "EnemyAttributeSet.h"
@@ -15,6 +18,7 @@
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 ABaseEnemy::ABaseEnemy()
 {
@@ -62,6 +66,8 @@ void ABaseEnemy::BeginPlay()
 			WeaponComponent->InitializeLoadout(DefaultWeaponTag);
 		}
 	}
+
+	InitializeEnemyDropData();
 }
 
 TArray<FGameplayAbilitySpecHandle> ABaseEnemy::GrantAbilities(TArray<TSubclassOf<UGameplayAbility>> AbilitiesToGrant)
@@ -108,6 +114,7 @@ void ABaseEnemy::OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount
 {
 	if (NewCount > 0)
 	{
+		Drop();
 		// 죽었을 때
 		HandleDeath();
 	}
@@ -117,6 +124,91 @@ void ABaseEnemy::OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount
 	}
 }
 
+void ABaseEnemy::InitializeEnemyDropData()
+{
+	EnemyDropData = FEnemyDropData();
 
+	if (!EnemyDropDataTable || !EnemyTypeTag.IsValid())
+	{
+		return;
+	}
 
+	
+	static const FString ContextString(TEXT("EnemyDropData"));
+	TArray<FEnemyDropDataRow*> Rows;
+	EnemyDropDataTable->GetAllRows(ContextString, Rows);
 
+	// 전체 데이터중 해당하는 Row 검색 후 데이터 가져옴
+	for (const FEnemyDropDataRow* Row : Rows)
+	{
+		if (!Row || Row->EnemyTag != EnemyTypeTag)
+		{
+			continue;
+		}
+
+		EnemyDropData.EnemyTag = Row->EnemyTag;
+		EnemyDropData.DropItemCount = Row->DropItemCount;
+
+		auto AddEntry = [this](const FGameplayTag& ItemTag, float Chance)
+			{
+				if (ItemTag.IsValid() && Chance > 0.f)
+				{
+					FEnemyDropEntry Entry;
+					Entry.ItemTag = ItemTag;
+					Entry.DropChance = Chance;
+					EnemyDropData.DropEntries.Add(Entry);
+				}
+			};
+
+		AddEntry(Row->ItemTag_1, Row->DropChance_1);
+		AddEntry(Row->ItemTag_2, Row->DropChance_2);
+		AddEntry(Row->ItemTag_3, Row->DropChance_3);
+		break;
+	}
+}
+
+void ABaseEnemy::Drop()
+{
+	if (!HasAuthority() || bHasDropped)
+	{
+		return;
+	}
+
+	bHasDropped = true;
+
+	for (const FEnemyDropEntry& Entry : EnemyDropData.DropEntries)
+	{
+		if (!Entry.ItemTag.IsValid())
+		{
+			continue;
+		}
+
+		if (FMath::FRand() > Entry.DropChance)
+		{
+			continue;
+		}
+
+		const FVector SpawnLoc =
+			GetActorLocation()
+			+ FVector(FMath::RandRange(-50.f, 50.f), FMath::RandRange(-50.f, 50.f), 30.f);
+
+		const FTransform SpawnTransform(GetActorRotation(), SpawnLoc);
+
+		// 디퍼드 스폰을 하여 BaseItem 스폰하고, 태그 전달
+		ABaseItem* SpawnedItem =
+			GetWorld()->SpawnActorDeferred<ABaseItem>(
+				ABaseItem::StaticClass(),
+				SpawnTransform,
+				this,
+				nullptr,
+				ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+
+		if (!SpawnedItem)
+		{
+			continue;
+		}
+
+		SpawnedItem->ItemTag = Entry.ItemTag;
+		UGameplayStatics::FinishSpawningActor(SpawnedItem, SpawnTransform);
+	}
+}

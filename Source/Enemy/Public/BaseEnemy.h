@@ -6,6 +6,8 @@
 #include "AbilitySystemInterface.h"
 #include "BaseCharacter.h"
 
+#include "EnemyDropData.h"
+
 #include "BaseEnemy.generated.h"
 
 class UAbilitySystemComponent;
@@ -92,4 +94,33 @@ public:
 	FORCEINLINE FGameplayTag GetDefaultWeaponTag() const { return DefaultWeaponTag; }
 	FORCEINLINE TObjectPtr<UBaseWeaponComponent> GetWeaponComponent() const { check(WeaponComponent) return WeaponComponent; }
 	FORCEINLINE virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { check(AbilitySystemComponent) return AbilitySystemComponent; }
+
+	/*---- For Drop ----*/
+	// 추후 위치 수정
+protected:
+
+	// 드랍 관련 데이터 테이블 (CSV 파일)
+	UPROPERTY(EditDefaultsOnly, Category = "Drop")
+	TObjectPtr<UDataTable> EnemyDropDataTable;
+
+	// 적 종류를 구분하는 태그 -> 해당 태그로 데이터가 있는 Row 검색
+	UPROPERTY(EditDefaultsOnly, Category = "Drop")
+	FGameplayTag EnemyTypeTag;
+
+	// 적 하나가 드랍할 아이템들에 대한 정보를 담은 구조체
+	UPROPERTY()
+	FEnemyDropData EnemyDropData;
+
+	// 한 번 드랍 했는지 확인하는 변수
+	UPROPERTY()
+	bool bHasDropped = false;
+
+public:
+	
+	//Data Table의 전체 데이터중 자신에게 해당하는 데이터를 가져오는 함수
+	void InitializeEnemyDropData();
+
+	// 실제 아이템을 Drop하는 함수
+	UFUNCTION(BlueprintCallable)
+	void Drop();
 };
