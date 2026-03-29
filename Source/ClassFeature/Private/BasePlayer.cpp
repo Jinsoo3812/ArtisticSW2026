@@ -175,7 +175,7 @@ void ABasePlayer::OnRep_PlayerState()
 		}
 	}
 }
-//asdlkfjasdlfkjs
+
 void ABasePlayer::PawnClientRestart()
 {
 	Super::PawnClientRestart();

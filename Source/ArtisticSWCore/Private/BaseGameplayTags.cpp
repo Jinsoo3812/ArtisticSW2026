@@ -56,16 +56,18 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Material_Woods, "Item.Material.Cloths");
 // Enemy
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Sword, "Item.EnemyWeapon.Sword");
 
-/* Mouse Input */
 
-
-/* Key Input */
+/* Default - Keyboard & Mouse */
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse, "Key.Default.Mouse");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_LeftClick, "Key.Default.Mouse.LeftClick");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_RightClick, "Key.Default.Mouse.RightClick");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_F, "Key.Default.F");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_ESC, "Key.Default.ESC");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Space, "Key.Default.Space");
+
+/* UI Input */
+// Ex. I >> Inventory, M >> Map, E >> Equipment
+UE_DEFINE_GAMEPLAY_TAG(Key_UI_I, "Key.UI.I");
 
 
 /* Feature Class */
