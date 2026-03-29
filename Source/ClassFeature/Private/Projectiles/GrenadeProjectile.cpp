@@ -1,9 +1,14 @@
-#include "Projectiles/GrenadeProjectile.h"
+ï»¿#include "Projectiles/GrenadeProjectile.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "GameFramework/Character.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Components/PrimitiveComponent.h"
+#include "AbilitySystemGlobals.h"
+#include "GameplayTagContainer.h"
+#include "GameFramework/ProjectileMovementComponent.h"
+#include "BaseGameplayTags.h"
+#include "Engine/OverlapResult.h"
 
 AGrenadeProjectile::AGrenadeProjectile()
 {
@@ -11,38 +16,48 @@ AGrenadeProjectile::AGrenadeProjectile()
     bReplicates = true;
     SetReplicateMovement(true);
 
-    // ¸Ş½Ã ÄÄÆ÷³ÍÆ® »ı¼º ¹× ·çÆ® µî·Ï 
+    // ë©”ì‹œ ì»´í¬ë„ŒíŠ¸ ìƒì„± ë° ë£¨íŠ¸ ë“±ë¡ 
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
     RootComponent = MeshComp;
 
-    // Ãæµ¹ ¹× ¹°¸®
+    // ì¶©ëŒ ë° ë¬¼ë¦¬
     MeshComp->SetCollisionProfileName(TEXT("BlockAllDynamic"));
     MeshComp->SetSimulatePhysics(false);
+
+    // PMC ì»´í¬ë„ŒíŠ¸ ìƒì„±
+    ProjectileMovement = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovement"));
+    ProjectileMovement->bAutoActivate = false;
+    ProjectileMovement->bShouldBounce = true;
 }
 
 void AGrenadeProjectile::BeginPlay()
 {
     Super::BeginPlay();
 
-    // ¼­¹ö¿¡¼­¸¸ Æø¹ß Å¸ÀÌ¸Ó ÀÛµ¿
+    // ì„œë²„ì—ì„œë§Œ í­ë°œ íƒ€ì´ë¨¸ ì‘ë™
     if (HasAuthority())
     {
         FTimerHandle ExplodeTimerHandle;
         GetWorld()->GetTimerManager().SetTimer(ExplodeTimerHandle, this, &AGrenadeProjectile::Explode, ExplosionDelay, false);
     }
+
+	if (APawn* InstigatorPawn = GetInstigator())
+	{
+		MeshComp->IgnoreActorWhenMoving(InstigatorPawn, true);
+	}
 }
 
 void AGrenadeProjectile::LaunchProjectile(const FVector& LaunchVelocity)
 {
-    // BP¿¡¼­ ¼³Á¤µÈ RootComponent(¹°¸®°¡ ÄÑÁø StaticMesh µî)¸¦ °¡Á®¿Í Áï½Ã ¼Óµµ Àû¿ë
-    if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(GetRootComponent()))
+    // PMCì— ë°œì‚¬ ì†ë„ ì ìš©
+    if (ProjectileMovement)
     {
-        PrimComp->SetSimulatePhysics(true);
-        PrimComp->SetPhysicsLinearVelocity(LaunchVelocity);
+        ProjectileMovement->Velocity = LaunchVelocity;
+        ProjectileMovement->Activate();
     }
 }
 
-// Áö¿¬ »ı¼º ´Ü°è¿¡¼­ ¸Ş½Ã ¿¡¼ÂÀ» Ã¤¿ö³Ö´Â ÇÔ¼ö
+// ì§€ì—° ìƒì„± ë‹¨ê³„ì—ì„œ ë©”ì‹œ ì—ì…‹ì„ ì±„ì›Œë„£ëŠ” í•¨ìˆ˜
 void AGrenadeProjectile::SetGrenadeMesh(UStaticMesh* InMesh)
 {
     if (MeshComp && InMesh)
@@ -53,34 +68,74 @@ void AGrenadeProjectile::SetGrenadeMesh(UStaticMesh* InMesh)
 
 void AGrenadeProjectile::Explode()
 {
-    TArray<AActor*> ActorsToIgnore;
-    ActorsToIgnore.Add(this);
-    TArray<AActor*> OverlappedActors;
+	TArray<FOverlapResult> OverlapResults;
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this); // ë‚œ í­ë°œì— ì•ˆ ë§ê²Œ
+	QueryParams.bTraceComplex = false;
 
-    // ¹İ°æ ³» Ä³¸¯ÅÍ ½ºÄµ
-    UKismetSystemLibrary::SphereOverlapActors(
-        this,
-        GetActorLocation(),
-        ExplosionRadius,
-        TArray<TEnumAsByte<EObjectTypeQuery>>(),
-        ACharacter::StaticClass(),
-        ActorsToIgnore,
-        OverlappedActors
-    );
+	GetWorld()->OverlapMultiByObjectType(
+		OverlapResults,
+		GetActorLocation(),
+		FQuat::Identity,
+		FCollisionObjectQueryParams(ECollisionChannel::ECC_Pawn), // ì  ì±„ë„ì„ ë”°ë¡œ ë§Œë“œëŠ”ê²Œ ë” ì¢‹ê¸´í•¨
+		FCollisionShape::MakeSphere(ExplosionRadius),
+		QueryParams
+	);
 
-    // ½ºÄµµÈ Ä³¸¯ÅÍµé¿¡°Ô µ¥¹ÌÁö(GE) ÀÔÈ÷±â
-    if (DamageEffectSpecHandle.IsValid())
-    {
-        for (AActor* TargetActor : OverlappedActors)
-        {
-            if (UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor))
-            {
-                TargetASC->ApplyGameplayEffectSpecToSelf(*DamageEffectSpecHandle.Data.Get());
-            }
-        }
-    }
+	if (DamageEffectSpecHandle.IsValid())
+	{
+		// ì¤‘ë³µ ì²˜ë¦¬ë¥¼ ë§‰ê¸° ìœ„í•´ ì´ë¯¸ ë°ë¯¸ì§€ë¥¼ ì ìš©í•œ ì•¡í„°ë¥¼ ê¸°ë¡í•  ë°°ì—´
+		TArray<AActor*> ProcessedActors;
+		ProcessedActors.Reserve(OverlapResults.Num()); // ë©”ëª¨ë¦¬ ì˜ˆì•½
 
-    if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, TEXT("Grenade Exploded!"));
+		for (const FOverlapResult& Result : OverlapResults)
+		{
+			AActor* TargetActor = Result.GetActor();
 
-    Destroy();
+			// TargetActorê°€ ìœ íš¨í•˜ì§€ ì•Šê±°ë‚˜, ì´ë¯¸ ë°°ì—´ì— ì¡´ì¬í•œë‹¤ë©´(ë°ë¯¸ì§€ë¥¼ ì¤¬ë‹¤ë©´) ìŠ¤í‚µ
+			if (!TargetActor || ProcessedActors.Contains(TargetActor))
+			{
+				continue;
+			}
+
+			// ìƒˆ íƒ€ê²Ÿì´ë¯€ë¡œ ë°°ì—´ì— ì¶”ê°€
+			ProcessedActors.Add(TargetActor);
+
+			// TargetActorì˜ ASC íšë“
+			if (UAbilitySystemComponent* TargetASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(TargetActor))
+			{
+				// Team_Enemy íƒœê·¸ë¥¼ ë“¤ê³  ìˆëŠ”ì§€ í™•ì¸
+				if (TargetASC->HasMatchingGameplayTag(Team_Enemy) || true /*ì§€ê¸ˆ ë‹¹ì¥ì€ ì ì´ ì—†ìœ¼ë‹ˆ ì¼ë‹¨*/)
+				{
+					TargetASC->ApplyGameplayEffectSpecToSelf(*DamageEffectSpecHandle.Data.Get());
+					UE_LOG(LogTemp, Log, TEXT("AGrenadeProjectile: Applied damage to %s"), *TargetActor->GetName());
+				}
+			}
+		}
+	}
+
+	// í­ë°œ ì´í™íŠ¸ ë“± í´ë¼ ì „ìš© ì²˜ë¦¬ë¥¼ ìœ„í•´ Multicast
+	Multicast_OnExploded();
+
+	Destroy();
+}
+
+void AGrenadeProjectile::Multicast_OnExploded_Implementation()
+{
+	// ì¶”í›„ í­ë°œ ì´í™íŠ¸ (VFX/SFX) ì‚½ì…ë¶€
+
+	// ë””ë²„ê·¸ ë“œë¡œìš° (ì‹œì „ì ë¨¸ì‹ ì—ì„œë§Œ) ---
+	APawn* InstigatorPawn = Cast<APawn>(GetInstigator());
+	if (InstigatorPawn && InstigatorPawn->IsLocallyControlled())
+	{
+		DrawDebugSphere(
+			GetWorld(),
+			GetActorLocation(),
+			ExplosionRadius,
+			32,
+			FColor::Red,
+			false,
+			2.0f
+		);
+	}
 }

@@ -9,6 +9,7 @@
 class UStaticMesh;
 class ABaseProjectile;
 class UTexture2D;
+class ABaseItem;	
 
 // 아이템 하나에 대한 정의 구조체
 USTRUCT(BlueprintType)
@@ -40,6 +41,10 @@ struct FItemDefinition
 	// 주웠을 때 플레이어에게 부여할 어빌리티 클래스
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	TSoftClassPtr<UGameplayAbility> GrantedAbilityClass;
+
+	// 실제 사용 시 스폰할 실제 액터 (예: BombProjectile)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
+	TSoftClassPtr<ABaseItem> SpawnClassByCrafting;
 
 	// 실제 사용 시 스폰할 실제 액터 (예: BombProjectile)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")

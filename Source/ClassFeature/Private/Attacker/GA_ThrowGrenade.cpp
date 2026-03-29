@@ -97,11 +97,7 @@ void UGA_ThrowGrenade::OnInputReleased(float TimeHeld)
 		LaunchDir.Normalize();
 		FVector LaunchVelocity = LaunchDir * ThrowSpeed;
 
-		FVector SpawnLocation = Player->GetActorLocation();
-		if (Player->GetMesh())
-		{
-			SpawnLocation = Player->GetMesh()->GetSocketLocation(FName("hand_r"));
-		}
+		FVector SpawnLocation = Player->EquippedItem->GetActorLocation();
 
 		FTransform SpawnTransform(LaunchVelocity.Rotation(), SpawnLocation);
 

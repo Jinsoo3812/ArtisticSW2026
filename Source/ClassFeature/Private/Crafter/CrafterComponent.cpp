@@ -14,6 +14,11 @@
 #include "InteractableComponent.h"
 #include "BaseGameplayTags.h"
 #include "StarForceWidget.h"
+#include "WorkTable.h"
+#include "InventoryComponent.h"
+#include "StarForceWidget.h"
+#include "ItemData.h"
+#include "BaseItem.h"
 
 UCrafterComponent::UCrafterComponent()
 {
@@ -189,13 +194,19 @@ void UCrafterComponent::HandleCraftEvent(const FGameplayEventData* Payload)
 	}
 }
 
+void UCrafterComponent::ClientRPC_OpenCraftingUI_Implementation(AActor* TargetActor)
+{
+	// 서버의 명령을 받아 클라이언트에서 실행됨
+	ShowCraftingUI(TargetActor);
+}
+
 void UCrafterComponent::ShowCraftingUI(AActor* TargetActor)
 {
 	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
 	if (!Player) return;
 
-	// InteractableComp로부터 UI 클래스 획득
-	UInteractableComponent* InteractComp = TargetActor->FindComponentByClass<UInteractableComponent>();
+	CurrentInteractingTable = Cast<AWorkTable>(TargetActor);
+	UInteractableComponent* InteractComp = CurrentInteractingTable->FindComponentByClass<UInteractableComponent>();
 	if (!InteractComp || !InteractComp->InteractPopupUIClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("UCrafterComponent::HandleCraftEvent : Can't find InteractableComponent or UI Class is not assigned."));
@@ -214,6 +225,14 @@ void UCrafterComponent::ShowCraftingUI(AActor* TargetActor)
 		ActiveCraftingUI = CreateWidget<UUserWidget>(PC, InteractComp->InteractPopupUIClass);
 		if (ActiveCraftingUI)
 		{
+			// 생성한 UI가 UStarForceWidget이라면 이벤트 구독(Bind)
+			if (UStarForceWidget* StarForceUI = Cast<UStarForceWidget>(ActiveCraftingUI))
+			{
+				// 이전에 바인딩된 게 있다면 지우고 새로 바인딩
+				StarForceUI->OnStarForceSuccess.RemoveDynamic(this, &UCrafterComponent::HandleStarForceSuccess);
+				StarForceUI->OnStarForceSuccess.AddDynamic(this, &UCrafterComponent::HandleStarForceSuccess);
+			}
+
 			// 화면에 위젯 추가
 			ActiveCraftingUI->AddToViewport();
 
@@ -242,10 +261,13 @@ void UCrafterComponent::ShowCraftingUI(AActor* TargetActor)
 	}
 }
 
-void UCrafterComponent::ClientRPC_OpenCraftingUI_Implementation(AActor* TargetActor)
+void UCrafterComponent::HandleStarForceSuccess()
 {
-	// 서버의 명령을 받아 클라이언트에서 실행됨
-	ShowCraftingUI(TargetActor);
+	// UI가 보낸 성공 이벤트를 받았으니 서버에게 Item을 만들어 Player에게 넘기라고 요청
+	if (CurrentInteractingTable.IsValid())
+	{
+		Server_CompleteCrafting(CurrentInteractingTable.Get());
+	}
 }
 
 void UCrafterComponent::EndCrafting()
@@ -310,6 +332,63 @@ void UCrafterComponent::SpaceBarAction()
 			{
 				StarForceUI->StartStarForce();
 				bIsPlayingStarforce = true;
+			}
+		}
+	}
+}
+
+void UCrafterComponent::Server_CompleteCrafting_Implementation(AWorkTable* TargetTable)
+{
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetOwner())) {
+		// [서버]
+		if (!Player->HasAuthority() || !TargetTable) return;
+
+		// 작업대에서 제작할 ItemTag 가져오기 (임시임. 실제로는 작업대가 csv 파일등을 가지고 있고, 작업대가 재료에 따라 정해진 것을 건내줄 것)
+		FGameplayTag CraftedTag = TargetTable->ItemTagToTestCraft;
+		if (!CraftedTag.IsValid()) return;
+
+		// 제작된 아이템이 Material인지 Tool인지 판단
+		if (CraftedTag.MatchesTag(Item_Material))
+		{
+			UInventoryComponent* InventoryComponent = Player->GetInventoryComponent();
+			// 재료라면 인벤토리에 추가
+			if (InventoryComponent)
+			{
+				InventoryComponent->AddMaterial(CraftedTag, 1);
+			}
+		}
+		else if (CraftedTag.MatchesTag(Item_Tool))
+		{
+			// 진입 전 빈 슬롯 검사
+			if (!Player->HasEmptyItemSlot())
+			{
+				// 슬롯이 꽉 찼으므로 예외 처리
+				UE_LOG(LogTemp, Warning, TEXT("CrafterComponent: Quick slots are full! Cannot craft item: %s"), *CraftedTag.ToString());
+				return;
+			}
+
+			// 태그를 기반으로 스폰할 클래스 찾기
+			UClass* ItemClassToSpawn = ItemDataAsset->FindItemDefinition(CraftedTag)->SpawnClassByCrafting.LoadSynchronous();
+
+			if (!ItemClassToSpawn)
+			{
+				UE_LOG(LogTemp, Error, TEXT("CrafterComponent: Invalid SpawnClass for Tag: %s"), *CraftedTag.ToString());
+				return;
+			}
+
+			// 스폰 위치는 작업대 위쪽으로 적당히 오프셋을 줌
+			FVector SpawnLocation = TargetTable->GetActorLocation() + FVector(0.f, 0.f, 50.f);
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+			ABaseItem* SpawnedItem = GetWorld()->SpawnActor<ABaseItem>(ItemClassToSpawn, SpawnLocation, FRotator::ZeroRotator, SpawnParams);
+			SpawnedItem->SetItemState(EItemState::Dropped_Hovering);
+
+			// 슬롯에 아이템 넣기
+			if (SpawnedItem)
+			{
+				Player->TryPutItemInSlot(SpawnedItem);
+				UE_LOG(LogTemp, Log, TEXT("CrafterComponent: Successfully crafted and equipped: %s"), *CraftedTag.ToString());
 			}
 		}
 	}
