@@ -47,7 +47,13 @@ UE_DEFINE_GAMEPLAY_TAG(Item_TestCrafted, "Item.TestCrafted");
 UE_DEFINE_GAMEPLAY_TAG(Item_Weapon_Grenade, "Item.Weapon.Grenade");
 UE_DEFINE_GAMEPLAY_TAG(Item_Weapon_Sword, "Item.Weapon.Sword");
 
+// Tool
+UE_DEFINE_GAMEPLAY_TAG(Item_Tool, "Item.Tool");
+UE_DEFINE_GAMEPLAY_TAG(Item_Tool_Grenade, "Item.Tool.Grenade");
+UE_DEFINE_GAMEPLAY_TAG(Item_Tool_TestRed, "Item.Tool.TestRed");
+UE_DEFINE_GAMEPLAY_TAG(Item_Tool_TestBlue, "Item.Tool.TestBlue");
 
+// Material
 UE_DEFINE_GAMEPLAY_TAG(Item_Material, "Item.Material");
 UE_DEFINE_GAMEPLAY_TAG(Item_Material_Ore, "Item.Material.Ore");
 UE_DEFINE_GAMEPLAY_TAG(Item_Material_Cloths, "Item.Material.Woods");
