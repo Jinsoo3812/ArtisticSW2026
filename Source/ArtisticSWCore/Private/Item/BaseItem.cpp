@@ -255,3 +255,23 @@ void ABaseItem::OnRep_ItemState()
 		break;
 	}
 }
+
+UTexture2D* ABaseItem::GetItemIcon() const
+{
+	if (!ItemDataAsset)
+	{
+		return nullptr;
+	}
+
+	return ItemDataAsset->GetIconByTag(ItemTag);
+}
+
+FText ABaseItem::GetItemNameText() const
+{
+	if (!ItemDataAsset)
+	{
+		return FText::FromString(ItemTag.ToString());
+	}
+
+	return ItemDataAsset->GetItemNameByTag(ItemTag);
+}
