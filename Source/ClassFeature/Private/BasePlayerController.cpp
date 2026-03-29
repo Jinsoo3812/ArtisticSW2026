@@ -53,9 +53,7 @@ void ABasePlayerController::SetupInputComponent()
 			{
 				if (Action.InputAction && Action.KeyTag.IsValid())
 				{
-					// Player를 거치지 않고, PC 자신의 OnUIInputPressed 함수로 직행
 					EnhancedInput->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayerController::OnUIInputPressed, Action.KeyTag);
-					UE_LOG(LogTemp, Log, TEXT("Bound UI input: %s"), *Action.KeyTag.ToString());	
 				}
 			}
 		}

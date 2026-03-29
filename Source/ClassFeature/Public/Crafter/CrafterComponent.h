@@ -16,6 +16,7 @@ class ABasePlayer;
 class ABaseItem;
 struct FGameplayEventData;
 class UUserWidget;
+class AWorkTable;
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class CLASSFEATURE_API UCrafterComponent : public UActorComponent
@@ -68,6 +69,9 @@ protected:
 
 	/* --- WorkTable 관리 --- */
 public:
+	// 서버로 제작 완료를 알리는 RPC
+	UFUNCTION(Server, Reliable)
+	void Server_CompleteCrafting(AWorkTable* TargetTable);
 	
 
 protected:
@@ -76,6 +80,10 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UUserWidget> ActiveCraftingUI;
+
+	// 현재 상호작용 중인 작업대를 기억할 캐시 변수
+	UPROPERTY()
+	TWeakObjectPtr<AWorkTable> CurrentInteractingTable;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Crafter|WorkTable")
 	float WorkTableIMCPriority = 10;
@@ -99,4 +107,8 @@ protected:
 	// 스페이스바 입력 시 호출될 함수 (스타포스 플레이)
 	UFUNCTION(BlueprintCallable, Category = "Interaction|Craft")
 	void SpaceBarAction();
+
+	// 작업대 UI로부터의 StarForce 성공 이벤트를 구독할 함수
+	UFUNCTION()
+	void HandleStarForceSuccess();
 };

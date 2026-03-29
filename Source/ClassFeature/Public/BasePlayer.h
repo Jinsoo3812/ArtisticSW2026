@@ -279,7 +279,6 @@ protected:
 	TObjectPtr<UInventoryComponent> InventoryComponent;
 
 public:
-
 	UFUNCTION()
 	void OnRep_ItemSlots();
 
