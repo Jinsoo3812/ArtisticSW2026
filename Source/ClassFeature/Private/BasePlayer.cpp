@@ -17,11 +17,11 @@
 #include "ItemData.h"
 #include "Interactable.h"
 #include "CollisionChannels.h"
-#include "BaseGameplayTags.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Components/WidgetComponent.h"
 #include "InteractableComponent.h"
 #include "InteractUserWidget.h"
+#include "Inventory/InventoryComponent.h"
 
 /* --- FItemSlot ---*/
 
@@ -53,6 +53,9 @@ ABasePlayer::ABasePlayer()
 	EquippedItem = nullptr;
 
 	CameraBoom->bDoCollisionTest = false;
+
+	// 인벤토리 컴포넌트 부착
+	InventoryComponent = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComponent"));
 }
 
 void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -87,6 +90,8 @@ void ABasePlayer::BeginPlay()
 			}
 		}
 	}
+
+	OnItemSlotsChanged.Broadcast();
 }
 
 void ABasePlayer::Tick(float DeltaTime)
@@ -144,8 +149,8 @@ void ABasePlayer::PossessedBy(AController* NewController)
 			}
 		}
 
-		// 부모 클래스에 구현된 어빌리티 부여 함수 호출 (서버에서만)
-		GrantAbilities(StartingAbilities);
+		/*// 부모 클래스에 구현된 어빌리티 부여 함수 호출 (서버에서만)
+		GrantAbilities(StartingAbilities);*/
 	}
 
 	// ASC 초기화 완료 알림 방송
@@ -170,7 +175,7 @@ void ABasePlayer::OnRep_PlayerState()
 		}
 	}
 }
-
+//asdlkfjasdlfkjs
 void ABasePlayer::PawnClientRestart()
 {
 	Super::PawnClientRestart();
@@ -457,6 +462,16 @@ void ABasePlayer::HandlePickUpEvent(const FGameplayEventData* Payload)
 	{
 		if (ABaseItem* ItemToPickUp = const_cast<ABaseItem*>(Cast<ABaseItem>(Payload->Target)))
 		{
+			// 아이템 태그가 material 로 시작하면 인벤토리로
+			if (ItemToPickUp->ItemTag.MatchesTag(Item_Material))
+			{
+				if (InventoryComponent && InventoryComponent ->AddMaterial(ItemToPickUp->ItemTag, 1))
+				{
+					ItemToPickUp->Destroy();
+				}
+				return;
+			}
+
 			TryPutItemInSlot(ItemToPickUp);
 		}
 	}
@@ -486,6 +501,8 @@ void ABasePlayer::UseEquippedItem(bool bDestroy)
 		
 		// 손에 들고 있는 장착 상태 해제
 		EquippedItem = nullptr;
+
+		OnItemSlotsChanged.Broadcast();
 	}
 }
 
@@ -557,6 +574,8 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 			GrantAbilityToSlot(Key_Default_Mouse_LeftClick, EquippedItem->GetGrantedAbilityClass());
 		}
 	}
+
+	OnItemSlotsChanged.Broadcast();
 }
 
 void ABasePlayer::Server_EquipItemFromSlot_Implementation(FGameplayTag KeyTag)
@@ -574,6 +593,7 @@ void ABasePlayer::RemoveItemFromSlot(FGameplayTag KeyTag)
 	{
 		ItemSlots[SlotIndex].Item = nullptr;
 		RemoveAbilityFromSlot(KeyTag);
+		OnItemSlotsChanged.Broadcast();
 	}
 }
 
@@ -590,6 +610,8 @@ void ABasePlayer::OnRep_EquippedItem()
 	{
 		EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, EquippedItem->MyDefinition->AttachmentSocketName);
 	}
+
+	OnItemSlotsChanged.Broadcast();
 }
 
 void ABasePlayer::StartInteractionScan()
@@ -765,4 +787,9 @@ void ABasePlayer::DoJumpStart()
 void ABasePlayer::DoJumpEnd()
 {
 	StopJumping();
+}
+
+void ABasePlayer::OnRep_ItemSlots()
+{
+	OnItemSlotsChanged.Broadcast();
 }

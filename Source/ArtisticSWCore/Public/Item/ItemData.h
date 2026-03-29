@@ -8,6 +8,7 @@
 
 class UStaticMesh;
 class ABaseProjectile;
+class UTexture2D;
 
 // 아이템 하나에 대한 정의 구조체
 USTRUCT(BlueprintType)
@@ -27,6 +28,10 @@ struct FItemDefinition
 	// 아이템의 사용법 (For UI)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	FText HowToInteractText;
+
+	// 아이템의 아이콘 (For UI)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
+	TSoftObjectPtr<UTexture2D> Icon2D;
 
 	// 아이템의 외형
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
@@ -65,4 +70,10 @@ public:
 	{
 		return ItemDefinitions.Find(ItemTag);
 	}
+
+	// 태그로 아이콘을 가져오는 함수
+	UTexture2D* GetIconByTag(const FGameplayTag& ItemTag) const;
+
+	// 태그로 이름을 가져오는 함수
+	FText GetItemNameByTag(const FGameplayTag& ItemTag) const;
 };
