@@ -530,7 +530,6 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 		// 이미 손에 들고 있는 Item이라면 아무 작업도 하지 않음
 		if (EquippedItem == SlotItem) return;
 
-
 		// 기존 아이템은 안보이게 넣음
 		if (IsValid(EquippedItem))
 		{
@@ -595,6 +594,15 @@ void ABasePlayer::RemoveItemFromSlot(FGameplayTag KeyTag)
 		RemoveAbilityFromSlot(KeyTag);
 		OnItemSlotsChanged.Broadcast();
 	}
+}
+
+bool ABasePlayer::HasEmptyItemSlot() const
+{
+	// 람다를 사용해 비어있는(Invalid한) 아이템 포인터가 하나라도 있는지 검사
+	return ItemSlots.ContainsByPredicate([](const FItemSlot& Slot)
+		{
+			return !IsValid(Slot.Item);
+		});
 }
 
 void ABasePlayer::ServerRPC_SendGameplayEvent_Implementation(FGameplayTag EventTag, FGameplayEventData Payload)

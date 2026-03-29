@@ -17,6 +17,7 @@ class ABaseItem;
 struct FGameplayEventData;
 class UUserWidget;
 class AWorkTable;
+class UItemData;
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class CLASSFEATURE_API UCrafterComponent : public UActorComponent
@@ -75,6 +76,10 @@ public:
 	
 
 protected:
+	// ItemData DA 캐시
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafter|WorkTable")
+	TObjectPtr<UItemData> ItemDataAsset;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Crafter|WorkTable")
 	UInputMappingContext* WorkTableIMC;
 

@@ -17,6 +17,8 @@
 #include "WorkTable.h"
 #include "InventoryComponent.h"
 #include "StarForceWidget.h"
+#include "ItemData.h"
+#include "BaseItem.h"
 
 UCrafterComponent::UCrafterComponent()
 {
@@ -355,11 +357,39 @@ void UCrafterComponent::Server_CompleteCrafting_Implementation(AWorkTable* Targe
 				InventoryComponent->AddMaterial(CraftedTag, 1);
 			}
 		}
-		else
+		else if (CraftedTag.MatchesTag(Item_Tool))
 		{
-			// [TODO] 재료가 아닌 경우 (예: 도구/무기라서 퀵슬롯에 들어가야 하는 경우)
-			// 여기에 액터를 스폰하고 TryPutItemInSlot()을 호출하는 로직을 나중에 추가하면 돼!
-			UE_LOG(LogTemp, Log, TEXT("Crafting Success! But it's not a material. Tag: %s"), *CraftedTag.ToString());
+			// 진입 전 빈 슬롯 검사
+			if (!Player->HasEmptyItemSlot())
+			{
+				// 슬롯이 꽉 찼으므로 예외 처리
+				UE_LOG(LogTemp, Warning, TEXT("CrafterComponent: Quick slots are full! Cannot craft item: %s"), *CraftedTag.ToString());
+				return;
+			}
+
+			// 태그를 기반으로 스폰할 클래스 찾기
+			UClass* ItemClassToSpawn = ItemDataAsset->FindItemDefinition(CraftedTag)->SpawnClassByCrafting.LoadSynchronous();
+
+			if (!ItemClassToSpawn)
+			{
+				UE_LOG(LogTemp, Error, TEXT("CrafterComponent: Invalid SpawnClass for Tag: %s"), *CraftedTag.ToString());
+				return;
+			}
+
+			// 스폰 위치는 작업대 위쪽으로 적당히 오프셋을 줌
+			FVector SpawnLocation = TargetTable->GetActorLocation() + FVector(0.f, 0.f, 50.f);
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+			ABaseItem* SpawnedItem = GetWorld()->SpawnActor<ABaseItem>(ItemClassToSpawn, SpawnLocation, FRotator::ZeroRotator, SpawnParams);
+			SpawnedItem->SetItemState(EItemState::Dropped_Hovering);
+
+			// 슬롯에 아이템 넣기
+			if (SpawnedItem)
+			{
+				Player->TryPutItemInSlot(SpawnedItem);
+				UE_LOG(LogTemp, Log, TEXT("CrafterComponent: Successfully crafted and equipped: %s"), *CraftedTag.ToString());
+			}
 		}
 	}
 }
