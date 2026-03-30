@@ -19,6 +19,7 @@
 #include "StarForceWidget.h"
 #include "ItemData.h"
 #include "BaseItem.h"
+#include "ItemSubsystem.h"
 
 UCrafterComponent::UCrafterComponent()
 {
@@ -359,36 +360,34 @@ void UCrafterComponent::Server_CompleteCrafting_Implementation(AWorkTable* Targe
 		}
 		else if (CraftedTag.MatchesTag(Item_Tool))
 		{
-			// 진입 전 빈 슬롯 검사
-			if (!Player->HasEmptyItemSlot())
-			{
-				// 슬롯이 꽉 찼으므로 예외 처리
-				UE_LOG(LogTemp, Warning, TEXT("CrafterComponent: Quick slots are full! Cannot craft item: %s"), *CraftedTag.ToString());
-				return;
-			}
+			bool bHasEmptySlot = Player->HasEmptyItemSlot();
 
-			// 태그를 기반으로 스폰할 클래스 찾기
-			UClass* ItemClassToSpawn = ItemDataAsset->FindItemDefinition(CraftedTag)->SpawnClassByCrafting.LoadSynchronous();
+			UWorld* World = GetWorld();
+			UItemSubsystem* ItemSubsystem = World ? World->GetSubsystem<UItemSubsystem>() : nullptr;
+			if (!ItemSubsystem) return;
 
-			if (!ItemClassToSpawn)
-			{
-				UE_LOG(LogTemp, Error, TEXT("CrafterComponent: Invalid SpawnClass for Tag: %s"), *CraftedTag.ToString());
-				return;
-			}
-
-			// 스폰 위치는 작업대 위쪽으로 적당히 오프셋을 줌
+			// 스폰 위치 계산
 			FVector SpawnLocation = TargetTable->GetActorLocation() + FVector(0.f, 0.f, 50.f);
-			FActorSpawnParameters SpawnParams;
-			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			FTransform SpawnTransform(FRotator::ZeroRotator, SpawnLocation);
 
-			ABaseItem* SpawnedItem = GetWorld()->SpawnActor<ABaseItem>(ItemClassToSpawn, SpawnLocation, FRotator::ZeroRotator, SpawnParams);
-			SpawnedItem->SetItemState(EItemState::Dropped_Hovering);
+			// 슬롯이 비어있다면 호버링 상태(또는 인벤토리 상태)로, 꽉 찼다면 바닥에 떨어지는 물리 상태로 결정
+			EItemState TargetState = bHasEmptySlot ? EItemState::Dropped_Hovering : EItemState::Dropped_Simulating;
 
-			// 슬롯에 아이템 넣기
+			// Subsystem을 통한 깔끔한 스폰 요청
+			ABaseItem* SpawnedItem = ItemSubsystem->SpawnItem(CraftedTag, SpawnTransform, TargetState, Player);
+
 			if (SpawnedItem)
 			{
-				Player->TryPutItemInSlot(SpawnedItem);
-				UE_LOG(LogTemp, Log, TEXT("CrafterComponent: Successfully crafted and equipped: %s"), *CraftedTag.ToString());
+				if (bHasEmptySlot)
+				{
+					Player->TryPutItemInSlot(SpawnedItem);
+					UE_LOG(LogTemp, Log, TEXT("CrafterComponent: Successfully crafted and equipped: %s"), *CraftedTag.ToString());
+				}
+				else
+				{
+					// 슬롯이 꽉 차서 바닥에 떨어뜨림 (유저 경험 향상)
+					UE_LOG(LogTemp, Warning, TEXT("CrafterComponent: Quick slots are full! Dropped crafted item: %s"), *CraftedTag.ToString());
+				}
 			}
 		}
 	}

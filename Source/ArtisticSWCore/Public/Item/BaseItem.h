@@ -56,6 +56,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_ItemTag, Category = "Item|Data")
 	FGameplayTag ItemTag;
 
+	// 서브시스템에서 ItemDefinition을 가져오기
+	const FItemDefinition* GetDefinitionFromSubsystem() const;
+
 	// DA로부터 가져온 본인의 정의 구조체
 	const FItemDefinition* MyDefinition;
 
@@ -68,10 +71,6 @@ protected:
 	// Interact Interface를 통한 상호작용 컴포넌트
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Components")
 	UInteractableComponent* InteractableComponent;
-
-	// ItemData DA 캐시
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Data")
-	TObjectPtr<UItemData> ItemDataAsset;
 
 	UPROPERTY(ReplicatedUsing = OnRep_ItemState)
 	EItemState ItemState;

@@ -616,6 +616,11 @@ void ABasePlayer::OnRep_EquippedItem()
 	// 새 아이템이 유효하다면 손 소켓에 부착
 	if (IsValid(EquippedItem) && EquippedItem->MyDefinition)
 	{
+		if (UStaticMeshComponent* MeshComp = Cast<UStaticMeshComponent>(EquippedItem->GetRootComponent()))
+		{
+			MeshComp->SetSimulatePhysics(false);
+			MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
 		EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, EquippedItem->MyDefinition->AttachmentSocketName);
 	}
 

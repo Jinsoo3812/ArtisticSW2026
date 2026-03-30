@@ -6,6 +6,7 @@
 #include "Net/UnrealNetwork.h"
 #include "InteractableComponent.h"
 #include "CollisionChannels.h"
+#include "ItemSubsystem.h"
 
 ABaseItem::ABaseItem()
 {
@@ -90,9 +91,9 @@ void ABaseItem::BeginPlay()
 		InteractableComponent->OnInteracted.AddDynamic(this, &ABaseItem::OnInteractableTriggered);
 	}
 
-	if (ItemDataAsset && ItemTag.IsValid())
+	if (ItemTag.IsValid())
 	{
-		if (const FItemDefinition* Def = ItemDataAsset->FindItemDefinition(ItemTag))
+		if (const FItemDefinition* Def = GetDefinitionFromSubsystem())
 		{
 			// InteractComp에 UI 정보 세팅
 			if (UInteractableComponent* InteractComp = FindComponentByClass<UInteractableComponent>())
@@ -102,6 +103,18 @@ void ABaseItem::BeginPlay()
 			}
 		}
 	}
+}
+
+const FItemDefinition* ABaseItem::GetDefinitionFromSubsystem() const
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>())
+		{
+			return ItemSubsystem->GetItemDefinition(ItemTag);
+		}
+	}
+	return nullptr;
 }
 
 void ABaseItem::Tick(float DeltaTime)
@@ -149,9 +162,9 @@ void ABaseItem::OnInteractableTriggered(AActor* Interactor)
 
 void ABaseItem::InitializeItem()
 {
-	if (ItemDataAsset && ItemTag.IsValid())
+	if (ItemTag.IsValid())
 	{
-		if (const FItemDefinition* Def = ItemDataAsset->FindItemDefinition(ItemTag))
+		if (const FItemDefinition* Def = GetDefinitionFromSubsystem())
 		{
 			MyDefinition = Def;
 
@@ -249,20 +262,18 @@ void ABaseItem::OnRep_ItemState()
 
 UTexture2D* ABaseItem::GetItemIcon() const
 {
-	if (!ItemDataAsset)
+	if (const FItemDefinition* Def = GetDefinitionFromSubsystem())
 	{
-		return nullptr;
+		return Def->Icon2D.LoadSynchronous();
 	}
-
-	return ItemDataAsset->GetIconByTag(ItemTag);
+	return nullptr;
 }
 
 FText ABaseItem::GetItemNameText() const
 {
-	if (!ItemDataAsset)
+	if (const FItemDefinition* Def = GetDefinitionFromSubsystem())
 	{
-		return FText::FromString(ItemTag.ToString());
+		return Def->ItemName;
 	}
-
-	return ItemDataAsset->GetItemNameByTag(ItemTag);
+	return FText::FromString(ItemTag.ToString());
 }
