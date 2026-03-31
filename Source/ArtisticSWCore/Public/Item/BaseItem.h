@@ -81,11 +81,6 @@ protected:
 
 	/* API for Player */
 public:
-	// Player가 Item을 주워 자신의 손/ItemSlot/Inventory에 저장하기 위한 함수.
-	// Interact 함수에서 호출되며 캡슐화되어야 하지만 PR이후 리팩토링 고려
-	UFUNCTION(BlueprintCallable, Category = "Item|Action")
-	virtual void PickUpItem(AActor* Picker);
-
 	// Item이 부여하는 GA Class 반환 함수
 	UFUNCTION(BlueprintCallable, Category = "Item|Data")
 	TSubclassOf<UGameplayAbility> GetGrantedAbilityClass() const;

@@ -385,8 +385,30 @@ void UCrafterComponent::Server_CompleteCrafting_Implementation(AWorkTable* Targe
 				}
 				else
 				{
-					// 슬롯이 꽉 차서 바닥에 떨어뜨림 (유저 경험 향상)
+					// 슬롯이 꽉 차서 바닥에 떨어뜨림 
 					UE_LOG(LogTemp, Warning, TEXT("CrafterComponent: Quick slots are full! Dropped crafted item: %s"), *CraftedTag.ToString());
+
+					// 아이템의 Root Component를 가져와 물리적 힘(Impulse)을 가합니다.
+					if (UPrimitiveComponent* PrimitiveComp = Cast<UPrimitiveComponent>(SpawnedItem->GetRootComponent()))
+					{
+						// Dropped_Simulating 상태라면 물리 시뮬레이션이 켜져 있을 것이므로 확인 후 실행
+						if (PrimitiveComp->IsSimulatingPhysics())
+						{
+							// Pitch(Y축 회전, 앙각)는 45도 고정, Yaw(Z축 회전)는 0~360도 랜덤
+							float RandomYaw = FMath::RandRange(0.f, 360.f);
+							FRotator LaunchRotation(45.f, RandomYaw, 0.f);
+
+							// 회전값을 기반으로 날아갈 방향 벡터 추출
+							FVector LaunchDirection = LaunchRotation.Vector();
+
+							// 살짝 튀어오를 속도 (cm/s 단위, C++17/20 모던 C++ 스타일로 constexpr 사용)
+							constexpr float LaunchSpeed = 400.f;
+							FVector LaunchVelocity = LaunchDirection * LaunchSpeed;
+
+							// bVelocityChange를 true로 주어, 아이템의 무게(Mass)를 무시하고 일정한 속도로 튀어오르게 함
+							PrimitiveComp->AddImpulse(LaunchVelocity, NAME_None, true);
+						}
+					}
 				}
 			}
 		}
