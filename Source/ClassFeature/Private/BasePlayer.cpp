@@ -22,6 +22,7 @@
 #include "InteractableComponent.h"
 #include "InteractUserWidget.h"
 #include "Inventory/InventoryComponent.h"
+#include "ItemSubSystem.h"
 
 /* --- FItemSlot ---*/
 
@@ -336,8 +337,6 @@ bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
 	{
 		// 빈 슬롯에 저장
 		ItemSlots[EmptySlotIndex].Item = Item;
-
-		Item->PickUpItem(this);
 		
 		if (IsValid(EquippedItem))
 		{
@@ -472,7 +471,47 @@ void ABasePlayer::HandlePickUpEvent(const FGameplayEventData* Payload)
 				return;
 			}
 
-			TryPutItemInSlot(ItemToPickUp);
+			// 장착형 아이템 처리 로직 (서버에서만 생성/파괴 수행)
+			if (HasAuthority())
+			{
+				// 슬롯 여유 공간 확인 (불필요한 힙 메모리 할당 및 스폰 연산 방지)
+				if (HasEmptyItemSlot())
+				{
+					UWorld* World = GetWorld();
+					if (IsValid(World))
+					{
+						if (UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>())
+						{
+							// 기존 아이템의 데이터 캐싱 (상수화로 불변성 보장)
+							const FGameplayTag TargetItemTag = ItemToPickUp->ItemTag;
+							const FTransform SpawnTransform = ItemToPickUp->GetActorTransform();
+
+							// 서브시스템을 통해 새로운 아이템 스폰 (초기 상태를 InItemSlot으로 지정)
+							ABaseItem* NewSpawnedItem = ItemSubsystem->SpawnItem(TargetItemTag, SpawnTransform, EItemState::InItemSlot, this);
+
+							if (IsValid(NewSpawnedItem))
+							{
+								// 성공적으로 스폰되었다면 슬롯에 할당 시도
+								if (TryPutItemInSlot(NewSpawnedItem))
+								{
+									// 슬롯 등록까지 완료되었을 때만 기존 바닥의 아이템을 맵에서 제거
+									ItemToPickUp->Destroy();
+								}
+								else
+								{
+									// 동시성 문제 등으로 슬롯 등록이 실패했다면 고아(Orphan) 액터가 되지 않도록 롤백
+									NewSpawnedItem->Destroy();
+									UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::HandlePickUpEvent : Failed to put new item in slot. Spawn rolled back."));
+								}
+							}
+						}
+					}
+				}
+				else
+				{
+					UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::HandlePickUpEvent : Inventory is full. Cannot pick up %s"), *ItemToPickUp->GetName());
+				}
+			}
 		}
 	}
 }
@@ -547,6 +586,7 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 		// 장착 아이템 갱신
 		EquippedItem = SlotItem;
 		EquippedItem->SetItemState(EItemState::Equipped);
+		EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, EquippedItem->MyDefinition->AttachmentSocketName);
 
 		// 새 아이템 GA 부여 로직
 		bool bShouldGrantAbility = false;
@@ -616,6 +656,11 @@ void ABasePlayer::OnRep_EquippedItem()
 	// 새 아이템이 유효하다면 손 소켓에 부착
 	if (IsValid(EquippedItem) && EquippedItem->MyDefinition)
 	{
+		if (UStaticMeshComponent* MeshComp = Cast<UStaticMeshComponent>(EquippedItem->GetRootComponent()))
+		{
+			MeshComp->SetSimulatePhysics(false);
+			MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
 		EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, EquippedItem->MyDefinition->AttachmentSocketName);
 	}
 

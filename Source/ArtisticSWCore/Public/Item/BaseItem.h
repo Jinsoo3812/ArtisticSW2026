@@ -56,6 +56,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing = OnRep_ItemTag, Category = "Item|Data")
 	FGameplayTag ItemTag;
 
+	// 서브시스템에서 ItemDefinition을 가져오기
+	const FItemDefinition* GetDefinitionFromSubsystem() const;
+
 	// DA로부터 가져온 본인의 정의 구조체
 	const FItemDefinition* MyDefinition;
 
@@ -69,10 +72,6 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Components")
 	UInteractableComponent* InteractableComponent;
 
-	// ItemData DA 캐시
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item|Data")
-	TObjectPtr<UItemData> ItemDataAsset;
-
 	UPROPERTY(ReplicatedUsing = OnRep_ItemState)
 	EItemState ItemState;
 
@@ -82,11 +81,6 @@ protected:
 
 	/* API for Player */
 public:
-	// Player가 Item을 주워 자신의 손/ItemSlot/Inventory에 저장하기 위한 함수.
-	// Interact 함수에서 호출되며 캡슐화되어야 하지만 PR이후 리팩토링 고려
-	UFUNCTION(BlueprintCallable, Category = "Item|Action")
-	virtual void PickUpItem(AActor* Picker);
-
 	// Item이 부여하는 GA Class 반환 함수
 	UFUNCTION(BlueprintCallable, Category = "Item|Data")
 	TSubclassOf<UGameplayAbility> GetGrantedAbilityClass() const;
