@@ -6,6 +6,7 @@
 #include "Net/UnrealNetwork.h"
 #include "InteractableComponent.h"
 #include "CollisionChannels.h"
+#include "ItemSubsystem.h"
 
 ABaseItem::ABaseItem()
 {
@@ -99,9 +100,9 @@ void ABaseItem::BeginPlay()
 		InteractableComponent->OnInteracted.AddDynamic(this, &ABaseItem::OnInteractableTriggered);
 	}
 
-	if (ItemDataAsset && ItemTag.IsValid())
+	if (ItemTag.IsValid())
 	{
-		if (const FItemDefinition* Def = ItemDataAsset->FindItemDefinition(ItemTag))
+		if (const FItemDefinition* Def = GetDefinitionFromSubsystem())
 		{
 			// InteractComp에 UI 정보 세팅
 			if (UInteractableComponent* InteractComp = FindComponentByClass<UInteractableComponent>())
@@ -111,6 +112,18 @@ void ABaseItem::BeginPlay()
 			}
 		}
 	}
+}
+
+const FItemDefinition* ABaseItem::GetDefinitionFromSubsystem() const
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>())
+		{
+			return ItemSubsystem->GetItemDefinition(ItemTag);
+		}
+	}
+	return nullptr;
 }
 
 void ABaseItem::Tick(float DeltaTime)
@@ -130,6 +143,7 @@ void ABaseItem::SetItemState(EItemState NewState)
 	if (HasAuthority() && ItemState != NewState)
 	{
 		ItemState = NewState;
+
 		OnRep_ItemState(); // 서버 로컬 적용
 	}
 }
@@ -143,24 +157,16 @@ void ABaseItem::OnMeshSleep(UPrimitiveComponent* SleepingComponent, FName BoneNa
 	}
 }
 
-void ABaseItem::PickUpItem(AActor* Picker)
-{
-	if (!Picker) return;
-
-	AttachToComponent(Cast<ACharacter>(Picker)->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, MyDefinition->AttachmentSocketName);
-}
-
 void ABaseItem::OnInteractableTriggered(AActor* Interactor)
 {
-	// 방송이 들어오면 기존의 PickUpItem을 실행하여 로직 재사용
-	PickUpItem(Interactor);
+	// 주워졌을 때 Item 내부에서 할 행동들
 }
 
 void ABaseItem::InitializeItem()
 {
-	if (ItemDataAsset && ItemTag.IsValid())
+	if (ItemTag.IsValid())
 	{
-		if (const FItemDefinition* Def = ItemDataAsset->FindItemDefinition(ItemTag))
+		if (const FItemDefinition* Def = GetDefinitionFromSubsystem())
 		{
 			MyDefinition = Def;
 
@@ -216,6 +222,8 @@ void ABaseItem::OnRep_ItemState()
 			ItemMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			ItemMesh->SetSimulatePhysics(true);
 		}
+		// 드롭될 때 부모로부터 확실히 분리
+		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 		break;
 
 	case EItemState::Dropped_Hovering:
@@ -258,20 +266,18 @@ void ABaseItem::OnRep_ItemState()
 
 UTexture2D* ABaseItem::GetItemIcon() const
 {
-	if (!ItemDataAsset)
+	if (const FItemDefinition* Def = GetDefinitionFromSubsystem())
 	{
-		return nullptr;
+		return Def->Icon2D.LoadSynchronous();
 	}
-
-	return ItemDataAsset->GetIconByTag(ItemTag);
+	return nullptr;
 }
 
 FText ABaseItem::GetItemNameText() const
 {
-	if (!ItemDataAsset)
+	if (const FItemDefinition* Def = GetDefinitionFromSubsystem())
 	{
-		return FText::FromString(ItemTag.ToString());
+		return Def->ItemName;
 	}
-
-	return ItemDataAsset->GetItemNameByTag(ItemTag);
+	return FText::FromString(ItemTag.ToString());
 }
