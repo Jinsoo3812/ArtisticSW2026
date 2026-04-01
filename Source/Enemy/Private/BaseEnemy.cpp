@@ -7,7 +7,7 @@
 #include "Weapon/BaseWeaponComponent.h"
 
 // ArtisticSWCore
-#include "BaseItem.h"
+#include "ItemSubsystem.h"
 
 // Enemy Folder
 #include "BaseAIController.h"
@@ -126,6 +126,7 @@ void ABaseEnemy::OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount
 
 void ABaseEnemy::InitializeEnemyDropData()
 {
+	// 데이터 테이블 전체를 가져옴
 	EnemyDropData = FEnemyDropData();
 
 	if (!EnemyDropDataTable || !EnemyTypeTag.IsValid())
@@ -133,7 +134,6 @@ void ABaseEnemy::InitializeEnemyDropData()
 		return;
 	}
 
-	
 	static const FString ContextString(TEXT("EnemyDropData"));
 	TArray<FEnemyDropDataRow*> Rows;
 	EnemyDropDataTable->GetAllRows(ContextString, Rows);
@@ -145,10 +145,12 @@ void ABaseEnemy::InitializeEnemyDropData()
 		{
 			continue;
 		}
+		// 구조체 Tag랑 BaseEnemy TypeTag가 같을 때 아래 실행
 
 		EnemyDropData.EnemyTag = Row->EnemyTag;
 		EnemyDropData.DropItemCount = Row->DropItemCount;
 
+		// 드랍해야 하는 아이템 하나마다 Entry 구조체 하나를 가지게 됨
 		auto AddEntry = [this](const FGameplayTag& ItemTag, float Chance)
 			{
 				if (ItemTag.IsValid() && Chance > 0.f)
@@ -160,6 +162,8 @@ void ABaseEnemy::InitializeEnemyDropData()
 				}
 			};
 
+		// Entry 구조체를 EnemyDropData 구조체에 전부 저장
+		// 드랍 할 정보는 EnemyDropData가 가지고 있음
 		AddEntry(Row->ItemTag_1, Row->DropChance_1);
 		AddEntry(Row->ItemTag_2, Row->DropChance_2);
 		AddEntry(Row->ItemTag_3, Row->DropChance_3);
@@ -173,9 +177,11 @@ void ABaseEnemy::Drop()
 	{
 		return;
 	}
+	UE_LOG(LogTemp, Warning, TEXT("Drop Called"));
 
 	bHasDropped = true;
 
+	// DropData 구조체에 저장된 Entry(드랍템 개수)만큼 반복
 	for (const FEnemyDropEntry& Entry : EnemyDropData.DropEntries)
 	{
 		if (!Entry.ItemTag.IsValid())
@@ -183,10 +189,15 @@ void ABaseEnemy::Drop()
 			continue;
 		}
 
+		// 랜덤 수가 확률 이하일 때 드랍
 		if (FMath::FRand() > Entry.DropChance)
 		{
 			continue;
 		}
+
+		// 아이템 서브시스템 생성
+		UWorld* World = GetWorld();
+		UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>();
 
 		const FVector SpawnLoc =
 			GetActorLocation()
@@ -194,21 +205,13 @@ void ABaseEnemy::Drop()
 
 		const FTransform SpawnTransform(GetActorRotation(), SpawnLoc);
 
-		// 디퍼드 스폰을 하여 BaseItem 스폰하고, 태그 전달
+		// 스폰
 		ABaseItem* SpawnedItem =
-			GetWorld()->SpawnActorDeferred<ABaseItem>(
-				ABaseItem::StaticClass(),
-				SpawnTransform,
-				this,
-				nullptr,
-				ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+			ItemSubsystem->SpawnItem(Entry.ItemTag, SpawnTransform, EItemState::Dropped_Simulating, this);
 
-		if (!SpawnedItem)
+		if (SpawnedItem)
 		{
-			continue;
+			UE_LOG(LogTemp, Warning, TEXT("Dropped"));
 		}
-
-		SpawnedItem->ItemTag = Entry.ItemTag;
-		UGameplayStatics::FinishSpawningActor(SpawnedItem, SpawnTransform);
 	}
 }

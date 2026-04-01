@@ -5,6 +5,16 @@
 #include "BaseGameplayTags.h"
 #include "EnemyDropData.generated.h"
 
+/*
+전체 표에서 Tag로 특정 Row를 찾아 FEnemyDropDataRow에 전부 저장
+
+FEnemyDropDataRow에 저장된 데이터에서 드랍할 아이템의 수 만큼 FEnemyDropEntry 생성하고 각 아이템 정보를 저장
+
+FEnemyDropData에 FEnemyDropEntry정보 저장
+
+위 과정이 초기화 단계이고, Enemy는 런타임동안 FEnemyDropData하나만 가지고 있게 함
+*/
+
 // 드랍할 아이템 하나마다 갖는 구조체
 USTRUCT(BlueprintType)
 struct FEnemyDropEntry
