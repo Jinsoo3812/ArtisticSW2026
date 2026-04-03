@@ -846,3 +846,37 @@ void ABasePlayer::OnRep_ItemSlots()
 {
 	OnItemSlotsChanged.Broadcast();
 }
+
+void ABasePlayer::Landed(const FHitResult& Hit)
+{
+	// 항상 Super를 먼저 호출해주어야 캐릭터 무브먼트의 기본 착지 로직이 꼬이지 않습니다.
+	Super::Landed(Hit);
+
+	// 착지하는 순간의 Z축 하강 속도를 가져옵니다.
+	// (CharacterMovementComponent에서 물리 연산 직전의 Z 속도를 보존하고 있습니다)
+	float FallSpeed = GetCharacterMovement()->Velocity.Z;
+
+	// 디버그용: 실제 게임에서 떨어졌을 때 속도가 얼마나 나오는지 확인해보세요.
+	// UE_LOG(LogTemp, Log, TEXT("Landed! Z Velocity: %f"), FallSpeed);
+
+	// 하강 속도가 일정 수치 이상일 때만 '진짜 착지'로 인정 (Z속도는 음수이므로 < 사용)
+	// -300.0f 는 예시이며, 점프 높이에 따라 -500.0f 등으로 조절하세요.
+	if (FallSpeed < -300.0f)
+	{
+		// 1. 애니메이션 재생을 위해 블루프린트(Character BP)로 신호를 보냅니다.
+		K2_OnRealLanded();
+
+		// 2. (보너스) 현재 GAS를 완벽하게 세팅해 두셨으니, 
+		// 착지 순간에 딜레이나 무적, 공격 불가 등의 상태(GE)를 부여하고 싶다면
+		// 여기서 바로 GameplayEvent를 발생시킬 수도 있습니다!
+		/*
+		if (CachedAbilitySystemComponent.Get())
+		{
+			FGameplayEventData Payload;
+			Payload.Instigator = this;
+			// Tag_Event_Movement_Landed 등 태그를 만들어 매핑
+			CachedAbilitySystemComponent->HandleGameplayEvent(Tag_Event_Movement_Landed, &Payload);
+		}
+		*/
+	}
+}
