@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Engine/DataTable.h"
 #include "GameplayTagContainer.h"
 #include "Abilities/GameplayAbility.h"
 #include "ItemData.generated.h"
@@ -11,7 +12,26 @@ class ABaseProjectile;
 class UTexture2D;
 class ABaseItem;	
 
-// 아이템 하나에 대한 정의 구조체
+
+// Data Table에 정의될 UObject가 아닌 ItemData
+USTRUCT(BlueprintType)
+struct FItemFeatureData : public FTableRowBase
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Feature")
+	FText ItemName;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Feature")
+	FText HowToInteractText;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Feature")
+	FName AttachmentSocketName = FName("GripPoint");
+
+	// MaxStack 등 필요한 기획 수치 추가...
+};
+
+// Data Asset에 정의될 UObject인 ItemData
 USTRUCT(BlueprintType)
 struct FItemDefinition
 {
@@ -22,11 +42,11 @@ struct FItemDefinition
 	* TSoftObjectPtr : A 클래스가 B 클래스를 TSoftClassPtr로 들고 있다면, B는 실제로 사용될 때 로드된다. (초기 로딩 감소)
 	*/
 
-	// 아이템의 이름 (For UI)
+	// 아이템의 이름 (For UI) -- LEGACY
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	FText ItemName;
 
-	// 아이템의 사용법 (For UI)
+	// 아이템의 사용법 (For UI) -- LEGACY
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	FText HowToInteractText;
 
@@ -50,9 +70,11 @@ struct FItemDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	TSoftClassPtr<AActor> SpawnClass;
 
+	// Item이 붙는 소켓 이름 -- LEGACY
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	FName AttachmentSocketName = FName("GripPoint");
 
+	// Item의 GA를 사용할 수 있는 클래스 TAG 리스트
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	TArray<FGameplayTag> CanUseClassList;
 

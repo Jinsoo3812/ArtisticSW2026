@@ -3,32 +3,60 @@
 
 #include "ItemSubsystem.h"
 #include "ItemData.h"
+#include "ItemSettings.h"
 #include "Engine/World.h"
 
 void UItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	LoadItemData();
+
+	UWorld* World = GetWorld();
+	// 실제 게임 월드가 아닌 경우(에디터 프리뷰 등) 초기화(에셋 로드)를 스킵
+	if (World && !World->IsGameWorld())
+	{
+		return;
+	}
+
+	// 프로젝트 세팅에 등록해둔 경로 가져오기
+	const UItemSettings* Settings = GetDefault<UItemSettings>();
+	if (!Settings) return;
+
+	// FItemFeatureData 데이터 테이블 캐싱
+	if (UDataTable* DT = Settings->ItemFeatureDataTable.LoadSynchronous())
+	{
+		static const FString ContextString(TEXT("ItemFeatureData Initialization"));
+		TArray<FItemFeatureData*> AllRows;
+		DT->GetAllRows<FItemFeatureData>(ContextString, AllRows);
+
+		TArray<FName> RowNames = DT->GetRowNames();
+
+		// DT의 데이터를 순회하면서 TMap에 복사
+		for (int32 i = 0; i < RowNames.Num(); ++i)
+		{
+			FGameplayTag Tag = FGameplayTag::RequestGameplayTag(RowNames[i]);
+
+			// 유효한 태그이고 데이터가 존재하면 Map에 적재
+			if (Tag.IsValid() && AllRows[i] != nullptr)
+			{
+				CachedFeatureData.Add(Tag, *AllRows[i]);
+			}
+		}
+		UE_LOG(LogTemp, Log, TEXT("[ItemSubsystem] Successfully cached %d Item Features from DataTable."), CachedFeatureData.Num());
+	}
+
+	// FItemDefinition 데이터 에셋(DA) 로드 및 참조 유지
+	// DA 내부에는 이미 TMap이 구현되어 있으므로, 통째로 메모리에 띄워두고 포인터만 들고 있는다.
+	if (UItemData* DA = Settings->ItemAssetRegistry.LoadSynchronous())
+	{
+		CachedItemData = DA;
+		UE_LOG(LogTemp, Log, TEXT("[ItemSubsystem] Successfully loaded Item Asset Registry."));
+	}
 }
 
 void UItemSubsystem::Deinitialize()
 {
 	CachedItemData = nullptr;
 	Super::Deinitialize();
-}
-
-void UItemSubsystem::LoadItemData()
-{
-	// 실제 프로젝트 환경에 맞게 DA 경로 지정
-	FSoftObjectPath ItemDataPath(TEXT("/Game/Blueprints/Item/DA_ItemData.DA_ItemData"));
-
-	// 동기 로드
-	CachedItemData = Cast<UItemData>(ItemDataPath.TryLoad());
-
-	if (!CachedItemData)
-	{
-		UE_LOG(LogTemp, Error, TEXT("ItemSubsystem: Failed to load UItemData!"));
-	}
 }
 
 ABaseItem* UItemSubsystem::SpawnItem(const FGameplayTag& ItemTag, const FTransform& SpawnTransform, EItemState InitialState, AActor* Instigator)
@@ -79,6 +107,16 @@ const FItemDefinition* UItemSubsystem::GetItemDefinition(const FGameplayTag& Ite
 	if (CachedItemData)
 	{
 		return CachedItemData->FindItemDefinition(ItemTag);
+	}
+	return nullptr;
+}
+
+const FItemFeatureData* UItemSubsystem::GetItemFeature(const FGameplayTag& Tag) const
+{
+	// O(1) 해시 맵 탐색
+	if (const FItemFeatureData* FoundData = CachedFeatureData.Find(Tag))
+	{
+		return FoundData;
 	}
 	return nullptr;
 }

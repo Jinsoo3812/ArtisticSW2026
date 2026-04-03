@@ -71,12 +71,15 @@ void ABaseItem::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetim
 
 void ABaseItem::BeginPlay()
 {
+
 	Super::BeginPlay();
+	if (ItemTag.IsValid())
+	{
+		InitializeItem();
+	}
 
 	// [서버]
 	if (HasAuthority()) {
-		InitializeItem();
-
 		// 물리 수면 이벤트(물리 연산을 더이상 하지 않는 최적화 모드로 들어감) 바인딩
 		// 서버에서만 바인딩하고 호버링을 클라가 따라하면 됨.
 		if (ItemMesh)
@@ -89,19 +92,6 @@ void ABaseItem::BeginPlay()
 	if (InteractableComponent)
 	{
 		InteractableComponent->OnInteracted.AddDynamic(this, &ABaseItem::OnInteractableTriggered);
-	}
-
-	if (ItemTag.IsValid())
-	{
-		if (const FItemDefinition* Def = GetDefinitionFromSubsystem())
-		{
-			// InteractComp에 UI 정보 세팅
-			if (UInteractableComponent* InteractComp = FindComponentByClass<UInteractableComponent>())
-			{
-				InteractComp->InteractUIInfo.ObjectName = Def->ItemName;
-				InteractComp->InteractUIInfo.ActionText = Def->HowToInteractText;
-			}
-		}
 	}
 }
 
@@ -155,27 +145,49 @@ void ABaseItem::OnInteractableTriggered(AActor* Interactor)
 
 void ABaseItem::InitializeItem()
 {
-	if (ItemTag.IsValid())
+	if (!ItemTag.IsValid()) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>();
+	if (!ItemSubsystem) return;
+
+	// DA_ItemData로부터 Mesh 초기화
+	if (const FItemDefinition* Def = ItemSubsystem->GetItemDefinition(ItemTag))
 	{
-		if (const FItemDefinition* Def = GetDefinitionFromSubsystem())
+		MyDefinition = Def;
+		if (UStaticMesh* LoadedMesh = MyDefinition->ItemMesh.LoadSynchronous())
 		{
-			MyDefinition = Def;
-
-			if (UStaticMesh* LoadedMesh = MyDefinition->ItemMesh.LoadSynchronous())
-			{
-				ItemMesh->SetStaticMesh(LoadedMesh);
-
-				ItemMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
-				ItemMesh->SetCollisionResponseToChannel(ECC_Interactable, ECR_Ignore);
-
-				// 메쉬와 충돌체가 준비되었으니 이제 중력과 물리를 킴
-				ItemMesh->SetSimulatePhysics(true);
-				ItemMesh->SetGenerateOverlapEvents(true);
-
-				// Slepp 이벤트를 받기 위함
-				ItemMesh->BodyInstance.bGenerateWakeEvents = true;
-			}
+			ItemMesh->SetStaticMesh(LoadedMesh);
 		}
+	}
+
+	// DT_ItemFeatureData로부터 Interactable Comp 초기화
+	if (const FItemFeatureData* Feature = ItemSubsystem->GetItemFeature(ItemTag))
+	{
+		if (InteractableComponent)
+		{
+			InteractableComponent->InitializeInteractable(Feature->ItemName, Feature->HowToInteractText);
+		}
+	}
+
+	// [서버] 물리는 서버에서만 설정하고 클라가 따라가도록
+	if (HasAuthority())
+	{
+		ItemMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+		ItemMesh->SetCollisionResponseToChannel(ECC_Interactable, ECR_Ignore);
+
+		ItemMesh->SetSimulatePhysics(true);
+		ItemMesh->SetGenerateOverlapEvents(true);
+		ItemMesh->BodyInstance.bGenerateWakeEvents = true;
+	}
+	else
+	{
+		ItemMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+		ItemMesh->SetCollisionResponseToChannel(ECC_Interactable, ECR_Ignore);
+
+		ItemMesh->SetSimulatePhysics(false);
 	}
 }
 

@@ -4,6 +4,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "GameplayTagContainer.h"
 #include "BaseItem.h"
+#include "ItemData.h"
 #include "ItemSubsystem.generated.h"
 
 class UItemData;
@@ -33,8 +34,11 @@ public:
 	UFUNCTION()
 	ABaseItem* SpawnItem(const FGameplayTag& ItemTag, const FTransform& SpawnTransform, EItemState InitialState, AActor* Instigator = nullptr);
 
-	//ItemData를 직접 사용하지 않고 Def 구조체만 사용하는 대부분의 경우
+	// GameplayTag로 에셋 데이터(오브젝트/클래스) 가져오기
 	const FItemDefinition* GetItemDefinition(const FGameplayTag& ItemTag) const;
+
+	// GameplayTag로 피처 데이터(수치) 가져오기
+	const FItemFeatureData* GetItemFeature(const FGameplayTag& Tag) const;
 
 	// DA가 직접 필요한 경우 (Def로 왠만하면 해결합시다.)
 	UItemData* GetItemDataAsset() const { return CachedItemData; }
@@ -44,5 +48,6 @@ private:
 	UPROPERTY()
 	TObjectPtr<UItemData> CachedItemData;
 
-	void LoadItemData();
+	// DT에서 긁어와 메모리에 올려둘 O(1) 탐색용 캐시 맵
+	TMap<FGameplayTag, FItemFeatureData> CachedFeatureData;
 };
