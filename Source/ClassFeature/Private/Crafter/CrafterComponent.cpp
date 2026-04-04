@@ -261,11 +261,11 @@ void UCrafterComponent::ShowCraftingUI(AActor* TargetActor)
 	}
 }
 
-void UCrafterComponent::HandleStarforceAttempt(float ErrorMargin)
+void UCrafterComponent::HandleStarforceAttempt(float ErrorMargin, float BarLength)
 {
 	if (CurrentInteractingTable.IsValid())
 	{
-		Server_AttemptCrafting(CurrentInteractingTable.Get(), ErrorMargin);
+		Server_AttemptCrafting(CurrentInteractingTable.Get(), ErrorMargin, BarLength);
 	}
 }
 
@@ -336,15 +336,15 @@ void UCrafterComponent::SpaceBarAction()
 	}
 }
 
-void UCrafterComponent::Server_AttemptCrafting_Implementation(AWorkTable* TargetTable, float ErrorMargin)
+void UCrafterComponent::Server_AttemptCrafting_Implementation(AWorkTable* TargetTable, float ErrorMargin, float BarLength)
 {
 	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
 
 	// [서버]에서 스타포스 성공 여부 판정
 	if (!Player || !Player->HasAuthority() || !TargetTable) return;
 
-	bool bIsSuccess = ErrorMargin <= 15.0f;
-
+	float AllowedMargin = (BarLength > 0.f) ? (BarLength * 0.5f) : 15.0f;
+	bool bIsSuccess = ErrorMargin <= AllowedMargin;
 	if (bIsSuccess)
 	{
 		FGameplayTag CraftedTag = TargetTable->ItemTagToTestCraft;

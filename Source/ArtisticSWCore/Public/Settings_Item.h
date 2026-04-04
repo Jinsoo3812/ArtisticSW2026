@@ -25,4 +25,8 @@ public:
 	// 에셋 매핑이 담긴 DA 카탈로그 경로
 	UPROPERTY(Config, EditAnywhere, Category = "Item Data")
 	TSoftObjectPtr<UItemData> ItemAssetRegistry;
+
+	// 아이템 조합식이 담긴 CSV Data Table 경로
+	UPROPERTY(Config, EditAnywhere, Category = "Item")
+	TSoftObjectPtr<UDataTable> ItemRecipeDataTable;
 };

@@ -72,7 +72,7 @@ protected:
 public:
 	// 서버로 제작 완료를 알리는 RPC
 	UFUNCTION(Server, Reliable)
-	void Server_AttemptCrafting(AWorkTable* TargetTable, float ErrorMargin);
+	void Server_AttemptCrafting(AWorkTable* TargetTable, float ErrorMargin, float BarLength);
 	
 
 protected:
@@ -114,5 +114,5 @@ protected:
 	void SpaceBarAction();
 
 	UFUNCTION()
-	void HandleStarforceAttempt(float ErrorMargin);
+	void HandleStarforceAttempt(float ErrorMargin, float BarLength);
 };

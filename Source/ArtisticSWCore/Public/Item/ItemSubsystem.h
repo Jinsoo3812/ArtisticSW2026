@@ -43,6 +43,9 @@ public:
 	// DA가 직접 필요한 경우 (Def로 왠만하면 해결합시다.)
 	UItemData* GetItemDataAsset() const { return CachedItemData; }
 
+	// 재료 Map을 던져주면 해당하는 레시피를 찾아주는 헬퍼 함수
+	const FItemRecipeData* FindRecipe(const TMap<FGameplayTag, int32>& InputIngredients) const;
+
 private:
 	// ItemData 캐시
 	UPROPERTY()
@@ -50,4 +53,11 @@ private:
 
 	// DT에서 긁어와 메모리에 올려둘 O(1) 탐색용 캐시 맵
 	TMap<FGameplayTag, FItemFeatureData> CachedFeatureData;
+
+	// 레시피 캐시 맵 (Key: 재료의 조합 해시값)
+	TMap<uint32, FItemRecipeData> CachedRecipeData;
+
+	// 재료 TMap을 기반으로 순서에 상관없는 고유 Hash 값을 만들어내는 내부 함수
+	uint32 GenerateRecipeHash(const TMap<FGameplayTag, int32>& Ingredients) const;
+
 };

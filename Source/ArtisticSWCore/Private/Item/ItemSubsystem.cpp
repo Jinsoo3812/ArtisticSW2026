@@ -44,6 +44,25 @@ void UItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		UE_LOG(LogTemp, Log, TEXT("[ItemSubsystem] Successfully cached %d Item Features from DataTable."), CachedFeatureData.Num());
 	}
 
+	// FItemRecipeData 데이터 테이블 캐싱
+	if (UDataTable* RecipeDT = Settings->ItemRecipeDataTable.LoadSynchronous())
+	{
+		static const FString ContextString(TEXT("ItemRecipeData Initialization"));
+		TArray<FItemRecipeData*> AllRecipes;
+		RecipeDT->GetAllRows<FItemRecipeData>(ContextString, AllRecipes);
+
+		for (FItemRecipeData* Recipe : AllRecipes)
+		{
+			if (Recipe && Recipe->RequiredIngredients.Num() > 0)
+			{
+				// 재료 목록을 해싱하여 키 값으로 사용
+				uint32 Hash = GenerateRecipeHash(Recipe->RequiredIngredients);
+				CachedRecipeData.Add(Hash, *Recipe);
+			}
+		}
+		UE_LOG(LogTemp, Log, TEXT("[ItemSubsystem] Successfully cached %d Item Recipes."), CachedRecipeData.Num());
+	}
+
 	// FItemDefinition 데이터 에셋(DA) 로드 및 참조 유지
 	// DA 내부에는 이미 TMap이 구현되어 있으므로, 통째로 메모리에 띄워두고 포인터만 들고 있는다.
 	if (UItemData* DA = Settings->ItemAssetRegistry.LoadSynchronous())
@@ -117,6 +136,44 @@ const FItemFeatureData* UItemSubsystem::GetItemFeature(const FGameplayTag& Tag) 
 	if (const FItemFeatureData* FoundData = CachedFeatureData.Find(Tag))
 	{
 		return FoundData;
+	}
+	return nullptr;
+}
+
+uint32 UItemSubsystem::GenerateRecipeHash(const TMap<FGameplayTag, int32>& Ingredients) const
+{
+	// 재료의 순서가 뒤죽박죽이어도 똑같은 해시가 나오도록 태그 문자열 기준으로 정렬.
+	TArray<FString> SortedKeys;
+	for (const auto& Pair : Ingredients)
+	{
+		// 예: "Item.Material.Apple:2" 형태의 문자열 생성
+		FString KeyStr = FString::Printf(TEXT("%s:%d"), *Pair.Key.ToString(), Pair.Value);
+		SortedKeys.Add(KeyStr);
+	}
+
+	// 알파벳 순 정렬
+	SortedKeys.Sort();
+
+	// 정렬된 문자열들을 하나로 쫙 이어 붙임
+	FString CombinedString = TEXT("");
+	for (const FString& Str : SortedKeys)
+	{
+		CombinedString += Str;
+	}
+
+	// 이어 붙인 문자열의 고유 Hash값 리턴
+	return GetTypeHash(CombinedString);
+}
+
+const FItemRecipeData* UItemSubsystem::FindRecipe(const TMap<FGameplayTag, int32>& InputIngredients) const
+{
+	// 인풋으로 들어온 재료들의 해시를 생성
+	uint32 Hash = GenerateRecipeHash(InputIngredients);
+
+	// 해시맵에서 O(1)로 찾기
+	if (const FItemRecipeData* FoundRecipe = CachedRecipeData.Find(Hash))
+	{
+		return FoundRecipe;
 	}
 	return nullptr;
 }
