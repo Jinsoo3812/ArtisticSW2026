@@ -75,13 +75,16 @@ void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	}
 }
 
-void UGA_ThrowGrenade::EndAbility(const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo,
-	const FGameplayAbilityActivationInfo ActivationInfo,
-	bool bReplicateEndAbility, bool bWasCancelled)
+void UGA_ThrowGrenade::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
 {
 	// 종료 시 궤적 타이머 해제
 	GetWorld()->GetTimerManager().ClearTimer(TrajectoryTimerHandle);
+
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	{
+		ASC->RemoveLooseGameplayTag(State_Aiming);
+		ASC->RemoveLooseGameplayTag(State_Attacking); // 어빌리티 종료 시 회전 고정도 해제
+	}
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -99,6 +102,14 @@ void UGA_ThrowGrenade::OnInputReleased(float TimeHeld)
 	if (ThrowMontage && ASC)
 	{
 		// 루프를 돌며 폼을 잡고 있던 애니메이션이 던지는 모션으로 즉시 넘어갑니다.
+		ASC->CurrentMontageJumpToSection(ThrowSectionName);
+
+		// 1. 조준 태그를 빼서 카메라는 즉시 줌아웃 시킵니다.
+		ASC->RemoveLooseGameplayTag(State_Aiming);
+
+		// 2. 공격 태그를 넣어서 애니메이션이 끝날 때까지 캐릭터 회전을 고정합니다.
+		ASC->AddLooseGameplayTag(State_Attacking);
+
 		ASC->CurrentMontageJumpToSection(ThrowSectionName);
 	}
 	else

@@ -101,16 +101,20 @@ void ABasePlayer::Tick(float DeltaTime)
 
 	// 조준 상태 확인 (GA에서 State_Aiming 태그를 부여했다고 가정)
 	bool bIsAimingState = false;
+	bool bIsAttackingState = false; // 공격( 현재 구현된 무기 기준으로는 투척) 중인지 확인
+
 	if (CachedAbilitySystemComponent.Get())
 	{
 		bIsAimingState = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
+		bIsAttackingState = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
 	}
 
-	// 캐릭터 회전 설정
-	bUseControllerRotationYaw = bIsAimingState;
-	GetCharacterMovement()->bOrientRotationToMovement = !bIsAimingState;
+	// 캐릭터 회전은 조준 중(Aiming)이거나 던지는 중(Attacking)일 때 모두 고정
+	bool bLockRotation = bIsAimingState || bIsAttackingState;
+	bUseControllerRotationYaw = bLockRotation;
+	GetCharacterMovement()->bOrientRotationToMovement = !bLockRotation;
 
-	// 카메라 보간 로직
+	// 카메라 줌인은 오직 조준 중(Aiming)일 때만 작동! (던질 땐 줌아웃됨)
 	if (CameraBoom)
 	{
 		float TargetArmLength = bIsAimingState ? AimingTargetArmLength : DefaultTargetArmLength;
