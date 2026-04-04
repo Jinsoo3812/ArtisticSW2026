@@ -172,23 +172,18 @@ void ABaseItem::InitializeItem()
 		}
 	}
 
+	// 서버/클라 구분 없이 기본 콜리전 프로파일만 세팅
+	ItemMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+	ItemMesh->SetCollisionResponseToChannel(ECC_Interactable, ECR_Ignore);
+	ItemMesh->SetGenerateOverlapEvents(true);
+
 	// [서버] 물리는 서버에서만 설정하고 클라가 따라가도록
 	if (HasAuthority())
 	{
-		ItemMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
-		ItemMesh->SetCollisionResponseToChannel(ECC_Interactable, ECR_Ignore);
-
-		ItemMesh->SetSimulatePhysics(true);
-		ItemMesh->SetGenerateOverlapEvents(true);
-		ItemMesh->BodyInstance.bGenerateWakeEvents = true;
+		ItemMesh->BodyInstance.bGenerateWakeEvents = true; // 서버에서만 Wake/Sleep 이벤트 추적
 	}
-	else
-	{
-		ItemMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
-		ItemMesh->SetCollisionResponseToChannel(ECC_Interactable, ECR_Ignore);
-
-		ItemMesh->SetSimulatePhysics(false);
-	}
+	// 최초 상태 적용도 서버/클라 구분 없이.
+	OnRep_ItemState();
 }
 
 void ABaseItem::OnThrown(FVector LaunchVelocity, AActor* Thrower)

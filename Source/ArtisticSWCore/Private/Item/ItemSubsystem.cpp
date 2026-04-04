@@ -3,7 +3,7 @@
 
 #include "ItemSubsystem.h"
 #include "ItemData.h"
-#include "ItemSettings.h"
+#include "Settings_Item.h"
 #include "Engine/World.h"
 
 void UItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -18,7 +18,7 @@ void UItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	}
 
 	// 프로젝트 세팅에 등록해둔 경로 가져오기
-	const UItemSettings* Settings = GetDefault<UItemSettings>();
+	const USettings_Item* Settings = GetDefault<USettings_Item>();
 	if (!Settings) return;
 
 	// FItemFeatureData 데이터 테이블 캐싱

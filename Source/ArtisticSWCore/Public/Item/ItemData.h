@@ -104,3 +104,22 @@ public:
 	// 태그로 이름을 가져오는 함수
 	FText GetItemNameByTag(const FGameplayTag& ItemTag) const;
 };
+
+// Item 조합식을 정의하는 구조체
+USTRUCT(BlueprintType)
+struct FItemRecipeData : public FTableRowBase
+{
+	GENERATED_BODY()
+
+	// 필요 재료 목록 (Key: 아이템 태그, Value: 필요 수량)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recipe")
+	TMap<FGameplayTag, int32> RequiredIngredients;
+
+	// 결과물 아이템 태그
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recipe")
+	FGameplayTag ResultItemTag;
+
+	// 결과물 생성 수량
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Recipe")
+	int32 ResultQuantity = 1;
+};

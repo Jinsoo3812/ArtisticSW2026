@@ -72,7 +72,7 @@ protected:
 public:
 	// 서버로 제작 완료를 알리는 RPC
 	UFUNCTION(Server, Reliable)
-	void Server_CompleteCrafting(AWorkTable* TargetTable);
+	void Server_AttemptCrafting(AWorkTable* TargetTable, float ErrorMargin);
 	
 
 protected:
@@ -113,7 +113,6 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "Interaction|Craft")
 	void SpaceBarAction();
 
-	// 작업대 UI로부터의 StarForce 성공 이벤트를 구독할 함수
 	UFUNCTION()
-	void HandleStarForceSuccess();
+	void HandleStarforceAttempt(float ErrorMargin);
 };

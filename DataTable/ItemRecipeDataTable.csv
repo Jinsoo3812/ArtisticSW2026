@@ -1,0 +1,2 @@
+---,RequiredIngredients,ResultItemTag,ResultQuantity
+Recipe_Test,"(Item.Material.Cloths=1,Item.Material.Ore=1)",Item.Tool.Grenade,1
