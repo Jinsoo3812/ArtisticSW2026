@@ -16,6 +16,12 @@ UInteractableComponent::UInteractableComponent()
 	SetCollisionProfileName(TEXT("Interactable"));
 }
 
+void UInteractableComponent::InitializeInteractable(const FText& InObjectName, const FText& InActionText)
+{
+	InteractUIInfo.ObjectName = InObjectName;
+	InteractUIInfo.ActionText = InActionText;
+}
+
 FGameplayTag UInteractableComponent::GetInteractionTag() const
 {
 	return InteractionTag;
