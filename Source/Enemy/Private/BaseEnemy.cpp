@@ -5,10 +5,13 @@
 #include "Weapon/BaseWeapon.h"
 #include "Weapon/WeaponDataAsset.h"
 #include "Weapon/BaseWeaponComponent.h"
-
-// Enemy Folder
-#include "BaseAIController.h"
+#include "Component/PathMovement.h"
 #include "EnemyAttributeSet.h"
+#include "AI/EnemyPathActor.h"
+#include "AI/EnemySpawnPoint.h"
+
+// Core
+#include "GameFramework/SWWaveGameMode.h"
 
 // Unreal
 #include "AbilitySystemComponent.h"
@@ -19,6 +22,13 @@
 ABaseEnemy::ABaseEnemy()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	
+	bReplicates = true;
+	SetReplicateMovement(false);
+	bAlwaysRelevant = true;
+	NetUpdateFrequency = 30.0f;
+	MinNetUpdateFrequency = 15.0f;
+	
 	// ASC
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
@@ -30,7 +40,15 @@ ABaseEnemy::ABaseEnemy()
 
 	// Component
 	WeaponComponent = CreateDefaultSubobject<UBaseWeaponComponent>(TEXT("WeaponComponent"));
+	PathMovement = CreateDefaultSubobject<UPathMovement>(TEXT("PathMovementComponent"));
+	PathMovement->SetIsReplicated(true);
 
+	if (GetCharacterMovement())
+	{
+		GetCharacterMovement()->SetIsReplicated(false);
+	}
+
+	
 	// State_Dead Tag를 감지하는 Delegate 등록
 	AbilitySystemComponent->RegisterGameplayTagEvent(State_Dead)
 		.AddUObject(this, &ABaseEnemy::OnDeadTagChanged);
@@ -39,13 +57,7 @@ ABaseEnemy::ABaseEnemy()
 void ABaseEnemy::BeginPlay()
 {
 	Super::BeginPlay();
-
-	// AIController 변수 Cast해주기
-	AIController = Cast<ABaseAIController>(UAIBlueprintHelperLibrary::GetAIController(this));
-	if (AIController && BehaviorTree)
-	{
-		AIController->RunBehaviorTree(BehaviorTree);
-	}
+	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
 	// StartingAbilities 능력 등록
 	if (AbilitySystemComponent && HasAuthority())
@@ -98,6 +110,19 @@ void ABaseEnemy::HandleDeath_Implementation()
 	GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GetCharacterMovement()->DisableMovement();
+
+	// 죽으면 경로 이동 중지
+	if (HasAuthority() && PathMovement)
+	{
+		PathMovement->StopPathMovement();
+
+		if (ASWWaveGameMode* GM = Cast<ASWWaveGameMode>(GetWorld()->GetAuthGameMode()))
+		{
+			GM->NotifyEnemyKilled();
+		}
+	}
+
+	
 	// Actor의 뒤와 위로 Impulse를 줘서 날아가도록 한다.
 	FVector Impulse = GetActorForwardVector() * -20000.f;
 	Impulse.Z = 15000.f;
@@ -115,6 +140,35 @@ void ABaseEnemy::OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount
 	{
 		// 캐릭터가 부활했을 때 처리할 로직을 여기에 작성
 	}
+}
+
+void ABaseEnemy::InitializePathMovement(AEnemyPathActor* InPath, float InStartDistance, bool bStartImmediately)
+{
+	if (!HasAuthority() || !PathMovement)
+	{
+		return;
+	}
+
+	PathMovement->InitializePath(InPath, InStartDistance);
+
+	if (bStartImmediately)
+	{
+		PathMovement->StartPathMovement();
+	}
+}
+
+void ABaseEnemy::InitializePathMovementFromSpawnPoint(AEnemySpawnPoint* InSpawnPoint, bool bStartImmediately)
+{
+	if (!HasAuthority() || !PathMovement || !InSpawnPoint)
+	{
+		return;
+	}
+
+	InitializePathMovement(
+		InSpawnPoint->GetAssignedPath(),
+		InSpawnPoint->GetClampedStartDistance(),
+		bStartImmediately
+	);
 }
 
 

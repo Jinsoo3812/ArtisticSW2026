@@ -6,6 +6,10 @@
 #include "GameFramework/Actor.h"
 #include "EnemyPathActor.generated.h"
 
+
+class USceneComponent;
+class USplineComponent;
+
 UCLASS()
 class ENEMY_API AEnemyPathActor : public AActor
 {

@@ -11,6 +11,11 @@
 AEnemyPathActor::AEnemyPathActor()
 {
 	//PrimaryActorTick.bCanEverTick = true;
+
+	bReplicates = true;
+	bAlwaysRelevant = true;
+	bNetLoadOnClient = true;
+	SetReplicateMovement(false);
 	
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
@@ -114,11 +119,4 @@ FTransform AEnemyPathActor::GetEndTransform() const
 {
 	return GetWorldTransformAtDistance(GetPathLength());
 }
-
-#if WITH_EDITOR
-void AEnemyPathActor::OnConstruction(const FTransform& Transform)
-{
-	Super::OnConstruction(Transform);
-}
-#endif
 
