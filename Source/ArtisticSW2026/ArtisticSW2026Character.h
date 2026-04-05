@@ -70,10 +70,6 @@ protected:
 
 	/** Called for looking input */
 	void Look(const FInputActionValue& Value);
-
-
-	// 입력(F)이 들어왔을 때 실행할 함수
-	void Interact();
 public:
 
 	/** Handles move inputs from either controls or UI interfaces */

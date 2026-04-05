@@ -22,6 +22,7 @@
 #include "InteractableComponent.h"
 #include "InteractUserWidget.h"
 #include "Inventory/InventoryComponent.h"
+#include "ItemSubSystem.h"
 
 /* --- FItemSlot ---*/
 
@@ -100,16 +101,20 @@ void ABasePlayer::Tick(float DeltaTime)
 
 	// 조준 상태 확인 (GA에서 State_Aiming 태그를 부여했다고 가정)
 	bool bIsAimingState = false;
+	bool bIsAttackingState = false; // 공격( 현재 구현된 무기 기준으로는 투척) 중인지 확인
+
 	if (CachedAbilitySystemComponent.Get())
 	{
 		bIsAimingState = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
+		bIsAttackingState = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
 	}
 
-	// 캐릭터 회전 설정
-	bUseControllerRotationYaw = bIsAimingState;
-	GetCharacterMovement()->bOrientRotationToMovement = !bIsAimingState;
+	// 캐릭터 회전은 조준 중(Aiming)이거나 던지는 중(Attacking)일 때 모두 고정
+	bool bLockRotation = bIsAimingState || bIsAttackingState;
+	bUseControllerRotationYaw = bLockRotation;
+	GetCharacterMovement()->bOrientRotationToMovement = !bLockRotation;
 
-	// 카메라 보간 로직
+	// 카메라 줌인은 오직 조준 중(Aiming)일 때만 작동! (던질 땐 줌아웃됨)
 	if (CameraBoom)
 	{
 		float TargetArmLength = bIsAimingState ? AimingTargetArmLength : DefaultTargetArmLength;
@@ -175,7 +180,7 @@ void ABasePlayer::OnRep_PlayerState()
 		}
 	}
 }
-//asdlkfjasdlfkjs
+
 void ABasePlayer::PawnClientRestart()
 {
 	Super::PawnClientRestart();
@@ -336,8 +341,6 @@ bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
 	{
 		// 빈 슬롯에 저장
 		ItemSlots[EmptySlotIndex].Item = Item;
-
-		Item->PickUpItem(this);
 		
 		if (IsValid(EquippedItem))
 		{
@@ -472,7 +475,47 @@ void ABasePlayer::HandlePickUpEvent(const FGameplayEventData* Payload)
 				return;
 			}
 
-			TryPutItemInSlot(ItemToPickUp);
+			// 장착형 아이템 처리 로직 (서버에서만 생성/파괴 수행)
+			if (HasAuthority())
+			{
+				// 슬롯 여유 공간 확인 (불필요한 힙 메모리 할당 및 스폰 연산 방지)
+				if (HasEmptyItemSlot())
+				{
+					UWorld* World = GetWorld();
+					if (IsValid(World))
+					{
+						if (UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>())
+						{
+							// 기존 아이템의 데이터 캐싱 (상수화로 불변성 보장)
+							const FGameplayTag TargetItemTag = ItemToPickUp->ItemTag;
+							const FTransform SpawnTransform = ItemToPickUp->GetActorTransform();
+
+							// 서브시스템을 통해 새로운 아이템 스폰 (초기 상태를 InItemSlot으로 지정)
+							ABaseItem* NewSpawnedItem = ItemSubsystem->SpawnItem(TargetItemTag, SpawnTransform, EItemState::InItemSlot, this);
+
+							if (IsValid(NewSpawnedItem))
+							{
+								// 성공적으로 스폰되었다면 슬롯에 할당 시도
+								if (TryPutItemInSlot(NewSpawnedItem))
+								{
+									// 슬롯 등록까지 완료되었을 때만 기존 바닥의 아이템을 맵에서 제거
+									ItemToPickUp->Destroy();
+								}
+								else
+								{
+									// 동시성 문제 등으로 슬롯 등록이 실패했다면 고아(Orphan) 액터가 되지 않도록 롤백
+									NewSpawnedItem->Destroy();
+									UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::HandlePickUpEvent : Failed to put new item in slot. Spawn rolled back."));
+								}
+							}
+						}
+					}
+				}
+				else
+				{
+					UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::HandlePickUpEvent : Inventory is full. Cannot pick up %s"), *ItemToPickUp->GetName());
+				}
+			}
 		}
 	}
 }
@@ -530,7 +573,6 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 		// 이미 손에 들고 있는 Item이라면 아무 작업도 하지 않음
 		if (EquippedItem == SlotItem) return;
 
-
 		// 기존 아이템은 안보이게 넣음
 		if (IsValid(EquippedItem))
 		{
@@ -548,6 +590,7 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 		// 장착 아이템 갱신
 		EquippedItem = SlotItem;
 		EquippedItem->SetItemState(EItemState::Equipped);
+		EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, EquippedItem->MyDefinition->AttachmentSocketName);
 
 		// 새 아이템 GA 부여 로직
 		bool bShouldGrantAbility = false;
@@ -597,6 +640,15 @@ void ABasePlayer::RemoveItemFromSlot(FGameplayTag KeyTag)
 	}
 }
 
+bool ABasePlayer::HasEmptyItemSlot() const
+{
+	// 람다를 사용해 비어있는(Invalid한) 아이템 포인터가 하나라도 있는지 검사
+	return ItemSlots.ContainsByPredicate([](const FItemSlot& Slot)
+		{
+			return !IsValid(Slot.Item);
+		});
+}
+
 void ABasePlayer::ServerRPC_SendGameplayEvent_Implementation(FGameplayTag EventTag, FGameplayEventData Payload)
 {
 	// 서버의 ASC에서 이벤트를 발생시켜 WaitGameplayEvent 태스크를 깨웁니다.
@@ -608,6 +660,11 @@ void ABasePlayer::OnRep_EquippedItem()
 	// 새 아이템이 유효하다면 손 소켓에 부착
 	if (IsValid(EquippedItem) && EquippedItem->MyDefinition)
 	{
+		if (UStaticMeshComponent* MeshComp = Cast<UStaticMeshComponent>(EquippedItem->GetRootComponent()))
+		{
+			MeshComp->SetSimulatePhysics(false);
+			MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
 		EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, EquippedItem->MyDefinition->AttachmentSocketName);
 	}
 
@@ -792,4 +849,38 @@ void ABasePlayer::DoJumpEnd()
 void ABasePlayer::OnRep_ItemSlots()
 {
 	OnItemSlotsChanged.Broadcast();
+}
+
+void ABasePlayer::Landed(const FHitResult& Hit)
+{
+	// 항상 Super를 먼저 호출해주어야 캐릭터 무브먼트의 기본 착지 로직이 꼬이지 않습니다.
+	Super::Landed(Hit);
+
+	// 착지하는 순간의 Z축 하강 속도를 가져옵니다.
+	// (CharacterMovementComponent에서 물리 연산 직전의 Z 속도를 보존하고 있습니다)
+	float FallSpeed = GetCharacterMovement()->Velocity.Z;
+
+	// 디버그용: 실제 게임에서 떨어졌을 때 속도가 얼마나 나오는지 확인해보세요.
+	// UE_LOG(LogTemp, Log, TEXT("Landed! Z Velocity: %f"), FallSpeed);
+
+	// 하강 속도가 일정 수치 이상일 때만 '진짜 착지'로 인정 (Z속도는 음수이므로 < 사용)
+	// -300.0f 는 예시이며, 점프 높이에 따라 -500.0f 등으로 조절하세요.
+	if (FallSpeed < -300.0f)
+	{
+		// 1. 애니메이션 재생을 위해 블루프린트(Character BP)로 신호를 보냅니다.
+		K2_OnRealLanded();
+
+		// 2. (보너스) 현재 GAS를 완벽하게 세팅해 두셨으니, 
+		// 착지 순간에 딜레이나 무적, 공격 불가 등의 상태(GE)를 부여하고 싶다면
+		// 여기서 바로 GameplayEvent를 발생시킬 수도 있습니다!
+		/*
+		if (CachedAbilitySystemComponent.Get())
+		{
+			FGameplayEventData Payload;
+			Payload.Instigator = this;
+			// Tag_Event_Movement_Landed 등 태그를 만들어 매핑
+			CachedAbilitySystemComponent->HandleGameplayEvent(Tag_Event_Movement_Landed, &Payload);
+		}
+		*/
+	}
 }

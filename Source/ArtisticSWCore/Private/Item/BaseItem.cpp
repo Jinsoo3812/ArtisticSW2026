@@ -6,6 +6,7 @@
 #include "Net/UnrealNetwork.h"
 #include "InteractableComponent.h"
 #include "CollisionChannels.h"
+#include "ItemSubsystem.h"
 
 ABaseItem::ABaseItem()
 {
@@ -70,12 +71,15 @@ void ABaseItem::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetim
 
 void ABaseItem::BeginPlay()
 {
+
 	Super::BeginPlay();
+	if (ItemTag.IsValid())
+	{
+		InitializeItem();
+	}
 
 	// [서버]
 	if (HasAuthority()) {
-		InitializeItem();
-
 		// 물리 수면 이벤트(물리 연산을 더이상 하지 않는 최적화 모드로 들어감) 바인딩
 		// 서버에서만 바인딩하고 호버링을 클라가 따라하면 됨.
 		if (ItemMesh)
@@ -89,19 +93,18 @@ void ABaseItem::BeginPlay()
 	{
 		InteractableComponent->OnInteracted.AddDynamic(this, &ABaseItem::OnInteractableTriggered);
 	}
+}
 
-	if (ItemDataAsset && ItemTag.IsValid())
+const FItemDefinition* ABaseItem::GetDefinitionFromSubsystem() const
+{
+	if (UWorld* World = GetWorld())
 	{
-		if (const FItemDefinition* Def = ItemDataAsset->FindItemDefinition(ItemTag))
+		if (UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>())
 		{
-			// InteractComp에 UI 정보 세팅
-			if (UInteractableComponent* InteractComp = FindComponentByClass<UInteractableComponent>())
-			{
-				InteractComp->InteractUIInfo.ObjectName = Def->ItemName;
-				InteractComp->InteractUIInfo.ActionText = Def->HowToInteractText;
-			}
+			return ItemSubsystem->GetItemDefinition(ItemTag);
 		}
 	}
+	return nullptr;
 }
 
 void ABaseItem::Tick(float DeltaTime)
@@ -121,6 +124,7 @@ void ABaseItem::SetItemState(EItemState NewState)
 	if (HasAuthority() && ItemState != NewState)
 	{
 		ItemState = NewState;
+
 		OnRep_ItemState(); // 서버 로컬 적용
 	}
 }
@@ -134,43 +138,52 @@ void ABaseItem::OnMeshSleep(UPrimitiveComponent* SleepingComponent, FName BoneNa
 	}
 }
 
-void ABaseItem::PickUpItem(AActor* Picker)
-{
-	if (!Picker) return;
-
-	AttachToComponent(Cast<ACharacter>(Picker)->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, MyDefinition->AttachmentSocketName);
-}
-
 void ABaseItem::OnInteractableTriggered(AActor* Interactor)
 {
-	// 방송이 들어오면 기존의 PickUpItem을 실행하여 로직 재사용
-	PickUpItem(Interactor);
+	// 주워졌을 때 Item 내부에서 할 행동들
 }
 
 void ABaseItem::InitializeItem()
 {
-	if (ItemDataAsset && ItemTag.IsValid())
+	if (!ItemTag.IsValid()) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>();
+	if (!ItemSubsystem) return;
+
+	// DA_ItemData로부터 Mesh 초기화
+	if (const FItemDefinition* Def = ItemSubsystem->GetItemDefinition(ItemTag))
 	{
-		if (const FItemDefinition* Def = ItemDataAsset->FindItemDefinition(ItemTag))
+		MyDefinition = Def;
+		if (UStaticMesh* LoadedMesh = MyDefinition->ItemMesh.LoadSynchronous())
 		{
-			MyDefinition = Def;
-
-			if (UStaticMesh* LoadedMesh = MyDefinition->ItemMesh.LoadSynchronous())
-			{
-				ItemMesh->SetStaticMesh(LoadedMesh);
-
-				ItemMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
-				ItemMesh->SetCollisionResponseToChannel(ECC_Interactable, ECR_Ignore);
-
-				// 메쉬와 충돌체가 준비되었으니 이제 중력과 물리를 킴
-				ItemMesh->SetSimulatePhysics(true);
-				ItemMesh->SetGenerateOverlapEvents(true);
-
-				// Slepp 이벤트를 받기 위함
-				ItemMesh->BodyInstance.bGenerateWakeEvents = true;
-			}
+			ItemMesh->SetStaticMesh(LoadedMesh);
 		}
 	}
+
+	// DT_ItemFeatureData로부터 Interactable Comp 초기화
+	if (const FItemFeatureData* Feature = ItemSubsystem->GetItemFeature(ItemTag))
+	{
+		if (InteractableComponent)
+		{
+			InteractableComponent->InitializeInteractable(Feature->ItemName, Feature->HowToInteractText);
+		}
+	}
+
+	// 서버/클라 구분 없이 기본 콜리전 프로파일만 세팅
+	ItemMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+	ItemMesh->SetCollisionResponseToChannel(ECC_Interactable, ECR_Ignore);
+	ItemMesh->SetGenerateOverlapEvents(true);
+
+	// [서버] 물리는 서버에서만 설정하고 클라가 따라가도록
+	if (HasAuthority())
+	{
+		ItemMesh->BodyInstance.bGenerateWakeEvents = true; // 서버에서만 Wake/Sleep 이벤트 추적
+	}
+	// 최초 상태 적용도 서버/클라 구분 없이.
+	OnRep_ItemState();
 }
 
 void ABaseItem::OnThrown(FVector LaunchVelocity, AActor* Thrower)
@@ -207,6 +220,8 @@ void ABaseItem::OnRep_ItemState()
 			ItemMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			ItemMesh->SetSimulatePhysics(true);
 		}
+		// 드롭될 때 부모로부터 확실히 분리
+		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 		break;
 
 	case EItemState::Dropped_Hovering:
@@ -249,20 +264,18 @@ void ABaseItem::OnRep_ItemState()
 
 UTexture2D* ABaseItem::GetItemIcon() const
 {
-	if (!ItemDataAsset)
+	if (const FItemDefinition* Def = GetDefinitionFromSubsystem())
 	{
-		return nullptr;
+		return Def->Icon2D.LoadSynchronous();
 	}
-
-	return ItemDataAsset->GetIconByTag(ItemTag);
+	return nullptr;
 }
 
 FText ABaseItem::GetItemNameText() const
 {
-	if (!ItemDataAsset)
+	if (const FItemDefinition* Def = GetDefinitionFromSubsystem())
 	{
-		return FText::FromString(ItemTag.ToString());
+		return Def->ItemName;
 	}
-
-	return ItemDataAsset->GetItemNameByTag(ItemTag);
+	return FText::FromString(ItemTag.ToString());
 }

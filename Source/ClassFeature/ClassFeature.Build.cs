@@ -24,7 +24,8 @@ public class ClassFeature: ModuleRules
             "EnhancedInput",    // <--- InputActionValue.h 등을 위해 필요
             "GASCore",          // <--- BaseCharacter, GASInputID.h를 위해 필요
             "ArtisticSWCore",   // <--- BaseItem.h를 위해 필요
-            "InputCore"
+            "InputCore",
+            "ArtisticSW2026"
         });
 
         PublicIncludePaths.AddRange(new string[] {

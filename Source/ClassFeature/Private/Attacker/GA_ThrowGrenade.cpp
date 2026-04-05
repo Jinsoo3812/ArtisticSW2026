@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+ï»¿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GA_ThrowGrenade.h"
 #include "BasePlayer.h"
@@ -6,6 +6,7 @@
 #include "Projectiles/GrenadeProjectile.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
+#include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h" // ëª½íƒ€ì£¼ ì¬ìƒ íƒœìŠ¤í¬ ì¶”ê°€
 #include "AbilitySystemComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "BaseGameplayTags.h"
@@ -20,7 +21,6 @@ void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	if (Player)
 	{
-		// ¼Õ¿¡ µç ¹°°ÇÀÌ ÀÖ´ÂÁö È®ÀÎ
 		if (!IsValid(Player->EquippedItem))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("UGA_ThrowGrenade::ActivateAbility : No Equipped Item. Cancel."));
@@ -28,14 +28,37 @@ void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 			return;
 		}
 
-		// [Å¬¶óÀÌ¾ğÆ®] ±ËÀû ±×¸®±â Å¸ÀÌ¸Ó ½ÃÀÛ
 		if (Player->IsLocallyControlled())
 		{
 			GetWorld()->GetTimerManager().SetTimer(TrajectoryTimerHandle, this, &UGA_ThrowGrenade::DrawTrajectory, TrajectoryFrequency, true);
 		}
 	}
 
-	// ÁÂÅ¬¸¯ ÇØÁ¦(ÅõÃ´ È®Á¤) ´ë±â
+	// 1. [í•µì‹¬ ë³€ê²½] ì–´ë¹Œë¦¬í‹°ê°€ ì‹œì‘ë˜ìë§ˆì ëª½íƒ€ì£¼ë¥¼ ì¬ìƒí•©ë‹ˆë‹¤. (Start -> Ready ë£¨í”„ ë¬´í•œ ëŒ€ê¸°)
+	if (ThrowMontage)
+	{
+		UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+			this, NAME_None, ThrowMontage, 1.0f);
+
+		if (MontageTask)
+		{
+			MontageTask->OnBlendOut.AddDynamic(this, &UGA_ThrowGrenade::OnMontageCompleted);
+			MontageTask->OnInterrupted.AddDynamic(this, &UGA_ThrowGrenade::OnMontageCompleted);
+			MontageTask->OnCancelled.AddDynamic(this, &UGA_ThrowGrenade::OnMontageCompleted);
+			MontageTask->OnCompleted.AddDynamic(this, &UGA_ThrowGrenade::OnMontageCompleted);
+			MontageTask->ReadyForActivation();
+		}
+
+		// ëª½íƒ€ì£¼ ë‚´ë¶€ì˜ "ë°œì‚¬!" ë…¸í‹°íŒŒì´ ëŒ€ê¸°ë„ ì‹œì‘ë¶€í„° ê°™ì´ ì¼œë‘¡ë‹ˆë‹¤.
+		UAbilityTask_WaitGameplayEvent* WaitEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, ThrowEventTag);
+		if (WaitEventTask)
+		{
+			WaitEventTask->EventReceived.AddDynamic(this, &UGA_ThrowGrenade::OnThrowEventReceived);
+			WaitEventTask->ReadyForActivation();
+		}
+	}
+
+	// 2. ì¢Œí´ë¦­ í•´ì œ ëŒ€ê¸° (ë˜ì§€ê¸° ì„¹ì…˜ìœ¼ë¡œ ì í”„í•˜ê¸° ìœ„í•¨)
 	UAbilityTask_WaitInputRelease* WaitReleaseTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this);
 	if (WaitReleaseTask)
 	{
@@ -43,7 +66,7 @@ void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		WaitReleaseTask->ReadyForActivation();
 	}
 
-	// ¿ìÅ¬¸¯ ÀÔ·Â(½ºÅ³ Ãë¼Ò) ´ë±â
+	// 3. ìš°í´ë¦­ ì…ë ¥ ëŒ€ê¸° (ìŠ¤í‚¬ ì·¨ì†Œ)
 	UAbilityTask_WaitGameplayEvent* WaitRightClickTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Key_Default_Mouse_RightClick);
 	if (WaitRightClickTask)
 	{
@@ -52,35 +75,64 @@ void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	}
 }
 
-void UGA_ThrowGrenade::EndAbility(const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo,
-	const FGameplayAbilityActivationInfo ActivationInfo,
-	bool bReplicateEndAbility, bool bWasCancelled)
+void UGA_ThrowGrenade::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
 {
-	// Á¾·á ½Ã ±ËÀû Å¸ÀÌ¸Ó ÇØÁ¦
+	// ì¢…ë£Œ ì‹œ ê¶¤ì  íƒ€ì´ë¨¸ í•´ì œ
 	GetWorld()->GetTimerManager().ClearTimer(TrajectoryTimerHandle);
+
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	{
+		ASC->RemoveLooseGameplayTag(State_Aiming);
+		ASC->RemoveLooseGameplayTag(State_Attacking); // ì–´ë¹Œë¦¬í‹° ì¢…ë£Œ ì‹œ íšŒì „ ê³ ì •ë„ í•´ì œ
+	}
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
 void UGA_ThrowGrenade::OnInputReleased(float TimeHeld)
 {
-	// ¾îºô¸®Æ¼°¡ ÀÌ¹Ì Ãë¼ÒµÇ¾ú°Å³ª Á¾·áµÇ¾ú´Ù¸é ¹«½Ã
-	if (!IsActive())
-	{
-		return;
-	}
+	if (!IsActive()) return;
 
+	// í™”ë©´ì˜ ê¶¤ì  ì§€ìš°ê¸°
+	GetWorld()->GetTimerManager().ClearTimer(TrajectoryTimerHandle);
+
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+
+	// ëª½íƒ€ì£¼ê°€ ì„¸íŒ…ë˜ì–´ ìˆë‹¤ë©´ "Throw" ì„¹ì…˜ìœ¼ë¡œ ê°•ì œ ì í”„!
+	if (ThrowMontage && ASC)
+	{
+		// ë£¨í”„ë¥¼ ëŒë©° í¼ì„ ì¡ê³  ìˆë˜ ì• ë‹ˆë©”ì´ì…˜ì´ ë˜ì§€ëŠ” ëª¨ì…˜ìœ¼ë¡œ ì¦‰ì‹œ ë„˜ì–´ê°‘ë‹ˆë‹¤.
+		ASC->CurrentMontageJumpToSection(ThrowSectionName);
+
+		// 1. ì¡°ì¤€ íƒœê·¸ë¥¼ ë¹¼ì„œ ì¹´ë©”ë¼ëŠ” ì¦‰ì‹œ ì¤Œì•„ì›ƒ ì‹œí‚µë‹ˆë‹¤.
+		ASC->RemoveLooseGameplayTag(State_Aiming);
+
+		// 2. ê³µê²© íƒœê·¸ë¥¼ ë„£ì–´ì„œ ì• ë‹ˆë©”ì´ì…˜ì´ ëë‚  ë•Œê¹Œì§€ ìºë¦­í„° íšŒì „ì„ ê³ ì •í•©ë‹ˆë‹¤.
+		ASC->AddLooseGameplayTag(State_Attacking);
+
+		ASC->CurrentMontageJumpToSection(ThrowSectionName);
+	}
+	else
+	{
+		// ëª½íƒ€ì£¼ê°€ ì—†ì„ ë•Œì˜ ì•ˆì „ ì¥ì¹˜
+		FGameplayEventData EmptyData;
+		OnThrowEventReceived(EmptyData);
+		OnMontageCompleted();
+	}
+}
+
+void UGA_ThrowGrenade::OnThrowEventReceived(FGameplayEventData Payload)
+{
+	// ê¸°ì¡´ì˜ OnInputReleasedì— ìˆë˜ ìˆ˜ë¥˜íƒ„ ì‹¤ì œ ìŠ¤í°/ë°œì‚¬ ë¡œì§ì…ë‹ˆë‹¤.
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 
 	if (!Player || !ASC || !IsValid(Player->EquippedItem))
 	{
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
 	}
 
-	// [¼­¹ö] ¼ö·ùÅº ½ºÆù ¹× ÅõÃ´
+	// [ì„œë²„] ìˆ˜ë¥˜íƒ„ ìŠ¤í° ë° íˆ¬ì²™
 	if (Player->HasAuthority())
 	{
 		UClass* SpawnClass = Player->EquippedItem->GetSpawnClass();
@@ -88,7 +140,6 @@ void UGA_ThrowGrenade::OnInputReleased(float TimeHeld)
 
 		if (!SpawnClass || !SpawnClass->IsChildOf(AGrenadeProjectile::StaticClass()))
 		{
-			EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 			return;
 		}
 
@@ -97,11 +148,7 @@ void UGA_ThrowGrenade::OnInputReleased(float TimeHeld)
 		LaunchDir.Normalize();
 		FVector LaunchVelocity = LaunchDir * ThrowSpeed;
 
-		FVector SpawnLocation = Player->GetActorLocation();
-		if (Player->GetMesh())
-		{
-			SpawnLocation = Player->GetMesh()->GetSocketLocation(FName("hand_r"));
-		}
+		FVector SpawnLocation = Player->EquippedItem->GetActorLocation();
 
 		FTransform SpawnTransform(LaunchVelocity.Rotation(), SpawnLocation);
 
@@ -126,11 +173,14 @@ void UGA_ThrowGrenade::OnInputReleased(float TimeHeld)
 			Grenade->LaunchProjectile(LaunchVelocity);
 		}
 
-		// ÀåÂø Item ¼Òºñ ¹× ÆÄ±«
+		// ì¥ì°© Item ì†Œë¹„ ë° íŒŒê´´
 		Player->UseEquippedItem(true);
 	}
+}
 
-	// ÅõÃ´ ÈÄ ¾îºô¸®Æ¼ Á¤»ó Á¾·á
+void UGA_ThrowGrenade::OnMontageCompleted()
+{
+	// ì• ë‹ˆë©”ì´ì…˜ì´ ì™„ì „íˆ ëë‚˜ë©´ ì–´ë¹Œë¦¬í‹°ë¥¼ ì •ìƒ ì¢…ë£Œí•©ë‹ˆë‹¤.
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
@@ -139,20 +189,20 @@ void UGA_ThrowGrenade::DrawTrajectory()
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	if (!Player || !IsValid(Player->EquippedItem)) return;
 
-	// ÅõÃ´ ½ÃÀÛ À§Ä¡
+	// íˆ¬ì²™ ì‹œì‘ ìœ„ì¹˜
 	FVector StartLoc = Player->EquippedItem->GetActorLocation();
 
-	// Ä«¸Ş¶ó°¡ º¸°í ÀÖ´Â ¹æÇâ º¤ÅÍ
+	// ì¹´ë©”ë¼ê°€ ë³´ê³  ìˆëŠ” ë°©í–¥ ë²¡í„°
 	FVector LaunchDir = Player->GetBaseAimRotation().Vector();
 
-	// Á÷±¸°¡ ¾ÈµÇ°Ô »ìÂ¦ µé¾î¿Ã¸²
+	// ì§êµ¬ê°€ ì•ˆë˜ê²Œ ì‚´ì§ ë“¤ì–´ì˜¬ë¦¼
 	LaunchDir.Z += Upper;
 	LaunchDir.Normalize();
 
-	// ÅõÃ´ ÃÊ±â ¼Óµµ
+	// íˆ¬ì²™ ì´ˆê¸° ì†ë„
 	FVector LaunchVelocity = LaunchDir * ThrowSpeed;
 
-	// °¡»óÀÇ ±ËÀû Ç¥½Ã
+	// ê°€ìƒì˜ ê¶¤ì  í‘œì‹œ
 	FPredictProjectilePathParams PredictParams(5.0f, StartLoc, LaunchVelocity, 3.0f, ECollisionChannel::ECC_Visibility, Player);
 	PredictParams.DrawDebugType = EDrawDebugTrace::ForOneFrame;
 	PredictParams.DrawDebugTime = TrajectoryFrequency;
@@ -166,13 +216,13 @@ void UGA_ThrowGrenade::OnRightClickCancelled(FGameplayEventData Payload)
 {
 	UE_LOG(LogTemp, Log, TEXT("UGA_ThrowGrenade: Right Click Event Received. Canceling Ability."));
 
-	// ÀÌ¹Ì Ãë¼ÒµÇ¾ú°Å³ª Á¾·áµÇ¾ú´Ù¸é ¹«½Ã
+	// ì´ë¯¸ ì·¨ì†Œë˜ì—ˆê±°ë‚˜ ì¢…ë£Œë˜ì—ˆë‹¤ë©´ ë¬´ì‹œ
 	if (!IsActive()) return;
 
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	if (!Player) return;
 
-	// [¼­¹ö]
+	// [ì„œë²„]
 	if (Player->HasAuthority())
 	{
 		CancelAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true);

@@ -6,6 +6,9 @@
 #include "Blueprint/UserWidget.h"
 #include "StarForceWidget.generated.h"
 
+// 스타포스 시도 시 별의 위치 오차를 보내는 이벤트
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnStarforceAttempted, float, ErrorMargin, float, BarLength);
+
 /**
  * 
  */
@@ -21,4 +24,12 @@ public:
 	// 스타포스를 멈추는 함수
 	UFUNCTION(BlueprintImplementableEvent, Category = "StarForce")
 	void StopStarForce();
+
+	// 스타포스가 멈췄을 때 호출되어 현재 별의 위치를 보고
+	UFUNCTION(BlueprintCallable, Category = "Crafting")
+	void ReportStarPosition(float CurrentXPosition, float BarLength);
+
+	// CrafterComponent가 바인딩할 이벤트(스타포스 성공 여부 판정)
+	UPROPERTY(BlueprintCallable, Category = "Crafting")
+	FOnStarforceAttempted OnStarforceAttempted;
 };

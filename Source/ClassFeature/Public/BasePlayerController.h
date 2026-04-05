@@ -4,6 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "GameplayTagContainer.h"
+#include "ArtisticSW2026PlayerController.h"
 #include "BasePlayerController.generated.h"
 
 /**
@@ -13,30 +15,36 @@
 class UInputMappingContext;
 class UPlayerHUDWidget;
 class UInputAction;
+class UInputTagConfig;
 
 UCLASS()
-class CLASSFEATURE_API ABasePlayerController : public APlayerController
+class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerController
 {
 	GENERATED_BODY()
 
 public:
-
-	UPROPERTY(EditAnywhere, Category = "Input|Input Mappings")
-	TArray<UInputMappingContext*> DefaultMappingContexts;
-
-	/** Input mapping context setup */
+	/*--- 초기화 ---*/
 	virtual void SetupInputComponent() override;
-
 	virtual void BeginPlay() override;
+
+	/*--- 네트워크 초기화 ---*/
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void OnRep_Pawn() override;
+	
+	/*--- UI Input ---*/
+protected:
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TArray<UInputMappingContext*> UIIMC;
 
+	// UI IMC의 우선순위
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	int32 UIIMCPriority = 1;
 
-	/*---- Input Action ----*/
-	// 인벤토리 열기 / 닫기 IA (I)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputAction> ToggleInventoryAction;
+	UPROPERTY(EditDefaultsOnly,  Category = "Input")
+	TObjectPtr<UInputTagConfig> UIInputConfig;
 
+	// UI 입력이 들어왔을 때 실행될 콜백 함수
+	void OnUIInputPressed(FGameplayTag InputTag);
 
 	/*---- 인벤토리 ----*/
 public:

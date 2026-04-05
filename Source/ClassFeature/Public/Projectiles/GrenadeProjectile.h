@@ -5,6 +5,8 @@
 #include "GameplayEffectTypes.h" 
 #include "GrenadeProjectile.generated.h"
 
+class UProjectileMovementComponent;
+
 UCLASS()
 class CLASSFEATURE_API AGrenadeProjectile : public AActor
 {
@@ -21,6 +23,10 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     UStaticMeshComponent* MeshComp;
 
+    // 투사체 움직임을 가볍게 연산하기 위한 컴포넌트
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UProjectileMovementComponent* ProjectileMovement;
+
     // GA가 수류탄을 생성할 때 넘겨줄 데미지 정보 (GE Spec)
     UPROPERTY(BlueprintReadWrite, meta = (ExposeOnSpawn = "true"), Category = "GAS")
     FGameplayEffectSpecHandle DamageEffectSpecHandle;
@@ -31,7 +37,11 @@ public:
 
     // 폭발 반경
     UPROPERTY(EditDefaultsOnly, Category = "Combat")
-    float ExplosionRadius = 500.f;
+    float ExplosionRadius = 300.f;
+
+    // 폭발 시 이펙트 등을 모든 클라이언트에게 멀티캐스트
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_OnExploded();
 
     // 실제 폭발 로직 (데미지 GE 적용)
     UFUNCTION()

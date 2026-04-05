@@ -26,6 +26,10 @@ public:
 	virtual FGameplayTag GetInteractionTag() const override;
 	virtual void Interact(AActor* Interactor) override;
 
+public:
+	// Interactable Component 초기화. 단순 Text 등을 ItemFeatureData로 부터 주입받는 용도
+	void InitializeInteractable(const FText& InObjectName, const FText& InActionText);
+
 	// 컴포넌트마다 인스턴스별로 태그를 설정할 수 있도록 노출
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
 	FGameplayTag InteractionTag;
