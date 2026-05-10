@@ -53,6 +53,7 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Tool, "Item.Tool");
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool_Grenade, "Item.Tool.Grenade");
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool_TestRed, "Item.Tool.TestRed");
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool_TestBlue, "Item.Tool.TestBlue");
+UE_DEFINE_GAMEPLAY_TAG(Item_Tool_Trap, "Item.Tool.Trap");
 
 // Material
 UE_DEFINE_GAMEPLAY_TAG(Item_Material, "Item.Material");

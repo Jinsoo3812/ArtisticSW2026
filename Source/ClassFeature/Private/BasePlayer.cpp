@@ -33,7 +33,13 @@ bool FItemSlot::operator==(const FGameplayTag& OtherTag) const { return KeyTag =
 
 bool FItemSlot::operator==(const ABaseItem* OtherItem) const { return Item.Get() == OtherItem; }
 
-
+// 커스텀 어태치 규칙 생성: 위치(Snap), 회전(Snap), 스케일(KeepWorld)
+FAttachmentTransformRules CustomAttachRules(
+	EAttachmentRule::SnapToTarget,   // Location: 소켓 위치에 맞춤
+	EAttachmentRule::SnapToTarget,   // Rotation: 소켓 회전에 맞춤
+	EAttachmentRule::KeepWorld,      // Scale: 부모 스케일 무시하고 현재 월드 크기(0.15) 절대 유지
+	false                            // bWeldSimulatedBodies: 콜리전 병합 여부
+);
 
 /* --- BasePlayer ---*/
 
