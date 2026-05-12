@@ -43,7 +43,7 @@ protected:
 
 protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Trap")
-	TSubclassOf<AGhostMeshActor> GhostMeshClass;
+	TSubclassOf<AGhostMeshActor> GhostActorClass;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Trap")
 	float InstallRange = 1000.0f; // 최대 설치 거리
@@ -53,7 +53,7 @@ protected:
 
 	// 현재 스폰된 고스트 메쉬 인스턴스 (로컬 클라이언트에서만 유효)
 	UPROPERTY()
-	TObjectPtr<AGhostMeshActor> SpawnedGhostMesh;
+	TObjectPtr<AGhostMeshActor> SpawnedGhostActor;
 
 	FTimerHandle TargetTimerHandle;
 

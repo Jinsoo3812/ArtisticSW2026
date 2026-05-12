@@ -14,6 +14,8 @@ AGhostMeshActor::AGhostMeshActor()
 	// 고스트 메쉬는 어떠한 물리나 충돌 연산도 하지 않음
 	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	MeshComponent->SetCastShadow(false); // 그림자도 끄기
+
+	bReplicates = false; // 로컬에만 보이는 액터이므로 복제 비활성화
 }
 
 void AGhostMeshActor::BeginPlay()

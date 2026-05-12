@@ -33,14 +33,15 @@ void UGA_InstallTrap::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	// [로컬 클라이언트] 고스트 메쉬 생성 및 업데이트 시작
 	if (Player->IsLocallyControlled())
 	{
-		if (GhostMeshClass)
+		if (GhostActorClass)
 		{
-			SpawnedGhostMesh = GetWorld()->SpawnActor<AGhostMeshActor>(GhostMeshClass, FVector::ZeroVector, FRotator::ZeroRotator);
-			if (SpawnedGhostMesh)
-			{
-				SpawnedGhostMesh->SetGhostMesh(Player->EquippedItem->GetStaticMesh());
-			}
+			UE_LOG(LogTemp, Log, TEXT("UGA_InstallTrap::ActivateAbility : Spawning Ghost Actor for local preview."));	
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+			SpawnedGhostActor = GetWorld()->SpawnActor<AGhostMeshActor>(GhostActorClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
 		}
+		else UE_LOG(LogTemp, Warning, TEXT("UGA_InstallTrap::ActivateAbility : GhostActorClass is not set!"));
 
 		// 주기적으로 트레이스 실행
 		GetWorld()->GetTimerManager().SetTimer(TargetTimerHandle, this, &UGA_InstallTrap::UpdateInstallTarget, UpdateFrequency, true);
@@ -70,10 +71,10 @@ void UGA_InstallTrap::EndAbility(const FGameplayAbilitySpecHandle Handle,
 {
 	GetWorld()->GetTimerManager().ClearTimer(TargetTimerHandle);
 
-	if (SpawnedGhostMesh)
+	if (SpawnedGhostActor)
 	{
-		SpawnedGhostMesh->Destroy();
-		SpawnedGhostMesh = nullptr;
+		SpawnedGhostActor->Destroy();
+		SpawnedGhostActor = nullptr;
 	}
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
@@ -88,7 +89,7 @@ void UGA_InstallTrap::UpdateInstallTarget()
 	TargetTransform = FTransform(HitRotation, HitLocation);
 
 	// 고스트 메쉬 위치 및 색상 갱신
-	if (SpawnedGhostMesh)
+	if (SpawnedGhostActor)
 	{
 		// 안 닿았을 경우 허공에라도 띄워주기 위해 끝점(TraceEnd) 사용
 		FVector ShowLoc = HitLocation;
@@ -98,8 +99,8 @@ void UGA_InstallTrap::UpdateInstallTarget()
 			ShowLoc = Player->GetPawnViewLocation() + (Player->GetBaseAimRotation().Vector() * InstallRange);
 		}
 
-		SpawnedGhostMesh->SetActorLocationAndRotation(ShowLoc, HitRotation);
-		SpawnedGhostMesh->SetIsValidPosition(bIsCurrentPositionValid);
+		SpawnedGhostActor->SetActorLocationAndRotation(ShowLoc, HitRotation);
+		SpawnedGhostActor->SetIsValidPosition(bIsCurrentPositionValid);
 	}
 }
 
@@ -116,7 +117,10 @@ bool UGA_InstallTrap::CheckInstallLocation(FVector& OutLocation, FRotator& OutRo
 	FHitResult HitResult;
 	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(Player);
-	Params.AddIgnoredActor(SpawnedGhostMesh);
+	if (SpawnedGhostActor)
+	{
+		Params.AddIgnoredActor(SpawnedGhostActor);
+	}
 
 	// 바닥이나 지형물만 검사할 수 있도록 적절한 채널(Visibility 또는 사용자 지정) 사용
 	bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, StartLoc, EndLoc, ECC_Visibility, Params);
