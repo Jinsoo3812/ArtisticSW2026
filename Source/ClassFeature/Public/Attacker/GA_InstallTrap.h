@@ -42,6 +42,9 @@ protected:
 	bool CheckInstallLocation(FVector& OutLocation, FRotator& OutRotation);
 
 protected:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Trap")
+	TSubclassOf<class UGameplayEffect> DamageEffectClass;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Trap")
 	TSubclassOf<AGhostMeshActor> GhostActorClass;
 

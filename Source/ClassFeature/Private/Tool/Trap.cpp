@@ -56,13 +56,12 @@ void ATrap::OnTrapBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor*
 	UAbilitySystemComponent* TargetASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(OtherActor);
 	if (!TargetASC) return;
 
-	// (선택) 적군 태그를 들고 있는지 확인
-	/*
-	if (!TargetASC->HasMatchingGameplayTag(Team_Enemy))
-	{
-		return;
-	}
-	*/
+	// 적군 태그를 들고 있는지 확인 (지금 Enemy에 Tag가 안 붙어있음 ;;)
+	// if (!TargetASC->HasMatchingGameplayTag(Team_Enemy))
+	// {
+	// 	UE_LOG(LogTemp, Warning, TEXT("ATrap::ActivateAbility : %s stepped on the trap but is not an enemy. Ignoring."), *OtherActor->GetName());	
+	// 	return;
+	// }
 
 	// 이미 밟고 있어서 관리 대상인 ASC라면 무시
 	if (ActiveDamageEffects.Contains(TargetASC)) return;

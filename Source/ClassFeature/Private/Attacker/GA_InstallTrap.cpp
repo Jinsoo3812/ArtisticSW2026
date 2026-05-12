@@ -8,6 +8,7 @@
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
+#include "Trap.h"
 
 UGA_InstallTrap::UGA_InstallTrap()
 {
@@ -150,6 +151,7 @@ void UGA_InstallTrap::OnInputReleased(float TimeHeld)
 	if (!IsActive()) return;
 
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 	if (!Player || !IsValid(Player->EquippedItem))
 	{
 		CancelAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true);
@@ -167,15 +169,34 @@ void UGA_InstallTrap::OnInputReleased(float TimeHeld)
 		{
 			UClass* SpawnClass = Player->EquippedItem->GetSpawnClass();
 
-			if (SpawnClass)
+			if (SpawnClass && SpawnClass->IsChildOf(ATrap::StaticClass()))
 			{
 				FTransform SpawnTransform(FinalRotation, FinalLocation);
 
-				// 함정 액터 스폰 (Deferred로 감싸서 추가 설정 후 FinishSpawning도 가능)
-				AActor* TrapActor = GetWorld()->SpawnActor<AActor>(SpawnClass, SpawnTransform);
+				// 1. GE Spec Handle 생성
+				FGameplayEffectSpecHandle DamageSpecHandle;
+				if (DamageEffectClass)
+				{
+					FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
+					ContextHandle.AddInstigator(Player, Player);
+					DamageSpecHandle = ASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
+				}
+
+				// 2. 지연 스폰 (Deferred Spawn)으로 트랩 생성
+				ATrap* TrapActor = GetWorld()->SpawnActorDeferred<ATrap>(
+					SpawnClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+
 				if (TrapActor)
 				{
-					// 설치 성공 시 아이템 소비
+					// 3. 데이터 주입
+					TrapActor->DamageEffectSpecHandle = DamageSpecHandle;
+					TrapActor->SetInstigator(Player);
+					TrapActor->SetOwner(Player);
+
+					// 4. 스폰 완료 (이때 TrapActor의 BeginPlay가 호출됨)
+					TrapActor->FinishSpawning(SpawnTransform);
+
+					// 설치 성공 시 아이템 소비 및 어빌리티 종료
 					Player->UseEquippedItem(true);
 					EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 					return;
@@ -183,7 +204,6 @@ void UGA_InstallTrap::OnInputReleased(float TimeHeld)
 			}
 		}
 
-		// 실패 시 경고음/UI 로직을 여기에 추가할 수 있습니다.
 		UE_LOG(LogTemp, Warning, TEXT("UGA_InstallTrap::OnInputReleased : Install Trap Failed: Invalid Position or SpawnClass."));
 	}
 
