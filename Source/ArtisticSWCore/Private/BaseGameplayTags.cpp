@@ -54,6 +54,7 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Tool_Grenade, "Item.Tool.Grenade");
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool_TestRed, "Item.Tool.TestRed");
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool_TestBlue, "Item.Tool.TestBlue");
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool_Trap, "Item.Tool.Trap");
+UE_DEFINE_GAMEPLAY_TAG(Item_Tool_ClusterGranade, "Item.Tool.ClusterGranade");
 
 // Material
 UE_DEFINE_GAMEPLAY_TAG(Item_Material, "Item.Material");

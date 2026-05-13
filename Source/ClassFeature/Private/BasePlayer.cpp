@@ -620,8 +620,11 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 
 		if (bShouldGrantAbility)
 		{
-			GrantAbilityToSlot(Key_Default_Mouse_LeftClick, EquippedItem->GetGrantedAbilityClass());
-			UE_LOG(LogTemp, Log, TEXT("ABasePlayer::EquipItemFromSlot : Granted ability %s for item %s"), *EquippedItem->GetGrantedAbilityClass()->GetName(), *EquippedItem->GetName());
+			auto GrantedAbilityClass = EquippedItem->GetGrantedAbilityClass();
+			if (GrantedAbilityClass) {
+				GrantAbilityToSlot(Key_Default_Mouse_LeftClick, EquippedItem->GetGrantedAbilityClass());
+				UE_LOG(LogTemp, Log, TEXT("ABasePlayer::EquipItemFromSlot : Granted ability %s for item %s"), *EquippedItem->GetGrantedAbilityClass()->GetName(), *EquippedItem->GetName());
+			}
 		}
 	}
 

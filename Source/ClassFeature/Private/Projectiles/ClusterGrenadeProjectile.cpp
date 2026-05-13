@@ -43,8 +43,8 @@ void AClusterGrenadeProjectile::Explode()
 		Split();
 	}
 
-	// 폭발 시각 효과(분리 이펙트) - AGrenadeProjectile의 Multicast 함수 활용
-	Multicast_OnExploded();
+	// 본체가 터질 때는 폭발 디버그(시각 효과)가 나타나지 않도록 주석 처리
+	// Multicast_OnExploded();
 
 	Destroy();
 }

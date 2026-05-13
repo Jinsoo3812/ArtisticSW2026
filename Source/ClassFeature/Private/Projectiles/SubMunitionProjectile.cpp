@@ -152,6 +152,6 @@ void ASubMunitionProjectile::Multicast_SetInstalled_Implementation()
 		ProjectileMovement->Deactivate();
 	}
 
-	// TODO: 설치 완료 상태를 나타내는 시각 효과 (예: 메시 머티리얼 변경, 이펙트 등)
+	// TODO: 설치 완료 상태를 나타내는 시각 효과 (예: 메시 머티리얼 변경, 이펙트 등)	
 	DrawDebugPoint(GetWorld(), GetActorLocation(), 15.0f, FColor::Green, false, InstalledLifeSpan);
 }
