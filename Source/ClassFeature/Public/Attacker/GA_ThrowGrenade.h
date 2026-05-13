@@ -77,7 +77,7 @@ protected:
 
 	// 노티파이(이벤트)를 받았을 때 실행될 함수 (실제 수류탄 스폰)
 	UFUNCTION()
-	void OnThrowEventReceived(FGameplayEventData Payload);
+	virtual void OnThrowEventReceived(FGameplayEventData Payload);
 
 	// 몽타주 재생이 완료되거나 끊겼을 때 실행될 함수
 	UFUNCTION()
