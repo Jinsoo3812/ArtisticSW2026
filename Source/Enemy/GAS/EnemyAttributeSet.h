@@ -6,11 +6,12 @@
 #include "GASCore/Public/BaseAttributeSet.h"
 #include "EnemyAttributeSet.generated.h"
 
-/**
- * 
- */
+
 UCLASS()
 class ENEMY_API UEnemyAttributeSet : public UBaseAttributeSet
 {
 	GENERATED_BODY()
+
+public:
+
 };

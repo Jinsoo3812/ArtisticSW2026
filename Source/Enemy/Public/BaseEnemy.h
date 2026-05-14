@@ -11,8 +11,12 @@
 #include "BaseEnemy.generated.h"
 
 class UAbilitySystemComponent;
-class UGameplayAbility;
+class UPathMovement;
 class UBaseWeaponComponent;
+class AEnemyPathActor;
+class AEnemySpawnPoint;
+
+class UGameplayAbility;
 class UBehaviorTree;
 class ABaseAIController;
 class ABaseWeapon;
@@ -56,6 +60,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UBaseWeaponComponent> WeaponComponent = nullptr;
 	
+	// Path
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Path")
+    TObjectPtr<UPathMovement> PathMovement = nullptr;
+	
 public:
 	ABaseEnemy();
 
@@ -86,13 +94,23 @@ protected:
 	
 	//  ASC Owner가 State.Dead Tag를 가질 때, 호출되는 함수
 	virtual void OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
+
+public:
+	UFUNCTION(BlueprintCallable, Category="Path")
+	void InitializePathMovement(AEnemyPathActor* InPath, float InStartDistance, bool bStartImmediately = true);
+
+	UFUNCTION(BlueprintCallable, Category="Path")
+	void InitializePathMovementFromSpawnPoint(AEnemySpawnPoint* InSpawnPoint, bool bStartImmediately = true);
+
+	
 public:
 	// Getters
 	// 일단 개발 중이므로, check를 넣었지만, 일부 BeginPlay 이전에는 nullptr 날 수 있음
 	FORCEINLINE TObjectPtr<ABaseAIController> GetAIController() const { check(AIController) return AIController; }
-	FORCEINLINE TObjectPtr<UBehaviorTree> GetBehaviorTree() const { check(BehaviorTree) return BehaviorTree; }
+	FORCEINLINE TObjectPtr<UBehaviorTree> GetBehaviorTree() const { return BehaviorTree; }
 	FORCEINLINE FGameplayTag GetDefaultWeaponTag() const { return DefaultWeaponTag; }
 	FORCEINLINE TObjectPtr<UBaseWeaponComponent> GetWeaponComponent() const { check(WeaponComponent) return WeaponComponent; }
+	FORCEINLINE TObjectPtr<UPathMovement> GetPathMovementComponent() const { check(PathMovement) return PathMovement;}
 	FORCEINLINE virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { check(AbilitySystemComponent) return AbilitySystemComponent; }
 
 	/*---- For Drop ----*/

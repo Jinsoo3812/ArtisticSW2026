@@ -138,6 +138,13 @@ protected:
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 
+	// 기본 착지 이벤트 오버라이드
+	virtual void Landed(const FHitResult& Hit) override;
+
+	// C++에서 '진짜 착지'로 판정되었을 때 블루프린트(ABP)로 신호를 보내기 위한 이벤트
+	UFUNCTION(BlueprintImplementableEvent, Category = "Movement|Animation")
+	void K2_OnRealLanded();
+
 	/* --- 키 입력으로 실행되는 GA ---  */
 public:
 	// Default GA가 어느 Key(Tag)에 매핑될지 설정하는 Map

@@ -64,4 +64,26 @@ protected:
 	// 취소 이벤트(우클릭) 수신 시 호출될 함수
 	UFUNCTION()
 	void OnRightClickCancelled(FGameplayEventData Payload);
+
+
+
+	// 투척 애니메이션 몽타주
+	UPROPERTY(EditDefaultsOnly, Category = "Animation")
+	UAnimMontage* ThrowMontage;
+
+	// 애니메이션 노티파이에서 기다릴 이벤트 태그
+	UPROPERTY(EditDefaultsOnly, Category = "Animation")
+	FGameplayTag ThrowEventTag;
+
+	// 노티파이(이벤트)를 받았을 때 실행될 함수 (실제 수류탄 스폰)
+	UFUNCTION()
+	void OnThrowEventReceived(FGameplayEventData Payload);
+
+	// 몽타주 재생이 완료되거나 끊겼을 때 실행될 함수
+	UFUNCTION()
+	void OnMontageCompleted();
+
+	// 클릭을 뗐을 때 점프할 몽타주 섹션의 이름
+	UPROPERTY(EditDefaultsOnly, Category = "Animation")
+	FName ThrowSectionName = FName("Throw");
 };
