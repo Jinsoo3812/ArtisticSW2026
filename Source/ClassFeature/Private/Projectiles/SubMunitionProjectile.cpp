@@ -23,6 +23,7 @@ ASubMunitionProjectile::ASubMunitionProjectile()
 	ProjectileMovement = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovement"));
 	ProjectileMovement->bAutoActivate = false;
 	ProjectileMovement->bShouldBounce = true;
+	ProjectileMovement->bRotationFollowsVelocity = true; // 날아가는 방향을 바라봄
 	ProjectileMovement->Bounciness = 0.4f; // 적당히 튕기도록
 	ProjectileMovement->Friction = 0.6f;   // 구르다가 멈추도록
 
@@ -152,6 +153,5 @@ void ASubMunitionProjectile::Multicast_SetInstalled_Implementation()
 		ProjectileMovement->Deactivate();
 	}
 
-	// TODO: 설치 완료 상태를 나타내는 시각 효과 (예: 메시 머티리얼 변경, 이펙트 등)	
-	DrawDebugPoint(GetWorld(), GetActorLocation(), 15.0f, FColor::Green, false, InstalledLifeSpan);
+	// TODO: 설치 완료 상태를 나타내는 시각 효과 (예: 메시 머티리얼 변경, 이펙트 등)
 }

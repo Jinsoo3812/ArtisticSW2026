@@ -22,6 +22,7 @@ void UGA_ThrowClusterGrenade::DrawTrajectory() {
   FPredictProjectilePathParams PredictParams(
       5.0f, StartLoc, LaunchVelocity, PredictedSplitTime,
       ECollisionChannel::ECC_Visibility, Player);
+  PredictParams.OverrideGravityZ = 0.001f; // 직선 궤적을 위해 중력을 거의 0으로 설정
   PredictParams.DrawDebugType = EDrawDebugTrace::ForOneFrame;
   PredictParams.DrawDebugTime = TrajectoryFrequency;
   PredictParams.bTraceWithCollision = true;

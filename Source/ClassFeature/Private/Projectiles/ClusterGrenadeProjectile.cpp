@@ -12,6 +12,8 @@ AClusterGrenadeProjectile::AClusterGrenadeProjectile()
 	if (ProjectileMovement)
 	{
 		ProjectileMovement->bShouldBounce = false;
+		ProjectileMovement->ProjectileGravityScale = 0.0f; // 직선으로 날아가도록 중력 제거
+		ProjectileMovement->bRotationFollowsVelocity = true; // 날아가는 방향을 바라봄
 	}
 
 	if (MeshComp)
@@ -63,6 +65,8 @@ void AClusterGrenadeProjectile::Split()
 	// 자탄들이 일제히 설치될 타임스탬프 계산
 	float InstallTimestamp = GetWorld()->GetTimeSeconds() + SubMunitionInstallTime;
 
+	TArray<ASubMunitionProjectile*> SpawnedSubMunitions;
+
 	for (int32 i = 0; i < SubMunitionCount; ++i)
 	{
 		// 랜덤 원뿔(Cone) 방향 계산
@@ -81,6 +85,17 @@ void AClusterGrenadeProjectile::Split()
 			SubMunition->InstallationTimestamp = InstallTimestamp;
 			SubMunition->FinishSpawning(SpawnTransform);
 			SubMunition->LaunchSubMunition(LaunchVel);
+			SpawnedSubMunitions.Add(SubMunition);
+		}
+	}
+
+	// 생성된 자탄끼리 서로의 충돌을 무시하도록 설정
+	for (int32 i = 0; i < SpawnedSubMunitions.Num(); ++i)
+	{
+		for (int32 j = i + 1; j < SpawnedSubMunitions.Num(); ++j)
+		{
+			SpawnedSubMunitions[i]->MeshComp->IgnoreActorWhenMoving(SpawnedSubMunitions[j], true);
+			SpawnedSubMunitions[j]->MeshComp->IgnoreActorWhenMoving(SpawnedSubMunitions[i], true);
 		}
 	}
 }
