@@ -136,8 +136,9 @@ void ASubMunitionProjectile::TransitionToInstalled()
 		ProjectileMovement->Deactivate();
 	}
 
-	// 설치 후 일정 시간 뒤에 폭발 혹은 소멸(여기선 단순 파괴)
-	SetLifeSpan(InstalledLifeSpan);
+	// 설치 후 일정 시간 뒤에 스스로 폭발하도록 타이머 설정
+	FTimerHandle AutoExplodeTimerHandle;
+	GetWorld()->GetTimerManager().SetTimer(AutoExplodeTimerHandle, this, &ASubMunitionProjectile::ExplodeAndDestroy, InstalledLifeSpan, false);
 
 	// 클라이언트에 상태 동기화
 	Multicast_SetInstalled();
