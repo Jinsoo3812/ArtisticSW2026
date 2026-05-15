@@ -5,20 +5,23 @@
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
 #include "Engine/OverlapResult.h"
+#include "TimerManager.h"
+#include "Math/UnrealMathUtility.h"
 
 ASubMunitionProjectile::ASubMunitionProjectile()
 {
-	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bCanEverTick = false; // Tick에서 타이머 체크를 제거했으므로 false로 변경
 	bReplicates = true;
 	SetReplicateMovement(true);
 
 	MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
 	RootComponent = MeshComp;
 
-	// 기본 콜리전: 적과는 Overlap (폭발), 바닥/벽과는 Block (튕김)을 가정
+	// 콜리전 설정은 Blueprint에서 하도록 명세
 	MeshComp->SetCollisionProfileName(TEXT("Projectile")); 
 	MeshComp->SetSimulatePhysics(false);
 	MeshComp->OnComponentBeginOverlap.AddDynamic(this, &ASubMunitionProjectile::OnOverlapBegin);
+	MeshComp->OnComponentHit.AddDynamic(this, &ASubMunitionProjectile::OnHit);
 
 	ProjectileMovement = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovement"));
 	ProjectileMovement->bAutoActivate = false;
@@ -43,15 +46,7 @@ void ASubMunitionProjectile::BeginPlay()
 void ASubMunitionProjectile::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-	// 이동(구르는) 중일 때 서버가 시간을 체크하여 일제히 설치 상태로 전환
-	if (HasAuthority() && CurrentState == ESubMunitionState::Moving)
-	{
-		if (GetWorld()->GetTimeSeconds() >= InstallationTimestamp)
-		{
-			TransitionToInstalled();
-		}
-	}
+	// 기존 타이머 체크 로직 제거됨
 }
 
 void ASubMunitionProjectile::LaunchSubMunition(const FVector& LaunchVelocity)
@@ -75,6 +70,38 @@ void ASubMunitionProjectile::OnOverlapBegin(UPrimitiveComponent* OverlappedComp,
 	{
 		// 적중하면 무조건 폭발
 		ExplodeAndDestroy();
+	}
+}
+
+void ASubMunitionProjectile::OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+{
+	if (!HasAuthority() || OtherActor == this)
+	{
+		return;
+	}
+
+	if (CurrentState == ESubMunitionState::Installed)
+	{
+		return; // 이미 설치된 상태면 무시
+	}
+
+	if (bExplodeOnImpact)
+	{
+		// 폭발 즉시 모드: 어떤 표면/객체든 닿기만 하면 폭발
+		ExplodeAndDestroy();
+	}
+	else
+	{
+		// 지뢰 모드: 바닥 경사를 체크하여 설치
+		float SlopeDot = FVector::DotProduct(FVector::UpVector, Hit.ImpactNormal);
+		float MinSlopeDot = FMath::Cos(FMath::DegreesToRadians(MaxInstallSlopeAngle));
+
+		if (SlopeDot >= MinSlopeDot)
+		{
+			// 경사가 M도 이하인 평탄한 바닥이므로 지뢰 설치
+			TransitionToInstalled();
+		}
+		// 경사가 심한 벽 등에 맞았다면 튕기도록 내버려둠 (bShouldBounce가 처리)
 	}
 }
 

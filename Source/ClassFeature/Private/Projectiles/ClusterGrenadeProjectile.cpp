@@ -62,9 +62,6 @@ void AClusterGrenadeProjectile::Split()
 		ForwardDir = GetActorForwardVector();
 	}
 
-	// 자탄들이 일제히 설치될 타임스탬프 계산
-	float InstallTimestamp = GetWorld()->GetTimeSeconds() + SubMunitionInstallTime;
-
 	TArray<ASubMunitionProjectile*> SpawnedSubMunitions;
 
 	for (int32 i = 0; i < SubMunitionCount; ++i)
@@ -75,14 +72,13 @@ void AClusterGrenadeProjectile::Split()
 
 		FTransform SpawnTransform(RandDir.Rotation(), CurrentLoc);
 		
-		// Deferred Spawn을 통해 변수(데미지스펙, 타임스탬프) 전달 후 생성 완료
+		// Deferred Spawn을 통해 변수(데미지스펙) 전달 후 생성 완료
 		ASubMunitionProjectile* SubMunition = GetWorld()->SpawnActorDeferred<ASubMunitionProjectile>(
 			SubMunitionClass, SpawnTransform, GetOwner(), GetInstigator(), ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 
 		if (SubMunition)
 		{
 			SubMunition->DamageEffectSpecHandle = DamageEffectSpecHandle;
-			SubMunition->InstallationTimestamp = InstallTimestamp;
 			SubMunition->FinishSpawning(SpawnTransform);
 			SubMunition->LaunchSubMunition(LaunchVel);
 			SpawnedSubMunitions.Add(SubMunition);

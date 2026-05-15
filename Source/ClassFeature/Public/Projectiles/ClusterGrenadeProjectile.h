@@ -40,8 +40,4 @@ protected:
 	// 분리 시 자탄에 가해질 초기 속력
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cluster")
 	float SubMunitionLaunchSpeed = 1000.0f;
-
-	// 자탄들이 바닥에 닿고 지뢰로 설치될 때까지의 시간 (본체에서 일제히 부여)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cluster")
-	float SubMunitionInstallTime = 3.0f;
 };
