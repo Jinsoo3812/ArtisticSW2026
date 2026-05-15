@@ -35,6 +35,8 @@ void UGA_ThrowClusterGrenade::ActivateAbility(const FGameplayAbilitySpecHandle H
           EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
           return;
       }
+      
+      UE_LOG(LogTemp, Log, TEXT("UGA_ThrowClusterGrenade::ActivateAbility : Found %d types of sub-munitions."), AvailableSubMunitions.Num());
 
       // Initialize Selection
       CurrentSelectionIndex = 0;
@@ -51,14 +53,14 @@ void UGA_ThrowClusterGrenade::ActivateAbility(const FGameplayAbilitySpecHandle H
       }
 
       // Wait for Mouse Wheel Events
-      WheelUpTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Event_Input_MouseWheelUp);
+      WheelUpTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Key_Default_Mouse_WheelUp);
       if (WheelUpTask)
       {
           WheelUpTask->EventReceived.AddDynamic(this, &UGA_ThrowClusterGrenade::OnMouseWheelUp);
           WheelUpTask->ReadyForActivation();
       }
 
-      WheelDownTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Event_Input_MouseWheelDown);
+      WheelDownTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Key_Default_Mouse_WheelDown);
       if (WheelDownTask)
       {
           WheelDownTask->EventReceived.AddDynamic(this, &UGA_ThrowClusterGrenade::OnMouseWheelDown);
@@ -97,6 +99,8 @@ void UGA_ThrowClusterGrenade::OnMouseWheelUp(FGameplayEventData Payload)
   if (AvailableSubMunitions.Num() > 0)
   {
       CurrentSelectionIndex = (CurrentSelectionIndex - 1 + AvailableSubMunitions.Num()) % AvailableSubMunitions.Num();
+      FGameplayTag SelectedTag = AvailableSubMunitions[CurrentSelectionIndex];
+      UE_LOG(LogTemp, Log, TEXT("UGA_ThrowClusterGrenade::OnMouseWheelUp : Index changed to %d, Tag: %s"), CurrentSelectionIndex, *SelectedTag.ToString());
       UpdateSelectionUI();
   }
 }
@@ -106,6 +110,8 @@ void UGA_ThrowClusterGrenade::OnMouseWheelDown(FGameplayEventData Payload)
   if (AvailableSubMunitions.Num() > 0)
   {
       CurrentSelectionIndex = (CurrentSelectionIndex + 1) % AvailableSubMunitions.Num();
+      FGameplayTag SelectedTag = AvailableSubMunitions[CurrentSelectionIndex];
+      UE_LOG(LogTemp, Log, TEXT("UGA_ThrowClusterGrenade::OnMouseWheelDown : Index changed to %d, Tag: %s"), CurrentSelectionIndex, *SelectedTag.ToString());
       UpdateSelectionUI();
   }
 }
@@ -199,6 +205,7 @@ void UGA_ThrowClusterGrenade::OnThrowEventReceived(FGameplayEventData Payload) {
       if (ClusterGrenade && AvailableSubMunitions.IsValidIndex(CurrentSelectionIndex))
       {
           FGameplayTag SelectedTag = AvailableSubMunitions[CurrentSelectionIndex];
+          UE_LOG(LogTemp, Log, TEXT("UGA_ThrowClusterGrenade::OnThrowEventReceived : Firing with Submunition Tag: %s"), *SelectedTag.ToString());
           
           if (Player->HasAuthority())
           {
@@ -208,7 +215,12 @@ void UGA_ThrowClusterGrenade::OnThrowEventReceived(FGameplayEventData Payload) {
           TSubclassOf<ASubMunitionProjectile>* SubClassPtr = SubMunitionClassMap.Find(SelectedTag);
           if (SubClassPtr && *SubClassPtr)
           {
+              UE_LOG(LogTemp, Log, TEXT("UGA_ThrowClusterGrenade::OnThrowEventReceived : Found class %s in map. Injecting..."), *(*SubClassPtr)->GetName());
               ClusterGrenade->SetSubMunitionClass(*SubClassPtr);
+          }
+          else
+          {
+              UE_LOG(LogTemp, Warning, TEXT("UGA_ThrowClusterGrenade::OnThrowEventReceived : Could NOT find class for Tag %s in SubMunitionClassMap!"), *SelectedTag.ToString());
           }
       }
 
