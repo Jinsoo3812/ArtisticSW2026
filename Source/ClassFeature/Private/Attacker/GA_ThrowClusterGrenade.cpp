@@ -4,6 +4,132 @@
 #include "BasePlayer.h"
 #include "Kismet/GameplayStatics.h"
 #include "Projectiles/GrenadeProjectile.h"
+#include "Projectiles/ClusterGrenadeProjectile.h"
+#include "Projectiles/SubMunitionProjectile.h"
+#include "Inventory/InventoryComponent.h"
+#include "UI/ClusterGrenadeSelectionWidget.h"
+#include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
+#include "BaseGameplayTags.h"
+
+void UGA_ThrowClusterGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
+{
+  ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+  if (Player && Player->GetInventoryComponent())
+  {
+      UInventoryComponent* Inv = Player->GetInventoryComponent();
+      AvailableSubMunitions.Empty();
+
+      // Find available sub-munitions from Inventory
+      const TArray<FInventoryMaterialEntry>& Materials = Inv->GetMaterials();
+      for (const FInventoryMaterialEntry& Entry : Materials)
+      {
+          if (Entry.ItemTag.MatchesTag(Item_Material_Submunition) && Entry.Count > 0)
+          {
+              AvailableSubMunitions.Add(Entry.ItemTag);
+          }
+      }
+
+      if (AvailableSubMunitions.IsEmpty())
+      {
+          UE_LOG(LogTemp, Warning, TEXT("UGA_ThrowClusterGrenade::ActivateAbility : No Sub-munitions available. Cancel."));
+          EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+          return;
+      }
+
+      // Initialize Selection
+      CurrentSelectionIndex = 0;
+
+      // Show UI (Only for local player)
+      if (Player->IsLocallyControlled() && SelectionWidgetClass)
+      {
+          SelectionWidget = CreateWidget<UClusterGrenadeSelectionWidget>(GetWorld(), SelectionWidgetClass);
+          if (SelectionWidget)
+          {
+              SelectionWidget->AddToViewport();
+              UpdateSelectionUI();
+          }
+      }
+
+      // Wait for Mouse Wheel Events
+      WheelUpTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Event_Input_MouseWheelUp);
+      if (WheelUpTask)
+      {
+          WheelUpTask->EventReceived.AddDynamic(this, &UGA_ThrowClusterGrenade::OnMouseWheelUp);
+          WheelUpTask->ReadyForActivation();
+      }
+
+      WheelDownTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Event_Input_MouseWheelDown);
+      if (WheelDownTask)
+      {
+          WheelDownTask->EventReceived.AddDynamic(this, &UGA_ThrowClusterGrenade::OnMouseWheelDown);
+          WheelDownTask->ReadyForActivation();
+      }
+  }
+
+  Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+}
+
+void UGA_ThrowClusterGrenade::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
+{
+  if (SelectionWidget)
+  {
+      SelectionWidget->RemoveFromParent();
+      SelectionWidget = nullptr;
+  }
+
+  if (WheelUpTask)
+  {
+      WheelUpTask->EndTask();
+      WheelUpTask = nullptr;
+  }
+
+  if (WheelDownTask)
+  {
+      WheelDownTask->EndTask();
+      WheelDownTask = nullptr;
+  }
+
+  Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
+}
+
+void UGA_ThrowClusterGrenade::OnMouseWheelUp(FGameplayEventData Payload)
+{
+  if (AvailableSubMunitions.Num() > 0)
+  {
+      CurrentSelectionIndex = (CurrentSelectionIndex - 1 + AvailableSubMunitions.Num()) % AvailableSubMunitions.Num();
+      UpdateSelectionUI();
+  }
+}
+
+void UGA_ThrowClusterGrenade::OnMouseWheelDown(FGameplayEventData Payload)
+{
+  if (AvailableSubMunitions.Num() > 0)
+  {
+      CurrentSelectionIndex = (CurrentSelectionIndex + 1) % AvailableSubMunitions.Num();
+      UpdateSelectionUI();
+  }
+}
+
+void UGA_ThrowClusterGrenade::UpdateSelectionUI()
+{
+  if (SelectionWidget && AvailableSubMunitions.IsValidIndex(CurrentSelectionIndex))
+  {
+      ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+      if (Player && Player->GetInventoryComponent())
+      {
+          FGameplayTag SelectedTag = AvailableSubMunitions[CurrentSelectionIndex];
+          UInventoryComponent* Inv = Player->GetInventoryComponent();
+          
+          FText ItemName = Inv->GetMaterialName(SelectedTag);
+          UTexture2D* ItemIcon = Inv->GetMaterialIcon(SelectedTag);
+          int32 Count = Inv->GetMaterialCount(SelectedTag);
+
+          SelectionWidget->UpdateSelection(SelectedTag, ItemName, ItemIcon, Count);
+          SelectionWidget->OnSelectionChanged();
+      }
+  }
+}
+
 
 void UGA_ThrowClusterGrenade::DrawTrajectory() {
   ABasePlayer *Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
@@ -68,6 +194,24 @@ void UGA_ThrowClusterGrenade::OnThrowEventReceived(FGameplayEventData Payload) {
             ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 
     if (Grenade) {
+      // Set SubMunition Class via Selected Tag and Consume from Inventory
+      AClusterGrenadeProjectile* ClusterGrenade = Cast<AClusterGrenadeProjectile>(Grenade);
+      if (ClusterGrenade && AvailableSubMunitions.IsValidIndex(CurrentSelectionIndex))
+      {
+          FGameplayTag SelectedTag = AvailableSubMunitions[CurrentSelectionIndex];
+          
+          if (Player->HasAuthority())
+          {
+              Player->GetInventoryComponent()->RemoveMaterial(SelectedTag, 1);
+          }
+
+          TSubclassOf<ASubMunitionProjectile>* SubClassPtr = SubMunitionClassMap.Find(SelectedTag);
+          if (SubClassPtr && *SubClassPtr)
+          {
+              ClusterGrenade->SetSubMunitionClass(*SubClassPtr);
+          }
+      }
+
       Grenade->SetInstigator(Player);
       Grenade->SetOwner(Player);
       Grenade->DamageEffectSpecHandle = DamageSpecHandle;

@@ -14,6 +14,8 @@ class CLASSFEATURE_API AClusterGrenadeProjectile : public AGrenadeProjectile
 public:
 	AClusterGrenadeProjectile();
 
+	void SetSubMunitionClass(TSubclassOf<ASubMunitionProjectile> InClass) { SubMunitionClass = InClass; }
+
 protected:
 	virtual void BeginPlay() override;
 
