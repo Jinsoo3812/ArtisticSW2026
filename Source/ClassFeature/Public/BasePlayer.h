@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -279,6 +279,18 @@ protected:
 	// 조준 시 카메라 오프셋
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	FVector AimingSocketOffset = FVector(0.f, 60.f, 50.f);
+
+	// 스나이핑 조준 시 카메라 거리
+	UPROPERTY(EditDefaultsOnly, Category = "Camera")
+	float SnipingTargetArmLength = 100.f;
+
+	// 스나이핑 조준 시 카메라 오프셋
+	UPROPERTY(EditDefaultsOnly, Category = "Camera")
+	FVector SnipingSocketOffset = FVector(0.f, 40.f, 50.f);
+
+	// 스나이핑 마우스 감도
+	UPROPERTY(EditDefaultsOnly, Category = "Camera")
+	float SnipingMouseSensitivity = 0.5f;
 
 	// 카메라 전환 보간 속도
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")

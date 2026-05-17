@@ -5,6 +5,7 @@ UE_DEFINE_GAMEPLAY_TAG(State_Attacking, "State.Attacking");
 UE_DEFINE_GAMEPLAY_TAG(State_Dead, "State.Dead");
 UE_DEFINE_GAMEPLAY_TAG(State_Damaged, "State.Damaged");
 UE_DEFINE_GAMEPLAY_TAG(State_Aiming, "State.Aiming");
+UE_DEFINE_GAMEPLAY_TAG(State_Sniping, "State.Sniping");
 UE_DEFINE_GAMEPLAY_TAG(State_Crafting, "State.Crafting");
 
 // Team
@@ -57,6 +58,7 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Tool_TestRed, "Item.Tool.TestRed");
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool_TestBlue, "Item.Tool.TestBlue");
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool_Trap, "Item.Tool.Trap");
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool_ClusterGranade, "Item.Tool.ClusterGranade");
+UE_DEFINE_GAMEPLAY_TAG(Item_Tool_SniperRifle, "Item.Tool.SniperRifle");
 
 // Material
 UE_DEFINE_GAMEPLAY_TAG(Item_Material, "Item.Material");

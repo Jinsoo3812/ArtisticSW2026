@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "BasePlayer.h"
@@ -105,27 +105,38 @@ void ABasePlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// 조준 상태 확인 (GA에서 State_Aiming 태그를 부여했다고 가정)
-	bool bIsAimingState = false;
-	bool bIsAttackingState = false; // 공격( 현재 구현된 무기 기준으로는 투척) 중인지 확인
+	// 기본 카메라/회전 상태 값
+	float TargetArmLength = DefaultTargetArmLength;
+	FVector TargetSocketOffset = DefaultSocketOffset;
+	bool bLockRotation = false;
 
-	if (CachedAbilitySystemComponent.Get())
+	// 우선순위가 높은 상태(Sniping -> Aiming -> Attacking)부터 순차적으로 판별 (더 복잡해지면 Player의 상태를 구조체로 관리할 필요가 있음.)
+	if (CachedAbilitySystemComponent.IsValid())
 	{
-		bIsAimingState = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
-		bIsAttackingState = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
+		if (CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Sniping))
+		{
+			TargetArmLength = SnipingTargetArmLength;
+			TargetSocketOffset = SnipingSocketOffset;
+			bLockRotation = true;
+		}
+		else if (CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming))
+		{
+			TargetArmLength = AimingTargetArmLength;
+			TargetSocketOffset = AimingSocketOffset;
+			bLockRotation = true;
+		}
+		else if (CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking))
+		{
+			bLockRotation = true;
+		}
 	}
 
-	// 캐릭터 회전은 조준 중(Aiming)이거나 던지는 중(Attacking)일 때 모두 고정
-	bool bLockRotation = bIsAimingState || bIsAttackingState;
+	// 캐릭터 회전 및 카메라 보간 적용
 	bUseControllerRotationYaw = bLockRotation;
 	GetCharacterMovement()->bOrientRotationToMovement = !bLockRotation;
 
-	// 카메라 줌인은 오직 조준 중(Aiming)일 때만 작동! (던질 땐 줌아웃됨)
 	if (CameraBoom)
 	{
-		float TargetArmLength = bIsAimingState ? AimingTargetArmLength : DefaultTargetArmLength;
-		FVector TargetSocketOffset = bIsAimingState ? AimingSocketOffset : DefaultSocketOffset;
-
 		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
 		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CameraInterpSpeed);
 	}
@@ -841,8 +852,14 @@ void ABasePlayer::DoLook(float Yaw, float Pitch)
 {
 	if (GetController() != nullptr)
 	{
-		AddControllerYawInput(Yaw);
-		AddControllerPitchInput(Pitch);
+		float Multiplier = 1.0f;
+		if (CachedAbilitySystemComponent.IsValid() && CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Sniping))
+		{
+			Multiplier = SnipingMouseSensitivity;
+		}
+
+		AddControllerYawInput(Yaw * Multiplier);
+		AddControllerPitchInput(Pitch * Multiplier);
 	}
 }
 
