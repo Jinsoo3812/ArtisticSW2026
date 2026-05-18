@@ -140,6 +140,13 @@ void ABasePlayer::Tick(float DeltaTime)
 		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
 		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CameraInterpSpeed);
 	}
+
+	// FOV 보간 (스나이핑 시 줌인)
+	if (FollowCamera)
+	{
+		float TargetFOV = bLockRotation && CachedAbilitySystemComponent.IsValid() && CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Sniping) ? SnipingFOV : DefaultFOV;
+		FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, TargetFOV, DeltaTime, CameraInterpSpeed));
+	}
 }
 
 void ABasePlayer::PossessedBy(AController* NewController)
@@ -554,6 +561,7 @@ void ABasePlayer::UseEquippedItem(bool bDestroy)
 		// 현재는 마우스로 사용하는 Item밖에 없으므로 이렇게 하지만 추후에는 Tag로 분기할 것
 		RemoveItemFromSlot(ItemSlots[EquippedIndex].KeyTag);
 		RemoveAbilityFromSlot(Key_Default_Mouse_LeftClick);
+		RemoveAbilityFromSlot(Key_Default_Mouse_RightClick);
 
 		if (bDestroy) {
 			EquippedItem->Destroy(); // 아이템 액터 제거
@@ -594,6 +602,7 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 		if (IsValid(EquippedItem))
 		{
 			RemoveAbilityFromSlot(Key_Default_Mouse_LeftClick);
+			RemoveAbilityFromSlot(Key_Default_Mouse_RightClick);
 			EquippedItem->SetItemState(EItemState::InItemSlot);
 		}
 
@@ -633,7 +642,15 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 		{
 			auto GrantedAbilityClass = EquippedItem->GetGrantedAbilityClass();
 			if (GrantedAbilityClass) {
-				GrantAbilityToSlot(Key_Default_Mouse_LeftClick, EquippedItem->GetGrantedAbilityClass());
+				// 스나이퍼 등 우클릭 전용 스킬 분기
+				if (GrantedAbilityClass->GetName().Contains(TEXT("Sniping")))
+				{
+					GrantAbilityToSlot(Key_Default_Mouse_RightClick, GrantedAbilityClass);
+				}
+				else
+				{
+					GrantAbilityToSlot(Key_Default_Mouse_LeftClick, GrantedAbilityClass);
+				}
 				UE_LOG(LogTemp, Log, TEXT("ABasePlayer::EquipItemFromSlot : Granted ability %s for item %s"), *EquippedItem->GetGrantedAbilityClass()->GetName(), *EquippedItem->GetName());
 			}
 		}

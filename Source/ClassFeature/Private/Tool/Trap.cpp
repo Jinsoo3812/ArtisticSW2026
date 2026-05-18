@@ -51,7 +51,7 @@ void ATrap::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ATrap::OnTrapBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
 	// 자신과의 충돌이거나 스펙이 없으면 무시
-	if (!OtherActor || OtherActor == this || !DamageEffectSpecHandle.IsValid()) return;
+	if (!OtherActor || OtherActor == this || !DamageEffectClass) return;
 
 	UAbilitySystemComponent* TargetASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(OtherActor);
 	if (!TargetASC) return;
@@ -65,6 +65,16 @@ void ATrap::OnTrapBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor*
 
 	// 이미 밟고 있어서 관리 대상인 ASC라면 무시
 	if (ActiveDamageEffects.Contains(TargetASC)) return;
+
+	// 인스티게이터(설치자)의 ASC를 가져와서 Spec 생성
+	UAbilitySystemComponent* InstigatorASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetInstigator());
+	if (!InstigatorASC) return;
+	
+	FGameplayEffectContextHandle ContextHandle = InstigatorASC->MakeEffectContext();
+	ContextHandle.AddInstigator(GetInstigator(), this);
+	FGameplayEffectSpecHandle DamageEffectSpecHandle = InstigatorASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
+	
+	if (!DamageEffectSpecHandle.IsValid()) return;
 
 	// 무한 유지 + 1초 주기 데미지 GE 적용
 	FActiveGameplayEffectHandle ActiveHandle = TargetASC->ApplyGameplayEffectSpecToSelf(*DamageEffectSpecHandle.Data.Get());

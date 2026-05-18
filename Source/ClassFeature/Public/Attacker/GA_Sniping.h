@@ -50,7 +50,7 @@ protected:
 	bool bIsSnipingActive;
 	bool bIsRecoiling;
 
-	// Hitscan 처리를 서버로 전송하기 위한 함수
-	UFUNCTION(Server, Reliable)
-	void Server_ProcessHit(const FHitResult& HitResult);
+	// Hitscan 처리를 서버로 전송하기 위한 함수 (GAS Target Data 시스템 사용)
+	UFUNCTION()
+	void OnTargetDataReceived(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag);
 };

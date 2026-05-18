@@ -18,9 +18,9 @@ class CLASSFEATURE_API ATrap : public AActor
 public:
 	ATrap();
 
-	// GA_InstallTrap에서 지연 생성(Deferred) 시 주입해 줄 GE Spec
+	// GA_InstallTrap에서 지연 생성(Deferred) 시 주입해 줄 GE Class
 	UPROPERTY(BlueprintReadWrite, meta = (ExposeOnSpawn = true), Category = "Trap")
-	FGameplayEffectSpecHandle DamageEffectSpecHandle;
+	TSubclassOf<class UGameplayEffect> DamageEffectClass;
 
 protected:
 	virtual void BeginPlay() override;

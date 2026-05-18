@@ -173,14 +173,7 @@ void UGA_InstallTrap::OnInputReleased(float TimeHeld)
 			{
 				FTransform SpawnTransform(FinalRotation, FinalLocation);
 
-				// 1. GE Spec Handle 생성
-				FGameplayEffectSpecHandle DamageSpecHandle;
-				if (DamageEffectClass)
-				{
-					FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
-					ContextHandle.AddInstigator(Player, Player);
-					DamageSpecHandle = ASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
-				}
+				// GE Spec Handle 생성은 Trap 내부에서 수행하도록 클래스만 전달
 
 				// 2. 지연 스폰 (Deferred Spawn)으로 트랩 생성
 				ATrap* TrapActor = GetWorld()->SpawnActorDeferred<ATrap>(
@@ -189,7 +182,7 @@ void UGA_InstallTrap::OnInputReleased(float TimeHeld)
 				if (TrapActor)
 				{
 					// 3. 데이터 주입
-					TrapActor->DamageEffectSpecHandle = DamageSpecHandle;
+					TrapActor->DamageEffectClass = DamageEffectClass;
 					TrapActor->SetInstigator(Player);
 					TrapActor->SetOwner(Player);
 

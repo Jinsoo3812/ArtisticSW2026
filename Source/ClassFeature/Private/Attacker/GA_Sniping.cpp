@@ -7,6 +7,8 @@
 #include "BaseGameplayTags.h"
 #include "Kismet/GameplayStatics.h"
 #include "Camera/CameraComponent.h"
+#include "DrawDebugHelpers.h"
+#include "AbilitySystemBlueprintLibrary.h"
 
 UGA_Sniping::UGA_Sniping()
 {
@@ -29,6 +31,13 @@ void UGA_Sniping::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
 	bIsSnipingActive = true;
 	bIsRecoiling = false;
 
+	// 로컬 플레이어에게만 메시 숨기기 (1인칭 연출, 다른 플레이어에게는 보임)
+	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+	if (Player && Player->IsLocallyControlled())
+	{
+		Player->GetMesh()->SetOwnerNoSee(true);
+	}
+
 	// 우클릭(조준키) 재입력 대기 (토글 해제)
 	UAbilityTask_WaitInputPress* WaitRightClick = UAbilityTask_WaitInputPress::WaitInputPress(this);
 	if (WaitRightClick)
@@ -43,6 +52,16 @@ void UGA_Sniping::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const
 	{
 		WaitShoot->EventReceived.AddDynamic(this, &UGA_Sniping::OnShoot);
 		WaitShoot->ReadyForActivation();
+	}
+
+	// Target Data 수신 델리게이트 바인딩 (서버)
+	if (HasAuthority(&ActivationInfo))
+	{
+		UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+		if (ASC)
+		{
+			ASC->AbilityTargetDataSetDelegate(Handle, ActivationInfo.GetActivationPredictionKey()).AddUObject(this, &UGA_Sniping::OnTargetDataReceived);
+		}
 	}
 
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
@@ -78,15 +97,45 @@ void UGA_Sniping::OnShoot(FGameplayEventData Payload)
 		FCollisionQueryParams QueryParams;
 		QueryParams.AddIgnoredActor(Player);
 
-		// ECC_Visibility 채널을 사용하여 장애물 및 타겟 검출
-		bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, StartLoc, EndLoc, ECC_Visibility, QueryParams);
+		// ECC_Pawn 채널을 사용하여 캐릭터 타겟 검출
+		bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, StartLoc, EndLoc, ECC_Pawn, QueryParams);
+
+		// 디버그 라인 그리기 (충돌 시 ImpactPoint까지, 아니면 끝까지)
+		FVector TraceEnd = bHit ? HitResult.ImpactPoint : EndLoc;
+		DrawDebugLine(GetWorld(), StartLoc, TraceEnd, FColor::Red, false, 3.0f, 0, 2.0f);
 
 		if (bHit)
 		{
-			// 타겟 명중 시 서버로 데이터 전송
-			if (HitResult.GetActor())
+			// 충돌 지점에 디버그 포인트 표시
+			DrawDebugPoint(GetWorld(), HitResult.ImpactPoint, 10.0f, FColor::Green, false, 3.0f);
+			UE_LOG(LogTemp, Log, TEXT("UGA_Sniping::OnShoot : Hit -> %s (Bone: %s)"), *HitResult.GetActor()->GetName(), *HitResult.BoneName.ToString());
+		}
+		else
+		{
+			UE_LOG(LogTemp, Log, TEXT("UGA_Sniping::OnShoot : Missed (No hit)"));
+		}
+
+		if (bHit && HitResult.GetActor())
+		{
+			// Target Data 생성
+			FGameplayAbilityTargetData_SingleTargetHit* HitData = new FGameplayAbilityTargetData_SingleTargetHit();
+			HitData->HitResult = HitResult;
+
+			FGameplayAbilityTargetDataHandle TargetDataHandle;
+			TargetDataHandle.Add(HitData);
+
+			// GAS Target Data 시스템을 통해 서버로 전송
+			UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+			if (ASC)
 			{
-				Server_ProcessHit(HitResult);
+				FScopedPredictionWindow ScopedPrediction(ASC, true);
+				ASC->CallServerSetReplicatedTargetData(
+					GetCurrentAbilitySpecHandle(),
+					GetCurrentActivationInfo().GetActivationPredictionKey(),
+					TargetDataHandle,
+					FGameplayTag(),
+					ASC->ScopedPredictionKey
+				);
 			}
 		}
 
@@ -103,22 +152,45 @@ void UGA_Sniping::OnShoot(FGameplayEventData Payload)
 	}
 }
 
-void UGA_Sniping::Server_ProcessHit_Implementation(const FHitResult& HitResult)
+void UGA_Sniping::OnTargetDataReceived(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag)
 {
-	// 서버에서 유효성 검증 및 데미지 적용
-	AActor* HitActor = HitResult.GetActor();
-	if (HitActor && DamageEffectClass)
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (!ASC) return;
+
+	// 수신한 Target Data 소비 (재수신 가능하도록)
+	ASC->ConsumeClientReplicatedTargetData(GetCurrentAbilitySpecHandle(), GetCurrentActivationInfo().GetActivationPredictionKey());
+
+	if (GetCurrentActorInfo()->IsNetAuthority() && DamageEffectClass)
 	{
-		UAbilitySystemComponent* TargetASC = HitActor->FindComponentByClass<UAbilitySystemComponent>();
-		if (TargetASC)
+		for (const TSharedPtr<FGameplayAbilityTargetData>& TargetData : Data.Data)
 		{
-			UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
-			FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
-			ContextHandle.AddInstigator(GetAvatarActorFromActorInfo(), GetAvatarActorFromActorInfo());
-			ContextHandle.AddHitResult(HitResult);
-			
-			SourceASC->ApplyGameplayEffectToTarget(DamageEffectClass.GetDefaultObject(), TargetASC, 1.0f, ContextHandle);
-			UE_LOG(LogTemp, Log, TEXT("UGA_Sniping: Hit Success -> Applied damage to %s"), *HitActor->GetName());
+			if (TargetData.IsValid())
+			{
+				const FHitResult* HitResult = TargetData->GetHitResult();
+				if (HitResult && HitResult->GetActor())
+				{
+					// ASC는 PlayerState에 존재하므로 FindComponentByClass가 아닌
+					// IAbilitySystemInterface를 통해 가져와야 함
+					UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(HitResult->GetActor());
+					if (TargetASC)
+					{
+						FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
+						ContextHandle.AddInstigator(GetAvatarActorFromActorInfo(), GetAvatarActorFromActorInfo());
+						ContextHandle.AddHitResult(*HitResult);
+						
+						FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
+						if (SpecHandle.IsValid())
+						{
+							ASC->ApplyGameplayEffectSpecToTarget(*SpecHandle.Data.Get(), TargetASC);
+							UE_LOG(LogTemp, Log, TEXT("UGA_Sniping: Hit Success -> Applied damage to %s"), *HitResult->GetActor()->GetName());
+						}
+					}
+					else
+					{
+						UE_LOG(LogTemp, Warning, TEXT("UGA_Sniping: Hit %s but no ASC found (not a GAS actor)"), *HitResult->GetActor()->GetName());
+					}
+				}
+			}
 		}
 	}
 }
@@ -132,6 +204,13 @@ void UGA_Sniping::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGam
 {
 	bIsSnipingActive = false;
 	bIsRecoiling = false;
+
+	// 로컬 메시 다시 보이게
+	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+	if (Player && Player->IsLocallyControlled())
+	{
+		Player->GetMesh()->SetOwnerNoSee(false);
+	}
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
