@@ -34,6 +34,15 @@ void UAM_InsertGroundStartFinishedNotify::OnApply_Implementation(UAnimSequence* 
 	const float ClampedMinTime = FMath::Clamp(MinNotifyTime, 0.0f, ClampedMaxTime);
 	const float NotifyTime = FMath::Clamp(PlayLength * NotifyTimeRatio, ClampedMinTime, ClampedMaxTime);
 
+	if (!UAnimationBlueprintLibrary::IsValidAnimNotifyTrackName(AnimationSequence, NotifyTrackName))
+	{
+		UAnimationBlueprintLibrary::AddAnimationNotifyTrack(
+			AnimationSequence,
+			NotifyTrackName,
+			FLinearColor(0.25f, 0.75f, 1.0f)
+		);
+	}
+
 	UAnimationBlueprintLibrary::AddAnimationNotifyEvent(
 		AnimationSequence,
 		NotifyTrackName,
