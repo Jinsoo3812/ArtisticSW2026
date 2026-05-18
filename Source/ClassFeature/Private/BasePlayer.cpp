@@ -910,27 +910,7 @@ void ABasePlayer::DoJumpEnd()
 
 void ABasePlayer::StartSprint()
 {
-	const bool bWasSprinting = bIsSprinting;
 	bIsSprinting = true;
-
-	if (!bWasSprinting)
-	{
-		const FVector2D MoveInput = CachedMoveInput.GetClampedToMaxSize(1.f);
-		if (MoveInput.Size() > MoveInputDeadZone)
-		{
-			MoveInputHeldTime = 0.f;
-			CurrentStartToLoopDelay = SprintStartToLoopDelay;
-			bStartRequested = true;
-			bStopRequested = false;
-			bUseStartDatabase = true;
-			bUseLoopDatabase = false;
-			bSharpTurnRequested = false;
-			bUseSharpTurnDatabase = false;
-			MoveInputTurnAngle = 0.f;
-			PreviousMoveInputForTurn = MoveInput;
-		}
-	}
-
 	UpdateMaxWalkSpeed();
 }
 
@@ -1000,16 +980,7 @@ void ABasePlayer::UpdateMovementRequestState(float DeltaTime)
 
 	MoveInputSize = MoveInput.Size();
 	bHasMoveInput = MoveInputSize > MoveInputDeadZone;
-
-	const bool bJustStartedMoving = !bPrevHasMoveInput && bHasMoveInput;
-	if (bJustStartedMoving)
-	{
-		MoveInputHeldTime = 0.f;
-	}
-	else
-	{
-		MoveInputHeldTime = bHasMoveInput ? MoveInputHeldTime + DeltaTime : 0.f;
-	}
+	MoveInputHeldTime = bHasMoveInput ? MoveInputHeldTime + DeltaTime : 0.f;
 
 	MoveInputTurnAngle = 0.f;
 	bSharpTurnRequested = false;
@@ -1040,6 +1011,30 @@ void ABasePlayer::UpdateMovementRequestState(float DeltaTime)
 		return;
 	}
 
+	const bool bJustStartedMoving = !bPrevHasMoveInput && bHasMoveInput;
+	const bool bJustStoppedMoving = bPrevHasMoveInput && !bHasMoveInput;
+
+	if (bJustStartedMoving)
+	{
+		MoveInputHeldTime = 0.f;
+		bGroundStartFinished = false;
+		bPendingGroundStartFinish = false;
+		bStartWasSprinting = bIsSprinting;
+	}
+
+	if (!bHasMoveInput)
+	{
+		bGroundStartFinished = false;
+		bPendingGroundStartFinish = false;
+		bStartWasSprinting = false;
+	}
+
+	if (bPendingGroundStartFinish && MoveInputHeldTime >= MinStartDatabaseTime)
+	{
+		bGroundStartFinished = true;
+		bPendingGroundStartFinish = false;
+	}
+
 	bSharpTurnRequested =
 		bIsSprinting &&
 		bHasMoveInput &&
@@ -1048,9 +1043,9 @@ void ABasePlayer::UpdateMovementRequestState(float DeltaTime)
 		FMath::Abs(MoveInputTurnAngle) >= SharpTurnAngleThreshold;
 
 	bStartRequested = bJustStartedMoving;
-	bStopRequested = bPrevHasMoveInput && !bHasMoveInput && GroundSpeed > StopIntentSpeedThreshold;
-	CurrentStartToLoopDelay = bIsSprinting ? SprintStartToLoopDelay : StartToLoopDelay;
-	bUseStartDatabase = bHasMoveInput && MoveInputHeldTime < CurrentStartToLoopDelay;
+	bStopRequested = bJustStoppedMoving && GroundSpeed > StopIntentSpeedThreshold;
+	CurrentStartToLoopDelay = StartToLoopDelay;
+	bUseStartDatabase = bHasMoveInput && !bGroundStartFinished && MoveInputHeldTime < StartToLoopDelay;
 	bUseSharpTurnDatabase = bSharpTurnRequested;
 	bUseLoopDatabase = bHasMoveInput && !bUseStartDatabase && !bUseSharpTurnDatabase && !bStopRequested;
 
@@ -1117,10 +1112,27 @@ void ABasePlayer::ClearMovementRequests()
 	bUseStartDatabase = false;
 	bUseLoopDatabase = false;
 	bUseSharpTurnDatabase = false;
+	bGroundStartFinished = false;
+	bPendingGroundStartFinish = false;
+	bStartWasSprinting = false;
 	MoveInputHeldTime = 0.f;
 	CurrentStartToLoopDelay = 0.f;
 	bSharpTurnRequested = false;
 	MoveInputTurnAngle = 0.f;
+}
+
+void ABasePlayer::MarkGroundStartFinished()
+{
+	if (MoveInputHeldTime < MinStartDatabaseTime)
+	{
+		bPendingGroundStartFinish = true;
+		return;
+	}
+
+	bPendingGroundStartFinish = false;
+	bGroundStartFinished = true;
+	bUseStartDatabase = false;
+	bUseLoopDatabase = bHasMoveInput && !bSharpTurnRequested && !bStopRequested;
 }
 
 void ABasePlayer::FinishJumpStart()

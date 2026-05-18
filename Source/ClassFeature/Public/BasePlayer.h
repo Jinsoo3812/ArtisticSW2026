@@ -175,7 +175,10 @@ public:
 	float MoveInputHeldTime = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Start")
-	float StartToLoopDelay = 0.22f;
+	float StartToLoopDelay = 0.75f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Start")
+	float MinStartDatabaseTime = 0.12f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Start")
 	float SprintStartToLoopDelay = 0.34f;
@@ -185,6 +188,15 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
 	bool bUseStartDatabase = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	bool bGroundStartFinished = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	bool bPendingGroundStartFinish = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	bool bStartWasSprinting = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
 	bool bUseLoopDatabase = false;
@@ -314,6 +326,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Animation|Movement")
 	void FinishJumpStart();
+
+	UFUNCTION(BlueprintCallable, Category = "Animation|Movement|Start")
+	void MarkGroundStartFinished();
 
 	UFUNCTION(BlueprintCallable, Category = "Animation|Combat")
 	void RequestCombatModeToggle();

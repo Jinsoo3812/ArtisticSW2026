@@ -49,6 +49,18 @@ void UBasePlayerAnimInstance::CacheOwningCharacter()
 	CachedBasePlayer = Cast<ABasePlayer>(CachedPawn);
 }
 
+void UBasePlayerAnimInstance::MarkGroundStartFinished()
+{
+	if (CachedBasePlayer)
+	{
+		CachedBasePlayer->MarkGroundStartFinished();
+		bGroundStartFinished = CachedBasePlayer->bGroundStartFinished;
+		bPendingGroundStartFinish = CachedBasePlayer->bPendingGroundStartFinish;
+		bUseStartDatabase = CachedBasePlayer->bUseStartDatabase;
+		bUseLoopDatabase = CachedBasePlayer->bUseLoopDatabase;
+	}
+}
+
 void UBasePlayerAnimInstance::ResetAnimationState()
 {
 	GroundSpeed = 0.f;
@@ -75,6 +87,9 @@ void UBasePlayerAnimInstance::ResetAnimationState()
 	bStartRequested = false;
 	bStopRequested = false;
 	bUseStartDatabase = false;
+	bGroundStartFinished = false;
+	bPendingGroundStartFinish = false;
+	bStartWasSprinting = false;
 	bUseLoopDatabase = false;
 	bUseSharpTurnDatabase = false;
 	MoveInputTurnAngle = 0.f;
@@ -130,6 +145,9 @@ void UBasePlayerAnimInstance::UpdateFromGenericCharacter(float DeltaSeconds)
 	bStartRequested = false;
 	bStopRequested = false;
 	bUseStartDatabase = false;
+	bGroundStartFinished = false;
+	bPendingGroundStartFinish = false;
+	bStartWasSprinting = false;
 	bUseLoopDatabase = false;
 	bUseSharpTurnDatabase = false;
 	bSharpTurnRequested = false;
@@ -169,6 +187,9 @@ void UBasePlayerAnimInstance::UpdateFromPlayerCharacter(float DeltaSeconds, cons
 	bStartRequested = PlayerCharacter.bStartRequested;
 	bStopRequested = PlayerCharacter.bStopRequested;
 	bUseStartDatabase = PlayerCharacter.bUseStartDatabase;
+	bGroundStartFinished = PlayerCharacter.bGroundStartFinished;
+	bPendingGroundStartFinish = PlayerCharacter.bPendingGroundStartFinish;
+	bStartWasSprinting = PlayerCharacter.bStartWasSprinting;
 	bUseLoopDatabase = PlayerCharacter.bUseLoopDatabase;
 	bUseSharpTurnDatabase = PlayerCharacter.bUseSharpTurnDatabase;
 	MoveInputTurnAngle = PlayerCharacter.MoveInputTurnAngle;

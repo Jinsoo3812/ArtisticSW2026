@@ -25,6 +25,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Animation")
 	void ResetAnimationState();
 
+	UFUNCTION(BlueprintCallable, Category = "Animation|Movement|Start")
+	void MarkGroundStartFinished();
+
 protected:
 	void UpdateFromGenericCharacter(float DeltaSeconds);
 	void UpdateFromPlayerCharacter(float DeltaSeconds, const ABasePlayer& PlayerCharacter);
@@ -116,6 +119,15 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Requests")
 	bool bUseStartDatabase = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	bool bGroundStartFinished = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	bool bPendingGroundStartFinish = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	bool bStartWasSprinting = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Requests")
 	bool bUseLoopDatabase = false;
