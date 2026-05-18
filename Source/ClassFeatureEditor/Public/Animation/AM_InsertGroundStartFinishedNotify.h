@@ -29,7 +29,7 @@ protected:
 	float MinNotifyTime = 0.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Ground Start")
-	float MaxNotifyTime = 0.45f;
+	float MaxNotifyTime = 1.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Ground Start")
 	FName NotifyTrackName = TEXT("Start");
