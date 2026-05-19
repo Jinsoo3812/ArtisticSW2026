@@ -105,40 +105,41 @@ void ABasePlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// 기본 카메라/회전 상태 값
+	UpdateAnimationMovementState();
+
 	float TargetArmLength = DefaultTargetArmLength;
 	FVector TargetSocketOffset = DefaultSocketOffset;
 	bool bLockRotation = false;
-	UpdateAnimationMovementState();
 
-	// 조준 상태 확인 (GA에서 State_Aiming 태그를 부여했다고 가정)
-	bool bIsAimingState = false;
-	bool bIsAttackingState = false; // 공격( 현재 구현된 무기 기준으로는 투척) 중인지 확인
-
-	// 우선순위가 높은 상태(Sniping -> Aiming -> Attacking)부터 순차적으로 판별 (더 복잡해지면 Player의 상태를 구조체로 관리할 필요가 있음.)
 	if (CachedAbilitySystemComponent.IsValid())
 	{
-		if (CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Sniping))
+		const bool bIsSniping = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Sniping);
+		const bool bIsAiming = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
+		const bool bIsAttacking = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
+
+		if (bIsSniping)
 		{
 			TargetArmLength = SnipingTargetArmLength;
 			TargetSocketOffset = SnipingSocketOffset;
 			bLockRotation = true;
 		}
-		else if (CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming))
+		else if (bIsAiming)
 		{
 			TargetArmLength = AimingTargetArmLength;
 			TargetSocketOffset = AimingSocketOffset;
 			bLockRotation = true;
 		}
-		else if (CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking))
+		else if (bIsAttacking)
 		{
 			bLockRotation = true;
 		}
 	}
 
-	// 캐릭터 회전 및 카메라 보간 적용
 	bUseControllerRotationYaw = bLockRotation;
-	GetCharacterMovement()->bOrientRotationToMovement = !bLockRotation;
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->bOrientRotationToMovement = !bLockRotation;
+	}
 
 	if (CameraBoom)
 	{
@@ -146,10 +147,10 @@ void ABasePlayer::Tick(float DeltaTime)
 		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CameraInterpSpeed);
 	}
 
-	// FOV 보간 (스나이핑 시 줌인)
 	if (FollowCamera)
 	{
-		float TargetFOV = bLockRotation && CachedAbilitySystemComponent.IsValid() && CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Sniping) ? SnipingFOV : DefaultFOV;
+		const bool bIsSniping = CachedAbilitySystemComponent.IsValid() && CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Sniping);
+		const float TargetFOV = bIsSniping ? SnipingFOV : DefaultFOV;
 		FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, TargetFOV, DeltaTime, CameraInterpSpeed));
 	}
 }
