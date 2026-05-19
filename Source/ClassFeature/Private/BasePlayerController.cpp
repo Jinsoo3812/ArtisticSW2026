@@ -11,6 +11,8 @@
 #include "Blueprint/UserWidget.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 #include "BaseGameplayTags.h"
+#include "Attacker/AttackerComponent.h"
+#include "Crafter/CrafterComponent.h"
 
 
 void ABasePlayerController::BeginPlay()
@@ -69,7 +71,15 @@ void ABasePlayerController::OnUIInputPressed(FGameplayTag InputTag)
 	}
 
 	if (InputTag.MatchesTagExact(Key_UI_I))
-	{
+	{		
+		// Attacker는 인벤토리 사용불가.
+		if (const APawn* ControlledPawn = GetPawn())
+		{
+			if (ControlledPawn->FindComponentByClass<UAttackerComponent>())
+			{
+				return;
+			}
+		}
 		const bool bOpen = !PlayerHUDWidget->IsInventoryVisible();
 		PlayerHUDWidget->SetInventoryVisible(bOpen);
 		ApplyInventoryInputMode(bOpen);
@@ -109,6 +119,15 @@ void ABasePlayerController::ToggleInventory()
 		return;
 	}
 
+	// Attacker는 인벤토리 사용 불가.
+	if (const APawn* ControlledPawn = GetPawn())
+	{
+		if (ControlledPawn->FindComponentByClass<UAttackerComponent>())
+		{
+			return;
+		}
+	}
+
 	const bool bOpen = !PlayerHUDWidget->IsInventoryVisible();
 	PlayerHUDWidget->SetInventoryVisible(bOpen);
 	ApplyInventoryInputMode(bOpen);
@@ -120,13 +139,19 @@ void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 
 	if (bOpen)
 	{
+		// 게임 입력, UI 입력 모두 받을 수 있는 InputMode
 		FInputModeGameAndUI InputMode;
+		// 클릭 및 드래그 할 때 커서 숨기지 않음
 		InputMode.SetHideCursorDuringCapture(false);
+		// 게임 화면 안에 마우스 가두지 않음
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		// playercontroller에 적용
 		SetInputMode(InputMode);
 
+		// 캐릭터나 카메라 회전 막기 true
 		SetIgnoreLookInput(true);
-		SetIgnoreMoveInput(true);
+		// 이동 입력 가능하게 설정
+		SetIgnoreMoveInput(false);
 	}
 	else
 	{

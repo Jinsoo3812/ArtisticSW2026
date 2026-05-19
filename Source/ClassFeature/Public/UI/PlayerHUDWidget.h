@@ -15,6 +15,9 @@ class UUniformGridPanel;
 class UBorder;
 class UQuickSlotEntryWidget;
 class UInventoryEntryWidget;
+class UInventoryCursorWidget;
+class UCanvasPanel;
+class UInventoryCursorWidget;
 
 UCLASS()
 class CLASSFEATURE_API UPlayerHUDWidget : public UUserWidget
@@ -47,6 +50,23 @@ protected:
 	TSubclassOf<UInventoryEntryWidget> InventoryEntryClass;
 
 	TWeakObjectPtr<ABasePlayer> CachedPlayer;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UQuickSlotEntryWidget>> QuickSlotEntries;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UCanvasPanel> RootCanvasPanel;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")
+	TSubclassOf<UInventoryCursorWidget> InventoryCursorWidgetClass;
+
+	UPROPERTY()
+	TObjectPtr<UInventoryCursorWidget> InventoryCursorWidget;
+
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
+	void RefreshCursorItemWidget();
+	void UpdateCursorItemWidgetPosition();
 
 	void RefreshQuickSlots();
 	void RefreshInventory();

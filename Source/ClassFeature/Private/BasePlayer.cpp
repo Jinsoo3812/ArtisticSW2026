@@ -83,6 +83,8 @@ void ABasePlayer::BeginPlay()
 	// ItemSlot 배열 초기화: TMap 등록 없이 구조체 배열에 순서대로 Add
 	if (ItemInputConfig)
 	{
+		ItemSlots.Empty();
+
 		for (const FKeyInputAction& Action : ItemInputConfig->KeyInputActions)
 		{
 			if (Action.KeyTag.IsValid() && Action.KeyTag.MatchesTag(Key_Item))
@@ -341,6 +343,8 @@ bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
 	{
 		// 빈 슬롯에 저장
 		ItemSlots[EmptySlotIndex].Item = Item;
+
+		OnItemSlotsChanged.Broadcast();
 		
 		if (IsValid(EquippedItem))
 		{
