@@ -34,5 +34,7 @@ protected:
 
 private:
     // 각 컨트롤러가 어떤 역할을 배정받았는지 추적하는 맵
+    FName GetOrAssignRole(AController* Controller);
+
     TMap<AController*, FName> PlayerRoles;
 };
