@@ -101,6 +101,8 @@ void ABasePlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	UpdateAnimationMovementState();
+
 	// 조준 상태 확인 (GA에서 State_Aiming 태그를 부여했다고 가정)
 	bool bIsAimingState = false;
 	bool bIsAttackingState = false; // 공격( 현재 구현된 무기 기준으로는 투척) 중인지 확인
@@ -842,6 +844,24 @@ void ABasePlayer::DoLook(float Yaw, float Pitch)
 
 void ABasePlayer::DoJumpStart()
 {
+	GetWorldTimerManager().ClearTimer(JumpStartTimerHandle);
+	GetWorldTimerManager().ClearTimer(LandingTimerHandle);
+	StopFallOffStart();
+
+	bIsLanding = false;
+	bIsInAir = true;
+	bWasInAir = true;
+	bSuppressFallOffStart = true;
+	bIsJumping = true;
+
+	GetWorldTimerManager().SetTimer(
+		JumpStartTimerHandle,
+		this,
+		&ABasePlayer::FinishJumpStart,
+		JumpStartDuration,
+		false
+	);
+
 	Jump();
 }
 
@@ -855,10 +875,103 @@ void ABasePlayer::OnRep_ItemSlots()
 	OnItemSlotsChanged.Broadcast();
 }
 
+bool ABasePlayer::IsInAirForAnimation() const
+{
+	const UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
+	return MovementComponent && MovementComponent->MovementMode == MOVE_Falling;
+}
+
+void ABasePlayer::UpdateAnimationMovementState()
+{
+	const FVector Velocity = GetVelocity();
+	VerticalSpeed = Velocity.Z;
+
+	FVector HorizontalVelocity = Velocity;
+	HorizontalVelocity.Z = 0.f;
+	GroundSpeed = HorizontalVelocity.Size();
+
+	const bool bNowInAir = IsInAirForAnimation();
+
+	if (!bWasInAir
+		&& bNowInAir
+		&& !bIsJumping
+		&& !bIsLanding
+		&& !bSuppressFallOffStart)
+	{
+		StartFallOffStart();
+	}
+
+	if (bNowInAir)
+	{
+		bIsInAir = true;
+	}
+	else if (!bIsJumping)
+	{
+		bIsInAir = false;
+		bSuppressFallOffStart = false;
+	}
+
+	bWasInAir = bNowInAir;
+}
+
+void ABasePlayer::FinishJumpStart()
+{
+	bIsJumping = false;
+}
+
+void ABasePlayer::StartFallOffStart()
+{
+	bIsInAir = true;
+	bIsFallOffStart = true;
+
+	GetWorldTimerManager().ClearTimer(FallOffStartTimerHandle);
+	GetWorldTimerManager().SetTimer(
+		FallOffStartTimerHandle,
+		this,
+		&ABasePlayer::FinishFallOffStart,
+		FallOffStartDuration,
+		false
+	);
+}
+
+void ABasePlayer::FinishFallOffStart()
+{
+	StopFallOffStart();
+}
+
+void ABasePlayer::StopFallOffStart()
+{
+	GetWorldTimerManager().ClearTimer(FallOffStartTimerHandle);
+	bIsFallOffStart = false;
+}
+
+void ABasePlayer::FinishLanding()
+{
+	bIsLanding = false;
+}
+
 void ABasePlayer::Landed(const FHitResult& Hit)
 {
 	// 항상 Super를 먼저 호출해주어야 캐릭터 무브먼트의 기본 착지 로직이 꼬이지 않습니다.
 	Super::Landed(Hit);
+
+	GetWorldTimerManager().ClearTimer(JumpStartTimerHandle);
+	StopFallOffStart();
+
+	bIsJumping = false;
+	bIsInAir = false;
+	bWasInAir = false;
+	bSuppressFallOffStart = false;
+	bIsLanding = true;
+
+	GetWorldTimerManager().ClearTimer(LandingTimerHandle);
+	GetWorldTimerManager().SetTimer(
+		LandingTimerHandle,
+		this,
+		&ABasePlayer::FinishLanding,
+		LandingDuration,
+		false
+	);
 
 	// 착지하는 순간의 Z축 하강 속도를 가져옵니다.
 	// (CharacterMovementComponent에서 물리 연산 직전의 Z 속도를 보존하고 있습니다)
