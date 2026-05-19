@@ -112,26 +112,21 @@ void ABasePlayer::Tick(float DeltaTime)
 	UpdateMaxWalkSpeed();
 	UpdateCombatMovementState();
 
-	// 조준 상태 확인 (GA에서 State_Aiming 태그를 부여했다고 가정)
-	bool bIsAimingState = false;
-	bool bIsAttackingState = false; // 공격( 현재 구현된 무기 기준으로는 투척) 중인지 확인
-
-	if (CachedAbilitySystemComponent.Get())
-	{
-		bIsAimingState = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
-		bIsAttackingState = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
-	}
-
-	// 캐릭터 회전은 조준 중(Aiming)이거나 던지는 중(Attacking)일 때 모두 고정
-	bool bLockRotation = bIsAimingState || bIsAttackingState || bIsCombatMode || bIsPlayingCombatIntro || bPendingCombatModeFromIntro;
+	const bool bHasAbilitySystem = CachedAbilitySystemComponent.IsValid();
+	const bool bIsAiming = bHasAbilitySystem && CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
+	const bool bIsThrowingOrAttacking = bHasAbilitySystem && CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
+	const bool bLockRotation = bIsAiming || bIsThrowingOrAttacking || bIsCombatMode || bIsPlayingCombatIntro || bPendingCombatModeFromIntro;
 	bUseControllerRotationYaw = bLockRotation;
-	GetCharacterMovement()->bOrientRotationToMovement = !bLockRotation;
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->bOrientRotationToMovement = !bLockRotation;
+	}
 
 	// 카메라 줌인은 오직 조준 중(Aiming)일 때만 작동! (던질 땐 줌아웃됨)
 	if (CameraBoom)
 	{
-		float TargetArmLength = bIsAimingState ? AimingTargetArmLength : DefaultTargetArmLength;
-		FVector TargetSocketOffset = bIsAimingState ? AimingSocketOffset : DefaultSocketOffset;
+		const float TargetArmLength = bIsAiming ? AimingTargetArmLength : DefaultTargetArmLength;
+		const FVector TargetSocketOffset = bIsAiming ? AimingSocketOffset : DefaultSocketOffset;
 
 		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
 		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CameraInterpSpeed);
