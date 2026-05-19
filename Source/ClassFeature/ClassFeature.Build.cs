@@ -35,7 +35,8 @@ public class ClassFeature: ModuleRules
             "ClassFeature/Public/Crafter",
             "ClassFeature/Public/Attacker",
             "ClassFeature/Public/Inventory",
-            "ClassFeature/Public/UI"
+            "ClassFeature/Public/UI",
+            "ClassFeature/Public/Tool"
         });
     }
 }

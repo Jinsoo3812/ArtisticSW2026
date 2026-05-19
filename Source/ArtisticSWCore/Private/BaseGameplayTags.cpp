@@ -1,10 +1,11 @@
-﻿#include "BaseGameplayTags.h"
+#include "BaseGameplayTags.h"
 
 // State
 UE_DEFINE_GAMEPLAY_TAG(State_Attacking, "State.Attacking");
 UE_DEFINE_GAMEPLAY_TAG(State_Dead, "State.Dead");
 UE_DEFINE_GAMEPLAY_TAG(State_Damaged, "State.Damaged");
 UE_DEFINE_GAMEPLAY_TAG(State_Aiming, "State.Aiming");
+UE_DEFINE_GAMEPLAY_TAG(State_Sniping, "State.Sniping");
 UE_DEFINE_GAMEPLAY_TAG(State_Crafting, "State.Crafting");
 
 // Team
@@ -23,6 +24,8 @@ UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Changed, "Event.Ability.Changed");
 UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_Start, "Event.HandleScan.Start");
 UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_End, "Event.HandleScan.End");
 UE_DEFINE_GAMEPLAY_TAG(Event_ActivateAbility_Equip, "Event.ActivateAbility.Equip");
+UE_DEFINE_GAMEPLAY_TAG(Event_Input_MouseWheelUp, "Event.Input.MouseWheelUp");
+UE_DEFINE_GAMEPLAY_TAG(Event_Input_MouseWheelDown, "Event.Input.MouseWheelDown");
 UE_DEFINE_GAMEPLAY_TAG(Event_Montage_ThrowGrenade, "Event.Montage.ThrowGrenade");
 // Data
 UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");
@@ -53,12 +56,18 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Tool, "Item.Tool");
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool_Grenade, "Item.Tool.Grenade");
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool_TestRed, "Item.Tool.TestRed");
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool_TestBlue, "Item.Tool.TestBlue");
+UE_DEFINE_GAMEPLAY_TAG(Item_Tool_Trap, "Item.Tool.Trap");
+UE_DEFINE_GAMEPLAY_TAG(Item_Tool_ClusterGranade, "Item.Tool.ClusterGranade");
+UE_DEFINE_GAMEPLAY_TAG(Item_Tool_SniperRifle, "Item.Tool.SniperRifle");
 
 // Material
 UE_DEFINE_GAMEPLAY_TAG(Item_Material, "Item.Material");
 UE_DEFINE_GAMEPLAY_TAG(Item_Material_Ore, "Item.Material.Ore");
-UE_DEFINE_GAMEPLAY_TAG(Item_Material_Cloths, "Item.Material.Woods");
-UE_DEFINE_GAMEPLAY_TAG(Item_Material_Woods, "Item.Material.Cloths");
+UE_DEFINE_GAMEPLAY_TAG(Item_Material_Cloths, "Item.Material.Cloths");
+UE_DEFINE_GAMEPLAY_TAG(Item_Material_Woods, "Item.Material.Woods");
+UE_DEFINE_GAMEPLAY_TAG(Item_Material_Submunition, "Item.Material.Submunition");
+UE_DEFINE_GAMEPLAY_TAG(Item_Material_Submunition_Explosive, "Item.Material.Submunition.Explosive");
+UE_DEFINE_GAMEPLAY_TAG(Item_Material_Submunition_Trap, "Item.Material.Submunition.Trap");
 
 // Enemy
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Sword, "Item.EnemyWeapon.Sword");
@@ -68,6 +77,8 @@ UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Sword, "Item.EnemyWeapon.Sword");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse, "Key.Default.Mouse");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_LeftClick, "Key.Default.Mouse.LeftClick");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_RightClick, "Key.Default.Mouse.RightClick");
+UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_WheelUp, "Key.Default.Mouse.WheelUp");
+UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_WheelDown, "Key.Default.Mouse.WheelDown");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_F, "Key.Default.F");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_ESC, "Key.Default.ESC");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Space, "Key.Default.Space");

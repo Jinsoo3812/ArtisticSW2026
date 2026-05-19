@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "BasePlayer.h"
@@ -35,7 +35,13 @@ bool FItemSlot::operator==(const FGameplayTag& OtherTag) const { return KeyTag =
 
 bool FItemSlot::operator==(const ABaseItem* OtherItem) const { return Item.Get() == OtherItem; }
 
-
+// 커스텀 어태치 규칙 생성: 위치(Snap), 회전(Snap), 스케일(KeepWorld)
+FAttachmentTransformRules CustomAttachRules(
+	EAttachmentRule::SnapToTarget,   // Location: 소켓 위치에 맞춤
+	EAttachmentRule::SnapToTarget,   // Rotation: 소켓 회전에 맞춤
+	EAttachmentRule::KeepWorld,      // Scale: 부모 스케일 무시하고 현재 월드 크기(0.15) 절대 유지
+	false                            // bWeldSimulatedBodies: 콜리전 병합 여부
+);
 
 /* --- BasePlayer ---*/
 
@@ -112,24 +118,48 @@ void ABasePlayer::Tick(float DeltaTime)
 	UpdateMaxWalkSpeed();
 	UpdateCombatMovementState();
 
-	const bool bHasAbilitySystem = CachedAbilitySystemComponent.IsValid();
-	const bool bIsAiming = bHasAbilitySystem && CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
-	const bool bIsThrowingOrAttacking = bHasAbilitySystem && CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
-	const bool bLockRotation = bIsAiming || bIsThrowingOrAttacking || bIsCombatMode || bIsPlayingCombatIntro || bPendingCombatModeFromIntro;
-	bUseControllerRotationYaw = bLockRotation;
-	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	bool bIsSniping = false;
+	bool bIsAiming = false;
+	bool bIsThrowingOrAttacking = false;
+
+	if (CachedAbilitySystemComponent.IsValid())
 	{
-		MovementComponent->bOrientRotationToMovement = !bLockRotation;
+		bIsSniping = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Sniping);
+		bIsAiming = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
+		bIsThrowingOrAttacking = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
 	}
 
-	// 카메라 줌인은 오직 조준 중(Aiming)일 때만 작동! (던질 땐 줌아웃됨)
+	float TargetArmLength = DefaultTargetArmLength;
+	FVector TargetSocketOffset = DefaultSocketOffset;
+
+	if (bIsSniping)
+	{
+		TargetArmLength = SnipingTargetArmLength;
+		TargetSocketOffset = SnipingSocketOffset;
+	}
+	else if (bIsAiming)
+	{
+		TargetArmLength = AimingTargetArmLength;
+		TargetSocketOffset = AimingSocketOffset;
+	}
+
+	const bool bShouldLockRotation = bIsSniping || bIsAiming || bIsThrowingOrAttacking || bIsCombatMode || bIsPlayingCombatIntro || bPendingCombatModeFromIntro;
+	bUseControllerRotationYaw = bShouldLockRotation;
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->bOrientRotationToMovement = !bShouldLockRotation;
+	}
+
 	if (CameraBoom)
 	{
-		const float TargetArmLength = bIsAiming ? AimingTargetArmLength : DefaultTargetArmLength;
-		const FVector TargetSocketOffset = bIsAiming ? AimingSocketOffset : DefaultSocketOffset;
-
 		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
 		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CameraInterpSpeed);
+	}
+
+	if (FollowCamera)
+	{
+		const float TargetFOV = bIsSniping ? SnipingFOV : DefaultFOV;
+		FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, TargetFOV, DeltaTime, CameraInterpSpeed));
 	}
 }
 
@@ -560,6 +590,7 @@ void ABasePlayer::UseEquippedItem(bool bDestroy)
 		// 현재는 마우스로 사용하는 Item밖에 없으므로 이렇게 하지만 추후에는 Tag로 분기할 것
 		RemoveItemFromSlot(ItemSlots[EquippedIndex].KeyTag);
 		RemoveAbilityFromSlot(Key_Default_Mouse_LeftClick);
+		RemoveAbilityFromSlot(Key_Default_Mouse_RightClick);
 
 		if (bDestroy) {
 			EquippedItem->Destroy(); // 아이템 액터 제거
@@ -600,6 +631,7 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 		if (IsValid(EquippedItem))
 		{
 			RemoveAbilityFromSlot(Key_Default_Mouse_LeftClick);
+			RemoveAbilityFromSlot(Key_Default_Mouse_RightClick);
 			EquippedItem->SetItemState(EItemState::InItemSlot);
 		}
 
@@ -637,7 +669,19 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 
 		if (bShouldGrantAbility)
 		{
-			GrantAbilityToSlot(Key_Default_Mouse_LeftClick, EquippedItem->GetGrantedAbilityClass());
+			auto GrantedAbilityClass = EquippedItem->GetGrantedAbilityClass();
+			if (GrantedAbilityClass) {
+				// 스나이퍼 등 우클릭 전용 스킬 분기
+				if (GrantedAbilityClass->GetName().Contains(TEXT("Sniping")))
+				{
+					GrantAbilityToSlot(Key_Default_Mouse_RightClick, GrantedAbilityClass);
+				}
+				else
+				{
+					GrantAbilityToSlot(Key_Default_Mouse_LeftClick, GrantedAbilityClass);
+				}
+				UE_LOG(LogTemp, Log, TEXT("ABasePlayer::EquipItemFromSlot : Granted ability %s for item %s"), *EquippedItem->GetGrantedAbilityClass()->GetName(), *EquippedItem->GetName());
+			}
 		}
 	}
 
@@ -866,8 +910,14 @@ void ABasePlayer::DoLook(float Yaw, float Pitch)
 {
 	if (GetController() != nullptr)
 	{
-		AddControllerYawInput(Yaw);
-		AddControllerPitchInput(Pitch);
+		float Multiplier = 1.0f;
+		if (CachedAbilitySystemComponent.IsValid() && CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Sniping))
+		{
+			Multiplier = SnipingMouseSensitivity;
+		}
+
+		AddControllerYawInput(Yaw * Multiplier);
+		AddControllerPitchInput(Pitch * Multiplier);
 	}
 }
 

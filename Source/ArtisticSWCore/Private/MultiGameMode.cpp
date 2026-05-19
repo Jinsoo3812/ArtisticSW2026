@@ -29,7 +29,7 @@ UClass* AMultiGameMode::GetDefaultPawnClassForController_Implementation(AControl
         }
     }
 
-	UE_LOG(LogTemp, Warning, TEXT("No role found for controller %s or corresponding pawn class not set."), *InController->GetName());
+	UE_LOG(LogTemp, Warning, TEXT("No pawn class set for role %s on controller %s."), *AssignedRole.ToString(), *GetNameSafe(InController));
     // 예외 상황일 경우 기본 폰 반환
     return Super::GetDefaultPawnClassForController_Implementation(InController);
 }

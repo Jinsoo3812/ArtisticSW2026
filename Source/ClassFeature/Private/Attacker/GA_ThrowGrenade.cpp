@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GA_ThrowGrenade.h"
 #include "BasePlayer.h"
@@ -58,8 +58,8 @@ void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		}
 	}
 
-	// 2. 좌클릭 해제 대기 (던지기 섹션으로 점프하기 위함)
-	UAbilityTask_WaitInputRelease* WaitReleaseTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this);
+	// 2. 입력 해제 대기 (bTestAlreadyReleased = true로 설정하여 빠르게 뗐을 때 무시되는 현상 방지)
+	UAbilityTask_WaitInputRelease* WaitReleaseTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this, true);
 	if (WaitReleaseTask)
 	{
 		WaitReleaseTask->OnRelease.AddDynamic(this, &UGA_ThrowGrenade::OnInputReleased);

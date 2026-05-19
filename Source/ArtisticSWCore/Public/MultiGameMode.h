@@ -33,8 +33,8 @@ protected:
     virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 
 private:
+    // 각 컨트롤러가 어떤 역할을 배정받았는지 추적하는 맵
     FName GetOrAssignRole(AController* Controller);
 
-    // 각 컨트롤러가 어떤 역할을 배정받았는지 추적하는 맵
     TMap<AController*, FName> PlayerRoles;
 };

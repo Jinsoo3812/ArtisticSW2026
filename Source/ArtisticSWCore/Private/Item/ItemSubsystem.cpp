@@ -94,7 +94,6 @@ ABaseItem* UItemSubsystem::SpawnItem(const FGameplayTag& ItemTag, const FTransfo
 	if (!SpawnClass)
 	{
 		SpawnClass = ABaseItem::StaticClass(); // Fallback
-		UE_LOG(LogTemp, Warning, TEXT("ItemSubsystem: SpawnClass not found for ItemTag %s, using ABaseItem as fallback"), *ItemTag.ToString());
 	}
 
 	// [지연 스폰 시작] - BeginPlay가 호출되기 전에 액터를 메모리에만 올림
@@ -117,7 +116,10 @@ ABaseItem* UItemSubsystem::SpawnItem(const FGameplayTag& ItemTag, const FTransfo
 		// 상태 변경 (초기화)
 		SpawnedItem->SetItemState(InitialState);
 	}
-
+	// SpawnTrasnform의 scale만 로그로 출력
+	UE_LOG(LogTemp, Log, TEXT("Spawned Item with Tag: Scale: %s"),
+		*SpawnTransform.GetScale3D().ToString()
+	);
 	return SpawnedItem;
 }
 

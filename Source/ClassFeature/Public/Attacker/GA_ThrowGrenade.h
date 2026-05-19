@@ -10,7 +10,7 @@ class AGrenadeProjectile;
 class UGameplayEffect;
 
 /**
- * ¼ö·ùÅº ÅõÃ´¿ë Gameplay Ability
+ * ìˆ˜ë¥˜íƒ„ íˆ¬ì²™ìš© Gameplay Ability
  */
 UCLASS()
 class CLASSFEATURE_API UGA_ThrowGrenade : public UBaseGameplayAbility
@@ -18,72 +18,72 @@ class CLASSFEATURE_API UGA_ThrowGrenade : public UBaseGameplayAbility
 	GENERATED_BODY()
 
 public:
-	/* --- GA °¡»óÇÔ¼ö --- */
+	/* --- GA ê°€ìƒí•¨ìˆ˜ --- */
 public:
-	// GAÀÇ ½ÃÀÛ ÁöÁ¡ ÇÔ¼ö
+	// GAì˜ ì‹œì‘ ì§€ì  í•¨ìˆ˜
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		const FGameplayEventData* TriggerEventData) override;
 
-	// GAÀÇ Á¾·á ÁöÁ¡ ÇÔ¼ö
+	// GAì˜ ì¢…ë£Œ ì§€ì  í•¨ìˆ˜
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		bool bReplicateEndAbility, bool bWasCancelled) override;
 
-	/* --- ¼ö·ùÅº ÅõÃ´ °ü·Ã --- */
+	/* --- ìˆ˜ë¥˜íƒ„ íˆ¬ì²™ ê´€ë ¨ --- */
 protected:
-	// ¼ö·ùÅº µ¥¹ÌÁö ÀÌÆåÆ® (GE)
+	// ìˆ˜ë¥˜íƒ„ ë°ë¯¸ì§€ ì´í™íŠ¸ (GE)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grenade")
 	TSubclassOf<UGameplayEffect> DamageEffectClass;
 
-	// ÅõÃ´ Èû (ÃÊ±â ¼Óµµ)
+	// íˆ¬ì²™ í˜ (ì´ˆê¸° ì†ë„)
 	UPROPERTY(EditDefaultsOnly, Category = "Throw")
 	float ThrowSpeed = 1500.f;
 
-	// Á÷¼±À¸·Î ´øÁöÁö ¾Êµµ·Ï »ìÂ¦ µé¾î¿Ã¸²
+	// ì§ì„ ìœ¼ë¡œ ë˜ì§€ì§€ ì•Šë„ë¡ ì‚´ì§ ë“¤ì–´ì˜¬ë¦¼
 	UPROPERTY(EditDefaultsOnly, Category = "Throw")
 	float Upper = 0.15f;
 
-	// ¹ß»ç ±ËÀû ¾÷µ¥ÀÌÆ® ºóµµ
+	// ë°œì‚¬ ê¶¤ì  ì—…ë°ì´íŠ¸ ë¹ˆë„
 	UPROPERTY(EditDefaultsOnly, Category = "Throw")
 	float TrajectoryFrequency = 0.03f;
 
-	// ±ËÀû Å¸ÀÌ¸Ó ÇÚµé
+	// ê¶¤ì  íƒ€ì´ë¨¸ í•¸ë“¤
 	FTimerHandle TrajectoryTimerHandle;
 
-	// ±ËÀûÀ» ±×¸®´Â ÇÔ¼ö
+	// ê¶¤ì ì„ ê·¸ë¦¬ëŠ” í•¨ìˆ˜
 	UFUNCTION()
-	void DrawTrajectory();
+	virtual void DrawTrajectory();
 
-	// ÀÔ·Â ÇØÁ¦(ÁÂÅ¬¸¯ ¶À) ½Ã È£ÃâµÉ ÇÔ¼ö
+	// ì…ë ¥ í•´ì œ(ì¢Œí´ë¦­ ë—Œ) ì‹œ í˜¸ì¶œë  í•¨ìˆ˜
 	UFUNCTION()
 	void OnInputReleased(float TimeHeld);
 
-	// Ãë¼Ò ÀÌº¥Æ®(¿ìÅ¬¸¯) ¼ö½Å ½Ã È£ÃâµÉ ÇÔ¼ö
+	// ì·¨ì†Œ ì´ë²¤íŠ¸(ìš°í´ë¦­) ìˆ˜ì‹  ì‹œ í˜¸ì¶œë  í•¨ìˆ˜
 	UFUNCTION()
 	void OnRightClickCancelled(FGameplayEventData Payload);
 
 
 
-	// ÅõÃ´ ¾Ö´Ï¸ŞÀÌ¼Ç ¸ùÅ¸ÁÖ
+	// íˆ¬ì²™ ì• ë‹ˆë©”ì´ì…˜ ëª½íƒ€ì£¼
 	UPROPERTY(EditDefaultsOnly, Category = "Animation")
 	UAnimMontage* ThrowMontage;
 
-	// ¾Ö´Ï¸ŞÀÌ¼Ç ³ëÆ¼ÆÄÀÌ¿¡¼­ ±â´Ù¸± ÀÌº¥Æ® ÅÂ±×
+	// ì• ë‹ˆë©”ì´ì…˜ ë…¸í‹°íŒŒì´ì—ì„œ ê¸°ë‹¤ë¦´ ì´ë²¤íŠ¸ íƒœê·¸
 	UPROPERTY(EditDefaultsOnly, Category = "Animation")
 	FGameplayTag ThrowEventTag;
 
-	// ³ëÆ¼ÆÄÀÌ(ÀÌº¥Æ®)¸¦ ¹Ş¾ÒÀ» ¶§ ½ÇÇàµÉ ÇÔ¼ö (½ÇÁ¦ ¼ö·ùÅº ½ºÆù)
+	// ë…¸í‹°íŒŒì´(ì´ë²¤íŠ¸)ë¥¼ ë°›ì•˜ì„ ë•Œ ì‹¤í–‰ë  í•¨ìˆ˜ (ì‹¤ì œ ìˆ˜ë¥˜íƒ„ ìŠ¤í°)
 	UFUNCTION()
-	void OnThrowEventReceived(FGameplayEventData Payload);
+	virtual void OnThrowEventReceived(FGameplayEventData Payload);
 
-	// ¸ùÅ¸ÁÖ Àç»ıÀÌ ¿Ï·áµÇ°Å³ª ²÷°åÀ» ¶§ ½ÇÇàµÉ ÇÔ¼ö
+	// ëª½íƒ€ì£¼ ì¬ìƒì´ ì™„ë£Œë˜ê±°ë‚˜ ëŠê²¼ì„ ë•Œ ì‹¤í–‰ë  í•¨ìˆ˜
 	UFUNCTION()
 	void OnMontageCompleted();
 
-	// Å¬¸¯À» ¶ÃÀ» ¶§ Á¡ÇÁÇÒ ¸ùÅ¸ÁÖ ¼½¼ÇÀÇ ÀÌ¸§
+	// í´ë¦­ì„ ë—ì„ ë•Œ ì í”„í•  ëª½íƒ€ì£¼ ì„¹ì…˜ì˜ ì´ë¦„
 	UPROPERTY(EditDefaultsOnly, Category = "Animation")
 	FName ThrowSectionName = FName("Throw");
 };
