@@ -20,8 +20,8 @@ void UGA_ThrowClusterGrenade::ActivateAbility(const FGameplayAbilitySpecHandle H
       AvailableSubMunitions.Empty();
 
       // Find available sub-munitions from Inventory
-      const TArray<FInventoryMaterialEntry>& Materials = Inv->GetMaterials();
-      for (const FInventoryMaterialEntry& Entry : Materials)
+      const TArray<FInventorySlot>& Materials = Inv->GetSlots();
+      for (const FInventorySlot& Entry : Materials)
       {
           if (Entry.ItemTag.MatchesTag(Item_Material_Submunition) && Entry.Count > 0)
           {
