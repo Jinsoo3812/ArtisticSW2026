@@ -58,6 +58,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Path|Network", meta=(ClampMin="0.0"))
 	float ClientInterpolationSpeed = 12.0f;
 
+	/** 스플라인 위치에서 Z축으로 얼마나 띄울지 (바닥에 파묻히면 올리고, 떠있으면 내리기) */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Path")
+	float PathZOffset = 0.0f;
+
 public:
 	UPROPERTY(BlueprintAssignable, Category="Path")
 	FOnPathGoalReachedSignature OnPathGoalReached;

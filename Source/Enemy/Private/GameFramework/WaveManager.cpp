@@ -86,6 +86,7 @@ void AWaveManager::ProcessNextSpawn()
 
 	if (SpawnedEnemy)
 	{
+		SpawnedEnemy->SpawnDefaultController();
 		// 1. PathMovement 초기화 및 자동 출발
 		SpawnedEnemy->InitializePathMovementFromSpawnPoint(CurrentTask.SpawnPoint, true);
 

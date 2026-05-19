@@ -4,7 +4,9 @@
 #include "AI/EnemyPathActor.h"
 
 // Unreal
+#include "Components/CapsuleComponent.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h"
 
 UPathMovement::UPathMovement()
@@ -274,9 +276,13 @@ void UPathMovement::ApplyTransformFromDistance(float DistanceAlongPath)
 	}
 
 	const FTransform NewTransform = CurrentPath->GetWorldTransformAtDistance(DistanceAlongPath);
+	FVector TargetLocation = NewTransform.GetLocation();
+
+	// 에디터에서 설정한 오프셋만큼만 위아래로 조절
+	TargetLocation.Z += PathZOffset;
 	
 	OwnerActor->SetActorLocationAndRotation(
-		NewTransform.GetLocation(),
+		TargetLocation,
 		NewTransform.GetRotation()
 	);
 }
