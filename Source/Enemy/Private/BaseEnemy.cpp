@@ -6,18 +6,19 @@
 #include "Weapon/WeaponDataAsset.h"
 #include "Weapon/BaseWeaponComponent.h"
 #include "Component/PathMovement.h"
+#include "WaveSystem/Route/EnemyWaypointMoveComponent.h"
 #include "EnemyAttributeSet.h"
 #include "AI/EnemyPathActor.h"
 #include "AI/EnemySpawnPoint.h"
 
 // Core
-#include "GameFramework/SWWaveGameMode.h"
 
 // Unreal
 #include "AbilitySystemComponent.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+
 
 ABaseEnemy::ABaseEnemy()
 {
@@ -43,6 +44,8 @@ ABaseEnemy::ABaseEnemy()
 	PathMovement = CreateDefaultSubobject<UPathMovement>(TEXT("PathMovementComponent"));
 	PathMovement->SetIsReplicated(true);
 
+	WaypointMoveComponent = CreateDefaultSubobject<UEnemyWaypointMoveComponent>(TEXT("WaypointMoveComponent"));
+
 	if (GetCharacterMovement())
 	{
 		GetCharacterMovement()->SetIsReplicated(false);
@@ -57,7 +60,7 @@ ABaseEnemy::ABaseEnemy()
 void ABaseEnemy::BeginPlay()
 {
 	Super::BeginPlay();
-	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+	//AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
 	// StartingAbilities 능력 등록
 	if (AbilitySystemComponent && HasAuthority())
@@ -105,6 +108,14 @@ TArray<FGameplayAbilitySpecHandle> ABaseEnemy::GrantAbilities(TArray<TSubclassOf
 
 void ABaseEnemy::HandleDeath_Implementation()
 {
+	// 중복 Death 방지
+	if (bDeathHandled)
+	{
+		return;
+	}
+
+	bDeathHandled = true;
+	
 	// 사망 시 Death 처리
 	GetMesh()->SetSimulatePhysics(true);
 	GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
@@ -112,14 +123,21 @@ void ABaseEnemy::HandleDeath_Implementation()
 	GetCharacterMovement()->DisableMovement();
 
 	// 죽으면 경로 이동 중지
-	if (HasAuthority() && PathMovement)
+	if (HasAuthority())
 	{
-		PathMovement->StopPathMovement();
-
-		if (ASWWaveGameMode* GM = Cast<ASWWaveGameMode>(GetWorld()->GetAuthGameMode()))
+		// 죽으면 경로 이동 중지
+		if (PathMovement)
 		{
-			GM->NotifyEnemyKilled();
+			PathMovement->StopPathMovement();
 		}
+
+		if (WaypointMoveComponent)
+		{
+			WaypointMoveComponent->StopRoute(true);
+		}
+
+		// V2 WaveSpawnManager가 이 Delegate를 받아 AliveEnemyCount를 감소시킨다.
+		OnBaseEnemyDeathNotified.Broadcast(this, EWaveEnemyRemoveReason::Death);
 	}
 
 	
@@ -171,6 +189,19 @@ void ABaseEnemy::InitializePathMovementFromSpawnPoint(AEnemySpawnPoint* InSpawnP
 	);
 }
 
+FVector ABaseEnemy::GetVelocity() const
+{
+	// 1. Path를 따라 이동 중일 때
+	if (PathMovement && PathMovement->IsPathMovementActive() && !PathMovement->HasReachedGoal())
+	{
+		// BasicAttributes가 유효하다면 GAS의 MoveSpeed를 사용하고, 아니면 기본 속도 사용
+		float CurrentSpeed = BasicAttributes ? BasicAttributes->GetMoveSpeed() : PathMovement->GetCurrentMoveSpeed();
+		UE_LOG(LogTemp, Warning, TEXT("%f"), CurrentSpeed);
+		return GetActorForwardVector() * CurrentSpeed;
+	}
 
+	// 2. 그 외의 상황
+	return Super::GetVelocity();
+}
 
 

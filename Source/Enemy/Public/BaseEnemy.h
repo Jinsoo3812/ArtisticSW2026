@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "WaveSystem/Data/WaveSpawnTypes.h"
 #include "BaseCharacter.h"
 
 #include "BaseEnemy.generated.h"
@@ -11,6 +12,7 @@
 class UAbilitySystemComponent;
 class UPathMovement;
 class UBaseWeaponComponent;
+class UEnemyWaypointMoveComponent;
 class AEnemyPathActor;
 class AEnemySpawnPoint;
 
@@ -19,6 +21,8 @@ class UBehaviorTree;
 class ABaseAIController;
 class ABaseWeapon;
 class UWeaponDataAsset;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBaseEnemyDeathNotifiedSignature, ABaseEnemy*, Enemy, EWaveEnemyRemoveReason, Reason);
 
 UCLASS()
 class ENEMY_API ABaseEnemy : public ABaseCharacter
@@ -62,6 +66,15 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Path")
     TObjectPtr<UPathMovement> PathMovement = nullptr;
 	
+	// WaypointMove
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UEnemyWaypointMoveComponent> WaypointMoveComponent;
+
+	// ------------------- GameMode
+	// Death 중복 방지
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Damage")
+	bool bDeathHandled = false;
+	
 public:
 	ABaseEnemy();
 
@@ -93,6 +106,7 @@ protected:
 	//  ASC Owner가 State.Dead Tag를 가질 때, 호출되는 함수
 	virtual void OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 
+	FVector GetVelocity() const override;
 public:
 	UFUNCTION(BlueprintCallable, Category="Path")
 	void InitializePathMovement(AEnemyPathActor* InPath, float InStartDistance, bool bStartImmediately = true);
@@ -100,7 +114,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Path")
 	void InitializePathMovementFromSpawnPoint(AEnemySpawnPoint* InSpawnPoint, bool bStartImmediately = true);
 
-	
+	/**
+	* Enemy Death를 외부 Wave 시스템에 알리는 Delegate.
+	* - AWaveSpawnManager가 이 Delegate에 바인딩해서 AliveEnemyCount를 감소시킨다.
+	*/
+	UPROPERTY(BlueprintAssignable, Category = "Wave|Events")
+	FOnBaseEnemyDeathNotifiedSignature OnBaseEnemyDeathNotified;
 public:
 	// Getters
 	// 일단 개발 중이므로, check를 넣었지만, 일부 BeginPlay 이전에는 nullptr 날 수 있음
@@ -110,4 +129,5 @@ public:
 	FORCEINLINE TObjectPtr<UBaseWeaponComponent> GetWeaponComponent() const { check(WeaponComponent) return WeaponComponent; }
 	FORCEINLINE TObjectPtr<UPathMovement> GetPathMovementComponent() const { check(PathMovement) return PathMovement;}
 	FORCEINLINE virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { check(AbilitySystemComponent) return AbilitySystemComponent; }
+	FORCEINLINE UEnemyWaypointMoveComponent* GetWaypointMoveComponent() const {return WaypointMoveComponent;}
 };
