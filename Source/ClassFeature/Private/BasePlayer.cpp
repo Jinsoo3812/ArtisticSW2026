@@ -118,56 +118,46 @@ void ABasePlayer::Tick(float DeltaTime)
 	UpdateMaxWalkSpeed();
 	UpdateCombatMovementState();
 
-	float TargetArmLength = DefaultTargetArmLength;
-	FVector TargetSocketOffset = DefaultSocketOffset;
-	bool bLockRotation = false;
+	bool bIsSniping = false;
+	bool bIsAiming = false;
+	bool bIsThrowingOrAttacking = false;
 
 	if (CachedAbilitySystemComponent.IsValid())
 	{
-		const bool bIsSniping = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Sniping);
-		const bool bIsAiming = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
-		const bool bIsAttacking = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
-
-		if (bIsSniping)
-		{
-			TargetArmLength = SnipingTargetArmLength;
-			TargetSocketOffset = SnipingSocketOffset;
-			bLockRotation = true;
-		}
-		else if (bIsAiming)
-		{
-			TargetArmLength = AimingTargetArmLength;
-			TargetSocketOffset = AimingSocketOffset;
-			bLockRotation = true;
-		}
-		else if (bIsAttacking)
-		{
-			bLockRotation = true;
-		}
+		bIsSniping = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Sniping);
+		bIsAiming = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
+		bIsThrowingOrAttacking = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
 	}
 
-	const bool bHasAbilitySystem = CachedAbilitySystemComponent.IsValid();
-	const bool bIsAiming = bHasAbilitySystem && CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
-	const bool bIsThrowingOrAttacking = bHasAbilitySystem && CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
-	const bool bLockRotation = bIsAiming || bIsThrowingOrAttacking || bIsCombatMode || bIsPlayingCombatIntro || bPendingCombatModeFromIntro;
-	bUseControllerRotationYaw = bLockRotation;
+	float TargetArmLength = DefaultTargetArmLength;
+	FVector TargetSocketOffset = DefaultSocketOffset;
+
+	if (bIsSniping)
+	{
+		TargetArmLength = SnipingTargetArmLength;
+		TargetSocketOffset = SnipingSocketOffset;
+	}
+	else if (bIsAiming)
+	{
+		TargetArmLength = AimingTargetArmLength;
+		TargetSocketOffset = AimingSocketOffset;
+	}
+
+	const bool bShouldLockRotation = bIsSniping || bIsAiming || bIsThrowingOrAttacking || bIsCombatMode || bIsPlayingCombatIntro || bPendingCombatModeFromIntro;
+	bUseControllerRotationYaw = bShouldLockRotation;
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
-		MovementComponent->bOrientRotationToMovement = !bLockRotation;
+		MovementComponent->bOrientRotationToMovement = !bShouldLockRotation;
 	}
 
 	if (CameraBoom)
 	{
-		const float TargetArmLength = bIsAiming ? AimingTargetArmLength : DefaultTargetArmLength;
-		const FVector TargetSocketOffset = bIsAiming ? AimingSocketOffset : DefaultSocketOffset;
-
 		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
 		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CameraInterpSpeed);
 	}
 
 	if (FollowCamera)
 	{
-		const bool bIsSniping = CachedAbilitySystemComponent.IsValid() && CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Sniping);
 		const float TargetFOV = bIsSniping ? SnipingFOV : DefaultFOV;
 		FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, TargetFOV, DeltaTime, CameraInterpSpeed));
 	}
