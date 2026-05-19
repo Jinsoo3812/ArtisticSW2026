@@ -18,6 +18,7 @@ struct FInputActionValue;
 class ABaseItem;
 class UInputTagConfig;
 class UInventoryComponent;
+class UAnimMontage;
 
 // Item Slot 관리 구조체
 USTRUCT(BlueprintType)
@@ -88,6 +89,9 @@ public:
 	virtual void DoMove(float Right, float Forward);
 
 	UFUNCTION(BlueprintCallable, Category = "Input")
+	void StopMoveInput();
+
+	UFUNCTION(BlueprintCallable, Category = "Input")
 	virtual void DoLook(float Yaw, float Pitch);
 
 	UFUNCTION(BlueprintCallable, Category = "Input")
@@ -96,11 +100,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	virtual void DoJumpEnd();
 
+	UFUNCTION(BlueprintCallable, Category = "Movement|Sprint")
+	void StartSprint();
+
+	UFUNCTION(BlueprintCallable, Category = "Movement|Sprint")
+	void StopSprint();
+
 	/* --- 애니메이션 이동 상태 --- */
 public:
 	// Animation-only air state. This is the single source of truth for ABP IsAir.
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
 	bool bIsInAir = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
+	bool bIsPhysicallyInAir = false;
 
 	// JumpStart is entered by bIsJumping, but JumpStart->FallLoop transition is handled in ABP by Time Remaining Fraction.
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
@@ -114,10 +127,115 @@ public:
 	bool bIsLanding = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
+	bool bLandingRequested = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
+	bool bCanEnterLand = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
+	bool bCanEnterGround = true;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
 	float GroundSpeed = 0.f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
 	float VerticalSpeed = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Input")
+	bool bHasMoveInput = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Input")
+	bool bPrevHasMoveInput = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Input")
+	float MoveInputSize = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Input")
+	float MoveInputDeadZone = 0.1f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Input")
+	FVector2D CachedMoveInput = FVector2D::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Animation|Movement|Sprint")
+	bool bIsSprinting = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Sprint")
+	float WalkSpeed = 500.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Sprint")
+	float SprintSpeed = 700.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Sprint")
+	float WalkRotationRateYaw = 500.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Sprint")
+	float SprintRotationRateYaw = 500.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	float MoveInputHeldTime = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Start")
+	float StartToLoopDelay = 0.75f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Start")
+	float MinStartDatabaseTime = 0.12f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Start")
+	float SprintStartToLoopDelay = 0.34f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	float CurrentStartToLoopDelay = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	bool bUseStartDatabase = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	bool bGroundStartFinished = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	bool bPendingGroundStartFinish = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	bool bStartWasSprinting = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	bool bUseLoopDatabase = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Turn")
+	bool bUseSharpTurnDatabase = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Requests")
+	bool bStartRequested = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Requests")
+	bool bStopRequested = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Requests")
+	float StopIntentSpeedThreshold = 80.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Requests")
+	float IdleSpeedThreshold = 30.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Requests")
+	float RunToSprintSpeedThreshold = 500.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Turn")
+	float MoveInputTurnAngle = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Turn")
+	bool bSharpTurnRequested = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Turn")
+	float SharpTurnAngleThreshold = 60.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Turn")
+	float MoveInputTurnDeadZoneAngle = 5.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Turn")
+	float SharpTurnMinSpeed = 500.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Turn")
+	FVector2D PreviousMoveInputForTurn = FVector2D::ZeroVector;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement")
 	float JumpStartDuration = 0.2f;
@@ -128,10 +246,98 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement")
 	float LandingDuration = 0.3f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Landing")
+	float LandingRequestDuration = 0.45f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Landing")
+	float JumpStartMaxDuration = 1.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
+	float LastFallSpeed = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
+	float LandStartGroundSpeed = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
+	float LandStartFallSpeed = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
+	bool bLandWasMoving = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
+	bool bLandWasSprinting = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
+	bool bUseHeavyLand = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Landing")
+	float HeavyLandSpeedThreshold = 650.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Landing")
+	float RealLandingEventSpeedThreshold = 300.f;
+
+	/* --- 애니메이션 전투 상태 --- */
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Combat")
+	bool bIsCombatMode = false;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Animation|Combat")
+	bool bIsAttacking = false;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Animation|Combat")
+	bool bIsDodging = false;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Animation|Combat")
+	bool bIsHitReacting = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Combat")
+	TObjectPtr<UAnimMontage> CombatIntroMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Combat")
+	float CombatIntroMontagePlayRate = 1.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Combat")
+	bool bIsPlayingCombatIntro = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Combat")
+	bool bPendingCombatModeFromIntro = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Combat")
+	bool bInterruptCombatIntroOnHit = true;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Combat")
+	float MovementDirection = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Combat")
+	float CombatInputForward = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Combat")
+	float CombatInputRight = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Combat")
+	float CombatForwardSpeed = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Combat")
+	float CombatRightSpeed = 0.f;
+
 	bool IsInAirForAnimation() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Animation|Movement")
 	void FinishFallOffStart();
+
+	UFUNCTION(BlueprintCallable, Category = "Animation|Movement")
+	void FinishJumpStart();
+
+	UFUNCTION(BlueprintCallable, Category = "Animation|Movement|Start")
+	void MarkGroundStartFinished();
+
+	UFUNCTION(BlueprintCallable, Category = "Animation|Combat")
+	void RequestCombatModeToggle();
+
+	UFUNCTION(BlueprintCallable, Category = "Animation|Combat")
+	void SetCombatMode(bool bNewCombatMode);
+
+	UFUNCTION(BlueprintCallable, Category = "Animation|Combat")
+	void InterruptCombatIntroForHit();
 
 protected:
 	bool bWasInAir = false;
@@ -142,12 +348,19 @@ protected:
 	FTimerHandle JumpStartTimerHandle;
 	FTimerHandle FallOffStartTimerHandle;
 	FTimerHandle LandingTimerHandle;
+	FTimerHandle LandingRequestTimerHandle;
 
-	void UpdateAnimationMovementState();
-	void FinishJumpStart();
+	void UpdateAnimationMovementState(float DeltaTime);
+	void UpdateMovementRequestState(float DeltaTime);
+	void UpdateCombatMovementState();
+	void UpdateMaxWalkSpeed();
+	void ClearMovementRequests();
+	void ApplyCombatRotationMode(bool bEnableCombatRotation);
 	void StartFallOffStart();
 	void StopFallOffStart();
 	void FinishLanding();
+	void FinishLandingRequest();
+	void OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 	// 모든 Config를 순회하며 ID를 부여하는 함수
 	void InitializeInputIDMap();
@@ -188,7 +401,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> MouseLookAction;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> SprintAction;
+
 	void Move(const FInputActionValue& Value);
+	void MoveStopped(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 
 	// 기본 착지 이벤트 오버라이드

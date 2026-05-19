@@ -11,5 +11,6 @@ public class ArtisticSW2026EditorTarget : TargetRules
 		DefaultBuildSettings = BuildSettingsVersion.V6;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_7;
 		ExtraModuleNames.Add("ArtisticSW2026");
+		ExtraModuleNames.Add("ClassFeatureEditor");
 	}
 }
