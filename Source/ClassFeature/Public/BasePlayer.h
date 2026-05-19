@@ -96,6 +96,59 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	virtual void DoJumpEnd();
 
+	/* --- 애니메이션 이동 상태 --- */
+public:
+	// Animation-only air state. This is the single source of truth for ABP IsAir.
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
+	bool bIsInAir = false;
+
+	// JumpStart is entered by bIsJumping, but JumpStart->FallLoop transition is handled in ABP by Time Remaining Fraction.
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
+	bool bIsJumping = false;
+
+	// FallOffStart means entering air without jump input, such as walking off a ledge.
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
+	bool bIsFallOffStart = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
+	bool bIsLanding = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
+	float GroundSpeed = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
+	float VerticalSpeed = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement")
+	float JumpStartDuration = 0.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement")
+	float FallOffStartDuration = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement")
+	float LandingDuration = 0.3f;
+
+	bool IsInAirForAnimation() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Animation|Movement")
+	void FinishFallOffStart();
+
+protected:
+	bool bWasInAir = false;
+
+	// Prevents a normal jump from being misclassified as FallOffStart.
+	bool bSuppressFallOffStart = false;
+
+	FTimerHandle JumpStartTimerHandle;
+	FTimerHandle FallOffStartTimerHandle;
+	FTimerHandle LandingTimerHandle;
+
+	void UpdateAnimationMovementState();
+	void FinishJumpStart();
+	void StartFallOffStart();
+	void StopFallOffStart();
+	void FinishLanding();
+
 	// 모든 Config를 순회하며 ID를 부여하는 함수
 	void InitializeInputIDMap();
 
