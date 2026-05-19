@@ -9,6 +9,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
+#include "InputCoreTypes.h"
 #include "BaseItem.h"
 #include "CrafterComponent.h"
 #include "BaseGameplayTags.h"
@@ -23,6 +24,7 @@
 #include "InteractUserWidget.h"
 #include "Inventory/InventoryComponent.h"
 #include "ItemSubSystem.h"
+#include "Animation/AnimInstance.h"
 
 /* --- FItemSlot ---*/
 
@@ -63,6 +65,12 @@ ABasePlayer::ABasePlayer()
 
 	// 인벤토리 컴포넌트 부착
 	InventoryComponent = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComponent"));
+
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->MaxWalkSpeed = WalkSpeed;
+		MovementComponent->RotationRate = FRotator(0.f, WalkRotationRateYaw, 0.f);
+	}
 }
 
 void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -105,7 +113,10 @@ void ABasePlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	UpdateAnimationMovementState();
+	UpdateAnimationMovementState(DeltaTime);
+	UpdateMovementRequestState(DeltaTime);
+	UpdateMaxWalkSpeed();
+	UpdateCombatMovementState();
 
 	float TargetArmLength = DefaultTargetArmLength;
 	FVector TargetSocketOffset = DefaultSocketOffset;
@@ -135,6 +146,10 @@ void ABasePlayer::Tick(float DeltaTime)
 		}
 	}
 
+	const bool bHasAbilitySystem = CachedAbilitySystemComponent.IsValid();
+	const bool bIsAiming = bHasAbilitySystem && CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
+	const bool bIsThrowingOrAttacking = bHasAbilitySystem && CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
+	const bool bLockRotation = bIsAiming || bIsThrowingOrAttacking || bIsCombatMode || bIsPlayingCombatIntro || bPendingCombatModeFromIntro;
 	bUseControllerRotationYaw = bLockRotation;
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
@@ -143,6 +158,9 @@ void ABasePlayer::Tick(float DeltaTime)
 
 	if (CameraBoom)
 	{
+		const float TargetArmLength = bIsAiming ? AimingTargetArmLength : DefaultTargetArmLength;
+		const FVector TargetSocketOffset = bIsAiming ? AimingSocketOffset : DefaultSocketOffset;
+
 		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
 		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CameraInterpSpeed);
 	}
@@ -268,6 +286,8 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 		if (MoveAction)
 		{
 			EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ABasePlayer::Move);
+			EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Completed, this, &ABasePlayer::MoveStopped);
+			EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Canceled, this, &ABasePlayer::MoveStopped);
 		}
 
 		// Looking
@@ -278,6 +298,14 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 		if (MouseLookAction)
 		{
 			EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &ABasePlayer::Look);
+		}
+
+		if (SprintAction)
+		{
+			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Started, this, &ABasePlayer::StartSprint);
+			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Triggered, this, &ABasePlayer::StartSprint);
+			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Completed, this, &ABasePlayer::StopSprint);
+			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Canceled, this, &ABasePlayer::StopSprint);
 		}
 
 		// Default 입력 바인딩
@@ -315,6 +343,11 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 			}
 		}
 	}
+
+	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Pressed, this, &ABasePlayer::StartSprint);
+	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Released, this, &ABasePlayer::StopSprint);
+	PlayerInputComponent->BindKey(EKeys::RightShift, IE_Pressed, this, &ABasePlayer::StartSprint);
+	PlayerInputComponent->BindKey(EKeys::RightShift, IE_Released, this, &ABasePlayer::StopSprint);
 }
 
 void ABasePlayer::InitializeInputIDMap()
@@ -850,6 +883,11 @@ void ABasePlayer::Move(const FInputActionValue& Value)
 	DoMove(MovementVector.X, MovementVector.Y);
 }
 
+void ABasePlayer::MoveStopped(const FInputActionValue& Value)
+{
+	StopMoveInput();
+}
+
 void ABasePlayer::Look(const FInputActionValue& Value)
 {
 	FVector2D LookAxisVector = Value.Get<FVector2D>();
@@ -858,6 +896,8 @@ void ABasePlayer::Look(const FInputActionValue& Value)
 
 void ABasePlayer::DoMove(float Right, float Forward)
 {
+	CachedMoveInput = FVector2D(Right, Forward);
+
 	if (GetController() != nullptr)
 	{
 		const FRotator Rotation = GetController()->GetControlRotation();
@@ -869,6 +909,11 @@ void ABasePlayer::DoMove(float Right, float Forward)
 		AddMovementInput(ForwardDirection, Forward);
 		AddMovementInput(RightDirection, Right);
 	}
+}
+
+void ABasePlayer::StopMoveInput()
+{
+	CachedMoveInput = FVector2D::ZeroVector;
 }
 
 void ABasePlayer::DoLook(float Yaw, float Pitch)
@@ -890,9 +935,13 @@ void ABasePlayer::DoJumpStart()
 {
 	GetWorldTimerManager().ClearTimer(JumpStartTimerHandle);
 	GetWorldTimerManager().ClearTimer(LandingTimerHandle);
+	GetWorldTimerManager().ClearTimer(LandingRequestTimerHandle);
 	StopFallOffStart();
 
 	bIsLanding = false;
+	bLandingRequested = false;
+	bCanEnterLand = false;
+	bCanEnterGround = false;
 	bIsInAir = true;
 	bWasInAir = true;
 	bSuppressFallOffStart = true;
@@ -902,7 +951,7 @@ void ABasePlayer::DoJumpStart()
 		JumpStartTimerHandle,
 		this,
 		&ABasePlayer::FinishJumpStart,
-		JumpStartDuration,
+		FMath::Max(0.1f, JumpStartMaxDuration),
 		false
 	);
 
@@ -912,6 +961,18 @@ void ABasePlayer::DoJumpStart()
 void ABasePlayer::DoJumpEnd()
 {
 	StopJumping();
+}
+
+void ABasePlayer::StartSprint()
+{
+	bIsSprinting = true;
+	UpdateMaxWalkSpeed();
+}
+
+void ABasePlayer::StopSprint()
+{
+	bIsSprinting = false;
+	UpdateMaxWalkSpeed();
 }
 
 void ABasePlayer::OnRep_ItemSlots()
@@ -925,7 +986,7 @@ bool ABasePlayer::IsInAirForAnimation() const
 	return MovementComponent && MovementComponent->MovementMode == MOVE_Falling;
 }
 
-void ABasePlayer::UpdateAnimationMovementState()
+void ABasePlayer::UpdateAnimationMovementState(float DeltaTime)
 {
 	const FVector Velocity = GetVelocity();
 	VerticalSpeed = Velocity.Z;
@@ -934,7 +995,13 @@ void ABasePlayer::UpdateAnimationMovementState()
 	HorizontalVelocity.Z = 0.f;
 	GroundSpeed = HorizontalVelocity.Size();
 
+	if (VerticalSpeed < 0.f)
+	{
+		LastFallSpeed = FMath::Abs(VerticalSpeed);
+	}
+
 	const bool bNowInAir = IsInAirForAnimation();
+	bIsPhysicallyInAir = bNowInAir;
 
 	if (!bWasInAir
 		&& bNowInAir
@@ -949,18 +1016,191 @@ void ABasePlayer::UpdateAnimationMovementState()
 	{
 		bIsInAir = true;
 	}
-	else if (!bIsJumping)
+	else if (!bIsJumping && !bLandingRequested && !bIsLanding)
 	{
 		bIsInAir = false;
 		bSuppressFallOffStart = false;
 	}
 
 	bWasInAir = bNowInAir;
+	bCanEnterLand = bLandingRequested;
+	bCanEnterGround = !bIsInAir && !bIsLanding && !bLandingRequested;
+}
+
+void ABasePlayer::UpdateMovementRequestState(float DeltaTime)
+{
+	bPrevHasMoveInput = bHasMoveInput;
+
+	const FVector2D MoveInput = CachedMoveInput.GetClampedToMaxSize(1.f);
+
+	MoveInputSize = MoveInput.Size();
+	bHasMoveInput = MoveInputSize > MoveInputDeadZone;
+	MoveInputHeldTime = bHasMoveInput ? MoveInputHeldTime + DeltaTime : 0.f;
+
+	MoveInputTurnAngle = 0.f;
+	bSharpTurnRequested = false;
+	bStartRequested = false;
+	bStopRequested = false;
+	bUseStartDatabase = false;
+	bUseLoopDatabase = false;
+	bUseSharpTurnDatabase = false;
+
+	if (bHasMoveInput && bPrevHasMoveInput && PreviousMoveInputForTurn.Size() > MoveInputDeadZone)
+	{
+		const FVector2D PrevDir = PreviousMoveInputForTurn.GetSafeNormal();
+		const FVector2D CurrDir = MoveInput.GetSafeNormal();
+		const float Dot = FMath::Clamp(FVector2D::DotProduct(PrevDir, CurrDir), -1.f, 1.f);
+		const float Cross = PrevDir.Y * CurrDir.X - PrevDir.X * CurrDir.Y;
+		MoveInputTurnAngle = FMath::RadiansToDegrees(FMath::Atan2(Cross, Dot));
+		if (FMath::Abs(MoveInputTurnAngle) < MoveInputTurnDeadZoneAngle)
+		{
+			MoveInputTurnAngle = 0.f;
+		}
+	}
+
+	const bool bCanRequestGroundMove = !bIsInAir && !bIsLanding && !bIsJumping && !bIsFallOffStart;
+	if (!bCanRequestGroundMove)
+	{
+		ClearMovementRequests();
+		PreviousMoveInputForTurn = bHasMoveInput ? MoveInput : FVector2D::ZeroVector;
+		return;
+	}
+
+	const bool bJustStartedMoving = !bPrevHasMoveInput && bHasMoveInput;
+	const bool bJustStoppedMoving = bPrevHasMoveInput && !bHasMoveInput;
+
+	if (bJustStartedMoving)
+	{
+		MoveInputHeldTime = 0.f;
+		bGroundStartFinished = false;
+		bPendingGroundStartFinish = false;
+		bStartWasSprinting = bIsSprinting;
+	}
+
+	if (!bHasMoveInput)
+	{
+		bGroundStartFinished = false;
+		bPendingGroundStartFinish = false;
+		bStartWasSprinting = false;
+	}
+
+	if (bPendingGroundStartFinish && MoveInputHeldTime >= MinStartDatabaseTime)
+	{
+		bGroundStartFinished = true;
+		bPendingGroundStartFinish = false;
+	}
+
+	bSharpTurnRequested =
+		bIsSprinting &&
+		bHasMoveInput &&
+		bPrevHasMoveInput &&
+		GroundSpeed >= SharpTurnMinSpeed &&
+		FMath::Abs(MoveInputTurnAngle) >= SharpTurnAngleThreshold;
+
+	bStartRequested = bJustStartedMoving;
+	bStopRequested = bJustStoppedMoving && GroundSpeed > StopIntentSpeedThreshold;
+	CurrentStartToLoopDelay = StartToLoopDelay;
+	bUseStartDatabase = bHasMoveInput && !bGroundStartFinished && MoveInputHeldTime < StartToLoopDelay;
+	bUseSharpTurnDatabase = bSharpTurnRequested;
+	bUseLoopDatabase = bHasMoveInput && !bUseStartDatabase && !bUseSharpTurnDatabase && !bStopRequested;
+
+	PreviousMoveInputForTurn = bHasMoveInput ? MoveInput : FVector2D::ZeroVector;
+}
+
+void ABasePlayer::UpdateCombatMovementState()
+{
+	const FVector2D CombatMoveInput = CachedMoveInput.GetClampedToMaxSize(1.f);
+	CombatInputRight = CombatMoveInput.X;
+	CombatInputForward = CombatMoveInput.Y;
+
+	if (bIsCombatMode && bHasMoveInput)
+	{
+		const float CurrentMaxSpeed = GetCharacterMovement() ? GetCharacterMovement()->MaxWalkSpeed : WalkSpeed;
+		CombatRightSpeed = CombatInputRight * CurrentMaxSpeed;
+		CombatForwardSpeed = CombatInputForward * CurrentMaxSpeed;
+		MovementDirection = FMath::RadiansToDegrees(FMath::Atan2(CombatInputRight, CombatInputForward));
+	}
+	else
+	{
+		MovementDirection = 0.f;
+		CombatForwardSpeed = 0.f;
+		CombatRightSpeed = 0.f;
+	}
+}
+
+void ABasePlayer::UpdateMaxWalkSpeed()
+{
+	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
+	if (!MovementComponent)
+	{
+		return;
+	}
+
+	const bool bCanSprint =
+		bIsSprinting &&
+		!bIsAttacking &&
+		!bIsDodging &&
+		!bIsHitReacting;
+
+	MovementComponent->MaxWalkSpeed = bCanSprint ? SprintSpeed : WalkSpeed;
+	MovementComponent->RotationRate = FRotator(
+		0.f,
+		bCanSprint ? SprintRotationRateYaw : WalkRotationRateYaw,
+		0.f
+	);
+}
+
+void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
+{
+	bUseControllerRotationYaw = bEnableCombatRotation;
+
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->bOrientRotationToMovement = !bEnableCombatRotation;
+	}
+}
+
+void ABasePlayer::ClearMovementRequests()
+{
+	bStartRequested = false;
+	bStopRequested = false;
+	bUseStartDatabase = false;
+	bUseLoopDatabase = false;
+	bUseSharpTurnDatabase = false;
+	bGroundStartFinished = false;
+	bPendingGroundStartFinish = false;
+	bStartWasSprinting = false;
+	MoveInputHeldTime = 0.f;
+	CurrentStartToLoopDelay = 0.f;
+	bSharpTurnRequested = false;
+	MoveInputTurnAngle = 0.f;
+}
+
+void ABasePlayer::MarkGroundStartFinished()
+{
+	if (MoveInputHeldTime < MinStartDatabaseTime)
+	{
+		bPendingGroundStartFinish = true;
+		return;
+	}
+
+	bPendingGroundStartFinish = false;
+	bGroundStartFinished = true;
+	bUseStartDatabase = false;
+	bUseLoopDatabase = bHasMoveInput && !bSharpTurnRequested && !bStopRequested;
 }
 
 void ABasePlayer::FinishJumpStart()
 {
+	GetWorldTimerManager().ClearTimer(JumpStartTimerHandle);
 	bIsJumping = false;
+
+	if (!IsInAirForAnimation() && !bIsLanding && !bLandingRequested)
+	{
+		bIsInAir = false;
+		bWasInAir = false;
+		bSuppressFallOffStart = false;
+	}
 }
 
 void ABasePlayer::StartFallOffStart()
@@ -992,21 +1232,145 @@ void ABasePlayer::StopFallOffStart()
 void ABasePlayer::FinishLanding()
 {
 	bIsLanding = false;
+	bCanEnterGround = !bIsInAir && !bLandingRequested;
+}
+
+void ABasePlayer::FinishLandingRequest()
+{
+	bIsLanding = false;
+	bLandingRequested = false;
+	bIsInAir = false;
+	bWasInAir = false;
+	bSuppressFallOffStart = false;
+	bCanEnterLand = false;
+	bCanEnterGround = true;
+}
+
+void ABasePlayer::RequestCombatModeToggle()
+{
+	SetCombatMode(!bIsCombatMode);
+}
+
+void ABasePlayer::SetCombatMode(bool bNewCombatMode)
+{
+	if (bNewCombatMode == bIsCombatMode && !bIsPlayingCombatIntro)
+	{
+		return;
+	}
+
+	if (!bNewCombatMode)
+	{
+		bIsCombatMode = false;
+		bPendingCombatModeFromIntro = false;
+		bIsPlayingCombatIntro = false;
+		ApplyCombatRotationMode(false);
+
+		if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+		{
+			if (CombatIntroMontage)
+			{
+				AnimInstance->Montage_Stop(0.1f, CombatIntroMontage);
+			}
+		}
+		return;
+	}
+
+	if (CombatIntroMontage)
+	{
+		bPendingCombatModeFromIntro = true;
+		bIsPlayingCombatIntro = true;
+		ApplyCombatRotationMode(true);
+
+		if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+		{
+			const float MontageLength = AnimInstance->Montage_Play(CombatIntroMontage, CombatIntroMontagePlayRate);
+			if (MontageLength > 0.f)
+			{
+				FOnMontageEnded MontageEndedDelegate;
+				MontageEndedDelegate.BindUObject(this, &ABasePlayer::OnCombatIntroMontageEnded);
+				AnimInstance->Montage_SetEndDelegate(MontageEndedDelegate, CombatIntroMontage);
+				return;
+			}
+		}
+	}
+
+	bIsCombatMode = true;
+	ApplyCombatRotationMode(true);
+	bPendingCombatModeFromIntro = false;
+	bIsPlayingCombatIntro = false;
+}
+
+void ABasePlayer::InterruptCombatIntroForHit()
+{
+	if (!bIsPlayingCombatIntro || !bInterruptCombatIntroOnHit)
+	{
+		return;
+	}
+
+	if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+	{
+		if (CombatIntroMontage)
+		{
+			AnimInstance->Montage_Stop(0.1f, CombatIntroMontage);
+		}
+	}
+
+	bIsPlayingCombatIntro = false;
+	bPendingCombatModeFromIntro = false;
+	if (!bIsCombatMode)
+	{
+		ApplyCombatRotationMode(false);
+	}
+}
+
+void ABasePlayer::OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+	if (Montage != CombatIntroMontage)
+	{
+		return;
+	}
+
+	bIsPlayingCombatIntro = false;
+
+	if (!bInterrupted && bPendingCombatModeFromIntro)
+	{
+		bIsCombatMode = true;
+		ApplyCombatRotationMode(true);
+	}
+	else if (!bIsCombatMode)
+	{
+		ApplyCombatRotationMode(false);
+	}
+
+	bPendingCombatModeFromIntro = false;
 }
 
 void ABasePlayer::Landed(const FHitResult& Hit)
 {
+	const float ImpactFallSpeed = FMath::Max(LastFallSpeed, FMath::Abs(GetVelocity().Z));
+
 	// 항상 Super를 먼저 호출해주어야 캐릭터 무브먼트의 기본 착지 로직이 꼬이지 않습니다.
 	Super::Landed(Hit);
 
 	GetWorldTimerManager().ClearTimer(JumpStartTimerHandle);
 	StopFallOffStart();
 
+	LandStartGroundSpeed = GroundSpeed;
+	LandStartFallSpeed = ImpactFallSpeed;
+	LastFallSpeed = ImpactFallSpeed;
+	bLandWasMoving = LandStartGroundSpeed > IdleSpeedThreshold || bHasMoveInput;
+	bLandWasSprinting = bIsSprinting || LandStartGroundSpeed >= RunToSprintSpeedThreshold;
+	bUseHeavyLand = LandStartFallSpeed >= HeavyLandSpeedThreshold;
+
 	bIsJumping = false;
-	bIsInAir = false;
+	bIsInAir = true;
+	bIsPhysicallyInAir = false;
 	bWasInAir = false;
 	bSuppressFallOffStart = false;
 	bIsLanding = true;
+	bLandingRequested = true;
+	bCanEnterLand = true;
+	bCanEnterGround = false;
 
 	GetWorldTimerManager().ClearTimer(LandingTimerHandle);
 	GetWorldTimerManager().SetTimer(
@@ -1014,6 +1378,15 @@ void ABasePlayer::Landed(const FHitResult& Hit)
 		this,
 		&ABasePlayer::FinishLanding,
 		LandingDuration,
+		false
+	);
+
+	GetWorldTimerManager().ClearTimer(LandingRequestTimerHandle);
+	GetWorldTimerManager().SetTimer(
+		LandingRequestTimerHandle,
+		this,
+		&ABasePlayer::FinishLandingRequest,
+		LandingRequestDuration,
 		false
 	);
 
@@ -1026,7 +1399,7 @@ void ABasePlayer::Landed(const FHitResult& Hit)
 
 	// 하강 속도가 일정 수치 이상일 때만 '진짜 착지'로 인정 (Z속도는 음수이므로 < 사용)
 	// -300.0f 는 예시이며, 점프 높이에 따라 -500.0f 등으로 조절하세요.
-	if (FallSpeed < -300.0f)
+	if (LandStartFallSpeed >= RealLandingEventSpeedThreshold)
 	{
 		// 1. 애니메이션 재생을 위해 블루프린트(Character BP)로 신호를 보냅니다.
 		K2_OnRealLanded();

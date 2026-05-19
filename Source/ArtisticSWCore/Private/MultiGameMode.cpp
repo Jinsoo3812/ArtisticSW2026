@@ -17,13 +17,16 @@ UClass* AMultiGameMode::GetDefaultPawnClassForController_Implementation(AControl
 {
     // 배정된 역할에 따라 다른 폰 클래스를 반환합니다.
     const FName AssignedRole = GetOrAssignRole(InController);
-    if (AssignedRole == FName("Attacker") && AttackerPawnClass)
+    if (!AssignedRole.IsNone())
     {
-        return AttackerPawnClass;
-    }
-    if (AssignedRole == FName("Crafter") && CrafterPawnClass)
-    {
-        return CrafterPawnClass;
+        if (AssignedRole == FName("Attacker") && AttackerPawnClass)
+        {
+            return AttackerPawnClass;
+        }
+        else if (AssignedRole == FName("Crafter") && CrafterPawnClass)
+        {
+            return CrafterPawnClass;
+        }
     }
 
 	UE_LOG(LogTemp, Warning, TEXT("No pawn class set for role %s on controller %s."), *AssignedRole.ToString(), *GetNameSafe(InController));
@@ -33,7 +36,7 @@ UClass* AMultiGameMode::GetDefaultPawnClassForController_Implementation(AControl
 
 AActor* AMultiGameMode::ChoosePlayerStart_Implementation(AController* Player)
 {
-    FName TargetTag = GetOrAssignRole(Player);
+    const FName TargetTag = GetOrAssignRole(Player);
 
     // 플레이어의 역할을 확인하고 그에 맞는 태그를 찾습니다.
     // 레벨에 있는 PlayerStart들을 순회하며 태그가 일치하는 곳을 반환합니다.
@@ -62,7 +65,7 @@ FName AMultiGameMode::GetOrAssignRole(AController* Controller)
         return *FoundRole;
     }
 
-    const FName AssignedRole = (PlayerRoles.Num() == 0) ? FName("Attacker") : FName("Crafter");
+    const FName AssignedRole = PlayerRoles.Num() == 0 ? FName("Attacker") : FName("Crafter");
     PlayerRoles.Add(Controller, AssignedRole);
     return AssignedRole;
 }
