@@ -649,7 +649,15 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 		// 장착 아이템 갱신
 		EquippedItem = SlotItem;
 		EquippedItem->SetItemState(EItemState::Equipped);
-		EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, EquippedItem->MyDefinition->AttachmentSocketName);
+		FName SocketName = FName("GripPoint");
+		if (UWorld* World = GetWorld())
+		{
+			if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
+			{
+				SocketName = Subsystem->GetAttachmentSocketName(EquippedItem->ItemTag);
+			}
+		}
+		EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
 
 		// 새 아이템 GA 부여 로직
 		bool bShouldGrantAbility = false;
@@ -736,7 +744,15 @@ void ABasePlayer::OnRep_EquippedItem()
 			MeshComp->SetSimulatePhysics(false);
 			MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		}
-		EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, EquippedItem->MyDefinition->AttachmentSocketName);
+		FName SocketName = FName("GripPoint");
+		if (UWorld* World = GetWorld())
+		{
+			if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
+			{
+				SocketName = Subsystem->GetAttachmentSocketName(EquippedItem->ItemTag);
+			}
+		}
+		EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
 	}
 
 	OnItemSlotsChanged.Broadcast();

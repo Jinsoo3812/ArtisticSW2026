@@ -40,6 +40,20 @@ public:
 	// GameplayTag로 피처 데이터(수치) 가져오기
 	const FItemFeatureData* GetItemFeature(const FGameplayTag& Tag) const;
 
+	// FItemDefinition Property Getters
+	TSoftObjectPtr<UTexture2D> GetIcon2D(const FGameplayTag& ItemTag) const;
+	TSoftObjectPtr<UStaticMesh> GetItemMesh(const FGameplayTag& ItemTag) const;
+	TSoftClassPtr<UGameplayAbility> GetGrantedAbilityClass(const FGameplayTag& ItemTag) const;
+	TSoftClassPtr<ABaseItem> GetSpawnClassByCrafting(const FGameplayTag& ItemTag) const;
+	TSoftClassPtr<AActor> GetSpawnClass(const FGameplayTag& ItemTag) const;
+	TArray<FGameplayTag> GetCanUseClassList(const FGameplayTag& ItemTag) const;
+
+	// FItemFeatureData Property Getters
+	FText GetItemName(const FGameplayTag& ItemTag) const;
+	FText GetHowToInteractText(const FGameplayTag& ItemTag) const;
+	FName GetAttachmentSocketName(const FGameplayTag& ItemTag) const;
+	int32 GetMaxStack(const FGameplayTag& ItemTag) const;
+
 	// DA가 직접 필요한 경우 (Def로 왠만하면 해결합시다.)
 	UItemData* GetItemDataAsset() const { return CachedItemData; }
 
@@ -54,7 +68,7 @@ private:
 	// DT에서 긁어와 메모리에 올려둘 O(1) 탐색용 캐시 맵
 	TMap<FGameplayTag, FItemFeatureData> CachedFeatureData;
 
-	// 레시피 캐시 맵 (Key: 재료의 조합 해시값)
+	// 레시피 캐시 맵 (Key: 재료의 조합 해시값)C
 	TMap<uint32, FItemRecipeData> CachedRecipeData;
 
 	// 재료 TMap을 기반으로 순서에 상관없는 고유 Hash 값을 만들어내는 내부 함수
