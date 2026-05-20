@@ -9,6 +9,7 @@
 class ABasePlayer;
 class ACharacter;
 class APawn;
+class UBasePlayerAnimStateComponent;
 
 UCLASS(Blueprintable, BlueprintType)
 class CLASSFEATURE_API UBasePlayerAnimInstance : public UAnimInstance
@@ -31,6 +32,7 @@ public:
 protected:
 	void UpdateFromGenericCharacter(float DeltaSeconds);
 	void UpdateFromPlayerCharacter(float DeltaSeconds, const ABasePlayer& PlayerCharacter);
+	void UpdateFromAnimStateComponent(const UBasePlayerAnimStateComponent& AnimState);
 	void UpdateAimOffset();
 	float CalculateAimOffsetAlpha() const;
 

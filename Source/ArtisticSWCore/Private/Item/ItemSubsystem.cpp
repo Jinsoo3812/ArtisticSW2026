@@ -142,6 +142,72 @@ const FItemFeatureData* UItemSubsystem::GetItemFeature(const FGameplayTag& Tag) 
 	return nullptr;
 }
 
+TSoftObjectPtr<UTexture2D> UItemSubsystem::GetIcon2D(const FGameplayTag& ItemTag) const
+{
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->Icon2D;
+	return nullptr;
+}
+
+TSoftObjectPtr<UStaticMesh> UItemSubsystem::GetItemMesh(const FGameplayTag& ItemTag) const
+{
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->ItemMesh;
+	return nullptr;
+}
+
+TSoftClassPtr<UGameplayAbility> UItemSubsystem::GetGrantedAbilityClass(const FGameplayTag& ItemTag) const
+{
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->GrantedAbilityClass;
+	return nullptr;
+}
+
+TSoftClassPtr<ABaseItem> UItemSubsystem::GetSpawnClassByCrafting(const FGameplayTag& ItemTag) const
+{
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->SpawnClassByCrafting;
+	return nullptr;
+}
+
+TSoftClassPtr<AActor> UItemSubsystem::GetSpawnClass(const FGameplayTag& ItemTag) const
+{
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->SpawnClass;
+	return nullptr;
+}
+
+TArray<FGameplayTag> UItemSubsystem::GetCanUseClassList(const FGameplayTag& ItemTag) const
+{
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->CanUseClassList;
+	return TArray<FGameplayTag>();
+}
+
+FGameplayTag UItemSubsystem::GetUseKeyTag(const FGameplayTag& ItemTag) const
+{
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->UseKeyTag;
+	return FGameplayTag::EmptyTag;
+}
+
+FText UItemSubsystem::GetItemName(const FGameplayTag& ItemTag) const
+{
+	if (const FItemFeatureData* Feature = GetItemFeature(ItemTag)) return Feature->ItemName;
+	return FText::FromString(ItemTag.ToString());
+}
+
+FText UItemSubsystem::GetHowToInteractText(const FGameplayTag& ItemTag) const
+{
+	if (const FItemFeatureData* Feature = GetItemFeature(ItemTag)) return Feature->HowToInteractText;
+	return FText::GetEmpty();
+}
+
+FName UItemSubsystem::GetAttachmentSocketName(const FGameplayTag& ItemTag) const
+{
+	if (const FItemFeatureData* Feature = GetItemFeature(ItemTag)) return Feature->AttachmentSocketName;
+	return FName("GripPoint");
+}
+
+int32 UItemSubsystem::GetMaxStack(const FGameplayTag& ItemTag) const
+{
+	if (const FItemFeatureData* Feature = GetItemFeature(ItemTag)) return Feature->MaxStack;
+	return 99;
+}
+
 uint32 UItemSubsystem::GenerateRecipeHash(const TMap<FGameplayTag, int32>& Ingredients) const
 {
 	// 재료의 순서가 뒤죽박죽이어도 똑같은 해시가 나오도록 태그 문자열 기준으로 정렬.
