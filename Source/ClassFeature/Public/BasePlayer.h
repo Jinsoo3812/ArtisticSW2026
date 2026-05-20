@@ -362,19 +362,13 @@ protected:
 	void FinishLandingRequest();
 	void OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
-	// 모든 Config를 순회하며 ID를 부여하는 함수
-	void InitializeInputIDMap();
-
-	// 태그를 넣으면 통합 맵에서 ID를 반환하는 헬퍼
+	// 태그를 넣으면 고유 Hash 기반 ID를 반환하는 헬퍼
 	int32 GetInputIDFromTag(const FGameplayTag& Tag) const;
 
 protected:
 	// 서버에 의해 로컬에서 Controller가 조종하는 Pawn이 지정될 때 호출되는 함수.
 	virtual void PawnClientRestart() override;
 
-	// 모든 Config의 태그를 통합하여 InputID를 부여할 맵
-	UPROPERTY()
-	TMap<FGameplayTag, int32> InputTagToIDMap;
 
 	// Default IMC (마우스 등)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")

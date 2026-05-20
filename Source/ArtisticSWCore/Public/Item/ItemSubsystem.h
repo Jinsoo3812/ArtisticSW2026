@@ -47,6 +47,7 @@ public:
 	TSoftClassPtr<ABaseItem> GetSpawnClassByCrafting(const FGameplayTag& ItemTag) const;
 	TSoftClassPtr<AActor> GetSpawnClass(const FGameplayTag& ItemTag) const;
 	TArray<FGameplayTag> GetCanUseClassList(const FGameplayTag& ItemTag) const;
+	FGameplayTag GetUseKeyTag(const FGameplayTag& ItemTag) const;
 
 	// FItemFeatureData Property Getters
 	FText GetItemName(const FGameplayTag& ItemTag) const;

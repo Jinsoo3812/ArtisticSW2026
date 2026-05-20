@@ -68,6 +68,10 @@ struct FItemDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	TArray<FGameplayTag> CanUseClassList;
 
+	// 사용을 위한 키 입력 (Editor에서 할당, 예: Key.Default.Mouse.LeftClick)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
+	FGameplayTag UseKeyTag;
+
 	// 필요하다면 아이템 이름, 아이콘(UI용 UTexture2D) 등도 여기에 추가
 };
 

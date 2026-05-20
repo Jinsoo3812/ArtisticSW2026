@@ -178,6 +178,12 @@ TArray<FGameplayTag> UItemSubsystem::GetCanUseClassList(const FGameplayTag& Item
 	return TArray<FGameplayTag>();
 }
 
+FGameplayTag UItemSubsystem::GetUseKeyTag(const FGameplayTag& ItemTag) const
+{
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->UseKeyTag;
+	return FGameplayTag::EmptyTag;
+}
+
 FText UItemSubsystem::GetItemName(const FGameplayTag& ItemTag) const
 {
 	if (const FItemFeatureData* Feature = GetItemFeature(ItemTag)) return Feature->ItemName;

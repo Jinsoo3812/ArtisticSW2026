@@ -85,9 +85,6 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 void ABasePlayer::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
-
-	// 모든 KeyTag와 InputID를 매핑
-	InitializeInputIDMap();
 }
 
 void ABasePlayer::BeginPlay()
@@ -342,44 +339,10 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::RightShift, IE_Released, this, &ABasePlayer::StopSprint);
 }
 
-void ABasePlayer::InitializeInputIDMap()
-{
-	InputTagToIDMap.Empty();
-	int32 NextID = 0;
-
-	// 모든 Config를 하나의 배열로 통합
-	TArray<UInputTagConfig*> Configs;
-	if (DefaultInputConfig) Configs.Add(DefaultInputConfig);
-	if (ItemInputConfig) Configs.Add(ItemInputConfig);
-
-	if (UCrafterComponent* CrafterComp = FindComponentByClass<UCrafterComponent>())
-	{
-		if (UInputTagConfig* CrafterConfig = CrafterComp->CrafterInputConfig)
-		{
-			Configs.Add(CrafterConfig);
-		}
-	}
-
-	// 각 Config를 순회하며 태그에 고유 ID 할당
-	for (UInputTagConfig* Config : Configs)
-	{
-		for (const FKeyInputAction& Action : Config->KeyInputActions)
-		{
-			if (Action.KeyTag.IsValid() && !InputTagToIDMap.Contains(Action.KeyTag))
-			{
-				UE_LOG(LogTemp, Log, TEXT("ABasePlayer::InitializeInputIDMap : Assigning InputID %d to KeyTag: %s"), NextID, *Action.KeyTag.ToString());
-				InputTagToIDMap.Add(Action.KeyTag, NextID++);
-			}
-		}
-	}
-
-
-}
-
 int32 ABasePlayer::GetInputIDFromTag(const FGameplayTag& Tag) const
 {
-	const int32* FoundID = InputTagToIDMap.Find(Tag);
-	return FoundID ? *FoundID : INDEX_NONE;
+	if (!Tag.IsValid()) return INDEX_NONE;
+	return static_cast<int32>(GetTypeHash(Tag));
 }
 
 bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
@@ -510,10 +473,33 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 
 void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
 {
+	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
+
 	// 공통 GAS 입력 해제 처리
 	OnAbilityInputReleased(InputTag);
 
-	// 여기는 Tag에 Released를 붙여야 하는데 귀찮아서 아직 안함
+	// Release 이벤트를 위한 태그 맵핑
+	FGameplayTag ReleasedEventTag = InputTag;
+	if (InputTag.MatchesTagExact(Key_Default_Mouse_LeftClick))
+	{
+		ReleasedEventTag = Key_Default_Mouse_LeftClick_Released;
+	}
+	else if (InputTag.MatchesTagExact(Key_Default_Mouse_RightClick))
+	{
+		ReleasedEventTag = Key_Default_Mouse_RightClick_Released;
+	}
+
+	// ASC에 GameplayEvent로서 전달
+	FGameplayEventData EventData;
+	EventData.Instigator = this;
+	EventData.Target = nullptr;
+
+	CachedAbilitySystemComponent->HandleGameplayEvent(ReleasedEventTag, &EventData);
+
+	if (!HasAuthority())
+	{
+		ServerRPC_SendGameplayEvent(ReleasedEventTag, EventData);
+	}
 }
 
 void ABasePlayer::HandlePickUpEvent(const FGameplayEventData* Payload)
@@ -591,10 +577,19 @@ void ABasePlayer::UseEquippedItem(bool bDestroy)
 	if (EquippedIndex != INDEX_NONE)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::UseEquippedItem : Item used! Slot index: %d"), EquippedIndex);
-		// 현재는 마우스로 사용하는 Item밖에 없으므로 이렇게 하지만 추후에는 Tag로 분기할 것
+		
+		FGameplayTag AssignedKeyTag = Key_Default_Mouse_LeftClick;
+		if (UWorld* World = GetWorld())
+		{
+			if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
+			{
+				FGameplayTag UseKeyTag = Subsystem->GetUseKeyTag(EquippedItem->ItemTag);
+				if (UseKeyTag.IsValid()) AssignedKeyTag = UseKeyTag;
+			}
+		}
+		
 		RemoveItemFromSlot(ItemSlots[EquippedIndex].KeyTag);
-		RemoveAbilityFromSlot(Key_Default_Mouse_LeftClick);
-		RemoveAbilityFromSlot(Key_Default_Mouse_RightClick);
+		RemoveAbilityFromSlot(AssignedKeyTag);
 
 		if (bDestroy) {
 			EquippedItem->Destroy(); // 아이템 액터 제거
@@ -634,8 +629,16 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 		// 기존 아이템은 안보이게 넣음
 		if (IsValid(EquippedItem))
 		{
-			RemoveAbilityFromSlot(Key_Default_Mouse_LeftClick);
-			RemoveAbilityFromSlot(Key_Default_Mouse_RightClick);
+			FGameplayTag PreviousKeyTag = Key_Default_Mouse_LeftClick;
+			if (UWorld* World = GetWorld())
+			{
+				if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
+				{
+					FGameplayTag OldUseKey = Subsystem->GetUseKeyTag(EquippedItem->ItemTag);
+					if (OldUseKey.IsValid()) PreviousKeyTag = OldUseKey;
+				}
+			}
+			RemoveAbilityFromSlot(PreviousKeyTag);
 			EquippedItem->SetItemState(EItemState::InItemSlot);
 		}
 
@@ -683,16 +686,21 @@ void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 		{
 			auto GrantedAbilityClass = EquippedItem->GetGrantedAbilityClass();
 			if (GrantedAbilityClass) {
-				// 스나이퍼 등 우클릭 전용 스킬 분기
-				if (GrantedAbilityClass->GetName().Contains(TEXT("Sniping")))
+				FGameplayTag AssignKeyTag = Key_Default_Mouse_LeftClick;
+				if (UWorld* World = GetWorld())
 				{
-					GrantAbilityToSlot(Key_Default_Mouse_RightClick, GrantedAbilityClass);
+					if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
+					{
+						FGameplayTag ItemUseKey = Subsystem->GetUseKeyTag(EquippedItem->ItemTag);
+						if (ItemUseKey.IsValid())
+						{
+							AssignKeyTag = ItemUseKey;
+						}
+					}
 				}
-				else
-				{
-					GrantAbilityToSlot(Key_Default_Mouse_LeftClick, GrantedAbilityClass);
-				}
-				UE_LOG(LogTemp, Log, TEXT("ABasePlayer::EquipItemFromSlot : Granted ability %s for item %s"), *EquippedItem->GetGrantedAbilityClass()->GetName(), *EquippedItem->GetName());
+				
+				GrantAbilityToSlot(AssignKeyTag, GrantedAbilityClass);
+				UE_LOG(LogTemp, Log, TEXT("ABasePlayer::EquipItemFromSlot : Granted ability %s for item %s to key %s"), *GrantedAbilityClass->GetName(), *EquippedItem->GetName(), *AssignKeyTag.ToString());
 			}
 		}
 	}

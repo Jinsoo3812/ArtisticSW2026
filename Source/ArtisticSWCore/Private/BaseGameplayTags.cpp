@@ -24,8 +24,6 @@ UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Changed, "Event.Ability.Changed");
 UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_Start, "Event.HandleScan.Start");
 UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_End, "Event.HandleScan.End");
 UE_DEFINE_GAMEPLAY_TAG(Event_ActivateAbility_Equip, "Event.ActivateAbility.Equip");
-UE_DEFINE_GAMEPLAY_TAG(Event_Input_MouseWheelUp, "Event.Input.MouseWheelUp");
-UE_DEFINE_GAMEPLAY_TAG(Event_Input_MouseWheelDown, "Event.Input.MouseWheelDown");
 UE_DEFINE_GAMEPLAY_TAG(Event_Montage_ThrowGrenade, "Event.Montage.ThrowGrenade");
 // Data
 UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");
@@ -81,7 +79,9 @@ UE_DEFINE_GAMEPLAY_TAG(Enemy_Undead_Test, "Enemy.Type.Undead.Test");
 /* Default - Keyboard & Mouse */
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse, "Key.Default.Mouse");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_LeftClick, "Key.Default.Mouse.LeftClick");
+UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_LeftClick_Released, "Key.Default.Mouse.LeftClick.Released");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_RightClick, "Key.Default.Mouse.RightClick");
+UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_RightClick_Released, "Key.Default.Mouse.RightClick.Released");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_WheelUp, "Key.Default.Mouse.WheelUp");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_WheelDown, "Key.Default.Mouse.WheelDown");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_F, "Key.Default.F");
