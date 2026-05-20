@@ -19,37 +19,37 @@ protected:
     virtual void BeginPlay() override;
 
 public:
-    // ¹°¸® ¹× ·»´õ¸µÀ» ´ã´çÇÒ ·çÆ® ¸Ş½Ã ÄÄÆ÷³ÍÆ®
+    // ë¬¼ë¦¬ ë° ë Œë”ë§ì„ ë‹´ë‹¹í•  ë£¨íŠ¸ ë©”ì‹œ ì»´í¬ë„ŒíŠ¸
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     UStaticMeshComponent* MeshComp;
 
-    // Åõ»çÃ¼ ¿òÁ÷ÀÓÀ» °¡º±°Ô ¿¬»êÇÏ±â À§ÇÑ ÄÄÆ÷³ÍÆ®
+    // íˆ¬ì‚¬ì²´ ì›€ì§ì„ì„ ê°€ë³ê²Œ ì—°ì‚°í•˜ê¸° ìœ„í•œ ì»´í¬ë„ŒíŠ¸
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UProjectileMovementComponent* ProjectileMovement;
 
-    // GA°¡ ¼ö·ùÅºÀ» »ı¼ºÇÒ ¶§ ³Ñ°ÜÁÙ µ¥¹ÌÁö Á¤º¸ (GE Spec)
+    // GAê°€ ìˆ˜ë¥˜íƒ„ì„ ìƒì„±í•  ë•Œ ë„˜ê²¨ì¤„ ë°ë¯¸ì§€ ì •ë³´ (GE Spec)
     UPROPERTY(BlueprintReadWrite, meta = (ExposeOnSpawn = "true"), Category = "GAS")
     FGameplayEffectSpecHandle DamageEffectSpecHandle;
 
-    // ¸î ÃÊ µÚ¿¡ ÅÍÁú °ÍÀÎ°¡?
+    // ëª‡ ì´ˆ ë’¤ì— í„°ì§ˆ ê²ƒì¸ê°€?
     UPROPERTY(EditDefaultsOnly, Category = "Combat")
     float ExplosionDelay = 3.0f;
 
-    // Æø¹ß ¹İ°æ
+    // í­ë°œ ë°˜ê²½
     UPROPERTY(EditDefaultsOnly, Category = "Combat")
     float ExplosionRadius = 300.f;
 
-    // Æø¹ß ½Ã ÀÌÆåÆ® µîÀ» ¸ğµç Å¬¶óÀÌ¾ğÆ®¿¡°Ô ¸ÖÆ¼Ä³½ºÆ®
+    // í­ë°œ ì‹œ ì´í™íŠ¸ ë“±ì„ ëª¨ë“  í´ë¼ì´ì–¸íŠ¸ì—ê²Œ ë©€í‹°ìºìŠ¤íŠ¸
     UFUNCTION(NetMulticast, Reliable)
     void Multicast_OnExploded();
 
-    // ½ÇÁ¦ Æø¹ß ·ÎÁ÷ (µ¥¹ÌÁö GE Àû¿ë)
+    // ì‹¤ì œ í­ë°œ ë¡œì§ (ë°ë¯¸ì§€ GE ì ìš©)
     UFUNCTION()
-    void Explode();
+    virtual void Explode();
 
-    // »ı¼º Á÷ÈÄ ´Ü¼ø ¹°¸® Èû(ÃÊ±â ¼Óµµ)À» °¡ÇØ ´øÁö±â À§ÇÑ ÇÔ¼ö
+    // ìƒì„± ì§í›„ ë‹¨ìˆœ ë¬¼ë¦¬ í˜(ì´ˆê¸° ì†ë„)ì„ ê°€í•´ ë˜ì§€ê¸° ìœ„í•œ í•¨ìˆ˜
     void LaunchProjectile(const FVector& LaunchVelocity);
 
-    // µ¿ÀûÀ¸·Î ½ºÅÂÆ½ ¸Ş½Ã¸¦ ±³Ã¼ÇÏ´Â ÇÔ¼ö
+    // ë™ì ìœ¼ë¡œ ìŠ¤íƒœí‹± ë©”ì‹œë¥¼ êµì²´í•˜ëŠ” í•¨ìˆ˜
     void SetGrenadeMesh(UStaticMesh* InMesh);
 };

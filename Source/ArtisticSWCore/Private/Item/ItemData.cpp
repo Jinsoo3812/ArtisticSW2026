@@ -20,3 +20,13 @@ FText UItemData::GetItemNameByTag(const FGameplayTag& ItemTag) const
 
 	return FText::FromString(ItemTag.ToString());
 }
+
+int32 UItemData::GetMaxStackByTag(const FGameplayTag& ItemTag) const
+{
+	if (const FItemDefinition* Def = FindItemDefinition(ItemTag))
+	{
+		return Def->MaxStack;
+	}
+
+	return -1;
+}

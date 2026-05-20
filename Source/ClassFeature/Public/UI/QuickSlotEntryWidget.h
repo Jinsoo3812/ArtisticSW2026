@@ -36,4 +36,8 @@ protected:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> EquippedBorder;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> SlotFrameBorder;
+	
 };

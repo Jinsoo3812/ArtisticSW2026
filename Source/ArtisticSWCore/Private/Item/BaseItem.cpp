@@ -23,7 +23,7 @@ ABaseItem::ABaseItem()
 
 	bReplicates = true;
 	SetReplicateMovement(true);
-	ItemState = EItemState::Dropped_Simulating;
+	ItemState = EItemState::Dropped_Simulating;	
 }
 
 TSubclassOf<UGameplayAbility> ABaseItem::GetGrantedAbilityClass() const

@@ -4,15 +4,15 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
-#include "WaveSystem/Data/WaveSpawnTypes.h"
 #include "BaseCharacter.h"
+
+#include "EnemyDropData.h"
 
 #include "BaseEnemy.generated.h"
 
 class UAbilitySystemComponent;
 class UPathMovement;
 class UBaseWeaponComponent;
-class UEnemyWaypointMoveComponent;
 class AEnemyPathActor;
 class AEnemySpawnPoint;
 
@@ -21,8 +21,6 @@ class UBehaviorTree;
 class ABaseAIController;
 class ABaseWeapon;
 class UWeaponDataAsset;
-
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBaseEnemyDeathNotifiedSignature, ABaseEnemy*, Enemy, EWaveEnemyRemoveReason, Reason);
 
 UCLASS()
 class ENEMY_API ABaseEnemy : public ABaseCharacter
@@ -66,15 +64,6 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Path")
     TObjectPtr<UPathMovement> PathMovement = nullptr;
 	
-	// WaypointMove
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UEnemyWaypointMoveComponent> WaypointMoveComponent;
-
-	// ------------------- GameMode
-	// Death 중복 방지
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Damage")
-	bool bDeathHandled = false;
-	
 public:
 	ABaseEnemy();
 
@@ -106,7 +95,6 @@ protected:
 	//  ASC Owner가 State.Dead Tag를 가질 때, 호출되는 함수
 	virtual void OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 
-	FVector GetVelocity() const override;
 public:
 	UFUNCTION(BlueprintCallable, Category="Path")
 	void InitializePathMovement(AEnemyPathActor* InPath, float InStartDistance, bool bStartImmediately = true);
@@ -114,12 +102,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Path")
 	void InitializePathMovementFromSpawnPoint(AEnemySpawnPoint* InSpawnPoint, bool bStartImmediately = true);
 
-	/**
-	* Enemy Death를 외부 Wave 시스템에 알리는 Delegate.
-	* - AWaveSpawnManager가 이 Delegate에 바인딩해서 AliveEnemyCount를 감소시킨다.
-	*/
-	UPROPERTY(BlueprintAssignable, Category = "Wave|Events")
-	FOnBaseEnemyDeathNotifiedSignature OnBaseEnemyDeathNotified;
+	
 public:
 	// Getters
 	// 일단 개발 중이므로, check를 넣었지만, 일부 BeginPlay 이전에는 nullptr 날 수 있음
@@ -129,5 +112,33 @@ public:
 	FORCEINLINE TObjectPtr<UBaseWeaponComponent> GetWeaponComponent() const { check(WeaponComponent) return WeaponComponent; }
 	FORCEINLINE TObjectPtr<UPathMovement> GetPathMovementComponent() const { check(PathMovement) return PathMovement;}
 	FORCEINLINE virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { check(AbilitySystemComponent) return AbilitySystemComponent; }
-	FORCEINLINE UEnemyWaypointMoveComponent* GetWaypointMoveComponent() const {return WaypointMoveComponent;}
+
+	/*---- For Drop ----*/
+	// 추후 위치 수정
+protected:
+
+	// 드랍 관련 데이터 테이블 (CSV 파일)
+	UPROPERTY(EditDefaultsOnly, Category = "Drop")
+	TObjectPtr<UDataTable> EnemyDropDataTable;
+
+	// 적 종류를 구분하는 태그 -> 해당 태그로 데이터가 있는 Row 검색
+	UPROPERTY(EditDefaultsOnly, Category = "Drop")
+	FGameplayTag EnemyTypeTag;
+
+	// 적 하나가 드랍할 아이템들에 대한 정보를 담은 구조체
+	UPROPERTY()
+	FEnemyDropData EnemyDropData;
+
+	// 한 번 드랍 했는지 확인하는 변수
+	UPROPERTY()
+	bool bHasDropped = false;
+
+public:
+	
+	//Data Table의 전체 데이터중 자신에게 해당하는 데이터를 가져오는 함수
+	void InitializeEnemyDropData();
+
+	// 실제 아이템을 Drop하는 함수
+	UFUNCTION(BlueprintCallable)
+	void Drop();
 };
