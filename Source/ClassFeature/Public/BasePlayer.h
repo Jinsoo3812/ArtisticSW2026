@@ -453,7 +453,7 @@ public:
 	void OnRep_EquippedItem();
 
 	// ItemSlot 구조체 배열 (복제)
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category = "Item")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_ItemSlots, Category = "Item")
 	TArray<FItemSlot> ItemSlots;
 
 	// 특정 슬롯의 Item을 제거하고 부여된 GA를 회수

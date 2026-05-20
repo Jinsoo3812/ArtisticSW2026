@@ -28,6 +28,8 @@ struct FItemFeatureData : public FTableRowBase
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Feature")
 	FName AttachmentSocketName = FName("GripPoint");
 
+
+
 	// MaxStack 등 필요한 기획 수치 추가...
 };
 
@@ -78,6 +80,10 @@ struct FItemDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	TArray<FGameplayTag> CanUseClassList;
 
+	// max stack 수 일단은 여기 추가햇습니다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Feature")
+	int32 MaxStack = 99;
+
 	// 필요하다면 아이템 이름, 아이콘(UI용 UTexture2D) 등도 여기에 추가
 };
 
@@ -103,6 +109,8 @@ public:
 
 	// 태그로 이름을 가져오는 함수
 	FText GetItemNameByTag(const FGameplayTag& ItemTag) const;
+
+	int32 GetMaxStackByTag(const FGameplayTag& ItemTag) const;
 };
 
 // Item 조합식을 정의하는 구조체

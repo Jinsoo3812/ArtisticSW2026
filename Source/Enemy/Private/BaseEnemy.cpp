@@ -5,6 +5,12 @@
 #include "Weapon/BaseWeapon.h"
 #include "Weapon/WeaponDataAsset.h"
 #include "Weapon/BaseWeaponComponent.h"
+
+// ArtisticSWCore
+#include "ItemSubsystem.h"
+
+// Enemy Folder
+#include "BaseAIController.h"
 #include "Component/PathMovement.h"
 #include "EnemyAttributeSet.h"
 #include "AI/EnemyPathActor.h"
@@ -18,6 +24,7 @@
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 ABaseEnemy::ABaseEnemy()
 {
@@ -74,6 +81,8 @@ void ABaseEnemy::BeginPlay()
 			WeaponComponent->InitializeLoadout(DefaultWeaponTag);
 		}
 	}
+
+	InitializeEnemyDropData();
 }
 
 TArray<FGameplayAbilitySpecHandle> ABaseEnemy::GrantAbilities(TArray<TSubclassOf<UGameplayAbility>> AbilitiesToGrant)
@@ -133,6 +142,7 @@ void ABaseEnemy::OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount
 {
 	if (NewCount > 0)
 	{
+		Drop();
 		// 죽었을 때
 		HandleDeath();
 	}
@@ -171,6 +181,93 @@ void ABaseEnemy::InitializePathMovementFromSpawnPoint(AEnemySpawnPoint* InSpawnP
 	);
 }
 
+void ABaseEnemy::InitializeEnemyDropData()
+{
+	// 데이터 테이블 전체를 가져옴
+	EnemyDropData = FEnemyDropData();
+	if (!EnemyDropDataTable || !EnemyTypeTag.IsValid())
+	{
+		return;
+	}
 
+	static const FString ContextString(TEXT("EnemyDropData"));
+	TArray<FEnemyDropDataRow*> Rows;
+	EnemyDropDataTable->GetAllRows(ContextString, Rows);
 
+	// 전체 데이터중 해당하는 Row 검색 후 데이터 가져옴
+	for (const FEnemyDropDataRow* Row : Rows)
+	{
+		if (!Row || Row->EnemyTag != EnemyTypeTag)
+		{
+			continue;
+		}
+		// 구조체 Tag랑 BaseEnemy TypeTag가 같을 때 아래 실행
 
+		EnemyDropData.EnemyTag = Row->EnemyTag;
+		EnemyDropData.DropItemCount = Row->DropItemCount;
+
+		// 드랍해야 하는 아이템 하나마다 Entry 구조체 하나를 가지게 됨
+		auto AddEntry = [this](const FGameplayTag& ItemTag, float Chance)
+			{
+				if (ItemTag.IsValid() && Chance > 0.f)
+				{
+					FEnemyDropEntry Entry;
+					Entry.ItemTag = ItemTag;
+					Entry.DropChance = Chance;
+					EnemyDropData.DropEntries.Add(Entry);
+				}
+			};
+
+		// Entry 구조체를 EnemyDropData 구조체에 전부 저장
+		// 드랍 할 정보는 EnemyDropData가 가지고 있음
+		AddEntry(Row->ItemTag_1, Row->DropChance_1);
+		AddEntry(Row->ItemTag_2, Row->DropChance_2);
+		AddEntry(Row->ItemTag_3, Row->DropChance_3);
+		break;
+	}
+}
+
+void ABaseEnemy::Drop()
+{
+	if (!HasAuthority() || bHasDropped)
+	{
+		return;
+	}
+	UE_LOG(LogTemp, Warning, TEXT("Drop Called"));
+
+	bHasDropped = true;
+
+	// DropData 구조체에 저장된 Entry(드랍템 개수)만큼 반복
+	for (const FEnemyDropEntry& Entry : EnemyDropData.DropEntries)
+	{
+		if (!Entry.ItemTag.IsValid())
+		{
+			continue;
+		}
+
+		// 랜덤 수가 확률 이하일 때 드랍
+		if (FMath::FRand() > Entry.DropChance)
+		{
+			continue;
+		}
+
+		// 아이템 서브시스템 생성
+		UWorld* World = GetWorld();
+		UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>();
+
+		const FVector SpawnLoc =
+			GetActorLocation()
+			+ FVector(FMath::RandRange(-50.f, 50.f), FMath::RandRange(-50.f, 50.f), 30.f);
+
+		const FTransform SpawnTransform(GetActorRotation(), SpawnLoc);
+
+		// 스폰
+		ABaseItem* SpawnedItem =
+			ItemSubsystem->SpawnItem(Entry.ItemTag, SpawnTransform, EItemState::Dropped_Simulating, this);
+
+		if (SpawnedItem)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Dropped"));
+		}
+	}
+}

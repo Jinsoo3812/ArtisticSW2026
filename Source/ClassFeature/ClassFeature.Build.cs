@@ -25,7 +25,9 @@ public class ClassFeature: ModuleRules
             "GASCore",          // <--- BaseCharacter, GASInputID.h를 위해 필요
             "ArtisticSWCore",   // <--- BaseItem.h를 위해 필요
             "InputCore",
-            "ArtisticSW2026"
+            "ArtisticSW2026",
+            "Slate",            // <--- PlayetHYDWidget.h를 위해 필요
+            "SlateCore"         // <--- PlayetHYDWidget.h를 위해 필요
         });
 
         PublicIncludePaths.AddRange(new string[] {

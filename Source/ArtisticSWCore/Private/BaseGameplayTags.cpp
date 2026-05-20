@@ -72,6 +72,11 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Material_Submunition_Trap, "Item.Material.Submunitio
 // Enemy
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Sword, "Item.EnemyWeapon.Sword");
 
+// Enemy Type
+// 적 구분 태그
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Animal_Test, "Enemy.Type.Animal.Test");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Undead_Test, "Enemy.Type.Undead.Test");
+
 
 /* Default - Keyboard & Mouse */
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse, "Key.Default.Mouse");

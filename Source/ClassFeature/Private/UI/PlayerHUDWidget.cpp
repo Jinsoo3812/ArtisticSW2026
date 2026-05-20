@@ -10,6 +10,13 @@
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
 #include "Components/Border.h"
+#include "UI/InventoryCursorWidget.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
+
+#include "BaseGameplayTags.h"
+
 #include "BaseItem.h"
 
 
@@ -20,6 +27,24 @@ void UPlayerHUDWidget::NativeConstruct()
 	if (InventoryPanel)
 	{
 		InventoryPanel->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	if (RootCanvasPanel && InventoryCursorWidgetClass && !InventoryCursorWidget)
+	{
+		InventoryCursorWidget = CreateWidget<UInventoryCursorWidget>(this, InventoryCursorWidgetClass);
+
+		if (InventoryCursorWidget)
+		{
+			RootCanvasPanel->AddChild(InventoryCursorWidget);
+
+			if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(InventoryCursorWidget->Slot))
+			{
+				CanvasSlot->SetAutoSize(true);
+				CanvasSlot->SetZOrder(999);
+			}
+
+			InventoryCursorWidget->ClearCursorItem();
+		}
 	}
 }
 
@@ -36,6 +61,14 @@ void UPlayerHUDWidget::NativeDestruct()
 	}
 
 	Super::NativeDestruct();
+}
+
+void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	RefreshCursorItemWidget();
+	UpdateCursorItemWidgetPosition();
 }
 
 void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
@@ -73,6 +106,15 @@ void UPlayerHUDWidget::SetInventoryVisible(bool bVisible)
 		return;
 	}
 
+	// 인벤토리를 닫을 때 커서 아이템 자동 복귀
+	if (!bVisible && CachedPlayer.IsValid())
+	{
+		if (UInventoryComponent* InventoryComp = CachedPlayer->GetInventoryComponent())
+		{
+			InventoryComp->ServerHandleRightClickInventory();
+		}
+	}
+
 	InventoryPanel->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 
 	if (bVisible)
@@ -98,39 +140,67 @@ void UPlayerHUDWidget::HandleItemSlotsChanged()
 
 void UPlayerHUDWidget::RefreshQuickSlots()
 {
-	if (!QuickSlotBox)
+	if (!QuickSlotBox || !QuickSlotEntryClass)
 	{
 		return;
 	}
 
-	QuickSlotBox->ClearChildren();
+	constexpr int32 QuickSlotCount = 3;
 
-	if (!CachedPlayer.IsValid() || !QuickSlotEntryClass)
+	if (QuickSlotEntries.Num() != QuickSlotCount || QuickSlotBox->GetChildrenCount() != QuickSlotCount)
 	{
-		return;
+		QuickSlotBox->ClearChildren();
+		QuickSlotEntries.Reset();
+
+		for (int32 Index = 0; Index < QuickSlotCount; ++Index)
+		{
+			UQuickSlotEntryWidget* EntryWidget = CreateWidget<UQuickSlotEntryWidget>(this, QuickSlotEntryClass);
+			if (!EntryWidget)
+			{
+				continue;
+			}
+
+			EntryWidget->SetVisibility(ESlateVisibility::Visible);
+			QuickSlotBox->AddChild(EntryWidget);
+			QuickSlotEntries.Add(EntryWidget);
+		}
 	}
 
-	for (const FItemSlot& QuickSlot : CachedPlayer->ItemSlots)
+	const FGameplayTag FallbackSlotTags[QuickSlotCount] =
 	{
-		UQuickSlotEntryWidget* EntryWidget = CreateWidget<UQuickSlotEntryWidget>(this, QuickSlotEntryClass);
+		Key_Item_1,
+		Key_Item_2,
+		Key_Item_3
+	};
+
+	for (int32 Index = 0; Index < QuickSlotEntries.Num(); ++Index)
+	{
+		UQuickSlotEntryWidget* EntryWidget = QuickSlotEntries[Index];
 		if (!EntryWidget)
 		{
 			continue;
 		}
 
+		FGameplayTag SlotTag = FallbackSlotTags[Index];
 		UTexture2D* Icon = nullptr;
-		FText ItemName = FText::FromString(TEXT("Empty"));
+		FText ItemName = FText::GetEmpty();
+		bool bEquipped = false;
 
-		if (IsValid(QuickSlot.Item))
+		if (CachedPlayer.IsValid() && CachedPlayer->ItemSlots.IsValidIndex(Index))
 		{
-			Icon = QuickSlot.Item->GetItemIcon();
-			ItemName = QuickSlot.Item->GetItemNameText();
+			const FItemSlot& QuickSlot = CachedPlayer->ItemSlots[Index];
+			SlotTag = QuickSlot.KeyTag.IsValid() ? QuickSlot.KeyTag : SlotTag;
+
+			if (IsValid(QuickSlot.Item))
+			{
+				Icon = QuickSlot.Item->GetItemIcon();
+				ItemName = QuickSlot.Item->GetItemNameText();
+				bEquipped = (QuickSlot.Item == CachedPlayer->EquippedItem);
+			}
 		}
 
-		const bool bEquipped = (QuickSlot.Item == CachedPlayer->EquippedItem);
-
-		EntryWidget->SetupFromData(QuickSlot.KeyTag, ItemName, Icon, bEquipped);
-		QuickSlotBox->AddChild(EntryWidget);
+		EntryWidget->SetVisibility(ESlateVisibility::Visible);
+		EntryWidget->SetupFromData(SlotTag, ItemName, Icon, bEquipped);
 	}
 }
 
@@ -154,34 +224,104 @@ void UPlayerHUDWidget::RefreshInventory()
 		return;
 	}
 
-	const TArray<FInventoryMaterialEntry>& Materials = InventoryComp->GetMaterials();
+	const TArray<FInventorySlot>& Slots = InventoryComp->GetSlots();
+	const int32 Columns = InventoryComp->GetInventoryColumns();
+	const int32 SlotCount = InventoryComp->GetSlotCount();
 
-	for (int32 Index = 0; Index < Materials.Num(); ++Index)
+	for (int32 Index = 0; Index < SlotCount; ++Index)
 	{
-		const FInventoryMaterialEntry& Entry = Materials[Index];
-
 		UInventoryEntryWidget* EntryWidget = CreateWidget<UInventoryEntryWidget>(this, InventoryEntryClass);
 		if (!EntryWidget)
 		{
 			continue;
 		}
 
-		EntryWidget->SetupFromData(
-			InventoryComp->GetMaterialName(Entry.ItemTag),
-			Entry.Count,
-			InventoryComp->GetMaterialIcon(Entry.ItemTag)
-		);
+		if (Slots.IsValidIndex(Index) && !Slots[Index].IsEmpty())
+		{
+			const FInventorySlot& InventorySlot = Slots[Index];
+
+			EntryWidget->SetupFromData(
+				InventoryComp->GetMaterialName(InventorySlot.ItemTag),
+				InventorySlot.Count,
+				InventoryComp->GetMaterialIcon(InventorySlot.ItemTag),
+				Index
+			);
+		}
+		else
+		{
+			EntryWidget->SetupAsEmpty(Index);
+		}
 
 		UUniformGridSlot* GridSlot = InventoryGridPanel->AddChildToUniformGrid(
 			EntryWidget,
-			Index / 4,   // Row
-			Index % 4    // Column
+			Index / Columns,
+			Index % Columns
 		);
 
 		if (GridSlot)
 		{
-			GridSlot->SetHorizontalAlignment(HAlign_Center);
-			GridSlot->SetVerticalAlignment(VAlign_Center);
+			GridSlot->SetHorizontalAlignment(HAlign_Fill);
+			GridSlot->SetVerticalAlignment(VAlign_Fill);
 		}
+	}
+}
+
+void UPlayerHUDWidget::RefreshCursorItemWidget()
+{
+	if (!InventoryCursorWidget || !CachedPlayer.IsValid())
+	{
+		return;
+	}
+
+	UInventoryComponent* InventoryComp = CachedPlayer->GetInventoryComponent();
+	if (!InventoryComp)
+	{
+		InventoryCursorWidget->ClearCursorItem();
+		return;
+	}
+
+	const FInventoryCursorItem& CursorItem = InventoryComp->GetCursorItem();
+
+	if (!CursorItem.IsValid())
+	{
+		InventoryCursorWidget->ClearCursorItem();
+		return;
+	}
+
+	InventoryCursorWidget->SetupCursorItem(
+		InventoryComp->GetMaterialIcon(CursorItem.ItemTag),
+		CursorItem.Count
+	);
+}
+
+void UPlayerHUDWidget::UpdateCursorItemWidgetPosition()
+{
+	if (!InventoryCursorWidget || InventoryCursorWidget->GetVisibility() == ESlateVisibility::Collapsed)
+	{
+		return;
+	}
+
+	APlayerController* PC = GetOwningPlayer();
+	if (!PC)
+	{
+		return;
+	}
+
+	float MouseX = 0.0f;
+	float MouseY = 0.0f;
+
+	if (!PC->GetMousePosition(MouseX, MouseY))
+	{
+		return;
+	}
+
+	const float ViewportScale = UWidgetLayoutLibrary::GetViewportScale(this);
+
+	const FVector2D MousePosition(MouseX / ViewportScale, MouseY / ViewportScale);
+
+	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(InventoryCursorWidget->Slot))
+	{
+		// 마우스 포인터보다 살짝 오른쪽 아래에 보이게 오프셋
+		CanvasSlot->SetPosition(MousePosition + FVector2D(12.0f, 12.0f));
 	}
 }

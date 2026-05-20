@@ -12,11 +12,8 @@ DECLARE_MULTICAST_DELEGATE(FOnInventoryChanged);
 class UItemData;
 class UTexture2D;
 
-/*
-* 인벤토리 한 칸에 담는 정보를 담당하는 구조체 (아이템 개수, 태그)
-*/
 USTRUCT(BlueprintType)
-struct FInventoryMaterialEntry
+struct FInventorySlot
 {
 	GENERATED_BODY()
 
@@ -25,6 +22,44 @@ struct FInventoryMaterialEntry
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
 	int32 Count = 0;
+
+	bool IsEmpty() const
+	{
+		return !ItemTag.IsValid() || Count <= 0;
+	}
+
+	void Clear()
+	{
+		ItemTag = FGameplayTag();
+		Count = 0;
+	}
+};
+
+USTRUCT(BlueprintType)
+struct FInventoryCursorItem
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	FGameplayTag ItemTag;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	int32 Count = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	int32 OriginalSlotIndex = INDEX_NONE;
+
+	bool IsValid() const
+	{
+		return ItemTag.IsValid() && Count > 0 && OriginalSlotIndex != INDEX_NONE;
+	}
+
+	void Clear()
+	{
+		ItemTag = FGameplayTag();
+		Count = 0;
+		OriginalSlotIndex = INDEX_NONE;
+	}
 };
 
 /*
@@ -39,56 +74,70 @@ public:
 	// Sets default values for this component's properties
 	UInventoryComponent();
 
+	virtual void BeginPlay() override;
+
 	// 리플리케이션을 위함
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	/**
-	 * 인벤토리에 아이템 추가
-	 * @param ItemTag 추가할 아이템의 태그 (ex. Item.Material.Ore)
-	 * @param Amount 추가할 아이템의 양 (ex. 1, 2, 3, ...)
-	 * @return 추가 성공시 true
-	 */
-	bool AddMaterial(const FGameplayTag& ItemTag, int32 Amount = 1);
-
-	/**
-	 * 인벤토리에 아이템 제거
-	 * @param ItemTag 제거할 아이템의 태그 (ex. Item.Material.Ore)
-	 * @param Amount 제거할 아이템의 양 (ex. 1, 2, 3, ...)
-	 * @return 제거 성공시 true
-	 */
+	//인벤토리에 아이템 추가
+	int32 AddMaterial(const FGameplayTag& ItemTag, int32 Amount = 1);
+	//인벤토리에 아이템 제거
 	bool RemoveMaterial(const FGameplayTag& ItemTag, int32 Amount = 1);
-
-	/**
-	 * 인벤토리 배열 Getter
-	 * @return Materials 인벤토리 배열
-	 */
-	const TArray<FInventoryMaterialEntry>& GetMaterials() const { return InventoryContents; }
-
-	/**
-	 * 해당 태그의 아이템 개수 Getter
-	 * @param ItemTag 개수 확인이 필요한 아이템 태그  (ex. Item.Material.Ore)
-	 * @return 인벤토리 배열 내 동일한 태그 아이템 개수 반환
-	 */
+	// Tag 아이템 총 개수 반환
 	int32 GetMaterialCount(const FGameplayTag& ItemTag) const;
+
+	// 하나의 특정 슬롯 Getter
+	const TArray<FInventorySlot>& GetSlots() const { return InventorySlots; }
+	// 커서에 달린 아이템 Getter
+	const FInventoryCursorItem& GetCursorItem() const { return CursorItem; }
+
+	//인벤토리 Row Getter
+	int32 GetInventoryRows() const { return InventoryRows; }
+	//인벤토리 Col Getter
+	int32 GetInventoryColumns() const { return InventoryColumns; }
+	//인벤토리 총 슬롯 개수 Getter
+	int32 GetSlotCount() const { return InventoryRows * InventoryColumns; }
+
+	// 인벤토리 내 아이템 MaxStack Getter
+	int32 GetMaxStack(const FGameplayTag& ItemTag) const;
+	// 인벤토리 내 아이템 아이콘 Getter
+	UTexture2D* GetMaterialIcon(const FGameplayTag& ItemTag) const;
+	// 인벤토리 내 아이템 이름 Getter
+	FText GetMaterialName(const FGameplayTag& ItemTag) const;
+
+	// 인벤토리 좌클릭 
+	void HandleLeftClickSlot(int32 SlotIndex);
+	// 인벤토리 우클릭 
+	void HandleRightClickInventory();
+	// 커서 아이템 원래 위치로 복귀
+	void ReturnCursorToOriginalSlot();
+
+	UFUNCTION(Server, Reliable)
+	void ServerHandleLeftClickSlot(int32 SlotIndex);
+	UFUNCTION(Server, Reliable)
+	void ServerHandleRightClickInventory();
 
 	// 인벤토리에 변경 사항이 있을 때 브로드캐스트 되는 델리게이트 ex. UI 업데이트 
 	FOnInventoryChanged OnInventoryChanged;
 
-	// 인벤토리 내 아이템 아이콘 Getter
-	UTexture2D* GetMaterialIcon(const FGameplayTag& ItemTag) const;
-
-	// 인벤토리 내 아이템 이름 Getter
-	FText GetMaterialName(const FGameplayTag& ItemTag) const;
-
 protected:
-	// 인벤토리 내 아이템을 보관하는 배열 <FInventoryMaterialEntry>
-	// 서버로부터 새 Materials 배열을 받았을 때, OnRep_InventoryContents를 자동으로 호출하여 브로드캐스트 하게 함
+	// 인벤토리 세로 칸 수
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")
+	int32 InventoryRows = 5;
+	// 인벤토리 가로 칸 수
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")
+	int32 InventoryColumns = 6;
+	// 인벤토리 슬롯 배열
 	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_InventoryContents, Category = "Inventory")
-	TArray<FInventoryMaterialEntry> InventoryContents;
+	TArray<FInventorySlot> InventorySlots;
+	// 커서에 붙어 있는 아이템
+	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_InventoryContents, Category = "Inventory")
+	FInventoryCursorItem CursorItem;
 
 	// 인벤토리에서 아이템 조회를 위한 ItemData
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")
 	TObjectPtr<UItemData> ItemData;
+
 
 	/**
 	 * 브로드캐스트를 위한 함수
