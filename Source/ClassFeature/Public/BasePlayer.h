@@ -18,6 +18,7 @@ struct FInputActionValue;
 class ABaseItem;
 class UInputTagConfig;
 class UInventoryComponent;
+class UBasePlayerAnimStateComponent;
 class UAnimMontage;
 
 // Item Slot 관리 구조체
@@ -50,6 +51,8 @@ UCLASS(Config = Game)
 class CLASSFEATURE_API ABasePlayer : public ABaseCharacter
 {
 	GENERATED_BODY()
+	friend class UBasePlayerAnimStateComponent;
+
 public:
 	ABasePlayer();
 
@@ -355,6 +358,7 @@ protected:
 	void UpdateCombatMovementState();
 	void UpdateMaxWalkSpeed();
 	void ClearMovementRequests();
+	void SyncAnimationStateFromComponent();
 	void ApplyCombatRotationMode(bool bEnableCombatRotation);
 	void StartFallOffStart();
 	void StopFallOffStart();
@@ -573,6 +577,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
 	TObjectPtr<UInventoryComponent> InventoryComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UBasePlayerAnimStateComponent> AnimStateComponent;
+
 public:
 	UFUNCTION()
 	void OnRep_ItemSlots();
@@ -581,4 +588,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	UInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Animation")
+	UBasePlayerAnimStateComponent* GetAnimStateComponent() const { return AnimStateComponent; }
 };

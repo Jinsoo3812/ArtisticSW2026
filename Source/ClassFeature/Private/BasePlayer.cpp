@@ -22,6 +22,7 @@
 #include "Components/WidgetComponent.h"
 #include "InteractableComponent.h"
 #include "InteractUserWidget.h"
+#include "Animation/BasePlayerAnimStateComponent.h"
 #include "Inventory/InventoryComponent.h"
 #include "ItemSubSystem.h"
 #include "Animation/AnimInstance.h"
@@ -65,6 +66,7 @@ ABasePlayer::ABasePlayer()
 
 	// 인벤토리 컴포넌트 부착
 	InventoryComponent = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComponent"));
+	AnimStateComponent = CreateDefaultSubobject<UBasePlayerAnimStateComponent>(TEXT("AnimStateComponent"));
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
@@ -112,10 +114,12 @@ void ABasePlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	UpdateAnimationMovementState(DeltaTime);
-	UpdateMovementRequestState(DeltaTime);
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->UpdateAnimationState(DeltaTime);
+		SyncAnimationStateFromComponent();
+	}
 	UpdateMaxWalkSpeed();
-	UpdateCombatMovementState();
 
 	bool bIsSniping = false;
 	bool bIsAiming = false;
@@ -160,6 +164,54 @@ void ABasePlayer::Tick(float DeltaTime)
 		const float TargetFOV = bIsSniping ? SnipingFOV : DefaultFOV;
 		FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, TargetFOV, DeltaTime, CameraInterpSpeed));
 	}
+}
+
+void ABasePlayer::SyncAnimationStateFromComponent()
+{
+	if (!AnimStateComponent)
+	{
+		return;
+	}
+
+	bIsInAir = AnimStateComponent->bIsInAir;
+	bIsPhysicallyInAir = AnimStateComponent->bIsPhysicallyInAir;
+	bIsJumping = AnimStateComponent->bIsJumping;
+	bIsFallOffStart = AnimStateComponent->bIsFallOffStart;
+	bIsLanding = AnimStateComponent->bIsLanding;
+	bLandingRequested = AnimStateComponent->bLandingRequested;
+	bCanEnterLand = AnimStateComponent->bCanEnterLand;
+	bCanEnterGround = AnimStateComponent->bCanEnterGround;
+	GroundSpeed = AnimStateComponent->GroundSpeed;
+	VerticalSpeed = AnimStateComponent->VerticalSpeed;
+	bHasMoveInput = AnimStateComponent->bHasMoveInput;
+	bPrevHasMoveInput = AnimStateComponent->bPrevHasMoveInput;
+	MoveInputSize = AnimStateComponent->MoveInputSize;
+	CachedMoveInput = AnimStateComponent->CachedMoveInput;
+	bIsSprinting = AnimStateComponent->bIsSprinting;
+	MoveInputHeldTime = AnimStateComponent->MoveInputHeldTime;
+	CurrentStartToLoopDelay = AnimStateComponent->CurrentStartToLoopDelay;
+	bUseStartDatabase = AnimStateComponent->bUseStartDatabase;
+	bGroundStartFinished = AnimStateComponent->bGroundStartFinished;
+	bPendingGroundStartFinish = AnimStateComponent->bPendingGroundStartFinish;
+	bStartWasSprinting = AnimStateComponent->bStartWasSprinting;
+	bUseLoopDatabase = AnimStateComponent->bUseLoopDatabase;
+	bUseSharpTurnDatabase = AnimStateComponent->bUseSharpTurnDatabase;
+	bStartRequested = AnimStateComponent->bStartRequested;
+	bStopRequested = AnimStateComponent->bStopRequested;
+	MoveInputTurnAngle = AnimStateComponent->MoveInputTurnAngle;
+	bSharpTurnRequested = AnimStateComponent->bSharpTurnRequested;
+	PreviousMoveInputForTurn = AnimStateComponent->PreviousMoveInputForTurn;
+	LastFallSpeed = AnimStateComponent->LastFallSpeed;
+	LandStartGroundSpeed = AnimStateComponent->LandStartGroundSpeed;
+	LandStartFallSpeed = AnimStateComponent->LandStartFallSpeed;
+	bLandWasMoving = AnimStateComponent->bLandWasMoving;
+	bLandWasSprinting = AnimStateComponent->bLandWasSprinting;
+	bUseHeavyLand = AnimStateComponent->bUseHeavyLand;
+	MovementDirection = AnimStateComponent->MovementDirection;
+	CombatInputForward = AnimStateComponent->CombatInputForward;
+	CombatInputRight = AnimStateComponent->CombatInputRight;
+	CombatForwardSpeed = AnimStateComponent->CombatForwardSpeed;
+	CombatRightSpeed = AnimStateComponent->CombatRightSpeed;
 }
 
 void ABasePlayer::PossessedBy(AController* NewController)
@@ -915,6 +967,10 @@ void ABasePlayer::Look(const FInputActionValue& Value)
 void ABasePlayer::DoMove(float Right, float Forward)
 {
 	CachedMoveInput = FVector2D(Right, Forward);
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->SetMoveInput(Right, Forward);
+	}
 
 	if (GetController() != nullptr)
 	{
@@ -932,6 +988,10 @@ void ABasePlayer::DoMove(float Right, float Forward)
 void ABasePlayer::StopMoveInput()
 {
 	CachedMoveInput = FVector2D::ZeroVector;
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->ClearMoveInput();
+	}
 }
 
 void ABasePlayer::DoLook(float Yaw, float Pitch)
@@ -951,27 +1011,11 @@ void ABasePlayer::DoLook(float Yaw, float Pitch)
 
 void ABasePlayer::DoJumpStart()
 {
-	GetWorldTimerManager().ClearTimer(JumpStartTimerHandle);
-	GetWorldTimerManager().ClearTimer(LandingTimerHandle);
-	GetWorldTimerManager().ClearTimer(LandingRequestTimerHandle);
-	StopFallOffStart();
-
-	bIsLanding = false;
-	bLandingRequested = false;
-	bCanEnterLand = false;
-	bCanEnterGround = false;
-	bIsInAir = true;
-	bWasInAir = true;
-	bSuppressFallOffStart = true;
-	bIsJumping = true;
-
-	GetWorldTimerManager().SetTimer(
-		JumpStartTimerHandle,
-		this,
-		&ABasePlayer::FinishJumpStart,
-		FMath::Max(0.1f, JumpStartMaxDuration),
-		false
-	);
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->HandleJumpStarted();
+		SyncAnimationStateFromComponent();
+	}
 
 	Jump();
 }
@@ -984,12 +1028,20 @@ void ABasePlayer::DoJumpEnd()
 void ABasePlayer::StartSprint()
 {
 	bIsSprinting = true;
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->bIsSprinting = true;
+	}
 	UpdateMaxWalkSpeed();
 }
 
 void ABasePlayer::StopSprint()
 {
 	bIsSprinting = false;
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->bIsSprinting = false;
+	}
 	UpdateMaxWalkSpeed();
 }
 
@@ -1148,6 +1200,11 @@ void ABasePlayer::UpdateCombatMovementState()
 
 void ABasePlayer::UpdateMaxWalkSpeed()
 {
+	if (!IsLocallyControlled() && !HasAuthority())
+	{
+		return;
+	}
+
 	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
 	if (!MovementComponent)
 	{
@@ -1196,6 +1253,13 @@ void ABasePlayer::ClearMovementRequests()
 
 void ABasePlayer::MarkGroundStartFinished()
 {
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->MarkGroundStartFinished();
+		SyncAnimationStateFromComponent();
+		return;
+	}
+
 	if (MoveInputHeldTime < MinStartDatabaseTime)
 	{
 		bPendingGroundStartFinish = true;
@@ -1210,6 +1274,13 @@ void ABasePlayer::MarkGroundStartFinished()
 
 void ABasePlayer::FinishJumpStart()
 {
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->FinishJumpStart();
+		SyncAnimationStateFromComponent();
+		return;
+	}
+
 	GetWorldTimerManager().ClearTimer(JumpStartTimerHandle);
 	bIsJumping = false;
 
@@ -1238,6 +1309,13 @@ void ABasePlayer::StartFallOffStart()
 
 void ABasePlayer::FinishFallOffStart()
 {
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->FinishFallOffStart();
+		SyncAnimationStateFromComponent();
+		return;
+	}
+
 	StopFallOffStart();
 }
 
@@ -1369,6 +1447,13 @@ void ABasePlayer::Landed(const FHitResult& Hit)
 
 	// 항상 Super를 먼저 호출해주어야 캐릭터 무브먼트의 기본 착지 로직이 꼬이지 않습니다.
 	Super::Landed(Hit);
+
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->HandleLanded(Hit);
+		SyncAnimationStateFromComponent();
+		return;
+	}
 
 	GetWorldTimerManager().ClearTimer(JumpStartTimerHandle);
 	StopFallOffStart();
