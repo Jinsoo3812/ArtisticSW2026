@@ -473,22 +473,6 @@ ASpawnRoute* AWaveSpawnManager::FindRouteById(FName RouteId) const
     return FoundRoute ? FoundRoute->Get() : nullptr;
 }
 
-void AWaveSpawnManager::ApplySpawnGroupModifiers_Implementation(ABaseEnemy* Enemy, const FSpawnGroupDefinition& SpawnGroupDefinition)
-{
-    if (!IsValid(Enemy))
-    {
-        return;
-    }
-
-    if (!FMath::IsNearlyEqual(SpawnGroupDefinition.SpeedMultiplier, 1.0f))
-    {
-        if (UCharacterMovementComponent* MovementComponent = Enemy->FindComponentByClass<UCharacterMovementComponent>())
-        {
-            MovementComponent->MaxWalkSpeed *= SpawnGroupDefinition.SpeedMultiplier;
-        }
-    }
-}
-
 void AWaveSpawnManager::BindToWaveGameMode()
 {
     if (!HasAuthority())
@@ -992,7 +976,7 @@ float AWaveSpawnManager::GetWaveTimeLimitForCurrentWave() const
     // 현재 FWaveDefinition에는 WaveTimeLimit 필드가 없다.
     // 이후 WaveSpawnTypes.h에 float WaveTimeLimit을 추가하면 여기서 해당 값을 반환하면 된다.
     // 0.f는 WaveGameMode에서 "시간 제한 없음"으로 취급된다.
-    return 0.f;
+    return FMath::Max(0.f, CurrentWaveDefinition.WaveTimeLimit);
 }
 
 bool AWaveSpawnManager::SpawnOneEnemyFromGroup(int32 SpawnGroupIndex, const FSpawnGroupDefinition& SpawnGroupDefinition, int32 SpawnOrdinalInGroup)
@@ -1059,7 +1043,12 @@ bool AWaveSpawnManager::SpawnOneEnemyFromGroup(int32 SpawnGroupIndex, const FSpa
     ++AliveEnemyCount;
 
     BindEnemyDelegates(SpawnedEnemy, WaypointMoveComponent);
-    ApplySpawnGroupModifiers(SpawnedEnemy, SpawnGroupDefinition);
+    
+    SpawnedEnemy->InitializeFromWaveSpawn(
+     SpawnGroupDefinition.HealthMultiplier,
+     SpawnGroupDefinition.SpeedMultiplier,
+     SpawnGroupDefinition.EnemyLevel
+ );
 
     UE_LOG(
         LogWaveSpawnManager,

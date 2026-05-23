@@ -152,6 +152,14 @@ public:
     float PreWaveDelay = 3.0f;
 
     /**
+     * 웨이브 제한 시간
+     * 0이하 = 제한 없음
+     * 0 초과 = 해당 시간 내에 클리어
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wave", meta = (ClampMin = "0.0", Units = "s"))
+    float WaveTimeLimit = 0.0f;
+    
+    /**
      * 이 Wave 안에서 실행할 SpawnGroup들.
      */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wave")
@@ -168,6 +176,8 @@ public:
      */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wave", meta = (ClampMin = "0.0", Units = "s"))
     float NextWaveDelay = 5.0f;
+
+    
 };
 
 /**

@@ -29,10 +29,24 @@ void AWaveGameMode::HandleAllPlayersReady()
 {
 	Super::HandleAllPlayersReady();
 
-	if (bAutoStartGameFlowWhenReady)
+	if (!bAutoStartGameFlowWhenReady)
 	{
-		StartGameFlow();
+		return;
 	}
+
+	// WaveSpawnManager가 아직 BeginPlay/Binding/DataReady를 끝내지 않았다면
+	// 여기서 시작 요청을 보내지 않고 NotifyWaveDataReady에서 다시 시도한다.
+	if (TotalWaveCount <= 0)
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[AWaveGameMode] Waiting for WaveData before starting game flow.")
+		);
+		return;
+	}
+
+	StartGameFlow();
 }
 
 void AWaveGameMode::StartGameFlow()
@@ -47,7 +61,24 @@ void AWaveGameMode::StartGameFlow()
 		return;
 	}
 
+	if (TotalWaveCount <= 0)
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("[AWaveGameMode] StartGameFlow blocked: WaveData is not ready yet.")
+		);
+		return;
+	}
+
 	bGameFlowStarted = true;
+
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("[AWaveGameMode] Game flow started. TotalWaveCount=%d"),
+		TotalWaveCount
+	);
 
 	SetPhase(EGamePhase::GameStarting);
 	OnGameStarted.Broadcast();
@@ -233,14 +264,23 @@ void AWaveGameMode::NotifyWaveDataReady_Implementation(int32 InTotalWaveCount)
 
 	TotalWaveCount = InTotalWaveCount;
 
-	UE_LOG(
-		LogTemp,
-		Log,
-		TEXT("[ASWWaveGameMode] WaveData ready. TotalWaveCount=%d"),
-		TotalWaveCount
-	);
-
 	SyncGameState();
+
+	// 플레이어 준비가 먼저 끝난 경우,
+	// WaveSpawnManager가 준비 완료된 이 시점에서 게임 흐름을 다시 시작한다.
+	if (bAutoStartGameFlowWhenReady &&
+		AreAllPlayersReady() &&
+		!bGameFlowStarted &&
+		!bGameEnded)
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[AWaveGameMode] Starting game flow after WaveData became ready.")
+		);
+
+		StartGameFlow();
+	}
 }
 
 void AWaveGameMode::NotifyWaveCountdownStarted_Implementation(
@@ -461,81 +501,27 @@ void AWaveGameMode::StartIntermission(int32 NextDisplayWaveNumber, float Duratio
 
 void AWaveGameMode::BeginPhaseRemainingTimer(float Duration)
 {
-	GetWorldTimerManager().ClearTimer(PhaseTickHandle);
-
-	if (Duration <= 0.f)
-	{
-		bHasPhaseEndTime = false;
-		PhaseEndTimeSeconds = 0.f;
-
-		if (ASWWaveGameState* GS = GetGameState<ASWWaveGameState>())
-		{
-			GS->SetRemainingPhaseTime(0.f);
-		}
-
-		return;
-	}
-
-	UWorld* World = GetWorld();
-	if (!World)
+	if (!HasAuthority())
 	{
 		return;
 	}
 
-	bHasPhaseEndTime = true;
-	PhaseEndTimeSeconds = World->GetTimeSeconds() + Duration;
-
-	UpdateRemainingPhaseTime();
-
-	GetWorldTimerManager().SetTimer(
-		PhaseTickHandle,
-		this,
-		&AWaveGameMode::UpdateRemainingPhaseTime,
-		0.1f,
-		true
-	);
+	if (ASWWaveGameState* GS = GetGameState<ASWWaveGameState>())
+	{
+		GS->SetPhaseCountdownFromDuration(Duration);
+	}
 }
 
 void AWaveGameMode::ClearPhaseRemainingTimer()
 {
-	GetWorldTimerManager().ClearTimer(PhaseTickHandle);
-
-	bHasPhaseEndTime = false;
-	PhaseEndTimeSeconds = 0.f;
+	if (!HasAuthority())
+	{
+		return;
+	}
 
 	if (ASWWaveGameState* GS = GetGameState<ASWWaveGameState>())
 	{
-		GS->SetRemainingPhaseTime(0.f);
-	}
-}
-
-void AWaveGameMode::UpdateRemainingPhaseTime()
-{
-	ASWWaveGameState* GS = GetGameState<ASWWaveGameState>();
-	if (!GS)
-	{
-		return;
-	}
-
-	if (!bHasPhaseEndTime)
-	{
-		GS->SetRemainingPhaseTime(0.f);
-		return;
-	}
-
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		GS->SetRemainingPhaseTime(0.f);
-		return;
-	}
-
-	const float Remaining = FMath::Max(PhaseEndTimeSeconds - World->GetTimeSeconds(), 0.f);
-	GS->SetRemainingPhaseTime(Remaining);
-
-	if (Remaining <= 0.f)
-	{
-		GetWorldTimerManager().ClearTimer(PhaseTickHandle);
+		GS->ClearPhaseCountdown();
 	}
 }
 
@@ -560,15 +546,8 @@ void AWaveGameMode::SyncGameState()
 void AWaveGameMode::ClearAllFlowTimers()
 {
 	GetWorldTimerManager().ClearTimer(IntermissionTimerHandle);
-	GetWorldTimerManager().ClearTimer(PhaseTickHandle);
 
-	bHasPhaseEndTime = false;
-	PhaseEndTimeSeconds = 0.f;
-
-	if (ASWWaveGameState* GS = GetGameState<ASWWaveGameState>())
-	{
-		GS->SetRemainingPhaseTime(0.f);
-	}
+	ClearPhaseRemainingTimer();
 }
 
 bool AWaveGameMode::IsLastWave(int32 DisplayWaveNumber) const

@@ -207,14 +207,6 @@ public:
     UFUNCTION(BlueprintPure, Category = "Wave|Route")
     ASpawnRoute* FindRouteById(FName RouteId) const;
 
-    /**
-     * SpawnGroup의 HealthMultiplier / SpeedMultiplier / EnemyLevel을 실제 Enemy에 적용하는 확장 지점.
-     * 기본 구현은 CharacterMovement MaxWalkSpeed에 SpeedMultiplier만 적용한다.
-     */
-    UFUNCTION(BlueprintNativeEvent, Category = "Wave|Enemy")
-    void ApplySpawnGroupModifiers(ABaseEnemy* Enemy, const FSpawnGroupDefinition& SpawnGroupDefinition);
-    virtual void ApplySpawnGroupModifiers_Implementation(ABaseEnemy* Enemy, const FSpawnGroupDefinition& SpawnGroupDefinition);
-
 private:
     // -------------------- GameMode binding
 

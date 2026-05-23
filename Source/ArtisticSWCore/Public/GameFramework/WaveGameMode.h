@@ -216,18 +216,7 @@ protected:
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Wave|Runtime")
 	int32 AliveEnemyCount = 0;
-
 	
-	/**
-	 * UI 표시용 Phase 남은 시간 계산에 사용.
-	 * Wave 데이터 자체를 소유하는 것이 아니라,
-	 * WaveSpawnManager가 보고한 duration을 기반으로 남은 시간을 표시한다.
-	 */
-	float PhaseEndTimeSeconds = 0.f;
-
-	bool bHasPhaseEndTime = false;
-
-	FTimerHandle PhaseTickHandle;
 	FTimerHandle IntermissionTimerHandle;
 
 public:
@@ -342,8 +331,6 @@ protected:
 	void BeginPhaseRemainingTimer(float Duration);
 
 	void ClearPhaseRemainingTimer();
-
-	void UpdateRemainingPhaseTime();
 
 	void SyncGameState();
 
