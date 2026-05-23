@@ -86,9 +86,7 @@ void AWaveManager::ProcessNextSpawn()
 
 	if (SpawnedEnemy)
 	{
-		// 1. PathMovement 초기화 및 자동 출발
-		SpawnedEnemy->InitializePathMovementFromSpawnPoint(CurrentTask.SpawnPoint, true);
-
+		SpawnedEnemy->SpawnDefaultController();
 		// 2. GameMode에 적 생성 알림 (++AliveEnemyCount)
 		if (WaveGameMode)
 		{

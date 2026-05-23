@@ -330,7 +330,7 @@ void ASWWaveGameMode::UpdateRemainingPhaseTime()
 		break;
 	}
 
-	GS->SetRemainingPhaseTime(FMath::Max(Remaining, 0.f));
+	//GS->SetRemainingPhaseTime(FMath::Max(Remaining, 0.f));
 }
 
 void ASWWaveGameMode::ClearAllFlowTimers()
@@ -342,7 +342,7 @@ void ASWWaveGameMode::ClearAllFlowTimers()
 
 	if (ASWWaveGameState* GS = GetGameState<ASWWaveGameState>())
 	{
-		GS->SetRemainingPhaseTime(0.f);
+		//GS->SetRemainingPhaseTime(0.f);
 	}
 }
 

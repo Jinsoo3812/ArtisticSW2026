@@ -11,13 +11,8 @@
 
 // Enemy Folder
 #include "BaseAIController.h"
-#include "Component/PathMovement.h"
 #include "EnemyAttributeSet.h"
-#include "AI/EnemyPathActor.h"
-#include "AI/EnemySpawnPoint.h"
-
-// Core
-#include "GameFramework/SWWaveGameMode.h"
+#include "WaveSystem/Route/EnemyWaypointMoveComponent.h"
 
 // Unreal
 #include "AbilitySystemComponent.h"
@@ -31,10 +26,13 @@ ABaseEnemy::ABaseEnemy()
 	PrimaryActorTick.bCanEverTick = true;
 	
 	bReplicates = true;
-	SetReplicateMovement(false);
+	SetReplicateMovement(true);
 	bAlwaysRelevant = true;
+
 	NetUpdateFrequency = 30.0f;
 	MinNetUpdateFrequency = 15.0f;
+	
+	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	
 	// ASC
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
@@ -47,13 +45,10 @@ ABaseEnemy::ABaseEnemy()
 
 	// Component
 	WeaponComponent = CreateDefaultSubobject<UBaseWeaponComponent>(TEXT("WeaponComponent"));
-	PathMovement = CreateDefaultSubobject<UPathMovement>(TEXT("PathMovementComponent"));
-	PathMovement->SetIsReplicated(true);
+	WaypointMoveComponent = CreateDefaultSubobject<UEnemyWaypointMoveComponent>(TEXT("WaypointMoveComponent"));
 
 	if (GetCharacterMovement())
-	{
-		GetCharacterMovement()->SetIsReplicated(false);
-	}
+		GetCharacterMovement()->SetIsReplicated(true);
 
 	
 	// State_Dead Tag를 감지하는 Delegate 등록
@@ -64,7 +59,6 @@ ABaseEnemy::ABaseEnemy()
 void ABaseEnemy::BeginPlay()
 {
 	Super::BeginPlay();
-	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
 	// StartingAbilities 능력 등록
 	if (AbilitySystemComponent && HasAuthority())
@@ -112,6 +106,24 @@ TArray<FGameplayAbilitySpecHandle> ABaseEnemy::GrantAbilities(TArray<TSubclassOf
 	return AbilitiesHandles;
 }
 
+
+void ABaseEnemy::NotifyRemovedFromWaveOnce(EWaveEnemyRemoveReason Reason)
+{
+	if (!HasAuthority() || bWaveRemoveNotified)
+	{
+		return;
+	}
+
+	bWaveRemoveNotified = true;
+
+	if (WaypointMoveComponent)
+	{
+		WaypointMoveComponent->StopRoute(true);
+	}
+
+	OnBaseEnemyDeathNotified.Broadcast(this, Reason);
+}
+
 void ABaseEnemy::HandleDeath_Implementation()
 {
 	// 사망 시 Death 처리
@@ -119,17 +131,6 @@ void ABaseEnemy::HandleDeath_Implementation()
 	GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GetCharacterMovement()->DisableMovement();
-
-	// 죽으면 경로 이동 중지
-	if (HasAuthority() && PathMovement)
-	{
-		PathMovement->StopPathMovement();
-
-		if (ASWWaveGameMode* GM = Cast<ASWWaveGameMode>(GetWorld()->GetAuthGameMode()))
-		{
-			GM->NotifyEnemyKilled();
-		}
-	}
 
 	
 	// Actor의 뒤와 위로 Impulse를 줘서 날아가도록 한다.
@@ -140,45 +141,40 @@ void ABaseEnemy::HandleDeath_Implementation()
 
 void ABaseEnemy::OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
-	if (NewCount > 0)
+	if (NewCount <= 0)
 	{
-		Drop();
-		// 죽었을 때
+		return;
+		// 이미 사망했을 때, 아무 처리하지 않음
+	}
+
+	if (!bDeathHandled)
+	{
+		bDeathHandled = true;
+
+		if (HasAuthority())
+		{
+			NotifyRemovedFromWaveOnce(EWaveEnemyRemoveReason::Death);
+			Drop();
+		}
+
 		HandleDeath();
 	}
-	else
-	{
-		// 캐릭터가 부활했을 때 처리할 로직을 여기에 작성
-	}
 }
 
-void ABaseEnemy::InitializePathMovement(AEnemyPathActor* InPath, float InStartDistance, bool bStartImmediately)
+void ABaseEnemy::InitializeFromWaveSpawn(float HealthMultiplier, float SpeedMultiplier, int32 EnemyLevel)
 {
-	if (!HasAuthority() || !PathMovement)
+	if (!HasAuthority())
 	{
 		return;
 	}
 
-	PathMovement->InitializePath(InPath, InStartDistance);
-
-	if (bStartImmediately)
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
-		PathMovement->StartPathMovement();
-	}
-}
-
-void ABaseEnemy::InitializePathMovementFromSpawnPoint(AEnemySpawnPoint* InSpawnPoint, bool bStartImmediately)
-{
-	if (!HasAuthority() || !PathMovement || !InSpawnPoint)
-	{
-		return;
+		Movement->MaxWalkSpeed *= FMath::Max(0.01f, SpeedMultiplier);
 	}
 
-	InitializePathMovement(
-		InSpawnPoint->GetAssignedPath(),
-		InSpawnPoint->GetClampedStartDistance(),
-		bStartImmediately
-	);
+	// 이후 AttributeSet 또는 GameplayEffect를 사용하여
+	// HealthMultiplier와 EnemyLevel을 실제 스탯에 반영
 }
 
 void ABaseEnemy::InitializeEnemyDropData()

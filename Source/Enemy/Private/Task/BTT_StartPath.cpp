@@ -11,7 +11,7 @@
 
 UBTT_StartPath::UBTT_StartPath()
 {
-	NodeName = TEXT("Start Path Movement");
+	NodeName = TEXT("Start Path");
 }
 
 
@@ -28,13 +28,5 @@ EBTNodeResult::Type UBTT_StartPath::ExecuteTask(UBehaviorTreeComponent& OwnerCom
 	{
 		return EBTNodeResult::Failed;
 	}
-
-	UPathMovement* PathMovement = Enemy->GetPathMovementComponent();
-	if (!PathMovement || !PathMovement->GetCurrentPath() || PathMovement->HasReachedGoal())
-	{
-		return EBTNodeResult::Failed;
-	}
-
-	PathMovement->StartPathMovement();
 	return EBTNodeResult::Succeeded;
 }

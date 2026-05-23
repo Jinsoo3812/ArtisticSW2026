@@ -27,13 +27,6 @@ EBTNodeResult::Type UBTT_EndPath::ExecuteTask(UBehaviorTreeComponent& OwnerComp,
 	{
 		return EBTNodeResult::Failed;
 	}
-
-	UPathMovement* PathMovement = Enemy->GetPathMovementComponent();
-	if (!PathMovement || !PathMovement->GetCurrentPath() || PathMovement->HasReachedGoal())
-	{
-		return EBTNodeResult::Failed;
-	}
-
-	PathMovement->StopPathMovement();
+	
 	return EBTNodeResult::Succeeded;
 }
