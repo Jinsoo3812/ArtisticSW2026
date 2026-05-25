@@ -51,7 +51,7 @@ public:
     void HandleJumpStarted();
 
     // Triggered on landing event from character movement
-    void HandleLanded(const FHitResult& Hit);
+    void HandleLanded(const FHitResult& Hit, float ImpactFallSpeed);
 
     // Forces immediate state transition
     void ForceStateTransition(ELocomotionState NewState);
@@ -61,10 +61,10 @@ public:
     void MarkGroundStartFinished() { NotifyStartFinished(); }
 
     UFUNCTION(BlueprintCallable, Category = "Locomotion|Stubs")
-    void FinishJumpStart() {}
+    void FinishJumpStart();
 
     UFUNCTION(BlueprintCallable, Category = "Locomotion|Stubs")
-    void FinishFallOffStart() {}
+    void FinishFallOffStart();
 
 protected:
     void CacheOwner();
@@ -243,6 +243,8 @@ public:
     FTimerHandle StartFallbackTimerHandle;
     FTimerHandle StopFallbackTimerHandle;
     FTimerHandle LandingFallbackTimerHandle;
+    FTimerHandle FallOffStartTimerHandle;
+    FTimerHandle JumpStartTimerHandle;
 
 protected:
     UPROPERTY(Transient)

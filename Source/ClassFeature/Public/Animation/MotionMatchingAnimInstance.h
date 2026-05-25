@@ -133,6 +133,9 @@ public:
     virtual void NativeInitializeAnimation() override;
     virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
+    UFUNCTION(BlueprintPure, Category = "Motion Matching", meta = (BlueprintThreadSafe))
+    UPoseSearchDatabase* GetCurrentActivePoseSearchDatabaseThreadSafe() const;
+
 protected:
     virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
 
@@ -152,13 +155,40 @@ protected:
     UPROPERTY(BlueprintReadOnly, Category = "Motion Matching")
     TObjectPtr<UPoseSearchDatabase> CurrentActivePoseSearchDatabase;
 
-    // Pre-processed Chooser Boolean columns
+    // Pre-processed Chooser Boolean columns (1-to-1 mutually exclusive states)
     UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserUseRunStart;
+    bool bChooserIsIdle;
 
     UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserUseRunStop;
+    bool bChooserIsRunStart;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
+    bool bChooserIsSprintStart;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
+    bool bChooserIsRunLocomotion;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
+    bool bChooserIsSprintLocomotion;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
+    bool bChooserIsRunStop;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
+    bool bChooserIsSprintStop;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
+    bool bChooserIsJumpStart;
 
     UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
     bool bChooserIsInAir;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
+    bool bChooserIsLandingHeavy;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
+    bool bChooserIsLandingLight;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
+    bool bChooserIsFallOffStart;
 };

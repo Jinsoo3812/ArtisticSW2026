@@ -1,5 +1,6 @@
 #include "Animation/SWTrajectoryComponent.h"
 #include "UObject/UnrealType.h"
+#include "GameFramework/Actor.h"
 
 USWTrajectoryComponent::USWTrajectoryComponent(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
@@ -8,7 +9,13 @@ USWTrajectoryComponent::USWTrajectoryComponent(const FObjectInitializer& ObjectI
 
 void USWTrajectoryComponent::ResetTrajectoryHistory()
 {
-    // Clear the trajectory struct property using reflection
+    AActor* Owner = GetOwner();
+    if (!Owner) return;
+
+    FVector ActorLocation = Owner->GetActorLocation();
+    FQuat ActorQuat = Owner->GetActorQuat();
+
+    // Reset/Modify the trajectory struct property using reflection
     TArray<FName> PropertyNames = { FName("Trajectory"), FName("QueryTrajectory") };
     for (const FName& PropName : PropertyNames)
     {
@@ -16,10 +23,65 @@ void USWTrajectoryComponent::ResetTrajectoryHistory()
         {
             if (FStructProperty* StructProp = CastField<FStructProperty>(Prop))
             {
+                UScriptStruct* Struct = StructProp->Struct;
+                if (!Struct) continue;
+
                 void* PropPtr = StructProp->ContainerPtrToValuePtr<void>(this);
-                if (PropPtr)
+                if (!PropPtr) continue;
+
+                FArrayProperty* SamplesProp = CastField<FArrayProperty>(Struct->FindPropertyByName(TEXT("Samples")));
+                if (SamplesProp)
                 {
-                    StructProp->InitializeValue(PropPtr);
+                    FScriptArrayHelper ArrayHelper(SamplesProp, SamplesProp->ContainerPtrToValuePtr<void>(PropPtr));
+                    
+                    // Ensure the array has a safe minimum size (e.g. 30 samples) to prevent assertion crashes
+                    if (ArrayHelper.Num() < 30)
+                    {
+                        ArrayHelper.Resize(30);
+                    }
+
+                    // Get properties of the elements (FTransformTrajectorySample or FPoseSearchQueryTrajectorySample)
+                    UScriptStruct* ElementStruct = nullptr;
+                    if (FStructProperty* InnerStructProp = CastField<FStructProperty>(SamplesProp->Inner))
+                    {
+                        ElementStruct = InnerStructProp->Struct;
+                    }
+
+                    if (ElementStruct)
+                    {
+                        FProperty* PosProp = ElementStruct->FindPropertyByName(TEXT("Position"));
+                        FProperty* FacingProp = ElementStruct->FindPropertyByName(TEXT("Facing"));
+                        if (!FacingProp)
+                        {
+                            FacingProp = ElementStruct->FindPropertyByName(TEXT("Rotation"));
+                        }
+
+                        // Loop through all samples and set them to the current position/facing with zero speed
+                        for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+                        {
+                            uint8* ElementPtr = ArrayHelper.GetRawPtr(i);
+                            if (PosProp)
+                            {
+                                if (FStructProperty* PosStructProp = CastField<FStructProperty>(PosProp))
+                                {
+                                    if (PosStructProp->Struct == TBaseStructure<FVector>::Get())
+                                    {
+                                        PosStructProp->CopyCompleteValue(PosProp->ContainerPtrToValuePtr<void>(ElementPtr), &ActorLocation);
+                                    }
+                                }
+                            }
+                            if (FacingProp)
+                            {
+                                if (FStructProperty* FacingStructProp = CastField<FStructProperty>(FacingProp))
+                                {
+                                    if (FacingStructProp->Struct == TBaseStructure<FQuat>::Get())
+                                    {
+                                        FacingStructProp->CopyCompleteValue(FacingProp->ContainerPtrToValuePtr<void>(ElementPtr), &ActorQuat);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

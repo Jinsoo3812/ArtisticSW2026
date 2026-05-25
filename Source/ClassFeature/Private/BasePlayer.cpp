@@ -1494,7 +1494,7 @@ void ABasePlayer::Landed(const FHitResult& Hit)
 
 	if (AnimStateComponent)
 	{
-		AnimStateComponent->HandleLanded(Hit);
+		AnimStateComponent->HandleLanded(Hit, ImpactFallSpeed);
 		SyncAnimationStateFromComponent();
 		return;
 	}

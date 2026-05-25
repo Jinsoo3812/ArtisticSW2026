@@ -84,9 +84,18 @@ UMotionMatchingAnimInstance::UMotionMatchingAnimInstance()
 {
     bUseMultiThreadedAnimationUpdate = true;
 
-    bChooserUseRunStart = false;
-    bChooserUseRunStop = false;
+    bChooserIsIdle = false;
+    bChooserIsRunStart = false;
+    bChooserIsSprintStart = false;
+    bChooserIsRunLocomotion = false;
+    bChooserIsSprintLocomotion = false;
+    bChooserIsRunStop = false;
+    bChooserIsSprintStop = false;
+    bChooserIsJumpStart = false;
     bChooserIsInAir = false;
+    bChooserIsLandingHeavy = false;
+    bChooserIsLandingLight = false;
+    bChooserIsFallOffStart = false;
 }
 
 FAnimInstanceProxy* UMotionMatchingAnimInstance::CreateAnimInstanceProxy()
@@ -132,10 +141,64 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         return;
     }
 
-    // 1. Pre-process state priority checks for Chooser Table
-    bChooserUseRunStart = (CachedLocomotionStateComponent->CurrentState == ELocomotionState::Start);
-    bChooserUseRunStop = (CachedLocomotionStateComponent->CurrentState == ELocomotionState::Stop);
-    bChooserIsInAir = (CachedLocomotionStateComponent->CurrentState == ELocomotionState::InAir);
+    // 1. Reset and Pre-process state checks for Chooser Table (mutually exclusive)
+    bChooserIsIdle = false;
+    bChooserIsRunStart = false;
+    bChooserIsSprintStart = false;
+    bChooserIsRunLocomotion = false;
+    bChooserIsSprintLocomotion = false;
+    bChooserIsRunStop = false;
+    bChooserIsSprintStop = false;
+    bChooserIsJumpStart = false;
+    bChooserIsInAir = false;
+    bChooserIsLandingHeavy = false;
+    bChooserIsLandingLight = false;
+    bChooserIsFallOffStart = false;
+
+    if (CachedLocomotionStateComponent->bIsFallOffStart)
+    {
+        bChooserIsFallOffStart = true;
+    }
+    else
+    {
+        bool bSprinting = CachedLocomotionStateComponent->bIsSprinting;
+
+        switch (CachedLocomotionStateComponent->CurrentState)
+        {
+        case ELocomotionState::Idle:
+            bChooserIsIdle = true;
+            break;
+        case ELocomotionState::Start:
+            if (bSprinting) bChooserIsSprintStart = true;
+            else bChooserIsRunStart = true;
+            break;
+        case ELocomotionState::Locomotion:
+            if (bSprinting) bChooserIsSprintLocomotion = true;
+            else bChooserIsRunLocomotion = true;
+            break;
+        case ELocomotionState::Stop:
+            if (bSprinting) bChooserIsSprintStop = true;
+            else bChooserIsRunStop = true;
+            break;
+        case ELocomotionState::InAir:
+            if (CachedLocomotionStateComponent->bIsJumping)
+            {
+                bChooserIsJumpStart = true;
+            }
+            else
+            {
+                bChooserIsInAir = true;
+            }
+            break;
+        case ELocomotionState::Landing:
+            if (CachedLocomotionStateComponent->bUseHeavyLand) bChooserIsLandingHeavy = true;
+            else bChooserIsLandingLight = true;
+            break;
+        default:
+            bChooserIsIdle = true;
+            break;
+        }
+    }
 
     // 2. Evaluate Chooser Table to select the active UPoseSearchDatabase
     if (ChooserTable)
@@ -199,4 +262,9 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     FMotionMatchingAnimInstanceProxy& MyProxy = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>();
     MyProxy.ThreadSafeData = ThreadSafeData;
     MyProxy.CurrentActivePoseSearchDatabase = CurrentActivePoseSearchDatabase;
+}
+
+UPoseSearchDatabase* UMotionMatchingAnimInstance::GetCurrentActivePoseSearchDatabaseThreadSafe() const
+{
+    return CurrentActivePoseSearchDatabase;
 }

@@ -137,10 +137,6 @@ void ULocomotionAnimStateComponent::UpdateAnimationState(float DeltaTime)
     bIsCombatMode = CachedBasePlayer->bIsCombatMode;
 
     // Setup input variables
-    bHasMoveInput = CachedBasePlayer->bHasMoveInput;
-    MoveInput = CachedBasePlayer->CachedMoveInput;
-    MoveInputSize = CachedBasePlayer->MoveInputSize;
-    CachedMoveInput = MoveInput;
 
     // Detect airborne state
     bool bPhysicallyFalling = MovementComponent->IsFalling();
@@ -178,11 +174,6 @@ void ULocomotionAnimStateComponent::UpdateAnimationState(float DeltaTime)
             // Transition from Air to Ground
             LastFallSpeed = FMath::Abs(VerticalSpeed);
             bWasAirborneLastFrame = false;
-        }
-        else
-        {
-            // Keep resetting fall speed if grounded
-            LastFallSpeed = 0.f;
         }
     }
 
@@ -223,7 +214,7 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             {
                 ForceStateTransition(ELocomotionState::InAir);
             }
-            else if (bHasMoveInput && GroundSpeed > IdleSpeedThreshold)
+            else if (bHasMoveInput)
             {
                 ForceStateTransition(ELocomotionState::Start);
             }
@@ -239,11 +230,6 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             {
                 ForceStateTransition(ELocomotionState::Stop);
             }
-            else if (GroundSpeed > SharpTurnMinSpeed)
-            {
-                // Transition to continuous locomotion
-                ForceStateTransition(ELocomotionState::Locomotion);
-            }
             break;
         }
         case ELocomotionState::Locomotion:
@@ -252,7 +238,7 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             {
                 ForceStateTransition(ELocomotionState::InAir);
             }
-            else if (!bHasMoveInput || GroundSpeed < IdleSpeedThreshold)
+            else if (!bHasMoveInput)
             {
                 ForceStateTransition(ELocomotionState::Stop);
             }
@@ -264,13 +250,9 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             {
                 ForceStateTransition(ELocomotionState::InAir);
             }
-            else if (bHasMoveInput && GroundSpeed > IdleSpeedThreshold)
+            else if (bHasMoveInput)
             {
                 ForceStateTransition(ELocomotionState::Start);
-            }
-            else if (GroundSpeed < IdleSpeedThreshold)
-            {
-                ForceStateTransition(ELocomotionState::Idle);
             }
             break;
         }
@@ -348,9 +330,21 @@ void ULocomotionAnimStateComponent::ForceStateTransition(ELocomotionState NewSta
     {
         GetWorld()->GetTimerManager().ClearTimer(StopFallbackTimerHandle);
     }
+    else if (CurrentState == ELocomotionState::InAir)
+    {
+        GetWorld()->GetTimerManager().ClearTimer(FallOffStartTimerHandle);
+        GetWorld()->GetTimerManager().ClearTimer(JumpStartTimerHandle);
+        bIsFallOffStart = false;
+        bIsJumping = false;
+        if (NewState != ELocomotionState::Landing)
+        {
+            LastFallSpeed = 0.f;
+        }
+    }
     else if (CurrentState == ELocomotionState::Landing)
     {
         GetWorld()->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
+        LastFallSpeed = 0.f;
     }
 
     PreviousState = CurrentState;
@@ -364,6 +358,14 @@ void ULocomotionAnimStateComponent::ForceStateTransition(ELocomotionState NewSta
     else if (CurrentState == ELocomotionState::Stop)
     {
         GetWorld()->GetTimerManager().SetTimer(StopFallbackTimerHandle, this, &ULocomotionAnimStateComponent::OnStopFallbackTimeout, 0.8f, false);
+    }
+    else if (CurrentState == ELocomotionState::InAir)
+    {
+        if (!bIsJumping)
+        {
+            bIsFallOffStart = true;
+            GetWorld()->GetTimerManager().SetTimer(FallOffStartTimerHandle, this, &ULocomotionAnimStateComponent::FinishFallOffStart, 0.6f, false);
+        }
     }
     else if (CurrentState == ELocomotionState::Landing)
     {
@@ -448,10 +450,40 @@ void ULocomotionAnimStateComponent::HandleJumpStarted()
     bIsInAir = true;
     AirborneDuration = 0.f;
     ForceStateTransition(ELocomotionState::InAir);
+
+    if (CachedBasePlayer && GetWorld())
+    {
+        GetWorld()->GetTimerManager().SetTimer(JumpStartTimerHandle, this, &ULocomotionAnimStateComponent::FinishJumpStart, CachedBasePlayer->JumpStartMaxDuration, false);
+    }
 }
 
-void ULocomotionAnimStateComponent::HandleLanded(const FHitResult& Hit)
+void ULocomotionAnimStateComponent::HandleLanded(const FHitResult& Hit, float ImpactFallSpeed)
 {
     bIsJumping = false;
     bIsInAir = false;
+    LastFallSpeed = ImpactFallSpeed;
+    bWasAirborneLastFrame = false;
+
+    if (GetWorld())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(JumpStartTimerHandle);
+    }
+}
+
+void ULocomotionAnimStateComponent::FinishJumpStart()
+{
+    bIsJumping = false;
+    if (GetWorld())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(JumpStartTimerHandle);
+    }
+}
+
+void ULocomotionAnimStateComponent::FinishFallOffStart()
+{
+    bIsFallOffStart = false;
+    if (GetWorld())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(FallOffStartTimerHandle);
+    }
 }
