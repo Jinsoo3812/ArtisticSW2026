@@ -190,5 +190,17 @@ protected:
     bool bChooserIsLandingLight;
 
     UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
+    bool bChooserIsRunLandHeavy;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
+    bool bChooserIsRunLandLight;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
+    bool bChooserIsSprintLandHeavy;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
+    bool bChooserIsSprintLandLight;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
     bool bChooserIsFallOffStart;
 };

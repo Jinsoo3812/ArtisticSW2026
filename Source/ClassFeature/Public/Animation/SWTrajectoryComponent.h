@@ -12,7 +12,13 @@ class CLASSFEATURE_API USWTrajectoryComponent : public UCharacterTrajectoryCompo
 public:
     USWTrajectoryComponent(const FObjectInitializer& ObjectInitializer);
 
+    virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
     // Clears/resets the trajectory history using reflection
     UFUNCTION(BlueprintCallable, Category = "Locomotion|Trajectory")
     void ResetTrajectoryHistory();
+
+private:
+    FVector PreviousAcceleration = FVector::ZeroVector;
+    FVector LastReplicatedVelocity = FVector::ZeroVector;
 };

@@ -72,8 +72,8 @@ ABasePlayer::ABasePlayer()
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
-		MovementComponent->MaxWalkSpeed = WalkSpeed;
-		MovementComponent->RotationRate = FRotator(0.f, WalkRotationRateYaw, 0.f);
+		MovementComponent->MaxWalkSpeed = AnimStateComponent ? AnimStateComponent->WalkSpeed : 500.f;
+		MovementComponent->RotationRate = FRotator(0.f, AnimStateComponent ? AnimStateComponent->WalkRotationRateYaw : 500.f, 0.f);
 	}
 }
 
@@ -114,56 +114,12 @@ void ABasePlayer::BeginPlay()
 
 void ABasePlayer::Tick(float DeltaTime)
 {
-	// Feed replicated velocity & acceleration for simulated proxies
-	if (GetLocalRole() == ROLE_SimulatedProxy && GetCharacterMovement())
-	{
-		FVector ReplicatedAcceleration = FVector::ZeroVector;
-		if (DeltaTime > 0.f)
-		{
-			ReplicatedAcceleration = (GetVelocity() - LastReplicatedVelocity) / DeltaTime;
-		}
-		LastReplicatedVelocity = GetVelocity();
-		
-		// Set protected Acceleration member on UCharacterMovementComponent using reflection
-		if (FProperty* AccelProp = GetCharacterMovement()->GetClass()->FindPropertyByName(TEXT("Acceleration")))
-		{
-			if (FStructProperty* StructProp = CastField<FStructProperty>(AccelProp))
-			{
-				FVector* AccelPtr = StructProp->ContainerPtrToValuePtr<FVector>(GetCharacterMovement());
-				if (AccelPtr)
-				{
-					*AccelPtr = ReplicatedAcceleration;
-				}
-			}
-		}
-	}
-
 	Super::Tick(DeltaTime);
-
-	// Detect when character acceleration drops to zero this frame
-	bool bStoppedAcceleratingThisFrame = false;
-	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
-	{
-		FVector CurrentAccel = MovementComponent->GetCurrentAcceleration();
-		if (CurrentAccel.IsNearlyZero() && !PreviousAcceleration.IsNearlyZero())
-		{
-			bStoppedAcceleratingThisFrame = true;
-		}
-		PreviousAcceleration = CurrentAccel;
-	}
-
-	// Reset trajectory history on idle stop to prevent sliding
-	if (bStoppedAcceleratingThisFrame && TrajectoryComponent)
-	{
-		TrajectoryComponent->ResetTrajectoryHistory();
-	}
 
 	if (AnimStateComponent)
 	{
-		AnimStateComponent->UpdateAnimationState(DeltaTime);
 		SyncAnimationStateFromComponent();
 	}
-	UpdateMaxWalkSpeed();
 
 	bool bIsSniping = false;
 	bool bIsAiming = false;
@@ -1074,9 +1030,8 @@ void ABasePlayer::StartSprint()
 	bIsSprinting = true;
 	if (AnimStateComponent)
 	{
-		AnimStateComponent->bIsSprinting = true;
+		AnimStateComponent->SetSprinting(true);
 	}
-	UpdateMaxWalkSpeed();
 }
 
 void ABasePlayer::StopSprint()
@@ -1084,68 +1039,13 @@ void ABasePlayer::StopSprint()
 	bIsSprinting = false;
 	if (AnimStateComponent)
 	{
-		AnimStateComponent->bIsSprinting = false;
+		AnimStateComponent->SetSprinting(false);
 	}
-	UpdateMaxWalkSpeed();
 }
 
 void ABasePlayer::OnRep_ItemSlots()
 {
 	OnItemSlotsChanged.Broadcast();
-}
-
-bool ABasePlayer::IsInAirForAnimation() const
-{
-	const UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
-	return MovementComponent && MovementComponent->MovementMode == MOVE_Falling;
-}
-
-void ABasePlayer::UpdateCombatMovementState()
-{
-	const FVector2D CombatMoveInput = CachedMoveInput.GetClampedToMaxSize(1.f);
-	CombatInputRight = CombatMoveInput.X;
-	CombatInputForward = CombatMoveInput.Y;
-
-	if (bIsCombatMode && bHasMoveInput)
-	{
-		const float CurrentMaxSpeed = GetCharacterMovement() ? GetCharacterMovement()->MaxWalkSpeed : WalkSpeed;
-		CombatRightSpeed = CombatInputRight * CurrentMaxSpeed;
-		CombatForwardSpeed = CombatInputForward * CurrentMaxSpeed;
-		MovementDirection = FMath::RadiansToDegrees(FMath::Atan2(CombatInputRight, CombatInputForward));
-	}
-	else
-	{
-		MovementDirection = 0.f;
-		CombatForwardSpeed = 0.f;
-		CombatRightSpeed = 0.f;
-	}
-}
-
-void ABasePlayer::UpdateMaxWalkSpeed()
-{
-	if (!IsLocallyControlled() && !HasAuthority())
-	{
-		return;
-	}
-
-	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
-	if (!MovementComponent)
-	{
-		return;
-	}
-
-	const bool bCanSprint =
-		bIsSprinting &&
-		!bIsAttacking &&
-		!bIsDodging &&
-		!bIsHitReacting;
-
-	MovementComponent->MaxWalkSpeed = bCanSprint ? SprintSpeed : WalkSpeed;
-	MovementComponent->RotationRate = FRotator(
-		0.f,
-		bCanSprint ? SprintRotationRateYaw : WalkRotationRateYaw,
-		0.f
-	);
 }
 
 void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
@@ -1157,15 +1057,6 @@ void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
 		MovementComponent->bOrientRotationToMovement = !bEnableCombatRotation;
 	}
 }
-
-void ABasePlayer::UpdateAnimationMovementState(float DeltaTime) {}
-void ABasePlayer::UpdateMovementRequestState(float DeltaTime) {}
-void ABasePlayer::ClearMovementRequests() {}
-void ABasePlayer::StartFallOffStart() {}
-void ABasePlayer::StopFallOffStart() {}
-void ABasePlayer::FinishLanding() {}
-void ABasePlayer::FinishLandingRequest() {}
-
 
 void ABasePlayer::MarkGroundStartFinished()
 {

@@ -53,6 +53,8 @@ public:
     // Triggered on landing event from character movement
     void HandleLanded(const FHitResult& Hit, float ImpactFallSpeed);
 
+    void SetSprinting(bool bNewSprinting);
+
     // Forces immediate state transition
     void ForceStateTransition(ELocomotionState NewState);
 
@@ -69,7 +71,20 @@ public:
 protected:
     void CacheOwner();
     bool PerformGroundProbe() const;
+    bool IsInAirForAnimation() const;
+    bool ShouldUseLocalInput() const;
+    FVector2D GetMovementInputForState() const;
     void UpdateStateTransitions(float DeltaTime);
+    void UpdateAirState(float DeltaTime);
+    void UpdateMovementRequestState(float DeltaTime);
+    void UpdateCombatMovementState();
+    void UpdateMaxWalkSpeed() const;
+    void ClearMovementRequests();
+    void StartFallOffStart();
+    void StopFallOffStart();
+    void StartLanding(float ImpactFallSpeed, bool bTriggerRealLandEvent);
+    void FinishLanding();
+    void FinishLandingRequest();
     
     // Timer fallback functions
     void OnStartFallbackTimeout();
@@ -199,6 +214,39 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Compatibility")
     bool bLandWasSprinting;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Fallback")
+    float StartMaxDuration = 0.8f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Fallback")
+    float StopMaxDuration = 0.8f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Fallback")
+    float JumpStartMaxDuration = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Fallback")
+    float FallOffStartMaxDuration = 0.8f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Fallback")
+    float LandingMaxDuration = 0.8f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing")
+    float RealLandingEventSpeedThreshold = 300.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Sprint")
+    float WalkSpeed = 500.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Sprint")
+    float SprintSpeed = 700.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Sprint")
+    float WalkRotationRateYaw = 500.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Sprint")
+    float SprintRotationRateYaw = 500.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Input")
+    float GenericMoveInputSpeedThreshold = 3.f;
+
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Compatibility")
     float MovementDirection;
@@ -255,4 +303,6 @@ protected:
     float AirborneDuration;
     bool bWasAirborneLastFrame;
     FVector2D PreviousMoveInput;
+    bool bWasInAir = false;
+    bool bSuppressFallOffStart = false;
 };

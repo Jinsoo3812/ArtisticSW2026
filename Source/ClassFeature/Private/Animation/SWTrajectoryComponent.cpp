@@ -1,10 +1,54 @@
 #include "Animation/SWTrajectoryComponent.h"
 #include "UObject/UnrealType.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 USWTrajectoryComponent::USWTrajectoryComponent(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
 {
+    PrimaryComponentTick.bCanEverTick = true;
+}
+
+void USWTrajectoryComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+    ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+    UCharacterMovementComponent* MovementComponent = OwnerCharacter ? OwnerCharacter->GetCharacterMovement() : nullptr;
+    if (!OwnerCharacter || !MovementComponent)
+    {
+        return;
+    }
+
+    if (OwnerCharacter->GetLocalRole() == ROLE_SimulatedProxy)
+    {
+        FVector ReplicatedAcceleration = FVector::ZeroVector;
+        if (DeltaTime > 0.f)
+        {
+            ReplicatedAcceleration = (OwnerCharacter->GetVelocity() - LastReplicatedVelocity) / DeltaTime;
+        }
+        LastReplicatedVelocity = OwnerCharacter->GetVelocity();
+
+        if (FProperty* AccelProp = MovementComponent->GetClass()->FindPropertyByName(TEXT("Acceleration")))
+        {
+            if (FStructProperty* StructProp = CastField<FStructProperty>(AccelProp))
+            {
+                FVector* AccelPtr = StructProp->ContainerPtrToValuePtr<FVector>(MovementComponent);
+                if (AccelPtr)
+                {
+                    *AccelPtr = ReplicatedAcceleration;
+                }
+            }
+        }
+    }
+
+    const FVector CurrentAcceleration = MovementComponent->GetCurrentAcceleration();
+    if (CurrentAcceleration.IsNearlyZero() && !PreviousAcceleration.IsNearlyZero())
+    {
+        ResetTrajectoryHistory();
+    }
+    PreviousAcceleration = CurrentAcceleration;
 }
 
 void USWTrajectoryComponent::ResetTrajectoryHistory()

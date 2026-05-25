@@ -95,6 +95,10 @@ UMotionMatchingAnimInstance::UMotionMatchingAnimInstance()
     bChooserIsInAir = false;
     bChooserIsLandingHeavy = false;
     bChooserIsLandingLight = false;
+    bChooserIsRunLandHeavy = false;
+    bChooserIsRunLandLight = false;
+    bChooserIsSprintLandHeavy = false;
+    bChooserIsSprintLandLight = false;
     bChooserIsFallOffStart = false;
 }
 
@@ -153,9 +157,35 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     bChooserIsInAir = false;
     bChooserIsLandingHeavy = false;
     bChooserIsLandingLight = false;
+    bChooserIsRunLandHeavy = false;
+    bChooserIsRunLandLight = false;
+    bChooserIsSprintLandHeavy = false;
+    bChooserIsSprintLandLight = false;
     bChooserIsFallOffStart = false;
 
-    if (CachedLocomotionStateComponent->bIsFallOffStart)
+    if (CachedLocomotionStateComponent->CurrentState == ELocomotionState::Landing)
+    {
+        const bool bSprintLand = CachedLocomotionStateComponent->bLandWasSprinting;
+        const bool bHeavyLand = CachedLocomotionStateComponent->bUseHeavyLand;
+
+        if (bSprintLand && bHeavyLand)
+        {
+            bChooserIsSprintLandHeavy = true;
+        }
+        else if (bSprintLand)
+        {
+            bChooserIsSprintLandLight = true;
+        }
+        else if (bHeavyLand)
+        {
+            bChooserIsRunLandHeavy = true;
+        }
+        else
+        {
+            bChooserIsRunLandLight = true;
+        }
+    }
+    else if (CachedLocomotionStateComponent->bIsFallOffStart)
     {
         bChooserIsFallOffStart = true;
     }
@@ -189,10 +219,6 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             {
                 bChooserIsInAir = true;
             }
-            break;
-        case ELocomotionState::Landing:
-            if (CachedLocomotionStateComponent->bUseHeavyLand) bChooserIsLandingHeavy = true;
-            else bChooserIsLandingLight = true;
             break;
         default:
             bChooserIsIdle = true;
