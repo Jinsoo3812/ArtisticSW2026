@@ -533,6 +533,10 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             {
                 InterruptLandingForMoveInput();
             }
+            else if (bLandWasMoving && !bHasMoveInput)
+            {
+                InterruptLandingForStop();
+            }
             break;
         }
         case ELocomotionState::Combat:
@@ -995,4 +999,25 @@ void ULocomotionAnimStateComponent::InterruptLandingForMoveInput()
     {
         ForceStateTransition(ELocomotionState::Start);
     }
+}
+
+void ULocomotionAnimStateComponent::InterruptLandingForStop()
+{
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
+    }
+
+    bIsLanding = false;
+    bLandingRequested = false;
+    bIsInAir = false;
+    bWasInAir = false;
+    bWasAirborneLastFrame = false;
+    AirborneDuration = 0.f;
+    bSuppressFallOffStart = false;
+    bCanEnterLand = false;
+    bCanEnterGround = true;
+    LastFallSpeed = 0.f;
+
+    ForceStateTransition(ELocomotionState::Stop);
 }

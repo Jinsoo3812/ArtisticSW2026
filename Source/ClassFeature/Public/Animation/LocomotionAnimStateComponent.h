@@ -150,6 +150,7 @@ protected:
     void FinishLanding();
     void FinishLandingRequest();
     void InterruptLandingForMoveInput();
+    void InterruptLandingForStop();
     bool ShouldAcceptRemoteAnimEvent(int32 EventSequence);
     
     // Timer fallback functions
