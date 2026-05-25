@@ -117,8 +117,14 @@ void ULocomotionAnimStateComponent::CacheOwner()
     bIsSprinting = CachedBasePlayer->bIsSprinting;
 }
 
+bool ULocomotionAnimStateComponent::IsDedicatedServer() const
+{
+    return GetWorld() && GetWorld()->GetNetMode() == NM_DedicatedServer;
+}
+
 bool ULocomotionAnimStateComponent::PerformGroundProbe() const
 {
+    if (IsDedicatedServer()) return false;
     if (!CachedBasePlayer) return false;
 
     UCapsuleComponent* Capsule = CachedBasePlayer->GetCapsuleComponent();
@@ -177,6 +183,11 @@ bool ULocomotionAnimStateComponent::ShouldUseLocalInput() const
 
 FVector2D ULocomotionAnimStateComponent::GetMovementInputForState() const
 {
+    if (IsDedicatedServer())
+    {
+        return FVector2D::ZeroVector;
+    }
+
     if (!CachedBasePlayer)
     {
         return FVector2D::ZeroVector;
@@ -270,6 +281,19 @@ void ULocomotionAnimStateComponent::UpdateMovementRequestState(float DeltaTime)
     bHasMoveInput = MoveInputSize > MoveInputDeadZone || (!ShouldUseLocalInput() && GroundSpeed > GenericMoveInputSpeedThreshold);
     MoveInputHeldTime = bHasMoveInput ? MoveInputHeldTime + DeltaTime : 0.f;
 
+    if (IsDedicatedServer())
+    {
+        MoveInputTurnAngle = 0.f;
+        bSharpTurnRequested = false;
+        bStartRequested = false;
+        bStopRequested = false;
+        bUseStartDatabase = false;
+        bUseLoopDatabase = bHasMoveInput;
+        bUseSharpTurnDatabase = false;
+        PreviousMoveInputForTurn = FVector2D::ZeroVector;
+        return;
+    }
+
     MoveInputTurnAngle = 0.f;
     bSharpTurnRequested = false;
     bStartRequested = false;
@@ -336,6 +360,16 @@ void ULocomotionAnimStateComponent::UpdateMovementRequestState(float DeltaTime)
 
 void ULocomotionAnimStateComponent::UpdateCombatMovementState()
 {
+    if (IsDedicatedServer())
+    {
+        CombatInputRight = 0.f;
+        CombatInputForward = 0.f;
+        MovementDirection = 0.f;
+        CombatForwardSpeed = 0.f;
+        CombatRightSpeed = 0.f;
+        return;
+    }
+
     const FVector2D CombatMoveInput = GetMovementInputForState();
     CombatInputRight = CombatMoveInput.X;
     CombatInputForward = CombatMoveInput.Y;
@@ -683,6 +717,71 @@ void ULocomotionAnimStateComponent::HandleJumpStarted()
     }
 }
 
+void ULocomotionAnimStateComponent::HandleRemoteJumpStarted(int32 EventSequence)
+{
+    if (!ShouldAcceptRemoteAnimEvent(EventSequence))
+    {
+        return;
+    }
+
+    HandleJumpStarted();
+}
+
+void ULocomotionAnimStateComponent::ApplyAuthoritativeSnapshot(const FReplicatedLocomotionState& Snapshot)
+{
+    if (CachedBasePlayer && CachedBasePlayer->HasAuthority())
+    {
+        return;
+    }
+
+    if (Snapshot.EventSequence < LastRemoteAnimEventSequence)
+    {
+        return;
+    }
+
+    LastRemoteAnimEventSequence = FMath::Max(LastRemoteAnimEventSequence, Snapshot.EventSequence);
+
+    const uint8 MaxStateValue = static_cast<uint8>(ELocomotionState::Combat);
+    const ELocomotionState AuthoritativeState = Snapshot.CurrentState <= MaxStateValue
+        ? static_cast<ELocomotionState>(Snapshot.CurrentState)
+        : ELocomotionState::Idle;
+
+    if (CurrentState != AuthoritativeState)
+    {
+        PreviousState = CurrentState;
+        CurrentState = AuthoritativeState;
+    }
+
+    bIsSprinting = Snapshot.bIsSprinting;
+    bIsJumping = Snapshot.bIsJumping;
+    bIsFallOffStart = Snapshot.bIsFallOffStart;
+    bIsLanding = Snapshot.bIsLanding;
+    bLandingRequested = Snapshot.bLandingRequested;
+    bUseHeavyLand = Snapshot.bUseHeavyLand;
+    bLandWasMoving = Snapshot.bLandWasMoving;
+    bLandWasSprinting = Snapshot.bLandWasSprinting;
+    LastFallSpeed = Snapshot.LastFallSpeed;
+
+    bIsInAir = bIsJumping || bIsFallOffStart || bIsLanding || CurrentState == ELocomotionState::InAir;
+    bCanEnterLand = bLandingRequested;
+    bCanEnterGround = !bIsInAir && !bIsLanding && !bLandingRequested;
+
+    if (!bIsLanding && GetWorld())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
+    }
+    if (!bIsJumping && GetWorld())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(JumpStartTimerHandle);
+    }
+    if (!bIsFallOffStart && GetWorld())
+    {
+        GetWorld()->GetTimerManager().ClearTimer(FallOffStartTimerHandle);
+    }
+
+    UpdateMaxWalkSpeed();
+}
+
 void ULocomotionAnimStateComponent::HandleLanded(const FHitResult& Hit, float ImpactFallSpeed)
 {
     StartLanding(ImpactFallSpeed, true);
@@ -723,6 +822,11 @@ void ULocomotionAnimStateComponent::StartFallOffStart()
 
     bIsInAir = true;
     bIsFallOffStart = true;
+
+    if (CachedBasePlayer && CachedBasePlayer->HasAuthority())
+    {
+        CachedBasePlayer->BroadcastFallOffStartedForRemoteClients();
+    }
 
     World->GetTimerManager().ClearTimer(FallOffStartTimerHandle);
     World->GetTimerManager().SetTimer(
@@ -780,6 +884,51 @@ void ULocomotionAnimStateComponent::StartLanding(float ImpactFallSpeed, bool bTr
     {
         CachedBasePlayer->K2_OnRealLanded();
     }
+}
+
+void ULocomotionAnimStateComponent::HandleRemoteFallOffStarted(int32 EventSequence)
+{
+    if (!ShouldAcceptRemoteAnimEvent(EventSequence))
+    {
+        return;
+    }
+
+    if (CurrentState == ELocomotionState::InAir && bIsFallOffStart)
+    {
+        return;
+    }
+
+    bIsJumping = false;
+    bIsLanding = false;
+    bLandingRequested = false;
+    bCanEnterLand = false;
+    bCanEnterGround = false;
+    bWasInAir = true;
+    bSuppressFallOffStart = false;
+    AirborneDuration = 0.f;
+
+    ForceStateTransition(ELocomotionState::InAir);
+}
+
+void ULocomotionAnimStateComponent::HandleRemoteLanded(float ImpactFallSpeed, int32 EventSequence)
+{
+    if (!ShouldAcceptRemoteAnimEvent(EventSequence))
+    {
+        return;
+    }
+
+    StartLanding(ImpactFallSpeed, false);
+}
+
+bool ULocomotionAnimStateComponent::ShouldAcceptRemoteAnimEvent(int32 EventSequence)
+{
+    if (EventSequence <= LastRemoteAnimEventSequence)
+    {
+        return false;
+    }
+
+    LastRemoteAnimEventSequence = EventSequence;
+    return true;
 }
 
 void ULocomotionAnimStateComponent::FinishLanding()

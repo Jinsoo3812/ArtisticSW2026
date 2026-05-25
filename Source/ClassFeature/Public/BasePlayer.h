@@ -6,6 +6,7 @@
 #include "BaseCharacter.h"
 #include "GameplayTagContainer.h"
 #include "InputTagConfig.h"
+#include "Animation/LocomotionAnimStateComponent.h"
 #include "BasePlayer.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
@@ -18,7 +19,6 @@ struct FInputActionValue;
 class ABaseItem;
 class UInputTagConfig;
 class UInventoryComponent;
-class ULocomotionAnimStateComponent;
 class USWTrajectoryComponent;
 class UAnimMontage;
 
@@ -111,6 +111,29 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Movement|Sprint")
 	void StopSprint();
 
+	UFUNCTION(Server, Reliable)
+	void Server_SetSprinting(bool bNewSprinting);
+
+	UFUNCTION()
+	void OnRep_IsSprinting();
+
+	UFUNCTION()
+	void OnRep_LocomotionStateSnapshot();
+
+	UFUNCTION(Server, Reliable)
+	void Server_NotifyJumpStarted();
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_NotifyJumpStarted(int32 EventSequence);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_NotifyFallOffStarted(int32 EventSequence);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_NotifyLanded(float ImpactFallSpeed, int32 EventSequence);
+
+	void BroadcastFallOffStartedForRemoteClients();
+
 	/* --- 애니메이션 이동 상태 --- */
 public:
 	// Animation-only air state. This is the single source of truth for ABP IsAir.
@@ -158,8 +181,11 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Input")
 	FVector2D CachedMoveInput = FVector2D::ZeroVector;
 
-	UPROPERTY(BlueprintReadWrite, Category = "Animation|Movement|Sprint")
+	UPROPERTY(BlueprintReadWrite, ReplicatedUsing = OnRep_IsSprinting, Category = "Animation|Movement|Sprint")
 	bool bIsSprinting = false;
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_LocomotionStateSnapshot, Category = "Animation|Movement|Network")
+	FReplicatedLocomotionState LocomotionStateSnapshot;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
 	float MoveInputHeldTime = 0.f;
@@ -293,8 +319,12 @@ protected:
 
 	FTimerHandle JumpStartTimerHandle;
 	FTimerHandle FallOffStartTimerHandle;
+	int32 LocomotionAnimEventSequence = 0;
 
 	void SyncAnimationStateFromComponent();
+	void UpdateLocomotionStateSnapshot();
+	int32 NextLocomotionAnimEventSequence();
+	bool CanSprintFromServerState() const;
 	void ApplyCombatRotationMode(bool bEnableCombatRotation);
 	void OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 

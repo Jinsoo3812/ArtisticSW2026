@@ -84,6 +84,8 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	// 배열과 장착 아이템 포인터를 클라이언트로 복제
 	DOREPLIFETIME(ABasePlayer, ItemSlots);
 	DOREPLIFETIME(ABasePlayer, EquippedItem);
+	DOREPLIFETIME(ABasePlayer, bIsSprinting);
+	DOREPLIFETIME(ABasePlayer, LocomotionStateSnapshot);
 }
 
 void ABasePlayer::PostInitializeComponents()
@@ -119,6 +121,10 @@ void ABasePlayer::Tick(float DeltaTime)
 	if (AnimStateComponent)
 	{
 		SyncAnimationStateFromComponent();
+	}
+	if (HasAuthority())
+	{
+		UpdateLocomotionStateSnapshot();
 	}
 
 	bool bIsSniping = false;
@@ -212,6 +218,32 @@ void ABasePlayer::SyncAnimationStateFromComponent()
 	CombatInputRight = AnimStateComponent->CombatInputRight;
 	CombatForwardSpeed = AnimStateComponent->CombatForwardSpeed;
 	CombatRightSpeed = AnimStateComponent->CombatRightSpeed;
+}
+
+void ABasePlayer::UpdateLocomotionStateSnapshot()
+{
+	if (!AnimStateComponent)
+	{
+		return;
+	}
+
+	FReplicatedLocomotionState NewSnapshot;
+	NewSnapshot.CurrentState = static_cast<uint8>(AnimStateComponent->CurrentState);
+	NewSnapshot.bIsSprinting = AnimStateComponent->bIsSprinting;
+	NewSnapshot.bIsJumping = AnimStateComponent->bIsJumping;
+	NewSnapshot.bIsFallOffStart = AnimStateComponent->bIsFallOffStart;
+	NewSnapshot.bIsLanding = AnimStateComponent->bIsLanding;
+	NewSnapshot.bLandingRequested = AnimStateComponent->bLandingRequested;
+	NewSnapshot.bUseHeavyLand = AnimStateComponent->bUseHeavyLand;
+	NewSnapshot.bLandWasMoving = AnimStateComponent->bLandWasMoving;
+	NewSnapshot.bLandWasSprinting = AnimStateComponent->bLandWasSprinting;
+	NewSnapshot.LastFallSpeed = AnimStateComponent->LastFallSpeed;
+	NewSnapshot.EventSequence = LocomotionAnimEventSequence;
+
+	if (LocomotionStateSnapshot != NewSnapshot)
+	{
+		LocomotionStateSnapshot = NewSnapshot;
+	}
 }
 
 void ABasePlayer::PossessedBy(AController* NewController)
@@ -1017,6 +1049,15 @@ void ABasePlayer::DoJumpStart()
 		SyncAnimationStateFromComponent();
 	}
 
+	if (HasAuthority())
+	{
+		Multicast_NotifyJumpStarted(NextLocomotionAnimEventSequence());
+	}
+	else
+	{
+		Server_NotifyJumpStarted();
+	}
+
 	Jump();
 }
 
@@ -1032,6 +1073,11 @@ void ABasePlayer::StartSprint()
 	{
 		AnimStateComponent->SetSprinting(true);
 	}
+
+	if (!HasAuthority())
+	{
+		Server_SetSprinting(true);
+	}
 }
 
 void ABasePlayer::StopSprint()
@@ -1040,6 +1086,101 @@ void ABasePlayer::StopSprint()
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->SetSprinting(false);
+	}
+
+	if (!HasAuthority())
+	{
+		Server_SetSprinting(false);
+	}
+}
+
+void ABasePlayer::Server_SetSprinting_Implementation(bool bNewSprinting)
+{
+	const bool bServerAllowsSprinting = bNewSprinting && CanSprintFromServerState();
+	bIsSprinting = bServerAllowsSprinting;
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->SetSprinting(bServerAllowsSprinting);
+		SyncAnimationStateFromComponent();
+		UpdateLocomotionStateSnapshot();
+	}
+}
+
+void ABasePlayer::OnRep_IsSprinting()
+{
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->SetSprinting(bIsSprinting);
+	}
+}
+
+void ABasePlayer::OnRep_LocomotionStateSnapshot()
+{
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->ApplyAuthoritativeSnapshot(LocomotionStateSnapshot);
+		SyncAnimationStateFromComponent();
+	}
+}
+
+void ABasePlayer::Server_NotifyJumpStarted_Implementation()
+{
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->HandleJumpStarted();
+		SyncAnimationStateFromComponent();
+	}
+
+	Multicast_NotifyJumpStarted(NextLocomotionAnimEventSequence());
+}
+
+void ABasePlayer::Multicast_NotifyJumpStarted_Implementation(int32 EventSequence)
+{
+	if (HasAuthority() || IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->HandleRemoteJumpStarted(EventSequence);
+		SyncAnimationStateFromComponent();
+	}
+}
+
+void ABasePlayer::Multicast_NotifyFallOffStarted_Implementation(int32 EventSequence)
+{
+	if (HasAuthority() || IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->HandleRemoteFallOffStarted(EventSequence);
+		SyncAnimationStateFromComponent();
+	}
+}
+
+void ABasePlayer::Multicast_NotifyLanded_Implementation(float ImpactFallSpeed, int32 EventSequence)
+{
+	if (HasAuthority() || IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->HandleRemoteLanded(ImpactFallSpeed, EventSequence);
+		SyncAnimationStateFromComponent();
+	}
+}
+
+void ABasePlayer::BroadcastFallOffStartedForRemoteClients()
+{
+	if (HasAuthority())
+	{
+		Multicast_NotifyFallOffStarted(NextLocomotionAnimEventSequence());
 	}
 }
 
@@ -1196,4 +1337,25 @@ void ABasePlayer::Landed(const FHitResult& Hit)
 		AnimStateComponent->HandleLanded(Hit, ImpactFallSpeed);
 		SyncAnimationStateFromComponent();
 	}
+
+	if (HasAuthority())
+	{
+		Multicast_NotifyLanded(ImpactFallSpeed, NextLocomotionAnimEventSequence());
+	}
+}
+
+int32 ABasePlayer::NextLocomotionAnimEventSequence()
+{
+	++LocomotionAnimEventSequence;
+	if (LocomotionAnimEventSequence <= 0)
+	{
+		LocomotionAnimEventSequence = 1;
+	}
+
+	return LocomotionAnimEventSequence;
+}
+
+bool ABasePlayer::CanSprintFromServerState() const
+{
+	return !bIsAttacking && !bIsDodging && !bIsHitReacting;
 }

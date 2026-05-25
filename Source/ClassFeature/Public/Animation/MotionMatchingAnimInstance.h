@@ -10,6 +10,8 @@
 class UPoseSearchDatabase;
 class UChooserTable;
 class UCharacterTrajectoryComponent;
+class FStructProperty;
+class FObjectProperty;
 
 USTRUCT(BlueprintType)
 struct FAnimMovementData
@@ -104,6 +106,18 @@ struct FAnimThreadSafeData
     FAnimLandingData LandingData;
 };
 
+struct FCachedMotionMatchingNodeInfo
+{
+    FStructProperty* NodeProperty = nullptr;
+    FObjectProperty* DatabaseProperty = nullptr;
+};
+
+struct FCachedHistoryCollectorNodeInfo
+{
+    FStructProperty* NodeProperty = nullptr;
+    FStructProperty* TrajectoryProperty = nullptr;
+};
+
 USTRUCT(BlueprintType)
 struct FMotionMatchingAnimInstanceProxy : public FAnimInstanceProxy
 {
@@ -120,6 +134,12 @@ public:
 
     UPROPERTY(Transient)
     TObjectPtr<UPoseSearchDatabase> CurrentActivePoseSearchDatabase;
+
+    TArray<FCachedMotionMatchingNodeInfo> CachedMMNodes;
+    TArray<FCachedHistoryCollectorNodeInfo> CachedHistoryNodes;
+    bool bNodesCached = false;
+
+    void CacheNodes(UAnimInstance* InAnimInstance);
 };
 
 UCLASS(Blueprintable, BlueprintType)
@@ -135,6 +155,8 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Motion Matching", meta = (BlueprintThreadSafe))
     UPoseSearchDatabase* GetCurrentActivePoseSearchDatabaseThreadSafe() const;
+
+    FStructProperty* CachedTrajectoryProperty = nullptr;
 
 protected:
     virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
@@ -163,10 +185,16 @@ protected:
     bool bChooserIsRunStart;
 
     UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
+    bool bChooserIsRunStartRemote;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
     bool bChooserIsSprintStart;
 
     UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
     bool bChooserIsRunLocomotion;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
+    bool bChooserIsRunLocomotionRemote;
 
     UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
     bool bChooserIsSprintLocomotion;

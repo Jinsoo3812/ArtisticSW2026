@@ -19,6 +19,65 @@ enum class ELocomotionState : uint8
     Combat
 };
 
+USTRUCT(BlueprintType)
+struct FReplicatedLocomotionState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    uint8 CurrentState = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    bool bIsSprinting = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    bool bIsJumping = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    bool bIsFallOffStart = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    bool bIsLanding = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    bool bLandingRequested = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    bool bUseHeavyLand = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    bool bLandWasMoving = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    bool bLandWasSprinting = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    float LastFallSpeed = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    int32 EventSequence = 0;
+
+    bool operator==(const FReplicatedLocomotionState& Other) const
+    {
+        return CurrentState == Other.CurrentState &&
+               bIsSprinting == Other.bIsSprinting &&
+               bIsJumping == Other.bIsJumping &&
+               bIsFallOffStart == Other.bIsFallOffStart &&
+               bIsLanding == Other.bIsLanding &&
+               bLandingRequested == Other.bLandingRequested &&
+               bUseHeavyLand == Other.bUseHeavyLand &&
+               bLandWasMoving == Other.bLandWasMoving &&
+               bLandWasSprinting == Other.bLandWasSprinting &&
+               FMath::IsNearlyEqual(LastFallSpeed, Other.LastFallSpeed) &&
+               EventSequence == Other.EventSequence;
+    }
+
+    bool operator!=(const FReplicatedLocomotionState& Other) const
+    {
+        return !(*this == Other);
+    }
+};
+
 UCLASS(ClassGroup=(Animation), meta=(BlueprintSpawnableComponent))
 class CLASSFEATURE_API ULocomotionAnimStateComponent : public UActorComponent
 {
@@ -49,9 +108,13 @@ public:
 
     // Triggered on jump start
     void HandleJumpStarted();
+    void HandleRemoteJumpStarted(int32 EventSequence);
+    void ApplyAuthoritativeSnapshot(const FReplicatedLocomotionState& Snapshot);
 
     // Triggered on landing event from character movement
     void HandleLanded(const FHitResult& Hit, float ImpactFallSpeed);
+    void HandleRemoteFallOffStarted(int32 EventSequence);
+    void HandleRemoteLanded(float ImpactFallSpeed, int32 EventSequence);
 
     void SetSprinting(bool bNewSprinting);
 
@@ -71,6 +134,7 @@ public:
 protected:
     void CacheOwner();
     bool PerformGroundProbe() const;
+    bool IsDedicatedServer() const;
     bool IsInAirForAnimation() const;
     bool ShouldUseLocalInput() const;
     FVector2D GetMovementInputForState() const;
@@ -86,6 +150,7 @@ protected:
     void FinishLanding();
     void FinishLandingRequest();
     void InterruptLandingForMoveInput();
+    bool ShouldAcceptRemoteAnimEvent(int32 EventSequence);
     
     // Timer fallback functions
     void OnStartFallbackTimeout();
@@ -306,4 +371,5 @@ protected:
     FVector2D PreviousMoveInput;
     bool bWasInAir = false;
     bool bSuppressFallOffStart = false;
+    int32 LastRemoteAnimEventSequence = 0;
 };
