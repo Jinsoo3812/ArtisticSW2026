@@ -3,7 +3,7 @@
 #include "Animation/BasePlayerAnimInstance.h"
 
 #include "BasePlayer.h"
-#include "Animation/BasePlayerAnimStateComponent.h"
+#include "Animation/LocomotionAnimStateComponent.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -33,7 +33,7 @@ void UBasePlayerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 	if (CachedBasePlayer)
 	{
-		if (const UBasePlayerAnimStateComponent* AnimState = CachedBasePlayer->GetAnimStateComponent())
+		if (const ULocomotionAnimStateComponent* AnimState = CachedBasePlayer->GetAnimStateComponent())
 		{
 			UpdateFromAnimStateComponent(*AnimState);
 		}
@@ -61,7 +61,7 @@ void UBasePlayerAnimInstance::MarkGroundStartFinished()
 {
 	if (CachedBasePlayer)
 	{
-		if (UBasePlayerAnimStateComponent* AnimState = CachedBasePlayer->GetAnimStateComponent())
+		if (ULocomotionAnimStateComponent* AnimState = CachedBasePlayer->GetAnimStateComponent())
 		{
 			AnimState->MarkGroundStartFinished();
 			UpdateFromAnimStateComponent(*AnimState);
@@ -222,7 +222,7 @@ void UBasePlayerAnimInstance::UpdateFromPlayerCharacter(float DeltaSeconds, cons
 	CombatRightSpeed = PlayerCharacter.CombatRightSpeed;
 }
 
-void UBasePlayerAnimInstance::UpdateFromAnimStateComponent(const UBasePlayerAnimStateComponent& AnimState)
+void UBasePlayerAnimInstance::UpdateFromAnimStateComponent(const ULocomotionAnimStateComponent& AnimState)
 {
 	GroundSpeed = AnimState.GroundSpeed;
 	VerticalSpeed = AnimState.VerticalSpeed;

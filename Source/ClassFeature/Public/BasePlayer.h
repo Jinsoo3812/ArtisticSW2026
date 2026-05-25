@@ -18,7 +18,8 @@ struct FInputActionValue;
 class ABaseItem;
 class UInputTagConfig;
 class UInventoryComponent;
-class UBasePlayerAnimStateComponent;
+class ULocomotionAnimStateComponent;
+class USWTrajectoryComponent;
 class UAnimMontage;
 
 // Item Slot 관리 구조체
@@ -578,7 +579,14 @@ protected:
 	TObjectPtr<UInventoryComponent> InventoryComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
-	TObjectPtr<UBasePlayerAnimStateComponent> AnimStateComponent;
+	TObjectPtr<ULocomotionAnimStateComponent> AnimStateComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<USWTrajectoryComponent> TrajectoryComponent;
+
+protected:
+	FVector PreviousAcceleration = FVector::ZeroVector;
+	FVector LastReplicatedVelocity = FVector::ZeroVector;
 
 public:
 	UFUNCTION()
@@ -590,5 +598,5 @@ public:
 	UInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Animation")
-	UBasePlayerAnimStateComponent* GetAnimStateComponent() const { return AnimStateComponent; }
+	ULocomotionAnimStateComponent* GetAnimStateComponent() const { return AnimStateComponent; }
 };

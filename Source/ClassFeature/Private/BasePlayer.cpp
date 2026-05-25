@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "BasePlayer.h"
@@ -22,7 +22,8 @@
 #include "Components/WidgetComponent.h"
 #include "InteractableComponent.h"
 #include "InteractUserWidget.h"
-#include "Animation/BasePlayerAnimStateComponent.h"
+#include "Animation/LocomotionAnimStateComponent.h"
+#include "Animation/SWTrajectoryComponent.h"
 #include "Inventory/InventoryComponent.h"
 #include "ItemSubSystem.h"
 #include "Animation/AnimInstance.h"
@@ -66,7 +67,8 @@ ABasePlayer::ABasePlayer()
 
 	// 인벤토리 컴포넌트 부착
 	InventoryComponent = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComponent"));
-	AnimStateComponent = CreateDefaultSubobject<UBasePlayerAnimStateComponent>(TEXT("AnimStateComponent"));
+	AnimStateComponent = CreateDefaultSubobject<ULocomotionAnimStateComponent>(TEXT("AnimStateComponent"));
+	TrajectoryComponent = CreateDefaultSubobject<USWTrajectoryComponent>(TEXT("TrajectoryComponent"));
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
@@ -112,7 +114,49 @@ void ABasePlayer::BeginPlay()
 
 void ABasePlayer::Tick(float DeltaTime)
 {
+	// Feed replicated velocity & acceleration for simulated proxies
+	if (GetLocalRole() == ROLE_SimulatedProxy && GetCharacterMovement())
+	{
+		FVector ReplicatedAcceleration = FVector::ZeroVector;
+		if (DeltaTime > 0.f)
+		{
+			ReplicatedAcceleration = (GetVelocity() - LastReplicatedVelocity) / DeltaTime;
+		}
+		LastReplicatedVelocity = GetVelocity();
+		
+		// Set protected Acceleration member on UCharacterMovementComponent using reflection
+		if (FProperty* AccelProp = GetCharacterMovement()->GetClass()->FindPropertyByName(TEXT("Acceleration")))
+		{
+			if (FStructProperty* StructProp = CastField<FStructProperty>(AccelProp))
+			{
+				FVector* AccelPtr = StructProp->ContainerPtrToValuePtr<FVector>(GetCharacterMovement());
+				if (AccelPtr)
+				{
+					*AccelPtr = ReplicatedAcceleration;
+				}
+			}
+		}
+	}
+
 	Super::Tick(DeltaTime);
+
+	// Detect when character acceleration drops to zero this frame
+	bool bStoppedAcceleratingThisFrame = false;
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		FVector CurrentAccel = MovementComponent->GetCurrentAcceleration();
+		if (CurrentAccel.IsNearlyZero() && !PreviousAcceleration.IsNearlyZero())
+		{
+			bStoppedAcceleratingThisFrame = true;
+		}
+		PreviousAcceleration = CurrentAccel;
+	}
+
+	// Reset trajectory history on idle stop to prevent sliding
+	if (bStoppedAcceleratingThisFrame && TrajectoryComponent)
+	{
+		TrajectoryComponent->ResetTrajectoryHistory();
+	}
 
 	if (AnimStateComponent)
 	{
