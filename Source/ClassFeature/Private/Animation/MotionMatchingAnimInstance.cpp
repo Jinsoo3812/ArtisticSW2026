@@ -55,7 +55,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
             FAnimNode_PoseSearchHistoryCollector* HistoryNode = StructProp->ContainerPtrToValuePtr<FAnimNode_PoseSearchHistoryCollector>(AnimInstanceObj);
             if (HistoryNode)
             {
-                // Set using reflection to support both deprecated Trajectory and new TransformTrajectory
+                // Set using reflection because the collector stores the trajectory as a private anim node property.
                 TArray<FName> HistoryPropNames = { FName("TransformTrajectory"), FName("Trajectory") };
                 for (const FName& PropName : HistoryPropNames)
                 {
@@ -63,7 +63,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     {
                         if (FStructProperty* HistoryStructProp = CastField<FStructProperty>(HistoryProp))
                         {
-                            if (HistoryStructProp->Struct)
+                            if (HistoryStructProp->Struct == FTransformTrajectory::StaticStruct())
                             {
                                 void* HistoryPropPtr = HistoryStructProp->ContainerPtrToValuePtr<void>(HistoryNode);
                                 if (HistoryPropPtr)
@@ -247,18 +247,21 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     UCharacterTrajectoryComponent* TrajectoryComp = CachedBasePlayer->FindComponentByClass<UCharacterTrajectoryComponent>();
     if (TrajectoryComp)
     {
-        TArray<FName> TrajPropNames = { FName("Trajectory"), FName("QueryTrajectory") };
+        TArray<FName> TrajPropNames = { FName("TransformTrajectory"), FName("Trajectory"), FName("QueryTrajectory") };
         for (const FName& PropName : TrajPropNames)
         {
             if (FProperty* Prop = TrajectoryComp->GetClass()->FindPropertyByName(PropName))
             {
                 if (FStructProperty* StructProp = CastField<FStructProperty>(Prop))
                 {
-                    void* PropPtr = StructProp->ContainerPtrToValuePtr<void>(TrajectoryComp);
-                    if (PropPtr)
+                    if (StructProp->Struct == FTransformTrajectory::StaticStruct())
                     {
-                        StructProp->Struct->CopyScriptStruct(&ThreadSafeData.MovementData.Trajectory, PropPtr);
-                        break;
+                        void* PropPtr = StructProp->ContainerPtrToValuePtr<void>(TrajectoryComp);
+                        if (PropPtr)
+                        {
+                            StructProp->Struct->CopyScriptStruct(&ThreadSafeData.MovementData.Trajectory, PropPtr);
+                            break;
+                        }
                     }
                 }
             }

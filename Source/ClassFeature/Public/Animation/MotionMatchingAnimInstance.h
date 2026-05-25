@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimInstanceProxy.h"
-#include "PoseSearch/PoseSearchTrajectoryTypes.h"
+#include "Animation/TrajectoryTypes.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "MotionMatchingAnimInstance.generated.h"
 
@@ -23,7 +23,7 @@ struct FAnimMovementData
     FVector Acceleration = FVector::ZeroVector;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
-    FPoseSearchQueryTrajectory Trajectory;
+    FTransformTrajectory Trajectory;
 };
 
 USTRUCT(BlueprintType)

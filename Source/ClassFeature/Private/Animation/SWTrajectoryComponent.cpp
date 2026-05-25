@@ -84,7 +84,7 @@ void USWTrajectoryComponent::ResetTrajectoryHistory()
                         ArrayHelper.Resize(30);
                     }
 
-                    // Get properties of the elements (FTransformTrajectorySample or FPoseSearchQueryTrajectorySample)
+                    // Get properties of the trajectory sample elements.
                     UScriptStruct* ElementStruct = nullptr;
                     if (FStructProperty* InnerStructProp = CastField<FStructProperty>(SamplesProp->Inner))
                     {

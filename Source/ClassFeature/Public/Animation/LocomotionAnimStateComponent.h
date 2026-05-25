@@ -85,6 +85,7 @@ protected:
     void StartLanding(float ImpactFallSpeed, bool bTriggerRealLandEvent);
     void FinishLanding();
     void FinishLandingRequest();
+    void InterruptLandingForMoveInput();
     
     // Timer fallback functions
     void OnStartFallbackTimeout();

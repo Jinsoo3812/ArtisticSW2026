@@ -496,6 +496,10 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             {
                 ForceStateTransition(ELocomotionState::InAir);
             }
+            else if (!bLandWasMoving && bHasMoveInput)
+            {
+                InterruptLandingForMoveInput();
+            }
             break;
         }
         case ELocomotionState::Combat:
@@ -804,5 +808,43 @@ void ULocomotionAnimStateComponent::FinishLandingRequest()
     else
     {
         ForceStateTransition(ELocomotionState::Idle);
+    }
+}
+
+void ULocomotionAnimStateComponent::InterruptLandingForMoveInput()
+{
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
+    }
+
+    bIsLanding = false;
+    bLandingRequested = false;
+    bIsInAir = false;
+    bWasInAir = false;
+    bWasAirborneLastFrame = false;
+    AirborneDuration = 0.f;
+    bSuppressFallOffStart = false;
+    bCanEnterLand = false;
+    bCanEnterGround = true;
+    LastFallSpeed = 0.f;
+
+    MoveInputHeldTime = 0.f;
+    bGroundStartFinished = !ShouldUseLocalInput();
+    bPendingGroundStartFinish = false;
+    bStartWasSprinting = bIsSprinting;
+    bStartRequested = ShouldUseLocalInput();
+    bStopRequested = false;
+    bUseStartDatabase = ShouldUseLocalInput();
+    bUseLoopDatabase = false;
+    bUseSharpTurnDatabase = false;
+
+    if (bIsCombatMode)
+    {
+        ForceStateTransition(ELocomotionState::Combat);
+    }
+    else
+    {
+        ForceStateTransition(ELocomotionState::Start);
     }
 }
