@@ -8,8 +8,7 @@
 
 ULocomotionAnimStateComponent::ULocomotionAnimStateComponent()
 {
-    PrimaryComponentTick.bCanEverTick = true;
-    PrimaryComponentTick.TickGroup = TG_PrePhysics; // Tick before physics to update inputs
+    PrimaryComponentTick.bCanEverTick = false;
 
     CurrentState = ELocomotionState::Idle;
     PreviousState = ELocomotionState::Idle;

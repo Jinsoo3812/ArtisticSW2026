@@ -120,6 +120,7 @@ void ABasePlayer::Tick(float DeltaTime)
 
 	if (AnimStateComponent)
 	{
+		AnimStateComponent->UpdateAnimationState(DeltaTime);
 		SyncAnimationStateFromComponent();
 	}
 	if (HasAuthority())
@@ -174,7 +175,7 @@ void ABasePlayer::Tick(float DeltaTime)
 
 void ABasePlayer::SyncAnimationStateFromComponent()
 {
-	if (!AnimStateComponent)
+	if (!AnimStateComponent || GetNetMode() == NM_DedicatedServer)
 	{
 		return;
 	}
