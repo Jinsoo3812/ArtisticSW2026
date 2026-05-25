@@ -178,14 +178,14 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
 	float MoveInputHeldTime = 0.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Start")
-	float StartToLoopDelay = 0.75f;
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	float StartToLoopDelay = 0.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Start")
-	float MinStartDatabaseTime = 0.12f;
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	float MinStartDatabaseTime = 0.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Start")
-	float SprintStartToLoopDelay = 0.34f;
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
+	float SprintStartToLoopDelay = 0.f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
 	float CurrentStartToLoopDelay = 0.f;
@@ -241,17 +241,7 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Turn")
 	FVector2D PreviousMoveInputForTurn = FVector2D::ZeroVector;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement")
-	float JumpStartDuration = 0.2f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement")
-	float FallOffStartDuration = 0.6f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement")
-	float LandingDuration = 0.3f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Landing")
-	float LandingRequestDuration = 0.45f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Landing")
 	float JumpStartMaxDuration = 1.0f;
@@ -270,6 +260,10 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
 	bool bLandWasSprinting = false;
+
+
+
+
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
 	bool bUseHeavyLand = false;
@@ -366,6 +360,7 @@ protected:
 	void FinishLanding();
 	void FinishLandingRequest();
 	void OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
 
 	// 태그를 넣으면 고유 Hash 기반 ID를 반환하는 헬퍼
 	int32 GetInputIDFromTag(const FGameplayTag& Tag) const;

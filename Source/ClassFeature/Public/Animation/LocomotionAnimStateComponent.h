@@ -199,6 +199,7 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Compatibility")
     bool bLandWasSprinting;
 
+
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Compatibility")
     float MovementDirection;
 
