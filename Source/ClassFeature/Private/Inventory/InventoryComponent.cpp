@@ -4,6 +4,7 @@
 #include "Inventory/InventoryComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "ItemData.h"
+#include "ItemSubsystem.h"
 #include "Engine/Engine.h"
 
 // Sets default values for this component's properties
@@ -152,32 +153,38 @@ int32 UInventoryComponent::GetMaterialCount(const FGameplayTag& ItemTag) const
 
 int32 UInventoryComponent::GetMaxStack(const FGameplayTag& ItemTag) const
 {
-    if (!ItemData)
+    if (UWorld* World = GetWorld())
     {
-        return 99;
+        if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
+        {
+            return Subsystem->GetMaxStack(ItemTag);
+        }
     }
-
-    return ItemData->GetMaxStackByTag(ItemTag);
+    return 99;
 }
 
 UTexture2D* UInventoryComponent::GetMaterialIcon(const FGameplayTag& ItemTag) const
 {
-    if (!ItemData)
+    if (UWorld* World = GetWorld())
     {
-        return nullptr;
+        if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
+        {
+            return Subsystem->GetIcon2D(ItemTag).LoadSynchronous();
+        }
     }
-
-    return ItemData->GetIconByTag(ItemTag);
+    return nullptr;
 }
 
 FText UInventoryComponent::GetMaterialName(const FGameplayTag& ItemTag) const
 {
-    if (!ItemData)
+    if (UWorld* World = GetWorld())
     {
-        return FText::FromString(ItemTag.ToString());
+        if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
+        {
+            return Subsystem->GetItemName(ItemTag);
+        }
     }
-
-    return ItemData->GetItemNameByTag(ItemTag);
+    return FText::FromString(ItemTag.ToString());
 }
 
 void UInventoryComponent::HandleLeftClickSlot(int32 SlotIndex)

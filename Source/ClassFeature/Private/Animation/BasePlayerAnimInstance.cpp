@@ -3,6 +3,7 @@
 #include "Animation/BasePlayerAnimInstance.h"
 
 #include "BasePlayer.h"
+#include "Animation/BasePlayerAnimStateComponent.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -32,7 +33,14 @@ void UBasePlayerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 	if (CachedBasePlayer)
 	{
-		UpdateFromPlayerCharacter(DeltaSeconds, *CachedBasePlayer);
+		if (const UBasePlayerAnimStateComponent* AnimState = CachedBasePlayer->GetAnimStateComponent())
+		{
+			UpdateFromAnimStateComponent(*AnimState);
+		}
+		else
+		{
+			UpdateFromPlayerCharacter(DeltaSeconds, *CachedBasePlayer);
+		}
 	}
 	else
 	{
@@ -53,11 +61,11 @@ void UBasePlayerAnimInstance::MarkGroundStartFinished()
 {
 	if (CachedBasePlayer)
 	{
-		CachedBasePlayer->MarkGroundStartFinished();
-		bGroundStartFinished = CachedBasePlayer->bGroundStartFinished;
-		bPendingGroundStartFinish = CachedBasePlayer->bPendingGroundStartFinish;
-		bUseStartDatabase = CachedBasePlayer->bUseStartDatabase;
-		bUseLoopDatabase = CachedBasePlayer->bUseLoopDatabase;
+		if (UBasePlayerAnimStateComponent* AnimState = CachedBasePlayer->GetAnimStateComponent())
+		{
+			AnimState->MarkGroundStartFinished();
+			UpdateFromAnimStateComponent(*AnimState);
+		}
 	}
 }
 
@@ -212,6 +220,63 @@ void UBasePlayerAnimInstance::UpdateFromPlayerCharacter(float DeltaSeconds, cons
 	CombatInputRight = PlayerCharacter.CombatInputRight;
 	CombatForwardSpeed = PlayerCharacter.CombatForwardSpeed;
 	CombatRightSpeed = PlayerCharacter.CombatRightSpeed;
+}
+
+void UBasePlayerAnimInstance::UpdateFromAnimStateComponent(const UBasePlayerAnimStateComponent& AnimState)
+{
+	GroundSpeed = AnimState.GroundSpeed;
+	VerticalSpeed = AnimState.VerticalSpeed;
+	bIsInAir = AnimState.bIsInAir;
+	bIsPhysicallyInAir = AnimState.bIsPhysicallyInAir;
+	bIsJumping = AnimState.bIsJumping;
+	bIsFallOffStart = AnimState.bIsFallOffStart;
+	bIsLanding = AnimState.bIsLanding;
+	bLandingRequested = AnimState.bLandingRequested;
+	bCanEnterLand = AnimState.bCanEnterLand;
+	bCanEnterGround = AnimState.bCanEnterGround;
+	LastFallSpeed = AnimState.LastFallSpeed;
+	LandStartGroundSpeed = AnimState.LandStartGroundSpeed;
+	LandStartFallSpeed = AnimState.LandStartFallSpeed;
+	bLandWasMoving = AnimState.bLandWasMoving;
+	bLandWasSprinting = AnimState.bLandWasSprinting;
+	bUseHeavyLand = AnimState.bUseHeavyLand;
+	MoveInputSize = AnimState.MoveInputSize;
+	MoveInputHeldTime = AnimState.MoveInputHeldTime;
+	CurrentStartToLoopDelay = AnimState.CurrentStartToLoopDelay;
+	bHasMoveInput = AnimState.bHasMoveInput;
+	bPrevHasMoveInput = AnimState.bPrevHasMoveInput;
+	bStartRequested = AnimState.bStartRequested;
+	bStopRequested = AnimState.bStopRequested;
+	bUseStartDatabase = AnimState.bUseStartDatabase;
+	bGroundStartFinished = AnimState.bGroundStartFinished;
+	bPendingGroundStartFinish = AnimState.bPendingGroundStartFinish;
+	bStartWasSprinting = AnimState.bStartWasSprinting;
+	bUseLoopDatabase = AnimState.bUseLoopDatabase;
+	bUseSharpTurnDatabase = AnimState.bUseSharpTurnDatabase;
+	MoveInputTurnAngle = AnimState.MoveInputTurnAngle;
+	bSharpTurnRequested = AnimState.bSharpTurnRequested;
+	bIsSprinting = AnimState.bIsSprinting;
+	StopIntentSpeedThreshold = AnimState.StopIntentSpeedThreshold;
+	IdleSpeedThreshold = AnimState.IdleSpeedThreshold;
+	RunToSprintSpeedThreshold = AnimState.RunToSprintSpeedThreshold;
+	SharpTurnAngleThreshold = AnimState.SharpTurnAngleThreshold;
+	MoveInputTurnDeadZoneAngle = AnimState.MoveInputTurnDeadZoneAngle;
+	SharpTurnMinSpeed = AnimState.SharpTurnMinSpeed;
+	MovementDirection = AnimState.MovementDirection;
+	CombatInputForward = AnimState.CombatInputForward;
+	CombatInputRight = AnimState.CombatInputRight;
+	CombatForwardSpeed = AnimState.CombatForwardSpeed;
+	CombatRightSpeed = AnimState.CombatRightSpeed;
+
+	if (CachedBasePlayer)
+	{
+		bIsCombatMode = CachedBasePlayer->bIsCombatMode;
+		bIsAttacking = CachedBasePlayer->bIsAttacking;
+		bIsDodging = CachedBasePlayer->bIsDodging;
+		bIsHitReacting = CachedBasePlayer->bIsHitReacting;
+		bIsPlayingCombatIntro = CachedBasePlayer->bIsPlayingCombatIntro;
+		bPendingCombatModeFromIntro = CachedBasePlayer->bPendingCombatModeFromIntro;
+	}
 }
 
 void UBasePlayerAnimInstance::UpdateAimOffset()

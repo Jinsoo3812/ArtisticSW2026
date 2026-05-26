@@ -1,4 +1,4 @@
-﻿#include "Item/BaseItem.h"
+#include "Item/BaseItem.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "ItemData.h"
@@ -264,18 +264,24 @@ void ABaseItem::OnRep_ItemState()
 
 UTexture2D* ABaseItem::GetItemIcon() const
 {
-	if (const FItemDefinition* Def = GetDefinitionFromSubsystem())
+	if (UWorld* World = GetWorld())
 	{
-		return Def->Icon2D.LoadSynchronous();
+		if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
+		{
+			return Subsystem->GetIcon2D(ItemTag).LoadSynchronous();
+		}
 	}
 	return nullptr;
 }
 
 FText ABaseItem::GetItemNameText() const
 {
-	if (const FItemDefinition* Def = GetDefinitionFromSubsystem())
+	if (UWorld* World = GetWorld())
 	{
-		return Def->ItemName;
+		if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
+		{
+			return Subsystem->GetItemName(ItemTag);
+		}
 	}
 	return FText::FromString(ItemTag.ToString());
 }

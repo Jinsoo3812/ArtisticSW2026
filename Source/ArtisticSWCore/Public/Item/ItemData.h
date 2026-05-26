@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
@@ -29,8 +29,8 @@ struct FItemFeatureData : public FTableRowBase
 	FName AttachmentSocketName = FName("GripPoint");
 
 
-
-	// MaxStack 등 필요한 기획 수치 추가...
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Feature")
+	int32 MaxStack = 99;
 };
 
 // Data Asset에 정의될 UObject인 ItemData
@@ -43,14 +43,6 @@ struct FItemDefinition
 	* TSubclassOf : A 클래스가 B 클래스를 TSubclassOf로 들고 있다면, A 클래스 객체가 로드될 때 B도 같이 로드된다.
 	* TSoftObjectPtr : A 클래스가 B 클래스를 TSoftClassPtr로 들고 있다면, B는 실제로 사용될 때 로드된다. (초기 로딩 감소)
 	*/
-
-	// 아이템의 이름 (For UI) -- LEGACY
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
-	FText ItemName;
-
-	// 아이템의 사용법 (For UI) -- LEGACY
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
-	FText HowToInteractText;
 
 	// 아이템의 아이콘 (For UI)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
@@ -72,17 +64,13 @@ struct FItemDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	TSoftClassPtr<AActor> SpawnClass;
 
-	// Item이 붙는 소켓 이름 -- LEGACY
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
-	FName AttachmentSocketName = FName("GripPoint");
-
 	// Item의 GA를 사용할 수 있는 클래스 TAG 리스트
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	TArray<FGameplayTag> CanUseClassList;
 
-	// max stack 수 일단은 여기 추가햇습니다.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Feature")
-	int32 MaxStack = 99;
+	// 사용을 위한 키 입력 (Editor에서 할당, 예: Key.Default.Mouse.LeftClick)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
+	FGameplayTag UseKeyTag;
 
 	// 필요하다면 아이템 이름, 아이콘(UI용 UTexture2D) 등도 여기에 추가
 };
@@ -103,14 +91,6 @@ public:
 	{
 		return ItemDefinitions.Find(ItemTag);
 	}
-
-	// 태그로 아이콘을 가져오는 함수
-	UTexture2D* GetIconByTag(const FGameplayTag& ItemTag) const;
-
-	// 태그로 이름을 가져오는 함수
-	FText GetItemNameByTag(const FGameplayTag& ItemTag) const;
-
-	int32 GetMaxStackByTag(const FGameplayTag& ItemTag) const;
 };
 
 // Item 조합식을 정의하는 구조체
