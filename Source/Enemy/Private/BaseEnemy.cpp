@@ -29,8 +29,8 @@ ABaseEnemy::ABaseEnemy()
 	SetReplicateMovement(true);
 	bAlwaysRelevant = true;
 
-	NetUpdateFrequency = 30.0f;
-	MinNetUpdateFrequency = 15.0f;
+	SetNetUpdateFrequency(30.0f);
+	SetMinNetUpdateFrequency(15.0f);
 	
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	

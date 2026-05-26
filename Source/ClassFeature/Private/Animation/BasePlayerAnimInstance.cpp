@@ -3,7 +3,7 @@
 #include "Animation/BasePlayerAnimInstance.h"
 
 #include "BasePlayer.h"
-#include "Animation/BasePlayerAnimStateComponent.h"
+#include "Animation/LocomotionAnimStateComponent.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -33,7 +33,7 @@ void UBasePlayerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 	if (CachedBasePlayer)
 	{
-		if (const UBasePlayerAnimStateComponent* AnimState = CachedBasePlayer->GetAnimStateComponent())
+		if (const ULocomotionAnimStateComponent* AnimState = CachedBasePlayer->GetAnimStateComponent())
 		{
 			UpdateFromAnimStateComponent(*AnimState);
 		}
@@ -61,7 +61,7 @@ void UBasePlayerAnimInstance::MarkGroundStartFinished()
 {
 	if (CachedBasePlayer)
 	{
-		if (UBasePlayerAnimStateComponent* AnimState = CachedBasePlayer->GetAnimStateComponent())
+		if (ULocomotionAnimStateComponent* AnimState = CachedBasePlayer->GetAnimStateComponent())
 		{
 			AnimState->MarkGroundStartFinished();
 			UpdateFromAnimStateComponent(*AnimState);
@@ -203,12 +203,12 @@ void UBasePlayerAnimInstance::UpdateFromPlayerCharacter(float DeltaSeconds, cons
 	MoveInputTurnAngle = PlayerCharacter.MoveInputTurnAngle;
 	bSharpTurnRequested = PlayerCharacter.bSharpTurnRequested;
 	bIsSprinting = PlayerCharacter.bIsSprinting;
-	StopIntentSpeedThreshold = PlayerCharacter.StopIntentSpeedThreshold;
-	IdleSpeedThreshold = PlayerCharacter.IdleSpeedThreshold;
-	RunToSprintSpeedThreshold = PlayerCharacter.RunToSprintSpeedThreshold;
-	SharpTurnAngleThreshold = PlayerCharacter.SharpTurnAngleThreshold;
-	MoveInputTurnDeadZoneAngle = PlayerCharacter.MoveInputTurnDeadZoneAngle;
-	SharpTurnMinSpeed = PlayerCharacter.SharpTurnMinSpeed;
+	StopIntentSpeedThreshold = 80.f;
+	IdleSpeedThreshold = 30.f;
+	RunToSprintSpeedThreshold = 500.f;
+	SharpTurnAngleThreshold = 60.f;
+	MoveInputTurnDeadZoneAngle = 5.f;
+	SharpTurnMinSpeed = 500.f;
 	bIsCombatMode = PlayerCharacter.bIsCombatMode;
 	bIsAttacking = PlayerCharacter.bIsAttacking;
 	bIsDodging = PlayerCharacter.bIsDodging;
@@ -222,7 +222,7 @@ void UBasePlayerAnimInstance::UpdateFromPlayerCharacter(float DeltaSeconds, cons
 	CombatRightSpeed = PlayerCharacter.CombatRightSpeed;
 }
 
-void UBasePlayerAnimInstance::UpdateFromAnimStateComponent(const UBasePlayerAnimStateComponent& AnimState)
+void UBasePlayerAnimInstance::UpdateFromAnimStateComponent(const ULocomotionAnimStateComponent& AnimState)
 {
 	GroundSpeed = AnimState.GroundSpeed;
 	VerticalSpeed = AnimState.VerticalSpeed;

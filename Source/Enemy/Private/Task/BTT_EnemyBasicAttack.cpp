@@ -174,7 +174,7 @@ bool UBTT_EnemyBasicAttack::IsAbilityClassTagged(TSubclassOf<UGameplayAbility> A
         return false;
     }
 
-    return AbilityCDO->AbilityTags.HasTagExact(AbilityAssetTag);
+    return AbilityCDO->GetAssetTags().HasTagExact(AbilityAssetTag);
 }
 
 void UBTT_EnemyBasicAttack::CleanupTagDelegate()

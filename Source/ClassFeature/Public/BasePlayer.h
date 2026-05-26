@@ -6,6 +6,7 @@
 #include "BaseCharacter.h"
 #include "GameplayTagContainer.h"
 #include "InputTagConfig.h"
+#include "Animation/LocomotionAnimStateComponent.h"
 #include "BasePlayer.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
@@ -18,7 +19,7 @@ struct FInputActionValue;
 class ABaseItem;
 class UInputTagConfig;
 class UInventoryComponent;
-class UBasePlayerAnimStateComponent;
+class USWTrajectoryComponent;
 class UAnimMontage;
 
 // Item Slot 관리 구조체
@@ -52,6 +53,7 @@ class CLASSFEATURE_API ABasePlayer : public ABaseCharacter
 {
 	GENERATED_BODY()
 	friend class UBasePlayerAnimStateComponent;
+	friend class ULocomotionAnimStateComponent;
 
 public:
 	ABasePlayer();
@@ -109,6 +111,29 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Movement|Sprint")
 	void StopSprint();
 
+	UFUNCTION(Server, Reliable)
+	void Server_SetSprinting(bool bNewSprinting);
+
+	UFUNCTION()
+	void OnRep_IsSprinting();
+
+	UFUNCTION()
+	void OnRep_LocomotionStateSnapshot();
+
+	UFUNCTION(Server, Reliable)
+	void Server_NotifyJumpStarted();
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_NotifyJumpStarted(int32 EventSequence);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_NotifyFallOffStarted(int32 EventSequence);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_NotifyLanded(float ImpactFallSpeed, int32 EventSequence);
+
+	void BroadcastFallOffStartedForRemoteClients();
+
 	/* --- 애니메이션 이동 상태 --- */
 public:
 	// Animation-only air state. This is the single source of truth for ABP IsAir.
@@ -153,38 +178,17 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Input")
 	float MoveInputSize = 0.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Input")
-	float MoveInputDeadZone = 0.1f;
-
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Input")
 	FVector2D CachedMoveInput = FVector2D::ZeroVector;
 
-	UPROPERTY(BlueprintReadWrite, Category = "Animation|Movement|Sprint")
+	UPROPERTY(BlueprintReadWrite, ReplicatedUsing = OnRep_IsSprinting, Category = "Animation|Movement|Sprint")
 	bool bIsSprinting = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Sprint")
-	float WalkSpeed = 500.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Sprint")
-	float SprintSpeed = 700.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Sprint")
-	float WalkRotationRateYaw = 500.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Sprint")
-	float SprintRotationRateYaw = 500.f;
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_LocomotionStateSnapshot, Category = "Animation|Movement|Network")
+	FReplicatedLocomotionState LocomotionStateSnapshot;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
 	float MoveInputHeldTime = 0.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Start")
-	float StartToLoopDelay = 0.75f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Start")
-	float MinStartDatabaseTime = 0.12f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Start")
-	float SprintStartToLoopDelay = 0.34f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
 	float CurrentStartToLoopDelay = 0.f;
@@ -213,47 +217,16 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Requests")
 	bool bStopRequested = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Requests")
-	float StopIntentSpeedThreshold = 80.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Requests")
-	float IdleSpeedThreshold = 30.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Requests")
-	float RunToSprintSpeedThreshold = 500.f;
-
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Turn")
 	float MoveInputTurnAngle = 0.f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Turn")
 	bool bSharpTurnRequested = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Turn")
-	float SharpTurnAngleThreshold = 60.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Turn")
-	float MoveInputTurnDeadZoneAngle = 5.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Turn")
-	float SharpTurnMinSpeed = 500.f;
-
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Turn")
 	FVector2D PreviousMoveInputForTurn = FVector2D::ZeroVector;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement")
-	float JumpStartDuration = 0.2f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement")
-	float FallOffStartDuration = 0.6f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement")
-	float LandingDuration = 0.3f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Landing")
-	float LandingRequestDuration = 0.45f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Landing")
-	float JumpStartMaxDuration = 1.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
 	float LastFallSpeed = 0.f;
@@ -270,14 +243,12 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
 	bool bLandWasSprinting = false;
 
+
+
+
+
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
 	bool bUseHeavyLand = false;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Landing")
-	float HeavyLandSpeedThreshold = 650.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement|Landing")
-	float RealLandingEventSpeedThreshold = 300.f;
 
 	/* --- 애니메이션 전투 상태 --- */
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Combat")
@@ -322,8 +293,6 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Combat")
 	float CombatRightSpeed = 0.f;
 
-	bool IsInAirForAnimation() const;
-
 	UFUNCTION(BlueprintCallable, Category = "Animation|Movement")
 	void FinishFallOffStart();
 
@@ -350,21 +319,15 @@ protected:
 
 	FTimerHandle JumpStartTimerHandle;
 	FTimerHandle FallOffStartTimerHandle;
-	FTimerHandle LandingTimerHandle;
-	FTimerHandle LandingRequestTimerHandle;
+	int32 LocomotionAnimEventSequence = 0;
 
-	void UpdateAnimationMovementState(float DeltaTime);
-	void UpdateMovementRequestState(float DeltaTime);
-	void UpdateCombatMovementState();
-	void UpdateMaxWalkSpeed();
-	void ClearMovementRequests();
 	void SyncAnimationStateFromComponent();
+	void UpdateLocomotionStateSnapshot();
+	int32 NextLocomotionAnimEventSequence();
+	bool CanSprintFromServerState() const;
 	void ApplyCombatRotationMode(bool bEnableCombatRotation);
-	void StartFallOffStart();
-	void StopFallOffStart();
-	void FinishLanding();
-	void FinishLandingRequest();
 	void OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
 
 	// 태그를 넣으면 고유 Hash 기반 ID를 반환하는 헬퍼
 	int32 GetInputIDFromTag(const FGameplayTag& Tag) const;
@@ -578,7 +541,10 @@ protected:
 	TObjectPtr<UInventoryComponent> InventoryComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
-	TObjectPtr<UBasePlayerAnimStateComponent> AnimStateComponent;
+	TObjectPtr<ULocomotionAnimStateComponent> AnimStateComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<USWTrajectoryComponent> TrajectoryComponent;
 
 public:
 	UFUNCTION()
@@ -590,5 +556,5 @@ public:
 	UInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Animation")
-	UBasePlayerAnimStateComponent* GetAnimStateComponent() const { return AnimStateComponent; }
+	ULocomotionAnimStateComponent* GetAnimStateComponent() const { return AnimStateComponent; }
 };
