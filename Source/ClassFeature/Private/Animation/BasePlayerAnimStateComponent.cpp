@@ -22,27 +22,6 @@ void UBasePlayerAnimStateComponent::CacheOwner()
 		return;
 	}
 
-	MoveInputDeadZone = CachedBasePlayer->MoveInputDeadZone;
-	WalkSpeed = CachedBasePlayer->WalkSpeed;
-	SprintSpeed = CachedBasePlayer->SprintSpeed;
-	WalkRotationRateYaw = CachedBasePlayer->WalkRotationRateYaw;
-	SprintRotationRateYaw = CachedBasePlayer->SprintRotationRateYaw;
-	StartToLoopDelay = CachedBasePlayer->StartToLoopDelay;
-	MinStartDatabaseTime = CachedBasePlayer->MinStartDatabaseTime;
-	SprintStartToLoopDelay = CachedBasePlayer->SprintStartToLoopDelay;
-	StopIntentSpeedThreshold = CachedBasePlayer->StopIntentSpeedThreshold;
-	IdleSpeedThreshold = CachedBasePlayer->IdleSpeedThreshold;
-	RunToSprintSpeedThreshold = CachedBasePlayer->RunToSprintSpeedThreshold;
-	SharpTurnAngleThreshold = CachedBasePlayer->SharpTurnAngleThreshold;
-	MoveInputTurnDeadZoneAngle = CachedBasePlayer->MoveInputTurnDeadZoneAngle;
-	SharpTurnMinSpeed = CachedBasePlayer->SharpTurnMinSpeed;
-	JumpStartDuration = CachedBasePlayer->JumpStartDuration;
-	FallOffStartDuration = CachedBasePlayer->FallOffStartDuration;
-	LandingDuration = CachedBasePlayer->LandingDuration;
-	LandingRequestDuration = CachedBasePlayer->LandingRequestDuration;
-	JumpStartMaxDuration = CachedBasePlayer->JumpStartMaxDuration;
-	HeavyLandSpeedThreshold = CachedBasePlayer->HeavyLandSpeedThreshold;
-	RealLandingEventSpeedThreshold = CachedBasePlayer->RealLandingEventSpeedThreshold;
 	bIsSprinting = CachedBasePlayer->bIsSprinting;
 }
 

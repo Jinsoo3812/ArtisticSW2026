@@ -21,7 +21,7 @@ public class Enemy: ModuleRules
             "NavigationSystem",
             "ArtisticSWCore",
             "ClassFeature",
-            "GasCore",
+            "GASCore",
         });
 
         PublicIncludePaths.AddRange(new string[] {

@@ -23,10 +23,9 @@ public class ArtisticSWCore: ModuleRules
         PublicIncludePaths.AddRange(new string[] {
             // ?덈줈 異붽????뚯씪 寃쎈줈瑜?異붽??섏뿬 include ???대옒???대쫫留??ъ슜?????덇쾶
 			"ArtisticSWCore",
-			"ArtisticSWCore/Public",
+            "ArtisticSWCore/Public",
             "ArtisticSWCore/Public/Item",
             "ArtisticSWCore/Public/GameFramework",
-            "ArtisticSWCore/Public/GameplayAbility",
             "ArtisticSWCore/Public/AnimNotify",
             "ArtisticSWCore/Public/Interactable"
         });

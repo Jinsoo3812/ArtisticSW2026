@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "BasePlayer.h"
@@ -22,7 +22,8 @@
 #include "Components/WidgetComponent.h"
 #include "InteractableComponent.h"
 #include "InteractUserWidget.h"
-#include "Animation/BasePlayerAnimStateComponent.h"
+#include "Animation/LocomotionAnimStateComponent.h"
+#include "Animation/SWTrajectoryComponent.h"
 #include "Inventory/InventoryComponent.h"
 #include "ItemSubSystem.h"
 #include "Animation/AnimInstance.h"
@@ -66,12 +67,13 @@ ABasePlayer::ABasePlayer()
 
 	// 인벤토리 컴포넌트 부착
 	InventoryComponent = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComponent"));
-	AnimStateComponent = CreateDefaultSubobject<UBasePlayerAnimStateComponent>(TEXT("AnimStateComponent"));
+	AnimStateComponent = CreateDefaultSubobject<ULocomotionAnimStateComponent>(TEXT("AnimStateComponent"));
+	TrajectoryComponent = CreateDefaultSubobject<USWTrajectoryComponent>(TEXT("TrajectoryComponent"));
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
-		MovementComponent->MaxWalkSpeed = WalkSpeed;
-		MovementComponent->RotationRate = FRotator(0.f, WalkRotationRateYaw, 0.f);
+		MovementComponent->MaxWalkSpeed = AnimStateComponent ? AnimStateComponent->WalkSpeed : 500.f;
+		MovementComponent->RotationRate = FRotator(0.f, AnimStateComponent ? AnimStateComponent->WalkRotationRateYaw : 500.f, 0.f);
 	}
 }
 
@@ -82,6 +84,8 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	// 배열과 장착 아이템 포인터를 클라이언트로 복제
 	DOREPLIFETIME(ABasePlayer, ItemSlots);
 	DOREPLIFETIME(ABasePlayer, EquippedItem);
+	DOREPLIFETIME(ABasePlayer, bIsSprinting);
+	DOREPLIFETIME(ABasePlayer, LocomotionStateSnapshot);
 }
 
 void ABasePlayer::PostInitializeComponents()
@@ -119,7 +123,10 @@ void ABasePlayer::Tick(float DeltaTime)
 		AnimStateComponent->UpdateAnimationState(DeltaTime);
 		SyncAnimationStateFromComponent();
 	}
-	UpdateMaxWalkSpeed();
+	if (HasAuthority())
+	{
+		UpdateLocomotionStateSnapshot();
+	}
 
 	bool bIsSniping = false;
 	bool bIsAiming = false;
@@ -168,7 +175,7 @@ void ABasePlayer::Tick(float DeltaTime)
 
 void ABasePlayer::SyncAnimationStateFromComponent()
 {
-	if (!AnimStateComponent)
+	if (!AnimStateComponent || GetNetMode() == NM_DedicatedServer)
 	{
 		return;
 	}
@@ -212,6 +219,32 @@ void ABasePlayer::SyncAnimationStateFromComponent()
 	CombatInputRight = AnimStateComponent->CombatInputRight;
 	CombatForwardSpeed = AnimStateComponent->CombatForwardSpeed;
 	CombatRightSpeed = AnimStateComponent->CombatRightSpeed;
+}
+
+void ABasePlayer::UpdateLocomotionStateSnapshot()
+{
+	if (!AnimStateComponent)
+	{
+		return;
+	}
+
+	FReplicatedLocomotionState NewSnapshot;
+	NewSnapshot.CurrentState = static_cast<uint8>(AnimStateComponent->CurrentState);
+	NewSnapshot.bIsSprinting = AnimStateComponent->bIsSprinting;
+	NewSnapshot.bIsJumping = AnimStateComponent->bIsJumping;
+	NewSnapshot.bIsFallOffStart = AnimStateComponent->bIsFallOffStart;
+	NewSnapshot.bIsLanding = AnimStateComponent->bIsLanding;
+	NewSnapshot.bLandingRequested = AnimStateComponent->bLandingRequested;
+	NewSnapshot.bUseHeavyLand = AnimStateComponent->bUseHeavyLand;
+	NewSnapshot.bLandWasMoving = AnimStateComponent->bLandWasMoving;
+	NewSnapshot.bLandWasSprinting = AnimStateComponent->bLandWasSprinting;
+	NewSnapshot.LastFallSpeed = AnimStateComponent->LastFallSpeed;
+	NewSnapshot.EventSequence = LocomotionAnimEventSequence;
+
+	if (LocomotionStateSnapshot != NewSnapshot)
+	{
+		LocomotionStateSnapshot = NewSnapshot;
+	}
 }
 
 void ABasePlayer::PossessedBy(AController* NewController)
@@ -1017,6 +1050,15 @@ void ABasePlayer::DoJumpStart()
 		SyncAnimationStateFromComponent();
 	}
 
+	if (HasAuthority())
+	{
+		Multicast_NotifyJumpStarted(NextLocomotionAnimEventSequence());
+	}
+	else
+	{
+		Server_NotifyJumpStarted();
+	}
+
 	Jump();
 }
 
@@ -1030,9 +1072,13 @@ void ABasePlayer::StartSprint()
 	bIsSprinting = true;
 	if (AnimStateComponent)
 	{
-		AnimStateComponent->bIsSprinting = true;
+		AnimStateComponent->SetSprinting(true);
 	}
-	UpdateMaxWalkSpeed();
+
+	if (!HasAuthority())
+	{
+		Server_SetSprinting(true);
+	}
 }
 
 void ABasePlayer::StopSprint()
@@ -1040,189 +1086,108 @@ void ABasePlayer::StopSprint()
 	bIsSprinting = false;
 	if (AnimStateComponent)
 	{
-		AnimStateComponent->bIsSprinting = false;
+		AnimStateComponent->SetSprinting(false);
 	}
-	UpdateMaxWalkSpeed();
+
+	if (!HasAuthority())
+	{
+		Server_SetSprinting(false);
+	}
+}
+
+void ABasePlayer::Server_SetSprinting_Implementation(bool bNewSprinting)
+{
+	const bool bServerAllowsSprinting = bNewSprinting && CanSprintFromServerState();
+	bIsSprinting = bServerAllowsSprinting;
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->SetSprinting(bServerAllowsSprinting);
+		SyncAnimationStateFromComponent();
+		UpdateLocomotionStateSnapshot();
+	}
+}
+
+void ABasePlayer::OnRep_IsSprinting()
+{
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->SetSprinting(bIsSprinting);
+	}
+}
+
+void ABasePlayer::OnRep_LocomotionStateSnapshot()
+{
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->ApplyAuthoritativeSnapshot(LocomotionStateSnapshot);
+		SyncAnimationStateFromComponent();
+	}
+}
+
+void ABasePlayer::Server_NotifyJumpStarted_Implementation()
+{
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->HandleJumpStarted();
+		SyncAnimationStateFromComponent();
+	}
+
+	Multicast_NotifyJumpStarted(NextLocomotionAnimEventSequence());
+}
+
+void ABasePlayer::Multicast_NotifyJumpStarted_Implementation(int32 EventSequence)
+{
+	if (HasAuthority() || IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->HandleRemoteJumpStarted(EventSequence);
+		SyncAnimationStateFromComponent();
+	}
+}
+
+void ABasePlayer::Multicast_NotifyFallOffStarted_Implementation(int32 EventSequence)
+{
+	if (HasAuthority() || IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->HandleRemoteFallOffStarted(EventSequence);
+		SyncAnimationStateFromComponent();
+	}
+}
+
+void ABasePlayer::Multicast_NotifyLanded_Implementation(float ImpactFallSpeed, int32 EventSequence)
+{
+	if (HasAuthority() || IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->HandleRemoteLanded(ImpactFallSpeed, EventSequence);
+		SyncAnimationStateFromComponent();
+	}
+}
+
+void ABasePlayer::BroadcastFallOffStartedForRemoteClients()
+{
+	if (HasAuthority())
+	{
+		Multicast_NotifyFallOffStarted(NextLocomotionAnimEventSequence());
+	}
 }
 
 void ABasePlayer::OnRep_ItemSlots()
 {
 	OnItemSlotsChanged.Broadcast();
-}
-
-bool ABasePlayer::IsInAirForAnimation() const
-{
-	const UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
-	return MovementComponent && MovementComponent->MovementMode == MOVE_Falling;
-}
-
-void ABasePlayer::UpdateAnimationMovementState(float DeltaTime)
-{
-	const FVector Velocity = GetVelocity();
-	VerticalSpeed = Velocity.Z;
-
-	FVector HorizontalVelocity = Velocity;
-	HorizontalVelocity.Z = 0.f;
-	GroundSpeed = HorizontalVelocity.Size();
-
-	if (VerticalSpeed < 0.f)
-	{
-		LastFallSpeed = FMath::Abs(VerticalSpeed);
-	}
-
-	const bool bNowInAir = IsInAirForAnimation();
-	bIsPhysicallyInAir = bNowInAir;
-
-	if (!bWasInAir
-		&& bNowInAir
-		&& !bIsJumping
-		&& !bIsLanding
-		&& !bSuppressFallOffStart)
-	{
-		StartFallOffStart();
-	}
-
-	if (bNowInAir)
-	{
-		bIsInAir = true;
-	}
-	else if (!bIsJumping && !bLandingRequested && !bIsLanding)
-	{
-		bIsInAir = false;
-		bSuppressFallOffStart = false;
-	}
-
-	bWasInAir = bNowInAir;
-	bCanEnterLand = bLandingRequested;
-	bCanEnterGround = !bIsInAir && !bIsLanding && !bLandingRequested;
-}
-
-void ABasePlayer::UpdateMovementRequestState(float DeltaTime)
-{
-	bPrevHasMoveInput = bHasMoveInput;
-
-	const FVector2D MoveInput = CachedMoveInput.GetClampedToMaxSize(1.f);
-
-	MoveInputSize = MoveInput.Size();
-	bHasMoveInput = MoveInputSize > MoveInputDeadZone;
-	MoveInputHeldTime = bHasMoveInput ? MoveInputHeldTime + DeltaTime : 0.f;
-
-	MoveInputTurnAngle = 0.f;
-	bSharpTurnRequested = false;
-	bStartRequested = false;
-	bStopRequested = false;
-	bUseStartDatabase = false;
-	bUseLoopDatabase = false;
-	bUseSharpTurnDatabase = false;
-
-	if (bHasMoveInput && bPrevHasMoveInput && PreviousMoveInputForTurn.Size() > MoveInputDeadZone)
-	{
-		const FVector2D PrevDir = PreviousMoveInputForTurn.GetSafeNormal();
-		const FVector2D CurrDir = MoveInput.GetSafeNormal();
-		const float Dot = FMath::Clamp(FVector2D::DotProduct(PrevDir, CurrDir), -1.f, 1.f);
-		const float Cross = PrevDir.Y * CurrDir.X - PrevDir.X * CurrDir.Y;
-		MoveInputTurnAngle = FMath::RadiansToDegrees(FMath::Atan2(Cross, Dot));
-		if (FMath::Abs(MoveInputTurnAngle) < MoveInputTurnDeadZoneAngle)
-		{
-			MoveInputTurnAngle = 0.f;
-		}
-	}
-
-	const bool bCanRequestGroundMove = !bIsInAir && !bIsLanding && !bIsJumping && !bIsFallOffStart;
-	if (!bCanRequestGroundMove)
-	{
-		ClearMovementRequests();
-		PreviousMoveInputForTurn = bHasMoveInput ? MoveInput : FVector2D::ZeroVector;
-		return;
-	}
-
-	const bool bJustStartedMoving = !bPrevHasMoveInput && bHasMoveInput;
-	const bool bJustStoppedMoving = bPrevHasMoveInput && !bHasMoveInput;
-
-	if (bJustStartedMoving)
-	{
-		MoveInputHeldTime = 0.f;
-		bGroundStartFinished = false;
-		bPendingGroundStartFinish = false;
-		bStartWasSprinting = bIsSprinting;
-	}
-
-	if (!bHasMoveInput)
-	{
-		bGroundStartFinished = false;
-		bPendingGroundStartFinish = false;
-		bStartWasSprinting = false;
-	}
-
-	if (bPendingGroundStartFinish && MoveInputHeldTime >= MinStartDatabaseTime)
-	{
-		bGroundStartFinished = true;
-		bPendingGroundStartFinish = false;
-	}
-
-	bSharpTurnRequested =
-		bIsSprinting &&
-		bHasMoveInput &&
-		bPrevHasMoveInput &&
-		GroundSpeed >= SharpTurnMinSpeed &&
-		FMath::Abs(MoveInputTurnAngle) >= SharpTurnAngleThreshold;
-
-	bStartRequested = bJustStartedMoving;
-	bStopRequested = bJustStoppedMoving && GroundSpeed > StopIntentSpeedThreshold;
-	CurrentStartToLoopDelay = StartToLoopDelay;
-	bUseStartDatabase = bHasMoveInput && !bGroundStartFinished && MoveInputHeldTime < StartToLoopDelay;
-	bUseSharpTurnDatabase = bSharpTurnRequested;
-	bUseLoopDatabase = bHasMoveInput && !bUseStartDatabase && !bUseSharpTurnDatabase && !bStopRequested;
-
-	PreviousMoveInputForTurn = bHasMoveInput ? MoveInput : FVector2D::ZeroVector;
-}
-
-void ABasePlayer::UpdateCombatMovementState()
-{
-	const FVector2D CombatMoveInput = CachedMoveInput.GetClampedToMaxSize(1.f);
-	CombatInputRight = CombatMoveInput.X;
-	CombatInputForward = CombatMoveInput.Y;
-
-	if (bIsCombatMode && bHasMoveInput)
-	{
-		const float CurrentMaxSpeed = GetCharacterMovement() ? GetCharacterMovement()->MaxWalkSpeed : WalkSpeed;
-		CombatRightSpeed = CombatInputRight * CurrentMaxSpeed;
-		CombatForwardSpeed = CombatInputForward * CurrentMaxSpeed;
-		MovementDirection = FMath::RadiansToDegrees(FMath::Atan2(CombatInputRight, CombatInputForward));
-	}
-	else
-	{
-		MovementDirection = 0.f;
-		CombatForwardSpeed = 0.f;
-		CombatRightSpeed = 0.f;
-	}
-}
-
-void ABasePlayer::UpdateMaxWalkSpeed()
-{
-	if (!IsLocallyControlled() && !HasAuthority())
-	{
-		return;
-	}
-
-	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
-	if (!MovementComponent)
-	{
-		return;
-	}
-
-	const bool bCanSprint =
-		bIsSprinting &&
-		!bIsAttacking &&
-		!bIsDodging &&
-		!bIsHitReacting;
-
-	MovementComponent->MaxWalkSpeed = bCanSprint ? SprintSpeed : WalkSpeed;
-	MovementComponent->RotationRate = FRotator(
-		0.f,
-		bCanSprint ? SprintRotationRateYaw : WalkRotationRateYaw,
-		0.f
-	);
 }
 
 void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
@@ -1235,41 +1200,13 @@ void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
 	}
 }
 
-void ABasePlayer::ClearMovementRequests()
-{
-	bStartRequested = false;
-	bStopRequested = false;
-	bUseStartDatabase = false;
-	bUseLoopDatabase = false;
-	bUseSharpTurnDatabase = false;
-	bGroundStartFinished = false;
-	bPendingGroundStartFinish = false;
-	bStartWasSprinting = false;
-	MoveInputHeldTime = 0.f;
-	CurrentStartToLoopDelay = 0.f;
-	bSharpTurnRequested = false;
-	MoveInputTurnAngle = 0.f;
-}
-
 void ABasePlayer::MarkGroundStartFinished()
 {
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->MarkGroundStartFinished();
 		SyncAnimationStateFromComponent();
-		return;
 	}
-
-	if (MoveInputHeldTime < MinStartDatabaseTime)
-	{
-		bPendingGroundStartFinish = true;
-		return;
-	}
-
-	bPendingGroundStartFinish = false;
-	bGroundStartFinished = true;
-	bUseStartDatabase = false;
-	bUseLoopDatabase = bHasMoveInput && !bSharpTurnRequested && !bStopRequested;
 }
 
 void ABasePlayer::FinishJumpStart()
@@ -1278,33 +1215,7 @@ void ABasePlayer::FinishJumpStart()
 	{
 		AnimStateComponent->FinishJumpStart();
 		SyncAnimationStateFromComponent();
-		return;
 	}
-
-	GetWorldTimerManager().ClearTimer(JumpStartTimerHandle);
-	bIsJumping = false;
-
-	if (!IsInAirForAnimation() && !bIsLanding && !bLandingRequested)
-	{
-		bIsInAir = false;
-		bWasInAir = false;
-		bSuppressFallOffStart = false;
-	}
-}
-
-void ABasePlayer::StartFallOffStart()
-{
-	bIsInAir = true;
-	bIsFallOffStart = true;
-
-	GetWorldTimerManager().ClearTimer(FallOffStartTimerHandle);
-	GetWorldTimerManager().SetTimer(
-		FallOffStartTimerHandle,
-		this,
-		&ABasePlayer::FinishFallOffStart,
-		FallOffStartDuration,
-		false
-	);
 }
 
 void ABasePlayer::FinishFallOffStart()
@@ -1313,34 +1224,9 @@ void ABasePlayer::FinishFallOffStart()
 	{
 		AnimStateComponent->FinishFallOffStart();
 		SyncAnimationStateFromComponent();
-		return;
 	}
-
-	StopFallOffStart();
 }
 
-void ABasePlayer::StopFallOffStart()
-{
-	GetWorldTimerManager().ClearTimer(FallOffStartTimerHandle);
-	bIsFallOffStart = false;
-}
-
-void ABasePlayer::FinishLanding()
-{
-	bIsLanding = false;
-	bCanEnterGround = !bIsInAir && !bLandingRequested;
-}
-
-void ABasePlayer::FinishLandingRequest()
-{
-	bIsLanding = false;
-	bLandingRequested = false;
-	bIsInAir = false;
-	bWasInAir = false;
-	bSuppressFallOffStart = false;
-	bCanEnterLand = false;
-	bCanEnterGround = true;
-}
 
 void ABasePlayer::RequestCombatModeToggle()
 {
@@ -1445,79 +1331,32 @@ void ABasePlayer::Landed(const FHitResult& Hit)
 {
 	const float ImpactFallSpeed = FMath::Max(LastFallSpeed, FMath::Abs(GetVelocity().Z));
 
-	// 항상 Super를 먼저 호출해주어야 캐릭터 무브먼트의 기본 착지 로직이 꼬이지 않습니다.
 	Super::Landed(Hit);
 
 	if (AnimStateComponent)
 	{
-		AnimStateComponent->HandleLanded(Hit);
+		AnimStateComponent->HandleLanded(Hit, ImpactFallSpeed);
 		SyncAnimationStateFromComponent();
-		return;
 	}
 
-	GetWorldTimerManager().ClearTimer(JumpStartTimerHandle);
-	StopFallOffStart();
-
-	LandStartGroundSpeed = GroundSpeed;
-	LandStartFallSpeed = ImpactFallSpeed;
-	LastFallSpeed = ImpactFallSpeed;
-	bLandWasMoving = LandStartGroundSpeed > IdleSpeedThreshold || bHasMoveInput;
-	bLandWasSprinting = bIsSprinting || LandStartGroundSpeed >= RunToSprintSpeedThreshold;
-	bUseHeavyLand = LandStartFallSpeed >= HeavyLandSpeedThreshold;
-
-	bIsJumping = false;
-	bIsInAir = true;
-	bIsPhysicallyInAir = false;
-	bWasInAir = false;
-	bSuppressFallOffStart = false;
-	bIsLanding = true;
-	bLandingRequested = true;
-	bCanEnterLand = true;
-	bCanEnterGround = false;
-
-	GetWorldTimerManager().ClearTimer(LandingTimerHandle);
-	GetWorldTimerManager().SetTimer(
-		LandingTimerHandle,
-		this,
-		&ABasePlayer::FinishLanding,
-		LandingDuration,
-		false
-	);
-
-	GetWorldTimerManager().ClearTimer(LandingRequestTimerHandle);
-	GetWorldTimerManager().SetTimer(
-		LandingRequestTimerHandle,
-		this,
-		&ABasePlayer::FinishLandingRequest,
-		LandingRequestDuration,
-		false
-	);
-
-	// 착지하는 순간의 Z축 하강 속도를 가져옵니다.
-	// (CharacterMovementComponent에서 물리 연산 직전의 Z 속도를 보존하고 있습니다)
-	float FallSpeed = GetCharacterMovement()->Velocity.Z;
-
-	// 디버그용: 실제 게임에서 떨어졌을 때 속도가 얼마나 나오는지 확인해보세요.
-	// UE_LOG(LogTemp, Log, TEXT("Landed! Z Velocity: %f"), FallSpeed);
-
-	// 하강 속도가 일정 수치 이상일 때만 '진짜 착지'로 인정 (Z속도는 음수이므로 < 사용)
-	// -300.0f 는 예시이며, 점프 높이에 따라 -500.0f 등으로 조절하세요.
-	if (LandStartFallSpeed >= RealLandingEventSpeedThreshold)
+	if (HasAuthority())
 	{
-		// 1. 애니메이션 재생을 위해 블루프린트(Character BP)로 신호를 보냅니다.
-		K2_OnRealLanded();
-
-		// 2. (보너스) 현재 GAS를 완벽하게 세팅해 두셨으니, 
-		// 착지 순간에 딜레이나 무적, 공격 불가 등의 상태(GE)를 부여하고 싶다면
-		// 여기서 바로 GameplayEvent를 발생시킬 수도 있습니다!
-		/*
-		if (CachedAbilitySystemComponent.Get())
-		{
-			FGameplayEventData Payload;
-			Payload.Instigator = this;
-			// Tag_Event_Movement_Landed 등 태그를 만들어 매핑
-			CachedAbilitySystemComponent->HandleGameplayEvent(Tag_Event_Movement_Landed, &Payload);
-		}
-		*/
+		Multicast_NotifyLanded(ImpactFallSpeed, NextLocomotionAnimEventSequence());
 	}
+}
+
+int32 ABasePlayer::NextLocomotionAnimEventSequence()
+{
+	++LocomotionAnimEventSequence;
+	if (LocomotionAnimEventSequence <= 0)
+	{
+		LocomotionAnimEventSequence = 1;
+	}
+
+	return LocomotionAnimEventSequence;
+}
+
+bool ABasePlayer::CanSprintFromServerState() const
+{
+	return !bIsAttacking && !bIsDodging && !bIsHitReacting;
 }

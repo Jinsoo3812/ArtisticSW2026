@@ -1,4 +1,4 @@
-﻿using UnrealBuildTool;
+using UnrealBuildTool;
 
 public class ClassFeature: ModuleRules
 {
@@ -27,7 +27,10 @@ public class ClassFeature: ModuleRules
             "InputCore",
             "ArtisticSW2026",
             "Slate",            // <--- PlayetHYDWidget.h를 위해 필요
-            "SlateCore"         // <--- PlayetHYDWidget.h를 위해 필요
+            "SlateCore",         // <--- PlayetHYDWidget.h를 위해 필요
+            "PoseSearch",
+            "Chooser",
+            "MotionTrajectory"
         });
 
         PublicIncludePaths.AddRange(new string[] {
