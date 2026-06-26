@@ -12,6 +12,7 @@ class UChooserTable;
 class UCharacterTrajectoryComponent;
 class FStructProperty;
 class FObjectProperty;
+class FFloatProperty;
 
 USTRUCT(BlueprintType)
 struct FAnimMovementData
@@ -22,10 +23,19 @@ struct FAnimMovementData
     FVector Velocity = FVector::ZeroVector;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    FVector VelocityLocal = FVector::ZeroVector;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     FVector Acceleration = FVector::ZeroVector;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     FTransformTrajectory Trajectory;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    FTransformTrajectory FallOffTrajectoryBefore;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float FallOffElapsedTime = 0.f;
 };
 
 USTRUCT(BlueprintType)
@@ -41,6 +51,9 @@ struct FAnimInputData
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     bool bSharpTurnRequested = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    FVector2D MoveInput = FVector2D::ZeroVector;
 };
 
 USTRUCT(BlueprintType)
@@ -68,6 +81,9 @@ struct FAnimAirData
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     bool bIsJumping = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    bool bIsFallOffStart = false;
 };
 
 USTRUCT(BlueprintType)
@@ -83,6 +99,36 @@ struct FAnimLandingData
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     float LastFallSpeed = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float GroundSpeed = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float VerticalSpeed = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float LandStartGroundSpeed = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float LandStartFallSpeed = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float LandingElapsedTime = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    FVector2D LandMoveDirection = FVector2D::ZeroVector;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    bool bIsPhysicallyInAir = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    bool bLandingRequested = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    bool bLandWasMoving = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    bool bLandWasSprinting = false;
 };
 
 USTRUCT(BlueprintType)
@@ -110,6 +156,12 @@ struct FCachedMotionMatchingNodeInfo
 {
     FStructProperty* NodeProperty = nullptr;
     FObjectProperty* DatabaseProperty = nullptr;
+    FFloatProperty* SearchThrottleTimeProperty = nullptr;
+    TObjectPtr<UPoseSearchDatabase> AppliedDatabase = nullptr;
+    TWeakObjectPtr<const UObject> LastSelectedAnim;
+    float LastSelectedTime = 0.f;
+    float DefaultSearchThrottleTime = 0.f;
+    bool bDefaultSearchThrottleCached = false;
 };
 
 struct FCachedHistoryCollectorNodeInfo
@@ -138,6 +190,7 @@ public:
     TArray<FCachedMotionMatchingNodeInfo> CachedMMNodes;
     TArray<FCachedHistoryCollectorNodeInfo> CachedHistoryNodes;
     bool bNodesCached = false;
+    float DebugLogAccumulator = 0.f;
 
     void CacheNodes(UAnimInstance* InAnimInstance);
 };
@@ -170,65 +223,110 @@ protected:
     UPROPERTY(Transient, BlueprintReadOnly, Category = "Animation")
     TObjectPtr<ULocomotionAnimStateComponent> CachedLocomotionStateComponent;
 
-    // Chooser Table Asset
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Motion Matching")
-    TObjectPtr<UChooserTable> ChooserTable;
+    // Motion Matching PSD assets (Direct C++ selection)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
+    TObjectPtr<UPoseSearchDatabase> IdleDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
+    TObjectPtr<UPoseSearchDatabase> TurnInPlaceDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
+    TObjectPtr<UPoseSearchDatabase> StartDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
+    TObjectPtr<UPoseSearchDatabase> StartDatabaseRemote;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
+    TObjectPtr<UPoseSearchDatabase> LocomotionDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
+    TObjectPtr<UPoseSearchDatabase> LocomotionDatabaseRemote;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
+    TObjectPtr<UPoseSearchDatabase> LocomotionTransitionDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
+    TObjectPtr<UPoseSearchDatabase> LocomotionTransitionDatabaseRemote;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
+    TObjectPtr<UPoseSearchDatabase> StopDatabase;
+
+    // Sprint PSDs
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
+    TObjectPtr<UPoseSearchDatabase> SprintStartDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
+    TObjectPtr<UPoseSearchDatabase> SprintLocomotionDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
+    TObjectPtr<UPoseSearchDatabase> SprintStopDatabase;
+
+    // Air / Landing PSDs
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
+    TObjectPtr<UPoseSearchDatabase> JumpStartDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
+    TObjectPtr<UPoseSearchDatabase> InAirDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
+    TObjectPtr<UPoseSearchDatabase> FallOffDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
+    TObjectPtr<UPoseSearchDatabase> StandLandLightDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
+    TObjectPtr<UPoseSearchDatabase> StandLandHeavyDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
+    TObjectPtr<UPoseSearchDatabase> RunLandLightDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
+    TObjectPtr<UPoseSearchDatabase> RunLandHeavyDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
+    TObjectPtr<UPoseSearchDatabase> SprintLandLightDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
+    TObjectPtr<UPoseSearchDatabase> SprintLandHeavyDatabase;
 
     UPROPERTY(BlueprintReadOnly, Category = "Motion Matching")
     TObjectPtr<UPoseSearchDatabase> CurrentActivePoseSearchDatabase;
 
-    // Pre-processed Chooser Boolean columns (1-to-1 mutually exclusive states)
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsIdle;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsRunStart;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsRunStartRemote;
+protected:
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Optimization")
+    bool bSkipDedicatedServerAnimationDataUpdate = true;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsSprintStart;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Optimization", meta = (ClampMin = "0.0"))
+    float HiddenRemoteUpdateInterval = 0.10f;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsRunLocomotion;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Optimization", meta = (ClampMin = "0.0"))
+    float RecentlyRenderedTolerance = 0.25f;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsRunLocomotionRemote;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Optimization", meta = (ClampMin = "0.0"))
+    float NearMotionMatchingDistance = 2500.0f;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsSprintLocomotion;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Optimization", meta = (ClampMin = "0.0"))
+    float MidMotionMatchingDistance = 6000.0f;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsRunStop;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Optimization", meta = (ClampMin = "0.0"))
+    float FarMotionMatchingDistance = 12000.0f;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsSprintStop;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Optimization", meta = (ClampMin = "0.0"))
+    float MidMotionMatchingUpdateInterval = 0.033f;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsJumpStart;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Optimization", meta = (ClampMin = "0.0"))
+    float FarMotionMatchingUpdateInterval = 0.083f;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsInAir;
+    bool ShouldEvaluateMotionMatchingThisFrame(float DeltaSeconds);
 
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsLandingHeavy;
+private:
+    float MotionMatchingUpdateAccumulator = 0.0f;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsLandingLight;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsRunLandHeavy;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsRunLandLight;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsSprintLandHeavy;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsSprintLandLight;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Motion Matching|Chooser")
-    bool bChooserIsFallOffStart;
+    ELocomotionState LastState = ELocomotionState::Idle;
+    FName LastDatabaseName = NAME_None;
+    float StateLogTimer = 0.0f;
+    bool bWasFallOffForDebug = false;
+    float FallOffDebugElapsedTime = 0.0f;
 };

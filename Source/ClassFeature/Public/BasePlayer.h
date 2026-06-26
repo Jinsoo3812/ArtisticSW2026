@@ -184,6 +184,9 @@ public:
 	UPROPERTY(BlueprintReadWrite, ReplicatedUsing = OnRep_IsSprinting, Category = "Animation|Movement|Sprint")
 	bool bIsSprinting = false;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Sprint")
+	bool bSprintInputHeld = false;
+
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_LocomotionStateSnapshot, Category = "Animation|Movement|Network")
 	FReplicatedLocomotionState LocomotionStateSnapshot;
 
@@ -324,6 +327,8 @@ protected:
 	void SyncAnimationStateFromComponent();
 	void UpdateLocomotionStateSnapshot();
 	int32 NextLocomotionAnimEventSequence();
+	bool CanSprintFromInput() const;
+	void RefreshSprintFromInput();
 	bool CanSprintFromServerState() const;
 	void ApplyCombatRotationMode(bool bEnableCombatRotation);
 	void OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterrupted);

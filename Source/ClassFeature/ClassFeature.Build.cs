@@ -29,6 +29,7 @@ public class ClassFeature: ModuleRules
             "Slate",            // <--- PlayetHYDWidget.h를 위해 필요
             "SlateCore",         // <--- PlayetHYDWidget.h를 위해 필요
             "PoseSearch",
+            "BlendStack",
             "Chooser",
             "MotionTrajectory"
         });

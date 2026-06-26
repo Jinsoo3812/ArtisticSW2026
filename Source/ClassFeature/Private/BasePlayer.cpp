@@ -15,6 +15,7 @@
 #include "BaseGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "HAL/IConsoleManager.h"
 #include "ItemData.h"
 #include "Interactable.h"
 #include "CollisionChannels.h"
@@ -68,12 +69,22 @@ ABasePlayer::ABasePlayer()
 	// 인벤토리 컴포넌트 부착
 	InventoryComponent = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComponent"));
 	AnimStateComponent = CreateDefaultSubobject<ULocomotionAnimStateComponent>(TEXT("AnimStateComponent"));
-	TrajectoryComponent = CreateDefaultSubobject<USWTrajectoryComponent>(TEXT("TrajectoryComponent"));
+	TrajectoryComponent = CreateDefaultSubobject<USWTrajectoryComponent>(TEXT("SWTrajectoryComponent"));
+
+	// 항상 등만 보이도록 설정 (Orient to Controller - 부드러운 회전으로 제자리 회전 유도)
+	bUseControllerRotationYaw = false;
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationRoll = false;
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
 		MovementComponent->MaxWalkSpeed = AnimStateComponent ? AnimStateComponent->WalkSpeed : 500.f;
 		MovementComponent->RotationRate = FRotator(0.f, AnimStateComponent ? AnimStateComponent->WalkRotationRateYaw : 500.f, 0.f);
+
+		// 이동 방향으로 몸 회전 방지
+		MovementComponent->bOrientRotationToMovement = false;
+		// 컨트롤러 지향 방향으로 부드러운 정렬 사용
+		MovementComponent->bUseControllerDesiredRotation = true;
 	}
 }
 
@@ -118,6 +129,9 @@ void ABasePlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// 후방 이동 시 질주(Sprint) 차단 (1안)
+	RefreshSprintFromInput();
+
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->UpdateAnimationState(DeltaTime);
@@ -153,12 +167,15 @@ void ABasePlayer::Tick(float DeltaTime)
 		TargetSocketOffset = AimingSocketOffset;
 	}
 
-	const bool bShouldLockRotation = bIsSniping || bIsAiming || bIsThrowingOrAttacking || bIsCombatMode || bIsPlayingCombatIntro || bPendingCombatModeFromIntro;
-	bUseControllerRotationYaw = bShouldLockRotation;
+	const bool bShouldLockRotation = true;
+	bUseControllerRotationYaw = false;
+	/*
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
-		MovementComponent->bOrientRotationToMovement = !bShouldLockRotation;
+		MovementComponent->bOrientRotationToMovement = false;
+		MovementComponent->bUseControllerDesiredRotation = true;
 	}
+	*/
 
 	if (CameraBoom)
 	{
@@ -238,6 +255,7 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 	NewSnapshot.bUseHeavyLand = AnimStateComponent->bUseHeavyLand;
 	NewSnapshot.bLandWasMoving = AnimStateComponent->bLandWasMoving;
 	NewSnapshot.bLandWasSprinting = AnimStateComponent->bLandWasSprinting;
+	NewSnapshot.LandMoveDirection = AnimStateComponent->LandMoveDirection;
 	NewSnapshot.LastFallSpeed = AnimStateComponent->LastFallSpeed;
 	NewSnapshot.EventSequence = LocomotionAnimEventSequence;
 
@@ -1004,6 +1022,7 @@ void ABasePlayer::DoMove(float Right, float Forward)
 	{
 		AnimStateComponent->SetMoveInput(Right, Forward);
 	}
+	RefreshSprintFromInput();
 
 	if (GetController() != nullptr)
 	{
@@ -1025,6 +1044,7 @@ void ABasePlayer::StopMoveInput()
 	{
 		AnimStateComponent->ClearMoveInput();
 	}
+	RefreshSprintFromInput();
 }
 
 void ABasePlayer::DoLook(float Yaw, float Pitch)
@@ -1044,6 +1064,13 @@ void ABasePlayer::DoLook(float Yaw, float Pitch)
 
 void ABasePlayer::DoJumpStart()
 {
+	if (!CanJump())
+	{
+		return;
+	}
+
+	Jump();
+
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->HandleJumpStarted();
@@ -1059,7 +1086,6 @@ void ABasePlayer::DoJumpStart()
 		Server_NotifyJumpStarted();
 	}
 
-	Jump();
 }
 
 void ABasePlayer::DoJumpEnd()
@@ -1069,20 +1095,18 @@ void ABasePlayer::DoJumpEnd()
 
 void ABasePlayer::StartSprint()
 {
-	bIsSprinting = true;
-	if (AnimStateComponent)
-	{
-		AnimStateComponent->SetSprinting(true);
-	}
-
-	if (!HasAuthority())
-	{
-		Server_SetSprinting(true);
-	}
+	bSprintInputHeld = true;
+	RefreshSprintFromInput();
 }
 
 void ABasePlayer::StopSprint()
 {
+	bSprintInputHeld = false;
+	if (!bIsSprinting)
+	{
+		return;
+	}
+
 	bIsSprinting = false;
 	if (AnimStateComponent)
 	{
@@ -1092,6 +1116,42 @@ void ABasePlayer::StopSprint()
 	if (!HasAuthority())
 	{
 		Server_SetSprinting(false);
+	}
+}
+
+bool ABasePlayer::CanSprintFromInput() const
+{
+	return CachedMoveInput.Y > 0.15f;
+}
+
+void ABasePlayer::RefreshSprintFromInput()
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	const bool bShouldSprint =
+		bSprintInputHeld &&
+		CanSprintFromInput() &&
+		!bIsAttacking &&
+		!bIsDodging &&
+		!bIsHitReacting;
+
+	if (bIsSprinting == bShouldSprint)
+	{
+		return;
+	}
+
+	bIsSprinting = bShouldSprint;
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->SetSprinting(bShouldSprint);
+	}
+
+	if (!HasAuthority())
+	{
+		Server_SetSprinting(bShouldSprint);
 	}
 }
 
@@ -1192,11 +1252,12 @@ void ABasePlayer::OnRep_ItemSlots()
 
 void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
 {
-	bUseControllerRotationYaw = bEnableCombatRotation;
+	bUseControllerRotationYaw = false;
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
-		MovementComponent->bOrientRotationToMovement = !bEnableCombatRotation;
+		MovementComponent->bOrientRotationToMovement = false;
+		MovementComponent->bUseControllerDesiredRotation = true;
 	}
 }
 
@@ -1330,6 +1391,22 @@ void ABasePlayer::OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterru
 void ABasePlayer::Landed(const FHitResult& Hit)
 {
 	const float ImpactFallSpeed = FMath::Max(LastFallSpeed, FMath::Abs(GetVelocity().Z));
+
+	if (const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MMDebugging"));
+		DebugCVar && DebugCVar->GetInt() > 0)
+	{
+		UE_LOG(LogTemp, Display,
+			TEXT("[MMCAP_EVENT] Character::Landed Impact=%.1f CachedLastFall=%.1f Velocity=(%.1f,%.1f,%.1f) HitActor=%s HitNormal=(%.2f,%.2f,%.2f)"),
+			ImpactFallSpeed,
+			LastFallSpeed,
+			GetVelocity().X,
+			GetVelocity().Y,
+			GetVelocity().Z,
+			*GetNameSafe(Hit.GetActor()),
+			Hit.ImpactNormal.X,
+			Hit.ImpactNormal.Y,
+			Hit.ImpactNormal.Z);
+	}
 
 	Super::Landed(Hit);
 
