@@ -43,19 +43,7 @@ namespace
 
 	void AppendBasePlayerMotionMatchingCaptureLine(const FString& Line)
 	{
-		const FString LogFilePath = FPaths::Combine(FPaths::ProjectLogDir(), TEXT("MMCapture.log"));
-		const FString StampedLine = FString::Printf(
-			TEXT("[%s] %s%s"),
-			*FDateTime::Now().ToString(TEXT("%Y-%m-%d %H:%M:%S.%s")),
-			*Line,
-			LINE_TERMINATOR);
-
-		FFileHelper::SaveStringToFile(
-			StampedLine,
-			*LogFilePath,
-			FFileHelper::EEncodingOptions::AutoDetect,
-			&IFileManager::Get(),
-			FILEWRITE_Append);
+		// 파일 입출력을 제거하여 퍼포먼스 드랍 방지. 기존 UE_LOG로 대체됨.
 	}
 }
 
@@ -125,7 +113,6 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	// 배열과 장착 아이템 포인터를 클라이언트로 복제
 	DOREPLIFETIME(ABasePlayer, ItemSlots);
 	DOREPLIFETIME(ABasePlayer, EquippedItem);
-	DOREPLIFETIME(ABasePlayer, bIsSprinting);
 	DOREPLIFETIME(ABasePlayer, LocomotionStateSnapshot);
 }
 
@@ -165,7 +152,6 @@ void ABasePlayer::Tick(float DeltaTime)
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->UpdateAnimationState(DeltaTime);
-		SyncAnimationStateFromComponent();
 	}
 	if (HasAuthority())
 	{
@@ -220,53 +206,6 @@ void ABasePlayer::Tick(float DeltaTime)
 	}
 }
 
-void ABasePlayer::SyncAnimationStateFromComponent()
-{
-	if (!AnimStateComponent || GetNetMode() == NM_DedicatedServer)
-	{
-		return;
-	}
-
-	bIsInAir = AnimStateComponent->bIsInAir;
-	bIsPhysicallyInAir = AnimStateComponent->bIsPhysicallyInAir;
-	bIsJumping = AnimStateComponent->bIsJumping;
-	bIsFallOffStart = AnimStateComponent->bIsFallOffStart;
-	bIsLanding = AnimStateComponent->bIsLanding;
-	bLandingRequested = AnimStateComponent->bLandingRequested;
-	bCanEnterLand = AnimStateComponent->bCanEnterLand;
-	bCanEnterGround = AnimStateComponent->bCanEnterGround;
-	GroundSpeed = AnimStateComponent->GroundSpeed;
-	VerticalSpeed = AnimStateComponent->VerticalSpeed;
-	bHasMoveInput = AnimStateComponent->bHasMoveInput;
-	bPrevHasMoveInput = AnimStateComponent->bPrevHasMoveInput;
-	MoveInputSize = AnimStateComponent->MoveInputSize;
-	CachedMoveInput = AnimStateComponent->CachedMoveInput;
-	bIsSprinting = AnimStateComponent->bIsSprinting;
-	MoveInputHeldTime = AnimStateComponent->MoveInputHeldTime;
-	CurrentStartToLoopDelay = AnimStateComponent->CurrentStartToLoopDelay;
-	bUseStartDatabase = AnimStateComponent->bUseStartDatabase;
-	bGroundStartFinished = AnimStateComponent->bGroundStartFinished;
-	bPendingGroundStartFinish = AnimStateComponent->bPendingGroundStartFinish;
-	bStartWasSprinting = AnimStateComponent->bStartWasSprinting;
-	bUseLoopDatabase = AnimStateComponent->bUseLoopDatabase;
-	bUseSharpTurnDatabase = AnimStateComponent->bUseSharpTurnDatabase;
-	bStartRequested = AnimStateComponent->bStartRequested;
-	bStopRequested = AnimStateComponent->bStopRequested;
-	MoveInputTurnAngle = AnimStateComponent->MoveInputTurnAngle;
-	bSharpTurnRequested = AnimStateComponent->bSharpTurnRequested;
-	PreviousMoveInputForTurn = AnimStateComponent->PreviousMoveInputForTurn;
-	LastFallSpeed = AnimStateComponent->LastFallSpeed;
-	LandStartGroundSpeed = AnimStateComponent->LandStartGroundSpeed;
-	LandStartFallSpeed = AnimStateComponent->LandStartFallSpeed;
-	bLandWasMoving = AnimStateComponent->bLandWasMoving;
-	bLandWasSprinting = AnimStateComponent->bLandWasSprinting;
-	bUseHeavyLand = AnimStateComponent->bUseHeavyLand;
-	MovementDirection = AnimStateComponent->MovementDirection;
-	CombatInputForward = AnimStateComponent->CombatInputForward;
-	CombatInputRight = AnimStateComponent->CombatInputRight;
-	CombatForwardSpeed = AnimStateComponent->CombatForwardSpeed;
-	CombatRightSpeed = AnimStateComponent->CombatRightSpeed;
-}
 
 void ABasePlayer::UpdateLocomotionStateSnapshot()
 {
@@ -295,9 +234,14 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 		NewSnapshot.bHasMoveInput = AnimStateComponent->bHasMoveInput;
 		NewSnapshot.MoveInput = AnimStateComponent->CachedMoveInput.GetClampedToMaxSize(1.f);
 	}
+
+	// 네트워크 양자화 (소수점 첫째 자리까지만 유지하여 미세한 아날로그 스틱 떨림으로 인한 리플리케이션 폭주 방지)
+	NewSnapshot.MoveInput.X = FMath::RoundHalfToEven(NewSnapshot.MoveInput.X * 10.f) / 10.f;
+	NewSnapshot.MoveInput.Y = FMath::RoundHalfToEven(NewSnapshot.MoveInput.Y * 10.f) / 10.f;
 	NewSnapshot.LandMoveDirection = AnimStateComponent->LandMoveDirection;
 	NewSnapshot.LastFallSpeed = AnimStateComponent->LastFallSpeed;
 	NewSnapshot.EventSequence = LocomotionAnimEventSequence;
+	NewSnapshot.LastLocomotionEvent = LocomotionStateSnapshot.LastLocomotionEvent;
 
 	if (LocomotionStateSnapshot != NewSnapshot)
 	{
@@ -1073,14 +1017,14 @@ void ABasePlayer::Look(const FInputActionValue& Value)
 
 void ABasePlayer::DoMove(float Right, float Forward)
 {
-	CachedMoveInput = FVector2D(Right, Forward);
+	if(AnimStateComponent) AnimStateComponent->CachedMoveInput = FVector2D(Right, Forward);
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->SetMoveInput(Right, Forward);
 	}
 	RefreshSprintFromInput();
 
-	const FVector2D ClampedMoveInput = CachedMoveInput.GetClampedToMaxSize(1.f);
+	const FVector2D ClampedMoveInput = FVector2D(Right, Forward).GetClampedToMaxSize(1.f);
 	if (HasAuthority())
 	{
 		AuthoritativeMoveInput = ClampedMoveInput;
@@ -1110,7 +1054,7 @@ void ABasePlayer::DoMove(float Right, float Forward)
 			Forward,
 			ClampedMoveInput.X,
 			ClampedMoveInput.Y,
-			bIsSprinting ? 1 : 0);
+			(AnimStateComponent && AnimStateComponent->bIsSprinting) ? 1 : 0);
 		UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
 		AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
 	}
@@ -1130,7 +1074,7 @@ void ABasePlayer::DoMove(float Right, float Forward)
 
 void ABasePlayer::StopMoveInput()
 {
-	CachedMoveInput = FVector2D::ZeroVector;
+	if(AnimStateComponent) AnimStateComponent->ClearMoveInput();
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->ClearMoveInput();
@@ -1156,7 +1100,7 @@ void ABasePlayer::StopMoveInput()
 			*GetName(),
 			static_cast<int32>(GetNetMode()),
 			static_cast<int32>(GetLocalRole()),
-			bIsSprinting ? 1 : 0);
+			(AnimStateComponent && AnimStateComponent->bIsSprinting) ? 1 : 0);
 		UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
 		AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
 	}
@@ -1189,12 +1133,12 @@ void ABasePlayer::DoJumpStart()
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->HandleJumpStarted();
-		SyncAnimationStateFromComponent();
 	}
 
 	if (HasAuthority())
 	{
-		Multicast_NotifyJumpStarted(NextLocomotionAnimEventSequence());
+		LocomotionStateSnapshot.EventSequence = NextLocomotionAnimEventSequence();
+		LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::Jump;
 	}
 	else
 	{
@@ -1217,12 +1161,12 @@ void ABasePlayer::StartSprint()
 void ABasePlayer::StopSprint()
 {
 	bSprintInputHeld = false;
-	if (!bIsSprinting)
+	if (!AnimStateComponent || !AnimStateComponent->bIsSprinting)
 	{
 		return;
 	}
 
-	bIsSprinting = false;
+	
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->SetSprinting(false);
@@ -1236,7 +1180,7 @@ void ABasePlayer::StopSprint()
 
 bool ABasePlayer::CanSprintFromInput() const
 {
-	return CachedMoveInput.Y > 0.15f;
+	return AnimStateComponent ? AnimStateComponent->CachedMoveInput.Y > 0.15f : false;
 }
 
 void ABasePlayer::RefreshSprintFromInput()
@@ -1253,12 +1197,12 @@ void ABasePlayer::RefreshSprintFromInput()
 		!bIsDodging &&
 		!bIsHitReacting;
 
-	if (bIsSprinting == bShouldSprint)
+	if ((AnimStateComponent ? AnimStateComponent->bIsSprinting : false) == bShouldSprint)
 	{
 		return;
 	}
 
-	bIsSprinting = bShouldSprint;
+	
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->SetSprinting(bShouldSprint);
@@ -1273,11 +1217,10 @@ void ABasePlayer::RefreshSprintFromInput()
 void ABasePlayer::Server_SetSprinting_Implementation(bool bNewSprinting)
 {
 	const bool bServerAllowsSprinting = bNewSprinting && CanSprintFromServerState();
-	bIsSprinting = bServerAllowsSprinting;
+	
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->SetSprinting(bServerAllowsSprinting);
-		SyncAnimationStateFromComponent();
 		UpdateLocomotionStateSnapshot();
 	}
 }
@@ -1285,7 +1228,7 @@ void ABasePlayer::Server_SetSprinting_Implementation(bool bNewSprinting)
 void ABasePlayer::Server_SetMoveInput_Implementation(FVector2D NewMoveInput)
 {
 	const FVector2D ClampedMoveInput = NewMoveInput.GetClampedToMaxSize(1.f);
-	CachedMoveInput = ClampedMoveInput;
+	
 	AuthoritativeMoveInput = ClampedMoveInput;
 	bHasAuthoritativeMoveInput = true;
 
@@ -1300,7 +1243,6 @@ void ABasePlayer::Server_SetMoveInput_Implementation(FVector2D NewMoveInput)
 			AnimStateComponent->ClearMoveInput();
 		}
 
-		SyncAnimationStateFromComponent();
 		UpdateLocomotionStateSnapshot();
 	}
 
@@ -1321,20 +1263,43 @@ void ABasePlayer::Server_SetMoveInput_Implementation(FVector2D NewMoveInput)
 	}
 }
 
-void ABasePlayer::OnRep_IsSprinting()
+void ABasePlayer::OnRep_LocomotionStateSnapshot(const FReplicatedLocomotionState& OldSnapshot)
 {
 	if (AnimStateComponent)
 	{
-		AnimStateComponent->SetSprinting(bIsSprinting);
-	}
-}
+		if (const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MMDebugging"));
+			DebugCVar && DebugCVar->GetInt() > 0)
+		{
+			UE_LOG(LogTemp, Display, TEXT("[MMCAP_EVENT] OnRep_LocomotionStateSnapshot Pawn=%s Seq=%d (Old=%d) Event=%d Sprint=%d HasInput=%d Move=(%.2f,%.2f)"),
+				*GetName(),
+				LocomotionStateSnapshot.EventSequence, OldSnapshot.EventSequence,
+				(int32)LocomotionStateSnapshot.LastLocomotionEvent,
+				LocomotionStateSnapshot.bIsSprinting ? 1 : 0,
+				LocomotionStateSnapshot.bHasMoveInput ? 1 : 0,
+				LocomotionStateSnapshot.MoveInput.X, LocomotionStateSnapshot.MoveInput.Y);
+		}
 
-void ABasePlayer::OnRep_LocomotionStateSnapshot()
-{
-	if (AnimStateComponent)
-	{
+
+		// 데이터 기반 이벤트 처리 (새로운 EventSequence가 오면 LastLocomotionEvent를 기반으로 애니메이션 컴포넌트에 통보)
+		if (LocomotionStateSnapshot.EventSequence != OldSnapshot.EventSequence)
+		{
+			switch (LocomotionStateSnapshot.LastLocomotionEvent)
+			{
+			case EReplicatedLocomotionEvent::Jump:
+				AnimStateComponent->HandleRemoteJumpStarted(LocomotionStateSnapshot.EventSequence);
+				break;
+			case EReplicatedLocomotionEvent::FallOff:
+				AnimStateComponent->HandleRemoteFallOffStarted(LocomotionStateSnapshot.EventSequence);
+				break;
+			case EReplicatedLocomotionEvent::Landed:
+				AnimStateComponent->HandleRemoteLanded(LocomotionStateSnapshot.LastFallSpeed, LocomotionStateSnapshot.EventSequence);
+				break;
+			default:
+				break;
+			}
+		}
+
 		AnimStateComponent->ApplyAuthoritativeSnapshot(LocomotionStateSnapshot);
-		SyncAnimationStateFromComponent();
 	}
 }
 
@@ -1343,59 +1308,19 @@ void ABasePlayer::Server_NotifyJumpStarted_Implementation()
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->HandleJumpStarted();
-		SyncAnimationStateFromComponent();
 	}
 
-	Multicast_NotifyJumpStarted(NextLocomotionAnimEventSequence());
-}
-
-void ABasePlayer::Multicast_NotifyJumpStarted_Implementation(int32 EventSequence)
-{
-	if (HasAuthority() || IsLocallyControlled())
-	{
-		return;
-	}
-
-	if (AnimStateComponent)
-	{
-		AnimStateComponent->HandleRemoteJumpStarted(EventSequence);
-		SyncAnimationStateFromComponent();
-	}
-}
-
-void ABasePlayer::Multicast_NotifyFallOffStarted_Implementation(int32 EventSequence)
-{
-	if (HasAuthority() || IsLocallyControlled())
-	{
-		return;
-	}
-
-	if (AnimStateComponent)
-	{
-		AnimStateComponent->HandleRemoteFallOffStarted(EventSequence);
-		SyncAnimationStateFromComponent();
-	}
-}
-
-void ABasePlayer::Multicast_NotifyLanded_Implementation(float ImpactFallSpeed, int32 EventSequence)
-{
-	if (HasAuthority() || IsLocallyControlled())
-	{
-		return;
-	}
-
-	if (AnimStateComponent)
-	{
-		AnimStateComponent->HandleRemoteLanded(ImpactFallSpeed, EventSequence);
-		SyncAnimationStateFromComponent();
-	}
+	// 이벤트 통보 (Multicast 대신 Snapshot에 변수 세팅)
+	LocomotionStateSnapshot.EventSequence = NextLocomotionAnimEventSequence();
+	LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::Jump;
 }
 
 void ABasePlayer::BroadcastFallOffStartedForRemoteClients()
 {
 	if (HasAuthority())
 	{
-		Multicast_NotifyFallOffStarted(NextLocomotionAnimEventSequence());
+		LocomotionStateSnapshot.EventSequence = NextLocomotionAnimEventSequence();
+		LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::FallOff;
 	}
 }
 
@@ -1412,33 +1337,6 @@ void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
 	{
 		MovementComponent->bOrientRotationToMovement = false;
 		MovementComponent->bUseControllerDesiredRotation = true;
-	}
-}
-
-void ABasePlayer::MarkGroundStartFinished()
-{
-	if (AnimStateComponent)
-	{
-		AnimStateComponent->MarkGroundStartFinished();
-		SyncAnimationStateFromComponent();
-	}
-}
-
-void ABasePlayer::FinishJumpStart()
-{
-	if (AnimStateComponent)
-	{
-		AnimStateComponent->FinishJumpStart();
-		SyncAnimationStateFromComponent();
-	}
-}
-
-void ABasePlayer::FinishFallOffStart()
-{
-	if (AnimStateComponent)
-	{
-		AnimStateComponent->FinishFallOffStart();
-		SyncAnimationStateFromComponent();
 	}
 }
 
@@ -1544,7 +1442,7 @@ void ABasePlayer::OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterru
 
 void ABasePlayer::Landed(const FHitResult& Hit)
 {
-	const float ImpactFallSpeed = FMath::Max(LastFallSpeed, FMath::Abs(GetVelocity().Z));
+	const float ImpactFallSpeed = FMath::Max((AnimStateComponent ? AnimStateComponent->LastFallSpeed : 0.f), FMath::Abs(GetVelocity().Z));
 
 	if (const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MMDebugging"));
 		DebugCVar && DebugCVar->GetInt() > 0)
@@ -1552,7 +1450,7 @@ void ABasePlayer::Landed(const FHitResult& Hit)
 		UE_LOG(LogTemp, Display,
 			TEXT("[MMCAP_EVENT] Character::Landed Impact=%.1f CachedLastFall=%.1f Velocity=(%.1f,%.1f,%.1f) HitActor=%s HitNormal=(%.2f,%.2f,%.2f)"),
 			ImpactFallSpeed,
-			LastFallSpeed,
+			(AnimStateComponent ? AnimStateComponent->LastFallSpeed : 0.f),
 			GetVelocity().X,
 			GetVelocity().Y,
 			GetVelocity().Z,
@@ -1567,12 +1465,13 @@ void ABasePlayer::Landed(const FHitResult& Hit)
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->HandleLanded(Hit, ImpactFallSpeed);
-		SyncAnimationStateFromComponent();
 	}
 
 	if (HasAuthority())
 	{
-		Multicast_NotifyLanded(ImpactFallSpeed, NextLocomotionAnimEventSequence());
+		LocomotionStateSnapshot.EventSequence = NextLocomotionAnimEventSequence();
+		LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::Landed;
+		// FallSpeed는 UpdateLocomotionStateSnapshot 시점에 LastFallSpeed로 복제됨
 	}
 }
 

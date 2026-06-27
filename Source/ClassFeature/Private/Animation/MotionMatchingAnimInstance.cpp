@@ -287,6 +287,10 @@ void FMotionMatchingAnimInstanceProxy::CacheNodes(UAnimInstance* InAnimInstance)
             {
                 Info.SearchThrottleTimeProperty = CastField<FFloatProperty>(SearchThrottleProp);
             }
+            if (FProperty* ShouldSearchProp = FAnimNode_MotionMatching::StaticStruct()->FindPropertyByName(TEXT("bShouldSearch")))
+            {
+                Info.ShouldSearchProperty = CastField<FBoolProperty>(ShouldSearchProp);
+            }
 
             CachedMMNodes.Add(Info);
         }
@@ -452,7 +456,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     {
                         UMotionMatchingAnimInstance* MMAnim = Cast<UMotionMatchingAnimInstance>(AnimInstanceObj);
                         const ULocomotionAnimStateComponent* StateComp = MMAnim ? MMAnim->CachedLocomotionStateComponent.Get() : nullptr;
-                        if (StateComp && (StateComp->CurrentState == ELocomotionState::Start || StateComp->CurrentState == ELocomotionState::Stop))
+                        if (StateComp && (StateComp->CurrentState == ELocomotionState::Start || StateComp->CurrentState == ELocomotionState::Stop || StateComp->CurrentState == ELocomotionState::Landing))
                         {
                             // Start 및 Stop 상태에서는 최초 진입 프레임(bAppliedDatabaseChanged) 및 에셋 교체 직후 프레임(bSearchResultDatabaseChanged)에만 검색을 허용하고,
                             // 그 외의 프레임에서는 추가 평가(재검색)를 차단하여 재생 중인 에셋이 중간에 끊기거나 오매칭되는 현상을 방지합니다.
@@ -463,6 +467,12 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                         }
                     }
                     Info.SearchThrottleTimeProperty->SetPropertyValue_InContainer(MMNode, SearchThrottleTime);
+
+                    if (Info.ShouldSearchProperty)
+                    {
+                        const bool bShouldSearch = (SearchThrottleTime < SuppressedSearchThrottleTime - 1.f);
+                        Info.ShouldSearchProperty->SetPropertyValue_InContainer(MMNode, bShouldSearch);
+                    }
                 }
 
             }
@@ -507,7 +517,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     const FString NodeStateName = StaticEnum<ELocomotionState>()->GetNameStringByValue(
                         static_cast<int64>(ThreadSafeData.GroundData.GroundMotionMode));
                     const FString NodeDebugLine = FString::Printf(
-                        TEXT("[MMCAP_NODE] Pawn=%s Net=%s Role=%s Anim=%s Node=%d Property=%s State=%s Input=(R=%.2f,F=%.2f) HasInput=%d RequestedPSD=%s SelectedDB=%s SelectedAsset=%s AssetDir=%s Time=%.3f Cost=%.3f Continue=%d Prev=%s Mirrored=%d Loop=%d PlayRate=%.3f Blend=(%.2f,%.2f,%.2f) Throttle=%.3f FallOff=%d SearchEveryUpdate=%d DBChanged=%d StackNum=%d"),
+                        TEXT("[MMCAP_NODE] Pawn=%s Net=%s Role=%s Anim=%s Node=%d Property=%s State=%s Input=(R=%.2f,F=%.2f) HasInput=%d RequestedPSD=%s SelectedDB=%s SelectedAsset=%s AssetDir=%s Time=%.3f Cost=%.3f Continue=%d Prev=%s Mirrored=%d Loop=%d PlayRate=%.3f Blend=(%.2f,%.2f,%.2f) Throttle=%.3f FallOff=%d ShouldSearch=%d DBChanged=%d StackNum=%d"),
                         *DebugPawnName,
                         FormatNetMode(DebugNetMode),
                         FormatNetRole(DebugRole),
@@ -534,7 +544,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                         Result.BlendParameters.Z,
                         CurrentThrottle,
                         bIsFallOffStartPhase ? 1 : 0,
-                        bSearchFallOffEveryUpdate ? 1 : 0,
+                        Info.ShouldSearchProperty ? (Info.ShouldSearchProperty->GetPropertyValue_InContainer(MMNode) ? 1 : 0) : 1,
                         bDatabaseChanged ? 1 : 0,
                         MMNode->AnimPlayers.Num());
                     UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *NodeDebugLine);
@@ -862,7 +872,8 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     }
 
     // 2. Start/Stop/Landing 상태의 애니메이션 재생 완료 감지 및 자동 상태 전환 처리 (노티파이 의존성 100% 제거)
-    if (CachedLocomotionStateComponent)
+    // SimulatedProxy의 경우 서버의 복제 스냅샷 상태를 그대로 추종해야 하므로 로컬 자동 완료 처리를 수행하지 않고 스킵합니다.
+    if (CachedLocomotionStateComponent && CachedBasePlayer && CachedBasePlayer->GetLocalRole() != ROLE_SimulatedProxy)
     {
         const ELocomotionState State = CachedLocomotionStateComponent->CurrentState;
         if (State == ELocomotionState::Start || State == ELocomotionState::Stop || State == ELocomotionState::Landing)
@@ -1148,7 +1159,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
             FVector2D MoveInput = CachedLocomotionStateComponent
                 ? CachedLocomotionStateComponent->CachedMoveInput
-                : CachedBasePlayer->CachedMoveInput;
+                : (CachedBasePlayer->GetAnimStateComponent() ? CachedBasePlayer->GetAnimStateComponent()->CachedMoveInput : FVector2D::ZeroVector);
             float ControlYaw = CachedBasePlayer->GetControlRotation().Yaw;
             float ActorYaw = CachedBasePlayer->GetActorRotation().Yaw;
             float YawDelta = FMath::FindDeltaAngleDegrees(ActorYaw, ControlYaw);
@@ -1222,7 +1233,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                 *SnapshotStateStr,
                 CachedBasePlayer->LocomotionStateSnapshot.EventSequence,
                 *CurrentDatabaseName.ToString(),
-                CachedBasePlayer->bIsSprinting ? 1 : 0,
+                (CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsSprinting) ? 1 : 0,
                 InputSourceText,
                 MoveInput.X,
                 MoveInput.Y,

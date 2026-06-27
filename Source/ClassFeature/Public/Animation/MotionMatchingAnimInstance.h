@@ -157,6 +157,7 @@ struct FCachedMotionMatchingNodeInfo
     FStructProperty* NodeProperty = nullptr;
     FObjectProperty* DatabaseProperty = nullptr;
     FFloatProperty* SearchThrottleTimeProperty = nullptr;
+    FBoolProperty* ShouldSearchProperty = nullptr;
     TObjectPtr<UPoseSearchDatabase> AppliedDatabase = nullptr;
     TWeakObjectPtr<const UObject> LastSelectedAnim;
     float LastSelectedTime = 0.f;

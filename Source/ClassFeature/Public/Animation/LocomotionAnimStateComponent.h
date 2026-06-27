@@ -20,6 +20,15 @@ enum class ELocomotionState : uint8
     Combat
 };
 
+UENUM(BlueprintType)
+enum class EReplicatedLocomotionEvent : uint8
+{
+    None,
+    Jump,
+    FallOff,
+    Landed
+};
+
 USTRUCT(BlueprintType)
 struct FReplicatedLocomotionState
 {
@@ -67,6 +76,9 @@ struct FReplicatedLocomotionState
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
     int32 EventSequence = 0;
 
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    EReplicatedLocomotionEvent LastLocomotionEvent = EReplicatedLocomotionEvent::None;
+
     bool operator==(const FReplicatedLocomotionState& Other) const
     {
         return CurrentState == Other.CurrentState &&
@@ -79,10 +91,11 @@ struct FReplicatedLocomotionState
                bLandWasMoving == Other.bLandWasMoving &&
                bLandWasSprinting == Other.bLandWasSprinting &&
                bHasMoveInput == Other.bHasMoveInput &&
-               MoveInput.Equals(Other.MoveInput, KINDA_SMALL_NUMBER) &&
-               LandMoveDirection.Equals(Other.LandMoveDirection, KINDA_SMALL_NUMBER) &&
+               MoveInput.Equals(Other.MoveInput, 0.05f) &&
+               LandMoveDirection.Equals(Other.LandMoveDirection, 0.05f) &&
                FMath::IsNearlyEqual(LastFallSpeed, Other.LastFallSpeed) &&
-               EventSequence == Other.EventSequence;
+               EventSequence == Other.EventSequence &&
+               LastLocomotionEvent == Other.LastLocomotionEvent;
     }
 
     bool operator!=(const FReplicatedLocomotionState& Other) const

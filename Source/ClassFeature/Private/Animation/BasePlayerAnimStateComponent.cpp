@@ -22,7 +22,7 @@ void UBasePlayerAnimStateComponent::CacheOwner()
 		return;
 	}
 
-	bIsSprinting = CachedBasePlayer->bIsSprinting;
+	bIsSprinting = (CachedBasePlayer->GetAnimStateComponent() && CachedBasePlayer->GetAnimStateComponent()->bIsSprinting);
 }
 
 void UBasePlayerAnimStateComponent::UpdateAnimationState(float DeltaTime)

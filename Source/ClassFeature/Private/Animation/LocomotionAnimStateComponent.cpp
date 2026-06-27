@@ -21,19 +21,7 @@ namespace
 
     void AppendMotionMatchingCaptureLine(const FString& Line)
     {
-        const FString LogFilePath = FPaths::Combine(FPaths::ProjectLogDir(), TEXT("MMCapture.log"));
-        const FString StampedLine = FString::Printf(
-            TEXT("[%s] %s%s"),
-            *FDateTime::Now().ToString(TEXT("%Y-%m-%d %H:%M:%S.%s")),
-            *Line,
-            LINE_TERMINATOR);
-
-        FFileHelper::SaveStringToFile(
-            StampedLine,
-            *LogFilePath,
-            FFileHelper::EEncodingOptions::AutoDetect,
-            &IFileManager::Get(),
-            FILEWRITE_Append);
+        // 파일 입출력을 제거하여 퍼포먼스 드랍 방지. 기존 UE_LOG(LogTemp)로 대체됨.
     }
 }
 
@@ -159,7 +147,7 @@ void ULocomotionAnimStateComponent::CacheOwner()
         return;
     }
 
-    bIsSprinting = CachedBasePlayer->bIsSprinting;
+    // bIsSprinting = CachedBasePlayer->bIsSprinting;
 
     if (USkeletalMeshComponent* Mesh = CachedBasePlayer->GetMesh())
     {
@@ -222,9 +210,12 @@ void ULocomotionAnimStateComponent::UpdateAnimationState(float DeltaTime)
         LastFallSpeed = FMath::Abs(VerticalSpeed);
     }
 
-    UpdateAirState(DeltaTime);
-    UpdateMovementRequestState(DeltaTime);
-    UpdateStateTransitions(DeltaTime);
+    if (CachedBasePlayer->GetLocalRole() != ROLE_SimulatedProxy)
+    {
+        UpdateAirState(DeltaTime);
+        UpdateMovementRequestState(DeltaTime);
+        UpdateStateTransitions(DeltaTime);
+    }
     UpdateMaxWalkSpeed();
     UpdateCombatMovementState();
 
@@ -1185,6 +1176,13 @@ void ULocomotionAnimStateComponent::ApplyAuthoritativeSnapshot(const FReplicated
     MoveInputSize = CachedMoveInput.Size();
     LandMoveDirection = Snapshot.LandMoveDirection;
     LastFallSpeed = Snapshot.LastFallSpeed;
+
+    const bool bStateChangedToLanding = (CurrentState == ELocomotionState::Landing && PreviousState != ELocomotionState::Landing);
+    if (bStateChangedToLanding)
+    {
+        LandStartGroundSpeed = GroundSpeed;
+        LandStartFallSpeed = LastFallSpeed;
+    }
 
     bIsInAir = bIsJumping || bIsFallOffStart || bIsLanding || CurrentState == ELocomotionState::InAir;
     bCanEnterLand = bLandingRequested;
