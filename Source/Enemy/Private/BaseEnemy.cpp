@@ -10,8 +10,8 @@
 #include "ItemSubsystem.h"
 
 // Enemy Folder
-#include "BaseAIController.h"
-#include "EnemyAttributeSet.h"
+#include "AI/BaseAIController.h"
+#include "GAS/EnemyAttributeSet.h"
 #include "WaveSystem/Route/EnemyWaypointMoveComponent.h"
 
 // Unreal

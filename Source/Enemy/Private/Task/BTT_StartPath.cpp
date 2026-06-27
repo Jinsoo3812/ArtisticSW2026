@@ -3,7 +3,7 @@
 
 #include "Task/BTT_StartPath.h"
 #include "Component/PathMovement.h"
-#include "BaseAIController.h"
+#include "AI/BaseAIController.h"
 #include "BaseEnemy.h"
 
 // Unreal

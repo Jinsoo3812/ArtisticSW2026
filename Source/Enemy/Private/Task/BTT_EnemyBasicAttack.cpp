@@ -6,7 +6,7 @@
 #include "task/BTT_EnemyBasicAttack.h"
 
 #include "BaseEnemy.h"
-#include "BaseAIController.h"
+#include "AI/BaseAIController.h"
 #include "Weapon/BaseWeapon.h"
 #include "Weapon/BaseWeaponComponent.h"
 #include "Weapon/WeaponDataAsset.h"

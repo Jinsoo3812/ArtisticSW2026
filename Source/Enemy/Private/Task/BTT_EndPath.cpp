@@ -2,7 +2,7 @@
 
 
 #include "Task/BTT_EndPath.h"
-#include "BaseAIController.h"
+#include "AI/BaseAIController.h"
 #include "BaseEnemy.h"
 #include "Component/PathMovement.h"
 
