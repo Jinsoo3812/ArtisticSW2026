@@ -202,6 +202,8 @@ class CLASSFEATURE_API UMotionMatchingAnimInstance : public UAnimInstance
 {
     GENERATED_BODY()
 
+    friend struct FMotionMatchingAnimInstanceProxy;
+
 public:
     UMotionMatchingAnimInstance();
 
@@ -239,6 +241,9 @@ protected:
     TObjectPtr<UPoseSearchDatabase> StartDatabaseRemote;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
+    TObjectPtr<UPoseSearchDatabase> RunStartRefaceDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
     TObjectPtr<UPoseSearchDatabase> LocomotionDatabase;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
@@ -256,6 +261,12 @@ protected:
     // Sprint PSDs
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
     TObjectPtr<UPoseSearchDatabase> SprintStartDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
+    TObjectPtr<UPoseSearchDatabase> SprintStartDatabaseRemote;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
+    TObjectPtr<UPoseSearchDatabase> SprintStartRefaceDatabase;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
     TObjectPtr<UPoseSearchDatabase> SprintLocomotionDatabase;

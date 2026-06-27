@@ -130,6 +130,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Locomotion|Stubs")
     void MarkGroundStartFinished() { NotifyStartFinished(); }
 
+    UFUNCTION(BlueprintCallable, Category = "Locomotion|Rotation")
+    bool GetUseInstantRotationSnap() const { return bUseInstantRotationSnap; }
+
+    UFUNCTION(BlueprintCallable, Category = "Locomotion|Rotation")
+    float GetMeshYawOffset() const { return MeshYawOffset; }
+
     UFUNCTION(BlueprintCallable, Category = "Locomotion|Stubs")
     void FinishJumpStart();
 
@@ -150,7 +156,7 @@ protected:
     void UpdateCharacterRotation(float DeltaTime);
     void UpdateMaxWalkSpeed() const;
     void ClearMovementRequests();
-    void AlignActorYawToControlYawForStartIfNeeded() const;
+    void AlignActorYawToControlYawForStartIfNeeded();
     void StartFallOffStart();
     void StopFallOffStart();
     void StartLanding(float ImpactFallSpeed, bool bTriggerRealLandEvent);
@@ -414,6 +420,19 @@ public:
     FTimerHandle JumpStartTimerHandle;
 
 protected:
+    /** true일 경우 즉각 캡슐 회전을 스냅하고 메쉬 오프셋 보간을 적용합니다. false일 경우 PSD의 Reface 애니메이션이 매칭되도록 스냅하지 않습니다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Start")
+    bool bUseInstantRotationSnap = false;
+
+    UPROPERTY(Transient)
+    float MeshYawOffset = 0.f;
+
+    UPROPERTY(Transient)
+    FRotator DefaultMeshRelativeRotation = FRotator(0.f, -90.f, 0.f);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Tuning")
+    float MeshYawOffsetInterpSpeed = 10.f;
+
     UPROPERTY(Transient)
     TObjectPtr<ABasePlayer> CachedBasePlayer;
 

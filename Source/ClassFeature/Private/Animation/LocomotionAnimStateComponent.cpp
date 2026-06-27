@@ -1,4 +1,4 @@
-﻿#include "Animation/LocomotionAnimStateComponent.h"
+#include "Animation/LocomotionAnimStateComponent.h"
 #include "BasePlayer.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -159,6 +159,11 @@ void ULocomotionAnimStateComponent::CacheOwner()
     }
 
     bIsSprinting = CachedBasePlayer->bIsSprinting;
+
+    if (USkeletalMeshComponent* Mesh = CachedBasePlayer->GetMesh())
+    {
+        DefaultMeshRelativeRotation = Mesh->GetRelativeRotation();
+    }
 }
 
 bool ULocomotionAnimStateComponent::IsDedicatedServer() const
@@ -580,6 +585,32 @@ void ULocomotionAnimStateComponent::UpdateCharacterRotation(float DeltaTime)
         CurrentState != ELocomotionState::Idle &&
         CurrentState != ELocomotionState::Stop &&
         CurrentState != ELocomotionState::TurnInPlace;
+
+    // Interpolate mesh relative rotation offset back to default
+    if (FMath::Abs(MeshYawOffset) > 0.01f)
+    {
+        MeshYawOffset = FMath::FInterpTo(MeshYawOffset, 0.f, DeltaTime, MeshYawOffsetInterpSpeed);
+        if (CachedBasePlayer)
+        {
+            if (USkeletalMeshComponent* Mesh = CachedBasePlayer->GetMesh())
+            {
+                FRotator MeshRot = DefaultMeshRelativeRotation;
+                MeshRot.Yaw += MeshYawOffset;
+                Mesh->SetRelativeRotation(MeshRot);
+            }
+        }
+    }
+    else if (MeshYawOffset != 0.f)
+    {
+        MeshYawOffset = 0.f;
+        if (CachedBasePlayer)
+        {
+            if (USkeletalMeshComponent* Mesh = CachedBasePlayer->GetMesh())
+            {
+                Mesh->SetRelativeRotation(DefaultMeshRelativeRotation);
+            }
+        }
+    }
 }
 
 void ULocomotionAnimStateComponent::UpdateMaxWalkSpeed() const
@@ -627,8 +658,13 @@ void ULocomotionAnimStateComponent::ClearMovementRequests()
     MoveInputTurnAngle = 0.f;
 }
 
-void ULocomotionAnimStateComponent::AlignActorYawToControlYawForStartIfNeeded() const
+void ULocomotionAnimStateComponent::AlignActorYawToControlYawForStartIfNeeded()
 {
+    if (!bUseInstantRotationSnap)
+    {
+        return;
+    }
+
     if (!CachedBasePlayer ||
         (!CachedBasePlayer->IsLocallyControlled() && !CachedBasePlayer->HasAuthority()))
     {
@@ -646,6 +682,17 @@ void ULocomotionAnimStateComponent::AlignActorYawToControlYawForStartIfNeeded() 
     FRotator NewRotation = CachedBasePlayer->GetActorRotation();
     NewRotation.Yaw = ControlYaw;
     CachedBasePlayer->SetActorRotation(NewRotation);
+
+    // Apply negative yaw offset to mesh so it visually stays at the old rotation
+    MeshYawOffset -= YawDelta;
+    MeshYawOffset = FRotator::NormalizeAxis(MeshYawOffset);
+
+    if (USkeletalMeshComponent* Mesh = CachedBasePlayer->GetMesh())
+    {
+        FRotator MeshRot = DefaultMeshRelativeRotation;
+        MeshRot.Yaw += MeshYawOffset;
+        Mesh->SetRelativeRotation(MeshRot);
+    }
 
     if (IsMotionMatchingCaptureEnabled())
     {

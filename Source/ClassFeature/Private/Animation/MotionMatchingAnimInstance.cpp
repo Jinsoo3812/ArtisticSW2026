@@ -12,6 +12,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimSequence.h"
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "UObject/UnrealType.h"
@@ -331,12 +332,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
         !ThreadSafeData.AirData.bIsFallOffStart &&
         !ThreadSafeData.LandingData.bIsLanding &&
         !ThreadSafeData.LandingData.bLandingRequested;
-    const bool bCaptureMotionMatchingFrame =
-        bCaptureFrame &&
-        (ThreadSafeData.AirData.bIsFallOffStart ||
-            bIsAirLoopDebugPhase ||
-            ThreadSafeData.LandingData.bIsLanding ||
-            ThreadSafeData.LandingData.bLandingRequested);
+    const bool bCaptureMotionMatchingFrame = bCaptureFrame;
 
     int32 MotionMatchingNodeIndex = 0;
     for (FCachedMotionMatchingNodeInfo& Info : CachedMMNodes)
@@ -363,7 +359,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     Info.bDefaultMaxActiveBlendsCached = true;
                 }
 
-                const UPoseSearchDatabase* SelectedDatabaseBeforeUpdate =
+                 const UPoseSearchDatabase* SelectedDatabaseBeforeUpdate =
                     MMNode->GetMotionMatchingState().SearchResult.SelectedDatabase.Get();
                 const bool bSearchResultDatabaseChanged = SelectedDatabaseBeforeUpdate != CurrentActivePoseSearchDatabase.Get();
                 const bool bAppliedDatabaseChanged = Info.AppliedDatabase != CurrentActivePoseSearchDatabase;
@@ -417,6 +413,20 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     {
                         // Allow pose re-evaluation during air loop so that character can rotate/respond to inputs
                         SearchThrottleTime = Info.DefaultSearchThrottleTime;
+                    }
+                    else
+                    {
+                        UMotionMatchingAnimInstance* MMAnim = Cast<UMotionMatchingAnimInstance>(AnimInstanceObj);
+                        const ULocomotionAnimStateComponent* StateComp = MMAnim ? MMAnim->CachedLocomotionStateComponent.Get() : nullptr;
+                        if (StateComp && (StateComp->CurrentState == ELocomotionState::Start || StateComp->CurrentState == ELocomotionState::Stop))
+                        {
+                            // Start 및 Stop 상태에서는 최초 진입 프레임(bAppliedDatabaseChanged) 및 에셋 교체 직후 프레임(bSearchResultDatabaseChanged)에만 검색을 허용하고,
+                            // 그 외의 프레임에서는 추가 평가(재검색)를 차단하여 재생 중인 에셋이 중간에 끊기거나 오매칭되는 현상을 방지합니다.
+                            if (!bSearchResultDatabaseChanged && !bAppliedDatabaseChanged)
+                            {
+                                SearchThrottleTime = SuppressedSearchThrottleTime;
+                            }
+                        }
                     }
                     Info.SearchThrottleTimeProperty->SetPropertyValue_InContainer(MMNode, SearchThrottleTime);
                 }
@@ -649,6 +659,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     }
 
     // 1. C++ 직접 상태 분기 및 알맞은 PSD 할당 (Chooser Table 미사용)
+    const UPoseSearchDatabase* PrevActiveDB = CurrentActivePoseSearchDatabase.Get();
     CurrentActivePoseSearchDatabase = nullptr;
 
     if (CachedLocomotionStateComponent)
@@ -663,13 +674,65 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             break;
 
         case ELocomotionState::Start:
-            if (bSprinting)
             {
-                CurrentActivePoseSearchDatabase = SprintStartDatabase;
-            }
-            else
-            {
-                CurrentActivePoseSearchDatabase = bSimulated ? StartDatabaseRemote : StartDatabase;
+                // 로컬 플레이어의 경우 입력 방향(Control Yaw)과 캐릭터 정면(Actor Yaw)의 각도 차이를 계산하여 Reface 사용 여부 결정
+                // 단, 이미 Start 상태에 진입해 있는 동안에는 프레임마다 데이터베이스가 직진용으로 복구되어 중간에 끊기는 것을 방지하기 위해 
+                // 이전 프레임에 이미 Reface DB를 할당했다면 해당 선택을 고정(Latch)합니다.
+                bool bUseReface = false;
+                const bool bAlreadyUsingReface = (PrevActiveDB == RunStartRefaceDatabase.Get() || PrevActiveDB == SprintStartRefaceDatabase.Get());
+                
+                if (bAlreadyUsingReface)
+                {
+                    bUseReface = true;
+                }
+                else if (!bSimulated && CachedBasePlayer)
+                {
+                    float ActorYaw = CachedBasePlayer->GetActorRotation().Yaw;
+                    float ControlYaw = ActorYaw;
+                    if (CachedBasePlayer->GetController())
+                    {
+                        ControlYaw = CachedBasePlayer->GetController()->GetControlRotation().Yaw;
+                    }
+                    float YawDiff = FMath::Abs(FRotator::NormalizeAxis(ActorYaw - ControlYaw));
+                    bUseReface = YawDiff >= 50.f; // 50도 이상 꺾일 때만 Reface 사용 허용
+                }
+
+                if (bSprinting)
+                {
+                    if (bSimulated)
+                    {
+                        CurrentActivePoseSearchDatabase = SprintStartDatabaseRemote.Get() ? SprintStartDatabaseRemote : SprintStartDatabase;
+                    }
+                    else
+                    {
+                        if (bUseReface)
+                        {
+                            CurrentActivePoseSearchDatabase = SprintStartRefaceDatabase.Get() ? SprintStartRefaceDatabase : SprintStartDatabase;
+                        }
+                        else
+                        {
+                            CurrentActivePoseSearchDatabase = SprintStartDatabase;
+                        }
+                    }
+                }
+                else
+                {
+                    if (bSimulated)
+                    {
+                        CurrentActivePoseSearchDatabase = StartDatabaseRemote.Get() ? StartDatabaseRemote : StartDatabase;
+                    }
+                    else
+                    {
+                        if (bUseReface)
+                        {
+                            CurrentActivePoseSearchDatabase = RunStartRefaceDatabase.Get() ? RunStartRefaceDatabase : StartDatabase;
+                        }
+                        else
+                        {
+                            CurrentActivePoseSearchDatabase = StartDatabase;
+                        }
+                    }
+                }
             }
             break;
 
@@ -739,6 +802,57 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         default:
             CurrentActivePoseSearchDatabase = IdleDatabase;
             break;
+        }
+    }
+
+    // 2. Start/Stop/Landing 상태의 애니메이션 재생 완료 감지 및 자동 상태 전환 처리 (노티파이 의존성 100% 제거)
+    if (CachedLocomotionStateComponent)
+    {
+        const ELocomotionState State = CachedLocomotionStateComponent->CurrentState;
+        if (State == ELocomotionState::Start || State == ELocomotionState::Stop || State == ELocomotionState::Landing)
+        {
+            FMotionMatchingAnimInstanceProxy& MyProxy = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>();
+            for (const FCachedMotionMatchingNodeInfo& Info : MyProxy.CachedMMNodes)
+            {
+                if (Info.NodeProperty)
+                {
+                    FAnimNode_MotionMatching* MMNode = Info.NodeProperty->ContainerPtrToValuePtr<FAnimNode_MotionMatching>(this);
+                    if (MMNode)
+                    {
+                        const FPoseSearchBlueprintResult& Result = MMNode->GetMotionMatchingState().SearchResult;
+                        if (Result.SelectedAnim)
+                        {
+                            UAnimSequence* AnimSeq = Cast<UAnimSequence>(Result.SelectedAnim);
+                            if (AnimSeq)
+                            {
+                                float PlayLength = AnimSeq->GetPlayLength();
+                                float CurrentTime = Result.SelectedTime;
+                                
+                                // 일반 에셋은 종료 0.1초 전에 전이, 단 아주 짧은 에셋(0.4초 이하)은 종료 0.03초 전에 완료 유도
+                                const float TransitionOffset = (PlayLength < 0.4f) ? 0.03f : 0.10f;
+                                const float TransitionThreshold = PlayLength - TransitionOffset;
+
+                                if (CurrentTime >= TransitionThreshold)
+                                {
+                                    if (State == ELocomotionState::Start)
+                                    {
+                                        CachedLocomotionStateComponent->NotifyStartFinished();
+                                    }
+                                    else if (State == ELocomotionState::Stop)
+                                    {
+                                        CachedLocomotionStateComponent->NotifyStopFinished();
+                                    }
+                                    else if (State == ELocomotionState::Landing)
+                                    {
+                                        CachedLocomotionStateComponent->NotifyLandingFinished();
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -991,11 +1105,21 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             FString TrajFuture2Str = FormatSample(0.5f);
             FString TrajFuture3Str = FormatSample(1.0f);
 
-            UE_LOG(LogTemp, Log, TEXT("[MM_DEBUG] LocalPlayer: Speed=%.1f, State=%s, Database=%s, Sprint=%s"),
+            bool bInstantSnap = false;
+            float MeshOffset = 0.f;
+            if (CachedLocomotionStateComponent)
+            {
+                bInstantSnap = CachedLocomotionStateComponent->GetUseInstantRotationSnap();
+                MeshOffset = CachedLocomotionStateComponent->GetMeshYawOffset();
+            }
+
+            UE_LOG(LogTemp, Log, TEXT("[MM_DEBUG] LocalPlayer: Speed=%.1f, State=%s, Database=%s, Sprint=%s, InstantSnap=%s, MeshYawOffset=%.1f"),
                 CachedLocomotionStateComponent ? CachedLocomotionStateComponent->GroundSpeed : 0.f,
                 CachedLocomotionStateComponent ? *StaticEnum<ELocomotionState>()->GetNameStringByValue((int64)CachedLocomotionStateComponent->CurrentState) : TEXT("None"),
                 *CurrentDatabaseName.ToString(),
-                CachedBasePlayer->bIsSprinting ? TEXT("True") : TEXT("False"));
+                CachedBasePlayer->bIsSprinting ? TEXT("True") : TEXT("False"),
+                bInstantSnap ? TEXT("True") : TEXT("False"),
+                MeshOffset);
 
             UE_LOG(LogTemp, Log, TEXT("          Rotation: ControlYaw=%.1f, ActorYaw=%.1f, DeltaYaw=%.1f, bOrientToMovement=%s, bUseControllerDesired=%s"),
                 ControlYaw, ActorYaw, YawDelta,
