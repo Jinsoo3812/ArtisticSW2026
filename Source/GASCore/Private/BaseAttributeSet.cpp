@@ -9,7 +9,7 @@
 
 UBaseAttributeSet::UBaseAttributeSet()
 {
-	// ?앹꽦?섏뿀???? 泥대젰? 100
+	// 기본 체력값입니다. 이후 초기화 GE나 캐릭터별 AttributeSet에서 덮어쓸 수 있습니다.
 	MaxHealth = 100.0f;
 	Health = 100.0f;
 }
@@ -18,9 +18,7 @@ void UBaseAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	// AttributeSet???ㅽ듃?뚰겕 ?숆린??
-	// COND_None: 議곌굔 ?놁씠 ??긽 ?숆린??- 理쒖쟻?????
-	// REPNOTIFY_Always: 媛믪씠 媛숈븘??RepNotify ?⑥닔瑜??몄텧 (?덉륫, 濡ㅻ갚 ?깆뿉 ?ъ슜)
+	// 모든 클라이언트에 Attribute를 복제하고, 예측/롤백 보정을 위해 항상 RepNotify를 호출합니다.
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, Health, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, AttackPower, COND_None, REPNOTIFY_Always);
@@ -31,7 +29,7 @@ void UBaseAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, 
 {
 	Super::PreAttributeChange(Attribute, NewValue);
 
-	// 泥대젰??0 ~ 100 ?ъ씠濡?Clamp
+	// Health는 0과 현재 MaxHealth 사이로 제한합니다.
 	if (Attribute == GetHealthAttribute())
 	{
 		NewValue = FMath::Clamp(NewValue, 0.0f, GetMaxHealth());
@@ -42,7 +40,7 @@ void UBaseAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallba
 {
 	Super::PostGameplayEffectExecute(Data);
 
-	// 泥대젰 蹂寃쎌뿉 ???湲곕낯 泥섎━ (Test ??
+	// GameplayEffect로 Health가 직접 바뀐 경우에도 유효 범위를 보장합니다.
 	if (Data.EvaluatedData.Attribute == GetHealthAttribute())
 	{
 		SetHealth(FMath::Clamp(GetHealth(), 0.0f, GetMaxHealth()));

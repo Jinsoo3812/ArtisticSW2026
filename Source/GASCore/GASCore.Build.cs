@@ -5,7 +5,7 @@ public class GASCore: ModuleRules
     public GASCore(ReadOnlyTargetRules Target) : base(Target)
     {
         PrivateDependencyModuleNames.AddRange(new string[] {
-            // 紐⑤뱢 ???대옒?ㅼ쓽 ?뚯뒪 ?뚯씪?먯꽌留??ъ슜??紐⑤뱢 ?섏〈?깆쓣 異붽?
+            // GASCore의 .cpp 파일에서만 필요한 모듈 의존성입니다.
             "Core",
             "CoreUObject",
             "Engine",
@@ -13,14 +13,14 @@ public class GASCore: ModuleRules
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
-            // 紐⑤뱢 ???대옒?ㅼ쓽 ?ㅻ뜑 ?뚯씪?먯꽌遺???ъ슜??紐⑤뱢 ?섏〈?깆쓣 異붽?
+            // GASCore의 public 헤더가 노출하는 GAS 관련 모듈입니다.
             "GameplayAbilities",
             "GameplayTasks",
             "GameplayTags"
         });
 
         PublicIncludePaths.AddRange(new string[] {
-            // ?덈줈 異붽????뚯씪 寃쎈줈瑜?異붽??섏뿬 include ???대옒???대쫫留??ъ슜?????덇쾶
+            // 모듈 내부/외부에서 GASCore public 헤더를 짧은 경로로 include할 수 있게 합니다.
 			"GASCore",
 			"GASCore/Public"
 		});
