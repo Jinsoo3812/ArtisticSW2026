@@ -7,6 +7,7 @@
 #include "Weapon/BaseWeaponComponent.h"
 
 // ArtisticSWCore
+#include "BaseGameplayTags.h"
 #include "ItemSubsystem.h"
 
 // Enemy Folder
@@ -49,22 +50,21 @@ ABaseEnemy::ABaseEnemy()
 
 	if (GetCharacterMovement())
 		GetCharacterMovement()->SetIsReplicated(true);
-
-	
-	// State_Dead Tag를 감지하는 Delegate 등록
-	AbilitySystemComponent->RegisterGameplayTagEvent(State_Dead)
-		.AddUObject(this, &ABaseEnemy::OnDeadTagChanged);
 }
 
 void ABaseEnemy::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->InitAbilityActorInfo(this, this);
+		BindASCDelegates();
+	}
+
 	// StartingAbilities 능력 등록
 	if (AbilitySystemComponent && HasAuthority())
 	{
-		AbilitySystemComponent->InitAbilityActorInfo(this, this);
-
 		if (StartingAbilities.Num() > 0)
 		{
 			GrantAbilities(StartingAbilities);
@@ -77,6 +77,13 @@ void ABaseEnemy::BeginPlay()
 	}
 
 	InitializeEnemyDropData();
+}
+
+void ABaseEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	UnbindASCDelegates();
+
+	Super::EndPlay(EndPlayReason);
 }
 
 TArray<FGameplayAbilitySpecHandle> ABaseEnemy::GrantAbilities(TArray<TSubclassOf<UGameplayAbility>> AbilitiesToGrant)
@@ -159,6 +166,91 @@ void ABaseEnemy::OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount
 
 		HandleDeath();
 	}
+}
+
+void ABaseEnemy::BindASCDelegates()
+{
+	if (bASCDelegatesBound || !AbilitySystemComponent)
+	{
+		return;
+	}
+
+	HealthChangedDelegateHandle = AbilitySystemComponent
+		->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute())
+		.AddUObject(this, &ABaseEnemy::OnHealthChanged);
+
+	MaxHealthChangedDelegateHandle = AbilitySystemComponent
+		->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetMaxHealthAttribute())
+		.AddUObject(this, &ABaseEnemy::OnMaxHealthChanged);
+
+	DeadTagDelegateHandle = AbilitySystemComponent
+		->RegisterGameplayTagEvent(State_Dead)
+		.AddUObject(this, &ABaseEnemy::OnDeadTagChanged);
+
+	bASCDelegatesBound = true;
+
+	if (HasAuthority() && BasicAttributes && BasicAttributes->GetHealth() <= 0.0f)
+	{
+		AddDeadTagOnce();
+	}
+}
+
+void ABaseEnemy::UnbindASCDelegates()
+{
+	if (!bASCDelegatesBound || !AbilitySystemComponent)
+	{
+		return;
+	}
+
+	AbilitySystemComponent
+		->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute())
+		.Remove(HealthChangedDelegateHandle);
+
+	AbilitySystemComponent
+		->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetMaxHealthAttribute())
+		.Remove(MaxHealthChangedDelegateHandle);
+
+	AbilitySystemComponent
+		->RegisterGameplayTagEvent(State_Dead)
+		.Remove(DeadTagDelegateHandle);
+
+	HealthChangedDelegateHandle.Reset();
+	MaxHealthChangedDelegateHandle.Reset();
+	DeadTagDelegateHandle.Reset();
+	bASCDelegatesBound = false;
+}
+
+void ABaseEnemy::OnHealthChanged(const FOnAttributeChangeData& Data)
+{
+	// UI 체력바 갱신
+	// 피격 VFX
+	// 체력 변화 로그
+	// 보스 체력바 이벤트
+	
+	if (HasAuthority() && Data.NewValue <= 0.0f)
+	{
+		AddDeadTagOnce();
+	}
+}
+
+void ABaseEnemy::OnMaxHealthChanged(const FOnAttributeChangeData& Data)
+{
+	// Enemy UI가 Attribute delegate를 직접 구독하지 않는 경우 이 지점에서 체력바를 갱신할 수 있습니다.
+}
+
+void ABaseEnemy::AddDeadTagOnce()
+{
+	if (!HasAuthority() || !AbilitySystemComponent)
+	{
+		return;
+	}
+
+	if (AbilitySystemComponent->HasMatchingGameplayTag(State_Dead))
+	{
+		return;
+	}
+
+	AbilitySystemComponent->AddLooseGameplayTag(State_Dead, 1, EGameplayTagReplicationState::TagOnly);
 }
 
 void ABaseEnemy::InitializeFromWaveSpawn(float HealthMultiplier, float SpeedMultiplier, int32 EnemyLevel)

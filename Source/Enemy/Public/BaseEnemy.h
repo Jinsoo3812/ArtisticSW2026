@@ -13,6 +13,7 @@
 class UAbilitySystemComponent;
 class UBaseWeaponComponent;
 class UEnemyWaypointMoveComponent;
+struct FOnAttributeChangeData;
 
 class UGameplayAbility;
 class UBehaviorTree;
@@ -109,9 +110,25 @@ protected:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
 	//  ASC Owner가 State.Dead Tag를 가질 때, 호출되는 함수
 	virtual void OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
+
+	// ASC 초기화 이후 Health/MaxHealth/Dead Tag 변경 이벤트를 연결합니다.
+	void BindASCDelegates();
+
+	// Destroy/EndPlay 시 ASC delegate를 해제해 죽은 객체로 콜백이 들어오지 않게 합니다.
+	void UnbindASCDelegates();
+
+	// Health Attribute가 변경될 때 호출됩니다. 서버에서는 Health가 0 이하가 되면 Dead 태그를 부여합니다.
+	void OnHealthChanged(const FOnAttributeChangeData& Data);
+
+	// MaxHealth Attribute가 변경될 때 호출됩니다. 현재는 UI 연결 지점으로만 열어둡니다.
+	void OnMaxHealthChanged(const FOnAttributeChangeData& Data);
+
+	// 서버에서 한 번만 State.Dead 태그를 부여합니다.
+	void AddDeadTagOnce();
 
 	// FVector GetVelocity() const override;
 	
@@ -153,6 +170,12 @@ protected:
 	// 한 번 드랍 했는지 확인하는 변수
 	UPROPERTY()
 	bool bHasDropped = false;
+
+private:
+	FDelegateHandle HealthChangedDelegateHandle;
+	FDelegateHandle MaxHealthChangedDelegateHandle;
+	FDelegateHandle DeadTagDelegateHandle;
+	bool bASCDelegatesBound = false;
 
 public:
 	

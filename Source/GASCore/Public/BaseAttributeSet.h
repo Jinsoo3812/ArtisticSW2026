@@ -57,6 +57,20 @@ public:
 	FGameplayAttributeData MoveSpeed;
 	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, MoveSpeed)
 
+
+	// -------------------------------------------------------------------
+	// Meta Attributes
+
+	// 피해량을 임시로 전달받는 메타 Attribute입니다. GE 처리 후 Health에 반영하고 즉시 0으로 되돌립니다.
+	UPROPERTY(BlueprintReadOnly, Category = "Attributes|Meta")
+	FGameplayAttributeData Damage;
+	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, Damage)
+
+	// 회복량을 임시로 전달받는 메타 Attribute입니다. GE 처리 후 Health에 반영하고 즉시 0으로 되돌립니다.
+	UPROPERTY(BlueprintReadOnly, Category = "Attributes|Meta")
+	FGameplayAttributeData Healing;
+	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, Healing)
+
 protected:
 	/* --- RepNotify callbacks --- */
 

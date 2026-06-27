@@ -8,12 +8,12 @@ public class GASCore: ModuleRules
             // GASCore의 .cpp 파일에서만 필요한 모듈 의존성입니다.
             "Core",
             "CoreUObject",
-            "Engine",
             "ArtisticSWCore"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
             // GASCore의 public 헤더가 노출하는 GAS 관련 모듈입니다.
+            "Engine",
             "GameplayAbilities",
             "GameplayTasks",
             "GameplayTags"

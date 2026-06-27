@@ -23,6 +23,8 @@ void UBaseAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, AttackPower, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, MoveSpeed, COND_None, REPNOTIFY_Always);
+
+	// Damage와 Healing은 GE 실행 중에만 쓰는 메타 Attribute라 복제하지 않습니다.
 }
 
 void UBaseAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
@@ -33,6 +35,11 @@ void UBaseAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, 
 	if (Attribute == GetHealthAttribute())
 	{
 		NewValue = FMath::Clamp(NewValue, 0.0f, GetMaxHealth());
+	}
+
+	if (Attribute == GetMaxHealthAttribute())
+	{
+		NewValue = FMath::Max(0.0f, NewValue);
 	}
 }
 
@@ -45,11 +52,42 @@ void UBaseAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallba
 	{
 		SetHealth(FMath::Clamp(GetHealth(), 0.0f, GetMaxHealth()));
 	}
+
+	// Damage는 최종 피해량을 받는 메타 Attribute입니다.
+	// 실제 체력 감소만 Health에 남기고 Damage 값은 다음 GE를 위해 비웁니다.
+	if (Data.EvaluatedData.Attribute == GetDamageAttribute())
+	{
+		const float LocalDamage = FMath::Max(0.0f, GetDamage());
+		SetDamage(0.0f);
+
+		if (LocalDamage > 0.0f)
+		{
+			SetHealth(FMath::Clamp(GetHealth() - LocalDamage, 0.0f, GetMaxHealth()));
+		}
+	}
+
+	// Healing은 최종 회복량을 받는 메타 Attribute입니다.
+	// 실제 체력 회복만 Health에 남기고 Healing 값은 다음 GE를 위해 비웁니다.
+	if (Data.EvaluatedData.Attribute == GetHealingAttribute())
+	{
+		const float LocalHealing = FMath::Max(0.0f, GetHealing());
+		SetHealing(0.0f);
+
+		if (LocalHealing > 0.0f)
+		{
+			SetHealth(FMath::Clamp(GetHealth() + LocalHealing, 0.0f, GetMaxHealth()));
+		}
+	}
 }
 
 void UBaseAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribute, float OldValue, float NewValue)
 {
 	Super::PostAttributeChange(Attribute, OldValue, NewValue);
+
+	if (Attribute == GetMaxHealthAttribute() && GetHealth() > NewValue)
+	{
+		SetHealth(NewValue);
+	}
 	
 }
 
