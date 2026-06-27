@@ -162,6 +162,8 @@ struct FCachedMotionMatchingNodeInfo
     float LastSelectedTime = 0.f;
     float DefaultSearchThrottleTime = 0.f;
     bool bDefaultSearchThrottleCached = false;
+    int32 DefaultMaxActiveBlends = 4;
+    bool bDefaultMaxActiveBlendsCached = false;
 };
 
 struct FCachedHistoryCollectorNodeInfo

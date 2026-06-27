@@ -197,7 +197,7 @@ namespace
         }
     }
 
-    void AppendMotionMatchingCaptureLine(const FString& Line)
+    void AppendMotionMatchingAnimCaptureLine(const FString& Line)
     {
         const FString LogFilePath = FPaths::Combine(FPaths::ProjectLogDir(), TEXT("MMCapture.log"));
         const FString StampedLine = FString::Printf(
@@ -213,6 +213,7 @@ namespace
             &IFileManager::Get(),
             FILEWRITE_Append);
     }
+
 }
 
 FMotionMatchingAnimInstanceProxy::FMotionMatchingAnimInstanceProxy()
@@ -356,6 +357,12 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     Info.bDefaultSearchThrottleCached = true;
                 }
 
+                if (!Info.bDefaultMaxActiveBlendsCached)
+                {
+                    Info.DefaultMaxActiveBlends = MMNode->GetMaxActiveBlends();
+                    Info.bDefaultMaxActiveBlendsCached = true;
+                }
+
                 const UPoseSearchDatabase* SelectedDatabaseBeforeUpdate =
                     MMNode->GetMotionMatchingState().SearchResult.SelectedDatabase.Get();
                 const bool bSearchResultDatabaseChanged = SelectedDatabaseBeforeUpdate != CurrentActivePoseSearchDatabase.Get();
@@ -376,14 +383,24 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     Info.AppliedDatabase = CurrentActivePoseSearchDatabase;
                 }
 
+                const bool bIsAirLoopPhase =
+                    ThreadSafeData.AirData.bIsInAir &&
+                    !ThreadSafeData.AirData.bIsJumping &&
+                    !ThreadSafeData.AirData.bIsFallOffStart &&
+                    !ThreadSafeData.LandingData.bIsLanding &&
+                    !ThreadSafeData.LandingData.bLandingRequested;
+
+                if (bIsAirLoopPhase)
+                {
+                    MMNode->SetMaxActiveBlends(1);
+                }
+                else
+                {
+                    MMNode->SetMaxActiveBlends(Info.DefaultMaxActiveBlends);
+                }
+
                 if (Info.SearchThrottleTimeProperty)
                 {
-                    const bool bIsAirLoopPhase =
-                        ThreadSafeData.AirData.bIsInAir &&
-                        !ThreadSafeData.AirData.bIsJumping &&
-                        !ThreadSafeData.AirData.bIsFallOffStart &&
-                        !ThreadSafeData.LandingData.bIsLanding &&
-                        !ThreadSafeData.LandingData.bLandingRequested;
                     float SearchThrottleTime = Info.DefaultSearchThrottleTime;
                     if (bIsFallOffStartPhase && !bSearchResultDatabaseChanged)
                     {
@@ -396,9 +413,10 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                             SearchThrottleTime = FMath::Max(Info.DefaultSearchThrottleTime, FallOffSearchThrottleTime);
                         }
                     }
-                    else if (bIsAirLoopPhase && !bAppliedDatabaseChanged)
+                    else if (bIsAirLoopPhase)
                     {
-                        SearchThrottleTime = SuppressedSearchThrottleTime;
+                        // Allow pose re-evaluation during air loop so that character can rotate/respond to inputs
+                        SearchThrottleTime = Info.DefaultSearchThrottleTime;
                     }
                     Info.SearchThrottleTimeProperty->SetPropertyValue_InContainer(MMNode, SearchThrottleTime);
                 }
@@ -436,7 +454,6 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                         TEXT("%s@%.3f"),
                         *GetNameSafe(Info.LastSelectedAnim.Get()),
                         Info.LastSelectedTime);
-
                     const FString NodeDebugLine = FString::Printf(
                         TEXT("[MMCAP_NODE] Anim=%s Node=%d Property=%s RequestedPSD=%s SelectedDB=%s SelectedAsset=%s AssetDir=%s Time=%.3f Cost=%.3f Continue=%d Prev=%s Mirrored=%d Loop=%d PlayRate=%.3f Blend=(%.2f,%.2f,%.2f) Throttle=%.3f FallOff=%d SearchEveryUpdate=%d DBChanged=%d StackNum=%d"),
                         *AnimInstanceObj->GetName(),
@@ -462,7 +479,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                         bDatabaseChanged ? 1 : 0,
                         MMNode->AnimPlayers.Num());
                     UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *NodeDebugLine);
-                    AppendMotionMatchingCaptureLine(NodeDebugLine);
+                    AppendMotionMatchingAnimCaptureLine(NodeDebugLine);
 
                     const FString BlendStackDebugLine = FString::Printf(
                         TEXT("[MMCAP_BLENDSTACK] Anim=%s Node=%d FallOff=%d Stack=%s"),
@@ -471,7 +488,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                         bIsFallOffStartPhase ? 1 : 0,
                         *FormatMotionMatchingBlendStack(*MMNode));
                     UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *BlendStackDebugLine);
-                    AppendMotionMatchingCaptureLine(BlendStackDebugLine);
+                    AppendMotionMatchingAnimCaptureLine(BlendStackDebugLine);
 
                     Info.LastSelectedAnim = Result.SelectedAnim.Get();
                     Info.LastSelectedTime = Result.SelectedTime;
@@ -518,7 +535,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
             Data.LandingData.LandMoveDirection.Y,
             Data.LandingData.LandingElapsedTime);
         UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *StateDebugLine);
-        AppendMotionMatchingCaptureLine(StateDebugLine);
+        AppendMotionMatchingAnimCaptureLine(StateDebugLine);
 
         const FTransform OwnerComponentTransform = AnimInstanceObj->GetOwningComponent()
             ? AnimInstanceObj->GetOwningComponent()->GetComponentTransform()
@@ -536,7 +553,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                 *FormatTrajectorySample(Data.MovementData.Trajectory, OwnerComponentTransform, 0.5f),
                 *FormatTrajectorySample(Data.MovementData.Trajectory, OwnerComponentTransform, 1.f));
             UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *FallOffTrajectoryDebugLine);
-            AppendMotionMatchingCaptureLine(FallOffTrajectoryDebugLine);
+            AppendMotionMatchingAnimCaptureLine(FallOffTrajectoryDebugLine);
         }
     }
 
@@ -643,10 +660,6 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         {
         case ELocomotionState::Idle:
             CurrentActivePoseSearchDatabase = IdleDatabase;
-            break;
-
-        case ELocomotionState::TurnInPlace:
-            CurrentActivePoseSearchDatabase = TurnInPlaceDatabase;
             break;
 
         case ELocomotionState::Start:
@@ -793,22 +806,6 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                     {
                         ApplyFallingPredictionToTrajectory(ThreadSafeData.MovementData.Trajectory, *CachedBasePlayer);
                     }
-                    else if (State == ELocomotionState::TurnInPlace)
-                    {
-                        // 제자리 회전 상태: 미래의 바라보는 방향(Facing)을 마우스(컨트롤러) 회전 방향으로 블렌딩하여 모션 매칭이 제자리 회전 애니메이션을 찾아내도록 유도
-                        FQuat TargetQuat = CachedBasePlayer->GetControlRotation().Quaternion();
-                        for (FTransformTrajectorySample& Sample : Samples)
-                        {
-                            if (Sample.TimeInSeconds > 0.f)
-                            {
-                                float Alpha = FMath::Clamp(Sample.TimeInSeconds / 0.8f, 0.f, 1.f);
-                                FQuat BlendedQuat = FQuat::Slerp(ActorQuat, TargetQuat, Alpha);
-                                FTransform TempTransform = Sample.GetTransform();
-                                TempTransform.SetRotation(BlendedQuat);
-                                Sample.SetTransform(TempTransform);
-                            }
-                        }
-                    }
                     else if (State == ELocomotionState::Landing
                         && CachedLocomotionStateComponent->bLandWasMoving
                         && !CachedLocomotionStateComponent->LandMoveDirection.IsNearlyZero())
@@ -916,7 +913,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                     CachedLocomotionStateComponent->CachedMoveInput.X,
                     CachedLocomotionStateComponent->CachedMoveInput.Y);
                 UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *PsdDebugLine);
-                AppendMotionMatchingCaptureLine(PsdDebugLine);
+                AppendMotionMatchingAnimCaptureLine(PsdDebugLine);
 
                 if (LastState == ELocomotionState::Landing && CachedLocomotionStateComponent->CurrentState == ELocomotionState::Start)
                 {
@@ -932,7 +929,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                         CachedLocomotionStateComponent->CachedMoveInput.X,
                         CachedLocomotionStateComponent->CachedMoveInput.Y);
                     UE_LOG(LogMotionMatchingCapture, Warning, TEXT("%s"), *LandToStartDebugLine);
-                    AppendMotionMatchingCaptureLine(LandToStartDebugLine);
+                    AppendMotionMatchingAnimCaptureLine(LandToStartDebugLine);
                 }
             }
         }
@@ -1017,6 +1014,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                 ActiveMontage && Montage_IsPlaying(ActiveMontage) ? 1 : 0);
         }
     }
+
 }
 
 UPoseSearchDatabase* UMotionMatchingAnimInstance::GetCurrentActivePoseSearchDatabaseThreadSafe() const

@@ -120,6 +120,7 @@ ULocomotionAnimStateComponent::ULocomotionAnimStateComponent()
     SprintSpeed = 700.f;
     WalkRotationRateYaw = 500.f;
     SprintRotationRateYaw = 500.f;
+    StartAlignControlYawThreshold = 90.f;
     GenericMoveInputSpeedThreshold = 3.f;
 
     AirborneDuration = 0.f;
@@ -574,8 +575,11 @@ void ULocomotionAnimStateComponent::UpdateCharacterRotation(float DeltaTime)
     // Always keep camera-oriented rotation settings (showing back)
     MovementComponent->bOrientRotationToMovement = false;
 
-    // Face controller rotation except when Idle (to allow Turn-In-Place yaw accumulation)
-    MovementComponent->bUseControllerDesiredRotation = (CurrentState != ELocomotionState::Idle);
+    // Keep idle/stop poses from rotating with camera-only look input.
+    MovementComponent->bUseControllerDesiredRotation =
+        CurrentState != ELocomotionState::Idle &&
+        CurrentState != ELocomotionState::Stop &&
+        CurrentState != ELocomotionState::TurnInPlace;
 }
 
 void ULocomotionAnimStateComponent::UpdateMaxWalkSpeed() const
@@ -598,10 +602,6 @@ void ULocomotionAnimStateComponent::UpdateMaxWalkSpeed() const
         !CachedBasePlayer->bIsHitReacting;
 
     float TargetRotationRate = bCanSprint ? SprintRotationRateYaw : WalkRotationRateYaw;
-    if (CurrentState == ELocomotionState::TurnInPlace)
-    {
-        TargetRotationRate = 180.f; // ?쒖옄由??뚯쟾 ??遺?쒕윭???뚯쟾???꾪빐 ?뚯쟾 ?띾룄瑜?180?꾨줈 ?쒗븳
-    }
 
     MovementComponent->MaxWalkSpeed = bCanSprint ? SprintSpeed : WalkSpeed;
     MovementComponent->RotationRate = FRotator(
@@ -627,6 +627,41 @@ void ULocomotionAnimStateComponent::ClearMovementRequests()
     MoveInputTurnAngle = 0.f;
 }
 
+void ULocomotionAnimStateComponent::AlignActorYawToControlYawForStartIfNeeded() const
+{
+    if (!CachedBasePlayer ||
+        (!CachedBasePlayer->IsLocallyControlled() && !CachedBasePlayer->HasAuthority()))
+    {
+        return;
+    }
+
+    const float ActorYaw = CachedBasePlayer->GetActorRotation().Yaw;
+    const float ControlYaw = CachedBasePlayer->GetControlRotation().Yaw;
+    const float YawDelta = FMath::FindDeltaAngleDegrees(ActorYaw, ControlYaw);
+    if (FMath::Abs(YawDelta) < StartAlignControlYawThreshold)
+    {
+        return;
+    }
+
+    FRotator NewRotation = CachedBasePlayer->GetActorRotation();
+    NewRotation.Yaw = ControlYaw;
+    CachedBasePlayer->SetActorRotation(NewRotation);
+
+    if (IsMotionMatchingCaptureEnabled())
+    {
+        const FString DebugLine = FString::Printf(
+            TEXT("[MMCAP_EVENT] AlignStartYaw ActorYaw=%.1f ControlYaw=%.1f Delta=%.1f Threshold=%.1f Input=(R=%.2f,F=%.2f)"),
+            ActorYaw,
+            ControlYaw,
+            YawDelta,
+            StartAlignControlYawThreshold,
+            CachedMoveInput.X,
+            CachedMoveInput.Y);
+        UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+        AppendMotionMatchingCaptureLine(DebugLine);
+    }
+}
+
 void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
 {
     PreviousState = CurrentState;
@@ -641,17 +676,8 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             }
             else if (bHasMoveInput)
             {
+                AlignActorYawToControlYawForStartIfNeeded();
                 ForceStateTransition(ELocomotionState::Start);
-            }
-            else
-            {
-                float ActorYaw = CachedBasePlayer->GetActorRotation().Yaw;
-                float ControlYaw = CachedBasePlayer->GetControlRotation().Yaw;
-                float YawDelta = FMath::FindDeltaAngleDegrees(ActorYaw, ControlYaw);
-                if (FMath::Abs(YawDelta) >= 90.f)
-                {
-                    ForceStateTransition(ELocomotionState::TurnInPlace);
-                }
             }
             break;
         }
@@ -663,17 +689,12 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             }
             else if (bHasMoveInput)
             {
+                AlignActorYawToControlYawForStartIfNeeded();
                 ForceStateTransition(ELocomotionState::Start);
             }
             else
             {
-                float ActorYaw = CachedBasePlayer->GetActorRotation().Yaw;
-                float ControlYaw = CachedBasePlayer->GetControlRotation().Yaw;
-                float YawDelta = FMath::FindDeltaAngleDegrees(ActorYaw, ControlYaw);
-                if (FMath::Abs(YawDelta) < 5.f)
-                {
-                    ForceStateTransition(ELocomotionState::Idle);
-                }
+                ForceStateTransition(ELocomotionState::Idle);
             }
             break;
         }
@@ -709,6 +730,7 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             }
             else if (bHasMoveInput)
             {
+                AlignActorYawToControlYawForStartIfNeeded();
                 ForceStateTransition(ELocomotionState::Start);
             }
             break;

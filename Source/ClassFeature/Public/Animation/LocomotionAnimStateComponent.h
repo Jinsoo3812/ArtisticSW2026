@@ -150,6 +150,7 @@ protected:
     void UpdateCharacterRotation(float DeltaTime);
     void UpdateMaxWalkSpeed() const;
     void ClearMovementRequests();
+    void AlignActorYawToControlYawForStartIfNeeded() const;
     void StartFallOffStart();
     void StopFallOffStart();
     void StartLanding(float ImpactFallSpeed, bool bTriggerRealLandEvent);
@@ -354,6 +355,9 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Sprint")
     float SprintRotationRateYaw = 500.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Start", meta = (ClampMin = "0.0", ClampMax = "180.0"))
+    float StartAlignControlYawThreshold = 90.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Input")
     float GenericMoveInputSpeedThreshold = 3.f;
