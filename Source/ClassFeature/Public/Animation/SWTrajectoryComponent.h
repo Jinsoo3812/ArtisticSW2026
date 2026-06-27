@@ -48,6 +48,7 @@ private:
     void EnsureTrajectoryBuffers();
     void ApplyTrajectorySmoothing(float DeltaTime);
     void RepairRemoteTrajectoryFacing(const ACharacter& CharacterOwner);
+    void RepairRemoteTrajectoryPrediction(const ACharacter& CharacterOwner);
     void ScaleTrajectoryHistory(float ScaleRatio);
 
     UPROPERTY(Transient)

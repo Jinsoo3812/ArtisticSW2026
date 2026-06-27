@@ -53,6 +53,12 @@ struct FReplicatedLocomotionState
     bool bLandWasSprinting = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    bool bHasMoveInput = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    FVector2D MoveInput = FVector2D::ZeroVector;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
     FVector2D LandMoveDirection = FVector2D::ZeroVector;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
@@ -72,6 +78,8 @@ struct FReplicatedLocomotionState
                bUseHeavyLand == Other.bUseHeavyLand &&
                bLandWasMoving == Other.bLandWasMoving &&
                bLandWasSprinting == Other.bLandWasSprinting &&
+               bHasMoveInput == Other.bHasMoveInput &&
+               MoveInput.Equals(Other.MoveInput, KINDA_SMALL_NUMBER) &&
                LandMoveDirection.Equals(Other.LandMoveDirection, KINDA_SMALL_NUMBER) &&
                FMath::IsNearlyEqual(LastFallSpeed, Other.LastFallSpeed) &&
                EventSequence == Other.EventSequence;
@@ -166,6 +174,8 @@ protected:
     void InterruptLandingForDirectionChange();
     void InterruptLandingForStop();
     bool ShouldAcceptRemoteAnimEvent(int32 EventSequence);
+    bool IsDiagonalLanding() const;
+    float GetEffectiveMinimumLandingDuration() const;
     
     // Timer fallback functions
     void OnStartFallbackTimeout();
@@ -343,12 +353,15 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0", ClampMax = "180.0"))
     float LandingControlYawInterruptAngle = 55.f;
 
-    /** Short landing hold used only for forward-diagonal sprint landings (W+A / W+D). */
+    /** Short landing hold used for diagonal movement landings (W+A / W+D / S+A / S+D). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0"))
     float SprintDiagonalLandingDuration = 0.16f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float SprintDiagonalLandingRightThreshold = 0.25f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float DiagonalLandingForwardThreshold = 0.25f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Sprint")
     float WalkSpeed = 500.f;

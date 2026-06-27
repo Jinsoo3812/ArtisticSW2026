@@ -62,6 +62,40 @@ namespace
 
     static FMotionMatchingDebugLoggingResetRegistration MotionMatchingDebugLoggingResetRegistration;
 
+    const TCHAR* FormatNetRole(ENetRole Role)
+    {
+        switch (Role)
+        {
+        case ROLE_None:
+            return TEXT("None");
+        case ROLE_SimulatedProxy:
+            return TEXT("SimProxy");
+        case ROLE_AutonomousProxy:
+            return TEXT("AutoProxy");
+        case ROLE_Authority:
+            return TEXT("Authority");
+        default:
+            return TEXT("Unknown");
+        }
+    }
+
+    const TCHAR* FormatNetMode(ENetMode NetMode)
+    {
+        switch (NetMode)
+        {
+        case NM_Standalone:
+            return TEXT("Standalone");
+        case NM_DedicatedServer:
+            return TEXT("DedicatedServer");
+        case NM_ListenServer:
+            return TEXT("ListenServer");
+        case NM_Client:
+            return TEXT("Client");
+        default:
+            return TEXT("Unknown");
+        }
+    }
+
     FString FormatTrajectorySample(const FTransformTrajectory& Trajectory, const FTransform& ReferenceTransform, float TargetTime)
     {
         const FTransformTrajectorySample* Closest = nullptr;
@@ -440,6 +474,12 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
 
     if (bCaptureMotionMatchingFrame)
     {
+        const APawn* DebugPawn = AnimInstanceObj ? AnimInstanceObj->TryGetPawnOwner() : nullptr;
+        const AActor* DebugActor = DebugPawn ? Cast<const AActor>(DebugPawn) : nullptr;
+        const FString DebugPawnName = DebugActor ? DebugActor->GetName() : GetNameSafe(AnimInstanceObj);
+        const ENetRole DebugRole = DebugActor ? DebugActor->GetLocalRole() : ROLE_None;
+        const ENetMode DebugNetMode = DebugActor ? DebugActor->GetNetMode() : NM_Standalone;
+
         MotionMatchingNodeIndex = 0;
         for (FCachedMotionMatchingNodeInfo& Info : CachedMMNodes)
         {
@@ -464,11 +504,20 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                         TEXT("%s@%.3f"),
                         *GetNameSafe(Info.LastSelectedAnim.Get()),
                         Info.LastSelectedTime);
+                    const FString NodeStateName = StaticEnum<ELocomotionState>()->GetNameStringByValue(
+                        static_cast<int64>(ThreadSafeData.GroundData.GroundMotionMode));
                     const FString NodeDebugLine = FString::Printf(
-                        TEXT("[MMCAP_NODE] Anim=%s Node=%d Property=%s RequestedPSD=%s SelectedDB=%s SelectedAsset=%s AssetDir=%s Time=%.3f Cost=%.3f Continue=%d Prev=%s Mirrored=%d Loop=%d PlayRate=%.3f Blend=(%.2f,%.2f,%.2f) Throttle=%.3f FallOff=%d SearchEveryUpdate=%d DBChanged=%d StackNum=%d"),
+                        TEXT("[MMCAP_NODE] Pawn=%s Net=%s Role=%s Anim=%s Node=%d Property=%s State=%s Input=(R=%.2f,F=%.2f) HasInput=%d RequestedPSD=%s SelectedDB=%s SelectedAsset=%s AssetDir=%s Time=%.3f Cost=%.3f Continue=%d Prev=%s Mirrored=%d Loop=%d PlayRate=%.3f Blend=(%.2f,%.2f,%.2f) Throttle=%.3f FallOff=%d SearchEveryUpdate=%d DBChanged=%d StackNum=%d"),
+                        *DebugPawnName,
+                        FormatNetMode(DebugNetMode),
+                        FormatNetRole(DebugRole),
                         *AnimInstanceObj->GetName(),
                         MotionMatchingNodeIndex,
                         *Info.NodeProperty->GetName(),
+                        *NodeStateName,
+                        ThreadSafeData.InputData.MoveInput.X,
+                        ThreadSafeData.InputData.MoveInput.Y,
+                        ThreadSafeData.InputData.bHasMoveInput ? 1 : 0,
                         *GetNameSafe(CurrentActivePoseSearchDatabase),
                         *GetNameSafe(Result.SelectedDatabase),
                         *GetNameSafe(Result.SelectedAnim),
@@ -492,7 +541,10 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     AppendMotionMatchingAnimCaptureLine(NodeDebugLine);
 
                     const FString BlendStackDebugLine = FString::Printf(
-                        TEXT("[MMCAP_BLENDSTACK] Anim=%s Node=%d FallOff=%d Stack=%s"),
+                        TEXT("[MMCAP_BLENDSTACK] Pawn=%s Net=%s Role=%s Anim=%s Node=%d FallOff=%d Stack=%s"),
+                        *DebugPawnName,
+                        FormatNetMode(DebugNetMode),
+                        FormatNetRole(DebugRole),
                         *AnimInstanceObj->GetName(),
                         MotionMatchingNodeIndex,
                         bIsFallOffStartPhase ? 1 : 0,
@@ -747,11 +799,15 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                 const bool bTransitioning = CachedLocomotionStateComponent ? CachedLocomotionStateComponent->bIsLocomotionTransitioning : false;
                 if (bTransitioning && LocomotionTransitionDatabase)
                 {
-                    CurrentActivePoseSearchDatabase = bSimulated ? LocomotionTransitionDatabaseRemote : LocomotionTransitionDatabase;
+                    CurrentActivePoseSearchDatabase = (bSimulated && LocomotionTransitionDatabaseRemote)
+                        ? LocomotionTransitionDatabaseRemote
+                        : LocomotionTransitionDatabase;
                 }
                 else
                 {
-                    CurrentActivePoseSearchDatabase = bSimulated ? LocomotionDatabaseRemote : LocomotionDatabase;
+                    CurrentActivePoseSearchDatabase = (bSimulated && LocomotionDatabaseRemote)
+                        ? LocomotionDatabaseRemote
+                        : LocomotionDatabase;
                 }
             }
             break;
@@ -991,28 +1047,60 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     MyProxy.ThreadSafeData = ThreadSafeData;
     MyProxy.CurrentActivePoseSearchDatabase = CurrentActivePoseSearchDatabase;
 
-    // Debug Logging for Local Player Character
-    if (CVarMotionMatchingDebugLogging.GetValueOnGameThread() > 0 && CachedBasePlayer && CachedBasePlayer->IsLocallyControlled())
+    // Debug logging for both the local pawn and observed simulated proxies.
+    if (CVarMotionMatchingDebugLogging.GetValueOnGameThread() > 0 && CachedBasePlayer)
     {
         StateLogTimer += DeltaSeconds;
 
         FName CurrentDatabaseName = CurrentActivePoseSearchDatabase ? CurrentActivePoseSearchDatabase->GetFName() : NAME_None;
 
         bool bChanged = (CachedLocomotionStateComponent && CachedLocomotionStateComponent->CurrentState != LastState) || (CurrentDatabaseName != LastDatabaseName);
+        const ENetRole LocalRole = CachedBasePlayer->GetLocalRole();
+        const ENetMode NetMode = CachedBasePlayer->GetNetMode();
+        const bool bIsLocalPawn = CachedBasePlayer->IsLocallyControlled();
+        const bool bIsSimulatedProxy = LocalRole == ROLE_SimulatedProxy;
+        const FString PawnName = CachedBasePlayer->GetName();
+        const bool bRemoteUsesReplicatedInput =
+            bIsSimulatedProxy &&
+            CachedBasePlayer->LocomotionStateSnapshot.bHasMoveInput;
+        const TCHAR* InputSourceText = bIsLocalPawn
+            ? TEXT("EnhancedInput")
+            : (bRemoteUsesReplicatedInput ? TEXT("ReplicatedInput") : TEXT("VelocityEstimate"));
+        const FString SnapshotStateStr = StaticEnum<ELocomotionState>()->GetNameStringByValue(
+            static_cast<int64>(static_cast<ELocomotionState>(FMath::Min<uint8>(
+                CachedBasePlayer->LocomotionStateSnapshot.CurrentState,
+                static_cast<uint8>(ELocomotionState::Combat)))));
 
         if (bChanged)
         {
             FString OldStateStr = StaticEnum<ELocomotionState>()->GetNameStringByValue((int64)LastState);
             FString NewStateStr = CachedLocomotionStateComponent ? StaticEnum<ELocomotionState>()->GetNameStringByValue((int64)CachedLocomotionStateComponent->CurrentState) : TEXT("None");
-            UE_LOG(LogTemp, Log, TEXT("[MM_STATE_CHANGE] State changed: %s -> %s | Database: %s"),
-                *OldStateStr, *NewStateStr, *CurrentDatabaseName.ToString());
+            UE_LOG(LogTemp, Log, TEXT("[MM_STATE_CHANGE] Pawn=%s Net=%s Role=%s Local=%d Sim=%d State changed: %s -> %s | Database: %s Snapshot=%s Seq=%d"),
+                *PawnName,
+                FormatNetMode(NetMode),
+                FormatNetRole(LocalRole),
+                bIsLocalPawn ? 1 : 0,
+                bIsSimulatedProxy ? 1 : 0,
+                *OldStateStr,
+                *NewStateStr,
+                *CurrentDatabaseName.ToString(),
+                *SnapshotStateStr,
+                CachedBasePlayer->LocomotionStateSnapshot.EventSequence);
 
             if (CachedLocomotionStateComponent)
             {
                 const FString PsdDebugLine = FString::Printf(
-                    TEXT("[MMCAP_PSD] SelectPSD PrevState=%s State=%s Database=%s Jump=%d FallOff=%d Landing=%d LandingRequested=%d Heavy=%d LandMoving=%d SprintLand=%d LandTime=%.3f LandSpeed=%.1f FallSpeed=%.1f Input=(R=%.2f,F=%.2f)"),
+                    TEXT("[MMCAP_PSD] Pawn=%s Net=%s Role=%s Local=%d Sim=%d Auth=%d PrevState=%s State=%s SnapshotState=%s Seq=%d Database=%s Jump=%d FallOff=%d Landing=%d LandingRequested=%d Heavy=%d LandMoving=%d SprintLand=%d LandTime=%.3f LandSpeed=%.1f FallSpeed=%.1f Input=(R=%.2f,F=%.2f) InputSource=%s"),
+                    *PawnName,
+                    FormatNetMode(NetMode),
+                    FormatNetRole(LocalRole),
+                    bIsLocalPawn ? 1 : 0,
+                    bIsSimulatedProxy ? 1 : 0,
+                    CachedBasePlayer->HasAuthority() ? 1 : 0,
                     *OldStateStr,
                     *NewStateStr,
+                    *SnapshotStateStr,
+                    CachedBasePlayer->LocomotionStateSnapshot.EventSequence,
                     *CurrentDatabaseName.ToString(),
                     CachedLocomotionStateComponent->bIsJumping ? 1 : 0,
                     CachedLocomotionStateComponent->bIsFallOffStart ? 1 : 0,
@@ -1025,7 +1113,8 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                     CachedLocomotionStateComponent->LandStartGroundSpeed,
                     CachedLocomotionStateComponent->LandStartFallSpeed,
                     CachedLocomotionStateComponent->CachedMoveInput.X,
-                    CachedLocomotionStateComponent->CachedMoveInput.Y);
+                    CachedLocomotionStateComponent->CachedMoveInput.Y,
+                    InputSourceText);
                 UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *PsdDebugLine);
                 AppendMotionMatchingAnimCaptureLine(PsdDebugLine);
 
@@ -1057,17 +1146,25 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             }
             LastDatabaseName = CurrentDatabaseName;
 
-            FVector2D MoveInput = CachedBasePlayer->CachedMoveInput;
+            FVector2D MoveInput = CachedLocomotionStateComponent
+                ? CachedLocomotionStateComponent->CachedMoveInput
+                : CachedBasePlayer->CachedMoveInput;
             float ControlYaw = CachedBasePlayer->GetControlRotation().Yaw;
             float ActorYaw = CachedBasePlayer->GetActorRotation().Yaw;
             float YawDelta = FMath::FindDeltaAngleDegrees(ActorYaw, ControlYaw);
 
             bool bOrient = false;
             bool bUseControllerDesired = false;
+            FVector Velocity = FVector::ZeroVector;
+            FVector Acceleration = FVector::ZeroVector;
+            TEnumAsByte<EMovementMode> MovementMode = MOVE_None;
             if (UCharacterMovementComponent* MoveComp = CachedBasePlayer->GetCharacterMovement())
             {
                 bOrient = MoveComp->bOrientRotationToMovement;
                 bUseControllerDesired = MoveComp->bUseControllerDesiredRotation;
+                Velocity = MoveComp->Velocity;
+                Acceleration = MoveComp->GetCurrentAcceleration();
+                MovementMode = MoveComp->MovementMode;
             }
 
             const TArray<FTransformTrajectorySample>& Samples = ThreadSafeData.MovementData.Trajectory.Samples;
@@ -1113,29 +1210,59 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                 MeshOffset = CachedLocomotionStateComponent->GetMeshYawOffset();
             }
 
-            UE_LOG(LogTemp, Log, TEXT("[MM_DEBUG] LocalPlayer: Speed=%.1f, State=%s, Database=%s, Sprint=%s, InstantSnap=%s, MeshYawOffset=%.1f"),
-                CachedLocomotionStateComponent ? CachedLocomotionStateComponent->GroundSpeed : 0.f,
+            const FString FrameDebugLine = FString::Printf(
+                TEXT("[MMCAP_FRAME] Pawn=%s Net=%s Role=%s Local=%d Sim=%d Auth=%d State=%s SnapshotState=%s Seq=%d Database=%s Sprint=%d InputSource=%s Input=(R=%.2f,F=%.2f) HasInput=%d MoveHeld=%.3f Speed=%.1f Vel=(%.1f,%.1f,%.1f) Accel=(%.1f,%.1f,%.1f) MoveMode=%d ControlYaw=%.1f ActorYaw=%.1f YawDelta=%.1f OrientToMove=%d UseControllerDesired=%d InstantSnap=%d MeshYawOffset=%.1f Traj=%s %s %s %s %s"),
+                *PawnName,
+                FormatNetMode(NetMode),
+                FormatNetRole(LocalRole),
+                bIsLocalPawn ? 1 : 0,
+                bIsSimulatedProxy ? 1 : 0,
+                CachedBasePlayer->HasAuthority() ? 1 : 0,
                 CachedLocomotionStateComponent ? *StaticEnum<ELocomotionState>()->GetNameStringByValue((int64)CachedLocomotionStateComponent->CurrentState) : TEXT("None"),
+                *SnapshotStateStr,
+                CachedBasePlayer->LocomotionStateSnapshot.EventSequence,
                 *CurrentDatabaseName.ToString(),
-                CachedBasePlayer->bIsSprinting ? TEXT("True") : TEXT("False"),
-                bInstantSnap ? TEXT("True") : TEXT("False"),
-                MeshOffset);
-
-            UE_LOG(LogTemp, Log, TEXT("          Rotation: ControlYaw=%.1f, ActorYaw=%.1f, DeltaYaw=%.1f, bOrientToMovement=%s, bUseControllerDesired=%s"),
-                ControlYaw, ActorYaw, YawDelta,
-                bOrient ? TEXT("True") : TEXT("False"),
-                bUseControllerDesired ? TEXT("True") : TEXT("False"));
-
-            UE_LOG(LogTemp, Log, TEXT("          Trajectory: %s %s %s %s %s"),
-                *TrajHistoryStr, *TrajCurrentStr, *TrajFuture1Str, *TrajFuture2Str, *TrajFuture3Str);
+                CachedBasePlayer->bIsSprinting ? 1 : 0,
+                InputSourceText,
+                MoveInput.X,
+                MoveInput.Y,
+                CachedLocomotionStateComponent && CachedLocomotionStateComponent->bHasMoveInput ? 1 : 0,
+                CachedLocomotionStateComponent ? CachedLocomotionStateComponent->MoveInputHeldTime : 0.f,
+                CachedLocomotionStateComponent ? CachedLocomotionStateComponent->GroundSpeed : 0.f,
+                Velocity.X,
+                Velocity.Y,
+                Velocity.Z,
+                Acceleration.X,
+                Acceleration.Y,
+                Acceleration.Z,
+                static_cast<int32>(MovementMode.GetValue()),
+                ControlYaw,
+                ActorYaw,
+                YawDelta,
+                bOrient ? 1 : 0,
+                bUseControllerDesired ? 1 : 0,
+                bInstantSnap ? 1 : 0,
+                MeshOffset,
+                *TrajHistoryStr,
+                *TrajCurrentStr,
+                *TrajFuture1Str,
+                *TrajFuture2Str,
+                *TrajFuture3Str);
+            UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *FrameDebugLine);
+            AppendMotionMatchingAnimCaptureLine(FrameDebugLine);
 
             UAnimMontage* ActiveMontage = GetCurrentActiveMontage();
-            UE_LOG(LogMotionMatchingCapture, Display,
-                TEXT("[MMCAP_GRAPH] AnimInstance=%s ActiveMontage=%s MontagePosition=%.3f MontagePlaying=%d"),
+            const FString GraphDebugLine = FString::Printf(
+                TEXT("[MMCAP_GRAPH] Pawn=%s Net=%s Role=%s AnimInstance=%s ActiveMontage=%s MontagePosition=%.3f MontagePlaying=%d"),
+                *PawnName,
+                FormatNetMode(NetMode),
+                FormatNetRole(LocalRole),
                 *GetName(),
                 *GetNameSafe(ActiveMontage),
                 ActiveMontage ? Montage_GetPosition(ActiveMontage) : 0.f,
                 ActiveMontage && Montage_IsPlaying(ActiveMontage) ? 1 : 0);
+            UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *GraphDebugLine);
+            AppendMotionMatchingAnimCaptureLine(GraphDebugLine);
         }
     }
 
@@ -1168,6 +1295,18 @@ bool UMotionMatchingAnimInstance::ShouldEvaluateMotionMatchingThisFrame(float De
         MotionMatchingUpdateAccumulator += DeltaSeconds;
         if (MotionMatchingUpdateAccumulator < HiddenRemoteUpdateInterval)
         {
+            if (CVarMotionMatchingDebugLogging.GetValueOnGameThread() > 0)
+            {
+                const FString SkipDebugLine = FString::Printf(
+                    TEXT("[MMCAP_SKIP] Pawn=%s Net=%s Role=%s Reason=HiddenRemote Accum=%.3f Required=%.3f RecentlyRendered=0"),
+                    *CachedBasePlayer->GetName(),
+                    FormatNetMode(CachedBasePlayer->GetNetMode()),
+                    FormatNetRole(CachedBasePlayer->GetLocalRole()),
+                    MotionMatchingUpdateAccumulator,
+                    HiddenRemoteUpdateInterval);
+                UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *SkipDebugLine);
+                AppendMotionMatchingAnimCaptureLine(SkipDebugLine);
+            }
             return false;
         }
         MotionMatchingUpdateAccumulator = 0.0f;
@@ -1208,6 +1347,19 @@ bool UMotionMatchingAnimInstance::ShouldEvaluateMotionMatchingThisFrame(float De
     MotionMatchingUpdateAccumulator += DeltaSeconds;
     if (MotionMatchingUpdateAccumulator < UpdateInterval)
     {
+        if (CVarMotionMatchingDebugLogging.GetValueOnGameThread() > 0)
+        {
+            const FString SkipDebugLine = FString::Printf(
+                TEXT("[MMCAP_SKIP] Pawn=%s Net=%s Role=%s Reason=DistanceThrottle Distance=%.1f Accum=%.3f Required=%.3f"),
+                *CachedBasePlayer->GetName(),
+                FormatNetMode(CachedBasePlayer->GetNetMode()),
+                FormatNetRole(CachedBasePlayer->GetLocalRole()),
+                Distance,
+                MotionMatchingUpdateAccumulator,
+                UpdateInterval);
+            UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *SkipDebugLine);
+            AppendMotionMatchingAnimCaptureLine(SkipDebugLine);
+        }
         return false;
     }
 

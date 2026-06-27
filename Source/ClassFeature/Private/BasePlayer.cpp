@@ -28,6 +28,36 @@
 #include "Inventory/InventoryComponent.h"
 #include "ItemSubSystem.h"
 #include "Animation/AnimInstance.h"
+#include "HAL/FileManager.h"
+#include "Misc/DateTime.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+
+namespace
+{
+	bool IsBasePlayerMotionMatchingCaptureEnabled()
+	{
+		const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MMDebugging"));
+		return DebugCVar && DebugCVar->GetInt() > 0;
+	}
+
+	void AppendBasePlayerMotionMatchingCaptureLine(const FString& Line)
+	{
+		const FString LogFilePath = FPaths::Combine(FPaths::ProjectLogDir(), TEXT("MMCapture.log"));
+		const FString StampedLine = FString::Printf(
+			TEXT("[%s] %s%s"),
+			*FDateTime::Now().ToString(TEXT("%Y-%m-%d %H:%M:%S.%s")),
+			*Line,
+			LINE_TERMINATOR);
+
+		FFileHelper::SaveStringToFile(
+			StampedLine,
+			*LogFilePath,
+			FFileHelper::EEncodingOptions::AutoDetect,
+			&IFileManager::Get(),
+			FILEWRITE_Append);
+	}
+}
 
 /* --- FItemSlot ---*/
 
@@ -255,6 +285,16 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 	NewSnapshot.bUseHeavyLand = AnimStateComponent->bUseHeavyLand;
 	NewSnapshot.bLandWasMoving = AnimStateComponent->bLandWasMoving;
 	NewSnapshot.bLandWasSprinting = AnimStateComponent->bLandWasSprinting;
+	if (HasAuthority() && bHasAuthoritativeMoveInput)
+	{
+		NewSnapshot.MoveInput = AuthoritativeMoveInput.GetClampedToMaxSize(1.f);
+		NewSnapshot.bHasMoveInput = NewSnapshot.MoveInput.SizeSquared() > FMath::Square(AnimStateComponent->MoveInputDeadZone);
+	}
+	else
+	{
+		NewSnapshot.bHasMoveInput = AnimStateComponent->bHasMoveInput;
+		NewSnapshot.MoveInput = AnimStateComponent->CachedMoveInput.GetClampedToMaxSize(1.f);
+	}
 	NewSnapshot.LandMoveDirection = AnimStateComponent->LandMoveDirection;
 	NewSnapshot.LastFallSpeed = AnimStateComponent->LastFallSpeed;
 	NewSnapshot.EventSequence = LocomotionAnimEventSequence;
@@ -262,6 +302,22 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 	if (LocomotionStateSnapshot != NewSnapshot)
 	{
 		LocomotionStateSnapshot = NewSnapshot;
+		if (IsBasePlayerMotionMatchingCaptureEnabled())
+		{
+			const FString DebugLine = FString::Printf(
+				TEXT("[MMCAP_SNAPSHOT] Pawn=%s Net=%d Role=%d State=%d HasInput=%d MoveInput=(R=%.2f,F=%.2f) Sprint=%d Seq=%d"),
+				*GetName(),
+				static_cast<int32>(GetNetMode()),
+				static_cast<int32>(GetLocalRole()),
+				static_cast<int32>(NewSnapshot.CurrentState),
+				NewSnapshot.bHasMoveInput ? 1 : 0,
+				NewSnapshot.MoveInput.X,
+				NewSnapshot.MoveInput.Y,
+				NewSnapshot.bIsSprinting ? 1 : 0,
+				NewSnapshot.EventSequence);
+			UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+			AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
+		}
 	}
 }
 
@@ -1024,6 +1080,41 @@ void ABasePlayer::DoMove(float Right, float Forward)
 	}
 	RefreshSprintFromInput();
 
+	const FVector2D ClampedMoveInput = CachedMoveInput.GetClampedToMaxSize(1.f);
+	if (HasAuthority())
+	{
+		AuthoritativeMoveInput = ClampedMoveInput;
+		bHasAuthoritativeMoveInput = true;
+	}
+	if (IsLocallyControlled() && !HasAuthority())
+	{
+		const bool bShouldSendMoveInput =
+			!bHasSentMoveInputToServer ||
+			!LastSentMoveInputToServer.Equals(ClampedMoveInput, 0.01f);
+		if (bShouldSendMoveInput)
+		{
+			LastSentMoveInputToServer = ClampedMoveInput;
+			bHasSentMoveInputToServer = true;
+			Server_SetMoveInput(ClampedMoveInput);
+		}
+	}
+
+	if (IsBasePlayerMotionMatchingCaptureEnabled() && IsLocallyControlled())
+	{
+		const FString DebugLine = FString::Printf(
+			TEXT("[MMCAP_INPUT] Pawn=%s Net=%d Role=%d Source=LocalMove Raw=(R=%.2f,F=%.2f) Clamped=(R=%.2f,F=%.2f) Sprint=%d"),
+			*GetName(),
+			static_cast<int32>(GetNetMode()),
+			static_cast<int32>(GetLocalRole()),
+			Right,
+			Forward,
+			ClampedMoveInput.X,
+			ClampedMoveInput.Y,
+			bIsSprinting ? 1 : 0);
+		UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+		AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
+	}
+
 	if (GetController() != nullptr)
 	{
 		const FRotator Rotation = GetController()->GetControlRotation();
@@ -1045,6 +1136,30 @@ void ABasePlayer::StopMoveInput()
 		AnimStateComponent->ClearMoveInput();
 	}
 	RefreshSprintFromInput();
+
+	if (IsLocallyControlled() && !HasAuthority())
+	{
+		LastSentMoveInputToServer = FVector2D::ZeroVector;
+		bHasSentMoveInputToServer = true;
+		Server_SetMoveInput(FVector2D::ZeroVector);
+	}
+	else if (HasAuthority())
+	{
+		AuthoritativeMoveInput = FVector2D::ZeroVector;
+		bHasAuthoritativeMoveInput = true;
+	}
+
+	if (IsBasePlayerMotionMatchingCaptureEnabled() && IsLocallyControlled())
+	{
+		const FString DebugLine = FString::Printf(
+			TEXT("[MMCAP_INPUT] Pawn=%s Net=%d Role=%d Source=LocalStop Raw=(R=0.00,F=0.00) Clamped=(R=0.00,F=0.00) Sprint=%d"),
+			*GetName(),
+			static_cast<int32>(GetNetMode()),
+			static_cast<int32>(GetLocalRole()),
+			bIsSprinting ? 1 : 0);
+		UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+		AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
+	}
 }
 
 void ABasePlayer::DoLook(float Yaw, float Pitch)
@@ -1164,6 +1279,45 @@ void ABasePlayer::Server_SetSprinting_Implementation(bool bNewSprinting)
 		AnimStateComponent->SetSprinting(bServerAllowsSprinting);
 		SyncAnimationStateFromComponent();
 		UpdateLocomotionStateSnapshot();
+	}
+}
+
+void ABasePlayer::Server_SetMoveInput_Implementation(FVector2D NewMoveInput)
+{
+	const FVector2D ClampedMoveInput = NewMoveInput.GetClampedToMaxSize(1.f);
+	CachedMoveInput = ClampedMoveInput;
+	AuthoritativeMoveInput = ClampedMoveInput;
+	bHasAuthoritativeMoveInput = true;
+
+	if (AnimStateComponent)
+	{
+		if (ClampedMoveInput.SizeSquared() > FMath::Square(AnimStateComponent->MoveInputDeadZone))
+		{
+			AnimStateComponent->SetMoveInput(ClampedMoveInput.X, ClampedMoveInput.Y);
+		}
+		else
+		{
+			AnimStateComponent->ClearMoveInput();
+		}
+
+		SyncAnimationStateFromComponent();
+		UpdateLocomotionStateSnapshot();
+	}
+
+	if (IsBasePlayerMotionMatchingCaptureEnabled())
+	{
+		const FString DebugLine = FString::Printf(
+			TEXT("[MMCAP_SERVER_INPUT] Pawn=%s Net=%d Role=%d Received=(R=%.2f,F=%.2f) Clamped=(R=%.2f,F=%.2f) HasInput=%d"),
+			*GetName(),
+			static_cast<int32>(GetNetMode()),
+			static_cast<int32>(GetLocalRole()),
+			NewMoveInput.X,
+			NewMoveInput.Y,
+			ClampedMoveInput.X,
+			ClampedMoveInput.Y,
+			ClampedMoveInput.SizeSquared() > FMath::Square(AnimStateComponent ? AnimStateComponent->MoveInputDeadZone : 0.1f) ? 1 : 0);
+		UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+		AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
 	}
 }
 

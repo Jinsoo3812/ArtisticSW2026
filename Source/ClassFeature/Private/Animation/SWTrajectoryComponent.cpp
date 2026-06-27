@@ -5,6 +5,14 @@
 #include "Async/ParallelFor.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 
+namespace
+{
+    FQuat MakeMotionMatchingQueryRotation(const ACharacter& CharacterOwner)
+    {
+        return FQuat(FRotator(0.f, -90.f, 0.f)) * CharacterOwner.GetActorQuat();
+    }
+}
+
 USWTrajectoryComponent::USWTrajectoryComponent(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
 {
@@ -105,6 +113,7 @@ void USWTrajectoryComponent::UpdateTrajectoryState(float DeltaTime)
     if (bSimulatedProxy && bEnableRemoteFacingRepair)
     {
         RepairRemoteTrajectoryFacing(*CharacterOwner);
+        RepairRemoteTrajectoryPrediction(*CharacterOwner);
     }
 
     if (UCharacterMovementComponent* MovementComponent = CharacterOwner->GetCharacterMovement())
@@ -214,7 +223,7 @@ void USWTrajectoryComponent::RepairRemoteTrajectoryFacing(const ACharacter& Char
         return;
     }
 
-    const FQuat ActorQuat = CharacterOwner.GetActorQuat();
+    const FQuat QueryQuat = MakeMotionMatchingQueryRotation(CharacterOwner);
 
     for (int32 Index = 0; Index < NumSamples; ++Index)
     {
@@ -225,10 +234,99 @@ void USWTrajectoryComponent::RepairRemoteTrajectoryFacing(const ACharacter& Char
         }
 
         FTransform RepairedTransform = Trajectory.Samples[Index].GetTransform();
-        RepairedTransform.SetRotation(ActorQuat);
+        RepairedTransform.SetRotation(QueryQuat);
         Trajectory.Samples[Index].SetTransform(RepairedTransform);
     }
 
     PreviousFilteredTrajectory = Trajectory;
+}
+
+void USWTrajectoryComponent::RepairRemoteTrajectoryPrediction(const ACharacter& CharacterOwner)
+{
+    const int32 NumSamples = Trajectory.Samples.Num();
+    if (NumSamples < 2)
+    {
+        return;
+    }
+
+    const UCharacterMovementComponent* MovementComponent = CharacterOwner.GetCharacterMovement();
+    if (!MovementComponent)
+    {
+        return;
+    }
+
+    const ULocomotionAnimStateComponent* StateComponent = CharacterOwner.FindComponentByClass<ULocomotionAnimStateComponent>();
+    if (!StateComponent)
+    {
+        return;
+    }
+
+    const ELocomotionState State = StateComponent->CurrentState;
+    if (State != ELocomotionState::Start && State != ELocomotionState::Locomotion)
+    {
+        return;
+    }
+
+    FVector HorizontalVelocity = MovementComponent->Velocity;
+    HorizontalVelocity.Z = 0.f;
+
+    FVector WorldDirection = FVector::ZeroVector;
+    if (!StateComponent->CachedMoveInput.IsNearlyZero())
+    {
+        const FVector2D LocalInput = StateComponent->CachedMoveInput.GetSafeNormal();
+        WorldDirection =
+            CharacterOwner.GetActorForwardVector() * LocalInput.Y +
+            CharacterOwner.GetActorRightVector() * LocalInput.X;
+        WorldDirection.Z = 0.f;
+    }
+
+    if (WorldDirection.IsNearlyZero() && !HorizontalVelocity.IsNearlyZero())
+    {
+        WorldDirection = HorizontalVelocity.GetSafeNormal();
+    }
+
+    if (WorldDirection.IsNearlyZero())
+    {
+        return;
+    }
+
+    WorldDirection.Normalize();
+
+    const float CurrentSpeed = HorizontalVelocity.Size();
+    const float MaxWalkSpeed = MovementComponent->GetMaxSpeed();
+    const float QuerySpeed = State == ELocomotionState::Start
+        ? FMath::Max(CurrentSpeed, MaxWalkSpeed)
+        : FMath::Max(CurrentSpeed, StateComponent->IdleSpeedThreshold);
+    if (QuerySpeed <= StateComponent->IdleSpeedThreshold)
+    {
+        return;
+    }
+
+    const FVector ActorLocation = CharacterOwner.GetActorLocation();
+    const FQuat QueryQuat = MakeMotionMatchingQueryRotation(CharacterOwner);
+
+    bool bRepairedAnySample = false;
+    for (FTransformTrajectorySample& Sample : Trajectory.Samples)
+    {
+        if (Sample.TimeInSeconds <= UE_KINDA_SMALL_NUMBER)
+        {
+            continue;
+        }
+
+        FTransform SampleTransform = Sample.GetTransform();
+        const FVector LockedLocation = ActorLocation + WorldDirection * QuerySpeed * Sample.TimeInSeconds;
+        FVector SampleLocation = SampleTransform.GetLocation();
+        SampleLocation.X = LockedLocation.X;
+        SampleLocation.Y = LockedLocation.Y;
+        SampleTransform.SetLocation(SampleLocation);
+        SampleTransform.SetRotation(QueryQuat);
+        Sample.SetTransform(SampleTransform);
+        bRepairedAnySample = true;
+    }
+
+    if (bRepairedAnySample)
+    {
+        PreviousFilteredTrajectory = Trajectory;
+    }
 }
 

@@ -114,6 +114,9 @@ public:
 	UFUNCTION(Server, Reliable)
 	void Server_SetSprinting(bool bNewSprinting);
 
+	UFUNCTION(Server, Reliable)
+	void Server_SetMoveInput(FVector2D NewMoveInput);
+
 	UFUNCTION()
 	void OnRep_IsSprinting();
 
@@ -180,6 +183,11 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Input")
 	FVector2D CachedMoveInput = FVector2D::ZeroVector;
+
+	FVector2D LastSentMoveInputToServer = FVector2D::ZeroVector;
+	bool bHasSentMoveInputToServer = false;
+	FVector2D AuthoritativeMoveInput = FVector2D::ZeroVector;
+	bool bHasAuthoritativeMoveInput = false;
 
 	UPROPERTY(BlueprintReadWrite, ReplicatedUsing = OnRep_IsSprinting, Category = "Animation|Movement|Sprint")
 	bool bIsSprinting = false;
