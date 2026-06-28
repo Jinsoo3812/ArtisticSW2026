@@ -7,11 +7,14 @@
 #include "InputActionValue.h"
 #include "Ship.generated.h"
 
+class UStaticMeshComponent;
 class USpringArmComponent;
 class UCameraComponent;
 class UInteractableComponent;
 class UInputMappingContext;
 class UInputAction;
+class APlayerController;
+class UPrimitiveComponent;
 
 UCLASS()
 class WATERANDSHIP_API AShip : public APawn
