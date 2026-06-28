@@ -115,6 +115,8 @@ protected:
 	FTransform SavedBoomRelativeTransform;
 	FRotator SavedControlRotation;
 	float SavedTargetArmLength = 800.0f;
+	FVector SavedFollowCameraRelativeLocation = FVector::ZeroVector;
+	FRotator SavedFollowCameraRelativeRotation = FRotator::ZeroRotator;
 
 	// ---- Passenger Reference ----
 	UPROPERTY(ReplicatedUsing = OnRep_RidingPlayer)
@@ -125,6 +127,9 @@ protected:
 
 	UPROPERTY()
 	APlayerController* CachedPlayerController = nullptr;
+
+	UFUNCTION()
+	void OnShipHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 
 public:
 	virtual void OnRep_Controller() override;

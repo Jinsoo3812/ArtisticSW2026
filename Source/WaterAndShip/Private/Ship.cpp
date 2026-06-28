@@ -49,7 +49,12 @@ AShip::AShip()
 void AShip::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
+	if (BuoyancyRoot)
+	{
+		BuoyancyRoot->OnComponentHit.AddDynamic(this, &AShip::OnShipHit);
+		UE_LOG(LogTemp, Log, TEXT("AShip: Successfully bound OnShipHit event to BuoyancyRoot."));
+	}
 }
 
 // Called every frame
@@ -141,6 +146,8 @@ void AShip::Board(APawn* PlayerPawn)
 	APlayerController* PC = Cast<APlayerController>(PlayerPawn->GetController());
 	if (!PC) return;
 
+	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board initiated by player pawn %s. Ship location: %s, Player location: %s"), *PlayerPawn->GetName(), *GetActorLocation().ToString(), *PlayerPawn->GetActorLocation().ToString());
+
 	RidingPlayer = PlayerPawn;
 
 	// Disable player collision
@@ -153,8 +160,17 @@ void AShip::Board(APawn* PlayerPawn)
 		Char->GetCharacterMovement()->StopMovementImmediately();
 	}
 
-	// Attach to buoyancy root (or ship) directly at current boarding location
-	RidingPlayer->AttachToComponent(BuoyancyRoot, FAttachmentTransformRules::KeepWorldTransform);
+	// Disable movement replication while on the ship to prevent jittering
+	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board - Player bReplicateMovement before disable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
+	RidingPlayer->SetReplicateMovement(false);
+	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board - Player bReplicateMovement after disable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
+
+	// Attach to buoyancy root directly without welding physics bodies to avoid physics conflicts
+	FAttachmentTransformRules AttachmentRules(EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, false);
+	RidingPlayer->AttachToComponent(BuoyancyRoot, AttachmentRules);
+	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board - Player attached to BuoyancyRoot. Relative location: %s, relative rotation: %s"), 
+		*RidingPlayer->GetRootComponent()->GetRelativeLocation().ToString(), 
+		*RidingPlayer->GetRootComponent()->GetRelativeRotation().ToString());
 
 	// Possess ship pawn
 	PC->Possess(this);
@@ -178,11 +194,14 @@ void AShip::Disembark()
 	APlayerController* PC = Cast<APlayerController>(GetController());
 	if (!PC) return;
 
+	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark initiated. Player pawn: %s"), *RidingPlayer->GetName());
+
 	// Restore camera mode
 	ResetToFollowCamera();
 
 	// Detach player preserving their current world position on the ship
 	RidingPlayer->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark - Detached player. World location: %s"), *RidingPlayer->GetActorLocation().ToString());
 
 	RidingPlayer->SetActorEnableCollision(true);
 	RidingPlayer->SetActorHiddenInGame(false);
@@ -191,6 +210,10 @@ void AShip::Disembark()
 	{
 		Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	}
+
+	// Restore movement replication on disembark
+	RidingPlayer->SetReplicateMovement(true);
+	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark - Player bReplicateMovement after enable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
 
 	// Return possession to player character
 	PC->Possess(RidingPlayer);
@@ -249,6 +272,11 @@ void AShip::ToggleFixedCamera()
 		SavedBoomRelativeTransform = CameraBoom->GetRelativeTransform();
 		SavedTargetArmLength = CameraBoom->TargetArmLength;
 		SavedControlRotation = PC->GetControlRotation();
+		if (FollowCamera)
+		{
+			SavedFollowCameraRelativeLocation = FollowCamera->GetRelativeLocation();
+			SavedFollowCameraRelativeRotation = FollowCamera->GetRelativeRotation();
+		}
 
 		// Detach camera boom so it stops following the ship
 		CameraBoom->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
@@ -271,6 +299,11 @@ void AShip::ToggleFixedCamera()
 		CameraBoom->SetRelativeTransform(SavedBoomRelativeTransform);
 		CameraBoom->bUsePawnControlRotation = true;
 		CameraBoom->TargetArmLength = SavedTargetArmLength;
+		if (FollowCamera)
+		{
+			FollowCamera->SetRelativeLocation(SavedFollowCameraRelativeLocation);
+			FollowCamera->SetRelativeRotation(SavedFollowCameraRelativeRotation);
+		}
 		PC->SetControlRotation(SavedControlRotation);
 
 		UE_LOG(LogTemp, Log, TEXT("Switched back to follow camera."));
@@ -287,6 +320,11 @@ void AShip::ResetToFollowCamera()
 		CameraBoom->SetRelativeTransform(SavedBoomRelativeTransform);
 		CameraBoom->bUsePawnControlRotation = true;
 		CameraBoom->TargetArmLength = SavedTargetArmLength;
+		if (FollowCamera)
+		{
+			FollowCamera->SetRelativeLocation(SavedFollowCameraRelativeLocation);
+			FollowCamera->SetRelativeRotation(SavedFollowCameraRelativeRotation);
+		}
 
 		if (APlayerController* PC = Cast<APlayerController>(GetController()))
 		{
@@ -297,8 +335,13 @@ void AShip::ResetToFollowCamera()
 
 void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 {
+	UE_LOG(LogTemp, Log, TEXT("AShip: [CLIENT] OnRep_RidingPlayer. OldRidingPlayer: %s, RidingPlayer: %s"), 
+		OldRidingPlayer ? *OldRidingPlayer->GetName() : TEXT("Null"), 
+		RidingPlayer ? *RidingPlayer->GetName() : TEXT("Null"));
+
 	if (OldRidingPlayer && OldRidingPlayer != RidingPlayer)
 	{
+		UE_LOG(LogTemp, Log, TEXT("AShip: [CLIENT] OnRep_RidingPlayer - Restoring old passenger collision and walking movement."));
 		OldRidingPlayer->SetActorEnableCollision(true);
 		if (ACharacter* Char = Cast<ACharacter>(OldRidingPlayer))
 		{
@@ -308,12 +351,24 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 
 	if (RidingPlayer)
 	{
+		UE_LOG(LogTemp, Log, TEXT("AShip: [CLIENT] OnRep_RidingPlayer - Disabling current passenger collision and movement."));
 		RidingPlayer->SetActorEnableCollision(false);
 		if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
 		{
 			Char->GetCharacterMovement()->DisableMovement();
 			Char->GetCharacterMovement()->StopMovementImmediately();
 		}
+	}
+}
+
+void AShip::OnShipHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+{
+	if (OtherActor)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AShip: [COLLISION] Ship collided with OtherActor: %s, OtherComponent: %s, HitLocation: %s"),
+			*OtherActor->GetName(),
+			OtherComp ? *OtherComp->GetName() : TEXT("None"),
+			*Hit.ImpactPoint.ToString());
 	}
 }
 
