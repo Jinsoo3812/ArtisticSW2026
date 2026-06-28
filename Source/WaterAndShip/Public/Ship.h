@@ -53,10 +53,6 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UCameraComponent* FollowCamera;
 
-	/** Seat point where the player character will be attached */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	USceneComponent* PlayerSeatPoint;
-
 	/** Interactable component to allow player interactions */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UInteractableComponent* InteractableComponent;
@@ -121,18 +117,23 @@ protected:
 	float SavedTargetArmLength = 800.0f;
 
 	// ---- Passenger Reference ----
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_RidingPlayer)
 	APawn* RidingPlayer = nullptr;
 
+	UFUNCTION()
+	void OnRep_RidingPlayer(APawn* OldRidingPlayer);
+
+	UPROPERTY()
+	APlayerController* CachedPlayerController = nullptr;
+
 public:
+	virtual void OnRep_Controller() override;
+
 	/** Returns CameraBoom subobject */
 	FORCEINLINE USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 
 	/** Returns FollowCamera subobject */
 	FORCEINLINE UCameraComponent* GetFollowCamera() const { return FollowCamera; }
-
-	/** Returns PlayerSeatPoint subobject */
-	FORCEINLINE USceneComponent* GetPlayerSeatPoint() const { return PlayerSeatPoint; }
 
 	/** Resets camera to follow mode (called when disembarking) */
 	void ResetToFollowCamera();

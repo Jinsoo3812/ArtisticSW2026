@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Ship.h"
@@ -37,11 +37,6 @@ AShip::AShip()
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
-
-	// Player Seat Point
-	PlayerSeatPoint = CreateDefaultSubobject<USceneComponent>(TEXT("PlayerSeatPoint"));
-	PlayerSeatPoint->SetupAttachment(BuoyancyRoot);
-	PlayerSeatPoint->SetRelativeLocation(FVector(0.0f, 0.0f, 100.0f));
 
 	// Interactable Component
 	InteractableComponent = CreateDefaultSubobject<UInteractableComponent>(TEXT("InteractableComponent"));
@@ -86,17 +81,7 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	if (APlayerController* PC = Cast<APlayerController>(GetController()))
-	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
-		{
-			if (ShipInputMappingContext)
-			{
-				Subsystem->AddMappingContext(ShipInputMappingContext, ShipInputPriority);
-				UE_LOG(LogTemp, Log, TEXT("AShip: Added ShipInputMappingContext to local player."));
-			}
-		}
-	}
+	CachedPlayerController = Cast<APlayerController>(GetController());
 
 	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
@@ -138,18 +123,6 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 
 void AShip::UnPossessed()
 {
-	if (APlayerController* PC = Cast<APlayerController>(GetController()))
-	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
-		{
-			if (ShipInputMappingContext)
-			{
-				Subsystem->RemoveMappingContext(ShipInputMappingContext);
-				UE_LOG(LogTemp, Log, TEXT("AShip: Removed ShipInputMappingContext."));
-			}
-		}
-	}
-
 	Super::UnPossessed();
 }
 
@@ -170,9 +143,9 @@ void AShip::Board(APawn* PlayerPawn)
 
 	RidingPlayer = PlayerPawn;
 
-	// Hide and disable player collision
+	// Disable player collision
 	RidingPlayer->SetActorEnableCollision(false);
-	RidingPlayer->SetActorHiddenInGame(true);
+	RidingPlayer->SetActorHiddenInGame(false);
 
 	if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
 	{
@@ -180,8 +153,8 @@ void AShip::Board(APawn* PlayerPawn)
 		Char->GetCharacterMovement()->StopMovementImmediately();
 	}
 
-	// Attach to player seat
-	RidingPlayer->AttachToComponent(PlayerSeatPoint, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	// Attach to buoyancy root (or ship) directly at current boarding location
+	RidingPlayer->AttachToComponent(BuoyancyRoot, FAttachmentTransformRules::KeepWorldTransform);
 
 	// Possess ship pawn
 	PC->Possess(this);
@@ -208,11 +181,8 @@ void AShip::Disembark()
 	// Restore camera mode
 	ResetToFollowCamera();
 
-	// Detach and restore player state
+	// Detach player preserving their current world position on the ship
 	RidingPlayer->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-
-	// Place player exactly at the seat point (no separate point component requested)
-	RidingPlayer->SetActorLocationAndRotation(PlayerSeatPoint->GetComponentLocation(), PlayerSeatPoint->GetComponentRotation());
 
 	RidingPlayer->SetActorEnableCollision(true);
 	RidingPlayer->SetActorHiddenInGame(false);
@@ -321,6 +291,64 @@ void AShip::ResetToFollowCamera()
 		if (APlayerController* PC = Cast<APlayerController>(GetController()))
 		{
 			PC->SetControlRotation(SavedControlRotation);
+		}
+	}
+}
+
+void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
+{
+	if (OldRidingPlayer && OldRidingPlayer != RidingPlayer)
+	{
+		OldRidingPlayer->SetActorEnableCollision(true);
+		if (ACharacter* Char = Cast<ACharacter>(OldRidingPlayer))
+		{
+			Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+		}
+	}
+
+	if (RidingPlayer)
+	{
+		RidingPlayer->SetActorEnableCollision(false);
+		if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
+		{
+			Char->GetCharacterMovement()->DisableMovement();
+			Char->GetCharacterMovement()->StopMovementImmediately();
+		}
+	}
+}
+
+void AShip::OnRep_Controller()
+{
+	Super::OnRep_Controller();
+
+	if (Controller == nullptr)
+	{
+		if (CachedPlayerController)
+		{
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
+			{
+				if (ShipInputMappingContext)
+				{
+					Subsystem->RemoveMappingContext(ShipInputMappingContext);
+					UE_LOG(LogTemp, Log, TEXT("AShip: Removed ShipInputMappingContext in OnRep_Controller."));
+				}
+			}
+			CachedPlayerController = nullptr;
+		}
+	}
+	else
+	{
+		CachedPlayerController = Cast<APlayerController>(Controller);
+		if (CachedPlayerController)
+		{
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
+			{
+				if (ShipInputMappingContext)
+				{
+					Subsystem->AddMappingContext(ShipInputMappingContext, ShipInputPriority);
+					UE_LOG(LogTemp, Log, TEXT("AShip: Added ShipInputMappingContext in OnRep_Controller."));
+				}
+			}
 		}
 	}
 }
