@@ -27,7 +27,9 @@ public class Enemy: ModuleRules
         PublicIncludePaths.AddRange(new string[] {
             // Enemy 내 파일 접근을 용이하게 하기 위해서 include 경로 추가
 			"Enemy",
-			"Enemy/Public"
-		});
+			"Enemy/Public",
+            "Enemy/Public/AI",
+            "Enemy/Public/GAS"
+        });
     }
 }

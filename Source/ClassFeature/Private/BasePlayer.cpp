@@ -28,6 +28,7 @@
 #include "Inventory/InventoryComponent.h"
 #include "ItemSubSystem.h"
 #include "Animation/AnimInstance.h"
+#include "Ship.h"
 
 /* --- FItemSlot ---*/
 
@@ -281,6 +282,7 @@ void ABasePlayer::PossessedBy(AController* NewController)
 		// 현재는 Event 별로 따로 바인딩하지만 더 좋은 방법이 있을까?
 		if(CachedAbilitySystemComponent.IsValid()) {
 			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
+			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_ShipBoard).AddUObject(this, &ABasePlayer::HandleShipBoardEvent);
 
 			// Map에 등록된 기본 어빌리티 순회 및 슬롯에 부여
 			for (const auto& AbilityPair : DefaultAbilityMap)
@@ -604,6 +606,17 @@ void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
 	if (!HasAuthority())
 	{
 		ServerRPC_SendGameplayEvent(ReleasedEventTag, EventData);
+	}
+}
+
+void ABasePlayer::HandleShipBoardEvent(const FGameplayEventData* Payload)
+{
+	if (Payload && Payload->Target)
+	{
+		if (AShip* TargetShip = const_cast<AShip*>(Cast<AShip>(Payload->Target)))
+		{
+			TargetShip->Board(this);
+		}
 	}
 }
 
