@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Ship.h"
@@ -286,7 +286,11 @@ void AShip::ToggleFixedCamera()
 
 		// Move camera to fixed world position
 		CameraBoom->SetWorldLocationAndRotation(FixedCameraLocation, FixedCameraRotation);
-		CameraBoom->TargetArmLength = 0.0f;
+		if (FollowCamera)
+		{
+			FollowCamera->SetRelativeLocation(FVector::ZeroVector);
+			FollowCamera->SetRelativeRotation(FRotator::ZeroRotator);
+		}
 
 		UE_LOG(LogTemp, Log, TEXT("Switched to fixed camera at %s"), *FixedCameraLocation.ToString());
 	}
