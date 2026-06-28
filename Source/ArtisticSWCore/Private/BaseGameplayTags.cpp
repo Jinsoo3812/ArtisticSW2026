@@ -102,3 +102,4 @@ UE_DEFINE_GAMEPLAY_TAG(Class_Attacker, "Class.Attacker");
 UE_DEFINE_GAMEPLAY_TAG(Interaction, "Interaction");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_PickUp, "Interaction.PickUp");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_Craft, "Interaction.Craft");
+UE_DEFINE_GAMEPLAY_TAG(Interaction_ShipBoard, "Interaction.ShipBoard");
