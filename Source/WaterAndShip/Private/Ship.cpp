@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Ship.h"
@@ -49,12 +49,6 @@ AShip::AShip()
 void AShip::BeginPlay()
 {
 	Super::BeginPlay();
-
-	if (BuoyancyRoot)
-	{
-		BuoyancyRoot->OnComponentHit.AddDynamic(this, &AShip::OnShipHit);
-		UE_LOG(LogTemp, Log, TEXT("AShip: Successfully bound OnShipHit event to BuoyancyRoot."));
-	}
 }
 
 // Called every frame
@@ -398,17 +392,6 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 			Char->GetCharacterMovement()->DisableMovement();
 			Char->GetCharacterMovement()->StopMovementImmediately();
 		}
-	}
-}
-
-void AShip::OnShipHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
-{
-	if (OtherActor)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("AShip: [COLLISION] Ship collided with OtherActor: %s, OtherComponent: %s, HitLocation: %s"),
-			*OtherActor->GetName(),
-			OtherComp ? *OtherComp->GetName() : TEXT("None"),
-			*Hit.ImpactPoint.ToString());
 	}
 }
 

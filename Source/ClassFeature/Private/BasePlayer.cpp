@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "BasePlayer.h"
@@ -75,6 +75,16 @@ ABasePlayer::ABasePlayer()
 	{
 		MovementComponent->MaxWalkSpeed = AnimStateComponent ? AnimStateComponent->WalkSpeed : 500.f;
 		MovementComponent->RotationRate = FRotator(0.f, AnimStateComponent ? AnimStateComponent->WalkRotationRateYaw : 500.f, 0.f);
+
+		// 캐릭터가 움직이면서 물리 오브젝트에 힘을 가하지 못하도록 설정.
+		MovementComponent->bEnablePhysicsInteraction = false;
+
+		// 캐릭터 충돌 캡슐이 다른 강체와 접촉했을 때 힘을 가하지 않도록 차단.
+		MovementComponent->bTouchForceScaledToMass = false;
+
+		// 힘의 계수를 0으로 설정
+		MovementComponent->InitialPushForceFactor = 0.0f;
+		MovementComponent->PushForceFactor = 0.0f;
 	}
 }
 
