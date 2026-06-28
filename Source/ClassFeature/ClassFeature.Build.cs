@@ -30,7 +30,8 @@ public class ClassFeature: ModuleRules
             "SlateCore",         // <--- PlayetHYDWidget.h를 위해 필요
             "PoseSearch",
             "Chooser",
-            "MotionTrajectory"
+            "MotionTrajectory",
+            "WaterAndShip"
         });
 
         PublicIncludePaths.AddRange(new string[] {

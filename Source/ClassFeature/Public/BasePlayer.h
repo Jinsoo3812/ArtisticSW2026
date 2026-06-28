@@ -21,6 +21,7 @@ class UInputTagConfig;
 class UInventoryComponent;
 class USWTrajectoryComponent;
 class UAnimMontage;
+class AShip;
 
 // Item Slot 관리 구조체
 USTRUCT(BlueprintType)
@@ -453,6 +454,9 @@ protected:
 
 	// 공용 Interact GA가 보내준 PickUp 이벤트를 처리하는 함수
 	void HandlePickUpEvent(const FGameplayEventData* Payload);
+
+	// 배 승선 이벤트를 처리하는 함수
+	void HandleShipBoardEvent(const FGameplayEventData* Payload);
 
 
 	/* --- Interactable Object Trace ---*/
