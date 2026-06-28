@@ -215,15 +215,7 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 	}
 
 	FReplicatedLocomotionState NewSnapshot;
-	NewSnapshot.CurrentState = static_cast<uint8>(AnimStateComponent->CurrentState);
 	NewSnapshot.bIsSprinting = AnimStateComponent->bIsSprinting;
-	NewSnapshot.bIsJumping = AnimStateComponent->bIsJumping;
-	NewSnapshot.bIsFallOffStart = AnimStateComponent->bIsFallOffStart;
-	NewSnapshot.bIsLanding = AnimStateComponent->bIsLanding;
-	NewSnapshot.bLandingRequested = AnimStateComponent->bLandingRequested;
-	NewSnapshot.bUseHeavyLand = AnimStateComponent->bUseHeavyLand;
-	NewSnapshot.bLandWasMoving = AnimStateComponent->bLandWasMoving;
-	NewSnapshot.bLandWasSprinting = AnimStateComponent->bLandWasSprinting;
 	if (HasAuthority() && bHasAuthoritativeMoveInput)
 	{
 		NewSnapshot.MoveInput = AuthoritativeMoveInput.GetClampedToMaxSize(1.f);
@@ -249,16 +241,16 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 		if (IsBasePlayerMotionMatchingCaptureEnabled())
 		{
 			const FString DebugLine = FString::Printf(
-				TEXT("[MMCAP_SNAPSHOT] Pawn=%s Net=%d Role=%d State=%d HasInput=%d MoveInput=(R=%.2f,F=%.2f) Sprint=%d Seq=%d"),
+				TEXT("[MMCAP_SNAPSHOT] Pawn=%s Net=%d Role=%d Seq=%d LastEvent=%d HasInput=%d MoveInput=(R=%.2f,F=%.2f) Sprint=%d"),
 				*GetName(),
 				static_cast<int32>(GetNetMode()),
 				static_cast<int32>(GetLocalRole()),
-				static_cast<int32>(NewSnapshot.CurrentState),
+				NewSnapshot.EventSequence,
+				static_cast<int32>(NewSnapshot.LastLocomotionEvent),
 				NewSnapshot.bHasMoveInput ? 1 : 0,
 				NewSnapshot.MoveInput.X,
 				NewSnapshot.MoveInput.Y,
-				NewSnapshot.bIsSprinting ? 1 : 0,
-				NewSnapshot.EventSequence);
+				NewSnapshot.bIsSprinting ? 1 : 0);
 			UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
 			AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
 		}
@@ -1270,13 +1262,14 @@ void ABasePlayer::OnRep_LocomotionStateSnapshot(const FReplicatedLocomotionState
 		if (const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MMDebugging"));
 			DebugCVar && DebugCVar->GetInt() > 0)
 		{
-			UE_LOG(LogTemp, Display, TEXT("[MMCAP_EVENT] OnRep_LocomotionStateSnapshot Pawn=%s Seq=%d (Old=%d) Event=%d Sprint=%d HasInput=%d Move=(%.2f,%.2f)"),
+			UE_LOG(LogTemp, Display, TEXT("[MMCAP_EVENT] OnRep_LocomotionStateSnapshot Pawn=%s Seq=%d (Old=%d) Event=%d HasInput=%d MoveInput=(R=%.2f,F=%.2f) Sprint=%d"),
 				*GetName(),
 				LocomotionStateSnapshot.EventSequence, OldSnapshot.EventSequence,
 				(int32)LocomotionStateSnapshot.LastLocomotionEvent,
-				LocomotionStateSnapshot.bIsSprinting ? 1 : 0,
 				LocomotionStateSnapshot.bHasMoveInput ? 1 : 0,
-				LocomotionStateSnapshot.MoveInput.X, LocomotionStateSnapshot.MoveInput.Y);
+				LocomotionStateSnapshot.MoveInput.X,
+				LocomotionStateSnapshot.MoveInput.Y,
+				LocomotionStateSnapshot.bIsSprinting ? 1 : 0);
 		}
 
 

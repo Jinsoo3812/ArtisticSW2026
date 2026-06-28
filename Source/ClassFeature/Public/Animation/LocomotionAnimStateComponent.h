@@ -35,31 +35,7 @@ struct FReplicatedLocomotionState
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    uint8 CurrentState = 0;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
     bool bIsSprinting = false;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    bool bIsJumping = false;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    bool bIsFallOffStart = false;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    bool bIsLanding = false;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    bool bLandingRequested = false;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    bool bUseHeavyLand = false;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    bool bLandWasMoving = false;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    bool bLandWasSprinting = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
     bool bHasMoveInput = false;
@@ -81,15 +57,7 @@ struct FReplicatedLocomotionState
 
     bool operator==(const FReplicatedLocomotionState& Other) const
     {
-        return CurrentState == Other.CurrentState &&
-               bIsSprinting == Other.bIsSprinting &&
-               bIsJumping == Other.bIsJumping &&
-               bIsFallOffStart == Other.bIsFallOffStart &&
-               bIsLanding == Other.bIsLanding &&
-               bLandingRequested == Other.bLandingRequested &&
-               bUseHeavyLand == Other.bUseHeavyLand &&
-               bLandWasMoving == Other.bLandWasMoving &&
-               bLandWasSprinting == Other.bLandWasSprinting &&
+        return bIsSprinting == Other.bIsSprinting &&
                bHasMoveInput == Other.bHasMoveInput &&
                MoveInput.Equals(Other.MoveInput, 0.05f) &&
                LandMoveDirection.Equals(Other.LandMoveDirection, 0.05f) &&
@@ -334,6 +302,9 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
     float LandingStartControlYaw = 0.f;
 
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
+    bool bLandingFromFallOff = false;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Fallback")
     float StartMaxDuration = 0.8f;
 
@@ -355,6 +326,12 @@ public:
     /** Prevents held/released movement input from cancelling the landing pose immediately. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0"))
     float MinimumLandingDuration = 0.45f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0"))
+    float RemoteMinimumLandingDuration = 0.65f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0"))
+    float FallOffMinimumLandingDuration = 0.60f;
 
     /** Allows deliberate steering to leave landing earlier without snapping immediately on impact. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0"))

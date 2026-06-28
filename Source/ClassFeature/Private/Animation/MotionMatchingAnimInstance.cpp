@@ -24,7 +24,7 @@
 static TAutoConsoleVariable<int32> CVarMotionMatchingDebugLogging(
     TEXT("p.MMDebugging"),
     1,
-    TEXT("Motion Matching landing diagnostics. 0: Disabled, 1: Enabled"),
+    TEXT("Motion Matching diagnostics. 0: Disabled, 1: Transition/search events, 2: Verbose frame/node/stack dumps"),
     ECVF_Default
 );
 
@@ -32,15 +32,214 @@ DEFINE_LOG_CATEGORY_STATIC(LogMotionMatchingCapture, Log, All);
 
 namespace
 {
-    constexpr bool bSearchFallOffEveryUpdate = true;
+    constexpr bool bSearchFallOffEveryUpdate = false;
     constexpr float FallOffSearchThrottleTime = 0.12f;
     constexpr float FallOffActiveSearchDuration = 0.45f;
     constexpr float SuppressedSearchThrottleTime = 3600.0f;
+    constexpr float RemoteTransitionAllowedTimeSlack = 0.06f;
+    constexpr float RemoteTransitionMaxForwardJump = 0.20f;
+    constexpr float BlendStackDuplicateTimeSlack = 0.08f;
+
+    bool IsTransitionMotionMatchingState(ELocomotionState State)
+    {
+        return State == ELocomotionState::Start ||
+            State == ELocomotionState::Stop ||
+            State == ELocomotionState::Landing;
+    }
+
+    bool IsTransitionAnimationForState(const UAnimationAsset* AnimationAsset, ELocomotionState State)
+    {
+        const FString AssetName = GetNameSafe(AnimationAsset);
+        switch (State)
+        {
+        case ELocomotionState::Start:
+            return AssetName.Contains(TEXT("_Start"));
+        case ELocomotionState::Stop:
+            return AssetName.Contains(TEXT("_Stop"));
+        case ELocomotionState::Landing:
+            return AssetName.Contains(TEXT("_Land"));
+        default:
+            return false;
+        }
+    }
+
+    bool IsAnyTransitionAnimation(const UObject* AnimationAsset)
+    {
+        const FString AssetName = GetNameSafe(AnimationAsset);
+        return AssetName.Contains(TEXT("_Start")) ||
+            AssetName.Contains(TEXT("_Stop")) ||
+            AssetName.Contains(TEXT("_Land"));
+    }
+
+    bool IsLocomotionLoopAnimation(const UObject* AnimationAsset)
+    {
+        const FString AssetName = GetNameSafe(AnimationAsset);
+        return AssetName.Contains(TEXT("_Run_Loop")) ||
+            AssetName.Contains(TEXT("_Walk_Loop")) ||
+            AssetName.Contains(TEXT("_Idle"));
+    }
+
+    float ClampAnimationAssetTime(const UAnimationAsset* AnimationAsset, float Time)
+    {
+        if (!AnimationAsset)
+        {
+            return FMath::Max(0.f, Time);
+        }
+
+        const float PlayLength = AnimationAsset->GetPlayLength();
+        if (PlayLength <= UE_SMALL_NUMBER)
+        {
+            return FMath::Max(0.f, Time);
+        }
+
+        return FMath::Clamp(Time, 0.f, FMath::Max(0.f, PlayLength - KINDA_SMALL_NUMBER));
+    }
+
+    bool RestoreBlendStackTopPlayer(
+        const FAnimationUpdateContext& Context,
+        FAnimNode_MotionMatching& MotionMatchingNode,
+        UAnimationAsset* AnimationAsset,
+        float AccumulatedTime)
+    {
+        if (MotionMatchingNode.AnimPlayers.IsEmpty() || !AnimationAsset)
+        {
+            return false;
+        }
+
+        FBlendStackAnimPlayer& TopPlayer = MotionMatchingNode.AnimPlayers[0];
+        FAnimationInitializeContext InitContext(Context.AnimInstanceProxy, Context.SharedContext);
+        TopPlayer.Initialize(
+            InitContext,
+            AnimationAsset,
+            ClampAnimationAssetTime(AnimationAsset, AccumulatedTime),
+            TopPlayer.IsLooping(),
+            TopPlayer.GetMirror(),
+            nullptr,
+            0.f,
+            nullptr,
+            TopPlayer.GetBlendOption(),
+            TopPlayer.GetBlendParameters(),
+            TopPlayer.GetPlayRate(),
+            0.f,
+            TopPlayer.GetPoseLinkIndex(),
+            NAME_None,
+            EAnimGroupRole::CanBeLeader,
+            EAnimSyncMethod::DoNotSync,
+            false);
+        return true;
+    }
+
+    bool RemoveLowerTransitionPlayersForState(FAnimNode_MotionMatching& MotionMatchingNode, ELocomotionState State)
+    {
+        if (MotionMatchingNode.AnimPlayers.Num() <= 1)
+        {
+            return false;
+        }
+
+        bool bRemoved = false;
+        for (int32 PlayerIndex = MotionMatchingNode.AnimPlayers.Num() - 1; PlayerIndex >= 1; --PlayerIndex)
+        {
+            const UAnimationAsset* PlayerAsset = MotionMatchingNode.AnimPlayers[PlayerIndex].GetAnimationAsset();
+            if (IsTransitionAnimationForState(PlayerAsset, State))
+            {
+                MotionMatchingNode.AnimPlayers.RemoveAt(PlayerIndex, 1, EAllowShrinking::No);
+                bRemoved = true;
+            }
+        }
+
+        return bRemoved;
+    }
+
+    bool StabilizeRemoteTransitionBlendStackPlayer(
+        const FAnimationUpdateContext& Context,
+        FAnimNode_MotionMatching& MotionMatchingNode,
+        FCachedMotionMatchingNodeInfo& NodeInfo,
+        ELocomotionState State)
+    {
+        NodeInfo.bPostUpdateCollapsedTransitionStack = false;
+
+        if (MotionMatchingNode.AnimPlayers.IsEmpty())
+        {
+            NodeInfo.bHasRemoteTransitionLock = false;
+            NodeInfo.LockedRemoteTransitionAnim.Reset();
+            NodeInfo.LockedRemoteTransitionTime = 0.f;
+            return false;
+        }
+
+        FBlendStackAnimPlayer& TopPlayer = MotionMatchingNode.AnimPlayers[0];
+        UAnimationAsset* TopAsset = TopPlayer.GetAnimationAsset();
+        if (!IsTransitionAnimationForState(TopAsset, State))
+        {
+            NodeInfo.bHasRemoteTransitionLock = false;
+            NodeInfo.LockedRemoteTransitionAnim.Reset();
+            NodeInfo.LockedRemoteTransitionTime = 0.f;
+            return false;
+        }
+
+        NodeInfo.bPostUpdateCollapsedTransitionStack =
+            RemoveLowerTransitionPlayersForState(MotionMatchingNode, State);
+
+        UAnimationAsset* LockedAsset = NodeInfo.LockedRemoteTransitionAnim.Get();
+        const bool bNeedsNewLock =
+            !NodeInfo.bHasRemoteTransitionLock ||
+            NodeInfo.LockedRemoteTransitionState != State ||
+            !IsTransitionAnimationForState(LockedAsset, State);
+
+        if (bNeedsNewLock)
+        {
+            UAnimationAsset* SeedAsset = TopAsset;
+            float SeedTime = TopPlayer.GetAccumulatedTime();
+
+            UAnimationAsset* PreUpdateAsset = const_cast<UAnimationAsset*>(
+                Cast<const UAnimationAsset>(NodeInfo.PreUpdateStackTopAnim.Get()));
+            if (IsTransitionAnimationForState(PreUpdateAsset, State) &&
+                NodeInfo.PreUpdateStackTopTime > 0.f &&
+                (PreUpdateAsset != TopAsset || TopPlayer.GetAccumulatedTime() > NodeInfo.PreUpdateStackTopTime + RemoteTransitionMaxForwardJump))
+            {
+                SeedAsset = PreUpdateAsset;
+                SeedTime = NodeInfo.PreUpdateStackTopTime + FMath::Max(0.f, Context.GetDeltaTime());
+            }
+
+            NodeInfo.LockedRemoteTransitionAnim = SeedAsset;
+            NodeInfo.LockedRemoteTransitionTime = ClampAnimationAssetTime(SeedAsset, SeedTime);
+            NodeInfo.LockedRemoteTransitionState = State;
+            NodeInfo.bHasRemoteTransitionLock = true;
+            LockedAsset = SeedAsset;
+        }
+
+        const float PlayRate = FMath::Max(0.f, TopPlayer.GetPlayRate());
+        const float ExpectedTime = ClampAnimationAssetTime(
+            LockedAsset,
+            NodeInfo.LockedRemoteTransitionTime + FMath::Max(0.f, Context.GetDeltaTime()) * PlayRate);
+        const float TopTime = TopPlayer.GetAccumulatedTime();
+        const bool bAssetChanged = TopAsset != LockedAsset;
+        const bool bTimeRewound = TopTime + RemoteTransitionAllowedTimeSlack < ExpectedTime;
+        const bool bTimeJumpedForward = TopTime > ExpectedTime + RemoteTransitionMaxForwardJump;
+
+        if (bAssetChanged || bTimeRewound || bTimeJumpedForward)
+        {
+            if (RestoreBlendStackTopPlayer(Context, MotionMatchingNode, LockedAsset, ExpectedTime))
+            {
+                NodeInfo.LockedRemoteTransitionTime = ExpectedTime;
+                NodeInfo.bPostUpdateCollapsedTransitionStack =
+                    RemoveLowerTransitionPlayersForState(MotionMatchingNode, State) ||
+                    NodeInfo.bPostUpdateCollapsedTransitionStack;
+                return true;
+            }
+        }
+
+        NodeInfo.LockedRemoteTransitionTime = ClampAnimationAssetTime(
+            LockedAsset,
+            FMath::Max(NodeInfo.LockedRemoteTransitionTime, TopTime));
+        return false;
+    }
 
     void ClearMotionMatchingCaptureLog()
     {
         const FString LogFilePath = FPaths::Combine(FPaths::ProjectLogDir(), TEXT("MMCapture.log"));
+        const FString SummaryLogFilePath = FPaths::Combine(FPaths::ProjectLogDir(), TEXT("MMCaptureSummary.log"));
         IFileManager::Get().Delete(*LogFilePath, false, true);
+        IFileManager::Get().Delete(*SummaryLogFilePath, false, true);
     }
 
     void OnMotionMatchingDebugLoggingChanged(IConsoleVariable* Variable)
@@ -179,6 +378,87 @@ namespace
         return BlendStack;
     }
 
+    const FBlendStackAnimPlayer* GetBlendStackTopPlayer(const FAnimNode_MotionMatching& MotionMatchingNode)
+    {
+        return MotionMatchingNode.AnimPlayers.IsEmpty() ? nullptr : &MotionMatchingNode.AnimPlayers[0];
+    }
+
+    FString FormatCompactBlendStackHead(const FAnimNode_MotionMatching& MotionMatchingNode)
+    {
+        const FBlendStackAnimPlayer* TopPlayer = GetBlendStackTopPlayer(MotionMatchingNode);
+        if (!TopPlayer)
+        {
+            return TEXT("Empty");
+        }
+
+        FString StackHead = FString::Printf(
+            TEXT("#0=%s@%.3f/w%.2f/in%.2f"),
+            *GetNameSafe(TopPlayer->GetAnimationAsset()),
+            TopPlayer->GetAccumulatedTime(),
+            TopPlayer->GetBlendInWeight(),
+            TopPlayer->GetCurrentBlendInTime());
+
+        if (MotionMatchingNode.AnimPlayers.Num() > 1)
+        {
+            const FBlendStackAnimPlayer& PreviousPlayer = MotionMatchingNode.AnimPlayers[1];
+            StackHead += FString::Printf(
+                TEXT(" #1=%s@%.3f/w%.2f/in%.2f"),
+                *GetNameSafe(PreviousPlayer.GetAnimationAsset()),
+                PreviousPlayer.GetAccumulatedTime(),
+                PreviousPlayer.GetBlendInWeight(),
+                PreviousPlayer.GetCurrentBlendInTime());
+        }
+
+        return StackHead;
+    }
+
+    const TCHAR* FormatBoolChange(bool bBefore, bool bAfter)
+    {
+        if (bBefore == bAfter)
+        {
+            return bAfter ? TEXT("1") : TEXT("0");
+        }
+        return bAfter ? TEXT("0->1") : TEXT("1->0");
+    }
+
+    FString FormatPoseSearchInterruptModeValue(int64 Value)
+    {
+        const UEnum* InterruptEnum = StaticEnum<EPoseSearchInterruptMode>();
+        return InterruptEnum ? InterruptEnum->GetNameStringByValue(Value) : FString::Printf(TEXT("%lld"), Value);
+    }
+
+    FString ReadPoseSearchInterruptMode(const FCachedMotionMatchingNodeInfo& Info, const FAnimNode_MotionMatching& MotionMatchingNode)
+    {
+        if (!Info.NextUpdateInterruptModeProperty)
+        {
+            return TEXT("NA");
+        }
+
+        const void* ValuePtr = Info.NextUpdateInterruptModeProperty->ContainerPtrToValuePtr<void>(&MotionMatchingNode);
+        if (!ValuePtr)
+        {
+            return TEXT("NA");
+        }
+
+        if (const FEnumProperty* EnumProperty = CastField<FEnumProperty>(Info.NextUpdateInterruptModeProperty))
+        {
+            const int64 Value = EnumProperty->GetUnderlyingProperty()->GetSignedIntPropertyValue(ValuePtr);
+            return FormatPoseSearchInterruptModeValue(Value);
+        }
+
+        if (const FByteProperty* ByteProperty = CastField<FByteProperty>(Info.NextUpdateInterruptModeProperty))
+        {
+            return FormatPoseSearchInterruptModeValue(ByteProperty->GetPropertyValue(ValuePtr));
+        }
+
+        if (const FNumericProperty* NumericProperty = CastField<FNumericProperty>(Info.NextUpdateInterruptModeProperty))
+        {
+            return FormatPoseSearchInterruptModeValue(NumericProperty->GetSignedIntPropertyValue(ValuePtr));
+        }
+
+        return TEXT("Unknown");
+    }
+
     float GetFallOffLateralTrajectoryLeadTime(const ABasePlayer& CharacterOwner, const FVector& CharacterVelocity)
     {
         const FVector LocalVelocity = CharacterOwner.GetActorTransform().InverseTransformVectorNoScale(CharacterVelocity);
@@ -249,6 +529,23 @@ namespace
             FILEWRITE_Append);
     }
 
+    void AppendMotionMatchingSummaryCaptureLine(const FString& Line)
+    {
+        const FString LogFilePath = FPaths::Combine(FPaths::ProjectLogDir(), TEXT("MMCaptureSummary.log"));
+        const FString StampedLine = FString::Printf(
+            TEXT("[%s] %s%s"),
+            *FDateTime::Now().ToString(TEXT("%H:%M:%S.%s")),
+            *Line,
+            LINE_TERMINATOR);
+
+        FFileHelper::SaveStringToFile(
+            StampedLine,
+            *LogFilePath,
+            FFileHelper::EEncodingOptions::AutoDetect,
+            &IFileManager::Get(),
+            FILEWRITE_Append);
+    }
+
 }
 
 FMotionMatchingAnimInstanceProxy::FMotionMatchingAnimInstanceProxy()
@@ -290,6 +587,10 @@ void FMotionMatchingAnimInstanceProxy::CacheNodes(UAnimInstance* InAnimInstance)
             if (FProperty* ShouldSearchProp = FAnimNode_MotionMatching::StaticStruct()->FindPropertyByName(TEXT("bShouldSearch")))
             {
                 Info.ShouldSearchProperty = CastField<FBoolProperty>(ShouldSearchProp);
+            }
+            if (FProperty* InterruptModeProp = FAnimNode_MotionMatching::StaticStruct()->FindPropertyByName(TEXT("NextUpdateInterruptMode")))
+            {
+                Info.NextUpdateInterruptModeProperty = InterruptModeProp;
             }
 
             CachedMMNodes.Add(Info);
@@ -371,6 +672,8 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
         !ThreadSafeData.LandingData.bIsLanding &&
         !ThreadSafeData.LandingData.bLandingRequested;
     const bool bCaptureMotionMatchingFrame = bCaptureFrame;
+    const APawn* OwnerPawn = AnimInstanceObj ? AnimInstanceObj->TryGetPawnOwner() : nullptr;
+    const bool bIsRemoteSimProxy = OwnerPawn && OwnerPawn->GetLocalRole() == ROLE_SimulatedProxy;
 
     int32 MotionMatchingNodeIndex = 0;
     for (FCachedMotionMatchingNodeInfo& Info : CachedMMNodes)
@@ -397,24 +700,62 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     Info.bDefaultMaxActiveBlendsCached = true;
                 }
 
-                 const UPoseSearchDatabase* SelectedDatabaseBeforeUpdate =
+                const FMotionMatchingState& PreUpdateMotionMatchingState = MMNode->GetMotionMatchingState();
+                const FPoseSearchBlueprintResult& PreUpdateResult = PreUpdateMotionMatchingState.SearchResult;
+                const FBlendStackAnimPlayer* PreUpdateTopPlayer = GetBlendStackTopPlayer(*MMNode);
+
+                Info.PreUpdateSelectedAnim = PreUpdateResult.SelectedAnim.Get();
+                Info.PreUpdateSelectedDatabase = PreUpdateResult.SelectedDatabase.Get();
+                Info.PreUpdateSelectedTime = PreUpdateResult.SelectedTime;
+                Info.bPreUpdateContinue = PreUpdateResult.bIsContinuingPoseSearch;
+                Info.PreUpdateStackTopAnim = PreUpdateTopPlayer ? PreUpdateTopPlayer->GetAnimationAsset() : nullptr;
+                Info.PreUpdateStackTopTime = PreUpdateTopPlayer ? PreUpdateTopPlayer->GetAccumulatedTime() : 0.f;
+                Info.PreUpdateStackNum = MMNode->AnimPlayers.Num();
+
+                const UPoseSearchDatabase* SelectedDatabaseBeforeUpdate =
                     MMNode->GetMotionMatchingState().SearchResult.SelectedDatabase.Get();
                 const bool bSearchResultDatabaseChanged = SelectedDatabaseBeforeUpdate != CurrentActivePoseSearchDatabase.Get();
                 const bool bAppliedDatabaseChanged = Info.AppliedDatabase != CurrentActivePoseSearchDatabase;
+                Info.bPreUpdateDbChanged = bSearchResultDatabaseChanged;
+                Info.bPreUpdateAppliedDbChanged = bAppliedDatabaseChanged;
+                const ELocomotionState CurrentMotionState = static_cast<ELocomotionState>(ThreadSafeData.GroundData.GroundMotionMode);
+                const bool bIsTransitionState = IsTransitionMotionMatchingState(CurrentMotionState);
+                const bool bIsRemoteIdleHold =
+                    bIsRemoteSimProxy &&
+                    CurrentMotionState == ELocomotionState::Idle &&
+                    !ThreadSafeData.InputData.bHasMoveInput &&
+                    !bSearchResultDatabaseChanged &&
+                    !bAppliedDatabaseChanged;
                 if (bAppliedDatabaseChanged)
                 {
+                    const EPoseSearchInterruptMode InterruptMode = bIsTransitionState
+                        ? EPoseSearchInterruptMode::InterruptOnDatabaseChange
+                        : EPoseSearchInterruptMode::InterruptOnDatabaseChangeAndInvalidateContinuingPose;
+
                     if (CurrentActivePoseSearchDatabase)
                     {
                         MMNode->SetDatabaseToSearch(
                             CurrentActivePoseSearchDatabase,
-                            EPoseSearchInterruptMode::InterruptOnDatabaseChangeAndInvalidateContinuingPose);
+                            InterruptMode);
                     }
                     else
                     {
                         MMNode->ResetDatabasesToSearch(
-                            EPoseSearchInterruptMode::InterruptOnDatabaseChangeAndInvalidateContinuingPose);
+                            InterruptMode);
                     }
                     Info.AppliedDatabase = CurrentActivePoseSearchDatabase;
+                }
+                else if (bIsTransitionState)
+                {
+                    MMNode->SetInterruptMode(EPoseSearchInterruptMode::DoNotInterrupt);
+                }
+                else if (bIsFallOffStartPhase && !bSearchResultDatabaseChanged && !bAppliedDatabaseChanged)
+                {
+                    MMNode->SetInterruptMode(EPoseSearchInterruptMode::DoNotInterrupt);
+                }
+                else if (bIsRemoteIdleHold)
+                {
+                    MMNode->SetInterruptMode(EPoseSearchInterruptMode::DoNotInterrupt);
                 }
 
                 const bool bIsAirLoopPhase =
@@ -424,7 +765,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     !ThreadSafeData.LandingData.bIsLanding &&
                     !ThreadSafeData.LandingData.bLandingRequested;
 
-                if (bIsAirLoopPhase)
+                if (bIsFallOffStartPhase || bIsAirLoopPhase)
                 {
                     MMNode->SetMaxActiveBlends(1);
                 }
@@ -432,6 +773,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                 {
                     MMNode->SetMaxActiveBlends(Info.DefaultMaxActiveBlends);
                 }
+                Info.PreUpdateMaxActiveBlends = MMNode->GetMaxActiveBlends();
 
                 if (Info.SearchThrottleTimeProperty)
                 {
@@ -465,14 +807,29 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                                 SearchThrottleTime = SuppressedSearchThrottleTime;
                             }
                         }
+                        else if (bIsRemoteIdleHold)
+                        {
+                            SearchThrottleTime = SuppressedSearchThrottleTime;
+                        }
                     }
                     Info.SearchThrottleTimeProperty->SetPropertyValue_InContainer(MMNode, SearchThrottleTime);
+                    Info.PreUpdateThrottle = SearchThrottleTime;
 
                     if (Info.ShouldSearchProperty)
                     {
                         const bool bShouldSearch = (SearchThrottleTime < SuppressedSearchThrottleTime - 1.f);
                         Info.ShouldSearchProperty->SetPropertyValue_InContainer(MMNode, bShouldSearch);
+                        Info.bPreUpdateShouldSearch = bShouldSearch;
                     }
+                    else
+                    {
+                        Info.bPreUpdateShouldSearch = true;
+                    }
+                }
+                else
+                {
+                    Info.PreUpdateThrottle = -1.f;
+                    Info.bPreUpdateShouldSearch = true;
                 }
 
             }
@@ -482,7 +839,240 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
 
     FAnimInstanceProxy::UpdateAnimationNode_WithRoot(InContext, InRootNode, InGroupRelevancyName);
 
-    if (bCaptureMotionMatchingFrame)
+    const ELocomotionState UpdatedMotionState = static_cast<ELocomotionState>(ThreadSafeData.GroundData.GroundMotionMode);
+    const APawn* UpdatedPawn = AnimInstanceObj ? AnimInstanceObj->TryGetPawnOwner() : nullptr;
+    const bool bStabilizeRemoteTransition =
+        UpdatedPawn &&
+        UpdatedPawn->GetLocalRole() == ROLE_SimulatedProxy &&
+        IsTransitionMotionMatchingState(UpdatedMotionState);
+    if (bStabilizeRemoteTransition)
+    {
+        for (FCachedMotionMatchingNodeInfo& Info : CachedMMNodes)
+        {
+            Info.bPostUpdateRestoredTransitionStack = false;
+            Info.bPostUpdateCollapsedTransitionStack = false;
+            if (Info.NodeProperty)
+            {
+                FAnimNode_MotionMatching* MMNode =
+                    Info.NodeProperty->ContainerPtrToValuePtr<FAnimNode_MotionMatching>(AnimInstanceObj);
+                if (MMNode)
+                {
+                    Info.bPostUpdateRestoredTransitionStack =
+                        StabilizeRemoteTransitionBlendStackPlayer(InContext, *MMNode, Info, UpdatedMotionState);
+                }
+            }
+        }
+    }
+    else
+    {
+        for (FCachedMotionMatchingNodeInfo& Info : CachedMMNodes)
+        {
+            Info.bPostUpdateRestoredTransitionStack = false;
+            Info.bPostUpdateCollapsedTransitionStack = false;
+            Info.bHasRemoteTransitionLock = false;
+            Info.LockedRemoteTransitionAnim.Reset();
+            Info.LockedRemoteTransitionTime = 0.f;
+        }
+    }
+
+    const int32 DebugLevel = CVarMotionMatchingDebugLogging.GetValueOnAnyThread();
+    if (DebugLevel > 0 && AnimInstanceObj && AnimInstanceObj->GetWorld() && AnimInstanceObj->GetWorld()->IsGameWorld())
+    {
+        const APawn* DebugPawn = AnimInstanceObj->TryGetPawnOwner();
+        const AActor* DebugActor = DebugPawn ? Cast<const AActor>(DebugPawn) : nullptr;
+        const FString DebugPawnName = DebugActor ? DebugActor->GetName() : GetNameSafe(AnimInstanceObj);
+        const ENetRole DebugRole = DebugActor ? DebugActor->GetLocalRole() : ROLE_None;
+        const ENetMode DebugNetMode = DebugActor ? DebugActor->GetNetMode() : NM_Standalone;
+        const FString NodeStateName = StaticEnum<ELocomotionState>()->GetNameStringByValue(
+            static_cast<int64>(ThreadSafeData.GroundData.GroundMotionMode));
+        const bool bIsTransitionState = IsTransitionMotionMatchingState(UpdatedMotionState);
+
+        MotionMatchingNodeIndex = 0;
+        for (FCachedMotionMatchingNodeInfo& Info : CachedMMNodes)
+        {
+            if (Info.NodeProperty)
+            {
+                const FAnimNode_MotionMatching* MMNode =
+                    Info.NodeProperty->ContainerPtrToValuePtr<FAnimNode_MotionMatching>(AnimInstanceObj);
+                if (MMNode)
+                {
+                    const FMotionMatchingState& MotionMatchingState = MMNode->GetMotionMatchingState();
+                    const FPoseSearchBlueprintResult& Result = MotionMatchingState.SearchResult;
+                    const FBlendStackAnimPlayer* PostTopPlayer = GetBlendStackTopPlayer(*MMNode);
+                    const UObject* PostTopAnim = PostTopPlayer ? PostTopPlayer->GetAnimationAsset() : nullptr;
+                    const float PostTopTime = PostTopPlayer ? PostTopPlayer->GetAccumulatedTime() : 0.f;
+                    const int32 PostStackNum = MMNode->AnimPlayers.Num();
+                    const FBlendStackAnimPlayer* PostPreviousPlayer = PostStackNum > 1 ? &MMNode->AnimPlayers[1] : nullptr;
+                    const UObject* PostPreviousAnim = PostPreviousPlayer ? PostPreviousPlayer->GetAnimationAsset() : nullptr;
+                    const float PostPreviousTime = PostPreviousPlayer ? PostPreviousPlayer->GetAccumulatedTime() : 0.f;
+
+                    const bool bTopChanged = Info.PreUpdateStackTopAnim.Get() != PostTopAnim;
+                    const bool bTopRewound = Info.PreUpdateStackTopAnim.Get() == PostTopAnim &&
+                        Info.PreUpdateStackTopTime > 0.08f &&
+                        PostTopTime + 0.04f < Info.PreUpdateStackTopTime;
+                    const bool bStackGrew = PostStackNum > Info.PreUpdateStackNum;
+                    const bool bSelectedChanged = Info.PreUpdateSelectedAnim.Get() != Result.SelectedAnim.Get();
+                    const bool bSelectedRewound = Info.PreUpdateSelectedAnim.Get() == Result.SelectedAnim.Get() &&
+                        Info.PreUpdateSelectedTime > 0.08f &&
+                        Result.SelectedTime + 0.04f < Info.PreUpdateSelectedTime;
+                    const bool bChangedSinceLastLog = Info.LastStackTopAnim.Get() != PostTopAnim ||
+                        FMath::Abs(Info.LastStackTopTime - PostTopTime) > 0.20f ||
+                        Info.LastStackNum != PostStackNum;
+                    const bool bShouldLogTransitionFrame = bIsTransitionState && (bCaptureFrame || bTopChanged || bTopRewound || bStackGrew || bSelectedChanged || bSelectedRewound);
+                    const bool bShouldLogStackEvent = bStackGrew || bTopChanged || bTopRewound || bSelectedChanged || bSelectedRewound || Info.bPostUpdateRestoredTransitionStack || Info.bPostUpdateCollapsedTransitionStack;
+                    const bool bDuplicateTop = PostTopAnim && PostPreviousAnim == PostTopAnim &&
+                        FMath::Abs(PostPreviousTime - PostTopTime) <= BlendStackDuplicateTimeSlack;
+                    const bool bLoopOverTransition = IsLocomotionLoopAnimation(PostTopAnim) && IsAnyTransitionAnimation(PostPreviousAnim);
+                    const bool bTransitionOverLoop = IsAnyTransitionAnimation(PostTopAnim) && IsLocomotionLoopAnimation(PostPreviousAnim);
+                    const bool bTransitionEnter = bIsTransitionState && IsAnyTransitionAnimation(PostTopAnim) &&
+                        !IsAnyTransitionAnimation(Info.PreUpdateStackTopAnim.Get());
+                    const bool bTransitionExit = !bIsTransitionState &&
+                        IsAnyTransitionAnimation(Info.PreUpdateStackTopAnim.Get()) &&
+                        IsLocomotionLoopAnimation(PostTopAnim);
+
+                    if (bShouldLogTransitionFrame || bShouldLogStackEvent || (DebugLevel >= 2 && bChangedSinceLastLog))
+                    {
+                        const FString InterruptModeName = ReadPoseSearchInterruptMode(Info, *MMNode);
+                        const FString MotionMatchingEventLine = FString::Printf(
+                            TEXT("[MMCAP_MM] Pawn=%s Net=%s Role=%s Anim=%s Node=%d State=%s Transition=%d RequestedPSD=%s AppliedPSD=%s PreSel=%s@%.3f PostSel=%s@%.3f Continue=%s Cost=%.3f PreTop=%s@%.3f PostTop=%s@%.3f Stack=%d->%d Grew=%d TopChanged=%d TopRewind=%d SelChanged=%d SelRewind=%d DbChanged=%d AppliedDbChanged=%d Throttle=%.3f ShouldSearch=%d MaxBlend=%d Interrupt=%s Restored=%d Collapsed=%d DupTop=%d LoopOverTransition=%d TransitionOverLoop=%d Lock=%s@%.3f Head={%s}"),
+                            *DebugPawnName,
+                            FormatNetMode(DebugNetMode),
+                            FormatNetRole(DebugRole),
+                            *AnimInstanceObj->GetName(),
+                            MotionMatchingNodeIndex,
+                            *NodeStateName,
+                            bIsTransitionState ? 1 : 0,
+                            *GetNameSafe(CurrentActivePoseSearchDatabase),
+                            *GetNameSafe(Result.SelectedDatabase),
+                            *GetNameSafe(Info.PreUpdateSelectedAnim.Get()),
+                            Info.PreUpdateSelectedTime,
+                            *GetNameSafe(Result.SelectedAnim),
+                            Result.SelectedTime,
+                            FormatBoolChange(Info.bPreUpdateContinue, Result.bIsContinuingPoseSearch),
+                            Result.SearchCost,
+                            *GetNameSafe(Info.PreUpdateStackTopAnim.Get()),
+                            Info.PreUpdateStackTopTime,
+                            *GetNameSafe(PostTopAnim),
+                            PostTopTime,
+                            Info.PreUpdateStackNum,
+                            PostStackNum,
+                            bStackGrew ? 1 : 0,
+                            bTopChanged ? 1 : 0,
+                            bTopRewound ? 1 : 0,
+                            bSelectedChanged ? 1 : 0,
+                            bSelectedRewound ? 1 : 0,
+                            Info.bPreUpdateDbChanged ? 1 : 0,
+                            Info.bPreUpdateAppliedDbChanged ? 1 : 0,
+                            Info.PreUpdateThrottle,
+                            Info.bPreUpdateShouldSearch ? 1 : 0,
+                            Info.PreUpdateMaxActiveBlends,
+                            *InterruptModeName,
+                            Info.bPostUpdateRestoredTransitionStack ? 1 : 0,
+                            Info.bPostUpdateCollapsedTransitionStack ? 1 : 0,
+                            bDuplicateTop ? 1 : 0,
+                            bLoopOverTransition ? 1 : 0,
+                            bTransitionOverLoop ? 1 : 0,
+                            *GetNameSafe(Info.LockedRemoteTransitionAnim.Get()),
+                            Info.LockedRemoteTransitionTime,
+                            *FormatCompactBlendStackHead(*MMNode));
+                        UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *MotionMatchingEventLine);
+                        AppendMotionMatchingAnimCaptureLine(MotionMatchingEventLine);
+
+                        TArray<FString> SummaryEvents;
+                        if (bTransitionEnter)
+                        {
+                            SummaryEvents.Add(TEXT("ENTER"));
+                        }
+                        if (bTransitionExit)
+                        {
+                            SummaryEvents.Add(TEXT("EXIT"));
+                        }
+                        if (bStackGrew)
+                        {
+                            SummaryEvents.Add(TEXT("STACK_GROW"));
+                        }
+                        if (bDuplicateTop)
+                        {
+                            SummaryEvents.Add(TEXT("DUP"));
+                        }
+                        if (bTopRewound || bSelectedRewound)
+                        {
+                            SummaryEvents.Add(TEXT("REWIND"));
+                        }
+                        if (bLoopOverTransition)
+                        {
+                            SummaryEvents.Add(TEXT("LOOP_OVER_TRANSITION"));
+                        }
+                        if (bTransitionOverLoop)
+                        {
+                            SummaryEvents.Add(TEXT("TRANSITION_OVER_LOOP"));
+                        }
+                        if (Info.bPostUpdateRestoredTransitionStack)
+                        {
+                            SummaryEvents.Add(TEXT("RESTORE"));
+                        }
+                        if (Info.bPostUpdateCollapsedTransitionStack)
+                        {
+                            SummaryEvents.Add(TEXT("COLLAPSE"));
+                        }
+                        if (SummaryEvents.IsEmpty() && bIsTransitionState && bCaptureFrame)
+                        {
+                            SummaryEvents.Add(TEXT("TRACE"));
+                        }
+
+                        if (!SummaryEvents.IsEmpty())
+                        {
+                            const FString SummaryLine = FString::Printf(
+                                TEXT("[MMSUM] Pawn=%s Role=%s Node=%d State=%s Event=%s PSD=%s Applied=%s PreTop=%s@%.3f PostTop=%s@%.3f Sel=%s@%.3f Stack=%d->%d MaxBlend=%d Interrupt=%s Throttle=%.3f Should=%d Restore=%d Collapse=%d Lock=%s@%.3f Input=(R=%.2f,F=%.2f,H=%d) Air=(In=%d,Jump=%d,FallOff=%d) Land=(Landing=%d,Req=%d,Heavy=%d,Speed=%.1f,Time=%.3f) Head={%s}"),
+                                *DebugPawnName,
+                                FormatNetRole(DebugRole),
+                                static_cast<int32>(MotionMatchingNodeIndex),
+                                *NodeStateName,
+                                *FString::Join(SummaryEvents, TEXT("+")),
+                                *GetNameSafe(CurrentActivePoseSearchDatabase),
+                                *GetNameSafe(Result.SelectedDatabase),
+                                *GetNameSafe(Info.PreUpdateStackTopAnim.Get()),
+                                Info.PreUpdateStackTopTime,
+                                *GetNameSafe(PostTopAnim),
+                                PostTopTime,
+                                *GetNameSafe(Result.SelectedAnim),
+                                Result.SelectedTime,
+                                static_cast<int32>(Info.PreUpdateStackNum),
+                                static_cast<int32>(PostStackNum),
+                                static_cast<int32>(Info.PreUpdateMaxActiveBlends),
+                                *InterruptModeName,
+                                Info.PreUpdateThrottle,
+                                Info.bPreUpdateShouldSearch ? int32(1) : int32(0),
+                                Info.bPostUpdateRestoredTransitionStack ? int32(1) : int32(0),
+                                Info.bPostUpdateCollapsedTransitionStack ? int32(1) : int32(0),
+                                *GetNameSafe(Info.LockedRemoteTransitionAnim.Get()),
+                                Info.LockedRemoteTransitionTime,
+                                ThreadSafeData.InputData.MoveInput.X,
+                                ThreadSafeData.InputData.MoveInput.Y,
+                                ThreadSafeData.InputData.bHasMoveInput ? int32(1) : int32(0),
+                                ThreadSafeData.AirData.bIsInAir ? int32(1) : int32(0),
+                                ThreadSafeData.AirData.bIsJumping ? int32(1) : int32(0),
+                                ThreadSafeData.AirData.bIsFallOffStart ? int32(1) : int32(0),
+                                ThreadSafeData.LandingData.bIsLanding ? int32(1) : int32(0),
+                                ThreadSafeData.LandingData.bLandingRequested ? int32(1) : int32(0),
+                                ThreadSafeData.LandingData.bUseHeavyLand ? int32(1) : int32(0),
+                                ThreadSafeData.LandingData.GroundSpeed,
+                                ThreadSafeData.LandingData.LandingElapsedTime,
+                                *FormatCompactBlendStackHead(*MMNode));
+                            AppendMotionMatchingSummaryCaptureLine(SummaryLine);
+                        }
+                    }
+
+                    Info.LastStackTopAnim = PostTopAnim;
+                    Info.LastStackTopTime = PostTopTime;
+                    Info.LastStackNum = PostStackNum;
+                }
+            }
+            ++MotionMatchingNodeIndex;
+        }
+    }
+
+    if (bCaptureMotionMatchingFrame && CVarMotionMatchingDebugLogging.GetValueOnAnyThread() >= 2)
     {
         const APawn* DebugPawn = AnimInstanceObj ? AnimInstanceObj->TryGetPawnOwner() : nullptr;
         const AActor* DebugActor = DebugPawn ? Cast<const AActor>(DebugPawn) : nullptr;
@@ -570,7 +1160,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
         }
     }
 
-    if (bCaptureMotionMatchingFrame)
+    if (bCaptureMotionMatchingFrame && CVarMotionMatchingDebugLogging.GetValueOnAnyThread() >= 2)
     {
         const FAnimThreadSafeData& Data = ThreadSafeData;
         const FString StateDebugLine = FString::Printf(
@@ -872,7 +1462,31 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     }
 
     // 2. Start/Stop/Landing 상태의 애니메이션 재생 완료 감지 및 자동 상태 전환 처리 (노티파이 의존성 100% 제거)
-    // SimulatedProxy의 경우 서버의 복제 스냅샷 상태를 그대로 추종해야 하므로 로컬 자동 완료 처리를 수행하지 않고 스킵합니다.
+    if (CachedLocomotionStateComponent)
+    {
+        const ELocomotionState State = CachedLocomotionStateComponent->CurrentState;
+        if (IsTransitionMotionMatchingState(State))
+        {
+            if (!bTransitionLocked || LockedTransitionState != State || !LockedTransitionDatabase)
+            {
+                LockedTransitionDatabase = CurrentActivePoseSearchDatabase;
+                LockedTransitionState = State;
+                bTransitionLocked = true;
+            }
+            else
+            {
+                CurrentActivePoseSearchDatabase = LockedTransitionDatabase;
+            }
+        }
+        else
+        {
+            LockedTransitionDatabase = nullptr;
+            LockedTransitionState = ELocomotionState::Idle;
+            bTransitionLocked = false;
+        }
+    }
+
+    // Simulated proxies follow replicated state; do not locally finish transition states.
     if (CachedLocomotionStateComponent && CachedBasePlayer && CachedBasePlayer->GetLocalRole() != ROLE_SimulatedProxy)
     {
         const ELocomotionState State = CachedLocomotionStateComponent->CurrentState;
@@ -1077,10 +1691,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         const TCHAR* InputSourceText = bIsLocalPawn
             ? TEXT("EnhancedInput")
             : (bRemoteUsesReplicatedInput ? TEXT("ReplicatedInput") : TEXT("VelocityEstimate"));
-        const FString SnapshotStateStr = StaticEnum<ELocomotionState>()->GetNameStringByValue(
-            static_cast<int64>(static_cast<ELocomotionState>(FMath::Min<uint8>(
-                CachedBasePlayer->LocomotionStateSnapshot.CurrentState,
-                static_cast<uint8>(ELocomotionState::Combat)))));
+        const FString SnapshotStateStr = TEXT("N/A");
 
         if (bChanged)
         {
@@ -1148,7 +1759,16 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             }
         }
 
-        if (bChanged || StateLogTimer >= 0.2f)
+        if (bChanged && CVarMotionMatchingDebugLogging.GetValueOnGameThread() < 2)
+        {
+            if (CachedLocomotionStateComponent)
+            {
+                LastState = CachedLocomotionStateComponent->CurrentState;
+            }
+            LastDatabaseName = CurrentDatabaseName;
+        }
+
+        if ((bChanged || StateLogTimer >= 0.2f) && CVarMotionMatchingDebugLogging.GetValueOnGameThread() >= 2)
         {
             StateLogTimer = 0.0f;
             if (CachedLocomotionStateComponent)
@@ -1306,7 +1926,7 @@ bool UMotionMatchingAnimInstance::ShouldEvaluateMotionMatchingThisFrame(float De
         MotionMatchingUpdateAccumulator += DeltaSeconds;
         if (MotionMatchingUpdateAccumulator < HiddenRemoteUpdateInterval)
         {
-            if (CVarMotionMatchingDebugLogging.GetValueOnGameThread() > 0)
+            if (CVarMotionMatchingDebugLogging.GetValueOnGameThread() >= 2)
             {
                 const FString SkipDebugLine = FString::Printf(
                     TEXT("[MMCAP_SKIP] Pawn=%s Net=%s Role=%s Reason=HiddenRemote Accum=%.3f Required=%.3f RecentlyRendered=0"),
@@ -1358,7 +1978,7 @@ bool UMotionMatchingAnimInstance::ShouldEvaluateMotionMatchingThisFrame(float De
     MotionMatchingUpdateAccumulator += DeltaSeconds;
     if (MotionMatchingUpdateAccumulator < UpdateInterval)
     {
-        if (CVarMotionMatchingDebugLogging.GetValueOnGameThread() > 0)
+        if (CVarMotionMatchingDebugLogging.GetValueOnGameThread() >= 2)
         {
             const FString SkipDebugLine = FString::Printf(
                 TEXT("[MMCAP_SKIP] Pawn=%s Net=%s Role=%s Reason=DistanceThrottle Distance=%.1f Accum=%.3f Required=%.3f"),

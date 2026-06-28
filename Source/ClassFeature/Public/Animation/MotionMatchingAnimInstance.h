@@ -10,6 +10,7 @@
 class UPoseSearchDatabase;
 class UChooserTable;
 class UCharacterTrajectoryComponent;
+class UAnimationAsset;
 class FStructProperty;
 class FObjectProperty;
 class FFloatProperty;
@@ -158,6 +159,8 @@ struct FCachedMotionMatchingNodeInfo
     FObjectProperty* DatabaseProperty = nullptr;
     FFloatProperty* SearchThrottleTimeProperty = nullptr;
     FBoolProperty* ShouldSearchProperty = nullptr;
+    FBoolProperty* ResetOnBecomingRelevantProperty = nullptr;
+    FProperty* NextUpdateInterruptModeProperty = nullptr;
     TObjectPtr<UPoseSearchDatabase> AppliedDatabase = nullptr;
     TWeakObjectPtr<const UObject> LastSelectedAnim;
     float LastSelectedTime = 0.f;
@@ -165,6 +168,27 @@ struct FCachedMotionMatchingNodeInfo
     bool bDefaultSearchThrottleCached = false;
     int32 DefaultMaxActiveBlends = 4;
     bool bDefaultMaxActiveBlendsCached = false;
+    TWeakObjectPtr<const UObject> PreUpdateSelectedAnim;
+    TWeakObjectPtr<const UObject> PreUpdateSelectedDatabase;
+    TWeakObjectPtr<const UObject> PreUpdateStackTopAnim;
+    float PreUpdateSelectedTime = 0.f;
+    float PreUpdateStackTopTime = 0.f;
+    int32 PreUpdateStackNum = 0;
+    bool bPreUpdateContinue = false;
+    bool bPreUpdateDbChanged = false;
+    bool bPreUpdateAppliedDbChanged = false;
+    float PreUpdateThrottle = 0.f;
+    int32 PreUpdateMaxActiveBlends = 0;
+    bool bPreUpdateShouldSearch = false;
+    bool bPostUpdateRestoredTransitionStack = false;
+    bool bPostUpdateCollapsedTransitionStack = false;
+    TWeakObjectPtr<const UObject> LastStackTopAnim;
+    float LastStackTopTime = 0.f;
+    int32 LastStackNum = 0;
+    TWeakObjectPtr<UAnimationAsset> LockedRemoteTransitionAnim;
+    float LockedRemoteTransitionTime = 0.f;
+    ELocomotionState LockedRemoteTransitionState = ELocomotionState::Idle;
+    bool bHasRemoteTransitionLock = false;
 };
 
 struct FCachedHistoryCollectorNodeInfo
@@ -343,4 +367,8 @@ private:
     float StateLogTimer = 0.0f;
     bool bWasFallOffForDebug = false;
     float FallOffDebugElapsedTime = 0.0f;
+    bool bSuppressDatabaseSearchThreadSafe = false;
+    TObjectPtr<UPoseSearchDatabase> LockedTransitionDatabase = nullptr;
+    bool bTransitionLocked = false;
+    ELocomotionState LockedTransitionState = ELocomotionState::Idle;
 };
