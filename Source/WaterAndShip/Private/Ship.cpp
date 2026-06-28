@@ -225,6 +225,26 @@ void AShip::ShipMove(const FInputActionValue& Value)
 {
 	const float MoveValue = Value.Get<float>();
 
+	if (FMath::Abs(MoveValue) > KINDA_SMALL_NUMBER)
+	{
+		// Apply local force immediately for prediction
+		ApplyForwardForce(MoveValue);
+
+		// Send input to server
+		if (!HasAuthority())
+		{
+			ServerMove(MoveValue);
+		}
+	}
+}
+
+void AShip::ServerMove_Implementation(float MoveValue)
+{
+	ApplyForwardForce(MoveValue);
+}
+
+void AShip::ApplyForwardForce(float MoveValue)
+{
 	if (BuoyancyRoot && FMath::Abs(MoveValue) > KINDA_SMALL_NUMBER)
 	{
 		// Project forward vector onto XY plane so the ship always moves horizontally
@@ -240,6 +260,26 @@ void AShip::ShipTurn(const FInputActionValue& Value)
 {
 	const float TurnValue = Value.Get<float>();
 
+	if (FMath::Abs(TurnValue) > KINDA_SMALL_NUMBER)
+	{
+		// Apply local torque immediately for prediction
+		ApplyTurnTorque(TurnValue);
+
+		// Send input to server
+		if (!HasAuthority())
+		{
+			ServerTurn(TurnValue);
+		}
+	}
+}
+
+void AShip::ServerTurn_Implementation(float TurnValue)
+{
+	ApplyTurnTorque(TurnValue);
+}
+
+void AShip::ApplyTurnTorque(float TurnValue)
+{
 	if (BuoyancyRoot && FMath::Abs(TurnValue) > KINDA_SMALL_NUMBER)
 	{
 		// Apply torque around the Z-axis (yaw) for horizontal turning

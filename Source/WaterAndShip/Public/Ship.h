@@ -105,6 +105,17 @@ protected:
 	void ToggleFixedCamera();
 	void OnDisembarkAction(const FInputActionValue& Value);
 
+	// Physics forces apply functions
+	void ApplyForwardForce(float MoveValue);
+	void ApplyTurnTorque(float TurnValue);
+
+	// Server RPCs for movement (Unreliable because of high frequency axis updates)
+	UFUNCTION(Server, Unreliable)
+	void ServerMove(float MoveValue);
+
+	UFUNCTION(Server, Unreliable)
+	void ServerTurn(float TurnValue);
+
 	UFUNCTION(Server, Reliable)
 	void ServerDisembark();
 
