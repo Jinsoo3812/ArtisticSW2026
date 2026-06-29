@@ -21,6 +21,7 @@ class UInputTagConfig;
 class UInventoryComponent;
 class USWTrajectoryComponent;
 class UAnimMontage;
+class UBaseHealthComponent;
 class AShip;
 
 // Item Slot 관리 구조체
@@ -61,6 +62,7 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PostInitializeComponents() override;
 
 	/* --- GAS 초기화 ---*/
@@ -550,6 +552,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<USWTrajectoryComponent> TrajectoryComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UBaseHealthComponent> HealthComponent;
+
 public:
 	UFUNCTION()
 	void OnRep_ItemSlots();
@@ -561,4 +566,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Animation")
 	ULocomotionAnimStateComponent* GetAnimStateComponent() const { return AnimStateComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Health")
+	UBaseHealthComponent* GetHealthComponent() const { return HealthComponent; }
 };

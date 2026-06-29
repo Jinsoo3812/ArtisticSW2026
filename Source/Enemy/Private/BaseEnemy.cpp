@@ -17,6 +17,7 @@
 // Unreal
 #include "AbilitySystemComponent.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
+#include "Components/BaseHealthComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -46,25 +47,29 @@ ABaseEnemy::ABaseEnemy()
 	// Component
 	WeaponComponent = CreateDefaultSubobject<UBaseWeaponComponent>(TEXT("WeaponComponent"));
 	WaypointMoveComponent = CreateDefaultSubobject<UEnemyWaypointMoveComponent>(TEXT("WaypointMoveComponent"));
+	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 
 	if (GetCharacterMovement())
 		GetCharacterMovement()->SetIsReplicated(true);
-
-	
-	// State_Dead Tag를 감지하는 Delegate 등록
-	AbilitySystemComponent->RegisterGameplayTagEvent(State_Dead)
-		.AddUObject(this, &ABaseEnemy::OnDeadTagChanged);
 }
 
 void ABaseEnemy::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->InitAbilityActorInfo(this, this);
+		if (HealthComponent)
+		{
+			HealthComponent->OnDeathStarted.AddUniqueDynamic(this, &ABaseEnemy::OnDeathStarted);
+			HealthComponent->InitializeWithAbilitySystem(AbilitySystemComponent);
+		}
+	}
+
 	// StartingAbilities 능력 등록
 	if (AbilitySystemComponent && HasAuthority())
 	{
-		AbilitySystemComponent->InitAbilityActorInfo(this, this);
-
 		if (StartingAbilities.Num() > 0)
 		{
 			GrantAbilities(StartingAbilities);
@@ -77,6 +82,17 @@ void ABaseEnemy::BeginPlay()
 	}
 
 	InitializeEnemyDropData();
+}
+
+void ABaseEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (HealthComponent)
+	{
+		HealthComponent->OnDeathStarted.RemoveDynamic(this, &ABaseEnemy::OnDeathStarted);
+		HealthComponent->UninitializeFromAbilitySystem();
+	}
+
+	Super::EndPlay(EndPlayReason);
 }
 
 TArray<FGameplayAbilitySpecHandle> ABaseEnemy::GrantAbilities(TArray<TSubclassOf<UGameplayAbility>> AbilitiesToGrant)
@@ -139,14 +155,8 @@ void ABaseEnemy::HandleDeath_Implementation()
 	GetMesh()->AddImpulseAtLocation(Impulse, GetActorLocation());
 }
 
-void ABaseEnemy::OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
+void ABaseEnemy::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 {
-	if (NewCount <= 0)
-	{
-		return;
-		// 이미 사망했을 때, 아무 처리하지 않음
-	}
-
 	if (!bDeathHandled)
 	{
 		bDeathHandled = true;
