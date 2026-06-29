@@ -1,4 +1,4 @@
-﻿#include "Animation/SWTrajectoryComponent.h"
+#include "Animation/SWTrajectoryComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "MotionTrajectoryLibrary.h"
@@ -344,7 +344,7 @@ void USWTrajectoryComponent::RepairRemoteTrajectoryPrediction(const ACharacter& 
     }
 
     const ELocomotionState State = StateComponent->CurrentState;
-    if (State != ELocomotionState::Start && State != ELocomotionState::Locomotion)
+    if (State != ELocomotionState::Start && State != ELocomotionState::Locomotion && State != ELocomotionState::Stop)
     {
         return;
     }
@@ -384,6 +384,16 @@ void USWTrajectoryComponent::RepairRemoteTrajectoryPrediction(const ACharacter& 
         return;
     }
 
+    float Deceleration = 0.f;
+    if (State == ELocomotionState::Stop)
+    {
+        Deceleration = MovementComponent->BrakingDecelerationWalking;
+        if (Deceleration <= 0.f)
+        {
+            Deceleration = 2048.f;
+        }
+    }
+
     const FVector ActorLocation = CharacterOwner.GetActorLocation();
     const FQuat QueryQuat = MakeMotionMatchingQueryRotation(CharacterOwner);
 
@@ -395,8 +405,27 @@ void USWTrajectoryComponent::RepairRemoteTrajectoryPrediction(const ACharacter& 
             continue;
         }
 
+        float t = Sample.TimeInSeconds;
+        float Distance = 0.f;
+        if (State == ELocomotionState::Stop)
+        {
+            float StopTime = QuerySpeed / Deceleration;
+            if (t < StopTime)
+            {
+                Distance = QuerySpeed * t - 0.5f * Deceleration * t * t;
+            }
+            else
+            {
+                Distance = 0.5f * QuerySpeed * StopTime;
+            }
+        }
+        else
+        {
+            Distance = QuerySpeed * t;
+        }
+
         FTransform SampleTransform = Sample.GetTransform();
-        const FVector LockedLocation = ActorLocation + WorldDirection * QuerySpeed * Sample.TimeInSeconds;
+        const FVector LockedLocation = ActorLocation + WorldDirection * Distance;
         FVector SampleLocation = SampleTransform.GetLocation();
         SampleLocation.X = LockedLocation.X;
         SampleLocation.Y = LockedLocation.Y;
