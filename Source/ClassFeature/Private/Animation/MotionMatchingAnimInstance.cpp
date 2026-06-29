@@ -957,7 +957,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
     const bool bStabilizeRemoteTransition =
         UpdatedPawn &&
         UpdatedPawn->GetLocalRole() == ROLE_SimulatedProxy &&
-        IsTransitionMotionMatchingState(UpdatedMotionState);
+        (UpdatedMotionState == ELocomotionState::Stop || UpdatedMotionState == ELocomotionState::Landing);
     if (bStabilizeRemoteTransition)
     {
         for (FCachedMotionMatchingNodeInfo& Info : CachedMMNodes)
