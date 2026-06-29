@@ -28,6 +28,8 @@
 #include "Inventory/InventoryComponent.h"
 #include "ItemSubSystem.h"
 #include "Animation/AnimInstance.h"
+#include "Components/BaseHealthComponent.h"
+#include "Ship.h"
 #include "HAL/FileManager.h"
 #include "Misc/DateTime.h"
 #include "Misc/FileHelper.h"
@@ -88,6 +90,7 @@ ABasePlayer::ABasePlayer()
 	InventoryComponent = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComponent"));
 	AnimStateComponent = CreateDefaultSubobject<ULocomotionAnimStateComponent>(TEXT("AnimStateComponent"));
 	TrajectoryComponent = CreateDefaultSubobject<USWTrajectoryComponent>(TEXT("SWTrajectoryComponent"));
+	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 
 	// 항상 등만 보이도록 설정 (Orient to Controller - 부드러운 회전으로 제자리 회전 유도)
 	bUseControllerRotationYaw = false;
@@ -140,6 +143,16 @@ void ABasePlayer::BeginPlay()
 	}
 
 	OnItemSlotsChanged.Broadcast();
+}
+
+void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (HealthComponent)
+	{
+		HealthComponent->UninitializeFromAbilitySystem();
+	}
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void ABasePlayer::Tick(float DeltaTime)
@@ -275,11 +288,16 @@ void ABasePlayer::PossessedBy(AController* NewController)
 
 		// PlayerState로 부터 ASC 포인터 가져와서 캐싱
 		CachedAbilitySystemComponent = PS->GetAbilitySystemComponent();
+		if (HealthComponent)
+		{
+			HealthComponent->InitializeWithAbilitySystem(CachedAbilitySystemComponent.Get());
+		}
 
 		// Interact GA에 의해 발생한 Gameplay Event를 처리할 콜백 함수 등록
 		// 현재는 Event 별로 따로 바인딩하지만 더 좋은 방법이 있을까?
 		if(CachedAbilitySystemComponent.IsValid()) {
 			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
+			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_ShipBoard).AddUObject(this, &ABasePlayer::HandleShipBoardEvent);
 
 			// Map에 등록된 기본 어빌리티 순회 및 슬롯에 부여
 			for (const auto& AbilityPair : DefaultAbilityMap)
@@ -312,6 +330,10 @@ void ABasePlayer::OnRep_PlayerState()
 
 		// 클라이언트 측 포인터 갱신
 		CachedAbilitySystemComponent = PS->GetAbilitySystemComponent();
+		if (HealthComponent)
+		{
+			HealthComponent->InitializeWithAbilitySystem(CachedAbilitySystemComponent.Get());
+		}
 		if (CachedAbilitySystemComponent.Get()) {
 			//CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
 		}
@@ -599,6 +621,17 @@ void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
 	if (!HasAuthority())
 	{
 		ServerRPC_SendGameplayEvent(ReleasedEventTag, EventData);
+	}
+}
+
+void ABasePlayer::HandleShipBoardEvent(const FGameplayEventData* Payload)
+{
+	if (Payload && Payload->Target)
+	{
+		if (AShip* TargetShip = const_cast<AShip*>(Cast<AShip>(Payload->Target)))
+		{
+			TargetShip->Board(this);
+		}
 	}
 }
 
