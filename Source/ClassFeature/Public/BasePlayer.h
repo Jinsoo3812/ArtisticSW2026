@@ -21,6 +21,8 @@ class UInputTagConfig;
 class UInventoryComponent;
 class USWTrajectoryComponent;
 class UAnimMontage;
+class UBaseHealthComponent;
+class AShip;
 
 // Item Slot 관리 구조체
 USTRUCT(BlueprintType)
@@ -59,6 +61,7 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PostInitializeComponents() override;
 
 	/* --- GAS 초기화 ---*/
@@ -328,6 +331,9 @@ protected:
 	// 공용 Interact GA가 보내준 PickUp 이벤트를 처리하는 함수
 	void HandlePickUpEvent(const FGameplayEventData* Payload);
 
+	// 배 승선 이벤트를 처리하는 함수
+	void HandleShipBoardEvent(const FGameplayEventData* Payload);
+
 
 	/* --- Interactable Object Trace ---*/
 public:
@@ -420,6 +426,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<USWTrajectoryComponent> TrajectoryComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UBaseHealthComponent> HealthComponent;
+
 public:
 	UFUNCTION()
 	void OnRep_ItemSlots();
@@ -431,4 +440,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Animation")
 	ULocomotionAnimStateComponent* GetAnimStateComponent() const { return AnimStateComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Health")
+	UBaseHealthComponent* GetHealthComponent() const { return HealthComponent; }
 };

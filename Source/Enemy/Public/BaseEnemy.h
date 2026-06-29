@@ -12,6 +12,7 @@
 
 class UAbilitySystemComponent;
 class UBaseWeaponComponent;
+class UBaseHealthComponent;
 class UEnemyWaypointMoveComponent;
 
 class UGameplayAbility;
@@ -77,6 +78,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UEnemyWaypointMoveComponent> WaypointMoveComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UBaseHealthComponent> HealthComponent;
+
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Wave")
 	bool bWaveRemoveNotified = false;
 
@@ -103,15 +107,17 @@ protected:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "AbilitySystem")
 	void ServerSendGameplayEventToSelf(FGameplayEventData EventData);*/
 	
-	// ASC Owner가 죽었을 때 OnDeadTagChanged에서 호출되는 함수
+	// ASC Owner가 죽었을 때 호출되는 함수
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Damage")
 	void HandleDeath();
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
-	//  ASC Owner가 State.Dead Tag를 가질 때, 호출되는 함수
-	virtual void OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	// HealthComponent가 죽음을 감지했을 때 기존 Enemy 사망 처리를 실행합니다.
+	UFUNCTION()
+	void OnDeathStarted(UBaseHealthComponent* InHealthComponent);
 
 	// FVector GetVelocity() const override;
 	
@@ -125,6 +131,7 @@ public:
 	//FORCEINLINE TObjectPtr<UPathMovement> GetPathMovementComponent() const { check(PathMovement) return PathMovement;}
 	FORCEINLINE virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { check(AbilitySystemComponent) return AbilitySystemComponent; }
 	FORCEINLINE UEnemyWaypointMoveComponent* GetWaypointMoveComponent() const {return WaypointMoveComponent;}
+	FORCEINLINE UBaseHealthComponent* GetHealthComponent() const { return HealthComponent; }
 
 	// Enemy소환 API
 	UFUNCTION(BlueprintCallable, Category = "Wave")

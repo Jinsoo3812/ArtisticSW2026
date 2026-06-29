@@ -32,7 +32,8 @@ public class ClassFeature: ModuleRules
             "BlendStack",
             "AnimGraphRuntime",
             "Chooser",
-            "MotionTrajectory"
+            "MotionTrajectory",
+            "WaterAndShip"
         });
 
         PublicIncludePaths.AddRange(new string[] {

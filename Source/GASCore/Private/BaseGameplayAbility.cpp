@@ -6,12 +6,12 @@
 
 UBaseGameplayAbility::UBaseGameplayAbility()
 {
-	// GA 인스턴스 정책
-	// InstancedPerActor: 액터마다 하나의 GA 인스턴스를 생성 및 관리
+	// 액터마다 하나의 Ability 인스턴스를 유지합니다.
+	// 콤보 카운트, 차징 상태처럼 Ability 내부 상태를 저장하기 좋습니다.
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
-	// 네트워크 실행 정책
-	// LocalPredicted: 클라이언트에서 입력 즉시 예측 실행 후 서버에서 검증
+	// 로컬 클라이언트에서 먼저 예측 실행하고 서버가 검증합니다.
+	// 입력 반응성이 중요한 플레이어 Ability의 기본값으로 적합합니다.
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 }
 
@@ -22,7 +22,7 @@ void UBaseGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Hand
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 	
-	// 시전 후 의 공통 로직
+	// 파생 Ability에서 Super 호출 뒤 공통 시작 로직을 이어서 확장할 수 있습니다.
 }
 
 void UBaseGameplayAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
@@ -30,7 +30,7 @@ void UBaseGameplayAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	bool bReplicateEndAbility, bool bWasCancelled)
 {
-	// GA 종료 전의 공통 로직
+	// 파생 Ability에서 Super 호출 전 필요한 정리 로직을 먼저 실행할 수 있습니다.
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -52,16 +52,16 @@ TArray<FActiveGameplayEffectHandle> UBaseGameplayAbility::ApplyEffectToTargetDat
 		return AppliedEffects;
 	}
 
-	// GE Spec Context 생성
+	// Ability 소유자를 Instigator로 기록한 GE Context를 만듭니다.
 	FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
 	ContextHandle.AddInstigator(GetAvatarActorFromActorInfo(), GetAvatarActorFromActorInfo());
 
-	// GE Spec 생성
+	// 적용할 GameplayEffect Spec을 생성합니다.
 	FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(EffectClass, EffectLevel, ContextHandle);
 
 	if (SpecHandle.IsValid())
 	{
-		// 생성된 Spec을 바탕으로 TargetData에게 일괄적으로 GE를 적용
+		// TargetData에 들어 있는 대상 ASC에 Spec을 일괄 적용합니다.
 		AppliedEffects = K2_ApplyGameplayEffectSpecToTarget(SpecHandle, TargetData);
 	}
 
@@ -81,16 +81,16 @@ FActiveGameplayEffectHandle UBaseGameplayAbility::ApplyEffectToOwner(TSubclassOf
 		return FActiveGameplayEffectHandle();
 	}
 
-	// GE Spec Context 생성
+	// Ability 소유자를 Instigator로 기록한 GE Context를 만듭니다.
 	FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
 	ContextHandle.AddInstigator(GetAvatarActorFromActorInfo(), GetAvatarActorFromActorInfo());
 
-	// GE Spec 생성
+	// 적용할 GameplayEffect Spec을 생성합니다.
 	FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(EffectClass, EffectLevel, ContextHandle);
 
 	if (SpecHandle.IsValid())
 	{
-		// 자신(ASC)에게 직접 GE를 적용합니다.
+		// 자신이 가진 ASC에 Spec을 직접 적용합니다.
 		return ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 	}
 
