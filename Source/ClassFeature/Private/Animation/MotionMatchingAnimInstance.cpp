@@ -835,8 +835,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                 if (bAppliedDatabaseChanged)
                 {
                     const bool bInvalidateContinuingPose =
-                        (!bIsTransitionState && CurrentMotionState != ELocomotionState::InAir) ||
-                        (bIsRemoteSimProxy && CurrentMotionState == ELocomotionState::Landing);
+                        (!bIsTransitionState && CurrentMotionState != ELocomotionState::InAir);
                     const EPoseSearchInterruptMode InterruptMode = bInvalidateContinuingPose
                         ? EPoseSearchInterruptMode::InterruptOnDatabaseChangeAndInvalidateContinuingPose
                         : EPoseSearchInterruptMode::InterruptOnDatabaseChange;
@@ -1846,7 +1845,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                             TArray<FTransformTrajectorySample>& Samples = ThreadSafeData.MovementData.Trajectory.Samples;
                             for (FTransformTrajectorySample& Sample : Samples)
                             {
-                                if (Sample.TimeInSeconds >= -RemoteLandingHistoryGroundLockWindow)
+                                if (Sample.TimeInSeconds >= 0.f)
                                 {
                                     FTransform SampleTransform = Sample.GetTransform();
                                     FVector SampleLocation = SampleTransform.GetLocation();

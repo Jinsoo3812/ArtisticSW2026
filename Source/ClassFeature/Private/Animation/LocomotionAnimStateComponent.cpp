@@ -1124,7 +1124,6 @@ void ULocomotionAnimStateComponent::ApplyAuthoritativeSnapshot(const FReplicated
         return;
     }
 
-    LastRemoteAnimEventSequence = FMath::Max(LastRemoteAnimEventSequence, Snapshot.EventSequence);
     LastFallSpeed = Snapshot.LastFallSpeed;
 
     bIsSprinting = Snapshot.bIsSprinting;
