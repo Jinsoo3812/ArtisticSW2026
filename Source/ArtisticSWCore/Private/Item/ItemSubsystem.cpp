@@ -100,7 +100,7 @@ ABaseItem* UItemSubsystem::SpawnItem(const FGameplayTag& ItemTag, const FTransfo
 	ABaseItem* SpawnedItem = World->SpawnActorDeferred<ABaseItem>(
 		SpawnClass,
 		SpawnTransform,
-		nullptr,
+		Instigator,
 		Instigator ? Cast<APawn>(Instigator) : nullptr,
 		ESpawnActorCollisionHandlingMethod::AlwaysSpawn
 	);
