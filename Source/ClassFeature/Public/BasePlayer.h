@@ -52,7 +52,6 @@ UCLASS(Config = Game)
 class CLASSFEATURE_API ABasePlayer : public ABaseCharacter
 {
 	GENERATED_BODY()
-	friend class UBasePlayerAnimStateComponent;
 	friend class ULocomotionAnimStateComponent;
 
 public:
