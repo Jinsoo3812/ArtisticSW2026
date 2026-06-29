@@ -39,6 +39,7 @@ namespace
     constexpr float RemoteTransitionAllowedTimeSlack = 0.06f;
     constexpr float RemoteTransitionMaxForwardJump = 0.20f;
     constexpr float BlendStackDuplicateTimeSlack = 0.08f;
+    constexpr float RemoteLandingHistoryGroundLockWindow = 0.15f;
 
     bool IsTransitionMotionMatchingState(ELocomotionState State)
     {
@@ -207,6 +208,16 @@ namespace
             LockedAsset = SeedAsset;
         }
 
+        const FPoseSearchBlueprintResult& CurrentResult = MotionMatchingNode.GetMotionMatchingState().SearchResult;
+        if (State == ELocomotionState::Landing && CurrentResult.SelectedAnim.Get() == LockedAsset)
+        {
+            const float SelectedTime = ClampAnimationAssetTime(LockedAsset, CurrentResult.SelectedTime);
+            if (SelectedTime > NodeInfo.LockedRemoteTransitionTime + RemoteTransitionAllowedTimeSlack)
+            {
+                NodeInfo.LockedRemoteTransitionTime = SelectedTime;
+            }
+        }
+
         const float PlayRate = FMath::Max(0.f, TopPlayer.GetPlayRate());
         const float ExpectedTime = ClampAnimationAssetTime(
             LockedAsset,
@@ -295,7 +306,7 @@ namespace
         }
     }
 
-    FString FormatTrajectorySample(const FTransformTrajectory& Trajectory, const FTransform& ReferenceTransform, float TargetTime)
+    const FTransformTrajectorySample* FindClosestTrajectorySample(const FTransformTrajectory& Trajectory, float TargetTime)
     {
         const FTransformTrajectorySample* Closest = nullptr;
         float ClosestDifference = MAX_flt;
@@ -309,6 +320,89 @@ namespace
             }
         }
 
+        return Closest;
+    }
+
+    FString FormatLocalDirectionLabel(const FVector2D& Direction)
+    {
+        if (Direction.IsNearlyZero(0.05f))
+        {
+            return TEXT("None");
+        }
+
+        const FVector2D Normalized = Direction.GetSafeNormal();
+        const float AbsRight = FMath::Abs(Normalized.X);
+        const float AbsForward = FMath::Abs(Normalized.Y);
+        if (AbsForward >= AbsRight * 1.35f)
+        {
+            return Normalized.Y >= 0.f ? TEXT("F") : TEXT("B");
+        }
+        if (AbsRight >= AbsForward * 1.35f)
+        {
+            return Normalized.X >= 0.f ? TEXT("R") : TEXT("L");
+        }
+
+        return FString::Printf(TEXT("%s%s"),
+            Normalized.Y >= 0.f ? TEXT("F") : TEXT("B"),
+            Normalized.X >= 0.f ? TEXT("R") : TEXT("L"));
+    }
+
+    const TCHAR* ResolveLandAssetDirection(const UObject* Asset)
+    {
+        const FString AssetName = GetNameSafe(Asset);
+        if (AssetName.Contains(TEXT("_Jump_LL_Land")) || AssetName.Contains(TEXT("_LL_Land")))
+        {
+            return TEXT("LL");
+        }
+        if (AssetName.Contains(TEXT("_Jump_RL_Land")) || AssetName.Contains(TEXT("_RL_Land")))
+        {
+            return TEXT("RL");
+        }
+        if (AssetName.Contains(TEXT("_Jump_B_Land")) || AssetName.Contains(TEXT("_B_Land")))
+        {
+            return TEXT("B");
+        }
+        if (AssetName.Contains(TEXT("_Jump_F_Land")) || AssetName.Contains(TEXT("_F_Land")))
+        {
+            return TEXT("F");
+        }
+        return TEXT("Unknown");
+    }
+
+    FVector GetTrajectorySampleRelativeLocation(const FTransformTrajectory& Trajectory, const FTransform& ReferenceTransform, float TargetTime, bool& bOutFound)
+    {
+        bOutFound = false;
+        const FTransformTrajectorySample* Closest = FindClosestTrajectorySample(Trajectory, TargetTime);
+        if (!Closest)
+        {
+            return FVector::ZeroVector;
+        }
+
+        bOutFound = true;
+        const FTransform Transform = Closest->GetTransform();
+        const FTransform RelativeTransform = Transform.GetRelativeTransform(ReferenceTransform);
+        return RelativeTransform.GetLocation();
+    }
+
+    FString FormatTrajectoryDirectionProbe(const FTransformTrajectory& Trajectory, const FTransform& ReferenceTransform, float TargetTime)
+    {
+        bool bFound = false;
+        const FVector RelativeLocation = GetTrajectorySampleRelativeLocation(Trajectory, ReferenceTransform, TargetTime, bFound);
+        if (!bFound)
+        {
+            return FString::Printf(TEXT("T%.1f=NA"), TargetTime);
+        }
+
+        return FString::Printf(TEXT("T%.1f=(RelX=%.1f,RelY=%.1f,Label=%s)"),
+            TargetTime,
+            RelativeLocation.X,
+            RelativeLocation.Y,
+            *FormatLocalDirectionLabel(FVector2D(RelativeLocation.X, RelativeLocation.Y)));
+    }
+
+    FString FormatTrajectorySample(const FTransformTrajectory& Trajectory, const FTransform& ReferenceTransform, float TargetTime)
+    {
+        const FTransformTrajectorySample* Closest = FindClosestTrajectorySample(Trajectory, TargetTime);
         if (!Closest)
         {
             return FString::Printf(TEXT("T%.1f=NA"), TargetTime);
@@ -323,6 +417,18 @@ namespace
             Location.Y,
             Location.Z,
             Transform.Rotator().Yaw);
+    }
+
+    FString FormatLandingTrajectorySamples(const FTransformTrajectory& Trajectory, const FTransform& ReferenceTransform)
+    {
+        return FString::Printf(TEXT("%s %s %s %s %s %s %s"),
+            *FormatTrajectorySample(Trajectory, ReferenceTransform, -0.30f),
+            *FormatTrajectorySample(Trajectory, ReferenceTransform, -0.10f),
+            *FormatTrajectorySample(Trajectory, ReferenceTransform, 0.00f),
+            *FormatTrajectorySample(Trajectory, ReferenceTransform, 0.10f),
+            *FormatTrajectorySample(Trajectory, ReferenceTransform, 0.30f),
+            *FormatTrajectorySample(Trajectory, ReferenceTransform, 0.60f),
+            *FormatTrajectorySample(Trajectory, ReferenceTransform, 1.00f));
     }
 
     const TCHAR* ResolveFallOffAssetDirection(const UObject* Asset)
@@ -728,9 +834,12 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     !bAppliedDatabaseChanged;
                 if (bAppliedDatabaseChanged)
                 {
-                    const EPoseSearchInterruptMode InterruptMode = bIsTransitionState
-                        ? EPoseSearchInterruptMode::InterruptOnDatabaseChange
-                        : EPoseSearchInterruptMode::InterruptOnDatabaseChangeAndInvalidateContinuingPose;
+                    const bool bInvalidateContinuingPose =
+                        (!bIsTransitionState && CurrentMotionState != ELocomotionState::InAir) ||
+                        (bIsRemoteSimProxy && CurrentMotionState == ELocomotionState::Landing);
+                    const EPoseSearchInterruptMode InterruptMode = bInvalidateContinuingPose
+                        ? EPoseSearchInterruptMode::InterruptOnDatabaseChangeAndInvalidateContinuingPose
+                        : EPoseSearchInterruptMode::InterruptOnDatabaseChange;
 
                     if (CurrentActivePoseSearchDatabase)
                     {
@@ -791,8 +900,13 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     }
                     else if (bIsAirLoopPhase)
                     {
-                        // Allow pose re-evaluation during air loop so that character can rotate/respond to inputs
-                        SearchThrottleTime = Info.DefaultSearchThrottleTime;
+                        const bool bRemoteStableAirLoop =
+                            bIsRemoteSimProxy &&
+                            !bSearchResultDatabaseChanged &&
+                            !bAppliedDatabaseChanged;
+                        SearchThrottleTime = bRemoteStableAirLoop
+                            ? SuppressedSearchThrottleTime
+                            : Info.DefaultSearchThrottleTime;
                     }
                     else
                     {
@@ -929,6 +1043,15 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     const bool bTransitionExit = !bIsTransitionState &&
                         IsAnyTransitionAnimation(Info.PreUpdateStackTopAnim.Get()) &&
                         IsLocomotionLoopAnimation(PostTopAnim);
+                    const bool bLandingQueryProbe =
+                        UpdatedMotionState == ELocomotionState::Landing &&
+                        (bTransitionEnter ||
+                            Info.bPreUpdateAppliedDbChanged ||
+                            Info.bPreUpdateDbChanged ||
+                            bSelectedChanged ||
+                            bSelectedRewound ||
+                            bTopChanged ||
+                            bTopRewound);
 
                     if (bShouldLogTransitionFrame || bShouldLogStackEvent || (DebugLevel >= 2 && bChangedSinceLastLog))
                     {
@@ -978,6 +1101,112 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                         UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *MotionMatchingEventLine);
                         AppendMotionMatchingAnimCaptureLine(MotionMatchingEventLine);
 
+                        if (bLandingQueryProbe)
+                        {
+                            const FTransform OwnerComponentTransform = AnimInstanceObj->GetOwningComponent()
+                                ? AnimInstanceObj->GetOwningComponent()->GetComponentTransform()
+                                : FTransform::Identity;
+                            const FString LandQueryLine = FString::Printf(
+                                TEXT("[MMCAP_LAND_QUERY] Pawn=%s Net=%s Role=%s Anim=%s Node=%d Event=%s RequestedPSD=%s AppliedPSD=%s PreDB=%s PreSel=%s@%.3f PostSel=%s@%.3f Continue=%s Cost=%.3f PreTop=%s@%.3f PostTop=%s@%.3f Stack=%d->%d Interrupt=%s Throttle=%.3f ShouldSearch=%d Input=(R=%.2f,F=%.2f,H=%d) Move=(Vel=%.1f,%.1f,%.1f Local=R%.1f,F%.1f,Z%.1f Accel=%.1f,%.1f,%.1f) Air=(In=%d,Jump=%d,FallOff=%d) Land=(Req=%d,Heavy=%d,Moving=%d,Sprint=%d,Ground=%.1f,StartGround=%.1f,Fall=%.1f,Dir=R%.2f,F%.2f,Time=%.3f,PhysAir=%d) RawTraj={%s} FinalTraj={%s} Head={%s}"),
+                                *DebugPawnName,
+                                FormatNetMode(DebugNetMode),
+                                FormatNetRole(DebugRole),
+                                *AnimInstanceObj->GetName(),
+                                MotionMatchingNodeIndex,
+                                bTransitionEnter ? TEXT("ENTER") : (Info.bPreUpdateAppliedDbChanged ? TEXT("DB_APPLY") : TEXT("SEARCH")),
+                                *GetNameSafe(CurrentActivePoseSearchDatabase),
+                                *GetNameSafe(Result.SelectedDatabase),
+                                *GetNameSafe(Info.PreUpdateSelectedDatabase.Get()),
+                                *GetNameSafe(Info.PreUpdateSelectedAnim.Get()),
+                                Info.PreUpdateSelectedTime,
+                                *GetNameSafe(Result.SelectedAnim),
+                                Result.SelectedTime,
+                                FormatBoolChange(Info.bPreUpdateContinue, Result.bIsContinuingPoseSearch),
+                                Result.SearchCost,
+                                *GetNameSafe(Info.PreUpdateStackTopAnim.Get()),
+                                Info.PreUpdateStackTopTime,
+                                *GetNameSafe(PostTopAnim),
+                                PostTopTime,
+                                Info.PreUpdateStackNum,
+                                PostStackNum,
+                                *InterruptModeName,
+                                Info.PreUpdateThrottle,
+                                Info.bPreUpdateShouldSearch ? 1 : 0,
+                                ThreadSafeData.InputData.MoveInput.X,
+                                ThreadSafeData.InputData.MoveInput.Y,
+                                ThreadSafeData.InputData.bHasMoveInput ? 1 : 0,
+                                ThreadSafeData.MovementData.Velocity.X,
+                                ThreadSafeData.MovementData.Velocity.Y,
+                                ThreadSafeData.MovementData.Velocity.Z,
+                                ThreadSafeData.MovementData.VelocityLocal.Y,
+                                ThreadSafeData.MovementData.VelocityLocal.X,
+                                ThreadSafeData.MovementData.VelocityLocal.Z,
+                                ThreadSafeData.MovementData.Acceleration.X,
+                                ThreadSafeData.MovementData.Acceleration.Y,
+                                ThreadSafeData.MovementData.Acceleration.Z,
+                                ThreadSafeData.AirData.bIsInAir ? 1 : 0,
+                                ThreadSafeData.AirData.bIsJumping ? 1 : 0,
+                                ThreadSafeData.AirData.bIsFallOffStart ? 1 : 0,
+                                ThreadSafeData.LandingData.bLandingRequested ? 1 : 0,
+                                ThreadSafeData.LandingData.bUseHeavyLand ? 1 : 0,
+                                ThreadSafeData.LandingData.bLandWasMoving ? 1 : 0,
+                                ThreadSafeData.LandingData.bLandWasSprinting ? 1 : 0,
+                                ThreadSafeData.LandingData.GroundSpeed,
+                                ThreadSafeData.LandingData.LandStartGroundSpeed,
+                                ThreadSafeData.LandingData.LandStartFallSpeed,
+                                ThreadSafeData.LandingData.LandMoveDirection.X,
+                                ThreadSafeData.LandingData.LandMoveDirection.Y,
+                                ThreadSafeData.LandingData.LandingElapsedTime,
+                                ThreadSafeData.LandingData.bIsPhysicallyInAir ? 1 : 0,
+                                *FormatLandingTrajectorySamples(ThreadSafeData.MovementData.FallOffTrajectoryBefore, OwnerComponentTransform),
+                                *FormatLandingTrajectorySamples(ThreadSafeData.MovementData.Trajectory, OwnerComponentTransform),
+                                *FormatCompactBlendStackHead(*MMNode));
+                            UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *LandQueryLine);
+                            AppendMotionMatchingAnimCaptureLine(LandQueryLine);
+                            AppendMotionMatchingSummaryCaptureLine(LandQueryLine);
+
+                            const FRotator ActorRotation = DebugActor ? DebugActor->GetActorRotation() : FRotator::ZeroRotator;
+                            const FRotator MeshRotation = OwnerComponentTransform.Rotator();
+                            const FVector2D LandDirection = ThreadSafeData.LandingData.LandMoveDirection.GetSafeNormal();
+                            const FVector2D InputDirection = ThreadSafeData.InputData.MoveInput.GetSafeNormal();
+                            const FString LandDirectionLine = FString::Printf(
+                                TEXT("[MMCAP_LAND_DIR] Pawn=%s Role=%s Node=%d Event=%s LandDir=(R=%.2f,F=%.2f,%s) InputDir=(R=%.2f,F=%.2f,%s,H=%d) PreAsset=%s Dir=%s@%.3f PostAsset=%s Dir=%s@%.3f PreTop=%s Dir=%s@%.3f PostTop=%s Dir=%s@%.3f RawTrajDir={%s %s} FinalTrajDir={%s %s} Yaw=(Actor=%.1f,Mesh=%.1f) Cost=%.3f PSD=%s"),
+                                *DebugPawnName,
+                                FormatNetRole(DebugRole),
+                                MotionMatchingNodeIndex,
+                                bTransitionEnter ? TEXT("ENTER") : (Info.bPreUpdateAppliedDbChanged ? TEXT("DB_APPLY") : TEXT("SEARCH")),
+                                LandDirection.X,
+                                LandDirection.Y,
+                                *FormatLocalDirectionLabel(LandDirection),
+                                InputDirection.X,
+                                InputDirection.Y,
+                                *FormatLocalDirectionLabel(InputDirection),
+                                ThreadSafeData.InputData.bHasMoveInput ? 1 : 0,
+                                *GetNameSafe(Info.PreUpdateSelectedAnim.Get()),
+                                ResolveLandAssetDirection(Info.PreUpdateSelectedAnim.Get()),
+                                Info.PreUpdateSelectedTime,
+                                *GetNameSafe(Result.SelectedAnim),
+                                ResolveLandAssetDirection(Result.SelectedAnim),
+                                Result.SelectedTime,
+                                *GetNameSafe(Info.PreUpdateStackTopAnim.Get()),
+                                ResolveLandAssetDirection(Info.PreUpdateStackTopAnim.Get()),
+                                Info.PreUpdateStackTopTime,
+                                *GetNameSafe(PostTopAnim),
+                                ResolveLandAssetDirection(PostTopAnim),
+                                PostTopTime,
+                                *FormatTrajectoryDirectionProbe(ThreadSafeData.MovementData.FallOffTrajectoryBefore, OwnerComponentTransform, 0.30f),
+                                *FormatTrajectoryDirectionProbe(ThreadSafeData.MovementData.FallOffTrajectoryBefore, OwnerComponentTransform, 1.00f),
+                                *FormatTrajectoryDirectionProbe(ThreadSafeData.MovementData.Trajectory, OwnerComponentTransform, 0.30f),
+                                *FormatTrajectoryDirectionProbe(ThreadSafeData.MovementData.Trajectory, OwnerComponentTransform, 1.00f),
+                                ActorRotation.Yaw,
+                                MeshRotation.Yaw,
+                                Result.SearchCost,
+                                *GetNameSafe(Result.SelectedDatabase));
+                            UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *LandDirectionLine);
+                            AppendMotionMatchingAnimCaptureLine(LandDirectionLine);
+                            AppendMotionMatchingSummaryCaptureLine(LandDirectionLine);
+                        }
+
                         TArray<FString> SummaryEvents;
                         if (bTransitionEnter)
                         {
@@ -1023,7 +1252,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                         if (!SummaryEvents.IsEmpty())
                         {
                             const FString SummaryLine = FString::Printf(
-                                TEXT("[MMSUM] Pawn=%s Role=%s Node=%d State=%s Event=%s PSD=%s Applied=%s PreTop=%s@%.3f PostTop=%s@%.3f Sel=%s@%.3f Stack=%d->%d MaxBlend=%d Interrupt=%s Throttle=%.3f Should=%d Restore=%d Collapse=%d Lock=%s@%.3f Input=(R=%.2f,F=%.2f,H=%d) Air=(In=%d,Jump=%d,FallOff=%d) Land=(Landing=%d,Req=%d,Heavy=%d,Speed=%.1f,Time=%.3f) Head={%s}"),
+                                TEXT("[MMSUM] Pawn=%s Role=%s Node=%d State=%s Event=%s PSD=%s Applied=%s PreTop=%s@%.3f PostTop=%s@%.3f Sel=%s@%.3f Stack=%d->%d MaxBlend=%d Interrupt=%s Throttle=%.3f Should=%d Restore=%d Collapse=%d Lock=%s@%.3f Input=(R=%.2f,F=%.2f,H=%d) Air=(In=%d,Jump=%d,FallOff=%d) Land=(Landing=%d,Req=%d,Heavy=%d,Speed=%.1f,StartGround=%.1f,Fall=%.1f,Dir=(R=%.2f,F=%.2f),Time=%.3f) Head={%s}"),
                                 *DebugPawnName,
                                 FormatNetRole(DebugRole),
                                 static_cast<int32>(MotionMatchingNodeIndex),
@@ -1057,6 +1286,10 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                                 ThreadSafeData.LandingData.bLandingRequested ? int32(1) : int32(0),
                                 ThreadSafeData.LandingData.bUseHeavyLand ? int32(1) : int32(0),
                                 ThreadSafeData.LandingData.GroundSpeed,
+                                ThreadSafeData.LandingData.LandStartGroundSpeed,
+                                ThreadSafeData.LandingData.LandStartFallSpeed,
+                                ThreadSafeData.LandingData.LandMoveDirection.X,
+                                ThreadSafeData.LandingData.LandMoveDirection.Y,
                                 ThreadSafeData.LandingData.LandingElapsedTime,
                                 *FormatCompactBlendStackHead(*MMNode));
                             AppendMotionMatchingSummaryCaptureLine(SummaryLine);
@@ -1593,8 +1826,6 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                 // Trajectory Facing Post-processing to solve Turn-in-Place and Strafe awkwardness
                 if (CachedLocomotionStateComponent)
                 {
-                    TArray<FTransformTrajectorySample>& Samples = ThreadSafeData.MovementData.Trajectory.Samples;
-                    FQuat ActorQuat = CachedBasePlayer->GetActorQuat();
                     ELocomotionState State = CachedLocomotionStateComponent->CurrentState;
 
                     if (State == ELocomotionState::InAir && CachedLocomotionStateComponent->bIsFallOffStart)
@@ -1605,29 +1836,24 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                         && CachedLocomotionStateComponent->bLandWasMoving
                         && !CachedLocomotionStateComponent->LandMoveDirection.IsNearlyZero())
                     {
-                        // Keep the landing query aligned with the movement direction captured at impact.
-                        // Live input/trajectory can change on the landing frame, especially for back/strafe falls.
-                        const FVector2D LocalDirection = CachedLocomotionStateComponent->LandMoveDirection.GetSafeNormal();
-                        const FVector WorldDirection =
-                            CachedBasePlayer->GetActorForwardVector() * LocalDirection.Y +
-                            CachedBasePlayer->GetActorRightVector() * LocalDirection.X;
-                        const FVector ActorLocation = CachedBasePlayer->GetActorLocation();
-                        const float QuerySpeed = FMath::Max(
-                            CachedLocomotionStateComponent->LandStartGroundSpeed,
-                            CachedLocomotionStateComponent->IdleSpeedThreshold);
-
-                        for (FTransformTrajectorySample& Sample : Samples)
+                        const bool bSimulatedProxy = CachedBasePlayer->GetLocalRole() == ROLE_SimulatedProxy;
+                        if (bSimulatedProxy)
                         {
-                            if (Sample.TimeInSeconds > 0.f)
+                            const float LandingGroundZ = GetOwningComponent()
+                                ? GetOwningComponent()->GetComponentLocation().Z
+                                : CachedBasePlayer->GetActorLocation().Z;
+
+                            TArray<FTransformTrajectorySample>& Samples = ThreadSafeData.MovementData.Trajectory.Samples;
+                            for (FTransformTrajectorySample& Sample : Samples)
                             {
-                                FTransform SampleTransform = Sample.GetTransform();
-                                FVector SampleLocation = SampleTransform.GetLocation();
-                                const FVector LockedLocation = ActorLocation + WorldDirection * QuerySpeed * Sample.TimeInSeconds;
-                                SampleLocation.X = LockedLocation.X;
-                                SampleLocation.Y = LockedLocation.Y;
-                                SampleTransform.SetLocation(SampleLocation);
-                                SampleTransform.SetRotation(ActorQuat);
-                                Sample.SetTransform(SampleTransform);
+                                if (Sample.TimeInSeconds >= -RemoteLandingHistoryGroundLockWindow)
+                                {
+                                    FTransform SampleTransform = Sample.GetTransform();
+                                    FVector SampleLocation = SampleTransform.GetLocation();
+                                    SampleLocation.Z = LandingGroundZ;
+                                    SampleTransform.SetLocation(SampleLocation);
+                                    Sample.SetTransform(SampleTransform);
+                                }
                             }
                         }
                     }

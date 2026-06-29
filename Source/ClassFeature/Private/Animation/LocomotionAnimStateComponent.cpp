@@ -1028,32 +1028,6 @@ void ULocomotionAnimStateComponent::NotifyLandingFinished()
 {
     if (CurrentState == ELocomotionState::Landing)
     {
-        const float EffectiveMinimumLandingDuration = GetEffectiveMinimumLandingDuration();
-        if (LandingElapsedTime < EffectiveMinimumLandingDuration)
-        {
-            if (UWorld* World = GetWorld())
-            {
-                const float RemainingLandingTime = FMath::Max(0.01f, EffectiveMinimumLandingDuration - LandingElapsedTime);
-                World->GetTimerManager().SetTimer(
-                    LandingFallbackTimerHandle,
-                    this,
-                    &ULocomotionAnimStateComponent::NotifyLandingFinished,
-                    RemainingLandingTime,
-                    false);
-            }
-
-            if (IsMotionMatchingCaptureEnabled())
-            {
-                const FString DebugLine = FString::Printf(TEXT("[MMCAP_EVENT] DelayLandingFinished LandTime=%.3f MinLandTime=%.3f Diagonal=%d"),
-                    LandingElapsedTime,
-                    EffectiveMinimumLandingDuration,
-                    IsDiagonalLanding() ? 1 : 0);
-                UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
-                AppendMotionMatchingCaptureLine(DebugLine);
-            }
-            return;
-        }
-
         if (UWorld* World = GetWorld())
         {
             World->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);

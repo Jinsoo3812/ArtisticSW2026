@@ -231,6 +231,7 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 	NewSnapshot.MoveInput.X = FMath::RoundHalfToEven(NewSnapshot.MoveInput.X * 10.f) / 10.f;
 	NewSnapshot.MoveInput.Y = FMath::RoundHalfToEven(NewSnapshot.MoveInput.Y * 10.f) / 10.f;
 	NewSnapshot.LandMoveDirection = AnimStateComponent->LandMoveDirection;
+	NewSnapshot.LandStartGroundSpeed = AnimStateComponent->LandStartGroundSpeed;
 	NewSnapshot.LastFallSpeed = AnimStateComponent->LastFallSpeed;
 	NewSnapshot.EventSequence = LocomotionAnimEventSequence;
 	NewSnapshot.LastLocomotionEvent = LocomotionStateSnapshot.LastLocomotionEvent;
@@ -241,7 +242,7 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 		if (IsBasePlayerMotionMatchingCaptureEnabled())
 		{
 			const FString DebugLine = FString::Printf(
-				TEXT("[MMCAP_SNAPSHOT] Pawn=%s Net=%d Role=%d Seq=%d LastEvent=%d HasInput=%d MoveInput=(R=%.2f,F=%.2f) Sprint=%d"),
+				TEXT("[MMCAP_SNAPSHOT] Pawn=%s Net=%d Role=%d Seq=%d LastEvent=%d HasInput=%d MoveInput=(R=%.2f,F=%.2f) LandDir=(R=%.2f,F=%.2f) LandGround=%.1f Fall=%.1f Sprint=%d"),
 				*GetName(),
 				static_cast<int32>(GetNetMode()),
 				static_cast<int32>(GetLocalRole()),
@@ -250,6 +251,10 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 				NewSnapshot.bHasMoveInput ? 1 : 0,
 				NewSnapshot.MoveInput.X,
 				NewSnapshot.MoveInput.Y,
+				NewSnapshot.LandMoveDirection.X,
+				NewSnapshot.LandMoveDirection.Y,
+				NewSnapshot.LandStartGroundSpeed,
+				NewSnapshot.LastFallSpeed,
 				NewSnapshot.bIsSprinting ? 1 : 0);
 			UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
 			AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
@@ -1262,18 +1267,24 @@ void ABasePlayer::OnRep_LocomotionStateSnapshot(const FReplicatedLocomotionState
 		if (const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MMDebugging"));
 			DebugCVar && DebugCVar->GetInt() > 0)
 		{
-			UE_LOG(LogTemp, Display, TEXT("[MMCAP_EVENT] OnRep_LocomotionStateSnapshot Pawn=%s Seq=%d (Old=%d) Event=%d HasInput=%d MoveInput=(R=%.2f,F=%.2f) Sprint=%d"),
+			UE_LOG(LogTemp, Display, TEXT("[MMCAP_EVENT] OnRep_LocomotionStateSnapshot Pawn=%s Seq=%d (Old=%d) Event=%d HasInput=%d MoveInput=(R=%.2f,F=%.2f) LandDir=(R=%.2f,F=%.2f) LandGround=%.1f Fall=%.1f Sprint=%d"),
 				*GetName(),
 				LocomotionStateSnapshot.EventSequence, OldSnapshot.EventSequence,
 				(int32)LocomotionStateSnapshot.LastLocomotionEvent,
 				LocomotionStateSnapshot.bHasMoveInput ? 1 : 0,
 				LocomotionStateSnapshot.MoveInput.X,
 				LocomotionStateSnapshot.MoveInput.Y,
+				LocomotionStateSnapshot.LandMoveDirection.X,
+				LocomotionStateSnapshot.LandMoveDirection.Y,
+				LocomotionStateSnapshot.LandStartGroundSpeed,
+				LocomotionStateSnapshot.LastFallSpeed,
 				LocomotionStateSnapshot.bIsSprinting ? 1 : 0);
 		}
 
 
 		// 데이터 기반 이벤트 처리 (새로운 EventSequence가 오면 LastLocomotionEvent를 기반으로 애니메이션 컴포넌트에 통보)
+		AnimStateComponent->ApplyAuthoritativeSnapshot(LocomotionStateSnapshot);
+
 		if (LocomotionStateSnapshot.EventSequence != OldSnapshot.EventSequence)
 		{
 			switch (LocomotionStateSnapshot.LastLocomotionEvent)
@@ -1292,7 +1303,6 @@ void ABasePlayer::OnRep_LocomotionStateSnapshot(const FReplicatedLocomotionState
 			}
 		}
 
-		AnimStateComponent->ApplyAuthoritativeSnapshot(LocomotionStateSnapshot);
 	}
 }
 

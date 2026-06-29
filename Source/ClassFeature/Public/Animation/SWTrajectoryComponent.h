@@ -32,7 +32,7 @@ public:
 
 protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Trajectory|Smoothing")
-    bool bEnableTrajectorySmoothing = true;
+    bool bEnableTrajectorySmoothing = false;
 
     /** Interpolation speed coefficient (alpha = Clamp(DeltaTime * TrajectorySmoothingSpeed, 0, 1)) */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Trajectory|Smoothing", meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "bEnableTrajectorySmoothing"))
@@ -43,6 +43,12 @@ protected:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Trajectory|Correction")
     bool bEnableRemoteFacingRepair = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Trajectory|Correction", meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "bEnableRemoteFacingRepair"))
+    float RemoteFacingRepairMinSpeed = 80.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Trajectory|Correction", meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "bEnableRemoteFacingRepair"))
+    float RemoteFacingRepairMaxYawDelta = 35.0f;
 
 private:
     void EnsureTrajectoryBuffers();

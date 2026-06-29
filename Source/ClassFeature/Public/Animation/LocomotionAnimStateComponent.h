@@ -47,6 +47,9 @@ struct FReplicatedLocomotionState
     FVector2D LandMoveDirection = FVector2D::ZeroVector;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    float LandStartGroundSpeed = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
     float LastFallSpeed = 0.f;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
@@ -61,6 +64,7 @@ struct FReplicatedLocomotionState
                bHasMoveInput == Other.bHasMoveInput &&
                MoveInput.Equals(Other.MoveInput, 0.05f) &&
                LandMoveDirection.Equals(Other.LandMoveDirection, 0.05f) &&
+               FMath::IsNearlyEqual(LandStartGroundSpeed, Other.LandStartGroundSpeed) &&
                FMath::IsNearlyEqual(LastFallSpeed, Other.LastFallSpeed) &&
                EventSequence == Other.EventSequence &&
                LastLocomotionEvent == Other.LastLocomotionEvent;

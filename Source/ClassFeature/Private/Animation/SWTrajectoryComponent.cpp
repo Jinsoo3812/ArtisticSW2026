@@ -11,6 +11,48 @@ namespace
     {
         return FQuat(FRotator(0.f, -90.f, 0.f)) * CharacterOwner.GetActorQuat();
     }
+
+    int32 FindPresentTrajectorySampleIndex(const FTransformTrajectory& Trajectory)
+    {
+        int32 PresentSampleIndex = INDEX_NONE;
+        float SmallestAbsTime = TNumericLimits<float>::Max();
+
+        for (int32 Index = 0; Index < Trajectory.Samples.Num(); ++Index)
+        {
+            const float AbsTime = FMath::Abs(Trajectory.Samples[Index].TimeInSeconds);
+            if (AbsTime < SmallestAbsTime)
+            {
+                SmallestAbsTime = AbsTime;
+                PresentSampleIndex = Index;
+            }
+        }
+
+        return PresentSampleIndex;
+    }
+
+    FVector GetHorizontalSampleDelta(const FTransformTrajectory& Trajectory, int32 FromIndex, int32 ToIndex)
+    {
+        if (!Trajectory.Samples.IsValidIndex(FromIndex) || !Trajectory.Samples.IsValidIndex(ToIndex))
+        {
+            return FVector::ZeroVector;
+        }
+
+        FVector Delta = Trajectory.Samples[ToIndex].GetTransform().GetLocation() -
+            Trajectory.Samples[FromIndex].GetTransform().GetLocation();
+        Delta.Z = 0.f;
+        return Delta;
+    }
+
+    FVector ResolveTrajectorySampleDirection(const FTransformTrajectory& Trajectory, int32 SampleIndex, const FVector& FallbackDirection)
+    {
+        FVector Direction = GetHorizontalSampleDelta(Trajectory, SampleIndex, SampleIndex + 1);
+        if (Direction.IsNearlyZero())
+        {
+            Direction = GetHorizontalSampleDelta(Trajectory, SampleIndex - 1, SampleIndex);
+        }
+
+        return Direction.IsNearlyZero() ? FallbackDirection : Direction.GetSafeNormal();
+    }
 }
 
 USWTrajectoryComponent::USWTrajectoryComponent(const FObjectInitializer& ObjectInitializer)
@@ -223,18 +265,58 @@ void USWTrajectoryComponent::RepairRemoteTrajectoryFacing(const ACharacter& Char
         return;
     }
 
-    const FQuat QueryQuat = MakeMotionMatchingQueryRotation(CharacterOwner);
+    FVector HorizontalVelocity = CharacterOwner.GetVelocity();
+    HorizontalVelocity.Z = 0.f;
+    const float GroundSpeed = HorizontalVelocity.Size();
+    if (GroundSpeed < RemoteFacingRepairMinSpeed)
+    {
+        return;
+    }
+
+    const FVector VelocityDirection = HorizontalVelocity / GroundSpeed;
+    const float VelocityYaw = VelocityDirection.Rotation().Yaw;
+    const float ActorVelocityYawDelta = FMath::Abs(
+        FMath::FindDeltaAngleDegrees(CharacterOwner.GetActorRotation().Yaw, VelocityYaw));
+    if (ActorVelocityYawDelta > RemoteFacingRepairMaxYawDelta)
+    {
+        return;
+    }
+
+    const int32 PresentSampleIndex = FindPresentTrajectorySampleIndex(Trajectory);
+    if (PresentSampleIndex == INDEX_NONE)
+    {
+        return;
+    }
+
+    const FTransform PresentTransform = Trajectory.Samples[PresentSampleIndex].GetTransform();
+    const FVector PresentDirectionSafe = ResolveTrajectorySampleDirection(Trajectory, PresentSampleIndex, VelocityDirection);
+    if (PresentDirectionSafe.IsNearlyZero())
+    {
+        return;
+    }
+
+    const float PresentMoveYaw = PresentDirectionSafe.Rotation().Yaw;
+    const float PresentFaceYaw = PresentTransform.GetRotation().Rotator().Yaw;
+    const float FacingOffsetYaw = FMath::FindDeltaAngleDegrees(PresentMoveYaw, PresentFaceYaw);
+
+    FVector LastValidDirection = PresentDirectionSafe;
 
     for (int32 Index = 0; Index < NumSamples; ++Index)
     {
-        // simulated proxy媛 ?吏곸씠怨??덉쑝誘濡? 誘몃옒 ?덉륫 ?섑뵆?ㅼ쓽 Facing???≫꽣 ?뚯쟾???뺣젹?쒗궡 (Strafe 紐⑤뱶)
         if (Trajectory.Samples[Index].TimeInSeconds < -UE_KINDA_SMALL_NUMBER)
         {
             continue;
         }
 
+        LastValidDirection = ResolveTrajectorySampleDirection(Trajectory, Index, LastValidDirection);
+        if (LastValidDirection.IsNearlyZero())
+        {
+            continue;
+        }
+
         FTransform RepairedTransform = Trajectory.Samples[Index].GetTransform();
-        RepairedTransform.SetRotation(QueryQuat);
+        const float RepairedFacingYaw = LastValidDirection.Rotation().Yaw + FacingOffsetYaw;
+        RepairedTransform.SetRotation(FRotator(0.f, RepairedFacingYaw, 0.f).Quaternion());
         Trajectory.Samples[Index].SetTransform(RepairedTransform);
     }
 
