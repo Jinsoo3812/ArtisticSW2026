@@ -7,7 +7,8 @@
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.generated.h"
 
-// ?댄듃由щ럭???묎렐???명븯寃??댁＜???몃━???쒓났 留ㅽ겕濡?
+// Attribute 접근자 함수를 한 번에 생성하는 GAS 표준 매크로입니다.
+// Getter, Setter, Init 함수를 Blueprint/C++ 양쪽에서 일관되게 사용할 수 있게 합니다.
 #define ATTRIBUTE_ACCESSORS(ClassName, PropertyName) \
 	GAMEPLAYATTRIBUTE_PROPERTY_GETTER(ClassName, PropertyName) \
 	GAMEPLAYATTRIBUTE_VALUE_GETTER(PropertyName) \
@@ -22,58 +23,70 @@ class GASCORE_API UBaseAttributeSet : public UAttributeSet
 public:
 	UBaseAttributeSet();
 
-	/*
-	* ?ㅽ듃?뚰겕 ?쒖뒪?쒖씠 ?대옒?ㅼ쓽 Replication ?덉씠?꾩썐??援ъ꽦?????몄텧?섎뒗 ?⑥닔
-	* ?숆린?붿뿉 ?깅줉??蹂???깆쓣 吏??
-	*/
+	// 네트워크로 복제할 Attribute와 RepNotify 방식을 등록합니다.
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	// Attribute 媛믪씠 蹂寃쎈릺湲?吏곸쟾???몄텧
+	// Attribute 값이 바뀌기 직전에 호출됩니다. 주로 최대/최소값 보정에 사용합니다.
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
 
-	/*
-	* GameplayEffect媛 ?곸슜?????몄텧
-	* @param Data - GameplayEffect???곸슜??????뺣낫媛 ?닿릿 援ъ“泥?(?대뼡 Attribute媛 蹂寃쎈릺?덈뒗吏 ??
-	*/
+	// GameplayEffect 실행이 끝난 뒤 호출됩니다. 피해/회복 같은 최종 보정을 처리합니다.
 	virtual void PostGameplayEffectExecute(const struct FGameplayEffectModCallbackData& Data) override;
 	
-	//Attribute 媛믪씠 蹂寃쎈맂 ?꾩뿉 ?몄텧
+	// Attribute 값이 실제로 변경된 뒤 호출됩니다. UI 이벤트나 파생값 갱신에 사용할 수 있습니다.
 	virtual void PostAttributeChange(const FGameplayAttribute& Attribute, float OldValue, float NewValue) override;
 	
 	/* --- Attributes --- */
 
-	// 泥대젰
+	// 현재 체력입니다. 0이 되면 사망 처리의 기준이 됩니다.
 	UPROPERTY(BlueprintReadOnly, Category = "Attributes", ReplicatedUsing = OnRep_Health)
 	FGameplayAttributeData Health;
 	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, Health)
 
-	// 理쒕? 泥대젰
+	// 최대 체력입니다. Health는 이 값을 넘지 않도록 보정됩니다.
 	UPROPERTY(BlueprintReadOnly, Category = "Attributes", ReplicatedUsing = OnRep_MaxHealth)
 	FGameplayAttributeData MaxHealth;
 	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, MaxHealth)
 
-	// 怨듦꺽??
+	// 기본 공격력입니다. Damage GameplayEffect를 만들 때 기본 피해량으로 사용할 수 있습니다.
 	UPROPERTY(BlueprintReadOnly, Category = "Attributes", ReplicatedUsing = OnRep_AttackPower)
 	FGameplayAttributeData AttackPower;
 	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, AttackPower)
 
-	// ?대룞 ?띾룄
+	// 이동 속도입니다. 캐릭터 MovementComponent의 속도와 동기화할 때 사용합니다.
 	UPROPERTY(BlueprintReadOnly, Category = "Attributes", ReplicatedUsing = OnRep_MoveSpeed)
 	FGameplayAttributeData MoveSpeed;
 	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, MoveSpeed)
 
-protected:
-	/* --- RepNotify ?⑥닔??(?쒕쾭?먯꽌 媛믪씠 蹂寃쎈릺?덉쓣 ???대씪?댁뼵?몄뿉???숆린?뷀븯湲??꾪빐 ?몄텧?? --- */
 
+	// -------------------------------------------------------------------
+	// Meta Attributes
+
+	// 피해량을 임시로 전달받는 메타 Attribute입니다. GE 처리 후 Health에 반영하고 즉시 0으로 되돌립니다.
+	UPROPERTY(BlueprintReadOnly, Category = "Attributes|Meta")
+	FGameplayAttributeData Damage;
+	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, Damage)
+
+	// 회복량을 임시로 전달받는 메타 Attribute입니다. GE 처리 후 Health에 반영하고 즉시 0으로 되돌립니다.
+	UPROPERTY(BlueprintReadOnly, Category = "Attributes|Meta")
+	FGameplayAttributeData Healing;
+	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, Healing)
+
+protected:
+	/* --- RepNotify callbacks --- */
+
+	// 서버에서 복제된 Health 변경을 클라이언트 ASC에 알립니다.
 	UFUNCTION()
 	virtual void OnRep_Health(const FGameplayAttributeData& OldHealth);
 
+	// 서버에서 복제된 MaxHealth 변경을 클라이언트 ASC에 알립니다.
 	UFUNCTION()
 	virtual void OnRep_MaxHealth(const FGameplayAttributeData& OldMaxHealth);
 
+	// 서버에서 복제된 AttackPower 변경을 클라이언트 ASC에 알립니다.
 	UFUNCTION()
 	virtual void OnRep_AttackPower(const FGameplayAttributeData& OldAttackPower);
 
+	// 서버에서 복제된 MoveSpeed 변경을 클라이언트 ASC에 알립니다.
 	UFUNCTION()
 	virtual void OnRep_MoveSpeed(const FGameplayAttributeData& OldMoveSpeed);
 };

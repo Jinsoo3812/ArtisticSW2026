@@ -14,13 +14,13 @@ class GASCORE_API UBaseGameplayAbility : public UGameplayAbility
 public:
 	UBaseGameplayAbility();
 
-	// GA의 시작 지점 함수
+	// Ability가 활성화될 때 호출되는 진입점입니다. 공통 시작 로직을 넣는 위치입니다.
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		const FGameplayEventData* TriggerEventData) override;
 
-	// GA의 종료 지점 함수
+	// Ability가 종료될 때 호출되는 지점입니다. 공통 정리 로직을 넣는 위치입니다.
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo,
@@ -28,11 +28,11 @@ public:
 
 protected:
 	/*
-	* 대상에게 GE를 적용하는 함수
-	* @param TargetData - GE를 적용할 대상 정보
-	* @param EffectClass - 적용할 GE 클래스
-	* @param EffectLevel - GE의 레벨 (옵션, 기본값은 1)
-	* @return 적용된 GE 핸들의 배열 (여러 대상에게 적용할 경우 활용)
+	* TargetData에 포함된 모든 대상에게 GameplayEffect를 적용합니다.
+	* @param TargetData GE를 적용할 대상 정보입니다.
+	* @param EffectClass 적용할 GameplayEffect 클래스입니다.
+	* @param EffectLevel GE 레벨입니다. 기본값은 1입니다.
+	* @return 적용된 GE 핸들 목록입니다.
 	*/
 	UFUNCTION(BlueprintCallable, Category = "Ability|Effect")
 	virtual TArray<FActiveGameplayEffectHandle> ApplyEffectToTargetData(
@@ -40,10 +40,10 @@ protected:
 		TSubclassOf<class UGameplayEffect> EffectClass, int32 EffectLevel = 1);
 
 	/*
-	* 자신에게 GE를 적용할 때 사용하는 헬퍼 함수
-	* @param EffectClass - 적용할 GE 클래스
-	* @param EffectLevel - GE의 레벨 (옵션, 기본값은 1)
-	* @return 적용된 GE 핸들
+	* Ability 소유자 자신의 ASC에 GameplayEffect를 적용합니다.
+	* @param EffectClass 적용할 GameplayEffect 클래스입니다.
+	* @param EffectLevel GE 레벨입니다. 기본값은 1입니다.
+	* @return 적용된 GE 핸들입니다.
 	*/
 	UFUNCTION(BlueprintCallable, Category = "Ability|Effect")
 	virtual FActiveGameplayEffectHandle ApplyEffectToOwner(TSubclassOf<class UGameplayEffect> EffectClass, int32 EffectLevel = 1);

@@ -19,6 +19,7 @@
 #include "Interactable.h"
 #include "CollisionChannels.h"
 #include "AbilitySystemBlueprintLibrary.h"
+#include "Components/BaseHealthComponent.h"
 #include "Components/WidgetComponent.h"
 #include "InteractableComponent.h"
 #include "InteractUserWidget.h"
@@ -70,6 +71,7 @@ ABasePlayer::ABasePlayer()
 	InventoryComponent = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComponent"));
 	AnimStateComponent = CreateDefaultSubobject<ULocomotionAnimStateComponent>(TEXT("AnimStateComponent"));
 	TrajectoryComponent = CreateDefaultSubobject<USWTrajectoryComponent>(TEXT("TrajectoryComponent"));
+	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
@@ -123,6 +125,16 @@ void ABasePlayer::BeginPlay()
 	}
 
 	OnItemSlotsChanged.Broadcast();
+}
+
+void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (HealthComponent)
+	{
+		HealthComponent->UninitializeFromAbilitySystem();
+	}
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void ABasePlayer::Tick(float DeltaTime)
@@ -271,6 +283,10 @@ void ABasePlayer::PossessedBy(AController* NewController)
 
 		// PlayerState로 부터 ASC 포인터 가져와서 캐싱
 		CachedAbilitySystemComponent = PS->GetAbilitySystemComponent();
+		if (HealthComponent)
+		{
+			HealthComponent->InitializeWithAbilitySystem(CachedAbilitySystemComponent.Get());
+		}
 
 		// Interact GA에 의해 발생한 Gameplay Event를 처리할 콜백 함수 등록
 		// 현재는 Event 별로 따로 바인딩하지만 더 좋은 방법이 있을까?
@@ -309,6 +325,10 @@ void ABasePlayer::OnRep_PlayerState()
 
 		// 클라이언트 측 포인터 갱신
 		CachedAbilitySystemComponent = PS->GetAbilitySystemComponent();
+		if (HealthComponent)
+		{
+			HealthComponent->InitializeWithAbilitySystem(CachedAbilitySystemComponent.Get());
+		}
 		if (CachedAbilitySystemComponent.Get()) {
 			//CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
 		}

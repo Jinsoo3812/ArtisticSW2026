@@ -5,32 +5,20 @@
 
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
-/*
-#include "AbilitySystemComponent.h"
-#include "AbilitySystemBlueprintLibrary.h"
-#include "BaseGameplayTags.h"*/
 
-
-// Sets default values
 ABaseCharacter::ABaseCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	/* Player는 PlayerState에 ASC가 존재하므로 주석 처리
-	// Ability System Component 추가
-	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
-	AbilitySystemComponent->SetIsReplicated(true);
-	AbilitySystemComponent->SetReplicationMode(ASCReplicationMode);
-	*/
-
+	// 공통 캡슐 크기입니다. 파생 캐릭터에서 필요하면 다시 설정할 수 있습니다.
 	GetCapsuleComponent()->InitCapsuleSize(35.f, 90.f);
 
-	// Don't rotate when the controller rotates. Let that just affect the camera.
+	// 컨트롤러 회전은 카메라/조준에 맡기고, 캐릭터는 이동 방향을 기준으로 회전합니다.
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
 
-	// Configure character movement
+	// 플레이어와 적이 공통으로 사용할 기본 이동값입니다.
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.f, 500.f, 0.f);
 
@@ -40,18 +28,7 @@ ABaseCharacter::ABaseCharacter()
 	GetCharacterMovement()->MinAnalogWalkSpeed = 20.f;
 	GetCharacterMovement()->BrakingDecelerationFalling = 1500.f;
 	GetCharacterMovement()->BrakingDecelerationWalking = 2000.f;
-
-	// Basic Attribute Set 추가
-	// BasicAttributes = CreateDefaultSubobject<UBaseAttributeSet>(TEXT("BasicAttributeSet"));
-
-	/* Player는 PlayerState에 ASC가 존재하므로 주석 처리
-	* 시점을 다른 곳으로 옮긴 후 ASC 확인하고 넣으면 될듯 ?
-	// ASC Owner가 State.Dead tag를 가질 때, OnDeadTagChanged함수를 Call
-	AbilitySystemComponent->RegisterGameplayTagEvent(State_Dead)
-		.AddUObject(this, &ABaseCharacter::OnDeadTagChanged);
-	*/
 }
-
 
 void ABaseCharacter::BeginPlay()
 {
@@ -68,104 +45,3 @@ UAbilitySystemComponent* ABaseCharacter::GetAbilitySystemComponent() const
 {
 	return AbilitySystemComponent;
 }
-
-/*void ABaseCharacter::PossessedBy(AController* NewController)
-{
-	Super::PossessedBy(NewController);
-
-	// 이 곳에서 ASC를 초기화 하면 안됩니다.
-	// Player는 PlayerState로 부터 ASC를 캐시해 와야 하는데 이곳에서 자체적으로 ASC를 초기화하면 안됩니다.
-	// 추가로, PossededBy는 서버에서만 호출되는 함수이므로 권한 검사가 필요하지는 않습니다.
-
-	//if (AbilitySystemComponent && HasAuthority())
-	//{
-	//	AbilitySystemComponent->InitAbilityActorInfo(this, this);
-
-	//	if (StartingAbilities.Num() > 0)
-	//	{
-	//		GrantAbilities(StartingAbilities);
-	//	}
-	//}
-}
-
-
-/*
-TArray<FGameplayAbilitySpecHandle> ABaseCharacter::GrantAbilities(
-	TArray<TSubclassOf<UGameplayAbility>> AbilitiesToGrant)
-{
-	// UE_LOG(LogTemp, Warning, TEXT("ABaseCharacter::GrantAbilities"));
-	// 모든 능력을 for loop를 통해서 일일히 Grant 해줌
-	if (!AbilitySystemComponent || !HasAuthority())// HasAuthority는 서버에 있는 지 확인하는 함수
-		// GrantAbilities는 서버에서만 동작하므로, 서버에서 클라로 보내는 것은 충돌 일어날 수 있다. 따라서 서버에서만 동작하도록 한다.
-	{
-		return TArray<FGameplayAbilitySpecHandle>();
-	}
-
-	TArray<FGameplayAbilitySpecHandle> AbilitiesHandles;
-	
-	for (TSubclassOf<UGameplayAbility> Ability : AbilitiesToGrant)
-	{
-		FGameplayAbilitySpecHandle SpecHandle= AbilitySystemComponent->GiveAbility(FGameplayAbilitySpec
-			(Ability, 1, -1, this));
-		
-		AbilitiesHandles.Add(SpecHandle);
-	}
-
-	SendAbilitiesChangedEvent();
-	return AbilitiesHandles;
-}
-
-void ABaseCharacter::RemoveAbilities(TArray<FGameplayAbilitySpecHandle> AbilityHandlesToRemove)
-{
-	if (!AbilitySystemComponent && !HasAuthority())
-	{
-		return;
-	}
-
-	for (FGameplayAbilitySpecHandle Abilityhandle : AbilityHandlesToRemove)
-	{
-		AbilitySystemComponent->ClearAbility(Abilityhandle);
-	}
-
-	SendAbilitiesChangedEvent();
-}
-
-void ABaseCharacter::SendAbilitiesChangedEvent()
-{
-	FGameplayEventData EventData;
-	EventData.EventTag = Event_Ability_Changed;
-	EventData.Instigator = this;
-	EventData.Target = this;
-
-	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, EventData.EventTag, EventData);
-}
-
-void ABaseCharacter::ServerSendGameplayEventToSelf_Implementation(FGameplayEventData EventData)
-{
-	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, EventData.EventTag, EventData);
-}
-
-void ABaseCharacter::HandleDeath_Implementation()
-{
-	GetMesh()->SetSimulatePhysics(true);
-	GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	GetCharacterMovement()->DisableMovement();
-
-	FVector Impulse = GetActorForwardVector() * -20000.f;
-	Impulse.Z = 15000.f;
-	GetMesh()->AddImpulseAtLocation(Impulse, GetActorLocation());
-}
-
-void ABaseCharacter::OnDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
-{
-	if (NewCount > 0)
-	{
-		// 죽었을 때
-		HandleDeath();
-	}
-	else
-	{
-		// 캐릭터가 부활했을 때 처리할 로직을 여기에 작성
-	}
-}*/
