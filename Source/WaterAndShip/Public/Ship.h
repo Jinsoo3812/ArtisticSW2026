@@ -16,6 +16,18 @@ class UInputAction;
 class APlayerController;
 class UPrimitiveComponent;
 
+USTRUCT(BlueprintType)
+struct FShipReplicatedState
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FVector Location = FVector::ZeroVector;
+
+	UPROPERTY()
+	FRotator Rotation = FRotator::ZeroRotator;
+};
+
 UCLASS()
 class WATERANDSHIP_API AShip : public APawn
 {
@@ -142,8 +154,18 @@ protected:
 	UPROPERTY()
 	APlayerController* CachedPlayerController = nullptr;
 
-	UFUNCTION()
-	void OnShipHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
+	// ---- Custom Replication State & Interp Configuration ----
+	UPROPERTY(Replicated)
+	FShipReplicatedState ReplicatedState;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Replication")
+	float LocationInterpSpeed = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Replication")
+	float RotationInterpSpeed = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Replication")
+	float TeleportThreshold = 500.0f;
 
 public:
 	virtual void OnRep_Controller() override;
