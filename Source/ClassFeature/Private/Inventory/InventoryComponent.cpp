@@ -6,6 +6,7 @@
 #include "ItemData.h"
 #include "ItemSubsystem.h"
 #include "Engine/Engine.h"
+#include "Storage/StorageComponent.h"
 
 // Sets default values for this component's properties
 UInventoryComponent::UInventoryComponent()
@@ -346,6 +347,69 @@ void UInventoryComponent::ReturnCursorToOriginalSlot()
 
     OnInventoryChanged.Broadcast();
     PrintInventoryToScreen();
+}
+
+int32 UInventoryComponent::TransferSlotToStorage(int32 SlotIndex, UStorageComponent* TargetStorage)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !TargetStorage)
+    {
+        return 0;
+    }
+
+    if (CursorItem.IsValid())
+    {
+        ReturnCursorToOriginalSlot();
+    }
+
+    if (!InventorySlots.IsValidIndex(SlotIndex) || InventorySlots[SlotIndex].IsEmpty())
+    {
+        return 0;
+    }
+
+    FInventorySlot& SourceSlot = InventorySlots[SlotIndex];
+    const int32 AddedCount = TargetStorage->AddItem(SourceSlot.ItemTag, SourceSlot.Count);
+
+    if (AddedCount <= 0)
+    {
+        return 0;
+    }
+
+    SourceSlot.Count -= AddedCount;
+    if (SourceSlot.Count <= 0)
+    {
+        SourceSlot.Clear();
+    }
+
+    OnInventoryChanged.Broadcast();
+    PrintInventoryToScreen();
+
+    return AddedCount;
+}
+
+int32 UInventoryComponent::TransferCursorToStorageSlot(UStorageComponent* TargetStorage, int32 StorageSlotIndex)
+{
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !TargetStorage || !CursorItem.IsValid())
+    {
+        return 0;
+    }
+
+    const int32 AddedCount = TargetStorage->AddItemToSlot(StorageSlotIndex, CursorItem.ItemTag, CursorItem.Count);
+
+    if (AddedCount <= 0)
+    {
+        return 0;
+    }
+
+    CursorItem.Count -= AddedCount;
+    if (CursorItem.Count <= 0)
+    {
+        CursorItem.Clear();
+    }
+
+    OnInventoryChanged.Broadcast();
+    PrintInventoryToScreen();
+
+    return AddedCount;
 }
 
 void UInventoryComponent::ServerHandleRightClickInventory_Implementation()
