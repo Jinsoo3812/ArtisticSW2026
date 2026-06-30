@@ -5,6 +5,25 @@
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "HAL/FileManager.h"
+#include "HAL/IConsoleManager.h"
+#include "Misc/DateTime.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+
+namespace
+{
+    bool IsMotionMatchingCaptureEnabled()
+    {
+        const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MMDebugging"));
+        return DebugCVar && DebugCVar->GetInt() > 0;
+    }
+
+    void AppendMotionMatchingCaptureLine(const FString& Line)
+    {
+        // 파일 입출력을 제거하여 퍼포먼스 드랍 방지. 기존 UE_LOG(LogTemp)로 대체됨.
+    }
+}
 
 ULocomotionAnimStateComponent::ULocomotionAnimStateComponent()
 {
@@ -28,6 +47,9 @@ ULocomotionAnimStateComponent::ULocomotionAnimStateComponent()
     bUseHeavyLand = false;
     LastFallSpeed = 0.f;
     bIsCombatMode = false;
+    bIsTurningInPlace = false;
+    bIsLocomotionTransitioning = false;
+    LocomotionTransitionTimer = 0.f;
 
     // Backward-compatibility properties
     bIsPhysicallyInAir = false;
@@ -52,6 +74,10 @@ ULocomotionAnimStateComponent::ULocomotionAnimStateComponent()
     LandStartFallSpeed = 0.f;
     bLandWasMoving = false;
     bLandWasSprinting = false;
+    LandMoveDirection = FVector2D::ZeroVector;
+    LandingElapsedTime = 0.f;
+    LandingStartControlYaw = 0.f;
+    bLandingFromFallOff = false;
     MovementDirection = 0.f;
     CombatInputForward = 0.f;
     CombatInputRight = 0.f;
@@ -70,13 +96,23 @@ ULocomotionAnimStateComponent::ULocomotionAnimStateComponent()
     StartMaxDuration = 0.8f;
     StopMaxDuration = 0.8f;
     JumpStartMaxDuration = 1.0f;
-    FallOffStartMaxDuration = 0.8f;
+    FallOffStartMaxDuration = 2.0f;
     LandingMaxDuration = 0.8f;
     RealLandingEventSpeedThreshold = 300.f;
+    MinimumLandingDuration = 0.45f;
+    RemoteMinimumLandingDuration = 0.65f;
+    FallOffMinimumLandingDuration = 0.60f;
+    LandingDirectionInterruptMinTime = 0.18f;
+    LandingInputDirectionInterruptAngle = 45.f;
+    LandingControlYawInterruptAngle = 55.f;
+    SprintDiagonalLandingDuration = 0.16f;
+    SprintDiagonalLandingRightThreshold = 0.25f;
+    DiagonalLandingForwardThreshold = 0.25f;
     WalkSpeed = 500.f;
     SprintSpeed = 700.f;
     WalkRotationRateYaw = 500.f;
     SprintRotationRateYaw = 500.f;
+    StartAlignControlYawThreshold = 90.f;
     GenericMoveInputSpeedThreshold = 3.f;
 
     AirborneDuration = 0.f;
@@ -84,6 +120,7 @@ ULocomotionAnimStateComponent::ULocomotionAnimStateComponent()
     PreviousMoveInput = FVector2D::ZeroVector;
     bWasInAir = false;
     bSuppressFallOffStart = false;
+    GroundedConfirmTimer = 0.f;
 }
 
 void ULocomotionAnimStateComponent::BeginPlay()
@@ -113,7 +150,12 @@ void ULocomotionAnimStateComponent::CacheOwner()
         return;
     }
 
-    bIsSprinting = CachedBasePlayer->bIsSprinting;
+    // bIsSprinting = CachedBasePlayer->bIsSprinting;
+
+    if (USkeletalMeshComponent* Mesh = CachedBasePlayer->GetMesh())
+    {
+        DefaultMeshRelativeRotation = Mesh->GetRelativeRotation();
+    }
 }
 
 bool ULocomotionAnimStateComponent::IsDedicatedServer() const
@@ -157,6 +199,15 @@ void ULocomotionAnimStateComponent::UpdateAnimationState(float DeltaTime)
     Acceleration = MovementComponent->GetCurrentAcceleration();
     bIsCombatMode = CachedBasePlayer->bIsCombatMode;
 
+    if (CurrentState == ELocomotionState::Landing)
+    {
+        LandingElapsedTime += DeltaTime;
+    }
+    else
+    {
+        LandingElapsedTime = 0.f;
+    }
+
     if (VerticalSpeed < 0.f)
     {
         LastFallSpeed = FMath::Abs(VerticalSpeed);
@@ -165,8 +216,46 @@ void ULocomotionAnimStateComponent::UpdateAnimationState(float DeltaTime)
     UpdateAirState(DeltaTime);
     UpdateMovementRequestState(DeltaTime);
     UpdateStateTransitions(DeltaTime);
+
     UpdateMaxWalkSpeed();
     UpdateCombatMovementState();
+
+    // ?쒖옄由??뚯쟾(Turn In Place) ?곹깭 癒몄떊 湲곕컲 Desired Rotation ?쒖뼱
+    bIsTurningInPlace = (CurrentState == ELocomotionState::TurnInPlace);
+
+    // ?낅젰 諛⑺뼢怨??ㅼ젣 ?띾룄 諛⑺뼢???ㅼ감瑜?怨꾩궛?섏뿬 諛⑺뼢 ?꾪솚 ?곹깭(Transition) ?먮퀎
+    bool bPhysicallyTransitioning = false;
+    if (bHasMoveInput && GroundSpeed > 50.f)
+    {
+        // 罹먮┃??以묒떖 湲곗????대룞 ?낅젰 Yaw
+        const float InputYaw = FMath::RadiansToDegrees(FMath::Atan2(CombatInputRight, CombatInputForward));
+
+        // ?붾뱶 ?띾룄 踰≫꽣瑜?罹먮┃??濡쒖뺄 怨듦컙?쇰줈 蹂?섑븯??濡쒖뺄 ?띾룄 Yaw ?곗궛
+        const FVector LocalVelocity = CachedBasePlayer->GetActorTransform().InverseTransformVector(HorizontalVelocity);
+        const float VelocityYaw = FMath::RadiansToDegrees(FMath::Atan2(LocalVelocity.Y, LocalVelocity.X));
+
+        const float AngleDiff = FMath::Abs(FMath::FindDeltaAngleDegrees(InputYaw, VelocityYaw));
+        bPhysicallyTransitioning = (AngleDiff > 20.f);
+    }
+
+    if (bPhysicallyTransitioning)
+    {
+        // 諛⑺뼢 ?꾪솚??媛먯??섎㈃ 理쒖냼 ?좎? ?쒓컙 ??대㉧瑜??뗮똿?섍퀬 ?꾪솚 ?곹깭 ?좎?
+        LocomotionTransitionTimer = MinTransitionDuration;
+        bIsLocomotionTransitioning = true;
+    }
+    else if (LocomotionTransitionTimer > 0.f)
+    {
+        // ??대㉧媛 ?숈옉?섎뒗 ?숈븞? ?ㅼ감媛 醫곹?議뚯뼱??怨꾩냽 ?꾪솚(Transition DB) ?곹깭瑜?蹂댁옣?섏뿬 ?쇰쿁 紐⑥뀡 ?꾨즺 ?좊룄
+        LocomotionTransitionTimer -= DeltaTime;
+        bIsLocomotionTransitioning = true;
+    }
+    else
+    {
+        bIsLocomotionTransitioning = false;
+    }
+
+    UpdateCharacterRotation(DeltaTime);
 }
 
 bool ULocomotionAnimStateComponent::IsInAirForAnimation() const
@@ -197,21 +286,33 @@ FVector2D ULocomotionAnimStateComponent::GetMovementInputForState() const
         return MoveInput.GetClampedToMaxSize(1.f);
     }
 
-    FVector HorizontalVelocity = CachedBasePlayer->GetVelocity();
-    HorizontalVelocity.Z = 0.f;
-    if (HorizontalVelocity.SizeSquared() <= FMath::Square(GenericMoveInputSpeedThreshold))
+    if (bHasMoveInput && CachedMoveInput.SizeSquared() > FMath::Square(MoveInputDeadZone))
     {
-        return FVector2D::ZeroVector;
+        return CachedMoveInput.GetClampedToMaxSize(1.f);
     }
 
-    const FVector LocalVelocity = CachedBasePlayer->GetActorTransform().InverseTransformVectorNoScale(HorizontalVelocity.GetSafeNormal());
-    return FVector2D(LocalVelocity.Y, LocalVelocity.X).GetClampedToMaxSize(1.f);
+    return FVector2D::ZeroVector;
 }
 
 void ULocomotionAnimStateComponent::UpdateAirState(float DeltaTime)
 {
     const bool bNowPhysicallyInAir = IsInAirForAnimation();
     bool bNowInAirForAnimation = bNowPhysicallyInAir;
+
+    // Filter brief ledge/step-down ground contact while falling.
+    if (bNowPhysicallyInAir)
+    {
+        GroundedConfirmTimer = 0.0f;
+    }
+    else if (bWasInAir)
+    {
+        // 0.1珥??숈븞 ?곗냽?쇰줈 ?뺤떎?섍쾶 吏€?곸뿉 癒몃Ъ?ъ빞 吏꾩쭨 吏€???곹깭濡??몄젙
+        GroundedConfirmTimer += DeltaTime;
+        if (GroundedConfirmTimer < 0.1f)
+        {
+            bNowInAirForAnimation = true; // ?꾩쭅?€ 怨듭쨷 ?곹깭 ?좎?
+        }
+    }
 
     if (bNowInAirForAnimation && CachedBasePlayer && CachedBasePlayer->GetLocalRole() == ROLE_SimulatedProxy && FMath::Abs(VerticalSpeed) < 150.f)
     {
@@ -230,11 +331,27 @@ void ULocomotionAnimStateComponent::UpdateAirState(float DeltaTime)
         bWasAirborneLastFrame = false;
     }
 
-    if (bWasInAir && !bNowInAirForAnimation && !bIsLanding && !bLandingRequested)
+    if (bWasInAir && !bNowInAirForAnimation && !bIsLanding && !bLandingRequested && !bIsJumping)
     {
         const float ImpactFallSpeed = FMath::Max(LastFallSpeed, FMath::Abs(VerticalSpeed));
         if (AirborneDuration < 0.08f || ImpactFallSpeed < 100.f)
         {
+            if (IsMotionMatchingCaptureEnabled())
+            {
+                const FString DebugLine = FString::Printf(
+                    TEXT("[MMCAP_AIR] IgnoreLanding AirTime=%.3f Impact=%.1f Vertical=%.1f Ground=%.1f Input=(R=%.2f,F=%.2f) PhysAir=%d AnimAir=%d"),
+                    AirborneDuration,
+                    ImpactFallSpeed,
+                    VerticalSpeed,
+                    GroundSpeed,
+                    CachedMoveInput.X,
+                    CachedMoveInput.Y,
+                    bNowPhysicallyInAir ? 1 : 0,
+                    bNowInAirForAnimation ? 1 : 0);
+                UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+                AppendMotionMatchingCaptureLine(DebugLine);
+            }
+
             bIsInAir = false;
             bWasInAir = false;
             bSuppressFallOffStart = false;
@@ -242,6 +359,23 @@ void ULocomotionAnimStateComponent::UpdateAirState(float DeltaTime)
         }
         else
         {
+            if (IsMotionMatchingCaptureEnabled())
+            {
+                const FString DebugLine = FString::Printf(
+                    TEXT("[MMCAP_AIR] GroundedAfterAir -> StartLanding AirTime=%.3f Impact=%.1f LastFall=%.1f Vertical=%.1f Ground=%.1f WasJump=%d WasFallOff=%d Input=(R=%.2f,F=%.2f)"),
+                    AirborneDuration,
+                    ImpactFallSpeed,
+                    LastFallSpeed,
+                    VerticalSpeed,
+                    GroundSpeed,
+                    bIsJumping ? 1 : 0,
+                    bIsFallOffStart ? 1 : 0,
+                    CachedMoveInput.X,
+                    CachedMoveInput.Y);
+                UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+                AppendMotionMatchingCaptureLine(DebugLine);
+            }
+
             StartLanding(ImpactFallSpeed, false);
         }
     }
@@ -251,10 +385,51 @@ void ULocomotionAnimStateComponent::UpdateAirState(float DeltaTime)
         && !bIsLanding
         && !bSuppressFallOffStart)
     {
+        if (IsMotionMatchingCaptureEnabled())
+        {
+            const FString DebugLine = FString::Printf(
+                TEXT("[MMCAP_AIR] DetectFallOff -> StartFallOff PhysAir=%d AnimAir=%d Jump=%d Landing=%d Suppress=%d Vel=(%.1f,%.1f,%.1f) Ground=%.1f Input=(R=%.2f,F=%.2f) State=%s"),
+                bNowPhysicallyInAir ? 1 : 0,
+                bNowInAirForAnimation ? 1 : 0,
+                bIsJumping ? 1 : 0,
+                bIsLanding ? 1 : 0,
+                bSuppressFallOffStart ? 1 : 0,
+                Velocity.X,
+                Velocity.Y,
+                Velocity.Z,
+                GroundSpeed,
+                CachedMoveInput.X,
+                CachedMoveInput.Y,
+                *StaticEnum<ELocomotionState>()->GetNameStringByValue(static_cast<int64>(CurrentState)));
+            UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+            AppendMotionMatchingCaptureLine(DebugLine);
+        }
+
         StartFallOffStart();
     }
+    else if (!bWasInAir && bNowInAirForAnimation && IsMotionMatchingCaptureEnabled())
+    {
+        const FString DebugLine = FString::Printf(
+            TEXT("[MMCAP_AIR] SkipFallOffStart PhysAir=%d AnimAir=%d Jump=%d Landing=%d LandingRequested=%d Suppress=%d Vel=(%.1f,%.1f,%.1f) Ground=%.1f Input=(R=%.2f,F=%.2f) State=%s"),
+            bNowPhysicallyInAir ? 1 : 0,
+            bNowInAirForAnimation ? 1 : 0,
+            bIsJumping ? 1 : 0,
+            bIsLanding ? 1 : 0,
+            bLandingRequested ? 1 : 0,
+            bSuppressFallOffStart ? 1 : 0,
+            Velocity.X,
+            Velocity.Y,
+            Velocity.Z,
+            GroundSpeed,
+            CachedMoveInput.X,
+            CachedMoveInput.Y,
+            *StaticEnum<ELocomotionState>()->GetNameStringByValue(static_cast<int64>(CurrentState)));
+        UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+        AppendMotionMatchingCaptureLine(DebugLine);
+    }
 
-    if (bNowInAirForAnimation)
+    // bIsInAir should not be set back to true if we are in the middle of a Landing sequence!
+    if (bNowInAirForAnimation && !bIsLanding)
     {
         bIsInAir = true;
     }
@@ -277,7 +452,13 @@ void ULocomotionAnimStateComponent::UpdateMovementRequestState(float DeltaTime)
     CachedMoveInput = MovementInput;
 
     MoveInputSize = MovementInput.Size();
-    bHasMoveInput = MoveInputSize > MoveInputDeadZone || (!ShouldUseLocalInput() && GroundSpeed > GenericMoveInputSpeedThreshold);
+    
+    if (ShouldUseLocalInput())
+    {
+        bHasMoveInput = MoveInputSize > MoveInputDeadZone;
+    }
+    // For Simulated Proxy, bHasMoveInput is already updated from the snapshot, do not overwrite it based on velocity.
+    
     MoveInputHeldTime = bHasMoveInput ? MoveInputHeldTime + DeltaTime : 0.f;
 
     if (IsDedicatedServer())
@@ -388,6 +569,54 @@ void ULocomotionAnimStateComponent::UpdateCombatMovementState()
     }
 }
 
+void ULocomotionAnimStateComponent::UpdateCharacterRotation(float DeltaTime)
+{
+    UCharacterMovementComponent* MovementComponent = CachedBasePlayer ? CachedBasePlayer->GetCharacterMovement() : nullptr;
+    if (!MovementComponent) return;
+
+    // Always keep camera-oriented rotation settings (showing back)
+    MovementComponent->bOrientRotationToMovement = false;
+
+    if (CachedBasePlayer && CachedBasePlayer->GetLocalRole() == ROLE_SimulatedProxy)
+    {
+        MovementComponent->bUseControllerDesiredRotation = false;
+    }
+    else
+    {
+        // Keep idle/stop poses from rotating with camera-only look input.
+        MovementComponent->bUseControllerDesiredRotation =
+            CurrentState != ELocomotionState::Idle &&
+            CurrentState != ELocomotionState::Stop &&
+            CurrentState != ELocomotionState::TurnInPlace;
+    }
+
+    // Interpolate mesh relative rotation offset back to default
+    if (FMath::Abs(MeshYawOffset) > 0.01f)
+    {
+        MeshYawOffset = FMath::FInterpTo(MeshYawOffset, 0.f, DeltaTime, MeshYawOffsetInterpSpeed);
+        if (CachedBasePlayer)
+        {
+            if (USkeletalMeshComponent* Mesh = CachedBasePlayer->GetMesh())
+            {
+                FRotator MeshRot = DefaultMeshRelativeRotation;
+                MeshRot.Yaw += MeshYawOffset;
+                Mesh->SetRelativeRotation(MeshRot);
+            }
+        }
+    }
+    else if (MeshYawOffset != 0.f)
+    {
+        MeshYawOffset = 0.f;
+        if (CachedBasePlayer)
+        {
+            if (USkeletalMeshComponent* Mesh = CachedBasePlayer->GetMesh())
+            {
+                Mesh->SetRelativeRotation(DefaultMeshRelativeRotation);
+            }
+        }
+    }
+}
+
 void ULocomotionAnimStateComponent::UpdateMaxWalkSpeed() const
 {
     if (!CachedBasePlayer || (!CachedBasePlayer->IsLocallyControlled() && !CachedBasePlayer->HasAuthority()))
@@ -407,10 +636,12 @@ void ULocomotionAnimStateComponent::UpdateMaxWalkSpeed() const
         !CachedBasePlayer->bIsDodging &&
         !CachedBasePlayer->bIsHitReacting;
 
+    float TargetRotationRate = bCanSprint ? SprintRotationRateYaw : WalkRotationRateYaw;
+
     MovementComponent->MaxWalkSpeed = bCanSprint ? SprintSpeed : WalkSpeed;
     MovementComponent->RotationRate = FRotator(
         0.f,
-        bCanSprint ? SprintRotationRateYaw : WalkRotationRateYaw,
+        TargetRotationRate,
         0.f
     );
 }
@@ -431,16 +662,60 @@ void ULocomotionAnimStateComponent::ClearMovementRequests()
     MoveInputTurnAngle = 0.f;
 }
 
+void ULocomotionAnimStateComponent::AlignActorYawToControlYawForStartIfNeeded()
+{
+    if (!bUseInstantRotationSnap)
+    {
+        return;
+    }
+
+    if (!CachedBasePlayer ||
+        (!CachedBasePlayer->IsLocallyControlled() && !CachedBasePlayer->HasAuthority()))
+    {
+        return;
+    }
+
+    const float ActorYaw = CachedBasePlayer->GetActorRotation().Yaw;
+    const float ControlYaw = CachedBasePlayer->GetControlRotation().Yaw;
+    const float YawDelta = FMath::FindDeltaAngleDegrees(ActorYaw, ControlYaw);
+    if (FMath::Abs(YawDelta) < StartAlignControlYawThreshold)
+    {
+        return;
+    }
+
+    FRotator NewRotation = CachedBasePlayer->GetActorRotation();
+    NewRotation.Yaw = ControlYaw;
+    CachedBasePlayer->SetActorRotation(NewRotation);
+
+    // Apply negative yaw offset to mesh so it visually stays at the old rotation
+    MeshYawOffset -= YawDelta;
+    MeshYawOffset = FRotator::NormalizeAxis(MeshYawOffset);
+
+    if (USkeletalMeshComponent* Mesh = CachedBasePlayer->GetMesh())
+    {
+        FRotator MeshRot = DefaultMeshRelativeRotation;
+        MeshRot.Yaw += MeshYawOffset;
+        Mesh->SetRelativeRotation(MeshRot);
+    }
+
+    if (IsMotionMatchingCaptureEnabled())
+    {
+        const FString DebugLine = FString::Printf(
+            TEXT("[MMCAP_EVENT] AlignStartYaw ActorYaw=%.1f ControlYaw=%.1f Delta=%.1f Threshold=%.1f Input=(R=%.2f,F=%.2f)"),
+            ActorYaw,
+            ControlYaw,
+            YawDelta,
+            StartAlignControlYawThreshold,
+            CachedMoveInput.X,
+            CachedMoveInput.Y);
+        UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+        AppendMotionMatchingCaptureLine(DebugLine);
+    }
+}
+
 void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
 {
     PreviousState = CurrentState;
-
-    // If combat mode is active and we are not in air or landing, default to combat locomotion/idle
-    if (bIsCombatMode && CurrentState != ELocomotionState::InAir && CurrentState != ELocomotionState::Landing)
-    {
-        CurrentState = ELocomotionState::Combat;
-        return;
-    }
 
     switch (CurrentState)
     {
@@ -452,7 +727,25 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             }
             else if (bHasMoveInput)
             {
+                AlignActorYawToControlYawForStartIfNeeded();
                 ForceStateTransition(ELocomotionState::Start);
+            }
+            break;
+        }
+        case ELocomotionState::TurnInPlace:
+        {
+            if (bIsInAir)
+            {
+                ForceStateTransition(ELocomotionState::InAir);
+            }
+            else if (bHasMoveInput)
+            {
+                AlignActorYawToControlYawForStartIfNeeded();
+                ForceStateTransition(ELocomotionState::Start);
+            }
+            else
+            {
+                ForceStateTransition(ELocomotionState::Idle);
             }
             break;
         }
@@ -488,6 +781,7 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             }
             else if (bHasMoveInput)
             {
+                AlignActorYawToControlYawForStartIfNeeded();
                 ForceStateTransition(ELocomotionState::Start);
             }
             break;
@@ -529,13 +823,70 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             {
                 ForceStateTransition(ELocomotionState::InAir);
             }
-            else if (!bLandWasMoving && bHasMoveInput)
+            else if (IsDiagonalLanding() && LandingElapsedTime >= GetEffectiveMinimumLandingDuration())
             {
-                InterruptLandingForMoveInput();
+                if (IsMotionMatchingCaptureEnabled())
+                {
+                    const FString DebugLine = FString::Printf(
+                        TEXT("[MMCAP_EVENT] FinishDiagonalLanding LandTime=%.3f Input=(R=%.2f,F=%.2f) LandDir=(R=%.2f,F=%.2f) ShortLandTime=%.3f"),
+                        LandingElapsedTime,
+                        CachedMoveInput.X,
+                        CachedMoveInput.Y,
+                        LandMoveDirection.X,
+                        LandMoveDirection.Y,
+                        GetEffectiveMinimumLandingDuration());
+                    UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+                    AppendMotionMatchingCaptureLine(DebugLine);
+                }
+                FinishLandingRequest();
             }
-            else if (bLandWasMoving && !bHasMoveInput)
+            else if (LandingElapsedTime >= LandingDirectionInterruptMinTime)
             {
-                InterruptLandingForStop();
+                bool bInputDirectionChanged = false;
+                if (bHasMoveInput && !LandMoveDirection.IsNearlyZero() && !CachedMoveInput.IsNearlyZero())
+                {
+                    const FVector2D LandDirection = LandMoveDirection.GetSafeNormal();
+                    const FVector2D CurrentInputDirection = CachedMoveInput.GetSafeNormal();
+                    const float Dot = FMath::Clamp(FVector2D::DotProduct(LandDirection, CurrentInputDirection), -1.f, 1.f);
+                    const float DirectionDelta = FMath::RadiansToDegrees(FMath::Acos(Dot));
+                    bInputDirectionChanged = DirectionDelta >= LandingInputDirectionInterruptAngle;
+                }
+
+                bool bControlYawChanged = false;
+                if (CachedBasePlayer && (bHasMoveInput || bLandWasMoving || GroundSpeed > IdleSpeedThreshold))
+                {
+                    const float ControlYawDelta = FMath::Abs(FMath::FindDeltaAngleDegrees(
+                        LandingStartControlYaw,
+                        CachedBasePlayer->GetControlRotation().Yaw));
+                    bControlYawChanged = ControlYawDelta >= LandingControlYawInterruptAngle;
+                }
+
+                if (bInputDirectionChanged || bControlYawChanged)
+                {
+                    InterruptLandingForDirectionChange();
+                }
+                else if (LandingElapsedTime >= MinimumLandingDuration)
+                {
+                    if (!bLandWasMoving)
+                    {
+                        if (bHasMoveInput)
+                        {
+                            InterruptLandingForMoveInput();
+                        }
+                    }
+                    else // bLandWasMoving
+                    {
+                        if (bHasMoveInput)
+                        {
+                            // Moving land should finish into locomotion, not restart with run_Start.
+                            FinishLandingRequest();
+                        }
+                        else
+                        {
+                            InterruptLandingForStop();
+                        }
+                    }
+                }
             }
             break;
         }
@@ -545,7 +896,7 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             {
                 ForceStateTransition(ELocomotionState::InAir);
             }
-            else if (!bIsCombatMode)
+            else
             {
                 if (bHasMoveInput)
                 {
@@ -564,6 +915,8 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
 void ULocomotionAnimStateComponent::ForceStateTransition(ELocomotionState NewState)
 {
     if (CurrentState == NewState) return;
+
+    const ELocomotionState OldState = CurrentState;
 
     // Clear active fallback timers when leaving transitional states
     if (CurrentState == ELocomotionState::Start)
@@ -589,10 +942,35 @@ void ULocomotionAnimStateComponent::ForceStateTransition(ELocomotionState NewSta
     {
         GetWorld()->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
         LastFallSpeed = 0.f;
+        LandingElapsedTime = 0.f;
+        bIsLanding = false;
+        bLandingRequested = false;
+        bLandingFromFallOff = false;
+        bSuppressFallOffStart = false;
     }
 
     PreviousState = CurrentState;
     CurrentState = NewState;
+
+    if (IsMotionMatchingCaptureEnabled())
+    {
+        const FString DebugLine = FString::Printf(
+            TEXT("[MMCAP_EVENT] StateTransition %s -> %s PhysAir=%d AnimAir=%d Input=(R=%.2f,F=%.2f) Ground=%.1f Vertical=%.1f LastFall=%.1f Landing=%d Requested=%d LandTime=%.3f"),
+            *StaticEnum<ELocomotionState>()->GetNameStringByValue(static_cast<int64>(OldState)),
+            *StaticEnum<ELocomotionState>()->GetNameStringByValue(static_cast<int64>(NewState)),
+            bIsPhysicallyInAir ? 1 : 0,
+            bIsInAir ? 1 : 0,
+            CachedMoveInput.X,
+            CachedMoveInput.Y,
+            GroundSpeed,
+            VerticalSpeed,
+            LastFallSpeed,
+            bIsLanding ? 1 : 0,
+            bLandingRequested ? 1 : 0,
+            LandingElapsedTime);
+        UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+        AppendMotionMatchingCaptureLine(DebugLine);
+    }
 
     // Initialize timers when entering transitional states
     if (CurrentState == ELocomotionState::Start)
@@ -616,6 +994,7 @@ void ULocomotionAnimStateComponent::ForceStateTransition(ELocomotionState NewSta
         GetWorld()->GetTimerManager().ClearTimer(FallOffStartTimerHandle);
         bUseHeavyLand = (LastFallSpeed > HeavyLandSpeedThreshold);
         bIsFallOffStart = false;
+        LandingElapsedTime = 0.f;
         GetWorld()->GetTimerManager().SetTimer(LandingFallbackTimerHandle, this, &ULocomotionAnimStateComponent::OnLandingFallbackTimeout, FMath::Max(0.1f, LandingMaxDuration), false);
     }
 }
@@ -649,7 +1028,10 @@ void ULocomotionAnimStateComponent::NotifyLandingFinished()
 {
     if (CurrentState == ELocomotionState::Landing)
     {
-        GetWorld()->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
+        }
         FinishLandingRequest();
     }
 }
@@ -732,7 +1114,7 @@ void ULocomotionAnimStateComponent::HandleRemoteJumpStarted(int32 EventSequence)
 
 void ULocomotionAnimStateComponent::ApplyAuthoritativeSnapshot(const FReplicatedLocomotionState& Snapshot)
 {
-    if (CachedBasePlayer && CachedBasePlayer->HasAuthority())
+    if (CachedBasePlayer && (CachedBasePlayer->HasAuthority() || CachedBasePlayer->IsLocallyControlled()))
     {
         return;
     }
@@ -742,47 +1124,14 @@ void ULocomotionAnimStateComponent::ApplyAuthoritativeSnapshot(const FReplicated
         return;
     }
 
-    LastRemoteAnimEventSequence = FMath::Max(LastRemoteAnimEventSequence, Snapshot.EventSequence);
-
-    const uint8 MaxStateValue = static_cast<uint8>(ELocomotionState::Combat);
-    const ELocomotionState AuthoritativeState = Snapshot.CurrentState <= MaxStateValue
-        ? static_cast<ELocomotionState>(Snapshot.CurrentState)
-        : ELocomotionState::Idle;
-
-    if (CurrentState != AuthoritativeState)
-    {
-        PreviousState = CurrentState;
-        CurrentState = AuthoritativeState;
-    }
-
-    bIsSprinting = Snapshot.bIsSprinting;
-    bIsJumping = Snapshot.bIsJumping;
-    bIsFallOffStart = Snapshot.bIsFallOffStart;
-    bIsLanding = Snapshot.bIsLanding;
-    bLandingRequested = Snapshot.bLandingRequested;
-    bUseHeavyLand = Snapshot.bUseHeavyLand;
-    bLandWasMoving = Snapshot.bLandWasMoving;
-    bLandWasSprinting = Snapshot.bLandWasSprinting;
     LastFallSpeed = Snapshot.LastFallSpeed;
 
-    bIsInAir = bIsJumping || bIsFallOffStart || bIsLanding || CurrentState == ELocomotionState::InAir;
-    bCanEnterLand = bLandingRequested;
-    bCanEnterGround = !bIsInAir && !bIsLanding && !bLandingRequested;
-
-    if (!bIsLanding && GetWorld())
-    {
-        GetWorld()->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
-    }
-    if (!bIsJumping && GetWorld())
-    {
-        GetWorld()->GetTimerManager().ClearTimer(JumpStartTimerHandle);
-    }
-    if (!bIsFallOffStart && GetWorld())
-    {
-        GetWorld()->GetTimerManager().ClearTimer(FallOffStartTimerHandle);
-    }
-
-    UpdateMaxWalkSpeed();
+    bIsSprinting = Snapshot.bIsSprinting;
+    bHasMoveInput = Snapshot.bHasMoveInput;
+    CachedMoveInput = Snapshot.bHasMoveInput ? Snapshot.MoveInput.GetClampedToMaxSize(1.f) : FVector2D::ZeroVector;
+    MoveInput = CachedMoveInput;
+    MoveInputSize = CachedMoveInput.Size();
+    LandMoveDirection = Snapshot.LandMoveDirection;
 }
 
 void ULocomotionAnimStateComponent::HandleLanded(const FHitResult& Hit, float ImpactFallSpeed)
@@ -826,6 +1175,20 @@ void ULocomotionAnimStateComponent::StartFallOffStart()
     bIsInAir = true;
     bIsFallOffStart = true;
 
+    if (IsMotionMatchingCaptureEnabled())
+    {
+        const FString DebugLine = FString::Printf(TEXT("[MMCAP_FALLOFF] StartFallOffStart! Vel=(%.1f,%.1f,%.1f) Speed=%.1f Accel=(%.1f,%.1f,%.1f) Input=(R=%.2f,F=%.2f) AirTime=%.3f PhysAir=%d Suppress=%d State=%s"),
+            Velocity.X, Velocity.Y, Velocity.Z, GroundSpeed, Acceleration.X, Acceleration.Y, Acceleration.Z,
+            CachedMoveInput.X,
+            CachedMoveInput.Y,
+            AirborneDuration,
+            bIsPhysicallyInAir ? 1 : 0,
+            bSuppressFallOffStart ? 1 : 0,
+            *StaticEnum<ELocomotionState>()->GetNameStringByValue(static_cast<int64>(CurrentState)));
+        UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugLine);
+        AppendMotionMatchingCaptureLine(DebugLine);
+    }
+
     if (CachedBasePlayer && CachedBasePlayer->HasAuthority())
     {
         CachedBasePlayer->BroadcastFallOffStartedForRemoteClients();
@@ -843,6 +1206,16 @@ void ULocomotionAnimStateComponent::StartFallOffStart()
 
 void ULocomotionAnimStateComponent::StopFallOffStart()
 {
+    if (bIsFallOffStart && IsMotionMatchingCaptureEnabled())
+    {
+        const FString DebugLine = FString::Printf(TEXT("[MMCAP_FALLOFF] StopFallOffStart! TimeElapsed=%.3f Vel=(%.1f,%.1f,%.1f) Speed=%.1f State=%s"),
+            GetWorld() ? GetWorld()->GetTimerManager().GetTimerElapsed(FallOffStartTimerHandle) : -1.f,
+            Velocity.X, Velocity.Y, Velocity.Z, GroundSpeed,
+            *StaticEnum<ELocomotionState>()->GetNameStringByValue(static_cast<int64>(CurrentState)));
+        UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugLine);
+        AppendMotionMatchingCaptureLine(DebugLine);
+    }
+
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(FallOffStartTimerHandle);
@@ -859,15 +1232,58 @@ void ULocomotionAnimStateComponent::StartLanding(float ImpactFallSpeed, bool bTr
         return;
     }
 
+    const bool bWasJumpLanding = bIsJumping;
+    const bool bWasFallOffLanding = bIsFallOffStart;
+
     World->GetTimerManager().ClearTimer(JumpStartTimerHandle);
     StopFallOffStart();
+    GroundedConfirmTimer = 0.f;
+
+    if (CachedBasePlayer)
+    {
+        if (UCharacterMovementComponent* MovementComponent = CachedBasePlayer->GetCharacterMovement())
+        {
+            Velocity = CachedBasePlayer->GetVelocity();
+            FVector HorizontalVelocityForSnapshot = Velocity;
+            HorizontalVelocityForSnapshot.Z = 0.f;
+            GroundSpeed = HorizontalVelocityForSnapshot.Size();
+            VerticalSpeed = Velocity.Z;
+            Acceleration = MovementComponent->GetCurrentAcceleration();
+
+            CachedMoveInput = GetMovementInputForState();
+            MoveInputSize = CachedMoveInput.Size();
+            bHasMoveInput = MoveInputSize > MoveInputDeadZone ||
+                (!ShouldUseLocalInput() && GroundSpeed > GenericMoveInputSpeedThreshold);
+        }
+    }
 
     LandStartGroundSpeed = GroundSpeed;
     LandStartFallSpeed = ImpactFallSpeed;
     LastFallSpeed = ImpactFallSpeed;
     bLandWasMoving = LandStartGroundSpeed > IdleSpeedThreshold || bHasMoveInput;
-    bLandWasSprinting = bIsSprinting || LandStartGroundSpeed >= RunToSprintSpeedThreshold;
     bUseHeavyLand = LandStartFallSpeed >= HeavyLandSpeedThreshold;
+
+    FVector HorizontalVelocity = Velocity;
+    HorizontalVelocity.Z = 0.f;
+    if (HorizontalVelocity.SizeSquared() > FMath::Square(IdleSpeedThreshold))
+    {
+        const FVector LocalDirection = CachedBasePlayer->GetActorTransform()
+            .InverseTransformVectorNoScale(HorizontalVelocity.GetSafeNormal());
+        LandMoveDirection = FVector2D(LocalDirection.Y, LocalDirection.X).GetSafeNormal();
+    }
+    else
+    {
+        LandMoveDirection = CachedMoveInput.GetSafeNormal();
+    }
+
+    // Sprint landing assets are strongly forward-biased. Walk speed is also exactly 500,
+    // so speed alone classified ordinary strafe/back movement as sprint landing.
+    // Use sprint landing only when the character was actually sprinting forward.
+    constexpr float SprintForwardDirectionThreshold = 0.35f;
+    bLandWasSprinting =
+        bIsSprinting &&
+        LandStartGroundSpeed >= RunToSprintSpeedThreshold &&
+        LandMoveDirection.Y >= SprintForwardDirectionThreshold;
 
     bIsJumping = false;
     bIsInAir = true;
@@ -878,10 +1294,35 @@ void ULocomotionAnimStateComponent::StartLanding(float ImpactFallSpeed, bool bTr
     bSuppressFallOffStart = false;
     bIsLanding = true;
     bLandingRequested = true;
+    bLandingFromFallOff = bWasFallOffLanding;
     bCanEnterLand = true;
     bCanEnterGround = false;
+    LandingElapsedTime = 0.f;
+    LandingStartControlYaw = CachedBasePlayer ? CachedBasePlayer->GetControlRotation().Yaw : 0.f;
 
     ForceStateTransition(ELocomotionState::Landing);
+
+    if (IsMotionMatchingCaptureEnabled())
+    {
+        const FString DebugLine = FString::Printf(
+            TEXT("[MMCAP_EVENT] StartLanding Impact=%.1f Ground=%.1f Heavy=%d Moving=%d SprintLand=%d Diagonal=%d MinLandTime=%.3f FromJump=%d FromFallOff=%d Input=(R=%.2f,F=%.2f) LandDir=(R=%.2f,F=%.2f) RealEvent=%d"),
+            ImpactFallSpeed,
+            LandStartGroundSpeed,
+            bUseHeavyLand ? 1 : 0,
+            bLandWasMoving ? 1 : 0,
+            bLandWasSprinting ? 1 : 0,
+            IsDiagonalLanding() ? 1 : 0,
+            GetEffectiveMinimumLandingDuration(),
+            bWasJumpLanding ? 1 : 0,
+            bWasFallOffLanding ? 1 : 0,
+            CachedMoveInput.X,
+            CachedMoveInput.Y,
+            LandMoveDirection.X,
+            LandMoveDirection.Y,
+            bTriggerRealLandEvent ? 1 : 0);
+        UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+        AppendMotionMatchingCaptureLine(DebugLine);
+    }
 
     if (bTriggerRealLandEvent && CachedBasePlayer && LandStartFallSpeed >= RealLandingEventSpeedThreshold)
     {
@@ -923,6 +1364,47 @@ void ULocomotionAnimStateComponent::HandleRemoteLanded(float ImpactFallSpeed, in
     StartLanding(ImpactFallSpeed, false);
 }
 
+bool ULocomotionAnimStateComponent::IsDiagonalLanding() const
+{
+    const FVector2D InputDirection = CachedMoveInput.GetSafeNormal();
+    const FVector2D LandingDirection = LandMoveDirection.GetSafeNormal();
+
+    const bool bInputDiagonal =
+        bHasMoveInput &&
+        FMath::Abs(InputDirection.X) >= SprintDiagonalLandingRightThreshold &&
+        FMath::Abs(InputDirection.Y) >= DiagonalLandingForwardThreshold;
+
+    const bool bLandingDirectionDiagonal =
+        bLandWasMoving &&
+        FMath::Abs(LandingDirection.X) >= SprintDiagonalLandingRightThreshold &&
+        FMath::Abs(LandingDirection.Y) >= DiagonalLandingForwardThreshold;
+
+    return bInputDiagonal || bLandingDirectionDiagonal;
+}
+
+float ULocomotionAnimStateComponent::GetEffectiveMinimumLandingDuration() const
+{
+    const bool bIsSimulatedProxy = CachedBasePlayer && CachedBasePlayer->GetLocalRole() == ROLE_SimulatedProxy;
+    float EffectiveDuration = MinimumLandingDuration;
+
+    if (IsDiagonalLanding() && !bIsSimulatedProxy && !bLandingFromFallOff)
+    {
+        EffectiveDuration = FMath::Min(EffectiveDuration, SprintDiagonalLandingDuration);
+    }
+
+    if (bIsSimulatedProxy)
+    {
+        EffectiveDuration = FMath::Max(EffectiveDuration, RemoteMinimumLandingDuration);
+    }
+
+    if (bLandingFromFallOff)
+    {
+        EffectiveDuration = FMath::Max(EffectiveDuration, FallOffMinimumLandingDuration);
+    }
+
+    return EffectiveDuration;
+}
+
 bool ULocomotionAnimStateComponent::ShouldAcceptRemoteAnimEvent(int32 EventSequence)
 {
     if (EventSequence <= LastRemoteAnimEventSequence)
@@ -938,10 +1420,26 @@ void ULocomotionAnimStateComponent::FinishLanding()
 {
     bIsLanding = false;
     bCanEnterGround = !bIsInAir && !bLandingRequested;
+    if (!bLandingRequested)
+    {
+        bLandingFromFallOff = false;
+    }
 }
 
 void ULocomotionAnimStateComponent::FinishLandingRequest()
 {
+    if (IsMotionMatchingCaptureEnabled())
+    {
+        const FString DebugLine = FString::Printf(TEXT("[MMCAP_EVENT] FinishLandingRequest LandTime=%.3f HasInput=%d LandWasMoving=%d Diagonal=%d MinLandTime=%.3f"),
+            LandingElapsedTime,
+            bHasMoveInput ? 1 : 0,
+            bLandWasMoving ? 1 : 0,
+            IsDiagonalLanding() ? 1 : 0,
+            GetEffectiveMinimumLandingDuration());
+        UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+        AppendMotionMatchingCaptureLine(DebugLine);
+    }
+
     bIsLanding = false;
     bLandingRequested = false;
     bIsInAir = false;
@@ -949,6 +1447,7 @@ void ULocomotionAnimStateComponent::FinishLandingRequest()
     bWasAirborneLastFrame = false;
     AirborneDuration = 0.f;
     bSuppressFallOffStart = false;
+    bLandingFromFallOff = false;
     bCanEnterLand = false;
     bCanEnterGround = true;
     LastFallSpeed = 0.f;
@@ -965,6 +1464,18 @@ void ULocomotionAnimStateComponent::FinishLandingRequest()
 
 void ULocomotionAnimStateComponent::InterruptLandingForMoveInput()
 {
+    if (IsMotionMatchingCaptureEnabled())
+    {
+        const FString DebugLine = FString::Printf(TEXT("[MMCAP_EVENT] InterruptLandingForMoveInput LandTime=%.3f LandWasMoving=%d MinLandTime=%.3f Input=(R=%.2f,F=%.2f)"),
+            LandingElapsedTime,
+            bLandWasMoving ? 1 : 0,
+            MinimumLandingDuration,
+            CachedMoveInput.X,
+            CachedMoveInput.Y);
+        UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+        AppendMotionMatchingCaptureLine(DebugLine);
+    }
+
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
@@ -977,6 +1488,7 @@ void ULocomotionAnimStateComponent::InterruptLandingForMoveInput()
     bWasAirborneLastFrame = false;
     AirborneDuration = 0.f;
     bSuppressFallOffStart = false;
+    bLandingFromFallOff = false;
     bCanEnterLand = false;
     bCanEnterGround = true;
     LastFallSpeed = 0.f;
@@ -1001,8 +1513,35 @@ void ULocomotionAnimStateComponent::InterruptLandingForMoveInput()
     }
 }
 
-void ULocomotionAnimStateComponent::InterruptLandingForStop()
+void ULocomotionAnimStateComponent::InterruptLandingForDirectionChange()
 {
+    const float ControlYawDelta = CachedBasePlayer
+        ? FMath::Abs(FMath::FindDeltaAngleDegrees(LandingStartControlYaw, CachedBasePlayer->GetControlRotation().Yaw))
+        : 0.f;
+
+    float InputDirectionDelta = 0.f;
+    if (!LandMoveDirection.IsNearlyZero() && !CachedMoveInput.IsNearlyZero())
+    {
+        const FVector2D LandDirection = LandMoveDirection.GetSafeNormal();
+        const FVector2D CurrentInputDirection = CachedMoveInput.GetSafeNormal();
+        const float Dot = FMath::Clamp(FVector2D::DotProduct(LandDirection, CurrentInputDirection), -1.f, 1.f);
+        InputDirectionDelta = FMath::RadiansToDegrees(FMath::Acos(Dot));
+    }
+
+    if (IsMotionMatchingCaptureEnabled())
+    {
+        const FString DebugLine = FString::Printf(TEXT("[MMCAP_EVENT] InterruptLandingForDirectionChange LandTime=%.3f InputDelta=%.1f ControlYawDelta=%.1f LandDir=(R=%.2f,F=%.2f) Input=(R=%.2f,F=%.2f)"),
+            LandingElapsedTime,
+            InputDirectionDelta,
+            ControlYawDelta,
+            LandMoveDirection.X,
+            LandMoveDirection.Y,
+            CachedMoveInput.X,
+            CachedMoveInput.Y);
+        UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+        AppendMotionMatchingCaptureLine(DebugLine);
+    }
+
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
@@ -1015,6 +1554,50 @@ void ULocomotionAnimStateComponent::InterruptLandingForStop()
     bWasAirborneLastFrame = false;
     AirborneDuration = 0.f;
     bSuppressFallOffStart = false;
+    bLandingFromFallOff = false;
+    bCanEnterLand = false;
+    bCanEnterGround = true;
+    LastFallSpeed = 0.f;
+
+    bIsLocomotionTransitioning = true;
+    LocomotionTransitionTimer = FMath::Max(LocomotionTransitionTimer, MinTransitionDuration);
+    bGroundStartFinished = true;
+    bPendingGroundStartFinish = false;
+    bUseStartDatabase = false;
+    bUseLoopDatabase = true;
+    bUseSharpTurnDatabase = false;
+
+    ForceStateTransition((bHasMoveInput || GroundSpeed > IdleSpeedThreshold)
+        ? ELocomotionState::Locomotion
+        : ELocomotionState::Idle);
+}
+
+void ULocomotionAnimStateComponent::InterruptLandingForStop()
+{
+    if (IsMotionMatchingCaptureEnabled())
+    {
+        const FString DebugLine = FString::Printf(TEXT("[MMCAP_EVENT] InterruptLandingForStop LandTime=%.3f LandWasMoving=%d MinLandTime=%.3f Ground=%.1f"),
+            LandingElapsedTime,
+            bLandWasMoving ? 1 : 0,
+            MinimumLandingDuration,
+            GroundSpeed);
+        UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+        AppendMotionMatchingCaptureLine(DebugLine);
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
+    }
+
+    bIsLanding = false;
+    bLandingRequested = false;
+    bIsInAir = false;
+    bWasInAir = false;
+    bWasAirborneLastFrame = false;
+    AirborneDuration = 0.f;
+    bSuppressFallOffStart = false;
+    bLandingFromFallOff = false;
     bCanEnterLand = false;
     bCanEnterGround = true;
     LastFallSpeed = 0.f;

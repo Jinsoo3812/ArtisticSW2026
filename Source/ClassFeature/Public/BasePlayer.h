@@ -54,7 +54,6 @@ UCLASS(Config = Game)
 class CLASSFEATURE_API ABasePlayer : public ABaseCharacter
 {
 	GENERATED_BODY()
-	friend class UBasePlayerAnimStateComponent;
 	friend class ULocomotionAnimStateComponent;
 
 public:
@@ -117,141 +116,32 @@ public:
 	UFUNCTION(Server, Reliable)
 	void Server_SetSprinting(bool bNewSprinting);
 
-	UFUNCTION()
-	void OnRep_IsSprinting();
+	UFUNCTION(Server, Reliable)
+	void Server_SetMoveInput(FVector2D NewMoveInput);
+
 
 	UFUNCTION()
-	void OnRep_LocomotionStateSnapshot();
+	void OnRep_LocomotionStateSnapshot(const FReplicatedLocomotionState& OldSnapshot);
 
 	UFUNCTION(Server, Reliable)
 	void Server_NotifyJumpStarted();
 
-	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_NotifyJumpStarted(int32 EventSequence);
-
-	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_NotifyFallOffStarted(int32 EventSequence);
-
-	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_NotifyLanded(float ImpactFallSpeed, int32 EventSequence);
+	// Multicast RPCs 제거됨 (데이터 기반 이벤트 처리로 변경)
 
 	void BroadcastFallOffStartedForRemoteClients();
 
 	/* --- 애니메이션 이동 상태 --- */
 public:
-	// Animation-only air state. This is the single source of truth for ABP IsAir.
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
-	bool bIsInAir = false;
+	FVector2D LastSentMoveInputToServer = FVector2D::ZeroVector;
+	bool bHasSentMoveInputToServer = false;
+	FVector2D AuthoritativeMoveInput = FVector2D::ZeroVector;
+	bool bHasAuthoritativeMoveInput = false;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
-	bool bIsPhysicallyInAir = false;
-
-	// JumpStart is entered by bIsJumping, but JumpStart->FallLoop transition is handled in ABP by Time Remaining Fraction.
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
-	bool bIsJumping = false;
-
-	// FallOffStart means entering air without jump input, such as walking off a ledge.
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
-	bool bIsFallOffStart = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
-	bool bIsLanding = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
-	bool bLandingRequested = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
-	bool bCanEnterLand = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
-	bool bCanEnterGround = true;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
-	float GroundSpeed = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement")
-	float VerticalSpeed = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Input")
-	bool bHasMoveInput = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Input")
-	bool bPrevHasMoveInput = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Input")
-	float MoveInputSize = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Input")
-	FVector2D CachedMoveInput = FVector2D::ZeroVector;
-
-	UPROPERTY(BlueprintReadWrite, ReplicatedUsing = OnRep_IsSprinting, Category = "Animation|Movement|Sprint")
-	bool bIsSprinting = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Sprint")
+	bool bSprintInputHeld = false;
 
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_LocomotionStateSnapshot, Category = "Animation|Movement|Network")
 	FReplicatedLocomotionState LocomotionStateSnapshot;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
-	float MoveInputHeldTime = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
-	float CurrentStartToLoopDelay = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
-	bool bUseStartDatabase = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
-	bool bGroundStartFinished = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
-	bool bPendingGroundStartFinish = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
-	bool bStartWasSprinting = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Start")
-	bool bUseLoopDatabase = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Turn")
-	bool bUseSharpTurnDatabase = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Requests")
-	bool bStartRequested = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Requests")
-	bool bStopRequested = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Turn")
-	float MoveInputTurnAngle = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Turn")
-	bool bSharpTurnRequested = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Turn")
-	FVector2D PreviousMoveInputForTurn = FVector2D::ZeroVector;
-
-
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
-	float LastFallSpeed = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
-	float LandStartGroundSpeed = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
-	float LandStartFallSpeed = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
-	bool bLandWasMoving = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
-	bool bLandWasSprinting = false;
-
-
-
-
-
-	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Landing")
-	bool bUseHeavyLand = false;
 
 	/* --- 애니메이션 전투 상태 --- */
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Combat")
@@ -296,15 +186,6 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Combat")
 	float CombatRightSpeed = 0.f;
 
-	UFUNCTION(BlueprintCallable, Category = "Animation|Movement")
-	void FinishFallOffStart();
-
-	UFUNCTION(BlueprintCallable, Category = "Animation|Movement")
-	void FinishJumpStart();
-
-	UFUNCTION(BlueprintCallable, Category = "Animation|Movement|Start")
-	void MarkGroundStartFinished();
-
 	UFUNCTION(BlueprintCallable, Category = "Animation|Combat")
 	void RequestCombatModeToggle();
 
@@ -315,18 +196,11 @@ public:
 	void InterruptCombatIntroForHit();
 
 protected:
-	bool bWasInAir = false;
-
-	// Prevents a normal jump from being misclassified as FallOffStart.
-	bool bSuppressFallOffStart = false;
-
-	FTimerHandle JumpStartTimerHandle;
-	FTimerHandle FallOffStartTimerHandle;
 	int32 LocomotionAnimEventSequence = 0;
-
-	void SyncAnimationStateFromComponent();
 	void UpdateLocomotionStateSnapshot();
 	int32 NextLocomotionAnimEventSequence();
+	bool CanSprintFromInput() const;
+	void RefreshSprintFromInput();
 	bool CanSprintFromServerState() const;
 	void ApplyCombatRotationMode(bool bEnableCombatRotation);
 	void OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterrupted);
