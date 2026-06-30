@@ -43,6 +43,9 @@ AShip::AShip()
 	InteractableComponent->SetupAttachment(BuoyancyRoot);
 	// Set default collision preset for interactables
 	InteractableComponent->SetCollisionProfileName(TEXT("Interactable"));
+
+	bReplicates = true;
+	SetReplicateMovement(false);
 }
 
 // Called when the game starts or when spawned
@@ -52,8 +55,14 @@ void AShip::BeginPlay()
 
 	if (BuoyancyRoot)
 	{
-		BuoyancyRoot->OnComponentHit.AddDynamic(this, &AShip::OnShipHit);
-		UE_LOG(LogTemp, Log, TEXT("AShip: Successfully bound OnShipHit event to BuoyancyRoot."));
+		if (HasAuthority())
+		{
+			BuoyancyRoot->SetSimulatePhysics(true);
+		}
+		else
+		{
+			BuoyancyRoot->SetSimulatePhysics(false);
+		}
 	}
 }
 
@@ -62,22 +71,51 @@ void AShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// ---- Lateral Hydrodynamic Drag ----
-	if (BuoyancyRoot && LateralDragCoefficient > 0.0f)
+	if (HasAuthority())
 	{
-		FVector Velocity = BuoyancyRoot->GetPhysicsLinearVelocity();
+		// ---- Lateral Hydrodynamic Drag ----
+		if (BuoyancyRoot && LateralDragCoefficient > 0.0f)
+		{
+			FVector Velocity = BuoyancyRoot->GetPhysicsLinearVelocity();
 
-		// Ship's right vector projected onto XY plane
-		FVector Right = GetActorRightVector();
-		Right.Z = 0.0f;
-		Right.Normalize();
+			// Ship's right vector projected onto XY plane
+			FVector Right = GetActorRightVector();
+			Right.Z = 0.0f;
+			Right.Normalize();
 
-		// Lateral speed = velocity component along the right axis
-		float LateralSpeed = FVector::DotProduct(Velocity, Right);
+			// Lateral speed = velocity component along the right axis
+			float LateralSpeed = FVector::DotProduct(Velocity, Right);
 
-		// Apply opposing force to resist sideways movement
-		FVector LateralDragForce = -Right * LateralSpeed * LateralDragCoefficient;
-		BuoyancyRoot->AddForce(LateralDragForce);
+			// Apply opposing force to resist sideways movement
+			FVector LateralDragForce = -Right * LateralSpeed * LateralDragCoefficient;
+			BuoyancyRoot->AddForce(LateralDragForce);
+		}
+
+		// Update replicated state for client-side interpolation
+		ReplicatedState.Location = GetActorLocation();
+		ReplicatedState.Rotation = GetActorRotation();
+	}
+	else
+	{
+		// Client-side interpolation towards server state
+		FVector CurrentLocation = GetActorLocation();
+		FQuat CurrentRotation = GetActorQuat();
+
+		FVector TargetLocation = ReplicatedState.Location;
+		FQuat TargetRotation = ReplicatedState.Rotation.Quaternion();
+
+		float DistSq = FVector::DistSquared(CurrentLocation, TargetLocation);
+		if (DistSq > FMath::Square(TeleportThreshold))
+		{
+			SetActorLocationAndRotation(TargetLocation, TargetRotation, false, nullptr, ETeleportType::TeleportPhysics);
+		}
+		else
+		{
+			FVector InterpedLocation = FMath::VInterpTo(CurrentLocation, TargetLocation, DeltaTime, LocationInterpSpeed);
+			FQuat InterpedRotation = FMath::QInterpTo(CurrentRotation, TargetRotation, DeltaTime, RotationInterpSpeed);
+
+			SetActorLocationAndRotation(InterpedLocation, InterpedRotation, false, nullptr, ETeleportType::None);
+		}
 	}
 }
 
@@ -136,6 +174,7 @@ void AShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AShip, RidingPlayer);
+	DOREPLIFETIME(AShip, ReplicatedState);
 }
 
 void AShip::Board(APawn* PlayerPawn)
@@ -227,11 +266,11 @@ void AShip::ShipMove(const FInputActionValue& Value)
 
 	if (FMath::Abs(MoveValue) > KINDA_SMALL_NUMBER)
 	{
-		// Apply local force immediately for prediction
-		ApplyForwardForce(MoveValue);
-
-		// Send input to server
-		if (!HasAuthority())
+		if (HasAuthority())
+		{
+			ApplyForwardForce(MoveValue);
+		}
+		else
 		{
 			ServerMove(MoveValue);
 		}
@@ -262,11 +301,11 @@ void AShip::ShipTurn(const FInputActionValue& Value)
 
 	if (FMath::Abs(TurnValue) > KINDA_SMALL_NUMBER)
 	{
-		// Apply local torque immediately for prediction
-		ApplyTurnTorque(TurnValue);
-
-		// Send input to server
-		if (!HasAuthority())
+		if (HasAuthority())
+		{
+			ApplyTurnTorque(TurnValue);
+		}
+		else
 		{
 			ServerTurn(TurnValue);
 		}
@@ -398,17 +437,6 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 			Char->GetCharacterMovement()->DisableMovement();
 			Char->GetCharacterMovement()->StopMovementImmediately();
 		}
-	}
-}
-
-void AShip::OnShipHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
-{
-	if (OtherActor)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("AShip: [COLLISION] Ship collided with OtherActor: %s, OtherComponent: %s, HitLocation: %s"),
-			*OtherActor->GetName(),
-			OtherComp ? *OtherComp->GetName() : TEXT("None"),
-			*Hit.ImpactPoint.ToString());
 	}
 }
 
