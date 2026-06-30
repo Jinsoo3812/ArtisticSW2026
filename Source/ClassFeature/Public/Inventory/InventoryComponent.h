@@ -10,6 +10,7 @@
 DECLARE_MULTICAST_DELEGATE(FOnInventoryChanged);
 
 class UItemData;
+class UStorageComponent;
 class UTexture2D;
 
 USTRUCT(BlueprintType)
@@ -111,6 +112,8 @@ public:
 	void HandleRightClickInventory();
 	// 커서 아이템 원래 위치로 복귀
 	void ReturnCursorToOriginalSlot();
+	int32 TransferSlotToStorage(int32 SlotIndex, UStorageComponent* TargetStorage);
+	int32 TransferCursorToStorageSlot(UStorageComponent* TargetStorage, int32 StorageSlotIndex);
 
 	UFUNCTION(Server, Reliable)
 	void ServerHandleLeftClickSlot(int32 SlotIndex);

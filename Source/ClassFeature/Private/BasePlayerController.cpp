@@ -13,6 +13,10 @@
 #include "BaseGameplayTags.h"
 #include "Attacker/AttackerComponent.h"
 #include "Crafter/CrafterComponent.h"
+#include "Inventory/InventoryComponent.h"
+#include "Storage/StorageChest.h"
+#include "Storage/StorageComponent.h"
+#include "UI/StorageWindowWidget.h"
 
 
 void ABasePlayerController::BeginPlay()
@@ -72,17 +76,7 @@ void ABasePlayerController::OnUIInputPressed(FGameplayTag InputTag)
 
 	if (InputTag.MatchesTagExact(Key_UI_I))
 	{		
-		// Attacker는 인벤토리 사용불가.
-		if (const APawn* ControlledPawn = GetPawn())
-		{
-			if (ControlledPawn->FindComponentByClass<UAttackerComponent>())
-			{
-				return;
-			}
-		}
-		const bool bOpen = !PlayerHUDWidget->IsInventoryVisible();
-		PlayerHUDWidget->SetInventoryVisible(bOpen);
-		ApplyInventoryInputMode(bOpen);
+		ToggleInventory();
 	}
 }
 
@@ -119,18 +113,190 @@ void ABasePlayerController::ToggleInventory()
 		return;
 	}
 
-	// Attacker는 인벤토리 사용 불가.
-	if (const APawn* ControlledPawn = GetPawn())
+	if (IsStorageOpen())
 	{
-		if (ControlledPawn->FindComponentByClass<UAttackerComponent>())
-		{
-			return;
-		}
+		CloseStorage();
+		PlayerHUDWidget->SetInventoryVisible(false);
+		ApplyInventoryInputMode(false);
+		return;
 	}
 
 	const bool bOpen = !PlayerHUDWidget->IsInventoryVisible();
 	PlayerHUDWidget->SetInventoryVisible(bOpen);
 	ApplyInventoryInputMode(bOpen);
+}
+
+void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
+{
+	if (!HasAuthority() || !StorageChest)
+	{
+		return;
+	}
+
+	ActiveStorageChest = StorageChest;
+	ClientOpenStorage(StorageChest);
+}
+
+void ABasePlayerController::ClientOpenStorage_Implementation(AStorageChest* StorageChest)
+{
+	OpenStorage(StorageChest);
+}
+
+void ABasePlayerController::ServerTransferStorageSlot_Implementation(AStorageChest* StorageChest, int32 SlotIndex)
+{
+	ServerQuickMoveStorageSlotToInventory_Implementation(StorageChest, SlotIndex);
+}
+
+void ABasePlayerController::ServerHandleStorageLeftClick_Implementation(AStorageChest* StorageChest, int32 SlotIndex)
+{
+	if (!StorageChest || ActiveStorageChest != StorageChest)
+	{
+		return;
+	}
+
+	ABasePlayer* BasePlayer = Cast<ABasePlayer>(GetPawn());
+	if (!BasePlayer)
+	{
+		return;
+	}
+
+	UStorageComponent* StorageComponent = StorageChest->GetStorageComponent();
+	UInventoryComponent* InventoryComponent = BasePlayer->GetInventoryComponent();
+	if (!StorageComponent || !InventoryComponent)
+	{
+		return;
+	}
+
+	if (InventoryComponent->GetCursorItem().IsValid())
+	{
+		InventoryComponent->TransferCursorToStorageSlot(StorageComponent, SlotIndex);
+		return;
+	}
+
+	StorageComponent->TransferSlotToInventory(SlotIndex, InventoryComponent);
+}
+
+void ABasePlayerController::ServerQuickMoveInventorySlotToStorage_Implementation(int32 SlotIndex)
+{
+	if (!ActiveStorageChest)
+	{
+		return;
+	}
+
+	ABasePlayer* BasePlayer = Cast<ABasePlayer>(GetPawn());
+	if (!BasePlayer)
+	{
+		return;
+	}
+
+	UInventoryComponent* InventoryComponent = BasePlayer->GetInventoryComponent();
+	UStorageComponent* StorageComponent = ActiveStorageChest->GetStorageComponent();
+	if (!InventoryComponent || !StorageComponent)
+	{
+		return;
+	}
+
+	InventoryComponent->TransferSlotToStorage(SlotIndex, StorageComponent);
+}
+
+void ABasePlayerController::ServerQuickMoveStorageSlotToInventory_Implementation(AStorageChest* StorageChest, int32 SlotIndex)
+{
+	if (!StorageChest || ActiveStorageChest != StorageChest)
+	{
+		return;
+	}
+
+	ABasePlayer* BasePlayer = Cast<ABasePlayer>(GetPawn());
+	if (!BasePlayer)
+	{
+		return;
+	}
+
+	UStorageComponent* StorageComponent = StorageChest->GetStorageComponent();
+	UInventoryComponent* InventoryComponent = BasePlayer->GetInventoryComponent();
+	if (!StorageComponent || !InventoryComponent)
+	{
+		return;
+	}
+
+	InventoryComponent->ReturnCursorToOriginalSlot();
+	StorageComponent->TransferSlotToInventory(SlotIndex, InventoryComponent);
+}
+
+void ABasePlayerController::ServerCloseStorage_Implementation(AStorageChest* StorageChest)
+{
+	if (ActiveStorageChest == StorageChest)
+	{
+		ActiveStorageChest = nullptr;
+	}
+}
+
+void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
+{
+	if (!IsLocalController() || !StorageChest || !PlayerHUDWidget)
+	{
+		return;
+	}
+
+	if (StorageWindowWidget)
+	{
+		StorageWindowWidget->RemoveFromParent();
+		StorageWindowWidget = nullptr;
+	}
+
+	ActiveStorageChest = StorageChest;
+
+	PlayerHUDWidget->SetInventoryVisible(true);
+	ApplyInventoryInputMode(true);
+
+	TSubclassOf<UStorageWindowWidget> WidgetClass = StorageWindowWidgetClass;
+	if (!WidgetClass)
+	{
+		WidgetClass = UStorageWindowWidget::StaticClass();
+	}
+
+	StorageWindowWidget = CreateWidget<UStorageWindowWidget>(this, WidgetClass);
+	if (!StorageWindowWidget)
+	{
+		return;
+	}
+
+	StorageWindowWidget->InitializeStorage(StorageChest, Cast<ABasePlayer>(GetPawn()));
+	StorageWindowWidget->AddToViewport(20);
+	StorageWindowWidget->SetAlignmentInViewport(FVector2D(0.0f, 0.0f));
+	StorageWindowWidget->SetPositionInViewport(FVector2D(60.0f, 140.0f), false);
+}
+
+void ABasePlayerController::CloseStorage(bool bNotifyServer)
+{
+	AStorageChest* ClosingStorageChest = ActiveStorageChest;
+
+	if (StorageWindowWidget)
+	{
+		StorageWindowWidget->RemoveFromParent();
+		StorageWindowWidget = nullptr;
+	}
+
+	ActiveStorageChest = nullptr;
+
+	if (!bNotifyServer || !ClosingStorageChest)
+	{
+		return;
+	}
+
+	if (HasAuthority())
+	{
+		ServerCloseStorage_Implementation(ClosingStorageChest);
+	}
+	else
+	{
+		ServerCloseStorage(ClosingStorageChest);
+	}
+}
+
+bool ABasePlayerController::IsStorageOpen() const
+{
+	return StorageWindowWidget != nullptr && ActiveStorageChest != nullptr;
 }
 
 void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)

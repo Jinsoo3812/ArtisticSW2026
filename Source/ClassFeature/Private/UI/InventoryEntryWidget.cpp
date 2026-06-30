@@ -7,6 +7,7 @@
 #include "Engine/Texture2D.h"
 
 #include "BasePlayer.h"
+#include "BasePlayerController.h"
 #include "Inventory/InventoryComponent.h"
 
 void UInventoryEntryWidget::SetupFromData(const FText& InItemName, int32 InCount, UTexture2D* InIcon, int32 InSlotIndex)
@@ -73,14 +74,29 @@ FReply UInventoryEntryWidget::NativeOnMouseButtonDown(const FGeometry& InGeometr
 		return FReply::Unhandled();
 	}
 
+	ABasePlayerController* PlayerController = Cast<ABasePlayerController>(GetOwningPlayer());
+	const bool bHasOpenStorage = PlayerController && PlayerController->HasOpenStorage();
+
 	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
+		if (bHasOpenStorage && InMouseEvent.IsShiftDown())
+		{
+			PlayerController->ServerQuickMoveInventorySlotToStorage(SlotIndex);
+			return FReply::Handled();
+		}
+
 		InventoryComp->ServerHandleLeftClickSlot(SlotIndex);
 		return FReply::Handled();
 	}
 
 	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
 	{
+		if (bHasOpenStorage)
+		{
+			PlayerController->ServerQuickMoveInventorySlotToStorage(SlotIndex);
+			return FReply::Handled();
+		}
+
 		InventoryComp->ServerHandleRightClickInventory();
 		return FReply::Handled();
 	}
