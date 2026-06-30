@@ -15,6 +15,9 @@ class ARTISTICSWCORE_API ABowItem : public ABaseItem
 public:
 	ABowItem();
 
+	virtual void BeginPlay() override;
+	virtual void OnThrown(FVector LaunchVelocity, AActor* Thrower) override;
+
 	UFUNCTION(BlueprintPure, Category = "Bow")
 	USkeletalMeshComponent* GetBowMesh() const { return BowMesh; }
 
@@ -33,6 +36,8 @@ public:
 protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Bow")
 	void K2_OnReleaseFX();
+
+	void ApplyDroppedPhysicsSetup();
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bow|Components")
