@@ -16,7 +16,17 @@ enum class ELocomotionState : uint8
     Stop,
     InAir,
     Landing,
+    TurnInPlace,
     Combat
+};
+
+UENUM(BlueprintType)
+enum class EReplicatedLocomotionEvent : uint8
+{
+    None,
+    Jump,
+    FallOff,
+    Landed
 };
 
 USTRUCT(BlueprintType)
@@ -25,31 +35,19 @@ struct FReplicatedLocomotionState
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    uint8 CurrentState = 0;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
     bool bIsSprinting = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    bool bIsJumping = false;
+    bool bHasMoveInput = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    bool bIsFallOffStart = false;
+    FVector2D MoveInput = FVector2D::ZeroVector;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    bool bIsLanding = false;
+    FVector2D LandMoveDirection = FVector2D::ZeroVector;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    bool bLandingRequested = false;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    bool bUseHeavyLand = false;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    bool bLandWasMoving = false;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
-    bool bLandWasSprinting = false;
+    float LandStartGroundSpeed = 0.f;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
     float LastFallSpeed = 0.f;
@@ -57,19 +55,19 @@ struct FReplicatedLocomotionState
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
     int32 EventSequence = 0;
 
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    EReplicatedLocomotionEvent LastLocomotionEvent = EReplicatedLocomotionEvent::None;
+
     bool operator==(const FReplicatedLocomotionState& Other) const
     {
-        return CurrentState == Other.CurrentState &&
-               bIsSprinting == Other.bIsSprinting &&
-               bIsJumping == Other.bIsJumping &&
-               bIsFallOffStart == Other.bIsFallOffStart &&
-               bIsLanding == Other.bIsLanding &&
-               bLandingRequested == Other.bLandingRequested &&
-               bUseHeavyLand == Other.bUseHeavyLand &&
-               bLandWasMoving == Other.bLandWasMoving &&
-               bLandWasSprinting == Other.bLandWasSprinting &&
+        return bIsSprinting == Other.bIsSprinting &&
+               bHasMoveInput == Other.bHasMoveInput &&
+               MoveInput.Equals(Other.MoveInput, 0.05f) &&
+               LandMoveDirection.Equals(Other.LandMoveDirection, 0.05f) &&
+               FMath::IsNearlyEqual(LandStartGroundSpeed, Other.LandStartGroundSpeed) &&
                FMath::IsNearlyEqual(LastFallSpeed, Other.LastFallSpeed) &&
-               EventSequence == Other.EventSequence;
+               EventSequence == Other.EventSequence &&
+               LastLocomotionEvent == Other.LastLocomotionEvent;
     }
 
     bool operator!=(const FReplicatedLocomotionState& Other) const
@@ -125,6 +123,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Locomotion|Stubs")
     void MarkGroundStartFinished() { NotifyStartFinished(); }
 
+    UFUNCTION(BlueprintCallable, Category = "Locomotion|Rotation")
+    bool GetUseInstantRotationSnap() const { return bUseInstantRotationSnap; }
+
+    UFUNCTION(BlueprintCallable, Category = "Locomotion|Rotation")
+    float GetMeshYawOffset() const { return MeshYawOffset; }
+
     UFUNCTION(BlueprintCallable, Category = "Locomotion|Stubs")
     void FinishJumpStart();
 
@@ -142,16 +146,21 @@ protected:
     void UpdateAirState(float DeltaTime);
     void UpdateMovementRequestState(float DeltaTime);
     void UpdateCombatMovementState();
+    void UpdateCharacterRotation(float DeltaTime);
     void UpdateMaxWalkSpeed() const;
     void ClearMovementRequests();
+    void AlignActorYawToControlYawForStartIfNeeded();
     void StartFallOffStart();
     void StopFallOffStart();
     void StartLanding(float ImpactFallSpeed, bool bTriggerRealLandEvent);
     void FinishLanding();
     void FinishLandingRequest();
     void InterruptLandingForMoveInput();
+    void InterruptLandingForDirectionChange();
     void InterruptLandingForStop();
     bool ShouldAcceptRemoteAnimEvent(int32 EventSequence);
+    bool IsDiagonalLanding() const;
+    float GetEffectiveMinimumLandingDuration() const;
     
     // Timer fallback functions
     void OnStartFallbackTimeout();
@@ -213,6 +222,12 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Combat")
     bool bIsCombatMode;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    bool bIsTurningInPlace = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    bool bIsLocomotionTransitioning = false;
 
     // Backward-compatibility properties for ABasePlayer
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Compatibility")
@@ -281,6 +296,19 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Compatibility")
     bool bLandWasSprinting;
 
+    /** Character-local landing movement direction: X=right, Y=forward. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
+    FVector2D LandMoveDirection;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
+    float LandingElapsedTime;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
+    float LandingStartControlYaw = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
+    bool bLandingFromFallOff = false;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Fallback")
     float StartMaxDuration = 0.8f;
 
@@ -291,13 +319,43 @@ public:
     float JumpStartMaxDuration = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Fallback")
-    float FallOffStartMaxDuration = 0.8f;
+    float FallOffStartMaxDuration = 2.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Fallback")
     float LandingMaxDuration = 0.8f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing")
     float RealLandingEventSpeedThreshold = 300.f;
+
+    /** Prevents held/released movement input from cancelling the landing pose immediately. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0"))
+    float MinimumLandingDuration = 0.45f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0"))
+    float RemoteMinimumLandingDuration = 0.65f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0"))
+    float FallOffMinimumLandingDuration = 0.60f;
+
+    /** Allows deliberate steering to leave landing earlier without snapping immediately on impact. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0"))
+    float LandingDirectionInterruptMinTime = 0.18f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0", ClampMax = "180.0"))
+    float LandingInputDirectionInterruptAngle = 45.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0", ClampMax = "180.0"))
+    float LandingControlYawInterruptAngle = 55.f;
+
+    /** Short landing hold used for diagonal movement landings (W+A / W+D / S+A / S+D). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0"))
+    float SprintDiagonalLandingDuration = 0.16f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float SprintDiagonalLandingRightThreshold = 0.25f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float DiagonalLandingForwardThreshold = 0.25f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Sprint")
     float WalkSpeed = 500.f;
@@ -310,6 +368,9 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Sprint")
     float SprintRotationRateYaw = 500.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Start", meta = (ClampMin = "0.0", ClampMax = "180.0"))
+    float StartAlignControlYawThreshold = 90.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Input")
     float GenericMoveInputSpeedThreshold = 3.f;
@@ -355,6 +416,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Tuning")
     float MoveInputTurnDeadZoneAngle = 5.f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Tuning")
+    float MinTransitionDuration = 0.45f;
+
     // Timers
     FTimerHandle StartFallbackTimerHandle;
     FTimerHandle StopFallbackTimerHandle;
@@ -363,6 +427,19 @@ public:
     FTimerHandle JumpStartTimerHandle;
 
 protected:
+    /** true일 경우 즉각 캡슐 회전을 스냅하고 메쉬 오프셋 보간을 적용합니다. false일 경우 PSD의 Reface 애니메이션이 매칭되도록 스냅하지 않습니다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Start")
+    bool bUseInstantRotationSnap = false;
+
+    UPROPERTY(Transient)
+    float MeshYawOffset = 0.f;
+
+    UPROPERTY(Transient)
+    FRotator DefaultMeshRelativeRotation = FRotator(0.f, -90.f, 0.f);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Tuning")
+    float MeshYawOffsetInterpSpeed = 10.f;
+
     UPROPERTY(Transient)
     TObjectPtr<ABasePlayer> CachedBasePlayer;
 
@@ -370,7 +447,10 @@ protected:
     float AirborneDuration;
     bool bWasAirborneLastFrame;
     FVector2D PreviousMoveInput;
+
+    float LocomotionTransitionTimer;
     bool bWasInAir = false;
     bool bSuppressFallOffStart = false;
     int32 LastRemoteAnimEventSequence = 0;
+    float GroundedConfirmTimer = 0.0f;
 };
