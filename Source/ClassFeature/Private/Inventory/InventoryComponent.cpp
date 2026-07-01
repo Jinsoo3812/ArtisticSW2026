@@ -351,6 +351,7 @@ void UInventoryComponent::ReturnCursorToOriginalSlot()
 
 int32 UInventoryComponent::TransferSlotToStorage(int32 SlotIndex, UStorageComponent* TargetStorage)
 {
+    // 인벤토리의 슬롯을, storage로 이동
     if (!GetOwner() || !GetOwner()->HasAuthority() || !TargetStorage)
     {
         return 0;
@@ -388,6 +389,7 @@ int32 UInventoryComponent::TransferSlotToStorage(int32 SlotIndex, UStorageCompon
 
 int32 UInventoryComponent::TransferCursorToStorageSlot(UStorageComponent* TargetStorage, int32 StorageSlotIndex)
 {
+    // 커서에 붙은 아이템을 storage로 이동
     if (!GetOwner() || !GetOwner()->HasAuthority() || !TargetStorage || !CursorItem.IsValid())
     {
         return 0;

@@ -32,11 +32,13 @@ void UStorageComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 
 void UStorageComponent::ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems)
 {
+	// storage 구성, slot의 개수, 열의 수, 아이템들 array를 전달하면 storage가 구성됨
 	if (!GetOwner() || !GetOwner()->HasAuthority())
 	{
 		return;
 	}
 
+	// 슬롯 크기 조절 및 슬롯 초기화
 	SlotCount = FMath::Max(1, InSlotCount);
 	ColumnCount = FMath::Max(1, InColumnCount);
 
@@ -126,6 +128,7 @@ bool UStorageComponent::RemoveItem(const FGameplayTag& ItemTag, int32 Amount)
 
 	EnsureSlotArray();
 
+	// 인자로 받은 tag로 동일한 아이템의 개수 count를 저장
 	int32 AvailableCount = 0;
 	for (const FInventorySlot& Slot : StorageSlots)
 	{
@@ -135,11 +138,14 @@ bool UStorageComponent::RemoveItem(const FGameplayTag& ItemTag, int32 Amount)
 		}
 	}
 
+	// 가지고 있는 양보다 amount가 작으면 false 
 	if (AvailableCount < Amount)
 	{
 		return false;
 	}
 
+	// amount 이상으로 가지고 있는 것을 확인, 
+	// 지워야하는 남은 개수 remaining에 amount를 저장
 	int32 Remaining = Amount;
 	for (FInventorySlot& Slot : StorageSlots)
 	{
@@ -152,7 +158,7 @@ bool UStorageComponent::RemoveItem(const FGameplayTag& ItemTag, int32 Amount)
 		{
 			continue;
 		}
-
+		// 동일한 tag 아이템을 찾아서, 해당 칸에 있는 개수 전부, 빼야하는 개수 전부 중 더 작은 값 선택 (slot의 count가 reamining 보다 클 수 있으니까)
 		const int32 MoveCount = FMath::Min(Slot.Count, Remaining);
 		Slot.Count -= MoveCount;
 		Remaining -= MoveCount;
@@ -188,6 +194,7 @@ int32 UStorageComponent::AddItemToSlot(int32 SlotIndex, const FGameplayTag& Item
 
 	if (TargetSlot.IsEmpty())
 	{
+		// 슬롯이 비어 있으면 추가
 		const int32 AddedCount = FMath::Min(MaxStack, Amount);
 		TargetSlot.ItemTag = ItemTag;
 		TargetSlot.Count = AddedCount;
@@ -202,7 +209,7 @@ int32 UStorageComponent::AddItemToSlot(int32 SlotIndex, const FGameplayTag& Item
 	{
 		return 0;
 	}
-
+	// target slot이 비어있지 않을 때, 남은 공간 만큼 추가하고, 추가된 수량을 return
 	const int32 Space = MaxStack - TargetSlot.Count;
 	const int32 AddedCount = FMath::Min(Space, Amount);
 	TargetSlot.Count += AddedCount;
@@ -215,6 +222,7 @@ int32 UStorageComponent::AddItemToSlot(int32 SlotIndex, const FGameplayTag& Item
 
 int32 UStorageComponent::TransferSlotToInventory(int32 SlotIndex, UInventoryComponent* TargetInventory)
 {
+	// storage에서 inventory로 이동 
 	if (!GetOwner() || !GetOwner()->HasAuthority() || !TargetInventory)
 	{
 		return 0;
@@ -318,9 +326,11 @@ void UStorageComponent::InitializeFromInitialItems()
 
 void UStorageComponent::EnsureSlotArray()
 {
+	// slot의 수 확인
 	SlotCount = FMath::Max(1, SlotCount);
 	ColumnCount = FMath::Max(1, ColumnCount);
 
+	// slot array의 칸 수와, slot의 수가 다르면, 일치하도록 설정
 	if (StorageSlots.Num() != GetSlotCount())
 	{
 		StorageSlots.SetNum(GetSlotCount());
@@ -330,6 +340,8 @@ void UStorageComponent::EnsureSlotArray()
 
 void UStorageComponent::CompactSlots()
 {
+	// 슬롯 압축
+	// 아이템 array에 빈 공간이 있으면 앞으로 압축
 	TArray<FInventorySlot> CompactedSlots;
 	CompactedSlots.SetNum(GetSlotCount());
 

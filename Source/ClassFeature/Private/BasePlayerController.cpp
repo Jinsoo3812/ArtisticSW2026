@@ -36,6 +36,8 @@ void ABasePlayerController::BeginPlay()
 		}
 	}
 
+	// PlayerController에서 HUD 설정 ..
+	// TODO: HUD로 바꾸기?
 	if (IsLocalController() && PlayerHUDWidgetClass)
 	{
 		PlayerHUDWidget = CreateWidget<UPlayerHUDWidget>(this, PlayerHUDWidgetClass);
@@ -113,6 +115,7 @@ void ABasePlayerController::ToggleInventory()
 		return;
 	}
 
+	// 상자 UI가 열려 있으면, 상자를 닫고 인벤토리만 열기
 	if (IsStorageOpen())
 	{
 		CloseStorage();
@@ -121,6 +124,7 @@ void ABasePlayerController::ToggleInventory()
 		return;
 	}
 
+	// 인벤토리가 열려 있지 않으면 인벤토리 열기
 	const bool bOpen = !PlayerHUDWidget->IsInventoryVisible();
 	PlayerHUDWidget->SetInventoryVisible(bOpen);
 	ApplyInventoryInputMode(bOpen);
@@ -149,6 +153,9 @@ void ABasePlayerController::ServerTransferStorageSlot_Implementation(AStorageChe
 
 void ABasePlayerController::ServerHandleStorageLeftClick_Implementation(AStorageChest* StorageChest, int32 SlotIndex)
 {
+	// 좌클릭 했을 때 상호작용
+	// 커서에 아이템이 붙어 있으면 인벤토리 -> storage
+	// 커서에 아이템이 없으면 storage -> 인벤토리
 	if (!StorageChest || ActiveStorageChest != StorageChest)
 	{
 		return;
@@ -178,6 +185,7 @@ void ABasePlayerController::ServerHandleStorageLeftClick_Implementation(AStorage
 
 void ABasePlayerController::ServerQuickMoveInventorySlotToStorage_Implementation(int32 SlotIndex)
 {
+	// 인벤토리 -> storage
 	if (!ActiveStorageChest)
 	{
 		return;
@@ -201,6 +209,7 @@ void ABasePlayerController::ServerQuickMoveInventorySlotToStorage_Implementation
 
 void ABasePlayerController::ServerQuickMoveStorageSlotToInventory_Implementation(AStorageChest* StorageChest, int32 SlotIndex)
 {
+	//storage -> Inventory (우클릭)
 	if (!StorageChest || ActiveStorageChest != StorageChest)
 	{
 		return;
@@ -233,11 +242,12 @@ void ABasePlayerController::ServerCloseStorage_Implementation(AStorageChest* Sto
 
 void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 {
+	// chest에 대한 storage UI열기
 	if (!IsLocalController() || !StorageChest || !PlayerHUDWidget)
 	{
 		return;
 	}
-
+	// 열려 있던 창 제거
 	if (StorageWindowWidget)
 	{
 		StorageWindowWidget->RemoveFromParent();
