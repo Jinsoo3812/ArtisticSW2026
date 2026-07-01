@@ -6,6 +6,8 @@
 #include "WaterBodyActor.h"
 #include "WaterBodyTypes.h"
 #include "Engine/World.h"
+#include "GameFramework/GameStateBase.h"
+#include "WaterWaves.h"
 
 USwimmingComponent::USwimmingComponent()
 {
@@ -51,11 +53,9 @@ void USwimmingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 
 	CheckWaterTransitions();
 
-	if (CharacterMovement && CharacterMovement->MovementMode == MOVE_Custom &&
-		CharacterMovement->CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming))
-	{
-		UpdateSwimmingMovement(DeltaTime);
-	}
+	// TickComponent no longer directly updates custom swimming physics.
+	// This is now processed within USWCharacterMovementComponent::PhysCustom
+	// to enable proper network prediction, replication, and smooth client interpolation.
 }
 
 void USwimmingComponent::InitializeOverlaps()
@@ -145,13 +145,27 @@ bool USwimmingComponent::GetWaterHeightAtLocation(const FVector& Location, float
 	// Query 100cm below the location to handle being slightly above the surface (bobbing/jumping)
 	FVector QueryLocation = Location - FVector(0.f, 0.f, 100.f);
 
+	// Get Server Synchronized Time to fetch deterministic wave height
+	float CurrentServerTime = 0.0f;
+	if (GetWorld())
+	{
+		if (AGameStateBase* GameState = GetWorld()->GetGameState())
+		{
+			CurrentServerTime = GameState->GetServerWorldTimeSeconds();
+		}
+		else
+		{
+			CurrentServerTime = GetWorld()->GetTimeSeconds();
+		}
+	}
+
 	auto CheckWaterBody = [&](UWaterBodyComponent* WaterBody)
 	{
 		if (!WaterBody) return;
 
+		// Compute flat water surface height first
 		EWaterBodyQueryFlags QueryFlags = EWaterBodyQueryFlags::ComputeLocation
-										| EWaterBodyQueryFlags::ComputeImmersionDepth
-										| EWaterBodyQueryFlags::IncludeWaves;
+										| EWaterBodyQueryFlags::ComputeDepth;
 
 		float SplineInputKey = -1.f;
 		if (WaterBody->GetWaterBodyType() == EWaterBodyType::River)
@@ -163,13 +177,31 @@ bool USwimmingComponent::GetWaterHeightAtLocation(const FVector& Location, float
 		if (QueryResult.HasValue())
 		{
 			const FWaterBodyQueryResult& Query = QueryResult.GetValue();
-			if (Query.IsInWater())
+			float FlatWaterZ = Query.GetWaterSurfaceLocation().Z;
+			float WaterZ = FlatWaterZ;
+
+			// Add wave offset manually using the server-synchronized time
+			if (WaterBody->HasWaves())
 			{
-				// Compute actual water surface height: QueryLocation.Z + ImmersionDepth
-				float CurrentWaterHeight = QueryLocation.Z + Query.GetImmersionDepth();
-				if (CurrentWaterHeight > MaxWaterHeight)
+				float WaterDepth = Query.GetWaterSurfaceDepth();
+				if (UWaterWavesBase* WaterWaves = WaterBody->GetWaterWaves())
 				{
-					MaxWaterHeight = CurrentWaterHeight;
+					float AttenuationFactor = WaterWaves->GetWaveAttenuationFactor(Query.GetWaterSurfaceLocation(), WaterDepth, WaterBody->TargetWaveMaskDepth);
+					if (AttenuationFactor > 0.0f)
+					{
+						FVector ComputedNormal;
+						float RawWaveHeight = WaterWaves->GetWaveHeightAtPosition(Query.GetWaterSurfaceLocation(), WaterDepth, CurrentServerTime, ComputedNormal);
+						WaterZ += RawWaveHeight * AttenuationFactor;
+					}
+				}
+			}
+
+			// If query location is below the wave-calculated water surface, count as in water
+			if (QueryLocation.Z <= WaterZ)
+			{
+				if (WaterZ > MaxWaterHeight)
+				{
+					MaxWaterHeight = WaterZ;
 					bInWater = true;
 				}
 			}

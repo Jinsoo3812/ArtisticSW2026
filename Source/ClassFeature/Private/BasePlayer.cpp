@@ -15,6 +15,7 @@
 #include "BaseGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "SWCharacterMovementComponent.h"
 #include "HAL/IConsoleManager.h"
 #include "ItemData.h"
 #include "Interactable.h"
@@ -69,7 +70,8 @@ FAttachmentTransformRules CustomAttachRules(
 
 /* --- BasePlayer ---*/
 
-ABasePlayer::ABasePlayer()
+ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<USWCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
 	// 카메라 붐(SpringArm) 생성 및 설정
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));

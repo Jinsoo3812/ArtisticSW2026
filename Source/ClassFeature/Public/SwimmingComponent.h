@@ -24,6 +24,9 @@ class CLASSFEATURE_API USwimmingComponent : public UActorComponent
 public:
 	USwimmingComponent();
 
+	// Process the custom swimming movement physics
+	void UpdateSwimmingMovement(float DeltaTime);
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -44,8 +47,7 @@ private:
 	// Initialize overlapping water bodies on startup
 	void InitializeOverlaps();
 
-	// Process the custom swimming movement physics
-	void UpdateSwimmingMovement(float DeltaTime);
+
 
 	// Check transition conditions (entry/exit)
 	void CheckWaterTransitions();

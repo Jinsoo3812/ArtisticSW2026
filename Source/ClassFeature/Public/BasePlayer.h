@@ -58,7 +58,7 @@ class CLASSFEATURE_API ABasePlayer : public ABaseCharacter
 	friend class ULocomotionAnimStateComponent;
 
 public:
-	ABasePlayer();
+	ABasePlayer(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
