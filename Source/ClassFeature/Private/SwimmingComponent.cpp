@@ -54,6 +54,17 @@ void USwimmingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	if (!OwnerCharacter || !CharacterMovement) return;
+
+	bool bIsCustomSwimming = (CharacterMovement->MovementMode == MOVE_Custom &&
+							  CharacterMovement->CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming));
+
+	// If we are not swimming and not overlapping any water bodies, do not check transitions or query water height.
+	if (!bIsCustomSwimming && OverlappingWaterBodies.Num() == 0)
+	{
+		return;
+	}
+
 	CheckWaterTransitions();
 
 	// Output wave height logs at (15170, 400) every 1 second based on synchronized server time.
@@ -302,7 +313,10 @@ void USwimmingComponent::CheckWaterTransitions()
 		{
 			CharacterMovement->SetMovementMode(MOVE_Custom, static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming));
 			CharacterMovement->Buoyancy = 0.f; // CMC의 기본 부력 사용 정지
-			// UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] >>> Entered Swimming State! <<<"));
+			
+			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
+			FString ContextStr = (GetOwner() && GetOwner()->HasAuthority()) ? TEXT("Server") : TEXT("Client");
+			UE_LOG(LogTemp, Warning, TEXT("[%s] %s >>> Entered Swimming State! (FeetSubmersion: %.2f)"), *ContextStr, *OwnerName, FeetSubmersion);
 		}
 	}
 	else
@@ -326,13 +340,19 @@ void USwimmingComponent::CheckWaterTransitions()
 		if (bExitSubmersion && bOnWalkableFloor)
 		{
 			CharacterMovement->SetMovementMode(MOVE_Walking);
-			// UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] <<< Exited Swimming State (Walking) >>>"));
+			
+			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
+			FString ContextStr = (GetOwner() && GetOwner()->HasAuthority()) ? TEXT("Server") : TEXT("Client");
+			UE_LOG(LogTemp, Warning, TEXT("[%s] %s <<< Exited Swimming State (Walking) >>>"), *ContextStr, *OwnerName);
 		}
 		else if (!bFeetInWater || FeetSubmersion < -100.f)
 		{
 			// 물높이가 감지되지 않거나 발밑이 물높이보다 100cm 이상으로 떠버린 경우 (완전히 뭍으로 탈출 또는 공중 점프 등)
 			CharacterMovement->SetMovementMode(MOVE_Falling);
-			// UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] <<< Exited Swimming State (Falling) >>>"));
+			
+			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
+			FString ContextStr = (GetOwner() && GetOwner()->HasAuthority()) ? TEXT("Server") : TEXT("Client");
+			UE_LOG(LogTemp, Warning, TEXT("[%s] %s <<< Exited Swimming State (Falling) (FeetSubmersion: %.2f) >>>"), *ContextStr, *OwnerName, FeetSubmersion);
 		}
 	}
 }
