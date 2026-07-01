@@ -17,3 +17,16 @@ void USWCharacterMovementComponent::PhysCustom(float DeltaTime, int32 Iterations
 		}
 	}
 }
+
+void USWCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
+{
+	Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
+
+	if (ACharacter* CharOwner = CharacterOwner)
+	{
+		if (USwimmingComponent* SwimComp = CharOwner->FindComponentByClass<USwimmingComponent>())
+		{
+			SwimComp->CheckWaterTransitions();
+		}
+	}
+}

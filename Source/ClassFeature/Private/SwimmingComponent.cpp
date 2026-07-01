@@ -54,19 +54,6 @@ void USwimmingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if (!OwnerCharacter || !CharacterMovement) return;
-
-	bool bIsCustomSwimming = (CharacterMovement->MovementMode == MOVE_Custom &&
-							  CharacterMovement->CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming));
-
-	// If we are not swimming and not overlapping any water bodies, do not check transitions or query water height.
-	if (!bIsCustomSwimming && OverlappingWaterBodies.Num() == 0)
-	{
-		return;
-	}
-
-	CheckWaterTransitions();
-
 	// Output wave height logs at (15170, 400) every 1 second based on synchronized server time.
 	/*
 	if (GetWorld() && GetWorld()->GetGameState())
@@ -276,6 +263,15 @@ void USwimmingComponent::CheckWaterTransitions()
 {
 	if (!OwnerCharacter || !CharacterMovement || !CapsuleComponent) return;
 
+	bool bIsCustomSwimming = (CharacterMovement->MovementMode == MOVE_Custom &&
+							  CharacterMovement->CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming));
+
+	// If we are not swimming and not overlapping any water bodies, do not check transitions or query water height.
+	if (!bIsCustomSwimming && OverlappingWaterBodies.Num() == 0)
+	{
+		return;
+	}
+
 	float CapsuleHalfHeight = CapsuleComponent->GetUnscaledCapsuleHalfHeight();
 	FVector ActorLocation = OwnerCharacter->GetActorLocation();
 	FVector FeetLocation = ActorLocation - FVector(0.f, 0.f, CapsuleHalfHeight);
@@ -284,9 +280,6 @@ void USwimmingComponent::CheckWaterTransitions()
 	bool bFeetInWater = GetWaterHeightAtLocation(FeetLocation, FeetWaterHeight);
 
 	float FeetSubmersion = bFeetInWater ? (FeetWaterHeight - FeetLocation.Z) : -100000.f;
-
-	bool bIsCustomSwimming = (CharacterMovement->MovementMode == MOVE_Custom &&
-							  CharacterMovement->CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming));
 
 	// Throttled logging (every 30 frames)
 	// static int32 FrameCount = 0;
@@ -326,7 +319,8 @@ void USwimmingComponent::CheckWaterTransitions()
 		CharacterMovement->FindFloor(ActorLocation, FloorResult, false);
 		bool bOnWalkableFloor = FloorResult.IsWalkableFloor();
 
-		bool bExitSubmersion = !bFeetInWater || (FeetSubmersion < SwimExitOffset);
+		float EffectiveExitOffset = FMath::Max(SwimExitOffset, SwimEntryOffset - 2.0f);
+		bool bExitSubmersion = !bFeetInWater || (FeetSubmersion < EffectiveExitOffset);
 		
 		// if (bShouldLog)
 		// {
@@ -343,7 +337,7 @@ void USwimmingComponent::CheckWaterTransitions()
 			
 			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
 			FString ContextStr = (GetOwner() && GetOwner()->HasAuthority()) ? TEXT("Server") : TEXT("Client");
-			UE_LOG(LogTemp, Warning, TEXT("[%s] %s <<< Exited Swimming State (Walking) >>>"), *ContextStr, *OwnerName);
+			UE_LOG(LogTemp, Warning, TEXT("[%s] %s <<< Exited Swimming State (Walking) (FeetSubmersion: %.2f, ExitOffset: %.2f) >>>"), *ContextStr, *OwnerName, FeetSubmersion, EffectiveExitOffset);
 		}
 		else if (!bFeetInWater || FeetSubmersion < -100.f)
 		{

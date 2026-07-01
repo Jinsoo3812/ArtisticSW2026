@@ -15,4 +15,5 @@ class CLASSFEATURE_API USWCharacterMovementComponent : public UCharacterMovement
 
 protected:
 	virtual void PhysCustom(float DeltaTime, int32 Iterations) override;
+	virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
 };

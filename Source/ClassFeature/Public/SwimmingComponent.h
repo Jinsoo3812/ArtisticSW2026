@@ -27,6 +27,9 @@ public:
 	// Process the custom swimming movement physics
 	void UpdateSwimmingMovement(float DeltaTime);
 
+	// Check transition conditions (entry/exit)
+	void CheckWaterTransitions();
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -46,11 +49,6 @@ private:
 
 	// Initialize overlapping water bodies on startup
 	void InitializeOverlaps();
-
-
-
-	// Check transition conditions (entry/exit)
-	void CheckWaterTransitions();
 
 protected:
 	/** Distance above the feet the water surface must reach to trigger swimming */
