@@ -11,6 +11,11 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 
+#ifdef UE_LOG
+#undef UE_LOG
+#endif
+#define UE_LOG(...)
+
 namespace
 {
     bool IsMotionMatchingCaptureEnabled()

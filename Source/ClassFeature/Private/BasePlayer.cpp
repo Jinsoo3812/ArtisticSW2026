@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "BasePlayer.h"
@@ -30,6 +30,7 @@
 #include "Animation/AnimInstance.h"
 #include "Components/BaseHealthComponent.h"
 #include "Ship.h"
+#include "SwimmingComponent.h"
 #include "HAL/FileManager.h"
 #include "Misc/DateTime.h"
 #include "Misc/FileHelper.h"
@@ -91,6 +92,7 @@ ABasePlayer::ABasePlayer()
 	AnimStateComponent = CreateDefaultSubobject<ULocomotionAnimStateComponent>(TEXT("AnimStateComponent"));
 	TrajectoryComponent = CreateDefaultSubobject<USWTrajectoryComponent>(TEXT("TrajectoryComponent"));
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
+	SwimmingComponent = CreateDefaultSubobject<USwimmingComponent>(TEXT("SwimmingComponent"));
 
 	// 항상 등만 보이도록 설정 (Orient to Controller - 부드러운 회전으로 제자리 회전 유도)
 	bUseControllerRotationYaw = false;
@@ -279,7 +281,7 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 				NewSnapshot.LandStartGroundSpeed,
 				NewSnapshot.LastFallSpeed,
 				NewSnapshot.bIsSprinting ? 1 : 0);
-			UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+			// UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
 			AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
 		}
 	}
@@ -1095,7 +1097,7 @@ void ABasePlayer::DoMove(float Right, float Forward)
 			ClampedMoveInput.X,
 			ClampedMoveInput.Y,
 			(AnimStateComponent && AnimStateComponent->bIsSprinting) ? 1 : 0);
-		UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+		// UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
 		AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
 	}
 
@@ -1141,7 +1143,7 @@ void ABasePlayer::StopMoveInput()
 			static_cast<int32>(GetNetMode()),
 			static_cast<int32>(GetLocalRole()),
 			(AnimStateComponent && AnimStateComponent->bIsSprinting) ? 1 : 0);
-		UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+		// UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
 		AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
 	}
 }
