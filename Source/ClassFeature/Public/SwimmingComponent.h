@@ -112,4 +112,7 @@ private:
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<UWaterBodyComponent> LastActiveWaterBody;
+
+	UPROPERTY(Transient)
+	float LastLoggedTime = -1.0f;
 };

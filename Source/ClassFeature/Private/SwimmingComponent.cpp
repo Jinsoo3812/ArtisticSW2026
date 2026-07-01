@@ -8,6 +8,9 @@
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
 #include "WaterWaves.h"
+#include "WaterSubsystem.h"
+#include "Materials/MaterialParameterCollection.h"
+#include "Materials/MaterialParameterCollectionInstance.h"
 
 USwimmingComponent::USwimmingComponent()
 {
@@ -41,8 +44,8 @@ void USwimmingComponent::BeginPlay()
 
 			InitializeOverlaps();
 			
-			UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] BeginPlay: Capsule setup complete. GenerateOverlapEvents=%s"), 
-				CapsuleComponent->GetGenerateOverlapEvents() ? TEXT("True") : TEXT("False"));
+			// UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] BeginPlay: Capsule setup complete. GenerateOverlapEvents=%s"), 
+			// 	CapsuleComponent->GetGenerateOverlapEvents() ? TEXT("True") : TEXT("False"));
 		}
 	}
 }
@@ -53,9 +56,42 @@ void USwimmingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 
 	CheckWaterTransitions();
 
-	// TickComponent no longer directly updates custom swimming physics.
-	// This is now processed within USWCharacterMovementComponent::PhysCustom
-	// to enable proper network prediction, replication, and smooth client interpolation.
+	// Output wave height logs at (15170, 400) every 1 second based on synchronized server time.
+	if (GetWorld() && GetWorld()->GetGameState())
+	{
+		float CurrentServerTime = GetWorld()->GetGameState()->GetServerWorldTimeSeconds();
+		if (CurrentServerTime - LastLoggedTime >= 1.0f)
+		{
+			LastLoggedTime = FMath::FloorToFloat(CurrentServerTime);
+
+			FVector QueryPoint = FVector(15170.f, 400.f, 0.f);
+			float WaveHeight = 0.f;
+			GetWaterHeightAtLocation(QueryPoint, WaveHeight);
+
+			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
+
+			float MPCTime = -1.f;
+			if (UWaterSubsystem* WaterSubsystem = UWaterSubsystem::GetWaterSubsystem(GetWorld()))
+			{
+				if (UMaterialParameterCollection* MPC = WaterSubsystem->GetMaterialParameterCollection())
+				{
+					if (UMaterialParameterCollectionInstance* MPCInstance = GetWorld()->GetParameterCollectionInstance(MPC))
+					{
+						MPCInstance->GetScalarParameterValue(FName(TEXT("Time")), MPCTime);
+					}
+				}
+			}
+
+			if (GetOwner() && GetOwner()->HasAuthority())
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[Server] %s | 시간: %f | MPC시간: %f | 15170, 400에서 계산한 계산한 서버 파고 : %f"), *OwnerName, CurrentServerTime, MPCTime, WaveHeight);
+			}
+			else if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[Client] %s | 시간: %f | MPC시간: %f | 15170, 400에서 구한 로컬 파고 : %f"), *OwnerName, CurrentServerTime, MPCTime, WaveHeight);
+			}
+		}
+	}
 }
 
 void USwimmingComponent::InitializeOverlaps()
@@ -64,7 +100,7 @@ void USwimmingComponent::InitializeOverlaps()
 	{
 		TArray<AActor*> OverlappingActors;
 		CapsuleComponent->GetOverlappingActors(OverlappingActors);
-		UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] InitializeOverlaps: Found %d overlapping actors in capsule on start."), OverlappingActors.Num());
+		// UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] InitializeOverlaps: Found %d overlapping actors in capsule on start."), OverlappingActors.Num());
 		for (AActor* Actor : OverlappingActors)
 		{
 			if (AWaterBody* WaterBodyActor = Cast<AWaterBody>(Actor))
@@ -73,7 +109,7 @@ void USwimmingComponent::InitializeOverlaps()
 				{
 					OverlappingWaterBodies.AddUnique(WaterBody);
 					LastActiveWaterBody = WaterBody;
-					UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] InitializeOverlaps: Found WaterBody from Actor=%s"), *Actor->GetName());
+					// UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] InitializeOverlaps: Found WaterBody from Actor=%s"), *Actor->GetName());
 				}
 			}
 		}
@@ -90,14 +126,14 @@ void USwimmingComponent::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AAc
 			{
 				OverlappingWaterBodies.AddUnique(WaterBody);
 				LastActiveWaterBody = WaterBody;
-				UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Overlap Begin: WaterBody Actor=%s, Component=%s. Total water bodies=%d"), 
-					*OtherActor->GetName(), *WaterBody->GetName(), OverlappingWaterBodies.Num());
+				// UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Overlap Begin: WaterBody Actor=%s, Component=%s. Total water bodies=%d"), 
+				// 	*OtherActor->GetName(), *WaterBody->GetName(), OverlappingWaterBodies.Num());
 			}
 		}
 		else
 		{
-			UE_LOG(LogTemp, Log, TEXT("[SwimDebug] Overlap Begin (Non-Water): Component=%s (Actor=%s)"), 
-				OtherComp ? *OtherComp->GetName() : TEXT("None"), *OtherActor->GetName());
+			// UE_LOG(LogTemp, Log, TEXT("[SwimDebug] Overlap Begin (Non-Water): Component=%s (Actor=%s)"), 
+			// 	OtherComp ? *OtherComp->GetName() : TEXT("None"), *OtherActor->GetName());
 		}
 	}
 }
@@ -129,8 +165,8 @@ void USwimmingComponent::OnOverlapEnd(UPrimitiveComponent* OverlappedComp, AActo
 				if (!bStillOverlapping)
 				{
 					OverlappingWaterBodies.Remove(WaterBody);
-					UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Overlap End: WaterBody Actor=%s. Total water bodies=%d"), 
-						*OtherActor->GetName(), OverlappingWaterBodies.Num());
+					// UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Overlap End: WaterBody Actor=%s. Total water bodies=%d"), 
+					// 	*OtherActor->GetName(), OverlappingWaterBodies.Num());
 				}
 			}
 		}
@@ -240,22 +276,22 @@ void USwimmingComponent::CheckWaterTransitions()
 							  CharacterMovement->CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming));
 
 	// Throttled logging (every 30 frames)
-	static int32 FrameCount = 0;
-	FrameCount++;
-	bool bShouldLog = (FrameCount % 30 == 0);
+	// static int32 FrameCount = 0;
+	// FrameCount++;
+	// bool bShouldLog = (FrameCount % 30 == 0);
 
-	if (bShouldLog)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Transitions Check: OverlappingWaterBodies=%d | FeetLoc=%s | bFeetInWater=%s | FeetWaterHeight=%.2f | FeetSubmersion=%.2f | EntryOffset=%.2f | Mode=%d | CustomMode=%d"),
-			OverlappingWaterBodies.Num(),
-			*FeetLocation.ToString(),
-			bFeetInWater ? TEXT("True") : TEXT("False"),
-			FeetWaterHeight,
-			FeetSubmersion,
-			SwimEntryOffset,
-			(int32)CharacterMovement->MovementMode,
-			CharacterMovement->CustomMovementMode);
-	}
+	// if (bShouldLog)
+	// {
+	// 	UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Transitions Check: OverlappingWaterBodies=%d | FeetLoc=%s | bFeetInWater=%s | FeetWaterHeight=%.2f | FeetSubmersion=%.2f | EntryOffset=%.2f | Mode=%d | CustomMode=%d"),
+	// 		OverlappingWaterBodies.Num(),
+	// 		*FeetLocation.ToString(),
+	// 		bFeetInWater ? TEXT("True") : TEXT("False"),
+	// 		FeetWaterHeight,
+	// 		FeetSubmersion,
+	// 		SwimEntryOffset,
+	// 		(int32)CharacterMovement->MovementMode,
+	// 		CharacterMovement->CustomMovementMode);
+	// }
 
 	if (!bIsCustomSwimming)
 	{
@@ -264,7 +300,7 @@ void USwimmingComponent::CheckWaterTransitions()
 		{
 			CharacterMovement->SetMovementMode(MOVE_Custom, static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming));
 			CharacterMovement->Buoyancy = 0.f; // CMC의 기본 부력 사용 정지
-			UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] >>> Entered Swimming State! <<<"));
+			// UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] >>> Entered Swimming State! <<<"));
 		}
 	}
 	else
@@ -276,25 +312,25 @@ void USwimmingComponent::CheckWaterTransitions()
 
 		bool bExitSubmersion = !bFeetInWater || (FeetSubmersion < SwimExitOffset);
 		
-		if (bShouldLog)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Exit Check: bExitSubmersion=%s (Submersion=%.2f, ExitOffset=%.2f) | bOnWalkableFloor=%s"),
-				bExitSubmersion ? TEXT("True") : TEXT("False"),
-				FeetSubmersion,
-				SwimExitOffset,
-				bOnWalkableFloor ? TEXT("True") : TEXT("False"));
-		}
+		// if (bShouldLog)
+		// {
+		// 	UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Exit Check: bExitSubmersion=%s (Submersion=%.2f, ExitOffset=%.2f) | bOnWalkableFloor=%s"),
+		// 		bExitSubmersion ? TEXT("True") : TEXT("False"),
+		// 		FeetSubmersion,
+		// 		SwimExitOffset,
+		// 		bOnWalkableFloor ? TEXT("True") : TEXT("False"));
+		// }
 
 		if (bExitSubmersion && bOnWalkableFloor)
 		{
 			CharacterMovement->SetMovementMode(MOVE_Walking);
-			UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] <<< Exited Swimming State (Walking) >>>"));
+			// UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] <<< Exited Swimming State (Walking) >>>"));
 		}
 		else if (!bFeetInWater || FeetSubmersion < -100.f)
 		{
 			// 물높이가 감지되지 않거나 발밑이 물높이보다 100cm 이상으로 떠버린 경우 (완전히 뭍으로 탈출 또는 공중 점프 등)
 			CharacterMovement->SetMovementMode(MOVE_Falling);
-			UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] <<< Exited Swimming State (Falling) >>>"));
+			// UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] <<< Exited Swimming State (Falling) >>>"));
 		}
 	}
 }
@@ -346,25 +382,25 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 	float TotalVertAccel = GravityZ + BuoyantAccelerationZ;
 
 	// Throttled logging (every 30 frames)
-	static int32 FrameCount = 0;
-	FrameCount++;
-	bool bShouldLog = (FrameCount % 30 == 0);
+	// static int32 FrameCount = 0;
+	// FrameCount++;
+	// bool bShouldLog = (FrameCount % 30 == 0);
 
-	if (bShouldLog)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Movement Update: bPontoonInWater=%s | PontoonLoc=%s | WaterHeight=%.2f | Submersion=%.2f | SubVolume=%.2f | DampFactor=%.2f | BuoyantForce=%.2f | BuoyantAccZ=%.2f | GravityZ=%.2f | TotalVertAccel=%.2f | CurrentVelZ=%.2f"),
-			bPontoonInWater ? TEXT("True") : TEXT("False"),
-			*PontoonLocation.ToString(),
-			WaterHeight,
-			Submersion,
-			SubVolume,
-			DampingFactor,
-			BuoyantForce,
-			BuoyantAccelerationZ,
-			GravityZ,
-			TotalVertAccel,
-			CharacterMovement->Velocity.Z);
-	}
+	// if (bShouldLog)
+	// {
+	// 	UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Movement Update: bPontoonInWater=%s | PontoonLoc=%s | WaterHeight=%.2f | Submersion=%.2f | SubVolume=%.2f | DampFactor=%.2f | BuoyantForce=%.2f | BuoyantAccZ=%.2f | GravityZ=%.2f | TotalVertAccel=%.2f | CurrentVelZ=%.2f"),
+	// 		bPontoonInWater ? TEXT("True") : TEXT("False"),
+	// 		*PontoonLocation.ToString(),
+	// 		WaterHeight,
+	// 		Submersion,
+	// 		SubVolume,
+	// 		DampingFactor,
+	// 		BuoyantForce,
+	// 		BuoyantAccelerationZ,
+	// 		GravityZ,
+	// 		TotalVertAccel,
+	// 		CharacterMovement->Velocity.Z);
+	// }
 
 	// 수직 속도 업데이트
 	CharacterMovement->Velocity.Z += TotalVertAccel * DeltaTime;
