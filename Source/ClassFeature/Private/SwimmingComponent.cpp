@@ -57,6 +57,7 @@ void USwimmingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 	CheckWaterTransitions();
 
 	// Output wave height logs at (15170, 400) every 1 second based on synchronized server time.
+	/*
 	if (GetWorld() && GetWorld()->GetGameState())
 	{
 		float CurrentServerTime = GetWorld()->GetGameState()->GetServerWorldTimeSeconds();
@@ -92,6 +93,7 @@ void USwimmingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 			}
 		}
 	}
+	*/
 }
 
 void USwimmingComponent::InitializeOverlaps()
