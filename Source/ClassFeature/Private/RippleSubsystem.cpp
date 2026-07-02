@@ -12,6 +12,8 @@
 #include "RHICommandList.h"
 #include "Engine/Engine.h"
 #include "Stats/Stats.h"
+#include "EngineUtils.h"
+#include "WaterBodyActor.h"
 
 URippleSubsystem::URippleSubsystem()
 {
@@ -38,12 +40,61 @@ void URippleSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void URippleSubsystem::Deinitialize()
 {
+	if (UWorld* World = GetWorld())
+	{
+		for (TActorIterator<AWaterBody> It(World); It; ++It)
+		{
+			AWaterBody* WaterBody = *It;
+			if (WaterBody)
+			{
+				WaterBody->OnActorBeginOverlap.RemoveAll(this);
+			}
+		}
+	}
+
 	if (RippleTexture)
 	{
 		RippleTexture = nullptr;
 	}
 
 	Super::Deinitialize();
+}
+
+void URippleSubsystem::OnWorldBeginPlay(UWorld& InWorld)
+{
+	Super::OnWorldBeginPlay(InWorld);
+
+	// Bind to OnActorBeginOverlap for all WaterBody actors in the level
+	for (TActorIterator<AWaterBody> It(&InWorld); It; ++It)
+	{
+		AWaterBody* WaterBody = *It;
+		if (WaterBody)
+		{
+			WaterBody->OnActorBeginOverlap.AddDynamic(this, &URippleSubsystem::OnWaterBodyActorOverlap);
+			UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Bound overlap listener to WaterBody: %s"), *WaterBody->GetName());
+		}
+	}
+}
+
+void URippleSubsystem::OnWaterBodyActorOverlap(AActor* OverlappedActor, AActor* OtherActor)
+{
+	if (!OtherActor || OtherActor == OverlappedActor) return;
+
+	// Use actor's current velocity
+	float DownwardSpeed = -OtherActor->GetVelocity().Z;
+	const float MinVelocity = 100.0f; // 1.0 m/s threshold
+
+	if (DownwardSpeed >= MinVelocity)
+	{
+		FVector ContactLoc = OtherActor->GetActorLocation();
+		float InitialAmplitude = FMath::Clamp(DownwardSpeed * AmplitudeMultiplier, 10.0f, MaxInitialAmplitude);
+
+		// Spawn ripple locally using Default configurations
+		AddRipple(FVector2D(ContactLoc.X, ContactLoc.Y), InitialAmplitude, DefaultWaveSpeed, DefaultDecayRate, DefaultWaveLength);
+
+		UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Actor: %s entered WaterBody: %s. Speed: %.2f. Spawning Ripple Amp: %.2f"),
+			*OtherActor->GetName(), *OverlappedActor->GetName(), DownwardSpeed, InitialAmplitude);
+	}
 }
 
 TStatId URippleSubsystem::GetStatId() const
@@ -55,15 +106,7 @@ void URippleSubsystem::Tick(float DeltaTime)
 {
 	if (!GetWorld()) return;
 
-	float ServerTime = 0.0f;
-	if (AGameStateBase* GameState = GetWorld()->GetGameState())
-	{
-		ServerTime = GameState->GetServerWorldTimeSeconds();
-	}
-	else
-	{
-		ServerTime = GetWorld()->GetTimeSeconds();
-	}
+	float ServerTime = GetWorld()->GetTimeSeconds();
 
 	// 1. Remove expired ripples
 	bool bChanged = false;
@@ -84,6 +127,68 @@ void URippleSubsystem::Tick(float DeltaTime)
 
 	// 3. Update server time to MPC
 	UpdateServerTimeMPC(ServerTime);
+
+	// 4. Debug Diagnostics & Dynamic Texture Binding (Every 1 second)
+	static float LastDebugLogTime = 0.0f;
+	float CurrentTime = GetWorld()->GetTimeSeconds();
+	
+	bool bShouldLog = (CurrentTime - LastDebugLogTime >= 1.0f);
+	
+	// We bind to MID texture parameters every frame to ensure runtime dynamic materials are updated,
+	// but only log every 1 second to avoid console spam.
+	int32 BoundWaterBodiesCount = 0;
+	int32 FailedWaterBodiesCount = 0;
+	for (TActorIterator<AWaterBody> It(GetWorld()); It; ++It)
+	{
+		if (AWaterBody* WaterBody = *It)
+		{
+			if (UWaterBodyComponent* WaterComp = WaterBody->GetWaterBodyComponent())
+			{
+				if (UMaterialInstanceDynamic* WaterMID = WaterComp->GetWaterMaterialInstance())
+				{
+					WaterMID->SetTextureParameterValue(FName(TEXT("RippleTex")), RippleTexture);
+					BoundWaterBodiesCount++;
+				}
+				else
+				{
+					FailedWaterBodiesCount++;
+				}
+			}
+		}
+	}
+
+	if (bShouldLog)
+	{
+		LastDebugLogTime = CurrentTime;
+		
+		FString MPCStatus = TEXT("Failed (No MPC)");
+		if (UWaterSubsystem* WaterSubsystem = UWaterSubsystem::GetWaterSubsystem(GetWorld()))
+		{
+			if (UMaterialParameterCollection* MPC = WaterSubsystem->GetMaterialParameterCollection())
+			{
+				if (UMaterialParameterCollectionInstance* MPCInstance = GetWorld()->GetParameterCollectionInstance(MPC))
+				{
+					MPCStatus = TEXT("Success (Updated ServerTime)");
+				}
+			}
+		}
+
+		float TestHeight = 0.0f;
+		FString ActiveWaveInfo = TEXT("None");
+		{
+			FReadScopeLock ReadLock(RipplesLock);
+			if (ActiveRipples.Num() > 0)
+			{
+				const FWaveData& FirstRipple = ActiveRipples[0];
+				FVector TestPos(FirstRipple.Origin.X + 100.0f, FirstRipple.Origin.Y, 0.0f);
+				TestHeight = GetRippleHeight(TestPos);
+				ActiveWaveInfo = FString::Printf(TEXT("First Wave Origin: (%f, %f), Amp: %f"), FirstRipple.Origin.X, FirstRipple.Origin.Y, FirstRipple.InitialAmplitude);
+			}
+		}
+
+		UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem Diagnostics] Time: %.2f | MPC: %s | Bound MIDs: %d (Failed: %d) | Active Waves: %d (%s) | Test Height (+100cm): %.4f"),
+			ServerTime, *MPCStatus, BoundWaterBodiesCount, FailedWaterBodiesCount, ActiveRipples.Num(), *ActiveWaveInfo, TestHeight);
+	}
 }
 
 void URippleSubsystem::AddRipple(FVector2D Origin, float InitialAmplitude, float WaveSpeed, float DecayRate, float WaveLength)
@@ -91,15 +196,7 @@ void URippleSubsystem::AddRipple(FVector2D Origin, float InitialAmplitude, float
 	UWorld* World = GetWorld();
 	if (!World) return;
 
-	float ServerTime = 0.0f;
-	if (AGameStateBase* GameState = World->GetGameState())
-	{
-		ServerTime = GameState->GetServerWorldTimeSeconds();
-	}
-	else
-	{
-		ServerTime = World->GetTimeSeconds();
-	}
+	float ServerTime = World->GetTimeSeconds();
 
 	// Range Culling: Check distance to all player pawns
 	bool bIsNearPlayer = false;
@@ -124,6 +221,7 @@ void URippleSubsystem::AddRipple(FVector2D Origin, float InitialAmplitude, float
 	// If no players are nearby, do not generate the ripple
 	if (!bIsNearPlayer && Players.Num() > 0)
 	{
+		UE_LOG(LogTemp, Log, TEXT("[RippleSubsystem] AddRipple Culled: No players near %s (MaxDist: %.2f)"), *Origin.ToString(), MaxGenerationDistance);
 		return;
 	}
 
@@ -158,11 +256,13 @@ void URippleSubsystem::AddRipple(FVector2D Origin, float InitialAmplitude, float
 					BestIndex = i;
 				}
 			}
+			UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Active slot limit reached. Replacing ripple at index %d. New Location: %s, Amp: %.2f, Tmax: %.2fs"), BestIndex, *Origin.ToString(), InitialAmplitude, Tmax);
 			ActiveRipples[BestIndex] = NewWave;
 		}
 		else
 		{
 			ActiveRipples.Add(NewWave);
+			UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Spawned Ripple successfully at %s (Amp: %.2f, Speed: %.2f, Tmax: %.2fs). Active Count: %d"), *Origin.ToString(), InitialAmplitude, WaveSpeed, Tmax, ActiveRipples.Num());
 		}
 	}
 }
@@ -172,15 +272,7 @@ float URippleSubsystem::GetRippleHeight(const FVector& Location) const
 	UWorld* World = GetWorld();
 	if (!World) return 0.0f;
 
-	float ServerTime = 0.0f;
-	if (AGameStateBase* GameState = World->GetGameState())
-	{
-		ServerTime = GameState->GetServerWorldTimeSeconds();
-	}
-	else
-	{
-		ServerTime = World->GetTimeSeconds();
-	}
+	float ServerTime = World->GetTimeSeconds();
 
 	float TotalHeight = 0.0f;
 	FVector2D QueryPos(Location.X, Location.Y);

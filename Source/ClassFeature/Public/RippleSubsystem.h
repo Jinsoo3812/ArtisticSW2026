@@ -44,6 +44,7 @@ public:
 	// UWorldSubsystem implementation
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 
 	// FTickableGameObject implementation
 	virtual void Tick(float DeltaTime) override;
@@ -71,6 +72,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water Ripple")
 	float AmplitudeCullThreshold = 0.01f;
 
+	// Default propagation speed of the ripples (cm/s)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water Ripple|Parameters")
+	float DefaultWaveSpeed = 300.0f;
+
+	// Default exponential decay rate (higher values decay faster)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water Ripple|Parameters")
+	float DefaultDecayRate = 1.0f;
+
+	// Default wavelength of the ripples (cm)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water Ripple|Parameters")
+	float DefaultWaveLength = 100.0f;
+
+	// Multiplier applied to velocity Z to compute initial amplitude
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water Ripple|Parameters")
+	float AmplitudeMultiplier = 0.15f;
+
+	// Max limit for initial ripple amplitude
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water Ripple|Parameters")
+	float MaxInitialAmplitude = 150.0f;
+
 	// Max number of active ripples
 	static const int32 MaxActiveRipples = 32;
 
@@ -90,4 +111,7 @@ private:
 
 	// Synchronize Server Time to the Material Parameter Collection
 	void UpdateServerTimeMPC(float ServerTime);
+
+	UFUNCTION()
+	void OnWaterBodyActorOverlap(AActor* OverlappedActor, AActor* OtherActor);
 };
