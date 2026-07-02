@@ -9,9 +9,12 @@ USWRippleWaterWaves::USWRippleWaterWaves()
 float USWRippleWaterWaves::GetMaxWaveHeight() const
 {
 	float MaxHeight = 0.0f;
-	if (BaseWaves)
+	if (BaseWavesAsset)
 	{
-		MaxHeight = BaseWaves->GetMaxWaveHeight();
+		if (const UWaterWaves* ActualWaves = BaseWavesAsset->GetWaterWaves())
+		{
+			MaxHeight = ActualWaves->GetMaxWaveHeight();
+		}
 	}
 	
 	// Add an arbitrary maximum ripple allowance (e.g. 50cm) to let the physics engine
@@ -22,9 +25,16 @@ float USWRippleWaterWaves::GetMaxWaveHeight() const
 float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, float InWaterDepth, float InTime, FVector& OutNormal) const
 {
 	float Height = 0.0f;
-	if (BaseWaves)
+	if (BaseWavesAsset)
 	{
-		Height = BaseWaves->GetWaveHeightAtPosition(InPosition, InWaterDepth, InTime, OutNormal);
+		if (const UWaterWaves* ActualWaves = BaseWavesAsset->GetWaterWaves())
+		{
+			Height = ActualWaves->GetWaveHeightAtPosition(InPosition, InWaterDepth, InTime, OutNormal);
+		}
+		else
+		{
+			OutNormal = FVector::UpVector;
+		}
 	}
 	else
 	{
@@ -45,9 +55,12 @@ float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, fl
 float USWRippleWaterWaves::GetSimpleWaveHeightAtPosition(const FVector& InPosition, float InWaterDepth, float InTime) const
 {
 	float Height = 0.0f;
-	if (BaseWaves)
+	if (BaseWavesAsset)
 	{
-		Height = BaseWaves->GetSimpleWaveHeightAtPosition(InPosition, InWaterDepth, InTime);
+		if (const UWaterWaves* ActualWaves = BaseWavesAsset->GetWaterWaves())
+		{
+			Height = ActualWaves->GetSimpleWaveHeightAtPosition(InPosition, InWaterDepth, InTime);
+		}
 	}
 
 	if (UWorld* World = GetWorld())
@@ -63,9 +76,12 @@ float USWRippleWaterWaves::GetSimpleWaveHeightAtPosition(const FVector& InPositi
 
 float USWRippleWaterWaves::GetWaveAttenuationFactor(const FVector& InPosition, float InWaterDepth, float InMinDepth) const
 {
-	if (BaseWaves)
+	if (BaseWavesAsset)
 	{
-		return BaseWaves->GetWaveAttenuationFactor(InPosition, InWaterDepth, InMinDepth);
+		if (const UWaterWaves* ActualWaves = BaseWavesAsset->GetWaterWaves())
+		{
+			return ActualWaves->GetWaveAttenuationFactor(InPosition, InWaterDepth, InMinDepth);
+		}
 	}
 	return 1.0f;
 }

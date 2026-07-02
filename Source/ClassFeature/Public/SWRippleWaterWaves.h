@@ -5,7 +5,7 @@
 #include "SWRippleWaterWaves.generated.h"
 
 UCLASS(BlueprintType, EditInlineNew)
-class CLASSFEATURE_API USWRippleWaterWaves : public UWaterWavesBase
+class CLASSFEATURE_API USWRippleWaterWaves : public UWaterWaves
 {
 	GENERATED_BODY()
 
@@ -18,7 +18,7 @@ public:
 	virtual float GetSimpleWaveHeightAtPosition(const FVector& InPosition, float InWaterDepth, float InTime) const override;
 	virtual float GetWaveAttenuationFactor(const FVector& InPosition, float InWaterDepth, float InMinDepth) const override;
 
-	// The base wave generator (e.g. Gerstner Water Waves) to delegate standard wave computation to.
+	// The base wave asset reference (e.g. GerstnerWaves_Ocean) to delegate standard wave computation to.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Waves")
-	TObjectPtr<UWaterWavesBase> BaseWaves;
+	TObjectPtr<UWaterWavesAsset> BaseWavesAsset;
 };
