@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -14,7 +14,7 @@ class GASCORE_API ABaseCharacter : public ACharacter, public IAbilitySystemInter
 	GENERATED_BODY()
 
 public:
-	ABaseCharacter();
+	ABaseCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	// 이 캐릭터가 직접 소유하거나 외부(PlayerState 등)에서 캐시해 온 AbilitySystemComponent입니다.
 	// 플레이어는 보통 PlayerState ASC를 캐시하고, 적은 캐릭터가 ASC를 직접 생성합니다.

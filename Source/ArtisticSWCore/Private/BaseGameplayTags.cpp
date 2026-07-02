@@ -25,6 +25,7 @@ UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_Start, "Event.HandleScan.Start");
 UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_End, "Event.HandleScan.End");
 UE_DEFINE_GAMEPLAY_TAG(Event_ActivateAbility_Equip, "Event.ActivateAbility.Equip");
 UE_DEFINE_GAMEPLAY_TAG(Event_Montage_ThrowGrenade, "Event.Montage.ThrowGrenade");
+UE_DEFINE_GAMEPLAY_TAG(Event_Montage_FireArrow, "Event.Montage.FireArrow");
 // Data
 UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");
 UE_DEFINE_GAMEPLAY_TAG(Data_Heal, "Data.Heal");
@@ -45,9 +46,9 @@ UE_DEFINE_GAMEPLAY_TAG(Key_Crafter_R, "Key.Crafter.R");
 /* Item */
 // Item 식별 Tag
 UE_DEFINE_GAMEPLAY_TAG(Item_TestCrafted, "Item.TestCrafted");
-
 UE_DEFINE_GAMEPLAY_TAG(Item_Weapon_Grenade, "Item.Weapon.Grenade");
 UE_DEFINE_GAMEPLAY_TAG(Item_Weapon_Sword, "Item.Weapon.Sword");
+UE_DEFINE_GAMEPLAY_TAG(Item_Weapon_Bow, "Item.Weapon.Bow");
 
 // Tool
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool, "Item.Tool");
@@ -57,6 +58,7 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Tool_TestBlue, "Item.Tool.TestBlue");
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool_Trap, "Item.Tool.Trap");
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool_ClusterGranade, "Item.Tool.ClusterGranade");
 UE_DEFINE_GAMEPLAY_TAG(Item_Tool_SniperRifle, "Item.Tool.SniperRifle");
+
 
 // Material
 UE_DEFINE_GAMEPLAY_TAG(Item_Material, "Item.Material");
@@ -107,6 +109,8 @@ UE_DEFINE_GAMEPLAY_TAG(Key_Default_Space, "Key.Default.Space");
 // Ex. I >> Inventory, M >> Map, E >> Equipment
 UE_DEFINE_GAMEPLAY_TAG(Key_UI_I, "Key.UI.I");
 
+/* Ability */
+UE_DEFINE_GAMEPLAY_TAG(Ability_Item_Equipped, "Ability.Item.Equipped");
 
 /* Feature Class */
 UE_DEFINE_GAMEPLAY_TAG(Class_Crafter, "Class.Crafter");

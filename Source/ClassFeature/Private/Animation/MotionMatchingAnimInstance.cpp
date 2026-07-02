@@ -21,6 +21,11 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 
+#ifdef UE_LOG
+#undef UE_LOG
+#endif
+#define UE_LOG(...)
+
 static TAutoConsoleVariable<int32> CVarMotionMatchingDebugLogging(
     TEXT("p.MMDebugging"),
     1,

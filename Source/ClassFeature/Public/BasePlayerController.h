@@ -35,6 +35,7 @@ public:
 	/*--- 초기화 ---*/
 	virtual void SetupInputComponent() override;
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaTime) override;
 
 	/*--- 네트워크 초기화 ---*/
 	virtual void OnPossess(APawn* InPawn) override;
