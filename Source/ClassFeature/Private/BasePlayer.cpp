@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "BasePlayer.h"
@@ -15,6 +15,7 @@
 #include "BaseGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "SWCharacterMovementComponent.h"
 #include "HAL/IConsoleManager.h"
 #include "ItemData.h"
 #include "Interactable.h"
@@ -30,6 +31,7 @@
 #include "Animation/AnimInstance.h"
 #include "Components/BaseHealthComponent.h"
 #include "Ship.h"
+#include "SwimmingComponent.h"
 #include "HAL/FileManager.h"
 #include "Misc/DateTime.h"
 #include "Misc/FileHelper.h"
@@ -68,7 +70,8 @@ FAttachmentTransformRules CustomAttachRules(
 
 /* --- BasePlayer ---*/
 
-ABasePlayer::ABasePlayer()
+ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<USWCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
 	// 카메라 붐(SpringArm) 생성 및 설정
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -91,6 +94,7 @@ ABasePlayer::ABasePlayer()
 	AnimStateComponent = CreateDefaultSubobject<ULocomotionAnimStateComponent>(TEXT("AnimStateComponent"));
 	TrajectoryComponent = CreateDefaultSubobject<USWTrajectoryComponent>(TEXT("TrajectoryComponent"));
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
+	SwimmingComponent = CreateDefaultSubobject<USwimmingComponent>(TEXT("SwimmingComponent"));
 
 	// 항상 등만 보이도록 설정 (Orient to Controller - 부드러운 회전으로 제자리 회전 유도)
 	bUseControllerRotationYaw = false;
@@ -262,26 +266,26 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 	if (LocomotionStateSnapshot != NewSnapshot)
 	{
 		LocomotionStateSnapshot = NewSnapshot;
-		if (IsBasePlayerMotionMatchingCaptureEnabled())
-		{
-			const FString DebugLine = FString::Printf(
-				TEXT("[MMCAP_SNAPSHOT] Pawn=%s Net=%d Role=%d Seq=%d LastEvent=%d HasInput=%d MoveInput=(R=%.2f,F=%.2f) LandDir=(R=%.2f,F=%.2f) LandGround=%.1f Fall=%.1f Sprint=%d"),
-				*GetName(),
-				static_cast<int32>(GetNetMode()),
-				static_cast<int32>(GetLocalRole()),
-				NewSnapshot.EventSequence,
-				static_cast<int32>(NewSnapshot.LastLocomotionEvent),
-				NewSnapshot.bHasMoveInput ? 1 : 0,
-				NewSnapshot.MoveInput.X,
-				NewSnapshot.MoveInput.Y,
-				NewSnapshot.LandMoveDirection.X,
-				NewSnapshot.LandMoveDirection.Y,
-				NewSnapshot.LandStartGroundSpeed,
-				NewSnapshot.LastFallSpeed,
-				NewSnapshot.bIsSprinting ? 1 : 0);
-			UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
-			AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
-		}
+		// if (IsBasePlayerMotionMatchingCaptureEnabled())
+		// {
+		// 	const FString DebugLine = FString::Printf(
+		// 		TEXT("[MMCAP_SNAPSHOT] Pawn=%s Net=%d Role=%d Seq=%d LastEvent=%d HasInput=%d MoveInput=(R=%.2f,F=%.2f) LandDir=(R=%.2f,F=%.2f) LandGround=%.1f Fall=%.1f Sprint=%d"),
+		// 		*GetName(),
+		// 		static_cast<int32>(GetNetMode()),
+		// 		static_cast<int32>(GetLocalRole()),
+		// 		NewSnapshot.EventSequence,
+		// 		static_cast<int32>(NewSnapshot.LastLocomotionEvent),
+		// 		NewSnapshot.bHasMoveInput ? 1 : 0,
+		// 		NewSnapshot.MoveInput.X,
+		// 		NewSnapshot.MoveInput.Y,
+		// 		NewSnapshot.LandMoveDirection.X,
+		// 		NewSnapshot.LandMoveDirection.Y,
+		// 				NewSnapshot.LandStartGroundSpeed,
+		// 				NewSnapshot.LastFallSpeed,
+		// 				NewSnapshot.bIsSprinting ? 1 : 0);
+		// 			// UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+		// 			AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
+		// 		}
 	}
 }
 
@@ -1083,21 +1087,21 @@ void ABasePlayer::DoMove(float Right, float Forward)
 		}
 	}
 
-	if (IsBasePlayerMotionMatchingCaptureEnabled() && IsLocallyControlled())
-	{
-		const FString DebugLine = FString::Printf(
-			TEXT("[MMCAP_INPUT] Pawn=%s Net=%d Role=%d Source=LocalMove Raw=(R=%.2f,F=%.2f) Clamped=(R=%.2f,F=%.2f) Sprint=%d"),
-			*GetName(),
-			static_cast<int32>(GetNetMode()),
-			static_cast<int32>(GetLocalRole()),
-			Right,
-			Forward,
-			ClampedMoveInput.X,
-			ClampedMoveInput.Y,
-			(AnimStateComponent && AnimStateComponent->bIsSprinting) ? 1 : 0);
-		UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
-		AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
-	}
+	// if (IsBasePlayerMotionMatchingCaptureEnabled() && IsLocallyControlled())
+	// {
+	// 	const FString DebugLine = FString::Printf(
+	// 		TEXT("[MMCAP_INPUT] Pawn=%s Net=%d Role=%d Source=LocalMove Raw=(R=%.2f,F=%.2f) Clamped=(R=%.2f,F=%.2f) Sprint=%d"),
+	// 		*GetName(),
+	// 		static_cast<int32>(GetNetMode()),
+	// 		static_cast<int32>(GetLocalRole()),
+	// 		Right,
+	// 		Forward,
+	// 		ClampedMoveInput.X,
+	// 		ClampedMoveInput.Y,
+	// 		(AnimStateComponent && AnimStateComponent->bIsSprinting) ? 1 : 0);
+	// 	// UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+	// 	AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
+	// }
 
 	if (GetController() != nullptr)
 	{
@@ -1133,17 +1137,17 @@ void ABasePlayer::StopMoveInput()
 		bHasAuthoritativeMoveInput = true;
 	}
 
-	if (IsBasePlayerMotionMatchingCaptureEnabled() && IsLocallyControlled())
-	{
-		const FString DebugLine = FString::Printf(
-			TEXT("[MMCAP_INPUT] Pawn=%s Net=%d Role=%d Source=LocalStop Raw=(R=0.00,F=0.00) Clamped=(R=0.00,F=0.00) Sprint=%d"),
-			*GetName(),
-			static_cast<int32>(GetNetMode()),
-			static_cast<int32>(GetLocalRole()),
-			(AnimStateComponent && AnimStateComponent->bIsSprinting) ? 1 : 0);
-		UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
-		AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
-	}
+	// if (IsBasePlayerMotionMatchingCaptureEnabled() && IsLocallyControlled())
+	// {
+	// 	const FString DebugLine = FString::Printf(
+	// 		TEXT("[MMCAP_INPUT] Pawn=%s Net=%d Role=%d Source=LocalStop Raw=(R=0.00,F=0.00) Clamped=(R=0.00,F=0.00) Sprint=%d"),
+	// 		*GetName(),
+	// 		static_cast<int32>(GetNetMode()),
+	// 		static_cast<int32>(GetLocalRole()),
+	// 		(AnimStateComponent && AnimStateComponent->bIsSprinting) ? 1 : 0);
+	// 	// UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+	// 	AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
+	// }
 }
 
 void ABasePlayer::DoLook(float Yaw, float Pitch)
@@ -1286,43 +1290,43 @@ void ABasePlayer::Server_SetMoveInput_Implementation(FVector2D NewMoveInput)
 		UpdateLocomotionStateSnapshot();
 	}
 
-	if (IsBasePlayerMotionMatchingCaptureEnabled())
-	{
-		const FString DebugLine = FString::Printf(
-			TEXT("[MMCAP_SERVER_INPUT] Pawn=%s Net=%d Role=%d Received=(R=%.2f,F=%.2f) Clamped=(R=%.2f,F=%.2f) HasInput=%d"),
-			*GetName(),
-			static_cast<int32>(GetNetMode()),
-			static_cast<int32>(GetLocalRole()),
-			NewMoveInput.X,
-			NewMoveInput.Y,
-			ClampedMoveInput.X,
-			ClampedMoveInput.Y,
-			ClampedMoveInput.SizeSquared() > FMath::Square(AnimStateComponent ? AnimStateComponent->MoveInputDeadZone : 0.1f) ? 1 : 0);
-		UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
-		AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
-	}
+	// if (IsBasePlayerMotionMatchingCaptureEnabled())
+	// {
+	// 	const FString DebugLine = FString::Printf(
+	// 		TEXT("[MMCAP_SERVER_INPUT] Pawn=%s Net=%d Role=%d Received=(R=%.2f,F=%.2f) Clamped=(R=%.2f,F=%.2f) HasInput=%d"),
+	// 		*GetName(),
+	// 		static_cast<int32>(GetNetMode()),
+	// 		static_cast<int32>(GetLocalRole()),
+	// 		NewMoveInput.X,
+	// 		NewMoveInput.Y,
+	// 		ClampedMoveInput.X,
+	// 		ClampedMoveInput.Y,
+	// 		ClampedMoveInput.SizeSquared() > FMath::Square(AnimStateComponent ? AnimStateComponent->MoveInputDeadZone : 0.1f) ? 1 : 0);
+	// 	UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+	// 	AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
+	// }
 }
 
 void ABasePlayer::OnRep_LocomotionStateSnapshot(const FReplicatedLocomotionState& OldSnapshot)
 {
 	if (AnimStateComponent)
 	{
-		if (const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MMDebugging"));
-			DebugCVar && DebugCVar->GetInt() > 0)
-		{
-			UE_LOG(LogTemp, Display, TEXT("[MMCAP_EVENT] OnRep_LocomotionStateSnapshot Pawn=%s Seq=%d (Old=%d) Event=%d HasInput=%d MoveInput=(R=%.2f,F=%.2f) LandDir=(R=%.2f,F=%.2f) LandGround=%.1f Fall=%.1f Sprint=%d"),
-				*GetName(),
-				LocomotionStateSnapshot.EventSequence, OldSnapshot.EventSequence,
-				(int32)LocomotionStateSnapshot.LastLocomotionEvent,
-				LocomotionStateSnapshot.bHasMoveInput ? 1 : 0,
-				LocomotionStateSnapshot.MoveInput.X,
-				LocomotionStateSnapshot.MoveInput.Y,
-				LocomotionStateSnapshot.LandMoveDirection.X,
-				LocomotionStateSnapshot.LandMoveDirection.Y,
-				LocomotionStateSnapshot.LandStartGroundSpeed,
-				LocomotionStateSnapshot.LastFallSpeed,
-				LocomotionStateSnapshot.bIsSprinting ? 1 : 0);
-		}
+		// if (const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MMDebugging"));
+		// 	DebugCVar && DebugCVar->GetInt() > 0)
+		// {
+		// 	UE_LOG(LogTemp, Display, TEXT("[MMCAP_EVENT] OnRep_LocomotionStateSnapshot Pawn=%s Seq=%d (Old=%d) Event=%d HasInput=%d MoveInput=(R=%.2f,F=%.2f) LandDir=(R=%.2f,F=%.2f) LandGround=%.1f Fall=%.1f Sprint=%d"),
+		// 		*GetName(),
+		// 		LocomotionStateSnapshot.EventSequence, OldSnapshot.EventSequence,
+		// 		(int32)LocomotionStateSnapshot.LastLocomotionEvent,
+		// 		LocomotionStateSnapshot.bHasMoveInput ? 1 : 0,
+		// 		LocomotionStateSnapshot.MoveInput.X,
+		// 		LocomotionStateSnapshot.MoveInput.Y,
+		// 		LocomotionStateSnapshot.LandMoveDirection.X,
+		// 		LocomotionStateSnapshot.LandMoveDirection.Y,
+		// 		LocomotionStateSnapshot.LandStartGroundSpeed,
+		// 		LocomotionStateSnapshot.LastFallSpeed,
+		// 		LocomotionStateSnapshot.bIsSprinting ? 1 : 0);
+		// }
 
 
 		// 데이터 기반 이벤트 처리 (새로운 EventSequence가 오면 LastLocomotionEvent를 기반으로 애니메이션 컴포넌트에 통보)
@@ -1490,21 +1494,21 @@ void ABasePlayer::Landed(const FHitResult& Hit)
 {
 	const float ImpactFallSpeed = FMath::Max((AnimStateComponent ? AnimStateComponent->LastFallSpeed : 0.f), FMath::Abs(GetVelocity().Z));
 
-	if (const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MMDebugging"));
-		DebugCVar && DebugCVar->GetInt() > 0)
-	{
-		UE_LOG(LogTemp, Display,
-			TEXT("[MMCAP_EVENT] Character::Landed Impact=%.1f CachedLastFall=%.1f Velocity=(%.1f,%.1f,%.1f) HitActor=%s HitNormal=(%.2f,%.2f,%.2f)"),
-			ImpactFallSpeed,
-			(AnimStateComponent ? AnimStateComponent->LastFallSpeed : 0.f),
-			GetVelocity().X,
-			GetVelocity().Y,
-			GetVelocity().Z,
-			*GetNameSafe(Hit.GetActor()),
-			Hit.ImpactNormal.X,
-			Hit.ImpactNormal.Y,
-			Hit.ImpactNormal.Z);
-	}
+	// if (const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MMDebugging"));
+	// 	DebugCVar && DebugCVar->GetInt() > 0)
+	// {
+	// 	UE_LOG(LogTemp, Display,
+	// 		TEXT("[MMCAP_EVENT] Character::Landed Impact=%.1f CachedLastFall=%.1f Velocity=(%.1f,%.1f,%.1f) HitActor=%s HitNormal=(%.2f,%.2f,%.2f)"),
+	// 		ImpactFallSpeed,
+	// 		(AnimStateComponent ? AnimStateComponent->LastFallSpeed : 0.f),
+	// 		GetVelocity().X,
+	// 		GetVelocity().Y,
+	// 		GetVelocity().Z,
+	// 		*GetNameSafe(Hit.GetActor()),
+	// 		Hit.ImpactNormal.X,
+	// 		Hit.ImpactNormal.Y,
+	// 		Hit.ImpactNormal.Z);
+	// }
 
 	Super::Landed(Hit);
 

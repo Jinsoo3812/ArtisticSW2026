@@ -23,6 +23,7 @@ class USWTrajectoryComponent;
 class UAnimMontage;
 class UBaseHealthComponent;
 class AShip;
+class USwimmingComponent;
 
 // Item Slot 관리 구조체
 USTRUCT(BlueprintType)
@@ -57,7 +58,7 @@ class CLASSFEATURE_API ABasePlayer : public ABaseCharacter
 	friend class ULocomotionAnimStateComponent;
 
 public:
-	ABasePlayer();
+	ABasePlayer(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
@@ -429,6 +430,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBaseHealthComponent> HealthComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USwimmingComponent> SwimmingComponent;
+
 public:
 	UFUNCTION()
 	void OnRep_ItemSlots();
@@ -443,4 +447,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Health")
 	UBaseHealthComponent* GetHealthComponent() const { return HealthComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Movement")
+	USwimmingComponent* GetSwimmingComponent() const { return SwimmingComponent; }
 };
