@@ -2,3 +2,4 @@ TagName,ItemName,HowToInteractText,AttachmentSocketName
 Item.Tool.TestRed,Test_RedItem,F to Pick Up,HandGrip_R
 Item.Tool.TestBlue,Test_BlueItem,F to Pick Up,HandGrip_R
 Item.Tool.Grenade,Test_Grenade,F to Pick Up,HandGrip_R
+Item.Weapon.Bow,Bow,F to Pick Up,HandGrip_R
