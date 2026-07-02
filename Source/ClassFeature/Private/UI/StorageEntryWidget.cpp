@@ -26,6 +26,8 @@ void UStorageEntryWidget::SetupFromData(const FText& InItemName, int32 InCount, 
 
 	SlotIndex = InSlotIndex;
 	StorageChest = InStorageChest;
+	bCanInteract = true;
+	bIsSearching = false;
 
 	SetToolTipText(InItemName);
 
@@ -40,6 +42,11 @@ void UStorageEntryWidget::SetupFromData(const FText& InItemName, int32 InCount, 
 		CountText->SetText(FText::AsNumber(InCount));
 		CountText->SetVisibility(ESlateVisibility::HitTestInvisible);
 	}
+
+	if (SearchIconImage)
+	{
+		SearchIconImage->SetVisibility(ESlateVisibility::Hidden);
+	}
 }
 
 void UStorageEntryWidget::SetupAsEmpty(int32 InSlotIndex, AStorageChest* InStorageChest)
@@ -48,6 +55,8 @@ void UStorageEntryWidget::SetupAsEmpty(int32 InSlotIndex, AStorageChest* InStora
 
 	SlotIndex = InSlotIndex;
 	StorageChest = InStorageChest;
+	bCanInteract = true;
+	bIsSearching = false;
 
 	SetToolTipText(FText::GetEmpty());
 
@@ -61,6 +70,87 @@ void UStorageEntryWidget::SetupAsEmpty(int32 InSlotIndex, AStorageChest* InStora
 		CountText->SetText(FText::GetEmpty());
 		CountText->SetVisibility(ESlateVisibility::Hidden);
 	}
+
+	if (SearchIconImage)
+	{
+		SearchIconImage->SetVisibility(ESlateVisibility::Hidden);
+	}
+}
+
+void UStorageEntryWidget::SetupAsSearching(int32 InSlotIndex, AStorageChest* InStorageChest, UTexture2D* InSearchIcon)
+{
+	BuildWidgetTree();
+
+	SlotIndex = InSlotIndex;
+	StorageChest = InStorageChest;
+	bCanInteract = false;
+	bIsSearching = true;
+	SearchRotationAngle = 0.0f;
+
+	SetToolTipText(FText::FromString(TEXT("Searching...")));
+
+	if (ItemIconImage)
+	{
+		ItemIconImage->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (CountText)
+	{
+		CountText->SetText(FText::GetEmpty());
+		CountText->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (SearchIconImage)
+	{
+		if (InSearchIcon)
+		{
+			SearchIconImage->SetBrushFromTexture(InSearchIcon, true);
+		}
+
+		SearchIconImage->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+		SearchIconImage->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+}
+
+void UStorageEntryWidget::SetupAsUnrevealed(int32 InSlotIndex, AStorageChest* InStorageChest)
+{
+	BuildWidgetTree();
+
+	SlotIndex = InSlotIndex;
+	StorageChest = InStorageChest;
+	bCanInteract = false;
+	bIsSearching = false;
+
+	SetToolTipText(FText::GetEmpty());
+
+	if (ItemIconImage)
+	{
+		ItemIconImage->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (CountText)
+	{
+		CountText->SetText(FText::GetEmpty());
+		CountText->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (SearchIconImage)
+	{
+		SearchIconImage->SetVisibility(ESlateVisibility::Hidden);
+	}
+}
+
+void UStorageEntryWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	if (!bIsSearching || !SearchIconImage)
+	{
+		return;
+	}
+
+	SearchRotationAngle = FMath::Fmod(SearchRotationAngle + InDeltaTime * 180.0f, 360.0f);
+	SearchIconImage->SetRenderTransformAngle(SearchRotationAngle);
 }
 
 void UStorageEntryWidget::HandleSlotClicked()
@@ -81,7 +171,7 @@ void UStorageEntryWidget::HandleSlotClicked()
 
 FReply UStorageEntryWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (SlotIndex == INDEX_NONE || !StorageChest)
+	if (!bCanInteract || SlotIndex == INDEX_NONE || !StorageChest)
 	{
 		return FReply::Unhandled();
 	}
@@ -140,6 +230,14 @@ void UStorageEntryWidget::BuildWidgetTree()
 		IconSlot->SetVerticalAlignment(VAlign_Fill);
 	}
 	ItemIconImage->SetVisibility(ESlateVisibility::Hidden);
+
+	SearchIconImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("SearchIconImage"));
+	if (UOverlaySlot* SearchSlot = SlotOverlay->AddChildToOverlay(SearchIconImage))
+	{
+		SearchSlot->SetHorizontalAlignment(HAlign_Center);
+		SearchSlot->SetVerticalAlignment(VAlign_Center);
+	}
+	SearchIconImage->SetVisibility(ESlateVisibility::Hidden);
 
 	CountText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CountText"));
 	CountText->SetColorAndOpacity(FSlateColor(FLinearColor::White));

@@ -54,6 +54,8 @@ public:
 	int32 GetSlotCount() const { return FMath::Max(1, SlotCount); }
 
 	int32 GetMaxStack(const FGameplayTag& ItemTag) const;
+	FGameplayTag GetItemRarityTag(const FGameplayTag& ItemTag) const;
+	int32 GetItemRarityRank(const FGameplayTag& ItemTag) const;
 	UTexture2D* GetItemIcon(const FGameplayTag& ItemTag) const;
 	FText GetItemName(const FGameplayTag& ItemTag) const;
 

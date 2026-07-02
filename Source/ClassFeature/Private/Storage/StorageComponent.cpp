@@ -2,6 +2,7 @@
 
 
 #include "Storage/StorageComponent.h"
+#include "BaseGameplayTags.h"
 #include "ItemSubsystem.h"
 #include "Net/UnrealNetwork.h"
 
@@ -273,6 +274,30 @@ int32 UStorageComponent::GetMaxStack(const FGameplayTag& ItemTag) const
 	return 99;
 }
 
+FGameplayTag UStorageComponent::GetItemRarityTag(const FGameplayTag& ItemTag) const
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
+		{
+			if (const FItemDefinition* ItemDefinition = Subsystem->GetItemDefinition(ItemTag))
+			{
+				return ItemDefinition->RarityTag;
+			}
+		}
+	}
+
+	return FGameplayTag();
+}
+
+int32 UStorageComponent::GetItemRarityRank(const FGameplayTag& ItemTag) const
+{
+	const FGameplayTag RarityTag = GetItemRarityTag(ItemTag);
+	const int32 RarityRank = UItemData::GetRarityRank(RarityTag);
+
+	return RarityRank > 0 ? RarityRank : UItemData::GetRarityRank(Item_Rarity_Common);
+}
+
 UTexture2D* UStorageComponent::GetItemIcon(const FGameplayTag& ItemTag) const
 {
 	if (UWorld* World = GetWorld())
@@ -356,6 +381,21 @@ void UStorageComponent::CompactSlots()
 		CompactedSlots[WriteIndex] = Slot;
 		++WriteIndex;
 	}
+
+	CompactedSlots.StableSort([this](const FInventorySlot& Left, const FInventorySlot& Right)
+	{
+		if (Left.IsEmpty())
+		{
+			return false;
+		}
+
+		if (Right.IsEmpty())
+		{
+			return true;
+		}
+
+		return GetItemRarityRank(Left.ItemTag) < GetItemRarityRank(Right.ItemTag);
+	});
 
 	StorageSlots = MoveTemp(CompactedSlots);
 }

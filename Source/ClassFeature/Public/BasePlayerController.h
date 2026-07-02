@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
+#include "TimerManager.h"
 #include "ArtisticSW2026PlayerController.h"
 #include "BasePlayerController.generated.h"
 
@@ -18,6 +19,12 @@ class UInputAction;
 class UInputTagConfig;
 class AStorageChest;
 class UStorageWindowWidget;
+
+struct FStorageRevealState
+{
+	int32 RevealedSlotCount = 0;
+	int32 SearchingSlotIndex = INDEX_NONE;
+};
 
 UCLASS()
 class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerController
@@ -57,6 +64,9 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientOpenStorage(AStorageChest* StorageChest);
 
+	UFUNCTION(Client, Reliable)
+	void ClientUpdateStorageRevealState(AStorageChest* StorageChest, int32 RevealedSlotCount, int32 SearchingSlotIndex);
+
 	UFUNCTION(Server, Reliable)
 	void ServerTransferStorageSlot(AStorageChest* StorageChest, int32 SlotIndex);
 
@@ -73,6 +83,8 @@ public:
 	void ServerCloseStorage(AStorageChest* StorageChest);
 
 	bool HasOpenStorage() const { return ActiveStorageChest != nullptr; }
+	bool IsStorageSlotRevealed(AStorageChest* StorageChest, int32 SlotIndex) const;
+	bool IsStorageSlotSearching(AStorageChest* StorageChest, int32 SlotIndex) const;
 
 protected:
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
@@ -90,10 +102,33 @@ protected:
 	UPROPERTY()
 	TObjectPtr<AStorageChest> ActiveStorageChest;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Storage|Search", meta = (ClampMin = "0.0"))
+	float CommonSearchTime = 0.5f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Storage|Search", meta = (ClampMin = "0.0"))
+	float RelicSearchTime = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Storage|Search", meta = (ClampMin = "0.0"))
+	float RareSearchTime = 1.5f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Storage|Search", meta = (ClampMin = "0.0"))
+	float EpicSearchTime = 2.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Storage|Search", meta = (ClampMin = "0.0"))
+	float LegendarySearchTime = 3.0f;
+
+	TMap<AStorageChest*, FStorageRevealState> StorageRevealStates;
+	FTimerHandle StorageSearchTimerHandle;
+
 	void BindHUDToCurrentPlayer();
 	void ApplyInventoryInputMode(bool bOpen);
 	void OpenStorage(AStorageChest* StorageChest);
 	void CloseStorage(bool bNotifyServer = true);
 	bool IsStorageOpen() const;
+	void StartStorageSearch(AStorageChest* StorageChest);
+	void RevealCurrentStorageSlot();
+	void NotifyStorageRevealState(AStorageChest* StorageChest);
+	int32 FindNextUnrevealedStorageSlot(AStorageChest* StorageChest) const;
+	float GetStorageSlotSearchTime(AStorageChest* StorageChest, int32 SlotIndex) const;
 	
 };
