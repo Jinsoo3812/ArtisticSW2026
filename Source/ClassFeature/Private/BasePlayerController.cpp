@@ -17,6 +17,8 @@
 #include "Storage/StorageChest.h"
 #include "Storage/StorageComponent.h"
 #include "UI/StorageWindowWidget.h"
+#include "WaterSubsystem.h"
+#include "GameFramework/GameStateBase.h"
 
 
 void ABasePlayerController::BeginPlay()
@@ -326,5 +328,24 @@ void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 
 		SetIgnoreLookInput(false);
 		SetIgnoreMoveInput(false);
+	}
+}
+
+void ABasePlayerController::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	if (GetWorld())
+	{
+		if (AGameStateBase* GameState = GetWorld()->GetGameState())
+		{
+			float CurrentServerTime = GameState->GetServerWorldTimeSeconds();
+			if (UWaterSubsystem* WaterSubsystem = UWaterSubsystem::GetWaterSubsystem(GetWorld()))
+			{
+				WaterSubsystem->SetShouldOverrideSmoothedWorldTimeSeconds(true);
+				WaterSubsystem->SetOverrideSmoothedWorldTimeSeconds(CurrentServerTime);
+				WaterSubsystem->SetSmoothedWorldTimeSeconds(CurrentServerTime);
+			}
+		}
 	}
 }

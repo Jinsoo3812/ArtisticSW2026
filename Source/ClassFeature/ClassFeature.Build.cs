@@ -33,7 +33,8 @@ public class ClassFeature: ModuleRules
             "AnimGraphRuntime",
             "Chooser",
             "MotionTrajectory",
-            "WaterAndShip"
+            "WaterAndShip",
+            "Water"
         });
 
         PublicIncludePaths.AddRange(new string[] {
