@@ -43,6 +43,10 @@ public:
 	UFUNCTION()
 	void OnOverlapEnd(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
+	// NetMulticast RPC to spawn ripple on all clients deterministically
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastSpawnRipple(FVector2D Origin, float InitialAmplitude, float WaveSpeed = 300.0f, float DecayRate = 1.0f, float WaveLength = 100.0f);
+
 private:
 	// Helper to calculate the water height at a given location (queries overlapping water bodies)
 	bool GetWaterHeightAtLocation(const FVector& Location, float& OutWaterHeight) const;
@@ -54,6 +58,10 @@ protected:
 	/** Distance above the feet the water surface must reach to trigger swimming */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection")
 	float SwimEntryOffset = 20.0f;
+
+	/** Minimum downward velocity (cm/s) to trigger a water entry ripple */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection")
+	float MinEntryVelocityThreshold = 100.0f;
 
 	/** Distance below the feet the water surface must reach to exit swimming */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection")

@@ -11,6 +11,8 @@
 #include "WaterSubsystem.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
+#include "RippleSubsystem.h"
+#include "SWRippleWaterWaves.h"
 
 USwimmingComponent::USwimmingComponent()
 {
@@ -228,6 +230,15 @@ bool USwimmingComponent::GetWaterHeightAtLocation(const FVector& Location, float
 						FVector ComputedNormal;
 						float RawWaveHeight = WaterWaves->GetWaveHeightAtPosition(Query.GetWaterSurfaceLocation(), WaterDepth, CurrentServerTime, ComputedNormal);
 						WaterZ += RawWaveHeight * AttenuationFactor;
+
+						// Fallback: If custom waves are not assigned, manually query and add the ripple height
+						if (!WaterWaves->IsA<USWRippleWaterWaves>())
+						{
+							if (URippleSubsystem* RippleSubsystem = GetWorld()->GetSubsystem<URippleSubsystem>())
+							{
+								WaterZ += RippleSubsystem->GetRippleHeight(Query.GetWaterSurfaceLocation()) * AttenuationFactor;
+							}
+						}
 					}
 				}
 			}
@@ -304,12 +315,27 @@ void USwimmingComponent::CheckWaterTransitions()
 		// Entry: 물 표면이 발밑에서부터 SwimEntryOffset 이상 깊어졌을 때 수영 상태 진입
 		if (bFeetInWater && FeetSubmersion > SwimEntryOffset)
 		{
+			float ZVelocity = CharacterMovement->Velocity.Z;
+
 			CharacterMovement->SetMovementMode(MOVE_Custom, static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming));
 			CharacterMovement->Buoyancy = 0.f; // CMC의 기본 부력 사용 정지
 			
 			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
 			FString ContextStr = (GetOwner() && GetOwner()->HasAuthority()) ? TEXT("Server") : TEXT("Client");
 			UE_LOG(LogTemp, Warning, TEXT("[%s] %s >>> Entered Swimming State! (FeetSubmersion: %.2f)"), *ContextStr, *OwnerName, FeetSubmersion);
+
+			// Trigger ripple on water entry if downward velocity exceeds threshold
+			float DownwardVelocity = -ZVelocity;
+			if (DownwardVelocity >= MinEntryVelocityThreshold)
+			{
+				float InitialAmplitude = FMath::Clamp(DownwardVelocity * 0.15f, 10.0f, 150.0f);
+				FVector EntryLocation = OwnerCharacter->GetActorLocation();
+
+				if (GetOwner()->HasAuthority())
+				{
+					MulticastSpawnRipple(FVector2D(EntryLocation.X, EntryLocation.Y), InitialAmplitude);
+				}
+			}
 		}
 	}
 	else
@@ -444,5 +470,13 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 	if (SweepHit.IsValidBlockingHit())
 	{
 		static_cast<UMovementComponent*>(CharacterMovement)->SlideAlongSurface(CharacterMovement->Velocity * DeltaTime, 1.f - SweepHit.Time, SweepHit.Normal, SweepHit, true);
+	}
+}
+
+void USwimmingComponent::MulticastSpawnRipple_Implementation(FVector2D Origin, float InitialAmplitude, float WaveSpeed, float DecayRate, float WaveLength)
+{
+	if (URippleSubsystem* RippleSubsystem = GetWorld()->GetSubsystem<URippleSubsystem>())
+	{
+		RippleSubsystem->AddRipple(Origin, InitialAmplitude, WaveSpeed, DecayRate, WaveLength);
 	}
 }
