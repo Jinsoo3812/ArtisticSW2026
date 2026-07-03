@@ -18,7 +18,6 @@
 #include "AbilitySystemComponent.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Components/BaseHealthComponent.h"
-#include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -142,17 +141,7 @@ void ABaseEnemy::NotifyRemovedFromWaveOnce(EWaveEnemyRemoveReason Reason)
 
 void ABaseEnemy::HandleDeath_Implementation()
 {
-	// 사망 시 Death 처리
-	GetMesh()->SetSimulatePhysics(true);
-	GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	GetCharacterMovement()->DisableMovement();
-
-	
-	// Actor의 뒤와 위로 Impulse를 줘서 날아가도록 한다.
-	FVector Impulse = GetActorForwardVector() * -20000.f;
-	Impulse.Z = 15000.f;
-	GetMesh()->AddImpulseAtLocation(Impulse, GetActorLocation());
+	ApplyLocalDeathRagdoll();
 }
 
 void ABaseEnemy::OnDeathStarted(UBaseHealthComponent* InHealthComponent)

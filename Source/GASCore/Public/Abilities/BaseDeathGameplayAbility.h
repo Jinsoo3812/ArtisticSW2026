@@ -8,6 +8,8 @@
 
 class UBaseHealthComponent;
 class ACharacter;
+class UAnimMontage;
+class UAbilityTask_PlayMontageAndWait;
 
 UCLASS()
 class GASCORE_API UBaseDeathGameplayAbility : public UBaseGameplayAbility
@@ -31,6 +33,18 @@ public:
 		bool bWasCancelled) override;
 
 protected:
+	UFUNCTION()
+	void OnDeathMontageCompleted();
+
+	UFUNCTION()
+	void OnDeathMontageBlendOut();
+
+	UFUNCTION()
+	void OnDeathMontageInterrupted();
+
+	UFUNCTION()
+	void OnDeathMontageCancelled();
+
 	UFUNCTION(BlueprintPure, Category = "Death")
 	UBaseHealthComponent* GetHealthComponentFromAvatar() const;
 
@@ -38,7 +52,13 @@ protected:
 	void FinishDeath();
 
 	UFUNCTION(BlueprintCallable, Category = "Death")
-	void ApplyDeathRagdoll();
+	void FinishDeathWithCancel(bool bWasCancelled);
+
+	UFUNCTION(BlueprintCallable, Category = "Death")
+	bool PlayDeathMontage();
+
+	UFUNCTION(BlueprintCallable, Category = "Death")
+	void ApplyDeathState();
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Death", meta = (DisplayName = "On Death Started"))
 	void K2_OnDeathStarted(const FGameplayEventData& TriggerEventData);
@@ -49,24 +69,33 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Death")
 	TObjectPtr<UBaseHealthComponent> CachedHealthComponent;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll")
-	bool bAutoApplyDeathRagdoll = true;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Montage")
+	TObjectPtr<UAnimMontage> DeathMontage;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll", meta = (ClampMin = "0.0"))
-	float DeathBackwardImpulse = 20000.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Montage", meta = (ClampMin = "0.0"))
+	float DeathMontagePlayRate = 1.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll", meta = (ClampMin = "0.0"))
-	float DeathUpwardImpulse = 15000.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Montage")
+	FName DeathMontageStartSection = NAME_None;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll")
-	bool bDisableCapsuleCollision = true;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Montage")
+	bool bStopDeathMontageWhenAbilityEnds = false;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death")
+	bool bFinishDeathWhenMontageEnds = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death")
+	bool bAutoFinishDeathWithoutMontage = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death")
 	bool bDisableMovement = true;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll")
-	bool bDetachFromController = true;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death")
+	bool bDisableCapsuleCollision = false;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Death|Ragdoll")
-	bool bDeathRagdollApplied = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Death|Montage")
+	TObjectPtr<UAbilityTask_PlayMontageAndWait> DeathMontageTask;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Death")
+	bool bDeathFinished = false;
 };

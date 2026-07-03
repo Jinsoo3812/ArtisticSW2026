@@ -65,6 +65,9 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PostInitializeComponents() override;
 
+	UFUNCTION()
+	void HandleDeathFinished(UBaseHealthComponent* InHealthComponent);
+
 	/* --- GAS 초기화 ---*/
 public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return CachedAbilitySystemComponent.Get(); };
@@ -260,9 +263,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
 	TMap<FGameplayTag, TSubclassOf<UGameplayAbility>> DefaultAbilityMap;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
+	TArray<TSubclassOf<UGameplayAbility>> DefaultGrantedAbilities;
+
 	// GA와 그 GA가 어떤 키 입력(Tag)에 반응할지 함께 적용하는 함수.
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
 	void GrantAbilityToSlot(FGameplayTag SlotTag, TSubclassOf<UGameplayAbility> AbilityClass);
+
+	UFUNCTION(BlueprintCallable, Category = "Abilities")
+	void GrantDefaultAbility(TSubclassOf<UGameplayAbility> AbilityClass);
 
 	// 키보드 & 마우스 입력 Tag와 함께 등록된 GA 해제
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
