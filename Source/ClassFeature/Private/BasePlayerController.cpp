@@ -238,6 +238,12 @@ void ABasePlayerController::ServerQuickMoveInventorySlotToStorage_Implementation
 		return;
 	}
 
+	if (InventoryComponent->GetCursorItem().IsValid())
+	{
+		InventoryComponent->ReturnCursorToOriginalSlot();
+		return;
+	}
+
 	InventoryComponent->TransferSlotToStorage(SlotIndex, StorageComponent);
 	StartStorageSearch(ActiveStorageChest);
 }

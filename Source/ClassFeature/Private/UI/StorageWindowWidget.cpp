@@ -169,7 +169,7 @@ void UStorageWindowWidget::RefreshStorage()
 			}
 			else
 			{
-				EntryWidget->SetupAsUnrevealed(Index, CachedStorageChest);
+				EntryWidget->SetupAsUnrevealed(Index, CachedStorageChest, UnrevealedOverlayTexture);
 			}
 		}
 		else

@@ -7,6 +7,7 @@
 #include "StorageEntryWidget.generated.h"
 
 class AStorageChest;
+class UBorder;
 class UButton;
 class UImage;
 class UTextBlock;
@@ -21,7 +22,7 @@ public:
 	void SetupFromData(const FText& InItemName, int32 InCount, UTexture2D* InIcon, int32 InSlotIndex, AStorageChest* InStorageChest);
 	void SetupAsEmpty(int32 InSlotIndex, AStorageChest* InStorageChest);
 	void SetupAsSearching(int32 InSlotIndex, AStorageChest* InStorageChest, UTexture2D* InSearchIcon);
-	void SetupAsUnrevealed(int32 InSlotIndex, AStorageChest* InStorageChest);
+	void SetupAsUnrevealed(int32 InSlotIndex, AStorageChest* InStorageChest, UTexture2D* InUnrevealedOverlayTexture);
 
 protected:
 	virtual void NativeConstruct() override;
@@ -41,6 +42,12 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UImage> SearchIconImage;
+
+	UPROPERTY()
+	TObjectPtr<UBorder> UnrevealedOverlay;
+
+	UPROPERTY()
+	TObjectPtr<UImage> UnrevealedOverlayImage;
 
 	UPROPERTY()
 	TObjectPtr<UTextBlock> CountText;

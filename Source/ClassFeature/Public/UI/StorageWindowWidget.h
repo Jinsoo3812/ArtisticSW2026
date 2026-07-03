@@ -42,6 +42,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Storage|Search")
 	TObjectPtr<UTexture2D> SearchIconTexture;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Storage|Search")
+	TObjectPtr<UTexture2D> UnrevealedOverlayTexture;
+
 	UPROPERTY()
 	TObjectPtr<AStorageChest> CachedStorageChest;
 

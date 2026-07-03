@@ -47,6 +47,16 @@ void UStorageEntryWidget::SetupFromData(const FText& InItemName, int32 InCount, 
 	{
 		SearchIconImage->SetVisibility(ESlateVisibility::Hidden);
 	}
+
+	if (UnrevealedOverlay)
+	{
+		UnrevealedOverlay->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (UnrevealedOverlayImage)
+	{
+		UnrevealedOverlayImage->SetVisibility(ESlateVisibility::Hidden);
+	}
 }
 
 void UStorageEntryWidget::SetupAsEmpty(int32 InSlotIndex, AStorageChest* InStorageChest)
@@ -74,6 +84,16 @@ void UStorageEntryWidget::SetupAsEmpty(int32 InSlotIndex, AStorageChest* InStora
 	if (SearchIconImage)
 	{
 		SearchIconImage->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (UnrevealedOverlay)
+	{
+		UnrevealedOverlay->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (UnrevealedOverlayImage)
+	{
+		UnrevealedOverlayImage->SetVisibility(ESlateVisibility::Hidden);
 	}
 }
 
@@ -110,9 +130,19 @@ void UStorageEntryWidget::SetupAsSearching(int32 InSlotIndex, AStorageChest* InS
 		SearchIconImage->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
 		SearchIconImage->SetVisibility(ESlateVisibility::HitTestInvisible);
 	}
+
+	if (UnrevealedOverlay)
+	{
+		UnrevealedOverlay->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (UnrevealedOverlayImage)
+	{
+		UnrevealedOverlayImage->SetVisibility(ESlateVisibility::Hidden);
+	}
 }
 
-void UStorageEntryWidget::SetupAsUnrevealed(int32 InSlotIndex, AStorageChest* InStorageChest)
+void UStorageEntryWidget::SetupAsUnrevealed(int32 InSlotIndex, AStorageChest* InStorageChest, UTexture2D* InUnrevealedOverlayTexture)
 {
 	BuildWidgetTree();
 
@@ -137,6 +167,21 @@ void UStorageEntryWidget::SetupAsUnrevealed(int32 InSlotIndex, AStorageChest* In
 	if (SearchIconImage)
 	{
 		SearchIconImage->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (UnrevealedOverlay)
+	{
+		UnrevealedOverlay->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+
+	if (UnrevealedOverlayImage)
+	{
+		if (InUnrevealedOverlayTexture)
+		{
+			UnrevealedOverlayImage->SetBrushFromTexture(InUnrevealedOverlayTexture, true);
+		}
+
+		UnrevealedOverlayImage->SetVisibility(InUnrevealedOverlayTexture ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	}
 }
 
@@ -238,6 +283,23 @@ void UStorageEntryWidget::BuildWidgetTree()
 		SearchSlot->SetVerticalAlignment(VAlign_Center);
 	}
 	SearchIconImage->SetVisibility(ESlateVisibility::Hidden);
+
+	UnrevealedOverlay = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("UnrevealedOverlay"));
+	UnrevealedOverlay->SetBrushColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.62f));
+	UnrevealedOverlay->SetVisibility(ESlateVisibility::Hidden);
+	if (UOverlaySlot* OverlaySlot = SlotOverlay->AddChildToOverlay(UnrevealedOverlay))
+	{
+		OverlaySlot->SetHorizontalAlignment(HAlign_Fill);
+		OverlaySlot->SetVerticalAlignment(VAlign_Fill);
+	}
+
+	UnrevealedOverlayImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("UnrevealedOverlayImage"));
+	UnrevealedOverlayImage->SetVisibility(ESlateVisibility::Hidden);
+	if (UOverlaySlot* OverlayImageSlot = SlotOverlay->AddChildToOverlay(UnrevealedOverlayImage))
+	{
+		OverlayImageSlot->SetHorizontalAlignment(HAlign_Fill);
+		OverlayImageSlot->SetVerticalAlignment(VAlign_Fill);
+	}
 
 	CountText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CountText"));
 	CountText->SetColorAndOpacity(FSlateColor(FLinearColor::White));

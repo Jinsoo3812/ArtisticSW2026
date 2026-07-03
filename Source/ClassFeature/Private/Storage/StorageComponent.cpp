@@ -113,7 +113,6 @@ int32 UStorageComponent::AddItem(const FGameplayTag& ItemTag, int32 Amount)
 
 	if (AddedCount > 0)
 	{
-		CompactSlots();
 		BroadcastStorageChanged();
 	}
 
@@ -170,7 +169,6 @@ bool UStorageComponent::RemoveItem(const FGameplayTag& ItemTag, int32 Amount)
 		}
 	}
 
-	CompactSlots();
 	BroadcastStorageChanged();
 
 	return true;
@@ -200,7 +198,6 @@ int32 UStorageComponent::AddItemToSlot(int32 SlotIndex, const FGameplayTag& Item
 		TargetSlot.ItemTag = ItemTag;
 		TargetSlot.Count = AddedCount;
 
-		CompactSlots();
 		BroadcastStorageChanged();
 
 		return AddedCount;
@@ -215,7 +212,6 @@ int32 UStorageComponent::AddItemToSlot(int32 SlotIndex, const FGameplayTag& Item
 	const int32 AddedCount = FMath::Min(Space, Amount);
 	TargetSlot.Count += AddedCount;
 
-	CompactSlots();
 	BroadcastStorageChanged();
 
 	return AddedCount;
@@ -250,7 +246,6 @@ int32 UStorageComponent::TransferSlotToInventory(int32 SlotIndex, UInventoryComp
 		SourceSlot.Clear();
 	}
 
-	CompactSlots();
 	BroadcastStorageChanged();
 
 	return AddedCount;

@@ -343,7 +343,7 @@ void UInventoryComponent::ReturnCursorToOriginalSlot()
 
     CursorItem.ItemTag = TempSlot.ItemTag;
     CursorItem.Count = TempSlot.Count;
-    CursorItem.OriginalSlotIndex = INDEX_NONE;
+    CursorItem.OriginalSlotIndex = TempSlot.IsEmpty() ? INDEX_NONE : CursorItem.OriginalSlotIndex;
 
     OnInventoryChanged.Broadcast();
     PrintInventoryToScreen();
