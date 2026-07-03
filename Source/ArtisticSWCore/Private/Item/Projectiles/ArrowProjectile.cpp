@@ -2,6 +2,7 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "BaseGameplayTags.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
@@ -69,14 +70,33 @@ void AArrowProjectile::SetArrowMesh(UStaticMesh* InMesh)
 	}
 }
 
+void AArrowProjectile::InitializeDamage(UAbilitySystemComponent* InSourceASC, AActor* InInstigatorActor, float InChargeDamageMultiplier)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	SourceASC = InSourceASC;
+	InstigatorActor = InInstigatorActor;
+	ChargeDamageMultiplier = FMath::Max(0.0f, InChargeDamageMultiplier);
+	bHasRolledCritical = false;
+	bCriticalHit = false;
+	BuildDamageEffectSpecs();
+}
+
 void AArrowProjectile::SetDamageEffectSpecHandle(const FGameplayEffectSpecHandle& InDamageEffectSpecHandle)
 {
-	DamageEffectSpecHandle = InDamageEffectSpecHandle;
+	DamageEffectSpecHandles.Reset();
+	if (InDamageEffectSpecHandle.IsValid())
+	{
+		DamageEffectSpecHandles.Add(InDamageEffectSpecHandle);
+	}
 }
 
 void AArrowProjectile::SetAdditionalDamageEffectSpecHandles(const TArray<FGameplayEffectSpecHandle>& InAdditionalDamageEffectSpecHandles)
 {
-	AdditionalDamageEffectSpecHandles = InAdditionalDamageEffectSpecHandles;
+	DamageEffectSpecHandles.Append(InAdditionalDamageEffectSpecHandles);
 }
 
 void AArrowProjectile::Multicast_PlayImpactFX_Implementation(const FHitResult& Hit)
@@ -91,6 +111,7 @@ void AArrowProjectile::OnArrowHit(UPrimitiveComponent* HitComponent, AActor* Oth
 		return;
 	}
 
+	BuildDamageEffectSpecs();
 	ApplyDamageToActor(OtherActor);
 	Multicast_PlayImpactFX(Hit);
 
@@ -115,6 +136,77 @@ bool AArrowProjectile::ShouldIgnoreHitActor(const AActor* OtherActor) const
 	return false;
 }
 
+void AArrowProjectile::BuildDamageEffectSpecs()
+{
+	if (!HasAuthority() || !SourceASC)
+	{
+		return;
+	}
+
+	if (!bHasRolledCritical)
+	{
+		bCriticalHit = DamageData.CritChance > 0.0f && FMath::FRand() <= DamageData.CritChance;
+		bHasRolledCritical = true;
+	}
+
+	const float CriticalDamageMultiplier = bCriticalHit ? DamageData.CritMultiplier : 1.0f;
+
+	if (DamageEffectSpecHandles.Num() == 0)
+	{
+		for (const FArrowDamageEffect& DamageEffect : DamageData.DamageEffects)
+		{
+			if (!DamageEffect.DamageEffectClass)
+			{
+				continue;
+			}
+
+			const float ChargeMultiplier = DamageEffect.bScaleWithCharge ? ChargeDamageMultiplier : 1.0f;
+			const float CritMultiplier = DamageEffect.bCanCrit ? CriticalDamageMultiplier : 1.0f;
+			const float FinalDamage = DamageEffect.BaseDamage * ChargeMultiplier * CritMultiplier;
+
+			FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
+			ContextHandle.AddInstigator(InstigatorActor.Get(), this);
+			ContextHandle.AddSourceObject(this);
+
+			FGameplayEffectSpecHandle DamageSpecHandle = SourceASC->MakeOutgoingSpec(
+				DamageEffect.DamageEffectClass,
+				FMath::Max(1, DamageEffect.EffectLevel),
+				ContextHandle);
+
+			if (DamageSpecHandle.IsValid())
+			{
+				DamageSpecHandle.Data->SetSetByCallerMagnitude(Data_Damage, FMath::Max(0.0f, FinalDamage));
+				DamageEffectSpecHandles.Add(DamageSpecHandle);
+			}
+		}
+	}
+
+	if (StatusEffectSpecHandles.Num() == 0)
+	{
+		for (const TSubclassOf<UGameplayEffect>& StatusEffectClass : DamageData.StatusEffectClasses)
+		{
+			if (!StatusEffectClass)
+			{
+				continue;
+			}
+
+			FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
+			ContextHandle.AddInstigator(InstigatorActor.Get(), this);
+			ContextHandle.AddSourceObject(this);
+
+			FGameplayEffectSpecHandle StatusSpecHandle = SourceASC->MakeOutgoingSpec(
+				StatusEffectClass,
+				1.0f,
+				ContextHandle);
+
+			if (StatusSpecHandle.IsValid())
+			{
+				StatusEffectSpecHandles.Add(StatusSpecHandle);
+			}
+		}
+	}
+}
+
 void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor)
 {
 	if (!TargetActor)
@@ -128,16 +220,19 @@ void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor)
 		return;
 	}
 
-	if (DamageEffectSpecHandle.IsValid() && DamageEffectSpecHandle.Data.IsValid())
+	for (const FGameplayEffectSpecHandle& DamageSpecHandle : DamageEffectSpecHandles)
 	{
-		TargetASC->ApplyGameplayEffectSpecToSelf(*DamageEffectSpecHandle.Data.Get());
+		if (DamageSpecHandle.IsValid() && DamageSpecHandle.Data.IsValid())
+		{
+			TargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpecHandle.Data.Get());
+		}
 	}
 
-	for (const FGameplayEffectSpecHandle& AdditionalSpecHandle : AdditionalDamageEffectSpecHandles)
+	for (const FGameplayEffectSpecHandle& StatusSpecHandle : StatusEffectSpecHandles)
 	{
-		if (AdditionalSpecHandle.IsValid() && AdditionalSpecHandle.Data.IsValid())
+		if (StatusSpecHandle.IsValid() && StatusSpecHandle.Data.IsValid())
 		{
-			TargetASC->ApplyGameplayEffectSpecToSelf(*AdditionalSpecHandle.Data.Get());
+			TargetASC->ApplyGameplayEffectSpecToSelf(*StatusSpecHandle.Data.Get());
 		}
 	}
 }
