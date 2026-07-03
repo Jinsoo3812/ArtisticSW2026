@@ -18,6 +18,8 @@ class UInventoryEntryWidget;
 class UInventoryCursorWidget;
 class UCanvasPanel;
 class UInventoryCursorWidget;
+class UHealthBarWidget;
+class UBaseHealthComponent;
 
 UCLASS()
 class CLASSFEATURE_API UPlayerHUDWidget : public UUserWidget
@@ -63,14 +65,30 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UInventoryCursorWidget> InventoryCursorWidget;
 
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UHealthBarWidget> HealthBarWidget;
+
+	UPROPERTY()
+	TObjectPtr<UBaseHealthComponent> CachedHealthComponent;
+
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	void RefreshCursorItemWidget();
 	void UpdateCursorItemWidgetPosition();
+	void BindHealthComponent(UBaseHealthComponent* HealthComponent);
+	void UnbindHealthComponent();
+	void RefreshHealth();
 
 	void RefreshQuickSlots();
 	void RefreshInventory();
 
 	void HandleInventoryChanged();
 	void HandleItemSlotsChanged();
+	void HandleAbilitySystemInitialized();
+
+	UFUNCTION()
+	void HandleHealthChanged(UBaseHealthComponent* HealthComponent, float OldValue, float NewValue, AActor* InstigatorActor);
+
+	UFUNCTION()
+	void HandleMaxHealthChanged(UBaseHealthComponent* HealthComponent, float OldValue, float NewValue, AActor* InstigatorActor);
 };

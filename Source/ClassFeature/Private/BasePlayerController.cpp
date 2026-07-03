@@ -48,6 +48,7 @@ void ABasePlayerController::BeginPlay()
 		{
 			PlayerHUDWidget->AddToViewport();
 			PlayerHUDWidget->SetInventoryVisible(false);
+			BindHUDToCurrentPlayer();
 		}
 	}
 }

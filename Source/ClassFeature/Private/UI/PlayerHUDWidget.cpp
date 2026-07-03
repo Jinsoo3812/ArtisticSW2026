@@ -11,9 +11,11 @@
 #include "Components/UniformGridSlot.h"
 #include "Components/Border.h"
 #include "UI/InventoryCursorWidget.h"
+#include "UI/HealthBarWidget.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Components/BaseHealthComponent.h"
 
 #include "BaseGameplayTags.h"
 
@@ -52,6 +54,7 @@ void UPlayerHUDWidget::NativeDestruct()
 {
 	if (CachedPlayer.IsValid())
 	{
+		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
 		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
 
 		if (UInventoryComponent* InventoryComp = CachedPlayer->GetInventoryComponent())
@@ -59,6 +62,8 @@ void UPlayerHUDWidget::NativeDestruct()
 			InventoryComp->OnInventoryChanged.RemoveAll(this);
 		}
 	}
+
+	UnbindHealthComponent();
 
 	Super::NativeDestruct();
 }
@@ -75,6 +80,7 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 {
 	if (CachedPlayer.IsValid())
 	{
+		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
 		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
 
 		if (UInventoryComponent* OldInventory = CachedPlayer->GetInventoryComponent())
@@ -83,20 +89,26 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 		}
 	}
 
+	UnbindHealthComponent();
+
 	CachedPlayer = InPlayer;
 
 	if (CachedPlayer.IsValid())
 	{
+		CachedPlayer->OnAbilitySystemInitialized.AddUObject(this, &UPlayerHUDWidget::HandleAbilitySystemInitialized);
 		CachedPlayer->OnItemSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleItemSlotsChanged);
 
 		if (UInventoryComponent* InventoryComp = CachedPlayer->GetInventoryComponent())
 		{
 			InventoryComp->OnInventoryChanged.AddUObject(this, &UPlayerHUDWidget::HandleInventoryChanged);
 		}
+
+		BindHealthComponent(CachedPlayer->GetHealthComponent());
 	}
 
 	RefreshQuickSlots();
 	RefreshInventory();
+	RefreshHealth();
 }
 
 void UPlayerHUDWidget::SetInventoryVisible(bool bVisible)
@@ -136,6 +148,65 @@ void UPlayerHUDWidget::HandleInventoryChanged()
 void UPlayerHUDWidget::HandleItemSlotsChanged()
 {
 	RefreshQuickSlots();
+}
+
+void UPlayerHUDWidget::HandleAbilitySystemInitialized()
+{
+	BindHealthComponent(CachedPlayer.IsValid() ? CachedPlayer->GetHealthComponent() : nullptr);
+	RefreshHealth();
+}
+
+void UPlayerHUDWidget::HandleHealthChanged(UBaseHealthComponent* HealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
+{
+	RefreshHealth();
+}
+
+void UPlayerHUDWidget::HandleMaxHealthChanged(UBaseHealthComponent* HealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
+{
+	RefreshHealth();
+}
+
+void UPlayerHUDWidget::BindHealthComponent(UBaseHealthComponent* HealthComponent)
+{
+	if (CachedHealthComponent == HealthComponent)
+	{
+		return;
+	}
+
+	UnbindHealthComponent();
+
+	CachedHealthComponent = HealthComponent;
+
+	if (CachedHealthComponent)
+	{
+		CachedHealthComponent->OnHealthChanged.AddDynamic(this, &UPlayerHUDWidget::HandleHealthChanged);
+		CachedHealthComponent->OnMaxHealthChanged.AddDynamic(this, &UPlayerHUDWidget::HandleMaxHealthChanged);
+	}
+}
+
+void UPlayerHUDWidget::UnbindHealthComponent()
+{
+	if (!CachedHealthComponent)
+	{
+		return;
+	}
+
+	CachedHealthComponent->OnHealthChanged.RemoveDynamic(this, &UPlayerHUDWidget::HandleHealthChanged);
+	CachedHealthComponent->OnMaxHealthChanged.RemoveDynamic(this, &UPlayerHUDWidget::HandleMaxHealthChanged);
+	CachedHealthComponent = nullptr;
+}
+
+void UPlayerHUDWidget::RefreshHealth()
+{
+	if (!HealthBarWidget || !CachedHealthComponent)
+	{
+		return;
+	}
+
+	HealthBarWidget->SetHealthValues(
+		CachedHealthComponent->GetHealth(),
+		CachedHealthComponent->GetMaxHealth()
+	);
 }
 
 void UPlayerHUDWidget::RefreshQuickSlots()
