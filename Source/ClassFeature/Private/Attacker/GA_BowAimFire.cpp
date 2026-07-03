@@ -5,6 +5,7 @@
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
+#include "GASCombatLibrary.h"
 #include "Item/Components/BowComponent.h"
 #include "Item/Projectiles/ArrowProjectile.h"
 #include "Item/Weapons/BowItem.h"
@@ -175,17 +176,6 @@ void UGA_BowAimFire::FireArrow()
 	FTransform SpawnTransform = CachedBowComponent->BuildArrowSpawnTransform();
 	SpawnTransform.SetRotation(LaunchDirection.Rotation().Quaternion());
 
-	FGameplayEffectSpecHandle DamageSpecHandle;
-	if (DamageEffectClass)
-	{
-		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
-		{
-			FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
-			ContextHandle.AddInstigator(Player, Player);
-			DamageSpecHandle = ASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
-		}
-	}
-
 	AArrowProjectile* Arrow = GetWorld()->SpawnActorDeferred<AArrowProjectile>(
 		SpawnClass,
 		SpawnTransform,
@@ -198,9 +188,42 @@ void UGA_BowAimFire::FireArrow()
 		return;
 	}
 
+	FGameplayEffectSpecHandle DamageSpecHandle;
+	TArray<FGameplayEffectSpecHandle> AdditionalDamageSpecHandles;
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	{
+		const float DrawAlpha = CachedBowComponent->GetDrawAlpha();
+		const float ChargeDamageMultiplier = FMath::Lerp(MinChargeDamageMultiplier, MaxChargeDamageMultiplier, DrawAlpha);
+		const float FinalDamageAmount = DamageAmount * ChargeDamageMultiplier;
+		const float FinalAdditionalDamageAmount = AdditionalDamageAmount * ChargeDamageMultiplier;
+
+		DamageSpecHandle = UGASCombatLibrary::MakeDamageEffectSpec(
+			ASC,
+			DamageEffectClass,
+			FinalDamageAmount,
+			Player,
+			Arrow);
+
+		for (const TSubclassOf<UGameplayEffect>& AdditionalDamageEffectClass : AdditionalDamageEffectClasses)
+		{
+			FGameplayEffectSpecHandle AdditionalSpecHandle = UGASCombatLibrary::MakeDamageEffectSpec(
+				ASC,
+				AdditionalDamageEffectClass,
+				FinalAdditionalDamageAmount,
+				Player,
+				Arrow);
+
+			if (AdditionalSpecHandle.IsValid())
+			{
+				AdditionalDamageSpecHandles.Add(AdditionalSpecHandle);
+			}
+		}
+	}
+
 	Arrow->SetOwner(Player);
 	Arrow->SetInstigator(Player);
 	Arrow->SetDamageEffectSpecHandle(DamageSpecHandle);
+	Arrow->SetAdditionalDamageEffectSpecHandles(AdditionalDamageSpecHandles);
 	Arrow->FinishSpawning(SpawnTransform);
 	Arrow->LaunchArrow(LaunchVelocity);
 	CachedBow->Multicast_PlayReleaseFX();

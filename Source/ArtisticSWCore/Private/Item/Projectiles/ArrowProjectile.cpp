@@ -74,6 +74,11 @@ void AArrowProjectile::SetDamageEffectSpecHandle(const FGameplayEffectSpecHandle
 	DamageEffectSpecHandle = InDamageEffectSpecHandle;
 }
 
+void AArrowProjectile::SetAdditionalDamageEffectSpecHandles(const TArray<FGameplayEffectSpecHandle>& InAdditionalDamageEffectSpecHandles)
+{
+	AdditionalDamageEffectSpecHandles = InAdditionalDamageEffectSpecHandles;
+}
+
 void AArrowProjectile::Multicast_PlayImpactFX_Implementation(const FHitResult& Hit)
 {
 	K2_OnImpactFX(Hit);
@@ -112,7 +117,7 @@ bool AArrowProjectile::ShouldIgnoreHitActor(const AActor* OtherActor) const
 
 void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor)
 {
-	if (!TargetActor || !DamageEffectSpecHandle.IsValid() || !DamageEffectSpecHandle.Data.IsValid())
+	if (!TargetActor)
 	{
 		return;
 	}
@@ -123,5 +128,16 @@ void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor)
 		return;
 	}
 
-	TargetASC->ApplyGameplayEffectSpecToSelf(*DamageEffectSpecHandle.Data.Get());
+	if (DamageEffectSpecHandle.IsValid() && DamageEffectSpecHandle.Data.IsValid())
+	{
+		TargetASC->ApplyGameplayEffectSpecToSelf(*DamageEffectSpecHandle.Data.Get());
+	}
+
+	for (const FGameplayEffectSpecHandle& AdditionalSpecHandle : AdditionalDamageEffectSpecHandles)
+	{
+		if (AdditionalSpecHandle.IsValid() && AdditionalSpecHandle.Data.IsValid())
+		{
+			TargetASC->ApplyGameplayEffectSpecToSelf(*AdditionalSpecHandle.Data.Get());
+		}
+	}
 }

@@ -27,6 +27,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arrow")
 	void SetDamageEffectSpecHandle(const FGameplayEffectSpecHandle& InDamageEffectSpecHandle);
 
+	UFUNCTION(BlueprintCallable, Category = "Arrow")
+	void SetAdditionalDamageEffectSpecHandles(const TArray<FGameplayEffectSpecHandle>& InAdditionalDamageEffectSpecHandles);
+
 	UFUNCTION(NetMulticast, Unreliable, BlueprintCallable, Category = "Arrow")
 	void Multicast_PlayImpactFX(const FHitResult& Hit);
 
@@ -43,6 +46,9 @@ protected:
 protected:
 	UPROPERTY(BlueprintReadWrite, meta = (ExposeOnSpawn = "true"), Category = "GAS")
 	FGameplayEffectSpecHandle DamageEffectSpecHandle;
+
+	UPROPERTY(BlueprintReadWrite, meta = (ExposeOnSpawn = "true"), Category = "GAS")
+	TArray<FGameplayEffectSpecHandle> AdditionalDamageEffectSpecHandles;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow")
 	bool bDestroyOnImpact = true;
