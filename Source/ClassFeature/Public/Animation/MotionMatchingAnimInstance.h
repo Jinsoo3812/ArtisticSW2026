@@ -5,6 +5,7 @@
 #include "Animation/AnimInstanceProxy.h"
 #include "Animation/TrajectoryTypes.h"
 #include "Animation/LocomotionAnimStateComponent.h"
+#include "BoneControllers/AnimNode_FootPlacement.h"
 #include "MotionMatchingAnimInstance.generated.h"
 
 class UPoseSearchDatabase;
@@ -133,6 +134,21 @@ struct FAnimLandingData
 };
 
 USTRUCT(BlueprintType)
+struct FAnimAimData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "AimOffset")
+    float AimYaw = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "AimOffset")
+    float AimPitch = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "AimOffset")
+    float AimOffsetAlpha = 0.f;
+};
+
+USTRUCT(BlueprintType)
 struct FAnimThreadSafeData
 {
     GENERATED_BODY()
@@ -151,6 +167,9 @@ struct FAnimThreadSafeData
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     FAnimLandingData LandingData;
+
+    UPROPERTY(BlueprintReadOnly, Category = "AimOffset")
+    FAnimAimData AimData;
 };
 
 struct FCachedMotionMatchingNodeInfo
@@ -238,12 +257,28 @@ public:
     UFUNCTION(BlueprintPure, Category = "Motion Matching", meta = (BlueprintThreadSafe))
     UPoseSearchDatabase* GetCurrentActivePoseSearchDatabaseThreadSafe() const;
 
+    UFUNCTION(BlueprintPure, Category = "Animation|AimOffset", meta = (BlueprintThreadSafe))
+    float GetThreadSafeAimYaw() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|AimOffset", meta = (BlueprintThreadSafe))
+    float GetThreadSafeAimPitch() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|AimOffset", meta = (BlueprintThreadSafe))
+    float GetThreadSafeAimOffsetAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
+    FFootPlacementPlantSettings Get_FootPlacementPlantSettings() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
+    FFootPlacementInterpolationSettings Get_FootPlacementInterpolationSettings() const;
+
     FStructProperty* CachedTrajectoryProperty = nullptr;
 
 protected:
     virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
 
     bool IsDedicatedServerAnimationContext() const;
+    float CalculateAimOffsetAlpha(const FAnimThreadSafeData& ThreadSafeData) const;
 
 protected:
     UPROPERTY(Transient, BlueprintReadOnly, Category = "Animation")
@@ -329,6 +364,42 @@ protected:
 
     UPROPERTY(BlueprintReadOnly, Category = "Motion Matching")
     TObjectPtr<UPoseSearchDatabase> CurrentActivePoseSearchDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    bool bForceAimOffsetAlwaysOn = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    float MaxAimYaw = 90.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    float MaxAimPitch = 60.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    float StandingAimAlpha = 1.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    float MovingAimAlpha = 0.35f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    float SprintAimAlpha = 0.15f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    float CombatAimAlpha = 1.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    float GenericMoveInputSpeedThreshold = 3.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    FFootPlacementPlantSettings FootPlacementPlantSettingsDefault;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    FFootPlacementPlantSettings FootPlacementPlantSettingsStops;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    FFootPlacementInterpolationSettings FootPlacementInterpolationSettingsDefault;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    FFootPlacementInterpolationSettings FootPlacementInterpolationSettingsStops;
 
 
 

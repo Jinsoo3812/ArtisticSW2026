@@ -8,6 +8,31 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
+FBasePlayerAnimInstanceProxy::FBasePlayerAnimInstanceProxy()
+{
+}
+
+FBasePlayerAnimInstanceProxy::FBasePlayerAnimInstanceProxy(UAnimInstance* InAnimInstance)
+	: FAnimInstanceProxy(InAnimInstance)
+{
+}
+
+UBasePlayerAnimInstance::UBasePlayerAnimInstance()
+{
+	bUseMultiThreadedAnimationUpdate = true;
+
+	FootPlacementPlantSettingsStops.SpeedThreshold = 80.0f;
+	FootPlacementPlantSettingsStops.UnplantRadius = 25.0f;
+	FootPlacementPlantSettingsStops.UnplantAngle = 35.0f;
+	FootPlacementPlantSettingsStops.ReplantRadiusRatio = 0.5f;
+	FootPlacementPlantSettingsStops.ReplantAngleRatio = 0.65f;
+
+	FootPlacementInterpolationSettingsStops.UnplantLinearStiffness = 500.0f;
+	FootPlacementInterpolationSettingsStops.UnplantAngularStiffness = 700.0f;
+	FootPlacementInterpolationSettingsStops.FloorLinearStiffness = 1200.0f;
+	FootPlacementInterpolationSettingsStops.FloorAngularStiffness = 650.0f;
+}
+
 void UBasePlayerAnimInstance::NativeInitializeAnimation()
 {
 	Super::NativeInitializeAnimation();
@@ -28,6 +53,7 @@ void UBasePlayerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	if (!CachedCharacter)
 	{
 		ResetAnimationState();
+		PublishAimOffsetToProxy();
 		return;
 	}
 
@@ -48,6 +74,17 @@ void UBasePlayerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	}
 
 	UpdateAimOffset();
+	PublishAimOffsetToProxy();
+}
+
+FAnimInstanceProxy* UBasePlayerAnimInstance::CreateAnimInstanceProxy()
+{
+	return new FBasePlayerAnimInstanceProxy(this);
+}
+
+void UBasePlayerAnimInstance::DestroyAnimInstanceProxy(FAnimInstanceProxy* InProxy)
+{
+	delete InProxy;
 }
 
 void UBasePlayerAnimInstance::CacheOwningCharacter()
@@ -67,6 +104,33 @@ void UBasePlayerAnimInstance::MarkGroundStartFinished()
 			UpdateFromAnimStateComponent(*AnimState);
 		}
 	}
+}
+
+float UBasePlayerAnimInstance::GetThreadSafeAimYaw() const
+{
+	return GetProxyOnAnyThread<FBasePlayerAnimInstanceProxy>().GetThreadSafeAimData().AimYaw;
+}
+
+float UBasePlayerAnimInstance::GetThreadSafeAimPitch() const
+{
+	return GetProxyOnAnyThread<FBasePlayerAnimInstanceProxy>().GetThreadSafeAimData().AimPitch;
+}
+
+float UBasePlayerAnimInstance::GetThreadSafeAimOffsetAlpha() const
+{
+	return GetProxyOnAnyThread<FBasePlayerAnimInstanceProxy>().GetThreadSafeAimData().AimOffsetAlpha;
+}
+
+FFootPlacementPlantSettings UBasePlayerAnimInstance::Get_FootPlacementPlantSettings() const
+{
+	const FBasePlayerAnimInstanceProxy& BasePlayerProxy = GetProxyOnAnyThread<FBasePlayerAnimInstanceProxy>();
+	return BasePlayerProxy.GetThreadSafeStopRequested() ? FootPlacementPlantSettingsStops : FootPlacementPlantSettingsDefault;
+}
+
+FFootPlacementInterpolationSettings UBasePlayerAnimInstance::Get_FootPlacementInterpolationSettings() const
+{
+	const FBasePlayerAnimInstanceProxy& BasePlayerProxy = GetProxyOnAnyThread<FBasePlayerAnimInstanceProxy>();
+	return BasePlayerProxy.GetThreadSafeStopRequested() ? FootPlacementInterpolationSettingsStops : FootPlacementInterpolationSettingsDefault;
 }
 
 void UBasePlayerAnimInstance::ResetAnimationState()
@@ -327,4 +391,16 @@ float UBasePlayerAnimInstance::CalculateAimOffsetAlpha() const
 	}
 
 	return GroundSpeed > GenericMoveInputSpeedThreshold ? MovingAimAlpha : StandingAimAlpha;
+}
+
+void UBasePlayerAnimInstance::PublishAimOffsetToProxy()
+{
+	FBasePlayerAimThreadSafeData AimData;
+	AimData.AimYaw = AimYaw;
+	AimData.AimPitch = AimPitch;
+	AimData.AimOffsetAlpha = AimOffsetAlpha;
+
+	FBasePlayerAnimInstanceProxy& BasePlayerProxy = GetProxyOnGameThread<FBasePlayerAnimInstanceProxy>();
+	BasePlayerProxy.SetThreadSafeAimData(AimData);
+	BasePlayerProxy.SetThreadSafeStopRequested(bStopRequested);
 }

@@ -1461,6 +1461,17 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
 UMotionMatchingAnimInstance::UMotionMatchingAnimInstance()
 {
     bUseMultiThreadedAnimationUpdate = true;
+
+    FootPlacementPlantSettingsStops.SpeedThreshold = 80.0f;
+    FootPlacementPlantSettingsStops.UnplantRadius = 25.0f;
+    FootPlacementPlantSettingsStops.UnplantAngle = 35.0f;
+    FootPlacementPlantSettingsStops.ReplantRadiusRatio = 0.5f;
+    FootPlacementPlantSettingsStops.ReplantAngleRatio = 0.65f;
+
+    FootPlacementInterpolationSettingsStops.UnplantLinearStiffness = 500.0f;
+    FootPlacementInterpolationSettingsStops.UnplantAngularStiffness = 700.0f;
+    FootPlacementInterpolationSettingsStops.FloorLinearStiffness = 1200.0f;
+    FootPlacementInterpolationSettingsStops.FloorAngularStiffness = 650.0f;
 }
 
 FAnimInstanceProxy* UMotionMatchingAnimInstance::CreateAnimInstanceProxy()
@@ -1506,6 +1517,33 @@ void UMotionMatchingAnimInstance::NativeInitializeAnimation()
 bool UMotionMatchingAnimInstance::IsDedicatedServerAnimationContext() const
 {
     return GetWorld() && GetWorld()->GetNetMode() == NM_DedicatedServer;
+}
+
+float UMotionMatchingAnimInstance::CalculateAimOffsetAlpha(const FAnimThreadSafeData& ThreadSafeData) const
+{
+    if (bForceAimOffsetAlwaysOn)
+    {
+        return 1.f;
+    }
+
+    if (ThreadSafeData.AirData.bIsInAir ||
+        ThreadSafeData.LandingData.bIsLanding ||
+        (CachedBasePlayer && (CachedBasePlayer->bIsAttacking || CachedBasePlayer->bIsDodging || CachedBasePlayer->bIsHitReacting)))
+    {
+        return 0.f;
+    }
+
+    if (CachedBasePlayer && CachedBasePlayer->bIsCombatMode)
+    {
+        return CombatAimAlpha;
+    }
+
+    if (CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsSprinting)
+    {
+        return SprintAimAlpha;
+    }
+
+    return ThreadSafeData.LandingData.GroundSpeed > GenericMoveInputSpeedThreshold ? MovingAimAlpha : StandingAimAlpha;
 }
 
 void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
@@ -1897,6 +1935,15 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     ThreadSafeData.LandingData.bLandWasMoving = CachedLocomotionStateComponent->bLandWasMoving;
     ThreadSafeData.LandingData.bLandWasSprinting = CachedLocomotionStateComponent->bLandWasSprinting;
 
+    if (CachedBasePlayer->GetController())
+    {
+        const FRotator ActorRotation = CachedBasePlayer->GetActorRotation();
+        const FRotator ControlRotation = CachedBasePlayer->GetControlRotation();
+        ThreadSafeData.AimData.AimYaw = FMath::Clamp(FMath::FindDeltaAngleDegrees(ActorRotation.Yaw, ControlRotation.Yaw), -MaxAimYaw, MaxAimYaw);
+        ThreadSafeData.AimData.AimPitch = FMath::Clamp(FRotator::NormalizeAxis(ControlRotation.Pitch), -MaxAimPitch, MaxAimPitch);
+        ThreadSafeData.AimData.AimOffsetAlpha = CalculateAimOffsetAlpha(ThreadSafeData);
+    }
+
     // 4. Push variables safely to the proxy
     FMotionMatchingAnimInstanceProxy& MyProxy = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>();
     MyProxy.ThreadSafeData = ThreadSafeData;
@@ -2132,6 +2179,33 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 UPoseSearchDatabase* UMotionMatchingAnimInstance::GetCurrentActivePoseSearchDatabaseThreadSafe() const
 {
     return CurrentActivePoseSearchDatabase;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeAimYaw() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.AimData.AimYaw;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeAimPitch() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.AimData.AimPitch;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeAimOffsetAlpha() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.AimData.AimOffsetAlpha;
+}
+
+FFootPlacementPlantSettings UMotionMatchingAnimInstance::Get_FootPlacementPlantSettings() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return ThreadSafeData.GroundData.bStopRequested ? FootPlacementPlantSettingsStops : FootPlacementPlantSettingsDefault;
+}
+
+FFootPlacementInterpolationSettings UMotionMatchingAnimInstance::Get_FootPlacementInterpolationSettings() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return ThreadSafeData.GroundData.bStopRequested ? FootPlacementInterpolationSettingsStops : FootPlacementInterpolationSettingsDefault;
 }
 
 bool UMotionMatchingAnimInstance::ShouldEvaluateMotionMatchingThisFrame(float DeltaSeconds)
