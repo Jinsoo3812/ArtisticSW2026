@@ -7,6 +7,7 @@
 #include "BaseDeathGameplayAbility.generated.h"
 
 class UBaseHealthComponent;
+class ACharacter;
 
 UCLASS()
 class GASCORE_API UBaseDeathGameplayAbility : public UBaseGameplayAbility
@@ -36,6 +37,9 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "Death")
 	void FinishDeath();
 
+	UFUNCTION(BlueprintCallable, Category = "Death")
+	void ApplyDeathRagdoll();
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Death", meta = (DisplayName = "On Death Started"))
 	void K2_OnDeathStarted(const FGameplayEventData& TriggerEventData);
 
@@ -44,4 +48,25 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Death")
 	TObjectPtr<UBaseHealthComponent> CachedHealthComponent;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll")
+	bool bAutoApplyDeathRagdoll = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll", meta = (ClampMin = "0.0"))
+	float DeathBackwardImpulse = 20000.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll", meta = (ClampMin = "0.0"))
+	float DeathUpwardImpulse = 15000.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll")
+	bool bDisableCapsuleCollision = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll")
+	bool bDisableMovement = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll")
+	bool bDetachFromController = true;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Death|Ragdoll")
+	bool bDeathRagdollApplied = false;
 };

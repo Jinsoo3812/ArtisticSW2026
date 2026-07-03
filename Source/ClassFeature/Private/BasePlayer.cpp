@@ -86,7 +86,6 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 
 	// 아이템 포인터 초기화
 	EquippedItem = nullptr;
-
 	CameraBoom->bDoCollisionTest = false;
 
 	// 인벤토리 컴포넌트 부착

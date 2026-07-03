@@ -3,13 +3,23 @@
 
 #include "Abilities/BaseDeathGameplayAbility.h"
 
+#include "BaseGameplayTags.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/BaseHealthComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 UBaseDeathGameplayAbility::UBaseDeathGameplayAbility()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
+
+	FAbilityTriggerData DeathTrigger;
+	DeathTrigger.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
+	DeathTrigger.TriggerTag = GameplayAbility_Dead;
+	AbilityTriggers.Add(DeathTrigger);
 }
 
 void UBaseDeathGameplayAbility::ActivateAbility(
@@ -30,6 +40,12 @@ void UBaseDeathGameplayAbility::ActivateAbility(
 
 	FGameplayEventData EmptyEventData;
 	const FGameplayEventData& EventData = TriggerEventData ? *TriggerEventData : EmptyEventData;
+
+	if (bAutoApplyDeathRagdoll)
+	{
+		ApplyDeathRagdoll();
+	}
+
 	K2_OnDeathStarted(EventData);
 }
 
@@ -49,6 +65,57 @@ UBaseHealthComponent* UBaseDeathGameplayAbility::GetHealthComponentFromAvatar() 
 {
 	AActor* AvatarActor = GetAvatarActorFromActorInfo();
 	return AvatarActor ? AvatarActor->FindComponentByClass<UBaseHealthComponent>() : nullptr;
+}
+
+void UBaseDeathGameplayAbility::ApplyDeathRagdoll()
+{
+	if (bDeathRagdollApplied)
+	{
+		return;
+	}
+
+	ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
+	if (!Character)
+	{
+		return;
+	}
+
+	if (bDetachFromController)
+	{
+		Character->DetachFromControllerPendingDestroy();
+	}
+
+	if (bDisableMovement)
+	{
+		if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
+		{
+			Movement->DisableMovement();
+			Movement->StopMovementImmediately();
+		}
+	}
+
+	if (bDisableCapsuleCollision)
+	{
+		if (UCapsuleComponent* Capsule = Character->GetCapsuleComponent())
+		{
+			Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+	}
+
+	USkeletalMeshComponent* Mesh = Character->GetMesh();
+	if (!Mesh)
+	{
+		return;
+	}
+
+	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	Mesh->SetSimulatePhysics(true);
+
+	FVector Impulse = Character->GetActorForwardVector() * -DeathBackwardImpulse;
+	Impulse.Z = DeathUpwardImpulse;
+	Mesh->AddImpulseAtLocation(Impulse, Character->GetActorLocation());
+
+	bDeathRagdollApplied = true;
 }
 
 void UBaseDeathGameplayAbility::FinishDeath()
