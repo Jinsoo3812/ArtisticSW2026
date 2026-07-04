@@ -82,9 +82,8 @@ void URippleSubsystem::OnWaterBodyActorOverlap(AActor* OverlappedActor, AActor* 
 
 	// Use actor's current velocity
 	float DownwardSpeed = -OtherActor->GetVelocity().Z;
-	const float MinVelocity = 100.0f; // 1.0 m/s threshold
 
-	if (DownwardSpeed >= MinVelocity)
+	if (DownwardSpeed >= MinVelocityThreshold)
 	{
 		FVector ContactLoc = OtherActor->GetActorLocation();
 		float InitialAmplitude = FMath::Clamp(DownwardSpeed * AmplitudeMultiplier, 10.0f, MaxInitialAmplitude);

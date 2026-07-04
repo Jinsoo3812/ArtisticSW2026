@@ -92,6 +92,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water Ripple|Parameters")
 	float MaxInitialAmplitude = 150.0f;
 
+	// Minimum downward velocity (cm/s) required to trigger a water entry ripple
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water Ripple|Parameters")
+	float MinVelocityThreshold = 100.0f;
+
 	// Max number of active ripples
 	static const int32 MaxActiveRipples = 32;
 
