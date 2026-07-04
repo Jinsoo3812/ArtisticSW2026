@@ -13,7 +13,9 @@ public class ClassFeature: ModuleRules
             "InputCore",
             "EnhancedInput",
             "ArtisticSWCore",
-            "UMG"
+            "UMG",
+            "RHI",
+            "RenderCore"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {

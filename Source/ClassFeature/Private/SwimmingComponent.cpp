@@ -11,6 +11,8 @@
 #include "WaterSubsystem.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
+#include "RippleSubsystem.h"
+#include "SWRippleWaterWaves.h"
 
 USwimmingComponent::USwimmingComponent()
 {
@@ -228,6 +230,15 @@ bool USwimmingComponent::GetWaterHeightAtLocation(const FVector& Location, float
 						FVector ComputedNormal;
 						float RawWaveHeight = WaterWaves->GetWaveHeightAtPosition(Query.GetWaterSurfaceLocation(), WaterDepth, CurrentServerTime, ComputedNormal);
 						WaterZ += RawWaveHeight * AttenuationFactor;
+
+						// Fallback: If custom waves are not assigned, manually query and add the ripple height
+						if (!WaterWaves->IsA<USWRippleWaterWaves>())
+						{
+							if (URippleSubsystem* RippleSubsystem = GetWorld()->GetSubsystem<URippleSubsystem>())
+							{
+								WaterZ += RippleSubsystem->GetRippleHeight(Query.GetWaterSurfaceLocation()) * AttenuationFactor;
+							}
+						}
 					}
 				}
 			}
@@ -446,3 +457,5 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 		static_cast<UMovementComponent*>(CharacterMovement)->SlideAlongSurface(CharacterMovement->Velocity * DeltaTime, 1.f - SweepHit.Time, SweepHit.Normal, SweepHit, true);
 	}
 }
+
+
