@@ -85,3 +85,13 @@ float USWRippleWaterWaves::GetWaveAttenuationFactor(const FVector& InPosition, f
 	}
 	return 1.0f;
 }
+
+const UWaterWaves* USWRippleWaterWaves::GetWaterWaves() const
+{
+	return BaseWavesAsset ? BaseWavesAsset->GetWaterWaves() : nullptr;
+}
+
+UWaterWaves* USWRippleWaterWaves::GetWaterWaves()
+{
+	return BaseWavesAsset ? BaseWavesAsset->GetWaterWaves() : nullptr;
+}

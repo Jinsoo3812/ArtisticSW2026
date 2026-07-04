@@ -186,8 +186,8 @@ void URippleSubsystem::Tick(float DeltaTime)
 			}
 		}
 
-		UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem Diagnostics] Time: %.2f | MPC: %s | Bound MIDs: %d (Failed: %d) | Active Waves: %d (%s) | Test Height (+100cm): %.4f"),
-			ServerTime, *MPCStatus, BoundWaterBodiesCount, FailedWaterBodiesCount, ActiveRipples.Num(), *ActiveWaveInfo, TestHeight);
+		// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem Diagnostics] Time: %.2f | MPC: %s | Bound MIDs: %d (Failed: %d) | Active Waves: %d (%s) | Test Height (+100cm): %.4f"),
+		// 	ServerTime, *MPCStatus, BoundWaterBodiesCount, FailedWaterBodiesCount, ActiveRipples.Num(), *ActiveWaveInfo, TestHeight);
 	}
 }
 
