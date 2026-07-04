@@ -71,7 +71,7 @@ void URippleSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		if (WaterBody)
 		{
 			WaterBody->OnActorBeginOverlap.AddDynamic(this, &URippleSubsystem::OnWaterBodyActorOverlap);
-			UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Bound overlap listener to WaterBody: %s"), *WaterBody->GetName());
+			// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Bound overlap listener to WaterBody: %s"), *WaterBody->GetName());
 		}
 	}
 }
@@ -92,8 +92,8 @@ void URippleSubsystem::OnWaterBodyActorOverlap(AActor* OverlappedActor, AActor* 
 		// Spawn ripple locally using Default configurations
 		AddRipple(FVector2D(ContactLoc.X, ContactLoc.Y), InitialAmplitude, DefaultWaveSpeed, DefaultDecayRate, DefaultWaveLength);
 
-		UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Actor: %s entered WaterBody: %s. Speed: %.2f. Spawning Ripple Amp: %.2f"),
-			*OtherActor->GetName(), *OverlappedActor->GetName(), DownwardSpeed, InitialAmplitude);
+		// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Actor: %s entered WaterBody: %s. Speed: %.2f. Spawning Ripple Amp: %.2f"),
+		// 	*OtherActor->GetName(), *OverlappedActor->GetName(), DownwardSpeed, InitialAmplitude);
 	}
 }
 
@@ -221,7 +221,7 @@ void URippleSubsystem::AddRipple(FVector2D Origin, float InitialAmplitude, float
 	// If no players are nearby, do not generate the ripple
 	if (!bIsNearPlayer && Players.Num() > 0)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[RippleSubsystem] AddRipple Culled: No players near %s (MaxDist: %.2f)"), *Origin.ToString(), MaxGenerationDistance);
+		// UE_LOG(LogTemp, Log, TEXT("[RippleSubsystem] AddRipple Culled: No players near %s (MaxDist: %.2f)"), *Origin.ToString(), MaxGenerationDistance);
 		return;
 	}
 
@@ -256,13 +256,13 @@ void URippleSubsystem::AddRipple(FVector2D Origin, float InitialAmplitude, float
 					BestIndex = i;
 				}
 			}
-			UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Active slot limit reached. Replacing ripple at index %d. New Location: %s, Amp: %.2f, Tmax: %.2fs"), BestIndex, *Origin.ToString(), InitialAmplitude, Tmax);
+			// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Active slot limit reached. Replacing ripple at index %d. New Location: %s, Amp: %.2f, Tmax: %.2fs"), BestIndex, *Origin.ToString(), InitialAmplitude, Tmax);
 			ActiveRipples[BestIndex] = NewWave;
 		}
 		else
 		{
 			ActiveRipples.Add(NewWave);
-			UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Spawned Ripple successfully at %s (Amp: %.2f, Speed: %.2f, Tmax: %.2fs). Active Count: %d"), *Origin.ToString(), InitialAmplitude, WaveSpeed, Tmax, ActiveRipples.Num());
+			// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Spawned Ripple successfully at %s (Amp: %.2f, Speed: %.2f, Tmax: %.2fs). Active Count: %d"), *Origin.ToString(), InitialAmplitude, WaveSpeed, Tmax, ActiveRipples.Num());
 		}
 	}
 }
