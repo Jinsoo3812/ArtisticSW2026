@@ -112,6 +112,9 @@ private:
 	// Synchronize Server Time to the Material Parameter Collection
 	void UpdateServerTimeMPC(float ServerTime);
 
+	// Get synchronized server world time (network-synced absolute time)
+	float GetServerTime() const;
+
 	UFUNCTION()
 	void OnWaterBodyActorOverlap(AActor* OverlappedActor, AActor* OtherActor);
 };

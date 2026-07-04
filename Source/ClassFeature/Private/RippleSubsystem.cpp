@@ -106,7 +106,7 @@ void URippleSubsystem::Tick(float DeltaTime)
 {
 	if (!GetWorld()) return;
 
-	float ServerTime = GetWorld()->GetTimeSeconds();
+	float ServerTime = GetServerTime();
 
 	// 1. Remove expired ripples
 	bool bChanged = false;
@@ -130,7 +130,7 @@ void URippleSubsystem::Tick(float DeltaTime)
 
 	// 4. Debug Diagnostics & Dynamic Texture Binding (Every 1 second)
 	static float LastDebugLogTime = 0.0f;
-	float CurrentTime = GetWorld()->GetTimeSeconds();
+	float CurrentTime = GetServerTime();
 	
 	bool bShouldLog = (CurrentTime - LastDebugLogTime >= 1.0f);
 	
@@ -196,7 +196,7 @@ void URippleSubsystem::AddRipple(FVector2D Origin, float InitialAmplitude, float
 	UWorld* World = GetWorld();
 	if (!World) return;
 
-	float ServerTime = World->GetTimeSeconds();
+	float ServerTime = GetServerTime();
 
 	// Range Culling: Check distance to all player pawns
 	bool bIsNearPlayer = false;
@@ -272,7 +272,7 @@ float URippleSubsystem::GetRippleHeight(const FVector& Location) const
 	UWorld* World = GetWorld();
 	if (!World) return 0.0f;
 
-	float ServerTime = World->GetTimeSeconds();
+	float ServerTime = GetServerTime();
 
 	float TotalHeight = 0.0f;
 	FVector2D QueryPos(Location.X, Location.Y);
@@ -379,4 +379,17 @@ void URippleSubsystem::UpdateServerTimeMPC(float ServerTime)
 			}
 		}
 	}
+}
+
+float URippleSubsystem::GetServerTime() const
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (AGameStateBase* GameState = World->GetGameState())
+		{
+			return GameState->GetServerWorldTimeSeconds();
+		}
+		return World->GetTimeSeconds();
+	}
+	return 0.0f;
 }
