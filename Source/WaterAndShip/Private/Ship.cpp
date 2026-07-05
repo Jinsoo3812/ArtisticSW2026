@@ -64,6 +64,10 @@ void AShip::BeginPlay()
 			BuoyancyRoot->SetSimulatePhysics(false);
 		}
 	}
+
+	// Initialize replicated state to avoid teleporting to 0,0,0 on client initialization
+	ReplicatedState.Location = GetActorLocation();
+	ReplicatedState.Rotation = GetActorRotation();
 }
 
 // Called every frame

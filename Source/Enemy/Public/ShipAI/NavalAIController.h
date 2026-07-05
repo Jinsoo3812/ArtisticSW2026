@@ -28,9 +28,6 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI | Perception")
 	TObjectPtr<UAISenseConfig_Sight> SightConfig;
 
-	UFUNCTION()
-	void OnTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus);
-
 protected:
 	// 비헤이비어 트리를 구동할 데이터 설정
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "AI | Behavior Tree")
