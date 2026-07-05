@@ -23,6 +23,7 @@ class USWTrajectoryComponent;
 class UAnimMontage;
 class UBaseHealthComponent;
 class AShip;
+class ACannon;
 class USwimmingComponent;
 
 // Item Slot 관리 구조체
@@ -343,6 +344,9 @@ protected:
 
 	// 배 승선 이벤트를 처리하는 함수
 	void HandleShipBoardEvent(const FGameplayEventData* Payload);
+
+	// 대포 탑승 이벤트를 처리하는 함수
+	void HandleCannonBoardEvent(const FGameplayEventData* Payload);
 
 
 	/* --- Interactable Object Trace ---*/

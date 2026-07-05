@@ -44,7 +44,7 @@ ACannon::ACannon()
 	AimCamera->SetMobility(EComponentMobility::Movable);
 	AimCamera->bUsePawnControlRotation = false; // We drive the rotation manually
 
-	// Interactable Component
+	// Interactable Component (Ship과 동일 패턴 - BeginPlay에서 바인딩하지 않음)
 	InteractableComponent = CreateDefaultSubobject<UInteractableComponent>(TEXT("InteractableComponent"));
 	InteractableComponent->SetupAttachment(RootComponent);
 	InteractableComponent->SetCollisionProfileName(TEXT("Interactable"));
@@ -56,12 +56,6 @@ ACannon::ACannon()
 void ACannon::BeginPlay()
 {
 	Super::BeginPlay();
-
-	// Bind interact event
-	if (InteractableComponent)
-	{
-		InteractableComponent->OnInteracted.AddUniqueDynamic(this, &ACannon::OnInteracted);
-	}
 
 	// Capture initial rotations
 	if (BaseMesh)
@@ -98,82 +92,32 @@ void ACannon::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	UE_LOG(LogTemp, Log, TEXT("ACannon::SetupPlayerInputComponent Called!"));
+	// Ship의 SetupPlayerInputComponent와 동일 패턴: CachedPlayerController 캐싱
+	CachedPlayerController = Cast<APlayerController>(GetController());
 
 	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
 		if (CannonLookAction)
 		{
 			EnhancedInput->BindAction(CannonLookAction, ETriggerEvent::Triggered, this, &ACannon::HandleLook);
-			UE_LOG(LogTemp, Log, TEXT("ACannon::SetupPlayerInputComponent - Bound LookAction"));
 		}
 		if (CannonFireAction)
 		{
 			EnhancedInput->BindAction(CannonFireAction, ETriggerEvent::Started, this, &ACannon::HandleFire);
-			UE_LOG(LogTemp, Log, TEXT("ACannon::SetupPlayerInputComponent - Bound FireAction"));
 		}
 		if (CannonExitAction)
 		{
 			EnhancedInput->BindAction(CannonExitAction, ETriggerEvent::Started, this, &ACannon::HandleExit);
-			UE_LOG(LogTemp, Log, TEXT("ACannon::SetupPlayerInputComponent - Bound ExitAction"));
 		}
 	}
-}
-
-void ACannon::PossessedBy(AController* NewController)
-{
-	Super::PossessedBy(NewController);
-
-	CachedPC = Cast<APlayerController>(NewController);
-
-	// Explicitly enable input for this pawn
-	EnableInput(CachedPC);
-
-	if (CachedPC && CachedPC->IsLocalController())
+	else
 	{
-		// Clients or Listen Server Local
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPC->GetLocalPlayer()))
-		{
-			if (CannonInputMappingContext)
-			{
-				Subsystem->AddMappingContext(CannonInputMappingContext, CannonInputPriority);
-			}
-		}
-
-		if (AimWidgetClass && !AimWidgetInstance)
-		{
-			AimWidgetInstance = CreateWidget<UUserWidget>(CachedPC, AimWidgetClass);
-			if (AimWidgetInstance)
-			{
-				AimWidgetInstance->AddToViewport();
-			}
-		}
+		UE_LOG(LogTemp, Error, TEXT("ACannon::SetupPlayerInputComponent - Failed to find Enhanced Input Component."));
 	}
 }
 
 void ACannon::UnPossessed()
 {
-	if (CachedPC)
-	{
-		if (CachedPC->IsLocalController())
-		{
-			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPC->GetLocalPlayer()))
-			{
-				if (CannonInputMappingContext)
-				{
-					Subsystem->RemoveMappingContext(CannonInputMappingContext);
-				}
-			}
-
-			if (AimWidgetInstance)
-			{
-				AimWidgetInstance->RemoveFromParent();
-				AimWidgetInstance = nullptr;
-			}
-		}
-	}
-
-	CachedPC = nullptr;
 	Super::UnPossessed();
 }
 
@@ -211,46 +155,43 @@ void ACannon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
 	DOREPLIFETIME(ACannon, AimRotation);
 }
 
-void ACannon::OnInteracted(AActor* Interactor)
+// Ship의 Board()와 완전히 동일한 패턴
+void ACannon::Board(APawn* PlayerPawn)
 {
 	if (!HasAuthority()) return;
+	if (!PlayerPawn || RidingPlayer) return;
 
-	APawn* InteractingPawn = Cast<APawn>(Interactor);
-	if (!InteractingPawn || RidingPlayer) return;
+	APlayerController* PC = Cast<APlayerController>(PlayerPawn->GetController());
+	if (!PC) return;
 
-	RidingPlayer = InteractingPawn;
-	EnterAimMode(RidingPlayer.Get());
-}
+	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board initiated by player pawn %s. Cannon location: %s, Player location: %s"), *PlayerPawn->GetName(), *GetActorLocation().ToString(), *PlayerPawn->GetActorLocation().ToString());
 
-void ACannon::EnterAimMode(APawn* InPlayer)
-{
-	if (!HasAuthority() || !InPlayer) return;
+	RidingPlayer = PlayerPawn;
 
-	// Disable collision and movement
-	InPlayer->SetActorEnableCollision(false);
+	// Disable player collision
+	RidingPlayer->SetActorEnableCollision(false);
+	RidingPlayer->SetActorHiddenInGame(false);
 
-	if (ACharacter* Character = Cast<ACharacter>(InPlayer))
+	if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
 	{
-		if (UCharacterMovementComponent* MoveComp = Character->GetCharacterMovement())
-		{
-			MoveComp->DisableMovement();
-			MoveComp->StopMovementImmediately();
-		}
+		Char->GetCharacterMovement()->DisableMovement();
+		Char->GetCharacterMovement()->StopMovementImmediately();
 	}
 
-	// Disable movement replication during Cannon ride
-	InPlayer->SetReplicateMovement(false);
+	// Disable movement replication while on the cannon to prevent jittering
+	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board - Player bReplicateMovement before disable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
+	RidingPlayer->SetReplicateMovement(false);
+	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board - Player bReplicateMovement after disable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
 
-	// Attach Player to base mesh (Seat position)
+	// Attach to BaseMesh directly without welding physics bodies to avoid physics conflicts
 	FAttachmentTransformRules AttachmentRules(EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, false);
-	InPlayer->AttachToComponent(BaseMesh, AttachmentRules);
+	RidingPlayer->AttachToComponent(BaseMesh, AttachmentRules);
+	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board - Player attached to BaseMesh. Relative location: %s, relative rotation: %s"), 
+		*RidingPlayer->GetRootComponent()->GetRelativeLocation().ToString(), 
+		*RidingPlayer->GetRootComponent()->GetRelativeRotation().ToString());
 
-	// Possess Cannon Pawn
-	AController* OldController = InPlayer->GetController();
-	if (OldController)
-	{
-		OldController->Possess(this);
-	}
+	// Possess cannon pawn (Ship의 Board와 동일)
+	PC->Possess(this);
 }
 
 void ACannon::HandleLook(const FInputActionValue& Value)
@@ -304,44 +245,40 @@ void ACannon::HandleFire(const FInputActionValue& Value)
 
 void ACannon::HandleExit(const FInputActionValue& Value)
 {
-	if (HasAuthority())
-	{
-		ExitAimMode();
-	}
-	else
-	{
-		ServerExit();
-	}
+	ServerExit();
 }
 
+// Ship의 Disembark()와 동일한 패턴
 void ACannon::ExitAimMode()
 {
-	if (!HasAuthority() || !RidingPlayer) return;
+	if (!HasAuthority()) return;
+	if (!RidingPlayer) return;
 
-	APawn* PlayerPawn = RidingPlayer;
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC) return;
+
+	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode initiated. Player pawn: %s"), *RidingPlayer->GetName());
+
+	// Detach player preserving their current world position on the cannon
+	RidingPlayer->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode - Detached player. World location: %s"), *RidingPlayer->GetActorLocation().ToString());
+
+	RidingPlayer->SetActorEnableCollision(true);
+	RidingPlayer->SetActorHiddenInGame(false);
+
+	if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
+	{
+		Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+	}
+
+	// Restore movement replication on exit
+	RidingPlayer->SetReplicateMovement(true);
+	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode - Player bReplicateMovement after enable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
+
+	// Return possession to player character (Ship의 Disembark와 동일)
+	PC->Possess(RidingPlayer);
+
 	RidingPlayer = nullptr;
-
-	// Detach Player
-	PlayerPawn->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-	PlayerPawn->SetActorEnableCollision(true);
-
-	if (ACharacter* Character = Cast<ACharacter>(PlayerPawn))
-	{
-		if (UCharacterMovementComponent* MoveComp = Character->GetCharacterMovement())
-		{
-			MoveComp->SetMovementMode(MOVE_Walking);
-		}
-	}
-
-	// Restore movement replication
-	PlayerPawn->SetReplicateMovement(true);
-
-	// Re-possess player pawn
-	AController* PC = GetController();
-	if (PC)
-	{
-		PC->Possess(PlayerPawn);
-	}
 }
 
 void ACannon::ForceExit()
@@ -398,82 +335,85 @@ void ACannon::OnRep_AimRotation()
 	// mesh rotation is handled in Tick
 }
 
+// Ship의 OnRep_RidingPlayer()와 동일 패턴
 void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 {
+	UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer. OldPlayer: %s, RidingPlayer: %s"), 
+		OldPlayer ? *OldPlayer->GetName() : TEXT("Null"), 
+		RidingPlayer ? *RidingPlayer->GetName() : TEXT("Null"));
+
 	if (OldPlayer && OldPlayer != RidingPlayer)
 	{
+		UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer - Restoring old passenger collision and walking movement."));
 		OldPlayer->SetActorEnableCollision(true);
-
-		if (ACharacter* Character = Cast<ACharacter>(OldPlayer))
+		if (ACharacter* Char = Cast<ACharacter>(OldPlayer))
 		{
-			if (UCharacterMovementComponent* MoveComp = Character->GetCharacterMovement())
-			{
-				MoveComp->SetMovementMode(MOVE_Walking);
-			}
+			Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 		}
 	}
 
 	if (RidingPlayer)
 	{
+		UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer - Disabling current passenger collision and movement."));
 		RidingPlayer->SetActorEnableCollision(false);
-
-		if (ACharacter* Character = Cast<ACharacter>(RidingPlayer))
+		if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
 		{
-			if (UCharacterMovementComponent* MoveComp = Character->GetCharacterMovement())
-			{
-				MoveComp->DisableMovement();
-				MoveComp->StopMovementImmediately();
-			}
+			Char->GetCharacterMovement()->DisableMovement();
+			Char->GetCharacterMovement()->StopMovementImmediately();
 		}
 	}
 }
 
+// Ship의 OnRep_Controller()와 완전히 동일한 패턴
 void ACannon::OnRep_Controller()
 {
 	Super::OnRep_Controller();
 
-	CachedPC = Cast<APlayerController>(GetController());
-
-	if (CachedPC == nullptr)
+	if (Controller == nullptr)
 	{
-		// Clean up UI/IMC locally when unpossessed
-		if (APlayerController* LocalPC = Cast<APlayerController>(GEngine->GetFirstLocalPlayerController(GetWorld())))
+		if (CachedPlayerController)
 		{
-			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPC->GetLocalPlayer()))
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
 			{
 				if (CannonInputMappingContext)
 				{
 					Subsystem->RemoveMappingContext(CannonInputMappingContext);
+					UE_LOG(LogTemp, Log, TEXT("ACannon: Removed CannonInputMappingContext in OnRep_Controller."));
 				}
 			}
-		}
 
-		if (AimWidgetInstance)
-		{
-			AimWidgetInstance->RemoveFromParent();
-			AimWidgetInstance = nullptr;
-		}
-	}
-	else if (CachedPC->IsLocalController())
-	{
-		// Explicitly enable input for this pawn locally
-		EnableInput(CachedPC);
-
-		// Apply local setup
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPC->GetLocalPlayer()))
-		{
-			if (CannonInputMappingContext)
-			{
-				Subsystem->AddMappingContext(CannonInputMappingContext, CannonInputPriority);
-			}
-		}
-
-		if (AimWidgetClass && !AimWidgetInstance)
-		{
-			AimWidgetInstance = CreateWidget<UUserWidget>(CachedPC, AimWidgetClass);
+			// UI 정리
 			if (AimWidgetInstance)
 			{
-				AimWidgetInstance->AddToViewport();
+				AimWidgetInstance->RemoveFromParent();
+				AimWidgetInstance = nullptr;
+			}
+
+			CachedPlayerController = nullptr;
+		}
+	}
+	else
+	{
+		CachedPlayerController = Cast<APlayerController>(Controller);
+		if (CachedPlayerController)
+		{
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
+			{
+				if (CannonInputMappingContext)
+				{
+					Subsystem->AddMappingContext(CannonInputMappingContext, CannonInputPriority);
+					UE_LOG(LogTemp, Log, TEXT("ACannon: Added CannonInputMappingContext in OnRep_Controller."));
+				}
+			}
+
+			// UI 생성
+			if (AimWidgetClass && !AimWidgetInstance)
+			{
+				AimWidgetInstance = CreateWidget<UUserWidget>(CachedPlayerController, AimWidgetClass);
+				if (AimWidgetInstance)
+				{
+					AimWidgetInstance->AddToViewport();
+				}
 			}
 		}
 	}

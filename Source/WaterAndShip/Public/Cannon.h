@@ -41,15 +41,13 @@ protected:
 public:	
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
-	virtual void PossessedBy(AController* NewController) override;
 	virtual void UnPossessed() override;
 	virtual void OnRep_Controller() override;
 	class AShip* GetOwningShip() const;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	/** Interact Handler bound to UInteractableComponent */
-	UFUNCTION()
-	void OnInteracted(AActor* Interactor);
+	/* Boarding Interaction - Ship의 Board()와 완전히 동일한 패턴 */
+	void Board(APawn* PlayerPawn);
 
 	/** Force exit from cannon control (e.g. when ship is destroyed or forced off) */
 	void ForceExit();
@@ -118,7 +116,6 @@ protected:
 	void HandleExit(const FInputActionValue& Value);
 
 	// ---- Actions ----
-	void EnterAimMode(APawn* InPlayer);
 	void ExitAimMode();
 
 	// ---- Server RPCs ----
@@ -141,7 +138,7 @@ protected:
 	void OnRep_RidingPlayer(APawn* OldPlayer);
 
 private:
-	// ---- State ----
+	// ---- Passenger Reference (Ship의 RidingPlayer와 동일 패턴) ----
 	UPROPERTY(ReplicatedUsing = OnRep_RidingPlayer)
 	TObjectPtr<APawn> RidingPlayer = nullptr;
 
@@ -159,5 +156,5 @@ private:
 	FRotator InitialBarrelRotation;
 
 	UPROPERTY()
-	TObjectPtr<APlayerController> CachedPC = nullptr;
+	TObjectPtr<APlayerController> CachedPlayerController = nullptr;
 };

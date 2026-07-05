@@ -31,6 +31,7 @@
 #include "Animation/AnimInstance.h"
 #include "Components/BaseHealthComponent.h"
 #include "Ship.h"
+#include "Cannon.h"
 #include "SwimmingComponent.h"
 #include "HAL/FileManager.h"
 #include "Misc/DateTime.h"
@@ -326,6 +327,7 @@ void ABasePlayer::PossessedBy(AController* NewController)
 		if(CachedAbilitySystemComponent.IsValid()) {
 			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
 			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_ShipBoard).AddUObject(this, &ABasePlayer::HandleShipBoardEvent);
+			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_CannonBoard).AddUObject(this, &ABasePlayer::HandleCannonBoardEvent);
 
 			// Map에 등록된 기본 어빌리티 순회 및 슬롯에 부여
 			for (TSubclassOf<UGameplayAbility> AbilityClass : DefaultGrantedAbilities)
@@ -544,11 +546,25 @@ void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayA
 		return;
 	}
 
-	// 해당 슬롯에 이미 부여된 어빌리티가 있다면 교체
+	int32 TargetInputID = GetInputIDFromTag(KeyTag);
+	if (TargetInputID != INDEX_NONE)
+	{
+		// 이미 해당 InputID에 동일한 클래스의 어빌리티가 부여되어 있는지 확인
+		for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
+		{
+			if (Spec.InputID == TargetInputID && Spec.Ability && Spec.Ability->GetClass() == AbilityClass)
+			{
+				// 이미 동일한 어빌리티가 동일 슬롯에 존재하므로 중복 부여하지 않고 리턴
+				return;
+			}
+		}
+	}
+
+	// 해당 슬롯에 다른 어빌리티가 있거나 없을 때만 제거 후 부여
 	RemoveAbilityFromSlot(KeyTag);
 
 	// 통합 맵에서 이 태그에 할당된 ID를 가져옴
-	int32 AssignedID = GetInputIDFromTag(KeyTag);
+	int32 AssignedID = TargetInputID;
 
 	// GA Spec 생성 시 해당 ID 주입
 	FGameplayAbilitySpec Spec(AbilityClass, 1, AssignedID, this);
@@ -683,6 +699,17 @@ void ABasePlayer::HandleShipBoardEvent(const FGameplayEventData* Payload)
 		if (AShip* TargetShip = const_cast<AShip*>(Cast<AShip>(Payload->Target)))
 		{
 			TargetShip->Board(this);
+		}
+	}
+}
+
+void ABasePlayer::HandleCannonBoardEvent(const FGameplayEventData* Payload)
+{
+	if (Payload && Payload->Target)
+	{
+		if (ACannon* TargetCannon = const_cast<ACannon*>(Cast<ACannon>(Payload->Target)))
+		{
+			TargetCannon->Board(this);
 		}
 	}
 }
