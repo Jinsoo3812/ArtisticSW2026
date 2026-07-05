@@ -225,6 +225,10 @@ void AShip::Board(APawn* PlayerPawn)
 	{
 		Char->GetCharacterMovement()->DisableMovement();
 		Char->GetCharacterMovement()->StopMovementImmediately();
+		if (Char->GetMesh())
+		{
+			Char->GetMesh()->SetOwnerNoSee(true);
+		}
 	}
 
 	// Disable movement replication while on the ship to prevent jittering
@@ -276,6 +280,10 @@ void AShip::Disembark()
 	if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
 	{
 		Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+		if (Char->GetMesh())
+		{
+			Char->GetMesh()->SetOwnerNoSee(false);
+		}
 	}
 
 	// Restore movement replication on disembark
@@ -465,6 +473,10 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 		if (ACharacter* Char = Cast<ACharacter>(OldRidingPlayer))
 		{
 			Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+			if (Char->GetMesh())
+			{
+				Char->GetMesh()->SetOwnerNoSee(false);
+			}
 		}
 	}
 
@@ -476,6 +488,10 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 		{
 			Char->GetCharacterMovement()->DisableMovement();
 			Char->GetCharacterMovement()->StopMovementImmediately();
+			if (Char->GetMesh())
+			{
+				Char->GetMesh()->SetOwnerNoSee(true);
+			}
 		}
 	}
 }

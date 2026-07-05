@@ -10,6 +10,7 @@
 #include "DrawDebugHelpers.h"
 #include "WaterBodyActor.h"
 #include "Cannon.h"
+#include "BaseAttributeSet.h"
 
 ACannonball::ACannonball()
 {
@@ -101,7 +102,13 @@ void ACannonball::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* Ot
 				}
 			}
 
-			UE_LOG(LogTemp, Warning, TEXT("ACannonball: Hit Ship %s! Dealt %f damage."), *HitShip->GetName(), DamageAmount);
+			float CurrentHealth = 0.0f;
+			if (TargetASC)
+			{
+				CurrentHealth = TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
+			}
+
+			UE_LOG(LogTemp, Warning, TEXT("ACannonball: Hit Ship %s! Dealt %f damage. Current Health: %f"), *HitShip->GetName(), DamageAmount, CurrentHealth);
 
 			// 3. Destroy projectile immediately
 			Destroy();
