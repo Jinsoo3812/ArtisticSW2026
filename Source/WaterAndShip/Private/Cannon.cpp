@@ -176,10 +176,6 @@ void ACannon::Board(APawn* PlayerPawn)
 	{
 		Char->GetCharacterMovement()->DisableMovement();
 		Char->GetCharacterMovement()->StopMovementImmediately();
-		if (Char->GetMesh())
-		{
-			Char->GetMesh()->SetOwnerNoSee(true);
-		}
 	}
 
 	// Disable movement replication while on the cannon to prevent jittering
@@ -273,10 +269,6 @@ void ACannon::ExitAimMode()
 	if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
 	{
 		Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
-		if (Char->GetMesh())
-		{
-			Char->GetMesh()->SetOwnerNoSee(false);
-		}
 	}
 
 	// Restore movement replication on exit
@@ -357,10 +349,11 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 		if (ACharacter* Char = Cast<ACharacter>(OldPlayer))
 		{
 			Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
-			if (Char->GetMesh())
-			{
-				Char->GetMesh()->SetOwnerNoSee(false);
-			}
+		}
+
+		if (CachedPlayerController && CachedPlayerController->IsLocalController())
+		{
+			CachedPlayerController->HiddenActors.Remove(OldPlayer);
 		}
 	}
 
@@ -372,10 +365,11 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 		{
 			Char->GetCharacterMovement()->DisableMovement();
 			Char->GetCharacterMovement()->StopMovementImmediately();
-			if (Char->GetMesh())
-			{
-				Char->GetMesh()->SetOwnerNoSee(true);
-			}
+		}
+
+		if (CachedPlayerController && CachedPlayerController->IsLocalController())
+		{
+			CachedPlayerController->HiddenActors.AddUnique(RidingPlayer);
 		}
 	}
 }
@@ -389,6 +383,11 @@ void ACannon::OnRep_Controller()
 	{
 		if (CachedPlayerController)
 		{
+			if (RidingPlayer && CachedPlayerController->IsLocalController())
+			{
+				CachedPlayerController->HiddenActors.Remove(RidingPlayer);
+			}
+
 			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
 			{
 				if (CannonInputMappingContext)

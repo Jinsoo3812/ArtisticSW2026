@@ -225,10 +225,6 @@ void AShip::Board(APawn* PlayerPawn)
 	{
 		Char->GetCharacterMovement()->DisableMovement();
 		Char->GetCharacterMovement()->StopMovementImmediately();
-		if (Char->GetMesh())
-		{
-			Char->GetMesh()->SetOwnerNoSee(true);
-		}
 	}
 
 	// Disable movement replication while on the ship to prevent jittering
@@ -280,10 +276,6 @@ void AShip::Disembark()
 	if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
 	{
 		Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
-		if (Char->GetMesh())
-		{
-			Char->GetMesh()->SetOwnerNoSee(false);
-		}
 	}
 
 	// Restore movement replication on disembark
@@ -473,10 +465,11 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 		if (ACharacter* Char = Cast<ACharacter>(OldRidingPlayer))
 		{
 			Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
-			if (Char->GetMesh())
-			{
-				Char->GetMesh()->SetOwnerNoSee(false);
-			}
+		}
+
+		if (CachedPlayerController && CachedPlayerController->IsLocalController())
+		{
+			CachedPlayerController->HiddenActors.Remove(OldRidingPlayer);
 		}
 	}
 
@@ -488,10 +481,11 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 		{
 			Char->GetCharacterMovement()->DisableMovement();
 			Char->GetCharacterMovement()->StopMovementImmediately();
-			if (Char->GetMesh())
-			{
-				Char->GetMesh()->SetOwnerNoSee(true);
-			}
+		}
+
+		if (CachedPlayerController && CachedPlayerController->IsLocalController())
+		{
+			CachedPlayerController->HiddenActors.AddUnique(RidingPlayer);
 		}
 	}
 }
@@ -504,6 +498,11 @@ void AShip::OnRep_Controller()
 	{
 		if (CachedPlayerController)
 		{
+			if (RidingPlayer && CachedPlayerController->IsLocalController())
+			{
+				CachedPlayerController->HiddenActors.Remove(RidingPlayer);
+			}
+
 			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
 			{
 				if (ShipInputMappingContext)
