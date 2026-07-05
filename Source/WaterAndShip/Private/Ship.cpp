@@ -12,6 +12,8 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "AbilitySystemComponent.h"
+#include "BaseAttributeSet.h"
 
 // Sets default values
 AShip::AShip()
@@ -44,6 +46,14 @@ AShip::AShip()
 	// Set default collision preset for interactables
 	InteractableComponent->SetCollisionProfileName(TEXT("Interactable"));
 
+	// Ability System Component
+	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AbilitySystemComponent->SetIsReplicated(true);
+	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
+
+	// Attribute Set
+	AttributeSet = CreateDefaultSubobject<UBaseAttributeSet>(TEXT("AttributeSet"));
+
 	bReplicates = true;
 	SetReplicateMovement(false);
 	bAlwaysRelevant = true;
@@ -53,6 +63,19 @@ AShip::AShip()
 void AShip::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->InitAbilityActorInfo(this, this);
+	}
+
+	if (HasAuthority() && AttributeSet)
+	{
+		AttributeSet->InitHealth(100.0f);
+		AttributeSet->InitMaxHealth(100.0f);
+		AttributeSet->InitMoveSpeed(1.0f);
+		AttributeSet->InitAttackPower(10.0f);
+	}
 
 	if (BuoyancyRoot)
 	{
@@ -296,7 +319,13 @@ void AShip::ApplyForwardForce(float MoveValue)
 		Forward.Z = 0.0f;
 		Forward.Normalize();
 
-		BuoyancyRoot->AddForce(Forward * ForwardForce * MoveValue);
+		float CurrentMoveSpeedMultiplier = 1.0f;
+		if (AttributeSet)
+		{
+			CurrentMoveSpeedMultiplier = AttributeSet->GetMoveSpeed();
+		}
+
+		BuoyancyRoot->AddForce(Forward * ForwardForce * MoveValue * CurrentMoveSpeedMultiplier);
 	}
 }
 
@@ -326,8 +355,14 @@ void AShip::ApplyTurnTorque(float TurnValue)
 {
 	if (BuoyancyRoot && FMath::Abs(TurnValue) > KINDA_SMALL_NUMBER)
 	{
+		float CurrentMoveSpeedMultiplier = 1.0f;
+		if (AttributeSet)
+		{
+			CurrentMoveSpeedMultiplier = AttributeSet->GetMoveSpeed();
+		}
+
 		// Apply torque around the Z-axis (yaw) for horizontal turning
-		BuoyancyRoot->AddTorqueInDegrees(FVector(0.0f, 0.0f, TurnTorque * TurnValue));
+		BuoyancyRoot->AddTorqueInDegrees(FVector(0.0f, 0.0f, TurnTorque * TurnValue * CurrentMoveSpeedMultiplier));
 	}
 }
 
@@ -479,6 +514,11 @@ void AShip::OnRep_Controller()
 			}
 		}
 	}
+}
+
+UAbilitySystemComponent* AShip::GetAbilitySystemComponent() const
+{
+	return AbilitySystemComponent;
 }
 
 

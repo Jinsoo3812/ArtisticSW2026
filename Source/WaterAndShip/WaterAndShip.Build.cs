@@ -17,8 +17,10 @@ public class WaterAndShip: ModuleRules
             "GameplayTasks",
             "GameplayTags",
             "ArtisticSWCore",
+            "GASCore",
             "EnhancedInput",
-            "UMG"
+            "UMG",
+            "Water"
         });
 
         PublicIncludePaths.AddRange(new string[] {

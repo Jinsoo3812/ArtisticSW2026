@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
 #include "InputActionValue.h"
+#include "AbilitySystemInterface.h"
 #include "Ship.generated.h"
 
 class UStaticMeshComponent;
@@ -15,6 +16,8 @@ class UInputMappingContext;
 class UInputAction;
 class APlayerController;
 class UPrimitiveComponent;
+class UAbilitySystemComponent;
+class UBaseAttributeSet;
 
 USTRUCT(BlueprintType)
 struct FShipReplicatedState
@@ -29,13 +32,16 @@ struct FShipReplicatedState
 };
 
 UCLASS()
-class WATERANDSHIP_API AShip : public APawn
+class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this pawn's properties
 	AShip();
+
+	// IAbilitySystemInterface 구현
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
 protected:
 	// Called when the game starts or when spawned
@@ -178,4 +184,11 @@ public:
 
 	/** Resets camera to follow mode (called when disembarking) */
 	void ResetToFollowCamera();
+
+protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UBaseAttributeSet> AttributeSet;
 };
