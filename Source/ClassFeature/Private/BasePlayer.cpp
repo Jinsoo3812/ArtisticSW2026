@@ -86,7 +86,6 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 
 	// 아이템 포인터 초기화
 	EquippedItem = nullptr;
-
 	CameraBoom->bDoCollisionTest = false;
 
 	// 인벤토리 컴포넌트 부착
@@ -142,6 +141,15 @@ void ABasePlayer::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (HealthComponent)
+	{
+		HealthComponent->OnDeathFinished.AddUniqueDynamic(this, &ABasePlayer::HandleDeathFinished);
+		if (HealthComponent->GetDeathState() == EBaseDeathState::DeathFinished)
+		{
+			ApplyLocalDeathRagdoll();
+		}
+	}
+
 	// ItemSlot 배열 초기화: TMap 등록 없이 구조체 배열에 순서대로 Add
 	if (ItemInputConfig)
 	{
@@ -163,10 +171,16 @@ void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (HealthComponent)
 	{
+		HealthComponent->OnDeathFinished.RemoveDynamic(this, &ABasePlayer::HandleDeathFinished);
 		HealthComponent->UninitializeFromAbilitySystem();
 	}
 
 	Super::EndPlay(EndPlayReason);
+}
+
+void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
+{
+	ApplyLocalDeathRagdoll();
 }
 
 void ABasePlayer::Tick(float DeltaTime)
@@ -314,6 +328,11 @@ void ABasePlayer::PossessedBy(AController* NewController)
 			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_ShipBoard).AddUObject(this, &ABasePlayer::HandleShipBoardEvent);
 
 			// Map에 등록된 기본 어빌리티 순회 및 슬롯에 부여
+			for (TSubclassOf<UGameplayAbility> AbilityClass : DefaultGrantedAbilities)
+			{
+				GrantDefaultAbility(AbilityClass);
+			}
+
 			for (const auto& AbilityPair : DefaultAbilityMap)
 			{
 				if (AbilityPair.Value)
@@ -533,6 +552,25 @@ void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayA
 
 	// GA Spec 생성 시 해당 ID 주입
 	FGameplayAbilitySpec Spec(AbilityClass, 1, AssignedID, this);
+	CachedAbilitySystemComponent->GiveAbility(Spec);
+}
+
+void ABasePlayer::GrantDefaultAbility(TSubclassOf<UGameplayAbility> AbilityClass)
+{
+	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass)
+	{
+		return;
+	}
+
+	for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
+	{
+		if (Spec.Ability && Spec.Ability->GetClass() == AbilityClass)
+		{
+			return;
+		}
+	}
+
+	FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, this);
 	CachedAbilitySystemComponent->GiveAbility(Spec);
 }
 

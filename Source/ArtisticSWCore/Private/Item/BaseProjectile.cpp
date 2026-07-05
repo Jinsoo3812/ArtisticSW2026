@@ -20,7 +20,6 @@ ABaseProjectile::ABaseProjectile()
 	CollisionComp = CreateDefaultSubobject<UBoxComponent>(TEXT("BoxComp"));
 	CollisionComp->InitBoxExtent(FVector(15.f)); // 큐브 크기에 맞게 조절
 	CollisionComp->SetCollisionProfileName(TEXT("Projectile"));
-	CollisionComp->SetCollisionProfileName(TEXT("BlockAllDynamic"));
 	RootComponent = CollisionComp;
 
 	// 2. 메시 컴포넌트 부착

@@ -4,6 +4,7 @@
 #include "BaseCharacter.h"
 
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 ABaseCharacter::ABaseCharacter(const FObjectInitializer& ObjectInitializer)
@@ -11,15 +12,12 @@ ABaseCharacter::ABaseCharacter(const FObjectInitializer& ObjectInitializer)
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// 공통 캡슐 크기입니다. 파생 캐릭터에서 필요하면 다시 설정할 수 있습니다.
 	GetCapsuleComponent()->InitCapsuleSize(35.f, 90.f);
 
-	// 컨트롤러 회전은 카메라/조준에 맡기고, 캐릭터는 이동 방향을 기준으로 회전합니다.
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
 
-	// 플레이어와 적이 공통으로 사용할 기본 이동값입니다.
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.f, 500.f, 0.f);
 
@@ -34,7 +32,6 @@ ABaseCharacter::ABaseCharacter(const FObjectInitializer& ObjectInitializer)
 void ABaseCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	
 }
 
 void ABaseCharacter::Tick(float DeltaTime)
@@ -45,4 +42,55 @@ void ABaseCharacter::Tick(float DeltaTime)
 UAbilitySystemComponent* ABaseCharacter::GetAbilitySystemComponent() const
 {
 	return AbilitySystemComponent;
+}
+
+void ABaseCharacter::ApplyLocalDeathRagdoll()
+{
+	if (bLocalDeathRagdollApplied)
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* MeshComponent = GetMesh();
+	if (!MeshComponent)
+	{
+		return;
+	}
+
+	bLocalDeathRagdollApplied = true;
+
+	if (bDetachControllerOnDeathRagdoll)
+	{
+		DetachFromControllerPendingDestroy();
+	}
+
+	if (bDisableMovementOnDeathRagdoll)
+	{
+		if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+		{
+			MovementComponent->DisableMovement();
+			MovementComponent->StopMovementImmediately();
+		}
+	}
+
+	if (bDisableCapsuleCollisionOnDeathRagdoll)
+	{
+		if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+		{
+			Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+	}
+
+	MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	MeshComponent->SetAllBodiesSimulatePhysics(true);
+	MeshComponent->SetSimulatePhysics(true);
+	MeshComponent->WakeAllRigidBodies();
+
+	if (bApplyDeathRagdollImpulse)
+	{
+		FVector Impulse = GetActorForwardVector() * -DeathRagdollBackwardImpulse;
+		Impulse.Z = DeathRagdollUpwardImpulse;
+		MeshComponent->AddImpulseAtLocation(Impulse, GetActorLocation());
+		MeshComponent->AddImpulseToAllBodiesBelow(Impulse, NAME_None, true, true);
+	}
 }
