@@ -46,6 +46,7 @@ AShip::AShip()
 
 	bReplicates = true;
 	SetReplicateMovement(false);
+	bAlwaysRelevant = true;
 }
 
 // Called when the game starts or when spawned
