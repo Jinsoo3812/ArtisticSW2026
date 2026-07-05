@@ -219,7 +219,7 @@ void ACannon::OnInteracted(AActor* Interactor)
 	if (!InteractingPawn || RidingPlayer) return;
 
 	RidingPlayer = InteractingPawn;
-	EnterAimMode(RidingPlayer);
+	EnterAimMode(RidingPlayer.Get());
 }
 
 void ACannon::EnterAimMode(APawn* InPlayer)
@@ -400,18 +400,9 @@ void ACannon::OnRep_AimRotation()
 
 void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 {
-	APlayerController* LocalPC = Cast<APlayerController>(GEngine->GetFirstLocalPlayerController(GetWorld()));
-	APlayerState* LocalPlayerState = LocalPC ? LocalPC->PlayerState : nullptr;
-
 	if (OldPlayer && OldPlayer != RidingPlayer)
 	{
 		OldPlayer->SetActorEnableCollision(true);
-
-		// 로컬 클라이언트에서 하차한 로컬 캐릭터 복원
-		if (LocalPlayerState && OldPlayer->GetPlayerState() == LocalPlayerState)
-		{
-			OldPlayer->SetActorHiddenInGame(false);
-		}
 
 		if (ACharacter* Character = Cast<ACharacter>(OldPlayer))
 		{
@@ -425,12 +416,6 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 	if (RidingPlayer)
 	{
 		RidingPlayer->SetActorEnableCollision(false);
-
-		// 로컬 클라이언트에서 탑승한 로컬 캐릭터 숨김
-		if (LocalPlayerState && RidingPlayer->GetPlayerState() == LocalPlayerState)
-		{
-			RidingPlayer->SetActorHiddenInGame(true);
-		}
 
 		if (ACharacter* Character = Cast<ACharacter>(RidingPlayer))
 		{

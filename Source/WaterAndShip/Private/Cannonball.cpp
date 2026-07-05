@@ -101,7 +101,7 @@ void ACannonball::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* Ot
 				}
 			}
 
-			UE_LOG(LogTemp, Log, TEXT("ACannonball: Hit Ship %s! Dealt %f damage."), *HitShip->GetName(), DamageAmount);
+			UE_LOG(LogTemp, Warning, TEXT("ACannonball: Hit Ship %s! Dealt %f damage."), *HitShip->GetName(), DamageAmount);
 
 			// 3. Destroy projectile immediately
 			Destroy();
@@ -122,7 +122,22 @@ void ACannonball::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* Ot
 
 	if (bIsWater)
 	{
-		TriggerWaterRipple(GetActorLocation());
+		if (!bHasHitWater)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ACannonball: Hit Water at Location %s! Triggering Ripple..."), *GetActorLocation().ToString());
+			TriggerWaterRipple(GetActorLocation());
+		}
+		return;
+	}
+
+	// Hit other obstacles (Terrain, walls, general actors)
+	if (OtherActor && OtherActor != LaunchingShip && OtherActor != GetOwner() && OtherActor != GetInstigator())
+	{
+		if (HasAuthority())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ACannonball: Hit General Obstacle %s at Location %s and destroyed."), *OtherActor->GetName(), *GetActorLocation().ToString());
+			Destroy();
+		}
 	}
 }
 
@@ -131,7 +146,18 @@ void ACannonball::TriggerWaterRipple(const FVector& HitLocation)
 	if (bHasHitWater) return;
 	bHasHitWater = true;
 
-	// Stop projectile physical movement and hide visual representation
+	// Schedule disabling physics movement, collision and mesh visibility 0.05 seconds later
+	// This ensures the physics engine registers the overlap event with AWaterBody with its original velocity
+	// and URippleSubsystem has enough time to spawn the ripple.
+	GetWorldTimerManager().SetTimer(WaterHitTimerHandle, this, &ACannonball::DeactivateProjectile, 0.05f, false);
+
+	// Schedule destruction after N seconds
+	SetLifeSpan(LifeTimeAfterWaterHit);
+}
+
+void ACannonball::DeactivateProjectile()
+{
+	// Stop projectile physical movement
 	if (ProjectileMovement)
 	{
 		ProjectileMovement->StopMovementImmediately();
@@ -147,7 +173,4 @@ void ACannonball::TriggerWaterRipple(const FVector& HitLocation)
 	{
 		CannonballMesh->SetVisibility(false);
 	}
-
-	// Schedule destruction after N seconds
-	SetLifeSpan(LifeTimeAfterWaterHit);
 }
