@@ -43,6 +43,8 @@ public:
 	UFUNCTION()
 	void OnOverlapEnd(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
+
+
 private:
 	// Helper to calculate the water height at a given location (queries overlapping water bodies)
 	bool GetWaterHeightAtLocation(const FVector& Location, float& OutWaterHeight) const;
@@ -54,6 +56,10 @@ protected:
 	/** Distance above the feet the water surface must reach to trigger swimming */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection")
 	float SwimEntryOffset = 20.0f;
+
+	/** Minimum downward velocity (cm/s) to trigger a water entry ripple */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection")
+	float MinEntryVelocityThreshold = 100.0f;
 
 	/** Distance below the feet the water surface must reach to exit swimming */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection")

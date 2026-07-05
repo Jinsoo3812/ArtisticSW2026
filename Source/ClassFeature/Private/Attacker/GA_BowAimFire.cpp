@@ -175,17 +175,6 @@ void UGA_BowAimFire::FireArrow()
 	FTransform SpawnTransform = CachedBowComponent->BuildArrowSpawnTransform();
 	SpawnTransform.SetRotation(LaunchDirection.Rotation().Quaternion());
 
-	FGameplayEffectSpecHandle DamageSpecHandle;
-	if (DamageEffectClass)
-	{
-		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
-		{
-			FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
-			ContextHandle.AddInstigator(Player, Player);
-			DamageSpecHandle = ASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
-		}
-	}
-
 	AArrowProjectile* Arrow = GetWorld()->SpawnActorDeferred<AArrowProjectile>(
 		SpawnClass,
 		SpawnTransform,
@@ -198,9 +187,15 @@ void UGA_BowAimFire::FireArrow()
 		return;
 	}
 
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	{
+		const float DrawAlpha = CachedBowComponent->GetDrawAlpha();
+		const float ChargeDamageMultiplier = FMath::Lerp(MinChargeDamageMultiplier, MaxChargeDamageMultiplier, DrawAlpha);
+		Arrow->InitializeDamage(ASC, Player, ChargeDamageMultiplier);
+	}
+
 	Arrow->SetOwner(Player);
 	Arrow->SetInstigator(Player);
-	Arrow->SetDamageEffectSpecHandle(DamageSpecHandle);
 	Arrow->FinishSpawning(SpawnTransform);
 	Arrow->LaunchArrow(LaunchVelocity);
 	CachedBow->Multicast_PlayReleaseFX();

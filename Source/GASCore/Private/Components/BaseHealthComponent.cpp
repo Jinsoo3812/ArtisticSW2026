@@ -5,6 +5,7 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Abilities/BaseDeathGameplayAbility.h"
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "GameplayEffectExtension.h"
@@ -123,6 +124,15 @@ void UBaseHealthComponent::StartDeath()
 	}
 
 	SendGameplayEventToOwner(GameplayAbility_Dead);
+
+	for (const FGameplayAbilitySpec& AbilitySpec : AbilitySystemComponent->GetActivatableAbilities())
+	{
+		if (AbilitySpec.Ability && AbilitySpec.Ability->GetClass()->IsChildOf(UBaseDeathGameplayAbility::StaticClass()))
+		{
+			AbilitySystemComponent->TryActivateAbility(AbilitySpec.Handle);
+			break;
+		}
+	}
 }
 
 void UBaseHealthComponent::FinishDeath()
