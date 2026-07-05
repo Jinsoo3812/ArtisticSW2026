@@ -7,7 +7,6 @@
 class ABowItem;
 class AArrowProjectile;
 class UBowComponent;
-class UGameplayEffect;
 
 /**
  * Bow ability driven by right-click aim, left-click draw, and left-click release fire.
@@ -58,8 +57,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Charge", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float MinDrawAlphaToFire = 0.1f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Damage")
-	TSubclassOf<UGameplayEffect> DamageEffectClass;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Damage", meta = (ClampMin = "0.0"))
+	float MinChargeDamageMultiplier = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Damage", meta = (ClampMin = "0.0"))
+	float MaxChargeDamageMultiplier = 1.0f;
 
 	UPROPERTY()
 	TObjectPtr<ABowItem> CachedBow;
