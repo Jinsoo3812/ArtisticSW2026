@@ -31,6 +31,7 @@ ANavalAIController::ANavalAIController()
 		PerceptionComp->ConfigureSense(*SightConfig);
 		PerceptionComp->SetDominantSense(SightConfig->GetSenseImplementation());
 	}
+
 }
 
 void ANavalAIController::BeginPlay()

@@ -10,7 +10,8 @@ enum class ENavalCombatState : uint8
 	Idle,
 	Approach,
 	Orbit,
-	Retreat
+	Retreat,
+	Return
 };
 
 UCLASS()
