@@ -14,6 +14,7 @@
 #include "Net/UnrealNetwork.h"
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
+#include "ShipAttributeSet.h"
 
 // Sets default values
 AShip::AShip()
@@ -52,7 +53,7 @@ AShip::AShip()
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 
 	// Attribute Set
-	AttributeSet = CreateDefaultSubobject<UBaseAttributeSet>(TEXT("AttributeSet"));
+	AttributeSet = CreateDefaultSubobject<UShipAttributeSet>(TEXT("AttributeSet"));
 
 	bReplicates = true;
 	SetReplicateMovement(false);
@@ -71,10 +72,7 @@ void AShip::BeginPlay()
 
 	if (HasAuthority() && AttributeSet)
 	{
-		AttributeSet->InitHealth(100.0f);
-		AttributeSet->InitMaxHealth(100.0f);
-		AttributeSet->InitMoveSpeed(1.0f);
-		AttributeSet->InitAttackPower(10.0f);
+		InitializeDefaultAttributes();
 	}
 
 	if (BuoyancyRoot)
@@ -322,7 +320,7 @@ void AShip::ApplyForwardForce(float MoveValue)
 		float CurrentMoveSpeedMultiplier = 1.0f;
 		if (AttributeSet)
 		{
-			CurrentMoveSpeedMultiplier = AttributeSet->GetMoveSpeed();
+			CurrentMoveSpeedMultiplier = AttributeSet->GetShipSpeedMultiplier();
 		}
 
 		BuoyancyRoot->AddForce(Forward * ForwardForce * MoveValue * CurrentMoveSpeedMultiplier);
@@ -358,7 +356,7 @@ void AShip::ApplyTurnTorque(float TurnValue)
 		float CurrentMoveSpeedMultiplier = 1.0f;
 		if (AttributeSet)
 		{
-			CurrentMoveSpeedMultiplier = AttributeSet->GetMoveSpeed();
+			CurrentMoveSpeedMultiplier = AttributeSet->GetShipSpeedMultiplier();
 		}
 
 		// Apply torque around the Z-axis (yaw) for horizontal turning
@@ -534,6 +532,47 @@ void AShip::OnRep_Controller()
 UAbilitySystemComponent* AShip::GetAbilitySystemComponent() const
 {
 	return AbilitySystemComponent;
+}
+
+void AShip::InitializeDefaultAttributes()
+{
+	if (!HasAuthority() || !AttributeSet) return;
+
+	if (ShipStatTable && !ShipStatRowName.IsNone())
+	{
+		static const FString ContextString(TEXT("Ship Stat Table Context"));
+		FShipStatRow* StatRow = ShipStatTable->FindRow<FShipStatRow>(ShipStatRowName, ContextString);
+		if (StatRow)
+		{
+			AttributeSet->InitHealth(StatRow->MaxHealth);
+			AttributeSet->InitMaxHealth(StatRow->MaxHealth);
+			AttributeSet->InitMoveSpeed(1.0f); // 캐릭터 기본 MoveSpeed는 1.0f로 고정 유지
+			AttributeSet->InitShipSpeedMultiplier(StatRow->ShipSpeedMultiplier);
+			AttributeSet->InitCannonDamage(StatRow->CannonDamage);
+			AttributeSet->InitCannonFireCooldown(StatRow->CannonFireCooldown);
+			AttributeSet->InitCannonballSpeed(StatRow->CannonballSpeed);
+
+			UE_LOG(LogTemp, Log, TEXT("AShip: Successfully initialized attributes from DataTable Row [%s]."), *ShipStatRowName.ToString());
+			return;
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("AShip: Failed to find DataTable Row [%s] in ShipStatTable."), *ShipStatRowName.ToString());
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("AShip: ShipStatTable or ShipStatRowName is not set. Initializing with default fallback stats."));
+	}
+
+	// Fallback 기본값 설정
+	AttributeSet->InitHealth(100.f);
+	AttributeSet->InitMaxHealth(100.f);
+	AttributeSet->InitMoveSpeed(1.f);
+	AttributeSet->InitShipSpeedMultiplier(1.f);
+	AttributeSet->InitCannonDamage(20.f);
+	AttributeSet->InitCannonFireCooldown(2.f);
+	AttributeSet->InitCannonballSpeed(3000.f);
 }
 
 

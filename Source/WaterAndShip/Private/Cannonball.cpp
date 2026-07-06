@@ -53,10 +53,18 @@ void ACannonball::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 }
 
-void ACannonball::InitializeProjectile(AShip* InLaunchingShip, float InDamage)
+void ACannonball::InitializeProjectile(AShip* InLaunchingShip, float InDamage, float InSpeed)
 {
 	LaunchingShip = InLaunchingShip;
 	DamageAmount = InDamage;
+
+	if (ProjectileMovement)
+	{
+		ProjectileMovement->InitialSpeed = InSpeed;
+		ProjectileMovement->MaxSpeed = FMath::Max(InSpeed * 2.0f, 5000.0f);
+		ProjectileMovement->Velocity = GetActorForwardVector() * InSpeed;
+		ProjectileMovement->UpdateComponentVelocity();
+	}
 }
 
 void ACannonball::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)

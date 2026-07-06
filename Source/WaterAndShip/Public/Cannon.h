@@ -120,7 +120,7 @@ protected:
 
 	// ---- Server RPCs ----
 	UFUNCTION(Server, Reliable)
-	void ServerFire(FVector MuzzleLocation, FRotator LaunchRotation, float Damage);
+	void ServerFire(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed);
 
 	UFUNCTION(Server, Reliable)
 	void ServerUpdateAim(float NewPitch, float NewYaw);

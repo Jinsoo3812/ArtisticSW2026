@@ -27,7 +27,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	/** Initialize Projectile values on spawn */
-	void InitializeProjectile(AShip* InLaunchingShip, float InDamage);
+	void InitializeProjectile(AShip* InLaunchingShip, float InDamage, float InSpeed);
 
 protected:
 	// ---- Components ----

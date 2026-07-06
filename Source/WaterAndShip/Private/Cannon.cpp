@@ -14,6 +14,7 @@
 #include "Ship.h"
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
+#include "ShipAttributeSet.h"
 #include "Kismet/GameplayStatics.h"
 #include "Cannonball.h"
 
@@ -223,24 +224,31 @@ void ACannon::HandleFire(const FInputActionValue& Value)
 
 	if (!bCanFire) return;
 
-	// Cooldown start
 	bCanFire = false;
-	GetWorldTimerManager().SetTimer(CooldownTimerHandle, this, &ACannon::ResetCooldown, FireCooldown, false);
 
-	FVector MuzzleLocation = BarrelMesh ? BarrelMesh->GetComponentLocation() + BarrelMesh->GetForwardVector() * 200.0f : GetActorLocation();
-	FRotator LaunchRotation = BarrelMesh ? BarrelMesh->GetComponentRotation() : GetActorRotation();
+	// 배의 스탯 초기값 (Fallback)
+	float TargetCooldown = FireCooldown;
+	float TargetDamage = 10.0f;
+	float TargetSpeed = FireVelocity;
 
-	// Read ship attack power from ship GAS
-	float Damage = 10.0f;
+	// 배가 존재하면 배의 GAS Attribute에서 실시간으로 대포 스탯들을 긁어옴
 	if (AShip* MyShip = GetOwningShip())
 	{
 		if (UAbilitySystemComponent* ShipASC = MyShip->GetAbilitySystemComponent())
 		{
-			Damage = ShipASC->GetNumericAttribute(UBaseAttributeSet::GetAttackPowerAttribute());
+			TargetCooldown = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonFireCooldownAttribute());
+			TargetDamage = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonDamageAttribute());
+			TargetSpeed = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute());
 		}
 	}
 
-	ServerFire(MuzzleLocation, LaunchRotation, Damage);
+	// 스탯 기반의 발사 쿨타임 타이머 작동
+	GetWorldTimerManager().SetTimer(CooldownTimerHandle, this, &ACannon::ResetCooldown, TargetCooldown, false);
+
+	FVector MuzzleLocation = BarrelMesh ? BarrelMesh->GetComponentLocation() + BarrelMesh->GetForwardVector() * 200.0f : GetActorLocation();
+	FRotator LaunchRotation = BarrelMesh ? BarrelMesh->GetComponentRotation() : GetActorRotation();
+
+	ServerFire(MuzzleLocation, LaunchRotation, TargetDamage, TargetSpeed);
 }
 
 void ACannon::HandleExit(const FInputActionValue& Value)
@@ -289,7 +297,7 @@ void ACannon::ForceExit()
 	}
 }
 
-void ACannon::ServerFire_Implementation(FVector MuzzleLocation, FRotator LaunchRotation, float Damage)
+void ACannon::ServerFire_Implementation(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed)
 {
 	if (!CannonballClass)
 	{
@@ -309,7 +317,7 @@ void ACannon::ServerFire_Implementation(FVector MuzzleLocation, FRotator LaunchR
 	{
 		if (ACannonball* Projectile = Cast<ACannonball>(SpawnedProjectile))
 		{
-			Projectile->InitializeProjectile(OwningShip, Damage);
+			Projectile->InitializeProjectile(OwningShip, Damage, Speed);
 		}
 	}
 }
