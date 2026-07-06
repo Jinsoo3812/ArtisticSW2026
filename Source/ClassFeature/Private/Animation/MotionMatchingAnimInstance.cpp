@@ -1962,6 +1962,9 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         const float GroundSpeed = CachedLocomotionStateComponent->GroundSpeed;
         const bool bMoving = GroundSpeed > WeaponUpperBodyMovingSpeedThreshold;
         const bool bSprinting = CachedLocomotionStateComponent->bIsSprinting;
+        const float Direction = bForceSprintWeaponUpperBodyDirectionForward && bSprinting
+            ? 0.f
+            : FRotator::NormalizeAxis(CachedLocomotionStateComponent->MovementDirection);
 
         ThreadSafeData.WeaponUpperBodyData.bHasWeaponEquipped = bHasWeaponEquipped;
         ThreadSafeData.WeaponUpperBodyData.EquippedWeaponTag = EquippedWeaponTag;
@@ -1970,6 +1973,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         ThreadSafeData.WeaponUpperBodyData.bShouldOverrideUpperBody = bEnableWeaponUpperBodyOverlay && bUseWeaponOverlay && bGroundedForOverlay;
         ThreadSafeData.WeaponUpperBodyData.UpperBodyAlpha = ThreadSafeData.WeaponUpperBodyData.bShouldOverrideUpperBody ? 1.f : 0.f;
         ThreadSafeData.WeaponUpperBodyData.GroundSpeed = GroundSpeed;
+        ThreadSafeData.WeaponUpperBodyData.Direction = Direction;
         ThreadSafeData.WeaponUpperBodyData.bIsSprinting = bSprinting;
 
         if (!ThreadSafeData.WeaponUpperBodyData.bShouldOverrideUpperBody)
@@ -2308,6 +2312,11 @@ float UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyAlpha() const
 float UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodySpeed() const
 {
     return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.GroundSpeed;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyDirection() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.Direction;
 }
 
 FFootPlacementPlantSettings UMotionMatchingAnimInstance::Get_FootPlacementPlantSettings() const

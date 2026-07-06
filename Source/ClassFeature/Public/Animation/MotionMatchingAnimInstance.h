@@ -197,6 +197,9 @@ struct FAnimWeaponUpperBodyData
     float GroundSpeed = 0.f;
 
     UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    float Direction = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
     bool bIsSprinting = false;
 };
 
@@ -351,6 +354,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
     float GetThreadSafeWeaponUpperBodySpeed() const;
 
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    float GetThreadSafeWeaponUpperBodyDirection() const;
+
     UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
     FFootPlacementPlantSettings Get_FootPlacementPlantSettings() const;
 
@@ -479,6 +485,9 @@ protected:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Weapon UpperBody", meta = (ClampMin = "0.0"))
     float WeaponUpperBodyMovingSpeedThreshold = 80.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Weapon UpperBody")
+    bool bForceSprintWeaponUpperBodyDirectionForward = true;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
     FFootPlacementPlantSettings FootPlacementPlantSettingsDefault;

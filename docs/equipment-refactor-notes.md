@@ -76,6 +76,7 @@ Weapon equip is treated as entering combat. When a weapon is finalized as equipp
 - `GetThreadSafeWeaponUpperBodyState()`
 - `GetThreadSafeWeaponUpperBodyAlpha()`
 - `GetThreadSafeWeaponUpperBodySpeed()`
+- `GetThreadSafeWeaponUpperBodyDirection()`
 
 The anim instance reads the equipped item through `UPlayerEquipmentComponent`. The component resolves the current `FWeaponAnimationEntry` from `UWeaponAnimationDataAsset`, then exposes the weapon's upper-body overlay tag when `bUseUpperBodyOverlay` is enabled.
 
@@ -98,6 +99,7 @@ Tunable defaults in `UMotionMatchingAnimInstance`:
 
 - `bEnableWeaponUpperBodyOverlay`
 - `WeaponUpperBodyMovingSpeedThreshold`
+- `bForceSprintWeaponUpperBodyDirectionForward`
 
 The old bow-specific getters remain as compatibility helpers while the ABP is moved to the generic weapon overlay functions.
 
@@ -112,13 +114,15 @@ Recommended graph position:
    - `2`: `BS_Sword_UpperBody`
    - `3`: `BS_Spear_UpperBody`
 3. Feed `GetThreadSafeWeaponUpperBodySpeed()` into each weapon upper-body BlendSpace speed axis.
-4. Feed `GetThreadSafeWeaponUpperBodyOverlayIndex()` into `Blend Poses by Int` to choose the active weapon BlendSpace.
-5. Plug the normal locomotion pose into the weapon `Layered Blend Per Bone` `Base Pose`.
-6. Plug the selected weapon upper-body BlendSpace pose into `Blend Poses 0`.
-7. Send the weapon layered output into `Slot 'UpperBody'`.
-8. Plug `GetThreadSafeWeaponUpperBodyAlpha()` into `Blend Weights 0`.
-9. Set the branch filter to `spine_01` or `spine_02` depending on the skeleton, with enough depth to include chest, shoulders, arms, neck, and head if needed.
-10. Continue into the existing aim offset / final upper-lower body blend / foot placement chain.
+4. Feed `GetThreadSafeWeaponUpperBodyDirection()` into each weapon upper-body BlendSpace direction axis.
+   - With `bForceSprintWeaponUpperBodyDirectionForward = true`, sprint uses direction `0` so a forward-only sprint animation works cleanly.
+5. Feed `GetThreadSafeWeaponUpperBodyOverlayIndex()` into `Blend Poses by Int` to choose the active weapon BlendSpace.
+6. Plug the normal locomotion pose into the weapon `Layered Blend Per Bone` `Base Pose`.
+7. Plug the selected weapon upper-body BlendSpace pose into `Blend Poses 0`.
+8. Send the weapon layered output into `Slot 'UpperBody'`.
+9. Plug `GetThreadSafeWeaponUpperBodyAlpha()` into `Blend Weights 0`.
+10. Set the branch filter to `spine_01` or `spine_02` depending on the skeleton, with enough depth to include chest, shoulders, arms, neck, and head if needed.
+11. Continue into the existing aim offset / final upper-lower body blend / foot placement chain.
 
 Looping weapon run and sprint animations are fine for this layer as long as they are in-place. If the source animations are full-body, the lower body will be ignored by the layered blend, so focus on whether the spine, shoulders, and hands look stable with the weapon.
 
