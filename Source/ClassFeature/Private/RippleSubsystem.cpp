@@ -71,7 +71,7 @@ void URippleSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		if (WaterBody)
 		{
 			WaterBody->OnActorBeginOverlap.AddDynamic(this, &URippleSubsystem::OnWaterBodyActorOverlap);
-			UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Bound overlap listener to WaterBody: %s"), *WaterBody->GetName());
+			// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Bound overlap listener to WaterBody: %s"), *WaterBody->GetName());
 		}
 	}
 }
@@ -82,9 +82,8 @@ void URippleSubsystem::OnWaterBodyActorOverlap(AActor* OverlappedActor, AActor* 
 
 	// Use actor's current velocity
 	float DownwardSpeed = -OtherActor->GetVelocity().Z;
-	const float MinVelocity = 100.0f; // 1.0 m/s threshold
 
-	if (DownwardSpeed >= MinVelocity)
+	if (DownwardSpeed >= MinVelocityThreshold)
 	{
 		FVector ContactLoc = OtherActor->GetActorLocation();
 		float InitialAmplitude = FMath::Clamp(DownwardSpeed * AmplitudeMultiplier, 10.0f, MaxInitialAmplitude);
@@ -92,8 +91,13 @@ void URippleSubsystem::OnWaterBodyActorOverlap(AActor* OverlappedActor, AActor* 
 		// Spawn ripple locally using Default configurations
 		AddRipple(FVector2D(ContactLoc.X, ContactLoc.Y), InitialAmplitude, DefaultWaveSpeed, DefaultDecayRate, DefaultWaveLength);
 
-		UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Actor: %s entered WaterBody: %s. Speed: %.2f. Spawning Ripple Amp: %.2f"),
-			*OtherActor->GetName(), *OverlappedActor->GetName(), DownwardSpeed, InitialAmplitude);
+		// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Actor: %s entered WaterBody: %s. Speed: %.2f. Spawning Ripple Amp: %.2f"),
+		// 	*OtherActor->GetName(), *OverlappedActor->GetName(), DownwardSpeed, InitialAmplitude);
+	}
+	else
+	{
+		// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Actor %s entered WaterBody %s but skipped: DownwardSpeed (%.2f) < MinVelocityThreshold (%.2f)"), 
+		// 	*OtherActor->GetName(), *OverlappedActor->GetName(), DownwardSpeed, MinVelocityThreshold);
 	}
 }
 
@@ -106,7 +110,7 @@ void URippleSubsystem::Tick(float DeltaTime)
 {
 	if (!GetWorld()) return;
 
-	float ServerTime = GetWorld()->GetTimeSeconds();
+	float ServerTime = GetServerTime();
 
 	// 1. Remove expired ripples
 	bool bChanged = false;
@@ -130,7 +134,7 @@ void URippleSubsystem::Tick(float DeltaTime)
 
 	// 4. Debug Diagnostics & Dynamic Texture Binding (Every 1 second)
 	static float LastDebugLogTime = 0.0f;
-	float CurrentTime = GetWorld()->GetTimeSeconds();
+	float CurrentTime = GetServerTime();
 	
 	bool bShouldLog = (CurrentTime - LastDebugLogTime >= 1.0f);
 	
@@ -186,8 +190,8 @@ void URippleSubsystem::Tick(float DeltaTime)
 			}
 		}
 
-		UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem Diagnostics] Time: %.2f | MPC: %s | Bound MIDs: %d (Failed: %d) | Active Waves: %d (%s) | Test Height (+100cm): %.4f"),
-			ServerTime, *MPCStatus, BoundWaterBodiesCount, FailedWaterBodiesCount, ActiveRipples.Num(), *ActiveWaveInfo, TestHeight);
+		// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem Diagnostics] Time: %.2f | MPC: %s | Bound MIDs: %d (Failed: %d) | Active Waves: %d (%s) | Test Height (+100cm): %.4f"),
+		// 	ServerTime, *MPCStatus, BoundWaterBodiesCount, FailedWaterBodiesCount, ActiveRipples.Num(), *ActiveWaveInfo, TestHeight);
 	}
 }
 
@@ -196,7 +200,7 @@ void URippleSubsystem::AddRipple(FVector2D Origin, float InitialAmplitude, float
 	UWorld* World = GetWorld();
 	if (!World) return;
 
-	float ServerTime = World->GetTimeSeconds();
+	float ServerTime = GetServerTime();
 
 	// Range Culling: Check distance to all player pawns
 	bool bIsNearPlayer = false;
@@ -256,13 +260,13 @@ void URippleSubsystem::AddRipple(FVector2D Origin, float InitialAmplitude, float
 					BestIndex = i;
 				}
 			}
-			UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Active slot limit reached. Replacing ripple at index %d. New Location: %s, Amp: %.2f, Tmax: %.2fs"), BestIndex, *Origin.ToString(), InitialAmplitude, Tmax);
+			// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Active slot limit reached. Replacing ripple at index %d. New Location: %s, Amp: %.2f, Tmax: %.2fs"), BestIndex, *Origin.ToString(), InitialAmplitude, Tmax);
 			ActiveRipples[BestIndex] = NewWave;
 		}
 		else
 		{
 			ActiveRipples.Add(NewWave);
-			UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Spawned Ripple successfully at %s (Amp: %.2f, Speed: %.2f, Tmax: %.2fs). Active Count: %d"), *Origin.ToString(), InitialAmplitude, WaveSpeed, Tmax, ActiveRipples.Num());
+			// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Spawned Ripple successfully at %s (Amp: %.2f, Speed: %.2f, Tmax: %.2fs). Active Count: %d"), *Origin.ToString(), InitialAmplitude, WaveSpeed, Tmax, ActiveRipples.Num());
 		}
 	}
 }
@@ -272,7 +276,7 @@ float URippleSubsystem::GetRippleHeight(const FVector& Location) const
 	UWorld* World = GetWorld();
 	if (!World) return 0.0f;
 
-	float ServerTime = World->GetTimeSeconds();
+	float ServerTime = GetServerTime();
 
 	float TotalHeight = 0.0f;
 	FVector2D QueryPos(Location.X, Location.Y);
@@ -379,4 +383,17 @@ void URippleSubsystem::UpdateServerTimeMPC(float ServerTime)
 			}
 		}
 	}
+}
+
+float URippleSubsystem::GetServerTime() const
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (AGameStateBase* GameState = World->GetGameState())
+		{
+			return GameState->GetServerWorldTimeSeconds();
+		}
+		return World->GetTimeSeconds();
+	}
+	return 0.0f;
 }

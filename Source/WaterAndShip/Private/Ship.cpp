@@ -12,6 +12,9 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "AbilitySystemComponent.h"
+#include "BaseAttributeSet.h"
+#include "ShipAttributeSet.h"
 
 // Sets default values
 AShip::AShip()
@@ -44,14 +47,33 @@ AShip::AShip()
 	// Set default collision preset for interactables
 	InteractableComponent->SetCollisionProfileName(TEXT("Interactable"));
 
+	// Ability System Component
+	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AbilitySystemComponent->SetIsReplicated(true);
+	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
+
+	// Attribute Set
+	AttributeSet = CreateDefaultSubobject<UShipAttributeSet>(TEXT("AttributeSet"));
+
 	bReplicates = true;
 	SetReplicateMovement(false);
+	bAlwaysRelevant = true;
 }
 
 // Called when the game starts or when spawned
 void AShip::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->InitAbilityActorInfo(this, this);
+	}
+
+	if (HasAuthority() && AttributeSet)
+	{
+		InitializeDefaultAttributes();
+	}
 
 	if (BuoyancyRoot)
 	{
@@ -64,6 +86,10 @@ void AShip::BeginPlay()
 			BuoyancyRoot->SetSimulatePhysics(false);
 		}
 	}
+
+	// Initialize replicated state to avoid teleporting to 0,0,0 on client initialization
+	ReplicatedState.Location = GetActorLocation();
+	ReplicatedState.Rotation = GetActorRotation();
 }
 
 // Called every frame
@@ -291,7 +317,13 @@ void AShip::ApplyForwardForce(float MoveValue)
 		Forward.Z = 0.0f;
 		Forward.Normalize();
 
-		BuoyancyRoot->AddForce(Forward * ForwardForce * MoveValue);
+		float CurrentMoveSpeedMultiplier = 1.0f;
+		if (AttributeSet)
+		{
+			CurrentMoveSpeedMultiplier = AttributeSet->GetShipSpeedMultiplier();
+		}
+
+		BuoyancyRoot->AddForce(Forward * ForwardForce * MoveValue * CurrentMoveSpeedMultiplier);
 	}
 }
 
@@ -321,8 +353,14 @@ void AShip::ApplyTurnTorque(float TurnValue)
 {
 	if (BuoyancyRoot && FMath::Abs(TurnValue) > KINDA_SMALL_NUMBER)
 	{
+		float CurrentMoveSpeedMultiplier = 1.0f;
+		if (AttributeSet)
+		{
+			CurrentMoveSpeedMultiplier = AttributeSet->GetShipSpeedMultiplier();
+		}
+
 		// Apply torque around the Z-axis (yaw) for horizontal turning
-		BuoyancyRoot->AddTorqueInDegrees(FVector(0.0f, 0.0f, TurnTorque * TurnValue));
+		BuoyancyRoot->AddTorqueInDegrees(FVector(0.0f, 0.0f, TurnTorque * TurnValue * CurrentMoveSpeedMultiplier));
 	}
 }
 
@@ -426,6 +464,11 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 		{
 			Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 		}
+
+		if (CachedPlayerController && CachedPlayerController->IsLocalController())
+		{
+			CachedPlayerController->HiddenActors.Remove(OldRidingPlayer);
+		}
 	}
 
 	if (RidingPlayer)
@@ -436,6 +479,11 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 		{
 			Char->GetCharacterMovement()->DisableMovement();
 			Char->GetCharacterMovement()->StopMovementImmediately();
+		}
+
+		if (CachedPlayerController && CachedPlayerController->IsLocalController())
+		{
+			CachedPlayerController->HiddenActors.AddUnique(RidingPlayer);
 		}
 	}
 }
@@ -448,6 +496,11 @@ void AShip::OnRep_Controller()
 	{
 		if (CachedPlayerController)
 		{
+			if (RidingPlayer && CachedPlayerController->IsLocalController())
+			{
+				CachedPlayerController->HiddenActors.Remove(RidingPlayer);
+			}
+
 			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
 			{
 				if (ShipInputMappingContext)
@@ -474,6 +527,52 @@ void AShip::OnRep_Controller()
 			}
 		}
 	}
+}
+
+UAbilitySystemComponent* AShip::GetAbilitySystemComponent() const
+{
+	return AbilitySystemComponent;
+}
+
+void AShip::InitializeDefaultAttributes()
+{
+	if (!HasAuthority() || !AttributeSet) return;
+
+	if (ShipStatTable && !ShipStatRowName.IsNone())
+	{
+		static const FString ContextString(TEXT("Ship Stat Table Context"));
+		FShipStatRow* StatRow = ShipStatTable->FindRow<FShipStatRow>(ShipStatRowName, ContextString);
+		if (StatRow)
+		{
+			AttributeSet->InitHealth(StatRow->MaxHealth);
+			AttributeSet->InitMaxHealth(StatRow->MaxHealth);
+			AttributeSet->InitMoveSpeed(1.0f); // 캐릭터 기본 MoveSpeed는 1.0f로 고정 유지
+			AttributeSet->InitShipSpeedMultiplier(StatRow->ShipSpeedMultiplier);
+			AttributeSet->InitCannonDamage(StatRow->CannonDamage);
+			AttributeSet->InitCannonFireCooldown(StatRow->CannonFireCooldown);
+			AttributeSet->InitCannonballSpeed(StatRow->CannonballSpeed);
+
+			UE_LOG(LogTemp, Log, TEXT("AShip: Successfully initialized attributes from DataTable Row [%s]."), *ShipStatRowName.ToString());
+			return;
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("AShip: Failed to find DataTable Row [%s] in ShipStatTable."), *ShipStatRowName.ToString());
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("AShip: ShipStatTable or ShipStatRowName is not set. Initializing with default fallback stats."));
+	}
+
+	// Fallback 기본값 설정
+	AttributeSet->InitHealth(100.f);
+	AttributeSet->InitMaxHealth(100.f);
+	AttributeSet->InitMoveSpeed(1.f);
+	AttributeSet->InitShipSpeedMultiplier(1.f);
+	AttributeSet->InitCannonDamage(20.f);
+	AttributeSet->InitCannonFireCooldown(2.f);
+	AttributeSet->InitCannonballSpeed(3000.f);
 }
 
 

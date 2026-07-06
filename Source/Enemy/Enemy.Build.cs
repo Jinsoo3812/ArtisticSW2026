@@ -1,4 +1,4 @@
-﻿using UnrealBuildTool;
+using UnrealBuildTool;
 
 public class Enemy: ModuleRules
 {
@@ -22,6 +22,8 @@ public class Enemy: ModuleRules
             "ArtisticSWCore",
             "ClassFeature",
             "GASCore",
+            "WaterAndShip",
+            "Water",
         });
 
         PublicIncludePaths.AddRange(new string[] {
@@ -29,7 +31,8 @@ public class Enemy: ModuleRules
 			"Enemy",
 			"Enemy/Public",
             "Enemy/Public/AI",
-            "Enemy/Public/GAS"
+            "Enemy/Public/GAS",
+            "Enemy/Public/ShipAI"
         });
     }
 }
