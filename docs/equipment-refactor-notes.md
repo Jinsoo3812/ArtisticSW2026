@@ -121,10 +121,24 @@ Recommended graph position:
 7. Plug the selected weapon upper-body BlendSpace pose into `Blend Poses 0`.
 8. Send the weapon layered output into `Slot 'UpperBody'`.
 9. Plug `GetThreadSafeWeaponUpperBodyAlpha()` into `Blend Weights 0`.
-10. Set the branch filter to `spine_01` or `spine_02` depending on the skeleton, with enough depth to include chest, shoulders, arms, neck, and head if needed.
-11. Continue into the existing aim offset / final upper-lower body blend / foot placement chain.
+10. Keep the weapon overlay branch filter conservative. On the current player skeleton, prefer arm/shoulder filters first:
+    - `clavicle_l` / depth `4`
+    - `clavicle_r` / depth `4`
+11. Only add a spine filter if the weapon pose needs torso involvement, and keep it shallow:
+    - optional `spine_03` / depth `1`
+12. Avoid deep `spine_02`, `spine_03`, `spine_04`, or `spine_05` filters for weapon locomotion overlays unless the source animations are verified to have clean translation keys. This skeleton has `neck_01`, `neck_02`, and `head` under `spine_05`, so deep spine filters can pull neck/head transforms into the blend and cause head rotation or neck stretching.
+13. Continue into the existing aim offset / final upper-lower body blend / foot placement chain.
 
-Looping weapon run and sprint animations are fine for this layer as long as they are in-place. If the source animations are full-body, the lower body will be ignored by the layered blend, so focus on whether the spine, shoulders, and hands look stable with the weapon.
+Looping weapon run and sprint animations are fine for this layer as long as they are in-place. If the source animations are full-body, the lower body will be ignored by the layered blend, so focus on whether the shoulders, arms, and hands look stable with the weapon.
+
+Layered blend settings used for the weapon overlay:
+
+- `Mesh Space Rotation Blend`: on
+- `Root Space Rotation Blend`: off
+- `Mesh Space Scale Blend`: off
+- `Blend Root Motion Based On Root Bone`: off while debugging retarget/stretch issues
+
+If the character's neck stretches only when `GetThreadSafeWeaponUpperBodyAlpha()` is connected, first test the weapon `Layered Blend Per Bone` with only `clavicle_l` and `clavicle_r` filters. If that fixes the pose, the problem is the spine/neck translation being pulled into the blend, not the aim offset or montage slot.
 
 ## Current Flow
 
