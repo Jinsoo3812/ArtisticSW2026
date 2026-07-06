@@ -6,6 +6,7 @@
 #include "Animation/TrajectoryTypes.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "BoneControllers/AnimNode_FootPlacement.h"
+#include "GameplayTagContainer.h"
 #include "MotionMatchingAnimInstance.generated.h"
 
 class UPoseSearchDatabase;
@@ -15,6 +16,24 @@ class UAnimationAsset;
 class FStructProperty;
 class FObjectProperty;
 class FFloatProperty;
+
+UENUM(BlueprintType)
+enum class EWeaponUpperBodyOverlayMode : uint8
+{
+    None,
+    BowIdle,
+    BowRun,
+    BowSprint
+};
+
+UENUM(BlueprintType)
+enum class EWeaponUpperBodyOverlayState : uint8
+{
+    None,
+    Idle,
+    Run,
+    Sprint
+};
 
 USTRUCT(BlueprintType)
 struct FAnimMovementData
@@ -149,6 +168,39 @@ struct FAnimAimData
 };
 
 USTRUCT(BlueprintType)
+struct FAnimWeaponUpperBodyData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    bool bHasWeaponEquipped = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    FGameplayTag EquippedWeaponTag;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    FGameplayTag OverlayTag;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    int32 OverlayIndex = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    bool bShouldOverrideUpperBody = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    EWeaponUpperBodyOverlayState OverlayState = EWeaponUpperBodyOverlayState::None;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    float UpperBodyAlpha = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    float GroundSpeed = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    bool bIsSprinting = false;
+};
+
+USTRUCT(BlueprintType)
 struct FAnimThreadSafeData
 {
     GENERATED_BODY()
@@ -170,6 +222,9 @@ struct FAnimThreadSafeData
 
     UPROPERTY(BlueprintReadOnly, Category = "AimOffset")
     FAnimAimData AimData;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    FAnimWeaponUpperBodyData WeaponUpperBodyData;
 };
 
 struct FCachedMotionMatchingNodeInfo
@@ -265,6 +320,36 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Animation|AimOffset", meta = (BlueprintThreadSafe))
     float GetThreadSafeAimOffsetAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeHasBowEquipped() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeHasWeaponEquipped() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    FGameplayTag GetThreadSafeEquippedWeaponTag() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    FGameplayTag GetThreadSafeWeaponUpperBodyOverlayTag() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    int32 GetThreadSafeWeaponUpperBodyOverlayIndex() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeShouldOverrideWeaponUpperBody() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    EWeaponUpperBodyOverlayMode GetThreadSafeWeaponUpperBodyMode() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    EWeaponUpperBodyOverlayState GetThreadSafeWeaponUpperBodyState() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    float GetThreadSafeWeaponUpperBodyAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    float GetThreadSafeWeaponUpperBodySpeed() const;
 
     UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
     FFootPlacementPlantSettings Get_FootPlacementPlantSettings() const;
@@ -388,6 +473,12 @@ protected:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
     float GenericMoveInputSpeedThreshold = 3.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Weapon UpperBody")
+    bool bEnableWeaponUpperBodyOverlay = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Weapon UpperBody", meta = (ClampMin = "0.0"))
+    float WeaponUpperBodyMovingSpeedThreshold = 80.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
     FFootPlacementPlantSettings FootPlacementPlantSettingsDefault;

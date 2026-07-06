@@ -2,9 +2,11 @@
 #include "BasePlayer.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Animation/SWTrajectoryComponent.h"
+#include "BaseGameplayTags.h"
 #include "CharacterTrajectoryComponent.h"
 #include "ChooserFunctionLibrary.h"
 #include "Chooser.h"
+#include "Equipment/PlayerEquipmentComponent.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "PoseSearch/AnimNode_MotionMatching.h"
 #include "PoseSearch/AnimNode_PoseSearchHistoryCollector.h"
@@ -1944,6 +1946,50 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         ThreadSafeData.AimData.AimOffsetAlpha = CalculateAimOffsetAlpha(ThreadSafeData);
     }
 
+    ThreadSafeData.WeaponUpperBodyData = FAnimWeaponUpperBodyData();
+
+    if (const UPlayerEquipmentComponent* EquipmentComponent = CachedBasePlayer->GetEquipmentComponent())
+    {
+        const FGameplayTag EquippedWeaponTag = EquipmentComponent->GetEquippedItemTag();
+        const FGameplayTag OverlayTag = EquipmentComponent->GetEquippedUpperBodyOverlayTag();
+        const bool bHasWeaponEquipped = EquippedWeaponTag.IsValid();
+        const bool bUseWeaponOverlay = OverlayTag.IsValid();
+        const bool bGroundedForOverlay =
+            CachedLocomotionStateComponent->CurrentState == ELocomotionState::Idle ||
+            CachedLocomotionStateComponent->CurrentState == ELocomotionState::Start ||
+            CachedLocomotionStateComponent->CurrentState == ELocomotionState::Locomotion ||
+            CachedLocomotionStateComponent->CurrentState == ELocomotionState::Stop;
+        const float GroundSpeed = CachedLocomotionStateComponent->GroundSpeed;
+        const bool bMoving = GroundSpeed > WeaponUpperBodyMovingSpeedThreshold;
+        const bool bSprinting = CachedLocomotionStateComponent->bIsSprinting;
+
+        ThreadSafeData.WeaponUpperBodyData.bHasWeaponEquipped = bHasWeaponEquipped;
+        ThreadSafeData.WeaponUpperBodyData.EquippedWeaponTag = EquippedWeaponTag;
+        ThreadSafeData.WeaponUpperBodyData.OverlayTag = OverlayTag;
+        ThreadSafeData.WeaponUpperBodyData.OverlayIndex = EquipmentComponent->GetEquippedUpperBodyOverlayIndex();
+        ThreadSafeData.WeaponUpperBodyData.bShouldOverrideUpperBody = bEnableWeaponUpperBodyOverlay && bUseWeaponOverlay && bGroundedForOverlay;
+        ThreadSafeData.WeaponUpperBodyData.UpperBodyAlpha = ThreadSafeData.WeaponUpperBodyData.bShouldOverrideUpperBody ? 1.f : 0.f;
+        ThreadSafeData.WeaponUpperBodyData.GroundSpeed = GroundSpeed;
+        ThreadSafeData.WeaponUpperBodyData.bIsSprinting = bSprinting;
+
+        if (!ThreadSafeData.WeaponUpperBodyData.bShouldOverrideUpperBody)
+        {
+            ThreadSafeData.WeaponUpperBodyData.OverlayState = EWeaponUpperBodyOverlayState::None;
+        }
+        else if (bSprinting)
+        {
+            ThreadSafeData.WeaponUpperBodyData.OverlayState = EWeaponUpperBodyOverlayState::Sprint;
+        }
+        else if (bMoving)
+        {
+            ThreadSafeData.WeaponUpperBodyData.OverlayState = EWeaponUpperBodyOverlayState::Run;
+        }
+        else
+        {
+            ThreadSafeData.WeaponUpperBodyData.OverlayState = EWeaponUpperBodyOverlayState::Idle;
+        }
+    }
+
     // 4. Push variables safely to the proxy
     FMotionMatchingAnimInstanceProxy& MyProxy = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>();
     MyProxy.ThreadSafeData = ThreadSafeData;
@@ -2194,6 +2240,74 @@ float UMotionMatchingAnimInstance::GetThreadSafeAimPitch() const
 float UMotionMatchingAnimInstance::GetThreadSafeAimOffsetAlpha() const
 {
     return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.AimData.AimOffsetAlpha;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeHasBowEquipped() const
+{
+    const FGameplayTag OverlayTag = GetThreadSafeWeaponUpperBodyOverlayTag();
+    const FGameplayTag EquippedWeaponTag = GetThreadSafeEquippedWeaponTag();
+    return OverlayTag.MatchesTag(Item_Weapon_Bow) || EquippedWeaponTag.MatchesTag(Item_Weapon_Bow);
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeHasWeaponEquipped() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.bHasWeaponEquipped;
+}
+
+FGameplayTag UMotionMatchingAnimInstance::GetThreadSafeEquippedWeaponTag() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.EquippedWeaponTag;
+}
+
+FGameplayTag UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyOverlayTag() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.OverlayTag;
+}
+
+int32 UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyOverlayIndex() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.OverlayIndex;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeShouldOverrideWeaponUpperBody() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.bShouldOverrideUpperBody;
+}
+
+EWeaponUpperBodyOverlayMode UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyMode() const
+{
+    const FAnimWeaponUpperBodyData& WeaponData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData;
+    if (!WeaponData.OverlayTag.MatchesTag(Item_Weapon_Bow))
+    {
+        return EWeaponUpperBodyOverlayMode::None;
+    }
+
+    switch (WeaponData.OverlayState)
+    {
+    case EWeaponUpperBodyOverlayState::Idle:
+        return EWeaponUpperBodyOverlayMode::BowIdle;
+    case EWeaponUpperBodyOverlayState::Run:
+        return EWeaponUpperBodyOverlayMode::BowRun;
+    case EWeaponUpperBodyOverlayState::Sprint:
+        return EWeaponUpperBodyOverlayMode::BowSprint;
+    default:
+        return EWeaponUpperBodyOverlayMode::None;
+    }
+}
+
+EWeaponUpperBodyOverlayState UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyState() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.OverlayState;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyAlpha() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.UpperBodyAlpha;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodySpeed() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.GroundSpeed;
 }
 
 FFootPlacementPlantSettings UMotionMatchingAnimInstance::Get_FootPlacementPlantSettings() const
