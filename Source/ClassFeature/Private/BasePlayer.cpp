@@ -373,6 +373,8 @@ void ABasePlayer::OnRep_PlayerState()
 			//CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
 		}
 	}
+
+	OnAbilitySystemInitialized.Broadcast();
 }
 
 void ABasePlayer::PawnClientRestart()

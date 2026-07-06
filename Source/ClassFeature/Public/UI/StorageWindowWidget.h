@@ -11,6 +11,7 @@ class AStorageChest;
 class UBorder;
 class UStorageEntryWidget;
 class UTextBlock;
+class UTexture2D;
 class UUniformGridPanel;
 
 UCLASS()
@@ -23,6 +24,7 @@ public:
 	virtual void NativeDestruct() override;
 
 	void InitializeStorage(AStorageChest* InStorageChest, ABasePlayer* InPlayer);
+	void RefreshStorage();
 
 protected:
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -37,6 +39,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Storage")
 	TSubclassOf<UStorageEntryWidget> StorageEntryWidgetClass;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Storage|Search")
+	TObjectPtr<UTexture2D> SearchIconTexture;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Storage|Search")
+	TObjectPtr<UTexture2D> UnrevealedOverlayTexture;
+
 	UPROPERTY()
 	TObjectPtr<AStorageChest> CachedStorageChest;
 
@@ -44,6 +52,5 @@ protected:
 	TObjectPtr<ABasePlayer> CachedPlayer;
 
 	void BuildWidgetTree();
-	void RefreshStorage();
 	void HandleStorageChanged();
 };

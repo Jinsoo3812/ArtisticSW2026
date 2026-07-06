@@ -69,6 +69,21 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Material_Submunition, "Item.Material.Submunition");
 UE_DEFINE_GAMEPLAY_TAG(Item_Material_Submunition_Explosive, "Item.Material.Submunition.Explosive");
 UE_DEFINE_GAMEPLAY_TAG(Item_Material_Submunition_Trap, "Item.Material.Submunition.Trap");
 
+// Item Rarity
+UE_DEFINE_GAMEPLAY_TAG(Item_Rarity, "Item.Rarity");
+UE_DEFINE_GAMEPLAY_TAG(Item_Rarity_Common, "Item.Rarity.Common");
+UE_DEFINE_GAMEPLAY_TAG(Item_Rarity_Rare, "Item.Rarity.Rare");
+UE_DEFINE_GAMEPLAY_TAG(Item_Rarity_Epic, "Item.Rarity.Epic");
+UE_DEFINE_GAMEPLAY_TAG(Item_Rarity_Legendary, "Item.Rarity.Legendary");
+UE_DEFINE_GAMEPLAY_TAG(Item_Rarity_Relic, "Item.Rarity.Relic");
+
+// Item Category
+UE_DEFINE_GAMEPLAY_TAG(Item_Category, "Item.Category");
+UE_DEFINE_GAMEPLAY_TAG(Item_Category_Weapon, "Item.Category.Weapon");
+UE_DEFINE_GAMEPLAY_TAG(Item_Category_Material, "Item.Category.Material");
+UE_DEFINE_GAMEPLAY_TAG(Item_Category_Consumable, "Item.Category.Consumable");
+UE_DEFINE_GAMEPLAY_TAG(Item_Category_Clue, "Item.Category.Clue");
+
 // Enemy
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Sword, "Item.EnemyWeapon.Sword");
 
