@@ -1,4 +1,5 @@
 #include "SwimmingComponent.h"
+#include "DrawDebugHelpers.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -13,6 +14,15 @@
 #include "Materials/MaterialParameterCollectionInstance.h"
 #include "RippleSubsystem.h"
 #include "SWRippleWaterWaves.h"
+
+static TAutoConsoleVariable<int32> CVarShowSwimBuoyancyDebug(
+	TEXT("p.ShowSwimBuoyancyDebug"),
+	0,
+	TEXT("Show custom swimming buoyancy pontoon debug shapes.\n")
+	TEXT("0: Disabled\n")
+	TEXT("1: Enabled"),
+	ECVF_Default
+);
 
 USwimmingComponent::USwimmingComponent()
 {
@@ -56,44 +66,58 @@ void USwimmingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// Output wave height logs at (15170, 400) every 1 second based on synchronized server time.
-	/*
-	if (GetWorld() && GetWorld()->GetGameState())
+	// Pontoon Debug Visualizer - Always active in non-shipping builds
+	if (OwnerCharacter)
 	{
-		float CurrentServerTime = GetWorld()->GetGameState()->GetServerWorldTimeSeconds();
-		if (CurrentServerTime - LastLoggedTime >= 1.0f)
+		FVector ActorLocation = OwnerCharacter->GetActorLocation();
+		FVector PontoonLocation = ActorLocation + PontoonOffset;
+
+		float WaterHeight = -100000.f;
+		FVector QueryLocation = PontoonLocation - FVector(0.f, 0.f, PontoonRadius + 100.f);
+		bool bPontoonInWater = GetWaterHeightAtLocation(QueryLocation, WaterHeight);
+
+		FColor SphereColor = FColor::Orange; // Orange: Not in water
+		float Submersion = 0.f;
+
+		if (bPontoonInWater)
 		{
-			LastLoggedTime = FMath::FloorToFloat(CurrentServerTime);
-
-			FVector QueryPoint = FVector(15170.f, 400.f, 0.f);
-			float WaveHeight = 0.f;
-			GetWaterHeightAtLocation(QueryPoint, WaveHeight);
-
-			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
-
-			float MPCTime = -1.f;
-			if (UWaterSubsystem* WaterSubsystem = UWaterSubsystem::GetWaterSubsystem(GetWorld()))
+			Submersion = WaterHeight - (PontoonLocation.Z - PontoonRadius);
+			if (Submersion > 0.f)
 			{
-				if (UMaterialParameterCollection* MPC = WaterSubsystem->GetMaterialParameterCollection())
+				if (Submersion >= 2.f * PontoonRadius)
 				{
-					if (UMaterialParameterCollectionInstance* MPCInstance = GetWorld()->GetParameterCollectionInstance(MPC))
-					{
-						MPCInstance->GetScalarParameterValue(FName(TEXT("Time")), MPCTime);
-					}
+					SphereColor = FColor::Blue; // Blue: Fully submerged
+				}
+				else
+				{
+					SphereColor = FColor::Green; // Green: Partially submerged
 				}
 			}
-
-			if (GetOwner() && GetOwner()->HasAuthority())
+			else
 			{
-				UE_LOG(LogTemp, Warning, TEXT("[Server] %s | 시간: %f | MPC시간: %f | 15170, 400에서 계산한 계산한 서버 파고 : %f"), *OwnerName, CurrentServerTime, MPCTime, WaveHeight);
-			}
-			else if (OwnerCharacter && OwnerCharacter->IsLocallyControlled())
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[Client] %s | 시간: %f | MPC시간: %f | 15170, 400에서 구한 로컬 파고 : %f"), *OwnerName, CurrentServerTime, MPCTime, WaveHeight);
+				SphereColor = FColor::Yellow; // Yellow: Above water surface but inside water body
 			}
 		}
+
+		// Draw Pontoon sphere representing its size and position
+		DrawDebugSphere(GetWorld(), PontoonLocation, PontoonRadius, 16, SphereColor, false, -1.f, 0, 1.5f);
+
+		// Draw center point
+		DrawDebugPoint(GetWorld(), PontoonLocation, 8.f, FColor::White, false, -1.f);
+
+		// Draw water surface height and intersection if inside water
+		if (bPontoonInWater)
+		{
+			FVector WaterSurfaceIntersection = FVector(PontoonLocation.X, PontoonLocation.Y, WaterHeight);
+
+			// Vertical line from pontoon center to water surface
+			DrawDebugLine(GetWorld(), PontoonLocation, WaterSurfaceIntersection, FColor::Cyan, false, -1.f, 0, 1.5f);
+
+			// Draw a horizontal cross at the water surface to show the intersection level
+			DrawDebugLine(GetWorld(), WaterSurfaceIntersection - FVector(PontoonRadius, 0.f, 0.f), WaterSurfaceIntersection + FVector(PontoonRadius, 0.f, 0.f), FColor::Cyan, false, -1.f, 0, 1.5f);
+			DrawDebugLine(GetWorld(), WaterSurfaceIntersection - FVector(0.f, PontoonRadius, 0.f), WaterSurfaceIntersection + FVector(0.f, PontoonRadius, 0.f), FColor::Cyan, false, -1.f, 0, 1.5f);
+		}
 	}
-	*/
 }
 
 void USwimmingComponent::InitializeOverlaps()

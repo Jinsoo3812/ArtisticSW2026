@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
 #include "InputActionValue.h"
+#include "AbilitySystemInterface.h"
+#include "Engine/DataTable.h"
 #include "Ship.generated.h"
 
 class UStaticMeshComponent;
@@ -15,6 +17,30 @@ class UInputMappingContext;
 class UInputAction;
 class APlayerController;
 class UPrimitiveComponent;
+class UAbilitySystemComponent;
+class UBaseAttributeSet;
+class UShipAttributeSet;
+
+USTRUCT(BlueprintType)
+struct FShipStatRow : public FTableRowBase
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	float MaxHealth = 100.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	float ShipSpeedMultiplier = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	float CannonDamage = 20.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	float CannonFireCooldown = 2.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	float CannonballSpeed = 3000.f;
+};
 
 USTRUCT(BlueprintType)
 struct FShipReplicatedState
@@ -29,13 +55,16 @@ struct FShipReplicatedState
 };
 
 UCLASS()
-class WATERANDSHIP_API AShip : public APawn
+class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this pawn's properties
 	AShip();
+
+	// IAbilitySystemInterface 구현
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
 protected:
 	// Called when the game starts or when spawned
@@ -178,4 +207,20 @@ public:
 
 	/** Resets camera to follow mode (called when disembarking) */
 	void ResetToFollowCamera();
+
+public:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Stats")
+	TObjectPtr<UDataTable> ShipStatTable;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Stats")
+	FName ShipStatRowName;
+
+protected:
+	void InitializeDefaultAttributes();
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UShipAttributeSet> AttributeSet;
 };

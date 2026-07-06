@@ -18,6 +18,10 @@ public:
 	virtual float GetSimpleWaveHeightAtPosition(const FVector& InPosition, float InWaterDepth, float InTime) const override;
 	virtual float GetWaveAttenuationFactor(const FVector& InPosition, float InWaterDepth, float InMinDepth) const override;
 
+	// Delegate underlying wave query to BaseWavesAsset so Epic's Water Plugin finds Gerstner waves
+	virtual const UWaterWaves* GetWaterWaves() const override;
+	virtual UWaterWaves* GetWaterWaves() override;
+
 	// The base wave asset reference (e.g. GerstnerWaves_Ocean) to delegate standard wave computation to.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Waves")
 	TObjectPtr<UWaterWavesAsset> BaseWavesAsset;

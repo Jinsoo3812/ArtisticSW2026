@@ -73,6 +73,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy")
 	FVector PontoonOffset = FVector(0.0f, 0.0f, -50.0f);
 
+	/** If true, draws the buoyancy pontoon debug sphere and submersion status */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy")
+	bool bShowDebugPontoon = false;
+
 	/** Buoyancy coefficient (multiplier for buoyant force) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy")
 	float BuoyancyCoefficient = 0.2f;
