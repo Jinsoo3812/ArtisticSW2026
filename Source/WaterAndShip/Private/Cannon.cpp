@@ -220,9 +220,14 @@ void ACannon::HandleLook(const FInputActionValue& Value)
 
 void ACannon::HandleFire(const FInputActionValue& Value)
 {
-	UE_LOG(LogTemp, Warning, TEXT("ACannon::HandleFire Called! CanFire: %d"), bCanFire);
+	FireCannon();
+}
 
-	if (!bCanFire) return;
+bool ACannon::FireCannon()
+{
+	if (!bCanFire) return false;
+
+	UE_LOG(LogTemp, Warning, TEXT("ACannon::FireCannon - Fire! Owner: %s"), *GetName());
 
 	bCanFire = false;
 
@@ -248,7 +253,25 @@ void ACannon::HandleFire(const FInputActionValue& Value)
 	FVector MuzzleLocation = BarrelMesh ? BarrelMesh->GetComponentLocation() + BarrelMesh->GetForwardVector() * 200.0f : GetActorLocation();
 	FRotator LaunchRotation = BarrelMesh ? BarrelMesh->GetComponentRotation() : GetActorRotation();
 
-	ServerFire(MuzzleLocation, LaunchRotation, TargetDamage, TargetSpeed);
+	if (HasAuthority())
+	{
+		SpawnCannonball(MuzzleLocation, LaunchRotation, TargetDamage, TargetSpeed);
+	}
+	else
+	{
+		ServerFire(MuzzleLocation, LaunchRotation, TargetDamage, TargetSpeed);
+	}
+
+	return true;
+}
+
+void ACannon::SetAIAimRotation(float NewPitch, float NewYaw)
+{
+	if (HasAuthority())
+	{
+		AimRotation.Pitch = FMath::Clamp(NewPitch, MinPitch, MaxPitch);
+		AimRotation.Yaw = FMath::Clamp(NewYaw, -MaxYawOffset, MaxYawOffset);
+	}
 }
 
 void ACannon::HandleExit(const FInputActionValue& Value)
@@ -299,9 +322,16 @@ void ACannon::ForceExit()
 
 void ACannon::ServerFire_Implementation(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed)
 {
+	SpawnCannonball(MuzzleLocation, LaunchRotation, Damage, Speed);
+}
+
+void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed)
+{
+	if (!HasAuthority()) return;
+
 	if (!CannonballClass)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ACannon::ServerFire - CannonballClass is null. Please assign it in the editor."));
+		UE_LOG(LogTemp, Error, TEXT("ACannon::SpawnCannonball - CannonballClass is null. Please assign it in the editor."));
 		return;
 	}
 
@@ -309,7 +339,7 @@ void ACannon::ServerFire_Implementation(FVector MuzzleLocation, FRotator LaunchR
 
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.Owner = OwningShip ? Cast<AActor>(OwningShip) : Cast<AActor>(this);
-	SpawnParams.Instigator = RidingPlayer; // The player who controls the cannon
+	SpawnParams.Instigator = RidingPlayer; // The player who controls the cannon (might be null for AI)
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	AActor* SpawnedProjectile = GetWorld()->SpawnActor<AActor>(CannonballClass, MuzzleLocation, LaunchRotation, SpawnParams);

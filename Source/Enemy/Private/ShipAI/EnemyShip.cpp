@@ -1,0 +1,199 @@
+// Fill out your copyright notice in the Description page of Project Settings.
+
+#include "ShipAI/EnemyShip.h"
+#include "Cannon.h"
+#include "Components/ChildActorComponent.h"
+#include "AbilitySystemComponent.h"
+#include "ShipAttributeSet.h"
+#include "TimerManager.h"
+#include "Engine/World.h"
+
+AEnemyShip::AEnemyShip()
+{
+	PrimaryActorTick.bCanEverTick = true;
+}
+
+void AEnemyShip::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// 캐싱된 대포 목록 탐색
+	FindAttachedCannons();
+
+	// 0.5초마다 타겟과 가장 가까운 N개의 대포를 선정해 목록을 갱신하는 타이머 작동
+	if (HasAuthority())
+	{
+		GetWorldTimerManager().SetTimer(ActiveCannonsTimerHandle, this, &AEnemyShip::UpdateActiveCannons, 0.5f, true);
+	}
+}
+
+void AEnemyShip::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	if (HasAuthority())
+	{
+		TickAIAimingAndFiring(DeltaTime);
+	}
+}
+
+void AEnemyShip::FindAttachedCannons()
+{
+	AttachedCannons.Empty();
+
+	// 1. 레벨 상에서 자식으로 부착된 Actor 탐색 (Actor Attachment)
+	TArray<AActor*> AttachedActors;
+	GetAttachedActors(AttachedActors);
+	for (AActor* Actor : AttachedActors)
+	{
+		if (ACannon* Cannon = Cast<ACannon>(Actor))
+		{
+			AttachedCannons.Add(Cannon);
+		}
+	}
+
+	// 2. 블루프린트 내부 컴포넌트로 들어있는 ChildActorComponent 내 대포 탐색
+	TArray<UActorComponent*> ChildComps;
+	GetComponents(UChildActorComponent::StaticClass(), ChildComps);
+	for (UActorComponent* Comp : ChildComps)
+	{
+		if (UChildActorComponent* CAC = Cast<UChildActorComponent>(Comp))
+		{
+			if (ACannon* Cannon = Cast<ACannon>(CAC->GetChildActor()))
+			{
+				AttachedCannons.Add(Cannon);
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::FindAttachedCannons - Found %d cannons attached to %s."), AttachedCannons.Num(), *GetName());
+}
+
+void AEnemyShip::UpdateActiveCannons()
+{
+	if (!HasAuthority()) return;
+
+	if (!AITargetShip || AttachedCannons.Num() == 0)
+	{
+		// 타겟이 없거나 대포가 없으면 활성 대포 정렬을 비우고 기존 대포는 정렬 리셋
+		ActiveAICannons.Empty();
+		for (ACannon* Cannon : AttachedCannons)
+		{
+			if (Cannon)
+			{
+				Cannon->SetAIAimRotation(0.f, 0.f);
+			}
+		}
+		return;
+	}
+
+	FVector TargetLoc = AITargetShip->GetActorLocation();
+
+	// 타겟 선박과의 거리 기준 정렬 (제곱 거리로 연산 최소화)
+	TArray<ACannon*> SortedCannons = AttachedCannons;
+	SortedCannons.Sort([TargetLoc](const ACannon& A, const ACannon& B) {
+		float DistA = FVector::DistSquared(A.GetActorLocation(), TargetLoc);
+		float DistB = FVector::DistSquared(B.GetActorLocation(), TargetLoc);
+		return DistA < DistB;
+	});
+
+	ActiveAICannons.Empty();
+	int32 CountToSelect = FMath::Min(MaxActiveCannons, SortedCannons.Num());
+	for (int32 i = 0; i < CountToSelect; ++i)
+	{
+		ActiveAICannons.Add(SortedCannons[i]);
+	}
+
+	// 활성화되지 못한 나머지 대포들은 조준 초기화(정면 복귀)
+	for (ACannon* Cannon : AttachedCannons)
+	{
+		if (Cannon && !ActiveAICannons.Contains(Cannon))
+		{
+			Cannon->SetAIAimRotation(0.f, 0.f);
+		}
+	}
+}
+
+void AEnemyShip::TickAIAimingAndFiring(float DeltaTime)
+{
+	if (!AITargetShip || ActiveAICannons.Num() == 0)
+	{
+		return;
+	}
+
+	// 1. 배의 스탯으로부터 대포알 발사 속도 및 중력 정보 획득
+	float ProjectileSpeed = 3000.f; // Fallback 기본값
+	if (UAbilitySystemComponent* ShipASC = GetAbilitySystemComponent())
+	{
+		ProjectileSpeed = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute());
+	}
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	float Gravity = FMath::Abs(World->GetGravityZ());
+	if (Gravity <= 0.01f || ProjectileSpeed <= 10.f)
+	{
+		return; // 비정상 물리 상태 예외 처리
+	}
+
+	FVector TargetLoc = AITargetShip->GetActorLocation();
+
+	// 2. 활성 대포별로 각각 조준각 연산 및 발사 진행
+	for (ACannon* Cannon : ActiveAICannons)
+	{
+		if (!Cannon) continue;
+
+		FVector StartLoc = Cannon->GetActorLocation();
+		FVector ToTarget = TargetLoc - StartLoc;
+
+		float HorizDist = FVector::Dist2D(StartLoc, TargetLoc);
+		float VertDist = ToTarget.Z;
+
+		// 3. 탄도학 투사 궤적 공식 대입 (해석학적 공식)
+		// Disc = v^4 - g * (g * x^2 + 2 * y * v^2)
+		float SpeedSq = ProjectileSpeed * ProjectileSpeed;
+		float Speed4 = SpeedSq * SpeedSq;
+		float Disc = Speed4 - Gravity * (Gravity * HorizDist * HorizDist + 2.f * VertDist * SpeedSq);
+
+		if (Disc < 0.f)
+		{
+			// 최대 사거리를 벗어난 경우 조준을 풀고 대기
+			Cannon->SetAIAimRotation(0.f, 0.f);
+			continue;
+		}
+
+		// 저각 탄도 계산
+		float PitchRad = FMath::Atan2(SpeedSq - FMath::Sqrt(Disc), Gravity * HorizDist);
+		float PitchDeg = FMath::RadiansToDegrees(PitchRad);
+
+		// 월드 공간 발사 방향 벡터 생성
+		FVector HorizDir = FVector(ToTarget.X, ToTarget.Y, 0.f).GetSafeNormal();
+		FVector LaunchDir = HorizDir * FMath::Cos(PitchRad) + FVector(0.f, 0.f, FMath::Sin(PitchRad));
+
+		// 대포의 로컬 공간으로 변환하여 Yaw / Pitch 도출
+		FVector LocalLaunchDir = Cannon->GetActorTransform().InverseTransformVector(LaunchDir);
+		FRotator TargetRot = LocalLaunchDir.Rotation();
+
+		float TargetPitch = TargetRot.Pitch;
+		float TargetYaw = TargetRot.Yaw;
+
+		// 4. 180도 고개 돌림 방지 체크 (로컬 Yaw가 좌우 90도를 초과하면 조준 불가 상태 처리)
+		if (FMath::Abs(TargetYaw) > 90.f)
+		{
+			// 조준하지 않고 정면 정렬 대기
+			Cannon->SetAIAimRotation(0.f, 0.f);
+		}
+		else
+		{
+			// 조준 제어 적용
+			Cannon->SetAIAimRotation(TargetPitch, TargetYaw);
+
+			// 선회(Orbit) 또는 도망(Retreat) 상태 시 지속 발사
+			if (CurrentCombatState == ENavalCombatState::Orbit || CurrentCombatState == ENavalCombatState::Retreat)
+			{
+				Cannon->FireCannon();
+			}
+		}
+	}
+}

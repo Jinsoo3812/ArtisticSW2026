@@ -62,6 +62,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval AI|Debug")
 	bool bShowDebugRanges = true;
 
+	// 한 번에 조준/사격에 사용할 최대 대포 개수
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval AI|Combat")
+	int32 MaxActiveCannons = 2;
+
 	// 디버그 라인의 Z축 오프셋 (바다에 파묻히지 않게 위로 띄울 값)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval AI|Debug")
 	float DebugZOffset = 100.f;

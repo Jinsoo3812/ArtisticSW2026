@@ -41,6 +41,7 @@ ACannonball::ACannonball()
 
 	bReplicates = true;
 	SetReplicateMovement(true);
+	bAlwaysRelevant = true;
 }
 
 void ACannonball::BeginPlay()

@@ -2,6 +2,7 @@
 #include "AIController.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Ship.h"
+#include "ShipAI/EnemyShip.h"
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/Engine.h"
@@ -438,6 +439,14 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 				);
 			}
 		}
+	}
+
+	// --- 9. AEnemyShip 전용 대포 AI 정보 동기화 ---
+	if (AEnemyShip* EnemyShip = Cast<AEnemyShip>(MyShip))
+	{
+		EnemyShip->SetAITarget(TargetShip);
+		EnemyShip->SetNavalCombatState(CurrentState);
+		EnemyShip->SetMaxActiveCannons(MaxActiveCannons);
 	}
 }
 

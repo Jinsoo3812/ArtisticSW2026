@@ -52,6 +52,13 @@ public:
 	/** Force exit from cannon control (e.g. when ship is destroyed or forced off) */
 	void ForceExit();
 
+	/** Fires the cannon. Returns true if fire was successful, false if on cooldown. */
+	UFUNCTION(BlueprintCallable, Category = "Cannon")
+	bool FireCannon();
+
+	/** Allows AI to set aim rotation directly on the server. */
+	void SetAIAimRotation(float NewPitch, float NewYaw);
+
 protected:
 	// ---- Components ----
 	/** Base mesh that rotates left/right (Yaw) */
@@ -121,6 +128,8 @@ protected:
 	// ---- Server RPCs ----
 	UFUNCTION(Server, Reliable)
 	void ServerFire(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed);
+
+	void SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed);
 
 	UFUNCTION(Server, Reliable)
 	void ServerUpdateAim(float NewPitch, float NewYaw);
