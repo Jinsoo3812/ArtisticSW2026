@@ -391,6 +391,23 @@ void ABasePlayerController::StartStorageSearch(AStorageChest* StorageChest)
 	GetWorldTimerManager().ClearTimer(StorageSearchTimerHandle);
 
 	FStorageRevealState& RevealState = StorageRevealStates.FindOrAdd(StorageChest);
+
+	if (const UStorageComponent* StorageComponent = StorageChest->GetStorageComponent())
+	{
+		const TArray<FInventorySlot>& Slots = StorageComponent->GetSlots();
+		const int32 SlotCount = StorageComponent->GetSlotCount();
+
+		while (RevealState.RevealedSlotCount < SlotCount)
+		{
+			if (Slots.IsValidIndex(RevealState.RevealedSlotCount) && !Slots[RevealState.RevealedSlotCount].IsEmpty())
+			{
+				break;
+			}
+
+			++RevealState.RevealedSlotCount;
+		}
+	}
+
 	RevealState.SearchingSlotIndex = FindNextUnrevealedStorageSlot(StorageChest);
 	NotifyStorageRevealState(StorageChest);
 
