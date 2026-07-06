@@ -17,9 +17,12 @@
 // Unreal
 #include "AbilitySystemComponent.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
+#include "Components/WidgetComponent.h"
 #include "Components/BaseHealthComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "UI/HealthBarWidget.h"
+#include "UObject/ConstructorHelpers.h"
 
 ABaseEnemy::ABaseEnemy()
 {
@@ -48,6 +51,21 @@ ABaseEnemy::ABaseEnemy()
 	WaypointMoveComponent = CreateDefaultSubobject<UEnemyWaypointMoveComponent>(TEXT("WaypointMoveComponent"));
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 
+	// ================= Health Bar =================
+	HealthBarWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarWidgetComponent"));
+	HealthBarWidgetComponent->SetupAttachment(GetRootComponent());
+	HealthBarWidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
+	HealthBarWidgetComponent->SetDrawAtDesiredSize(false);
+	HealthBarWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	static ConstructorHelpers::FClassFinder<UHealthBarWidget> HealthBarWidgetFinder(TEXT("/Game/Blueprints/02_UI/UI_HUD/WBP_HealthBarWidget"));
+	if (HealthBarWidgetFinder.Succeeded())
+	{
+		HealthBarWidgetClass = HealthBarWidgetFinder.Class;
+		HealthBarWidgetComponent->SetWidgetClass(HealthBarWidgetClass);
+	}
+	// ================= End of Health Bar =================
+
 	if (GetCharacterMovement())
 		GetCharacterMovement()->SetIsReplicated(true);
 }
@@ -62,9 +80,13 @@ void ABaseEnemy::BeginPlay()
 		if (HealthComponent)
 		{
 			HealthComponent->OnDeathStarted.AddUniqueDynamic(this, &ABaseEnemy::OnDeathStarted);
+			HealthComponent->OnHealthChanged.AddUniqueDynamic(this, &ABaseEnemy::OnHealthChanged);
+			HealthComponent->OnMaxHealthChanged.AddUniqueDynamic(this, &ABaseEnemy::OnMaxHealthChanged);
 			HealthComponent->InitializeWithAbilitySystem(AbilitySystemComponent);
 		}
 	}
+
+	InitializeHealthBarWidget();
 
 	// StartingAbilities 능력 등록
 	if (AbilitySystemComponent && HasAuthority())
@@ -88,8 +110,12 @@ void ABaseEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (HealthComponent)
 	{
 		HealthComponent->OnDeathStarted.RemoveDynamic(this, &ABaseEnemy::OnDeathStarted);
+		HealthComponent->OnHealthChanged.RemoveDynamic(this, &ABaseEnemy::OnHealthChanged);
+		HealthComponent->OnMaxHealthChanged.RemoveDynamic(this, &ABaseEnemy::OnMaxHealthChanged);
 		HealthComponent->UninitializeFromAbilitySystem();
 	}
+
+	GetWorldTimerManager().ClearTimer(HealthBarHideTimerHandle);
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -146,6 +172,11 @@ void ABaseEnemy::HandleDeath_Implementation()
 
 void ABaseEnemy::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 {
+	if (HealthBarWidgetComponent)
+	{
+		HealthBarWidgetComponent->SetVisibility(false);
+	}
+
 	if (!bDeathHandled)
 	{
 		bDeathHandled = true;
@@ -157,6 +188,76 @@ void ABaseEnemy::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 		}
 
 		HandleDeath();
+	}
+}
+
+void ABaseEnemy::OnHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
+{
+	RefreshHealthBarWidget();
+	UpdateHealthBarVisibilityAfterHealthChanged(OldValue, NewValue);
+}
+
+void ABaseEnemy::OnMaxHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
+{
+	RefreshHealthBarWidget();
+}
+
+void ABaseEnemy::InitializeHealthBarWidget()
+{
+	if (!HealthBarWidgetComponent)
+	{
+		return;
+	}
+
+	HealthBarWidgetComponent->SetRelativeLocation(HealthBarOffset);
+	HealthBarWidgetComponent->SetDrawSize(HealthBarDrawSize);
+
+	if (HealthBarWidgetClass)
+	{
+		HealthBarWidgetComponent->SetWidgetClass(HealthBarWidgetClass);
+	}
+
+	HealthBarWidgetComponent->InitWidget();
+	RefreshHealthBarWidget();
+	HealthBarWidgetComponent->SetVisibility(HealthBarVisibilityPolicy == EEnemyHealthBarVisibilityPolicy::AlwaysVisible);
+}
+
+void ABaseEnemy::RefreshHealthBarWidget()
+{
+	if (!HealthComponent || !HealthBarWidgetComponent)
+	{
+		return;
+	}
+
+	if (UHealthBarWidget* HealthBarWidget = Cast<UHealthBarWidget>(HealthBarWidgetComponent->GetUserWidgetObject()))
+	{
+		HealthBarWidget->SetShowHealthText(false);
+		HealthBarWidget->SetHealthValues(HealthComponent->GetHealth(), HealthComponent->GetMaxHealth());
+	}
+}
+
+void ABaseEnemy::UpdateHealthBarVisibilityAfterHealthChanged(float OldValue, float NewValue)
+{
+	if (!HealthBarWidgetComponent || HealthBarVisibilityPolicy != EEnemyHealthBarVisibilityPolicy::ShowOnDamage)
+	{
+		return;
+	}
+
+	if (OldValue <= NewValue)
+	{
+		return;
+	}
+
+	HealthBarWidgetComponent->SetVisibility(true);
+	GetWorldTimerManager().ClearTimer(HealthBarHideTimerHandle);
+	GetWorldTimerManager().SetTimer(HealthBarHideTimerHandle, this, &ABaseEnemy::HideHealthBarForDamagePolicy, HealthBarVisibleDurationAfterDamage, false);
+}
+
+void ABaseEnemy::HideHealthBarForDamagePolicy()
+{
+	if (HealthBarWidgetComponent && HealthBarVisibilityPolicy == EEnemyHealthBarVisibilityPolicy::ShowOnDamage)
+	{
+		HealthBarWidgetComponent->SetVisibility(false);
 	}
 }
 

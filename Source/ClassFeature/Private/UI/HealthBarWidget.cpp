@@ -18,6 +18,13 @@ void UHealthBarWidget::SetHealthValues(float CurrentHealth, float MaxHealth)
 
 	if (HealthText)
 	{
+		HealthText->SetVisibility(bShowHealthText ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+
+		if (!bShowHealthText)
+		{
+			return;
+		}
+
 		const int32 CurrentHealthInt = FMath::RoundToInt(ClampedCurrentHealth);
 		const int32 MaxHealthInt = FMath::RoundToInt(SafeMaxHealth);
 		HealthText->SetText(FText::Format(
@@ -25,5 +32,15 @@ void UHealthBarWidget::SetHealthValues(float CurrentHealth, float MaxHealth)
 			FText::AsNumber(CurrentHealthInt),
 			FText::AsNumber(MaxHealthInt)
 		));
+	}
+}
+
+void UHealthBarWidget::SetShowHealthText(bool bShow)
+{
+	bShowHealthText = bShow;
+
+	if (HealthText)
+	{
+		HealthText->SetVisibility(bShowHealthText ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 }

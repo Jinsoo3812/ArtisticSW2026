@@ -8,7 +8,8 @@ public class Enemy: ModuleRules
             // 소스파일에서 사용할 모듈을 작성하는 곳
             "Core",
             "CoreUObject",
-            "Engine"
+            "Engine",
+            "UMG"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
@@ -32,7 +33,8 @@ public class Enemy: ModuleRules
 			"Enemy/Public",
             "Enemy/Public/AI",
             "Enemy/Public/GAS",
-            "Enemy/Public/ShipAI"
+            "Enemy/Public/ShipAI",
+            "Enemy/Public/UI"
         });
     }
 }

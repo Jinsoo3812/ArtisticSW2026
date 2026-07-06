@@ -18,10 +18,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Health")
 	void SetHealthValues(float CurrentHealth, float MaxHealth);
 
+	UFUNCTION(BlueprintCallable, Category = "Health")
+	void SetShowHealthText(bool bShow);
+
 protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UProgressBar> HealthProgressBar;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> HealthText;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Health")
+	bool bShowHealthText = true;
 };
