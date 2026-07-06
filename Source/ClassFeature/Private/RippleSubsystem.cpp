@@ -91,13 +91,13 @@ void URippleSubsystem::OnWaterBodyActorOverlap(AActor* OverlappedActor, AActor* 
 		// Spawn ripple locally using Default configurations
 		AddRipple(FVector2D(ContactLoc.X, ContactLoc.Y), InitialAmplitude, DefaultWaveSpeed, DefaultDecayRate, DefaultWaveLength);
 
-		UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Actor: %s entered WaterBody: %s. Speed: %.2f. Spawning Ripple Amp: %.2f"),
-			*OtherActor->GetName(), *OverlappedActor->GetName(), DownwardSpeed, InitialAmplitude);
+		// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Actor: %s entered WaterBody: %s. Speed: %.2f. Spawning Ripple Amp: %.2f"),
+		// 	*OtherActor->GetName(), *OverlappedActor->GetName(), DownwardSpeed, InitialAmplitude);
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Actor %s entered WaterBody %s but skipped: DownwardSpeed (%.2f) < MinVelocityThreshold (%.2f)"), 
-			*OtherActor->GetName(), *OverlappedActor->GetName(), DownwardSpeed, MinVelocityThreshold);
+		// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Actor %s entered WaterBody %s but skipped: DownwardSpeed (%.2f) < MinVelocityThreshold (%.2f)"), 
+		// 	*OtherActor->GetName(), *OverlappedActor->GetName(), DownwardSpeed, MinVelocityThreshold);
 	}
 }
 
@@ -260,13 +260,13 @@ void URippleSubsystem::AddRipple(FVector2D Origin, float InitialAmplitude, float
 					BestIndex = i;
 				}
 			}
-			UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Active slot limit reached. Replacing ripple at index %d. New Location: %s, Amp: %.2f, Tmax: %.2fs"), BestIndex, *Origin.ToString(), InitialAmplitude, Tmax);
+			// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Active slot limit reached. Replacing ripple at index %d. New Location: %s, Amp: %.2f, Tmax: %.2fs"), BestIndex, *Origin.ToString(), InitialAmplitude, Tmax);
 			ActiveRipples[BestIndex] = NewWave;
 		}
 		else
 		{
 			ActiveRipples.Add(NewWave);
-			UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Spawned Ripple successfully at %s (Amp: %.2f, Speed: %.2f, Tmax: %.2fs). Active Count: %d"), *Origin.ToString(), InitialAmplitude, WaveSpeed, Tmax, ActiveRipples.Num());
+			// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem] Spawned Ripple successfully at %s (Amp: %.2f, Speed: %.2f, Tmax: %.2fs). Active Count: %d"), *Origin.ToString(), InitialAmplitude, WaveSpeed, Tmax, ActiveRipples.Num());
 		}
 	}
 }

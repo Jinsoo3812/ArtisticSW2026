@@ -7,15 +7,32 @@
 #include "ShipAttributeSet.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
+#include "Components/BaseHealthComponent.h"
+#include "BaseAttributeSet.h"
+#include "AIController.h"
+#include "BrainComponent.h"
+#include "BuoyancyComponent.h"
 
 AEnemyShip::AEnemyShip()
 {
 	PrimaryActorTick.bCanEverTick = true;
+
+	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 }
 
 void AEnemyShip::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// HealthComponent를 Ship의 ASC에 바인딩 (BaseEnemy의 패턴과 동일)
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		if (HealthComponent)
+		{
+			HealthComponent->OnDeathStarted.AddUniqueDynamic(this, &AEnemyShip::OnDeathStarted);
+			HealthComponent->InitializeWithAbilitySystem(ASC);
+		}
+	}
 
 	// 캐싱된 대포 목록 탐색
 	FindAttachedCannons();
@@ -27,14 +44,72 @@ void AEnemyShip::BeginPlay()
 	}
 }
 
+void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (HealthComponent)
+	{
+		HealthComponent->OnDeathStarted.RemoveDynamic(this, &AEnemyShip::OnDeathStarted);
+		HealthComponent->UninitializeFromAbilitySystem();
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void AEnemyShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (HasAuthority())
+	if (HasAuthority() && !bDeathHandled)
 	{
 		TickAIAimingAndFiring(DeltaTime);
 	}
+}
+
+void AEnemyShip::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
+{
+	if (!bDeathHandled)
+	{
+		bDeathHandled = true;
+		HandleShipDeath();
+	}
+}
+
+void AEnemyShip::HandleShipDeath()
+{
+	if (!HasAuthority()) return;
+
+	// 1. 사망 로그 출력 (이름 + 마지막 체력)
+	float FinalHealth = 0.0f;
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		FinalHealth = ASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
+	}
+	UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::HandleShipDeath - [%s] destroyed! Final Health: %.1f"), *GetName(), FinalHealth);
+
+	// 2. AI Behavior Tree 먼저 정지 (AddForce 경고 방지)
+	if (AAIController* AIC = Cast<AAIController>(GetController()))
+	{
+		if (UBrainComponent* BrainComp = AIC->GetBrainComponent())
+		{
+			BrainComp->StopLogic(TEXT("Ship Destroyed"));
+		}
+	}
+
+	// 3. BuoyancyCoefficient를 0으로 설정 → 부력만 완전히 제거, 중력으로 자연 침몰
+	if (UBuoyancyComponent* BuoyancyComp = FindComponentByClass<UBuoyancyComponent>())
+	{
+		BuoyancyComp->BuoyancyData.BuoyancyCoefficient = 0.0f;
+	}
+
+	// 4. 대포 발사/조준 타이머 정지
+	GetWorldTimerManager().ClearTimer(ActiveCannonsTimerHandle);
+	ActiveAICannons.Empty();
+
+	// 5. N초 후 Destroy
+	GetWorldTimerManager().SetTimer(DeathDestroyTimerHandle, FTimerDelegate::CreateLambda([this]()
+	{
+		Destroy();
+	}), DestroyAfterDeathDelay, false);
 }
 
 void AEnemyShip::FindAttachedCannons()

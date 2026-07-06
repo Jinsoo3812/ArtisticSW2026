@@ -8,6 +8,7 @@
 #include "EnemyShip.generated.h"
 
 class ACannon;
+class UBaseHealthComponent;
 
 UCLASS()
 class ENEMY_API AEnemyShip : public AShip
@@ -19,6 +20,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 public:
 	virtual void Tick(float DeltaTime) override;
@@ -40,6 +42,26 @@ protected:
 	// Aiming and firing logic
 	void TickAIAimingAndFiring(float DeltaTime);
 
+	// ---- Death Handling ----
+	UFUNCTION()
+	void OnDeathStarted(UBaseHealthComponent* InHealthComponent);
+
+	void HandleShipDeath();
+
+	// ---- Death Properties ----
+	/** 사망 후 Destroy까지의 대기 시간 (초) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Death")
+	float DestroyAfterDeathDelay = 5.0f;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Death")
+	bool bDeathHandled = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UBaseHealthComponent> HealthComponent;
+
+	FTimerHandle DeathDestroyTimerHandle;
+
+	// ---- Cannon & AI State ----
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|AI Cannon")
 	TArray<TObjectPtr<ACannon>> AttachedCannons;
 

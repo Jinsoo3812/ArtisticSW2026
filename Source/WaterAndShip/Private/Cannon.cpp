@@ -227,7 +227,8 @@ bool ACannon::FireCannon()
 {
 	if (!bCanFire) return false;
 
-	UE_LOG(LogTemp, Warning, TEXT("ACannon::FireCannon - Fire! Owner: %s"), *GetName());
+	AShip* MyShip = GetOwningShip();
+	UE_LOG(LogTemp, Warning, TEXT("ACannon::FireCannon - Fire! Cannon: %s, Ship: %s"), *GetName(), MyShip ? *MyShip->GetName() : TEXT("None"));
 
 	bCanFire = false;
 
@@ -237,7 +238,7 @@ bool ACannon::FireCannon()
 	float TargetSpeed = FireVelocity;
 
 	// 배가 존재하면 배의 GAS Attribute에서 실시간으로 대포 스탯들을 긁어옴
-	if (AShip* MyShip = GetOwningShip())
+	if (MyShip)
 	{
 		if (UAbilitySystemComponent* ShipASC = MyShip->GetAbilitySystemComponent())
 		{

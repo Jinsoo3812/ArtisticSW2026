@@ -23,6 +23,7 @@ public class Enemy: ModuleRules
             "ClassFeature",
             "GASCore",
             "WaterAndShip",
+            "Water",
         });
 
         PublicIncludePaths.AddRange(new string[] {
