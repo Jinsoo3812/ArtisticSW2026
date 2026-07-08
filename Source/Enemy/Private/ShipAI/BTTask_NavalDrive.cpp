@@ -8,6 +8,7 @@
 #include "Engine/Engine.h"
 #include "EngineUtils.h"
 #include "ShipAI/NavalAIController.h"
+#include "ShipAI/ShipSwarmSubsystem.h"
 
 UBTTask_NavalDrive::UBTTask_NavalDrive()
 {
@@ -115,6 +116,15 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 
 	// 타겟과 복귀 위치 정보 사전 산출
 	FVector SelfLoc = MyShip->GetActorLocation();
+
+	// 배의 인스턴스 전용 세팅값 동적 조회
+	float CurrentIdealDistance = IdealDistance;
+	FName CurrentSquadID = NAME_None;
+	if (AEnemyShip* EnemyShip = Cast<AEnemyShip>(MyShip))
+	{
+		CurrentIdealDistance = EnemyShip->IdealDistance;
+		CurrentSquadID = EnemyShip->SquadID;
+	}
 	
 	// A. 타겟 거리 및 벡터 계산
 	float Distance = 0.f;
@@ -189,7 +199,7 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 			{
 				CurrentState = ENavalCombatState::Retreat;
 			}
-			else if (Distance <= IdealDistance)
+			else if (Distance <= CurrentIdealDistance)
 			{
 				CurrentState = ENavalCombatState::Orbit;
 			}
@@ -197,7 +207,7 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 		// B. 후퇴(Retreat) 상태 전이 (멀어지는 중)
 		else if (CurrentState == ENavalCombatState::Retreat)
 		{
-			if (Distance >= IdealDistance)
+			if (Distance >= CurrentIdealDistance)
 			{
 				CurrentState = ENavalCombatState::Orbit;
 			}
@@ -205,7 +215,7 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 		// C. 선회(Orbit) 상태 전이 (완충 오프셋 적용)
 		else if (CurrentState == ENavalCombatState::Orbit)
 		{
-			if (Distance > (IdealDistance + OrbitTolerance))
+			if (Distance > (CurrentIdealDistance + OrbitTolerance))
 			{
 				CurrentState = ENavalCombatState::Approach;
 			}
@@ -216,8 +226,8 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 		}
 	}
 
-	// --- 4. 상태별 조타 방향(Heading) 및 기동 속도 비율 설정 ---
-	FVector DesiredHeading = FVector::ZeroVector;
+	// --- 4. 상태별 기본 조타 방향(BaseHeading) 및 기동 속도 비율 설정 ---
+	FVector BaseHeading = FVector::ZeroVector;
 	float SpeedFactor = 1.0f;
 	FString StateString = TEXT("Unknown");
 	FColor StateColor = FColor::White;
@@ -225,7 +235,7 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 	switch (CurrentState)
 	{
 	case ENavalCombatState::Idle:
-		DesiredHeading = MyShip->GetActorForwardVector();
+		BaseHeading = MyShip->GetActorForwardVector();
 		SpeedFactor = 0.0f; // 가속 0
 		if (ReturnPointActor)
 		{
@@ -241,7 +251,7 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 		break;
 
 	case ENavalCombatState::Return:
-		DesiredHeading = ToReturnDir;
+		BaseHeading = ToReturnDir;
 		SpeedFactor = 1.0f; // 전속 복귀 가속
 		StateString = FString::Printf(TEXT("Return -> %s (Dist: %.1f / Offset: %.1f)"), 
 			*ReturnPointActor->GetName(), DistToReturn, ReturnArrivalOffset);
@@ -249,7 +259,7 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 		break;
 
 	case ENavalCombatState::Approach:
-		DesiredHeading = ToTargetDir;
+		BaseHeading = ToTargetDir;
 		SpeedFactor = 1.0f;
 		StateString = TEXT("Approach (Chasing)");
 		StateColor = FColor::Orange;
@@ -261,22 +271,150 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 				FVector(-ToTargetDir.Y, ToTargetDir.X, 0.f) : 
 				FVector(ToTargetDir.Y, -ToTargetDir.X, 0.f);
 
-			float DistanceDiff = Distance - IdealDistance;
-			float SteeringBias = FMath::Clamp(DistanceDiff / IdealDistance, -0.4f, 0.4f);
+			float DistanceDiff = Distance - CurrentIdealDistance;
+			float SteeringBias = FMath::Clamp(DistanceDiff / CurrentIdealDistance, -0.4f, 0.4f);
 
-			DesiredHeading = (TangentDir + ToTargetDir * SteeringBias).GetSafeNormal();
+			BaseHeading = (TangentDir + ToTargetDir * SteeringBias).GetSafeNormal();
 			SpeedFactor = 1.0f; 
-			StateString = TEXT("Orbit (Circling)");
+			StateString = FString::Printf(TEXT("Orbit (Ideal Dist: %.1f)"), CurrentIdealDistance);
 			StateColor = FColor::Green;
 		}
 		break;
 
 	case ENavalCombatState::Retreat:
-		DesiredHeading = -ToTargetDir;
+		BaseHeading = -ToTargetDir;
 		SpeedFactor = 1.0f;
 		StateString = TEXT("Retreat (Evading)");
 		StateColor = FColor::Red;
 		break;
+	}
+
+	// --- 4.5. 컨텍스트 스티어링 (Context Steering) 적용 ── 서버 10Hz 의사결정 주기 ---
+	FVector DesiredHeading = BaseHeading;
+	if (MyShip->HasAuthority() && CurrentState != ENavalCombatState::Idle)
+	{
+		double CurrentTime = MyShip->GetWorld()->GetTimeSeconds();
+		if (CurrentTime - LastDecisionTime >= 0.1 || CachedDesiredHeading.IsNearlyZero())
+		{
+			LastDecisionTime = CurrentTime;
+
+			// A. 12방향 후보 레이(Ray) 벡터 생성 (수평면 상)
+			const int32 NumRays = 12;
+			FVector Rays[NumRays];
+			for (int32 i = 0; i < NumRays; ++i)
+			{
+				float Angle = (360.f / NumRays) * i;
+				float Rad = FMath::DegreesToRadians(Angle);
+				Rays[i] = FVector(FMath::Cos(Rad), FMath::Sin(Rad), 0.f);
+			}
+
+			// B. 관심도(Interest) 산출: 원래 이동하고자 하는 BaseHeading과의 방향 일치성 (0.0 ~ 1.0)
+			float Interest[NumRays];
+			for (int32 i = 0; i < NumRays; ++i)
+			{
+				float Dot = FVector::DotProduct(Rays[i], BaseHeading);
+				Interest[i] = FMath::Max(0.f, Dot);
+			}
+
+			// C. 위험도(Danger) 산출: 같은 군집 내의 동료 배들로부터 회피
+			float Danger[NumRays];
+			FMemory::Memzero(Danger, sizeof(float) * NumRays);
+
+			if (UShipSwarmSubsystem* SwarmSubsystem = MyShip->GetWorld()->GetSubsystem<UShipSwarmSubsystem>())
+			{
+				TArray<AEnemyShip*> SquadMembers = SwarmSubsystem->GetSquadMembers(CurrentSquadID);
+				float AvoidanceRadius = CurrentIdealDistance * 1.0f; // 충돌 감지 반경
+				if (AvoidanceRadius <= 100.f)
+				{
+					AvoidanceRadius = 2000.f; // 폴백 최소값
+				}
+
+				for (AEnemyShip* Member : SquadMembers)
+				{
+					if (!Member || Member == MyShip) continue;
+
+					FVector ToOther = Member->GetActorLocation() - SelfLoc;
+					ToOther.Z = 0.f;
+					float Dist = ToOther.Size();
+
+					if (Dist < AvoidanceRadius && Dist > 1.f)
+					{
+						FVector ToOtherDir = ToOther.GetSafeNormal();
+						// 가까울수록 비선형적으로 점수가 급증하도록 제곱 사용
+						float DangerWeight = FMath::Square(1.0f - (Dist / AvoidanceRadius));
+
+						for (int32 i = 0; i < NumRays; ++i)
+						{
+							float Dot = FVector::DotProduct(Rays[i], ToOtherDir);
+							if (Dot > 0.f)
+							{
+								// 동료 배가 있는 방향의 후보 방향 레이들에 Danger 부과
+								Danger[i] = FMath::Max(Danger[i], Dot * DangerWeight);
+							}
+						}
+					}
+				}
+			}
+
+			// D. 최종 점수(Interest - Danger) 최댓값 레이 선택
+			float BestScore = -999.f;
+			int32 BestRayIndex = -1;
+			for (int32 i = 0; i < NumRays; ++i)
+			{
+				float Score = Interest[i] - Danger[i];
+				if (Score > BestScore)
+				{
+					BestScore = Score;
+					BestRayIndex = i;
+				}
+			}
+
+			// 원래 가려던 방향(BaseHeading)과 가장 일치하는 Interest 최대 레이 인덱스 탐색
+			int32 MaxInterestIndex = -1;
+			float MaxInterestVal = -999.f;
+			for (int32 i = 0; i < NumRays; ++i)
+			{
+				if (Interest[i] > MaxInterestVal)
+				{
+					MaxInterestVal = Interest[i];
+					MaxInterestIndex = i;
+				}
+			}
+
+			if (BestRayIndex != -1)
+			{
+				CachedDesiredHeading = Rays[BestRayIndex];
+				
+				// 회피 상태 판정: 선택된 방향이 원래 가려던 최적 관심도 방향과 다르거나, 원래 방향에 장벽(Danger)이 존재할 때
+				if (MaxInterestIndex != -1)
+				{
+					bIsAvoiding = (BestRayIndex != MaxInterestIndex) || (Danger[MaxInterestIndex] > 0.01f);
+				}
+				else
+				{
+					bIsAvoiding = (Danger[BestRayIndex] > 0.01f);
+				}
+			}
+			else
+			{
+				CachedDesiredHeading = BaseHeading;
+				bIsAvoiding = false;
+			}
+		}
+		DesiredHeading = CachedDesiredHeading;
+	}
+	else
+	{
+		CachedDesiredHeading = BaseHeading;
+		DesiredHeading = BaseHeading;
+		bIsAvoiding = false;
+	}
+
+	// --- 4.6. 회피 상태 로그 피드백 반영 ---
+	if (bIsAvoiding)
+	{
+		StateString += TEXT(" (Avoiding)");
+		StateColor = FColor::Magenta;
 	}
 
 	// --- 5. 플레이어식 조작 방식으로 물리 힘 연산 통일 (W 가속, A/D 토크) ---
@@ -325,8 +463,9 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 	// --- 7. 화면 좌상단 스크린 디버그 로그 표시 ---
 	if (GEngine)
 	{
-		FString DebugMsg = FString::Printf(TEXT("Naval Drive: %s -> %s"), 
-			*MyShip->GetName(), *StateString);
+		FString SquadStr = CurrentSquadID.IsNone() ? TEXT("NoSquad") : CurrentSquadID.ToString();
+		FString DebugMsg = FString::Printf(TEXT("Naval Drive: %s [%s] -> %s"), 
+			*MyShip->GetName(), *SquadStr, *StateString);
 		
 		GEngine->AddOnScreenDebugMessage(static_cast<int32>(MyShip->GetUniqueID()), 1.0f, StateColor, DebugMsg);
 	}
@@ -344,7 +483,7 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 			DrawDebugCircle(
 				World,
 				CenterLoc,
-				IdealDistance,
+				CurrentIdealDistance,
 				64,
 				FColor::Green,
 				false,
@@ -360,7 +499,7 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 			DrawDebugCircle(
 				World,
 				CenterLoc,
-				IdealDistance + OrbitTolerance,
+				CurrentIdealDistance + OrbitTolerance,
 				64,
 				FColor::Yellow,
 				false,
@@ -371,6 +510,22 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 				FVector(0.f, 1.f, 0.f),
 				false
 			);
+
+			// 컨텍스트 스티어링 최종 조타 방향 시각화 (보라색 화살표)
+			if (TargetShip && CurrentState != ENavalCombatState::Idle && CurrentState != ENavalCombatState::Return)
+			{
+				DrawDebugDirectionalArrow(
+					World,
+					CenterLoc,
+					CenterLoc + DesiredHeading * 800.f,
+					150.f,
+					FColor::Magenta,
+					false,
+					-1.f,
+					0,
+					5.f
+				);
+			}
 
 			// DangerCloseDistance (안전 이탈선 - 빨간색 원)
 			DrawDebugCircle(

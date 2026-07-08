@@ -15,6 +15,7 @@
 #include "BuoyancyComponent.h"
 #include "UI/HealthBarWidget.h"
 #include "UObject/ConstructorHelpers.h"
+#include "ShipAI/ShipSwarmSubsystem.h"
 
 AEnemyShip::AEnemyShip()
 {
@@ -61,10 +62,27 @@ void AEnemyShip::BeginPlay()
 	{
 		GetWorldTimerManager().SetTimer(ActiveCannonsTimerHandle, this, &AEnemyShip::UpdateActiveCannons, 0.5f, true);
 	}
+
+	// 군집 서브시스템에 등록
+	if (HasAuthority())
+	{
+		if (UShipSwarmSubsystem* SwarmSubsystem = GetWorld()->GetSubsystem<UShipSwarmSubsystem>())
+		{
+			SwarmSubsystem->RegisterShip(this);
+		}
+	}
 }
 
 void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (HasAuthority())
+	{
+		if (UShipSwarmSubsystem* SwarmSubsystem = GetWorld()->GetSubsystem<UShipSwarmSubsystem>())
+		{
+			SwarmSubsystem->UnregisterShip(this);
+		}
+	}
+
 	if (HealthComponent)
 	{
 		HealthComponent->OnDeathStarted.RemoveDynamic(this, &AEnemyShip::OnDeathStarted);

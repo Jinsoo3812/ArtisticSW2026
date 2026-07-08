@@ -74,6 +74,15 @@ private:
 	// 각 AI Pawn 객체별 고유 인스턴스 전용 상태 변수
 	ENavalCombatState CurrentState = ENavalCombatState::Idle;
 
+	// 의사결정 쓰로틀링 (10Hz)을 위한 최근 업데이트 시간 기록
+	double LastDecisionTime = 0.0;
+
+	// 컨텍스트 스티어링의 최적 조타 방향 캐싱
+	FVector CachedDesiredHeading = FVector::ZeroVector;
+
+	// 현재 다른 아군 배를 회피 중인지 여부
+	bool bIsAvoiding = false;
+
 	// 플레이어가 조종 중이거나 탑승 중인 배를 월드에서 찾아 반환하는 헬퍼 함수
 	class AShip* FindPlayerShip(UWorld* World, APawn* AIPawn) const;
 };
