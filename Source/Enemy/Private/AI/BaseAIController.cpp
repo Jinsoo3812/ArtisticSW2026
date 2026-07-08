@@ -70,7 +70,8 @@ void ABaseAIController::OnPossess(APawn* PossessedPawn)
 			UBlackboardComponent* Bboard;
 			UseBlackboard(PossessedEnemy->GetBehaviorTree()->BlackboardAsset, Bboard);
 			Blackboard = Bboard;
-			
+
+			InitializeBlackboardValues(PossessedPawn);
 			
 			RunBehaviorTree(PossessedEnemy->GetBehaviorTree());
 		}
@@ -81,17 +82,36 @@ void ABaseAIController::OnPossess(APawn* PossessedPawn)
 void ABaseAIController::OnTargetSighted(AActor* SeenTarget, FAIStimulus Stimulus)
 {
 	// 관찰된 Player를 Blackboard에 넣어서 Behavior Tree에서 사용할 수 있도록 하는 로직을 작성할 수 있습니다.
+	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
+	if (!BlackboardComponent)
+	{
+		return;
+	}
+
 	if (ABasePlayer* PlayerTarget = Cast<ABasePlayer>(SeenTarget))
 	{
 		if (Stimulus.WasSuccessfullySensed())
 		{
 			// 시야에 들어옴
-			GetBlackboardComponent()->SetValueAsObject("TargetActor", PlayerTarget);
+			BlackboardComponent->SetValueAsObject(TargetActorKeyName, PlayerTarget);
 		}
 		else
 		{
 			// 시야에서 벗어남 (필요에 따라 처리)
-			GetBlackboardComponent()->ClearValue("TargetActor");
+			BlackboardComponent->ClearValue(TargetActorKeyName);
 		}
 	}
+}
+
+void ABaseAIController::InitializeBlackboardValues(APawn* PossessedPawn)
+{
+	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
+	if (!BlackboardComponent || !PossessedPawn)
+	{
+		return;
+	}
+
+	BlackboardComponent->ClearValue(TargetActorKeyName);
+	BlackboardComponent->SetValueAsVector(HomeLocationKeyName, PossessedPawn->GetActorLocation());
+	BlackboardComponent->SetValueAsFloat(PatrolRadiusKeyName, DefaultPatrolRadius);
 }
