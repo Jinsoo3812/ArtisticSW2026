@@ -69,6 +69,85 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Material_Submunition, "Item.Material.Submunition");
 UE_DEFINE_GAMEPLAY_TAG(Item_Material_Submunition_Explosive, "Item.Material.Submunition.Explosive");
 UE_DEFINE_GAMEPLAY_TAG(Item_Material_Submunition_Trap, "Item.Material.Submunition.Trap");
 
+// New Item Id
+UE_DEFINE_GAMEPLAY_TAG(Item_Id, "Item.Id");
+
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material, "Item.Id.Material");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponMaterial, "Item.Id.Material.WeaponMaterial");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponMaterial_Wood, "Item.Id.Material.WeaponMaterial.Wood");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponMaterial_GoodWood, "Item.Id.Material.WeaponMaterial.GoodWood");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponMaterial_Iron, "Item.Id.Material.WeaponMaterial.Iron");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponMaterial_GoodIron, "Item.Id.Material.WeaponMaterial.GoodIron");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ConsumablesMaterial, "Item.Id.Material.ConsumablesMaterial");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ConsumablesMaterial_Pear, "Item.Id.Material.ConsumablesMaterial.Pear");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ConsumablesMaterial_GoodPear, "Item.Id.Material.ConsumablesMaterial.GoodPear");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ConsumablesMaterial_Herbs, "Item.Id.Material.ConsumablesMaterial.Herbs");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ConsumablesMaterial_GoodHerbs, "Item.Id.Material.ConsumablesMaterial.GoodHerbs");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ConsumablesMaterial_OxGallStone, "Item.Id.Material.ConsumablesMaterial.OxGallStone");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ShipMaterials, "Item.Id.Material.ShipMaterials");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ShipMaterials_WoodenPlank, "Item.Id.Material.ShipMaterials.WoodenPlank");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ShipMaterials_GoodWoodenPlank, "Item.Id.Material.ShipMaterials.GoodWoodenPlank");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ShipMaterials_IronPlate, "Item.Id.Material.ShipMaterials.IronPlate");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ShipMaterials_GoodIronPlate, "Item.Id.Material.ShipMaterials.GoodIronPlate");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ShipMaterials_GrapplingHook, "Item.Id.Material.ShipMaterials.GrapplingHook");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ShipMaterials_LuminousPearl, "Item.Id.Material.ShipMaterials.LuminousPearl");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialMaterial, "Item.Id.Material.WeaponSpecialMaterial");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialMaterial_EpicRecipe, "Item.Id.Material.WeaponSpecialMaterial.EpicRecipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialMaterial_EpicMaterial, "Item.Id.Material.WeaponSpecialMaterial.EpicMaterial");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialMaterial_LegendaryRecipe, "Item.Id.Material.WeaponSpecialMaterial.LegendaryRecipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialMaterial_LegendaryMaterial, "Item.Id.Material.WeaponSpecialMaterial.LegendaryMaterial");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_SkillMaterial, "Item.Id.Material.SkillMaterial");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_SkillMaterial_RareSkill, "Item.Id.Material.SkillMaterial.RareSkill");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_SkillMaterial_EpicSkill, "Item.Id.Material.SkillMaterial.EpicSkill");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_SkillMaterial_LegendarySkill, "Item.Id.Material.SkillMaterial.LegendarySkill");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_Etc, "Item.Id.Material.Etc");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_Etc_Gunpowder, "Item.Id.Material.Etc.Gunpowder");
+
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables, "Item.Id.Consumables");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal, "Item.Id.Consumables.Heal");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal_Medicine, "Item.Id.Consumables.Heal.Medicine");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal_Tangyak, "Item.Id.Consumables.Heal.Tangyak");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal_Elixir, "Item.Id.Consumables.Heal.Elixir");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff, "Item.Id.Consumables.Buff");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff_Doraji, "Item.Id.Consumables.Buff.Doraji");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff_Chungshimhwan, "Item.Id.Consumables.Buff.Chungshimhwan");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff_Gongjindan, "Item.Id.Consumables.Buff.Gongjindan");
+
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon, "Item.Id.Weapon");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Sword, "Item.Id.Weapon.Sword");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Sword_SwordA1, "Item.Id.Weapon.Sword.SwordA1");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Sword_SwordA2, "Item.Id.Weapon.Sword.SwordA2");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Sword_SwordA3, "Item.Id.Weapon.Sword.SwordA3");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Sword_SwordA4, "Item.Id.Weapon.Sword.SwordA4");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Sword_SwordA5, "Item.Id.Weapon.Sword.SwordA5");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Sword_SwordB1, "Item.Id.Weapon.Sword.SwordB1");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Sword_SwordB2, "Item.Id.Weapon.Sword.SwordB2");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Sword_SwordB3, "Item.Id.Weapon.Sword.SwordB3");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Sword_SwordB4, "Item.Id.Weapon.Sword.SwordB4");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Sword_SwordB5, "Item.Id.Weapon.Sword.SwordB5");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Bow, "Item.Id.Weapon.Bow");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Bow_ShortBow1, "Item.Id.Weapon.Bow.ShortBow1");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Bow_ShortBow2, "Item.Id.Weapon.Bow.ShortBow2");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Bow_ShortBow3, "Item.Id.Weapon.Bow.ShortBow3");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Bow_ShortBow4, "Item.Id.Weapon.Bow.ShortBow4");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Bow_ShortBow5, "Item.Id.Weapon.Bow.ShortBow5");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Bow_LongBow1, "Item.Id.Weapon.Bow.LongBow1");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Bow_LongBow2, "Item.Id.Weapon.Bow.LongBow2");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Bow_LongBow3, "Item.Id.Weapon.Bow.LongBow3");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Bow_LongBow4, "Item.Id.Weapon.Bow.LongBow4");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Bow_LongBow5, "Item.Id.Weapon.Bow.LongBow5");
+
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill, "Item.Id.Skill");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_CurrentGenerator, "Item.Id.Skill.CurrentGenerator");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_WaterBomb, "Item.Id.Skill.WaterBomb");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_CannonBarrage, "Item.Id.Skill.CannonBarrage");
+
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Clue, "Item.Id.Clue");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Clue_Clue1, "Item.Id.Clue.Clue1");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Clue_Clue2, "Item.Id.Clue.Clue2");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Clue_Clue3, "Item.Id.Clue.Clue3");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Clue_Clue4, "Item.Id.Clue.Clue4");
+
 // Item Rarity
 UE_DEFINE_GAMEPLAY_TAG(Item_Rarity, "Item.Rarity");
 UE_DEFINE_GAMEPLAY_TAG(Item_Rarity_Common, "Item.Rarity.Common");
@@ -83,6 +162,7 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Category_Weapon, "Item.Category.Weapon");
 UE_DEFINE_GAMEPLAY_TAG(Item_Category_Material, "Item.Category.Material");
 UE_DEFINE_GAMEPLAY_TAG(Item_Category_Consumable, "Item.Category.Consumable");
 UE_DEFINE_GAMEPLAY_TAG(Item_Category_Clue, "Item.Category.Clue");
+UE_DEFINE_GAMEPLAY_TAG(Item_Category_Skill, "Item.Category.Skill");
 
 // Enemy
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Sword, "Item.EnemyWeapon.Sword");
