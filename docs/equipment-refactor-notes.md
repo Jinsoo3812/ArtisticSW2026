@@ -140,6 +140,58 @@ Layered blend settings used for the weapon overlay:
 
 If the character's neck stretches only when `GetThreadSafeWeaponUpperBodyAlpha()` is connected, first test the weapon `Layered Blend Per Bone` with only `clavicle_l` and `clavicle_r` filters. If that fixes the pose, the problem is the spine/neck translation being pulled into the blend, not the aim offset or montage slot.
 
+## Bow Draw Animation Sync
+
+`GA_BowAimFire` already owns the bow draw gameplay flow:
+
+1. Right click activates the bow aim/fire ability.
+2. Left click hold starts drawing.
+3. `GA_BowAimFire::UpdateDrawAlpha()` increases `UBowComponent::DrawAlpha` from `0.0` to `1.0`.
+4. Left click release fires the arrow on the server if the draw alpha is high enough.
+5. `UBowComponent::DrawAlpha` is replicated, so remote clients can see the same draw state.
+
+The anim instance now exposes bow state to the ABP:
+
+- `GetThreadSafeIsBowAiming()`
+- `GetThreadSafeIsBowDrawing()`
+- `GetThreadSafeIsBowFullyDrawn()`
+- `GetThreadSafeIsBowReleasing()`
+- `GetThreadSafeBowDrawAlpha()`
+
+Use `GetThreadSafeBowDrawAlpha()` as the single sync value for all bow draw visuals:
+
+- bow string deformation
+- bow draw pose / 1D BlendSpace / Sequence Evaluator
+- right-hand IK target between a rest socket and a full-draw socket
+- fire speed and damage scaling
+
+Recommended socket setup on the bow skeletal mesh:
+
+- `String_Rest_Socket`: where the right hand/string sits at draw alpha `0.0`
+- `String_Draw_Socket`: where the right hand/string sits at draw alpha `1.0`
+
+The right-hand IK target should lerp between those two socket transforms by `DrawAlpha`. This keeps the character hand and bow string visually matched while the bow is being pulled.
+
+Sprint is blocked while the bow is being drawn by using the existing `State.Attacking` gameplay tag. Draw movement is still allowed, but sprint should not start or continue until the left click draw is released.
+
+Bow fire is intentionally gated behind full draw:
+
+1. Left click starts a shot if the bow is not already drawing or releasing.
+2. `DrawAlpha` advances from `0.0` to `1.0`.
+3. When `DrawAlpha` reaches `FullDrawAlphaToRelease`, the ability enters release state.
+4. If `ReleaseMontage` is assigned, the ability plays that montage.
+5. Put `AN_SendGameplayEvent` on the frame where the hand releases the string, and set its tag to `Event.Montage.FireArrow`.
+6. `GA_BowAimFire` fires the arrow only from that event while the shot is fully drawn and release is in progress.
+7. Extra left-click presses are ignored while drawing or releasing.
+
+The bow ability also publishes these GAS state tags:
+
+- `State.Bow.Drawing`
+- `State.Bow.FullyDrawn`
+- `State.Bow.Releasing`
+
+These tags are useful for animation conditions, sprint blocking, debugging, and future UI feedback. The existing `State.Attacking` tag remains the broad combat/action gate.
+
 ## Current Flow
 
 1. Quick-slot input calls `ABasePlayer::EquipItemFromSlot()`.

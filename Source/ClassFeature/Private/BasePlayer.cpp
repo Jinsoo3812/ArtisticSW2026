@@ -1143,7 +1143,13 @@ void ABasePlayer::StopSprint()
 
 bool ABasePlayer::CanSprintFromInput() const
 {
-	return AnimStateComponent ? AnimStateComponent->CachedMoveInput.Y > 0.15f : false;
+	const bool bBlockedByAbilityState =
+		CachedAbilitySystemComponent.IsValid() &&
+		CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
+
+	return AnimStateComponent && !bBlockedByAbilityState
+		? AnimStateComponent->CachedMoveInput.Y > 0.15f
+		: false;
 }
 
 void ABasePlayer::RefreshSprintFromInput()
@@ -1482,5 +1488,9 @@ int32 ABasePlayer::NextLocomotionAnimEventSequence()
 
 bool ABasePlayer::CanSprintFromServerState() const
 {
-	return !bIsAttacking && !bIsDodging && !bIsHitReacting;
+	const bool bBlockedByAbilityState =
+		CachedAbilitySystemComponent.IsValid() &&
+		CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
+
+	return !bBlockedByAbilityState && !bIsAttacking && !bIsDodging && !bIsHitReacting;
 }

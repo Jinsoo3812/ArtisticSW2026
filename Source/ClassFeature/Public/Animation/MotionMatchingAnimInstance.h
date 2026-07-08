@@ -204,6 +204,27 @@ struct FAnimWeaponUpperBodyData
 };
 
 USTRUCT(BlueprintType)
+struct FAnimBowData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    bool bIsAiming = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    bool bIsDrawing = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    bool bIsFullyDrawn = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    bool bIsReleasing = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    float DrawAlpha = 0.f;
+};
+
+USTRUCT(BlueprintType)
 struct FAnimThreadSafeData
 {
     GENERATED_BODY()
@@ -228,6 +249,9 @@ struct FAnimThreadSafeData
 
     UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
     FAnimWeaponUpperBodyData WeaponUpperBodyData;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    FAnimBowData BowData;
 };
 
 struct FCachedMotionMatchingNodeInfo
@@ -356,6 +380,21 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
     float GetThreadSafeWeaponUpperBodyDirection() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsBowAiming() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsBowDrawing() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsBowFullyDrawn() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsBowReleasing() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    float GetThreadSafeBowDrawAlpha() const;
 
     UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
     FFootPlacementPlantSettings Get_FootPlacementPlantSettings() const;

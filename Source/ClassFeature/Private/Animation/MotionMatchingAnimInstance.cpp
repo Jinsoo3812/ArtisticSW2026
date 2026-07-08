@@ -7,6 +7,8 @@
 #include "ChooserFunctionLibrary.h"
 #include "Chooser.h"
 #include "Equipment/PlayerEquipmentComponent.h"
+#include "Item/Components/BowComponent.h"
+#include "Item/Weapons/BowItem.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "PoseSearch/AnimNode_MotionMatching.h"
 #include "PoseSearch/AnimNode_PoseSearchHistoryCollector.h"
@@ -15,6 +17,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
+#include "AbilitySystemComponent.h"
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "UObject/UnrealType.h"
@@ -1947,6 +1950,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     }
 
     ThreadSafeData.WeaponUpperBodyData = FAnimWeaponUpperBodyData();
+    ThreadSafeData.BowData = FAnimBowData();
 
     if (const UPlayerEquipmentComponent* EquipmentComponent = CachedBasePlayer->GetEquipmentComponent())
     {
@@ -1991,6 +1995,24 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         else
         {
             ThreadSafeData.WeaponUpperBodyData.OverlayState = EWeaponUpperBodyOverlayState::Idle;
+        }
+
+        if (const ABowItem* EquippedBow = Cast<ABowItem>(CachedBasePlayer->EquippedItem))
+        {
+            if (const UBowComponent* BowComponent = EquippedBow->GetBowComponent())
+            {
+                ThreadSafeData.BowData.bIsAiming = BowComponent->IsAiming();
+                ThreadSafeData.BowData.DrawAlpha = BowComponent->GetDrawAlpha();
+                ThreadSafeData.BowData.bIsDrawing = ThreadSafeData.BowData.bIsAiming && ThreadSafeData.BowData.DrawAlpha > KINDA_SMALL_NUMBER;
+                ThreadSafeData.BowData.bIsFullyDrawn = ThreadSafeData.BowData.DrawAlpha >= 1.f - KINDA_SMALL_NUMBER;
+            }
+        }
+
+        if (const UAbilitySystemComponent* ASC = CachedBasePlayer->GetAbilitySystemComponent())
+        {
+            ThreadSafeData.BowData.bIsDrawing = ASC->HasMatchingGameplayTag(State_Bow_Drawing);
+            ThreadSafeData.BowData.bIsFullyDrawn = ASC->HasMatchingGameplayTag(State_Bow_FullyDrawn);
+            ThreadSafeData.BowData.bIsReleasing = ASC->HasMatchingGameplayTag(State_Bow_Releasing);
         }
     }
 
@@ -2317,6 +2339,31 @@ float UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodySpeed() const
 float UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyDirection() const
 {
     return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.Direction;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsBowAiming() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.bIsAiming;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsBowDrawing() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.bIsDrawing;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsBowFullyDrawn() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.bIsFullyDrawn;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsBowReleasing() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.bIsReleasing;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeBowDrawAlpha() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.DrawAlpha;
 }
 
 FFootPlacementPlantSettings UMotionMatchingAnimInstance::Get_FootPlacementPlantSettings() const
