@@ -323,11 +323,9 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 			if (UShipSwarmSubsystem* SwarmSubsystem = MyShip->GetWorld()->GetSubsystem<UShipSwarmSubsystem>())
 			{
 				TArray<AEnemyShip*> SquadMembers = SwarmSubsystem->GetSquadMembers(CurrentSquadID);
-				float AvoidanceRadius = CurrentIdealDistance * 1.0f; // 충돌 감지 반경
-				if (AvoidanceRadius <= 100.f)
-				{
-					AvoidanceRadius = 2000.f; // 폴백 최소값
-				}
+				
+				// 내 배의 실제 크기 (바운딩 박스 기준 절반 길이) 구하기
+				float MySize = MyShip->BuoyancyRoot ? MyShip->BuoyancyRoot->Bounds.BoxExtent.GetMax() : 500.f;
 
 				for (AEnemyShip* Member : SquadMembers)
 				{
@@ -337,19 +335,60 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 					ToOther.Z = 0.f;
 					float Dist = ToOther.Size();
 
+					// 상대방 배의 실제 크기 구하기
+					float MemberSize = Member->BuoyancyRoot ? Member->BuoyancyRoot->Bounds.BoxExtent.GetMax() : 500.f;
+					
+					// 동적 회피 반경 = 내 크기 + 상대 크기 + 안전 버퍼(800.f)
+					float AvoidanceRadius = MySize + MemberSize + 800.f;
+
 					if (Dist < AvoidanceRadius && Dist > 1.f)
 					{
 						FVector ToOtherDir = ToOther.GetSafeNormal();
 						// 가까울수록 비선형적으로 점수가 급증하도록 제곱 사용
 						float DangerWeight = FMath::Square(1.0f - (Dist / AvoidanceRadius));
 
+						// A. 기본 물리적 회피 위험도 적용
 						for (int32 i = 0; i < NumRays; ++i)
 						{
 							float Dot = FVector::DotProduct(Rays[i], ToOtherDir);
 							if (Dot > 0.f)
 							{
-								// 동료 배가 있는 방향의 후보 방향 레이들에 Danger 부과
 								Danger[i] = FMath::Max(Danger[i], Dot * DangerWeight);
+							}
+						}
+
+						// B. 정면 마주침 대칭성 깨기 보정 (COLREGs 우현 선회 원칙 적용)
+						FVector ShipForward = MyShip->GetActorForwardVector();
+						ShipForward.Z = 0.f;
+						ShipForward.Normalize();
+
+						float ForwardDot = FVector::DotProduct(ShipForward, ToOtherDir);
+						
+						// 상대방 배가 내 전방 30도 이내에 있고 (cos(30도) = 0.866)
+						if (ForwardDot > 0.866f)
+						{
+							FVector MemberForward = Member->GetActorForwardVector();
+							MemberForward.Z = 0.f;
+							MemberForward.Normalize();
+
+							float OtherForwardDot = FVector::DotProduct(MemberForward, -ToOtherDir);
+							
+							// 상대방 배도 나를 향해 정면 45도 이내로 다가오고 있을 때 (마주 보고 달리는 상태)
+							if (OtherForwardDot > 0.707f)
+							{
+								FVector ShipRight = MyShip->GetActorRightVector();
+								ShipRight.Z = 0.f;
+								ShipRight.Normalize();
+
+								// 내 기준 왼쪽(Port) 레이들에 가상 위험도 가산 적용 -> 우현 회피 유도
+								for (int32 i = 0; i < NumRays; ++i)
+								{
+									float RayRightDot = FVector::DotProduct(Rays[i], ShipRight);
+									if (RayRightDot < -0.2f) // 내 좌향 레이들
+									{
+										Danger[i] = FMath::Max(Danger[i], 0.35f * DangerWeight);
+									}
+								}
 							}
 						}
 					}
