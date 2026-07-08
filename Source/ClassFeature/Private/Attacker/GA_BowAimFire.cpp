@@ -1,6 +1,7 @@
 #include "Attacker/GA_BowAimFire.h"
 
 #include "AbilitySystemComponent.h"
+#include "Abilities/GameplayAbilityTargetTypes.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "BaseGameplayTags.h"
@@ -121,7 +122,7 @@ void UGA_BowAimFire::OnLeftClickReleased(FGameplayEventData Payload)
 	const float FinalDrawAlpha = CachedBowComponent->GetDrawAlpha();
 	if (FinalDrawAlpha >= MinDrawAlphaToFire)
 	{
-		FireArrow();
+		FireArrow(Payload);
 	}
 
 	bIsDrawing = false;
@@ -153,7 +154,7 @@ void UGA_BowAimFire::UpdateDrawAlpha()
 	CachedBowComponent->SetDrawAlpha(DrawAlpha);
 }
 
-void UGA_BowAimFire::FireArrow()
+void UGA_BowAimFire::FireArrow(const FGameplayEventData& Payload)
 {
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	if (!Player || !Player->HasAuthority() || !CachedBow || !CachedBowComponent)
@@ -168,12 +169,36 @@ void UGA_BowAimFire::FireArrow()
 		return;
 	}
 
-	const FVector LaunchDirection = Player->GetBaseAimRotation().Vector();
-	const float FireSpeed = CachedBowComponent->GetCurrentFireSpeed();
-	const FVector LaunchVelocity = LaunchDirection * FireSpeed;
-
 	FTransform SpawnTransform = CachedBowComponent->BuildArrowSpawnTransform();
-	SpawnTransform.SetRotation(LaunchDirection.Rotation().Quaternion());
+	const FVector SpawnLocation = SpawnTransform.GetLocation();
+	FVector AimTarget;
+	if (!TryGetAimTargetFromPayload(Payload, AimTarget))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UGA_BowAimFire::FireArrow : Missing client aim target payload. Arrow will not fire."));
+		return;
+	}
+
+	TArray<AActor*> ActorsToIgnore;
+	ActorsToIgnore.Add(Player);
+	ActorsToIgnore.Add(CachedBow);
+
+	FVector ServerAimTarget;
+	if (!CachedBowComponent->ResolveAimTargetFromSocket(SpawnLocation, AimTarget, ActorsToIgnore, ServerAimTarget))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UGA_BowAimFire::FireArrow : Could not resolve server aim target from arrow socket. Arrow will not fire."));
+		return;
+	}
+	AimTarget = ServerAimTarget;
+
+	FVector LaunchVelocity;
+	if (!CachedBowComponent->TryCalculateLaunchVelocity(SpawnLocation, AimTarget, ActorsToIgnore, LaunchVelocity))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UGA_BowAimFire::FireArrow : Could not resolve launch velocity to client aim target. Arrow will not fire."));
+		return;
+	}
+
+	SpawnTransform.SetRotation(LaunchVelocity.Rotation().Quaternion());
+	CachedBowComponent->DrawServerFireDebug(SpawnLocation, AimTarget);
 
 	AArrowProjectile* Arrow = GetWorld()->SpawnActorDeferred<AArrowProjectile>(
 		SpawnClass,
@@ -187,6 +212,9 @@ void UGA_BowAimFire::FireArrow()
 		return;
 	}
 
+	Arrow->IgnoreActorForMovement(Player);
+	Arrow->IgnoreActorForMovement(CachedBow);
+
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
 		const float DrawAlpha = CachedBowComponent->GetDrawAlpha();
@@ -199,6 +227,25 @@ void UGA_BowAimFire::FireArrow()
 	Arrow->FinishSpawning(SpawnTransform);
 	Arrow->LaunchArrow(LaunchVelocity);
 	CachedBow->Multicast_PlayReleaseFX();
+}
+
+bool UGA_BowAimFire::TryGetAimTargetFromPayload(const FGameplayEventData& Payload, FVector& OutAimTarget) const
+{
+	OutAimTarget = FVector::ZeroVector;
+	if (Payload.TargetData.Num() > 0)
+	{
+		if (const FHitResult* HitResult = Payload.TargetData.Get(0)->GetHitResult())
+		{
+			const FVector PayloadAimTarget = !HitResult->ImpactPoint.IsNearlyZero() ? HitResult->ImpactPoint : HitResult->TraceEnd;
+			if (!PayloadAimTarget.IsNearlyZero())
+			{
+				OutAimTarget = PayloadAimTarget;
+				return true;
+			}
+		}
+	}
+
+	return false;
 }
 
 void UGA_BowAimFire::ResetBowState()

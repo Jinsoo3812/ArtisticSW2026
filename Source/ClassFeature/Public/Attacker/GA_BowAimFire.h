@@ -43,9 +43,10 @@ protected:
 	void OnRightClickReleased(float TimeHeld);
 
 	void UpdateDrawAlpha();
-	void FireArrow();
+	void FireArrow(const FGameplayEventData& Payload);
 	void ResetBowState();
 	bool CacheBowFromAvatar();
+	bool TryGetAimTargetFromPayload(const FGameplayEventData& Payload, FVector& OutAimTarget) const;
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Charge", meta = (ClampMin = "0.01"))
