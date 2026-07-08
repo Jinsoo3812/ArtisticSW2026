@@ -38,6 +38,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ship|AI")
 	void SetMaxActiveCannons(int32 Count) { MaxActiveCannons = Count; }
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI")
+	FName SquadID = TEXT("Squad_Alpha");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI")
+	float IdealDistance = 2000.f;
+
 protected:
 	void FindAttachedCannons();
 	void UpdateActiveCannons();
