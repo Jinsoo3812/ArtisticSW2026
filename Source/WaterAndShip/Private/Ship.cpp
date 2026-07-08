@@ -15,6 +15,7 @@
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
 #include "ShipAttributeSet.h"
+#include "BaseGameplayTags.h"
 
 // Sets default values
 AShip::AShip()
@@ -46,6 +47,15 @@ AShip::AShip()
 	InteractableComponent->SetupAttachment(BuoyancyRoot);
 	// Set default collision preset for interactables
 	InteractableComponent->SetCollisionProfileName(TEXT("Interactable"));
+
+	// Sea Boarding Interactable Component
+	SeaBoardingInteractable = CreateDefaultSubobject<UInteractableComponent>(TEXT("SeaBoardingInteractable"));
+	SeaBoardingInteractable->SetupAttachment(BuoyancyRoot);
+	SeaBoardingInteractable->SetCollisionProfileName(TEXT("Interactable"));
+
+	// Sea Boarding Destination Point
+	SeaBoardingDestination = CreateDefaultSubobject<USceneComponent>(TEXT("SeaBoardingDestination"));
+	SeaBoardingDestination->SetupAttachment(BuoyancyRoot);
 
 	// Ability System Component
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
@@ -90,6 +100,16 @@ void AShip::BeginPlay()
 	// Initialize replicated state to avoid teleporting to 0,0,0 on client initialization
 	ReplicatedState.Location = GetActorLocation();
 	ReplicatedState.Rotation = GetActorRotation();
+
+	// 바다 승선 상호작용 바인딩
+	if (SeaBoardingInteractable)
+	{
+		SeaBoardingInteractable->InitializeInteractable(
+			FText::FromString(TEXT("배")),
+			FText::FromString(TEXT("승선하기"))
+		);
+		SeaBoardingInteractable->OnInteracted.AddUniqueDynamic(this, &AShip::HandleSeaBoarding);
+	}
 }
 
 // Called every frame
@@ -573,6 +593,34 @@ void AShip::InitializeDefaultAttributes()
 	AttributeSet->InitCannonDamage(20.f);
 	AttributeSet->InitCannonFireCooldown(2.f);
 	AttributeSet->InitCannonballSpeed(3000.f);
+}
+
+void AShip::HandleSeaBoarding(AActor* Interactor)
+{
+	if (!Interactor) return;
+
+	// 서버 권한이 있을 때만 텔레포트 및 이동 모드 변경 처리를 수행하여 동기화를 보장합니다.
+	if (HasAuthority())
+	{
+		FVector DestinationLoc = SeaBoardingDestination ? SeaBoardingDestination->GetComponentLocation() : GetActorLocation() + FVector(0.f, 0.f, 200.f);
+		FRotator DestinationRot = SeaBoardingDestination ? SeaBoardingDestination->GetComponentRotation() : GetActorRotation();
+
+		// 수영 상태(MOVE_Swimming/Custom)에서 걷기 상태로 강제 전환하여 중력과 지면 서포트가 올바르게 작동하게 만듭니다.
+		if (ACharacter* Character = Cast<ACharacter>(Interactor))
+		{
+			if (UCharacterMovementComponent* MoveComp = Character->GetCharacterMovement())
+			{
+				MoveComp->SetMovementMode(MOVE_Walking);
+				UE_LOG(LogTemp, Log, TEXT("AShip::HandleSeaBoarding - Character movement mode set to MOVE_Walking."));
+			}
+		}
+
+		// 플레이어를 갑판 위 텔레포트 지정 지점으로 순간이동
+		Interactor->TeleportTo(DestinationLoc, DestinationRot);
+
+		UE_LOG(LogTemp, Log, TEXT("AShip::HandleSeaBoarding - Teleported %s to boarding destination: %s"), 
+			*Interactor->GetName(), *DestinationLoc.ToString());
+	}
 }
 
 

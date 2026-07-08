@@ -298,15 +298,22 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 		{
 			LastDecisionTime = CurrentTime;
 
-			// A. 12방향 후보 레이(Ray) 벡터 생성 (수평면 상)
+			// A. 12방향 후보 레이(Ray) 정적 벡터 (런타임 Cos/Sin 연산 부하 0)
 			const int32 NumRays = 12;
-			FVector Rays[NumRays];
-			for (int32 i = 0; i < NumRays; ++i)
-			{
-				float Angle = (360.f / NumRays) * i;
-				float Rad = FMath::DegreesToRadians(Angle);
-				Rays[i] = FVector(FMath::Cos(Rad), FMath::Sin(Rad), 0.f);
-			}
+			static const FVector Rays[NumRays] = {
+				FVector(1.000000f, 0.000000f, 0.f),   // 0도 (전방)
+				FVector(0.866025f, 0.500000f, 0.f),   // 30도
+				FVector(0.500000f, 0.866025f, 0.f),   // 60도
+				FVector(0.000000f, 1.000000f, 0.f),   // 90도 (우측)
+				FVector(-0.500000f, 0.866025f, 0.f),  // 120도
+				FVector(-0.866025f, 0.500000f, 0.f),  // 150도
+				FVector(-1.000000f, 0.000000f, 0.f),  // 180도 (후방)
+				FVector(-0.866025f, -0.500000f, 0.f), // 210도
+				FVector(-0.500000f, -0.866025f, 0.f), // 240도
+				FVector(-0.000000f, -1.000000f, 0.f), // 270도 (좌측)
+				FVector(0.500000f, -0.866025f, 0.f),  // 300도
+				FVector(0.866025f, -0.500000f, 0.f)   // 330도
+			};
 
 			// B. 관심도(Interest) 산출: 원래 이동하고자 하는 BaseHeading과의 방향 일치성 (0.0 ~ 1.0)
 			float Interest[NumRays];
