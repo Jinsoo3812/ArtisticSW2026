@@ -101,13 +101,21 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UInteractableComponent* InteractableComponent;
 
-	/** Sea boarding interactable component for climbing up from the water */
+	/** Port (left) side boarding interactable component */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UInteractableComponent* SeaBoardingInteractable;
+	UInteractableComponent* PortSeaBoardingInteractable;
 
-	/** Location point where the player will be teleported when boarding from the sea */
+	/** Location point where the player will be teleported when boarding from the Port side */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	USceneComponent* SeaBoardingDestination;
+	USceneComponent* PortSeaBoardingDestination;
+
+	/** Starboard (right) side boarding interactable component */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UInteractableComponent* StarboardSeaBoardingInteractable;
+
+	/** Location point where the player will be teleported when boarding from the Starboard side */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	USceneComponent* StarboardSeaBoardingDestination;
 
 	/** World location of the fixed observation camera (set XYZ in editor) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Fixed Camera")
@@ -158,7 +166,10 @@ protected:
 	void OnDisembarkAction(const FInputActionValue& Value);
 
 	UFUNCTION()
-	void HandleSeaBoarding(AActor* Interactor);
+	void HandlePortSeaBoarding(AActor* Interactor);
+
+	UFUNCTION()
+	void HandleStarboardSeaBoarding(AActor* Interactor);
 
 	// Physics forces apply functions
 	void ApplyForwardForce(float MoveValue);
