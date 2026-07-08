@@ -101,6 +101,22 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UInteractableComponent* InteractableComponent;
 
+	/** Port (left) side boarding interactable component */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UInteractableComponent* PortSeaBoardingInteractable;
+
+	/** Location point where the player will be teleported when boarding from the Port side */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	USceneComponent* PortSeaBoardingDestination;
+
+	/** Starboard (right) side boarding interactable component */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UInteractableComponent* StarboardSeaBoardingInteractable;
+
+	/** Location point where the player will be teleported when boarding from the Starboard side */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	USceneComponent* StarboardSeaBoardingDestination;
+
 	/** World location of the fixed observation camera (set XYZ in editor) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Fixed Camera")
 	FVector FixedCameraLocation = FVector(0.0f, 0.0f, 1000.0f);
@@ -148,6 +164,12 @@ protected:
 	void ShipLook(const FInputActionValue& Value);
 	void ToggleFixedCamera();
 	void OnDisembarkAction(const FInputActionValue& Value);
+
+	UFUNCTION()
+	void HandlePortSeaBoarding(AActor* Interactor);
+
+	UFUNCTION()
+	void HandleStarboardSeaBoarding(AActor* Interactor);
 
 	// Physics forces apply functions
 	void ApplyForwardForce(float MoveValue);
