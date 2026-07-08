@@ -15,6 +15,7 @@
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
 #include "ShipAttributeSet.h"
+#include "BaseGameplayTags.h"
 
 // Sets default values
 AShip::AShip()
@@ -46,6 +47,22 @@ AShip::AShip()
 	InteractableComponent->SetupAttachment(BuoyancyRoot);
 	// Set default collision preset for interactables
 	InteractableComponent->SetCollisionProfileName(TEXT("Interactable"));
+
+	// Port Sea Boarding Component
+	PortSeaBoardingInteractable = CreateDefaultSubobject<UInteractableComponent>(TEXT("PortSeaBoardingInteractable"));
+	PortSeaBoardingInteractable->SetupAttachment(BuoyancyRoot);
+	PortSeaBoardingInteractable->SetCollisionProfileName(TEXT("Interactable"));
+
+	PortSeaBoardingDestination = CreateDefaultSubobject<USceneComponent>(TEXT("PortSeaBoardingDestination"));
+	PortSeaBoardingDestination->SetupAttachment(BuoyancyRoot);
+
+	// Starboard Sea Boarding Component
+	StarboardSeaBoardingInteractable = CreateDefaultSubobject<UInteractableComponent>(TEXT("StarboardSeaBoardingInteractable"));
+	StarboardSeaBoardingInteractable->SetupAttachment(BuoyancyRoot);
+	StarboardSeaBoardingInteractable->SetCollisionProfileName(TEXT("Interactable"));
+
+	StarboardSeaBoardingDestination = CreateDefaultSubobject<USceneComponent>(TEXT("StarboardSeaBoardingDestination"));
+	StarboardSeaBoardingDestination->SetupAttachment(BuoyancyRoot);
 
 	// Ability System Component
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
@@ -90,6 +107,26 @@ void AShip::BeginPlay()
 	// Initialize replicated state to avoid teleporting to 0,0,0 on client initialization
 	ReplicatedState.Location = GetActorLocation();
 	ReplicatedState.Rotation = GetActorRotation();
+
+	// 좌현 바다 승선 상호작용 바인딩
+	if (PortSeaBoardingInteractable)
+	{
+		PortSeaBoardingInteractable->InitializeInteractable(
+			FText::FromString(TEXT("배")),
+			FText::FromString(TEXT("승선하기"))
+		);
+		PortSeaBoardingInteractable->OnInteracted.AddUniqueDynamic(this, &AShip::HandlePortSeaBoarding);
+	}
+
+	// 우현 바다 승선 상호작용 바인딩
+	if (StarboardSeaBoardingInteractable)
+	{
+		StarboardSeaBoardingInteractable->InitializeInteractable(
+			FText::FromString(TEXT("배")),
+			FText::FromString(TEXT("승선하기"))
+		);
+		StarboardSeaBoardingInteractable->OnInteracted.AddUniqueDynamic(this, &AShip::HandleStarboardSeaBoarding);
+	}
 }
 
 // Called every frame
@@ -573,6 +610,56 @@ void AShip::InitializeDefaultAttributes()
 	AttributeSet->InitCannonDamage(20.f);
 	AttributeSet->InitCannonFireCooldown(2.f);
 	AttributeSet->InitCannonballSpeed(3000.f);
+}
+
+void AShip::HandlePortSeaBoarding(AActor* Interactor)
+{
+	if (!Interactor) return;
+
+	if (HasAuthority())
+	{
+		FVector DestinationLoc = PortSeaBoardingDestination ? PortSeaBoardingDestination->GetComponentLocation() : GetActorLocation() + FVector(0.f, 0.f, 200.f);
+		FRotator DestinationRot = PortSeaBoardingDestination ? PortSeaBoardingDestination->GetComponentRotation() : GetActorRotation();
+
+		if (ACharacter* Character = Cast<ACharacter>(Interactor))
+		{
+			if (UCharacterMovementComponent* MoveComp = Character->GetCharacterMovement())
+			{
+				MoveComp->SetMovementMode(MOVE_Walking);
+				UE_LOG(LogTemp, Log, TEXT("AShip::HandlePortSeaBoarding - Character movement mode set to MOVE_Walking."));
+			}
+		}
+
+		Interactor->TeleportTo(DestinationLoc, DestinationRot);
+
+		UE_LOG(LogTemp, Log, TEXT("AShip::HandlePortSeaBoarding - Teleported %s to port boarding destination: %s"), 
+			*Interactor->GetName(), *DestinationLoc.ToString());
+	}
+}
+
+void AShip::HandleStarboardSeaBoarding(AActor* Interactor)
+{
+	if (!Interactor) return;
+
+	if (HasAuthority())
+	{
+		FVector DestinationLoc = StarboardSeaBoardingDestination ? StarboardSeaBoardingDestination->GetComponentLocation() : GetActorLocation() + FVector(0.f, 0.f, 200.f);
+		FRotator DestinationRot = StarboardSeaBoardingDestination ? StarboardSeaBoardingDestination->GetComponentRotation() : GetActorRotation();
+
+		if (ACharacter* Character = Cast<ACharacter>(Interactor))
+		{
+			if (UCharacterMovementComponent* MoveComp = Character->GetCharacterMovement())
+			{
+				MoveComp->SetMovementMode(MOVE_Walking);
+				UE_LOG(LogTemp, Log, TEXT("AShip::HandleStarboardSeaBoarding - Character movement mode set to MOVE_Walking."));
+			}
+		}
+
+		Interactor->TeleportTo(DestinationLoc, DestinationRot);
+
+		UE_LOG(LogTemp, Log, TEXT("AShip::HandleStarboardSeaBoarding - Teleported %s to starboard boarding destination: %s"), 
+			*Interactor->GetName(), *DestinationLoc.ToString());
+	}
 }
 
 
