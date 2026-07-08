@@ -1045,7 +1045,6 @@ void ABasePlayer::PerformInteractionScan()
 	{
 		if (AActor* HitActor = Hit.GetActor())
 		{
-			if (UWidgetComponent* WidgetComp = HitActor->FindComponentByClass<UWidgetComponent>())
 			{
 				CurrentHoveredWidgets.AddUnique(WidgetComp);
 			}
