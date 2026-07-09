@@ -59,6 +59,18 @@ void ACannonball::InitializeProjectile(AShip* InLaunchingShip, float InDamage, f
 	LaunchingShip = InLaunchingShip;
 	DamageAmount = InDamage;
 
+	if (SphereCollision && InLaunchingShip)
+	{
+		if (InLaunchingShip->ActorHasTag(TEXT("Enemy")))
+		{
+			SphereCollision->SetCollisionProfileName(TEXT("EnemyCannonball"));
+		}
+		else
+		{
+			SphereCollision->SetCollisionProfileName(TEXT("PlayerCannonball"));
+		}
+	}
+
 	if (ProjectileMovement)
 	{
 		ProjectileMovement->InitialSpeed = InSpeed;

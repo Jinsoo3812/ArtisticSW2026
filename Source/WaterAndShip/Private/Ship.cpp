@@ -27,6 +27,9 @@ AShip::AShip()
 	BuoyancyRoot = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BuoyancyRoot"));
 	RootComponent = BuoyancyRoot;
 	BuoyancyRoot->SetSimulatePhysics(true);
+	BuoyancyRoot->SetCollisionProfileName(TEXT("PlayerShip"));
+
+	Tags.AddUnique(TEXT("Player"));
 
 	// Camera Boom
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -94,6 +97,7 @@ void AShip::BeginPlay()
 
 	if (BuoyancyRoot)
 	{
+		BuoyancyRoot->SetCollisionProfileName(TEXT("PlayerShip"));
 		if (HasAuthority())
 		{
 			BuoyancyRoot->SetSimulatePhysics(true);

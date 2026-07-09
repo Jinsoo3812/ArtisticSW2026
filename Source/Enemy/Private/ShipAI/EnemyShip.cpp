@@ -34,11 +34,18 @@ AEnemyShip::AEnemyShip()
 		HealthBarWidgetClass = HealthBarWidgetFinder.Class;
 		HealthBarWidgetComponent->SetWidgetClass(HealthBarWidgetClass);
 	}
+
+	Tags.AddUnique(TEXT("Enemy"));
 }
 
 void AEnemyShip::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (BuoyancyRoot)
+	{
+		BuoyancyRoot->SetCollisionProfileName(TEXT("EnemyShip"));
+	}
 
 	// HealthComponent를 Ship의 ASC에 바인딩 (BaseEnemy의 패턴과 동일)
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
