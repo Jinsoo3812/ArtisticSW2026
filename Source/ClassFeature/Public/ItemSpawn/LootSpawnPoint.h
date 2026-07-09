@@ -66,6 +66,21 @@ public:
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Spawn")
 	TSubclassOf<ABaseItem> ItemClassOverride = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Placement")
+	bool bAlignItemBottomToGround = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Placement", meta = (EditCondition = "bAlignItemBottomToGround", ClampMin = "0.0", UIMin = "0.0"))
+	float GroundClearance = 2.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Placement", meta = (EditCondition = "bAlignItemBottomToGround", ClampMin = "0.0", UIMin = "0.0"))
+	float GroundTraceUpDistance = 200.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Placement", meta = (EditCondition = "bAlignItemBottomToGround", ClampMin = "0.0", UIMin = "0.0"))
+	float GroundTraceDownDistance = 1000.f;
+
+private:
+	void AlignItemBottomToGround(ABaseItem* Item) const;
 };
 
 UCLASS()
@@ -90,6 +105,19 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Storage", meta = (ClampMin = "0", UIMin = "0"))
 	int32 InitialItemRollCount = 3;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Placement")
+	bool bAlignChestBottomToGround = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Placement", meta = (EditCondition = "bAlignChestBottomToGround", ClampMin = "0.0", UIMin = "0.0"))
+	float GroundClearance = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Placement", meta = (EditCondition = "bAlignChestBottomToGround", ClampMin = "0.0", UIMin = "0.0"))
+	float GroundTraceUpDistance = 200.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Placement", meta = (EditCondition = "bAlignChestBottomToGround", ClampMin = "0.0", UIMin = "0.0"))
+	float GroundTraceDownDistance = 1000.f;
+
 private:
+	void AlignChestBottomToGround(AStorageChest* Chest) const;
 	TArray<FStorageItemEntry> BuildInitialItems(const TArray<FChestInitialLootRow>& LootRows, int32 Seed) const;
 };

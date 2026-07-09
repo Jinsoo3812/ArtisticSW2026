@@ -1,5 +1,6 @@
 #include "ItemSpawn/LootSpawnPoint.h"
 
+#include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "Item/BaseItem.h"
 #include "Storage/StorageChest.h"
@@ -81,9 +82,54 @@ ABaseItem* ALooseLootSpawnPoint::SpawnLooseLoot(const FZoneLootItemRow& LootRow,
 
 	SpawnedItem->ItemTag = LootRow.ItemTag;
 	SpawnedItem->FinishSpawning(GetActorTransform());
+	AlignItemBottomToGround(SpawnedItem);
 	MarkActivated(SpawnedItem);
 
 	return SpawnedItem;
+}
+
+void ALooseLootSpawnPoint::AlignItemBottomToGround(ABaseItem* Item) const
+{
+	if (!bAlignItemBottomToGround || !IsValid(Item))
+	{
+		return;
+	}
+
+	UStaticMeshComponent* ItemMesh = Item->FindComponentByClass<UStaticMeshComponent>();
+	if (!IsValid(ItemMesh) || !ItemMesh->GetStaticMesh())
+	{
+		return;
+	}
+
+	const FVector SpawnPointLocation = GetActorLocation();
+	const FVector TraceStart = SpawnPointLocation + FVector::UpVector * GroundTraceUpDistance;
+	const FVector TraceEnd = SpawnPointLocation - FVector::UpVector * GroundTraceDownDistance;
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(LooseLootSpawnGroundTrace), false);
+	QueryParams.AddIgnoredActor(this);
+	QueryParams.AddIgnoredActor(Item);
+
+	FHitResult GroundHit;
+	const bool bFoundGround = GetWorld()->LineTraceSingleByChannel(
+		GroundHit,
+		TraceStart,
+		TraceEnd,
+		ECC_Visibility,
+		QueryParams
+	);
+
+	const float GroundZ = bFoundGround ? GroundHit.ImpactPoint.Z : SpawnPointLocation.Z;
+
+	ItemMesh->UpdateBounds();
+	const float MeshBottomZ = ItemMesh->Bounds.GetBox().Min.Z;
+	const float VerticalOffset = GroundZ + GroundClearance - MeshBottomZ;
+
+	Item->SetActorLocation(
+		Item->GetActorLocation() + FVector::UpVector * VerticalOffset,
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics
+	);
 }
 
 AStorageChest* AChestSpawnPoint::SpawnChest(const TArray<FChestInitialLootRow>& LootRows, TSubclassOf<AStorageChest> FallbackChestClass, int32 Seed)
@@ -120,10 +166,55 @@ AStorageChest* AChestSpawnPoint::SpawnChest(const TArray<FChestInitialLootRow>& 
 		return nullptr;
 	}
 
+	AlignChestBottomToGround(SpawnedChest);
 	SpawnedChest->ConfigureStorage(SlotCount, ColumnCount, BuildInitialItems(LootRows, Seed));
 	MarkActivated(SpawnedChest);
 
 	return SpawnedChest;
+}
+
+void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
+{
+	if (!bAlignChestBottomToGround || !IsValid(Chest))
+	{
+		return;
+	}
+
+	UStaticMeshComponent* ChestMesh = Chest->GetChestMesh();
+	if (!IsValid(ChestMesh) || !ChestMesh->GetStaticMesh())
+	{
+		return;
+	}
+
+	const FVector SpawnPointLocation = GetActorLocation();
+	const FVector TraceStart = SpawnPointLocation + FVector::UpVector * GroundTraceUpDistance;
+	const FVector TraceEnd = SpawnPointLocation - FVector::UpVector * GroundTraceDownDistance;
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ChestSpawnGroundTrace), false);
+	QueryParams.AddIgnoredActor(this);
+	QueryParams.AddIgnoredActor(Chest);
+
+	FHitResult GroundHit;
+	const bool bFoundGround = GetWorld()->LineTraceSingleByChannel(
+		GroundHit,
+		TraceStart,
+		TraceEnd,
+		ECC_Visibility,
+		QueryParams
+	);
+
+	const float GroundZ = bFoundGround ? GroundHit.ImpactPoint.Z : SpawnPointLocation.Z;
+
+	ChestMesh->UpdateBounds();
+	const float MeshBottomZ = ChestMesh->Bounds.GetBox().Min.Z;
+	const float VerticalOffset = GroundZ + GroundClearance - MeshBottomZ;
+
+	Chest->SetActorLocation(
+		Chest->GetActorLocation() + FVector::UpVector * VerticalOffset,
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics
+	);
 }
 
 TArray<FStorageItemEntry> AChestSpawnPoint::BuildInitialItems(const TArray<FChestInitialLootRow>& LootRows, int32 Seed) const
