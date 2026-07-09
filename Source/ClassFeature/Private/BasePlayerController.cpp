@@ -141,6 +141,12 @@ void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
 		return;
 	}
 
+	// 이미 열려 있는 동일한 상자에는 중복 열기 요청을 보내지 않는다.
+	if (ActiveStorageChest == StorageChest)
+	{
+		return;
+	}
+
 	ActiveStorageChest = StorageChest;
 	StartStorageSearch(StorageChest);
 	ClientOpenStorage(StorageChest);
@@ -318,6 +324,13 @@ void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 	{
 		return;
 	}
+
+	// 동일한 상자 UI가 이미 열려 있으면 위젯과 입력 모드를 다시 생성하지 않는다.
+	if (ActiveStorageChest == StorageChest && StorageWindowWidget)
+	{
+		return;
+	}
+
 	// 열려 있던 창 제거
 	if (StorageWindowWidget)
 	{
