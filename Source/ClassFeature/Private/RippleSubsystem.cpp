@@ -23,6 +23,12 @@ void URippleSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
+	// [Antigravity] 데디케이트 서버에서는 텍스처 생성 및 렌더링 관련 초기화를 진행하지 않음
+	if (IsRunningDedicatedServer())
+	{
+		return;
+	}
+
 	// Create a 32x2 transient float texture
 	RippleTexture = UTexture2D::CreateTransient(MaxActiveRipples, 2, PF_A32B32G32R32F);
 	if (RippleTexture)
@@ -108,6 +114,9 @@ TStatId URippleSubsystem::GetStatId() const
 
 void URippleSubsystem::Tick(float DeltaTime)
 {
+	// [Antigravity] 데디케이트 서버에서는 틱 연산을 수행하지 않음
+	if (IsRunningDedicatedServer()) return;
+
 	if (!GetWorld()) return;
 
 	float ServerTime = GetServerTime();
@@ -179,15 +188,23 @@ void URippleSubsystem::Tick(float DeltaTime)
 
 		float TestHeight = 0.0f;
 		FString ActiveWaveInfo = TEXT("None");
+		FWaveData FirstRipple;
+		bool bHasRipples = false;
 		{
+			// [Antigravity] 데드락 방지: lock을 잡은 상태에서 GetRippleHeight(내부에서 다시 lock을 잡음)를 호출하지 않고, 데이터를 복사한 후 lock을 해제하고 호출함
 			FReadScopeLock ReadLock(RipplesLock);
 			if (ActiveRipples.Num() > 0)
 			{
-				const FWaveData& FirstRipple = ActiveRipples[0];
-				FVector TestPos(FirstRipple.Origin.X + 100.0f, FirstRipple.Origin.Y, 0.0f);
-				TestHeight = GetRippleHeight(TestPos);
-				ActiveWaveInfo = FString::Printf(TEXT("First Wave Origin: (%f, %f), Amp: %f"), FirstRipple.Origin.X, FirstRipple.Origin.Y, FirstRipple.InitialAmplitude);
+				FirstRipple = ActiveRipples[0];
+				bHasRipples = true;
 			}
+		}
+
+		if (bHasRipples)
+		{
+			FVector TestPos(FirstRipple.Origin.X + 100.0f, FirstRipple.Origin.Y, 0.0f);
+			TestHeight = GetRippleHeight(TestPos);
+			ActiveWaveInfo = FString::Printf(TEXT("First Wave Origin: (%f, %f), Amp: %f"), FirstRipple.Origin.X, FirstRipple.Origin.Y, FirstRipple.InitialAmplitude);
 		}
 
 		// UE_LOG(LogTemp, Warning, TEXT("[RippleSubsystem Diagnostics] Time: %.2f | MPC: %s | Bound MIDs: %d (Failed: %d) | Active Waves: %d (%s) | Test Height (+100cm): %.4f"),
@@ -197,6 +214,9 @@ void URippleSubsystem::Tick(float DeltaTime)
 
 void URippleSubsystem::AddRipple(FVector2D Origin, float InitialAmplitude, float WaveSpeed, float DecayRate, float WaveLength)
 {
+	// [Antigravity] 데디케이트 서버에서는 리플을 생성하지 않음
+	if (IsRunningDedicatedServer()) return;
+
 	UWorld* World = GetWorld();
 	if (!World) return;
 
@@ -273,6 +293,9 @@ void URippleSubsystem::AddRipple(FVector2D Origin, float InitialAmplitude, float
 
 float URippleSubsystem::GetRippleHeight(const FVector& Location) const
 {
+	// [Antigravity] 데디케이트 서버에서는 높이 연산을 건너뛰고 0을 반환
+	if (IsRunningDedicatedServer()) return 0.0f;
+
 	UWorld* World = GetWorld();
 	if (!World) return 0.0f;
 
