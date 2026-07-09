@@ -381,6 +381,8 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 		OldPlayer ? *OldPlayer->GetName() : TEXT("Null"), 
 		RidingPlayer ? *RidingPlayer->GetName() : TEXT("Null"));
 
+	APlayerController* LocalPC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+
 	if (OldPlayer && OldPlayer != RidingPlayer)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer - Restoring old passenger collision and walking movement."));
@@ -390,9 +392,9 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 			Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 		}
 
-		if (CachedPlayerController && CachedPlayerController->IsLocalController())
+		if (LocalPC && LocalPC->IsLocalController())
 		{
-			CachedPlayerController->HiddenActors.Remove(OldPlayer);
+			LocalPC->HiddenActors.Remove(OldPlayer);
 		}
 	}
 
@@ -406,9 +408,9 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 			Char->GetCharacterMovement()->StopMovementImmediately();
 		}
 
-		if (CachedPlayerController && CachedPlayerController->IsLocalController())
+		if (LocalPC && LocalPC->IsLocalController())
 		{
-			CachedPlayerController->HiddenActors.AddUnique(RidingPlayer);
+			LocalPC->HiddenActors.AddUnique(RidingPlayer);
 		}
 	}
 }
@@ -420,13 +422,14 @@ void ACannon::OnRep_Controller()
 
 	if (Controller == nullptr)
 	{
+		APlayerController* LocalPC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+		if (LocalPC && LocalPC->IsLocalController() && RidingPlayer)
+		{
+			LocalPC->HiddenActors.Remove(RidingPlayer);
+		}
+
 		if (CachedPlayerController)
 		{
-			if (RidingPlayer && CachedPlayerController->IsLocalController())
-			{
-				CachedPlayerController->HiddenActors.Remove(RidingPlayer);
-			}
-
 			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
 			{
 				if (CannonInputMappingContext)

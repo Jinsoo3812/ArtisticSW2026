@@ -497,6 +497,8 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 		OldRidingPlayer ? *OldRidingPlayer->GetName() : TEXT("Null"), 
 		RidingPlayer ? *RidingPlayer->GetName() : TEXT("Null"));
 
+	APlayerController* LocalPC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+
 	if (OldRidingPlayer && OldRidingPlayer != RidingPlayer)
 	{
 		UE_LOG(LogTemp, Log, TEXT("AShip: [CLIENT] OnRep_RidingPlayer - Restoring old passenger collision and walking movement."));
@@ -506,9 +508,9 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 			Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 		}
 
-		if (CachedPlayerController && CachedPlayerController->IsLocalController())
+		if (LocalPC && LocalPC->IsLocalController())
 		{
-			CachedPlayerController->HiddenActors.Remove(OldRidingPlayer);
+			LocalPC->HiddenActors.Remove(OldRidingPlayer);
 		}
 	}
 
@@ -522,9 +524,9 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 			Char->GetCharacterMovement()->StopMovementImmediately();
 		}
 
-		if (CachedPlayerController && CachedPlayerController->IsLocalController())
+		if (LocalPC && LocalPC->IsLocalController())
 		{
-			CachedPlayerController->HiddenActors.AddUnique(RidingPlayer);
+			LocalPC->HiddenActors.AddUnique(RidingPlayer);
 		}
 	}
 }
@@ -535,13 +537,14 @@ void AShip::OnRep_Controller()
 
 	if (Controller == nullptr)
 	{
+		APlayerController* LocalPC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+		if (LocalPC && LocalPC->IsLocalController() && RidingPlayer)
+		{
+			LocalPC->HiddenActors.Remove(RidingPlayer);
+		}
+
 		if (CachedPlayerController)
 		{
-			if (RidingPlayer && CachedPlayerController->IsLocalController())
-			{
-				CachedPlayerController->HiddenActors.Remove(RidingPlayer);
-			}
-
 			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
 			{
 				if (ShipInputMappingContext)
