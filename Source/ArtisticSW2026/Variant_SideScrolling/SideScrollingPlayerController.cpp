@@ -1,4 +1,4 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 
 #include "SideScrollingPlayerController.h"
@@ -18,7 +18,8 @@ void ASideScrollingPlayerController::BeginPlay()
 	Super::BeginPlay();
 
 	// only spawn touch controls on local player controllers
-	if (ShouldUseTouchControls() && IsLocalPlayerController())
+	// [Antigravity] 데디케이트 서버 크래시 방지: IsLocalPlayerController()를 먼저 체크하여 서버에서 ShouldUseTouchControls()가 호출되는 것을 막음
+	if (IsLocalPlayerController() && ShouldUseTouchControls())
 	{
 		// spawn the mobile controls widget
 		MobileControlsWidget = CreateWidget<UUserWidget>(this, MobileControlsWidgetClass);
@@ -93,6 +94,11 @@ void ASideScrollingPlayerController::OnPawnDestroyed(AActor* DestroyedActor)
 
 bool ASideScrollingPlayerController::ShouldUseTouchControls() const
 {
+	// [Antigravity] 데디케이트 서버(UI/Slate가 없는 환경)에서 SVirtualJoystick 관련 함수 호출 시 크래시가 발생하는 것을 방지
+	if (GetWorld() && GetWorld()->GetNetMode() == NM_DedicatedServer)
+	{
+		return false;
+	}
 	// are we on a mobile platform? Should we force touch?
 	return SVirtualJoystick::ShouldDisplayTouchInterface() || bForceTouchControls;
 }
