@@ -86,10 +86,13 @@ void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	}
 
 	// [클라] 로컬은 데이터를 보냈으므로 예측 단계에서 어빌리티 종료 
-	if (bIsLocallyControlled && !bHasAuthority)
+	// [Antigravity] 멀티플레이어 상호작용 버그 수정: 클라이언트가 데이터를 보낸 직후 어빌리티를 직접 종료해버리면,
+	// 서버가 네트워크를 통해 TargetData를 전달받기도 전에 어빌리티가 종료되어 대포/선박 승선 상호작용이 무시되는 현상이 생깁니다.
+	// 따라서 서버가 TargetData를 수신하여 최종적으로 EndAbility를 호출하고 이를 복제(Replicate)할 때까지 대기하도록 변경합니다.
+	/*if (bIsLocallyControlled && !bHasAuthority)
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
-	}
+	}*/
 }
 
 void UInteract::PerformLocalTrace(FHitResult& OutHitResult)
