@@ -191,6 +191,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Drop")
 	FGameplayTag EnemyTypeTag;
 
+	// 사망한 적의 위치에 생성할 시체 전용 Storage BP
+	UPROPERTY(EditDefaultsOnly, Category = "Drop|Storage")
+	TSubclassOf<class AStorageChest> EnemyCorpseStorageClass;
+
+	// 기본 슬롯 수. 아이템 Entry 수가 더 많으면 자동 확장된다.
+	UPROPERTY(EditDefaultsOnly, Category = "Drop|Storage", meta = (ClampMin = "1", UIMin = "1"))
+	int32 EnemyCorpseStorageSlotCount = 5;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Drop|Storage", meta = (ClampMin = "1", UIMin = "1"))
+	int32 EnemyCorpseStorageColumnCount = 4;
+
 	// 적 하나가 드랍할 아이템들에 대한 정보를 담은 구조체
 	UPROPERTY()
 	FEnemyDropData EnemyDropData;

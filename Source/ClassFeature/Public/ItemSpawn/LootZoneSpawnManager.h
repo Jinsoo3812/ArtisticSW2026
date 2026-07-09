@@ -29,9 +29,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Loot|Spawn")
 	void ResetZone(bool bDestroySpawnedActors);
 
-	UFUNCTION(BlueprintPure, Category = "Loot|Spawn")
-	float GetBudgetWeight() const { return BudgetWeight; }
-
 protected:
 	virtual void BeginPlay() override;
 
@@ -43,9 +40,6 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Spawn")
 	FName ZoneId = NAME_None;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Budget", meta = (ClampMin = "0.0", UIMin = "0.0"))
-	float BudgetWeight = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Data")
 	TObjectPtr<UDataTable> ZoneLootItemTable = nullptr;

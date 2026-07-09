@@ -169,8 +169,11 @@ UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Sword, "Item.EnemyWeapon.Sword");
 
 // Enemy Type
 // 적 구분 태그
-UE_DEFINE_GAMEPLAY_TAG(Enemy_Animal_Test, "Enemy.Type.Animal.Test");
-UE_DEFINE_GAMEPLAY_TAG(Enemy_Undead_Test, "Enemy.Type.Undead.Test");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Human_Test0, "Enemy.Type.Human.Test0");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Human_Test1, "Enemy.Type.Human.Test1");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Ship_Test0, "Enemy.Type.Ship.Test0");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Ship_Test1, "Enemy.Type.Ship.Test1");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Ship_Test2, "Enemy.Type.Ship.Test2");
 
 
 /* Default - Keyboard & Mouse */

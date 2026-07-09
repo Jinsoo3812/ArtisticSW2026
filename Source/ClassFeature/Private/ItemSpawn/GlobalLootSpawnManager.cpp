@@ -55,7 +55,6 @@ bool AGlobalLootSpawnManager::BuildZoneManagerList()
 		{
 			FLootZoneBudgetEntry Entry;
 			Entry.ZoneManager = ZoneManager;
-			Entry.Weight = ZoneManager->GetBudgetWeight();
 			Entry.AllocationMode = ELootBudgetAllocationMode::Weighted;
 			ZoneBudgets.Add(Entry);
 		}
