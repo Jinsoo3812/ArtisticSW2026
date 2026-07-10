@@ -159,11 +159,31 @@ void ACannon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
 // Ship의 Board()와 완전히 동일한 패턴
 void ACannon::Board(APawn* PlayerPawn)
 {
+	UE_LOG(LogTemp, Log, TEXT("ACannon::Board - [SERVER] Entered. PlayerPawn: %s, HasAuthority: %s, RidingPlayer: %s"),
+		PlayerPawn ? *PlayerPawn->GetName() : TEXT("None"),
+		HasAuthority() ? TEXT("YES") : TEXT("NO"),
+		RidingPlayer ? *RidingPlayer->GetName() : TEXT("None"));
+
 	if (!HasAuthority()) return;
-	if (!PlayerPawn || RidingPlayer) return;
+	if (!PlayerPawn)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ACannon::Board - [SERVER] Failed: PlayerPawn is null!"));
+		return;
+	}
+	if (RidingPlayer)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ACannon::Board - [SERVER] Failed: Cannon is already being ridden by %s!"), *RidingPlayer->GetName());
+		return;
+	}
 
 	APlayerController* PC = Cast<APlayerController>(PlayerPawn->GetController());
-	if (!PC) return;
+	if (!PC)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ACannon::Board - [SERVER] Failed: PlayerPawn has no PlayerController! Pawn: %s, Controller: %s"),
+			*PlayerPawn->GetName(),
+			PlayerPawn->GetController() ? *PlayerPawn->GetController()->GetName() : TEXT("None"));
+		return;
+	}
 
 	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board initiated by player pawn %s. Cannon location: %s, Player location: %s"), *PlayerPawn->GetName(), *GetActorLocation().ToString(), *PlayerPawn->GetActorLocation().ToString());
 

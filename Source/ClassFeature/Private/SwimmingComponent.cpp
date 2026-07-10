@@ -66,8 +66,12 @@ void USwimmingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// Pontoon Debug Visualizer - Always active in non-shipping builds
-	if (OwnerCharacter)
+	// Pontoon Debug Visualizer - Active only in editor (PIE)
+#if WITH_EDITOR
+	if (GIsEditor && OwnerCharacter)
+#else
+	if (false)
+#endif
 	{
 		FVector ActorLocation = OwnerCharacter->GetActorLocation();
 		FVector PontoonLocation = ActorLocation + PontoonOffset;
