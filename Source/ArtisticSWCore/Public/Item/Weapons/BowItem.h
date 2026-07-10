@@ -27,6 +27,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Bow")
 	FTransform GetArrowSpawnTransform() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Bow")
+	bool GetStringIKTargetTransform(float DrawAlpha, FTransform& OutWorldTransform) const;
+
 	UFUNCTION(NetMulticast, Unreliable, BlueprintCallable, Category = "Bow")
 	void Multicast_PlayReleaseFX();
 
@@ -43,4 +46,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow")
 	FName ArrowSocketName = FName("ArrowSocket");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|IK")
+	FName StringRestSocketName = FName("String_Rest_Socket");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|IK")
+	FName StringDrawSocketName = FName("String_Draw_Socket");
 };

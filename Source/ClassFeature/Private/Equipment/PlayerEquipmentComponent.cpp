@@ -8,6 +8,7 @@
 #include "ItemSubSystem.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Net/UnrealNetwork.h"
 
@@ -245,6 +246,16 @@ FName UPlayerEquipmentComponent::ResolveEquipSocketName(const ABaseItem* Item) c
 	return SocketName;
 }
 
+FName UPlayerEquipmentComponent::ResolveItemGripSocketName(const ABaseItem* Item) const
+{
+	if (const FWeaponAnimationEntry* Entry = ResolveWeaponAnimationEntry(Item))
+	{
+		return Entry->ItemGripSocketName;
+	}
+
+	return NAME_None;
+}
+
 FName UPlayerEquipmentComponent::ResolveStoredSocketName(const ABaseItem* Item) const
 {
 	if (const FWeaponAnimationEntry* Entry = ResolveWeaponAnimationEntry(Item))
@@ -365,7 +376,39 @@ void UPlayerEquipmentComponent::AttachItemToSocket(ABaseItem* Item, FName Socket
 		MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
 
-	Item->AttachToComponent(PlayerOwner->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
+	const FName ItemGripSocketName = ResolveItemGripSocketName(Item);
+	if (ItemGripSocketName.IsNone())
+	{
+		Item->AttachToComponent(PlayerOwner->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
+		return;
+	}
+
+	USceneComponent* GripComponent = nullptr;
+	TArray<USceneComponent*> ItemComponents;
+	Item->GetComponents<USceneComponent>(ItemComponents);
+	for (USceneComponent* Component : ItemComponents)
+	{
+		if (Component && Component->DoesSocketExist(ItemGripSocketName))
+		{
+			GripComponent = Component;
+			break;
+		}
+	}
+
+	if (!GripComponent || !Item->GetRootComponent())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UPlayerEquipmentComponent::AttachItemToSocket : Item %s has no grip socket %s. Falling back to root attachment."), *GetNameSafe(Item), *ItemGripSocketName.ToString());
+		Item->AttachToComponent(PlayerOwner->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
+		return;
+	}
+
+	const FTransform RootWorldTransform = Item->GetRootComponent()->GetComponentTransform();
+	const FTransform GripWorldTransform = GripComponent->GetSocketTransform(ItemGripSocketName, RTS_World);
+	const FTransform GripRelativeToRoot = GripWorldTransform.GetRelativeTransform(RootWorldTransform);
+	const FTransform TargetSocketWorldTransform = PlayerOwner->GetMesh()->GetSocketTransform(SocketName, RTS_World);
+
+	Item->AttachToComponent(PlayerOwner->GetMesh(), FAttachmentTransformRules::KeepWorldTransform, SocketName);
+	Item->SetActorTransform(GripRelativeToRoot.Inverse() * TargetSocketWorldTransform, false, nullptr, ETeleportType::TeleportPhysics);
 }
 
 void UPlayerEquipmentComponent::StoreCurrentEquippedItem()

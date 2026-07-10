@@ -222,6 +222,15 @@ struct FAnimBowData
 
     UPROPERTY(BlueprintReadOnly, Category = "Bow")
     float DrawAlpha = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    bool bHasStringIKTarget = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    float StringIKAlpha = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    FTransform StringIKTargetTransform = FTransform::Identity;
 };
 
 USTRUCT(BlueprintType)
@@ -395,6 +404,15 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
     float GetThreadSafeBowDrawAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeHasBowStringIKTarget() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    float GetThreadSafeBowStringIKAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    FTransform GetThreadSafeBowStringIKTargetTransform() const;
 
     UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
     FFootPlacementPlantSettings Get_FootPlacementPlantSettings() const;

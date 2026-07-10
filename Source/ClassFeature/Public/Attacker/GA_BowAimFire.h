@@ -54,6 +54,8 @@ protected:
 	void OnReleaseMontageInterrupted();
 
 	void UpdateDrawAlpha();
+	void PlayDrawMontage();
+	void StopDrawMontage(float BlendOutTime);
 	void BeginRelease();
 	void FireArrow();
 	void FinishShot();
@@ -67,11 +69,26 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Charge", meta = (ClampMin = "0.01"))
 	float MaxChargeTime = 1.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Charge", meta = (ClampMin = "0.0"))
+	float DrawAlphaStartDelay = 0.6f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Charge", meta = (ClampMin = "0.01"))
+	float FullDrawTime = 1.03f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Charge", meta = (ClampMin = "0.005"))
 	float ChargeTickRate = 0.02f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Charge", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float FullDrawAlphaToRelease = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation")
+	TObjectPtr<UAnimMontage> DrawMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation", meta = (ClampMin = "0.01"))
+	float DrawMontagePlayRate = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation", meta = (ClampMin = "0.0"))
+	float DrawMontageBlendOutTime = 0.1f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation")
 	TObjectPtr<UAnimMontage> ReleaseMontage;

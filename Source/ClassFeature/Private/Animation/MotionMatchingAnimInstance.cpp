@@ -15,6 +15,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
 #include "AbilitySystemComponent.h"
@@ -2005,6 +2006,17 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                 ThreadSafeData.BowData.DrawAlpha = BowComponent->GetDrawAlpha();
                 ThreadSafeData.BowData.bIsDrawing = ThreadSafeData.BowData.bIsAiming && ThreadSafeData.BowData.DrawAlpha > KINDA_SMALL_NUMBER;
                 ThreadSafeData.BowData.bIsFullyDrawn = ThreadSafeData.BowData.DrawAlpha >= 1.f - KINDA_SMALL_NUMBER;
+
+                FTransform StringIKTargetWorldTransform = FTransform::Identity;
+                if (EquippedBow->GetStringIKTargetTransform(ThreadSafeData.BowData.DrawAlpha, StringIKTargetWorldTransform))
+                {
+                    if (const USkeletalMeshComponent* CharacterMesh = GetSkelMeshComponent())
+                    {
+                        ThreadSafeData.BowData.bHasStringIKTarget = true;
+                        ThreadSafeData.BowData.StringIKTargetTransform =
+                            StringIKTargetWorldTransform.GetRelativeTransform(CharacterMesh->GetComponentTransform());
+                    }
+                }
             }
         }
 
@@ -2014,6 +2026,13 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             ThreadSafeData.BowData.bIsFullyDrawn = ASC->HasMatchingGameplayTag(State_Bow_FullyDrawn);
             ThreadSafeData.BowData.bIsReleasing = ASC->HasMatchingGameplayTag(State_Bow_Releasing);
         }
+
+        ThreadSafeData.BowData.StringIKAlpha =
+            ThreadSafeData.BowData.bHasStringIKTarget &&
+            (ThreadSafeData.BowData.bIsDrawing || ThreadSafeData.BowData.bIsFullyDrawn) &&
+            !ThreadSafeData.BowData.bIsReleasing
+                ? FMath::Clamp(ThreadSafeData.BowData.DrawAlpha, 0.f, 1.f)
+                : 0.f;
     }
 
     // 4. Push variables safely to the proxy
@@ -2364,6 +2383,21 @@ bool UMotionMatchingAnimInstance::GetThreadSafeIsBowReleasing() const
 float UMotionMatchingAnimInstance::GetThreadSafeBowDrawAlpha() const
 {
     return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.DrawAlpha;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeHasBowStringIKTarget() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.bHasStringIKTarget;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeBowStringIKAlpha() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.StringIKAlpha;
+}
+
+FTransform UMotionMatchingAnimInstance::GetThreadSafeBowStringIKTargetTransform() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.StringIKTargetTransform;
 }
 
 FFootPlacementPlantSettings UMotionMatchingAnimInstance::Get_FootPlacementPlantSettings() const

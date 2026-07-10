@@ -116,6 +116,7 @@ protected:
 	const UWeaponAnimationDataAsset* ResolveWeaponAnimationData(const ABaseItem* Item) const;
 	const FWeaponAnimationEntry* ResolveWeaponAnimationEntry(const ABaseItem* Item) const;
 	FName ResolveEquipSocketName(const ABaseItem* Item) const;
+	FName ResolveItemGripSocketName(const ABaseItem* Item) const;
 	FName ResolveStoredSocketName(const ABaseItem* Item) const;
 	FGameplayTag ResolveUseKeyTag(const ABaseItem* Item) const;
 	bool CanUseEquippedItemAbility(const ABaseItem* Item) const;

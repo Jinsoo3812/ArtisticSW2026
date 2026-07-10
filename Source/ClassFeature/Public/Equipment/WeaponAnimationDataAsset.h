@@ -34,6 +34,10 @@ struct FWeaponAnimationEntry
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attachment")
 	FName EquipSocketName = TEXT("GripPoint");
 
+	// Socket on the item mesh that should coincide with EquipSocketName when equipped.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attachment")
+	FName ItemGripSocketName = NAME_None;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attachment")
 	FName StoredSocketName = TEXT("BackWeaponSocket");
 

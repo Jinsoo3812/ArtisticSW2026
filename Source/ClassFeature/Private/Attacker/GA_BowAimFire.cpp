@@ -4,6 +4,7 @@
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
+#include "Animation/AnimInstance.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "Item/Components/BowComponent.h"
@@ -96,7 +97,7 @@ void UGA_BowAimFire::EndAbility(
 
 void UGA_BowAimFire::OnLeftClickPressed(FGameplayEventData Payload)
 {
-	if (!IsActive() || !CachedBowComponent || bIsDrawing || bIsReleaseInProgress)
+	if (!IsActive() || !CachedBowComponent || bIsDrawing || bIsFullyDrawn || bIsReleaseInProgress)
 	{
 		return;
 	}
@@ -119,6 +120,8 @@ void UGA_BowAimFire::OnLeftClickPressed(FGameplayEventData Payload)
 		Player->StopSprint();
 	}
 
+	PlayDrawMontage();
+
 	GetWorld()->GetTimerManager().SetTimer(
 		ChargeTimerHandle,
 		this,
@@ -129,8 +132,21 @@ void UGA_BowAimFire::OnLeftClickPressed(FGameplayEventData Payload)
 
 void UGA_BowAimFire::OnLeftClickReleased(FGameplayEventData Payload)
 {
-	// Firing is intentionally driven by full draw + release montage notify.
-	// Releasing the button early does not cancel or fire the shot.
+	if (!IsActive() || !CachedBowComponent || bIsReleaseInProgress)
+	{
+		return;
+	}
+
+	if (bIsFullyDrawn)
+	{
+		BeginRelease();
+		return;
+	}
+
+	if (bIsDrawing)
+	{
+		FinishShot();
+	}
 }
 
 void UGA_BowAimFire::OnRightClickReleased(float TimeHeld)
@@ -149,12 +165,53 @@ void UGA_BowAimFire::UpdateDrawAlpha()
 	}
 
 	const float HeldTime = GetWorld()->GetTimeSeconds() - DrawStartTime;
-	const float DrawAlpha = FMath::Clamp(HeldTime / MaxChargeTime, 0.0f, 1.0f);
+	const float DrawDuration = FMath::Max(FullDrawTime - DrawAlphaStartDelay, KINDA_SMALL_NUMBER);
+	const float DrawAlpha = FMath::Clamp((HeldTime - DrawAlphaStartDelay) / DrawDuration, 0.0f, 1.0f);
 	CachedBowComponent->SetDrawAlpha(DrawAlpha);
 
 	if (DrawAlpha >= FullDrawAlphaToRelease)
 	{
-		BeginRelease();
+		GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+		CachedBowComponent->SetDrawAlpha(1.0f);
+		StopDrawMontage(DrawMontageBlendOutTime);
+		SetBowDrawTagState(false, true, false);
+	}
+}
+
+void UGA_BowAimFire::PlayDrawMontage()
+{
+	if (!DrawMontage)
+	{
+		return;
+	}
+
+	UAbilityTask_PlayMontageAndWait* DrawMontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+		this,
+		NAME_None,
+		DrawMontage,
+		DrawMontagePlayRate,
+		NAME_None,
+		true);
+
+	if (DrawMontageTask)
+	{
+		DrawMontageTask->ReadyForActivation();
+	}
+}
+
+void UGA_BowAimFire::StopDrawMontage(float BlendOutTime)
+{
+	if (!DrawMontage || !CurrentActorInfo)
+	{
+		return;
+	}
+
+	if (UAnimInstance* AnimInstance = CurrentActorInfo->GetAnimInstance())
+	{
+		if (AnimInstance->Montage_IsPlaying(DrawMontage))
+		{
+			AnimInstance->Montage_Stop(FMath::Max(0.f, BlendOutTime), DrawMontage);
+		}
 	}
 }
 
@@ -171,6 +228,7 @@ void UGA_BowAimFire::BeginRelease()
 	bIsReleaseInProgress = true;
 	CachedBowComponent->SetDrawAlpha(1.0f);
 	SetBowDrawTagState(false, true, true);
+	StopDrawMontage(0.0f);
 
 	if (ReleaseMontage)
 	{
@@ -284,6 +342,7 @@ void UGA_BowAimFire::FireArrow()
 void UGA_BowAimFire::FinishShot()
 {
 	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+	StopDrawMontage(DrawMontageBlendOutTime);
 
 	bIsDrawing = false;
 	bIsFullyDrawn = false;
@@ -305,6 +364,7 @@ void UGA_BowAimFire::FinishShot()
 void UGA_BowAimFire::ResetBowState()
 {
 	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
+	StopDrawMontage(DrawMontageBlendOutTime);
 	bIsDrawing = false;
 	bIsFullyDrawn = false;
 	bIsReleaseInProgress = false;

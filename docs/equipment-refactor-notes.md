@@ -157,6 +157,9 @@ The anim instance now exposes bow state to the ABP:
 - `GetThreadSafeIsBowFullyDrawn()`
 - `GetThreadSafeIsBowReleasing()`
 - `GetThreadSafeBowDrawAlpha()`
+- `GetThreadSafeHasBowStringIKTarget()`
+- `GetThreadSafeBowStringIKAlpha()`
+- `GetThreadSafeBowStringIKTargetTransform()`
 
 Use `GetThreadSafeBowDrawAlpha()` as the single sync value for all bow draw visuals:
 
@@ -172,17 +175,45 @@ Recommended socket setup on the bow skeletal mesh:
 
 The right-hand IK target should lerp between those two socket transforms by `DrawAlpha`. This keeps the character hand and bow string visually matched while the bow is being pulled.
 
+`ABowItem` resolves those sockets on the bow skeletal mesh, blends between them by `UBowComponent::DrawAlpha`, and `UMotionMatchingAnimInstance` converts the result to the character mesh's component space for ABP use. In the character ABP, place the right-hand IK after the final upper-body montage/aim pose and before foot placement:
+
+```text
+Slot 'DefaultSlot'
+ -> Local To Component
+ -> FABRIK / Two Bone IK for hand_r
+ -> Foot Placement
+```
+
+Use `GetThreadSafeBowStringIKTargetTransform()` as the IK effector transform and `GetThreadSafeBowStringIKAlpha()` as the IK alpha. The alpha is enabled while the bow is aiming/drawing/fully drawn and disabled during release so the release montage can pull the hand off the string.
+
+## Weapon Grip Alignment
+
+Weapon attachment now supports socket-to-socket alignment. Set `EquipSocketName` to the character socket and `ItemGripSocketName` to the matching socket on the item mesh. The equipment component aligns the item grip socket to the character socket instead of attaching the item actor root directly.
+
+For the bow entry, use:
+
+```text
+EquipSocketName: Bow
+ItemGripSocketName: GripSocket
+```
+
+`ABowItem` hides its inherited static `ItemMesh`; its `BowMesh` skeletal component is the visible bow so its animation and string sockets remain the single visual source.
+
 Sprint is blocked while the bow is being drawn by using the existing `State.Attacking` gameplay tag. Draw movement is still allowed, but sprint should not start or continue until the left click draw is released.
 
 Bow fire is intentionally gated behind full draw:
 
-1. Left click starts a shot if the bow is not already drawing or releasing.
-2. `DrawAlpha` advances from `0.0` to `1.0`.
-3. When `DrawAlpha` reaches `FullDrawAlphaToRelease`, the ability enters release state.
-4. If `ReleaseMontage` is assigned, the ability plays that montage.
-5. Put `AN_SendGameplayEvent` on the frame where the hand releases the string, and set its tag to `Event.Montage.FireArrow`.
-6. `GA_BowAimFire` fires the arrow only from that event while the shot is fully drawn and release is in progress.
-7. Extra left-click presses are ignored while drawing or releasing.
+1. Left click starts a shot if the bow is not already drawing, fully drawn, or releasing.
+2. If `DrawMontage` is assigned, the ability plays that montage on draw start.
+3. `DrawAlpha` advances from `0.0` to `1.0`.
+4. When `DrawAlpha` reaches `FullDrawAlphaToRelease`, the ability stops the draw montage, enters fully drawn hold state, and keeps `DrawAlpha` at `1.0`.
+5. The ABP can blend into a full-draw aim idle pose while `State.Bow.FullyDrawn` is active.
+6. Releasing left click from fully drawn state enters release state.
+7. If `ReleaseMontage` is assigned, the ability plays that montage.
+8. Put `AN_SendGameplayEvent` on the frame where the hand releases the string, and set its tag to `Event.Montage.FireArrow`.
+9. `GA_BowAimFire` fires the arrow only from that event while the shot is fully drawn and release is in progress.
+10. Releasing left click before full draw cancels the draw and does not fire.
+11. Extra left-click presses are ignored while drawing, fully drawn, or releasing.
 
 The bow ability also publishes these GAS state tags:
 
