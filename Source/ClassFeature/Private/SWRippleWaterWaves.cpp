@@ -1,6 +1,7 @@
 #include "SWRippleWaterWaves.h"
 #include "RippleSubsystem.h"
 #include "Engine/World.h"
+#include "GameFramework/GameStateBase.h"
 
 USWRippleWaterWaves::USWRippleWaterWaves()
 {
@@ -24,12 +25,22 @@ float USWRippleWaterWaves::GetMaxWaveHeight() const
 
 float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, float InWaterDepth, float InTime, FVector& OutNormal) const
 {
+	float SyncTime = InTime;
+	UWorld* World = GetWorld();
+	if (World)
+	{
+		if (AGameStateBase* GameState = World->GetGameState())
+		{
+			SyncTime = GameState->GetServerWorldTimeSeconds();
+		}
+	}
+
 	float Height = 0.0f;
 	if (BaseWavesAsset)
 	{
 		if (const UWaterWaves* ActualWaves = BaseWavesAsset->GetWaterWaves())
 		{
-			Height = ActualWaves->GetWaveHeightAtPosition(InPosition, InWaterDepth, InTime, OutNormal);
+			Height = ActualWaves->GetWaveHeightAtPosition(InPosition, InWaterDepth, SyncTime, OutNormal);
 		}
 		else
 		{
@@ -41,11 +52,25 @@ float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, fl
 		OutNormal = FVector::UpVector;
 	}
 
-	if (UWorld* World = GetWorld())
+	if (World)
 	{
 		if (URippleSubsystem* Subsystem = World->GetSubsystem<URippleSubsystem>())
 		{
 			Height += Subsystem->GetRippleHeight(InPosition);
+		}
+	}
+
+	// 1초에 한 번씩 서버/클라 파고 쿼리값 출력 (대조 디버깅용)
+	if (World)
+	{
+		static float LastLogTime = 0.f;
+		float RealTime = World->GetTimeSeconds();
+		if (RealTime - LastLogTime >= 1.f)
+		{
+			LastLogTime = RealTime;
+			UE_LOG(LogTemp, Warning, TEXT("[%s] WaveQuery - PosX: %.2f | Time: %.4f | WaveHeightZ: %.4f"),
+				World->IsNetMode(NM_DedicatedServer) ? TEXT("SERVER") : TEXT("CLIENT"),
+				InPosition.X, SyncTime, Height);
 		}
 	}
 
@@ -54,12 +79,21 @@ float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, fl
 
 float USWRippleWaterWaves::GetSimpleWaveHeightAtPosition(const FVector& InPosition, float InWaterDepth, float InTime) const
 {
+	float SyncTime = InTime;
+	if (UWorld* World = GetWorld())
+	{
+		if (AGameStateBase* GameState = World->GetGameState())
+		{
+			SyncTime = GameState->GetServerWorldTimeSeconds();
+		}
+	}
+
 	float Height = 0.0f;
 	if (BaseWavesAsset)
 	{
 		if (const UWaterWaves* ActualWaves = BaseWavesAsset->GetWaterWaves())
 		{
-			Height = ActualWaves->GetSimpleWaveHeightAtPosition(InPosition, InWaterDepth, InTime);
+			Height = ActualWaves->GetSimpleWaveHeightAtPosition(InPosition, InWaterDepth, SyncTime);
 		}
 	}
 
