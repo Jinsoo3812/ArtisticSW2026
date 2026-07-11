@@ -1088,9 +1088,24 @@ void ABasePlayer::PerformInteractionScan()
 	{
 		if (AActor* HitActor = Hit.GetActor())
 		{
-			if (UWidgetComponent* WidgetComp = HitActor->FindComponentByClass<UWidgetComponent>())
+			if (!HitActor->FindComponentByClass<UInteractableComponent>())
 			{
-				CurrentHoveredWidgets.AddUnique(WidgetComp);
+				continue;
+			}
+
+			TArray<UWidgetComponent*> WidgetComponents;
+			HitActor->GetComponents<UWidgetComponent>(WidgetComponents);
+			for (UWidgetComponent* WidgetComp : WidgetComponents)
+			{
+				if (!WidgetComp)
+				{
+					continue;
+				}
+
+				if (Cast<UInteractUserWidget>(WidgetComp->GetUserWidgetObject()))
+				{
+					CurrentHoveredWidgets.AddUnique(WidgetComp);
+				}
 			}
 		}
 	}

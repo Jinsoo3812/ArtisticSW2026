@@ -89,7 +89,7 @@ class ARTISTICSWCORE_API UItemData : public UPrimaryDataAsset
 
 public:
 	// ItemData는 주로 Tag로 접근하므로 Map 관리
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Data")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Data", meta = (Categories = "Item.Id"))
 	TMap<FGameplayTag, FItemDefinition> ItemDefinitions;
 
 	// 외부에서 태그로 쉽게 구조체 포인터를 얻어갈 수 있는 헬퍼 함수

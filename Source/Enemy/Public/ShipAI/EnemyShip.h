@@ -5,10 +5,12 @@
 #include "CoreMinimal.h"
 #include "Ship.h"
 #include "ShipAI/BTTask_NavalDrive.h" // For ENavalCombatState
+#include "EnemyDropData.h"
 #include "UI/EnemyHealthBarTypes.h"
 #include "EnemyShip.generated.h"
 
 class ACannon;
+class AStorageChest;
 class UBaseHealthComponent;
 class UHealthBarWidget;
 class UWidgetComponent;
@@ -56,6 +58,8 @@ protected:
 	void OnDeathStarted(UBaseHealthComponent* InHealthComponent);
 
 	void HandleShipDeath();
+	void InitializeEnemyDropData();
+	void DropAtDeathLocation(const FVector& DeathLocation, const FRotator& DeathRotation);
 
 	UFUNCTION()
 	void OnHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor);
@@ -75,6 +79,34 @@ protected:
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Death")
 	bool bDeathHandled = false;
+	
+	// 사망 시 Drop 아이템 정보 담은 Data Table
+	UPROPERTY(EditDefaultsOnly, Category = "Ship|Drop")
+	TObjectPtr<UDataTable> EnemyDropDataTable;
+
+	// 적이 가지는 고유 식별 Tag (For Drop)
+	UPROPERTY(EditDefaultsOnly, Category = "Ship|Drop")
+	FGameplayTag EnemyTypeTag;
+
+	// 죽었을 때, 드랍할 Storage 클래스
+	UPROPERTY(EditDefaultsOnly, Category = "Ship|Drop|Storage")
+	TSubclassOf<AStorageChest> EnemyCorpseStorageClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Ship|Drop|Storage", meta = (ClampMin = "1", UIMin = "1"))
+	int32 EnemyCorpseStorageSlotCount = 5;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Ship|Drop|Storage", meta = (ClampMin = "1", UIMin = "1"))
+	int32 EnemyCorpseStorageColumnCount = 4;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Ship|Drop|Storage")
+	FVector EnemyCorpseStorageSpawnOffset = FVector(0.0f, 0.0f, 250.0f);
+
+	// 한 Ship이 드랍할 정보를 저장하는 구조체
+	UPROPERTY()
+	FEnemyDropData EnemyDropData;
+
+	UPROPERTY()
+	bool bHasDropped = false;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBaseHealthComponent> HealthComponent;

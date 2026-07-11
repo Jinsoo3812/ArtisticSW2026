@@ -37,6 +37,17 @@ void AStorageChest::BeginPlay()
 	}
 }
 
+void AStorageChest::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	UE_LOG(LogTemp, Warning, TEXT("AStorageChest::EndPlay - Chest=%s Reason=%d Owner=%s Location=%s"),
+		*GetName(),
+		static_cast<int32>(EndPlayReason),
+		*GetNameSafe(GetOwner()),
+		*GetActorLocation().ToString());
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void AStorageChest::ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems)
 {
 	if (StorageComponent)

@@ -5,6 +5,8 @@
 #include "Components/ChildActorComponent.h"
 #include "AbilitySystemComponent.h"
 #include "ShipAttributeSet.h"
+#include "Storage/StorageChest.h"
+#include "Storage/StorageComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
 #include "Components/WidgetComponent.h"
@@ -56,6 +58,8 @@ void AEnemyShip::BeginPlay()
 
 	// 캐싱된 대포 목록 탐색
 	FindAttachedCannons();
+	// Drop에 관한 정보 초기화
+	InitializeEnemyDropData();
 
 	// 0.5초마다 타겟과 가장 가까운 N개의 대포를 선정해 목록을 갱신하는 타이머 작동
 	if (HasAuthority())
@@ -194,6 +198,9 @@ void AEnemyShip::HandleShipDeath()
 {
 	if (!HasAuthority()) return;
 
+	const FVector DeathLocation = GetActorLocation();
+	const FRotator DeathRotation = GetActorRotation();
+
 	// 1. 사망 로그 출력 (이름 + 마지막 체력)
 	float FinalHealth = 0.0f;
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
@@ -221,11 +228,185 @@ void AEnemyShip::HandleShipDeath()
 	GetWorldTimerManager().ClearTimer(ActiveCannonsTimerHandle);
 	ActiveAICannons.Empty();
 
+	DropAtDeathLocation(DeathLocation, DeathRotation);
+
 	// 5. N초 후 Destroy
 	GetWorldTimerManager().SetTimer(DeathDestroyTimerHandle, FTimerDelegate::CreateLambda([this]()
 	{
 		Destroy();
 	}), DestroyAfterDeathDelay, false);
+}
+
+void AEnemyShip::InitializeEnemyDropData()
+{
+	// Drop 할 아이템을 Data Table에서 가져오기
+	EnemyDropData = FEnemyDropData();
+	if (!EnemyDropDataTable || !EnemyTypeTag.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::InitializeEnemyDropData - Missing drop setup. Ship=%s DropTable=%s EnemyTypeTag=%s"),
+			*GetName(),
+			*GetNameSafe(EnemyDropDataTable),
+			*EnemyTypeTag.ToString());
+		return;
+	}
+
+	static const FString ContextString(TEXT("EnemyShipDropData"));
+	TArray<FEnemyDropDataRow*> Rows;
+	EnemyDropDataTable->GetAllRows(ContextString, Rows);
+
+	for (const FEnemyDropDataRow* Row : Rows)
+	{
+		if (!Row || Row->EnemyTag != EnemyTypeTag)
+		{
+			continue;
+		}
+
+		EnemyDropData.EnemyTag = Row->EnemyTag;
+		EnemyDropData.DropEntries = Row->DropEntries;
+		UE_LOG(LogTemp, Log, TEXT("AEnemyShip::InitializeEnemyDropData - Loaded %d drop entries. Ship=%s EnemyTypeTag=%s"),
+			EnemyDropData.DropEntries.Num(),
+			*GetName(),
+			*EnemyTypeTag.ToString());
+		break;
+	}
+
+	if (EnemyDropData.DropEntries.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::InitializeEnemyDropData - No matching drop row or empty drop entries. Ship=%s EnemyTypeTag=%s Table=%s"),
+			*GetName(),
+			*EnemyTypeTag.ToString(),
+			*GetNameSafe(EnemyDropDataTable));
+	}
+}
+
+void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotator& DeathRotation)
+{
+	// 죽은 위치에 Storage Spawn하기
+	if (!HasAuthority() || bHasDropped)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - Drop skipped. Ship=%s HasAuthority=%d bHasDropped=%d"),
+			*GetName(),
+			HasAuthority() ? 1 : 0,
+			bHasDropped ? 1 : 0);
+		return;
+	}
+	bHasDropped = true;
+
+	if (!EnemyCorpseStorageClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s: EnemyCorpseStorageClass is not configured."), *GetName());
+		return;
+	}
+
+	// Storage에 들어갈 아이템들의 배열 생성
+	TArray<FStorageItemEntry> StorageItems;
+	StorageItems.Reserve(EnemyDropData.DropEntries.Num());
+
+	int32 InvalidEntryCount = 0;
+	int32 FailedChanceCount = 0;
+
+	// 한 row에 있는 아이템 마다 반복
+	for (const FEnemyDropEntry& Entry : EnemyDropData.DropEntries)
+	{
+		if (!Entry.ItemTag.IsValid())
+		{
+			++InvalidEntryCount;
+			continue;
+		}
+
+		const float ClampedChance = FMath::Clamp(Entry.DropChance, 0.f, 1.f);
+		// 랜덤으로 뽑은 값이 확률보다 크면 Spawn 하지 않음, Guaranteed면 무조건 Spawn
+		if (!Entry.bGuaranteed && FMath::FRand() > ClampedChance)
+		{
+			++FailedChanceCount;
+			continue;
+		}
+
+		const int32 MinCount = FMath::Max(1, Entry.MinCount);
+		const int32 MaxCount = FMath::Max(MinCount, Entry.MaxCount);
+
+		FStorageItemEntry& StorageItem = StorageItems.AddDefaulted_GetRef();
+		StorageItem.ItemTag = Entry.ItemTag;
+		StorageItem.Count = FMath::RandRange(MinCount, MaxCount);
+	}
+
+	if (StorageItems.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - No storage items selected, so chest will not spawn. Ship=%s EnemyTypeTag=%s Entries=%d Invalid=%d FailedChance=%d"),
+			*GetName(),
+			*EnemyTypeTag.ToString(),
+			EnemyDropData.DropEntries.Num(),
+			InvalidEntryCount,
+			FailedChanceCount);
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - World is null. Ship=%s"), *GetName());
+		return;
+	}
+
+	const FVector SpawnLocation = DeathLocation + EnemyCorpseStorageSpawnOffset;
+	const FRotator SpawnRotation(0.0f, DeathRotation.Yaw, 0.0f);
+	const FTransform SpawnTransform(SpawnRotation, SpawnLocation);
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	AStorageChest* SpawnedStorage = World->SpawnActor<AStorageChest>(
+		EnemyCorpseStorageClass,
+		SpawnTransform,
+		SpawnParameters
+	);
+
+	if (SpawnedStorage)
+	{
+		SpawnedStorage->SetReplicates(true);
+		SpawnedStorage->SetReplicateMovement(true);
+		SpawnedStorage->bAlwaysRelevant = true;
+		SpawnedStorage->SetNetCullDistanceSquared(FMath::Square(100000.0f));
+		SpawnedStorage->SetOwner(nullptr);
+		SpawnedStorage->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		SpawnedStorage->SetLifeSpan(0.0f);
+		SpawnedStorage->ForceNetUpdate();
+
+		TMap<FGameplayTag, int32> TotalCountByItem;
+		for (const FStorageItemEntry& StorageItem : StorageItems)
+		{
+			// map에 아이템 태그랑 개수 추가 
+			TotalCountByItem.FindOrAdd(StorageItem.ItemTag) += StorageItem.Count;
+		}
+
+		// 앞서 구했던 아이템 개수만큼 슬롯 추가
+		int32 RequiredSlotCount = StorageItems.Num();
+		if (const UStorageComponent* StorageComponent = SpawnedStorage->GetStorageComponent())
+		{
+			RequiredSlotCount = 0;
+			for (const TPair<FGameplayTag, int32>& ItemTotal : TotalCountByItem)
+			{
+				// map에 저장된 정보에서, 최대 스택보다 많은 수가 있으면 slot 분할
+				const int32 MaxStack = FMath::Max(1, StorageComponent->GetMaxStack(ItemTotal.Key));
+				RequiredSlotCount += FMath::DivideAndRoundUp(ItemTotal.Value, MaxStack);
+			}
+		}
+
+		const int32 SlotCount = FMath::Max(EnemyCorpseStorageSlotCount, RequiredSlotCount);
+		SpawnedStorage->ConfigureStorage(SlotCount, EnemyCorpseStorageColumnCount, StorageItems);
+		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - Spawned storage chest. Ship=%s Chest=%s Location=%s Items=%d Slots=%d"),
+			*GetName(),
+			*GetNameSafe(SpawnedStorage),
+			*SpawnedStorage->GetActorLocation().ToString(),
+			StorageItems.Num(),
+			SlotCount);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - SpawnActor failed. Ship=%s StorageClass=%s Location=%s"),
+			*GetName(),
+			*GetNameSafe(EnemyCorpseStorageClass),
+			*SpawnLocation.ToString());
+	}
 }
 
 void AEnemyShip::FindAttachedCannons()
