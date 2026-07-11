@@ -519,6 +519,7 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 	// --- 8. 디버그 원 시각화 (Z축 오프셋 적용) ---
 	if (bShowDebugRanges)
 	{
+		/*
 		UWorld* World = MyShip->GetWorld();
 		if (World)
 		{
@@ -640,6 +641,7 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 				);
 			}
 		}
+		*/
 	}
 
 	// --- 9. AEnemyShip 전용 대포 AI 정보 동기화 ---

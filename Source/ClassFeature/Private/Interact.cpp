@@ -160,7 +160,7 @@ void UInteract::PerformLocalTrace(FHitResult& OutHitResult)
 		float TraceHalfHeight = (EndLoc - StartLoc).Size() * 0.5f;
 		FQuat TraceRotation = FRotationMatrix::MakeFromZ(EndLoc - StartLoc).ToQuat();
 
-		DrawDebugCapsule(World, TraceCenter, TraceHalfHeight, InteractTraceRadius, TraceRotation, DrawColor, false, 2.0f);
+		// DrawDebugCapsule(World, TraceCenter, TraceHalfHeight, InteractTraceRadius, TraceRotation, DrawColor, false, 2.0f);
 	}
 #endif
 #endif
