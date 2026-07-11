@@ -8,6 +8,7 @@
 
 struct FAIStimulus;
 class UAISenseConfig_Sight;
+class UBaseHealthComponent;
 
 UCLASS()
 class ENEMY_API ABaseAIController : public AAIController
@@ -40,14 +41,22 @@ protected:
 	// AI Sight Perception이 Target을 감지했을 때 호출되는 함수
 	UFUNCTION()
 	void OnTargetSighted(AActor* SeenTarget, FAIStimulus Stimulus);
+
+	UFUNCTION()
+	void OnPerceivedTargetDeathStarted(UBaseHealthComponent* HealthComponent);
 	
 
 protected:
 	virtual void OnPossess(APawn* PossessedPawn) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
 	// 초기에 AI Sight Perception 변수를 초기화하는 함수
 	void SetupPerceptionSystem();
 
 	void InitializeBlackboardValues(APawn* PossessedPawn);
+	void BindPerceivedTargetDeath(AActor* TargetActor);
+	void UnbindPerceivedTargetDeath();
+
+	TWeakObjectPtr<UBaseHealthComponent> ObservedTargetHealthComponent;
 };
