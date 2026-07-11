@@ -19,6 +19,7 @@ public:
 	AStorageChest();
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UStorageComponent* GetStorageComponent() const { return StorageComponent; }
 	UInteractableComponent* GetInteractableComponent() const { return InteractableComponent; }

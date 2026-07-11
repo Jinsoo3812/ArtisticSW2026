@@ -6,8 +6,7 @@
 #include "Weapon/WeaponDataAsset.h"
 #include "Weapon/BaseWeaponComponent.h"
 
-// ArtisticSWCore
-#include "ItemSubsystem.h"
+#include "Storage/StorageChest.h"
 
 // Enemy Folder
 #include "AI/BaseAIController.h"
@@ -300,25 +299,7 @@ void ABaseEnemy::InitializeEnemyDropData()
 		// 구조체 Tag랑 BaseEnemy TypeTag가 같을 때 아래 실행
 
 		EnemyDropData.EnemyTag = Row->EnemyTag;
-		EnemyDropData.DropItemCount = Row->DropItemCount;
-
-		// 드랍해야 하는 아이템 하나마다 Entry 구조체 하나를 가지게 됨
-		auto AddEntry = [this](const FGameplayTag& ItemTag, float Chance)
-			{
-				if (ItemTag.IsValid() && Chance > 0.f)
-				{
-					FEnemyDropEntry Entry;
-					Entry.ItemTag = ItemTag;
-					Entry.DropChance = Chance;
-					EnemyDropData.DropEntries.Add(Entry);
-				}
-			};
-
-		// Entry 구조체를 EnemyDropData 구조체에 전부 저장
-		// 드랍 할 정보는 EnemyDropData가 가지고 있음
-		AddEntry(Row->ItemTag_1, Row->DropChance_1);
-		AddEntry(Row->ItemTag_2, Row->DropChance_2);
-		AddEntry(Row->ItemTag_3, Row->DropChance_3);
+		EnemyDropData.DropEntries = Row->DropEntries;
 		break;
 	}
 }
@@ -329,11 +310,17 @@ void ABaseEnemy::Drop()
 	{
 		return;
 	}
-	UE_LOG(LogTemp, Warning, TEXT("Drop Called"));
-
 	bHasDropped = true;
 
-	// DropData 구조체에 저장된 Entry(드랍템 개수)만큼 반복
+	if (!EnemyCorpseStorageClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s: EnemyCorpseStorageClass is not configured."), *GetName());
+		return;
+	}
+
+	TArray<FStorageItemEntry> StorageItems;
+	StorageItems.Reserve(EnemyDropData.DropEntries.Num());
+
 	for (const FEnemyDropEntry& Entry : EnemyDropData.DropEntries)
 	{
 		if (!Entry.ItemTag.IsValid())
@@ -341,29 +328,63 @@ void ABaseEnemy::Drop()
 			continue;
 		}
 
-		// 랜덤 수가 확률 이하일 때 드랍
-		if (FMath::FRand() > Entry.DropChance)
+		const float ClampedChance = FMath::Clamp(Entry.DropChance, 0.f, 1.f);
+		if (!Entry.bGuaranteed && FMath::FRand() > ClampedChance)
 		{
 			continue;
 		}
 
-		// 아이템 서브시스템 생성
-		UWorld* World = GetWorld();
-		UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>();
+		const int32 MinCount = FMath::Max(1, Entry.MinCount);
+		const int32 MaxCount = FMath::Max(MinCount, Entry.MaxCount);
 
-		const FVector SpawnLoc =
-			GetActorLocation()
-			+ FVector(FMath::RandRange(-50.f, 50.f), FMath::RandRange(-50.f, 50.f), 30.f);
+		FStorageItemEntry& StorageItem = StorageItems.AddDefaulted_GetRef();
+		StorageItem.ItemTag = Entry.ItemTag;
+		StorageItem.Count = FMath::RandRange(MinCount, MaxCount);
+	}
 
-		const FTransform SpawnTransform(GetActorRotation(), SpawnLoc);
+	// 당첨된 아이템이 하나도 없으면 빈 Storage는 생성하지 않는다.
+	if (StorageItems.IsEmpty())
+	{
+		return;
+	}
 
-		// 스폰
-		ABaseItem* SpawnedItem =
-			ItemSubsystem->SpawnItem(Entry.ItemTag, SpawnTransform, EItemState::Dropped_Simulating, this);
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
 
-		if (SpawnedItem)
+	const FTransform SpawnTransform(GetActorRotation(), GetActorLocation());
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = this;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	AStorageChest* SpawnedStorage = World->SpawnActor<AStorageChest>(
+		EnemyCorpseStorageClass,
+		SpawnTransform,
+		SpawnParameters
+	);
+
+	if (SpawnedStorage)
+	{
+		TMap<FGameplayTag, int32> TotalCountByItem;
+		for (const FStorageItemEntry& StorageItem : StorageItems)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Dropped"));
+			TotalCountByItem.FindOrAdd(StorageItem.ItemTag) += StorageItem.Count;
 		}
+
+		int32 RequiredSlotCount = StorageItems.Num();
+		if (const UStorageComponent* StorageComponent = SpawnedStorage->GetStorageComponent())
+		{
+			RequiredSlotCount = 0;
+			for (const TPair<FGameplayTag, int32>& ItemTotal : TotalCountByItem)
+			{
+				const int32 MaxStack = FMath::Max(1, StorageComponent->GetMaxStack(ItemTotal.Key));
+				RequiredSlotCount += FMath::DivideAndRoundUp(ItemTotal.Value, MaxStack);
+			}
+		}
+
+		const int32 SlotCount = FMath::Max(EnemyCorpseStorageSlotCount, RequiredSlotCount);
+		SpawnedStorage->ConfigureStorage(SlotCount, EnemyCorpseStorageColumnCount, StorageItems);
 	}
 }
