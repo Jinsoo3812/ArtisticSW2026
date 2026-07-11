@@ -86,7 +86,6 @@ protected:
 
 	// ----------------- WeaponData 관리
 	const FWeaponDefinition* ResolveWeaponDefinition(FGameplayTag InTag) const;
-	const FWeaponDefinition* GetCurrentWeaponDefinition() const;
 	
 	// ----------------- Ability 관리
 	// 무기에 들어있는 Ability들을 부여/제거 하는 함수
@@ -120,6 +119,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Weapon")
 	bool IsWeaponEquipped() const { return WeaponState == EEnemyWeaponState::Equipped; }
+
+	const FWeaponDefinition* GetCurrentWeaponDefinition() const;
 	
 	// Owner Getter함수
 	ABaseEnemy* GetOwningEnemy() const;
