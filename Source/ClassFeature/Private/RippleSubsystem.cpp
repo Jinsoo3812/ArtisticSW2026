@@ -245,7 +245,7 @@ void URippleSubsystem::AddRipple(FVector2D Origin, float InitialAmplitude, float
 	// If no players are nearby, do not generate the ripple
 	if (!bIsNearPlayer && Players.Num() > 0)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[RippleSubsystem] AddRipple Culled: No players near %s (MaxDist: %.2f)"), *Origin.ToString(), MaxGenerationDistance);
+		// UE_LOG(LogTemp, Log, TEXT("[RippleSubsystem] AddRipple Culled: No players near %s (MaxDist: %.2f)"), *Origin.ToString(), MaxGenerationDistance);
 		return;
 	}
 

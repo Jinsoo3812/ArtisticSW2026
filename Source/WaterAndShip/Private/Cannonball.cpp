@@ -152,7 +152,7 @@ void ACannonball::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* Ot
 	{
 		if (!bHasHitWater)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("ACannonball: Hit Water at Location %s! Triggering Ripple..."), *GetActorLocation().ToString());
+			// UE_LOG(LogTemp, Warning, TEXT("ACannonball: Hit Water at Location %s! Triggering Ripple..."), *GetActorLocation().ToString());
 			TriggerWaterRipple(GetActorLocation());
 		}
 		return;

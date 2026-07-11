@@ -20,9 +20,9 @@ void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	bool bIsLocallyControlled = ActorInfo->IsLocallyControlled();
 	bool bHasAuthority = HasAuthority(&ActivationInfo);
 
-	UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [%s] Started. LocallyControlled: %s"),
-		bHasAuthority ? TEXT("SERVER") : TEXT("CLIENT"),
-		bIsLocallyControlled ? TEXT("YES") : TEXT("NO"));
+	// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [%s] Started. LocallyControlled: %s"),
+	// 	bHasAuthority ? TEXT("SERVER") : TEXT("CLIENT"),
+	// 	bIsLocallyControlled ? TEXT("YES") : TEXT("NO"));
 
 	FGameplayAbilityTargetDataHandle TargetDataHandle;
 
@@ -32,8 +32,8 @@ void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		TArray<FHitResult> HitResults;
 		ABasePlayer* PlayerAvatar = Cast<ABasePlayer>(ActorInfo->AvatarActor.Get());
 
-		UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [CLIENT] Performing interact trace on player character: %s"),
-			PlayerAvatar ? *PlayerAvatar->GetName() : TEXT("None"));
+		// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [CLIENT] Performing interact trace on player character: %s"),
+		// 	PlayerAvatar ? *PlayerAvatar->GetName() : TEXT("None"));
 
 		if (PlayerAvatar && PlayerAvatar->PerformInteractTrace(HitResults) && HitResults.Num() > 0)
 		{
@@ -46,11 +46,11 @@ void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 			for (int32 Index = 0; Index < HitResults.Num(); ++Index)
 			{
 				const FHitResult& Hit = HitResults[Index];
-				UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [CLIENT] Trace Hit [%d]: Actor: %s, Component: %s, ImpactPoint: %s"),
-					Index,
-					Hit.GetActor() ? *Hit.GetActor()->GetName() : TEXT("None"),
-					Hit.GetComponent() ? *Hit.GetComponent()->GetName() : TEXT("None"),
-					*Hit.ImpactPoint.ToString());
+				// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [CLIENT] Trace Hit [%d]: Actor: %s, Component: %s, ImpactPoint: %s"),
+				// 	Index,
+				// 	Hit.GetActor() ? *Hit.GetActor()->GetName() : TEXT("None"),
+				// 	Hit.GetComponent() ? *Hit.GetComponent()->GetName() : TEXT("None"),
+				// 	*Hit.ImpactPoint.ToString());
 				
 				float DistSq = FVector::DistSquared(StartLoc, Hit.ImpactPoint);
 				if (DistSq < ClosestDistanceSq)
@@ -64,10 +64,10 @@ void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 			// 가장 가까운 객체 하나만 TargetData로 패키징
 			if (bFoundValidHit)
 			{
-				UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [CLIENT] Best Hit chosen: Actor: %s, Component: %s, DistanceSq: %f"),
-					BestHit.GetActor() ? *BestHit.GetActor()->GetName() : TEXT("None"),
-					BestHit.GetComponent() ? *BestHit.GetComponent()->GetName() : TEXT("None"),
-					ClosestDistanceSq);
+				// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [CLIENT] Best Hit chosen: Actor: %s, Component: %s, DistanceSq: %f"),
+				// 	BestHit.GetActor() ? *BestHit.GetActor()->GetName() : TEXT("None"),
+				// 	BestHit.GetComponent() ? *BestHit.GetComponent()->GetName() : TEXT("None"),
+				// 	ClosestDistanceSq);
 
 				FGameplayAbilityTargetData_SingleTargetHit* TargetData = new FGameplayAbilityTargetData_SingleTargetHit();
 				TargetData->HitResult = BestHit;
@@ -76,14 +76,14 @@ void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		}
 		else
 		{
-			UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [CLIENT] PerformInteractTrace returned false or no hits. Avatar valid: %s, HitCount: %d"),
-				PlayerAvatar ? TEXT("YES") : TEXT("NO"),
-				HitResults.Num());
+			// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [CLIENT] PerformInteractTrace returned false or no hits. Avatar valid: %s, HitCount: %d"),
+			// 	PlayerAvatar ? TEXT("YES") : TEXT("NO"),
+			// 	HitResults.Num());
 		}
 
 		// 서버로 TargetData 전송
-		UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [CLIENT] Calling CallServerSetReplicatedTargetData. NumTargetData: %d"),
-			TargetDataHandle.Num());
+		// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [CLIENT] Calling CallServerSetReplicatedTargetData. NumTargetData: %d"),
+		// 	TargetDataHandle.Num());
 
 		ASC->CallServerSetReplicatedTargetData(
 			Handle,
@@ -100,14 +100,14 @@ void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		// Test 환경 (Statd alone)에서는 통신없이 즉시 처리
 		if (bIsLocallyControlled)
 		{
-			UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [SERVER] Standalone mode: directly processing interaction."));
+			// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [SERVER] Standalone mode: directly processing interaction."));
 			ProcessInteract(TargetDataHandle);
 		}
 		else
 		{
 			// 실제 환경 (Dedicated) 에서는 클라이언트가 보낸 데이터를 기다려야 하므로 델리게이트 바인딩
-			UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [SERVER] Dedicated mode: binding AbilityTargetDataSetDelegate. PredictionKey: %d"),
-				ActivationInfo.GetActivationPredictionKey().Current);
+			// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [SERVER] Dedicated mode: binding AbilityTargetDataSetDelegate. PredictionKey: %d"),
+			// 	ActivationInfo.GetActivationPredictionKey().Current);
 
 			ASC->AbilityTargetDataSetDelegate(Handle, ActivationInfo.GetActivationPredictionKey()).AddUObject(this, &UInteract::OnTargetDataReadyCallback);
 

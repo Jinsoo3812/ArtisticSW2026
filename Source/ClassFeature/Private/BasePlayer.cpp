@@ -373,13 +373,13 @@ void ABasePlayer::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
 
-	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] Start."));
+	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] Start."));
 
 	// 클라이언트 측 ASC 초기화 (PlayerState가 클라로 복제되었음을 보장하는 타이밍)
 	ABasePlayerState* PS = GetPlayerState<ABasePlayerState>();
 	if (PS)
 	{
-		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] PlayerState found: %s"), *PS->GetName());
+		// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] PlayerState found: %s"), *PS->GetName());
 		// 클라이언트에서도 Owner와 Avatar를 연결해줌
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
 
@@ -395,7 +395,7 @@ void ABasePlayer::OnRep_PlayerState()
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] PlayerState is null!"));
+		// UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] PlayerState is null!"));
 	}
 
 	OnAbilitySystemInitialized.Broadcast();
@@ -648,30 +648,30 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] Fails: CachedAbilitySystemComponent valid? %s, InputTag: %s"),
-			HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
-			CachedAbilitySystemComponent.IsValid() ? TEXT("YES") : TEXT("NO"),
-			*InputTag.ToString());
+		// UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] Fails: CachedAbilitySystemComponent valid? %s, InputTag: %s"),
+		// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+		// 	CachedAbilitySystemComponent.IsValid() ? TEXT("YES") : TEXT("NO"),
+		// 	*InputTag.ToString());
 		return;
 	}
 
 	int32 InputID = GetInputIDFromTag(InputTag);
-	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
-		HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
-		*InputTag.ToString(),
-		InputID,
-		IsLocallyControlled() ? TEXT("YES") : TEXT("NO"));
+	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
+	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+	// 	*InputTag.ToString(),
+	// 	InputID,
+	// 	IsLocallyControlled() ? TEXT("YES") : TEXT("NO"));
 
 	// 현재 부여된 모든 어빌리티 및 그 InputID 출력
 	const TArray<FGameplayAbilitySpec>& Specs = CachedAbilitySystemComponent->GetActivatableAbilities();
-	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] Activatable Abilities Count: %d"), 
-		HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"), Specs.Num());
+	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] Activatable Abilities Count: %d"), 
+	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"), Specs.Num());
 	for (const FGameplayAbilitySpec& Spec : Specs)
 	{
-		UE_LOG(LogTemp, Log, TEXT("  - Ability: %s, InputID: %d, Active: %s"), 
-			Spec.Ability ? *Spec.Ability->GetName() : TEXT("None"),
-			Spec.InputID,
-			Spec.IsActive() ? TEXT("YES") : TEXT("NO"));
+		// UE_LOG(LogTemp, Log, TEXT("  - Ability: %s, InputID: %d, Active: %s"), 
+		// 	Spec.Ability ? *Spec.Ability->GetName() : TEXT("None"),
+		// 	Spec.InputID,
+		// 	Spec.IsActive() ? TEXT("YES") : TEXT("NO"));
 	}
 
 	if (InputID != INDEX_NONE)
@@ -685,11 +685,11 @@ void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 
 	int32 InputID = GetInputIDFromTag(InputTag);
-	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputReleased - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
-		HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
-		*InputTag.ToString(),
-		InputID,
-		IsLocallyControlled() ? TEXT("YES") : TEXT("NO"));
+	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputReleased - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
+	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+	// 	*InputTag.ToString(),
+	// 	InputID,
+	// 	IsLocallyControlled() ? TEXT("YES") : TEXT("NO"));
 
 	if (InputID != INDEX_NONE)
 	{

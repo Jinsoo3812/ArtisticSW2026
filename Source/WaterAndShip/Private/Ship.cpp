@@ -513,15 +513,15 @@ void AShip::ResetToFollowCamera()
 
 void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 {
-	UE_LOG(LogTemp, Log, TEXT("AShip: [CLIENT] OnRep_RidingPlayer. OldRidingPlayer: %s, RidingPlayer: %s"), 
-		OldRidingPlayer ? *OldRidingPlayer->GetName() : TEXT("Null"), 
-		RidingPlayer ? *RidingPlayer->GetName() : TEXT("Null"));
+	// UE_LOG(LogTemp, Log, TEXT("AShip: [CLIENT] OnRep_RidingPlayer. OldRidingPlayer: %s, RidingPlayer: %s"), 
+	// 	OldRidingPlayer ? *OldRidingPlayer->GetName() : TEXT("Null"), 
+	// 	RidingPlayer ? *RidingPlayer->GetName() : TEXT("Null"));
 
 	APlayerController* LocalPC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
 
 	if (OldRidingPlayer && OldRidingPlayer != RidingPlayer)
 	{
-		UE_LOG(LogTemp, Log, TEXT("AShip: [CLIENT] OnRep_RidingPlayer - Restoring old passenger collision and walking movement."));
+		// UE_LOG(LogTemp, Log, TEXT("AShip: [CLIENT] OnRep_RidingPlayer - Restoring old passenger collision and walking movement."));
 		OldRidingPlayer->SetActorEnableCollision(true);
 		if (ACharacter* Char = Cast<ACharacter>(OldRidingPlayer))
 		{
@@ -536,7 +536,7 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 
 	if (RidingPlayer)
 	{
-		UE_LOG(LogTemp, Log, TEXT("AShip: [CLIENT] OnRep_RidingPlayer - Disabling current passenger collision and movement."));
+		// UE_LOG(LogTemp, Log, TEXT("AShip: [CLIENT] OnRep_RidingPlayer - Disabling current passenger collision and movement."));
 		RidingPlayer->SetActorEnableCollision(false);
 		if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
 		{
@@ -570,7 +570,7 @@ void AShip::OnRep_Controller()
 				if (ShipInputMappingContext)
 				{
 					Subsystem->RemoveMappingContext(ShipInputMappingContext);
-					UE_LOG(LogTemp, Log, TEXT("AShip: Removed ShipInputMappingContext in OnRep_Controller."));
+					// UE_LOG(LogTemp, Log, TEXT("AShip: Removed ShipInputMappingContext in OnRep_Controller."));
 				}
 			}
 			CachedPlayerController = nullptr;
@@ -586,7 +586,7 @@ void AShip::OnRep_Controller()
 				if (ShipInputMappingContext)
 				{
 					Subsystem->AddMappingContext(ShipInputMappingContext, ShipInputPriority);
-					UE_LOG(LogTemp, Log, TEXT("AShip: Added ShipInputMappingContext in OnRep_Controller."));
+					// UE_LOG(LogTemp, Log, TEXT("AShip: Added ShipInputMappingContext in OnRep_Controller."));
 				}
 			}
 		}

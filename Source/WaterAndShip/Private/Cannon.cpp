@@ -153,7 +153,7 @@ void ACannon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(ACannon, RidingPlayer);
-	DOREPLIFETIME(ACannon, AimRotation);
+	DOREPLIFETIME_CONDITION(ACannon, AimRotation, COND_SkipOwner);
 }
 
 // Ship의 Board()와 완전히 동일한 패턴
@@ -248,7 +248,7 @@ bool ACannon::FireCannon()
 	if (!bCanFire) return false;
 
 	AShip* MyShip = GetOwningShip();
-	UE_LOG(LogTemp, Warning, TEXT("ACannon::FireCannon - Fire! Cannon: %s, Ship: %s"), *GetName(), MyShip ? *MyShip->GetName() : TEXT("None"));
+	// UE_LOG(LogTemp, Warning, TEXT("ACannon::FireCannon - Fire! Cannon: %s, Ship: %s"), *GetName(), MyShip ? *MyShip->GetName() : TEXT("None"));
 
 	bCanFire = false;
 
@@ -397,15 +397,15 @@ void ACannon::OnRep_AimRotation()
 // Ship의 OnRep_RidingPlayer()와 동일 패턴
 void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 {
-	UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer. OldPlayer: %s, RidingPlayer: %s"), 
-		OldPlayer ? *OldPlayer->GetName() : TEXT("Null"), 
-		RidingPlayer ? *RidingPlayer->GetName() : TEXT("Null"));
+	// UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer. OldPlayer: %s, RidingPlayer: %s"), 
+	// 	OldPlayer ? *OldPlayer->GetName() : TEXT("Null"), 
+	// 	RidingPlayer ? *RidingPlayer->GetName() : TEXT("Null"));
 
 	APlayerController* LocalPC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
 
 	if (OldPlayer && OldPlayer != RidingPlayer)
 	{
-		UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer - Restoring old passenger collision and walking movement."));
+		// UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer - Restoring old passenger collision and walking movement."));
 		OldPlayer->SetActorEnableCollision(true);
 		if (ACharacter* Char = Cast<ACharacter>(OldPlayer))
 		{
@@ -420,7 +420,7 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 
 	if (RidingPlayer)
 	{
-		UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer - Disabling current passenger collision and movement."));
+		// UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer - Disabling current passenger collision and movement."));
 		RidingPlayer->SetActorEnableCollision(false);
 		if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
 		{
@@ -455,7 +455,7 @@ void ACannon::OnRep_Controller()
 				if (CannonInputMappingContext)
 				{
 					Subsystem->RemoveMappingContext(CannonInputMappingContext);
-					UE_LOG(LogTemp, Log, TEXT("ACannon: Removed CannonInputMappingContext in OnRep_Controller."));
+					// UE_LOG(LogTemp, Log, TEXT("ACannon: Removed CannonInputMappingContext in OnRep_Controller."));
 				}
 			}
 
@@ -479,7 +479,7 @@ void ACannon::OnRep_Controller()
 				if (CannonInputMappingContext)
 				{
 					Subsystem->AddMappingContext(CannonInputMappingContext, CannonInputPriority);
-					UE_LOG(LogTemp, Log, TEXT("ACannon: Added CannonInputMappingContext in OnRep_Controller."));
+					// UE_LOG(LogTemp, Log, TEXT("ACannon: Added CannonInputMappingContext in OnRep_Controller."));
 				}
 			}
 
