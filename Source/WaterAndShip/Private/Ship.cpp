@@ -27,6 +27,8 @@
 #include "GerstnerWaterWaves.h"
 #include "Chaos/PhysicsObject.h"
 #include "Interfaces/IPhysicsComponent.h"
+#include "GameFramework/GameStateBase.h"
+
 
 
 
@@ -100,7 +102,7 @@ AShip::AShip()
 	}
 
 	bReplicates = true;
-	SetReplicateMovement(true); // Resimulation 모드 작동을 위해 물리 무브먼트 복제 활성화
+	SetReplicateMovement(false); // standard movement replication 비활성화 (Network Physics Component의 롤백 재시뮬레이션과 충돌 방지)
 	bAlwaysRelevant = true;
 }
 
@@ -125,7 +127,12 @@ void AShip::BeginPlay()
 		BuoyancyRoot->SetSimulatePhysics(true);
 	}
 
-	if (UPhysicsSettings::Get()->PhysicsPrediction.bEnablePhysicsPrediction && NetworkPhysicsComponent)
+	bool bPredictionEnabled = UPhysicsSettings::Get()->PhysicsPrediction.bEnablePhysicsPrediction;
+	UE_LOG(LogTemp, Warning, TEXT("[GT] AShip::BeginPlay - PhysicsPrediction Enabled Flag: %s | NetworkPhysicsComponent: %s"), 
+		bPredictionEnabled ? TEXT("True") : TEXT("False"), 
+		NetworkPhysicsComponent ? TEXT("Valid") : TEXT("Null"));
+
+	if (bPredictionEnabled && NetworkPhysicsComponent)
 	{
 		if (UWorld* World = GetWorld())
 		{
@@ -141,10 +148,19 @@ void AShip::BeginPlay()
 							ShipPhysicsAsync->SetPhysicsObject(reinterpret_cast<Chaos::FConstPhysicsObjectHandle>(BuoyancyRoot->GetBodyInstance()->GetPhysicsActorHandle()));
 						}
 						NetworkPhysicsComponent->CreateDataHistory(ShipPhysicsAsync);
+						UE_LOG(LogTemp, Warning, TEXT("[GT] AShip::BeginPlay - SUCCESSFULLY registered ShipPhysicsAsync and bound to NetworkPhysicsComponent!"));
+					}
+					else
+					{
+						UE_LOG(LogTemp, Error, TEXT("[GT] AShip::BeginPlay - FAILED to create/register SimCallbackObject FShipPhysicsAsync!"));
 					}
 				}
 			}
 		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("[GT] AShip::BeginPlay - CRITICAL: Skipping Network Physics registration! (Prediction flag disabled or Component null)"));
 	}
 
 	if (UActorComponent* BuoyancyComp = GetComponentByClass(UBuoyancyComponent::StaticClass()))
@@ -219,7 +235,6 @@ void AShip::Tick(float DeltaTime)
 		{
 			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
 			{
-				static bool bStaticDataInitialized = false;
 				if (!bStaticDataInitialized)
 				{
 					bStaticDataInitialized = true;
@@ -263,6 +278,16 @@ void AShip::Tick(float DeltaTime)
 					AsyncInput->BuoyancyRadius = 150.f; // 폰툰 기본 반경
 					AsyncInput->BuoyancyForceMultiplier = 1.3f;
 					AsyncInput->WaterDamping = 3.0f;
+
+					// 절대 시간 동기화 오프셋 마샬링 (서버와 클라이언트 간의 절대적 월드 생성 시간 격차 상쇄)
+					if (AGameStateBase* GameState = GetWorld()->GetGameState())
+					{
+						AsyncInput->SpawnWorldTime = GameState->GetServerWorldTimeSeconds();
+					}
+					else
+					{
+						AsyncInput->SpawnWorldTime = GetWorld()->GetTimeSeconds();
+					}
 				}
 			}
 		}
@@ -272,6 +297,22 @@ void AShip::Tick(float DeltaTime)
 	{
 		ReplicatedState.Location = GetActorLocation();
 		ReplicatedState.Rotation = GetActorRotation();
+	}
+	else
+	{
+		// 클라이언트 전용 GT 위치 오차 실측 디버그 로그 (1초 주기 호출)
+		if (UWorld* World = GetWorld())
+		{
+			static float LogTimer = 0.0f;
+			LogTimer += DeltaTime;
+			if (LogTimer >= 1.0f)
+			{
+				LogTimer = 0.0f;
+				float Dist = FVector::Dist(GetActorLocation(), ReplicatedState.Location);
+				UE_LOG(LogTemp, Warning, TEXT("[CLIENT-GT] Ship Location vs Server RepLocation - Diff: %.2f cm | ActorLoc: %s | RepLoc: %s"), 
+					Dist, *GetActorLocation().ToString(), *ReplicatedState.Location.ToString());
+			}
+		}
 	}
 }
 
@@ -320,10 +361,27 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	}
 }
 
+void AShip::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	if (NetworkPhysicsComponent)
+	{
+		// 서버 측에서는 로컬 입력 릴레이를 해제 (RPC 수신 및 로컬 예측은 클라이언트 책임)
+		NetworkPhysicsComponent->SetIsRelayingLocalInputs(false);
+	}
+}
+
 void AShip::UnPossessed()
 {
+	if (NetworkPhysicsComponent)
+	{
+		NetworkPhysicsComponent->SetIsRelayingLocalInputs(false);
+	}
+
 	Super::UnPossessed();
 }
+
 
 void AShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
@@ -607,6 +665,13 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 void AShip::OnRep_Controller()
 {
 	Super::OnRep_Controller();
+
+	if (NetworkPhysicsComponent)
+	{
+		bool bRelay = IsLocallyControlled();
+		NetworkPhysicsComponent->SetIsRelayingLocalInputs(bRelay);
+		UE_LOG(LogTemp, Warning, TEXT("[CLIENT-GT] OnRep_Controller - SetIsRelayingLocalInputs: %s"), bRelay ? TEXT("True") : TEXT("False"));
+	}
 
 	if (Controller == nullptr)
 	{

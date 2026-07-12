@@ -55,12 +55,32 @@ void FShipPhysicsAsync::ValidateInput_Internal(FNetInputShip& Input) const
 
 void FShipPhysicsAsync::BuildState_Internal(FNetStatePhysicsShip& State) const
 {
-	// 기본 6자유도 리지드바디 트랜스폼 복제는 Iris/Resimulation이 처리하므로 빈 껍데기로 둡니다.
+	if (PhysicsObject)
+	{
+		Chaos::FWritePhysicsObjectInterface_Internal Interface = Chaos::FPhysicsObjectInternalInterface::GetWrite();
+		if (Chaos::FPBDRigidParticleHandle* ParticleHandle = Interface.GetRigidParticle(PhysicsObject))
+		{
+			State.Position = ParticleHandle->GetX();
+			State.Rotation = ParticleHandle->GetR();
+			State.LinearVelocity = ParticleHandle->GetV();
+			State.AngularVelocity = ParticleHandle->GetW();
+		}
+	}
 }
 
 void FShipPhysicsAsync::ApplyState_Internal(const FNetStatePhysicsShip& State)
 {
-	// 기본 6자유도 리지드바디 트랜스폼 복제는 Iris/Resimulation이 처리하므로 빈 껍데기로 둡니다.
+	if (PhysicsObject)
+	{
+		Chaos::FWritePhysicsObjectInterface_Internal Interface = Chaos::FPhysicsObjectInternalInterface::GetWrite();
+		if (Chaos::FPBDRigidParticleHandle* ParticleHandle = Interface.GetRigidParticle(PhysicsObject))
+		{
+			ParticleHandle->SetX(State.Position);
+			ParticleHandle->SetR(State.Rotation);
+			ParticleHandle->SetV(State.LinearVelocity);
+			ParticleHandle->SetW(State.AngularVelocity);
+		}
+	}
 }
 
 void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
@@ -84,6 +104,11 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 				if (AsyncInput->GerstnerWaves.Num() > 0)
 				{
 					CachedGerstnerWaves = AsyncInput->GerstnerWaves;
+				}
+				if (AsyncInput->SpawnWorldTime >= 0.0f)
+				{
+					CachedSpawnWorldTime = AsyncInput->SpawnWorldTime;
+					CachedSpawnPhysicsStep = AsyncInput->SpawnPhysicsStep;
 				}
 				CachedGravityZ = AsyncInput->GravityZ;
 				CachedLateralDrag = AsyncInput->LateralDrag;
@@ -113,12 +138,28 @@ void FShipPhysicsAsync::OnPreSimulate_Internal()
 		return;
 	}
 
-	// 1. 결정론적 타임스탬프 계산 (SimTime 정밀도 확보)
-	// PhysicsStep * FixedDeltaTime(60Hz=0.0166667f) 적용
-	float SimTime = CurrentPhysicsStep * 0.0166667f;
+	// 1. 결정론적 타임스탬프 계산 (Spawn 절대 월드 시간 오프셋 적용하여 파고 동기화 정밀도 보장)
+	float SimTime = 0.0f;
+	if (CachedSpawnWorldTime >= 0.0f && CachedSpawnPhysicsStep >= 0)
+	{
+		SimTime = CachedSpawnWorldTime + (CurrentPhysicsStep - CachedSpawnPhysicsStep) * 0.0166667f;
+	}
+	else
+	{
+		SimTime = CurrentPhysicsStep * 0.0166667f;
+	}
 
 	FVector ActorLocation = ParticleHandle->GetX();
 	FQuat ActorRotation = ParticleHandle->GetR();
+
+	if (Chaos::FPhysicsSolverBase* CurrentSolver = GetSolver())
+	{
+		if (CurrentSolver->IsResimming())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] RESIMULATE TICK - Step: %d | SimTime: %.4f | Loc: %s"), 
+				CurrentPhysicsStep, SimTime, *ActorLocation.ToString());
+		}
+	}
 
 	// 2. 가로축 수력 드래그 (Lateral Hydrodynamic Drag) 계산 및 적용
 	if (CachedLateralDrag > 0.0f)

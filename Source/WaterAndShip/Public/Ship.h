@@ -74,9 +74,66 @@ USTRUCT()
 struct FNetStatePhysicsShip : public FNetworkPhysicsPayload
 {
 	GENERATED_BODY()
-	FNetStatePhysicsShip() {}
-	virtual void InterpolateData(const FNetworkPhysicsPayload& MinData, const FNetworkPhysicsPayload& MaxData, float LerpAlpha) override {}
-	virtual bool CompareData(const FNetworkPhysicsPayload& PredictedData) const override { return true; }
+
+	FNetStatePhysicsShip()
+		: Position(FVector::ZeroVector)
+		, Rotation(FQuat::Identity)
+		, LinearVelocity(FVector::ZeroVector)
+		, AngularVelocity(FVector::ZeroVector)
+	{}
+
+	UPROPERTY()
+	FVector Position;
+
+	UPROPERTY()
+	FQuat Rotation;
+
+	UPROPERTY()
+	FVector LinearVelocity;
+
+	UPROPERTY()
+	FVector AngularVelocity;
+
+	virtual void InterpolateData(const FNetworkPhysicsPayload& MinData, const FNetworkPhysicsPayload& MaxData, float LerpAlpha) override
+	{
+		const FNetStatePhysicsShip& MinState = static_cast<const FNetStatePhysicsShip&>(MinData);
+		const FNetStatePhysicsShip& MaxState = static_cast<const FNetStatePhysicsShip&>(MaxData);
+
+		Position = FMath::Lerp(MinState.Position, MaxState.Position, LerpAlpha);
+		Rotation = FQuat::Slerp(MinState.Rotation, MaxState.Rotation, LerpAlpha);
+		LinearVelocity = FMath::Lerp(MinState.LinearVelocity, MaxState.LinearVelocity, LerpAlpha);
+		AngularVelocity = FMath::Lerp(MinState.AngularVelocity, MaxState.AngularVelocity, LerpAlpha);
+	}
+
+	virtual bool CompareData(const FNetworkPhysicsPayload& PredictedData) const override
+	{
+		const FNetStatePhysicsShip& PredState = static_cast<const FNetStatePhysicsShip&>(PredictedData);
+
+		// 배의 롤백 트리거 위치/회전 차이 임계값
+		if (FVector::DistSquared(Position, PredState.Position) > 25.0f) return false;
+		if (Rotation.AngularDistance(PredState.Rotation) > 0.035f) return false; // 약 2도
+
+		return true;
+	}
+
+	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
+	{
+		bOutSuccess = true;
+		Ar << Position;
+		Ar << Rotation;
+		Ar << LinearVelocity;
+		Ar << AngularVelocity;
+		return true;
+	}
+};
+
+template<>
+struct TStructOpsTypeTraits<FNetStatePhysicsShip> : public TStructOpsTypeTraitsBase2<FNetStatePhysicsShip>
+{
+	enum
+	{
+		WithNetSerializer = true,
+	};
 };
 
 class UStaticMeshComponent;
@@ -147,6 +204,7 @@ public:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
+	virtual void PossessedBy(AController* NewController) override;
 	virtual void UnPossessed() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -327,4 +385,6 @@ private:
 
 	float CurrentMoveInput = 0.0f;
 	float CurrentTurnInput = 0.0f;
+
+	bool bStaticDataInitialized = false;
 };

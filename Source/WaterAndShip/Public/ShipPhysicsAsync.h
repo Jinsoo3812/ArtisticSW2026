@@ -31,12 +31,18 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	float BuoyancyForceMultiplier = 1.2f;
 	float WaterDamping = 3.0f;
 
+	// 위상 동기화용 시간/틱 오프셋
+	float SpawnWorldTime = -1.0f;
+	int32 SpawnPhysicsStep = -1;
+
 	void Reset()
 	{
 		MovementInput = 0.0f;
 		SteeringInput = 0.0f;
 		PontoonOffsets.Empty();
 		GerstnerWaves.Empty();
+		SpawnWorldTime = -1.0f;
+		SpawnPhysicsStep = -1;
 	}
 };
 
@@ -93,4 +99,8 @@ private:
 	float CachedBuoyancyRadius = 100.f;
 	float CachedBuoyancyForceMultiplier = 1.2f;
 	float CachedWaterDamping = 3.0f;
+
+	// 위상 동기화용 타임스탬프 캐시
+	float CachedSpawnWorldTime = -1.0f;
+	int32 CachedSpawnPhysicsStep = -1;
 };
