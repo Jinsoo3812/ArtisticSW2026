@@ -7,7 +7,77 @@
 #include "InputActionValue.h"
 #include "AbilitySystemInterface.h"
 #include "Engine/DataTable.h"
+#include "Physics/NetworkPhysicsComponent.h"
 #include "Ship.generated.h"
+
+USTRUCT()
+struct FNetInputShip : public FNetworkPhysicsPayload
+{
+	GENERATED_BODY()
+
+	FNetInputShip() : MovementInput(0.f), SteeringInput(0.f) {}
+
+	UPROPERTY()
+	float MovementInput;
+
+	UPROPERTY()
+	float SteeringInput;
+
+	virtual void InterpolateData(const FNetworkPhysicsPayload& MinData, const FNetworkPhysicsPayload& MaxData, float LerpAlpha) override
+	{
+		const FNetInputShip& MinInput = static_cast<const FNetInputShip&>(MinData);
+		const FNetInputShip& MaxInput = static_cast<const FNetInputShip&>(MaxData);
+		MovementInput = FMath::Lerp(MinInput.MovementInput, MaxInput.MovementInput, LerpAlpha);
+		SteeringInput = FMath::Lerp(MinInput.SteeringInput, MaxInput.SteeringInput, LerpAlpha);
+	}
+
+	virtual void MergeData(const FNetworkPhysicsPayload& FromData) override
+	{
+		const FNetInputShip& FromInput = static_cast<const FNetInputShip&>(FromData);
+		MovementInput = FromInput.MovementInput;
+		SteeringInput = FromInput.SteeringInput;
+	}
+
+	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
+	{
+		bOutSuccess = true;
+		if (Ar.IsSaving())
+		{
+			int8 QuantizedMove = FMath::Clamp(FMath::RoundToInt(MovementInput * 127.f), -128, 127);
+			int8 QuantizedSteer = FMath::Clamp(FMath::RoundToInt(SteeringInput * 127.f), -128, 127);
+			Ar << QuantizedMove;
+			Ar << QuantizedSteer;
+		}
+		else
+		{
+			int8 QuantizedMove = 0;
+			int8 QuantizedSteer = 0;
+			Ar << QuantizedMove;
+			Ar << QuantizedSteer;
+			MovementInput = static_cast<float>(QuantizedMove) / 127.f;
+			SteeringInput = static_cast<float>(QuantizedSteer) / 127.f;
+		}
+		return true;
+	}
+};
+
+template<>
+struct TStructOpsTypeTraits<FNetInputShip> : public TStructOpsTypeTraitsBase2<FNetInputShip>
+{
+	enum
+	{
+		WithNetSerializer = true,
+	};
+};
+
+USTRUCT()
+struct FNetStatePhysicsShip : public FNetworkPhysicsPayload
+{
+	GENERATED_BODY()
+	FNetStatePhysicsShip() {}
+	virtual void InterpolateData(const FNetworkPhysicsPayload& MinData, const FNetworkPhysicsPayload& MaxData, float LerpAlpha) override {}
+	virtual bool CompareData(const FNetworkPhysicsPayload& PredictedData) const override { return true; }
+};
 
 class UStaticMeshComponent;
 class USpringArmComponent;
@@ -245,4 +315,16 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UShipAttributeSet> AttributeSet;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UNetworkPhysicsComponent> NetworkPhysicsComponent;
+
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+private:
+	friend class FShipPhysicsAsync;
+	FShipPhysicsAsync* ShipPhysicsAsync = nullptr;
+
+	float CurrentMoveInput = 0.0f;
+	float CurrentTurnInput = 0.0f;
 };

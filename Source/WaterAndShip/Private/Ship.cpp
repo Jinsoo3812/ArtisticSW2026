@@ -16,6 +16,21 @@
 #include "BaseAttributeSet.h"
 #include "ShipAttributeSet.h"
 #include "BaseGameplayTags.h"
+#include "ShipPhysicsAsync.h"
+#include "Physics/Experimental/PhysScene_Chaos.h"
+#include "PBDRigidsSolver.h"
+#include "BuoyancyComponent.h"
+#include "WaterBodyActor.h"
+#include "EngineUtils.h"
+#include "PhysicsEngine/PhysicsSettings.h"
+#include "Physics/NetworkPhysicsComponent.h"
+#include "GerstnerWaterWaves.h"
+#include "Chaos/PhysicsObject.h"
+#include "Interfaces/IPhysicsComponent.h"
+
+
+
+
 
 // Sets default values
 AShip::AShip()
@@ -75,8 +90,17 @@ AShip::AShip()
 	// Attribute Set
 	AttributeSet = CreateDefaultSubobject<UShipAttributeSet>(TEXT("AttributeSet"));
 
+	// Network Physics Component
+	if (UPhysicsSettings::Get()->PhysicsPrediction.bEnablePhysicsPrediction)
+	{
+		static const FName NetworkPhysicsComponentName(TEXT("NetworkPhysicsComponent"));
+		NetworkPhysicsComponent = CreateDefaultSubobject<UNetworkPhysicsComponent>(NetworkPhysicsComponentName);
+		NetworkPhysicsComponent->SetNetAddressable();
+		SetPhysicsReplicationMode(EPhysicsReplicationMode::Resimulation);
+	}
+
 	bReplicates = true;
-	SetReplicateMovement(false);
+	SetReplicateMovement(true); // Resimulation 모드 작동을 위해 물리 무브먼트 복제 활성화
 	bAlwaysRelevant = true;
 }
 
@@ -98,14 +122,34 @@ void AShip::BeginPlay()
 	if (BuoyancyRoot)
 	{
 		BuoyancyRoot->SetCollisionProfileName(TEXT("PlayerShip"));
-		if (HasAuthority())
+		BuoyancyRoot->SetSimulatePhysics(true);
+	}
+
+	if (UPhysicsSettings::Get()->PhysicsPrediction.bEnablePhysicsPrediction && NetworkPhysicsComponent)
+	{
+		if (UWorld* World = GetWorld())
 		{
-			BuoyancyRoot->SetSimulatePhysics(true);
+			if (FPhysScene* PhysScene = World->GetPhysicsScene())
+			{
+				if (Chaos::FPhysicsSolver* Solver = PhysScene->GetSolver())
+				{
+					ShipPhysicsAsync = Solver->CreateAndRegisterSimCallbackObject_External<FShipPhysicsAsync>();
+					if (ShipPhysicsAsync)
+					{
+						if (BuoyancyRoot && BuoyancyRoot->GetBodyInstance())
+						{
+							ShipPhysicsAsync->SetPhysicsObject(reinterpret_cast<Chaos::FConstPhysicsObjectHandle>(BuoyancyRoot->GetBodyInstance()->GetPhysicsActorHandle()));
+						}
+						NetworkPhysicsComponent->CreateDataHistory(ShipPhysicsAsync);
+					}
+				}
+			}
 		}
-		else
-		{
-			BuoyancyRoot->SetSimulatePhysics(false);
-		}
+	}
+
+	if (UActorComponent* BuoyancyComp = GetComponentByClass(UBuoyancyComponent::StaticClass()))
+	{
+		BuoyancyComp->SetActive(false);
 	}
 
 	// Initialize replicated state to avoid teleporting to 0,0,0 on client initialization
@@ -133,56 +177,101 @@ void AShip::BeginPlay()
 	}
 }
 
+void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (ShipPhysicsAsync)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			if (FPhysScene* PhysScene = World->GetPhysicsScene())
+			{
+				if (Chaos::FPhysicsSolver* Solver = PhysScene->GetSolver())
+				{
+					Solver->UnregisterAndFreeSimCallbackObject_External(ShipPhysicsAsync);
+				}
+			}
+		}
+		ShipPhysicsAsync = nullptr;
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
 // Called every frame
 void AShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	if (ShipPhysicsAsync)
+	{
+		// 1. 조작 입력 데이터 마샬링 (Autonomous Proxy 및 Local Controller 전용)
+		if (IsLocallyControlled())
+		{
+			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
+			{
+				AsyncInput->MovementInput = CurrentMoveInput;
+				AsyncInput->SteeringInput = CurrentTurnInput;
+			}
+		}
+
+		// 2. 물리 틱용 기초 구조 정보 및 파도 파라미터 마샬링 (서버 & 클라이언트 로컬 물리 예측 공통)
+		if (IsLocallyControlled() || HasAuthority())
+		{
+			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
+			{
+				static bool bStaticDataInitialized = false;
+				if (!bStaticDataInitialized)
+				{
+					bStaticDataInitialized = true;
+
+					// 폰툰 오프셋 수집
+					if (UBuoyancyComponent* BuoyancyComp = Cast<UBuoyancyComponent>(GetComponentByClass(UBuoyancyComponent::StaticClass())))
+					{
+						for (const FSphericalPontoon& Pontoon : BuoyancyComp->BuoyancyData.Pontoons)
+						{
+							AsyncInput->PontoonOffsets.Add(Pontoon.RelativeLocation);
+						}
+					}
+
+					// 결정론적 파고 계산을 위한 Gerstner Waves 자산 데이터 수집
+					for (TActorIterator<AWaterBody> It(GetWorld()); It; ++It)
+					{
+						if (AWaterBody* WaterBody = *It)
+						{
+							if (UGerstnerWaterWaves* GerstnerAsset = Cast<UGerstnerWaterWaves>(WaterBody->GetWaterWaves()))
+							{
+								AsyncInput->GerstnerWaves = GerstnerAsset->GetGerstnerWaves();
+								break;
+							}
+						}
+					}
+
+					// 기타 물리/부력 매개변수 전송
+					AsyncInput->GravityZ = GetWorld()->GetGravityZ();
+					AsyncInput->LateralDrag = LateralDragCoefficient;
+					AsyncInput->ForwardForceValue = ForwardForce;
+					AsyncInput->TurnTorqueValue = TurnTorque;
+					
+					float SpeedMult = 1.0f;
+					if (AttributeSet)
+					{
+						SpeedMult = AttributeSet->GetShipSpeedMultiplier();
+					}
+					AsyncInput->SpeedMultiplier = SpeedMult;
+
+					// 부력 댐핑 및 반경 설정
+					AsyncInput->BuoyancyRadius = 150.f; // 폰툰 기본 반경
+					AsyncInput->BuoyancyForceMultiplier = 1.3f;
+					AsyncInput->WaterDamping = 3.0f;
+				}
+			}
+		}
+	}
+
 	if (HasAuthority())
 	{
-		// ---- Lateral Hydrodynamic Drag ----
-		if (BuoyancyRoot && LateralDragCoefficient > 0.0f)
-		{
-			FVector Velocity = BuoyancyRoot->GetPhysicsLinearVelocity();
-
-			// Ship's right vector projected onto XY plane
-			FVector Right = GetActorRightVector();
-			Right.Z = 0.0f;
-			Right.Normalize();
-
-			// Lateral speed = velocity component along the right axis
-			float LateralSpeed = FVector::DotProduct(Velocity, Right);
-
-			// Apply opposing force to resist sideways movement
-			FVector LateralDragForce = -Right * LateralSpeed * LateralDragCoefficient;
-			BuoyancyRoot->AddForce(LateralDragForce);
-		}
-
-		// Update replicated state for client-side interpolation
 		ReplicatedState.Location = GetActorLocation();
 		ReplicatedState.Rotation = GetActorRotation();
-	}
-	else
-	{
-		// Client-side interpolation towards server state
-		FVector CurrentLocation = GetActorLocation();
-		FQuat CurrentRotation = GetActorQuat();
-
-		FVector TargetLocation = ReplicatedState.Location;
-		FQuat TargetRotation = ReplicatedState.Rotation.Quaternion();
-
-		float DistSq = FVector::DistSquared(CurrentLocation, TargetLocation);
-		if (DistSq > FMath::Square(TeleportThreshold))
-		{
-			SetActorLocationAndRotation(TargetLocation, TargetRotation, false, nullptr, ETeleportType::TeleportPhysics);
-		}
-		else
-		{
-			FVector InterpedLocation = FMath::VInterpTo(CurrentLocation, TargetLocation, DeltaTime, LocationInterpSpeed);
-			FQuat InterpedRotation = FMath::QInterpTo(CurrentRotation, TargetRotation, DeltaTime, RotationInterpSpeed);
-
-			SetActorLocationAndRotation(InterpedLocation, InterpedRotation, false, nullptr, ETeleportType::None);
-		}
 	}
 }
 
@@ -350,79 +439,43 @@ void AShip::Disembark()
 void AShip::ShipMove(const FInputActionValue& Value)
 {
 	const float MoveValue = Value.Get<float>();
+	CurrentMoveInput = MoveValue;
 
-	if (FMath::Abs(MoveValue) > KINDA_SMALL_NUMBER)
+	if (!HasAuthority())
 	{
-		if (HasAuthority())
-		{
-			ApplyForwardForce(MoveValue);
-		}
-		else
-		{
-			ServerMove(MoveValue);
-		}
+		ServerMove(MoveValue);
 	}
 }
 
 void AShip::ServerMove_Implementation(float MoveValue)
 {
-	ApplyForwardForce(MoveValue);
+	CurrentMoveInput = MoveValue;
 }
 
 void AShip::ApplyForwardForce(float MoveValue)
 {
-	if (BuoyancyRoot && FMath::Abs(MoveValue) > KINDA_SMALL_NUMBER)
-	{
-		// Project forward vector onto XY plane so the ship always moves horizontally
-		FVector Forward = GetActorForwardVector();
-		Forward.Z = 0.0f;
-		Forward.Normalize();
-
-		float CurrentMoveSpeedMultiplier = 1.0f;
-		if (AttributeSet)
-		{
-			CurrentMoveSpeedMultiplier = AttributeSet->GetShipSpeedMultiplier();
-		}
-
-		BuoyancyRoot->AddForce(Forward * ForwardForce * MoveValue * CurrentMoveSpeedMultiplier);
-	}
+	// 비동기 물리 스레드(FShipPhysicsAsync)에서 물리 힘이 연산되므로 빈 함수로 둡니다.
 }
 
 void AShip::ShipTurn(const FInputActionValue& Value)
 {
 	const float TurnValue = Value.Get<float>();
+	CurrentTurnInput = TurnValue;
 
-	if (FMath::Abs(TurnValue) > KINDA_SMALL_NUMBER)
+	if (!HasAuthority())
 	{
-		if (HasAuthority())
-		{
-			ApplyTurnTorque(TurnValue);
-		}
-		else
-		{
-			ServerTurn(TurnValue);
-		}
+		ServerTurn(TurnValue);
 	}
 }
 
 void AShip::ServerTurn_Implementation(float TurnValue)
 {
-	ApplyTurnTorque(TurnValue);
+	CurrentTurnInput = TurnValue;
 }
 
 void AShip::ApplyTurnTorque(float TurnValue)
 {
-	if (BuoyancyRoot && FMath::Abs(TurnValue) > KINDA_SMALL_NUMBER)
-	{
-		float CurrentMoveSpeedMultiplier = 1.0f;
-		if (AttributeSet)
-		{
-			CurrentMoveSpeedMultiplier = AttributeSet->GetShipSpeedMultiplier();
-		}
-
-		// Apply torque around the Z-axis (yaw) for horizontal turning
-		BuoyancyRoot->AddTorqueInDegrees(FVector(0.0f, 0.0f, TurnTorque * TurnValue * CurrentMoveSpeedMultiplier));
-	}
+	// 비동기 물리 스레드(FShipPhysicsAsync)에서 물리 힘이 연산되므로 빈 함수로 둡니다.
 }
 
 void AShip::ShipLook(const FInputActionValue& Value)

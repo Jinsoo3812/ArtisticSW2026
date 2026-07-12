@@ -29,9 +29,15 @@ float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, fl
 	UWorld* World = GetWorld();
 	if (World)
 	{
-		if (AGameStateBase* GameState = World->GetGameState())
+		// 게임 스레드 틱(예: 수영, 발사체 등)에서 호출될 때만 서버 동기화 시간으로 보정합니다.
+		// 비동기 물리 틱(Async Physics)에서 호출될 때의 InTime은 서버-클라가 동일하게 축적하는 고정 SimTime이므로 그대로 사용합니다.
+		float TimeSeconds = World->GetTimeSeconds();
+		if (FMath::IsNearlyEqual(InTime, TimeSeconds, 0.001f))
 		{
-			SyncTime = GameState->GetServerWorldTimeSeconds();
+			if (AGameStateBase* GameState = World->GetGameState())
+			{
+				SyncTime = GameState->GetServerWorldTimeSeconds();
+			}
 		}
 	}
 
@@ -80,11 +86,16 @@ float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, fl
 float USWRippleWaterWaves::GetSimpleWaveHeightAtPosition(const FVector& InPosition, float InWaterDepth, float InTime) const
 {
 	float SyncTime = InTime;
-	if (UWorld* World = GetWorld())
+	UWorld* World = GetWorld();
+	if (World)
 	{
-		if (AGameStateBase* GameState = World->GetGameState())
+		float TimeSeconds = World->GetTimeSeconds();
+		if (FMath::IsNearlyEqual(InTime, TimeSeconds, 0.001f))
 		{
-			SyncTime = GameState->GetServerWorldTimeSeconds();
+			if (AGameStateBase* GameState = World->GetGameState())
+			{
+				SyncTime = GameState->GetServerWorldTimeSeconds();
+			}
 		}
 	}
 
@@ -97,7 +108,7 @@ float USWRippleWaterWaves::GetSimpleWaveHeightAtPosition(const FVector& InPositi
 		}
 	}
 
-	if (UWorld* World = GetWorld())
+	if (World)
 	{
 		if (URippleSubsystem* Subsystem = World->GetSubsystem<URippleSubsystem>())
 		{
