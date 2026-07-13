@@ -936,3 +936,413 @@ M11~M14 종합 인사이트:
 
 - `Saved/Logs/Codex_M16_FrameGate_Server.log`
 - `Saved/Logs/Codex_M16_FrameGate_Client.log`
+
+### 2026-07-13 — M17 정확한 Tick Offset 준비 플래그 및 에디터 튜닝 인계
+
+#### M17 변경 상태
+
+- M15/M16에서 확인한 startup placeholder 문제를 피하기 위해 `GetUpcomingServerFrame_External()`의 숫자를 준비 여부로 사용하지 않도록 변경했다.
+- 클라이언트는 UE 5.7의 `APlayerController::GetNetworkPhysicsTickOffsetAssigned()`가 true가 된 뒤에만 실제 `NetworkPhysicsTickOffset`을 GT에서 PT로 전달한다.
+- 서버는 offset 0을 즉시 유효한 값으로 취급한다.
+- `BuildState_Internal()`이 `State.ServerFrame - State.LocalFrame`으로 offset을 추측하여 startup의 `0 - 0 = 0`을 확정하던 부작용을 제거했다.
+- Editor Development 빌드는 성공했다. 엔진 API deprecation warning 외 컴파일 오류는 없었다.
+
+#### M17 런타임 첨부 로그가 새로 보여 준 미해결점
+
+- 사용자가 제공한 PIE 로그에서 authority state 자체는 `ServerFrame=986`, `LocalFrame=900`, 즉 실제 offset 86으로 올바르게 매핑되었다.
+- 그러나 같은 과거 Step 900을 재시뮬레이션할 때 custom callback은 다음을 출력했다.
+
+```text
+[PHYSICS-PT-WAITING] Step=900 Pontoons=4 Waves=16 Clock=Ready Dt=0.016667 FrameOffset=Missing
+```
+
+- 이 경로에서 `bStaticDataReady=false`가 되어 그 resim step의 커스텀 파도·부력·조종 힘을 전부 건너뛴다.
+- forward simulation에서 offset을 알고 있더라도 rewind된 callback 시점에는 custom readiness/cache가 동일하게 복원되지 않거나, resim 중에는 GT async input을 소비하지 않기 때문에 다시 채울 수 없는 것으로 보인다.
+- 따라서 M17은 startup의 거짓 offset 0 판정을 제거했지만, **resim에서 필요한 결정론적 설정과 frame mapping을 history-safe하게 보존한다는 조건은 아직 충족하지 못했다.** M17은 빌드 성공 상태이지만 최종 채택 검증 완료 상태가 아니다.
+
+첨부 로그의 추가 관찰:
+
+- 위치 mismatch가 5~34 cm 범위로 연속 발생하며 5 cm threshold 때문에 반복 rollback한다.
+- 순간 선속도 차이는 `1076.77 cm/s`, 각속도 차이는 `24.682 deg/s`까지 증가했다.
+- 서버/클라이언트 상태의 rotation 차이는 대부분 5도 threshold 아래였고, 주 trigger는 위치 오차였다.
+- GT 최신 snapshot 비교에서는 `LocDiff=92.39 cm`도 보였지만 이것은 동일-frame history 비교가 아니므로 Network Physics mismatch 수치와 분리해서 해석해야 한다.
+
+#### KKH_Test 시작 충돌에 대한 해석
+
+- 지금까지의 headless runtime 검증은 `/Game/New/Level/KKH_Test`에서 수행했다.
+- 이 레벨에서는 시작 직후 Player가 배 위로 떨어져 배를 물속으로 강하게 누르는 이벤트가 있다.
+- 그러므로 초기 수백 cm mismatch에는 late join/history 문제뿐 아니라 Player-Ship 충돌 시점과 충격량 차이가 섞였을 가능성이 높다.
+- Network Physics 자체의 초기 안정성을 검증할 때는 Player가 배를 타격하지 않는 빈 배 조건을 별도 기준선으로 사용해야 한다.
+
+#### 에디터 물성 튜닝 규칙
+
+현재 custom PT 부력 코드에서 실제 사용하는 에디터 값:
+
+- `BuoyancyRoot`의 Chaos Mass 및 관성
+- 첫 번째 Pontoon의 Radius — 현재 이 하나의 반경을 모든 custom pontoon에 공통 사용
+- `BuoyancyCoefficient`
+- `BuoyancyDamp`
+- `BuoyancyDamp2`
+- `MaxBuoyantForce` — custom 코드에서는 각 pontoon마다 clamp
+- Ship의 `LateralDragCoefficient`
+
+주의:
+
+- 내장 `UBuoyancyComponent`는 BeginPlay에서 비활성화되므로, 위에서 custom 코드가 읽는 값 이외의 내장 컴포넌트 옵션은 실제 부력에 반영되지 않을 수 있다.
+- BP 기본값을 바꾸어 서버와 모든 클라이언트가 동일한 asset 값을 읽는 튜닝은 가능하다.
+- 런타임에 한 피어에서만 값을 변경하면 static/config가 Network Physics history payload로 복제되지 않으므로 결정론이 깨질 수 있다.
+- 권장 순서는 `Mass → BuoyancyCoefficient/MaxBuoyantForce → Damp/Damp2 → LateralDrag`이다.
+- Player 타격이 없는 정지 조건에서 흘수와 복원력을 먼저 맞춘 다음 승선/낙하 충돌을 추가한다.
+
+### 2026-07-13 — 바다 상호작용 승선 직후 Ship 대형 요동 원인 분석 (코드 변경 없음)
+
+#### 승선 경로
+
+`HandlePortSeaBoarding()`과 `HandleStarboardSeaBoarding()`은 서버에서 다음 순서로 실행한다.
+
+1. CharacterMovement를 즉시 `MOVE_Walking`으로 변경한다.
+2. Character Actor origin을 `Port/StarboardSeaBoardingDestination`의 월드 좌표로 그대로 `TeleportTo`한다.
+3. 이 경로에서는 Player collision을 끄거나 Ship과의 충돌을 무시하지 않는다.
+
+이것은 Ship을 possess하는 `AShip::Board()`와 다른 경로다. `Board()`는 collision과 CharacterMovement를 끄지만, 바다에서 갑판으로 올라오는 두 Handle 함수는 그렇지 않다.
+
+#### 원인 후보 우선순위
+
+1. **Teleport 목적지와 Character Capsule의 초기 관통 — 가장 먼저 검사**
+   - 목적지 SceneComponent가 갑판 표면에 놓여 있고 Character origin 기준 높이 보정이 없다면, capsule 중심이 갑판 표면으로 이동하여 capsule 하부가 배 collision 안에 박힌다.
+   - Walking 전환까지 먼저 수행하므로 첫 floor update/Chaos contact에서 큰 depenetration과 off-center torque가 발생할 수 있다.
+
+2. **CharacterMovement의 StandingDownwardForce — 엔진 소스로 확인된 외력 경로**
+   - `ABasePlayer`는 `bEnablePhysicsInteraction=false`, `InitialPushForceFactor=0`, `PushForceFactor=0`으로 설정한다.
+   - 하지만 UE 5.7 `UCharacterMovementComponent::ApplyDownwardForce()`는 `bEnablePhysicsInteraction`을 확인하지 않는다.
+   - `StandingDownwardForceScale != 0`이고 현재 floor가 물리 시뮬레이션 중이면 다음 힘을 floor impact point에 매 틱 가한다.
+
+```text
+Gravity × CharacterMovement.Mass × StandingDownwardForceScale
+```
+
+   - 이 힘은 갑판 중앙이 아닌 발 위치에 적용되어 roll/pitch torque를 만들 수 있다.
+   - 서버 CharacterMovement와 클라이언트 예측 CharacterMovement의 접촉/floor 갱신은 Ship custom Network Physics input history에 들어 있지 않으므로, 같은 과거 프레임을 resim할 때 동일하게 재생된다는 보장이 없다.
+
+3. **외부 충돌 뒤 rollback에서 custom 부력 누락 — 첨부 로그로 확인**
+   - Player 접촉이 5 cm 초과 오차를 만들면 Ship은 rollback한다.
+   - 첨부 로그에서는 rollback Step 900에서 `FrameOffset=Missing`으로 custom 부력이 빠진다.
+   - 따라서 `Player 접촉/Teleport 충격 → mismatch → rollback → resim 부력 누락 → 새로운 mismatch`의 증폭 루프가 가능하다.
+
+4. **현재 부력값이 작은 자세 변화에 큰 복원 토크를 만드는 증폭 조건**
+   - 첨부 시점 파라미터는 Radius 300, Coefficient 0.04, Damp 1000, Damp2 1, pontoon별 MaxForce 5M이었다.
+   - 로그의 총 부력은 약 6.7~6.9M, 부력 토크는 약 1.7B~3.4B 단위까지 나타났다.
+   - 이 값 자체가 원인이라고 확정할 수는 없지만, capsule 관통이나 off-center downward force로 시작된 작은 roll/pitch를 매우 큰 반대 토크로 되받아 요동을 확대할 수 있다.
+
+#### 코드 작성 전 원인 분리 실험 순서
+
+1. `PortSeaBoardingDestination`/`StarboardSeaBoardingDestination`을 capsule half-height보다 충분히 높은 위치로 임시 이동한다. 요동이 사라지면 초기 관통이 주원인이다.
+2. Player CharacterMovement의 `Standing Downward Force Scale`만 임시로 0으로 설정한다. 기존 `Enable Physics Interaction=false`만으로는 이 힘이 차단되지 않는다.
+3. 빈 배 위에 Player를 처음부터 안전한 높이로 배치한 경우와 바다 상호작용 Teleport를 비교한다. 전자는 안정적이고 후자만 요동하면 승선 전환/관통 문제다.
+4. Standalone 또는 서버 단독에서도 같은 요동인지 확인한다.
+   - Standalone에서도 발생: 관통, 물성, 부력 복원 토크가 주원인.
+   - 네트워크에서만 심함: Character 외력이 Ship history에 없고 rollback에서 부력이 누락되는 문제가 주원인.
+5. 진단 목적으로만 위치 rollback threshold를 크게 올려 correction을 잠시 줄여 본다.
+   - 물리 배 자체는 차분해지고 화면 요동만 사라지면 correction loop 증폭이다.
+   - 배가 계속 실제로 크게 흔들리면 물리 접촉/부력 튜닝 문제다.
+   - 이 실험값은 최종 설정으로 채택하지 않는다.
+6. PIE에서 collision visualization으로 승선 직후 capsule이 갑판 mesh 내부에 생성되는지, Character의 Movement Base가 `BuoyancyRoot`인지 확인한다.
+
+현재 가장 효율적인 첫 실험은 **Destination을 위로 올리는 것**과 **StandingDownwardForceScale을 0으로 만드는 것**을 각각 독립적으로 비교하는 것이다.
+
+### 2026-07-13 — 승선 요동 2차 실험: 네트워크 전용 physics-base feedback으로 범위 축소
+
+#### 사용자가 수행한 반증 실험
+
+1. 승선 Destination은 갑판보다 위에 있으며, Player가 잠깐 낙하한 뒤 발이 닿는 순간부터 요동한다.
+   - capsule이 처음부터 갑판 안에 생성되는 단순 teleport penetration 가설은 우선순위가 크게 낮아졌다.
+   - 단, 낙하 접촉 자체의 서버/클라이언트 시점 차이는 여전히 남는다.
+2. Player BP에서 `Standing Downward Force Scale=0`으로 만든 뒤 `Enable Physics Interaction`을 다시 비활성화했지만 네트워크 PIE 요동은 동일했다.
+3. Standalone에서는 Player가 갑판 위에 올라가 걷거나 좌우 난간에 충돌해도 정상이다.
+   - 난간 충돌 시 배가 물리적으로 조금 기울기는 하지만 폭주하지 않는다.
+   - 동일한 Mass/부력/충돌 형상으로 Standalone이 안정적이므로, 일반 부력 튜닝이나 Player 접촉 자체가 단독 주원인일 가능성은 낮다.
+
+#### 이전 분석 정정 — 기록은 유지하고 이 항목으로 대체
+
+이전 항목에서는 UE 5.7 `ApplyDownwardForce()` 함수 내부가 `bEnablePhysicsInteraction`을 검사하지 않는다는 점을 근거로 StandingDownwardForce를 1순위 후보로 두었다. 함수 내부만 보면 사실이지만, 호출부를 추가 확인한 결과 실제 실행은 다음 상위 조건 안에 있다.
+
+```cpp
+if (bEnablePhysicsInteraction)
+{
+    ApplyDownwardForce(DeltaTime);
+    ApplyRepulsionForce(DeltaTime);
+}
+```
+
+따라서 현재 Player BP처럼 `Enable Physics Interaction=false`이면 StandingDownwardForce와 RepulsionForce는 호출되지 않는다. 사용자의 Scale 0 실험도 같은 결론을 실측으로 확인했다. **명시적 CharacterMovement physics force는 이번 현상의 주원인에서 제외한다.**
+
+다만 `Enable Physics Interaction=false`는 CharacterMovement가 직접 호출하는 push/downward/repulsion force만 막는다. Character capsule과 `BuoyancyRoot`가 서로 Block인 상태에서 Chaos collision solver가 만드는 비관통 접촉과, 움직이는 base를 따라가기 위한 based movement sweep까지 제거하지는 않는다.
+
+#### 첨부 Client PIE 로그 정량 분석
+
+- same-frame Network Physics compare 73회를 추출했다.
+- 전체 평균 위치 오차 `6.54 cm`, 최대 `17.06 cm`.
+- `SF < 504`: 평균 `6.09 cm`, 최대 `8.63 cm`, 최대 각속도 차이 `2.139 deg/s`.
+- `SF >= 504`: 평균 `8.45 cm`, 최대 `17.06 cm`, 최대 각속도 차이 `5.127 deg/s`.
+- SF 504 부근부터 서버 Ship에 기존에 없던 수평 속도와 각운동 변화가 나타나고 이후 위치/회전 오차가 커진다. Player 접촉 시점일 가능성은 있지만, 제공 로그에는 성공한 `HandlePort/StarboardSeaBoarding` 또는 contact marker가 없으므로 정확한 발 접촉 프레임으로 단정하지 않는다.
+- excerpt 안의 interaction 로그 두 건은 모두 `WaterBodyOcean_0`을 hit하고 실패한 요청이므로 승선 성공 표식으로 사용할 수 없다.
+- Ship은 계속 `ROLE_SimulatedProxy`, `ReplicateMovement=FALSE`였다.
+- resim 중 `FrameOffset=Missing`이 8회 반복됐다. Step 240/300/360/420 등에서 재현되어 일회성 startup 로그가 아니라 반복되는 rollback 경로 문제임을 보여 준다.
+
+#### 현재 최우선 인과 모델
+
+1. 서버에서는 서버 Character가 서버 Ship 위에 착지하여 physics base를 잡는다.
+2. Client 1에서는 autonomous Character가 로컬 예측된 simulated-proxy Ship 위에 착지하여 별도의 시점과 위치에서 base를 잡는다.
+3. CharacterMovement는 PrePhysics에서 움직이는 base의 변화를 따라 Character capsule을 이동시킨다.
+4. 첨부 이미지에서 `Based Movement Ignore Physics Base`는 꺼져 있다. 따라서 physics base를 따라 capsule을 옮기는 sweep가 현재 base actor 자체와 충돌할 수 있다.
+5. Character와 Ship 사이의 contact/depenetration 결과는 서버와 클라이언트에서 서로 다를 수 있지만, `FNetInputShip` history에는 Move/Steer만 있고 Player 접촉 상태나 접촉 impulse는 없다.
+6. Ship state가 5 cm threshold를 넘으면 client가 rollback한다.
+7. rollback 시 CharacterMovement는 Ship과 동일한 Network Physics history로 과거 프레임부터 재생되지 않으며, 현재 M17 callback은 일부 resim step에서 `FrameOffset=Missing`으로 custom 부력까지 건너뛴다.
+8. 결과적으로 `서로 다른 Player contact → Ship mismatch → 불완전한 rollback → 새로운 mismatch`가 화면상 큰 요동으로 증폭될 수 있다.
+
+Standalone에서는 서버/클라이언트 두 세계와 correction이 없으므로 동일 접촉이 단순한 한 번의 물리 반응으로 끝난다. 이것이 Standalone 정상 / Client PIE 폭주의 차이를 가장 잘 설명한다.
+
+#### 다음 실험 — 코드 작성 없이 우선 수행
+
+1. **Player BP의 `Based Movement Ignore Physics Base`를 true로 변경한다.**
+   - UE 설명상 simulated physics base를 따라 `UpdateBasedMovement()`가 Character를 이동시킬 때 current base actor와의 충돌을 무시하는 전용 옵션이다.
+   - 바닥 판정을 없애는 옵션이 아니라 base-follow 이동 중 자기 base와 다시 부딪히는 경로를 막는 옵션이므로 현재 현상에 가장 직접적인 실험이다.
+   - 이 값 하나만 바꾸고 동일 Client PIE 승선을 반복한다.
+2. 진단용으로 `BuoyancyRoot/PlayerShip`의 Pawn response를 Ignore로 바꿔 Player가 배를 통과하게 한다.
+   - 통과 순간 배가 전혀 요동하지 않으면 Character-Ship blocking contact가 trigger임이 확정된다.
+   - 이것은 진단용이며 최종 게임 설정은 아니다.
+3. Simulated Proxy state rewind만 잠시 끄고 같은 승선을 시험하는 것은 좋은 분리 실험이지만, 현재는 코드 변경 없이 바로 수행할 수 없다.
+   - `AShip::Tick()`이 Simulated Proxy에서 매 틱 `SetCompareStateToTriggerRewind(true, true)`를 호출하므로 `np2.Resim.CompareStateToTriggerRewind.IncludeSimProxies=0` CVar만 바꿔도 component override가 다시 true로 설정된다.
+   - 추후 임시 진단 스위치를 허용할 때만 이 강제 호출을 통제하여 비교한다.
+   - 이 상태에서 Client 화면 폭주가 사라지면 rollback feedback 증폭이 확정되지만, drift를 허용하므로 최종 해결책은 아니다.
+4. Player capsule collision을 착지 직후 잠시 끄는 BP 실험을 한다.
+   - 끄는 즉시 Ship 요동이 멎으면 based movement 또는 blocking contact 경로가 원인이다.
+5. 다음 로그에는 승선 RPC 성공 시점, Player MovementBase 이름, Player 위치/속도와 Ship server frame을 같은 표식으로 남겨 실제 발 접촉 프레임을 compare spike와 결합한다. 현재 로그만으로는 SF 504 전환을 접촉 시점이라고 확정할 수 없다.
+
+#### 해결 방향 후보
+
+가장 실용적인 구조는 양방향 물리 접촉을 Ship rigid body에서 분리하는 것이다.
+
+- 실제 물리 `BuoyancyRoot`는 Pawn을 Ignore한다.
+- 갑판 보행은 Ship에 부착된 별도 `QueryOnly` deck collision이 Pawn을 Block하도록 한다.
+- Character는 deck을 floor/base로 쿼리해 걸을 수 있지만, capsule이 Chaos Ship rigid body에 직접 contact impulse를 만들지 않는다.
+- 탑승자 무게를 배에 반영해야 한다면 raw capsule contact에 의존하지 않고, 서버 frame별 탑승자 질량/상대 위치를 Ship Network Physics input으로 결정론적으로 전달하여 custom PT에서 force/torque로 적용한다.
+
+근본적인 Network Physics 쪽 해결은 resim에서도 frame offset과 모든 custom static config가 항상 유효하고, Player가 만드는 외력이 같은 과거 frame에서 재현되도록 만드는 것이다. `Based Movement Ignore Physics Base=true`가 현상을 완화하더라도 `FrameOffset=Missing` resim은 별도 결함으로 계속 해결해야 한다.
+
+### 2026-07-13 — 승선 요동 3차 실험: 에디터 Collision 변경이 BeginPlay에서 무효화됨
+
+#### 사용자가 수행한 실험
+
+1. Player BP의 `Based Movement Ignore Physics Base=true` — 변화 없음, 동일하게 극심한 요동.
+2. 다시 false로 복원 후 Ship `BuoyancyRoot`를 Custom으로 바꾸고 Pawn response를 Ignore — Player가 여전히 배 위에 서며 동일하게 요동.
+3. Custom 상태에서 `Physics Only`와 `Query Only`도 각각 시험 — 양쪽 모두 Player가 서고 동일하게 요동.
+
+#### 접근 방식: 이 결과가 실제로 무엇을 반증하는가
+
+처음 해석하면 “Pawn Ignore인데도 접촉 요동이므로 Character-Ship collision 가설이 틀렸다”고 보기 쉽다. 그러나 실제 런타임 collision 설정이 바뀌었는지를 먼저 증명해야 한다.
+
+CharacterMovement의 floor sweep는 Query 경로다. 실제 floor component가 정말 `Physics Only`였다면 Character는 그 component를 바닥으로 찾을 수 없고 통과해야 한다. 그런데 Player가 계속 섰다. 이것은 다음 중 하나를 의미한다.
+
+1. 에디터에서 바꾼 `BuoyancyRoot` 설정이 PIE BeginPlay에서 다시 덮어써졌다.
+2. `BuoyancyRoot` 외의 다른 PrimitiveComponent가 실제 갑판 floor로 Pawn을 Block한다.
+
+현재 소스는 1번을 직접 증명한다.
+
+#### 코드 증거
+
+`AShip` 생성자:
+
+```cpp
+BuoyancyRoot->SetCollisionProfileName(TEXT("PlayerShip"));
+```
+
+`AShip::BeginPlay()`에서도 다시 실행:
+
+```cpp
+if (BuoyancyRoot)
+{
+    BuoyancyRoot->SetCollisionProfileName(TEXT("PlayerShip"));
+    BuoyancyRoot->SetSimulatePhysics(true);
+}
+```
+
+UE 5.7 `UPrimitiveComponent::SetCollisionProfileName()` API 주석도 이 함수가 현재 Collision Setting을 overwrite한다고 명시한다. `PlayerShip` profile은 `DefaultEngine.ini`에서 다음과 같이 정의된다.
+
+- `CollisionEnabled=QueryAndPhysics`
+- ObjectType `WorldDynamic`
+- Pawn response를 별도로 지정하지 않으므로 기본 Block response 유지
+
+따라서 BP Class Defaults/컴포넌트 Details에서 설정한 Custom, Pawn Ignore, Physics Only, Query Only는 PIE가 시작되면 BeginPlay의 `SetCollisionProfileName("PlayerShip")`에 의해 다시 `PlayerShip + QueryAndPhysics + Pawn Block`으로 돌아간다.
+
+이번 세 Collision 실험은 실제 contact를 제거한 실험으로 인정할 수 없다. Character가 계속 설 수 있었고 결과가 완전히 같았던 이유도 이 강제 재설정으로 설명된다.
+
+`Based Movement Ignore Physics Base=true`가 효과 없었던 결과는 유효하다. 따라서 based-movement가 자기 base를 sweep하는 세부 경로는 주원인 우선순위가 낮아졌지만, Character-Ship blocking contact 자체는 아직 반증되지 않았다.
+
+#### 다음 실험 — 소스 수정 없이 실제 런타임 값을 바꾸는 방법
+
+1. PIE 시작 후 Eject하여 **실행 중인 Ship 인스턴스**의 `BuoyancyRoot`를 선택한다.
+2. 다음 런타임 값을 확인한다.
+   - Collision Profile Name
+   - Collision Enabled
+   - Pawn response
+3. 예상값은 `PlayerShip / QueryAndPhysics / Pawn Block`이다. 이 값이면 BeginPlay overwrite가 실측 확인된다.
+4. BP 진단 그래프를 사용할 경우 Event BeginPlay 즉시가 아니라 짧은 `Delay` 뒤 `BuoyancyRoot`에 다음 중 하나를 적용한다.
+   - `Set Collision Enabled: NoCollision`, 또는
+   - `Set Collision Response To Channel: Pawn → Ignore`
+   C++ `AShip::BeginPlay()`의 강제 profile 설정이 끝난 뒤 실행되도록 해야 한다.
+5. 가장 명확한 진단은 Delay 뒤 `NoCollision`이다.
+   - Player가 배를 통과하고 요동도 사라짐: 실제 Ship blocking contact가 trigger.
+   - Player가 계속 섬: 다른 component가 floor를 제공함.
+   - Player는 통과하지만 Ship은 계속 요동: contact와 별개로 Network Physics resim 결함이 단독으로 폭주함.
+6. Player CharacterMovement의 `GetMovementBase()`를 Print String하여 실제 component 이름을 확인한다.
+   - `BuoyancyRoot`이면 위 delayed runtime 변경 대상으로 확정한다.
+   - 다른 mesh/collision component이면 그 component의 runtime Collision Enabled/Pawn response를 검사해야 한다.
+
+#### 해결 방향에 미치는 영향
+
+- 아직 Character-Ship contact 가설은 폐기하지 않는다. 이번 Custom/Pawn Ignore 테스트는 런타임에 적용되지 않았을 가능성이 코드로 증명됐다.
+- 런타임 `NoCollision` 분리 실험이 먼저다.
+- contact가 trigger로 확정되면 `BuoyancyRoot Pawn Ignore + 별도 QueryOnly deck floor` 구조를 검토한다.
+- contact를 완전히 제거해도 요동하면 우선순위를 M17의 반복 `FrameOffset=Missing` resim 결함으로 이동한다.
+
+### 2026-07-13 — 승선 요동 4차 실험: Pawn Blocking Contact가 trigger로 확정
+
+#### 확정 실험
+
+- Project Settings의 `PlayerShip` collision profile 자체에서 Pawn response를 Ignore로 변경했다.
+- 이번에는 C++ BeginPlay가 다시 `PlayerShip`을 적용해도 수정된 profile 내용이 사용되므로 실제 런타임 변경이다.
+- 결과:
+  - Player는 Ship을 그대로 통과했다.
+  - Ship은 아무 요동 없이 정상적으로 물 위에 떠 있었다.
+
+판정:
+
+- `BuoyancyRoot`와 Player Capsule 사이의 Pawn Blocking Contact가 극심한 네트워크 PIE 요동의 trigger임이 실험으로 확정됐다.
+- `Based Movement Ignore Physics Base`, StandingDownwardForce, 초기 teleport penetration, 일반 부력값은 단독 주원인이 아니다.
+- Network Physics의 불완전한 resim은 contact가 만든 작은 서버/클라이언트 차이를 큰 correction loop로 증폭하는 2차 원인이다.
+
+#### Physics Interaction을 껐는데도 힘이 전달되는 이유
+
+`CharacterMovement.bEnablePhysicsInteraction=false`가 차단하는 것은 CharacterMovement가 명시적으로 호출하는 다음 힘들이다.
+
+- PushForce
+- TouchForce
+- StandingDownwardForce
+- RepulsionForce
+
+그러나 Capsule의 Pawn channel과 Ship의 collision response가 Block이면 Chaos collision solver는 두 shape가 서로 관통하지 않도록 contact constraint를 해결해야 한다.
+
+Character Capsule은 일반적인 dynamic rigid body가 아니라 CharacterMovement가 위치를 직접 갱신하는 kinematic 성격의 collider다. 움직이는 kinematic collider가 dynamic Ship을 침범하거나 밀면 solver는 Capsule을 질량이 매우 큰/위치가 강제된 물체처럼 취급하고, 움직일 수 있는 Ship 쪽을 밀어내 contact를 해결할 수 있다. 이것은 CharacterMovement의 PushForce 옵션과 별개의 물리 충돌 반응이다.
+
+네트워크에서는 더 심해진다.
+
+1. 서버 Character Capsule과 autonomous client Capsule의 위치·착지 시점·based movement가 완전히 같지 않다.
+2. 서버 Ship과 simulated-proxy client Ship이 서로 다른 kinematic contact impulse/depenetration을 받는다.
+3. 이 Player contact는 `FNetInputShip` history에 기록되지 않는다.
+4. server state가 도착해 Ship만 rewind해도 Character Capsule은 동일한 과거 frame contact로 함께 rewind/replay되지 않는다.
+5. 현재 resim에는 `FrameOffset=Missing`으로 custom 부력이 빠지는 구간도 있다.
+6. 결과적으로 contact가 만든 작은 차이가 5 cm rollback을 반복 호출하며 큰 화면 요동으로 증폭된다.
+
+Standalone에서는 한 세계의 contact만 존재하고 server correction/rewind가 없으므로 동일한 blocking contact가 배를 약간 기울이는 일반 물리 반응으로 끝난다.
+
+#### 권장 해결 구조: 물리 선체와 보행 충돌 분리
+
+최종 구조의 목표는 Character가 갑판 위에 설 수는 있지만 Capsule이 Chaos Ship rigid body에 직접 contact impulse를 만들지 않게 하는 것이다.
+
+1. 실제 물리 몸체인 `BuoyancyRoot`/`PlayerShip`은 Pawn Ignore를 유지한다.
+2. Ship에 별도의 갑판/난간 collision component를 둔다.
+   - `Collision Enabled = Query Only`
+   - `Simulate Physics = false`
+   - Pawn = Block
+   - 필요 없는 다른 channel = Ignore
+   - `Can Character Step Up On = Yes`
+   - `BuoyancyRoot`에 attachment만 하고 physics weld는 하지 않는다.
+3. CharacterMovement의 floor sweep와 이동 sweep는 QueryOnly deck/rail을 Block으로 인식하므로 Player는 갑판에 서고 난간에 막힌다.
+4. QueryOnly component는 Chaos rigid-body contact에 참여하지 않으므로 Player Capsule이 실제 물리 Ship에 impulse를 전달하지 않는다.
+
+BP에서 빠르게 구성하려면 갑판에는 얇은 Box Collision 여러 개, 난간에는 세로 Box Collision을 두는 방식이 가장 예측 가능하다. 복잡한 선체 mesh collision을 복제하는 것보다 보행 영역만 단순 shape로 만드는 편이 네트워크와 CharacterMovement 모두 안정적이다.
+
+검증 체크리스트:
+
+- PlayerShip profile의 Pawn Ignore 유지.
+- QueryOnly deck 위에서 Player가 서고 걸을 수 있음.
+- 난간 QueryOnly collision이 Player를 막음.
+- Player 착지/걷기/점프/난간 충돌 후 Ship Network Physics mismatch와 화면 요동이 발생하지 않음.
+- `GetMovementBase()`가 `BuoyancyRoot`가 아니라 새 QueryOnly deck component를 반환하는지 확인.
+
+#### 탑승자 무게를 Ship에 반영하고 싶은 경우
+
+QueryOnly deck 구조는 raw contact impulse를 제거하므로 Player 체중이 자동으로 Ship에 전달되지 않는다. 체중 효과가 필요하면 비결정적 capsule contact를 다시 켜지 말고 다음 정보를 Ship Network Physics input/history에 넣는다.
+
+- 탑승자 질량
+- Ship 기준 상대 위치
+- 접지 여부
+- 해당 server frame
+
+그 뒤 custom PT에서 `Mass × Gravity` 힘과 상대 위치 기반 torque를 동일 server frame에 결정론적으로 적용한다. 이렇게 해야 server/client normal simulation과 rollback이 같은 승객 하중을 재생할 수 있다.
+
+#### 별도 잔여 결함
+
+Pawn contact를 분리하면 현재 사용자-visible 폭주는 해결될 가능성이 높지만, M17 resim의 반복 `FrameOffset=Missing`은 독립된 Network Physics 결함으로 남는다. Player 외의 외부 충돌이나 큰 correction에서도 문제가 재발할 수 있으므로 이후 별도로 수정·검증해야 한다.
+
+### 2026-07-13 — 승선 요동 5차 실험: QueryOnly 보행 충돌로 증상 해결
+
+#### 사용자가 적용한 최종 에디터 설정
+
+- 실제 물리 몸체 `BuoyancyRoot`/`PlayerShip` profile: Pawn Ignore 유지.
+- 별도 갑판 보행 collision:
+  - `Collision Enabled = Query Only`
+  - `Simulate Physics = false`
+  - Pawn = Block
+  - 불필요한 나머지 channel = Ignore
+  - `Can Character Step Up On = Yes`
+  - `BuoyancyRoot`에 attach
+  - `Auto Weld = false`
+
+실측 결과 Player는 배 위에 정상적으로 설 수 있고, 발을 딛거나 움직여도 이전의 극심한 Ship 진동이 사라졌다.
+
+판정:
+
+- 4차 실험에서 확정한 `Character Capsule ↔ dynamic BuoyancyRoot`의 Chaos blocking contact가 직접 trigger였다는 인과관계가 다시 확인됐다.
+- QueryOnly deck은 CharacterMovement의 floor/movement query에는 Block으로 응답하지만 rigid-body contact constraint에는 참여하지 않는다. 따라서 Player가 설 수 있으면서도 dynamic Ship에 비결정적인 contact impulse를 주지 않는다.
+- `Auto Weld=false`도 맞는 설정이다. 보행용 query shape를 물리 body에 합치지 않고 transform만 따라가게 한다.
+- 이 구성은 현재 승선 요동 문제의 실용적인 해결책으로 채택한다.
+
+#### 첨부 Client PIE 로그 정량 감사
+
+분석 구간은 `AuthServerFrame 1107~1458`, same-frame compare 56회다.
+
+- 첫 compare 한 건: 위치 `310.27 cm`, 회전 `2.473°`, 선속도 `594.23 cm/s` 차이. 바로 뒤 Player가 Swimming 상태에 진입한다. 로그가 중간부터 시작했으므로 이 한 건을 KKH_Test 초기 낙하나 승선 접촉 중 어느 하나로 확정할 수는 없으며, 큰 교란/초기 history 불일치 1회로 분리해서 본다.
+- 위 1회를 제외한 55회:
+  - MATCH 5회, MISMATCH 50회
+  - 평균 위치 오차 `5.95 cm`
+  - 최소 `0.55 cm`, 최대 `8.96 cm`
+  - 최대 회전 오차 `0.368°`
+  - 최대 선속도 차이 `126.21 cm/s`
+  - 최대 각속도 차이 `3.947 deg/s`
+- `SF >= 1200`의 안정 구간 43회도 평균 `5.89 cm`, 최대 `8.96 cm`로 비슷하다. 즉 처음 한 번의 310 cm spike가 사라진 뒤 발산하지 않고 작은 범위에 머문다.
+- 이전 Pawn contact 로그의 후반 구간은 평균 `8.45 cm`, 최대 `17.06 cm`, 최대 각속도 차이 `5.127 deg/s`였다. 이번에는 특히 최대 위치/회전 편차가 줄었고 사용자 화면에서도 폭주가 사라졌으므로 contact 분리 효과가 수치와 육안 양쪽에서 일치한다.
+
+#### 로그에 아직 남은 문제
+
+화면상 승선 진동은 해결됐지만 Network Physics가 완전히 수렴한 로그는 아니다.
+
+1. 위치 임계치가 `5.00 cm`라서 steady 구간 평균 `5.95 cm`도 계속 threshold를 넘는다. 그 결과 51회 trigger, 50회 `ApplyState`가 기록됐다. 육안으로 티가 안 나더라도 correction churn이 지속된다.
+2. resim 경로에서 `[PHYSICS-PT-WAITING] ... FrameOffset=Missing`이 12회 반복됐다. 모든 WAITING 로그가 이 원인이었으며 일회성 startup이 아니다.
+3. 이때 custom callback은 `Control-only rewind input` 상태로 진행한다. 즉 정상 frame과 동일한 시간/부력 계산을 완전하게 replay하지 못하는 기존 M17 잔여 결함이 그대로다.
+4. `[SHIP-SYNC] LocDiff 40~60 cm`는 서로 다른 시점의 현재 Actor transform과 최근 replicated state를 비교하는 보조 지표이므로, same-frame 오차 `5~9 cm`와 동일한 값으로 해석하지 않는다.
+
+따라서 현재 상태는 다음처럼 구분한다.
+
+- **승선 collision 버그:** 해결됨.
+- **일반 플레이 체감 안정성:** 이번 짧은 구간에서는 정상.
+- **Network Physics 완전 동기화/rollback 재현성:** 미완료. 5 cm 주변의 반복 보정과 `FrameOffset=Missing`을 별도로 해결해야 함.
+
+#### 다음 검증 및 우선순위
+
+1. 현재 QueryOnly deck 구조는 유지한다. Pawn blocking contact를 `BuoyancyRoot`에 다시 켜지 않는다.
+2. PIE에서 `GetMovementBase()`가 새 QueryOnly deck component인지 확인한다.
+3. Client 승선 후 걷기, 점프, 난간 충돌, 장시간 대기, late join을 반복해 visible 진동이 재발하지 않는지 확인한다.
+4. 다음 코드 작업의 우선순위는 collision tuning이 아니라 resim 중 exact tick offset이 사라지는 경로를 고쳐 `FrameOffset=Missing=0`으로 만드는 것이다.
+5. 그 뒤 같은 테스트에서 MISMATCH/ApplyState 빈도와 steady-state same-frame 오차를 다시 측정한다. 임계치를 단순히 올리는 것은 결함을 가릴 수 있으므로 offset/replay 경로를 먼저 수정한다.
