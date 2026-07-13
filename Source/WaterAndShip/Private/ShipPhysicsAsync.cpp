@@ -67,17 +67,52 @@ void FShipPhysicsAsync::ApplyInput_Internal(const FNetInputShip& Input)
 	MovementInput_Internal = Input.MovementInput;
 	SteeringInput_Internal = Input.SteeringInput;
 
-	CachedPontoonOffsets = Input.PontoonOffsets;
-	CachedGerstnerWaves = Input.GerstnerWaves;
-	CachedGravityZ = Input.GravityZ;
-	CachedLateralDrag = Input.LateralDrag;
-	CachedForwardForce = Input.ForwardForceValue;
-	CachedTurnTorque = Input.TurnTorqueValue;
-	CachedSpeedMultiplier = Input.SpeedMultiplier;
-	CachedBuoyancyRadius = Input.BuoyancyRadius;
-	CachedBuoyancyForceMultiplier = Input.BuoyancyForceMultiplier;
-	CachedWaterDamping = Input.WaterDamping;
-	CachedWaterDamping2 = Input.WaterDamping2;
+	// 네트워크 복제 패킷의 빈 깡통 데이터가 로컬의 유효한 물리/파도 캐시를 날려버리지 않도록 유효성 방어
+	if (Input.PontoonOffsets.Num() > 0)
+	{
+		CachedPontoonOffsets = Input.PontoonOffsets;
+	}
+	if (Input.GerstnerWaves.Num() > 0)
+	{
+		CachedGerstnerWaves = Input.GerstnerWaves;
+	}
+	if (FMath::Abs(Input.GravityZ) > 0.0f)
+	{
+		CachedGravityZ = Input.GravityZ;
+	}
+	if (Input.LateralDrag > 0.0f)
+	{
+		CachedLateralDrag = Input.LateralDrag;
+	}
+	if (Input.ForwardForceValue > 0.0f)
+	{
+		CachedForwardForce = Input.ForwardForceValue;
+	}
+	if (Input.TurnTorqueValue > 0.0f)
+	{
+		CachedTurnTorque = Input.TurnTorqueValue;
+	}
+	if (Input.SpeedMultiplier > 0.0f)
+	{
+		CachedSpeedMultiplier = Input.SpeedMultiplier;
+	}
+	if (Input.BuoyancyRadius > 0.0f)
+	{
+		CachedBuoyancyRadius = Input.BuoyancyRadius;
+	}
+	if (Input.BuoyancyForceMultiplier > 0.0f)
+	{
+		CachedBuoyancyForceMultiplier = Input.BuoyancyForceMultiplier;
+	}
+	if (Input.WaterDamping > 0.0f)
+	{
+		CachedWaterDamping = Input.WaterDamping;
+	}
+	if (Input.WaterDamping2 > 0.0f)
+	{
+		CachedWaterDamping2 = Input.WaterDamping2;
+	}
+
 	if (Input.SpawnWorldTime >= 0.0f)
 	{
 		if (CachedSpawnWorldTime < 0.0f)
@@ -156,10 +191,10 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 	if (Chaos::FPhysicsSolverBase* CurrentSolver = GetSolver())
 	{
 		bIsResimming = CurrentSolver->IsResimming();
+		CurrentPhysicsStep = PhysicsStep;
+
 		if (!bIsResimming)
 		{
-			CurrentPhysicsStep = PhysicsStep;
-
 			const FAsyncInputShip* AsyncInput = GetConsumerInput_Internal();
 			/*if (CurrentPhysicsStep % 60 == 0)
 			{
@@ -240,6 +275,20 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 	// 잠자기 방지 설정
 	ParticleHandle->SetSleepType(Chaos::ESleepType::NeverSleep);
 
+	// 서버-클라이언트 간의 실시간 물리/파도 파라미터 Desync 정밀 진단 로그
+	if (CurrentPhysicsStep % 60 == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT-PARAMS] Step: %d | IsResim: %s | Waves: %d | Pontoons: %d | Radius: %.2f | Multiplier: %.2f | Damp: %.2f | Damp2: %.2f"),
+			CurrentPhysicsStep,
+			bIsResimming ? TEXT("True") : TEXT("False"),
+			CachedGerstnerWaves.Num(),
+			CachedPontoonOffsets.Num(),
+			CachedBuoyancyRadius,
+			CachedBuoyancyForceMultiplier,
+			CachedWaterDamping,
+			CachedWaterDamping2);
+	}
+
 	// 1. 결정론적 타임스탬프 계산 (Spawn 절대 월드 시간 오프셋 적용하여 파고 동기화 정밀도 보장)
 	float SimTime = 0.0f;
 	if (CachedSpawnWorldTime >= 0.0f && CachedSpawnPhysicsStep >= 0)
@@ -317,14 +366,14 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 				FVector PontoonVelocity = ParticleHandle->GetV() + FVector::CrossProduct(ParticleHandle->GetW(), PontoonWorldPos - ActorLocation);
 				float VelocityZ = PontoonVelocity.Z;
 
-				// 1차 및 2차 감쇄력 연산
+				// 1차 및 2차 감쇄력 연산 (엔진 순정 공식 복원)
 				float FirstOrderDrag = CachedWaterDamping * VelocityZ;
 				float SecondOrderDrag = FMath::Sign(VelocityZ) * CachedWaterDamping2 * VelocityZ * VelocityZ;
-				float DampingFactorZ = -(FirstOrderDrag + SecondOrderDrag);
+				float DampingFactorZ = -FMath::Max(FirstOrderDrag + SecondOrderDrag, 0.f);
 
-				// 부력 합산 및 댐핑 적용 (상승 속도 억제 제동력이 씹히지 않도록 클램프 완화)
+				// 부력 합산 및 댐핑 적용 (순정 클램핑 복원)
 				float PontoonForceZ = (SubVolume * CachedBuoyancyForceMultiplier) + DampingFactorZ;
-				PontoonForceZ = FMath::Max(PontoonForceZ, -50000.f);
+				PontoonForceZ = FMath::Max(PontoonForceZ, 0.f);
 
 				FVector PontoonTotalForce = FVector::UpVector * PontoonForceZ;
 

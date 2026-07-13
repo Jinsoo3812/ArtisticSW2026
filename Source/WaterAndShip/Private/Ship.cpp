@@ -106,7 +106,7 @@ AShip::AShip()
 	}
 
 	bReplicates = true;
-	SetReplicateMovement(false); // standard movement replication 비활성화 (Network Physics Component의 롤백 재시뮬레이션과 충돌 방지)
+	SetReplicateMovement(true); // standard movement replication 활성화 (Iris 비활성화 상태 하의 Simulated Proxy 롤백 채널 확보)
 	bAlwaysRelevant = true;
 }
 
