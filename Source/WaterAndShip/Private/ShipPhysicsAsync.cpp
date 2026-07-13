@@ -3,8 +3,8 @@
 #include "PBDRigidsSolver.h"
 #include "Chaos/ParticleHandle.h"
 #include "Chaos/PhysicsObject.h"
-#include "PhysicsProxy/SingleParticlePhysicsProxy.h"
-
+#include "Chaos/DebugDrawQueue.h"
+#include "HAL/IConsoleManager.h"
 
 FShipPhysicsAsync::FShipPhysicsAsync()
 {
@@ -78,8 +78,14 @@ void FShipPhysicsAsync::ApplyInput_Internal(const FNetInputShip& Input)
 	CachedBuoyancyForceMultiplier = Input.BuoyancyForceMultiplier;
 	CachedWaterDamping = Input.WaterDamping;
 	CachedWaterDamping2 = Input.WaterDamping2;
-	CachedSpawnWorldTime = Input.SpawnWorldTime;
-	CachedSpawnPhysicsStep = Input.SpawnPhysicsStep;
+	if (Input.SpawnWorldTime >= 0.0f)
+	{
+		if (CachedSpawnWorldTime < 0.0f)
+		{
+			CachedSpawnWorldTime = Input.SpawnWorldTime;
+			CachedSpawnPhysicsStep = CurrentPhysicsStep;
+		}
+	}
 
 	if (CurrentPhysicsStep % 60 == 0)
 	{
@@ -155,11 +161,11 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 			CurrentPhysicsStep = PhysicsStep;
 
 			const FAsyncInputShip* AsyncInput = GetConsumerInput_Internal();
-			if (CurrentPhysicsStep % 60 == 0)
+			/*if (CurrentPhysicsStep % 60 == 0)
 			{
 				UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] ProcessInputs_Internal - Step: %d | AsyncInput: %s"), 
 					CurrentPhysicsStep, AsyncInput ? TEXT("Valid") : TEXT("Null"));
-			}
+			}*/
 
 			if (AsyncInput)
 			{
@@ -198,10 +204,10 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 	// 안전장치: PhysicsObject 유효성 검사 최우선 배치로 레이스 컨디션 차단
 	if (!PhysicsObject)
 	{
-		if (CurrentPhysicsStep % 60 == 0)
+		/*if (CurrentPhysicsStep % 60 == 0)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] ProcessInputs_Internal - Step: %d | PhysicsObject: Null (Skip Simulation)"), CurrentPhysicsStep);
-		}
+		}*/
 		return;
 	}
 
@@ -209,27 +215,27 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 	Chaos::FPBDRigidParticleHandle* ParticleHandle = Interface.GetRigidParticle(PhysicsObject);
 	if (!ParticleHandle)
 	{
-		if (CurrentPhysicsStep % 60 == 0)
+		/*if (CurrentPhysicsStep % 60 == 0)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] ProcessInputs_Internal - Step: %d | ParticleHandle is NULL!"), CurrentPhysicsStep);
-		}
+		}*/
 		return;
 	}
 	if (ParticleHandle->Disabled())
 	{
-		if (CurrentPhysicsStep % 60 == 0)
+		/*if (CurrentPhysicsStep % 60 == 0)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] ProcessInputs_Internal - Step: %d | ParticleHandle is DISABLED!"), CurrentPhysicsStep);
-		}
+		}*/
 		return;
 	}
 
 	// 60틱 주기 정밀 상태 모니터링 로그
-	if (CurrentPhysicsStep % 60 == 0)
+	/*if (CurrentPhysicsStep % 60 == 0)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] ProcessInputs_Internal - Step: %d | PhysicsObject: Valid | IsSleeping: %s | IsResimming: %s"), 
 			CurrentPhysicsStep, ParticleHandle->Sleeping() ? TEXT("True") : TEXT("False"), bIsResimming ? TEXT("True") : TEXT("False"));
-	}
+	}*/
 
 	// 잠자기 방지 설정
 	ParticleHandle->SetSleepType(Chaos::ESleepType::NeverSleep);
@@ -248,11 +254,11 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 	FVector ActorLocation = ParticleHandle->GetX();
 	FQuat ActorRotation = ParticleHandle->GetR();
 
-	if (bIsResimming)
+	/*if (bIsResimming)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] RESIMULATE TICK - Step: %d | SimTime: %.4f | Loc: %s"), 
 			CurrentPhysicsStep, SimTime, *ActorLocation.ToString());
-	}
+	}*/
 
 	// 2. 가로축 수력 드래그 (Lateral Hydrodynamic Drag) 계산 및 적용
 	if (CachedLateralDrag > 0.0f)
@@ -316,33 +322,34 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 				float SecondOrderDrag = FMath::Sign(VelocityZ) * CachedWaterDamping2 * VelocityZ * VelocityZ;
 				float DampingFactorZ = -(FirstOrderDrag + SecondOrderDrag);
 
-				// 부력 합산 및 최하단 클램핑 (음수 힘 방지)
-				float PontoonForceZ = SubVolume * CachedBuoyancyForceMultiplier + DampingFactorZ;
-				PontoonForceZ = FMath::Max(PontoonForceZ, 0.f);
+				// 부력 합산 및 댐핑 적용 (상승 속도 억제 제동력이 씹히지 않도록 클램프 완화)
+				float PontoonForceZ = (SubVolume * CachedBuoyancyForceMultiplier) + DampingFactorZ;
+				PontoonForceZ = FMath::Max(PontoonForceZ, -50000.f);
 
 				FVector PontoonTotalForce = FVector::UpVector * PontoonForceZ;
 
 				TotalBuoyancyForce += PontoonTotalForce;
 				TotalBuoyancyTorque += FVector::CrossProduct(PontoonWorldPos - ActorLocation, PontoonTotalForce);
 			}
+
 		}
 
 		ParticleHandle->AddForce(TotalBuoyancyForce);
 		ParticleHandle->AddTorque(TotalBuoyancyTorque);
 
-		if (CurrentPhysicsStep % 60 == 0)
+		/*if (CurrentPhysicsStep % 60 == 0)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] Buoyancy Applied - Step: %d | ForceZ: %.2f | Torq: %s | Pontoons: %d | Waves: %d"),
 				CurrentPhysicsStep, TotalBuoyancyForce.Z, *TotalBuoyancyTorque.ToString(), CachedPontoonOffsets.Num(), CachedGerstnerWaves.Num());
-		}
+		}*/
 	}
 	else
 	{
-		if (CurrentPhysicsStep % 60 == 0)
+		/*if (CurrentPhysicsStep % 60 == 0)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] Buoyancy Skipped - Step: %d | Pontoons: %d | Waves: %d"),
 				CurrentPhysicsStep, CachedPontoonOffsets.Num(), CachedGerstnerWaves.Num());
-		}
+		}*/
 	}
 
 	// 4. 명시적 중력(Gravity) 적용 (물리 스레드 내 엔진 중력 증발 현상 대응)
@@ -352,11 +359,11 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 		FVector GravityForce = FVector(0.f, 0.f, CachedGravityZ) * Mass;
 		ParticleHandle->AddForce(GravityForce);
 
-		if (CurrentPhysicsStep % 60 == 0)
+		/*if (CurrentPhysicsStep % 60 == 0)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT-GRAVITY] Step: %d | InvMass: %.6f | Mass: %.2f | GravityZ: %.2f | GravityForceZ: %.2f"),
 				CurrentPhysicsStep, InvMass, Mass, CachedGravityZ, GravityForce.Z);
-		}
+		}*/
 	}
 
 	// 4. WASD 조작 물리 추진력 적용
@@ -377,6 +384,18 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 		{
 			ParticleHandle->AddTorque(FVector(0.f, 0.f, CachedTurnTorque * SteeringInput_Internal * CachedSpeedMultiplier));
 		}
+	}
+
+	// [PT-RESIM] 서버-클라이언트 롤백 리심 상태 정밀 진단용 60틱 로그
+	// [PT-RESIM] 서버-클라이언트 롤백 리심 상태 및 SimTime 시간 위상 대조용 60틱 로그
+	if (CurrentPhysicsStep % 60 == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PT-RESIM] Step: %d | IsResimming: %s | SimTime: %.4f | Pos: %s | Vel: %s"),
+			CurrentPhysicsStep, 
+			bIsResimming ? TEXT("TRUE") : TEXT("FALSE"),
+			SimTime,
+			*ParticleHandle->GetX().ToString(),
+			*ParticleHandle->GetV().ToString());
 	}
 }
 

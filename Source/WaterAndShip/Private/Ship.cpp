@@ -29,6 +29,8 @@
 #include "Chaos/PhysicsObject.h"
 #include "Interfaces/IPhysicsComponent.h"
 #include "GameFramework/GameStateBase.h"
+#include "DrawDebugHelpers.h"
+
 
 
 
@@ -221,6 +223,37 @@ void AShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+#if !UE_SERVER
+	if (!IsRunningDedicatedServer())
+	{
+		if (UBuoyancyComponent* BuoyancyComp = Cast<UBuoyancyComponent>(GetComponentByClass(UBuoyancyComponent::StaticClass())))
+		{
+			FVector ShipLocation = GetActorLocation();
+			FRotator ShipRotation = GetActorRotation();
+
+			// 1. 클라이언트 로컬 물리 위치 기준 폰툰 (연두색 - Green)
+			for (const FSphericalPontoon& Pontoon : BuoyancyComp->BuoyancyData.Pontoons)
+			{
+				FVector PontoonLocalWorldPos = ShipLocation + ShipRotation.RotateVector(Pontoon.RelativeLocation);
+				DrawDebugSphere(GetWorld(), PontoonLocalWorldPos, Pontoon.Radius, 8, FColor::Green, false, 0.0f, 0, 1.5f);
+			}
+
+			// 2. 서버 공인 복제 위치 기준 폰툰 (빨간색 - Red)
+			if (!HasAuthority())
+			{
+				FVector RepLocation = ReplicatedState.Location;
+				FRotator RepRotation = ReplicatedState.Rotation;
+				for (const FSphericalPontoon& Pontoon : BuoyancyComp->BuoyancyData.Pontoons)
+				{
+					FVector PontoonRepWorldPos = RepLocation + RepRotation.RotateVector(Pontoon.RelativeLocation);
+					// 로컬 물리 구체와 구분되도록 크기를 살짝 줄여 드로우
+					DrawDebugSphere(GetWorld(), PontoonRepWorldPos, Pontoon.Radius * 0.9f, 8, FColor::Red, false, 0.0f, 0, 1.5f);
+				}
+			}
+		}
+	}
+#endif
+
 	if (ShipPhysicsAsync)
 	{
 		// 1. 조작 입력 데이터 마샬링 (Autonomous Proxy 및 Local Controller 전용)
@@ -322,20 +355,31 @@ void AShip::Tick(float DeltaTime)
 				AsyncInput->WaterDamping = WaterDamping;
 				AsyncInput->WaterDamping2 = WaterDamping2;
 
-				if (AGameStateBase* GameState = GetWorld()->GetGameState())
+				static bool bSpawnTimeSent = false;
+				float WorldTimeToSend = -1.0f;
+				if (!bSpawnTimeSent)
 				{
-					AsyncInput->SpawnWorldTime = GameState->GetServerWorldTimeSeconds();
+					if (AGameStateBase* GameState = GetWorld()->GetGameState())
+					{
+						WorldTimeToSend = GameState->GetServerWorldTimeSeconds();
+						if (WorldTimeToSend > 0.0f)
+						{
+							bSpawnTimeSent = true;
+						}
+					}
+					else
+					{
+						WorldTimeToSend = GetWorld()->GetTimeSeconds();
+						bSpawnTimeSent = true;
+					}
 				}
-				else
-				{
-					AsyncInput->SpawnWorldTime = GetWorld()->GetTimeSeconds();
-				}
+				AsyncInput->SpawnWorldTime = WorldTimeToSend;
 
-				if (GFrameCounter % 60 == 0)
+				/*if (GFrameCounter % 60 == 0)
 				{
 					UE_LOG(LogTemp, Warning, TEXT("[GT-Serialize] Sending Input - Waves: %d | Pontoons: %d | SpTime: %.3f"), 
 						AsyncInput->GerstnerWaves.Num(), AsyncInput->PontoonOffsets.Num(), AsyncInput->SpawnWorldTime);
-				}
+				}*/
 			}
 
 			// B. Simulated Proxy 등 입력 복제가 씹히는 피어들을 위해, 물리 스레드 내부 멤버 변수(캐시) 강제 다이렉트 주입!
@@ -371,7 +415,7 @@ void AShip::Tick(float DeltaTime)
 			{
 				LogTimer = 0.0f;
 				float Dist = FVector::Dist(GetActorLocation(), ReplicatedState.Location);
-				UE_LOG(LogTemp, Warning, TEXT("[CLIENT-GT] Ship Location vs Server RepLocation - Diff: %.2f cm | ActorLoc: %s | RepLoc: %s"), 
+				UE_LOG(LogTemp, Warning, TEXT("[SHIP-SYNC] LocDiff: %.2f cm | ActorLoc: %s | RepLoc: %s"), 
 					Dist, *GetActorLocation().ToString(), *ReplicatedState.Location.ToString());
 			}
 		}
