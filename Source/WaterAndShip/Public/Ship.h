@@ -17,26 +17,12 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 	FNetInputShip() 
 		: MovementInput(0.f)
 		, SteeringInput(0.f)
-		, GravityZ(-980.f)
-		, LateralDrag(0.5f)
-		, ForwardForceValue(500000.f)
-		, TurnTorqueValue(20000000.f)
-		, SpeedMultiplier(1.0f)
-		, BuoyancyRadius(100.f)
-		, BuoyancyForceMultiplier(1.2f)
-		, WaterDamping(3.0f)
-		, SpawnWorldTime(-1.f)
-		, SpawnPhysicsStep(-1)
 	{}
 
 	void Reset()
 	{
 		MovementInput = 0.0f;
 		SteeringInput = 0.0f;
-		PontoonOffsets.Empty();
-		GerstnerWaves.Empty();
-		SpawnWorldTime = -1.0f;
-		SpawnPhysicsStep = -1;
 	}
 
 	UPROPERTY()
@@ -45,42 +31,12 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 	UPROPERTY()
 	float SteeringInput;
 
-	// 로컬 마샬링 전용 비복제 물리/부력 필드들 (NetSerialize에서는 스킵)
-	TArray<FVector> PontoonOffsets;
-	TArray<FGerstnerWave> GerstnerWaves;
-	float GravityZ;
-	float LateralDrag;
-	float ForwardForceValue;
-	float TurnTorqueValue;
-	float SpeedMultiplier;
-	float BuoyancyRadius;
-	float BuoyancyForceMultiplier;
-	float WaterDamping;
-	float WaterDamping2;
-	float SpawnWorldTime;
-	int32 SpawnPhysicsStep;
-
 	virtual void InterpolateData(const FNetworkPhysicsPayload& MinData, const FNetworkPhysicsPayload& MaxData, float LerpAlpha) override
 	{
 		const FNetInputShip& MinInput = static_cast<const FNetInputShip&>(MinData);
 		const FNetInputShip& MaxInput = static_cast<const FNetInputShip&>(MaxData);
 		MovementInput = FMath::Lerp(MinInput.MovementInput, MaxInput.MovementInput, LerpAlpha);
 		SteeringInput = FMath::Lerp(MinInput.SteeringInput, MaxInput.SteeringInput, LerpAlpha);
-		
-		// 비보간 데이터는 단순 이전/이후 값 대입
-		PontoonOffsets = MaxInput.PontoonOffsets;
-		GerstnerWaves = MaxInput.GerstnerWaves;
-		GravityZ = MaxInput.GravityZ;
-		LateralDrag = MaxInput.LateralDrag;
-		ForwardForceValue = MaxInput.ForwardForceValue;
-		TurnTorqueValue = MaxInput.TurnTorqueValue;
-		SpeedMultiplier = MaxInput.SpeedMultiplier;
-		BuoyancyRadius = MaxInput.BuoyancyRadius;
-		BuoyancyForceMultiplier = MaxInput.BuoyancyForceMultiplier;
-		WaterDamping = MaxInput.WaterDamping;
-		WaterDamping2 = MaxInput.WaterDamping2;
-		SpawnWorldTime = MaxInput.SpawnWorldTime;
-		SpawnPhysicsStep = MaxInput.SpawnPhysicsStep;
 	}
 
 	virtual void MergeData(const FNetworkPhysicsPayload& FromData) override
@@ -88,25 +44,41 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		const FNetInputShip& FromInput = static_cast<const FNetInputShip&>(FromData);
 		MovementInput = FromInput.MovementInput;
 		SteeringInput = FromInput.SteeringInput;
-		
-		PontoonOffsets = FromInput.PontoonOffsets;
-		GerstnerWaves = FromInput.GerstnerWaves;
-		GravityZ = FromInput.GravityZ;
-		LateralDrag = FromInput.LateralDrag;
-		ForwardForceValue = FromInput.ForwardForceValue;
-		TurnTorqueValue = FromInput.TurnTorqueValue;
-		SpeedMultiplier = FromInput.SpeedMultiplier;
-		BuoyancyRadius = FromInput.BuoyancyRadius;
-		BuoyancyForceMultiplier = FromInput.BuoyancyForceMultiplier;
-		WaterDamping = FromInput.WaterDamping;
-		WaterDamping2 = FromInput.WaterDamping2;
-		SpawnWorldTime = FromInput.SpawnWorldTime;
-		SpawnPhysicsStep = FromInput.SpawnPhysicsStep;
 	}
 
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
 	{
-		bOutSuccess = true;
+		// FInstancedStruct calls this native serializer directly, so inherited
+		// FNetworkPhysicsPayload fields are not serialized automatically.
+		// ServerFrame is the identity used to map authoritative data to the
+		// matching client rewind-history frame.
+		uint32 PackedServerFrame = 0;
+		if (Ar.IsSaving())
+		{
+			if (!ensureMsgf(ServerFrame >= -1, TEXT("FNetInputShip cannot serialize invalid ServerFrame %d"), ServerFrame))
+			{
+				bOutSuccess = false;
+				return false;
+			}
+
+			PackedServerFrame = static_cast<uint32>(static_cast<int64>(ServerFrame) + 1);
+		}
+
+		Ar.SerializeIntPacked(PackedServerFrame);
+
+		if (Ar.IsLoading())
+		{
+			const int64 DecodedServerFrame = static_cast<int64>(PackedServerFrame) - 1;
+			if (!ensureMsgf(DecodedServerFrame <= MAX_int32, TEXT("FNetInputShip received invalid packed ServerFrame %u"), PackedServerFrame))
+			{
+				bOutSuccess = false;
+				return false;
+			}
+
+			ServerFrame = static_cast<int32>(DecodedServerFrame);
+			LocalFrame = ServerFrame;
+		}
+
 		if (Ar.IsSaving())
 		{
 			int8 QuantizedMove = FMath::Clamp(FMath::RoundToInt(MovementInput * 127.f), -128, 127);
@@ -123,7 +95,19 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 			MovementInput = static_cast<float>(QuantizedMove) / 127.f;
 			SteeringInput = static_cast<float>(QuantizedSteer) / 127.f;
 		}
-		return true;
+
+		bOutSuccess = !Ar.IsError();
+		if (bOutSuccess && ServerFrame > 0 && (ServerFrame <= 5 || ServerFrame % 60 == 0))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[NETPHYS-FRAME-INPUT] Direction=%s ServerFrame=%d LocalFrame=%d Move=%.3f Steer=%.3f"),
+				Ar.IsLoading() ? TEXT("Load") : TEXT("Save"),
+				ServerFrame,
+				LocalFrame,
+				MovementInput,
+				SteeringInput);
+		}
+
+		return bOutSuccess;
 	}
 };
 
@@ -146,6 +130,8 @@ struct FNetStatePhysicsShip : public FNetworkPhysicsPayload
 		, Rotation(FQuat::Identity)
 		, LinearVelocity(FVector::ZeroVector)
 		, AngularVelocity(FVector::ZeroVector)
+		, LocationThresholdSq(25.0f) // 기본 5cm의 제곱
+		, RotationThresholdRad(0.087f) // 기본 5도의 라디안
 	{}
 
 	UPROPERTY()
@@ -160,6 +146,12 @@ struct FNetStatePhysicsShip : public FNetworkPhysicsPayload
 	UPROPERTY()
 	FVector AngularVelocity;
 
+	UPROPERTY()
+	float LocationThresholdSq;
+
+	UPROPERTY()
+	float RotationThresholdRad;
+
 	virtual void InterpolateData(const FNetworkPhysicsPayload& MinData, const FNetworkPhysicsPayload& MaxData, float LerpAlpha) override
 	{
 		const FNetStatePhysicsShip& MinState = static_cast<const FNetStatePhysicsShip&>(MinData);
@@ -169,27 +161,113 @@ struct FNetStatePhysicsShip : public FNetworkPhysicsPayload
 		Rotation = FQuat::Slerp(MinState.Rotation, MaxState.Rotation, LerpAlpha);
 		LinearVelocity = FMath::Lerp(MinState.LinearVelocity, MaxState.LinearVelocity, LerpAlpha);
 		AngularVelocity = FMath::Lerp(MinState.AngularVelocity, MaxState.AngularVelocity, LerpAlpha);
+		LocationThresholdSq = MaxState.LocationThresholdSq;
+		RotationThresholdRad = MaxState.RotationThresholdRad;
 	}
 
 	virtual bool CompareData(const FNetworkPhysicsPayload& PredictedData) const override
 	{
 		const FNetStatePhysicsShip& PredState = static_cast<const FNetStatePhysicsShip&>(PredictedData);
 
-		// 배의 롤백 트리거 위치/회전 차이 임계값
-		if (FVector::DistSquared(Position, PredState.Position) > 25.0f) return false;
-		if (Rotation.AngularDistance(PredState.Rotation) > 0.035f) return false; // 약 2도
+		// 배의 롤백 트리거 위치/회전 차이 임계값 (에디터 연동 변수 사용)
+		float TargetLocThreshold = (LocationThresholdSq > 0.0f) ? LocationThresholdSq : 25.0f;
+		float TargetRotThreshold = (RotationThresholdRad > 0.0f) ? RotationThresholdRad : 0.087f;
 
-		return true;
+		float DistSq = FVector::DistSquared(Position, PredState.Position);
+		float RotDist = Rotation.AngularDistance(PredState.Rotation);
+		float LinearVelocityDistSq = FVector::DistSquared(LinearVelocity, PredState.LinearVelocity);
+		float AngularVelocityDist = FVector::Distance(AngularVelocity, PredState.AngularVelocity);
+		const bool bPositionMatch = DistSq <= TargetLocThreshold;
+		const bool bRotationMatch = RotDist <= TargetRotThreshold;
+		bool bMatch = bPositionMatch && bRotationMatch;
+		const bool bPeriodicFrameLog = ServerFrame > 0 && (ServerFrame <= 5 || ServerFrame % 60 == 0);
+
+		if (bPeriodicFrameLog || !bMatch)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[NETPHYS-COMPARE] Result=%s AuthServerFrame=%d AuthLocalFrame=%d PredServerFrame=%d PredLocalFrame=%d Dist=%.2fcm Rot=%.3fdeg LinVel=%.2fcm/s AngVel=%.3fdeg/s"),
+				bMatch ? TEXT("MATCH") : TEXT("MISMATCH"),
+				ServerFrame,
+				LocalFrame,
+				PredState.ServerFrame,
+				PredState.LocalFrame,
+				FMath::Sqrt(DistSq),
+				FMath::RadiansToDegrees(RotDist),
+				FMath::Sqrt(LinearVelocityDistSq),
+				FMath::RadiansToDegrees(AngularVelocityDist));
+		}
+
+		// 롤백이 격발되거나(오차 초과), 평상시용 진단 출력
+		if (!bMatch)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[RESIM-COMPARE-TRIGGER] AuthServerFrame=%d AuthLocalFrame=%d PredServerFrame=%d PredLocalFrame=%d ServerPos=%s ClientHistPos=%s Dist=%.2fcm Threshold=%.2fcm Rot=%.3fdeg RotThreshold=%.3fdeg LinVel=%.2fcm/s AngVel=%.3fdeg/s PosFail=%d RotFail=%d TriggerRollback=TRUE"),
+				ServerFrame,
+				LocalFrame,
+				PredState.ServerFrame,
+				PredState.LocalFrame,
+				*Position.ToString(),
+				*PredState.Position.ToString(),
+				FMath::Sqrt(DistSq),
+				FMath::Sqrt(TargetLocThreshold),
+				FMath::RadiansToDegrees(RotDist),
+				FMath::RadiansToDegrees(TargetRotThreshold),
+				FMath::Sqrt(LinearVelocityDistSq),
+				FMath::RadiansToDegrees(AngularVelocityDist),
+				!bPositionMatch,
+				!bRotationMatch);
+		}
+
+		return bMatch;
 	}
 
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
 	{
-		bOutSuccess = true;
+		// See FNetInputShip::NetSerialize. The authoritative state is only useful
+		// when the receiver can associate it with the same predicted history frame.
+		uint32 PackedServerFrame = 0;
+		if (Ar.IsSaving())
+		{
+			if (!ensureMsgf(ServerFrame >= -1, TEXT("FNetStatePhysicsShip cannot serialize invalid ServerFrame %d"), ServerFrame))
+			{
+				bOutSuccess = false;
+				return false;
+			}
+
+			PackedServerFrame = static_cast<uint32>(static_cast<int64>(ServerFrame) + 1);
+		}
+
+		Ar.SerializeIntPacked(PackedServerFrame);
+
+		if (Ar.IsLoading())
+		{
+			const int64 DecodedServerFrame = static_cast<int64>(PackedServerFrame) - 1;
+			if (!ensureMsgf(DecodedServerFrame <= MAX_int32, TEXT("FNetStatePhysicsShip received invalid packed ServerFrame %u"), PackedServerFrame))
+			{
+				bOutSuccess = false;
+				return false;
+			}
+
+			ServerFrame = static_cast<int32>(DecodedServerFrame);
+			LocalFrame = ServerFrame;
+		}
+
 		Ar << Position;
 		Ar << Rotation;
 		Ar << LinearVelocity;
 		Ar << AngularVelocity;
-		return true;
+		Ar << LocationThresholdSq;
+		Ar << RotationThresholdRad;
+
+		bOutSuccess = !Ar.IsError();
+		if (bOutSuccess && ServerFrame > 0 && (ServerFrame <= 5 || ServerFrame % 60 == 0))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[NETPHYS-FRAME-STATE] Direction=%s ServerFrame=%d LocalFrame=%d Z=%.3f"),
+				Ar.IsLoading() ? TEXT("Load") : TEXT("Save"),
+				ServerFrame,
+				LocalFrame,
+				Position.Z);
+		}
+
+		return bOutSuccess;
 	}
 };
 
@@ -320,6 +398,12 @@ public:
 	FRotator FixedCameraRotation = FRotator(-45.0f, 0.0f, 0.0f);
 
 	// ---- Movement Parameters ----
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Physics | Replication")
+	float ResimLocationThreshold = 5.0f; // 오차 허용 거리 임계값 (cm 단위)
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Physics | Replication")
+	float ResimRotationThreshold = 5.0f; // 오차 허용 회전 임계값 (도 단위, Degree)
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Movement")
 	float ForwardForce = 500000.f;
 
@@ -402,6 +486,14 @@ protected:
 	// ---- Custom Replication State & Interp Configuration ----
 	UPROPERTY(Replicated)
 	FShipReplicatedState ReplicatedState;
+
+	// Authoritative mapping from Network Physics ServerFrame 0 to server world time.
+	// Late-joining clients combine this origin with the replicated solver step.
+	UPROPERTY(Replicated)
+	double ServerPhysicsTimeOrigin = -1.0;
+
+	UPROPERTY(Replicated)
+	float ServerPhysicsStepSeconds = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Replication")
 	float LocationInterpSpeed = 10.0f;

@@ -11,6 +11,7 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 {
 	float MovementInput = 0.0f;
 	float SteeringInput = 0.0f;
+	bool bHasLocalController = false;
 
 	TArray<FVector> PontoonOffsets;
 	TArray<FGerstnerWave> GerstnerWaves;
@@ -25,18 +26,29 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	float BuoyancyForceMultiplier = 1.2f;
 	float WaterDamping = 3.0f;
 	float WaterDamping2 = 0.1f;
+	float MaxBuoyantForce = 5000000.0f;
 
-	float SpawnWorldTime = -1.0f;
-	int32 SpawnPhysicsStep = -1;
+	double ServerPhysicsTimeOrigin = -1.0;
+	float ServerPhysicsStepSeconds = 0.0f;
+	int32 NetworkPhysicsTickOffset = 0;
+	bool bNetworkPhysicsTickOffsetAssigned = false;
+
+	float ResimLocationThreshold = 5.0f;
+	float ResimRotationThreshold = 5.0f;
 
 	void Reset()
 	{
 		MovementInput = 0.0f;
 		SteeringInput = 0.0f;
+		bHasLocalController = false;
 		PontoonOffsets.Empty();
 		GerstnerWaves.Empty();
-		SpawnWorldTime = -1.0f;
-		SpawnPhysicsStep = -1;
+		ServerPhysicsTimeOrigin = -1.0;
+		ServerPhysicsStepSeconds = 0.0f;
+		NetworkPhysicsTickOffset = 0;
+		bNetworkPhysicsTickOffsetAssigned = false;
+		ResimLocationThreshold = 5.0f;
+		ResimRotationThreshold = 5.0f;
 	}
 };
 
@@ -68,21 +80,6 @@ public:
 
 	void SetPhysicsObject(Chaos::FConstPhysicsObjectHandle InObject) { PhysicsObject = InObject; }
 
-	void SetBuoyancyStaticData_External(const TArray<FVector>& Pontoons, const TArray<FGerstnerWave>& Waves, float Gravity, float LateralDrag, float ForwardForce, float TurnTorque, float SpeedMultiplier, float BuoyancyRadius, float BuoyancyForceMultiplier, float WaterDamping, float WaterDamping2)
-	{
-		CachedPontoonOffsets = Pontoons;
-		CachedGerstnerWaves = Waves;
-		CachedGravityZ = Gravity;
-		CachedLateralDrag = LateralDrag;
-		CachedForwardForce = ForwardForce;
-		CachedTurnTorque = TurnTorque;
-		CachedSpeedMultiplier = SpeedMultiplier;
-		CachedBuoyancyRadius = BuoyancyRadius;
-		CachedBuoyancyForceMultiplier = BuoyancyForceMultiplier;
-		CachedWaterDamping = WaterDamping;
-		CachedWaterDamping2 = WaterDamping2;
-	}
-
 private:
 	// 물리 스레드 내부에서 계산할 실시간 파고 쿼리 함수 (순수 수학 연산, 100% 스레드 세이프)
 	float GetWaveHeightAtPosition_Internal(const FVector& Position, float Time, const TArray<FGerstnerWave>& Waves, float Gravity) const;
@@ -109,8 +106,15 @@ private:
 	float CachedBuoyancyForceMultiplier = 1.2f;
 	float CachedWaterDamping = 3.0f;
 	float CachedWaterDamping2 = 0.1f;
+	float CachedMaxBuoyantForce = 5000000.0f;
 
-	// 위상 동기화용 타임스탬프 캐시
-	float CachedSpawnWorldTime = -1.0f;
-	int32 CachedSpawnPhysicsStep = -1;
+	// Authoritative server-frame clock used in normal simulation and rewind.
+	double CachedServerPhysicsTimeOrigin = -1.0;
+	float CachedServerPhysicsStepSeconds = 0.0f;
+	int32 CachedNetworkPhysicsTickOffset = 0;
+	bool bHasNetworkPhysicsTickOffset = false;
+
+	// 에디터 연동 롤백 오차 임계값 캐시
+	float CachedResimLocationThreshold = 5.f;
+	float CachedResimRotationThreshold = 5.f;
 };

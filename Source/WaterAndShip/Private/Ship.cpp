@@ -13,6 +13,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "AbilitySystemComponent.h"
+#include "HAL/IConsoleManager.h"
 #include "BaseAttributeSet.h"
 #include "ShipAttributeSet.h"
 #include "BaseGameplayTags.h"
@@ -173,7 +174,6 @@ void AShip::BeginPlay()
 		BuoyancyComp->SetActive(false);
 	}
 
-	// Initialize replicated state to avoid teleporting to 0,0,0 on client initialization
 	ReplicatedState.Location = GetActorLocation();
 	ReplicatedState.Rotation = GetActorRotation();
 
@@ -223,6 +223,40 @@ void AShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// Establish one authoritative, immutable mapping between the Network Physics
+	// server-frame timeline and server world time. Replication makes the same
+	// origin available to late-joining clients.
+	if (HasAuthority() && ServerPhysicsTimeOrigin < 0.0)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			if (FPhysScene* PhysScene = World->GetPhysicsScene())
+			{
+				if (Chaos::FPhysicsSolver* Solver = PhysScene->GetSolver())
+				{
+					const int32 UpcomingServerFrame = UE::NetworkPhysicsUtils::GetUpcomingServerFrame_External(World);
+					const float SolverStepSeconds = Solver->GetAsyncDeltaTime();
+					if (UpcomingServerFrame != INDEX_NONE && SolverStepSeconds > UE_SMALL_NUMBER)
+					{
+						const double ServerWorldTime = World->GetGameState()
+							? World->GetGameState()->GetServerWorldTimeSeconds()
+							: World->GetTimeSeconds();
+						ServerPhysicsStepSeconds = SolverStepSeconds;
+						ServerPhysicsTimeOrigin = ServerWorldTime
+							- static_cast<double>(UpcomingServerFrame) * static_cast<double>(SolverStepSeconds);
+						ForceNetUpdate();
+
+						UE_LOG(LogTemp, Warning, TEXT("[NETPHYS-CLOCK] Authority initialized Origin=%.9f Step=%.9f UpcomingServerFrame=%d ServerWorldTime=%.9f"),
+							ServerPhysicsTimeOrigin,
+							ServerPhysicsStepSeconds,
+							UpcomingServerFrame,
+							ServerWorldTime);
+					}
+				}
+			}
+		}
+	}
+
 #if !UE_SERVER
 	if (!IsRunningDedicatedServer())
 	{
@@ -263,12 +297,30 @@ void AShip::Tick(float DeltaTime)
 			{
 				AsyncInput->MovementInput = CurrentMoveInput;
 				AsyncInput->SteeringInput = CurrentTurnInput;
+				AsyncInput->bHasLocalController = true; // 로컬 컨트롤러 조종 여부 릴레이
 			}
 		}
 
 		// 2. 물리 틱용 기초 구조 정보 및 파도 파라미터 마샬링 (모든 권한/제어 상태에서 강제 전송 및 물리 캐시 다이렉트 주입)
 		{
 			// 로컬에서 임시 파도/폰툰 취합
+			// This mapping becomes valid only after PlayerController's Network Physics
+			// timestamp handshake. Before then, GetUpcomingServerFrame_External still
+			// produces a local-frame placeholder and cannot be used as readiness proof.
+			bool bNetworkPhysicsTickOffsetAssigned = HasAuthority();
+			int32 NetworkPhysicsTickOffset = 0;
+			if (!HasAuthority() && NetworkPhysicsComponent && NetworkPhysicsComponent->IsNetworkPhysicsTickOffsetAssigned())
+			{
+				if (const UWorld* World = GetWorld())
+				{
+					if (const APlayerController* PlayerController = World->GetFirstPlayerController())
+					{
+						NetworkPhysicsTickOffset = PlayerController->GetNetworkPhysicsTickOffset();
+						bNetworkPhysicsTickOffsetAssigned = true;
+					}
+				}
+			}
+
 			TArray<FVector> TempPontoons;
 			if (UBuoyancyComponent* BuoyancyComp = Cast<UBuoyancyComponent>(GetComponentByClass(UBuoyancyComponent::StaticClass())))
 			{
@@ -328,6 +380,7 @@ void AShip::Tick(float DeltaTime)
 			float BuoyancyForceMultiplier = 1.3f;
 			float WaterDamping = 3.0f;
 			float WaterDamping2 = 0.1f;
+			float MaxBuoyantForce = 5000000.0f;
 
 			if (UBuoyancyComponent* BuoyancyComp = Cast<UBuoyancyComponent>(GetComponentByClass(UBuoyancyComponent::StaticClass())))
 			{
@@ -338,6 +391,7 @@ void AShip::Tick(float DeltaTime)
 				BuoyancyForceMultiplier = BuoyancyComp->BuoyancyData.BuoyancyCoefficient;
 				WaterDamping = BuoyancyComp->BuoyancyData.BuoyancyDamp;
 				WaterDamping2 = BuoyancyComp->BuoyancyData.BuoyancyDamp2;
+				MaxBuoyantForce = BuoyancyComp->BuoyancyData.MaxBuoyantForce;
 			}
 
 			// A. 비동기 인풋 버퍼(GetProducerInputData_External)가 유효하다면 인풋 히스토리에 적재
@@ -354,48 +408,16 @@ void AShip::Tick(float DeltaTime)
 				AsyncInput->BuoyancyForceMultiplier = BuoyancyForceMultiplier;
 				AsyncInput->WaterDamping = WaterDamping;
 				AsyncInput->WaterDamping2 = WaterDamping2;
-
-				static bool bSpawnTimeSent = false;
-				float WorldTimeToSend = -1.0f;
-				if (!bSpawnTimeSent)
-				{
-					if (AGameStateBase* GameState = GetWorld()->GetGameState())
-					{
-						WorldTimeToSend = GameState->GetServerWorldTimeSeconds();
-						if (WorldTimeToSend > 0.0f)
-						{
-							bSpawnTimeSent = true;
-						}
-					}
-					else
-					{
-						WorldTimeToSend = GetWorld()->GetTimeSeconds();
-						bSpawnTimeSent = true;
-					}
-				}
-				AsyncInput->SpawnWorldTime = WorldTimeToSend;
-
-				/*if (GFrameCounter % 60 == 0)
-				{
-					UE_LOG(LogTemp, Warning, TEXT("[GT-Serialize] Sending Input - Waves: %d | Pontoons: %d | SpTime: %.3f"), 
-						AsyncInput->GerstnerWaves.Num(), AsyncInput->PontoonOffsets.Num(), AsyncInput->SpawnWorldTime);
-				}*/
+				AsyncInput->MaxBuoyantForce = MaxBuoyantForce;
+				// Keep the custom payload aligned with the project's 5 cm Network
+				// Physics threshold; 30 cm is visibly separated at pontoon scale.
+				AsyncInput->ResimLocationThreshold = FMath::Clamp(ResimLocationThreshold, 0.1f, 5.0f);
+				AsyncInput->ResimRotationThreshold = ResimRotationThreshold;
+				AsyncInput->ServerPhysicsTimeOrigin = ServerPhysicsTimeOrigin;
+				AsyncInput->ServerPhysicsStepSeconds = ServerPhysicsStepSeconds;
+				AsyncInput->NetworkPhysicsTickOffset = NetworkPhysicsTickOffset;
+				AsyncInput->bNetworkPhysicsTickOffsetAssigned = bNetworkPhysicsTickOffsetAssigned;
 			}
-
-			// B. Simulated Proxy 등 입력 복제가 씹히는 피어들을 위해, 물리 스레드 내부 멤버 변수(캐시) 강제 다이렉트 주입!
-			ShipPhysicsAsync->SetBuoyancyStaticData_External(
-				TempPontoons, 
-				TempWaves, 
-				Gravity, 
-				LateralDrag, 
-				ForwardForceValue, 
-				TurnTorqueValue, 
-				SpeedMult, 
-				BuoyancyRadius, 
-				BuoyancyForceMultiplier, 
-				WaterDamping,
-				WaterDamping2
-			);
 		}
 	}
 
@@ -406,6 +428,12 @@ void AShip::Tick(float DeltaTime)
 	}
 	else
 	{
+		// 매 틱 SimProxy 배에 대해 CompareState 플래그를 강제로 세팅 (BeginPlay 1회로 부족할 수 있음)
+		if (NetworkPhysicsComponent && GetLocalRole() == ROLE_SimulatedProxy)
+		{
+			NetworkPhysicsComponent->SetCompareStateToTriggerRewind(true, true);
+		}
+
 		// 클라이언트 전용 GT 위치 오차 실측 디버그 로그 (1초 주기 호출)
 		if (UWorld* World = GetWorld())
 		{
@@ -417,6 +445,36 @@ void AShip::Tick(float DeltaTime)
 				float Dist = FVector::Dist(GetActorLocation(), ReplicatedState.Location);
 				UE_LOG(LogTemp, Warning, TEXT("[SHIP-SYNC] LocDiff: %.2f cm | ActorLoc: %s | RepLoc: %s"), 
 					Dist, *GetActorLocation().ToString(), *ReplicatedState.Location.ToString());
+
+				if (BuoyancyRoot)
+				{
+					if (FBodyInstance* BI = BuoyancyRoot->GetBodyInstance())
+					{
+						FTransform GS_PhysTransform = BI->GetUnrealWorldTransform();
+						UE_LOG(LogTemp, Warning, TEXT("[GS-BODY-TRANS] BodyZ: %.3f | ActorZ: %.3f | RepZ: %.3f"),
+							GS_PhysTransform.GetLocation().Z, GetActorLocation().Z, ReplicatedState.Location.Z);
+					}
+				}
+
+				// 소유권 및 네트워크 역할 실시간 실측 로그 추가
+				AActor* ShipOwner = GetOwner();
+				ENetRole LocalRole = GetLocalRole();
+				ENetRole MyRemoteRole = GetRemoteRole();
+				FString LocalRoleStr = UEnum::GetValueAsString(LocalRole);
+				FString RemoteRoleStr = UEnum::GetValueAsString(MyRemoteRole);
+
+				UE_LOG(LogTemp, Warning, TEXT("[GS-OWNER-DIAG] Owner: %s | LocalRole: %s | RemoteRole: %s | ReplicateMovement: %s"),
+					ShipOwner ? *ShipOwner->GetName() : TEXT("None"),
+					*LocalRoleStr,
+					*RemoteRoleStr,
+					IsReplicatingMovement() ? TEXT("TRUE") : TEXT("FALSE"));
+
+				// CVar 값 직접 조회 로그 — ini 세팅이 실제로 적용되었는지 검증
+				IConsoleVariable* CVarCompare = IConsoleManager::Get().FindConsoleVariable(TEXT("np2.Resim.CompareStateToTriggerRewind"));
+				IConsoleVariable* CVarSimProxy = IConsoleManager::Get().FindConsoleVariable(TEXT("np2.Resim.CompareStateToTriggerRewind.IncludeSimProxies"));
+				UE_LOG(LogTemp, Warning, TEXT("[GS-CVAR-DIAG] CompareState CVar: %s | IncludeSimProxies CVar: %s"),
+					CVarCompare ? (CVarCompare->GetBool() ? TEXT("TRUE") : TEXT("FALSE")) : TEXT("NOT FOUND"),
+					CVarSimProxy ? (CVarSimProxy->GetBool() ? TEXT("TRUE") : TEXT("FALSE")) : TEXT("NOT FOUND"));
 			}
 		}
 	}
@@ -495,6 +553,8 @@ void AShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 
 	DOREPLIFETIME(AShip, RidingPlayer);
 	DOREPLIFETIME(AShip, ReplicatedState);
+	DOREPLIFETIME(AShip, ServerPhysicsTimeOrigin);
+	DOREPLIFETIME(AShip, ServerPhysicsStepSeconds);
 }
 
 void AShip::Board(APawn* PlayerPawn)
