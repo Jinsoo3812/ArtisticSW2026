@@ -309,14 +309,21 @@ void AShip::Tick(float DeltaTime)
 			// produces a local-frame placeholder and cannot be used as readiness proof.
 			bool bNetworkPhysicsTickOffsetAssigned = HasAuthority();
 			int32 NetworkPhysicsTickOffset = 0;
-			if (!HasAuthority() && NetworkPhysicsComponent && NetworkPhysicsComponent->IsNetworkPhysicsTickOffsetAssigned())
+			if (!HasAuthority())
 			{
 				if (const UWorld* World = GetWorld())
 				{
 					if (const APlayerController* PlayerController = World->GetFirstPlayerController())
 					{
-						NetworkPhysicsTickOffset = PlayerController->GetNetworkPhysicsTickOffset();
-						bNetworkPhysicsTickOffsetAssigned = true;
+						// A simulated-proxy Ship has no controller of its own, so
+						// UNetworkPhysicsComponent::IsNetworkPhysicsTickOffsetAssigned()
+						// always returns false for it. UE's async Network Physics path
+						// also reads the world's first PlayerController for sim proxies.
+						if (PlayerController->GetNetworkPhysicsTickOffsetAssigned())
+						{
+							NetworkPhysicsTickOffset = PlayerController->GetNetworkPhysicsTickOffset();
+							bNetworkPhysicsTickOffsetAssigned = true;
+						}
 					}
 				}
 			}

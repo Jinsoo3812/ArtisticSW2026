@@ -1346,3 +1346,146 @@ Pawn contact를 분리하면 현재 사용자-visible 폭주는 해결될 가능
 3. Client 승선 후 걷기, 점프, 난간 충돌, 장시간 대기, late join을 반복해 visible 진동이 재발하지 않는지 확인한다.
 4. 다음 코드 작업의 우선순위는 collision tuning이 아니라 resim 중 exact tick offset이 사라지는 경로를 고쳐 `FrameOffset=Missing=0`으로 만드는 것이다.
 5. 그 뒤 같은 테스트에서 MISMATCH/ApplyState 빈도와 steady-state same-frame 오차를 다시 측정한다. 임계치를 단순히 올리는 것은 결함을 가릴 수 있으므로 offset/replay 경로를 먼저 수정한다.
+
+### 2026-07-13 — M18~M20: 간헐 제자리 진동의 근본 원인 수정
+
+#### 사용자 관찰과 새 PIE 로그
+
+QueryOnly 갑판을 적용한 뒤 승선 시 폭발적인 요동은 사라졌지만, Ship이 정상적으로 떠 있다가 간헐적으로 제자리에서 짧게 덜덜거린 뒤 다시 안정되는 현상이 관찰됐다.
+
+첨부 PIE 로그 전체 1013줄, `AuthServerFrame 104~1146`을 분석했다.
+
+- same-frame compare 157회
+- MATCH 9회, MISMATCH 148회
+- `ApplyState` 148회
+- 위치 오차 평균 `21.71 cm`, 최대 `1219.44 cm`
+- 초기 SF 104/106의 `1192.67/1219.44 cm` 두 건을 제외하면 대부분 `5~10 cm`, 최대 `12.70 cm`
+- `FrameOffset=Missing` 진단 38회
+- 로그 출력 조건이 `CurrentPhysicsStep % 60 == 0`이므로 Step 60, 120, 180…에서만 보이지만, 실제 `bHasNetworkPhysicsTickOffset=false` 상태에서는 그 사이의 모든 Client PT step도 custom 부력 계산 전에 return한다.
+
+초기 12m 오차 두 건은 Client history가 아직 서버의 과거 frame을 갖지 못한 접속 초기 수렴 문제다. 그러나 그 뒤에도 거의 모든 authoritative state가 5 cm threshold를 넘어 rollback을 발생시키는 것은 별도 지속 결함이다.
+
+#### M18 — 별도 Dedicated Server + Client 기준선 재현
+
+실행 조건:
+
+- Map: `/Game/New/Level/KKH_Test`
+- Dedicated Server 1개를 먼저 시작
+- 8초 뒤 Client 1개 접속
+- `UnrealEditor-Cmd`, `-server`/`-game`, `-NullRHI`, 30초 수집
+- 로그:
+  - `Saved/Logs/Codex_M18_QueryDeck_Server.log`
+  - `Saved/Logs/Codex_M18_QueryDeck_Client.log`
+
+Client 결과:
+
+- compare 162회: MATCH 3, MISMATCH 159
+- 접속 초기 100 cm 이상 오차 2회
+- 초기 두 건 제외 steady 평균 `7.41 cm`, 최대 `12.92 cm`
+- 최대 회전 오차 `0.440°`
+- `ApplyState` 158회
+- `FrameOffset=Missing` 44회
+- Client `[NETPHYS-OFFSET] PT accepted` 0회
+- Server는 authority offset 0을 정상 수신
+- 네트워크 에러 0회
+
+PIE와 별도 프로세스에서 동일하게 재현됐으므로 Player 착지, PIE single-process 특성, QueryOnly deck 접촉은 간헐 진동의 원인에서 제외했다.
+
+#### 근본 원인 추출
+
+기존 `AShip::Tick()`은 Client offset 전달 전에 다음 조건을 사용했다.
+
+```cpp
+if (!HasAuthority() && NetworkPhysicsComponent
+    && NetworkPhysicsComponent->IsNetworkPhysicsTickOffsetAssigned())
+```
+
+UE 5.7 엔진 구현을 확인한 결과:
+
+1. `UNetworkPhysicsComponent::IsNetworkPhysicsTickOffsetAssigned()`는 내부에서 `GetPlayerController()`를 호출한다.
+2. `GetPlayerController()`는 NetworkPhysicsComponent owner인 Ship의 Controller를 찾는다.
+3. 이 Ship은 Client에서 `ROLE_SimulatedProxy`, `Owner=None`, Controller 없음이다.
+4. 따라서 Component readiness 함수는 PlayerController의 실제 handshake 완료 여부와 무관하게 항상 false를 반환한다.
+5. 반면 UE의 `UNetworkPhysicsComponent::UpdateAsyncComponent()`는 SimProxy를 위해 `World->GetFirstPlayerController()->GetNetworkPhysicsTickOffset()`을 직접 사용한다.
+
+Dedicated M18 초기 compare도 이를 보여 준다.
+
+- authoritative: `ServerFrame=529`, `LocalFrame=25`
+- predicted: 처음에는 `ServerFrame=25`, `LocalFrame=25`
+- 이후 UE internal NetworkPhysics history는 server/local mapping을 회복하지만, custom `FShipPhysicsAsync` 캐시는 offset을 끝내 받지 못했다.
+
+결과적으로 서버는 server-frame 시간의 파도/부력을 정상 계산하지만 Client custom PT는 `bStaticDataReady=false`로 부력 계산을 계속 건너뛴다. Client Ship은 authoritative correction으로만 끌려가며 5~13 cm 차이가 반복되고, 이 correction burst가 화면의 간헐 제자리 진동으로 보였다.
+
+#### M19 수정
+
+`AShip::Tick()`에서 Component의 readiness gate를 제거하고, UE internal SimProxy 경로와 동일하게 World의 첫 PlayerController를 사용했다.
+
+```cpp
+if (!HasAuthority())
+{
+    if (const APlayerController* PlayerController = World->GetFirstPlayerController())
+    {
+        if (PlayerController->GetNetworkPhysicsTickOffsetAssigned())
+        {
+            NetworkPhysicsTickOffset = PlayerController->GetNetworkPhysicsTickOffset();
+            bNetworkPhysicsTickOffsetAssigned = true;
+        }
+    }
+}
+```
+
+수정 범위는 Simulated Proxy custom PT로 exact offset을 전달하는 조건 하나뿐이다. 서버 authority 경로는 기존처럼 offset 0을 사용한다.
+
+빌드:
+
+- `ArtisticSW2026Editor Win64 Development`
+- 결과 `Succeeded`
+- 기존 UE 5.7 deprecation/toolchain warning 외 새 compile error 없음
+
+M19 동일 30초 Dedicated 재검증:
+
+- Client PT가 `LocalStep=27 Offset=454` 수신
+- `FrameOffset=Missing`: `44 → 0`
+- compare: 12회, MATCH 8, MISMATCH 4
+- 접속 초기 2회 제외 steady 평균: `7.41 → 1.16 cm`
+- steady 최대: `12.92 → 6.02 cm`
+- 최대 회전 오차: `0.440 → 0.048°`
+- `ApplyState`: `158 → 3`
+- 네트워크 에러 0회
+
+#### M20 60초 장기 검증
+
+동일 조건에서 60초간 추가 검증했다.
+
+- Client PT: `LocalStep=28 Offset=506` 수신
+- `FrameOffset=Missing=0`
+- compare 23회: MATCH 20, MISMATCH 3
+- 100 cm 이상 startup mismatch 1회
+- startup 제외 mismatch는 SF 549의 `5.32 cm`, SF 572의 `6.10 cm` 두 번뿐
+- startup 제외 전체 compare 평균 `0.579 cm`
+- 최대 회전 오차 `0.073°`
+- SF 1200~3360의 주기 compare는 위치 오차가 모두 `0 cm`
+- 네트워크 에러 0회
+
+동일 server frame의 `[NETPHYS-DET]`도 대조했다.
+
+- 공통 frame 102개
+- offset 수신 직후 정착 중인 SF 540/570 두 개만 차이 존재
+- SF 600 이후 100개 공통 frame에서 Ship PZ, 첫 폰툰 Wave, Depth, Pontoon Force, 총 부력과 torque가 모두 로그 정밀도 기준 정확히 일치
+
+#### 판정
+
+- **승선 폭발 요동:** QueryOnly deck으로 해결 유지.
+- **간헐 제자리 진동:** Simulated Proxy custom PT offset readiness gate가 근본 원인이었고 M19 수정으로 해결된 것으로 판정.
+- **파도/부력 결정론:** offset 정착 후 서버/클라이언트 공통 100개 frame에서 정확히 일치함을 확인.
+- **접속 초기 mismatch:** history가 없는 첫 수십 frame에 1~2회 남는다. 이후 장시간 발산이나 correction churn은 없다.
+
+현재 5 cm threshold를 완화할 이유는 없다. 원인 수정 뒤 threshold를 유지한 상태에서도 steady compare가 대부분 0 cm로 수렴했다.
+
+#### 다음 수동 확인
+
+1. Editor를 재시작하거나 새 DLL이 로드된 상태에서 Client PIE를 실행한다.
+2. KKH_Test 초기 침수/부상 후 최소 60초 동안 정지 관찰한다.
+3. Client 로그에서 `[NETPHYS-OFFSET] ... Offset=<nonzero>` 1회와 `FrameOffset=Missing=0`을 확인한다.
+4. Player 걷기/점프/난간 충돌/승선 후에도 QueryOnly deck 구성과 안정성이 유지되는지 확인한다.
+5. 초기 접속 1~2회 correction까지 제거할지는 별도 startup-history 정책으로 다룬다. 현재 장시간 시뮬레이션 안정성과는 분리한다.
