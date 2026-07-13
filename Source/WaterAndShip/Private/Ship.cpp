@@ -25,6 +25,7 @@
 #include "PhysicsEngine/PhysicsSettings.h"
 #include "Physics/NetworkPhysicsComponent.h"
 #include "GerstnerWaterWaves.h"
+#include "WaterWaves.h"
 #include "Chaos/PhysicsObject.h"
 #include "Interfaces/IPhysicsComponent.h"
 #include "GameFramework/GameStateBase.h"
@@ -98,6 +99,7 @@ AShip::AShip()
 		static const FName NetworkPhysicsComponentName(TEXT("NetworkPhysicsComponent"));
 		NetworkPhysicsComponent = CreateDefaultSubobject<UNetworkPhysicsComponent>(NetworkPhysicsComponentName);
 		NetworkPhysicsComponent->SetNetAddressable();
+		NetworkPhysicsComponent->SetIsReplicated(true);
 		SetPhysicsReplicationMode(EPhysicsReplicationMode::Resimulation);
 	}
 
@@ -143,12 +145,13 @@ void AShip::BeginPlay()
 					ShipPhysicsAsync = Solver->CreateAndRegisterSimCallbackObject_External<FShipPhysicsAsync>();
 					if (ShipPhysicsAsync)
 					{
-						if (BuoyancyRoot && BuoyancyRoot->GetBodyInstance())
+						if (BuoyancyRoot)
 						{
-							ShipPhysicsAsync->SetPhysicsObject(reinterpret_cast<Chaos::FConstPhysicsObjectHandle>(BuoyancyRoot->GetBodyInstance()->GetPhysicsActorHandle()));
+							ShipPhysicsAsync->SetPhysicsObject(BuoyancyRoot->GetPhysicsObjectByName(NAME_None));
 						}
 						NetworkPhysicsComponent->CreateDataHistory(ShipPhysicsAsync);
-						UE_LOG(LogTemp, Warning, TEXT("[GT] AShip::BeginPlay - SUCCESSFULLY registered ShipPhysicsAsync and bound to NetworkPhysicsComponent!"));
+						NetworkPhysicsComponent->SetCompareStateToTriggerRewind(true, true);
+						UE_LOG(LogTemp, Warning, TEXT("[GT] AShip::BeginPlay - SUCCESSFULLY registered ShipPhysicsAsync and bound to NetworkPhysicsComponent! (Simulated Proxy Rollback Enabled)"));
 					}
 					else
 					{
@@ -230,66 +233,125 @@ void AShip::Tick(float DeltaTime)
 			}
 		}
 
-		// 2. 물리 틱용 기초 구조 정보 및 파도 파라미터 마샬링 (서버 & 클라이언트 로컬 물리 예측 공통)
-		if (IsLocallyControlled() || HasAuthority())
+		// 2. 물리 틱용 기초 구조 정보 및 파도 파라미터 마샬링 (모든 권한/제어 상태에서 강제 전송 및 물리 캐시 다이렉트 주입)
 		{
-			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
+			// 로컬에서 임시 파도/폰툰 취합
+			TArray<FVector> TempPontoons;
+			if (UBuoyancyComponent* BuoyancyComp = Cast<UBuoyancyComponent>(GetComponentByClass(UBuoyancyComponent::StaticClass())))
 			{
-				if (!bStaticDataInitialized)
+				for (const FSphericalPontoon& Pontoon : BuoyancyComp->BuoyancyData.Pontoons)
 				{
-					bStaticDataInitialized = true;
+					TempPontoons.Add(Pontoon.RelativeLocation);
+				}
+			}
 
-					// 폰툰 오프셋 수집
-					if (UBuoyancyComponent* BuoyancyComp = Cast<UBuoyancyComponent>(GetComponentByClass(UBuoyancyComponent::StaticClass())))
+			TArray<FGerstnerWave> TempWaves;
+			for (TActorIterator<AWaterBody> It(GetWorld()); It; ++It)
+			{
+				if (AWaterBody* WaterBody = *It)
+				{
+					UWaterWavesBase* WaterWaves = WaterBody->GetWaterWaves();
+					if (WaterWaves)
 					{
-						for (const FSphericalPontoon& Pontoon : BuoyancyComp->BuoyancyData.Pontoons)
+						if (WaterWaves->GetClass()->GetName() == TEXT("SWRippleWaterWaves"))
 						{
-							AsyncInput->PontoonOffsets.Add(Pontoon.RelativeLocation);
-						}
-					}
-
-					// 결정론적 파고 계산을 위한 Gerstner Waves 자산 데이터 수집
-					for (TActorIterator<AWaterBody> It(GetWorld()); It; ++It)
-					{
-						if (AWaterBody* WaterBody = *It)
-						{
-							if (UGerstnerWaterWaves* GerstnerAsset = Cast<UGerstnerWaterWaves>(WaterBody->GetWaterWaves()))
+							if (FProperty* Prop = WaterWaves->GetClass()->FindPropertyByName(TEXT("BaseWavesAsset")))
 							{
-								AsyncInput->GerstnerWaves = GerstnerAsset->GetGerstnerWaves();
-								break;
+								if (FObjectProperty* ObjProp = CastField<FObjectProperty>(Prop))
+								{
+									UObject* AssetObj = ObjProp->GetObjectPropertyValue_InContainer(WaterWaves);
+									if (AssetObj)
+									{
+										if (UWaterWavesAsset* WavesAsset = Cast<UWaterWavesAsset>(AssetObj))
+										{
+											if (UWaterWaves* InnerWaves = WavesAsset->GetWaterWaves())
+											{
+												if (UGerstnerWaterWaves* GerstnerAsset = Cast<UGerstnerWaterWaves>(InnerWaves))
+												{
+													TempWaves = GerstnerAsset->GetGerstnerWaves();
+													break;
+												}
+											}
+										}
+									}
+								}
 							}
 						}
-					}
-
-					// 기타 물리/부력 매개변수 전송
-					AsyncInput->GravityZ = GetWorld()->GetGravityZ();
-					AsyncInput->LateralDrag = LateralDragCoefficient;
-					AsyncInput->ForwardForceValue = ForwardForce;
-					AsyncInput->TurnTorqueValue = TurnTorque;
-					
-					float SpeedMult = 1.0f;
-					if (AttributeSet)
-					{
-						SpeedMult = AttributeSet->GetShipSpeedMultiplier();
-					}
-					AsyncInput->SpeedMultiplier = SpeedMult;
-
-					// 부력 댐핑 및 반경 설정
-					AsyncInput->BuoyancyRadius = 150.f; // 폰툰 기본 반경
-					AsyncInput->BuoyancyForceMultiplier = 1.3f;
-					AsyncInput->WaterDamping = 3.0f;
-
-					// 절대 시간 동기화 오프셋 마샬링 (서버와 클라이언트 간의 절대적 월드 생성 시간 격차 상쇄)
-					if (AGameStateBase* GameState = GetWorld()->GetGameState())
-					{
-						AsyncInput->SpawnWorldTime = GameState->GetServerWorldTimeSeconds();
-					}
-					else
-					{
-						AsyncInput->SpawnWorldTime = GetWorld()->GetTimeSeconds();
+						else if (UGerstnerWaterWaves* GerstnerAsset = Cast<UGerstnerWaterWaves>(WaterWaves))
+						{
+							TempWaves = GerstnerAsset->GetGerstnerWaves();
+							break;
+						}
 					}
 				}
 			}
+
+			float Gravity = GetWorld()->GetGravityZ();
+			float LateralDrag = LateralDragCoefficient;
+			float ForwardForceValue = ForwardForce;
+			float TurnTorqueValue = TurnTorque;
+			float SpeedMult = AttributeSet ? AttributeSet->GetShipSpeedMultiplier() : 1.0f;
+			float BuoyancyRadius = 150.f;
+			float BuoyancyForceMultiplier = 1.3f;
+			float WaterDamping = 3.0f;
+			float WaterDamping2 = 0.1f;
+
+			if (UBuoyancyComponent* BuoyancyComp = Cast<UBuoyancyComponent>(GetComponentByClass(UBuoyancyComponent::StaticClass())))
+			{
+				if (BuoyancyComp->BuoyancyData.Pontoons.Num() > 0)
+				{
+					BuoyancyRadius = BuoyancyComp->BuoyancyData.Pontoons[0].Radius;
+				}
+				BuoyancyForceMultiplier = BuoyancyComp->BuoyancyData.BuoyancyCoefficient;
+				WaterDamping = BuoyancyComp->BuoyancyData.BuoyancyDamp;
+				WaterDamping2 = BuoyancyComp->BuoyancyData.BuoyancyDamp2;
+			}
+
+			// A. 비동기 인풋 버퍼(GetProducerInputData_External)가 유효하다면 인풋 히스토리에 적재
+			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
+			{
+				AsyncInput->PontoonOffsets = TempPontoons;
+				AsyncInput->GerstnerWaves = TempWaves;
+				AsyncInput->GravityZ = Gravity;
+				AsyncInput->LateralDrag = LateralDrag;
+				AsyncInput->ForwardForceValue = ForwardForceValue;
+				AsyncInput->TurnTorqueValue = TurnTorqueValue;
+				AsyncInput->SpeedMultiplier = SpeedMult;
+				AsyncInput->BuoyancyRadius = BuoyancyRadius;
+				AsyncInput->BuoyancyForceMultiplier = BuoyancyForceMultiplier;
+				AsyncInput->WaterDamping = WaterDamping;
+				AsyncInput->WaterDamping2 = WaterDamping2;
+
+				if (AGameStateBase* GameState = GetWorld()->GetGameState())
+				{
+					AsyncInput->SpawnWorldTime = GameState->GetServerWorldTimeSeconds();
+				}
+				else
+				{
+					AsyncInput->SpawnWorldTime = GetWorld()->GetTimeSeconds();
+				}
+
+				if (GFrameCounter % 60 == 0)
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[GT-Serialize] Sending Input - Waves: %d | Pontoons: %d | SpTime: %.3f"), 
+						AsyncInput->GerstnerWaves.Num(), AsyncInput->PontoonOffsets.Num(), AsyncInput->SpawnWorldTime);
+				}
+			}
+
+			// B. Simulated Proxy 등 입력 복제가 씹히는 피어들을 위해, 물리 스레드 내부 멤버 변수(캐시) 강제 다이렉트 주입!
+			ShipPhysicsAsync->SetBuoyancyStaticData_External(
+				TempPontoons, 
+				TempWaves, 
+				Gravity, 
+				LateralDrag, 
+				ForwardForceValue, 
+				TurnTorqueValue, 
+				SpeedMult, 
+				BuoyancyRadius, 
+				BuoyancyForceMultiplier, 
+				WaterDamping,
+				WaterDamping2
+			);
 		}
 	}
 

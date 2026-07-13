@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -8,6 +6,7 @@
 #include "AbilitySystemInterface.h"
 #include "Engine/DataTable.h"
 #include "Physics/NetworkPhysicsComponent.h"
+#include "GerstnerWaterWaves.h"
 #include "Ship.generated.h"
 
 USTRUCT()
@@ -15,7 +14,30 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 {
 	GENERATED_BODY()
 
-	FNetInputShip() : MovementInput(0.f), SteeringInput(0.f) {}
+	FNetInputShip() 
+		: MovementInput(0.f)
+		, SteeringInput(0.f)
+		, GravityZ(-980.f)
+		, LateralDrag(0.5f)
+		, ForwardForceValue(500000.f)
+		, TurnTorqueValue(20000000.f)
+		, SpeedMultiplier(1.0f)
+		, BuoyancyRadius(100.f)
+		, BuoyancyForceMultiplier(1.2f)
+		, WaterDamping(3.0f)
+		, SpawnWorldTime(-1.f)
+		, SpawnPhysicsStep(-1)
+	{}
+
+	void Reset()
+	{
+		MovementInput = 0.0f;
+		SteeringInput = 0.0f;
+		PontoonOffsets.Empty();
+		GerstnerWaves.Empty();
+		SpawnWorldTime = -1.0f;
+		SpawnPhysicsStep = -1;
+	}
 
 	UPROPERTY()
 	float MovementInput;
@@ -23,12 +45,42 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 	UPROPERTY()
 	float SteeringInput;
 
+	// 로컬 마샬링 전용 비복제 물리/부력 필드들 (NetSerialize에서는 스킵)
+	TArray<FVector> PontoonOffsets;
+	TArray<FGerstnerWave> GerstnerWaves;
+	float GravityZ;
+	float LateralDrag;
+	float ForwardForceValue;
+	float TurnTorqueValue;
+	float SpeedMultiplier;
+	float BuoyancyRadius;
+	float BuoyancyForceMultiplier;
+	float WaterDamping;
+	float WaterDamping2;
+	float SpawnWorldTime;
+	int32 SpawnPhysicsStep;
+
 	virtual void InterpolateData(const FNetworkPhysicsPayload& MinData, const FNetworkPhysicsPayload& MaxData, float LerpAlpha) override
 	{
 		const FNetInputShip& MinInput = static_cast<const FNetInputShip&>(MinData);
 		const FNetInputShip& MaxInput = static_cast<const FNetInputShip&>(MaxData);
 		MovementInput = FMath::Lerp(MinInput.MovementInput, MaxInput.MovementInput, LerpAlpha);
 		SteeringInput = FMath::Lerp(MinInput.SteeringInput, MaxInput.SteeringInput, LerpAlpha);
+		
+		// 비보간 데이터는 단순 이전/이후 값 대입
+		PontoonOffsets = MaxInput.PontoonOffsets;
+		GerstnerWaves = MaxInput.GerstnerWaves;
+		GravityZ = MaxInput.GravityZ;
+		LateralDrag = MaxInput.LateralDrag;
+		ForwardForceValue = MaxInput.ForwardForceValue;
+		TurnTorqueValue = MaxInput.TurnTorqueValue;
+		SpeedMultiplier = MaxInput.SpeedMultiplier;
+		BuoyancyRadius = MaxInput.BuoyancyRadius;
+		BuoyancyForceMultiplier = MaxInput.BuoyancyForceMultiplier;
+		WaterDamping = MaxInput.WaterDamping;
+		WaterDamping2 = MaxInput.WaterDamping2;
+		SpawnWorldTime = MaxInput.SpawnWorldTime;
+		SpawnPhysicsStep = MaxInput.SpawnPhysicsStep;
 	}
 
 	virtual void MergeData(const FNetworkPhysicsPayload& FromData) override
@@ -36,6 +88,20 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		const FNetInputShip& FromInput = static_cast<const FNetInputShip&>(FromData);
 		MovementInput = FromInput.MovementInput;
 		SteeringInput = FromInput.SteeringInput;
+		
+		PontoonOffsets = FromInput.PontoonOffsets;
+		GerstnerWaves = FromInput.GerstnerWaves;
+		GravityZ = FromInput.GravityZ;
+		LateralDrag = FromInput.LateralDrag;
+		ForwardForceValue = FromInput.ForwardForceValue;
+		TurnTorqueValue = FromInput.TurnTorqueValue;
+		SpeedMultiplier = FromInput.SpeedMultiplier;
+		BuoyancyRadius = FromInput.BuoyancyRadius;
+		BuoyancyForceMultiplier = FromInput.BuoyancyForceMultiplier;
+		WaterDamping = FromInput.WaterDamping;
+		WaterDamping2 = FromInput.WaterDamping2;
+		SpawnWorldTime = FromInput.SpawnWorldTime;
+		SpawnPhysicsStep = FromInput.SpawnPhysicsStep;
 	}
 
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)

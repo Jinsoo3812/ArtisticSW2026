@@ -7,31 +7,25 @@
 #include "GerstnerWaterWaves.h"
 #include "Ship.h"
 
-// GameThread -> PhysicsThread 마샬링용 구조체
 struct FAsyncInputShip : public Chaos::FSimCallbackInput
 {
 	float MovementInput = 0.0f;
 	float SteeringInput = 0.0f;
 
-	// 폰툰 오프셋 데이터
 	TArray<FVector> PontoonOffsets;
-	
-	// 파도 수학적 파라미터 (Gerstner Waves 복사본)
 	TArray<FGerstnerWave> GerstnerWaves;
 
-	// 중력 가속도, 드래그 계수 등 물리 설정 값
 	float GravityZ = -980.f;
 	float LateralDrag = 0.5f;
 	float ForwardForceValue = 500000.f;
 	float TurnTorqueValue = 20000000.f;
 	float SpeedMultiplier = 1.0f;
 
-	// 부력 관련 상세 세팅 (폰툰 개수 당 부력 세기, 반경 등)
 	float BuoyancyRadius = 100.f;
 	float BuoyancyForceMultiplier = 1.2f;
 	float WaterDamping = 3.0f;
+	float WaterDamping2 = 0.1f;
 
-	// 위상 동기화용 시간/틱 오프셋
 	float SpawnWorldTime = -1.0f;
 	int32 SpawnPhysicsStep = -1;
 
@@ -74,6 +68,21 @@ public:
 
 	void SetPhysicsObject(Chaos::FConstPhysicsObjectHandle InObject) { PhysicsObject = InObject; }
 
+	void SetBuoyancyStaticData_External(const TArray<FVector>& Pontoons, const TArray<FGerstnerWave>& Waves, float Gravity, float LateralDrag, float ForwardForce, float TurnTorque, float SpeedMultiplier, float BuoyancyRadius, float BuoyancyForceMultiplier, float WaterDamping, float WaterDamping2)
+	{
+		CachedPontoonOffsets = Pontoons;
+		CachedGerstnerWaves = Waves;
+		CachedGravityZ = Gravity;
+		CachedLateralDrag = LateralDrag;
+		CachedForwardForce = ForwardForce;
+		CachedTurnTorque = TurnTorque;
+		CachedSpeedMultiplier = SpeedMultiplier;
+		CachedBuoyancyRadius = BuoyancyRadius;
+		CachedBuoyancyForceMultiplier = BuoyancyForceMultiplier;
+		CachedWaterDamping = WaterDamping;
+		CachedWaterDamping2 = WaterDamping2;
+	}
+
 private:
 	// 물리 스레드 내부에서 계산할 실시간 파고 쿼리 함수 (순수 수학 연산, 100% 스레드 세이프)
 	float GetWaveHeightAtPosition_Internal(const FVector& Position, float Time, const TArray<FGerstnerWave>& Waves, float Gravity) const;
@@ -99,6 +108,7 @@ private:
 	float CachedBuoyancyRadius = 100.f;
 	float CachedBuoyancyForceMultiplier = 1.2f;
 	float CachedWaterDamping = 3.0f;
+	float CachedWaterDamping2 = 0.1f;
 
 	// 위상 동기화용 타임스탬프 캐시
 	float CachedSpawnWorldTime = -1.0f;
