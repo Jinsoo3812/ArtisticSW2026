@@ -105,19 +105,7 @@ bool UBTT_EnemyBasicAttack::ActivateCurrentWeaponAbilityByAssetTag(ABaseEnemy* E
         return false;
     }
 	
-	const FGameplayTag CurrentWeaponTag = Enemy->GetDefaultWeaponTag();
-	if (!CurrentWeaponTag.IsValid())
-	{
-		return false;
-	}
-
-    UWeaponDataAsset* WeaponRegistry = WeaponComponent->GetWeaponRegistry();
-    if (!WeaponRegistry)
-    {
-        return false;
-    }
-
-    const FWeaponDefinition* WeaponDef = WeaponRegistry->FindWeaponDefinitionByTag(CurrentWeaponTag);
+    const FWeaponDefinition* WeaponDef = WeaponComponent->GetCurrentWeaponDefinition();
     if (!WeaponDef)
     {
         return false;
