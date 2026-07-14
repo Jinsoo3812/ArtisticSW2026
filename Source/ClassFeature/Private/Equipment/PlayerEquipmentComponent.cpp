@@ -5,6 +5,8 @@
 #include "BaseItem.h"
 #include "BasePlayer.h"
 #include "Equipment/WeaponAnimationDataAsset.h"
+#include "AbilitySystemComponent.h"
+#include "BaseGameplayTags.h"
 #include "ItemSubSystem.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -180,6 +182,24 @@ float UPlayerEquipmentComponent::GetEquippedReloadPlayRate() const
 	const ABaseItem* EquippedItem = OwnerPlayer ? OwnerPlayer->EquippedItem : nullptr;
 	const FWeaponAnimationEntry* Entry = ResolveWeaponAnimationEntry(EquippedItem);
 	return Entry ? Entry->ReloadPlayRate : 1.f;
+}
+
+UAnimMontage* UPlayerEquipmentComponent::GetEquippedAimCycleMontage() const
+{
+	const FWeaponAnimationEntry* Entry = GetEquippedWeaponAnimationEntry();
+	return Entry ? Entry->AimCycleMontage.Get() : nullptr;
+}
+
+TSubclassOf<UAnimInstance> UPlayerEquipmentComponent::GetEquippedWeaponAnimLayerClass() const
+{
+	const FWeaponAnimationEntry* Entry = GetEquippedWeaponAnimationEntry();
+	return Entry ? Entry->WeaponAnimLayerClass : nullptr;
+}
+
+const FWeaponAnimationEntry* UPlayerEquipmentComponent::GetEquippedWeaponAnimationEntry() const
+{
+	const ABasePlayer* OwnerPlayer = PlayerOwner ? PlayerOwner.Get() : Cast<ABasePlayer>(GetOwner());
+	return ResolveWeaponAnimationEntry(OwnerPlayer ? OwnerPlayer->EquippedItem : nullptr);
 }
 
 void UPlayerEquipmentComponent::OnRep_EquipmentState()
@@ -383,21 +403,11 @@ void UPlayerEquipmentComponent::AttachItemToSocket(ABaseItem* Item, FName Socket
 		return;
 	}
 
-	USceneComponent* GripComponent = nullptr;
-	TArray<USceneComponent*> ItemComponents;
-	Item->GetComponents<USceneComponent>(ItemComponents);
-	for (USceneComponent* Component : ItemComponents)
-	{
-		if (Component && Component->DoesSocketExist(ItemGripSocketName))
-		{
-			GripComponent = Component;
-			break;
-		}
-	}
+	USceneComponent* GripComponent = Item->GetAttachmentReferenceComponent();
 
-	if (!GripComponent || !Item->GetRootComponent())
+	if (!GripComponent || !GripComponent->DoesSocketExist(ItemGripSocketName) || !Item->GetRootComponent())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("UPlayerEquipmentComponent::AttachItemToSocket : Item %s has no grip socket %s. Falling back to root attachment."), *GetNameSafe(Item), *ItemGripSocketName.ToString());
+		UE_LOG(LogTemp, Warning, TEXT("UPlayerEquipmentComponent::AttachItemToSocket : Item %s has no grip socket %s on its attachment reference component. Falling back to root attachment."), *GetNameSafe(Item), *ItemGripSocketName.ToString());
 		Item->AttachToComponent(PlayerOwner->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
 		return;
 	}
@@ -407,8 +417,14 @@ void UPlayerEquipmentComponent::AttachItemToSocket(ABaseItem* Item, FName Socket
 	const FTransform GripRelativeToRoot = GripWorldTransform.GetRelativeTransform(RootWorldTransform);
 	const FTransform TargetSocketWorldTransform = PlayerOwner->GetMesh()->GetSocketTransform(SocketName, RTS_World);
 
-	Item->AttachToComponent(PlayerOwner->GetMesh(), FAttachmentTransformRules::KeepWorldTransform, SocketName);
 	Item->SetActorTransform(GripRelativeToRoot.Inverse() * TargetSocketWorldTransform, false, nullptr, ETeleportType::TeleportPhysics);
+	Item->AttachToComponent(PlayerOwner->GetMesh(), FAttachmentTransformRules::KeepWorldTransform, SocketName);
+
+	const float AlignmentError = FVector::Distance(
+		GripComponent->GetSocketLocation(ItemGripSocketName),
+		PlayerOwner->GetMesh()->GetSocketLocation(SocketName));
+	UE_LOG(LogTemp, Log, TEXT("UPlayerEquipmentComponent::AttachItemToSocket : Item=%s EquipSocket=%s GripSocket=%s AlignmentError=%.4f"),
+		*GetNameSafe(Item), *SocketName.ToString(), *ItemGripSocketName.ToString(), AlignmentError);
 }
 
 void UPlayerEquipmentComponent::StoreCurrentEquippedItem()
@@ -432,6 +448,13 @@ void UPlayerEquipmentComponent::StartEquipItemFromSlot(int32 SlotIndex)
 	}
 
 	ABaseItem* SlotItem = PlayerOwner->ItemSlots[SlotIndex].Item;
+	if (UAbilitySystemComponent* ASC = PlayerOwner->GetAbilitySystemComponent())
+	{
+		FGameplayTagContainer AimCycleAbilityTags;
+		AimCycleAbilityTags.AddTag(GameplayAbility_Weapon_AimCycle);
+		ASC->CancelAbilities(&AimCycleAbilityTags, nullptr, nullptr);
+	}
+
 	if (PlayerOwner->EquippedItem == SlotItem)
 	{
 		StoreCurrentEquippedItem();

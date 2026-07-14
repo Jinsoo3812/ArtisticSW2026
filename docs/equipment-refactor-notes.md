@@ -165,7 +165,6 @@ Use `GetThreadSafeBowDrawAlpha()` as the single sync value for all bow draw visu
 
 - bow string deformation
 - bow draw pose / 1D BlendSpace / Sequence Evaluator
-- right-hand IK target between a rest socket and a full-draw socket
 - fire speed and damage scaling
 
 Recommended socket setup on the bow skeletal mesh:
@@ -173,9 +172,9 @@ Recommended socket setup on the bow skeletal mesh:
 - `String_Rest_Socket`: where the right hand/string sits at draw alpha `0.0`
 - `String_Draw_Socket`: where the right hand/string sits at draw alpha `1.0`
 
-The right-hand IK target should lerp between those two socket transforms by `DrawAlpha`. This keeps the character hand and bow string visually matched while the bow is being pulled.
+The character's authored Draw, Full Draw Aim Idle, and Release animations are the authority for `hand_r`. Do not drive the hand toward the bow string as the normal path; that reverses ownership and makes the hand visibly chase the bow.
 
-`ABowItem` resolves those sockets on the bow skeletal mesh, blends between them by `UBowComponent::DrawAlpha`, and `UMotionMatchingAnimInstance` converts the result to the character mesh's component space for ABP use. In the character ABP, place the right-hand IK after the final upper-body montage/aim pose and before foot placement:
+`ABowItem` still resolves the two string sockets and exposes a blended component-space target for optional correction. `UMotionMatchingAnimInstance::bEnableBowStringHandIK` defaults to `false`, so the character animation remains untouched. Keep the existing FABRIK node wired after the final upper-body pose and before foot placement, but its alpha will be zero by default:
 
 ```text
 Slot 'DefaultSlot'
@@ -184,7 +183,11 @@ Slot 'DefaultSlot'
  -> Foot Placement
 ```
 
-Use `GetThreadSafeBowStringIKTargetTransform()` as the IK effector transform and `GetThreadSafeBowStringIKAlpha()` as the IK alpha. The alpha is enabled while the bow is aiming/drawing/fully drawn and disabled during release so the release montage can pull the hand off the string.
+Use `GetThreadSafeBowStringIKTargetTransform()` as the IK effector transform and `GetThreadSafeBowStringIKAlpha()` as the IK alpha. Leave the new `Enable Bow String Hand IK` setting disabled until the grip socket, full-draw sequence, and aim offset are all correct. If enabled later, it runs only at full draw and is intended for a small residual correction, not for creating the draw pose.
+
+### Bow string follows authored fingers
+
+For the primary string alignment path, do not enable character FABRIK. Add a `BowStringGrip` socket to the character hand that pulls the string and position it at the finger pinch in the full-draw pose. `ABowItem::GetCharacterStringGripTargetTransform()` returns that socket in `BowMesh` component space. In the Bow animation blueprint, use the returned transform to drive the string-center bone (currently `Bone_end`) with a Transform Modify Bone or a Bow Control Rig. Blend that correction with `DrawAlpha`; the bow moves to the authored hand, while the character montage remains authoritative for the hand pose.
 
 ## Weapon Grip Alignment
 
@@ -198,6 +201,51 @@ ItemGripSocketName: GripSocket
 ```
 
 `ABowItem` hides its inherited static `ItemMesh`; its `BowMesh` skeletal component is the visible bow so its animation and string sockets remain the single visual source.
+
+`ABaseItem::GetAttachmentReferenceComponent()` identifies the component that owns an item's grip socket. The default returns the actor root, while `ABowItem` overrides it to return `BowMesh`. This keeps socket-to-socket attachment deterministic as more weapon types are added.
+
+During Draw, Full Draw, and Release, `bSuppressAimOffsetWhileBowFullyDrawn` defaults to true. This prevents the global aim offset from rotating an authored bow pose after it has been selected. Disable it only after introducing a bow-specific additive aim layer that is authored to work with those poses.
+
+When draw reaches its maximum alpha, the anim instance treats `DrawAlpha == 1.0` as fully drawn immediately, then also reads `State.Bow.FullyDrawn`. The ability sets that state before blending out the Draw montage, so the Full Draw pose is already selected underneath the montage and the normal bow overlay cannot flash between them.
+
+`GetThreadSafeShouldUseBowFullDrawPose()` additionally preloads the Full Draw pose at `FullDrawPosePreloadAlpha` (default `0.9`). Use this single boolean for the Full Draw `Blend Poses by Bool` active value; it already excludes the release state. This gives the upper-body graph one animation update to prepare the hold pose before the Draw montage fades out.
+
+## Weapon Action Cycle Montage
+
+The bow now supports a single `AimCycleMontage` from its `FWeaponAnimationEntry`. Configure this on the bow entry in the weapon animation DA:
+
+```text
+Aim Cycle Montage: AM_BowAimCycle
+Aim Cycle Draw Section Name: Bow_Draw
+Aim Cycle Hold Section Name: Bow_Hold
+Aim Cycle Release Section Name: Bow_Release
+Aim Cycle Play Rate: 1.0
+Aim Cycle Blend Out Time: 0.1
+```
+
+`AM_BowAimCycle` must use the existing `DefaultGroup.UpperBody` slot. Its sections should flow as follows:
+
+```text
+Bow_Draw -> Bow_Hold -> Bow_Hold (loop)
+Bow_Hold -> Bow_Release (when left click is released)
+Bow_Release -> End
+```
+
+The bow ability starts this montage at `Bow_Draw`, jumps to `Bow_Hold` on full draw, and jumps to `Bow_Release` on left-click release. It no longer stops a Draw montage and exposes the base bow overlay between the draw and hold poses. If `AimCycleMontage` is left unset, the old separate Draw/Release montage path remains available while assets are being migrated.
+
+For exact bow-string synchronization, author a float curve named `Weapon.DrawAlpha` on the character sequences in the Aim Cycle montage, then enable `Use Aim Cycle Draw Alpha Curve` on `GA_BowAimShoot`:
+
+```text
+Bow_Draw: 0 at rest, then 0 -> 1 while the character pulls the string
+Bow_Hold: 1 for the whole loop
+Bow_Release: 1 -> 0 while the string returns
+```
+
+The curve is copied to replicated `UBowComponent::DrawAlpha`, which drives the bow skeletal mesh animation for remote clients too. Leave the option disabled until the curve exists; the legacy timing values remain the fallback.
+
+`GameplayAbility.Weapon.AimCycle` is now the common cancellation tag for weapon aiming. `UPlayerEquipmentComponent` cancels active abilities with this tag before a weapon switch begins. Dodge and hit-reaction abilities should also cancel this tag in their ability settings (or call `CancelAbilities` with it) once their gameplay tags are finalized.
+
+The global aim offset remains suppressed during Bow Draw/Hold/Release so it cannot overwrite authored action poses. For the Hold section only, use `GetThreadSafeBowHoldAimOffsetAlpha()` in the bow upper-body layer. It returns `BowHoldAimOffsetAlpha` (default `1.0`) only while the bow is fully drawn and not releasing. Apply the existing aim-offset additive pose through a second `Layered Blend Per Bone` rooted at `spine_03`; enable Mesh Space Rotation Blend and leave Mesh Space Scale Blend disabled. This rotates the chest and arms with the camera while preserving the draw and release animations.
 
 Sprint is blocked while the bow is being drawn by using the existing `State.Attacking` gameplay tag. Draw movement is still allowed, but sprint should not start or continue until the left click draw is released.
 

@@ -8,6 +8,7 @@
 class ABaseItem;
 class ABasePlayer;
 class UAnimMontage;
+class UAnimInstance;
 class UWeaponAnimationDataAsset;
 struct FWeaponAnimationEntry;
 
@@ -79,6 +80,14 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
 	float GetEquippedReloadPlayRate() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
+	UAnimMontage* GetEquippedAimCycleMontage() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
+	TSubclassOf<UAnimInstance> GetEquippedWeaponAnimLayerClass() const;
+
+	const FWeaponAnimationEntry* GetEquippedWeaponAnimationEntry() const;
 
 protected:
 	virtual void BeginPlay() override;

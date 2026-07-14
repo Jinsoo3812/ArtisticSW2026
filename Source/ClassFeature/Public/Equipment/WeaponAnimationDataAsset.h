@@ -7,6 +7,7 @@
 #include "WeaponAnimationDataAsset.generated.h"
 
 class UAnimMontage;
+class UAnimInstance;
 
 USTRUCT(BlueprintType)
 struct FWeaponAnimationEntry
@@ -30,6 +31,34 @@ struct FWeaponAnimationEntry
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Combat")
 	TObjectPtr<UAnimMontage> ReloadMontage;
+
+	// A single montage which owns draw, hold, and release without returning to
+	// the normal weapon overlay between sections.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Weapon Action")
+	TObjectPtr<UAnimMontage> AimCycleMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Weapon Action")
+	FName AimCycleDrawSectionName = TEXT("Bow_Draw");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Weapon Action")
+	FName AimCycleHoldSectionName = TEXT("Bow_Hold");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Weapon Action")
+	FName AimCycleReleaseSectionName = TEXT("Bow_Release");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Weapon Action", meta = (ClampMin = "0.01"))
+	float AimCyclePlayRate = 1.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Weapon Action", meta = (ClampMin = "0.0"))
+	float AimCycleBlendOutTime = 0.1f;
+
+	// Optional authoring contract. When enabled by the bow ability, this curve
+	// synchronizes the animated bow mesh with the character montage.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Weapon Action")
+	FName DrawAlphaCurveName = TEXT("Weapon.DrawAlpha");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Weapon Layer")
+	TSubclassOf<UAnimInstance> WeaponAnimLayerClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attachment")
 	FName EquipSocketName = TEXT("GripPoint");

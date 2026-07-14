@@ -35,6 +35,11 @@ FTransform ABowItem::GetArrowSpawnTransform() const
 	return GetActorTransform();
 }
 
+USceneComponent* ABowItem::GetAttachmentReferenceComponent() const
+{
+	return BowMesh;
+}
+
 bool ABowItem::GetStringIKTargetTransform(float DrawAlpha, FTransform& OutWorldTransform) const
 {
 	if (!BowMesh ||
@@ -50,6 +55,27 @@ bool ABowItem::GetStringIKTargetTransform(float DrawAlpha, FTransform& OutWorldT
 	const float ClampedAlpha = FMath::Clamp(DrawAlpha, 0.0f, 1.0f);
 
 	OutWorldTransform.Blend(RestTransform, DrawTransform, ClampedAlpha);
+	return true;
+}
+
+bool ABowItem::GetCharacterStringGripTargetTransform(FTransform& OutBowComponentSpaceTransform) const
+{
+	OutBowComponentSpaceTransform = FTransform::Identity;
+
+	if (!BowMesh || CharacterStringGripSocketName.IsNone())
+	{
+		return false;
+	}
+
+	const USceneComponent* ItemAttachmentParent = GetRootComponent() ? GetRootComponent()->GetAttachParent() : nullptr;
+	const USkeletalMeshComponent* CharacterMesh = Cast<USkeletalMeshComponent>(ItemAttachmentParent);
+	if (!CharacterMesh || !CharacterMesh->DoesSocketExist(CharacterStringGripSocketName))
+	{
+		return false;
+	}
+
+	const FTransform GripWorldTransform = CharacterMesh->GetSocketTransform(CharacterStringGripSocketName, RTS_World);
+	OutBowComponentSpaceTransform = GripWorldTransform.GetRelativeTransform(BowMesh->GetComponentTransform());
 	return true;
 }
 

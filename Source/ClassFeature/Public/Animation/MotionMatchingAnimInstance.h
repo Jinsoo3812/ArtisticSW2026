@@ -217,6 +217,11 @@ struct FAnimBowData
     UPROPERTY(BlueprintReadOnly, Category = "Bow")
     bool bIsFullyDrawn = false;
 
+    // Becomes true slightly before the draw montage exits so the full-draw pose
+    // is already underneath the montage when it blends out.
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    bool bShouldUseFullDrawPose = false;
+
     UPROPERTY(BlueprintReadOnly, Category = "Bow")
     bool bIsReleasing = false;
 
@@ -400,6 +405,12 @@ public:
     bool GetThreadSafeIsBowFullyDrawn() const;
 
     UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeShouldUseBowFullDrawPose() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    float GetThreadSafeBowHoldAimOffsetAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
     bool GetThreadSafeIsBowReleasing() const;
 
     UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
@@ -515,6 +526,29 @@ protected:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
     bool bForceAimOffsetAlwaysOn = true;
+
+    // The authored draw, full-draw, and release poses own the arms. A global aim offset
+    // applied after them would otherwise rotate those poses again.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset", meta = (DisplayName = "Suppress Aim Offset While Bow Draw Pose Is Active"))
+    bool bSuppressAimOffsetWhileBowFullyDrawn = true;
+
+    // Disabled by default: the authored bow animation already places hand_r on the string.
+    // Enable only as a small per-character correction after validating the bow grip alignment.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Bow|IK")
+    bool bEnableBowStringHandIK = false;
+
+    // Starts preparing the static full-draw upper-body pose before the draw
+    // montage's final blend-out. This avoids exposing the normal bow idle pose.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Bow", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float FullDrawPosePreloadAlpha = 0.9f;
+
+    // Separate from the global aim offset. This is consumed only by the bow
+    // layer while the full-draw hold pose is active.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Bow|AimOffset")
+    bool bEnableBowHoldAimOffset = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Bow|AimOffset", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float BowHoldAimOffsetAlpha = 1.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
     float MaxAimYaw = 90.f;

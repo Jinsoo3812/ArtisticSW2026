@@ -9,6 +9,7 @@ class AArrowProjectile;
 class UBowComponent;
 class UAbilityTask_PlayMontageAndWait;
 class UAnimMontage;
+struct FWeaponAnimationEntry;
 
 /**
  * Bow ability driven by right-click aim, left-click draw, and left-click release fire.
@@ -54,6 +55,9 @@ protected:
 	void OnReleaseMontageInterrupted();
 
 	void UpdateDrawAlpha();
+	void PlayAimCycleMontage();
+	void StopAimCycleMontage(float BlendOutTime);
+	void JumpAimCycleToSection(FName SectionName);
 	void PlayDrawMontage();
 	void StopDrawMontage(float BlendOutTime);
 	void BeginRelease();
@@ -64,6 +68,15 @@ protected:
 	void AddBowStateTags();
 	void RemoveBowStateTags();
 	void SetBowDrawTagState(bool bDrawing, bool bFullyDrawn, bool bReleasing);
+	const FWeaponAnimationEntry* GetBowAnimationEntry() const;
+	UAnimMontage* GetAimCycleMontage() const;
+	bool IsUsingAimCycleMontage() const;
+
+	UFUNCTION()
+	void OnAimCycleMontageCompleted();
+
+	UFUNCTION()
+	void OnAimCycleMontageInterrupted();
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Charge", meta = (ClampMin = "0.01"))
@@ -98,6 +111,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation")
 	bool bRequireReleaseNotifyToFire = true;
+
+	// Enable after authoring Weapon.DrawAlpha on the Aim Cycle montage sequences.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation")
+	bool bUseAimCycleDrawAlphaCurve = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Damage", meta = (ClampMin = "0.0"))
 	float MinChargeDamageMultiplier = 1.0f;

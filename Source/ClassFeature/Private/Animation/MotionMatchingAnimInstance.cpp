@@ -1527,6 +1527,16 @@ bool UMotionMatchingAnimInstance::IsDedicatedServerAnimationContext() const
 
 float UMotionMatchingAnimInstance::CalculateAimOffsetAlpha(const FAnimThreadSafeData& ThreadSafeData) const
 {
+	const bool bHasAuthoredBowDrawPose =
+		ThreadSafeData.BowData.bIsDrawing ||
+		ThreadSafeData.BowData.bIsFullyDrawn ||
+		ThreadSafeData.BowData.bIsReleasing;
+
+	if (bSuppressAimOffsetWhileBowFullyDrawn && bHasAuthoredBowDrawPose)
+	{
+		return 0.f;
+	}
+
     if (bForceAimOffsetAlwaysOn)
     {
         return 1.f;
@@ -1947,7 +1957,6 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         const FRotator ControlRotation = CachedBasePlayer->GetControlRotation();
         ThreadSafeData.AimData.AimYaw = FMath::Clamp(FMath::FindDeltaAngleDegrees(ActorRotation.Yaw, ControlRotation.Yaw), -MaxAimYaw, MaxAimYaw);
         ThreadSafeData.AimData.AimPitch = FMath::Clamp(FRotator::NormalizeAxis(ControlRotation.Pitch), -MaxAimPitch, MaxAimPitch);
-        ThreadSafeData.AimData.AimOffsetAlpha = CalculateAimOffsetAlpha(ThreadSafeData);
     }
 
     ThreadSafeData.WeaponUpperBodyData = FAnimWeaponUpperBodyData();
@@ -2023,16 +2032,36 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         if (const UAbilitySystemComponent* ASC = CachedBasePlayer->GetAbilitySystemComponent())
         {
             ThreadSafeData.BowData.bIsDrawing = ASC->HasMatchingGameplayTag(State_Bow_Drawing);
-            ThreadSafeData.BowData.bIsFullyDrawn = ASC->HasMatchingGameplayTag(State_Bow_FullyDrawn);
+            // DrawAlpha reaches 1.0 in the same gameplay update that promotes the
+            // ability to FullyDrawn. Keep that local visual transition immediate
+            // instead of waiting for the gameplay-tag/proxy update on the next frame.
+            ThreadSafeData.BowData.bIsFullyDrawn =
+                ThreadSafeData.BowData.bIsFullyDrawn ||
+                ASC->HasMatchingGameplayTag(State_Bow_FullyDrawn);
             ThreadSafeData.BowData.bIsReleasing = ASC->HasMatchingGameplayTag(State_Bow_Releasing);
         }
 
+        // Preload the full-draw pose while the authored draw montage is still
+        // visible. When that montage fades out, it therefore reveals the
+        // matching pose rather than the regular bow upper-body blend space.
+        ThreadSafeData.BowData.bShouldUseFullDrawPose =
+            !ThreadSafeData.BowData.bIsReleasing &&
+            (ThreadSafeData.BowData.bIsFullyDrawn ||
+             (ThreadSafeData.BowData.bIsAiming &&
+              ThreadSafeData.BowData.DrawAlpha >= FullDrawPosePreloadAlpha));
+
         ThreadSafeData.BowData.StringIKAlpha =
+            bEnableBowStringHandIK &&
             ThreadSafeData.BowData.bHasStringIKTarget &&
-            (ThreadSafeData.BowData.bIsDrawing || ThreadSafeData.BowData.bIsFullyDrawn) &&
+            ThreadSafeData.BowData.bIsFullyDrawn &&
             !ThreadSafeData.BowData.bIsReleasing
-                ? FMath::Clamp(ThreadSafeData.BowData.DrawAlpha, 0.f, 1.f)
+                ? 1.f
                 : 0.f;
+
+		if (CachedBasePlayer->GetController())
+		{
+			ThreadSafeData.AimData.AimOffsetAlpha = CalculateAimOffsetAlpha(ThreadSafeData);
+		}
     }
 
     // 4. Push variables safely to the proxy
@@ -2373,6 +2402,21 @@ bool UMotionMatchingAnimInstance::GetThreadSafeIsBowDrawing() const
 bool UMotionMatchingAnimInstance::GetThreadSafeIsBowFullyDrawn() const
 {
     return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.bIsFullyDrawn;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeShouldUseBowFullDrawPose() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.bShouldUseFullDrawPose;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeBowHoldAimOffsetAlpha() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return bEnableBowHoldAimOffset &&
+        ThreadSafeData.BowData.bIsFullyDrawn &&
+        !ThreadSafeData.BowData.bIsReleasing
+            ? BowHoldAimOffsetAlpha
+            : 0.f;
 }
 
 bool UMotionMatchingAnimInstance::GetThreadSafeIsBowReleasing() const

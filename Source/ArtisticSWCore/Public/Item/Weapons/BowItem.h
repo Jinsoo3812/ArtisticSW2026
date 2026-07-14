@@ -27,8 +27,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Bow")
 	FTransform GetArrowSpawnTransform() const;
 
+	virtual USceneComponent* GetAttachmentReferenceComponent() const override;
+
 	UFUNCTION(BlueprintCallable, Category = "Bow")
 	bool GetStringIKTargetTransform(float DrawAlpha, FTransform& OutWorldTransform) const;
+
+	/**
+	 * Returns the character's string-grip socket in BowMesh component space.
+	 * Bow animation blueprints use this to move their string-center bone toward
+	 * the authored finger grip instead of pulling the character hand with IK.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Bow|String")
+	bool GetCharacterStringGripTargetTransform(FTransform& OutBowComponentSpaceTransform) const;
 
 	UFUNCTION(NetMulticast, Unreliable, BlueprintCallable, Category = "Bow")
 	void Multicast_PlayReleaseFX();
@@ -52,4 +62,8 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|IK")
 	FName StringDrawSocketName = FName("String_Draw_Socket");
+
+	/** Socket on the equipped character mesh where the drawing fingers grip the string. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|String")
+	FName CharacterStringGripSocketName = FName("BowStringGrip");
 };

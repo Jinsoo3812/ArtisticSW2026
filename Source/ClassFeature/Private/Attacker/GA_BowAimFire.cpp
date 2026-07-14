@@ -7,6 +7,8 @@
 #include "Animation/AnimInstance.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
+#include "Equipment/PlayerEquipmentComponent.h"
+#include "Equipment/WeaponAnimationDataAsset.h"
 #include "Item/Components/BowComponent.h"
 #include "Item/Projectiles/ArrowProjectile.h"
 #include "Item/Weapons/BowItem.h"
@@ -15,6 +17,9 @@ UGA_BowAimFire::UGA_BowAimFire()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+	FGameplayTagContainer AssetTags;
+	AssetTags.AddTag(GameplayAbility_Weapon_AimCycle);
+	SetAssetTags(AssetTags);
 }
 
 void UGA_BowAimFire::ActivateAbility(
@@ -120,7 +125,14 @@ void UGA_BowAimFire::OnLeftClickPressed(FGameplayEventData Payload)
 		Player->StopSprint();
 	}
 
-	PlayDrawMontage();
+	if (IsUsingAimCycleMontage())
+	{
+		PlayAimCycleMontage();
+	}
+	else
+	{
+		PlayDrawMontage();
+	}
 
 	GetWorld()->GetTimerManager().SetTimer(
 		ChargeTimerHandle,
@@ -164,17 +176,95 @@ void UGA_BowAimFire::UpdateDrawAlpha()
 		return;
 	}
 
-	const float HeldTime = GetWorld()->GetTimeSeconds() - DrawStartTime;
-	const float DrawDuration = FMath::Max(FullDrawTime - DrawAlphaStartDelay, KINDA_SMALL_NUMBER);
-	const float DrawAlpha = FMath::Clamp((HeldTime - DrawAlphaStartDelay) / DrawDuration, 0.0f, 1.0f);
+	float DrawAlpha = 0.f;
+	if (bUseAimCycleDrawAlphaCurve && IsUsingAimCycleMontage())
+	{
+		if (const FWeaponAnimationEntry* Entry = GetBowAnimationEntry())
+		{
+			if (const UAnimInstance* AnimInstance = CurrentActorInfo ? CurrentActorInfo->GetAnimInstance() : nullptr)
+			{
+				DrawAlpha = FMath::Clamp(AnimInstance->GetCurveValue(Entry->DrawAlphaCurveName), 0.f, 1.f);
+			}
+		}
+	}
+	else
+	{
+		const float HeldTime = GetWorld()->GetTimeSeconds() - DrawStartTime;
+		const float DrawDuration = FMath::Max(FullDrawTime - DrawAlphaStartDelay, KINDA_SMALL_NUMBER);
+		DrawAlpha = FMath::Clamp((HeldTime - DrawAlphaStartDelay) / DrawDuration, 0.0f, 1.0f);
+	}
 	CachedBowComponent->SetDrawAlpha(DrawAlpha);
 
 	if (DrawAlpha >= FullDrawAlphaToRelease)
 	{
 		GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
 		CachedBowComponent->SetDrawAlpha(1.0f);
-		StopDrawMontage(DrawMontageBlendOutTime);
+
+		// Make the full-draw pose available before the draw montage starts blending
+		// out. This prevents the underlying unaimed bow overlay from flashing.
 		SetBowDrawTagState(false, true, false);
+		if (IsUsingAimCycleMontage())
+		{
+			JumpAimCycleToSection(GetBowAnimationEntry()->AimCycleHoldSectionName);
+		}
+		else
+		{
+			StopDrawMontage(DrawMontageBlendOutTime);
+		}
+	}
+}
+
+void UGA_BowAimFire::PlayAimCycleMontage()
+{
+	UAnimMontage* AimCycleMontage = GetAimCycleMontage();
+	const FWeaponAnimationEntry* Entry = GetBowAnimationEntry();
+	if (!AimCycleMontage || !Entry)
+	{
+		return;
+	}
+
+	UAbilityTask_PlayMontageAndWait* AimCycleTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+		this,
+		NAME_None,
+		AimCycleMontage,
+		Entry->AimCyclePlayRate,
+		Entry->AimCycleDrawSectionName,
+		true);
+
+	if (AimCycleTask)
+	{
+		AimCycleTask->OnCompleted.AddDynamic(this, &UGA_BowAimFire::OnAimCycleMontageCompleted);
+		AimCycleTask->OnInterrupted.AddDynamic(this, &UGA_BowAimFire::OnAimCycleMontageInterrupted);
+		AimCycleTask->OnCancelled.AddDynamic(this, &UGA_BowAimFire::OnAimCycleMontageInterrupted);
+		AimCycleTask->ReadyForActivation();
+	}
+}
+
+void UGA_BowAimFire::StopAimCycleMontage(float BlendOutTime)
+{
+	UAnimMontage* AimCycleMontage = GetAimCycleMontage();
+	if (!AimCycleMontage || !CurrentActorInfo)
+	{
+		return;
+	}
+
+	if (UAnimInstance* AnimInstance = CurrentActorInfo->GetAnimInstance())
+	{
+		if (AnimInstance->Montage_IsPlaying(AimCycleMontage))
+		{
+			AnimInstance->Montage_Stop(FMath::Max(0.f, BlendOutTime), AimCycleMontage);
+		}
+	}
+}
+
+void UGA_BowAimFire::JumpAimCycleToSection(FName SectionName)
+{
+	if (UAnimMontage* AimCycleMontage = GetAimCycleMontage())
+	{
+		if (UAnimInstance* AnimInstance = CurrentActorInfo ? CurrentActorInfo->GetAnimInstance() : nullptr)
+		{
+			AnimInstance->Montage_JumpToSection(SectionName, AimCycleMontage);
+		}
 	}
 }
 
@@ -228,6 +318,16 @@ void UGA_BowAimFire::BeginRelease()
 	bIsReleaseInProgress = true;
 	CachedBowComponent->SetDrawAlpha(1.0f);
 	SetBowDrawTagState(false, true, true);
+	if (IsUsingAimCycleMontage())
+	{
+		JumpAimCycleToSection(GetBowAnimationEntry()->AimCycleReleaseSectionName);
+		if (!bRequireReleaseNotifyToFire)
+		{
+			FireArrow();
+		}
+		return;
+	}
+
 	StopDrawMontage(0.0f);
 
 	if (ReleaseMontage)
@@ -290,6 +390,22 @@ void UGA_BowAimFire::OnReleaseMontageInterrupted()
 	FinishShot();
 }
 
+void UGA_BowAimFire::OnAimCycleMontageCompleted()
+{
+	if (IsActive())
+	{
+		FinishShot();
+	}
+}
+
+void UGA_BowAimFire::OnAimCycleMontageInterrupted()
+{
+	if (IsActive())
+	{
+		FinishShot();
+	}
+}
+
 void UGA_BowAimFire::FireArrow()
 {
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
@@ -343,6 +459,10 @@ void UGA_BowAimFire::FinishShot()
 {
 	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
 	StopDrawMontage(DrawMontageBlendOutTime);
+	if (const FWeaponAnimationEntry* Entry = GetBowAnimationEntry())
+	{
+		StopAimCycleMontage(Entry->AimCycleBlendOutTime);
+	}
 
 	bIsDrawing = false;
 	bIsFullyDrawn = false;
@@ -365,6 +485,10 @@ void UGA_BowAimFire::ResetBowState()
 {
 	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
 	StopDrawMontage(DrawMontageBlendOutTime);
+	if (const FWeaponAnimationEntry* Entry = GetBowAnimationEntry())
+	{
+		StopAimCycleMontage(Entry->AimCycleBlendOutTime);
+	}
 	bIsDrawing = false;
 	bIsFullyDrawn = false;
 	bIsReleaseInProgress = false;
@@ -392,6 +516,28 @@ bool UGA_BowAimFire::CacheBowFromAvatar()
 	CachedBowComponent = CachedBow ? CachedBow->GetBowComponent() : nullptr;
 
 	return CachedBow && CachedBowComponent;
+}
+
+const FWeaponAnimationEntry* UGA_BowAimFire::GetBowAnimationEntry() const
+{
+	const ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+	if (const UPlayerEquipmentComponent* EquipmentComponent = Player ? Player->GetEquipmentComponent() : nullptr)
+	{
+		return EquipmentComponent->GetEquippedWeaponAnimationEntry();
+	}
+
+	return nullptr;
+}
+
+UAnimMontage* UGA_BowAimFire::GetAimCycleMontage() const
+{
+	const FWeaponAnimationEntry* Entry = GetBowAnimationEntry();
+	return Entry ? Entry->AimCycleMontage.Get() : nullptr;
+}
+
+bool UGA_BowAimFire::IsUsingAimCycleMontage() const
+{
+	return GetAimCycleMontage() != nullptr;
 }
 
 void UGA_BowAimFire::AddBowStateTags()
