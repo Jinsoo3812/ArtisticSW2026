@@ -37,12 +37,15 @@ AEnemyShip::AEnemyShip()
 		HealthBarWidgetComponent->SetWidgetClass(HealthBarWidgetClass);
 	}
 
+	Tags.Remove(TEXT("Player"));
 	Tags.AddUnique(TEXT("Enemy"));
 }
 
 void AEnemyShip::BeginPlay()
 {
 	Super::BeginPlay();
+	Tags.Remove(TEXT("Player"));
+	Tags.AddUnique(TEXT("Enemy"));
 
 	if (BuoyancyRoot)
 	{
@@ -204,6 +207,7 @@ void AEnemyShip::HideHealthBarForDamagePolicy()
 void AEnemyShip::HandleShipDeath()
 {
 	if (!HasAuthority()) return;
+	SetAIControlInput(0.0f, 0.0f);
 
 	const FVector DeathLocation = GetActorLocation();
 	const FRotator DeathRotation = GetActorRotation();

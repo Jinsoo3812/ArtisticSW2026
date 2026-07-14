@@ -543,6 +543,8 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 void AShip::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+	CurrentMoveInput = 0.0f;
+	CurrentTurnInput = 0.0f;
 
 	if (NetworkPhysicsComponent)
 	{
@@ -562,6 +564,17 @@ void AShip::UnPossessed()
 	}
 
 	Super::UnPossessed();
+}
+
+void AShip::SetAIControlInput(float MoveInput, float TurnInput)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	CurrentMoveInput = FMath::Clamp(MoveInput, -1.0f, 1.0f);
+	CurrentTurnInput = FMath::Clamp(TurnInput, -1.0f, 1.0f);
 }
 
 

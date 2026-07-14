@@ -22,7 +22,27 @@ UBTTask_NavalDrive::UBTTask_NavalDrive()
 EBTNodeResult::Type UBTTask_NavalDrive::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
 	CurrentState = ENavalCombatState::Idle;
+	if (AAIController* Controller = OwnerComp.GetAIOwner())
+	{
+		if (AShip* Ship = Cast<AShip>(Controller->GetPawn()))
+		{
+			Ship->SetAIControlInput(0.0f, 0.0f);
+		}
+	}
 	return EBTNodeResult::InProgress;
+}
+
+EBTNodeResult::Type UBTTask_NavalDrive::AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
+{
+	if (AAIController* Controller = OwnerComp.GetAIOwner())
+	{
+		if (AShip* Ship = Cast<AShip>(Controller->GetPawn()))
+		{
+			Ship->SetAIControlInput(0.0f, 0.0f);
+		}
+	}
+
+	return EBTNodeResult::Aborted;
 }
 
 void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
@@ -43,6 +63,7 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 		FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
 		return;
 	}
+	const ENavalCombatState StateAtTickStart = CurrentState;
 
 	// --- 1. 리플렉션을 사용해 BP_EnemyShip 인스턴스 변수 다이렉트 동적 로드 ---
 	// 블랙보드나 C++ 소속의 꼬임을 원천 예방하고 기획자가 블루프린트 디테일창에서 세팅한 값을 100% 무조건 정확하게 연동합니다.
@@ -494,16 +515,23 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 	}
 
 	// --- 6. 물리 엔진 적용 (배율 적용) ---
-	if (FMath::Abs(MoveInput) > KINDA_SMALL_NUMBER)
-	{
-		FVector ForceToApply = ShipForward * (MyShip->ForwardForce * ForwardForceMultiplier) * MoveInput;
-		BuoyancyRoot->AddForce(ForceToApply);
-	}
+	// Feed AI intent into the same async Network Physics path as player input.
+	// Server-authored inputs are recorded and sent to simulated proxies for prediction/resimulation.
+	const float NetworkMoveInput = FMath::Clamp(
+		MoveInput * FMath::Max(0.0f, ForwardForceMultiplier), -1.0f, 1.0f);
+	const float NetworkTurnInput = FMath::Clamp(
+		TurnInput * FMath::Max(0.0f, TurnTorqueMultiplier), -1.0f, 1.0f);
+	MyShip->SetAIControlInput(NetworkMoveInput, NetworkTurnInput);
 
-	if (FMath::Abs(TurnInput) > KINDA_SMALL_NUMBER)
+	if (StateAtTickStart != CurrentState)
 	{
-		FVector TorqueToApply = FVector(0.f, 0.f, (MyShip->TurnTorque * TurnTorqueMultiplier) * TurnInput);
-		BuoyancyRoot->AddTorqueInDegrees(TorqueToApply);
+		UE_LOG(LogTemp, Log, TEXT("[NAVAL-AI-STATE] Ship=%s State=%s Target=%s Distance=%.1f Move=%.3f Turn=%.3f"),
+			*MyShip->GetName(),
+			*StaticEnum<ENavalCombatState>()->GetNameStringByValue(static_cast<int64>(CurrentState)),
+			*GetNameSafe(TargetShip),
+			Distance,
+			NetworkMoveInput,
+			NetworkTurnInput);
 	}
 
 	// --- 7. 화면 좌상단 스크린 디버그 로그 표시 ---
@@ -661,40 +689,19 @@ AShip* UBTTask_NavalDrive::FindPlayerShip(UWorld* World, APawn* AIPawn) const
 	float ClosestDistance = FLT_MAX;
 	FVector SelfLoc = AIPawn->GetActorLocation();
 
-	// 월드 내의 모든 플레이어 컨트롤러를 탐색 (멀티플레이어/리슨 서버 완벽 대응)
-	for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	// Possess 여부와 무관하게 월드의 플레이어 배를 탐색한다.
+	for (TActorIterator<AShip> Iterator(World); Iterator; ++Iterator)
 	{
-		APlayerController* PlayerController = Iterator->Get();
-		if (!PlayerController) continue;
-
-		APawn* PlayerPawn = PlayerController->GetPawn();
-		if (!PlayerPawn) continue;
-
-		AShip* FoundShip = nullptr;
-
-		// 1. 플레이어가 배에 직접 빙의(Possess)하여 운전 중인 경우
-		if (AShip* ControlledShip = Cast<AShip>(PlayerPawn))
-		{
-			FoundShip = ControlledShip;
-		}
-		// 2. 플레이어 캐릭터가 배의 자식 컴포넌트로 탑승(Attach)하고 있는 상태인 경우
-		else if (AActor* ParentActor = PlayerPawn->GetAttachParentActor())
-		{
-			if (AShip* AttachedShip = Cast<AShip>(ParentActor))
-			{
-				FoundShip = AttachedShip;
-			}
-		}
+		AShip* FoundShip = *Iterator;
+		if (!FoundShip || FoundShip == AIPawn) continue;
+		if (!FoundShip->ActorHasTag(TEXT("Player")) || FoundShip->ActorHasTag(TEXT("Enemy"))) continue;
 
 		// 가장 가까운 위치의 플레이어 배를 최종 타겟팅 대상으로 선택
-		if (FoundShip)
+		const float Dist = FVector::Dist(SelfLoc, FoundShip->GetActorLocation());
+		if (Dist < ClosestDistance)
 		{
-			float Dist = FVector::Dist(SelfLoc, FoundShip->GetActorLocation());
-			if (Dist < ClosestDistance)
-			{
-				ClosestDistance = Dist;
-				ClosestPlayerShip = FoundShip;
-			}
+			ClosestDistance = Dist;
+			ClosestPlayerShip = FoundShip;
 		}
 	}
 

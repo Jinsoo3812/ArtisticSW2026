@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
@@ -351,6 +351,9 @@ public:
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void UnPossessed() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	/** Sets normalized server-authored control input for AI-controlled ships. */
+	void SetAIControlInput(float MoveInput, float TurnInput);
 
 	/* Boarding Interaction */
 	void Board(APawn* PlayerPawn);
