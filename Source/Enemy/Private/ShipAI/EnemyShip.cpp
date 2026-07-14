@@ -36,11 +36,21 @@ AEnemyShip::AEnemyShip()
 		HealthBarWidgetClass = HealthBarWidgetFinder.Class;
 		HealthBarWidgetComponent->SetWidgetClass(HealthBarWidgetClass);
 	}
+
+	Tags.Remove(TEXT("Player"));
+	Tags.AddUnique(TEXT("Enemy"));
 }
 
 void AEnemyShip::BeginPlay()
 {
 	Super::BeginPlay();
+	Tags.Remove(TEXT("Player"));
+	Tags.AddUnique(TEXT("Enemy"));
+
+	if (BuoyancyRoot)
+	{
+		BuoyancyRoot->SetCollisionProfileName(TEXT("EnemyShip"));
+	}
 
 	// HealthComponent를 Ship의 ASC에 바인딩 (BaseEnemy의 패턴과 동일)
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
@@ -197,6 +207,7 @@ void AEnemyShip::HideHealthBarForDamagePolicy()
 void AEnemyShip::HandleShipDeath()
 {
 	if (!HasAuthority()) return;
+	SetAIControlInput(0.0f, 0.0f);
 
 	const FVector DeathLocation = GetActorLocation();
 	const FRotator DeathRotation = GetActorRotation();

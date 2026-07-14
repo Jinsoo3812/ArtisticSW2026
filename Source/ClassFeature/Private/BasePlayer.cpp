@@ -3,6 +3,7 @@
 
 #include "BasePlayer.h"
 #include "BasePlayerState.h"
+#include "Misc/Crc.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbilityTargetTypes.h"
 #include "Camera/CameraComponent.h"
@@ -311,10 +312,13 @@ void ABasePlayer::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 
+	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Start. NewController: %s"), NewController ? *NewController->GetName() : TEXT("None"));
+
 	// 서버 측 ASC 초기화 (InitAbilityActorInfo)
 	ABasePlayerState* PS = GetPlayerState<ABasePlayerState>();
 	if (PS)
 	{
+		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] PlayerState found: %s"), *PS->GetName());
 		// Owner는 PlayerState, Avatar는 이 Character 객체로 설정
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
 
@@ -332,9 +336,13 @@ void ABasePlayer::PossessedBy(AController* NewController)
 			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_ShipBoard).AddUObject(this, &ABasePlayer::HandleShipBoardEvent);
 			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_CannonBoard).AddUObject(this, &ABasePlayer::HandleCannonBoardEvent);
 
+			UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] DefaultGrantedAbilities Count: %d, DefaultAbilityMap Count: %d"),
+				DefaultGrantedAbilities.Num(), DefaultAbilityMap.Num());
+
 			// Map에 등록된 기본 어빌리티 순회 및 슬롯에 부여
 			for (TSubclassOf<UGameplayAbility> AbilityClass : DefaultGrantedAbilities)
 			{
+				UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Granting Default Ability: %s"), AbilityClass ? *AbilityClass->GetName() : TEXT("None"));
 				GrantDefaultAbility(AbilityClass);
 			}
 
@@ -342,13 +350,22 @@ void ABasePlayer::PossessedBy(AController* NewController)
 			{
 				if (AbilityPair.Value)
 				{
+					UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Granting Ability: %s to Slot Tag: %s (InputID: %d)"),
+						*AbilityPair.Value->GetName(),
+						*AbilityPair.Key.ToString(),
+						GetInputIDFromTag(AbilityPair.Key));
 					GrantAbilityToSlot(AbilityPair.Key, AbilityPair.Value);
 				}
 			}
 		}
-
-		/*// 부모 클래스에 구현된 어빌리티 부여 함수 호출 (서버에서만)
-		GrantAbilities(StartingAbilities);*/
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::PossessedBy - [SERVER] CachedAbilitySystemComponent is invalid!"));
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::PossessedBy - [SERVER] PlayerState is null!"));
 	}
 
 	// ASC 초기화 완료 알림 방송
@@ -359,10 +376,13 @@ void ABasePlayer::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
 
+	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] Start."));
+
 	// 클라이언트 측 ASC 초기화 (PlayerState가 클라로 복제되었음을 보장하는 타이밍)
 	ABasePlayerState* PS = GetPlayerState<ABasePlayerState>();
 	if (PS)
 	{
+		// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] PlayerState found: %s"), *PS->GetName());
 		// 클라이언트에서도 Owner와 Avatar를 연결해줌
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
 
@@ -375,6 +395,10 @@ void ABasePlayer::OnRep_PlayerState()
 		if (CachedAbilitySystemComponent.Get()) {
 			//CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
 		}
+	}
+	else
+	{
+		// UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] PlayerState is null!"));
 	}
 
 	OnAbilitySystemInitialized.Broadcast();
@@ -504,7 +528,7 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 int32 ABasePlayer::GetInputIDFromTag(const FGameplayTag& Tag) const
 {
 	if (!Tag.IsValid()) return INDEX_NONE;
-	return static_cast<int32>(GetTypeHash(Tag));
+	return static_cast<int32>(FCrc::StrCrc32(*Tag.ToString()));
 }
 
 bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
@@ -625,12 +649,36 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 
 void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
-	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
+	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid())
+	{
+		// UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] Fails: CachedAbilitySystemComponent valid? %s, InputTag: %s"),
+		// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+		// 	CachedAbilitySystemComponent.IsValid() ? TEXT("YES") : TEXT("NO"),
+		// 	*InputTag.ToString());
+		return;
+	}
 
 	int32 InputID = GetInputIDFromTag(InputTag);
+	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
+	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+	// 	*InputTag.ToString(),
+	// 	InputID,
+	// 	IsLocallyControlled() ? TEXT("YES") : TEXT("NO"));
+
+	// 현재 부여된 모든 어빌리티 및 그 InputID 출력
+	const TArray<FGameplayAbilitySpec>& Specs = CachedAbilitySystemComponent->GetActivatableAbilities();
+	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] Activatable Abilities Count: %d"), 
+	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"), Specs.Num());
+	for (const FGameplayAbilitySpec& Spec : Specs)
+	{
+		// UE_LOG(LogTemp, Log, TEXT("  - Ability: %s, InputID: %d, Active: %s"), 
+		// 	Spec.Ability ? *Spec.Ability->GetName() : TEXT("None"),
+		// 	Spec.InputID,
+		// 	Spec.IsActive() ? TEXT("YES") : TEXT("NO"));
+	}
+
 	if (InputID != INDEX_NONE)
 	{
-		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed : Input pressed with KeyTag: %s, InputID: %d"), *InputTag.ToString(), InputID);
 		CachedAbilitySystemComponent->AbilityLocalInputPressed(InputID);
 	}
 }
@@ -640,6 +688,12 @@ void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 
 	int32 InputID = GetInputIDFromTag(InputTag);
+	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputReleased - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
+	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+	// 	*InputTag.ToString(),
+	// 	InputID,
+	// 	IsLocallyControlled() ? TEXT("YES") : TEXT("NO"));
+
 	if (InputID != INDEX_NONE)
 	{
 		CachedAbilitySystemComponent->AbilityLocalInputReleased(InputID);
@@ -739,22 +793,44 @@ void ABasePlayer::AddMouseAimTargetData(FGameplayEventData& EventData) const
 
 void ABasePlayer::HandleShipBoardEvent(const FGameplayEventData* Payload)
 {
+	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::HandleShipBoardEvent - [%s] Event received. Payload valid: %s, Target: %s"),
+		HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+		Payload ? TEXT("YES") : TEXT("NO"),
+		Payload && Payload->Target ? *Payload->Target->GetName() : TEXT("None"));
+
 	if (Payload && Payload->Target)
 	{
 		if (AShip* TargetShip = const_cast<AShip*>(Cast<AShip>(Payload->Target)))
 		{
 			TargetShip->Board(this);
 		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::HandleShipBoardEvent - [%s] Target is not AShip! Target: %s"),
+				HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+				*Payload->Target->GetName());
+		}
 	}
 }
 
 void ABasePlayer::HandleCannonBoardEvent(const FGameplayEventData* Payload)
 {
+	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::HandleCannonBoardEvent - [%s] Event received. Payload valid: %s, Target: %s"),
+		HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+		Payload ? TEXT("YES") : TEXT("NO"),
+		Payload && Payload->Target ? *Payload->Target->GetName() : TEXT("None"));
+
 	if (Payload && Payload->Target)
 	{
 		if (ACannon* TargetCannon = const_cast<ACannon*>(Cast<ACannon>(Payload->Target)))
 		{
 			TargetCannon->Board(this);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::HandleCannonBoardEvent - [%s] Target is not ACannon! Target: %s"),
+				HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+				*Payload->Target->GetName());
 		}
 	}
 }
@@ -1064,13 +1140,18 @@ bool ABasePlayer::PerformInteractTrace(TArray<FHitResult>& OutHitResults) const
 	);
 
 #if ENABLE_DRAW_DEBUG
-	FColor DrawColor = bHit ? FColor::Green : FColor::Red;
-	FVector TraceCenter = StartLoc + (EndLoc - StartLoc) * 0.5f;
-	float TraceHalfHeight = (EndLoc - StartLoc).Size() * 0.5f;
-	FQuat TraceRotation = FRotationMatrix::MakeFromZ(EndLoc - StartLoc).ToQuat();
+#if WITH_EDITOR
+	if (GIsEditor)
+	{
+		FColor DrawColor = bHit ? FColor::Green : FColor::Red;
+		FVector TraceCenter = StartLoc + (EndLoc - StartLoc) * 0.5f;
+		float TraceHalfHeight = (EndLoc - StartLoc).Size() * 0.5f;
+		FQuat TraceRotation = FRotationMatrix::MakeFromZ(EndLoc - StartLoc).ToQuat();
 
-	// 타이머 주기에 맞춰 그려지도록 LifeTime을 짧게 설정 (예: 0.1초)
-	DrawDebugCapsule(GetWorld(), TraceCenter, TraceHalfHeight, InteractTraceRadius, TraceRotation, DrawColor, false, 0.1f);
+		// 타이머 주기에 맞춰 그려지도록 LifeTime을 짧게 설정 (예: 0.1초)
+		// DrawDebugCapsule(GetWorld(), TraceCenter, TraceHalfHeight, InteractTraceRadius, TraceRotation, DrawColor, false, 0.1f);
+	}
+#endif
 #endif
 
 	return bHit;

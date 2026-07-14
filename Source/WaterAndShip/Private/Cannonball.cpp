@@ -59,6 +59,18 @@ void ACannonball::InitializeProjectile(AShip* InLaunchingShip, float InDamage, f
 	LaunchingShip = InLaunchingShip;
 	DamageAmount = InDamage;
 
+	if (SphereCollision && InLaunchingShip)
+	{
+		if (InLaunchingShip->ActorHasTag(TEXT("Enemy")))
+		{
+			SphereCollision->SetCollisionProfileName(TEXT("EnemyCannonball"));
+		}
+		else
+		{
+			SphereCollision->SetCollisionProfileName(TEXT("PlayerCannonball"));
+		}
+	}
+
 	if (ProjectileMovement)
 	{
 		ProjectileMovement->InitialSpeed = InSpeed;
@@ -140,7 +152,7 @@ void ACannonball::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* Ot
 	{
 		if (!bHasHitWater)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("ACannonball: Hit Water at Location %s! Triggering Ripple..."), *GetActorLocation().ToString());
+			// UE_LOG(LogTemp, Warning, TEXT("ACannonball: Hit Water at Location %s! Triggering Ripple..."), *GetActorLocation().ToString());
 			TriggerWaterRipple(GetActorLocation());
 		}
 		return;
