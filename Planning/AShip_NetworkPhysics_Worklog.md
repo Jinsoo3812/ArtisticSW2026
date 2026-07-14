@@ -1605,3 +1605,43 @@ M19 동일 30초 Dedicated 재검증:
 - **Player가 Ship 위에 서는 네트워크 충돌 안정성:** 달성.
 - **모든 gameplay 시나리오를 포함한 “완벽한 Network Physics” 최종 목표:** 아직 미완료.
 - 현재 남은 문제는 core loop의 비작동이 아니라 startup 초기화 품질, 실제 조종/외력의 history 모델, full water 정의, 다중 Client와 불량 네트워크 수용 검증이다.
+
+### 2026-07-14 M22 Enemy Ship Network Physics 입력 통합 및 비점유 Player Ship 탐지
+
+#### 증상과 원인
+
+- Test Level 시작 직후 Player가 배를 조종하지 않으면 근처 Enemy Ship 3척이 계속 Idle 상태에 머물렀다.
+- 기존 `FindPlayerShip`은 PlayerController가 직접 `AShip`을 Possess하거나 Player Pawn이 Ship에 Attach된 경우만 탐색했다. 따라서 아무도 타지 않은 Player Ship은 AI 표적 후보에 들어가지 않았다.
+- 기본 `AShip`이 `Player` 태그를 추가하고 `AEnemyShip`이 이를 상속한 뒤 `Enemy` 태그만 추가해, Enemy Ship도 `Player`와 `Enemy` 태그를 동시에 가질 수 있었다.
+- Player Ship은 Network Physics 적용 후 physics thread의 `ParticleHandle->AddTorque`를 사용했지만 Enemy BT는 game thread의 `AddTorqueInDegrees`를 계속 사용했다. 같은 수치라도 degrees-to-radians 변환 때문에 Enemy 회전 토크가 약 57.3배 작게 적용됐다.
+- BT는 선수 정렬값 `HeadingDot > 0`일 때만 전진력을 주므로, 약한 회전 때문에 측면이나 후방의 표적을 향하지 못하면 전진 입력도 계속 0에 가까워졌다.
+- Enemy BT의 직접 Force/Torque는 `FNetInputShip` history에 기록되지 않아 Client Simulated Proxy가 AI 추진을 예측·재시뮬레이션할 수 없었다.
+
+#### 수정한 구조
+
+- `AEnemyShip`은 생성 및 BeginPlay 시 `Player` 태그를 제거하고 `Enemy` 태그를 보장한다.
+- `FindPlayerShip`은 PlayerController 소유 여부 대신 World의 모든 `AShip`을 순회한다. `Player` 태그가 있고 `Enemy` 태그가 없는 Ship을 표적으로 선택하므로 비점유 Player Ship도 즉시 인식한다.
+- `AShip::SetAIControlInput`을 추가했다. 서버 권한에서만 Move/Turn을 `[-1, 1]`로 clamp하여 Player와 동일한 `CurrentMoveInput`/`CurrentTurnInput` 경로에 기록한다.
+- `BTTask_NavalDrive`는 직접 `AddForce`/`AddTorqueInDegrees`를 호출하지 않는다. BT가 계산한 정규화 입력을 `SetAIControlInput`으로 넘기고, `AShip::Tick`이 이를 `FShipPhysicsAsync`로 전달한다.
+- BT 시작·중단 및 Enemy 사망 시 AI 입력을 0으로 초기화해 이전 추진 입력이 history에 남지 않도록 했다.
+- 결과적으로 AI 판단은 서버 전용이지만, 서버가 작성한 Enemy Move/Turn은 Network Physics input history로 Client에 전달된다. Client의 Enemy Ship은 단순 transform 추종만 하는 것이 아니라 해당 입력으로 물리를 extrapolation하고, 서버 state와 비교해 필요 시 rewind/resimulation한다.
+
+#### 기본 물리값 정렬
+
+- Player Ship을 기준으로 Enemy Ship 계열의 기본값을 동일하게 맞췄다: Mass `10000`, Linear Damping `0.8`, Angular Damping `3.0`, Forward Force `2,000,000`, Turn Torque `6,000,000,000`, Lateral Drag `200`.
+- Test Level이 사용하는 `BP_TestShip_SingeMesh`와 `BP_TestShip_SingleMesh`의 관련 값이 동일함도 확인했다.
+- 향후 감각 튜닝은 각 BP의 에디터 값으로 분리 조정할 수 있다.
+
+#### Dedicated Server + Client 검증
+
+- `/Game/New/Level/Test_Level`에서 서버 1 + Client 1을 25초간 실행했다.
+- Player가 배를 조종하지 않은 상태에서 3척 모두 `Idle -> Approach`로 전환하고 `BP_TestShip_SingeMesh`를 표적으로 선택했다.
+- 서버에서 Enemy별 nonzero Move/Turn 입력이 Network Physics history에 저장됐고 Client에서 같은 입력을 load하는 것을 확인했다.
+- Client physics thread에서 nonzero 전진력과 회전 토크가 적용됐고, 약 5 cm 정책에 따른 state 비교 및 resimulation이 작동했다.
+- Fatal, Assertion, Ensure, NaN은 발생하지 않았다.
+
+#### 로그 정리
+
+- 검증에 사용한 `[GT]`, `[CLIENT-GT]`, `[SHIP-SYNC]`, `[GS-*]`, `[NETPHYS-*]`, `[PHYSICS-PT*]`, `[PT-RESIM]`, `[RESIM-COMPARE-TRIGGER]`, `[NAVAL-AI-STATE]` 진단 로그는 호출 코드를 삭제하지 않고 주석 처리했다.
+- 탑승, 전투, 드롭, 설정 오류 등 기존 gameplay 로그는 유지했다.
+- 필요 시 해당 주석만 해제하면 동일한 frame/input/state/force 계측을 다시 사용할 수 있다.

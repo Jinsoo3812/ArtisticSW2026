@@ -97,6 +97,7 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		}
 
 		bOutSuccess = !Ar.IsError();
+		/* Network Physics serializer diagnostic log disabled after validation.
 		if (bOutSuccess && ServerFrame > 0 && (ServerFrame <= 5 || ServerFrame % 60 == 0))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[NETPHYS-FRAME-INPUT] Direction=%s ServerFrame=%d LocalFrame=%d Move=%.3f Steer=%.3f"),
@@ -106,6 +107,7 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 				MovementInput,
 				SteeringInput);
 		}
+		*/
 
 		return bOutSuccess;
 	}
@@ -175,11 +177,12 @@ struct FNetStatePhysicsShip : public FNetworkPhysicsPayload
 
 		float DistSq = FVector::DistSquared(Position, PredState.Position);
 		float RotDist = Rotation.AngularDistance(PredState.Rotation);
-		float LinearVelocityDistSq = FVector::DistSquared(LinearVelocity, PredState.LinearVelocity);
-		float AngularVelocityDist = FVector::Distance(AngularVelocity, PredState.AngularVelocity);
 		const bool bPositionMatch = DistSq <= TargetLocThreshold;
 		const bool bRotationMatch = RotDist <= TargetRotThreshold;
 		bool bMatch = bPositionMatch && bRotationMatch;
+		/* Network Physics comparison diagnostic logs disabled after validation.
+		float LinearVelocityDistSq = FVector::DistSquared(LinearVelocity, PredState.LinearVelocity);
+		float AngularVelocityDist = FVector::Distance(AngularVelocity, PredState.AngularVelocity);
 		const bool bPeriodicFrameLog = ServerFrame > 0 && (ServerFrame <= 5 || ServerFrame % 60 == 0);
 
 		if (bPeriodicFrameLog || !bMatch)
@@ -215,6 +218,7 @@ struct FNetStatePhysicsShip : public FNetworkPhysicsPayload
 				!bPositionMatch,
 				!bRotationMatch);
 		}
+		*/
 
 		return bMatch;
 	}
@@ -258,6 +262,7 @@ struct FNetStatePhysicsShip : public FNetworkPhysicsPayload
 		Ar << RotationThresholdRad;
 
 		bOutSuccess = !Ar.IsError();
+		/* Network Physics serializer diagnostic log disabled after validation.
 		if (bOutSuccess && ServerFrame > 0 && (ServerFrame <= 5 || ServerFrame % 60 == 0))
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[NETPHYS-FRAME-STATE] Direction=%s ServerFrame=%d LocalFrame=%d Z=%.3f"),
@@ -266,6 +271,7 @@ struct FNetStatePhysicsShip : public FNetworkPhysicsPayload
 				LocalFrame,
 				Position.Z);
 		}
+		*/
 
 		return bOutSuccess;
 	}

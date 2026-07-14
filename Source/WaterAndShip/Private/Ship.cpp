@@ -135,9 +135,11 @@ void AShip::BeginPlay()
 	}
 
 	bool bPredictionEnabled = UPhysicsSettings::Get()->PhysicsPrediction.bEnablePhysicsPrediction;
+	/* Network Physics initialization diagnostic log disabled after validation.
 	UE_LOG(LogTemp, Warning, TEXT("[GT] AShip::BeginPlay - PhysicsPrediction Enabled Flag: %s | NetworkPhysicsComponent: %s"), 
 		bPredictionEnabled ? TEXT("True") : TEXT("False"), 
 		NetworkPhysicsComponent ? TEXT("Valid") : TEXT("Null"));
+	*/
 
 	if (bPredictionEnabled && NetworkPhysicsComponent)
 	{
@@ -156,11 +158,15 @@ void AShip::BeginPlay()
 						}
 						NetworkPhysicsComponent->CreateDataHistory(ShipPhysicsAsync);
 						NetworkPhysicsComponent->SetCompareStateToTriggerRewind(true, true);
+						/* Network Physics initialization diagnostic log disabled after validation.
 						UE_LOG(LogTemp, Warning, TEXT("[GT] AShip::BeginPlay - SUCCESSFULLY registered ShipPhysicsAsync and bound to NetworkPhysicsComponent! (Simulated Proxy Rollback Enabled)"));
+						*/
 					}
 					else
 					{
+						/* Network Physics initialization diagnostic log disabled after validation.
 						UE_LOG(LogTemp, Error, TEXT("[GT] AShip::BeginPlay - FAILED to create/register SimCallbackObject FShipPhysicsAsync!"));
+						*/
 					}
 				}
 			}
@@ -168,7 +174,9 @@ void AShip::BeginPlay()
 	}
 	else
 	{
+		/* Network Physics initialization diagnostic log disabled after validation.
 		UE_LOG(LogTemp, Error, TEXT("[GT] AShip::BeginPlay - CRITICAL: Skipping Network Physics registration! (Prediction flag disabled or Component null)"));
+		*/
 	}
 
 	if (UActorComponent* BuoyancyComp = GetComponentByClass(UBuoyancyComponent::StaticClass()))
@@ -248,11 +256,13 @@ void AShip::Tick(float DeltaTime)
 							- static_cast<double>(UpcomingServerFrame) * static_cast<double>(SolverStepSeconds);
 						ForceNetUpdate();
 
+						/* Network Physics clock diagnostic log disabled after validation.
 						UE_LOG(LogTemp, Warning, TEXT("[NETPHYS-CLOCK] Authority initialized Origin=%.9f Step=%.9f UpcomingServerFrame=%d ServerWorldTime=%.9f"),
 							ServerPhysicsTimeOrigin,
 							ServerPhysicsStepSeconds,
 							UpcomingServerFrame,
 							ServerWorldTime);
+						*/
 					}
 				}
 			}
@@ -443,6 +453,7 @@ void AShip::Tick(float DeltaTime)
 			NetworkPhysicsComponent->SetCompareStateToTriggerRewind(true, true);
 		}
 
+		/* Network Physics client synchronization diagnostic logs disabled after validation.
 		// 클라이언트 전용 GT 위치 오차 실측 디버그 로그 (1초 주기 호출)
 		if (UWorld* World = GetWorld())
 		{
@@ -486,6 +497,7 @@ void AShip::Tick(float DeltaTime)
 					CVarSimProxy ? (CVarSimProxy->GetBool() ? TEXT("TRUE") : TEXT("FALSE")) : TEXT("NOT FOUND"));
 			}
 		}
+		*/
 	}
 }
 
@@ -897,7 +909,9 @@ void AShip::OnRep_Controller()
 	{
 		bool bRelay = IsLocallyControlled();
 		NetworkPhysicsComponent->SetIsRelayingLocalInputs(bRelay);
+		/* Network Physics input relay diagnostic log disabled after validation.
 		UE_LOG(LogTemp, Warning, TEXT("[CLIENT-GT] OnRep_Controller - SetIsRelayingLocalInputs: %s"), bRelay ? TEXT("True") : TEXT("False"));
+		*/
 	}
 
 	if (Controller == nullptr)

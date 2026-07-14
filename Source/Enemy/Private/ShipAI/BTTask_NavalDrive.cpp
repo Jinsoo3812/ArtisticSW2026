@@ -63,7 +63,9 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 		FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
 		return;
 	}
+	/* Enemy Ship Network Physics state-transition diagnostic value disabled after validation.
 	const ENavalCombatState StateAtTickStart = CurrentState;
+	*/
 
 	// --- 1. 리플렉션을 사용해 BP_EnemyShip 인스턴스 변수 다이렉트 동적 로드 ---
 	// 블랙보드나 C++ 소속의 꼬임을 원천 예방하고 기획자가 블루프린트 디테일창에서 세팅한 값을 100% 무조건 정확하게 연동합니다.
@@ -523,6 +525,7 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 		TurnInput * FMath::Max(0.0f, TurnTorqueMultiplier), -1.0f, 1.0f);
 	MyShip->SetAIControlInput(NetworkMoveInput, NetworkTurnInput);
 
+	/* Enemy Ship Network Physics input/state diagnostic log disabled after validation.
 	if (StateAtTickStart != CurrentState)
 	{
 		UE_LOG(LogTemp, Log, TEXT("[NAVAL-AI-STATE] Ship=%s State=%s Target=%s Distance=%.1f Move=%.3f Turn=%.3f"),
@@ -533,6 +536,7 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 			NetworkMoveInput,
 			NetworkTurnInput);
 	}
+	*/
 
 	// --- 7. 화면 좌상단 스크린 디버그 로그 표시 ---
 	if (GEngine)
