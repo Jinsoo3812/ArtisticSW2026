@@ -405,10 +405,10 @@ public:
 	float ResimRotationThreshold = 5.0f; // 오차 허용 회전 임계값 (도 단위, Degree)
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Movement")
-	float ForwardForce = 500000.f;
+	float ForwardForce = 2000000.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Movement")
-	float TurnTorque = 50000000.f;
+	float TurnTorque = 6000000000.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Movement")
 	float LateralDragCoefficient = 200.f;
@@ -438,7 +438,9 @@ public:
 protected:
 	// ---- Input Handlers ----
 	void ShipMove(const FInputActionValue& Value);
+	void StopShipMove(const FInputActionValue& Value);
 	void ShipTurn(const FInputActionValue& Value);
+	void StopShipTurn(const FInputActionValue& Value);
 	void ShipLook(const FInputActionValue& Value);
 	void ToggleFixedCamera();
 	void OnDisembarkAction(const FInputActionValue& Value);
@@ -459,6 +461,13 @@ protected:
 
 	UFUNCTION(Server, Unreliable)
 	void ServerTurn(float TurnValue);
+
+	// Axis release must not depend on an unreliable held-input packet arriving.
+	UFUNCTION(Server, Reliable)
+	void ServerStopMove();
+
+	UFUNCTION(Server, Reliable)
+	void ServerStopTurn();
 
 	UFUNCTION(Server, Reliable)
 	void ServerDisembark();

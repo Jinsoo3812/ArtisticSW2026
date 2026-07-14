@@ -18,8 +18,8 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 
 	float GravityZ = -980.f;
 	float LateralDrag = 0.5f;
-	float ForwardForceValue = 500000.f;
-	float TurnTorqueValue = 20000000.f;
+	float ForwardForceValue = 2000000.f;
+	float TurnTorqueValue = 6000000000.f;
 	float SpeedMultiplier = 1.0f;
 
 	float BuoyancyRadius = 100.f;
@@ -99,8 +99,8 @@ private:
 	
 	float CachedGravityZ = -980.f;
 	float CachedLateralDrag = 0.5f;
-	float CachedForwardForce = 500000.f;
-	float CachedTurnTorque = 20000000.f;
+	float CachedForwardForce = 2000000.f;
+	float CachedTurnTorque = 6000000000.f;
 	float CachedSpeedMultiplier = 1.0f;
 	float CachedBuoyancyRadius = 100.f;
 	float CachedBuoyancyForceMultiplier = 1.2f;

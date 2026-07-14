@@ -49,6 +49,8 @@ AShip::AShip()
 	RootComponent = BuoyancyRoot;
 	BuoyancyRoot->SetSimulatePhysics(true);
 	BuoyancyRoot->SetCollisionProfileName(TEXT("PlayerShip"));
+	BuoyancyRoot->SetLinearDamping(0.8f);
+	BuoyancyRoot->SetAngularDamping(3.0f);
 
 	Tags.AddUnique(TEXT("Player"));
 
@@ -493,6 +495,8 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
 	CachedPlayerController = Cast<APlayerController>(GetController());
+	CurrentMoveInput = 0.0f;
+	CurrentTurnInput = 0.0f;
 
 	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
@@ -500,12 +504,16 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 		if (ShipMoveAction)
 		{
 			EnhancedInput->BindAction(ShipMoveAction, ETriggerEvent::Triggered, this, &AShip::ShipMove);
+			EnhancedInput->BindAction(ShipMoveAction, ETriggerEvent::Completed, this, &AShip::StopShipMove);
+			EnhancedInput->BindAction(ShipMoveAction, ETriggerEvent::Canceled, this, &AShip::StopShipMove);
 		}
 
 		// Ship turning (A/D)
 		if (ShipTurnAction)
 		{
 			EnhancedInput->BindAction(ShipTurnAction, ETriggerEvent::Triggered, this, &AShip::ShipTurn);
+			EnhancedInput->BindAction(ShipTurnAction, ETriggerEvent::Completed, this, &AShip::StopShipTurn);
+			EnhancedInput->BindAction(ShipTurnAction, ETriggerEvent::Canceled, this, &AShip::StopShipTurn);
 		}
 
 		// Ship camera look (Mouse)
@@ -545,6 +553,9 @@ void AShip::PossessedBy(AController* NewController)
 
 void AShip::UnPossessed()
 {
+	CurrentMoveInput = 0.0f;
+	CurrentTurnInput = 0.0f;
+
 	if (NetworkPhysicsComponent)
 	{
 		NetworkPhysicsComponent->SetIsRelayingLocalInputs(false);
@@ -683,6 +694,21 @@ void AShip::ServerMove_Implementation(float MoveValue)
 	CurrentMoveInput = MoveValue;
 }
 
+void AShip::StopShipMove(const FInputActionValue&)
+{
+	CurrentMoveInput = 0.0f;
+
+	if (!HasAuthority())
+	{
+		ServerStopMove();
+	}
+}
+
+void AShip::ServerStopMove_Implementation()
+{
+	CurrentMoveInput = 0.0f;
+}
+
 void AShip::ApplyForwardForce(float MoveValue)
 {
 	// 비동기 물리 스레드(FShipPhysicsAsync)에서 물리 힘이 연산되므로 빈 함수로 둡니다.
@@ -702,6 +728,21 @@ void AShip::ShipTurn(const FInputActionValue& Value)
 void AShip::ServerTurn_Implementation(float TurnValue)
 {
 	CurrentTurnInput = TurnValue;
+}
+
+void AShip::StopShipTurn(const FInputActionValue&)
+{
+	CurrentTurnInput = 0.0f;
+
+	if (!HasAuthority())
+	{
+		ServerStopTurn();
+	}
+}
+
+void AShip::ServerStopTurn_Implementation()
+{
+	CurrentTurnInput = 0.0f;
 }
 
 void AShip::ApplyTurnTorque(float TurnValue)

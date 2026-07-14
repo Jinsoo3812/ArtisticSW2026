@@ -1489,3 +1489,119 @@ M19 동일 30초 Dedicated 재검증:
 3. Client 로그에서 `[NETPHYS-OFFSET] ... Offset=<nonzero>` 1회와 `FrameOffset=Missing=0`을 확인한다.
 4. Player 걷기/점프/난간 충돌/승선 후에도 QueryOnly deck 구성과 안정성이 유지되는지 확인한다.
 5. 초기 접속 1~2회 correction까지 제거할지는 별도 startup-history 정책으로 다룬다. 현재 장시간 시뮬레이션 안정성과는 분리한다.
+
+### 2026-07-13 — 현재 단계 최종 종합: 궁극 목표 체크리스트와 남은 작업
+
+이 절은 앞선 실험 기록을 삭제하거나 덮어쓰지 않고, M20까지 확보한 최신 증거로 프로젝트 전체 상태를 다시 판정한 요약이다. 앞부분의 M1~M17 당시 “현재 위험”, “다음 실험”은 해당 시점의 역사 기록이며, 서로 모순될 경우 이 절과 M18~M20 결과를 최신 판정으로 사용한다.
+
+#### 궁극적 목표
+
+`AShip`의 서버와 모든 Client가 Unreal Engine Network Physics history를 사용해 동일한 서버 physics frame을 식별하고, 같은 과거 상태·입력·설정·파도 시간을 재생함으로써 다음을 만족하는 것이 최종 목표다.
+
+- 서버는 Ship 물리의 최종 권위를 가진다.
+- Client는 서버 패킷 사이를 자체 예측하여 부드럽게 표시한다.
+- 권위 상태가 도착하면 동일 과거 frame의 Client history와 비교한다.
+- 허용 오차를 넘을 때만 과거 상태를 적용하고 현재까지 재시뮬레이션한다.
+- normal simulation과 resimulation이 동일한 입력, timestep, 파도, 부력, 외력을 사용한다.
+- late join, 다중 Client, 실제 조종, 충돌, 지연·손실 환경에서도 발산하거나 correction storm이 발생하지 않는다.
+- 렌더링 수면과 gameplay/physics 수면의 관계가 명시적으로 정의되고 검증된다.
+
+#### 최종 체크리스트
+
+표기: `[x]` 달성 및 런타임 검증, `[~]` 구조/일부 시나리오 달성이나 최종 수용 미완료, `[ ]` 미검증 또는 미구현.
+
+##### A. 시간과 frame identity
+
+- [x] 서버가 `ServerPhysicsTimeOrigin`과 실제 solver fixed dt를 생성하고 복제한다.
+- [x] Client local physics frame과 server physics frame의 정확한 tick offset을 PlayerController handshake에서 얻는다.
+- [x] `SimTime = Origin + ServerFrame × SolverDt`를 normal PT와 resim PT 모두 사용한다.
+- [x] `FNetInputShip`과 `FNetStatePhysicsShip`이 상속 payload의 `ServerFrame`을 명시적으로 직렬화한다.
+- [x] 8초 뒤 접속한 Dedicated Client에서 nonzero offset을 받고 matching local history frame을 비교한다.
+- [~] 일반 gameplay query와 Water 렌더는 GameState 서버 시간축을 사용하지만, 이는 복제·스무딩 시간이라 physics frame과 비트 단위로 동일한 시계는 아니다.
+- [ ] 60초 이상 late join, tick-offset 재조정, 여러 PIE world와 여러 Ship에서 instance 간 clock 독립성을 최종 검증한다.
+
+##### B. 파도 결정론과 수면 정의
+
+- [x] Ship PT는 각 peer의 임의 현재 월드 시간이 아니라 authoritative `ServerFrame` 기반 시간을 사용한다.
+- [x] 동일 server frame에서 prediction particle의 `X/R`로 동일 폰툰 좌표를 구성한다.
+- [x] M20에서 offset 정착 후 공통 100개 frame의 Ship PZ, 첫 폰툰 wave/depth/force, 총 부력/torque가 로그 정밀도 기준 server/client 완전 일치했다.
+- [x] 수영 query, Ripple wrapper, WaterSubsystem/MPC에 GameState 서버 시간 주입 경로가 존재한다.
+- [~] custom Ship wave는 base Gerstner 파라미터의 결정론적 cosine 합이지만 UE Water의 full Gerstner query, Water Body base Z, attenuation, LWC 처리를 모두 복제하지는 않는다.
+- [~] 렌더 수면과 Ship physics 수면은 시간축은 공유하지만 수식 전체가 동일하다는 검증은 아직 없다.
+- [ ] ripple을 cosmetic으로 제한할지 authoritative gameplay wave로 복제할지 정책을 확정한다.
+
+##### C. Network Physics history, correction, resimulation
+
+- [x] `UNetworkPhysicsComponent`, History Capture, Resimulation mode, input/state history가 실제 런타임에서 작동한다.
+- [x] matching past frame에서 `CompareData`가 호출되고, threshold 초과 시 `ApplyState`와 rewind/resim이 실행된다.
+- [x] 상태 복원 시 `X/R/V/W`뿐 아니라 Chaos next transform인 `P/Q`도 함께 복원한다.
+- [x] 5 cm 위치 및 5° 회전 correction 정책을 실제 payload state에 저장하여 비교한다.
+- [x] 정적 파도/폰툰/튜닝 cache를 조종 input history에서 분리해 resim input load가 기본값으로 오염시키지 않는다.
+- [x] GT→PT 데이터 전달을 async producer input으로 한정하고 GT의 PT cache 직접 mutation 경로를 제거했다.
+- [x] Simulated Proxy가 Controller를 소유하지 않아 custom PT offset readiness가 영원히 false였던 결함을 M19에서 수정했다.
+- [x] M20 60초 run에서 `FrameOffset=Missing=0`, startup 이후 주기 same-frame 위치 오차 0 cm, 장시간 correction storm 없음.
+- [~] 접속 직후 local history가 아직 없는 1~2개 authoritative packet은 수 m startup mismatch와 one-shot correction을 만든다. 이후에는 수렴하지만 완전한 warm start는 아니다.
+- [~] runtime 중 wave asset이나 부력 계수가 바뀔 경우 과거 frame에서 당시 config version을 복원하는 history 정책은 없다.
+
+##### D. Ship 물리 모델과 Player 상호작용
+
+- [x] Chaos built-in gravity와 custom manual gravity의 이중 적용을 제거했다.
+- [x] 폰툰별 최대 부력 상한과 60 Hz async fixed step을 적용했다.
+- [x] Character Capsule과 dynamic `BuoyancyRoot`의 blocking contact가 네트워크 correction loop를 폭주시킨다는 것을 분리 실험으로 확정했다.
+- [x] `BuoyancyRoot Pawn Ignore + 별도 QueryOnly deck/rail Pawn Block + no weld` 구조로 Player가 서면서 Ship에 raw Chaos contact impulse를 전달하지 않게 했다.
+- [~] 현재 질량, pontoon 반경, coefficient, damping은 안정적으로 동작하지만 최종 게임 감각의 흘수·복원력·마찰 튜닝은 사용자의 에디터 조정 영역이다.
+- [~] QueryOnly deck은 승객 체중을 자동으로 Ship에 전달하지 않는다. 체중 효과가 필요하면 passenger mass/relative position/grounded frame을 결정론적 Network Physics input으로 모델링해야 한다.
+- [ ] 외부 dynamic rigid body 충돌을 rollback에서 결정론적으로 재현하는 정책을 설계하고 검증한다.
+
+##### E. 조종, 소유권과 최종 수용 행렬
+
+- [~] `MovementInput/SteeringInput`은 frame-tagged `FNetInputShip` history에 저장·직렬화·적용되는 구조가 구현돼 있다.
+- [~] Ship possession 및 input relay 관련 코드가 존재하지만 RPC 조종 경로와 Network Physics input 경로가 중복돼 책임이 완전히 정리되지 않았다.
+- [ ] 실제 possessed/autonomous Ship을 지속 조종하면서 correction 뒤 input replay가 동일하게 재현되는지 검증한다.
+- [ ] Dedicated 2개 이상 Client, Listen Server, 60초 late join, 여러 Ship 인스턴스를 검증한다.
+- [ ] packet lag, jitter, loss, reorder 환경에서 correction 예산과 조종 품질을 검증한다.
+- [ ] 장시간 운항, 큰 좌표/LWC 또는 world-origin 경계를 검증한다.
+
+#### 달성된 핵심 결과
+
+1. Network Physics가 “서버 transform을 최신 값으로 복제하는 시스템”이 아니라 과거 frame history를 비교하고 되감는 폐루프로 실제 동작하게 만들었다.
+2. server/client가 동일한 physics frame과 시간으로 custom 파도와 부력을 계산하도록 만들었다.
+3. Dedicated late-join 기준으로 offset 정착 후 server/client force와 state가 정확히 일치함을 실측했다.
+4. Client 화면이 서버 correction에만 끌려가던 `FrameOffset=Missing` 결함을 제거했고 correction storm을 없앴다.
+5. 승선 Character contact와 Network Physics가 만드는 비결정적 feedback을 QueryOnly 보행 collision으로 분리했다.
+6. 잘못된 timestep, 이중 중력, 무상한 부력 피크, 불완전 transform 복원, frame serializer 누락, resim cache 오염 등 주요 구조 결함을 수정했다.
+
+#### 중간까지 진행했지만 멈춘 지점
+
+1. **startup warm start**
+   - 첫 authoritative state가 도착할 때 해당 Client local history slot이 생성되기 전이면 큰 mismatch가 발생한다.
+   - M11 GT teleport, M12 seed guard, M13 absolute-clock PT seed를 시험했지만 서로 다른 frame의 snapshot을 현재 particle/history에 넣어 오히려 약 113 m 오염 또는 correction storm을 만들었다.
+   - 모두 제거했다. 현재는 첫 authoritative correction을 허용하고 수십 frame 안에 정확히 수렴하는 안전한 기준선을 채택한다.
+   - 완전 해결하려면 엔진 history 생성 시점에 **같은 local frame**의 authoritative initial state를 기록하는 방식이 필요하다.
+2. **full water equivalence**
+   - physics peer 간 custom wave는 일치한다.
+   - 그러나 physics 함수와 렌더/UE Water full Gerstner 표면이 완전히 같은 함수라는 증거는 없다.
+   - Water Body별 기준면, attenuation, LWC와 ripple authority를 먼저 결정해야 다음 구현을 확정할 수 있다.
+3. **조종 예측**
+   - payload와 history 구조는 준비됐다.
+   - 자동 Dedicated 테스트의 Ship은 비소유 Simulated Proxy였고 Move/Steer가 0이어서 실제 조종 replay는 검증하지 못했다.
+4. **다중 Client 검증**
+   - M21 서버 1 + Client 2 staggered-join 테스트를 시작했지만 사용자 중지 요청으로 프로세스를 종료했다.
+   - 해당 run은 완료된 수용 증거로 계산하지 않는다.
+
+#### 남은 작업의 권장 순서
+
+1. 새 빌드가 로드된 Editor의 KKH_Test Client PIE에서 60초 정지, 승선, 걷기, 점프, 난간 충돌을 수동 확인한다.
+2. 실제 Ship possession 시나리오를 고정하고 Move/Steer input history와 correction 후 replay를 계측한다.
+3. Dedicated 2 Client와 60초 late join을 완료한다.
+4. packet impairment 행렬을 실행하고 위치/회전/속도 오차와 correction 횟수의 수용 예산을 정한다.
+5. 렌더 수면과 physics 수면의 목표 관계 및 ripple 권위 정책을 결정한다.
+6. 필요할 경우에만 engine-history-aware startup seed를 설계한다. 현재의 안정된 post-startup 동작을 해치는 임의 teleport 방식은 재도입하지 않는다.
+7. 위 행렬을 통과한 뒤 여러 Ship/LWC/장시간 성능을 검증하고 최종 완료 판정을 내린다.
+
+#### 현재 종합 판정
+
+- **정지한 단일 AShip, Dedicated Server + 1 late-join Client의 core Network Physics와 base-wave 부력 동기화:** 달성.
+- **Player가 Ship 위에 서는 네트워크 충돌 안정성:** 달성.
+- **모든 gameplay 시나리오를 포함한 “완벽한 Network Physics” 최종 목표:** 아직 미완료.
+- 현재 남은 문제는 core loop의 비작동이 아니라 startup 초기화 품질, 실제 조종/외력의 history 모델, full water 정의, 다중 Client와 불량 네트워크 수용 검증이다.
