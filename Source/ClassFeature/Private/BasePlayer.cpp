@@ -842,7 +842,22 @@ void ABasePlayer::HandlePickUpEvent(const FGameplayEventData* Payload)
 		if (ABaseItem* ItemToPickUp = const_cast<ABaseItem*>(Cast<ABaseItem>(Payload->Target)))
 		{
 			// 아이템 태그가 material 로 시작하면 인벤토리로
-			if (ItemToPickUp->ItemTag.MatchesTag(Item_Material))
+			bool bShouldStoreInInventory = ItemToPickUp->ItemTag.MatchesTag(Item_Material);
+			if (UWorld* World = GetWorld())
+			{
+				if (UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>())
+				{
+					const FGameplayTag CategoryTag = ItemSubsystem->GetCategoryTag(ItemToPickUp->ItemTag);
+					bShouldStoreInInventory =
+						bShouldStoreInInventory ||
+						CategoryTag.MatchesTag(Item_Category_Clue) ||
+						CategoryTag.MatchesTag(Item_Category_Consumable) ||
+						CategoryTag.MatchesTag(Item_Category_Material) ||
+						CategoryTag.MatchesTag(Item_Category_Weapon);
+				}
+			}
+
+			if (bShouldStoreInInventory)
 			{
 				if (InventoryComponent && InventoryComponent ->AddMaterial(ItemToPickUp->ItemTag, 1))
 				{

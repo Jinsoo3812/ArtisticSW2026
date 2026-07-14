@@ -11,10 +11,9 @@
  */
 class ABasePlayer;
 class UHorizontalBox;
-class UUniformGridPanel;
 class UBorder;
 class UQuickSlotEntryWidget;
-class UInventoryEntryWidget;
+class UInventoryPanelWidget;
 class UInventoryCursorWidget;
 class UCanvasPanel;
 class UInventoryCursorWidget;
@@ -53,14 +52,11 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UBorder> InventoryPanel;
 
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UUniformGridPanel> InventoryGridPanel;;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UInventoryPanelWidget> InventoryPanelWidget;
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UQuickSlotEntryWidget> QuickSlotEntryClass;
-
-	UPROPERTY(EditDefaultsOnly, Category = "UI")
-	TSubclassOf<UInventoryEntryWidget> InventoryEntryClass;
 
 	TWeakObjectPtr<ABasePlayer> CachedPlayer;
 
@@ -120,7 +116,6 @@ protected:
 	float GetCrosshairResponsiveScale(const FVector2D& LocalSize) const;
 
 	void RefreshQuickSlots();
-	void RefreshInventory();
 
 	void HandleInventoryChanged();
 	void HandleItemSlotsChanged();

@@ -3,12 +3,10 @@
 
 #include "UI/PlayerHUDWidget.h"
 #include "UI/QuickSlotEntryWidget.h"
-#include "UI/InventoryEntryWidget.h"
+#include "UI/InventoryPanelWidget.h"
 #include "BasePlayer.h"
 #include "Inventory/InventoryComponent.h"
 #include "Components/HorizontalBox.h"
-#include "Components/UniformGridPanel.h"
-#include "Components/UniformGridSlot.h"
 #include "Components/Border.h"
 #include "UI/InventoryCursorWidget.h"
 #include "UI/HealthBarWidget.h"
@@ -112,11 +110,6 @@ void UPlayerHUDWidget::NativeDestruct()
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
 		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
-
-		if (UInventoryComponent* InventoryComp = CachedPlayer->GetInventoryComponent())
-		{
-			InventoryComp->OnInventoryChanged.RemoveAll(this);
-		}
 	}
 
 	UnbindHealthComponent();
@@ -155,16 +148,14 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 		CachedPlayer->OnAbilitySystemInitialized.AddUObject(this, &UPlayerHUDWidget::HandleAbilitySystemInitialized);
 		CachedPlayer->OnItemSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleItemSlotsChanged);
 
-		if (UInventoryComponent* InventoryComp = CachedPlayer->GetInventoryComponent())
-		{
-			InventoryComp->OnInventoryChanged.AddUObject(this, &UPlayerHUDWidget::HandleInventoryChanged);
-		}
-
 		BindHealthComponent(CachedPlayer->GetHealthComponent());
 	}
 
 	RefreshQuickSlots();
-	RefreshInventory();
+	if (InventoryPanelWidget)
+	{
+		InventoryPanelWidget->InitializeForPlayer(CachedPlayer.Get());
+	}
 	RefreshHealth();
 	RefreshBowCrosshairBinding();
 }
@@ -189,7 +180,10 @@ void UPlayerHUDWidget::SetInventoryVisible(bool bVisible)
 
 	if (bVisible)
 	{
-		RefreshInventory();
+		if (InventoryPanelWidget)
+		{
+			InventoryPanelWidget->RefreshInventory();
+		}
 	}
 }
 
@@ -200,7 +194,10 @@ bool UPlayerHUDWidget::IsInventoryVisible() const
 
 void UPlayerHUDWidget::HandleInventoryChanged()
 {
-	RefreshInventory();
+	if (InventoryPanelWidget)
+	{
+		InventoryPanelWidget->RefreshInventory();
+	}
 }
 
 void UPlayerHUDWidget::HandleItemSlotsChanged()
@@ -441,68 +438,6 @@ void UPlayerHUDWidget::RefreshQuickSlots()
 
 		EntryWidget->SetVisibility(ESlateVisibility::Visible);
 		EntryWidget->SetupFromData(SlotTag, ItemName, Icon, bEquipped);
-	}
-}
-
-void UPlayerHUDWidget::RefreshInventory()
-{
-	if (!InventoryGridPanel)
-	{
-		return;
-	}
-
-	InventoryGridPanel->ClearChildren();
-
-	if (!CachedPlayer.IsValid() || !InventoryEntryClass)
-	{
-		return;
-	}
-
-	UInventoryComponent* InventoryComp = CachedPlayer->GetInventoryComponent();
-	if (!InventoryComp)
-	{
-		return;
-	}
-
-	const TArray<FInventorySlot>& Slots = InventoryComp->GetSlots();
-	const int32 Columns = InventoryComp->GetInventoryColumns();
-	const int32 SlotCount = InventoryComp->GetSlotCount();
-
-	for (int32 Index = 0; Index < SlotCount; ++Index)
-	{
-		UInventoryEntryWidget* EntryWidget = CreateWidget<UInventoryEntryWidget>(this, InventoryEntryClass);
-		if (!EntryWidget)
-		{
-			continue;
-		}
-
-		if (Slots.IsValidIndex(Index) && !Slots[Index].IsEmpty())
-		{
-			const FInventorySlot& InventorySlot = Slots[Index];
-
-			EntryWidget->SetupFromData(
-				InventoryComp->GetMaterialName(InventorySlot.ItemTag),
-				InventorySlot.Count,
-				InventoryComp->GetMaterialIcon(InventorySlot.ItemTag),
-				Index
-			);
-		}
-		else
-		{
-			EntryWidget->SetupAsEmpty(Index);
-		}
-
-		UUniformGridSlot* GridSlot = InventoryGridPanel->AddChildToUniformGrid(
-			EntryWidget,
-			Index / Columns,
-			Index % Columns
-		);
-
-		if (GridSlot)
-		{
-			GridSlot->SetHorizontalAlignment(HAlign_Fill);
-			GridSlot->SetVerticalAlignment(VAlign_Fill);
-		}
 	}
 }
 
