@@ -5,6 +5,7 @@
 #include "BasePlayerState.h"
 #include "Misc/Crc.h"
 #include "AbilitySystemComponent.h"
+#include "Abilities/GameplayAbilityTargetTypes.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "EnhancedInputComponent.h"
@@ -29,6 +30,8 @@
 #include "Animation/SWTrajectoryComponent.h"
 #include "Inventory/InventoryComponent.h"
 #include "ItemSubSystem.h"
+#include "Item/Components/BowComponent.h"
+#include "Item/Weapons/BowItem.h"
 #include "Animation/AnimInstance.h"
 #include "Components/BaseHealthComponent.h"
 #include "Ship.h"
@@ -739,6 +742,10 @@ void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
 	FGameplayEventData EventData;
 	EventData.Instigator = this;
 	EventData.Target = nullptr;
+	if (ReleasedEventTag.MatchesTagExact(Key_Default_Mouse_LeftClick_Released))
+	{
+		AddMouseAimTargetData(EventData);
+	}
 
 	CachedAbilitySystemComponent->HandleGameplayEvent(ReleasedEventTag, &EventData);
 
@@ -746,6 +753,42 @@ void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
 	{
 		ServerRPC_SendGameplayEvent(ReleasedEventTag, EventData);
 	}
+}
+
+void ABasePlayer::AddMouseAimTargetData(FGameplayEventData& EventData) const
+{
+	const ABowItem* Bow = Cast<ABowItem>(EquippedItem);
+	const UBowComponent* BowComponent = Bow ? Bow->GetBowComponent() : nullptr;
+	if (!BowComponent)
+	{
+		return;
+	}
+
+	const FVector ViewLocation = FollowCamera ? FollowCamera->GetComponentLocation() : GetActorLocation();
+	const FVector ViewForward = FollowCamera ? FollowCamera->GetForwardVector() : GetBaseAimRotation().Vector();
+
+	TArray<AActor*> ActorsToIgnore;
+	ActorsToIgnore.Add(const_cast<ABasePlayer*>(this));
+	if (EquippedItem)
+	{
+		ActorsToIgnore.Add(EquippedItem);
+	}
+
+	FBowAimResult AimResult;
+	if (!BowComponent->CalculateAim(ViewLocation, ViewForward, ActorsToIgnore, AimResult))
+	{
+		return;
+	}
+
+	FHitResult AimHit;
+	AimHit.TraceStart = AimResult.TraceStart;
+	AimHit.TraceEnd = AimResult.TraceEnd;
+	AimHit.Location = AimResult.AimTarget;
+	AimHit.ImpactPoint = AimResult.AimTarget;
+	AimHit.bBlockingHit = AimResult.bBlockingHit;
+
+	FGameplayAbilityTargetData_SingleTargetHit* TargetData = new FGameplayAbilityTargetData_SingleTargetHit(AimHit);
+	EventData.TargetData.Add(TargetData);
 }
 
 void ABasePlayer::HandleShipBoardEvent(const FGameplayEventData* Payload)

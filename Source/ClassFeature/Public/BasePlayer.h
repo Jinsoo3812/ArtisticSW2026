@@ -285,6 +285,7 @@ public:
 	// 마우스 입력에 대한 활용을 위해 따로 OnAbilityInput과 분리
 	void OnMouseInputPressed(FGameplayTag InputTag);
 	void OnMouseInputReleased(FGameplayTag InputTag);
+	void AddMouseAimTargetData(FGameplayEventData& EventData) const;
 
 	// 서버의 GA에게 GameplayEvent를 보내는 함수 (예: 마우스 입력에 반응하는 GA에게 신호 보내기)
 	UFUNCTION(Server, Reliable)

@@ -68,9 +68,13 @@ public:
 	AArrowProjectile();
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Arrow")
 	void LaunchArrow(const FVector& LaunchVelocity);
+
+	UFUNCTION(BlueprintCallable, Category = "Arrow")
+	void IgnoreActorForMovement(AActor* ActorToIgnore);
 
 	UFUNCTION(BlueprintCallable, Category = "Arrow")
 	void SetArrowMesh(UStaticMesh* InMesh);
@@ -122,6 +126,12 @@ protected:
 
 	UPROPERTY(Transient)
 	bool bCriticalHit = false;
+
+	UPROPERTY(Transient)
+	TArray<TWeakObjectPtr<AActor>> MovementIgnoredActors;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Movement", meta = (ClampMin = "0.0"))
+	float FlightGravityScale = 0.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow")
 	bool bDestroyOnImpact = true;

@@ -166,6 +166,7 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Category_Skill, "Item.Category.Skill");
 
 // Enemy
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Sword, "Item.EnemyWeapon.Sword");
+UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Hand, "Item.EnemyWeapon.Hand");
 
 // Enemy Type
 // 적 구분 태그
