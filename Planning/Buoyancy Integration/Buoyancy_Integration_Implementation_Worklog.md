@@ -42,7 +42,7 @@
 - [x] `USWRippleWaterWaves` GT 경로가 공통 인증 cache/evaluator 결과 사용
 - [x] Ship GT가 인증 Ripple snapshot을 PT input에 전달
 - [x] Ship PT Gerstner 결과에 동일 `FSWRippleEvaluator` 적용
-- [ ] 동일 위치·동일 서버 시각의 GT/PT 수치 비교 테스트
+- [x] 동일 위치·동일 서버 시각의 GT/PT 수치 비교 테스트
 
 ## Phase 4 — 부력 계산 및 컴포넌트
 
@@ -63,7 +63,7 @@
 - [x] Ship 낙하/다중 폰툰 부력 및 Network Physics 회귀 확인
 - [x] BP_Storage_Buoyancy 낙하/서버 부력/클라이언트 복제 회귀 확인
 - [x] Ripple 서버 생성 및 client cache 수신 확인
-- [ ] 서버/클라이언트의 동일 Ripple query 값 확인
+- [x] 서버/클라이언트의 동일 Ripple query 값 확인
 - [x] Fatal/Assertion/Ensure 없음 확인
 
 ## 구현 구조 메모
@@ -101,9 +101,9 @@
 - 안정성: 양쪽 로그에 Fatal, Assertion, Ensure 없음.
 - 제한: NullRHI이므로 client의 Ripple texture resource가 없는 것은 예상 결과이며 렌더링 자체는 미검증.
 
-### 다음 검증
+### 완료된 정량 검증
 
-- 같은 Ripple event에 대한 서버/클라이언트 높이 수치 비교 진단 추가.
+- 같은 Ripple event에 대한 서버/클라이언트 높이 수치 비교 완료. 상세 결과는 아래 정량 검증 기록 참조.
 
 ### 2026-07-15 — KKH_Test 위치·속도 회귀 실행
 
@@ -156,3 +156,23 @@
 - 실행 로그: `Saved/Logs/Codex_ShipSWDefaults_Server.log`.
 - 런타임 결과: `Mode=ExternalNetworkPhysics Pontoons=4 SettingsSource=SWComponent`.
 - Fatal, Assertion, Ensure, NaN 없음. 기존 Ship BP의 Water Buoyancy component는 이제 삭제 가능.
+
+### 2026-07-15 — GT/PT 및 서버/클라이언트 Ripple 정량 검증
+
+- 진단 옵션: `-BuoyancyQueryDiagnostics -RippleQueryDiagnostics`.
+- 최종 로그:
+  - `Saved/Logs/Codex_BuoyancyNumericV2_Server.log`
+  - `Saved/Logs/Codex_BuoyancyNumericV2_Client.log`
+- 1차 GT/PT 비교에서 약 `25~63cm` 차이를 발견했다.
+  - 원인: Ship PT는 단순 `cos(phase) * amplitude`만 계산했지만, 엔진 GT의 `UGerstnerWaterWaves::GetWaveHeightAtPosition`은 steepness(`Q`)가 0이 아닐 때 수평 변위를 역보정하는 2회 샘플/보간을 수행한다.
+  - 수정: Ship PT에 엔진과 동일한 full Gerstner 높이 계산과 LWC tile 경계 보정을 적용하고, 사용되지 않는 `PhaseOffset` 가산을 제거했다.
+- 수정 후 동일 위치·동일 서버 시각 GT/PT 비교:
+  - 서버 24 sample: 평균 절대 오차 `0.000007639cm`, 최대 `0.000030518cm`.
+  - 클라이언트 16 sample: 평균 절대 오차 `0.000004560cm`, 최대 `0.000015259cm`.
+  - 판정: float 반올림 오차 수준으로 통과.
+- 동일 Ripple query 비교:
+  - EventId 1: 서버/클라이언트 `14.807029724cm`, 차이 `0.000000000cm`.
+  - EventId 2: 서버/클라이언트 `1.754480958cm`, 차이 `0.000000000cm`.
+  - 판정: 동일 event, 위치, 서버 시각에서 완전 일치.
+- 검증 중 `USWRippleWaterWaves`가 명시적으로 전달받은 과거 시각에도 현재 Ripple 시각을 사용하던 경로를 수정하여, base wave와 Ripple 모두 같은 `SyncTime`으로 평가하도록 통일했다.
+- 빌드 성공. 서버/클라이언트 로그에 Fatal, Assertion 실패 없음.

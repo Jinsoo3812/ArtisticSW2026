@@ -1,8 +1,35 @@
 #include "Water/SWRippleReplicator.h"
 
 #include "Engine/World.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Net/UnrealNetwork.h"
 #include "Water/SWRippleStateSubsystem.h"
+
+namespace
+{
+	void LogRippleNetworkCheck(const FSWRippleEvent& Event, const TCHAR* Role)
+	{
+		if (!FParse::Param(FCommandLine::Get(), TEXT("RippleQueryDiagnostics")))
+		{
+			return;
+		}
+
+		const FVector2D QueryPosition = Event.Origin + FVector2D(37.0f, 19.0f);
+		const double QueryServerTime = Event.StartServerTime + 0.375;
+		const float Height = FSWRippleEvaluator::EvaluateHeight(
+			QueryPosition,
+			QueryServerTime,
+			MakeArrayView(&Event, 1));
+		UE_LOG(LogTemp, Warning,
+			TEXT("[RIPPLE-NET-CHECK] Role=%s EventId=%d Position=%s ServerTime=%.9f Height=%.9f"),
+			Role,
+			Event.EventId,
+			*QueryPosition.ToString(),
+			QueryServerTime,
+			Height);
+	}
+}
 
 void FSWReplicatedRippleArray::PostReplicatedAdd(const TArrayView<int32> AddedIndices, int32 FinalSize)
 {
@@ -60,7 +87,7 @@ void ASWRippleReplicator::BeginPlay()
 			StateSubsystem->RegisterReplicator(this);
 			for (const FSWReplicatedRippleItem& Item : ReplicatedRipples.Items)
 			{
-				StateSubsystem->AddOrUpdateReplicatedEvent(Item.Event);
+				ApplyReplicatedEvent(Item.Event);
 			}
 		}
 	}
@@ -139,6 +166,7 @@ bool ASWRippleReplicator::AddServerRipple(
 	ReplicatedRipples.MarkItemDirty(NewItem);
 
 	StateSubsystem->AddOrUpdateReplicatedEvent(NewItem.Event);
+	LogRippleNetworkCheck(NewItem.Event, TEXT("Authority"));
 	ForceNetUpdate();
 	return true;
 }
@@ -150,6 +178,7 @@ void ASWRippleReplicator::ApplyReplicatedEvent(const FSWRippleEvent& Event) cons
 		if (USWRippleStateSubsystem* StateSubsystem = World->GetSubsystem<USWRippleStateSubsystem>())
 		{
 			StateSubsystem->AddOrUpdateReplicatedEvent(Event);
+			LogRippleNetworkCheck(Event, TEXT("Client"));
 		}
 	}
 }

@@ -564,6 +564,8 @@ protected:
 private:
 	friend class FShipPhysicsAsync;
 	FShipPhysicsAsync* ShipPhysicsAsync = nullptr;
+	bool bBuoyancyQueryDiagnostics = false;
+	double NextBuoyancyQueryDiagnosticTime = 0.0;
 
 	float CurrentMoveInput = 0.0f;
 	float CurrentTurnInput = 0.0f;

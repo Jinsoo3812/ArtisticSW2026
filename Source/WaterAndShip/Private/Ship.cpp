@@ -33,11 +33,41 @@
 #include "Interfaces/IPhysicsComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "DrawDebugHelpers.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
+namespace
+{
+	bool EvaluateGameThreadWaveOffset(
+		UWorld* World,
+		const FVector& Position,
+		double ServerTime,
+		float& OutHeight)
+	{
+		if (!World)
+		{
+			return false;
+		}
 
+		for (TActorIterator<AWaterBody> It(World); It; ++It)
+		{
+			if (UWaterWavesBase* Waves = It->GetWaterWaves())
+			{
+				FVector Normal = FVector::UpVector;
+				// The Ship PT evaluator operates on the unattenuated deep-water wave
+				// offset, so use a large water depth for an apples-to-apples check.
+				OutHeight = Waves->GetWaveHeightAtPosition(
+					Position,
+					100000.0f,
+					static_cast<float>(ServerTime),
+					Normal);
+				return true;
+			}
+		}
 
-
-
+		return false;
+	}
+}
 
 
 // Sets default values
@@ -141,6 +171,8 @@ AShip::AShip()
 void AShip::BeginPlay()
 {
 	Super::BeginPlay();
+	bBuoyancyQueryDiagnostics = FParse::Param(
+		FCommandLine::Get(), TEXT("BuoyancyQueryDiagnostics"));
 
 	if (AbilitySystemComponent)
 	{
@@ -256,6 +288,44 @@ void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (bBuoyancyQueryDiagnostics && ShipPhysicsAsync)
+	{
+		bool bHasLatestSample = false;
+		bool bLatestWasResimming = false;
+		FVector LatestPosition = FVector::ZeroVector;
+		double LatestServerTime = 0.0;
+		float LatestPTHeight = 0.0f;
+		while (auto Output = ShipPhysicsAsync->PopOutputData_External())
+		{
+			if (Output->bWaveSampleValid)
+			{
+				bHasLatestSample = true;
+				bLatestWasResimming = Output->bWasResimming;
+				LatestPosition = Output->WaveSamplePosition;
+				LatestServerTime = Output->WaveSampleServerTime;
+				LatestPTHeight = Output->PTWaveHeight;
+			}
+		}
+
+		if (bHasLatestSample && LatestServerTime >= NextBuoyancyQueryDiagnosticTime)
+		{
+			NextBuoyancyQueryDiagnosticTime = LatestServerTime + 1.0;
+			float GTHeight = 0.0f;
+			if (EvaluateGameThreadWaveOffset(GetWorld(), LatestPosition, LatestServerTime, GTHeight))
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("[BUOYANCY-GTPT] Role=%s Resim=%s Position=%s ServerTime=%.6f GT=%.6f PT=%.6f AbsDiff=%.9f"),
+					HasAuthority() ? TEXT("Authority") : TEXT("Client"),
+					bLatestWasResimming ? TEXT("true") : TEXT("false"),
+					*LatestPosition.ToString(),
+					LatestServerTime,
+					GTHeight,
+					LatestPTHeight,
+					FMath::Abs(GTHeight - LatestPTHeight));
+			}
+		}
+	}
 
 	// Establish one authoritative, immutable mapping between the Network Physics
 	// server-frame timeline and server world time. Replication makes the same
@@ -452,6 +522,7 @@ void AShip::Tick(float DeltaTime)
 			// A. 비동기 인풋 버퍼(GetProducerInputData_External)가 유효하다면 인풋 히스토리에 적재
 			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
 			{
+				AsyncInput->bQueryDiagnostics = bBuoyancyQueryDiagnostics;
 				AsyncInput->PontoonOffsets = TempPontoons;
 				AsyncInput->PontoonRadii = TempPontoonRadii;
 				AsyncInput->PontoonForceScales = TempPontoonForceScales;
