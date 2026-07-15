@@ -113,12 +113,18 @@ private:
 	// Updates the GPU texture with the active ripples data
 	void UpdateTexture();
 
-	// Synchronize Server Time to the Material Parameter Collection
-	void UpdateServerTimeMPC(float ServerTime);
-
 	// Get synchronized server world time (network-synced absolute time)
 	float GetServerTime() const;
 
 	UFUNCTION()
 	void OnWaterBodyActorOverlap(AActor* OverlappedActor, AActor* OtherActor);
+
+	// Opt-in runtime diagnostics, enabled only with -RippleDiagnostics.
+	bool bDiagnosticsEnabled = false;
+	float DiagnosticsStartTime = 0.0f;
+	float DiagnosticsLastSummaryTime = -1.0f;
+	int32 DiagnosticsLastUploadedRippleCount = INDEX_NONE;
+	bool bDiagnosticsLastTextureResourceValid = false;
+
+	void TickDiagnostics();
 };
