@@ -3,6 +3,7 @@
 
 #include "UI/StorageWindowWidget.h"
 #include "BasePlayer.h"
+#include "BasePlayerController.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/ScrollBox.h"
@@ -149,13 +150,27 @@ void UStorageWindowWidget::RefreshStorage()
 		if (Slots.IsValidIndex(Index) && !Slots[Index].IsEmpty())
 		{
 			const FInventorySlot& StorageSlot = Slots[Index];
-			EntryWidget->SetupFromData(
-				StorageComponent->GetItemName(StorageSlot.ItemTag),
-				StorageSlot.Count,
-				StorageComponent->GetItemIcon(StorageSlot.ItemTag),
-				Index,
-				CachedStorageChest
-			);
+			const ABasePlayerController* PlayerController = Cast<ABasePlayerController>(GetOwningPlayer());
+			const bool bIsRevealed = !PlayerController || PlayerController->IsStorageSlotRevealed(CachedStorageChest, Index);
+
+			if (bIsRevealed)
+			{
+				EntryWidget->SetupFromData(
+					StorageComponent->GetItemName(StorageSlot.ItemTag),
+					StorageSlot.Count,
+					StorageComponent->GetItemIcon(StorageSlot.ItemTag),
+					Index,
+					CachedStorageChest
+				);
+			}
+			else if (PlayerController && PlayerController->IsStorageSlotSearching(CachedStorageChest, Index))
+			{
+				EntryWidget->SetupAsSearching(Index, CachedStorageChest, SearchIconTexture);
+			}
+			else
+			{
+				EntryWidget->SetupAsUnrevealed(Index, CachedStorageChest, UnrevealedOverlayTexture);
+			}
 		}
 		else
 		{

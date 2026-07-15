@@ -10,6 +10,8 @@
 #include "WeaponDataAsset.generated.h"
 
 class UGameplayAbility;
+class UGameplayEffect;
+class UAnimMontage;
 class ABaseWeapon;
 
 USTRUCT(BlueprintType)
@@ -44,6 +46,15 @@ USTRUCT(BlueprintType)
 struct FWeaponCombatData
 {
 	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	TSubclassOf<UGameplayEffect> DamageEffectClass = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	TObjectPtr<UAnimMontage> AttackMontage = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta=(ClampMin="0.001"))
+	float AttackMontagePlayRate = 1.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	float IdealRange = 150.f;

@@ -91,6 +91,12 @@ FReply UInventoryEntryWidget::NativeOnMouseButtonDown(const FGeometry& InGeometr
 
 	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
 	{
+		if (InventoryComp->GetCursorItem().IsValid())
+		{
+			InventoryComp->ServerHandleRightClickInventory();
+			return FReply::Handled();
+		}
+
 		if (bHasOpenStorage)
 		{
 			PlayerController->ServerQuickMoveInventorySlotToStorage(SlotIndex);

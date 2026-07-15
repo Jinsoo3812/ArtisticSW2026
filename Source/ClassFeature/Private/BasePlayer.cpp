@@ -3,7 +3,9 @@
 
 #include "BasePlayer.h"
 #include "BasePlayerState.h"
+#include "Misc/Crc.h"
 #include "AbilitySystemComponent.h"
+#include "Abilities/GameplayAbilityTargetTypes.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "EnhancedInputComponent.h"
@@ -29,11 +31,14 @@
 #include "Inventory/InventoryComponent.h"
 #include "ItemSubSystem.h"
 #include "Equipment/PlayerEquipmentComponent.h"
+#include "Item/Components/BowComponent.h"
+#include "Item/Weapons/BowItem.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/BaseHealthComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Ship.h"
+#include "Cannon.h"
 #include "SwimmingComponent.h"
 #include "HAL/FileManager.h"
 #include "Misc/DateTime.h"
@@ -311,10 +316,13 @@ void ABasePlayer::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 
+	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Start. NewController: %s"), NewController ? *NewController->GetName() : TEXT("None"));
+
 	// 서버 측 ASC 초기화 (InitAbilityActorInfo)
 	ABasePlayerState* PS = GetPlayerState<ABasePlayerState>();
 	if (PS)
 	{
+		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] PlayerState found: %s"), *PS->GetName());
 		// Owner는 PlayerState, Avatar는 이 Character 객체로 설정
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
 
@@ -330,10 +338,15 @@ void ABasePlayer::PossessedBy(AController* NewController)
 		if(CachedAbilitySystemComponent.IsValid()) {
 			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
 			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_ShipBoard).AddUObject(this, &ABasePlayer::HandleShipBoardEvent);
+			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_CannonBoard).AddUObject(this, &ABasePlayer::HandleCannonBoardEvent);
+
+			UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] DefaultGrantedAbilities Count: %d, DefaultAbilityMap Count: %d"),
+				DefaultGrantedAbilities.Num(), DefaultAbilityMap.Num());
 
 			// Map에 등록된 기본 어빌리티 순회 및 슬롯에 부여
 			for (TSubclassOf<UGameplayAbility> AbilityClass : DefaultGrantedAbilities)
 			{
+				UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Granting Default Ability: %s"), AbilityClass ? *AbilityClass->GetName() : TEXT("None"));
 				GrantDefaultAbility(AbilityClass);
 			}
 
@@ -341,13 +354,22 @@ void ABasePlayer::PossessedBy(AController* NewController)
 			{
 				if (AbilityPair.Value)
 				{
+					UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Granting Ability: %s to Slot Tag: %s (InputID: %d)"),
+						*AbilityPair.Value->GetName(),
+						*AbilityPair.Key.ToString(),
+						GetInputIDFromTag(AbilityPair.Key));
 					GrantAbilityToSlot(AbilityPair.Key, AbilityPair.Value);
 				}
 			}
 		}
-
-		/*// 부모 클래스에 구현된 어빌리티 부여 함수 호출 (서버에서만)
-		GrantAbilities(StartingAbilities);*/
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::PossessedBy - [SERVER] CachedAbilitySystemComponent is invalid!"));
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::PossessedBy - [SERVER] PlayerState is null!"));
 	}
 
 	// ASC 초기화 완료 알림 방송
@@ -358,10 +380,13 @@ void ABasePlayer::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
 
+	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] Start."));
+
 	// 클라이언트 측 ASC 초기화 (PlayerState가 클라로 복제되었음을 보장하는 타이밍)
 	ABasePlayerState* PS = GetPlayerState<ABasePlayerState>();
 	if (PS)
 	{
+		// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] PlayerState found: %s"), *PS->GetName());
 		// 클라이언트에서도 Owner와 Avatar를 연결해줌
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
 
@@ -375,6 +400,12 @@ void ABasePlayer::OnRep_PlayerState()
 			//CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
 		}
 	}
+	else
+	{
+		// UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] PlayerState is null!"));
+	}
+
+	OnAbilitySystemInitialized.Broadcast();
 }
 
 void ABasePlayer::PawnClientRestart()
@@ -501,7 +532,7 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 int32 ABasePlayer::GetInputIDFromTag(const FGameplayTag& Tag) const
 {
 	if (!Tag.IsValid()) return INDEX_NONE;
-	return static_cast<int32>(GetTypeHash(Tag));
+	return static_cast<int32>(FCrc::StrCrc32(*Tag.ToString()));
 }
 
 bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
@@ -548,11 +579,25 @@ void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayA
 		return;
 	}
 
-	// 해당 슬롯에 이미 부여된 어빌리티가 있다면 교체
+	int32 TargetInputID = GetInputIDFromTag(KeyTag);
+	if (TargetInputID != INDEX_NONE)
+	{
+		// 이미 해당 InputID에 동일한 클래스의 어빌리티가 부여되어 있는지 확인
+		for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
+		{
+			if (Spec.InputID == TargetInputID && Spec.Ability && Spec.Ability->GetClass() == AbilityClass)
+			{
+				// 이미 동일한 어빌리티가 동일 슬롯에 존재하므로 중복 부여하지 않고 리턴
+				return;
+			}
+		}
+	}
+
+	// 해당 슬롯에 다른 어빌리티가 있거나 없을 때만 제거 후 부여
 	RemoveAbilityFromSlot(KeyTag);
 
 	// 통합 맵에서 이 태그에 할당된 ID를 가져옴
-	int32 AssignedID = GetInputIDFromTag(KeyTag);
+	int32 AssignedID = TargetInputID;
 
 	// GA Spec 생성 시 해당 ID 주입
 	FGameplayAbilitySpec Spec(AbilityClass, 1, AssignedID, this);
@@ -608,13 +653,41 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 
 void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
-	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
-	if (IsEquipmentTransitioning()) return;
+	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid())
+	{
+		// UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] Fails: CachedAbilitySystemComponent valid? %s, InputTag: %s"),
+		// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+		// 	CachedAbilitySystemComponent.IsValid() ? TEXT("YES") : TEXT("NO"),
+		// 	*InputTag.ToString());
+		return;
+	}
+
+	if (IsEquipmentTransitioning())
+	{
+		return;
+	}
 
 	int32 InputID = GetInputIDFromTag(InputTag);
+	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
+	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+	// 	*InputTag.ToString(),
+	// 	InputID,
+	// 	IsLocallyControlled() ? TEXT("YES") : TEXT("NO"));
+
+	// 현재 부여된 모든 어빌리티 및 그 InputID 출력
+	const TArray<FGameplayAbilitySpec>& Specs = CachedAbilitySystemComponent->GetActivatableAbilities();
+	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] Activatable Abilities Count: %d"), 
+	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"), Specs.Num());
+	for (const FGameplayAbilitySpec& Spec : Specs)
+	{
+		// UE_LOG(LogTemp, Log, TEXT("  - Ability: %s, InputID: %d, Active: %s"), 
+		// 	Spec.Ability ? *Spec.Ability->GetName() : TEXT("None"),
+		// 	Spec.InputID,
+		// 	Spec.IsActive() ? TEXT("YES") : TEXT("NO"));
+	}
+
 	if (InputID != INDEX_NONE)
 	{
-		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed : Input pressed with KeyTag: %s, InputID: %d"), *InputTag.ToString(), InputID);
 		CachedAbilitySystemComponent->AbilityLocalInputPressed(InputID);
 	}
 }
@@ -624,6 +697,12 @@ void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 
 	int32 InputID = GetInputIDFromTag(InputTag);
+	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputReleased - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
+	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+	// 	*InputTag.ToString(),
+	// 	InputID,
+	// 	IsLocallyControlled() ? TEXT("YES") : TEXT("NO"));
+
 	if (InputID != INDEX_NONE)
 	{
 		CachedAbilitySystemComponent->AbilityLocalInputReleased(InputID);
@@ -673,6 +752,10 @@ void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
 	FGameplayEventData EventData;
 	EventData.Instigator = this;
 	EventData.Target = nullptr;
+	if (ReleasedEventTag.MatchesTagExact(Key_Default_Mouse_LeftClick_Released))
+	{
+		AddMouseAimTargetData(EventData);
+	}
 
 	CachedAbilitySystemComponent->HandleGameplayEvent(ReleasedEventTag, &EventData);
 
@@ -682,13 +765,82 @@ void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
 	}
 }
 
+void ABasePlayer::AddMouseAimTargetData(FGameplayEventData& EventData) const
+{
+	const ABowItem* Bow = Cast<ABowItem>(EquippedItem);
+	const UBowComponent* BowComponent = Bow ? Bow->GetBowComponent() : nullptr;
+	if (!BowComponent)
+	{
+		return;
+	}
+
+	const FVector ViewLocation = FollowCamera ? FollowCamera->GetComponentLocation() : GetActorLocation();
+	const FVector ViewForward = FollowCamera ? FollowCamera->GetForwardVector() : GetBaseAimRotation().Vector();
+
+	TArray<AActor*> ActorsToIgnore;
+	ActorsToIgnore.Add(const_cast<ABasePlayer*>(this));
+	if (EquippedItem)
+	{
+		ActorsToIgnore.Add(EquippedItem);
+	}
+
+	FBowAimResult AimResult;
+	if (!BowComponent->CalculateAim(ViewLocation, ViewForward, ActorsToIgnore, AimResult))
+	{
+		return;
+	}
+
+	FHitResult AimHit;
+	AimHit.TraceStart = AimResult.TraceStart;
+	AimHit.TraceEnd = AimResult.TraceEnd;
+	AimHit.Location = AimResult.AimTarget;
+	AimHit.ImpactPoint = AimResult.AimTarget;
+	AimHit.bBlockingHit = AimResult.bBlockingHit;
+
+	FGameplayAbilityTargetData_SingleTargetHit* TargetData = new FGameplayAbilityTargetData_SingleTargetHit(AimHit);
+	EventData.TargetData.Add(TargetData);
+}
+
 void ABasePlayer::HandleShipBoardEvent(const FGameplayEventData* Payload)
 {
+	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::HandleShipBoardEvent - [%s] Event received. Payload valid: %s, Target: %s"),
+		HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+		Payload ? TEXT("YES") : TEXT("NO"),
+		Payload && Payload->Target ? *Payload->Target->GetName() : TEXT("None"));
+
 	if (Payload && Payload->Target)
 	{
 		if (AShip* TargetShip = const_cast<AShip*>(Cast<AShip>(Payload->Target)))
 		{
 			TargetShip->Board(this);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::HandleShipBoardEvent - [%s] Target is not AShip! Target: %s"),
+				HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+				*Payload->Target->GetName());
+		}
+	}
+}
+
+void ABasePlayer::HandleCannonBoardEvent(const FGameplayEventData* Payload)
+{
+	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::HandleCannonBoardEvent - [%s] Event received. Payload valid: %s, Target: %s"),
+		HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+		Payload ? TEXT("YES") : TEXT("NO"),
+		Payload && Payload->Target ? *Payload->Target->GetName() : TEXT("None"));
+
+	if (Payload && Payload->Target)
+	{
+		if (ACannon* TargetCannon = const_cast<ACannon*>(Cast<ACannon>(Payload->Target)))
+		{
+			TargetCannon->Board(this);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::HandleCannonBoardEvent - [%s] Target is not ACannon! Target: %s"),
+				HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
+				*Payload->Target->GetName());
 		}
 	}
 }
@@ -873,13 +1025,18 @@ bool ABasePlayer::PerformInteractTrace(TArray<FHitResult>& OutHitResults) const
 	);
 
 #if ENABLE_DRAW_DEBUG
-	FColor DrawColor = bHit ? FColor::Green : FColor::Red;
-	FVector TraceCenter = StartLoc + (EndLoc - StartLoc) * 0.5f;
-	float TraceHalfHeight = (EndLoc - StartLoc).Size() * 0.5f;
-	FQuat TraceRotation = FRotationMatrix::MakeFromZ(EndLoc - StartLoc).ToQuat();
+#if WITH_EDITOR
+	if (GIsEditor)
+	{
+		FColor DrawColor = bHit ? FColor::Green : FColor::Red;
+		FVector TraceCenter = StartLoc + (EndLoc - StartLoc) * 0.5f;
+		float TraceHalfHeight = (EndLoc - StartLoc).Size() * 0.5f;
+		FQuat TraceRotation = FRotationMatrix::MakeFromZ(EndLoc - StartLoc).ToQuat();
 
-	// 타이머 주기에 맞춰 그려지도록 LifeTime을 짧게 설정 (예: 0.1초)
-	DrawDebugCapsule(GetWorld(), TraceCenter, TraceHalfHeight, InteractTraceRadius, TraceRotation, DrawColor, false, 0.1f);
+		// 타이머 주기에 맞춰 그려지도록 LifeTime을 짧게 설정 (예: 0.1초)
+		// DrawDebugCapsule(GetWorld(), TraceCenter, TraceHalfHeight, InteractTraceRadius, TraceRotation, DrawColor, false, 0.1f);
+	}
+#endif
 #endif
 
 	return bHit;
@@ -897,9 +1054,24 @@ void ABasePlayer::PerformInteractionScan()
 	{
 		if (AActor* HitActor = Hit.GetActor())
 		{
-			if (UWidgetComponent* WidgetComp = HitActor->FindComponentByClass<UWidgetComponent>())
+			if (!HitActor->FindComponentByClass<UInteractableComponent>())
 			{
-				CurrentHoveredWidgets.AddUnique(WidgetComp);
+				continue;
+			}
+
+			TArray<UWidgetComponent*> WidgetComponents;
+			HitActor->GetComponents<UWidgetComponent>(WidgetComponents);
+			for (UWidgetComponent* WidgetComp : WidgetComponents)
+			{
+				if (!WidgetComp)
+				{
+					continue;
+				}
+
+				if (Cast<UInteractUserWidget>(WidgetComp->GetUserWidgetObject()))
+				{
+					CurrentHoveredWidgets.AddUnique(WidgetComp);
+				}
 			}
 		}
 	}

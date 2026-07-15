@@ -17,6 +17,21 @@
 
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"
+#include "Components/BaseHealthComponent.h"
+
+namespace
+{
+	bool IsDeadActor(const AActor* Actor)
+	{
+		if (!IsValid(Actor))
+		{
+			return true;
+		}
+
+		const UBaseHealthComponent* HealthComponent = Actor->FindComponentByClass<UBaseHealthComponent>();
+		return HealthComponent && HealthComponent->IsDead();
+	}
+}
 
 
 // Sets default values
@@ -70,7 +85,8 @@ void ABaseAIController::OnPossess(APawn* PossessedPawn)
 			UBlackboardComponent* Bboard;
 			UseBlackboard(PossessedEnemy->GetBehaviorTree()->BlackboardAsset, Bboard);
 			Blackboard = Bboard;
-			
+
+			InitializeBlackboardValues(PossessedPawn);
 			
 			RunBehaviorTree(PossessedEnemy->GetBehaviorTree());
 		}
@@ -78,20 +94,95 @@ void ABaseAIController::OnPossess(APawn* PossessedPawn)
 	
 }
 
+void ABaseAIController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	UnbindPerceivedTargetDeath();
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void ABaseAIController::OnTargetSighted(AActor* SeenTarget, FAIStimulus Stimulus)
 {
 	// 관찰된 Player를 Blackboard에 넣어서 Behavior Tree에서 사용할 수 있도록 하는 로직을 작성할 수 있습니다.
+	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
+	if (!BlackboardComponent)
+	{
+		return;
+	}
+
 	if (ABasePlayer* PlayerTarget = Cast<ABasePlayer>(SeenTarget))
 	{
 		if (Stimulus.WasSuccessfullySensed())
 		{
+			if (IsDeadActor(PlayerTarget))
+			{
+				BlackboardComponent->ClearValue(TargetActorKeyName);
+				UnbindPerceivedTargetDeath();
+				return;
+			}
+
 			// 시야에 들어옴
-			GetBlackboardComponent()->SetValueAsObject("TargetActor", PlayerTarget);
+			BlackboardComponent->SetValueAsObject(TargetActorKeyName, PlayerTarget);
+			BindPerceivedTargetDeath(PlayerTarget);
 		}
 		else
 		{
 			// 시야에서 벗어남 (필요에 따라 처리)
-			GetBlackboardComponent()->ClearValue("TargetActor");
+			BlackboardComponent->ClearValue(TargetActorKeyName);
+			UnbindPerceivedTargetDeath();
 		}
 	}
+}
+
+void ABaseAIController::OnPerceivedTargetDeathStarted(UBaseHealthComponent* HealthComponent)
+{
+	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
+	if (BlackboardComponent)
+	{
+		BlackboardComponent->ClearValue(TargetActorKeyName);
+	}
+
+	UnbindPerceivedTargetDeath();
+}
+
+void ABaseAIController::InitializeBlackboardValues(APawn* PossessedPawn)
+{
+	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
+	if (!BlackboardComponent || !PossessedPawn)
+	{
+		return;
+	}
+
+	BlackboardComponent->ClearValue(TargetActorKeyName);
+	BlackboardComponent->SetValueAsVector(HomeLocationKeyName, PossessedPawn->GetActorLocation());
+	BlackboardComponent->SetValueAsFloat(PatrolRadiusKeyName, DefaultPatrolRadius);
+}
+
+void ABaseAIController::BindPerceivedTargetDeath(AActor* TargetActor)
+{
+	UBaseHealthComponent* HealthComponent = TargetActor ? TargetActor->FindComponentByClass<UBaseHealthComponent>() : nullptr;
+	if (ObservedTargetHealthComponent.Get() == HealthComponent)
+	{
+		return;
+	}
+
+	UnbindPerceivedTargetDeath();
+
+	if (!HealthComponent)
+	{
+		return;
+	}
+
+	ObservedTargetHealthComponent = HealthComponent;
+	HealthComponent->OnDeathStarted.AddUniqueDynamic(this, &ABaseAIController::OnPerceivedTargetDeathStarted);
+}
+
+void ABaseAIController::UnbindPerceivedTargetDeath()
+{
+	if (UBaseHealthComponent* HealthComponent = ObservedTargetHealthComponent.Get())
+	{
+		HealthComponent->OnDeathStarted.RemoveDynamic(this, &ABaseAIController::OnPerceivedTargetDeathStarted);
+	}
+
+	ObservedTargetHealthComponent.Reset();
 }

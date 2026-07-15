@@ -26,6 +26,8 @@ void UStorageEntryWidget::SetupFromData(const FText& InItemName, int32 InCount, 
 
 	SlotIndex = InSlotIndex;
 	StorageChest = InStorageChest;
+	bCanInteract = true;
+	bIsSearching = false;
 
 	SetToolTipText(InItemName);
 
@@ -40,6 +42,21 @@ void UStorageEntryWidget::SetupFromData(const FText& InItemName, int32 InCount, 
 		CountText->SetText(FText::AsNumber(InCount));
 		CountText->SetVisibility(ESlateVisibility::HitTestInvisible);
 	}
+
+	if (SearchIconImage)
+	{
+		SearchIconImage->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (UnrevealedOverlay)
+	{
+		UnrevealedOverlay->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (UnrevealedOverlayImage)
+	{
+		UnrevealedOverlayImage->SetVisibility(ESlateVisibility::Hidden);
+	}
 }
 
 void UStorageEntryWidget::SetupAsEmpty(int32 InSlotIndex, AStorageChest* InStorageChest)
@@ -48,6 +65,8 @@ void UStorageEntryWidget::SetupAsEmpty(int32 InSlotIndex, AStorageChest* InStora
 
 	SlotIndex = InSlotIndex;
 	StorageChest = InStorageChest;
+	bCanInteract = true;
+	bIsSearching = false;
 
 	SetToolTipText(FText::GetEmpty());
 
@@ -61,6 +80,122 @@ void UStorageEntryWidget::SetupAsEmpty(int32 InSlotIndex, AStorageChest* InStora
 		CountText->SetText(FText::GetEmpty());
 		CountText->SetVisibility(ESlateVisibility::Hidden);
 	}
+
+	if (SearchIconImage)
+	{
+		SearchIconImage->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (UnrevealedOverlay)
+	{
+		UnrevealedOverlay->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (UnrevealedOverlayImage)
+	{
+		UnrevealedOverlayImage->SetVisibility(ESlateVisibility::Hidden);
+	}
+}
+
+void UStorageEntryWidget::SetupAsSearching(int32 InSlotIndex, AStorageChest* InStorageChest, UTexture2D* InSearchIcon)
+{
+	BuildWidgetTree();
+
+	SlotIndex = InSlotIndex;
+	StorageChest = InStorageChest;
+	bCanInteract = false;
+	bIsSearching = true;
+	SearchRotationAngle = 0.0f;
+
+	SetToolTipText(FText::FromString(TEXT("Searching...")));
+
+	if (ItemIconImage)
+	{
+		ItemIconImage->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (CountText)
+	{
+		CountText->SetText(FText::GetEmpty());
+		CountText->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (SearchIconImage)
+	{
+		if (InSearchIcon)
+		{
+			SearchIconImage->SetBrushFromTexture(InSearchIcon, true);
+		}
+
+		SearchIconImage->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+		SearchIconImage->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+
+	if (UnrevealedOverlay)
+	{
+		UnrevealedOverlay->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (UnrevealedOverlayImage)
+	{
+		UnrevealedOverlayImage->SetVisibility(ESlateVisibility::Hidden);
+	}
+}
+
+void UStorageEntryWidget::SetupAsUnrevealed(int32 InSlotIndex, AStorageChest* InStorageChest, UTexture2D* InUnrevealedOverlayTexture)
+{
+	BuildWidgetTree();
+
+	SlotIndex = InSlotIndex;
+	StorageChest = InStorageChest;
+	bCanInteract = false;
+	bIsSearching = false;
+
+	SetToolTipText(FText::GetEmpty());
+
+	if (ItemIconImage)
+	{
+		ItemIconImage->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (CountText)
+	{
+		CountText->SetText(FText::GetEmpty());
+		CountText->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (SearchIconImage)
+	{
+		SearchIconImage->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (UnrevealedOverlay)
+	{
+		UnrevealedOverlay->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+
+	if (UnrevealedOverlayImage)
+	{
+		if (InUnrevealedOverlayTexture)
+		{
+			UnrevealedOverlayImage->SetBrushFromTexture(InUnrevealedOverlayTexture, true);
+		}
+
+		UnrevealedOverlayImage->SetVisibility(InUnrevealedOverlayTexture ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+	}
+}
+
+void UStorageEntryWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	if (!bIsSearching || !SearchIconImage)
+	{
+		return;
+	}
+
+	SearchRotationAngle = FMath::Fmod(SearchRotationAngle + InDeltaTime * 180.0f, 360.0f);
+	SearchIconImage->SetRenderTransformAngle(SearchRotationAngle);
 }
 
 void UStorageEntryWidget::HandleSlotClicked()
@@ -81,7 +216,7 @@ void UStorageEntryWidget::HandleSlotClicked()
 
 FReply UStorageEntryWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	if (SlotIndex == INDEX_NONE || !StorageChest)
+	if (!bCanInteract || SlotIndex == INDEX_NONE || !StorageChest)
 	{
 		return FReply::Unhandled();
 	}
@@ -140,6 +275,31 @@ void UStorageEntryWidget::BuildWidgetTree()
 		IconSlot->SetVerticalAlignment(VAlign_Fill);
 	}
 	ItemIconImage->SetVisibility(ESlateVisibility::Hidden);
+
+	SearchIconImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("SearchIconImage"));
+	if (UOverlaySlot* SearchSlot = SlotOverlay->AddChildToOverlay(SearchIconImage))
+	{
+		SearchSlot->SetHorizontalAlignment(HAlign_Center);
+		SearchSlot->SetVerticalAlignment(VAlign_Center);
+	}
+	SearchIconImage->SetVisibility(ESlateVisibility::Hidden);
+
+	UnrevealedOverlay = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("UnrevealedOverlay"));
+	UnrevealedOverlay->SetBrushColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.62f));
+	UnrevealedOverlay->SetVisibility(ESlateVisibility::Hidden);
+	if (UOverlaySlot* OverlaySlot = SlotOverlay->AddChildToOverlay(UnrevealedOverlay))
+	{
+		OverlaySlot->SetHorizontalAlignment(HAlign_Fill);
+		OverlaySlot->SetVerticalAlignment(VAlign_Fill);
+	}
+
+	UnrevealedOverlayImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("UnrevealedOverlayImage"));
+	UnrevealedOverlayImage->SetVisibility(ESlateVisibility::Hidden);
+	if (UOverlaySlot* OverlayImageSlot = SlotOverlay->AddChildToOverlay(UnrevealedOverlayImage))
+	{
+		OverlayImageSlot->SetHorizontalAlignment(HAlign_Fill);
+		OverlayImageSlot->SetVerticalAlignment(VAlign_Fill);
+	}
 
 	CountText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CountText"));
 	CountText->SetColorAndOpacity(FSlateColor(FLinearColor::White));

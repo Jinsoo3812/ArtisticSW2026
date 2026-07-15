@@ -4,11 +4,15 @@ public class WaterAndShip: ModuleRules
 {
     public WaterAndShip(ReadOnlyTargetRules Target) : base(Target)
     {
+        SetupIrisSupport(Target);
+
         PrivateDependencyModuleNames.AddRange(new string[] {
             // 모듈 내 클래스의 소스 파일에서만 사용할 모듈 의존성을 추가
             "Core",
             "CoreUObject",
-            "Engine"
+            "Engine",
+            "PhysicsCore",
+            "Chaos"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
@@ -17,8 +21,10 @@ public class WaterAndShip: ModuleRules
             "GameplayTasks",
             "GameplayTags",
             "ArtisticSWCore",
+            "GASCore",
             "EnhancedInput",
-            "UMG"
+            "UMG",
+            "Water"
         });
 
         PublicIncludePaths.AddRange(new string[] {

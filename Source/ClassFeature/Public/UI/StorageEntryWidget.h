@@ -7,6 +7,7 @@
 #include "StorageEntryWidget.generated.h"
 
 class AStorageChest;
+class UBorder;
 class UButton;
 class UImage;
 class UTextBlock;
@@ -20,9 +21,12 @@ class CLASSFEATURE_API UStorageEntryWidget : public UUserWidget
 public:
 	void SetupFromData(const FText& InItemName, int32 InCount, UTexture2D* InIcon, int32 InSlotIndex, AStorageChest* InStorageChest);
 	void SetupAsEmpty(int32 InSlotIndex, AStorageChest* InStorageChest);
+	void SetupAsSearching(int32 InSlotIndex, AStorageChest* InStorageChest, UTexture2D* InSearchIcon);
+	void SetupAsUnrevealed(int32 InSlotIndex, AStorageChest* InStorageChest, UTexture2D* InUnrevealedOverlayTexture);
 
 protected:
 	virtual void NativeConstruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 	UFUNCTION()
@@ -37,10 +41,22 @@ protected:
 	TObjectPtr<UImage> ItemIconImage;
 
 	UPROPERTY()
+	TObjectPtr<UImage> SearchIconImage;
+
+	UPROPERTY()
+	TObjectPtr<UBorder> UnrevealedOverlay;
+
+	UPROPERTY()
+	TObjectPtr<UImage> UnrevealedOverlayImage;
+
+	UPROPERTY()
 	TObjectPtr<UTextBlock> CountText;
 
 	UPROPERTY()
 	TObjectPtr<AStorageChest> StorageChest;
 
 	int32 SlotIndex = INDEX_NONE;
+	bool bCanInteract = true;
+	bool bIsSearching = false;
+	float SearchRotationAngle = 0.0f;
 };

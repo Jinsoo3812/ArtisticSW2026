@@ -9,6 +9,7 @@
 
 class UInteractableComponent;
 class UStaticMeshComponent;
+class UBuoyancyComponent;
 
 UCLASS()
 class CLASSFEATURE_API AStorageChest : public AActor
@@ -19,10 +20,12 @@ public:
 	AStorageChest();
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UStorageComponent* GetStorageComponent() const { return StorageComponent; }
 	UInteractableComponent* GetInteractableComponent() const { return InteractableComponent; }
 	UStaticMeshComponent* GetChestMesh() const { return ChestMesh; }
+	UBuoyancyComponent* GetBuoyancyComponent() const { return BuoyancyComponent; }
 	FText GetStorageName() const { return StorageName; }
 
 	UFUNCTION(BlueprintCallable, Category = "Storage")
@@ -30,10 +33,10 @@ public:
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<USceneComponent> SceneRoot;
+	TObjectPtr<UStaticMeshComponent> ChestMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UStaticMeshComponent> ChestMesh;
+	TObjectPtr<UBuoyancyComponent> BuoyancyComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UInteractableComponent> InteractableComponent;
@@ -46,6 +49,10 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction")
 	FText ActionText = FText::FromString(TEXT("Open"));
+
+	/** Server-authoritative rigid-body mass. Buoyancy and physics are simulated only by the server. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Storage Chest|Physics", meta = (ClampMin = "1.0", Units = "kg"))
+	float PhysicsMassKg = 25.0f;
 
 	UFUNCTION()
 	void HandleInteracted(AActor* Interactor);

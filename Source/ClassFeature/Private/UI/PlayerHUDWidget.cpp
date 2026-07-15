@@ -11,13 +11,68 @@
 #include "Components/UniformGridSlot.h"
 #include "Components/Border.h"
 #include "UI/InventoryCursorWidget.h"
+#include "UI/HealthBarWidget.h"
+#include "UI/BowCrosshairWidget.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Components/BaseHealthComponent.h"
+#include "Item/Components/BowComponent.h"
+#include "Item/Weapons/BowItem.h"
+#include "Brushes/SlateRoundedBoxBrush.h"
+#include "Rendering/DrawElements.h"
 
 #include "BaseGameplayTags.h"
 
 #include "BaseItem.h"
+
+int32 UPlayerHUDWidget::NativePaint(
+	const FPaintArgs& Args,
+	const FGeometry& AllottedGeometry,
+	const FSlateRect& MyCullingRect,
+	FSlateWindowElementList& OutDrawElements,
+	int32 LayerId,
+	const FWidgetStyle& InWidgetStyle,
+	bool bParentEnabled) const
+{
+	const int32 PaintedLayerId = Super::NativePaint(
+		Args,
+		AllottedGeometry,
+		MyCullingRect,
+		OutDrawElements,
+		LayerId,
+		InWidgetStyle,
+		bParentEnabled);
+
+	const FVector2D LocalSize = AllottedGeometry.GetLocalSize();
+	const float Scale = GetCrosshairResponsiveScale(LocalSize);
+	const float ScaledDotSize = CenterDotSize * Scale;
+	if (ScaledDotSize <= 0.0f)
+	{
+		return PaintedLayerId;
+	}
+
+	const FVector2D Center = LocalSize * 0.5f;
+	const FVector2D DotPosition = Center - FVector2D(ScaledDotSize * 0.5f);
+	// 화면 중앙에 점 그리기
+	// TODO: 삼인칭 화면에 맞는 항상 떠있는 CrossHair 추가하기
+	const FSlateRoundedBoxBrush DotBrush(
+		CenterDotColor,
+		ScaledDotSize * 0.5f,
+		FVector2f(ScaledDotSize, ScaledDotSize));
+
+	FSlateDrawElement::MakeBox(
+		OutDrawElements,
+		PaintedLayerId + 1,
+		AllottedGeometry.ToPaintGeometry(
+			FVector2f(ScaledDotSize, ScaledDotSize),
+			FSlateLayoutTransform(FVector2f(DotPosition))),
+		&DotBrush,
+		ESlateDrawEffect::None,
+		CenterDotColor);
+
+	return PaintedLayerId + 1;
+}
 
 
 void UPlayerHUDWidget::NativeConstruct()
@@ -46,12 +101,16 @@ void UPlayerHUDWidget::NativeConstruct()
 			InventoryCursorWidget->ClearCursorItem();
 		}
 	}
+
+	CreateBowCrosshairWidget();
+	RefreshBowCrosshairBinding();
 }
 
 void UPlayerHUDWidget::NativeDestruct()
 {
 	if (CachedPlayer.IsValid())
 	{
+		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
 		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
 
 		if (UInventoryComponent* InventoryComp = CachedPlayer->GetInventoryComponent())
@@ -59,6 +118,9 @@ void UPlayerHUDWidget::NativeDestruct()
 			InventoryComp->OnInventoryChanged.RemoveAll(this);
 		}
 	}
+
+	UnbindHealthComponent();
+	UnbindBowComponent();
 
 	Super::NativeDestruct();
 }
@@ -75,6 +137,7 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 {
 	if (CachedPlayer.IsValid())
 	{
+		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
 		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
 
 		if (UInventoryComponent* OldInventory = CachedPlayer->GetInventoryComponent())
@@ -83,20 +146,27 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 		}
 	}
 
+	UnbindHealthComponent();
+
 	CachedPlayer = InPlayer;
 
 	if (CachedPlayer.IsValid())
 	{
+		CachedPlayer->OnAbilitySystemInitialized.AddUObject(this, &UPlayerHUDWidget::HandleAbilitySystemInitialized);
 		CachedPlayer->OnItemSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleItemSlotsChanged);
 
 		if (UInventoryComponent* InventoryComp = CachedPlayer->GetInventoryComponent())
 		{
 			InventoryComp->OnInventoryChanged.AddUObject(this, &UPlayerHUDWidget::HandleInventoryChanged);
 		}
+
+		BindHealthComponent(CachedPlayer->GetHealthComponent());
 	}
 
 	RefreshQuickSlots();
 	RefreshInventory();
+	RefreshHealth();
+	RefreshBowCrosshairBinding();
 }
 
 void UPlayerHUDWidget::SetInventoryVisible(bool bVisible)
@@ -136,6 +206,176 @@ void UPlayerHUDWidget::HandleInventoryChanged()
 void UPlayerHUDWidget::HandleItemSlotsChanged()
 {
 	RefreshQuickSlots();
+	RefreshBowCrosshairBinding();
+}
+
+void UPlayerHUDWidget::HandleAbilitySystemInitialized()
+{
+	BindHealthComponent(CachedPlayer.IsValid() ? CachedPlayer->GetHealthComponent() : nullptr);
+	RefreshHealth();
+}
+
+void UPlayerHUDWidget::HandleHealthChanged(UBaseHealthComponent* HealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
+{
+	RefreshHealth();
+}
+
+void UPlayerHUDWidget::HandleMaxHealthChanged(UBaseHealthComponent* HealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
+{
+	RefreshHealth();
+}
+
+void UPlayerHUDWidget::BindHealthComponent(UBaseHealthComponent* HealthComponent)
+{
+	if (CachedHealthComponent == HealthComponent)
+	{
+		return;
+	}
+
+	UnbindHealthComponent();
+
+	CachedHealthComponent = HealthComponent;
+
+	if (CachedHealthComponent)
+	{
+		CachedHealthComponent->OnHealthChanged.AddDynamic(this, &UPlayerHUDWidget::HandleHealthChanged);
+		CachedHealthComponent->OnMaxHealthChanged.AddDynamic(this, &UPlayerHUDWidget::HandleMaxHealthChanged);
+	}
+}
+
+void UPlayerHUDWidget::UnbindHealthComponent()
+{
+	if (!CachedHealthComponent)
+	{
+		return;
+	}
+
+	CachedHealthComponent->OnHealthChanged.RemoveDynamic(this, &UPlayerHUDWidget::HandleHealthChanged);
+	CachedHealthComponent->OnMaxHealthChanged.RemoveDynamic(this, &UPlayerHUDWidget::HandleMaxHealthChanged);
+	CachedHealthComponent = nullptr;
+}
+
+void UPlayerHUDWidget::RefreshHealth()
+{
+	if (!HealthBarWidget || !CachedHealthComponent)
+	{
+		return;
+	}
+
+	HealthBarWidget->SetHealthValues(
+		CachedHealthComponent->GetHealth(),
+		CachedHealthComponent->GetMaxHealth()
+	);
+}
+
+// BowCrossHair를 생성 (실제로 그리는 것은 BowCrossHairWidget.cpp에서 처리) 여기서는 그리는 준비 
+void UPlayerHUDWidget::CreateBowCrosshairWidget()
+{
+	if (!RootCanvasPanel || !BowCrosshairWidgetClass || BowCrosshairWidget)
+	{
+		return;
+	}
+
+	BowCrosshairWidget = CreateWidget<UBowCrosshairWidget>(this, BowCrosshairWidgetClass);
+	if (!BowCrosshairWidget)
+	{
+		return;
+	}
+
+	RootCanvasPanel->AddChild(BowCrosshairWidget);
+
+	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(BowCrosshairWidget->Slot))
+	{
+		CanvasSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+		CanvasSlot->SetOffsets(FMargin(0.0f));
+		CanvasSlot->SetAlignment(FVector2D::ZeroVector);
+		CanvasSlot->SetZOrder(100);
+	}
+}
+
+// 현재 장착 아이템이 활인지 확인하고 bow 컴포넌트와 연결하고 해당 컴포넌트의 이벤트 구독
+void UPlayerHUDWidget::RefreshBowCrosshairBinding()
+{
+	CreateBowCrosshairWidget();
+
+	UBowComponent* NewBowComponent = nullptr;
+	if (CachedPlayer.IsValid())
+	{
+		if (const ABowItem* BowItem = Cast<ABowItem>(CachedPlayer->EquippedItem))
+		{
+			NewBowComponent = BowItem->GetBowComponent();
+		}
+	}
+
+	BindBowComponent(NewBowComponent);
+
+	if (BowCrosshairWidget)
+	{
+		BowCrosshairWidget->SetBowEquipped(NewBowComponent != nullptr);
+		BowCrosshairWidget->SetBowAiming(NewBowComponent ? NewBowComponent->IsAiming() : false);
+		BowCrosshairWidget->SetDrawAlpha(NewBowComponent ? NewBowComponent->GetDrawAlpha() : 0.0f);
+	}
+}
+
+// 활 컴포넌트의 이벤트와 HUD를 연결, 전달된 컴포넌트가 새 컴포넌트면 기존 컴포넌트를 Unbind 후 새 컴포넌트와 bind
+void UPlayerHUDWidget::BindBowComponent(UBowComponent* BowComponent)
+{
+	if (BoundBowComponent == BowComponent)
+	{
+		return;
+	}
+
+	UnbindBowComponent();
+
+	BoundBowComponent = BowComponent;
+	if (BoundBowComponent)
+	{
+		BoundBowComponent->OnAimStateChanged.AddDynamic(this, &UPlayerHUDWidget::HandleBowAimStateChanged);
+		BoundBowComponent->OnDrawAlphaChanged.AddDynamic(this, &UPlayerHUDWidget::HandleBowDrawAlphaChanged);
+	}
+}
+
+// 연결된 컴포넌트의 브로드캐스트 구독 해제
+void UPlayerHUDWidget::UnbindBowComponent()
+{
+	if (!BoundBowComponent)
+	{
+		return;
+	}
+
+	BoundBowComponent->OnAimStateChanged.RemoveDynamic(this, &UPlayerHUDWidget::HandleBowAimStateChanged);
+	BoundBowComponent->OnDrawAlphaChanged.RemoveDynamic(this, &UPlayerHUDWidget::HandleBowDrawAlphaChanged);
+	BoundBowComponent = nullptr;
+}
+
+//활의 조준 상태가 바뀌었을 때 호출
+void UPlayerHUDWidget::HandleBowAimStateChanged(bool bIsAiming)
+{
+	if (BowCrosshairWidget)
+	{
+		BowCrosshairWidget->SetBowAiming(bIsAiming);
+	}
+}
+
+// 활의 차징 정도가 바뀔 때 알려줌
+void UPlayerHUDWidget::HandleBowDrawAlphaChanged(float DrawAlpha)
+{
+	if (BowCrosshairWidget)
+	{
+		BowCrosshairWidget->SetDrawAlpha(DrawAlpha);
+	}
+}
+
+// Corss Hair의 스케일 조정
+float UPlayerHUDWidget::GetCrosshairResponsiveScale(const FVector2D& LocalSize) const
+{
+	const float ShortSide = FMath::Min(LocalSize.X, LocalSize.Y);
+	if (CrosshairReferenceShortSide <= 0.0f || ShortSide <= 0.0f)
+	{
+		return 1.0f;
+	}
+
+	return FMath::Clamp(ShortSide / CrosshairReferenceShortSide, CrosshairMinScale, CrosshairMaxScale);
 }
 
 void UPlayerHUDWidget::RefreshQuickSlots()

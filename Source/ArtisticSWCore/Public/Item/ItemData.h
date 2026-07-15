@@ -72,6 +72,12 @@ struct FItemDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	FGameplayTag UseKeyTag;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Classification", meta = (Categories = "Item.Rarity"))
+	FGameplayTag RarityTag;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Classification", meta = (Categories = "Item.Category"))
+	FGameplayTag CategoryTag;
+
 	// 필요하다면 아이템 이름, 아이콘(UI용 UTexture2D) 등도 여기에 추가
 };
 
@@ -83,7 +89,7 @@ class ARTISTICSWCORE_API UItemData : public UPrimaryDataAsset
 
 public:
 	// ItemData는 주로 Tag로 접근하므로 Map 관리
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Data")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Data", meta = (Categories = "Item.Id"))
 	TMap<FGameplayTag, FItemDefinition> ItemDefinitions;
 
 	// 외부에서 태그로 쉽게 구조체 포인터를 얻어갈 수 있는 헬퍼 함수
@@ -91,6 +97,12 @@ public:
 	{
 		return ItemDefinitions.Find(ItemTag);
 	}
+
+	UFUNCTION(BlueprintPure, Category = "Item|Classification")
+	static int32 GetRarityRank(FGameplayTag RarityTag);
+
+	UFUNCTION(BlueprintPure, Category = "Item|Classification")
+	static bool IsRarityAtLeast(FGameplayTag RarityTag, FGameplayTag MinimumRarityTag);
 };
 
 // Item 조합식을 정의하는 구조체

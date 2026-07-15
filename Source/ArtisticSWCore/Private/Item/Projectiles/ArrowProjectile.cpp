@@ -4,6 +4,7 @@
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
 #include "Components/BoxComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 
@@ -26,7 +27,8 @@ AArrowProjectile::AArrowProjectile()
 		ProjectileMovementComp->bAutoActivate = false;
 		ProjectileMovementComp->InitialSpeed = 0.0f;
 		ProjectileMovementComp->MaxSpeed = 6000.0f;
-		ProjectileMovementComp->ProjectileGravityScale = 0.15f;
+		ProjectileMovementComp->ProjectileGravityScale = FlightGravityScale;
+		ProjectileMovementComp->bInitialVelocityInLocalSpace = false;
 		ProjectileMovementComp->bRotationFollowsVelocity = true;
 		ProjectileMovementComp->bShouldBounce = false;
 	}
@@ -38,27 +40,75 @@ void AArrowProjectile::BeginPlay()
 
 	if (APawn* InstigatorPawn = GetInstigator())
 	{
-		if (CollisionComp)
-		{
-			CollisionComp->IgnoreActorWhenMoving(InstigatorPawn, true);
-		}
+		IgnoreActorForMovement(InstigatorPawn);
 	}
 
 	if (AActor* OwnerActor = GetOwner())
 	{
-		if (CollisionComp)
+		IgnoreActorForMovement(OwnerActor);
+	}
+}
+
+void AArrowProjectile::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (CollisionComp)
+	{
+		for (const TWeakObjectPtr<AActor>& IgnoredActorPtr : MovementIgnoredActors)
 		{
-			CollisionComp->IgnoreActorWhenMoving(OwnerActor, true);
+			if (AActor* IgnoredActor = IgnoredActorPtr.Get())
+			{
+				CollisionComp->IgnoreActorWhenMoving(IgnoredActor, false);
+
+				TArray<UPrimitiveComponent*> PrimitiveComponents;
+				IgnoredActor->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
+				for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+				{
+					if (PrimitiveComponent)
+					{
+						PrimitiveComponent->IgnoreActorWhenMoving(this, false);
+					}
+				}
+			}
 		}
 	}
+
+	MovementIgnoredActors.Reset();
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void AArrowProjectile::LaunchArrow(const FVector& LaunchVelocity)
 {
 	if (ProjectileMovementComp)
 	{
+		ProjectileMovementComp->ProjectileGravityScale = FlightGravityScale;
 		ProjectileMovementComp->Velocity = LaunchVelocity;
 		ProjectileMovementComp->Activate();
+	}
+}
+
+void AArrowProjectile::IgnoreActorForMovement(AActor* ActorToIgnore)
+{
+	if (!ActorToIgnore || ActorToIgnore == this)
+	{
+		return;
+	}
+
+	if (CollisionComp)
+	{
+		CollisionComp->IgnoreActorWhenMoving(ActorToIgnore, true);
+	}
+
+	MovementIgnoredActors.AddUnique(ActorToIgnore);
+
+	TArray<UPrimitiveComponent*> PrimitiveComponents;
+	ActorToIgnore->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
+	for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+	{
+		if (PrimitiveComponent)
+		{
+			PrimitiveComponent->IgnoreActorWhenMoving(this, true);
+		}
 	}
 }
 
@@ -131,6 +181,14 @@ bool AArrowProjectile::ShouldIgnoreHitActor(const AActor* OtherActor) const
 	if (OtherActor == GetOwner() || OtherActor == GetInstigator())
 	{
 		return true;
+	}
+
+	for (const TWeakObjectPtr<AActor>& IgnoredActorPtr : MovementIgnoredActors)
+	{
+		if (IgnoredActorPtr.Get() == OtherActor)
+		{
+			return true;
+		}
 	}
 
 	return false;

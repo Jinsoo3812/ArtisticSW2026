@@ -24,6 +24,7 @@ class USWTrajectoryComponent;
 class UAnimMontage;
 class UBaseHealthComponent;
 class AShip;
+class ACannon;
 class USwimmingComponent;
 
 // Item Slot 관리 구조체
@@ -291,6 +292,7 @@ public:
 	// 마우스 입력에 대한 활용을 위해 따로 OnAbilityInput과 분리
 	void OnMouseInputPressed(FGameplayTag InputTag);
 	void OnMouseInputReleased(FGameplayTag InputTag);
+	void AddMouseAimTargetData(FGameplayEventData& EventData) const;
 
 	// 서버의 GA에게 GameplayEvent를 보내는 함수 (예: 마우스 입력에 반응하는 GA에게 신호 보내기)
 	UFUNCTION(Server, Reliable)
@@ -360,6 +362,9 @@ protected:
 
 	// 배 승선 이벤트를 처리하는 함수
 	void HandleShipBoardEvent(const FGameplayEventData* Payload);
+
+	// 대포 탑승 이벤트를 처리하는 함수
+	void HandleCannonBoardEvent(const FGameplayEventData* Payload);
 
 
 	/* --- Interactable Object Trace ---*/
