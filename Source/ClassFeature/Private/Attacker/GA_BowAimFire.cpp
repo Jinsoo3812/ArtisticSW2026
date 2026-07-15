@@ -1,6 +1,7 @@
 #include "Attacker/GA_BowAimFire.h"
 
 #include "AbilitySystemComponent.h"
+#include "Abilities/GameplayAbilityTargetTypes.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
@@ -151,7 +152,7 @@ void UGA_BowAimFire::OnLeftClickReleased(FGameplayEventData Payload)
 
 	if (bIsFullyDrawn)
 	{
-		BeginRelease();
+		BeginRelease(Payload);
 		return;
 	}
 
@@ -305,7 +306,7 @@ void UGA_BowAimFire::StopDrawMontage(float BlendOutTime)
 	}
 }
 
-void UGA_BowAimFire::BeginRelease()
+void UGA_BowAimFire::BeginRelease(const FGameplayEventData& Payload)
 {
 	if (!IsActive() || !CachedBowComponent || bIsReleaseInProgress || bHasFiredCurrentShot)
 	{
@@ -317,13 +318,14 @@ void UGA_BowAimFire::BeginRelease()
 	bIsFullyDrawn = true;
 	bIsReleaseInProgress = true;
 	CachedBowComponent->SetDrawAlpha(1.0f);
+	ReleasePayload = Payload;
 	SetBowDrawTagState(false, true, true);
 	if (IsUsingAimCycleMontage())
 	{
 		JumpAimCycleToSection(GetBowAnimationEntry()->AimCycleReleaseSectionName);
 		if (!bRequireReleaseNotifyToFire)
 		{
-			FireArrow();
+			FireArrow(ReleasePayload);
 		}
 		return;
 	}
@@ -350,13 +352,13 @@ void UGA_BowAimFire::BeginRelease()
 
 			if (!bRequireReleaseNotifyToFire)
 			{
-				FireArrow();
+				FireArrow(ReleasePayload);
 			}
 			return;
 		}
 	}
 
-	FireArrow();
+	FireArrow(ReleasePayload);
 	FinishShot();
 }
 
@@ -367,7 +369,7 @@ void UGA_BowAimFire::OnReleaseFireEvent(FGameplayEventData Payload)
 		return;
 	}
 
-	FireArrow();
+	FireArrow(ReleasePayload);
 }
 
 void UGA_BowAimFire::OnReleaseMontageCompleted()
@@ -406,7 +408,7 @@ void UGA_BowAimFire::OnAimCycleMontageInterrupted()
 	}
 }
 
-void UGA_BowAimFire::FireArrow()
+void UGA_BowAimFire::FireArrow(const FGameplayEventData& Payload)
 {
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	if (bHasFiredCurrentShot || !bIsFullyDrawn || !Player || !Player->HasAuthority() || !CachedBow || !CachedBowComponent)
@@ -421,12 +423,36 @@ void UGA_BowAimFire::FireArrow()
 		return;
 	}
 
-	const FVector LaunchDirection = Player->GetBaseAimRotation().Vector();
-	const float FireSpeed = CachedBowComponent->GetCurrentFireSpeed();
-	const FVector LaunchVelocity = LaunchDirection * FireSpeed;
-
 	FTransform SpawnTransform = CachedBowComponent->BuildArrowSpawnTransform();
-	SpawnTransform.SetRotation(LaunchDirection.Rotation().Quaternion());
+	const FVector SpawnLocation = SpawnTransform.GetLocation();
+
+	FVector AimTarget;
+	if (!TryGetAimTargetFromPayload(Payload, AimTarget))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UGA_BowAimFire::FireArrow : Missing client aim target payload. Arrow will not fire."));
+		return;
+	}
+
+	TArray<AActor*> ActorsToIgnore;
+	ActorsToIgnore.Add(Player);
+	ActorsToIgnore.Add(CachedBow);
+
+	FVector ServerAimTarget;
+	if (!CachedBowComponent->ResolveAimTargetFromSocket(SpawnLocation, AimTarget, ActorsToIgnore, ServerAimTarget))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UGA_BowAimFire::FireArrow : Could not resolve server aim target from arrow socket. Arrow will not fire."));
+		return;
+	}
+
+	FVector LaunchVelocity;
+	if (!CachedBowComponent->TryCalculateLaunchVelocity(SpawnLocation, ServerAimTarget, ActorsToIgnore, LaunchVelocity))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UGA_BowAimFire::FireArrow : Could not resolve launch velocity to client aim target. Arrow will not fire."));
+		return;
+	}
+
+	SpawnTransform.SetRotation(LaunchVelocity.Rotation().Quaternion());
+	CachedBowComponent->DrawServerFireDebug(SpawnLocation, ServerAimTarget);
 
 	AArrowProjectile* Arrow = GetWorld()->SpawnActorDeferred<AArrowProjectile>(
 		SpawnClass,
@@ -439,6 +465,9 @@ void UGA_BowAimFire::FireArrow()
 	{
 		return;
 	}
+
+	Arrow->IgnoreActorForMovement(Player);
+	Arrow->IgnoreActorForMovement(CachedBow);
 
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
@@ -455,6 +484,24 @@ void UGA_BowAimFire::FireArrow()
 	bHasFiredCurrentShot = true;
 }
 
+bool UGA_BowAimFire::TryGetAimTargetFromPayload(const FGameplayEventData& Payload, FVector& OutAimTarget) const
+{
+	OutAimTarget = FVector::ZeroVector;
+	if (Payload.TargetData.Num() == 0)
+	{
+		return false;
+	}
+
+	const FHitResult* HitResult = Payload.TargetData.Get(0)->GetHitResult();
+	if (!HitResult)
+	{
+		return false;
+	}
+
+	OutAimTarget = !HitResult->ImpactPoint.IsNearlyZero() ? HitResult->ImpactPoint : HitResult->TraceEnd;
+	return !OutAimTarget.IsNearlyZero();
+}
+
 void UGA_BowAimFire::FinishShot()
 {
 	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
@@ -468,6 +515,7 @@ void UGA_BowAimFire::FinishShot()
 	bIsFullyDrawn = false;
 	bIsReleaseInProgress = false;
 	bHasFiredCurrentShot = false;
+	ReleasePayload = FGameplayEventData();
 
 	if (CachedBowComponent)
 	{
@@ -493,6 +541,7 @@ void UGA_BowAimFire::ResetBowState()
 	bIsFullyDrawn = false;
 	bIsReleaseInProgress = false;
 	bHasFiredCurrentShot = false;
+	ReleasePayload = FGameplayEventData();
 
 	if (CachedBowComponent)
 	{

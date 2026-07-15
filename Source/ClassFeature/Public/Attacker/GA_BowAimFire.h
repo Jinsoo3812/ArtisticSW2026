@@ -60,11 +60,12 @@ protected:
 	void JumpAimCycleToSection(FName SectionName);
 	void PlayDrawMontage();
 	void StopDrawMontage(float BlendOutTime);
-	void BeginRelease();
-	void FireArrow();
+	void BeginRelease(const FGameplayEventData& Payload);
+	void FireArrow(const FGameplayEventData& Payload);
 	void FinishShot();
 	void ResetBowState();
 	bool CacheBowFromAvatar();
+	bool TryGetAimTargetFromPayload(const FGameplayEventData& Payload, FVector& OutAimTarget) const;
 	void AddBowStateTags();
 	void RemoveBowStateTags();
 	void SetBowDrawTagState(bool bDrawing, bool bFullyDrawn, bool bReleasing);
@@ -129,6 +130,7 @@ protected:
 	TObjectPtr<UBowComponent> CachedBowComponent;
 
 	FTimerHandle ChargeTimerHandle;
+	FGameplayEventData ReleasePayload;
 	float DrawStartTime = 0.0f;
 	bool bIsDrawing = false;
 	bool bIsFullyDrawn = false;
