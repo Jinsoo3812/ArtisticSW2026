@@ -5,6 +5,7 @@
 #include "Chaos/PhysicsObject.h"
 #include "Chaos/DebugDrawQueue.h"
 #include "HAL/IConsoleManager.h"
+#include "Water/SWBuoyancyMath.h"
 
 FShipPhysicsAsync::FShipPhysicsAsync()
 {
@@ -162,11 +163,14 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 				if (AsyncInput->PontoonOffsets.Num() > 0)
 				{
 					CachedPontoonOffsets = AsyncInput->PontoonOffsets;
+					CachedPontoonRadii = AsyncInput->PontoonRadii;
+					CachedPontoonForceScales = AsyncInput->PontoonForceScales;
 				}
 				if (AsyncInput->GerstnerWaves.Num() > 0)
 				{
 					CachedGerstnerWaves = AsyncInput->GerstnerWaves;
 				}
+				CachedRippleEvents = AsyncInput->RippleEvents;
 				if (AsyncInput->ServerPhysicsTimeOrigin >= 0.0 && AsyncInput->ServerPhysicsStepSeconds > UE_SMALL_NUMBER)
 				{
 					CachedServerPhysicsTimeOrigin = AsyncInput->ServerPhysicsTimeOrigin;
@@ -244,6 +248,7 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 	ParticleHandle->SetSleepType(Chaos::ESleepType::NeverSleep);
 
 	const bool bStaticDataReady = CachedPontoonOffsets.Num() > 0
+		&& CachedPontoonRadii.Num() == CachedPontoonOffsets.Num()
 		&& CachedGerstnerWaves.Num() > 0
 		&& CachedServerPhysicsTimeOrigin >= 0.0
 		&& CachedServerPhysicsStepSeconds > UE_SMALL_NUMBER
@@ -348,32 +353,32 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 			}
 			*/
 
-			float Submersion = Depth + CachedBuoyancyRadius;
-			float PontoonForceZ = 0.0f;
+			const FVector PontoonVelocity = ParticleHandle->GetV()
+				+ FVector::CrossProduct(ParticleHandle->GetW(), PontoonWorldPos - ActorLocation);
+			FSWBuoyancySolveInput SolveInput;
+			SolveInput.WaterHeight = WaveHeightZ;
+			SolveInput.PontoonCenterZ = PontoonWorldPos.Z;
+			SolveInput.PontoonRadius = CachedPontoonRadii[PontoonIndex];
+			SolveInput.RelativeVelocityZ = PontoonVelocity.Z;
+			SolveInput.ForceScale = CachedPontoonForceScales.IsValidIndex(PontoonIndex)
+				? CachedPontoonForceScales[PontoonIndex]
+				: 1.0f;
+			FSWBuoyancyForceSettings SolveSettings;
+			SolveSettings.BuoyancyCoefficient = CachedBuoyancyForceMultiplier;
+			SolveSettings.BuoyancyDamp = CachedWaterDamping;
+			SolveSettings.BuoyancyDamp2 = CachedWaterDamping2;
+			SolveSettings.MaxBuoyantForce = CachedMaxBuoyantForce;
+			const FSWBuoyancySolveResult SolveResult =
+				FSWBuoyancyMath::SolvePontoon(SolveInput, SolveSettings);
+			const float PontoonForceZ = SolveResult.BuoyantForceZ;
 
-			if (Submersion > 0.0f)
+			if (PontoonForceZ > 0.0f)
 			{
 				// 구체 폰툰 체적 적분 계산 (Spherical Cap Volume)
-				float SubDiff = FMath::Clamp(Submersion, 0.f, 2.f * CachedBuoyancyRadius);
-				float SubDiffSq = SubDiff * SubDiff;
-				float SubVolume = (PI / 3.f) * SubDiffSq * ((3.f * CachedBuoyancyRadius) - SubDiff);
 
 				// 폰툰 로컬 속도 추출
-				FVector PontoonVelocity = ParticleHandle->GetV() + FVector::CrossProduct(ParticleHandle->GetW(), PontoonWorldPos - ActorLocation);
-				float VelocityZ = PontoonVelocity.Z;
 
 				// 1차 및 2차 감쇄력 연산 (엔진 순정 공식 복원)
-				float FirstOrderDrag = CachedWaterDamping * VelocityZ;
-				float SecondOrderDrag = FMath::Sign(VelocityZ) * CachedWaterDamping2 * VelocityZ * VelocityZ;
-				float DampingFactorZ = -FMath::Max(FirstOrderDrag + SecondOrderDrag, 0.f);
-
-				// Clamp each physical pontoon independently. The Water plugin's
-				// normalized PontoonCoefficient is not applicable here because this
-				// custom solver intentionally sums four full spherical-cap volumes.
-				PontoonForceZ = FMath::Clamp(
-					(SubVolume * CachedBuoyancyForceMultiplier) + DampingFactorZ,
-					0.0f,
-					CachedMaxBuoyantForce);
 
 				FVector PontoonTotalForce = FVector::UpVector * PontoonForceZ;
 
@@ -492,6 +497,11 @@ float FShipPhysicsAsync::GetWaveHeightAtPosition_Internal(const FVector& Positio
 		float WaveCos = FMath::Cos(WavePosition);
 		TotalZOffset += WaveCos * Wave.Amplitude;
 	}
+
+	TotalZOffset += FSWRippleEvaluator::EvaluateHeight(
+		FVector2D(Position.X, Position.Y),
+		static_cast<double>(Time),
+		CachedRippleEvents);
 
 	return TotalZOffset;
 }

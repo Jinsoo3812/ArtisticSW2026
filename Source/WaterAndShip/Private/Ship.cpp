@@ -21,6 +21,8 @@
 #include "Physics/Experimental/PhysScene_Chaos.h"
 #include "PBDRigidsSolver.h"
 #include "BuoyancyComponent.h"
+#include "Buoyancy/SWBuoyancyComponent.h"
+#include "Water/SWRippleStateSubsystem.h"
 #include "WaterBodyActor.h"
 #include "EngineUtils.h"
 #include "PhysicsEngine/PhysicsSettings.h"
@@ -51,6 +53,10 @@ AShip::AShip()
 	BuoyancyRoot->SetCollisionProfileName(TEXT("PlayerShip"));
 	BuoyancyRoot->SetLinearDamping(0.8f);
 	BuoyancyRoot->SetAngularDamping(3.0f);
+
+	SWBuoyancyComponent = CreateDefaultSubobject<USWBuoyancyComponent>(TEXT("SWBuoyancyComponent"));
+	SWBuoyancyComponent->ExecutionMode = ESWBuoyancyExecutionMode::ExternalNetworkPhysics;
+	SWBuoyancyComponent->bImportLegacyWaterBuoyancy = true;
 
 	Tags.AddUnique(TEXT("Player"));
 
@@ -272,13 +278,13 @@ void AShip::Tick(float DeltaTime)
 #if !UE_SERVER
 	if (!IsRunningDedicatedServer())
 	{
-		if (UBuoyancyComponent* BuoyancyComp = Cast<UBuoyancyComponent>(GetComponentByClass(UBuoyancyComponent::StaticClass())))
+		if (SWBuoyancyComponent)
 		{
 			FVector ShipLocation = GetActorLocation();
 			FRotator ShipRotation = GetActorRotation();
 
 			// 1. 클라이언트 로컬 물리 위치 기준 폰툰 (연두색 - Green)
-			for (const FSphericalPontoon& Pontoon : BuoyancyComp->BuoyancyData.Pontoons)
+			for (const FSWBuoyancyPontoon& Pontoon : SWBuoyancyComponent->GetPontoons())
 			{
 				FVector PontoonLocalWorldPos = ShipLocation + ShipRotation.RotateVector(Pontoon.RelativeLocation);
 				DrawDebugSphere(GetWorld(), PontoonLocalWorldPos, Pontoon.Radius, 8, FColor::Green, false, 0.0f, 0, 1.5f);
@@ -289,7 +295,7 @@ void AShip::Tick(float DeltaTime)
 			{
 				FVector RepLocation = ReplicatedState.Location;
 				FRotator RepRotation = ReplicatedState.Rotation;
-				for (const FSphericalPontoon& Pontoon : BuoyancyComp->BuoyancyData.Pontoons)
+				for (const FSWBuoyancyPontoon& Pontoon : SWBuoyancyComponent->GetPontoons())
 				{
 					FVector PontoonRepWorldPos = RepLocation + RepRotation.RotateVector(Pontoon.RelativeLocation);
 					// 로컬 물리 구체와 구분되도록 크기를 살짝 줄여 드로우
@@ -341,11 +347,15 @@ void AShip::Tick(float DeltaTime)
 			}
 
 			TArray<FVector> TempPontoons;
-			if (UBuoyancyComponent* BuoyancyComp = Cast<UBuoyancyComponent>(GetComponentByClass(UBuoyancyComponent::StaticClass())))
+			TArray<float> TempPontoonRadii;
+			TArray<float> TempPontoonForceScales;
+			if (SWBuoyancyComponent)
 			{
-				for (const FSphericalPontoon& Pontoon : BuoyancyComp->BuoyancyData.Pontoons)
+				for (const FSWBuoyancyPontoon& Pontoon : SWBuoyancyComponent->GetPontoons())
 				{
 					TempPontoons.Add(Pontoon.RelativeLocation);
+					TempPontoonRadii.Add(Pontoon.Radius);
+					TempPontoonForceScales.Add(Pontoon.ForceScale);
 				}
 			}
 
@@ -401,23 +411,34 @@ void AShip::Tick(float DeltaTime)
 			float WaterDamping2 = 0.1f;
 			float MaxBuoyantForce = 5000000.0f;
 
-			if (UBuoyancyComponent* BuoyancyComp = Cast<UBuoyancyComponent>(GetComponentByClass(UBuoyancyComponent::StaticClass())))
+			if (SWBuoyancyComponent)
 			{
-				if (BuoyancyComp->BuoyancyData.Pontoons.Num() > 0)
+				const TArray<FSWBuoyancyPontoon>& Pontoons = SWBuoyancyComponent->GetPontoons();
+				const FSWBuoyancyForceSettings& Settings = SWBuoyancyComponent->GetForceSettings();
+				if (Pontoons.Num() > 0)
 				{
-					BuoyancyRadius = BuoyancyComp->BuoyancyData.Pontoons[0].Radius;
+					BuoyancyRadius = Pontoons[0].Radius;
 				}
-				BuoyancyForceMultiplier = BuoyancyComp->BuoyancyData.BuoyancyCoefficient;
-				WaterDamping = BuoyancyComp->BuoyancyData.BuoyancyDamp;
-				WaterDamping2 = BuoyancyComp->BuoyancyData.BuoyancyDamp2;
-				MaxBuoyantForce = BuoyancyComp->BuoyancyData.MaxBuoyantForce;
+				BuoyancyForceMultiplier = Settings.BuoyancyCoefficient;
+				WaterDamping = Settings.BuoyancyDamp;
+				WaterDamping2 = Settings.BuoyancyDamp2;
+				MaxBuoyantForce = Settings.MaxBuoyantForce;
+			}
+
+			TArray<FSWRippleEvent> TempRippleEvents;
+			if (USWRippleStateSubsystem* RippleState = GetWorld()->GetSubsystem<USWRippleStateSubsystem>())
+			{
+				RippleState->GetEventsSnapshot(TempRippleEvents);
 			}
 
 			// A. 비동기 인풋 버퍼(GetProducerInputData_External)가 유효하다면 인풋 히스토리에 적재
 			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
 			{
 				AsyncInput->PontoonOffsets = TempPontoons;
+				AsyncInput->PontoonRadii = TempPontoonRadii;
+				AsyncInput->PontoonForceScales = TempPontoonForceScales;
 				AsyncInput->GerstnerWaves = TempWaves;
+				AsyncInput->RippleEvents = MoveTemp(TempRippleEvents);
 				AsyncInput->GravityZ = Gravity;
 				AsyncInput->LateralDrag = LateralDrag;
 				AsyncInput->ForwardForceValue = ForwardForceValue;

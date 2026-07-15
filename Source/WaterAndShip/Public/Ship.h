@@ -9,6 +9,8 @@
 #include "GerstnerWaterWaves.h"
 #include "Ship.generated.h"
 
+class USWBuoyancyComponent;
+
 USTRUCT()
 struct FNetInputShip : public FNetworkPhysicsPayload
 {
@@ -369,6 +371,10 @@ public:
 	/** Root physics mesh for the ship */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UStaticMeshComponent* BuoyancyRoot;
+
+	/** Shared pontoon/settings source; FShipPhysicsAsync remains the force executor. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USWBuoyancyComponent> SWBuoyancyComponent;
 
 	/** Camera boom for orbiting camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
