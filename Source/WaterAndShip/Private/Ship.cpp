@@ -56,7 +56,25 @@ AShip::AShip()
 
 	SWBuoyancyComponent = CreateDefaultSubobject<USWBuoyancyComponent>(TEXT("SWBuoyancyComponent"));
 	SWBuoyancyComponent->ExecutionMode = ESWBuoyancyExecutionMode::ExternalNetworkPhysics;
-	SWBuoyancyComponent->bImportLegacyWaterBuoyancy = true;
+	SWBuoyancyComponent->bImportLegacyWaterBuoyancy = false;
+	SWBuoyancyComponent->Pontoons.Reset();
+	const auto AddShipPontoon = [this](const TCHAR* Name, const FVector& RelativeLocation)
+	{
+		FSWBuoyancyPontoon& Pontoon = SWBuoyancyComponent->Pontoons.AddDefaulted_GetRef();
+		Pontoon.Name = FName(Name);
+		Pontoon.RelativeLocation = RelativeLocation;
+		Pontoon.Radius = 300.0f;
+		Pontoon.ForceScale = 1.0f;
+	};
+	// Defaults migrated from BP_TestShip_SingleMesh's legacy Water Buoyancy.
+	AddShipPontoon(TEXT("FrontPort"), FVector(1100.0f, 300.0f, 250.0f));
+	AddShipPontoon(TEXT("FrontStarboard"), FVector(1100.0f, -300.0f, 250.0f));
+	AddShipPontoon(TEXT("RearPort"), FVector(-1100.0f, 300.0f, 250.0f));
+	AddShipPontoon(TEXT("RearStarboard"), FVector(-1100.0f, -300.0f, 250.0f));
+	SWBuoyancyComponent->ForceSettings.BuoyancyCoefficient = 0.04f;
+	SWBuoyancyComponent->ForceSettings.BuoyancyDamp = 1000.0f;
+	SWBuoyancyComponent->ForceSettings.BuoyancyDamp2 = 1.0f;
+	SWBuoyancyComponent->ForceSettings.MaxBuoyantForce = 5000000.0f;
 
 	Tags.AddUnique(TEXT("Player"));
 

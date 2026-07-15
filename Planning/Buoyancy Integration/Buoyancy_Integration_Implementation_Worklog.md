@@ -142,3 +142,17 @@
   - Storage asset 로드 시 제거된 native Buoyancy component 관련 오류/경고 없음.
   - Fatal, Assertion, Ensure, NaN 없음.
 - 수면 근처 진동은 단일 폰툰이 Gerstner/Ripple 수면을 직접 추종하는 물리 반응과 server movement replication의 조합으로 판단한다. 별도 필터/다중 폰툰/보간 변경은 이번 범위에서 보류.
+
+### 2026-07-15 — 배치 Ship 폰툰의 C++ 기본값 이전
+
+- `KKH_Test` 배치 인스턴스 확인:
+  - Actor label: `BP_TestShip_SingeMesh`
+  - Blueprint: `/Game/New/Ship/BP_TestShip_SingleMesh`
+- 기존 Water Buoyancy 에디터 설정을 C++ `AShip` 기본값으로 이전:
+  - Force: coefficient `0.04`, damp `1000`, damp2 `1`, max force `5,000,000`.
+  - Pontoons: `(1100, ±300, 250)`, `(-1100, ±300, 250)`, 각 radius `300`.
+- Ship 기본 `bImportLegacyWaterBuoyancy=false`로 변경.
+- 에디터 재검사에서 SW Pontoons 4개와 Force 값이 기존 Water component와 일치함을 확인.
+- 실행 로그: `Saved/Logs/Codex_ShipSWDefaults_Server.log`.
+- 런타임 결과: `Mode=ExternalNetworkPhysics Pontoons=4 SettingsSource=SWComponent`.
+- Fatal, Assertion, Ensure, NaN 없음. 기존 Ship BP의 Water Buoyancy component는 이제 삭제 가능.
