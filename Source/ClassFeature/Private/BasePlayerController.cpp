@@ -18,6 +18,7 @@
 #include "Storage/StorageChest.h"
 #include "Storage/StorageComponent.h"
 #include "UI/StorageWindowWidget.h"
+#include "UI/StatusWindowWidget.h"
 #include "WaterSubsystem.h"
 #include "GameFramework/GameStateBase.h"
 
@@ -51,6 +52,17 @@ void ABasePlayerController::BeginPlay()
 			BindHUDToCurrentPlayer();
 		}
 	}
+
+	if (IsLocalController() && StatusWindowWidgetClass)
+	{
+		StatusWindowWidget = CreateWidget<UStatusWindowWidget>(this, StatusWindowWidgetClass);
+		if (StatusWindowWidget)
+		{
+			StatusWindowWidget->AddToViewport(10);
+			StatusWindowWidget->SetStatusVisible(false);
+			BindHUDToCurrentPlayer();
+		}
+	}
 }
 
 void ABasePlayerController::SetupInputComponent()
@@ -70,6 +82,8 @@ void ABasePlayerController::SetupInputComponent()
 			}
 		}
 	}
+
+	InputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &ABasePlayerController::ToggleStatus);
 }
 
 void ABasePlayerController::OnUIInputPressed(FGameplayTag InputTag)
@@ -101,20 +115,32 @@ void ABasePlayerController::OnRep_Pawn()
 void ABasePlayerController::BindHUDToCurrentPlayer()
 {
 	// [클라/로컬] HUD 위젯은 로컬 플레이어에게만
-	if (!IsLocalController() || !PlayerHUDWidget)
+	if (!IsLocalController())
 	{
 		return;
 	}
 
 	if (ABasePlayer* BasePlayer = Cast<ABasePlayer>(GetPawn()))
 	{
-		PlayerHUDWidget->InitializeForPlayer(BasePlayer);
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->InitializeForPlayer(BasePlayer);
+		}
+		if (StatusWindowWidget)
+		{
+			StatusWindowWidget->InitializeForPlayer(BasePlayer);
+		}
 	}
 }
 
 void ABasePlayerController::ToggleInventory()
 {
 	if (!IsLocalController() || !PlayerHUDWidget)
+	{
+		return;
+	}
+
+	if (StatusWindowWidget && StatusWindowWidget->IsStatusVisible())
 	{
 		return;
 	}
@@ -132,6 +158,36 @@ void ABasePlayerController::ToggleInventory()
 	const bool bOpen = !PlayerHUDWidget->IsInventoryVisible();
 	PlayerHUDWidget->SetInventoryVisible(bOpen);
 	ApplyInventoryInputMode(bOpen);
+}
+
+void ABasePlayerController::ToggleStatus()
+{
+	if (!IsLocalController() || !StatusWindowWidget)
+	{
+		return;
+	}
+
+	if (StatusWindowWidget->IsStatusVisible())
+	{
+		StatusWindowWidget->SetStatusVisible(false);
+		ApplyInventoryInputMode(false);
+		return;
+	}
+
+	// A storage window owns the inventory interaction while it is open.
+	if (IsStorageOpen())
+	{
+		return;
+	}
+
+	// A standalone inventory yields to the full status window.
+	if (PlayerHUDWidget && PlayerHUDWidget->IsInventoryVisible())
+	{
+		PlayerHUDWidget->SetInventoryVisible(false);
+	}
+
+	StatusWindowWidget->SetStatusVisible(true);
+	ApplyInventoryInputMode(true);
 }
 
 void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)

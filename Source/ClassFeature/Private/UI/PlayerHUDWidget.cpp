@@ -110,6 +110,11 @@ void UPlayerHUDWidget::NativeDestruct()
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
 		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
+		CachedPlayer->OnQuickSlotsChanged.RemoveAll(this);
+		if (UInventoryComponent* Inventory = CachedPlayer->GetInventoryComponent())
+		{
+			Inventory->OnInventoryChanged.RemoveAll(this);
+		}
 	}
 
 	UnbindHealthComponent();
@@ -132,6 +137,7 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
 		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
+		CachedPlayer->OnQuickSlotsChanged.RemoveAll(this);
 
 		if (UInventoryComponent* OldInventory = CachedPlayer->GetInventoryComponent())
 		{
@@ -147,8 +153,13 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	{
 		CachedPlayer->OnAbilitySystemInitialized.AddUObject(this, &UPlayerHUDWidget::HandleAbilitySystemInitialized);
 		CachedPlayer->OnItemSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleItemSlotsChanged);
+		CachedPlayer->OnQuickSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleItemSlotsChanged);
 
 		BindHealthComponent(CachedPlayer->GetHealthComponent());
+		if (UInventoryComponent* Inventory = CachedPlayer->GetInventoryComponent())
+		{
+			Inventory->OnInventoryChanged.AddUObject(this, &UPlayerHUDWidget::HandleInventoryChanged);
+		}
 	}
 
 	RefreshQuickSlots();
@@ -198,6 +209,7 @@ void UPlayerHUDWidget::HandleInventoryChanged()
 	{
 		InventoryPanelWidget->RefreshInventory();
 	}
+	RefreshQuickSlots();
 }
 
 void UPlayerHUDWidget::HandleItemSlotsChanged()
@@ -377,14 +389,26 @@ float UPlayerHUDWidget::GetCrosshairResponsiveScale(const FVector2D& LocalSize) 
 
 void UPlayerHUDWidget::RefreshQuickSlots()
 {
-	if (!QuickSlotBox || !QuickSlotEntryClass)
+	constexpr int32 QuickSlotCount = 5;
+	TArray<UQuickSlotEntryWidget*> EditorPlacedEntries =
 	{
-		return;
+		WeaponQuickSlot1, WeaponQuickSlot2, ConsumableQuickSlot3, ConsumableQuickSlot4, ConsumableQuickSlot5
+	};
+	const bool bHasEditorPlacedEntries = EditorPlacedEntries.ContainsByPredicate([](const UQuickSlotEntryWidget* Entry)
+	{
+		return Entry != nullptr;
+	});
+
+	if (bHasEditorPlacedEntries)
+	{
+		QuickSlotEntries.Reset();
+		for (UQuickSlotEntryWidget* Entry : EditorPlacedEntries)
+		{
+			QuickSlotEntries.Add(Entry);
+		}
 	}
-
-	constexpr int32 QuickSlotCount = 3;
-
-	if (QuickSlotEntries.Num() != QuickSlotCount || QuickSlotBox->GetChildrenCount() != QuickSlotCount)
+	else if (QuickSlotBox && QuickSlotEntryClass &&
+		(QuickSlotEntries.Num() != QuickSlotCount || QuickSlotBox->GetChildrenCount() != QuickSlotCount))
 	{
 		QuickSlotBox->ClearChildren();
 		QuickSlotEntries.Reset();
@@ -402,12 +426,18 @@ void UPlayerHUDWidget::RefreshQuickSlots()
 			QuickSlotEntries.Add(EntryWidget);
 		}
 	}
+	else if (!QuickSlotBox || !QuickSlotEntryClass)
+	{
+		return;
+	}
 
 	const FGameplayTag FallbackSlotTags[QuickSlotCount] =
 	{
 		Key_Item_1,
 		Key_Item_2,
-		Key_Item_3
+		Key_Item_3,
+		Key_Item_4,
+		Key_Item_5
 	};
 
 	for (int32 Index = 0; Index < QuickSlotEntries.Num(); ++Index)
@@ -422,22 +452,28 @@ void UPlayerHUDWidget::RefreshQuickSlots()
 		UTexture2D* Icon = nullptr;
 		FText ItemName = FText::GetEmpty();
 		bool bEquipped = false;
+		int32 Count = 0;
 
-		if (CachedPlayer.IsValid() && CachedPlayer->ItemSlots.IsValidIndex(Index))
+		if (CachedPlayer.IsValid() && CachedPlayer->QuickSlots.IsValidIndex(Index))
 		{
-			const FItemSlot& QuickSlot = CachedPlayer->ItemSlots[Index];
+			const FQuickSlotReference& QuickSlot = CachedPlayer->QuickSlots[Index];
 			SlotTag = QuickSlot.KeyTag.IsValid() ? QuickSlot.KeyTag : SlotTag;
 
-			if (IsValid(QuickSlot.Item))
+			if (QuickSlot.ItemTag.IsValid())
 			{
-				Icon = QuickSlot.Item->GetItemIcon();
-				ItemName = QuickSlot.Item->GetItemNameText();
-				bEquipped = (QuickSlot.Item == CachedPlayer->EquippedItem);
+				if (UInventoryComponent* Inventory = CachedPlayer->GetInventoryComponent())
+				{
+					Icon = Inventory->GetMaterialIcon(QuickSlot.ItemTag);
+					ItemName = Inventory->GetMaterialName(QuickSlot.ItemTag);
+					Count = Inventory->GetMaterialCount(QuickSlot.ItemTag);
+				}
+				bEquipped = IsValid(CachedPlayer->EquippedItem) && CachedPlayer->EquippedItem->ItemTag == QuickSlot.ItemTag;
 			}
 		}
 
 		EntryWidget->SetVisibility(ESlateVisibility::Visible);
-		EntryWidget->SetupFromData(SlotTag, ItemName, Icon, bEquipped);
+		EntryWidget->ConfigureInteraction(Index, false);
+		EntryWidget->SetupFromData(SlotTag, ItemName, Icon, bEquipped, Count);
 	}
 }
 

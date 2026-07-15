@@ -19,6 +19,7 @@ class UInputAction;
 class UInputTagConfig;
 class AStorageChest;
 class UStorageWindowWidget;
+class UStatusWindowWidget;
 
 struct FStorageRevealState
 {
@@ -60,6 +61,7 @@ protected:
 public:
 
 	void ToggleInventory();
+	void ToggleStatus();
 	void OpenStorageFromServer(AStorageChest* StorageChest);
 
 	UFUNCTION(Client, Reliable)
@@ -93,6 +95,12 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UPlayerHUDWidget> PlayerHUDWidget;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI")
+	TSubclassOf<UStatusWindowWidget> StatusWindowWidgetClass;
+
+	UPROPERTY()
+	TObjectPtr<UStatusWindowWidget> StatusWindowWidget;
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UStorageWindowWidget> StorageWindowWidgetClass;

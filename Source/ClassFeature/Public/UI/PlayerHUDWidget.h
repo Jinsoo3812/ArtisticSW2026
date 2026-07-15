@@ -46,8 +46,19 @@ protected:
 		const FWidgetStyle& InWidgetStyle,
 		bool bParentEnabled) const override;
 
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UHorizontalBox> QuickSlotBox;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UQuickSlotEntryWidget> WeaponQuickSlot1;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UQuickSlotEntryWidget> WeaponQuickSlot2;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UQuickSlotEntryWidget> ConsumableQuickSlot3;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UQuickSlotEntryWidget> ConsumableQuickSlot4;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UQuickSlotEntryWidget> ConsumableQuickSlot5;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UBorder> InventoryPanel;
