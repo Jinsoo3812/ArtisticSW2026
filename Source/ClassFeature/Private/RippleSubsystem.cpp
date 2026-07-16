@@ -11,6 +11,7 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Profiling/SWRippleProfileController.h"
+#include "Profiling/SWLevelProfileController.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "Rendering/Texture2DResource.h"
 #include "RHI.h"
@@ -140,6 +141,23 @@ void URippleSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 			InWorld.SpawnActor<ASWRippleProfileController>(
 				ASWRippleProfileController::StaticClass(),
 				FTransform(ProfileLocation),
+				SpawnParameters);
+		}
+	}
+
+	if (FParse::Param(FCommandLine::Get(), TEXT("SWProfileLevel")))
+	{
+		FString TargetMap(TEXT("Test_Level"));
+		FParse::Value(FCommandLine::Get(), TEXT("SWProfileLevelMap="), TargetMap);
+		if (InWorld.GetMapName().Contains(TargetMap))
+		{
+			FActorSpawnParameters SpawnParameters;
+			SpawnParameters.Name = TEXT("SW_Level_Profile_Controller");
+			SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			SpawnParameters.ObjectFlags |= RF_Transient;
+			InWorld.SpawnActor<ASWLevelProfileController>(
+				ASWLevelProfileController::StaticClass(),
+				FTransform::Identity,
 				SpawnParameters);
 		}
 	}
