@@ -33,6 +33,7 @@ public class ClassFeature: ModuleRules
             "PoseSearch",
             "BlendStack",
             "AnimGraphRuntime",
+            "AnimationWarpingRuntime",
             "Chooser",
             "MotionTrajectory",
             "WaterAndShip",

@@ -15,6 +15,7 @@ struct FItemDefinition;
 class UInteractableComponent;
 class UTexture2D;
 class UItemData;
+class USceneComponent;
 
 UENUM(BlueprintType)
 enum class EItemState : uint8
@@ -97,6 +98,9 @@ public:
 	// 던져졌을 때 물리 및 충돌 상태를 복구하는 함수
 	UFUNCTION(BlueprintCallable, Category = "Item|Action")
 	virtual void OnThrown(FVector LaunchVelocity, AActor* Thrower);
+
+	// Returns the component that owns this item's attachment sockets.
+	virtual USceneComponent* GetAttachmentReferenceComponent() const;
 
 	/* Hovering */
 protected:

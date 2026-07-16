@@ -30,10 +30,13 @@
 #include "Animation/SWTrajectoryComponent.h"
 #include "Inventory/InventoryComponent.h"
 #include "ItemSubSystem.h"
+#include "Equipment/PlayerEquipmentComponent.h"
 #include "Item/Components/BowComponent.h"
 #include "Item/Weapons/BowItem.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Components/BaseHealthComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Ship.h"
 #include "Cannon.h"
 #include "SwimmingComponent.h"
@@ -99,6 +102,7 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	TrajectoryComponent = CreateDefaultSubobject<USWTrajectoryComponent>(TEXT("TrajectoryComponent"));
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 	SwimmingComponent = CreateDefaultSubobject<USwimmingComponent>(TEXT("SwimmingComponent"));
+	EquipmentComponent = CreateDefaultSubobject<UPlayerEquipmentComponent>(TEXT("EquipmentComponent"));
 
 	// 항상 등만 보이도록 설정 (Orient to Controller - 부드러운 회전으로 제자리 회전 유도)
 	bUseControllerRotationYaw = false;
@@ -658,6 +662,11 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 		return;
 	}
 
+	if (IsEquipmentTransitioning())
+	{
+		return;
+	}
+
 	int32 InputID = GetInputIDFromTag(InputTag);
 	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
 	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
@@ -703,6 +712,7 @@ void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 {
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
+	if (IsEquipmentTransitioning()) return;
 
 	// 공통 GAS 입력 해제 처리
 	OnAbilityInputPressed(InputTag);
@@ -898,153 +908,42 @@ void ABasePlayer::HandlePickUpEvent(const FGameplayEventData* Payload)
 
 void ABasePlayer::UseEquippedItem(bool bDestroy)
 {
-	// 서버 권한 및 장착 아이템 유효성 검사
-	if (!HasAuthority() || EquippedItem == nullptr)
+	if (EquipmentComponent)
 	{
-		return;
-	}
-
-	// 장착된 아이템이 ItemSlots 배열의 몇 번째 인덱스에 있는지 탐색
-	int32 EquippedIndex = ItemSlots.IndexOfByKey(EquippedItem.Get());
-
-	if (EquippedIndex != INDEX_NONE)
-	{
-		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::UseEquippedItem : Item used! Slot index: %d"), EquippedIndex);
-		
-		FGameplayTag AssignedKeyTag = Key_Default_Mouse_LeftClick;
-		if (UWorld* World = GetWorld())
-		{
-			if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
-			{
-				FGameplayTag UseKeyTag = Subsystem->GetUseKeyTag(EquippedItem->ItemTag);
-				if (UseKeyTag.IsValid()) AssignedKeyTag = UseKeyTag;
-			}
-		}
-		
-		RemoveItemFromSlot(ItemSlots[EquippedIndex].KeyTag);
-		RemoveAbilityFromSlot(AssignedKeyTag);
-
-		if (bDestroy) {
-			EquippedItem->Destroy(); // 아이템 액터 제거
-		}
-		
-		// 손에 들고 있는 장착 상태 해제
-		EquippedItem = nullptr;
-
-		OnItemSlotsChanged.Broadcast();
+		EquipmentComponent->UseEquippedItem(bDestroy);
 	}
 }
 
 void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 {
-	// 현재는 장착형 아이템이기 때문에 ItemSlot에 대한 키 입력이 들어올 경우 손에 장착하는 로직만 있지만
-	// 추후에 즉발형 아이템의 경우 Item 자체의 Tag로 분기하여 손에 들지않고 즉시 사용되도록 추가해야 함.
-	// OnAbilityInputPressed으로 바로 넘기면 될 듯? 그게 즉발형을 위한 바인딩 함수니까.
-
-	// [클라이언트] 권한이 없다면 서버로 RPC 요청
-	if (!HasAuthority())
+	if (EquipmentComponent)
 	{
-		Server_EquipItemFromSlot(KeyTag);
-		// UI 등 로컬 예측을 하고 싶다면 여기서
-		return;
+		EquipmentComponent->EquipItemFromSlot(KeyTag);
 	}
-
-	// [서버]
-	int32 SlotIndex = ItemSlots.IndexOfByKey(KeyTag);
-
-	if (ItemSlots.IsValidIndex(SlotIndex))
-	{
-		ABaseItem* SlotItem = ItemSlots[SlotIndex].Item;
-
-		// 이미 손에 들고 있는 Item이라면 아무 작업도 하지 않음
-		if (EquippedItem == SlotItem) return;
-
-		// 기존 아이템은 안보이게 넣음
-		if (IsValid(EquippedItem))
-		{
-			FGameplayTag PreviousKeyTag = Key_Default_Mouse_LeftClick;
-			if (UWorld* World = GetWorld())
-			{
-				if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
-				{
-					FGameplayTag OldUseKey = Subsystem->GetUseKeyTag(EquippedItem->ItemTag);
-					if (OldUseKey.IsValid()) PreviousKeyTag = OldUseKey;
-				}
-			}
-			RemoveAbilityFromSlot(PreviousKeyTag);
-			EquippedItem->SetItemState(EItemState::InItemSlot);
-		}
-
-		// 새 아이템이 없다면 맨손으로 만들고 종료
-		if (!IsValid(SlotItem))
-		{
-			EquippedItem = nullptr;
-			return;
-		}
-
-		// 장착 아이템 갱신
-		EquippedItem = SlotItem;
-		EquippedItem->SetItemState(EItemState::Equipped);
-		FName SocketName = FName("GripPoint");
-		if (UWorld* World = GetWorld())
-		{
-			if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
-			{
-				SocketName = Subsystem->GetAttachmentSocketName(EquippedItem->ItemTag);
-			}
-		}
-		EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
-
-		// 새 아이템 GA 부여 로직
-		bool bShouldGrantAbility = false;
-		const TArray<FGameplayTag>& RequiredTags = EquippedItem->GetCanUseAbilityList();
-
-		if (RequiredTags.IsEmpty())
-		{
-			bShouldGrantAbility = true;
-		}
-		else if (CachedAbilitySystemComponent.Get())
-		{
-			for (const FGameplayTag& Tag : RequiredTags)
-			{
-				if (CachedAbilitySystemComponent->HasMatchingGameplayTag(Tag))
-				{
-					bShouldGrantAbility = true;
-					break;
-				}
-			}
-		}
-
-		if (bShouldGrantAbility)
-		{
-			auto GrantedAbilityClass = EquippedItem->GetGrantedAbilityClass();
-			if (GrantedAbilityClass) {
-				FGameplayTag AssignKeyTag = Key_Default_Mouse_LeftClick;
-				if (UWorld* World = GetWorld())
-				{
-					if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
-					{
-						FGameplayTag ItemUseKey = Subsystem->GetUseKeyTag(EquippedItem->ItemTag);
-						if (ItemUseKey.IsValid())
-						{
-							AssignKeyTag = ItemUseKey;
-						}
-					}
-				}
-				
-				GrantAbilityToSlot(AssignKeyTag, GrantedAbilityClass);
-				UE_LOG(LogTemp, Log, TEXT("ABasePlayer::EquipItemFromSlot : Granted ability %s for item %s to key %s"), *GrantedAbilityClass->GetName(), *EquippedItem->GetName(), *AssignKeyTag.ToString());
-			}
-		}
-	}
-
-	OnItemSlotsChanged.Broadcast();
 }
 
 void ABasePlayer::Server_EquipItemFromSlot_Implementation(FGameplayTag KeyTag)
 {
 	// 서버가 다시 본래의 함수를 호출하여 권한(HasAuthority)을 통과시키고 실제 로직을 실행
 	EquipItemFromSlot(KeyTag);
+}
+
+EEquipmentState ABasePlayer::GetEquipmentState() const
+{
+	return EquipmentComponent ? EquipmentComponent->GetEquipmentState() : EEquipmentState::None;
+}
+
+bool ABasePlayer::IsEquipmentTransitioning() const
+{
+	return EquipmentComponent && EquipmentComponent->IsEquipmentTransitioning();
+}
+
+void ABasePlayer::HandleEquipmentAttachNotify()
+{
+	if (EquipmentComponent)
+	{
+		EquipmentComponent->HandleEquipmentAttachNotify();
+	}
 }
 
 void ABasePlayer::RemoveItemFromSlot(FGameplayTag KeyTag)
@@ -1077,23 +976,9 @@ void ABasePlayer::ServerRPC_SendGameplayEvent_Implementation(FGameplayTag EventT
 
 void ABasePlayer::OnRep_EquippedItem()
 {
-	// 새 아이템이 유효하다면 손 소켓에 부착
-	if (IsValid(EquippedItem) && EquippedItem->MyDefinition)
+	if (EquipmentComponent)
 	{
-		if (UStaticMeshComponent* MeshComp = Cast<UStaticMeshComponent>(EquippedItem->GetRootComponent()))
-		{
-			MeshComp->SetSimulatePhysics(false);
-			MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		}
-		FName SocketName = FName("GripPoint");
-		if (UWorld* World = GetWorld())
-		{
-			if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
-			{
-				SocketName = Subsystem->GetAttachmentSocketName(EquippedItem->ItemTag);
-			}
-		}
-		EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
+		EquipmentComponent->OnRepOwnerEquippedItem();
 	}
 
 	OnItemSlotsChanged.Broadcast();
@@ -1430,7 +1315,13 @@ void ABasePlayer::StopSprint()
 
 bool ABasePlayer::CanSprintFromInput() const
 {
-	return AnimStateComponent ? AnimStateComponent->CachedMoveInput.Y > 0.15f : false;
+	const bool bBlockedByAbilityState =
+		CachedAbilitySystemComponent.IsValid() &&
+		CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
+
+	return AnimStateComponent && !bBlockedByAbilityState
+		? AnimStateComponent->CachedMoveInput.Y > 0.15f
+		: false;
 }
 
 void ABasePlayer::RefreshSprintFromInput()
@@ -1609,6 +1500,17 @@ void ABasePlayer::SetCombatMode(bool bNewCombatMode)
 		return;
 	}
 
+	UAnimMontage* ResolvedCombatIntroMontage = CombatIntroMontage;
+	float ResolvedCombatIntroPlayRate = CombatIntroMontagePlayRate;
+	if (EquipmentComponent)
+	{
+		if (UAnimMontage* EquipmentCombatIntroMontage = EquipmentComponent->GetEquippedCombatIntroMontage())
+		{
+			ResolvedCombatIntroMontage = EquipmentCombatIntroMontage;
+			ResolvedCombatIntroPlayRate = EquipmentComponent->GetEquippedCombatIntroPlayRate();
+		}
+	}
+
 	if (!bNewCombatMode)
 	{
 		bIsCombatMode = false;
@@ -1618,28 +1520,30 @@ void ABasePlayer::SetCombatMode(bool bNewCombatMode)
 
 		if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
 		{
-			if (CombatIntroMontage)
+			if (ActiveCombatIntroMontage)
 			{
-				AnimInstance->Montage_Stop(0.1f, CombatIntroMontage);
+				AnimInstance->Montage_Stop(0.1f, ActiveCombatIntroMontage);
 			}
 		}
+		ActiveCombatIntroMontage = nullptr;
 		return;
 	}
 
-	if (CombatIntroMontage)
+	if (ResolvedCombatIntroMontage)
 	{
 		bPendingCombatModeFromIntro = true;
 		bIsPlayingCombatIntro = true;
 		ApplyCombatRotationMode(true);
+		ActiveCombatIntroMontage = ResolvedCombatIntroMontage;
 
 		if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
 		{
-			const float MontageLength = AnimInstance->Montage_Play(CombatIntroMontage, CombatIntroMontagePlayRate);
+			const float MontageLength = AnimInstance->Montage_Play(ResolvedCombatIntroMontage, ResolvedCombatIntroPlayRate);
 			if (MontageLength > 0.f)
 			{
 				FOnMontageEnded MontageEndedDelegate;
 				MontageEndedDelegate.BindUObject(this, &ABasePlayer::OnCombatIntroMontageEnded);
-				AnimInstance->Montage_SetEndDelegate(MontageEndedDelegate, CombatIntroMontage);
+				AnimInstance->Montage_SetEndDelegate(MontageEndedDelegate, ResolvedCombatIntroMontage);
 				return;
 			}
 		}
@@ -1649,6 +1553,16 @@ void ABasePlayer::SetCombatMode(bool bNewCombatMode)
 	ApplyCombatRotationMode(true);
 	bPendingCombatModeFromIntro = false;
 	bIsPlayingCombatIntro = false;
+	ActiveCombatIntroMontage = nullptr;
+}
+
+void ABasePlayer::EnterCombatModeFromEquipment()
+{
+	bIsCombatMode = true;
+	bPendingCombatModeFromIntro = false;
+	bIsPlayingCombatIntro = false;
+	ActiveCombatIntroMontage = nullptr;
+	ApplyCombatRotationMode(true);
 }
 
 void ABasePlayer::InterruptCombatIntroForHit()
@@ -1660,14 +1574,15 @@ void ABasePlayer::InterruptCombatIntroForHit()
 
 	if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
 	{
-		if (CombatIntroMontage)
+		if (ActiveCombatIntroMontage)
 		{
-			AnimInstance->Montage_Stop(0.1f, CombatIntroMontage);
+			AnimInstance->Montage_Stop(0.1f, ActiveCombatIntroMontage);
 		}
 	}
 
 	bIsPlayingCombatIntro = false;
 	bPendingCombatModeFromIntro = false;
+	ActiveCombatIntroMontage = nullptr;
 	if (!bIsCombatMode)
 	{
 		ApplyCombatRotationMode(false);
@@ -1676,12 +1591,13 @@ void ABasePlayer::InterruptCombatIntroForHit()
 
 void ABasePlayer::OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
-	if (Montage != CombatIntroMontage)
+	if (Montage != ActiveCombatIntroMontage)
 	{
 		return;
 	}
 
 	bIsPlayingCombatIntro = false;
+	ActiveCombatIntroMontage = nullptr;
 
 	if (!bInterrupted && bPendingCombatModeFromIntro)
 	{
@@ -1744,5 +1660,9 @@ int32 ABasePlayer::NextLocomotionAnimEventSequence()
 
 bool ABasePlayer::CanSprintFromServerState() const
 {
-	return !bIsAttacking && !bIsDodging && !bIsHitReacting;
+	const bool bBlockedByAbilityState =
+		CachedAbilitySystemComponent.IsValid() &&
+		CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
+
+	return !bBlockedByAbilityState && !bIsAttacking && !bIsDodging && !bIsHitReacting;
 }
