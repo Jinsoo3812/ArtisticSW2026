@@ -4,6 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimInstanceProxy.h"
+#include "BoneControllers/AnimNode_FootPlacement.h"
 #include "BasePlayerAnimInstance.generated.h"
 
 class ABasePlayer;
@@ -11,14 +13,57 @@ class ACharacter;
 class APawn;
 class ULocomotionAnimStateComponent;
 
+USTRUCT(BlueprintType)
+struct FBasePlayerAimThreadSafeData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation|ThreadSafe")
+	float AimYaw = 0.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation|ThreadSafe")
+	float AimPitch = 0.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation|ThreadSafe")
+	float AimOffsetAlpha = 0.f;
+};
+
+USTRUCT(BlueprintType)
+struct FBasePlayerAnimInstanceProxy : public FAnimInstanceProxy
+{
+	GENERATED_BODY()
+
+public:
+	FBasePlayerAnimInstanceProxy();
+	FBasePlayerAnimInstanceProxy(UAnimInstance* InAnimInstance);
+
+	const FBasePlayerAimThreadSafeData& GetThreadSafeAimData() const { return ThreadSafeAimData; }
+	void SetThreadSafeAimData(const FBasePlayerAimThreadSafeData& InAimData) { ThreadSafeAimData = InAimData; }
+	bool GetThreadSafeStopRequested() const { return bThreadSafeStopRequested; }
+	void SetThreadSafeStopRequested(bool bInStopRequested) { bThreadSafeStopRequested = bInStopRequested; }
+
+private:
+	UPROPERTY(Transient)
+	FBasePlayerAimThreadSafeData ThreadSafeAimData;
+
+	UPROPERTY(Transient)
+	bool bThreadSafeStopRequested = false;
+};
+
 UCLASS(Blueprintable, BlueprintType)
 class CLASSFEATURE_API UBasePlayerAnimInstance : public UAnimInstance
 {
 	GENERATED_BODY()
 
+	friend struct FBasePlayerAnimInstanceProxy;
+
 public:
+	UBasePlayerAnimInstance();
+
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
+	virtual void DestroyAnimInstanceProxy(FAnimInstanceProxy* InProxy) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Animation")
 	void CacheOwningCharacter();
@@ -29,12 +74,28 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Animation|Movement|Start")
 	void MarkGroundStartFinished();
 
+	UFUNCTION(BlueprintPure, Category = "Animation|AimOffset", meta = (BlueprintThreadSafe))
+	float GetThreadSafeAimYaw() const;
+
+	UFUNCTION(BlueprintPure, Category = "Animation|AimOffset", meta = (BlueprintThreadSafe))
+	float GetThreadSafeAimPitch() const;
+
+	UFUNCTION(BlueprintPure, Category = "Animation|AimOffset", meta = (BlueprintThreadSafe))
+	float GetThreadSafeAimOffsetAlpha() const;
+
+	UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
+	FFootPlacementPlantSettings Get_FootPlacementPlantSettings() const;
+
+	UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
+	FFootPlacementInterpolationSettings Get_FootPlacementInterpolationSettings() const;
+
 protected:
 	void UpdateFromGenericCharacter(float DeltaSeconds);
 	void UpdateFromPlayerCharacter(float DeltaSeconds, const ABasePlayer& PlayerCharacter);
 	void UpdateFromAnimStateComponent(const ULocomotionAnimStateComponent& AnimState);
 	void UpdateAimOffset();
 	float CalculateAimOffsetAlpha() const;
+	void PublishAimOffsetToProxy();
 
 protected:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Animation")
@@ -226,6 +287,18 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|AimOffset")
 	float CombatAimAlpha = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+	FFootPlacementPlantSettings FootPlacementPlantSettingsDefault;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+	FFootPlacementPlantSettings FootPlacementPlantSettingsStops;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+	FFootPlacementInterpolationSettings FootPlacementInterpolationSettingsDefault;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+	FFootPlacementInterpolationSettings FootPlacementInterpolationSettingsStops;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Movement")
 	float GenericMoveInputSpeedThreshold = 3.f;

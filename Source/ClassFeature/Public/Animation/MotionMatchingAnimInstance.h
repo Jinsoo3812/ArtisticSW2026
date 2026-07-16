@@ -5,6 +5,8 @@
 #include "Animation/AnimInstanceProxy.h"
 #include "Animation/TrajectoryTypes.h"
 #include "Animation/LocomotionAnimStateComponent.h"
+#include "BoneControllers/AnimNode_FootPlacement.h"
+#include "GameplayTagContainer.h"
 #include "MotionMatchingAnimInstance.generated.h"
 
 class UPoseSearchDatabase;
@@ -14,6 +16,24 @@ class UAnimationAsset;
 class FStructProperty;
 class FObjectProperty;
 class FFloatProperty;
+
+UENUM(BlueprintType)
+enum class EWeaponUpperBodyOverlayMode : uint8
+{
+    None,
+    BowIdle,
+    BowRun,
+    BowSprint
+};
+
+UENUM(BlueprintType)
+enum class EWeaponUpperBodyOverlayState : uint8
+{
+    None,
+    Idle,
+    Run,
+    Sprint
+};
 
 USTRUCT(BlueprintType)
 struct FAnimMovementData
@@ -133,6 +153,92 @@ struct FAnimLandingData
 };
 
 USTRUCT(BlueprintType)
+struct FAnimAimData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "AimOffset")
+    float AimYaw = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "AimOffset")
+    float AimPitch = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "AimOffset")
+    float AimOffsetAlpha = 0.f;
+};
+
+USTRUCT(BlueprintType)
+struct FAnimWeaponUpperBodyData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    bool bHasWeaponEquipped = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    FGameplayTag EquippedWeaponTag;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    FGameplayTag OverlayTag;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    int32 OverlayIndex = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    bool bShouldOverrideUpperBody = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    EWeaponUpperBodyOverlayState OverlayState = EWeaponUpperBodyOverlayState::None;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    float UpperBodyAlpha = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    float GroundSpeed = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    float Direction = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    bool bIsSprinting = false;
+};
+
+USTRUCT(BlueprintType)
+struct FAnimBowData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    bool bIsAiming = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    bool bIsDrawing = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    bool bIsFullyDrawn = false;
+
+    // Becomes true slightly before the draw montage exits so the full-draw pose
+    // is already underneath the montage when it blends out.
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    bool bShouldUseFullDrawPose = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    bool bIsReleasing = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    float DrawAlpha = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    bool bHasStringIKTarget = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    float StringIKAlpha = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    FTransform StringIKTargetTransform = FTransform::Identity;
+};
+
+USTRUCT(BlueprintType)
 struct FAnimThreadSafeData
 {
     GENERATED_BODY()
@@ -151,6 +257,15 @@ struct FAnimThreadSafeData
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     FAnimLandingData LandingData;
+
+    UPROPERTY(BlueprintReadOnly, Category = "AimOffset")
+    FAnimAimData AimData;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Weapon UpperBody")
+    FAnimWeaponUpperBodyData WeaponUpperBodyData;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Bow")
+    FAnimBowData BowData;
 };
 
 struct FCachedMotionMatchingNodeInfo
@@ -238,12 +353,91 @@ public:
     UFUNCTION(BlueprintPure, Category = "Motion Matching", meta = (BlueprintThreadSafe))
     UPoseSearchDatabase* GetCurrentActivePoseSearchDatabaseThreadSafe() const;
 
+    UFUNCTION(BlueprintPure, Category = "Animation|AimOffset", meta = (BlueprintThreadSafe))
+    float GetThreadSafeAimYaw() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|AimOffset", meta = (BlueprintThreadSafe))
+    float GetThreadSafeAimPitch() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|AimOffset", meta = (BlueprintThreadSafe))
+    float GetThreadSafeAimOffsetAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeHasBowEquipped() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeHasWeaponEquipped() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    FGameplayTag GetThreadSafeEquippedWeaponTag() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    FGameplayTag GetThreadSafeWeaponUpperBodyOverlayTag() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    int32 GetThreadSafeWeaponUpperBodyOverlayIndex() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeShouldOverrideWeaponUpperBody() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    EWeaponUpperBodyOverlayMode GetThreadSafeWeaponUpperBodyMode() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    EWeaponUpperBodyOverlayState GetThreadSafeWeaponUpperBodyState() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    float GetThreadSafeWeaponUpperBodyAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    float GetThreadSafeWeaponUpperBodySpeed() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Weapon UpperBody", meta = (BlueprintThreadSafe))
+    float GetThreadSafeWeaponUpperBodyDirection() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsBowAiming() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsBowDrawing() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsBowFullyDrawn() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeShouldUseBowFullDrawPose() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    float GetThreadSafeBowHoldAimOffsetAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsBowReleasing() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    float GetThreadSafeBowDrawAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeHasBowStringIKTarget() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    float GetThreadSafeBowStringIKAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
+    FTransform GetThreadSafeBowStringIKTargetTransform() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
+    FFootPlacementPlantSettings Get_FootPlacementPlantSettings() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
+    FFootPlacementInterpolationSettings Get_FootPlacementInterpolationSettings() const;
+
     FStructProperty* CachedTrajectoryProperty = nullptr;
 
 protected:
     virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
 
     bool IsDedicatedServerAnimationContext() const;
+    float CalculateAimOffsetAlpha(const FAnimThreadSafeData& ThreadSafeData) const;
 
 protected:
     UPROPERTY(Transient, BlueprintReadOnly, Category = "Animation")
@@ -329,6 +523,74 @@ protected:
 
     UPROPERTY(BlueprintReadOnly, Category = "Motion Matching")
     TObjectPtr<UPoseSearchDatabase> CurrentActivePoseSearchDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    bool bForceAimOffsetAlwaysOn = true;
+
+    // The authored draw, full-draw, and release poses own the arms. A global aim offset
+    // applied after them would otherwise rotate those poses again.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset", meta = (DisplayName = "Suppress Aim Offset While Bow Draw Pose Is Active"))
+    bool bSuppressAimOffsetWhileBowFullyDrawn = true;
+
+    // Disabled by default: the authored bow animation already places hand_r on the string.
+    // Enable only as a small per-character correction after validating the bow grip alignment.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Bow|IK")
+    bool bEnableBowStringHandIK = false;
+
+    // Starts preparing the static full-draw upper-body pose before the draw
+    // montage's final blend-out. This avoids exposing the normal bow idle pose.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Bow", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float FullDrawPosePreloadAlpha = 0.9f;
+
+    // Separate from the global aim offset. This is consumed only by the bow
+    // layer while the full-draw hold pose is active.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Bow|AimOffset")
+    bool bEnableBowHoldAimOffset = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Bow|AimOffset", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float BowHoldAimOffsetAlpha = 1.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    float MaxAimYaw = 90.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    float MaxAimPitch = 60.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    float StandingAimAlpha = 1.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    float MovingAimAlpha = 0.35f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    float SprintAimAlpha = 0.15f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    float CombatAimAlpha = 1.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|AimOffset")
+    float GenericMoveInputSpeedThreshold = 3.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Weapon UpperBody")
+    bool bEnableWeaponUpperBodyOverlay = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Weapon UpperBody", meta = (ClampMin = "0.0"))
+    float WeaponUpperBodyMovingSpeedThreshold = 80.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Weapon UpperBody")
+    bool bForceSprintWeaponUpperBodyDirectionForward = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    FFootPlacementPlantSettings FootPlacementPlantSettingsDefault;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    FFootPlacementPlantSettings FootPlacementPlantSettingsStops;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    FFootPlacementInterpolationSettings FootPlacementInterpolationSettingsDefault;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    FFootPlacementInterpolationSettings FootPlacementInterpolationSettingsStops;
 
 
 
