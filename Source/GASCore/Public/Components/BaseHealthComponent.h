@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "GameplayEffectTypes.h"
 #include "GameplayTagContainer.h"
 #include "BaseHealthComponent.generated.h"
 
@@ -79,9 +80,16 @@ public:
 private:
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleMaxHealthChanged(const FOnAttributeChangeData& Data);
+	void HandleDamageChanged(const FOnAttributeChangeData& Data);
 	void HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void SetDeathState(EBaseDeathState NewDeathState);
-	void SendGameplayEventToOwner(const FGameplayTag& EventTag, float EventMagnitude = 0.0f) const;
+	AActor* ResolveSourceActorFromContext(const FGameplayEffectContextHandle& EffectContextHandle) const;
+	void ClearPendingDamageContext();
+	void SendGameplayEventToOwner(
+		const FGameplayTag& EventTag,
+		float EventMagnitude = 0.0f,
+		AActor* SourceActor = nullptr,
+		const FGameplayEffectContextHandle& EffectContextHandle = FGameplayEffectContextHandle()) const;
 	AActor* GetOwningActor() const;
 
 	UFUNCTION()
@@ -96,5 +104,13 @@ private:
 
 	FDelegateHandle HealthChangedDelegateHandle;
 	FDelegateHandle MaxHealthChangedDelegateHandle;
+	FDelegateHandle DamageChangedDelegateHandle;
 	FDelegateHandle DeadTagDelegateHandle;
+
+	FGameplayEffectContextHandle PendingDamageEffectContextHandle;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<AActor> PendingDamageSourceActor;
+
+	bool bHasPendingDamageContext = false;
 };

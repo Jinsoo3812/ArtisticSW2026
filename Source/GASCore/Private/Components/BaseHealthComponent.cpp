@@ -50,6 +50,10 @@ void UBaseHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent* 
 		->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetMaxHealthAttribute())
 		.AddUObject(this, &UBaseHealthComponent::HandleMaxHealthChanged);
 
+	DamageChangedDelegateHandle = AbilitySystemComponent
+		->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetDamageAttribute())
+		.AddUObject(this, &UBaseHealthComponent::HandleDamageChanged);
+
 	DeadTagDelegateHandle = AbilitySystemComponent
 		->RegisterGameplayTagEvent(State_Dead)
 		.AddUObject(this, &UBaseHealthComponent::HandleDeadTagChanged);
@@ -79,13 +83,19 @@ void UBaseHealthComponent::UninitializeFromAbilitySystem()
 		.Remove(MaxHealthChangedDelegateHandle);
 
 	AbilitySystemComponent
+		->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetDamageAttribute())
+		.Remove(DamageChangedDelegateHandle);
+
+	AbilitySystemComponent
 		->RegisterGameplayTagEvent(State_Dead)
 		.Remove(DeadTagDelegateHandle);
 
 	HealthChangedDelegateHandle.Reset();
 	MaxHealthChangedDelegateHandle.Reset();
+	DamageChangedDelegateHandle.Reset();
 	DeadTagDelegateHandle.Reset();
 	AbilitySystemComponent = nullptr;
+	ClearPendingDamageContext();
 }
 
 float UBaseHealthComponent::GetHealth() const
@@ -148,13 +158,25 @@ void UBaseHealthComponent::FinishDeath()
 
 void UBaseHealthComponent::HandleHealthChanged(const FOnAttributeChangeData& Data)
 {
-	AActor* InstigatorActor = nullptr;
-	if (Data.GEModData && Data.GEModData->EffectSpec.GetContext().GetOriginalInstigator())
+	AActor* SourceActor = nullptr;
+	FGameplayEffectContextHandle EffectContextHandle;
+	if (Data.GEModData)
 	{
-		InstigatorActor = Data.GEModData->EffectSpec.GetContext().GetOriginalInstigator();
+		EffectContextHandle = Data.GEModData->EffectSpec.GetContext();
+		SourceActor = ResolveSourceActorFromContext(EffectContextHandle);
 	}
 
-	OnHealthChanged.Broadcast(this, Data.OldValue, Data.NewValue, InstigatorActor);
+	if (!EffectContextHandle.IsValid() && bHasPendingDamageContext)
+	{
+		EffectContextHandle = PendingDamageEffectContextHandle;
+	}
+
+	if (!SourceActor && PendingDamageSourceActor.IsValid())
+	{
+		SourceActor = PendingDamageSourceActor.Get();
+	}
+
+	OnHealthChanged.Broadcast(this, Data.OldValue, Data.NewValue, SourceActor);
 
 	AActor* Owner = GetOwningActor();
 	if (!Owner || !Owner->HasAuthority())
@@ -164,12 +186,14 @@ void UBaseHealthComponent::HandleHealthChanged(const FOnAttributeChangeData& Dat
 
 	if (Data.OldValue > Data.NewValue && Data.NewValue > 0.0f && DeathState == EBaseDeathState::NotDead)
 	{
-		SendGameplayEventToOwner(GameplayAbility_HitReaction, Data.OldValue - Data.NewValue);
+		SendGameplayEventToOwner(GameplayAbility_HitReaction, Data.OldValue - Data.NewValue, SourceActor, EffectContextHandle);
+		ClearPendingDamageContext();
 	}
 
 	if (Data.NewValue <= 0.0f)
 	{
 		StartDeath();
+		ClearPendingDamageContext();
 	}
 }
 
@@ -184,12 +208,51 @@ void UBaseHealthComponent::HandleMaxHealthChanged(const FOnAttributeChangeData& 
 	OnMaxHealthChanged.Broadcast(this, Data.OldValue, Data.NewValue, InstigatorActor);
 }
 
+void UBaseHealthComponent::HandleDamageChanged(const FOnAttributeChangeData& Data)
+{
+	if (Data.NewValue <= Data.OldValue || Data.NewValue <= 0.0f || !Data.GEModData)
+	{
+		return;
+	}
+
+	PendingDamageEffectContextHandle = Data.GEModData->EffectSpec.GetContext();
+	PendingDamageSourceActor = ResolveSourceActorFromContext(PendingDamageEffectContextHandle);
+	bHasPendingDamageContext = PendingDamageEffectContextHandle.IsValid();
+}
+
 void UBaseHealthComponent::HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
 	if (NewCount > 0 && DeathState == EBaseDeathState::NotDead)
 	{
 		SetDeathState(EBaseDeathState::DeathStarted);
 	}
+}
+
+AActor* UBaseHealthComponent::ResolveSourceActorFromContext(const FGameplayEffectContextHandle& EffectContextHandle) const
+{
+	if (!EffectContextHandle.IsValid())
+	{
+		return nullptr;
+	}
+
+	if (AActor* SourceActor = EffectContextHandle.GetOriginalInstigator())
+	{
+		return SourceActor;
+	}
+
+	if (AActor* SourceActor = EffectContextHandle.GetEffectCauser())
+	{
+		return SourceActor;
+	}
+
+	return Cast<AActor>(EffectContextHandle.GetSourceObject());
+}
+
+void UBaseHealthComponent::ClearPendingDamageContext()
+{
+	PendingDamageEffectContextHandle = FGameplayEffectContextHandle();
+	PendingDamageSourceActor.Reset();
+	bHasPendingDamageContext = false;
 }
 
 void UBaseHealthComponent::SetDeathState(EBaseDeathState NewDeathState)
@@ -214,7 +277,11 @@ void UBaseHealthComponent::SetDeathState(EBaseDeathState NewDeathState)
 	(void)OldDeathState;
 }
 
-void UBaseHealthComponent::SendGameplayEventToOwner(const FGameplayTag& EventTag, float EventMagnitude) const
+void UBaseHealthComponent::SendGameplayEventToOwner(
+	const FGameplayTag& EventTag,
+	float EventMagnitude,
+	AActor* SourceActor,
+	const FGameplayEffectContextHandle& EffectContextHandle) const
 {
 	AActor* Owner = GetOwningActor();
 	if (!Owner || !EventTag.IsValid())
@@ -224,8 +291,10 @@ void UBaseHealthComponent::SendGameplayEventToOwner(const FGameplayTag& EventTag
 
 	FGameplayEventData Payload;
 	Payload.EventTag = EventTag;
-	Payload.Instigator = Owner;
+	Payload.Instigator = SourceActor;
 	Payload.Target = Owner;
+	Payload.OptionalObject = SourceActor;
+	Payload.ContextHandle = EffectContextHandle;
 	Payload.EventMagnitude = EventMagnitude;
 
 	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(Owner, EventTag, Payload);

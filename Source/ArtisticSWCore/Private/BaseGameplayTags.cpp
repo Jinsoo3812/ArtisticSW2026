@@ -7,6 +7,7 @@ UE_DEFINE_GAMEPLAY_TAG(State_Damaged, "State.Damaged");
 UE_DEFINE_GAMEPLAY_TAG(State_Aiming, "State.Aiming");
 UE_DEFINE_GAMEPLAY_TAG(State_Sniping, "State.Sniping");
 UE_DEFINE_GAMEPLAY_TAG(State_Crafting, "State.Crafting");
+UE_DEFINE_GAMEPLAY_TAG(State_Poisoned, "State.Poisoned");
 
 // Team
 UE_DEFINE_GAMEPLAY_TAG(Team_Player, "Team.Player");
