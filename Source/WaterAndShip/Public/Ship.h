@@ -348,6 +348,13 @@ public:
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
+	virtual void OnConstruction(const FTransform& Transform) override;
+
+	/** Mirrors the legacy BuoyancyRoot asset into the split render/query meshes. */
+	void SynchronizeSplitShipMeshes();
+
+	/** Applies role-specific collision without re-enabling overlap on the physics root. */
+	void ConfigureSplitShipCollision();
 
 public:	
 	// Called every frame
@@ -368,9 +375,28 @@ public:
 
 	/* Components */
 
-	/** Root physics mesh for the ship */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	/**
+	 * Root Chaos body for the ship. The serialized component name remains BuoyancyRoot
+	 * so existing Blueprint mesh, mass, and Network Physics references stay intact.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "Physics Root (BuoyancyRoot)"))
 	UStaticMeshComponent* BuoyancyRoot;
+
+	/** Collision-free visual copy of the Physics Root mesh. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> ShipVisualMesh;
+
+	/** Query-only receiver for the opposing cannon channel. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> ShipDamageMesh;
+
+	/** Query-only walkable copy; currently mirrors the root mesh until a deck-only asset is supplied. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> ShipDeckMesh;
+
+	/** Temporary migration switch. Disable after dedicated visual/damage/deck meshes are assigned. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Mesh Split")
+	bool bMirrorPhysicsRootMeshToSplitMeshes = true;
 
 	/** Shared pontoon/settings source; FShipPhysicsAsync remains the force executor. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")

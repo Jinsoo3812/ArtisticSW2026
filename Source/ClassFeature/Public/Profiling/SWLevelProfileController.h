@@ -30,6 +30,8 @@ private:
 	int32 EnemyShipLimit = -1;
 	bool bDisableEnemyOverlaps = false;
 	bool bDisableEnemyRootOverlaps = false;
+	bool bDisableEnemyShipShadows = false;
+	bool bProfileGPU = false;
 	double BeginWorldTime = 0.0;
 	uint32 NetworkStartInBytes = 0;
 	uint32 NetworkStartOutBytes = 0;

@@ -30,12 +30,14 @@ void ASWLevelProfileController::BeginPlay()
 	bAutoQuit = FParse::Param(CommandLine, TEXT("SWProfileLevelAutoQuit"));
 	bDisableEnemyOverlaps = FParse::Param(CommandLine, TEXT("SWProfileDisableEnemyOverlaps"));
 	bDisableEnemyRootOverlaps = FParse::Param(CommandLine, TEXT("SWProfileDisableEnemyRootOverlaps"));
+	bDisableEnemyShipShadows = FParse::Param(CommandLine, TEXT("SWProfileDisableEnemyShipShadows"));
+	bProfileGPU = FParse::Param(CommandLine, TEXT("SWProfileGPU"));
 	WarmupSeconds = FMath::Max(0.0f, WarmupSeconds);
 	CaptureFrames = FMath::Max(1, CaptureFrames);
 	BeginWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 
 	UE_LOG(LogTemp, Display,
-		TEXT("[SW-LEVEL-PROFILE] Ready Map=%s NetMode=%d Warmup=%.2f Frames=%d EnemyLimit=%d DisableEnemyOverlaps=%s DisableEnemyRootOverlaps=%s AutoQuit=%s"),
+		TEXT("[SW-LEVEL-PROFILE] Ready Map=%s NetMode=%d Warmup=%.2f Frames=%d EnemyLimit=%d DisableEnemyOverlaps=%s DisableEnemyRootOverlaps=%s DisableEnemyShipShadows=%s AutoQuit=%s"),
 		GetWorld() ? *GetWorld()->GetMapName() : TEXT("NoWorld"),
 		GetWorld() ? static_cast<int32>(GetWorld()->GetNetMode()) : -1,
 		WarmupSeconds,
@@ -43,6 +45,7 @@ void ASWLevelProfileController::BeginPlay()
 		EnemyShipLimit,
 		bDisableEnemyOverlaps ? TEXT("true") : TEXT("false"),
 		bDisableEnemyRootOverlaps ? TEXT("true") : TEXT("false"),
+		bDisableEnemyShipShadows ? TEXT("true") : TEXT("false"),
 		bAutoQuit ? TEXT("true") : TEXT("false"));
 }
 
@@ -65,6 +68,14 @@ void ASWLevelProfileController::Tick(float DeltaSeconds)
 		bCaptureRequested = true;
 		TRACE_BOOKMARK(TEXT("SW Level Profile Measure Begin Map=%s"), GetWorld() ? *GetWorld()->GetMapName() : TEXT("NoWorld"));
 		UE_LOG(LogTemp, Display, TEXT("[SW-LEVEL-PROFILE] CaptureBegin Frames=%d Viewport=%dx%d"), CaptureFrames, ViewportSize.X, ViewportSize.Y);
+		if (bProfileGPU && GEngine)
+		{
+			GEngine->Exec(GetWorld(), TEXT("r.ProfileGPU.ShowUI 0"));
+			GEngine->Exec(GetWorld(), TEXT("r.ProfileGPU.Screenshot 0"));
+			GEngine->Exec(GetWorld(), TEXT("r.ProfileGPU.Sort 1"));
+			GEngine->Exec(GetWorld(), TEXT("r.ProfileGPU.ThresholdPercent 0.1"));
+			GEngine->Exec(GetWorld(), TEXT("ProfileGPU"));
+		}
 		CaptureProcessAndNetworkStart();
 		CsvProfiler->BeginCapture(CaptureFrames);
 		return;
@@ -155,6 +166,7 @@ void ASWLevelProfileController::ApplyProfileScenario()
 	});
 
 	int32 DisabledOverlapComponents = 0;
+	int32 DisabledShadowComponents = 0;
 	for (int32 Index = 0; Index < EnemyShips.Num(); ++Index)
 	{
 		AActor* EnemyShip = EnemyShips[Index];
@@ -187,13 +199,30 @@ void ASWLevelProfileController::ApplyProfileScenario()
 				}
 			}
 		}
+
+		if (bDisableEnemyShipShadows)
+		{
+			TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(EnemyShip);
+			for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+			{
+				if (PrimitiveComponent
+					&& PrimitiveComponent->GetName() == TEXT("ShipVisualMesh")
+					&& PrimitiveComponent->CastShadow)
+				{
+					PrimitiveComponent->SetCastShadow(false);
+					++DisabledShadowComponents;
+				}
+			}
+		}
 	}
 
 	UE_LOG(LogTemp, Display,
-		TEXT("[SW-LEVEL-PROFILE] Scenario EnemyFound=%d EnemyLimit=%d DisableEnemyOverlaps=%s DisableEnemyRootOverlaps=%s DisabledComponents=%d"),
+		TEXT("[SW-LEVEL-PROFILE] Scenario EnemyFound=%d EnemyLimit=%d DisableEnemyOverlaps=%s DisableEnemyRootOverlaps=%s DisabledOverlapComponents=%d DisableEnemyShipShadows=%s DisabledShadowComponents=%d"),
 		EnemyShips.Num(),
 		EnemyShipLimit,
 		bDisableEnemyOverlaps ? TEXT("true") : TEXT("false"),
 		bDisableEnemyRootOverlaps ? TEXT("true") : TEXT("false"),
-		DisabledOverlapComponents);
+		DisabledOverlapComponents,
+		bDisableEnemyShipShadows ? TEXT("true") : TEXT("false"),
+		DisabledShadowComponents);
 }

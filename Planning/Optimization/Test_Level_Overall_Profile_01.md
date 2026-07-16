@@ -377,8 +377,19 @@ EnemyShip 0 / 3 / 6 / 9
 - [x] Physical/GPU memory snapshot
 - [x] NetDriver bytes/packets/bunches 정규화
 - [x] 프로파일 전용 옵션이 일반 플레이에 영향을 주지 않도록 격리
-- [ ] Blueprint 영구 수정
-- [ ] Ripple 진입 감지 경로 이전
-- [ ] 기능 회귀 테스트
-- [ ] 수정 후 최종 FHD/PIE 재측정
-- [ ] 다음 단계 GPU pass 분해
+- [x] Ship C++ 구조 영구 수정
+- [ ] 선박 입수 Ripple 경로 이전(현재 사용자 결정으로 보류)
+- [x] 대포 피격 및 부력 기능 회귀 테스트
+- [x] 수정 후 최종 FHD 별도 Client 재측정
+- [x] 다음 단계 GPU pass 분해
+
+## 후속 구현 문서
+
+이 문서에서 찾은 Root Overlap 병목의 실제 구조 변경과 FHD 회귀 검증은 다음 문서에서 완료했다.
+
+- `Planning/Optimization/Ship_PhysicsRoot_MeshSplit_Optimization.md`
+- `Planning/Optimization/Render_Thread_GPU_Profile_01.md`
+
+최종 Ship Split은 클라이언트 `SyncBodies`를 41.820ms에서 1.985ms로 줄였다. 이어서 무조건 실행되던 Ship Pontoon/AI 디버그 렌더를 기본 OFF로 전환하여 GPU 평균을 13.739ms에서 12.988ms로 줄였다.
+
+후속 대포알 작업에서는 `ShipDamage` 전용 Object Channel과 ProjectileMovement Blocking Sweep을 적용했다. 서버 Damage Hull도 `GenerateOverlapEvents=false`가 되었으며, 기존 GAS 피해와 WaterBody 서버 Ripple이 함께 동작함을 `Saved/Logs/TestLevel_CannonSweep_Server.log`에서 검증했다.

@@ -47,10 +47,7 @@ void AEnemyShip::BeginPlay()
 	Tags.Remove(TEXT("Player"));
 	Tags.AddUnique(TEXT("Enemy"));
 
-	if (BuoyancyRoot)
-	{
-		BuoyancyRoot->SetCollisionProfileName(TEXT("EnemyShip"));
-	}
+	ConfigureSplitShipCollision();
 
 	// HealthComponent를 Ship의 ASC에 바인딩 (BaseEnemy의 패턴과 동일)
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())

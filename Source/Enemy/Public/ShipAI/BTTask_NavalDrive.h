@@ -61,7 +61,7 @@ protected:
 
 	// 조타 범위(이상적 거리, 위험 거리)를 바다 위에 디버그 원으로 그릴지 여부
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval AI|Debug")
-	bool bShowDebugRanges = true;
+	bool bShowDebugRanges = false;
 
 	// 한 번에 조준/사격에 사용할 최대 대포 개수
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Naval AI|Combat")
