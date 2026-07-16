@@ -80,6 +80,9 @@ private:
 	float DiagnosticsLastSummaryTime = -1.0f;
 	int32 DiagnosticsLastUploadedRippleCount = INDEX_NONE;
 	bool bDiagnosticsLastTextureResourceValid = false;
+	bool bHasUploadedStateRevision = false;
+	uint32 LastUploadedStateRevision = 0;
+	int32 LastUploadedRippleCount = 0;
 
 	void TickDiagnostics();
 };

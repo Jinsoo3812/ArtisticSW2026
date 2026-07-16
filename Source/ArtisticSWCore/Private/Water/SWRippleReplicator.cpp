@@ -4,6 +4,8 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Net/UnrealNetwork.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
+#include "Water/SWRippleProfile.h"
 #include "Water/SWRippleStateSubsystem.h"
 
 namespace
@@ -118,6 +120,7 @@ bool ASWRippleReplicator::AddServerRipple(
 	float DecayRate,
 	float WaveLength)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Ripple_AddServerRipple);
 	if (!HasAuthority() || InitialAmplitude <= 0.0f || WaveLength <= UE_SMALL_NUMBER)
 	{
 		return false;
@@ -151,6 +154,7 @@ bool ASWRippleReplicator::AddServerRipple(
 			}
 		}
 		ReplicatedRipples.Items.RemoveAtSwap(OldestIndex, 1, EAllowShrinking::No);
+		FSWRippleProfile::RecordReplicatedEventsRemoved(1);
 		ReplicatedRipples.MarkArrayDirty();
 	}
 
@@ -166,6 +170,7 @@ bool ASWRippleReplicator::AddServerRipple(
 	ReplicatedRipples.MarkItemDirty(NewItem);
 
 	StateSubsystem->AddOrUpdateReplicatedEvent(NewItem.Event);
+	FSWRippleProfile::RecordAuthoritativeEventAdded();
 	LogRippleNetworkCheck(NewItem.Event, TEXT("Authority"));
 	ForceNetUpdate();
 	return true;
@@ -173,11 +178,13 @@ bool ASWRippleReplicator::AddServerRipple(
 
 void ASWRippleReplicator::ApplyReplicatedEvent(const FSWRippleEvent& Event) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Ripple_ApplyReplicatedEvent);
 	if (UWorld* World = GetWorld())
 	{
 		if (USWRippleStateSubsystem* StateSubsystem = World->GetSubsystem<USWRippleStateSubsystem>())
 		{
 			StateSubsystem->AddOrUpdateReplicatedEvent(Event);
+			FSWRippleProfile::RecordReplicatedEventApplied();
 			LogRippleNetworkCheck(Event, TEXT("Client"));
 		}
 	}
@@ -185,18 +192,22 @@ void ASWRippleReplicator::ApplyReplicatedEvent(const FSWRippleEvent& Event) cons
 
 void ASWRippleReplicator::RemoveExpiredActiveEvents(double ServerTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Ripple_RemoveExpiredReplicatedEvents);
 	bool bRemoved = false;
+	int32 RemovedCount = 0;
 	for (int32 Index = ReplicatedRipples.Items.Num() - 1; Index >= 0; --Index)
 	{
 		if (ReplicatedRipples.Items[Index].Event.ExpireServerTime <= ServerTime)
 		{
 			ReplicatedRipples.Items.RemoveAtSwap(Index, 1, EAllowShrinking::No);
 			bRemoved = true;
+			++RemovedCount;
 		}
 	}
 
 	if (bRemoved)
 	{
+		FSWRippleProfile::RecordReplicatedEventsRemoved(RemovedCount);
 		ReplicatedRipples.MarkArrayDirty();
 		ForceNetUpdate();
 	}

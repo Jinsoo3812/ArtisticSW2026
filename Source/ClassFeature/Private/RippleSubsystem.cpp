@@ -10,10 +10,13 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "Profiling/SWRippleProfileController.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "Rendering/Texture2DResource.h"
 #include "RHI.h"
 #include "RHICommandList.h"
 #include "Water/SWRippleStateSubsystem.h"
+#include "Water/SWRippleProfile.h"
 #include "Water/SWRippleTypes.h"
 #include "WaterBodyActor.h"
 #include "WaterBodyComponent.h"
@@ -105,12 +108,51 @@ void URippleSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 			GetRippleNetMode(&InWorld),
 			InWorld.GetNetMode() != NM_Client ? TEXT("true") : TEXT("false"));
 	}
+
+	// The profile map remains a clean copy of KKH_Test. The deterministic driver is
+	// transiently spawned only when the explicit profiling command-line flag is set.
+	if (FSWRippleProfile::IsEnabled() && InWorld.GetMapName().Contains(TEXT("KKH_Profile_Ripple")))
+	{
+		bool bAlreadySpawned = false;
+		for (TActorIterator<ASWRippleProfileController> It(&InWorld); It; ++It)
+		{
+			bAlreadySpawned = true;
+			break;
+		}
+
+		if (!bAlreadySpawned)
+		{
+			FVector ProfileLocation = FVector::ZeroVector;
+			for (TActorIterator<AActor> It(&InWorld); It; ++It)
+			{
+				if (It->GetClass()->GetName().Contains(TEXT("Storage")))
+				{
+					ProfileLocation = It->GetActorLocation();
+					ProfileLocation.Z = 0.0;
+					break;
+				}
+			}
+
+			FActorSpawnParameters SpawnParameters;
+			SpawnParameters.Name = TEXT("SW_Ripple_Profile_Controller");
+			SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			SpawnParameters.ObjectFlags |= RF_Transient;
+			InWorld.SpawnActor<ASWRippleProfileController>(
+				ASWRippleProfileController::StaticClass(),
+				FTransform(ProfileLocation),
+				SpawnParameters);
+		}
+	}
 }
 
 void URippleSubsystem::OnWaterBodyActorOverlap(AActor* OverlappedActor, AActor* OtherActor)
 {
 	UWorld* World = GetWorld();
 	if (!World || World->GetNetMode() == NM_Client || !OtherActor || OtherActor == OverlappedActor)
+	{
+		return;
+	}
+	if (FSWRippleProfile::IsEnabled() && World->GetMapName().Contains(TEXT("KKH_Profile_Ripple")))
 	{
 		return;
 	}
@@ -211,8 +253,19 @@ float URippleSubsystem::GetRippleHeight(const FVector& Location) const
 
 void URippleSubsystem::UpdateTexture()
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Ripple_UpdateTexture);
+	const uint64 ProfileStartCycles = FSWRippleProfile::IsEnabled() ? FPlatformTime::Cycles64() : 0;
 	if (!RippleTexture || !GetWorld())
 	{
+		return;
+	}
+
+	const USWRippleStateSubsystem* StateSubsystem = GetWorld()->GetSubsystem<USWRippleStateSubsystem>();
+	const uint32 StateRevision = StateSubsystem ? StateSubsystem->GetRevision() : 0;
+	if (bHasUploadedStateRevision && LastUploadedStateRevision == StateRevision)
+	{
+		FSWRippleProfile::RecordTextureUpdate(LastUploadedRippleCount, StateRevision, true);
+		FSWRippleProfile::RecordTextureUpdateCycles(FPlatformTime::Cycles64() - ProfileStartCycles);
 		return;
 	}
 
@@ -220,12 +273,12 @@ void URippleSubsystem::UpdateTexture()
 	FMemory::Memzero(PixelData, sizeof(PixelData));
 
 	TArray<FSWRippleEvent> ActiveEvents;
-	if (const USWRippleStateSubsystem* StateSubsystem = GetWorld()->GetSubsystem<USWRippleStateSubsystem>())
+	if (StateSubsystem)
 	{
 		StateSubsystem->GetActiveEventsSnapshot(GetServerTime(), ActiveEvents);
 	}
-
 	const int32 Count = FMath::Min(ActiveEvents.Num(), MaxActiveRipples);
+	FSWRippleProfile::RecordTextureUpdate(Count, StateRevision, false);
 	for (int32 Index = 0; Index < Count; ++Index)
 	{
 		const FSWRippleEvent& Ripple = ActiveEvents[Index];
@@ -254,9 +307,11 @@ void URippleSubsystem::UpdateTexture()
 
 	if (TextureResource)
 	{
+		FSWRippleProfile::RecordTextureUpload(sizeof(PixelData));
 		ENQUEUE_RENDER_COMMAND(UpdateAuthenticatedRippleTexture)(
 			[TextureResource, DataCopy = TArray<FLinearColor>(PixelData, UE_ARRAY_COUNT(PixelData))](FRHICommandListImmediate& RHICmdList)
 			{
+				TRACE_CPUPROFILER_EVENT_SCOPE(SW_Ripple_RenderThreadTextureUpload);
 				const FUpdateTextureRegion2D Region(0, 0, 0, 0, URippleSubsystem::MaxActiveRipples, 2);
 				RHICmdList.UpdateTexture2D(
 					TextureResource->GetTexture2DRHI(),
@@ -265,11 +320,17 @@ void URippleSubsystem::UpdateTexture()
 					URippleSubsystem::MaxActiveRipples * sizeof(FLinearColor),
 					reinterpret_cast<const uint8*>(DataCopy.GetData()));
 			});
+		bHasUploadedStateRevision = true;
+		LastUploadedStateRevision = StateRevision;
+		LastUploadedRippleCount = Count;
 	}
+	FSWRippleProfile::RecordTextureUpdateCycles(FPlatformTime::Cycles64() - ProfileStartCycles);
 }
 
 void URippleSubsystem::BindRippleDataToWaterMaterials()
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Ripple_BindWaterMaterials);
+	const uint64 ProfileStartCycles = FSWRippleProfile::IsEnabled() ? FPlatformTime::Cycles64() : 0;
 	if (!GetWorld() || !RippleTexture)
 	{
 		return;
@@ -278,9 +339,12 @@ void URippleSubsystem::BindRippleDataToWaterMaterials()
 	static const FName RippleTextureParameterName(TEXT("RippleTex"));
 	static const FName ServerTimeParameterName(TEXT("ServerTime"));
 	const float ServerTime = static_cast<float>(GetServerTime());
+	int32 WaterBodyCount = 0;
+	int32 ParameterWriteCount = 0;
 
 	for (TActorIterator<AWaterBody> It(GetWorld()); It; ++It)
 	{
+		++WaterBodyCount;
 		if (AWaterBody* WaterBody = *It)
 		{
 			if (UWaterBodyComponent* WaterComponent = WaterBody->GetWaterBodyComponent())
@@ -289,10 +353,15 @@ void URippleSubsystem::BindRippleDataToWaterMaterials()
 				{
 					WaterMID->SetTextureParameterValue(RippleTextureParameterName, RippleTexture);
 					WaterMID->SetScalarParameterValue(ServerTimeParameterName, ServerTime);
+					ParameterWriteCount += 2;
 				}
 			}
 		}
 	}
+	FSWRippleProfile::RecordMaterialBind(
+		WaterBodyCount,
+		ParameterWriteCount,
+		FPlatformTime::Cycles64() - ProfileStartCycles);
 }
 
 double URippleSubsystem::GetServerTime() const
