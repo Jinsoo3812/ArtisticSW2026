@@ -262,6 +262,11 @@ void ABaseItem::OnRep_ItemState()
 	}
 }
 
+USceneComponent* ABaseItem::GetAttachmentReferenceComponent() const
+{
+	return GetRootComponent();
+}
+
 UTexture2D* ABaseItem::GetItemIcon() const
 {
 	if (UWorld* World = GetWorld())

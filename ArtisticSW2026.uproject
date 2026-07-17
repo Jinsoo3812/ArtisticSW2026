@@ -101,6 +101,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "AnimationWarping",
+			"Enabled": true
+		},
+		{
 			"Name": "Buoyancy",
 			"Enabled": true
 		},
