@@ -89,20 +89,15 @@ void UPlayerHUDWidget::NativeConstruct()
 		StorageWindowWidget->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
-	if (RootCanvasPanel && InventoryCursorWidgetClass && !InventoryCursorWidget)
+	if (InventoryCursorWidgetClass && !InventoryCursorWidget)
 	{
-		InventoryCursorWidget = CreateWidget<UInventoryCursorWidget>(this, InventoryCursorWidgetClass);
+		InventoryCursorWidget = CreateWidget<UInventoryCursorWidget>(GetOwningPlayer(), InventoryCursorWidgetClass);
 
 		if (InventoryCursorWidget)
 		{
-			RootCanvasPanel->AddChild(InventoryCursorWidget);
-
-			if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(InventoryCursorWidget->Slot))
-			{
-				CanvasSlot->SetAutoSize(true);
-				CanvasSlot->SetZOrder(999);
-			}
-
+			// The status window hides the HUD while it is open. Keep the held item
+			// in the viewport so it remains visible above either inventory screen.
+			InventoryCursorWidget->AddToViewport(999);
 			InventoryCursorWidget->ClearCursorItem();
 		}
 	}
@@ -114,6 +109,11 @@ void UPlayerHUDWidget::NativeConstruct()
 void UPlayerHUDWidget::NativeDestruct()
 {
 	HideStorageWindow();
+	if (InventoryCursorWidget)
+	{
+		InventoryCursorWidget->RemoveFromParent();
+		InventoryCursorWidget = nullptr;
+	}
 
 	if (CachedPlayer.IsValid())
 	{
@@ -137,7 +137,6 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
 	RefreshCursorItemWidget();
-	UpdateCursorItemWidgetPosition();
 }
 
 void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
@@ -283,6 +282,7 @@ void UPlayerHUDWidget::HandleInventoryChanged()
 		InventoryPanelWidget->RefreshInventory();
 	}
 	RefreshQuickSlots();
+	RefreshCursorItemWidget();
 }
 
 void UPlayerHUDWidget::HandleItemSlotsChanged()

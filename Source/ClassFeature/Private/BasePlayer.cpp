@@ -571,8 +571,10 @@ bool ABasePlayer::CanQuickSlotAcceptItem(int32 QuickSlotIndex, FGameplayTag Item
 	}
 
 	const FGameplayTag CategoryTag = ItemSubsystem->GetCategoryTag(ItemTag);
+	const bool bIsWeapon = CategoryTag.MatchesTag(Item_Category_Weapon)
+		|| ItemTag.MatchesTag(Item_Id_Weapon);
 	return QuickSlots[QuickSlotIndex].SlotType == EQuickSlotType::Weapon
-		? CategoryTag.MatchesTag(Item_Category_Weapon)
+		? bIsWeapon
 		: CategoryTag.MatchesTag(Item_Category_Consumable);
 }
 
