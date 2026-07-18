@@ -73,8 +73,6 @@ protected:
 	void RefreshItemInfo(FGameplayTag ItemTag, int32 Count);
 	void BindInventoryComponent(UInventoryComponent* InventoryComponent);
 	void UnbindInventoryComponent();
-	bool TrySelectFirstNonEmptyTab();
-	bool HasAnyItemInTab(EInventoryTab Tab) const;
 	void RefreshTabButtonStyles();
 	void ApplyTabButtonColor(UButton* Button, bool bIsActive);
 

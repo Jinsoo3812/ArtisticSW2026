@@ -114,8 +114,6 @@ void UInventoryPanelWidget::RefreshInventory()
 		return;
 	}
 
-	TrySelectFirstNonEmptyTab();
-
 	const EInventoryTab ActiveTab = BoundInventoryComponent->GetActiveTab();
 	RefreshTabButtonStyles();
 
@@ -164,51 +162,6 @@ void UInventoryPanelWidget::RefreshInventory()
 			GridSlot->SetVerticalAlignment(VAlign_Fill);
 		}
 	}
-}
-
-bool UInventoryPanelWidget::TrySelectFirstNonEmptyTab()
-{
-	if (!BoundInventoryComponent || HasAnyItemInTab(BoundInventoryComponent->GetActiveTab()))
-	{
-		return false;
-	}
-
-	const EInventoryTab Tabs[] =
-	{
-		EInventoryTab::Clue,
-		EInventoryTab::Consumable,
-		EInventoryTab::Material,
-		EInventoryTab::Weapon
-	};
-
-	for (const EInventoryTab Tab : Tabs)
-	{
-		if (HasAnyItemInTab(Tab))
-		{
-			BoundInventoryComponent->SetActiveTab(Tab);
-			return true;
-		}
-	}
-
-	return false;
-}
-
-bool UInventoryPanelWidget::HasAnyItemInTab(EInventoryTab Tab) const
-{
-	if (!BoundInventoryComponent)
-	{
-		return false;
-	}
-
-	for (const FInventorySlot& InventorySlot : BoundInventoryComponent->GetSlots(Tab))
-	{
-		if (!InventorySlot.IsEmpty())
-		{
-			return true;
-		}
-	}
-
-	return false;
 }
 
 void UInventoryPanelWidget::RefreshItemInfo(FGameplayTag ItemTag, int32 Count)
