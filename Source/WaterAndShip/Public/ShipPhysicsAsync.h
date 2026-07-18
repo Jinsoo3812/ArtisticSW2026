@@ -1,10 +1,11 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Chaos/SimCallbackObject.h"
 #include "Chaos/PhysicsObject.h"
 #include "Physics/NetworkPhysicsComponent.h"
 #include "GerstnerWaterWaves.h"
+#include "Water/SWRippleTypes.h"
 #include "Ship.h"
 
 struct FAsyncInputShip : public Chaos::FSimCallbackInput
@@ -12,9 +13,13 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	float MovementInput = 0.0f;
 	float SteeringInput = 0.0f;
 	bool bHasLocalController = false;
+	bool bQueryDiagnostics = false;
 
 	TArray<FVector> PontoonOffsets;
+	TArray<float> PontoonRadii;
+	TArray<float> PontoonForceScales;
 	TArray<FGerstnerWave> GerstnerWaves;
+	TArray<FSWRippleEvent> RippleEvents;
 
 	float GravityZ = -980.f;
 	float LateralDrag = 0.5f;
@@ -41,8 +46,12 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 		MovementInput = 0.0f;
 		SteeringInput = 0.0f;
 		bHasLocalController = false;
+		bQueryDiagnostics = false;
 		PontoonOffsets.Empty();
+		PontoonRadii.Empty();
+		PontoonForceScales.Empty();
 		GerstnerWaves.Empty();
+		RippleEvents.Empty();
 		ServerPhysicsTimeOrigin = -1.0;
 		ServerPhysicsStepSeconds = 0.0f;
 		NetworkPhysicsTickOffset = 0;
@@ -54,7 +63,20 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 
 struct FAsyncOutputShip : public Chaos::FSimCallbackOutput
 {
-	void Reset() {}
+	bool bWaveSampleValid = false;
+	bool bWasResimming = false;
+	FVector WaveSamplePosition = FVector::ZeroVector;
+	double WaveSampleServerTime = 0.0;
+	float PTWaveHeight = 0.0f;
+
+	void Reset()
+	{
+		bWaveSampleValid = false;
+		bWasResimming = false;
+		WaveSamplePosition = FVector::ZeroVector;
+		WaveSampleServerTime = 0.0;
+		PTWaveHeight = 0.0f;
+	}
 };
 
 class FShipPhysicsAsync : public Chaos::TSimCallbackObject<FAsyncInputShip, FAsyncOutputShip,
@@ -92,10 +114,14 @@ private:
 	// 비동기 스레드 내부 입력 캐시
 	float MovementInput_Internal = 0.0f;
 	float SteeringInput_Internal = 0.0f;
+	bool bQueryDiagnostics_Internal = false;
 
 	// 물리 스레드에서 고정 보관할 데이터들 (최초 전송 시 캐싱)
 	TArray<FVector> CachedPontoonOffsets;
+	TArray<float> CachedPontoonRadii;
+	TArray<float> CachedPontoonForceScales;
 	TArray<FGerstnerWave> CachedGerstnerWaves;
+	TArray<FSWRippleEvent> CachedRippleEvents;
 	
 	float CachedGravityZ = -980.f;
 	float CachedLateralDrag = 0.5f;

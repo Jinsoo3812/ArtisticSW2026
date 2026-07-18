@@ -14,6 +14,7 @@
 #include "Materials/MaterialParameterCollectionInstance.h"
 #include "RippleSubsystem.h"
 #include "SWRippleWaterWaves.h"
+#include "Water/SWBuoyancyMath.h"
 
 static TAutoConsoleVariable<int32> CVarShowSwimBuoyancyDebug(
 	TEXT("p.ShowSwimBuoyancyDebug"),
@@ -416,21 +417,24 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 
 	if (bPontoonInWater)
 	{
-		Submersion = WaterHeight - (PontoonLocation.Z - PontoonRadius);
-		if (Submersion > 0.f)
-		{
-			float SubDiff = FMath::Clamp(Submersion, 0.f, 2.f * PontoonRadius);
-			float SubDiffSq = SubDiff * SubDiff;
-			SubVolume = (PI / 3.f) * SubDiffSq * ((3.f * PontoonRadius) - SubDiff);
+		FSWBuoyancySolveInput SolveInput;
+		SolveInput.WaterHeight = WaterHeight;
+		SolveInput.PontoonCenterZ = PontoonLocation.Z;
+		SolveInput.PontoonRadius = PontoonRadius;
+		SolveInput.RelativeVelocityZ = CharacterMovement->Velocity.Z;
 
-			float VelocityZ = CharacterMovement->Velocity.Z;
-			float FirstOrderDrag = BuoyancyDamp * VelocityZ;
-			float SecondOrderDrag = FMath::Sign(VelocityZ) * BuoyancyDamp2 * VelocityZ * VelocityZ;
-			DampingFactor = -FMath::Max(FirstOrderDrag + SecondOrderDrag, 0.f);
+		FSWBuoyancyForceSettings SolveSettings;
+		SolveSettings.BuoyancyCoefficient = BuoyancyCoefficient;
+		SolveSettings.BuoyancyDamp = BuoyancyDamp;
+		SolveSettings.BuoyancyDamp2 = BuoyancyDamp2;
+		SolveSettings.MaxBuoyantForce = MaxBuoyantForce;
 
-			BuoyantForce = SubVolume * BuoyancyCoefficient + DampingFactor;
-			BuoyantForce = FMath::Clamp(BuoyantForce, 0.f, MaxBuoyantForce);
-		}
+		const FSWBuoyancySolveResult SolveResult =
+			FSWBuoyancyMath::SolvePontoon(SolveInput, SolveSettings);
+		Submersion = SolveResult.ImmersionDepth;
+		SubVolume = SolveResult.SubmergedVolume;
+		DampingFactor = SolveResult.DampingForce;
+		BuoyantForce = SolveResult.BuoyantForceZ;
 	}
 
 	float BuoyantAccelerationZ = BuoyantForce / Mass;

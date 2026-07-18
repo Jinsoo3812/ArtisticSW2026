@@ -9,7 +9,7 @@
 
 class UInteractableComponent;
 class UStaticMeshComponent;
-class UBuoyancyComponent;
+class USWBuoyancyComponent;
 
 UCLASS()
 class CLASSFEATURE_API AStorageChest : public AActor
@@ -25,7 +25,7 @@ public:
 	UStorageComponent* GetStorageComponent() const { return StorageComponent; }
 	UInteractableComponent* GetInteractableComponent() const { return InteractableComponent; }
 	UStaticMeshComponent* GetChestMesh() const { return ChestMesh; }
-	UBuoyancyComponent* GetBuoyancyComponent() const { return BuoyancyComponent; }
+	USWBuoyancyComponent* GetSWBuoyancyComponent() const { return SWBuoyancyComponent; }
 	FText GetStorageName() const { return StorageName; }
 
 	UFUNCTION(BlueprintCallable, Category = "Storage")
@@ -35,8 +35,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> ChestMesh;
 
+	/** Server-authoritative custom buoyancy. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UBuoyancyComponent> BuoyancyComponent;
+	TObjectPtr<USWBuoyancyComponent> SWBuoyancyComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UInteractableComponent> InteractableComponent;

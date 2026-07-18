@@ -5,8 +5,7 @@
 #include "BasePlayer.h"
 #include "BasePlayerController.h"
 #include "Components/StaticMeshComponent.h"
-#include "BuoyancyComponent.h"
-#include "BuoyancyTypes.h"
+#include "Buoyancy/SWBuoyancyComponent.h"
 #include "InteractableComponent.h"
 
 AStorageChest::AStorageChest()
@@ -20,17 +19,12 @@ AStorageChest::AStorageChest()
 	ChestMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ChestMesh"));
 	SetRootComponent(ChestMesh);
 
-	BuoyancyComponent = CreateDefaultSubobject<UBuoyancyComponent>(TEXT("BuoyancyComponent"));
-	BuoyancyComponent->SetCanBeActive(false);
-	// UE 5.7's async buoyancy snapshot only recognizes a direct UGerstnerWaterWaves
-	// object. KKH_Test uses SWRippleWaterWaves as a wrapper, so use the normal
-	// game-thread query path that evaluates the wrapper's virtual wave function.
-	BuoyancyComponent->bUseAsyncPath = false;
-	BuoyancyComponent->BuoyancyData.Pontoons.Reset();
-	FSphericalPontoon CenterPontoon;
-	CenterPontoon.RelativeLocation = FVector::ZeroVector;
-	CenterPontoon.Radius = 50.0f;
-	BuoyancyComponent->BuoyancyData.Pontoons.Add(CenterPontoon);
+	SWBuoyancyComponent = CreateDefaultSubobject<USWBuoyancyComponent>(TEXT("SWBuoyancyComponent"));
+	SWBuoyancyComponent->ExecutionMode = ESWBuoyancyExecutionMode::ServerAuthority;
+	SWBuoyancyComponent->ConfigureSinglePontoon(50.0f);
+	// Preserve the Water plugin's near-surface coefficient while accelerating only
+	// the fully submerged recovery after a large fall.
+	SWBuoyancyComponent->ForceSettings.DeepWaterBuoyancyMultiplier = 3.0f;
 
 	InteractableComponent = CreateDefaultSubobject<UInteractableComponent>(TEXT("InteractableComponent"));
 	InteractableComponent->SetupAttachment(ChestMesh);
@@ -58,16 +52,6 @@ void AStorageChest::BeginPlay()
 			ChestMesh->WakeAllRigidBodies();
 		}
 
-		if (BuoyancyComponent)
-		{
-			BuoyancyComponent->SetCanBeActive(true);
-		}
-	}
-	else if (BuoyancyComponent)
-	{
-		// Clients receive the server root rigid-body state through replicated movement.
-		// They must not submit their own buoyancy forces.
-		BuoyancyComponent->SetCanBeActive(false);
 	}
 
 	if (InteractableComponent)
