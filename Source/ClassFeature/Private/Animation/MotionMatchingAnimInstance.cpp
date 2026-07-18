@@ -2,17 +2,23 @@
 #include "BasePlayer.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Animation/SWTrajectoryComponent.h"
+#include "BaseGameplayTags.h"
 #include "CharacterTrajectoryComponent.h"
 #include "ChooserFunctionLibrary.h"
 #include "Chooser.h"
+#include "Equipment/PlayerEquipmentComponent.h"
+#include "Item/Components/BowComponent.h"
+#include "Item/Weapons/BowItem.h"
 #include "PoseSearch/PoseSearchDatabase.h"
 #include "PoseSearch/AnimNode_MotionMatching.h"
 #include "PoseSearch/AnimNode_PoseSearchHistoryCollector.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
+#include "AbilitySystemComponent.h"
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "UObject/UnrealType.h"
@@ -1461,6 +1467,17 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
 UMotionMatchingAnimInstance::UMotionMatchingAnimInstance()
 {
     bUseMultiThreadedAnimationUpdate = true;
+
+    FootPlacementPlantSettingsStops.SpeedThreshold = 80.0f;
+    FootPlacementPlantSettingsStops.UnplantRadius = 25.0f;
+    FootPlacementPlantSettingsStops.UnplantAngle = 35.0f;
+    FootPlacementPlantSettingsStops.ReplantRadiusRatio = 0.5f;
+    FootPlacementPlantSettingsStops.ReplantAngleRatio = 0.65f;
+
+    FootPlacementInterpolationSettingsStops.UnplantLinearStiffness = 500.0f;
+    FootPlacementInterpolationSettingsStops.UnplantAngularStiffness = 700.0f;
+    FootPlacementInterpolationSettingsStops.FloorLinearStiffness = 1200.0f;
+    FootPlacementInterpolationSettingsStops.FloorAngularStiffness = 650.0f;
 }
 
 FAnimInstanceProxy* UMotionMatchingAnimInstance::CreateAnimInstanceProxy()
@@ -1506,6 +1523,43 @@ void UMotionMatchingAnimInstance::NativeInitializeAnimation()
 bool UMotionMatchingAnimInstance::IsDedicatedServerAnimationContext() const
 {
     return GetWorld() && GetWorld()->GetNetMode() == NM_DedicatedServer;
+}
+
+float UMotionMatchingAnimInstance::CalculateAimOffsetAlpha(const FAnimThreadSafeData& ThreadSafeData) const
+{
+	const bool bHasAuthoredBowDrawPose =
+		ThreadSafeData.BowData.bIsDrawing ||
+		ThreadSafeData.BowData.bIsFullyDrawn ||
+		ThreadSafeData.BowData.bIsReleasing;
+
+	if (bSuppressAimOffsetWhileBowFullyDrawn && bHasAuthoredBowDrawPose)
+	{
+		return 0.f;
+	}
+
+    if (bForceAimOffsetAlwaysOn)
+    {
+        return 1.f;
+    }
+
+    if (ThreadSafeData.AirData.bIsInAir ||
+        ThreadSafeData.LandingData.bIsLanding ||
+        (CachedBasePlayer && (CachedBasePlayer->bIsAttacking || CachedBasePlayer->bIsDodging || CachedBasePlayer->bIsHitReacting)))
+    {
+        return 0.f;
+    }
+
+    if (CachedBasePlayer && CachedBasePlayer->bIsCombatMode)
+    {
+        return CombatAimAlpha;
+    }
+
+    if (CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsSprinting)
+    {
+        return SprintAimAlpha;
+    }
+
+    return ThreadSafeData.LandingData.GroundSpeed > GenericMoveInputSpeedThreshold ? MovingAimAlpha : StandingAimAlpha;
 }
 
 void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
@@ -1897,6 +1951,119 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     ThreadSafeData.LandingData.bLandWasMoving = CachedLocomotionStateComponent->bLandWasMoving;
     ThreadSafeData.LandingData.bLandWasSprinting = CachedLocomotionStateComponent->bLandWasSprinting;
 
+    if (CachedBasePlayer->GetController())
+    {
+        const FRotator ActorRotation = CachedBasePlayer->GetActorRotation();
+        const FRotator ControlRotation = CachedBasePlayer->GetControlRotation();
+        ThreadSafeData.AimData.AimYaw = FMath::Clamp(FMath::FindDeltaAngleDegrees(ActorRotation.Yaw, ControlRotation.Yaw), -MaxAimYaw, MaxAimYaw);
+        ThreadSafeData.AimData.AimPitch = FMath::Clamp(FRotator::NormalizeAxis(ControlRotation.Pitch), -MaxAimPitch, MaxAimPitch);
+    }
+
+    ThreadSafeData.WeaponUpperBodyData = FAnimWeaponUpperBodyData();
+    ThreadSafeData.BowData = FAnimBowData();
+
+    if (const UPlayerEquipmentComponent* EquipmentComponent = CachedBasePlayer->GetEquipmentComponent())
+    {
+        const FGameplayTag EquippedWeaponTag = EquipmentComponent->GetEquippedItemTag();
+        const FGameplayTag OverlayTag = EquipmentComponent->GetEquippedUpperBodyOverlayTag();
+        const bool bHasWeaponEquipped = EquippedWeaponTag.IsValid();
+        const bool bUseWeaponOverlay = OverlayTag.IsValid();
+        const bool bGroundedForOverlay =
+            CachedLocomotionStateComponent->CurrentState == ELocomotionState::Idle ||
+            CachedLocomotionStateComponent->CurrentState == ELocomotionState::Start ||
+            CachedLocomotionStateComponent->CurrentState == ELocomotionState::Locomotion ||
+            CachedLocomotionStateComponent->CurrentState == ELocomotionState::Stop;
+        const float GroundSpeed = CachedLocomotionStateComponent->GroundSpeed;
+        const bool bMoving = GroundSpeed > WeaponUpperBodyMovingSpeedThreshold;
+        const bool bSprinting = CachedLocomotionStateComponent->bIsSprinting;
+        const float Direction = bForceSprintWeaponUpperBodyDirectionForward && bSprinting
+            ? 0.f
+            : FRotator::NormalizeAxis(CachedLocomotionStateComponent->MovementDirection);
+
+        ThreadSafeData.WeaponUpperBodyData.bHasWeaponEquipped = bHasWeaponEquipped;
+        ThreadSafeData.WeaponUpperBodyData.EquippedWeaponTag = EquippedWeaponTag;
+        ThreadSafeData.WeaponUpperBodyData.OverlayTag = OverlayTag;
+        ThreadSafeData.WeaponUpperBodyData.OverlayIndex = EquipmentComponent->GetEquippedUpperBodyOverlayIndex();
+        ThreadSafeData.WeaponUpperBodyData.bShouldOverrideUpperBody = bEnableWeaponUpperBodyOverlay && bUseWeaponOverlay && bGroundedForOverlay;
+        ThreadSafeData.WeaponUpperBodyData.UpperBodyAlpha = ThreadSafeData.WeaponUpperBodyData.bShouldOverrideUpperBody ? 1.f : 0.f;
+        ThreadSafeData.WeaponUpperBodyData.GroundSpeed = GroundSpeed;
+        ThreadSafeData.WeaponUpperBodyData.Direction = Direction;
+        ThreadSafeData.WeaponUpperBodyData.bIsSprinting = bSprinting;
+
+        if (!ThreadSafeData.WeaponUpperBodyData.bShouldOverrideUpperBody)
+        {
+            ThreadSafeData.WeaponUpperBodyData.OverlayState = EWeaponUpperBodyOverlayState::None;
+        }
+        else if (bSprinting)
+        {
+            ThreadSafeData.WeaponUpperBodyData.OverlayState = EWeaponUpperBodyOverlayState::Sprint;
+        }
+        else if (bMoving)
+        {
+            ThreadSafeData.WeaponUpperBodyData.OverlayState = EWeaponUpperBodyOverlayState::Run;
+        }
+        else
+        {
+            ThreadSafeData.WeaponUpperBodyData.OverlayState = EWeaponUpperBodyOverlayState::Idle;
+        }
+
+        if (const ABowItem* EquippedBow = Cast<ABowItem>(CachedBasePlayer->EquippedItem))
+        {
+            if (const UBowComponent* BowComponent = EquippedBow->GetBowComponent())
+            {
+                ThreadSafeData.BowData.bIsAiming = BowComponent->IsAiming();
+                ThreadSafeData.BowData.DrawAlpha = BowComponent->GetDrawAlpha();
+                ThreadSafeData.BowData.bIsDrawing = ThreadSafeData.BowData.bIsAiming && ThreadSafeData.BowData.DrawAlpha > KINDA_SMALL_NUMBER;
+                ThreadSafeData.BowData.bIsFullyDrawn = ThreadSafeData.BowData.DrawAlpha >= 1.f - KINDA_SMALL_NUMBER;
+
+                FTransform StringIKTargetWorldTransform = FTransform::Identity;
+                if (EquippedBow->GetStringIKTargetTransform(ThreadSafeData.BowData.DrawAlpha, StringIKTargetWorldTransform))
+                {
+                    if (const USkeletalMeshComponent* CharacterMesh = GetSkelMeshComponent())
+                    {
+                        ThreadSafeData.BowData.bHasStringIKTarget = true;
+                        ThreadSafeData.BowData.StringIKTargetTransform =
+                            StringIKTargetWorldTransform.GetRelativeTransform(CharacterMesh->GetComponentTransform());
+                    }
+                }
+            }
+        }
+
+        if (const UAbilitySystemComponent* ASC = CachedBasePlayer->GetAbilitySystemComponent())
+        {
+            ThreadSafeData.BowData.bIsDrawing = ASC->HasMatchingGameplayTag(State_Bow_Drawing);
+            // DrawAlpha reaches 1.0 in the same gameplay update that promotes the
+            // ability to FullyDrawn. Keep that local visual transition immediate
+            // instead of waiting for the gameplay-tag/proxy update on the next frame.
+            ThreadSafeData.BowData.bIsFullyDrawn =
+                ThreadSafeData.BowData.bIsFullyDrawn ||
+                ASC->HasMatchingGameplayTag(State_Bow_FullyDrawn);
+            ThreadSafeData.BowData.bIsReleasing = ASC->HasMatchingGameplayTag(State_Bow_Releasing);
+        }
+
+        // Preload the full-draw pose while the authored draw montage is still
+        // visible. When that montage fades out, it therefore reveals the
+        // matching pose rather than the regular bow upper-body blend space.
+        ThreadSafeData.BowData.bShouldUseFullDrawPose =
+            !ThreadSafeData.BowData.bIsReleasing &&
+            (ThreadSafeData.BowData.bIsFullyDrawn ||
+             (ThreadSafeData.BowData.bIsAiming &&
+              ThreadSafeData.BowData.DrawAlpha >= FullDrawPosePreloadAlpha));
+
+        ThreadSafeData.BowData.StringIKAlpha =
+            bEnableBowStringHandIK &&
+            ThreadSafeData.BowData.bHasStringIKTarget &&
+            ThreadSafeData.BowData.bIsFullyDrawn &&
+            !ThreadSafeData.BowData.bIsReleasing
+                ? 1.f
+                : 0.f;
+
+		if (CachedBasePlayer->GetController())
+		{
+			ThreadSafeData.AimData.AimOffsetAlpha = CalculateAimOffsetAlpha(ThreadSafeData);
+		}
+    }
+
     // 4. Push variables safely to the proxy
     FMotionMatchingAnimInstanceProxy& MyProxy = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>();
     MyProxy.ThreadSafeData = ThreadSafeData;
@@ -2132,6 +2299,161 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 UPoseSearchDatabase* UMotionMatchingAnimInstance::GetCurrentActivePoseSearchDatabaseThreadSafe() const
 {
     return CurrentActivePoseSearchDatabase;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeAimYaw() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.AimData.AimYaw;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeAimPitch() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.AimData.AimPitch;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeAimOffsetAlpha() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.AimData.AimOffsetAlpha;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeHasBowEquipped() const
+{
+    const FGameplayTag OverlayTag = GetThreadSafeWeaponUpperBodyOverlayTag();
+    const FGameplayTag EquippedWeaponTag = GetThreadSafeEquippedWeaponTag();
+    return OverlayTag.MatchesTag(Item_Weapon_Bow) || EquippedWeaponTag.MatchesTag(Item_Weapon_Bow);
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeHasWeaponEquipped() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.bHasWeaponEquipped;
+}
+
+FGameplayTag UMotionMatchingAnimInstance::GetThreadSafeEquippedWeaponTag() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.EquippedWeaponTag;
+}
+
+FGameplayTag UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyOverlayTag() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.OverlayTag;
+}
+
+int32 UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyOverlayIndex() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.OverlayIndex;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeShouldOverrideWeaponUpperBody() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.bShouldOverrideUpperBody;
+}
+
+EWeaponUpperBodyOverlayMode UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyMode() const
+{
+    const FAnimWeaponUpperBodyData& WeaponData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData;
+    if (!WeaponData.OverlayTag.MatchesTag(Item_Weapon_Bow))
+    {
+        return EWeaponUpperBodyOverlayMode::None;
+    }
+
+    switch (WeaponData.OverlayState)
+    {
+    case EWeaponUpperBodyOverlayState::Idle:
+        return EWeaponUpperBodyOverlayMode::BowIdle;
+    case EWeaponUpperBodyOverlayState::Run:
+        return EWeaponUpperBodyOverlayMode::BowRun;
+    case EWeaponUpperBodyOverlayState::Sprint:
+        return EWeaponUpperBodyOverlayMode::BowSprint;
+    default:
+        return EWeaponUpperBodyOverlayMode::None;
+    }
+}
+
+EWeaponUpperBodyOverlayState UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyState() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.OverlayState;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyAlpha() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.UpperBodyAlpha;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodySpeed() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.GroundSpeed;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyDirection() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData.Direction;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsBowAiming() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.bIsAiming;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsBowDrawing() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.bIsDrawing;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsBowFullyDrawn() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.bIsFullyDrawn;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeShouldUseBowFullDrawPose() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.bShouldUseFullDrawPose;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeBowHoldAimOffsetAlpha() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return bEnableBowHoldAimOffset &&
+        ThreadSafeData.BowData.bIsFullyDrawn &&
+        !ThreadSafeData.BowData.bIsReleasing
+            ? BowHoldAimOffsetAlpha
+            : 0.f;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsBowReleasing() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.bIsReleasing;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeBowDrawAlpha() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.DrawAlpha;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeHasBowStringIKTarget() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.bHasStringIKTarget;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeBowStringIKAlpha() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.StringIKAlpha;
+}
+
+FTransform UMotionMatchingAnimInstance::GetThreadSafeBowStringIKTargetTransform() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.StringIKTargetTransform;
+}
+
+FFootPlacementPlantSettings UMotionMatchingAnimInstance::Get_FootPlacementPlantSettings() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return ThreadSafeData.GroundData.bStopRequested ? FootPlacementPlantSettingsStops : FootPlacementPlantSettingsDefault;
+}
+
+FFootPlacementInterpolationSettings UMotionMatchingAnimInstance::Get_FootPlacementInterpolationSettings() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return ThreadSafeData.GroundData.bStopRequested ? FootPlacementInterpolationSettingsStops : FootPlacementInterpolationSettingsDefault;
 }
 
 bool UMotionMatchingAnimInstance::ShouldEvaluateMotionMatchingThisFrame(float DeltaSeconds)

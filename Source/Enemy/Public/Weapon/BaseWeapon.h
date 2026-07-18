@@ -65,7 +65,7 @@ protected:
 protected:
 	void ProcessTrace();
 	void HitScan(const FHitResult& HitResult);
-	void ApplyEffectToTarget(AActor* TargetActor) const;
+	void ApplyEffectToTarget(AActor* TargetActor, const FHitResult& HitResult) const;
 	bool ShouldIgnoreActor(const AActor* OtherActor) const;
 	void ClearHitScanInternalState();
 	

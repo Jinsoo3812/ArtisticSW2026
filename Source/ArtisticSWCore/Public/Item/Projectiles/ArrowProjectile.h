@@ -33,6 +33,21 @@ struct FArrowDamageEffect
 };
 
 USTRUCT(BlueprintType)
+struct FArrowStatusEffect
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Status")
+	TSubclassOf<UGameplayEffect> StatusEffectClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Status", meta = (ClampMin = "1"))
+	int32 EffectLevel = 1;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Status")
+	FGameplayTag RefreshGrantedTag;
+};
+
+USTRUCT(BlueprintType)
 struct FArrowDamageData
 {
 	GENERATED_BODY()
@@ -55,7 +70,10 @@ struct FArrowDamageData
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage", meta = (ClampMin = "0"))
 	int32 PierceCount = 0;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Status")
+	TArray<FArrowStatusEffect> StatusEffects;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage", meta = (DeprecatedProperty, DeprecationMessage = "Use StatusEffects instead."))
 	TArray<TSubclassOf<UGameplayEffect>> StatusEffectClasses;
 };
 
@@ -111,6 +129,9 @@ protected:
 
 	UPROPERTY(BlueprintReadWrite, meta = (ExposeOnSpawn = "true"), Category = "GAS")
 	TArray<FGameplayEffectSpecHandle> StatusEffectSpecHandles;
+
+	UPROPERTY(Transient)
+	TArray<FGameplayTag> StatusEffectRefreshGrantedTags;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilitySystemComponent> SourceASC;

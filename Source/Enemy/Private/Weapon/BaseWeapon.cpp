@@ -7,6 +7,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "GameplayEffect.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Net/UnrealNetwork.h"
 
@@ -155,11 +156,11 @@ void ABaseWeapon::HitScan(const FHitResult& HitResult)
 	}
 
 	HitActors.Add(HitActorPtr);
-	ApplyEffectToTarget(HitActor);
+	ApplyEffectToTarget(HitActor, HitResult);
 }
 
 // HitScan으로 감지된 Actor에게 CachedEffectSpecHandle의 GameplayEffect를 적용하는 함수
-void ABaseWeapon::ApplyEffectToTarget(AActor* TargetActor) const
+void ABaseWeapon::ApplyEffectToTarget(AActor* TargetActor, const FHitResult& HitResult) const
 {
 	if (!TargetActor || !CachedEffectSpecHandle.IsValid() || !CachedEffectSpecHandle.Data.IsValid())
 	{
@@ -173,7 +174,25 @@ void ABaseWeapon::ApplyEffectToTarget(AActor* TargetActor) const
 	}
 	
 	// UE_LOG(LogTemp, Log, TEXT("Applying effect to target: %s"), *TargetActor->GetName());
-	TargetASC->ApplyGameplayEffectSpecToSelf(*CachedEffectSpecHandle.Data.Get());
+	FGameplayEffectSpec TargetEffectSpec(*CachedEffectSpecHandle.Data.Get());
+	FGameplayEffectContextHandle EffectContext = TargetEffectSpec.GetContext();
+
+	AActor* SourceActor = GetInstigator();
+	if (!SourceActor)
+	{
+		SourceActor = GetOwner();
+	}
+
+	if (SourceActor)
+	{
+		EffectContext.AddInstigator(SourceActor, const_cast<ABaseWeapon*>(this));
+	}
+
+	EffectContext.AddSourceObject(const_cast<ABaseWeapon*>(this));
+	EffectContext.AddHitResult(HitResult, true);
+	TargetEffectSpec.SetContext(EffectContext);
+
+	TargetASC->ApplyGameplayEffectSpecToSelf(TargetEffectSpec);
 }
 
 // HitScan시 무시해야할 대상

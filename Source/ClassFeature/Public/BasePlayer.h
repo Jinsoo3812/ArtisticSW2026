@@ -6,6 +6,7 @@
 #include "BaseCharacter.h"
 #include "GameplayTagContainer.h"
 #include "InputTagConfig.h"
+#include "Equipment/PlayerEquipmentComponent.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "BasePlayer.generated.h"
 
@@ -199,6 +200,9 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Combat")
 	bool bPendingCombatModeFromIntro = false;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimMontage> ActiveCombatIntroMontage;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Combat")
 	bool bInterruptCombatIntroOnHit = true;
 
@@ -222,6 +226,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Animation|Combat")
 	void SetCombatMode(bool bNewCombatMode);
+
+	UFUNCTION(BlueprintCallable, Category = "Animation|Combat")
+	void EnterCombatModeFromEquipment();
 
 	UFUNCTION(BlueprintCallable, Category = "Animation|Combat")
 	void InterruptCombatIntroForHit();
@@ -328,7 +335,17 @@ public:
 	UFUNCTION()
 	void OnRep_EquippedItem();
 
-	// ItemSlot 구조체 배열 (복제)
+
+	UFUNCTION(BlueprintPure, Category = "Equipment")
+	EEquipmentState GetEquipmentState() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment")
+	bool IsEquipmentTransitioning() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Equipment")
+	void HandleEquipmentAttachNotify();
+
+	// ItemSlot 援ъ“泥?諛곗뿴 (蹂듭젣)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_ItemSlots, Category = "Item")
 	TArray<FItemSlot> ItemSlots;
 
@@ -359,17 +376,18 @@ public:
 	void ServerActivateQuickSlot(int32 QuickSlotIndex);
 
 	// 특정 슬롯의 Item을 제거하고 부여된 GA를 회수
+	// ?뱀젙 ?щ’??Item???쒓굅?섍퀬 遺?щ맂 GA瑜??뚯닔
 	UFUNCTION()
 	void RemoveItemFromSlot(FGameplayTag SlotTag);
 
 	UFUNCTION()
 	void UseEquippedItem(bool bDestroy = true);
 
-	// 빈 아이템 슬롯이 하나라도 있는지 확인
+	// 鍮??꾩씠???щ’???섎굹?쇰룄 ?덈뒗吏 ?뺤씤
 	UFUNCTION()
 	bool HasEmptyItemSlot() const;
 
-	// 아이템 슬롯에 아이템을 저장하고 장착 상태를 관리
+	// ?꾩씠???щ’???꾩씠?쒖쓣 ??ν븯怨??μ갑 ?곹깭瑜?愿由?
 	bool TryPutItemInSlot(ABaseItem* Item);
 
 protected:
@@ -510,6 +528,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USwimmingComponent> SwimmingComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UPlayerEquipmentComponent> EquipmentComponent;
+
 public:
 	UFUNCTION()
 	void OnRep_ItemSlots();
@@ -530,4 +551,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Movement")
 	USwimmingComponent* GetSwimmingComponent() const { return SwimmingComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Equipment")
+	UPlayerEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
 };

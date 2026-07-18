@@ -7,6 +7,7 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "StatusEffectLibrary.h"
 
 AArrowProjectile::AArrowProjectile()
 {
@@ -241,6 +242,31 @@ void AArrowProjectile::BuildDamageEffectSpecs()
 
 	if (StatusEffectSpecHandles.Num() == 0)
 	{
+		StatusEffectRefreshGrantedTags.Reset();
+
+		for (const FArrowStatusEffect& StatusEffect : DamageData.StatusEffects)
+		{
+			if (!StatusEffect.StatusEffectClass)
+			{
+				continue;
+			}
+
+			FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
+			ContextHandle.AddInstigator(InstigatorActor.Get(), this);
+			ContextHandle.AddSourceObject(this);
+
+			FGameplayEffectSpecHandle StatusSpecHandle = SourceASC->MakeOutgoingSpec(
+				StatusEffect.StatusEffectClass,
+				FMath::Max(1, StatusEffect.EffectLevel),
+				ContextHandle);
+
+			if (StatusSpecHandle.IsValid())
+			{
+				StatusEffectSpecHandles.Add(StatusSpecHandle);
+				StatusEffectRefreshGrantedTags.Add(StatusEffect.RefreshGrantedTag);
+			}
+		}
+
 		for (const TSubclassOf<UGameplayEffect>& StatusEffectClass : DamageData.StatusEffectClasses)
 		{
 			if (!StatusEffectClass)
@@ -260,6 +286,7 @@ void AArrowProjectile::BuildDamageEffectSpecs()
 			if (StatusSpecHandle.IsValid())
 			{
 				StatusEffectSpecHandles.Add(StatusSpecHandle);
+				StatusEffectRefreshGrantedTags.Add(FGameplayTag());
 			}
 		}
 	}
@@ -286,11 +313,16 @@ void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor)
 		}
 	}
 
-	for (const FGameplayEffectSpecHandle& StatusSpecHandle : StatusEffectSpecHandles)
+	for (int32 StatusEffectIndex = 0; StatusEffectIndex < StatusEffectSpecHandles.Num(); ++StatusEffectIndex)
 	{
+		const FGameplayEffectSpecHandle& StatusSpecHandle = StatusEffectSpecHandles[StatusEffectIndex];
 		if (StatusSpecHandle.IsValid() && StatusSpecHandle.Data.IsValid())
 		{
-			TargetASC->ApplyGameplayEffectSpecToSelf(*StatusSpecHandle.Data.Get());
+			const FGameplayTag RefreshGrantedTag = StatusEffectRefreshGrantedTags.IsValidIndex(StatusEffectIndex)
+				? StatusEffectRefreshGrantedTags[StatusEffectIndex]
+				: FGameplayTag();
+
+			UStatusEffectLibrary::ApplyDurationDamageEffectSpecToTarget(TargetASC, StatusSpecHandle, RefreshGrantedTag);
 		}
 	}
 }

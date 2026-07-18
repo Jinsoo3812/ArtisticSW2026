@@ -7,6 +7,9 @@
 class ABowItem;
 class AArrowProjectile;
 class UBowComponent;
+class UAbilityTask_PlayMontageAndWait;
+class UAnimMontage;
+struct FWeaponAnimationEntry;
 
 /**
  * Bow ability driven by right-click aim, left-click draw, and left-click release fire.
@@ -42,21 +45,77 @@ protected:
 	UFUNCTION()
 	void OnRightClickReleased(float TimeHeld);
 
+	UFUNCTION()
+	void OnReleaseFireEvent(FGameplayEventData Payload);
+
+	UFUNCTION()
+	void OnReleaseMontageCompleted();
+
+	UFUNCTION()
+	void OnReleaseMontageInterrupted();
+
 	void UpdateDrawAlpha();
+	void PlayAimCycleMontage();
+	void StopAimCycleMontage(float BlendOutTime);
+	void JumpAimCycleToSection(FName SectionName);
+	void PlayDrawMontage();
+	void StopDrawMontage(float BlendOutTime);
+	void BeginRelease(const FGameplayEventData& Payload);
 	void FireArrow(const FGameplayEventData& Payload);
+	void FinishShot();
 	void ResetBowState();
 	bool CacheBowFromAvatar();
 	bool TryGetAimTargetFromPayload(const FGameplayEventData& Payload, FVector& OutAimTarget) const;
+	void AddBowStateTags();
+	void RemoveBowStateTags();
+	void SetBowDrawTagState(bool bDrawing, bool bFullyDrawn, bool bReleasing);
+	const FWeaponAnimationEntry* GetBowAnimationEntry() const;
+	UAnimMontage* GetAimCycleMontage() const;
+	bool IsUsingAimCycleMontage() const;
+
+	UFUNCTION()
+	void OnAimCycleMontageCompleted();
+
+	UFUNCTION()
+	void OnAimCycleMontageInterrupted();
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Charge", meta = (ClampMin = "0.01"))
 	float MaxChargeTime = 1.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Charge", meta = (ClampMin = "0.0"))
+	float DrawAlphaStartDelay = 0.6f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Charge", meta = (ClampMin = "0.01"))
+	float FullDrawTime = 1.03f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Charge", meta = (ClampMin = "0.005"))
 	float ChargeTickRate = 0.02f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Charge", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float MinDrawAlphaToFire = 0.1f;
+	float FullDrawAlphaToRelease = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation")
+	TObjectPtr<UAnimMontage> DrawMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation", meta = (ClampMin = "0.01"))
+	float DrawMontagePlayRate = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation", meta = (ClampMin = "0.0"))
+	float DrawMontageBlendOutTime = 0.1f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation")
+	TObjectPtr<UAnimMontage> ReleaseMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation", meta = (ClampMin = "0.01"))
+	float ReleaseMontagePlayRate = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation")
+	bool bRequireReleaseNotifyToFire = true;
+
+	// Enable after authoring Weapon.DrawAlpha on the Aim Cycle montage sequences.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation")
+	bool bUseAimCycleDrawAlphaCurve = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Damage", meta = (ClampMin = "0.0"))
 	float MinChargeDamageMultiplier = 1.0f;
@@ -71,6 +130,10 @@ protected:
 	TObjectPtr<UBowComponent> CachedBowComponent;
 
 	FTimerHandle ChargeTimerHandle;
+	FGameplayEventData ReleasePayload;
 	float DrawStartTime = 0.0f;
 	bool bIsDrawing = false;
+	bool bIsFullyDrawn = false;
+	bool bIsReleaseInProgress = false;
+	bool bHasFiredCurrentShot = false;
 };

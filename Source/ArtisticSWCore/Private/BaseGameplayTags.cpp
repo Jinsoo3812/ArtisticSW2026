@@ -7,6 +7,10 @@ UE_DEFINE_GAMEPLAY_TAG(State_Damaged, "State.Damaged");
 UE_DEFINE_GAMEPLAY_TAG(State_Aiming, "State.Aiming");
 UE_DEFINE_GAMEPLAY_TAG(State_Sniping, "State.Sniping");
 UE_DEFINE_GAMEPLAY_TAG(State_Crafting, "State.Crafting");
+UE_DEFINE_GAMEPLAY_TAG(State_Poisoned, "State.Poisoned");
+UE_DEFINE_GAMEPLAY_TAG(State_Bow_Drawing, "State.Bow.Drawing");
+UE_DEFINE_GAMEPLAY_TAG(State_Bow_FullyDrawn, "State.Bow.FullyDrawn");
+UE_DEFINE_GAMEPLAY_TAG(State_Bow_Releasing, "State.Bow.Releasing");
 
 // Team
 UE_DEFINE_GAMEPLAY_TAG(Team_Player, "Team.Player");
@@ -19,6 +23,7 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_BasicAttack, "GameplayAbility.BasicAttack
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_HitReaction, "GameplayAbility.HitReaction");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_TestHit, "GameplayAbility.TestHit");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Equip, "GameplayAbility.Equip");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Weapon_AimCycle, "GameplayAbility.Weapon.AimCycle");
 // Event
 UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Changed, "Event.Ability.Changed");
 UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_Start, "Event.HandleScan.Start");
