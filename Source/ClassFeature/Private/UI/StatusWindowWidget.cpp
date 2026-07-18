@@ -2,12 +2,29 @@
 
 #include "BaseItem.h"
 #include "BasePlayer.h"
+#include "BasePlayerController.h"
 #include "BaseGameplayTags.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
+#include "InputCoreTypes.h"
+#include "Input/Reply.h"
 #include "Inventory/InventoryComponent.h"
 #include "UI/InventoryPanelWidget.h"
 #include "UI/QuickSlotEntryWidget.h"
+
+FReply UStatusWindowWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	if (InKeyEvent.GetKey() == EKeys::Tab)
+	{
+		if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(GetOwningPlayer()))
+		{
+			PlayerController->ToggleStatus();
+		}
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
 
 void UStatusWindowWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 {

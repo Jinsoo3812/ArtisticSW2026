@@ -16,6 +16,7 @@ class CLASSFEATURE_API UStatusWindowWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual void NativeDestruct() override;
 	void InitializeForPlayer(ABasePlayer* InPlayer);
 	void SetStatusVisible(bool bVisible);
@@ -31,7 +32,7 @@ public:
 	void SetExperienceValues(float CurrentExperience, float RequiredExperience);
 
 protected:
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UInventoryPanelWidget> InventoryPanelWidget;
 
 	UPROPERTY(meta = (BindWidgetOptional))

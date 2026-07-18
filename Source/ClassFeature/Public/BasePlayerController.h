@@ -106,6 +106,8 @@ protected:
 	ESlateVisibility PlayerHUDVisibilityBeforeStatus = ESlateVisibility::Visible;
 	TWeakObjectPtr<APawn> StatusInputLockedPawn;
 	bool bWasStatusPawnInputEnabled = true;
+	bool bStatusCharacterInputLocked = false;
+	bool bInventoryInputModeApplied = false;
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UStorageWindowWidget> StorageWindowWidgetClass;

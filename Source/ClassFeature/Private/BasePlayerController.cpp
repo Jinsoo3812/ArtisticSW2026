@@ -9,6 +9,7 @@
 #include "Engine/LocalPlayer.h"
 #include "InputMappingContext.h"
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "TimerManager.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 #include "BaseGameplayTags.h"
@@ -619,17 +620,28 @@ void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 		SetInputMode(InputMode);
 
 		// 캐릭터나 카메라 회전 막기 true
-		SetIgnoreLookInput(true);
+		if (!bInventoryInputModeApplied)
+		{
+			SetIgnoreLookInput(true);
+			bInventoryInputModeApplied = true;
+		}
 		// 이동 입력 가능하게 설정
-		SetIgnoreMoveInput(false);
 	}
 	else
 	{
 		FInputModeGameOnly InputMode;
+		// Closing a UI must not consume the first mouse-down just to recapture the viewport.
+		// Forward that click to gameplay as well (attack/interact inputs use mouse buttons).
+		InputMode.SetConsumeCaptureMouseDown(false);
 		SetInputMode(InputMode);
+		UWidgetBlueprintLibrary::SetFocusToGameViewport();
+		FlushPressedKeys();
 
-		SetIgnoreLookInput(false);
-		SetIgnoreMoveInput(false);
+		if (bInventoryInputModeApplied)
+		{
+			SetIgnoreLookInput(false);
+			bInventoryInputModeApplied = false;
+		}
 	}
 }
 
@@ -637,6 +649,11 @@ void ABasePlayerController::SetStatusCharacterInputLocked(bool bLocked)
 {
 	if (bLocked)
 	{
+		if (bStatusCharacterInputLocked)
+		{
+			return;
+		}
+
 		APawn* ControlledPawn = GetPawn();
 		if (!ControlledPawn)
 		{
@@ -647,7 +664,12 @@ void ABasePlayerController::SetStatusCharacterInputLocked(bool bLocked)
 		bWasStatusPawnInputEnabled = ControlledPawn->InputEnabled();
 		ControlledPawn->DisableInput(this);
 		SetIgnoreMoveInput(true);
-		SetIgnoreLookInput(true);
+		bStatusCharacterInputLocked = true;
+		return;
+	}
+
+	if (!bStatusCharacterInputLocked)
+	{
 		return;
 	}
 
@@ -655,7 +677,9 @@ void ABasePlayerController::SetStatusCharacterInputLocked(bool bLocked)
 	{
 		StatusInputLockedPawn->EnableInput(this);
 	}
+	SetIgnoreMoveInput(false);
 	StatusInputLockedPawn.Reset();
+	bStatusCharacterInputLocked = false;
 }
 
 void ABasePlayerController::Tick(float DeltaTime)
