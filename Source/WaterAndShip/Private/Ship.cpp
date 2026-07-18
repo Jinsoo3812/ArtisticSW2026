@@ -21,6 +21,8 @@
 #include "Physics/Experimental/PhysScene_Chaos.h"
 #include "PBDRigidsSolver.h"
 #include "BuoyancyComponent.h"
+#include "Buoyancy/SWBuoyancyComponent.h"
+#include "Water/SWRippleStateSubsystem.h"
 #include "WaterBodyActor.h"
 #include "EngineUtils.h"
 #include "PhysicsEngine/PhysicsSettings.h"
@@ -31,11 +33,48 @@
 #include "Interfaces/IPhysicsComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "DrawDebugHelpers.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+#include "CollisionChannels.h"
 
+namespace
+{
+	TAutoConsoleVariable<int32> CVarShowShipNetworkBuoyancyDebug(
+		TEXT("p.ShowShipNetworkBuoyancyDebug"),
+		0,
+		TEXT("Draw local and replicated ship buoyancy pontoons. 0=off, 1=on."),
+		ECVF_Cheat);
 
+	bool EvaluateGameThreadWaveOffset(
+		UWorld* World,
+		const FVector& Position,
+		double ServerTime,
+		float& OutHeight)
+	{
+		if (!World)
+		{
+			return false;
+		}
 
+		for (TActorIterator<AWaterBody> It(World); It; ++It)
+		{
+			if (UWaterWavesBase* Waves = It->GetWaterWaves())
+			{
+				FVector Normal = FVector::UpVector;
+				// The Ship PT evaluator operates on the unattenuated deep-water wave
+				// offset, so use a large water depth for an apples-to-apples check.
+				OutHeight = Waves->GetWaveHeightAtPosition(
+					Position,
+					100000.0f,
+					static_cast<float>(ServerTime),
+					Normal);
+				return true;
+			}
+		}
 
-
+		return false;
+	}
+}
 
 
 // Sets default values
@@ -49,8 +88,61 @@ AShip::AShip()
 	RootComponent = BuoyancyRoot;
 	BuoyancyRoot->SetSimulatePhysics(true);
 	BuoyancyRoot->SetCollisionProfileName(TEXT("PlayerShip"));
+	BuoyancyRoot->SetGenerateOverlapEvents(false);
 	BuoyancyRoot->SetLinearDamping(0.8f);
 	BuoyancyRoot->SetAngularDamping(3.0f);
+
+	// Split presentation and gameplay queries away from the Chaos body. Existing
+	// Blueprint assets keep assigning their mesh to BuoyancyRoot; OnConstruction
+	// mirrors that asset until dedicated meshes are authored.
+	ShipVisualMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipVisualMesh"));
+	ShipVisualMesh->SetupAttachment(BuoyancyRoot);
+	ShipVisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ShipVisualMesh->SetGenerateOverlapEvents(false);
+
+	ShipDamageMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipDamageMesh"));
+	ShipDamageMesh->SetupAttachment(BuoyancyRoot);
+	ShipDamageMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	ShipDamageMesh->SetCollisionObjectType(ECC_ShipDamage);
+	ShipDamageMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+	ShipDamageMesh->SetCollisionResponseToChannel(ECC_GameTraceChannel3, ECR_Block);
+	ShipDamageMesh->SetGenerateOverlapEvents(false);
+	ShipDamageMesh->SetVisibility(false, false);
+	ShipDamageMesh->SetHiddenInGame(true, false);
+	ShipDamageMesh->SetCastShadow(false);
+
+	ShipDeckMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipDeckMesh"));
+	ShipDeckMesh->SetupAttachment(BuoyancyRoot);
+	ShipDeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
+	ShipDeckMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+	ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+	ShipDeckMesh->SetGenerateOverlapEvents(false);
+	ShipDeckMesh->SetVisibility(false, false);
+	ShipDeckMesh->SetHiddenInGame(true, false);
+	ShipDeckMesh->SetCastShadow(false);
+
+	SWBuoyancyComponent = CreateDefaultSubobject<USWBuoyancyComponent>(TEXT("SWBuoyancyComponent"));
+	SWBuoyancyComponent->ExecutionMode = ESWBuoyancyExecutionMode::ExternalNetworkPhysics;
+	SWBuoyancyComponent->bImportLegacyWaterBuoyancy = false;
+	SWBuoyancyComponent->Pontoons.Reset();
+	const auto AddShipPontoon = [this](const TCHAR* Name, const FVector& RelativeLocation)
+	{
+		FSWBuoyancyPontoon& Pontoon = SWBuoyancyComponent->Pontoons.AddDefaulted_GetRef();
+		Pontoon.Name = FName(Name);
+		Pontoon.RelativeLocation = RelativeLocation;
+		Pontoon.Radius = 300.0f;
+		Pontoon.ForceScale = 1.0f;
+	};
+	// Defaults migrated from BP_TestShip_SingleMesh's legacy Water Buoyancy.
+	AddShipPontoon(TEXT("FrontPort"), FVector(1100.0f, 300.0f, 250.0f));
+	AddShipPontoon(TEXT("FrontStarboard"), FVector(1100.0f, -300.0f, 250.0f));
+	AddShipPontoon(TEXT("RearPort"), FVector(-1100.0f, 300.0f, 250.0f));
+	AddShipPontoon(TEXT("RearStarboard"), FVector(-1100.0f, -300.0f, 250.0f));
+	SWBuoyancyComponent->ForceSettings.BuoyancyCoefficient = 0.04f;
+	SWBuoyancyComponent->ForceSettings.BuoyancyDamp = 1000.0f;
+	SWBuoyancyComponent->ForceSettings.BuoyancyDamp2 = 1.0f;
+	SWBuoyancyComponent->ForceSettings.MaxBuoyantForce = 5000000.0f;
 
 	Tags.AddUnique(TEXT("Player"));
 
@@ -117,6 +209,8 @@ AShip::AShip()
 void AShip::BeginPlay()
 {
 	Super::BeginPlay();
+	bBuoyancyQueryDiagnostics = FParse::Param(
+		FCommandLine::Get(), TEXT("BuoyancyQueryDiagnostics"));
 
 	if (AbilitySystemComponent)
 	{
@@ -128,9 +222,21 @@ void AShip::BeginPlay()
 		InitializeDefaultAttributes();
 	}
 
+	SynchronizeSplitShipMeshes();
+
+	// The legacy Water plugin component may have enabled root overlap during its
+	// initialization. It is no longer a settings or force source, so disable it
+	// before applying the final split collision policy.
+	if (UBuoyancyComponent* LegacyBuoyancy = FindComponentByClass<UBuoyancyComponent>())
+	{
+		LegacyBuoyancy->SetAutoActivate(false);
+		LegacyBuoyancy->SetComponentTickEnabled(false);
+		LegacyBuoyancy->Deactivate();
+	}
+
+	ConfigureSplitShipCollision();
 	if (BuoyancyRoot)
 	{
-		BuoyancyRoot->SetCollisionProfileName(TEXT("PlayerShip"));
 		BuoyancyRoot->SetSimulatePhysics(true);
 	}
 
@@ -179,11 +285,6 @@ void AShip::BeginPlay()
 		*/
 	}
 
-	if (UActorComponent* BuoyancyComp = GetComponentByClass(UBuoyancyComponent::StaticClass()))
-	{
-		BuoyancyComp->SetActive(false);
-	}
-
 	ReplicatedState.Location = GetActorLocation();
 	ReplicatedState.Rotation = GetActorRotation();
 
@@ -205,6 +306,103 @@ void AShip::BeginPlay()
 			FText::FromString(TEXT("승선하기"))
 		);
 		StarboardSeaBoardingInteractable->OnInteracted.AddUniqueDynamic(this, &AShip::HandleStarboardSeaBoarding);
+	}
+}
+
+void AShip::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	SynchronizeSplitShipMeshes();
+	ConfigureSplitShipCollision();
+}
+
+void AShip::SynchronizeSplitShipMeshes()
+{
+	if (!bMirrorPhysicsRootMeshToSplitMeshes || !BuoyancyRoot)
+	{
+		return;
+	}
+
+	UStaticMesh* SourceMesh = BuoyancyRoot->GetStaticMesh();
+	if (!SourceMesh)
+	{
+		return;
+	}
+
+	const auto MirrorMeshAndMaterials = [this, SourceMesh](UStaticMeshComponent* Target)
+	{
+		if (!Target)
+		{
+			return;
+		}
+
+		Target->SetStaticMesh(SourceMesh);
+		for (int32 MaterialIndex = 0; MaterialIndex < BuoyancyRoot->GetNumMaterials(); ++MaterialIndex)
+		{
+			Target->SetMaterial(MaterialIndex, BuoyancyRoot->GetMaterial(MaterialIndex));
+		}
+	};
+
+	MirrorMeshAndMaterials(ShipVisualMesh);
+	MirrorMeshAndMaterials(ShipDamageMesh);
+	MirrorMeshAndMaterials(ShipDeckMesh);
+
+	// Only the visual copy renders. The original component remains the serialized
+	// Chaos body and supplies collision geometry, mass, and inertia.
+	BuoyancyRoot->SetVisibility(false, false);
+	BuoyancyRoot->SetHiddenInGame(true, false);
+	if (ShipVisualMesh)
+	{
+		ShipVisualMesh->SetVisibility(true, false);
+		ShipVisualMesh->SetHiddenInGame(false, false);
+	}
+}
+
+void AShip::ConfigureSplitShipCollision()
+{
+	const bool bEnemyShip = ActorHasTag(TEXT("Enemy"));
+	if (BuoyancyRoot)
+	{
+		BuoyancyRoot->SetCollisionProfileName(bEnemyShip ? TEXT("EnemyShip") : TEXT("PlayerShip"));
+		BuoyancyRoot->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+		BuoyancyRoot->SetCollisionResponseToChannel(ECC_GameTraceChannel2, ECR_Ignore);
+		BuoyancyRoot->SetCollisionResponseToChannel(ECC_GameTraceChannel3, ECR_Ignore);
+		BuoyancyRoot->SetGenerateOverlapEvents(false);
+	}
+
+	if (ShipVisualMesh)
+	{
+		ShipVisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		ShipVisualMesh->SetGenerateOverlapEvents(false);
+	}
+
+	if (ShipDamageMesh)
+	{
+		ShipDamageMesh->SetCollisionObjectType(ECC_ShipDamage);
+		ShipDamageMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+		ShipDamageMesh->SetGenerateOverlapEvents(false);
+		// Damage is server authoritative. The hull never generates persistent
+		// overlap pairs; the opposing projectile sweeps against this query body.
+		if (HasAuthority())
+		{
+			ShipDamageMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+			ShipDamageMesh->SetCollisionResponseToChannel(
+				bEnemyShip ? ECC_GameTraceChannel2 : ECC_GameTraceChannel3,
+				ECR_Block);
+		}
+		else
+		{
+			ShipDamageMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+	}
+
+	if (ShipDeckMesh)
+	{
+		ShipDeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
+		ShipDeckMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+		ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+		ShipDeckMesh->SetGenerateOverlapEvents(false);
 	}
 }
 
@@ -232,6 +430,44 @@ void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (bBuoyancyQueryDiagnostics && ShipPhysicsAsync)
+	{
+		bool bHasLatestSample = false;
+		bool bLatestWasResimming = false;
+		FVector LatestPosition = FVector::ZeroVector;
+		double LatestServerTime = 0.0;
+		float LatestPTHeight = 0.0f;
+		while (auto Output = ShipPhysicsAsync->PopOutputData_External())
+		{
+			if (Output->bWaveSampleValid)
+			{
+				bHasLatestSample = true;
+				bLatestWasResimming = Output->bWasResimming;
+				LatestPosition = Output->WaveSamplePosition;
+				LatestServerTime = Output->WaveSampleServerTime;
+				LatestPTHeight = Output->PTWaveHeight;
+			}
+		}
+
+		if (bHasLatestSample && LatestServerTime >= NextBuoyancyQueryDiagnosticTime)
+		{
+			NextBuoyancyQueryDiagnosticTime = LatestServerTime + 1.0;
+			float GTHeight = 0.0f;
+			if (EvaluateGameThreadWaveOffset(GetWorld(), LatestPosition, LatestServerTime, GTHeight))
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("[BUOYANCY-GTPT] Role=%s Resim=%s Position=%s ServerTime=%.6f GT=%.6f PT=%.6f AbsDiff=%.9f"),
+					HasAuthority() ? TEXT("Authority") : TEXT("Client"),
+					bLatestWasResimming ? TEXT("true") : TEXT("false"),
+					*LatestPosition.ToString(),
+					LatestServerTime,
+					GTHeight,
+					LatestPTHeight,
+					FMath::Abs(GTHeight - LatestPTHeight));
+			}
+		}
+	}
 
 	// Establish one authoritative, immutable mapping between the Network Physics
 	// server-frame timeline and server world time. Replication makes the same
@@ -272,13 +508,13 @@ void AShip::Tick(float DeltaTime)
 #if !UE_SERVER
 	if (!IsRunningDedicatedServer())
 	{
-		if (UBuoyancyComponent* BuoyancyComp = Cast<UBuoyancyComponent>(GetComponentByClass(UBuoyancyComponent::StaticClass())))
+		if (SWBuoyancyComponent && CVarShowShipNetworkBuoyancyDebug.GetValueOnGameThread() > 0)
 		{
 			FVector ShipLocation = GetActorLocation();
 			FRotator ShipRotation = GetActorRotation();
 
 			// 1. 클라이언트 로컬 물리 위치 기준 폰툰 (연두색 - Green)
-			for (const FSphericalPontoon& Pontoon : BuoyancyComp->BuoyancyData.Pontoons)
+			for (const FSWBuoyancyPontoon& Pontoon : SWBuoyancyComponent->GetPontoons())
 			{
 				FVector PontoonLocalWorldPos = ShipLocation + ShipRotation.RotateVector(Pontoon.RelativeLocation);
 				DrawDebugSphere(GetWorld(), PontoonLocalWorldPos, Pontoon.Radius, 8, FColor::Green, false, 0.0f, 0, 1.5f);
@@ -289,7 +525,7 @@ void AShip::Tick(float DeltaTime)
 			{
 				FVector RepLocation = ReplicatedState.Location;
 				FRotator RepRotation = ReplicatedState.Rotation;
-				for (const FSphericalPontoon& Pontoon : BuoyancyComp->BuoyancyData.Pontoons)
+				for (const FSWBuoyancyPontoon& Pontoon : SWBuoyancyComponent->GetPontoons())
 				{
 					FVector PontoonRepWorldPos = RepLocation + RepRotation.RotateVector(Pontoon.RelativeLocation);
 					// 로컬 물리 구체와 구분되도록 크기를 살짝 줄여 드로우
@@ -341,11 +577,15 @@ void AShip::Tick(float DeltaTime)
 			}
 
 			TArray<FVector> TempPontoons;
-			if (UBuoyancyComponent* BuoyancyComp = Cast<UBuoyancyComponent>(GetComponentByClass(UBuoyancyComponent::StaticClass())))
+			TArray<float> TempPontoonRadii;
+			TArray<float> TempPontoonForceScales;
+			if (SWBuoyancyComponent)
 			{
-				for (const FSphericalPontoon& Pontoon : BuoyancyComp->BuoyancyData.Pontoons)
+				for (const FSWBuoyancyPontoon& Pontoon : SWBuoyancyComponent->GetPontoons())
 				{
 					TempPontoons.Add(Pontoon.RelativeLocation);
+					TempPontoonRadii.Add(Pontoon.Radius);
+					TempPontoonForceScales.Add(Pontoon.ForceScale);
 				}
 			}
 
@@ -401,23 +641,35 @@ void AShip::Tick(float DeltaTime)
 			float WaterDamping2 = 0.1f;
 			float MaxBuoyantForce = 5000000.0f;
 
-			if (UBuoyancyComponent* BuoyancyComp = Cast<UBuoyancyComponent>(GetComponentByClass(UBuoyancyComponent::StaticClass())))
+			if (SWBuoyancyComponent)
 			{
-				if (BuoyancyComp->BuoyancyData.Pontoons.Num() > 0)
+				const TArray<FSWBuoyancyPontoon>& Pontoons = SWBuoyancyComponent->GetPontoons();
+				const FSWBuoyancyForceSettings& Settings = SWBuoyancyComponent->GetForceSettings();
+				if (Pontoons.Num() > 0)
 				{
-					BuoyancyRadius = BuoyancyComp->BuoyancyData.Pontoons[0].Radius;
+					BuoyancyRadius = Pontoons[0].Radius;
 				}
-				BuoyancyForceMultiplier = BuoyancyComp->BuoyancyData.BuoyancyCoefficient;
-				WaterDamping = BuoyancyComp->BuoyancyData.BuoyancyDamp;
-				WaterDamping2 = BuoyancyComp->BuoyancyData.BuoyancyDamp2;
-				MaxBuoyantForce = BuoyancyComp->BuoyancyData.MaxBuoyantForce;
+				BuoyancyForceMultiplier = Settings.BuoyancyCoefficient;
+				WaterDamping = Settings.BuoyancyDamp;
+				WaterDamping2 = Settings.BuoyancyDamp2;
+				MaxBuoyantForce = Settings.MaxBuoyantForce;
+			}
+
+			TArray<FSWRippleEvent> TempRippleEvents;
+			if (USWRippleStateSubsystem* RippleState = GetWorld()->GetSubsystem<USWRippleStateSubsystem>())
+			{
+				RippleState->GetEventsSnapshot(TempRippleEvents);
 			}
 
 			// A. 비동기 인풋 버퍼(GetProducerInputData_External)가 유효하다면 인풋 히스토리에 적재
 			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
 			{
+				AsyncInput->bQueryDiagnostics = bBuoyancyQueryDiagnostics;
 				AsyncInput->PontoonOffsets = TempPontoons;
+				AsyncInput->PontoonRadii = TempPontoonRadii;
+				AsyncInput->PontoonForceScales = TempPontoonForceScales;
 				AsyncInput->GerstnerWaves = TempWaves;
+				AsyncInput->RippleEvents = MoveTemp(TempRippleEvents);
 				AsyncInput->GravityZ = Gravity;
 				AsyncInput->LateralDrag = LateralDrag;
 				AsyncInput->ForwardForceValue = ForwardForceValue;

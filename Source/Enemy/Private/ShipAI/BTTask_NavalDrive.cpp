@@ -9,6 +9,16 @@
 #include "EngineUtils.h"
 #include "ShipAI/NavalAIController.h"
 #include "ShipAI/ShipSwarmSubsystem.h"
+#include "HAL/IConsoleManager.h"
+
+namespace
+{
+	TAutoConsoleVariable<int32> CVarShowNavalAIDebug(
+		TEXT("p.ShowNavalAIDebug"),
+		0,
+		TEXT("Draw naval AI on-screen and range diagnostics. 0=off, 1=on."),
+		ECVF_Cheat);
+}
 
 UBTTask_NavalDrive::UBTTask_NavalDrive()
 {
@@ -539,7 +549,8 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 	*/
 
 	// --- 7. 화면 좌상단 스크린 디버그 로그 표시 ---
-	if (GEngine)
+	const bool bNavalDebugEnabled = CVarShowNavalAIDebug.GetValueOnGameThread() > 0;
+	if (bNavalDebugEnabled && GEngine)
 	{
 		FString SquadStr = CurrentSquadID.IsNone() ? TEXT("NoSquad") : CurrentSquadID.ToString();
 		FString DebugMsg = FString::Printf(TEXT("Naval Drive: %s [%s] -> %s"), 
@@ -549,7 +560,7 @@ void UBTTask_NavalDrive::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 	}
 
 	// --- 8. 디버그 원 시각화 (Z축 오프셋 적용) ---
-	if (bShowDebugRanges)
+	if (bNavalDebugEnabled && bShowDebugRanges)
 	{
 		/*
 		UWorld* World = MyShip->GetWorld();

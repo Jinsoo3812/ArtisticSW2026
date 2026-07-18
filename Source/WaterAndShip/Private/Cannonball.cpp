@@ -9,8 +9,8 @@
 #include "GameplayEffect.h"
 #include "DrawDebugHelpers.h"
 #include "WaterBodyActor.h"
-#include "Cannon.h"
 #include "BaseAttributeSet.h"
+#include "CollisionChannels.h"
 
 ACannonball::ACannonball()
 {
@@ -19,11 +19,16 @@ ACannonball::ACannonball()
 	// Sphere Collision
 	SphereCollision = CreateDefaultSubobject<USphereComponent>(TEXT("SphereCollision"));
 	SphereCollision->InitSphereRadius(15.0f);
-	SphereCollision->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+	// SpawnActor calls BeginPlay before ACannon can inject the launching ship/team.
+	// Keep collision disabled until InitializeProjectile configures all ignores.
+	SphereCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SphereCollision->SetGenerateOverlapEvents(true);
+	SphereCollision->SetNotifyRigidBodyCollision(true);
 	RootComponent = SphereCollision;
 
-	// Overlap Event
+	// Water uses overlap; opposing ShipDamage hulls use ProjectileMovement sweep hits.
 	SphereCollision->OnComponentBeginOverlap.AddUniqueDynamic(this, &ACannonball::OnOverlapBegin);
+	SphereCollision->OnComponentHit.AddUniqueDynamic(this, &ACannonball::OnHit);
 
 	// Visual Mesh
 	CannonballMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CannonballMesh"));
@@ -37,6 +42,7 @@ ACannonball::ACannonball()
 	ProjectileMovement->MaxSpeed = 5000.0f;
 	ProjectileMovement->bRotationFollowsVelocity = true;
 	ProjectileMovement->bShouldBounce = false;
+	ProjectileMovement->bSweepCollision = true;
 	ProjectileMovement->ProjectileGravityScale = 1.0f; // Enable parabola arc trajectory
 
 	bReplicates = true;
@@ -61,14 +67,32 @@ void ACannonball::InitializeProjectile(AShip* InLaunchingShip, float InDamage, f
 
 	if (SphereCollision && InLaunchingShip)
 	{
-		if (InLaunchingShip->ActorHasTag(TEXT("Enemy")))
+		const bool bEnemyProjectile = InLaunchingShip->ActorHasTag(TEXT("Enemy"));
+		SphereCollision->SetCollisionProfileName(
+			bEnemyProjectile ? TEXT("EnemyCannonball") : TEXT("PlayerCannonball"),
+			false);
+		SphereCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		SphereCollision->SetCollisionObjectType(
+			bEnemyProjectile ? ECC_GameTraceChannel3 : ECC_GameTraceChannel2);
+		SphereCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
+		// WaterBody is WorldStatic and must keep generating the server-authoritative
+		// actor overlap used by URippleSubsystem.
+		SphereCollision->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Overlap);
+		SphereCollision->SetCollisionResponseToChannel(ECC_ShipDamage, ECR_Block);
+		SphereCollision->SetGenerateOverlapEvents(true);
+		SphereCollision->SetNotifyRigidBodyCollision(true);
+
+		SphereCollision->IgnoreActorWhenMoving(InLaunchingShip, true);
+		if (AActor* OwnerActor = GetOwner())
 		{
-			SphereCollision->SetCollisionProfileName(TEXT("EnemyCannonball"));
+			SphereCollision->IgnoreActorWhenMoving(OwnerActor, true);
 		}
-		else
+		if (APawn* InstigatorPawn = GetInstigator())
 		{
-			SphereCollision->SetCollisionProfileName(TEXT("PlayerCannonball"));
+			SphereCollision->IgnoreActorWhenMoving(InstigatorPawn, true);
 		}
+
+		SphereCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	}
 
 	if (ProjectileMovement)
@@ -83,59 +107,6 @@ void ACannonball::InitializeProjectile(AShip* InLaunchingShip, float InDamage, f
 void ACannonball::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
 	if (!OtherActor || OtherActor == this) return;
-
-	// 1. Ignore collision with launching ship
-	if (OtherActor == LaunchingShip) return;
-
-	// 2. Ignore collision with own owner or instigator
-	if (OtherActor == GetOwner() || OtherActor == GetInstigator()) return;
-
-	// 3. Ignore collision with cannons attached to launching ship
-	if (ACannon* HitCannon = Cast<ACannon>(OtherActor))
-	{
-		if (HitCannon == GetOwner() || HitCannon->GetAttachParentActor() == LaunchingShip || HitCannon->GetParentActor() == LaunchingShip)
-		{
-			return;
-		}
-	}
-
-	// Hit Ship
-	if (AShip* HitShip = Cast<AShip>(OtherActor))
-	{
-		if (HasAuthority())
-		{
-			// 1. Draw debug sphere
-			DrawDebugSphere(GetWorld(), GetActorLocation(), 100.0f, 12, FColor::Red, false, 2.0f);
-
-			// 2. Apply damage via GAS
-			UAbilitySystemComponent* TargetASC = HitShip->GetAbilitySystemComponent();
-			if (TargetASC && DamageGEClass)
-			{
-				FGameplayEffectContextHandle EffectContext = TargetASC->MakeEffectContext();
-				EffectContext.AddInstigator(GetInstigator(), this);
-
-				FGameplayEffectSpecHandle SpecHandle = TargetASC->MakeOutgoingSpec(DamageGEClass, 1.0f, EffectContext);
-				if (SpecHandle.IsValid())
-				{
-					// Set magnitude dynamically using Data.Damage tag
-					SpecHandle.Data.Get()->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(FName("Data.Damage")), DamageAmount);
-					TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
-				}
-			}
-
-			float CurrentHealth = 0.0f;
-			if (TargetASC)
-			{
-				CurrentHealth = TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
-			}
-
-			UE_LOG(LogTemp, Warning, TEXT("ACannonball: Hit Ship %s! Dealt %f damage. Current Health: %f"), *HitShip->GetName(), DamageAmount, CurrentHealth);
-
-			// 3. Destroy projectile immediately
-			Destroy();
-		}
-		return;
-	}
 
 	// Hit Water (Check AWaterBody class or Water profile name)
 	bool bIsWater = false;
@@ -158,15 +129,74 @@ void ACannonball::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* Ot
 		return;
 	}
 
-	// Hit other obstacles (Terrain, walls, general actors)
-	if (OtherActor && OtherActor != LaunchingShip && OtherActor != GetOwner() && OtherActor != GetInstigator())
+	// Pawn, Storage, terrain and every non-water overlap are intentionally ignored.
+}
+
+void ACannonball::OnHit(
+	UPrimitiveComponent* HitComponent,
+	AActor* OtherActor,
+	UPrimitiveComponent* OtherComp,
+	FVector NormalImpulse,
+	const FHitResult& Hit)
+{
+	if (!OtherActor || OtherActor == this || OtherActor == LaunchingShip
+		|| OtherActor == GetOwner() || OtherActor == GetInstigator())
 	{
-		if (HasAuthority())
+		return;
+	}
+
+	if (AShip* HitShip = Cast<AShip>(OtherActor))
+	{
+		HandleShipHit(HitShip);
+	}
+}
+
+void ACannonball::HandleShipHit(AShip* HitShip)
+{
+	if (!HasAuthority() || !HitShip || HitShip == LaunchingShip)
+	{
+		return;
+	}
+
+	// Collision responses already enforce this, but keep a gameplay-level team
+	// check so a bad Blueprint collision override can never cause friendly fire.
+	if (LaunchingShip
+		&& LaunchingShip->ActorHasTag(TEXT("Enemy")) == HitShip->ActorHasTag(TEXT("Enemy")))
+	{
+		return;
+	}
+
+	// Preserve the existing GAS damage path exactly; only contact detection changed.
+	DrawDebugSphere(GetWorld(), GetActorLocation(), 100.0f, 12, FColor::Red, false, 2.0f);
+
+	UAbilitySystemComponent* TargetASC = HitShip->GetAbilitySystemComponent();
+	if (TargetASC && DamageGEClass)
+	{
+		FGameplayEffectContextHandle EffectContext = TargetASC->MakeEffectContext();
+		EffectContext.AddInstigator(GetInstigator(), this);
+
+		FGameplayEffectSpecHandle SpecHandle = TargetASC->MakeOutgoingSpec(DamageGEClass, 1.0f, EffectContext);
+		if (SpecHandle.IsValid())
 		{
-			UE_LOG(LogTemp, Warning, TEXT("ACannonball: Hit General Obstacle %s at Location %s and destroyed."), *OtherActor->GetName(), *GetActorLocation().ToString());
-			Destroy();
+			SpecHandle.Data.Get()->SetSetByCallerMagnitude(
+				FGameplayTag::RequestGameplayTag(FName("Data.Damage")),
+				DamageAmount);
+			TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 		}
 	}
+
+	float CurrentHealth = 0.0f;
+	if (TargetASC)
+	{
+		CurrentHealth = TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("ACannonball: Swept Hit Ship %s! Dealt %f damage. Current Health: %f"),
+		*HitShip->GetName(),
+		DamageAmount,
+		CurrentHealth);
+	Destroy();
 }
 
 void ACannonball::TriggerWaterRipple(const FVector& HitLocation)

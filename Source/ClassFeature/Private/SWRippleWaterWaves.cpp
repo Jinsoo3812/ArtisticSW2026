@@ -2,6 +2,7 @@
 #include "RippleSubsystem.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
+#include "Water/SWRippleStateSubsystem.h"
 
 USWRippleWaterWaves::USWRippleWaterWaves()
 {
@@ -60,9 +61,9 @@ float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, fl
 
 	if (World)
 	{
-		if (URippleSubsystem* Subsystem = World->GetSubsystem<URippleSubsystem>())
+		if (USWRippleStateSubsystem* Subsystem = World->GetSubsystem<USWRippleStateSubsystem>())
 		{
-			Height += Subsystem->GetRippleHeight(InPosition);
+			Height += Subsystem->GetRippleHeight(InPosition, static_cast<double>(SyncTime));
 		}
 	}
 
@@ -110,9 +111,9 @@ float USWRippleWaterWaves::GetSimpleWaveHeightAtPosition(const FVector& InPositi
 
 	if (World)
 	{
-		if (URippleSubsystem* Subsystem = World->GetSubsystem<URippleSubsystem>())
+		if (USWRippleStateSubsystem* Subsystem = World->GetSubsystem<USWRippleStateSubsystem>())
 		{
-			Height += Subsystem->GetRippleHeight(InPosition);
+			Height += Subsystem->GetRippleHeight(InPosition, static_cast<double>(SyncTime));
 		}
 	}
 

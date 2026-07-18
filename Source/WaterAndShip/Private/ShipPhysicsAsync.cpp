@@ -5,6 +5,104 @@
 #include "Chaos/PhysicsObject.h"
 #include "Chaos/DebugDrawQueue.h"
 #include "HAL/IConsoleManager.h"
+#include "Misc/LargeWorldRenderPosition.h"
+#include "Water/SWBuoyancyMath.h"
+
+namespace
+{
+	void BlendWaveBetweenLWCTiles(
+		const FGerstnerWave& Wave,
+		const FVector& Position,
+		float Time,
+		float& WaveSin,
+		float& WaveCos)
+	{
+		const FVector TileBorderDistance = FVector(FLargeWorldRenderScalar::GetTileSize() * 0.5) - Position.GetAbs();
+		constexpr double BlendZoneWidth = 400.0;
+		if (TileBorderDistance.X < BlendZoneWidth || TileBorderDistance.Y < BlendZoneWidth)
+		{
+			const FVector2D BlendPosition(TileBorderDistance.X, TileBorderDistance.Y);
+			const double BlendAlpha = FMath::Clamp(BlendPosition.X / BlendZoneWidth, 0.0, 1.0)
+				* FMath::Clamp(BlendPosition.Y / BlendZoneWidth, 0.0, 1.0);
+			const float BlendPhase = FVector2D::DotProduct(BlendPosition, Wave.WaveVector) - Wave.WaveSpeed * Time;
+			float BlendSin = 0.0f;
+			float BlendCos = 0.0f;
+			FMath::SinCos(&BlendSin, &BlendCos, BlendPhase);
+			WaveSin = FMath::Lerp(BlendSin, WaveSin, BlendAlpha);
+			WaveCos = FMath::Lerp(BlendCos, WaveCos, BlendAlpha);
+		}
+	}
+
+	FVector GetWaveOffset(
+		const FGerstnerWave& Wave,
+		const FVector& Position,
+		float Time,
+		FVector& OutNormal,
+		float& OutOffset1D)
+	{
+		const float Phase = FVector2D::DotProduct(FVector2D(Position.X, Position.Y), Wave.WaveVector)
+			- Wave.WaveSpeed * Time;
+		float WaveSin = 0.0f;
+		float WaveCos = 0.0f;
+		FMath::SinCos(&WaveSin, &WaveCos, Phase);
+		BlendWaveBetweenLWCTiles(Wave, Position, Time, WaveSin, WaveCos);
+
+		OutOffset1D = -Wave.Q * WaveSin;
+		OutNormal = FVector(
+			WaveSin * Wave.WKA * Wave.Direction.X,
+			WaveSin * Wave.WKA * Wave.Direction.Y,
+			0.0f);
+		return FVector(
+			OutOffset1D * Wave.Direction.X,
+			OutOffset1D * Wave.Direction.Y,
+			WaveCos * Wave.Amplitude);
+	}
+
+	float EvaluateFullGerstnerHeight(const FVector& WorldPosition, float Time, const TArray<FGerstnerWave>& Waves)
+	{
+		float WaveHeight = 0.0f;
+		const FVector Position(FLargeWorldRenderPosition(WorldPosition).GetOffset());
+
+		for (const FGerstnerWave& Wave : Waves)
+		{
+			float FirstOffset1D = 0.0f;
+			FVector FirstNormal;
+			FVector FirstOffset = GetWaveOffset(Wave, Position, Time, FirstNormal, FirstOffset1D);
+
+			if (Wave.Q != 0.0f)
+			{
+				constexpr float TwoPi = 2.0f * PI;
+				const float Position1D = FVector2D::DotProduct(FVector2D(Position.X, Position.Y), Wave.WaveVector)
+					- Wave.WaveSpeed * Time;
+				const float MappedPosition1D = Position1D >= 0.0f
+					? FMath::Fmod(Position1D, TwoPi)
+					: TwoPi - FMath::Abs(FMath::Fmod(Position1D, TwoPi));
+				const bool bUsePositiveGuess = MappedPosition1D < PI;
+				const FVector GuessPosition = Position + (bUsePositiveGuess ? Wave.Direction * Wave.Q : -Wave.Direction * Wave.Q);
+
+				float SecondOffset1D = 0.0f;
+				FVector SecondNormal;
+				FVector SecondOffset = GetWaveOffset(Wave, GuessPosition, Time, SecondNormal, SecondOffset1D);
+				SecondOffset1D += bUsePositiveGuess ? Wave.Q : -Wave.Q;
+				if (!bUsePositiveGuess)
+				{
+					Swap(FirstOffset, SecondOffset);
+					Swap(FirstOffset1D, SecondOffset1D);
+				}
+
+				const float Denominator = SecondOffset1D - FirstOffset1D;
+				const float Alpha = -FirstOffset1D / (Denominator > 0.0f ? Denominator : 1.0f);
+				WaveHeight += FMath::Lerp(FirstOffset.Z, SecondOffset.Z, Alpha);
+			}
+			else
+			{
+				WaveHeight += FirstOffset.Z;
+			}
+		}
+
+		return WaveHeight;
+	}
+}
 
 FShipPhysicsAsync::FShipPhysicsAsync()
 {
@@ -150,6 +248,7 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 
 			if (AsyncInput)
 			{
+				bQueryDiagnostics_Internal = AsyncInput->bQueryDiagnostics;
 				// 로컬 컨트롤러가 있는 피어(로컬 조종사)만 WASD 조종력을 직접 덮어씀.
 				// 서버 및 다른 관망 클라이언트는 네트워크 입력 패킷(ApplyInput_Internal)으로 수신된 조종력을 그대로 보존.
 				if (AsyncInput->bHasLocalController)
@@ -162,11 +261,14 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 				if (AsyncInput->PontoonOffsets.Num() > 0)
 				{
 					CachedPontoonOffsets = AsyncInput->PontoonOffsets;
+					CachedPontoonRadii = AsyncInput->PontoonRadii;
+					CachedPontoonForceScales = AsyncInput->PontoonForceScales;
 				}
 				if (AsyncInput->GerstnerWaves.Num() > 0)
 				{
 					CachedGerstnerWaves = AsyncInput->GerstnerWaves;
 				}
+				CachedRippleEvents = AsyncInput->RippleEvents;
 				if (AsyncInput->ServerPhysicsTimeOrigin >= 0.0 && AsyncInput->ServerPhysicsStepSeconds > UE_SMALL_NUMBER)
 				{
 					CachedServerPhysicsTimeOrigin = AsyncInput->ServerPhysicsTimeOrigin;
@@ -244,6 +346,7 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 	ParticleHandle->SetSleepType(Chaos::ESleepType::NeverSleep);
 
 	const bool bStaticDataReady = CachedPontoonOffsets.Num() > 0
+		&& CachedPontoonRadii.Num() == CachedPontoonOffsets.Num()
 		&& CachedGerstnerWaves.Num() > 0
 		&& CachedServerPhysicsTimeOrigin >= 0.0
 		&& CachedServerPhysicsStepSeconds > UE_SMALL_NUMBER
@@ -336,6 +439,15 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 
 			// 스레드 세이프 삼각함수 파고 연산 실행
 			float WaveHeightZ = GetWaveHeightAtPosition_Internal(PontoonWorldPos, SimTime, CachedGerstnerWaves, GravityMag);
+			if (bQueryDiagnostics_Internal && PontoonIndex == 0)
+			{
+				FAsyncOutputShip& Output = GetProducerOutputData_Internal();
+				Output.bWaveSampleValid = true;
+				Output.bWasResimming = bIsResimming;
+				Output.WaveSamplePosition = PontoonWorldPos;
+				Output.WaveSampleServerTime = SimTimeSeconds;
+				Output.PTWaveHeight = WaveHeightZ;
+			}
 
 			// 물에 잠긴 깊이 계산
 			float Depth = WaveHeightZ - PontoonWorldPos.Z;
@@ -348,32 +460,32 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 			}
 			*/
 
-			float Submersion = Depth + CachedBuoyancyRadius;
-			float PontoonForceZ = 0.0f;
+			const FVector PontoonVelocity = ParticleHandle->GetV()
+				+ FVector::CrossProduct(ParticleHandle->GetW(), PontoonWorldPos - ActorLocation);
+			FSWBuoyancySolveInput SolveInput;
+			SolveInput.WaterHeight = WaveHeightZ;
+			SolveInput.PontoonCenterZ = PontoonWorldPos.Z;
+			SolveInput.PontoonRadius = CachedPontoonRadii[PontoonIndex];
+			SolveInput.RelativeVelocityZ = PontoonVelocity.Z;
+			SolveInput.ForceScale = CachedPontoonForceScales.IsValidIndex(PontoonIndex)
+				? CachedPontoonForceScales[PontoonIndex]
+				: 1.0f;
+			FSWBuoyancyForceSettings SolveSettings;
+			SolveSettings.BuoyancyCoefficient = CachedBuoyancyForceMultiplier;
+			SolveSettings.BuoyancyDamp = CachedWaterDamping;
+			SolveSettings.BuoyancyDamp2 = CachedWaterDamping2;
+			SolveSettings.MaxBuoyantForce = CachedMaxBuoyantForce;
+			const FSWBuoyancySolveResult SolveResult =
+				FSWBuoyancyMath::SolvePontoon(SolveInput, SolveSettings);
+			const float PontoonForceZ = SolveResult.BuoyantForceZ;
 
-			if (Submersion > 0.0f)
+			if (PontoonForceZ > 0.0f)
 			{
 				// 구체 폰툰 체적 적분 계산 (Spherical Cap Volume)
-				float SubDiff = FMath::Clamp(Submersion, 0.f, 2.f * CachedBuoyancyRadius);
-				float SubDiffSq = SubDiff * SubDiff;
-				float SubVolume = (PI / 3.f) * SubDiffSq * ((3.f * CachedBuoyancyRadius) - SubDiff);
 
 				// 폰툰 로컬 속도 추출
-				FVector PontoonVelocity = ParticleHandle->GetV() + FVector::CrossProduct(ParticleHandle->GetW(), PontoonWorldPos - ActorLocation);
-				float VelocityZ = PontoonVelocity.Z;
 
 				// 1차 및 2차 감쇄력 연산 (엔진 순정 공식 복원)
-				float FirstOrderDrag = CachedWaterDamping * VelocityZ;
-				float SecondOrderDrag = FMath::Sign(VelocityZ) * CachedWaterDamping2 * VelocityZ * VelocityZ;
-				float DampingFactorZ = -FMath::Max(FirstOrderDrag + SecondOrderDrag, 0.f);
-
-				// Clamp each physical pontoon independently. The Water plugin's
-				// normalized PontoonCoefficient is not applicable here because this
-				// custom solver intentionally sums four full spherical-cap volumes.
-				PontoonForceZ = FMath::Clamp(
-					(SubVolume * CachedBuoyancyForceMultiplier) + DampingFactorZ,
-					0.0f,
-					CachedMaxBuoyantForce);
 
 				FVector PontoonTotalForce = FVector::UpVector * PontoonForceZ;
 
@@ -483,15 +595,14 @@ void FShipPhysicsAsync::OnPreSimulate_Internal()
 
 float FShipPhysicsAsync::GetWaveHeightAtPosition_Internal(const FVector& Position, float Time, const TArray<FGerstnerWave>& Waves, float Gravity) const
 {
-	float TotalZOffset = 0.0f;
+	// Match UGerstnerWaterWaves::GetWaveHeightAtPosition, including the
+	// horizontal-displacement inversion used when steepness (Q) is non-zero.
+	float TotalZOffset = EvaluateFullGerstnerHeight(Position, Time, Waves);
 
-	for (const FGerstnerWave& Wave : Waves)
-	{
-		float WaveTime = Wave.WaveSpeed * Time;
-		float WavePosition = FVector2D::DotProduct(FVector2D(Position.X, Position.Y), Wave.WaveVector) - WaveTime + Wave.PhaseOffset;
-		float WaveCos = FMath::Cos(WavePosition);
-		TotalZOffset += WaveCos * Wave.Amplitude;
-	}
+	TotalZOffset += FSWRippleEvaluator::EvaluateHeight(
+		FVector2D(Position.X, Position.Y),
+		static_cast<double>(Time),
+		CachedRippleEvents);
 
 	return TotalZOffset;
 }
