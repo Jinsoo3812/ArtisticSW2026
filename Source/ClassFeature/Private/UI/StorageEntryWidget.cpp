@@ -31,6 +31,12 @@ void UStorageEntryWidget::SetupFromData(const FText& InItemName, int32 InCount, 
 
 	SetToolTipText(InItemName);
 
+	if (ItemNameText)
+	{
+		ItemNameText->SetText(InItemName);
+		ItemNameText->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+
 	if (ItemIconImage)
 	{
 		ItemIconImage->SetBrushFromTexture(InIcon, true);
@@ -70,6 +76,12 @@ void UStorageEntryWidget::SetupAsEmpty(int32 InSlotIndex, AStorageChest* InStora
 
 	SetToolTipText(FText::GetEmpty());
 
+	if (ItemNameText)
+	{
+		ItemNameText->SetText(FText::GetEmpty());
+		ItemNameText->SetVisibility(ESlateVisibility::Hidden);
+	}
+
 	if (ItemIconImage)
 	{
 		ItemIconImage->SetVisibility(ESlateVisibility::Hidden);
@@ -108,6 +120,12 @@ void UStorageEntryWidget::SetupAsSearching(int32 InSlotIndex, AStorageChest* InS
 	SearchRotationAngle = 0.0f;
 
 	SetToolTipText(FText::FromString(TEXT("Searching...")));
+
+	if (ItemNameText)
+	{
+		ItemNameText->SetText(FText::GetEmpty());
+		ItemNameText->SetVisibility(ESlateVisibility::Hidden);
+	}
 
 	if (ItemIconImage)
 	{
@@ -152,6 +170,12 @@ void UStorageEntryWidget::SetupAsUnrevealed(int32 InSlotIndex, AStorageChest* In
 	bIsSearching = false;
 
 	SetToolTipText(FText::GetEmpty());
+
+	if (ItemNameText)
+	{
+		ItemNameText->SetText(FText::GetEmpty());
+		ItemNameText->SetVisibility(ESlateVisibility::Hidden);
+	}
 
 	if (ItemIconImage)
 	{
@@ -250,7 +274,7 @@ FReply UStorageEntryWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry,
 
 void UStorageEntryWidget::BuildWidgetTree()
 {
-	if (SlotButton || !WidgetTree)
+	if (!WidgetTree || WidgetTree->RootWidget)
 	{
 		return;
 	}

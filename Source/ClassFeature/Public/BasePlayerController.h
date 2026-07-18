@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Components/SlateWrapperTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
 #include "TimerManager.h"
@@ -102,6 +103,10 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UStatusWindowWidget> StatusWindowWidget;
 
+	ESlateVisibility PlayerHUDVisibilityBeforeStatus = ESlateVisibility::Visible;
+	TWeakObjectPtr<APawn> StatusInputLockedPawn;
+	bool bWasStatusPawnInputEnabled = true;
+
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UStorageWindowWidget> StorageWindowWidgetClass;
 
@@ -131,6 +136,7 @@ protected:
 
 	void BindHUDToCurrentPlayer();
 	void ApplyInventoryInputMode(bool bOpen);
+	void SetStatusCharacterInputLocked(bool bLocked);
 	void OpenStorage(AStorageChest* StorageChest);
 	void CloseStorage(bool bNotifyServer = true);
 	bool IsStorageOpen() const;

@@ -6,7 +6,6 @@
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Inventory/InventoryComponent.h"
-#include "UI/CharacterPreviewWidget.h"
 #include "UI/InventoryPanelWidget.h"
 #include "UI/QuickSlotEntryWidget.h"
 
@@ -37,20 +36,11 @@ void UStatusWindowWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	{
 		InventoryPanelWidget->InitializeForPlayer(CachedPlayer.Get());
 	}
-	if (CharacterPreviewWidget)
-	{
-		CharacterPreviewWidget->InitializeForPlayer(CachedPlayer.Get());
-	}
 	RefreshQuickSlots();
 }
 
 void UStatusWindowWidget::SetStatusVisible(bool bVisible)
 {
-	if (CharacterPreviewWidget)
-	{
-		CharacterPreviewWidget->SetPreviewActive(bVisible);
-	}
-
 	if (!bVisible && CachedPlayer.IsValid())
 	{
 		if (UInventoryComponent* Inventory = CachedPlayer->GetInventoryComponent())
@@ -65,10 +55,6 @@ void UStatusWindowWidget::SetStatusVisible(bool bVisible)
 		if (InventoryPanelWidget)
 		{
 			InventoryPanelWidget->RefreshInventory();
-		}
-		if (CharacterPreviewWidget)
-		{
-			CharacterPreviewWidget->RefreshPreview();
 		}
 		RefreshQuickSlots();
 	}

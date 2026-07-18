@@ -21,6 +21,8 @@ class UHealthBarWidget;
 class UBaseHealthComponent;
 class UBowCrosshairWidget;
 class UBowComponent;
+class AStorageChest;
+class UStorageWindowWidget;
 
 UCLASS()
 class CLASSFEATURE_API UPlayerHUDWidget : public UUserWidget
@@ -35,6 +37,12 @@ public:
 
 	void SetInventoryVisible(bool bVisible);
 	bool IsInventoryVisible() const;
+
+	UStorageWindowWidget* ShowStorageWindow(
+		AStorageChest* StorageChest,
+		ABasePlayer* Player,
+		TSubclassOf<UStorageWindowWidget> StorageWindowClass);
+	void HideStorageWindow();
 
 protected:
 	virtual int32 NativePaint(
@@ -76,6 +84,17 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCanvasPanel> RootCanvasPanel;
+
+	// When this widget is placed in the HUD designer with this exact name,
+	// its Canvas Slot controls the chest window position.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UStorageWindowWidget> StorageWindowWidget;
+
+	// Fallback placement used only when the HUD blueprint has no designer-placed storage window.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Storage")
+	FVector2D RuntimeStorageWindowTopRightMargin = FVector2D(60.0f, 140.0f);
+
+	bool bRuntimeStorageWindow = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")
 	TSubclassOf<UInventoryCursorWidget> InventoryCursorWidgetClass;

@@ -170,6 +170,11 @@ void ABasePlayerController::ToggleStatus()
 	if (StatusWindowWidget->IsStatusVisible())
 	{
 		StatusWindowWidget->SetStatusVisible(false);
+		SetStatusCharacterInputLocked(false);
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeStatus);
+		}
 		ApplyInventoryInputMode(false);
 		return;
 	}
@@ -186,8 +191,15 @@ void ABasePlayerController::ToggleStatus()
 		PlayerHUDWidget->SetInventoryVisible(false);
 	}
 
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDVisibilityBeforeStatus = PlayerHUDWidget->GetVisibility();
+		PlayerHUDWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
 	StatusWindowWidget->SetStatusVisible(true);
 	ApplyInventoryInputMode(true);
+	SetStatusCharacterInputLocked(true);
 }
 
 void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
@@ -390,7 +402,7 @@ void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 	// 열려 있던 창 제거
 	if (StorageWindowWidget)
 	{
-		StorageWindowWidget->RemoveFromParent();
+		PlayerHUDWidget->HideStorageWindow();
 		StorageWindowWidget = nullptr;
 	}
 
@@ -399,22 +411,14 @@ void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 	PlayerHUDWidget->SetInventoryVisible(true);
 	ApplyInventoryInputMode(true);
 
-	TSubclassOf<UStorageWindowWidget> WidgetClass = StorageWindowWidgetClass;
-	if (!WidgetClass)
-	{
-		WidgetClass = UStorageWindowWidget::StaticClass();
-	}
-
-	StorageWindowWidget = CreateWidget<UStorageWindowWidget>(this, WidgetClass);
+	StorageWindowWidget = PlayerHUDWidget->ShowStorageWindow(
+		StorageChest,
+		Cast<ABasePlayer>(GetPawn()),
+		StorageWindowWidgetClass);
 	if (!StorageWindowWidget)
 	{
 		return;
 	}
-
-	StorageWindowWidget->InitializeStorage(StorageChest, Cast<ABasePlayer>(GetPawn()));
-	StorageWindowWidget->AddToViewport(20);
-	StorageWindowWidget->SetAlignmentInViewport(FVector2D(0.0f, 0.0f));
-	StorageWindowWidget->SetPositionInViewport(FVector2D(60.0f, 140.0f), false);
 }
 
 void ABasePlayerController::CloseStorage(bool bNotifyServer)
@@ -423,7 +427,10 @@ void ABasePlayerController::CloseStorage(bool bNotifyServer)
 
 	if (StorageWindowWidget)
 	{
-		StorageWindowWidget->RemoveFromParent();
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->HideStorageWindow();
+		}
 		StorageWindowWidget = nullptr;
 	}
 
@@ -624,6 +631,31 @@ void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 		SetIgnoreLookInput(false);
 		SetIgnoreMoveInput(false);
 	}
+}
+
+void ABasePlayerController::SetStatusCharacterInputLocked(bool bLocked)
+{
+	if (bLocked)
+	{
+		APawn* ControlledPawn = GetPawn();
+		if (!ControlledPawn)
+		{
+			return;
+		}
+
+		StatusInputLockedPawn = ControlledPawn;
+		bWasStatusPawnInputEnabled = ControlledPawn->InputEnabled();
+		ControlledPawn->DisableInput(this);
+		SetIgnoreMoveInput(true);
+		SetIgnoreLookInput(true);
+		return;
+	}
+
+	if (StatusInputLockedPawn.IsValid() && bWasStatusPawnInputEnabled)
+	{
+		StatusInputLockedPawn->EnableInput(this);
+	}
+	StatusInputLockedPawn.Reset();
 }
 
 void ABasePlayerController::Tick(float DeltaTime)

@@ -5,7 +5,6 @@
 #include "StatusWindowWidget.generated.h"
 
 class ABasePlayer;
-class UCharacterPreviewWidget;
 class UInventoryPanelWidget;
 class UProgressBar;
 class UQuickSlotEntryWidget;
@@ -34,9 +33,6 @@ public:
 protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UInventoryPanelWidget> InventoryPanelWidget;
-
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UCharacterPreviewWidget> CharacterPreviewWidget;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UQuickSlotEntryWidget> WeaponQuickSlot1;

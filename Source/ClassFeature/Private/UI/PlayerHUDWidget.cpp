@@ -11,6 +11,8 @@
 #include "UI/InventoryCursorWidget.h"
 #include "UI/HealthBarWidget.h"
 #include "UI/BowCrosshairWidget.h"
+#include "UI/StorageWindowWidget.h"
+#include "Storage/StorageChest.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
@@ -82,6 +84,11 @@ void UPlayerHUDWidget::NativeConstruct()
 		InventoryPanel->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
+	if (StorageWindowWidget)
+	{
+		StorageWindowWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
 	if (RootCanvasPanel && InventoryCursorWidgetClass && !InventoryCursorWidget)
 	{
 		InventoryCursorWidget = CreateWidget<UInventoryCursorWidget>(this, InventoryCursorWidgetClass);
@@ -106,6 +113,8 @@ void UPlayerHUDWidget::NativeConstruct()
 
 void UPlayerHUDWidget::NativeDestruct()
 {
+	HideStorageWindow();
+
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
@@ -201,6 +210,70 @@ void UPlayerHUDWidget::SetInventoryVisible(bool bVisible)
 bool UPlayerHUDWidget::IsInventoryVisible() const
 {
 	return InventoryPanel && InventoryPanel->GetVisibility() != ESlateVisibility::Collapsed;
+}
+
+UStorageWindowWidget* UPlayerHUDWidget::ShowStorageWindow(
+	AStorageChest* StorageChest,
+	ABasePlayer* Player,
+	TSubclassOf<UStorageWindowWidget> StorageWindowClass)
+{
+	if (!StorageChest)
+	{
+		return nullptr;
+	}
+
+	if (!StorageWindowWidget)
+	{
+		if (!RootCanvasPanel)
+		{
+			return nullptr;
+		}
+
+		if (!StorageWindowClass)
+		{
+			StorageWindowClass = UStorageWindowWidget::StaticClass();
+		}
+
+		StorageWindowWidget = CreateWidget<UStorageWindowWidget>(GetOwningPlayer(), StorageWindowClass);
+		if (!StorageWindowWidget)
+		{
+			return nullptr;
+		}
+
+		bRuntimeStorageWindow = true;
+		RootCanvasPanel->AddChild(StorageWindowWidget);
+
+		if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(StorageWindowWidget->Slot))
+		{
+			CanvasSlot->SetAnchors(FAnchors(1.0f, 0.0f));
+			CanvasSlot->SetAlignment(FVector2D(1.0f, 0.0f));
+			CanvasSlot->SetPosition(FVector2D(-RuntimeStorageWindowTopRightMargin.X, RuntimeStorageWindowTopRightMargin.Y));
+			CanvasSlot->SetAutoSize(true);
+			CanvasSlot->SetZOrder(20);
+		}
+	}
+
+	StorageWindowWidget->InitializeStorage(StorageChest, Player);
+	StorageWindowWidget->SetVisibility(ESlateVisibility::Visible);
+	return StorageWindowWidget;
+}
+
+void UPlayerHUDWidget::HideStorageWindow()
+{
+	if (!StorageWindowWidget)
+	{
+		return;
+	}
+
+	if (bRuntimeStorageWindow)
+	{
+		StorageWindowWidget->RemoveFromParent();
+		StorageWindowWidget = nullptr;
+		bRuntimeStorageWindow = false;
+		return;
+	}
+
+	StorageWindowWidget->SetVisibility(ESlateVisibility::Collapsed);
 }
 
 void UPlayerHUDWidget::HandleInventoryChanged()
