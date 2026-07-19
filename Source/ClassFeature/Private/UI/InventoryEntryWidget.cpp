@@ -10,9 +10,11 @@
 #include "BasePlayerController.h"
 #include "Inventory/InventoryComponent.h"
 
-void UInventoryEntryWidget::SetupFromData(const FText& InItemName, int32 InCount, UTexture2D* InIcon, int32 InSlotIndex)
+void UInventoryEntryWidget::SetupFromData(const FText& InItemName, int32 InCount, UTexture2D* InIcon, int32 InSlotIndex, FGameplayTag InItemTag, const FText& InRarityName)
 {
 	SlotIndex = InSlotIndex;
+	ItemTag = InItemTag;
+	SetToolTipText(InRarityName);
 
 	if (ItemNameText)
 	{
@@ -36,6 +38,8 @@ void UInventoryEntryWidget::SetupFromData(const FText& InItemName, int32 InCount
 void UInventoryEntryWidget::SetupAsEmpty(int32 InSlotIndex)
 {
 	SlotIndex = InSlotIndex;
+	ItemTag = FGameplayTag();
+	SetToolTipText(FText::GetEmpty());
 
 	if (ItemNameText)
 	{
@@ -52,6 +56,26 @@ void UInventoryEntryWidget::SetupAsEmpty(int32 InSlotIndex)
 	if (ItemIconImage)
 	{
 		ItemIconImage->SetVisibility(ESlateVisibility::Hidden);
+	}
+}
+
+void UInventoryEntryWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
+
+	if (SlotIndex != INDEX_NONE && ItemTag.IsValid())
+	{
+		OnEntryHovered.ExecuteIfBound(SlotIndex, ItemTag);
+	}
+}
+
+void UInventoryEntryWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
+{
+	Super::NativeOnMouseLeave(InMouseEvent);
+
+	if (SlotIndex != INDEX_NONE)
+	{
+		OnEntryUnhovered.ExecuteIfBound(SlotIndex);
 	}
 }
 
@@ -85,7 +109,7 @@ FReply UInventoryEntryWidget::NativeOnMouseButtonDown(const FGeometry& InGeometr
 			return FReply::Handled();
 		}
 
-		InventoryComp->ServerHandleLeftClickSlot(SlotIndex);
+		InventoryComp->ServerHandleLeftClickSlotInTab(InventoryComp->GetActiveTab(), SlotIndex);
 		return FReply::Handled();
 	}
 

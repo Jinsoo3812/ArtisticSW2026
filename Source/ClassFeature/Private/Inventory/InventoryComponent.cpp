@@ -7,11 +7,20 @@
 #include "ItemSubsystem.h"
 #include "Engine/Engine.h"
 #include "Storage/StorageComponent.h"
+#include "BaseGameplayTags.h"
 
 // Sets default values for this component's properties
 UInventoryComponent::UInventoryComponent()
 {
 	SetIsReplicatedByDefault(true);
+
+	InventoryTabConfigs =
+	{
+		{ EInventoryTab::Clue, 25 },
+		{ EInventoryTab::Consumable, 25 },
+		{ EInventoryTab::Material, 25 },
+		{ EInventoryTab::Weapon, 25 }
+	};
 }
 
 void UInventoryComponent::BeginPlay()
@@ -20,7 +29,7 @@ void UInventoryComponent::BeginPlay()
     //서버에서만 인벤토리 array 크기 초기화
     if (GetOwner() && GetOwner()->HasAuthority())
     {
-        InventorySlots.SetNum(GetSlotCount());
+        InitializeInventoryPages();
     }
 }
 
@@ -29,12 +38,127 @@ void UInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
     DOREPLIFETIME(UInventoryComponent, InventorySlots);
+    DOREPLIFETIME(UInventoryComponent, InventoryPages);
     DOREPLIFETIME(UInventoryComponent, CursorItem);
 }
 
 void UInventoryComponent::OnRep_InventoryContents()
 {
+    if (const FInventoryTabPage* Page = FindPage(ActiveTab))
+    {
+        InventorySlots = Page->Slots;
+    }
     OnInventoryChanged.Broadcast();
+}
+
+void UInventoryComponent::InitializeInventoryPages()
+{
+    if (InventoryColumns <= 0)
+    {
+        InventoryColumns = 5;
+    }
+
+    if (InventoryTabConfigs.Num() == 0)
+    {
+        InventoryTabConfigs =
+        {
+            { EInventoryTab::Clue, 25 },
+            { EInventoryTab::Consumable, 25 },
+            { EInventoryTab::Material, 25 },
+            { EInventoryTab::Weapon, 25 }
+        };
+    }
+
+    for (const FInventoryTabConfig& Config : InventoryTabConfigs)
+    {
+        FInventoryTabPage* Page = FindMutablePage(Config.Tab);
+        if (!Page)
+        {
+            FInventoryTabPage NewPage;
+            NewPage.Tab = Config.Tab;
+            InventoryPages.Add(NewPage);
+            Page = &InventoryPages.Last();
+        }
+
+        Page->Slots.SetNum(FMath::Max(0, Config.SlotCount));
+    }
+
+    if (FInventoryTabPage* ActivePage = FindMutablePage(ActiveTab))
+    {
+        InventorySlots = ActivePage->Slots;
+    }
+}
+
+FInventoryTabPage* UInventoryComponent::FindMutablePage(EInventoryTab Tab)
+{
+    return InventoryPages.FindByPredicate([Tab](const FInventoryTabPage& Page)
+    {
+        return Page.Tab == Tab;
+    });
+}
+
+const FInventoryTabPage* UInventoryComponent::FindPage(EInventoryTab Tab) const
+{
+    return InventoryPages.FindByPredicate([Tab](const FInventoryTabPage& Page)
+    {
+        return Page.Tab == Tab;
+    });
+}
+
+const TArray<FInventorySlot>& UInventoryComponent::GetSlots(EInventoryTab Tab) const
+{
+    if (const FInventoryTabPage* Page = FindPage(Tab))
+    {
+        return Page->Slots;
+    }
+
+    static const TArray<FInventorySlot> EmptySlots;
+    return EmptySlots;
+}
+
+int32 UInventoryComponent::GetSlotCount(EInventoryTab Tab) const
+{
+    if (const FInventoryTabPage* Page = FindPage(Tab))
+    {
+        return Page->Slots.Num();
+    }
+
+    if (const FInventoryTabConfig* Config = InventoryTabConfigs.FindByPredicate([Tab](const FInventoryTabConfig& Candidate)
+    {
+        return Candidate.Tab == Tab;
+    }))
+    {
+        return FMath::Max(0, Config->SlotCount);
+    }
+
+    return 0;
+}
+
+int32 UInventoryComponent::GetInventoryRows(EInventoryTab Tab) const
+{
+    const int32 Columns = FMath::Max(1, InventoryColumns);
+    return FMath::DivideAndRoundUp(GetSlotCount(Tab), Columns);
+}
+
+void UInventoryComponent::SetActiveTab(EInventoryTab NewTab)
+{
+    ActiveTab = NewTab;
+
+    if (const FInventoryTabPage* Page = FindPage(ActiveTab))
+    {
+        InventorySlots = Page->Slots;
+    }
+    else
+    {
+        InventorySlots.Reset();
+    }
+
+    OnInventoryChanged.Broadcast();
+}
+
+bool UInventoryComponent::CanSlotAcceptItem(EInventoryTab Tab, const FGameplayTag& ItemTag) const
+{
+    return ItemTag.IsValid() && GetInventoryTabForItem(ItemTag) == Tab;
 }
 
 int32 UInventoryComponent::AddMaterial(const FGameplayTag& ItemTag, int32 Amount)
@@ -44,10 +168,16 @@ int32 UInventoryComponent::AddMaterial(const FGameplayTag& ItemTag, int32 Amount
         return 0;
     }
 
-    if (InventorySlots.Num() != GetSlotCount())
+    InitializeInventoryPages();
+
+    const EInventoryTab ItemTab = GetInventoryTabForItem(ItemTag);
+    FInventoryTabPage* Page = FindMutablePage(ItemTab);
+    if (!Page)
     {
-        InventorySlots.SetNum(GetSlotCount());
+        return 0;
     }
+
+    TArray<FInventorySlot>& TargetSlots = Page->Slots;
 
     const int32 MaxStack = GetMaxStack(ItemTag);
 
@@ -55,7 +185,7 @@ int32 UInventoryComponent::AddMaterial(const FGameplayTag& ItemTag, int32 Amount
     int32 AddedCount = 0;
     
     // 1. 같은 아이템 슬롯에 먼저 가능한 만큼 누적
-    for (FInventorySlot& Slot : InventorySlots)
+    for (FInventorySlot& Slot : TargetSlots)
     {
         if (Remaining <= 0) break;
      
@@ -74,7 +204,7 @@ int32 UInventoryComponent::AddMaterial(const FGameplayTag& ItemTag, int32 Amount
     }
 
     // 2. 남은 수량을 빈 슬롯에 가능한 만큼 추가
-    for (FInventorySlot& Slot : InventorySlots)
+    for (FInventorySlot& Slot : TargetSlots)
     {
         if (Remaining <= 0) break;    
 
@@ -91,6 +221,10 @@ int32 UInventoryComponent::AddMaterial(const FGameplayTag& ItemTag, int32 Amount
 
     if (AddedCount > 0)
     {
+        if (ItemTab == ActiveTab)
+        {
+            InventorySlots = TargetSlots;
+        }
         OnInventoryChanged.Broadcast();
         PrintInventoryToScreen();
     }
@@ -110,9 +244,15 @@ bool UInventoryComponent::RemoveMaterial(const FGameplayTag& ItemTag, int32 Amou
         return false;
     }
 
+    FInventoryTabPage* Page = FindMutablePage(GetInventoryTabForItem(ItemTag));
+    if (!Page)
+    {
+        return false;
+    }
+
     int32 Remaining = Amount;
 
-    for (FInventorySlot& Slot : InventorySlots) 
+    for (FInventorySlot& Slot : Page->Slots) 
     {
         if (ItemTag != Slot.ItemTag) continue;
 
@@ -128,6 +268,10 @@ bool UInventoryComponent::RemoveMaterial(const FGameplayTag& ItemTag, int32 Amou
 
         if (Remaining <= 0)
         {
+            if (Page->Tab == ActiveTab)
+            {
+                InventorySlots = Page->Slots;
+            }
             OnInventoryChanged.Broadcast();
             PrintInventoryToScreen();
             return true;
@@ -141,11 +285,14 @@ int32 UInventoryComponent::GetMaterialCount(const FGameplayTag& ItemTag) const
 {
     int32 TotalCount = 0;
 
-    for (const FInventorySlot& Slot : InventorySlots)
+    for (const FInventoryTabPage& Page : InventoryPages)
     {
-        if (Slot.ItemTag == ItemTag)
+        for (const FInventorySlot& Slot : Page.Slots)
         {
-            TotalCount += Slot.Count;
+            if (Slot.ItemTag == ItemTag)
+            {
+                TotalCount += Slot.Count;
+            }
         }
     }
 
@@ -188,19 +335,90 @@ FText UInventoryComponent::GetMaterialName(const FGameplayTag& ItemTag) const
     return FText::FromString(ItemTag.ToString());
 }
 
+FText UInventoryComponent::GetItemDescription(const FGameplayTag& ItemTag) const
+{
+    if (UWorld* World = GetWorld())
+    {
+        if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
+        {
+            return Subsystem->GetHowToInteractText(ItemTag);
+        }
+    }
+    return FText::GetEmpty();
+}
+
+FGameplayTag UInventoryComponent::GetItemRarityTag(const FGameplayTag& ItemTag) const
+{
+    if (UWorld* World = GetWorld())
+    {
+        if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
+        {
+            return Subsystem->GetRarityTag(ItemTag);
+        }
+    }
+    return FGameplayTag();
+}
+
+FText UInventoryComponent::GetItemRarityName(const FGameplayTag& ItemTag) const
+{
+    const FGameplayTag RarityTag = GetItemRarityTag(ItemTag);
+    if (!RarityTag.IsValid())
+    {
+        return FText::GetEmpty();
+    }
+
+    if (RarityTag.MatchesTagExact(Item_Rarity_Common)) return FText::FromString(TEXT("Common"));
+    if (RarityTag.MatchesTagExact(Item_Rarity_Rare)) return FText::FromString(TEXT("Rare"));
+    if (RarityTag.MatchesTagExact(Item_Rarity_Epic)) return FText::FromString(TEXT("Epic"));
+    if (RarityTag.MatchesTagExact(Item_Rarity_Legendary)) return FText::FromString(TEXT("Legendary"));
+    if (RarityTag.MatchesTagExact(Item_Rarity_Relic)) return FText::FromString(TEXT("Relic"));
+
+    return FText::FromString(RarityTag.GetTagName().ToString());
+}
+
+EInventoryTab UInventoryComponent::GetInventoryTabForItem(const FGameplayTag& ItemTag) const
+{
+    if (UWorld* World = GetWorld())
+    {
+        if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
+        {
+            const FGameplayTag CategoryTag = Subsystem->GetCategoryTag(ItemTag);
+            if (CategoryTag.MatchesTag(Item_Category_Clue)) return EInventoryTab::Clue;
+            if (CategoryTag.MatchesTag(Item_Category_Consumable)) return EInventoryTab::Consumable;
+            if (CategoryTag.MatchesTag(Item_Category_Material)) return EInventoryTab::Material;
+            if (CategoryTag.MatchesTag(Item_Category_Weapon)) return EInventoryTab::Weapon;
+        }
+    }
+
+    if (ItemTag.MatchesTag(Item_Id_Clue)) return EInventoryTab::Clue;
+    if (ItemTag.MatchesTag(Item_Id_Consumables)) return EInventoryTab::Consumable;
+    if (ItemTag.MatchesTag(Item_Id_Weapon)) return EInventoryTab::Weapon;
+
+    return EInventoryTab::Material;
+}
+
 void UInventoryComponent::HandleLeftClickSlot(int32 SlotIndex)
+{
+    HandleLeftClickSlotInTab(ActiveTab, SlotIndex);
+}
+
+void UInventoryComponent::HandleLeftClickSlotInTab(EInventoryTab Tab, int32 SlotIndex)
 {
     if (!GetOwner() || !GetOwner()->HasAuthority())
     {
         return;
     }
 
-    if (!InventorySlots.IsValidIndex(SlotIndex))
+    InitializeInventoryPages();
+
+    FInventoryTabPage* Page = FindMutablePage(Tab);
+    if (!Page || !Page->Slots.IsValidIndex(SlotIndex))
     {
         return;
     }
 
-    FInventorySlot& TargetSlot = InventorySlots[SlotIndex];
+    TArray<FInventorySlot>& Slots = Page->Slots;
+    FInventorySlot& TargetSlot = Slots[SlotIndex];
 
     // 1. 커서가 비어 있고, 아이템 슬롯을 클릭한 경우
     if (!CursorItem.IsValid())
@@ -213,9 +431,14 @@ void UInventoryComponent::HandleLeftClickSlot(int32 SlotIndex)
         CursorItem.ItemTag = TargetSlot.ItemTag;
         CursorItem.Count = TargetSlot.Count;
         CursorItem.OriginalSlotIndex = SlotIndex;
+        CursorItem.OriginalTab = Tab;
 
         TargetSlot.Clear();
 
+        if (Tab == ActiveTab)
+        {
+            InventorySlots = Slots;
+        }
         OnInventoryChanged.Broadcast();
         PrintInventoryToScreen();
         return;
@@ -224,11 +447,20 @@ void UInventoryComponent::HandleLeftClickSlot(int32 SlotIndex)
     // 2. 커서가 아이템을 들고 있고, 빈 슬롯을 클릭한 경우
     if (TargetSlot.IsEmpty())
     {
+        if (!CanSlotAcceptItem(Tab, CursorItem.ItemTag))
+        {
+            return;
+        }
+
         TargetSlot.ItemTag = CursorItem.ItemTag;
         TargetSlot.Count = CursorItem.Count;
 
         CursorItem.Clear();
 
+        if (Tab == ActiveTab)
+        {
+            InventorySlots = Slots;
+        }
         OnInventoryChanged.Broadcast();
         PrintInventoryToScreen();
         return;
@@ -238,6 +470,11 @@ void UInventoryComponent::HandleLeftClickSlot(int32 SlotIndex)
     // 가능한 만큼만 합치기
     if (TargetSlot.ItemTag == CursorItem.ItemTag)
     {
+        if (!CanSlotAcceptItem(Tab, CursorItem.ItemTag))
+        {
+            return;
+        }
+
         const int32 MaxStack = GetMaxStack(CursorItem.ItemTag);
         const int32 Space = MaxStack - TargetSlot.Count;
 
@@ -256,12 +493,21 @@ void UInventoryComponent::HandleLeftClickSlot(int32 SlotIndex)
             CursorItem.Clear();
         }
 
+        if (Tab == ActiveTab)
+        {
+            InventorySlots = Slots;
+        }
         OnInventoryChanged.Broadcast();
         PrintInventoryToScreen();
         return;
     }
 
     // 4. 다른 아이템이면 서로 교환
+    if (!CanSlotAcceptItem(Tab, CursorItem.ItemTag))
+    {
+        return;
+    }
+
     FInventorySlot TempSlot = TargetSlot;
 
     TargetSlot.ItemTag = CursorItem.ItemTag;
@@ -270,7 +516,12 @@ void UInventoryComponent::HandleLeftClickSlot(int32 SlotIndex)
     CursorItem.ItemTag = TempSlot.ItemTag;
     CursorItem.Count = TempSlot.Count;
     CursorItem.OriginalSlotIndex = SlotIndex;
+    CursorItem.OriginalTab = Tab;
 
+    if (Tab == ActiveTab)
+    {
+        InventorySlots = Slots;
+    }
     OnInventoryChanged.Broadcast();
     PrintInventoryToScreen();
 }
@@ -291,7 +542,8 @@ void UInventoryComponent::ReturnCursorToOriginalSlot()
         return;
     }
 
-    if (!InventorySlots.IsValidIndex(CursorItem.OriginalSlotIndex))
+    FInventoryTabPage* Page = FindMutablePage(CursorItem.OriginalTab);
+    if (!Page || !Page->Slots.IsValidIndex(CursorItem.OriginalSlotIndex))
     {
         CursorItem.Clear();
 
@@ -300,7 +552,8 @@ void UInventoryComponent::ReturnCursorToOriginalSlot()
         return;
     }
 
-    FInventorySlot& OriginalSlot = InventorySlots[CursorItem.OriginalSlotIndex];
+    TArray<FInventorySlot>& Slots = Page->Slots;
+    FInventorySlot& OriginalSlot = Slots[CursorItem.OriginalSlotIndex];
 
     // 원래 칸이 비어 있으면 그대로 복귀
     if (OriginalSlot.IsEmpty())
@@ -310,6 +563,10 @@ void UInventoryComponent::ReturnCursorToOriginalSlot()
 
         CursorItem.Clear();
 
+        if (Page->Tab == ActiveTab)
+        {
+            InventorySlots = Slots;
+        }
         OnInventoryChanged.Broadcast();
         PrintInventoryToScreen();
         return;
@@ -330,6 +587,10 @@ void UInventoryComponent::ReturnCursorToOriginalSlot()
             CursorItem.Clear();
         }
 
+        if (Page->Tab == ActiveTab)
+        {
+            InventorySlots = Slots;
+        }
         OnInventoryChanged.Broadcast();
         PrintInventoryToScreen();
         return;
@@ -344,7 +605,12 @@ void UInventoryComponent::ReturnCursorToOriginalSlot()
     CursorItem.ItemTag = TempSlot.ItemTag;
     CursorItem.Count = TempSlot.Count;
     CursorItem.OriginalSlotIndex = TempSlot.IsEmpty() ? INDEX_NONE : CursorItem.OriginalSlotIndex;
+    CursorItem.OriginalTab = Page->Tab;
 
+    if (Page->Tab == ActiveTab)
+    {
+        InventorySlots = Slots;
+    }
     OnInventoryChanged.Broadcast();
     PrintInventoryToScreen();
 }
@@ -362,12 +628,13 @@ int32 UInventoryComponent::TransferSlotToStorage(int32 SlotIndex, UStorageCompon
         ReturnCursorToOriginalSlot();
     }
 
-    if (!InventorySlots.IsValidIndex(SlotIndex) || InventorySlots[SlotIndex].IsEmpty())
+    FInventoryTabPage* Page = FindMutablePage(ActiveTab);
+    if (!Page || !Page->Slots.IsValidIndex(SlotIndex) || Page->Slots[SlotIndex].IsEmpty())
     {
         return 0;
     }
 
-    FInventorySlot& SourceSlot = InventorySlots[SlotIndex];
+    FInventorySlot& SourceSlot = Page->Slots[SlotIndex];
     const int32 AddedCount = TargetStorage->AddItem(SourceSlot.ItemTag, SourceSlot.Count);
 
     if (AddedCount <= 0)
@@ -381,6 +648,7 @@ int32 UInventoryComponent::TransferSlotToStorage(int32 SlotIndex, UStorageCompon
         SourceSlot.Clear();
     }
 
+    InventorySlots = Page->Slots;
     OnInventoryChanged.Broadcast();
     PrintInventoryToScreen();
 
@@ -422,6 +690,11 @@ void UInventoryComponent::ServerHandleRightClickInventory_Implementation()
 void UInventoryComponent::ServerHandleLeftClickSlot_Implementation(int32 SlotIndex)
 {
     HandleLeftClickSlot(SlotIndex);
+}
+
+void UInventoryComponent::ServerHandleLeftClickSlotInTab_Implementation(EInventoryTab Tab, int32 SlotIndex)
+{
+    HandleLeftClickSlotInTab(Tab, SlotIndex);
 }
 
 void UInventoryComponent::PrintInventoryToScreen() const
