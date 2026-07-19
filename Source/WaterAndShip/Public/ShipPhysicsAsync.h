@@ -12,6 +12,7 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 {
 	float MovementInput = 0.0f;
 	float SteeringInput = 0.0f;
+	FVector ExternalAcceleration = FVector::ZeroVector;
 	bool bHasLocalController = false;
 	bool bQueryDiagnostics = false;
 
@@ -45,6 +46,7 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	{
 		MovementInput = 0.0f;
 		SteeringInput = 0.0f;
+		ExternalAcceleration = FVector::ZeroVector;
 		bHasLocalController = false;
 		bQueryDiagnostics = false;
 		PontoonOffsets.Empty();
@@ -114,6 +116,7 @@ private:
 	// 비동기 스레드 내부 입력 캐시
 	float MovementInput_Internal = 0.0f;
 	float SteeringInput_Internal = 0.0f;
+	FVector ExternalAcceleration_Internal = FVector::ZeroVector;
 	bool bQueryDiagnostics_Internal = false;
 
 	// 물리 스레드에서 고정 보관할 데이터들 (최초 전송 시 캐싱)

@@ -19,12 +19,14 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 	FNetInputShip() 
 		: MovementInput(0.f)
 		, SteeringInput(0.f)
-	{}
+		, ExternalAcceleration(FVector::ZeroVector)
+		{}
 
 	void Reset()
 	{
 		MovementInput = 0.0f;
 		SteeringInput = 0.0f;
+		ExternalAcceleration = FVector::ZeroVector;
 	}
 
 	UPROPERTY()
@@ -33,12 +35,17 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 	UPROPERTY()
 	float SteeringInput;
 
+	/** Server-authored world-space acceleration replayed by Network Physics. */
+	UPROPERTY()
+	FVector ExternalAcceleration;
+
 	virtual void InterpolateData(const FNetworkPhysicsPayload& MinData, const FNetworkPhysicsPayload& MaxData, float LerpAlpha) override
 	{
 		const FNetInputShip& MinInput = static_cast<const FNetInputShip&>(MinData);
 		const FNetInputShip& MaxInput = static_cast<const FNetInputShip&>(MaxData);
 		MovementInput = FMath::Lerp(MinInput.MovementInput, MaxInput.MovementInput, LerpAlpha);
 		SteeringInput = FMath::Lerp(MinInput.SteeringInput, MaxInput.SteeringInput, LerpAlpha);
+		ExternalAcceleration = FMath::Lerp(MinInput.ExternalAcceleration, MaxInput.ExternalAcceleration, LerpAlpha);
 	}
 
 	virtual void MergeData(const FNetworkPhysicsPayload& FromData) override
@@ -46,6 +53,7 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		const FNetInputShip& FromInput = static_cast<const FNetInputShip&>(FromData);
 		MovementInput = FromInput.MovementInput;
 		SteeringInput = FromInput.SteeringInput;
+		ExternalAcceleration = FromInput.ExternalAcceleration;
 	}
 
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
@@ -87,6 +95,16 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 			int8 QuantizedSteer = FMath::Clamp(FMath::RoundToInt(SteeringInput * 127.f), -128, 127);
 			Ar << QuantizedMove;
 			Ar << QuantizedSteer;
+
+			uint8 bHasExternalAcceleration = ExternalAcceleration.IsNearlyZero(0.5f) ? 0 : 1;
+			Ar.SerializeBits(&bHasExternalAcceleration, 1);
+			if (bHasExternalAcceleration != 0)
+			{
+				int16 QuantizedX = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(ExternalAcceleration.X), -32767, 32767));
+				int16 QuantizedY = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(ExternalAcceleration.Y), -32767, 32767));
+				Ar << QuantizedX;
+				Ar << QuantizedY;
+			}
 		}
 		else
 		{
@@ -96,6 +114,21 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 			Ar << QuantizedSteer;
 			MovementInput = static_cast<float>(QuantizedMove) / 127.f;
 			SteeringInput = static_cast<float>(QuantizedSteer) / 127.f;
+
+			uint8 bHasExternalAcceleration = 0;
+			Ar.SerializeBits(&bHasExternalAcceleration, 1);
+			if (bHasExternalAcceleration != 0)
+			{
+				int16 QuantizedX = 0;
+				int16 QuantizedY = 0;
+				Ar << QuantizedX;
+				Ar << QuantizedY;
+				ExternalAcceleration = FVector(static_cast<float>(QuantizedX), static_cast<float>(QuantizedY), 0.0f);
+			}
+			else
+			{
+				ExternalAcceleration = FVector::ZeroVector;
+			}
 		}
 
 		bOutSuccess = !Ar.IsError();
@@ -370,6 +403,15 @@ public:
 	/** Sets normalized server-authored control input for AI-controlled ships. */
 	void SetAIControlInput(float MoveInput, float TurnInput);
 
+	/** Identifies hostile ships without making WaterAndShip depend on Enemy. */
+	virtual bool IsEnemyShipForEffects() const { return false; }
+
+	void SetExternalAccelerationSource(const FGuid& SourceId, const FVector& WorldAcceleration);
+	void RemoveExternalAccelerationSource(const FGuid& SourceId);
+	void AddPropulsionSuppression(const FGuid& SourceId);
+	void RemovePropulsionSuppression(const FGuid& SourceId);
+	bool IsPropulsionSuppressed() const { return PropulsionSuppressionSources.Num() > 0; }
+
 	/* Boarding Interaction */
 	void Board(APawn* PlayerPawn);
 
@@ -453,6 +495,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Movement")
 	float LateralDragCoefficient = 200.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Movement", meta = (ClampMin = "0.0", Units = "cm/s^2"))
+	float MaxExternalAcceleration = 5000.f;
 
 	// ---- Input Config ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Input")
@@ -595,6 +640,9 @@ private:
 
 	float CurrentMoveInput = 0.0f;
 	float CurrentTurnInput = 0.0f;
+	FVector CurrentExternalAcceleration = FVector::ZeroVector;
+	TMap<FGuid, FVector> ExternalAccelerationSources;
+	TSet<FGuid> PropulsionSuppressionSources;
 
 	bool bStaticDataInitialized = false;
 };

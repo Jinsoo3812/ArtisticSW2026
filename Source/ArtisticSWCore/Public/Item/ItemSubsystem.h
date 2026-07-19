@@ -5,6 +5,7 @@
 #include "GameplayTagContainer.h"
 #include "BaseItem.h"
 #include "ItemData.h"
+#include "Crafting/CraftingRecipeTypes.h"
 #include "ItemSubsystem.generated.h"
 
 class UItemData;
@@ -61,6 +62,20 @@ public:
 	// 재료 Map을 던져주면 해당하는 레시피를 찾아주는 헬퍼 함수
 	const FItemRecipeData* FindRecipe(const TMap<FGameplayTag, int32>& InputIngredients) const;
 
+	/** New crafting pipeline: look up a recipe by its stable Data Table row name. */
+	const FCraftingRecipeRow* FindCraftingRecipe(FName RecipeId) const;
+
+	/** New crafting pipeline: returns enabled recipes in deterministic UI order. */
+	void GetCraftingRecipeIds(TArray<FName>& OutRecipeIds, bool bIncludeDisabled = false) const;
+
+	/** Validates the new recipe cache without mutating any legacy item data. */
+	bool ValidateCraftingRecipes(TArray<FString>& OutErrors) const;
+
+#if WITH_DEV_AUTOMATION_TESTS
+	void AddCraftingRecipeForTesting(FName RecipeId, const FCraftingRecipeRow& Recipe);
+	void ClearCraftingRecipesForTesting();
+#endif
+
 private:
 	// ItemData 캐시
 	UPROPERTY()
@@ -71,6 +86,9 @@ private:
 
 	// 레시피 캐시 맵 (Key: 재료의 조합 해시값)C
 	TMap<uint32, FItemRecipeData> CachedRecipeData;
+
+	// New pipeline cache. Kept separate so the legacy hash recipe API is unchanged.
+	TMap<FName, FCraftingRecipeRow> CachedCraftingRecipes;
 
 	// 재료 TMap을 기반으로 순서에 상관없는 고유 Hash 값을 만들어내는 내부 함수
 	uint32 GenerateRecipeHash(const TMap<FGameplayTag, int32>& Ingredients) const;

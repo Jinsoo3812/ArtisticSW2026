@@ -20,6 +20,7 @@ struct FInputActionValue;
 class ABaseItem;
 class UInputTagConfig;
 class UInventoryComponent;
+class UCraftingComponent;
 class USWTrajectoryComponent;
 class UAnimMontage;
 class UBaseHealthComponent;
@@ -274,6 +275,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
 	TArray<TSubclassOf<UGameplayAbility>> DefaultGrantedAbilities;
 
+	/** Temporary Keyboard 3 test hook; disable when the final skill slot is wired. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex Test")
+	bool bEnableGravityVortexTestInput = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex Test")
+	TSubclassOf<UGameplayAbility> GravityVortexTestAbilityClass;
+
 	// GA와 그 GA가 어떤 키 입력(Tag)에 반응할지 함께 적용하는 함수.
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
 	void GrantAbilityToSlot(FGameplayTag SlotTag, TSubclassOf<UGameplayAbility> AbilityClass);
@@ -288,6 +296,8 @@ public:
 	// 즉발형 GA에 대해 SlotTag에 매핑된 GA를 실행하는 함수
 	void OnAbilityInputPressed(FGameplayTag InputTag);
 	void OnAbilityInputReleased(FGameplayTag InputTag);
+	void OnGravityVortexTestPressed();
+	void OnGravityVortexTestReleased();
 
 	// 마우스 입력에 대한 활용을 위해 따로 OnAbilityInput과 분리
 	void OnMouseInputPressed(FGameplayTag InputTag);
@@ -452,6 +462,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
 	TObjectPtr<UInventoryComponent> InventoryComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
+	TObjectPtr<UCraftingComponent> CraftingComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<ULocomotionAnimStateComponent> AnimStateComponent;
 
@@ -475,6 +488,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	UInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Crafting")
+	UCraftingComponent* GetCraftingComponent() const { return CraftingComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Animation")
 	ULocomotionAnimStateComponent* GetAnimStateComponent() const { return AnimStateComponent; }

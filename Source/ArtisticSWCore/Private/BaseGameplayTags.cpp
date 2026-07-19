@@ -24,6 +24,7 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_HitReaction, "GameplayAbility.HitReaction
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_TestHit, "GameplayAbility.TestHit");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Equip, "GameplayAbility.Equip");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Weapon_AimCycle, "GameplayAbility.Weapon.AimCycle");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_GravityVortex, "GameplayAbility.Skill.GravityVortex");
 // Event
 UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Changed, "Event.Ability.Changed");
 UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_Start, "Event.HandleScan.Start");
@@ -43,6 +44,7 @@ UE_DEFINE_GAMEPLAY_TAG(Key_Item, "Key.Item");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_1, "Key.Item.1");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_2, "Key.Item.2");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_3, "Key.Item.3");
+UE_DEFINE_GAMEPLAY_TAG(Key_Test_Skill_GravityVortex, "Key.Test.Skill.GravityVortex");
 
 // Crafter only
 UE_DEFINE_GAMEPLAY_TAG(Key_Crafter_R, "Key.Crafter.R");

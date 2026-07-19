@@ -539,6 +539,17 @@ void AShip::Tick(float DeltaTime)
 	if (ShipPhysicsAsync)
 	{
 		// 1. 조작 입력 데이터 마샬링 (Autonomous Proxy 및 Local Controller 전용)
+		CurrentExternalAcceleration = FVector::ZeroVector;
+		for (const TPair<FGuid, FVector>& SourcePair : ExternalAccelerationSources)
+		{
+			if (!SourcePair.Value.ContainsNaN())
+			{
+				CurrentExternalAcceleration += SourcePair.Value;
+			}
+		}
+		CurrentExternalAcceleration.Z = 0.0f;
+		CurrentExternalAcceleration = CurrentExternalAcceleration.GetClampedToMaxSize(FMath::Max(0.0f, MaxExternalAcceleration));
+
 		if (IsLocallyControlled())
 		{
 			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
@@ -664,6 +675,7 @@ void AShip::Tick(float DeltaTime)
 			// A. 비동기 인풋 버퍼(GetProducerInputData_External)가 유효하다면 인풋 히스토리에 적재
 			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
 			{
+				AsyncInput->ExternalAcceleration = CurrentExternalAcceleration;
 				AsyncInput->bQueryDiagnostics = bBuoyancyQueryDiagnostics;
 				AsyncInput->PontoonOffsets = TempPontoons;
 				AsyncInput->PontoonRadii = TempPontoonRadii;
@@ -837,8 +849,56 @@ void AShip::SetAIControlInput(float MoveInput, float TurnInput)
 		return;
 	}
 
+	if (IsPropulsionSuppressed())
+	{
+		CurrentMoveInput = 0.0f;
+		CurrentTurnInput = 0.0f;
+		return;
+	}
+
 	CurrentMoveInput = FMath::Clamp(MoveInput, -1.0f, 1.0f);
 	CurrentTurnInput = FMath::Clamp(TurnInput, -1.0f, 1.0f);
+}
+
+void AShip::SetExternalAccelerationSource(const FGuid& SourceId, const FVector& WorldAcceleration)
+{
+	if (!HasAuthority() || !SourceId.IsValid())
+	{
+		return;
+	}
+
+	FVector SafeAcceleration = WorldAcceleration.ContainsNaN() ? FVector::ZeroVector : WorldAcceleration;
+	SafeAcceleration.Z = 0.0f;
+	ExternalAccelerationSources.FindOrAdd(SourceId) =
+		SafeAcceleration.GetClampedToMaxSize(FMath::Max(0.0f, MaxExternalAcceleration));
+}
+
+void AShip::RemoveExternalAccelerationSource(const FGuid& SourceId)
+{
+	if (HasAuthority())
+	{
+		ExternalAccelerationSources.Remove(SourceId);
+	}
+}
+
+void AShip::AddPropulsionSuppression(const FGuid& SourceId)
+{
+	if (!HasAuthority() || !SourceId.IsValid())
+	{
+		return;
+	}
+
+	PropulsionSuppressionSources.Add(SourceId);
+	CurrentMoveInput = 0.0f;
+	CurrentTurnInput = 0.0f;
+}
+
+void AShip::RemovePropulsionSuppression(const FGuid& SourceId)
+{
+	if (HasAuthority())
+	{
+		PropulsionSuppressionSources.Remove(SourceId);
+	}
 }
 
 
