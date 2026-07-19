@@ -7,6 +7,7 @@
 #include "Engine/DataTable.h"
 #include "Physics/NetworkPhysicsComponent.h"
 #include "GerstnerWaterWaves.h"
+#include "Upgrade/ShipUpgradeTypes.h"
 #include "Ship.generated.h"
 
 class USWBuoyancyComponent;
@@ -341,8 +342,15 @@ struct FShipStatRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	float MaxHealth = 100.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	/** Legacy migration source. New runtime code does not consume this field directly. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats", meta = (DeprecatedProperty, DeprecationMessage = "Use ForwardPropulsionMultiplier and TurnTorqueMultiplier"))
 	float ShipSpeedMultiplier = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	float ForwardPropulsionMultiplier = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	float TurnTorqueMultiplier = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	float CannonDamage = 20.f;
@@ -378,6 +386,9 @@ public:
 	// IAbilitySystemInterface 구현
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
+	UFUNCTION(BlueprintPure, Category = "Ship|Stats")
+	UShipAttributeSet* GetShipAttributeSet() const { return AttributeSet; }
+
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
@@ -399,6 +410,18 @@ public:
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void UnPossessed() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	/** Returns the selected DT row, with legacy movement fields safely migrated in memory. */
+	UFUNCTION(BlueprintPure, Category = "Ship|Stats")
+	FShipStatSnapshot GetBaseStatSnapshot() const;
+
+	/** Applies an already calculated authoritative snapshot to this ship. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Stats")
+	void ApplyStatSnapshot(const FShipStatSnapshot& Snapshot, bool bRefillHealth = true);
+
+	/** Applies the assigned player's active upgrade nodes over this ship's base DT row. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Stats")
+	bool ApplyPlayerUpgrades(APlayerState* InPlayerState, bool bRefillHealth = true);
 
 	/** Sets normalized server-authored control input for AI-controlled ships. */
 	void SetAIControlInput(float MoveInput, float TurnInput);
@@ -577,6 +600,10 @@ protected:
 
 	UPROPERTY()
 	APlayerController* CachedPlayerController = nullptr;
+
+	/** Prevents repeated boarding by the same player from refilling upgraded health. */
+	UPROPERTY(Transient)
+	TObjectPtr<APlayerState> AppliedUpgradePlayerState;
 
 	// ---- Custom Replication State & Interp Configuration ----
 	UPROPERTY(Replicated)

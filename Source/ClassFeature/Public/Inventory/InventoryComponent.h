@@ -6,6 +6,7 @@
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
 #include "Crafting/CraftingRecipeTypes.h"
+#include "Upgrade/ShipUpgradeInventoryProvider.h"
 #include "InventoryComponent.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnInventoryChanged);
@@ -68,7 +69,7 @@ struct FInventoryCursorItem
 * 인벤토리 컴포넌트 (Material.~ 아이템을 주울 때, 인벤토리로 들어옴)
 */
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
-class CLASSFEATURE_API UInventoryComponent : public UActorComponent
+class CLASSFEATURE_API UInventoryComponent : public UActorComponent, public IShipUpgradeInventoryProvider
 {
 	GENERATED_BODY()
 
@@ -110,6 +111,11 @@ public:
 	/** Best-effort rollback path for a receiver that rejected after preflight. */
 	bool AddItemsAtomically(const TArray<FCraftingItemStack>& Items);
 
+	virtual int32 GetShipUpgradeItemCount(const FGameplayTag& ItemTag) const override { return GetItemCount(ItemTag); }
+	virtual bool RemoveShipUpgradeItemsAtomically(const TArray<FCraftingItemStack>& Costs) override { return RemoveItemsAtomically(Costs); }
+	virtual bool AddShipUpgradeItemsAtomically(const TArray<FCraftingItemStack>& Items) override { return AddItemsAtomically(Items); }
+	virtual FShipUpgradeInventoryChangedNative& GetShipUpgradeInventoryChangedDelegate() override { return ShipUpgradeInventoryChanged; }
+
 	// 하나의 특정 슬롯 Getter
 	const TArray<FInventorySlot>& GetSlots() const { return InventorySlots; }
 	// 커서에 달린 아이템 Getter
@@ -145,6 +151,7 @@ public:
 
 	// 인벤토리에 변경 사항이 있을 때 브로드캐스트 되는 델리게이트 ex. UI 업데이트 
 	FOnInventoryChanged OnInventoryChanged;
+	FShipUpgradeInventoryChangedNative ShipUpgradeInventoryChanged;
 
 protected:
 	// 인벤토리 세로 칸 수
@@ -173,4 +180,5 @@ protected:
 
 	/*----디버깅용---*/
 	void PrintInventoryToScreen() const;
+	void BroadcastShipUpgradeInventoryChanged();
 };

@@ -127,7 +127,7 @@ protected:
 
 	// ---- Server RPCs ----
 	UFUNCTION(Server, Reliable)
-	void ServerFire(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed);
+	void ServerFire();
 
 	void SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed);
 

@@ -280,7 +280,7 @@ bool ACannon::FireCannon()
 	}
 	else
 	{
-		ServerFire(MuzzleLocation, LaunchRotation, TargetDamage, TargetSpeed);
+		ServerFire();
 	}
 
 	return true;
@@ -341,9 +341,30 @@ void ACannon::ForceExit()
 	}
 }
 
-void ACannon::ServerFire_Implementation(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed)
+void ACannon::ServerFire_Implementation()
 {
-	SpawnCannonball(MuzzleLocation, LaunchRotation, Damage, Speed);
+	if (!bCanFire) return;
+
+	float AuthoritativeCooldown = FireCooldown;
+	float AuthoritativeDamage = 10.0f;
+	float AuthoritativeSpeed = FireVelocity;
+	if (AShip* Ship = GetOwningShip())
+	{
+		if (UAbilitySystemComponent* ShipASC = Ship->GetAbilitySystemComponent())
+		{
+			AuthoritativeCooldown = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonFireCooldownAttribute());
+			AuthoritativeDamage = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonDamageAttribute());
+			AuthoritativeSpeed = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute());
+		}
+	}
+
+	bCanFire = false;
+	GetWorldTimerManager().SetTimer(CooldownTimerHandle, this, &ACannon::ResetCooldown, FMath::Max(0.05f, AuthoritativeCooldown), false);
+	const FVector MuzzleLocation = BarrelMesh
+		? BarrelMesh->GetComponentLocation() + BarrelMesh->GetForwardVector() * 200.0f
+		: GetActorLocation();
+	const FRotator LaunchRotation = BarrelMesh ? BarrelMesh->GetComponentRotation() : GetActorRotation();
+	SpawnCannonball(MuzzleLocation, LaunchRotation, AuthoritativeDamage, AuthoritativeSpeed);
 }
 
 void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed)

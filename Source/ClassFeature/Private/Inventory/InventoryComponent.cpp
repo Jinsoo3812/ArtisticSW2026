@@ -98,6 +98,7 @@ UInventoryComponent::UInventoryComponent()
 void UInventoryComponent::BeginPlay()
 {
     Super::BeginPlay();
+	OnInventoryChanged.AddUObject(this, &UInventoryComponent::BroadcastShipUpgradeInventoryChanged);
     //서버에서만 인벤토리 array 크기 초기화
     if (GetOwner() && GetOwner()->HasAuthority())
     {
@@ -231,6 +232,11 @@ int32 UInventoryComponent::GetMaterialCount(const FGameplayTag& ItemTag) const
     }
 
     return TotalCount;
+}
+
+void UInventoryComponent::BroadcastShipUpgradeInventoryChanged()
+{
+	ShipUpgradeInventoryChanged.Broadcast();
 }
 
 int32 UInventoryComponent::AddItem(const FGameplayTag& ItemTag, int32 Amount)

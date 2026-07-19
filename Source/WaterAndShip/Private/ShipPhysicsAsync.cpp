@@ -303,7 +303,8 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 				CachedLateralDrag = AsyncInput->LateralDrag;
 				CachedForwardForce = AsyncInput->ForwardForceValue;
 				CachedTurnTorque = AsyncInput->TurnTorqueValue;
-				CachedSpeedMultiplier = AsyncInput->SpeedMultiplier;
+				CachedForwardPropulsionMultiplier = AsyncInput->ForwardPropulsionMultiplier;
+				CachedTurnTorqueMultiplier = AsyncInput->TurnTorqueMultiplier;
 				CachedBuoyancyRadius = AsyncInput->BuoyancyRadius;
 				CachedBuoyancyForceMultiplier = AsyncInput->BuoyancyForceMultiplier;
 				CachedWaterDamping = AsyncInput->WaterDamping;
@@ -545,14 +546,14 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 			Forward.Z = 0.0f;
 			Forward.Normalize();
 
-			AppliedControlForce = Forward * CachedForwardForce * MovementInput_Internal * CachedSpeedMultiplier;
+			AppliedControlForce = Forward * CachedForwardForce * MovementInput_Internal * CachedForwardPropulsionMultiplier;
 			ParticleHandle->AddForce(AppliedControlForce);
 		}
 
 		// 회전 토크
 		if (FMath::Abs(SteeringInput_Internal) > KINDA_SMALL_NUMBER)
 		{
-			AppliedControlTorque = FVector(0.f, 0.f, CachedTurnTorque * SteeringInput_Internal * CachedSpeedMultiplier);
+			AppliedControlTorque = FVector(0.f, 0.f, CachedTurnTorque * SteeringInput_Internal * CachedTurnTorqueMultiplier);
 			ParticleHandle->AddTorque(AppliedControlTorque);
 		}
 	}

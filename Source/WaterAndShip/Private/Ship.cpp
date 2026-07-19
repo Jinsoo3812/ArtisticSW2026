@@ -9,6 +9,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -36,6 +37,7 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "CollisionChannels.h"
+#include "Upgrade/ShipUpgradeComponent.h"
 
 namespace
 {
@@ -645,7 +647,8 @@ void AShip::Tick(float DeltaTime)
 			float LateralDrag = LateralDragCoefficient;
 			float ForwardForceValue = ForwardForce;
 			float TurnTorqueValue = TurnTorque;
-			float SpeedMult = AttributeSet ? AttributeSet->GetShipSpeedMultiplier() : 1.0f;
+			float ForwardPropulsionMultiplier = AttributeSet ? AttributeSet->GetForwardPropulsionMultiplier() : 1.0f;
+			float TurnTorqueMultiplier = AttributeSet ? AttributeSet->GetTurnTorqueMultiplier() : 1.0f;
 			float BuoyancyRadius = 150.f;
 			float BuoyancyForceMultiplier = 1.3f;
 			float WaterDamping = 3.0f;
@@ -686,7 +689,8 @@ void AShip::Tick(float DeltaTime)
 				AsyncInput->LateralDrag = LateralDrag;
 				AsyncInput->ForwardForceValue = ForwardForceValue;
 				AsyncInput->TurnTorqueValue = TurnTorqueValue;
-				AsyncInput->SpeedMultiplier = SpeedMult;
+				AsyncInput->ForwardPropulsionMultiplier = ForwardPropulsionMultiplier;
+				AsyncInput->TurnTorqueMultiplier = TurnTorqueMultiplier;
 				AsyncInput->BuoyancyRadius = BuoyancyRadius;
 				AsyncInput->BuoyancyForceMultiplier = BuoyancyForceMultiplier;
 				AsyncInput->WaterDamping = WaterDamping;
@@ -826,6 +830,16 @@ void AShip::PossessedBy(AController* NewController)
 	{
 		// 서버 측에서는 로컬 입력 릴레이를 해제 (RPC 수신 및 로컬 예측은 클라이언트 책임)
 		NetworkPhysicsComponent->SetIsRelayingLocalInputs(false);
+	}
+
+	if (const APlayerController* PlayerController = Cast<APlayerController>(NewController))
+	{
+		APlayerState* InPlayerState = PlayerController->PlayerState;
+		const bool bFirstApplicationForPlayer = AppliedUpgradePlayerState != InPlayerState;
+		if (ApplyPlayerUpgrades(InPlayerState, bFirstApplicationForPlayer))
+		{
+			AppliedUpgradePlayerState = InPlayerState;
+		}
 	}
 }
 
@@ -1282,7 +1296,11 @@ void AShip::InitializeDefaultAttributes()
 			AttributeSet->InitHealth(StatRow->MaxHealth);
 			AttributeSet->InitMaxHealth(StatRow->MaxHealth);
 			AttributeSet->InitMoveSpeed(1.0f); // 캐릭터 기본 MoveSpeed는 1.0f로 고정 유지
-			AttributeSet->InitShipSpeedMultiplier(StatRow->ShipSpeedMultiplier);
+			const bool bUseLegacyMovement = FMath::IsNearlyEqual(StatRow->ForwardPropulsionMultiplier, 1.0f)
+				&& FMath::IsNearlyEqual(StatRow->TurnTorqueMultiplier, 1.0f)
+				&& !FMath::IsNearlyEqual(StatRow->ShipSpeedMultiplier, 1.0f);
+			AttributeSet->InitForwardPropulsionMultiplier(bUseLegacyMovement ? StatRow->ShipSpeedMultiplier : StatRow->ForwardPropulsionMultiplier);
+			AttributeSet->InitTurnTorqueMultiplier(bUseLegacyMovement ? StatRow->ShipSpeedMultiplier : StatRow->TurnTorqueMultiplier);
 			AttributeSet->InitCannonDamage(StatRow->CannonDamage);
 			AttributeSet->InitCannonFireCooldown(StatRow->CannonFireCooldown);
 			AttributeSet->InitCannonballSpeed(StatRow->CannonballSpeed);
@@ -1304,10 +1322,65 @@ void AShip::InitializeDefaultAttributes()
 	AttributeSet->InitHealth(100.f);
 	AttributeSet->InitMaxHealth(100.f);
 	AttributeSet->InitMoveSpeed(1.f);
-	AttributeSet->InitShipSpeedMultiplier(1.f);
+	AttributeSet->InitForwardPropulsionMultiplier(1.f);
+	AttributeSet->InitTurnTorqueMultiplier(1.f);
 	AttributeSet->InitCannonDamage(20.f);
 	AttributeSet->InitCannonFireCooldown(2.f);
 	AttributeSet->InitCannonballSpeed(3000.f);
+}
+
+FShipStatSnapshot AShip::GetBaseStatSnapshot() const
+{
+	FShipStatSnapshot Snapshot;
+	if (!ShipStatTable || ShipStatRowName.IsNone()) return Snapshot;
+	static const FString ContextString(TEXT("Ship Stat Snapshot Context"));
+	const FShipStatRow* StatRow = ShipStatTable->FindRow<FShipStatRow>(ShipStatRowName, ContextString);
+	if (!StatRow) return Snapshot;
+
+	Snapshot.MaxHealth = StatRow->MaxHealth;
+	Snapshot.CannonDamage = StatRow->CannonDamage;
+	Snapshot.CannonFireCooldownSeconds = StatRow->CannonFireCooldown;
+	Snapshot.CannonballSpeed = StatRow->CannonballSpeed;
+	Snapshot.ForwardPropulsionMultiplier = StatRow->ForwardPropulsionMultiplier;
+	Snapshot.TurnTorqueMultiplier = StatRow->TurnTorqueMultiplier;
+	if (FMath::IsNearlyEqual(StatRow->ForwardPropulsionMultiplier, 1.0f)
+		&& FMath::IsNearlyEqual(StatRow->TurnTorqueMultiplier, 1.0f)
+		&& !FMath::IsNearlyEqual(StatRow->ShipSpeedMultiplier, 1.0f))
+	{
+		Snapshot.ForwardPropulsionMultiplier = StatRow->ShipSpeedMultiplier;
+		Snapshot.TurnTorqueMultiplier = StatRow->ShipSpeedMultiplier;
+	}
+	return Snapshot;
+}
+
+void AShip::ApplyStatSnapshot(const FShipStatSnapshot& Snapshot, bool bRefillHealth)
+{
+	if (!HasAuthority() || !AttributeSet) return;
+	AttributeSet->InitMaxHealth(FMath::Max(1.0f, Snapshot.MaxHealth));
+	if (bRefillHealth)
+	{
+		AttributeSet->InitHealth(AttributeSet->GetMaxHealth());
+	}
+	else
+	{
+		AttributeSet->SetHealth(FMath::Min(AttributeSet->GetHealth(), AttributeSet->GetMaxHealth()));
+	}
+	AttributeSet->InitMoveSpeed(1.0f);
+	AttributeSet->InitForwardPropulsionMultiplier(Snapshot.ForwardPropulsionMultiplier);
+	AttributeSet->InitTurnTorqueMultiplier(Snapshot.TurnTorqueMultiplier);
+	AttributeSet->InitCannonDamage(Snapshot.CannonDamage);
+	AttributeSet->InitCannonFireCooldown(Snapshot.CannonFireCooldownSeconds);
+	AttributeSet->InitCannonballSpeed(Snapshot.CannonballSpeed);
+}
+
+bool AShip::ApplyPlayerUpgrades(APlayerState* InPlayerState, bool bRefillHealth)
+{
+	if (!HasAuthority() || !InPlayerState) return false;
+	UShipUpgradeComponent* UpgradeComponent = InPlayerState->FindComponentByClass<UShipUpgradeComponent>();
+	if (!UpgradeComponent || !UpgradeComponent->UpgradeTree) return false;
+	UpgradeComponent->SetPreviewBaseStats(GetBaseStatSnapshot());
+	ApplyStatSnapshot(UpgradeComponent->GetCurrentShipStats(), bRefillHealth);
+	return true;
 }
 
 void AShip::HandlePortSeaBoarding(AActor* Interactor)
