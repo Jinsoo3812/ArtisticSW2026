@@ -55,7 +55,7 @@ protected:
 	TObjectPtr<UBowComponent> BowComponent;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow")
-	FName ArrowSocketName = FName("ArrowSocket");
+	FName ArrowSocketName = FName("Arrow");
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|IK")
 	FName StringRestSocketName = FName("String_Rest_Socket");
