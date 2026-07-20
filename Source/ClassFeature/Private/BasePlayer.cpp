@@ -180,8 +180,53 @@ void ABasePlayer::BeginPlay()
 		InventoryComponent->OnInventoryChanged.AddUObject(this, &ABasePlayer::HandleInventoryContentsChanged);
 	}
 
+#if WITH_EDITOR
+	GiveStartingItemForTest();
+#endif
+
 	OnItemSlotsChanged.Broadcast();
 	OnQuickSlotsChanged.Broadcast();
+}
+
+void ABasePlayer::GiveStartingItemForTest()
+{
+	if (!HasAuthority() || !bGiveStartingItemForTest || !InventoryComponent ||
+		!StartingItemTagForTest.IsValid() || StartingItemCountForTest <= 0)
+	{
+		return;
+	}
+
+	UItemSubsystem* ItemSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
+	if (!ItemSubsystem || !ItemSubsystem->GetItemDefinition(StartingItemTagForTest))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ABasePlayer::GiveStartingItemForTest : ItemTag %s is not registered in DA_ItemData."),
+			*StartingItemTagForTest.ToString());
+		return;
+	}
+
+	const int32 CurrentCount = InventoryComponent->GetMaterialCount(StartingItemTagForTest);
+	const int32 AmountToAdd = FMath::Max(0, StartingItemCountForTest - CurrentCount);
+	if (AmountToAdd <= 0)
+	{
+		return;
+	}
+
+	const int32 AddedCount = InventoryComponent->AddMaterial(StartingItemTagForTest, AmountToAdd);
+	if (AddedCount != AmountToAdd)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ABasePlayer::GiveStartingItemForTest : Requested %d of %s, but added %d. Check inventory capacity."),
+			AmountToAdd,
+			*StartingItemTagForTest.ToString(),
+			AddedCount);
+		return;
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("ABasePlayer::GiveStartingItemForTest : Added %s. Total=%d"),
+		*StartingItemTagForTest.ToString(),
+		StartingItemCountForTest);
 }
 
 void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
