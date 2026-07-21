@@ -56,6 +56,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Cannon")
 	bool FireCannon();
 
+	UFUNCTION(BlueprintPure, Category = "Cannon|Water Bomb")
+	bool IsWaterBombMode() const { return bWaterBombMode; }
+
 	/** Allows AI to set aim rotation directly on the server. */
 	void SetAIAimRotation(float NewPitch, float NewYaw);
 
@@ -80,6 +83,10 @@ protected:
 	// ---- Properties ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Projectile")
 	TSubclassOf<AActor> CannonballClass;
+
+	/** 비어 있으면 일반 포탄으로 fallback하지 않고 발사를 거부합니다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Water Bomb")
+	TSubclassOf<AActor> WaterBombCannonballClass;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Projectile")
 	float FireVelocity = 3000.0f;
@@ -113,6 +120,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
 	TObjectPtr<UInputAction> CannonExitAction;
 
+	/** 선택 사항. 비어 있으면 테스트용 숫자 4 직접 바인딩을 사용합니다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
+	TObjectPtr<UInputAction> CannonWaterBombToggleAction;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
 	int32 CannonInputPriority = 10;
 
@@ -121,6 +132,8 @@ protected:
 	void HandleLook(const FInputActionValue& Value);
 	void HandleFire(const FInputActionValue& Value);
 	void HandleExit(const FInputActionValue& Value);
+	void HandleWaterBombToggle(const FInputActionValue& Value);
+	void ToggleWaterBombMode();
 
 	// ---- Actions ----
 	void ExitAimMode();
@@ -128,6 +141,9 @@ protected:
 	// ---- Server RPCs ----
 	UFUNCTION(Server, Reliable)
 	void ServerFire();
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetWaterBombMode(bool bEnabled);
 
 	void SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed);
 
@@ -146,6 +162,12 @@ protected:
 	UFUNCTION()
 	void OnRep_RidingPlayer(APawn* OldPlayer);
 
+	UFUNCTION()
+	void OnRep_WaterBombMode();
+
+	void SetWaterBombModeAuthoritative(bool bEnabled);
+	bool IsOwningShipCannonDisabled() const;
+
 private:
 	// ---- Passenger Reference (Ship의 RidingPlayer와 동일 패턴) ----
 	UPROPERTY(ReplicatedUsing = OnRep_RidingPlayer)
@@ -153,6 +175,9 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_AimRotation)
 	FCannonAimRotation AimRotation;
+
+	UPROPERTY(ReplicatedUsing = OnRep_WaterBombMode)
+	bool bWaterBombMode = false;
 
 	bool bCanFire = true;
 	FTimerHandle CooldownTimerHandle;

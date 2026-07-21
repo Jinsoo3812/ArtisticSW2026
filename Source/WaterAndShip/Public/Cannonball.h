@@ -63,7 +63,8 @@ protected:
 	UFUNCTION()
 	void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 
-	void HandleShipHit(AShip* HitShip);
+	virtual void HandleShipHit(AShip* HitShip);
+	AShip* GetLaunchingShip() const { return LaunchingShip; }
 	void TriggerWaterRipple(const FVector& HitLocation);
 	void DeactivateProjectile();
 

@@ -17,6 +17,9 @@
 #include "ShipAttributeSet.h"
 #include "Kismet/GameplayStatics.h"
 #include "Cannonball.h"
+#include "WaterBombCannonball.h"
+#include "BaseGameplayTags.h"
+#include "InputCoreTypes.h"
 
 ACannon::ACannon()
 {
@@ -52,6 +55,7 @@ ACannon::ACannon()
 
 	bReplicates = true;
 	SetReplicateMovement(false); // We replicate rotations manually via AimRotation
+	WaterBombCannonballClass = AWaterBombCannonball::StaticClass();
 }
 
 void ACannon::BeginPlay()
@@ -110,6 +114,15 @@ void ACannon::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 		{
 			EnhancedInput->BindAction(CannonExitAction, ETriggerEvent::Started, this, &ACannon::HandleExit);
 		}
+		if (CannonWaterBombToggleAction)
+		{
+			EnhancedInput->BindAction(CannonWaterBombToggleAction, ETriggerEvent::Started, this, &ACannon::HandleWaterBombToggle);
+		}
+		else
+		{
+			// IA/IMC 에셋을 만들기 전에도 PIE에서 바로 검증할 수 있는 임시 4번 키 경로입니다.
+			PlayerInputComponent->BindKey(EKeys::Four, IE_Pressed, this, &ACannon::ToggleWaterBombMode);
+		}
 	}
 	else
 	{
@@ -119,6 +132,10 @@ void ACannon::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 
 void ACannon::UnPossessed()
 {
+	if (HasAuthority())
+	{
+		SetWaterBombModeAuthoritative(false);
+	}
 	Super::UnPossessed();
 }
 
@@ -154,6 +171,7 @@ void ACannon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
 
 	DOREPLIFETIME(ACannon, RidingPlayer);
 	DOREPLIFETIME_CONDITION(ACannon, AimRotation, COND_SkipOwner);
+	DOREPLIFETIME(ACannon, bWaterBombMode);
 }
 
 // Ship의 Board()와 완전히 동일한 패턴
@@ -243,9 +261,40 @@ void ACannon::HandleFire(const FInputActionValue& Value)
 	FireCannon();
 }
 
+void ACannon::HandleWaterBombToggle(const FInputActionValue& Value)
+{
+	ToggleWaterBombMode();
+}
+
+void ACannon::ToggleWaterBombMode()
+{
+	// 이 Pawn이 로컬 플레이어에게 빙의된 동안에만 입력 컴포넌트가 활성화됩니다.
+	if (!IsLocallyControlled() || !IsPlayerControlled())
+	{
+		return;
+	}
+
+	const bool bNewMode = !bWaterBombMode;
+	if (HasAuthority())
+	{
+		SetWaterBombModeAuthoritative(bNewMode);
+	}
+	else
+	{
+		bWaterBombMode = bNewMode;
+		UE_LOG(LogTemp, Warning, TEXT("[WaterBomb] Cannon mode (predicted): %s"), bWaterBombMode ? TEXT("WATER BOMB") : TEXT("NORMAL"));
+		ServerSetWaterBombMode(bNewMode);
+	}
+}
+
 bool ACannon::FireCannon()
 {
 	if (!bCanFire) return false;
+	if (IsOwningShipCannonDisabled())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[WaterBomb] Cannon fire blocked: owning ship is water-bomb disabled."));
+		return false;
+	}
 
 	AShip* MyShip = GetOwningShip();
 	// UE_LOG(LogTemp, Warning, TEXT("ACannon::FireCannon - Fire! Cannon: %s, Ship: %s"), *GetName(), MyShip ? *MyShip->GetName() : TEXT("None"));
@@ -344,6 +393,11 @@ void ACannon::ForceExit()
 void ACannon::ServerFire_Implementation()
 {
 	if (!bCanFire) return;
+	if (IsOwningShipCannonDisabled())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[WaterBomb] Server rejected cannon fire: owning ship is water-bomb disabled."));
+		return;
+	}
 
 	float AuthoritativeCooldown = FireCooldown;
 	float AuthoritativeDamage = 10.0f;
@@ -371,9 +425,13 @@ void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, f
 {
 	if (!HasAuthority()) return;
 
-	if (!CannonballClass)
+	const TSubclassOf<AActor> SelectedProjectileClass = bWaterBombMode
+		? WaterBombCannonballClass
+		: CannonballClass;
+	if (!SelectedProjectileClass)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ACannon::SpawnCannonball - CannonballClass is null. Please assign it in the editor."));
+		UE_LOG(LogTemp, Error, TEXT("ACannon::SpawnCannonball - %s projectile class is null."),
+			bWaterBombMode ? TEXT("Water bomb") : TEXT("Normal cannonball"));
 		return;
 	}
 
@@ -384,7 +442,7 @@ void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, f
 	SpawnParams.Instigator = RidingPlayer; // The player who controls the cannon (might be null for AI)
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	AActor* SpawnedProjectile = GetWorld()->SpawnActor<AActor>(CannonballClass, MuzzleLocation, LaunchRotation, SpawnParams);
+	AActor* SpawnedProjectile = GetWorld()->SpawnActor<AActor>(SelectedProjectileClass, MuzzleLocation, LaunchRotation, SpawnParams);
 	if (SpawnedProjectile)
 	{
 		if (ACannonball* Projectile = Cast<ACannonball>(SpawnedProjectile))
@@ -392,6 +450,35 @@ void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, f
 			Projectile->InitializeProjectile(OwningShip, Damage, Speed);
 		}
 	}
+}
+
+void ACannon::ServerSetWaterBombMode_Implementation(bool bEnabled)
+{
+	if (!RidingPlayer || !IsPlayerControlled())
+	{
+		return;
+	}
+
+	SetWaterBombModeAuthoritative(bEnabled);
+}
+
+void ACannon::SetWaterBombModeAuthoritative(bool bEnabled)
+{
+	if (!HasAuthority() || bWaterBombMode == bEnabled)
+	{
+		return;
+	}
+
+	bWaterBombMode = bEnabled;
+	ForceNetUpdate();
+	UE_LOG(LogTemp, Warning, TEXT("[WaterBomb] Cannon mode: %s"), bWaterBombMode ? TEXT("WATER BOMB") : TEXT("NORMAL"));
+}
+
+bool ACannon::IsOwningShipCannonDisabled() const
+{
+	const AShip* Ship = GetOwningShip();
+	const UAbilitySystemComponent* ShipASC = Ship ? Ship->GetAbilitySystemComponent() : nullptr;
+	return ShipASC && ShipASC->HasMatchingGameplayTag(State_Ship_CannonDisabled);
 }
 
 void ACannon::ServerUpdateAim_Implementation(float NewPitch, float NewYaw)
@@ -413,6 +500,11 @@ void ACannon::ResetCooldown()
 void ACannon::OnRep_AimRotation()
 {
 	// mesh rotation is handled in Tick
+}
+
+void ACannon::OnRep_WaterBombMode()
+{
+	UE_LOG(LogTemp, Warning, TEXT("[WaterBomb] Cannon mode replicated: %s"), bWaterBombMode ? TEXT("WATER BOMB") : TEXT("NORMAL"));
 }
 
 // Ship의 OnRep_RidingPlayer()와 동일 패턴

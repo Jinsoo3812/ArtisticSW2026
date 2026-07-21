@@ -23,6 +23,7 @@ public class WaterAndShip: ModuleRules
             "ArtisticSWCore",
             "GASCore",
             "EnhancedInput",
+			"InputCore",
             "UMG",
             "Water"
         });
