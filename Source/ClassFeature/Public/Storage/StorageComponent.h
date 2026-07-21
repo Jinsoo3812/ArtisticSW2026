@@ -68,7 +68,7 @@ protected:
 
 	// 열의 수
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_StorageContents, Category = "Storage", meta = (ClampMin = "1", UIMin = "1"))
-	int32 ColumnCount = 4;
+	int32 ColumnCount = 5;
 
 	// 초기에 storage slot에 들어있어야 하는 아이템
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storage")

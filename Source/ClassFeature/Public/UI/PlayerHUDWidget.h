@@ -11,10 +11,9 @@
  */
 class ABasePlayer;
 class UHorizontalBox;
-class UUniformGridPanel;
 class UBorder;
 class UQuickSlotEntryWidget;
-class UInventoryEntryWidget;
+class UInventoryPanelWidget;
 class UInventoryCursorWidget;
 class UCanvasPanel;
 class UInventoryCursorWidget;
@@ -22,6 +21,8 @@ class UHealthBarWidget;
 class UBaseHealthComponent;
 class UBowCrosshairWidget;
 class UBowComponent;
+class AStorageChest;
+class UStorageWindowWidget;
 
 UCLASS()
 class CLASSFEATURE_API UPlayerHUDWidget : public UUserWidget
@@ -37,6 +38,12 @@ public:
 	void SetInventoryVisible(bool bVisible);
 	bool IsInventoryVisible() const;
 
+	UStorageWindowWidget* ShowStorageWindow(
+		AStorageChest* StorageChest,
+		ABasePlayer* Player,
+		TSubclassOf<UStorageWindowWidget> StorageWindowClass);
+	void HideStorageWindow();
+
 protected:
 	virtual int32 NativePaint(
 		const FPaintArgs& Args,
@@ -47,20 +54,28 @@ protected:
 		const FWidgetStyle& InWidgetStyle,
 		bool bParentEnabled) const override;
 
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UHorizontalBox> QuickSlotBox;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UQuickSlotEntryWidget> WeaponQuickSlot1;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UQuickSlotEntryWidget> WeaponQuickSlot2;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UQuickSlotEntryWidget> ConsumableQuickSlot3;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UQuickSlotEntryWidget> ConsumableQuickSlot4;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UQuickSlotEntryWidget> ConsumableQuickSlot5;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UBorder> InventoryPanel;
 
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UUniformGridPanel> InventoryGridPanel;;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UInventoryPanelWidget> InventoryPanelWidget;
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UQuickSlotEntryWidget> QuickSlotEntryClass;
-
-	UPROPERTY(EditDefaultsOnly, Category = "UI")
-	TSubclassOf<UInventoryEntryWidget> InventoryEntryClass;
 
 	TWeakObjectPtr<ABasePlayer> CachedPlayer;
 
@@ -69,6 +84,17 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCanvasPanel> RootCanvasPanel;
+
+	// When this widget is placed in the HUD designer with this exact name,
+	// its Canvas Slot controls the chest window position.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UStorageWindowWidget> StorageWindowWidget;
+
+	// Fallback placement used only when the HUD blueprint has no designer-placed storage window.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Storage")
+	FVector2D RuntimeStorageWindowTopRightMargin = FVector2D(60.0f, 140.0f);
+
+	bool bRuntimeStorageWindow = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")
 	TSubclassOf<UInventoryCursorWidget> InventoryCursorWidgetClass;
@@ -120,7 +146,6 @@ protected:
 	float GetCrosshairResponsiveScale(const FVector2D& LocalSize) const;
 
 	void RefreshQuickSlots();
-	void RefreshInventory();
 
 	void HandleInventoryChanged();
 	void HandleItemSlotsChanged();

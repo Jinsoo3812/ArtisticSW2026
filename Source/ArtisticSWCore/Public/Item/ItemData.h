@@ -69,7 +69,7 @@ struct FItemDefinition
 	TArray<FGameplayTag> CanUseClassList;
 
 	// 사용을 위한 키 입력 (Editor에서 할당, 예: Key.Default.Mouse.LeftClick)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item", meta = (Categories = "Key"))
 	FGameplayTag UseKeyTag;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Classification", meta = (Categories = "Item.Rarity"))

@@ -212,6 +212,18 @@ FGameplayTag UItemSubsystem::GetUseKeyTag(const FGameplayTag& ItemTag) const
 	return FGameplayTag::EmptyTag;
 }
 
+FGameplayTag UItemSubsystem::GetRarityTag(const FGameplayTag& ItemTag) const
+{
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->RarityTag;
+	return FGameplayTag::EmptyTag;
+}
+
+FGameplayTag UItemSubsystem::GetCategoryTag(const FGameplayTag& ItemTag) const
+{
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->CategoryTag;
+	return FGameplayTag::EmptyTag;
+}
+
 FText UItemSubsystem::GetItemName(const FGameplayTag& ItemTag) const
 {
 	if (const FItemFeatureData* Feature = GetItemFeature(ItemTag)) return Feature->ItemName;

@@ -45,6 +45,8 @@ UE_DEFINE_GAMEPLAY_TAG(Key_Item_1, "Key.Item.1");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_2, "Key.Item.2");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_3, "Key.Item.3");
 UE_DEFINE_GAMEPLAY_TAG(Key_Test_Skill_GravityVortex, "Key.Test.Skill.GravityVortex");
+UE_DEFINE_GAMEPLAY_TAG(Key_Item_4, "Key.Item.4");
+UE_DEFINE_GAMEPLAY_TAG(Key_Item_5, "Key.Item.5");
 
 // Crafter only
 UE_DEFINE_GAMEPLAY_TAG(Key_Crafter_R, "Key.Crafter.R");
@@ -199,6 +201,7 @@ UE_DEFINE_GAMEPLAY_TAG(Key_Default_Space, "Key.Default.Space");
 /* UI Input */
 // Ex. I >> Inventory, M >> Map, E >> Equipment
 UE_DEFINE_GAMEPLAY_TAG(Key_UI_I, "Key.UI.I");
+UE_DEFINE_GAMEPLAY_TAG(Key_UI_Tab, "Key.UI.Tab");
 
 /* Ability */
 UE_DEFINE_GAMEPLAY_TAG(Ability_Item_Equipped, "Ability.Item.Equipped");
