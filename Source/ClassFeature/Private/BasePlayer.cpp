@@ -42,6 +42,7 @@
 #include "Cannon.h"
 #include "SwimmingComponent.h"
 #include "Attacker/GA_GravityVortexThrow.h"
+#include "Attacker/GA_WaterBombCannonMode.h"
 #include "HAL/FileManager.h"
 #include "Misc/DateTime.h"
 #include "Misc/FileHelper.h"
@@ -107,6 +108,7 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	SwimmingComponent = CreateDefaultSubobject<USwimmingComponent>(TEXT("SwimmingComponent"));
 	EquipmentComponent = CreateDefaultSubobject<UPlayerEquipmentComponent>(TEXT("EquipmentComponent"));
 	GravityVortexTestAbilityClass = UGA_GravityVortexThrow::StaticClass();
+	WaterBombAbilityClass = UGA_WaterBombCannonMode::StaticClass();
 
 	// 항상 등만 보이도록 설정 (Orient to Controller - 부드러운 회전으로 제자리 회전 유도)
 	bUseControllerRotationYaw = false;
@@ -381,6 +383,10 @@ void ABasePlayer::PossessedBy(AController* NewController)
 				if (bEnableGravityVortexTestInput && GravityVortexTestAbilityClass)
 				{
 					GrantAbilityToSlot(Key_Test_Skill_GravityVortex, GravityVortexTestAbilityClass);
+				}
+				if (bGrantWaterBombAbility && WaterBombAbilityClass)
+				{
+					GrantDefaultAbility(WaterBombAbilityClass);
 				}
 			}
 		else

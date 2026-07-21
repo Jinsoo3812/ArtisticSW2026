@@ -147,6 +147,12 @@ void ACannonball::OnHit(
 
 	if (AShip* HitShip = Cast<AShip>(OtherActor))
 	{
+		if (bHasProcessedShipHit)
+		{
+			return;
+		}
+
+		bHasProcessedShipHit = true;
 		HandleShipHit(HitShip);
 	}
 }

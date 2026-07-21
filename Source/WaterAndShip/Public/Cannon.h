@@ -14,6 +14,8 @@ class UInputMappingContext;
 class UInputAction;
 class APlayerController;
 class UUserWidget;
+class UGameplayAbility;
+class AWaterBombCannonball;
 
 USTRUCT(BlueprintType)
 struct FCannonAimRotation
@@ -58,6 +60,14 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Cannon|Water Bomb")
 	bool IsWaterBombMode() const { return bWaterBombMode; }
+	APawn* GetRidingPlayer() const { return RidingPlayer; }
+
+	bool ActivateWaterBombModeFromAbility(
+		UGameplayAbility* Ability,
+		TSubclassOf<AWaterBombCannonball> ProjectileClass,
+		float EffectDurationSeconds,
+		float AttackSpeedMultiplier);
+	void DeactivateWaterBombModeFromAbility(UGameplayAbility* Ability);
 
 	/** Allows AI to set aim rotation directly on the server. */
 	void SetAIAimRotation(float NewPitch, float NewYaw);
@@ -85,9 +95,6 @@ protected:
 	TSubclassOf<AActor> CannonballClass;
 
 	/** 비어 있으면 일반 포탄으로 fallback하지 않고 발사를 거부합니다. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Water Bomb")
-	TSubclassOf<AActor> WaterBombCannonballClass;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Projectile")
 	float FireVelocity = 3000.0f;
 
@@ -133,7 +140,7 @@ protected:
 	void HandleFire(const FInputActionValue& Value);
 	void HandleExit(const FInputActionValue& Value);
 	void HandleWaterBombToggle(const FInputActionValue& Value);
-	void ToggleWaterBombMode();
+	void ToggleWaterBombAbility();
 
 	// ---- Actions ----
 	void ExitAimMode();
@@ -143,7 +150,7 @@ protected:
 	void ServerFire();
 
 	UFUNCTION(Server, Reliable)
-	void ServerSetWaterBombMode(bool bEnabled);
+	void ServerToggleWaterBombAbility();
 
 	void SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed);
 
@@ -166,6 +173,9 @@ protected:
 	void OnRep_WaterBombMode();
 
 	void SetWaterBombModeAuthoritative(bool bEnabled);
+	void ToggleWaterBombAbilityAuthoritative();
+	void CancelWaterBombAbilityAuthoritative();
+	class UAbilitySystemComponent* GetRidingPlayerAbilitySystem() const;
 	bool IsOwningShipCannonDisabled() const;
 
 private:
@@ -179,7 +189,14 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_WaterBombMode)
 	bool bWaterBombMode = false;
 
+	TWeakObjectPtr<UGameplayAbility> ActiveWaterBombAbility;
+	TSubclassOf<AWaterBombCannonball> ActiveWaterBombProjectileClass;
+	float ActiveWaterBombEffectDurationSeconds = 5.0f;
+	float ActiveWaterBombAttackSpeedMultiplier = 0.5f;
+
 	bool bCanFire = true;
+	/** AI가 매 Tick 발사를 재시도해도 물폭탄 봉쇄 로그는 효과당 한 번만 출력합니다. */
+	bool bLoggedWaterBombFireBlock = false;
 	FTimerHandle CooldownTimerHandle;
 
 	UPROPERTY()

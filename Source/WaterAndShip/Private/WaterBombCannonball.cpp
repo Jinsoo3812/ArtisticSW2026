@@ -16,6 +16,17 @@ AWaterBombCannonball::AWaterBombCannonball()
 	CannonDisableEffectClass = UWaterBombCannonDisableGameplayEffect::StaticClass();
 }
 
+void AWaterBombCannonball::ConfigureFromAbility(float InEffectDurationSeconds, float InAttackSpeedMultiplier)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	EffectDurationSeconds = FMath::Max(0.1f, InEffectDurationSeconds);
+	AttackSpeedMultiplier = FMath::Clamp(InAttackSpeedMultiplier, 0.1f, 1.0f);
+}
+
 void AWaterBombCannonball::HandleShipHit(AShip* HitShip)
 {
 	AShip* SourceShip = GetLaunchingShip();

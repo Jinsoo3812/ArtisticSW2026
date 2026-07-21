@@ -1,6 +1,6 @@
 # 물폭탄 대포 스킬 구현 계획
 
-> 구현 기록(2026-07-21): 계획의 Attribute 기반 정식 경로를 구현했다. 실제 구현에서는 모듈 순환 의존성을 피하기 위해 `AttackSpeedMultiplier`를 `UEnemyAttributeSet`가 상속하는 `UBaseAttributeSet`에 배치했다. 지속시간과 배율은 `AWaterBombCannonball` Class Defaults가 GE Spec에 주입한다. 세부 에디터 설정과 테스트 절차는 같은 폴더의 `Water_Bomb_Editor_Setup_and_PIE_Test_Guide.md`를 따른다.
+> 구현 기록(2026-07-21): 계획의 Attribute 기반 정식 경로를 구현했다. 실제 구현에서는 모듈 순환 의존성을 피하기 위해 `AttackSpeedMultiplier`를 `UEnemyAttributeSet`가 상속하는 `UBaseAttributeSet`에 배치했다. 이후 해류 발생기와 같은 GA 기반 구조로 전환하여 `UGA_WaterBombCannonMode`가 Projectile Class, 지속시간, 감속 배율을 소유하고 발사 시 Projectile 인스턴스에 전달한다. 세부 에디터 설정과 테스트 절차는 같은 폴더의 `Water_Bomb_Editor_Setup_and_PIE_Test_Guide.md`를 따른다.
 
 ## 1. 문서 목적
 

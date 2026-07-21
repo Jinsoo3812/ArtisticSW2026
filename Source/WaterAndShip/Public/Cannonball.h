@@ -74,5 +74,6 @@ private:
 	TObjectPtr<AShip> LaunchingShip = nullptr;
 
 	bool bHasHitWater = false;
+	bool bHasProcessedShipHit = false;
 	FTimerHandle WaterHitTimerHandle;
 };

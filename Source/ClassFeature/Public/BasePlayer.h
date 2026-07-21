@@ -308,6 +308,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex Test")
 	TSubclassOf<UGameplayAbility> GravityVortexTestAbilityClass;
 
+	/** Granted without a player input slot; a ridden cannon activates/cancels it through its ability tag. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Water Bomb")
+	bool bGrantWaterBombAbility = true;
+
+	/** Set this to a GA_WaterBombCannonMode Blueprint to tune projectile, duration, and slow multiplier. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Water Bomb")
+	TSubclassOf<UGameplayAbility> WaterBombAbilityClass;
+
 	// GA와 그 GA가 어떤 키 입력(Tag)에 반응할지 함께 적용하는 함수.
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
 	void GrantAbilityToSlot(FGameplayTag SlotTag, TSubclassOf<UGameplayAbility> AbilityClass);

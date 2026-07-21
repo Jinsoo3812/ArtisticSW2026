@@ -28,6 +28,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Water Bomb")
 	float GetAttackSpeedMultiplier() const { return AttackSpeedMultiplier; }
 
+	void ConfigureFromAbility(float InEffectDurationSeconds, float InAttackSpeedMultiplier);
+
 protected:
 	virtual void HandleShipHit(AShip* HitShip) override;
 
