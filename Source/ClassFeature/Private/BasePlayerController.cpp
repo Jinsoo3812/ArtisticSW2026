@@ -9,6 +9,7 @@
 #include "Engine/LocalPlayer.h"
 #include "InputMappingContext.h"
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "TimerManager.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 #include "BaseGameplayTags.h"
@@ -18,6 +19,7 @@
 #include "Storage/StorageChest.h"
 #include "Storage/StorageComponent.h"
 #include "UI/StorageWindowWidget.h"
+#include "UI/StatusWindowWidget.h"
 #include "WaterSubsystem.h"
 #include "GameFramework/GameStateBase.h"
 
@@ -51,6 +53,17 @@ void ABasePlayerController::BeginPlay()
 			BindHUDToCurrentPlayer();
 		}
 	}
+
+	if (IsLocalController() && StatusWindowWidgetClass)
+	{
+		StatusWindowWidget = CreateWidget<UStatusWindowWidget>(this, StatusWindowWidgetClass);
+		if (StatusWindowWidget)
+		{
+			StatusWindowWidget->AddToViewport(10);
+			StatusWindowWidget->SetStatusVisible(false);
+			BindHUDToCurrentPlayer();
+		}
+	}
 }
 
 void ABasePlayerController::SetupInputComponent()
@@ -70,6 +83,8 @@ void ABasePlayerController::SetupInputComponent()
 			}
 		}
 	}
+
+	InputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &ABasePlayerController::ToggleStatus);
 }
 
 void ABasePlayerController::OnUIInputPressed(FGameplayTag InputTag)
@@ -101,20 +116,32 @@ void ABasePlayerController::OnRep_Pawn()
 void ABasePlayerController::BindHUDToCurrentPlayer()
 {
 	// [클라/로컬] HUD 위젯은 로컬 플레이어에게만
-	if (!IsLocalController() || !PlayerHUDWidget)
+	if (!IsLocalController())
 	{
 		return;
 	}
 
 	if (ABasePlayer* BasePlayer = Cast<ABasePlayer>(GetPawn()))
 	{
-		PlayerHUDWidget->InitializeForPlayer(BasePlayer);
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->InitializeForPlayer(BasePlayer);
+		}
+		if (StatusWindowWidget)
+		{
+			StatusWindowWidget->InitializeForPlayer(BasePlayer);
+		}
 	}
 }
 
 void ABasePlayerController::ToggleInventory()
 {
 	if (!IsLocalController() || !PlayerHUDWidget)
+	{
+		return;
+	}
+
+	if (StatusWindowWidget && StatusWindowWidget->IsStatusVisible())
 	{
 		return;
 	}
@@ -132,6 +159,48 @@ void ABasePlayerController::ToggleInventory()
 	const bool bOpen = !PlayerHUDWidget->IsInventoryVisible();
 	PlayerHUDWidget->SetInventoryVisible(bOpen);
 	ApplyInventoryInputMode(bOpen);
+}
+
+void ABasePlayerController::ToggleStatus()
+{
+	if (!IsLocalController() || !StatusWindowWidget)
+	{
+		return;
+	}
+
+	if (StatusWindowWidget->IsStatusVisible())
+	{
+		StatusWindowWidget->SetStatusVisible(false);
+		SetStatusCharacterInputLocked(false);
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeStatus);
+		}
+		ApplyInventoryInputMode(false);
+		return;
+	}
+
+	// A storage window owns the inventory interaction while it is open.
+	if (IsStorageOpen())
+	{
+		return;
+	}
+
+	// A standalone inventory yields to the full status window.
+	if (PlayerHUDWidget && PlayerHUDWidget->IsInventoryVisible())
+	{
+		PlayerHUDWidget->SetInventoryVisible(false);
+	}
+
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDVisibilityBeforeStatus = PlayerHUDWidget->GetVisibility();
+		PlayerHUDWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	StatusWindowWidget->SetStatusVisible(true);
+	ApplyInventoryInputMode(true);
+	SetStatusCharacterInputLocked(true);
 }
 
 void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
@@ -334,7 +403,7 @@ void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 	// 열려 있던 창 제거
 	if (StorageWindowWidget)
 	{
-		StorageWindowWidget->RemoveFromParent();
+		PlayerHUDWidget->HideStorageWindow();
 		StorageWindowWidget = nullptr;
 	}
 
@@ -343,22 +412,14 @@ void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 	PlayerHUDWidget->SetInventoryVisible(true);
 	ApplyInventoryInputMode(true);
 
-	TSubclassOf<UStorageWindowWidget> WidgetClass = StorageWindowWidgetClass;
-	if (!WidgetClass)
-	{
-		WidgetClass = UStorageWindowWidget::StaticClass();
-	}
-
-	StorageWindowWidget = CreateWidget<UStorageWindowWidget>(this, WidgetClass);
+	StorageWindowWidget = PlayerHUDWidget->ShowStorageWindow(
+		StorageChest,
+		Cast<ABasePlayer>(GetPawn()),
+		StorageWindowWidgetClass);
 	if (!StorageWindowWidget)
 	{
 		return;
 	}
-
-	StorageWindowWidget->InitializeStorage(StorageChest, Cast<ABasePlayer>(GetPawn()));
-	StorageWindowWidget->AddToViewport(20);
-	StorageWindowWidget->SetAlignmentInViewport(FVector2D(0.0f, 0.0f));
-	StorageWindowWidget->SetPositionInViewport(FVector2D(60.0f, 140.0f), false);
 }
 
 void ABasePlayerController::CloseStorage(bool bNotifyServer)
@@ -367,7 +428,10 @@ void ABasePlayerController::CloseStorage(bool bNotifyServer)
 
 	if (StorageWindowWidget)
 	{
-		StorageWindowWidget->RemoveFromParent();
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->HideStorageWindow();
+		}
 		StorageWindowWidget = nullptr;
 	}
 
@@ -556,18 +620,66 @@ void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 		SetInputMode(InputMode);
 
 		// 캐릭터나 카메라 회전 막기 true
-		SetIgnoreLookInput(true);
+		if (!bInventoryInputModeApplied)
+		{
+			SetIgnoreLookInput(true);
+			bInventoryInputModeApplied = true;
+		}
 		// 이동 입력 가능하게 설정
-		SetIgnoreMoveInput(false);
 	}
 	else
 	{
 		FInputModeGameOnly InputMode;
+		// Closing a UI must not consume the first mouse-down just to recapture the viewport.
+		// Forward that click to gameplay as well (attack/interact inputs use mouse buttons).
+		InputMode.SetConsumeCaptureMouseDown(false);
 		SetInputMode(InputMode);
+		UWidgetBlueprintLibrary::SetFocusToGameViewport();
+		FlushPressedKeys();
 
-		SetIgnoreLookInput(false);
-		SetIgnoreMoveInput(false);
+		if (bInventoryInputModeApplied)
+		{
+			SetIgnoreLookInput(false);
+			bInventoryInputModeApplied = false;
+		}
 	}
+}
+
+void ABasePlayerController::SetStatusCharacterInputLocked(bool bLocked)
+{
+	if (bLocked)
+	{
+		if (bStatusCharacterInputLocked)
+		{
+			return;
+		}
+
+		APawn* ControlledPawn = GetPawn();
+		if (!ControlledPawn)
+		{
+			return;
+		}
+
+		StatusInputLockedPawn = ControlledPawn;
+		bWasStatusPawnInputEnabled = ControlledPawn->InputEnabled();
+		ControlledPawn->DisableInput(this);
+		SetIgnoreMoveInput(true);
+		bStatusCharacterInputLocked = true;
+		return;
+	}
+
+	if (!bStatusCharacterInputLocked)
+	{
+		return;
+	}
+
+	if (StatusInputLockedPawn.IsValid() && bWasStatusPawnInputEnabled)
+	{
+		StatusInputLockedPawn->EnableInput(this);
+	}
+	SetIgnoreMoveInput(false);
+	StatusInputLockedPawn.Reset();
+	bStatusCharacterInputLocked = false;
 }
 
 void ABasePlayerController::Tick(float DeltaTime)

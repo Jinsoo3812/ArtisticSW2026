@@ -13,6 +13,15 @@ class UItemData;
 class UStorageComponent;
 class UTexture2D;
 
+UENUM(BlueprintType)
+enum class EInventoryTab : uint8
+{
+	Clue UMETA(DisplayName = "Clue"),
+	Consumable UMETA(DisplayName = "Consumable"),
+	Material UMETA(DisplayName = "Material"),
+	Weapon UMETA(DisplayName = "Weapon")
+};
+
 USTRUCT(BlueprintType)
 struct FInventorySlot
 {
@@ -50,6 +59,9 @@ struct FInventoryCursorItem
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
 	int32 OriginalSlotIndex = INDEX_NONE;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	EInventoryTab OriginalTab = EInventoryTab::Material;
+
 	bool IsValid() const
 	{
 		return ItemTag.IsValid() && Count > 0 && OriginalSlotIndex != INDEX_NONE;
@@ -60,7 +72,32 @@ struct FInventoryCursorItem
 		ItemTag = FGameplayTag();
 		Count = 0;
 		OriginalSlotIndex = INDEX_NONE;
+		OriginalTab = EInventoryTab::Material;
 	}
+};
+
+USTRUCT(BlueprintType)
+struct FInventoryTabConfig
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")
+	EInventoryTab Tab = EInventoryTab::Material;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "0"))
+	int32 SlotCount = 25;
+};
+
+USTRUCT(BlueprintType)
+struct FInventoryTabPage
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	EInventoryTab Tab = EInventoryTab::Material;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	TArray<FInventorySlot> Slots;
 };
 
 /*
@@ -88,16 +125,20 @@ public:
 	int32 GetMaterialCount(const FGameplayTag& ItemTag) const;
 
 	// 하나의 특정 슬롯 Getter
-	const TArray<FInventorySlot>& GetSlots() const { return InventorySlots; }
+	const TArray<FInventorySlot>& GetSlots() const { return GetSlots(ActiveTab); }
+	const TArray<FInventorySlot>& GetSlots(EInventoryTab Tab) const;
 	// 커서에 달린 아이템 Getter
 	const FInventoryCursorItem& GetCursorItem() const { return CursorItem; }
 
 	//인벤토리 Row Getter
-	int32 GetInventoryRows() const { return InventoryRows; }
+	int32 GetInventoryRows() const { return GetInventoryRows(ActiveTab); }
+	int32 GetInventoryRows(EInventoryTab Tab) const;
 	//인벤토리 Col Getter
 	int32 GetInventoryColumns() const { return InventoryColumns; }
 	//인벤토리 총 슬롯 개수 Getter
-	int32 GetSlotCount() const { return InventoryRows * InventoryColumns; }
+	int32 GetSlotCount() const { return GetSlotCount(ActiveTab); }
+	int32 GetSlotCount(EInventoryTab Tab) const;
+	EInventoryTab GetActiveTab() const { return ActiveTab; }
 
 	// 인벤토리 내 아이템 MaxStack Getter
 	int32 GetMaxStack(const FGameplayTag& ItemTag) const;
@@ -105,9 +146,15 @@ public:
 	UTexture2D* GetMaterialIcon(const FGameplayTag& ItemTag) const;
 	// 인벤토리 내 아이템 이름 Getter
 	FText GetMaterialName(const FGameplayTag& ItemTag) const;
+	FText GetItemDescription(const FGameplayTag& ItemTag) const;
+	FGameplayTag GetItemRarityTag(const FGameplayTag& ItemTag) const;
+	FText GetItemRarityName(const FGameplayTag& ItemTag) const;
+	EInventoryTab GetInventoryTabForItem(const FGameplayTag& ItemTag) const;
 
+	void SetActiveTab(EInventoryTab NewTab);
 	// 인벤토리 좌클릭 
 	void HandleLeftClickSlot(int32 SlotIndex);
+	void HandleLeftClickSlotInTab(EInventoryTab Tab, int32 SlotIndex);
 	// 인벤토리 우클릭 
 	void HandleRightClickInventory();
 	// 커서 아이템 원래 위치로 복귀
@@ -118,18 +165,27 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerHandleLeftClickSlot(int32 SlotIndex);
 	UFUNCTION(Server, Reliable)
+	void ServerHandleLeftClickSlotInTab(EInventoryTab Tab, int32 SlotIndex);
+	UFUNCTION(Server, Reliable)
 	void ServerHandleRightClickInventory();
 
 	// 인벤토리에 변경 사항이 있을 때 브로드캐스트 되는 델리게이트 ex. UI 업데이트 
 	FOnInventoryChanged OnInventoryChanged;
 
 protected:
-	// 인벤토리 세로 칸 수
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")
-	int32 InventoryRows = 5;
 	// 인벤토리 가로 칸 수
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")
-	int32 InventoryColumns = 6;
+	int32 InventoryColumns = 5;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")
+	TArray<FInventoryTabConfig> InventoryTabConfigs;
+
+	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_InventoryContents, Category = "Inventory")
+	TArray<FInventoryTabPage> InventoryPages;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	EInventoryTab ActiveTab = EInventoryTab::Material;
+
 	// 인벤토리 슬롯 배열
 	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_InventoryContents, Category = "Inventory")
 	TArray<FInventorySlot> InventorySlots;
@@ -150,4 +206,9 @@ protected:
 
 	/*----디버깅용---*/
 	void PrintInventoryToScreen() const;
+
+	void InitializeInventoryPages();
+	FInventoryTabPage* FindMutablePage(EInventoryTab Tab);
+	const FInventoryTabPage* FindPage(EInventoryTab Tab) const;
+	bool CanSlotAcceptItem(EInventoryTab Tab, const FGameplayTag& ItemTag) const;
 };

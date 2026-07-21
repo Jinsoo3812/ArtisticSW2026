@@ -3,16 +3,16 @@
 
 #include "UI/PlayerHUDWidget.h"
 #include "UI/QuickSlotEntryWidget.h"
-#include "UI/InventoryEntryWidget.h"
+#include "UI/InventoryPanelWidget.h"
 #include "BasePlayer.h"
 #include "Inventory/InventoryComponent.h"
 #include "Components/HorizontalBox.h"
-#include "Components/UniformGridPanel.h"
-#include "Components/UniformGridSlot.h"
 #include "Components/Border.h"
 #include "UI/InventoryCursorWidget.h"
 #include "UI/HealthBarWidget.h"
 #include "UI/BowCrosshairWidget.h"
+#include "UI/StorageWindowWidget.h"
+#include "Storage/StorageChest.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
@@ -84,20 +84,20 @@ void UPlayerHUDWidget::NativeConstruct()
 		InventoryPanel->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
-	if (RootCanvasPanel && InventoryCursorWidgetClass && !InventoryCursorWidget)
+	if (StorageWindowWidget)
 	{
-		InventoryCursorWidget = CreateWidget<UInventoryCursorWidget>(this, InventoryCursorWidgetClass);
+		StorageWindowWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	if (InventoryCursorWidgetClass && !InventoryCursorWidget)
+	{
+		InventoryCursorWidget = CreateWidget<UInventoryCursorWidget>(GetOwningPlayer(), InventoryCursorWidgetClass);
 
 		if (InventoryCursorWidget)
 		{
-			RootCanvasPanel->AddChild(InventoryCursorWidget);
-
-			if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(InventoryCursorWidget->Slot))
-			{
-				CanvasSlot->SetAutoSize(true);
-				CanvasSlot->SetZOrder(999);
-			}
-
+			// The status window hides the HUD while it is open. Keep the held item
+			// in the viewport so it remains visible above either inventory screen.
+			InventoryCursorWidget->AddToViewport(999);
 			InventoryCursorWidget->ClearCursorItem();
 		}
 	}
@@ -108,14 +108,21 @@ void UPlayerHUDWidget::NativeConstruct()
 
 void UPlayerHUDWidget::NativeDestruct()
 {
+	HideStorageWindow();
+	if (InventoryCursorWidget)
+	{
+		InventoryCursorWidget->RemoveFromParent();
+		InventoryCursorWidget = nullptr;
+	}
+
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
 		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
-
-		if (UInventoryComponent* InventoryComp = CachedPlayer->GetInventoryComponent())
+		CachedPlayer->OnQuickSlotsChanged.RemoveAll(this);
+		if (UInventoryComponent* Inventory = CachedPlayer->GetInventoryComponent())
 		{
-			InventoryComp->OnInventoryChanged.RemoveAll(this);
+			Inventory->OnInventoryChanged.RemoveAll(this);
 		}
 	}
 
@@ -130,7 +137,6 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
 	RefreshCursorItemWidget();
-	UpdateCursorItemWidgetPosition();
 }
 
 void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
@@ -139,6 +145,7 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
 		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
+		CachedPlayer->OnQuickSlotsChanged.RemoveAll(this);
 
 		if (UInventoryComponent* OldInventory = CachedPlayer->GetInventoryComponent())
 		{
@@ -154,17 +161,20 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	{
 		CachedPlayer->OnAbilitySystemInitialized.AddUObject(this, &UPlayerHUDWidget::HandleAbilitySystemInitialized);
 		CachedPlayer->OnItemSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleItemSlotsChanged);
-
-		if (UInventoryComponent* InventoryComp = CachedPlayer->GetInventoryComponent())
-		{
-			InventoryComp->OnInventoryChanged.AddUObject(this, &UPlayerHUDWidget::HandleInventoryChanged);
-		}
+		CachedPlayer->OnQuickSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleItemSlotsChanged);
 
 		BindHealthComponent(CachedPlayer->GetHealthComponent());
+		if (UInventoryComponent* Inventory = CachedPlayer->GetInventoryComponent())
+		{
+			Inventory->OnInventoryChanged.AddUObject(this, &UPlayerHUDWidget::HandleInventoryChanged);
+		}
 	}
 
 	RefreshQuickSlots();
-	RefreshInventory();
+	if (InventoryPanelWidget)
+	{
+		InventoryPanelWidget->InitializeForPlayer(CachedPlayer.Get());
+	}
 	RefreshHealth();
 	RefreshBowCrosshairBinding();
 }
@@ -189,7 +199,10 @@ void UPlayerHUDWidget::SetInventoryVisible(bool bVisible)
 
 	if (bVisible)
 	{
-		RefreshInventory();
+		if (InventoryPanelWidget)
+		{
+			InventoryPanelWidget->RefreshInventory();
+		}
 	}
 }
 
@@ -198,9 +211,78 @@ bool UPlayerHUDWidget::IsInventoryVisible() const
 	return InventoryPanel && InventoryPanel->GetVisibility() != ESlateVisibility::Collapsed;
 }
 
+UStorageWindowWidget* UPlayerHUDWidget::ShowStorageWindow(
+	AStorageChest* StorageChest,
+	ABasePlayer* Player,
+	TSubclassOf<UStorageWindowWidget> StorageWindowClass)
+{
+	if (!StorageChest)
+	{
+		return nullptr;
+	}
+
+	if (!StorageWindowWidget)
+	{
+		if (!RootCanvasPanel)
+		{
+			return nullptr;
+		}
+
+		if (!StorageWindowClass)
+		{
+			StorageWindowClass = UStorageWindowWidget::StaticClass();
+		}
+
+		StorageWindowWidget = CreateWidget<UStorageWindowWidget>(GetOwningPlayer(), StorageWindowClass);
+		if (!StorageWindowWidget)
+		{
+			return nullptr;
+		}
+
+		bRuntimeStorageWindow = true;
+		RootCanvasPanel->AddChild(StorageWindowWidget);
+
+		if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(StorageWindowWidget->Slot))
+		{
+			CanvasSlot->SetAnchors(FAnchors(1.0f, 0.0f));
+			CanvasSlot->SetAlignment(FVector2D(1.0f, 0.0f));
+			CanvasSlot->SetPosition(FVector2D(-RuntimeStorageWindowTopRightMargin.X, RuntimeStorageWindowTopRightMargin.Y));
+			CanvasSlot->SetAutoSize(true);
+			CanvasSlot->SetZOrder(20);
+		}
+	}
+
+	StorageWindowWidget->InitializeStorage(StorageChest, Player);
+	StorageWindowWidget->SetVisibility(ESlateVisibility::Visible);
+	return StorageWindowWidget;
+}
+
+void UPlayerHUDWidget::HideStorageWindow()
+{
+	if (!StorageWindowWidget)
+	{
+		return;
+	}
+
+	if (bRuntimeStorageWindow)
+	{
+		StorageWindowWidget->RemoveFromParent();
+		StorageWindowWidget = nullptr;
+		bRuntimeStorageWindow = false;
+		return;
+	}
+
+	StorageWindowWidget->SetVisibility(ESlateVisibility::Collapsed);
+}
+
 void UPlayerHUDWidget::HandleInventoryChanged()
 {
-	RefreshInventory();
+	if (InventoryPanelWidget)
+	{
+		InventoryPanelWidget->RefreshInventory();
+	}
+	RefreshQuickSlots();
+	RefreshCursorItemWidget();
 }
 
 void UPlayerHUDWidget::HandleItemSlotsChanged()
@@ -380,14 +462,26 @@ float UPlayerHUDWidget::GetCrosshairResponsiveScale(const FVector2D& LocalSize) 
 
 void UPlayerHUDWidget::RefreshQuickSlots()
 {
-	if (!QuickSlotBox || !QuickSlotEntryClass)
+	constexpr int32 QuickSlotCount = 5;
+	TArray<UQuickSlotEntryWidget*> EditorPlacedEntries =
 	{
-		return;
+		WeaponQuickSlot1, WeaponQuickSlot2, ConsumableQuickSlot3, ConsumableQuickSlot4, ConsumableQuickSlot5
+	};
+	const bool bHasEditorPlacedEntries = EditorPlacedEntries.ContainsByPredicate([](const UQuickSlotEntryWidget* Entry)
+	{
+		return Entry != nullptr;
+	});
+
+	if (bHasEditorPlacedEntries)
+	{
+		QuickSlotEntries.Reset();
+		for (UQuickSlotEntryWidget* Entry : EditorPlacedEntries)
+		{
+			QuickSlotEntries.Add(Entry);
+		}
 	}
-
-	constexpr int32 QuickSlotCount = 3;
-
-	if (QuickSlotEntries.Num() != QuickSlotCount || QuickSlotBox->GetChildrenCount() != QuickSlotCount)
+	else if (QuickSlotBox && QuickSlotEntryClass &&
+		(QuickSlotEntries.Num() != QuickSlotCount || QuickSlotBox->GetChildrenCount() != QuickSlotCount))
 	{
 		QuickSlotBox->ClearChildren();
 		QuickSlotEntries.Reset();
@@ -405,12 +499,18 @@ void UPlayerHUDWidget::RefreshQuickSlots()
 			QuickSlotEntries.Add(EntryWidget);
 		}
 	}
+	else if (!QuickSlotBox || !QuickSlotEntryClass)
+	{
+		return;
+	}
 
 	const FGameplayTag FallbackSlotTags[QuickSlotCount] =
 	{
 		Key_Item_1,
 		Key_Item_2,
-		Key_Item_3
+		Key_Item_3,
+		Key_Item_4,
+		Key_Item_5
 	};
 
 	for (int32 Index = 0; Index < QuickSlotEntries.Num(); ++Index)
@@ -425,84 +525,28 @@ void UPlayerHUDWidget::RefreshQuickSlots()
 		UTexture2D* Icon = nullptr;
 		FText ItemName = FText::GetEmpty();
 		bool bEquipped = false;
+		int32 Count = 0;
 
-		if (CachedPlayer.IsValid() && CachedPlayer->ItemSlots.IsValidIndex(Index))
+		if (CachedPlayer.IsValid() && CachedPlayer->QuickSlots.IsValidIndex(Index))
 		{
-			const FItemSlot& QuickSlot = CachedPlayer->ItemSlots[Index];
+			const FQuickSlotReference& QuickSlot = CachedPlayer->QuickSlots[Index];
 			SlotTag = QuickSlot.KeyTag.IsValid() ? QuickSlot.KeyTag : SlotTag;
 
-			if (IsValid(QuickSlot.Item))
+			if (QuickSlot.ItemTag.IsValid())
 			{
-				Icon = QuickSlot.Item->GetItemIcon();
-				ItemName = QuickSlot.Item->GetItemNameText();
-				bEquipped = (QuickSlot.Item == CachedPlayer->EquippedItem);
+				if (UInventoryComponent* Inventory = CachedPlayer->GetInventoryComponent())
+				{
+					Icon = Inventory->GetMaterialIcon(QuickSlot.ItemTag);
+					ItemName = Inventory->GetMaterialName(QuickSlot.ItemTag);
+					Count = Inventory->GetMaterialCount(QuickSlot.ItemTag);
+				}
+				bEquipped = IsValid(CachedPlayer->EquippedItem) && CachedPlayer->EquippedItem->ItemTag == QuickSlot.ItemTag;
 			}
 		}
 
 		EntryWidget->SetVisibility(ESlateVisibility::Visible);
-		EntryWidget->SetupFromData(SlotTag, ItemName, Icon, bEquipped);
-	}
-}
-
-void UPlayerHUDWidget::RefreshInventory()
-{
-	if (!InventoryGridPanel)
-	{
-		return;
-	}
-
-	InventoryGridPanel->ClearChildren();
-
-	if (!CachedPlayer.IsValid() || !InventoryEntryClass)
-	{
-		return;
-	}
-
-	UInventoryComponent* InventoryComp = CachedPlayer->GetInventoryComponent();
-	if (!InventoryComp)
-	{
-		return;
-	}
-
-	const TArray<FInventorySlot>& Slots = InventoryComp->GetSlots();
-	const int32 Columns = InventoryComp->GetInventoryColumns();
-	const int32 SlotCount = InventoryComp->GetSlotCount();
-
-	for (int32 Index = 0; Index < SlotCount; ++Index)
-	{
-		UInventoryEntryWidget* EntryWidget = CreateWidget<UInventoryEntryWidget>(this, InventoryEntryClass);
-		if (!EntryWidget)
-		{
-			continue;
-		}
-
-		if (Slots.IsValidIndex(Index) && !Slots[Index].IsEmpty())
-		{
-			const FInventorySlot& InventorySlot = Slots[Index];
-
-			EntryWidget->SetupFromData(
-				InventoryComp->GetMaterialName(InventorySlot.ItemTag),
-				InventorySlot.Count,
-				InventoryComp->GetMaterialIcon(InventorySlot.ItemTag),
-				Index
-			);
-		}
-		else
-		{
-			EntryWidget->SetupAsEmpty(Index);
-		}
-
-		UUniformGridSlot* GridSlot = InventoryGridPanel->AddChildToUniformGrid(
-			EntryWidget,
-			Index / Columns,
-			Index % Columns
-		);
-
-		if (GridSlot)
-		{
-			GridSlot->SetHorizontalAlignment(HAlign_Fill);
-			GridSlot->SetVerticalAlignment(VAlign_Fill);
-		}
+		EntryWidget->ConfigureInteraction(Index, false);
+		EntryWidget->SetupFromData(SlotTag, ItemName, Icon, bEquipped, Count);
 	}
 }
 
