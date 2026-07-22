@@ -7,7 +7,8 @@
 UShipAttributeSet::UShipAttributeSet()
 {
 	// 기본값 초기화
-	ShipSpeedMultiplier = 1.0f;
+	ForwardPropulsionMultiplier = 1.0f;
+	TurnTorqueMultiplier = 1.0f;
 	CannonDamage = 20.0f;
 	CannonFireCooldown = 2.0f;
 	CannonballSpeed = 3000.0f;
@@ -18,7 +19,8 @@ void UShipAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	// 배 전용 Attribute들의 네트워크 복제 및 RepNotify를 등록합니다.
-	DOREPLIFETIME_CONDITION_NOTIFY(UShipAttributeSet, ShipSpeedMultiplier, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UShipAttributeSet, ForwardPropulsionMultiplier, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UShipAttributeSet, TurnTorqueMultiplier, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UShipAttributeSet, CannonDamage, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UShipAttributeSet, CannonFireCooldown, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UShipAttributeSet, CannonballSpeed, COND_None, REPNOTIFY_Always);
@@ -29,7 +31,8 @@ void UShipAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, 
 	Super::PreAttributeChange(Attribute, NewValue);
 
 	// 스탯의 최소 보정 로직
-	if (Attribute == GetShipSpeedMultiplierAttribute())
+	if (Attribute == GetForwardPropulsionMultiplierAttribute()
+		|| Attribute == GetTurnTorqueMultiplierAttribute())
 	{
 		NewValue = FMath::Max(0.0f, NewValue);
 	}
@@ -48,9 +51,14 @@ void UShipAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, 
 	}
 }
 
-void UShipAttributeSet::OnRep_ShipSpeedMultiplier(const FGameplayAttributeData& OldShipSpeedMultiplier)
+void UShipAttributeSet::OnRep_ForwardPropulsionMultiplier(const FGameplayAttributeData& OldValue)
 {
-	GAMEPLAYATTRIBUTE_REPNOTIFY(UShipAttributeSet, ShipSpeedMultiplier, OldShipSpeedMultiplier);
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UShipAttributeSet, ForwardPropulsionMultiplier, OldValue);
+}
+
+void UShipAttributeSet::OnRep_TurnTorqueMultiplier(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UShipAttributeSet, TurnTorqueMultiplier, OldValue);
 }
 
 void UShipAttributeSet::OnRep_CannonDamage(const FGameplayAttributeData& OldCannonDamage)

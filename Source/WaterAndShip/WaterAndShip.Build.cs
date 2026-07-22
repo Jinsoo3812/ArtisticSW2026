@@ -23,8 +23,10 @@ public class WaterAndShip: ModuleRules
             "ArtisticSWCore",
             "GASCore",
             "EnhancedInput",
+			"InputCore",
             "UMG",
-            "Water"
+            "Water",
+            "Landscape"
         });
 
         PublicIncludePaths.AddRange(new string[] {

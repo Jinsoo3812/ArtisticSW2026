@@ -79,7 +79,7 @@ protected:
 
 	/** Buoyancy coefficient (multiplier for buoyant force) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy")
-	float BuoyancyCoefficient = 0.2f;
+	float BuoyancyCoefficient = 0.3f;
 
 	/** Linear damping coefficient for vertical water drag (1st order) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy")

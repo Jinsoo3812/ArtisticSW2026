@@ -7,6 +7,7 @@
 #include "Engine/DataTable.h"
 #include "Physics/NetworkPhysicsComponent.h"
 #include "GerstnerWaterWaves.h"
+#include "Upgrade/ShipUpgradeTypes.h"
 #include "Ship.generated.h"
 
 class USWBuoyancyComponent;
@@ -19,12 +20,14 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 	FNetInputShip() 
 		: MovementInput(0.f)
 		, SteeringInput(0.f)
-	{}
+		, ExternalAcceleration(FVector::ZeroVector)
+		{}
 
 	void Reset()
 	{
 		MovementInput = 0.0f;
 		SteeringInput = 0.0f;
+		ExternalAcceleration = FVector::ZeroVector;
 	}
 
 	UPROPERTY()
@@ -33,12 +36,17 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 	UPROPERTY()
 	float SteeringInput;
 
+	/** Server-authored world-space acceleration replayed by Network Physics. */
+	UPROPERTY()
+	FVector ExternalAcceleration;
+
 	virtual void InterpolateData(const FNetworkPhysicsPayload& MinData, const FNetworkPhysicsPayload& MaxData, float LerpAlpha) override
 	{
 		const FNetInputShip& MinInput = static_cast<const FNetInputShip&>(MinData);
 		const FNetInputShip& MaxInput = static_cast<const FNetInputShip&>(MaxData);
 		MovementInput = FMath::Lerp(MinInput.MovementInput, MaxInput.MovementInput, LerpAlpha);
 		SteeringInput = FMath::Lerp(MinInput.SteeringInput, MaxInput.SteeringInput, LerpAlpha);
+		ExternalAcceleration = FMath::Lerp(MinInput.ExternalAcceleration, MaxInput.ExternalAcceleration, LerpAlpha);
 	}
 
 	virtual void MergeData(const FNetworkPhysicsPayload& FromData) override
@@ -46,6 +54,7 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		const FNetInputShip& FromInput = static_cast<const FNetInputShip&>(FromData);
 		MovementInput = FromInput.MovementInput;
 		SteeringInput = FromInput.SteeringInput;
+		ExternalAcceleration = FromInput.ExternalAcceleration;
 	}
 
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
@@ -87,6 +96,16 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 			int8 QuantizedSteer = FMath::Clamp(FMath::RoundToInt(SteeringInput * 127.f), -128, 127);
 			Ar << QuantizedMove;
 			Ar << QuantizedSteer;
+
+			uint8 bHasExternalAcceleration = ExternalAcceleration.IsNearlyZero(0.5f) ? 0 : 1;
+			Ar.SerializeBits(&bHasExternalAcceleration, 1);
+			if (bHasExternalAcceleration != 0)
+			{
+				int16 QuantizedX = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(ExternalAcceleration.X), -32767, 32767));
+				int16 QuantizedY = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(ExternalAcceleration.Y), -32767, 32767));
+				Ar << QuantizedX;
+				Ar << QuantizedY;
+			}
 		}
 		else
 		{
@@ -96,6 +115,21 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 			Ar << QuantizedSteer;
 			MovementInput = static_cast<float>(QuantizedMove) / 127.f;
 			SteeringInput = static_cast<float>(QuantizedSteer) / 127.f;
+
+			uint8 bHasExternalAcceleration = 0;
+			Ar.SerializeBits(&bHasExternalAcceleration, 1);
+			if (bHasExternalAcceleration != 0)
+			{
+				int16 QuantizedX = 0;
+				int16 QuantizedY = 0;
+				Ar << QuantizedX;
+				Ar << QuantizedY;
+				ExternalAcceleration = FVector(static_cast<float>(QuantizedX), static_cast<float>(QuantizedY), 0.0f);
+			}
+			else
+			{
+				ExternalAcceleration = FVector::ZeroVector;
+			}
 		}
 
 		bOutSuccess = !Ar.IsError();
@@ -299,6 +333,9 @@ class UPrimitiveComponent;
 class UAbilitySystemComponent;
 class UBaseAttributeSet;
 class UShipAttributeSet;
+class UGameplayAbility;
+class ABombardment;
+class ABombardmentPreview;
 
 USTRUCT(BlueprintType)
 struct FShipStatRow : public FTableRowBase
@@ -308,8 +345,15 @@ struct FShipStatRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	float MaxHealth = 100.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	/** Legacy migration source. New runtime code does not consume this field directly. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats", meta = (DeprecatedProperty, DeprecationMessage = "Use ForwardPropulsionMultiplier and TurnTorqueMultiplier"))
 	float ShipSpeedMultiplier = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	float ForwardPropulsionMultiplier = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	float TurnTorqueMultiplier = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	float CannonDamage = 20.f;
@@ -345,6 +389,9 @@ public:
 	// IAbilitySystemInterface 구현
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
+	UFUNCTION(BlueprintPure, Category = "Ship|Stats")
+	UShipAttributeSet* GetShipAttributeSet() const { return AttributeSet; }
+
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
@@ -367,8 +414,37 @@ public:
 	virtual void UnPossessed() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	/** Returns the selected DT row, with legacy movement fields safely migrated in memory. */
+	UFUNCTION(BlueprintPure, Category = "Ship|Stats")
+	FShipStatSnapshot GetBaseStatSnapshot() const;
+
+	/** Applies an already calculated authoritative snapshot to this ship. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Stats")
+	void ApplyStatSnapshot(const FShipStatSnapshot& Snapshot, bool bRefillHealth = true);
+
+	/** Applies the assigned player's active upgrade nodes over this ship's base DT row. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Stats")
+	bool ApplyPlayerUpgrades(APlayerState* InPlayerState, bool bRefillHealth = true);
+
 	/** Sets normalized server-authored control input for AI-controlled ships. */
 	void SetAIControlInput(float MoveInput, float TurnInput);
+
+	/** Identifies hostile ships without making WaterAndShip depend on Enemy. */
+	virtual bool IsEnemyShipForEffects() const { return false; }
+
+	void SetExternalAccelerationSource(const FGuid& SourceId, const FVector& WorldAcceleration);
+	void RemoveExternalAccelerationSource(const FGuid& SourceId);
+	void AddPropulsionSuppression(const FGuid& SourceId);
+	void RemovePropulsionSuppression(const FGuid& SourceId);
+	bool IsPropulsionSuppressed() const { return PropulsionSuppressionSources.Num() > 0; }
+
+	/** Bombardment GA bridge. The WaterAndShip module stays independent from ClassFeature. */
+	bool ActivateBombardmentModeFromAbility(
+		UGameplayAbility* Ability,
+		TSubclassOf<ABombardment> BombardmentClass);
+	void DeactivateBombardmentModeFromAbility(UGameplayAbility* Ability);
+	bool IsBombardmentTargeting() const { return bBombardmentTargeting; }
+	APawn* GetRidingPlayer() const { return RidingPlayer; }
 
 	/* Boarding Interaction */
 	void Board(APawn* PlayerPawn);
@@ -454,6 +530,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Movement")
 	float LateralDragCoefficient = 200.f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Movement", meta = (ClampMin = "0.0", Units = "cm/s^2"))
+	float MaxExternalAcceleration = 5000.f;
+
 	// ---- Input Config ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Input")
 	UInputMappingContext* ShipInputMappingContext;
@@ -485,6 +564,9 @@ protected:
 	void ShipLook(const FInputActionValue& Value);
 	void ToggleFixedCamera();
 	void OnDisembarkAction(const FInputActionValue& Value);
+	void HandleBombardmentToggle();
+	void HandleBombardmentConfirm();
+	void HandleBombardmentCancel();
 
 	UFUNCTION()
 	void HandlePortSeaBoarding(AActor* Interactor);
@@ -513,6 +595,15 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void ServerDisembark();
 
+	UFUNCTION(Server, Reliable)
+	void ServerToggleBombardmentAbility();
+
+	UFUNCTION(Server, Reliable)
+	void ServerConfirmBombardment(FVector ClientTargetLocation);
+
+	UFUNCTION(Server, Reliable)
+	void ServerCancelBombardmentAbility();
+
 	void Disembark();
 
 	// ---- Camera State ----
@@ -530,8 +621,21 @@ protected:
 	UFUNCTION()
 	void OnRep_RidingPlayer(APawn* OldRidingPlayer);
 
+	UPROPERTY(ReplicatedUsing = OnRep_BombardmentTargeting)
+	bool bBombardmentTargeting = false;
+
+	UPROPERTY(ReplicatedUsing = OnRep_BombardmentTargeting)
+	TSubclassOf<ABombardment> ActiveBombardmentClass;
+
+	UFUNCTION()
+	void OnRep_BombardmentTargeting();
+
 	UPROPERTY()
 	APlayerController* CachedPlayerController = nullptr;
+
+	/** Prevents repeated boarding by the same player from refilling upgraded health. */
+	UPROPERTY(Transient)
+	TObjectPtr<APlayerState> AppliedUpgradePlayerState;
 
 	// ---- Custom Replication State & Interp Configuration ----
 	UPROPERTY(Replicated)
@@ -588,6 +692,31 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	void ToggleBombardmentAbilityAuthoritative();
+	void CancelBombardmentAbilityAuthoritative();
+	void SetBombardmentTargetingAuthoritative(bool bEnabled);
+	UAbilitySystemComponent* GetRidingPlayerAbilitySystem() const;
+	TSubclassOf<AActor> ResolveNormalCannonballClass() const;
+	bool ValidateAndResolveBombardmentTarget(const FVector& RequestedLocation, FVector& OutLocation) const;
+	bool ResolveBombardmentTargetFromCursor(FVector& OutLocation) const;
+	bool ResolveStableSurfaceAtXY(const FVector2D& XY, FVector& OutLocation) const;
+	bool FindLandscapeHitAlongRay(const FVector& RayStart, const FVector& RayEnd, FHitResult& OutHit) const;
+	void RefreshLocalBombardmentTargeting();
+	void BeginLocalBombardmentTargeting();
+	void EndLocalBombardmentTargeting();
+	void UpdateLocalBombardmentPreview();
+	void SpawnBombardmentAuthoritative(const FVector& TargetLocation);
+
+	TWeakObjectPtr<UGameplayAbility> ActiveBombardmentAbility;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ABombardmentPreview> BombardmentPreviewActor;
+
+	FVector LocalBombardmentTarget = FVector::ZeroVector;
+	bool bLocalBombardmentTargetValid = false;
+	bool bLocalBombardmentInputModeApplied = false;
+	bool bSavedShowMouseCursor = false;
+
 	friend class FShipPhysicsAsync;
 	FShipPhysicsAsync* ShipPhysicsAsync = nullptr;
 	bool bBuoyancyQueryDiagnostics = false;
@@ -595,6 +724,9 @@ private:
 
 	float CurrentMoveInput = 0.0f;
 	float CurrentTurnInput = 0.0f;
+	FVector CurrentExternalAcceleration = FVector::ZeroVector;
+	TMap<FGuid, FVector> ExternalAccelerationSources;
+	TSet<FGuid> PropulsionSuppressionSources;
 
 	bool bStaticDataInitialized = false;
 };

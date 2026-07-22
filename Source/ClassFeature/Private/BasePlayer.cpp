@@ -29,6 +29,7 @@
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Animation/SWTrajectoryComponent.h"
 #include "Inventory/InventoryComponent.h"
+#include "Crafting/CraftingComponent.h"
 #include "ItemSubSystem.h"
 #include "Equipment/PlayerEquipmentComponent.h"
 #include "Item/Components/BowComponent.h"
@@ -40,6 +41,9 @@
 #include "Ship.h"
 #include "Cannon.h"
 #include "SwimmingComponent.h"
+#include "Attacker/GA_GravityVortexThrow.h"
+#include "Attacker/GA_WaterBombCannonMode.h"
+#include "Attacker/GA_Bombardment.h"
 #include "HAL/FileManager.h"
 #include "Misc/DateTime.h"
 #include "Misc/FileHelper.h"
@@ -98,11 +102,15 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 
 	// 인벤토리 컴포넌트 부착
 	InventoryComponent = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComponent"));
+	CraftingComponent = CreateDefaultSubobject<UCraftingComponent>(TEXT("CraftingComponent"));
 	AnimStateComponent = CreateDefaultSubobject<ULocomotionAnimStateComponent>(TEXT("AnimStateComponent"));
 	TrajectoryComponent = CreateDefaultSubobject<USWTrajectoryComponent>(TEXT("TrajectoryComponent"));
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 	SwimmingComponent = CreateDefaultSubobject<USwimmingComponent>(TEXT("SwimmingComponent"));
 	EquipmentComponent = CreateDefaultSubobject<UPlayerEquipmentComponent>(TEXT("EquipmentComponent"));
+	GravityVortexTestAbilityClass = UGA_GravityVortexThrow::StaticClass();
+	WaterBombAbilityClass = UGA_WaterBombCannonMode::StaticClass();
+	BombardmentAbilityClass = UGA_Bombardment::StaticClass();
 
 	// 항상 등만 보이도록 설정 (Orient to Controller - 부드러운 회전으로 제자리 회전 유도)
 	bUseControllerRotationYaw = false;
@@ -413,18 +421,30 @@ void ABasePlayer::PossessedBy(AController* NewController)
 				GrantDefaultAbility(AbilityClass);
 			}
 
-			for (const auto& AbilityPair : DefaultAbilityMap)
-			{
+				for (const auto& AbilityPair : DefaultAbilityMap)
+				{
 				if (AbilityPair.Value)
 				{
 					UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Granting Ability: %s to Slot Tag: %s (InputID: %d)"),
 						*AbilityPair.Value->GetName(),
 						*AbilityPair.Key.ToString(),
 						GetInputIDFromTag(AbilityPair.Key));
-					GrantAbilityToSlot(AbilityPair.Key, AbilityPair.Value);
+						GrantAbilityToSlot(AbilityPair.Key, AbilityPair.Value);
+					}
+				}
+				if (bEnableGravityVortexTestInput && GravityVortexTestAbilityClass)
+				{
+					GrantAbilityToSlot(Key_Test_Skill_GravityVortex, GravityVortexTestAbilityClass);
+				}
+				if (bGrantWaterBombAbility && WaterBombAbilityClass)
+				{
+					GrantDefaultAbility(WaterBombAbilityClass);
+				}
+				if (bGrantBombardmentAbility && BombardmentAbilityClass)
+				{
+					GrantDefaultAbility(BombardmentAbilityClass);
 				}
 			}
-		}
 		else
 		{
 			UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::PossessedBy - [SERVER] CachedAbilitySystemComponent is invalid!"));
@@ -570,6 +590,7 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, this, &ABasePlayer::OnAbilityInputReleased, Action.KeyTag);
 					}
 				}
+
 			}
 		}
 
@@ -585,6 +606,11 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Released, this, &ABasePlayer::StopSprint);
 	PlayerInputComponent->BindKey(EKeys::RightShift, IE_Pressed, this, &ABasePlayer::StartSprint);
 	PlayerInputComponent->BindKey(EKeys::RightShift, IE_Released, this, &ABasePlayer::StopSprint);
+	if (bEnableGravityVortexTestInput)
+	{
+		PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ABasePlayer::OnGravityVortexTestPressed);
+		PlayerInputComponent->BindKey(EKeys::Three, IE_Released, this, &ABasePlayer::OnGravityVortexTestReleased);
+	}
 }
 
 int32 ABasePlayer::GetInputIDFromTag(const FGameplayTag& Tag) const
@@ -996,6 +1022,22 @@ void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 	}
 }
 
+void ABasePlayer::OnGravityVortexTestPressed()
+{
+	if (bEnableGravityVortexTestInput)
+	{
+		OnAbilityInputPressed(Key_Test_Skill_GravityVortex);
+	}
+}
+
+void ABasePlayer::OnGravityVortexTestReleased()
+{
+	if (bEnableGravityVortexTestInput)
+	{
+		OnAbilityInputReleased(Key_Test_Skill_GravityVortex);
+	}
+}
+
 void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 {
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
@@ -1018,7 +1060,13 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 	}
 
 	// 공통 GAS 입력 해제 처리
-	OnAbilityInputPressed(InputTag);
+	const bool bGravityVortexOwnsLeftClick =
+		InputTag.MatchesTagExact(Key_Default_Mouse_LeftClick)
+		&& CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex);
+	if (!bGravityVortexOwnsLeftClick)
+	{
+		OnAbilityInputPressed(InputTag);
+	}
 
 	// ASC에 GameplayEvent로서 전달
 	FGameplayEventData EventData;
@@ -1235,6 +1283,11 @@ void ABasePlayer::UseEquippedItem(bool bDestroy)
 
 void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 {
+	if (bEnableGravityVortexTestInput && KeyTag.MatchesTagExact(Key_Item_3))
+	{
+		return;
+	}
+
 	if (EquipmentComponent)
 	{
 		EquipmentComponent->EquipItemFromSlot(KeyTag);
