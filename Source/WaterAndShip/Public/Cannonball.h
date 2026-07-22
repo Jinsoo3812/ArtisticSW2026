@@ -22,12 +22,17 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void PostNetReceiveLocationAndRotation() override;
+	virtual void PostNetReceiveVelocity(const FVector& NewVelocity) override;
 
 public:	
 	virtual void Tick(float DeltaTime) override;
 
 	/** Initialize Projectile values on spawn */
 	void InitializeProjectile(AShip* InLaunchingShip, float InDamage, float InSpeed);
+
+	/** Optional exact endpoint used by skills so terrain impacts do not continue below the Landscape. */
+	void SetDesignatedImpactLocation(const FVector& InImpactLocation, float InArrivalTolerance = 75.0f);
 
 protected:
 	// ---- Components ----
@@ -63,7 +68,8 @@ protected:
 	UFUNCTION()
 	void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 
-	void HandleShipHit(AShip* HitShip);
+	virtual void HandleShipHit(AShip* HitShip);
+	AShip* GetLaunchingShip() const { return LaunchingShip; }
 	void TriggerWaterRipple(const FVector& HitLocation);
 	void DeactivateProjectile();
 
@@ -73,5 +79,10 @@ private:
 	TObjectPtr<AShip> LaunchingShip = nullptr;
 
 	bool bHasHitWater = false;
+	bool bHasProcessedShipHit = false;
+	bool bHasDesignatedImpact = false;
+	FVector DesignatedImpactLocation = FVector::ZeroVector;
+	FVector PreviousProjectileLocation = FVector::ZeroVector;
+	float DesignatedImpactTolerance = 75.0f;
 	FTimerHandle WaterHitTimerHandle;
 };

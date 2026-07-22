@@ -20,6 +20,8 @@ public:
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	/** WaterAndShip 등 저수준 모듈이 Enemy 모듈을 참조하지 않고 적을 판별할 수 있게 합니다. */
+	virtual bool IsEnemyCharacterForEffects() const { return false; }
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 

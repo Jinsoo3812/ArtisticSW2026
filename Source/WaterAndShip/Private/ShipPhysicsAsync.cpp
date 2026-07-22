@@ -142,6 +142,7 @@ void FShipPhysicsAsync::BuildInput_Internal(FNetInputShip& Input) const
 {
 	Input.MovementInput = MovementInput_Internal;
 	Input.SteeringInput = SteeringInput_Internal;
+	Input.ExternalAcceleration = ExternalAcceleration_Internal;
 
 	/* Network Physics input build diagnostic log disabled after validation.
 	if (CurrentPhysicsStep % 60 == 0)
@@ -156,6 +157,7 @@ void FShipPhysicsAsync::ApplyInput_Internal(const FNetInputShip& Input)
 {
 	MovementInput_Internal = Input.MovementInput;
 	SteeringInput_Internal = Input.SteeringInput;
+	ExternalAcceleration_Internal = Input.ExternalAcceleration;
 
 	/* Network Physics input apply diagnostic logs disabled after validation.
 	if (CurrentPhysicsStep % 60 == 0)
@@ -172,6 +174,12 @@ void FShipPhysicsAsync::ValidateInput_Internal(FNetInputShip& Input) const
 {
 	Input.MovementInput = FMath::Clamp(Input.MovementInput, -1.f, 1.f);
 	Input.SteeringInput = FMath::Clamp(Input.SteeringInput, -1.f, 1.f);
+	if (Input.ExternalAcceleration.ContainsNaN())
+	{
+		Input.ExternalAcceleration = FVector::ZeroVector;
+	}
+	Input.ExternalAcceleration.Z = 0.0f;
+	Input.ExternalAcceleration = Input.ExternalAcceleration.GetClampedToMaxSize(5000.f);
 }
 
 void FShipPhysicsAsync::BuildState_Internal(FNetStatePhysicsShip& State) const
@@ -251,11 +259,12 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 				bQueryDiagnostics_Internal = AsyncInput->bQueryDiagnostics;
 				// 로컬 컨트롤러가 있는 피어(로컬 조종사)만 WASD 조종력을 직접 덮어씀.
 				// 서버 및 다른 관망 클라이언트는 네트워크 입력 패킷(ApplyInput_Internal)으로 수신된 조종력을 그대로 보존.
-				if (AsyncInput->bHasLocalController)
-				{
-					MovementInput_Internal = AsyncInput->MovementInput;
-					SteeringInput_Internal = AsyncInput->SteeringInput;
-				}
+					if (AsyncInput->bHasLocalController)
+					{
+						MovementInput_Internal = AsyncInput->MovementInput;
+						SteeringInput_Internal = AsyncInput->SteeringInput;
+						ExternalAcceleration_Internal = AsyncInput->ExternalAcceleration;
+					}
 
 				// 최초 마샬링 시에만 필요한 폰툰 및 파도 설정 캐싱
 				if (AsyncInput->PontoonOffsets.Num() > 0)
@@ -294,7 +303,8 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 				CachedLateralDrag = AsyncInput->LateralDrag;
 				CachedForwardForce = AsyncInput->ForwardForceValue;
 				CachedTurnTorque = AsyncInput->TurnTorqueValue;
-				CachedSpeedMultiplier = AsyncInput->SpeedMultiplier;
+				CachedForwardPropulsionMultiplier = AsyncInput->ForwardPropulsionMultiplier;
+				CachedTurnTorqueMultiplier = AsyncInput->TurnTorqueMultiplier;
 				CachedBuoyancyRadius = AsyncInput->BuoyancyRadius;
 				CachedBuoyancyForceMultiplier = AsyncInput->BuoyancyForceMultiplier;
 				CachedWaterDamping = AsyncInput->WaterDamping;
@@ -536,15 +546,26 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 			Forward.Z = 0.0f;
 			Forward.Normalize();
 
-			AppliedControlForce = Forward * CachedForwardForce * MovementInput_Internal * CachedSpeedMultiplier;
+			AppliedControlForce = Forward * CachedForwardForce * MovementInput_Internal * CachedForwardPropulsionMultiplier;
 			ParticleHandle->AddForce(AppliedControlForce);
 		}
 
 		// 회전 토크
 		if (FMath::Abs(SteeringInput_Internal) > KINDA_SMALL_NUMBER)
 		{
-			AppliedControlTorque = FVector(0.f, 0.f, CachedTurnTorque * SteeringInput_Internal * CachedSpeedMultiplier);
+			AppliedControlTorque = FVector(0.f, 0.f, CachedTurnTorque * SteeringInput_Internal * CachedTurnTorqueMultiplier);
 			ParticleHandle->AddTorque(AppliedControlTorque);
+		}
+	}
+
+	// Replay gameplay-authored acceleration through the same Network Physics
+	// input history as steering and throttle.
+	if (!ExternalAcceleration_Internal.IsNearlyZero())
+	{
+		const float ParticleMass = ParticleHandle->M();
+		if (ParticleMass > UE_SMALL_NUMBER)
+		{
+			ParticleHandle->AddForce(ExternalAcceleration_Internal * ParticleMass);
 		}
 	}
 

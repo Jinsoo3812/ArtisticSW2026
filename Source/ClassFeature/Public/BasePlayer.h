@@ -21,6 +21,7 @@ struct FInputActionValue;
 class ABaseItem;
 class UInputTagConfig;
 class UInventoryComponent;
+class UCraftingComponent;
 class USWTrajectoryComponent;
 class UAnimMontage;
 class UBaseHealthComponent;
@@ -300,6 +301,29 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
 	TArray<TSubclassOf<UGameplayAbility>> DefaultGrantedAbilities;
 
+	/** Temporary Keyboard 3 test hook; disable when the final skill slot is wired. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex Test")
+	bool bEnableGravityVortexTestInput = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex Test")
+	TSubclassOf<UGameplayAbility> GravityVortexTestAbilityClass;
+
+	/** Granted without a player input slot; a ridden cannon activates/cancels it through its ability tag. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Water Bomb")
+	bool bGrantWaterBombAbility = true;
+
+	/** Set this to a GA_WaterBombCannonMode Blueprint to tune projectile, duration, and slow multiplier. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Water Bomb")
+	TSubclassOf<UGameplayAbility> WaterBombAbilityClass;
+
+	/** Granted without a player input slot; the currently possessed ship toggles it with test key 5. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Bombardment")
+	bool bGrantBombardmentAbility = true;
+
+	/** Set this to a GA_Bombardment Blueprint that references the authored Bombardment actor class. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Bombardment")
+	TSubclassOf<UGameplayAbility> BombardmentAbilityClass;
+
 	// GA와 그 GA가 어떤 키 입력(Tag)에 반응할지 함께 적용하는 함수.
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
 	void GrantAbilityToSlot(FGameplayTag SlotTag, TSubclassOf<UGameplayAbility> AbilityClass);
@@ -314,6 +338,8 @@ public:
 	// 즉발형 GA에 대해 SlotTag에 매핑된 GA를 실행하는 함수
 	void OnAbilityInputPressed(FGameplayTag InputTag);
 	void OnAbilityInputReleased(FGameplayTag InputTag);
+	void OnGravityVortexTestPressed();
+	void OnGravityVortexTestReleased();
 
 	// 마우스 입력에 대한 활용을 위해 따로 OnAbilityInput과 분리
 	void OnMouseInputPressed(FGameplayTag InputTag);
@@ -516,6 +542,8 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
 	TObjectPtr<UInventoryComponent> InventoryComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
+	TObjectPtr<UCraftingComponent> CraftingComponent;
 	/** 에디터 테스트 시작 시 특정 아이템을 인벤토리에 지급한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory")
 	bool bGiveStartingItemForTest = false;
@@ -558,6 +586,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	UInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Crafting")
+	UCraftingComponent* GetCraftingComponent() const { return CraftingComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Animation")
 	ULocomotionAnimStateComponent* GetAnimStateComponent() const { return AnimStateComponent; }

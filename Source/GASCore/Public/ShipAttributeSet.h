@@ -24,9 +24,15 @@ public:
 	/* --- Attributes --- */
 
 	// 배의 이동속도 계수 (WS, AD 조작 시 배의 물리 출력에 곱해집니다. 기본값: 1.0f)
-	UPROPERTY(BlueprintReadOnly, Category = "Attributes|Ship", ReplicatedUsing = OnRep_ShipSpeedMultiplier)
-	FGameplayAttributeData ShipSpeedMultiplier;
-	ATTRIBUTE_ACCESSORS(UShipAttributeSet, ShipSpeedMultiplier)
+	/** Multiplier applied only to W/S forward propulsion force. */
+	UPROPERTY(BlueprintReadOnly, Category = "Attributes|Ship", ReplicatedUsing = OnRep_ForwardPropulsionMultiplier)
+	FGameplayAttributeData ForwardPropulsionMultiplier;
+	ATTRIBUTE_ACCESSORS(UShipAttributeSet, ForwardPropulsionMultiplier)
+
+	/** Multiplier applied only to A/D steering torque. */
+	UPROPERTY(BlueprintReadOnly, Category = "Attributes|Ship", ReplicatedUsing = OnRep_TurnTorqueMultiplier)
+	FGameplayAttributeData TurnTorqueMultiplier;
+	ATTRIBUTE_ACCESSORS(UShipAttributeSet, TurnTorqueMultiplier)
 
 	// 대포 공격력 (대포알이 발사될 때 적용되는 기본 피해량)
 	UPROPERTY(BlueprintReadOnly, Category = "Attributes|Cannon", ReplicatedUsing = OnRep_CannonDamage)
@@ -47,7 +53,10 @@ protected:
 	/* --- RepNotify callbacks --- */
 
 	UFUNCTION()
-	virtual void OnRep_ShipSpeedMultiplier(const FGameplayAttributeData& OldShipSpeedMultiplier);
+	virtual void OnRep_ForwardPropulsionMultiplier(const FGameplayAttributeData& OldValue);
+
+	UFUNCTION()
+	virtual void OnRep_TurnTorqueMultiplier(const FGameplayAttributeData& OldValue);
 
 	UFUNCTION()
 	virtual void OnRep_CannonDamage(const FGameplayAttributeData& OldCannonDamage);

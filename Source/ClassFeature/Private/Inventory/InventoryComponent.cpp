@@ -9,6 +9,87 @@
 #include "Storage/StorageComponent.h"
 #include "BaseGameplayTags.h"
 
+namespace
+{
+	int32 CountItemInSlots(const TArray<FInventorySlot>& Slots, const FGameplayTag& ItemTag)
+	{
+		int32 Total = 0;
+		for (const FInventorySlot& Slot : Slots)
+		{
+			if (Slot.ItemTag == ItemTag)
+			{
+				Total += Slot.Count;
+			}
+		}
+		return Total;
+	}
+
+	bool RemoveFromSlots(TArray<FInventorySlot>& Slots, const FGameplayTag& ItemTag, int32 Amount)
+	{
+		if (!ItemTag.IsValid() || Amount <= 0 || CountItemInSlots(Slots, ItemTag) < Amount)
+		{
+			return false;
+		}
+		int32 Remaining = Amount;
+		for (FInventorySlot& Slot : Slots)
+		{
+			if (Slot.ItemTag != ItemTag)
+			{
+				continue;
+			}
+			const int32 Removed = FMath::Min(Remaining, Slot.Count);
+			Slot.Count -= Removed;
+			Remaining -= Removed;
+			if (Slot.Count <= 0)
+			{
+				Slot.Clear();
+			}
+			if (Remaining == 0)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool AddToSlots(TArray<FInventorySlot>& Slots, const FGameplayTag& ItemTag, int32 Amount, int32 MaxStack)
+	{
+		if (!ItemTag.IsValid() || Amount <= 0 || MaxStack <= 0)
+		{
+			return false;
+		}
+		int32 Remaining = Amount;
+		for (FInventorySlot& Slot : Slots)
+		{
+			if (Remaining == 0)
+			{
+				break;
+			}
+			if (Slot.ItemTag == ItemTag && Slot.Count < MaxStack)
+			{
+				const int32 Added = FMath::Min(Remaining, MaxStack - Slot.Count);
+				Slot.Count += Added;
+				Remaining -= Added;
+			}
+		}
+		for (FInventorySlot& Slot : Slots)
+		{
+			if (Remaining == 0)
+			{
+				break;
+			}
+			if (Slot.IsEmpty())
+			{
+				const int32 Added = FMath::Min(Remaining, MaxStack);
+				Slot.ItemTag = ItemTag;
+				Slot.Count = Added;
+				Remaining -= Added;
+			}
+		}
+		return Remaining == 0;
+	}
+}
+
 // Sets default values for this component's properties
 UInventoryComponent::UInventoryComponent()
 {
@@ -26,6 +107,7 @@ UInventoryComponent::UInventoryComponent()
 void UInventoryComponent::BeginPlay()
 {
     Super::BeginPlay();
+	OnInventoryChanged.AddUObject(this, &UInventoryComponent::BroadcastShipUpgradeInventoryChanged);
     //서버에서만 인벤토리 array 크기 초기화
     if (GetOwner() && GetOwner()->HasAuthority())
     {
@@ -297,6 +379,106 @@ int32 UInventoryComponent::GetMaterialCount(const FGameplayTag& ItemTag) const
     }
 
     return TotalCount;
+}
+
+void UInventoryComponent::BroadcastShipUpgradeInventoryChanged()
+{
+	ShipUpgradeInventoryChanged.Broadcast();
+}
+
+int32 UInventoryComponent::AddItem(const FGameplayTag& ItemTag, int32 Amount)
+{
+	return AddMaterial(ItemTag, Amount);
+}
+
+bool UInventoryComponent::RemoveItem(const FGameplayTag& ItemTag, int32 Amount)
+{
+	return RemoveMaterial(ItemTag, Amount);
+}
+
+int32 UInventoryComponent::GetItemCount(const FGameplayTag& ItemTag) const
+{
+	return GetMaterialCount(ItemTag);
+}
+
+bool UInventoryComponent::CanAddItem(const FGameplayTag& ItemTag, int32 Amount) const
+{
+	if (!ItemTag.IsValid() || Amount <= 0)
+	{
+		return false;
+	}
+	TArray<FInventorySlot> WorkingSlots = InventorySlots;
+	WorkingSlots.SetNum(GetSlotCount());
+	return AddToSlots(WorkingSlots, ItemTag, Amount, GetMaxStack(ItemTag));
+}
+
+bool UInventoryComponent::TryApplyCraftingTransaction(const TArray<FCraftingItemStack>& Costs, const FCraftingItemStack& Result)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !Result.ItemTag.IsValid() || Result.Quantity <= 0)
+	{
+		return false;
+	}
+
+	TArray<FInventorySlot> WorkingSlots = InventorySlots;
+	WorkingSlots.SetNum(GetSlotCount());
+	for (const FCraftingItemStack& Cost : Costs)
+	{
+		if (!RemoveFromSlots(WorkingSlots, Cost.ItemTag, Cost.Quantity))
+		{
+			return false;
+		}
+	}
+	if (!AddToSlots(WorkingSlots, Result.ItemTag, Result.Quantity, GetMaxStack(Result.ItemTag)))
+	{
+		return false;
+	}
+
+	InventorySlots = MoveTemp(WorkingSlots);
+	OnInventoryChanged.Broadcast();
+	PrintInventoryToScreen();
+	return true;
+}
+
+bool UInventoryComponent::RemoveItemsAtomically(const TArray<FCraftingItemStack>& Costs)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return false;
+	}
+	TArray<FInventorySlot> WorkingSlots = InventorySlots;
+	WorkingSlots.SetNum(GetSlotCount());
+	for (const FCraftingItemStack& Cost : Costs)
+	{
+		if (!RemoveFromSlots(WorkingSlots, Cost.ItemTag, Cost.Quantity))
+		{
+			return false;
+		}
+	}
+	InventorySlots = MoveTemp(WorkingSlots);
+	OnInventoryChanged.Broadcast();
+	PrintInventoryToScreen();
+	return true;
+}
+
+bool UInventoryComponent::AddItemsAtomically(const TArray<FCraftingItemStack>& Items)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return false;
+	}
+	TArray<FInventorySlot> WorkingSlots = InventorySlots;
+	WorkingSlots.SetNum(GetSlotCount());
+	for (const FCraftingItemStack& Item : Items)
+	{
+		if (!AddToSlots(WorkingSlots, Item.ItemTag, Item.Quantity, GetMaxStack(Item.ItemTag)))
+		{
+			return false;
+		}
+	}
+	InventorySlots = MoveTemp(WorkingSlots);
+	OnInventoryChanged.Broadcast();
+	PrintInventoryToScreen();
+	return true;
 }
 
 int32 UInventoryComponent::GetMaxStack(const FGameplayTag& ItemTag) const

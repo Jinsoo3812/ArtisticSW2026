@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
+#include "Crafting/CraftingRecipeTypes.h"
+#include "Upgrade/ShipUpgradeInventoryProvider.h"
 #include "InventoryComponent.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnInventoryChanged);
@@ -104,7 +106,7 @@ struct FInventoryTabPage
 * 인벤토리 컴포넌트 (Material.~ 아이템을 주울 때, 인벤토리로 들어옴)
 */
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
-class CLASSFEATURE_API UInventoryComponent : public UActorComponent
+class CLASSFEATURE_API UInventoryComponent : public UActorComponent, public IShipUpgradeInventoryProvider
 {
 	GENERATED_BODY()
 
@@ -123,6 +125,33 @@ public:
 	bool RemoveMaterial(const FGameplayTag& ItemTag, int32 Amount = 1);
 	// Tag 아이템 총 개수 반환
 	int32 GetMaterialCount(const FGameplayTag& ItemTag) const;
+
+	// New generic item wrappers. Legacy Material functions remain unchanged.
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Item")
+	int32 AddItem(const FGameplayTag& ItemTag, int32 Amount = 1);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Item")
+	bool RemoveItem(const FGameplayTag& ItemTag, int32 Amount = 1);
+
+	UFUNCTION(BlueprintPure, Category = "Inventory|Item")
+	int32 GetItemCount(const FGameplayTag& ItemTag) const;
+
+	UFUNCTION(BlueprintPure, Category = "Inventory|Item")
+	bool CanAddItem(const FGameplayTag& ItemTag, int32 Amount = 1) const;
+
+	/** Atomic inventory destination used by crafting: costs and result commit together. */
+	bool TryApplyCraftingTransaction(const TArray<FCraftingItemStack>& Costs, const FCraftingItemStack& Result);
+
+	/** Atomic cost removal used before delivering to an external receiver. */
+	bool RemoveItemsAtomically(const TArray<FCraftingItemStack>& Costs);
+
+	/** Best-effort rollback path for a receiver that rejected after preflight. */
+	bool AddItemsAtomically(const TArray<FCraftingItemStack>& Items);
+
+	virtual int32 GetShipUpgradeItemCount(const FGameplayTag& ItemTag) const override { return GetItemCount(ItemTag); }
+	virtual bool RemoveShipUpgradeItemsAtomically(const TArray<FCraftingItemStack>& Costs) override { return RemoveItemsAtomically(Costs); }
+	virtual bool AddShipUpgradeItemsAtomically(const TArray<FCraftingItemStack>& Items) override { return AddItemsAtomically(Items); }
+	virtual FShipUpgradeInventoryChangedNative& GetShipUpgradeInventoryChangedDelegate() override { return ShipUpgradeInventoryChanged; }
 
 	// 하나의 특정 슬롯 Getter
 	const TArray<FInventorySlot>& GetSlots() const { return GetSlots(ActiveTab); }
@@ -171,6 +200,7 @@ public:
 
 	// 인벤토리에 변경 사항이 있을 때 브로드캐스트 되는 델리게이트 ex. UI 업데이트 
 	FOnInventoryChanged OnInventoryChanged;
+	FShipUpgradeInventoryChangedNative ShipUpgradeInventoryChanged;
 
 protected:
 	// 인벤토리 가로 칸 수
@@ -206,6 +236,7 @@ protected:
 
 	/*----디버깅용---*/
 	void PrintInventoryToScreen() const;
+	void BroadcastShipUpgradeInventoryChanged();
 
 	void InitializeInventoryPages();
 	FInventoryTabPage* FindMutablePage(EInventoryTab Tab);

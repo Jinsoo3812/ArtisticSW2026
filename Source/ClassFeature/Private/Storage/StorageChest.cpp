@@ -4,6 +4,7 @@
 #include "Storage/StorageChest.h"
 #include "BasePlayer.h"
 #include "BasePlayerController.h"
+#include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Buoyancy/SWBuoyancyComponent.h"
 #include "InteractableComponent.h"
@@ -18,6 +19,11 @@ AStorageChest::AStorageChest()
 
 	ChestMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ChestMesh"));
 	SetRootComponent(ChestMesh);
+
+	// Keep the old native component name so derived Blueprints can conform their
+	// serialized hierarchy, but make it a child of the physics root.
+	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+	SceneRoot->SetupAttachment(ChestMesh);
 
 	SWBuoyancyComponent = CreateDefaultSubobject<USWBuoyancyComponent>(TEXT("SWBuoyancyComponent"));
 	SWBuoyancyComponent->ExecutionMode = ESWBuoyancyExecutionMode::ServerAuthority;

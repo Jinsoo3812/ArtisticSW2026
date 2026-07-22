@@ -8,6 +8,7 @@
 #include "StorageChest.generated.h"
 
 class UInteractableComponent;
+class USceneComponent;
 class UStaticMeshComponent;
 class USWBuoyancyComponent;
 
@@ -32,6 +33,13 @@ public:
 	void ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems);
 
 protected:
+	/**
+	 * Compatibility child for existing Blueprint assets that were authored when
+	 * SceneRoot was the native root. ChestMesh remains the physics/replication root.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USceneComponent> SceneRoot;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> ChestMesh;
 
