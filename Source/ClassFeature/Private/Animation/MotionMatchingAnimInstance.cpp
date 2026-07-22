@@ -2,6 +2,7 @@
 #include "BasePlayer.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Animation/SWTrajectoryComponent.h"
+#include "SwimmingComponent.h"
 #include "BaseGameplayTags.h"
 #include "CharacterTrajectoryComponent.h"
 #include "ChooserFunctionLibrary.h"
@@ -73,6 +74,12 @@ namespace
         default:
             return false;
         }
+    }
+
+    bool IsJumpStartAnimation(const UAnimationAsset* AnimationAsset)
+    {
+        const FString AssetName = GetNameSafe(AnimationAsset);
+        return AssetName.Contains(TEXT("_Jump_")) && AssetName.Contains(TEXT("_Start"));
     }
 
     bool IsAnyTransitionAnimation(const UObject* AnimationAsset)
@@ -160,6 +167,79 @@ namespace
         }
 
         return bRemoved;
+    }
+
+    bool CollapseBlendStackToTopPlayer(FAnimNode_MotionMatching& MotionMatchingNode)
+    {
+        if (MotionMatchingNode.AnimPlayers.Num() <= 1)
+        {
+            return false;
+        }
+
+        MotionMatchingNode.AnimPlayers.RemoveAt(1, MotionMatchingNode.AnimPlayers.Num() - 1, EAllowShrinking::No);
+        return true;
+    }
+
+    bool StabilizeJumpStartBlendStackPlayer(
+        const FAnimationUpdateContext& Context,
+        FAnimNode_MotionMatching& MotionMatchingNode,
+        FCachedMotionMatchingNodeInfo& NodeInfo)
+    {
+        if (MotionMatchingNode.AnimPlayers.IsEmpty())
+        {
+            NodeInfo.bHasJumpStartLock = false;
+            NodeInfo.LockedJumpStartAnim.Reset();
+            NodeInfo.LockedJumpStartTime = 0.f;
+            return false;
+        }
+
+        FBlendStackAnimPlayer& TopPlayer = MotionMatchingNode.AnimPlayers[0];
+        UAnimationAsset* TopAsset = TopPlayer.GetAnimationAsset();
+        if (!IsJumpStartAnimation(TopAsset))
+        {
+            NodeInfo.bHasJumpStartLock = false;
+            NodeInfo.LockedJumpStartAnim.Reset();
+            NodeInfo.LockedJumpStartTime = 0.f;
+            return false;
+        }
+
+        if (!NodeInfo.bHasJumpStartLock || !NodeInfo.LockedJumpStartAnim.IsValid())
+        {
+            NodeInfo.LockedJumpStartAnim = TopAsset;
+            NodeInfo.LockedJumpStartTime = ClampAnimationAssetTime(TopAsset, TopPlayer.GetAccumulatedTime());
+            NodeInfo.bHasJumpStartLock = true;
+            NodeInfo.bPostUpdateCollapsedTransitionStack = CollapseBlendStackToTopPlayer(MotionMatchingNode);
+            return false;
+        }
+
+        UAnimationAsset* LockedAsset = NodeInfo.LockedJumpStartAnim.Get();
+        const float ExpectedTime = ClampAnimationAssetTime(
+            LockedAsset,
+            NodeInfo.LockedJumpStartTime + FMath::Max(0.f, Context.GetDeltaTime()) * FMath::Max(0.f, TopPlayer.GetPlayRate()));
+        const float TopTime = TopPlayer.GetAccumulatedTime();
+        const bool bAssetChanged = TopAsset != LockedAsset;
+        const bool bTimeRewound = TopTime + RemoteTransitionAllowedTimeSlack < ExpectedTime;
+        const bool bTimeJumpedForward = TopTime > ExpectedTime + RemoteTransitionMaxForwardJump;
+
+        bool bRestored = false;
+        if (bAssetChanged || bTimeRewound || bTimeJumpedForward)
+        {
+            bRestored = RestoreBlendStackTopPlayer(Context, MotionMatchingNode, LockedAsset, ExpectedTime);
+            if (bRestored)
+            {
+                NodeInfo.LockedJumpStartTime = ExpectedTime;
+            }
+        }
+        else
+        {
+            NodeInfo.LockedJumpStartTime = ClampAnimationAssetTime(
+                LockedAsset,
+                FMath::Max(NodeInfo.LockedJumpStartTime, TopTime));
+        }
+
+        NodeInfo.bPostUpdateCollapsedTransitionStack =
+            CollapseBlendStackToTopPlayer(MotionMatchingNode) || NodeInfo.bPostUpdateCollapsedTransitionStack;
+        return bRestored;
     }
 
     bool StabilizeRemoteTransitionBlendStackPlayer(
@@ -629,6 +709,42 @@ namespace
         }
     }
 
+
+    void ApplyJumpStartPredictionToTrajectory(
+        FTransformTrajectory& Trajectory,
+        const ABasePlayer& CharacterOwner,
+        const ULocomotionAnimStateComponent& StateComponent)
+    {
+        const UCharacterMovementComponent* MovementComponent = CharacterOwner.GetCharacterMovement();
+        if (!MovementComponent || !MovementComponent->IsFalling())
+        {
+            return;
+        }
+
+        const FVector LaunchDirection =
+            CharacterOwner.GetActorForwardVector() * StateComponent.JumpStartMoveDirection.Y +
+            CharacterOwner.GetActorRightVector() * StateComponent.JumpStartMoveDirection.X;
+        const FVector HorizontalDirection = LaunchDirection.GetSafeNormal2D();
+        const FVector Origin = CharacterOwner.GetActorLocation();
+        const FVector Velocity = MovementComponent->Velocity;
+        const float GravityZ = MovementComponent->GetGravityZ();
+
+        for (FTransformTrajectorySample& Sample : Trajectory.Samples)
+        {
+            if (Sample.TimeInSeconds <= UE_KINDA_SMALL_NUMBER)
+            {
+                continue;
+            }
+
+            const float Time = Sample.TimeInSeconds;
+            FTransform SampleTransform = Sample.GetTransform();
+            FVector SampleLocation = Origin + HorizontalDirection * StateComponent.JumpStartGroundSpeed * Time;
+            SampleLocation.Z = Origin.Z + Velocity.Z * Time + 0.5f * GravityZ * Time * Time;
+            SampleTransform.SetLocation(SampleLocation);
+            Sample.SetTransform(SampleTransform);
+        }
+    }
+
     void AppendMotionMatchingAnimCaptureLine(const FString& Line)
     {
         const FString LogFilePath = FPaths::Combine(FPaths::ProjectLogDir(), TEXT("MMCapture.log"));
@@ -837,6 +953,16 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                 Info.bPreUpdateAppliedDbChanged = bAppliedDatabaseChanged;
                 const ELocomotionState CurrentMotionState = static_cast<ELocomotionState>(ThreadSafeData.GroundData.GroundMotionMode);
                 const bool bIsTransitionState = IsTransitionMotionMatchingState(CurrentMotionState);
+                const bool bIsJumpStartPhase =
+                    CurrentMotionState == ELocomotionState::InAir &&
+                    ThreadSafeData.AirData.bIsJumping;
+                const bool bIsProtectedOneShotState = bIsTransitionState || bIsJumpStartPhase;
+                const bool bIsAirLoopPhase =
+                    ThreadSafeData.AirData.bIsInAir &&
+                    !ThreadSafeData.AirData.bIsJumping &&
+                    !ThreadSafeData.AirData.bIsFallOffStart &&
+                    !ThreadSafeData.LandingData.bIsLanding &&
+                    !ThreadSafeData.LandingData.bLandingRequested;
                 const bool bIsRemoteIdleHold =
                     bIsRemoteSimProxy &&
                     CurrentMotionState == ELocomotionState::Idle &&
@@ -845,7 +971,11 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     !bAppliedDatabaseChanged;
                 if (bAppliedDatabaseChanged)
                 {
+                    // Jump start must replace a continuing ground pose on the
+                    // very first airborne frame. General air loops retain
+                    // continuity after their initial search.
                     const bool bInvalidateContinuingPose =
+                        bIsJumpStartPhase ||
                         (!bIsTransitionState && CurrentMotionState != ELocomotionState::InAir);
                     const EPoseSearchInterruptMode InterruptMode = bInvalidateContinuingPose
                         ? EPoseSearchInterruptMode::InterruptOnDatabaseChangeAndInvalidateContinuingPose
@@ -864,11 +994,15 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     }
                     Info.AppliedDatabase = CurrentActivePoseSearchDatabase;
                 }
-                else if (bIsTransitionState)
+                else if (bIsProtectedOneShotState)
                 {
                     MMNode->SetInterruptMode(EPoseSearchInterruptMode::DoNotInterrupt);
                 }
                 else if (bIsFallOffStartPhase && !bSearchResultDatabaseChanged && !bAppliedDatabaseChanged)
+                {
+                    MMNode->SetInterruptMode(EPoseSearchInterruptMode::DoNotInterrupt);
+                }
+                else if (bIsAirLoopPhase && !bSearchResultDatabaseChanged && !bAppliedDatabaseChanged)
                 {
                     MMNode->SetInterruptMode(EPoseSearchInterruptMode::DoNotInterrupt);
                 }
@@ -877,14 +1011,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     MMNode->SetInterruptMode(EPoseSearchInterruptMode::DoNotInterrupt);
                 }
 
-                const bool bIsAirLoopPhase =
-                    ThreadSafeData.AirData.bIsInAir &&
-                    !ThreadSafeData.AirData.bIsJumping &&
-                    !ThreadSafeData.AirData.bIsFallOffStart &&
-                    !ThreadSafeData.LandingData.bIsLanding &&
-                    !ThreadSafeData.LandingData.bLandingRequested;
-
-                if (bIsFallOffStartPhase || bIsAirLoopPhase)
+                if (bIsJumpStartPhase || bIsFallOffStartPhase || bIsAirLoopPhase)
                 {
                     MMNode->SetMaxActiveBlends(1);
                 }
@@ -910,11 +1037,10 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     }
                     else if (bIsAirLoopPhase)
                     {
-                        const bool bRemoteStableAirLoop =
-                            bIsRemoteSimProxy &&
+                        const bool bStableAirLoop =
                             !bSearchResultDatabaseChanged &&
                             !bAppliedDatabaseChanged;
-                        SearchThrottleTime = bRemoteStableAirLoop
+                        SearchThrottleTime = bStableAirLoop
                             ? SuppressedSearchThrottleTime
                             : Info.DefaultSearchThrottleTime;
                     }
@@ -922,7 +1048,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     {
                         UMotionMatchingAnimInstance* MMAnim = Cast<UMotionMatchingAnimInstance>(AnimInstanceObj);
                         const ULocomotionAnimStateComponent* StateComp = MMAnim ? MMAnim->CachedLocomotionStateComponent.Get() : nullptr;
-                        if (StateComp && (StateComp->CurrentState == ELocomotionState::Start || StateComp->CurrentState == ELocomotionState::Stop || StateComp->CurrentState == ELocomotionState::Landing))
+                        if (bIsJumpStartPhase || (StateComp && (StateComp->CurrentState == ELocomotionState::Start || StateComp->CurrentState == ELocomotionState::Stop || StateComp->CurrentState == ELocomotionState::Landing)))
                         {
                             // Start 및 Stop 상태에서는 최초 진입 프레임(bAppliedDatabaseChanged) 및 에셋 교체 직후 프레임(bSearchResultDatabaseChanged)에만 검색을 허용하고,
                             // 그 외의 프레임에서는 추가 평가(재검색)를 차단하여 재생 중인 에셋이 중간에 끊기거나 오매칭되는 현상을 방지합니다.
@@ -965,11 +1091,14 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
 
     const ELocomotionState UpdatedMotionState = static_cast<ELocomotionState>(ThreadSafeData.GroundData.GroundMotionMode);
     const APawn* UpdatedPawn = AnimInstanceObj ? AnimInstanceObj->TryGetPawnOwner() : nullptr;
+    const bool bStabilizeJumpStart =
+        UpdatedMotionState == ELocomotionState::InAir &&
+        ThreadSafeData.AirData.bIsJumping;
     const bool bStabilizeRemoteTransition =
         UpdatedPawn &&
         UpdatedPawn->GetLocalRole() == ROLE_SimulatedProxy &&
         UpdatedMotionState == ELocomotionState::Landing;
-    if (bStabilizeRemoteTransition)
+    if (bStabilizeJumpStart || bStabilizeRemoteTransition)
     {
         for (FCachedMotionMatchingNodeInfo& Info : CachedMMNodes)
         {
@@ -981,8 +1110,9 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     Info.NodeProperty->ContainerPtrToValuePtr<FAnimNode_MotionMatching>(AnimInstanceObj);
                 if (MMNode)
                 {
-                    Info.bPostUpdateRestoredTransitionStack =
-                        StabilizeRemoteTransitionBlendStackPlayer(InContext, *MMNode, Info, UpdatedMotionState);
+                    Info.bPostUpdateRestoredTransitionStack = bStabilizeJumpStart
+                        ? StabilizeJumpStartBlendStackPlayer(InContext, *MMNode, Info)
+                        : StabilizeRemoteTransitionBlendStackPlayer(InContext, *MMNode, Info, UpdatedMotionState);
                 }
             }
         }
@@ -996,6 +1126,9 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
             Info.bHasRemoteTransitionLock = false;
             Info.LockedRemoteTransitionAnim.Reset();
             Info.LockedRemoteTransitionTime = 0.f;
+            Info.bHasJumpStartLock = false;
+            Info.LockedJumpStartAnim.Reset();
+            Info.LockedJumpStartTime = 0.f;
         }
     }
 
@@ -1595,6 +1728,24 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         TrajectoryComp->UpdateTrajectoryState(DeltaSeconds);
     }
 
+    // Swimming visual state must remain current even when distant characters
+    // skip a costly motion-matching search this frame.
+    FSwimmingAnimationState CurrentSwimData;
+    if (const USwimmingComponent* SwimmingComponent = CachedBasePlayer->GetSwimmingComponent())
+    {
+        CurrentSwimData = SwimmingComponent->GetAnimationState();
+    }
+
+    // A linked animation-layer instance receives the main instance's snapshot.
+    // Keep using that explicit source even if its own NativeUpdate is evaluated
+    // at a different point in the linked-layer update order.
+    if (bHasLinkedSwimAnimationState && GetSkelMeshComponent() && GetSkelMeshComponent()->GetAnimInstance() != this)
+    {
+        CurrentSwimData = LinkedSwimAnimationState;
+    }
+    GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData = CurrentSwimData;
+    PropagateSwimAnimationStateToLinkedInstances(CurrentSwimData);
+
     // 최적화 틱 레이트에 맞추어 이번 프레임의 모션 매칭 평가 여부 결정
     if (!ShouldEvaluateMotionMatchingThisFrame(DeltaSeconds))
     {
@@ -1710,7 +1861,9 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         case ELocomotionState::InAir:
             if (CachedLocomotionStateComponent->bIsJumping)
             {
-                CurrentActivePoseSearchDatabase = JumpStartDatabase;
+                CurrentActivePoseSearchDatabase = CachedLocomotionStateComponent->bJumpStartWasMoving
+                    ? (JumpStartMovingDatabase.Get() ? JumpStartMovingDatabase : JumpStartDatabase)
+                    : (JumpStartStandDatabase.Get() ? JumpStartStandDatabase : JumpStartDatabase);
             }
             else if (CachedLocomotionStateComponent->bIsFallOffStart)
             {
@@ -1756,7 +1909,10 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     if (CachedLocomotionStateComponent)
     {
         const ELocomotionState State = CachedLocomotionStateComponent->CurrentState;
-        if (IsTransitionMotionMatchingState(State))
+        const bool bIsJumpStartPhase =
+            State == ELocomotionState::InAir &&
+            CachedLocomotionStateComponent->bIsJumping;
+        if (IsTransitionMotionMatchingState(State) || bIsJumpStartPhase)
         {
             if (!bTransitionLocked || LockedTransitionState != State || !LockedTransitionDatabase)
             {
@@ -1886,7 +2042,11 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                 {
                     ELocomotionState State = CachedLocomotionStateComponent->CurrentState;
 
-                    if (State == ELocomotionState::InAir && CachedLocomotionStateComponent->bIsFallOffStart)
+                    if (State == ELocomotionState::InAir && CachedLocomotionStateComponent->bIsJumping)
+                    {
+                        ApplyJumpStartPredictionToTrajectory(ThreadSafeData.MovementData.Trajectory, *CachedBasePlayer, *CachedLocomotionStateComponent);
+                    }
+                    else if (State == ELocomotionState::InAir && CachedLocomotionStateComponent->bIsFallOffStart)
                     {
                         ApplyFallingPredictionToTrajectory(ThreadSafeData.MovementData.Trajectory, *CachedBasePlayer);
                     }
@@ -1935,6 +2095,9 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     ThreadSafeData.AirData.bIsInAir = CachedLocomotionStateComponent->bIsInAir;
     ThreadSafeData.AirData.bIsJumping = CachedLocomotionStateComponent->bIsJumping;
     ThreadSafeData.AirData.bIsFallOffStart = CachedLocomotionStateComponent->bIsFallOffStart;
+    ThreadSafeData.AirData.bJumpStartWasMoving = CachedLocomotionStateComponent->bJumpStartWasMoving;
+    ThreadSafeData.AirData.JumpStartGroundSpeed = CachedLocomotionStateComponent->JumpStartGroundSpeed;
+    ThreadSafeData.AirData.JumpStartMoveDirection = CachedLocomotionStateComponent->JumpStartMoveDirection;
 
     // Landing Data
     ThreadSafeData.LandingData.bIsLanding = (CachedLocomotionStateComponent->CurrentState == ELocomotionState::Landing);
@@ -1961,6 +2124,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
     ThreadSafeData.WeaponUpperBodyData = FAnimWeaponUpperBodyData();
     ThreadSafeData.BowData = FAnimBowData();
+    ThreadSafeData.SwimData = CurrentSwimData;
 
     if (const UPlayerEquipmentComponent* EquipmentComponent = CachedBasePlayer->GetEquipmentComponent())
     {
@@ -2442,6 +2606,71 @@ float UMotionMatchingAnimInstance::GetThreadSafeBowStringIKAlpha() const
 FTransform UMotionMatchingAnimInstance::GetThreadSafeBowStringIKTargetTransform() const
 {
     return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.StringIKTargetTransform;
+}
+
+void UMotionMatchingAnimInstance::ReceiveLinkedSwimAnimationState(const FSwimmingAnimationState& InSwimState)
+{
+    LinkedSwimAnimationState = InSwimState;
+    bHasLinkedSwimAnimationState = true;
+    GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData = InSwimState;
+}
+
+void UMotionMatchingAnimInstance::PropagateSwimAnimationStateToLinkedInstances(const FSwimmingAnimationState& InSwimState)
+{
+    USkeletalMeshComponent* MeshComponent = GetSkelMeshComponent();
+    if (!MeshComponent || MeshComponent->GetAnimInstance() != this)
+    {
+        return;
+    }
+
+    if (UAnimInstance* LinkedInstance = GetLinkedAnimLayerInstanceByClass(UMotionMatchingAnimInstance::StaticClass(), true))
+    {
+        if (UMotionMatchingAnimInstance* LinkedMotionMatchingInstance = Cast<UMotionMatchingAnimInstance>(LinkedInstance))
+        {
+            LinkedMotionMatchingInstance->ReceiveLinkedSwimAnimationState(InSwimState);
+        }
+    }
+
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsSwimming() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.bIsSwimming;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsUnderwater() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.bIsUnderwater;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeSwimDiveInputHeld() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.bDiveInputHeld;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeSwimAscendInputHeld() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.bAscendInputHeld;
+}
+
+ESwimDepthMode UMotionMatchingAnimInstance::GetThreadSafeSwimDepthMode() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.DepthMode;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeSwimSpeed() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.HorizontalSpeed;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeSwimVerticalSpeed() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.VerticalSpeed;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeSwimDirection() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.Direction;
 }
 
 FFootPlacementPlantSettings UMotionMatchingAnimInstance::Get_FootPlacementPlantSettings() const
