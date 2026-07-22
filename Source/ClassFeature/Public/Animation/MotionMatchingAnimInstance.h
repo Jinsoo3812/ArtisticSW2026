@@ -7,6 +7,7 @@
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "BoneControllers/AnimNode_FootPlacement.h"
 #include "GameplayTagContainer.h"
+#include "SwimmingComponent.h"
 #include "MotionMatchingAnimInstance.generated.h"
 
 class UPoseSearchDatabase;
@@ -266,6 +267,9 @@ struct FAnimThreadSafeData
 
     UPROPERTY(BlueprintReadOnly, Category = "Bow")
     FAnimBowData BowData;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Swimming")
+    FSwimmingAnimationState SwimData;
 };
 
 struct FCachedMotionMatchingNodeInfo
@@ -424,6 +428,30 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
     FTransform GetThreadSafeBowStringIKTargetTransform() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsSwimming() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsUnderwater() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeSwimDiveInputHeld() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeSwimAscendInputHeld() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    ESwimDepthMode GetThreadSafeSwimDepthMode() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    float GetThreadSafeSwimSpeed() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    float GetThreadSafeSwimVerticalSpeed() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    float GetThreadSafeSwimDirection() const;
 
     UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
     FFootPlacementPlantSettings Get_FootPlacementPlantSettings() const;

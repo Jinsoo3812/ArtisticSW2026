@@ -2,6 +2,7 @@
 #include "BasePlayer.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Animation/SWTrajectoryComponent.h"
+#include "SwimmingComponent.h"
 #include "BaseGameplayTags.h"
 #include "CharacterTrajectoryComponent.h"
 #include "ChooserFunctionLibrary.h"
@@ -1595,6 +1596,15 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         TrajectoryComp->UpdateTrajectoryState(DeltaSeconds);
     }
 
+    // Swimming visual state must remain current even when distant characters
+    // skip a costly motion-matching search this frame.
+    FSwimmingAnimationState CurrentSwimData;
+    if (const USwimmingComponent* SwimmingComponent = CachedBasePlayer->GetSwimmingComponent())
+    {
+        CurrentSwimData = SwimmingComponent->GetAnimationState();
+    }
+    GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData = CurrentSwimData;
+
     // 최적화 틱 레이트에 맞추어 이번 프레임의 모션 매칭 평가 여부 결정
     if (!ShouldEvaluateMotionMatchingThisFrame(DeltaSeconds))
     {
@@ -1961,6 +1971,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
     ThreadSafeData.WeaponUpperBodyData = FAnimWeaponUpperBodyData();
     ThreadSafeData.BowData = FAnimBowData();
+    ThreadSafeData.SwimData = CurrentSwimData;
 
     if (const UPlayerEquipmentComponent* EquipmentComponent = CachedBasePlayer->GetEquipmentComponent())
     {
@@ -2442,6 +2453,46 @@ float UMotionMatchingAnimInstance::GetThreadSafeBowStringIKAlpha() const
 FTransform UMotionMatchingAnimInstance::GetThreadSafeBowStringIKTargetTransform() const
 {
     return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.StringIKTargetTransform;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsSwimming() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.bIsSwimming;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsUnderwater() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.bIsUnderwater;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeSwimDiveInputHeld() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.bDiveInputHeld;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeSwimAscendInputHeld() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.bAscendInputHeld;
+}
+
+ESwimDepthMode UMotionMatchingAnimInstance::GetThreadSafeSwimDepthMode() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.DepthMode;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeSwimSpeed() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.HorizontalSpeed;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeSwimVerticalSpeed() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.VerticalSpeed;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeSwimDirection() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData.Direction;
 }
 
 FFootPlacementPlantSettings UMotionMatchingAnimInstance::Get_FootPlacementPlantSettings() const
