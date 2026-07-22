@@ -516,6 +516,22 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
 	TObjectPtr<UInventoryComponent> InventoryComponent;
 
+	/** 에디터 테스트 시작 시 특정 아이템을 인벤토리에 지급한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory")
+	bool bGiveStartingItemForTest = false;
+
+	/** DA_ItemData에 등록된 구체적인 Item.Id 태그를 지정한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory",
+		meta = (EditCondition = "bGiveStartingItemForTest", Categories = "Item.Id"))
+	FGameplayTag StartingItemTagForTest;
+
+	/** 테스트 시작 시 보유하게 할 총수량이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory",
+		meta = (EditCondition = "bGiveStartingItemForTest", ClampMin = "1", UIMin = "1"))
+	int32 StartingItemCountForTest = 1;
+
+	void GiveStartingItemForTest();
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<ULocomotionAnimStateComponent> AnimStateComponent;
 

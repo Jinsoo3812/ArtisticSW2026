@@ -180,8 +180,53 @@ void ABasePlayer::BeginPlay()
 		InventoryComponent->OnInventoryChanged.AddUObject(this, &ABasePlayer::HandleInventoryContentsChanged);
 	}
 
+#if WITH_EDITOR
+	GiveStartingItemForTest();
+#endif
+
 	OnItemSlotsChanged.Broadcast();
 	OnQuickSlotsChanged.Broadcast();
+}
+
+void ABasePlayer::GiveStartingItemForTest()
+{
+	if (!HasAuthority() || !bGiveStartingItemForTest || !InventoryComponent ||
+		!StartingItemTagForTest.IsValid() || StartingItemCountForTest <= 0)
+	{
+		return;
+	}
+
+	UItemSubsystem* ItemSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
+	if (!ItemSubsystem || !ItemSubsystem->GetItemDefinition(StartingItemTagForTest))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ABasePlayer::GiveStartingItemForTest : ItemTag %s is not registered in DA_ItemData."),
+			*StartingItemTagForTest.ToString());
+		return;
+	}
+
+	const int32 CurrentCount = InventoryComponent->GetMaterialCount(StartingItemTagForTest);
+	const int32 AmountToAdd = FMath::Max(0, StartingItemCountForTest - CurrentCount);
+	if (AmountToAdd <= 0)
+	{
+		return;
+	}
+
+	const int32 AddedCount = InventoryComponent->AddMaterial(StartingItemTagForTest, AmountToAdd);
+	if (AddedCount != AmountToAdd)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ABasePlayer::GiveStartingItemForTest : Requested %d of %s, but added %d. Check inventory capacity."),
+			AmountToAdd,
+			*StartingItemTagForTest.ToString(),
+			AddedCount);
+		return;
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("ABasePlayer::GiveStartingItemForTest : Added %s. Total=%d"),
+		*StartingItemTagForTest.ToString(),
+		StartingItemCountForTest);
 }
 
 void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -341,6 +386,11 @@ void ABasePlayer::PossessedBy(AController* NewController)
 
 		// PlayerState로 부터 ASC 포인터 가져와서 캐싱
 		CachedAbilitySystemComponent = PS->GetAbilitySystemComponent();
+		if (CachedAbilitySystemComponent.IsValid() &&
+			!CachedAbilitySystemComponent->HasMatchingGameplayTag(Team_Player))
+		{
+			CachedAbilitySystemComponent->AddLooseGameplayTag(Team_Player);
+		}
 		if (HealthComponent)
 		{
 			HealthComponent->InitializeWithAbilitySystem(CachedAbilitySystemComponent.Get());
@@ -698,93 +748,15 @@ bool ABasePlayer::IsEquippedItemOwnedByLegacySlot() const
 
 void ABasePlayer::UnequipCurrentItem()
 {
-	if (!HasAuthority() || !IsValid(EquippedItem))
+	if (EquipmentComponent)
 	{
-		return;
+		EquipmentComponent->UnequipCurrentItem();
 	}
-
-	FGameplayTag UseKeyTag = Key_Default_Mouse_LeftClick;
-	if (UItemSubsystem* ItemSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr)
-	{
-		const FGameplayTag ConfiguredUseKey = ItemSubsystem->GetUseKeyTag(EquippedItem->ItemTag);
-		if (ConfiguredUseKey.IsValid())
-		{
-			UseKeyTag = ConfiguredUseKey;
-		}
-	}
-	RemoveAbilityFromSlot(UseKeyTag);
-
-	ABaseItem* PreviousItem = EquippedItem;
-	const bool bLegacySlotItem = IsEquippedItemOwnedByLegacySlot();
-	EquippedItem = nullptr;
-	if (bLegacySlotItem)
-	{
-		PreviousItem->SetItemState(EItemState::InItemSlot);
-	}
-	else
-	{
-		PreviousItem->Destroy();
-	}
-
-	OnItemSlotsChanged.Broadcast();
-	OnQuickSlotsChanged.Broadcast();
 }
 
 bool ABasePlayer::EquipInventoryWeapon(FGameplayTag ItemTag)
 {
-	if (!HasAuthority() || !InventoryComponent || InventoryComponent->GetMaterialCount(ItemTag) <= 0)
-	{
-		return false;
-	}
-
-	if (IsValid(EquippedItem) && EquippedItem->ItemTag == ItemTag && !IsEquippedItemOwnedByLegacySlot())
-	{
-		return true;
-	}
-
-	UnequipCurrentItem();
-	UItemSubsystem* ItemSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
-	if (!ItemSubsystem)
-	{
-		return false;
-	}
-
-	ABaseItem* SpawnedItem = ItemSubsystem->SpawnItem(ItemTag, GetActorTransform(), EItemState::InItemSlot, this);
-	if (!IsValid(SpawnedItem))
-	{
-		return false;
-	}
-
-	EquippedItem = SpawnedItem;
-	EquippedItem->SetItemState(EItemState::Equipped);
-	EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-		ItemSubsystem->GetAttachmentSocketName(ItemTag));
-
-	bool bCanUse = EquippedItem->GetCanUseAbilityList().IsEmpty();
-	if (!bCanUse && CachedAbilitySystemComponent.IsValid())
-	{
-		for (const FGameplayTag& RequiredTag : EquippedItem->GetCanUseAbilityList())
-		{
-			if (CachedAbilitySystemComponent->HasMatchingGameplayTag(RequiredTag))
-			{
-				bCanUse = true;
-				break;
-			}
-		}
-	}
-
-	if (bCanUse)
-	{
-		if (TSubclassOf<UGameplayAbility> AbilityClass = EquippedItem->GetGrantedAbilityClass())
-		{
-			FGameplayTag UseKeyTag = ItemSubsystem->GetUseKeyTag(ItemTag);
-			GrantAbilityToSlot(UseKeyTag.IsValid() ? UseKeyTag : Key_Default_Mouse_LeftClick, AbilityClass);
-		}
-	}
-
-	OnItemSlotsChanged.Broadcast();
-	OnQuickSlotsChanged.Broadcast();
-	return true;
+	return EquipmentComponent && EquipmentComponent->EquipInventoryWeapon(ItemTag);
 }
 
 bool ABasePlayer::ConsumeInventoryItem(FGameplayTag ItemTag)
