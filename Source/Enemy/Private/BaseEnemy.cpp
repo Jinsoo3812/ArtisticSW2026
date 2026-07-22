@@ -5,6 +5,7 @@
 #include "Weapon/BaseWeapon.h"
 #include "Weapon/WeaponDataAsset.h"
 #include "Weapon/BaseWeaponComponent.h"
+#include "BaseGameplayTags.h"
 
 #include "Storage/StorageChest.h"
 
@@ -76,6 +77,10 @@ void ABaseEnemy::BeginPlay()
 	if (AbilitySystemComponent)
 	{
 		AbilitySystemComponent->InitAbilityActorInfo(this, this);
+		if (HasAuthority())
+		{
+			AbilitySystemComponent->AddLooseGameplayTag(Team_Enemy);
+		}
 		if (HealthComponent)
 		{
 			HealthComponent->OnDeathStarted.AddUniqueDynamic(this, &ABaseEnemy::OnDeathStarted);
