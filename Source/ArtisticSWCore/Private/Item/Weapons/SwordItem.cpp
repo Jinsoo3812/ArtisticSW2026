@@ -36,16 +36,16 @@ float ASwordItem::CalculateDamage(float AttackPower) const
 	return FMath::Max(0.0f, BaseDamage + FMath::Max(0.0f, AttackPower) * AttackPowerMultiplier);
 }
 
-void ASwordItem::HitScanStart(const FGameplayEffectSpecHandle& DamageEffectSpecHandle)
+bool ASwordItem::HitScanStart(const FGameplayEffectSpecHandle& DamageEffectSpecHandle)
 {
 	if (!HasAuthority() || !GetWorld() || !TraceStartPoint || !TraceEndPoint)
 	{
-		return;
+		return false;
 	}
 
 	if (!DamageEffectSpecHandle.IsValid() || !DamageEffectSpecHandle.Data.IsValid())
 	{
-		return;
+		return false;
 	}
 
 	HitScanEnd();
@@ -57,27 +57,17 @@ void ASwordItem::HitScanStart(const FGameplayEffectSpecHandle& DamageEffectSpecH
 	PreviousTraceStart = TraceStartPoint->GetComponentLocation();
 	PreviousTraceEnd = TraceEndPoint->GetComponentLocation();
 
-	ProcessTrace();
-
-	GetWorldTimerManager().SetTimer(
-		HitScanTimerHandle,
-		this,
-		&ASwordItem::ProcessTrace,
-		FMath::Max(HitScanInterval, KINDA_SMALL_NUMBER),
-		true);
+	// Capture actors already intersecting the blade when the window opens.
+	TraceSegment(PreviousTraceStart, PreviousTraceEnd);
+	return true;
 }
 
 void ASwordItem::HitScanEnd()
 {
-	if (GetWorld())
-	{
-		GetWorldTimerManager().ClearTimer(HitScanTimerHandle);
-	}
-
 	ClearHitScanState();
 }
 
-void ASwordItem::ProcessTrace()
+void ASwordItem::SampleHitScan()
 {
 	if (!HasAuthority() || !GetWorld() || !bHitScanActive || !TraceStartPoint || !TraceEndPoint)
 	{
@@ -132,7 +122,7 @@ void ASwordItem::TraceSegment(const FVector& Start, const FVector& End)
 		TraceObjectTypes,
 		bTraceComplex,
 		ActorsToIgnore,
-		bDrawDebugTrace ? EDrawDebugTrace::ForDuration : EDrawDebugTrace::None,
+		bDrawDebugTrace ? EDrawDebugTrace::ForOneFrame : EDrawDebugTrace::None,
 		HitResults,
 		true);
 
@@ -244,5 +234,6 @@ void ASwordItem::ClearHitScanState()
 	bHasPreviousTracePoints = false;
 	CachedDamageEffectSpecHandle = FGameplayEffectSpecHandle();
 	HitActors.Reset();
-	HitScanTimerHandle.Invalidate();
+	PreviousTraceStart = FVector::ZeroVector;
+	PreviousTraceEnd = FVector::ZeroVector;
 }

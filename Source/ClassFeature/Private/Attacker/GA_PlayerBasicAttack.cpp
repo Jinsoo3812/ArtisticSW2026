@@ -12,6 +12,8 @@
 #include "GASCombatLibrary.h"
 #include "Item/Weapons/SwordItem.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogPlayerBasicAttack, Log, All);
+
 UGA_PlayerBasicAttack::UGA_PlayerBasicAttack()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
@@ -33,6 +35,10 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	bAttackFinished = false;
 	bHitScanActive = false;
 	bComboInputBuffered = false;
+	bServerCombatPoseRefreshAcquired = false;
+	HitScanWindowStartTime = -1.0;
+	ExpectedHitScanWindowDuration = 0.0f;
+	HitScanWindowTickCount = 0;
 	CurrentComboIndex = INDEX_NONE;
 
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
@@ -60,6 +66,11 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
 	{
 		Player->StopSprint();
+		if (Player->HasAuthority())
+		{
+			Player->AcquireServerCombatPoseRefresh();
+			bServerCombatPoseRefreshAcquired = true;
+		}
 	}
 
 	HitScanStartEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
@@ -72,6 +83,18 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	{
 		HitScanStartEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnHitScanStartEvent);
 		HitScanStartEventTask->ReadyForActivation();
+	}
+
+	HitScanTickEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+		this,
+		Event_HandleScan_Tick,
+		nullptr,
+		false,
+		true);
+	if (HitScanTickEventTask)
+	{
+		HitScanTickEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnHitScanTickEvent);
+		HitScanTickEventTask->ReadyForActivation();
 	}
 
 	HitScanEndEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
@@ -124,6 +147,16 @@ void UGA_PlayerBasicAttack::EndAbility(
 	bool bWasCancelled)
 {
 	EndHitScan();
+
+	if (bServerCombatPoseRefreshAcquired)
+	{
+		if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
+		{
+			Player->ReleaseServerCombatPoseRefresh();
+		}
+		bServerCombatPoseRefreshAcquired = false;
+	}
+
 	RemoveAttackStateTag();
 
 	CachedSword = nullptr;
@@ -133,12 +166,16 @@ void UGA_PlayerBasicAttack::EndAbility(
 	CachedDamageSpecHandle = FGameplayEffectSpecHandle();
 	AttackMontageTask = nullptr;
 	HitScanStartEventTask = nullptr;
+	HitScanTickEventTask = nullptr;
 	HitScanEndEventTask = nullptr;
 	ComboCommitEventTask = nullptr;
 	ComboInputEventTask = nullptr;
 	CurrentComboIndex = INDEX_NONE;
 	bComboInputBuffered = false;
 	bAttackFinished = false;
+	HitScanWindowStartTime = -1.0;
+	ExpectedHitScanWindowDuration = 0.0f;
+	HitScanWindowTickCount = 0;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -353,12 +390,62 @@ void UGA_PlayerBasicAttack::OnAttackMontageCancelled()
 
 void UGA_PlayerBasicAttack::OnHitScanStartEvent(FGameplayEventData Payload)
 {
+	UWorld* World = GetWorld();
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	HitScanWindowStartTime = World ? World->GetTimeSeconds() : -1.0;
+	ExpectedHitScanWindowDuration = Payload.EventMagnitude / FMath::Max(CachedAttackMontagePlayRate, KINDA_SMALL_NUMBER);
+	HitScanWindowTickCount = 0;
+
+	UE_LOG(
+		LogPlayerBasicAttack,
+		Log,
+		TEXT("[HitScanWindow Begin] Avatar=%s Authority=%d Role=%d NetMode=%d ExpectedDuration=%.4f ComboIndex=%d"),
+		*GetNameSafe(Avatar),
+		Avatar && Avatar->HasAuthority() ? 1 : 0,
+		Avatar ? static_cast<int32>(Avatar->GetLocalRole()) : static_cast<int32>(ROLE_None),
+		World ? static_cast<int32>(World->GetNetMode()) : static_cast<int32>(NM_Standalone),
+		ExpectedHitScanWindowDuration,
+		CurrentComboIndex);
+
 	StartHitScan();
+}
+
+void UGA_PlayerBasicAttack::OnHitScanTickEvent(FGameplayEventData Payload)
+{
+	++HitScanWindowTickCount;
+
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	if (Avatar && Avatar->HasAuthority() && bHitScanActive && CachedSword)
+	{
+		CachedSword->SampleHitScan();
+	}
 }
 
 void UGA_PlayerBasicAttack::OnHitScanEndEvent(FGameplayEventData Payload)
 {
+	UWorld* World = GetWorld();
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	const double ActualDuration = World && HitScanWindowStartTime >= 0.0
+		? World->GetTimeSeconds() - HitScanWindowStartTime
+		: -1.0;
+
+	UE_LOG(
+		LogPlayerBasicAttack,
+		Log,
+		TEXT("[HitScanWindow End] Avatar=%s Authority=%d Role=%d NetMode=%d ExpectedDuration=%.4f ActualDuration=%.4f TickCount=%d ComboIndex=%d"),
+		*GetNameSafe(Avatar),
+		Avatar && Avatar->HasAuthority() ? 1 : 0,
+		Avatar ? static_cast<int32>(Avatar->GetLocalRole()) : static_cast<int32>(ROLE_None),
+		World ? static_cast<int32>(World->GetNetMode()) : static_cast<int32>(NM_Standalone),
+		ExpectedHitScanWindowDuration,
+		ActualDuration,
+		HitScanWindowTickCount,
+		CurrentComboIndex);
+
 	EndHitScan();
+	HitScanWindowStartTime = -1.0;
+	ExpectedHitScanWindowDuration = 0.0f;
+	HitScanWindowTickCount = 0;
 }
 
 void UGA_PlayerBasicAttack::OnComboCommitEvent(FGameplayEventData Payload)
@@ -379,18 +466,19 @@ void UGA_PlayerBasicAttack::OnComboInputEvent(FGameplayEventData Payload)
 
 void UGA_PlayerBasicAttack::StartHitScan()
 {
-	if (bHitScanActive || !CachedSword || !CachedDamageSpecHandle.IsValid())
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	if (!Avatar || !Avatar->HasAuthority() || bHitScanActive || !CachedSword || !CachedDamageSpecHandle.IsValid())
 	{
 		return;
 	}
 
-	bHitScanActive = true;
-	CachedSword->HitScanStart(CachedDamageSpecHandle);
+	bHitScanActive = CachedSword->HitScanStart(CachedDamageSpecHandle);
 }
 
 void UGA_PlayerBasicAttack::EndHitScan()
 {
-	if (CachedSword)
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	if (Avatar && Avatar->HasAuthority() && CachedSword)
 	{
 		CachedSword->HitScanEnd();
 	}

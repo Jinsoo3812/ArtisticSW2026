@@ -1913,6 +1913,45 @@ void ABasePlayer::InterruptCombatIntroForHit()
 	}
 }
 
+void ABasePlayer::AcquireServerCombatPoseRefresh()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* PlayerMesh = GetMesh();
+	if (!PlayerMesh)
+	{
+		return;
+	}
+
+	if (ServerCombatPoseRefreshRefCount == 0)
+	{
+		ServerCombatOriginalAnimTickOption = PlayerMesh->VisibilityBasedAnimTickOption;
+		PlayerMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	}
+
+	++ServerCombatPoseRefreshRefCount;
+}
+
+void ABasePlayer::ReleaseServerCombatPoseRefresh()
+{
+	if (!HasAuthority() || ServerCombatPoseRefreshRefCount <= 0)
+	{
+		return;
+	}
+
+	--ServerCombatPoseRefreshRefCount;
+	if (ServerCombatPoseRefreshRefCount == 0)
+	{
+		if (USkeletalMeshComponent* PlayerMesh = GetMesh())
+		{
+			PlayerMesh->VisibilityBasedAnimTickOption = ServerCombatOriginalAnimTickOption;
+		}
+	}
+}
+
 void ABasePlayer::OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterrupted)
 {
 	if (Montage != ActiveCombatIntroMontage)

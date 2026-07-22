@@ -27,6 +27,7 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Weapon_AimCycle, "GameplayAbility.Weapon.
 // Event
 UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Changed, "Event.Ability.Changed");
 UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_Start, "Event.HandleScan.Start");
+UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_Tick, "Event.HandleScan.Tick");
 UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_End, "Event.HandleScan.End");
 UE_DEFINE_GAMEPLAY_TAG(Event_Attack_ComboCommit, "Event.Attack.Combo.Commit");
 UE_DEFINE_GAMEPLAY_TAG(Event_ActivateAbility_Equip, "Event.ActivateAbility.Equip");
