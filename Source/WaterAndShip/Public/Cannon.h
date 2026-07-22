@@ -58,6 +58,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Cannon")
 	bool FireCannon();
 
+	/** Normal projectile class used by this cannon; ship skills may reuse its authored mesh/effects. */
+	TSubclassOf<AActor> GetCannonballClass() const { return CannonballClass; }
+
 	UFUNCTION(BlueprintPure, Category = "Cannon|Water Bomb")
 	bool IsWaterBombMode() const { return bWaterBombMode; }
 	APawn* GetRidingPlayer() const { return RidingPlayer; }

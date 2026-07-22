@@ -316,6 +316,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Water Bomb")
 	TSubclassOf<UGameplayAbility> WaterBombAbilityClass;
 
+	/** Granted without a player input slot; the currently possessed ship toggles it with test key 5. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Bombardment")
+	bool bGrantBombardmentAbility = true;
+
+	/** Set this to a GA_Bombardment Blueprint that references the authored Bombardment actor class. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Bombardment")
+	TSubclassOf<UGameplayAbility> BombardmentAbilityClass;
+
 	// GA와 그 GA가 어떤 키 입력(Tag)에 반응할지 함께 적용하는 함수.
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
 	void GrantAbilityToSlot(FGameplayTag SlotTag, TSubclassOf<UGameplayAbility> AbilityClass);

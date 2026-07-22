@@ -333,6 +333,9 @@ class UPrimitiveComponent;
 class UAbilitySystemComponent;
 class UBaseAttributeSet;
 class UShipAttributeSet;
+class UGameplayAbility;
+class ABombardment;
+class ABombardmentPreview;
 
 USTRUCT(BlueprintType)
 struct FShipStatRow : public FTableRowBase
@@ -434,6 +437,14 @@ public:
 	void AddPropulsionSuppression(const FGuid& SourceId);
 	void RemovePropulsionSuppression(const FGuid& SourceId);
 	bool IsPropulsionSuppressed() const { return PropulsionSuppressionSources.Num() > 0; }
+
+	/** Bombardment GA bridge. The WaterAndShip module stays independent from ClassFeature. */
+	bool ActivateBombardmentModeFromAbility(
+		UGameplayAbility* Ability,
+		TSubclassOf<ABombardment> BombardmentClass);
+	void DeactivateBombardmentModeFromAbility(UGameplayAbility* Ability);
+	bool IsBombardmentTargeting() const { return bBombardmentTargeting; }
+	APawn* GetRidingPlayer() const { return RidingPlayer; }
 
 	/* Boarding Interaction */
 	void Board(APawn* PlayerPawn);
@@ -553,6 +564,9 @@ protected:
 	void ShipLook(const FInputActionValue& Value);
 	void ToggleFixedCamera();
 	void OnDisembarkAction(const FInputActionValue& Value);
+	void HandleBombardmentToggle();
+	void HandleBombardmentConfirm();
+	void HandleBombardmentCancel();
 
 	UFUNCTION()
 	void HandlePortSeaBoarding(AActor* Interactor);
@@ -581,6 +595,15 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void ServerDisembark();
 
+	UFUNCTION(Server, Reliable)
+	void ServerToggleBombardmentAbility();
+
+	UFUNCTION(Server, Reliable)
+	void ServerConfirmBombardment(FVector ClientTargetLocation);
+
+	UFUNCTION(Server, Reliable)
+	void ServerCancelBombardmentAbility();
+
 	void Disembark();
 
 	// ---- Camera State ----
@@ -597,6 +620,15 @@ protected:
 
 	UFUNCTION()
 	void OnRep_RidingPlayer(APawn* OldRidingPlayer);
+
+	UPROPERTY(ReplicatedUsing = OnRep_BombardmentTargeting)
+	bool bBombardmentTargeting = false;
+
+	UPROPERTY(ReplicatedUsing = OnRep_BombardmentTargeting)
+	TSubclassOf<ABombardment> ActiveBombardmentClass;
+
+	UFUNCTION()
+	void OnRep_BombardmentTargeting();
 
 	UPROPERTY()
 	APlayerController* CachedPlayerController = nullptr;
@@ -660,6 +692,31 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	void ToggleBombardmentAbilityAuthoritative();
+	void CancelBombardmentAbilityAuthoritative();
+	void SetBombardmentTargetingAuthoritative(bool bEnabled);
+	UAbilitySystemComponent* GetRidingPlayerAbilitySystem() const;
+	TSubclassOf<AActor> ResolveNormalCannonballClass() const;
+	bool ValidateAndResolveBombardmentTarget(const FVector& RequestedLocation, FVector& OutLocation) const;
+	bool ResolveBombardmentTargetFromCursor(FVector& OutLocation) const;
+	bool ResolveStableSurfaceAtXY(const FVector2D& XY, FVector& OutLocation) const;
+	bool FindLandscapeHitAlongRay(const FVector& RayStart, const FVector& RayEnd, FHitResult& OutHit) const;
+	void RefreshLocalBombardmentTargeting();
+	void BeginLocalBombardmentTargeting();
+	void EndLocalBombardmentTargeting();
+	void UpdateLocalBombardmentPreview();
+	void SpawnBombardmentAuthoritative(const FVector& TargetLocation);
+
+	TWeakObjectPtr<UGameplayAbility> ActiveBombardmentAbility;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ABombardmentPreview> BombardmentPreviewActor;
+
+	FVector LocalBombardmentTarget = FVector::ZeroVector;
+	bool bLocalBombardmentTargetValid = false;
+	bool bLocalBombardmentInputModeApplied = false;
+	bool bSavedShowMouseCursor = false;
+
 	friend class FShipPhysicsAsync;
 	FShipPhysicsAsync* ShipPhysicsAsync = nullptr;
 	bool bBuoyancyQueryDiagnostics = false;

@@ -3,14 +3,9 @@
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
-#include "EngineUtils.h"
-#include "GameFramework/GameStateBase.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Skills/GravityVortexField.h"
-#include "WaterBodyActor.h"
-#include "WaterBodyComponent.h"
-#include "WaterBodyTypes.h"
-#include "WaterWaves.h"
+#include "WaterSurfaceQueryLibrary.h"
 
 AGravityVortexProjectile::AGravityVortexProjectile()
 {
@@ -115,68 +110,8 @@ void AGravityVortexProjectile::LaunchProjectile(const FVector& LaunchVelocity)
 
 bool AGravityVortexProjectile::QueryWaterSurfaceAtLocation(const FVector& Location, float& OutWaterSurfaceZ) const
 {
-	if (!GetWorld())
-	{
-		return false;
-	}
-
-	bool bFoundWater = false;
-	float HighestWaterZ = -TNumericLimits<float>::Max();
-	double ServerTime = GetWorld()->GetTimeSeconds();
-	if (const AGameStateBase* GameState = GetWorld()->GetGameState())
-	{
-		ServerTime = GameState->GetServerWorldTimeSeconds();
-	}
-
-	for (TActorIterator<AWaterBody> It(GetWorld()); It; ++It)
-	{
-		UWaterBodyComponent* WaterBody = It->GetWaterBodyComponent();
-		if (!WaterBody)
-		{
-			continue;
-		}
-
-		const EWaterBodyQueryFlags QueryFlags = EWaterBodyQueryFlags::ComputeLocation | EWaterBodyQueryFlags::ComputeDepth;
-		float SplineInputKey = -1.0f;
-		if (WaterBody->GetWaterBodyType() == EWaterBodyType::River)
-		{
-			SplineInputKey = WaterBody->FindInputKeyClosestToWorldLocation(Location);
-		}
-
-		const TValueOrError<FWaterBodyQueryResult, EWaterBodyQueryError> QueryResult =
-			WaterBody->TryQueryWaterInfoClosestToWorldLocation(Location, QueryFlags, SplineInputKey);
-		if (!QueryResult.HasValue())
-		{
-			continue;
-		}
-
-		const FWaterBodyQueryResult& Query = QueryResult.GetValue();
-		float WaterZ = Query.GetWaterSurfaceLocation().Z;
-		if (bIncludeWaveHeight && WaterBody->HasWaves())
-		{
-			if (UWaterWavesBase* WaterWaves = WaterBody->GetWaterWaves())
-			{
-				const float WaterDepth = Query.GetWaterSurfaceDepth();
-				const float Attenuation = WaterWaves->GetWaveAttenuationFactor(
-					Query.GetWaterSurfaceLocation(), WaterDepth, WaterBody->TargetWaveMaskDepth);
-				if (Attenuation > 0.0f)
-				{
-					FVector SurfaceNormal = FVector::UpVector;
-					WaterZ += WaterWaves->GetWaveHeightAtPosition(
-						Query.GetWaterSurfaceLocation(), WaterDepth, ServerTime, SurfaceNormal) * Attenuation;
-				}
-			}
-		}
-
-		if (!bFoundWater || WaterZ > HighestWaterZ)
-		{
-			bFoundWater = true;
-			HighestWaterZ = WaterZ;
-		}
-	}
-
-	OutWaterSurfaceZ = HighestWaterZ;
-	return bFoundWater;
+	return FWaterSurfaceQueryLibrary::QueryWaterSurface(
+		GetWorld(), Location, OutWaterSurfaceZ, bIncludeWaveHeight);
 }
 
 void AGravityVortexProjectile::ActivateAtWaterSurface(const FVector& SurfaceLocation)
