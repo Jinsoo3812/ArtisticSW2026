@@ -106,6 +106,15 @@ struct FAnimAirData
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     bool bIsFallOffStart = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    bool bJumpStartWasMoving = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float JumpStartGroundSpeed = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    FVector2D JumpStartMoveDirection = FVector2D::ZeroVector;
 };
 
 USTRUCT(BlueprintType)
@@ -308,6 +317,9 @@ struct FCachedMotionMatchingNodeInfo
     float LockedRemoteTransitionTime = 0.f;
     ELocomotionState LockedRemoteTransitionState = ELocomotionState::Idle;
     bool bHasRemoteTransitionLock = false;
+    TWeakObjectPtr<UAnimationAsset> LockedJumpStartAnim;
+    float LockedJumpStartTime = 0.f;
+    bool bHasJumpStartLock = false;
 };
 
 struct FCachedHistoryCollectorNodeInfo
@@ -536,6 +548,13 @@ protected:
     // Air / Landing PSDs
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
     TObjectPtr<UPoseSearchDatabase> JumpStartDatabase;
+
+    /** Optional filtered PSDs. Assign normal stand/move jump assets only; JumpStartDatabase remains the compatibility fallback. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
+    TObjectPtr<UPoseSearchDatabase> JumpStartStandDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
+    TObjectPtr<UPoseSearchDatabase> JumpStartMovingDatabase;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
     TObjectPtr<UPoseSearchDatabase> InAirDatabase;
