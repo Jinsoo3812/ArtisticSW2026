@@ -354,6 +354,13 @@ public:
     virtual void NativeInitializeAnimation() override;
     virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
+    /**
+     * The main AnimInstance calls this for linked animation-layer instances.
+     * Linked instances own a separate proxy, so swim state must be copied to
+     * that proxy instead of relying on their update order.
+     */
+    void ReceiveLinkedSwimAnimationState(const FSwimmingAnimationState& InSwimState);
+
     UFUNCTION(BlueprintPure, Category = "Motion Matching", meta = (BlueprintThreadSafe))
     UPoseSearchDatabase* GetCurrentActivePoseSearchDatabaseThreadSafe() const;
 
@@ -463,6 +470,11 @@ public:
 
 protected:
     virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
+
+    void PropagateSwimAnimationStateToLinkedInstances(const FSwimmingAnimationState& InSwimState);
+
+    FSwimmingAnimationState LinkedSwimAnimationState;
+    bool bHasLinkedSwimAnimationState = false;
 
     bool IsDedicatedServerAnimationContext() const;
     float CalculateAimOffsetAlpha(const FAnimThreadSafeData& ThreadSafeData) const;

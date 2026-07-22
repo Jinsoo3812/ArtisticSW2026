@@ -145,6 +145,63 @@ DiveToUnderwater`, or any `Ascend -> ExitToSurface` transition. Space causes
 the looping `Ascend` state only while still underwater; reaching the surface
 has no authored follow-up asset, so it returns directly to the surface loop.
 
+### Interrupted dive handling
+
+`EnterDive` is interruptible: do not force the surface dive sequence to its
+end when the player changes intent. Add these transitions with higher priority
+than its normal end-of-sequence exits:
+
+```text
+EnterDive -> Ascend:
+    Ascend Held && Underwater
+
+EnterDive -> SurfaceLocomotion:
+    Ascend Held && !Underwater
+
+DiveToUnderwater -> Ascend:
+    Ascend Held
+```
+
+The existing player input code makes Space take precedence over Ctrl, so no
+movement-code change is required for this animation exception. The first rule
+handles a dive that has already submerged; the second prevents an awkward
+underwater ascent pose when Space is pressed before the head has gone below the
+surface. Keep a short interrupt blend (`0.08` to `0.12` seconds).
+
+When Ctrl is released during `EnterDive` and the player supplies WASD input,
+skip `DiveToUnderwater` and enter the directional underwater BlendSpace
+immediately:
+
+```text
+EnterDive -> UnderwaterLocomotion:
+    !Dive Held && Underwater && Swim Speed > 5.0
+
+EnterDive -> DiveToUnderwater:
+    !Dive Held && Underwater && Swim Speed <= 5.0
+```
+
+Place the direct locomotion transition above the idle transition. No movement
+code is required: released Ctrl restores WASD movement, and `Swim Speed` is
+already copied into the linked swim layer's Thread Safe snapshot.
+
+### Transition debugging
+
+Use `p.SwimTransitionDebug 1` in the console to emit a throttled
+`[SwimTransition]` line while Ctrl or Space is held. It reports effective
+vertical input, underwater flag, whether the exact Space surface ceiling was
+reached, actor/water/target height, and vertical velocity. Set it back to `0`
+after diagnosis.
+
+### Linked animation-layer state propagation
+
+`ABP_Swim` is a linked animation-layer instance and therefore owns a separate
+animation proxy from the main `ABP_Player` instance. The main
+`UMotionMatchingAnimInstance` now copies each current `FSwimmingAnimationState`
+snapshot into every linked `UMotionMatchingAnimInstance` on the same mesh. This
+keeps the layer's Thread Safe getters current even when linked-instance update
+order differs, preventing `Ascend` or `EnterDive` from retaining an old
+`Underwater`/input value after the main player has already changed state.
+
 ### ABP_Player host graph
 
 Keep the current ground pipeline intact through its final `Pose History` node. Replace only `Pose History -> Output Pose` with:
@@ -166,6 +223,20 @@ Both the main player ABP and `ABP_Swim` must still implement
 `ALI_Player_Swim`, and `ABP_Swim`'s `Swim` layer must connect `SM_Swim` to its
 layer `Output Pose`. A missing class assignment or an empty layer output is a
 reference pose (T-pose) when `Is Swimming` selects the True branch.
+
+## Ascend surface ceiling
+
+Holding Space applies vertical swim acceleration only until the player reaches
+the wave-aware surface target (`WaterHeight - SurfaceTargetDepth`). Before
+movement is integrated, the component caps the upward velocity to the remaining
+distance for the current frame. This prevents a held Space input from launching
+the character above the sea while preserving the existing wave-following surface
+position and direct `Ascend -> SurfaceLocomotion` animation transition. At that
+same ceiling, a held Space explicitly clears `Is Underwater` and restores
+`Surface` depth mode. The result is calculated from the exact water query used
+to cap movement and skips the secondary head-location hysteresis query for that
+frame, so wave-query position differences cannot leave the animation state in
+Ascend after the character has reached the surface target.
 
 Use an initial blend time around 0.15–0.20 seconds and enable reset-on-activation for the linked child if available. Do not insert the swim layer before ground foot placement, leg IK, weapon overlay, or pose history; those are ground-only post-processes.
 

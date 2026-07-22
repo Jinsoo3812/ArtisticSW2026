@@ -25,6 +25,15 @@ static TAutoConsoleVariable<int32> CVarShowSwimBuoyancyDebug(
 	ECVF_Default
 );
 
+static TAutoConsoleVariable<int32> CVarSwimTransitionDebug(
+	TEXT("p.SwimTransitionDebug"),
+	0,
+	TEXT("Log authoritative custom-swim surface and vertical-input state.\n")
+	TEXT("0: Disabled\n")
+	TEXT("1: Log while Ctrl/Space vertical swim input is active"),
+	ECVF_Default
+);
+
 USwimmingComponent::USwimmingComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -529,10 +538,23 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 	{
 		// Ctrl/Space own the full body. Do not retain a horizontal movement input
 		// while a dedicated descend/ascend animation is playing.
-		CharacterMovement->Velocity.Z = FMath::Clamp(
+		float NewVerticalVelocity = FMath::Clamp(
 			CharacterMovement->Velocity.Z + InputVerticalAcceleration * DeltaTime,
 			-MaxVerticalSwimSpeed,
 			MaxVerticalSwimSpeed);
+
+		if (VerticalSwimInput > KINDA_SMALL_NUMBER && bPontoonInWater)
+		{
+			// Space may bring the player to the surface, but it must not propel the
+			// capsule through it. Use the same wave-aware target as surface swimming
+			// and cap this frame's upward travel before SafeMoveUpdatedComponent.
+			const float SurfaceTargetActorZ = WaterHeight - SurfaceTargetDepth;
+			const float RemainingRise = SurfaceTargetActorZ - ActorLocation.Z;
+			const float MaxUpwardVelocityToSurface = FMath::Max(0.0f, RemainingRise / FMath::Max(DeltaTime, KINDA_SMALL_NUMBER));
+			NewVerticalVelocity = FMath::Min(NewVerticalVelocity, MaxUpwardVelocityToSurface);
+		}
+
+		CharacterMovement->Velocity.Z = NewVerticalVelocity;
 	}
 	else if (!bUseCameraDirectedMovement)
 	{
@@ -587,7 +609,45 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 		static_cast<UMovementComponent*>(CharacterMovement)->SlideAlongSurface(CharacterMovement->Velocity * DeltaTime, 1.f - SweepHit.Time, SweepHit.Normal, SweepHit, true);
 	}
 
-	UpdateUnderwaterState();
+	// Use the exact same water query and target used for the Space movement cap.
+	// Do not immediately overwrite this result with a second head-location query:
+	// on steep waves that query can differ enough to leave the animation state in
+	// Ascend after the movement has already reached the surface ceiling.
+	const float SurfaceTargetActorZ = WaterHeight - SurfaceTargetDepth;
+	const bool bReachedSurfaceWhileAscending = bPontoonInWater
+		&& bAscendInputHeld
+		&& OwnerCharacter->GetActorLocation().Z >= SurfaceTargetActorZ - 1.0f;
+	if (bReachedSurfaceWhileAscending)
+	{
+		CharacterMovement->Velocity.Z = FMath::Min(CharacterMovement->Velocity.Z, 0.0f);
+		DepthMode = ESwimDepthMode::Surface;
+		bIsUnderwater = false;
+	}
+	else
+	{
+		UpdateUnderwaterState();
+	}
+
+	if (CVarSwimTransitionDebug.GetValueOnGameThread() != 0
+		&& HasVerticalSwimInput()
+		&& GetWorld()
+		&& GetWorld()->GetTimeSeconds() - LastLoggedTime >= 0.25f)
+	{
+		LastLoggedTime = GetWorld()->GetTimeSeconds();
+		UE_LOG(LogTemp, Warning,
+			TEXT("[SwimTransition] %s Input=%.1f Dive=%d Ascend=%d ReachedSurface=%d Underwater=%d DepthMode=%d ActorZ=%.1f WaterZ=%.1f SurfaceTargetZ=%.1f VelZ=%.1f"),
+			*GetNameSafe(OwnerCharacter),
+			VerticalSwimInput,
+			bDiveInputHeld ? 1 : 0,
+			bAscendInputHeld ? 1 : 0,
+			bReachedSurfaceWhileAscending ? 1 : 0,
+			bIsUnderwater ? 1 : 0,
+			static_cast<int32>(DepthMode),
+			OwnerCharacter->GetActorLocation().Z,
+			WaterHeight,
+			SurfaceTargetActorZ,
+			CharacterMovement->Velocity.Z);
+	}
 }
 
 void USwimmingComponent::UpdateUnderwaterState()

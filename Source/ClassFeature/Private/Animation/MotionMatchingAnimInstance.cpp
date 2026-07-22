@@ -1603,7 +1603,16 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     {
         CurrentSwimData = SwimmingComponent->GetAnimationState();
     }
+
+    // A linked animation-layer instance receives the main instance's snapshot.
+    // Keep using that explicit source even if its own NativeUpdate is evaluated
+    // at a different point in the linked-layer update order.
+    if (bHasLinkedSwimAnimationState && GetSkelMeshComponent() && GetSkelMeshComponent()->GetAnimInstance() != this)
+    {
+        CurrentSwimData = LinkedSwimAnimationState;
+    }
     GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData = CurrentSwimData;
+    PropagateSwimAnimationStateToLinkedInstances(CurrentSwimData);
 
     // 최적화 틱 레이트에 맞추어 이번 프레임의 모션 매칭 평가 여부 결정
     if (!ShouldEvaluateMotionMatchingThisFrame(DeltaSeconds))
@@ -2453,6 +2462,30 @@ float UMotionMatchingAnimInstance::GetThreadSafeBowStringIKAlpha() const
 FTransform UMotionMatchingAnimInstance::GetThreadSafeBowStringIKTargetTransform() const
 {
     return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.StringIKTargetTransform;
+}
+
+void UMotionMatchingAnimInstance::ReceiveLinkedSwimAnimationState(const FSwimmingAnimationState& InSwimState)
+{
+    LinkedSwimAnimationState = InSwimState;
+    bHasLinkedSwimAnimationState = true;
+    GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData = InSwimState;
+}
+
+void UMotionMatchingAnimInstance::PropagateSwimAnimationStateToLinkedInstances(const FSwimmingAnimationState& InSwimState)
+{
+    USkeletalMeshComponent* MeshComponent = GetSkelMeshComponent();
+    if (!MeshComponent || MeshComponent->GetAnimInstance() != this)
+    {
+        return;
+    }
+
+    if (UAnimInstance* LinkedInstance = GetLinkedAnimLayerInstanceByClass(UMotionMatchingAnimInstance::StaticClass(), true))
+    {
+        if (UMotionMatchingAnimInstance* LinkedMotionMatchingInstance = Cast<UMotionMatchingAnimInstance>(LinkedInstance))
+        {
+            LinkedMotionMatchingInstance->ReceiveLinkedSwimAnimationState(InSwimState);
+        }
+    }
 }
 
 bool UMotionMatchingAnimInstance::GetThreadSafeIsSwimming() const
