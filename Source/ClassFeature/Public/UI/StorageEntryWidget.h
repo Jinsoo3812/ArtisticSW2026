@@ -34,22 +34,25 @@ protected:
 
 	void BuildWidgetTree();
 
-	UPROPERTY()
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> SlotButton;
 
-	UPROPERTY()
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> ItemIconImage;
 
-	UPROPERTY()
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> SearchIconImage;
 
-	UPROPERTY()
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> UnrevealedOverlay;
 
-	UPROPERTY()
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> UnrevealedOverlayImage;
 
-	UPROPERTY()
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> ItemNameText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> CountText;
 
 	UPROPERTY()

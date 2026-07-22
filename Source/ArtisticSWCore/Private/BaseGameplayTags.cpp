@@ -11,6 +11,8 @@ UE_DEFINE_GAMEPLAY_TAG(State_Poisoned, "State.Poisoned");
 UE_DEFINE_GAMEPLAY_TAG(State_Bow_Drawing, "State.Bow.Drawing");
 UE_DEFINE_GAMEPLAY_TAG(State_Bow_FullyDrawn, "State.Bow.FullyDrawn");
 UE_DEFINE_GAMEPLAY_TAG(State_Bow_Releasing, "State.Bow.Releasing");
+UE_DEFINE_GAMEPLAY_TAG(State_Ship_CannonDisabled, "State.Ship.CannonDisabled");
+UE_DEFINE_GAMEPLAY_TAG(State_Debuff_WaterBomb, "State.Debuff.WaterBomb");
 
 // Team
 UE_DEFINE_GAMEPLAY_TAG(Team_Player, "Team.Player");
@@ -25,6 +27,8 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_TestHit, "GameplayAbility.TestHit");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Equip, "GameplayAbility.Equip");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Weapon_AimCycle, "GameplayAbility.Weapon.AimCycle");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_GravityVortex, "GameplayAbility.Skill.GravityVortex");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_WaterBomb, "GameplayAbility.Skill.WaterBomb");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_Bombardment, "GameplayAbility.Skill.Bombardment");
 // Event
 UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Changed, "Event.Ability.Changed");
 UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_Start, "Event.HandleScan.Start");
@@ -35,6 +39,7 @@ UE_DEFINE_GAMEPLAY_TAG(Event_Montage_FireArrow, "Event.Montage.FireArrow");
 // Data
 UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");
 UE_DEFINE_GAMEPLAY_TAG(Data_Heal, "Data.Heal");
+UE_DEFINE_GAMEPLAY_TAG(Data_Effect_AttackSpeedMultiplier, "Data.Effect.AttackSpeedMultiplier");
 
 
 /* Keyboard Input */
@@ -45,6 +50,8 @@ UE_DEFINE_GAMEPLAY_TAG(Key_Item_1, "Key.Item.1");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_2, "Key.Item.2");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_3, "Key.Item.3");
 UE_DEFINE_GAMEPLAY_TAG(Key_Test_Skill_GravityVortex, "Key.Test.Skill.GravityVortex");
+UE_DEFINE_GAMEPLAY_TAG(Key_Item_4, "Key.Item.4");
+UE_DEFINE_GAMEPLAY_TAG(Key_Item_5, "Key.Item.5");
 
 // Crafter only
 UE_DEFINE_GAMEPLAY_TAG(Key_Crafter_R, "Key.Crafter.R");
@@ -199,6 +206,7 @@ UE_DEFINE_GAMEPLAY_TAG(Key_Default_Space, "Key.Default.Space");
 /* UI Input */
 // Ex. I >> Inventory, M >> Map, E >> Equipment
 UE_DEFINE_GAMEPLAY_TAG(Key_UI_I, "Key.UI.I");
+UE_DEFINE_GAMEPLAY_TAG(Key_UI_Tab, "Key.UI.Tab");
 
 /* Ability */
 UE_DEFINE_GAMEPLAY_TAG(Ability_Item_Equipped, "Ability.Item.Equipped");

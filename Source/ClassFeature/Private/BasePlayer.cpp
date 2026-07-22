@@ -42,6 +42,8 @@
 #include "Cannon.h"
 #include "SwimmingComponent.h"
 #include "Attacker/GA_GravityVortexThrow.h"
+#include "Attacker/GA_WaterBombCannonMode.h"
+#include "Attacker/GA_Bombardment.h"
 #include "HAL/FileManager.h"
 #include "Misc/DateTime.h"
 #include "Misc/FileHelper.h"
@@ -107,6 +109,8 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	SwimmingComponent = CreateDefaultSubobject<USwimmingComponent>(TEXT("SwimmingComponent"));
 	EquipmentComponent = CreateDefaultSubobject<UPlayerEquipmentComponent>(TEXT("EquipmentComponent"));
 	GravityVortexTestAbilityClass = UGA_GravityVortexThrow::StaticClass();
+	WaterBombAbilityClass = UGA_WaterBombCannonMode::StaticClass();
+	BombardmentAbilityClass = UGA_Bombardment::StaticClass();
 
 	// 항상 등만 보이도록 설정 (Orient to Controller - 부드러운 회전으로 제자리 회전 유도)
 	bUseControllerRotationYaw = false;
@@ -141,6 +145,7 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 
 	// 배열과 장착 아이템 포인터를 클라이언트로 복제
 	DOREPLIFETIME(ABasePlayer, ItemSlots);
+	DOREPLIFETIME(ABasePlayer, QuickSlots);
 	DOREPLIFETIME(ABasePlayer, EquippedItem);
 	DOREPLIFETIME(ABasePlayer, LocomotionStateSnapshot);
 }
@@ -177,11 +182,68 @@ void ABasePlayer::BeginPlay()
 		}
 	}
 
+	InitializeQuickSlots();
+	if (InventoryComponent)
+	{
+		InventoryComponent->OnInventoryChanged.AddUObject(this, &ABasePlayer::HandleInventoryContentsChanged);
+	}
+
+#if WITH_EDITOR
+	GiveStartingItemForTest();
+#endif
+
 	OnItemSlotsChanged.Broadcast();
+	OnQuickSlotsChanged.Broadcast();
+}
+
+void ABasePlayer::GiveStartingItemForTest()
+{
+	if (!HasAuthority() || !bGiveStartingItemForTest || !InventoryComponent ||
+		!StartingItemTagForTest.IsValid() || StartingItemCountForTest <= 0)
+	{
+		return;
+	}
+
+	UItemSubsystem* ItemSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
+	if (!ItemSubsystem || !ItemSubsystem->GetItemDefinition(StartingItemTagForTest))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ABasePlayer::GiveStartingItemForTest : ItemTag %s is not registered in DA_ItemData."),
+			*StartingItemTagForTest.ToString());
+		return;
+	}
+
+	const int32 CurrentCount = InventoryComponent->GetMaterialCount(StartingItemTagForTest);
+	const int32 AmountToAdd = FMath::Max(0, StartingItemCountForTest - CurrentCount);
+	if (AmountToAdd <= 0)
+	{
+		return;
+	}
+
+	const int32 AddedCount = InventoryComponent->AddMaterial(StartingItemTagForTest, AmountToAdd);
+	if (AddedCount != AmountToAdd)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ABasePlayer::GiveStartingItemForTest : Requested %d of %s, but added %d. Check inventory capacity."),
+			AmountToAdd,
+			*StartingItemTagForTest.ToString(),
+			AddedCount);
+		return;
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("ABasePlayer::GiveStartingItemForTest : Added %s. Total=%d"),
+		*StartingItemTagForTest.ToString(),
+		StartingItemCountForTest);
 }
 
 void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (InventoryComponent)
+	{
+		InventoryComponent->OnInventoryChanged.RemoveAll(this);
+	}
+
 	if (HealthComponent)
 	{
 		HealthComponent->OnDeathFinished.RemoveDynamic(this, &ABasePlayer::HandleDeathFinished);
@@ -332,6 +394,11 @@ void ABasePlayer::PossessedBy(AController* NewController)
 
 		// PlayerState로 부터 ASC 포인터 가져와서 캐싱
 		CachedAbilitySystemComponent = PS->GetAbilitySystemComponent();
+		if (CachedAbilitySystemComponent.IsValid() &&
+			!CachedAbilitySystemComponent->HasMatchingGameplayTag(Team_Player))
+		{
+			CachedAbilitySystemComponent->AddLooseGameplayTag(Team_Player);
+		}
 		if (HealthComponent)
 		{
 			HealthComponent->InitializeWithAbilitySystem(CachedAbilitySystemComponent.Get());
@@ -368,6 +435,14 @@ void ABasePlayer::PossessedBy(AController* NewController)
 				if (bEnableGravityVortexTestInput && GravityVortexTestAbilityClass)
 				{
 					GrantAbilityToSlot(Key_Test_Skill_GravityVortex, GravityVortexTestAbilityClass);
+				}
+				if (bGrantWaterBombAbility && WaterBombAbilityClass)
+				{
+					GrantDefaultAbility(WaterBombAbilityClass);
+				}
+				if (bGrantBombardmentAbility && BombardmentAbilityClass)
+				{
+					GrantDefaultAbility(BombardmentAbilityClass);
 				}
 			}
 		else
@@ -519,18 +594,13 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 			}
 		}
 
-		// ItemSlot 입력 바인딩
-		if (ItemInputConfig)
-		{
-			for (const FKeyInputAction& Action : ItemInputConfig->KeyInputActions)
-			{
-				if (Action.InputAction && Action.KeyTag.IsValid())
-				{
-					EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::EquipItemFromSlot, Action.KeyTag);
-				}
-			}
-		}
 	}
+
+	PlayerInputComponent->BindKey(EKeys::One, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot1);
+	PlayerInputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot2);
+	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot3);
+	PlayerInputComponent->BindKey(EKeys::Four, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot4);
+	PlayerInputComponent->BindKey(EKeys::Five, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot5);
 
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Pressed, this, &ABasePlayer::StartSprint);
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Released, this, &ABasePlayer::StopSprint);
@@ -547,6 +617,235 @@ int32 ABasePlayer::GetInputIDFromTag(const FGameplayTag& Tag) const
 {
 	if (!Tag.IsValid()) return INDEX_NONE;
 	return static_cast<int32>(FCrc::StrCrc32(*Tag.ToString()));
+}
+
+void ABasePlayer::InitializeQuickSlots()
+{
+	if (!HasAuthority() || QuickSlots.Num() == 5)
+	{
+		return;
+	}
+
+	QuickSlots.Reset(5);
+	const FGameplayTag SlotTags[] = { Key_Item_1, Key_Item_2, Key_Item_3, Key_Item_4, Key_Item_5 };
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(SlotTags); ++Index)
+	{
+		FQuickSlotReference& Slot = QuickSlots.AddDefaulted_GetRef();
+		Slot.KeyTag = SlotTags[Index];
+		Slot.SlotType = Index < 2 ? EQuickSlotType::Weapon : EQuickSlotType::Consumable;
+	}
+}
+
+bool ABasePlayer::CanQuickSlotAcceptItem(int32 QuickSlotIndex, FGameplayTag ItemTag) const
+{
+	if (!QuickSlots.IsValidIndex(QuickSlotIndex) || !ItemTag.IsValid())
+	{
+		return false;
+	}
+
+	const UWorld* World = GetWorld();
+	const UItemSubsystem* ItemSubsystem = World ? World->GetSubsystem<UItemSubsystem>() : nullptr;
+	if (!ItemSubsystem)
+	{
+		return false;
+	}
+
+	const FGameplayTag CategoryTag = ItemSubsystem->GetCategoryTag(ItemTag);
+	const bool bIsWeapon = CategoryTag.MatchesTag(Item_Category_Weapon)
+		|| ItemTag.MatchesTag(Item_Id_Weapon);
+	return QuickSlots[QuickSlotIndex].SlotType == EQuickSlotType::Weapon
+		? bIsWeapon
+		: CategoryTag.MatchesTag(Item_Category_Consumable);
+}
+
+void ABasePlayer::AssignQuickSlotFromInventory(int32 QuickSlotIndex)
+{
+	if (!HasAuthority())
+	{
+		ServerAssignQuickSlotFromInventory(QuickSlotIndex);
+		return;
+	}
+
+	if (!InventoryComponent || !QuickSlots.IsValidIndex(QuickSlotIndex))
+	{
+		return;
+	}
+
+	const FInventoryCursorItem& CursorItem = InventoryComponent->GetCursorItem();
+	if (!CursorItem.IsValid() || !CanQuickSlotAcceptItem(QuickSlotIndex, CursorItem.ItemTag))
+	{
+		return;
+	}
+
+	const FGameplayTag AssignedItemTag = CursorItem.ItemTag;
+	for (FQuickSlotReference& Slot : QuickSlots)
+	{
+		if (Slot.ItemTag == AssignedItemTag)
+		{
+			Slot.ItemTag = FGameplayTag();
+		}
+	}
+
+	QuickSlots[QuickSlotIndex].ItemTag = AssignedItemTag;
+	InventoryComponent->ReturnCursorToOriginalSlot();
+	OnQuickSlotsChanged.Broadcast();
+}
+
+void ABasePlayer::ServerAssignQuickSlotFromInventory_Implementation(int32 QuickSlotIndex)
+{
+	AssignQuickSlotFromInventory(QuickSlotIndex);
+}
+
+void ABasePlayer::ClearQuickSlot(int32 QuickSlotIndex)
+{
+	if (!HasAuthority())
+	{
+		ServerClearQuickSlot(QuickSlotIndex);
+		return;
+	}
+
+	if (QuickSlots.IsValidIndex(QuickSlotIndex) && !QuickSlots[QuickSlotIndex].IsEmpty())
+	{
+		QuickSlots[QuickSlotIndex].ItemTag = FGameplayTag();
+		OnQuickSlotsChanged.Broadcast();
+	}
+}
+
+void ABasePlayer::ServerClearQuickSlot_Implementation(int32 QuickSlotIndex)
+{
+	ClearQuickSlot(QuickSlotIndex);
+}
+
+void ABasePlayer::ActivateQuickSlot1() { ActivateQuickSlot(0); }
+void ABasePlayer::ActivateQuickSlot2() { ActivateQuickSlot(1); }
+void ABasePlayer::ActivateQuickSlot3() { ActivateQuickSlot(2); }
+void ABasePlayer::ActivateQuickSlot4() { ActivateQuickSlot(3); }
+void ABasePlayer::ActivateQuickSlot5() { ActivateQuickSlot(4); }
+
+void ABasePlayer::ActivateQuickSlot(int32 QuickSlotIndex)
+{
+	if (!HasAuthority())
+	{
+		ServerActivateQuickSlot(QuickSlotIndex);
+		return;
+	}
+
+	if (!QuickSlots.IsValidIndex(QuickSlotIndex))
+	{
+		return;
+	}
+
+	const FQuickSlotReference& Slot = QuickSlots[QuickSlotIndex];
+	if (Slot.IsEmpty())
+	{
+		UnequipCurrentItem();
+		return;
+	}
+
+	if (!InventoryComponent || InventoryComponent->GetMaterialCount(Slot.ItemTag) <= 0)
+	{
+		ClearQuickSlot(QuickSlotIndex);
+		UnequipCurrentItem();
+		return;
+	}
+
+	if (Slot.SlotType == EQuickSlotType::Weapon)
+	{
+		EquipInventoryWeapon(Slot.ItemTag);
+	}
+	else
+	{
+		ConsumeInventoryItem(Slot.ItemTag);
+	}
+}
+
+void ABasePlayer::ServerActivateQuickSlot_Implementation(int32 QuickSlotIndex)
+{
+	ActivateQuickSlot(QuickSlotIndex);
+}
+
+bool ABasePlayer::IsEquippedItemOwnedByLegacySlot() const
+{
+	return IsValid(EquippedItem) && ItemSlots.ContainsByPredicate([this](const FItemSlot& Slot)
+	{
+		return Slot.Item == EquippedItem;
+	});
+}
+
+void ABasePlayer::UnequipCurrentItem()
+{
+	if (EquipmentComponent)
+	{
+		EquipmentComponent->UnequipCurrentItem();
+	}
+}
+
+bool ABasePlayer::EquipInventoryWeapon(FGameplayTag ItemTag)
+{
+	return EquipmentComponent && EquipmentComponent->EquipInventoryWeapon(ItemTag);
+}
+
+bool ABasePlayer::ConsumeInventoryItem(FGameplayTag ItemTag)
+{
+	if (!HasAuthority() || !InventoryComponent || !CachedAbilitySystemComponent.IsValid())
+	{
+		return false;
+	}
+
+	UItemSubsystem* ItemSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
+	if (!ItemSubsystem || !ItemSubsystem->GetCategoryTag(ItemTag).MatchesTag(Item_Category_Consumable))
+	{
+		return false;
+	}
+
+	TSubclassOf<UGameplayAbility> AbilityClass = ItemSubsystem->GetGrantedAbilityClass(ItemTag).LoadSynchronous();
+	if (!AbilityClass)
+	{
+		return false;
+	}
+
+	FGameplayAbilitySpec AbilitySpec(AbilityClass, 1, INDEX_NONE, this);
+	const FGameplayAbilitySpecHandle Handle = CachedAbilitySystemComponent->GiveAbilityAndActivateOnce(AbilitySpec);
+	if (!Handle.IsValid())
+	{
+		return false;
+	}
+
+	return InventoryComponent->RemoveMaterial(ItemTag, 1);
+}
+
+void ABasePlayer::HandleInventoryContentsChanged()
+{
+	if (!HasAuthority() || !InventoryComponent)
+	{
+		return;
+	}
+
+	const FInventoryCursorItem& CursorItem = InventoryComponent->GetCursorItem();
+	bool bChanged = false;
+	for (FQuickSlotReference& Slot : QuickSlots)
+	{
+		const bool bHeldByCursor = CursorItem.IsValid() && CursorItem.ItemTag == Slot.ItemTag;
+		if (!Slot.IsEmpty() && !bHeldByCursor && InventoryComponent->GetMaterialCount(Slot.ItemTag) <= 0)
+		{
+			Slot.ItemTag = FGameplayTag();
+			bChanged = true;
+		}
+	}
+
+	if (IsValid(EquippedItem) && !IsEquippedItemOwnedByLegacySlot())
+	{
+		const bool bHeldByCursor = CursorItem.IsValid() && CursorItem.ItemTag == EquippedItem->ItemTag;
+		if (!bHeldByCursor && InventoryComponent->GetMaterialCount(EquippedItem->ItemTag) <= 0)
+		{
+			UnequipCurrentItem();
+		}
+	}
+
+	if (bChanged)
+	{
+		OnQuickSlotsChanged.Broadcast();
+	}
 }
 
 bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
@@ -888,7 +1187,22 @@ void ABasePlayer::HandlePickUpEvent(const FGameplayEventData* Payload)
 		if (ABaseItem* ItemToPickUp = const_cast<ABaseItem*>(Cast<ABaseItem>(Payload->Target)))
 		{
 			// 아이템 태그가 material 로 시작하면 인벤토리로
-			if (ItemToPickUp->ItemTag.MatchesTag(Item_Material))
+			bool bShouldStoreInInventory = ItemToPickUp->ItemTag.MatchesTag(Item_Material);
+			if (UWorld* World = GetWorld())
+			{
+				if (UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>())
+				{
+					const FGameplayTag CategoryTag = ItemSubsystem->GetCategoryTag(ItemToPickUp->ItemTag);
+					bShouldStoreInInventory =
+						bShouldStoreInInventory ||
+						CategoryTag.MatchesTag(Item_Category_Clue) ||
+						CategoryTag.MatchesTag(Item_Category_Consumable) ||
+						CategoryTag.MatchesTag(Item_Category_Material) ||
+						CategoryTag.MatchesTag(Item_Category_Weapon);
+				}
+			}
+
+			if (bShouldStoreInInventory)
 			{
 				if (InventoryComponent && InventoryComponent ->AddMaterial(ItemToPickUp->ItemTag, 1))
 				{
@@ -1515,6 +1829,11 @@ void ABasePlayer::BroadcastFallOffStartedForRemoteClients()
 void ABasePlayer::OnRep_ItemSlots()
 {
 	OnItemSlotsChanged.Broadcast();
+}
+
+void ABasePlayer::OnRep_QuickSlots()
+{
+	OnQuickSlotsChanged.Broadcast();
 }
 
 void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)

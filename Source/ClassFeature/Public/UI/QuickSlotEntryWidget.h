@@ -21,9 +21,11 @@ class CLASSFEATURE_API UQuickSlotEntryWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	void SetupFromData(const FGameplayTag& InSlotTag, const FText& InItemName, UTexture2D* InIcon, bool bEquipped);
+	void SetupFromData(const FGameplayTag& InSlotTag, const FText& InItemName, UTexture2D* InIcon, bool bEquipped, int32 InCount = 0);
+	void ConfigureInteraction(int32 InQuickSlotIndex, bool bInInteractive);
 
 protected:
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> ItemIconImage;
@@ -35,9 +37,15 @@ protected:
 	TObjectPtr<UTextBlock> ItemNameText;
 
 	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> CountText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> EquippedBorder;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> SlotFrameBorder;
+
+	int32 QuickSlotIndex = INDEX_NONE;
+	bool bInteractive = false;
 	
 };

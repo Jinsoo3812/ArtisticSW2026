@@ -37,6 +37,11 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "CollisionChannels.h"
+#include "Bombardment.h"
+#include "Cannon.h"
+#include "Cannonball.h"
+#include "LandscapeProxy.h"
+#include "WaterSurfaceQueryLibrary.h"
 #include "Upgrade/ShipUpgradeComponent.h"
 
 namespace
@@ -410,6 +415,12 @@ void AShip::ConfigureSplitShipCollision()
 
 void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (HasAuthority())
+	{
+		CancelBombardmentAbilityAuthoritative();
+	}
+	EndLocalBombardmentTargeting();
+
 	if (ShipPhysicsAsync)
 	{
 		if (UWorld* World = GetWorld())
@@ -432,6 +443,11 @@ void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (IsLocallyControlled() && bBombardmentTargeting)
+	{
+		UpdateLocalBombardmentPreview();
+	}
 
 	if (bBuoyancyQueryDiagnostics && ShipPhysicsAsync)
 	{
@@ -818,6 +834,12 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	{
 		UE_LOG(LogTemp, Error, TEXT("AShip::SetupPlayerInputComponent - Failed to find Enhanced Input Component."));
 	}
+
+	// Test bindings intentionally live on the possessed ship, so slot 5 only works while driving it.
+	PlayerInputComponent->BindKey(EKeys::Five, IE_Pressed, this, &AShip::HandleBombardmentToggle);
+	PlayerInputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &AShip::HandleBombardmentConfirm);
+	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &AShip::HandleBombardmentCancel);
+	PlayerInputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AShip::HandleBombardmentCancel);
 }
 
 void AShip::PossessedBy(AController* NewController)
@@ -845,6 +867,11 @@ void AShip::PossessedBy(AController* NewController)
 
 void AShip::UnPossessed()
 {
+	if (HasAuthority())
+	{
+		CancelBombardmentAbilityAuthoritative();
+	}
+	EndLocalBombardmentTargeting();
 	CurrentMoveInput = 0.0f;
 	CurrentTurnInput = 0.0f;
 
@@ -921,6 +948,8 @@ void AShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AShip, RidingPlayer);
+	DOREPLIFETIME(AShip, bBombardmentTargeting);
+	DOREPLIFETIME(AShip, ActiveBombardmentClass);
 	DOREPLIFETIME(AShip, ReplicatedState);
 	DOREPLIFETIME(AShip, ServerPhysicsTimeOrigin);
 	DOREPLIFETIME(AShip, ServerPhysicsStepSeconds);
@@ -998,6 +1027,7 @@ void AShip::Disembark()
 {
 	if (!HasAuthority()) return;
 	if (!RidingPlayer) return;
+	CancelBombardmentAbilityAuthoritative();
 
 	APlayerController* PC = Cast<APlayerController>(GetController());
 	if (!PC) return;
@@ -1103,6 +1133,11 @@ void AShip::ApplyTurnTorque(float TurnValue)
 
 void AShip::ShipLook(const FInputActionValue& Value)
 {
+	if (bBombardmentTargeting)
+	{
+		return;
+	}
+
 	const FVector2D LookValue = Value.Get<FVector2D>();
 
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -1110,6 +1145,561 @@ void AShip::ShipLook(const FInputActionValue& Value)
 		// Rotate the controller (which drives the SpringArm via bUsePawnControlRotation)
 		PC->AddYawInput(LookValue.X);
 		PC->AddPitchInput(LookValue.Y);
+	}
+}
+
+void AShip::HandleBombardmentToggle()
+{
+	if (!IsPlayerControlled())
+	{
+		return;
+	}
+
+	if (HasAuthority())
+	{
+		ToggleBombardmentAbilityAuthoritative();
+	}
+	else
+	{
+		ServerToggleBombardmentAbility();
+	}
+}
+
+void AShip::HandleBombardmentConfirm()
+{
+	if (!IsLocallyControlled() || !bBombardmentTargeting || !bLocalBombardmentTargetValid)
+	{
+		return;
+	}
+
+	if (HasAuthority())
+	{
+		FVector ResolvedLocation;
+		if (ValidateAndResolveBombardmentTarget(LocalBombardmentTarget, ResolvedLocation))
+		{
+			SpawnBombardmentAuthoritative(ResolvedLocation);
+			CancelBombardmentAbilityAuthoritative();
+		}
+	}
+	else
+	{
+		ServerConfirmBombardment(LocalBombardmentTarget);
+	}
+}
+
+void AShip::HandleBombardmentCancel()
+{
+	if (!IsPlayerControlled() || !bBombardmentTargeting)
+	{
+		return;
+	}
+
+	if (HasAuthority())
+	{
+		CancelBombardmentAbilityAuthoritative();
+	}
+	else
+	{
+		ServerCancelBombardmentAbility();
+	}
+}
+
+void AShip::ServerToggleBombardmentAbility_Implementation()
+{
+	if (RidingPlayer && IsPlayerControlled())
+	{
+		ToggleBombardmentAbilityAuthoritative();
+	}
+}
+
+void AShip::ServerConfirmBombardment_Implementation(FVector ClientTargetLocation)
+{
+	if (!RidingPlayer || !IsPlayerControlled() || !bBombardmentTargeting)
+	{
+		return;
+	}
+
+	FVector ResolvedLocation;
+	if (!ValidateAndResolveBombardmentTarget(ClientTargetLocation, ResolvedLocation))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Bombardment] Server rejected target %s for ship %s"),
+			*ClientTargetLocation.ToString(), *GetName());
+		return;
+	}
+
+	SpawnBombardmentAuthoritative(ResolvedLocation);
+	CancelBombardmentAbilityAuthoritative();
+}
+
+void AShip::ServerCancelBombardmentAbility_Implementation()
+{
+	CancelBombardmentAbilityAuthoritative();
+}
+
+bool AShip::ActivateBombardmentModeFromAbility(
+	UGameplayAbility* Ability,
+	TSubclassOf<ABombardment> BombardmentClass)
+{
+	if (!HasAuthority() || !Ability || !BombardmentClass || !RidingPlayer || !IsPlayerControlled()
+		|| bBombardmentTargeting)
+	{
+		return false;
+	}
+
+	ActiveBombardmentAbility = Ability;
+	ActiveBombardmentClass = BombardmentClass;
+	SetBombardmentTargetingAuthoritative(true);
+	return true;
+}
+
+void AShip::DeactivateBombardmentModeFromAbility(UGameplayAbility* Ability)
+{
+	if (!HasAuthority() || (ActiveBombardmentAbility.IsValid() && ActiveBombardmentAbility.Get() != Ability))
+	{
+		return;
+	}
+
+	ActiveBombardmentAbility.Reset();
+	ActiveBombardmentClass = nullptr;
+	SetBombardmentTargetingAuthoritative(false);
+}
+
+void AShip::ToggleBombardmentAbilityAuthoritative()
+{
+	if (!HasAuthority() || !RidingPlayer || !IsPlayerControlled())
+	{
+		return;
+	}
+
+	UAbilitySystemComponent* ASC = GetRidingPlayerAbilitySystem();
+	if (!ASC)
+	{
+		return;
+	}
+
+	FGameplayTagContainer AbilityTags(GameplayAbility_Skill_Bombardment);
+	if (bBombardmentTargeting || ASC->HasMatchingGameplayTag(GameplayAbility_Skill_Bombardment))
+	{
+		ASC->CancelAbilities(&AbilityTags);
+		return;
+	}
+
+	if (!ASC->TryActivateAbilitiesByTag(AbilityTags, true))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Bombardment] GA activation failed. Grant a Bombardment GA to player=%s (tag=%s)."),
+			*GetNameSafe(RidingPlayer), *GameplayAbility_Skill_Bombardment.GetTag().ToString());
+	}
+}
+
+void AShip::CancelBombardmentAbilityAuthoritative()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (UAbilitySystemComponent* ASC = GetRidingPlayerAbilitySystem())
+	{
+		FGameplayTagContainer AbilityTags(GameplayAbility_Skill_Bombardment);
+		ASC->CancelAbilities(&AbilityTags);
+	}
+
+	if (bBombardmentTargeting)
+	{
+		ActiveBombardmentAbility.Reset();
+		ActiveBombardmentClass = nullptr;
+		SetBombardmentTargetingAuthoritative(false);
+	}
+}
+
+void AShip::SetBombardmentTargetingAuthoritative(bool bEnabled)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	bBombardmentTargeting = bEnabled;
+	ForceNetUpdate();
+	RefreshLocalBombardmentTargeting();
+}
+
+UAbilitySystemComponent* AShip::GetRidingPlayerAbilitySystem() const
+{
+	const IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(RidingPlayer);
+	return AbilitySystemInterface ? AbilitySystemInterface->GetAbilitySystemComponent() : nullptr;
+}
+
+void AShip::OnRep_BombardmentTargeting()
+{
+	RefreshLocalBombardmentTargeting();
+}
+
+void AShip::RefreshLocalBombardmentTargeting()
+{
+	if (!IsLocallyControlled())
+	{
+		EndLocalBombardmentTargeting();
+		return;
+	}
+
+	if (bBombardmentTargeting && ActiveBombardmentClass)
+	{
+		BeginLocalBombardmentTargeting();
+	}
+	else
+	{
+		EndLocalBombardmentTargeting();
+	}
+}
+
+void AShip::BeginLocalBombardmentTargeting()
+{
+	if (bLocalBombardmentInputModeApplied || !ActiveBombardmentClass)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[BombardmentPreview] Begin skipped Ship=%s InputModeApplied=%s ActiveClass=%s"),
+			*GetNameSafe(this),
+			bLocalBombardmentInputModeApplied ? TEXT("true") : TEXT("false"),
+			*GetPathNameSafe(ActiveBombardmentClass));
+		return;
+	}
+
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	const ABombardment* BombardmentDefaults = ActiveBombardmentClass->GetDefaultObject<ABombardment>();
+	if (!PC || !PC->IsLocalController() || !BombardmentDefaults)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[BombardmentPreview] Begin FAILED Ship=%s PC=%s LocalController=%s ActiveClass=%s Defaults=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(PC),
+			PC && PC->IsLocalController() ? TEXT("true") : TEXT("false"),
+			*GetPathNameSafe(ActiveBombardmentClass),
+			*GetNameSafe(BombardmentDefaults));
+		return;
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[BombardmentPreview] Begin Ship=%s ActiveClass=%s PreviewClass=%s Radius=%.1f HeightOffset=%.1f"),
+		*GetNameSafe(this),
+		*GetPathNameSafe(ActiveBombardmentClass),
+		*GetPathNameSafe(BombardmentDefaults->PreviewClass),
+		BombardmentDefaults->SkillRadius,
+		BombardmentDefaults->PreviewHeightOffset);
+
+	bSavedShowMouseCursor = PC->bShowMouseCursor;
+	PC->bShowMouseCursor = true;
+	FInputModeGameAndUI InputMode;
+	InputMode.SetHideCursorDuringCapture(false);
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	PC->SetInputMode(InputMode);
+	bLocalBombardmentInputModeApplied = true;
+
+	if (BombardmentDefaults->PreviewClass && GetWorld())
+	{
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.Owner = this;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		BombardmentPreviewActor = GetWorld()->SpawnActor<ABombardmentPreview>(
+			BombardmentDefaults->PreviewClass,
+			GetActorLocation(),
+			FRotator::ZeroRotator,
+			SpawnParams);
+		if (BombardmentPreviewActor)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[BombardmentPreview] Spawn OK Actor=%s ActualClass=%s InitialLocation=%s"),
+				*GetNameSafe(BombardmentPreviewActor),
+				*GetPathNameSafe(BombardmentPreviewActor->GetClass()),
+				*BombardmentPreviewActor->GetActorLocation().ToCompactString());
+			BombardmentPreviewActor->ConfigurePreview(BombardmentDefaults->SkillRadius);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[BombardmentPreview] Spawn FAILED Ship=%s PreviewClass=%s World=%s"),
+				*GetNameSafe(this),
+				*GetPathNameSafe(BombardmentDefaults->PreviewClass),
+				*GetNameSafe(GetWorld()));
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[BombardmentPreview] Spawn skipped Ship=%s PreviewClass=%s World=%s"),
+			*GetNameSafe(this),
+			*GetPathNameSafe(BombardmentDefaults->PreviewClass),
+			*GetNameSafe(GetWorld()));
+	}
+}
+
+void AShip::EndLocalBombardmentTargeting()
+{
+	if (BombardmentPreviewActor)
+	{
+		BombardmentPreviewActor->Destroy();
+		BombardmentPreviewActor = nullptr;
+	}
+
+	if (bLocalBombardmentInputModeApplied)
+	{
+		APlayerController* PC = Cast<APlayerController>(GetController());
+		if (!PC)
+		{
+			PC = CachedPlayerController;
+		}
+		if (PC)
+		{
+			PC->bShowMouseCursor = bSavedShowMouseCursor;
+			FInputModeGameOnly InputMode;
+			InputMode.SetConsumeCaptureMouseDown(false);
+			PC->SetInputMode(InputMode);
+		}
+	}
+
+	bLocalBombardmentInputModeApplied = false;
+	bLocalBombardmentTargetValid = false;
+}
+
+void AShip::UpdateLocalBombardmentPreview()
+{
+	if (!bLocalBombardmentInputModeApplied)
+	{
+		BeginLocalBombardmentTargeting();
+	}
+
+	const ABombardment* BombardmentDefaults = ActiveBombardmentClass
+		? ActiveBombardmentClass->GetDefaultObject<ABombardment>()
+		: nullptr;
+	FVector TargetLocation = LocalBombardmentTarget;
+	bLocalBombardmentTargetValid = BombardmentDefaults
+		&& ResolveBombardmentTargetFromCursor(TargetLocation);
+	if (bLocalBombardmentTargetValid)
+	{
+		FVector RangeDelta = TargetLocation - GetActorLocation();
+		RangeDelta.Z = 0.0f;
+		bLocalBombardmentTargetValid =
+			RangeDelta.SizeSquared() <= FMath::Square(FMath::Max(1.0f, BombardmentDefaults->MaxTargetRange));
+		LocalBombardmentTarget = TargetLocation;
+	}
+
+	if (BombardmentPreviewActor && BombardmentDefaults)
+	{
+		if (!TargetLocation.ContainsNaN())
+		{
+			BombardmentPreviewActor->SetActorLocation(
+				TargetLocation + FVector::UpVector * BombardmentDefaults->PreviewHeightOffset);
+		}
+		BombardmentPreviewActor->SetPreviewValid(bLocalBombardmentTargetValid);
+	}
+}
+
+bool AShip::ResolveBombardmentTargetFromCursor(FVector& OutLocation) const
+{
+	const APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC || !PC->IsLocalController())
+	{
+		return false;
+	}
+
+	FVector RayStart;
+	FVector RayDirection;
+	if (!PC->DeprojectMousePositionToWorld(RayStart, RayDirection))
+	{
+		return false;
+	}
+	RayDirection.Normalize();
+
+	float ReferenceWaterZ = 0.0f;
+	const bool bHasReferenceWater = FWaterSurfaceQueryLibrary::QueryWaterSurface(
+		GetWorld(), GetActorLocation(), ReferenceWaterZ, false);
+	float WaterRayDistance = TNumericLimits<float>::Max();
+	FVector WaterIntersection = FVector::ZeroVector;
+	if (bHasReferenceWater && FMath::Abs(RayDirection.Z) > UE_SMALL_NUMBER)
+	{
+		WaterRayDistance = (ReferenceWaterZ - RayStart.Z) / RayDirection.Z;
+		if (WaterRayDistance > 0.0f)
+		{
+			WaterIntersection = RayStart + RayDirection * WaterRayDistance;
+		}
+		else
+		{
+			WaterRayDistance = TNumericLimits<float>::Max();
+		}
+	}
+
+	FHitResult LandscapeHit;
+	const FVector RayEnd = RayStart + RayDirection * 500000.0f;
+	if (FindLandscapeHitAlongRay(RayStart, RayEnd, LandscapeHit)
+		&& LandscapeHit.Distance <= WaterRayDistance + 1.0f)
+	{
+		float WaterAtLandscapeZ = 0.0f;
+		const bool bWaterAtLandscape = FWaterSurfaceQueryLibrary::QueryWaterSurface(
+			GetWorld(), LandscapeHit.ImpactPoint, WaterAtLandscapeZ, false);
+		if (!bWaterAtLandscape || LandscapeHit.ImpactPoint.Z >= WaterAtLandscapeZ - 25.0f)
+		{
+			OutLocation = LandscapeHit.ImpactPoint;
+			return true;
+		}
+	}
+
+	if (WaterRayDistance == TNumericLimits<float>::Max())
+	{
+		return false;
+	}
+
+	float ExactWaterZ = 0.0f;
+	if (!FWaterSurfaceQueryLibrary::QueryWaterSurface(GetWorld(), WaterIntersection, ExactWaterZ, false))
+	{
+		return false;
+	}
+	OutLocation = FVector(WaterIntersection.X, WaterIntersection.Y, ExactWaterZ);
+	return true;
+}
+
+bool AShip::ResolveStableSurfaceAtXY(const FVector2D& XY, FVector& OutLocation) const
+{
+	const FVector QueryLocation(XY.X, XY.Y, GetActorLocation().Z);
+	float WaterZ = 0.0f;
+	const bool bHasWater = FWaterSurfaceQueryLibrary::QueryWaterSurface(
+		GetWorld(), QueryLocation, WaterZ, false);
+
+	FHitResult LandscapeHit;
+	const FVector TraceStart(XY.X, XY.Y, 100000.0f);
+	const FVector TraceEnd(XY.X, XY.Y, -100000.0f);
+	if (FindLandscapeHitAlongRay(TraceStart, TraceEnd, LandscapeHit)
+		&& (!bHasWater || LandscapeHit.ImpactPoint.Z >= WaterZ - 25.0f))
+	{
+		OutLocation = LandscapeHit.ImpactPoint;
+		return true;
+	}
+
+	if (bHasWater)
+	{
+		OutLocation = FVector(XY.X, XY.Y, WaterZ);
+		return true;
+	}
+	return false;
+}
+
+bool AShip::FindLandscapeHitAlongRay(const FVector& RayStart, const FVector& RayEnd, FHitResult& OutHit) const
+{
+	if (!GetWorld())
+	{
+		return false;
+	}
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(BombardmentLandscapeTarget), true, this);
+	Params.AddIgnoredActor(RidingPlayer);
+	for (TActorIterator<AWaterBody> It(GetWorld()); It; ++It)
+	{
+		Params.AddIgnoredActor(*It);
+	}
+
+	TArray<FHitResult> Hits;
+	FCollisionObjectQueryParams ObjectTypes;
+	ObjectTypes.AddObjectTypesToQuery(ECC_WorldStatic);
+	GetWorld()->LineTraceMultiByObjectType(Hits, RayStart, RayEnd, ObjectTypes, Params);
+	for (const FHitResult& Hit : Hits)
+	{
+		if (Hit.GetActor() && Hit.GetActor()->IsA<ALandscapeProxy>())
+		{
+			OutHit = Hit;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool AShip::ValidateAndResolveBombardmentTarget(const FVector& RequestedLocation, FVector& OutLocation) const
+{
+	if (!HasAuthority() || !bBombardmentTargeting || !ActiveBombardmentClass || RequestedLocation.ContainsNaN())
+	{
+		return false;
+	}
+
+	const ABombardment* BombardmentDefaults = ActiveBombardmentClass->GetDefaultObject<ABombardment>();
+	if (!BombardmentDefaults || !ResolveStableSurfaceAtXY(FVector2D(RequestedLocation), OutLocation))
+	{
+		return false;
+	}
+
+	FVector RangeDelta = OutLocation - GetActorLocation();
+	RangeDelta.Z = 0.0f;
+	return RangeDelta.SizeSquared()
+		<= FMath::Square(FMath::Max(1.0f, BombardmentDefaults->MaxTargetRange));
+}
+
+TSubclassOf<AActor> AShip::ResolveNormalCannonballClass() const
+{
+	if (!GetWorld())
+	{
+		return nullptr;
+	}
+
+	for (TActorIterator<ACannon> It(GetWorld()); It; ++It)
+	{
+		ACannon* Cannon = *It;
+		if (IsValid(Cannon) && Cannon->GetOwningShip() == this)
+		{
+			TSubclassOf<AActor> ProjectileClass = Cannon->GetCannonballClass();
+			if (ProjectileClass && ProjectileClass->IsChildOf(ACannonball::StaticClass()))
+			{
+				return ProjectileClass;
+			}
+		}
+	}
+	return nullptr;
+}
+
+void AShip::SpawnBombardmentAuthoritative(const FVector& TargetLocation)
+{
+	if (!HasAuthority() || !ActiveBombardmentClass || !GetWorld())
+	{
+		return;
+	}
+
+	const ABombardment* BombardmentDefaults = ActiveBombardmentClass->GetDefaultObject<ABombardment>();
+	TSubclassOf<AActor> ProjectileClass = BombardmentDefaults
+		? BombardmentDefaults->ProjectileClassOverride
+		: nullptr;
+	if (!ProjectileClass)
+	{
+		ProjectileClass = ResolveNormalCannonballClass();
+	}
+	if (!ProjectileClass || !ProjectileClass->IsChildOf(ACannonball::StaticClass()))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[Bombardment] No normal cannonball class was found on Player ship %s. Set ProjectileClassOverride."),
+			*GetName());
+		return;
+	}
+
+	float Damage = 10.0f;
+	float Speed = 3000.0f;
+	if (AbilitySystemComponent)
+	{
+		Damage = AbilitySystemComponent->GetNumericAttribute(UShipAttributeSet::GetCannonDamageAttribute());
+		Speed = AbilitySystemComponent->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute());
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = this;
+	SpawnParams.Instigator = RidingPlayer;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ABombardment* Bombardment = GetWorld()->SpawnActor<ABombardment>(
+		ActiveBombardmentClass,
+		TargetLocation,
+		FRotator::ZeroRotator,
+		SpawnParams);
+	if (Bombardment)
+	{
+		Bombardment->InitializeBombardment(
+			this, RidingPlayer, TargetLocation, ProjectileClass, Damage, Speed);
+		UE_LOG(LogTemp, Log,
+			TEXT("[Bombardment] Started at %s Radius=%.1f Damage=%.1f Speed=%.1f"),
+			*TargetLocation.ToString(), Bombardment->SkillRadius, Damage, Speed);
 	}
 }
 

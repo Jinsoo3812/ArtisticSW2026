@@ -12,6 +12,7 @@
 
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
 DECLARE_MULTICAST_DELEGATE(FOnItemSlotsChangedDelegate);
+DECLARE_MULTICAST_DELEGATE(FOnQuickSlotsChangedDelegate);
 
 class USpringArmComponent;
 class UCameraComponent;
@@ -49,6 +50,31 @@ struct FItemSlot
 
 	// Item 포인터로 배열에서 바로 찾기 위한 연산자 오버로딩
 	bool operator==(const ABaseItem* OtherItem) const;
+};
+
+UENUM(BlueprintType)
+enum class EQuickSlotType : uint8
+{
+	Weapon,
+	Consumable
+};
+
+/** Inventory-backed quick-slot reference. The item remains in the inventory. */
+USTRUCT(BlueprintType)
+struct FQuickSlotReference
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "QuickSlot")
+	FGameplayTag KeyTag;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "QuickSlot")
+	FGameplayTag ItemTag;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "QuickSlot")
+	EQuickSlotType SlotType = EQuickSlotType::Weapon;
+
+	bool IsEmpty() const { return !ItemTag.IsValid(); }
 };
 
 /**
@@ -282,6 +308,22 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex Test")
 	TSubclassOf<UGameplayAbility> GravityVortexTestAbilityClass;
 
+	/** Granted without a player input slot; a ridden cannon activates/cancels it through its ability tag. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Water Bomb")
+	bool bGrantWaterBombAbility = true;
+
+	/** Set this to a GA_WaterBombCannonMode Blueprint to tune projectile, duration, and slow multiplier. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Water Bomb")
+	TSubclassOf<UGameplayAbility> WaterBombAbilityClass;
+
+	/** Granted without a player input slot; the currently possessed ship toggles it with test key 5. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Bombardment")
+	bool bGrantBombardmentAbility = true;
+
+	/** Set this to a GA_Bombardment Blueprint that references the authored Bombardment actor class. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Bombardment")
+	TSubclassOf<UGameplayAbility> BombardmentAbilityClass;
+
 	// GA와 그 GA가 어떤 키 입력(Tag)에 반응할지 함께 적용하는 함수.
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
 	void GrantAbilityToSlot(FGameplayTag SlotTag, TSubclassOf<UGameplayAbility> AbilityClass);
@@ -333,6 +375,33 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_ItemSlots, Category = "Item")
 	TArray<FItemSlot> ItemSlots;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_QuickSlots, Category = "QuickSlot")
+	TArray<FQuickSlotReference> QuickSlots;
+
+	FOnQuickSlotsChangedDelegate OnQuickSlotsChanged;
+
+	UFUNCTION(BlueprintCallable, Category = "QuickSlot")
+	void AssignQuickSlotFromInventory(int32 QuickSlotIndex);
+
+	UFUNCTION(BlueprintCallable, Category = "QuickSlot")
+	void ClearQuickSlot(int32 QuickSlotIndex);
+
+	UFUNCTION(BlueprintCallable, Category = "QuickSlot")
+	void ActivateQuickSlot(int32 QuickSlotIndex);
+
+	UFUNCTION(BlueprintPure, Category = "QuickSlot")
+	bool CanQuickSlotAcceptItem(int32 QuickSlotIndex, FGameplayTag ItemTag) const;
+
+	UFUNCTION(Server, Reliable)
+	void ServerAssignQuickSlotFromInventory(int32 QuickSlotIndex);
+
+	UFUNCTION(Server, Reliable)
+	void ServerClearQuickSlot(int32 QuickSlotIndex);
+
+	UFUNCTION(Server, Reliable)
+	void ServerActivateQuickSlot(int32 QuickSlotIndex);
+
+	// 특정 슬롯의 Item을 제거하고 부여된 GA를 회수
 	// ?뱀젙 ?щ’??Item???쒓굅?섍퀬 遺?щ맂 GA瑜??뚯닔
 	UFUNCTION()
 	void RemoveItemFromSlot(FGameplayTag SlotTag);
@@ -362,6 +431,17 @@ protected:
 
 	// 슬롯 키를 눌렀을 때 아이템을 장착하는 함수
 	void EquipItemFromSlot(FGameplayTag SlotTag);
+	void ActivateQuickSlot1();
+	void ActivateQuickSlot2();
+	void ActivateQuickSlot3();
+	void ActivateQuickSlot4();
+	void ActivateQuickSlot5();
+	void InitializeQuickSlots();
+	void UnequipCurrentItem();
+	bool EquipInventoryWeapon(FGameplayTag ItemTag);
+	bool ConsumeInventoryItem(FGameplayTag ItemTag);
+	void HandleInventoryContentsChanged();
+	bool IsEquippedItemOwnedByLegacySlot() const;
 
 	// 서버에서 먼저 ItemSlot 처리를 해준 후 클라이언트가 수행하기 위해
 	UFUNCTION(Server, Reliable)
@@ -464,6 +544,21 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
 	TObjectPtr<UCraftingComponent> CraftingComponent;
+	/** 에디터 테스트 시작 시 특정 아이템을 인벤토리에 지급한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory")
+	bool bGiveStartingItemForTest = false;
+
+	/** DA_ItemData에 등록된 구체적인 Item.Id 태그를 지정한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory",
+		meta = (EditCondition = "bGiveStartingItemForTest", Categories = "Item.Id"))
+	FGameplayTag StartingItemTagForTest;
+
+	/** 테스트 시작 시 보유하게 할 총수량이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory",
+		meta = (EditCondition = "bGiveStartingItemForTest", ClampMin = "1", UIMin = "1"))
+	int32 StartingItemCountForTest = 1;
+
+	void GiveStartingItemForTest();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<ULocomotionAnimStateComponent> AnimStateComponent;
@@ -483,6 +578,9 @@ protected:
 public:
 	UFUNCTION()
 	void OnRep_ItemSlots();
+
+	UFUNCTION()
+	void OnRep_QuickSlots();
 
 	FOnItemSlotsChangedDelegate OnItemSlotsChanged;
 

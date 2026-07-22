@@ -32,6 +32,13 @@ struct FWeaponAnimationEntry
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Combat")
 	TObjectPtr<UAnimMontage> ReloadMontage;
 
+	/** Character montage played for the equipped weapon's basic attack. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Combat")
+	TObjectPtr<UAnimMontage> BasicAttackMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Combat", meta = (ClampMin = "0.01"))
+	float BasicAttackPlayRate = 1.f;
+
 	// A single montage which owns draw, hold, and release without returning to
 	// the normal weapon overlay between sections.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Weapon Action")
@@ -61,14 +68,14 @@ struct FWeaponAnimationEntry
 	TSubclassOf<UAnimInstance> WeaponAnimLayerClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attachment")
-	FName EquipSocketName = TEXT("GripPoint");
+	FName EquipSocketName = NAME_None;
 
 	// Socket on the item mesh that should coincide with EquipSocketName when equipped.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attachment")
 	FName ItemGripSocketName = NAME_None;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attachment")
-	FName StoredSocketName = TEXT("BackWeaponSocket");
+	FName StoredSocketName = NAME_None;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation", meta = (ClampMin = "0.0"))
 	float EquipPlayRate = 1.f;

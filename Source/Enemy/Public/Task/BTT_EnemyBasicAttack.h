@@ -28,12 +28,14 @@ public:
 public:
 	virtual EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
 	virtual EBTNodeResult::Type AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
+	virtual void TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override;
 	// virtual FString GetStaticDescription() const override;
 
 protected:
 	bool ActivateCurrentWeaponAbilityByAssetTag(class ABaseEnemy* Enemy, const FGameplayTag& AbilityAssetTag) const;
 	bool IsAbilityClassTagged(TSubclassOf<class UGameplayAbility> AbilityClass, const FGameplayTag& AbilityAssetTag) const;
 	void CleanupTagDelegate();
+	void FinishAttackTask(EBTNodeResult::Type Result);
 	void OnAttackTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	
 private:
@@ -41,5 +43,8 @@ private:
 	TWeakObjectPtr<UAbilitySystemComponent> CachedASC;
 	FDelegateHandle AttackTagDelegateHandle;
 	bool bObservedAttackStart = false;
+	bool bRecovering = false;
+	float RecoveryProgress = 0.0f;
+	float BaseAttackCooldown = 0.0f;
 	
 };
