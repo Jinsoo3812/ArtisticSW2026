@@ -12,9 +12,9 @@
 #include "WaterSubsystem.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
+#include "Net/UnrealNetwork.h"
 #include "RippleSubsystem.h"
 #include "SWRippleWaterWaves.h"
-#include "Water/SWBuoyancyMath.h"
 
 static TAutoConsoleVariable<int32> CVarShowSwimBuoyancyDebug(
 	TEXT("p.ShowSwimBuoyancyDebug"),
@@ -25,10 +25,91 @@ static TAutoConsoleVariable<int32> CVarShowSwimBuoyancyDebug(
 	ECVF_Default
 );
 
+static TAutoConsoleVariable<int32> CVarSwimTransitionDebug(
+	TEXT("p.SwimTransitionDebug"),
+	0,
+	TEXT("Log authoritative custom-swim surface and vertical-input state.\n")
+	TEXT("0: Disabled\n")
+	TEXT("1: Log while Ctrl/Space vertical swim input is active"),
+	ECVF_Default
+);
+
 USwimmingComponent::USwimmingComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
+	SetIsReplicatedByDefault(true);
+}
+
+void USwimmingComponent::SetVerticalSwimInput(float InVerticalInput)
+{
+	VerticalSwimInput = FMath::Clamp(InVerticalInput, -1.0f, 1.0f);
+	bDiveInputHeld = VerticalSwimInput < -KINDA_SMALL_NUMBER;
+	bAscendInputHeld = VerticalSwimInput > KINDA_SMALL_NUMBER;
+	if (VerticalSwimInput < -KINDA_SMALL_NUMBER && IsCustomSwimming())
+	{
+		// Diving is a state transition, not just a temporary force. Releasing Ctrl
+		// therefore keeps the player at their newly chosen depth.
+		DepthMode = ESwimDepthMode::Submerged;
+	}
+}
+
+bool USwimmingComponent::HasVerticalSwimInput() const
+{
+	return bDiveInputHeld || bAscendInputHeld;
+}
+
+bool USwimmingComponent::ShouldUseCameraDirectedUnderwaterMovement() const
+{
+	return IsCustomSwimming()
+		&& bIsUnderwater
+		&& DepthMode == ESwimDepthMode::Submerged
+		&& !HasVerticalSwimInput();
+}
+
+bool USwimmingComponent::IsCustomSwimming() const
+{
+	return CharacterMovement
+		&& CharacterMovement->MovementMode == MOVE_Custom
+		&& CharacterMovement->CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming);
+}
+
+FSwimmingAnimationState USwimmingComponent::GetAnimationState() const
+{
+	FSwimmingAnimationState State;
+	State.bIsSwimming = IsCustomSwimming();
+	State.bIsUnderwater = bIsUnderwater;
+	State.bDiveInputHeld = bDiveInputHeld;
+	State.bAscendInputHeld = bAscendInputHeld;
+	State.DepthMode = DepthMode;
+
+	if (!OwnerCharacter || !CharacterMovement)
+	{
+		return State;
+	}
+
+	const FVector Velocity = CharacterMovement->Velocity;
+	// During neutral underwater movement, W follows the camera pitch. Use total
+	// speed so a steep upward/downward forward swim still selects a forward loop.
+	State.HorizontalSpeed = ShouldUseCameraDirectedUnderwaterMovement()
+		? Velocity.Size()
+		: Velocity.Size2D();
+	State.VerticalSpeed = Velocity.Z;
+
+	const FVector LocalVelocity = OwnerCharacter->GetActorTransform().InverseTransformVectorNoScale(Velocity);
+	if (!LocalVelocity.IsNearlyZero())
+	{
+		State.Direction = FMath::RadiansToDegrees(FMath::Atan2(LocalVelocity.Y, LocalVelocity.X));
+	}
+
+	return State;
+}
+
+void USwimmingComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(USwimmingComponent, bDiveInputHeld);
+	DOREPLIFETIME(USwimmingComponent, bAscendInputHeld);
 }
 
 void USwimmingComponent::BeginPlay()
@@ -303,8 +384,7 @@ void USwimmingComponent::CheckWaterTransitions()
 {
 	if (!OwnerCharacter || !CharacterMovement || !CapsuleComponent) return;
 
-	bool bIsCustomSwimming = (CharacterMovement->MovementMode == MOVE_Custom &&
-							  CharacterMovement->CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming));
+	bool bIsCustomSwimming = IsCustomSwimming();
 
 	// If we are not swimming and not overlapping any water bodies, do not check transitions or query water height.
 	if (!bIsCustomSwimming && OverlappingWaterBodies.Num() == 0)
@@ -345,6 +425,7 @@ void USwimmingComponent::CheckWaterTransitions()
 		if (bFeetInWater && FeetSubmersion > SwimEntryOffset)
 		{
 			CharacterMovement->SetMovementMode(MOVE_Custom, static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming));
+			DepthMode = ESwimDepthMode::Surface;
 			CharacterMovement->Buoyancy = 0.f; // CMC의 기본 부력 사용 정지
 			
 			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
@@ -389,6 +470,17 @@ void USwimmingComponent::CheckWaterTransitions()
 			UE_LOG(LogTemp, Warning, TEXT("[%s] %s <<< Exited Swimming State (Falling) (FeetSubmersion: %.2f) >>>"), *ContextStr, *OwnerName, FeetSubmersion);
 		}
 	}
+
+	if (IsCustomSwimming())
+	{
+		UpdateUnderwaterState();
+	}
+	else
+	{
+		bIsUnderwater = false;
+		VerticalSwimInput = 0.0f;
+		DepthMode = ESwimDepthMode::Surface;
+	}
 }
 
 void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
@@ -402,43 +494,11 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 	FVector QueryLocation = PontoonLocation - FVector(0.f, 0.f, PontoonRadius + 100.f);
 	float WaterHeight = -100000.f;
 	bool bPontoonInWater = GetWaterHeightAtLocation(QueryLocation, WaterHeight);
+	UpdateDepthMode();
 
-	float Mass = CharacterMovement->Mass;
-	if (Mass <= 0.f) Mass = 100.f;
-
-	// 1. Z축 중력 연산
-	float GravityZ = GetWorld()->GetGravityZ() * CharacterMovement->GravityScale;
-
-	// 2. Z축 부력 연산 (UBuoyancyComponent의 구체 체적 적분 및 댐핑 공식을 차용)
-	float BuoyantForce = 0.f;
-	float Submersion = 0.f;
-	float SubVolume = 0.f;
-	float DampingFactor = 0.f;
-
-	if (bPontoonInWater)
-	{
-		FSWBuoyancySolveInput SolveInput;
-		SolveInput.WaterHeight = WaterHeight;
-		SolveInput.PontoonCenterZ = PontoonLocation.Z;
-		SolveInput.PontoonRadius = PontoonRadius;
-		SolveInput.RelativeVelocityZ = CharacterMovement->Velocity.Z;
-
-		FSWBuoyancyForceSettings SolveSettings;
-		SolveSettings.BuoyancyCoefficient = BuoyancyCoefficient;
-		SolveSettings.BuoyancyDamp = BuoyancyDamp;
-		SolveSettings.BuoyancyDamp2 = BuoyancyDamp2;
-		SolveSettings.MaxBuoyantForce = MaxBuoyantForce;
-
-		const FSWBuoyancySolveResult SolveResult =
-			FSWBuoyancyMath::SolvePontoon(SolveInput, SolveSettings);
-		Submersion = SolveResult.ImmersionDepth;
-		SubVolume = SolveResult.SubmergedVolume;
-		DampingFactor = SolveResult.DampingForce;
-		BuoyantForce = SolveResult.BuoyantForceZ;
-	}
-
-	float BuoyantAccelerationZ = BuoyantForce / Mass;
-	float TotalVertAccel = GravityZ + BuoyantAccelerationZ;
+	const float InputVerticalAcceleration = VerticalSwimInput * VerticalSwimAcceleration;
+	const bool bHasVerticalInput = HasVerticalSwimInput();
+	const bool bUseCameraDirectedMovement = ShouldUseCameraDirectedUnderwaterMovement();
 
 	// Throttled logging (every 30 frames)
 	// static int32 FrameCount = 0;
@@ -462,31 +522,191 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 	// }
 
 	// 수직 속도 업데이트
-	CharacterMovement->Velocity.Z += TotalVertAccel * DeltaTime;
-
-	// 3. XY축 WASD 수평 이동 연산
-	FVector InputDirection = CharacterMovement->GetCurrentAcceleration().GetSafeNormal2D();
-
-	FVector CurrentHorizontalVelocity = FVector(CharacterMovement->Velocity.X, CharacterMovement->Velocity.Y, 0.f);
-	FVector TargetAcceleration = InputDirection * SwimAcceleration;
-	FVector FrictionForce = -CurrentHorizontalVelocity * SwimFriction;
-	FVector NewHorizontalVelocity = CurrentHorizontalVelocity + (TargetAcceleration + FrictionForce) * DeltaTime;
-
-	// MaxSwimSpeed로 속도 제한
-	if (NewHorizontalVelocity.Size() > MaxSwimSpeed)
+	if (!bHasVerticalInput && DepthMode == ESwimDepthMode::Surface && bPontoonInWater)
 	{
-		NewHorizontalVelocity = NewHorizontalVelocity.GetSafeNormal() * MaxSwimSpeed;
+		// Follow the wave with a damped height spring. This replaces a permanent
+		// upward force, so the surface position is stable instead of drifting up.
+		const float TargetActorZ = WaterHeight - SurfaceTargetDepth;
+		const float SurfaceAcceleration = (TargetActorZ - ActorLocation.Z) * SurfaceHeightSpring
+			- CharacterMovement->Velocity.Z * SurfaceHeightDamping;
+		CharacterMovement->Velocity.Z = FMath::Clamp(
+			CharacterMovement->Velocity.Z + SurfaceAcceleration * DeltaTime,
+			-MaxVerticalSwimSpeed,
+			MaxVerticalSwimSpeed);
+	}
+	else if (bHasVerticalInput)
+	{
+		// Ctrl/Space own the full body. Do not retain a horizontal movement input
+		// while a dedicated descend/ascend animation is playing.
+		float NewVerticalVelocity = FMath::Clamp(
+			CharacterMovement->Velocity.Z + InputVerticalAcceleration * DeltaTime,
+			-MaxVerticalSwimSpeed,
+			MaxVerticalSwimSpeed);
+
+		if (VerticalSwimInput > KINDA_SMALL_NUMBER && bPontoonInWater)
+		{
+			// Space may bring the player to the surface, but it must not propel the
+			// capsule through it. Use the same wave-aware target as surface swimming
+			// and cap this frame's upward travel before SafeMoveUpdatedComponent.
+			const float SurfaceTargetActorZ = WaterHeight - SurfaceTargetDepth;
+			const float RemainingRise = SurfaceTargetActorZ - ActorLocation.Z;
+			const float MaxUpwardVelocityToSurface = FMath::Max(0.0f, RemainingRise / FMath::Max(DeltaTime, KINDA_SMALL_NUMBER));
+			NewVerticalVelocity = FMath::Min(NewVerticalVelocity, MaxUpwardVelocityToSurface);
+		}
+
+		CharacterMovement->Velocity.Z = NewVerticalVelocity;
+	}
+	else if (!bUseCameraDirectedMovement)
+	{
+		// Underwater movement is neutrally buoyant. With no input, drag settles Z
+		// velocity to zero and retains the depth selected by the player.
+		CharacterMovement->Velocity.Z += InputVerticalAcceleration * DeltaTime;
+		CharacterMovement->Velocity.Z = FMath::FInterpTo(
+			CharacterMovement->Velocity.Z,
+			0.0f,
+			DeltaTime,
+			SubmergedVerticalDamping);
+		CharacterMovement->Velocity.Z = FMath::Clamp(
+			CharacterMovement->Velocity.Z,
+			-MaxVerticalSwimSpeed,
+			MaxVerticalSwimSpeed);
 	}
 
-	CharacterMovement->Velocity.X = NewHorizontalVelocity.X;
-	CharacterMovement->Velocity.Y = NewHorizontalVelocity.Y;
+	if (bUseCameraDirectedMovement)
+	{
+		// Neutral underwater W movement follows the full control rotation, including
+		// pitch. This keeps W/A/S/D diagonals while allowing the camera to steer depth.
+		const FVector InputDirection = CharacterMovement->GetCurrentAcceleration().GetSafeNormal();
+		FVector NewVelocity = CharacterMovement->Velocity
+			+ (InputDirection * SwimAcceleration - CharacterMovement->Velocity * SwimFriction) * DeltaTime;
+		CharacterMovement->Velocity = NewVelocity.GetClampedToMaxSize(MaxSwimSpeed);
+	}
+	else
+	{
+		// Surface movement and Ctrl/Space movement remain planar. While Ctrl/Space is
+		// held, this applies drag only so the character transitions to vertical travel.
+		const FVector InputDirection = bHasVerticalInput
+			? FVector::ZeroVector
+			: CharacterMovement->GetCurrentAcceleration().GetSafeNormal2D();
+		const FVector CurrentHorizontalVelocity(CharacterMovement->Velocity.X, CharacterMovement->Velocity.Y, 0.f);
+		FVector NewHorizontalVelocity = CurrentHorizontalVelocity
+			+ (InputDirection * SwimAcceleration - CurrentHorizontalVelocity * SwimFriction) * DeltaTime;
+		NewHorizontalVelocity = NewHorizontalVelocity.GetClampedToMaxSize(MaxSwimSpeed);
+		CharacterMovement->Velocity.X = NewHorizontalVelocity.X;
+		CharacterMovement->Velocity.Y = NewHorizontalVelocity.Y;
+	}
 
 	// 4. CMC 이동 및 충돌 슬라이딩 처리
 	FHitResult SweepHit;
 	CharacterMovement->SafeMoveUpdatedComponent(CharacterMovement->Velocity * DeltaTime, OwnerCharacter->GetActorRotation(), true, SweepHit);
 	if (SweepHit.IsValidBlockingHit())
 	{
+		if (SweepHit.Normal.Z > 0.5f && CharacterMovement->Velocity.Z < 0.0f)
+		{
+			// In deep water, touching the sea floor should stop descent but retain swimming.
+			CharacterMovement->Velocity.Z = 0.0f;
+		}
 		static_cast<UMovementComponent*>(CharacterMovement)->SlideAlongSurface(CharacterMovement->Velocity * DeltaTime, 1.f - SweepHit.Time, SweepHit.Normal, SweepHit, true);
+	}
+
+	// Use the exact same water query and target used for the Space movement cap.
+	// Do not immediately overwrite this result with a second head-location query:
+	// on steep waves that query can differ enough to leave the animation state in
+	// Ascend after the movement has already reached the surface ceiling.
+	const float SurfaceTargetActorZ = WaterHeight - SurfaceTargetDepth;
+	const bool bReachedSurfaceWhileAscending = bPontoonInWater
+		&& bAscendInputHeld
+		&& OwnerCharacter->GetActorLocation().Z >= SurfaceTargetActorZ - 1.0f;
+	if (bReachedSurfaceWhileAscending)
+	{
+		CharacterMovement->Velocity.Z = FMath::Min(CharacterMovement->Velocity.Z, 0.0f);
+		DepthMode = ESwimDepthMode::Surface;
+		bIsUnderwater = false;
+	}
+	else
+	{
+		UpdateUnderwaterState();
+	}
+
+	if (CVarSwimTransitionDebug.GetValueOnGameThread() != 0
+		&& HasVerticalSwimInput()
+		&& GetWorld()
+		&& GetWorld()->GetTimeSeconds() - LastLoggedTime >= 0.25f)
+	{
+		LastLoggedTime = GetWorld()->GetTimeSeconds();
+		UE_LOG(LogTemp, Warning,
+			TEXT("[SwimTransition] %s Input=%.1f Dive=%d Ascend=%d ReachedSurface=%d Underwater=%d DepthMode=%d ActorZ=%.1f WaterZ=%.1f SurfaceTargetZ=%.1f VelZ=%.1f"),
+			*GetNameSafe(OwnerCharacter),
+			VerticalSwimInput,
+			bDiveInputHeld ? 1 : 0,
+			bAscendInputHeld ? 1 : 0,
+			bReachedSurfaceWhileAscending ? 1 : 0,
+			bIsUnderwater ? 1 : 0,
+			static_cast<int32>(DepthMode),
+			OwnerCharacter->GetActorLocation().Z,
+			WaterHeight,
+			SurfaceTargetActorZ,
+			CharacterMovement->Velocity.Z);
+	}
+}
+
+void USwimmingComponent::UpdateUnderwaterState()
+{
+	if (!OwnerCharacter || !CapsuleComponent || !IsCustomSwimming())
+	{
+		bIsUnderwater = false;
+		return;
+	}
+
+	const FVector HeadLocation = OwnerCharacter->GetActorLocation()
+		+ FVector::UpVector * (CapsuleComponent->GetUnscaledCapsuleHalfHeight() - 15.0f);
+	float WaterHeight = -BIG_NUMBER;
+	if (!GetWaterHeightAtLocation(HeadLocation, WaterHeight))
+	{
+		bIsUnderwater = false;
+		return;
+	}
+
+	const float WaterHeightRelativeToHead = WaterHeight - HeadLocation.Z;
+	if (bIsUnderwater)
+	{
+		// Waves may cross the exact head height every frame. Keep the state until
+		// the head is clearly above the current wave surface.
+		bIsUnderwater = WaterHeightRelativeToHead > -UnderwaterExitHeadClearance;
+	}
+	else
+	{
+		// Require meaningful submersion before entering the underwater state.
+		bIsUnderwater = WaterHeightRelativeToHead > UnderwaterEntryHeadSubmersion;
+	}
+}
+
+void USwimmingComponent::UpdateDepthMode()
+{
+	if (!OwnerCharacter || !CapsuleComponent || !IsCustomSwimming())
+	{
+		DepthMode = ESwimDepthMode::Surface;
+		return;
+	}
+
+	if (VerticalSwimInput < -KINDA_SMALL_NUMBER)
+	{
+		DepthMode = ESwimDepthMode::Submerged;
+		return;
+	}
+
+	if (DepthMode != ESwimDepthMode::Submerged)
+	{
+		return;
+	}
+
+	const FVector HeadLocation = OwnerCharacter->GetActorLocation()
+		+ FVector::UpVector * (CapsuleComponent->GetUnscaledCapsuleHalfHeight() - 15.0f);
+	float HeadWaterHeight = -BIG_NUMBER;
+	if (GetWaterHeightAtLocation(HeadLocation, HeadWaterHeight)
+		&& HeadLocation.Z >= HeadWaterHeight + SurfaceReentryHeadClearance)
+	{
+		DepthMode = ESwimDepthMode::Surface;
 	}
 }
 

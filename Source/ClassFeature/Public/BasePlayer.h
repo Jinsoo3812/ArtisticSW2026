@@ -141,6 +141,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	virtual void DoJumpEnd();
 
+	/** Hold Ctrl while swimming to descend. This is intentionally inert on land. */
+	UFUNCTION(BlueprintCallable, Category = "Input|Swimming")
+	void StartSwimDive();
+
+	UFUNCTION(BlueprintCallable, Category = "Input|Swimming")
+	void StopSwimDive();
+
 	UFUNCTION(BlueprintCallable, Category = "Movement|Sprint")
 	void StartSprint();
 
@@ -152,6 +159,9 @@ public:
 
 	UFUNCTION(Server, Reliable)
 	void Server_SetMoveInput(FVector2D NewMoveInput);
+
+	UFUNCTION(Server, Reliable)
+	void Server_SetSwimmingVerticalInput(float NewVerticalInput);
 
 
 	UFUNCTION()
@@ -173,6 +183,9 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Sprint")
 	bool bSprintInputHeld = false;
+
+	bool bSwimDiveInputHeld = false;
+	bool bSwimAscendInputHeld = false;
 
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_LocomotionStateSnapshot, Category = "Animation|Movement|Network")
 	FReplicatedLocomotionState LocomotionStateSnapshot;
@@ -294,6 +307,7 @@ protected:
 	void Move(const FInputActionValue& Value);
 	void MoveStopped(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
+	void RefreshSwimmingVerticalInput();
 
 	// 기본 착지 이벤트 오버라이드
 	virtual void Landed(const FHitResult& Hit) override;
@@ -575,6 +589,17 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<USWTrajectoryComponent> TrajectoryComponent;
+
+	/**
+	 * Optional linked animation-layer implementation used while the character is
+	 * swimming. Assign ABP_Swim (or a character-specific equivalent) in the
+	 * player Blueprint; the native BeginPlay path binds its implemented layers.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Swimming")
+	TSubclassOf<class UAnimInstance> SwimmingAnimLayerClass;
+
+	/** Binds SwimmingAnimLayerClass to this mesh's main animation instance. */
+	void InitializeSwimmingAnimLayers();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBaseHealthComponent> HealthComponent;

@@ -211,6 +211,17 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Air")
     bool bIsJumping;
 
+    /** Snapshot at the accepted jump event. Live air input must not reclassify JumpStart. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Air")
+    bool bJumpStartWasMoving = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Air")
+    float JumpStartGroundSpeed = 0.f;
+
+    /** Character-local launch direction: X=right, Y=forward. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Air")
+    FVector2D JumpStartMoveDirection = FVector2D::ZeroVector;
+
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
     bool bIsLanding;
 
@@ -300,6 +311,10 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
     FVector2D LandMoveDirection;
 
+    /** Input direction captured at impact. Kept separate from velocity so camera-relative steering does not invalidate a landing spuriously. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
+    FVector2D LandingStartMoveInput;
+
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
     float LandingElapsedTime;
 
@@ -347,7 +362,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0", ClampMax = "180.0"))
     float LandingControlYawInterruptAngle = 55.f;
 
-    /** Short landing hold used for diagonal movement landings (W+A / W+D / S+A / S+D). */
+    /** Legacy lower bound for diagonal landings. Diagonal landings never finish before MinimumLandingDuration. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0"))
     float SprintDiagonalLandingDuration = 0.16f;
 
