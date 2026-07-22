@@ -18,8 +18,67 @@
 #include "Storage/StorageChest.h"
 #include "Storage/StorageComponent.h"
 #include "UI/StorageWindowWidget.h"
+#include "UI/FacilityHubWidget.h"
+#include "Crafting/CraftingAccessComponent.h"
 #include "WaterSubsystem.h"
 #include "GameFramework/GameStateBase.h"
+
+
+void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
+{
+	if (!HasAuthority() || !IsValid(ContextActor)
+		|| !ContextActor->FindComponentByClass<UCraftingAccessComponent>())
+	{
+		return;
+	}
+
+	ClientOpenFacilityHub(ContextActor);
+}
+
+void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* ContextActor)
+{
+	if (!IsLocalController() || !IsValid(ContextActor))
+	{
+		return;
+	}
+
+	CloseFacilityHub();
+
+	TSubclassOf<UFacilityHubWidget> WidgetClass = FacilityHubWidgetClass;
+	if (!WidgetClass)
+	{
+		WidgetClass = LoadClass<UFacilityHubWidget>(
+			nullptr,
+			TEXT("/Game/Blueprints/02_UI/UI_FacilityHub/WBP_FacilityHub.WBP_FacilityHub_C"));
+	}
+	if (!WidgetClass)
+	{
+		WidgetClass = UFacilityHubWidget::StaticClass();
+	}
+
+	FacilityHubWidget = CreateWidget<UFacilityHubWidget>(this, WidgetClass);
+	if (!FacilityHubWidget)
+	{
+		return;
+	}
+
+	FacilityHubWidget->InitializeForContext(ContextActor);
+	FacilityHubWidget->AddToViewport(50);
+	ApplyInventoryInputMode(true);
+}
+
+void ABasePlayerController::CloseFacilityHub()
+{
+	if (!FacilityHubWidget)
+	{
+		return;
+	}
+
+	FacilityHubWidget->PrepareToClose();
+	FacilityHubWidget->RemoveFromParent();
+	FacilityHubWidget = nullptr;
+	ApplyInventoryInputMode(false);
+}
 
 
 void ABasePlayerController::BeginPlay()
