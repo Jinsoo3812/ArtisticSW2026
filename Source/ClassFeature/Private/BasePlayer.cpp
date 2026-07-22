@@ -1001,6 +1001,22 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 	if (IsEquipmentTransitioning()) return;
 
+	// Capture the state before AbilityLocalInputPressed can activate the bound
+	// ability. EventMagnitude 0 means activation click, 1 means active re-input.
+	bool bWasBoundAbilityActive = false;
+	const int32 InputID = GetInputIDFromTag(InputTag);
+	if (InputID != INDEX_NONE)
+	{
+		for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
+		{
+			if (Spec.InputID == InputID && Spec.IsActive())
+			{
+				bWasBoundAbilityActive = true;
+				break;
+			}
+		}
+	}
+
 	// 공통 GAS 입력 해제 처리
 	OnAbilityInputPressed(InputTag);
 
@@ -1008,6 +1024,7 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 	FGameplayEventData EventData;
 	EventData.Instigator = this;
 	EventData.Target = nullptr;
+	EventData.EventMagnitude = bWasBoundAbilityActive ? 1.0f : 0.0f;
 
 	CachedAbilitySystemComponent->HandleGameplayEvent(InputTag, &EventData);
 
