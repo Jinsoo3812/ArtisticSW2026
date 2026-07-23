@@ -1,5 +1,7 @@
 # 공용 작업대 및 배 강화 UI 에디터 Step-by-Step 가이드
 
+> **2026-07-23 FacilityHub 통합 갱신:** `master`의 제작 UI 병합 이후 최상위 진입 경로가 변경되었다. 이 문서의 배 강화 자식 WBP 제작 절차는 계속 유효하지만, 공용 창·PlayerController·작업대 설정은 `FacilityHub_Crafting_ShipUpgrade_Integration_Guide.md`를 우선 적용한다. 특히 `BP_WorkTable`과 `ShipUpgradeWorkspaceWidgetClass`를 사용하는 기존 11~13절 설명은 더 이상 현재 런타임 경로가 아니다.
+
 > 기준: 2026-07-23 네이티브 UMG 및 모듈 분리 이후  
 > 대상: Unreal Widget Blueprint를 처음 사용하는 작업자  
 > 목표: 게임 로직은 C++, 화면 배치와 디자인만 Widget Blueprint에서 담당한다.

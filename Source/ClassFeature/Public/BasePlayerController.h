@@ -22,7 +22,6 @@ class AStorageChest;
 class UStorageWindowWidget;
 class UFacilityHubWidget;
 class UStatusWindowWidget;
-class UUserWidget;
 
 struct FStorageRevealState
 {
@@ -43,6 +42,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Facility Hub")
 	void CloseFacilityHub();
+
+	UFUNCTION(BlueprintPure, Category = "Facility Hub")
+	bool IsFacilityHubOpen() const;
 
 	/*--- 초기화 ---*/
 	virtual void SetupInputComponent() override;
@@ -74,20 +76,6 @@ public:
 	void ToggleInventory();
 	void ToggleStatus();
 
-	/** Opens the integrated workbench screen on the local owning client. */
-	UFUNCTION(BlueprintCallable, Category = "UI|Workspace")
-	void OpenShipUpgradeWorkspace();
-
-	UFUNCTION(BlueprintCallable, Category = "UI|Workspace")
-	void CloseShipUpgradeWorkspace();
-
-	UFUNCTION(BlueprintPure, Category = "UI|Workspace")
-	bool IsShipUpgradeWorkspaceOpen() const;
-
-	/** Server-side entry point used after a workbench interaction is validated. */
-	UFUNCTION(Client, Reliable)
-	void ClientOpenShipUpgradeWorkspace();
-
 	void OpenStorageFromServer(AStorageChest* StorageChest);
 
 	UFUNCTION(Client, Reliable)
@@ -116,7 +104,8 @@ public:
 	bool IsStorageSlotSearching(AStorageChest* StorageChest, int32 SlotIndex) const;
 
 protected:
-	UPROPERTY(EditDefaultsOnly, Category = "UI")
+	/** Assign WBP_WorkspaceScreen. It is the one shared shell for every facility tab. */
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Facility Hub")
 	TSubclassOf<UFacilityHubWidget> FacilityHubWidgetClass;
 
 	UPROPERTY()
@@ -134,15 +123,8 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UStatusWindowWidget> StatusWindowWidget;
 
-	/** Assign WBP_WorkspaceScreen on the PlayerController Blueprint. */
-	UPROPERTY(EditDefaultsOnly, Category = "UI|Workspace")
-	TSubclassOf<UUserWidget> ShipUpgradeWorkspaceWidgetClass;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UUserWidget> ShipUpgradeWorkspaceWidget;
-
 	ESlateVisibility PlayerHUDVisibilityBeforeStatus = ESlateVisibility::Visible;
-	ESlateVisibility PlayerHUDVisibilityBeforeWorkspace = ESlateVisibility::Visible;
+	ESlateVisibility PlayerHUDVisibilityBeforeFacilityHub = ESlateVisibility::Visible;
 	TWeakObjectPtr<APawn> StatusInputLockedPawn;
 	bool bWasStatusPawnInputEnabled = true;
 	bool bStatusCharacterInputLocked = false;

@@ -1,6 +1,9 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
+#include "Facility/FacilityHubActor.h"
+#include "UI/Crafting/CraftingPanelWidget.h"
+#include "UI/FacilityHubWidget.h"
 #include "UI/ShipUpgradeConnectionWidget.h"
 #include "UI/ShipUpgradeDetailsWidget.h"
 #include "UI/ShipUpgradeGraphWidget.h"
@@ -53,6 +56,25 @@ bool FShipUpgradeUIModulePlacementTest::RunTest(const FString& Parameters)
 			RedirectedName.ToString(),
 			FCoreRedirectObjectName(Expectation.NewClass).ToString());
 	}
+
+	TestTrue(
+		TEXT("The existing ship workspace is a compatibility child of the single FacilityHub shell"),
+		UShipUpgradeWorkspaceWidget::StaticClass()->IsChildOf(UFacilityHubWidget::StaticClass()));
+
+	UClass* WorkspaceAssetClass = LoadClass<UFacilityHubWidget>(
+		nullptr,
+		TEXT("/Game/Blueprints/02_UI/UI_WorkTable/WBP_WorkspaceScreen.WBP_WorkspaceScreen_C"));
+	TestNotNull(TEXT("The existing ship workspace design loads as a FacilityHub widget"), WorkspaceAssetClass);
+
+	UClass* CraftingPanelAssetClass = LoadClass<UCraftingPanelWidget>(
+		nullptr,
+		TEXT("/Game/Blueprints/02_UI/UI_FacilityHub/Crafting/WBP_CraftingPanel.WBP_CraftingPanel_C"));
+	TestNotNull(TEXT("The teammate crafting panel remains loadable"), CraftingPanelAssetClass);
+
+	UClass* FacilityActorAssetClass = LoadClass<AFacilityHubActor>(
+		nullptr,
+		TEXT("/Game/Blueprints/03_WorldObject/03_FacilityHub/BP_FacilityHub.BP_FacilityHub_C"));
+	TestNotNull(TEXT("The teammate FacilityHub actor remains loadable"), FacilityActorAssetClass);
 
 	return true;
 }

@@ -14,8 +14,6 @@
 #include "InputCoreTypes.h"
 #include "BaseItem.h"
 #include "BaseGameplayTags.h"
-#include "BasePlayerController.h"
-#include "Crafter/WorkTable.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "SWCharacterMovementComponent.h"
@@ -412,7 +410,6 @@ void ABasePlayer::PossessedBy(AController* NewController)
 			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_PickUp).AddUObject(this, &ABasePlayer::HandlePickUpEvent);
 			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_ShipBoard).AddUObject(this, &ABasePlayer::HandleShipBoardEvent);
 			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_CannonBoard).AddUObject(this, &ABasePlayer::HandleCannonBoardEvent);
-			CachedAbilitySystemComponent->GenericGameplayEventCallbacks.FindOrAdd(Interaction_Craft).AddUObject(this, &ABasePlayer::HandleWorkTableInteractionEvent);
 
 			UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] DefaultGrantedAbilities Count: %d, DefaultAbilityMap Count: %d"),
 				DefaultGrantedAbilities.Num(), DefaultAbilityMap.Num());
@@ -1190,38 +1187,6 @@ void ABasePlayer::HandleCannonBoardEvent(const FGameplayEventData* Payload)
 				*Payload->Target->GetName());
 		}
 	}
-}
-
-void ABasePlayer::HandleWorkTableInteractionEvent(const FGameplayEventData* Payload)
-{
-	if (!Payload || !Payload->Target)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::HandleWorkTableInteractionEvent - Missing interaction target."));
-		return;
-	}
-
-	const AWorkTable* WorkTable = Cast<AWorkTable>(Payload->Target);
-	if (!WorkTable)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("ABasePlayer::HandleWorkTableInteractionEvent - Interaction.Craft target is not a work table: %s"),
-			*GetNameSafe(Payload->Target));
-		return;
-	}
-
-	ABasePlayerController* PlayerController = Cast<ABasePlayerController>(GetController());
-	if (!PlayerController)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("ABasePlayer::HandleWorkTableInteractionEvent - BasePlayerController is unavailable for %s."),
-			*GetName());
-		return;
-	}
-
-	UE_LOG(LogTemp, Log,
-		TEXT("ABasePlayer::HandleWorkTableInteractionEvent - [SERVER] Opening integrated workspace for %s."),
-		*GetNameSafe(WorkTable));
-	PlayerController->ClientOpenShipUpgradeWorkspace();
 }
 
 void ABasePlayer::HandlePickUpEvent(const FGameplayEventData* Payload)

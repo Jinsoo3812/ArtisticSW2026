@@ -1,5 +1,7 @@
 # 배 강화 UI Blueprint 사용 가이드
 
+> **2026-07-23 FacilityHub 통합 갱신:** 공용 창과 Context는 이제 `UFacilityHubWidget` 하나가 소유하고, 제작과 배 강화는 독립 자식 패널이다. 진입점은 `BP_FacilityHub → AFacilityHubActor → ABasePlayerController::ClientOpenFacilityHub`이다. 이 문서에 남아 있는 `BP_WorkTable`, `ClientOpenShipUpgradeWorkspace`, `ShipUpgradeWorkspaceWidgetClass` 설명 대신 `FacilityHub_Crafting_ShipUpgrade_Integration_Guide.md`를 우선한다.
+
 > 2026-07-23 기준: 이 문서의 API 설명은 디버깅과 확장용 참고 자료다. 실제 Widget Blueprint는 `UShipUpgrade...Widget` 네이티브 부모를 사용하며, 초기화·이벤트 바인딩·동적 위젯 생성·비동기 로드·활성화 흐름을 Event Graph에서 다시 만들지 않는다. 실제 에디터 제작 순서는 `Ship_Upgrade_UI_Editor_Step_by_Step_Guide.md`를 따른다.
 
 ## 1. UI가 알아야 하는 객체

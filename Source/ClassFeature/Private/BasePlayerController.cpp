@@ -19,7 +19,7 @@
 #include "Storage/StorageComponent.h"
 #include "UI/StorageWindowWidget.h"
 #include "UI/FacilityHubWidget.h"
-#include "Crafting/CraftingAccessComponent.h"
+#include "Facility/FacilityHubActor.h"
 #include "UI/StatusWindowWidget.h"
 #include "WaterSubsystem.h"
 #include "GameFramework/GameStateBase.h"
@@ -27,8 +27,7 @@
 
 void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 {
-	if (!HasAuthority() || !IsValid(ContextActor)
-		|| !ContextActor->FindComponentByClass<UCraftingAccessComponent>())
+	if (!HasAuthority() || !IsValid(Cast<AFacilityHubActor>(ContextActor)))
 	{
 		return;
 	}
@@ -45,32 +44,70 @@ void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* Context
 
 	CloseFacilityHub();
 
+	if (StatusWindowWidget && StatusWindowWidget->IsStatusVisible())
+	{
+		StatusWindowWidget->SetStatusVisible(false);
+		SetStatusCharacterInputLocked(false);
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeStatus);
+		}
+	}
+	if (IsStorageOpen())
+	{
+		CloseStorage();
+	}
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetInventoryVisible(false);
+		PlayerHUDVisibilityBeforeFacilityHub = PlayerHUDWidget->GetVisibility();
+		PlayerHUDWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
 	TSubclassOf<UFacilityHubWidget> WidgetClass = FacilityHubWidgetClass;
+	if (!WidgetClass)
+	{
+		WidgetClass = LoadClass<UFacilityHubWidget>(
+			nullptr,
+			TEXT("/Game/Blueprints/02_UI/UI_WorkTable/WBP_WorkspaceScreen.WBP_WorkspaceScreen_C"));
+	}
 	if (!WidgetClass)
 	{
 		WidgetClass = LoadClass<UFacilityHubWidget>(
 			nullptr,
 			TEXT("/Game/Blueprints/02_UI/UI_FacilityHub/WBP_FacilityHub.WBP_FacilityHub_C"));
 	}
+
 	if (!WidgetClass)
 	{
-		WidgetClass = UFacilityHubWidget::StaticClass();
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeFacilityHub);
+		}
+		ApplyInventoryInputMode(false);
+		return;
 	}
 
 	FacilityHubWidget = CreateWidget<UFacilityHubWidget>(this, WidgetClass);
 	if (!FacilityHubWidget)
 	{
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeFacilityHub);
+		}
+		ApplyInventoryInputMode(false);
 		return;
 	}
 
 	FacilityHubWidget->InitializeForContext(ContextActor);
-	FacilityHubWidget->AddToViewport(50);
+	FacilityHubWidget->AddToViewport(100);
 	ApplyInventoryInputMode(true);
+	FacilityHubWidget->SetUserFocus(this);
 }
 
 void ABasePlayerController::CloseFacilityHub()
 {
-	if (!FacilityHubWidget)
+	if (!IsLocalController() || !FacilityHubWidget)
 	{
 		return;
 	}
@@ -78,7 +115,16 @@ void ABasePlayerController::CloseFacilityHub()
 	FacilityHubWidget->PrepareToClose();
 	FacilityHubWidget->RemoveFromParent();
 	FacilityHubWidget = nullptr;
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeFacilityHub);
+	}
 	ApplyInventoryInputMode(false);
+}
+
+bool ABasePlayerController::IsFacilityHubOpen() const
+{
+	return FacilityHubWidget && FacilityHubWidget->IsInViewport();
 }
 
 
@@ -205,9 +251,9 @@ void ABasePlayerController::ToggleInventory()
 		return;
 	}
 
-	if (IsShipUpgradeWorkspaceOpen())
+	if (IsFacilityHubOpen())
 	{
-		CloseShipUpgradeWorkspace();
+		CloseFacilityHub();
 	}
 
 	// 상자 UI가 열려 있으면, 상자를 닫고 인벤토리만 열기
@@ -232,9 +278,9 @@ void ABasePlayerController::ToggleStatus()
 		return;
 	}
 
-	if (IsShipUpgradeWorkspaceOpen())
+	if (IsFacilityHubOpen())
 	{
-		CloseShipUpgradeWorkspace();
+		CloseFacilityHub();
 	}
 
 	if (StatusWindowWidget->IsStatusVisible())
@@ -272,91 +318,11 @@ void ABasePlayerController::ToggleStatus()
 	SetStatusCharacterInputLocked(true);
 }
 
-void ABasePlayerController::OpenShipUpgradeWorkspace()
-{
-	if (!IsLocalController() || !ShipUpgradeWorkspaceWidgetClass)
-	{
-		return;
-	}
-	if (IsShipUpgradeWorkspaceOpen())
-	{
-		return;
-	}
-
-	if (StatusWindowWidget && StatusWindowWidget->IsStatusVisible())
-	{
-		StatusWindowWidget->SetStatusVisible(false);
-		SetStatusCharacterInputLocked(false);
-		if (PlayerHUDWidget)
-		{
-			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeStatus);
-		}
-	}
-
-	if (IsStorageOpen())
-	{
-		CloseStorage();
-	}
-
-	if (PlayerHUDWidget)
-	{
-		PlayerHUDWidget->SetInventoryVisible(false);
-		PlayerHUDVisibilityBeforeWorkspace = PlayerHUDWidget->GetVisibility();
-		PlayerHUDWidget->SetVisibility(ESlateVisibility::Collapsed);
-	}
-
-	if (!ShipUpgradeWorkspaceWidget)
-	{
-		ShipUpgradeWorkspaceWidget = CreateWidget<UUserWidget>(this, ShipUpgradeWorkspaceWidgetClass);
-		if (!ShipUpgradeWorkspaceWidget)
-		{
-			if (PlayerHUDWidget)
-			{
-				PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeWorkspace);
-			}
-			return;
-		}
-		ShipUpgradeWorkspaceWidget->AddToViewport(100);
-	}
-
-	ShipUpgradeWorkspaceWidget->SetVisibility(ESlateVisibility::Visible);
-	ShipUpgradeWorkspaceWidget->SetIsEnabled(true);
-	ApplyInventoryInputMode(true);
-	ShipUpgradeWorkspaceWidget->SetUserFocus(this);
-}
-
-void ABasePlayerController::CloseShipUpgradeWorkspace()
-{
-	if (!IsLocalController() || !ShipUpgradeWorkspaceWidget)
-	{
-		return;
-	}
-
-	ShipUpgradeWorkspaceWidget->SetVisibility(ESlateVisibility::Collapsed);
-	if (PlayerHUDWidget)
-	{
-		PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeWorkspace);
-	}
-	ApplyInventoryInputMode(false);
-}
-
-bool ABasePlayerController::IsShipUpgradeWorkspaceOpen() const
-{
-	return ShipUpgradeWorkspaceWidget
-		&& ShipUpgradeWorkspaceWidget->GetVisibility() != ESlateVisibility::Collapsed
-		&& ShipUpgradeWorkspaceWidget->GetVisibility() != ESlateVisibility::Hidden;
-}
-
-void ABasePlayerController::ClientOpenShipUpgradeWorkspace_Implementation()
-{
-	OpenShipUpgradeWorkspace();
-}
-
 void ABasePlayerController::HandleMenuEscape()
 {
-	if (IsShipUpgradeWorkspaceOpen())
+	if (IsFacilityHubOpen())
 	{
-		CloseShipUpgradeWorkspace();
+		CloseFacilityHub();
 	}
 }
 
@@ -551,9 +517,9 @@ void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 		return;
 	}
 
-	if (IsShipUpgradeWorkspaceOpen())
+	if (IsFacilityHubOpen())
 	{
-		CloseShipUpgradeWorkspace();
+		CloseFacilityHub();
 	}
 
 	// 동일한 상자 UI가 이미 열려 있으면 위젯과 입력 모드를 다시 생성하지 않는다.

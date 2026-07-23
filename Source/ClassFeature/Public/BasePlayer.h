@@ -480,10 +480,6 @@ protected:
 	// 대포 탑승 이벤트를 처리하는 함수
 	void HandleCannonBoardEvent(const FGameplayEventData* Payload);
 
-	/** Opens the current integrated workbench UI. Legacy Crafter/StarForce code is intentionally not involved. */
-	void HandleWorkTableInteractionEvent(const FGameplayEventData* Payload);
-
-
 	/* --- Interactable Object Trace ---*/
 public:
 	// Interactable Object 감지를 위한 범위 함수 (범위 내의 모든 HitResult를 반환하므로 알아서 걸러 쓸 것)
