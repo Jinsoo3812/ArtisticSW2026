@@ -8,6 +8,7 @@
 #include "InputTagConfig.h"
 #include "Equipment/PlayerEquipmentComponent.h"
 #include "Animation/LocomotionAnimStateComponent.h"
+#include "Components/SkinnedMeshComponent.h"
 #include "BasePlayer.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
@@ -247,7 +248,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Animation|Combat")
 	void InterruptCombatIntroForHit();
 
+	/** Keep server-side weapon sockets synchronized while a combat montage is active. */
+	void AcquireServerCombatPoseRefresh();
+
+	/** Releases one combat pose refresh request and restores the previous mesh setting. */
+	void ReleaseServerCombatPoseRefresh();
+
 protected:
+	EVisibilityBasedAnimTickOption ServerCombatOriginalAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPose;
+	int32 ServerCombatPoseRefreshRefCount = 0;
+
 	int32 LocomotionAnimEventSequence = 0;
 	void UpdateLocomotionStateSnapshot();
 	int32 NextLocomotionAnimEventSequence();

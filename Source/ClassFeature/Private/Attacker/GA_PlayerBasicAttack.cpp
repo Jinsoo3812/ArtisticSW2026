@@ -3,6 +3,7 @@
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
+#include "Animation/AnimMontage.h"
 #include "Attacker/BasicMeleeDamageGameplayEffect.h"
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
@@ -10,6 +11,8 @@
 #include "Equipment/PlayerEquipmentComponent.h"
 #include "GASCombatLibrary.h"
 #include "Item/Weapons/SwordItem.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogPlayerBasicAttack, Log, All);
 
 UGA_PlayerBasicAttack::UGA_PlayerBasicAttack()
 {
@@ -31,6 +34,12 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 
 	bAttackFinished = false;
 	bHitScanActive = false;
+	bComboInputBuffered = false;
+	bServerCombatPoseRefreshAcquired = false;
+	HitScanWindowStartTime = -1.0;
+	ExpectedHitScanWindowDuration = 0.0f;
+	HitScanWindowTickCount = 0;
+	CurrentComboIndex = INDEX_NONE;
 
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 	if (!ASC || ASC->HasMatchingGameplayTag(State_Dead) || ASC->HasMatchingGameplayTag(State_Attacking))
@@ -57,6 +66,11 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
 	{
 		Player->StopSprint();
+		if (Player->HasAuthority())
+		{
+			Player->AcquireServerCombatPoseRefresh();
+			bServerCombatPoseRefreshAcquired = true;
+		}
 	}
 
 	HitScanStartEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
@@ -71,6 +85,18 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 		HitScanStartEventTask->ReadyForActivation();
 	}
 
+	HitScanTickEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+		this,
+		Event_HandleScan_Tick,
+		nullptr,
+		false,
+		true);
+	if (HitScanTickEventTask)
+	{
+		HitScanTickEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnHitScanTickEvent);
+		HitScanTickEventTask->ReadyForActivation();
+	}
+
 	HitScanEndEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
 		this,
 		Event_HandleScan_End,
@@ -81,6 +107,30 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	{
 		HitScanEndEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnHitScanEndEvent);
 		HitScanEndEventTask->ReadyForActivation();
+	}
+
+	ComboCommitEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+		this,
+		Event_Attack_ComboCommit,
+		nullptr,
+		false,
+		true);
+	if (ComboCommitEventTask)
+	{
+		ComboCommitEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnComboCommitEvent);
+		ComboCommitEventTask->ReadyForActivation();
+	}
+
+	ComboInputEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+		this,
+		Key_Default_Mouse_LeftClick,
+		nullptr,
+		false,
+		true);
+	if (ComboInputEventTask)
+	{
+		ComboInputEventTask->EventReceived.AddDynamic(this, &UGA_PlayerBasicAttack::OnComboInputEvent);
+		ComboInputEventTask->ReadyForActivation();
 	}
 
 	if (!PlayAttackMontage())
@@ -97,16 +147,35 @@ void UGA_PlayerBasicAttack::EndAbility(
 	bool bWasCancelled)
 {
 	EndHitScan();
+
+	if (bServerCombatPoseRefreshAcquired)
+	{
+		if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
+		{
+			Player->ReleaseServerCombatPoseRefresh();
+		}
+		bServerCombatPoseRefreshAcquired = false;
+	}
+
 	RemoveAttackStateTag();
 
 	CachedSword = nullptr;
 	CachedAttackMontage = nullptr;
+	CachedComboSections.Reset();
 	CachedAttackMontagePlayRate = 1.0f;
 	CachedDamageSpecHandle = FGameplayEffectSpecHandle();
 	AttackMontageTask = nullptr;
 	HitScanStartEventTask = nullptr;
+	HitScanTickEventTask = nullptr;
 	HitScanEndEventTask = nullptr;
+	ComboCommitEventTask = nullptr;
+	ComboInputEventTask = nullptr;
+	CurrentComboIndex = INDEX_NONE;
+	bComboInputBuffered = false;
 	bAttackFinished = false;
+	HitScanWindowStartTime = -1.0;
+	ExpectedHitScanWindowDuration = 0.0f;
+	HitScanWindowTickCount = 0;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -129,7 +198,7 @@ bool UGA_PlayerBasicAttack::CacheAttackData()
 
 	CachedAttackMontage = EquipmentComponent->GetEquippedBasicAttackMontage();
 	CachedAttackMontagePlayRate = EquipmentComponent->GetEquippedBasicAttackPlayRate();
-	if (!CachedAttackMontage)
+	if (!CachedAttackMontage || !CacheComboSections(EquipmentComponent->GetEquippedBasicAttackComboSections()))
 	{
 		return false;
 	}
@@ -154,6 +223,57 @@ bool UGA_PlayerBasicAttack::CacheAttackData()
 	return CachedDamageSpecHandle.IsValid();
 }
 
+bool UGA_PlayerBasicAttack::CacheComboSections(const TArray<FName>& ConfiguredSections)
+{
+	CachedComboSections.Reset();
+	if (!CachedAttackMontage)
+	{
+		return false;
+	}
+
+	if (ConfiguredSections.IsEmpty())
+	{
+		for (int32 SectionIndex = 0; SectionIndex < CachedAttackMontage->GetNumSections(); ++SectionIndex)
+		{
+			const FName SectionName = CachedAttackMontage->GetSectionName(SectionIndex);
+			if (!SectionName.IsNone())
+			{
+				CachedComboSections.Add(SectionName);
+			}
+		}
+
+		return true;
+	}
+
+	for (const FName SectionName : ConfiguredSections)
+	{
+		if (SectionName.IsNone() || CachedAttackMontage->GetSectionIndex(SectionName) == INDEX_NONE)
+		{
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("UGA_PlayerBasicAttack::CacheComboSections : Montage '%s' does not contain section '%s'."),
+				*GetNameSafe(CachedAttackMontage),
+				*SectionName.ToString());
+			return false;
+		}
+
+		if (CachedComboSections.Contains(SectionName))
+		{
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("UGA_PlayerBasicAttack::CacheComboSections : Duplicate combo section '%s'."),
+				*SectionName.ToString());
+			return false;
+		}
+
+		CachedComboSections.Add(SectionName);
+	}
+
+	return true;
+}
+
 bool UGA_PlayerBasicAttack::PlayAttackMontage()
 {
 	if (!CachedAttackMontage)
@@ -166,7 +286,7 @@ bool UGA_PlayerBasicAttack::PlayAttackMontage()
 		FName(TEXT("PlayerBasicAttackMontageTask")),
 		CachedAttackMontage,
 		FMath::Max(CachedAttackMontagePlayRate, KINDA_SMALL_NUMBER),
-		NAME_None,
+		CachedComboSections.IsEmpty() ? NAME_None : CachedComboSections[0],
 		true);
 
 	if (!AttackMontageTask)
@@ -179,7 +299,71 @@ bool UGA_PlayerBasicAttack::PlayAttackMontage()
 	AttackMontageTask->OnInterrupted.AddDynamic(this, &UGA_PlayerBasicAttack::OnAttackMontageInterrupted);
 	AttackMontageTask->OnCancelled.AddDynamic(this, &UGA_PlayerBasicAttack::OnAttackMontageCancelled);
 	AttackMontageTask->ReadyForActivation();
+
+	if (!CachedComboSections.IsEmpty())
+	{
+		CurrentComboIndex = 0;
+		if (CachedComboSections.IsValidIndex(CurrentComboIndex + 1))
+		{
+			HoldSectionForCommit(CachedComboSections[CurrentComboIndex]);
+		}
+	}
+
 	return true;
+}
+
+void UGA_PlayerBasicAttack::CommitBufferedCombo()
+{
+	if (bAttackFinished || !CachedComboSections.IsValidIndex(CurrentComboIndex))
+	{
+		return;
+	}
+
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (!ASC)
+	{
+		FinishAttack(true);
+		return;
+	}
+
+	const FName CurrentSection = CachedComboSections[CurrentComboIndex];
+	const int32 NextComboIndex = CurrentComboIndex + 1;
+	if (!bComboInputBuffered || !CachedComboSections.IsValidIndex(NextComboIndex))
+	{
+		ASC->CurrentMontageSetNextSectionName(CurrentSection, NAME_None);
+		bComboInputBuffered = false;
+		return;
+	}
+
+	const FName NextSection = CachedComboSections[NextComboIndex];
+
+	// Only sections that have another combo step need to wait for a commit.
+	// The final section remains terminal and finishes without another notify.
+	if (CachedComboSections.IsValidIndex(NextComboIndex + 1))
+	{
+		HoldSectionForCommit(NextSection);
+	}
+	else
+	{
+		ASC->CurrentMontageSetNextSectionName(NextSection, NAME_None);
+	}
+	ASC->CurrentMontageSetNextSectionName(CurrentSection, NextSection);
+
+	CurrentComboIndex = NextComboIndex;
+	bComboInputBuffered = false;
+}
+
+void UGA_PlayerBasicAttack::HoldSectionForCommit(FName SectionName)
+{
+	if (SectionName.IsNone())
+	{
+		return;
+	}
+
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	{
+		ASC->CurrentMontageSetNextSectionName(SectionName, SectionName);
+	}
 }
 
 void UGA_PlayerBasicAttack::OnAttackMontageCompleted()
@@ -189,7 +373,9 @@ void UGA_PlayerBasicAttack::OnAttackMontageCompleted()
 
 void UGA_PlayerBasicAttack::OnAttackMontageBlendOut()
 {
-	FinishAttack(false);
+	// A queued Anim Notify can be dispatched later in the same frame than this
+	// callback. Keep the ability and its WaitGameplayEvent tasks alive until the
+	// montage completes so a late combo commit event is still observable.
 }
 
 void UGA_PlayerBasicAttack::OnAttackMontageInterrupted()
@@ -204,28 +390,95 @@ void UGA_PlayerBasicAttack::OnAttackMontageCancelled()
 
 void UGA_PlayerBasicAttack::OnHitScanStartEvent(FGameplayEventData Payload)
 {
+	UWorld* World = GetWorld();
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	HitScanWindowStartTime = World ? World->GetTimeSeconds() : -1.0;
+	ExpectedHitScanWindowDuration = Payload.EventMagnitude / FMath::Max(CachedAttackMontagePlayRate, KINDA_SMALL_NUMBER);
+	HitScanWindowTickCount = 0;
+
+	UE_LOG(
+		LogPlayerBasicAttack,
+		Log,
+		TEXT("[HitScanWindow Begin] Avatar=%s Authority=%d Role=%d NetMode=%d ExpectedDuration=%.4f ComboIndex=%d"),
+		*GetNameSafe(Avatar),
+		Avatar && Avatar->HasAuthority() ? 1 : 0,
+		Avatar ? static_cast<int32>(Avatar->GetLocalRole()) : static_cast<int32>(ROLE_None),
+		World ? static_cast<int32>(World->GetNetMode()) : static_cast<int32>(NM_Standalone),
+		ExpectedHitScanWindowDuration,
+		CurrentComboIndex);
+
 	StartHitScan();
+}
+
+void UGA_PlayerBasicAttack::OnHitScanTickEvent(FGameplayEventData Payload)
+{
+	++HitScanWindowTickCount;
+
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	if (Avatar && Avatar->HasAuthority() && bHitScanActive && CachedSword)
+	{
+		CachedSword->SampleHitScan();
+	}
 }
 
 void UGA_PlayerBasicAttack::OnHitScanEndEvent(FGameplayEventData Payload)
 {
+	UWorld* World = GetWorld();
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	const double ActualDuration = World && HitScanWindowStartTime >= 0.0
+		? World->GetTimeSeconds() - HitScanWindowStartTime
+		: -1.0;
+
+	UE_LOG(
+		LogPlayerBasicAttack,
+		Log,
+		TEXT("[HitScanWindow End] Avatar=%s Authority=%d Role=%d NetMode=%d ExpectedDuration=%.4f ActualDuration=%.4f TickCount=%d ComboIndex=%d"),
+		*GetNameSafe(Avatar),
+		Avatar && Avatar->HasAuthority() ? 1 : 0,
+		Avatar ? static_cast<int32>(Avatar->GetLocalRole()) : static_cast<int32>(ROLE_None),
+		World ? static_cast<int32>(World->GetNetMode()) : static_cast<int32>(NM_Standalone),
+		ExpectedHitScanWindowDuration,
+		ActualDuration,
+		HitScanWindowTickCount,
+		CurrentComboIndex);
+
 	EndHitScan();
+	HitScanWindowStartTime = -1.0;
+	ExpectedHitScanWindowDuration = 0.0f;
+	HitScanWindowTickCount = 0;
+}
+
+void UGA_PlayerBasicAttack::OnComboCommitEvent(FGameplayEventData Payload)
+{
+	CommitBufferedCombo();
+}
+
+void UGA_PlayerBasicAttack::OnComboInputEvent(FGameplayEventData Payload)
+{
+	// The input router marks the activation click as 0 and presses made while
+	// this input's ability was already active as 1.
+	const bool bIsRepeatInput = Payload.EventMagnitude > 0.5f;
+	if (bIsRepeatInput && !bAttackFinished && CachedComboSections.IsValidIndex(CurrentComboIndex + 1))
+	{
+		bComboInputBuffered = true;
+	}
 }
 
 void UGA_PlayerBasicAttack::StartHitScan()
 {
-	if (bHitScanActive || !CachedSword || !CachedDamageSpecHandle.IsValid())
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	if (!Avatar || !Avatar->HasAuthority() || bHitScanActive || !CachedSword || !CachedDamageSpecHandle.IsValid())
 	{
 		return;
 	}
 
-	bHitScanActive = true;
-	CachedSword->HitScanStart(CachedDamageSpecHandle);
+	bHitScanActive = CachedSword->HitScanStart(CachedDamageSpecHandle);
 }
 
 void UGA_PlayerBasicAttack::EndHitScan()
 {
-	if (CachedSword)
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	if (Avatar && Avatar->HasAuthority() && CachedSword)
 	{
 		CachedSword->HitScanEnd();
 	}

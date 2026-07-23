@@ -109,6 +109,9 @@ public:
 	UAnimMontage* GetEquippedBasicAttackMontage() const;
 
 	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
+	TArray<FName> GetEquippedBasicAttackComboSections() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
 	float GetEquippedBasicAttackPlayRate() const;
 
 	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
