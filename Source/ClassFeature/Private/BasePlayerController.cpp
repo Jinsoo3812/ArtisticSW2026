@@ -14,7 +14,6 @@
 #include "Widgets/Input/SVirtualJoystick.h"
 #include "BaseGameplayTags.h"
 #include "Attacker/AttackerComponent.h"
-#include "Crafter/CrafterComponent.h"
 #include "Inventory/InventoryComponent.h"
 #include "Storage/StorageChest.h"
 #include "Storage/StorageComponent.h"

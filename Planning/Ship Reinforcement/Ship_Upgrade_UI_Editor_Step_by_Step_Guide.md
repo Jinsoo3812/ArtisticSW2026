@@ -632,13 +632,15 @@ Player Controller Class
 /Game/Blueprints/Interactable_Object/BP_WorkTable
 ```
 
-Class Defaults 또는 배치된 작업대 인스턴스에서 다음 값을 켠다.
+`Interactable` 컴포넌트의 상호작용 태그가 다음 값인지 확인한다.
 
 ```text
-Open Integrated Workspace = true
+Interaction.Craft
 ```
 
-이 값이 꺼져 있으면 통합 Workspace 대신 기존 StarForce 팝업 경로가 열린다.
+현재 시스템은 `ABasePlayer`가 이 이벤트를 직접 받아 통합 Workspace만 연다.
+`CrafterComponent`, `Open Integrated Workspace`, `InteractPopupUIClass`, 기존 StarForce 팝업은 이 경로에 관여하지 않는다.
+`BP_Player`에 레거시 `CrafterComponent`를 추가하지 않는다.
 
 ## 14. 강화 데이터 에셋 설정
 
@@ -714,7 +716,7 @@ VisualPriority = 20
 12. Screen의 Preview Stage와 기본 배 Actor Class를 지정한다.
 13. `WBP_WorkspaceScreen`을 만들고 Switcher index 0에 ShipUpgradeScreen을 넣는다.
 14. PlayerController에 Workspace Widget Class를 지정한다.
-15. WorkTable의 `Open Integrated Workspace`를 켠다.
+15. WorkTable의 `Interactable` 태그가 `Interaction.Craft`인지 확인한다.
 16. 강화 Data Asset의 UI와 프리뷰 필드를 채운다.
 17. Standalone PIE에서 아래 체크리스트를 확인한다.
 
@@ -782,8 +784,8 @@ VisualPriority = 20
 | 배 프리뷰가 검정색 | SceneCapture Texture Target과 조명 |
 | 배가 안 보임 | 프리뷰 Actor Mesh 위치와 카메라 방향 |
 | 줌이 안 됨 | ScrollBox `Consume Mouse Wheel = Never` |
-| 작업대에서 옛 UI가 열림 | `Open Integrated Workspace = true` |
-| 화면이 안 열림 | Controller의 Workspace Widget Class와 실제 GameMode |
+| 작업대에서 옛 UI가 열림 | 현재 `BP_Player`에 레거시 `CrafterComponent`가 추가됐거나 별도 BP Event Graph가 StarForce UI를 열고 있지 않은지 확인 |
+| 화면이 안 열림 | `Interaction.Craft` 태그, Controller의 Workspace Widget Class, 실제 GameMode, 로그의 `HandleWorkTableInteractionEvent` |
 | 재료가 있는데 활성화 불가 | UI에서 수량을 고치지 말고 Inventory와 노드 조건 확인 |
 | 기존 WBP 부모가 Invalid | Core Redirect 적용 후 에디터 재시작, 필요하면 새 부모로 Reparent |
 

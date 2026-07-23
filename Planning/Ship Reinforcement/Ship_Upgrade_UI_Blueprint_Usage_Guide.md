@@ -393,7 +393,7 @@ ESC 또는 닫기
 - `UShipUpgradeNodeWidget`: 표현, 비동기 아이콘 로드, 클릭/호버/선택 처리
 - `UShipUpgradeDetailsWidget`: 선택 노드 상세, 행 생성, 활성화 요청과 Pending 표시
 
-`AWorkTable.bOpenIntegratedWorkspace`의 기본값은 true다. 따라서 기존 `Interaction.Craft` 서버 검증 뒤 `UCrafterComponent`가 소유 클라이언트의 `ClientOpenShipUpgradeWorkspace()`를 호출한다. false인 작업대만 기존 `InteractPopupUIClass`/스타포스 팝업 경로를 사용한다.
+현재 작업대 진입 경로는 `ABasePlayer`가 `Interaction.Craft`를 직접 수신하고, 대상이 `AWorkTable`이면 소유 클라이언트의 `ClientOpenShipUpgradeWorkspace()`를 호출하는 단일 경로다. 레거시 `UCrafterComponent`, `AWorkTable.bOpenIntegratedWorkspace`, `InteractPopupUIClass`, StarForce 팝업은 현재 플레이어와 통합 Workspace 진입에 관여하지 않는다. 레거시 코드는 보존하지만 `BP_Player`에 `CrafterComponent`를 추가하지 않는다.
 
 Controller는 Inventory, Status, Storage, Workspace를 상호 배타적으로 전환하고 Workspace를 닫을 때 게임 입력과 Look 입력을 복원한다. Widget 내부에서 별도로 Input Mode를 바꾸거나 `RemoveFromParent`를 호출하지 않는다.
 
