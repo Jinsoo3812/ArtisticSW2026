@@ -48,6 +48,9 @@ ULocomotionAnimStateComponent::ULocomotionAnimStateComponent()
     bStopRequested = false;
     bIsInAir = false;
     bIsJumping = false;
+    bJumpStartWasMoving = false;
+    JumpStartGroundSpeed = 0.f;
+    JumpStartMoveDirection = FVector2D::ZeroVector;
     bIsLanding = false;
     bUseHeavyLand = false;
     LastFallSpeed = 0.f;
@@ -80,6 +83,7 @@ ULocomotionAnimStateComponent::ULocomotionAnimStateComponent()
     bLandWasMoving = false;
     bLandWasSprinting = false;
     LandMoveDirection = FVector2D::ZeroVector;
+    LandingStartMoveInput = FVector2D::ZeroVector;
     LandingElapsedTime = 0.f;
     LandingStartControlYaw = 0.f;
     bLandingFromFallOff = false;
@@ -589,10 +593,14 @@ void ULocomotionAnimStateComponent::UpdateCharacterRotation(float DeltaTime)
     else
     {
         // Keep idle/stop poses from rotating with camera-only look input.
+        // Keep the actor's facing stable while a landing asset consumes its
+        // captured movement direction. Rotating to a newly moved camera here
+        // changes the pose-search reference frame half way through the asset.
         MovementComponent->bUseControllerDesiredRotation =
             CurrentState != ELocomotionState::Idle &&
             CurrentState != ELocomotionState::Stop &&
-            CurrentState != ELocomotionState::TurnInPlace;
+            CurrentState != ELocomotionState::TurnInPlace &&
+            CurrentState != ELocomotionState::Landing;
     }
 
     // Interpolate mesh relative rotation offset back to default
@@ -848,9 +856,9 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             else if (LandingElapsedTime >= LandingDirectionInterruptMinTime)
             {
                 bool bInputDirectionChanged = false;
-                if (bHasMoveInput && !LandMoveDirection.IsNearlyZero() && !CachedMoveInput.IsNearlyZero())
+                if (bHasMoveInput && !LandingStartMoveInput.IsNearlyZero() && !CachedMoveInput.IsNearlyZero())
                 {
-                    const FVector2D LandDirection = LandMoveDirection.GetSafeNormal();
+                    const FVector2D LandDirection = LandingStartMoveInput.GetSafeNormal();
                     const FVector2D CurrentInputDirection = CachedMoveInput.GetSafeNormal();
                     const float Dot = FMath::Clamp(FVector2D::DotProduct(LandDirection, CurrentInputDirection), -1.f, 1.f);
                     const float DirectionDelta = FMath::RadiansToDegrees(FMath::Acos(Dot));
@@ -1090,6 +1098,34 @@ void ULocomotionAnimStateComponent::HandleJumpStarted()
     World->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
     StopFallOffStart();
 
+    // Capture launch intent before CharacterMovement turns the current input
+    // into mid-air steering. JumpStart selection uses this immutable snapshot.
+    JumpStartGroundSpeed = 0.f;
+    JumpStartMoveDirection = FVector2D::ZeroVector;
+    if (CachedBasePlayer)
+    {
+        if (const UCharacterMovementComponent* MovementComponent = CachedBasePlayer->GetCharacterMovement())
+        {
+            FVector HorizontalVelocity = MovementComponent->Velocity;
+            HorizontalVelocity.Z = 0.f;
+            JumpStartGroundSpeed = HorizontalVelocity.Size();
+
+            if (HorizontalVelocity.SizeSquared() > FMath::Square(IdleSpeedThreshold))
+            {
+                const FVector LocalDirection = CachedBasePlayer->GetActorTransform()
+                    .InverseTransformVectorNoScale(HorizontalVelocity.GetSafeNormal());
+                JumpStartMoveDirection = FVector2D(LocalDirection.Y, LocalDirection.X).GetSafeNormal();
+            }
+            else
+            {
+                JumpStartMoveDirection = GetMovementInputForState().GetSafeNormal();
+            }
+        }
+    }
+    bJumpStartWasMoving =
+        JumpStartGroundSpeed > IdleSpeedThreshold ||
+        !JumpStartMoveDirection.IsNearlyZero();
+
     bIsJumping = true;
     bIsInAir = true;
     bIsLanding = false;
@@ -1237,6 +1273,13 @@ void ULocomotionAnimStateComponent::StartLanding(float ImpactFallSpeed, bool bTr
         return;
     }
 
+    // Landed can be delivered both by CharacterMovement and by the air-state
+    // confirmation path. A second delivery must not rewind the one-shot pose.
+    if (CurrentState == ELocomotionState::Landing && bIsLanding && bLandingRequested)
+    {
+        return;
+    }
+
     const bool bWasJumpLanding = bIsJumping;
     const bool bWasFallOffLanding = bIsFallOffStart;
 
@@ -1280,15 +1323,17 @@ void ULocomotionAnimStateComponent::StartLanding(float ImpactFallSpeed, bool bTr
     {
         LandMoveDirection = CachedMoveInput.GetSafeNormal();
     }
+    LandingStartMoveInput = CachedMoveInput.GetSafeNormal();
 
     // Sprint landing assets are strongly forward-biased. Walk speed is also exactly 500,
     // so speed alone classified ordinary strafe/back movement as sprint landing.
     // Use sprint landing only when the character was actually sprinting forward.
-    constexpr float SprintForwardDirectionThreshold = 0.35f;
+    constexpr float SprintForwardDirectionThreshold = 0.85f;
     bLandWasSprinting =
         bIsSprinting &&
         LandStartGroundSpeed >= RunToSprintSpeedThreshold &&
-        LandMoveDirection.Y >= SprintForwardDirectionThreshold;
+        LandMoveDirection.Y >= SprintForwardDirectionThreshold &&
+        !IsDiagonalLanding();
 
     bIsJumping = false;
     bIsInAir = true;
@@ -1394,7 +1439,10 @@ float ULocomotionAnimStateComponent::GetEffectiveMinimumLandingDuration() const
 
     if (IsDiagonalLanding() && !bIsSimulatedProxy && !bLandingFromFallOff)
     {
-        EffectiveDuration = FMath::Min(EffectiveDuration, SprintDiagonalLandingDuration);
+        // A diagonal asset needs at least the normal landing window. The old
+        // minimum() reduced the default 0.45 s window to 0.16 s and cut the
+        // pose before its directional contact had settled.
+        EffectiveDuration = FMath::Max(EffectiveDuration, SprintDiagonalLandingDuration);
     }
 
     if (bIsSimulatedProxy)
@@ -1525,9 +1573,9 @@ void ULocomotionAnimStateComponent::InterruptLandingForDirectionChange()
         : 0.f;
 
     float InputDirectionDelta = 0.f;
-    if (!LandMoveDirection.IsNearlyZero() && !CachedMoveInput.IsNearlyZero())
+    if (!LandingStartMoveInput.IsNearlyZero() && !CachedMoveInput.IsNearlyZero())
     {
-        const FVector2D LandDirection = LandMoveDirection.GetSafeNormal();
+        const FVector2D LandDirection = LandingStartMoveInput.GetSafeNormal();
         const FVector2D CurrentInputDirection = CachedMoveInput.GetSafeNormal();
         const float Dot = FMath::Clamp(FVector2D::DotProduct(LandDirection, CurrentInputDirection), -1.f, 1.f);
         InputDirectionDelta = FMath::RadiansToDegrees(FMath::Acos(Dot));

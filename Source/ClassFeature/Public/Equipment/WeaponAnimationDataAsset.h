@@ -36,6 +36,13 @@ struct FWeaponAnimationEntry
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Combat")
 	TObjectPtr<UAnimMontage> BasicAttackMontage;
 
+	/**
+	 * Ordered sections used by the basic-attack combo.
+	 * When empty, every section in BasicAttackMontage is used in montage order.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Combat")
+	TArray<FName> BasicAttackComboSections;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Combat", meta = (ClampMin = "0.01"))
 	float BasicAttackPlayRate = 1.f;
 

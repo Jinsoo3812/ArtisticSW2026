@@ -16,6 +16,46 @@ enum class ECustomMovementMode : uint8
 	CMOVE_Swimming = 1
 };
 
+/** Player-only vertical swimming state. Ships continue to use their own physics buoyancy. */
+UENUM(BlueprintType)
+enum class ESwimDepthMode : uint8
+{
+	Surface,
+	Submerged
+};
+
+/** Snapshot consumed by animation code. It is built on the game thread, then copied to the AnimInstance proxy. */
+USTRUCT(BlueprintType)
+struct FSwimmingAnimationState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Swimming")
+	bool bIsSwimming = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Swimming")
+	bool bIsUnderwater = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Swimming")
+	bool bDiveInputHeld = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Swimming")
+	bool bAscendInputHeld = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Swimming")
+	ESwimDepthMode DepthMode = ESwimDepthMode::Surface;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Swimming")
+	float HorizontalSpeed = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Swimming")
+	float VerticalSpeed = 0.0f;
+
+	/** Local-space movement direction in degrees. Forward is 0, right is 90. */
+	UPROPERTY(BlueprintReadOnly, Category = "Swimming")
+	float Direction = 0.0f;
+};
+
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class CLASSFEATURE_API USwimmingComponent : public UActorComponent
 {
@@ -27,11 +67,35 @@ public:
 	// Process the custom swimming movement physics
 	void UpdateSwimmingMovement(float DeltaTime);
 
+	/** Sets the requested vertical swim direction: -1 dives, +1 ascends. */
+	void SetVerticalSwimInput(float InVerticalInput);
+
+	/** True while Ctrl or Space owns movement and horizontal swim input must be ignored. */
+	bool HasVerticalSwimInput() const;
+
+	/** True only for neutral underwater movement, where W follows camera pitch in 3D. */
+	bool ShouldUseCameraDirectedUnderwaterMovement() const;
+
+	UFUNCTION(BlueprintPure, Category = "Swimming")
+	bool IsCustomSwimming() const;
+
+	/** True when the top of the capsule is below the queried water surface. */
+	UFUNCTION(BlueprintPure, Category = "Swimming")
+	bool IsUnderwater() const { return bIsUnderwater; }
+
+	UFUNCTION(BlueprintPure, Category = "Swimming")
+	ESwimDepthMode GetDepthMode() const { return DepthMode; }
+
+	/** Builds the authoritative animation snapshot for the owning character. */
+	UFUNCTION(BlueprintPure, Category = "Swimming")
+	FSwimmingAnimationState GetAnimationState() const;
+
 	// Check transition conditions (entry/exit)
 	void CheckWaterTransitions();
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
@@ -77,22 +141,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy")
 	bool bShowDebugPontoon = false;
 
-	/** Buoyancy coefficient (multiplier for buoyant force) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy")
-	float BuoyancyCoefficient = 0.3f;
-
-	/** Linear damping coefficient for vertical water drag (1st order) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy")
-	float BuoyancyDamp = 1000.0f;
-
-	/** Quadratic damping coefficient for vertical water drag (2nd order) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy")
-	float BuoyancyDamp2 = 1.0f;
-
-	/** Max buoyant force applied in the upward direction */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy")
-	float MaxBuoyantForce = 5000000.0f;
-
 	/** Max speed on the XY plane when swimming */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Movement")
 	float MaxSwimSpeed = 300.0f;
@@ -104,6 +152,42 @@ protected:
 	/** Friction/drag coefficient for horizontal movement in water */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Movement")
 	float SwimFriction = 4.0f;
+
+	/** Acceleration applied by dive/ascend input while in custom swimming mode. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Movement")
+	float VerticalSwimAcceleration = 1200.0f;
+
+	/** Absolute Z velocity limit while swimming. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Movement")
+	float MaxVerticalSwimSpeed = 350.0f;
+
+	/** Desired depth of the actor origin below the water surface while surface swimming. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface", meta = (ClampMin = "0.0", Units = "cm"))
+	float SurfaceTargetDepth = 50.0f;
+
+	/** Spring strength that follows the wave surface only in Surface mode. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface", meta = (ClampMin = "0.0"))
+	float SurfaceHeightSpring = 18.0f;
+
+	/** Vertical damping applied while following the wave surface. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface", meta = (ClampMin = "0.0"))
+	float SurfaceHeightDamping = 8.0f;
+
+	/** Drag that brings the player to a stop at the current depth when submerged and no key is held. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Submerged", meta = (ClampMin = "0.0"))
+	float SubmergedVerticalDamping = 6.0f;
+
+	/** Clearance above the wave surface required before returning to Surface mode. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface", meta = (ClampMin = "0.0", Units = "cm"))
+	float SurfaceReentryHeadClearance = 15.0f;
+
+	/** Water must cover the head by this amount before the underwater animation state begins. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection", meta = (ClampMin = "0.0", Units = "cm"))
+	float UnderwaterEntryHeadSubmersion = 10.0f;
+
+	/** Head clearance required before the underwater animation state ends. Kept separate from entry to prevent wave flicker. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection", meta = (ClampMin = "0.0", Units = "cm"))
+	float UnderwaterExitHeadClearance = 15.0f;
 
 private:
 	UPROPERTY(Transient)
@@ -123,4 +207,21 @@ private:
 
 	UPROPERTY(Transient)
 	float LastLoggedTime = -1.0f;
+
+	float VerticalSwimInput = 0.0f;
+
+	UPROPERTY(Replicated)
+	bool bDiveInputHeld = false;
+
+	UPROPERTY(Replicated)
+	bool bAscendInputHeld = false;
+
+	UPROPERTY(Transient)
+	ESwimDepthMode DepthMode = ESwimDepthMode::Surface;
+
+	UPROPERTY(Transient)
+	bool bIsUnderwater = false;
+
+	void UpdateDepthMode();
+	void UpdateUnderwaterState();
 };

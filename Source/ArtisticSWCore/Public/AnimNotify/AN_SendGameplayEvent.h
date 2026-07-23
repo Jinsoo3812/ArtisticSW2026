@@ -18,6 +18,15 @@ class ARTISTICSWCORE_API UAN_SendGameplayEvent : public UAnimNotify
 public:
 	UAN_SendGameplayEvent();
 
+	/**
+	 * Sends a gameplay event to the actor that owns MeshComp.
+	 * Shared by point notifies and notify states so they build identical payloads.
+	 */
+	static bool SendGameplayEventToMeshOwner(
+		USkeletalMeshComponent* MeshComp,
+		FGameplayTag GameplayEventTag,
+		float EventMagnitude = 0.0f);
+
 	// 노티파이가 실행될 때 호출되는 함수
 	virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;
 

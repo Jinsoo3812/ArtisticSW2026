@@ -88,6 +88,14 @@ namespace
 		}
 		return Remaining == 0;
 	}
+
+	FInventoryTabPage* FindPageInArray(TArray<FInventoryTabPage>& Pages, EInventoryTab Tab)
+	{
+		return Pages.FindByPredicate([Tab](const FInventoryTabPage& Page)
+		{
+			return Page.Tab == Tab;
+		});
+	}
 }
 
 // Sets default values for this component's properties
@@ -409,8 +417,12 @@ bool UInventoryComponent::CanAddItem(const FGameplayTag& ItemTag, int32 Amount) 
 	}
 	const EInventoryTab ItemTab = GetInventoryTabForItem(ItemTag);
 	const FInventoryTabPage* Page = FindPage(ItemTab);
-	TArray<FInventorySlot> WorkingSlots = Page ? Page->Slots : TArray<FInventorySlot>();
-	WorkingSlots.SetNum(GetSlotCount(ItemTab));
+	if (!Page)
+	{
+		return false;
+	}
+
+	TArray<FInventorySlot> WorkingSlots = Page->Slots;
 	return AddToSlots(WorkingSlots, ItemTag, Amount, GetMaxStack(ItemTag));
 }
 
@@ -423,31 +435,31 @@ bool UInventoryComponent::TryApplyCraftingTransaction(const TArray<FCraftingItem
 
 	InitializeInventoryPages();
 	TArray<FInventoryTabPage> WorkingPages = InventoryPages;
-	auto FindWorkingPage = [&WorkingPages](EInventoryTab Tab) -> FInventoryTabPage*
-	{
-		return WorkingPages.FindByPredicate([Tab](const FInventoryTabPage& Page)
-		{
-			return Page.Tab == Tab;
-		});
-	};
-
 	for (const FCraftingItemStack& Cost : Costs)
 	{
-		FInventoryTabPage* CostPage = FindWorkingPage(GetInventoryTabForItem(Cost.ItemTag));
+		if (!Cost.ItemTag.IsValid() || Cost.Quantity <= 0)
+		{
+			return false;
+		}
+
+		FInventoryTabPage* CostPage = FindPageInArray(WorkingPages, GetInventoryTabForItem(Cost.ItemTag));
 		if (!CostPage || !RemoveFromSlots(CostPage->Slots, Cost.ItemTag, Cost.Quantity))
 		{
 			return false;
 		}
 	}
 
-	FInventoryTabPage* ResultPage = FindWorkingPage(GetInventoryTabForItem(Result.ItemTag));
+	FInventoryTabPage* ResultPage = FindPageInArray(WorkingPages, GetInventoryTabForItem(Result.ItemTag));
 	if (!ResultPage || !AddToSlots(ResultPage->Slots, Result.ItemTag, Result.Quantity, GetMaxStack(Result.ItemTag)))
 	{
 		return false;
 	}
 
 	InventoryPages = MoveTemp(WorkingPages);
-	InventorySlots = GetSlots(ActiveTab);
+	if (const FInventoryTabPage* ActivePage = FindPage(ActiveTab))
+	{
+		InventorySlots = ActivePage->Slots;
+	}
 	OnInventoryChanged.Broadcast();
 	PrintInventoryToScreen();
 	return true;
@@ -464,11 +476,12 @@ bool UInventoryComponent::RemoveItemsAtomically(const TArray<FCraftingItemStack>
 	TArray<FInventoryTabPage> WorkingPages = InventoryPages;
 	for (const FCraftingItemStack& Cost : Costs)
 	{
-		const EInventoryTab CostTab = GetInventoryTabForItem(Cost.ItemTag);
-		FInventoryTabPage* CostPage = WorkingPages.FindByPredicate([CostTab](const FInventoryTabPage& Page)
+		if (!Cost.ItemTag.IsValid() || Cost.Quantity <= 0)
 		{
-			return Page.Tab == CostTab;
-		});
+			return false;
+		}
+
+		FInventoryTabPage* CostPage = FindPageInArray(WorkingPages, GetInventoryTabForItem(Cost.ItemTag));
 		if (!CostPage || !RemoveFromSlots(CostPage->Slots, Cost.ItemTag, Cost.Quantity))
 		{
 			return false;
@@ -476,7 +489,10 @@ bool UInventoryComponent::RemoveItemsAtomically(const TArray<FCraftingItemStack>
 	}
 
 	InventoryPages = MoveTemp(WorkingPages);
-	InventorySlots = GetSlots(ActiveTab);
+	if (const FInventoryTabPage* ActivePage = FindPage(ActiveTab))
+	{
+		InventorySlots = ActivePage->Slots;
+	}
 	OnInventoryChanged.Broadcast();
 	PrintInventoryToScreen();
 	return true;
@@ -493,11 +509,12 @@ bool UInventoryComponent::AddItemsAtomically(const TArray<FCraftingItemStack>& I
 	TArray<FInventoryTabPage> WorkingPages = InventoryPages;
 	for (const FCraftingItemStack& Item : Items)
 	{
-		const EInventoryTab ItemTab = GetInventoryTabForItem(Item.ItemTag);
-		FInventoryTabPage* ItemPage = WorkingPages.FindByPredicate([ItemTab](const FInventoryTabPage& Page)
+		if (!Item.ItemTag.IsValid() || Item.Quantity <= 0)
 		{
-			return Page.Tab == ItemTab;
-		});
+			return false;
+		}
+
+		FInventoryTabPage* ItemPage = FindPageInArray(WorkingPages, GetInventoryTabForItem(Item.ItemTag));
 		if (!ItemPage || !AddToSlots(ItemPage->Slots, Item.ItemTag, Item.Quantity, GetMaxStack(Item.ItemTag)))
 		{
 			return false;
@@ -505,7 +522,10 @@ bool UInventoryComponent::AddItemsAtomically(const TArray<FCraftingItemStack>& I
 	}
 
 	InventoryPages = MoveTemp(WorkingPages);
-	InventorySlots = GetSlots(ActiveTab);
+	if (const FInventoryTabPage* ActivePage = FindPage(ActiveTab))
+	{
+		InventorySlots = ActivePage->Slots;
+	}
 	OnInventoryChanged.Broadcast();
 	PrintInventoryToScreen();
 	return true;

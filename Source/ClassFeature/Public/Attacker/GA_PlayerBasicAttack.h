@@ -49,11 +49,23 @@ protected:
 	void OnHitScanStartEvent(FGameplayEventData Payload);
 
 	UFUNCTION()
+	void OnHitScanTickEvent(FGameplayEventData Payload);
+
+	UFUNCTION()
 	void OnHitScanEndEvent(FGameplayEventData Payload);
+
+	UFUNCTION()
+	void OnComboCommitEvent(FGameplayEventData Payload);
+
+	UFUNCTION()
+	void OnComboInputEvent(FGameplayEventData Payload);
 
 private:
 	bool CacheAttackData();
+	bool CacheComboSections(const TArray<FName>& ConfiguredSections);
 	bool PlayAttackMontage();
+	void CommitBufferedCombo();
+	void HoldSectionForCommit(FName SectionName);
 	void StartHitScan();
 	void EndHitScan();
 	void FinishAttack(bool bWasCancelled);
@@ -75,9 +87,25 @@ private:
 	TObjectPtr<UAbilityTask_WaitGameplayEvent> HitScanStartEventTask;
 
 	UPROPERTY()
+	TObjectPtr<UAbilityTask_WaitGameplayEvent> HitScanTickEventTask;
+
+	UPROPERTY()
 	TObjectPtr<UAbilityTask_WaitGameplayEvent> HitScanEndEventTask;
 
+	UPROPERTY()
+	TObjectPtr<UAbilityTask_WaitGameplayEvent> ComboCommitEventTask;
+
+	UPROPERTY()
+	TObjectPtr<UAbilityTask_WaitGameplayEvent> ComboInputEventTask;
+
+	TArray<FName> CachedComboSections;
 	float CachedAttackMontagePlayRate = 1.0f;
+	double HitScanWindowStartTime = -1.0;
+	float ExpectedHitScanWindowDuration = 0.0f;
+	int32 HitScanWindowTickCount = 0;
+	int32 CurrentComboIndex = INDEX_NONE;
+	bool bComboInputBuffered = false;
 	bool bHitScanActive = false;
 	bool bAttackFinished = false;
+	bool bServerCombatPoseRefreshAcquired = false;
 };
