@@ -1,5 +1,7 @@
 # 배 강화 UI Blueprint 사용 가이드
 
+> 2026-07-23 기준: 이 문서의 API 설명은 디버깅과 확장용 참고 자료다. 실제 Widget Blueprint는 `UShipUpgrade...Widget` 네이티브 부모를 사용하며, 초기화·이벤트 바인딩·동적 위젯 생성·비동기 로드·활성화 흐름을 Event Graph에서 다시 만들지 않는다. 실제 에디터 제작 순서는 `Ship_Upgrade_UI_Editor_Step_by_Step_Guide.md`를 따른다.
+
 ## 1. UI가 알아야 하는 객체
 
 UI는 `UShipUpgradeComponent` 하나만 사용한다.
@@ -12,7 +14,7 @@ UI는 `UShipUpgradeComponent` 하나만 사용한다.
 - SaveGame 직접 로드/저장
 - Server RPC 직접 호출
 
-위젯의 `Construct` 또는 화면 진입 함수에서 다음 Blueprint 함수를 호출한다.
+네이티브 화면 위젯이 `NativeConstruct`에서 다음 API에 해당하는 작업을 자동 수행한다. 커스텀 화면을 새로 만드는 경우에만 직접 호출한다.
 
 ```text
 Get Local Ship Upgrade Component
@@ -198,36 +200,33 @@ Snapshot 필드:
 
 ---
 
-## 6. 권장 위젯 책임 분리
+## 6. 네이티브 위젯 책임 분리
 
 ### `WBP_ShipUpgradeScreen`
 
-- UpgradeComponent 획득
-- Delegate 바인딩/해제
-- 전체 Node View 조회
-- NodeId → NodeWidget Map 관리
-- 연결선 관리
-- 현재 총 스탯 표시
+- 부모: `UShipUpgradeScreenWidget`
+- WBP 책임: `GraphWidget`, `DetailsWidget` 배치와 화면 디자인
+- C++ 책임: UpgradeComponent 획득, Delegate 바인딩/해제, 전체 조회, 선택, 요청 중 상태, 현재 스탯, 줌, 3D 프리뷰
 
 ### `WBP_ShipUpgradeNode`
 
-- 자신의 NodeId 저장
-- 이름, 아이콘, State 표시
-- 클릭 시 상위 Screen에 NodeId 전달
+- 부모: `UShipUpgradeNodeWidget`
+- WBP 책임: `Button_Node`와 선택적 이미지/텍스트 배치
+- C++ 책임: Node View 보관, 아이콘 비동기 로드, 상태 표시, 클릭/호버/선택 처리
 
 ### `WBP_ShipUpgradeDetails`
 
-- 선택한 Node View 표시
-- StatChanges 표시
-- 활성화 버튼 상태 관리
-- RequestActivateNode 호출
-- 활성화 결과 메시지 표시
+- 부모: `UShipUpgradeDetailsWidget`
+- WBP 책임: `Button_Activate`와 선택적 상세 위젯 배치, Row Class 지정
+- C++ 책임: 선택 View 표시, Stat/Material 행 생성, 버튼 상태, 활성화 요청, 요청 중 표시
 
-노드 위젯이 SaveGame이나 PlayerState를 개별 조회하지 않도록 한다. Screen이 컴포넌트 하나를 소유하고 하위 위젯에는 View 데이터만 전달하는 편이 단순하다.
+노드 WBP가 SaveGame이나 PlayerState를 개별 조회하지 않는다. 네이티브 Screen이 컴포넌트 하나를 소유하고 하위 네이티브 위젯에는 View 데이터만 전달한다.
 
 ---
 
-## 7. 전체 Blueprint 유즈케이스
+## 7. 전체 유즈케이스
+
+아래 흐름은 기능 이해용이다. 이 흐름은 현재 C++ 네이티브 위젯 계층에 구현되어 있으므로 WBP Event Graph로 옮기지 않는다.
 
 ```text
 [화면 열기]
@@ -323,7 +322,7 @@ UI에서 별도의 계산식이나 임시 SaveGame을 만들면 서버의 실제
 3. 강화 재료 원자 차감의 `InventorySlots`/`InventoryPages` 불일치 수정
 4. 에디터 타깃 컴파일 성공과 `ArtisticSW.ShipUpgrade` 자동화 테스트 3개 전체 통과
 
-남은 일은 C++ 기반 공사가 아니라 실제 Widget Blueprint, 아이콘, 프리뷰 Actor, RenderTarget, 노드 좌표와 스타일 제작이다. 구체적인 에디터 작업 순서는 `Ship_Upgrade_UI_Editor_Step_by_Step_Guide.md`를 따른다.
+2026-07-23 네이티브 UMG 계층까지 구현되어, 남은 일은 필수 이름의 Widget Blueprint 배치, 아이콘, 프리뷰 Actor, RenderTarget, 노드 좌표와 스타일 제작이다. 구체적인 에디터 작업 순서는 `Ship_Upgrade_UI_Editor_Step_by_Step_Guide.md`를 따른다.
 
 ### 11.2 현재 준비된 범위
 
@@ -338,8 +337,8 @@ UI에서 별도의 계산식이나 임시 SaveGame을 만들면 서버의 실제
 | 재료 보유량/필요량 표시 | 준비됨 | `MaterialCosts`에 이름, 아이콘, 보유량, 필요량, 충족 여부가 포함되며 원자 차감 테스트 통과 |
 | 활성화 요청/결과 | 준비됨 | `RequestActivateNode` 후 `OnNodeActivationResult`를 기다림 |
 | 저장/복제/배 전투 수치 적용 | 준비됨 | PlayerState 컴포넌트 저장·복제 후 `AShip::PossessedBy()`에서 `ApplyPlayerUpgrades()` 호출 |
-| UI 스크롤, 줌, 노드 확대, 토글 | UI 책임 | 공개 API 추가 없이 UMG에서 구현 가능 |
-| 3D 배 회전 프리뷰 | 데이터 준비됨 | `PreviewType`, `PreviewActorClass`, `CameraPreset` 제공. SceneCapture/RenderTarget 자산은 에디터에서 제작 |
+| UI 스크롤, 줌, 노드 확대, 토글 | 네이티브 UI 준비됨 | C++가 줌, 선택/호버 확대, 상태 전환을 처리. WBP는 스타일만 지정 |
+| 3D 배 회전 프리뷰 | 네이티브 UI 준비됨 | C++가 Soft Class 로드, Actor 교체, 드래그 회전을 처리. SceneCapture/RenderTarget 자산은 에디터에서 제작 |
 | 대포·배 강화 직후 외형 변경 | 데이터 준비됨 | `ActivatedShipActorClass`, `ActivatedCannonActorClass`, `VisualPriority` 제공 |
 | 통합 작업대 화면 열기/닫기 | 준비됨 | Controller의 Open/Close 함수와 작업대 Client RPC 경로 구현. Widget Class 지정 필요 |
 
@@ -389,10 +388,10 @@ ESC 또는 닫기
 구현 위치:
 
 - `ABasePlayerController`: `OpenShipUpgradeWorkspace`, `CloseShipUpgradeWorkspace`, 화면 인스턴스와 입력 모드 소유
-- `UPlayerHUDWidget` 또는 별도 `WBP_WorkspaceScreen`: 화면 인스턴스 소유와 Visibility 전환
-- `WBP_ShipUpgradeScreen`: `UShipUpgradeComponent` 바인딩과 노드/연결선 갱신
-- `WBP_ShipUpgradeNode`: 표현과 클릭 전달만 담당
-- `WBP_ShipUpgradeDetails`: 선택 노드 상세와 활성화 요청 담당
+- `UShipUpgradeWorkspaceWidget`: 탭 버튼과 Switcher, 닫기 요청 처리
+- `UShipUpgradeScreenWidget`: `UShipUpgradeComponent` 바인딩과 노드/연결선/상세/프리뷰 갱신
+- `UShipUpgradeNodeWidget`: 표현, 비동기 아이콘 로드, 클릭/호버/선택 처리
+- `UShipUpgradeDetailsWidget`: 선택 노드 상세, 행 생성, 활성화 요청과 Pending 표시
 
 `AWorkTable.bOpenIntegratedWorkspace`의 기본값은 true다. 따라서 기존 `Interaction.Craft` 서버 검증 뒤 `UCrafterComponent`가 소유 클라이언트의 `ClientOpenShipUpgradeWorkspace()`를 호출한다. false인 작업대만 기존 `InteractPopupUIClass`/스타포스 팝업 경로를 사용한다.
 
@@ -400,11 +399,11 @@ Controller는 Inventory, Status, Storage, Workspace를 상호 배타적으로 �
 
 ### 11.5 이벤트 바인딩 시 주의점
 
-- `OnUpgradeDataReady`는 컴포넌트 `BeginPlay`에서 이미 발생할 수 있으므로, 화면을 연 뒤 이 이벤트만 기다리면 영원히 초기화되지 않을 수 있다. 컴포넌트를 얻은 즉시 이벤트를 바인딩하고 `RefreshUpgradeData()`와 `GetAllNodeViews()`를 직접 호출한다.
-- `GetLocalShipUpgradeComponent()`가 null이면 PlayerState 복제가 끝나지 않은 상태일 수 있다. 짧은 재시도 또는 PlayerController의 PlayerState 준비 시점에서 다시 초기화한다.
-- 활성화 성공으로 자식 노드가 `Locked -> Available`이 되어도 `OnNodeStateChanged`는 현재 구현상 활성 ID가 바뀐 노드 중심으로 발생한다. 선행 관계 전체 갱신은 `OnUpgradeDataChanged`에서 모든 Node View를 재조회하는 방식이 안전하다.
-- 활성화 버튼은 클릭 즉시 로컬 `PendingNodeIds`에 넣어 중복 클릭을 막고, `OnNodeActivationResult`에서 해제한다. 서버는 중복 활성화를 막지만 요청 중 로딩 표현은 UI가 소유해야 한다.
-- `Icon`은 `TSoftObjectPtr`이므로 UMG Image에 넣기 전에 비동기 로드 또는 `Async Load Asset` 처리가 필요하다.
+- `UShipUpgradeScreenWidget`이 이벤트 바인딩 직후 `RefreshUpgradeData()`와 `GetAllNodeViews()`를 호출해 이미 지나간 `OnUpgradeDataReady`에도 대응한다.
+- `GetLocalShipUpgradeComponent()`가 null이면 네이티브 Screen이 짧게 재시도한다.
+- `OnUpgradeDataChanged`에서 모든 Node View를 다시 조회하므로 후속 노드의 `Locked -> Available`도 갱신된다.
+- 네이티브 Screen이 `PendingNodeIds`를 관리해 중복 클릭을 막고 결과 수신 시 해제한다.
+- 아이콘과 프리뷰 Actor Soft Reference는 C++ StreamableManager로 비동기 로드한다. WBP에 `Async Load Asset` 노드를 만들지 않는다.
 
 ### 11.6 자동화 테스트 결과와 수정 완료 사항
 
@@ -441,9 +440,27 @@ SceneCapture2D와 RenderTarget으로 배를 보여주고, 프리뷰 Actor의 Yaw
 
 ### 11.8 UI 담당자 착수 순서
 
-1. `WBP_WorkspaceScreen`을 만들고 `BP_BasePlayerController`의 Workspace Widget Class에 지정한다.
-2. `WBP_ShipUpgradeScreen`, 노드, 선, 상세 패널을 2D 플레이스홀더로 제작한다.
-3. `OnUpgradeDataChanged` 전체 재조회와 `OnNodeActivationResult` 비동기 흐름을 연결한다.
-4. 노드 Icon, GraphPosition, 설명, 비용을 실제 `DA_ShipUpgradeTree`에 채운다.
-5. Preview Actor, RenderTarget, SceneCapture Stage를 만들고 프리뷰 필드에 연결한다.
+1. 각 WBP를 `UShipUpgrade...Widget` C++ 부모로 만들고 가이드의 필수 이름만 배치한다.
+2. Graph/Details/Screen/Workspace의 Class Defaults에 자식 WBP Class를 지정한다.
+3. Preview Actor, RenderTarget, `BP_ShipUpgradePreviewStage`를 만들고 프리뷰 필드에 연결한다.
+4. `WBP_WorkspaceScreen`을 `BP_BasePlayerController`의 Workspace Widget Class에 지정한다.
+5. 노드 Icon, GraphPosition, 설명, 비용을 실제 `DA_ShipUpgradeTree`에 채운다.
 6. Standalone과 Listen Server에서 화면 재오픈, 재료 획득 중 갱신, 연속 클릭, 저장 후 재접속, 배 탑승 후 실제 스탯을 검증한다.
+
+### 11.9 2026-07-23 네이티브 UMG 구현 현황
+
+추가된 네이티브 클래스:
+
+```text
+UShipUpgradeWorkspaceWidget
+UShipUpgradeScreenWidget
+UShipUpgradeGraphWidget
+UShipUpgradeNodeWidget
+UShipUpgradeConnectionWidget
+UShipUpgradeDetailsWidget
+UShipUpgradeStatChangeRowWidget
+UShipUpgradeMaterialRowWidget
+AShipUpgradePreviewStage
+```
+
+이 변경은 표현 계층의 구현 위치만 바꾼다. `UShipUpgradeComponent`, 강화 데이터, 서버 검증, 재료 원자 차감, 저장/복제, 실제 배 스탯 적용 경로는 변경하지 않는다. 2026-07-23 UE 5.7 Editor Target 빌드와 `ArtisticSW.ShipUpgrade` 테스트 3개가 모두 성공했다.
