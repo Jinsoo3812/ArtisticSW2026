@@ -407,8 +407,10 @@ bool UInventoryComponent::CanAddItem(const FGameplayTag& ItemTag, int32 Amount) 
 	{
 		return false;
 	}
-	TArray<FInventorySlot> WorkingSlots = InventorySlots;
-	WorkingSlots.SetNum(GetSlotCount());
+	const EInventoryTab ItemTab = GetInventoryTabForItem(ItemTag);
+	const FInventoryTabPage* Page = FindPage(ItemTab);
+	TArray<FInventorySlot> WorkingSlots = Page ? Page->Slots : TArray<FInventorySlot>();
+	WorkingSlots.SetNum(GetSlotCount(ItemTab));
 	return AddToSlots(WorkingSlots, ItemTag, Amount, GetMaxStack(ItemTag));
 }
 
@@ -419,21 +421,33 @@ bool UInventoryComponent::TryApplyCraftingTransaction(const TArray<FCraftingItem
 		return false;
 	}
 
-	TArray<FInventorySlot> WorkingSlots = InventorySlots;
-	WorkingSlots.SetNum(GetSlotCount());
+	InitializeInventoryPages();
+	TArray<FInventoryTabPage> WorkingPages = InventoryPages;
+	auto FindWorkingPage = [&WorkingPages](EInventoryTab Tab) -> FInventoryTabPage*
+	{
+		return WorkingPages.FindByPredicate([Tab](const FInventoryTabPage& Page)
+		{
+			return Page.Tab == Tab;
+		});
+	};
+
 	for (const FCraftingItemStack& Cost : Costs)
 	{
-		if (!RemoveFromSlots(WorkingSlots, Cost.ItemTag, Cost.Quantity))
+		FInventoryTabPage* CostPage = FindWorkingPage(GetInventoryTabForItem(Cost.ItemTag));
+		if (!CostPage || !RemoveFromSlots(CostPage->Slots, Cost.ItemTag, Cost.Quantity))
 		{
 			return false;
 		}
 	}
-	if (!AddToSlots(WorkingSlots, Result.ItemTag, Result.Quantity, GetMaxStack(Result.ItemTag)))
+
+	FInventoryTabPage* ResultPage = FindWorkingPage(GetInventoryTabForItem(Result.ItemTag));
+	if (!ResultPage || !AddToSlots(ResultPage->Slots, Result.ItemTag, Result.Quantity, GetMaxStack(Result.ItemTag)))
 	{
 		return false;
 	}
 
-	InventorySlots = MoveTemp(WorkingSlots);
+	InventoryPages = MoveTemp(WorkingPages);
+	InventorySlots = GetSlots(ActiveTab);
 	OnInventoryChanged.Broadcast();
 	PrintInventoryToScreen();
 	return true;
@@ -445,16 +459,24 @@ bool UInventoryComponent::RemoveItemsAtomically(const TArray<FCraftingItemStack>
 	{
 		return false;
 	}
-	TArray<FInventorySlot> WorkingSlots = InventorySlots;
-	WorkingSlots.SetNum(GetSlotCount());
+
+	InitializeInventoryPages();
+	TArray<FInventoryTabPage> WorkingPages = InventoryPages;
 	for (const FCraftingItemStack& Cost : Costs)
 	{
-		if (!RemoveFromSlots(WorkingSlots, Cost.ItemTag, Cost.Quantity))
+		const EInventoryTab CostTab = GetInventoryTabForItem(Cost.ItemTag);
+		FInventoryTabPage* CostPage = WorkingPages.FindByPredicate([CostTab](const FInventoryTabPage& Page)
+		{
+			return Page.Tab == CostTab;
+		});
+		if (!CostPage || !RemoveFromSlots(CostPage->Slots, Cost.ItemTag, Cost.Quantity))
 		{
 			return false;
 		}
 	}
-	InventorySlots = MoveTemp(WorkingSlots);
+
+	InventoryPages = MoveTemp(WorkingPages);
+	InventorySlots = GetSlots(ActiveTab);
 	OnInventoryChanged.Broadcast();
 	PrintInventoryToScreen();
 	return true;
@@ -466,16 +488,24 @@ bool UInventoryComponent::AddItemsAtomically(const TArray<FCraftingItemStack>& I
 	{
 		return false;
 	}
-	TArray<FInventorySlot> WorkingSlots = InventorySlots;
-	WorkingSlots.SetNum(GetSlotCount());
+
+	InitializeInventoryPages();
+	TArray<FInventoryTabPage> WorkingPages = InventoryPages;
 	for (const FCraftingItemStack& Item : Items)
 	{
-		if (!AddToSlots(WorkingSlots, Item.ItemTag, Item.Quantity, GetMaxStack(Item.ItemTag)))
+		const EInventoryTab ItemTab = GetInventoryTabForItem(Item.ItemTag);
+		FInventoryTabPage* ItemPage = WorkingPages.FindByPredicate([ItemTab](const FInventoryTabPage& Page)
+		{
+			return Page.Tab == ItemTab;
+		});
+		if (!ItemPage || !AddToSlots(ItemPage->Slots, Item.ItemTag, Item.Quantity, GetMaxStack(Item.ItemTag)))
 		{
 			return false;
 		}
 	}
-	InventorySlots = MoveTemp(WorkingSlots);
+
+	InventoryPages = MoveTemp(WorkingPages);
+	InventorySlots = GetSlots(ActiveTab);
 	OnInventoryChanged.Broadcast();
 	PrintInventoryToScreen();
 	return true;

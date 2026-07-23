@@ -21,6 +21,7 @@ class UInputTagConfig;
 class AStorageChest;
 class UStorageWindowWidget;
 class UStatusWindowWidget;
+class UUserWidget;
 
 struct FStorageRevealState
 {
@@ -63,6 +64,21 @@ public:
 
 	void ToggleInventory();
 	void ToggleStatus();
+
+	/** Opens the integrated workbench screen on the local owning client. */
+	UFUNCTION(BlueprintCallable, Category = "UI|Workspace")
+	void OpenShipUpgradeWorkspace();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Workspace")
+	void CloseShipUpgradeWorkspace();
+
+	UFUNCTION(BlueprintPure, Category = "UI|Workspace")
+	bool IsShipUpgradeWorkspaceOpen() const;
+
+	/** Server-side entry point used after a workbench interaction is validated. */
+	UFUNCTION(Client, Reliable)
+	void ClientOpenShipUpgradeWorkspace();
+
 	void OpenStorageFromServer(AStorageChest* StorageChest);
 
 	UFUNCTION(Client, Reliable)
@@ -103,7 +119,15 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UStatusWindowWidget> StatusWindowWidget;
 
+	/** Assign WBP_WorkspaceScreen on the PlayerController Blueprint. */
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Workspace")
+	TSubclassOf<UUserWidget> ShipUpgradeWorkspaceWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> ShipUpgradeWorkspaceWidget;
+
 	ESlateVisibility PlayerHUDVisibilityBeforeStatus = ESlateVisibility::Visible;
+	ESlateVisibility PlayerHUDVisibilityBeforeWorkspace = ESlateVisibility::Visible;
 	TWeakObjectPtr<APawn> StatusInputLockedPawn;
 	bool bWasStatusPawnInputEnabled = true;
 	bool bStatusCharacterInputLocked = false;
@@ -137,6 +161,7 @@ protected:
 	FTimerHandle StorageSearchTimerHandle;
 
 	void BindHUDToCurrentPlayer();
+	void HandleMenuEscape();
 	void ApplyInventoryInputMode(bool bOpen);
 	void SetStatusCharacterInputLocked(bool bLocked);
 	void OpenStorage(AStorageChest* StorageChest);

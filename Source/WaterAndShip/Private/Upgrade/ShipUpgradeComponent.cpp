@@ -79,6 +79,12 @@ bool UShipUpgradeComponent::GetNodeView(FName NodeId, FShipUpgradeNodeView& OutV
 	OutView.DisplayName = Node->DisplayName;
 	OutView.Description = Node->Description;
 	OutView.Icon = Node->Icon;
+	OutView.PreviewType = Node->PreviewType;
+	OutView.PreviewActorClass = Node->PreviewActorClass;
+	OutView.ActivatedShipActorClass = Node->ActivatedShipActorClass;
+	OutView.ActivatedCannonActorClass = Node->ActivatedCannonActorClass;
+	OutView.VisualPriority = Node->VisualPriority;
+	OutView.CameraPreset = Node->CameraPreset;
 	OutView.GraphPosition = Node->GraphPosition;
 	OutView.PrerequisiteNodeIds = Node->PrerequisiteNodeIds;
 	OutView.State = GetNodeState(NodeId);

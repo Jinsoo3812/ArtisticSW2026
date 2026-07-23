@@ -10,6 +10,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "InputTagConfig.h"
 #include "BasePlayer.h"
+#include "BasePlayerController.h"
 #include "BaseGameplayTags.h"
 #include "InteractableComponent.h"
 #include "BaseGameplayTags.h"
@@ -182,6 +183,22 @@ void UCrafterComponent::HandleCraftEvent(const FGameplayEventData* Payload)
 	ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
 
 	if (!TargetActor || !Player) return;
+
+	if (const AWorkTable* WorkTable = Cast<AWorkTable>(TargetActor); WorkTable && WorkTable->bOpenIntegratedWorkspace)
+	{
+		if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(Player->GetController()))
+		{
+			if (Player->HasAuthority())
+			{
+				PlayerController->ClientOpenShipUpgradeWorkspace();
+			}
+			else if (Player->IsLocallyControlled())
+			{
+				PlayerController->OpenShipUpgradeWorkspace();
+			}
+			return;
+		}
+	}
 
 	// [서버]에서 이벤트를 받았다면 클라이언트에게 UI를 띄우라고 RPC 전송
 	if (Player->HasAuthority())

@@ -85,6 +85,7 @@ void ABasePlayerController::SetupInputComponent()
 	}
 
 	InputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &ABasePlayerController::ToggleStatus);
+	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ABasePlayerController::HandleMenuEscape);
 }
 
 void ABasePlayerController::OnUIInputPressed(FGameplayTag InputTag)
@@ -146,6 +147,11 @@ void ABasePlayerController::ToggleInventory()
 		return;
 	}
 
+	if (IsShipUpgradeWorkspaceOpen())
+	{
+		CloseShipUpgradeWorkspace();
+	}
+
 	// 상자 UI가 열려 있으면, 상자를 닫고 인벤토리만 열기
 	if (IsStorageOpen())
 	{
@@ -166,6 +172,11 @@ void ABasePlayerController::ToggleStatus()
 	if (!IsLocalController() || !StatusWindowWidget)
 	{
 		return;
+	}
+
+	if (IsShipUpgradeWorkspaceOpen())
+	{
+		CloseShipUpgradeWorkspace();
 	}
 
 	if (StatusWindowWidget->IsStatusVisible())
@@ -201,6 +212,94 @@ void ABasePlayerController::ToggleStatus()
 	StatusWindowWidget->SetStatusVisible(true);
 	ApplyInventoryInputMode(true);
 	SetStatusCharacterInputLocked(true);
+}
+
+void ABasePlayerController::OpenShipUpgradeWorkspace()
+{
+	if (!IsLocalController() || !ShipUpgradeWorkspaceWidgetClass)
+	{
+		return;
+	}
+	if (IsShipUpgradeWorkspaceOpen())
+	{
+		return;
+	}
+
+	if (StatusWindowWidget && StatusWindowWidget->IsStatusVisible())
+	{
+		StatusWindowWidget->SetStatusVisible(false);
+		SetStatusCharacterInputLocked(false);
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeStatus);
+		}
+	}
+
+	if (IsStorageOpen())
+	{
+		CloseStorage();
+	}
+
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetInventoryVisible(false);
+		PlayerHUDVisibilityBeforeWorkspace = PlayerHUDWidget->GetVisibility();
+		PlayerHUDWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	if (!ShipUpgradeWorkspaceWidget)
+	{
+		ShipUpgradeWorkspaceWidget = CreateWidget<UUserWidget>(this, ShipUpgradeWorkspaceWidgetClass);
+		if (!ShipUpgradeWorkspaceWidget)
+		{
+			if (PlayerHUDWidget)
+			{
+				PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeWorkspace);
+			}
+			return;
+		}
+		ShipUpgradeWorkspaceWidget->AddToViewport(100);
+	}
+
+	ShipUpgradeWorkspaceWidget->SetVisibility(ESlateVisibility::Visible);
+	ShipUpgradeWorkspaceWidget->SetIsEnabled(true);
+	ApplyInventoryInputMode(true);
+	ShipUpgradeWorkspaceWidget->SetUserFocus(this);
+}
+
+void ABasePlayerController::CloseShipUpgradeWorkspace()
+{
+	if (!IsLocalController() || !ShipUpgradeWorkspaceWidget)
+	{
+		return;
+	}
+
+	ShipUpgradeWorkspaceWidget->SetVisibility(ESlateVisibility::Collapsed);
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeWorkspace);
+	}
+	ApplyInventoryInputMode(false);
+}
+
+bool ABasePlayerController::IsShipUpgradeWorkspaceOpen() const
+{
+	return ShipUpgradeWorkspaceWidget
+		&& ShipUpgradeWorkspaceWidget->GetVisibility() != ESlateVisibility::Collapsed
+		&& ShipUpgradeWorkspaceWidget->GetVisibility() != ESlateVisibility::Hidden;
+}
+
+void ABasePlayerController::ClientOpenShipUpgradeWorkspace_Implementation()
+{
+	OpenShipUpgradeWorkspace();
+}
+
+void ABasePlayerController::HandleMenuEscape()
+{
+	if (IsShipUpgradeWorkspaceOpen())
+	{
+		CloseShipUpgradeWorkspace();
+	}
 }
 
 void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
@@ -392,6 +491,11 @@ void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 	if (!IsLocalController() || !StorageChest || !PlayerHUDWidget)
 	{
 		return;
+	}
+
+	if (IsShipUpgradeWorkspaceOpen())
+	{
+		CloseShipUpgradeWorkspace();
 	}
 
 	// 동일한 상자 UI가 이미 열려 있으면 위젯과 입력 모드를 다시 생성하지 않는다.
