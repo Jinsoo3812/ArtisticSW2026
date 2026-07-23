@@ -6,6 +6,7 @@
 
 class AActor;
 class UCraftingComponent;
+class UCraftingPanelWidget;
 
 /**
  * Blueprint-facing API for the integrated facility UI.
@@ -43,6 +44,10 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Facility Hub")
 	TObjectPtr<UCraftingComponent> CraftingComponent;
+
+	/** Designer-authored WBP_CraftingPanel placed inside the existing CraftingPanel container. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UCraftingPanelWidget> CraftingPanelWidget;
 
 	/** Implement in WBP_FacilityHub to switch to the crafting panel after server approval. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Facility Hub|Crafting", meta = (DisplayName = "On Crafting Tab Approved"))

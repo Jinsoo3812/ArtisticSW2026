@@ -48,7 +48,7 @@ bool FCraftingPipelineTest::RunTest(const FString& Parameters)
 
 	FCraftingRecipeRow LockedRecipe;
 	LockedRecipe.ResultItemTag = Item_Id_Weapon_Sword_SwordA4;
-	LockedRecipe.RequiredRecipeItemTag = Item_Id_Material_WeaponSpecialMaterial_EpicRecipe;
+	LockedRecipe.RequiredRecipeItemTag = Item_Id_Material_WeaponSpecialRecipe_EpicRecipe;
 	FCraftingItemStack IronCost;
 	IronCost.ItemTag = Item_Id_Material_WeaponMaterial_GoodIron;
 	IronCost.Quantity = 2;

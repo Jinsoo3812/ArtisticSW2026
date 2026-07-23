@@ -3,6 +3,7 @@
 #include "BasePlayer.h"
 #include "BasePlayerController.h"
 #include "Crafting/CraftingComponent.h"
+#include "UI/Crafting/CraftingPanelWidget.h"
 
 void UFacilityHubWidget::NativeConstruct()
 {
@@ -14,6 +15,11 @@ void UFacilityHubWidget::NativeConstruct()
 
 void UFacilityHubWidget::NativeDestruct()
 {
+	if (CraftingPanelWidget)
+	{
+		CraftingPanelWidget->DeactivateCraftingPanel();
+	}
+
 	UnbindCraftingEvents();
 	Super::NativeDestruct();
 }
@@ -92,10 +98,20 @@ void UFacilityHubWidget::HandleCraftingScreenOpened(AActor* ApprovedContext)
 		return;
 	}
 
+	if (CraftingPanelWidget)
+	{
+		CraftingPanelWidget->ActivateCraftingPanel(CraftingComponent);
+	}
+
 	BP_OnCraftingTabApproved(ApprovedContext);
 }
 
 void UFacilityHubWidget::HandleCraftingScreenClosed()
 {
+	if (CraftingPanelWidget)
+	{
+		CraftingPanelWidget->DeactivateCraftingPanel();
+	}
+
 	BP_OnCraftingTabClosed();
 }

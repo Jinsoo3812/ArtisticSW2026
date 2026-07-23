@@ -106,10 +106,12 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ShipMaterials_GoodIronPlate, "Item.Id.Ma
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ShipMaterials_GrapplingHook, "Item.Id.Material.ShipMaterials.GrapplingHook");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_ShipMaterials_LuminousPearl, "Item.Id.Material.ShipMaterials.LuminousPearl");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialMaterial, "Item.Id.Material.WeaponSpecialMaterial");
-UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialMaterial_EpicRecipe, "Item.Id.Material.WeaponSpecialMaterial.EpicRecipe");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialMaterial_EpicMaterial, "Item.Id.Material.WeaponSpecialMaterial.EpicMaterial");
-UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialMaterial_LegendaryRecipe, "Item.Id.Material.WeaponSpecialMaterial.LegendaryRecipe");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialMaterial_LegendaryMaterial, "Item.Id.Material.WeaponSpecialMaterial.LegendaryMaterial");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe, "Item.Id.Material.WeaponSpecialRecipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_EpicRecipe, "Item.Id.Material.WeaponSpecialRecipe.EpicRecipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_LegendaryRecipe, "Item.Id.Material.WeaponSpecialRecipe.LegendaryRecipe");
+
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_SkillMaterial, "Item.Id.Material.SkillMaterial");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_SkillMaterial_RareSkill, "Item.Id.Material.SkillMaterial.RareSkill");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_SkillMaterial_EpicSkill, "Item.Id.Material.SkillMaterial.EpicSkill");
