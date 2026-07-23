@@ -1,5 +1,6 @@
 #include "UI/Crafting/CraftingPanelWidget.h"
 
+#include "Components/Button.h"
 #include "Components/Image.h"
 #include "Components/PanelWidget.h"
 #include "Components/ScrollBox.h"
@@ -11,8 +12,24 @@
 #include "UI/Crafting/CraftingIngredientEntryWidget.h"
 #include "UI/Crafting/CraftingRecipeEntryWidget.h"
 
+void UCraftingPanelWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	if (CraftButton)
+	{
+		CraftButton->OnClicked.AddUniqueDynamic(this, &UCraftingPanelWidget::HandleCraftButtonClicked);
+		CraftButton->SetIsEnabled(false);
+	}
+}
+
 void UCraftingPanelWidget::NativeDestruct()
 {
+	if (CraftButton)
+	{
+		CraftButton->OnClicked.RemoveDynamic(this, &UCraftingPanelWidget::HandleCraftButtonClicked);
+	}
+
 	DeactivateCraftingPanel();
 	Super::NativeDestruct();
 }
@@ -36,6 +53,8 @@ void UCraftingPanelWidget::DeactivateCraftingPanel()
 	UnbindCraftingEvents();
 	CraftingComponent = nullptr;
 	SelectedRecipeId = NAME_None;
+	PendingRequestId.Invalidate();
+	bCraftRequestPending = false;
 	ClearRecipeList();
 	ClearRecipeDetails();
 }
@@ -45,6 +64,7 @@ void UCraftingPanelWidget::BindCraftingEvents()
 	if (CraftingComponent)
 	{
 		CraftingComponent->OnCraftingDataChanged.AddUniqueDynamic(this, &UCraftingPanelWidget::HandleCraftingDataChanged);
+		CraftingComponent->OnCraftingResult.AddUniqueDynamic(this, &UCraftingPanelWidget::HandleCraftingResult);
 	}
 }
 
@@ -53,6 +73,7 @@ void UCraftingPanelWidget::UnbindCraftingEvents()
 	if (CraftingComponent)
 	{
 		CraftingComponent->OnCraftingDataChanged.RemoveDynamic(this, &UCraftingPanelWidget::HandleCraftingDataChanged);
+		CraftingComponent->OnCraftingResult.RemoveDynamic(this, &UCraftingPanelWidget::HandleCraftingResult);
 	}
 }
 
@@ -166,6 +187,15 @@ void UCraftingPanelWidget::ClearRecipeDetails()
 	{
 		MissingRecipeText->SetVisibility(ESlateVisibility::Collapsed);
 	}
+	if (CraftButton)
+	{
+		CraftButton->SetIsEnabled(false);
+	}
+	if (CraftResultText)
+	{
+		CraftResultText->SetText(FText::GetEmpty());
+		CraftResultText->SetVisibility(ESlateVisibility::Collapsed);
+	}
 	if (RecipeDetailPanel)
 	{
 		RecipeDetailPanel->SetVisibility(ESlateVisibility::Collapsed);
@@ -229,6 +259,12 @@ void UCraftingPanelWidget::ApplyRecipeDetails(const FCraftingDetailsView& Detail
 		ResultIconImage->SetBrushFromTexture(Icon, true);
 		ResultIconImage->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	}
+	if (CraftButton)
+	{
+		CraftButton->SetIsEnabled(
+			!bCraftRequestPending
+			&& Details.Availability == ECraftingAvailability::Available);
+	}
 
 	if (MissingRecipeText)
 	{
@@ -284,10 +320,98 @@ void UCraftingPanelWidget::HandleRecipeSelected(FName RecipeId)
 	}
 
 	SelectedRecipeId = RecipeId;
+	if (CraftResultText)
+	{
+		CraftResultText->SetText(FText::GetEmpty());
+		CraftResultText->SetVisibility(ESlateVisibility::Collapsed);
+	}
 	UpdateRecipeEntrySelection();
 	if (RefreshSelectedRecipeDetails())
 	{
 		OnRecipeSelected.Broadcast(SelectedRecipeId);
+	}
+}
+
+void UCraftingPanelWidget::HandleCraftButtonClicked()
+{
+	if (!bPanelActive || !CraftingComponent || SelectedRecipeId.IsNone() || bCraftRequestPending)
+	{
+		return;
+	}
+
+	FCraftingDetailsView Details;
+	if (!CraftingComponent->GetCraftingDetails(SelectedRecipeId, 1, Details)
+		|| Details.Availability != ECraftingAvailability::Available)
+	{
+		RefreshSelectedRecipeDetails();
+		return;
+	}
+
+	FCraftingRequest Request;
+	Request.RequestId = FGuid::NewGuid();
+	Request.RecipeId = SelectedRecipeId;
+	Request.CraftCount = 1;
+	Request.Output.Type = ECraftingOutputType::Inventory;
+
+	PendingRequestId = Request.RequestId;
+	bCraftRequestPending = true;
+	if (CraftButton)
+	{
+		CraftButton->SetIsEnabled(false);
+	}
+	if (CraftResultText)
+	{
+		CraftResultText->SetText(FText::GetEmpty());
+		CraftResultText->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	CraftingComponent->RequestCraft(Request);
+}
+
+void UCraftingPanelWidget::HandleCraftingResult(const FCraftingResult& Result)
+{
+	if (!bCraftRequestPending || Result.RequestId != PendingRequestId)
+	{
+		return;
+	}
+
+	bCraftRequestPending = false;
+	PendingRequestId.Invalidate();
+
+	if (CraftResultText)
+	{
+		CraftResultText->SetText(GetCraftResultText(Result.Reason));
+		CraftResultText->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+
+	RefreshSelectedRecipeDetails();
+}
+
+FText UCraftingPanelWidget::GetCraftResultText(ECraftingFailureReason FailureReason)
+{
+	switch (FailureReason)
+	{
+	case ECraftingFailureReason::Success:
+		return NSLOCTEXT("Crafting", "CraftResultSuccess", "제작 완료");
+	case ECraftingFailureReason::MissingRecipe:
+		return NSLOCTEXT("Crafting", "CraftResultMissingRecipe", "필요한 제작법이 없습니다.");
+	case ECraftingFailureReason::MissingIngredients:
+		return NSLOCTEXT("Crafting", "CraftResultMissingIngredients", "재료가 부족합니다.");
+	case ECraftingFailureReason::OutputUnavailable:
+		return NSLOCTEXT("Crafting", "CraftResultOutputUnavailable", "결과 아이템을 넣을 공간이 없습니다.");
+	case ECraftingFailureReason::NoActiveContext:
+	case ECraftingFailureReason::OutOfRange:
+		return NSLOCTEXT("Crafting", "CraftResultInvalidContext", "제작 시설을 사용할 수 없습니다.");
+	case ECraftingFailureReason::RecipeDisabled:
+	case ECraftingFailureReason::InvalidRecipe:
+		return NSLOCTEXT("Crafting", "CraftResultInvalidRecipe", "사용할 수 없는 제작법입니다.");
+	case ECraftingFailureReason::DuplicateRequest:
+		return NSLOCTEXT("Crafting", "CraftResultDuplicate", "이미 처리된 제작 요청입니다.");
+	case ECraftingFailureReason::InvalidQuantity:
+	case ECraftingFailureReason::OutputRejected:
+	case ECraftingFailureReason::InternalError:
+	default:
+		return NSLOCTEXT("Crafting", "CraftResultFailed", "제작에 실패했습니다.");
 	}
 }
 

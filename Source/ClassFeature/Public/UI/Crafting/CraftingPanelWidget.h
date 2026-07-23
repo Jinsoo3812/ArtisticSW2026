@@ -2,17 +2,18 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Crafting/CraftingTypes.h"
 #include "CraftingPanelWidget.generated.h"
 
 class UCraftingComponent;
 class UCraftingIngredientEntryWidget;
 class UCraftingRecipeEntryWidget;
+class UButton;
 class UImage;
 class UPanelWidget;
 class UScrollBox;
 class UTextBlock;
 class UWidget;
-struct FCraftingDetailsView;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCraftingRecipeSelected, FName, RecipeId);
 
@@ -36,6 +37,7 @@ public:
 	FOnCraftingRecipeSelected OnRecipeSelected;
 
 protected:
+	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
 	UPROPERTY(meta = (BindWidget))
@@ -68,6 +70,13 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> MissingRecipeText;
 
+	/** Crafts the selected recipe once and delivers the result to the category-appropriate inventory tab. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> CraftButton;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> CraftResultText;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Crafting|UI")
 	TSubclassOf<UCraftingRecipeEntryWidget> RecipeEntryClass;
 
@@ -83,9 +92,16 @@ private:
 	void ApplyRecipeDetails(const FCraftingDetailsView& Details);
 	void UpdateRecipeEntrySelection();
 	void HandleRecipeSelected(FName RecipeId);
+	static FText GetCraftResultText(ECraftingFailureReason FailureReason);
 
 	UFUNCTION()
 	void HandleCraftingDataChanged();
+
+	UFUNCTION()
+	void HandleCraftButtonClicked();
+
+	UFUNCTION()
+	void HandleCraftingResult(const FCraftingResult& Result);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCraftingComponent> CraftingComponent;
@@ -97,5 +113,7 @@ private:
 	TArray<TObjectPtr<UCraftingIngredientEntryWidget>> SpawnedIngredientEntries;
 
 	FName SelectedRecipeId;
+	FGuid PendingRequestId;
 	bool bPanelActive = false;
+	bool bCraftRequestPending = false;
 };
