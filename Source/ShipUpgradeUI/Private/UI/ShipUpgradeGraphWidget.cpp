@@ -24,8 +24,19 @@ void UShipUpgradeGraphWidget::RebuildGraph(const TArray<FShipUpgradeNodeView>& I
 {
 	if (!CanvasPanel_Graph)
 	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[ShipUpgradeUI] FAILED: CanvasPanel_Graph is not bound. Graph=%s"),
+			*GetNameSafe(this));
 		return;
 	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[ShipUpgradeUI] RebuildGraph started. Graph=%s Views=%d NodeClass=%s ConnectionClass=%s CanvasSize=%s"),
+		*GetNameSafe(this),
+		InViews.Num(),
+		*GetNameSafe(NodeWidgetClass.Get()),
+		*GetNameSafe(ConnectionWidgetClass.Get()),
+		*CanvasPanel_Graph->GetCachedGeometry().GetLocalSize().ToString());
 
 	for (const TPair<FName, TObjectPtr<UShipUpgradeNodeWidget>>& Pair : NodeWidgets)
 	{
@@ -39,6 +50,7 @@ void UShipUpgradeGraphWidget::RebuildGraph(const TArray<FShipUpgradeNodeView>& I
 	NodeViews = InViews;
 	NodeWidgets.Reset();
 
+	int32 CreatedConnectionCount = 0;
 	if (ConnectionWidgetClass)
 	{
 		for (const FShipUpgradeNodeView& ChildView : NodeViews)
@@ -80,10 +92,17 @@ void UShipUpgradeGraphWidget::RebuildGraph(const TArray<FShipUpgradeNodeView>& I
 				Connection->SetRenderTransformPivot(FVector2D(0.0f, 0.5f));
 				Connection->SetRenderTransformAngle(AngleDegrees);
 				Connection->ConfigureConnection(ChildView.State == EShipUpgradeNodeState::Locked);
+				++CreatedConnectionCount;
 			}
 		}
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradeUI] ConnectionWidgetClass is None; nodes can appear but connection lines will not."));
+	}
 
+	int32 CreatedNodeCount = 0;
 	if (NodeWidgetClass)
 	{
 		for (const FShipUpgradeNodeView& View : NodeViews)
@@ -105,8 +124,28 @@ void UShipUpgradeGraphWidget::RebuildGraph(const TArray<FShipUpgradeNodeView>& I
 			NodeWidget->ApplyNodeView(View);
 			NodeWidget->OnNodeSelected().AddUObject(this, &UShipUpgradeGraphWidget::HandleNodeSelected);
 			NodeWidgets.Add(View.NodeId, NodeWidget);
+			++CreatedNodeCount;
+			UE_LOG(LogTemp, Log,
+				TEXT("[ShipUpgradeUI] Node widget created. NodeId=%s State=%s DataPosition=%s RuntimePosition=%s Widget=%s"),
+				*View.NodeId.ToString(),
+				*UEnum::GetValueAsString(View.State),
+				*View.GraphPosition.ToString(),
+				*(View.GraphPosition + GraphOriginOffset).ToString(),
+				*GetNameSafe(NodeWidget));
 		}
 	}
+	else
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[ShipUpgradeUI] FAILED: NodeWidgetClass is None; no node widgets can be created."));
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[ShipUpgradeUI] RebuildGraph finished. RequestedNodes=%d CreatedNodes=%d CreatedConnections=%d CanvasChildren=%d"),
+		InViews.Num(),
+		CreatedNodeCount,
+		CreatedConnectionCount,
+		CanvasPanel_Graph->GetChildrenCount());
 }
 
 void UShipUpgradeGraphWidget::SetSelectedNode(FName NodeId)

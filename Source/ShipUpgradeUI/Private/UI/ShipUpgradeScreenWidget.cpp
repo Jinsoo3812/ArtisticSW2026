@@ -12,10 +12,18 @@
 #include "UI/ShipUpgradePreviewStage.h"
 #include "Upgrade/ShipUpgradeBlueprintLibrary.h"
 #include "Upgrade/ShipUpgradeComponent.h"
+#include "Upgrade/ShipUpgradeTreeDataAsset.h"
 
 void UShipUpgradeScreenWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	UE_LOG(LogTemp, Log,
+		TEXT("[ShipUpgradeUI] Screen constructed. Screen=%s OwningPlayer=%s Graph=%s Details=%s GraphExtent=%s"),
+		*GetNameSafe(this),
+		*GetNameSafe(GetOwningPlayer()),
+		*GetNameSafe(GraphWidget),
+		*GetNameSafe(DetailsWidget),
+		*GetNameSafe(SizeBox_GraphExtent));
 
 	if (GraphWidget)
 	{
@@ -117,10 +125,19 @@ void UShipUpgradeScreenWidget::RefreshAll()
 {
 	if (!UpgradeComponent)
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradeUI] RefreshAll skipped: UpgradeComponent is null. Screen=%s"),
+			*GetNameSafe(this));
 		return;
 	}
 
 	CachedNodeViews = UpgradeComponent->GetAllNodeViews();
+	UE_LOG(LogTemp, Log,
+		TEXT("[ShipUpgradeUI] Runtime data received. Component=%s Owner=%s UpgradeTree=%s NodeViews=%d"),
+		*GetNameSafe(UpgradeComponent),
+		*GetNameSafe(UpgradeComponent->GetOwner()),
+		*GetNameSafe(UpgradeComponent->UpgradeTree.Get()),
+		CachedNodeViews.Num());
 	if (SelectedNodeId.IsNone() && !CachedNodeViews.IsEmpty())
 	{
 		const FShipUpgradeNodeView* PreferredView = CachedNodeViews.FindByPredicate(
@@ -136,6 +153,15 @@ void UShipUpgradeScreenWidget::RefreshAll()
 		GraphWidget->RebuildGraph(CachedNodeViews);
 		GraphWidget->SetSelectedNode(SelectedNodeId);
 	}
+	else
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[ShipUpgradeUI] FAILED: GraphWidget is not bound on WBP_ShipUpgradeScreen."));
+	}
+	UE_LOG(LogTemp, Log,
+		TEXT("[ShipUpgradeUI] Screen refresh continuing. SelectedNode=%s DetailsWidget=%s"),
+		*SelectedNodeId.ToString(),
+		*GetNameSafe(DetailsWidget));
 	RefreshActiveVisuals();
 	RefreshSelectedNode();
 	RefreshCurrentStats(UpgradeComponent->GetCurrentShipStats());
@@ -179,6 +205,12 @@ void UShipUpgradeScreenWidget::TryInitialize()
 	if (UShipUpgradeComponent* FoundComponent =
 		UShipUpgradeBlueprintLibrary::GetLocalShipUpgradeComponent(this))
 	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[ShipUpgradeUI] SUCCESS: Local ShipUpgradeComponent found. Attempt=%d Component=%s Owner=%s Tree=%s"),
+			InitializationRetryCount + 1,
+			*GetNameSafe(FoundComponent),
+			*GetNameSafe(FoundComponent->GetOwner()),
+			*GetNameSafe(FoundComponent->UpgradeTree.Get()));
 		BindUpgradeComponent(FoundComponent);
 		FoundComponent->RefreshUpgradeData();
 		RefreshAll();
@@ -188,8 +220,17 @@ void UShipUpgradeScreenWidget::TryInitialize()
 	++InitializationRetryCount;
 	if (InitializationRetryCount >= MaxInitializationRetries)
 	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[ShipUpgradeUI] FAILED: Local ShipUpgradeComponent not found after %d attempts. Check GameMode PlayerStateClass."),
+			InitializationRetryCount);
 		BP_OnInitializationFailed();
 		return;
+	}
+	if (InitializationRetryCount == 1)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradeUI] Local ShipUpgradeComponent not ready; retrying up to %d times."),
+			MaxInitializationRetries);
 	}
 
 	if (UWorld* World = GetWorld())
@@ -221,6 +262,11 @@ void UShipUpgradeScreenWidget::BindUpgradeComponent(UShipUpgradeComponent* InCom
 	UpgradeComponent->OnUpgradeDataChanged.AddDynamic(this, &UShipUpgradeScreenWidget::HandleUpgradeDataChanged);
 	UpgradeComponent->OnNodeActivationResult.AddDynamic(this, &UShipUpgradeScreenWidget::HandleActivationResult);
 	UpgradeComponent->OnShipStatsChanged.AddDynamic(this, &UShipUpgradeScreenWidget::HandleShipStatsChanged);
+	UE_LOG(LogTemp, Log,
+		TEXT("[ShipUpgradeUI] Component events bound. Component=%s Graph=%s Details=%s"),
+		*GetNameSafe(UpgradeComponent),
+		*GetNameSafe(GraphWidget),
+		*GetNameSafe(DetailsWidget));
 	if (DetailsWidget)
 	{
 		DetailsWidget->SetUpgradeComponent(UpgradeComponent);
@@ -242,6 +288,9 @@ void UShipUpgradeScreenWidget::UnbindUpgradeComponent()
 
 void UShipUpgradeScreenWidget::HandleNodeSelected(FName NodeId)
 {
+	UE_LOG(LogTemp, Log,
+		TEXT("[ShipUpgradeUI] Node selected. NodeId=%s"),
+		*NodeId.ToString());
 	SelectedNodeId = NodeId;
 	RefreshSelectedNode();
 }
@@ -280,20 +329,39 @@ void UShipUpgradeScreenWidget::RefreshSelectedNode()
 {
 	if (!DetailsWidget)
 	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[ShipUpgradeUI] FAILED: DetailsWidget is not bound; selected node details cannot render."));
 		return;
 	}
 
 	const FShipUpgradeNodeView* View = FindCachedView(SelectedNodeId);
 	if (!View)
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradeUI] Selected node view not found. NodeId=%s"),
+			*SelectedNodeId.ToString());
 		DetailsWidget->ClearNode();
 		return;
 	}
+	UE_LOG(LogTemp, Log,
+		TEXT("[ShipUpgradeUI] Sending node data to details. NodeId=%s StatRows=%d MaterialRows=%d HasMaterials=%s"),
+		*View->NodeId.ToString(),
+		View->StatChanges.Num(),
+		View->MaterialCosts.Num(),
+		View->bHasEnoughMaterials ? TEXT("YES") : TEXT("NO"));
 	DetailsWidget->ShowNode(*View, PendingNodeIds.Contains(View->NodeId));
 }
 
 void UShipUpgradeScreenWidget::RefreshCurrentStats(const FShipStatSnapshot& Stats)
 {
+	UE_LOG(LogTemp, Log,
+		TEXT("[ShipUpgradeUI] Current stats received. Health=%.2f Damage=%.2f Cooldown=%.2f ProjectileSpeed=%.2f Propulsion=%.2f Turn=%.2f"),
+		Stats.MaxHealth,
+		Stats.CannonDamage,
+		Stats.CannonFireCooldownSeconds,
+		Stats.CannonballSpeed,
+		Stats.ForwardPropulsionMultiplier,
+		Stats.TurnTorqueMultiplier);
 	if (Text_CurrentHealth)
 	{
 		Text_CurrentHealth->SetText(FText::AsNumber(Stats.MaxHealth));

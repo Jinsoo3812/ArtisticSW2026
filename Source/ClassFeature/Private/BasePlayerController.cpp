@@ -29,16 +29,33 @@ void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 {
 	if (!HasAuthority() || !IsValid(Cast<AFacilityHubActor>(ContextActor)))
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[FacilityHubFlow][SERVER] Open rejected. Controller=%s Authority=%s Context=%s ContextClass=%s"),
+			*GetNameSafe(this),
+			HasAuthority() ? TEXT("YES") : TEXT("NO"),
+			*GetNameSafe(ContextActor),
+			*GetNameSafe(ContextActor ? ContextActor->GetClass() : nullptr));
 		return;
 	}
 
+	UE_LOG(LogTemp, Log,
+		TEXT("[FacilityHubFlow][SERVER] Context validated; sending ClientOpenFacilityHub. Context=%s"),
+		*GetNameSafe(ContextActor));
 	ClientOpenFacilityHub(ContextActor);
 }
 
 void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* ContextActor)
 {
+	UE_LOG(LogTemp, Log,
+		TEXT("[FacilityHubFlow][CLIENT] Open RPC received. Controller=%s Local=%s Context=%s"),
+		*GetNameSafe(this),
+		IsLocalController() ? TEXT("YES") : TEXT("NO"),
+		*GetNameSafe(ContextActor));
+
 	if (!IsLocalController() || !IsValid(ContextActor))
 	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[FacilityHubFlow][CLIENT] FAILED: Invalid local controller or context."));
 		return;
 	}
 
@@ -80,6 +97,8 @@ void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* Context
 
 	if (!WidgetClass)
 	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[FacilityHubFlow][CLIENT] FAILED: Neither WBP_WorkspaceScreen nor WBP_FacilityHub could be loaded."));
 		if (PlayerHUDWidget)
 		{
 			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeFacilityHub);
@@ -88,9 +107,16 @@ void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* Context
 		return;
 	}
 
+	UE_LOG(LogTemp, Log,
+		TEXT("[FacilityHubFlow][CLIENT] Widget class resolved. Class=%s"),
+		*GetNameSafe(WidgetClass.Get()));
+
 	FacilityHubWidget = CreateWidget<UFacilityHubWidget>(this, WidgetClass);
 	if (!FacilityHubWidget)
 	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[FacilityHubFlow][CLIENT] FAILED: CreateWidget returned null. Class=%s"),
+			*GetNameSafe(WidgetClass.Get()));
 		if (PlayerHUDWidget)
 		{
 			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeFacilityHub);
@@ -103,6 +129,10 @@ void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* Context
 	FacilityHubWidget->AddToViewport(100);
 	ApplyInventoryInputMode(true);
 	FacilityHubWidget->SetUserFocus(this);
+	UE_LOG(LogTemp, Log,
+		TEXT("[FacilityHubFlow][CLIENT] SUCCESS: Common FacilityHub added to viewport. Widget=%s Context=%s"),
+		*GetNameSafe(FacilityHubWidget),
+		*GetNameSafe(ContextActor));
 }
 
 void ABasePlayerController::CloseFacilityHub()
@@ -113,6 +143,9 @@ void ABasePlayerController::CloseFacilityHub()
 	}
 
 	FacilityHubWidget->PrepareToClose();
+	UE_LOG(LogTemp, Log,
+		TEXT("[FacilityHubFlow][CLIENT] Closing FacilityHub. Widget=%s"),
+		*GetNameSafe(FacilityHubWidget));
 	FacilityHubWidget->RemoveFromParent();
 	FacilityHubWidget = nullptr;
 	if (PlayerHUDWidget)
