@@ -27,10 +27,13 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Sword|Trace")
-	void HitScanStart(const FGameplayEffectSpecHandle& DamageEffectSpecHandle);
+	bool HitScanStart(const FGameplayEffectSpecHandle& DamageEffectSpecHandle);
 
 	UFUNCTION(BlueprintCallable, Category = "Sword|Trace")
 	void HitScanEnd();
+
+	/** Samples the current blade position once during an active animation window. */
+	void SampleHitScan();
 
 	UFUNCTION(BlueprintPure, Category = "Sword|Trace")
 	bool IsHitScanActive() const { return bHitScanActive; }
@@ -60,9 +63,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Trace", meta = (ClampMin = "0.1"))
 	float TraceRadius = 12.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Trace", meta = (ClampMin = "0.001"))
-	float HitScanInterval = 0.02f;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Trace")
 	bool bTraceComplex = false;
 
@@ -83,7 +83,6 @@ protected:
 	float AttackPowerMultiplier = 1.0f;
 
 private:
-	void ProcessTrace();
 	void TraceSegment(const FVector& Start, const FVector& End);
 	void HandleHit(const FHitResult& HitResult);
 	void ApplyEffectToTarget(UAbilitySystemComponent* TargetASC, const FHitResult& HitResult);
@@ -93,7 +92,6 @@ private:
 	void ClearHitScanState();
 
 	FGameplayEffectSpecHandle CachedDamageEffectSpecHandle;
-	FTimerHandle HitScanTimerHandle;
 	TSet<TWeakObjectPtr<AActor>> HitActors;
 	FVector PreviousTraceStart = FVector::ZeroVector;
 	FVector PreviousTraceEnd = FVector::ZeroVector;

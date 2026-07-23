@@ -252,6 +252,12 @@ UAnimMontage* UPlayerEquipmentComponent::GetEquippedBasicAttackMontage() const
 	return Entry ? Entry->BasicAttackMontage.Get() : nullptr;
 }
 
+TArray<FName> UPlayerEquipmentComponent::GetEquippedBasicAttackComboSections() const
+{
+	const FWeaponAnimationEntry* Entry = GetEquippedWeaponAnimationEntry();
+	return Entry ? Entry->BasicAttackComboSections : TArray<FName>();
+}
+
 float UPlayerEquipmentComponent::GetEquippedBasicAttackPlayRate() const
 {
 	const FWeaponAnimationEntry* Entry = GetEquippedWeaponAnimationEntry();

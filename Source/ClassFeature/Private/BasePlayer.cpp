@@ -158,6 +158,7 @@ void ABasePlayer::PostInitializeComponents()
 void ABasePlayer::BeginPlay()
 {
 	Super::BeginPlay();
+	InitializeSwimmingAnimLayers();
 
 	if (HealthComponent)
 	{
@@ -606,6 +607,10 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Released, this, &ABasePlayer::StopSprint);
 	PlayerInputComponent->BindKey(EKeys::RightShift, IE_Pressed, this, &ABasePlayer::StartSprint);
 	PlayerInputComponent->BindKey(EKeys::RightShift, IE_Released, this, &ABasePlayer::StopSprint);
+	PlayerInputComponent->BindKey(EKeys::LeftControl, IE_Pressed, this, &ABasePlayer::StartSwimDive);
+	PlayerInputComponent->BindKey(EKeys::LeftControl, IE_Released, this, &ABasePlayer::StopSwimDive);
+	PlayerInputComponent->BindKey(EKeys::RightControl, IE_Pressed, this, &ABasePlayer::StartSwimDive);
+	PlayerInputComponent->BindKey(EKeys::RightControl, IE_Released, this, &ABasePlayer::StopSwimDive);
 	if (bEnableGravityVortexTestInput)
 	{
 		PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ABasePlayer::OnGravityVortexTestPressed);
@@ -1043,6 +1048,22 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 	if (IsEquipmentTransitioning()) return;
 
+	// Capture the state before AbilityLocalInputPressed can activate the bound
+	// ability. EventMagnitude 0 means activation click, 1 means active re-input.
+	bool bWasBoundAbilityActive = false;
+	const int32 InputID = GetInputIDFromTag(InputTag);
+	if (InputID != INDEX_NONE)
+	{
+		for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
+		{
+			if (Spec.InputID == InputID && Spec.IsActive())
+			{
+				bWasBoundAbilityActive = true;
+				break;
+			}
+		}
+	}
+
 	// 공통 GAS 입력 해제 처리
 	const bool bGravityVortexOwnsLeftClick =
 		InputTag.MatchesTagExact(Key_Default_Mouse_LeftClick)
@@ -1056,6 +1077,7 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 	FGameplayEventData EventData;
 	EventData.Instigator = this;
 	EventData.Target = nullptr;
+	EventData.EventMagnitude = bWasBoundAbilityActive ? 1.0f : 0.0f;
 
 	CachedAbilitySystemComponent->HandleGameplayEvent(InputTag, &EventData);
 
@@ -1507,14 +1529,27 @@ void ABasePlayer::Look(const FInputActionValue& Value)
 
 void ABasePlayer::DoMove(float Right, float Forward)
 {
-	if(AnimStateComponent) AnimStateComponent->CachedMoveInput = FVector2D(Right, Forward);
+	const bool bVerticalSwimOverride = SwimmingComponent
+		&& SwimmingComponent->IsCustomSwimming()
+		&& SwimmingComponent->HasVerticalSwimInput();
+	const FVector2D ClampedMoveInput = bVerticalSwimOverride
+		? FVector2D::ZeroVector
+		: FVector2D(Right, Forward).GetClampedToMaxSize(1.f);
+
+	if(AnimStateComponent) AnimStateComponent->CachedMoveInput = ClampedMoveInput;
 	if (AnimStateComponent)
 	{
-		AnimStateComponent->SetMoveInput(Right, Forward);
+		if (ClampedMoveInput.IsNearlyZero())
+		{
+			AnimStateComponent->ClearMoveInput();
+		}
+		else
+		{
+			AnimStateComponent->SetMoveInput(ClampedMoveInput.X, ClampedMoveInput.Y);
+		}
 	}
 	RefreshSprintFromInput();
 
-	const FVector2D ClampedMoveInput = FVector2D(Right, Forward).GetClampedToMaxSize(1.f);
 	if (HasAuthority())
 	{
 		AuthoritativeMoveInput = ClampedMoveInput;
@@ -1549,16 +1584,36 @@ void ABasePlayer::DoMove(float Right, float Forward)
 	// 	AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
 	// }
 
-	if (GetController() != nullptr)
+	if (!bVerticalSwimOverride && GetController() != nullptr)
 	{
 		const FRotator Rotation = GetController()->GetControlRotation();
-		const FRotator YawRotation(0, Rotation.Yaw, 0);
+		const bool bUseCameraDirectedSwim = SwimmingComponent
+			&& SwimmingComponent->ShouldUseCameraDirectedUnderwaterMovement();
+		const FRotator MoveRotation = bUseCameraDirectedSwim
+			? Rotation
+			: FRotator(0, Rotation.Yaw, 0);
 
-		const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+		const FVector ForwardDirection = FRotationMatrix(MoveRotation).GetUnitAxis(EAxis::X);
+		const FVector RightDirection = FRotationMatrix(MoveRotation).GetUnitAxis(EAxis::Y);
 
-		AddMovementInput(ForwardDirection, Forward);
-		AddMovementInput(RightDirection, Right);
+		AddMovementInput(ForwardDirection, ClampedMoveInput.Y);
+		AddMovementInput(RightDirection, ClampedMoveInput.X);
+	}
+}
+
+void ABasePlayer::InitializeSwimmingAnimLayers()
+{
+	if (!SwimmingAnimLayerClass)
+	{
+		return;
+	}
+
+	if (USkeletalMeshComponent* PlayerMesh = GetMesh())
+	{
+		if (UAnimInstance* AnimInstance = PlayerMesh->GetAnimInstance())
+		{
+			AnimInstance->LinkAnimClassLayers(SwimmingAnimLayerClass);
+		}
 	}
 }
 
@@ -1613,6 +1668,14 @@ void ABasePlayer::DoLook(float Yaw, float Pitch)
 
 void ABasePlayer::DoJumpStart()
 {
+	if (SwimmingComponent && SwimmingComponent->IsCustomSwimming())
+	{
+		bSwimAscendInputHeld = true;
+		bSwimDiveInputHeld = false;
+		RefreshSwimmingVerticalInput();
+		return;
+	}
+
 	if (!CanJump())
 	{
 		return;
@@ -1639,7 +1702,77 @@ void ABasePlayer::DoJumpStart()
 
 void ABasePlayer::DoJumpEnd()
 {
+	if (SwimmingComponent && SwimmingComponent->IsCustomSwimming())
+	{
+		bSwimAscendInputHeld = false;
+		RefreshSwimmingVerticalInput();
+		return;
+	}
+
 	StopJumping();
+}
+
+void ABasePlayer::StartSwimDive()
+{
+	if (!SwimmingComponent || !SwimmingComponent->IsCustomSwimming())
+	{
+		return;
+	}
+
+	bSwimDiveInputHeld = true;
+	bSwimAscendInputHeld = false;
+	RefreshSwimmingVerticalInput();
+}
+
+void ABasePlayer::StopSwimDive()
+{
+	if (!SwimmingComponent || !SwimmingComponent->IsCustomSwimming())
+	{
+		return;
+	}
+
+	bSwimDiveInputHeld = false;
+	RefreshSwimmingVerticalInput();
+}
+
+void ABasePlayer::RefreshSwimmingVerticalInput()
+{
+	if (!SwimmingComponent || !SwimmingComponent->IsCustomSwimming())
+	{
+		return;
+	}
+
+	const float VerticalInput = (bSwimAscendInputHeld ? 1.0f : 0.0f)
+		- (bSwimDiveInputHeld ? 1.0f : 0.0f);
+	SwimmingComponent->SetVerticalSwimInput(VerticalInput);
+	if (SwimmingComponent->HasVerticalSwimInput())
+	{
+		if (AnimStateComponent)
+		{
+			AnimStateComponent->ClearMoveInput();
+		}
+		AuthoritativeMoveInput = FVector2D::ZeroVector;
+		bHasAuthoritativeMoveInput = true;
+		if (IsLocallyControlled() && !HasAuthority())
+		{
+			LastSentMoveInputToServer = FVector2D::ZeroVector;
+			bHasSentMoveInputToServer = true;
+			Server_SetMoveInput(FVector2D::ZeroVector);
+		}
+	}
+
+	if (!HasAuthority())
+	{
+		Server_SetSwimmingVerticalInput(VerticalInput);
+	}
+}
+
+void ABasePlayer::Server_SetSwimmingVerticalInput_Implementation(float NewVerticalInput)
+{
+	if (SwimmingComponent && SwimmingComponent->IsCustomSwimming())
+	{
+		SwimmingComponent->SetVerticalSwimInput(NewVerticalInput);
+	}
 }
 
 void ABasePlayer::StartSprint()
@@ -1946,6 +2079,45 @@ void ABasePlayer::InterruptCombatIntroForHit()
 	if (!bIsCombatMode)
 	{
 		ApplyCombatRotationMode(false);
+	}
+}
+
+void ABasePlayer::AcquireServerCombatPoseRefresh()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* PlayerMesh = GetMesh();
+	if (!PlayerMesh)
+	{
+		return;
+	}
+
+	if (ServerCombatPoseRefreshRefCount == 0)
+	{
+		ServerCombatOriginalAnimTickOption = PlayerMesh->VisibilityBasedAnimTickOption;
+		PlayerMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	}
+
+	++ServerCombatPoseRefreshRefCount;
+}
+
+void ABasePlayer::ReleaseServerCombatPoseRefresh()
+{
+	if (!HasAuthority() || ServerCombatPoseRefreshRefCount <= 0)
+	{
+		return;
+	}
+
+	--ServerCombatPoseRefreshRefCount;
+	if (ServerCombatPoseRefreshRefCount == 0)
+	{
+		if (USkeletalMeshComponent* PlayerMesh = GetMesh())
+		{
+			PlayerMesh->VisibilityBasedAnimTickOption = ServerCombatOriginalAnimTickOption;
+		}
 	}
 }
 

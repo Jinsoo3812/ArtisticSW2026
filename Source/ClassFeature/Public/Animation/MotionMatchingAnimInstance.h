@@ -7,6 +7,7 @@
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "BoneControllers/AnimNode_FootPlacement.h"
 #include "GameplayTagContainer.h"
+#include "SwimmingComponent.h"
 #include "MotionMatchingAnimInstance.generated.h"
 
 class UPoseSearchDatabase;
@@ -105,6 +106,15 @@ struct FAnimAirData
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     bool bIsFallOffStart = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    bool bJumpStartWasMoving = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float JumpStartGroundSpeed = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    FVector2D JumpStartMoveDirection = FVector2D::ZeroVector;
 };
 
 USTRUCT(BlueprintType)
@@ -266,6 +276,9 @@ struct FAnimThreadSafeData
 
     UPROPERTY(BlueprintReadOnly, Category = "Bow")
     FAnimBowData BowData;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Swimming")
+    FSwimmingAnimationState SwimData;
 };
 
 struct FCachedMotionMatchingNodeInfo
@@ -304,6 +317,9 @@ struct FCachedMotionMatchingNodeInfo
     float LockedRemoteTransitionTime = 0.f;
     ELocomotionState LockedRemoteTransitionState = ELocomotionState::Idle;
     bool bHasRemoteTransitionLock = false;
+    TWeakObjectPtr<UAnimationAsset> LockedJumpStartAnim;
+    float LockedJumpStartTime = 0.f;
+    bool bHasJumpStartLock = false;
 };
 
 struct FCachedHistoryCollectorNodeInfo
@@ -349,6 +365,13 @@ public:
 
     virtual void NativeInitializeAnimation() override;
     virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+
+    /**
+     * The main AnimInstance calls this for linked animation-layer instances.
+     * Linked instances own a separate proxy, so swim state must be copied to
+     * that proxy instead of relying on their update order.
+     */
+    void ReceiveLinkedSwimAnimationState(const FSwimmingAnimationState& InSwimState);
 
     UFUNCTION(BlueprintPure, Category = "Motion Matching", meta = (BlueprintThreadSafe))
     UPoseSearchDatabase* GetCurrentActivePoseSearchDatabaseThreadSafe() const;
@@ -425,6 +448,30 @@ public:
     UFUNCTION(BlueprintPure, Category = "Animation|Bow", meta = (BlueprintThreadSafe))
     FTransform GetThreadSafeBowStringIKTargetTransform() const;
 
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsSwimming() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsUnderwater() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeSwimDiveInputHeld() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeSwimAscendInputHeld() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    ESwimDepthMode GetThreadSafeSwimDepthMode() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    float GetThreadSafeSwimSpeed() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    float GetThreadSafeSwimVerticalSpeed() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Swimming", meta = (BlueprintThreadSafe))
+    float GetThreadSafeSwimDirection() const;
+
     UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
     FFootPlacementPlantSettings Get_FootPlacementPlantSettings() const;
 
@@ -435,6 +482,11 @@ public:
 
 protected:
     virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
+
+    void PropagateSwimAnimationStateToLinkedInstances(const FSwimmingAnimationState& InSwimState);
+
+    FSwimmingAnimationState LinkedSwimAnimationState;
+    bool bHasLinkedSwimAnimationState = false;
 
     bool IsDedicatedServerAnimationContext() const;
     float CalculateAimOffsetAlpha(const FAnimThreadSafeData& ThreadSafeData) const;
@@ -496,6 +548,13 @@ protected:
     // Air / Landing PSDs
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
     TObjectPtr<UPoseSearchDatabase> JumpStartDatabase;
+
+    /** Optional filtered PSDs. Assign normal stand/move jump assets only; JumpStartDatabase remains the compatibility fallback. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
+    TObjectPtr<UPoseSearchDatabase> JumpStartStandDatabase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
+    TObjectPtr<UPoseSearchDatabase> JumpStartMovingDatabase;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
     TObjectPtr<UPoseSearchDatabase> InAirDatabase;
