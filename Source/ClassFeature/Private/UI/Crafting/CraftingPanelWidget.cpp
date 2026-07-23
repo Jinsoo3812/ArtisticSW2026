@@ -268,36 +268,48 @@ void UCraftingPanelWidget::ApplyRecipeDetails(const FCraftingDetailsView& Detail
 
 	if (MissingRecipeText)
 	{
-		MissingRecipeText->SetVisibility(
-			Details.bIngredientsVisible
-				? ESlateVisibility::Collapsed
-				: ESlateVisibility::HitTestInvisible);
+		MissingRecipeText->SetVisibility(ESlateVisibility::Collapsed);
 	}
 	if (IngredientList)
 	{
 		IngredientList->SetVisibility(
-			Details.bIngredientsVisible
+			(Details.bHasRequiredRecipeItem || Details.bIngredientsVisible)
 				? ESlateVisibility::SelfHitTestInvisible
 				: ESlateVisibility::Collapsed);
 	}
 
-	if (!Details.bIngredientsVisible || !IngredientList || !IngredientEntryClass)
+	if (!IngredientList || !IngredientEntryClass)
+	{
+		return;
+	}
+
+	const auto AddIngredientEntry = [this](const FCraftingIngredientView& Ingredient)
+	{
+		UCraftingIngredientEntryWidget* IngredientWidget =
+			CreateWidget<UCraftingIngredientEntryWidget>(this, IngredientEntryClass);
+		if (!IngredientWidget)
+		{
+			return;
+		}
+
+		IngredientWidget->SetupFromIngredient(Ingredient);
+		IngredientList->AddChild(IngredientWidget);
+		SpawnedIngredientEntries.Add(IngredientWidget);
+	};
+
+	if (Details.bHasRequiredRecipeItem)
+	{
+		AddIngredientEntry(Details.RequiredRecipeItem);
+	}
+
+	if (!Details.bIngredientsVisible)
 	{
 		return;
 	}
 
 	for (const FCraftingIngredientView& Ingredient : Details.Ingredients)
 	{
-		UCraftingIngredientEntryWidget* IngredientWidget =
-			CreateWidget<UCraftingIngredientEntryWidget>(this, IngredientEntryClass);
-		if (!IngredientWidget)
-		{
-			continue;
-		}
-
-		IngredientWidget->SetupFromIngredient(Ingredient);
-		IngredientList->AddChild(IngredientWidget);
-		SpawnedIngredientEntries.Add(IngredientWidget);
+		AddIngredientEntry(Ingredient);
 	}
 }
 

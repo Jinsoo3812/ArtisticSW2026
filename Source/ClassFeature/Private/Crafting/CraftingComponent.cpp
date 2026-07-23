@@ -153,6 +153,19 @@ bool UCraftingComponent::GetCraftingDetails(FName RecipeId, int32 CraftCount, FC
 	OutDetails.Header = BuildListEntry(RecipeId, SafeCraftCount);
 	OutDetails.RequiredRecipeItemTag = Recipe->RequiredRecipeItemTag;
 	OutDetails.Availability = OutDetails.Header.Availability;
+	if (Recipe->RequiredRecipeItemTag.IsValid())
+	{
+		OutDetails.bHasRequiredRecipeItem = true;
+		OutDetails.RequiredRecipeItem.ItemTag = Recipe->RequiredRecipeItemTag;
+		OutDetails.RequiredRecipeItem.DisplayName = Items->GetItemName(Recipe->RequiredRecipeItemTag);
+		OutDetails.RequiredRecipeItem.Icon = Items->GetIcon2D(Recipe->RequiredRecipeItemTag);
+		OutDetails.RequiredRecipeItem.OwnedQuantity = GetOwnedItemCount(Recipe->RequiredRecipeItemTag);
+		OutDetails.RequiredRecipeItem.RequiredQuantity =
+			Recipe->bConsumeRecipeItem ? SafeCraftCount : 1;
+		OutDetails.RequiredRecipeItem.bEnough =
+			OutDetails.RequiredRecipeItem.OwnedQuantity
+			>= OutDetails.RequiredRecipeItem.RequiredQuantity;
+	}
 	if (OutDetails.Availability == ECraftingAvailability::MissingRecipe)
 	{
 		OutDetails.bIngredientsVisible = false;

@@ -94,8 +94,19 @@ bool FCraftingPipelineTest::RunTest(const FString& Parameters)
 	FCraftingDetailsView LockedDetails;
 	TestTrue(TEXT("Locked recipe details still resolve"), Crafting->GetCraftingDetails(TEXT("Test_LockedSword"), 1, LockedDetails));
 	TestEqual(TEXT("Locked recipe reports MissingRecipe"), LockedDetails.Availability, ECraftingAvailability::MissingRecipe);
+	TestTrue(TEXT("Locked recipe reports its required recipe item"), LockedDetails.bHasRequiredRecipeItem);
+	TestEqual(TEXT("Locked recipe item owned quantity is zero"), LockedDetails.RequiredRecipeItem.OwnedQuantity, 0);
+	TestEqual(TEXT("Locked recipe item required quantity is one"), LockedDetails.RequiredRecipeItem.RequiredQuantity, 1);
 	TestFalse(TEXT("Locked recipe hides ingredients"), LockedDetails.bIngredientsVisible);
 	TestEqual(TEXT("Locked recipe returns no ingredient rows"), LockedDetails.Ingredients.Num(), 0);
+
+	Inventory->AddItem(Item_Id_Material_WeaponSpecialRecipe_EpicRecipe, 1);
+	FCraftingDetailsView UnlockedRecipeDetails;
+	TestTrue(TEXT("Unlocked recipe details resolve"), Crafting->GetCraftingDetails(TEXT("Test_LockedSword"), 1, UnlockedRecipeDetails));
+	TestTrue(TEXT("Unlocked recipe still reports its required recipe item"), UnlockedRecipeDetails.bHasRequiredRecipeItem);
+	TestEqual(TEXT("Unlocked recipe item owned quantity is one"), UnlockedRecipeDetails.RequiredRecipeItem.OwnedQuantity, 1);
+	TestTrue(TEXT("Unlocked recipe shows normal ingredients"), UnlockedRecipeDetails.bIngredientsVisible);
+	TestEqual(TEXT("Unlocked recipe returns its normal ingredient rows"), UnlockedRecipeDetails.Ingredients.Num(), 1);
 
 	FCraftingRequest Request;
 	Request.RequestId = FGuid::NewGuid();
