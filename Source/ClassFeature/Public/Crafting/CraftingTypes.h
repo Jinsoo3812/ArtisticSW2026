@@ -122,6 +122,13 @@ struct CLASSFEATURE_API FCraftingDetailsView
 	FGameplayTag RequiredRecipeItemTag;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Crafting")
+	bool bHasRequiredRecipeItem = false;
+
+	/** Required recipe item displayed before normal ingredients as OwnedQuantity / RequiredQuantity. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting")
+	FCraftingIngredientView RequiredRecipeItem;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting")
 	bool bIngredientsVisible = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Crafting")

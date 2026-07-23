@@ -88,6 +88,14 @@ namespace
 		}
 		return Remaining == 0;
 	}
+
+	FInventoryTabPage* FindPageInArray(TArray<FInventoryTabPage>& Pages, EInventoryTab Tab)
+	{
+		return Pages.FindByPredicate([Tab](const FInventoryTabPage& Page)
+		{
+			return Page.Tab == Tab;
+		});
+	}
 }
 
 // Sets default values for this component's properties
@@ -407,8 +415,15 @@ bool UInventoryComponent::CanAddItem(const FGameplayTag& ItemTag, int32 Amount) 
 	{
 		return false;
 	}
-	TArray<FInventorySlot> WorkingSlots = InventorySlots;
-	WorkingSlots.SetNum(GetSlotCount());
+
+	const EInventoryTab ItemTab = GetInventoryTabForItem(ItemTag);
+	const FInventoryTabPage* Page = FindPage(ItemTab);
+	if (!Page)
+	{
+		return false;
+	}
+
+	TArray<FInventorySlot> WorkingSlots = Page->Slots;
 	return AddToSlots(WorkingSlots, ItemTag, Amount, GetMaxStack(ItemTag));
 }
 
@@ -419,21 +434,33 @@ bool UInventoryComponent::TryApplyCraftingTransaction(const TArray<FCraftingItem
 		return false;
 	}
 
-	TArray<FInventorySlot> WorkingSlots = InventorySlots;
-	WorkingSlots.SetNum(GetSlotCount());
+	InitializeInventoryPages();
+	TArray<FInventoryTabPage> WorkingPages = InventoryPages;
 	for (const FCraftingItemStack& Cost : Costs)
 	{
-		if (!RemoveFromSlots(WorkingSlots, Cost.ItemTag, Cost.Quantity))
+		if (!Cost.ItemTag.IsValid() || Cost.Quantity <= 0)
+		{
+			return false;
+		}
+
+		FInventoryTabPage* CostPage = FindPageInArray(WorkingPages, GetInventoryTabForItem(Cost.ItemTag));
+		if (!CostPage || !RemoveFromSlots(CostPage->Slots, Cost.ItemTag, Cost.Quantity))
 		{
 			return false;
 		}
 	}
-	if (!AddToSlots(WorkingSlots, Result.ItemTag, Result.Quantity, GetMaxStack(Result.ItemTag)))
+
+	FInventoryTabPage* ResultPage = FindPageInArray(WorkingPages, GetInventoryTabForItem(Result.ItemTag));
+	if (!ResultPage || !AddToSlots(ResultPage->Slots, Result.ItemTag, Result.Quantity, GetMaxStack(Result.ItemTag)))
 	{
 		return false;
 	}
 
-	InventorySlots = MoveTemp(WorkingSlots);
+	InventoryPages = MoveTemp(WorkingPages);
+	if (const FInventoryTabPage* ActivePage = FindPage(ActiveTab))
+	{
+		InventorySlots = ActivePage->Slots;
+	}
 	OnInventoryChanged.Broadcast();
 	PrintInventoryToScreen();
 	return true;
@@ -445,16 +472,28 @@ bool UInventoryComponent::RemoveItemsAtomically(const TArray<FCraftingItemStack>
 	{
 		return false;
 	}
-	TArray<FInventorySlot> WorkingSlots = InventorySlots;
-	WorkingSlots.SetNum(GetSlotCount());
+
+	InitializeInventoryPages();
+	TArray<FInventoryTabPage> WorkingPages = InventoryPages;
 	for (const FCraftingItemStack& Cost : Costs)
 	{
-		if (!RemoveFromSlots(WorkingSlots, Cost.ItemTag, Cost.Quantity))
+		if (!Cost.ItemTag.IsValid() || Cost.Quantity <= 0)
+		{
+			return false;
+		}
+
+		FInventoryTabPage* CostPage = FindPageInArray(WorkingPages, GetInventoryTabForItem(Cost.ItemTag));
+		if (!CostPage || !RemoveFromSlots(CostPage->Slots, Cost.ItemTag, Cost.Quantity))
 		{
 			return false;
 		}
 	}
-	InventorySlots = MoveTemp(WorkingSlots);
+
+	InventoryPages = MoveTemp(WorkingPages);
+	if (const FInventoryTabPage* ActivePage = FindPage(ActiveTab))
+	{
+		InventorySlots = ActivePage->Slots;
+	}
 	OnInventoryChanged.Broadcast();
 	PrintInventoryToScreen();
 	return true;
@@ -466,16 +505,28 @@ bool UInventoryComponent::AddItemsAtomically(const TArray<FCraftingItemStack>& I
 	{
 		return false;
 	}
-	TArray<FInventorySlot> WorkingSlots = InventorySlots;
-	WorkingSlots.SetNum(GetSlotCount());
+
+	InitializeInventoryPages();
+	TArray<FInventoryTabPage> WorkingPages = InventoryPages;
 	for (const FCraftingItemStack& Item : Items)
 	{
-		if (!AddToSlots(WorkingSlots, Item.ItemTag, Item.Quantity, GetMaxStack(Item.ItemTag)))
+		if (!Item.ItemTag.IsValid() || Item.Quantity <= 0)
+		{
+			return false;
+		}
+
+		FInventoryTabPage* ItemPage = FindPageInArray(WorkingPages, GetInventoryTabForItem(Item.ItemTag));
+		if (!ItemPage || !AddToSlots(ItemPage->Slots, Item.ItemTag, Item.Quantity, GetMaxStack(Item.ItemTag)))
 		{
 			return false;
 		}
 	}
-	InventorySlots = MoveTemp(WorkingSlots);
+
+	InventoryPages = MoveTemp(WorkingPages);
+	if (const FInventoryTabPage* ActivePage = FindPage(ActiveTab))
+	{
+		InventorySlots = ActivePage->Slots;
+	}
 	OnInventoryChanged.Broadcast();
 	PrintInventoryToScreen();
 	return true;

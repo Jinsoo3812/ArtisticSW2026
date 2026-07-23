@@ -20,6 +20,7 @@ class UInputAction;
 class UInputTagConfig;
 class AStorageChest;
 class UStorageWindowWidget;
+class UFacilityHubWidget;
 class UStatusWindowWidget;
 
 struct FStorageRevealState
@@ -34,6 +35,14 @@ class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerContr
 	GENERATED_BODY()
 
 public:
+	void OpenFacilityHubFromServer(AActor* ContextActor);
+
+	UFUNCTION(Client, Reliable)
+	void ClientOpenFacilityHub(AActor* ContextActor);
+
+	UFUNCTION(BlueprintCallable, Category = "Facility Hub")
+	void CloseFacilityHub();
+
 	/*--- 초기화 ---*/
 	virtual void SetupInputComponent() override;
 	virtual void BeginPlay() override;
@@ -91,6 +100,12 @@ public:
 	bool IsStorageSlotSearching(AStorageChest* StorageChest, int32 SlotIndex) const;
 
 protected:
+	UPROPERTY(EditDefaultsOnly, Category = "UI")
+	TSubclassOf<UFacilityHubWidget> FacilityHubWidgetClass;
+
+	UPROPERTY()
+	TObjectPtr<UFacilityHubWidget> FacilityHubWidget;
+
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UPlayerHUDWidget> PlayerHUDWidgetClass;
 
