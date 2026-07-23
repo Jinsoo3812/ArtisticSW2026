@@ -49,13 +49,13 @@ void UShipUpgradeDetailsWidget::ShowNode(const FShipUpgradeNodeView& InView, boo
 	SelectedView = InView;
 	bHasSelection = true;
 	bIsRequestPending = bRequestPending;
-	UE_LOG(LogTemp, Log,
+	/* UE_LOG(LogTemp, Log,
 		TEXT("[ShipUpgradeUI] Details rendering started. NodeId=%s State=%s Stats=%d Materials=%d Pending=%s"),
 		*SelectedView.NodeId.ToString(),
 		*UEnum::GetValueAsString(SelectedView.State),
 		SelectedView.StatChanges.Num(),
 		SelectedView.MaterialCosts.Num(),
-		bIsRequestPending ? TEXT("YES") : TEXT("NO"));
+		bIsRequestPending ? TEXT("YES") : TEXT("NO")); */
 
 	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	if (Text_NodeName)
@@ -146,15 +146,15 @@ void UShipUpgradeDetailsWidget::RebuildStatChanges()
 {
 	if (!VerticalBox_StatChanges)
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[ShipUpgradeUI] Stat rows skipped: VerticalBox_StatChanges is not bound."));
+		/* UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradeUI] Stat rows skipped: VerticalBox_StatChanges is not bound.")); */
 		return;
 	}
 	VerticalBox_StatChanges->ClearChildren();
 	if (!StatChangeRowClass)
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[ShipUpgradeUI] Stat rows skipped: StatChangeRowClass is None."));
+		/* UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradeUI] Stat rows skipped: StatChangeRowClass is None.")); */
 		return;
 	}
 
@@ -167,25 +167,25 @@ void UShipUpgradeDetailsWidget::RebuildStatChanges()
 			VerticalBox_StatChanges->AddChildToVerticalBox(Row);
 		}
 	}
-	UE_LOG(LogTemp, Log,
+	/* UE_LOG(LogTemp, Log,
 		TEXT("[ShipUpgradeUI] Stat rows rendered. Requested=%d Created=%d"),
 		SelectedView.StatChanges.Num(),
-		VerticalBox_StatChanges->GetChildrenCount());
+		VerticalBox_StatChanges->GetChildrenCount()); */
 }
 
 void UShipUpgradeDetailsWidget::RebuildMaterialCosts()
 {
 	if (!VerticalBox_MaterialCosts)
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[ShipUpgradeUI] Material rows skipped: VerticalBox_MaterialCosts is not bound."));
+		/* UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradeUI] Material rows skipped: VerticalBox_MaterialCosts is not bound.")); */
 		return;
 	}
 	VerticalBox_MaterialCosts->ClearChildren();
 	if (!MaterialRowClass)
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[ShipUpgradeUI] Material rows skipped: MaterialRowClass is None."));
+		/* UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradeUI] Material rows skipped: MaterialRowClass is None.")); */
 		return;
 	}
 
@@ -198,10 +198,10 @@ void UShipUpgradeDetailsWidget::RebuildMaterialCosts()
 			VerticalBox_MaterialCosts->AddChildToVerticalBox(Row);
 		}
 	}
-	UE_LOG(LogTemp, Log,
+	/* UE_LOG(LogTemp, Log,
 		TEXT("[ShipUpgradeUI] Material rows rendered. Requested=%d Created=%d"),
 		SelectedView.MaterialCosts.Num(),
-		VerticalBox_MaterialCosts->GetChildrenCount());
+		VerticalBox_MaterialCosts->GetChildrenCount()); */
 }
 
 void UShipUpgradeDetailsWidget::RequestPreviewIconLoad()
