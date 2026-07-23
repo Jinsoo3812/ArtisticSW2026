@@ -5,7 +5,7 @@
 #include "SWRippleWaterWaves.generated.h"
 
 UCLASS(BlueprintType, EditInlineNew)
-class CLASSFEATURE_API USWRippleWaterWaves : public UWaterWaves
+class WATERANDSHIP_API USWRippleWaterWaves : public UWaterWaves
 {
 	GENERATED_BODY()
 

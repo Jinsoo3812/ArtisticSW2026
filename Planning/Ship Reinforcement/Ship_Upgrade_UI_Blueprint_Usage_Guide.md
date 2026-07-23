@@ -449,6 +449,8 @@ SceneCapture2D와 RenderTarget으로 배를 보여주고, 프리뷰 Actor의 Yaw
 
 ### 11.9 2026-07-23 네이티브 UMG 구현 현황
 
+아래 클래스는 전용 Runtime 모듈 `ShipUpgradeUI`에 있다. 강화 규칙과 데이터는 `WaterAndShip`, PlayerController·작업대·인벤토리 연결은 `ClassFeature`에 유지한다.
+
 추가된 네이티브 클래스:
 
 ```text
@@ -463,4 +465,4 @@ UShipUpgradeMaterialRowWidget
 AShipUpgradePreviewStage
 ```
 
-이 변경은 표현 계층의 구현 위치만 바꾼다. `UShipUpgradeComponent`, 강화 데이터, 서버 검증, 재료 원자 차감, 저장/복제, 실제 배 스탯 적용 경로는 변경하지 않는다. 2026-07-23 UE 5.7 Editor Target 빌드와 `ArtisticSW.ShipUpgrade` 테스트 3개가 모두 성공했다.
+이 변경은 표현 계층의 구현 위치만 바꾼다. `UShipUpgradeComponent`, 강화 데이터, 서버 검증, 재료 원자 차감, 저장/복제, 실제 배 스탯 적용 경로는 변경하지 않는다. 기존 `/Script/ClassFeature.ShipUpgrade...` 부모 참조는 `CoreRedirects`로 `ShipUpgradeUI`에 연결된다. 2026-07-23 UE 5.7 Editor/Game Target 빌드와 `ArtisticSW` 자동화 테스트 17개가 모두 성공했다.

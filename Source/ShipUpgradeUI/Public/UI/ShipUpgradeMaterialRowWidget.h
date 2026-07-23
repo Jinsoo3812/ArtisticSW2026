@@ -10,7 +10,7 @@ class UImage;
 class UTextBlock;
 
 UCLASS(Abstract, BlueprintType)
-class CLASSFEATURE_API UShipUpgradeMaterialRowWidget : public UUserWidget
+class SHIPUPGRADEUI_API UShipUpgradeMaterialRowWidget : public UUserWidget
 {
 	GENERATED_BODY()
 

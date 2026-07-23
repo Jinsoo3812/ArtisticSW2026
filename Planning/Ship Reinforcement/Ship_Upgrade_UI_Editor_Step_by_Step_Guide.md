@@ -3,6 +3,8 @@
 > 기준: 2026-07-23 네이티브 UMG 리팩터링 이후  
 > 목표: 로직은 C++, 배치와 아트는 Widget Blueprint에서 담당한다.
 
+네이티브 WBP 부모는 `ShipUpgradeUI` Runtime 모듈, 강화 데이터와 규칙은 `WaterAndShip`, 작업대·PlayerController·인벤토리 연결은 `ClassFeature`에 있다.
+
 ## 0. 가장 중요한 원칙
 
 이번 리팩터링은 UI 구현 위치만 Blueprint에서 C++로 옮긴 것이다. 아래 기능은 바꾸지 않는다.

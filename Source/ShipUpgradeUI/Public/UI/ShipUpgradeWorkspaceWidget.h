@@ -12,7 +12,7 @@ class UWidgetSwitcher;
  * Button and switcher names are the only required Blueprint connection.
  */
 UCLASS(Abstract, BlueprintType)
-class CLASSFEATURE_API UShipUpgradeWorkspaceWidget : public UUserWidget
+class SHIPUPGRADEUI_API UShipUpgradeWorkspaceWidget : public UUserWidget
 {
 	GENERATED_BODY()
 

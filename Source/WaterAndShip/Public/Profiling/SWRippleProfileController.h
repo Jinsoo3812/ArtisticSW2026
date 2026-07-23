@@ -13,7 +13,7 @@ class USWRippleStateSubsystem;
  * fixed query grid, emits trace bookmarks, and logs cumulative metric deltas.
  */
 UCLASS()
-class CLASSFEATURE_API ASWRippleProfileController : public AActor
+class WATERANDSHIP_API ASWRippleProfileController : public AActor
 {
 	GENERATED_BODY()
 

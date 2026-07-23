@@ -14,7 +14,7 @@ class UTextureRenderTarget2D;
  * but class loading, actor replacement and rotation are native.
  */
 UCLASS(Blueprintable)
-class CLASSFEATURE_API AShipUpgradePreviewStage : public AActor
+class SHIPUPGRADEUI_API AShipUpgradePreviewStage : public AActor
 {
 	GENERATED_BODY()
 

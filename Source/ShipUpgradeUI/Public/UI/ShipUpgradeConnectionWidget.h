@@ -9,7 +9,7 @@ class UTexture2D;
 
 /** Native geometry/state for one graph connection. */
 UCLASS(Abstract, BlueprintType)
-class CLASSFEATURE_API UShipUpgradeConnectionWidget : public UUserWidget
+class SHIPUPGRADEUI_API UShipUpgradeConnectionWidget : public UUserWidget
 {
 	GENERATED_BODY()
 

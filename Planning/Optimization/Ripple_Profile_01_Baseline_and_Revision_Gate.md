@@ -268,10 +268,10 @@ Saved/Profiling/RippleBaseline/R32_ClientNet_v3.utrace
 
 - `Source/ArtisticSWCore/Public/Water/SWRippleProfile.h`
 - `Source/ArtisticSWCore/Private/Water/SWRippleProfile.cpp`
-- `Source/ClassFeature/Public/Profiling/SWRippleProfileController.h`
-- `Source/ClassFeature/Private/Profiling/SWRippleProfileController.cpp`
-- `Source/ClassFeature/Private/RippleSubsystem.cpp`
-- `Source/ClassFeature/Public/RippleSubsystem.h`
+- `Source/WaterAndShip/Public/Profiling/SWRippleProfileController.h`
+- `Source/WaterAndShip/Private/Profiling/SWRippleProfileController.cpp`
+- `Source/WaterAndShip/Private/RippleSubsystem.cpp`
+- `Source/WaterAndShip/Public/RippleSubsystem.h`
 
 ### 주요 trace
 

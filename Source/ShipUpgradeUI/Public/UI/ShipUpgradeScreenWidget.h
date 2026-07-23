@@ -19,7 +19,7 @@ class UTextBlock;
  * pending requests, stat text, zoom and preview-stage lifetime live here.
  */
 UCLASS(Abstract, BlueprintType)
-class CLASSFEATURE_API UShipUpgradeScreenWidget : public UUserWidget
+class SHIPUPGRADEUI_API UShipUpgradeScreenWidget : public UUserWidget
 {
 	GENERATED_BODY()
 

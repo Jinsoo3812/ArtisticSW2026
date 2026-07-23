@@ -17,7 +17,7 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FShipUpgradeGraphNodeSelectedNative, FName);
  * and class assignments for the node/connection visual children.
  */
 UCLASS(Abstract, BlueprintType)
-class CLASSFEATURE_API UShipUpgradeGraphWidget : public UUserWidget
+class SHIPUPGRADEUI_API UShipUpgradeGraphWidget : public UUserWidget
 {
 	GENERATED_BODY()
 

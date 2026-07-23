@@ -20,7 +20,7 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FShipUpgradeActivationRequestedNative, FName
 DECLARE_MULTICAST_DELEGATE_OneParam(FShipUpgradePreviewRequestedNative, const FShipUpgradeNodeView&);
 
 UCLASS(Abstract, BlueprintType)
-class CLASSFEATURE_API UShipUpgradeDetailsWidget : public UUserWidget
+class SHIPUPGRADEUI_API UShipUpgradeDetailsWidget : public UUserWidget
 {
 	GENERATED_BODY()
 

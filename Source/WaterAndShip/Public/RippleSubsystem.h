@@ -11,7 +11,7 @@
  * Authoritative ripple state/query math lives in USWRippleStateSubsystem.
  */
 UCLASS(BlueprintType, Blueprintable)
-class CLASSFEATURE_API URippleSubsystem : public UWorldSubsystem, public FTickableGameObject
+class WATERANDSHIP_API URippleSubsystem : public UWorldSubsystem, public FTickableGameObject
 {
 	GENERATED_BODY()
 

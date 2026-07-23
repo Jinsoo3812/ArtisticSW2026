@@ -9,7 +9,7 @@
  * Spawned transiently by URippleSubsystem only with -SWProfileLevel.
  */
 UCLASS()
-class CLASSFEATURE_API ASWLevelProfileController : public AActor
+class WATERANDSHIP_API ASWLevelProfileController : public AActor
 {
 	GENERATED_BODY()
 

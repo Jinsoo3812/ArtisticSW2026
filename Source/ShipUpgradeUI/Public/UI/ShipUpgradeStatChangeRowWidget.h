@@ -8,7 +8,7 @@
 class UTextBlock;
 
 UCLASS(Abstract, BlueprintType)
-class CLASSFEATURE_API UShipUpgradeStatChangeRowWidget : public UUserWidget
+class SHIPUPGRADEUI_API UShipUpgradeStatChangeRowWidget : public UUserWidget
 {
 	GENERATED_BODY()
 

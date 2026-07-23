@@ -18,7 +18,7 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FShipUpgradeNodeSelectedNative, FName);
  * The Widget Blueprint child only supplies named designer widgets and styling.
  */
 UCLASS(Abstract, BlueprintType)
-class CLASSFEATURE_API UShipUpgradeNodeWidget : public UUserWidget
+class SHIPUPGRADEUI_API UShipUpgradeNodeWidget : public UUserWidget
 {
 	GENERATED_BODY()
 
