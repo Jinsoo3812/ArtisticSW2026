@@ -157,10 +157,41 @@ bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 	const UGA_GravityVortexThrow* AbilityDefaults =
 		Cast<UGA_GravityVortexThrow>(AbilityClass->GetDefaultObject());
 	AddInfo(FString::Printf(
-		TEXT("GA socket=%s projectile=%s"),
+		TEXT("GA socket=%s projectile=%s aimLine=%s debug=%s visual=%s"),
 		AbilityDefaults ? *AbilityDefaults->SpawnSocketName.ToString() : TEXT("None"),
-		AbilityDefaults ? *GetPathNameSafe(AbilityDefaults->ProjectileClass.Get()) : TEXT("None")));
+		AbilityDefaults ? *GetPathNameSafe(AbilityDefaults->ProjectileClass.Get()) : TEXT("None"),
+		AbilityDefaults ? *GetPathNameSafe(AbilityDefaults->AimLineClass.Get()) : TEXT("None"),
+		AbilityDefaults && AbilityDefaults->bDrawAimTrajectory ? TEXT("true") : TEXT("false"),
+		AbilityDefaults && AbilityDefaults->bUpdateAimTrajectoryVisual ? TEXT("true") : TEXT("false")));
+	TestEqual(
+		TEXT("BP_Player grants the configured GA_VortexField Blueprint, not the native fallback"),
+		PlayerDefaults->GravityVortexAbilityClass.Get(),
+		AbilityClass);
+	TestEqual(
+		TEXT("GA_VortexField resolves the authored right-hand socket"),
+		AbilityDefaults->SpawnSocketName,
+		FName(TEXT("HandGrip_R")));
+	TestFalse(
+		TEXT("GA_VortexField debug trajectory is disabled"),
+		AbilityDefaults->bDrawAimTrajectory);
+	TestTrue(
+		TEXT("GA_VortexField real trajectory visualization is enabled"),
+		AbilityDefaults->bUpdateAimTrajectoryVisual);
 	TestNotNull(TEXT("GA_VortexField has a projectile class"), AbilityDefaults->ProjectileClass.Get());
+	if (TestNotNull(TEXT("GA_VortexField has an aim-line class"), AbilityDefaults->AimLineClass.Get()))
+	{
+		const AVortexAimLine* AimLineDefaults =
+			AbilityDefaults->AimLineClass->GetDefaultObject<AVortexAimLine>();
+		if (TestNotNull(TEXT("Configured aim-line CDO derives from AVortexAimLine"), AimLineDefaults))
+		{
+			TestNotNull(
+				TEXT("Configured aim-line has SM_VortexAimLine assigned"),
+				AimLineDefaults->AimLineMesh.Get());
+			TestNotNull(
+				TEXT("Configured aim-line has M_VortexAimLine assigned"),
+				AimLineDefaults->AimLineMaterial.Get());
+		}
+	}
 
 	const AGravityVortexProjectile* ProjectileDefaults =
 		AbilityDefaults && AbilityDefaults->ProjectileClass
@@ -265,13 +296,35 @@ bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("The resolved HandGrip_R world transform is spatially separate from the face/head"),
 		FVector::Distance(HandGripWorldLocation, HeadWorldLocation) > 20.0f);
+	FVector ResolvedLaunchLocation = FVector::ZeroVector;
+	const USkeletalMeshComponent* ResolvedLaunchMesh = nullptr;
+	FName ResolvedLaunchName = NAME_None;
+	TestTrue(
+		TEXT("Gravity Vortex launch resolver finds the configured socket"),
+		UGA_GravityVortexThrow::ResolveSpawnSocket(
+			BlueprintPlayer,
+			AbilityDefaults->SpawnSocketName,
+			AbilityDefaults->FallbackSpawnBoneName,
+			ResolvedLaunchLocation,
+			ResolvedLaunchMesh,
+			ResolvedLaunchName));
+	TestEqual(
+		TEXT("Gravity Vortex launch resolver keeps HandGrip_R instead of falling back"),
+		ResolvedLaunchName,
+		FName(TEXT("HandGrip_R")));
+	TestTrue(
+		TEXT("Gravity Vortex launch starts exactly at the HandGrip_R world transform"),
+		ResolvedLaunchLocation.Equals(HandGripWorldLocation, 0.1f));
+	TestTrue(
+		TEXT("Gravity Vortex launch resolver uses the visible player mesh"),
+		ResolvedLaunchMesh == BlueprintPlayer->GetMesh());
 
-	if (AimLineMesh)
+	if (AimLineMesh && AbilityDefaults->AimLineClass)
 	{
-		AVortexAimLine* AimLine = World->SpawnActor<AVortexAimLine>();
-		if (TestNotNull(TEXT("Native VortexAimLine actor spawns"), AimLine))
+		AVortexAimLine* AimLine = World->SpawnActor<AVortexAimLine>(
+			AbilityDefaults->AimLineClass);
+		if (TestNotNull(TEXT("Configured BP_VortexAimLine actor spawns"), AimLine))
 		{
-			AimLine->AimLineMesh = AimLineMesh;
 			AimLine->SetTrajectory({
 				FVector(0.0f, 0.0f, 100.0f),
 				FVector(500.0f, 0.0f, 300.0f),
@@ -282,6 +335,19 @@ bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 				TEXT("Three trajectory points create two visible spline-mesh segments"),
 				SplineMeshes.Num(),
 				2);
+			for (USplineMeshComponent* SplineMesh : SplineMeshes)
+			{
+				TestTrue(
+					TEXT("Configured spline-mesh segment is visible"),
+					SplineMesh && SplineMesh->IsVisible() && !SplineMesh->bHiddenInGame);
+				TestTrue(
+					TEXT("Configured spline-mesh segment uses SM_VortexAimLine"),
+					SplineMesh && SplineMesh->GetStaticMesh() == AimLineMesh);
+				TestTrue(
+					TEXT("Configured spline-mesh segment uses M_VortexAimLine"),
+					SplineMesh
+						&& SplineMesh->GetMaterial(0) == AimLine->AimLineMaterial.Get());
+			}
 		}
 	}
 

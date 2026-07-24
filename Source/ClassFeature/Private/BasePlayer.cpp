@@ -484,6 +484,12 @@ void ABasePlayer::PossessedBy(AController* NewController)
 				}
 				if (bEnableGravityVortexSkillInput && GravityVortexAbilityClass)
 				{
+					UE_LOG(LogTemp, Warning,
+						TEXT("[VortexPipeline][Grant] PlayerClass=%s AbilityClass=%s Slot=%s InputID=%d"),
+						*GetPathNameSafe(GetClass()),
+						*GetPathNameSafe(GravityVortexAbilityClass.Get()),
+						*Key_Skill_GravityVortex.ToString(),
+						GetInputIDFromTag(Key_Skill_GravityVortex));
 					GrantAbilityToSlot(Key_Skill_GravityVortex, GravityVortexAbilityClass);
 				}
 				if (bGrantWaterBombAbility && WaterBombAbilityClass)

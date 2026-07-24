@@ -72,4 +72,6 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<USplineMeshComponent>> SegmentMeshes;
+
+	bool bLoggedConfiguration = false;
 };

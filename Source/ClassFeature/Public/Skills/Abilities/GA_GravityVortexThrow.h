@@ -5,7 +5,9 @@
 #include "GA_GravityVortexThrow.generated.h"
 
 class AGravityVortexProjectile;
+class ABasePlayer;
 class AVortexAimLine;
+class USkeletalMeshComponent;
 
 /** Hold the skill key to aim, press left mouse to throw, or right mouse/release the skill key to cancel. */
 UCLASS(Blueprintable)
@@ -15,6 +17,15 @@ class CLASSFEATURE_API UGA_GravityVortexThrow : public UPlayerSkillGameplayAbili
 
 public:
 	UGA_GravityVortexThrow();
+
+	/** Resolves an authored socket first, then a fallback bone, across all player skeletal meshes. */
+	static bool ResolveSpawnSocket(
+		const ABasePlayer* Player,
+		FName RequestedSocketName,
+		FName FallbackBoneName,
+		FVector& OutWorldLocation,
+		const USkeletalMeshComponent*& OutMesh,
+		FName& OutResolvedName);
 
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
@@ -45,14 +56,14 @@ public:
 	float SpawnVerticalOffset = 70.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Throw")
-	FName SpawnSocketName = NAME_None;
+	FName SpawnSocketName = TEXT("HandGrip_R");
 
 	/** Used only when SpawnSocketName is missing from every skeletal mesh on the player. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Throw")
 	FName FallbackSpawnBoneName = TEXT("hand_r");
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Debug")
-	bool bDrawAimTrajectory = true;
+	bool bDrawAimTrajectory = false;
 
 	/**
 	 * Sends the predicted world-space trajectory to Blueprint while aiming.
@@ -96,6 +107,8 @@ private:
 	void SpawnProjectileOnServer();
 
 	bool bThrowRequested = false;
+	mutable bool bLoggedLaunchResolution = false;
+	bool bLoggedAimLineResolution = false;
 	FTimerHandle TrajectoryTimerHandle;
 
 	UPROPERTY(Transient)

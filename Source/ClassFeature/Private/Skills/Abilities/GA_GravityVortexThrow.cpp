@@ -6,6 +6,7 @@
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "Kismet/GameplayStatics.h"
 #include "Projectiles/GravityVortexProjectile.h"
 #include "Skills/VortexAimLine.h"
@@ -29,8 +30,25 @@ void UGA_GravityVortexThrow::ActivateAbility(
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
+	bLoggedLaunchResolution = false;
+	bLoggedAimLineResolution = false;
+	UE_LOG(LogTemp, Warning,
+		TEXT("[VortexPipeline][Activate] Ability=%s Avatar=%s Local=%s Authority=%s "
+			"Socket=%s Fallback=%s Debug=%s Visual=%s AimLineClass=%s ProjectileClass=%s"),
+		*GetPathNameSafe(GetClass()),
+		*GetPathNameSafe(GetAvatarActorFromActorInfo()),
+		ActorInfo && ActorInfo->IsLocallyControlled() ? TEXT("true") : TEXT("false"),
+		ActorInfo && ActorInfo->IsNetAuthority() ? TEXT("true") : TEXT("false"),
+		*SpawnSocketName.ToString(),
+		*FallbackSpawnBoneName.ToString(),
+		bDrawAimTrajectory ? TEXT("true") : TEXT("false"),
+		bUpdateAimTrajectoryVisual ? TEXT("true") : TEXT("false"),
+		*GetPathNameSafe(AimLineClass.Get()),
+		*GetPathNameSafe(ProjectileClass.Get()));
+
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
+		UE_LOG(LogTemp, Error, TEXT("[VortexPipeline][Activate] CommitAbility failed."));
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
@@ -38,6 +56,9 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	if (!Player || !ProjectileClass)
 	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[VortexPipeline][Activate] Invalid Player=%s or ProjectileClass=%s."),
+			*GetPathNameSafe(Player), *GetPathNameSafe(ProjectileClass.Get()));
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
@@ -75,6 +96,9 @@ void UGA_GravityVortexThrow::ActivateAbility(
 
 	if (Player->IsLocallyControlled() && (bDrawAimTrajectory || bUpdateAimTrajectoryVisual))
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[VortexPipeline][Activate] Starting trajectory timer interval=%.3f."),
+			FMath::Max(0.01f, TrajectoryRefreshInterval));
 		GetWorld()->GetTimerManager().SetTimer(
 			TrajectoryTimerHandle, this, &UGA_GravityVortexThrow::DrawAimTrajectory,
 			FMath::Max(0.01f, TrajectoryRefreshInterval), true, 0.0f);
@@ -190,7 +214,18 @@ void UGA_GravityVortexThrow::DrawAimTrajectory()
 		{
 			WorldPoints.Add(Point.Location);
 		}
-		if (AimLineClass && !IsValid(AimLineActor))
+		if (!AimLineClass)
+		{
+			if (!bLoggedAimLineResolution)
+			{
+				UE_LOG(LogTemp, Error,
+					TEXT("[VortexPipeline][AimLine] AimLineClass is None. "
+						"The active ability class is %s."),
+					*GetPathNameSafe(GetClass()));
+				bLoggedAimLineResolution = true;
+			}
+		}
+		else if (!IsValid(AimLineActor))
 		{
 			FActorSpawnParameters SpawnParameters;
 			SpawnParameters.Owner = Player;
@@ -202,10 +237,24 @@ void UGA_GravityVortexThrow::DrawAimTrajectory()
 				Player->GetActorLocation(),
 				FRotator::ZeroRotator,
 				SpawnParameters);
+			UE_LOG(LogTemp, Warning,
+				TEXT("[VortexPipeline][AimLine] Spawn class=%s result=%s mesh=%s material=%s."),
+				*GetPathNameSafe(AimLineClass.Get()),
+				*GetPathNameSafe(AimLineActor),
+				AimLineActor ? *GetPathNameSafe(AimLineActor->AimLineMesh) : TEXT("None"),
+				AimLineActor ? *GetPathNameSafe(AimLineActor->AimLineMaterial) : TEXT("None"));
+			bLoggedAimLineResolution = true;
 		}
 		if (AimLineActor)
 		{
 			AimLineActor->SetTrajectory(WorldPoints);
+		}
+		else if (!bLoggedAimLineResolution)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[VortexPipeline][AimLine] Actor was not created for class=%s."),
+				*GetPathNameSafe(AimLineClass.Get()));
+			bLoggedAimLineResolution = true;
 		}
 		K2_OnAimTrajectoryUpdated(WorldPoints);
 	}
@@ -226,41 +275,122 @@ bool UGA_GravityVortexThrow::GetLaunchData(FVector& OutSpawnLocation, FVector& O
 	OutSpawnLocation = Player->GetActorLocation()
 		+ Player->GetActorForwardVector() * SpawnForwardOffset
 		+ FVector::UpVector * SpawnVerticalOffset;
-	if (!SpawnSocketName.IsNone())
+	const FVector OffsetFallbackLocation = OutSpawnLocation;
+	const bool bShouldLogResolution = !bLoggedLaunchResolution;
+	bLoggedLaunchResolution = true;
+
+	TInlineComponentArray<USkeletalMeshComponent*> SkeletalMeshes(Player);
+	if (bShouldLogResolution)
 	{
-		const USkeletalMeshComponent* SocketMesh = nullptr;
-		FName ResolvedSocketName = SpawnSocketName;
-		auto FindSocketMesh = [Player](FName SocketName) -> const USkeletalMeshComponent*
+		UE_LOG(LogTemp, Warning,
+			TEXT("[VortexPipeline][Launch] Player=%s ActorLocation=%s RequestedSocket=%s "
+				"SkeletalMeshComponents=%d"),
+			*GetPathNameSafe(Player),
+			*Player->GetActorLocation().ToCompactString(),
+			*SpawnSocketName.ToString(),
+			SkeletalMeshes.Num());
+		for (const USkeletalMeshComponent* Candidate : SkeletalMeshes)
 		{
-			if (Player->GetMesh() && Player->GetMesh()->DoesSocketExist(SocketName))
-			{
-				return Player->GetMesh();
-			}
-			TInlineComponentArray<USkeletalMeshComponent*> SkeletalMeshes(Player);
-			for (const USkeletalMeshComponent* Candidate : SkeletalMeshes)
-			{
-				if (IsValid(Candidate) && Candidate->DoesSocketExist(SocketName))
-				{
-					return Candidate;
-				}
-			}
-			return nullptr;
-		};
-
-		SocketMesh = FindSocketMesh(ResolvedSocketName);
-		if (!SocketMesh && !FallbackSpawnBoneName.IsNone())
-		{
-			ResolvedSocketName = FallbackSpawnBoneName;
-			SocketMesh = FindSocketMesh(ResolvedSocketName);
-		}
-
-		if (SocketMesh)
-		{
-			OutSpawnLocation = SocketMesh->GetSocketTransform(ResolvedSocketName, RTS_World).GetLocation();
+			UE_LOG(LogTemp, Warning,
+				TEXT("[VortexPipeline][Launch] MeshComponent=%s Asset=%s Registered=%s "
+					"Visible=%s RequestedExists=%s FallbackExists=%s"),
+				*GetPathNameSafe(Candidate),
+				Candidate ? *GetPathNameSafe(Candidate->GetSkeletalMeshAsset()) : TEXT("None"),
+				Candidate && Candidate->IsRegistered() ? TEXT("true") : TEXT("false"),
+				Candidate && Candidate->IsVisible() ? TEXT("true") : TEXT("false"),
+				Candidate && Candidate->DoesSocketExist(SpawnSocketName) ? TEXT("true") : TEXT("false"),
+				Candidate && Candidate->DoesSocketExist(FallbackSpawnBoneName) ? TEXT("true") : TEXT("false"));
 		}
 	}
 
+	const USkeletalMeshComponent* ResolvedMesh = nullptr;
+	FName ResolvedSocketName = NAME_None;
+	if (!SpawnSocketName.IsNone())
+	{
+		ResolveSpawnSocket(
+			Player,
+			SpawnSocketName,
+			FallbackSpawnBoneName,
+			OutSpawnLocation,
+			ResolvedMesh,
+			ResolvedSocketName);
+	}
+
 	OutLaunchVelocity = AimDirection * FMath::Max(1.0f, ThrowSpeed);
+	if (bShouldLogResolution)
+	{
+		if (ResolvedMesh)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[VortexPipeline][Launch] RESOLVED Mesh=%s Socket=%s Location=%s "
+					"DistanceFromActor=%.1f Velocity=%s"),
+				*GetPathNameSafe(ResolvedMesh),
+				*ResolvedSocketName.ToString(),
+				*OutSpawnLocation.ToCompactString(),
+				FVector::Distance(Player->GetActorLocation(), OutSpawnLocation),
+				*OutLaunchVelocity.ToCompactString());
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[VortexPipeline][Launch] SOCKET NOT FOUND. Using actor offset=%s "
+					"(ForwardOffset=%.1f VerticalOffset=%.1f)."),
+				*OffsetFallbackLocation.ToCompactString(),
+				SpawnForwardOffset,
+				SpawnVerticalOffset);
+		}
+	}
+	return true;
+}
+
+bool UGA_GravityVortexThrow::ResolveSpawnSocket(
+	const ABasePlayer* Player,
+	FName RequestedSocketName,
+	FName FallbackBoneName,
+	FVector& OutWorldLocation,
+	const USkeletalMeshComponent*& OutMesh,
+	FName& OutResolvedName)
+{
+	OutMesh = nullptr;
+	OutResolvedName = NAME_None;
+	if (!IsValid(Player) || RequestedSocketName.IsNone())
+	{
+		return false;
+	}
+
+	TInlineComponentArray<USkeletalMeshComponent*> SkeletalMeshes(Player);
+	auto FindSocketMesh =
+		[Player, &SkeletalMeshes](FName SocketName) -> const USkeletalMeshComponent*
+	{
+		if (Player->GetMesh() && Player->GetMesh()->DoesSocketExist(SocketName))
+		{
+			return Player->GetMesh();
+		}
+		for (const USkeletalMeshComponent* Candidate : SkeletalMeshes)
+		{
+			if (IsValid(Candidate) && Candidate->DoesSocketExist(SocketName))
+			{
+				return Candidate;
+			}
+		}
+		return nullptr;
+	};
+
+	OutResolvedName = RequestedSocketName;
+	OutMesh = FindSocketMesh(OutResolvedName);
+	if (!OutMesh && !FallbackBoneName.IsNone())
+	{
+		OutResolvedName = FallbackBoneName;
+		OutMesh = FindSocketMesh(OutResolvedName);
+	}
+	if (!OutMesh)
+	{
+		OutResolvedName = NAME_None;
+		return false;
+	}
+
+	OutWorldLocation =
+		OutMesh->GetSocketTransform(OutResolvedName, RTS_World).GetLocation();
 	return true;
 }
 
@@ -271,6 +401,10 @@ void UGA_GravityVortexThrow::SpawnProjectileOnServer()
 	FVector LaunchVelocity;
 	if (!Player || !Player->HasAuthority() || !GetLaunchData(SpawnLocation, LaunchVelocity))
 	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[VortexPipeline][Projectile] Server spawn preconditions failed Player=%s Authority=%s."),
+			*GetPathNameSafe(Player),
+			Player && Player->HasAuthority() ? TEXT("true") : TEXT("false"));
 		return;
 	}
 
@@ -279,6 +413,12 @@ void UGA_GravityVortexThrow::SpawnProjectileOnServer()
 		ProjectileClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 	if (Projectile)
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[VortexPipeline][Projectile] Spawned=%s Class=%s Location=%s Velocity=%s."),
+			*GetPathNameSafe(Projectile),
+			*GetPathNameSafe(ProjectileClass.Get()),
+			*SpawnLocation.ToCompactString(),
+			*LaunchVelocity.ToCompactString());
 		Projectile->FinishSpawning(SpawnTransform);
 		Projectile->LaunchProjectile(LaunchVelocity);
 	}

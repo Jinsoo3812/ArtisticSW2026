@@ -25,6 +25,18 @@ void AVortexAimLine::SetTrajectory(const TArray<FVector>& WorldPoints)
 {
 	if (!TrajectorySpline || !AimLineMesh || WorldPoints.Num() < 2)
 	{
+		if (!bLoggedConfiguration)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[VortexPipeline][AimLineActor] Cannot render Actor=%s Spline=%s "
+					"Mesh=%s Material=%s PointCount=%d."),
+				*GetPathNameSafe(this),
+				*GetPathNameSafe(TrajectorySpline),
+				*GetPathNameSafe(AimLineMesh),
+				*GetPathNameSafe(AimLineMaterial),
+				WorldPoints.Num());
+			bLoggedConfiguration = true;
+		}
 		ClearTrajectory();
 		return;
 	}
@@ -101,6 +113,23 @@ void AVortexAimLine::SetTrajectory(const TArray<FVector>& WorldPoints)
 			SegmentMeshes[SegmentIndex]->SetVisibility(false);
 			SegmentMeshes[SegmentIndex]->SetHiddenInGame(true);
 		}
+	}
+
+	if (!bLoggedConfiguration)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[VortexPipeline][AimLineActor] READY Actor=%s Mesh=%s Material=%s "
+				"Points=%d Segments=%d Axis=%d Width=%.2f First=%s Last=%s."),
+			*GetPathNameSafe(this),
+			*GetPathNameSafe(AimLineMesh),
+			*GetPathNameSafe(AimLineMaterial),
+			PointCount,
+			SegmentCount,
+			static_cast<int32>(ResolvedAxis),
+			WidthScale,
+			*WorldPoints[0].ToCompactString(),
+			*WorldPoints[PointCount - 1].ToCompactString());
+		bLoggedConfiguration = true;
 	}
 }
 
