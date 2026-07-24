@@ -12,12 +12,20 @@
 #include "Skills/Abilities/GA_GravityVortexThrow.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FGravityVortexQuickSlotToggleTest,
-	"ArtisticSW.GravityVortex.QuickSlotToggle",
+	FGravityVortexHoldInputTest,
+	"ArtisticSW.GravityVortex.HoldInputLifecycle",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FGravityVortexQuickSlotToggleTest::RunTest(const FString& Parameters)
+bool FGravityVortexHoldInputTest::RunTest(const FString& Parameters)
 {
+	TestTrue(
+		TEXT("Skill-bearing DefaultIMC priority is raised above the legacy ItemIMC"),
+		ABasePlayer::ResolveDefaultMappingPriority(1, 1, true) > 1);
+	TestEqual(
+		TEXT("DefaultIMC priority is unchanged when no skill input is assigned"),
+		ABasePlayer::ResolveDefaultMappingPriority(1, 1, false),
+		1);
+
 	const UGA_GravityVortexThrow* AbilityDefaults = GetDefault<UGA_GravityVortexThrow>();
 	TestEqual(
 		TEXT("Gravity Vortex uses one persistent ability instance per player"),
@@ -65,12 +73,22 @@ bool FGravityVortexQuickSlotToggleTest::RunTest(const FString& Parameters)
 
 	Player->OnGravityVortexSkillPressed();
 	TestTrue(
-		TEXT("One press enters Gravity Vortex aiming mode"),
+		TEXT("Pressing and holding the skill key enters Gravity Vortex aiming mode"),
+		ASC->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex));
+
+	Player->OnMouseInputPressed(Key_Default_Mouse_RightClick);
+	TestFalse(
+		TEXT("Right click cancels Gravity Vortex aiming mode"),
 		ASC->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex));
 
 	Player->OnGravityVortexSkillPressed();
+	TestTrue(
+		TEXT("The skill can enter aiming mode again"),
+		ASC->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex));
+
+	Player->OnGravityVortexSkillReleased();
 	TestFalse(
-		TEXT("A second press cancels Gravity Vortex aiming mode"),
+		TEXT("Releasing the held skill key cancels Gravity Vortex aiming mode"),
 		ASC->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex));
 
 	CleanupWorld();

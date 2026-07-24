@@ -284,6 +284,13 @@ protected:
 	// 태그를 넣으면 고유 Hash 기반 ID를 반환하는 헬퍼
 	int32 GetInputIDFromTag(const FGameplayTag& Tag) const;
 
+public:
+	/** Keeps the on-foot skill mapping above the legacy item-slot context. */
+	static int32 ResolveDefaultMappingPriority(
+		int32 ConfiguredDefaultPriority,
+		int32 ConfiguredItemPriority,
+		bool bHasSkillInput);
+
 protected:
 	// 서버에 의해 로컬에서 Controller가 조종하는 Pawn이 지정될 때 호출되는 함수.
 	virtual void PawnClientRestart() override;
@@ -388,6 +395,7 @@ public:
 	void OnAbilityInputPressed(FGameplayTag InputTag);
 	void OnAbilityInputReleased(FGameplayTag InputTag);
 	void OnGravityVortexSkillPressed();
+	void OnGravityVortexSkillReleased();
 
 	// 마우스 입력에 대한 활용을 위해 따로 OnAbilityInput과 분리
 	void OnMouseInputPressed(FGameplayTag InputTag);

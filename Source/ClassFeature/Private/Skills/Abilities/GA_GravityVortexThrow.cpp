@@ -1,6 +1,7 @@
 #include "Skills/Abilities/GA_GravityVortexThrow.h"
 
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
+#include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
@@ -25,10 +26,18 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
+	UE_LOG(LogTemp, Warning,
+		TEXT("[GravityVortex][GA] ActivateAbility entered. Avatar=%s Authority=%s LocallyControlled=%s Handle=%s"),
+		*GetNameSafe(ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr),
+		ActorInfo && ActorInfo->AvatarActor.IsValid() && ActorInfo->AvatarActor->HasAuthority()
+			? TEXT("true") : TEXT("false"),
+		ActorInfo && ActorInfo->IsLocallyControlled() ? TEXT("true") : TEXT("false"),
+		*Handle.ToString());
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
+		UE_LOG(LogTemp, Error, TEXT("[GravityVortex][GA] CommitAbility failed."));
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
@@ -36,6 +45,10 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	if (!Player || !ProjectileClass)
 	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[GravityVortex][GA] Invalid activation data. Player=%s ProjectileClass=%s"),
+			*GetNameSafe(Player),
+			*GetPathNameSafe(ProjectileClass.Get()));
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
@@ -54,6 +67,24 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	{
 		LeftClickTask->EventReceived.AddDynamic(this, &UGA_GravityVortexThrow::OnLeftClickPressed);
 		LeftClickTask->ReadyForActivation();
+		UE_LOG(LogTemp, Warning, TEXT("[GravityVortex][GA] Waiting for left click."));
+	}
+
+	UAbilityTask_WaitGameplayEvent* RightClickTask =
+		UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Key_Default_Mouse_RightClick, nullptr, true, true);
+	if (RightClickTask)
+	{
+		RightClickTask->EventReceived.AddDynamic(this, &UGA_GravityVortexThrow::OnRightClickPressed);
+		RightClickTask->ReadyForActivation();
+		UE_LOG(LogTemp, Warning, TEXT("[GravityVortex][GA] Waiting for right click cancel."));
+	}
+
+	UAbilityTask_WaitInputRelease* InputReleaseTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this, true);
+	if (InputReleaseTask)
+	{
+		InputReleaseTask->OnRelease.AddDynamic(this, &UGA_GravityVortexThrow::OnActivationInputReleased);
+		InputReleaseTask->ReadyForActivation();
+		UE_LOG(LogTemp, Warning, TEXT("[GravityVortex][GA] Waiting for skill-key release cancel."));
 	}
 
 	if (Player->IsLocallyControlled() && bDrawAimTrajectory)
@@ -61,6 +92,16 @@ void UGA_GravityVortexThrow::ActivateAbility(
 		GetWorld()->GetTimerManager().SetTimer(
 			TrajectoryTimerHandle, this, &UGA_GravityVortexThrow::DrawAimTrajectory,
 			FMath::Max(0.01f, TrajectoryRefreshInterval), true, 0.0f);
+		UE_LOG(LogTemp, Warning,
+			TEXT("[GravityVortex][GA] Aim trajectory timer started. Interval=%.3f"),
+			FMath::Max(0.01f, TrajectoryRefreshInterval));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[GravityVortex][GA] Aim trajectory not drawn. Local=%s DrawEnabled=%s"),
+			Player->IsLocallyControlled() ? TEXT("true") : TEXT("false"),
+			bDrawAimTrajectory ? TEXT("true") : TEXT("false"));
 	}
 }
 
@@ -71,6 +112,11 @@ void UGA_GravityVortexThrow::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
+	UE_LOG(LogTemp, Warning,
+		TEXT("[GravityVortex][GA] EndAbility. Avatar=%s Cancelled=%s ThrowRequested=%s"),
+		*GetNameSafe(GetAvatarActorFromActorInfo()),
+		bWasCancelled ? TEXT("true") : TEXT("false"),
+		bThrowRequested ? TEXT("true") : TEXT("false"));
 	if (GetWorld())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(TrajectoryTimerHandle);
@@ -87,6 +133,12 @@ void UGA_GravityVortexThrow::EndAbility(
 
 void UGA_GravityVortexThrow::OnLeftClickPressed(FGameplayEventData Payload)
 {
+	UE_LOG(LogTemp, Warning,
+		TEXT("[GravityVortex][GA] Left click received. Active=%s ThrowRequested=%s Authority=%s"),
+		IsActive() ? TEXT("true") : TEXT("false"),
+		bThrowRequested ? TEXT("true") : TEXT("false"),
+		GetAvatarActorFromActorInfo() && GetAvatarActorFromActorInfo()->HasAuthority()
+			? TEXT("true") : TEXT("false"));
 	if (!IsActive() || bThrowRequested)
 	{
 		return;
@@ -108,12 +160,37 @@ void UGA_GravityVortexThrow::OnLeftClickPressed(FGameplayEventData Payload)
 		{
 			if (!TryConsumeSkillUse())
 			{
+				UE_LOG(LogTemp, Error, TEXT("[GravityVortex][GA] Material consumption failed on server."));
 				EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 				return;
 			}
 			SpawnProjectileOnServer();
 			EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 		}
+	}
+}
+
+void UGA_GravityVortexThrow::OnRightClickPressed(FGameplayEventData Payload)
+{
+	UE_LOG(LogTemp, Warning,
+		TEXT("[GravityVortex][GA] Right click cancel received. Active=%s"),
+		IsActive() ? TEXT("true") : TEXT("false"));
+	if (IsActive() && !bThrowRequested)
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+	}
+}
+
+void UGA_GravityVortexThrow::OnActivationInputReleased(float TimeHeld)
+{
+	UE_LOG(LogTemp, Warning,
+		TEXT("[GravityVortex][GA] Skill key released. Active=%s TimeHeld=%.3f ThrowRequested=%s"),
+		IsActive() ? TEXT("true") : TEXT("false"),
+		TimeHeld,
+		bThrowRequested ? TEXT("true") : TEXT("false"));
+	if (IsActive() && !bThrowRequested)
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 	}
 }
 
