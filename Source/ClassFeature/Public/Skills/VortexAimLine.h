@@ -60,11 +60,23 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Vortex Aim Line", meta = (ClampMin = "0.001"))
 	float WidthScale = 1.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Vortex Aim Line")
-	bool bSmoothTrajectory = true;
+	/**
+	 * CurveClamped can fold the first short segment when the hand and aim move.
+	 * Disabled by default for a stable, socket-exact trajectory.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Vortex Aim Line|Stability")
+	bool bSmoothTrajectory = false;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Vortex Aim Line", meta = (ClampMin = "1", ClampMax = "128"))
-	int32 MaxSegments = 64;
+	/**
+	 * Maximum rendered components. The complete source trajectory is uniformly
+	 * resampled to this count; reducing it no longer shortens the displayed arc.
+	 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "Vortex Aim Line|Stability",
+		meta = (ClampMin = "2", ClampMax = "64"))
+	int32 MaxSegments = 20;
 
 private:
 	USplineMeshComponent* GetOrCreateSegment(int32 SegmentIndex);

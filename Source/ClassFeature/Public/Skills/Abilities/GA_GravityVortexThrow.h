@@ -80,8 +80,32 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Visual")
 	TSubclassOf<AVortexAimLine> AimLineClass;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Debug", meta = (ClampMin = "0.01", Units = "s"))
-	float TrajectoryRefreshInterval = 0.05f;
+	/** Visual refresh rate. 0.0167 is approximately 60 Hz. */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "Gravity Vortex|Aim Line Stability",
+		meta = (ClampMin = "0.0083", ClampMax = "0.1", Units = "s"))
+	float TrajectoryRefreshInterval = 0.0167f;
+
+	/** Duration covered by the predicted trajectory. */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "Gravity Vortex|Aim Line Stability",
+		meta = (ClampMin = "0.1", ClampMax = "10.0", Units = "s"))
+	float TrajectoryMaxSimulationTime = 3.0f;
+
+	/**
+	 * Physics samples per second. The visual actor resamples these points to its
+	 * Max Segments value, so this does not directly control component count.
+	 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "Gravity Vortex|Aim Line Stability",
+		meta = (ClampMin = "2.0", ClampMax = "30.0"))
+	float TrajectorySimulationFrequency = 10.0f;
 
 protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Gravity Vortex|Visual", meta = (DisplayName = "On Aim Trajectory Updated"))

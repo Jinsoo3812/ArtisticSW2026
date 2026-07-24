@@ -7,6 +7,7 @@
 #include "BasePlayer.h"
 #include "BasePlayerState.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/SplineComponent.h"
 #include "Components/SplineMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/SkeletalMeshSocket.h"
@@ -177,6 +178,12 @@ bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("GA_VortexField real trajectory visualization is enabled"),
 		AbilityDefaults->bUpdateAimTrajectoryVisual);
+	TestTrue(
+		TEXT("GA_VortexField aim line refreshes at least at approximately 60 Hz"),
+		AbilityDefaults->TrajectoryRefreshInterval <= 0.017f);
+	TestTrue(
+		TEXT("GA_VortexField prediction sampling is capped for visual stability"),
+		AbilityDefaults->TrajectorySimulationFrequency <= 10.0f);
 	TestNotNull(TEXT("GA_VortexField has a projectile class"), AbilityDefaults->ProjectileClass.Get());
 	if (TestNotNull(TEXT("GA_VortexField has an aim-line class"), AbilityDefaults->AimLineClass.Get()))
 	{
@@ -190,6 +197,13 @@ bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 			TestNotNull(
 				TEXT("Configured aim-line has M_VortexAimLine assigned"),
 				AimLineDefaults->AimLineMaterial.Get());
+			TestFalse(
+				TEXT("Configured aim-line disables unstable CurveClamped tangents"),
+				AimLineDefaults->bSmoothTrajectory);
+			TestEqual(
+				TEXT("Configured aim-line caps rendered spline components"),
+				AimLineDefaults->MaxSegments,
+				20);
 		}
 	}
 
@@ -348,6 +362,32 @@ bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 					SplineMesh
 						&& SplineMesh->GetMaterial(0) == AimLine->AimLineMaterial.Get());
 			}
+
+			TArray<FVector> DenseTrajectory;
+			for (int32 PointIndex = 0; PointIndex < 62; ++PointIndex)
+			{
+				const float Time = static_cast<float>(PointIndex) / 20.0f;
+				DenseTrajectory.Add(FVector(
+					Time * 1000.0f,
+					0.0f,
+					100.0f + Time * 600.0f - 490.0f * Time * Time));
+			}
+			AimLine->SetTrajectory(DenseTrajectory);
+			SplineMeshes.Reset();
+			AimLine->GetComponents<USplineMeshComponent>(SplineMeshes);
+			TestEqual(
+				TEXT("Dense predicted trajectory is uniformly capped to twenty components"),
+				SplineMeshes.Num(),
+				20);
+			TestTrue(
+				TEXT("Resampling preserves the exact socket/start point"),
+				AimLine->TrajectorySpline->GetLocationAtSplinePoint(
+					0, ESplineCoordinateSpace::World).Equals(DenseTrajectory[0], 0.1f));
+			TestTrue(
+				TEXT("Resampling preserves the complete trajectory endpoint"),
+				AimLine->TrajectorySpline->GetLocationAtSplinePoint(
+					AimLine->TrajectorySpline->GetNumberOfSplinePoints() - 1,
+					ESplineCoordinateSpace::World).Equals(DenseTrajectory.Last(), 0.1f));
 		}
 	}
 

@@ -41,13 +41,28 @@ void AVortexAimLine::SetTrajectory(const TArray<FVector>& WorldPoints)
 		return;
 	}
 
-	const int32 PointCount = FMath::Min(WorldPoints.Num(), FMath::Max(2, MaxSegments + 1));
+	const int32 SourcePointCount = WorldPoints.Num();
+	const int32 PointCount =
+		FMath::Min(SourcePointCount, FMath::Max(2, MaxSegments + 1));
 	TArray<FVector> LocalPoints;
 	LocalPoints.Reserve(PointCount);
 	const FTransform ActorTransform = GetActorTransform();
 	for (int32 PointIndex = 0; PointIndex < PointCount; ++PointIndex)
 	{
-		LocalPoints.Add(ActorTransform.InverseTransformPosition(WorldPoints[PointIndex]));
+		// Preserve the complete arc when limiting component count. In particular,
+		// point 0 remains exactly the socket position and the last point remains
+		// the end of the prediction.
+		const float SourcePosition = PointCount > 1
+			? static_cast<float>(PointIndex)
+				* static_cast<float>(SourcePointCount - 1)
+				/ static_cast<float>(PointCount - 1)
+			: 0.0f;
+		const int32 LowerIndex = FMath::FloorToInt(SourcePosition);
+		const int32 UpperIndex = FMath::Min(LowerIndex + 1, SourcePointCount - 1);
+		const float Alpha = SourcePosition - static_cast<float>(LowerIndex);
+		const FVector ResampledWorldPoint =
+			FMath::Lerp(WorldPoints[LowerIndex], WorldPoints[UpperIndex], Alpha);
+		LocalPoints.Add(ActorTransform.InverseTransformPosition(ResampledWorldPoint));
 	}
 
 	TrajectorySpline->SetSplinePoints(LocalPoints, ESplineCoordinateSpace::Local, false);

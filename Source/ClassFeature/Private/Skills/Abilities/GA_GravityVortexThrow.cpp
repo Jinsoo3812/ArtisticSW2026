@@ -198,8 +198,8 @@ void UGA_GravityVortexThrow::DrawAimTrajectory()
 	Params.StartLocation = SpawnLocation;
 	Params.LaunchVelocity = LaunchVelocity;
 	Params.ProjectileRadius = 5.0f;
-	Params.MaxSimTime = 3.0f;
-	Params.SimFrequency = 20.0f;
+	Params.MaxSimTime = FMath::Max(0.1f, TrajectoryMaxSimulationTime);
+	Params.SimFrequency = FMath::Clamp(TrajectorySimulationFrequency, 2.0f, 30.0f);
 	Params.bTraceWithCollision = false;
 	Params.DrawDebugType = bDrawAimTrajectory ? EDrawDebugTrace::ForDuration : EDrawDebugTrace::None;
 	Params.DrawDebugTime = FMath::Max(0.01f, TrajectoryRefreshInterval);
