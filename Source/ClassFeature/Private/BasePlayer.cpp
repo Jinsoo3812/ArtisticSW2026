@@ -40,6 +40,7 @@
 #include "Ship.h"
 #include "Cannon.h"
 #include "SwimmingComponent.h"
+#include "Skills/PlayerSkillComponent.h"
 #include "Attacker/GA_GravityVortexThrow.h"
 #include "Attacker/GA_WaterBombCannonMode.h"
 #include "Attacker/GA_Bombardment.h"
@@ -149,6 +150,41 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	DOREPLIFETIME(ABasePlayer, LocomotionStateSnapshot);
 }
 
+bool ABasePlayer::CanUseSkill(const FGameplayTag& SkillTag) const
+{
+	if (bBypassSkillRequirementsForTesting)
+	{
+		return GetPlayerSkillComponent()
+			&& GetPlayerSkillComponent()->FindSkillDefinition(SkillTag) != nullptr;
+	}
+
+	const UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent();
+	return SkillComponent && SkillComponent->CanUseSkillWithInventory(SkillTag, InventoryComponent);
+}
+
+bool ABasePlayer::TryConsumeSkillUse(const FGameplayTag& SkillTag)
+{
+	UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent();
+	if (bBypassSkillRequirementsForTesting)
+	{
+		return HasAuthority() && SkillComponent && SkillComponent->FindSkillDefinition(SkillTag) != nullptr;
+	}
+
+	return HasAuthority()
+		&& SkillComponent
+		&& SkillComponent->TryConsumeSkillUseWithInventory(SkillTag, InventoryComponent);
+}
+
+UPlayerSkillComponent* ABasePlayer::GetPlayerSkillComponent() const
+{
+	const ABasePlayerState* PS = GetPlayerState<ABasePlayerState>();
+	if (PS && PS->GetPlayerSkillComponent())
+	{
+		return PS->GetPlayerSkillComponent();
+	}
+	return CachedPlayerSkillComponent.Get();
+}
+
 void ABasePlayer::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
@@ -158,6 +194,12 @@ void ABasePlayer::BeginPlay()
 {
 	Super::BeginPlay();
 	InitializeSwimmingAnimLayers();
+
+	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
+	{
+		CachedPlayerSkillComponent = SkillComponent;
+		SkillComponent->RegisterInventorySource(InventoryComponent);
+	}
 
 	if (HealthComponent)
 	{
@@ -382,6 +424,12 @@ void ABasePlayer::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 
+	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
+	{
+		CachedPlayerSkillComponent = SkillComponent;
+		SkillComponent->RegisterInventorySource(InventoryComponent);
+	}
+
 	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Start. NewController: %s"), NewController ? *NewController->GetName() : TEXT("None"));
 
 	// 서버 측 ASC 초기화 (InitAbilityActorInfo)
@@ -469,6 +517,12 @@ void ABasePlayer::OnRep_PlayerState()
 	ABasePlayerState* PS = GetPlayerState<ABasePlayerState>();
 	if (PS)
 	{
+		if (UPlayerSkillComponent* SkillComponent = PS->GetPlayerSkillComponent())
+		{
+			CachedPlayerSkillComponent = SkillComponent;
+			SkillComponent->RegisterInventorySource(InventoryComponent);
+		}
+
 		// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] PlayerState found: %s"), *PS->GetName());
 		// 클라이언트에서도 Owner와 Avatar를 연결해줌
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
@@ -808,6 +862,11 @@ bool ABasePlayer::ConsumeInventoryItem(FGameplayTag ItemTag)
 
 void ABasePlayer::HandleInventoryContentsChanged()
 {
+	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
+	{
+		SkillComponent->NotifyInventoryChanged();
+	}
+
 	if (!HasAuthority() || !InventoryComponent)
 	{
 		return;

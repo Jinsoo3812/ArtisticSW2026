@@ -19,6 +19,7 @@
 #include "Cannonball.h"
 #include "WaterBombCannonball.h"
 #include "BaseGameplayTags.h"
+#include "Skills/SkillUseProvider.h"
 #include "InputCoreTypes.h"
 #include "AbilitySystemInterface.h"
 #include "Abilities/GameplayAbility.h"
@@ -290,6 +291,18 @@ void ACannon::ToggleWaterBombAbility()
 bool ACannon::FireCannon()
 {
 	if (!bCanFire) return false;
+	if (bWaterBombMode)
+	{
+		const ISkillUseProvider* SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
+		if (!SkillProvider || !SkillProvider->CanUseSkill(GameplayAbility_Skill_WaterBomb))
+		{
+			if (HasAuthority())
+			{
+				CancelWaterBombAbilityAuthoritative();
+			}
+			return false;
+		}
+	}
 	if (IsOwningShipCannonDisabled())
 	{
 		if (IsPlayerControlled() && !bLoggedWaterBombFireBlock)
@@ -402,6 +415,15 @@ void ACannon::ForceExit()
 void ACannon::ServerFire_Implementation()
 {
 	if (!bCanFire) return;
+	if (bWaterBombMode)
+	{
+		const ISkillUseProvider* SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
+		if (!SkillProvider || !SkillProvider->CanUseSkill(GameplayAbility_Skill_WaterBomb))
+		{
+			CancelWaterBombAbilityAuthoritative();
+			return;
+		}
+	}
 	if (IsOwningShipCannonDisabled())
 	{
 		if (IsPlayerControlled() && !bLoggedWaterBombFireBlock)
@@ -453,6 +475,20 @@ void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, f
 		return;
 	}
 
+	ISkillUseProvider* SkillProvider = nullptr;
+	if (bWaterBombMode)
+	{
+		SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
+		if (!SkillProvider || !SkillProvider->TryConsumeSkillUse(GameplayAbility_Skill_WaterBomb))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[WaterBomb] Fire rejected because the skill is locked or has no usage material. Player=%s"),
+				*GetNameSafe(RidingPlayer));
+			CancelWaterBombAbilityAuthoritative();
+			return;
+		}
+	}
+
 	AShip* OwningShip = GetOwningShip();
 
 	FActorSpawnParameters SpawnParams;
@@ -482,6 +518,11 @@ void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, f
 				*GetNameSafe(OwningShip),
 				*SpawnedProjectile->GetName(),
 				*GetNameSafe(SelectedProjectileClass.Get()));
+
+			if (SkillProvider && !SkillProvider->CanUseSkill(GameplayAbility_Skill_WaterBomb))
+			{
+				CancelWaterBombAbilityAuthoritative();
+			}
 		}
 	}
 }

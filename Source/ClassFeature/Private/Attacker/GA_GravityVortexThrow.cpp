@@ -12,6 +12,7 @@
 UGA_GravityVortexThrow::UGA_GravityVortexThrow()
 {
 	ProjectileClass = AGravityVortexProjectile::StaticClass();
+	SkillTag = GameplayAbility_Skill_GravityVortex;
 	FGameplayTagContainer AssetTags;
 	AssetTags.AddTag(GameplayAbility_Skill_GravityVortex);
 	SetAssetTags(AssetTags);
@@ -111,6 +112,11 @@ void UGA_GravityVortexThrow::OnLeftClickPressed(FGameplayEventData Payload)
 	{
 		if (Player->HasAuthority())
 		{
+			if (!TryConsumeSkillUse())
+			{
+				EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+				return;
+			}
 			SpawnProjectileOnServer();
 			EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 		}

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "BaseGameplayAbility.h"
+#include "Skills/PlayerSkillGameplayAbility.h"
 #include "GA_Bombardment.generated.h"
 
 class ABombardment;
@@ -9,7 +9,7 @@ class AShip;
 
 /** Persistent server ability used while the player selects a Bombardment target from a controlled ship. */
 UCLASS(Blueprintable)
-class CLASSFEATURE_API UGA_Bombardment : public UBaseGameplayAbility
+class CLASSFEATURE_API UGA_Bombardment : public UPlayerSkillGameplayAbility
 {
 	GENERATED_BODY()
 

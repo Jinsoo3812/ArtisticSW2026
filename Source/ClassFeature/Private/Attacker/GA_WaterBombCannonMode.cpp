@@ -11,6 +11,7 @@ UGA_WaterBombCannonMode::UGA_WaterBombCannonMode()
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
 	ProjectileClass = AWaterBombCannonball::StaticClass();
+	SkillTag = GameplayAbility_Skill_WaterBomb;
 
 	FGameplayTagContainer AssetTags;
 	AssetTags.AddTag(GameplayAbility_Skill_WaterBomb);

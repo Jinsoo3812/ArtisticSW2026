@@ -11,7 +11,9 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "Inventory/InventoryComponent.h"
 #include "Ship.h"
+#include "Skills/PlayerSkillComponent.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FBombardmentAbilityConfigurationTest,
@@ -83,6 +85,14 @@ bool FBombardmentShipModeIntegrationTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Ship tracks the riding player"), Ship->GetRidingPlayer() == Player);
 
 	FGameplayTagContainer AbilityTags(GameplayAbility_Skill_Bombardment);
+	UPlayerSkillComponent* SkillComponent = PlayerState->GetPlayerSkillComponent();
+	TestNotNull(TEXT("Player skill component exists"), SkillComponent);
+	TestFalse(TEXT("Locked Bombardment cannot activate"),
+		ASC->TryActivateAbilitiesByTag(AbilityTags, true));
+	TestTrue(TEXT("Bombardment is unlocked for the targeting test"),
+		SkillComponent && SkillComponent->UnlockSkill(GameplayAbility_Skill_Bombardment));
+	TestEqual(TEXT("One Bombardment material is added"),
+		Player->GetInventoryComponent()->AddItem(Item_Id_Material_SkillMaterial_LegendarySkill, 1), 1);
 	TestTrue(TEXT("Bombardment GA activates by ability tag"),
 		ASC->TryActivateAbilitiesByTag(AbilityTags, true));
 	TestTrue(TEXT("GA activation enters ship targeting mode"), Ship->IsBombardmentTargeting());

@@ -18,6 +18,7 @@
 #include "BaseAttributeSet.h"
 #include "ShipAttributeSet.h"
 #include "BaseGameplayTags.h"
+#include "Skills/SkillUseProvider.h"
 #include "ShipPhysicsAsync.h"
 #include "Physics/Experimental/PhysScene_Chaos.h"
 #include "PBDRigidsSolver.h"
@@ -1673,6 +1674,15 @@ void AShip::SpawnBombardmentAuthoritative(const FVector& TargetLocation)
 		UE_LOG(LogTemp, Error,
 			TEXT("[Bombardment] No normal cannonball class was found on Player ship %s. Set ProjectileClassOverride."),
 			*GetName());
+		return;
+	}
+
+	ISkillUseProvider* SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
+	if (!SkillProvider || !SkillProvider->TryConsumeSkillUse(GameplayAbility_Skill_Bombardment))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Bombardment] Execution rejected because the skill is locked or has no usage material. Player=%s"),
+			*GetNameSafe(RidingPlayer));
 		return;
 	}
 

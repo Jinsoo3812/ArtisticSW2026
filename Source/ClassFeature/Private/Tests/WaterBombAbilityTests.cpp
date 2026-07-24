@@ -12,6 +12,8 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
+#include "Inventory/InventoryComponent.h"
+#include "Skills/PlayerSkillComponent.h"
 #include "WaterBombCannonball.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -100,10 +102,21 @@ bool FWaterBombAbilityCannonIntegrationTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Cannon tracks the riding player"), Cannon->GetRidingPlayer() == Player);
 	TestTrue(TEXT("Player controller possesses the cannon"), Cannon->IsPlayerControlled());
 
+	UPlayerSkillComponent* SkillComponent = PlayerState->GetPlayerSkillComponent();
+	TestNotNull(TEXT("Player skill component exists"), SkillComponent);
+	TestFalse(TEXT("Locked Water Bomb cannot activate"),
+		ASC->TryActivateAbilitiesByTag(AbilityTags, true));
+	TestTrue(TEXT("Water Bomb is unlocked for the execution test"),
+		SkillComponent && SkillComponent->UnlockSkill(GameplayAbility_Skill_WaterBomb));
+	TestEqual(TEXT("One Water Bomb material is added"),
+		Player->GetInventoryComponent()->AddItem(Item_Id_Material_SkillMaterial_EpicSkill, 1), 1);
+
 	TestTrue(TEXT("Water Bomb GA activates by ability tag"), ASC->TryActivateAbilitiesByTag(AbilityTags, true));
 	TestTrue(TEXT("GA activation changes cannon to Water Bomb mode"), Cannon->IsWaterBombMode());
 
 	TestTrue(TEXT("Water Bomb mode fires successfully"), Cannon->FireCannon());
+	TestEqual(TEXT("Water Bomb fire consumes one material"),
+		Player->GetInventoryComponent()->GetItemCount(Item_Id_Material_SkillMaterial_EpicSkill), 0);
 	AWaterBombCannonball* FiredProjectile = nullptr;
 	for (TActorIterator<AWaterBombCannonball> It(World); It; ++It)
 	{

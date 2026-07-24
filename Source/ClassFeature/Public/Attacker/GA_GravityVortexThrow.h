@@ -1,14 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "BaseGameplayAbility.h"
+#include "Skills/PlayerSkillGameplayAbility.h"
 #include "GA_GravityVortexThrow.generated.h"
 
 class AGravityVortexProjectile;
 
 /** Hold the bound key to aim, then press left mouse to throw. */
 UCLASS(Blueprintable)
-class CLASSFEATURE_API UGA_GravityVortexThrow : public UBaseGameplayAbility
+class CLASSFEATURE_API UGA_GravityVortexThrow : public UPlayerSkillGameplayAbility
 {
 	GENERATED_BODY()
 

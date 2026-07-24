@@ -9,6 +9,7 @@
 #include "Equipment/PlayerEquipmentComponent.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Components/SkinnedMeshComponent.h"
+#include "Skills/SkillUseProvider.h"
 #include "BasePlayer.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
@@ -29,6 +30,7 @@ class UBaseHealthComponent;
 class AShip;
 class ACannon;
 class USwimmingComponent;
+class UPlayerSkillComponent;
 
 // Item Slot 관리 구조체
 USTRUCT(BlueprintType)
@@ -82,7 +84,7 @@ struct FQuickSlotReference
  * 
  */
 UCLASS(Config = Game)
-class CLASSFEATURE_API ABasePlayer : public ABaseCharacter
+class CLASSFEATURE_API ABasePlayer : public ABaseCharacter, public ISkillUseProvider
 {
 	GENERATED_BODY()
 	friend class ULocomotionAnimStateComponent;
@@ -102,9 +104,20 @@ public:
 public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return CachedAbilitySystemComponent.Get(); };
 
+	// ISkillUseProvider: execution actors call this bridge without depending on ClassFeature.
+	virtual bool CanUseSkill(const FGameplayTag& SkillTag) const override;
+	virtual bool TryConsumeSkillUse(const FGameplayTag& SkillTag) override;
+
+	UFUNCTION(BlueprintPure, Category = "Skill")
+	UPlayerSkillComponent* GetPlayerSkillComponent() const;
+
 protected:
 	UPROPERTY()
 	TWeakObjectPtr<class UAbilitySystemComponent> CachedAbilitySystemComponent;
+
+	/** Retained while the controller temporarily possesses a ship or cannon. */
+	UPROPERTY()
+	TWeakObjectPtr<UPlayerSkillComponent> CachedPlayerSkillComponent;
 
 	/* --- 네트워크 초기화 ---*/
 public:
@@ -324,6 +337,14 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
 	TArray<TSubclassOf<UGameplayAbility>> DefaultGrantedAbilities;
+
+	/**
+	 * Development-only convenience switch for skill testing.
+	 * When enabled, all three player skills ignore story locks and inventory
+	 * materials, and completed uses do not consume an item.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Skill Test")
+	bool bBypassSkillRequirementsForTesting = false;
 
 	/** Temporary Keyboard 3 test hook; disable when the final skill slot is wired. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex Test")
