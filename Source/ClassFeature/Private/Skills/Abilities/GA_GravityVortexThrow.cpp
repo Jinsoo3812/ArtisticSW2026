@@ -8,6 +8,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Projectiles/GravityVortexProjectile.h"
+#include "Skills/VortexAimLine.h"
 
 UGA_GravityVortexThrow::UGA_GravityVortexThrow()
 {
@@ -26,18 +27,10 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
-	UE_LOG(LogTemp, Warning,
-		TEXT("[GravityVortex][GA] ActivateAbility entered. Avatar=%s Authority=%s LocallyControlled=%s Handle=%s"),
-		*GetNameSafe(ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr),
-		ActorInfo && ActorInfo->AvatarActor.IsValid() && ActorInfo->AvatarActor->HasAuthority()
-			? TEXT("true") : TEXT("false"),
-		ActorInfo && ActorInfo->IsLocallyControlled() ? TEXT("true") : TEXT("false"),
-		*Handle.ToString());
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[GravityVortex][GA] CommitAbility failed."));
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
@@ -45,10 +38,6 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
 	if (!Player || !ProjectileClass)
 	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[GravityVortex][GA] Invalid activation data. Player=%s ProjectileClass=%s"),
-			*GetNameSafe(Player),
-			*GetPathNameSafe(ProjectileClass.Get()));
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
@@ -67,7 +56,6 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	{
 		LeftClickTask->EventReceived.AddDynamic(this, &UGA_GravityVortexThrow::OnLeftClickPressed);
 		LeftClickTask->ReadyForActivation();
-		UE_LOG(LogTemp, Warning, TEXT("[GravityVortex][GA] Waiting for left click."));
 	}
 
 	UAbilityTask_WaitGameplayEvent* RightClickTask =
@@ -76,7 +64,6 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	{
 		RightClickTask->EventReceived.AddDynamic(this, &UGA_GravityVortexThrow::OnRightClickPressed);
 		RightClickTask->ReadyForActivation();
-		UE_LOG(LogTemp, Warning, TEXT("[GravityVortex][GA] Waiting for right click cancel."));
 	}
 
 	UAbilityTask_WaitInputRelease* InputReleaseTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this, true);
@@ -84,24 +71,13 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	{
 		InputReleaseTask->OnRelease.AddDynamic(this, &UGA_GravityVortexThrow::OnActivationInputReleased);
 		InputReleaseTask->ReadyForActivation();
-		UE_LOG(LogTemp, Warning, TEXT("[GravityVortex][GA] Waiting for skill-key release cancel."));
 	}
 
-	if (Player->IsLocallyControlled() && bDrawAimTrajectory)
+	if (Player->IsLocallyControlled() && (bDrawAimTrajectory || bUpdateAimTrajectoryVisual))
 	{
 		GetWorld()->GetTimerManager().SetTimer(
 			TrajectoryTimerHandle, this, &UGA_GravityVortexThrow::DrawAimTrajectory,
 			FMath::Max(0.01f, TrajectoryRefreshInterval), true, 0.0f);
-		UE_LOG(LogTemp, Warning,
-			TEXT("[GravityVortex][GA] Aim trajectory timer started. Interval=%.3f"),
-			FMath::Max(0.01f, TrajectoryRefreshInterval));
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[GravityVortex][GA] Aim trajectory not drawn. Local=%s DrawEnabled=%s"),
-			Player->IsLocallyControlled() ? TEXT("true") : TEXT("false"),
-			bDrawAimTrajectory ? TEXT("true") : TEXT("false"));
 	}
 }
 
@@ -112,14 +88,19 @@ void UGA_GravityVortexThrow::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
-	UE_LOG(LogTemp, Warning,
-		TEXT("[GravityVortex][GA] EndAbility. Avatar=%s Cancelled=%s ThrowRequested=%s"),
-		*GetNameSafe(GetAvatarActorFromActorInfo()),
-		bWasCancelled ? TEXT("true") : TEXT("false"),
-		bThrowRequested ? TEXT("true") : TEXT("false"));
 	if (GetWorld())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(TrajectoryTimerHandle);
+	}
+	if (CurrentActorInfo && CurrentActorInfo->IsLocallyControlled() && bUpdateAimTrajectoryVisual)
+	{
+		K2_OnAimTrajectoryCleared();
+	}
+	if (AimLineActor)
+	{
+		AimLineActor->ClearTrajectory();
+		AimLineActor->Destroy();
+		AimLineActor = nullptr;
 	}
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
@@ -133,12 +114,6 @@ void UGA_GravityVortexThrow::EndAbility(
 
 void UGA_GravityVortexThrow::OnLeftClickPressed(FGameplayEventData Payload)
 {
-	UE_LOG(LogTemp, Warning,
-		TEXT("[GravityVortex][GA] Left click received. Active=%s ThrowRequested=%s Authority=%s"),
-		IsActive() ? TEXT("true") : TEXT("false"),
-		bThrowRequested ? TEXT("true") : TEXT("false"),
-		GetAvatarActorFromActorInfo() && GetAvatarActorFromActorInfo()->HasAuthority()
-			? TEXT("true") : TEXT("false"));
 	if (!IsActive() || bThrowRequested)
 	{
 		return;
@@ -160,7 +135,6 @@ void UGA_GravityVortexThrow::OnLeftClickPressed(FGameplayEventData Payload)
 		{
 			if (!TryConsumeSkillUse())
 			{
-				UE_LOG(LogTemp, Error, TEXT("[GravityVortex][GA] Material consumption failed on server."));
 				EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 				return;
 			}
@@ -172,9 +146,6 @@ void UGA_GravityVortexThrow::OnLeftClickPressed(FGameplayEventData Payload)
 
 void UGA_GravityVortexThrow::OnRightClickPressed(FGameplayEventData Payload)
 {
-	UE_LOG(LogTemp, Warning,
-		TEXT("[GravityVortex][GA] Right click cancel received. Active=%s"),
-		IsActive() ? TEXT("true") : TEXT("false"));
 	if (IsActive() && !bThrowRequested)
 	{
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
@@ -183,11 +154,6 @@ void UGA_GravityVortexThrow::OnRightClickPressed(FGameplayEventData Payload)
 
 void UGA_GravityVortexThrow::OnActivationInputReleased(float TimeHeld)
 {
-	UE_LOG(LogTemp, Warning,
-		TEXT("[GravityVortex][GA] Skill key released. Active=%s TimeHeld=%.3f ThrowRequested=%s"),
-		IsActive() ? TEXT("true") : TEXT("false"),
-		TimeHeld,
-		bThrowRequested ? TEXT("true") : TEXT("false"));
 	if (IsActive() && !bThrowRequested)
 	{
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
@@ -211,11 +177,38 @@ void UGA_GravityVortexThrow::DrawAimTrajectory()
 	Params.MaxSimTime = 3.0f;
 	Params.SimFrequency = 20.0f;
 	Params.bTraceWithCollision = false;
-	Params.DrawDebugType = EDrawDebugTrace::ForDuration;
+	Params.DrawDebugType = bDrawAimTrajectory ? EDrawDebugTrace::ForDuration : EDrawDebugTrace::None;
 	Params.DrawDebugTime = FMath::Max(0.01f, TrajectoryRefreshInterval);
 
 	FPredictProjectilePathResult Result;
 	UGameplayStatics::PredictProjectilePath(this, Params, Result);
+	if (bUpdateAimTrajectoryVisual)
+	{
+		TArray<FVector> WorldPoints;
+		WorldPoints.Reserve(Result.PathData.Num());
+		for (const FPredictProjectilePathPointData& Point : Result.PathData)
+		{
+			WorldPoints.Add(Point.Location);
+		}
+		if (AimLineClass && !IsValid(AimLineActor))
+		{
+			FActorSpawnParameters SpawnParameters;
+			SpawnParameters.Owner = Player;
+			SpawnParameters.Instigator = Player;
+			SpawnParameters.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AimLineActor = GetWorld()->SpawnActor<AVortexAimLine>(
+				AimLineClass,
+				Player->GetActorLocation(),
+				FRotator::ZeroRotator,
+				SpawnParameters);
+		}
+		if (AimLineActor)
+		{
+			AimLineActor->SetTrajectory(WorldPoints);
+		}
+		K2_OnAimTrajectoryUpdated(WorldPoints);
+	}
 }
 
 bool UGA_GravityVortexThrow::GetLaunchData(FVector& OutSpawnLocation, FVector& OutLaunchVelocity) const
@@ -233,9 +226,38 @@ bool UGA_GravityVortexThrow::GetLaunchData(FVector& OutSpawnLocation, FVector& O
 	OutSpawnLocation = Player->GetActorLocation()
 		+ Player->GetActorForwardVector() * SpawnForwardOffset
 		+ FVector::UpVector * SpawnVerticalOffset;
-	if (!SpawnSocketName.IsNone() && Player->GetMesh() && Player->GetMesh()->DoesSocketExist(SpawnSocketName))
+	if (!SpawnSocketName.IsNone())
 	{
-		OutSpawnLocation = Player->GetMesh()->GetSocketLocation(SpawnSocketName);
+		const USkeletalMeshComponent* SocketMesh = nullptr;
+		FName ResolvedSocketName = SpawnSocketName;
+		auto FindSocketMesh = [Player](FName SocketName) -> const USkeletalMeshComponent*
+		{
+			if (Player->GetMesh() && Player->GetMesh()->DoesSocketExist(SocketName))
+			{
+				return Player->GetMesh();
+			}
+			TInlineComponentArray<USkeletalMeshComponent*> SkeletalMeshes(Player);
+			for (const USkeletalMeshComponent* Candidate : SkeletalMeshes)
+			{
+				if (IsValid(Candidate) && Candidate->DoesSocketExist(SocketName))
+				{
+					return Candidate;
+				}
+			}
+			return nullptr;
+		};
+
+		SocketMesh = FindSocketMesh(ResolvedSocketName);
+		if (!SocketMesh && !FallbackSpawnBoneName.IsNone())
+		{
+			ResolvedSocketName = FallbackSpawnBoneName;
+			SocketMesh = FindSocketMesh(ResolvedSocketName);
+		}
+
+		if (SocketMesh)
+		{
+			OutSpawnLocation = SocketMesh->GetSocketTransform(ResolvedSocketName, RTS_World).GetLocation();
+		}
 	}
 
 	OutLaunchVelocity = AimDirection * FMath::Max(1.0f, ThrowSpeed);
@@ -259,7 +281,5 @@ void UGA_GravityVortexThrow::SpawnProjectileOnServer()
 	{
 		Projectile->FinishSpawning(SpawnTransform);
 		Projectile->LaunchProjectile(LaunchVelocity);
-		UE_LOG(LogTemp, Log, TEXT("[GRAVITY-VORTEX] Projectile spawned by %s at %s"),
-			*GetNameSafe(Player), *SpawnLocation.ToString());
 	}
 }

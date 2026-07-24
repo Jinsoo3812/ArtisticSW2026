@@ -1,5 +1,6 @@
 #include "Skills/GravityVortexField.h"
 
+#include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Curves/CurveFloat.h"
 #include "DrawDebugHelpers.h"
@@ -14,6 +15,9 @@ AGravityVortexField::AGravityVortexField()
 	bReplicates = true;
 	bAlwaysRelevant = true;
 	SetReplicateMovement(false);
+
+	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+	SetRootComponent(SceneRoot);
 }
 
 void AGravityVortexField::BeginPlay()
@@ -27,8 +31,6 @@ void AGravityVortexField::BeginPlay()
 		ExpireServerTime = ActivationServerTime + FMath::Max(0.05f, Duration);
 		SetLifeSpan(FMath::Max(0.05f, Duration));
 		RefreshTargets();
-		UE_LOG(LogTemp, Log, TEXT("[GRAVITY-VORTEX] Field started at %s Radius=%.1f Duration=%.2f"),
-			*GetActorLocation().ToString(), PullRadius, Duration);
 	}
 }
 
@@ -88,7 +90,6 @@ void AGravityVortexField::EndPlay(const EEndPlayReason::Type EndPlayReason)
 			ReleaseShip(ShipPtr.Get());
 		}
 		AffectedShips.Reset();
-		UE_LOG(LogTemp, Log, TEXT("[GRAVITY-VORTEX] Field ended"));
 	}
 
 	Super::EndPlay(EndPlayReason);

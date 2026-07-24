@@ -568,16 +568,6 @@ void ABasePlayer::PawnClientRestart()
 					ItemIMCPriority,
 					bEnableGravityVortexSkillInput && GravityVortexSkillAction);
 				Subsystem->AddMappingContext(DefaultIMC, EffectiveDefaultPriority);
-				UE_LOG(LogTemp, Warning,
-					TEXT("[GravityVortex][IMC] Added. Pawn=%s Class=%s IMC=%s ConfiguredPriority=%d "
-						"EffectivePriority=%d ItemPriority=%d Local=%s"),
-					*GetNameSafe(this),
-					*GetPathNameSafe(GetClass()),
-					*GetPathNameSafe(DefaultIMC.Get()),
-					DefaultIMCPriority,
-					EffectiveDefaultPriority,
-					ItemIMCPriority,
-					IsLocallyControlled() ? TEXT("true") : TEXT("false"));
 			}
 
 			// ItemIMC 등록
@@ -636,22 +626,6 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Started, this, &ABasePlayer::OnGravityVortexSkillPressed);
 			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Completed, this, &ABasePlayer::OnGravityVortexSkillReleased);
 			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Canceled, this, &ABasePlayer::OnGravityVortexSkillReleased);
-			UE_LOG(LogTemp, Warning,
-				TEXT("[GravityVortex][InputSetup] Bound. Pawn=%s Class=%s IA=%s Local=%s Controller=%s"),
-				*GetNameSafe(this),
-				*GetPathNameSafe(GetClass()),
-				*GetPathNameSafe(GravityVortexSkillAction.Get()),
-				IsLocallyControlled() ? TEXT("true") : TEXT("false"),
-				*GetNameSafe(GetController()));
-		}
-		else
-		{
-			UE_LOG(LogTemp, Error,
-				TEXT("[GravityVortex][InputSetup] NOT bound. Pawn=%s Class=%s Enabled=%s IA=%s"),
-				*GetNameSafe(this),
-				*GetPathNameSafe(GetClass()),
-				bEnableGravityVortexSkillInput ? TEXT("true") : TEXT("false"),
-				*GetPathNameSafe(GravityVortexSkillAction.Get()));
 		}
 
 		// Default 입력 바인딩
@@ -984,16 +958,6 @@ void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayA
 	// 서버에서만 실행되며, 유효성 검사 수행
 	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass || !KeyTag.IsValid())
 	{
-		if (KeyTag.MatchesTagExact(Key_Skill_GravityVortex))
-		{
-			UE_LOG(LogTemp, Error,
-				TEXT("[GravityVortex][Grant] Rejected. Pawn=%s Authority=%s ASC=%s AbilityClass=%s KeyTag=%s"),
-				*GetNameSafe(this),
-				HasAuthority() ? TEXT("true") : TEXT("false"),
-				*GetNameSafe(CachedAbilitySystemComponent.Get()),
-				*GetPathNameSafe(AbilityClass.Get()),
-				*KeyTag.ToString());
-		}
 		return;
 	}
 
@@ -1005,15 +969,6 @@ void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayA
 		{
 			if (Spec.InputID == TargetInputID && Spec.Ability && Spec.Ability->GetClass() == AbilityClass)
 			{
-				if (KeyTag.MatchesTagExact(Key_Skill_GravityVortex))
-				{
-					UE_LOG(LogTemp, Warning,
-						TEXT("[GravityVortex][Grant] Existing Spec. Pawn=%s Ability=%s InputID=%d Handle=%s"),
-						*GetNameSafe(this),
-						*GetPathNameSafe(Spec.Ability),
-						TargetInputID,
-						*Spec.Handle.ToString());
-				}
 				// 이미 동일한 어빌리티가 동일 슬롯에 존재하므로 중복 부여하지 않고 리턴
 				return;
 			}
@@ -1028,17 +983,7 @@ void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayA
 
 	// GA Spec 생성 시 해당 ID 주입
 	FGameplayAbilitySpec Spec(AbilityClass, 1, AssignedID, this);
-	const FGameplayAbilitySpecHandle GrantedHandle = CachedAbilitySystemComponent->GiveAbility(Spec);
-	if (KeyTag.MatchesTagExact(Key_Skill_GravityVortex))
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[GravityVortex][Grant] Granted. Pawn=%s AbilityClass=%s KeyTag=%s InputID=%d Handle=%s"),
-			*GetNameSafe(this),
-			*GetPathNameSafe(AbilityClass.Get()),
-			*KeyTag.ToString(),
-			AssignedID,
-			*GrantedHandle.ToString());
-	}
+	CachedAbilitySystemComponent->GiveAbility(Spec);
 }
 
 void ABasePlayer::GrantDefaultAbility(TSubclassOf<UGameplayAbility> AbilityClass)
@@ -1092,14 +1037,6 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid())
 	{
-		if (InputTag.MatchesTagExact(Key_Skill_GravityVortex))
-		{
-			UE_LOG(LogTemp, Error,
-				TEXT("[GravityVortex][GASInput] Rejected before lookup. Pawn=%s ASC=%s InputTag=%s"),
-				*GetNameSafe(this),
-				*GetNameSafe(CachedAbilitySystemComponent.Get()),
-				*InputTag.ToString());
-		}
 		// UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] Fails: CachedAbilitySystemComponent valid? %s, InputTag: %s"),
 		// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
 		// 	CachedAbilitySystemComponent.IsValid() ? TEXT("YES") : TEXT("NO"),
@@ -1109,45 +1046,10 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 
 	if (IsEquipmentTransitioning())
 	{
-		if (InputTag.MatchesTagExact(Key_Skill_GravityVortex))
-		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("[GravityVortex][GASInput] Blocked by equipment transition. Pawn=%s"),
-				*GetNameSafe(this));
-		}
 		return;
 	}
 
 	int32 InputID = GetInputIDFromTag(InputTag);
-	if (InputTag.MatchesTagExact(Key_Skill_GravityVortex))
-	{
-		const FGameplayAbilitySpec* MatchingSpec = nullptr;
-		for (const FGameplayAbilitySpec& Candidate : CachedAbilitySystemComponent->GetActivatableAbilities())
-		{
-			if (Candidate.InputID == InputID)
-			{
-				MatchingSpec = &Candidate;
-				break;
-			}
-		}
-
-		const UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent();
-		UE_LOG(LogTemp, Warning,
-			TEXT("[GravityVortex][GASInput] Press. Pawn=%s NetRole=%d Local=%s InputID=%d Specs=%d "
-				"Match=%s Ability=%s Active=%s Bypass=%s Unlocked=%s Uses=%d"),
-			*GetNameSafe(this),
-			static_cast<int32>(GetLocalRole()),
-			IsLocallyControlled() ? TEXT("true") : TEXT("false"),
-			InputID,
-			CachedAbilitySystemComponent->GetActivatableAbilities().Num(),
-			MatchingSpec ? TEXT("true") : TEXT("false"),
-			MatchingSpec ? *GetPathNameSafe(MatchingSpec->Ability) : TEXT("None"),
-			MatchingSpec && MatchingSpec->IsActive() ? TEXT("true") : TEXT("false"),
-			bBypassSkillRequirementsForTesting ? TEXT("true") : TEXT("false"),
-			SkillComponent && SkillComponent->IsSkillUnlocked(GameplayAbility_Skill_GravityVortex)
-				? TEXT("true") : TEXT("false"),
-			SkillComponent ? SkillComponent->GetSkillUseCount(GameplayAbility_Skill_GravityVortex) : INDEX_NONE);
-	}
 	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
 	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
 	// 	*InputTag.ToString(),
@@ -1169,13 +1071,6 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 	if (InputID != INDEX_NONE)
 	{
 		CachedAbilitySystemComponent->AbilityLocalInputPressed(InputID);
-		if (InputTag.MatchesTagExact(Key_Skill_GravityVortex))
-		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("[GravityVortex][GASInput] Forwarded. ActiveTagAfter=%s"),
-				CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex)
-					? TEXT("true") : TEXT("false"));
-		}
 	}
 }
 
@@ -1198,13 +1093,6 @@ void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 
 void ABasePlayer::OnGravityVortexSkillPressed()
 {
-	UE_LOG(LogTemp, Warning,
-		TEXT("[GravityVortex][IA] Started. Pawn=%s Class=%s Enabled=%s ASC=%s Local=%s"),
-		*GetNameSafe(this),
-		*GetPathNameSafe(GetClass()),
-		bEnableGravityVortexSkillInput ? TEXT("true") : TEXT("false"),
-		*GetNameSafe(CachedAbilitySystemComponent.Get()),
-		IsLocallyControlled() ? TEXT("true") : TEXT("false"));
 	if (!bEnableGravityVortexSkillInput)
 	{
 		return;
@@ -1214,13 +1102,6 @@ void ABasePlayer::OnGravityVortexSkillPressed()
 
 void ABasePlayer::OnGravityVortexSkillReleased()
 {
-	UE_LOG(LogTemp, Warning,
-		TEXT("[GravityVortex][IA] Completed/Canceled. Pawn=%s ASC=%s ActiveTagBefore=%s"),
-		*GetNameSafe(this),
-		*GetNameSafe(CachedAbilitySystemComponent.Get()),
-		CachedAbilitySystemComponent.IsValid()
-			&& CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex)
-				? TEXT("true") : TEXT("false"));
 	OnAbilityInputReleased(Key_Skill_GravityVortex);
 }
 
@@ -1262,14 +1143,6 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 	EventData.EventMagnitude = bWasBoundAbilityActive ? 1.0f : 0.0f;
 
 	CachedAbilitySystemComponent->HandleGameplayEvent(InputTag, &EventData);
-	if (bGravityVortexOwnsMouseClick)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[GravityVortex][Mouse] Event dispatched. Pawn=%s Tag=%s Authority=%s"),
-			*GetNameSafe(this),
-			*InputTag.ToString(),
-			HasAuthority() ? TEXT("true") : TEXT("false"));
-	}
 
 	if (!HasAuthority())
 	{

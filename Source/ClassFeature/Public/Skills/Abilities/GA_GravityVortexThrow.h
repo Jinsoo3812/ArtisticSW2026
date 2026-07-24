@@ -5,6 +5,7 @@
 #include "GA_GravityVortexThrow.generated.h"
 
 class AGravityVortexProjectile;
+class AVortexAimLine;
 
 /** Hold the skill key to aim, press left mouse to throw, or right mouse/release the skill key to cancel. */
 UCLASS(Blueprintable)
@@ -46,13 +47,38 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Throw")
 	FName SpawnSocketName = NAME_None;
 
+	/** Used only when SpawnSocketName is missing from every skeletal mesh on the player. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Throw")
+	FName FallbackSpawnBoneName = TEXT("hand_r");
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Debug")
 	bool bDrawAimTrajectory = true;
+
+	/**
+	 * Sends the predicted world-space trajectory to Blueprint while aiming.
+	 * Implement K2_OnAimTrajectoryUpdated in the GA Blueprint to drive a Niagara
+	 * ribbon or spline-mesh preview. This is independent from debug drawing.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Visual")
+	bool bUpdateAimTrajectoryVisual = true;
+
+	/**
+	 * Optional zero-graph aim-line actor. Reparent BP_VortexAimLine to
+	 * AVortexAimLine, assign it here, then set its mesh and material.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Visual")
+	TSubclassOf<AVortexAimLine> AimLineClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Debug", meta = (ClampMin = "0.01", Units = "s"))
 	float TrajectoryRefreshInterval = 0.05f;
 
 protected:
+	UFUNCTION(BlueprintImplementableEvent, Category = "Gravity Vortex|Visual", meta = (DisplayName = "On Aim Trajectory Updated"))
+	void K2_OnAimTrajectoryUpdated(const TArray<FVector>& WorldPoints);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Gravity Vortex|Visual", meta = (DisplayName = "On Aim Trajectory Cleared"))
+	void K2_OnAimTrajectoryCleared();
+
 	UFUNCTION()
 	void OnLeftClickPressed(FGameplayEventData Payload);
 
@@ -71,4 +97,7 @@ private:
 
 	bool bThrowRequested = false;
 	FTimerHandle TrajectoryTimerHandle;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AVortexAimLine> AimLineActor;
 };

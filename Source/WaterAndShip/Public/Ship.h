@@ -434,6 +434,13 @@ public:
 
 	void SetExternalAccelerationSource(const FGuid& SourceId, const FVector& WorldAcceleration);
 	void RemoveExternalAccelerationSource(const FGuid& SourceId);
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Effects")
+	int32 GetExternalAccelerationSourceCount() const { return ExternalAccelerationSources.Num(); }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Effects")
+	FVector GetCurrentExternalAcceleration() const { return CurrentExternalAcceleration; }
+
 	void AddPropulsionSuppression(const FGuid& SourceId);
 	void RemovePropulsionSuppression(const FGuid& SourceId);
 	bool IsPropulsionSuppressed() const { return PropulsionSuppressionSources.Num() > 0; }
@@ -538,7 +545,7 @@ public:
 	UInputMappingContext* ShipInputMappingContext;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Input")
-	int32 ShipInputPriority = 0;
+	int32 ShipInputPriority = 20;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Input")
 	UInputAction* ShipMoveAction;

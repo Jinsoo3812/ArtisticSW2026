@@ -3,6 +3,9 @@
 #include "Misc/AutomationTest.h"
 
 #include "Bombardment.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialInterface.h"
+#include "Ship.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FBombardmentConfigurationTest,
@@ -20,8 +23,34 @@ bool FBombardmentConfigurationTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("At least one volley is fired"), Defaults->VolleyCount > 0);
 	TestNotNull(TEXT("A preview class is available"), Defaults->PreviewClass.Get());
 	const ABombardmentPreview* PreviewDefaults = GetDefault<ABombardmentPreview>();
-	TestNotNull(TEXT("Flat decal preview component is available"), PreviewDefaults->PreviewDecal.Get());
-	TestTrue(TEXT("Decal projection depth is positive"), PreviewDefaults->DecalProjectionDepth > 0.0f);
+	TestNotNull(TEXT("A single preview mesh component is available"), PreviewDefaults->PreviewMesh.Get());
+	TestTrue(
+		TEXT("Ship input outranks player/item contexts for shared confirm and cancel keys"),
+		GetDefault<AShip>()->ShipInputPriority >= 20);
+
+	UMaterialInterface* BombardPreviewMaterial = LoadObject<UMaterialInterface>(
+		nullptr, TEXT("/Game/New/Skill/Bombardment/M_BombardPreview.M_BombardPreview"));
+	UMaterialInterface* GhostMaterial = LoadObject<UMaterialInterface>(
+		nullptr, TEXT("/Game/New/Skill/Bombardment/M_Ghost.M_Ghost"));
+	TestNotNull(TEXT("M_BombardPreview loads"), BombardPreviewMaterial);
+	TestNotNull(TEXT("M_Ghost loads"), GhostMaterial);
+	for (const TPair<const TCHAR*, UMaterialInterface*> MaterialInfo : {
+		TPair<const TCHAR*, UMaterialInterface*>(TEXT("M_BombardPreview"), BombardPreviewMaterial),
+		TPair<const TCHAR*, UMaterialInterface*>(TEXT("M_Ghost"), GhostMaterial) })
+	{
+		if (MaterialInfo.Value)
+		{
+			const UMaterial* BaseMaterial = MaterialInfo.Value->GetMaterial();
+			AddInfo(FString::Printf(
+				TEXT("%s domain=%d blend=%d unlit=%s twoSided=%s"),
+				MaterialInfo.Key,
+				BaseMaterial ? static_cast<int32>(BaseMaterial->MaterialDomain.GetValue()) : INDEX_NONE,
+				static_cast<int32>(MaterialInfo.Value->GetBlendMode()),
+				MaterialInfo.Value->GetShadingModels().HasShadingModel(MSM_Unlit)
+					? TEXT("true") : TEXT("false"),
+				MaterialInfo.Value->IsTwoSided() ? TEXT("true") : TEXT("false")));
+		}
+	}
 	return true;
 }
 

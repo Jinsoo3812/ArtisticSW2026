@@ -696,6 +696,7 @@ void AShip::Tick(float DeltaTime)
 			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
 			{
 				AsyncInput->ExternalAcceleration = CurrentExternalAcceleration;
+				AsyncInput->bApplyAuthoritativeExternalAcceleration = HasAuthority();
 				AsyncInput->bQueryDiagnostics = bBuoyancyQueryDiagnostics;
 				AsyncInput->PontoonOffsets = TempPontoons;
 				AsyncInput->PontoonRadii = TempPontoonRadii;
@@ -1400,11 +1401,6 @@ void AShip::BeginLocalBombardmentTargeting()
 {
 	if (bLocalBombardmentInputModeApplied || !ActiveBombardmentClass)
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[BombardmentPreview] Begin skipped Ship=%s InputModeApplied=%s ActiveClass=%s"),
-			*GetNameSafe(this),
-			bLocalBombardmentInputModeApplied ? TEXT("true") : TEXT("false"),
-			*GetPathNameSafe(ActiveBombardmentClass));
 		return;
 	}
 
@@ -1412,23 +1408,8 @@ void AShip::BeginLocalBombardmentTargeting()
 	const ABombardment* BombardmentDefaults = ActiveBombardmentClass->GetDefaultObject<ABombardment>();
 	if (!PC || !PC->IsLocalController() || !BombardmentDefaults)
 	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[BombardmentPreview] Begin FAILED Ship=%s PC=%s LocalController=%s ActiveClass=%s Defaults=%s"),
-			*GetNameSafe(this),
-			*GetNameSafe(PC),
-			PC && PC->IsLocalController() ? TEXT("true") : TEXT("false"),
-			*GetPathNameSafe(ActiveBombardmentClass),
-			*GetNameSafe(BombardmentDefaults));
 		return;
 	}
-
-	UE_LOG(LogTemp, Warning,
-		TEXT("[BombardmentPreview] Begin Ship=%s ActiveClass=%s PreviewClass=%s Radius=%.1f HeightOffset=%.1f"),
-		*GetNameSafe(this),
-		*GetPathNameSafe(ActiveBombardmentClass),
-		*GetPathNameSafe(BombardmentDefaults->PreviewClass),
-		BombardmentDefaults->SkillRadius,
-		BombardmentDefaults->PreviewHeightOffset);
 
 	bSavedShowMouseCursor = PC->bShowMouseCursor;
 	PC->bShowMouseCursor = true;
@@ -1450,29 +1431,8 @@ void AShip::BeginLocalBombardmentTargeting()
 			SpawnParams);
 		if (BombardmentPreviewActor)
 		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("[BombardmentPreview] Spawn OK Actor=%s ActualClass=%s InitialLocation=%s"),
-				*GetNameSafe(BombardmentPreviewActor),
-				*GetPathNameSafe(BombardmentPreviewActor->GetClass()),
-				*BombardmentPreviewActor->GetActorLocation().ToCompactString());
 			BombardmentPreviewActor->ConfigurePreview(BombardmentDefaults->SkillRadius);
 		}
-		else
-		{
-			UE_LOG(LogTemp, Error,
-				TEXT("[BombardmentPreview] Spawn FAILED Ship=%s PreviewClass=%s World=%s"),
-				*GetNameSafe(this),
-				*GetPathNameSafe(BombardmentDefaults->PreviewClass),
-				*GetNameSafe(GetWorld()));
-		}
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[BombardmentPreview] Spawn skipped Ship=%s PreviewClass=%s World=%s"),
-			*GetNameSafe(this),
-			*GetPathNameSafe(BombardmentDefaults->PreviewClass),
-			*GetNameSafe(GetWorld()));
 	}
 }
 
@@ -1943,7 +1903,12 @@ void AShip::OnRep_Controller()
 			{
 				if (ShipInputMappingContext)
 				{
-					Subsystem->AddMappingContext(ShipInputMappingContext, ShipInputPriority);
+					// Player and item contexts can remain registered across possession.
+					// Ship input must win shared keys such as LMB, RMB, and number 5.
+					constexpr int32 MinimumShipInputPriority = 20;
+					Subsystem->AddMappingContext(
+						ShipInputMappingContext,
+						FMath::Max(ShipInputPriority, MinimumShipInputPriority));
 					// UE_LOG(LogTemp, Log, TEXT("AShip: Added ShipInputMappingContext in OnRep_Controller."));
 				}
 			}

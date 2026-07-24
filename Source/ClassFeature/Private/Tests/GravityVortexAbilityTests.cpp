@@ -6,9 +6,17 @@
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "BasePlayerState.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/SplineMeshComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/SkeletalMeshSocket.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "Projectiles/GravityVortexProjectile.h"
+#include "Ship.h"
+#include "Skills/GravityVortexField.h"
+#include "Skills/VortexAimLine.h"
 #include "Skills/Abilities/GA_GravityVortexThrow.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -35,6 +43,12 @@ bool FGravityVortexHoldInputTest::RunTest(const FString& Parameters)
 		TEXT("Gravity Vortex is locally predicted and confirmed by the server"),
 		AbilityDefaults->GetNetExecutionPolicy(),
 		EGameplayAbilityNetExecutionPolicy::LocalPredicted);
+	TestFalse(
+		TEXT("A hand-bone fallback is configured when an authored socket cannot be found"),
+		AbilityDefaults->FallbackSpawnBoneName.IsNone());
+	TestTrue(
+		TEXT("A Blueprint VFX trajectory is updated independently from debug drawing"),
+		AbilityDefaults->bUpdateAimTrajectoryVisual);
 
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("GravityVortexQuickSlotWorld"));
 	if (!TestNotNull(TEXT("Transient game world is created"), World))
@@ -91,6 +105,204 @@ bool FGravityVortexHoldInputTest::RunTest(const FString& Parameters)
 		TEXT("Releasing the held skill key cancels Gravity Vortex aiming mode"),
 		ASC->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex));
 
+	CleanupWorld();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FGravityVortexAssetWiringTest,
+	"ArtisticSW.GravityVortex.AssetWiring",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
+{
+	UClass* PlayerClass = LoadClass<ABasePlayer>(
+		nullptr, TEXT("/Game/Blueprints/Player/BP_Player.BP_Player_C"));
+	if (!TestNotNull(TEXT("BP_Player class loads"), PlayerClass))
+	{
+		return false;
+	}
+
+	const ABasePlayer* PlayerDefaults = Cast<ABasePlayer>(PlayerClass->GetDefaultObject());
+	const USkeletalMeshComponent* PlayerMesh = PlayerDefaults ? PlayerDefaults->GetMesh() : nullptr;
+	if (!TestNotNull(TEXT("BP_Player has a skeletal mesh component"), PlayerMesh))
+	{
+		return false;
+	}
+	AddInfo(FString::Printf(
+		TEXT("BP_Player skeletal mesh: %s"),
+		*GetPathNameSafe(PlayerMesh->GetSkeletalMeshAsset())));
+	TestTrue(
+		TEXT("BP_Player mesh exposes the authored HandGrip_R socket"),
+		PlayerMesh->DoesSocketExist(TEXT("HandGrip_R")));
+	if (const USkeletalMeshSocket* HandGripSocket = PlayerMesh->GetSocketByName(TEXT("HandGrip_R")))
+	{
+		AddInfo(FString::Printf(
+			TEXT("HandGrip_R parent=%s relativeLocation=%s relativeRotation=%s relativeScale=%s"),
+			*HandGripSocket->BoneName.ToString(),
+			*HandGripSocket->RelativeLocation.ToCompactString(),
+			*HandGripSocket->RelativeRotation.ToCompactString(),
+			*HandGripSocket->RelativeScale.ToCompactString()));
+	}
+	TestTrue(
+		TEXT("BP_Player mesh exposes the hand_r fallback bone"),
+		PlayerMesh->DoesSocketExist(TEXT("hand_r")));
+
+	UClass* AbilityClass = LoadClass<UGA_GravityVortexThrow>(
+		nullptr, TEXT("/Game/New/Skill/Vortex/GA_VortexField.GA_VortexField_C"));
+	if (!TestNotNull(TEXT("GA_VortexField class loads"), AbilityClass))
+	{
+		return false;
+	}
+	const UGA_GravityVortexThrow* AbilityDefaults =
+		Cast<UGA_GravityVortexThrow>(AbilityClass->GetDefaultObject());
+	AddInfo(FString::Printf(
+		TEXT("GA socket=%s projectile=%s"),
+		AbilityDefaults ? *AbilityDefaults->SpawnSocketName.ToString() : TEXT("None"),
+		AbilityDefaults ? *GetPathNameSafe(AbilityDefaults->ProjectileClass.Get()) : TEXT("None")));
+	TestNotNull(TEXT("GA_VortexField has a projectile class"), AbilityDefaults->ProjectileClass.Get());
+
+	const AGravityVortexProjectile* ProjectileDefaults =
+		AbilityDefaults && AbilityDefaults->ProjectileClass
+			? AbilityDefaults->ProjectileClass->GetDefaultObject<AGravityVortexProjectile>()
+			: nullptr;
+	if (!TestNotNull(TEXT("Configured projectile CDO loads"), ProjectileDefaults))
+	{
+		return false;
+	}
+	AddInfo(FString::Printf(
+		TEXT("Projectile=%s field=%s"),
+		*GetPathNameSafe(ProjectileDefaults->GetClass()),
+		*GetPathNameSafe(ProjectileDefaults->FieldClass.Get())));
+	TestNotNull(TEXT("Projectile has a vortex field class"), ProjectileDefaults->FieldClass.Get());
+
+	const AGravityVortexField* FieldDefaults = ProjectileDefaults->FieldClass
+		? ProjectileDefaults->FieldClass->GetDefaultObject<AGravityVortexField>()
+		: nullptr;
+	if (!TestNotNull(TEXT("Configured field CDO loads"), FieldDefaults))
+	{
+		return false;
+	}
+	AddInfo(FString::Printf(
+		TEXT("Field=%s replicates=%s tick=%s debug=%s radius=%.1f acceleration=%.1f duration=%.2f"),
+		*GetPathNameSafe(FieldDefaults->GetClass()),
+		FieldDefaults->GetIsReplicated() ? TEXT("true") : TEXT("false"),
+		FieldDefaults->PrimaryActorTick.bCanEverTick ? TEXT("true") : TEXT("false"),
+		FieldDefaults->bDrawDebug ? TEXT("true") : TEXT("false"),
+		FieldDefaults->PullRadius,
+		FieldDefaults->PullAcceleration,
+		FieldDefaults->Duration));
+	TestTrue(TEXT("Field replication is enabled"), FieldDefaults->GetIsReplicated());
+	TestTrue(TEXT("Field ticking is enabled"), FieldDefaults->PrimaryActorTick.bCanEverTick);
+	TestTrue(TEXT("Field debug visualization is enabled"), FieldDefaults->bDrawDebug);
+	TestTrue(TEXT("Field pull radius is positive"), FieldDefaults->PullRadius > 0.0f);
+	TestTrue(TEXT("Field acceleration is positive"), FieldDefaults->PullAcceleration > 0.0f);
+	TestTrue(TEXT("Field duration is positive"), FieldDefaults->Duration > 0.0f);
+
+	UStaticMesh* AimLineMesh = LoadObject<UStaticMesh>(
+		nullptr, TEXT("/Game/New/Skill/Vortex/SM_VortexAimLine.SM_VortexAimLine"));
+	if (TestNotNull(TEXT("SM_VortexAimLine loads"), AimLineMesh))
+	{
+		const FBoxSphereBounds MeshBounds = AimLineMesh->GetBounds();
+		const FVector Size = MeshBounds.BoxExtent * 2.0f;
+		const TCHAR* LongestAxis = Size.X >= Size.Y && Size.X >= Size.Z
+			? TEXT("X")
+			: (Size.Y >= Size.X && Size.Y >= Size.Z ? TEXT("Y") : TEXT("Z"));
+		AddInfo(FString::Printf(
+			TEXT("SM_VortexAimLine origin=%s size=%s longestAxis=%s verticesLOD0=%d"),
+			*MeshBounds.Origin.ToCompactString(),
+			*Size.ToCompactString(),
+			LongestAxis,
+			AimLineMesh->GetNumVertices(0)));
+		TestTrue(
+			TEXT("SM_VortexAimLine has a clearly identifiable forward axis"),
+			FMath::Max3(Size.X, Size.Y, Size.Z)
+				> FMath::Min3(Size.X, Size.Y, Size.Z) * 2.0f);
+	}
+
+	UClass* EnemyShipClass = LoadClass<AShip>(
+		nullptr, TEXT("/Game/New/Enemy_Ship/BP_EnemyShip.BP_EnemyShip_C"));
+	if (!TestNotNull(TEXT("BP_EnemyShip class loads"), EnemyShipClass))
+	{
+		return false;
+	}
+	const AShip* EnemyShipDefaults = Cast<AShip>(EnemyShipClass->GetDefaultObject());
+	TestTrue(
+		TEXT("BP_EnemyShip is eligible for enemy-only field effects"),
+		EnemyShipDefaults && EnemyShipDefaults->IsEnemyShipForEffects());
+
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("GravityVortexFieldWorld"));
+	if (!TestNotNull(TEXT("Transient vortex field world is created"), World))
+	{
+		return false;
+	}
+	FWorldContext& WorldContext = GEngine->CreateNewWorldContext(EWorldType::Game);
+	WorldContext.SetCurrentWorld(World);
+	auto CleanupWorld = [World]()
+	{
+		World->DestroyWorld(false);
+		GEngine->DestroyWorldContext(World);
+	};
+
+	const FVector PlayerSpawnLocation(3000.0f, 4000.0f, 500.0f);
+	ABasePlayer* BlueprintPlayer = World->SpawnActor<ABasePlayer>(
+		PlayerClass, PlayerSpawnLocation, FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("BP_Player spawns for socket transform validation"), BlueprintPlayer))
+	{
+		CleanupWorld();
+		return false;
+	}
+	const FVector HandGripWorldLocation =
+		BlueprintPlayer->GetMesh()->GetSocketLocation(TEXT("HandGrip_R"));
+	const FVector HeadWorldLocation =
+		BlueprintPlayer->GetMesh()->GetSocketLocation(TEXT("head"));
+	AddInfo(FString::Printf(
+		TEXT("Spawned BP_Player actor=%s handGrip=%s head=%s handToHeadDistance=%.1f"),
+		*BlueprintPlayer->GetActorLocation().ToCompactString(),
+		*HandGripWorldLocation.ToCompactString(),
+		*HeadWorldLocation.ToCompactString(),
+		FVector::Distance(HandGripWorldLocation, HeadWorldLocation)));
+	TestTrue(
+		TEXT("The resolved HandGrip_R world transform is spatially separate from the face/head"),
+		FVector::Distance(HandGripWorldLocation, HeadWorldLocation) > 20.0f);
+
+	if (AimLineMesh)
+	{
+		AVortexAimLine* AimLine = World->SpawnActor<AVortexAimLine>();
+		if (TestNotNull(TEXT("Native VortexAimLine actor spawns"), AimLine))
+		{
+			AimLine->AimLineMesh = AimLineMesh;
+			AimLine->SetTrajectory({
+				FVector(0.0f, 0.0f, 100.0f),
+				FVector(500.0f, 0.0f, 300.0f),
+				FVector(1000.0f, 0.0f, 100.0f) });
+			TArray<USplineMeshComponent*> SplineMeshes;
+			AimLine->GetComponents<USplineMeshComponent>(SplineMeshes);
+			TestEqual(
+				TEXT("Three trajectory points create two visible spline-mesh segments"),
+				SplineMeshes.Num(),
+				2);
+		}
+	}
+
+	const FVector FieldSpawnLocation(10000.0f, 20000.0f, 125.0f);
+	AShip* EnemyShip = World->SpawnActor<AShip>(
+		EnemyShipClass, FieldSpawnLocation + FVector(1000.0f, 0.0f, 0.0f), FRotator::ZeroRotator);
+	AGravityVortexField* Field = World->SpawnActor<AGravityVortexField>(
+		ProjectileDefaults->FieldClass, FieldSpawnLocation, FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("Configured BP_VortexField spawns"), Field)
+		|| !TestNotNull(TEXT("BP_EnemyShip spawns"), EnemyShip))
+	{
+		CleanupWorld();
+		return false;
+	}
+	TestTrue(
+		TEXT("BP_VortexField preserves the projectile water-impact spawn location"),
+		Field->GetActorLocation().Equals(FieldSpawnLocation, 0.1f));
+	Field->DispatchBeginPlay();
+	TestTrue(
+		TEXT("BP_VortexField registers an in-range BP_EnemyShip acceleration source"),
+		EnemyShip->GetExternalAccelerationSourceCount() > 0);
 	CleanupWorld();
 	return true;
 }
