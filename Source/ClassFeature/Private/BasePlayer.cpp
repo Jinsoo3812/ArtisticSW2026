@@ -615,8 +615,6 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 		if (bEnableGravityVortexSkillInput && GravityVortexSkillAction)
 		{
 			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Started, this, &ABasePlayer::OnGravityVortexSkillPressed);
-			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Completed, this, &ABasePlayer::OnGravityVortexSkillReleased);
-			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Canceled, this, &ABasePlayer::OnGravityVortexSkillReleased);
 		}
 
 		// Default 입력 바인딩
@@ -1074,18 +1072,21 @@ void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 
 void ABasePlayer::OnGravityVortexSkillPressed()
 {
-	if (bEnableGravityVortexSkillInput)
+	if (!bEnableGravityVortexSkillInput || !CachedAbilitySystemComponent.IsValid())
 	{
-		OnAbilityInputPressed(Key_Skill_GravityVortex);
+		return;
 	}
-}
 
-void ABasePlayer::OnGravityVortexSkillReleased()
-{
-	if (bEnableGravityVortexSkillInput)
+	// 숫자 3은 홀드 입력이 아니라 퀵슬롯 토글처럼 동작한다.
+	// 이미 조준 모드라면 같은 키를 한 번 더 눌러 취소한다.
+	if (CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex))
 	{
-		OnAbilityInputReleased(Key_Skill_GravityVortex);
+		FGameplayTagContainer AbilityTags(GameplayAbility_Skill_GravityVortex);
+		CachedAbilitySystemComponent->CancelAbilities(&AbilityTags);
+		return;
 	}
+
+	OnAbilityInputPressed(Key_Skill_GravityVortex);
 }
 
 void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)

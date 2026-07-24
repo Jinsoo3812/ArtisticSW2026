@@ -1,7 +1,6 @@
 #include "Skills/Abilities/GA_GravityVortexThrow.h"
 
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
-#include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
@@ -11,6 +10,8 @@
 
 UGA_GravityVortexThrow::UGA_GravityVortexThrow()
 {
+	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
+	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 	ProjectileClass = AGravityVortexProjectile::StaticClass();
 	SkillTag = GameplayAbility_Skill_GravityVortex;
 	FGameplayTagContainer AssetTags;
@@ -53,13 +54,6 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	{
 		LeftClickTask->EventReceived.AddDynamic(this, &UGA_GravityVortexThrow::OnLeftClickPressed);
 		LeftClickTask->ReadyForActivation();
-	}
-
-	UAbilityTask_WaitInputRelease* InputReleaseTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this, true);
-	if (InputReleaseTask)
-	{
-		InputReleaseTask->OnRelease.AddDynamic(this, &UGA_GravityVortexThrow::OnActivationInputReleased);
-		InputReleaseTask->ReadyForActivation();
 	}
 
 	if (Player->IsLocallyControlled() && bDrawAimTrajectory)
@@ -120,14 +114,6 @@ void UGA_GravityVortexThrow::OnLeftClickPressed(FGameplayEventData Payload)
 			SpawnProjectileOnServer();
 			EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 		}
-	}
-}
-
-void UGA_GravityVortexThrow::OnActivationInputReleased(float TimeHeld)
-{
-	if (IsActive() && !bThrowRequested)
-	{
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 	}
 }
 

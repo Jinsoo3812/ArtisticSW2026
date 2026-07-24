@@ -6,7 +6,7 @@
 
 class AGravityVortexProjectile;
 
-/** Hold the bound key to aim, then press left mouse to throw. */
+/** Press the skill key once to aim, then press left mouse to throw. Press the skill key again to cancel. */
 UCLASS(Blueprintable)
 class CLASSFEATURE_API UGA_GravityVortexThrow : public UPlayerSkillGameplayAbility
 {
@@ -55,9 +55,6 @@ public:
 protected:
 	UFUNCTION()
 	void OnLeftClickPressed(FGameplayEventData Payload);
-
-	UFUNCTION()
-	void OnActivationInputReleased(float TimeHeld);
 
 	UFUNCTION()
 	void DrawAimTrajectory();
