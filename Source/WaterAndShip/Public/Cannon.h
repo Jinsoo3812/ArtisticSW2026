@@ -130,7 +130,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
 	TObjectPtr<UInputAction> CannonExitAction;
 
-	/** 선택 사항. 비어 있으면 테스트용 숫자 4 직접 바인딩을 사용합니다. */
+	/** Assign the Water Bomb IA mapped to key 4 in the cannon IMC. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
 	TObjectPtr<UInputAction> CannonWaterBombToggleAction;
 

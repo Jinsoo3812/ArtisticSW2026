@@ -317,6 +317,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> SprintAction;
 
+	/** Assign the Gravity Vortex IA mapped to key 3 in the on-foot IMC. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Skills")
+	TObjectPtr<UInputAction> GravityVortexSkillAction;
+
 	void Move(const FInputActionValue& Value);
 	void MoveStopped(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
@@ -346,12 +350,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Skill Test")
 	bool bBypassSkillRequirementsForTesting = false;
 
-	/** Temporary Keyboard 3 test hook; disable when the final skill slot is wired. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex Test")
-	bool bEnableGravityVortexTestInput = true;
+	/** Enables the formal Gravity Vortex Enhanced Input binding while on foot. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex")
+	bool bEnableGravityVortexSkillInput = true;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex Test")
-	TSubclassOf<UGameplayAbility> GravityVortexTestAbilityClass;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex")
+	TSubclassOf<UGameplayAbility> GravityVortexAbilityClass;
 
 	/** Granted without a player input slot; a ridden cannon activates/cancels it through its ability tag. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Water Bomb")
@@ -361,7 +365,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Water Bomb")
 	TSubclassOf<UGameplayAbility> WaterBombAbilityClass;
 
-	/** Granted without a player input slot; the currently possessed ship toggles it with test key 5. */
+	/** Granted without a player input slot; the currently possessed ship toggles it through its IA/IMC binding. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Bombardment")
 	bool bGrantBombardmentAbility = true;
 
@@ -383,8 +387,8 @@ public:
 	// 즉발형 GA에 대해 SlotTag에 매핑된 GA를 실행하는 함수
 	void OnAbilityInputPressed(FGameplayTag InputTag);
 	void OnAbilityInputReleased(FGameplayTag InputTag);
-	void OnGravityVortexTestPressed();
-	void OnGravityVortexTestReleased();
+	void OnGravityVortexSkillPressed();
+	void OnGravityVortexSkillReleased();
 
 	// 마우스 입력에 대한 활용을 위해 따로 OnAbilityInput과 분리
 	void OnMouseInputPressed(FGameplayTag InputTag);

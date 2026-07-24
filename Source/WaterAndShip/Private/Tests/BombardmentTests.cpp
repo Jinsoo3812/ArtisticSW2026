@@ -19,6 +19,9 @@ bool FBombardmentConfigurationTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("At least one projectile is fired per volley"), Defaults->ProjectilesPerVolley > 0);
 	TestTrue(TEXT("At least one volley is fired"), Defaults->VolleyCount > 0);
 	TestNotNull(TEXT("A preview class is available"), Defaults->PreviewClass.Get());
+	const ABombardmentPreview* PreviewDefaults = GetDefault<ABombardmentPreview>();
+	TestNotNull(TEXT("Flat decal preview component is available"), PreviewDefaults->PreviewDecal.Get());
+	TestTrue(TEXT("Decal projection depth is positive"), PreviewDefaults->DecalProjectionDepth > 0.0f);
 	return true;
 }
 

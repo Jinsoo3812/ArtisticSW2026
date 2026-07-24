@@ -51,7 +51,7 @@ UE_DEFINE_GAMEPLAY_TAG(Key_Item, "Key.Item");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_1, "Key.Item.1");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_2, "Key.Item.2");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_3, "Key.Item.3");
-UE_DEFINE_GAMEPLAY_TAG(Key_Test_Skill_GravityVortex, "Key.Test.Skill.GravityVortex");
+UE_DEFINE_GAMEPLAY_TAG(Key_Skill_GravityVortex, "Key.Skill.GravityVortex");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_4, "Key.Item.4");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_5, "Key.Item.5");
 

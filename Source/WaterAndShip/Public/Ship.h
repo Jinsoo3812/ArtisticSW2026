@@ -555,6 +555,38 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Input")
 	UInputAction* ShipDisembarkAction;
 
+	/** Axis1D action. Positive input (mouse wheel up) zooms in. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Input")
+	UInputAction* ShipZoomAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Input|Skills")
+	UInputAction* ShipBombardmentToggleAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Input|Skills")
+	UInputAction* ShipBombardmentConfirmAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Input|Skills")
+	UInputAction* ShipBombardmentCancelAction;
+
+	/** Ship look intentionally mirrors the on-foot camera convention. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera")
+	bool bInvertShipLookYaw = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera")
+	bool bInvertShipLookPitch = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera", meta = (ClampMin = "0.0"))
+	float ShipLookSensitivity = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera|Zoom", meta = (ClampMin = "0.0", Units = "cm"))
+	float ShipZoomStep = 150.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera|Zoom", meta = (ClampMin = "0.0", Units = "cm"))
+	float MinShipZoomArmLength = 300.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera|Zoom", meta = (ClampMin = "0.0", Units = "cm"))
+	float MaxShipZoomArmLength = 1800.0f;
+
 protected:
 	// ---- Input Handlers ----
 	void ShipMove(const FInputActionValue& Value);
@@ -562,6 +594,7 @@ protected:
 	void ShipTurn(const FInputActionValue& Value);
 	void StopShipTurn(const FInputActionValue& Value);
 	void ShipLook(const FInputActionValue& Value);
+	void ShipZoom(const FInputActionValue& Value);
 	void ToggleFixedCamera();
 	void OnDisembarkAction(const FInputActionValue& Value);
 	void HandleBombardmentToggle();
@@ -613,6 +646,12 @@ protected:
 	float SavedTargetArmLength = 800.0f;
 	FVector SavedFollowCameraRelativeLocation = FVector::ZeroVector;
 	FRotator SavedFollowCameraRelativeRotation = FRotator::ZeroRotator;
+	bool bHasRememberedFollowCameraState = false;
+	float RememberedFollowTargetArmLength = 800.0f;
+	FRotator RememberedFollowControlRotation = FRotator::ZeroRotator;
+
+	void RememberFollowCameraState(APlayerController* PlayerController);
+	void RestoreRememberedFollowCameraState(APlayerController* PlayerController);
 
 	// ---- Passenger Reference ----
 	UPROPERTY(ReplicatedUsing = OnRep_RidingPlayer)

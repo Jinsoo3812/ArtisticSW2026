@@ -2,7 +2,9 @@
 
 #include "BaseCharacter.h"
 #include "Cannonball.h"
+#include "Components/DecalComponent.h"
 #include "Components/MeshComponent.h"
+#include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
@@ -17,18 +19,30 @@ ABombardmentPreview::ABombardmentPreview()
 	PrimaryActorTick.bCanEverTick = true;
 	bReplicates = false;
 
+	PreviewRoot = CreateDefaultSubobject<USceneComponent>(TEXT("PreviewRoot"));
+	SetRootComponent(PreviewRoot);
+
 	PreviewMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PreviewMesh"));
-	SetRootComponent(PreviewMesh);
+	PreviewMesh->SetupAttachment(PreviewRoot);
 	PreviewMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	PreviewMesh->SetGenerateOverlapEvents(false);
 	PreviewMesh->SetCastShadow(false);
 	PreviewMesh->TranslucencySortPriority = 10;
+
+	PreviewDecal = CreateDefaultSubobject<UDecalComponent>(TEXT("PreviewDecal"));
+	PreviewDecal->SetupAttachment(PreviewRoot);
+	PreviewDecal->SetRelativeRotation(FRotator(-90.0f, 0.0f, 0.0f));
+	PreviewDecal->DecalSize = FVector(DecalProjectionDepth, 100.0f, 100.0f);
+	PreviewDecal->SetVisibility(false);
+	PreviewDecal->SetHiddenInGame(true);
+	PreviewDecal->SortOrder = 10;
 }
 
 void ABombardmentPreview::BeginPlay()
 {
 	Super::BeginPlay();
 	AuthoredPreviewMaterial = PreviewMesh ? PreviewMesh->GetMaterial(0) : nullptr;
+	AuthoredPreviewDecalMaterial = PreviewDecal ? PreviewDecal->GetDecalMaterial() : nullptr;
 
 	UE_LOG(LogTemp, Warning,
 		TEXT("[BombardmentPreview] BeginPlay Actor=%s Class=%s MeshComponent=%s StaticMesh=%s Material0=%s Overlay=%s "
@@ -67,6 +81,36 @@ void ABombardmentPreview::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ABombardmentPreview::ConfigurePreview(float InSkillRadius)
 {
 	SkillRadius = FMath::Max(1.0f, InSkillRadius);
+	if (bUseDecalPreview)
+	{
+		if (PreviewMesh)
+		{
+			PreviewMesh->SetVisibility(false);
+			PreviewMesh->SetHiddenInGame(true);
+		}
+		if (PreviewDecal)
+		{
+			PreviewDecal->DecalSize = FVector(
+				FMath::Max(1.0f, DecalProjectionDepth),
+				SkillRadius,
+				SkillRadius);
+			PreviewDecal->SetVisibility(true);
+			PreviewDecal->SetHiddenInGame(false);
+		}
+		return;
+	}
+
+	if (PreviewDecal)
+	{
+		PreviewDecal->SetVisibility(false);
+		PreviewDecal->SetHiddenInGame(true);
+	}
+	if (PreviewMesh)
+	{
+		PreviewMesh->SetVisibility(true);
+		PreviewMesh->SetHiddenInGame(false);
+	}
+
 	if (!PreviewMesh || !PreviewMesh->GetStaticMesh())
 	{
 		UE_LOG(LogTemp, Error,
@@ -110,6 +154,23 @@ void ABombardmentPreview::SetPreviewValid(bool bInValid)
 {
 	const bool bValidityChanged = bPreviewValid != bInValid;
 	bPreviewValid = bInValid;
+	if (bUseDecalPreview)
+	{
+		if (!PreviewDecal)
+		{
+			return;
+		}
+
+		UMaterialInterface* DesiredDecalMaterial = bPreviewValid
+			? (ValidPreviewDecalMaterial ? ValidPreviewDecalMaterial.Get() : AuthoredPreviewDecalMaterial.Get())
+			: (InvalidPreviewDecalMaterial ? InvalidPreviewDecalMaterial.Get() : AuthoredPreviewDecalMaterial.Get());
+		if (DesiredDecalMaterial)
+		{
+			PreviewDecal->SetDecalMaterial(DesiredDecalMaterial);
+		}
+		return;
+	}
+
 	if (!PreviewMesh)
 	{
 		if (!bHasLoggedPreviewValidity || bValidityChanged)

@@ -8,6 +8,7 @@ class ACannonball;
 class AShip;
 class UMaterialInterface;
 class UMeshComponent;
+class UDecalComponent;
 class USceneComponent;
 class UStaticMeshComponent;
 
@@ -28,7 +29,7 @@ struct FBombardmentMeshHighlightState
 	int32 CustomDepthStencilValue = 0;
 };
 
-/** Local-only targeting visualization. Its mesh/material are intended to be authored in a Blueprint child. */
+/** Local-only targeting visualization. Supports either a legacy mesh or a flat projected decal. */
 UCLASS(Blueprintable)
 class WATERANDSHIP_API ABombardmentPreview : public AActor
 {
@@ -44,7 +45,29 @@ public:
 	void SetPreviewValid(bool bInValid);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bombardment|Preview")
+	TObjectPtr<USceneComponent> PreviewRoot;
+
+	/** Legacy preview path. Kept so existing Blueprint children continue to work. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bombardment|Preview")
 	TObjectPtr<UStaticMeshComponent> PreviewMesh;
+
+	/** Flat 2D preview projected onto terrain. Use a Deferred Decal material. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bombardment|Preview")
+	TObjectPtr<UDecalComponent> PreviewDecal;
+
+	/** Opt into the flat projected preview after assigning decal-domain materials below. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Preview|Decal")
+	bool bUseDecalPreview = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Preview|Decal")
+	TObjectPtr<UMaterialInterface> ValidPreviewDecalMaterial;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Preview|Decal")
+	TObjectPtr<UMaterialInterface> InvalidPreviewDecalMaterial;
+
+	/** Projection volume depth. This is not visible thickness. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Preview|Decal", meta = (ClampMin = "1.0", Units = "cm"))
+	float DecalProjectionDepth = 300.0f;
 
 	/** Optional material used while the target is valid. Null preserves material slot 0 from the Preview Blueprint. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Preview")
@@ -92,6 +115,7 @@ private:
 	int32 LastLoggedHighlightedMeshCount = INDEX_NONE;
 	TSet<FString> LoggedHighlightMeshPaths;
 	TWeakObjectPtr<UMaterialInterface> AuthoredPreviewMaterial;
+	TWeakObjectPtr<UMaterialInterface> AuthoredPreviewDecalMaterial;
 	TArray<FBombardmentMeshHighlightState> HighlightedMeshes;
 };
 

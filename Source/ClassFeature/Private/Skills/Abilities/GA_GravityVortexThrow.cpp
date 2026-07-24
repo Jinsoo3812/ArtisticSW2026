@@ -1,4 +1,4 @@
-#include "Attacker/GA_GravityVortexThrow.h"
+#include "Skills/Abilities/GA_GravityVortexThrow.h"
 
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"

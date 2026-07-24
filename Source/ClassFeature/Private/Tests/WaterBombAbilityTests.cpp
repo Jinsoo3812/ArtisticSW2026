@@ -2,7 +2,7 @@
 
 #include "Misc/AutomationTest.h"
 
-#include "Attacker/GA_WaterBombCannonMode.h"
+#include "Skills/Abilities/GA_WaterBombCannonMode.h"
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
@@ -132,8 +132,18 @@ bool FWaterBombAbilityCannonIntegrationTest::RunTest(const FString& Parameters)
 			FiredProjectile->GetAttackSpeedMultiplier(), 0.5f);
 	}
 
-	ASC->CancelAbilities(&AbilityTags);
-	TestFalse(TEXT("Cancelling the GA restores normal cannon mode"), Cannon->IsWaterBombMode());
+	TestFalse(TEXT("Firing the last available material automatically exits Water Bomb mode"),
+		Cannon->IsWaterBombMode());
+
+	TestEqual(TEXT("Another Water Bomb material is added"),
+		Player->GetInventoryComponent()->AddItem(Item_Id_Material_SkillMaterial_EpicSkill, 1), 1);
+	TestTrue(TEXT("Water Bomb mode can be entered again"), ASC->TryActivateAbilitiesByTag(AbilityTags, true));
+	TestTrue(TEXT("The reactivated GA changes the cannon mode"), Cannon->IsWaterBombMode());
+	TestTrue(TEXT("The material can disappear through another inventory path"),
+		Player->GetInventoryComponent()->RemoveItem(Item_Id_Material_SkillMaterial_EpicSkill, 1));
+	Cannon->Tick(0.016f);
+	TestFalse(TEXT("Server tick exits Water Bomb mode when its material runs out externally"),
+		Cannon->IsWaterBombMode());
 
 	CleanupWorld();
 	return true;

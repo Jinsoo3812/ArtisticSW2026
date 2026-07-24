@@ -41,9 +41,9 @@
 #include "Cannon.h"
 #include "SwimmingComponent.h"
 #include "Skills/PlayerSkillComponent.h"
-#include "Attacker/GA_GravityVortexThrow.h"
-#include "Attacker/GA_WaterBombCannonMode.h"
-#include "Attacker/GA_Bombardment.h"
+#include "Skills/Abilities/GA_GravityVortexThrow.h"
+#include "Skills/Abilities/GA_WaterBombCannonMode.h"
+#include "Skills/Abilities/GA_Bombardment.h"
 #include "HAL/FileManager.h"
 #include "Misc/DateTime.h"
 #include "Misc/FileHelper.h"
@@ -108,7 +108,7 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 	SwimmingComponent = CreateDefaultSubobject<USwimmingComponent>(TEXT("SwimmingComponent"));
 	EquipmentComponent = CreateDefaultSubobject<UPlayerEquipmentComponent>(TEXT("EquipmentComponent"));
-	GravityVortexTestAbilityClass = UGA_GravityVortexThrow::StaticClass();
+	GravityVortexAbilityClass = UGA_GravityVortexThrow::StaticClass();
 	WaterBombAbilityClass = UGA_WaterBombCannonMode::StaticClass();
 	BombardmentAbilityClass = UGA_Bombardment::StaticClass();
 
@@ -480,9 +480,9 @@ void ABasePlayer::PossessedBy(AController* NewController)
 						GrantAbilityToSlot(AbilityPair.Key, AbilityPair.Value);
 					}
 				}
-				if (bEnableGravityVortexTestInput && GravityVortexTestAbilityClass)
+				if (bEnableGravityVortexSkillInput && GravityVortexAbilityClass)
 				{
-					GrantAbilityToSlot(Key_Test_Skill_GravityVortex, GravityVortexTestAbilityClass);
+					GrantAbilityToSlot(Key_Skill_GravityVortex, GravityVortexAbilityClass);
 				}
 				if (bGrantWaterBombAbility && WaterBombAbilityClass)
 				{
@@ -612,6 +612,13 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Canceled, this, &ABasePlayer::StopSprint);
 		}
 
+		if (bEnableGravityVortexSkillInput && GravityVortexSkillAction)
+		{
+			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Started, this, &ABasePlayer::OnGravityVortexSkillPressed);
+			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Completed, this, &ABasePlayer::OnGravityVortexSkillReleased);
+			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Canceled, this, &ABasePlayer::OnGravityVortexSkillReleased);
+		}
+
 		// Default 입력 바인딩
 		if (DefaultInputConfig)
 		{
@@ -640,9 +647,6 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	PlayerInputComponent->BindKey(EKeys::One, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot1);
 	PlayerInputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot2);
-	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot3);
-	PlayerInputComponent->BindKey(EKeys::Four, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot4);
-	PlayerInputComponent->BindKey(EKeys::Five, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot5);
 
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Pressed, this, &ABasePlayer::StartSprint);
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Released, this, &ABasePlayer::StopSprint);
@@ -652,11 +656,6 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::LeftControl, IE_Released, this, &ABasePlayer::StopSwimDive);
 	PlayerInputComponent->BindKey(EKeys::RightControl, IE_Pressed, this, &ABasePlayer::StartSwimDive);
 	PlayerInputComponent->BindKey(EKeys::RightControl, IE_Released, this, &ABasePlayer::StopSwimDive);
-	if (bEnableGravityVortexTestInput)
-	{
-		PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ABasePlayer::OnGravityVortexTestPressed);
-		PlayerInputComponent->BindKey(EKeys::Three, IE_Released, this, &ABasePlayer::OnGravityVortexTestReleased);
-	}
 }
 
 int32 ABasePlayer::GetInputIDFromTag(const FGameplayTag& Tag) const
@@ -1073,19 +1072,19 @@ void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 	}
 }
 
-void ABasePlayer::OnGravityVortexTestPressed()
+void ABasePlayer::OnGravityVortexSkillPressed()
 {
-	if (bEnableGravityVortexTestInput)
+	if (bEnableGravityVortexSkillInput)
 	{
-		OnAbilityInputPressed(Key_Test_Skill_GravityVortex);
+		OnAbilityInputPressed(Key_Skill_GravityVortex);
 	}
 }
 
-void ABasePlayer::OnGravityVortexTestReleased()
+void ABasePlayer::OnGravityVortexSkillReleased()
 {
-	if (bEnableGravityVortexTestInput)
+	if (bEnableGravityVortexSkillInput)
 	{
-		OnAbilityInputReleased(Key_Test_Skill_GravityVortex);
+		OnAbilityInputReleased(Key_Skill_GravityVortex);
 	}
 }
 
@@ -1334,7 +1333,7 @@ void ABasePlayer::UseEquippedItem(bool bDestroy)
 
 void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 {
-	if (bEnableGravityVortexTestInput && KeyTag.MatchesTagExact(Key_Item_3))
+	if (bEnableGravityVortexSkillInput && KeyTag.MatchesTagExact(Key_Item_3))
 	{
 		return;
 	}

@@ -2,7 +2,7 @@
 
 #include "Misc/AutomationTest.h"
 
-#include "Attacker/GA_Bombardment.h"
+#include "Skills/Abilities/GA_Bombardment.h"
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
