@@ -39,6 +39,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship Upgrade|Persistence")
 	FString SaveSlotName = TEXT("ShipUpgradeProgress");
 
+	/**
+	 * Development-only material bypass for testing this component.
+	 * It is forcibly ignored in Shipping builds and does not affect crafting or any other inventory consumer.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship Upgrade|Testing", meta = (DevelopmentOnly))
+	bool bIgnoreMaterialCostsForTesting = false;
+
 	UPROPERTY(BlueprintAssignable, Category = "Ship Upgrade|Events")
 	FShipUpgradeDataReadySignature OnUpgradeDataReady;
 
@@ -92,6 +99,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ship Upgrade|UI")
 	void RequestActivateNode(FName NodeId);
 
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship Upgrade|Testing", meta = (DevelopmentOnly))
+	void SetIgnoreMaterialCostsForTesting(bool bInIgnore);
+
+	UFUNCTION(BlueprintPure, Category = "Ship Upgrade|Testing", meta = (DevelopmentOnly))
+	bool IsIgnoringMaterialCostsForTesting() const;
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship Upgrade")
 	void SetPreviewBaseStats(const FShipStatSnapshot& InBaseStats);
 
@@ -125,6 +138,7 @@ private:
 	void BroadcastStateDiff(const TArray<FName>& PreviousNodeIds);
 	IShipUpgradeInventoryProvider* ResolveInventoryProvider() const;
 	bool BuildAggregatedCosts(const FShipUpgradeNodeDefinition& Node, TArray<FCraftingItemStack>& OutCosts) const;
+	bool ShouldIgnoreMaterialCostsForTesting() const;
 	void HandleInventoryChanged();
 
 	UPROPERTY(Transient)

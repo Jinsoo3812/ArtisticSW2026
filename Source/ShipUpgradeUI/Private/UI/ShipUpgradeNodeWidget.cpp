@@ -103,31 +103,38 @@ void UShipUpgradeNodeWidget::RefreshBuiltInVisuals()
 	{
 		Image_Icon->SetVisibility(
 			bLocked ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
-		const float Opacity =
-			NodeView.State == EShipUpgradeNodeState::Available ? AvailableIconOpacity : 1.0f;
-		Image_Icon->SetOpacity(Opacity);
+		// State color belongs to the node background, never to the icon.
+		Image_Icon->SetOpacity(1.0f);
 	}
 	if (Text_Name)
 	{
 		Text_Name->SetVisibility(
 			bLocked ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	}
+	FLinearColor StateColor = LockedGlowColor;
+	if (bActive)
+	{
+		StateColor = ActiveGlowColor;
+	}
+	else if (!bLocked && !NodeView.bHasEnoughMaterials)
+	{
+		StateColor = InsufficientMaterialsGlowColor;
+	}
+	else if (!bLocked)
+	{
+		StateColor = AvailableGlowColor;
+	}
+	if (Button_Node)
+	{
+		// BackgroundColor only multiplies the Button style brushes. Unlike
+		// ColorAndOpacity/Foreground it does not tint the icon or label.
+		Button_Node->SetBackgroundColor(StateColor);
+	}
 	if (Border_StateGlow)
 	{
-		FLinearColor GlowColor = LockedGlowColor;
-		if (bActive)
-		{
-			GlowColor = ActiveGlowColor;
-		}
-		else if (!bLocked && !NodeView.bHasEnoughMaterials)
-		{
-			GlowColor = InsufficientMaterialsGlowColor;
-		}
-		else if (!bLocked)
-		{
-			GlowColor = AvailableGlowColor;
-		}
-		Border_StateGlow->SetBrushColor(GlowColor);
+		// Legacy inner state layer caused a second, inset colored rectangle.
+		// It is optional and may be removed from the Widget Blueprint.
+		Border_StateGlow->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
 	BP_OnVisualStateApplied(NodeView.State, bSelected);
