@@ -13,7 +13,7 @@ class SHIPUPGRADEUI_API UShipUpgradeStatChangeRowWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	void ApplyStatChange(const FShipStatChangeView& InChange);
+	void ApplyStatChange(const FShipStatChangeView& InChange, bool bAfterValueOnly = false);
 
 protected:
 	UPROPERTY(meta = (BindWidgetOptional))

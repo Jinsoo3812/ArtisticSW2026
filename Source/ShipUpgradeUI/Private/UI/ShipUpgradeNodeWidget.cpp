@@ -66,7 +66,7 @@ void UShipUpgradeNodeWidget::SetSelected(bool bInSelected)
 
 void UShipUpgradeNodeWidget::HandleClicked()
 {
-	if (!NodeView.NodeId.IsNone())
+	if (!NodeView.NodeId.IsNone() && NodeView.State != EShipUpgradeNodeState::Locked)
 	{
 		NodeSelectedDelegate.Broadcast(NodeView.NodeId);
 	}
@@ -99,10 +99,16 @@ void UShipUpgradeNodeWidget::RefreshBuiltInVisuals()
 	}
 	if (Image_Icon)
 	{
-		const float Opacity = bLocked
-			? LockedIconOpacity
-			: (NodeView.State == EShipUpgradeNodeState::Available ? AvailableIconOpacity : 1.0f);
+		Image_Icon->SetVisibility(
+			bLocked ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+		const float Opacity =
+			NodeView.State == EShipUpgradeNodeState::Available ? AvailableIconOpacity : 1.0f;
 		Image_Icon->SetOpacity(Opacity);
+	}
+	if (Text_Name)
+	{
+		Text_Name->SetVisibility(
+			bLocked ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	}
 	if (Border_StateGlow)
 	{
@@ -145,7 +151,7 @@ void UShipUpgradeNodeWidget::RequestIconLoad()
 	{
 		if (Image_Icon)
 		{
-			Image_Icon->SetVisibility(ESlateVisibility::Hidden);
+			Image_Icon->SetVisibility(ESlateVisibility::Collapsed);
 		}
 		return;
 	}
@@ -153,7 +159,10 @@ void UShipUpgradeNodeWidget::RequestIconLoad()
 	if (UTexture2D* LoadedTexture = NodeView.Icon.Get())
 	{
 		Image_Icon->SetBrushFromTexture(LoadedTexture, true);
-		Image_Icon->SetVisibility(ESlateVisibility::HitTestInvisible);
+		Image_Icon->SetVisibility(
+			NodeView.State == EShipUpgradeNodeState::Locked
+				? ESlateVisibility::Collapsed
+				: ESlateVisibility::HitTestInvisible);
 		return;
 	}
 
@@ -172,7 +181,10 @@ void UShipUpgradeNodeWidget::RequestIconLoad()
 			if (UTexture2D* LoadedTexture = Cast<UTexture2D>(RequestedPath.ResolveObject()))
 			{
 				Widget->Image_Icon->SetBrushFromTexture(LoadedTexture, true);
-				Widget->Image_Icon->SetVisibility(ESlateVisibility::HitTestInvisible);
+				Widget->Image_Icon->SetVisibility(
+					Widget->NodeView.State == EShipUpgradeNodeState::Locked
+						? ESlateVisibility::Collapsed
+						: ESlateVisibility::HitTestInvisible);
 			}
 		}));
 }

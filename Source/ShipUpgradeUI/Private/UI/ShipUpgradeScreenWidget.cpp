@@ -1,14 +1,26 @@
 #include "UI/ShipUpgradeScreenWidget.h"
 
+#include "Blueprint/WidgetTree.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
+#include "Components/PanelSlot.h"
+#include "Components/PanelWidget.h"
+#include "Components/ScaleBox.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Engine/TextureRenderTarget2D.h"
+#include "EngineUtils.h"
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
+#include "Ship.h"
 #include "TimerManager.h"
 #include "UI/ShipUpgradeDetailsWidget.h"
 #include "UI/ShipUpgradeGraphWidget.h"
+#include "UI/ShipUpgradeNodeWidget.h"
 #include "UI/ShipUpgradePreviewStage.h"
 #include "Upgrade/ShipUpgradeBlueprintLibrary.h"
 #include "Upgrade/ShipUpgradeComponent.h"
@@ -38,8 +50,14 @@ void UShipUpgradeScreenWidget::NativeConstruct()
 		DetailsWidget->OnPreviewRequested().AddUObject(this, &UShipUpgradeScreenWidget::HandlePreviewRequested);
 	}
 
-	ApplyZoom(1.0f);
+	SetupPreviewLayers();
+	SetupDetailsPopup();
 	SpawnPreviewStage();
+	if (DetailsWidget)
+	{
+		DetailsWidget->ClearNode();
+	}
+	SetDetailsPopupVisible(false);
 	TryInitialize();
 }
 
@@ -113,11 +131,9 @@ FReply UShipUpgradeScreenWidget::NativeOnMouseWheel(
 	const FGeometry& InGeometry,
 	const FPointerEvent& InMouseEvent)
 {
-	if (IsPointerOverWidget(GraphWidget, InMouseEvent))
-	{
-		ApplyZoom(Zoom + InMouseEvent.GetWheelDelta() * ZoomStep);
-		return FReply::Handled();
-	}
+	// Let the parent ScrollBox consume the wheel so the prerequisite tree moves
+	// vertically. Zooming a graph under the cursor made the intended scroll UI
+	// feel broken and also changed the clickable geometry.
 	return Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
 }
 
@@ -138,20 +154,11 @@ void UShipUpgradeScreenWidget::RefreshAll()
 		*GetNameSafe(UpgradeComponent->GetOwner()),
 		*GetNameSafe(UpgradeComponent->UpgradeTree.Get()),
 		CachedNodeViews.Num()); */
-	if (SelectedNodeId.IsNone() && !CachedNodeViews.IsEmpty())
-	{
-		const FShipUpgradeNodeView* PreferredView = CachedNodeViews.FindByPredicate(
-			[](const FShipUpgradeNodeView& View)
-			{
-				return View.State == EShipUpgradeNodeState::Active;
-			});
-		SelectedNodeId = PreferredView ? PreferredView->NodeId : CachedNodeViews[0].NodeId;
-	}
-
 	if (GraphWidget)
 	{
 		GraphWidget->RebuildGraph(CachedNodeViews);
 		GraphWidget->SetSelectedNode(SelectedNodeId);
+		UpdateGraphExtent();
 	}
 	else
 	{
@@ -291,8 +298,28 @@ void UShipUpgradeScreenWidget::HandleNodeSelected(FName NodeId)
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[ShipUpgradeUI] Node selected. NodeId=%s"),
 		*NodeId.ToString()); */
+	if (SelectedNodeId == NodeId)
+	{
+		SelectedNodeId = NAME_None;
+		if (GraphWidget)
+		{
+			GraphWidget->SetSelectedNode(NAME_None);
+		}
+		if (DetailsWidget)
+		{
+			DetailsWidget->ClearNode();
+		}
+		SetDetailsPopupVisible(false);
+		return;
+	}
+
 	SelectedNodeId = NodeId;
+	if (GraphWidget)
+	{
+		GraphWidget->SetSelectedNode(NodeId);
+	}
 	RefreshSelectedNode();
+	PositionDetailsNextToNode(NodeId);
 }
 
 void UShipUpgradeScreenWidget::HandleActivationRequested(FName NodeId)
@@ -311,7 +338,7 @@ void UShipUpgradeScreenWidget::HandleActivationRequested(FName NodeId)
 
 void UShipUpgradeScreenWidget::HandlePreviewRequested(const FShipUpgradeNodeView& View)
 {
-	if (!View.PreviewActorClass.IsNull())
+	if (View.PreviewType != EShipUpgradePreviewType::Icon2D && !View.PreviewActorClass.IsNull())
 	{
 		ApplyPreviewClass(View.PreviewActorClass);
 	}
@@ -321,7 +348,7 @@ void UShipUpgradeScreenWidget::HandlePreviewRequested(const FShipUpgradeNodeView
 	}
 	else
 	{
-		ApplyPreviewClass(DefaultShipPreviewActorClass);
+		ApplyCurrentShipPreview();
 	}
 }
 
@@ -341,6 +368,7 @@ void UShipUpgradeScreenWidget::RefreshSelectedNode()
 			TEXT("[ShipUpgradeUI] Selected node view not found. NodeId=%s"),
 			*SelectedNodeId.ToString()); */
 		DetailsWidget->ClearNode();
+		SetDetailsPopupVisible(false);
 		return;
 	}
 	/* UE_LOG(LogTemp, Log,
@@ -350,6 +378,7 @@ void UShipUpgradeScreenWidget::RefreshSelectedNode()
 		View->MaterialCosts.Num(),
 		View->bHasEnoughMaterials ? TEXT("YES") : TEXT("NO")); */
 	DetailsWidget->ShowNode(*View, PendingNodeIds.Contains(View->NodeId));
+	SetDetailsPopupVisible(true);
 }
 
 void UShipUpgradeScreenWidget::RefreshCurrentStats(const FShipStatSnapshot& Stats)
@@ -419,10 +448,136 @@ void UShipUpgradeScreenWidget::RefreshActiveVisuals()
 	}
 
 	BP_OnActiveVisualsChanged(ActiveShipVisualClass, ActiveCannonVisualClass);
-	if (SelectedNodeId.IsNone())
+	if (!ActiveShipVisualClass.IsNull())
 	{
-		ApplyPreviewClass(
-			!ActiveShipVisualClass.IsNull() ? ActiveShipVisualClass : DefaultShipPreviewActorClass);
+		ApplyPreviewClass(ActiveShipVisualClass);
+	}
+	else
+	{
+		ApplyCurrentShipPreview();
+	}
+}
+
+void UShipUpgradeScreenWidget::SetupPreviewLayers()
+{
+	if (!Image_MainShipPreview || Image_ShipModelOverlay || !WidgetTree)
+	{
+		return;
+	}
+
+	UPanelWidget* Parent = Image_MainShipPreview->GetParent();
+	if (!Parent)
+	{
+		return;
+	}
+	const int32 ChildIndex = Parent->GetChildIndex(Image_MainShipPreview);
+	UPanelSlot* OriginalSlot = Image_MainShipPreview->Slot;
+	if (ChildIndex == INDEX_NONE || !OriginalSlot)
+	{
+		return;
+	}
+
+	UOverlay* PreviewOverlay = WidgetTree->ConstructWidget<UOverlay>(
+		UOverlay::StaticClass(),
+		TEXT("Overlay_ShipPreviewLayers"));
+	PreviewModelScaleBox = WidgetTree->ConstructWidget<UScaleBox>(
+		UScaleBox::StaticClass(),
+		TEXT("ScaleBox_ShipModelOverlay"));
+	Image_ShipModelOverlay = WidgetTree->ConstructWidget<UImage>(
+		UImage::StaticClass(),
+		TEXT("Image_ShipModelOverlay"));
+	if (!PreviewOverlay || !PreviewModelScaleBox || !Image_ShipModelOverlay)
+	{
+		return;
+	}
+
+	Parent->RemoveChildAt(ChildIndex);
+	if (!Parent->InsertChildAt(ChildIndex, PreviewOverlay, OriginalSlot))
+	{
+		return;
+	}
+
+	if (UOverlaySlot* BackgroundSlot = PreviewOverlay->AddChildToOverlay(Image_MainShipPreview))
+	{
+		BackgroundSlot->SetHorizontalAlignment(HAlign_Fill);
+		BackgroundSlot->SetVerticalAlignment(VAlign_Fill);
+	}
+	if (UOverlaySlot* ModelSlot = PreviewOverlay->AddChildToOverlay(PreviewModelScaleBox))
+	{
+		ModelSlot->SetHorizontalAlignment(HAlign_Fill);
+		ModelSlot->SetVerticalAlignment(VAlign_Fill);
+	}
+
+	PreviewModelScaleBox->SetStretch(EStretch::ScaleToFit);
+	PreviewModelScaleBox->SetStretchDirection(EStretchDirection::Both);
+	PreviewModelScaleBox->AddChild(Image_ShipModelOverlay);
+	Image_ShipModelOverlay->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+	UMaterialInterface* OverlayMaterial = LoadObject<UMaterialInterface>(
+		nullptr,
+		TEXT("/Game/Blueprints/02_UI/UI_WorkTable/UI_ShipUpgrade/M_ShipPreviewOverlay.M_ShipPreviewOverlay"));
+	if (OverlayMaterial)
+	{
+		Image_ShipModelOverlay->SetBrushFromMaterial(OverlayMaterial);
+		PreviewOverlayMaterialInstance = Image_ShipModelOverlay->GetDynamicMaterial();
+	}
+}
+
+void UShipUpgradeScreenWidget::SetupDetailsPopup()
+{
+	if (!DetailsWidget || DetailsPopupHost || !WidgetTree)
+	{
+		return;
+	}
+
+	UPanelWidget* Parent = DetailsWidget->GetParent();
+	if (!Parent)
+	{
+		return;
+	}
+	const int32 ChildIndex = Parent->GetChildIndex(DetailsWidget);
+	UPanelSlot* OriginalSlot = DetailsWidget->Slot;
+	if (ChildIndex == INDEX_NONE || !OriginalSlot)
+	{
+		return;
+	}
+
+	DetailsPopupHost = WidgetTree->ConstructWidget<USizeBox>(
+		USizeBox::StaticClass(),
+		TEXT("SizeBox_ShipUpgradeDetailsPopup"));
+	if (!DetailsPopupHost)
+	{
+		return;
+	}
+
+	Parent->RemoveChildAt(ChildIndex);
+	UPanelSlot* PopupSlot = Parent->InsertChildAt(ChildIndex, DetailsPopupHost, OriginalSlot);
+	if (!PopupSlot)
+	{
+		DetailsPopupHost = nullptr;
+		return;
+	}
+	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(PopupSlot))
+	{
+		CanvasSlot->SetAnchors(FAnchors(0.0f));
+		CanvasSlot->SetAlignment(FVector2D::ZeroVector);
+		CanvasSlot->SetPosition(FVector2D::ZeroVector);
+		CanvasSlot->SetAutoSize(true);
+		CanvasSlot->SetZOrder(100);
+	}
+
+	DetailsPopupHost->SetWidthOverride(DetailsPopupWidth);
+	DetailsPopupHost->SetMaxDesiredHeight(DetailsPopupMaxHeight);
+	DetailsPopupHost->AddChild(DetailsWidget);
+	DetailsPopupHost->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void UShipUpgradeScreenWidget::SetDetailsPopupVisible(bool bVisible)
+{
+	if (DetailsPopupHost)
+	{
+		DetailsPopupHost->SetVisibility(
+			bVisible ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	}
 }
 
@@ -441,15 +596,28 @@ void UShipUpgradeScreenWidget::SpawnPreviewStage()
 		PreviewStageSpawnTransform,
 		Parameters);
 
-	if (PreviewStage && Image_MainShipPreview)
+	if (PreviewStage && Image_ShipModelOverlay)
 	{
 		if (UTextureRenderTarget2D* RenderTarget = PreviewStage->GetRenderTarget())
 		{
-			FSlateBrush Brush = Image_MainShipPreview->GetBrush();
-			Brush.SetResourceObject(RenderTarget);
-			Image_MainShipPreview->SetBrush(Brush);
+			if (PreviewOverlayMaterialInstance)
+			{
+				PreviewOverlayMaterialInstance->SetTextureParameterValue(
+					TEXT("ShipPreviewTexture"),
+					RenderTarget);
+			}
+			else
+			{
+				FSlateBrush Brush = Image_ShipModelOverlay->GetBrush();
+				Brush.SetResourceObject(RenderTarget);
+				Brush.SetImageSize(FVector2D(
+					static_cast<float>(RenderTarget->SizeX),
+					static_cast<float>(RenderTarget->SizeY)));
+				Image_ShipModelOverlay->SetBrush(Brush);
+			}
 		}
 	}
+	ApplyCurrentShipPreview();
 }
 
 void UShipUpgradeScreenWidget::ApplyPreviewClass(TSoftClassPtr<AActor> PreviewClass)
@@ -458,6 +626,123 @@ void UShipUpgradeScreenWidget::ApplyPreviewClass(TSoftClassPtr<AActor> PreviewCl
 	{
 		PreviewStage->SetPreviewActorSoftClass(PreviewClass);
 	}
+}
+
+void UShipUpgradeScreenWidget::ApplyCurrentShipPreview()
+{
+	if (!PreviewStage || !GetWorld())
+	{
+		return;
+	}
+
+	const APawn* PlayerPawn = GetOwningPlayerPawn();
+	AShip* BestShip = nullptr;
+	double BestDistanceSquared = TNumericLimits<double>::Max();
+	for (TActorIterator<AShip> It(GetWorld()); It; ++It)
+	{
+		AShip* Candidate = *It;
+		if (!IsValid(Candidate) || Candidate->IsEnemyShipForEffects())
+		{
+			continue;
+		}
+		const double DistanceSquared = PlayerPawn
+			? FVector::DistSquared(PlayerPawn->GetActorLocation(), Candidate->GetActorLocation())
+			: 0.0;
+		if (!BestShip || DistanceSquared < BestDistanceSquared)
+		{
+			BestShip = Candidate;
+			BestDistanceSquared = DistanceSquared;
+		}
+	}
+
+	if (BestShip)
+	{
+		PreviewStage->SetPreviewSourceActor(BestShip);
+	}
+	else if (!DefaultShipPreviewActorClass.IsNull())
+	{
+		PreviewStage->SetPreviewActorSoftClass(DefaultShipPreviewActorClass);
+	}
+}
+
+void UShipUpgradeScreenWidget::PositionDetailsNextToNode(FName NodeId)
+{
+	if (!DetailsWidget || !DetailsPopupHost || !GraphWidget)
+	{
+		return;
+	}
+	UShipUpgradeNodeWidget* NodeWidget = GraphWidget->GetNodeWidget(NodeId);
+	if (!NodeWidget)
+	{
+		return;
+	}
+
+	DetailsPopupHost->SetRenderTranslation(FVector2D::ZeroVector);
+	ForceLayoutPrepass();
+	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(DetailsPopupHost->Slot))
+	{
+		if (UPanelWidget* PopupParent = DetailsPopupHost->GetParent())
+		{
+			const FGeometry& ParentGeometry = PopupParent->GetCachedGeometry();
+			const FGeometry& NodeGeometry = NodeWidget->GetCachedGeometry();
+			const FVector2D ParentSize = ParentGeometry.GetLocalSize();
+			if (!ParentSize.IsNearlyZero() && !NodeGeometry.GetLocalSize().IsNearlyZero())
+			{
+				FVector2D TargetPosition =
+					ParentGeometry.AbsoluteToLocal(NodeGeometry.GetAbsolutePosition())
+					+ FVector2D(NodeGeometry.GetLocalSize().X, 0.0f)
+					+ DetailsNodeOffset;
+				TargetPosition.X = FMath::Clamp(
+					TargetPosition.X,
+					0.0f,
+					FMath::Max(0.0f, ParentSize.X - DetailsPopupWidth));
+				TargetPosition.Y = FMath::Clamp(
+					TargetPosition.Y,
+					0.0f,
+					FMath::Max(0.0f, ParentSize.Y - DetailsPopupMaxHeight));
+				CanvasSlot->SetPosition(TargetPosition);
+				return;
+			}
+		}
+	}
+
+	const FGeometry& ScreenGeometry = GetCachedGeometry();
+	const FGeometry& NodeGeometry = NodeWidget->GetCachedGeometry();
+	const FGeometry& DetailsGeometry = DetailsPopupHost->GetCachedGeometry();
+	if (ScreenGeometry.GetLocalSize().IsNearlyZero() || NodeGeometry.GetLocalSize().IsNearlyZero())
+	{
+		return;
+	}
+
+	const FVector2D NodeLocalPosition =
+		ScreenGeometry.AbsoluteToLocal(NodeGeometry.GetAbsolutePosition());
+	const FVector2D CurrentDetailsLocalPosition =
+		ScreenGeometry.AbsoluteToLocal(DetailsGeometry.GetAbsolutePosition());
+	FVector2D TargetLocalPosition =
+		NodeLocalPosition + FVector2D(NodeGeometry.GetLocalSize().X, 0.0f) + DetailsNodeOffset;
+
+	const FVector2D DetailsSize = DetailsGeometry.GetLocalSize();
+	const FVector2D ScreenSize = ScreenGeometry.GetLocalSize();
+	TargetLocalPosition.X = FMath::Clamp(
+		TargetLocalPosition.X,
+		0.0f,
+		FMath::Max(0.0f, ScreenSize.X - DetailsSize.X));
+	TargetLocalPosition.Y = FMath::Clamp(
+		TargetLocalPosition.Y,
+		0.0f,
+		FMath::Max(0.0f, ScreenSize.Y - DetailsSize.Y));
+	DetailsPopupHost->SetRenderTranslation(TargetLocalPosition - CurrentDetailsLocalPosition);
+}
+
+void UShipUpgradeScreenWidget::UpdateGraphExtent()
+{
+	if (!SizeBox_GraphExtent || !GraphWidget)
+	{
+		return;
+	}
+	const FVector2D RequiredExtent = GraphWidget->GetRequiredExtent();
+	SizeBox_GraphExtent->SetWidthOverride(FMath::Max(VerticalGraphMinWidth, RequiredExtent.X));
+	SizeBox_GraphExtent->SetHeightOverride(FMath::Max(VerticalGraphMinHeight, RequiredExtent.Y));
 }
 
 const FShipUpgradeNodeView* UShipUpgradeScreenWidget::FindCachedView(FName NodeId) const

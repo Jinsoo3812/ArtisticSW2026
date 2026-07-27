@@ -163,7 +163,9 @@ void UShipUpgradeDetailsWidget::RebuildStatChanges()
 		if (UShipUpgradeStatChangeRowWidget* Row = CreateWidget<UShipUpgradeStatChangeRowWidget>(
 			GetOwningPlayer(), StatChangeRowClass))
 		{
-			Row->ApplyStatChange(Change);
+			Row->ApplyStatChange(
+				Change,
+				SelectedView.State == EShipUpgradeNodeState::Active);
 			VerticalBox_StatChanges->AddChildToVerticalBox(Row);
 		}
 	}
@@ -182,6 +184,12 @@ void UShipUpgradeDetailsWidget::RebuildMaterialCosts()
 		return;
 	}
 	VerticalBox_MaterialCosts->ClearChildren();
+	if (SelectedView.State == EShipUpgradeNodeState::Active)
+	{
+		VerticalBox_MaterialCosts->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+	VerticalBox_MaterialCosts->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	if (!MaterialRowClass)
 	{
 		/* UE_LOG(LogTemp, Warning,
@@ -262,6 +270,8 @@ void UShipUpgradeDetailsWidget::RefreshActivationState()
 	if (Button_Activate)
 	{
 		Button_Activate->SetIsEnabled(bCanActivate);
+		Button_Activate->SetVisibility(
+			bIsActive ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
 	}
 	if (Throbber_Requesting)
 	{
