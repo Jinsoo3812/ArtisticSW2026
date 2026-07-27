@@ -95,7 +95,9 @@ void UShipUpgradeNodeWidget::RefreshBuiltInVisuals()
 	}
 	if (Image_Check)
 	{
-		Image_Check->SetVisibility(bActive ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		// Activation is represented by the node background color. The optional
+		// legacy check image stays hidden and can safely be deleted from the WBP.
+		Image_Check->SetVisibility(ESlateVisibility::Collapsed);
 	}
 	if (Image_Icon)
 	{
@@ -113,15 +115,15 @@ void UShipUpgradeNodeWidget::RefreshBuiltInVisuals()
 	if (Border_StateGlow)
 	{
 		FLinearColor GlowColor = LockedGlowColor;
-		if (bSelected)
-		{
-			GlowColor = SelectedGlowColor;
-		}
-		else if (bActive)
+		if (bActive)
 		{
 			GlowColor = ActiveGlowColor;
 		}
-		else if (NodeView.State == EShipUpgradeNodeState::Available)
+		else if (!bLocked && !NodeView.bHasEnoughMaterials)
+		{
+			GlowColor = InsufficientMaterialsGlowColor;
+		}
+		else if (!bLocked)
 		{
 			GlowColor = AvailableGlowColor;
 		}
