@@ -37,6 +37,12 @@ void UShipUpgradeScreenWidget::NativeConstruct()
 		*GetNameSafe(DetailsWidget),
 		*GetNameSafe(SizeBox_GraphExtent)); */
 
+	// These helpers reparent designer widgets into runtime hosts. Do that before
+	// binding native delegates because releasing a UserWidget's Slate resources
+	// during reparenting can run NativeDestruct and clear those delegates.
+	SetupPreviewLayers();
+	SetupDetailsPopup();
+
 	if (GraphWidget)
 	{
 		GraphWidget->OnNodeSelected().RemoveAll(this);
@@ -50,8 +56,6 @@ void UShipUpgradeScreenWidget::NativeConstruct()
 		DetailsWidget->OnPreviewRequested().AddUObject(this, &UShipUpgradeScreenWidget::HandlePreviewRequested);
 	}
 
-	SetupPreviewLayers();
-	SetupDetailsPopup();
 	SpawnPreviewStage();
 	if (DetailsWidget)
 	{

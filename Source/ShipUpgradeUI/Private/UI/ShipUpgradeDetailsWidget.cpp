@@ -138,7 +138,9 @@ void UShipUpgradeDetailsWidget::HandleActivateClicked()
 		return;
 	}
 
-	SetRequestPending(true);
+	// The screen owns the request queue and sets the pending state only after it
+	// accepts this request. Setting it here could leave the details widget stuck
+	// forever if its parent delegate was not bound.
 	ActivationRequestedDelegate.Broadcast(SelectedView.NodeId);
 }
 
@@ -276,7 +278,9 @@ void UShipUpgradeDetailsWidget::RefreshActivationState()
 	if (Throbber_Requesting)
 	{
 		Throbber_Requesting->SetVisibility(
-			bIsRequestPending ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+			bShowRequestThrobber && bIsRequestPending
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
 	}
 	if (Text_Activate)
 	{
