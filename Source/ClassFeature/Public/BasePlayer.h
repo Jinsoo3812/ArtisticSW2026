@@ -328,6 +328,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Skills")
 	TObjectPtr<UInputAction> GravityVortexSkillAction;
 
+	/** Direct hotkey for Current Generator. Defaults to 6 and can be changed per Player Blueprint. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Skills")
+	FKey CurrentGeneratorSkillHotkey;
+
 	void Move(const FInputActionValue& Value);
 	void MoveStopped(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);

@@ -87,6 +87,8 @@ FAttachmentTransformRules CustomAttachRules(
 ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<USWCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
+	CurrentGeneratorSkillHotkey = EKeys::Six;
+
 	// 카메라 붐(SpringArm) 생성 및 설정
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
@@ -488,7 +490,7 @@ void ABasePlayer::PossessedBy(AController* NewController)
 						TEXT("[VortexPipeline][Grant] PlayerClass=%s AbilityClass=%s Slot=%s InputID=%d"),
 						*GetPathNameSafe(GetClass()),
 						*GetPathNameSafe(GravityVortexAbilityClass.Get()),
-						*Key_Skill_GravityVortex.ToString(),
+						*Key_Skill_GravityVortex.GetTag().ToString(),
 						GetInputIDFromTag(Key_Skill_GravityVortex));
 					GrantAbilityToSlot(Key_Skill_GravityVortex, GravityVortexAbilityClass);
 				}
@@ -572,7 +574,7 @@ void ABasePlayer::PawnClientRestart()
 				const int32 EffectiveDefaultPriority = ResolveDefaultMappingPriority(
 					DefaultIMCPriority,
 					ItemIMCPriority,
-					bEnableGravityVortexSkillInput && GravityVortexSkillAction);
+					false);
 				Subsystem->AddMappingContext(DefaultIMC, EffectiveDefaultPriority);
 			}
 
@@ -627,13 +629,6 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Canceled, this, &ABasePlayer::StopSprint);
 		}
 
-		if (bEnableGravityVortexSkillInput && GravityVortexSkillAction)
-		{
-			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Started, this, &ABasePlayer::OnGravityVortexSkillPressed);
-			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Completed, this, &ABasePlayer::OnGravityVortexSkillReleased);
-			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Canceled, this, &ABasePlayer::OnGravityVortexSkillReleased);
-		}
-
 		// Default 입력 바인딩
 		if (DefaultInputConfig)
 		{
@@ -662,6 +657,13 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	PlayerInputComponent->BindKey(EKeys::One, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot1);
 	PlayerInputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot2);
+	if (bEnableGravityVortexSkillInput && CurrentGeneratorSkillHotkey.IsValid())
+	{
+		PlayerInputComponent->BindKey(
+			CurrentGeneratorSkillHotkey, IE_Pressed, this, &ABasePlayer::OnGravityVortexSkillPressed);
+		PlayerInputComponent->BindKey(
+			CurrentGeneratorSkillHotkey, IE_Released, this, &ABasePlayer::OnGravityVortexSkillReleased);
+	}
 
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Pressed, this, &ABasePlayer::StartSprint);
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Released, this, &ABasePlayer::StopSprint);

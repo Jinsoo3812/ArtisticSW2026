@@ -569,6 +569,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Input|Skills")
 	UInputAction* ShipBombardmentToggleAction;
 
+	/** Direct Bombardment hotkey. Defaults to 8 and can be changed per Ship Blueprint. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Input|Skills")
+	FKey BombardmentSkillHotkey;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Input|Skills")
 	UInputAction* ShipBombardmentConfirmAction;
 

@@ -156,9 +156,9 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Bow_LongBow4, "Item.Id.Weapon.Bow.LongBow4
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Bow_LongBow5, "Item.Id.Weapon.Bow.LongBow5");
 
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill, "Item.Id.Skill");
-UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_CurrentGenerator, "Item.Id.Skill.CurrentGenerator");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_GravityVortex, "Item.Id.Skill.GravityVortex");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_WaterBomb, "Item.Id.Skill.WaterBomb");
-UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_CannonBarrage, "Item.Id.Skill.CannonBarrage");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_Bombardment, "Item.Id.Skill.Bombardment");
 
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Clue, "Item.Id.Clue");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Clue_Clue1, "Item.Id.Clue.Clue1");

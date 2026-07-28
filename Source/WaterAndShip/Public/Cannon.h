@@ -134,6 +134,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
 	TObjectPtr<UInputAction> CannonWaterBombToggleAction;
 
+	/** Direct Water Bomb hotkey. Defaults to 7 and can be changed per Cannon Blueprint. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannon|Input|Skills")
+	FKey WaterBombSkillHotkey;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
 	int32 CannonInputPriority = 10;
 
