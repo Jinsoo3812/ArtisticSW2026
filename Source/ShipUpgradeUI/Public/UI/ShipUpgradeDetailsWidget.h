@@ -67,6 +67,10 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UThrobber> Throbber_Requesting;
 
+	/** Optional network-request indicator. Disabled by default for the compact popup design. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Style")
+	bool bShowRequestThrobber = false;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Rows")
 	TSubclassOf<UShipUpgradeStatChangeRowWidget> StatChangeRowClass;
 

@@ -211,6 +211,7 @@ TArray<FShipUpgradeMaterialView> UShipUpgradeComponent::GetNodeMaterialCosts(FNa
 	TArray<FCraftingItemStack> Costs;
 	if (!BuildAggregatedCosts(*Node, Costs)) return Views;
 
+	const bool bIgnoreMaterialCosts = ShouldIgnoreMaterialCostsForTesting();
 	IShipUpgradeInventoryProvider* Provider = ResolveInventoryProvider();
 	UItemSubsystem* Items = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
 	for (const FCraftingItemStack& Cost : Costs)
@@ -219,7 +220,11 @@ TArray<FShipUpgradeMaterialView> UShipUpgradeComponent::GetNodeMaterialCosts(FNa
 		View.ItemTag = Cost.ItemTag;
 		View.RequiredQuantity = Cost.Quantity;
 		View.OwnedQuantity = Provider ? Provider->GetShipUpgradeItemCount(Cost.ItemTag) : 0;
-		View.bEnough = View.OwnedQuantity >= View.RequiredQuantity;
+		if (bIgnoreMaterialCosts)
+		{
+			View.OwnedQuantity = FMath::Max(View.OwnedQuantity, View.RequiredQuantity);
+		}
+		View.bEnough = bIgnoreMaterialCosts || View.OwnedQuantity >= View.RequiredQuantity;
 		if (Items)
 		{
 			View.DisplayName = Items->GetItemName(Cost.ItemTag);
@@ -250,6 +255,7 @@ bool UShipUpgradeComponent::HasRequiredMaterials(FName NodeId, FText& OutReason)
 		return false;
 	}
 	if (Costs.IsEmpty()) return true;
+	if (ShouldIgnoreMaterialCostsForTesting()) return true;
 	IShipUpgradeInventoryProvider* Provider = ResolveInventoryProvider();
 	if (!Provider)
 	{
@@ -289,6 +295,22 @@ void UShipUpgradeComponent::RequestActivateNode(FName NodeId)
 	{
 		ServerRequestActivateNode(NodeId);
 	}
+}
+
+void UShipUpgradeComponent::SetIgnoreMaterialCostsForTesting(bool bInIgnore)
+{
+	if (GetOwner() && !GetOwner()->HasAuthority()) return;
+#if UE_BUILD_SHIPPING
+	bInIgnore = false;
+#endif
+	if (bIgnoreMaterialCostsForTesting == bInIgnore) return;
+	bIgnoreMaterialCostsForTesting = bInIgnore;
+	OnUpgradeDataChanged.Broadcast();
+}
+
+bool UShipUpgradeComponent::IsIgnoringMaterialCostsForTesting() const
+{
+	return ShouldIgnoreMaterialCostsForTesting();
 }
 
 void UShipUpgradeComponent::SetPreviewBaseStats(const FShipStatSnapshot& InBaseStats)
@@ -362,8 +384,9 @@ EShipUpgradeActivationResult UShipUpgradeComponent::ActivateNodeInternal(FName N
 	const FShipUpgradeNodeDefinition* Node = UpgradeTree->FindNode(NodeId);
 	TArray<FCraftingItemStack> Costs;
 	if (!Node || !BuildAggregatedCosts(*Node, Costs)) return EShipUpgradeActivationResult::InvalidCost;
-	IShipUpgradeInventoryProvider* Provider = Costs.IsEmpty() ? nullptr : ResolveInventoryProvider();
-	if (!Costs.IsEmpty() && (!Provider || !Provider->RemoveShipUpgradeItemsAtomically(Costs)))
+	const bool bConsumeMaterialCosts = !Costs.IsEmpty() && !ShouldIgnoreMaterialCostsForTesting();
+	IShipUpgradeInventoryProvider* Provider = bConsumeMaterialCosts ? ResolveInventoryProvider() : nullptr;
+	if (bConsumeMaterialCosts && (!Provider || !Provider->RemoveShipUpgradeItemsAtomically(Costs)))
 	{
 		return EShipUpgradeActivationResult::MissingMaterials;
 	}
@@ -480,6 +503,15 @@ bool UShipUpgradeComponent::BuildAggregatedCosts(const FShipUpgradeNodeDefinitio
 		return A.ItemTag.ToString() < B.ItemTag.ToString();
 	});
 	return true;
+}
+
+bool UShipUpgradeComponent::ShouldIgnoreMaterialCostsForTesting() const
+{
+#if UE_BUILD_SHIPPING
+	return false;
+#else
+	return bIgnoreMaterialCostsForTesting;
+#endif
 }
 
 void UShipUpgradeComponent::HandleInventoryChanged()
