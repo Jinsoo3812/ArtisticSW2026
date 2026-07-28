@@ -63,7 +63,7 @@ ARTISTICSWCORE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Key_Item_5);
 
 // Temporary standalone test binding. The physical key is Keyboard 3, but this
 // tag intentionally stays separate from Key.Item.3 until quick-slot policy is decided.
-ARTISTICSWCORE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Key_Test_Skill_GravityVortex);
+ARTISTICSWCORE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Key_Skill_GravityVortex);
 
 // Crafter Skill - Keyboard Tag
 ARTISTICSWCORE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Key_Crafter_R);

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "BaseGameplayAbility.h"
+#include "Skills/PlayerSkillGameplayAbility.h"
 #include "GA_WaterBombCannonMode.generated.h"
 
 class ACannon;
@@ -12,7 +12,7 @@ class AWaterBombCannonball;
  * avatar into Water Bomb mode. Pressing the cannon toggle again cancels this GA.
  */
 UCLASS(Blueprintable)
-class CLASSFEATURE_API UGA_WaterBombCannonMode : public UBaseGameplayAbility
+class CLASSFEATURE_API UGA_WaterBombCannonMode : public UPlayerSkillGameplayAbility
 {
 	GENERATED_BODY()
 

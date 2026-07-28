@@ -9,6 +9,7 @@
 #include "Equipment/PlayerEquipmentComponent.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Components/SkinnedMeshComponent.h"
+#include "Skills/SkillUseProvider.h"
 #include "BasePlayer.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
@@ -29,6 +30,7 @@ class UBaseHealthComponent;
 class AShip;
 class ACannon;
 class USwimmingComponent;
+class UPlayerSkillComponent;
 
 // Item Slot 관리 구조체
 USTRUCT(BlueprintType)
@@ -82,7 +84,7 @@ struct FQuickSlotReference
  * 
  */
 UCLASS(Config = Game)
-class CLASSFEATURE_API ABasePlayer : public ABaseCharacter
+class CLASSFEATURE_API ABasePlayer : public ABaseCharacter, public ISkillUseProvider
 {
 	GENERATED_BODY()
 	friend class ULocomotionAnimStateComponent;
@@ -102,9 +104,20 @@ public:
 public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return CachedAbilitySystemComponent.Get(); };
 
+	// ISkillUseProvider: execution actors call this bridge without depending on ClassFeature.
+	virtual bool CanUseSkill(const FGameplayTag& SkillTag) const override;
+	virtual bool TryConsumeSkillUse(const FGameplayTag& SkillTag) override;
+
+	UFUNCTION(BlueprintPure, Category = "Skill")
+	UPlayerSkillComponent* GetPlayerSkillComponent() const;
+
 protected:
 	UPROPERTY()
 	TWeakObjectPtr<class UAbilitySystemComponent> CachedAbilitySystemComponent;
+
+	/** Retained while the controller temporarily possesses a ship or cannon. */
+	UPROPERTY()
+	TWeakObjectPtr<UPlayerSkillComponent> CachedPlayerSkillComponent;
 
 	/* --- 네트워크 초기화 ---*/
 public:
@@ -271,6 +284,13 @@ protected:
 	// 태그를 넣으면 고유 Hash 기반 ID를 반환하는 헬퍼
 	int32 GetInputIDFromTag(const FGameplayTag& Tag) const;
 
+public:
+	/** Keeps the on-foot skill mapping above the legacy item-slot context. */
+	static int32 ResolveDefaultMappingPriority(
+		int32 ConfiguredDefaultPriority,
+		int32 ConfiguredItemPriority,
+		bool bHasSkillInput);
+
 protected:
 	// 서버에 의해 로컬에서 Controller가 조종하는 Pawn이 지정될 때 호출되는 함수.
 	virtual void PawnClientRestart() override;
@@ -304,6 +324,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> SprintAction;
 
+	/** Assign the Gravity Vortex IA mapped to key 3 in the on-foot IMC. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Skills")
+	TObjectPtr<UInputAction> GravityVortexSkillAction;
+
 	void Move(const FInputActionValue& Value);
 	void MoveStopped(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
@@ -325,12 +349,20 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
 	TArray<TSubclassOf<UGameplayAbility>> DefaultGrantedAbilities;
 
-	/** Temporary Keyboard 3 test hook; disable when the final skill slot is wired. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex Test")
-	bool bEnableGravityVortexTestInput = true;
+	/**
+	 * Development-only convenience switch for skill testing.
+	 * When enabled, all three player skills ignore story locks and inventory
+	 * materials, and completed uses do not consume an item.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Skill Test")
+	bool bBypassSkillRequirementsForTesting = false;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex Test")
-	TSubclassOf<UGameplayAbility> GravityVortexTestAbilityClass;
+	/** Enables the formal Gravity Vortex Enhanced Input binding while on foot. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex")
+	bool bEnableGravityVortexSkillInput = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex")
+	TSubclassOf<UGameplayAbility> GravityVortexAbilityClass;
 
 	/** Granted without a player input slot; a ridden cannon activates/cancels it through its ability tag. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Water Bomb")
@@ -340,7 +372,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Water Bomb")
 	TSubclassOf<UGameplayAbility> WaterBombAbilityClass;
 
-	/** Granted without a player input slot; the currently possessed ship toggles it with test key 5. */
+	/** Granted without a player input slot; the currently possessed ship toggles it through its IA/IMC binding. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Bombardment")
 	bool bGrantBombardmentAbility = true;
 
@@ -362,8 +394,8 @@ public:
 	// 즉발형 GA에 대해 SlotTag에 매핑된 GA를 실행하는 함수
 	void OnAbilityInputPressed(FGameplayTag InputTag);
 	void OnAbilityInputReleased(FGameplayTag InputTag);
-	void OnGravityVortexTestPressed();
-	void OnGravityVortexTestReleased();
+	void OnGravityVortexSkillPressed();
+	void OnGravityVortexSkillReleased();
 
 	// 마우스 입력에 대한 활용을 위해 따로 OnAbilityInput과 분리
 	void OnMouseInputPressed(FGameplayTag InputTag);

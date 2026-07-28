@@ -122,15 +122,27 @@ void AGravityVortexProjectile::ActivateAtWaterSurface(const FVector& SurfaceLoca
 	}
 
 	bActivated = true;
-	if (FieldClass)
+	TSubclassOf<AGravityVortexField> EffectiveFieldClass = FieldClass;
+	if (!EffectiveFieldClass)
+	{
+		EffectiveFieldClass = AGravityVortexField::StaticClass();
+	}
+	if (EffectiveFieldClass)
 	{
 		FActorSpawnParameters SpawnParams;
 		SpawnParams.Owner = GetOwner();
 		SpawnParams.Instigator = GetInstigator();
 		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		GetWorld()->SpawnActor<AGravityVortexField>(FieldClass, SurfaceLocation, FRotator::ZeroRotator, SpawnParams);
+		if (AGravityVortexField* Field = GetWorld()->SpawnActor<AGravityVortexField>(
+			EffectiveFieldClass, SurfaceLocation, FRotator::ZeroRotator, SpawnParams))
+		{
+			// A Blueprint child may have serialized an older replication default.
+			Field->SetReplicates(true);
+			Field->bAlwaysRelevant = true;
+			Field->SetActorTickEnabled(true);
+			Field->ForceNetUpdate();
+		}
 	}
-	UE_LOG(LogTemp, Log, TEXT("[GRAVITY-VORTEX] Water activation at %s"), *SurfaceLocation.ToString());
 
 	Destroy();
 }

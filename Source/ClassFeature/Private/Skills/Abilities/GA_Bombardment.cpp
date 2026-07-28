@@ -1,4 +1,4 @@
-#include "Attacker/GA_Bombardment.h"
+#include "Skills/Abilities/GA_Bombardment.h"
 
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
@@ -11,6 +11,7 @@ UGA_Bombardment::UGA_Bombardment()
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
 	BombardmentClass = ABombardment::StaticClass();
+	SkillTag = GameplayAbility_Skill_Bombardment;
 
 	FGameplayTagContainer AssetTags;
 	AssetTags.AddTag(GameplayAbility_Skill_Bombardment);

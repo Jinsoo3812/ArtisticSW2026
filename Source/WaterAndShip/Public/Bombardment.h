@@ -9,6 +9,7 @@ class AShip;
 class UMaterialInterface;
 class UMeshComponent;
 class USceneComponent;
+class UStaticMesh;
 class UStaticMeshComponent;
 
 UENUM(BlueprintType)
@@ -22,13 +23,10 @@ struct FBombardmentMeshHighlightState
 {
 	TWeakObjectPtr<UMeshComponent> Mesh;
 	TWeakObjectPtr<UMaterialInterface> OverlayMaterial;
-	TArray<TWeakObjectPtr<UMaterialInterface>> Materials;
-	bool bMaterialsReplaced = false;
-	bool bRenderedCustomDepth = false;
-	int32 CustomDepthStencilValue = 0;
+	bool bDisallowNanite = false;
 };
 
-/** Local-only targeting visualization. Its mesh/material are intended to be authored in a Blueprint child. */
+/** Local-only targeting visualization: one mesh, one preview material, and one enemy highlight material. */
 UCLASS(Blueprintable)
 class WATERANDSHIP_API ABombardmentPreview : public AActor
 {
@@ -44,54 +42,36 @@ public:
 	void SetPreviewValid(bool bInValid);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bombardment|Preview")
+	TObjectPtr<USceneComponent> PreviewRoot;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bombardment|Preview")
 	TObjectPtr<UStaticMeshComponent> PreviewMesh;
 
-	/** Optional material used while the target is valid. Null preserves material slot 0 from the Preview Blueprint. */
+	/** Authored targeting disk. If null, the mesh assigned directly on PreviewMesh is preserved. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Preview")
-	TObjectPtr<UMaterialInterface> ValidPreviewMaterial;
+	TObjectPtr<UStaticMesh> PreviewStaticMesh;
 
+	/** Optional override for material slot 0. If null, the material authored on PreviewMesh is preserved. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Preview")
-	TObjectPtr<UMaterialInterface> InvalidPreviewMaterial;
+	TObjectPtr<UMaterialInterface> PreviewMaterial;
 
-	/** Final world-space thickness of the preview mesh after radius scaling. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Preview", meta = (ClampMin = "0.01", Units = "cm"))
-	float PreviewWorldThickness = 1.0f;
-
-	/** Local-only material applied to enemies inside the preview radius. */
+	/** Drawn translucently over the existing enemy materials inside the valid target disk. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Highlight")
-	TObjectPtr<UMaterialInterface> TargetHighlightOverlayMaterial;
-
-	/** Replaces every visible mesh material slot. More reliable than Unreal's optional overlay pass. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Highlight")
-	bool bReplaceTargetMaterials = true;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Highlight")
-	bool bUseCustomDepthHighlight = false;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Highlight", meta = (ClampMin = "0", ClampMax = "255"))
-	int32 TargetHighlightStencilValue = 1;
+	TObjectPtr<UMaterialInterface> TargetHighlightMaterial;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Highlight", meta = (ClampMin = "0.02", Units = "s"))
 	float HighlightRefreshInterval = 0.1f;
 
-protected:
-	virtual void BeginPlay() override;
-
 private:
 	void RefreshHighlightedTargets();
-	void HighlightActor(AActor* Actor);
+	void CollectHighlightMeshes(AActor* Actor, TSet<UMeshComponent*>& OutMeshes) const;
+	void ApplyHighlight(UMeshComponent* Mesh);
+	static void RestoreHighlight(const FBombardmentMeshHighlightState& State);
 	void RestoreHighlights();
 
 	float SkillRadius = 0.0f;
 	float HighlightRefreshAccumulator = 0.0f;
 	bool bPreviewValid = false;
-	bool bHasLoggedPreviewValidity = false;
-	bool bHasLoggedHighlightDisabledReason = false;
-	int32 LastLoggedEnemyShipCount = INDEX_NONE;
-	int32 LastLoggedInRangeEnemyShipCount = INDEX_NONE;
-	int32 LastLoggedHighlightedMeshCount = INDEX_NONE;
-	TSet<FString> LoggedHighlightMeshPaths;
-	TWeakObjectPtr<UMaterialInterface> AuthoredPreviewMaterial;
 	TArray<FBombardmentMeshHighlightState> HighlightedMeshes;
 };
 
