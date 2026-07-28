@@ -66,6 +66,17 @@ protected:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Preview")
 	TObjectPtr<AActor> SpawnedPreviewActor;
 
+	/**
+	 * Multiplies the automatically calculated camera distance.
+	 * Smaller values make the preview fill more of the frame.
+	 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "Preview|Framing",
+		meta = (ClampMin = "0.5", ClampMax = "3.0", UIMin = "0.5", UIMax = "2.0"))
+	float FrameDistanceMultiplier = 0.9f;
+
 private:
 	void EnsureOwnedRenderTarget();
 	void ClearClonedPreviewComponents();

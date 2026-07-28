@@ -363,7 +363,9 @@ void AShipUpgradePreviewStage::FramePreview()
 	const FVector Center = Bounds.GetCenter();
 	const float Radius = FMath::Max(Bounds.GetExtent().Size(), 100.0f);
 	const float HalfFovRadians = FMath::DegreesToRadians(SceneCapture->FOVAngle * 0.5f);
-	const float Distance = Radius / FMath::Max(FMath::Tan(HalfFovRadians), 0.1f) * 1.15f;
+	const float Distance =
+		Radius / FMath::Max(FMath::Tan(HalfFovRadians), 0.1f)
+		* FMath::Max(FrameDistanceMultiplier, 0.1f);
 	const FVector CameraLocation = Center + FVector(-Distance, -Distance * 0.7f, Distance * 0.32f);
 	SceneCapture->SetWorldLocation(CameraLocation);
 	SceneCapture->SetWorldRotation((Center - CameraLocation).Rotation());

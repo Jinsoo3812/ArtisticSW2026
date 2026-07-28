@@ -275,6 +275,11 @@ void UFacilityHubWidget::ShowTab(int32 TabIndex)
 		TabIndex,
 		*GetNameSafe(Switcher->GetActiveWidget())); */
 	BP_OnFacilityTabChanged(TabIndex);
+	NativeOnFacilityTabChanged(TabIndex);
+}
+
+void UFacilityHubWidget::NativeOnFacilityTabChanged(int32 NewTabIndex)
+{
 }
 
 UWidgetSwitcher* UFacilityHubWidget::GetTabSwitcher() const
