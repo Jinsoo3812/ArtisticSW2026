@@ -144,6 +144,16 @@ void UFacilityHubWidget::EnsureCraftingPanel()
 		return;
 	}
 
+	if (Switcher->GetChildrenCount() > ItemCraftingTabIndex)
+	{
+		if (UCraftingPanelWidget* ExistingPanel =
+			Cast<UCraftingPanelWidget>(Switcher->GetChildAt(ItemCraftingTabIndex)))
+		{
+			CraftingPanelWidget = ExistingPanel;
+			return;
+		}
+	}
+
 	UCraftingPanelWidget* NewPanel = CreateWidget<UCraftingPanelWidget>(GetOwningPlayer(), PanelClass);
 	if (!NewPanel)
 	{
@@ -163,7 +173,8 @@ void UFacilityHubWidget::EnsureCraftingPanel()
 
 	if (Switcher->GetChildrenCount() > ItemCraftingTabIndex)
 	{
-		if (UPanelWidget* ExistingHost = Cast<UPanelWidget>(Switcher->GetChildAt(ItemCraftingTabIndex)))
+		UWidget* ExistingCraftingTab = Switcher->GetChildAt(ItemCraftingTabIndex);
+		if (UPanelWidget* ExistingHost = Cast<UPanelWidget>(ExistingCraftingTab))
 		{
 			ExistingHost->AddChild(NewPanel);
 			CraftingPanelWidget = NewPanel;
