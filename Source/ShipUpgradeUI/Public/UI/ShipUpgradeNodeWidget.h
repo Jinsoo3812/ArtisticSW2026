@@ -52,23 +52,17 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> Border_StateGlow;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Style", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float LockedIconOpacity = 0.2f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Style", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float AvailableIconOpacity = 0.7f;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Style")
 	FLinearColor LockedGlowColor = FLinearColor(0.2f, 0.2f, 0.2f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Style")
-	FLinearColor AvailableGlowColor = FLinearColor(0.0f, 0.75f, 0.8f, 1.0f);
+	FLinearColor InsufficientMaterialsGlowColor = FLinearColor(0.7f, 0.08f, 0.08f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Style")
-	FLinearColor ActiveGlowColor = FLinearColor(0.1f, 1.0f, 0.55f, 1.0f);
+	FLinearColor AvailableGlowColor = FLinearColor(0.08f, 0.6f, 0.18f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Style")
-	FLinearColor SelectedGlowColor = FLinearColor::White;
+	FLinearColor ActiveGlowColor = FLinearColor(0.05f, 0.35f, 0.9f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Style", meta = (ClampMin = "0.1"))
 	float HoverScale = 1.08f;

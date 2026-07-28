@@ -59,7 +59,13 @@ void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* Context
 		return;
 	}
 
-	CloseFacilityHub();
+	// Interacting with a facility while its hub is already open is a toggle:
+	// close the current hub and do not immediately construct a replacement.
+	if (IsFacilityHubOpen())
+	{
+		CloseFacilityHub();
+		return;
+	}
 
 	if (StatusWindowWidget && StatusWindowWidget->IsStatusVisible())
 	{

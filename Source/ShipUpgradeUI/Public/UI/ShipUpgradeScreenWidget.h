@@ -7,6 +7,8 @@
 
 class AShipUpgradePreviewStage;
 class UImage;
+class UMaterialInstanceDynamic;
+class UScaleBox;
 class UShipUpgradeComponent;
 class UShipUpgradeDetailsWidget;
 class UShipUpgradeGraphWidget;
@@ -74,6 +76,21 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Graph")
 	FVector2D BaseGraphExtent = FVector2D(2400.0f, 1600.0f);
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Graph", meta = (ClampMin = "100.0"))
+	float VerticalGraphMinWidth = 1100.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Graph", meta = (ClampMin = "100.0"))
+	float VerticalGraphMinHeight = 1600.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Details")
+	FVector2D DetailsNodeOffset = FVector2D(24.0f, -20.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Details", meta = (ClampMin = "200.0"))
+	float DetailsPopupWidth = 360.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Details", meta = (ClampMin = "100.0"))
+	float DetailsPopupMaxHeight = 420.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Graph", meta = (ClampMin = "0.1"))
 	float ZoomMin = 0.6f;
 
@@ -137,8 +154,14 @@ private:
 	void RefreshSelectedNode();
 	void RefreshCurrentStats(const FShipStatSnapshot& Stats);
 	void RefreshActiveVisuals();
+	void SetupPreviewLayers();
+	void SetupDetailsPopup();
+	void SetDetailsPopupVisible(bool bVisible);
 	void SpawnPreviewStage();
 	void ApplyPreviewClass(TSoftClassPtr<AActor> PreviewClass);
+	void ApplyCurrentShipPreview();
+	void PositionDetailsNextToNode(FName NodeId);
+	void UpdateGraphExtent();
 	const FShipUpgradeNodeView* FindCachedView(FName NodeId) const;
 	bool IsPointerOverWidget(const UWidget* Widget, const FPointerEvent& MouseEvent) const;
 	void ApplyZoom(float NewZoom);
@@ -151,6 +174,18 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AShipUpgradePreviewStage> PreviewStage;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UImage> Image_ShipModelOverlay;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UScaleBox> PreviewModelScaleBox;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USizeBox> DetailsPopupHost;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> PreviewOverlayMaterialInstance;
 
 	UPROPERTY(Transient)
 	TSet<FName> PendingNodeIds;
