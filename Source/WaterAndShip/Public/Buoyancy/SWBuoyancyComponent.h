@@ -21,7 +21,7 @@ enum class ESWBuoyancyExecutionMode : uint8
 
 /**
  * Shared configuration and game-thread force application for Chaos rigid bodies.
- * Player buoyancy remains in SwimmingComponent and reuses FSWBuoyancyMath only.
+ * Player swimming uses its own CMC custom-movement model and does not apply rigid-body buoyancy forces.
  */
 UCLASS(ClassGroup = (Water), BlueprintType, Blueprintable, meta = (BlueprintSpawnableComponent))
 class WATERANDSHIP_API USWBuoyancyComponent : public UActorComponent

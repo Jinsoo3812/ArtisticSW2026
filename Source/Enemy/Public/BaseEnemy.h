@@ -33,6 +33,7 @@ class ENEMY_API ABaseEnemy : public ABaseCharacter
 
 public:
 	ABaseEnemy();
+	virtual bool IsEnemyCharacterForEffects() const override { return true; }
 	
 	/**
 	* Enemy Death를 외부 Wave 시스템에 알리는 Delegate.

@@ -10,10 +10,11 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "InputAction.h"
 #include "InputActionValue.h"
+#include "InputMappingContext.h"
 #include "InputCoreTypes.h"
 #include "BaseItem.h"
-#include "CrafterComponent.h"
 #include "BaseGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -29,6 +30,7 @@
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Animation/SWTrajectoryComponent.h"
 #include "Inventory/InventoryComponent.h"
+#include "Crafting/CraftingComponent.h"
 #include "ItemSubSystem.h"
 #include "Equipment/PlayerEquipmentComponent.h"
 #include "Item/Components/BowComponent.h"
@@ -40,6 +42,10 @@
 #include "Ship.h"
 #include "Cannon.h"
 #include "SwimmingComponent.h"
+#include "Skills/PlayerSkillComponent.h"
+#include "Skills/Abilities/GA_GravityVortexThrow.h"
+#include "Skills/Abilities/GA_WaterBombCannonMode.h"
+#include "Skills/Abilities/GA_Bombardment.h"
 #include "HAL/FileManager.h"
 #include "Misc/DateTime.h"
 #include "Misc/FileHelper.h"
@@ -98,11 +104,15 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 
 	// 인벤토리 컴포넌트 부착
 	InventoryComponent = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComponent"));
+	CraftingComponent = CreateDefaultSubobject<UCraftingComponent>(TEXT("CraftingComponent"));
 	AnimStateComponent = CreateDefaultSubobject<ULocomotionAnimStateComponent>(TEXT("AnimStateComponent"));
 	TrajectoryComponent = CreateDefaultSubobject<USWTrajectoryComponent>(TEXT("TrajectoryComponent"));
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 	SwimmingComponent = CreateDefaultSubobject<USwimmingComponent>(TEXT("SwimmingComponent"));
 	EquipmentComponent = CreateDefaultSubobject<UPlayerEquipmentComponent>(TEXT("EquipmentComponent"));
+	GravityVortexAbilityClass = UGA_GravityVortexThrow::StaticClass();
+	WaterBombAbilityClass = UGA_WaterBombCannonMode::StaticClass();
+	BombardmentAbilityClass = UGA_Bombardment::StaticClass();
 
 	// 항상 등만 보이도록 설정 (Orient to Controller - 부드러운 회전으로 제자리 회전 유도)
 	bUseControllerRotationYaw = false;
@@ -142,6 +152,41 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	DOREPLIFETIME(ABasePlayer, LocomotionStateSnapshot);
 }
 
+bool ABasePlayer::CanUseSkill(const FGameplayTag& SkillTag) const
+{
+	if (bBypassSkillRequirementsForTesting)
+	{
+		return GetPlayerSkillComponent()
+			&& GetPlayerSkillComponent()->FindSkillDefinition(SkillTag) != nullptr;
+	}
+
+	const UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent();
+	return SkillComponent && SkillComponent->CanUseSkillWithInventory(SkillTag, InventoryComponent);
+}
+
+bool ABasePlayer::TryConsumeSkillUse(const FGameplayTag& SkillTag)
+{
+	UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent();
+	if (bBypassSkillRequirementsForTesting)
+	{
+		return HasAuthority() && SkillComponent && SkillComponent->FindSkillDefinition(SkillTag) != nullptr;
+	}
+
+	return HasAuthority()
+		&& SkillComponent
+		&& SkillComponent->TryConsumeSkillUseWithInventory(SkillTag, InventoryComponent);
+}
+
+UPlayerSkillComponent* ABasePlayer::GetPlayerSkillComponent() const
+{
+	const ABasePlayerState* PS = GetPlayerState<ABasePlayerState>();
+	if (PS && PS->GetPlayerSkillComponent())
+	{
+		return PS->GetPlayerSkillComponent();
+	}
+	return CachedPlayerSkillComponent.Get();
+}
+
 void ABasePlayer::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
@@ -150,6 +195,13 @@ void ABasePlayer::PostInitializeComponents()
 void ABasePlayer::BeginPlay()
 {
 	Super::BeginPlay();
+	InitializeSwimmingAnimLayers();
+
+	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
+	{
+		CachedPlayerSkillComponent = SkillComponent;
+		SkillComponent->RegisterInventorySource(InventoryComponent);
+	}
 
 	if (HealthComponent)
 	{
@@ -180,8 +232,53 @@ void ABasePlayer::BeginPlay()
 		InventoryComponent->OnInventoryChanged.AddUObject(this, &ABasePlayer::HandleInventoryContentsChanged);
 	}
 
+#if WITH_EDITOR
+	GiveStartingItemForTest();
+#endif
+
 	OnItemSlotsChanged.Broadcast();
 	OnQuickSlotsChanged.Broadcast();
+}
+
+void ABasePlayer::GiveStartingItemForTest()
+{
+	if (!HasAuthority() || !bGiveStartingItemForTest || !InventoryComponent ||
+		!StartingItemTagForTest.IsValid() || StartingItemCountForTest <= 0)
+	{
+		return;
+	}
+
+	UItemSubsystem* ItemSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
+	if (!ItemSubsystem || !ItemSubsystem->GetItemDefinition(StartingItemTagForTest))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ABasePlayer::GiveStartingItemForTest : ItemTag %s is not registered in DA_ItemData."),
+			*StartingItemTagForTest.ToString());
+		return;
+	}
+
+	const int32 CurrentCount = InventoryComponent->GetMaterialCount(StartingItemTagForTest);
+	const int32 AmountToAdd = FMath::Max(0, StartingItemCountForTest - CurrentCount);
+	if (AmountToAdd <= 0)
+	{
+		return;
+	}
+
+	const int32 AddedCount = InventoryComponent->AddMaterial(StartingItemTagForTest, AmountToAdd);
+	if (AddedCount != AmountToAdd)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ABasePlayer::GiveStartingItemForTest : Requested %d of %s, but added %d. Check inventory capacity."),
+			AmountToAdd,
+			*StartingItemTagForTest.ToString(),
+			AddedCount);
+		return;
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("ABasePlayer::GiveStartingItemForTest : Added %s. Total=%d"),
+		*StartingItemTagForTest.ToString(),
+		StartingItemCountForTest);
 }
 
 void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -329,6 +426,12 @@ void ABasePlayer::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 
+	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
+	{
+		CachedPlayerSkillComponent = SkillComponent;
+		SkillComponent->RegisterInventorySource(InventoryComponent);
+	}
+
 	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Start. NewController: %s"), NewController ? *NewController->GetName() : TEXT("None"));
 
 	// 서버 측 ASC 초기화 (InitAbilityActorInfo)
@@ -341,6 +444,11 @@ void ABasePlayer::PossessedBy(AController* NewController)
 
 		// PlayerState로 부터 ASC 포인터 가져와서 캐싱
 		CachedAbilitySystemComponent = PS->GetAbilitySystemComponent();
+		if (CachedAbilitySystemComponent.IsValid() &&
+			!CachedAbilitySystemComponent->HasMatchingGameplayTag(Team_Player))
+		{
+			CachedAbilitySystemComponent->AddLooseGameplayTag(Team_Player);
+		}
 		if (HealthComponent)
 		{
 			HealthComponent->InitializeWithAbilitySystem(CachedAbilitySystemComponent.Get());
@@ -363,18 +471,36 @@ void ABasePlayer::PossessedBy(AController* NewController)
 				GrantDefaultAbility(AbilityClass);
 			}
 
-			for (const auto& AbilityPair : DefaultAbilityMap)
-			{
+				for (const auto& AbilityPair : DefaultAbilityMap)
+				{
 				if (AbilityPair.Value)
 				{
 					UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Granting Ability: %s to Slot Tag: %s (InputID: %d)"),
 						*AbilityPair.Value->GetName(),
 						*AbilityPair.Key.ToString(),
 						GetInputIDFromTag(AbilityPair.Key));
-					GrantAbilityToSlot(AbilityPair.Key, AbilityPair.Value);
+						GrantAbilityToSlot(AbilityPair.Key, AbilityPair.Value);
+					}
+				}
+				if (bEnableGravityVortexSkillInput && GravityVortexAbilityClass)
+				{
+					UE_LOG(LogTemp, Warning,
+						TEXT("[VortexPipeline][Grant] PlayerClass=%s AbilityClass=%s Slot=%s InputID=%d"),
+						*GetPathNameSafe(GetClass()),
+						*GetPathNameSafe(GravityVortexAbilityClass.Get()),
+						*Key_Skill_GravityVortex.ToString(),
+						GetInputIDFromTag(Key_Skill_GravityVortex));
+					GrantAbilityToSlot(Key_Skill_GravityVortex, GravityVortexAbilityClass);
+				}
+				if (bGrantWaterBombAbility && WaterBombAbilityClass)
+				{
+					GrantDefaultAbility(WaterBombAbilityClass);
+				}
+				if (bGrantBombardmentAbility && BombardmentAbilityClass)
+				{
+					GrantDefaultAbility(BombardmentAbilityClass);
 				}
 			}
-		}
 		else
 		{
 			UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::PossessedBy - [SERVER] CachedAbilitySystemComponent is invalid!"));
@@ -399,6 +525,12 @@ void ABasePlayer::OnRep_PlayerState()
 	ABasePlayerState* PS = GetPlayerState<ABasePlayerState>();
 	if (PS)
 	{
+		if (UPlayerSkillComponent* SkillComponent = PS->GetPlayerSkillComponent())
+		{
+			CachedPlayerSkillComponent = SkillComponent;
+			SkillComponent->RegisterInventorySource(InventoryComponent);
+		}
+
 		// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] PlayerState found: %s"), *PS->GetName());
 		// 클라이언트에서도 Owner와 Avatar를 연결해줌
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
@@ -434,7 +566,14 @@ void ABasePlayer::PawnClientRestart()
 			// DefaultIMC 등록
 			if(DefaultIMC)
 			{
-				Subsystem->AddMappingContext(DefaultIMC, DefaultIMCPriority);
+				// ItemIMC contains the legacy IA_Item_3 mapping. Keep the
+				// skill-bearing DefaultIMC above it so IA_Item_3 cannot consume
+				// Keyboard 3 before IA_GravityVortex receives it.
+				const int32 EffectiveDefaultPriority = ResolveDefaultMappingPriority(
+					DefaultIMCPriority,
+					ItemIMCPriority,
+					bEnableGravityVortexSkillInput && GravityVortexSkillAction);
+				Subsystem->AddMappingContext(DefaultIMC, EffectiveDefaultPriority);
 			}
 
 			// ItemIMC 등록
@@ -442,12 +581,6 @@ void ABasePlayer::PawnClientRestart()
 			{
 				Subsystem->AddMappingContext(ItemIMC, ItemIMCPriority);
 			}
-		}
-
-		// Crafter 전용 IMC
-		if (UCrafterComponent* CrafterComp = FindComponentByClass<UCrafterComponent>())
-		{
-			CrafterComp->AddCrafterMappingContext();
 		}
 
 		// Interactable Object를 감지하기 위한 Trace 시작
@@ -461,12 +594,6 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
-		// CrafterComponent가 있다면 Crafter 전용 입력 바인딩
-		if (UCrafterComponent* CrafterComp = FindComponentByClass<UCrafterComponent>())
-		{
-			CrafterComp->BindCrafterInput(EnhancedInputComponent);
-		}
-
 		// Jumping
 		if (JumpAction)
 		{
@@ -500,6 +627,13 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Canceled, this, &ABasePlayer::StopSprint);
 		}
 
+		if (bEnableGravityVortexSkillInput && GravityVortexSkillAction)
+		{
+			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Started, this, &ABasePlayer::OnGravityVortexSkillPressed);
+			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Completed, this, &ABasePlayer::OnGravityVortexSkillReleased);
+			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Canceled, this, &ABasePlayer::OnGravityVortexSkillReleased);
+		}
+
 		// Default 입력 바인딩
 		if (DefaultInputConfig)
 		{
@@ -520,6 +654,7 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, this, &ABasePlayer::OnAbilityInputReleased, Action.KeyTag);
 					}
 				}
+
 			}
 		}
 
@@ -527,20 +662,31 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	PlayerInputComponent->BindKey(EKeys::One, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot1);
 	PlayerInputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot2);
-	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot3);
-	PlayerInputComponent->BindKey(EKeys::Four, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot4);
-	PlayerInputComponent->BindKey(EKeys::Five, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot5);
 
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Pressed, this, &ABasePlayer::StartSprint);
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Released, this, &ABasePlayer::StopSprint);
 	PlayerInputComponent->BindKey(EKeys::RightShift, IE_Pressed, this, &ABasePlayer::StartSprint);
 	PlayerInputComponent->BindKey(EKeys::RightShift, IE_Released, this, &ABasePlayer::StopSprint);
+	PlayerInputComponent->BindKey(EKeys::LeftControl, IE_Pressed, this, &ABasePlayer::StartSwimDive);
+	PlayerInputComponent->BindKey(EKeys::LeftControl, IE_Released, this, &ABasePlayer::StopSwimDive);
+	PlayerInputComponent->BindKey(EKeys::RightControl, IE_Pressed, this, &ABasePlayer::StartSwimDive);
+	PlayerInputComponent->BindKey(EKeys::RightControl, IE_Released, this, &ABasePlayer::StopSwimDive);
 }
 
 int32 ABasePlayer::GetInputIDFromTag(const FGameplayTag& Tag) const
 {
 	if (!Tag.IsValid()) return INDEX_NONE;
 	return static_cast<int32>(FCrc::StrCrc32(*Tag.ToString()));
+}
+
+int32 ABasePlayer::ResolveDefaultMappingPriority(
+	int32 ConfiguredDefaultPriority,
+	int32 ConfiguredItemPriority,
+	bool bHasSkillInput)
+{
+	return bHasSkillInput
+		? FMath::Max(ConfiguredDefaultPriority, ConfiguredItemPriority + 1)
+		: ConfiguredDefaultPriority;
 }
 
 void ABasePlayer::InitializeQuickSlots()
@@ -698,93 +844,15 @@ bool ABasePlayer::IsEquippedItemOwnedByLegacySlot() const
 
 void ABasePlayer::UnequipCurrentItem()
 {
-	if (!HasAuthority() || !IsValid(EquippedItem))
+	if (EquipmentComponent)
 	{
-		return;
+		EquipmentComponent->UnequipCurrentItem();
 	}
-
-	FGameplayTag UseKeyTag = Key_Default_Mouse_LeftClick;
-	if (UItemSubsystem* ItemSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr)
-	{
-		const FGameplayTag ConfiguredUseKey = ItemSubsystem->GetUseKeyTag(EquippedItem->ItemTag);
-		if (ConfiguredUseKey.IsValid())
-		{
-			UseKeyTag = ConfiguredUseKey;
-		}
-	}
-	RemoveAbilityFromSlot(UseKeyTag);
-
-	ABaseItem* PreviousItem = EquippedItem;
-	const bool bLegacySlotItem = IsEquippedItemOwnedByLegacySlot();
-	EquippedItem = nullptr;
-	if (bLegacySlotItem)
-	{
-		PreviousItem->SetItemState(EItemState::InItemSlot);
-	}
-	else
-	{
-		PreviousItem->Destroy();
-	}
-
-	OnItemSlotsChanged.Broadcast();
-	OnQuickSlotsChanged.Broadcast();
 }
 
 bool ABasePlayer::EquipInventoryWeapon(FGameplayTag ItemTag)
 {
-	if (!HasAuthority() || !InventoryComponent || InventoryComponent->GetMaterialCount(ItemTag) <= 0)
-	{
-		return false;
-	}
-
-	if (IsValid(EquippedItem) && EquippedItem->ItemTag == ItemTag && !IsEquippedItemOwnedByLegacySlot())
-	{
-		return true;
-	}
-
-	UnequipCurrentItem();
-	UItemSubsystem* ItemSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
-	if (!ItemSubsystem)
-	{
-		return false;
-	}
-
-	ABaseItem* SpawnedItem = ItemSubsystem->SpawnItem(ItemTag, GetActorTransform(), EItemState::InItemSlot, this);
-	if (!IsValid(SpawnedItem))
-	{
-		return false;
-	}
-
-	EquippedItem = SpawnedItem;
-	EquippedItem->SetItemState(EItemState::Equipped);
-	EquippedItem->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-		ItemSubsystem->GetAttachmentSocketName(ItemTag));
-
-	bool bCanUse = EquippedItem->GetCanUseAbilityList().IsEmpty();
-	if (!bCanUse && CachedAbilitySystemComponent.IsValid())
-	{
-		for (const FGameplayTag& RequiredTag : EquippedItem->GetCanUseAbilityList())
-		{
-			if (CachedAbilitySystemComponent->HasMatchingGameplayTag(RequiredTag))
-			{
-				bCanUse = true;
-				break;
-			}
-		}
-	}
-
-	if (bCanUse)
-	{
-		if (TSubclassOf<UGameplayAbility> AbilityClass = EquippedItem->GetGrantedAbilityClass())
-		{
-			FGameplayTag UseKeyTag = ItemSubsystem->GetUseKeyTag(ItemTag);
-			GrantAbilityToSlot(UseKeyTag.IsValid() ? UseKeyTag : Key_Default_Mouse_LeftClick, AbilityClass);
-		}
-	}
-
-	OnItemSlotsChanged.Broadcast();
-	OnQuickSlotsChanged.Broadcast();
-	return true;
+	return EquipmentComponent && EquipmentComponent->EquipInventoryWeapon(ItemTag);
 }
 
 bool ABasePlayer::ConsumeInventoryItem(FGameplayTag ItemTag)
@@ -818,6 +886,11 @@ bool ABasePlayer::ConsumeInventoryItem(FGameplayTag ItemTag)
 
 void ABasePlayer::HandleInventoryContentsChanged()
 {
+	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
+	{
+		SkillComponent->NotifyInventoryChanged();
+	}
+
 	if (!HasAuthority() || !InventoryComponent)
 	{
 		return;
@@ -1024,18 +1097,56 @@ void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 	}
 }
 
+void ABasePlayer::OnGravityVortexSkillPressed()
+{
+	if (!bEnableGravityVortexSkillInput)
+	{
+		return;
+	}
+	OnAbilityInputPressed(Key_Skill_GravityVortex);
+}
+
+void ABasePlayer::OnGravityVortexSkillReleased()
+{
+	OnAbilityInputReleased(Key_Skill_GravityVortex);
+}
+
 void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 {
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 	if (IsEquipmentTransitioning()) return;
 
+	// Capture the state before AbilityLocalInputPressed can activate the bound
+	// ability. EventMagnitude 0 means activation click, 1 means active re-input.
+	bool bWasBoundAbilityActive = false;
+	const int32 InputID = GetInputIDFromTag(InputTag);
+	if (InputID != INDEX_NONE)
+	{
+		for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
+		{
+			if (Spec.InputID == InputID && Spec.IsActive())
+			{
+				bWasBoundAbilityActive = true;
+				break;
+			}
+		}
+	}
+
 	// 공통 GAS 입력 해제 처리
-	OnAbilityInputPressed(InputTag);
+	const bool bGravityVortexOwnsMouseClick =
+		(InputTag.MatchesTagExact(Key_Default_Mouse_LeftClick)
+			|| InputTag.MatchesTagExact(Key_Default_Mouse_RightClick))
+		&& CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex);
+	if (!bGravityVortexOwnsMouseClick)
+	{
+		OnAbilityInputPressed(InputTag);
+	}
 
 	// ASC에 GameplayEvent로서 전달
 	FGameplayEventData EventData;
 	EventData.Instigator = this;
 	EventData.Target = nullptr;
+	EventData.EventMagnitude = bWasBoundAbilityActive ? 1.0f : 0.0f;
 
 	CachedAbilitySystemComponent->HandleGameplayEvent(InputTag, &EventData);
 
@@ -1246,6 +1357,11 @@ void ABasePlayer::UseEquippedItem(bool bDestroy)
 
 void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 {
+	if (bEnableGravityVortexSkillInput && KeyTag.MatchesTagExact(Key_Item_3))
+	{
+		return;
+	}
+
 	if (EquipmentComponent)
 	{
 		EquipmentComponent->EquipItemFromSlot(KeyTag);
@@ -1482,14 +1598,27 @@ void ABasePlayer::Look(const FInputActionValue& Value)
 
 void ABasePlayer::DoMove(float Right, float Forward)
 {
-	if(AnimStateComponent) AnimStateComponent->CachedMoveInput = FVector2D(Right, Forward);
+	const bool bVerticalSwimOverride = SwimmingComponent
+		&& SwimmingComponent->IsCustomSwimming()
+		&& SwimmingComponent->HasVerticalSwimInput();
+	const FVector2D ClampedMoveInput = bVerticalSwimOverride
+		? FVector2D::ZeroVector
+		: FVector2D(Right, Forward).GetClampedToMaxSize(1.f);
+
+	if(AnimStateComponent) AnimStateComponent->CachedMoveInput = ClampedMoveInput;
 	if (AnimStateComponent)
 	{
-		AnimStateComponent->SetMoveInput(Right, Forward);
+		if (ClampedMoveInput.IsNearlyZero())
+		{
+			AnimStateComponent->ClearMoveInput();
+		}
+		else
+		{
+			AnimStateComponent->SetMoveInput(ClampedMoveInput.X, ClampedMoveInput.Y);
+		}
 	}
 	RefreshSprintFromInput();
 
-	const FVector2D ClampedMoveInput = FVector2D(Right, Forward).GetClampedToMaxSize(1.f);
 	if (HasAuthority())
 	{
 		AuthoritativeMoveInput = ClampedMoveInput;
@@ -1524,16 +1653,36 @@ void ABasePlayer::DoMove(float Right, float Forward)
 	// 	AppendBasePlayerMotionMatchingCaptureLine(DebugLine);
 	// }
 
-	if (GetController() != nullptr)
+	if (!bVerticalSwimOverride && GetController() != nullptr)
 	{
 		const FRotator Rotation = GetController()->GetControlRotation();
-		const FRotator YawRotation(0, Rotation.Yaw, 0);
+		const bool bUseCameraDirectedSwim = SwimmingComponent
+			&& SwimmingComponent->ShouldUseCameraDirectedUnderwaterMovement();
+		const FRotator MoveRotation = bUseCameraDirectedSwim
+			? Rotation
+			: FRotator(0, Rotation.Yaw, 0);
 
-		const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+		const FVector ForwardDirection = FRotationMatrix(MoveRotation).GetUnitAxis(EAxis::X);
+		const FVector RightDirection = FRotationMatrix(MoveRotation).GetUnitAxis(EAxis::Y);
 
-		AddMovementInput(ForwardDirection, Forward);
-		AddMovementInput(RightDirection, Right);
+		AddMovementInput(ForwardDirection, ClampedMoveInput.Y);
+		AddMovementInput(RightDirection, ClampedMoveInput.X);
+	}
+}
+
+void ABasePlayer::InitializeSwimmingAnimLayers()
+{
+	if (!SwimmingAnimLayerClass)
+	{
+		return;
+	}
+
+	if (USkeletalMeshComponent* PlayerMesh = GetMesh())
+	{
+		if (UAnimInstance* AnimInstance = PlayerMesh->GetAnimInstance())
+		{
+			AnimInstance->LinkAnimClassLayers(SwimmingAnimLayerClass);
+		}
 	}
 }
 
@@ -1588,6 +1737,14 @@ void ABasePlayer::DoLook(float Yaw, float Pitch)
 
 void ABasePlayer::DoJumpStart()
 {
+	if (SwimmingComponent && SwimmingComponent->IsCustomSwimming())
+	{
+		bSwimAscendInputHeld = true;
+		bSwimDiveInputHeld = false;
+		RefreshSwimmingVerticalInput();
+		return;
+	}
+
 	if (!CanJump())
 	{
 		return;
@@ -1614,7 +1771,77 @@ void ABasePlayer::DoJumpStart()
 
 void ABasePlayer::DoJumpEnd()
 {
+	if (SwimmingComponent && SwimmingComponent->IsCustomSwimming())
+	{
+		bSwimAscendInputHeld = false;
+		RefreshSwimmingVerticalInput();
+		return;
+	}
+
 	StopJumping();
+}
+
+void ABasePlayer::StartSwimDive()
+{
+	if (!SwimmingComponent || !SwimmingComponent->IsCustomSwimming())
+	{
+		return;
+	}
+
+	bSwimDiveInputHeld = true;
+	bSwimAscendInputHeld = false;
+	RefreshSwimmingVerticalInput();
+}
+
+void ABasePlayer::StopSwimDive()
+{
+	if (!SwimmingComponent || !SwimmingComponent->IsCustomSwimming())
+	{
+		return;
+	}
+
+	bSwimDiveInputHeld = false;
+	RefreshSwimmingVerticalInput();
+}
+
+void ABasePlayer::RefreshSwimmingVerticalInput()
+{
+	if (!SwimmingComponent || !SwimmingComponent->IsCustomSwimming())
+	{
+		return;
+	}
+
+	const float VerticalInput = (bSwimAscendInputHeld ? 1.0f : 0.0f)
+		- (bSwimDiveInputHeld ? 1.0f : 0.0f);
+	SwimmingComponent->SetVerticalSwimInput(VerticalInput);
+	if (SwimmingComponent->HasVerticalSwimInput())
+	{
+		if (AnimStateComponent)
+		{
+			AnimStateComponent->ClearMoveInput();
+		}
+		AuthoritativeMoveInput = FVector2D::ZeroVector;
+		bHasAuthoritativeMoveInput = true;
+		if (IsLocallyControlled() && !HasAuthority())
+		{
+			LastSentMoveInputToServer = FVector2D::ZeroVector;
+			bHasSentMoveInputToServer = true;
+			Server_SetMoveInput(FVector2D::ZeroVector);
+		}
+	}
+
+	if (!HasAuthority())
+	{
+		Server_SetSwimmingVerticalInput(VerticalInput);
+	}
+}
+
+void ABasePlayer::Server_SetSwimmingVerticalInput_Implementation(float NewVerticalInput)
+{
+	if (SwimmingComponent && SwimmingComponent->IsCustomSwimming())
+	{
+		SwimmingComponent->SetVerticalSwimInput(NewVerticalInput);
+	}
 }
 
 void ABasePlayer::StartSprint()
@@ -1921,6 +2148,45 @@ void ABasePlayer::InterruptCombatIntroForHit()
 	if (!bIsCombatMode)
 	{
 		ApplyCombatRotationMode(false);
+	}
+}
+
+void ABasePlayer::AcquireServerCombatPoseRefresh()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* PlayerMesh = GetMesh();
+	if (!PlayerMesh)
+	{
+		return;
+	}
+
+	if (ServerCombatPoseRefreshRefCount == 0)
+	{
+		ServerCombatOriginalAnimTickOption = PlayerMesh->VisibilityBasedAnimTickOption;
+		PlayerMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	}
+
+	++ServerCombatPoseRefreshRefCount;
+}
+
+void ABasePlayer::ReleaseServerCombatPoseRefresh()
+{
+	if (!HasAuthority() || ServerCombatPoseRefreshRefCount <= 0)
+	{
+		return;
+	}
+
+	--ServerCombatPoseRefreshRefCount;
+	if (ServerCombatPoseRefreshRefCount == 0)
+	{
+		if (USkeletalMeshComponent* PlayerMesh = GetMesh())
+		{
+			PlayerMesh->VisibilityBasedAnimTickOption = ServerCombatOriginalAnimTickOption;
+		}
 	}
 }
 

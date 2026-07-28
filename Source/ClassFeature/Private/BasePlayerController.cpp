@@ -14,14 +14,157 @@
 #include "Widgets/Input/SVirtualJoystick.h"
 #include "BaseGameplayTags.h"
 #include "Attacker/AttackerComponent.h"
-#include "Crafter/CrafterComponent.h"
 #include "Inventory/InventoryComponent.h"
 #include "Storage/StorageChest.h"
 #include "Storage/StorageComponent.h"
 #include "UI/StorageWindowWidget.h"
+#include "UI/FacilityHubWidget.h"
+#include "Facility/FacilityHubActor.h"
 #include "UI/StatusWindowWidget.h"
 #include "WaterSubsystem.h"
 #include "GameFramework/GameStateBase.h"
+
+
+void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
+{
+	if (!HasAuthority() || !IsValid(Cast<AFacilityHubActor>(ContextActor)))
+	{
+		/* UE_LOG(LogTemp, Warning,
+			TEXT("[FacilityHubFlow][SERVER] Open rejected. Controller=%s Authority=%s Context=%s ContextClass=%s"),
+			*GetNameSafe(this),
+			HasAuthority() ? TEXT("YES") : TEXT("NO"),
+			*GetNameSafe(ContextActor),
+			*GetNameSafe(ContextActor ? ContextActor->GetClass() : nullptr)); */
+		return;
+	}
+
+	/* UE_LOG(LogTemp, Log,
+		TEXT("[FacilityHubFlow][SERVER] Context validated; sending ClientOpenFacilityHub. Context=%s"),
+		*GetNameSafe(ContextActor)); */
+	ClientOpenFacilityHub(ContextActor);
+}
+
+void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* ContextActor)
+{
+	/* UE_LOG(LogTemp, Log,
+		TEXT("[FacilityHubFlow][CLIENT] Open RPC received. Controller=%s Local=%s Context=%s"),
+		*GetNameSafe(this),
+		IsLocalController() ? TEXT("YES") : TEXT("NO"),
+		*GetNameSafe(ContextActor)); */
+
+	if (!IsLocalController() || !IsValid(ContextActor))
+	{
+		/* UE_LOG(LogTemp, Error,
+			TEXT("[FacilityHubFlow][CLIENT] FAILED: Invalid local controller or context.")); */
+		return;
+	}
+
+	// Interacting with a facility while its hub is already open is a toggle:
+	// close the current hub and do not immediately construct a replacement.
+	if (IsFacilityHubOpen())
+	{
+		CloseFacilityHub();
+		return;
+	}
+
+	if (StatusWindowWidget && StatusWindowWidget->IsStatusVisible())
+	{
+		StatusWindowWidget->SetStatusVisible(false);
+		SetStatusCharacterInputLocked(false);
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeStatus);
+		}
+	}
+	if (IsStorageOpen())
+	{
+		CloseStorage();
+	}
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetInventoryVisible(false);
+		PlayerHUDVisibilityBeforeFacilityHub = PlayerHUDWidget->GetVisibility();
+		PlayerHUDWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	TSubclassOf<UFacilityHubWidget> WidgetClass = FacilityHubWidgetClass;
+	if (!WidgetClass)
+	{
+		WidgetClass = LoadClass<UFacilityHubWidget>(
+			nullptr,
+			TEXT("/Game/Blueprints/02_UI/UI_WorkTable/WBP_WorkspaceScreen.WBP_WorkspaceScreen_C"));
+	}
+	if (!WidgetClass)
+	{
+		WidgetClass = LoadClass<UFacilityHubWidget>(
+			nullptr,
+			TEXT("/Game/Blueprints/02_UI/UI_FacilityHub/WBP_FacilityHub.WBP_FacilityHub_C"));
+	}
+
+	if (!WidgetClass)
+	{
+		/* UE_LOG(LogTemp, Error,
+			TEXT("[FacilityHubFlow][CLIENT] FAILED: Neither WBP_WorkspaceScreen nor WBP_FacilityHub could be loaded.")); */
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeFacilityHub);
+		}
+		ApplyInventoryInputMode(false);
+		return;
+	}
+
+	/* UE_LOG(LogTemp, Log,
+		TEXT("[FacilityHubFlow][CLIENT] Widget class resolved. Class=%s"),
+		*GetNameSafe(WidgetClass.Get())); */
+
+	FacilityHubWidget = CreateWidget<UFacilityHubWidget>(this, WidgetClass);
+	if (!FacilityHubWidget)
+	{
+		/* UE_LOG(LogTemp, Error,
+			TEXT("[FacilityHubFlow][CLIENT] FAILED: CreateWidget returned null. Class=%s"),
+			*GetNameSafe(WidgetClass.Get())); */
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeFacilityHub);
+		}
+		ApplyInventoryInputMode(false);
+		return;
+	}
+
+	FacilityHubWidget->InitializeForContext(ContextActor);
+	FacilityHubWidget->AddToViewport(100);
+	ApplyInventoryInputMode(true);
+	FacilityHubWidget->SetUserFocus(this);
+	/* UE_LOG(LogTemp, Log,
+		TEXT("[FacilityHubFlow][CLIENT] SUCCESS: Common FacilityHub added to viewport. Widget=%s Context=%s"),
+		*GetNameSafe(FacilityHubWidget),
+		*GetNameSafe(ContextActor)); */
+}
+
+void ABasePlayerController::CloseFacilityHub()
+{
+	if (!IsLocalController() || !FacilityHubWidget)
+	{
+		return;
+	}
+
+	FacilityHubWidget->PrepareToClose();
+	/* UE_LOG(LogTemp, Log,
+		TEXT("[FacilityHubFlow][CLIENT] Closing FacilityHub. Widget=%s"),
+		*GetNameSafe(FacilityHubWidget)); */
+	FacilityHubWidget->RemoveFromParent();
+	FacilityHubWidget = nullptr;
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeFacilityHub);
+	}
+	ApplyInventoryInputMode(false);
+}
+
+bool ABasePlayerController::IsFacilityHubOpen() const
+{
+	return FacilityHubWidget && FacilityHubWidget->IsInViewport();
+}
 
 
 void ABasePlayerController::BeginPlay()
@@ -85,6 +228,7 @@ void ABasePlayerController::SetupInputComponent()
 	}
 
 	InputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &ABasePlayerController::ToggleStatus);
+	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ABasePlayerController::HandleMenuEscape);
 }
 
 void ABasePlayerController::OnUIInputPressed(FGameplayTag InputTag)
@@ -146,6 +290,11 @@ void ABasePlayerController::ToggleInventory()
 		return;
 	}
 
+	if (IsFacilityHubOpen())
+	{
+		CloseFacilityHub();
+	}
+
 	// 상자 UI가 열려 있으면, 상자를 닫고 인벤토리만 열기
 	if (IsStorageOpen())
 	{
@@ -166,6 +315,11 @@ void ABasePlayerController::ToggleStatus()
 	if (!IsLocalController() || !StatusWindowWidget)
 	{
 		return;
+	}
+
+	if (IsFacilityHubOpen())
+	{
+		CloseFacilityHub();
 	}
 
 	if (StatusWindowWidget->IsStatusVisible())
@@ -201,6 +355,14 @@ void ABasePlayerController::ToggleStatus()
 	StatusWindowWidget->SetStatusVisible(true);
 	ApplyInventoryInputMode(true);
 	SetStatusCharacterInputLocked(true);
+}
+
+void ABasePlayerController::HandleMenuEscape()
+{
+	if (IsFacilityHubOpen())
+	{
+		CloseFacilityHub();
+	}
 }
 
 void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
@@ -392,6 +554,11 @@ void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 	if (!IsLocalController() || !StorageChest || !PlayerHUDWidget)
 	{
 		return;
+	}
+
+	if (IsFacilityHubOpen())
+	{
+		CloseFacilityHub();
 	}
 
 	// 동일한 상자 UI가 이미 열려 있으면 위젯과 입력 모드를 다시 생성하지 않는다.

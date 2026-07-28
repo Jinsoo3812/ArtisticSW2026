@@ -17,6 +17,11 @@
 #include "ShipAttributeSet.h"
 #include "Kismet/GameplayStatics.h"
 #include "Cannonball.h"
+#include "WaterBombCannonball.h"
+#include "BaseGameplayTags.h"
+#include "Skills/SkillUseProvider.h"
+#include "AbilitySystemInterface.h"
+#include "Abilities/GameplayAbility.h"
 
 ACannon::ACannon()
 {
@@ -73,6 +78,17 @@ void ACannon::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// Inventory/lock state can change while the modal ability is active.
+	// Keep the server authoritative and close the mode within one frame.
+	if (HasAuthority() && bWaterBombMode)
+	{
+		const ISkillUseProvider* SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
+		if (!SkillProvider || !SkillProvider->CanUseSkill(GameplayAbility_Skill_WaterBomb))
+		{
+			CancelWaterBombAbilityAuthoritative();
+		}
+	}
+
 	// Apply rotation to meshes
 	if (BaseMesh)
 	{
@@ -110,6 +126,10 @@ void ACannon::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 		{
 			EnhancedInput->BindAction(CannonExitAction, ETriggerEvent::Started, this, &ACannon::HandleExit);
 		}
+		if (CannonWaterBombToggleAction)
+		{
+			EnhancedInput->BindAction(CannonWaterBombToggleAction, ETriggerEvent::Started, this, &ACannon::HandleWaterBombToggle);
+		}
 	}
 	else
 	{
@@ -119,6 +139,11 @@ void ACannon::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 
 void ACannon::UnPossessed()
 {
+	if (HasAuthority())
+	{
+		CancelWaterBombAbilityAuthoritative();
+		SetWaterBombModeAuthoritative(false);
+	}
 	Super::UnPossessed();
 }
 
@@ -154,6 +179,7 @@ void ACannon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeP
 
 	DOREPLIFETIME(ACannon, RidingPlayer);
 	DOREPLIFETIME_CONDITION(ACannon, AimRotation, COND_SkipOwner);
+	DOREPLIFETIME(ACannon, bWaterBombMode);
 }
 
 // Ship의 Board()와 완전히 동일한 패턴
@@ -243,9 +269,59 @@ void ACannon::HandleFire(const FInputActionValue& Value)
 	FireCannon();
 }
 
+void ACannon::HandleWaterBombToggle(const FInputActionValue& Value)
+{
+	ToggleWaterBombAbility();
+}
+
+void ACannon::ToggleWaterBombAbility()
+{
+	// 이 Pawn이 로컬 플레이어에게 빙의된 동안에만 입력 컴포넌트가 활성화됩니다.
+	if (!IsLocallyControlled() || !IsPlayerControlled())
+	{
+		return;
+	}
+
+	if (HasAuthority())
+	{
+		ToggleWaterBombAbilityAuthoritative();
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("[WaterBomb] Requested Player GA toggle from cannon=%s"), *GetName());
+		ServerToggleWaterBombAbility();
+	}
+}
+
 bool ACannon::FireCannon()
 {
 	if (!bCanFire) return false;
+	if (bWaterBombMode)
+	{
+		const ISkillUseProvider* SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
+		if (!SkillProvider || !SkillProvider->CanUseSkill(GameplayAbility_Skill_WaterBomb))
+		{
+			if (HasAuthority())
+			{
+				CancelWaterBombAbilityAuthoritative();
+			}
+			return false;
+		}
+	}
+	if (IsOwningShipCannonDisabled())
+	{
+		if (IsPlayerControlled() && !bLoggedWaterBombFireBlock)
+		{
+			bLoggedWaterBombFireBlock = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("[WaterBomb] Cannon fire blocked once for this effect: cannon=%s, owning-ship=%s, controller=%s"),
+				*GetName(),
+				*GetNameSafe(GetOwningShip()),
+				*GetNameSafe(GetController()));
+		}
+		return false;
+	}
+	bLoggedWaterBombFireBlock = false;
 
 	AShip* MyShip = GetOwningShip();
 	// UE_LOG(LogTemp, Warning, TEXT("ACannon::FireCannon - Fire! Cannon: %s, Ship: %s"), *GetName(), MyShip ? *MyShip->GetName() : TEXT("None"));
@@ -280,7 +356,7 @@ bool ACannon::FireCannon()
 	}
 	else
 	{
-		ServerFire(MuzzleLocation, LaunchRotation, TargetDamage, TargetSpeed);
+		ServerFire();
 	}
 
 	return true;
@@ -341,19 +417,81 @@ void ACannon::ForceExit()
 	}
 }
 
-void ACannon::ServerFire_Implementation(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed)
+void ACannon::ServerFire_Implementation()
 {
-	SpawnCannonball(MuzzleLocation, LaunchRotation, Damage, Speed);
+	if (!bCanFire) return;
+	if (bWaterBombMode)
+	{
+		const ISkillUseProvider* SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
+		if (!SkillProvider || !SkillProvider->CanUseSkill(GameplayAbility_Skill_WaterBomb))
+		{
+			CancelWaterBombAbilityAuthoritative();
+			return;
+		}
+	}
+	if (IsOwningShipCannonDisabled())
+	{
+		if (IsPlayerControlled() && !bLoggedWaterBombFireBlock)
+		{
+			bLoggedWaterBombFireBlock = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("[WaterBomb] Server rejected cannon fire once for this effect: cannon=%s, owning-ship=%s, controller=%s"),
+				*GetName(),
+				*GetNameSafe(GetOwningShip()),
+				*GetNameSafe(GetController()));
+		}
+		return;
+	}
+	bLoggedWaterBombFireBlock = false;
+
+	float AuthoritativeCooldown = FireCooldown;
+	float AuthoritativeDamage = 10.0f;
+	float AuthoritativeSpeed = FireVelocity;
+	if (AShip* Ship = GetOwningShip())
+	{
+		if (UAbilitySystemComponent* ShipASC = Ship->GetAbilitySystemComponent())
+		{
+			AuthoritativeCooldown = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonFireCooldownAttribute());
+			AuthoritativeDamage = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonDamageAttribute());
+			AuthoritativeSpeed = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute());
+		}
+	}
+
+	bCanFire = false;
+	GetWorldTimerManager().SetTimer(CooldownTimerHandle, this, &ACannon::ResetCooldown, FMath::Max(0.05f, AuthoritativeCooldown), false);
+	const FVector MuzzleLocation = BarrelMesh
+		? BarrelMesh->GetComponentLocation() + BarrelMesh->GetForwardVector() * 200.0f
+		: GetActorLocation();
+	const FRotator LaunchRotation = BarrelMesh ? BarrelMesh->GetComponentRotation() : GetActorRotation();
+	SpawnCannonball(MuzzleLocation, LaunchRotation, AuthoritativeDamage, AuthoritativeSpeed);
 }
 
 void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed)
 {
 	if (!HasAuthority()) return;
 
-	if (!CannonballClass)
+	const TSubclassOf<AActor> SelectedProjectileClass = bWaterBombMode
+		? ActiveWaterBombProjectileClass
+		: CannonballClass;
+	if (!SelectedProjectileClass)
 	{
-		UE_LOG(LogTemp, Error, TEXT("ACannon::SpawnCannonball - CannonballClass is null. Please assign it in the editor."));
+		UE_LOG(LogTemp, Error, TEXT("ACannon::SpawnCannonball - %s projectile class is null."),
+			bWaterBombMode ? TEXT("Water bomb") : TEXT("Normal cannonball"));
 		return;
+	}
+
+	ISkillUseProvider* SkillProvider = nullptr;
+	if (bWaterBombMode)
+	{
+		SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
+		if (!SkillProvider || !SkillProvider->TryConsumeSkillUse(GameplayAbility_Skill_WaterBomb))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[WaterBomb] Fire rejected because the skill is locked or has no usage material. Player=%s"),
+				*GetNameSafe(RidingPlayer));
+			CancelWaterBombAbilityAuthoritative();
+			return;
+		}
 	}
 
 	AShip* OwningShip = GetOwningShip();
@@ -363,14 +501,155 @@ void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, f
 	SpawnParams.Instigator = RidingPlayer; // The player who controls the cannon (might be null for AI)
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	AActor* SpawnedProjectile = GetWorld()->SpawnActor<AActor>(CannonballClass, MuzzleLocation, LaunchRotation, SpawnParams);
+	AActor* SpawnedProjectile = GetWorld()->SpawnActor<AActor>(SelectedProjectileClass, MuzzleLocation, LaunchRotation, SpawnParams);
 	if (SpawnedProjectile)
 	{
 		if (ACannonball* Projectile = Cast<ACannonball>(SpawnedProjectile))
 		{
+			if (AWaterBombCannonball* WaterBombProjectile = Cast<AWaterBombCannonball>(Projectile))
+			{
+				WaterBombProjectile->ConfigureFromAbility(
+					ActiveWaterBombEffectDurationSeconds,
+					ActiveWaterBombAttackSpeedMultiplier);
+			}
 			Projectile->InitializeProjectile(OwningShip, Damage, Speed);
 		}
+
+		if (bWaterBombMode)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[WaterBomb] Fired: cannon=%s, owning-ship=%s, projectile=%s, class=%s"),
+				*GetName(),
+				*GetNameSafe(OwningShip),
+				*SpawnedProjectile->GetName(),
+				*GetNameSafe(SelectedProjectileClass.Get()));
+
+			if (SkillProvider && !SkillProvider->CanUseSkill(GameplayAbility_Skill_WaterBomb))
+			{
+				CancelWaterBombAbilityAuthoritative();
+			}
+		}
 	}
+}
+
+void ACannon::ServerToggleWaterBombAbility_Implementation()
+{
+	if (!RidingPlayer || !IsPlayerControlled())
+	{
+		return;
+	}
+
+	ToggleWaterBombAbilityAuthoritative();
+}
+
+UAbilitySystemComponent* ACannon::GetRidingPlayerAbilitySystem() const
+{
+	const IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(RidingPlayer);
+	return AbilitySystemInterface ? AbilitySystemInterface->GetAbilitySystemComponent() : nullptr;
+}
+
+void ACannon::ToggleWaterBombAbilityAuthoritative()
+{
+	if (!HasAuthority() || !RidingPlayer || !IsPlayerControlled())
+	{
+		return;
+	}
+
+	UAbilitySystemComponent* ASC = GetRidingPlayerAbilitySystem();
+	if (!ASC)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[WaterBomb] Player ASC is missing; cannot toggle GA. player=%s"),
+			*GetNameSafe(RidingPlayer));
+		return;
+	}
+
+	FGameplayTagContainer AbilityTags(GameplayAbility_Skill_WaterBomb);
+	if (ASC->HasMatchingGameplayTag(GameplayAbility_Skill_WaterBomb))
+	{
+		ASC->CancelAbilities(&AbilityTags);
+		return;
+	}
+
+	if (!ASC->TryActivateAbilitiesByTag(AbilityTags, true))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[WaterBomb] GA activation failed. Grant a Water Bomb GA to player=%s (tag=%s)."),
+			*GetNameSafe(RidingPlayer), *GameplayAbility_Skill_WaterBomb.GetTag().ToString());
+	}
+}
+
+void ACannon::CancelWaterBombAbilityAuthoritative()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (UAbilitySystemComponent* ASC = GetRidingPlayerAbilitySystem())
+	{
+		FGameplayTagContainer AbilityTags(GameplayAbility_Skill_WaterBomb);
+		ASC->CancelAbilities(&AbilityTags);
+	}
+}
+
+bool ACannon::ActivateWaterBombModeFromAbility(
+	UGameplayAbility* Ability,
+	TSubclassOf<AWaterBombCannonball> ProjectileClass,
+	float EffectDurationSeconds,
+	float AttackSpeedMultiplier)
+{
+	if (!HasAuthority() || !Ability || !ProjectileClass || !RidingPlayer || !IsPlayerControlled())
+	{
+		return false;
+	}
+
+	if (Ability->GetAvatarActorFromActorInfo() != RidingPlayer)
+	{
+		return false;
+	}
+
+	ActiveWaterBombAbility = Ability;
+	ActiveWaterBombProjectileClass = ProjectileClass;
+	ActiveWaterBombEffectDurationSeconds = FMath::Max(0.1f, EffectDurationSeconds);
+	ActiveWaterBombAttackSpeedMultiplier = FMath::Clamp(AttackSpeedMultiplier, 0.1f, 1.0f);
+	SetWaterBombModeAuthoritative(true);
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[WaterBomb] GA configured cannon=%s, projectile=%s, duration=%.2fs, attack-speed multiplier=%.2f"),
+		*GetName(), *GetNameSafe(ProjectileClass.Get()), ActiveWaterBombEffectDurationSeconds,
+		ActiveWaterBombAttackSpeedMultiplier);
+	return true;
+}
+
+void ACannon::DeactivateWaterBombModeFromAbility(UGameplayAbility* Ability)
+{
+	if (!HasAuthority() || (ActiveWaterBombAbility.IsValid() && ActiveWaterBombAbility.Get() != Ability))
+	{
+		return;
+	}
+
+	ActiveWaterBombAbility.Reset();
+	ActiveWaterBombProjectileClass = nullptr;
+	SetWaterBombModeAuthoritative(false);
+}
+
+void ACannon::SetWaterBombModeAuthoritative(bool bEnabled)
+{
+	if (!HasAuthority() || bWaterBombMode == bEnabled)
+	{
+		return;
+	}
+
+	bWaterBombMode = bEnabled;
+	ForceNetUpdate();
+	UE_LOG(LogTemp, Warning, TEXT("[WaterBomb] Cannon mode: %s"), bWaterBombMode ? TEXT("WATER BOMB") : TEXT("NORMAL"));
+}
+
+bool ACannon::IsOwningShipCannonDisabled() const
+{
+	const AShip* Ship = GetOwningShip();
+	const UAbilitySystemComponent* ShipASC = Ship ? Ship->GetAbilitySystemComponent() : nullptr;
+	return ShipASC && ShipASC->HasMatchingGameplayTag(State_Ship_CannonDisabled);
 }
 
 void ACannon::ServerUpdateAim_Implementation(float NewPitch, float NewYaw)
@@ -392,6 +671,11 @@ void ACannon::ResetCooldown()
 void ACannon::OnRep_AimRotation()
 {
 	// mesh rotation is handled in Tick
+}
+
+void ACannon::OnRep_WaterBombMode()
+{
+	UE_LOG(LogTemp, Warning, TEXT("[WaterBomb] Cannon mode replicated: %s"), bWaterBombMode ? TEXT("WATER BOMB") : TEXT("NORMAL"));
 }
 
 // Ship의 OnRep_RidingPlayer()와 동일 패턴

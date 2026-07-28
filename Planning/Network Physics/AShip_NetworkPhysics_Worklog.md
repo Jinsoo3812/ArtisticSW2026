@@ -46,7 +46,8 @@ M3~M10에서 추가로 확인·수정한 사항:
 확인한 범위:
 
 - `Source/WaterAndShip`: `AShip`, Network Physics payload, Async Physics, 부력/파도 계산
-- `Source/ClassFeature`: Water Waves wrapper, Ripple subsystem, 수영 쿼리, Water 렌더 시간 주입 경로
+- `Source/WaterAndShip`: Water Waves wrapper, Ripple subsystem, Water 렌더 시간 주입 경로
+- `Source/ClassFeature`: 플레이어 수영 쿼리와 캐릭터 이동 연동
 - `Config/DefaultEngine.ini`: Physics Prediction, Physics History Capture, 관련 CVar
 - 현재 사용 후보 Ship Blueprint들의 런타임 Class Default Object 설정
 - UE 5.7 엔진의 `NetworkPhysicsComponent`, `FNetworkPhysicsPayload`, rewind history, `FInstancedStruct::NetSerialize`, Gerstner Water Waves 구현

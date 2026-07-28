@@ -9,6 +9,95 @@
 #include "Storage/StorageComponent.h"
 #include "BaseGameplayTags.h"
 
+namespace
+{
+	int32 CountItemInSlots(const TArray<FInventorySlot>& Slots, const FGameplayTag& ItemTag)
+	{
+		int32 Total = 0;
+		for (const FInventorySlot& Slot : Slots)
+		{
+			if (Slot.ItemTag == ItemTag)
+			{
+				Total += Slot.Count;
+			}
+		}
+		return Total;
+	}
+
+	bool RemoveFromSlots(TArray<FInventorySlot>& Slots, const FGameplayTag& ItemTag, int32 Amount)
+	{
+		if (!ItemTag.IsValid() || Amount <= 0 || CountItemInSlots(Slots, ItemTag) < Amount)
+		{
+			return false;
+		}
+		int32 Remaining = Amount;
+		for (FInventorySlot& Slot : Slots)
+		{
+			if (Slot.ItemTag != ItemTag)
+			{
+				continue;
+			}
+			const int32 Removed = FMath::Min(Remaining, Slot.Count);
+			Slot.Count -= Removed;
+			Remaining -= Removed;
+			if (Slot.Count <= 0)
+			{
+				Slot.Clear();
+			}
+			if (Remaining == 0)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool AddToSlots(TArray<FInventorySlot>& Slots, const FGameplayTag& ItemTag, int32 Amount, int32 MaxStack)
+	{
+		if (!ItemTag.IsValid() || Amount <= 0 || MaxStack <= 0)
+		{
+			return false;
+		}
+		int32 Remaining = Amount;
+		for (FInventorySlot& Slot : Slots)
+		{
+			if (Remaining == 0)
+			{
+				break;
+			}
+			if (Slot.ItemTag == ItemTag && Slot.Count < MaxStack)
+			{
+				const int32 Added = FMath::Min(Remaining, MaxStack - Slot.Count);
+				Slot.Count += Added;
+				Remaining -= Added;
+			}
+		}
+		for (FInventorySlot& Slot : Slots)
+		{
+			if (Remaining == 0)
+			{
+				break;
+			}
+			if (Slot.IsEmpty())
+			{
+				const int32 Added = FMath::Min(Remaining, MaxStack);
+				Slot.ItemTag = ItemTag;
+				Slot.Count = Added;
+				Remaining -= Added;
+			}
+		}
+		return Remaining == 0;
+	}
+
+	FInventoryTabPage* FindPageInArray(TArray<FInventoryTabPage>& Pages, EInventoryTab Tab)
+	{
+		return Pages.FindByPredicate([Tab](const FInventoryTabPage& Page)
+		{
+			return Page.Tab == Tab;
+		});
+	}
+}
+
 // Sets default values for this component's properties
 UInventoryComponent::UInventoryComponent()
 {
@@ -26,6 +115,7 @@ UInventoryComponent::UInventoryComponent()
 void UInventoryComponent::BeginPlay()
 {
     Super::BeginPlay();
+	OnInventoryChanged.AddUObject(this, &UInventoryComponent::BroadcastShipUpgradeInventoryChanged);
     //서버에서만 인벤토리 array 크기 초기화
     if (GetOwner() && GetOwner()->HasAuthority())
     {
@@ -297,6 +387,148 @@ int32 UInventoryComponent::GetMaterialCount(const FGameplayTag& ItemTag) const
     }
 
     return TotalCount;
+}
+
+void UInventoryComponent::BroadcastShipUpgradeInventoryChanged()
+{
+	ShipUpgradeInventoryChanged.Broadcast();
+}
+
+int32 UInventoryComponent::AddItem(const FGameplayTag& ItemTag, int32 Amount)
+{
+	return AddMaterial(ItemTag, Amount);
+}
+
+bool UInventoryComponent::RemoveItem(const FGameplayTag& ItemTag, int32 Amount)
+{
+	return RemoveMaterial(ItemTag, Amount);
+}
+
+int32 UInventoryComponent::GetItemCount(const FGameplayTag& ItemTag) const
+{
+	return GetMaterialCount(ItemTag);
+}
+
+bool UInventoryComponent::CanAddItem(const FGameplayTag& ItemTag, int32 Amount) const
+{
+	if (!ItemTag.IsValid() || Amount <= 0)
+	{
+		return false;
+	}
+	const EInventoryTab ItemTab = GetInventoryTabForItem(ItemTag);
+	const FInventoryTabPage* Page = FindPage(ItemTab);
+	if (!Page)
+	{
+		return false;
+	}
+
+	TArray<FInventorySlot> WorkingSlots = Page->Slots;
+	return AddToSlots(WorkingSlots, ItemTag, Amount, GetMaxStack(ItemTag));
+}
+
+bool UInventoryComponent::TryApplyCraftingTransaction(const TArray<FCraftingItemStack>& Costs, const FCraftingItemStack& Result)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !Result.ItemTag.IsValid() || Result.Quantity <= 0)
+	{
+		return false;
+	}
+
+	InitializeInventoryPages();
+	TArray<FInventoryTabPage> WorkingPages = InventoryPages;
+	for (const FCraftingItemStack& Cost : Costs)
+	{
+		if (!Cost.ItemTag.IsValid() || Cost.Quantity <= 0)
+		{
+			return false;
+		}
+
+		FInventoryTabPage* CostPage = FindPageInArray(WorkingPages, GetInventoryTabForItem(Cost.ItemTag));
+		if (!CostPage || !RemoveFromSlots(CostPage->Slots, Cost.ItemTag, Cost.Quantity))
+		{
+			return false;
+		}
+	}
+
+	FInventoryTabPage* ResultPage = FindPageInArray(WorkingPages, GetInventoryTabForItem(Result.ItemTag));
+	if (!ResultPage || !AddToSlots(ResultPage->Slots, Result.ItemTag, Result.Quantity, GetMaxStack(Result.ItemTag)))
+	{
+		return false;
+	}
+
+	InventoryPages = MoveTemp(WorkingPages);
+	if (const FInventoryTabPage* ActivePage = FindPage(ActiveTab))
+	{
+		InventorySlots = ActivePage->Slots;
+	}
+	OnInventoryChanged.Broadcast();
+	PrintInventoryToScreen();
+	return true;
+}
+
+bool UInventoryComponent::RemoveItemsAtomically(const TArray<FCraftingItemStack>& Costs)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return false;
+	}
+
+	InitializeInventoryPages();
+	TArray<FInventoryTabPage> WorkingPages = InventoryPages;
+	for (const FCraftingItemStack& Cost : Costs)
+	{
+		if (!Cost.ItemTag.IsValid() || Cost.Quantity <= 0)
+		{
+			return false;
+		}
+
+		FInventoryTabPage* CostPage = FindPageInArray(WorkingPages, GetInventoryTabForItem(Cost.ItemTag));
+		if (!CostPage || !RemoveFromSlots(CostPage->Slots, Cost.ItemTag, Cost.Quantity))
+		{
+			return false;
+		}
+	}
+
+	InventoryPages = MoveTemp(WorkingPages);
+	if (const FInventoryTabPage* ActivePage = FindPage(ActiveTab))
+	{
+		InventorySlots = ActivePage->Slots;
+	}
+	OnInventoryChanged.Broadcast();
+	PrintInventoryToScreen();
+	return true;
+}
+
+bool UInventoryComponent::AddItemsAtomically(const TArray<FCraftingItemStack>& Items)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return false;
+	}
+
+	InitializeInventoryPages();
+	TArray<FInventoryTabPage> WorkingPages = InventoryPages;
+	for (const FCraftingItemStack& Item : Items)
+	{
+		if (!Item.ItemTag.IsValid() || Item.Quantity <= 0)
+		{
+			return false;
+		}
+
+		FInventoryTabPage* ItemPage = FindPageInArray(WorkingPages, GetInventoryTabForItem(Item.ItemTag));
+		if (!ItemPage || !AddToSlots(ItemPage->Slots, Item.ItemTag, Item.Quantity, GetMaxStack(Item.ItemTag)))
+		{
+			return false;
+		}
+	}
+
+	InventoryPages = MoveTemp(WorkingPages);
+	if (const FInventoryTabPage* ActivePage = FindPage(ActiveTab))
+	{
+		InventorySlots = ActivePage->Slots;
+	}
+	OnInventoryChanged.Broadcast();
+	PrintInventoryToScreen();
+	return true;
 }
 
 int32 UInventoryComponent::GetMaxStack(const FGameplayTag& ItemTag) const

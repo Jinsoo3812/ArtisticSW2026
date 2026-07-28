@@ -42,6 +42,7 @@ void UBaseHitReactionGameplayAbility::ActivateAbility(
 	bHitReactionFinished = false;
 	CurrentHitReactionDirection = CalculateHitReactionDirection(EventData);
 
+	OnHitReactionActivated(EventData, EventData.EventMagnitude, CurrentHitReactionDirection);
 	K2_OnHitReactionStarted(EventData, EventData.EventMagnitude);
 	K2_OnDirectionalHitReactionStarted(EventData, EventData.EventMagnitude, CurrentHitReactionDirection);
 
@@ -169,6 +170,13 @@ EBaseHitReactionDirection UBaseHitReactionGameplayAbility::CalculateHitReactionD
 	}
 
 	return RightDot >= 0.0f ? EBaseHitReactionDirection::Right : EBaseHitReactionDirection::Left;
+}
+
+void UBaseHitReactionGameplayAbility::OnHitReactionActivated(
+	const FGameplayEventData& TriggerEventData,
+	float DamageAmount,
+	EBaseHitReactionDirection Direction)
+{
 }
 
 UAnimMontage* UBaseHitReactionGameplayAbility::GetHitReactionMontage(EBaseHitReactionDirection Direction) const

@@ -29,4 +29,8 @@ public:
 	// 아이템 조합식이 담긴 CSV Data Table 경로
 	UPROPERTY(Config, EditAnywhere, Category = "Item")
 	TSoftObjectPtr<UDataTable> ItemRecipeDataTable;
+
+	// 신규 제작 UI/API가 사용하는 제작법 Data Table. Legacy 조합식 테이블과 분리한다.
+	UPROPERTY(Config, EditAnywhere, Category = "Crafting", meta = (AllowedClasses = "/Script/Engine.DataTable"))
+	TSoftObjectPtr<UDataTable> CraftingRecipeDataTable;
 };

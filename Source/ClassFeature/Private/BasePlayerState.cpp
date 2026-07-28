@@ -4,6 +4,8 @@
 #include "BasePlayerState.h"
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
+#include "Skills/PlayerSkillComponent.h"
+#include "Upgrade/ShipUpgradeComponent.h"
 
 ABasePlayerState::ABasePlayerState()
 {
@@ -21,6 +23,9 @@ ABasePlayerState::ABasePlayerState()
 
 	// Basic Attribute Set 생성
 	BasicAttributes = CreateDefaultSubobject<UBaseAttributeSet>(TEXT("BasicAttributeSet"));
+
+	ShipUpgradeComponent = CreateDefaultSubobject<UShipUpgradeComponent>(TEXT("ShipUpgradeComponent"));
+	PlayerSkillComponent = CreateDefaultSubobject<UPlayerSkillComponent>(TEXT("PlayerSkillComponent"));
 }
 
 UAbilitySystemComponent* ABasePlayerState::GetAbilitySystemComponent() const

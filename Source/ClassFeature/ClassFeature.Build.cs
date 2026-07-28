@@ -12,10 +12,7 @@ public class ClassFeature: ModuleRules
             "GASCore",
             "InputCore",
             "EnhancedInput",
-            "ArtisticSWCore",
-            "UMG",
-            "RHI",
-            "RenderCore"
+            "ArtisticSWCore"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
@@ -28,6 +25,7 @@ public class ClassFeature: ModuleRules
             "ArtisticSWCore",   // <--- BaseItem.h를 위해 필요
             "InputCore",
             "ArtisticSW2026",
+            "UMG",
             "Slate",            // <--- PlayetHYDWidget.h를 위해 필요
             "SlateCore",         // <--- PlayetHYDWidget.h를 위해 필요
             "PoseSearch",

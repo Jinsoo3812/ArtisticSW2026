@@ -62,6 +62,17 @@
 			"AdditionalDependencies": [
 				"Engine"
 			]
+		},
+		{
+			"Name": "ShipUpgradeUI",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine",
+				"UMG",
+				"WaterAndShip",
+				"ClassFeature"
+			]
 		}
 	],
 	"Plugins": [

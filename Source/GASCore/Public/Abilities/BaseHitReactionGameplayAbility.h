@@ -54,6 +54,16 @@ protected:
 	UFUNCTION(BlueprintPure, Category = "HitReaction")
 	UAnimMontage* GetHitReactionMontage(EBaseHitReactionDirection Direction) const;
 
+	/**
+	 * Called after the hit direction has been resolved and before the reaction montage starts.
+	 * Native subclasses can add character-specific reaction behavior without duplicating
+	 * the base activation and montage flow.
+	 */
+	virtual void OnHitReactionActivated(
+		const FGameplayEventData& TriggerEventData,
+		float DamageAmount,
+		EBaseHitReactionDirection Direction);
+
 	void FinishHitReaction(bool bWasCancelled);
 	bool TryGetHitReactionSourceLocation(const FGameplayEventData& TriggerEventData, FVector& OutSourceLocation) const;
 
