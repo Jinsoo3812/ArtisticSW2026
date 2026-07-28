@@ -69,9 +69,22 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Graph", meta = (ClampMin = "1.0"))
 	float ConnectionThickness = 4.0f;
 
+	/** Routes every prerequisite edge through axis-aligned segments instead of one diagonal segment. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Graph")
+	bool bUseOrthogonalConnections = true;
+
+	/** Places the horizontal elbow between the parent exit and child entry. */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "Ship Upgrade|Graph",
+		meta = (ClampMin = "0.1", ClampMax = "0.9"))
+	float OrthogonalConnectionElbowRatio = 0.5f;
+
 private:
 	void HandleNodeSelected(FName NodeId);
 	const FShipUpgradeNodeView* FindView(FName NodeId) const;
+	bool AddConnectionSegment(const FVector2D& Start, const FVector2D& End, bool bDashed);
 	void BuildDisplayPositions();
 	int32 CalculateNodeDepth(FName NodeId, TMap<FName, int32>& DepthCache, TSet<FName>& Visiting) const;
 

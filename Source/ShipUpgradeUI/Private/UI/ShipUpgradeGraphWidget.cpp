@@ -56,7 +56,8 @@ void UShipUpgradeGraphWidget::RebuildGraph(const TArray<FShipUpgradeNodeView>& I
 	{
 		for (const FShipUpgradeNodeView& ChildView : NodeViews)
 		{
-			const FVector2D ChildCenter = GetNodeDisplayPosition(ChildView.NodeId) + NodeWidgetSize * 0.5f;
+			const FVector2D ChildPosition = GetNodeDisplayPosition(ChildView.NodeId);
+			const FVector2D ChildCenter = ChildPosition + NodeWidgetSize * 0.5f;
 			for (FName ParentId : ChildView.PrerequisiteNodeIds)
 			{
 				const FShipUpgradeNodeView* ParentView = FindView(ParentId);
@@ -65,35 +66,37 @@ void UShipUpgradeGraphWidget::RebuildGraph(const TArray<FShipUpgradeNodeView>& I
 					continue;
 				}
 
-				const FVector2D ParentCenter = GetNodeDisplayPosition(ParentId) + NodeWidgetSize * 0.5f;
-				const FVector2D Delta = ChildCenter - ParentCenter;
-				const float Length = Delta.Size();
-				if (Length <= KINDA_SMALL_NUMBER)
+				const FVector2D ParentPosition = GetNodeDisplayPosition(ParentId);
+				const FVector2D ParentCenter = ParentPosition + NodeWidgetSize * 0.5f;
+				const bool bDashed = ChildView.State == EShipUpgradeNodeState::Locked;
+
+				if (!bUseOrthogonalConnections)
 				{
+					CreatedConnectionCount += AddConnectionSegment(ParentCenter, ChildCenter, bDashed) ? 1 : 0;
 					continue;
 				}
 
-				UShipUpgradeConnectionWidget* Connection = CreateWidget<UShipUpgradeConnectionWidget>(
-					GetOwningPlayer(), ConnectionWidgetClass);
-				if (!Connection)
-				{
-					continue;
-				}
+				// The vertical tree exits from the edge of the parent facing the child
+				// and enters the corresponding edge of the child. The child's X
+				// position automatically determines whether the middle segment travels
+				// left or right.
+				const bool bChildIsBelow = ChildCenter.Y >= ParentCenter.Y;
+				const FVector2D ParentExit(
+					ParentCenter.X,
+					bChildIsBelow ? ParentPosition.Y + NodeWidgetSize.Y : ParentPosition.Y);
+				const FVector2D ChildEntry(
+					ChildCenter.X,
+					bChildIsBelow ? ChildPosition.Y : ChildPosition.Y + NodeWidgetSize.Y);
+				const float ElbowY = FMath::Lerp(
+					ParentExit.Y,
+					ChildEntry.Y,
+					FMath::Clamp(OrthogonalConnectionElbowRatio, 0.1f, 0.9f));
+				const FVector2D ParentCorner(ParentExit.X, ElbowY);
+				const FVector2D ChildCorner(ChildEntry.X, ElbowY);
 
-				CanvasPanel_Graph->AddChild(Connection);
-				if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Connection->Slot))
-				{
-					CanvasSlot->SetPosition(ParentCenter);
-					CanvasSlot->SetSize(FVector2D(Length, ConnectionThickness));
-					CanvasSlot->SetAlignment(FVector2D(0.0f, 0.5f));
-					CanvasSlot->SetZOrder(0);
-				}
-
-				const float AngleDegrees = FMath::RadiansToDegrees(FMath::Atan2(Delta.Y, Delta.X));
-				Connection->SetRenderTransformPivot(FVector2D(0.0f, 0.5f));
-				Connection->SetRenderTransformAngle(AngleDegrees);
-				Connection->ConfigureConnection(ChildView.State == EShipUpgradeNodeState::Locked);
-				++CreatedConnectionCount;
+				CreatedConnectionCount += AddConnectionSegment(ParentExit, ParentCorner, bDashed) ? 1 : 0;
+				CreatedConnectionCount += AddConnectionSegment(ParentCorner, ChildCorner, bDashed) ? 1 : 0;
+				CreatedConnectionCount += AddConnectionSegment(ChildCorner, ChildEntry, bDashed) ? 1 : 0;
 			}
 		}
 	}
@@ -180,6 +183,46 @@ UShipUpgradeNodeWidget* UShipUpgradeGraphWidget::GetNodeWidget(FName NodeId) con
 		return Widget->Get();
 	}
 	return nullptr;
+}
+
+bool UShipUpgradeGraphWidget::AddConnectionSegment(
+	const FVector2D& Start,
+	const FVector2D& End,
+	bool bDashed)
+{
+	if (!CanvasPanel_Graph || !ConnectionWidgetClass)
+	{
+		return false;
+	}
+
+	const FVector2D Delta = End - Start;
+	const float Length = Delta.Size();
+	if (Length <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	UShipUpgradeConnectionWidget* Connection = CreateWidget<UShipUpgradeConnectionWidget>(
+		GetOwningPlayer(), ConnectionWidgetClass);
+	if (!Connection)
+	{
+		return false;
+	}
+
+	CanvasPanel_Graph->AddChild(Connection);
+	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Connection->Slot))
+	{
+		CanvasSlot->SetPosition(Start);
+		CanvasSlot->SetSize(FVector2D(Length, ConnectionThickness));
+		CanvasSlot->SetAlignment(FVector2D(0.0f, 0.5f));
+		CanvasSlot->SetZOrder(0);
+	}
+
+	const float AngleDegrees = FMath::RadiansToDegrees(FMath::Atan2(Delta.Y, Delta.X));
+	Connection->SetRenderTransformPivot(FVector2D(0.0f, 0.5f));
+	Connection->SetRenderTransformAngle(AngleDegrees);
+	Connection->ConfigureConnection(bDashed);
+	return true;
 }
 
 void UShipUpgradeGraphWidget::SetSelectedNode(FName NodeId)
