@@ -69,7 +69,8 @@
 ## 구현 구조 메모
 
 - `ArtisticSWCore`: 순수 Ripple 이벤트/evaluator, thread-safe 상태 cache, Fast Array replicator, 순수 부력 solver.
-- `ClassFeature`: 서버 Ripple 감지·렌더링 facade, Player Swimming/CMC 적용, Storage 서버 권위 적용.
+- `WaterAndShip`: 서버 Ripple 감지·렌더링 facade와 WaterWaves 연동.
+- `ClassFeature`: Player Swimming/CMC 적용과 Storage 서버 권위 적용.
 - `WaterAndShip`: Rigidbody 설정 컴포넌트와 Ship Network Physics PT 적용.
 - `ESWBuoyancyExecutionMode::ServerAuthority`: 컴포넌트가 authority에서 Chaos force를 적용한다.
 - `ESWBuoyancyExecutionMode::ExternalNetworkPhysics`: 컴포넌트는 설정 원천이고 외부 PT callback이 force를 적용한다.

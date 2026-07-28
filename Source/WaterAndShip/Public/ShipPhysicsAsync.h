@@ -14,6 +14,8 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	float SteeringInput = 0.0f;
 	FVector ExternalAcceleration = FVector::ZeroVector;
 	bool bHasLocalController = false;
+	/** Server-authored gameplay force (vortex, knockback, etc.) may affect AI ships too. */
+	bool bApplyAuthoritativeExternalAcceleration = false;
 	bool bQueryDiagnostics = false;
 
 	TArray<FVector> PontoonOffsets;
@@ -49,6 +51,7 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 		SteeringInput = 0.0f;
 		ExternalAcceleration = FVector::ZeroVector;
 		bHasLocalController = false;
+		bApplyAuthoritativeExternalAcceleration = false;
 		bQueryDiagnostics = false;
 		PontoonOffsets.Empty();
 		PontoonRadii.Empty();

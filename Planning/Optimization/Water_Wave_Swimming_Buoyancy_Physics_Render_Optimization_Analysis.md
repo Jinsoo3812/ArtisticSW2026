@@ -651,8 +651,8 @@ M1과 M2까지는 현재 네트워크 방식과 부력 결과를 거의 건드�
 | Ripple 이벤트별 높이 평가 | `Source/ArtisticSWCore/Private/Water/SWRippleTypes.cpp` |
 | Ripple 매 프레임 정리, Lock, Snapshot 복사 | `Source/ArtisticSWCore/Private/Water/SWRippleStateSubsystem.cpp` |
 | FastArray, AlwaysRelevant, 갱신 주기 | `Source/ArtisticSWCore/Private/Water/SWRippleReplicator.cpp` |
-| Ripple 발생 시 Pawn 검색, 매 프레임 texture upload/MID 순회 | `Source/ClassFeature/Private/RippleSubsystem.cpp` |
-| Base Waves + Ripple 수면 query | `Source/ClassFeature/Private/SWRippleWaterWaves.cpp` |
+| Ripple 발생 시 Pawn 검색, 매 프레임 texture upload/MID 순회 | `Source/WaterAndShip/Private/RippleSubsystem.cpp` |
+| Base Waves + Ripple 수면 query | `Source/WaterAndShip/Private/SWRippleWaterWaves.cpp` |
 | 수영 수면 query와 transition/floor 처리 | `Source/ClassFeature/Private/SwimmingComponent.cpp` |
 | CMC의 SwimmingComponent 반복 검색 | `Source/ClassFeature/Private/SWCharacterMovementComponent.cpp` |
 | Storage 폰툰별 WaterBody query/force | `Source/WaterAndShip/Private/Buoyancy/SWBuoyancyComponent.cpp` |

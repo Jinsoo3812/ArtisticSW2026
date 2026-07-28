@@ -10,6 +10,7 @@
 class UAbilitySystemComponent;
 class UBaseAttributeSet;
 class UShipUpgradeComponent;
+class UPlayerSkillComponent;
 
 /*
  * Player가 죽어도 그 정보를 유지하여 Player를 다시 소환하고 상태를 관리하는 PlayerState
@@ -30,6 +31,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ship Upgrade")
 	UShipUpgradeComponent* GetShipUpgradeComponent() const { return ShipUpgradeComponent; }
 
+	UFUNCTION(BlueprintPure, Category = "Skill")
+	UPlayerSkillComponent* GetPlayerSkillComponent() const { return PlayerSkillComponent; }
+
 protected:
 	// PlayerState가 소유할 AbilitySystemComponent
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AbilitySystem")
@@ -42,6 +46,10 @@ protected:
 	/** Server-authoritative player ship progression and UI facade. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship Upgrade")
 	TObjectPtr<UShipUpgradeComponent> ShipUpgradeComponent;
+
+	/** Story unlock state and inventory-backed use counts for the three player skills. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Skill")
+	TObjectPtr<UPlayerSkillComponent> PlayerSkillComponent;
 
 	// INI 파일(DefaultGame.ini)에서 값을 제어할 수 있음
 	UPROPERTY(Config)

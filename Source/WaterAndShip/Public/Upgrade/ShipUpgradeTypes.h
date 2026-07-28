@@ -4,6 +4,8 @@
 #include "Crafting/CraftingRecipeTypes.h"
 #include "ShipUpgradeTypes.generated.h"
 
+class AActor;
+
 UENUM(BlueprintType)
 enum class EShipStatType : uint8
 {
@@ -28,6 +30,15 @@ enum class EShipUpgradeNodeState : uint8
 	Locked,
 	Available,
 	Active
+};
+
+/** Selects the visual treatment used by the upgrade details panel. */
+UENUM(BlueprintType)
+enum class EShipUpgradePreviewType : uint8
+{
+	Icon2D,
+	Cannon3D,
+	Ship3D
 };
 
 UENUM(BlueprintType)
@@ -102,6 +113,30 @@ struct WATERANDSHIP_API FShipUpgradeNodeDefinition
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation")
 	TSoftObjectPtr<UTexture2D> Icon;
+
+	/** 2D icon, isolated cannon actor, or isolated ship actor shown for this node. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation|3D")
+	EShipUpgradePreviewType PreviewType = EShipUpgradePreviewType::Icon2D;
+
+	/** Optional actor spawned only in the UI preview stage for the selected node. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation|3D")
+	TSoftClassPtr<AActor> PreviewActorClass;
+
+	/** Optional cumulative ship appearance selected while this node is active. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation|3D")
+	TSoftClassPtr<AActor> ActivatedShipActorClass;
+
+	/** Optional cumulative cannon appearance selected while this node is active. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation|3D")
+	TSoftClassPtr<AActor> ActivatedCannonActorClass;
+
+	/** Highest active priority wins when several nodes supply a cumulative appearance. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation|3D")
+	int32 VisualPriority = 0;
+
+	/** Optional UI-defined camera preset key, for example ShipWide or CannonClose. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation|3D")
+	FName CameraPreset;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Graph")
 	FVector2D GraphPosition = FVector2D::ZeroVector;
@@ -187,6 +222,24 @@ struct WATERANDSHIP_API FShipUpgradeNodeView
 
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Upgrade|UI")
 	TSoftObjectPtr<UTexture2D> Icon;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Upgrade|UI")
+	EShipUpgradePreviewType PreviewType = EShipUpgradePreviewType::Icon2D;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Upgrade|UI")
+	TSoftClassPtr<AActor> PreviewActorClass;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Upgrade|UI")
+	TSoftClassPtr<AActor> ActivatedShipActorClass;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Upgrade|UI")
+	TSoftClassPtr<AActor> ActivatedCannonActorClass;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Upgrade|UI")
+	int32 VisualPriority = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Upgrade|UI")
+	FName CameraPreset;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Upgrade|UI")
 	FVector2D GraphPosition = FVector2D::ZeroVector;

@@ -19,7 +19,7 @@
 #include "Cannonball.h"
 #include "WaterBombCannonball.h"
 #include "BaseGameplayTags.h"
-#include "InputCoreTypes.h"
+#include "Skills/SkillUseProvider.h"
 #include "AbilitySystemInterface.h"
 #include "Abilities/GameplayAbility.h"
 
@@ -78,6 +78,17 @@ void ACannon::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// Inventory/lock state can change while the modal ability is active.
+	// Keep the server authoritative and close the mode within one frame.
+	if (HasAuthority() && bWaterBombMode)
+	{
+		const ISkillUseProvider* SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
+		if (!SkillProvider || !SkillProvider->CanUseSkill(GameplayAbility_Skill_WaterBomb))
+		{
+			CancelWaterBombAbilityAuthoritative();
+		}
+	}
+
 	// Apply rotation to meshes
 	if (BaseMesh)
 	{
@@ -118,11 +129,6 @@ void ACannon::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 		if (CannonWaterBombToggleAction)
 		{
 			EnhancedInput->BindAction(CannonWaterBombToggleAction, ETriggerEvent::Started, this, &ACannon::HandleWaterBombToggle);
-		}
-		else
-		{
-			// IA/IMC 에셋을 만들기 전에도 PIE에서 바로 검증할 수 있는 임시 4번 키 경로입니다.
-			PlayerInputComponent->BindKey(EKeys::Four, IE_Pressed, this, &ACannon::ToggleWaterBombAbility);
 		}
 	}
 	else
@@ -290,6 +296,18 @@ void ACannon::ToggleWaterBombAbility()
 bool ACannon::FireCannon()
 {
 	if (!bCanFire) return false;
+	if (bWaterBombMode)
+	{
+		const ISkillUseProvider* SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
+		if (!SkillProvider || !SkillProvider->CanUseSkill(GameplayAbility_Skill_WaterBomb))
+		{
+			if (HasAuthority())
+			{
+				CancelWaterBombAbilityAuthoritative();
+			}
+			return false;
+		}
+	}
 	if (IsOwningShipCannonDisabled())
 	{
 		if (IsPlayerControlled() && !bLoggedWaterBombFireBlock)
@@ -402,6 +420,15 @@ void ACannon::ForceExit()
 void ACannon::ServerFire_Implementation()
 {
 	if (!bCanFire) return;
+	if (bWaterBombMode)
+	{
+		const ISkillUseProvider* SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
+		if (!SkillProvider || !SkillProvider->CanUseSkill(GameplayAbility_Skill_WaterBomb))
+		{
+			CancelWaterBombAbilityAuthoritative();
+			return;
+		}
+	}
 	if (IsOwningShipCannonDisabled())
 	{
 		if (IsPlayerControlled() && !bLoggedWaterBombFireBlock)
@@ -453,6 +480,20 @@ void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, f
 		return;
 	}
 
+	ISkillUseProvider* SkillProvider = nullptr;
+	if (bWaterBombMode)
+	{
+		SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
+		if (!SkillProvider || !SkillProvider->TryConsumeSkillUse(GameplayAbility_Skill_WaterBomb))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[WaterBomb] Fire rejected because the skill is locked or has no usage material. Player=%s"),
+				*GetNameSafe(RidingPlayer));
+			CancelWaterBombAbilityAuthoritative();
+			return;
+		}
+	}
+
 	AShip* OwningShip = GetOwningShip();
 
 	FActorSpawnParameters SpawnParams;
@@ -482,6 +523,11 @@ void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, f
 				*GetNameSafe(OwningShip),
 				*SpawnedProjectile->GetName(),
 				*GetNameSafe(SelectedProjectileClass.Get()));
+
+			if (SkillProvider && !SkillProvider->CanUseSkill(GameplayAbility_Skill_WaterBomb))
+			{
+				CancelWaterBombAbilityAuthoritative();
+			}
 		}
 	}
 }

@@ -16,6 +16,13 @@ void UCraftingPanelWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
+	// The teammate-authored WBP shipped with a lowercase "l" in Ingredientlist.
+	// Keep the asset functional without forcing a binary Blueprint rename during integration.
+	if (!IngredientList)
+	{
+		IngredientList = Cast<UPanelWidget>(GetWidgetFromName(TEXT("Ingredientlist")));
+	}
+
 	if (CraftButton)
 	{
 		CraftButton->OnClicked.AddUniqueDynamic(this, &UCraftingPanelWidget::HandleCraftButtonClicked);

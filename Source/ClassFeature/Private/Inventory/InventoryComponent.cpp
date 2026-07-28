@@ -415,7 +415,6 @@ bool UInventoryComponent::CanAddItem(const FGameplayTag& ItemTag, int32 Amount) 
 	{
 		return false;
 	}
-
 	const EInventoryTab ItemTab = GetInventoryTabForItem(ItemTag);
 	const FInventoryTabPage* Page = FindPage(ItemTab);
 	if (!Page)

@@ -18,6 +18,7 @@
 #include "BaseAttributeSet.h"
 #include "ShipAttributeSet.h"
 #include "BaseGameplayTags.h"
+#include "Skills/SkillUseProvider.h"
 #include "ShipPhysicsAsync.h"
 #include "Physics/Experimental/PhysScene_Chaos.h"
 #include "PBDRigidsSolver.h"
@@ -695,6 +696,7 @@ void AShip::Tick(float DeltaTime)
 			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
 			{
 				AsyncInput->ExternalAcceleration = CurrentExternalAcceleration;
+				AsyncInput->bApplyAuthoritativeExternalAcceleration = HasAuthority();
 				AsyncInput->bQueryDiagnostics = bBuoyancyQueryDiagnostics;
 				AsyncInput->PontoonOffsets = TempPontoons;
 				AsyncInput->PontoonRadii = TempPontoonRadii;
@@ -829,17 +831,30 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 		{
 			EnhancedInput->BindAction(ShipDisembarkAction, ETriggerEvent::Started, this, &AShip::OnDisembarkAction);
 		}
+
+		if (ShipZoomAction)
+		{
+			EnhancedInput->BindAction(ShipZoomAction, ETriggerEvent::Triggered, this, &AShip::ShipZoom);
+		}
+		if (ShipBombardmentToggleAction)
+		{
+			EnhancedInput->BindAction(ShipBombardmentToggleAction, ETriggerEvent::Started, this, &AShip::HandleBombardmentToggle);
+		}
+		if (ShipBombardmentConfirmAction)
+		{
+			EnhancedInput->BindAction(ShipBombardmentConfirmAction, ETriggerEvent::Started, this, &AShip::HandleBombardmentConfirm);
+		}
+		if (ShipBombardmentCancelAction)
+		{
+			EnhancedInput->BindAction(ShipBombardmentCancelAction, ETriggerEvent::Started, this, &AShip::HandleBombardmentCancel);
+		}
 	}
 	else
 	{
 		UE_LOG(LogTemp, Error, TEXT("AShip::SetupPlayerInputComponent - Failed to find Enhanced Input Component."));
 	}
 
-	// Test bindings intentionally live on the possessed ship, so slot 5 only works while driving it.
-	PlayerInputComponent->BindKey(EKeys::Five, IE_Pressed, this, &AShip::HandleBombardmentToggle);
-	PlayerInputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &AShip::HandleBombardmentConfirm);
-	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &AShip::HandleBombardmentCancel);
-	PlayerInputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AShip::HandleBombardmentCancel);
+	RestoreRememberedFollowCameraState(CachedPlayerController);
 }
 
 void AShip::PossessedBy(AController* NewController)
@@ -867,6 +882,9 @@ void AShip::PossessedBy(AController* NewController)
 
 void AShip::UnPossessed()
 {
+	ResetToFollowCamera();
+	RememberFollowCameraState(Cast<APlayerController>(GetController()));
+
 	if (HasAuthority())
 	{
 		CancelBombardmentAbilityAuthoritative();
@@ -1036,6 +1054,7 @@ void AShip::Disembark()
 
 	// Restore camera mode
 	ResetToFollowCamera();
+	RememberFollowCameraState(PC);
 
 	// Detach player preserving their current world position on the ship
 	RidingPlayer->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
@@ -1143,9 +1162,33 @@ void AShip::ShipLook(const FInputActionValue& Value)
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
 		// Rotate the controller (which drives the SpringArm via bUsePawnControlRotation)
-		PC->AddYawInput(LookValue.X);
-		PC->AddPitchInput(LookValue.Y);
+		const float YawSign = bInvertShipLookYaw ? -1.0f : 1.0f;
+		const float PitchSign = bInvertShipLookPitch ? -1.0f : 1.0f;
+		PC->AddYawInput(LookValue.X * YawSign * ShipLookSensitivity);
+		PC->AddPitchInput(LookValue.Y * PitchSign * ShipLookSensitivity);
 	}
+}
+
+void AShip::ShipZoom(const FInputActionValue& Value)
+{
+	if (!CameraBoom || bUsingFixedCamera)
+	{
+		return;
+	}
+
+	const float WheelAxis = Value.Get<float>();
+	if (FMath::IsNearlyZero(WheelAxis))
+	{
+		return;
+	}
+
+	const float MinArm = FMath::Min(MinShipZoomArmLength, MaxShipZoomArmLength);
+	const float MaxArm = FMath::Max(MinShipZoomArmLength, MaxShipZoomArmLength);
+	CameraBoom->TargetArmLength = FMath::Clamp(
+		CameraBoom->TargetArmLength - WheelAxis * ShipZoomStep,
+		MinArm,
+		MaxArm);
+	RememberFollowCameraState(Cast<APlayerController>(GetController()));
 }
 
 void AShip::HandleBombardmentToggle()
@@ -1358,11 +1401,6 @@ void AShip::BeginLocalBombardmentTargeting()
 {
 	if (bLocalBombardmentInputModeApplied || !ActiveBombardmentClass)
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[BombardmentPreview] Begin skipped Ship=%s InputModeApplied=%s ActiveClass=%s"),
-			*GetNameSafe(this),
-			bLocalBombardmentInputModeApplied ? TEXT("true") : TEXT("false"),
-			*GetPathNameSafe(ActiveBombardmentClass));
 		return;
 	}
 
@@ -1370,23 +1408,8 @@ void AShip::BeginLocalBombardmentTargeting()
 	const ABombardment* BombardmentDefaults = ActiveBombardmentClass->GetDefaultObject<ABombardment>();
 	if (!PC || !PC->IsLocalController() || !BombardmentDefaults)
 	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[BombardmentPreview] Begin FAILED Ship=%s PC=%s LocalController=%s ActiveClass=%s Defaults=%s"),
-			*GetNameSafe(this),
-			*GetNameSafe(PC),
-			PC && PC->IsLocalController() ? TEXT("true") : TEXT("false"),
-			*GetPathNameSafe(ActiveBombardmentClass),
-			*GetNameSafe(BombardmentDefaults));
 		return;
 	}
-
-	UE_LOG(LogTemp, Warning,
-		TEXT("[BombardmentPreview] Begin Ship=%s ActiveClass=%s PreviewClass=%s Radius=%.1f HeightOffset=%.1f"),
-		*GetNameSafe(this),
-		*GetPathNameSafe(ActiveBombardmentClass),
-		*GetPathNameSafe(BombardmentDefaults->PreviewClass),
-		BombardmentDefaults->SkillRadius,
-		BombardmentDefaults->PreviewHeightOffset);
 
 	bSavedShowMouseCursor = PC->bShowMouseCursor;
 	PC->bShowMouseCursor = true;
@@ -1408,29 +1431,8 @@ void AShip::BeginLocalBombardmentTargeting()
 			SpawnParams);
 		if (BombardmentPreviewActor)
 		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("[BombardmentPreview] Spawn OK Actor=%s ActualClass=%s InitialLocation=%s"),
-				*GetNameSafe(BombardmentPreviewActor),
-				*GetPathNameSafe(BombardmentPreviewActor->GetClass()),
-				*BombardmentPreviewActor->GetActorLocation().ToCompactString());
 			BombardmentPreviewActor->ConfigurePreview(BombardmentDefaults->SkillRadius);
 		}
-		else
-		{
-			UE_LOG(LogTemp, Error,
-				TEXT("[BombardmentPreview] Spawn FAILED Ship=%s PreviewClass=%s World=%s"),
-				*GetNameSafe(this),
-				*GetPathNameSafe(BombardmentDefaults->PreviewClass),
-				*GetNameSafe(GetWorld()));
-		}
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[BombardmentPreview] Spawn skipped Ship=%s PreviewClass=%s World=%s"),
-			*GetNameSafe(this),
-			*GetPathNameSafe(BombardmentDefaults->PreviewClass),
-			*GetNameSafe(GetWorld()));
 	}
 }
 
@@ -1676,6 +1678,15 @@ void AShip::SpawnBombardmentAuthoritative(const FVector& TargetLocation)
 		return;
 	}
 
+	ISkillUseProvider* SkillProvider = Cast<ISkillUseProvider>(RidingPlayer);
+	if (!SkillProvider || !SkillProvider->TryConsumeSkillUse(GameplayAbility_Skill_Bombardment))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Bombardment] Execution rejected because the skill is locked or has no usage material. Player=%s"),
+			*GetNameSafe(RidingPlayer));
+		return;
+	}
+
 	float Damage = 10.0f;
 	float Speed = 3000.0f;
 	if (AbilitySystemComponent)
@@ -1770,11 +1781,40 @@ void AShip::ResetToFollowCamera()
 			FollowCamera->SetRelativeRotation(SavedFollowCameraRelativeRotation);
 		}
 
-		if (APlayerController* PC = Cast<APlayerController>(GetController()))
+		APlayerController* PC = Cast<APlayerController>(GetController());
+		if (!PC)
+		{
+			PC = CachedPlayerController;
+		}
+		if (PC)
 		{
 			PC->SetControlRotation(SavedControlRotation);
 		}
 	}
+}
+
+void AShip::RememberFollowCameraState(APlayerController* PlayerController)
+{
+	if (!CameraBoom || !PlayerController || !PlayerController->IsLocalController() || bUsingFixedCamera)
+	{
+		return;
+	}
+
+	RememberedFollowTargetArmLength = CameraBoom->TargetArmLength;
+	RememberedFollowControlRotation = PlayerController->GetControlRotation();
+	bHasRememberedFollowCameraState = true;
+}
+
+void AShip::RestoreRememberedFollowCameraState(APlayerController* PlayerController)
+{
+	if (!bHasRememberedFollowCameraState || !CameraBoom || !PlayerController
+		|| !PlayerController->IsLocalController() || bUsingFixedCamera)
+	{
+		return;
+	}
+
+	CameraBoom->TargetArmLength = RememberedFollowTargetArmLength;
+	PlayerController->SetControlRotation(RememberedFollowControlRotation);
 }
 
 void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
@@ -1840,6 +1880,8 @@ void AShip::OnRep_Controller()
 
 		if (CachedPlayerController)
 		{
+			ResetToFollowCamera();
+			RememberFollowCameraState(CachedPlayerController);
 			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
 			{
 				if (ShipInputMappingContext)
@@ -1856,11 +1898,17 @@ void AShip::OnRep_Controller()
 		CachedPlayerController = Cast<APlayerController>(Controller);
 		if (CachedPlayerController)
 		{
+			RestoreRememberedFollowCameraState(CachedPlayerController);
 			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
 			{
 				if (ShipInputMappingContext)
 				{
-					Subsystem->AddMappingContext(ShipInputMappingContext, ShipInputPriority);
+					// Player and item contexts can remain registered across possession.
+					// Ship input must win shared keys such as LMB, RMB, and number 5.
+					constexpr int32 MinimumShipInputPriority = 20;
+					Subsystem->AddMappingContext(
+						ShipInputMappingContext,
+						FMath::Max(ShipInputPriority, MinimumShipInputPriority));
 					// UE_LOG(LogTemp, Log, TEXT("AShip: Added ShipInputMappingContext in OnRep_Controller."));
 				}
 			}
