@@ -6,6 +6,8 @@
 #include "GlobalLootSpawnManager.generated.h"
 
 class ALootZoneSpawnManager;
+class AChestSpawnPoint;
+class URandomChestGroup;
 
 UCLASS()
 class CLASSFEATURE_API AGlobalLootSpawnManager : public AActor
@@ -20,6 +22,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Loot|Spawn")
 	int32 InitializeLevelLoot();
+
+	UFUNCTION(BlueprintCallable, Category = "Chest|Spawn")
+	int32 InitializeDataDrivenChests();
+
+	void SetInitializeOnBeginPlayForTesting(bool bInInitialize) { bInitializeOnBeginPlay = bInInitialize; }
+	void SetSpawnSeedForTesting(int32 InSeed) { SpawnSeed = InSeed; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -41,4 +49,7 @@ protected:
 
 private:
 	TMap<ALootZoneSpawnManager*, int32> CalculateZoneBudgets() const;
+	static AChestSpawnPoint* PickWeightedChestPoint(
+		const TArray<AChestSpawnPoint*>& Candidates,
+		FRandomStream& RandomStream);
 };

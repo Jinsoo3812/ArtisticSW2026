@@ -2,11 +2,14 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "ChestSpawnData.h"
 #include "LootSpawnTypes.h"
 #include "Storage/StorageComponent.h"
 #include "LootSpawnPoint.generated.h"
 
 class ABaseItem;
+class ABaseCharacter;
+class AShip;
 class AStorageChest;
 
 UCLASS(Abstract)
@@ -31,6 +34,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Loot|Spawn")
 	FName GetZoneId() const { return ZoneId; }
+
+	UFUNCTION(BlueprintPure, Category = "Loot|Spawn")
+	AActor* GetSpawnedActor() const { return SpawnedActor; }
 
 protected:
 	void MarkActivated(AActor* InSpawnedActor);
@@ -92,7 +98,58 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Loot|Spawn")
 	AStorageChest* SpawnChest(const TArray<FChestInitialLootRow>& LootRows, TSubclassOf<AStorageChest> FallbackChestClass, int32 Seed);
 
+	UFUNCTION(BlueprintCallable, Category = "Chest|Spawn")
+	AStorageChest* SpawnConfiguredChest(UChestDefinition* Definition, int32 Seed);
+
+	UFUNCTION(BlueprintPure, Category = "Chest|Spawn")
+	bool IsDataDrivenChestPoint() const { return SpawnMode != EChestSpawnMode::Legacy; }
+
+	UFUNCTION(BlueprintPure, Category = "Chest|Spawn")
+	bool CanSpawnDataDrivenChest() const
+	{
+		return IsDataDrivenChestPoint() && bEnabled && !bActivated
+			&& (SpawnMode == EChestSpawnMode::Guarded || PointWeight > 0.f);
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Chest|Spawn")
+	EChestSpawnMode GetSpawnMode() const { return SpawnMode; }
+
+	UFUNCTION(BlueprintPure, Category = "Chest|Spawn")
+	URandomChestGroup* GetRandomGroup() const { return RandomGroup; }
+
+	UFUNCTION(BlueprintPure, Category = "Chest|Spawn")
+	UChestDefinition* GetGuardedChestDefinition() const { return ChestDefinition; }
+
+	UFUNCTION(BlueprintCallable, Category = "Chest|Spawn")
+	void ConfigureRandomSpawn(URandomChestGroup* InRandomGroup, float InPointWeight = 1.f);
+
+	UFUNCTION(BlueprintCallable, Category = "Chest|Spawn")
+	void ConfigureGuardedSpawn(
+		UChestDefinition* InChestDefinition,
+		const TArray<ABaseCharacter*>& InGuardCharacters,
+		AShip* InOwningShip = nullptr);
+
 protected:
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Data Driven")
+	EChestSpawnMode SpawnMode = EChestSpawnMode::Legacy;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Data Driven",
+		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Random"))
+	TObjectPtr<URandomChestGroup> RandomGroup = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Data Driven",
+		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Guarded"))
+	TObjectPtr<UChestDefinition> ChestDefinition = nullptr;
+
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Chest|Guard",
+		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Guarded"))
+	TArray<TObjectPtr<ABaseCharacter>> GuardCharacters;
+
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Chest|Guard",
+		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Guarded"))
+	TObjectPtr<AShip> OwningShip = nullptr;
+
+	/** Legacy Zone-manager chest class. Used only while SpawnMode is Legacy. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Spawn")
 	TSubclassOf<AStorageChest> ChestClassOverride = nullptr;
 

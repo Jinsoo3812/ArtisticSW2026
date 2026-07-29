@@ -77,9 +77,13 @@ public:
 	void ToggleStatus();
 
 	void OpenStorageFromServer(AStorageChest* StorageChest);
+	void CloseStorageFromServer(AStorageChest* StorageChest);
 
 	UFUNCTION(Client, Reliable)
 	void ClientOpenStorage(AStorageChest* StorageChest);
+
+	UFUNCTION(Client, Reliable)
+	void ClientCloseStorage(AStorageChest* StorageChest);
 
 	UFUNCTION(Client, Reliable)
 	void ClientUpdateStorageRevealState(AStorageChest* StorageChest, int32 RevealedSlotCount, int32 SearchingSlotIndex);
