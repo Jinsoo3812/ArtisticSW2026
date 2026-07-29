@@ -246,6 +246,26 @@ ClassFeature -> WaterAndShip (기존 의존성)
 - 배 사망 후 경비병 사망으로 재해금되지 않음
 - 배의 실제 Destroy 시 갑판 상자도 Destroy
 
+`ArtisticSW.Chest.MapPlacedLogic`
+
+- `/Game/Tests/ChestSystem/ChestSystem_Test_Level` 실제 맵 로드
+- 맵에 저장된 두 Random Group의 생성 개수 확인
+- 맵에 저장된 섬/배 보호 상자의 경비병 참조 확인
+- 보호 상자의 초기 잠금과 배 상자 물리 비활성화 확인
+
+`ArtisticSW.Tools.BuildChestVisualTestMap`
+
+- 원본 `/Game/New/Level/Test_Level`을 읽어 테스트 맵을 재생성
+- 랜덤 저등급 지점 3개, 랜덤 고등급 지점 2개 배치
+- 섬 경비병 2명과 보호 상자 지점 배치
+- 적 배, 갑판 경비병, 배 보호 상자 지점 배치
+- `ChestSystem_Automation` Outliner 폴더에 모든 테스트 Actor 정리
+
+Editor World에서는 런타임 Dynamic Delegate를 게임과 동일하게 실행할 수 없으므로 역할을 분리한다.
+
+- 실제 맵 테스트: 배치/참조/스폰 개수/초기 상태 검증
+- Game World 테스트: 경비병 사망/해금/배 실패/동시 제거 검증
+
 ## 9. 이번 범위에서 만들지 않은 것
 
 - Box/거리 기반 경비병 자동 검색
