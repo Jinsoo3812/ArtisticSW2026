@@ -50,6 +50,7 @@ void USkillQuickSlotWidget::RefreshSlot()
 		: 0;
 	const bool bStoryUnlocked = SkillComponent && Definition && SkillComponent->IsSkillUnlocked(SkillTag);
 	const bool bHasUses = UseCount > 0;
+	const bool bShowLock = !bStoryUnlocked && !bHasUses;
 	const bool bSkillActive =
 		AbilitySystemComponent && SkillTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(SkillTag);
 
@@ -67,7 +68,7 @@ void USkillQuickSlotWidget::RefreshSlot()
 	}
 	if (StoryLockImage)
 	{
-		StoryLockImage->SetVisibility(!bStoryUnlocked ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+		StoryLockImage->SetVisibility(bShowLock ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 		StoryLockImage->SetBrushFromTexture(StoryLockTexture, true);
 	}
 
