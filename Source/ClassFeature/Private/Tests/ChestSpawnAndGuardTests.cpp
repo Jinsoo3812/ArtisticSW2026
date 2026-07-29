@@ -82,7 +82,6 @@ bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 	Definition->RollCount = 1;
 	Definition->SlotCount = 4;
 	Definition->ColumnCount = 2;
-	Definition->bEnablePhysicsAndBuoyancy = false;
 
 	URandomChestGroup* MidBossGroup = NewObject<URandomChestGroup>(GetTransientPackage());
 	MidBossGroup->ChestDefinition = Definition;
@@ -105,6 +104,7 @@ bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 	{
 		AChestSpawnPoint* Point = World->SpawnActor<AChestSpawnPoint>();
 		Point->ConfigureRandomSpawn(FinalBossGroup);
+		Point->SetPhysicsAndBuoyancyEnabled(true);
 		FinalBossPoints.Add(Point);
 	}
 
@@ -130,6 +130,19 @@ bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 
 	TestEqual(TEXT("Mid-boss group activates two of three points"), CountActivated(MidBossPoints), 2);
 	TestEqual(TEXT("Final-boss group activates one of two points"), CountActivated(FinalBossPoints), 1);
+
+	for (AChestSpawnPoint* Point : FinalBossPoints)
+	{
+		if (Point->IsActivated())
+		{
+			AStorageChest* FloatingChest = Cast<AStorageChest>(Point->GetSpawnedActor());
+			TestNotNull(TEXT("Floating point owns a storage chest"), FloatingChest);
+			if (FloatingChest)
+			{
+				TestTrue(TEXT("Spawn point enables chest physics and buoyancy"), FloatingChest->IsPhysicsAndBuoyancyEnabled());
+			}
+		}
+	}
 
 	for (AChestSpawnPoint* Point : MidBossPoints)
 	{

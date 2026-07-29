@@ -119,8 +119,11 @@ bool FBuildChestVisualTestMap::RunTest(const FString& Parameters)
 	FVector ShipAnchor = Anchor + FVector(0.0, 3000.0, 0.0);
 	for (TActorIterator<AShip> It(World); It; ++It)
 	{
-		ShipAnchor = It->GetActorLocation() + FVector(1500.0, 0.0, 0.0);
-		break;
+		if (It->IsA(ShipClass))
+		{
+			ShipAnchor = It->GetActorLocation() + FVector(1500.0, 0.0, 0.0);
+			break;
+		}
 	}
 
 	FActorSpawnParameters SpawnParameters;

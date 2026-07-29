@@ -92,6 +92,20 @@ void AStorageChest::ConfigureStorage(int32 InSlotCount, int32 InColumnCount, con
 	}
 }
 
+void AStorageChest::SetPhysicsAndBuoyancyEnabled(bool bEnabled)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	bEnablePhysicsAndBuoyancy = bEnabled;
+	if (HasActorBegunPlay())
+	{
+		ApplyPhysicsMode();
+	}
+}
+
 void AStorageChest::InitializeFromChestDefinition(UChestDefinition* InDefinition, int32 Seed)
 {
 	if (!HasAuthority() || !InDefinition)
@@ -101,7 +115,6 @@ void AStorageChest::InitializeFromChestDefinition(UChestDefinition* InDefinition
 
 	ChestDefinition = InDefinition;
 	LootSeed = Seed;
-	bEnablePhysicsAndBuoyancy = InDefinition->bEnablePhysicsAndBuoyancy;
 	ConfigureStorage(
 		FMath::Max(1, InDefinition->SlotCount),
 		FMath::Max(1, InDefinition->ColumnCount),

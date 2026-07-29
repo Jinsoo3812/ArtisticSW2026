@@ -41,9 +41,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storage", meta = (ClampMin = "1", UIMin = "1"))
 	int32 ColumnCount = 4;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Physics")
-	bool bEnablePhysicsAndBuoyancy = false;
-
 	TArray<FStorageItemEntry> RollInitialItems(int32 Seed) const;
 
 	static TArray<FStorageItemEntry> RollItemsFromRows(

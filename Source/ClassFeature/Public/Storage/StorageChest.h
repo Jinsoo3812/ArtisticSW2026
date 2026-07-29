@@ -42,6 +42,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Storage")
 	void ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems);
 
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Storage Chest|Physics")
+	void SetPhysicsAndBuoyancyEnabled(bool bEnabled);
+
 	void InitializeFromChestDefinition(UChestDefinition* InDefinition, int32 Seed);
 	void ConfigureGuarding(bool bInRequiresGuardClear, const TArray<ABaseCharacter*>& InGuardCharacters, AShip* InOwningShip);
 

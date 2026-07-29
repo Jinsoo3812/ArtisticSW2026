@@ -120,6 +120,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Chest|Spawn")
 	UChestDefinition* GetGuardedChestDefinition() const { return ChestDefinition; }
 
+	UFUNCTION(BlueprintPure, Category = "Chest|Placement")
+	bool IsPhysicsAndBuoyancyEnabled() const { return bEnablePhysicsAndBuoyancy; }
+
+	UFUNCTION(BlueprintCallable, Category = "Chest|Placement")
+	void SetPhysicsAndBuoyancyEnabled(bool bInPhysicsEnabled) { bEnablePhysicsAndBuoyancy = bInPhysicsEnabled; }
+
 	UFUNCTION(BlueprintCallable, Category = "Chest|Spawn")
 	void ConfigureRandomSpawn(URandomChestGroup* InRandomGroup, float InPointWeight = 1.f);
 
@@ -149,17 +155,25 @@ protected:
 		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Guarded"))
 	TObjectPtr<AShip> OwningShip = nullptr;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Placement",
+		meta = (EditCondition = "SpawnMode != EChestSpawnMode::Legacy"))
+	bool bEnablePhysicsAndBuoyancy = false;
+
 	/** Legacy Zone-manager chest class. Used only while SpawnMode is Legacy. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Spawn")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Spawn",
+		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Legacy", EditConditionHides))
 	TSubclassOf<AStorageChest> ChestClassOverride = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Storage", meta = (ClampMin = "1", UIMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Storage",
+		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Legacy", EditConditionHides, ClampMin = "1", UIMin = "1"))
 	int32 SlotCount = 5;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Storage", meta = (ClampMin = "1", UIMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Storage",
+		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Legacy", EditConditionHides, ClampMin = "1", UIMin = "1"))
 	int32 ColumnCount = 4;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Storage", meta = (ClampMin = "0", UIMin = "0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Storage",
+		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Legacy", EditConditionHides, ClampMin = "0", UIMin = "0"))
 	int32 InitialItemRollCount = 3;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Placement")

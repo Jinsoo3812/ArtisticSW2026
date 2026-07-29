@@ -201,6 +201,7 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 	}
 
 	SpawnedChest->InitializeFromChestDefinition(Definition, Seed);
+	SpawnedChest->SetPhysicsAndBuoyancyEnabled(bEnablePhysicsAndBuoyancy);
 
 	TArray<ABaseCharacter*> Guards;
 	Guards.Reserve(GuardCharacters.Num());

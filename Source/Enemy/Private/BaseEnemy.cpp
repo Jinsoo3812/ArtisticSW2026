@@ -66,8 +66,18 @@ ABaseEnemy::ABaseEnemy()
 	}
 	// ================= End of Health Bar =================
 
-	if (GetCharacterMovement())
-		GetCharacterMovement()->SetIsReplicated(true);
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->SetIsReplicated(true);
+
+		// Enemies may stand on physics-driven ship decks. CharacterMovement's
+		// default push/touch forces feed back into the ship body and cause jitter.
+		MovementComponent->bEnablePhysicsInteraction = false;
+		MovementComponent->bTouchForceScaledToMass = false;
+		MovementComponent->InitialPushForceFactor = 0.0f;
+		MovementComponent->PushForceFactor = 0.0f;
+		MovementComponent->TouchForceFactor = 0.0f;
+	}
 }
 
 void ABaseEnemy::BeginPlay()
