@@ -6,6 +6,7 @@
 
 class AShip;
 class UCurveFloat;
+class USceneComponent;
 
 /** Server-authoritative radial field. Clients only use the replicated actor for visuals/debug. */
 UCLASS(Blueprintable)
@@ -18,6 +19,9 @@ public:
 
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity Vortex|Components")
+	TObjectPtr<USceneComponent> SceneRoot;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Pull", meta = (ClampMin = "1.0", Units = "cm"))
 	float PullRadius = 5000.0f;

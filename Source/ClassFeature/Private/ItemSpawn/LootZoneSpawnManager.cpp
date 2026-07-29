@@ -93,7 +93,7 @@ int32 ALootZoneSpawnManager::ActivateAndSpawnByBudget(int32 Budget, int32 Seed)
 	}
 	for (AChestSpawnPoint* Point : ChestSpawnPoints)
 	{
-		if (IsValid(Point) && Point->CanBeActivated())
+		if (IsValid(Point) && !Point->IsDataDrivenChestPoint() && Point->CanBeActivated())
 		{
 			Candidates.Add(Point);
 		}

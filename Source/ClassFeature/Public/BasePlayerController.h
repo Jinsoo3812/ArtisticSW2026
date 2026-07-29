@@ -43,6 +43,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Facility Hub")
 	void CloseFacilityHub();
 
+	UFUNCTION(BlueprintPure, Category = "Facility Hub")
+	bool IsFacilityHubOpen() const;
+
 	/*--- 초기화 ---*/
 	virtual void SetupInputComponent() override;
 	virtual void BeginPlay() override;
@@ -72,10 +75,15 @@ public:
 
 	void ToggleInventory();
 	void ToggleStatus();
+
 	void OpenStorageFromServer(AStorageChest* StorageChest);
+	void CloseStorageFromServer(AStorageChest* StorageChest);
 
 	UFUNCTION(Client, Reliable)
 	void ClientOpenStorage(AStorageChest* StorageChest);
+
+	UFUNCTION(Client, Reliable)
+	void ClientCloseStorage(AStorageChest* StorageChest);
 
 	UFUNCTION(Client, Reliable)
 	void ClientUpdateStorageRevealState(AStorageChest* StorageChest, int32 RevealedSlotCount, int32 SearchingSlotIndex);
@@ -100,7 +108,8 @@ public:
 	bool IsStorageSlotSearching(AStorageChest* StorageChest, int32 SlotIndex) const;
 
 protected:
-	UPROPERTY(EditDefaultsOnly, Category = "UI")
+	/** Assign WBP_WorkspaceScreen. It is the one shared shell for every facility tab. */
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Facility Hub")
 	TSubclassOf<UFacilityHubWidget> FacilityHubWidgetClass;
 
 	UPROPERTY()
@@ -119,6 +128,7 @@ protected:
 	TObjectPtr<UStatusWindowWidget> StatusWindowWidget;
 
 	ESlateVisibility PlayerHUDVisibilityBeforeStatus = ESlateVisibility::Visible;
+	ESlateVisibility PlayerHUDVisibilityBeforeFacilityHub = ESlateVisibility::Visible;
 	TWeakObjectPtr<APawn> StatusInputLockedPawn;
 	bool bWasStatusPawnInputEnabled = true;
 	bool bStatusCharacterInputLocked = false;
@@ -152,6 +162,7 @@ protected:
 	FTimerHandle StorageSearchTimerHandle;
 
 	void BindHUDToCurrentPlayer();
+	void HandleMenuEscape();
 	void ApplyInventoryInputMode(bool bOpen);
 	void SetStatusCharacterInputLocked(bool bLocked);
 	void OpenStorage(AStorageChest* StorageChest);

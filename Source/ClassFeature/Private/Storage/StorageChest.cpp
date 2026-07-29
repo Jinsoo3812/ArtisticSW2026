@@ -2,16 +2,23 @@
 
 
 #include "Storage/StorageChest.h"
+#include "BaseCharacter.h"
 #include "BasePlayer.h"
 #include "BasePlayerController.h"
+#include "Components/BaseHealthComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Buoyancy/SWBuoyancyComponent.h"
+#include "ItemSpawn/ChestSpawnData.h"
 #include "InteractableComponent.h"
+#include "Net/UnrealNetwork.h"
+#include "Ship.h"
+#include "EngineUtils.h"
 
 AStorageChest::AStorageChest()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.TickGroup = TG_PostPhysics;
 	bReplicates = true;
 	SetReplicateMovement(true);
 	SetNetUpdateFrequency(30.0f);
@@ -38,44 +45,91 @@ AStorageChest::AStorageChest()
 	StorageComponent = CreateDefaultSubobject<UStorageComponent>(TEXT("StorageComponent"));
 }
 
+void AStorageChest::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (HasAuthority() || !bEnablePhysicsAndBuoyancy || !bHasClientMovementTarget)
+	{
+		return;
+	}
+
+	const float TimeSinceUpdate = GetWorld()
+		? FMath::Max(0.0f, GetWorld()->GetTimeSeconds() - ClientMovementTargetReceiveTime)
+		: 0.0f;
+	const float ExtrapolationTime = FMath::Min(TimeSinceUpdate, ClientMaxExtrapolationTime);
+	const FVector DesiredLocation =
+		ClientMovementTargetLocation + ClientMovementTargetVelocity * ExtrapolationTime;
+
+	if (FVector::DistSquared(GetActorLocation(), DesiredLocation)
+		> FMath::Square(ClientNetworkSnapDistance))
+	{
+		SetActorLocationAndRotation(
+			DesiredLocation,
+			ClientMovementTargetRotation,
+			false,
+			nullptr,
+			ETeleportType::TeleportPhysics);
+		return;
+	}
+
+	const FVector SmoothedLocation = FMath::VInterpTo(
+		GetActorLocation(),
+		DesiredLocation,
+		DeltaSeconds,
+		ClientLocationInterpSpeed);
+	const FQuat SmoothedRotation = FMath::QInterpTo(
+		GetActorQuat(),
+		ClientMovementTargetRotation,
+		DeltaSeconds,
+		ClientRotationInterpSpeed);
+
+	SetActorLocationAndRotation(
+		SmoothedLocation,
+		SmoothedRotation,
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics);
+}
+
 void AStorageChest::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// The root must support physics for both server rigid-body simulation and built-in physics replication.
-	// Keep the Blueprint collision responses, but promote QueryOnly profiles to QueryAndPhysics at runtime.
-	if (ChestMesh)
+	if (HasAuthority() && ChestDefinition && !bDefinitionInitialized)
 	{
-		ChestMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		InitializeFromChestDefinition(ChestDefinition, LootSeed);
+	}
+
+	ApplyPhysicsMode();
+
+	if (InteractableComponent)
+	{
+		InteractableComponent->OnInteracted.AddUniqueDynamic(this, &AStorageChest::HandleInteracted);
 	}
 
 	if (HasAuthority())
 	{
-		if (ChestMesh)
-		{
-			ChestMesh->SetMassOverrideInKg(NAME_None, PhysicsMassKg, true);
-			ChestMesh->SetSimulatePhysics(true);
-			ChestMesh->WakeAllRigidBodies();
-		}
-
+		InitializeGuardState();
 	}
 
-	if (InteractableComponent)
-	{
-		InteractableComponent->InitializeInteractable(StorageName, ActionText);
-		InteractableComponent->OnInteracted.AddUniqueDynamic(this, &AStorageChest::HandleInteracted);
-	}
+	ApplyLockPresentation();
 }
 
 void AStorageChest::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	UE_LOG(LogTemp, Warning, TEXT("AStorageChest::EndPlay - Chest=%s Reason=%d Owner=%s Location=%s"),
-		*GetName(),
-		static_cast<int32>(EndPlayReason),
-		*GetNameSafe(GetOwner()),
-		*GetActorLocation().ToString());
+	ClearGuardBindings();
 
 	Super::EndPlay(EndPlayReason);
+}
+
+void AStorageChest::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(AStorageChest, bLocked);
+	DOREPLIFETIME(AStorageChest, bGuardFailed);
+	DOREPLIFETIME(AStorageChest, bEnablePhysicsAndBuoyancy);
 }
 
 void AStorageChest::ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems)
@@ -86,9 +140,105 @@ void AStorageChest::ConfigureStorage(int32 InSlotCount, int32 InColumnCount, con
 	}
 }
 
+void AStorageChest::SetPhysicsAndBuoyancyEnabled(bool bEnabled)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	bEnablePhysicsAndBuoyancy = bEnabled;
+	if (HasActorBegunPlay())
+	{
+		ApplyPhysicsMode();
+	}
+}
+
+void AStorageChest::InitializeFromChestDefinition(UChestDefinition* InDefinition, int32 Seed)
+{
+	if (!HasAuthority() || !InDefinition)
+	{
+		return;
+	}
+
+	ChestDefinition = InDefinition;
+	LootSeed = Seed;
+	ConfigureStorage(
+		FMath::Max(1, InDefinition->SlotCount),
+		FMath::Max(1, InDefinition->ColumnCount),
+		InDefinition->RollInitialItems(Seed));
+	bDefinitionInitialized = true;
+
+	if (HasActorBegunPlay())
+	{
+		ApplyPhysicsMode();
+	}
+}
+
+void AStorageChest::ConfigureGuarding(
+	bool bInRequiresGuardClear,
+	const TArray<ABaseCharacter*>& InGuardCharacters,
+	AShip* InOwningShip)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	bRequiresGuardClear = bInRequiresGuardClear;
+	GuardCharacters.Reset(InGuardCharacters.Num());
+	for (ABaseCharacter* GuardCharacter : InGuardCharacters)
+	{
+		if (GuardCharacter)
+		{
+			GuardCharacters.AddUnique(GuardCharacter);
+		}
+	}
+	OwningShip = InOwningShip;
+
+	if (OwningShip)
+	{
+		bEnablePhysicsAndBuoyancy = false;
+	}
+
+	// Configure immediately as well as in BeginPlay. Deferred spawns therefore
+	// enter the world already locked, and placed/runtime reconfiguration is deterministic.
+	InitializeGuardState();
+
+	if (HasActorBegunPlay())
+	{
+		ApplyPhysicsMode();
+	}
+}
+
+void AStorageChest::SetLocked(bool bInLocked)
+{
+	if (!HasAuthority() || bLocked == bInLocked)
+	{
+		return;
+	}
+
+	bLocked = bInLocked;
+	ApplyLockPresentation();
+	ForceNetUpdate();
+
+	if (!bLocked)
+	{
+		return;
+	}
+
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(It->Get()))
+		{
+			PlayerController->CloseStorageFromServer(this);
+		}
+	}
+}
+
 void AStorageChest::HandleInteracted(AActor* Interactor)
 {
-	if (!HasAuthority() || !Interactor)
+	if (!HasAuthority() || !Interactor || bLocked)
 	{
 		return;
 	}
@@ -106,4 +256,231 @@ void AStorageChest::HandleInteracted(AActor* Interactor)
 	}
 
 	PlayerController->OpenStorageFromServer(this);
+}
+
+void AStorageChest::HandleTrackedHealthDeath(UBaseHealthComponent* HealthComponent)
+{
+	if (!HasAuthority() || !HealthComponent)
+	{
+		return;
+	}
+
+	if (HealthComponent == OwningShipHealthComponent)
+	{
+		bGuardFailed = true;
+		SetLocked(true);
+
+		for (UBaseHealthComponent* GuardHealth : AliveGuardHealthComponents)
+		{
+			if (GuardHealth)
+			{
+				GuardHealth->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
+			}
+		}
+		AliveGuardHealthComponents.Reset();
+		ForceNetUpdate();
+		return;
+	}
+
+	HealthComponent->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
+	AliveGuardHealthComponents.Remove(HealthComponent);
+
+	if (!bGuardFailed && AliveGuardHealthComponents.IsEmpty())
+	{
+		SetLocked(false);
+	}
+}
+
+void AStorageChest::HandleOwningShipDestroyed(AActor* DestroyedActor)
+{
+	if (HasAuthority() && DestroyedActor == OwningShip)
+	{
+		Destroy();
+	}
+}
+
+void AStorageChest::OnRep_Locked()
+{
+	ApplyLockPresentation();
+}
+
+void AStorageChest::OnRep_ReplicatedMovement()
+{
+	if (!HasAuthority() && bEnablePhysicsAndBuoyancy)
+	{
+		const FRepMovement& Movement = GetReplicatedMovement();
+		ClientMovementTargetLocation = FRepMovement::RebaseOntoLocalOrigin(Movement.Location, this);
+		ClientMovementTargetRotation = Movement.Rotation.Quaternion();
+		ClientMovementTargetVelocity = Movement.LinearVelocity;
+		ClientMovementTargetReceiveTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+		bHasClientMovementTarget = true;
+
+		// Do not call the engine implementation for floating chests. It mirrors
+		// bRepPhysics by enabling client Chaos simulation, which has gravity but no
+		// client buoyancy and therefore fights the incoming server corrections.
+		if (ChestMesh && ChestMesh->IsSimulatingPhysics())
+		{
+			ChestMesh->SetSimulatePhysics(false);
+		}
+		if (ChestMesh)
+		{
+			ChestMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		}
+		SetActorTickEnabled(true);
+		return;
+	}
+
+	Super::OnRep_ReplicatedMovement();
+}
+
+void AStorageChest::OnRep_PhysicsMode()
+{
+	ApplyPhysicsMode();
+}
+
+void AStorageChest::InitializeGuardState()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	ClearGuardBindings();
+	bGuardFailed = false;
+
+	if (!bRequiresGuardClear)
+	{
+		SetLocked(false);
+		return;
+	}
+
+	SetLocked(true);
+
+	int32 ValidConfiguredGuardCount = 0;
+	for (ABaseCharacter* GuardCharacter : GuardCharacters)
+	{
+		if (!IsValid(GuardCharacter))
+		{
+			continue;
+		}
+
+		UBaseHealthComponent* GuardHealth = GuardCharacter->FindComponentByClass<UBaseHealthComponent>();
+		if (!GuardHealth)
+		{
+			UE_LOG(LogTemp, Error, TEXT("Guarded chest %s: guard %s has no BaseHealthComponent."),
+				*GetName(), *GetNameSafe(GuardCharacter));
+			continue;
+		}
+
+		++ValidConfiguredGuardCount;
+		if (!GuardHealth->IsDead())
+		{
+			AliveGuardHealthComponents.Add(GuardHealth);
+			GuardHealth->OnDeathStarted.AddUniqueDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
+		}
+	}
+
+	if (OwningShip)
+	{
+		OwningShip->OnDestroyed.AddUniqueDynamic(this, &AStorageChest::HandleOwningShipDestroyed);
+		OwningShipHealthComponent = OwningShip->FindComponentByClass<UBaseHealthComponent>();
+		if (OwningShipHealthComponent)
+		{
+			OwningShipHealthComponent->OnDeathStarted.AddUniqueDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
+			if (OwningShipHealthComponent->IsDead())
+			{
+				HandleTrackedHealthDeath(OwningShipHealthComponent);
+				return;
+			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("Guarded ship chest %s: owning ship %s has no BaseHealthComponent."),
+				*GetName(), *GetNameSafe(OwningShip));
+		}
+	}
+
+	if (ValidConfiguredGuardCount == 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Guarded chest %s has no valid guards and will remain locked."), *GetName());
+		return;
+	}
+
+	if (AliveGuardHealthComponents.IsEmpty())
+	{
+		SetLocked(false);
+	}
+}
+
+void AStorageChest::ClearGuardBindings()
+{
+	for (UBaseHealthComponent* GuardHealth : AliveGuardHealthComponents)
+	{
+		if (GuardHealth)
+		{
+			GuardHealth->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
+		}
+	}
+	AliveGuardHealthComponents.Reset();
+
+	if (OwningShipHealthComponent)
+	{
+		OwningShipHealthComponent->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
+		OwningShipHealthComponent = nullptr;
+	}
+
+	if (OwningShip)
+	{
+		OwningShip->OnDestroyed.RemoveDynamic(this, &AStorageChest::HandleOwningShipDestroyed);
+	}
+}
+
+void AStorageChest::ApplyPhysicsMode()
+{
+	if (!ChestMesh)
+	{
+		return;
+	}
+
+	SetActorTickEnabled(!HasAuthority() && bEnablePhysicsAndBuoyancy);
+
+	if (bEnablePhysicsAndBuoyancy)
+	{
+		if (HasAuthority())
+		{
+			ChestMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			ChestMesh->SetMassOverrideInKg(NAME_None, PhysicsMassKg, true);
+			ChestMesh->SetSimulatePhysics(true);
+			ChestMesh->WakeAllRigidBodies();
+		}
+		else
+		{
+			ChestMesh->SetSimulatePhysics(false);
+			ChestMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		}
+		if (SWBuoyancyComponent && HasAuthority())
+		{
+			SWBuoyancyComponent->Activate();
+		}
+		else if (SWBuoyancyComponent)
+		{
+			SWBuoyancyComponent->Deactivate();
+		}
+		return;
+	}
+
+	ChestMesh->SetSimulatePhysics(false);
+	bHasClientMovementTarget = false;
+	if (SWBuoyancyComponent)
+	{
+		SWBuoyancyComponent->Deactivate();
+	}
+}
+
+void AStorageChest::ApplyLockPresentation()
+{
+	if (InteractableComponent)
+	{
+		InteractableComponent->InitializeInteractable(StorageName, bLocked ? LockedActionText : ActionText);
+	}
 }

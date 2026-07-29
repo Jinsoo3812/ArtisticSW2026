@@ -78,6 +78,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, ReplicatedUsing = OnRep_StorageContents, Category = "Storage")
 	TArray<FInventorySlot> StorageSlots;
 
+	/** Prevents BeginPlay defaults from overwriting contents configured during deferred spawning. */
+	UPROPERTY(Transient)
+	bool bConfiguredAtRuntime = false;
+
 	UFUNCTION()
 	void OnRep_StorageContents();
 

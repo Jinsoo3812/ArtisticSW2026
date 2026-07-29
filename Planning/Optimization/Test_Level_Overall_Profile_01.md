@@ -89,9 +89,9 @@ PIE 체감 문제를 재현하되 Editor 자체의 Slate·에디터 월드 비�
 
 다음 파일에 일반 맵 프로파일 제어기를 추가했다.
 
-- `Source/ClassFeature/Public/Profiling/SWLevelProfileController.h`
-- `Source/ClassFeature/Private/Profiling/SWLevelProfileController.cpp`
-- `Source/ClassFeature/Private/RippleSubsystem.cpp`
+- `Source/WaterAndShip/Public/Profiling/SWLevelProfileController.h`
+- `Source/WaterAndShip/Private/Profiling/SWLevelProfileController.cpp`
+- `Source/WaterAndShip/Private/RippleSubsystem.cpp`
 
 `-SWProfileLevel`이 없으면 생성되지 않으므로 일반 플레이에는 영향을 주지 않는다.
 

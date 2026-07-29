@@ -10,10 +10,11 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "InputAction.h"
 #include "InputActionValue.h"
+#include "InputMappingContext.h"
 #include "InputCoreTypes.h"
 #include "BaseItem.h"
-#include "CrafterComponent.h"
 #include "BaseGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -41,9 +42,10 @@
 #include "Ship.h"
 #include "Cannon.h"
 #include "SwimmingComponent.h"
-#include "Attacker/GA_GravityVortexThrow.h"
-#include "Attacker/GA_WaterBombCannonMode.h"
-#include "Attacker/GA_Bombardment.h"
+#include "Skills/PlayerSkillComponent.h"
+#include "Skills/Abilities/GA_GravityVortexThrow.h"
+#include "Skills/Abilities/GA_WaterBombCannonMode.h"
+#include "Skills/Abilities/GA_Bombardment.h"
 #include "HAL/FileManager.h"
 #include "Misc/DateTime.h"
 #include "Misc/FileHelper.h"
@@ -108,7 +110,7 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 	SwimmingComponent = CreateDefaultSubobject<USwimmingComponent>(TEXT("SwimmingComponent"));
 	EquipmentComponent = CreateDefaultSubobject<UPlayerEquipmentComponent>(TEXT("EquipmentComponent"));
-	GravityVortexTestAbilityClass = UGA_GravityVortexThrow::StaticClass();
+	GravityVortexAbilityClass = UGA_GravityVortexThrow::StaticClass();
 	WaterBombAbilityClass = UGA_WaterBombCannonMode::StaticClass();
 	BombardmentAbilityClass = UGA_Bombardment::StaticClass();
 
@@ -150,6 +152,41 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	DOREPLIFETIME(ABasePlayer, LocomotionStateSnapshot);
 }
 
+bool ABasePlayer::CanUseSkill(const FGameplayTag& SkillTag) const
+{
+	if (bBypassSkillRequirementsForTesting)
+	{
+		return GetPlayerSkillComponent()
+			&& GetPlayerSkillComponent()->FindSkillDefinition(SkillTag) != nullptr;
+	}
+
+	const UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent();
+	return SkillComponent && SkillComponent->CanUseSkillWithInventory(SkillTag, InventoryComponent);
+}
+
+bool ABasePlayer::TryConsumeSkillUse(const FGameplayTag& SkillTag)
+{
+	UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent();
+	if (bBypassSkillRequirementsForTesting)
+	{
+		return HasAuthority() && SkillComponent && SkillComponent->FindSkillDefinition(SkillTag) != nullptr;
+	}
+
+	return HasAuthority()
+		&& SkillComponent
+		&& SkillComponent->TryConsumeSkillUseWithInventory(SkillTag, InventoryComponent);
+}
+
+UPlayerSkillComponent* ABasePlayer::GetPlayerSkillComponent() const
+{
+	const ABasePlayerState* PS = GetPlayerState<ABasePlayerState>();
+	if (PS && PS->GetPlayerSkillComponent())
+	{
+		return PS->GetPlayerSkillComponent();
+	}
+	return CachedPlayerSkillComponent.Get();
+}
+
 void ABasePlayer::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
@@ -159,6 +196,12 @@ void ABasePlayer::BeginPlay()
 {
 	Super::BeginPlay();
 	InitializeSwimmingAnimLayers();
+
+	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
+	{
+		CachedPlayerSkillComponent = SkillComponent;
+		SkillComponent->RegisterInventorySource(InventoryComponent);
+	}
 
 	if (HealthComponent)
 	{
@@ -383,6 +426,12 @@ void ABasePlayer::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 
+	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
+	{
+		CachedPlayerSkillComponent = SkillComponent;
+		SkillComponent->RegisterInventorySource(InventoryComponent);
+	}
+
 	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Start. NewController: %s"), NewController ? *NewController->GetName() : TEXT("None"));
 
 	// 서버 측 ASC 초기화 (InitAbilityActorInfo)
@@ -433,9 +482,15 @@ void ABasePlayer::PossessedBy(AController* NewController)
 						GrantAbilityToSlot(AbilityPair.Key, AbilityPair.Value);
 					}
 				}
-				if (bEnableGravityVortexTestInput && GravityVortexTestAbilityClass)
+				if (bEnableGravityVortexSkillInput && GravityVortexAbilityClass)
 				{
-					GrantAbilityToSlot(Key_Test_Skill_GravityVortex, GravityVortexTestAbilityClass);
+					UE_LOG(LogTemp, Warning,
+						TEXT("[VortexPipeline][Grant] PlayerClass=%s AbilityClass=%s Slot=%s InputID=%d"),
+						*GetPathNameSafe(GetClass()),
+						*GetPathNameSafe(GravityVortexAbilityClass.Get()),
+						*Key_Skill_GravityVortex.ToString(),
+						GetInputIDFromTag(Key_Skill_GravityVortex));
+					GrantAbilityToSlot(Key_Skill_GravityVortex, GravityVortexAbilityClass);
 				}
 				if (bGrantWaterBombAbility && WaterBombAbilityClass)
 				{
@@ -470,6 +525,12 @@ void ABasePlayer::OnRep_PlayerState()
 	ABasePlayerState* PS = GetPlayerState<ABasePlayerState>();
 	if (PS)
 	{
+		if (UPlayerSkillComponent* SkillComponent = PS->GetPlayerSkillComponent())
+		{
+			CachedPlayerSkillComponent = SkillComponent;
+			SkillComponent->RegisterInventorySource(InventoryComponent);
+		}
+
 		// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] PlayerState found: %s"), *PS->GetName());
 		// 클라이언트에서도 Owner와 Avatar를 연결해줌
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
@@ -505,7 +566,14 @@ void ABasePlayer::PawnClientRestart()
 			// DefaultIMC 등록
 			if(DefaultIMC)
 			{
-				Subsystem->AddMappingContext(DefaultIMC, DefaultIMCPriority);
+				// ItemIMC contains the legacy IA_Item_3 mapping. Keep the
+				// skill-bearing DefaultIMC above it so IA_Item_3 cannot consume
+				// Keyboard 3 before IA_GravityVortex receives it.
+				const int32 EffectiveDefaultPriority = ResolveDefaultMappingPriority(
+					DefaultIMCPriority,
+					ItemIMCPriority,
+					bEnableGravityVortexSkillInput && GravityVortexSkillAction);
+				Subsystem->AddMappingContext(DefaultIMC, EffectiveDefaultPriority);
 			}
 
 			// ItemIMC 등록
@@ -513,12 +581,6 @@ void ABasePlayer::PawnClientRestart()
 			{
 				Subsystem->AddMappingContext(ItemIMC, ItemIMCPriority);
 			}
-		}
-
-		// Crafter 전용 IMC
-		if (UCrafterComponent* CrafterComp = FindComponentByClass<UCrafterComponent>())
-		{
-			CrafterComp->AddCrafterMappingContext();
 		}
 
 		// Interactable Object를 감지하기 위한 Trace 시작
@@ -532,12 +594,6 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
-		// CrafterComponent가 있다면 Crafter 전용 입력 바인딩
-		if (UCrafterComponent* CrafterComp = FindComponentByClass<UCrafterComponent>())
-		{
-			CrafterComp->BindCrafterInput(EnhancedInputComponent);
-		}
-
 		// Jumping
 		if (JumpAction)
 		{
@@ -571,6 +627,13 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Canceled, this, &ABasePlayer::StopSprint);
 		}
 
+		if (bEnableGravityVortexSkillInput && GravityVortexSkillAction)
+		{
+			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Started, this, &ABasePlayer::OnGravityVortexSkillPressed);
+			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Completed, this, &ABasePlayer::OnGravityVortexSkillReleased);
+			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Canceled, this, &ABasePlayer::OnGravityVortexSkillReleased);
+		}
+
 		// Default 입력 바인딩
 		if (DefaultInputConfig)
 		{
@@ -599,9 +662,6 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	PlayerInputComponent->BindKey(EKeys::One, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot1);
 	PlayerInputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot2);
-	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot3);
-	PlayerInputComponent->BindKey(EKeys::Four, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot4);
-	PlayerInputComponent->BindKey(EKeys::Five, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot5);
 
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Pressed, this, &ABasePlayer::StartSprint);
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Released, this, &ABasePlayer::StopSprint);
@@ -611,17 +671,22 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::LeftControl, IE_Released, this, &ABasePlayer::StopSwimDive);
 	PlayerInputComponent->BindKey(EKeys::RightControl, IE_Pressed, this, &ABasePlayer::StartSwimDive);
 	PlayerInputComponent->BindKey(EKeys::RightControl, IE_Released, this, &ABasePlayer::StopSwimDive);
-	if (bEnableGravityVortexTestInput)
-	{
-		PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ABasePlayer::OnGravityVortexTestPressed);
-		PlayerInputComponent->BindKey(EKeys::Three, IE_Released, this, &ABasePlayer::OnGravityVortexTestReleased);
-	}
 }
 
 int32 ABasePlayer::GetInputIDFromTag(const FGameplayTag& Tag) const
 {
 	if (!Tag.IsValid()) return INDEX_NONE;
 	return static_cast<int32>(FCrc::StrCrc32(*Tag.ToString()));
+}
+
+int32 ABasePlayer::ResolveDefaultMappingPriority(
+	int32 ConfiguredDefaultPriority,
+	int32 ConfiguredItemPriority,
+	bool bHasSkillInput)
+{
+	return bHasSkillInput
+		? FMath::Max(ConfiguredDefaultPriority, ConfiguredItemPriority + 1)
+		: ConfiguredDefaultPriority;
 }
 
 void ABasePlayer::InitializeQuickSlots()
@@ -821,6 +886,11 @@ bool ABasePlayer::ConsumeInventoryItem(FGameplayTag ItemTag)
 
 void ABasePlayer::HandleInventoryContentsChanged()
 {
+	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
+	{
+		SkillComponent->NotifyInventoryChanged();
+	}
+
 	if (!HasAuthority() || !InventoryComponent)
 	{
 		return;
@@ -1027,20 +1097,18 @@ void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 	}
 }
 
-void ABasePlayer::OnGravityVortexTestPressed()
+void ABasePlayer::OnGravityVortexSkillPressed()
 {
-	if (bEnableGravityVortexTestInput)
+	if (!bEnableGravityVortexSkillInput)
 	{
-		OnAbilityInputPressed(Key_Test_Skill_GravityVortex);
+		return;
 	}
+	OnAbilityInputPressed(Key_Skill_GravityVortex);
 }
 
-void ABasePlayer::OnGravityVortexTestReleased()
+void ABasePlayer::OnGravityVortexSkillReleased()
 {
-	if (bEnableGravityVortexTestInput)
-	{
-		OnAbilityInputReleased(Key_Test_Skill_GravityVortex);
-	}
+	OnAbilityInputReleased(Key_Skill_GravityVortex);
 }
 
 void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
@@ -1065,10 +1133,11 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 	}
 
 	// 공통 GAS 입력 해제 처리
-	const bool bGravityVortexOwnsLeftClick =
-		InputTag.MatchesTagExact(Key_Default_Mouse_LeftClick)
+	const bool bGravityVortexOwnsMouseClick =
+		(InputTag.MatchesTagExact(Key_Default_Mouse_LeftClick)
+			|| InputTag.MatchesTagExact(Key_Default_Mouse_RightClick))
 		&& CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex);
-	if (!bGravityVortexOwnsLeftClick)
+	if (!bGravityVortexOwnsMouseClick)
 	{
 		OnAbilityInputPressed(InputTag);
 	}
@@ -1288,7 +1357,7 @@ void ABasePlayer::UseEquippedItem(bool bDestroy)
 
 void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
 {
-	if (bEnableGravityVortexTestInput && KeyTag.MatchesTagExact(Key_Item_3))
+	if (bEnableGravityVortexSkillInput && KeyTag.MatchesTagExact(Key_Item_3))
 	{
 		return;
 	}

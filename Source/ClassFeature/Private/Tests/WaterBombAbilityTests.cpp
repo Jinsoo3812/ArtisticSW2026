@@ -2,7 +2,7 @@
 
 #include "Misc/AutomationTest.h"
 
-#include "Attacker/GA_WaterBombCannonMode.h"
+#include "Skills/Abilities/GA_WaterBombCannonMode.h"
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
@@ -12,6 +12,8 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
+#include "Inventory/InventoryComponent.h"
+#include "Skills/PlayerSkillComponent.h"
 #include "WaterBombCannonball.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -100,10 +102,21 @@ bool FWaterBombAbilityCannonIntegrationTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Cannon tracks the riding player"), Cannon->GetRidingPlayer() == Player);
 	TestTrue(TEXT("Player controller possesses the cannon"), Cannon->IsPlayerControlled());
 
+	UPlayerSkillComponent* SkillComponent = PlayerState->GetPlayerSkillComponent();
+	TestNotNull(TEXT("Player skill component exists"), SkillComponent);
+	TestFalse(TEXT("Locked Water Bomb cannot activate"),
+		ASC->TryActivateAbilitiesByTag(AbilityTags, true));
+	TestTrue(TEXT("Water Bomb is unlocked for the execution test"),
+		SkillComponent && SkillComponent->UnlockSkill(GameplayAbility_Skill_WaterBomb));
+	TestEqual(TEXT("One Water Bomb material is added"),
+		Player->GetInventoryComponent()->AddItem(Item_Id_Material_SkillMaterial_EpicSkill, 1), 1);
+
 	TestTrue(TEXT("Water Bomb GA activates by ability tag"), ASC->TryActivateAbilitiesByTag(AbilityTags, true));
 	TestTrue(TEXT("GA activation changes cannon to Water Bomb mode"), Cannon->IsWaterBombMode());
 
 	TestTrue(TEXT("Water Bomb mode fires successfully"), Cannon->FireCannon());
+	TestEqual(TEXT("Water Bomb fire consumes one material"),
+		Player->GetInventoryComponent()->GetItemCount(Item_Id_Material_SkillMaterial_EpicSkill), 0);
 	AWaterBombCannonball* FiredProjectile = nullptr;
 	for (TActorIterator<AWaterBombCannonball> It(World); It; ++It)
 	{
@@ -119,8 +132,18 @@ bool FWaterBombAbilityCannonIntegrationTest::RunTest(const FString& Parameters)
 			FiredProjectile->GetAttackSpeedMultiplier(), 0.5f);
 	}
 
-	ASC->CancelAbilities(&AbilityTags);
-	TestFalse(TEXT("Cancelling the GA restores normal cannon mode"), Cannon->IsWaterBombMode());
+	TestFalse(TEXT("Firing the last available material automatically exits Water Bomb mode"),
+		Cannon->IsWaterBombMode());
+
+	TestEqual(TEXT("Another Water Bomb material is added"),
+		Player->GetInventoryComponent()->AddItem(Item_Id_Material_SkillMaterial_EpicSkill, 1), 1);
+	TestTrue(TEXT("Water Bomb mode can be entered again"), ASC->TryActivateAbilitiesByTag(AbilityTags, true));
+	TestTrue(TEXT("The reactivated GA changes the cannon mode"), Cannon->IsWaterBombMode());
+	TestTrue(TEXT("The material can disappear through another inventory path"),
+		Player->GetInventoryComponent()->RemoveItem(Item_Id_Material_SkillMaterial_EpicSkill, 1));
+	Cannon->Tick(0.016f);
+	TestFalse(TEXT("Server tick exits Water Bomb mode when its material runs out externally"),
+		Cannon->IsWaterBombMode());
 
 	CleanupWorld();
 	return true;

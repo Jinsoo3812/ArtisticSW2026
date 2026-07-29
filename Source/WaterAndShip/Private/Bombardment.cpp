@@ -3,6 +3,7 @@
 #include "BaseCharacter.h"
 #include "Cannonball.h"
 #include "Components/MeshComponent.h"
+#include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
@@ -17,33 +18,15 @@ ABombardmentPreview::ABombardmentPreview()
 	PrimaryActorTick.bCanEverTick = true;
 	bReplicates = false;
 
+	PreviewRoot = CreateDefaultSubobject<USceneComponent>(TEXT("PreviewRoot"));
+	SetRootComponent(PreviewRoot);
+
 	PreviewMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PreviewMesh"));
-	SetRootComponent(PreviewMesh);
+	PreviewMesh->SetupAttachment(PreviewRoot);
 	PreviewMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	PreviewMesh->SetGenerateOverlapEvents(false);
 	PreviewMesh->SetCastShadow(false);
 	PreviewMesh->TranslucencySortPriority = 10;
-}
-
-void ABombardmentPreview::BeginPlay()
-{
-	Super::BeginPlay();
-	AuthoredPreviewMaterial = PreviewMesh ? PreviewMesh->GetMaterial(0) : nullptr;
-
-	UE_LOG(LogTemp, Warning,
-		TEXT("[BombardmentPreview] BeginPlay Actor=%s Class=%s MeshComponent=%s StaticMesh=%s Material0=%s Overlay=%s "
-			"HiddenActor=%s ComponentVisible=%s Registered=%s Location=%s Scale=%s"),
-		*GetNameSafe(this),
-		*GetPathNameSafe(GetClass()),
-		*GetNameSafe(PreviewMesh),
-		PreviewMesh ? *GetPathNameSafe(PreviewMesh->GetStaticMesh()) : TEXT("None"),
-		PreviewMesh ? *GetPathNameSafe(PreviewMesh->GetMaterial(0)) : TEXT("None"),
-		*GetPathNameSafe(TargetHighlightOverlayMaterial),
-		IsHidden() ? TEXT("true") : TEXT("false"),
-		PreviewMesh && PreviewMesh->IsVisible() ? TEXT("true") : TEXT("false"),
-		PreviewMesh && PreviewMesh->IsRegistered() ? TEXT("true") : TEXT("false"),
-		*GetActorLocation().ToCompactString(),
-		PreviewMesh ? *PreviewMesh->GetRelativeScale3D().ToCompactString() : TEXT("None"));
 }
 
 void ABombardmentPreview::Tick(float DeltaSeconds)
@@ -67,113 +50,50 @@ void ABombardmentPreview::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ABombardmentPreview::ConfigurePreview(float InSkillRadius)
 {
 	SkillRadius = FMath::Max(1.0f, InSkillRadius);
-	if (!PreviewMesh || !PreviewMesh->GetStaticMesh())
+	if (!PreviewMesh)
 	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[BombardmentPreview] Configure FAILED Actor=%s Class=%s PreviewMesh=%s StaticMesh=%s Radius=%.1f"),
-			*GetNameSafe(this),
-			*GetPathNameSafe(GetClass()),
-			*GetNameSafe(PreviewMesh),
-			PreviewMesh ? *GetPathNameSafe(PreviewMesh->GetStaticMesh()) : TEXT("None"),
-			SkillRadius);
+		return;
+	}
+
+	if (PreviewStaticMesh)
+	{
+		PreviewMesh->SetStaticMesh(PreviewStaticMesh);
+	}
+	if (PreviewMaterial)
+	{
+		PreviewMesh->SetMaterial(0, PreviewMaterial);
+	}
+	PreviewMesh->SetVisibility(true);
+	PreviewMesh->SetHiddenInGame(false);
+	if (!PreviewMesh->GetStaticMesh())
+	{
 		return;
 	}
 
 	const FBoxSphereBounds MeshBounds = PreviewMesh->GetStaticMesh()->GetBounds();
 	const float AuthoredRadius = FMath::Max(MeshBounds.BoxExtent.X, MeshBounds.BoxExtent.Y);
-	float ZScale = 1.0f;
-	if (MeshBounds.BoxExtent.Z > UE_SMALL_NUMBER)
-	{
-		ZScale = FMath::Max(0.01f, PreviewWorldThickness) / (2.0f * MeshBounds.BoxExtent.Z);
-	}
 	if (AuthoredRadius > UE_SMALL_NUMBER)
 	{
 		const float UniformXYScale = SkillRadius / AuthoredRadius;
-		PreviewMesh->SetRelativeScale3D(FVector(UniformXYScale, UniformXYScale, ZScale));
+		PreviewMesh->SetRelativeScale3D(FVector(UniformXYScale, UniformXYScale, 1.0f));
 	}
-
-	UE_LOG(LogTemp, Warning,
-		TEXT("[BombardmentPreview] Configure OK Actor=%s StaticMesh=%s Radius=%.1f AuthoredRadius=%.2f "
-			"AuthoredThickness=%.2f WorldThickness=%.2f BoundsExtent=%s RelativeScale=%s Material0=%s"),
-		*GetNameSafe(this),
-		*GetPathNameSafe(PreviewMesh->GetStaticMesh()),
-		SkillRadius,
-		AuthoredRadius,
-		MeshBounds.BoxExtent.Z * 2.0f,
-		FMath::Max(0.01f, PreviewWorldThickness),
-		*MeshBounds.BoxExtent.ToCompactString(),
-		*PreviewMesh->GetRelativeScale3D().ToCompactString(),
-		*GetPathNameSafe(PreviewMesh->GetMaterial(0)));
 }
 
 void ABombardmentPreview::SetPreviewValid(bool bInValid)
 {
-	const bool bValidityChanged = bPreviewValid != bInValid;
 	bPreviewValid = bInValid;
-	if (!PreviewMesh)
-	{
-		if (!bHasLoggedPreviewValidity || bValidityChanged)
-		{
-			UE_LOG(LogTemp, Error,
-				TEXT("[BombardmentPreview] Target update Actor=%s Valid=%s Location=%s PreviewMesh=None"),
-				*GetNameSafe(this),
-				bPreviewValid ? TEXT("true") : TEXT("false"),
-				*GetActorLocation().ToCompactString());
-			bHasLoggedPreviewValidity = true;
-		}
-		return;
-	}
-
-	UMaterialInterface* DesiredMaterial = bPreviewValid
-		? (ValidPreviewMaterial ? ValidPreviewMaterial.Get() : AuthoredPreviewMaterial.Get())
-		: (InvalidPreviewMaterial ? InvalidPreviewMaterial.Get() : AuthoredPreviewMaterial.Get());
-	if (DesiredMaterial)
-	{
-		PreviewMesh->SetMaterial(0, DesiredMaterial);
-	}
-
-	if (!bHasLoggedPreviewValidity || bValidityChanged)
-	{
-		const FBoxSphereBounds WorldBounds = PreviewMesh->Bounds;
-		UE_LOG(LogTemp, Warning,
-			TEXT("[BombardmentPreview] Target update Actor=%s Valid=%s Location=%s StaticMesh=%s Material0=%s "
-				"Visible=%s HiddenInGame=%s WorldBoundsOrigin=%s WorldBoundsExtent=%s"),
-			*GetNameSafe(this),
-			bPreviewValid ? TEXT("true") : TEXT("false"),
-			*GetActorLocation().ToCompactString(),
-			*GetPathNameSafe(PreviewMesh->GetStaticMesh()),
-			*GetPathNameSafe(PreviewMesh->GetMaterial(0)),
-			PreviewMesh->IsVisible() ? TEXT("true") : TEXT("false"),
-			PreviewMesh->bHiddenInGame ? TEXT("true") : TEXT("false"),
-			*WorldBounds.Origin.ToCompactString(),
-			*WorldBounds.BoxExtent.ToCompactString());
-		bHasLoggedPreviewValidity = true;
-	}
 }
 
 void ABombardmentPreview::RefreshHighlightedTargets()
 {
-	RestoreHighlights();
-	if (!bPreviewValid || SkillRadius <= 0.0f || (!TargetHighlightOverlayMaterial && !bUseCustomDepthHighlight))
+	if (!bPreviewValid || SkillRadius <= 0.0f || !TargetHighlightMaterial)
 	{
-		if (!bHasLoggedHighlightDisabledReason)
-		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("[BombardmentPreview] Highlight inactive Actor=%s Valid=%s Radius=%.1f Overlay=%s UseCustomDepth=%s"),
-				*GetNameSafe(this),
-				bPreviewValid ? TEXT("true") : TEXT("false"),
-				SkillRadius,
-				*GetPathNameSafe(TargetHighlightOverlayMaterial),
-				bUseCustomDepthHighlight ? TEXT("true") : TEXT("false"));
-			bHasLoggedHighlightDisabledReason = true;
-		}
+		RestoreHighlights();
 		return;
 	}
-	bHasLoggedHighlightDisabledReason = false;
 
+	TSet<UMeshComponent*> DesiredMeshes;
 	const float RadiusSquared = FMath::Square(SkillRadius);
-	int32 EnemyShipCount = 0;
-	int32 InRangeEnemyShipCount = 0;
 	for (TActorIterator<AShip> It(GetWorld()); It; ++It)
 	{
 		AShip* Ship = *It;
@@ -181,14 +101,11 @@ void ABombardmentPreview::RefreshHighlightedTargets()
 		{
 			continue;
 		}
-		++EnemyShipCount;
-
 		FVector Delta = Ship->GetActorLocation() - GetActorLocation();
 		Delta.Z = 0.0f;
 		if (Delta.SizeSquared() <= RadiusSquared)
 		{
-			++InRangeEnemyShipCount;
-			HighlightActor(Ship);
+			CollectHighlightMeshes(Ship, DesiredMeshes);
 		}
 	}
 
@@ -204,31 +121,35 @@ void ABombardmentPreview::RefreshHighlightedTargets()
 		Delta.Z = 0.0f;
 		if (Delta.SizeSquared() <= RadiusSquared)
 		{
-			HighlightActor(Character);
+			CollectHighlightMeshes(Character, DesiredMeshes);
 		}
 	}
 
-	if (EnemyShipCount != LastLoggedEnemyShipCount
-		|| InRangeEnemyShipCount != LastLoggedInRangeEnemyShipCount
-		|| HighlightedMeshes.Num() != LastLoggedHighlightedMeshCount)
+	// Keep unchanged targets highlighted without toggling Nanite fallback every
+	// refresh. Restore only targets that actually left the disk.
+	for (int32 StateIndex = HighlightedMeshes.Num() - 1; StateIndex >= 0; --StateIndex)
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[BombardmentPreview] Highlight scan Actor=%s EnemyShips=%d InRangeEnemyShips=%d HighlightedMeshes=%d "
-				"Radius=%.1f Overlay=%s CustomDepth=%s"),
-			*GetNameSafe(this),
-			EnemyShipCount,
-			InRangeEnemyShipCount,
-			HighlightedMeshes.Num(),
-			SkillRadius,
-			*GetPathNameSafe(TargetHighlightOverlayMaterial),
-			bUseCustomDepthHighlight ? TEXT("true") : TEXT("false"));
-		LastLoggedEnemyShipCount = EnemyShipCount;
-		LastLoggedInRangeEnemyShipCount = InRangeEnemyShipCount;
-		LastLoggedHighlightedMeshCount = HighlightedMeshes.Num();
+		UMeshComponent* Mesh = HighlightedMeshes[StateIndex].Mesh.Get();
+		if (!IsValid(Mesh) || !DesiredMeshes.Contains(Mesh))
+		{
+			RestoreHighlight(HighlightedMeshes[StateIndex]);
+			HighlightedMeshes.RemoveAtSwap(StateIndex);
+		}
+		else
+		{
+			DesiredMeshes.Remove(Mesh);
+		}
+	}
+
+	for (UMeshComponent* Mesh : DesiredMeshes)
+	{
+		ApplyHighlight(Mesh);
 	}
 }
 
-void ABombardmentPreview::HighlightActor(AActor* Actor)
+void ABombardmentPreview::CollectHighlightMeshes(
+	AActor* Actor,
+	TSet<UMeshComponent*>& OutMeshes) const
 {
 	TArray<UMeshComponent*> Meshes;
 	Actor->GetComponents<UMeshComponent>(Meshes);
@@ -241,67 +162,47 @@ void ABombardmentPreview::HighlightActor(AActor* Actor)
 		{
 			continue;
 		}
+		OutMeshes.Add(Mesh);
+	}
+}
 
-		FBombardmentMeshHighlightState& State = HighlightedMeshes.AddDefaulted_GetRef();
-		State.Mesh = Mesh;
-		State.OverlayMaterial = Mesh->GetOverlayMaterial();
-		State.bRenderedCustomDepth = Mesh->bRenderCustomDepth;
-		State.CustomDepthStencilValue = Mesh->CustomDepthStencilValue;
-		UMaterialInterface* PreviousOverlay = Mesh->GetOverlayMaterial();
-		const int32 MaterialCount = Mesh->GetNumMaterials();
-		State.Materials.Reserve(MaterialCount);
-		for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; ++MaterialIndex)
+void ABombardmentPreview::ApplyHighlight(UMeshComponent* Mesh)
+{
+	if (!IsValid(Mesh))
+	{
+		return;
+	}
+
+	FBombardmentMeshHighlightState& State = HighlightedMeshes.AddDefaulted_GetRef();
+	State.Mesh = Mesh;
+	State.OverlayMaterial = Mesh->GetOverlayMaterial();
+	if (UStaticMeshComponent* StaticMesh = Cast<UStaticMeshComponent>(Mesh))
+	{
+		State.bDisallowNanite = StaticMesh->bDisallowNanite;
+		if (!StaticMesh->bDisallowNanite)
 		{
-			State.Materials.Add(Mesh->GetMaterial(MaterialIndex));
+			// Translucent overlay materials are not a valid Nanite base pass.
+			// Temporarily use the fallback mesh so the original material and
+			// the translucent blue overlay can both render.
+			StaticMesh->bDisallowNanite = true;
+			StaticMesh->MarkRenderStateDirty();
 		}
+	}
+	Mesh->SetOverlayMaterial(TargetHighlightMaterial);
+}
 
-		if (TargetHighlightOverlayMaterial)
+void ABombardmentPreview::RestoreHighlight(const FBombardmentMeshHighlightState& State)
+{
+	if (UMeshComponent* Mesh = State.Mesh.Get())
+	{
+		Mesh->SetOverlayMaterial(State.OverlayMaterial.Get());
+		if (UStaticMeshComponent* StaticMesh = Cast<UStaticMeshComponent>(Mesh))
 		{
-			if (bReplaceTargetMaterials)
+			if (StaticMesh->bDisallowNanite != State.bDisallowNanite)
 			{
-				for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; ++MaterialIndex)
-				{
-					Mesh->SetMaterial(MaterialIndex, TargetHighlightOverlayMaterial);
-				}
-				State.bMaterialsReplaced = true;
+				StaticMesh->bDisallowNanite = State.bDisallowNanite;
+				StaticMesh->MarkRenderStateDirty();
 			}
-			else
-			{
-				Mesh->SetOverlayMaterial(TargetHighlightOverlayMaterial);
-			}
-		}
-		if (bUseCustomDepthHighlight)
-		{
-			Mesh->SetRenderCustomDepth(true);
-			Mesh->SetCustomDepthStencilValue(FMath::Clamp(TargetHighlightStencilValue, 0, 255));
-		}
-
-		const FString MeshPath = Mesh->GetPathName();
-		if (!LoggedHighlightMeshPaths.Contains(MeshPath))
-		{
-			LoggedHighlightMeshPaths.Add(MeshPath);
-			UE_LOG(LogTemp, Warning,
-				TEXT("[BombardmentPreview] Highlight mesh Actor=%s ActorClass=%s ActorHidden=%s Mesh=%s MeshClass=%s "
-					"Visible=%s HiddenInGame=%s RecentlyRendered=%s NumMaterials=%d Material0Before=%s Material0After=%s "
-					"Mode=%s OverlayBefore=%s OverlayAfter=%s RenderCustomDepth=%s Stencil=%d BoundsOrigin=%s BoundsExtent=%s"),
-				*GetNameSafe(Actor),
-				*GetPathNameSafe(Actor->GetClass()),
-				Actor->IsHidden() ? TEXT("true") : TEXT("false"),
-				*MeshPath,
-				*GetPathNameSafe(Mesh->GetClass()),
-				Mesh->IsVisible() ? TEXT("true") : TEXT("false"),
-				Mesh->bHiddenInGame ? TEXT("true") : TEXT("false"),
-				Mesh->WasRecentlyRendered(0.5f) ? TEXT("true") : TEXT("false"),
-				MaterialCount,
-				MaterialCount > 0 ? *GetPathNameSafe(State.Materials[0].Get()) : TEXT("None"),
-				*GetPathNameSafe(Mesh->GetMaterial(0)),
-				bReplaceTargetMaterials ? TEXT("ReplaceMaterials") : TEXT("Overlay"),
-				*GetPathNameSafe(PreviousOverlay),
-				*GetPathNameSafe(Mesh->GetOverlayMaterial()),
-				Mesh->bRenderCustomDepth ? TEXT("true") : TEXT("false"),
-				Mesh->CustomDepthStencilValue,
-				*Mesh->Bounds.Origin.ToCompactString(),
-				*Mesh->Bounds.BoxExtent.ToCompactString());
 		}
 	}
 }
@@ -310,19 +211,7 @@ void ABombardmentPreview::RestoreHighlights()
 {
 	for (const FBombardmentMeshHighlightState& State : HighlightedMeshes)
 	{
-		if (UMeshComponent* Mesh = State.Mesh.Get())
-		{
-			if (State.bMaterialsReplaced)
-			{
-				for (int32 MaterialIndex = 0; MaterialIndex < State.Materials.Num(); ++MaterialIndex)
-				{
-					Mesh->SetMaterial(MaterialIndex, State.Materials[MaterialIndex].Get());
-				}
-			}
-			Mesh->SetOverlayMaterial(State.OverlayMaterial.Get());
-			Mesh->SetRenderCustomDepth(State.bRenderedCustomDepth);
-			Mesh->SetCustomDepthStencilValue(State.CustomDepthStencilValue);
-		}
+		RestoreHighlight(State);
 	}
 	HighlightedMeshes.Reset();
 }

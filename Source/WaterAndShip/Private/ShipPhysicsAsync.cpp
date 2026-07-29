@@ -263,6 +263,11 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 					{
 						MovementInput_Internal = AsyncInput->MovementInput;
 						SteeringInput_Internal = AsyncInput->SteeringInput;
+					}
+					// Gameplay-authored forces are authoritative and must also
+					// reach server-controlled AI ships, which have no local controller.
+					if (AsyncInput->bApplyAuthoritativeExternalAcceleration)
+					{
 						ExternalAcceleration_Internal = AsyncInput->ExternalAcceleration;
 					}
 
