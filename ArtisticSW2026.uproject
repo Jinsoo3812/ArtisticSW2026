@@ -25,6 +25,15 @@
 			]
 		},
 		{
+			"Name": "Story",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine",
+				"GameplayTags"
+			]
+		},
+		{
 			"Name": "GASCore",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"

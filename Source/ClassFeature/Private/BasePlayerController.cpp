@@ -367,7 +367,7 @@ void ABasePlayerController::HandleMenuEscape()
 
 void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
 {
-	if (!HasAuthority() || !StorageChest)
+	if (!HasAuthority() || !StorageChest || StorageChest->IsLocked())
 	{
 		return;
 	}
@@ -375,6 +375,7 @@ void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
 	// 이미 열려 있는 동일한 상자에는 중복 열기 요청을 보내지 않는다.
 	if (ActiveStorageChest == StorageChest)
 	{
+		CloseStorageFromServer(StorageChest);
 		return;
 	}
 
@@ -383,9 +384,32 @@ void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
 	ClientOpenStorage(StorageChest);
 }
 
+void ABasePlayerController::CloseStorageFromServer(AStorageChest* StorageChest)
+{
+	if (!HasAuthority() || !StorageChest || ActiveStorageChest != StorageChest)
+	{
+		return;
+	}
+
+	ClientCloseStorage(StorageChest);
+	ActiveStorageChest = nullptr;
+	GetWorldTimerManager().ClearTimer(StorageSearchTimerHandle);
+}
+
 void ABasePlayerController::ClientOpenStorage_Implementation(AStorageChest* StorageChest)
 {
-	OpenStorage(StorageChest);
+	if (StorageChest && !StorageChest->IsLocked())
+	{
+		OpenStorage(StorageChest);
+	}
+}
+
+void ABasePlayerController::ClientCloseStorage_Implementation(AStorageChest* StorageChest)
+{
+	if (ActiveStorageChest == StorageChest)
+	{
+		CloseStorage(false);
+	}
 }
 
 void ABasePlayerController::ClientUpdateStorageRevealState_Implementation(AStorageChest* StorageChest, int32 RevealedSlotCount, int32 SearchingSlotIndex)
@@ -415,7 +439,7 @@ void ABasePlayerController::ServerHandleStorageLeftClick_Implementation(AStorage
 	// 좌클릭 했을 때 상호작용
 	// 커서에 아이템이 붙어 있으면 인벤토리 -> storage
 	// 커서에 아이템이 없으면 storage -> 인벤토리
-	if (!StorageChest || ActiveStorageChest != StorageChest)
+	if (!StorageChest || StorageChest->IsLocked() || ActiveStorageChest != StorageChest)
 	{
 		return;
 	}
@@ -458,7 +482,7 @@ void ABasePlayerController::ServerHandleStorageLeftClick_Implementation(AStorage
 void ABasePlayerController::ServerQuickMoveInventorySlotToStorage_Implementation(int32 SlotIndex)
 {
 	// 인벤토리 -> storage
-	if (!ActiveStorageChest)
+	if (!ActiveStorageChest || ActiveStorageChest->IsLocked())
 	{
 		return;
 	}
@@ -489,7 +513,7 @@ void ABasePlayerController::ServerQuickMoveInventorySlotToStorage_Implementation
 void ABasePlayerController::ServerQuickMoveStorageSlotToInventory_Implementation(AStorageChest* StorageChest, int32 SlotIndex)
 {
 	//storage -> Inventory (우클릭)
-	if (!StorageChest || ActiveStorageChest != StorageChest)
+	if (!StorageChest || StorageChest->IsLocked() || ActiveStorageChest != StorageChest)
 	{
 		return;
 	}
@@ -551,7 +575,7 @@ bool ABasePlayerController::IsStorageSlotSearching(AStorageChest* StorageChest, 
 void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 {
 	// chest에 대한 storage UI열기
-	if (!IsLocalController() || !StorageChest || !PlayerHUDWidget)
+	if (!IsLocalController() || !StorageChest || StorageChest->IsLocked() || !PlayerHUDWidget)
 	{
 		return;
 	}
@@ -605,6 +629,12 @@ void ABasePlayerController::CloseStorage(bool bNotifyServer)
 	ActiveStorageChest = nullptr;
 	GetWorldTimerManager().ClearTimer(StorageSearchTimerHandle);
 
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetInventoryVisible(false);
+	}
+	ApplyInventoryInputMode(false);
+
 	if (!bNotifyServer || !ClosingStorageChest)
 	{
 		return;
@@ -627,7 +657,7 @@ bool ABasePlayerController::IsStorageOpen() const
 
 void ABasePlayerController::StartStorageSearch(AStorageChest* StorageChest)
 {
-	if (!HasAuthority() || !StorageChest)
+	if (!HasAuthority() || !StorageChest || StorageChest->IsLocked())
 	{
 		return;
 	}
@@ -672,7 +702,7 @@ void ABasePlayerController::StartStorageSearch(AStorageChest* StorageChest)
 
 void ABasePlayerController::RevealCurrentStorageSlot()
 {
-	if (!HasAuthority() || !ActiveStorageChest)
+	if (!HasAuthority() || !ActiveStorageChest || ActiveStorageChest->IsLocked())
 	{
 		return;
 	}
