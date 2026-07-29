@@ -66,7 +66,7 @@ void UShipUpgradeNodeWidget::SetSelected(bool bInSelected)
 
 void UShipUpgradeNodeWidget::HandleClicked()
 {
-	if (!NodeView.NodeId.IsNone())
+	if (!NodeView.NodeId.IsNone() && NodeView.State != EShipUpgradeNodeState::Locked)
 	{
 		NodeSelectedDelegate.Broadcast(NodeView.NodeId);
 	}
@@ -95,31 +95,46 @@ void UShipUpgradeNodeWidget::RefreshBuiltInVisuals()
 	}
 	if (Image_Check)
 	{
-		Image_Check->SetVisibility(bActive ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		// Activation is represented by the node background color. The optional
+		// legacy check image stays hidden and can safely be deleted from the WBP.
+		Image_Check->SetVisibility(ESlateVisibility::Collapsed);
 	}
 	if (Image_Icon)
 	{
-		const float Opacity = bLocked
-			? LockedIconOpacity
-			: (NodeView.State == EShipUpgradeNodeState::Available ? AvailableIconOpacity : 1.0f);
-		Image_Icon->SetOpacity(Opacity);
+		Image_Icon->SetVisibility(
+			bLocked ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+		// State color belongs to the node background, never to the icon.
+		Image_Icon->SetOpacity(1.0f);
+	}
+	if (Text_Name)
+	{
+		Text_Name->SetVisibility(
+			bLocked ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	}
+	FLinearColor StateColor = LockedGlowColor;
+	if (bActive)
+	{
+		StateColor = ActiveGlowColor;
+	}
+	else if (!bLocked && !NodeView.bHasEnoughMaterials)
+	{
+		StateColor = InsufficientMaterialsGlowColor;
+	}
+	else if (!bLocked)
+	{
+		StateColor = AvailableGlowColor;
+	}
+	if (Button_Node)
+	{
+		// BackgroundColor only multiplies the Button style brushes. Unlike
+		// ColorAndOpacity/Foreground it does not tint the icon or label.
+		Button_Node->SetBackgroundColor(StateColor);
 	}
 	if (Border_StateGlow)
 	{
-		FLinearColor GlowColor = LockedGlowColor;
-		if (bSelected)
-		{
-			GlowColor = SelectedGlowColor;
-		}
-		else if (bActive)
-		{
-			GlowColor = ActiveGlowColor;
-		}
-		else if (NodeView.State == EShipUpgradeNodeState::Available)
-		{
-			GlowColor = AvailableGlowColor;
-		}
-		Border_StateGlow->SetBrushColor(GlowColor);
+		// Legacy inner state layer caused a second, inset colored rectangle.
+		// It is optional and may be removed from the Widget Blueprint.
+		Border_StateGlow->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
 	BP_OnVisualStateApplied(NodeView.State, bSelected);
@@ -145,7 +160,7 @@ void UShipUpgradeNodeWidget::RequestIconLoad()
 	{
 		if (Image_Icon)
 		{
-			Image_Icon->SetVisibility(ESlateVisibility::Hidden);
+			Image_Icon->SetVisibility(ESlateVisibility::Collapsed);
 		}
 		return;
 	}
@@ -153,7 +168,10 @@ void UShipUpgradeNodeWidget::RequestIconLoad()
 	if (UTexture2D* LoadedTexture = NodeView.Icon.Get())
 	{
 		Image_Icon->SetBrushFromTexture(LoadedTexture, true);
-		Image_Icon->SetVisibility(ESlateVisibility::HitTestInvisible);
+		Image_Icon->SetVisibility(
+			NodeView.State == EShipUpgradeNodeState::Locked
+				? ESlateVisibility::Collapsed
+				: ESlateVisibility::HitTestInvisible);
 		return;
 	}
 
@@ -172,7 +190,10 @@ void UShipUpgradeNodeWidget::RequestIconLoad()
 			if (UTexture2D* LoadedTexture = Cast<UTexture2D>(RequestedPath.ResolveObject()))
 			{
 				Widget->Image_Icon->SetBrushFromTexture(LoadedTexture, true);
-				Widget->Image_Icon->SetVisibility(ESlateVisibility::HitTestInvisible);
+				Widget->Image_Icon->SetVisibility(
+					Widget->NodeView.State == EShipUpgradeNodeState::Locked
+						? ESlateVisibility::Collapsed
+						: ESlateVisibility::HitTestInvisible);
 			}
 		}));
 }

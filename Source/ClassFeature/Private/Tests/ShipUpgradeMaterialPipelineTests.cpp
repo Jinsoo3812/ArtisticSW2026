@@ -58,6 +58,9 @@ bool FShipUpgradeMaterialPipelineTest::RunTest(const FString& Parameters)
 	UShipUpgradeTreeDataAsset* Tree = NewObject<UShipUpgradeTreeDataAsset>();
 	Tree->Nodes.Add(ShipUpgradeMaterialTests::MakeNode(TEXT("Root_A")));
 	Tree->Nodes.Add(ShipUpgradeMaterialTests::MakeNode(TEXT("Root_B")));
+	FShipUpgradeNodeDefinition DebugBypass = ShipUpgradeMaterialTests::MakeNode(TEXT("Debug_Bypass"));
+	DebugBypass.ActivationCosts.Add(ShipUpgradeMaterialTests::MakeCost(Item_Id_Material_ShipMaterials_WoodenPlank, 99));
+	Tree->Nodes.Add(MoveTemp(DebugBypass));
 	FShipUpgradeNodeDefinition Child = ShipUpgradeMaterialTests::MakeNode(TEXT("Child_AB"), { TEXT("Root_A"), TEXT("Root_B") });
 	Child.ActivationCosts.Add(ShipUpgradeMaterialTests::MakeCost(Item_Id_Material_ShipMaterials_WoodenPlank, 3));
 	Child.ActivationCosts.Add(ShipUpgradeMaterialTests::MakeCost(Item_Id_Material_ShipMaterials_IronPlate, 2));
@@ -90,6 +93,18 @@ bool FShipUpgradeMaterialPipelineTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Iron cost is consumed atomically"), Inventory->GetItemCount(Item_Id_Material_ShipMaterials_IronPlate), 0);
 	TestEqual(TEXT("Duplicate activation is idempotent"), Upgrade->ActivateNodeForUseCase(TEXT("Child_AB")), EShipUpgradeActivationResult::AlreadyActive);
 	TestEqual(TEXT("Duplicate activation consumes nothing further"), Inventory->GetItemCount(Item_Id_Material_ShipMaterials_WoodenPlank), 2);
+
+	Upgrade->SetIgnoreMaterialCostsForTesting(true);
+	TestTrue(TEXT("Ship-upgrade test bypass reports an unaffordable node as affordable"), Upgrade->HasRequiredMaterials(TEXT("Debug_Bypass"), Reason));
+	TestTrue(TEXT("Bypassed node view resolves"), Upgrade->GetNodeView(TEXT("Debug_Bypass"), View));
+	TestTrue(TEXT("Bypassed node view reports enough materials"), View.bHasEnoughMaterials);
+	TestEqual(TEXT("Bypassed node view exposes its material row"), View.MaterialCosts.Num(), 1);
+	if (View.MaterialCosts.Num() == 1)
+	{
+		TestEqual(TEXT("Bypassed node view presents required quantity as owned"), View.MaterialCosts[0].OwnedQuantity, 99);
+	}
+	TestEqual(TEXT("Bypassed activation succeeds"), Upgrade->ActivateNodeForUseCase(TEXT("Debug_Bypass")), EShipUpgradeActivationResult::Success);
+	TestEqual(TEXT("Bypassed activation consumes no inventory"), Inventory->GetItemCount(Item_Id_Material_ShipMaterials_WoodenPlank), 2);
 
 	World->DestroyWorld(false);
 	GEngine->DestroyWorldContext(World);

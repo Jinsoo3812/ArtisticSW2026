@@ -18,7 +18,10 @@ void UStorageComponent::BeginPlay()
 
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
-		InitializeFromInitialItems();
+		if (!bConfiguredAtRuntime)
+		{
+			InitializeFromInitialItems();
+		}
 	}
 }
 
@@ -33,6 +36,8 @@ void UStorageComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 
 void UStorageComponent::ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems)
 {
+	bConfiguredAtRuntime = true;
+
 	// storage 구성, slot의 개수, 열의 수, 아이템들 array를 전달하면 storage가 구성됨
 	if (!GetOwner() || !GetOwner()->HasAuthority())
 	{

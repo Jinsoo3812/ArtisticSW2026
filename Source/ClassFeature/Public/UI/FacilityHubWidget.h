@@ -101,6 +101,9 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Facility Hub|Style")
 	void BP_OnFacilityTabChanged(int32 NewTabIndex);
 
+	/** Native extension point for specialized workspace shells. */
+	virtual void NativeOnFacilityTabChanged(int32 NewTabIndex);
+
 	/** Implement in WBP_FacilityHub to switch to the crafting panel after server approval. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Facility Hub|Crafting", meta = (DisplayName = "On Crafting Tab Approved"))
 	void BP_OnCraftingTabApproved(AActor* ApprovedContext);
