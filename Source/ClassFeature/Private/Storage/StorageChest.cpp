@@ -17,7 +17,8 @@
 
 AStorageChest::AStorageChest()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.TickGroup = TG_PostPhysics;
 	bReplicates = true;
 	SetReplicateMovement(true);
 	SetNetUpdateFrequency(30.0f);
@@ -42,6 +43,53 @@ AStorageChest::AStorageChest()
 	InteractableComponent->SetupAttachment(ChestMesh);
 
 	StorageComponent = CreateDefaultSubobject<UStorageComponent>(TEXT("StorageComponent"));
+}
+
+void AStorageChest::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (HasAuthority() || !bEnablePhysicsAndBuoyancy || !bHasClientMovementTarget)
+	{
+		return;
+	}
+
+	const float TimeSinceUpdate = GetWorld()
+		? FMath::Max(0.0f, GetWorld()->GetTimeSeconds() - ClientMovementTargetReceiveTime)
+		: 0.0f;
+	const float ExtrapolationTime = FMath::Min(TimeSinceUpdate, ClientMaxExtrapolationTime);
+	const FVector DesiredLocation =
+		ClientMovementTargetLocation + ClientMovementTargetVelocity * ExtrapolationTime;
+
+	if (FVector::DistSquared(GetActorLocation(), DesiredLocation)
+		> FMath::Square(ClientNetworkSnapDistance))
+	{
+		SetActorLocationAndRotation(
+			DesiredLocation,
+			ClientMovementTargetRotation,
+			false,
+			nullptr,
+			ETeleportType::TeleportPhysics);
+		return;
+	}
+
+	const FVector SmoothedLocation = FMath::VInterpTo(
+		GetActorLocation(),
+		DesiredLocation,
+		DeltaSeconds,
+		ClientLocationInterpSpeed);
+	const FQuat SmoothedRotation = FMath::QInterpTo(
+		GetActorQuat(),
+		ClientMovementTargetRotation,
+		DeltaSeconds,
+		ClientRotationInterpSpeed);
+
+	SetActorLocationAndRotation(
+		SmoothedLocation,
+		SmoothedRotation,
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics);
 }
 
 void AStorageChest::BeginPlay()
@@ -256,6 +304,35 @@ void AStorageChest::OnRep_Locked()
 	ApplyLockPresentation();
 }
 
+void AStorageChest::OnRep_ReplicatedMovement()
+{
+	if (!HasAuthority() && bEnablePhysicsAndBuoyancy)
+	{
+		const FRepMovement& Movement = GetReplicatedMovement();
+		ClientMovementTargetLocation = FRepMovement::RebaseOntoLocalOrigin(Movement.Location, this);
+		ClientMovementTargetRotation = Movement.Rotation.Quaternion();
+		ClientMovementTargetVelocity = Movement.LinearVelocity;
+		ClientMovementTargetReceiveTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+		bHasClientMovementTarget = true;
+
+		// Do not call the engine implementation for floating chests. It mirrors
+		// bRepPhysics by enabling client Chaos simulation, which has gravity but no
+		// client buoyancy and therefore fights the incoming server corrections.
+		if (ChestMesh && ChestMesh->IsSimulatingPhysics())
+		{
+			ChestMesh->SetSimulatePhysics(false);
+		}
+		if (ChestMesh)
+		{
+			ChestMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		}
+		SetActorTickEnabled(true);
+		return;
+	}
+
+	Super::OnRep_ReplicatedMovement();
+}
+
 void AStorageChest::OnRep_PhysicsMode()
 {
 	ApplyPhysicsMode();
@@ -365,23 +442,35 @@ void AStorageChest::ApplyPhysicsMode()
 		return;
 	}
 
+	SetActorTickEnabled(!HasAuthority() && bEnablePhysicsAndBuoyancy);
+
 	if (bEnablePhysicsAndBuoyancy)
 	{
-		ChestMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 		if (HasAuthority())
 		{
+			ChestMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			ChestMesh->SetMassOverrideInKg(NAME_None, PhysicsMassKg, true);
 			ChestMesh->SetSimulatePhysics(true);
 			ChestMesh->WakeAllRigidBodies();
 		}
-		if (SWBuoyancyComponent)
+		else
+		{
+			ChestMesh->SetSimulatePhysics(false);
+			ChestMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		}
+		if (SWBuoyancyComponent && HasAuthority())
 		{
 			SWBuoyancyComponent->Activate();
+		}
+		else if (SWBuoyancyComponent)
+		{
+			SWBuoyancyComponent->Deactivate();
 		}
 		return;
 	}
 
 	ChestMesh->SetSimulatePhysics(false);
+	bHasClientMovementTarget = false;
 	if (SWBuoyancyComponent)
 	{
 		SWBuoyancyComponent->Deactivate();

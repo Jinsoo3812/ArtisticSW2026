@@ -4,6 +4,7 @@
 
 #include "BaseCharacter.h"
 #include "BaseGameplayTags.h"
+#include "BasePlayerController.h"
 #include "Components/BaseHealthComponent.h"
 #include "Engine/DataTable.h"
 #include "Engine/Engine.h"
@@ -112,8 +113,9 @@ bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 	Manager->SetInitializeOnBeginPlayForTesting(false);
 	Manager->SetSpawnSeedForTesting(12345);
 
-	TestEqual(TEXT("Each random group spawns its configured count"), Manager->InitializeDataDrivenChests(), 3);
+	// Match runtime: data-driven chests are deferred-spawned after the world has begun play.
 	World->BeginPlay();
+	TestEqual(TEXT("Each random group spawns its configured count"), Manager->InitializeDataDrivenChests(), 3);
 
 	auto CountActivated = [](const TArray<AChestSpawnPoint*>& Points)
 	{
@@ -220,6 +222,16 @@ bool FGuardedChestUnlockTest::RunTest(const FString& Parameters)
 	GuardBHealth->OnDeathStarted.Broadcast(GuardBHealth);
 	TestFalse(TEXT("The last guard death unlocks the island chest"), IslandChest->IsLocked());
 	TestEqual(TEXT("No living guards remain"), IslandChest->GetAliveGuardCount(), 0);
+
+	ABasePlayerController* PlayerController = World->SpawnActor<ABasePlayerController>();
+	TestNotNull(TEXT("Storage toggle controller spawns"), PlayerController);
+	if (PlayerController)
+	{
+		PlayerController->OpenStorageFromServer(IslandChest);
+		TestTrue(TEXT("First interaction opens the chest"), PlayerController->HasOpenStorage());
+		PlayerController->OpenStorageFromServer(IslandChest);
+		TestFalse(TEXT("Second interaction closes the chest"), PlayerController->HasOpenStorage());
+	}
 
 	TestTrue(TEXT("Ship guarded chest starts locked"), ShipChest->IsLocked());
 	TestFalse(TEXT("Ship chest physics is disabled"), ShipChest->IsPhysicsAndBuoyancyEnabled());

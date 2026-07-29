@@ -24,9 +24,11 @@ class CLASSFEATURE_API AStorageChest : public AActor
 public:
 	AStorageChest();
 
+	virtual void Tick(float DeltaSeconds) override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void OnRep_ReplicatedMovement() override;
 
 	UStorageComponent* GetStorageComponent() const { return StorageComponent; }
 	UInteractableComponent* GetInteractableComponent() const { return InteractableComponent; }
@@ -96,6 +98,19 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Storage Chest|Physics", meta = (ClampMin = "1.0", Units = "kg"))
 	float PhysicsMassKg = 25.0f;
 
+	/** Client-only smoothing of server-authoritative floating chest movement. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Storage Chest|Networking", meta = (ClampMin = "0.0"))
+	float ClientLocationInterpSpeed = 14.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Storage Chest|Networking", meta = (ClampMin = "0.0"))
+	float ClientRotationInterpSpeed = 12.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Storage Chest|Networking", meta = (ClampMin = "0.0", Units = "s"))
+	float ClientMaxExtrapolationTime = 0.1f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Storage Chest|Networking", meta = (ClampMin = "0.0", Units = "cm"))
+	float ClientNetworkSnapDistance = 500.0f;
+
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Storage Chest|Guarding")
 	bool bRequiresGuardClear = false;
 
@@ -119,6 +134,11 @@ protected:
 	TObjectPtr<UBaseHealthComponent> OwningShipHealthComponent;
 
 	bool bDefinitionInitialized = false;
+	bool bHasClientMovementTarget = false;
+	FVector ClientMovementTargetLocation = FVector::ZeroVector;
+	FQuat ClientMovementTargetRotation = FQuat::Identity;
+	FVector ClientMovementTargetVelocity = FVector::ZeroVector;
+	float ClientMovementTargetReceiveTime = 0.0f;
 
 	UFUNCTION()
 	void HandleInteracted(AActor* Interactor);

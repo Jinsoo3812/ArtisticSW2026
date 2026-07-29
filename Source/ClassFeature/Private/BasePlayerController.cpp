@@ -375,6 +375,7 @@ void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
 	// 이미 열려 있는 동일한 상자에는 중복 열기 요청을 보내지 않는다.
 	if (ActiveStorageChest == StorageChest)
 	{
+		CloseStorageFromServer(StorageChest);
 		return;
 	}
 
@@ -627,6 +628,12 @@ void ABasePlayerController::CloseStorage(bool bNotifyServer)
 
 	ActiveStorageChest = nullptr;
 	GetWorldTimerManager().ClearTimer(StorageSearchTimerHandle);
+
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetInventoryVisible(false);
+	}
+	ApplyInventoryInputMode(false);
 
 	if (!bNotifyServer || !ClosingStorageChest)
 	{
