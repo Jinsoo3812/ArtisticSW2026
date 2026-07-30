@@ -233,52 +233,80 @@ void ABasePlayer::BeginPlay()
 	}
 
 #if WITH_EDITOR
-	GiveStartingItemForTest();
+	GiveStartingItemsForTest();
 #endif
 
 	OnItemSlotsChanged.Broadcast();
 	OnQuickSlotsChanged.Broadcast();
 }
 
-void ABasePlayer::GiveStartingItemForTest()
+void ABasePlayer::GiveStartingItemsForTest()
 {
-	if (!HasAuthority() || !bGiveStartingItemForTest || !InventoryComponent ||
-		!StartingItemTagForTest.IsValid() || StartingItemCountForTest <= 0)
+	if (!HasAuthority() || !bGiveStartingItemForTest || !InventoryComponent)
 	{
 		return;
 	}
 
 	UItemSubsystem* ItemSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
-	if (!ItemSubsystem || !ItemSubsystem->GetItemDefinition(StartingItemTagForTest))
+	if (!ItemSubsystem)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("ABasePlayer::GiveStartingItemForTest : ItemTag %s is not registered in DA_ItemData."),
-			*StartingItemTagForTest.ToString());
+			TEXT("ABasePlayer::GiveStartingItemsForTest : ItemSubsystem is unavailable."));
 		return;
 	}
 
-	const int32 CurrentCount = InventoryComponent->GetMaterialCount(StartingItemTagForTest);
-	const int32 AmountToAdd = FMath::Max(0, StartingItemCountForTest - CurrentCount);
-	if (AmountToAdd <= 0)
+	TSet<FGameplayTag> ProcessedTags;
+	for (const FStartingInventoryItemForTest& StartingItem : StartingItemsForTest)
 	{
-		return;
-	}
+		if (!StartingItem.ItemTag.IsValid() || StartingItem.Count <= 0)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("ABasePlayer::GiveStartingItemsForTest : Skipping an invalid entry (ItemTag=%s, Count=%d)."),
+				*StartingItem.ItemTag.ToString(),
+				StartingItem.Count);
+			continue;
+		}
 
-	const int32 AddedCount = InventoryComponent->AddMaterial(StartingItemTagForTest, AmountToAdd);
-	if (AddedCount != AmountToAdd)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("ABasePlayer::GiveStartingItemForTest : Requested %d of %s, but added %d. Check inventory capacity."),
-			AmountToAdd,
-			*StartingItemTagForTest.ToString(),
-			AddedCount);
-		return;
-	}
+		if (ProcessedTags.Contains(StartingItem.ItemTag))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("ABasePlayer::GiveStartingItemsForTest : Skipping duplicate ItemTag %s."),
+				*StartingItem.ItemTag.ToString());
+			continue;
+		}
+		ProcessedTags.Add(StartingItem.ItemTag);
 
-	UE_LOG(LogTemp, Log,
-		TEXT("ABasePlayer::GiveStartingItemForTest : Added %s. Total=%d"),
-		*StartingItemTagForTest.ToString(),
-		StartingItemCountForTest);
+		if (!ItemSubsystem->GetItemDefinition(StartingItem.ItemTag))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("ABasePlayer::GiveStartingItemsForTest : ItemTag %s is not registered in DA_ItemData."),
+				*StartingItem.ItemTag.ToString());
+			continue;
+		}
+
+		const int32 CurrentCount = InventoryComponent->GetItemCount(StartingItem.ItemTag);
+		const int32 AmountToAdd = FMath::Max(0, StartingItem.Count - CurrentCount);
+		if (AmountToAdd <= 0)
+		{
+			continue;
+		}
+
+		const int32 AddedCount = InventoryComponent->AddItem(StartingItem.ItemTag, AmountToAdd);
+		if (AddedCount != AmountToAdd)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("ABasePlayer::GiveStartingItemsForTest : Requested %d of %s, but added %d. Check inventory capacity."),
+				AmountToAdd,
+				*StartingItem.ItemTag.ToString(),
+				AddedCount);
+			continue;
+		}
+
+		UE_LOG(LogTemp, Log,
+			TEXT("ABasePlayer::GiveStartingItemsForTest : Added %s. Total=%d"),
+			*StartingItem.ItemTag.ToString(),
+			StartingItem.Count);
+	}
 }
 
 void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -488,7 +516,7 @@ void ABasePlayer::PossessedBy(AController* NewController)
 						TEXT("[VortexPipeline][Grant] PlayerClass=%s AbilityClass=%s Slot=%s InputID=%d"),
 						*GetPathNameSafe(GetClass()),
 						*GetPathNameSafe(GravityVortexAbilityClass.Get()),
-						*Key_Skill_GravityVortex.ToString(),
+						*Key_Skill_GravityVortex.GetTag().ToString(),
 						GetInputIDFromTag(Key_Skill_GravityVortex));
 					GrantAbilityToSlot(Key_Skill_GravityVortex, GravityVortexAbilityClass);
 				}
