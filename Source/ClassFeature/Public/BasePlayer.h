@@ -80,6 +80,21 @@ struct FQuickSlotReference
 	bool IsEmpty() const { return !ItemTag.IsValid(); }
 };
 
+/** One item type and its desired inventory count when starting an editor test. */
+USTRUCT(BlueprintType)
+struct FStartingInventoryItemForTest
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Testing|Inventory",
+		meta = (Categories = "Item.Id"))
+	FGameplayTag ItemTag;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Testing|Inventory",
+		meta = (ClampMin = "1", UIMin = "1"))
+	int32 Count = 1;
+};
+
 /**
  * 
  */
@@ -603,17 +618,24 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory")
 	bool bGiveStartingItemForTest = false;
 
-	/** DA_ItemData에 등록된 구체적인 Item.Id 태그를 지정한다. */
+	/** Items to ensure are present when this player starts in an editor test. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory",
-		meta = (EditCondition = "bGiveStartingItemForTest", Categories = "Item.Id"))
+		meta = (EditCondition = "bGiveStartingItemForTest", TitleProperty = "ItemTag"))
+	TArray<FStartingInventoryItemForTest> StartingItemsForTest;
+
+	/** DA_ItemData에 등록된 구체적인 Item.Id 태그를 지정한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory|Legacy",
+		meta = (EditCondition = "bGiveStartingItemForTest", Categories = "Item.Id",
+			DeprecatedProperty, DeprecationMessage = "Use StartingItemsForTest instead."))
 	FGameplayTag StartingItemTagForTest;
 
 	/** 테스트 시작 시 보유하게 할 총수량이다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory",
-		meta = (EditCondition = "bGiveStartingItemForTest", ClampMin = "1", UIMin = "1"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory|Legacy",
+		meta = (EditCondition = "bGiveStartingItemForTest", ClampMin = "1", UIMin = "1",
+			DeprecatedProperty, DeprecationMessage = "Use StartingItemsForTest instead."))
 	int32 StartingItemCountForTest = 1;
 
-	void GiveStartingItemForTest();
+	void GiveStartingItemsForTest();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<ULocomotionAnimStateComponent> AnimStateComponent;
