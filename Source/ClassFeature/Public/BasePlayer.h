@@ -623,18 +623,6 @@ protected:
 		meta = (EditCondition = "bGiveStartingItemForTest", TitleProperty = "ItemTag"))
 	TArray<FStartingInventoryItemForTest> StartingItemsForTest;
 
-	/** DA_ItemData에 등록된 구체적인 Item.Id 태그를 지정한다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory|Legacy",
-		meta = (EditCondition = "bGiveStartingItemForTest", Categories = "Item.Id",
-			DeprecatedProperty, DeprecationMessage = "Use StartingItemsForTest instead."))
-	FGameplayTag StartingItemTagForTest;
-
-	/** 테스트 시작 시 보유하게 할 총수량이다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory|Legacy",
-		meta = (EditCondition = "bGiveStartingItemForTest", ClampMin = "1", UIMin = "1",
-			DeprecatedProperty, DeprecationMessage = "Use StartingItemsForTest instead."))
-	int32 StartingItemCountForTest = 1;
-
 	void GiveStartingItemsForTest();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")

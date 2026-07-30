@@ -255,17 +255,8 @@ void ABasePlayer::GiveStartingItemsForTest()
 		return;
 	}
 
-	TArray<FStartingInventoryItemForTest> ItemsToGrant = StartingItemsForTest;
-	if (ItemsToGrant.IsEmpty() && StartingItemTagForTest.IsValid() && StartingItemCountForTest > 0)
-	{
-		FStartingInventoryItemForTest LegacyItem;
-		LegacyItem.ItemTag = StartingItemTagForTest;
-		LegacyItem.Count = StartingItemCountForTest;
-		ItemsToGrant.Add(LegacyItem);
-	}
-
 	TSet<FGameplayTag> ProcessedTags;
-	for (const FStartingInventoryItemForTest& StartingItem : ItemsToGrant)
+	for (const FStartingInventoryItemForTest& StartingItem : StartingItemsForTest)
 	{
 		if (!StartingItem.ItemTag.IsValid() || StartingItem.Count <= 0)
 		{
