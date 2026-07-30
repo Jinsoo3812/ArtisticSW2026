@@ -88,8 +88,6 @@ namespace
 // Sets default values
 AShip::AShip()
 {
-	BombardmentSkillHotkey = EKeys::Eight;
-
  	// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
@@ -838,6 +836,10 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 		{
 			EnhancedInput->BindAction(ShipZoomAction, ETriggerEvent::Triggered, this, &AShip::ShipZoom);
 		}
+		if (ShipBombardmentToggleAction)
+		{
+			EnhancedInput->BindAction(ShipBombardmentToggleAction, ETriggerEvent::Started, this, &AShip::HandleBombardmentToggle);
+		}
 		if (ShipBombardmentConfirmAction)
 		{
 			EnhancedInput->BindAction(ShipBombardmentConfirmAction, ETriggerEvent::Started, this, &AShip::HandleBombardmentConfirm);
@@ -850,12 +852,6 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	else
 	{
 		UE_LOG(LogTemp, Error, TEXT("AShip::SetupPlayerInputComponent - Failed to find Enhanced Input Component."));
-	}
-
-	if (BombardmentSkillHotkey.IsValid())
-	{
-		PlayerInputComponent->BindKey(
-			BombardmentSkillHotkey, IE_Pressed, this, &AShip::HandleBombardmentToggle);
 	}
 
 	RestoreRememberedFollowCameraState(CachedPlayerController);
@@ -1362,12 +1358,13 @@ void AShip::CancelBombardmentAbilityAuthoritative()
 
 void AShip::SetBombardmentTargetingAuthoritative(bool bEnabled)
 {
-	if (!HasAuthority())
+	if (!HasAuthority() || bBombardmentTargeting == bEnabled)
 	{
 		return;
 	}
 
 	bBombardmentTargeting = bEnabled;
+	OnBombardmentTargetingChanged.Broadcast(bBombardmentTargeting);
 	ForceNetUpdate();
 	RefreshLocalBombardmentTargeting();
 }
@@ -1380,6 +1377,7 @@ UAbilitySystemComponent* AShip::GetRidingPlayerAbilitySystem() const
 
 void AShip::OnRep_BombardmentTargeting()
 {
+	OnBombardmentTargetingChanged.Broadcast(bBombardmentTargeting);
 	RefreshLocalBombardmentTargeting();
 }
 

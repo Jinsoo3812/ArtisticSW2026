@@ -24,6 +24,9 @@
 #include "Rendering/DrawElements.h"
 #include "Blueprint/WidgetTree.h"
 #include "Skills/PlayerSkillComponent.h"
+#include "Cannon.h"
+#include "Ship.h"
+#include "GameFramework/PlayerController.h"
 
 #include "BaseGameplayTags.h"
 
@@ -107,6 +110,14 @@ void UPlayerHUDWidget::NativeConstruct()
 
 	CreateBowCrosshairWidget();
 	RefreshBowCrosshairBinding();
+
+	if (APlayerController* PlayerController = GetOwningPlayer())
+	{
+		PlayerController->OnPossessedPawnChanged.AddUniqueDynamic(
+			this, &UPlayerHUDWidget::HandlePossessedPawnChanged);
+		BoundPossessionController = PlayerController;
+		BindSkillStateSource(PlayerController->GetPawn());
+	}
 }
 
 void UPlayerHUDWidget::NativeDestruct()
@@ -132,6 +143,13 @@ void UPlayerHUDWidget::NativeDestruct()
 	UnbindHealthComponent();
 	UnbindBowComponent();
 	UnbindSkillComponent();
+	UnbindSkillStateSource();
+	if (APlayerController* PlayerController = BoundPossessionController.Get())
+	{
+		PlayerController->OnPossessedPawnChanged.RemoveDynamic(
+			this, &UPlayerHUDWidget::HandlePossessedPawnChanged);
+	}
+	BoundPossessionController.Reset();
 
 	Super::NativeDestruct();
 }
@@ -354,6 +372,63 @@ void UPlayerHUDWidget::UnbindSkillComponent()
 void UPlayerHUDWidget::HandleSkillChanged(FGameplayTag SkillTag)
 {
 	RefreshSkillQuickSlots();
+}
+
+void UPlayerHUDWidget::BindSkillStateSource(APawn* ControlledPawn)
+{
+	UnbindSkillStateSource();
+
+	if (ACannon* Cannon = Cast<ACannon>(ControlledPawn))
+	{
+		BoundSkillStateCannon = Cannon;
+		Cannon->OnWaterBombModeChanged.AddUObject(
+			this, &UPlayerHUDWidget::HandleSkillActiveStateChanged);
+	}
+	else if (AShip* Ship = Cast<AShip>(ControlledPawn))
+	{
+		BoundSkillStateShip = Ship;
+		Ship->OnBombardmentTargetingChanged.AddUObject(
+			this, &UPlayerHUDWidget::HandleSkillActiveStateChanged);
+	}
+
+	RefreshEquippedSkillBorders();
+}
+
+void UPlayerHUDWidget::UnbindSkillStateSource()
+{
+	if (ACannon* Cannon = BoundSkillStateCannon.Get())
+	{
+		Cannon->OnWaterBombModeChanged.RemoveAll(this);
+	}
+	if (AShip* Ship = BoundSkillStateShip.Get())
+	{
+		Ship->OnBombardmentTargetingChanged.RemoveAll(this);
+	}
+
+	BoundSkillStateCannon.Reset();
+	BoundSkillStateShip.Reset();
+}
+
+void UPlayerHUDWidget::RefreshEquippedSkillBorders()
+{
+	APawn* ControlledPawn = GetOwningPlayerPawn();
+	for (USkillQuickSlotWidget* SkillSlot : SkillQuickSlotEntries)
+	{
+		if (SkillSlot)
+		{
+			SkillSlot->RefreshEquippedState(ControlledPawn);
+		}
+	}
+}
+
+void UPlayerHUDWidget::HandlePossessedPawnChanged(APawn*, APawn* NewPawn)
+{
+	BindSkillStateSource(NewPawn);
+}
+
+void UPlayerHUDWidget::HandleSkillActiveStateChanged(bool)
+{
+	RefreshEquippedSkillBorders();
 }
 
 void UPlayerHUDWidget::HandleHealthChanged(UBaseHealthComponent* HealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)

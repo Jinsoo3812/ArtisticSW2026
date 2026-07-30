@@ -17,6 +17,8 @@ class UUserWidget;
 class UGameplayAbility;
 class AWaterBombCannonball;
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnWaterBombModeChanged, bool);
+
 USTRUCT(BlueprintType)
 struct FCannonAimRotation
 {
@@ -63,6 +65,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Cannon|Water Bomb")
 	bool IsWaterBombMode() const { return bWaterBombMode; }
+	FOnWaterBombModeChanged OnWaterBombModeChanged;
 	APawn* GetRidingPlayer() const { return RidingPlayer; }
 
 	bool ActivateWaterBombModeFromAbility(
@@ -133,10 +136,6 @@ protected:
 	/** Assign the Water Bomb IA mapped to key 4 in the cannon IMC. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
 	TObjectPtr<UInputAction> CannonWaterBombToggleAction;
-
-	/** Direct Water Bomb hotkey. Defaults to 7 and can be changed per Cannon Blueprint. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannon|Input|Skills")
-	FKey WaterBombSkillHotkey;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
 	int32 CannonInputPriority = 10;

@@ -451,6 +451,8 @@ public:
 		TSubclassOf<ABombardment> BombardmentClass);
 	void DeactivateBombardmentModeFromAbility(UGameplayAbility* Ability);
 	bool IsBombardmentTargeting() const { return bBombardmentTargeting; }
+	DECLARE_MULTICAST_DELEGATE_OneParam(FOnBombardmentTargetingChanged, bool);
+	FOnBombardmentTargetingChanged OnBombardmentTargetingChanged;
 	APawn* GetRidingPlayer() const { return RidingPlayer; }
 
 	/* Boarding Interaction */
@@ -568,10 +570,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Input|Skills")
 	UInputAction* ShipBombardmentToggleAction;
-
-	/** Direct Bombardment hotkey. Defaults to 8 and can be changed per Ship Blueprint. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Input|Skills")
-	FKey BombardmentSkillHotkey;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Input|Skills")
 	UInputAction* ShipBombardmentConfirmAction;

@@ -7,6 +7,7 @@
 #include "SkillQuickSlotWidget.generated.h"
 
 class ABasePlayer;
+class APawn;
 class UAbilitySystemComponent;
 class UBorder;
 class UImage;
@@ -32,12 +33,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Skill Quick Slot")
 	void RefreshSlot();
 
+	/** Refreshes only the active/equipped border from the currently controlled pawn. */
+	void RefreshEquippedState(APawn* ControlledPawn);
+
 	/** GameplayAbility.Skill.* represented by this designer-placed slot. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot",
 		meta = (ExposeOnSpawn = "true", DisplayName = "Skill Tag", Categories = "GameplayAbility.Skill"))
 	FGameplayTag SkillTag;
 
-	/** Key label shown in this slot. Defaults to 6/7/8 from SkillTag when unset. */
+	/** Key label shown in this slot. Defaults to 3/4/5 from SkillTag when unset. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot",
 		meta = (ExposeOnSpawn = "true", DisplayName = "Input Key"))
 	FKey InputKey;

@@ -26,8 +26,6 @@
 ACannon::ACannon()
 {
 	PrimaryActorTick.bCanEverTick = true;
-	WaterBombSkillHotkey = EKeys::Seven;
-
 	// Root Scene Component
 	USceneComponent* SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;
@@ -127,17 +125,16 @@ void ACannon::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 		{
 			EnhancedInput->BindAction(CannonExitAction, ETriggerEvent::Started, this, &ACannon::HandleExit);
 		}
+		if (CannonWaterBombToggleAction)
+		{
+			EnhancedInput->BindAction(CannonWaterBombToggleAction, ETriggerEvent::Started, this, &ACannon::HandleWaterBombToggle);
+		}
 	}
 	else
 	{
 		UE_LOG(LogTemp, Error, TEXT("ACannon::SetupPlayerInputComponent - Failed to find Enhanced Input Component."));
 	}
 
-	if (WaterBombSkillHotkey.IsValid())
-	{
-		PlayerInputComponent->BindKey(
-			WaterBombSkillHotkey, IE_Pressed, this, &ACannon::ToggleWaterBombAbility);
-	}
 }
 
 void ACannon::UnPossessed()
@@ -644,6 +641,7 @@ void ACannon::SetWaterBombModeAuthoritative(bool bEnabled)
 	}
 
 	bWaterBombMode = bEnabled;
+	OnWaterBombModeChanged.Broadcast(bWaterBombMode);
 	ForceNetUpdate();
 	UE_LOG(LogTemp, Warning, TEXT("[WaterBomb] Cannon mode: %s"), bWaterBombMode ? TEXT("WATER BOMB") : TEXT("NORMAL"));
 }
@@ -678,6 +676,7 @@ void ACannon::OnRep_AimRotation()
 
 void ACannon::OnRep_WaterBombMode()
 {
+	OnWaterBombModeChanged.Broadcast(bWaterBombMode);
 	UE_LOG(LogTemp, Warning, TEXT("[WaterBomb] Cannon mode replicated: %s"), bWaterBombMode ? TEXT("WATER BOMB") : TEXT("NORMAL"));
 }
 

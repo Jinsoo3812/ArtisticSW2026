@@ -3,12 +3,14 @@
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
+#include "Cannon.h"
 #include "Components/Border.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
 #include "Inventory/InventoryComponent.h"
 #include "Skills/PlayerSkillComponent.h"
+#include "Ship.h"
 #include "UObject/ConstructorHelpers.h"
 
 USkillQuickSlotWidget::USkillQuickSlotWidget(const FObjectInitializer& ObjectInitializer)
@@ -39,7 +41,6 @@ void USkillQuickSlotWidget::RefreshSlot()
 	}
 
 	ABasePlayer* Player = CachedPlayer.Get();
-	UAbilitySystemComponent* AbilitySystemComponent = Player ? Player->GetAbilitySystemComponent() : nullptr;
 	UPlayerSkillComponent* SkillComponent = Player ? Player->GetPlayerSkillComponent() : nullptr;
 	UInventoryComponent* Inventory = Player ? Player->GetInventoryComponent() : nullptr;
 	const FPlayerSkillDefinition* Definition =
@@ -51,9 +52,6 @@ void USkillQuickSlotWidget::RefreshSlot()
 	const bool bStoryUnlocked = SkillComponent && Definition && SkillComponent->IsSkillUnlocked(SkillTag);
 	const bool bHasUses = UseCount > 0;
 	const bool bShowLock = !bStoryUnlocked && !bHasUses;
-	const bool bSkillActive =
-		AbilitySystemComponent && SkillTag.IsValid() && AbilitySystemComponent->HasMatchingGameplayTag(SkillTag);
-
 	if (UseCountText)
 	{
 		UseCountText->SetText(FText::AsNumber(UseCount));
@@ -62,10 +60,7 @@ void USkillQuickSlotWidget::RefreshSlot()
 	{
 		EmptyOverlayBorder->SetVisibility(!bHasUses ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	}
-	if (EquippedBorder)
-	{
-		EquippedBorder->SetVisibility(bSkillActive ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
-	}
+	RefreshEquippedState(GetOwningPlayerPawn());
 	if (StoryLockImage)
 	{
 		StoryLockImage->SetVisibility(bShowLock ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
@@ -88,6 +83,42 @@ void USkillQuickSlotWidget::RefreshSlot()
 	{
 		SkillIconImage->SetBrushFromTexture(nullptr);
 		SkillIconImage->SetColorAndOpacity(FLinearColor::Transparent);
+	}
+}
+
+void USkillQuickSlotWidget::RefreshEquippedState(APawn* ControlledPawn)
+{
+	if (!EquippedBorder)
+	{
+		return;
+	}
+
+	bool bSkillActive = false;
+	if (SkillTag.MatchesTagExact(GameplayAbility_Skill_WaterBomb))
+	{
+		const ACannon* ControlledCannon = Cast<ACannon>(ControlledPawn);
+		bSkillActive = ControlledCannon && ControlledCannon->IsWaterBombMode();
+	}
+	else if (SkillTag.MatchesTagExact(GameplayAbility_Skill_Bombardment))
+	{
+		const AShip* ControlledShip = Cast<AShip>(ControlledPawn);
+		bSkillActive = ControlledShip && ControlledShip->IsBombardmentTargeting();
+	}
+	else
+	{
+		const ABasePlayer* Player = CachedPlayer.Get();
+		const UAbilitySystemComponent* AbilitySystemComponent =
+			Player ? Player->GetAbilitySystemComponent() : nullptr;
+		bSkillActive =
+			AbilitySystemComponent && SkillTag.IsValid()
+			&& AbilitySystemComponent->HasMatchingGameplayTag(SkillTag);
+	}
+
+	const ESlateVisibility DesiredVisibility =
+		bSkillActive ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden;
+	if (EquippedBorder->GetVisibility() != DesiredVisibility)
+	{
+		EquippedBorder->SetVisibility(DesiredVisibility);
 	}
 }
 
@@ -161,15 +192,15 @@ FKey USkillQuickSlotWidget::ResolveDisplayKey() const
 	}
 	if (SkillTag.MatchesTagExact(GameplayAbility_Skill_GravityVortex))
 	{
-		return EKeys::Six;
+		return EKeys::Three;
 	}
 	if (SkillTag.MatchesTagExact(GameplayAbility_Skill_WaterBomb))
 	{
-		return EKeys::Seven;
+		return EKeys::Four;
 	}
 	if (SkillTag.MatchesTagExact(GameplayAbility_Skill_Bombardment))
 	{
-		return EKeys::Eight;
+		return EKeys::Five;
 	}
 	return FKey();
 }
