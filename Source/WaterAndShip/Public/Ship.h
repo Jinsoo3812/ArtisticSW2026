@@ -451,6 +451,8 @@ public:
 		TSubclassOf<ABombardment> BombardmentClass);
 	void DeactivateBombardmentModeFromAbility(UGameplayAbility* Ability);
 	bool IsBombardmentTargeting() const { return bBombardmentTargeting; }
+	DECLARE_MULTICAST_DELEGATE_OneParam(FOnBombardmentTargetingChanged, bool);
+	FOnBombardmentTargetingChanged OnBombardmentTargetingChanged;
 	APawn* GetRidingPlayer() const { return RidingPlayer; }
 
 	/* Boarding Interaction */

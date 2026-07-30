@@ -1358,12 +1358,13 @@ void AShip::CancelBombardmentAbilityAuthoritative()
 
 void AShip::SetBombardmentTargetingAuthoritative(bool bEnabled)
 {
-	if (!HasAuthority())
+	if (!HasAuthority() || bBombardmentTargeting == bEnabled)
 	{
 		return;
 	}
 
 	bBombardmentTargeting = bEnabled;
+	OnBombardmentTargetingChanged.Broadcast(bBombardmentTargeting);
 	ForceNetUpdate();
 	RefreshLocalBombardmentTargeting();
 }
@@ -1376,6 +1377,7 @@ UAbilitySystemComponent* AShip::GetRidingPlayerAbilitySystem() const
 
 void AShip::OnRep_BombardmentTargeting()
 {
+	OnBombardmentTargetingChanged.Broadcast(bBombardmentTargeting);
 	RefreshLocalBombardmentTargeting();
 }
 

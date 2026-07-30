@@ -42,12 +42,12 @@ bool FPlayerSkillMaterialDatabaseTest::RunTest(const FString& Parameters)
 		EpicMaterial && EpicMaterial->CategoryTag.MatchesTagExact(Item_Category_Material));
 	TestTrue(TEXT("Legendary skill-use item is categorized as material"),
 		LegendaryMaterial && LegendaryMaterial->CategoryTag.MatchesTagExact(Item_Category_Material));
-	TestNotNull(TEXT("Current Generator skill identity is registered"),
-		ItemData->FindItemDefinition(Item_Id_Skill_CurrentGenerator));
+	TestNotNull(TEXT("Gravity Vortex skill identity is registered"),
+		ItemData->FindItemDefinition(Item_Id_Skill_GravityVortex));
 	TestNotNull(TEXT("Water Bomb skill identity is registered"),
 		ItemData->FindItemDefinition(Item_Id_Skill_WaterBomb));
-	TestNotNull(TEXT("Cannon Barrage skill identity is registered"),
-		ItemData->FindItemDefinition(Item_Id_Skill_CannonBarrage));
+	TestNotNull(TEXT("Bombardment skill identity is registered"),
+		ItemData->FindItemDefinition(Item_Id_Skill_Bombardment));
 	return true;
 }
 

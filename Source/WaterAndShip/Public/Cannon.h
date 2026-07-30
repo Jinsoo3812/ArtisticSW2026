@@ -17,6 +17,8 @@ class UUserWidget;
 class UGameplayAbility;
 class AWaterBombCannonball;
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnWaterBombModeChanged, bool);
+
 USTRUCT(BlueprintType)
 struct FCannonAimRotation
 {
@@ -63,6 +65,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Cannon|Water Bomb")
 	bool IsWaterBombMode() const { return bWaterBombMode; }
+	FOnWaterBombModeChanged OnWaterBombModeChanged;
 	APawn* GetRidingPlayer() const { return RidingPlayer; }
 
 	bool ActivateWaterBombModeFromAbility(
