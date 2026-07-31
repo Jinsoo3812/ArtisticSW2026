@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Water/SWBuoyancyTypes.h"
 #include "SwimmingComponent.generated.h"
 
 class ACharacter;
@@ -70,6 +71,12 @@ public:
 	/** Sets the requested vertical swim direction: -1 dives, +1 ascends. */
 	void SetVerticalSwimInput(float InVerticalInput);
 
+	/** Current vertical swim command captured by CMC saved moves. */
+	float GetVerticalSwimInput() const { return VerticalSwimInput; }
+
+	/** Restores the movement sub-state associated with a replayed CMC saved move. */
+	void RestorePredictedDepthMode(ESwimDepthMode InDepthMode) { DepthMode = InDepthMode; }
+
 	/** True while Ctrl or Space owns movement and horizontal swim input must be ignored. */
 	bool HasVerticalSwimInput() const;
 
@@ -130,12 +137,20 @@ protected:
 	float SwimExitOffset = 10.0f;
 
 	/** Radius of the virtual pontoon sphere used for buoyancy */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy", meta = (ClampMin = "1.0", Units = "cm"))
 	float PontoonRadius = 50.0f;
 
 	/** Offset of the pontoon from the actor location */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy")
 	FVector PontoonOffset = FVector(0.0f, 0.0f, -50.0f);
+
+	/** Per-pontoon force multiplier, shared with ship and chest pontoons. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy", meta = (ClampMin = "0.0"))
+	float PontoonForceScale = 1.0f;
+
+	/** Shared pontoon force settings used by ships, chests, and player surface swimming. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy", meta = (ShowOnlyInnerProperties))
+	FSWBuoyancyForceSettings BuoyancyForceSettings;
 
 	/** If true, draws the buoyancy pontoon debug sphere and submersion status */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy")
@@ -161,17 +176,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Movement")
 	float MaxVerticalSwimSpeed = 350.0f;
 
-	/** Desired depth of the actor origin below the water surface while surface swimming. */
+	/** Surface ceiling used by Space ascent before pontoon buoyancy resumes. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface", meta = (ClampMin = "0.0", Units = "cm"))
 	float SurfaceTargetDepth = 50.0f;
-
-	/** Spring strength that follows the wave surface only in Surface mode. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface", meta = (ClampMin = "0.0"))
-	float SurfaceHeightSpring = 18.0f;
-
-	/** Vertical damping applied while following the wave surface. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface", meta = (ClampMin = "0.0"))
-	float SurfaceHeightDamping = 8.0f;
 
 	/** Drag that brings the player to a stop at the current depth when submerged and no key is held. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Submerged", meta = (ClampMin = "0.0"))

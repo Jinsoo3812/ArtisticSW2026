@@ -188,10 +188,6 @@ public:
 	UFUNCTION(Server, Reliable)
 	void Server_SetMoveInput(FVector2D NewMoveInput);
 
-	UFUNCTION(Server, Reliable)
-	void Server_SetSwimmingVerticalInput(float NewVerticalInput);
-
-
 	UFUNCTION()
 	void OnRep_LocomotionStateSnapshot(const FReplicatedLocomotionState& OldSnapshot);
 

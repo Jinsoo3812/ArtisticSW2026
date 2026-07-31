@@ -1841,7 +1841,11 @@ void ABasePlayer::RefreshSwimmingVerticalInput()
 
 	const float VerticalInput = (bSwimAscendInputHeld ? 1.0f : 0.0f)
 		- (bSwimDiveInputHeld ? 1.0f : 0.0f);
-	SwimmingComponent->SetVerticalSwimInput(VerticalInput);
+	if (USWCharacterMovementComponent* SWMovement =
+		Cast<USWCharacterMovementComponent>(GetCharacterMovement()))
+	{
+		SWMovement->SetSwimmingVerticalInput(VerticalInput);
+	}
 	if (SwimmingComponent->HasVerticalSwimInput())
 	{
 		if (AnimStateComponent)
@@ -1858,18 +1862,6 @@ void ABasePlayer::RefreshSwimmingVerticalInput()
 		}
 	}
 
-	if (!HasAuthority())
-	{
-		Server_SetSwimmingVerticalInput(VerticalInput);
-	}
-}
-
-void ABasePlayer::Server_SetSwimmingVerticalInput_Implementation(float NewVerticalInput)
-{
-	if (SwimmingComponent && SwimmingComponent->IsCustomSwimming())
-	{
-		SwimmingComponent->SetVerticalSwimInput(NewVerticalInput);
-	}
 }
 
 void ABasePlayer::StartSprint()

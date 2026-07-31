@@ -15,6 +15,7 @@
 #include "Net/UnrealNetwork.h"
 #include "RippleSubsystem.h"
 #include "SWRippleWaterWaves.h"
+#include "Water/SWBuoyancyMath.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
@@ -70,6 +71,10 @@ USwimmingComponent::USwimmingComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
 	SetIsReplicatedByDefault(true);
+
+	// Preserve the player tuning that was used before surface swimming changed
+	// to a height spring. The setting type and solver are shared with ships/chests.
+	BuoyancyForceSettings.BuoyancyCoefficient = 0.3f;
 }
 
 void USwimmingComponent::SetVerticalSwimInput(float InVerticalInput)
@@ -139,8 +144,10 @@ FSwimmingAnimationState USwimmingComponent::GetAnimationState() const
 void USwimmingComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(USwimmingComponent, bDiveInputHeld);
-	DOREPLIFETIME(USwimmingComponent, bAscendInputHeld);
+	// The owning client predicts these through CMC. Replication is only needed by
+	// simulated proxies for their descend/ascend animation states.
+	DOREPLIFETIME_CONDITION(USwimmingComponent, bDiveInputHeld, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(USwimmingComponent, bAscendInputHeld, COND_SkipOwner);
 }
 
 void USwimmingComponent::BeginPlay()
@@ -531,37 +538,27 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 	const bool bHasVerticalInput = HasVerticalSwimInput();
 	const bool bUseCameraDirectedMovement = ShouldUseCameraDirectedUnderwaterMovement();
 
-	// Throttled logging (every 30 frames)
-	// static int32 FrameCount = 0;
-	// FrameCount++;
-	// bool bShouldLog = (FrameCount % 30 == 0);
-
-	// if (bShouldLog)
-	// {
-	// 	UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Movement Update: bPontoonInWater=%s | PontoonLoc=%s | WaterHeight=%.2f | Submersion=%.2f | SubVolume=%.2f | DampFactor=%.2f | BuoyantForce=%.2f | BuoyantAccZ=%.2f | GravityZ=%.2f | TotalVertAccel=%.2f | CurrentVelZ=%.2f"),
-	// 		bPontoonInWater ? TEXT("True") : TEXT("False"),
-	// 		*PontoonLocation.ToString(),
-	// 		WaterHeight,
-	// 		Submersion,
-	// 		SubVolume,
-	// 		DampingFactor,
-	// 		BuoyantForce,
-	// 		BuoyantAccelerationZ,
-	// 		GravityZ,
-	// 		TotalVertAccel,
-	// 		CharacterMovement->Velocity.Z);
-	// }
-
-	// 수직 속도 업데이트
-	if (!bHasVerticalInput && DepthMode == ESwimDepthMode::Surface && bPontoonInWater)
+	if (!bHasVerticalInput && DepthMode == ESwimDepthMode::Surface)
 	{
-		// Follow the wave with a damped height spring. This replaces a permanent
-		// upward force, so the surface position is stable instead of drifting up.
-		const float TargetActorZ = WaterHeight - SurfaceTargetDepth;
-		const float SurfaceAcceleration = (TargetActorZ - ActorLocation.Z) * SurfaceHeightSpring
-			- CharacterMovement->Velocity.Z * SurfaceHeightDamping;
+		FSWBuoyancySolveResult SolveResult;
+		if (bPontoonInWater)
+		{
+			FSWBuoyancySolveInput SolveInput;
+			SolveInput.WaterHeight = WaterHeight;
+			SolveInput.PontoonCenterZ = PontoonLocation.Z;
+			SolveInput.PontoonRadius = PontoonRadius;
+			SolveInput.RelativeVelocityZ = CharacterMovement->Velocity.Z;
+			SolveInput.ForceScale = PontoonForceScale;
+			SolveResult = FSWBuoyancyMath::SolvePontoon(SolveInput, BuoyancyForceSettings);
+		}
+
+		const float Mass = FMath::Max(CharacterMovement->Mass, UE_SMALL_NUMBER);
+		const float GravityAcceleration = GetWorld()
+			? GetWorld()->GetGravityZ() * CharacterMovement->GravityScale
+			: 0.0f;
+		const float BuoyantAcceleration = SolveResult.BuoyantForceZ / Mass;
 		CharacterMovement->Velocity.Z = FMath::Clamp(
-			CharacterMovement->Velocity.Z + SurfaceAcceleration * DeltaTime,
+			CharacterMovement->Velocity.Z + (GravityAcceleration + BuoyantAcceleration) * DeltaTime,
 			-MaxVerticalSwimSpeed,
 			MaxVerticalSwimSpeed);
 	}
