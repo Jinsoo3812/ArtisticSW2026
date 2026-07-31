@@ -5,6 +5,7 @@
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "Water/SWRippleProfile.h"
 #include "Water/SWRippleReplicator.h"
+#include "Water/SWRippleSettings.h"
 
 void USWRippleStateSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
@@ -74,15 +75,10 @@ void USWRippleStateSubsystem::AddOrUpdateReplicatedEvent(const FSWRippleEvent& E
 	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Ripple_AddOrUpdateEvent);
 	{
 		FWriteScopeLock WriteLock(EventsLock);
-		if (FSWRippleEvent* Existing = Events.FindByPredicate(
-			[&Event](const FSWRippleEvent& Candidate) { return Candidate.EventId == Event.EventId; }))
-		{
-			*Existing = Event;
-		}
-		else
-		{
-			Events.Add(Event);
-		}
+		FSWRippleQueuePolicy::AddOrUpdateCapped(
+			Events,
+			Event,
+			GetDefault<USWRippleSettings>()->GetMaxRippleCount());
 	}
 
 	++Revision;

@@ -6,6 +6,7 @@
 #include "Net/UnrealNetwork.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "Water/SWRippleProfile.h"
+#include "Water/SWRippleSettings.h"
 #include "Water/SWRippleStateSubsystem.h"
 
 namespace
@@ -142,13 +143,14 @@ bool ASWRippleReplicator::AddServerRipple(
 		10.0f);
 
 	RemoveExpiredActiveEvents(ServerTime);
-	if (ReplicatedRipples.Items.Num() >= MaxReplicatedRipples)
+	const int32 MaxRippleCount = GetDefault<USWRippleSettings>()->GetMaxRippleCount();
+	while (ReplicatedRipples.Items.Num() >= MaxRippleCount)
 	{
 		int32 OldestIndex = 0;
 		for (int32 Index = 1; Index < ReplicatedRipples.Items.Num(); ++Index)
 		{
-			if (ReplicatedRipples.Items[Index].Event.ExpireServerTime
-				< ReplicatedRipples.Items[OldestIndex].Event.ExpireServerTime)
+			if (ReplicatedRipples.Items[Index].Event.EventId
+				< ReplicatedRipples.Items[OldestIndex].Event.EventId)
 			{
 				OldestIndex = Index;
 			}

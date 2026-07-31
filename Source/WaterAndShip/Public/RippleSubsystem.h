@@ -62,11 +62,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water Ripple|Parameters")
 	float MinVelocityThreshold = 100.0f;
 
-	static constexpr int32 MaxActiveRipples = 32;
-
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture2D> RippleTexture;
+
+	int32 RippleCapacity = 32;
 
 	void UpdateTexture();
 	void BindRippleDataToWaterMaterials();

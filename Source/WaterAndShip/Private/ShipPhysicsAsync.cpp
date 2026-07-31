@@ -143,6 +143,8 @@ void FShipPhysicsAsync::BuildInput_Internal(FNetInputShip& Input) const
 	Input.MovementInput = MovementInput_Internal;
 	Input.SteeringInput = SteeringInput_Internal;
 	Input.ExternalAcceleration = ExternalAcceleration_Internal;
+	Input.bBuoyancyEnabled = bBuoyancyEnabled_Internal;
+	Input.bHasAuthoritativeBuoyancyState = bAuthoritativeBuoyancyWriter_Internal;
 
 	/* Network Physics input build diagnostic log disabled after validation.
 	if (CurrentPhysicsStep % 60 == 0)
@@ -158,6 +160,10 @@ void FShipPhysicsAsync::ApplyInput_Internal(const FNetInputShip& Input)
 	MovementInput_Internal = Input.MovementInput;
 	SteeringInput_Internal = Input.SteeringInput;
 	ExternalAcceleration_Internal = Input.ExternalAcceleration;
+	if (Input.bHasAuthoritativeBuoyancyState)
+	{
+		bBuoyancyEnabled_Internal = Input.bBuoyancyEnabled;
+	}
 
 	/* Network Physics input apply diagnostic logs disabled after validation.
 	if (CurrentPhysicsStep % 60 == 0)
@@ -269,6 +275,11 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 					if (AsyncInput->bApplyAuthoritativeExternalAcceleration)
 					{
 						ExternalAcceleration_Internal = AsyncInput->ExternalAcceleration;
+					}
+					if (AsyncInput->bApplyAuthoritativeBuoyancyState)
+					{
+						bBuoyancyEnabled_Internal = AsyncInput->bBuoyancyEnabled;
+						bAuthoritativeBuoyancyWriter_Internal = true;
 					}
 
 				// 최초 마샬링 시에만 필요한 폰툰 및 파도 설정 캐싱
@@ -442,7 +453,9 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 	}
 
 	// 3. 커스텀 폰툰 기반 부력 연산 (Archimedes Buoyancy & Damping)
-	if (CachedPontoonOffsets.Num() > 0 && CachedGerstnerWaves.Num() > 0)
+	if (bBuoyancyEnabled_Internal
+		&& CachedPontoonOffsets.Num() > 0
+		&& CachedGerstnerWaves.Num() > 0)
 	{
 		float GravityMag = FMath::Abs(CachedGravityZ);
 

@@ -10,11 +10,13 @@ public class ClassFeatureEditor : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"UnrealEd",
+			"LevelEditor",
 			"AnimationBlueprintLibrary",
 			"AnimationModifiers",
 			"ClassFeature",
 			"GASCore",
-			"WaterAndShip"
+			"WaterAndShip",
+			"Water"
 		});
 
 		PublicIncludePaths.AddRange(new string[]

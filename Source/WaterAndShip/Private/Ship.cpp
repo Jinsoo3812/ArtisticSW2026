@@ -697,6 +697,8 @@ void AShip::Tick(float DeltaTime)
 			{
 				AsyncInput->ExternalAcceleration = CurrentExternalAcceleration;
 				AsyncInput->bApplyAuthoritativeExternalAcceleration = HasAuthority();
+				AsyncInput->bApplyAuthoritativeBuoyancyState = HasAuthority();
+				AsyncInput->bBuoyancyEnabled = BuoyancyForceMultiplier > UE_SMALL_NUMBER;
 				AsyncInput->bQueryDiagnostics = bBuoyancyQueryDiagnostics;
 				AsyncInput->PontoonOffsets = TempPontoons;
 				AsyncInput->PontoonRadii = TempPontoonRadii;

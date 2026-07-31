@@ -16,6 +16,11 @@
 #include "RippleSubsystem.h"
 #include "SWRippleWaterWaves.h"
 
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+#include "WaterBodyCustomComponent.h"
+#endif
+
 static TAutoConsoleVariable<int32> CVarShowSwimBuoyancyDebug(
 	TEXT("p.ShowSwimBuoyancyDebug"),
 	0,
@@ -33,6 +38,32 @@ static TAutoConsoleVariable<int32> CVarSwimTransitionDebug(
 	TEXT("1: Log while Ctrl/Space vertical swim input is active"),
 	ECVF_Default
 );
+
+namespace
+{
+	void RemoveTrackedWaterBody(
+		TArray<TObjectPtr<UWaterBodyComponent>>& OverlappingWaterBodies,
+		TWeakObjectPtr<UWaterBodyComponent>& LastActiveWaterBody,
+		UWaterBodyComponent* WaterBody)
+	{
+		OverlappingWaterBodies.Remove(WaterBody);
+
+		if (LastActiveWaterBody.Get() != WaterBody)
+		{
+			return;
+		}
+
+		LastActiveWaterBody.Reset();
+		for (int32 Index = OverlappingWaterBodies.Num() - 1; Index >= 0; --Index)
+		{
+			if (UWaterBodyComponent* RemainingWaterBody = OverlappingWaterBodies[Index])
+			{
+				LastActiveWaterBody = RemainingWaterBody;
+				break;
+			}
+		}
+	}
+}
 
 USwimmingComponent::USwimmingComponent()
 {
@@ -276,7 +307,7 @@ void USwimmingComponent::OnOverlapEnd(UPrimitiveComponent* OverlappedComp, AActo
 
 				if (!bStillOverlapping)
 				{
-					OverlappingWaterBodies.Remove(WaterBody);
+					RemoveTrackedWaterBody(OverlappingWaterBodies, LastActiveWaterBody, WaterBody);
 					// UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Overlap End: WaterBody Actor=%s. Total water bodies=%d"), 
 					// 	*OtherActor->GetName(), OverlappingWaterBodies.Num());
 				}
@@ -709,5 +740,45 @@ void USwimmingComponent::UpdateDepthMode()
 		DepthMode = ESwimDepthMode::Surface;
 	}
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSwimmingWaterBodyTrackingTest,
+	"ArtisticSW.Swimming.WaterBodyTracking",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSwimmingWaterBodyTrackingTest::RunTest(const FString& Parameters)
+{
+	UWaterBodyComponent* FirstWaterBody = NewObject<UWaterBodyCustomComponent>();
+	UWaterBodyComponent* SecondWaterBody = NewObject<UWaterBodyCustomComponent>();
+	UWaterBodyComponent* ThirdWaterBody = NewObject<UWaterBodyCustomComponent>();
+
+	TArray<TObjectPtr<UWaterBodyComponent>> OverlappingWaterBodies{
+		FirstWaterBody,
+		SecondWaterBody,
+		ThirdWaterBody
+	};
+	TWeakObjectPtr<UWaterBodyComponent> LastActiveWaterBody = ThirdWaterBody;
+
+	RemoveTrackedWaterBody(OverlappingWaterBodies, LastActiveWaterBody, SecondWaterBody);
+	TestEqual(TEXT("Ending a non-active overlap removes only that water body"), OverlappingWaterBodies.Num(), 2);
+	TestTrue(TEXT("Ending a non-active overlap preserves the active water body"),
+		LastActiveWaterBody.Get() == ThirdWaterBody);
+
+	RemoveTrackedWaterBody(OverlappingWaterBodies, LastActiveWaterBody, ThirdWaterBody);
+	TestEqual(TEXT("Ending the active overlap removes it"), OverlappingWaterBodies.Num(), 1);
+	TestTrue(TEXT("Another overlapping water body becomes active"),
+		LastActiveWaterBody.Get() == FirstWaterBody);
+
+	RemoveTrackedWaterBody(OverlappingWaterBodies, LastActiveWaterBody, FirstWaterBody);
+	TestEqual(TEXT("Ending the final overlap empties the tracked list"), OverlappingWaterBodies.Num(), 0);
+	TestFalse(TEXT("Ending the final overlap clears the fallback water body"),
+		LastActiveWaterBody.IsValid());
+
+	return true;
+}
+
+#endif
 
 

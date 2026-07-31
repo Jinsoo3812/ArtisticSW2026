@@ -18,6 +18,7 @@
 #include "RHICommandList.h"
 #include "Water/SWRippleStateSubsystem.h"
 #include "Water/SWRippleProfile.h"
+#include "Water/SWRippleSettings.h"
 #include "Water/SWRippleTypes.h"
 #include "WaterBodyActor.h"
 #include "WaterBodyComponent.h"
@@ -46,6 +47,7 @@ void URippleSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 	bDiagnosticsEnabled = FParse::Param(FCommandLine::Get(), TEXT("RippleDiagnostics"));
+	RippleCapacity = GetDefault<USWRippleSettings>()->GetMaxRippleCount();
 
 	// Dedicated servers keep the authoritative CPU cache in USWRippleStateSubsystem,
 	// but never allocate render resources.
@@ -54,7 +56,7 @@ void URippleSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		return;
 	}
 
-	RippleTexture = UTexture2D::CreateTransient(MaxActiveRipples, 2, PF_A32B32G32R32F);
+	RippleTexture = UTexture2D::CreateTransient(RippleCapacity, 2, PF_A32B32G32R32F);
 	if (RippleTexture)
 	{
 		RippleTexture->SRGB = false;
@@ -287,15 +289,15 @@ void URippleSubsystem::UpdateTexture()
 		return;
 	}
 
-	static FLinearColor PixelData[MaxActiveRipples * 2];
-	FMemory::Memzero(PixelData, sizeof(PixelData));
+	TArray<FLinearColor> PixelData;
+	PixelData.SetNumZeroed(RippleCapacity * 2);
 
 	TArray<FSWRippleEvent> ActiveEvents;
 	if (StateSubsystem)
 	{
 		StateSubsystem->GetActiveEventsSnapshot(GetServerTime(), ActiveEvents);
 	}
-	const int32 Count = FMath::Min(ActiveEvents.Num(), MaxActiveRipples);
+	const int32 Count = FMath::Min(ActiveEvents.Num(), RippleCapacity);
 	FSWRippleProfile::RecordTextureUpdate(Count, StateRevision, false);
 	for (int32 Index = 0; Index < Count; ++Index)
 	{
@@ -305,7 +307,7 @@ void URippleSubsystem::UpdateTexture()
 			Ripple.Origin.Y,
 			static_cast<float>(Ripple.StartServerTime),
 			Ripple.InitialAmplitude);
-		PixelData[Index + MaxActiveRipples] = FLinearColor(
+		PixelData[Index + RippleCapacity] = FLinearColor(
 			Ripple.WaveSpeed,
 			Ripple.DecayRate,
 			Ripple.WaveLength,
@@ -325,17 +327,17 @@ void URippleSubsystem::UpdateTexture()
 
 	if (TextureResource)
 	{
-		FSWRippleProfile::RecordTextureUpload(sizeof(PixelData));
+		FSWRippleProfile::RecordTextureUpload(PixelData.Num() * sizeof(FLinearColor));
 		ENQUEUE_RENDER_COMMAND(UpdateAuthenticatedRippleTexture)(
-			[TextureResource, DataCopy = TArray<FLinearColor>(PixelData, UE_ARRAY_COUNT(PixelData))](FRHICommandListImmediate& RHICmdList)
+			[TextureResource, DataCopy = MoveTemp(PixelData), TextureWidth = RippleCapacity](FRHICommandListImmediate& RHICmdList)
 			{
 				TRACE_CPUPROFILER_EVENT_SCOPE(SW_Ripple_RenderThreadTextureUpload);
-				const FUpdateTextureRegion2D Region(0, 0, 0, 0, URippleSubsystem::MaxActiveRipples, 2);
+				const FUpdateTextureRegion2D Region(0, 0, 0, 0, TextureWidth, 2);
 				RHICmdList.UpdateTexture2D(
 					TextureResource->GetTexture2DRHI(),
 					0,
 					Region,
-					URippleSubsystem::MaxActiveRipples * sizeof(FLinearColor),
+					TextureWidth * sizeof(FLinearColor),
 					reinterpret_cast<const uint8*>(DataCopy.GetData()));
 			});
 		bHasUploadedStateRevision = true;

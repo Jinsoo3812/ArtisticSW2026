@@ -47,3 +47,13 @@ struct ARTISTICSWCORE_API FSWRippleEvaluator
 		double ServerTime,
 		TConstArrayView<FSWRippleEvent> Events);
 };
+
+/** Deterministic capped-queue policy shared by authority and replicated clients. */
+struct ARTISTICSWCORE_API FSWRippleQueuePolicy
+{
+	static int32 FindOldestEventIndex(TConstArrayView<FSWRippleEvent> Events);
+	static void AddOrUpdateCapped(
+		TArray<FSWRippleEvent>& Events,
+		const FSWRippleEvent& Event,
+		int32 MaxEventCount);
+};

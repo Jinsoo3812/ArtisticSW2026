@@ -3,6 +3,49 @@
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "Water/SWRippleProfile.h"
 
+int32 FSWRippleQueuePolicy::FindOldestEventIndex(TConstArrayView<FSWRippleEvent> Events)
+{
+	if (Events.IsEmpty())
+	{
+		return INDEX_NONE;
+	}
+
+	int32 OldestIndex = 0;
+	for (int32 Index = 1; Index < Events.Num(); ++Index)
+	{
+		if (Events[Index].EventId < Events[OldestIndex].EventId)
+		{
+			OldestIndex = Index;
+		}
+	}
+	return OldestIndex;
+}
+
+void FSWRippleQueuePolicy::AddOrUpdateCapped(
+	TArray<FSWRippleEvent>& Events,
+	const FSWRippleEvent& Event,
+	int32 MaxEventCount)
+{
+	if (FSWRippleEvent* Existing = Events.FindByPredicate(
+		[&Event](const FSWRippleEvent& Candidate) { return Candidate.EventId == Event.EventId; }))
+	{
+		*Existing = Event;
+		return;
+	}
+
+	const int32 SafeMaxEventCount = FMath::Max(1, MaxEventCount);
+	while (Events.Num() >= SafeMaxEventCount)
+	{
+		const int32 OldestIndex = FindOldestEventIndex(Events);
+		if (OldestIndex == INDEX_NONE)
+		{
+			break;
+		}
+		Events.RemoveAtSwap(OldestIndex, 1, EAllowShrinking::No);
+	}
+	Events.Add(Event);
+}
+
 float FSWRippleEvaluator::EvaluateHeight(
 	const FVector2D& QueryPosition,
 	double ServerTime,
