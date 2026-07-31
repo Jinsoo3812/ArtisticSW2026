@@ -121,7 +121,14 @@ private:
 	bool GetWaterHeightAtLocation(
 		const FVector& Location,
 		float& OutWaterHeight,
-		bool* bOutHadValidWaterBodyQuery = nullptr) const;
+		bool* bOutHadValidWaterBodyQuery = nullptr,
+		float WaveTimeOffsetSeconds = 0.0f) const;
+
+	/** Deterministic pose proxy derived only from CMC horizontal velocity. */
+	float GetSurfacePostureBlend() const;
+
+	/** Pontoon placement matching the upright idle and prone moving swim poses. */
+	FVector GetSurfacePontoonOffset() const;
 
 	// Initialize overlapping water bodies on startup
 	void InitializeOverlaps();
@@ -147,10 +154,6 @@ protected:
 	/** Radius of the virtual pontoon sphere used for buoyancy */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy", meta = (ClampMin = "1.0", Units = "cm"))
 	float PontoonRadius = 50.0f;
-
-	/** Offset of the pontoon from the actor location */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy")
-	FVector PontoonOffset = FVector(0.0f, 0.0f, -50.0f);
 
 	/** Per-pontoon force multiplier, shared with ship and chest pontoons. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy", meta = (ClampMin = "0.0"))
@@ -187,6 +190,29 @@ protected:
 	/** Surface ceiling used by Space ascent before pontoon buoyancy resumes. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface", meta = (ClampMin = "0.0", Units = "cm"))
 	float SurfaceTargetDepth = 50.0f;
+
+	/** Pontoon offset while the surface-swim pose is upright and idle. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface|Posture")
+	FVector SurfaceIdlePontoonOffset = FVector(0.0f, 0.0f, 65.0f);
+
+	/** Pontoon offset while the surface-swim pose is prone and moving. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface|Posture")
+	FVector SurfaceMovingPontoonOffset = FVector::ZeroVector;
+
+	/** Horizontal speed at which the moving-pose pontoon offset is fully applied. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface|Posture",
+		meta = (ClampMin = "1.0", Units = "cm/s"))
+	float SurfaceMovingPoseSpeed = 200.0f;
+
+	/** Fraction of the local wave's vertical velocity inherited by surface swimming drag. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface",
+		meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float SurfaceWaterVelocityInfluence = 0.8f;
+
+	/** Player-only scale applied symmetrically to the shared vertical drag coefficients. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface",
+		meta = (ClampMin = "0.0"))
+	float SurfaceVerticalDragScale = 2.0f;
 
 	/** Drag that brings the player to a stop at the current depth when submerged and no key is held. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Submerged", meta = (ClampMin = "0.0"))

@@ -42,6 +42,31 @@ static TAutoConsoleVariable<int32> CVarSwimTransitionDebug(
 
 namespace
 {
+	float ComputeSurfaceVerticalDragForce(
+		float BodyVelocityZ,
+		float WaterSurfaceVelocityZ,
+		const FSWBuoyancyForceSettings& Settings,
+		float WaterVelocityInfluence,
+		float DragScale)
+	{
+		const float RelativeVelocityZ = BodyVelocityZ
+			- WaterSurfaceVelocityZ * FMath::Clamp(WaterVelocityInfluence, 0.0f, 1.0f);
+		const float LinearDrag = Settings.BuoyancyDamp * RelativeVelocityZ;
+		const float QuadraticDrag = FMath::Sign(RelativeVelocityZ)
+			* Settings.BuoyancyDamp2
+			* FMath::Square(RelativeVelocityZ);
+		return -(LinearDrag + QuadraticDrag) * FMath::Max(DragScale, 0.0f);
+	}
+
+	float ComputeSurfacePostureBlend(float HorizontalSpeed, float MovingPoseSpeed)
+	{
+		const float NormalizedSpeed = FMath::Clamp(
+			HorizontalSpeed / FMath::Max(MovingPoseSpeed, 1.0f),
+			0.0f,
+			1.0f);
+		return FMath::SmoothStep(0.0f, 1.0f, NormalizedSpeed);
+	}
+
 	void RemoveTrackedWaterBody(
 		TArray<TObjectPtr<UWaterBodyComponent>>& OverlappingWaterBodies,
 		TWeakObjectPtr<UWaterBodyComponent>& LastActiveWaterBody,
@@ -113,6 +138,21 @@ bool USwimmingComponent::IsCustomSwimming() const
 	return CharacterMovement
 		&& CharacterMovement->MovementMode == MOVE_Custom
 		&& CharacterMovement->CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming);
+}
+
+float USwimmingComponent::GetSurfacePostureBlend() const
+{
+	return CharacterMovement
+		? ComputeSurfacePostureBlend(CharacterMovement->Velocity.Size2D(), SurfaceMovingPoseSpeed)
+		: 0.0f;
+}
+
+FVector USwimmingComponent::GetSurfacePontoonOffset() const
+{
+	return FMath::Lerp(
+		SurfaceIdlePontoonOffset,
+		SurfaceMovingPontoonOffset,
+		GetSurfacePostureBlend());
 }
 
 FSwimmingAnimationState USwimmingComponent::GetAnimationState() const
@@ -199,7 +239,7 @@ void USwimmingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 #endif
 	{
 		FVector ActorLocation = OwnerCharacter->GetActorLocation();
-		FVector PontoonLocation = ActorLocation + PontoonOffset;
+		FVector PontoonLocation = ActorLocation + GetSurfacePontoonOffset();
 
 		float WaterHeight = -100000.f;
 		FVector QueryLocation = PontoonLocation - FVector(0.f, 0.f, PontoonRadius + 100.f);
@@ -337,7 +377,8 @@ void USwimmingComponent::OnOverlapEnd(UPrimitiveComponent* OverlappedComp, AActo
 bool USwimmingComponent::GetWaterHeightAtLocation(
 	const FVector& Location,
 	float& OutWaterHeight,
-	bool* bOutHadValidWaterBodyQuery) const
+	bool* bOutHadValidWaterBodyQuery,
+	float WaveTimeOffsetSeconds) const
 {
 	float MaxValidWaterHeight = -100000.f;
 	float MaxWetWaterHeight = -100000.f;
@@ -359,6 +400,7 @@ bool USwimmingComponent::GetWaterHeightAtLocation(
 		{
 			CurrentServerTime = GetWorld()->GetTimeSeconds();
 		}
+		CurrentServerTime += WaveTimeOffsetSeconds;
 	}
 
 	auto CheckWaterBody = [&](UWaterBodyComponent* WaterBody)
@@ -580,7 +622,7 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 	if (!OwnerCharacter || !CharacterMovement) return;
 
 	FVector ActorLocation = OwnerCharacter->GetActorLocation();
-	FVector PontoonLocation = ActorLocation + PontoonOffset;
+	FVector PontoonLocation = ActorLocation + GetSurfacePontoonOffset();
 
 	// Pontoon 바닥면 부근에서 물 높이 쿼리 수행
 	FVector QueryLocation = PontoonLocation - FVector(0.f, 0.f, PontoonRadius + 100.f);
@@ -595,24 +637,60 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 	if (!bHasVerticalInput && DepthMode == ESwimDepthMode::Surface)
 	{
 		FSWBuoyancySolveResult SolveResult;
+		float WaterSurfaceVelocityZ = 0.0f;
 		if (bPontoonInWater)
 		{
+			// A fixed interval keeps the sampled wave velocity independent of the
+			// client/server frame rate used to evaluate the same CMC move.
+			constexpr float SampleDeltaTime = 1.0f / 60.0f;
+			float PreviousWaterHeight = WaterHeight;
+			bool bHadPreviousWaterQuery = false;
+			GetWaterHeightAtLocation(
+				QueryLocation,
+				PreviousWaterHeight,
+				&bHadPreviousWaterQuery,
+				-SampleDeltaTime);
+			if (bHadPreviousWaterQuery)
+			{
+				WaterSurfaceVelocityZ = (WaterHeight - PreviousWaterHeight) / SampleDeltaTime;
+			}
+
 			FSWBuoyancySolveInput SolveInput;
 			SolveInput.WaterHeight = WaterHeight;
 			SolveInput.PontoonCenterZ = PontoonLocation.Z;
 			SolveInput.PontoonRadius = PontoonRadius;
-			SolveInput.RelativeVelocityZ = CharacterMovement->Velocity.Z;
+			SolveInput.RelativeVelocityZ = 0.0f;
 			SolveInput.ForceScale = PontoonForceScale;
-			SolveResult = FSWBuoyancyMath::SolvePontoon(SolveInput, BuoyancyForceSettings);
+
+			// Keep the shared spherical-volume buoyancy, but apply player surface drag
+			// separately so it can oppose motion in both vertical directions relative
+			// to the moving wave surface.
+			FSWBuoyancyForceSettings HydrostaticSettings = BuoyancyForceSettings;
+			HydrostaticSettings.BuoyancyDamp = 0.0f;
+			HydrostaticSettings.BuoyancyDamp2 = 0.0f;
+			SolveResult = FSWBuoyancyMath::SolvePontoon(SolveInput, HydrostaticSettings);
 		}
 
 		const float Mass = FMath::Max(CharacterMovement->Mass, UE_SMALL_NUMBER);
 		const float GravityAcceleration = GetWorld()
 			? GetWorld()->GetGravityZ() * CharacterMovement->GravityScale
 			: 0.0f;
-		const float BuoyantAcceleration = SolveResult.BuoyantForceZ / Mass;
+		const float VerticalDragForce = SolveResult.bIsInWater
+			? ComputeSurfaceVerticalDragForce(
+				CharacterMovement->Velocity.Z,
+				WaterSurfaceVelocityZ,
+				BuoyancyForceSettings,
+				SurfaceWaterVelocityInfluence,
+				SurfaceVerticalDragScale)
+			: 0.0f;
+		const float MaxWaterForce = FMath::Max(BuoyancyForceSettings.MaxBuoyantForce, 0.0f);
+		const float TotalWaterForceZ = FMath::Clamp(
+			SolveResult.BuoyantForceZ + VerticalDragForce,
+			-MaxWaterForce,
+			MaxWaterForce);
+		const float WaterAcceleration = TotalWaterForceZ / Mass;
 		CharacterMovement->Velocity.Z = FMath::Clamp(
-			CharacterMovement->Velocity.Z + (GravityAcceleration + BuoyantAcceleration) * DeltaTime,
+			CharacterMovement->Velocity.Z + (GravityAcceleration + WaterAcceleration) * DeltaTime,
 			-MaxVerticalSwimSpeed,
 			MaxVerticalSwimSpeed);
 	}
@@ -793,6 +871,49 @@ void USwimmingComponent::UpdateDepthMode()
 }
 
 #if WITH_DEV_AUTOMATION_TESTS
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSwimmingSurfaceVerticalDragTest,
+	"ArtisticSW.Swimming.SurfaceVerticalDrag",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSwimmingSurfaceVerticalDragTest::RunTest(const FString& Parameters)
+{
+	FSWBuoyancyForceSettings Settings;
+	Settings.BuoyancyDamp = 1000.0f;
+	Settings.BuoyancyDamp2 = 1.0f;
+
+	const float UpwardDrag = ComputeSurfaceVerticalDragForce(
+		100.0f, 0.0f, Settings, 1.0f, 1.0f);
+	const float DownwardDrag = ComputeSurfaceVerticalDragForce(
+		-100.0f, 0.0f, Settings, 1.0f, 1.0f);
+	TestEqual(TEXT("Upward motion receives downward drag"), UpwardDrag, -110000.0f);
+	TestEqual(TEXT("Downward motion receives equal upward drag"), DownwardDrag, 110000.0f);
+
+	const float WaveMatchedDrag = ComputeSurfaceVerticalDragForce(
+		60.0f, 100.0f, Settings, 0.6f, 1.0f);
+	TestTrue(TEXT("Matching the inherited wave velocity produces no drag"),
+		FMath::IsNearlyZero(WaveMatchedDrag, 0.01f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSwimmingSurfacePosturePontoonTest,
+	"ArtisticSW.Swimming.SurfacePosturePontoon",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSwimmingSurfacePosturePontoonTest::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("Idle speed selects the upright pontoon"),
+		ComputeSurfacePostureBlend(0.0f, 200.0f), 0.0f);
+	TestEqual(TEXT("Half speed is the midpoint of the smooth blend"),
+		ComputeSurfacePostureBlend(100.0f, 200.0f), 0.5f);
+	TestEqual(TEXT("Moving speed selects the prone pontoon"),
+		ComputeSurfacePostureBlend(200.0f, 200.0f), 1.0f);
+	TestEqual(TEXT("The blend clamps speeds above the moving threshold"),
+		ComputeSurfacePostureBlend(400.0f, 200.0f), 1.0f);
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FSwimmingWaterBodyTrackingTest,
