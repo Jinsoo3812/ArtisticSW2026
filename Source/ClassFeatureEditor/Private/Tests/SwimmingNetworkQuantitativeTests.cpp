@@ -544,6 +544,10 @@ namespace SwimmingNetworkQuantitative
 					TEXT("[SWIM-NET-METRIC] IsolatedHarness ForcedMovementModeRecoveries=%d"),
 					State->ForcedMovementModeRecoveries);
 				Test->TestEqual(
+					TEXT("Surface swimming remains in the CMC custom movement mode"),
+					State->ForcedMovementModeRecoveries,
+					0);
+				Test->TestEqual(
 					TEXT("Surface state drives swimming animation on the owning client"),
 					State->Metrics[0].SwimAnimationStateMismatchSamples,
 					0);

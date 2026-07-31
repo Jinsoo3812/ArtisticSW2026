@@ -98,7 +98,7 @@ public:
 	FSwimmingAnimationState GetAnimationState() const;
 
 	// Check transition conditions (entry/exit)
-	void CheckWaterTransitions();
+	void CheckWaterTransitions(float DeltaSeconds);
 
 protected:
 	virtual void BeginPlay() override;
@@ -118,7 +118,10 @@ public:
 
 private:
 	// Helper to calculate the water height at a given location (queries overlapping water bodies)
-	bool GetWaterHeightAtLocation(const FVector& Location, float& OutWaterHeight) const;
+	bool GetWaterHeightAtLocation(
+		const FVector& Location,
+		float& OutWaterHeight,
+		bool* bOutHadValidWaterBodyQuery = nullptr) const;
 
 	// Initialize overlapping water bodies on startup
 	void InitializeOverlaps();
@@ -135,6 +138,11 @@ protected:
 	/** Distance below the feet the water surface must reach to exit swimming */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection")
 	float SwimExitOffset = 10.0f;
+
+	/** Time allowed for a missing WaterBody query before swimming exits. Known dry results do not use this grace. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection",
+		meta = (ClampMin = "0.0", Units = "s"))
+	float WaterQueryFailureGraceTime = 0.2f;
 
 	/** Radius of the virtual pontoon sphere used for buoyancy */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy", meta = (ClampMin = "1.0", Units = "cm"))
@@ -214,6 +222,9 @@ private:
 
 	UPROPERTY(Transient)
 	float LastLoggedTime = -1.0f;
+
+	UPROPERTY(Transient)
+	float WaterQueryFailureElapsed = 0.0f;
 
 	float VerticalSwimInput = 0.0f;
 

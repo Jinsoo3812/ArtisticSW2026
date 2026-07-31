@@ -45,11 +45,16 @@ namespace
 	void RemoveTrackedWaterBody(
 		TArray<TObjectPtr<UWaterBodyComponent>>& OverlappingWaterBodies,
 		TWeakObjectPtr<UWaterBodyComponent>& LastActiveWaterBody,
-		UWaterBodyComponent* WaterBody)
+		UWaterBodyComponent* WaterBody,
+		bool bPreserveActiveWaterBody = false)
 	{
 		OverlappingWaterBodies.Remove(WaterBody);
 
 		if (LastActiveWaterBody.Get() != WaterBody)
+		{
+			return;
+		}
+		if (bPreserveActiveWaterBody)
 		{
 			return;
 		}
@@ -314,7 +319,13 @@ void USwimmingComponent::OnOverlapEnd(UPrimitiveComponent* OverlappedComp, AActo
 
 				if (!bStillOverlapping)
 				{
-					RemoveTrackedWaterBody(OverlappingWaterBodies, LastActiveWaterBody, WaterBody);
+					const bool bPreserveActiveWaterBody = IsCustomSwimming()
+						&& LastActiveWaterBody.Get() == WaterBody;
+					RemoveTrackedWaterBody(
+						OverlappingWaterBodies,
+						LastActiveWaterBody,
+						WaterBody,
+						bPreserveActiveWaterBody);
 					// UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Overlap End: WaterBody Actor=%s. Total water bodies=%d"), 
 					// 	*OtherActor->GetName(), OverlappingWaterBodies.Num());
 				}
@@ -323,10 +334,15 @@ void USwimmingComponent::OnOverlapEnd(UPrimitiveComponent* OverlappedComp, AActo
 	}
 }
 
-bool USwimmingComponent::GetWaterHeightAtLocation(const FVector& Location, float& OutWaterHeight) const
+bool USwimmingComponent::GetWaterHeightAtLocation(
+	const FVector& Location,
+	float& OutWaterHeight,
+	bool* bOutHadValidWaterBodyQuery) const
 {
-	float MaxWaterHeight = -100000.f;
+	float MaxValidWaterHeight = -100000.f;
+	float MaxWetWaterHeight = -100000.f;
 	bool bInWater = false;
+	bool bHadValidWaterBodyQuery = false;
 	
 	// Query 100cm below the location to handle being slightly above the surface (bobbing/jumping)
 	FVector QueryLocation = Location - FVector(0.f, 0.f, 100.f);
@@ -363,6 +379,11 @@ bool USwimmingComponent::GetWaterHeightAtLocation(const FVector& Location, float
 		if (QueryResult.HasValue())
 		{
 			const FWaterBodyQueryResult& Query = QueryResult.GetValue();
+			if (Query.IsInExclusionVolume())
+			{
+				return;
+			}
+			bHadValidWaterBodyQuery = true;
 			float FlatWaterZ = Query.GetWaterSurfaceLocation().Z;
 			float WaterZ = FlatWaterZ;
 
@@ -391,14 +412,17 @@ bool USwimmingComponent::GetWaterHeightAtLocation(const FVector& Location, float
 				}
 			}
 
-			// If query location is below the wave-calculated water surface, count as in water
+			if (WaterZ > MaxValidWaterHeight)
+			{
+				MaxValidWaterHeight = WaterZ;
+			}
+
+			// Collision overlap only discovers a candidate body. The wave-aware query
+			// decides whether this location is actually wet.
 			if (QueryLocation.Z <= WaterZ)
 			{
-				if (WaterZ > MaxWaterHeight)
-				{
-					MaxWaterHeight = WaterZ;
-					bInWater = true;
-				}
+				bInWater = true;
+				MaxWetWaterHeight = FMath::Max(MaxWetWaterHeight, WaterZ);
 			}
 		}
 	};
@@ -414,11 +438,15 @@ bool USwimmingComponent::GetWaterHeightAtLocation(const FVector& Location, float
 		CheckWaterBody(LastActiveWaterBody.Get());
 	}
 
-	OutWaterHeight = MaxWaterHeight;
+	OutWaterHeight = bInWater ? MaxWetWaterHeight : MaxValidWaterHeight;
+	if (bOutHadValidWaterBodyQuery)
+	{
+		*bOutHadValidWaterBodyQuery = bHadValidWaterBodyQuery;
+	}
 	return bInWater;
 }
 
-void USwimmingComponent::CheckWaterTransitions()
+void USwimmingComponent::CheckWaterTransitions(float DeltaSeconds)
 {
 	if (!OwnerCharacter || !CharacterMovement || !CapsuleComponent) return;
 
@@ -435,9 +463,15 @@ void USwimmingComponent::CheckWaterTransitions()
 	FVector FeetLocation = ActorLocation - FVector(0.f, 0.f, CapsuleHalfHeight);
 
 	float FeetWaterHeight = -100000.f;
-	bool bFeetInWater = GetWaterHeightAtLocation(FeetLocation, FeetWaterHeight);
+	bool bHadValidWaterBodyQuery = false;
+	bool bFeetInWater = GetWaterHeightAtLocation(
+		FeetLocation,
+		FeetWaterHeight,
+		&bHadValidWaterBodyQuery);
 
-	float FeetSubmersion = bFeetInWater ? (FeetWaterHeight - FeetLocation.Z) : -100000.f;
+	float FeetSubmersion = bHadValidWaterBodyQuery
+		? (FeetWaterHeight - FeetLocation.Z)
+		: -100000.f;
 
 	// Throttled logging (every 30 frames)
 	// static int32 FrameCount = 0;
@@ -459,6 +493,7 @@ void USwimmingComponent::CheckWaterTransitions()
 
 	if (!bIsCustomSwimming)
 	{
+		WaterQueryFailureElapsed = 0.0f;
 		// Entry: 물 표면이 발밑에서부터 SwimEntryOffset 이상 깊어졌을 때 수영 상태 진입
 		if (bFeetInWater && FeetSubmersion > SwimEntryOffset)
 		{
@@ -473,6 +508,21 @@ void USwimmingComponent::CheckWaterTransitions()
 	}
 	else
 	{
+		if (bHadValidWaterBodyQuery)
+		{
+			WaterQueryFailureElapsed = 0.0f;
+		}
+		else
+		{
+			WaterQueryFailureElapsed += FMath::Max(DeltaSeconds, 0.0f);
+			if (WaterQueryFailureElapsed < WaterQueryFailureGraceTime)
+			{
+				// Query failure is an unknown state, not proof that the character is dry.
+				// Keep the current movement mode while the active WaterBody lease is valid.
+				return;
+			}
+		}
+
 		// Exit: CMC 바닥 감지 시스템을 이용하여 바로 밑에 walkable floor가 있고 물 밖으로 오프셋만큼 나왔을 때
 		FFindFloorResult FloorResult;
 		CharacterMovement->FindFloor(ActorLocation, FloorResult, false);
@@ -493,6 +543,8 @@ void USwimmingComponent::CheckWaterTransitions()
 		if (bExitSubmersion && bOnWalkableFloor)
 		{
 			CharacterMovement->SetMovementMode(MOVE_Walking);
+			LastActiveWaterBody.Reset();
+			WaterQueryFailureElapsed = 0.0f;
 			
 			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
 			FString ContextStr = (GetOwner() && GetOwner()->HasAuthority()) ? TEXT("Server") : TEXT("Client");
@@ -502,6 +554,8 @@ void USwimmingComponent::CheckWaterTransitions()
 		{
 			// 물높이가 감지되지 않거나 발밑이 물높이보다 100cm 이상으로 떠버린 경우 (완전히 뭍으로 탈출 또는 공중 점프 등)
 			CharacterMovement->SetMovementMode(MOVE_Falling);
+			LastActiveWaterBody.Reset();
+			WaterQueryFailureElapsed = 0.0f;
 			
 			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
 			FString ContextStr = (GetOwner() && GetOwner()->HasAuthority()) ? TEXT("Server") : TEXT("Client");
@@ -750,6 +804,20 @@ bool FSwimmingWaterBodyTrackingTest::RunTest(const FString& Parameters)
 	UWaterBodyComponent* FirstWaterBody = NewObject<UWaterBodyCustomComponent>();
 	UWaterBodyComponent* SecondWaterBody = NewObject<UWaterBodyCustomComponent>();
 	UWaterBodyComponent* ThirdWaterBody = NewObject<UWaterBodyCustomComponent>();
+
+	TArray<TObjectPtr<UWaterBodyComponent>> LeasedWaterBodies{ FirstWaterBody };
+	TWeakObjectPtr<UWaterBodyComponent> LeasedActiveWaterBody = FirstWaterBody;
+	RemoveTrackedWaterBody(
+		LeasedWaterBodies,
+		LeasedActiveWaterBody,
+		FirstWaterBody,
+		true);
+	TestEqual(TEXT("A leased water body leaves the overlap candidate list"), LeasedWaterBodies.Num(), 0);
+	TestTrue(TEXT("Swimming preserves the active water body lease after overlap loss"),
+		LeasedActiveWaterBody.Get() == FirstWaterBody);
+	RemoveTrackedWaterBody(LeasedWaterBodies, LeasedActiveWaterBody, FirstWaterBody);
+	TestFalse(TEXT("A confirmed exit clears the active water body lease"),
+		LeasedActiveWaterBody.IsValid());
 
 	TArray<TObjectPtr<UWaterBodyComponent>> OverlappingWaterBodies{
 		FirstWaterBody,

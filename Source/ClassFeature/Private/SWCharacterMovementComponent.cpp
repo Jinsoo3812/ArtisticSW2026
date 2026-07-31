@@ -200,7 +200,7 @@ void USWCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float Del
 	{
 		if (USwimmingComponent* SwimComp = CharOwner->FindComponentByClass<USwimmingComponent>())
 		{
-			SwimComp->CheckWaterTransitions();
+			SwimComp->CheckWaterTransitions(DeltaSeconds);
 		}
 	}
 }
