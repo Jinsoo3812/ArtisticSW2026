@@ -31,6 +31,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Water Ripple")
 	void AddRipple(FVector2D Origin, float InitialAmplitude, float WaveSpeed = 300.0f, float DecayRate = 1.0f, float WaveLength = 100.0f);
 
+	/** Creates a client-only visual prediction that is reconciled by the replicated server event. */
+	void AddPredictedRippleFromImpact(FVector2D Origin, float DownwardSpeed);
+
 	/** Evaluates the server-authored ripple cache at synchronized server time. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Water Ripple")
 	float GetRippleHeight(const FVector& Location) const;
@@ -83,6 +86,7 @@ private:
 	bool bHasUploadedStateRevision = false;
 	uint32 LastUploadedStateRevision = 0;
 	int32 LastUploadedRippleCount = 0;
+	double NextTextureTransitionServerTime = TNumericLimits<double>::Max();
 
 	void TickDiagnostics();
 };

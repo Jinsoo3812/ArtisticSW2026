@@ -262,6 +262,37 @@ void URippleSubsystem::AddRipple(
 	}
 }
 
+void URippleSubsystem::AddPredictedRippleFromImpact(FVector2D Origin, float DownwardSpeed)
+{
+	UWorld* World = GetWorld();
+	if (!World || World->GetNetMode() != NM_Client || DownwardSpeed < MinVelocityThreshold)
+	{
+		return;
+	}
+
+	const float InitialAmplitude = FMath::Clamp(
+		DownwardSpeed * AmplitudeMultiplier,
+		10.0f,
+		MaxInitialAmplitude);
+	USWRippleStateSubsystem* StateSubsystem = World->GetSubsystem<USWRippleStateSubsystem>();
+	const bool bAccepted = StateSubsystem
+		&& StateSubsystem->SubmitPredictedRipple(
+			Origin,
+			InitialAmplitude,
+			DefaultWaveSpeed,
+			DefaultDecayRate,
+			DefaultWaveLength);
+
+	if (bDiagnosticsEnabled)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[RIPPLE-LATENCY][Client] PredictionSubmitted Accepted=%s Origin=%s Amp=%.2f"),
+			bAccepted ? TEXT("true") : TEXT("false"),
+			*Origin.ToString(),
+			InitialAmplitude);
+	}
+}
+
 float URippleSubsystem::GetRippleHeight(const FVector& Location) const
 {
 	UWorld* World = GetWorld();
@@ -282,7 +313,10 @@ void URippleSubsystem::UpdateTexture()
 
 	const USWRippleStateSubsystem* StateSubsystem = GetWorld()->GetSubsystem<USWRippleStateSubsystem>();
 	const uint32 StateRevision = StateSubsystem ? StateSubsystem->GetRevision() : 0;
-	if (bHasUploadedStateRevision && LastUploadedStateRevision == StateRevision)
+	const double ServerTime = GetServerTime();
+	const bool bStateChanged = !bHasUploadedStateRevision || LastUploadedStateRevision != StateRevision;
+	const bool bReachedTimeTransition = ServerTime >= NextTextureTransitionServerTime;
+	if (!bStateChanged && !bReachedTimeTransition)
 	{
 		FSWRippleProfile::RecordTextureUpdate(LastUploadedRippleCount, StateRevision, true);
 		FSWRippleProfile::RecordTextureUpdateCycles(FPlatformTime::Cycles64() - ProfileStartCycles);
@@ -293,9 +327,28 @@ void URippleSubsystem::UpdateTexture()
 	PixelData.SetNumZeroed(RippleCapacity * 2);
 
 	TArray<FSWRippleEvent> ActiveEvents;
+	NextTextureTransitionServerTime = TNumericLimits<double>::Max();
 	if (StateSubsystem)
 	{
-		StateSubsystem->GetActiveEventsSnapshot(GetServerTime(), ActiveEvents);
+		StateSubsystem->GetActiveEventsSnapshot(ServerTime, ActiveEvents);
+
+		TArray<FSWRippleEvent> AllEvents;
+		StateSubsystem->GetEventsSnapshot(AllEvents);
+		for (const FSWRippleEvent& Event : AllEvents)
+		{
+			if (ServerTime < Event.StartServerTime)
+			{
+				NextTextureTransitionServerTime = FMath::Min(
+					NextTextureTransitionServerTime,
+					Event.StartServerTime);
+			}
+			else if (ServerTime < Event.ExpireServerTime)
+			{
+				NextTextureTransitionServerTime = FMath::Min(
+					NextTextureTransitionServerTime,
+					Event.ExpireServerTime);
+			}
+		}
 	}
 	const int32 Count = FMath::Min(ActiveEvents.Num(), RippleCapacity);
 	FSWRippleProfile::RecordTextureUpdate(Count, StateRevision, false);
@@ -316,13 +369,21 @@ void URippleSubsystem::UpdateTexture()
 
 	FTexture2DResource* TextureResource = static_cast<FTexture2DResource*>(RippleTexture->GetResource());
 	const bool bResourceValid = TextureResource != nullptr;
-	if (bDiagnosticsEnabled
-		&& (Count != DiagnosticsLastUploadedRippleCount || bResourceValid != bDiagnosticsLastTextureResourceValid))
+	if (bDiagnosticsEnabled && bResourceValid
+		&& (bStateChanged
+			|| bReachedTimeTransition
+			|| bResourceValid != bDiagnosticsLastTextureResourceValid))
 	{
 		DiagnosticsLastUploadedRippleCount = Count;
 		bDiagnosticsLastTextureResourceValid = bResourceValid;
-		UE_LOG(LogTemp, Warning, TEXT("[RIPPLE-AUTH][%s] Texture Active=%d RevisionResource=%s"),
-			GetRippleNetMode(GetWorld()), Count, bResourceValid ? TEXT("true") : TEXT("false"));
+		UE_LOG(LogTemp, Warning,
+			TEXT("[RIPPLE-LATENCY][%s] TextureUploaded Active=%d Revision=%u ServerTime=%.6f Trigger=%s Resource=%s"),
+			GetRippleNetMode(GetWorld()),
+			Count,
+			StateRevision,
+			ServerTime,
+			bStateChanged ? TEXT("State") : TEXT("TimeBoundary"),
+			bResourceValid ? TEXT("true") : TEXT("false"));
 	}
 
 	if (TextureResource)

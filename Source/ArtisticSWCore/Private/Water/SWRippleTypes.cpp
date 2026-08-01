@@ -3,6 +3,59 @@
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "Water/SWRippleProfile.h"
 
+void FSWRippleClientRenderClock::ObserveReplicatedEvent(
+	double EventStartServerTime,
+	double EstimatedServerTime,
+	double LocalWorldTime)
+{
+	const double CurrentRenderTime = Resolve(EstimatedServerTime, LocalWorldTime);
+	if (EventStartServerTime > CurrentRenderTime)
+	{
+		bHasAnchor = true;
+		AnchorServerTime = EventStartServerTime;
+		AnchorLocalWorldTime = LocalWorldTime;
+	}
+}
+
+double FSWRippleClientRenderClock::Resolve(double EstimatedServerTime, double LocalWorldTime) const
+{
+	if (!bHasAnchor)
+	{
+		return EstimatedServerTime;
+	}
+
+	const double AnchoredTime = AnchorServerTime
+		+ FMath::Max(0.0, LocalWorldTime - AnchorLocalWorldTime);
+	return FMath::Max(EstimatedServerTime, AnchoredTime);
+}
+
+int32 FSWRipplePredictionPolicy::FindBestPredictedEventIndex(
+	TConstArrayView<FSWRippleEvent> Events,
+	const FSWRippleEvent& AuthoritativeEvent,
+	float MaxDistance,
+	double MaxTimeDelta)
+{
+	int32 BestIndex = INDEX_NONE;
+	float BestDistanceSquared = FMath::Square(FMath::Max(0.0f, MaxDistance));
+	for (int32 Index = 0; Index < Events.Num(); ++Index)
+	{
+		const FSWRippleEvent& Candidate = Events[Index];
+		if (Candidate.EventId >= 0
+			|| FMath::Abs(Candidate.StartServerTime - AuthoritativeEvent.StartServerTime) > MaxTimeDelta)
+		{
+			continue;
+		}
+
+		const float DistanceSquared = FVector2D::DistSquared(Candidate.Origin, AuthoritativeEvent.Origin);
+		if (DistanceSquared <= BestDistanceSquared)
+		{
+			BestDistanceSquared = DistanceSquared;
+			BestIndex = Index;
+		}
+	}
+	return BestIndex;
+}
+
 int32 FSWRippleQueuePolicy::FindOldestEventIndex(TConstArrayView<FSWRippleEvent> Events)
 {
 	if (Events.IsEmpty())

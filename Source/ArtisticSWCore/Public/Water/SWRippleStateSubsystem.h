@@ -23,6 +23,12 @@ public:
 		float WaveSpeed,
 		float DecayRate,
 		float WaveLength);
+	bool SubmitPredictedRipple(
+		const FVector2D& Origin,
+		float InitialAmplitude,
+		float WaveSpeed,
+		float DecayRate,
+		float WaveLength);
 
 	void AddOrUpdateReplicatedEvent(const FSWRippleEvent& Event);
 	void GetEventsSnapshot(TArray<FSWRippleEvent>& OutEvents) const;
@@ -40,9 +46,13 @@ public:
 	float PhysicsHistoryRetentionSeconds = 2.0f;
 
 private:
+	double GetEstimatedServerTime() const;
+
 	mutable FRWLock EventsLock;
 	TArray<FSWRippleEvent> Events;
 	TAtomic<uint32> Revision { 0 };
 	TWeakObjectPtr<ASWRippleReplicator> Replicator;
+	FSWRippleClientRenderClock ClientRenderClock;
+	int32 NextPredictedEventId = -1;
 };
 

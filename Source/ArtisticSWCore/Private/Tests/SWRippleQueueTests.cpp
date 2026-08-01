@@ -51,4 +51,63 @@ bool FSWRippleQueueDeterminismTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSWRippleClientRenderClockTest,
+	"ArtisticSW.Water.RippleClientRenderClock",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSWRippleClientRenderClockTest::RunTest(const FString& Parameters)
+{
+	FSWRippleClientRenderClock Clock;
+	TestEqual(TEXT("Unanchored clock uses the GameState estimate"), Clock.Resolve(41.3, 10.0), 41.3);
+
+	Clock.ObserveReplicatedEvent(42.0, 41.3, 10.0);
+	TestTrue(TEXT("A received event anchors a clock that is 700 ms behind"), Clock.IsAnchored());
+	TestEqual(TEXT("Received event is active immediately"), Clock.Resolve(41.3, 10.0), 42.0);
+	TestEqual(TEXT("Anchor advances with local world time"), Clock.Resolve(41.8, 10.25), 42.25);
+	TestEqual(TEXT("A newer GameState estimate takes over without moving backward"), Clock.Resolve(42.6, 10.3), 42.6);
+
+	Clock.ObserveReplicatedEvent(42.4, 42.6, 10.3);
+	TestEqual(TEXT("Past events never rewind the render clock"), Clock.Resolve(42.6, 10.3), 42.6);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSWRipplePredictionMatchingTest,
+	"ArtisticSW.Water.RipplePredictionMatching",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSWRipplePredictionMatchingTest::RunTest(const FString& Parameters)
+{
+	TArray<FSWRippleEvent> Events;
+	FSWRippleEvent FarPrediction;
+	FarPrediction.EventId = -1;
+	FarPrediction.Origin = FVector2D(500.0f, 0.0f);
+	FarPrediction.StartServerTime = 10.0;
+	Events.Add(FarPrediction);
+
+	FSWRippleEvent MatchingPrediction;
+	MatchingPrediction.EventId = -2;
+	MatchingPrediction.Origin = FVector2D(12.0f, -8.0f);
+	MatchingPrediction.StartServerTime = 10.4;
+	Events.Add(MatchingPrediction);
+
+	FSWRippleEvent AuthoritativeEvent;
+	AuthoritativeEvent.EventId = 7;
+	AuthoritativeEvent.Origin = FVector2D(10.0f, -10.0f);
+	AuthoritativeEvent.StartServerTime = 10.0;
+	Events.Add(AuthoritativeEvent);
+
+	TestEqual(
+		TEXT("Closest spatial prediction is reconciled"),
+		FSWRipplePredictionPolicy::FindBestPredictedEventIndex(Events, AuthoritativeEvent, 250.0f, 1.5),
+		1);
+	AuthoritativeEvent.StartServerTime = 20.0;
+	TestEqual(
+		TEXT("Old predictions are not reconciled"),
+		FSWRipplePredictionPolicy::FindBestPredictedEventIndex(Events, AuthoritativeEvent, 250.0f, 1.5),
+		INDEX_NONE);
+	return true;
+}
+
 #endif

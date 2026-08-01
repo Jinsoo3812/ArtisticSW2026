@@ -48,6 +48,33 @@ struct ARTISTICSWCORE_API FSWRippleEvaluator
 		TConstArrayView<FSWRippleEvent> Events);
 };
 
+/**
+ * Keeps replicated visual events from waiting on a lagging GameState clock.
+ * The anchor only moves a client clock forward to an event that has already arrived;
+ * it never predicts an event that the server has not replicated yet.
+ */
+struct ARTISTICSWCORE_API FSWRippleClientRenderClock
+{
+	void ObserveReplicatedEvent(double EventStartServerTime, double EstimatedServerTime, double LocalWorldTime);
+	double Resolve(double EstimatedServerTime, double LocalWorldTime) const;
+	bool IsAnchored() const { return bHasAnchor; }
+
+private:
+	bool bHasAnchor = false;
+	double AnchorServerTime = 0.0;
+	double AnchorLocalWorldTime = 0.0;
+};
+
+/** Matches a local cosmetic prediction to the later authoritative ripple. */
+struct ARTISTICSWCORE_API FSWRipplePredictionPolicy
+{
+	static int32 FindBestPredictedEventIndex(
+		TConstArrayView<FSWRippleEvent> Events,
+		const FSWRippleEvent& AuthoritativeEvent,
+		float MaxDistance,
+		double MaxTimeDelta);
+};
+
 /** Deterministic capped-queue policy shared by authority and replicated clients. */
 struct ARTISTICSWCORE_API FSWRippleQueuePolicy
 {

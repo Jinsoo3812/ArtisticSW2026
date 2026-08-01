@@ -174,6 +174,14 @@ bool ASWRippleReplicator::AddServerRipple(
 	StateSubsystem->AddOrUpdateReplicatedEvent(NewItem.Event);
 	FSWRippleProfile::RecordAuthoritativeEventAdded();
 	LogRippleNetworkCheck(NewItem.Event, TEXT("Authority"));
+	if (FParse::Param(FCommandLine::Get(), TEXT("RippleDiagnostics")))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[RIPPLE-LATENCY][Authority] EventCreated Id=%d Start=%.6f Origin=%s"),
+			NewItem.Event.EventId,
+			NewItem.Event.StartServerTime,
+			*NewItem.Event.Origin.ToString());
+	}
 	ForceNetUpdate();
 	return true;
 }
