@@ -32,6 +32,16 @@ private:
 	bool bDisableEnemyRootOverlaps = false;
 	bool bDisableEnemyShipShadows = false;
 	bool bProfileGPU = false;
+	bool bScreenshot = false;
+	FString ScreenshotName;
+	bool bFixedWaterCamera = false;
+	float FixedCameraZOffset = 400.0f;
+	float FixedCameraPitch = -18.0f;
+	bool bInjectRipple = false;
+	bool bRippleInjected = false;
+	float RippleLeadSeconds = 0.75f;
+	float RippleForwardDistance = 3000.0f;
+	float RippleAmplitude = 100.0f;
 	double BeginWorldTime = 0.0;
 	uint32 NetworkStartInBytes = 0;
 	uint32 NetworkStartOutBytes = 0;
@@ -42,6 +52,7 @@ private:
 	uint64 StartUsedPhysicalBytes = 0;
 
 	void ApplyProfileScenario();
+	void InjectProfileRipple();
 	void CaptureProcessAndNetworkStart();
 	void LogProcessAndNetworkEnd() const;
 };
