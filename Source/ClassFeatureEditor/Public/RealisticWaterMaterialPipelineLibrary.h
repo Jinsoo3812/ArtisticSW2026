@@ -26,6 +26,10 @@ public:
 		UMaterialExpression* Expression,
 		int32 InputIndex);
 
+	/** Returns the exact compiler output pin names used for graph connections. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static TArray<FName> GetMaterialExpressionOutputNames(UMaterialExpression* Expression);
+
 	/**
 	 * Adds Normal and Roughness pins through the engine's supported C++ API and
 	 * connects them. UE 5.7's Python array setter cannot safely create more than
@@ -47,6 +51,19 @@ public:
 		UMaterialExpression* NormalExpression,
 		UMaterialExpression* RoughnessExpression,
 		UMaterialExpression* SpecularExpression);
+
+	/**
+	 * Adds the appearance pins used by the isolated V4 whitecap layer. The
+	 * source MaterialAttributes pin remains intact, so displacement, opacity,
+	 * absorption and every gameplay-facing water path are preserved.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureFoamWaterAttributeOverride(
+		UMaterialExpressionSetMaterialAttributes* SetAttributes,
+		UMaterialExpression* BaseColorExpression,
+		UMaterialExpression* RoughnessExpression,
+		UMaterialExpression* SpecularExpression,
+		UMaterialExpression* EmissiveExpression);
 
 	/** Sets matching texture parameter nodes to the sampler required by a non-sRGB grayscale texture. */
 	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")

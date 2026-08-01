@@ -39,6 +39,22 @@ UMaterialExpression* URealisticWaterMaterialPipelineLibrary::GetConnectedInputEx
 	return Input ? Input->Expression : nullptr;
 }
 
+TArray<FName> URealisticWaterMaterialPipelineLibrary::GetMaterialExpressionOutputNames(
+	UMaterialExpression* Expression)
+{
+	TArray<FName> Result;
+	if (!IsValid(Expression))
+	{
+		return Result;
+	}
+
+	for (const FExpressionOutput& Output : Expression->GetOutputs())
+	{
+		Result.Add(Output.OutputName);
+	}
+	return Result;
+}
+
 bool URealisticWaterMaterialPipelineLibrary::ConfigureAttributeOverride(
 	UMaterialExpressionSetMaterialAttributes* SetAttributes,
 	UMaterialExpression* NormalExpression,
@@ -74,6 +90,29 @@ bool URealisticWaterMaterialPipelineLibrary::ConfigureVisualWaterAttributeOverri
 	const bool bSpecularConnected = SetAttributes->ConnectInputAttribute(MP_Specular, SpecularExpression);
 	SetAttributes->PostEditChange();
 	return bNormalConnected && bRoughnessConnected && bSpecularConnected;
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConfigureFoamWaterAttributeOverride(
+	UMaterialExpressionSetMaterialAttributes* SetAttributes,
+	UMaterialExpression* BaseColorExpression,
+	UMaterialExpression* RoughnessExpression,
+	UMaterialExpression* SpecularExpression,
+	UMaterialExpression* EmissiveExpression)
+{
+	if (!IsValid(SetAttributes) || !IsValid(BaseColorExpression) ||
+		!IsValid(RoughnessExpression) || !IsValid(SpecularExpression) ||
+		!IsValid(EmissiveExpression))
+	{
+		return false;
+	}
+
+	SetAttributes->Modify();
+	const bool bBaseColorConnected = SetAttributes->ConnectInputAttribute(MP_BaseColor, BaseColorExpression);
+	const bool bRoughnessConnected = SetAttributes->ConnectInputAttribute(MP_Roughness, RoughnessExpression);
+	const bool bSpecularConnected = SetAttributes->ConnectInputAttribute(MP_Specular, SpecularExpression);
+	const bool bEmissiveConnected = SetAttributes->ConnectInputAttribute(MP_EmissiveColor, EmissiveExpression);
+	SetAttributes->PostEditChange();
+	return bBaseColorConnected && bRoughnessConnected && bSpecularConnected && bEmissiveConnected;
 }
 
 int32 URealisticWaterMaterialPipelineLibrary::ConfigureLinearGrayscaleSampler(
