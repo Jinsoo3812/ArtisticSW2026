@@ -162,8 +162,11 @@ void AArrowProjectile::OnArrowHit(UPrimitiveComponent* HitComponent, AActor* Oth
 		return;
 	}
 
-	BuildDamageEffectSpecs();
-	ApplyDamageToActor(OtherActor);
+	if (CanApplyDamageToActor(OtherActor))
+	{
+		BuildDamageEffectSpecs();
+		ApplyDamageToActor(OtherActor);
+	}
 	Multicast_PlayImpactFX(Hit);
 
 	if (bDestroyOnImpact)
@@ -193,6 +196,11 @@ bool AArrowProjectile::ShouldIgnoreHitActor(const AActor* OtherActor) const
 	}
 
 	return false;
+}
+
+bool AArrowProjectile::CanApplyDamageToActor(const AActor* OtherActor) const
+{
+	return OtherActor != nullptr;
 }
 
 void AArrowProjectile::BuildDamageEffectSpecs()

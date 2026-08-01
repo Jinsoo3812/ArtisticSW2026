@@ -113,7 +113,8 @@ protected:
 	UFUNCTION()
 	void OnArrowHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 
-	bool ShouldIgnoreHitActor(const AActor* OtherActor) const;
+	virtual bool ShouldIgnoreHitActor(const AActor* OtherActor) const;
+	virtual bool CanApplyDamageToActor(const AActor* OtherActor) const;
 	void BuildDamageEffectSpecs();
 	void ApplyDamageToActor(AActor* TargetActor);
 
