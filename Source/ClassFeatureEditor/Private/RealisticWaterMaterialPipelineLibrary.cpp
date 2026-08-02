@@ -6,6 +6,44 @@
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialFunction.h"
+#include "Editor.h"
+#include "Engine/Level.h"
+#include "Engine/World.h"
+#include "SWPersistentFoamField.h"
+
+ASWPersistentFoamField* URealisticWaterMaterialPipelineLibrary::SpawnPersistentFoamFieldDirect(
+	FVector Location,
+	FRotator Rotation)
+{
+	if (!GEditor)
+	{
+		return nullptr;
+	}
+
+	UWorld* EditorWorld = GEditor->GetEditorWorldContext().World();
+	if (!IsValid(EditorWorld) || !IsValid(EditorWorld->GetCurrentLevel()))
+	{
+		return nullptr;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.OverrideLevel = EditorWorld->GetCurrentLevel();
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParameters.ObjectFlags = RF_Transactional;
+
+	ASWPersistentFoamField* FoamField = EditorWorld->SpawnActor<ASWPersistentFoamField>(
+		ASWPersistentFoamField::StaticClass(),
+		Location,
+		Rotation,
+		SpawnParameters);
+	if (IsValid(FoamField))
+	{
+		FoamField->Modify();
+		EditorWorld->GetCurrentLevel()->MarkPackageDirty();
+	}
+	return FoamField;
+}
 
 TArray<UMaterialExpression*> URealisticWaterMaterialPipelineLibrary::GetMaterialExpressions(
 	UMaterial* Material)
@@ -17,6 +55,25 @@ TArray<UMaterialExpression*> URealisticWaterMaterialPipelineLibrary::GetMaterial
 
 	TArray<UMaterialExpression*> Result;
 	for (UMaterialExpression* Expression : Material->GetExpressions())
+	{
+		if (IsValid(Expression))
+		{
+			Result.Add(Expression);
+		}
+	}
+	return Result;
+}
+
+TArray<UMaterialExpression*> URealisticWaterMaterialPipelineLibrary::GetMaterialFunctionExpressions(
+	UMaterialFunction* Function)
+{
+	if (!IsValid(Function))
+	{
+		return {};
+	}
+
+	TArray<UMaterialExpression*> Result;
+	for (UMaterialExpression* Expression : Function->GetExpressions())
 	{
 		if (IsValid(Expression))
 		{
@@ -268,6 +325,35 @@ bool URealisticWaterMaterialPipelineLibrary::ConfigureFloat2CustomExpression(
 {
 	return ConfigureTypedCustomExpression(
 		CustomExpression, InputNames, Code, Description, CMOT_Float2);
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConfigureFloat3CustomExpression(
+	UMaterialExpressionCustom* CustomExpression,
+	const TArray<FName>& InputNames,
+	const FString& Code,
+	const FString& Description)
+{
+	return ConfigureTypedCustomExpression(
+		CustomExpression, InputNames, Code, Description, CMOT_Float3);
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConfigureFloat3CustomExpressionWithIncludes(
+	UMaterialExpressionCustom* CustomExpression,
+	const TArray<FName>& InputNames,
+	const FString& Code,
+	const FString& Description,
+	const TArray<FString>& IncludeFilePaths)
+{
+	if (!ConfigureTypedCustomExpression(
+		CustomExpression, InputNames, Code, Description, CMOT_Float3))
+	{
+		return false;
+	}
+
+	CustomExpression->Modify();
+	CustomExpression->IncludeFilePaths = IncludeFilePaths;
+	CustomExpression->PostEditChange();
+	return !CustomExpression->IncludeFilePaths.IsEmpty();
 }
 
 bool URealisticWaterMaterialPipelineLibrary::ConfigureFloat1CustomExpression(

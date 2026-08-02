@@ -8,6 +8,8 @@ class UMaterialExpression;
 class UMaterialExpressionCustom;
 class UMaterialExpressionSetMaterialAttributes;
 class UMaterial;
+class UMaterialFunction;
+class ASWPersistentFoamField;
 
 /** Editor-only helpers used to build the isolated realistic-water test material. */
 UCLASS()
@@ -16,9 +18,25 @@ class CLASSFEATUREEDITOR_API URealisticWaterMaterialPipelineLibrary : public UBl
 	GENERATED_BODY()
 
 public:
+	/**
+	 * Spawns the V5 foam field directly into the current editor level.
+	 *
+	 * EditorActorSubsystem::SpawnActorFromClass routes through viewport asset
+	 * placement and is unsafe in a headless commandlet. This deliberately uses
+	 * UWorld::SpawnActor and does not touch ActorFactory or viewport state.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static ASWPersistentFoamField* SpawnPersistentFoamFieldDirect(
+		FVector Location,
+		FRotator Rotation);
+
 	/** Returns the material's expression list for editor automation in UE 5.7. */
 	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
 	static TArray<UMaterialExpression*> GetMaterialExpressions(UMaterial* Material);
+
+	/** Returns a material function's expression list for editor diagnostics in UE 5.7. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static TArray<UMaterialExpression*> GetMaterialFunctionExpressions(UMaterialFunction* Function);
 
 	/** Returns the expression wired to a material-expression input pin. */
 	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
@@ -96,6 +114,22 @@ public:
 		const TArray<FName>& InputNames,
 		const FString& Code,
 		const FString& Description);
+
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureFloat3CustomExpression(
+		UMaterialExpressionCustom* CustomExpression,
+		const TArray<FName>& InputNames,
+		const FString& Code,
+		const FString& Description);
+
+	/** Configures a float3 Custom node plus explicit engine/plugin shader includes. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureFloat3CustomExpressionWithIncludes(
+		UMaterialExpressionCustom* CustomExpression,
+		const TArray<FName>& InputNames,
+		const FString& Code,
+		const FString& Description,
+		const TArray<FString>& IncludeFilePaths);
 
 	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
 	static bool ConfigureFloat1CustomExpression(
