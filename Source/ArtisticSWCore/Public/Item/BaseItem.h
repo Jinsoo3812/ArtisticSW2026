@@ -19,6 +19,7 @@ class UItemData;
 class USceneComponent;
 class UAbilitySystemComponent;
 class UGameplayEffect;
+class UWeaponFeedbackComponent;
 
 UENUM(BlueprintType)
 enum class EItemState : uint8
@@ -106,6 +107,9 @@ public:
 	// Returns the component that owns this item's attachment sockets.
 	virtual USceneComponent* GetAttachmentReferenceComponent() const;
 
+	UFUNCTION(BlueprintPure, Category = "Item|Feedback")
+	UWeaponFeedbackComponent* GetWeaponFeedbackComponent() const { return WeaponFeedbackComponent; }
+
 	UFUNCTION(BlueprintPure, Category = "Item|Strength")
 	float GetStrengthBonus() const { return StrengthBonus; }
 
@@ -143,6 +147,10 @@ public:
 	FText GetItemNameText() const;
 
 protected:
+	/** Optional shared cosmetic controller. Configure its Data Asset in each weapon Blueprint. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Components")
+	TObjectPtr<UWeaponFeedbackComponent> WeaponFeedbackComponent;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Strength", meta = (ClampMin = "0.0"))
 	float StrengthBonus = 0.0f;
 

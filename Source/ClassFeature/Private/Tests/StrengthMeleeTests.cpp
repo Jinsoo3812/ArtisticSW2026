@@ -12,6 +12,7 @@
 #include "GASCombatLibrary.h"
 #include "GASDamageInstantGameplayEffect.h"
 #include "Item/Weapons/SwordItem.h"
+#include "WeaponFeedback/WeaponFeedbackComponent.h"
 
 namespace StrengthMeleeTests
 {
@@ -70,10 +71,18 @@ bool FStrengthMeleePayloadTest::RunTest(const FString& Parameters)
 	ASwordItem* Sword = TestWorld.World->SpawnActor<ASwordItem>();
 	if (!TestNotNull(TEXT("Source character is spawned"), SourceCharacter)
 		|| !TestNotNull(TEXT("Target character is spawned"), TargetCharacter)
-		|| !TestNotNull(TEXT("Sword is spawned"), Sword))
+		|| !TestNotNull(TEXT("Sword is spawned"), Sword)
+		|| !TestNotNull(TEXT("Sword owns the shared weapon feedback component"), Sword ? Sword->GetWeaponFeedbackComponent() : nullptr))
 	{
 		return false;
 	}
+
+	TestFalse(
+		TEXT("Unconfigured feedback safely skips a swing sound"),
+		Sword->GetWeaponFeedbackComponent()->PlaySwingSound());
+	TestFalse(
+		TEXT("Unconfigured feedback safely skips a trail"),
+		Sword->GetWeaponFeedbackComponent()->BeginWeaponTrail());
 
 	UBaseAttributeSet* SourceAttributes = nullptr;
 	UAbilitySystemComponent* SourceASC = StrengthMeleeTests::AddAbilitySystem(SourceCharacter, SourceAttributes);

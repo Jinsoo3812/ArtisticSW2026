@@ -9,6 +9,7 @@
 #include "ItemSubsystem.h"
 #include "AbilitySystemComponent.h"
 #include "GameplayEffect.h"
+#include "WeaponFeedback/WeaponFeedbackComponent.h"
 
 ABaseItem::ABaseItem()
 {
@@ -22,6 +23,8 @@ ABaseItem::ABaseItem()
 
 	InteractableComponent = CreateDefaultSubobject<UInteractableComponent>(TEXT("InteractableComponent"));
 	InteractableComponent->SetupAttachment(RootComponent);
+
+	WeaponFeedbackComponent = CreateDefaultSubobject<UWeaponFeedbackComponent>(TEXT("WeaponFeedbackComponent"));
 
 	bReplicates = true;
 	SetReplicateMovement(true);
@@ -302,6 +305,11 @@ void ABaseItem::OnRep_ItemTag()
 
 void ABaseItem::OnRep_ItemState()
 {
+	if (ItemState != EItemState::Equipped && WeaponFeedbackComponent)
+	{
+		WeaponFeedbackComponent->ForceStopWeaponTrail(true);
+	}
+
 	switch (ItemState)
 	{
 	case EItemState::Dropped_Simulating:

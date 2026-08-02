@@ -7,6 +7,7 @@
 #include "InteractableComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "StatusEffectLibrary.h"
+#include "WeaponFeedback/WeaponFeedbackComponent.h"
 
 ASwordItem::ASwordItem()
 {
@@ -15,6 +16,11 @@ ASwordItem::ASwordItem()
 
 	TraceEndPoint = CreateDefaultSubobject<USceneComponent>(TEXT("TraceEndPoint"));
 	TraceEndPoint->SetupAttachment(ItemMesh);
+
+	if (WeaponFeedbackComponent)
+	{
+		WeaponFeedbackComponent->SetTrailEndpointComponents(TraceStartPoint, TraceEndPoint);
+	}
 
 	TraceObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECC_Pawn));
 
