@@ -7,6 +7,8 @@
 #include "InteractableComponent.h"
 #include "CollisionChannels.h"
 #include "ItemSubsystem.h"
+#include "AbilitySystemComponent.h"
+#include "GameplayEffect.h"
 
 ABaseItem::ABaseItem()
 {
@@ -93,6 +95,97 @@ void ABaseItem::BeginPlay()
 	{
 		InteractableComponent->OnInteracted.AddDynamic(this, &ABaseItem::OnInteractableTriggered);
 	}
+}
+
+void ABaseItem::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (HasAuthority())
+	{
+		RemoveStrengthBonusEffect();
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
+bool ABaseItem::ApplyStrengthBonusEffect(
+	UAbilitySystemComponent* SourceASC,
+	TSubclassOf<UGameplayEffect> StrengthEffectClass)
+{
+	if (!HasAuthority() || !SourceASC)
+	{
+		return false;
+	}
+
+	if (EquippedStrengthEffectHandle.IsValid())
+	{
+		if (StrengthEffectASC == SourceASC && SourceASC->GetActiveGameplayEffect(EquippedStrengthEffectHandle))
+		{
+			return true;
+		}
+
+		EquippedStrengthEffectHandle = FActiveGameplayEffectHandle();
+		StrengthEffectASC = nullptr;
+	}
+
+	if (StrengthBonus <= KINDA_SMALL_NUMBER)
+	{
+		return true;
+	}
+
+	if (!StrengthEffectClass)
+	{
+		return false;
+	}
+
+	FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
+	ContextHandle.AddSourceObject(this);
+	FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(StrengthEffectClass, 1.0f, ContextHandle);
+	if (!SpecHandle.IsValid() || !SpecHandle.Data.IsValid())
+	{
+		return false;
+	}
+
+	SpecHandle.Data->SetSetByCallerMagnitude(Data_StrengthBonus, StrengthBonus);
+	const FActiveGameplayEffectHandle AppliedHandle = SourceASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+	if (!AppliedHandle.IsValid())
+	{
+		return false;
+	}
+
+	EquippedStrengthEffectHandle = AppliedHandle;
+	StrengthEffectASC = SourceASC;
+	return true;
+}
+
+bool ABaseItem::SetStrengthBonus(float InStrengthBonus)
+{
+	if (EquippedStrengthEffectHandle.IsValid())
+	{
+		return false;
+	}
+
+	StrengthBonus = FMath::Max(0.0f, InStrengthBonus);
+	return true;
+}
+
+bool ABaseItem::RemoveStrengthBonusEffect()
+{
+	if (!EquippedStrengthEffectHandle.IsValid())
+	{
+		StrengthEffectASC = nullptr;
+		return true;
+	}
+
+	UAbilitySystemComponent* AppliedASC = StrengthEffectASC.Get();
+	if (!IsValid(AppliedASC) || !AppliedASC->RemoveActiveGameplayEffect(EquippedStrengthEffectHandle))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ABaseItem::RemoveStrengthBonusEffect: failed to remove equipped GE handle for %s."), *GetNameSafe(this));
+		return false;
+	}
+
+	EquippedStrengthEffectHandle = FActiveGameplayEffectHandle();
+	StrengthEffectASC = nullptr;
+	return true;
 }
 
 const FItemDefinition* ABaseItem::GetDefinitionFromSubsystem() const

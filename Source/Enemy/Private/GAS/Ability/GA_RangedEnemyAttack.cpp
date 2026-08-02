@@ -5,6 +5,8 @@
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
 #include "Item/Projectiles/ArrowProjectile.h"
+#include "GASCombatLibrary.h"
+#include "GASDamageInstantGameplayEffect.h"
 #include "RangedEnemy/RangedEnemy.h"
 #include "Ship.h"
 #include "Weapon/BaseWeapon.h"
@@ -207,19 +209,24 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 		}
 	}
 
-	Projectile->InitializeDamage(SourceASC, CachedEnemy, 1.0f);
-	if (TSubclassOf<UGameplayEffect> DamageEffectClass = CachedEnemy->GetRangedDamageEffectClass())
+	TSubclassOf<UGameplayEffect> DamageEffectClass = Projectile->GetDirectDamageEffectClass();
+	if (!DamageEffectClass)
 	{
-		FGameplayEffectContextHandle EffectContext = SourceASC->MakeEffectContext();
-		EffectContext.AddInstigator(CachedEnemy, Projectile);
-		EffectContext.AddSourceObject(Projectile);
-		FGameplayEffectSpecHandle DamageSpec = SourceASC->MakeOutgoingSpec(DamageEffectClass, 1, EffectContext);
-		if (DamageSpec.IsValid())
-		{
-			DamageSpec.Data->SetSetByCallerMagnitude(Data_Damage, FMath::Max(0.0f, CachedEnemy->GetRangedBaseDamage()));
-			Projectile->SetDamageEffectSpecHandle(DamageSpec);
-		}
+		DamageEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
 	}
+
+	FStrengthDamageRequest DamageRequest;
+	DamageRequest.SourceASC = SourceASC;
+	DamageRequest.DamageEffectClass = DamageEffectClass;
+	DamageRequest.AttackCoefficient = Projectile->GetAttackCoefficient();
+	DamageRequest.ChargeMultiplier = 1.0f;
+	DamageRequest.InstigatorActor = CachedEnemy;
+	DamageRequest.EffectCauser = Projectile;
+	DamageRequest.EffectLevel = Projectile->GetDirectDamageEffectLevel();
+	Projectile->InitializeStrengthDamage(
+		SourceASC,
+		CachedEnemy,
+		UGASCombatLibrary::MakeStrengthDamageEffectSpec(DamageRequest));
 
 	Projectile->SetOwner(CachedEnemy);
 	Projectile->SetInstigator(CachedEnemy);

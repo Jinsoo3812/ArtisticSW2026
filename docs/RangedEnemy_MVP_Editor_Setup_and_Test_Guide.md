@@ -9,9 +9,9 @@
 - 10Hz 서버 루프에서 표적, 거리, 시야를 다시 검증한다.
 - 공격 몽타주가 없으면 즉시 발사한다.
 - 몽타주가 있으면 `Event.Montage.FireArrow` 이벤트에서 발사한다.
-- 발사체는 자신과 HostShip을 무시하고 `Team.Player` 대상에게만 피해를 준다.
+- 발사체는 자신과 HostShip을 무시하고, 화살 Blueprint의 `DamageData`에 담긴 GE를 피격 대상에게 적용한다.
 - HostShip은 선택 사항이며 없더라도 감지·GA·발사 로직이 그대로 동작한다.
-- Player Actor Collision과 `Team.Player` 누락은 표적 선정을 막지 않는다. 단, 실제 Projectile 피격/피해에는 충돌과 `Team.Player`가 필요하다.
+- Player Actor Collision과 `Team.Player` 누락은 표적 선정을 막지 않는다. 실제 Projectile 피격에는 충돌 가능한 컴포넌트가 필요하다.
 - 갑판 위 이동과 사격 위치 선정은 2단계 범위다.
 
 ## 2. 생성할 Blueprint 자산
@@ -39,21 +39,34 @@ Content/GameplayAbilitySystem/Enemy/RangedEnemy/
 
 이 프리셋은 캐릭터와 월드 지형에 대한 `OnComponentHit`을 만들고, 조준·함포·함선 피해 채널과는 간섭하지 않도록 구성한다.
 
-### 2.1 `BP_RangedEnemyProjectile`
+### 2.1 Player/Enemy 화살 Blueprint
 
-1. `RangedEnemyProjectile`을 부모로 Blueprint Class를 만든다.
-2. `MeshComp`에 화살 Mesh를 지정한다.
-3. Mesh의 Forward Axis가 발사 방향인 +X를 향하는지 확인한다.
-4. 필요하면 MeshComp의 Relative Rotation만 수정한다.
-5. `BoxComp` 크기를 화살 Mesh에 맞춘다.
-6. `Collision Presets`를 `Projectile`로 선택한다. 기존 Blueprint가 `Custom` 값을 직렬화했다면 `Reset to Default` 후 다시 선택한다.
-7. `ProjectileComp` 설정:
+공통 기능은 `AArrowProjectile`에 있고, 다음 두 C++ 클래스는 Blueprint용 진입점이다.
+
+- Player: `PlayerArrowProjectile`을 부모로 기존 `BP_Arrow`를 Reparent한다.
+- Enemy: `RangedEnemyProjectile`을 부모로 `BP_EnemyProjectile`을 만든다.
+
+두 Blueprint 각각에서 다음을 설정한다.
+
+1. `MeshComp`에 화살 Mesh를 지정한다.
+2. Mesh의 Forward Axis가 발사 방향인 +X를 향하는지 확인한다.
+3. 필요하면 MeshComp의 Relative Rotation만 수정한다.
+4. `BoxComp` 크기를 화살 Mesh에 맞춘다.
+5. `Collision Presets`를 `Projectile`로 선택한다. 기존 Blueprint가 `Custom` 값을 직렬화했다면 `Reset to Default` 후 다시 선택한다.
+6. `ProjectileComp` 설정:
    - Rotation Follows Velocity: true
    - Should Bounce: false
    - Projectile Gravity Scale: 0.0
-8. 첫 MVP에서는 `Only Damage Players`를 true로 유지한다.
+7. `Arrow > Damage > Damage Data > Damage Effects`에 화살이 적용할 GE와 피해량을 설정한다.
+   - Damage Effect Class: `GE_Instant_Arrow`
+   - Base Damage: 화살별 피해량
+   - Player 화살: `Scale With Charge`를 필요에 따라 사용
+   - Enemy 화살: `Scale With Charge = false`
+8. `Arrow > Debug > Enable Team Damage Filtering`은 기본값 false를 유지한다.
+   - false: 대상 진영과 관계없이 유효한 ASC 대상에게 DamageData를 적용한다.
+   - true: 디버깅 시 발사자와 같은 `Team.Player` 또는 `Team.Enemy` 대상을 제외한다.
 
-`ARangedEnemyProjectile`에는 10초 LifeSpan이 있으므로 빗나간 화살도 자동 제거된다.
+Player/Enemy 전용 C++ 화살에는 10초 LifeSpan이 있으므로 빗나간 화살도 자동 제거된다.
 
 ### 2.2 `BP_RangedEnemy`
 
@@ -71,13 +84,11 @@ Content/GameplayAbilitySystem/Enemy/RangedEnemy/
 | Min Attack Range | 150 |
 | Max Attack Range | 2500 |
 | Attack Cooldown | 2.0 |
-| Base Damage | 10 |
 | Projectile Speed | 2500 |
 | Target Aim Height Offset | 60 |
-| Projectile Class | `BP_RangedEnemyProjectile` |
-| Damage Effect Class | `/Game/GameplayAbilitySystem/GameplayEffect/GE_Instant_Arrow` |
+| Projectile Class | `BP_EnemyProjectile` |
 
-`GE_Instant_Arrow` 대신 다른 GE를 사용한다면 `Data.Damage` SetByCaller 값을 Health 감소 Modifier가 읽도록 구성해야 한다.
+RangedEnemy는 피해 GE나 기본 피해량을 소유하지 않는다. `Projectile Class`로 선택한 화살의 `DamageData`가 GE Spec을 만들며, GE는 `Data.Damage` SetByCaller 값을 Health 감소 Modifier로 읽어야 한다.
 
 ### 2.3 Muzzle 설정
 
@@ -148,7 +159,7 @@ ArtisticSW.Enemy.RangedEnemy
 포함 테스트:
 
 - `Defaults`: Controller, Projectile, Ability 태그 기본 연결
-- `ProjectileTeamFilter`: Enemy 아군 피해 차단 및 Player 팀 허용
+- `ProjectileTeamFilter`: 기본 진영 무관 피해와 선택형 동일 팀 필터 검증
 - `AttackIntegration`: HostShip 없는 독립 공격, 즉시 발사 Projectile 생성, collision-disabled Player 표적 유지, 선택적 HostShip 연결
 
 명령줄:
@@ -169,7 +180,7 @@ ArtisticSW.Enemy.RangedEnemy
 2. Player가 2500cm 바깥에 있으면 발사하지 않는지 확인한다.
 3. 사거리 안으로 들어가면 Enemy가 Player를 바라보고 2초마다 발사하는지 확인한다.
 4. 화살이 Enemy와 발사한 EnemyShip에 즉시 충돌하지 않는지 확인한다.
-5. Player 명중 시 Base Damage만큼 Health가 감소하는지 확인한다.
+5. Player 명중 시 `BP_EnemyProjectile.DamageData`의 Base Damage만큼 Health가 감소하는지 확인한다.
 
 ### 루프 B: 차폐와 표적 상실
 
@@ -203,7 +214,7 @@ AI Sight 성공은 공격 가능 판정과 별개다. 서버 디버거에서 아
 2. `ARangedEnemy::IsValidCombatTarget`
    - 대상이 `ABasePlayer`인지, 사망하지 않았는지 확인한다.
    - Player ASC에 `Team.Enemy`가 잘못 들어 있지 않은지 확인한다.
-   - `Team.Player`와 Actor Collision은 공격 시작을 막지 않지만 Projectile 피해/피격에는 영향을 준다.
+   - `Team.Player`와 Actor Collision은 공격 시작을 막지 않는다. Actor Collision은 실제 Projectile 피격에는 영향을 준다.
 3. `ARangedEnemy::CanAttackTarget`
    - 3D 거리가 `MinAttackRange` 이상, `MaxAttackRange` 이하인지 확인한다.
    - `Draw Attack Line Of Sight`를 켜고 초록 선인지 확인한다. 빨간 선이면 Visibility Trace의 `Hit Actor`를 조사한다.
@@ -218,7 +229,7 @@ AI Sight 성공은 공격 가능 판정과 별개다. 서버 디버거에서 아
 
 ## 8. 1단계 완료 기준
 
-- Player 캐릭터만 감지하고 Enemy/함선에는 개인 무기 피해를 주지 않는다.
+- Player 캐릭터만 전투 표적으로 선택하며, Projectile의 실제 피해 대상 정책은 화살의 선택형 팀 필터 설정을 따른다.
 - 거리와 Visibility LOS가 모두 유효할 때만 발사한다.
 - 서버에서만 Projectile과 피해를 생성한다.
 - 함선 이동 중에도 발사 원점이 현재 Socket 위치를 따른다.

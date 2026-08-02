@@ -7,7 +7,6 @@
 class AArrowProjectile;
 class AShip;
 class UAnimMontage;
-class UGameplayEffect;
 
 /**
  * Stationary ranged-enemy MVP that can fight independently on ground or use
@@ -42,7 +41,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ranged Enemy|Combat")
 	bool IsValidCombatTarget(const AActor* Candidate) const;
 
-	/** Returns the exact target-rejection reason used by both AI and diagnostics. */
+	/** Returns the exact target-rejection reason used by the shared attack checks. */
 	bool EvaluateCombatTarget(const AActor* Candidate, FString& OutReason) const;
 
 	UFUNCTION(BlueprintPure, Category = "Ranged Enemy|Combat")
@@ -59,11 +58,9 @@ public:
 	FVector GetRangedAimLocation(const AActor* TargetActor) const;
 
 	TSubclassOf<AArrowProjectile> GetRangedProjectileClass() const { return ProjectileClass; }
-	TSubclassOf<UGameplayEffect> GetRangedDamageEffectClass() const { return DamageEffectClass; }
 	UAnimMontage* GetRangedAttackMontage() const { return AttackMontage; }
 	FGameplayTag GetRangedFireEventTag() const { return FireEventTag; }
 	float GetRangedProjectileSpeed() const { return ProjectileSpeed; }
-	float GetRangedBaseDamage() const { return BaseDamage; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -111,9 +108,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat", meta = (ClampMin = "0.0"))
 	float AttackCooldown = 2.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat", meta = (ClampMin = "0.0"))
-	float BaseDamage = 10.0f;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat", meta = (ClampMin = "1.0"))
 	float ProjectileSpeed = 2500.0f;
 
@@ -128,9 +122,6 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat")
 	TSubclassOf<AArrowProjectile> ProjectileClass;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat")
-	TSubclassOf<UGameplayEffect> DamageEffectClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Animation")
 	TObjectPtr<UAnimMontage> AttackMontage = nullptr;
