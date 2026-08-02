@@ -266,7 +266,9 @@ bool ASWPersistentFoamField::UpdateCpuWaveField()
 			const float Slope = FVector2D(SurfaceNormal.X, SurfaceNormal.Y).Length() / FMath::Max(FMath::Abs(SurfaceNormal.Z), 1.0e-4f);
 			const float Crest = FMath::SmoothStep(CrestStartCm, FMath::Max(CrestEndCm, CrestStartCm + 1.0f), Height);
 			const float Breaking = FMath::SmoothStep(SlopeStart, FMath::Max(SlopeEnd, SlopeStart + 1.0e-3f), Slope);
-			const float Source = FMath::Clamp(Crest * Breaking, 0.0f, 1.0f);
+			const float PatchNoise = FMath::Frac(FMath::Sin(WorldPosition.X * 0.0073f + WorldPosition.Y * 0.0137f + WaterTimeSeconds * 0.5f) * 43758.5453f);
+			const float PatchGate = FMath::SmoothStep(0.75f, 0.95f, PatchNoise);
+			const float Source = FMath::Clamp(Crest * Breaking * PatchGate, 0.0f, 1.0f);
 
 			const FVector2D Velocity = SWPersistentFoam::EvaluateExactHorizontalVelocity(Waves, WorldPosition, WaterTimeSeconds);
 			const float EncodedVelocityX = FMath::Clamp(Velocity.X / SafeVelocityRange * 0.5f + 0.5f, 0.0f, 1.0f);

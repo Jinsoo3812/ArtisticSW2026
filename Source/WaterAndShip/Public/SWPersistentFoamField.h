@@ -67,16 +67,16 @@ protected:
 	float SourceRate = 2.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Foam|Generation")
-	float CrestStartCm = 28.0f;
+	float CrestStartCm = 72.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Foam|Generation")
-	float CrestEndCm = 86.0f;
+	float CrestEndCm = 85.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Foam|Generation")
-	float SlopeStart = 0.026f;
+	float SlopeStart = 0.12f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Foam|Generation")
-	float SlopeEnd = 0.115f;
+	float SlopeEnd = 0.22f;
 
 	/** Resolution of the CPU Gerstner source/velocity field. The persistent state remains at Resolution. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Foam|Generation", meta = (ClampMin = 32, ClampMax = 512))
