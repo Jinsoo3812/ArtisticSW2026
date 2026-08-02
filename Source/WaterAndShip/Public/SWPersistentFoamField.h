@@ -48,7 +48,7 @@ protected:
 
 	/** Texture resolution per side. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Foam|Domain", meta = (ClampMin = 128, ClampMax = 2048))
-	int32 Resolution = 1024;
+	int32 Resolution = 512;
 
 	/** Width and height of the square field in centimeters. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Foam|Domain", meta = (ClampMin = 1000.0))

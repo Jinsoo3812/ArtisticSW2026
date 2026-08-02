@@ -22,8 +22,8 @@ namespace SWPersistentFoam
 {
 	const FName PreviousStateParameter(TEXT("V5 Previous Foam State"));
 	const FName PreviousCenterParameter(TEXT("V5 Previous Field Center"));
-	const FName CurrentCenterParameter(TEXT("V5 Field Center"));
-	const FName FieldSizeParameter(TEXT("V5 Field Size Cm"));
+	const FName CurrentCenterParameter(TEXT("V5 Foam Field Center"));
+	const FName FieldSizeParameter(TEXT("V5 Foam Field Size Cm"));
 	const FName ResolutionParameter(TEXT("V5 Field Resolution"));
 	const FName DeltaSecondsParameter(TEXT("V5 Delta Seconds"));
 	const FName LifetimeParameter(TEXT("V5 Foam Lifetime Seconds"));
@@ -115,11 +115,17 @@ void ASWPersistentFoamField::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ASWPersistentFoamField::ResolveTargetWaterBody()
 {
-	if (IsValid(TargetWaterBody) || !GetWorld())
+	if (!GetWorld())
 	{
 		return;
 	}
 
+	if (IsValid(TargetWaterBody) && TargetWaterBody->GetWorld() == GetWorld())
+	{
+		return;
+	}
+
+	TargetWaterBody = nullptr;
 	float ClosestDistanceSquared = TNumericLimits<float>::Max();
 	for (TActorIterator<AWaterBody> It(GetWorld()); It; ++It)
 	{
@@ -140,20 +146,15 @@ void ASWPersistentFoamField::ResolveTargetWaterBody()
 
 UTextureRenderTarget2D* ASWPersistentFoamField::CreateStateRenderTarget(const FName Name)
 {
-	UTextureRenderTarget2D* RenderTarget = NewObject<UTextureRenderTarget2D>(this, Name);
-	if (!RenderTarget)
+	UTextureRenderTarget2D* RenderTarget = UKismetRenderingLibrary::CreateRenderTarget2D(
+		this, Resolution, Resolution, ETextureRenderTargetFormat::RTF_RGBA16f, FLinearColor::Transparent, false);
+	if (RenderTarget)
 	{
-		return nullptr;
+		RenderTarget->Filter = TextureFilter::TF_Bilinear;
+		RenderTarget->AddressX = TextureAddress::TA_Clamp;
+		RenderTarget->AddressY = TextureAddress::TA_Clamp;
+		RenderTarget->UpdateResourceImmediate(true);
 	}
-
-	RenderTarget->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA16f;
-	RenderTarget->ClearColor = FLinearColor::Transparent;
-	RenderTarget->bAutoGenerateMips = false;
-	RenderTarget->Filter = TextureFilter::TF_Bilinear;
-	RenderTarget->AddressX = TextureAddress::TA_Clamp;
-	RenderTarget->AddressY = TextureAddress::TA_Clamp;
-	RenderTarget->InitAutoFormat(Resolution, Resolution);
-	RenderTarget->UpdateResourceImmediate(true);
 	return RenderTarget;
 }
 
@@ -168,15 +169,22 @@ bool ASWPersistentFoamField::InitializeFoamField()
 	if (!IsValid(TargetWaterBody) || !IsValid(FoamStateUpdateMaterial) ||
 		Resolution < 128 || FieldWorldSizeCm <= 0.0f)
 	{
+		UE_LOG(LogSWPersistentFoam, Warning, TEXT("InitializeFoamField failed validation: Water=%s Material=%s Resolution=%d FieldSize=%.1f"),
+			*GetNameSafe(TargetWaterBody), *GetNameSafe(FoamStateUpdateMaterial), Resolution, FieldWorldSizeCm);
 		return false;
 	}
 
 	FoamStateA = CreateStateRenderTarget(TEXT("V5FoamStateA"));
 	FoamStateB = CreateStateRenderTarget(TEXT("V5FoamStateB"));
 	FoamUpdateMID = UMaterialInstanceDynamic::Create(FoamStateUpdateMaterial, this);
-	WaterMID = TargetWaterBody->GetWaterBodyComponent()->GetWaterMaterialInstance();
-	if (!FoamStateA || !FoamStateB || !FoamUpdateMID || !WaterMID || !CreateCpuWaveField())
+	if (TargetWaterBody && TargetWaterBody->GetWaterBodyComponent())
 	{
+		WaterMID = TargetWaterBody->GetWaterBodyComponent()->GetWaterMaterialInstance();
+	}
+	if (!FoamStateA || !FoamStateB || !FoamUpdateMID || !CreateCpuWaveField())
+	{
+		UE_LOG(LogSWPersistentFoam, Warning, TEXT("InitializeFoamField failed resource creation: StateA=%s StateB=%s UpdateMID=%s"),
+			*GetNameSafe(FoamStateA), *GetNameSafe(FoamStateB), *GetNameSafe(FoamUpdateMID));
 		return false;
 	}
 
@@ -433,7 +441,21 @@ void ASWPersistentFoamField::LogInitialStateStatistics(UTextureRenderTarget2D* S
 
 void ASWPersistentFoamField::PushStateToWaterMaterial(UTextureRenderTarget2D* State)
 {
-	if (!IsValid(WaterMID) || !IsValid(State))
+	if (!IsValid(State))
+	{
+		return;
+	}
+
+	if (IsValid(TargetWaterBody) && IsValid(TargetWaterBody->GetWaterBodyComponent()))
+	{
+		UMaterialInstanceDynamic* CurrentWaterMID = TargetWaterBody->GetWaterBodyComponent()->GetWaterMaterialInstance();
+		if (IsValid(CurrentWaterMID))
+		{
+			WaterMID = CurrentWaterMID;
+		}
+	}
+
+	if (!IsValid(WaterMID))
 	{
 		return;
 	}
