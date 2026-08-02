@@ -365,3 +365,22 @@ bool URealisticWaterMaterialPipelineLibrary::ConfigureFloat1CustomExpression(
 	return ConfigureTypedCustomExpression(
 		CustomExpression, InputNames, Code, Description, CMOT_Float1);
 }
+
+bool URealisticWaterMaterialPipelineLibrary::ConfigureFloat1CustomExpressionWithIncludes(
+	UMaterialExpressionCustom* CustomExpression,
+	const TArray<FName>& InputNames,
+	const FString& Code,
+	const FString& Description,
+	const TArray<FString>& IncludeFilePaths)
+{
+	if (!ConfigureTypedCustomExpression(
+		CustomExpression, InputNames, Code, Description, CMOT_Float1))
+	{
+		return false;
+	}
+
+	CustomExpression->Modify();
+	CustomExpression->IncludeFilePaths = IncludeFilePaths;
+	CustomExpression->PostEditChange();
+	return !CustomExpression->IncludeFilePaths.IsEmpty();
+}

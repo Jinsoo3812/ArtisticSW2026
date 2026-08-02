@@ -137,4 +137,12 @@ public:
 		const TArray<FName>& InputNames,
 		const FString& Code,
 		const FString& Description);
+
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureFloat1CustomExpressionWithIncludes(
+		UMaterialExpressionCustom* CustomExpression,
+		const TArray<FName>& InputNames,
+		const FString& Code,
+		const FString& Description,
+		const TArray<FString>& IncludeFilePaths);
 };
