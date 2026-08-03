@@ -421,7 +421,7 @@ float FluidFlux_ComputeShallowFoamMask(
     // 깊이가 얕을수록 거품이 더 강하게 보임
     float ShallowFade = saturate(1.0f - DepthDistance * 0.01f);
     float FoamShallow = FoamTextureAlpha * ShallowFade;
-    return saturate((1.0f - FoamShallow) * ShallowIntensity);
+    return saturate(FoamShallow * ShallowIntensity);
 }
 
 // 거품 색상 합성

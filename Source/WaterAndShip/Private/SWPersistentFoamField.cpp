@@ -249,6 +249,11 @@ bool ASWPersistentFoamField::UpdateCpuWaveField()
 	const float PixelWorldSize = FieldWorldSizeCm / static_cast<float>(SourceResolution);
 	CpuWaveFieldCenter = CurrentCenter;
 
+	float MinSource = 1.0f;
+	float MaxSource = 0.0f;
+	double SumSource = 0.0;
+	int32 NonZeroSourceCount = 0;
+
 	const int32 PixelCount = SourceResolution * SourceResolution;
 	uint8* UploadData = new uint8[PixelCount * sizeof(FFloat16Color)];
 	FFloat16Color* Pixels = reinterpret_cast<FFloat16Color*>(UploadData);
@@ -269,6 +274,11 @@ bool ASWPersistentFoamField::UpdateCpuWaveField()
 			const float PatchNoise = FMath::Frac(FMath::Sin(WorldPosition.X * 0.0073f + WorldPosition.Y * 0.0137f + WaterTimeSeconds * 0.5f) * 43758.5453f);
 			const float PatchGate = FMath::SmoothStep(0.75f, 0.95f, PatchNoise);
 			const float Source = FMath::Clamp(Crest * Breaking * PatchGate, 0.0f, 1.0f);
+			
+			if (Source < MinSource) MinSource = Source;
+			if (Source > MaxSource) MaxSource = Source;
+			SumSource += Source;
+			if (Source > 0.001f) NonZeroSourceCount++;
 
 			const FVector2D Velocity = SWPersistentFoam::EvaluateExactHorizontalVelocity(Waves, WorldPosition, WaterTimeSeconds);
 			const float EncodedVelocityX = FMath::Clamp(Velocity.X / SafeVelocityRange * 0.5f + 0.5f, 0.0f, 1.0f);
@@ -276,6 +286,9 @@ bool ASWPersistentFoamField::UpdateCpuWaveField()
 			Pixels[Y * SourceResolution + X] = FFloat16Color(FLinearColor(Source, EncodedVelocityX, EncodedVelocityY, 1.0f));
 		}
 	}
+	
+	UE_LOG(LogSWPersistentFoam, Display, TEXT("CpuWaveField Source stats: Min=%f Max=%f Mean=%f NonZeroCoverage=%.2f%%"),
+		MinSource, MaxSource, SumSource / (double)PixelCount, (float)NonZeroSourceCount / (float)PixelCount * 100.0f);
 
 	FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(
 		0,
@@ -385,13 +398,13 @@ void ASWPersistentFoamField::Tick(float DeltaSeconds)
 	bLatestStateIsA = !bLatestStateIsA;
 	PushStateToWaterMaterial(WriteState);
 
-	if (bLogInitialStateStatistics && !bInitialStateStatisticsLogged)
+	if (bLogInitialStateStatistics)
 	{
 		InitialStateStatisticsElapsedSeconds += SafeDeltaSeconds;
-		if (InitialStateStatisticsElapsedSeconds >= 2.0f)
+		if (InitialStateStatisticsElapsedSeconds >= 5.0f)
 		{
 			LogInitialStateStatistics(WriteState);
-			bInitialStateStatisticsLogged = true;
+			InitialStateStatisticsElapsedSeconds = 0.0f;
 		}
 	}
 }
@@ -459,6 +472,7 @@ void ASWPersistentFoamField::PushStateToWaterMaterial(UTextureRenderTarget2D* St
 
 	if (!IsValid(WaterMID))
 	{
+		UE_LOG(LogSWPersistentFoam, Warning, TEXT("[DIAGNOSIS] PushStateToWaterMaterial: WaterMID is INVALID! Cannot push foam state."));
 		return;
 	}
 
@@ -467,6 +481,8 @@ void ASWPersistentFoamField::PushStateToWaterMaterial(UTextureRenderTarget2D* St
 		SWPersistentFoam::CurrentCenterParameter,
 		FLinearColor(CurrentCenter.X, CurrentCenter.Y, 0.0f, 0.0f));
 	WaterMID->SetScalarParameterValue(SWPersistentFoam::FieldSizeParameter, FieldWorldSizeCm);
+	
+	UE_LOG(LogSWPersistentFoam, VeryVerbose, TEXT("[DIAGNOSIS] PushStateToWaterMaterial: Successfully pushed state to WaterMID: %s, Parameter: %s"), *GetNameSafe(WaterMID), *SWPersistentFoam::OutputStateParameter.ToString());
 }
 
 UTextureRenderTarget2D* ASWPersistentFoamField::GetCurrentFoamState() const
