@@ -3,15 +3,20 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "AITypes.h"
 #include "Abilities/BaseHitReactionGameplayAbility.h"
-#include "GA_HitReaction.generated.h"
+#include "GA_PlayerHitReaction.generated.h"
 
-class AAIController;
+class ABasePlayer;
 
-/** Enemy hit reaction that temporarily owns AI movement. */
+/**
+ * Player-specific hit reaction.
+ *
+ * The base class owns ability interruption, retriggering, and montage playback.
+ * This subclass deliberately does not stop CharacterMovement, so normal movement
+ * remains available while the player-specific hit-reaction state is active.
+ */
 UCLASS()
-class ENEMY_API UGA_HitReaction : public UBaseHitReactionGameplayAbility
+class CLASSFEATURE_API UGA_PlayerHitReaction : public UBaseHitReactionGameplayAbility
 {
 	GENERATED_BODY()
 
@@ -29,11 +34,5 @@ protected:
 		bool bWasCancelled) override;
 
 private:
-	void SuspendAIForHitReaction();
-	void RestoreAIAfterHitReaction();
-
-	TWeakObjectPtr<AAIController> SuspendedAIController;
-	FAIRequestID SuspendedMoveRequestId;
-	bool bLockedAILogicForHitReaction = false;
-	bool bPausedAIMoveForHitReaction = false;
+	TWeakObjectPtr<ABasePlayer> HitReactingPlayer;
 };

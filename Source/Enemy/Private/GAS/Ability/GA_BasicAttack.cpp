@@ -20,7 +20,9 @@ UGA_BasicAttack::UGA_BasicAttack()
 
 	FGameplayTagContainer BasicAttackTags;
 	BasicAttackTags.AddTag(GameplayAbility_BasicAttack);
+	BasicAttackTags.AddTag(GameplayAbility_InterruptibleByHit);
 	SetAssetTags(BasicAttackTags);
+	ActivationBlockedTags.AddTag(State_Damaged);
 }
 
 void UGA_BasicAttack::ActivateAbility(

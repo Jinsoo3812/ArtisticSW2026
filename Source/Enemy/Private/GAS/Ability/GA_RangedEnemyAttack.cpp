@@ -20,7 +20,9 @@ UGA_RangedEnemyAttack::UGA_RangedEnemyAttack()
 	FGameplayTagContainer RangedAbilityTags;
 	RangedAbilityTags.AddTag(GameplayAbility_BasicAttack);
 	RangedAbilityTags.AddTag(GameplayAbility_RangedAttack);
+	RangedAbilityTags.AddTag(GameplayAbility_InterruptibleByHit);
 	SetAssetTags(RangedAbilityTags);
+	ActivationBlockedTags.AddTag(State_Damaged);
 }
 
 void UGA_RangedEnemyAttack::ActivateAbility(

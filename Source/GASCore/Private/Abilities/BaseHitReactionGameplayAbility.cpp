@@ -15,6 +15,16 @@ UBaseHitReactionGameplayAbility::UBaseHitReactionGameplayAbility()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
+	bRetriggerInstancedAbility = true;
+
+	FGameplayTagContainer HitReactionTags;
+	HitReactionTags.AddTag(GameplayAbility_HitReaction);
+	SetAssetTags(HitReactionTags);
+
+	CancelAbilitiesWithTag.AddTag(GameplayAbility_InterruptibleByHit);
+	BlockAbilitiesWithTag.AddTag(GameplayAbility_InterruptibleByHit);
+	ActivationOwnedTags.AddTag(State_Damaged);
+	ActivationBlockedTags.AddTag(State_Dead);
 
 	FAbilityTriggerData HitReactionTrigger;
 	HitReactionTrigger.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
@@ -66,14 +76,6 @@ void UBaseHitReactionGameplayAbility::OnHitReactionMontageCompleted()
 	FinishHitReaction(false);
 }
 
-void UBaseHitReactionGameplayAbility::OnHitReactionMontageBlendOut()
-{
-	if (bFinishHitReactionWhenMontageEnds)
-	{
-		FinishHitReaction(false);
-	}
-}
-
 void UBaseHitReactionGameplayAbility::OnHitReactionMontageInterrupted()
 {
 	FinishHitReaction(true);
@@ -110,7 +112,8 @@ bool UBaseHitReactionGameplayAbility::PlayHitReactionMontage(EBaseHitReactionDir
 		HitReactionMontage,
 		FMath::Max(HitReactionMontagePlayRate, KINDA_SMALL_NUMBER),
 		HitReactionMontageStartSection,
-		bStopHitReactionMontageWhenAbilityEnds);
+		bStopHitReactionMontageWhenAbilityEnds,
+		0.0f);
 
 	if (!HitReactionMontageTask)
 	{
@@ -118,7 +121,6 @@ bool UBaseHitReactionGameplayAbility::PlayHitReactionMontage(EBaseHitReactionDir
 	}
 
 	HitReactionMontageTask->OnCompleted.AddDynamic(this, &UBaseHitReactionGameplayAbility::OnHitReactionMontageCompleted);
-	HitReactionMontageTask->OnBlendOut.AddDynamic(this, &UBaseHitReactionGameplayAbility::OnHitReactionMontageBlendOut);
 	HitReactionMontageTask->OnInterrupted.AddDynamic(this, &UBaseHitReactionGameplayAbility::OnHitReactionMontageInterrupted);
 	HitReactionMontageTask->OnCancelled.AddDynamic(this, &UBaseHitReactionGameplayAbility::OnHitReactionMontageCancelled);
 	HitReactionMontageTask->ReadyForActivation();
