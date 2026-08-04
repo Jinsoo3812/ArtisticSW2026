@@ -22,7 +22,11 @@ DEFINE_LOG_CATEGORY_STATIC(LogEnemyAI, Log, All);
 
 ABaseAIController::ABaseAIController()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// AAIController updates its ControlRotation from the active focus in Tick().
+	// Disabling the controller tick lets path following move the pawn, but prevents
+	// SetFocus() from turning the controlled character toward its target.
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = true;
 	SetupPerceptionSystem();
 }
 
@@ -148,6 +152,12 @@ bool ABaseAIController::SetEnemyState(EEnemyAIState NewState)
 	}
 
 	BlackboardComponent->SetValueAsEnum(StateKeyName, static_cast<uint8>(NewState));
+	if (NewState != EEnemyAIState::Combat)
+	{
+		// A sequence can be aborted before its Clear Focus task executes.
+		ClearFocus(EAIFocusPriority::Gameplay);
+	}
+
 	return true;
 }
 

@@ -78,6 +78,10 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 
 	TestNotNull(TEXT("RangedEnemy CDO exists"), EnemyCDO);
 	TestNotNull(TEXT("RangedEnemy AI Controller CDO exists"), ControllerCDO);
+	TestTrue(TEXT("RangedEnemy AI Controller can tick to update focus rotation"),
+		ControllerCDO && ControllerCDO->PrimaryActorTick.bCanEverTick);
+	TestTrue(TEXT("RangedEnemy AI Controller starts with focus rotation ticking"),
+		ControllerCDO && ControllerCDO->PrimaryActorTick.bStartWithTickEnabled);
 	TestEqual(TEXT("RangedEnemy uses the dedicated AI controller"), EnemyCDO->AIControllerClass,
 		TSubclassOf<AController>(ARangedEnemyAIController::StaticClass()));
 	TestTrue(TEXT("Default projectile derives from RangedEnemyProjectile"),

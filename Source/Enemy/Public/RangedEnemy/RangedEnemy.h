@@ -104,10 +104,6 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat")
 	TObjectPtr<AActor> CombatTarget = nullptr;
 
-	/** Ground movement speed. Deck-derived classes can replace this without changing combat code. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Movement", meta = (ClampMin = "0.0"))
-	float GroundMaxWalkSpeed = 350.0f;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat", meta = (ClampMin = "0.0"))
 	float MinAttackRange = 150.0f;
 

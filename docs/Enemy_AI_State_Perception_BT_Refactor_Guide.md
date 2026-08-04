@@ -314,7 +314,7 @@ Root
     Wait
 ```
 
-`BP_RangedEnemy`의 `Ground Max Walk Speed`가 0보다 커야 이동한다. 기본 C++ 값은 350cm/s다.
+각 이동 Sequence 시작에는 `Set Movement Speed` Task를 둔다. `Jog` 모드는 350cm/s를 사용한다.
 
 ### 6.2 BT_Subtree_RangedGround_Combat
 
@@ -325,12 +325,16 @@ Root
   Selector
     Sequence: Attack
       Decorator: Can Ranged Attack
-      Service: Set Focus To Target
+      Set Movement Speed: Idle (0)
+      Set Focus: TargetActor
       Ranged Attack
+      Clear Focus
 
-    Sequence: Reposition
-      Service: Set Focus To Target
-      Strafe Around Target
+    Sequence: Idle
+      Set Movement Speed: Idle (0)
+      Set Focus: TargetActor
+      Wait
+      Clear Focus
 ```
 
 `Can Ranged Attack` 설정:
@@ -345,27 +349,23 @@ Root
 - Attack Execution State Tag: `State.Attacking`
 - Cancel Ability On Abort: On
 
-`Set Focus To Target` 설정:
+`Set Focus` 설정:
 
 - Blackboard Key: `TargetActor`
 - 기존 회전 정책을 유지
 
-`Strafe Around Target` 초기값 예:
+Sequence가 끝나면 `Clear Focus`로 Gameplay Focus를 해제한다.
 
-- Desired Radius: 700~1200cm
-- Strafe Duration: 1.0~1.5초
-- Move Request Interval: 0.2초
-- Project Destination To Navigation: On
-- Use Pathfinding: On
-- Randomize Direction: On
+`Set Movement Speed`의 모드별 속도:
 
-Desired Radius는 다음 조건 안에 둔다.
+| 모드 | Max Walk Speed |
+|---|---:|
+| Idle | 0 |
+| Jog | 350 |
+| Strafe | 250 |
+| Run | 500 |
 
-```text
-MinAttackRange < DesiredRadius < MaxAttackRange
-```
-
-첫 버전의 Reposition은 기존 Strafe Task를 재사용한다. 이후 엄폐, 선호 거리, 공격 지점 점수화가 필요하면 EQS 또는 `RangedCombatConfig` Data Asset 기반 Task로 교체한다. Root State 구조와 공격 GA는 변경할 필요가 없다.
+Reposition/Strafe는 기존 원형 이동 Task를 사용하지 않는다. 이후 EQS로 위치를 선정하는 Sequence를 추가하고, 시작에 `Set Movement Speed: Strafe (250)`, 종료에 `Clear Focus`를 둔다. 추적용 Run Sequence는 `Set Movement Speed: Run (500)`으로 시작한다.
 
 `Ranged Attack` Task는 Cooldown 중에는 Task 내부에서 기다린다. 별도의 BT Cooldown Decorator에 `AttackCooldown` 값을 복사하지 않는다.
 
@@ -464,11 +464,14 @@ Investigating, Frozen, Dead는 공통 Root Dynamic Node의 Default Behavior Asse
 
 | 속성 | 권장 시작값 |
 |---|---:|
-| Ground Max Walk Speed | 300~400 |
+| Set Movement Speed / Idle | 0 |
+| Set Movement Speed / Jog | 350 |
+| Set Movement Speed / Strafe | 250 |
+| Set Movement Speed / Run | 500 |
 | Character Movement / Orient Rotation to Movement | Off |
 | Use Controller Rotation Yaw | On |
 
-전투 중 회전은 `Set Focus To Target` Service가 담당한다.
+전투 중 회전은 Sequence의 `Set Focus` Task가 시작하고 `Clear Focus` Task가 해제한다.
 
 ### 9.3 공격
 

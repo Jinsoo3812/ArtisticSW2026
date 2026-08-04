@@ -148,6 +148,11 @@ bool ARangedEnemy::IsValidCombatTarget(const AActor* Candidate) const
 	return EvaluateCombatTarget(Candidate, UnusedReason);
 }
 
+bool ARangedEnemy::CanEngageActor_Implementation(AActor* Candidate) const
+{
+	return IsValidCombatTarget(Candidate);
+}
+
 bool ARangedEnemy::EvaluateCombatTarget(const AActor* Candidate, FString& OutReason) const
 {
 	if (!IsValid(Candidate))
@@ -287,6 +292,20 @@ bool ARangedEnemy::TryStartRangedAttack()
 		NextAttackTime = CurrentTime + FMath::Max(0.0f, AttackCooldown);
 	}
 	return bActivated;
+}
+
+float ARangedEnemy::GetRemainingAttackCooldown() const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return 0.0f;
+	}
+
+	const double RemainingTime =
+		NextAttackTime - World->GetTimeSeconds();
+
+	return static_cast<float>(FMath::Max(0.0, RemainingTime));
 }
 
 bool ARangedEnemy::EvaluateAttackTarget(const AActor* Candidate, bool bRequireLineOfSight, FString& OutReason) const

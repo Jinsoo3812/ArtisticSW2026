@@ -47,7 +47,7 @@ void UGA_HitReaction::SuspendAIForHitReaction()
 	}
 
 	// Reaction is the engine-defined priority for mechanics such as hit reactions.
-	// Locking the brain prevents ticking BT tasks (such as Strafe) from issuing a new MoveTo.
+	// Locking the brain prevents active BT tasks from issuing a new MoveTo.
 	if (UBrainComponent* BrainComponent = AIController->GetBrainComponent())
 	{
 		BrainComponent->LockResource(EAIRequestPriority::Reaction);
