@@ -2,6 +2,7 @@
 
 
 #include "Weapon/BaseWeapon.h"
+#include "WeaponFeedback/WeaponFeedbackComponent.h"
 
 // Unreal Engine
 #include "AbilitySystemBlueprintLibrary.h"
@@ -30,6 +31,9 @@ ABaseWeapon::ABaseWeapon()
 
 	TraceEndPoint = CreateDefaultSubobject<USceneComponent>(TEXT("TraceEndPoint"));
 	TraceEndPoint->SetupAttachment(WeaponMesh);
+
+	WeaponFeedbackComponent = CreateDefaultSubobject<UWeaponFeedbackComponent>(TEXT("WeaponFeedbackComponent"));
+	WeaponFeedbackComponent->SetTrailEndpointComponents(TraceStartPoint, TraceEndPoint);
 	
 	TraceObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECC_Pawn));
 }

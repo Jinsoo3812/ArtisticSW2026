@@ -130,10 +130,61 @@ void AArrowProjectile::InitializeDamage(UAbilitySystemComponent* InSourceASC, AA
 
 	SourceASC = InSourceASC;
 	InstigatorActor = InInstigatorActor;
-	ChargeDamageMultiplier = FMath::Max(0.0f, InChargeDamageMultiplier);
-	bHasRolledCritical = false;
-	bCriticalHit = false;
-	BuildDamageEffectSpecs();
+	DamageEffectSpecHandles.Reset();
+	StatusEffectSpecHandles.Reset();
+	AppliedActors.Reset();
+	BuildStatusEffectSpecs();
+}
+
+void AArrowProjectile::InitializeStrengthDamage(
+	UAbilitySystemComponent* InSourceASC,
+	AActor* InInstigatorActor,
+	const FGameplayEffectSpecHandle& InDirectDamageSpec)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	SourceASC = InSourceASC;
+	InstigatorActor = InInstigatorActor;
+	DamageEffectSpecHandles.Reset();
+	StatusEffectSpecHandles.Reset();
+	StatusEffectRefreshGrantedTags.Reset();
+	AppliedActors.Reset();
+
+	if (!SourceASC)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AArrowProjectile::InitializeStrengthDamage: SourceASC is missing."));
+		return;
+	}
+
+	if (!InDirectDamageSpec.IsValid() || !InDirectDamageSpec.Data.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AArrowProjectile::InitializeStrengthDamage: invalid Damage Spec."));
+		return;
+	}
+
+	DamageEffectSpecHandles.Add(InDirectDamageSpec);
+	BuildStatusEffectSpecs();
+}
+
+TSubclassOf<UGameplayEffect> AArrowProjectile::GetDirectDamageEffectClass() const
+{
+	if (DamageData.DirectDamageEffectClass)
+	{
+		return DamageData.DirectDamageEffectClass;
+	}
+
+	for (const FArrowDamageEffect& LegacyDamageEffect : DamageData.DamageEffects)
+	{
+		if (LegacyDamageEffect.DamageEffectClass)
+		{
+			return LegacyDamageEffect.DamageEffectClass;
+		}
+	}
+
+	return nullptr;
 }
 
 void AArrowProjectile::SetDamageEffectSpecHandle(const FGameplayEffectSpecHandle& InDamageEffectSpecHandle)
@@ -162,8 +213,10 @@ void AArrowProjectile::OnArrowHit(UPrimitiveComponent* HitComponent, AActor* Oth
 		return;
 	}
 
-	BuildDamageEffectSpecs();
-	ApplyDamageToActor(OtherActor);
+	if (CanApplyDamageToActor(OtherActor))
+	{
+		ApplyDamageToActor(OtherActor);
+	}
 	Multicast_PlayImpactFX(Hit);
 
 	if (bDestroyOnImpact)
@@ -195,49 +248,59 @@ bool AArrowProjectile::ShouldIgnoreHitActor(const AActor* OtherActor) const
 	return false;
 }
 
-void AArrowProjectile::BuildDamageEffectSpecs()
+bool AArrowProjectile::CanApplyDamageToActor(const AActor* OtherActor) const
+{
+	return IsValidDamageTarget(OtherActor);
+}
+
+bool AArrowProjectile::IsValidDamageTarget(const AActor* TargetActor) const
+{
+	if (!IsValid(TargetActor)
+		|| TargetActor == this
+		|| TargetActor == GetOwner()
+		|| TargetActor == GetInstigator())
+	{
+		return false;
+	}
+
+	const UAbilitySystemComponent* TargetASC =
+		UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(const_cast<AActor*>(TargetActor));
+	if (!TargetASC)
+	{
+		return false;
+	}
+
+	if (!bEnableTeamDamageFiltering)
+	{
+		return true;
+	}
+
+	const UAbilitySystemComponent* ProjectileSourceASC = SourceASC;
+	if (!ProjectileSourceASC)
+	{
+		AActor* SourceActor = GetInstigator() ? static_cast<AActor*>(GetInstigator()) : GetOwner();
+		ProjectileSourceASC = SourceActor
+			? UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(SourceActor)
+			: nullptr;
+	}
+
+	if (!ProjectileSourceASC)
+	{
+		return true;
+	}
+
+	const bool bBothPlayers = ProjectileSourceASC->HasMatchingGameplayTag(Team_Player)
+		&& TargetASC->HasMatchingGameplayTag(Team_Player);
+	const bool bBothEnemies = ProjectileSourceASC->HasMatchingGameplayTag(Team_Enemy)
+		&& TargetASC->HasMatchingGameplayTag(Team_Enemy);
+	return !bBothPlayers && !bBothEnemies;
+}
+
+void AArrowProjectile::BuildStatusEffectSpecs()
 {
 	if (!HasAuthority() || !SourceASC)
 	{
 		return;
-	}
-
-	if (!bHasRolledCritical)
-	{
-		bCriticalHit = DamageData.CritChance > 0.0f && FMath::FRand() <= DamageData.CritChance;
-		bHasRolledCritical = true;
-	}
-
-	const float CriticalDamageMultiplier = bCriticalHit ? DamageData.CritMultiplier : 1.0f;
-
-	if (DamageEffectSpecHandles.Num() == 0)
-	{
-		for (const FArrowDamageEffect& DamageEffect : DamageData.DamageEffects)
-		{
-			if (!DamageEffect.DamageEffectClass)
-			{
-				continue;
-			}
-
-			const float ChargeMultiplier = DamageEffect.bScaleWithCharge ? ChargeDamageMultiplier : 1.0f;
-			const float CritMultiplier = DamageEffect.bCanCrit ? CriticalDamageMultiplier : 1.0f;
-			const float FinalDamage = DamageEffect.BaseDamage * ChargeMultiplier * CritMultiplier;
-
-			FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
-			ContextHandle.AddInstigator(InstigatorActor.Get(), this);
-			ContextHandle.AddSourceObject(this);
-
-			FGameplayEffectSpecHandle DamageSpecHandle = SourceASC->MakeOutgoingSpec(
-				DamageEffect.DamageEffectClass,
-				FMath::Max(1, DamageEffect.EffectLevel),
-				ContextHandle);
-
-			if (DamageSpecHandle.IsValid())
-			{
-				DamageSpecHandle.Data->SetSetByCallerMagnitude(Data_Damage, FMath::Max(0.0f, FinalDamage));
-				DamageEffectSpecHandles.Add(DamageSpecHandle);
-			}
-		}
 	}
 
 	if (StatusEffectSpecHandles.Num() == 0)
@@ -302,8 +365,27 @@ void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor)
 	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor);
 	if (!TargetASC)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("AArrowProjectile::ApplyDamageToActor: TargetASC is missing for %s."), *GetNameSafe(TargetActor));
 		return;
 	}
+
+	const bool bHasValidDirectDamageSpec = DamageEffectSpecHandles.ContainsByPredicate(
+		[](const FGameplayEffectSpecHandle& SpecHandle)
+		{
+			return SpecHandle.IsValid() && SpecHandle.Data.IsValid();
+		});
+	if (!bHasValidDirectDamageSpec)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AArrowProjectile::ApplyDamageToActor: invalid Damage Spec."));
+		return;
+	}
+
+	const TWeakObjectPtr<AActor> TargetActorPtr(TargetActor);
+	if (AppliedActors.Contains(TargetActorPtr))
+	{
+		return;
+	}
+	AppliedActors.Add(TargetActorPtr);
 
 	for (const FGameplayEffectSpecHandle& DamageSpecHandle : DamageEffectSpecHandles)
 	{

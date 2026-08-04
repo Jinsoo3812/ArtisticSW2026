@@ -13,6 +13,7 @@ struct FGameplayEffectSpecHandle;
 class UWeaponDataAsset;
 class USceneComponent;
 class UAbilitySystemComponent;
+class UWeaponFeedbackComponent;
 
 UCLASS()
 class ENEMY_API ABaseWeapon : public AActor
@@ -26,6 +27,9 @@ protected:
 	// 무기의 Mesh, 이후 활과같은 ABP가 필요한 것들은 SkeletalMesh변수를 따로 생성
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UStaticMeshComponent> WeaponMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon|Feedback")
+	TObjectPtr<UWeaponFeedbackComponent> WeaponFeedbackComponent;
 
 	// 무기 Trace의 시작/끝 지점. Blueprint에서 WeaponMesh 기준으로 위치를 잡아준다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon|Trace")

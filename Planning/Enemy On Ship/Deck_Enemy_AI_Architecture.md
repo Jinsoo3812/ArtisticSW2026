@@ -9,8 +9,8 @@
 - `ABaseEnemy`: GAS, 체력, 무기, 사망, 드랍, 웨이브 연동
 - `ABaseAIController`: AI Perception의 시야 감지와 Behavior Tree 실행
 - `UBTT_EnemyBasicAttack`: 무기 데이터와 GAS 기본 공격 실행
-- `UBTT_StrafeAroundTarget`: 표적 주변 이동
-- `UBTS_SetFocusToTarget`: 표적 주시
+- `UBTT_SetFocus` / `UBTT_ClearFocus`: Sequence 단위 표적 주시
+- `UBTT_SetMovementSpeed`: Idle/Jog/Strafe/Run 이동 속도 설정
 - `AShip`: Network Physics 기반 함선과 `ShipDeckMesh`
 
 목표는 별도 적 프레임워크를 하나 더 만드는 것이 아니라, 기존 적 시스템에 **함선 로컬 공간과 갑판 제약 계층**을 추가하는 것이다.
@@ -383,7 +383,7 @@ flowchart TD
 - 로컬 마지막 위치
 - 공격 가능 여부 갱신
 
-기존 `BTS_SetFocusToTarget`은 전투 Branch에 그대로 사용하되, 같은 갑판과 전투 가능 상태 검사를 추가한다.
+전투 Sequence는 `BTT_SetFocus`로 시작하고 `BTT_ClearFocus`로 끝낸다. 같은 갑판과 전투 가능 상태 검사는 Decorator에서 처리한다.
 
 ### 6.2 필요한 Decorator
 
@@ -412,7 +412,7 @@ flowchart TD
 
 기존 `BTT_EnemyBasicAttack`은 재사용한다.
 
-기존 `BTT_FindPatrolLocation`과 `BTT_StrafeAroundTarget`의 `UNavigationSystemV1` 사용 부분은 갑판 전용 태스크에서는 사용하지 않는다.
+기존 `BTT_FindPatrolLocation`의 `UNavigationSystemV1` 사용 부분은 갑판 전용 태스크에서는 사용하지 않는다. Strafe 위치는 갑판 제약을 반영한 EQS 또는 `BTT_FindDeckAttackPosition`으로 선정한다.
 
 ---
 

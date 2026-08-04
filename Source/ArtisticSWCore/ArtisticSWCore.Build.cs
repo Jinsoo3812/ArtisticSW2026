@@ -10,7 +10,7 @@ public class ArtisticSWCore: ModuleRules
             "CoreUObject",
             "Engine",
             "InputCore",
-            "UMG"
+			"UMG"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
@@ -18,7 +18,8 @@ public class ArtisticSWCore: ModuleRules
             "GameplayAbilities",
             "GameplayTags",
             "GameplayTasks",
-            "NetCore"
+			"NetCore",
+			"Niagara"
         });
 
         PublicIncludePaths.AddRange(new string[] {
@@ -28,6 +29,7 @@ public class ArtisticSWCore: ModuleRules
             "ArtisticSWCore/Public/Item",
             "ArtisticSWCore/Public/GameFramework",
             "ArtisticSWCore/Public/AnimNotify",
+			"ArtisticSWCore/Public/WeaponFeedback",
             "ArtisticSWCore/Public/Interactable"
         });
     }
