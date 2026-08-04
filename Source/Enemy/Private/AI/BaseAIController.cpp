@@ -17,6 +17,7 @@
 #include "Perception/AISenseConfig_Damage.h"
 #include "Perception/AISenseConfig_Hearing.h"
 #include "Perception/AISenseConfig_Sight.h"
+#include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogEnemyAI, Log, All);
 
@@ -120,6 +121,7 @@ void ABaseAIController::OnPossess(APawn* PossessedPawn)
 
 void ABaseAIController::OnUnPossess()
 {
+	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
 	UnbindPerceivedTargetDeath();
 	UnbindPossessedEnemyDeath();
 	Super::OnUnPossess();
@@ -127,6 +129,7 @@ void ABaseAIController::OnUnPossess()
 
 void ABaseAIController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
 	UnbindPerceivedTargetDeath();
 	UnbindPossessedEnemyDeath();
 	Super::EndPlay(EndPlayReason);
@@ -169,6 +172,7 @@ bool ABaseAIController::SetCombatTarget(AActor* TargetActor)
 		return false;
 	}
 
+	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
 	BlackboardComponent->SetValueAsObject(TargetActorKeyName, TargetActor);
 	BindPerceivedTargetDeath(TargetActor);
 	SetEnemyState(EEnemyAIState::Combat);
@@ -177,6 +181,8 @@ bool ABaseAIController::SetCombatTarget(AActor* TargetActor)
 
 void ABaseAIController::ClearCombatTarget(bool bReturnToPassive)
 {
+	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
+
 	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
 	if (BlackboardComponent)
 	{
@@ -280,11 +286,34 @@ void ABaseAIController::HandleDamageStimulus(AActor* SensedActor, const FAIStimu
 
 void ABaseAIController::OnPerceivedTargetDeathStarted(UBaseHealthComponent* HealthComponent)
 {
-	ClearCombatTarget(true);
+	if (!HasAuthority() || ObservedTargetHealthComponent.Get() != HealthComponent)
+	{
+		return;
+	}
+
+	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
+	AActor* DeadTarget = BlackboardComponent
+		? Cast<AActor>(BlackboardComponent->GetValueAsObject(TargetActorKeyName))
+		: nullptr;
+	if (BlackboardComponent && IsValid(DeadTarget))
+	{
+		BlackboardComponent->SetValueAsVector(PointOfInterestKeyName, DeadTarget->GetActorLocation());
+	}
+
+	ClearCombatTarget(false);
+	ClearFocus(EAIFocusPriority::Gameplay);
+
+	GetWorldTimerManager().SetTimer(
+		TargetReacquireTimerHandle,
+		this,
+		&ABaseAIController::TryReacquireCombatTarget,
+		FMath::Max(0.01f, TargetReacquireDelay),
+		false);
 }
 
 void ABaseAIController::OnPossessedEnemyDeathStarted(UBaseHealthComponent* HealthComponent)
 {
+	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
 	ClearCombatTarget(false);
 
 	if (UBlackboardComponent* BlackboardComponent = GetBlackboardComponent())
@@ -377,6 +406,25 @@ AActor* ABaseAIController::SelectBestPerceivedTarget() const
 	}
 
 	return BestTarget;
+}
+
+void ABaseAIController::TryReacquireCombatTarget()
+{
+	if (!HasAuthority() || GetEnemyState() != EEnemyAIState::Combat)
+	{
+		return;
+	}
+
+	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
+	if (!BlackboardComponent || BlackboardComponent->GetValueAsObject(TargetActorKeyName))
+	{
+		return;
+	}
+
+	if (AActor* ReplacementTarget = SelectBestPerceivedTarget())
+	{
+		SetCombatTarget(ReplacementTarget);
+	}
 }
 
 void ABaseAIController::BindPerceivedTargetDeath(AActor* TargetActor)

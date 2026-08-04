@@ -61,6 +61,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Patrol", meta = (ClampMin = "0.0"))
 	float DefaultPatrolRadius = 800.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Targeting", meta = (ClampMin = "0.0"))
+	float TargetReacquireDelay = 0.25f;
+
 	// AI Sight Perception 변수
 	UPROPERTY()
 	TObjectPtr<UAISenseConfig_Sight> SightConfig;
@@ -123,6 +126,7 @@ private:
 	void InitializeBlackboardValues(APawn* PossessedPawn);
 	void ApplyBehaviorSet(const UEnemyBehaviorSet* BehaviorSet);
 	AActor* SelectBestPerceivedTarget() const;
+	void TryReacquireCombatTarget();
 	void BindPerceivedTargetDeath(AActor* TargetActor);
 	void UnbindPerceivedTargetDeath();
 	void BindPossessedEnemyDeath(ABaseEnemy* PossessedEnemy);
@@ -130,4 +134,5 @@ private:
 
 	TWeakObjectPtr<UBaseHealthComponent> ObservedTargetHealthComponent;
 	TWeakObjectPtr<UBaseHealthComponent> PossessedEnemyHealthComponent;
+	FTimerHandle TargetReacquireTimerHandle;
 };

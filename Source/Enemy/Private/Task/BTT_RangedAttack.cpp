@@ -2,7 +2,6 @@
 
 #include "AIController.h"
 #include "AbilitySystemComponent.h"
-#include "BaseGameplayTags.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "BehaviorTree/BlackboardComponent.h"
@@ -21,7 +20,6 @@ UBTT_RangedAttack::UBTT_RangedAttack()
 		GET_MEMBER_NAME_CHECKED(UBTT_RangedAttack, BlackboardKey),
 		AActor::StaticClass());
 
-	AttackExecutionStateTag = State_Attacking;
 }
 
 EBTNodeResult::Type UBTT_RangedAttack::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
@@ -36,7 +34,7 @@ EBTNodeResult::Type UBTT_RangedAttack::ExecuteTask(UBehaviorTreeComponent& Owner
 		: nullptr;
 	UAbilitySystemComponent* AbilitySystem = Enemy ? Enemy->GetAbilitySystemComponent() : nullptr;
 
-	if (!Enemy || !AbilitySystem || !AttackExecutionStateTag.IsValid() || !Enemy->IsValidCombatTarget(TargetActor))
+	if (!Enemy || !AbilitySystem || !Enemy->IsValidCombatTarget(TargetActor))
 	{
 		return EBTNodeResult::Failed;
 	}
@@ -45,9 +43,7 @@ EBTNodeResult::Type UBTT_RangedAttack::ExecuteTask(UBehaviorTreeComponent& Owner
 	CachedOwnerComp = &OwnerComp;
 	CachedAbilitySystem = AbilitySystem;
 	CachedEnemy = Enemy;
-	AttackTagDelegateHandle = AbilitySystem->RegisterGameplayTagEvent(AttackExecutionStateTag).AddUObject(
-		this,
-		&UBTT_RangedAttack::HandleAttackStateTagChanged);
+	CachedTarget = TargetActor;
 
 	if (Enemy->GetRemainingAttackCooldown() > KINDA_SMALL_NUMBER)
 	{
@@ -65,13 +61,14 @@ EBTNodeResult::Type UBTT_RangedAttack::ExecuteTask(UBehaviorTreeComponent& Owner
 
 void UBTT_RangedAttack::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
 {
-	if (!bWaitingForCooldown || bObservedAttackStart)
+	if (!bWaitingForCooldown)
 	{
 		return;
 	}
 
 	ARangedEnemy* Enemy = CachedEnemy.Get();
-	if (!Enemy || !Enemy->CanAttackCurrentTarget(true))
+	if (!Enemy || !CachedTarget.IsValid() || Enemy->GetCombatTarget() != CachedTarget.Get()
+		|| !Enemy->CanAttackCurrentTarget(true))
 	{
 		FinishAttackTask(EBTNodeResult::Failed);
 		return;
@@ -92,17 +89,23 @@ void UBTT_RangedAttack::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeM
 
 EBTNodeResult::Type UBTT_RangedAttack::AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
-	if (bCancelAbilityOnAbort)
+	bAborting = true;
+	UnregisterAbilityEnded();
+
+	if (bCancelAbilityOnAbort && CachedAbilityHandle.IsValid())
 	{
 		if (UAbilitySystemComponent* AbilitySystem = CachedAbilitySystem.Get())
 		{
-			FGameplayTagContainer AbilityTags;
-			AbilityTags.AddTag(GameplayAbility_RangedAttack);
-			AbilitySystem->CancelAbilities(&AbilityTags);
+			AbilitySystem->CancelAbilityHandle(CachedAbilityHandle);
 		}
 	}
 
-	CleanupTaskState();
+	if (ARangedEnemy* Enemy = CachedEnemy.Get(); Enemy && Enemy->GetCombatTarget() == CachedTarget.Get())
+	{
+		Enemy->ClearCombatTarget();
+	}
+
+	CleanupTaskState(false);
 	return EBTNodeResult::Aborted;
 }
 
@@ -115,87 +118,110 @@ void UBTT_RangedAttack::OnTaskFinished(
 	Super::OnTaskFinished(OwnerComp, NodeMemory, TaskResult);
 }
 
-void UBTT_RangedAttack::HandleAttackStateTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
+void UBTT_RangedAttack::HandleAbilityEnded(const FAbilityEndedData& EndedData)
 {
-	if (NewCount > 0)
+	if (bAborting || bTaskFinished || EndedData.AbilitySpecHandle != CachedAbilityHandle)
 	{
-		bObservedAttackStart = true;
 		return;
 	}
 
-	if (!bObservedAttackStart)
-	{
-		return;
-	}
+	const EBTNodeResult::Type Result = EndedData.bWasCancelled
+		? EBTNodeResult::Failed
+		: EBTNodeResult::Succeeded;
 
 	if (bActivatingAbility)
 	{
 		bCompletedSynchronously = true;
+		SynchronousResult = Result;
 		return;
 	}
 
-	FinishAttackTask(EBTNodeResult::Succeeded);
+	FinishAttackTask(Result);
 }
 
 EBTNodeResult::Type UBTT_RangedAttack::TryActivateCachedAttack()
 {
 	ARangedEnemy* Enemy = CachedEnemy.Get();
-	if (!Enemy || !Enemy->CanAttackCurrentTarget(true))
+	UAbilitySystemComponent* AbilitySystem = CachedAbilitySystem.Get();
+	if (!Enemy || !AbilitySystem || !CachedTarget.IsValid()
+		|| Enemy->GetCombatTarget() != CachedTarget.Get()
+		|| !Enemy->CanAttackCurrentTarget(true))
 	{
 		return EBTNodeResult::Failed;
 	}
 
+	if (!Enemy->FindRangedAttackAbility(CachedAbilityHandle))
+	{
+		return EBTNodeResult::Failed;
+	}
+
+	AbilityEndedDelegateHandle = AbilitySystem->OnAbilityEnded.AddUObject(
+		this,
+		&UBTT_RangedAttack::HandleAbilityEnded);
+
 	bActivatingAbility = true;
-	const bool bActivated = Enemy->TryStartRangedAttack();
+	const bool bActivated = Enemy->TryStartRangedAttack(CachedAbilityHandle);
 	bActivatingAbility = false;
 
 	if (!bActivated)
 	{
+		UnregisterAbilityEnded();
+		CachedAbilityHandle = FGameplayAbilitySpecHandle();
 		return EBTNodeResult::Failed;
 	}
 
-	// An attack without a montage can add and remove State.Attacking in the same call.
 	if (bCompletedSynchronously)
 	{
-		return EBTNodeResult::Succeeded;
+		return SynchronousResult;
 	}
 
-	return bObservedAttackStart
-		? EBTNodeResult::InProgress
-		: EBTNodeResult::Failed;
+	return EBTNodeResult::InProgress;
 }
 
 void UBTT_RangedAttack::FinishAttackTask(EBTNodeResult::Type Result)
 {
+	if (bAborting || bTaskFinished)
+	{
+		return;
+	}
+
+	bTaskFinished = true;
 	UBehaviorTreeComponent* OwnerComp = CachedOwnerComp.Get();
-	CleanupTaskState();
+	CleanupTaskState(false);
 	if (OwnerComp)
 	{
 		FinishLatentTask(*OwnerComp, Result);
 	}
 }
 
-void UBTT_RangedAttack::CleanupTaskState()
+void UBTT_RangedAttack::UnregisterAbilityEnded()
 {
 	if (UAbilitySystemComponent* AbilitySystem = CachedAbilitySystem.Get())
 	{
-		if (AttackTagDelegateHandle.IsValid() && AttackExecutionStateTag.IsValid())
+		if (AbilityEndedDelegateHandle.IsValid())
 		{
-			AbilitySystem->RegisterGameplayTagEvent(AttackExecutionStateTag).Remove(AttackTagDelegateHandle);
+			AbilitySystem->OnAbilityEnded.Remove(AbilityEndedDelegateHandle);
 		}
 	}
+	AbilityEndedDelegateHandle.Reset();
+}
 
-	if (ARangedEnemy* Enemy = CachedEnemy.Get())
-	{
-		Enemy->ClearCombatTarget();
-	}
+void UBTT_RangedAttack::CleanupTaskState(bool bResetLifecycle)
+{
+	UnregisterAbilityEnded();
 
-	AttackTagDelegateHandle.Reset();
 	CachedOwnerComp.Reset();
 	CachedAbilitySystem.Reset();
 	CachedEnemy.Reset();
-	bObservedAttackStart = false;
+	CachedTarget.Reset();
+	CachedAbilityHandle = FGameplayAbilitySpecHandle();
+	SynchronousResult = EBTNodeResult::Failed;
 	bActivatingAbility = false;
 	bCompletedSynchronously = false;
 	bWaitingForCooldown = false;
+	if (bResetLifecycle)
+	{
+		bAborting = false;
+		bTaskFinished = false;
+	}
 }

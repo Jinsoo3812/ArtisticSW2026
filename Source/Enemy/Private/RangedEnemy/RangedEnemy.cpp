@@ -2,6 +2,7 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Abilities/GameplayAbility.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "Components/BaseHealthComponent.h"
@@ -250,9 +251,37 @@ bool ARangedEnemy::CanAttackTarget(const AActor* Candidate, bool bRequireLineOfS
 	return EvaluateAttackTarget(Candidate, bRequireLineOfSight, UnusedReason);
 }
 
-bool ARangedEnemy::TryStartRangedAttack()
+bool ARangedEnemy::FindRangedAttackAbility(FGameplayAbilitySpecHandle& OutAbilityHandle) const
 {
-	if (!HasAuthority())
+	OutAbilityHandle = FGameplayAbilitySpecHandle();
+
+	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	if (!ASC)
+	{
+		return false;
+	}
+
+	FGameplayTagContainer AbilityTags;
+	AbilityTags.AddTag(GameplayAbility_RangedAttack);
+
+	TArray<FGameplayAbilitySpec*> MatchingAbilities;
+	ASC->GetActivatableGameplayAbilitySpecsByAllMatchingTags(AbilityTags, MatchingAbilities, false);
+	for (const FGameplayAbilitySpec* AbilitySpec : MatchingAbilities)
+	{
+		if (AbilitySpec && AbilitySpec->Ability
+			&& AbilitySpec->Ability->GetAssetTags().HasTagExact(GameplayAbility_RangedAttack))
+		{
+			OutAbilityHandle = AbilitySpec->Handle;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool ARangedEnemy::TryStartRangedAttack(FGameplayAbilitySpecHandle AbilityHandle)
+{
+	if (!HasAuthority() || !AbilityHandle.IsValid())
 	{
 		return false;
 	}
@@ -278,20 +307,31 @@ bool ARangedEnemy::TryStartRangedAttack()
 		return false;
 	}
 
+	const FGameplayAbilitySpec* AbilitySpec = ASC->FindAbilitySpecFromHandle(AbilityHandle);
+	if (!AbilitySpec || !AbilitySpec->Ability
+		|| !AbilitySpec->Ability->GetAssetTags().HasTagExact(GameplayAbility_RangedAttack))
+	{
+		return false;
+	}
+
 	const double CurrentTime = World->GetTimeSeconds();
 	if (CurrentTime < NextAttackTime)
 	{
 		return false;
 	}
 
-	FGameplayTagContainer AbilityTags;
-	AbilityTags.AddTag(GameplayAbility_RangedAttack);
-	const bool bActivated = ASC->TryActivateAbilitiesByTag(AbilityTags, true);
+	const bool bActivated = ASC->TryActivateAbility(AbilityHandle, false);
 	if (bActivated)
 	{
 		NextAttackTime = CurrentTime + FMath::Max(0.0f, AttackCooldown);
 	}
 	return bActivated;
+}
+
+bool ARangedEnemy::TryStartRangedAttack()
+{
+	FGameplayAbilitySpecHandle AbilityHandle;
+	return FindRangedAttackAbility(AbilityHandle) && TryStartRangedAttack(AbilityHandle);
 }
 
 float ARangedEnemy::GetRemainingAttackCooldown() const

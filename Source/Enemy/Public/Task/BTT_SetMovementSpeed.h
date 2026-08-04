@@ -26,6 +26,7 @@ public:
 	virtual EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
 	virtual FString GetStaticDescription() const override;
 	static float GetSpeedForMode(EEnemyMovementSpeedMode Mode);
+	EEnemyMovementSpeedMode GetMovementMode() const { return MovementMode; }
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement")

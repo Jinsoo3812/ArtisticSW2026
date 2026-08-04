@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "BaseEnemy.h"
+#include "GameplayAbilitySpecHandle.h"
 #include "RangedEnemy.generated.h"
 
 class AArrowProjectile;
@@ -54,6 +55,8 @@ public:
 
 	bool CanAttackTarget(const AActor* Candidate, bool bRequireLineOfSight = true) const;
 
+	bool FindRangedAttackAbility(FGameplayAbilitySpecHandle& OutAbilityHandle) const;
+	bool TryStartRangedAttack(FGameplayAbilitySpecHandle AbilityHandle);
 	bool TryStartRangedAttack();
 
 	UFUNCTION(BlueprintPure, Category = "Ranged Enemy|Combat")

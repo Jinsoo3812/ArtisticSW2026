@@ -8,6 +8,12 @@
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
+#include "BehaviorTree/BehaviorTree.h"
+#include "BehaviorTree/Composites/BTComposite_Selector.h"
+#include "BehaviorTree/Composites/BTComposite_Sequence.h"
+#include "BehaviorTree/Tasks/BTTask_MoveTo.h"
+#include "BehaviorTree/Tasks/BTTask_Wait.h"
+#include "Decorator/BTD_CombatTargetState.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
@@ -26,6 +32,9 @@
 #include "RangedEnemy/RangedEnemyProjectile.h"
 #include "Ship.h"
 #include "StatusEffectLibrary.h"
+#include "Task/BTT_ClearFocus.h"
+#include "Task/BTT_SetFocus.h"
+#include "Task/BTT_SetMovementSpeed.h"
 
 namespace RangedEnemyTests
 {
@@ -137,6 +146,83 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRangedEnemyCombatTreeContractTest,
+	"ArtisticSW.Enemy.RangedEnemy.CombatTreeContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRangedEnemyCombatTreeContractTest::RunTest(const FString& Parameters)
+{
+	const UBehaviorTree* CombatTree = LoadObject<UBehaviorTree>(
+		nullptr,
+		TEXT("/Game/GameplayAbilitySystem/Enemy/AI/SubTree/BT_Subtree_RangedEnemy_Combat.BT_Subtree_RangedEnemy_Combat"));
+	if (!TestNotNull(TEXT("Ranged combat behavior tree exists"), CombatTree))
+	{
+		return false;
+	}
+
+	const UBTComposite_Selector* RootSelector = Cast<UBTComposite_Selector>(CombatTree->RootNode);
+	if (!TestNotNull(TEXT("Ranged combat tree is rooted in a selector"), RootSelector))
+	{
+		return false;
+	}
+
+	const UBTComposite_Sequence* AttackSequence = nullptr;
+	const UBTComposite_Sequence* SearchSequence = nullptr;
+	for (const FBTCompositeChild& Child : RootSelector->Children)
+	{
+		const UBTComposite_Sequence* Sequence = Cast<UBTComposite_Sequence>(Child.ChildComposite);
+		for (const UBTDecorator* Decorator : Child.Decorators)
+		{
+			const UBTD_CombatTargetState* TargetDecorator = Cast<UBTD_CombatTargetState>(Decorator);
+			if (!TargetDecorator)
+			{
+				continue;
+			}
+
+			TestEqual(TEXT("Combat target branches abort both directions"),
+				TargetDecorator->GetFlowAbortMode(), EBTFlowAbortMode::Both);
+			if (TargetDecorator->GetQuery() == ECombatTargetStateQuery::IsSet)
+			{
+				AttackSequence = Sequence;
+			}
+			else
+			{
+				SearchSequence = Sequence;
+			}
+		}
+	}
+
+	TestNotNull(TEXT("Attack branch requires a combat target"), AttackSequence);
+	if (!TestNotNull(TEXT("Search branch requires no combat target"), SearchSequence))
+	{
+		return false;
+	}
+
+	bool bHasIdleSpeed = false;
+	bool bHasClearFocus = false;
+	bool bHasWait = false;
+	bool bHasUnexpectedTargetMove = false;
+	for (const FBTCompositeChild& Child : SearchSequence->Children)
+	{
+		const UBTTaskNode* Task = Child.ChildTask;
+		if (const UBTT_SetMovementSpeed* MovementTask = Cast<UBTT_SetMovementSpeed>(Task))
+		{
+			bHasIdleSpeed = MovementTask->GetMovementMode() == EEnemyMovementSpeedMode::Idle;
+		}
+		bHasClearFocus |= Task && Task->IsA<UBTT_ClearFocus>();
+		bHasWait |= Task && Task->IsA<UBTTask_Wait>();
+		bHasUnexpectedTargetMove |= Task
+			&& (Task->IsA<UBTT_SetFocus>() || Task->IsA<UBTTask_MoveTo>());
+	}
+
+	TestTrue(TEXT("Search branch stops movement"), bHasIdleSpeed);
+	TestTrue(TEXT("Search branch clears gameplay focus"), bHasClearFocus);
+	TestTrue(TEXT("Search branch waits for target reacquisition"), bHasWait);
+	TestFalse(TEXT("Search branch does not focus or move toward the dead target"), bHasUnexpectedTargetMove);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRangedEnemyProjectileTeamFilterTest,
 	"ArtisticSW.Enemy.RangedEnemy.ProjectileTeamFilter",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -232,10 +318,33 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 
 	EnemyASC->InitAbilityActorInfo(Enemy, Enemy);
 	EnemyASC->AddLooseGameplayTag(Team_Enemy);
-	EnemyASC->GiveAbility(FGameplayAbilitySpec(UGA_RangedEnemyAttack::StaticClass(), 1));
+	const FGameplayAbilitySpecHandle GrantedAttackHandle =
+		EnemyASC->GiveAbility(FGameplayAbilitySpec(UGA_RangedEnemyAttack::StaticClass(), 1));
+
+	FGameplayAbilitySpecHandle ResolvedAttackHandle;
+	TestTrue(TEXT("RangedEnemy resolves one exact ranged attack ability"),
+		Enemy->FindRangedAttackAbility(ResolvedAttackHandle));
+	TestTrue(TEXT("Resolved ranged attack handle matches the granted ability"),
+		ResolvedAttackHandle == GrantedAttackHandle);
+
+	bool bObservedAbilityEnd = false;
+	bool bObservedAbilityCancel = true;
+	const FDelegateHandle AbilityEndedHandle = EnemyASC->OnAbilityEnded.AddLambda(
+		[&](const FAbilityEndedData& EndedData)
+		{
+			if (EndedData.AbilitySpecHandle == ResolvedAttackHandle)
+			{
+				bObservedAbilityEnd = true;
+				bObservedAbilityCancel = EndedData.bWasCancelled;
+			}
+		});
 
 	const int32 ProjectilesBefore = RangedEnemyTests::CountActors<ARangedEnemyProjectile>(TestWorld.World);
-	TestTrue(TEXT("Standalone RangedEnemy activates its server ranged attack without HostShip"), Enemy->TryStartRangedAttack());
+	TestTrue(TEXT("Standalone RangedEnemy activates its exact server ranged attack without HostShip"),
+		Enemy->TryStartRangedAttack(ResolvedAttackHandle));
+	EnemyASC->OnAbilityEnded.Remove(AbilityEndedHandle);
+	TestTrue(TEXT("Ranged attack broadcasts ability completion"), bObservedAbilityEnd);
+	TestFalse(TEXT("Immediate ranged attack completion is not a cancellation"), bObservedAbilityCancel);
 	const int32 ProjectilesAfter = RangedEnemyTests::CountActors<ARangedEnemyProjectile>(TestWorld.World);
 	TestEqual(TEXT("An immediate-fire projectile is spawned when no montage is assigned"),
 		ProjectilesAfter, ProjectilesBefore + 1);
