@@ -14,8 +14,12 @@ class ARTISTICSWCORE_API UStatusEffectLibrary : public UBlueprintFunctionLibrary
 	GENERATED_BODY()
 
 public:
-	// Applies duration/periodic damage effects such as poison, burn, or bleed.
-	// If RefreshGrantedTag is valid, the existing effect with that granted tag is removed first.
+	/**
+	 * Applies a duration/periodic status effect without stacking duplicate timers.
+	 * An active effect with the same GE class is always removed before reapplication,
+	 * which resets both duration and periodic timing. RefreshGrantedTag optionally
+	 * makes different GE classes mutually exclusive within the same status group.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "GAS|Status")
 	static FActiveGameplayEffectHandle ApplyDurationDamageEffectSpecToTarget(
 		UAbilitySystemComponent* TargetASC,
