@@ -1,0 +1,744 @@
+Begin Object Class=/Script/Engine.MaterialFunction Name="WaterTextureSurface" ExportPath="/Script/Engine.MaterialFunction'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface'"
+   Begin Object Class=/Script/Engine.MaterialFunctionEditorOnlyData Name="WaterTextureSurfaceEditorOnlyData" ExportPath="/Script/Engine.MaterialFunctionEditorOnlyData'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:WaterTextureSurfaceEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAdd Name="MaterialExpressionAdd_0" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionAdd_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAppendVector Name="MaterialExpressionAppendVector_0" ExportPath="/Script/Engine.MaterialExpressionAppendVector'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionAppendVector_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAppendVector Name="MaterialExpressionAppendVector_1" ExportPath="/Script/Engine.MaterialExpressionAppendVector'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionAppendVector_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionCeil Name="MaterialExpressionCeil_0" ExportPath="/Script/Engine.MaterialExpressionCeil'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionCeil_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_0" ExportPath="/Script/Engine.MaterialExpressionComment'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionComment_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_0" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionComponentMask_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_1" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionComponentMask_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_2" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionComponentMask_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant Name="MaterialExpressionConstant_1" ExportPath="/Script/Engine.MaterialExpressionConstant'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionConstant_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant Name="MaterialExpressionConstant_2" ExportPath="/Script/Engine.MaterialExpressionConstant'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionConstant_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant3Vector Name="MaterialExpressionConstant3Vector_0" ExportPath="/Script/Engine.MaterialExpressionConstant3Vector'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionConstant3Vector_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant3Vector Name="MaterialExpressionConstant3Vector_1" ExportPath="/Script/Engine.MaterialExpressionConstant3Vector'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionConstant3Vector_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDivide Name="MaterialExpressionDivide_0" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionDivide_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDivide Name="MaterialExpressionDivide_1" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionDivide_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDivide Name="MaterialExpressionDivide_2" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionDivide_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDivide Name="MaterialExpressionDivide_3" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionDivide_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFresnel Name="MaterialExpressionFresnel_0" ExportPath="/Script/Engine.MaterialExpressionFresnel'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFresnel_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_1" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_2" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_3" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_4" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_5" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_6" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_7" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_7'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_8" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionOutput Name="MaterialExpressionFunctionOutput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionOutput_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionGetMaterialAttributes Name="MaterialExpressionGetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionGetMaterialAttributes'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionGetMaterialAttributes_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_0" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionLinearInterpolate_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_1" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionLinearInterpolate_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_2" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionLinearInterpolate_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_3" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionLinearInterpolate_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_4" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionLinearInterpolate_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_2" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionMaterialFunctionCall_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_2" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionMultiply_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_3" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionMultiply_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_4" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionMultiply_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_5" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionMultiply_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNormalize Name="MaterialExpressionNormalize_0" ExportPath="/Script/Engine.MaterialExpressionNormalize'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionNormalize_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPixelDepth Name="MaterialExpressionPixelDepth_0" ExportPath="/Script/Engine.MaterialExpressionPixelDepth'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionPixelDepth_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPixelDepth Name="MaterialExpressionPixelDepth_1" ExportPath="/Script/Engine.MaterialExpressionPixelDepth'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionPixelDepth_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_0" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionReroute_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_1" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionReroute_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_2" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionReroute_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_3" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionReroute_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_0" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSaturate_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_1" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSaturate_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_2" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSaturate_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_0" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_1" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_2" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_3" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_4" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_5" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_6" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_7" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_7'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_8" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_9" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_9'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSetMaterialAttributes_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_1" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSetMaterialAttributes_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSubtract Name="MaterialExpressionSubtract_0" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSubtract_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSubtract Name="MaterialExpressionSubtract_1" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSubtract_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSubtract Name="MaterialExpressionSubtract_2" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSubtract_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureObject Name="MaterialExpressionTextureObject_1" ExportPath="/Script/Engine.MaterialExpressionTextureObject'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionTextureObject_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTime Name="MaterialExpressionTime_0" ExportPath="/Script/Engine.MaterialExpressionTime'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionTime_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionWorldPosition Name="MaterialExpressionWorldPosition_0" ExportPath="/Script/Engine.MaterialExpressionWorldPosition'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionWorldPosition_0'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="WaterTextureSurfaceEditorOnlyData" ExportPath="/Script/Engine.MaterialFunctionEditorOnlyData'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:WaterTextureSurfaceEditorOnlyData'"
+      ExpressionCollection=(Expressions=("/Script/Engine.MaterialExpressionFunctionOutput'WaterTextureSurface:MaterialExpressionFunctionOutput_0'","/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_0'","/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_2'","/Script/Engine.MaterialExpressionLinearInterpolate'WaterTextureSurface:MaterialExpressionLinearInterpolate_0'","/Script/Engine.MaterialExpressionSaturate'WaterTextureSurface:MaterialExpressionSaturate_0'","/Script/Engine.MaterialExpressionGetMaterialAttributes'WaterTextureSurface:MaterialExpressionGetMaterialAttributes_0'","/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_3'","/Script/Engine.MaterialExpressionSetMaterialAttributes'WaterTextureSurface:MaterialExpressionSetMaterialAttributes_0'","/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_4'","/Script/Engine.MaterialExpressionSetMaterialAttributes'WaterTextureSurface:MaterialExpressionSetMaterialAttributes_1'","/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_1'","/Script/Engine.MaterialExpressionDivide'WaterTextureSurface:MaterialExpressionDivide_1'","/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_1'","/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_2'","/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_3'","/Script/Engine.MaterialExpressionFresnel'WaterTextureSurface:MaterialExpressionFresnel_0'","/Script/Engine.MaterialExpressionLinearInterpolate'WaterTextureSurface:MaterialExpressionLinearInterpolate_1'","/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_4'","/Script/Engine.MaterialExpressionConstant3Vector'WaterTextureSurface:MaterialExpressionConstant3Vector_0'","/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_5'","/Script/Engine.MaterialExpressionSaturate'WaterTextureSurface:MaterialExpressionSaturate_1'","/Script/Engine.MaterialExpressionLinearInterpolate'WaterTextureSurface:MaterialExpressionLinearInterpolate_2'","/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_5'","/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_0'","/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_6'","/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_6'","/Script/Engine.MaterialExpressionLinearInterpolate'WaterTextureSurface:MaterialExpressionLinearInterpolate_3'","/Script/Engine.MaterialExpressionComponentMask'WaterTextureSurface:MaterialExpressionComponentMask_0'","/Script/Engine.MaterialExpressionMultiply'WaterTextureSurface:MaterialExpressionMultiply_2'","/Script/Engine.MaterialExpressionAppendVector'WaterTextureSurface:MaterialExpressionAppendVector_0'","/Script/Engine.MaterialExpressionConstant'WaterTextureSurface:MaterialExpressionConstant_1'","/Script/Engine.MaterialExpressionAdd'WaterTextureSurface:MaterialExpressionAdd_0'","/Script/Engine.MaterialExpressionDivide'WaterTextureSurface:MaterialExpressionDivide_0'","/Script/Engine.MaterialExpressionComponentMask'WaterTextureSurface:MaterialExpressionComponentMask_1'","/Script/Engine.MaterialExpressionWorldPosition'WaterTextureSurface:MaterialExpressionWorldPosition_0'","/Script/Engine.MaterialExpressionCeil'WaterTextureSurface:MaterialExpressionCeil_0'","/Script/Engine.MaterialExpressionTextureObject'WaterTextureSurface:MaterialExpressionTextureObject_1'","/Script/Engine.MaterialExpressionNormalize'WaterTextureSurface:MaterialExpressionNormalize_0'","/Script/Engine.MaterialExpressionAppendVector'WaterTextureSurface:MaterialExpressionAppendVector_1'","/Script/Engine.MaterialExpressionSubtract'WaterTextureSurface:MaterialExpressionSubtract_0'","/Script/Engine.MaterialExpressionComponentMask'WaterTextureSurface:MaterialExpressionComponentMask_2'","/Script/Engine.MaterialExpressionSubtract'WaterTextureSurface:MaterialExpressionSubtract_1'","/Script/Engine.MaterialExpressionMultiply'WaterTextureSurface:MaterialExpressionMultiply_3'","/Script/Engine.MaterialExpressionReroute'WaterTextureSurface:MaterialExpressionReroute_1'","/Script/Engine.MaterialExpressionLinearInterpolate'WaterTextureSurface:MaterialExpressionLinearInterpolate_4'","/Script/Engine.MaterialExpressionReroute'WaterTextureSurface:MaterialExpressionReroute_2'","/Script/Engine.MaterialExpressionConstant3Vector'WaterTextureSurface:MaterialExpressionConstant3Vector_1'","/Script/Engine.MaterialExpressionMultiply'WaterTextureSurface:MaterialExpressionMultiply_4'","/Script/Engine.MaterialExpressionMultiply'WaterTextureSurface:MaterialExpressionMultiply_5'","/Script/Engine.MaterialExpressionMaterialFunctionCall'WaterTextureSurface:MaterialExpressionMaterialFunctionCall_2'","/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_7'","/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_7'","/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_8'","/Script/Engine.MaterialExpressionPixelDepth'WaterTextureSurface:MaterialExpressionPixelDepth_0'","/Script/Engine.MaterialExpressionSubtract'WaterTextureSurface:MaterialExpressionSubtract_2'","/Script/Engine.MaterialExpressionDivide'WaterTextureSurface:MaterialExpressionDivide_2'","/Script/Engine.MaterialExpressionDivide'WaterTextureSurface:MaterialExpressionDivide_3'","/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_9'","/Script/Engine.MaterialExpressionSaturate'WaterTextureSurface:MaterialExpressionSaturate_2'","/Script/Engine.MaterialExpressionPixelDepth'WaterTextureSurface:MaterialExpressionPixelDepth_1'","/Script/Engine.MaterialExpressionConstant'WaterTextureSurface:MaterialExpressionConstant_2'","/Script/Engine.MaterialExpressionReroute'WaterTextureSurface:MaterialExpressionReroute_0'","/Script/Engine.MaterialExpressionReroute'WaterTextureSurface:MaterialExpressionReroute_3'","/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_8'","/Script/Engine.MaterialExpressionTime'WaterTextureSurface:MaterialExpressionTime_0'"),EditorComments=("/Script/Engine.MaterialExpressionComment'WaterTextureSurface:MaterialExpressionComment_0'"))
+   End Object
+   Begin Object Name="MaterialExpressionAdd_0" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionAdd_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'WaterTextureSurface:MaterialExpressionGetMaterialAttributes_0'",OutputIndex=1)
+      B=(Expression="/Script/Engine.MaterialExpressionAppendVector'WaterTextureSurface:MaterialExpressionAppendVector_0'")
+      MaterialExpressionEditorX=80
+      MaterialExpressionEditorY=-16
+      MaterialExpressionGuid=35C3F5BD4B22BFD7BDEADF957449C3F5
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionAppendVector_0" ExportPath="/Script/Engine.MaterialExpressionAppendVector'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionAppendVector_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionMultiply'WaterTextureSurface:MaterialExpressionMultiply_2'")
+      B=(Expression="/Script/Engine.MaterialExpressionConstant'WaterTextureSurface:MaterialExpressionConstant_1'")
+      MaterialExpressionEditorX=-288
+      MaterialExpressionEditorY=512
+      MaterialExpressionGuid=DE59B6434E9FD562F5D98188C8F3C4FD
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionAppendVector_1" ExportPath="/Script/Engine.MaterialExpressionAppendVector'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionAppendVector_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionSubtract'WaterTextureSurface:MaterialExpressionSubtract_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionDivide'WaterTextureSurface:MaterialExpressionDivide_1'")
+      MaterialExpressionEditorX=-448
+      MaterialExpressionEditorY=336
+      MaterialExpressionGuid=FB9C910C4D87A2629479AA90187E81FE
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionCeil_0" ExportPath="/Script/Engine.MaterialExpressionCeil'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionCeil_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionSaturate'WaterTextureSurface:MaterialExpressionSaturate_0'")
+      MaterialExpressionEditorX=-2176
+      MaterialExpressionEditorY=672
+      MaterialExpressionGuid=FBC94A034CA3356C55F42191D780B2B8
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionComment_0" ExportPath="/Script/Engine.MaterialExpressionComment'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionComment_0'"
+      SizeX=1454
+      SizeY=393
+      Text="Blend Far Normal"
+      MaterialExpressionEditorX=-3936
+      MaterialExpressionEditorY=1088
+      MaterialExpressionGuid=E74153A64ACCC85954C6FEB2D5EA1751
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_0" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionComponentMask_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'WaterTextureSurface:MaterialExpressionMaterialFunctionCall_2'")
+      R=True
+      G=True
+      MaterialExpressionEditorX=-752
+      MaterialExpressionEditorY=336
+      MaterialExpressionGuid=6BB0382C4BF397E709D734B39C73A88A
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_1" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionComponentMask_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionDivide'WaterTextureSurface:MaterialExpressionDivide_0'")
+      R=True
+      G=True
+      MaterialExpressionEditorX=-1408
+      MaterialExpressionEditorY=384
+      MaterialExpressionGuid=6D3D532E4B218A780CBC72B1520C9BC7
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_2" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionComponentMask_2'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'WaterTextureSurface:MaterialExpressionMaterialFunctionCall_2'")
+      B=True
+      MaterialExpressionEditorX=-704
+      MaterialExpressionEditorY=752
+      MaterialExpressionGuid=26288BE64FF78B1457BC0EB17857E054
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant_1" ExportPath="/Script/Engine.MaterialExpressionConstant'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionConstant_1'"
+      MaterialExpressionEditorX=-400
+      MaterialExpressionEditorY=608
+      MaterialExpressionGuid=991443C54368BAEF15C0AC832036E7FB
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant_2" ExportPath="/Script/Engine.MaterialExpressionConstant'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionConstant_2'"
+      MaterialExpressionEditorX=-1344
+      MaterialExpressionEditorY=1584
+      MaterialExpressionGuid=488A53A047C8AAA896E95CAC7A74EDDB
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant3Vector_0" ExportPath="/Script/Engine.MaterialExpressionConstant3Vector'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionConstant3Vector_0'"
+      Constant=(R=0.000000,G=0.000000,B=1.000000,A=0.000000)
+      MaterialExpressionEditorX=-2128
+      MaterialExpressionEditorY=1104
+      MaterialExpressionGuid=DC2593384A5BA21F9548A19852EB0338
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionConstant3Vector_1" ExportPath="/Script/Engine.MaterialExpressionConstant3Vector'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionConstant3Vector_1'"
+      Constant=(R=0.000000,G=0.000000,B=1.000000,A=0.000000)
+      MaterialExpressionEditorX=-64
+      MaterialExpressionEditorY=992
+      MaterialExpressionGuid=F414DAEF499CC6C7804B058A2E0B0F76
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionDivide_0" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionDivide_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionWorldPosition'WaterTextureSurface:MaterialExpressionWorldPosition_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'WaterTextureSurface:MaterialExpressionLinearInterpolate_2'")
+      MaterialExpressionEditorX=-1536
+      MaterialExpressionEditorY=384
+      MaterialExpressionGuid=FB9390214C103AB7ED6C9B8CDA127C57
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionDivide_1" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionDivide_1'"
+      B=(Expression="/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_1'")
+      MaterialExpressionEditorX=-1200
+      MaterialExpressionEditorY=880
+      MaterialExpressionGuid=37F254F7419BAAED30EE8D8C8B9D89C2
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionDivide_2" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionDivide_2'"
+      A=(Expression="/Script/Engine.MaterialExpressionSubtract'WaterTextureSurface:MaterialExpressionSubtract_2'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_8'")
+      MaterialExpressionEditorX=-3262
+      MaterialExpressionEditorY=1170
+      MaterialExpressionGuid=1252DE534CCCAC4FEA39118C981513C2
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionDivide_3" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionDivide_3'"
+      A=(Expression="/Script/Engine.MaterialExpressionPixelDepth'WaterTextureSurface:MaterialExpressionPixelDepth_1'",Mask=1,MaskR=1)
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_9'")
+      MaterialExpressionEditorX=-1552
+      MaterialExpressionEditorY=1712
+      MaterialExpressionGuid=2884C1CD4B91FCC2CA4F439D5D1F9E2B
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionFresnel_0" ExportPath="/Script/Engine.MaterialExpressionFresnel'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFresnel_0'"
+      ExponentIn=(Expression="/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_5'")
+      Normal=(Expression="/Script/Engine.MaterialExpressionConstant3Vector'WaterTextureSurface:MaterialExpressionConstant3Vector_0'")
+      MaterialExpressionEditorX=-1952
+      MaterialExpressionEditorY=1040
+      MaterialExpressionGuid=C525963A46AE2B72009405B46B277940
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_0'"
+      Preview=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'WaterTextureSurface:MaterialExpressionSetMaterialAttributes_1'")
+      InputName="Wave Attributes"
+      Id=1AD253B54ED47B15C8594C9E3970FAA7
+      InputType=FunctionInput_MaterialAttributes
+      bUsePreviewValueAsDefault=True
+      MaterialExpressionEditorX=-1104
+      MaterialExpressionEditorY=-80
+      MaterialExpressionGuid=2601D21A40302291EA07BBBED8B00A51
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_1" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_1'"
+      Preview=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'WaterTextureSurface:MaterialExpressionLinearInterpolate_1'")
+      InputName="Far Normal Strength"
+      Id=5C51DCF24BD210A20134CB8562B33093
+      InputType=FunctionInput_Scalar
+      PreviewValue=(X=1.000000,Y=0.000000,Z=0.000000,W=1.000000)
+      bUsePreviewValueAsDefault=True
+      SortPriority=4
+      MaterialExpressionEditorX=-1488
+      MaterialExpressionEditorY=896
+      MaterialExpressionGuid=DF651B24479755A130B2FEA41BAA16C7
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_2" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_2'"
+      InputName="Blend Alpha"
+      Id=C3ECE25D4C4202AABA71F39383900F58
+      InputType=FunctionInput_Scalar
+      PreviewValue=(X=1.000000,Y=0.000000,Z=0.000000,W=1.000000)
+      bUsePreviewValueAsDefault=True
+      SortPriority=2
+      MaterialExpressionEditorX=-1632
+      MaterialExpressionEditorY=1408
+      MaterialExpressionGuid=2601D21A40302291EA07BBBED8B00A51
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_3" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_3'"
+      Preview=(Expression="/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_1'")
+      InputName="Distant Scale"
+      Id=9ECA2F91487F4A69D17EC3BDFE268164
+      InputType=FunctionInput_Scalar
+      PreviewValue=(X=2048.000000,Y=0.000000,Z=0.000000,W=1.000000)
+      bUsePreviewValueAsDefault=True
+      SortPriority=1
+      MaterialExpressionEditorX=-2160
+      MaterialExpressionEditorY=576
+      MaterialExpressionGuid=DF651B24479755A130B2FEA41BAA16C7
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_4" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_4'"
+      Preview=(Expression="/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_2'")
+      InputName="Speed"
+      Id=22D2424D4E8F495B780DCEA1193CC5FB
+      InputType=FunctionInput_Scalar
+      PreviewValue=(X=1.000000,Y=0.000000,Z=0.000000,W=1.000000)
+      bUsePreviewValueAsDefault=True
+      SortPriority=3
+      MaterialExpressionEditorX=-1424
+      MaterialExpressionEditorY=576
+      MaterialExpressionGuid=DF651B24479755A130B2FEA41BAA16C7
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_5" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_5'"
+      Preview=(Expression="/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_0'")
+      InputName="Near Scale"
+      Id=60D4B11D4D813D60495D2C96E9CEEB7C
+      InputType=FunctionInput_Scalar
+      PreviewValue=(X=2048.000000,Y=0.000000,Z=0.000000,W=1.000000)
+      bUsePreviewValueAsDefault=True
+      SortPriority=2
+      MaterialExpressionEditorX=-2160
+      MaterialExpressionEditorY=496
+      MaterialExpressionGuid=DF651B24479755A130B2FEA41BAA16C7
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_6" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_6'"
+      Preview=(Expression="/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_6'")
+      InputName="Near Normal Strength"
+      Id=0654158043A6D161B085CF9301E0EA92
+      InputType=FunctionInput_Scalar
+      PreviewValue=(X=1.000000,Y=0.000000,Z=0.000000,W=1.000000)
+      bUsePreviewValueAsDefault=True
+      SortPriority=5
+      MaterialExpressionEditorX=-1680
+      MaterialExpressionEditorY=1536
+      MaterialExpressionGuid=DF651B24479755A130B2FEA41BAA16C7
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_7" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_7'"
+      InputName="Far Displacement"
+      Id=C782948B4A3178E7A42B38BBA8FC09C0
+      InputType=FunctionInput_Scalar
+      bUsePreviewValueAsDefault=True
+      SortPriority=6
+      MaterialExpressionEditorX=-288
+      MaterialExpressionEditorY=864
+      MaterialExpressionGuid=D879A5BB42E50AA51F845892634A0DDF
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_8" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionInput_8'"
+      Preview=(Expression="/Script/Engine.MaterialExpressionTime'WaterTextureSurface:MaterialExpressionTime_0'")
+      InputName="Time"
+      Id=634CB99441CE746A7311F99E3B3F5EAF
+      InputType=FunctionInput_Scalar
+      bUsePreviewValueAsDefault=True
+      MaterialExpressionEditorX=-1408
+      MaterialExpressionEditorY=656
+      MaterialExpressionGuid=C32FB6B54F238992944172A4E399533E
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionFunctionOutput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionFunctionOutput_0'"
+      OutputName="Wave Attributes"
+      Description="Material Attributes with Normal and WPO defined."
+      A=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'WaterTextureSurface:MaterialExpressionSetMaterialAttributes_0'")
+      bLastPreviewed=True
+      Id=2641EA2045D424A89F6592B95D79F307
+      MaterialExpressionEditorX=1584
+      MaterialExpressionEditorY=-96
+      MaterialExpressionGuid=B6857B9C49E7C3FB9753E7A9F7E54892
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionGetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionGetMaterialAttributes'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionGetMaterialAttributes_0'"
+      MaterialAttributes=(Expression="/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_0'")
+      AttributeGetTypes(0)=0FA2821A200F4A4AB719B789C1259C64
+      AttributeGetTypes(1)=F905F895D5814314916D24348C40CE9E
+      MaterialExpressionEditorX=-688
+      MaterialExpressionEditorY=-80
+      MaterialExpressionGuid=677BA4D2437DD7203914A2866493329A
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+      Outputs(1)=(OutputName="Normal")
+      Outputs(2)=(OutputName="WorldPositionOffset")
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_0" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionLinearInterpolate_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionAdd'WaterTextureSurface:MaterialExpressionAdd_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionNormalize'WaterTextureSurface:MaterialExpressionNormalize_0'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionReroute'WaterTextureSurface:MaterialExpressionReroute_1'")
+      MaterialExpressionEditorX=560
+      MaterialExpressionEditorY=16
+      MaterialExpressionGuid=667C72C44ECC2C62C2637F8BAE55B806
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_1" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionLinearInterpolate_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_4'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_3'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionFresnel'WaterTextureSurface:MaterialExpressionFresnel_0'")
+      MaterialExpressionEditorX=-1632
+      MaterialExpressionEditorY=896
+      MaterialExpressionGuid=573997D1474D27E80BFF79A728863773
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_2" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionLinearInterpolate_2'"
+      A=(Expression="/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_5'")
+      B=(Expression="/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_3'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionSaturate'WaterTextureSurface:MaterialExpressionSaturate_1'")
+      MaterialExpressionEditorX=-1840
+      MaterialExpressionEditorY=512
+      MaterialExpressionGuid=3F1C4A0F47D766E95867B0ABF8FF768A
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_3" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionLinearInterpolate_3'"
+      A=(Expression="/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_6'")
+      B=(Expression="/Script/Engine.MaterialExpressionConstant'WaterTextureSurface:MaterialExpressionConstant_2'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionSaturate'WaterTextureSurface:MaterialExpressionSaturate_2'")
+      ConstB=0.000000
+      MaterialExpressionEditorX=-1168
+      MaterialExpressionEditorY=1536
+      MaterialExpressionGuid=3F1C4A0F47D766E95867B0ABF8FF768A
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_4" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionLinearInterpolate_4'"
+      A=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'WaterTextureSurface:MaterialExpressionGetMaterialAttributes_0'",OutputIndex=2)
+      B=(Expression="/Script/Engine.MaterialExpressionReroute'WaterTextureSurface:MaterialExpressionReroute_3'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionReroute'WaterTextureSurface:MaterialExpressionReroute_0'")
+      MaterialExpressionEditorX=832
+      MaterialExpressionEditorY=144
+      MaterialExpressionGuid=CABED1D44C016BF3843CCB920CC52CB6
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_2" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionMaterialFunctionCall_2'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Water/Materials/Functions/WaterTextureWaves.WaterTextureWaves'"
+      FunctionInputs(0)=(ExpressionInputId=694A8C7B4818A79CBAB5FCAF787F64AB,Input=(Expression="/Script/Engine.MaterialExpressionComponentMask'WaterTextureSurface:MaterialExpressionComponentMask_1'",InputName="Coordinates"))
+      FunctionInputs(1)=(ExpressionInputId=55386161419E95B577AA499D5EA27E57,Input=(OutputIndex=-1,InputName="Divisor"))
+      FunctionInputs(2)=(ExpressionInputId=41BB96B544CF258722C4C889B227A3C7,Input=(Expression="/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_4'",InputName="Speed"))
+      FunctionInputs(3)=(ExpressionInputId=B1577C02460424C9E66EA4AA78CAFDFF,Input=(Expression="/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_8'",InputName="Time"))
+      FunctionInputs(4)=(ExpressionInputId=34D7522A455D90B04EE02E800E1C866D,Input=(Expression="/Script/Engine.MaterialExpressionTextureObject'WaterTextureSurface:MaterialExpressionTextureObject_1'",InputName="Texture"))
+      FunctionOutputs(0)=(ExpressionOutputId=86A8532A4D53E96F911B8DA840667EB7,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=-1104
+      MaterialExpressionEditorY=592
+      MaterialExpressionGuid=9E199EB1420D4E494BFD35A539F13EAB
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_2" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionMultiply_2'"
+      A=(Expression="/Script/Engine.MaterialExpressionSubtract'WaterTextureSurface:MaterialExpressionSubtract_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'WaterTextureSurface:MaterialExpressionLinearInterpolate_3'")
+      MaterialExpressionEditorX=-416
+      MaterialExpressionEditorY=512
+      MaterialExpressionGuid=BF6868AF45773F802A06D2B5DB2E3DDA
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_3" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionMultiply_3'"
+      A=(Expression="/Script/Engine.MaterialExpressionSubtract'WaterTextureSurface:MaterialExpressionSubtract_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionReroute'WaterTextureSurface:MaterialExpressionReroute_1'")
+      MaterialExpressionEditorX=-368
+      MaterialExpressionEditorY=752
+      MaterialExpressionGuid=5F6E7C6845C7474292BC2EA807B77C20
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_4" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionMultiply_4'"
+      A=(Expression="/Script/Engine.MaterialExpressionMultiply'WaterTextureSurface:MaterialExpressionMultiply_3'")
+      B=(Expression="/Script/Engine.MaterialExpressionFunctionInput'WaterTextureSurface:MaterialExpressionFunctionInput_7'")
+      MaterialExpressionEditorX=48
+      MaterialExpressionEditorY=752
+      MaterialExpressionGuid=8B74BFF142F5B0504591219BFBC1DEB1
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_5" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionMultiply_5'"
+      A=(Expression="/Script/Engine.MaterialExpressionMultiply'WaterTextureSurface:MaterialExpressionMultiply_4'")
+      B=(Expression="/Script/Engine.MaterialExpressionConstant3Vector'WaterTextureSurface:MaterialExpressionConstant3Vector_1'")
+      MaterialExpressionEditorX=240
+      MaterialExpressionEditorY=752
+      MaterialExpressionGuid=F1A40A384FD0DC95BD76329370E99EF9
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionNormalize_0" ExportPath="/Script/Engine.MaterialExpressionNormalize'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionNormalize_0'"
+      VectorInput=(Expression="/Script/Engine.MaterialExpressionAppendVector'WaterTextureSurface:MaterialExpressionAppendVector_1'")
+      MaterialExpressionEditorX=-320
+      MaterialExpressionEditorY=336
+      MaterialExpressionGuid=CF9388FA47A9A2E073C8DC88915AAF64
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionPixelDepth_0" ExportPath="/Script/Engine.MaterialExpressionPixelDepth'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionPixelDepth_0'"
+      MaterialExpressionEditorX=-3726
+      MaterialExpressionEditorY=1138
+      MaterialExpressionGuid=9BCA78EB463A8F2CF1FD168B52261643
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionPixelDepth_1" ExportPath="/Script/Engine.MaterialExpressionPixelDepth'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionPixelDepth_1'"
+      MaterialExpressionEditorX=-1712
+      MaterialExpressionEditorY=1696
+      MaterialExpressionGuid=9BCA78EB463A8F2CF1FD168B52261643
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_0" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionReroute_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionReroute'WaterTextureSurface:MaterialExpressionReroute_1'")
+      MaterialExpressionEditorX=480
+      MaterialExpressionEditorY=1200
+      MaterialExpressionGuid=4F57252D462D3C60E52C919CD9CB105B
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_1" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionReroute_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionSaturate'WaterTextureSurface:MaterialExpressionSaturate_0'")
+      MaterialExpressionEditorX=-576
+      MaterialExpressionEditorY=1200
+      MaterialExpressionGuid=780DD9D1489990E70B1045869F0A53CD
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_2" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionReroute_2'"
+      Input=(Expression="/Script/Engine.MaterialExpressionSaturate'WaterTextureSurface:MaterialExpressionSaturate_0'")
+      MaterialExpressionEditorX=-2574
+      MaterialExpressionEditorY=1202
+      MaterialExpressionGuid=1F22B1694FEC3DC58F661589A88A7D5D
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_3" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionReroute_3'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMultiply'WaterTextureSurface:MaterialExpressionMultiply_5'")
+      MaterialExpressionEditorX=688
+      MaterialExpressionEditorY=208
+      MaterialExpressionGuid=1A8730274FD72D81C2ECE5BE21FA00B8
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_0" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSaturate_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionDivide'WaterTextureSurface:MaterialExpressionDivide_2'")
+      MaterialExpressionEditorX=-3022
+      MaterialExpressionEditorY=1170
+      MaterialExpressionGuid=9645077547DC9B644F0DB4831536FB15
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_1" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSaturate_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionCeil'WaterTextureSurface:MaterialExpressionCeil_0'")
+      MaterialExpressionEditorX=-2080
+      MaterialExpressionEditorY=672
+      MaterialExpressionGuid=B283B573431E0BEE75650787BAA3C4C8
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_2" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSaturate_2'"
+      Input=(Expression="/Script/Engine.MaterialExpressionDivide'WaterTextureSurface:MaterialExpressionDivide_3'")
+      MaterialExpressionEditorX=-1392
+      MaterialExpressionEditorY=1712
+      MaterialExpressionGuid=F4C93EE04B63749F24A597B3D5A907BE
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_0" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_0'"
+      DefaultValue=512.000000
+      ParameterName="Default Near Water Scale"
+      ExpressionGUID=06920B9A4F409C72EB624989776939E4
+      Group="Detail Normal Settings"
+      MaterialExpressionEditorX=-2384
+      MaterialExpressionEditorY=480
+      MaterialExpressionGuid=C71609894E5F90C8754B7DB57A6B999E
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_1" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_1'"
+      DefaultValue=3500.000000
+      ParameterName="Default Distant Water Scale"
+      ExpressionGUID=38C8C4F6462C2DA7C1AE0EA45700EDB1
+      Group="Detail Normal Settings"
+      MaterialExpressionEditorX=-2416
+      MaterialExpressionEditorY=560
+      MaterialExpressionGuid=C71609894E5F90C8754B7DB57A6B999E
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_2" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_2'"
+      DefaultValue=0.750000
+      ParameterName="Default Disant Water Speed"
+      ExpressionGUID=8D9BC85D48CF0EC973AC278EE23C8208
+      Group="Detail Normal Settings"
+      MaterialExpressionEditorX=-1664
+      MaterialExpressionEditorY=560
+      MaterialExpressionGuid=C71609894E5F90C8754B7DB57A6B999E
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_3" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_3'"
+      DefaultValue=0.300000
+      ParameterName="Default Distant Normal Strength"
+      ExpressionGUID=B19A55A5487A17F66E361B88C07A5F7E
+      Group="Detail Normal Settings"
+      MaterialExpressionEditorX=-1984
+      MaterialExpressionEditorY=960
+      MaterialExpressionGuid=8AEC8D9E41BDA40548140A9015CEAEED
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_4" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_4'"
+      DefaultValue=0.250000
+      ParameterName="Default Distant Normal StrengthB"
+      ExpressionGUID=5F8A5D224BDC178476BA338501DEAE23
+      Group="Detail Normal Settings"
+      MaterialExpressionEditorX=-1984
+      MaterialExpressionEditorY=880
+      MaterialExpressionGuid=8AEC8D9E41BDA40548140A9015CEAEED
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_5" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_5'"
+      DefaultValue=9.000000
+      ParameterName="Far Normal Fresnel Power"
+      ExpressionGUID=D84B33214A9EE170F825B59C974CCEF5
+      Group="Detail Normal Settings"
+      MaterialExpressionEditorX=-2240
+      MaterialExpressionEditorY=1024
+      MaterialExpressionGuid=A76680EE45F1B484F7B30EB0D734B704
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_6" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_6'"
+      DefaultValue=0.250000
+      ParameterName="Default Near Normal Strength"
+      ExpressionGUID=353F23394A7597DBC662449D1102CAB1
+      Group="Detail Normal Settings"
+      MaterialExpressionEditorX=-1952
+      MaterialExpressionEditorY=1520
+      MaterialExpressionGuid=8AEC8D9E41BDA40548140A9015CEAEED
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+      bCollapsed=False
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_7" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_7'"
+      DefaultValue=5000.000000
+      ParameterName="Water Distant Normal Offset"
+      ExpressionGUID=49AC982E477FA9373AF5B180A985F773
+      Group="Detail Normal Settings"
+      MaterialExpressionEditorX=-3886
+      MaterialExpressionEditorY=1234
+      MaterialExpressionGuid=4E2C5C2747C39980F2716E9E8787F3CE
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_8" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_8'"
+      DefaultValue=10000.000000
+      ParameterName="Water Distant Normal Length"
+      ExpressionGUID=64CDAB504F2AE98BE164FCB05F6CEC13
+      Group="Detail Normal Settings"
+      MaterialExpressionEditorX=-3870
+      MaterialExpressionEditorY=1362
+      MaterialExpressionGuid=4E2C5C2747C39980F2716E9E8787F3CE
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_9" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionScalarParameter_9'"
+      DefaultValue=5000.000000
+      ParameterName="Water Distant Normal Offset"
+      ExpressionGUID=DED84FCA4F59C6B7A63C70BBE787E992
+      Group="Detail Normal Settings"
+      MaterialExpressionEditorX=-1808
+      MaterialExpressionEditorY=1776
+      MaterialExpressionGuid=4E2C5C2747C39980F2716E9E8787F3CE
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSetMaterialAttributes_0'"
+      Inputs(0)=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'WaterTextureSurface:MaterialExpressionGetMaterialAttributes_0'")
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'WaterTextureSurface:MaterialExpressionLinearInterpolate_0'",InputName="Normal")
+      Inputs(2)=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'WaterTextureSurface:MaterialExpressionLinearInterpolate_4'",InputName="World Position Offset")
+      AttributeSetTypes(0)=0FA2821A200F4A4AB719B789C1259C64
+      AttributeSetTypes(1)=F905F895D5814314916D24348C40CE9E
+      MaterialExpressionEditorX=1072
+      MaterialExpressionEditorY=-64
+      MaterialExpressionGuid=9AC12BC34FCECB261495DA835609D2D2
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_1" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSetMaterialAttributes_1'"
+      MaterialExpressionEditorX=-1552
+      MaterialExpressionEditorY=-80
+      MaterialExpressionGuid=1693BCC2492A1E0BB583FA890EB4930D
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionSubtract_0" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSubtract_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionComponentMask'WaterTextureSurface:MaterialExpressionComponentMask_0'")
+      ConstB=0.500000
+      MaterialExpressionEditorX=-608
+      MaterialExpressionEditorY=336
+      MaterialExpressionGuid=464F31F044F1388A727B678836B5FDC4
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionSubtract_1" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSubtract_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionComponentMask'WaterTextureSurface:MaterialExpressionComponentMask_2'")
+      ConstB=0.500000
+      MaterialExpressionEditorX=-576
+      MaterialExpressionEditorY=752
+      MaterialExpressionGuid=D778E2F44519C52422BAA6BD927329B8
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionSubtract_2" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionSubtract_2'"
+      A=(Expression="/Script/Engine.MaterialExpressionPixelDepth'WaterTextureSurface:MaterialExpressionPixelDepth_0'",Mask=1,MaskR=1)
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'WaterTextureSurface:MaterialExpressionScalarParameter_7'")
+      MaterialExpressionEditorX=-3566
+      MaterialExpressionEditorY=1154
+      MaterialExpressionGuid=9C49724041BFE1E0144A58AB69FAF426
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureObject_1" ExportPath="/Script/Engine.MaterialExpressionTextureObject'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionTextureObject_1'"
+      Texture="/Script/Engine.Texture2D'/Water/Textures/Normals/T_Water_TilingNormal_With_Height_02_Softened.T_Water_TilingNormal_With_Height_02_Softened'"
+      SamplerType=SAMPLERTYPE_LinearColor
+      MaterialExpressionEditorX=-1408
+      MaterialExpressionEditorY=736
+      MaterialExpressionGuid=A00BADB947764874E7B6D2B2EC504752
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionTime_0" ExportPath="/Script/Engine.MaterialExpressionTime'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionTime_0'"
+      MaterialExpressionEditorX=-1584
+      MaterialExpressionEditorY=656
+      MaterialExpressionGuid=824AF56846F86DC43844F19B2F90994E
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="MaterialExpressionWorldPosition_0" ExportPath="/Script/Engine.MaterialExpressionWorldPosition'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:MaterialExpressionWorldPosition_0'"
+      WorldPositionShaderOffset=WPT_ExcludeAllShaderOffsets
+      MaterialExpressionEditorX=-2272
+      MaterialExpressionEditorY=368
+      MaterialExpressionGuid=25774FDD471CFB9D10842A83A6A6775B
+      Function="/Script/Engine.MaterialFunction'WaterTextureSurface'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Water/Materials/Functions/WaterTextureSurface.WaterTextureSurface:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   DependentFunctionExpressionCandidates(0)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_2'"
+   EditorOnlyData="/Script/Engine.MaterialFunctionEditorOnlyData'WaterTextureSurfaceEditorOnlyData'"
+   StateId=6E209B5A427A95C3DB6320BB16EEDAC6
+   CombinedInputTypes=1039
+   CombinedOutputTypes=1024
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+End Object

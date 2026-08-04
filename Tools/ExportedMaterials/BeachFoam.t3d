@@ -1,0 +1,1410 @@
+Begin Object Class=/Script/Engine.MaterialFunction Name="BeachFoam" ExportPath="/Script/Engine.MaterialFunction'/Water/Materials/Layers/BeachFoam.BeachFoam'"
+   Begin Object Class=/Script/Engine.MaterialFunctionEditorOnlyData Name="BeachFoamEditorOnlyData" ExportPath="/Script/Engine.MaterialFunctionEditorOnlyData'/Water/Materials/Layers/BeachFoam.BeachFoam:BeachFoamEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAdd Name="MaterialExpressionAdd_1" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAdd Name="MaterialExpressionAdd_10" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_10'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAdd Name="MaterialExpressionAdd_11" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_11'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAdd Name="MaterialExpressionAdd_13" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_13'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAdd Name="MaterialExpressionAdd_2" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAdd Name="MaterialExpressionAdd_3" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAdd Name="MaterialExpressionAdd_4" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAdd Name="MaterialExpressionAdd_5" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAdd Name="MaterialExpressionAdd_6" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAdd Name="MaterialExpressionAdd_8" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAdd Name="MaterialExpressionAdd_9" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_9'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAppendVector Name="MaterialExpressionAppendVector_0" ExportPath="/Script/Engine.MaterialExpressionAppendVector'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAppendVector_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionCollectionParameter Name="MaterialExpressionCollectionParameter_0" ExportPath="/Script/Engine.MaterialExpressionCollectionParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionCollectionParameter_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionCollectionParameter Name="MaterialExpressionCollectionParameter_1" ExportPath="/Script/Engine.MaterialExpressionCollectionParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionCollectionParameter_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionCollectionParameter Name="MaterialExpressionCollectionParameter_2" ExportPath="/Script/Engine.MaterialExpressionCollectionParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionCollectionParameter_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_0" ExportPath="/Script/Engine.MaterialExpressionComment'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionComment_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_1" ExportPath="/Script/Engine.MaterialExpressionComment'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionComment_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_0" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionComponentMask_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_1" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionComponentMask_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_2" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionComponentMask_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_3" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionComponentMask_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_4" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionComponentMask_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant Name="MaterialExpressionConstant_1" ExportPath="/Script/Engine.MaterialExpressionConstant'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionConstant_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant3Vector Name="MaterialExpressionConstant3Vector_1" ExportPath="/Script/Engine.MaterialExpressionConstant3Vector'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionConstant3Vector_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant3Vector Name="MaterialExpressionConstant3Vector_2" ExportPath="/Script/Engine.MaterialExpressionConstant3Vector'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionConstant3Vector_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDistanceToNearestSurface Name="MaterialExpressionDistanceToNearestSurface_0" ExportPath="/Script/Engine.MaterialExpressionDistanceToNearestSurface'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDistanceToNearestSurface_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDivide Name="MaterialExpressionDivide_0" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDivide Name="MaterialExpressionDivide_1" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDivide Name="MaterialExpressionDivide_2" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDivide Name="MaterialExpressionDivide_3" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDivide Name="MaterialExpressionDivide_4" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDivide Name="MaterialExpressionDivide_5" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDivide Name="MaterialExpressionDivide_6" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDivide Name="MaterialExpressionDivide_8" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDivide Name="MaterialExpressionDivide_9" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_9'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionFunctionInput_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionOutput Name="MaterialExpressionFunctionOutput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionFunctionOutput_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionOutput Name="MaterialExpressionFunctionOutput_1" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionFunctionOutput_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionOutput Name="MaterialExpressionFunctionOutput_2" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionFunctionOutput_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionGetMaterialAttributes Name="MaterialExpressionGetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionGetMaterialAttributes'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionGetMaterialAttributes_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_0" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionLinearInterpolate_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_1" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionLinearInterpolate_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_2" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionLinearInterpolate_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_3" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionLinearInterpolate_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_4" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionLinearInterpolate_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_0" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMaterialFunctionCall_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_1" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMaterialFunctionCall_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_3" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMaterialFunctionCall_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_4" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMaterialFunctionCall_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_5" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMaterialFunctionCall_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMax Name="MaterialExpressionMax_1" ExportPath="/Script/Engine.MaterialExpressionMax'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMax_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_0" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_1" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_10" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_10'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_11" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_11'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_12" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_12'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_13" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_13'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_14" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_14'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_15" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_15'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_16" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_16'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_17" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_17'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_18" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_18'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_19" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_19'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_2" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_4" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_5" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_6" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_8" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_9" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_9'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNormalize Name="MaterialExpressionNormalize_0" ExportPath="/Script/Engine.MaterialExpressionNormalize'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionNormalize_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionOneMinus Name="MaterialExpressionOneMinus_3" ExportPath="/Script/Engine.MaterialExpressionOneMinus'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionOneMinus_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionOneMinus Name="MaterialExpressionOneMinus_4" ExportPath="/Script/Engine.MaterialExpressionOneMinus'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionOneMinus_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionOneMinus Name="MaterialExpressionOneMinus_5" ExportPath="/Script/Engine.MaterialExpressionOneMinus'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionOneMinus_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPixelDepth Name="MaterialExpressionPixelDepth_0" ExportPath="/Script/Engine.MaterialExpressionPixelDepth'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionPixelDepth_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPower Name="MaterialExpressionPower_0" ExportPath="/Script/Engine.MaterialExpressionPower'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionPower_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_0" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionReroute_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_1" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionReroute_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_2" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionReroute_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_0" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_1" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_11" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_11'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_12" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_12'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_2" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_3" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_6" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_7" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_7'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_8" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_0" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_1" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_10" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_10'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_11" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_11'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_12" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_12'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_14" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_14'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_16" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_16'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_17" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_17'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_18" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_18'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_19" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_19'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_2" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_21" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_21'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_22" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_22'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_24" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_24'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_25" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_25'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_27" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_27'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_28" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_28'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_3" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_4" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_5" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_6" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_7" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_7'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_8" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_9" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_9'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSceneDepthWithoutWater Name="MaterialExpressionSceneDepthWithoutWater_0" ExportPath="/Script/Engine.MaterialExpressionSceneDepthWithoutWater'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSceneDepthWithoutWater_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSetMaterialAttributes_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSkyAtmosphereDistantLightScatteredLuminance Name="MaterialExpressionSkyAtmosphereDistantLightScatteredLuminance_0" ExportPath="/Script/Engine.MaterialExpressionSkyAtmosphereDistantLightScatteredLuminance'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSkyAtmosphereDistantLightScatteredLuminance_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSubtract Name="MaterialExpressionSubtract_0" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSubtract_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSubtract Name="MaterialExpressionSubtract_1" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSubtract_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSubtract Name="MaterialExpressionSubtract_4" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSubtract_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureObject Name="MaterialExpressionTextureObject_0" ExportPath="/Script/Engine.MaterialExpressionTextureObject'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionTextureObject_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureSample Name="MaterialExpressionTextureSample_1" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionTextureSample_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureSample Name="MaterialExpressionTextureSample_2" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionTextureSample_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureSample Name="MaterialExpressionTextureSample_4" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionTextureSample_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureSample Name="MaterialExpressionTextureSample_5" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionTextureSample_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureSample Name="MaterialExpressionTextureSample_6" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionTextureSample_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTwoSidedSign Name="MaterialExpressionTwoSidedSign_1" ExportPath="/Script/Engine.MaterialExpressionTwoSidedSign'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionTwoSidedSign_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVectorParameter Name="MaterialExpressionVectorParameter_0" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionVectorParameter_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVectorParameter Name="MaterialExpressionVectorParameter_1" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionVectorParameter_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionWorldPosition Name="MaterialExpressionWorldPosition_0" ExportPath="/Script/Engine.MaterialExpressionWorldPosition'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionWorldPosition_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionWorldPosition Name="MaterialExpressionWorldPosition_1" ExportPath="/Script/Engine.MaterialExpressionWorldPosition'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionWorldPosition_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionWorldPosition Name="MaterialExpressionWorldPosition_2" ExportPath="/Script/Engine.MaterialExpressionWorldPosition'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionWorldPosition_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionWorldPosition Name="MaterialExpressionWorldPosition_3" ExportPath="/Script/Engine.MaterialExpressionWorldPosition'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionWorldPosition_3'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Water/Materials/Layers/BeachFoam.BeachFoam:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="BeachFoamEditorOnlyData" ExportPath="/Script/Engine.MaterialFunctionEditorOnlyData'/Water/Materials/Layers/BeachFoam.BeachFoam:BeachFoamEditorOnlyData'"
+      ExpressionCollection=(Expressions=("/Script/Engine.MaterialExpressionFunctionOutput'BeachFoam:MaterialExpressionFunctionOutput_0'","/Script/Engine.MaterialExpressionFunctionInput'BeachFoam:MaterialExpressionFunctionInput_0'","/Script/Engine.MaterialExpressionSetMaterialAttributes'BeachFoam:MaterialExpressionSetMaterialAttributes_0'","/Script/Engine.MaterialExpressionDistanceToNearestSurface'BeachFoam:MaterialExpressionDistanceToNearestSurface_0'","/Script/Engine.MaterialExpressionWorldPosition'BeachFoam:MaterialExpressionWorldPosition_0'","/Script/Engine.MaterialExpressionWorldPosition'BeachFoam:MaterialExpressionWorldPosition_1'","/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_1'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_1'","/Script/Engine.MaterialExpressionMaterialFunctionCall'BeachFoam:MaterialExpressionMaterialFunctionCall_0'","/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_2'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_2'","/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_0'","/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_1'","/Script/Engine.MaterialExpressionGetMaterialAttributes'BeachFoam:MaterialExpressionGetMaterialAttributes_0'","/Script/Engine.MaterialExpressionFunctionOutput'BeachFoam:MaterialExpressionFunctionOutput_1'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_0'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_4'","/Script/Engine.MaterialExpressionSceneDepthWithoutWater'BeachFoam:MaterialExpressionSceneDepthWithoutWater_0'","/Script/Engine.MaterialExpressionPixelDepth'BeachFoam:MaterialExpressionPixelDepth_0'","/Script/Engine.MaterialExpressionSubtract'BeachFoam:MaterialExpressionSubtract_1'","/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_3'","/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_3'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_1'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_5'","/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_2'","/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_3'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_2'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_3'","/Script/Engine.MaterialExpressionTextureSample'BeachFoam:MaterialExpressionTextureSample_1'","/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_5'","/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_4'","/Script/Engine.MaterialExpressionTextureSample'BeachFoam:MaterialExpressionTextureSample_2'","/Script/Engine.MaterialExpressionMaterialFunctionCall'BeachFoam:MaterialExpressionMaterialFunctionCall_1'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_10'","/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_6'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_11'","/Script/Engine.MaterialExpressionLinearInterpolate'BeachFoam:MaterialExpressionLinearInterpolate_2'","/Script/Engine.MaterialExpressionWorldPosition'BeachFoam:MaterialExpressionWorldPosition_3'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_14'","/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_7'","/Script/Engine.MaterialExpressionReroute'BeachFoam:MaterialExpressionReroute_1'","/Script/Engine.MaterialExpressionMaterialFunctionCall'BeachFoam:MaterialExpressionMaterialFunctionCall_3'","/Script/Engine.MaterialExpressionTextureObject'BeachFoam:MaterialExpressionTextureObject_0'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_17'","/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_10'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_13'","/Script/Engine.MaterialExpressionConstant3Vector'BeachFoam:MaterialExpressionConstant3Vector_1'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_18'","/Script/Engine.MaterialExpressionLinearInterpolate'BeachFoam:MaterialExpressionLinearInterpolate_4'","/Script/Engine.MaterialExpressionComponentMask'BeachFoam:MaterialExpressionComponentMask_4'","/Script/Engine.MaterialExpressionAppendVector'BeachFoam:MaterialExpressionAppendVector_0'","/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_11'","/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_8'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_14'","/Script/Engine.MaterialExpressionConstant3Vector'BeachFoam:MaterialExpressionConstant3Vector_2'","/Script/Engine.MaterialExpressionTwoSidedSign'BeachFoam:MaterialExpressionTwoSidedSign_1'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_15'","/Script/Engine.MaterialExpressionNormalize'BeachFoam:MaterialExpressionNormalize_0'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_19'","/Script/Engine.MaterialExpressionTextureSample'BeachFoam:MaterialExpressionTextureSample_5'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_16'","/Script/Engine.MaterialExpressionVectorParameter'BeachFoam:MaterialExpressionVectorParameter_0'","/Script/Engine.MaterialExpressionFunctionOutput'BeachFoam:MaterialExpressionFunctionOutput_2'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_17'","/Script/Engine.MaterialExpressionVectorParameter'BeachFoam:MaterialExpressionVectorParameter_1'","/Script/Engine.MaterialExpressionPower'BeachFoam:MaterialExpressionPower_0'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_21'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_18'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_22'","/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_13'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_24'","/Script/Engine.MaterialExpressionTextureSample'BeachFoam:MaterialExpressionTextureSample_4'","/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_4'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_6'","/Script/Engine.MaterialExpressionComponentMask'BeachFoam:MaterialExpressionComponentMask_1'","/Script/Engine.MaterialExpressionLinearInterpolate'BeachFoam:MaterialExpressionLinearInterpolate_1'","/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_1'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_8'","/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_6'","/Script/Engine.MaterialExpressionMaterialFunctionCall'BeachFoam:MaterialExpressionMaterialFunctionCall_4'","/Script/Engine.MaterialExpressionTextureSample'BeachFoam:MaterialExpressionTextureSample_6'","/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_6'","/Script/Engine.MaterialExpressionLinearInterpolate'BeachFoam:MaterialExpressionLinearInterpolate_3'","/Script/Engine.MaterialExpressionReroute'BeachFoam:MaterialExpressionReroute_0'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_12'","/Script/Engine.MaterialExpressionSkyAtmosphereDistantLightScatteredLuminance'BeachFoam:MaterialExpressionSkyAtmosphereDistantLightScatteredLuminance_0'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_4'","/Script/Engine.MaterialExpressionSubtract'BeachFoam:MaterialExpressionSubtract_4'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_9'","/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_9'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_25'","/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_11'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_5'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_6'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_27'","/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_8'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_28'","/Script/Engine.MaterialExpressionMax'BeachFoam:MaterialExpressionMax_1'","/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_12'","/Script/Engine.MaterialExpressionCollectionParameter'BeachFoam:MaterialExpressionCollectionParameter_0'","/Script/Engine.MaterialExpressionMaterialFunctionCall'BeachFoam:MaterialExpressionMaterialFunctionCall_5'","/Script/Engine.MaterialExpressionConstant'BeachFoam:MaterialExpressionConstant_1'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_0'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_12'","/Script/Engine.MaterialExpressionOneMinus'BeachFoam:MaterialExpressionOneMinus_3'","/Script/Engine.MaterialExpressionWorldPosition'BeachFoam:MaterialExpressionWorldPosition_2'","/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_0'","/Script/Engine.MaterialExpressionCollectionParameter'BeachFoam:MaterialExpressionCollectionParameter_1'","/Script/Engine.MaterialExpressionComponentMask'BeachFoam:MaterialExpressionComponentMask_0'","/Script/Engine.MaterialExpressionOneMinus'BeachFoam:MaterialExpressionOneMinus_4'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_8'","/Script/Engine.MaterialExpressionLinearInterpolate'BeachFoam:MaterialExpressionLinearInterpolate_0'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_7'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_9'","/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_16'","/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_5'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_10'","/Script/Engine.MaterialExpressionComponentMask'BeachFoam:MaterialExpressionComponentMask_2'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_11'","/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_8'","/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_2'","/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_19'","/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_9'","/Script/Engine.MaterialExpressionOneMinus'BeachFoam:MaterialExpressionOneMinus_5'","/Script/Engine.MaterialExpressionReroute'BeachFoam:MaterialExpressionReroute_2'","/Script/Engine.MaterialExpressionCollectionParameter'BeachFoam:MaterialExpressionCollectionParameter_2'","/Script/Engine.MaterialExpressionSubtract'BeachFoam:MaterialExpressionSubtract_0'","/Script/Engine.MaterialExpressionComponentMask'BeachFoam:MaterialExpressionComponentMask_3'"),EditorComments=("/Script/Engine.MaterialExpressionComment'BeachFoam:MaterialExpressionComment_0'","/Script/Engine.MaterialExpressionComment'BeachFoam:MaterialExpressionComment_1'"))
+   End Object
+   Begin Object Name="MaterialExpressionAdd_1" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_5'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_8'")
+      MaterialExpressionEditorX=-1760
+      MaterialExpressionEditorY=960
+      MaterialExpressionGuid=31914C4644E337A0E45A9A986F1A04A0
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionAdd_10" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_10'"
+      A=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_13'")
+      B=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_16'")
+      MaterialExpressionEditorX=1040
+      MaterialExpressionEditorY=1040
+      MaterialExpressionGuid=43A307BC4648F30A7C3B36BCBA813D89
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionAdd_11" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_11'"
+      A=(Expression="/Script/Engine.MaterialExpressionNormalize'BeachFoam:MaterialExpressionNormalize_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_14'")
+      MaterialExpressionEditorX=1984
+      MaterialExpressionEditorY=752
+      MaterialExpressionGuid=498657DD479F365DB66D0EBC8DCC4310
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionAdd_13" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_13'"
+      A=(Expression="/Script/Engine.MaterialExpressionTextureSample'BeachFoam:MaterialExpressionTextureSample_2'",OutputIndex=1,Mask=1,MaskR=1)
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_24'")
+      MaterialExpressionEditorX=-1488
+      MaterialExpressionEditorY=192
+      MaterialExpressionGuid=31914C4644E337A0E45A9A986F1A04A0
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionAdd_2" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_2'"
+      A=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'BeachFoam:MaterialExpressionGetMaterialAttributes_0'",OutputIndex=3)
+      B=(Expression="/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_8'")
+      MaterialExpressionEditorX=1040
+      MaterialExpressionEditorY=320
+      MaterialExpressionGuid=4EB8B1B84F47B6DF3ADDEABBE01CA12B
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionAdd_3" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_3'"
+      A=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'BeachFoam:MaterialExpressionGetMaterialAttributes_0'",OutputIndex=2)
+      B=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_2'")
+      MaterialExpressionEditorX=1024
+      MaterialExpressionEditorY=208
+      MaterialExpressionGuid=F6BB5C484B8092547A09B396F63EAD71
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionAdd_4" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_4'"
+      A=(Expression="/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_5'")
+      ConstB=0.500000
+      MaterialExpressionEditorX=-3824
+      MaterialExpressionEditorY=-160
+      MaterialExpressionGuid=08A1B3E94257BDE9EC3E729F001EA8B6
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionAdd_5" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_5'"
+      A=(Expression="/Script/Engine.MaterialExpressionComponentMask'BeachFoam:MaterialExpressionComponentMask_0'")
+      ConstB=0.500000
+      MaterialExpressionEditorX=-2288
+      MaterialExpressionEditorY=-1312
+      MaterialExpressionGuid=A87CC89C4AE02749B9499A9C7C290D03
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionAdd_6" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_6'"
+      A=(Expression="/Script/Engine.MaterialExpressionTextureSample'BeachFoam:MaterialExpressionTextureSample_6'",OutputIndex=1,Mask=1,MaskR=1)
+      B=(Expression="/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_8'")
+      MaterialExpressionEditorX=-1392
+      MaterialExpressionEditorY=416
+      MaterialExpressionGuid=31914C4644E337A0E45A9A986F1A04A0
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionAdd_8" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_8'"
+      A=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_24'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_28'")
+      MaterialExpressionEditorX=-1520
+      MaterialExpressionEditorY=464
+      MaterialExpressionGuid=4181C5D7414E881AFC08C5B9BB27BA25
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionAdd_9" ExportPath="/Script/Engine.MaterialExpressionAdd'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAdd_9'"
+      A=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_11'")
+      ConstB=16.000000
+      MaterialExpressionEditorX=-2374
+      MaterialExpressionEditorY=-403
+      MaterialExpressionGuid=814355584A8F7F690465238D031E5A44
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionAppendVector_0" ExportPath="/Script/Engine.MaterialExpressionAppendVector'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionAppendVector_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionComponentMask'BeachFoam:MaterialExpressionComponentMask_4'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_19'")
+      MaterialExpressionEditorX=1344
+      MaterialExpressionEditorY=544
+      MaterialExpressionGuid=1E4BCBEF46176625FA8AC0A031529336
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionCollectionParameter_0" ExportPath="/Script/Engine.MaterialExpressionCollectionParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionCollectionParameter_0'"
+      Collection="/Script/Engine.MaterialParameterCollection'/Water/Materials/MPC/MPC_Water.MPC_Water'"
+      ParameterName="WaveCaptureSize"
+      ParameterId=3BD76D3C4D1C699CC20C52BB42F8D1F5
+      MaterialExpressionEditorX=-4560
+      MaterialExpressionEditorY=-144
+      MaterialExpressionGuid=250A249C4DD7CAF7CF7F738698CC84ED
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionCollectionParameter_1" ExportPath="/Script/Engine.MaterialExpressionCollectionParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionCollectionParameter_1'"
+      Collection="/Script/Engine.MaterialParameterCollection'/Water/Materials/MPC/MPC_Water.MPC_Water'"
+      ParameterName="FluidSimSize"
+      ParameterId=C210E0CF4094C942323EEB8D836D77EB
+      MaterialExpressionEditorX=-2976
+      MaterialExpressionEditorY=-1248
+      MaterialExpressionGuid=250A249C4DD7CAF7CF7F738698CC84ED
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionCollectionParameter_2" ExportPath="/Script/Engine.MaterialExpressionCollectionParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionCollectionParameter_2'"
+      Collection="/Script/Engine.MaterialParameterCollection'/Water/Materials/MPC/MPC_Water.MPC_Water'"
+      ParameterName="SimLocation"
+      ParameterId=A5ECE4244B7BC04AC88A168A30FC289C
+      MaterialExpressionEditorX=-4592
+      MaterialExpressionEditorY=-272
+      MaterialExpressionGuid=8A986305474FC6F2671DA9BF1CAF4546
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionComment_0" ExportPath="/Script/Engine.MaterialExpressionComment'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionComment_0'"
+      SizeX=1568
+      SizeY=496
+      Text="NearShore Foam"
+      MaterialExpressionEditorX=-3152
+      MaterialExpressionEditorY=-800
+      MaterialExpressionGuid=932E2ECD47DC696F8CD8158FB30F8496
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionComment_1" ExportPath="/Script/Engine.MaterialExpressionComment'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionComment_1'"
+      SizeX=336
+      SizeY=256
+      Text="Disabling due to Landscape Global DF issues"
+      MaterialExpressionEditorX=-1520
+      MaterialExpressionEditorY=-832
+      MaterialExpressionGuid=792FC6F24A9A5E7350B1679F6F3E4EDC
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_0" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionComponentMask_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_0'")
+      R=True
+      G=True
+      MaterialExpressionEditorX=-2464
+      MaterialExpressionEditorY=-1312
+      MaterialExpressionGuid=B710BAF14A8578AC0F3A219A76C8A8F8
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_1" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionComponentMask_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'BeachFoam:MaterialExpressionLinearInterpolate_2'")
+      R=True
+      G=True
+      MaterialExpressionEditorX=-4464
+      MaterialExpressionEditorY=144
+      MaterialExpressionGuid=BAEA87DA4115FACB70A56FA849734FD2
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_2" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionComponentMask_2'"
+      Input=(Expression="/Script/Engine.MaterialExpressionWorldPosition'BeachFoam:MaterialExpressionWorldPosition_0'")
+      B=True
+      MaterialExpressionEditorX=-2656
+      MaterialExpressionEditorY=-400
+      MaterialExpressionGuid=DED7970847FD55511D792299B02FEA07
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_3" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionComponentMask_3'"
+      Input=(Expression="/Script/Engine.MaterialExpressionCollectionParameter'BeachFoam:MaterialExpressionCollectionParameter_2'")
+      R=True
+      G=True
+      MaterialExpressionEditorX=-4368
+      MaterialExpressionEditorY=-240
+      MaterialExpressionGuid=BAEA87DA4115FACB70A56FA849734FD2
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_4" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionComponentMask_4'"
+      Input=(Expression="/Script/Engine.MaterialExpressionReroute'BeachFoam:MaterialExpressionReroute_1'")
+      R=True
+      G=True
+      MaterialExpressionEditorX=1168
+      MaterialExpressionEditorY=528
+      MaterialExpressionGuid=AE60E80944384EA7D6A5BEB2538B0723
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant_1" ExportPath="/Script/Engine.MaterialExpressionConstant'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionConstant_1'"
+      R=0.500000
+      MaterialExpressionEditorX=-2256
+      MaterialExpressionEditorY=-1184
+      MaterialExpressionGuid=49B5735645CDD0C74F87ABBE1CB6D78F
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant3Vector_1" ExportPath="/Script/Engine.MaterialExpressionConstant3Vector'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionConstant3Vector_1'"
+      Constant=(R=1.000000,G=1.000000,B=0.000000,A=0.000000)
+      MaterialExpressionEditorX=-304
+      MaterialExpressionEditorY=784
+      MaterialExpressionGuid=4F25A95D413FE038FC3A99BB7F99638D
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionConstant3Vector_2" ExportPath="/Script/Engine.MaterialExpressionConstant3Vector'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionConstant3Vector_2'"
+      Constant=(R=1.000000,G=1.000000,B=0.000000,A=0.000000)
+      MaterialExpressionEditorX=1008
+      MaterialExpressionEditorY=848
+      MaterialExpressionGuid=6C123FA240AA642ACC519DB5A203E068
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionDistanceToNearestSurface_0" ExportPath="/Script/Engine.MaterialExpressionDistanceToNearestSurface'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDistanceToNearestSurface_0'"
+      Position=(Expression="/Script/Engine.MaterialExpressionWorldPosition'BeachFoam:MaterialExpressionWorldPosition_0'")
+      MaterialExpressionEditorX=-2656
+      MaterialExpressionEditorY=-544
+      MaterialExpressionGuid=9233EFCC4B919AB11B50219903092C00
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionDivide_0" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionWorldPosition'BeachFoam:MaterialExpressionWorldPosition_2'")
+      B=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_9'")
+      MaterialExpressionEditorX=-2608
+      MaterialExpressionEditorY=-1312
+      MaterialExpressionGuid=7C4133BE41B736AE573541B1DAAC9A2D
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionDivide_1" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionDistanceToNearestSurface'BeachFoam:MaterialExpressionDistanceToNearestSurface_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_1'")
+      MaterialExpressionEditorX=-2256
+      MaterialExpressionEditorY=-544
+      MaterialExpressionGuid=1561654D4942D313C46A148A84D49BAE
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionDivide_2" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_2'"
+      A=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'BeachFoam:MaterialExpressionMaterialFunctionCall_0'",OutputIndex=2)
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_2'")
+      MaterialExpressionEditorX=-2578
+      MaterialExpressionEditorY=-697
+      MaterialExpressionGuid=8D5918D7454B35607E7A21B5D24E0EA4
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionDivide_3" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_3'"
+      A=(Expression="/Script/Engine.MaterialExpressionSubtract'BeachFoam:MaterialExpressionSubtract_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_5'")
+      MaterialExpressionEditorX=-312
+      MaterialExpressionEditorY=1130
+      MaterialExpressionGuid=31498EDC413D6CDF7BEEC58FA49DFA22
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionDivide_4" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_4'"
+      A=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'BeachFoam:MaterialExpressionLinearInterpolate_2'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_6'")
+      MaterialExpressionEditorX=-2320
+      MaterialExpressionEditorY=928
+      MaterialExpressionGuid=C7FEE54E4D52B67A81A9FD91F6A52281
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionDivide_5" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_5'"
+      A=(Expression="/Script/Engine.MaterialExpressionSubtract'BeachFoam:MaterialExpressionSubtract_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionCollectionParameter'BeachFoam:MaterialExpressionCollectionParameter_0'")
+      MaterialExpressionEditorX=-3952
+      MaterialExpressionEditorY=-160
+      MaterialExpressionGuid=0195012B4BDF2274F3F1B9A9B7D5A788
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionDivide_6" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_6'"
+      A=(Expression="/Script/Engine.MaterialExpressionComponentMask'BeachFoam:MaterialExpressionComponentMask_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_11'")
+      MaterialExpressionEditorX=-2208
+      MaterialExpressionEditorY=163
+      MaterialExpressionGuid=C7FEE54E4D52B67A81A9FD91F6A52281
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionDivide_8" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_8'"
+      A=(Expression="/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_9'")
+      ConstB=10.000000
+      MaterialExpressionEditorX=-2240
+      MaterialExpressionEditorY=-400
+      MaterialExpressionGuid=05B0A8FD4185E6A1501FEEB781C7306A
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionDivide_9" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionDivide_9'"
+      A=(Expression="/Script/Engine.MaterialExpressionSubtract'BeachFoam:MaterialExpressionSubtract_4'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_25'")
+      MaterialExpressionEditorX=-2560
+      MaterialExpressionEditorY=608
+      MaterialExpressionGuid=CF42568D401877FD0064708CFA99EE8B
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionFunctionInput_0'"
+      InputName="MA"
+      Id=A8FB190040516891983ED0B0A49A419C
+      InputType=FunctionInput_MaterialAttributes
+      MaterialExpressionEditorX=112
+      MaterialExpressionEditorY=-160
+      MaterialExpressionGuid=FCA15C814A2BFDD4E52325A4A1C1C029
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionFunctionOutput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionFunctionOutput_0'"
+      OutputName="Attributes"
+      A=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'BeachFoam:MaterialExpressionSetMaterialAttributes_0'")
+      bLastPreviewed=True
+      Id=08C013B342D88F9A05F0A0875A8AAD1A
+      MaterialExpressionEditorX=2720
+      MaterialExpressionEditorY=-176
+      MaterialExpressionGuid=EE5F18EB4940F7A42ED5138185B06A81
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionFunctionOutput_1" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionFunctionOutput_1'"
+      OutputName="Foam Opacity"
+      SortPriority=1
+      A=(Expression="/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_8'")
+      bLastPreviewed=True
+      Id=202483274A9DD9429BD5ADA9D74FC1F6
+      MaterialExpressionEditorX=1376
+      MaterialExpressionEditorY=720
+      MaterialExpressionGuid=EE5F18EB4940F7A42ED5138185B06A81
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionOutput_2" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionFunctionOutput_2'"
+      OutputName="Foam Scattering"
+      SortPriority=2
+      A=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'BeachFoam:MaterialExpressionMaterialFunctionCall_4'",OutputIndex=2)
+      bLastPreviewed=True
+      Id=1D4C45CD41995F51EB03ADA11D4DC2E3
+      MaterialExpressionEditorX=-176
+      MaterialExpressionEditorY=368
+      MaterialExpressionGuid=EE5F18EB4940F7A42ED5138185B06A81
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionGetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionGetMaterialAttributes'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionGetMaterialAttributes_0'"
+      MaterialAttributes=(Expression="/Script/Engine.MaterialExpressionFunctionInput'BeachFoam:MaterialExpressionFunctionInput_0'")
+      AttributeGetTypes(0)=9FDAB39925564CC98CD2D572C12C8FED
+      AttributeGetTypes(1)=D1DD967C4CAD47D39E6346FB08ECF210
+      AttributeGetTypes(2)=B8F50FBA2A754EC19EF672CFEB27BF51
+      AttributeGetTypes(3)=0FA2821A200F4A4AB719B789C1259C64
+      MaterialExpressionEditorX=400
+      MaterialExpressionEditorY=-160
+      MaterialExpressionGuid=573B4B3F486BCE3CA19F48A06C7CBC6D
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+      Outputs(1)=(OutputName="Specular")
+      Outputs(2)=(OutputName="Roughness")
+      Outputs(3)=(OutputName="Opacity")
+      Outputs(4)=(OutputName="Normal")
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_0" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionLinearInterpolate_0'"
+      B=(Expression="/Script/Engine.MaterialExpressionOneMinus'BeachFoam:MaterialExpressionOneMinus_4'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_7'")
+      ConstA=1.000000
+      MaterialExpressionEditorX=-1712
+      MaterialExpressionEditorY=-1232
+      MaterialExpressionGuid=A2380EE3401ED32DBC95CEAD7C946F03
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_1" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionLinearInterpolate_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_13'")
+      B=(Expression="/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_1'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionReroute'BeachFoam:MaterialExpressionReroute_0'")
+      MaterialExpressionEditorX=-1216
+      MaterialExpressionEditorY=192
+      MaterialExpressionGuid=2F0AD98D4075519E43D8258A317CF2D6
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_2" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionLinearInterpolate_2'"
+      A=(Expression="/Script/Engine.MaterialExpressionWorldPosition'BeachFoam:MaterialExpressionWorldPosition_3'")
+      B=(Expression="/Script/Engine.MaterialExpressionWorldPosition'BeachFoam:MaterialExpressionWorldPosition_1'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_14'")
+      MaterialExpressionEditorX=-4816
+      MaterialExpressionEditorY=144
+      MaterialExpressionGuid=1BB7FAEB4938593843122FAAAA714219
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_3" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionLinearInterpolate_3'"
+      A=(Expression="/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_6'")
+      B=(Expression="/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_1'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionReroute'BeachFoam:MaterialExpressionReroute_0'")
+      MaterialExpressionEditorX=-1184
+      MaterialExpressionEditorY=400
+      MaterialExpressionGuid=2F0AD98D4075519E43D8258A317CF2D6
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_4" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionLinearInterpolate_4'"
+      A=(Expression="/Script/Engine.MaterialExpressionReroute'BeachFoam:MaterialExpressionReroute_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_11'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionFunctionOutput'BeachFoam:MaterialExpressionFunctionOutput_1'")
+      MaterialExpressionEditorX=2224
+      MaterialExpressionEditorY=480
+      MaterialExpressionGuid=80DC94604F911C968980328D3153320E
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_0" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMaterialFunctionCall_0'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Water/Materials/Functions/WaterBodyData.WaterBodyData'"
+      FunctionInputs(0)=(ExpressionInputId=29E7EC4645F1ED35060265AFFDDAC305,Input=(OutputIndex=-1,InputName="Position"))
+      FunctionOutputs(0)=(ExpressionOutputId=E9AA029341C2E1EEEAB35B9389680AE4,Output=(OutputName="Velocity"))
+      FunctionOutputs(1)=(ExpressionOutputId=E632639143E6CE86180A4A9E913CFCBA,Output=(OutputName="Water Z Height"))
+      FunctionOutputs(2)=(ExpressionOutputId=CBB2E0234A6B8FBC60AB99A200513978,Output=(OutputName="Water Depth"))
+      FunctionOutputs(3)=(ExpressionOutputId=B2ED083D474313EF72AFAD8DF2F36F25,Output=(OutputName="Water Depth Clamped"))
+      FunctionOutputs(4)=(ExpressionOutputId=562C252A4C965271A08B849CA6116C64,Output=(OutputName="Terrain Z Height"))
+      MaterialExpressionEditorX=-3074
+      MaterialExpressionEditorY=-745
+      MaterialExpressionGuid=C39569A7452C8896C929769B2076A2B5
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+      Outputs(0)=(OutputName="Velocity")
+      Outputs(1)=(OutputName="Water Z Height")
+      Outputs(2)=(OutputName="Water Depth")
+      Outputs(3)=(OutputName="Water Depth Clamped")
+      Outputs(4)=(OutputName="Terrain Z Height")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_1" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMaterialFunctionCall_1'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Engine/Functions/Engine_MaterialFunctions02/Texturing/HeightLerp.HeightLerp'"
+      FunctionInputs(0)=(ExpressionInputId=522930F442483EA49A2C159D365AD20A,Input=(OutputIndex=1,InputName="A",Mask=1,MaskR=1))
+      FunctionInputs(1)=(ExpressionInputId=DCC75A8E43017C3B1AF2AD94F32E13C5,Input=(InputName="B"))
+      FunctionInputs(2)=(ExpressionInputId=7AB68F0841F03075F06D038ED7950EBE,Input=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_8'",InputName="Transition Phase"))
+      FunctionInputs(3)=(ExpressionInputId=2D66D8C24B09717A97E8BEA535A4BDC8,Input=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'BeachFoam:MaterialExpressionLinearInterpolate_1'",InputName="Height Texture"))
+      FunctionInputs(4)=(ExpressionInputId=25E63B0149C87485647617BC60B64B95,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_10'",InputName="Contrast"))
+      FunctionOutputs(0)=(ExpressionOutputId=DB6322FA4F561176DCDD2DA917597668,Output=(OutputName="Results"))
+      FunctionOutputs(1)=(ExpressionOutputId=BD30F3BD4F03EC073582C193699130FD,Output=(OutputName="Alpha"))
+      FunctionOutputs(2)=(ExpressionOutputId=D985320A43D35E6B187D16931DD224EF,Output=(OutputName="Lerp Alpha No Contrast"))
+      MaterialExpressionEditorX=-608
+      MaterialExpressionEditorY=160
+      MaterialExpressionGuid=FAB5EBC2472D4621F15CAAAD7F77BCB0
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+      Outputs(0)=(OutputName="Results")
+      Outputs(1)=(OutputName="Alpha")
+      Outputs(2)=(OutputName="Lerp Alpha No Contrast")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_3" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMaterialFunctionCall_3'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Engine/Functions/Engine_MaterialFunctions03/Procedurals/NormalFromHeightmap.NormalFromHeightmap'"
+      FunctionInputs(0)=(ExpressionInputId=D18B76DA498ACF9019832CA057F28DF9,Input=(Expression="/Script/Engine.MaterialExpressionTextureObject'BeachFoam:MaterialExpressionTextureObject_0'",InputName="Height Map"))
+      FunctionInputs(1)=(ExpressionInputId=B29BEDF846981D4D3E77569F196580E9,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_17'",InputName="Normal Map Intensity"))
+      FunctionInputs(2)=(ExpressionInputId=869F13D34EC0F9820DE2FF939EAFE52E,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_18'",InputName="Height Map UV Offset"))
+      FunctionInputs(3)=(ExpressionInputId=030390874A5513D2A2E5298EE2924C44,Input=(Expression="/Script/Engine.MaterialExpressionReroute'BeachFoam:MaterialExpressionReroute_2'",InputName="Coordinates"))
+      FunctionInputs(4)=(ExpressionInputId=91D2AE2C4FDB93F22CC486A515E427D4,Input=(OutputIndex=-1,InputName="Height Map Channel Selector"))
+      FunctionOutputs(0)=(ExpressionOutputId=E286AA1C4D326C3C97D7D98AA7273BEF,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=-592
+      MaterialExpressionEditorY=688
+      MaterialExpressionGuid=0F58D1474427A111119FF4A3003C365E
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_4" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMaterialFunctionCall_4'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Engine/Functions/Engine_MaterialFunctions02/Texturing/HeightLerp.HeightLerp'"
+      FunctionInputs(0)=(ExpressionInputId=522930F442483EA49A2C159D365AD20A,Input=(OutputIndex=1,InputName="A",Mask=1,MaskR=1))
+      FunctionInputs(1)=(ExpressionInputId=DCC75A8E43017C3B1AF2AD94F32E13C5,Input=(InputName="B"))
+      FunctionInputs(2)=(ExpressionInputId=7AB68F0841F03075F06D038ED7950EBE,Input=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_8'",InputName="Transition Phase"))
+      FunctionInputs(3)=(ExpressionInputId=2D66D8C24B09717A97E8BEA535A4BDC8,Input=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'BeachFoam:MaterialExpressionLinearInterpolate_3'",InputName="Height Texture"))
+      FunctionInputs(4)=(ExpressionInputId=25E63B0149C87485647617BC60B64B95,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_10'",InputName="Contrast"))
+      FunctionOutputs(0)=(ExpressionOutputId=DB6322FA4F561176DCDD2DA917597668,Output=(OutputName="Results"))
+      FunctionOutputs(1)=(ExpressionOutputId=BD30F3BD4F03EC073582C193699130FD,Output=(OutputName="Alpha"))
+      FunctionOutputs(2)=(ExpressionOutputId=D985320A43D35E6B187D16931DD224EF,Output=(OutputName="Lerp Alpha No Contrast"))
+      MaterialExpressionEditorX=-608
+      MaterialExpressionEditorY=320
+      MaterialExpressionGuid=FAB5EBC2472D4621F15CAAAD7F77BCB0
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+      Outputs(0)=(OutputName="Results")
+      Outputs(1)=(OutputName="Alpha")
+      Outputs(2)=(OutputName="Lerp Alpha No Contrast")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_5" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMaterialFunctionCall_5'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Engine/Functions/Engine_MaterialFunctions01/Gradient/BoxMask-2D.BoxMask-2D'"
+      FunctionInputs(0)=(ExpressionInputId=4CAF1D4E452AC3EFEDD321823833D345,Input=(Expression="/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_5'",InputName="A"))
+      FunctionInputs(1)=(ExpressionInputId=16A5B9D44F43022C6CF1CDB29F3E05CA,Input=(Expression="/Script/Engine.MaterialExpressionConstant'BeachFoam:MaterialExpressionConstant_1'",InputName="B"))
+      FunctionInputs(2)=(ExpressionInputId=6AE5B5294B8D8BDED45CE4AF5B32811B,Input=(Expression="/Script/Engine.MaterialExpressionOneMinus'BeachFoam:MaterialExpressionOneMinus_3'",InputName="Bounds"))
+      FunctionInputs(3)=(ExpressionInputId=8C3DFD4448F8C059211B368A3522EDE0,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_0'",InputName="Edge Falloff"))
+      FunctionOutputs(0)=(ExpressionOutputId=412493D24BA7A2C5E2481BB135887631,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=-2096
+      MaterialExpressionEditorY=-1216
+      MaterialExpressionGuid=244819EA46E93E6F0CC0EE8C782BCCED
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMax_1" ExportPath="/Script/Engine.MaterialExpressionMax'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMax_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_18'")
+      B=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_10'")
+      MaterialExpressionEditorX=-1374
+      MaterialExpressionEditorY=-734
+      MaterialExpressionGuid=DA4515D74437DDAA043B869334F60EC8
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_0" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_7'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_4'")
+      MaterialExpressionEditorX=702
+      MaterialExpressionEditorY=728
+      MaterialExpressionGuid=6AF3DD9046F4838F375EB482D5459E2F
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_1" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'BeachFoam:MaterialExpressionMaterialFunctionCall_1'",OutputIndex=1)
+      B=(Expression="/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_3'")
+      MaterialExpressionEditorX=320
+      MaterialExpressionEditorY=720
+      MaterialExpressionGuid=872E3ACC4B725191025061BAA9BEA3EE
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_10" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_10'"
+      A=(Expression="/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_19'")
+      MaterialExpressionEditorX=-1744
+      MaterialExpressionEditorY=-704
+      MaterialExpressionGuid=7DA1C2A041E85AC9CDF87DBE8BC1E034
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_11" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_11'"
+      A=(Expression="/Script/Engine.MaterialExpressionComponentMask'BeachFoam:MaterialExpressionComponentMask_2'")
+      ConstB=-1.000000
+      MaterialExpressionEditorX=-2512
+      MaterialExpressionEditorY=-400
+      MaterialExpressionGuid=0B974712455A4BBC2E6530951F6DF111
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_12" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_12'"
+      A=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_0'")
+      ConstB=2.000000
+      MaterialExpressionEditorX=-2480
+      MaterialExpressionEditorY=-1136
+      MaterialExpressionGuid=DA489AC545A318BE727D83AF6EC01645
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_13" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_13'"
+      A=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'BeachFoam:MaterialExpressionMaterialFunctionCall_3'")
+      B=(Expression="/Script/Engine.MaterialExpressionConstant3Vector'BeachFoam:MaterialExpressionConstant3Vector_1'")
+      MaterialExpressionEditorX=-192
+      MaterialExpressionEditorY=688
+      MaterialExpressionGuid=D98EDA864903B990577162875F6C16B9
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_14" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_14'"
+      A=(Expression="/Script/Engine.MaterialExpressionConstant3Vector'BeachFoam:MaterialExpressionConstant3Vector_2'")
+      B=(Expression="/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_10'")
+      MaterialExpressionEditorX=1264
+      MaterialExpressionEditorY=848
+      MaterialExpressionGuid=978668D7477525D2CE2C67AE31E87935
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_15" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_15'"
+      A=(Expression="/Script/Engine.MaterialExpressionAppendVector'BeachFoam:MaterialExpressionAppendVector_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionTwoSidedSign'BeachFoam:MaterialExpressionTwoSidedSign_1'")
+      MaterialExpressionEditorX=1472
+      MaterialExpressionEditorY=544
+      MaterialExpressionGuid=52AAF83D48796AD5F5572480E8229CB6
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_16" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_16'"
+      A=(Expression="/Script/Engine.MaterialExpressionTextureSample'BeachFoam:MaterialExpressionTextureSample_5'",Mask=1,MaskR=1,MaskG=1,MaskB=1)
+      B=(Expression="/Script/Engine.MaterialExpressionVectorParameter'BeachFoam:MaterialExpressionVectorParameter_0'",Mask=1,MaskR=1,MaskG=1,MaskB=1)
+      MaterialExpressionEditorX=692
+      MaterialExpressionEditorY=1622
+      MaterialExpressionGuid=9131B70C499175C519278796669D41E6
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_17" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_17'"
+      A=(Expression="/Script/Engine.MaterialExpressionVectorParameter'BeachFoam:MaterialExpressionVectorParameter_1'",Mask=1,MaskR=1,MaskG=1,MaskB=1)
+      B=(Expression="/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_8'")
+      MaterialExpressionEditorX=1552
+      MaterialExpressionEditorY=-16
+      MaterialExpressionGuid=E08549B84149CA860399B3AEBE686A97
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_18" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_18'"
+      A=(Expression="/Script/Engine.MaterialExpressionPower'BeachFoam:MaterialExpressionPower_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_22'")
+      MaterialExpressionEditorX=-1280
+      MaterialExpressionEditorY=-112
+      MaterialExpressionGuid=F05E36D64B93724CE24CB8811F96DE41
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_19" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_19'"
+      A=(Expression="/Script/Engine.MaterialExpressionOneMinus'BeachFoam:MaterialExpressionOneMinus_5'")
+      B=(Expression="/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_2'")
+      MaterialExpressionEditorX=-1888
+      MaterialExpressionEditorY=-528
+      MaterialExpressionGuid=79EA9F084E184A4282CFE28810AE5EE1
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_2" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_2'"
+      A=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_3'")
+      B=(Expression="/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_7'")
+      MaterialExpressionEditorX=576
+      MaterialExpressionEditorY=448
+      MaterialExpressionGuid=43B377AD480A641A6984D6BEC1381E03
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_4" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_4'"
+      A=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_17'")
+      B=(Expression="/Script/Engine.MaterialExpressionSkyAtmosphereDistantLightScatteredLuminance'BeachFoam:MaterialExpressionSkyAtmosphereDistantLightScatteredLuminance_0'")
+      MaterialExpressionEditorX=1693
+      MaterialExpressionEditorY=28
+      MaterialExpressionGuid=99557CDD403D301C9A42BB894F4FF2A4
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_5" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_5'"
+      A=(Expression="/Script/Engine.MaterialExpressionTextureSample'BeachFoam:MaterialExpressionTextureSample_4'",OutputIndex=1,Mask=1,MaskR=1)
+      B=(Expression="/Script/Engine.MaterialExpressionTextureSample'BeachFoam:MaterialExpressionTextureSample_4'",OutputIndex=1,Mask=1,MaskR=1)
+      MaterialExpressionEditorX=-1920
+      MaterialExpressionEditorY=944
+      MaterialExpressionGuid=BECA5DD64D499D1628F5ECA94704A5E4
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_6" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_6'"
+      A=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_27'")
+      B=(Expression="/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_11'")
+      MaterialExpressionEditorX=-2288
+      MaterialExpressionEditorY=352
+      MaterialExpressionGuid=2922DDD9488AAC096B35D8A5BCF8BBD8
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_8" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_8'"
+      A=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'BeachFoam:MaterialExpressionLinearInterpolate_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_18'")
+      MaterialExpressionEditorX=-608
+      MaterialExpressionEditorY=-512
+      MaterialExpressionGuid=68B09E1646F9EC1A8DB3A0AE2D70D132
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_9" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionMultiply_9'"
+      A=(Expression="/Script/Engine.MaterialExpressionCollectionParameter'BeachFoam:MaterialExpressionCollectionParameter_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_16'")
+      MaterialExpressionEditorX=-2734
+      MaterialExpressionEditorY=-1212
+      MaterialExpressionGuid=36892E064935E8AF55F82F8FADE6F6EB
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionNormalize_0" ExportPath="/Script/Engine.MaterialExpressionNormalize'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionNormalize_0'"
+      VectorInput=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_15'")
+      MaterialExpressionEditorX=1648
+      MaterialExpressionEditorY=544
+      MaterialExpressionGuid=449033DC4FEE0DA737E37295E2372FE9
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionOneMinus_3" ExportPath="/Script/Engine.MaterialExpressionOneMinus'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionOneMinus_3'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_12'")
+      MaterialExpressionEditorX=-2352
+      MaterialExpressionEditorY=-1152
+      MaterialExpressionGuid=83C41A994C8A2AD7091AC0AAC2AB11B4
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionOneMinus_4" ExportPath="/Script/Engine.MaterialExpressionOneMinus'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionOneMinus_4'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'BeachFoam:MaterialExpressionMaterialFunctionCall_5'")
+      MaterialExpressionEditorX=-1856
+      MaterialExpressionEditorY=-1216
+      MaterialExpressionGuid=1529329348ABB1237FE8F097522FA39A
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionOneMinus_5" ExportPath="/Script/Engine.MaterialExpressionOneMinus'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionOneMinus_5'"
+      Input=(Expression="/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_1'")
+      MaterialExpressionEditorX=-1968
+      MaterialExpressionEditorY=-544
+      MaterialExpressionGuid=E702606C4C2396ACEEE0218949F5FC08
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionPixelDepth_0" ExportPath="/Script/Engine.MaterialExpressionPixelDepth'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionPixelDepth_0'"
+      MaterialExpressionEditorX=-688
+      MaterialExpressionEditorY=1200
+      MaterialExpressionGuid=90909F544B7DA5A75C9654ABD8BE9DF5
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionPower_0" ExportPath="/Script/Engine.MaterialExpressionPower'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionPower_0'"
+      Base=(Expression="/Script/Engine.MaterialExpressionTextureSample'BeachFoam:MaterialExpressionTextureSample_1'",OutputIndex=1,Mask=1,MaskR=1)
+      Exponent=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_21'")
+      MaterialExpressionEditorX=-1424
+      MaterialExpressionEditorY=-112
+      MaterialExpressionGuid=677F7B154A1E4ED09468F4B88880CF18
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_0" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionReroute_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionSaturate'BeachFoam:MaterialExpressionSaturate_11'")
+      MaterialExpressionEditorX=-1600
+      MaterialExpressionEditorY=624
+      MaterialExpressionGuid=EA97D3B144EAF3CBD18CA18E7002210E
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_1" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionReroute_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'BeachFoam:MaterialExpressionGetMaterialAttributes_0'",OutputIndex=4)
+      MaterialExpressionEditorX=1008
+      MaterialExpressionEditorY=496
+      MaterialExpressionGuid=C4BB54F34E923EB01753E4BC08F7AFAB
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_2" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionReroute_2'"
+      Input=(Expression="/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_4'")
+      MaterialExpressionEditorX=-3584
+      MaterialExpressionEditorY=800
+      MaterialExpressionGuid=0C05285D488DF02D42CDC98FDA9F8124
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_0" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_2'")
+      MaterialExpressionEditorX=-2384
+      MaterialExpressionEditorY=-704
+      MaterialExpressionGuid=9F118F9D4C32FFAE98DFB39C64144C5A
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_1" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_1'")
+      MaterialExpressionEditorX=-2128
+      MaterialExpressionEditorY=-544
+      MaterialExpressionGuid=40051C2B4243BE4F14EB1CBA7A35A4BA
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_11" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_11'"
+      Input=(Expression="/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_9'")
+      MaterialExpressionEditorX=-2416
+      MaterialExpressionEditorY=608
+      MaterialExpressionGuid=293E04C64949D72DA56B56A197E1C1AF
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_12" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_12'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'BeachFoam:MaterialExpressionMaterialFunctionCall_1'",OutputIndex=1)
+      MaterialExpressionEditorX=-96
+      MaterialExpressionEditorY=176
+      MaterialExpressionGuid=191D627E4134CE5DB627919136399E9A
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_2" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_2'"
+      Input=(Expression="/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_8'")
+      MaterialExpressionEditorX=-2096
+      MaterialExpressionEditorY=-400
+      MaterialExpressionGuid=6BE18C6F49641196AF5CE69F4649B385
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_3" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_3'"
+      Input=(Expression="/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_3'")
+      MaterialExpressionEditorX=-184
+      MaterialExpressionEditorY=1130
+      MaterialExpressionGuid=3258E01A4D188EA5A5C31488E7283D91
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_6" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_6'"
+      Input=(Expression="/Script/Engine.MaterialExpressionTextureSample'BeachFoam:MaterialExpressionTextureSample_1'",OutputIndex=2,Mask=1,MaskG=1)
+      MaterialExpressionEditorX=-3296
+      MaterialExpressionEditorY=-32
+      MaterialExpressionGuid=A603DEDC48E8FC506D20108695A4CE67
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_7" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_7'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_1'")
+      MaterialExpressionEditorX=496
+      MaterialExpressionEditorY=720
+      MaterialExpressionGuid=3D986A3C4152F09467DB049890EEB861
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_8" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSaturate_8'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_0'")
+      MaterialExpressionEditorX=848
+      MaterialExpressionEditorY=720
+      MaterialExpressionGuid=077E382543228A03B41D17B1BE5CA1C5
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_0" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_0'"
+      DefaultValue=0.500000
+      ParameterName="Wave Foam Erase Near FluidsimSize"
+      ExpressionGUID=E4555D2A45FE146CE72125980D24109A
+      MaterialExpressionEditorX=-2752
+      MaterialExpressionEditorY=-992
+      MaterialExpressionGuid=82CE324046A4A6081EDB429A0D0B40FD
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_1" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_1'"
+      DefaultValue=256.000000
+      ParameterName="Foam Distance"
+      ExpressionGUID=40449EB84E2195D22F6917AEF5610E5B
+      MaterialExpressionEditorX=-2512
+      MaterialExpressionEditorY=-496
+      MaterialExpressionGuid=D371A6A140B05353066860B72719B636
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_10" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_10'"
+      DefaultValue=1.000000
+      ParameterName="FoamContrast"
+      ExpressionGUID=975A77F643B02DB0DEEBA5BA232F1380
+      MaterialExpressionEditorX=-864
+      MaterialExpressionEditorY=320
+      MaterialExpressionGuid=696E28F74A0FE2999CFC9E99969E3C07
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_11" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_11'"
+      DefaultValue=1536.000000
+      ParameterName="Foam MacroScale"
+      ExpressionGUID=744EB0254F2564AE8DDA69AFE5FD2EBB
+      MaterialExpressionEditorX=-2432
+      MaterialExpressionEditorY=192
+      MaterialExpressionGuid=0D1D5B514F7188C56DDABB80BF0284C1
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_12" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_12'"
+      DefaultValue=8.000000
+      ParameterName="Foam Scattering Mip"
+      ExpressionGUID=7B8EAEAC4905DD0EBB912FB84DEA98E5
+      MaterialExpressionEditorX=-2160
+      MaterialExpressionEditorY=448
+      MaterialExpressionGuid=71322EC4471982058952B2A9CD71E651
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_14" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_14'"
+      DefaultValue=0.400000
+      ParameterName="Foam Attachment"
+      ExpressionGUID=0EE2BB84445B17A4C2760A82276B6C1C
+      MaterialExpressionEditorX=-5104
+      MaterialExpressionEditorY=272
+      MaterialExpressionGuid=407050D94E7704414538668A02B51420
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_16" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_16'"
+      DefaultValue=0.500000
+      ParameterName="Fluid Eraose Ssaler"
+      ExpressionGUID=62FAC46B4065C01EA7D06182B2CE8F0A
+      MaterialExpressionEditorX=-2944
+      MaterialExpressionEditorY=-1120
+      MaterialExpressionGuid=DC1E296841049B38560B10910A4F4DEE
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_17" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_17'"
+      DefaultValue=0.500000
+      ParameterName="Foam Normal I"
+      ExpressionGUID=6901487E41FC730BEC235AB3CD4305D3
+      MaterialExpressionEditorX=-1040
+      MaterialExpressionEditorY=848
+      MaterialExpressionGuid=EDCB571947C349CA14F65482FB597203
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_18" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_18'"
+      DefaultValue=0.001953
+      ParameterName="Foam normal offset"
+      ExpressionGUID=EBC3C2CB4B74C0D28CF1429BEF239C0E
+      MaterialExpressionEditorX=-1040
+      MaterialExpressionEditorY=928
+      MaterialExpressionGuid=38D735CD46064E89EDE5FF96E231B985
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_19" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_19'"
+      DefaultValue=2.000000
+      ParameterName="Foam Wave normal Z"
+      ExpressionGUID=18A3E29048F78BEAC4EE81868913CFE0
+      MaterialExpressionEditorX=1120
+      MaterialExpressionEditorY=592
+      MaterialExpressionGuid=B1C85AE249CD406EAEE072A9EB89ABDE
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_2" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_2'"
+      DefaultValue=64.000000
+      ParameterName="Depth for DF Foam"
+      ExpressionGUID=EA8719854E0985286B1C8C9473C6E635
+      MaterialExpressionEditorX=-2784
+      MaterialExpressionEditorY=-656
+      MaterialExpressionGuid=DD2DB31A43AC514F2E83609378947E19
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_21" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_21'"
+      DefaultValue=0.200000
+      ParameterName="Foam powr"
+      ExpressionGUID=8115DDDE4F299A6D1379FC82C088213C
+      MaterialExpressionEditorX=-1600
+      MaterialExpressionEditorY=-16
+      MaterialExpressionGuid=BAE7367044E76F6AC85FDD9E904C0898
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_22" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_22'"
+      DefaultValue=1.000000
+      ParameterName="Foam Boost"
+      ExpressionGUID=8BEC3C084BD86D7B68645AAD84D5ABEA
+      MaterialExpressionEditorX=-1392
+      MaterialExpressionGuid=B7CB49AF4BA1E7ADEABCB6B16B528A06
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_24" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_24'"
+      DefaultValue=-1.000000
+      ParameterName="Height Bias"
+      ExpressionGUID=3013575D4B096FC354C70F994DCC3F80
+      MaterialExpressionEditorX=-1648
+      MaterialExpressionEditorY=240
+      MaterialExpressionGuid=4C6C0C4D4DFD2201C75E529C74DA4C0C
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_25" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_25'"
+      DefaultValue=0.400000
+      ParameterName="Foam Texture Blend Width"
+      ExpressionGUID=3CEB168C4122E6585312BE8CB38382D4
+      MaterialExpressionEditorX=-2944
+      MaterialExpressionEditorY=704
+      MaterialExpressionGuid=C37F038140202B118D6498B6221E3071
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_27" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_27'"
+      ParameterName="Foam Phase Mip Bias"
+      ExpressionGUID=D4389AF4473AEB8146D65BA076028BEC
+      MaterialExpressionEditorX=-2560
+      MaterialExpressionEditorY=336
+      MaterialExpressionGuid=9243305D436B04168485CBA2543D02A9
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_28" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_28'"
+      DefaultValue=0.250000
+      ParameterName="Foam Scatter Bias"
+      ExpressionGUID=6E1CDD4744A1CD860D866E843855E2F2
+      MaterialExpressionEditorX=-1712
+      MaterialExpressionEditorY=528
+      MaterialExpressionGuid=4C41F59A48D0E512471F9D8B9C127553
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_3" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_3'"
+      DefaultValue=0.200000
+      ParameterName="Foam Roughness"
+      ExpressionGUID=05999FA64E4B47DCCB6439B51FCADB7D
+      MaterialExpressionEditorX=224
+      MaterialExpressionEditorY=448
+      MaterialExpressionGuid=60B464374B4997A6665F4087DCBA526D
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_4" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_4'"
+      DefaultValue=1.000000
+      ParameterName="Foam Opacity"
+      ExpressionGUID=A6023637459B828F12D2EDB0D9CBD6C4
+      MaterialExpressionEditorX=512
+      MaterialExpressionEditorY=832
+      MaterialExpressionGuid=BFE979FE4869E9087C6B6BB96D34C7EE
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+      bCollapsed=False
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_5" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_5'"
+      DefaultValue=64.000000
+      ParameterName="Foam Dpeth Min"
+      ExpressionGUID=83DB191A494D7E4948B8568F1B31EE17
+      MaterialExpressionEditorX=-488
+      MaterialExpressionEditorY=1210
+      MaterialExpressionGuid=1C3CC6954CA5E11DC281CC8EAFA7A6D5
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_6" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_6'"
+      DefaultValue=654.000000
+      ParameterName="Front Foam Scale"
+      ExpressionGUID=E62879CA43312BD4B8CA3EBAECC35376
+      MaterialExpressionEditorX=-2544
+      MaterialExpressionEditorY=944
+      MaterialExpressionGuid=0D1D5B514F7188C56DDABB80BF0284C1
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_7" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_7'"
+      DefaultValue=1.000000
+      ParameterName="Mask Wave Foam near FluidSim"
+      ExpressionGUID=08F4805F4DF52B2105369C8F41B95D4D
+      MaterialExpressionEditorX=-2016
+      MaterialExpressionEditorY=-1072
+      MaterialExpressionGuid=420BEE294627ABCDD9DBC4A818954BDA
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_8" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_8'"
+      DefaultValue=-0.500000
+      ParameterName="Front Height Bias"
+      ExpressionGUID=D1EC293F4E6773BC9A9400A54C180DF8
+      MaterialExpressionEditorX=-1936
+      MaterialExpressionEditorY=1056
+      MaterialExpressionGuid=4C6C0C4D4DFD2201C75E529C74DA4C0C
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_9" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionScalarParameter_9'"
+      DefaultValue=0.400000
+      ParameterName="Foam Texture Blend Min"
+      ExpressionGUID=7817948441A98CFEB69ABCBABC21CA0E
+      MaterialExpressionEditorX=-3104
+      MaterialExpressionEditorY=624
+      MaterialExpressionGuid=C37F038140202B118D6498B6221E3071
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionSceneDepthWithoutWater_0" ExportPath="/Script/Engine.MaterialExpressionSceneDepthWithoutWater'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSceneDepthWithoutWater_0'"
+      MaterialExpressionEditorX=-728
+      MaterialExpressionEditorY=1114
+      MaterialExpressionGuid=FB18AC3E49E8636C457633A875B67A38
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSetMaterialAttributes_0'"
+      Inputs(0)=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'BeachFoam:MaterialExpressionGetMaterialAttributes_0'")
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'BeachFoam:MaterialExpressionGetMaterialAttributes_0'",OutputIndex=1,InputName="Specular")
+      Inputs(2)=(Expression="/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_3'",InputName="Roughness")
+      Inputs(3)=(Expression="/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_2'",InputName="Opacity")
+      Inputs(4)=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'BeachFoam:MaterialExpressionLinearInterpolate_4'",InputName="Normal")
+      Inputs(5)=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_4'",InputName="Emissive Color")
+      AttributeSetTypes(0)=9FDAB39925564CC98CD2D572C12C8FED
+      AttributeSetTypes(1)=D1DD967C4CAD47D39E6346FB08ECF210
+      AttributeSetTypes(2)=B8F50FBA2A754EC19EF672CFEB27BF51
+      AttributeSetTypes(3)=0FA2821A200F4A4AB719B789C1259C64
+      AttributeSetTypes(4)=B769B54DD08D4440ABC21BA6CD27D0E2
+      MaterialExpressionEditorX=2320
+      MaterialExpressionEditorY=-144
+      MaterialExpressionGuid=BF2810A8423BBEE56743F8902FC9C201
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionSkyAtmosphereDistantLightScatteredLuminance_0" ExportPath="/Script/Engine.MaterialExpressionSkyAtmosphereDistantLightScatteredLuminance'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSkyAtmosphereDistantLightScatteredLuminance_0'"
+      MaterialExpressionEditorX=1216
+      MaterialExpressionEditorY=160
+      MaterialExpressionGuid=AEDACFF54716377C8911AA81B7B00AC5
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionSubtract_0" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSubtract_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionComponentMask'BeachFoam:MaterialExpressionComponentMask_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionComponentMask'BeachFoam:MaterialExpressionComponentMask_3'")
+      MaterialExpressionEditorX=-4112
+      MaterialExpressionEditorY=-256
+      MaterialExpressionGuid=4D0203C643BBB1436D49BCB1B5A2250E
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionSubtract_1" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSubtract_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionSceneDepthWithoutWater'BeachFoam:MaterialExpressionSceneDepthWithoutWater_0'",Mask=1,MaskR=1)
+      B=(Expression="/Script/Engine.MaterialExpressionPixelDepth'BeachFoam:MaterialExpressionPixelDepth_0'",Mask=1,MaskR=1)
+      MaterialExpressionEditorX=-456
+      MaterialExpressionEditorY=1130
+      MaterialExpressionGuid=06E6F089489A2E4EEA77C58FD23A5819
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionSubtract_4" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionSubtract_4'"
+      A=(Expression="/Script/Engine.MaterialExpressionTextureSample'BeachFoam:MaterialExpressionTextureSample_1'",OutputIndex=1,Mask=1,MaskR=1)
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_9'")
+      MaterialExpressionEditorX=-2848
+      MaterialExpressionEditorY=592
+      MaterialExpressionGuid=104541AD4D5BB643D84BCCA939036632
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureObject_0" ExportPath="/Script/Engine.MaterialExpressionTextureObject'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionTextureObject_0'"
+      Texture="/Script/Engine.TextureRenderTarget2D'/Water/FluidSimulation/WaveFoam/FoamRT.FoamRT'"
+      SamplerType=SAMPLERTYPE_LinearColor
+      MaterialExpressionEditorX=-896
+      MaterialExpressionEditorY=672
+      MaterialExpressionGuid=ECD88592497D1AD471669DB781B98825
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureSample_1" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionTextureSample_1'"
+      Coordinates=(Expression="/Script/Engine.MaterialExpressionAdd'BeachFoam:MaterialExpressionAdd_4'")
+      SamplerSource=SSM_Clamp_WorldGroupSettings
+      Texture="/Script/Engine.TextureRenderTarget2D'/Water/FluidSimulation/WaveFoam/FoamRT.FoamRT'"
+      SamplerType=SAMPLERTYPE_LinearColor
+      MaterialExpressionEditorX=-3536
+      MaterialExpressionEditorY=-160
+      MaterialExpressionGuid=732E82E7492402F56A7038B5BC2B0CEC
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureSample_2" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionTextureSample_2'"
+      Coordinates=(Expression="/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_6'")
+      MipValue=(Expression="/Script/Engine.MaterialExpressionMultiply'BeachFoam:MaterialExpressionMultiply_6'")
+      SamplerSource=SSM_Wrap_WorldGroupSettings
+      Texture="/Script/Engine.Texture2D'/Water/Textures/Foam/T_WaterFlow_01_Foam_Tiled.T_WaterFlow_01_Foam_Tiled'"
+      MaterialExpressionEditorX=-1920
+      MaterialExpressionEditorY=160
+      MaterialExpressionGuid=F3E4944D4C4839AEE1653E986440FA6C
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureSample_4" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionTextureSample_4'"
+      Coordinates=(Expression="/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_4'")
+      SamplerSource=SSM_Wrap_WorldGroupSettings
+      Texture="/Script/Engine.VolumeTexture'/Engine/EngineSky/VolumetricClouds/T_VolumeNoiseShape128.T_VolumeNoiseShape128'"
+      SamplerType=SAMPLERTYPE_Masks
+      MaterialExpressionEditorX=-2176
+      MaterialExpressionEditorY=928
+      MaterialExpressionGuid=1C326DAB4646D0F3CAD56B8BC4361DCD
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureSample_5" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionTextureSample_5'"
+      Coordinates=(Expression="/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_6'")
+      SamplerSource=SSM_Wrap_WorldGroupSettings
+      Texture="/Script/Engine.Texture2D'/Water/Textures/Foam/T_WaterFlow_01_Foam_Tiled_N.T_WaterFlow_01_Foam_Tiled_N'"
+      SamplerType=SAMPLERTYPE_Normal
+      MaterialExpressionEditorX=16
+      MaterialExpressionEditorY=1616
+      MaterialExpressionGuid=F2AE238D4F4D121EBDDBE29AD6FA7A4A
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureSample_6" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionTextureSample_6'"
+      Coordinates=(Expression="/Script/Engine.MaterialExpressionDivide'BeachFoam:MaterialExpressionDivide_6'")
+      MipValue=(Expression="/Script/Engine.MaterialExpressionScalarParameter'BeachFoam:MaterialExpressionScalarParameter_12'")
+      MipValueMode=TMVM_MipLevel
+      SamplerSource=SSM_Wrap_WorldGroupSettings
+      Texture="/Script/Engine.Texture2D'/Water/Textures/Foam/T_WaterFlow_01_Foam_Tiled.T_WaterFlow_01_Foam_Tiled'"
+      MaterialExpressionEditorX=-1920
+      MaterialExpressionEditorY=384
+      MaterialExpressionGuid=F3E4944D4C4839AEE1653E986440FA6C
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionTwoSidedSign_1" ExportPath="/Script/Engine.MaterialExpressionTwoSidedSign'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionTwoSidedSign_1'"
+      MaterialExpressionEditorX=1136
+      MaterialExpressionEditorY=672
+      MaterialExpressionGuid=5FDB2D6248DA18CF03ADC6AB239309F6
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionVectorParameter_0" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionVectorParameter_0'"
+      DefaultValue=(R=0.500000,G=0.500000,B=1.000000,A=0.000000)
+      ParameterName="foramnormal"
+      ExpressionGUID=A42CF24F44672873F8E8CFAB04A292D4
+      MaterialExpressionEditorX=505
+      MaterialExpressionEditorY=1703
+      MaterialExpressionGuid=D9C961234492E24AD18B16A231A005A1
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionVectorParameter_1" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionVectorParameter_1'"
+      DefaultValue=(R=0.030000,G=0.100000,B=0.060000,A=0.000000)
+      ParameterName="Foam Emissive"
+      ExpressionGUID=29ED817C4EDA773E9D520D84A39A6822
+      MaterialExpressionEditorX=1360
+      MaterialExpressionEditorY=-32
+      MaterialExpressionGuid=29946F854B8BFC968FE04A9CC5A6646F
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionWorldPosition_0" ExportPath="/Script/Engine.MaterialExpressionWorldPosition'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionWorldPosition_0'"
+      WorldPositionShaderOffset=WPT_ExcludeAllShaderOffsets
+      MaterialExpressionEditorX=-3056
+      MaterialExpressionEditorY=-560
+      MaterialExpressionGuid=78ADDB554FC1FA82E1DDD0B03CD23793
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionWorldPosition_1" ExportPath="/Script/Engine.MaterialExpressionWorldPosition'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionWorldPosition_1'"
+      WorldPositionShaderOffset=WPT_ExcludeAllShaderOffsets
+      MaterialExpressionEditorX=-5248
+      MaterialExpressionEditorY=160
+      MaterialExpressionGuid=78ADDB554FC1FA82E1DDD0B03CD23793
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionWorldPosition_2" ExportPath="/Script/Engine.MaterialExpressionWorldPosition'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionWorldPosition_2'"
+      WorldPositionShaderOffset=WPT_ExcludeAllShaderOffsets
+      MaterialExpressionEditorX=-3088
+      MaterialExpressionEditorY=-1328
+      MaterialExpressionGuid=78ADDB554FC1FA82E1DDD0B03CD23793
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="MaterialExpressionWorldPosition_3" ExportPath="/Script/Engine.MaterialExpressionWorldPosition'/Water/Materials/Layers/BeachFoam.BeachFoam:MaterialExpressionWorldPosition_3'"
+      MaterialExpressionEditorX=-5104
+      MaterialExpressionEditorY=64
+      MaterialExpressionGuid=78ADDB554FC1FA82E1DDD0B03CD23793
+      Function="/Script/Engine.MaterialFunction'BeachFoam'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Water/Materials/Layers/BeachFoam.BeachFoam:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   DependentFunctionExpressionCandidates(0)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_0'"
+   DependentFunctionExpressionCandidates(1)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_1'"
+   DependentFunctionExpressionCandidates(2)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_3'"
+   DependentFunctionExpressionCandidates(3)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_4'"
+   DependentFunctionExpressionCandidates(4)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_5'"
+   EditorOnlyData="/Script/Engine.MaterialFunctionEditorOnlyData'BeachFoamEditorOnlyData'"
+   StateId=419C06204FA93B80E091EE915B4BF5AD
+   CombinedInputTypes=1024
+   CombinedOutputTypes=1039
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+End Object

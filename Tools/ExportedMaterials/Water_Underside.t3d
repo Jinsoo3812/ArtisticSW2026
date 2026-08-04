@@ -1,0 +1,437 @@
+Begin Object Class=/Script/Engine.MaterialFunction Name="Water_Underside" ExportPath="/Script/Engine.MaterialFunction'/Water/Materials/Functions/Water_Underside.Water_Underside'"
+   Begin Object Class=/Script/Engine.MaterialFunctionEditorOnlyData Name="Water_UndersideEditorOnlyData" ExportPath="/Script/Engine.MaterialFunctionEditorOnlyData'/Water/Materials/Functions/Water_Underside.Water_Underside:Water_UndersideEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionCameraVectorWS Name="MaterialExpressionCameraVectorWS_0" ExportPath="/Script/Engine.MaterialExpressionCameraVectorWS'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionCameraVectorWS_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDivide Name="MaterialExpressionDivide_0" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionDivide_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDivide Name="MaterialExpressionDivide_1" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionDivide_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDotProduct Name="MaterialExpressionDotProduct_0" ExportPath="/Script/Engine.MaterialExpressionDotProduct'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionDotProduct_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionFunctionInput_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_1" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionFunctionInput_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_2" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionFunctionInput_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionOutput Name="MaterialExpressionFunctionOutput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionFunctionOutput_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionOutput Name="MaterialExpressionFunctionOutput_1" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionFunctionOutput_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionOutput Name="MaterialExpressionFunctionOutput_2" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionFunctionOutput_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionGetMaterialAttributes Name="MaterialExpressionGetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionGetMaterialAttributes'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionGetMaterialAttributes_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_0" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionLinearInterpolate_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_1" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionLinearInterpolate_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_2" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionLinearInterpolate_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_3" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionLinearInterpolate_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_4" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionLinearInterpolate_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_5" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionLinearInterpolate_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_0" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionMultiply_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_1" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionMultiply_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionOneMinus Name="MaterialExpressionOneMinus_0" ExportPath="/Script/Engine.MaterialExpressionOneMinus'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionOneMinus_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPixelNormalWS Name="MaterialExpressionPixelNormalWS_0" ExportPath="/Script/Engine.MaterialExpressionPixelNormalWS'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionPixelNormalWS_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_0" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionReroute_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_1" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionReroute_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_2" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionReroute_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_3" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionReroute_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_0" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionSaturate_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_1" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionSaturate_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_2" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionSaturate_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_3" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionSaturate_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_4" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionSaturate_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_3" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionScalarParameter_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_4" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionScalarParameter_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_6" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionScalarParameter_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_7" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionScalarParameter_7'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_8" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionScalarParameter_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionSetMaterialAttributes_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSubtract Name="MaterialExpressionSubtract_0" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionSubtract_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTwoSidedSign Name="MaterialExpressionTwoSidedSign_0" ExportPath="/Script/Engine.MaterialExpressionTwoSidedSign'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionTwoSidedSign_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTwoSidedSign Name="MaterialExpressionTwoSidedSign_1" ExportPath="/Script/Engine.MaterialExpressionTwoSidedSign'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionTwoSidedSign_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTwoSidedSign Name="MaterialExpressionTwoSidedSign_2" ExportPath="/Script/Engine.MaterialExpressionTwoSidedSign'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionTwoSidedSign_2'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Water/Materials/Functions/Water_Underside.Water_Underside:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="Water_UndersideEditorOnlyData" ExportPath="/Script/Engine.MaterialFunctionEditorOnlyData'/Water/Materials/Functions/Water_Underside.Water_Underside:Water_UndersideEditorOnlyData'"
+      ExpressionCollection=(Expressions=("/Script/Engine.MaterialExpressionFunctionOutput'Water_Underside:MaterialExpressionFunctionOutput_0'","/Script/Engine.MaterialExpressionFunctionInput'Water_Underside:MaterialExpressionFunctionInput_0'","/Script/Engine.MaterialExpressionSetMaterialAttributes'Water_Underside:MaterialExpressionSetMaterialAttributes_0'","/Script/Engine.MaterialExpressionReroute'Water_Underside:MaterialExpressionReroute_0'","/Script/Engine.MaterialExpressionGetMaterialAttributes'Water_Underside:MaterialExpressionGetMaterialAttributes_0'","/Script/Engine.MaterialExpressionPixelNormalWS'Water_Underside:MaterialExpressionPixelNormalWS_0'","/Script/Engine.MaterialExpressionDotProduct'Water_Underside:MaterialExpressionDotProduct_0'","/Script/Engine.MaterialExpressionCameraVectorWS'Water_Underside:MaterialExpressionCameraVectorWS_0'","/Script/Engine.MaterialExpressionSubtract'Water_Underside:MaterialExpressionSubtract_0'","/Script/Engine.MaterialExpressionScalarParameter'Water_Underside:MaterialExpressionScalarParameter_3'","/Script/Engine.MaterialExpressionSaturate'Water_Underside:MaterialExpressionSaturate_0'","/Script/Engine.MaterialExpressionLinearInterpolate'Water_Underside:MaterialExpressionLinearInterpolate_0'","/Script/Engine.MaterialExpressionLinearInterpolate'Water_Underside:MaterialExpressionLinearInterpolate_1'","/Script/Engine.MaterialExpressionTwoSidedSign'Water_Underside:MaterialExpressionTwoSidedSign_0'","/Script/Engine.MaterialExpressionSaturate'Water_Underside:MaterialExpressionSaturate_1'","/Script/Engine.MaterialExpressionLinearInterpolate'Water_Underside:MaterialExpressionLinearInterpolate_2'","/Script/Engine.MaterialExpressionDivide'Water_Underside:MaterialExpressionDivide_0'","/Script/Engine.MaterialExpressionScalarParameter'Water_Underside:MaterialExpressionScalarParameter_4'","/Script/Engine.MaterialExpressionTwoSidedSign'Water_Underside:MaterialExpressionTwoSidedSign_2'","/Script/Engine.MaterialExpressionSaturate'Water_Underside:MaterialExpressionSaturate_2'","/Script/Engine.MaterialExpressionLinearInterpolate'Water_Underside:MaterialExpressionLinearInterpolate_3'","/Script/Engine.MaterialExpressionLinearInterpolate'Water_Underside:MaterialExpressionLinearInterpolate_4'","/Script/Engine.MaterialExpressionScalarParameter'Water_Underside:MaterialExpressionScalarParameter_6'","/Script/Engine.MaterialExpressionReroute'Water_Underside:MaterialExpressionReroute_1'","/Script/Engine.MaterialExpressionSaturate'Water_Underside:MaterialExpressionSaturate_3'","/Script/Engine.MaterialExpressionDivide'Water_Underside:MaterialExpressionDivide_1'","/Script/Engine.MaterialExpressionScalarParameter'Water_Underside:MaterialExpressionScalarParameter_7'","/Script/Engine.MaterialExpressionLinearInterpolate'Water_Underside:MaterialExpressionLinearInterpolate_5'","/Script/Engine.MaterialExpressionScalarParameter'Water_Underside:MaterialExpressionScalarParameter_8'","/Script/Engine.MaterialExpressionOneMinus'Water_Underside:MaterialExpressionOneMinus_0'","/Script/Engine.MaterialExpressionReroute'Water_Underside:MaterialExpressionReroute_2'","/Script/Engine.MaterialExpressionReroute'Water_Underside:MaterialExpressionReroute_3'","/Script/Engine.MaterialExpressionFunctionInput'Water_Underside:MaterialExpressionFunctionInput_1'","/Script/Engine.MaterialExpressionFunctionInput'Water_Underside:MaterialExpressionFunctionInput_2'","/Script/Engine.MaterialExpressionFunctionOutput'Water_Underside:MaterialExpressionFunctionOutput_1'","/Script/Engine.MaterialExpressionFunctionOutput'Water_Underside:MaterialExpressionFunctionOutput_2'","/Script/Engine.MaterialExpressionMultiply'Water_Underside:MaterialExpressionMultiply_0'","/Script/Engine.MaterialExpressionMultiply'Water_Underside:MaterialExpressionMultiply_1'","/Script/Engine.MaterialExpressionTwoSidedSign'Water_Underside:MaterialExpressionTwoSidedSign_1'","/Script/Engine.MaterialExpressionSaturate'Water_Underside:MaterialExpressionSaturate_4'"))
+   End Object
+   Begin Object Name="MaterialExpressionCameraVectorWS_0" ExportPath="/Script/Engine.MaterialExpressionCameraVectorWS'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionCameraVectorWS_0'"
+      MaterialExpressionEditorX=-1664
+      MaterialExpressionEditorY=720
+      MaterialExpressionGuid=9EC830A54460ECFB8FD8E0A11AA61C7E
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionDivide_0" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionDivide_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionSubtract'Water_Underside:MaterialExpressionSubtract_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'Water_Underside:MaterialExpressionScalarParameter_4'")
+      MaterialExpressionEditorX=-848
+      MaterialExpressionEditorY=624
+      MaterialExpressionGuid=E73708584B5B48E0A76845B393807C1F
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionDivide_1" ExportPath="/Script/Engine.MaterialExpressionDivide'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionDivide_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionSubtract'Water_Underside:MaterialExpressionSubtract_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'Water_Underside:MaterialExpressionScalarParameter_7'")
+      MaterialExpressionEditorX=-800
+      MaterialExpressionEditorY=1072
+      MaterialExpressionGuid=E73708584B5B48E0A76845B393807C1F
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionDotProduct_0" ExportPath="/Script/Engine.MaterialExpressionDotProduct'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionDotProduct_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionPixelNormalWS'Water_Underside:MaterialExpressionPixelNormalWS_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionCameraVectorWS'Water_Underside:MaterialExpressionCameraVectorWS_0'")
+      MaterialExpressionEditorX=-1456
+      MaterialExpressionEditorY=656
+      MaterialExpressionGuid=52B613814432FEDF62FCD4B677124742
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionFunctionInput_0'"
+      InputName="Attributes"
+      Id=7088FBE14811A85288A0C48E07AB993A
+      InputType=FunctionInput_MaterialAttributes
+      MaterialExpressionEditorX=-1504
+      MaterialExpressionEditorY=304
+      MaterialExpressionGuid=9DF178FD478226406812F794FC2D04A8
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_1" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionFunctionInput_1'"
+      InputName="Scattering"
+      Id=B4C542ED4FE1BFA5D47BC586D7E04376
+      SortPriority=1
+      MaterialExpressionEditorX=-448
+      MaterialExpressionEditorY=1472
+      MaterialExpressionGuid=44422EF24D607A85D4BCB08066D0C8DA
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_2" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionFunctionInput_2'"
+      InputName="Absorption"
+      Id=F28E2ABB4FDC6EF5CCD7D2AD1E977D9F
+      SortPriority=2
+      MaterialExpressionEditorX=-448
+      MaterialExpressionEditorY=1648
+      MaterialExpressionGuid=44422EF24D607A85D4BCB08066D0C8DA
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionOutput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionFunctionOutput_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'Water_Underside:MaterialExpressionSetMaterialAttributes_0'")
+      bLastPreviewed=True
+      Id=498F6BE44BD3568B29500DB92A54A99E
+      MaterialExpressionEditorX=640
+      MaterialExpressionEditorY=272
+      MaterialExpressionGuid=0891E87C43FFFCDC73C7AAB747225420
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionFunctionOutput_1" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionFunctionOutput_1'"
+      OutputName="Scattering"
+      SortPriority=1
+      A=(Expression="/Script/Engine.MaterialExpressionMultiply'Water_Underside:MaterialExpressionMultiply_0'")
+      bLastPreviewed=True
+      Id=1AC2E0EE46D67F59DB1EB8A674587AA6
+      MaterialExpressionEditorX=128
+      MaterialExpressionEditorY=1472
+      MaterialExpressionGuid=0891E87C43FFFCDC73C7AAB747225420
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionFunctionOutput_2" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionFunctionOutput_2'"
+      OutputName="Absorption"
+      SortPriority=2
+      A=(Expression="/Script/Engine.MaterialExpressionMultiply'Water_Underside:MaterialExpressionMultiply_1'")
+      bLastPreviewed=True
+      Id=92416E004385300C59029EBDDA706BEE
+      MaterialExpressionEditorX=128
+      MaterialExpressionEditorY=1648
+      MaterialExpressionGuid=0891E87C43FFFCDC73C7AAB747225420
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionGetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionGetMaterialAttributes'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionGetMaterialAttributes_0'"
+      MaterialAttributes=(Expression="/Script/Engine.MaterialExpressionReroute'Water_Underside:MaterialExpressionReroute_0'")
+      AttributeGetTypes(0)=9FDAB39925564CC98CD2D572C12C8FED
+      AttributeGetTypes(1)=B8F50FBA2A754EC19EF672CFEB27BF51
+      AttributeGetTypes(2)=D0B0FA0314D74455A851BAC581A0788B
+      MaterialExpressionEditorX=-848
+      MaterialExpressionEditorY=400
+      MaterialExpressionGuid=9FED72A64EE2352D503425ADDBBFDADA
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+      Outputs(1)=(OutputName="Specular")
+      Outputs(2)=(OutputName="Opacity")
+      Outputs(3)=(OutputName="Refraction")
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_0" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionLinearInterpolate_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'Water_Underside:MaterialExpressionGetMaterialAttributes_0'",OutputIndex=2)
+      Alpha=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'Water_Underside:MaterialExpressionLinearInterpolate_2'")
+      MaterialExpressionEditorX=-16
+      MaterialExpressionEditorY=560
+      MaterialExpressionGuid=9CC966A6465A801DC1646484AADBC6DF
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_1" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionLinearInterpolate_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'Water_Underside:MaterialExpressionGetMaterialAttributes_0'",OutputIndex=1)
+      Alpha=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'Water_Underside:MaterialExpressionLinearInterpolate_2'")
+      MaterialExpressionEditorX=-16
+      MaterialExpressionEditorY=432
+      MaterialExpressionGuid=80BDCAEF4B506D0F34B80EB161DD34D3
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_2" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionLinearInterpolate_2'"
+      A=(Expression="/Script/Engine.MaterialExpressionSaturate'Water_Underside:MaterialExpressionSaturate_0'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionSaturate'Water_Underside:MaterialExpressionSaturate_1'")
+      ConstB=0.000000
+      MaterialExpressionEditorX=-192
+      MaterialExpressionEditorY=624
+      MaterialExpressionGuid=432CD8A14DDD71D90B5ADBA1DBA30A75
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_3" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionLinearInterpolate_3'"
+      A=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'Water_Underside:MaterialExpressionLinearInterpolate_5'")
+      B=(Expression="/Script/Engine.MaterialExpressionReroute'Water_Underside:MaterialExpressionReroute_2'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionSaturate'Water_Underside:MaterialExpressionSaturate_2'")
+      MaterialExpressionEditorX=144
+      MaterialExpressionEditorY=976
+      MaterialExpressionGuid=D66F91764673A89DB0476FACF9871B92
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_4" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionLinearInterpolate_4'"
+      B=(Expression="/Script/Engine.MaterialExpressionReroute'Water_Underside:MaterialExpressionReroute_1'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionScalarParameter'Water_Underside:MaterialExpressionScalarParameter_6'")
+      ConstA=1.000000
+      MaterialExpressionEditorX=-208
+      MaterialExpressionEditorY=832
+      MaterialExpressionGuid=3636563743B8278085FB3791883079C3
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_5" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionLinearInterpolate_5'"
+      A=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'Water_Underside:MaterialExpressionLinearInterpolate_4'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'Water_Underside:MaterialExpressionScalarParameter_8'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionReroute'Water_Underside:MaterialExpressionReroute_3'")
+      ConstA=1.000000
+      MaterialExpressionEditorX=-32
+      MaterialExpressionEditorY=896
+      MaterialExpressionGuid=3636563743B8278085FB3791883079C3
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_0" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionMultiply_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionFunctionInput'Water_Underside:MaterialExpressionFunctionInput_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionSaturate'Water_Underside:MaterialExpressionSaturate_4'")
+      MaterialExpressionEditorX=-90
+      MaterialExpressionEditorY=1470
+      MaterialExpressionGuid=F1F95C0247395F34EA8274869BE1AB13
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_1" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionMultiply_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionFunctionInput'Water_Underside:MaterialExpressionFunctionInput_2'")
+      B=(Expression="/Script/Engine.MaterialExpressionSaturate'Water_Underside:MaterialExpressionSaturate_4'")
+      MaterialExpressionEditorX=-80
+      MaterialExpressionEditorY=1648
+      MaterialExpressionGuid=16D5ABC5429CFCBD33CBF69A4340CE9B
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionOneMinus_0" ExportPath="/Script/Engine.MaterialExpressionOneMinus'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionOneMinus_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionSaturate'Water_Underside:MaterialExpressionSaturate_3'")
+      MaterialExpressionEditorX=-384
+      MaterialExpressionEditorY=1072
+      MaterialExpressionGuid=2470F6FA437C8E22618BDCB0907B8FD1
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionPixelNormalWS_0" ExportPath="/Script/Engine.MaterialExpressionPixelNormalWS'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionPixelNormalWS_0'"
+      MaterialExpressionEditorX=-1664
+      MaterialExpressionEditorY=640
+      MaterialExpressionGuid=FF07D7CB4B5C11AD21EF14936F770219
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_0" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionReroute_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionFunctionInput'Water_Underside:MaterialExpressionFunctionInput_0'")
+      MaterialExpressionEditorX=-1088
+      MaterialExpressionEditorY=336
+      MaterialExpressionGuid=3B1017EE48C6DE0DA51AE8AC71CDCEB0
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_1" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionReroute_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'Water_Underside:MaterialExpressionGetMaterialAttributes_0'",OutputIndex=3)
+      MaterialExpressionEditorX=-640
+      MaterialExpressionEditorY=896
+      MaterialExpressionGuid=0A03C7E34AB5046F431186BEC7FE87E5
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_2" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionReroute_2'"
+      Input=(Expression="/Script/Engine.MaterialExpressionReroute'Water_Underside:MaterialExpressionReroute_1'")
+      MaterialExpressionEditorX=-480
+      MaterialExpressionEditorY=1040
+      MaterialExpressionGuid=03F81EB74D14278C61F0BA98EC6635C9
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_3" ExportPath="/Script/Engine.MaterialExpressionReroute'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionReroute_3'"
+      Input=(Expression="/Script/Engine.MaterialExpressionOneMinus'Water_Underside:MaterialExpressionOneMinus_0'")
+      MaterialExpressionEditorX=-144
+      MaterialExpressionEditorY=1104
+      MaterialExpressionGuid=E76204B24E49C07139678B8699944954
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_0" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionSaturate_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionDivide'Water_Underside:MaterialExpressionDivide_0'")
+      MaterialExpressionEditorX=-560
+      MaterialExpressionEditorY=624
+      MaterialExpressionGuid=21F6E52F40F840FC790CE481EA6E4238
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_1" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionSaturate_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionTwoSidedSign'Water_Underside:MaterialExpressionTwoSidedSign_0'")
+      MaterialExpressionEditorX=-336
+      MaterialExpressionEditorY=736
+      MaterialExpressionGuid=21F6E52F40F840FC790CE481EA6E4238
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_2" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionSaturate_2'"
+      Input=(Expression="/Script/Engine.MaterialExpressionTwoSidedSign'Water_Underside:MaterialExpressionTwoSidedSign_2'")
+      MaterialExpressionEditorX=-224
+      MaterialExpressionEditorY=1184
+      MaterialExpressionGuid=21F6E52F40F840FC790CE481EA6E4238
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_3" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionSaturate_3'"
+      Input=(Expression="/Script/Engine.MaterialExpressionDivide'Water_Underside:MaterialExpressionDivide_1'")
+      MaterialExpressionEditorX=-624
+      MaterialExpressionEditorY=1072
+      MaterialExpressionGuid=21F6E52F40F840FC790CE481EA6E4238
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_4" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionSaturate_4'"
+      Input=(Expression="/Script/Engine.MaterialExpressionTwoSidedSign'Water_Underside:MaterialExpressionTwoSidedSign_1'")
+      MaterialExpressionEditorX=-288
+      MaterialExpressionEditorY=1856
+      MaterialExpressionGuid=21F6E52F40F840FC790CE481EA6E4238
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_3" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionScalarParameter_3'"
+      DefaultValue=0.225000
+      ParameterName="Critical Angle Dot"
+      ExpressionGUID=10321E7B4848B66F2097EC90DE306DF9
+      Group="TwoSided Settings"
+      MaterialExpressionEditorX=-1536
+      MaterialExpressionEditorY=544
+      MaterialExpressionGuid=6C14CCA34ECC1685CB6BCF84D634E5B5
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_4" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionScalarParameter_4'"
+      DefaultValue=0.010000
+      ParameterName="Critical Angle Width"
+      ExpressionGUID=33375F994246A85DAEF747BB1342DC6F
+      Group="TwoSided Settings"
+      MaterialExpressionEditorX=-1056
+      MaterialExpressionEditorY=688
+      MaterialExpressionGuid=7160DB45456D2AAEA29E87B1D96739C2
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_6" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionScalarParameter_6'"
+      DefaultValue=1.000000
+      ParameterName="Refraction Bottom Amount"
+      ExpressionGUID=5297F9A64C0B5C0BA0F1F8A145E9DBC1
+      Group="TwoSided Settings"
+      MaterialExpressionEditorX=-496
+      MaterialExpressionEditorY=928
+      MaterialExpressionGuid=6BF5B83B4058BE422FDE598B78B5B643
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_7" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionScalarParameter_7'"
+      DefaultValue=-0.750000
+      ParameterName="Critical Angle Bend Width"
+      ExpressionGUID=0978960F485AE10FBC2384A36E5B63D3
+      Group="TwoSided Settings"
+      MaterialExpressionEditorX=-1088
+      MaterialExpressionEditorY=1168
+      MaterialExpressionGuid=7160DB45456D2AAEA29E87B1D96739C2
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_8" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionScalarParameter_8'"
+      DefaultValue=0.950000
+      ParameterName="Lip Refraction"
+      ExpressionGUID=FB69656B48587F3D6E54B1B8C3086173
+      Group="TwoSided Settings"
+      MaterialExpressionEditorX=-224
+      MaterialExpressionEditorY=960
+      MaterialExpressionGuid=157DC9CA4AE8C7D7614FA883999D5D12
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionSetMaterialAttributes_0'"
+      Inputs(0)=(Expression="/Script/Engine.MaterialExpressionReroute'Water_Underside:MaterialExpressionReroute_0'")
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'Water_Underside:MaterialExpressionLinearInterpolate_1'",InputName="Specular")
+      Inputs(2)=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'Water_Underside:MaterialExpressionLinearInterpolate_0'",InputName="Opacity")
+      Inputs(3)=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'Water_Underside:MaterialExpressionLinearInterpolate_3'",InputName="Refraction")
+      AttributeSetTypes(0)=9FDAB39925564CC98CD2D572C12C8FED
+      AttributeSetTypes(1)=B8F50FBA2A754EC19EF672CFEB27BF51
+      AttributeSetTypes(2)=D0B0FA0314D74455A851BAC581A0788B
+      MaterialExpressionEditorX=304
+      MaterialExpressionEditorY=304
+      MaterialExpressionGuid=BA07A2B74EA56B4B25E01BA6980941F1
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionSubtract_0" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionSubtract_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionScalarParameter'Water_Underside:MaterialExpressionScalarParameter_3'")
+      B=(Expression="/Script/Engine.MaterialExpressionDotProduct'Water_Underside:MaterialExpressionDotProduct_0'")
+      MaterialExpressionEditorX=-1312
+      MaterialExpressionEditorY=624
+      MaterialExpressionGuid=EA135B114CBBB8AB34F372B785BC7737
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionTwoSidedSign_0" ExportPath="/Script/Engine.MaterialExpressionTwoSidedSign'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionTwoSidedSign_0'"
+      MaterialExpressionEditorX=-512
+      MaterialExpressionEditorY=720
+      MaterialExpressionGuid=424673B648F3292AE501319923A22B51
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionTwoSidedSign_1" ExportPath="/Script/Engine.MaterialExpressionTwoSidedSign'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionTwoSidedSign_1'"
+      MaterialExpressionEditorX=-464
+      MaterialExpressionEditorY=1840
+      MaterialExpressionGuid=424673B648F3292AE501319923A22B51
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="MaterialExpressionTwoSidedSign_2" ExportPath="/Script/Engine.MaterialExpressionTwoSidedSign'/Water/Materials/Functions/Water_Underside.Water_Underside:MaterialExpressionTwoSidedSign_2'"
+      MaterialExpressionEditorX=-400
+      MaterialExpressionEditorY=1168
+      MaterialExpressionGuid=424673B648F3292AE501319923A22B51
+      Function="/Script/Engine.MaterialFunction'Water_Underside'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Water/Materials/Functions/Water_Underside.Water_Underside:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Description="Adjusts Specular, Opacity and Refraction to allow Water materials to work for the bottom side of the water using TwoSidedSign."
+   bExposeToLibrary=True
+   LibraryCategoriesText(0)=NSLOCTEXT("", "315846A34BDCFD588AEEACB9EFED3CE8", "Water")
+   EditorOnlyData="/Script/Engine.MaterialFunctionEditorOnlyData'Water_UndersideEditorOnlyData'"
+   StateId=90DE2CB74185A3B1F0821E9115E5938C
+   CombinedInputTypes=1028
+   CombinedOutputTypes=1039
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+End Object

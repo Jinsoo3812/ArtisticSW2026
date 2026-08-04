@@ -1,0 +1,303 @@
+Begin Object Class=/Script/Engine.Material Name="V5_M_FoamStateUpdate" ExportPath="/Script/Engine.Material'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate'"
+   Begin Object Class=/Script/Engine.MaterialEditorOnlyData Name="V5_M_FoamStateUpdateEditorOnlyData" ExportPath="/Script/Engine.MaterialEditorOnlyData'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:V5_M_FoamStateUpdateEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_3" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionComponentMask_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_4" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionComponentMask_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_5" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionComponentMask_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_6" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionComponentMask_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_7" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionComponentMask_7'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_8" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionComponentMask_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionCustom Name="MaterialExpressionCustom_10" ExportPath="/Script/Engine.MaterialExpressionCustom'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionCustom_10'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionCustom Name="MaterialExpressionCustom_11" ExportPath="/Script/Engine.MaterialExpressionCustom'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionCustom_11'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionCustom Name="MaterialExpressionCustom_7" ExportPath="/Script/Engine.MaterialExpressionCustom'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionCustom_7'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionCustom Name="MaterialExpressionCustom_8" ExportPath="/Script/Engine.MaterialExpressionCustom'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionCustom_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionCustom Name="MaterialExpressionCustom_9" ExportPath="/Script/Engine.MaterialExpressionCustom'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionCustom_9'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_12" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_12'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_13" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_13'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_14" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_14'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_15" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_15'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_16" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_16'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_17" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_17'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_18" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_18'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureCoordinate Name="MaterialExpressionTextureCoordinate_1" ExportPath="/Script/Engine.MaterialExpressionTextureCoordinate'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionTextureCoordinate_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureSampleParameter2D Name="MaterialExpressionTextureSampleParameter2D_1" ExportPath="/Script/Engine.MaterialExpressionTextureSampleParameter2D'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionTextureSampleParameter2D_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureSampleParameter2D Name="MaterialExpressionTextureSampleParameter2D_2" ExportPath="/Script/Engine.MaterialExpressionTextureSampleParameter2D'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionTextureSampleParameter2D_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVectorParameter Name="MaterialExpressionVectorParameter_2" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionVectorParameter_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVectorParameter Name="MaterialExpressionVectorParameter_3" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionVectorParameter_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVectorParameter Name="MaterialExpressionVectorParameter_4" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionVectorParameter_4'"
+   End Object
+   Begin Object Name="V5_M_FoamStateUpdateEditorOnlyData" ExportPath="/Script/Engine.MaterialEditorOnlyData'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:V5_M_FoamStateUpdateEditorOnlyData'"
+      EmissiveColor=(Expression="/Script/Engine.MaterialExpressionCustom'V5_M_FoamStateUpdate:MaterialExpressionCustom_11'")
+      ExpressionCollection=(Expressions=("/Script/Engine.MaterialExpressionTextureCoordinate'V5_M_FoamStateUpdate:MaterialExpressionTextureCoordinate_1'","/Script/Engine.MaterialExpressionVectorParameter'V5_M_FoamStateUpdate:MaterialExpressionVectorParameter_2'","/Script/Engine.MaterialExpressionComponentMask'V5_M_FoamStateUpdate:MaterialExpressionComponentMask_3'","/Script/Engine.MaterialExpressionVectorParameter'V5_M_FoamStateUpdate:MaterialExpressionVectorParameter_3'","/Script/Engine.MaterialExpressionComponentMask'V5_M_FoamStateUpdate:MaterialExpressionComponentMask_4'","/Script/Engine.MaterialExpressionVectorParameter'V5_M_FoamStateUpdate:MaterialExpressionVectorParameter_4'","/Script/Engine.MaterialExpressionComponentMask'V5_M_FoamStateUpdate:MaterialExpressionComponentMask_5'","/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_12'","/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_13'","/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_14'","/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_15'","/Script/Engine.MaterialExpressionCustom'V5_M_FoamStateUpdate:MaterialExpressionCustom_7'","/Script/Engine.MaterialExpressionCustom'V5_M_FoamStateUpdate:MaterialExpressionCustom_8'","/Script/Engine.MaterialExpressionTextureSampleParameter2D'V5_M_FoamStateUpdate:MaterialExpressionTextureSampleParameter2D_1'","/Script/Engine.MaterialExpressionComponentMask'V5_M_FoamStateUpdate:MaterialExpressionComponentMask_6'","/Script/Engine.MaterialExpressionComponentMask'V5_M_FoamStateUpdate:MaterialExpressionComponentMask_7'","/Script/Engine.MaterialExpressionCustom'V5_M_FoamStateUpdate:MaterialExpressionCustom_9'","/Script/Engine.MaterialExpressionTextureSampleParameter2D'V5_M_FoamStateUpdate:MaterialExpressionTextureSampleParameter2D_2'","/Script/Engine.MaterialExpressionComponentMask'V5_M_FoamStateUpdate:MaterialExpressionComponentMask_8'","/Script/Engine.MaterialExpressionCustom'V5_M_FoamStateUpdate:MaterialExpressionCustom_10'","/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_16'","/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_17'","/Script/Engine.MaterialExpressionCustom'V5_M_FoamStateUpdate:MaterialExpressionCustom_11'","/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_18'"))
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_3" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionComponentMask_3'"
+      Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'V5_M_FoamStateUpdate:MaterialExpressionVectorParameter_2'",Mask=1,MaskR=1,MaskG=1,MaskB=1)
+      R=True
+      G=True
+      MaterialExpressionEditorX=-1580
+      MaterialExpressionEditorY=-160
+      MaterialExpressionGuid=435CA9A84AB2A97E78A1348BBAC6E793
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_4" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionComponentMask_4'"
+      Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'V5_M_FoamStateUpdate:MaterialExpressionVectorParameter_3'",Mask=1,MaskR=1,MaskG=1,MaskB=1)
+      R=True
+      G=True
+      MaterialExpressionEditorX=-1580
+      MaterialExpressionEditorY=-20
+      MaterialExpressionGuid=E74BC9F64C152C368042B5AA6CF7065D
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_5" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionComponentMask_5'"
+      Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'V5_M_FoamStateUpdate:MaterialExpressionVectorParameter_4'",Mask=1,MaskR=1,MaskG=1,MaskB=1)
+      R=True
+      G=True
+      MaterialExpressionEditorX=-1580
+      MaterialExpressionEditorY=120
+      MaterialExpressionGuid=2F69E73F4B6DE510AA693988DE0C2C25
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_6" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionComponentMask_6'"
+      Input=(Expression="/Script/Engine.MaterialExpressionTextureSampleParameter2D'V5_M_FoamStateUpdate:MaterialExpressionTextureSampleParameter2D_1'",Mask=1,MaskR=1,MaskG=1,MaskB=1)
+      R=True
+      MaterialExpressionEditorX=-460
+      MaterialExpressionEditorY=-280
+      MaterialExpressionGuid=5FCB7E2F4D401514D9299788F5E5ACE8
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_7" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionComponentMask_7'"
+      Input=(Expression="/Script/Engine.MaterialExpressionTextureSampleParameter2D'V5_M_FoamStateUpdate:MaterialExpressionTextureSampleParameter2D_1'",Mask=1,MaskR=1,MaskG=1,MaskB=1)
+      G=True
+      B=True
+      MaterialExpressionEditorX=-460
+      MaterialExpressionEditorY=-100
+      MaterialExpressionGuid=851D4C5C44520E5A6FD8418491EC9730
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_8" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionComponentMask_8'"
+      Input=(Expression="/Script/Engine.MaterialExpressionTextureSampleParameter2D'V5_M_FoamStateUpdate:MaterialExpressionTextureSampleParameter2D_2'",Mask=1,MaskR=1,MaskG=1,MaskB=1)
+      R=True
+      MaterialExpressionEditorX=430
+      MaterialExpressionEditorY=40
+      MaterialExpressionGuid=B92252E84FF1979156200DBD6354D7BE
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+   End Object
+   Begin Object Name="MaterialExpressionCustom_10" ExportPath="/Script/Engine.MaterialExpressionCustom'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionCustom_10'"
+      Code="float2 lower = step(0.0, UV);\nfloat2 upper = step(UV, 1.0);\nreturn lower.x * lower.y * upper.x * upper.y;"
+      OutputType=CMOT_Float1
+      Description="V5 reject history outside previous local field"
+      Inputs(0)=(InputName="UV",Input=(Expression="/Script/Engine.MaterialExpressionCustom'V5_M_FoamStateUpdate:MaterialExpressionCustom_9'"))
+      MaterialExpressionEditorX=180
+      MaterialExpressionEditorY=220
+      MaterialExpressionGuid=EC2A3B8E461FA057566C4EBAD2A58D05
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+      Desc="V5 reject history outside previous local field"
+   End Object
+   Begin Object Name="MaterialExpressionCustom_11" ExportPath="/Script/Engine.MaterialExpressionCustom'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionCustom_11'"
+      Code="float dt = max(DeltaSeconds, 1.0e-4);\nfloat advected = saturate(PreviousDensity) * Inside;\nfloat decayed = advected * exp(-dt / max(Lifetime, 0.1));\n// Fix for Float16 quantization stall at high framerates\ndecayed = max(0.0, decayed - 0.01 * dt);\nfloat density = 1.0 - (1.0 - decayed) * exp(-saturate(Source) * SourceRate * dt);\nreturn saturate(float3(density, density, density));"
+      Description="V5 persistent foam: CPU source, exact velocity advection, exponential lifetime"
+      Inputs(0)=(InputName="PreviousDensity",Input=(Expression="/Script/Engine.MaterialExpressionComponentMask'V5_M_FoamStateUpdate:MaterialExpressionComponentMask_8'"))
+      Inputs(1)=(InputName="Source",Input=(Expression="/Script/Engine.MaterialExpressionComponentMask'V5_M_FoamStateUpdate:MaterialExpressionComponentMask_6'"))
+      Inputs(2)=(InputName="Inside",Input=(Expression="/Script/Engine.MaterialExpressionCustom'V5_M_FoamStateUpdate:MaterialExpressionCustom_10'"))
+      Inputs(3)=(InputName="DeltaSeconds",Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_13'"))
+      Inputs(4)=(InputName="Lifetime",Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_16'"))
+      Inputs(5)=(InputName="SourceRate",Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_17'"))
+      MaterialExpressionEditorX=760
+      MaterialExpressionEditorY=60
+      MaterialExpressionGuid=4E6391944945299A956F638082E6C7AD
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+      Desc="V5 persistent foam: CPU source, exact velocity advection, exponential lifetime"
+   End Object
+   Begin Object Name="MaterialExpressionCustom_7" ExportPath="/Script/Engine.MaterialExpressionCustom'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionCustom_7'"
+      Code="return Center + (UV - 0.5) * FieldSize;"
+      OutputType=CMOT_Float2
+      Description="V5 reconstruct world XY for local foam domain"
+      Inputs(0)=(InputName="UV",Input=(Expression="/Script/Engine.MaterialExpressionTextureCoordinate'V5_M_FoamStateUpdate:MaterialExpressionTextureCoordinate_1'"))
+      Inputs(1)=(InputName="Center",Input=(Expression="/Script/Engine.MaterialExpressionComponentMask'V5_M_FoamStateUpdate:MaterialExpressionComponentMask_3'"))
+      Inputs(2)=(InputName="FieldSize",Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_12'"))
+      MaterialExpressionEditorX=-1280
+      MaterialExpressionEditorY=-260
+      MaterialExpressionGuid=82B4158647E38E27C4F34EBFF2D63CC1
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+      Desc="V5 reconstruct world XY for local foam domain"
+   End Object
+   Begin Object Name="MaterialExpressionCustom_8" ExportPath="/Script/Engine.MaterialExpressionCustom'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionCustom_8'"
+      Code="return (WorldXY - SourceCenter) / max(FieldSize, 1.0) + 0.5;"
+      OutputType=CMOT_Float2
+      Description="V5 map current world position into CPU Gerstner source field"
+      Inputs(0)=(InputName="WorldXY",Input=(Expression="/Script/Engine.MaterialExpressionCustom'V5_M_FoamStateUpdate:MaterialExpressionCustom_7'"))
+      Inputs(1)=(InputName="SourceCenter",Input=(Expression="/Script/Engine.MaterialExpressionComponentMask'V5_M_FoamStateUpdate:MaterialExpressionComponentMask_5'"))
+      Inputs(2)=(InputName="FieldSize",Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_12'"))
+      MaterialExpressionEditorX=-1000
+      MaterialExpressionEditorY=-160
+      MaterialExpressionGuid=44BEF5EC43C45D4A74D05FA4736FC341
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+      Desc="V5 map current world position into CPU Gerstner source field"
+   End Object
+   Begin Object Name="MaterialExpressionCustom_9" ExportPath="/Script/Engine.MaterialExpressionCustom'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionCustom_9'"
+      Code="float2 velocityCmPerSecond = (EncodedVelocity * 2.0 - 1.0) * MaxVelocity;\nfloat2 backtracedWorldXY = WorldXY - velocityCmPerSecond * DeltaSeconds * Scale;\nreturn (backtracedWorldXY - PreviousCenter) / max(FieldSize, 1.0) + 0.5;"
+      OutputType=CMOT_Float2
+      Description="V5 semi-Lagrangian backtrace using CPU exact Gerstner velocity"
+      Inputs(0)=(InputName="WorldXY",Input=(Expression="/Script/Engine.MaterialExpressionCustom'V5_M_FoamStateUpdate:MaterialExpressionCustom_7'"))
+      Inputs(1)=(InputName="PreviousCenter",Input=(Expression="/Script/Engine.MaterialExpressionComponentMask'V5_M_FoamStateUpdate:MaterialExpressionComponentMask_4'"))
+      Inputs(2)=(InputName="FieldSize",Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_12'"))
+      Inputs(3)=(InputName="EncodedVelocity",Input=(Expression="/Script/Engine.MaterialExpressionComponentMask'V5_M_FoamStateUpdate:MaterialExpressionComponentMask_7'"))
+      Inputs(4)=(InputName="MaxVelocity",Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_14'"))
+      Inputs(5)=(InputName="DeltaSeconds",Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_13'"))
+      Inputs(6)=(InputName="Scale",Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_15'"))
+      MaterialExpressionEditorX=-120
+      MaterialExpressionEditorY=40
+      MaterialExpressionGuid=F968AA334D2260F2E00ACD907DB429FB
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+      Desc="V5 semi-Lagrangian backtrace using CPU exact Gerstner velocity"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_12" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_12'"
+      DefaultValue=30000.000000
+      ParameterName="V5 Foam Field Size Cm"
+      ExpressionGUID=CDE774084DD6AFC20CCB58AD07F3AD78
+      MaterialExpressionEditorX=-1800
+      MaterialExpressionEditorY=260
+      MaterialExpressionGuid=F152E3F3430FC4F0EE96D18D2FEE67A1
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_13" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_13'"
+      DefaultValue=0.016667
+      ParameterName="V5 Delta Seconds"
+      ExpressionGUID=165D34F742FF1542E687AB97EF9D6801
+      MaterialExpressionEditorX=-1800
+      MaterialExpressionEditorY=360
+      MaterialExpressionGuid=11A8606848B1029A440971823504655C
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_14" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_14'"
+      DefaultValue=1200.000000
+      ParameterName="V5 Max Encoded Velocity CmPerSecond"
+      ExpressionGUID=4FB09D34428927EFF4678F89AB0611A6
+      MaterialExpressionEditorX=-1800
+      MaterialExpressionEditorY=460
+      MaterialExpressionGuid=BB14B92C46D4250EAB0026A71610FAC7
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_15" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_15'"
+      DefaultValue=1.000000
+      ParameterName="V5 Foam Advection Scale"
+      ExpressionGUID=8C57B18A4ACD4059422FDAAE664ED953
+      MaterialExpressionEditorX=-1800
+      MaterialExpressionEditorY=560
+      MaterialExpressionGuid=AFFFE9C844E40E39D5ABE6AA8CCAD15B
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_16" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_16'"
+      DefaultValue=5.500000
+      ParameterName="V5 Foam Lifetime Seconds"
+      ExpressionGUID=FF08049C4C1439883E45D181085B7166
+      MaterialExpressionEditorX=430
+      MaterialExpressionEditorY=200
+      MaterialExpressionGuid=2351C1DF45BE6D573AF3E8B5922186A8
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_17" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_17'"
+      DefaultValue=2.000000
+      ParameterName="V5 Foam Source Rate"
+      ExpressionGUID=18F9EF22402EAEF017C21EB1551A8F6B
+      MaterialExpressionEditorX=430
+      MaterialExpressionEditorY=300
+      MaterialExpressionGuid=787FB76B4A6962405BF6CDBDD1F44FFD
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_18" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionScalarParameter_18'"
+      DefaultValue=1.000000
+      ParameterName="V5 CPU Wave Field Installed"
+      ExpressionGUID=886D2CD24453FD6343371A96CECE4E84
+      MaterialExpressionEditorX=760
+      MaterialExpressionEditorY=320
+      MaterialExpressionGuid=5397F5024FA272B72D24998A3C6B6E23
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+      Desc="V5 CPU bridge build marker; intentionally unconnected"
+   End Object
+   Begin Object Name="MaterialExpressionTextureCoordinate_1" ExportPath="/Script/Engine.MaterialExpressionTextureCoordinate'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionTextureCoordinate_1'"
+      MaterialExpressionEditorX=-1800
+      MaterialExpressionEditorY=-300
+      MaterialExpressionGuid=6B13BC8B4F6625C1E590258718677966
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+      Desc="V5 state UV"
+   End Object
+   Begin Object Name="MaterialExpressionTextureSampleParameter2D_1" ExportPath="/Script/Engine.MaterialExpressionTextureSampleParameter2D'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionTextureSampleParameter2D_1'"
+      ParameterName="V5 CPU Wave Field"
+      ExpressionGUID=1D7864DC49A642770EA886B376EF17DD
+      Coordinates=(Expression="/Script/Engine.MaterialExpressionCustom'V5_M_FoamStateUpdate:MaterialExpressionCustom_8'")
+      Texture="/Script/Engine.Texture2D'/Engine/Functions/Engine_MaterialFunctions02/PivotPainter2/Black_1x1_EXR_Texture.Black_1x1_EXR_Texture'"
+      SamplerType=SAMPLERTYPE_LinearColor
+      MaterialExpressionEditorX=-720
+      MaterialExpressionEditorY=-180
+      MaterialExpressionGuid=B5F3A8D344E5EC10D5C78AA0EFE93B9A
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+      Desc="V5 CPU Gerstner source and exact horizontal velocity"
+   End Object
+   Begin Object Name="MaterialExpressionTextureSampleParameter2D_2" ExportPath="/Script/Engine.MaterialExpressionTextureSampleParameter2D'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionTextureSampleParameter2D_2'"
+      ParameterName="V5 Previous Foam State"
+      ExpressionGUID=EB52D8A84AA615F8CA1BD9A3F93608D3
+      Coordinates=(Expression="/Script/Engine.MaterialExpressionCustom'V5_M_FoamStateUpdate:MaterialExpressionCustom_9'")
+      Texture="/Script/Engine.Texture2D'/Engine/Functions/Engine_MaterialFunctions02/PivotPainter2/Black_1x1_EXR_Texture.Black_1x1_EXR_Texture'"
+      SamplerType=SAMPLERTYPE_LinearColor
+      MaterialExpressionEditorX=180
+      MaterialExpressionEditorY=40
+      MaterialExpressionGuid=B85CA9A747785013B2C0459B4C5AB9A8
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+      Desc="V5 previous persistent foam state"
+   End Object
+   Begin Object Name="MaterialExpressionVectorParameter_2" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionVectorParameter_2'"
+      ParameterName="V5 Foam Field Center"
+      ExpressionGUID=D8D68FF14D014E6935C753B62F0CB1B1
+      MaterialExpressionEditorX=-1800
+      MaterialExpressionEditorY=-160
+      MaterialExpressionGuid=F5D6224B44149AF06BA1F38E73BDF53B
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+   End Object
+   Begin Object Name="MaterialExpressionVectorParameter_3" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionVectorParameter_3'"
+      ParameterName="V5 Previous Field Center"
+      ExpressionGUID=81B8B8E74450F7902F40C8AB56351F23
+      MaterialExpressionEditorX=-1800
+      MaterialExpressionEditorY=-20
+      MaterialExpressionGuid=5F7712334F25D1435CC516898A4AD61C
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+   End Object
+   Begin Object Name="MaterialExpressionVectorParameter_4" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Tests/Realistic_Water/V5_PersistentAdvectedFoam/V5_M_FoamStateUpdate.V5_M_FoamStateUpdate:MaterialExpressionVectorParameter_4'"
+      ParameterName="V5 CPU Wave Field Center"
+      ExpressionGUID=B0CAF4AE48584BBE076DD2856CA52D48
+      MaterialExpressionEditorX=-1800
+      MaterialExpressionEditorY=120
+      MaterialExpressionGuid=59F101D5470AC13AA85BF1A4E0E9CD35
+      Material="/Script/Engine.Material'V5_M_FoamStateUpdate'"
+   End Object
+   ShadingModel=MSM_Unlit
+   ShadingModels=(ShadingModelField=1)
+   bCanMaskedBeAssumedOpaque=True
+   StateId=045F7B7A4E5AA0A629679796443192A2
+   ReferencedTextureGuids(0)=C2F681154343C8D4CCEAA5B9A2EA32FC
+   EditorOnlyData="/Script/Engine.MaterialEditorOnlyData'V5_M_FoamStateUpdateEditorOnlyData'"
+   LightingGuid=8F3BC37A4F2BF3B2B90F60B13F23B8E9
+End Object
