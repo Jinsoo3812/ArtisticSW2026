@@ -1,0 +1,23 @@
+Begin Object Class=/Script/Engine.MaterialInstanceConstant Name="V7_MI_RealisticWater_Base" ExportPath="/Script/Engine.MaterialInstanceConstant'/Game/Tests/Realistic_Water/V7_FluxFoam/V7_MI_RealisticWater_Base.V7_MI_RealisticWater_Base'"
+   Begin Object Class=/Script/Engine.MaterialInstanceEditorOnlyData Name="V7_MI_RealisticWater_BaseEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Tests/Realistic_Water/V7_FluxFoam/V7_MI_RealisticWater_Base.V7_MI_RealisticWater_Base:V7_MI_RealisticWater_BaseEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Tests/Realistic_Water/V7_FluxFoam/V7_MI_RealisticWater_Base.V7_MI_RealisticWater_Base:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="V7_MI_RealisticWater_BaseEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Tests/Realistic_Water/V7_FluxFoam/V7_MI_RealisticWater_Base.V7_MI_RealisticWater_Base:V7_MI_RealisticWater_BaseEditorOnlyData'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Tests/Realistic_Water/V7_FluxFoam/V7_MI_RealisticWater_Base.V7_MI_RealisticWater_Base:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   ParameterStateId=75FFFA644DFA44B48A752C971F28B86E
+   Parent="/Script/Engine.Material'/Game/Tests/Realistic_Water/V3_GodotInspiredFlow/V3_M_RealisticWater_GodotInspired.V3_M_RealisticWater_GodotInspired'"
+   bHasStaticPermutationResource=True
+   ScalarParameterValues(0)=(ParameterInfo=(Name="RefractionDepthBias"))
+   BasePropertyOverrides=(TwoSided=True,BlendMode=BLEND_Masked,ShadingModel=MSM_SingleLayerWater,OpacityMaskClipValue=0.333300)
+   StaticParametersRuntime=(StaticSwitchParameters=((ParameterInfo=(Name="Show FluidSim Debug Bounds"),bOverride=True,ExpressionGUID=679FBE1C4560875BAAB0B4B547734350),(ParameterInfo=(Name="Caustics"),bOverride=True,ExpressionGUID=BBDBB5C24AD3B40FA278768B7727FCDC)))
+   EditorOnlyData="/Script/Engine.MaterialInstanceEditorOnlyData'V7_MI_RealisticWater_BaseEditorOnlyData'"
+   TextureStreamingDataVersion=1
+   TextureStreamingData(0)=(SamplingScale=0.156250,UVChannelIndex=0,TextureName="T_Water_TilingNormal_With_Height_02_Softened",TextureReference="/Water/Textures/Normals/T_Water_TilingNormal_With_Height_02_Softened.T_Water_TilingNormal_With_Height_02_Softened")
+   TextureStreamingData(1)=(SamplingScale=0.359375,UVChannelIndex=0,TextureName="T_WaterFlow_01_Foam_Tiled",TextureReference="/Water/Textures/Foam/T_WaterFlow_01_Foam_Tiled.T_WaterFlow_01_Foam_Tiled")
+   TextureStreamingData(2)=(SamplingScale=0.359375,UVChannelIndex=0,TextureName="T_WaterFlow_01_Foam_Tiled_N",TextureReference="/Water/Textures/Foam/T_WaterFlow_01_Foam_Tiled_N.T_WaterFlow_01_Foam_Tiled_N")
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+   LightingGuid=169A95B44E513E1990576281865400FC
+End Object
