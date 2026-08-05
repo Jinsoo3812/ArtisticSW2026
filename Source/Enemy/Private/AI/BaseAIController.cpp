@@ -35,6 +35,10 @@ void ABaseAIController::SetupPerceptionSystem()
 {
 	UAIPerceptionComponent* PerceptionComp =
 		CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("PerceptionComponent"));
+	// AI|Perception controller defaults are the single editor-facing source of truth.
+	// The component remains visible for inspection, but inherited Blueprints must not
+	// edit its generated sense configurations independently.
+	PerceptionComp->bEditableWhenInherited = false;
 	SetPerceptionComponent(*PerceptionComp);
 
 	SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));

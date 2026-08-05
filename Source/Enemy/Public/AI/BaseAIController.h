@@ -64,7 +64,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Targeting", meta = (ClampMin = "0.0"))
 	float TargetReacquireDelay = 0.25f;
 
-	// AI Sight Perception 변수
+	// Internal runtime sense configurations. Blueprint defaults must be authored
+	// through the normalized AI|Perception properties below, not the component.
 	UPROPERTY()
 	TObjectPtr<UAISenseConfig_Sight> SightConfig;
 
@@ -75,22 +76,22 @@ protected:
 	TObjectPtr<UAISenseConfig_Damage> DamageConfig;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception|Sight", meta = (ClampMin = "0.0"))
-	float SightRadius = 1000.0f;
+	float SightRadius = 2500.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception|Sight", meta = (ClampMin = "0.0"))
-	float LoseSightRadius = 1100.0f;
+	float LoseSightRadius = 3000.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception|Sight", meta = (ClampMin = "0.0", ClampMax = "180.0"))
-	float PeripheralVisionDegrees = 65.0f;
+	float PeripheralVisionDegrees = 70.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception|Sight", meta = (ClampMin = "0.0"))
-	float SightMaxAge = 5.0f;
+	float SightMaxAge = 3.5f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception|Sight", meta = (ClampMin = "0.0"))
 	float AutoSuccessRangeFromLastSeenLocation = 500.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception|Hearing", meta = (ClampMin = "0.0"))
-	float HearingRange = 500.0f;
+	float HearingRange = 1500.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception|Hearing", meta = (ClampMin = "0.0"))
 	float HearingMaxAge = 3.0f;
@@ -119,7 +120,8 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-	// Initializes all senses once. Per-archetype values can be overridden in Controller defaults.
+	// Initializes the read-only runtime component. Per-archetype values are authored
+	// exclusively through the Controller's AI|Perception defaults.
 	void SetupPerceptionSystem();
 	void RefreshPerceptionConfiguration();
 

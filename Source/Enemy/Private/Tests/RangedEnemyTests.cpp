@@ -111,6 +111,8 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 		: nullptr;
 	if (TestNotNull(TEXT("Ranged controller owns an AI Perception component"), PerceptionComponent))
 	{
+		TestFalse(TEXT("Inherited AI Perception component is read-only in Blueprint defaults"),
+			PerceptionComponent->IsEditableWhenInherited());
 		TestNotNull(TEXT("Sight sense is configured"), PerceptionComponent->GetSenseConfig<UAISenseConfig_Sight>());
 		TestNotNull(TEXT("Hearing sense is configured"), PerceptionComponent->GetSenseConfig<UAISenseConfig_Hearing>());
 		TestNotNull(TEXT("Damage sense is configured"), PerceptionComponent->GetSenseConfig<UAISenseConfig_Damage>());
