@@ -8,6 +8,7 @@
 
 class UAnimMontage;
 class UAnimInstance;
+class UAnimSequenceBase;
 
 USTRUCT(BlueprintType)
 struct FWeaponAnimationEntry
@@ -73,6 +74,13 @@ struct FWeaponAnimationEntry
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Weapon Layer")
 	TSubclassOf<UAnimInstance> WeaponAnimLayerClass;
+
+	/** Looping character animation used by the Status-window equipment preview. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Preview")
+	TSoftObjectPtr<UAnimSequenceBase> PreviewIdleAnimation;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Preview", meta = (ClampMin = "0.01"))
+	float PreviewIdlePlayRate = 1.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attachment")
 	FName EquipSocketName = NAME_None;

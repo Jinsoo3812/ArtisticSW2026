@@ -1,5 +1,7 @@
 #include "Equipment/PlayerEquipmentComponent.h"
 
+#include "Animation/AnimSequenceBase.h"
+
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
 #include "BaseItem.h"
@@ -262,6 +264,18 @@ float UPlayerEquipmentComponent::GetEquippedBasicAttackPlayRate() const
 {
 	const FWeaponAnimationEntry* Entry = GetEquippedWeaponAnimationEntry();
 	return Entry ? FMath::Max(Entry->BasicAttackPlayRate, KINDA_SMALL_NUMBER) : 1.f;
+}
+
+UAnimSequenceBase* UPlayerEquipmentComponent::GetEquippedPreviewIdleAnimation() const
+{
+	const FWeaponAnimationEntry* Entry = GetEquippedWeaponAnimationEntry();
+	return Entry ? Entry->PreviewIdleAnimation.LoadSynchronous() : nullptr;
+}
+
+float UPlayerEquipmentComponent::GetEquippedPreviewIdlePlayRate() const
+{
+	const FWeaponAnimationEntry* Entry = GetEquippedWeaponAnimationEntry();
+	return Entry ? FMath::Max(Entry->PreviewIdlePlayRate, KINDA_SMALL_NUMBER) : 1.f;
 }
 
 UAnimMontage* UPlayerEquipmentComponent::GetEquippedAimCycleMontage() const

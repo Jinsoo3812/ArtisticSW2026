@@ -9,6 +9,7 @@ class ABaseItem;
 class ABasePlayer;
 class UAnimMontage;
 class UAnimInstance;
+class UAnimSequenceBase;
 class UWeaponAnimationDataAsset;
 struct FWeaponAnimationEntry;
 
@@ -113,6 +114,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
 	float GetEquippedBasicAttackPlayRate() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Preview")
+	UAnimSequenceBase* GetEquippedPreviewIdleAnimation() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Preview")
+	float GetEquippedPreviewIdlePlayRate() const;
 
 	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
 	UAnimMontage* GetEquippedAimCycleMontage() const;
