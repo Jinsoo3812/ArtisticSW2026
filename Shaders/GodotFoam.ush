@@ -1,0 +1,48 @@
+// GodotFoam.ush
+#pragma once
+
+float CalculateGodotFoam(
+    float SceneDepth,
+    float PixelDepth,
+    float2 BaseUV,
+    float2 TimeDir,
+    float FoamScale,
+    float FoamDepthThreshold,
+    Texture2D FoamTexture, SamplerState FoamTextureSampler
+)
+{
+    // 1. 수심 계산 (Godot의 depth + VERTEX.z 에 해당)
+    // 언리얼은 cm 단위이므로 SceneDepth - PixelDepth 로 수심을 구합니다.
+    float DepthDiff = max(SceneDepth - PixelDepth, 0.0);
+    
+    // 2. Foam UV 계산 (Godot의 (uv*4.0) - uv_offset)
+    float2 FoamUV = (BaseUV * FoamScale) - TimeDir;
+    
+    // 3. 노이즈 텍스처 샘플링 (언리얼 범용 매크로 사용)
+    float RawNoise = Texture2DSample(FoamTexture, FoamTextureSampler, FoamUV).r;
+    
+    // 4. 폼 노이즈 강도 계산
+    // Godot: clamp(pow(texture.r, 10.0)*40.0, 0.0, 0.2)
+    float FoamNoise = clamp(pow(RawNoise, 10.0) * 40.0, 0.0, 0.2);
+    
+    // 5. 해안선 깊이 마스크 계산
+    // Godot: 1.0 - (depth + VERTEX.z). 고도는 미터(1.0) 단위, 언리얼은 cm(100.0) 단위.
+    float DepthMask = saturate((FoamDepthThreshold - DepthDiff) / FoamDepthThreshold);
+    
+    // 6. 최종 폼 블렌딩 값 계산
+    float FoamMix = clamp(pow(DepthMask + FoamNoise, 8.0) * FoamNoise * 0.4, 0.0, 1.0);
+    
+    // --- [디버깅 방법] ---
+    // 아래 주석(//)을 하나씩 해제하면서 머티리얼이 어떻게 변하는지 확인해보세요!
+    
+    // 1단계 디버깅: 수심 차이 확인 (해안선은 까맣게, 깊어질수록 하얗게 변해야 정상)
+    // return DepthDiff / FoamDepthThreshold; 
+    
+    // 2단계 디버깅: 해안선 마스크 확인 (해안선 근처만 하얗고 나머지는 까맣게 변해야 정상)
+    // return DepthMask;
+    
+    // 3단계 디버깅: 텍스처 노이즈 확인 (물 전체에 걸쳐 자글자글한 노이즈가 보여야 정상)
+    // return FoamNoise * 5.0; // 값이 너무 작아서 5를 곱해 시각화
+    
+    return FoamMix;
+}
