@@ -1,0 +1,4 @@
+﻿Begin Object Class=/Script/Engine.Material Name="M_Realistic_Water" ExportPath="/Script/Engine.Material'/Game/New/Water/Realistic_Water/M_Realistic_Water.M_Realistic_Water'"
+   Begin Object Class=/Script/Engine.MaterialEditorOnlyData Name="M_Realistic_WaterEditorOnlyData" ExportPath="/Script/Engine.MaterialEditorOnlyData'/Game/New/Water/Realistic_Water/M_Realistic_Water.M_Realistic_Water:M_Realistic_WaterEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAbs

@@ -1,0 +1,2487 @@
+{
+  "M_Realistic_WaterEditorOnlyData": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAbs_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAbs_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAbs_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAdd_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAdd_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAdd_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAdd_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAdd_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAdd_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAdd_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAdd_7": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAdd_8": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAdd_9": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAppendVector_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAppendVector_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAppendVector_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAppendVector_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionAppendVector_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionBreakMaterialAttributes_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V3 read engine Water base normal with Gerstner and Ripple basis"
+  },
+  "MaterialExpressionComment_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "ScaleFoam",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComment_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "Normal Maps",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComment_10": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "Scattering and Absorption",
+    "Function": "",
+    "Desc": "\ubb3c\uc758 \ud22c\uba85\ub3c4, \ubb3c\uc18d\uc758 \uc548\uac1c \uc0c9\uc0c1, \uadf8\ub9ac\uace0 \ube5b\uc774 \ubb3c\uc744 \ub6ab\uace0 \ub4e4\uc5b4\uac08 \ub54c\uc758 \uae4a\uc774\ubcc4 \uac10\uc1c4\ub97c \ucc98\ub9ac"
+  },
+  "MaterialExpressionComment_11": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "FrothFoam",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComment_12": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "ComputeGerstnerWaves",
+    "Function": "",
+    "Desc": "\uc785\ub825\ub41c WaterBody\uc758 \uc2dc\uac04\uc5d0 \ub530\ub978 \uc885\ud569 \ud30c\ub3c4 \ub370\uc774\ud130 \ucd9c\ub825"
+  },
+  "MaterialExpressionComment_13": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "Normal Maps",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComment_14": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "Ripple",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComment_15": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "Foam Params",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComment_16": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "Get Wave Steepness",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComment_17": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "Get Wave Height",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComment_18": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "Ocean Foam",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComment_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "Height Mapping VS",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComment_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "Water Attributes",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComment_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "Beach Foam",
+    "Function": "",
+    "Desc": "\ubb3c\uc774 \uc595\uc544\uc9c0\ub294 \uacf3\uc5d0\uc11c\uc758 \uac70\ud488 \ud45c\ud604"
+  },
+  "MaterialExpressionComment_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "River Flowmaps",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComment_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "Fluid Simulation",
+    "Function": "",
+    "Desc": "\uce90\ub9ad\ud130\uac00 \ubb3c\uc18d\uc744 \uac78\uc5b4\uac00\uac70\ub098 \uc624\ube0c\uc81d\ud2b8\uac00 \ub5a8\uc5b4\uc9c8 \ub54c \ubc1c\uc0dd\ud558\ub294 \ud30c\ub3d9 (\ubb3c\ub9ac\uac00 \uc544\ub2cc Render Target \ubc29\uc2dd)"
+  },
+  "MaterialExpressionComment_7": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "Masking",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComment_8": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "Analytical Caustics",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComment_9": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "Basic Water Shading",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComponentMask_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComponentMask_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComponentMask_10": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComponentMask_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComponentMask_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComponentMask_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V3 world-space wave-oriented normal"
+  },
+  "MaterialExpressionComponentMask_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V3 Godot source: world XY"
+  },
+  "MaterialExpressionComponentMask_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComponentMask_7": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComponentMask_8": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionComponentMask_9": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_10": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_11": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_12": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_13": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_14": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_15": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_16": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_17": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_18": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_19": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_7": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_8": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant_9": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant2Vector_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant3Vector_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionConstant3Vector_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "TransclucentColor"
+  },
+  "MaterialExpressionConstant3Vector_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "FoamColor"
+  },
+  "MaterialExpressionCustom_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionCustom_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 displaced-surface slope, evolving flow, and world-normalized curvature"
+  },
+  "MaterialExpressionCustom_10": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V3 Meso: warped phase B"
+  },
+  "MaterialExpressionCustom_11": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 Micro: stable rotated base coordinates"
+  },
+  "MaterialExpressionCustom_12": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V3 Micro: warped phase A"
+  },
+  "MaterialExpressionCustom_13": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V3 Micro: warped phase B"
+  },
+  "MaterialExpressionCustom_14": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionCustom_15": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionCustom_16": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionCustom_17": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionCustom_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 displaced-surface slope amount"
+  },
+  "MaterialExpressionCustom_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 world-normalized displaced-surface curvature"
+  },
+  "MaterialExpressionCustom_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionCustom_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 Macro: stable rotated base coordinates"
+  },
+  "MaterialExpressionCustom_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V3 Macro: warped phase A"
+  },
+  "MaterialExpressionCustom_7": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V3 Macro: warped phase B"
+  },
+  "MaterialExpressionCustom_8": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 Meso: stable rotated base coordinates"
+  },
+  "MaterialExpressionCustom_9": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V3 Meso: warped phase A"
+  },
+  "MaterialExpressionDivide_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionDivide_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionDivide_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionDivide_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionDivide_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionDivide_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionDivide_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionFrac_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionFrac_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionFrac_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionGetMaterialAttributes_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionGetMaterialAttributes_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionLinearInterpolate_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionLinearInterpolate_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionLinearInterpolate_10": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionLinearInterpolate_11": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionLinearInterpolate_12": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionLinearInterpolate_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionLinearInterpolate_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionLinearInterpolate_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionLinearInterpolate_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionLinearInterpolate_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionLinearInterpolate_7": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionLinearInterpolate_8": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionLinearInterpolate_9": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 unresolved normals become roughness"
+  },
+  "MaterialExpressionMaterialFunctionCall_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "\ud30c\ub3c4\uc640 \ubb34\uad00\ud55c \ubb3c \uc790\uccb4\uc758 \uc0c9\uc0c1, \ubc18\uc0ac, \uad74\uc808 \ub4f1\uc758 \uc18d\uc131"
+  },
+  "MaterialExpressionMaterialFunctionCall_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "\ud604\uc7ac \uc5f0\uc0b0\ud558\ub294 \uc815\uc810\uc758 \uc774\ub3d9 Offset(WPO) \ubc0f \uc218\uba74 \ubc95\uc120 \ubca1\ud130 \ucd9c\ub825 "
+  },
+  "MaterialExpressionMaterialFunctionCall_10": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMaterialFunctionCall_11": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMaterialFunctionCall_12": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMaterialFunctionCall_13": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMaterialFunctionCall_14": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMaterialFunctionCall_15": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMaterialFunctionCall_16": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMaterialFunctionCall_17": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMaterialFunctionCall_18": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "\uc720\uc18d\uc5d0 \ub530\ub978 \ud30c\ub3c4\uc758 \ud06c\uae30 \ub9c8\uc2a4\ud06c \uc801\uc6a9. \ube60\ub97c\uc218\ub85d \ud30c\ub3c4\uac00 \uc791\ub2e4."
+  },
+  "MaterialExpressionMaterialFunctionCall_19": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMaterialFunctionCall_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "1. \ud30c\ub3c4 \ubc95\uc120\uc5d0 \uc794\ubb3c\uacb0 \ubc95\uc120\uc744 \ub354\ud55c\ub2e4.\\r\\n2. \uce74\uba54\ub77c \uac70\ub9ac \ub9c8\uc2a4\ud0b9(Pixel Depth)\ub97c \ud1b5\ud574 \uba40\ub9ac \uc788\ub294 \ubb3c\uc744 \ucc98\ub9ac\ud55c\ub2e4.\\r\\n3. \ucd5c\uc885 WPO\uc640 Normal\uc744 \ucd9c\ub825\ud55c\ub2e4."
+  },
+  "MaterialExpressionMaterialFunctionCall_20": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMaterialFunctionCall_21": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 macro + meso"
+  },
+  "MaterialExpressionMaterialFunctionCall_22": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 coupled multiscale normals"
+  },
+  "MaterialExpressionMaterialFunctionCall_23": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V3 engine wave normal plus Godot source detail"
+  },
+  "MaterialExpressionMaterialFunctionCall_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "\ud30c\ub3c4 \uc18d\uc131\uacfc \ubb3c \uc18d\uc131\uc744 \uacb0\ud569\ud558\uc5ec \ud558\ub098\uc758 \ucd9c\ub825"
+  },
+  "MaterialExpressionMaterialFunctionCall_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMaterialFunctionCall_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMaterialFunctionCall_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMaterialFunctionCall_7": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "\ubb3c \uc548\uc5d0\uc11c \uc218\uba74\uc744 \uc62c\ub824\ub2e4 \ubcfc\ub54c\uc758 \ubc95\uc120 \ucc98\ub9ac \ubc0f \uc218\uc911 \uc0b0\ub780 \ucc98\ub9ac"
+  },
+  "MaterialExpressionMaterialFunctionCall_8": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMaterialFunctionCall_9": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMax_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_10": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_11": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_12": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_13": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_14": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_15": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_16": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_17": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_18": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_19": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_20": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_21": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_22": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_23": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_24": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_25": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V3 Godot source: base UV"
+  },
+  "MaterialExpressionMultiply_26": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_27": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_28": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_29": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_30": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_31": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_32": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_33": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_7": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_8": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionMultiply_9": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionNormalize_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionNormalize_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionNormalize_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionNormalize_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V3 Godot source normal result"
+  },
+  "MaterialExpressionObjectPositionWS_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionOneMinus_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionPixelDepth_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 scale-specific filtering distance"
+  },
+  "MaterialExpressionPixelDepth_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionPixelNormalWS_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_10": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_11": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_12": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_13": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_14": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_15": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_16": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_18": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_19": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_20": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_21": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_22": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_26": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_27": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_28": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_29": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_30": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_31": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_32": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_33": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_34": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_35": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_36": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_39": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_40": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_41": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_42": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_43": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_45": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_46": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_47": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_48": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_7": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_8": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionReroute_9": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionSaturate_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionSaturate_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionSaturate_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionSaturate_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionSaturate_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_10": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_11": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_12": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_13": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_14": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_15": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_16": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_17": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_18": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_19": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_20": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_21": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_22": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_23": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_24": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_25": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_26": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_27": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_28": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_29": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_30": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_31": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_32": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_33": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_34": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_35": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_36": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_37": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_38": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_39": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_40": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_41": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_42": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_43": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_44": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_45": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_46": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "Build marker; not connected"
+  },
+  "MaterialExpressionScalarParameter_47": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_48": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_49": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_50": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_51": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_52": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_53": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_54": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_55": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_56": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_57": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_58": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "Build marker; not connected"
+  },
+  "MaterialExpressionScalarParameter_59": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "Build marker; not connected"
+  },
+  "MaterialExpressionScalarParameter_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_60": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_7": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_8": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionScalarParameter_9": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionSetMaterialAttributes_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionSetMaterialAttributes_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionSetMaterialAttributes_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 flow-coupled Normal/Roughness/Specular; preserve Ripple, WPO and SingleLayerWater optics"
+  },
+  "MaterialExpressionSingleLayerWaterMaterialOutput_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionStaticSwitchParameter_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionStaticSwitchParameter_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionStaticSwitchParameter_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionStaticSwitchParameter_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionStaticSwitchParameter_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionStaticSwitchParameter_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionStaticSwitchParameter_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionStaticSwitchParameter_7": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionStaticSwitchParameter_8": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionSubtract_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionSubtract_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionSubtract_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionSubtract_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionSubtract_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionSubtract_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionSubtract_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureObjectParameter_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureObjectParameter_10": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureObjectParameter_11": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureObjectParameter_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureObjectParameter_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureObjectParameter_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureObjectParameter_7": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureSampleParameter2D_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureSampleParameter2D_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureSampleParameter2D_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureSampleParameter2D_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureSampleParameter2D_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureSampleParameter2D_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureSampleParameter2D_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureSampleParameter2D_7": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTextureSampleParameter2D_8": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTime_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 continuous shader time"
+  },
+  "MaterialExpressionTime_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 continuous shader time"
+  },
+  "MaterialExpressionTime_10": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 continuous shader time"
+  },
+  "MaterialExpressionTime_11": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTime_13": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionTime_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 continuous shader time"
+  },
+  "MaterialExpressionTime_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 continuous shader time"
+  },
+  "MaterialExpressionTime_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 continuous shader time"
+  },
+  "MaterialExpressionTime_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 continuous shader time"
+  },
+  "MaterialExpressionTime_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 continuous shader time"
+  },
+  "MaterialExpressionTime_7": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 continuous shader time"
+  },
+  "MaterialExpressionTime_8": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 continuous shader time"
+  },
+  "MaterialExpressionTime_9": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 continuous shader time"
+  },
+  "MaterialExpressionVectorParameter_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionVectorParameter_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionVectorParameter_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionVectorParameter_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionVectorParameter_4": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionVectorParameter_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionVectorParameter_6": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionWorldPosition_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 displaced world position"
+  },
+  "MaterialExpressionWorldPosition_1": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  },
+  "MaterialExpressionWorldPosition_2": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 displaced world position"
+  },
+  "MaterialExpressionWorldPosition_3": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 displaced world position"
+  },
+  "MaterialExpressionWorldPosition_5": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": "V2 displaced world position"
+  },
+  "SceneThumbnailInfoWithPrimitive_0": {
+    "Class": "",
+    "Inputs": [],
+    "Text": "",
+    "Function": "",
+    "Desc": ""
+  }
+}
