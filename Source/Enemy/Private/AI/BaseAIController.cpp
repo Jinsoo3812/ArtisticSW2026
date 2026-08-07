@@ -126,6 +126,7 @@ void ABaseAIController::OnPossess(APawn* PossessedPawn)
 void ABaseAIController::OnUnPossess()
 {
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
+	CachedTargetActor.Reset();
 	UnbindPerceivedTargetDeath();
 	UnbindPossessedEnemyDeath();
 	Super::OnUnPossess();
@@ -134,6 +135,7 @@ void ABaseAIController::OnUnPossess()
 void ABaseAIController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
+	CachedTargetActor.Reset();
 	UnbindPerceivedTargetDeath();
 	UnbindPossessedEnemyDeath();
 	Super::EndPlay(EndPlayReason);
@@ -177,15 +179,28 @@ bool ABaseAIController::SetCombatTarget(AActor* TargetActor)
 	}
 
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
+	CachedTargetActor = TargetActor;
 	BlackboardComponent->SetValueAsObject(TargetActorKeyName, TargetActor);
 	BindPerceivedTargetDeath(TargetActor);
 	SetEnemyState(EEnemyAIState::Combat);
 	return true;
 }
 
+AActor* ABaseAIController::GetCombatTarget() const
+{
+	AActor* TargetActor = CachedTargetActor.Get();
+	return IsValid(TargetActor) ? TargetActor : nullptr;
+}
+
+void ABaseAIController::SetEQSPreviewTarget(AActor* TargetActor)
+{
+	CachedTargetActor = IsValid(TargetActor) ? TargetActor : nullptr;
+}
+
 void ABaseAIController::ClearCombatTarget(bool bReturnToPassive)
 {
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
+	CachedTargetActor.Reset();
 
 	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
 	if (BlackboardComponent)
@@ -331,6 +346,8 @@ void ABaseAIController::OnPossessedEnemyDeathStarted(UBaseHealthComponent* Healt
 
 void ABaseAIController::InitializeBlackboardValues(APawn* PossessedPawn)
 {
+	CachedTargetActor.Reset();
+
 	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
 	if (!BlackboardComponent || !PossessedPawn)
 	{

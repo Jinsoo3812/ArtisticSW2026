@@ -33,6 +33,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Enemy|AI")
 	bool SetCombatTarget(AActor* TargetActor);
 
+	/** Returns the controller-owned combat target used by Blackboard gameplay and EQS contexts. */
+	UFUNCTION(BlueprintPure, Category = "Enemy|AI")
+	AActor* GetCombatTarget() const;
+
+	/**
+	 * Supplies a target to EQS preview tools without starting combat or requiring a Blackboard.
+	 * Passing nullptr clears the preview target. Runtime combat code should use SetCombatTarget instead.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|AI|EQS")
+	void SetEQSPreviewTarget(AActor* TargetActor);
+
 	UFUNCTION(BlueprintCallable, Category = "Enemy|AI")
 	void ClearCombatTarget(bool bReturnToPassive = true);
 
@@ -63,6 +74,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Targeting", meta = (ClampMin = "0.0"))
 	float TargetReacquireDelay = 0.25f;
+
+	/** Weak runtime cache shared by combat code and EQS contexts. */
+	UPROPERTY(Transient)
+	TWeakObjectPtr<AActor> CachedTargetActor;
 
 	// Internal runtime sense configurations. Blueprint defaults must be authored
 	// through the normalized AI|Perception properties below, not the component.
