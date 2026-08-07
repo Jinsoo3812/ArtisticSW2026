@@ -12,7 +12,9 @@ public class WaterAndShip: ModuleRules
             "CoreUObject",
             "Engine",
             "PhysicsCore",
-            "Chaos"
+            "Chaos",
+            "RHI",
+            "RenderCore"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
@@ -23,8 +25,10 @@ public class WaterAndShip: ModuleRules
             "ArtisticSWCore",
             "GASCore",
             "EnhancedInput",
+			"InputCore",
             "UMG",
-            "Water"
+            "Water",
+            "Landscape"
         });
 
         PublicIncludePaths.AddRange(new string[] {

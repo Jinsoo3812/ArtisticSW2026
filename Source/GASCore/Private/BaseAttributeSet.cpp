@@ -4,6 +4,10 @@
 #include "BaseAttributeSet.h"
 #include "Net/UnrealNetwork.h"
 #include "GameplayEffectExtension.h"
+#include "Abilities/GameplayAbility.h"
+#include "Abilities/GameplayAbilityTypes.h"
+#include "Animation/AnimInstance.h"
+#include "BaseGameplayTags.h"
 
 #include "Engine/Engine.h"
 
@@ -12,6 +16,8 @@ UBaseAttributeSet::UBaseAttributeSet()
 	// 기본 체력값입니다. 이후 초기화 GE나 캐릭터별 AttributeSet에서 덮어쓸 수 있습니다.
 	MaxHealth = 100.0f;
 	Health = 100.0f;
+	Strength = 10.0f;
+	AttackSpeedMultiplier = 1.0f;
 }
 
 void UBaseAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -22,7 +28,9 @@ void UBaseAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, Health, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, AttackPower, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, Strength, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, MoveSpeed, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, AttackSpeedMultiplier, COND_None, REPNOTIFY_Always);
 
 	// Damage와 Healing은 GE 실행 중에만 쓰는 메타 Attribute라 복제하지 않습니다.
 }
@@ -40,6 +48,16 @@ void UBaseAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, 
 	if (Attribute == GetMaxHealthAttribute())
 	{
 		NewValue = FMath::Max(0.0f, NewValue);
+	}
+
+	if (Attribute == GetStrengthAttribute())
+	{
+		NewValue = FMath::Max(0.0f, NewValue);
+	}
+
+	if (Attribute == GetAttackSpeedMultiplierAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, 0.1f, 3.0f);
 	}
 }
 
@@ -88,7 +106,32 @@ void UBaseAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribute,
 	{
 		SetHealth(NewValue);
 	}
-	
+
+	// 실행 중인 기본 공격에도 GE 적용/해제 시점의 새 배율을 즉시 반영합니다.
+	if (Attribute == GetAttackSpeedMultiplierAttribute()
+		&& !FMath::IsNearlyEqual(OldValue, NewValue)
+		&& OldValue > KINDA_SMALL_NUMBER)
+	{
+		UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
+		if (ASC && ASC->IsOwnerActorAuthoritative())
+		{
+			UE_LOG(LogTemp, Log, TEXT("[WaterBomb] AttackSpeedMultiplier changed: owner=%s %.2f -> %.2f"),
+				*GetNameSafe(ASC->GetAvatarActor()), OldValue, NewValue);
+			const UGameplayAbility* AnimatingAbility = ASC->GetAnimatingAbility();
+			const FGameplayAbilityActorInfo* ActorInfo = AnimatingAbility
+				? AnimatingAbility->GetCurrentActorInfo()
+				: nullptr;
+			UAnimInstance* AnimInstance = ActorInfo ? ActorInfo->GetAnimInstance() : nullptr;
+			if (AnimatingAbility
+				&& AnimatingAbility->GetAssetTags().HasTagExact(GameplayAbility_BasicAttack)
+				&& ASC->GetCurrentMontage()
+				&& AnimInstance)
+			{
+				const float CurrentRate = AnimInstance->Montage_GetPlayRate(ASC->GetCurrentMontage());
+				ASC->CurrentMontageSetPlayRate(FMath::Max(0.01f, CurrentRate * (NewValue / OldValue)));
+			}
+		}
+	}
 }
 
 void UBaseAttributeSet::OnRep_Health(const FGameplayAttributeData& OldHealth)
@@ -106,7 +149,17 @@ void UBaseAttributeSet::OnRep_AttackPower(const FGameplayAttributeData& OldAttac
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UBaseAttributeSet, AttackPower, OldAttackPower);
 }
 
+void UBaseAttributeSet::OnRep_Strength(const FGameplayAttributeData& OldStrength)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UBaseAttributeSet, Strength, OldStrength);
+}
+
 void UBaseAttributeSet::OnRep_MoveSpeed(const FGameplayAttributeData& OldMoveSpeed)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UBaseAttributeSet, MoveSpeed, OldMoveSpeed);
+}
+
+void UBaseAttributeSet::OnRep_AttackSpeedMultiplier(const FGameplayAttributeData& OldAttackSpeedMultiplier)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UBaseAttributeSet, AttackSpeedMultiplier, OldAttackSpeedMultiplier);
 }

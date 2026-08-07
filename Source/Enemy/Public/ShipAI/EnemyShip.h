@@ -22,6 +22,7 @@ class ENEMY_API AEnemyShip : public AShip
 
 public:
 	AEnemyShip();
+	virtual bool IsEnemyShipForEffects() const override { return true; }
 
 protected:
 	virtual void BeginPlay() override;

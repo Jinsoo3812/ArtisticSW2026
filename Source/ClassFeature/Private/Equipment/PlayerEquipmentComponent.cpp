@@ -5,18 +5,20 @@
 #include "BaseItem.h"
 #include "BasePlayer.h"
 #include "Equipment/WeaponAnimationDataAsset.h"
-#include "AbilitySystemComponent.h"
-#include "BaseGameplayTags.h"
+#include "Inventory/InventoryComponent.h"
 #include "ItemSubSystem.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SceneComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "GASStrengthEquipmentGameplayEffect.h"
 
 UPlayerEquipmentComponent::UPlayerEquipmentComponent()
 {
 	SetIsReplicatedByDefault(true);
+	StrengthEquipmentEffectClass = UGASStrengthEquipmentGameplayEffect::StaticClass();
 }
 
 void UPlayerEquipmentComponent::BeginPlay()
@@ -68,6 +70,68 @@ void UPlayerEquipmentComponent::EquipItemFromSlot(FGameplayTag KeyTag)
 	}
 }
 
+bool UPlayerEquipmentComponent::EquipInventoryWeapon(FGameplayTag ItemTag)
+{
+	if (!PlayerOwner)
+	{
+		PlayerOwner = Cast<ABasePlayer>(GetOwner());
+	}
+
+	UInventoryComponent* Inventory = PlayerOwner ? PlayerOwner->GetInventoryComponent() : nullptr;
+	if (!PlayerOwner || !PlayerOwner->HasAuthority() || !Inventory ||
+		Inventory->GetMaterialCount(ItemTag) <= 0 || IsEquipmentTransitioning())
+	{
+		return false;
+	}
+
+	if (IsValid(PlayerOwner->EquippedItem) &&
+		PlayerOwner->EquippedItem->ItemTag == ItemTag &&
+		!IsItemOwnedByItemSlot(PlayerOwner->EquippedItem))
+	{
+		return true;
+	}
+
+	StoreCurrentEquippedItem();
+
+	UItemSubsystem* ItemSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
+	if (!ItemSubsystem)
+	{
+		return false;
+	}
+
+	ABaseItem* SpawnedItem = ItemSubsystem->SpawnItem(
+		ItemTag,
+		PlayerOwner->GetActorTransform(),
+		EItemState::InItemSlot,
+		PlayerOwner);
+	if (!IsValid(SpawnedItem))
+	{
+		return false;
+	}
+
+	StartEquipItem(SpawnedItem, FGameplayTag());
+	PlayerOwner->OnQuickSlotsChanged.Broadcast();
+	return true;
+}
+
+void UPlayerEquipmentComponent::UnequipCurrentItem()
+{
+	if (!PlayerOwner)
+	{
+		PlayerOwner = Cast<ABasePlayer>(GetOwner());
+	}
+
+	if (!PlayerOwner || !PlayerOwner->HasAuthority() || IsEquipmentTransitioning())
+	{
+		return;
+	}
+
+	StoreCurrentEquippedItem();
+	EquipmentState = EEquipmentState::None;
+	PlayerOwner->OnItemSlotsChanged.Broadcast();
+	PlayerOwner->OnQuickSlotsChanged.Broadcast();
+}
+
 void UPlayerEquipmentComponent::UseEquippedItem(bool bDestroy)
 {
 	if (!PlayerOwner)
@@ -110,7 +174,7 @@ void UPlayerEquipmentComponent::OnRepOwnerEquippedItem()
 
 	if (PlayerOwner && IsValid(PlayerOwner->EquippedItem) && PlayerOwner->EquippedItem->MyDefinition)
 	{
-		AttachItemToSocket(PlayerOwner->EquippedItem, ResolveEquipSocketName(PlayerOwner->EquippedItem));
+		AttachItem(PlayerOwner->EquippedItem, EEquipmentAttachmentTarget::Equipped);
 	}
 }
 
@@ -184,6 +248,24 @@ float UPlayerEquipmentComponent::GetEquippedReloadPlayRate() const
 	return Entry ? Entry->ReloadPlayRate : 1.f;
 }
 
+UAnimMontage* UPlayerEquipmentComponent::GetEquippedBasicAttackMontage() const
+{
+	const FWeaponAnimationEntry* Entry = GetEquippedWeaponAnimationEntry();
+	return Entry ? Entry->BasicAttackMontage.Get() : nullptr;
+}
+
+TArray<FName> UPlayerEquipmentComponent::GetEquippedBasicAttackComboSections() const
+{
+	const FWeaponAnimationEntry* Entry = GetEquippedWeaponAnimationEntry();
+	return Entry ? Entry->BasicAttackComboSections : TArray<FName>();
+}
+
+float UPlayerEquipmentComponent::GetEquippedBasicAttackPlayRate() const
+{
+	const FWeaponAnimationEntry* Entry = GetEquippedWeaponAnimationEntry();
+	return Entry ? FMath::Max(Entry->BasicAttackPlayRate, KINDA_SMALL_NUMBER) : 1.f;
+}
+
 UAnimMontage* UPlayerEquipmentComponent::GetEquippedAimCycleMontage() const
 {
 	const FWeaponAnimationEntry* Entry = GetEquippedWeaponAnimationEntry();
@@ -239,54 +321,88 @@ const UWeaponAnimationDataAsset* UPlayerEquipmentComponent::ResolveWeaponAnimati
 	return WeaponAnimationData.Get();
 }
 
-FName UPlayerEquipmentComponent::ResolveEquipSocketName(const ABaseItem* Item) const
+FResolvedEquipmentAttachment UPlayerEquipmentComponent::GetEquippedAttachmentProfile() const
 {
+	const ABasePlayer* OwnerPlayer = PlayerOwner ? PlayerOwner.Get() : Cast<ABasePlayer>(GetOwner());
+	return ResolveAttachmentProfile(OwnerPlayer ? OwnerPlayer->EquippedItem : nullptr, EEquipmentAttachmentTarget::Equipped);
+}
+
+FResolvedEquipmentAttachment UPlayerEquipmentComponent::ResolveAttachmentProfile(
+	const ABaseItem* Item,
+	EEquipmentAttachmentTarget Target) const
+
+{
+	FResolvedEquipmentAttachment Profile;
+	Profile.CharacterSocketName = ResolveCharacterSocketName(Item, Target);
+
 	if (const FWeaponAnimationEntry* Entry = ResolveWeaponAnimationEntry(Item))
 	{
-		if (!Entry->EquipSocketName.IsNone())
+		Profile.ItemGripSocketName = Entry->ItemGripSocketName;
+	}
+
+	return Profile;
+}
+
+FName UPlayerEquipmentComponent::ResolveCharacterSocketName(
+	const ABaseItem* Item,
+	EEquipmentAttachmentTarget Target) const
+{
+	FName ConfiguredSocketName = NAME_None;
+	if (const FWeaponAnimationEntry* Entry = ResolveWeaponAnimationEntry(Item))
+	{
+		ConfiguredSocketName = Target == EEquipmentAttachmentTarget::Equipped
+			? Entry->EquipSocketName
+			: Entry->StoredSocketName;
+
+		if (IsCharacterSocketValid(ConfiguredSocketName))
 		{
-			return Entry->EquipSocketName;
+			return ConfiguredSocketName;
+		}
+
+		if (!ConfiguredSocketName.IsNone())
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("UPlayerEquipmentComponent::ResolveCharacterSocketName : Configured socket %s does not exist for item %s."),
+				*ConfiguredSocketName.ToString(),
+				*GetNameSafe(Item));
 		}
 	}
 
-	FName SocketName = TEXT("GripPoint");
-	if (UWorld* World = GetWorld())
+	// Item feature data remains the compatibility fallback for the equipped
+	// hand socket. Stored items use the explicit back socket fallback below.
+	if (Target == EEquipmentAttachmentTarget::Equipped)
 	{
-		if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
+		if (UItemSubsystem* Subsystem = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr)
 		{
-			const FGameplayTag ItemTag = Item ? Item->ItemTag : FGameplayTag();
-			const FName SubsystemSocketName = Subsystem->GetAttachmentSocketName(ItemTag);
-			if (!SubsystemSocketName.IsNone())
+			const FName ItemFeatureSocket = Subsystem->GetAttachmentSocketName(Item ? Item->ItemTag : FGameplayTag());
+			if (IsCharacterSocketValid(ItemFeatureSocket))
 			{
-				SocketName = SubsystemSocketName;
+				return ItemFeatureSocket;
 			}
 		}
 	}
 
-	return SocketName;
-}
-
-FName UPlayerEquipmentComponent::ResolveItemGripSocketName(const ABaseItem* Item) const
-{
-	if (const FWeaponAnimationEntry* Entry = ResolveWeaponAnimationEntry(Item))
+	const FName FallbackSocket = Target == EEquipmentAttachmentTarget::Equipped
+		? FName(TEXT("GripPoint"))
+		: FName(TEXT("BackWeaponSocket"));
+	if (IsCharacterSocketValid(FallbackSocket))
 	{
-		return Entry->ItemGripSocketName;
+		return FallbackSocket;
 	}
 
+	UE_LOG(LogTemp, Error,
+		TEXT("UPlayerEquipmentComponent::ResolveCharacterSocketName : No valid %s socket found for item %s. Configured=%s Fallback=%s"),
+		Target == EEquipmentAttachmentTarget::Equipped ? TEXT("equipped") : TEXT("stored"),
+		*GetNameSafe(Item),
+		*ConfiguredSocketName.ToString(),
+		*FallbackSocket.ToString());
 	return NAME_None;
 }
 
-FName UPlayerEquipmentComponent::ResolveStoredSocketName(const ABaseItem* Item) const
+bool UPlayerEquipmentComponent::IsCharacterSocketValid(FName SocketName) const
 {
-	if (const FWeaponAnimationEntry* Entry = ResolveWeaponAnimationEntry(Item))
-	{
-		if (!Entry->StoredSocketName.IsNone())
-		{
-			return Entry->StoredSocketName;
-		}
-	}
-
-	return TEXT("BackWeaponSocket");
+	const ABasePlayer* OwnerPlayer = PlayerOwner ? PlayerOwner.Get() : Cast<ABasePlayer>(GetOwner());
+	return OwnerPlayer && OwnerPlayer->GetMesh() && !SocketName.IsNone() && OwnerPlayer->GetMesh()->DoesSocketExist(SocketName);
 }
 
 FGameplayTag UPlayerEquipmentComponent::ResolveUseKeyTag(const ABaseItem* Item) const
@@ -337,6 +453,22 @@ bool UPlayerEquipmentComponent::CanUseEquippedItemAbility(const ABaseItem* Item)
 	return false;
 }
 
+void UPlayerEquipmentComponent::CancelActiveWeaponAbilities() const
+{
+	if (!PlayerOwner)
+	{
+		return;
+	}
+
+	if (UAbilitySystemComponent* ASC = PlayerOwner->GetAbilitySystemComponent())
+	{
+		FGameplayTagContainer WeaponActionTags;
+		WeaponActionTags.AddTag(GameplayAbility_Weapon_AimCycle);
+		WeaponActionTags.AddTag(GameplayAbility_BasicAttack);
+		ASC->CancelAbilities(&WeaponActionTags, nullptr, nullptr);
+	}
+}
+
 void UPlayerEquipmentComponent::GrantEquippedItemAbility(ABaseItem* Item)
 {
 	if (!PlayerOwner || !Item || !CanUseEquippedItemAbility(Item))
@@ -383,12 +515,20 @@ void UPlayerEquipmentComponent::RemoveEquippedItemAbility(ABaseItem* Item)
 	}
 }
 
-void UPlayerEquipmentComponent::AttachItemToSocket(ABaseItem* Item, FName SocketName) const
+bool UPlayerEquipmentComponent::AttachItem(ABaseItem* Item, EEquipmentAttachmentTarget Target) const
 {
 	if (!PlayerOwner || !Item || !PlayerOwner->GetMesh())
 	{
-		return;
+		return false;
 	}
+
+	const FResolvedEquipmentAttachment Profile = ResolveAttachmentProfile(Item, Target);
+	if (!Profile.IsValid())
+	{
+		return false;
+	}
+
+	const FName CharacterSocketName = Profile.CharacterSocketName;
 
 	if (UStaticMeshComponent* MeshComp = Cast<UStaticMeshComponent>(Item->GetRootComponent()))
 	{
@@ -396,47 +536,88 @@ void UPlayerEquipmentComponent::AttachItemToSocket(ABaseItem* Item, FName Socket
 		MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
 
-	const FName ItemGripSocketName = ResolveItemGripSocketName(Item);
+	const FName ItemGripSocketName = Profile.ItemGripSocketName;
 	if (ItemGripSocketName.IsNone())
 	{
-		Item->AttachToComponent(PlayerOwner->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
-		return;
+		const bool bAttached = Item->AttachToComponent(
+			PlayerOwner->GetMesh(),
+			FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+			CharacterSocketName);
+		return bAttached;
 	}
 
 	USceneComponent* GripComponent = Item->GetAttachmentReferenceComponent();
 
 	if (!GripComponent || !GripComponent->DoesSocketExist(ItemGripSocketName) || !Item->GetRootComponent())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("UPlayerEquipmentComponent::AttachItemToSocket : Item %s has no grip socket %s on its attachment reference component. Falling back to root attachment."), *GetNameSafe(Item), *ItemGripSocketName.ToString());
-		Item->AttachToComponent(PlayerOwner->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
-		return;
+		UE_LOG(LogTemp, Warning, TEXT("UPlayerEquipmentComponent::AttachItem : Item %s has no grip socket %s on its attachment reference component. Falling back to root attachment."), *GetNameSafe(Item), *ItemGripSocketName.ToString());
+		return Item->AttachToComponent(
+			PlayerOwner->GetMesh(),
+			FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+			CharacterSocketName);
 	}
 
 	const FTransform RootWorldTransform = Item->GetRootComponent()->GetComponentTransform();
 	const FTransform GripWorldTransform = GripComponent->GetSocketTransform(ItemGripSocketName, RTS_World);
 	const FTransform GripRelativeToRoot = GripWorldTransform.GetRelativeTransform(RootWorldTransform);
-	const FTransform TargetSocketWorldTransform = PlayerOwner->GetMesh()->GetSocketTransform(SocketName, RTS_World);
+	const FTransform TargetSocketWorldTransform = PlayerOwner->GetMesh()->GetSocketTransform(CharacterSocketName, RTS_World);
 
 	Item->SetActorTransform(GripRelativeToRoot.Inverse() * TargetSocketWorldTransform, false, nullptr, ETeleportType::TeleportPhysics);
-	Item->AttachToComponent(PlayerOwner->GetMesh(), FAttachmentTransformRules::KeepWorldTransform, SocketName);
+	const bool bAttached = Item->AttachToComponent(
+		PlayerOwner->GetMesh(),
+		FAttachmentTransformRules::KeepWorldTransform,
+		CharacterSocketName);
+	if (!bAttached)
+	{
+		return false;
+	}
 
 	const float AlignmentError = FVector::Distance(
 		GripComponent->GetSocketLocation(ItemGripSocketName),
-		PlayerOwner->GetMesh()->GetSocketLocation(SocketName));
-	UE_LOG(LogTemp, Log, TEXT("UPlayerEquipmentComponent::AttachItemToSocket : Item=%s EquipSocket=%s GripSocket=%s AlignmentError=%.4f"),
-		*GetNameSafe(Item), *SocketName.ToString(), *ItemGripSocketName.ToString(), AlignmentError);
+		PlayerOwner->GetMesh()->GetSocketLocation(CharacterSocketName));
+	UE_LOG(LogTemp, Log, TEXT("UPlayerEquipmentComponent::AttachItem : Item=%s Target=%s CharacterSocket=%s GripSocket=%s AlignmentError=%.4f"),
+		*GetNameSafe(Item),
+		Target == EEquipmentAttachmentTarget::Equipped ? TEXT("Equipped") : TEXT("Stored"),
+		*CharacterSocketName.ToString(),
+		*ItemGripSocketName.ToString(),
+		AlignmentError);
+	return true;
+}
+
+bool UPlayerEquipmentComponent::IsItemOwnedByItemSlot(const ABaseItem* Item) const
+{
+	return PlayerOwner && IsValid(Item) && PlayerOwner->ItemSlots.ContainsByPredicate([Item](const FItemSlot& Slot)
+	{
+		return Slot.Item == Item;
+	});
 }
 
 void UPlayerEquipmentComponent::StoreCurrentEquippedItem()
 {
+	CancelActiveWeaponAbilities();
+
 	if (!PlayerOwner || !IsValid(PlayerOwner->EquippedItem))
 	{
 		return;
 	}
 
-	RemoveEquippedItemAbility(PlayerOwner->EquippedItem);
-	PlayerOwner->EquippedItem->SetItemState(EItemState::InItemSlot);
+	ABaseItem* PreviousItem = PlayerOwner->EquippedItem;
+	const bool bOwnedByItemSlot = IsItemOwnedByItemSlot(PreviousItem);
+	PreviousItem->RemoveStrengthBonusEffect();
+	RemoveEquippedItemAbility(PreviousItem);
 	PlayerOwner->EquippedItem = nullptr;
+
+	if (bOwnedByItemSlot)
+	{
+		PreviousItem->SetItemState(EItemState::InItemSlot);
+	}
+	else
+	{
+		// Inventory-backed weapons are transient equipped representations. The
+		// inventory keeps the item count, so the actor must not survive unequip.
+		PreviousItem->Destroy();
+	}
+
 	PlayerOwner->SetCombatMode(false);
 }
 
@@ -448,12 +629,6 @@ void UPlayerEquipmentComponent::StartEquipItemFromSlot(int32 SlotIndex)
 	}
 
 	ABaseItem* SlotItem = PlayerOwner->ItemSlots[SlotIndex].Item;
-	if (UAbilitySystemComponent* ASC = PlayerOwner->GetAbilitySystemComponent())
-	{
-		FGameplayTagContainer AimCycleAbilityTags;
-		AimCycleAbilityTags.AddTag(GameplayAbility_Weapon_AimCycle);
-		ASC->CancelAbilities(&AimCycleAbilityTags, nullptr, nullptr);
-	}
 
 	if (PlayerOwner->EquippedItem == SlotItem)
 	{
@@ -470,17 +645,27 @@ void UPlayerEquipmentComponent::StartEquipItemFromSlot(int32 SlotIndex)
 		return;
 	}
 
-	PendingEquipItem = SlotItem;
-	PendingEquipSlotTag = PlayerOwner->ItemSlots[SlotIndex].KeyTag;
+	StartEquipItem(SlotItem, PlayerOwner->ItemSlots[SlotIndex].KeyTag);
+}
+
+void UPlayerEquipmentComponent::StartEquipItem(ABaseItem* Item, FGameplayTag SourceSlotTag)
+{
+	if (!PlayerOwner || !PlayerOwner->HasAuthority() || !IsValid(Item))
+	{
+		return;
+	}
+
+	PendingEquipItem = Item;
+	PendingEquipSlotTag = SourceSlotTag;
 	EquipmentState = EEquipmentState::Equipping;
 
-	const FWeaponAnimationEntry* Entry = ResolveWeaponAnimationEntry(SlotItem);
+	const FWeaponAnimationEntry* Entry = ResolveWeaponAnimationEntry(Item);
 	UAnimMontage* EquipMontage = Entry ? Entry->EquipMontage.Get() : nullptr;
 	const float PlayRate = Entry ? Entry->EquipPlayRate : 1.f;
 
 	if (EquipMontage)
 	{
-		Multicast_PlayEquipmentMontage(SlotItem, EquipMontage, PlayRate);
+		Multicast_PlayEquipmentMontage(Item, EquipMontage, PlayRate);
 	}
 	else
 	{
@@ -504,10 +689,22 @@ void UPlayerEquipmentComponent::FinalizePendingEquip()
 
 	if (PlayerOwner->EquippedItem != ItemToEquip)
 	{
+		ItemToEquip->SetItemState(EItemState::Equipped);
+		if (!AttachItem(ItemToEquip, EEquipmentAttachmentTarget::Equipped))
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("UPlayerEquipmentComponent::FinalizePendingEquip : Failed to attach item %s. Equip cancelled."),
+				*GetNameSafe(ItemToEquip));
+			CancelPendingEquip();
+			return;
+		}
+
 		PlayerOwner->EquippedItem = ItemToEquip;
-		PlayerOwner->EquippedItem->SetItemState(EItemState::Equipped);
-		AttachItemToSocket(PlayerOwner->EquippedItem, ResolveEquipSocketName(PlayerOwner->EquippedItem));
-		GrantEquippedItemAbility(PlayerOwner->EquippedItem);
+		if (!ItemToEquip->ApplyStrengthBonusEffect(PlayerOwner->GetAbilitySystemComponent(), StrengthEquipmentEffectClass))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("UPlayerEquipmentComponent::FinalizePendingEquip: failed to apply Strength GE for %s."), *GetNameSafe(ItemToEquip));
+		}
+		GrantEquippedItemAbility(ItemToEquip);
 		PlayerOwner->EnterCombatModeFromEquipment();
 	}
 
@@ -522,6 +719,18 @@ void UPlayerEquipmentComponent::CancelPendingEquip()
 {
 	if (PlayerOwner && PlayerOwner->HasAuthority())
 	{
+		if (ABaseItem* ItemToCancel = PendingEquipItem.Get())
+		{
+			if (IsItemOwnedByItemSlot(ItemToCancel))
+			{
+				ItemToCancel->SetItemState(EItemState::InItemSlot);
+			}
+			else if (ItemToCancel != PlayerOwner->EquippedItem)
+			{
+				ItemToCancel->Destroy();
+			}
+		}
+
 		EquipmentState = IsValid(PlayerOwner->EquippedItem) ? EEquipmentState::Equipped : EEquipmentState::None;
 	}
 
@@ -583,7 +792,14 @@ void UPlayerEquipmentComponent::HandleEquipmentAttachNotify()
 		return;
 	}
 
-	AttachItemToSocket(PendingEquipItem, ResolveEquipSocketName(PendingEquipItem));
+	if (!AttachItem(PendingEquipItem, EEquipmentAttachmentTarget::Equipped))
+	{
+		if (PlayerOwner && PlayerOwner->HasAuthority())
+		{
+			CancelPendingEquip();
+		}
+		return;
+	}
 
 	if (PlayerOwner && PlayerOwner->HasAuthority())
 	{

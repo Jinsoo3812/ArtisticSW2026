@@ -44,20 +44,88 @@ ACannonball::ACannonball()
 	ProjectileMovement->bShouldBounce = false;
 	ProjectileMovement->bSweepCollision = true;
 	ProjectileMovement->ProjectileGravityScale = 1.0f; // Enable parabola arc trajectory
+	// Replicated actor movement corrects the collision root. Let the visible child
+	// lag smoothly behind those corrections instead of snapping with the root.
+	ProjectileMovement->bInterpMovement = true;
+	ProjectileMovement->bInterpRotation = true;
+	ProjectileMovement->InterpLocationTime = 0.05f;
+	ProjectileMovement->InterpRotationTime = 0.05f;
+	// At 10,000 cm/s, the engine defaults (300 cm max lag / 500 cm snap)
+	// turn a normal 50 ms packet interval into a visible hard snap.
+	ProjectileMovement->InterpLocationMaxLagDistance = 2000.0f;
+	ProjectileMovement->InterpLocationSnapToTargetDistance = 10000.0f;
+	ProjectileMovement->SetInterpolatedComponent(CannonballMesh);
 
 	bReplicates = true;
 	SetReplicateMovement(true);
 	bAlwaysRelevant = true;
+	// Keep adaptive replication from dropping short-lived, high-speed projectiles
+	// toward AActor's 2 Hz minimum. The maximum remains the engine default 100 Hz.
+	SetMinNetUpdateFrequency(30.0f);
 }
 
 void ACannonball::BeginPlay()
 {
 	Super::BeginPlay();
+	PreviousProjectileLocation = GetActorLocation();
+}
+
+void ACannonball::PostNetReceiveLocationAndRotation()
+{
+	if (ProjectileMovement
+		&& ProjectileMovement->bInterpMovement
+		&& ProjectileMovement->GetInterpolatedComponent())
+	{
+		const FRepMovement& Movement = GetReplicatedMovement();
+		const FVector NewLocation = FRepMovement::RebaseOntoLocalOrigin(Movement.Location, this);
+		ProjectileMovement->MoveInterpolationTarget(NewLocation, Movement.Rotation);
+		return;
+	}
+
+	Super::PostNetReceiveLocationAndRotation();
+}
+
+void ACannonball::PostNetReceiveVelocity(const FVector& NewVelocity)
+{
+	Super::PostNetReceiveVelocity(NewVelocity);
+
+	// AActor's default implementation does not feed replicated velocity into a
+	// ProjectileMovementComponent. Without this, simulated clients travel at the
+	// Blueprint default speed and are repeatedly snapped back by server updates.
+	if (ProjectileMovement)
+	{
+		ProjectileMovement->Velocity = NewVelocity;
+		ProjectileMovement->UpdateComponentVelocity();
+	}
 }
 
 void ACannonball::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (bHasDesignatedImpact && !bHasHitWater && !bHasProcessedShipHit)
+	{
+		const FVector CurrentLocation = GetActorLocation();
+		if (FMath::PointDistToSegment(
+			DesignatedImpactLocation, PreviousProjectileLocation, CurrentLocation)
+			<= FMath::Max(1.0f, DesignatedImpactTolerance))
+		{
+			bHasDesignatedImpact = false;
+			SetActorLocation(DesignatedImpactLocation, false, nullptr, ETeleportType::TeleportPhysics);
+			DeactivateProjectile();
+			SetLifeSpan(0.1f);
+			return;
+		}
+		PreviousProjectileLocation = CurrentLocation;
+	}
+}
+
+void ACannonball::SetDesignatedImpactLocation(const FVector& InImpactLocation, float InArrivalTolerance)
+{
+	DesignatedImpactLocation = InImpactLocation;
+	DesignatedImpactTolerance = FMath::Max(1.0f, InArrivalTolerance);
+	PreviousProjectileLocation = GetActorLocation();
+	bHasDesignatedImpact = !InImpactLocation.ContainsNaN();
 }
 
 void ACannonball::InitializeProjectile(AShip* InLaunchingShip, float InDamage, float InSpeed)
@@ -147,6 +215,12 @@ void ACannonball::OnHit(
 
 	if (AShip* HitShip = Cast<AShip>(OtherActor))
 	{
+		if (bHasProcessedShipHit)
+		{
+			return;
+		}
+
+		bHasProcessedShipHit = true;
 		HandleShipHit(HitShip);
 	}
 }

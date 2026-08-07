@@ -20,6 +20,7 @@
 #include "AbilitySystemComponent.h"
 #include "GameplayAbilitySpec.h"
 #include "Abilities/GameplayAbility.h"
+#include "BaseAttributeSet.h"
 
 
 UBTT_EnemyBasicAttack::UBTT_EnemyBasicAttack()
@@ -36,6 +37,9 @@ EBTNodeResult::Type UBTT_EnemyBasicAttack::ExecuteTask(UBehaviorTreeComponent& O
 {
 	CleanupTagDelegate();
 	bObservedAttackStart = false;
+	bRecovering = false;
+	RecoveryProgress = 0.0f;
+	BaseAttackCooldown = 0.0f;
 
 	ABaseAIController* AIController = Cast<ABaseAIController>(OwnerComp.GetOwner());
 	if (!AIController)
@@ -58,6 +62,13 @@ EBTNodeResult::Type UBTT_EnemyBasicAttack::ExecuteTask(UBehaviorTreeComponent& O
 
 	CachedOwnerComp = &OwnerComp;
 	CachedASC = ASC;
+	if (const UBaseWeaponComponent* WeaponComponent = Enemy->GetWeaponComponent())
+	{
+		if (const FWeaponDefinition* WeaponDefinition = WeaponComponent->GetCurrentWeaponDefinition())
+		{
+			BaseAttackCooldown = FMath::Max(0.0f, WeaponDefinition->CombatData.AttackCooldown);
+		}
+	}
 
 	// State_Attack tag를 받으면 
 	AttackTagDelegateHandle = ASC->RegisterGameplayTagEvent(AttackStateTag).AddUObject(this,
@@ -76,10 +87,34 @@ EBTNodeResult::Type UBTT_EnemyBasicAttack::AbortTask(UBehaviorTreeComponent& Own
 {
 	CleanupTagDelegate();
 	bObservedAttackStart = false;
+	bRecovering = false;
+	RecoveryProgress = 0.0f;
+	BaseAttackCooldown = 0.0f;
 	CachedOwnerComp.Reset();
 	CachedASC.Reset();
 
 	return Super::AbortTask(OwnerComp, NodeMemory);
+}
+
+void UBTT_EnemyBasicAttack::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
+{
+	Super::TickTask(OwnerComp, NodeMemory, DeltaSeconds);
+
+	if (!bRecovering || !CachedASC.IsValid())
+	{
+		return;
+	}
+
+	const float AttackSpeedMultiplier = FMath::Clamp(
+		CachedASC->GetNumericAttribute(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute()),
+		0.1f,
+		3.0f);
+	RecoveryProgress += FMath::Max(0.0f, DeltaSeconds) * AttackSpeedMultiplier;
+
+	if (RecoveryProgress >= BaseAttackCooldown)
+	{
+		FinishAttackTask(EBTNodeResult::Succeeded);
+	}
 }
 
 // Debug용 코드
@@ -139,9 +174,12 @@ bool UBTT_EnemyBasicAttack::ActivateCurrentWeaponAbilityByAssetTag(ABaseEnemy* E
 
             if (bSameClass && bFromCurrentWeapon)
             {
-            	ASC->TryActivateAbility(Spec.Handle);
-            	UE_LOG(LogTemp, Log, TEXT("Activated ability: %s from weapon: %s"), *Spec.Ability->GetName(), *CurrentWeapon->GetName());
-            	return true;
+				const bool bActivated = ASC->TryActivateAbility(Spec.Handle);
+				if (bActivated)
+				{
+					UE_LOG(LogTemp, Log, TEXT("Activated ability: %s from weapon: %s"), *Spec.Ability->GetName(), *CurrentWeapon->GetName());
+				}
+				return bActivated;
             }
         }
     }
@@ -175,6 +213,23 @@ void UBTT_EnemyBasicAttack::CleanupTagDelegate()
     AttackTagDelegateHandle.Reset();
 }
 
+void UBTT_EnemyBasicAttack::FinishAttackTask(EBTNodeResult::Type Result)
+{
+	UBehaviorTreeComponent* OwnerComp = CachedOwnerComp.Get();
+	CleanupTagDelegate();
+	bObservedAttackStart = false;
+	bRecovering = false;
+	RecoveryProgress = 0.0f;
+	BaseAttackCooldown = 0.0f;
+	CachedOwnerComp.Reset();
+	CachedASC.Reset();
+
+	if (OwnerComp)
+	{
+		FinishLatentTask(*OwnerComp, Result);
+	}
+}
+
 void UBTT_EnemyBasicAttack::OnAttackTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
     if (!CachedOwnerComp.IsValid())
@@ -190,14 +245,18 @@ void UBTT_EnemyBasicAttack::OnAttackTagChanged(const FGameplayTag CallbackTag, i
         return;
     }
 
-    if (bObservedAttackStart && NewCount == 0)
-    {
-        UBehaviorTreeComponent* OwnerComp = CachedOwnerComp.Get();
-        CleanupTagDelegate();
-        bObservedAttackStart = false;
-        CachedOwnerComp.Reset();
-        CachedASC.Reset();
+	if (bObservedAttackStart && NewCount == 0)
+	{
+		CleanupTagDelegate();
+		bObservedAttackStart = false;
 
-        FinishLatentTask(*OwnerComp, EBTNodeResult::Succeeded);
-    }
+		if (BaseAttackCooldown <= KINDA_SMALL_NUMBER)
+		{
+			FinishAttackTask(EBTNodeResult::Succeeded);
+			return;
+		}
+
+		bRecovering = true;
+		RecoveryProgress = 0.0f;
+	}
 }

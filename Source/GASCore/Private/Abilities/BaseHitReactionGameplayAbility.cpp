@@ -15,6 +15,16 @@ UBaseHitReactionGameplayAbility::UBaseHitReactionGameplayAbility()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
+	bRetriggerInstancedAbility = true;
+
+	FGameplayTagContainer HitReactionTags;
+	HitReactionTags.AddTag(GameplayAbility_HitReaction);
+	SetAssetTags(HitReactionTags);
+
+	CancelAbilitiesWithTag.AddTag(GameplayAbility_InterruptibleByHit);
+	BlockAbilitiesWithTag.AddTag(GameplayAbility_InterruptibleByHit);
+	ActivationOwnedTags.AddTag(State_Damaged);
+	ActivationBlockedTags.AddTag(State_Dead);
 
 	FAbilityTriggerData HitReactionTrigger;
 	HitReactionTrigger.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
@@ -42,6 +52,7 @@ void UBaseHitReactionGameplayAbility::ActivateAbility(
 	bHitReactionFinished = false;
 	CurrentHitReactionDirection = CalculateHitReactionDirection(EventData);
 
+	OnHitReactionActivated(EventData, EventData.EventMagnitude, CurrentHitReactionDirection);
 	K2_OnHitReactionStarted(EventData, EventData.EventMagnitude);
 	K2_OnDirectionalHitReactionStarted(EventData, EventData.EventMagnitude, CurrentHitReactionDirection);
 
@@ -63,14 +74,6 @@ void UBaseHitReactionGameplayAbility::ActivateAbility(
 void UBaseHitReactionGameplayAbility::OnHitReactionMontageCompleted()
 {
 	FinishHitReaction(false);
-}
-
-void UBaseHitReactionGameplayAbility::OnHitReactionMontageBlendOut()
-{
-	if (bFinishHitReactionWhenMontageEnds)
-	{
-		FinishHitReaction(false);
-	}
 }
 
 void UBaseHitReactionGameplayAbility::OnHitReactionMontageInterrupted()
@@ -109,7 +112,8 @@ bool UBaseHitReactionGameplayAbility::PlayHitReactionMontage(EBaseHitReactionDir
 		HitReactionMontage,
 		FMath::Max(HitReactionMontagePlayRate, KINDA_SMALL_NUMBER),
 		HitReactionMontageStartSection,
-		bStopHitReactionMontageWhenAbilityEnds);
+		bStopHitReactionMontageWhenAbilityEnds,
+		0.0f);
 
 	if (!HitReactionMontageTask)
 	{
@@ -117,7 +121,6 @@ bool UBaseHitReactionGameplayAbility::PlayHitReactionMontage(EBaseHitReactionDir
 	}
 
 	HitReactionMontageTask->OnCompleted.AddDynamic(this, &UBaseHitReactionGameplayAbility::OnHitReactionMontageCompleted);
-	HitReactionMontageTask->OnBlendOut.AddDynamic(this, &UBaseHitReactionGameplayAbility::OnHitReactionMontageBlendOut);
 	HitReactionMontageTask->OnInterrupted.AddDynamic(this, &UBaseHitReactionGameplayAbility::OnHitReactionMontageInterrupted);
 	HitReactionMontageTask->OnCancelled.AddDynamic(this, &UBaseHitReactionGameplayAbility::OnHitReactionMontageCancelled);
 	HitReactionMontageTask->ReadyForActivation();
@@ -169,6 +172,13 @@ EBaseHitReactionDirection UBaseHitReactionGameplayAbility::CalculateHitReactionD
 	}
 
 	return RightDot >= 0.0f ? EBaseHitReactionDirection::Right : EBaseHitReactionDirection::Left;
+}
+
+void UBaseHitReactionGameplayAbility::OnHitReactionActivated(
+	const FGameplayEventData& TriggerEventData,
+	float DamageAmount,
+	EBaseHitReactionDirection Direction)
+{
 }
 
 UAnimMontage* UBaseHitReactionGameplayAbility::GetHitReactionMontage(EBaseHitReactionDirection Direction) const

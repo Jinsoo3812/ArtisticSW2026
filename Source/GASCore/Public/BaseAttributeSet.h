@@ -52,10 +52,21 @@ public:
 	FGameplayAttributeData AttackPower;
 	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, AttackPower)
 
+	// Strength-based attacks snapshot this value when their damage spec is created.
+	UPROPERTY(BlueprintReadOnly, Category = "Attributes", ReplicatedUsing = OnRep_Strength)
+	FGameplayAttributeData Strength;
+	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, Strength)
+
 	// 이동 속도입니다. 캐릭터 MovementComponent의 속도와 동기화할 때 사용합니다.
 	UPROPERTY(BlueprintReadOnly, Category = "Attributes", ReplicatedUsing = OnRep_MoveSpeed)
 	FGameplayAttributeData MoveSpeed;
 	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, MoveSpeed)
+
+	// 공격 애니메이션과 다음 공격까지의 회복 속도에 함께 곱해지는 배율입니다.
+	// 1.0은 정상 속도, 0.5는 공격 모션과 공격 주기가 모두 절반 속도입니다.
+	UPROPERTY(BlueprintReadOnly, Category = "Attributes", ReplicatedUsing = OnRep_AttackSpeedMultiplier)
+	FGameplayAttributeData AttackSpeedMultiplier;
+	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, AttackSpeedMultiplier)
 
 
 	// -------------------------------------------------------------------
@@ -86,7 +97,13 @@ protected:
 	UFUNCTION()
 	virtual void OnRep_AttackPower(const FGameplayAttributeData& OldAttackPower);
 
+	UFUNCTION()
+	virtual void OnRep_Strength(const FGameplayAttributeData& OldStrength);
+
 	// 서버에서 복제된 MoveSpeed 변경을 클라이언트 ASC에 알립니다.
 	UFUNCTION()
 	virtual void OnRep_MoveSpeed(const FGameplayAttributeData& OldMoveSpeed);
+
+	UFUNCTION()
+	virtual void OnRep_AttackSpeedMultiplier(const FGameplayAttributeData& OldAttackSpeedMultiplier);
 };

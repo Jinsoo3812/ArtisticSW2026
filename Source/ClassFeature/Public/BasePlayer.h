@@ -8,6 +8,8 @@
 #include "InputTagConfig.h"
 #include "Equipment/PlayerEquipmentComponent.h"
 #include "Animation/LocomotionAnimStateComponent.h"
+#include "Components/SkinnedMeshComponent.h"
+#include "Skills/SkillUseProvider.h"
 #include "BasePlayer.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
@@ -21,12 +23,14 @@ struct FInputActionValue;
 class ABaseItem;
 class UInputTagConfig;
 class UInventoryComponent;
+class UCraftingComponent;
 class USWTrajectoryComponent;
 class UAnimMontage;
 class UBaseHealthComponent;
 class AShip;
 class ACannon;
 class USwimmingComponent;
+class UPlayerSkillComponent;
 
 // Item Slot 관리 구조체
 USTRUCT(BlueprintType)
@@ -76,11 +80,26 @@ struct FQuickSlotReference
 	bool IsEmpty() const { return !ItemTag.IsValid(); }
 };
 
+/** One item type and its desired inventory count when starting an editor test. */
+USTRUCT(BlueprintType)
+struct FStartingInventoryItemForTest
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Testing|Inventory",
+		meta = (Categories = "Item.Id"))
+	FGameplayTag ItemTag;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Testing|Inventory",
+		meta = (ClampMin = "1", UIMin = "1"))
+	int32 Count = 1;
+};
+
 /**
  * 
  */
 UCLASS(Config = Game)
-class CLASSFEATURE_API ABasePlayer : public ABaseCharacter
+class CLASSFEATURE_API ABasePlayer : public ABaseCharacter, public ISkillUseProvider
 {
 	GENERATED_BODY()
 	friend class ULocomotionAnimStateComponent;
@@ -100,9 +119,20 @@ public:
 public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return CachedAbilitySystemComponent.Get(); };
 
+	// ISkillUseProvider: execution actors call this bridge without depending on ClassFeature.
+	virtual bool CanUseSkill(const FGameplayTag& SkillTag) const override;
+	virtual bool TryConsumeSkillUse(const FGameplayTag& SkillTag) override;
+
+	UFUNCTION(BlueprintPure, Category = "Skill")
+	UPlayerSkillComponent* GetPlayerSkillComponent() const;
+
 protected:
 	UPROPERTY()
 	TWeakObjectPtr<class UAbilitySystemComponent> CachedAbilitySystemComponent;
+
+	/** Retained while the controller temporarily possesses a ship or cannon. */
+	UPROPERTY()
+	TWeakObjectPtr<UPlayerSkillComponent> CachedPlayerSkillComponent;
 
 	/* --- 네트워크 초기화 ---*/
 public:
@@ -139,6 +169,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	virtual void DoJumpEnd();
 
+	/** Hold Ctrl while swimming to descend. This is intentionally inert on land. */
+	UFUNCTION(BlueprintCallable, Category = "Input|Swimming")
+	void StartSwimDive();
+
+	UFUNCTION(BlueprintCallable, Category = "Input|Swimming")
+	void StopSwimDive();
+
 	UFUNCTION(BlueprintCallable, Category = "Movement|Sprint")
 	void StartSprint();
 
@@ -150,6 +187,9 @@ public:
 
 	UFUNCTION(Server, Reliable)
 	void Server_SetMoveInput(FVector2D NewMoveInput);
+
+	UFUNCTION(Server, Reliable)
+	void Server_SetSwimmingVerticalInput(float NewVerticalInput);
 
 
 	UFUNCTION()
@@ -171,6 +211,9 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Sprint")
 	bool bSprintInputHeld = false;
+
+	bool bSwimDiveInputHeld = false;
+	bool bSwimAscendInputHeld = false;
 
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_LocomotionStateSnapshot, Category = "Animation|Movement|Network")
 	FReplicatedLocomotionState LocomotionStateSnapshot;
@@ -233,7 +276,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Animation|Combat")
 	void InterruptCombatIntroForHit();
 
+	/** Keep server-side weapon sockets synchronized while a combat montage is active. */
+	void AcquireServerCombatPoseRefresh();
+
+	/** Releases one combat pose refresh request and restores the previous mesh setting. */
+	void ReleaseServerCombatPoseRefresh();
+
 protected:
+	EVisibilityBasedAnimTickOption ServerCombatOriginalAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPose;
+	int32 ServerCombatPoseRefreshRefCount = 0;
+
 	int32 LocomotionAnimEventSequence = 0;
 	void UpdateLocomotionStateSnapshot();
 	int32 NextLocomotionAnimEventSequence();
@@ -246,6 +298,13 @@ protected:
 
 	// 태그를 넣으면 고유 Hash 기반 ID를 반환하는 헬퍼
 	int32 GetInputIDFromTag(const FGameplayTag& Tag) const;
+
+public:
+	/** Keeps the on-foot skill mapping above the legacy item-slot context. */
+	static int32 ResolveDefaultMappingPriority(
+		int32 ConfiguredDefaultPriority,
+		int32 ConfiguredItemPriority,
+		bool bHasSkillInput);
 
 protected:
 	// 서버에 의해 로컬에서 Controller가 조종하는 Pawn이 지정될 때 호출되는 함수.
@@ -280,9 +339,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> SprintAction;
 
+	/** Assign the Gravity Vortex IA mapped to key 3 in the on-foot IMC. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Skills")
+	TObjectPtr<UInputAction> GravityVortexSkillAction;
+
 	void Move(const FInputActionValue& Value);
 	void MoveStopped(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
+	void RefreshSwimmingVerticalInput();
 
 	// 기본 착지 이벤트 오버라이드
 	virtual void Landed(const FHitResult& Hit) override;
@@ -300,6 +364,37 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
 	TArray<TSubclassOf<UGameplayAbility>> DefaultGrantedAbilities;
 
+	/**
+	 * Development-only convenience switch for skill testing.
+	 * When enabled, all three player skills ignore story locks and inventory
+	 * materials, and completed uses do not consume an item.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Skill Test")
+	bool bBypassSkillRequirementsForTesting = false;
+
+	/** Enables the formal Gravity Vortex Enhanced Input binding while on foot. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex")
+	bool bEnableGravityVortexSkillInput = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex")
+	TSubclassOf<UGameplayAbility> GravityVortexAbilityClass;
+
+	/** Granted without a player input slot; a ridden cannon activates/cancels it through its ability tag. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Water Bomb")
+	bool bGrantWaterBombAbility = true;
+
+	/** Set this to a GA_WaterBombCannonMode Blueprint to tune projectile, duration, and slow multiplier. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Water Bomb")
+	TSubclassOf<UGameplayAbility> WaterBombAbilityClass;
+
+	/** Granted without a player input slot; the currently possessed ship toggles it through its IA/IMC binding. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Bombardment")
+	bool bGrantBombardmentAbility = true;
+
+	/** Set this to a GA_Bombardment Blueprint that references the authored Bombardment actor class. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Bombardment")
+	TSubclassOf<UGameplayAbility> BombardmentAbilityClass;
+
 	// GA와 그 GA가 어떤 키 입력(Tag)에 반응할지 함께 적용하는 함수.
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
 	void GrantAbilityToSlot(FGameplayTag SlotTag, TSubclassOf<UGameplayAbility> AbilityClass);
@@ -314,6 +409,8 @@ public:
 	// 즉발형 GA에 대해 SlotTag에 매핑된 GA를 실행하는 함수
 	void OnAbilityInputPressed(FGameplayTag InputTag);
 	void OnAbilityInputReleased(FGameplayTag InputTag);
+	void OnGravityVortexSkillPressed();
+	void OnGravityVortexSkillReleased();
 
 	// 마우스 입력에 대한 활용을 위해 따로 OnAbilityInput과 분리
 	void OnMouseInputPressed(FGameplayTag InputTag);
@@ -430,7 +527,6 @@ protected:
 	// 대포 탑승 이벤트를 처리하는 함수
 	void HandleCannonBoardEvent(const FGameplayEventData* Payload);
 
-
 	/* --- Interactable Object Trace ---*/
 public:
 	// Interactable Object 감지를 위한 범위 함수 (범위 내의 모든 HitResult를 반환하므로 알아서 걸러 쓸 것)
@@ -516,11 +612,35 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
 	TObjectPtr<UInventoryComponent> InventoryComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
+	TObjectPtr<UCraftingComponent> CraftingComponent;
+	/** 에디터 테스트 시작 시 특정 아이템을 인벤토리에 지급한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory")
+	bool bGiveStartingItemForTest = false;
+
+	/** Items to ensure are present when this player starts in an editor test. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory",
+		meta = (EditCondition = "bGiveStartingItemForTest", TitleProperty = "ItemTag"))
+	TArray<FStartingInventoryItemForTest> StartingItemsForTest;
+
+	void GiveStartingItemsForTest();
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<ULocomotionAnimStateComponent> AnimStateComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<USWTrajectoryComponent> TrajectoryComponent;
+
+	/**
+	 * Optional linked animation-layer implementation used while the character is
+	 * swimming. Assign ABP_Swim (or a character-specific equivalent) in the
+	 * player Blueprint; the native BeginPlay path binds its implemented layers.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Swimming")
+	TSubclassOf<class UAnimInstance> SwimmingAnimLayerClass;
+
+	/** Binds SwimmingAnimLayerClass to this mesh's main animation instance. */
+	void InitializeSwimmingAnimLayers();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBaseHealthComponent> HealthComponent;
@@ -542,6 +662,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	UInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Crafting")
+	UCraftingComponent* GetCraftingComponent() const { return CraftingComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Animation")
 	ULocomotionAnimStateComponent* GetAnimStateComponent() const { return AnimStateComponent; }

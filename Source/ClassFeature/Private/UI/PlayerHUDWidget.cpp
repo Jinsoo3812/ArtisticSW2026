@@ -11,6 +11,7 @@
 #include "UI/InventoryCursorWidget.h"
 #include "UI/HealthBarWidget.h"
 #include "UI/BowCrosshairWidget.h"
+#include "UI/SkillQuickSlotWidget.h"
 #include "UI/StorageWindowWidget.h"
 #include "Storage/StorageChest.h"
 #include "Components/CanvasPanel.h"
@@ -21,6 +22,11 @@
 #include "Item/Weapons/BowItem.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Rendering/DrawElements.h"
+#include "Blueprint/WidgetTree.h"
+#include "Skills/PlayerSkillComponent.h"
+#include "Cannon.h"
+#include "Ship.h"
+#include "GameFramework/PlayerController.h"
 
 #include "BaseGameplayTags.h"
 
@@ -104,6 +110,14 @@ void UPlayerHUDWidget::NativeConstruct()
 
 	CreateBowCrosshairWidget();
 	RefreshBowCrosshairBinding();
+
+	if (APlayerController* PlayerController = GetOwningPlayer())
+	{
+		PlayerController->OnPossessedPawnChanged.AddUniqueDynamic(
+			this, &UPlayerHUDWidget::HandlePossessedPawnChanged);
+		BoundPossessionController = PlayerController;
+		BindSkillStateSource(PlayerController->GetPawn());
+	}
 }
 
 void UPlayerHUDWidget::NativeDestruct()
@@ -128,6 +142,14 @@ void UPlayerHUDWidget::NativeDestruct()
 
 	UnbindHealthComponent();
 	UnbindBowComponent();
+	UnbindSkillComponent();
+	UnbindSkillStateSource();
+	if (APlayerController* PlayerController = BoundPossessionController.Get())
+	{
+		PlayerController->OnPossessedPawnChanged.RemoveDynamic(
+			this, &UPlayerHUDWidget::HandlePossessedPawnChanged);
+	}
+	BoundPossessionController.Reset();
 
 	Super::NativeDestruct();
 }
@@ -154,6 +176,7 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	}
 
 	UnbindHealthComponent();
+	UnbindSkillComponent();
 
 	CachedPlayer = InPlayer;
 
@@ -164,6 +187,7 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 		CachedPlayer->OnQuickSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleItemSlotsChanged);
 
 		BindHealthComponent(CachedPlayer->GetHealthComponent());
+		BindSkillComponent(CachedPlayer->GetPlayerSkillComponent());
 		if (UInventoryComponent* Inventory = CachedPlayer->GetInventoryComponent())
 		{
 			Inventory->OnInventoryChanged.AddUObject(this, &UPlayerHUDWidget::HandleInventoryChanged);
@@ -171,6 +195,7 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	}
 
 	RefreshQuickSlots();
+	RefreshSkillQuickSlots();
 	if (InventoryPanelWidget)
 	{
 		InventoryPanelWidget->InitializeForPlayer(CachedPlayer.Get());
@@ -282,6 +307,7 @@ void UPlayerHUDWidget::HandleInventoryChanged()
 		InventoryPanelWidget->RefreshInventory();
 	}
 	RefreshQuickSlots();
+	RefreshSkillQuickSlots();
 	RefreshCursorItemWidget();
 }
 
@@ -294,7 +320,115 @@ void UPlayerHUDWidget::HandleItemSlotsChanged()
 void UPlayerHUDWidget::HandleAbilitySystemInitialized()
 {
 	BindHealthComponent(CachedPlayer.IsValid() ? CachedPlayer->GetHealthComponent() : nullptr);
+	BindSkillComponent(CachedPlayer.IsValid() ? CachedPlayer->GetPlayerSkillComponent() : nullptr);
 	RefreshHealth();
+	RefreshSkillQuickSlots();
+}
+
+void UPlayerHUDWidget::RefreshSkillQuickSlots()
+{
+	SkillQuickSlotEntries.Reset();
+	if (!WidgetTree)
+	{
+		return;
+	}
+
+	TArray<UWidget*> AllWidgets;
+	WidgetTree->GetAllWidgets(AllWidgets);
+	for (UWidget* Widget : AllWidgets)
+	{
+		if (USkillQuickSlotWidget* SkillSlot = Cast<USkillQuickSlotWidget>(Widget))
+		{
+			SkillQuickSlotEntries.Add(SkillSlot);
+			SkillSlot->InitializeForPlayer(CachedPlayer.Get());
+		}
+	}
+}
+
+void UPlayerHUDWidget::BindSkillComponent(UPlayerSkillComponent* SkillComponent)
+{
+	if (BoundSkillComponent == SkillComponent)
+	{
+		return;
+	}
+
+	UnbindSkillComponent();
+	BoundSkillComponent = SkillComponent;
+	if (BoundSkillComponent)
+	{
+		BoundSkillComponent->OnSkillChanged.AddDynamic(this, &UPlayerHUDWidget::HandleSkillChanged);
+	}
+}
+
+void UPlayerHUDWidget::UnbindSkillComponent()
+{
+	if (BoundSkillComponent)
+	{
+		BoundSkillComponent->OnSkillChanged.RemoveDynamic(this, &UPlayerHUDWidget::HandleSkillChanged);
+		BoundSkillComponent = nullptr;
+	}
+}
+
+void UPlayerHUDWidget::HandleSkillChanged(FGameplayTag SkillTag)
+{
+	RefreshSkillQuickSlots();
+}
+
+void UPlayerHUDWidget::BindSkillStateSource(APawn* ControlledPawn)
+{
+	UnbindSkillStateSource();
+
+	if (ACannon* Cannon = Cast<ACannon>(ControlledPawn))
+	{
+		BoundSkillStateCannon = Cannon;
+		Cannon->OnWaterBombModeChanged.AddUObject(
+			this, &UPlayerHUDWidget::HandleSkillActiveStateChanged);
+	}
+	else if (AShip* Ship = Cast<AShip>(ControlledPawn))
+	{
+		BoundSkillStateShip = Ship;
+		Ship->OnBombardmentTargetingChanged.AddUObject(
+			this, &UPlayerHUDWidget::HandleSkillActiveStateChanged);
+	}
+
+	RefreshEquippedSkillBorders();
+}
+
+void UPlayerHUDWidget::UnbindSkillStateSource()
+{
+	if (ACannon* Cannon = BoundSkillStateCannon.Get())
+	{
+		Cannon->OnWaterBombModeChanged.RemoveAll(this);
+	}
+	if (AShip* Ship = BoundSkillStateShip.Get())
+	{
+		Ship->OnBombardmentTargetingChanged.RemoveAll(this);
+	}
+
+	BoundSkillStateCannon.Reset();
+	BoundSkillStateShip.Reset();
+}
+
+void UPlayerHUDWidget::RefreshEquippedSkillBorders()
+{
+	APawn* ControlledPawn = GetOwningPlayerPawn();
+	for (USkillQuickSlotWidget* SkillSlot : SkillQuickSlotEntries)
+	{
+		if (SkillSlot)
+		{
+			SkillSlot->RefreshEquippedState(ControlledPawn);
+		}
+	}
+}
+
+void UPlayerHUDWidget::HandlePossessedPawnChanged(APawn*, APawn* NewPawn)
+{
+	BindSkillStateSource(NewPawn);
+}
+
+void UPlayerHUDWidget::HandleSkillActiveStateChanged(bool)
+{
+	RefreshEquippedSkillBorders();
 }
 
 void UPlayerHUDWidget::HandleHealthChanged(UBaseHealthComponent* HealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)

@@ -9,6 +9,7 @@ class ABaseItem;
 class ABasePlayer;
 class UAnimMontage;
 class UAnimInstance;
+class UGameplayEffect;
 class UWeaponAnimationDataAsset;
 struct FWeaponAnimationEntry;
 
@@ -33,6 +34,28 @@ enum class EEquipmentState : uint8
 	Unequipping
 };
 
+UENUM(BlueprintType)
+enum class EEquipmentAttachmentTarget : uint8
+{
+	Equipped,
+	Stored
+};
+
+/** Fully resolved socket pair used for one attachment operation. */
+USTRUCT(BlueprintType)
+struct FResolvedEquipmentAttachment
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment|Attachment")
+	FName CharacterSocketName = NAME_None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment|Attachment")
+	FName ItemGripSocketName = NAME_None;
+
+	bool IsValid() const { return !CharacterSocketName.IsNone(); }
+};
+
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class CLASSFEATURE_API UPlayerEquipmentComponent : public UActorComponent
 {
@@ -50,6 +73,8 @@ public:
 	bool IsEquipmentTransitioning() const;
 
 	void EquipItemFromSlot(FGameplayTag KeyTag);
+	bool EquipInventoryWeapon(FGameplayTag ItemTag);
+	void UnequipCurrentItem();
 	void UseEquippedItem(bool bDestroy = true);
 	void HandleEquipmentAttachNotify();
 	void OnRepOwnerEquippedItem();
@@ -82,12 +107,24 @@ public:
 	float GetEquippedReloadPlayRate() const;
 
 	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
+	UAnimMontage* GetEquippedBasicAttackMontage() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
+	TArray<FName> GetEquippedBasicAttackComboSections() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
+	float GetEquippedBasicAttackPlayRate() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
 	UAnimMontage* GetEquippedAimCycleMontage() const;
 
 	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
 	TSubclassOf<UAnimInstance> GetEquippedWeaponAnimLayerClass() const;
 
 	const FWeaponAnimationEntry* GetEquippedWeaponAnimationEntry() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Attachment")
+	FResolvedEquipmentAttachment GetEquippedAttachmentProfile() const;
 
 protected:
 	virtual void BeginPlay() override;
@@ -100,6 +137,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Animation")
 	TArray<FWeaponAnimationDataMapping> WeaponAnimationDataByTag;
+
+	/** Common infinite GE used for an equipped item's Data.StrengthBonus. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Strength")
+	TSubclassOf<UGameplayEffect> StrengthEquipmentEffectClass;
 
 	UPROPERTY(Transient)
 	TObjectPtr<ABaseItem> PendingEquipItem;
@@ -124,16 +165,19 @@ protected:
 
 	const UWeaponAnimationDataAsset* ResolveWeaponAnimationData(const ABaseItem* Item) const;
 	const FWeaponAnimationEntry* ResolveWeaponAnimationEntry(const ABaseItem* Item) const;
-	FName ResolveEquipSocketName(const ABaseItem* Item) const;
-	FName ResolveItemGripSocketName(const ABaseItem* Item) const;
-	FName ResolveStoredSocketName(const ABaseItem* Item) const;
+	FResolvedEquipmentAttachment ResolveAttachmentProfile(const ABaseItem* Item, EEquipmentAttachmentTarget Target) const;
+	FName ResolveCharacterSocketName(const ABaseItem* Item, EEquipmentAttachmentTarget Target) const;
+	bool IsCharacterSocketValid(FName SocketName) const;
 	FGameplayTag ResolveUseKeyTag(const ABaseItem* Item) const;
 	bool CanUseEquippedItemAbility(const ABaseItem* Item) const;
+	void CancelActiveWeaponAbilities() const;
 	void GrantEquippedItemAbility(ABaseItem* Item);
 	void RemoveEquippedItemAbility(ABaseItem* Item);
-	void AttachItemToSocket(ABaseItem* Item, FName SocketName) const;
+	bool AttachItem(ABaseItem* Item, EEquipmentAttachmentTarget Target) const;
+	bool IsItemOwnedByItemSlot(const ABaseItem* Item) const;
 	void StoreCurrentEquippedItem();
 	void StartEquipItemFromSlot(int32 SlotIndex);
+	void StartEquipItem(ABaseItem* Item, FGameplayTag SourceSlotTag);
 	void FinalizePendingEquip();
 	void CancelPendingEquip();
 	void PlayEquipmentMontage(ABaseItem* Item, UAnimMontage* Montage, float PlayRate);

@@ -25,6 +25,15 @@
 			]
 		},
 		{
+			"Name": "Story",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine",
+				"GameplayTags"
+			]
+		},
+		{
 			"Name": "GASCore",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
@@ -61,6 +70,17 @@
 			"LoadingPhase": "Default",
 			"AdditionalDependencies": [
 				"Engine"
+			]
+		},
+		{
+			"Name": "ShipUpgradeUI",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine",
+				"UMG",
+				"WaterAndShip",
+				"ClassFeature"
 			]
 		}
 	],

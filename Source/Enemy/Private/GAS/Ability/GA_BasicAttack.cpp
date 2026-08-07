@@ -8,6 +8,7 @@
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "BaseEnemy.h"
 #include "BaseGameplayTags.h"
+#include "BaseAttributeSet.h"
 #include "Weapon/BaseWeapon.h"
 #include "Weapon/BaseWeaponComponent.h"
 #include "Weapon/WeaponDataAsset.h"
@@ -19,7 +20,9 @@ UGA_BasicAttack::UGA_BasicAttack()
 
 	FGameplayTagContainer BasicAttackTags;
 	BasicAttackTags.AddTag(GameplayAbility_BasicAttack);
+	BasicAttackTags.AddTag(GameplayAbility_InterruptibleByHit);
 	SetAssetTags(BasicAttackTags);
+	ActivationBlockedTags.AddTag(State_Damaged);
 }
 
 void UGA_BasicAttack::ActivateAbility(
@@ -141,11 +144,17 @@ bool UGA_BasicAttack::PlayAttackMontage(const FWeaponDefinition& WeaponDefinitio
 		return false;
 	}
 
+	const UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	const float AttackSpeedMultiplier = ASC
+		? FMath::Clamp(ASC->GetNumericAttribute(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute()), 0.1f, 3.0f)
+		: 1.0f;
+	const float EffectivePlayRate = WeaponDefinition.CombatData.AttackMontagePlayRate * AttackSpeedMultiplier;
+
 	AttackMontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
 		this,
 		FName(TEXT("EnemyBasicAttackMontageTask")),
 		AttackMontage,
-		FMath::Max(WeaponDefinition.CombatData.AttackMontagePlayRate, KINDA_SMALL_NUMBER),
+		FMath::Max(EffectivePlayRate, KINDA_SMALL_NUMBER),
 		NAME_None,
 		true);
 

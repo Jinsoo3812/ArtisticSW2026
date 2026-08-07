@@ -4,6 +4,7 @@
 #include "ItemSubsystem.h"
 #include "ItemData.h"
 #include "Settings_Item.h"
+#include "BaseGameplayTags.h"
 #include "Engine/World.h"
 
 void UItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -63,6 +64,30 @@ void UItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		UE_LOG(LogTemp, Log, TEXT("[ItemSubsystem] Successfully cached %d Item Recipes."), CachedRecipeData.Num());
 	}
 
+	// New UI-facing recipe data is deliberately separate from the legacy
+	// ingredient-hash table above so existing callers keep identical behavior.
+	if (UDataTable* CraftingDT = Settings->CraftingRecipeDataTable.LoadSynchronous())
+	{
+		static const FString ContextString(TEXT("CraftingRecipeData Initialization"));
+		const TArray<FName> RowNames = CraftingDT->GetRowNames();
+
+		for (const FName RowName : RowNames)
+		{
+			if (const FCraftingRecipeRow* Recipe = CraftingDT->FindRow<FCraftingRecipeRow>(RowName, ContextString))
+			{
+				CachedCraftingRecipes.Add(RowName, *Recipe);
+			}
+		}
+
+		TArray<FString> Errors;
+		ValidateCraftingRecipes(Errors);
+		for (const FString& Error : Errors)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[ItemSubsystem][Crafting] %s"), *Error);
+		}
+		UE_LOG(LogTemp, Log, TEXT("[ItemSubsystem] Cached %d new crafting recipes."), CachedCraftingRecipes.Num());
+	}
+
 	// FItemDefinition 데이터 에셋(DA) 로드 및 참조 유지
 	// DA 내부에는 이미 TMap이 구현되어 있으므로, 통째로 메모리에 띄워두고 포인터만 들고 있는다.
 	if (UItemData* DA = Settings->ItemAssetRegistry.LoadSynchronous())
@@ -75,6 +100,9 @@ void UItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 void UItemSubsystem::Deinitialize()
 {
 	CachedItemData = nullptr;
+	CachedFeatureData.Reset();
+	CachedRecipeData.Reset();
+	CachedCraftingRecipes.Reset();
 	Super::Deinitialize();
 }
 
@@ -257,4 +285,88 @@ const FItemRecipeData* UItemSubsystem::FindRecipe(const TMap<FGameplayTag, int32
 	}
 	return nullptr;
 }
+
+const FCraftingRecipeRow* UItemSubsystem::FindCraftingRecipe(FName RecipeId) const
+{
+	return RecipeId.IsNone() ? nullptr : CachedCraftingRecipes.Find(RecipeId);
+}
+
+void UItemSubsystem::GetCraftingRecipeIds(TArray<FName>& OutRecipeIds, bool bIncludeDisabled) const
+{
+	OutRecipeIds.Reset();
+	for (const TPair<FName, FCraftingRecipeRow>& Pair : CachedCraftingRecipes)
+	{
+		if (bIncludeDisabled || Pair.Value.bEnabled)
+		{
+			OutRecipeIds.Add(Pair.Key);
+		}
+	}
+
+	OutRecipeIds.Sort([this](const FName& Left, const FName& Right)
+	{
+		const FCraftingRecipeRow* LeftRecipe = CachedCraftingRecipes.Find(Left);
+		const FCraftingRecipeRow* RightRecipe = CachedCraftingRecipes.Find(Right);
+		const int32 LeftOrder = LeftRecipe ? LeftRecipe->SortOrder : 0;
+		const int32 RightOrder = RightRecipe ? RightRecipe->SortOrder : 0;
+		return LeftOrder == RightOrder ? Left.LexicalLess(Right) : LeftOrder < RightOrder;
+	});
+}
+
+bool UItemSubsystem::ValidateCraftingRecipes(TArray<FString>& OutErrors) const
+{
+	OutErrors.Reset();
+	for (const TPair<FName, FCraftingRecipeRow>& Pair : CachedCraftingRecipes)
+	{
+		const FName RecipeId = Pair.Key;
+		const FCraftingRecipeRow& Recipe = Pair.Value;
+		if (RecipeId.IsNone())
+		{
+			OutErrors.Add(TEXT("A crafting recipe has an empty RowName."));
+		}
+		if (!Recipe.ResultItemTag.IsValid() || !Recipe.ResultItemTag.MatchesTag(Item_Id))
+		{
+			OutErrors.Add(FString::Printf(TEXT("%s has an invalid ResultItemTag: %s"), *RecipeId.ToString(), *Recipe.ResultItemTag.ToString()));
+		}
+		if (Recipe.ResultQuantity <= 0)
+		{
+			OutErrors.Add(FString::Printf(TEXT("%s has a non-positive ResultQuantity."), *RecipeId.ToString()));
+		}
+		if (Recipe.RequiredRecipeItemTag.IsValid() && !Recipe.RequiredRecipeItemTag.MatchesTag(Item_Id))
+		{
+			OutErrors.Add(FString::Printf(TEXT("%s has an invalid RequiredRecipeItemTag."), *RecipeId.ToString()));
+		}
+		if (Recipe.bConsumeRecipeItem && !Recipe.RequiredRecipeItemTag.IsValid())
+		{
+			OutErrors.Add(FString::Printf(TEXT("%s consumes a recipe item but does not specify one."), *RecipeId.ToString()));
+		}
+
+		TSet<FGameplayTag> SeenIngredients;
+		for (const FCraftingItemStack& Ingredient : Recipe.Ingredients)
+		{
+			if (!Ingredient.ItemTag.IsValid() || !Ingredient.ItemTag.MatchesTag(Item_Id) || Ingredient.Quantity <= 0)
+			{
+				OutErrors.Add(FString::Printf(TEXT("%s contains an invalid ingredient."), *RecipeId.ToString()));
+				continue;
+			}
+			if (SeenIngredients.Contains(Ingredient.ItemTag))
+			{
+				OutErrors.Add(FString::Printf(TEXT("%s contains duplicate ingredient %s."), *RecipeId.ToString(), *Ingredient.ItemTag.ToString()));
+			}
+			SeenIngredients.Add(Ingredient.ItemTag);
+		}
+	}
+	return OutErrors.IsEmpty();
+}
+
+#if WITH_DEV_AUTOMATION_TESTS
+void UItemSubsystem::AddCraftingRecipeForTesting(FName RecipeId, const FCraftingRecipeRow& Recipe)
+{
+	CachedCraftingRecipes.Add(RecipeId, Recipe);
+}
+
+void UItemSubsystem::ClearCraftingRecipesForTesting()
+{
+	CachedCraftingRecipes.Reset();
+}
+#endif
 

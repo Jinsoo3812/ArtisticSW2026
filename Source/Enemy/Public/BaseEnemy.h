@@ -14,6 +14,7 @@
 class UAbilitySystemComponent;
 class UBaseWeaponComponent;
 class UBaseHealthComponent;
+class UEnemyBehaviorSet;
 class UEnemyWaypointMoveComponent;
 class UHealthBarWidget;
 class UWidgetComponent;
@@ -33,6 +34,7 @@ class ENEMY_API ABaseEnemy : public ABaseCharacter
 
 public:
 	ABaseEnemy();
+	virtual bool IsEnemyCharacterForEffects() const override { return true; }
 	
 	/**
 	* Enemy Death를 외부 Wave 시스템에 알리는 Delegate.
@@ -64,6 +66,10 @@ protected:
 	// Enemy가 사용할 Behavior Tree
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "AI | Behavior Tree")
 	TObjectPtr<UBehaviorTree> BehaviorTree;
+
+	/** State별 Run Behavior Dynamic Subtree를 설정하는 데이터 자산입니다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI | Behavior Tree")
+	TObjectPtr<UEnemyBehaviorSet> BehaviorSet;
 
 	// ------------------- WeaponTag
 
@@ -160,10 +166,18 @@ protected:
 	// FVector GetVelocity() const override;
 	
 public:
+	/**
+	 * Perception 후보가 이 Enemy의 전투 대상이 될 수 있는지 검사합니다.
+	 * 지상/갑판/보스 Enemy는 Blueprint 또는 C++에서 이 정책만 확장할 수 있습니다.
+	 */
+	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Enemy|AI")
+	bool CanEngageActor(AActor* Candidate) const;
+
 	// Getters
 	// 일단 개발 중이므로, check를 넣었지만, 일부 BeginPlay 이전에는 nullptr 날 수 있음
 	FORCEINLINE TObjectPtr<ABaseAIController> GetAIController() const { check(AIController) return AIController; }
 	FORCEINLINE TObjectPtr<UBehaviorTree> GetBehaviorTree() const { return BehaviorTree; }
+	FORCEINLINE UEnemyBehaviorSet* GetBehaviorSet() const { return BehaviorSet; }
 	FORCEINLINE FGameplayTag GetDefaultWeaponTag() const { return DefaultWeaponTag; }
 	FORCEINLINE TObjectPtr<UBaseWeaponComponent> GetWeaponComponent() const { check(WeaponComponent) return WeaponComponent; }
 	//FORCEINLINE TObjectPtr<UPathMovement> GetPathMovementComponent() const { check(PathMovement) return PathMovement;}

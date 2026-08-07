@@ -15,6 +15,8 @@
 #include "AIController.h"
 #include "BrainComponent.h"
 #include "BuoyancyComponent.h"
+#include "Buoyancy/SWBuoyancyComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "UI/HealthBarWidget.h"
 #include "UObject/ConstructorHelpers.h"
 #include "ShipAI/ShipSwarmSubsystem.h"
@@ -227,9 +229,21 @@ void AEnemyShip::HandleShipDeath()
 	}
 
 	// 3. BuoyancyCoefficient를 0으로 설정 → 부력만 완전히 제거, 중력으로 자연 침몰
+	// Disable the current shared buoyancy source so the network-physics ship sinks.
+	if (SWBuoyancyComponent)
+	{
+		SWBuoyancyComponent->ForceSettings.BuoyancyCoefficient = 0.0f;
+	}
+
+	// Keep the legacy component in sync for older derived enemy Blueprints.
 	if (UBuoyancyComponent* BuoyancyComp = FindComponentByClass<UBuoyancyComponent>())
 	{
 		BuoyancyComp->BuoyancyData.BuoyancyCoefficient = 0.0f;
+	}
+
+	if (BuoyancyRoot)
+	{
+		BuoyancyRoot->WakeAllRigidBodies();
 	}
 
 	// 4. 대포 발사/조준 타이머 정지
@@ -377,7 +391,6 @@ void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotato
 		SpawnedStorage->SetOwner(nullptr);
 		SpawnedStorage->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 		SpawnedStorage->SetLifeSpan(0.0f);
-		SpawnedStorage->ForceNetUpdate();
 
 		TMap<FGameplayTag, int32> TotalCountByItem;
 		for (const FStorageItemEntry& StorageItem : StorageItems)
@@ -401,6 +414,8 @@ void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotato
 
 		const int32 SlotCount = FMath::Max(EnemyCorpseStorageSlotCount, RequiredSlotCount);
 		SpawnedStorage->ConfigureStorage(SlotCount, EnemyCorpseStorageColumnCount, StorageItems);
+		// Replicate the fully configured storage contents in the same server update as the spawn.
+		SpawnedStorage->ForceNetUpdate();
 		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - Spawned storage chest. Ship=%s Chest=%s Location=%s Items=%d Slots=%d"),
 			*GetName(),
 			*GetNameSafe(SpawnedStorage),

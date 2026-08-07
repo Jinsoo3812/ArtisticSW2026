@@ -12,7 +12,10 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 {
 	float MovementInput = 0.0f;
 	float SteeringInput = 0.0f;
+	FVector ExternalAcceleration = FVector::ZeroVector;
 	bool bHasLocalController = false;
+	/** Server-authored gameplay force (vortex, knockback, etc.) may affect AI ships too. */
+	bool bApplyAuthoritativeExternalAcceleration = false;
 	bool bQueryDiagnostics = false;
 
 	TArray<FVector> PontoonOffsets;
@@ -25,7 +28,8 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	float LateralDrag = 0.5f;
 	float ForwardForceValue = 2000000.f;
 	float TurnTorqueValue = 6000000000.f;
-	float SpeedMultiplier = 1.0f;
+	float ForwardPropulsionMultiplier = 1.0f;
+	float TurnTorqueMultiplier = 1.0f;
 
 	float BuoyancyRadius = 100.f;
 	float BuoyancyForceMultiplier = 1.2f;
@@ -45,7 +49,9 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	{
 		MovementInput = 0.0f;
 		SteeringInput = 0.0f;
+		ExternalAcceleration = FVector::ZeroVector;
 		bHasLocalController = false;
+		bApplyAuthoritativeExternalAcceleration = false;
 		bQueryDiagnostics = false;
 		PontoonOffsets.Empty();
 		PontoonRadii.Empty();
@@ -114,6 +120,7 @@ private:
 	// 비동기 스레드 내부 입력 캐시
 	float MovementInput_Internal = 0.0f;
 	float SteeringInput_Internal = 0.0f;
+	FVector ExternalAcceleration_Internal = FVector::ZeroVector;
 	bool bQueryDiagnostics_Internal = false;
 
 	// 물리 스레드에서 고정 보관할 데이터들 (최초 전송 시 캐싱)
@@ -127,7 +134,8 @@ private:
 	float CachedLateralDrag = 0.5f;
 	float CachedForwardForce = 2000000.f;
 	float CachedTurnTorque = 6000000000.f;
-	float CachedSpeedMultiplier = 1.0f;
+	float CachedForwardPropulsionMultiplier = 1.0f;
+	float CachedTurnTorqueMultiplier = 1.0f;
 	float CachedBuoyancyRadius = 100.f;
 	float CachedBuoyancyForceMultiplier = 1.2f;
 	float CachedWaterDamping = 3.0f;

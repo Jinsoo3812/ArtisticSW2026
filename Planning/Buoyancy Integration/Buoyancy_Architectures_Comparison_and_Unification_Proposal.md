@@ -48,8 +48,8 @@
   - `Source/ClassFeature/Public/Storage/StorageChest.h`
   - `Source/ClassFeature/Private/Storage/StorageChest.cpp`
 - 공통 수면/리플 시간축
-  - `Source/ClassFeature/Private/SWRippleWaterWaves.cpp`
-  - `Source/ClassFeature/Private/RippleSubsystem.cpp`
+  - `Source/WaterAndShip/Private/SWRippleWaterWaves.cpp`
+  - `Source/WaterAndShip/Private/RippleSubsystem.cpp`
   - `Source/ClassFeature/Private/BasePlayerController.cpp`
 - 프로젝트 물리 설정
   - `Config/DefaultEngine.ini`
