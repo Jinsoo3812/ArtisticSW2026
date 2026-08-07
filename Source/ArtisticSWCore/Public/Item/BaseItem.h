@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "Abilities/GameplayAbility.h"
+#include "GameplayEffectTypes.h"
 #include "Interactable.h"
 #include "BaseGameplayTags.h"
 #include "BaseItem.generated.h"
@@ -16,6 +17,9 @@ class UInteractableComponent;
 class UTexture2D;
 class UItemData;
 class USceneComponent;
+class UAbilitySystemComponent;
+class UGameplayEffect;
+class UWeaponFeedbackComponent;
 
 UENUM(BlueprintType)
 enum class EItemState : uint8
@@ -34,6 +38,7 @@ class ARTISTICSWCORE_API ABaseItem : public AActor
 public:
 	ABaseItem();
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaTime) override;
 
 	/* 네트워크 설정 */
@@ -102,6 +107,25 @@ public:
 	// Returns the component that owns this item's attachment sockets.
 	virtual USceneComponent* GetAttachmentReferenceComponent() const;
 
+	UFUNCTION(BlueprintPure, Category = "Item|Feedback")
+	UWeaponFeedbackComponent* GetWeaponFeedbackComponent() const { return WeaponFeedbackComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Item|Strength")
+	float GetStrengthBonus() const { return StrengthBonus; }
+
+	/** Configures generated/runtime items before equip. Active bonuses cannot be mutated in place. */
+	UFUNCTION(BlueprintCallable, Category = "Item|Strength")
+	bool SetStrengthBonus(float InStrengthBonus);
+
+	/** Server-only. Applies at most one infinite Strength effect for this item. */
+	bool ApplyStrengthBonusEffect(UAbilitySystemComponent* SourceASC, TSubclassOf<UGameplayEffect> StrengthEffectClass);
+
+	/** Server-only. Removes the exact active effect created by ApplyStrengthBonusEffect. */
+	bool RemoveStrengthBonusEffect();
+
+	UFUNCTION(BlueprintPure, Category = "Item|Strength")
+	bool HasActiveStrengthBonusEffect() const { return EquippedStrengthEffectHandle.IsValid(); }
+
 	/* Hovering */
 protected:
 	FVector HoverBaseLoc;
@@ -121,4 +145,17 @@ public:
 	UTexture2D* GetItemIcon() const;
 	// DA에서 이름 Getter
 	FText GetItemNameText() const;
+
+protected:
+	/** Optional shared cosmetic controller. Configure its Data Asset in each weapon Blueprint. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Components")
+	TObjectPtr<UWeaponFeedbackComponent> WeaponFeedbackComponent;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Strength", meta = (ClampMin = "0.0"))
+	float StrengthBonus = 0.0f;
+
+	FActiveGameplayEffectHandle EquippedStrengthEffectHandle;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAbilitySystemComponent> StrengthEffectASC;
 };

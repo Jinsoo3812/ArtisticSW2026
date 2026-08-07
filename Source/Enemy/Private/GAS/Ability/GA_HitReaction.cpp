@@ -14,7 +14,6 @@ void UGA_HitReaction::OnHitReactionActivated(
 {
 	Super::OnHitReactionActivated(TriggerEventData, DamageAmount, Direction);
 	SuspendAIForHitReaction();
-	ApplyKnockback(TriggerEventData, Direction);
 }
 
 void UGA_HitReaction::EndAbility(
@@ -40,8 +39,15 @@ void UGA_HitReaction::SuspendAIForHitReaction()
 
 	SuspendedAIController = AIController;
 
+	// Stop the velocity already produced by path following without changing MovementMode.
+	// The paused path can therefore resume after the reaction without forcing Walking.
+	if (UCharacterMovementComponent* MovementComponent = Character->GetCharacterMovement())
+	{
+		MovementComponent->StopMovementImmediately();
+	}
+
 	// Reaction is the engine-defined priority for mechanics such as hit reactions.
-	// Locking the brain prevents ticking BT tasks (such as Strafe) from issuing a new MoveTo.
+	// Locking the brain prevents active BT tasks from issuing a new MoveTo.
 	if (UBrainComponent* BrainComponent = AIController->GetBrainComponent())
 	{
 		BrainComponent->LockResource(EAIRequestPriority::Reaction);
@@ -81,72 +87,4 @@ void UGA_HitReaction::RestoreAIAfterHitReaction()
 	SuspendedMoveRequestId = FAIRequestID();
 	bLockedAILogicForHitReaction = false;
 	bPausedAIMoveForHitReaction = false;
-}
-
-void UGA_HitReaction::ApplyKnockback(
-	const FGameplayEventData& TriggerEventData,
-	EBaseHitReactionDirection Direction) const
-{
-	ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
-	if (!Character || !Character->HasAuthority()
-		|| (KnockbackStrength <= 0.0f && KnockbackUpwardStrength <= 0.0f))
-	{
-		return;
-	}
-
-	UCharacterMovementComponent* MovementComponent = Character->GetCharacterMovement();
-	if (!MovementComponent || MovementComponent->MovementMode == MOVE_None)
-	{
-		return;
-	}
-
-	const FVector KnockbackDirection = CalculateKnockbackDirection(TriggerEventData, Direction);
-	if (KnockbackDirection.IsNearlyZero())
-	{
-		return;
-	}
-
-	// Guarantee an actual push even when AI movement is currently driving toward the source.
-	const float CurrentSpeedAwayFromSource = FVector::DotProduct(MovementComponent->Velocity, KnockbackDirection);
-	const float AdditionalSpeedAwayFromSource = FMath::Max(KnockbackStrength - CurrentSpeedAwayFromSource, 0.0f);
-	FVector VelocityChange = KnockbackDirection * AdditionalSpeedAwayFromSource;
-	VelocityChange.Z = KnockbackUpwardStrength;
-	MovementComponent->AddImpulse(VelocityChange, true);
-}
-
-FVector UGA_HitReaction::CalculateKnockbackDirection(
-	const FGameplayEventData& TriggerEventData,
-	EBaseHitReactionDirection Direction) const
-{
-	const AActor* AvatarActor = GetAvatarActorFromActorInfo();
-	if (!AvatarActor)
-	{
-		return FVector::ZeroVector;
-	}
-
-	FVector SourceLocation = FVector::ZeroVector;
-	if (TryGetHitReactionSourceLocation(TriggerEventData, SourceLocation))
-	{
-		FVector AwayFromSource = AvatarActor->GetActorLocation() - SourceLocation;
-		AwayFromSource.Z = 0.0f;
-		if (AwayFromSource.Normalize())
-		{
-			return AwayFromSource;
-		}
-	}
-
-	// If the source actor is unavailable, use the already resolved reaction direction.
-	switch (Direction)
-	{
-	case EBaseHitReactionDirection::Front:
-		return -AvatarActor->GetActorForwardVector().GetSafeNormal2D();
-	case EBaseHitReactionDirection::Back:
-		return AvatarActor->GetActorForwardVector().GetSafeNormal2D();
-	case EBaseHitReactionDirection::Left:
-		return AvatarActor->GetActorRightVector().GetSafeNormal2D();
-	case EBaseHitReactionDirection::Right:
-		return -AvatarActor->GetActorRightVector().GetSafeNormal2D();
-	default:
-		return FVector::ZeroVector;
-	}
 }
