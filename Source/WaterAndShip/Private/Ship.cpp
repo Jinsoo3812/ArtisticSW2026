@@ -308,21 +308,31 @@ void AShip::BeginPlay()
 	// 좌현 바다 승선 상호작용 바인딩
 	if (PortSeaBoardingInteractable)
 	{
-		PortSeaBoardingInteractable->InitializeInteractable(
-			FText::FromString(TEXT("배")),
-			FText::FromString(TEXT("승선하기"))
-		);
-		PortSeaBoardingInteractable->OnInteracted.AddUniqueDynamic(this, &AShip::HandlePortSeaBoarding);
+		PortSeaBoardingInteractable->SetCollisionEnabled(
+			AllowsPlayerBoarding() ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+		if (AllowsPlayerBoarding())
+		{
+			PortSeaBoardingInteractable->InitializeInteractable(
+				FText::FromString(TEXT("배")),
+				FText::FromString(TEXT("승선하기"))
+			);
+			PortSeaBoardingInteractable->OnInteracted.AddUniqueDynamic(this, &AShip::HandlePortSeaBoarding);
+		}
 	}
 
 	// 우현 바다 승선 상호작용 바인딩
 	if (StarboardSeaBoardingInteractable)
 	{
-		StarboardSeaBoardingInteractable->InitializeInteractable(
-			FText::FromString(TEXT("배")),
-			FText::FromString(TEXT("승선하기"))
-		);
-		StarboardSeaBoardingInteractable->OnInteracted.AddUniqueDynamic(this, &AShip::HandleStarboardSeaBoarding);
+		StarboardSeaBoardingInteractable->SetCollisionEnabled(
+			AllowsPlayerBoarding() ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+		if (AllowsPlayerBoarding())
+		{
+			StarboardSeaBoardingInteractable->InitializeInteractable(
+				FText::FromString(TEXT("배")),
+				FText::FromString(TEXT("승선하기"))
+			);
+			StarboardSeaBoardingInteractable->OnInteracted.AddUniqueDynamic(this, &AShip::HandleStarboardSeaBoarding);
+		}
 	}
 }
 
@@ -902,6 +912,11 @@ void AShip::Board(APawn* PlayerPawn)
 		RidingPlayer ? *RidingPlayer->GetName() : TEXT("None"));
 
 	if (!HasAuthority()) return;
+	if (!AllowsPlayerHelmControl())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AShip::Board - [SERVER] Failed: player helm control is disabled for %s."), *GetName());
+		return;
+	}
 	if (!PlayerPawn)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("AShip::Board - [SERVER] Failed: PlayerPawn is null!"));
@@ -1981,13 +1996,15 @@ void AShip::UpdateHelmInteractionAvailability()
 	if (HelmInteractable)
 	{
 		HelmInteractable->SetCollisionEnabled(
-			RidingPlayer ? ECollisionEnabled::NoCollision : ECollisionEnabled::QueryOnly);
+			AllowsPlayerHelmControl() && !RidingPlayer
+				? ECollisionEnabled::QueryOnly
+				: ECollisionEnabled::NoCollision);
 	}
 }
 
 void AShip::BoardFromSea(AActor* Interactor)
 {
-	if (!HasAuthority() || !IsValid(Interactor))
+	if (!HasAuthority() || !AllowsPlayerBoarding() || !IsValid(Interactor))
 	{
 		return;
 	}
@@ -2022,6 +2039,27 @@ void AShip::RefreshMountedCannons()
 			{
 				MountedCannons.AddUnique(Cannon);
 			}
+		}
+	}
+
+	// Temporary migration compatibility for cannons placed in a level and attached
+	// to a ship actor. AddUnique also prevents a child actor from being registered
+	// twice if Unreal reports it through both discovery paths.
+	TArray<AActor*> AttachedActors;
+	GetAttachedActors(AttachedActors);
+	for (AActor* AttachedActor : AttachedActors)
+	{
+		if (ACannon* Cannon = Cast<ACannon>(AttachedActor))
+		{
+			MountedCannons.AddUnique(Cannon);
+		}
+	}
+
+	for (ACannon* Cannon : MountedCannons)
+	{
+		if (IsValid(Cannon))
+		{
+			Cannon->RefreshPlayerInteractionAvailability();
 		}
 	}
 }

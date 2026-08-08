@@ -47,6 +47,15 @@ void AShipBoardingPoint::BeginPlay()
 
 	if (BoardingInteractable)
 	{
+		const AShip* OwningShip = GetOwningShip();
+		const bool bAllowsBoarding = !OwningShip || OwningShip->AllowsPlayerBoarding();
+		BoardingInteractable->SetCollisionEnabled(
+			bAllowsBoarding ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+		if (!bAllowsBoarding)
+		{
+			return;
+		}
+
 		BoardingInteractable->InitializeInteractable(
 			NSLOCTEXT("ShipInteraction", "BoardingPointObject", "Ship"),
 			NSLOCTEXT("ShipInteraction", "BoardingPointAction", "Board"));

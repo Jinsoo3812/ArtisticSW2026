@@ -23,6 +23,9 @@ class ENEMY_API AEnemyShip : public AShip
 public:
 	AEnemyShip();
 	virtual bool IsEnemyShipForEffects() const override { return true; }
+	virtual bool AllowsPlayerHelmControl() const override { return false; }
+	virtual bool AllowsPlayerCannonControl() const override { return false; }
+	virtual bool AllowsPlayerBoarding() const override { return false; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -48,7 +51,6 @@ public:
 	float IdealDistance = 2000.f;
 
 protected:
-	void FindAttachedCannons();
 	void UpdateActiveCannons();
 
 	// Aiming and firing logic
@@ -136,9 +138,6 @@ protected:
 	// ================= End of Health Bar =================
 	
 	// ---- Cannon & AI State ----
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|AI Cannon")
-	TArray<TObjectPtr<ACannon>> AttachedCannons;
-
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|AI Cannon")
 	TArray<TObjectPtr<ACannon>> ActiveAICannons;
 

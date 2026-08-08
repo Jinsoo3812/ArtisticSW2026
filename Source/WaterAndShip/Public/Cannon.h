@@ -65,6 +65,15 @@ public:
 	class AShip* GetOwningShip() const;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	/** Returns false for cannons mounted on ships that prohibit player cannon control. */
+	UFUNCTION(BlueprintPure, Category = "Cannon|Control")
+	bool AllowsPlayerControl() const;
+
+	/** Re-evaluates interaction collision after mounting or attachment changes. */
+	void RefreshPlayerInteractionAvailability();
+
+	UInteractableComponent* GetInteractableComponent() const { return InteractableComponent; }
+
 	/* Boarding Interaction - Ship의 Board()와 완전히 동일한 패턴 */
 	void Board(APawn* PlayerPawn);
 

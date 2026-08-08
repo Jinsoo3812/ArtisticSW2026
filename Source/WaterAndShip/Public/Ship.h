@@ -427,6 +427,18 @@ public:
 	/** Identifies hostile ships without making WaterAndShip depend on Enemy. */
 	virtual bool IsEnemyShipForEffects() const { return false; }
 
+	/** Class policy used by interaction collision and the authoritative Board guard. */
+	UFUNCTION(BlueprintPure, Category = "Ship|Control")
+	virtual bool AllowsPlayerHelmControl() const { return true; }
+
+	/** Class policy inherited by every cannon mounted on this ship. */
+	UFUNCTION(BlueprintPure, Category = "Ship|Control")
+	virtual bool AllowsPlayerCannonControl() const { return true; }
+
+	/** Class policy used by reusable and legacy sea-boarding points. */
+	UFUNCTION(BlueprintPure, Category = "Ship|Control")
+	virtual bool AllowsPlayerBoarding() const { return true; }
+
 	void SetExternalAccelerationSource(const FGuid& SourceId, const FVector& WorldAcceleration);
 	void RemoveExternalAccelerationSource(const FGuid& SourceId);
 
@@ -476,12 +488,14 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Helm")
 	void ForceDisembark();
 
-	/** Rebuilds the runtime list from BP_Cannon Child Actor Components owned by this ship. */
+	/** Rebuilds the canonical runtime list from BP child actors and legacy attached cannon actors. */
 	UFUNCTION(BlueprintCallable, Category = "Ship|Cannons")
 	void RefreshMountedCannons();
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Cannons")
 	int32 GetMountedCannonCount() const { return MountedCannons.Num(); }
+
+	const TArray<TObjectPtr<ACannon>>& GetMountedCannons() const { return MountedCannons; }
 
 	/* Components */
 
@@ -536,7 +550,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Boarding")
 	TObjectPtr<USceneComponent> BoardingArrivalPoint;
 
-	/** Runtime references discovered from BP_Cannon Child Actor Components. */
+	/** Canonical runtime references for both BP child actors and legacy attached actors. */
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Ship|Cannons")
 	TArray<TObjectPtr<ACannon>> MountedCannons;
 
