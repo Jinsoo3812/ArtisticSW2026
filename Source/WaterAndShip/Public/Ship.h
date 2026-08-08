@@ -330,12 +330,14 @@ class UInputMappingContext;
 class UInputAction;
 class APlayerController;
 class UPrimitiveComponent;
+class USceneComponent;
 class UAbilitySystemComponent;
 class UBaseAttributeSet;
 class UShipAttributeSet;
 class UGameplayAbility;
 class ABombardment;
 class ABombardmentPreview;
+class ACannon;
 
 USTRUCT(BlueprintType)
 struct FShipStatRow : public FTableRowBase
@@ -448,8 +450,38 @@ public:
 	FOnBombardmentTargetingChanged OnBombardmentTargetingChanged;
 	APawn* GetRidingPlayer() const { return RidingPlayer; }
 
+	UFUNCTION(BlueprintPure, Category = "Ship|Helm")
+	bool IsHelmOccupied() const { return RidingPlayer != nullptr; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Helm")
+	UInteractableComponent* GetHelmInteractable() const { return HelmInteractable; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Helm")
+	USceneComponent* GetHelmSeatPoint() const { return HelmSeatPoint; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Helm")
+	USceneComponent* GetHelmExitPoint() const { return HelmExitPoint; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Boarding")
+	USceneComponent* GetBoardingArrivalPoint() const { return BoardingArrivalPoint; }
+
 	/* Boarding Interaction */
 	void Board(APawn* PlayerPawn);
+
+	/** Teleports a character from any authored sea-boarding point to the shared arrival point. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Boarding")
+	void BoardFromSea(AActor* Interactor);
+
+	/** Safely returns the current helmsman to the authored exit point. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Helm")
+	void ForceDisembark();
+
+	/** Rebuilds the runtime list from BP_Cannon Child Actor Components owned by this ship. */
+	UFUNCTION(BlueprintCallable, Category = "Ship|Cannons")
+	void RefreshMountedCannons();
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Cannons")
+	int32 GetMountedCannonCount() const { return MountedCannons.Num(); }
 
 	/* Components */
 
@@ -484,25 +516,43 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UCameraComponent* FollowCamera;
 
-	/** Interactable component to allow player interactions */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UInteractableComponent* InteractableComponent;
+	/** Optional visible helm mesh. Its collision is independent from the interaction range. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Helm")
+	TObjectPtr<UStaticMeshComponent> HelmMesh;
 
-	/** Port (left) side boarding interactable component */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UInteractableComponent* PortSeaBoardingInteractable;
+	/** Interaction range used only to enter ship-control mode. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Helm")
+	TObjectPtr<UInteractableComponent> HelmInteractable;
 
-	/** Location point where the player will be teleported when boarding from the Port side */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	USceneComponent* PortSeaBoardingDestination;
+	/** Exact relative transform used while the player controls the ship. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Helm")
+	TObjectPtr<USceneComponent> HelmSeatPoint;
 
-	/** Starboard (right) side boarding interactable component */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UInteractableComponent* StarboardSeaBoardingInteractable;
+	/** Exact relative transform used when the player leaves ship-control mode. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Helm")
+	TObjectPtr<USceneComponent> HelmExitPoint;
 
-	/** Location point where the player will be teleported when boarding from the Starboard side */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	USceneComponent* StarboardSeaBoardingDestination;
+	/** Shared destination for every ShipBoardingPoint attached to this ship. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Boarding")
+	TObjectPtr<USceneComponent> BoardingArrivalPoint;
+
+	/** Runtime references discovered from BP_Cannon Child Actor Components. */
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Ship|Cannons")
+	TArray<TObjectPtr<ACannon>> MountedCannons;
+
+	// Kept only so legacy test-ship Blueprints deserialize without hard errors.
+	// BP_PlayerShip uses ShipBoardingPoint child actors and BoardingArrivalPoint.
+	UPROPERTY(Transient, meta = (DeprecatedProperty, DeprecationMessage = "Use ShipBoardingPoint child actors"))
+	TObjectPtr<UInteractableComponent> PortSeaBoardingInteractable;
+
+	UPROPERTY(Transient, meta = (DeprecatedProperty, DeprecationMessage = "Use BoardingArrivalPoint"))
+	TObjectPtr<USceneComponent> PortSeaBoardingDestination;
+
+	UPROPERTY(Transient, meta = (DeprecatedProperty, DeprecationMessage = "Use ShipBoardingPoint child actors"))
+	TObjectPtr<UInteractableComponent> StarboardSeaBoardingInteractable;
+
+	UPROPERTY(Transient, meta = (DeprecatedProperty, DeprecationMessage = "Use BoardingArrivalPoint"))
+	TObjectPtr<USceneComponent> StarboardSeaBoardingDestination;
 
 	/** World location of the fixed observation camera (set XYZ in editor) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Fixed Camera")
@@ -636,6 +686,7 @@ protected:
 	void ServerCancelBombardmentAbility();
 
 	void Disembark();
+	void UpdateHelmInteractionAvailability();
 
 	// ---- Camera State ----
 	bool bUsingFixedCamera = false;

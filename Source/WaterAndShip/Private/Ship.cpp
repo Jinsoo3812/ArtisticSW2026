@@ -4,6 +4,7 @@
 #include "Ship.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Components/ChildActorComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "InteractableComponent.h"
 #include "EnhancedInputComponent.h"
@@ -174,27 +175,25 @@ AShip::AShip()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
-	// Interactable Component
-	InteractableComponent = CreateDefaultSubobject<UInteractableComponent>(TEXT("InteractableComponent"));
-	InteractableComponent->SetupAttachment(BuoyancyRoot);
-	// Set default collision preset for interactables
-	InteractableComponent->SetCollisionProfileName(TEXT("Interactable"));
+	// Helm authoring components. Visuals and interaction collision remain separate
+	// so designers can scale either without affecting the other.
+	HelmMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HelmMesh"));
+	HelmMesh->SetupAttachment(BuoyancyRoot);
+	HelmMesh->SetCollisionProfileName(TEXT("NoCollision"));
 
-	// Port Sea Boarding Component
-	PortSeaBoardingInteractable = CreateDefaultSubobject<UInteractableComponent>(TEXT("PortSeaBoardingInteractable"));
-	PortSeaBoardingInteractable->SetupAttachment(BuoyancyRoot);
-	PortSeaBoardingInteractable->SetCollisionProfileName(TEXT("Interactable"));
+	HelmInteractable = CreateDefaultSubobject<UInteractableComponent>(TEXT("HelmInteractable"));
+	HelmInteractable->SetupAttachment(BuoyancyRoot);
+	HelmInteractable->SetCollisionProfileName(TEXT("Interactable"));
+	HelmInteractable->InteractionTag = Interaction_ShipBoard;
 
-	PortSeaBoardingDestination = CreateDefaultSubobject<USceneComponent>(TEXT("PortSeaBoardingDestination"));
-	PortSeaBoardingDestination->SetupAttachment(BuoyancyRoot);
+	HelmSeatPoint = CreateDefaultSubobject<USceneComponent>(TEXT("HelmSeatPoint"));
+	HelmSeatPoint->SetupAttachment(BuoyancyRoot);
 
-	// Starboard Sea Boarding Component
-	StarboardSeaBoardingInteractable = CreateDefaultSubobject<UInteractableComponent>(TEXT("StarboardSeaBoardingInteractable"));
-	StarboardSeaBoardingInteractable->SetupAttachment(BuoyancyRoot);
-	StarboardSeaBoardingInteractable->SetCollisionProfileName(TEXT("Interactable"));
+	HelmExitPoint = CreateDefaultSubobject<USceneComponent>(TEXT("HelmExitPoint"));
+	HelmExitPoint->SetupAttachment(BuoyancyRoot);
 
-	StarboardSeaBoardingDestination = CreateDefaultSubobject<USceneComponent>(TEXT("StarboardSeaBoardingDestination"));
-	StarboardSeaBoardingDestination->SetupAttachment(BuoyancyRoot);
+	BoardingArrivalPoint = CreateDefaultSubobject<USceneComponent>(TEXT("BoardingArrivalPoint"));
+	BoardingArrivalPoint->SetupAttachment(BuoyancyRoot);
 
 	// Ability System Component
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
@@ -292,6 +291,19 @@ void AShip::BeginPlay()
 
 	ReplicatedState.Location = GetActorLocation();
 	ReplicatedState.Rotation = GetActorRotation();
+
+	if (HelmInteractable)
+	{
+		const FText ObjectName = HelmInteractable->InteractUIInfo.ObjectName.IsEmpty()
+			? NSLOCTEXT("ShipInteraction", "HelmObject", "Ship Helm")
+			: HelmInteractable->InteractUIInfo.ObjectName;
+		const FText ActionText = HelmInteractable->InteractUIInfo.ActionText.IsEmpty()
+			? NSLOCTEXT("ShipInteraction", "HelmAction", "Take Control")
+			: HelmInteractable->InteractUIInfo.ActionText;
+		HelmInteractable->InitializeInteractable(ObjectName, ActionText);
+	}
+	UpdateHelmInteractionAvailability();
+	RefreshMountedCannons();
 
 	// 좌현 바다 승선 상호작용 바인딩
 	if (PortSeaBoardingInteractable)
@@ -913,6 +925,7 @@ void AShip::Board(APawn* PlayerPawn)
 	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board initiated by player pawn %s. Ship location: %s, Player location: %s"), *PlayerPawn->GetName(), *GetActorLocation().ToString(), *PlayerPawn->GetActorLocation().ToString());
 
 	RidingPlayer = PlayerPawn;
+	UpdateHelmInteractionAvailability();
 
 	// Disable player collision
 	RidingPlayer->SetActorEnableCollision(false);
@@ -929,10 +942,11 @@ void AShip::Board(APawn* PlayerPawn)
 	RidingPlayer->SetReplicateMovement(false);
 	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board - Player bReplicateMovement after disable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
 
-	// Attach to buoyancy root directly without welding physics bodies to avoid physics conflicts
-	FAttachmentTransformRules AttachmentRules(EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, false);
-	RidingPlayer->AttachToComponent(BuoyancyRoot, AttachmentRules);
-	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board - Player attached to BuoyancyRoot. Relative location: %s, relative rotation: %s"), 
+	// Snap the character to the authored helm point. Attaching without welding keeps
+	// the character capsule out of the Chaos ship body while control is transferred.
+	USceneComponent* SeatComponent = HelmSeatPoint ? HelmSeatPoint.Get() : BuoyancyRoot;
+	RidingPlayer->AttachToComponent(SeatComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board - Player attached to HelmSeatPoint. Relative location: %s, relative rotation: %s"),
 		*RidingPlayer->GetRootComponent()->GetRelativeLocation().ToString(), 
 		*RidingPlayer->GetRootComponent()->GetRelativeRotation().ToString());
 
@@ -965,9 +979,18 @@ void AShip::Disembark()
 	ResetToFollowCamera();
 	RememberFollowCameraState(PC);
 
-	// Detach player preserving their current world position on the ship
+	// Detach, then move to the single authored exit point while collision is still
+	// disabled. This avoids the ship hull rejecting the teleport.
 	RidingPlayer->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark - Detached player. World location: %s"), *RidingPlayer->GetActorLocation().ToString());
+	if (HelmExitPoint)
+	{
+		RidingPlayer->TeleportTo(
+			HelmExitPoint->GetComponentLocation(),
+			HelmExitPoint->GetComponentRotation(),
+			false,
+			true);
+	}
+	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark - Moved player to exit. World location: %s"), *RidingPlayer->GetActorLocation().ToString());
 
 	RidingPlayer->SetActorEnableCollision(true);
 	RidingPlayer->SetActorHiddenInGame(false);
@@ -985,6 +1008,12 @@ void AShip::Disembark()
 	PC->Possess(RidingPlayer);
 
 	RidingPlayer = nullptr;
+	UpdateHelmInteractionAvailability();
+}
+
+void AShip::ForceDisembark()
+{
+	Disembark();
 }
 
 void AShip::ShipMove(const FInputActionValue& Value)
@@ -1546,6 +1575,19 @@ bool AShip::ValidateAndResolveBombardmentTarget(const FVector& RequestedLocation
 
 TSubclassOf<AActor> AShip::ResolveNormalCannonballClass() const
 {
+	for (const ACannon* Cannon : MountedCannons)
+	{
+		if (IsValid(Cannon))
+		{
+			TSubclassOf<AActor> ProjectileClass = Cannon->GetCannonballClass();
+			if (ProjectileClass && ProjectileClass->IsChildOf(ACannonball::StaticClass()))
+			{
+				return ProjectileClass;
+			}
+		}
+	}
+
+	// Keep legacy level-authored attached cannons working during migration.
 	if (!GetWorld())
 	{
 		return nullptr;
@@ -1730,6 +1772,8 @@ void AShip::RestoreRememberedFollowCameraState(APlayerController* PlayerControll
 
 void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 {
+	UpdateHelmInteractionAvailability();
+
 	// UE_LOG(LogTemp, Log, TEXT("AShip: [CLIENT] OnRep_RidingPlayer. OldRidingPlayer: %s, RidingPlayer: %s"), 
 	// 	OldRidingPlayer ? *OldRidingPlayer->GetName() : TEXT("Null"), 
 	// 	RidingPlayer ? *RidingPlayer->GetName() : TEXT("Null"));
@@ -1930,6 +1974,56 @@ bool AShip::ApplyPlayerUpgrades(APlayerState* InPlayerState, bool bRefillHealth)
 	UpgradeComponent->SetPreviewBaseStats(GetBaseStatSnapshot());
 	ApplyStatSnapshot(UpgradeComponent->GetCurrentShipStats(), bRefillHealth);
 	return true;
+}
+
+void AShip::UpdateHelmInteractionAvailability()
+{
+	if (HelmInteractable)
+	{
+		HelmInteractable->SetCollisionEnabled(
+			RidingPlayer ? ECollisionEnabled::NoCollision : ECollisionEnabled::QueryOnly);
+	}
+}
+
+void AShip::BoardFromSea(AActor* Interactor)
+{
+	if (!HasAuthority() || !IsValid(Interactor))
+	{
+		return;
+	}
+
+	if (ACharacter* Character = Cast<ACharacter>(Interactor))
+	{
+		if (UCharacterMovementComponent* MoveComp = Character->GetCharacterMovement())
+		{
+			MoveComp->SetMovementMode(MOVE_Walking);
+		}
+	}
+
+	const FVector DestinationLocation = BoardingArrivalPoint
+		? BoardingArrivalPoint->GetComponentLocation()
+		: GetActorLocation() + FVector(0.0f, 0.0f, 200.0f);
+	const FRotator DestinationRotation = BoardingArrivalPoint
+		? BoardingArrivalPoint->GetComponentRotation()
+		: GetActorRotation();
+	Interactor->TeleportTo(DestinationLocation, DestinationRotation, false, true);
+}
+
+void AShip::RefreshMountedCannons()
+{
+	MountedCannons.Reset();
+
+	TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
+	for (UChildActorComponent* ChildActorComponent : ChildActorComponents)
+	{
+		if (ChildActorComponent)
+		{
+			if (ACannon* Cannon = Cast<ACannon>(ChildActorComponent->GetChildActor()))
+			{
+				MountedCannons.AddUnique(Cannon);
+			}
+		}
+	}
 }
 
 void AShip::HandlePortSeaBoarding(AActor* Interactor)

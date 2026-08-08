@@ -173,6 +173,25 @@ AShip* ACannon::GetOwningShip() const
 	return nullptr;
 }
 
+FCannonResolvedFiringStats ACannon::GetResolvedFiringStats() const
+{
+	FCannonResolvedFiringStats Stats;
+	Stats.CooldownSeconds = FireCooldown;
+	Stats.ProjectileSpeed = FireVelocity;
+
+	if (AShip* Ship = GetOwningShip())
+	{
+		if (const UAbilitySystemComponent* ShipASC = Ship->GetAbilitySystemComponent())
+		{
+			Stats.Damage = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonDamageAttribute());
+			Stats.CooldownSeconds = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonFireCooldownAttribute());
+			Stats.ProjectileSpeed = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute());
+		}
+	}
+
+	return Stats;
+}
+
 void ACannon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -345,6 +364,10 @@ bool ACannon::FireCannon()
 	}
 
 	// 스탯 기반의 발사 쿨타임 타이머 작동
+	const FCannonResolvedFiringStats FiringStats = GetResolvedFiringStats();
+	TargetCooldown = FiringStats.CooldownSeconds;
+	TargetDamage = FiringStats.Damage;
+	TargetSpeed = FiringStats.ProjectileSpeed;
 	GetWorldTimerManager().SetTimer(CooldownTimerHandle, this, &ACannon::ResetCooldown, TargetCooldown, false);
 
 	FVector MuzzleLocation = BarrelMesh ? BarrelMesh->GetComponentLocation() + BarrelMesh->GetForwardVector() * 200.0f : GetActorLocation();
@@ -458,6 +481,10 @@ void ACannon::ServerFire_Implementation()
 	}
 
 	bCanFire = false;
+	const FCannonResolvedFiringStats FiringStats = GetResolvedFiringStats();
+	AuthoritativeCooldown = FiringStats.CooldownSeconds;
+	AuthoritativeDamage = FiringStats.Damage;
+	AuthoritativeSpeed = FiringStats.ProjectileSpeed;
 	GetWorldTimerManager().SetTimer(CooldownTimerHandle, this, &ACannon::ResetCooldown, FMath::Max(0.05f, AuthoritativeCooldown), false);
 	const FVector MuzzleLocation = BarrelMesh
 		? BarrelMesh->GetComponentLocation() + BarrelMesh->GetForwardVector() * 200.0f
