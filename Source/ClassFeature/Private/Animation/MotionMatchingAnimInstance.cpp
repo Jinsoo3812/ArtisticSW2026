@@ -7,6 +7,8 @@
 #include "CharacterTrajectoryComponent.h"
 #include "ChooserFunctionLibrary.h"
 #include "Chooser.h"
+#include "ChooserTypes.h"
+#include "IObjectChooser.h"
 #include "Equipment/PlayerEquipmentComponent.h"
 #include "Item/Components/BowComponent.h"
 #include "Item/Weapons/BowItem.h"
@@ -28,10 +30,12 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 
-#ifdef UE_LOG
-#undef UE_LOG
-#endif
-#define UE_LOG(...)
+static TAutoConsoleVariable<int32> CVarAnimStateControllerDebug(
+    TEXT("a.StateControllerDebug"),
+    0,
+    TEXT("Enable StateController debug logging and on-screen messages. 0: Disabled, 1: Enabled"),
+    ECVF_Cheat
+);
 
 static TAutoConsoleVariable<int32> CVarMotionMatchingDebugLogging(
     TEXT("p.MMDebugging"),
@@ -1746,6 +1750,10 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.SwimData = CurrentSwimData;
     PropagateSwimAnimationStateToLinkedInstances(CurrentSwimData);
 
+    UpdateMovementDirection();
+    CalculateAOValueAndEnableAO();
+    EvaluateStateControllerPresentationState();
+
     // 최적화 틱 레이트에 맞추어 이번 프레임의 모션 매칭 평가 여부 결정
     if (!ShouldEvaluateMotionMatchingThisFrame(DeltaSeconds))
     {
@@ -1902,6 +1910,15 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         default:
             CurrentActivePoseSearchDatabase = IdleDatabase;
             break;
+        }
+    }
+
+    if (CVarAnimStateControllerDebug.GetValueOnGameThread() > 0)
+    {
+        if (!CurrentActivePoseSearchDatabase && CachedLocomotionStateComponent)
+        {
+            UE_LOG(LogMotionMatchingCapture, Error, TEXT("[MM_DB_NULL_ERROR] Pawn=%s | State=%d | CurrentActivePoseSearchDatabase is NULL! Check ABP_Player Details Panel!"),
+                *GetNameSafe(CachedBasePlayer), static_cast<int32>(CachedLocomotionStateComponent->CurrentState));
         }
     }
 
@@ -2232,6 +2249,16 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     FMotionMatchingAnimInstanceProxy& MyProxy = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>();
     MyProxy.ThreadSafeData = ThreadSafeData;
     MyProxy.CurrentActivePoseSearchDatabase = CurrentActivePoseSearchDatabase;
+
+    // Push real-time debug HUD to screen when a.StateControllerDebug is 1
+    if (CVarAnimStateControllerDebug.GetValueOnGameThread() > 0 && GEngine)
+    {
+        FString DisplayHUD = FString::Printf(TEXT("[MM_HUD] State: %d | ChooserAnim: %s | ActivePSD: %s"),
+            CachedLocomotionStateComponent ? static_cast<int32>(CachedLocomotionStateComponent->CurrentState) : -1,
+            StateControllerSelectedAnimation ? *StateControllerSelectedAnimation->GetName() : TEXT("None"),
+            CurrentActivePoseSearchDatabase ? *CurrentActivePoseSearchDatabase->GetName() : TEXT("None"));
+        GEngine->AddOnScreenDebugMessage(1002, 0.0f, FColor::Cyan, DisplayHUD);
+    }
 
     // Debug logging for both the local pawn and observed simulated proxies.
     if (CVarMotionMatchingDebugLogging.GetValueOnGameThread() > 0 && CachedBasePlayer)
@@ -2777,4 +2804,530 @@ bool UMotionMatchingAnimInstance::ShouldEvaluateMotionMatchingThisFrame(float De
 
     MotionMatchingUpdateAccumulator = 0.0f;
     return true;
+}
+
+void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
+{
+    if (!CachedLocomotionStateComponent) return;
+
+    FAnimThreadSafeData& ThreadSafeData = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    EStateControllerPresentationState DesiredState = EStateControllerPresentationState::IdleLoop;
+
+    const bool bHasMoveInput = ThreadSafeData.InputData.bHasMoveInput;
+    const float GroundSpeed = ThreadSafeData.MovementData.Velocity.Size2D();
+    const bool bInAir = ThreadSafeData.AirData.bIsInAir;
+    const bool bLanding = ThreadSafeData.LandingData.bIsLanding;
+    const bool bShouldTurnInPlace = CachedLocomotionStateComponent->bShouldTurnInPlace;
+    const bool bInPlaybackHold = (StateControllerPlaybackHoldElapsed < StateControllerPlaybackHoldDuration);
+
+    if (bInAir)
+    {
+        DesiredState = EStateControllerPresentationState::TransitionToJump;
+    }
+    else if (bLanding)
+    {
+        DesiredState = EStateControllerPresentationState::TransitionToLand;
+    }
+    else if (bHasMoveInput || GroundSpeed > 10.0f)
+    {
+        const bool bIsPivoting = ThreadSafeData.InputData.bSharpTurnRequested;
+        if (bIsPivoting && (StateControllerPlaybackHoldState == EStateControllerPresentationState::LocomotionLoop || StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart))
+        {
+            DesiredState = EStateControllerPresentationState::TransitionToPivot;
+        }
+        else if (StateControllerPlaybackHoldState == EStateControllerPresentationState::IdleLoop ||
+            StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace ||
+            StateControllerPlaybackHoldState == EStateControllerPresentationState::None)
+        {
+            DesiredState = EStateControllerPresentationState::TransitionToStart;
+        }
+        else if (bInPlaybackHold && StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart)
+        {
+            DesiredState = EStateControllerPresentationState::TransitionToStart;
+        }
+        else
+        {
+            DesiredState = EStateControllerPresentationState::LocomotionLoop;
+        }
+    }
+    else
+    {
+        if (bShouldTurnInPlace)
+        {
+            DesiredState = EStateControllerPresentationState::TurnInPlace;
+        }
+        else if (bInPlaybackHold && StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop)
+        {
+            DesiredState = EStateControllerPresentationState::TransitionToStop;
+        }
+        else if (GroundSpeed > 100.0f || (bInPlaybackHold && StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart))
+        {
+            DesiredState = EStateControllerPresentationState::TransitionToStop;
+        }
+        else
+        {
+            DesiredState = EStateControllerPresentationState::IdleLoop;
+        }
+    }
+
+    if (DesiredState == EStateControllerPresentationState::TransitionToLand)
+    {
+        if (!bHasStateControllerLandGaitLock)
+        {
+            const bool bMovingLand = bHasMoveInput || GroundSpeed > 10.0f;
+            if (bMovingLand)
+            {
+                StateControllerLandGaitLock = ThreadSafeData.GroundData.bStartRequested ? EGaitIntent::Sprint : EGaitIntent::Run;
+            }
+            else
+            {
+                StateControllerLandGaitLock = EGaitIntent::Walk;
+            }
+            bHasStateControllerLandGaitLock = true;
+        }
+    }
+    else
+    {
+        bHasStateControllerLandGaitLock = false;
+    }
+
+    EvaluateStateControllerPlaybackHold(DesiredState);
+}
+
+void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateControllerPresentationState DesiredState)
+{
+    FAnimThreadSafeData& ThreadSafeData = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    const float DeltaTime = GetWorld()->GetDeltaSeconds();
+    const bool bStateChanged = (DesiredState != StateControllerPlaybackHoldState);
+
+    bool bInterruptLandForMotionMatching = false;
+    if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToLand &&
+        DesiredState == EStateControllerPresentationState::LocomotionLoop)
+    {
+        const bool bWantsSprint = ThreadSafeData.GroundData.bStartRequested;
+        const bool bLandWasSprinting = (StateControllerLandGaitLock == EGaitIntent::Sprint);
+
+        if (!ThreadSafeData.LandingData.bIsLanding || (bLandWasSprinting && !bWantsSprint))
+        {
+            bInterruptLandForMotionMatching = true;
+        }
+    }
+
+    if (bStateChanged || bInterruptLandForMotionMatching)
+    {
+        StateControllerPlaybackHoldState = DesiredState;
+        StateControllerPlaybackHoldElapsed = 0.0f;
+
+        StateControllerPresentationState = StateControllerPlaybackHoldState;
+        StateControllerMovementDirection = CurrentMovementDirection;
+        StateControllerPreviousMovementDirection = MovementDirectionLastFrame;
+        bStateControllerIsPivoting = ThreadSafeData.InputData.bSharpTurnRequested;
+        if (bHasStateControllerLandGaitLock)
+        {
+            StateControllerGait = StateControllerLandGaitLock;
+        }
+        else
+        {
+            StateControllerGait = ThreadSafeData.GroundData.bStartRequested ? EGaitIntent::Sprint : EGaitIntent::Run;
+        }
+
+        UChooserTable* TargetChooser = MainChooserTable;
+        if (!TargetChooser)
+        {
+            switch (DesiredState)
+            {
+            case EStateControllerPresentationState::TransitionToStart:
+                TargetChooser = StartChooserTable;
+                break;
+            case EStateControllerPresentationState::TransitionToStop:
+                TargetChooser = StopChooserTable;
+                break;
+            case EStateControllerPresentationState::TransitionToJump:
+                TargetChooser = InAirChooserTable;
+                break;
+            case EStateControllerPresentationState::TransitionToLand:
+                TargetChooser = LandChooserTable;
+                break;
+            case EStateControllerPresentationState::TransitionToPivot:
+                TargetChooser = PivotChooserTable;
+                break;
+            case EStateControllerPresentationState::TurnInPlace:
+                TargetChooser = TurnInPlaceChooserTable;
+                break;
+            default:
+                TargetChooser = nullptr;
+                break;
+            }
+        }
+
+        if (TargetChooser)
+        {
+            FChooserEvaluationContext ChooserContext;
+            ChooserContext.AddObjectParam(this);
+
+            FChooserPlayerSettings PlayerSettings;
+            ChooserContext.AddStructParam(PlayerSettings);
+
+            FS_ChooserOutputs ChooserOutputs;
+            ChooserContext.AddStructParam(ChooserOutputs);
+
+            const FInstancedStruct ChooserObject = UChooserFunctionLibrary::MakeEvaluateChooser(TargetChooser);
+            UObject* EvaluatedObject = ChooserObject.IsValid()
+                ? UChooserFunctionLibrary::EvaluateObjectChooserBase(ChooserContext, ChooserObject, UObject::StaticClass())
+                : nullptr;
+
+            while (UChooserTable* SubChooserTable = Cast<UChooserTable>(EvaluatedObject))
+            {
+                const FInstancedStruct SubChooserObject = UChooserFunctionLibrary::MakeEvaluateChooser(SubChooserTable);
+                if (!SubChooserObject.IsValid())
+                {
+                    EvaluatedObject = nullptr;
+                    break;
+                }
+                EvaluatedObject = UChooserFunctionLibrary::EvaluateObjectChooserBase(ChooserContext, SubChooserObject, UObject::StaticClass());
+            }
+
+            StateControllerSelectedAnimation = Cast<UAnimationAsset>(EvaluatedObject);
+            StateControllerSelectedAnimationBlendTime = ChooserOutputs.BlendTime > 0.0f ? ChooserOutputs.BlendTime : 0.2f;
+            StateControllerPlaybackHoldDuration = StateControllerSelectedAnimation ? StateControllerSelectedAnimation->GetPlayLength() : 0.5f;
+
+            if (CVarAnimStateControllerDebug.GetValueOnGameThread() > 0)
+            {
+                UE_LOG(LogMotionMatchingCapture, Warning, TEXT("[MM_CHOOSER_EVAL] Pawn=%s | State=%d | Chooser=%s | Asset=%s | Length=%.2fs"),
+                    CachedBasePlayer ? *CachedBasePlayer->GetName() : TEXT("NULL"),
+                    static_cast<int32>(StateControllerPlaybackHoldState),
+                    TargetChooser ? *TargetChooser->GetName() : TEXT("NULL"),
+                    StateControllerSelectedAnimation ? *StateControllerSelectedAnimation->GetName() : TEXT("NULL"),
+                    StateControllerPlaybackHoldDuration);
+
+                if (!StateControllerSelectedAnimation && TargetChooser)
+                {
+                    UE_LOG(LogMotionMatchingCapture, Error, TEXT("[MM_CHOOSER_EMPTY] Chooser Table %s evaluated to NULL for state %d!"),
+                        *TargetChooser->GetName(), static_cast<int32>(StateControllerPlaybackHoldState));
+                }
+            }
+        }
+        else
+        {
+            StateControllerSelectedAnimation = nullptr;
+            StateControllerPlaybackHoldDuration = 0.0f;
+        }
+    }
+    else
+    {
+        StateControllerPlaybackHoldElapsed += DeltaTime;
+    }
+
+    ThreadSafeData.StateController.PresentationState = StateControllerPlaybackHoldState;
+    ThreadSafeData.StateController.MovementDirection = CurrentMovementDirection;
+    ThreadSafeData.StateController.SelectedAnimation = StateControllerSelectedAnimation;
+    ThreadSafeData.StateController.SelectedAnimationBlendTime = StateControllerSelectedAnimationBlendTime;
+    ThreadSafeData.StateController.bShouldOverrideMotionMatching = (StateControllerPlaybackHoldState != EStateControllerPresentationState::LocomotionLoop && StateControllerPlaybackHoldState != EStateControllerPresentationState::IdleLoop);
+    ThreadSafeData.StateController.TurnInPlaceSteeringAlpha = 1.0f;
+
+    if (CVarAnimStateControllerDebug.GetValueOnGameThread() > 0 && GEngine)
+    {
+        FString Line1 = FString::Printf(
+            TEXT("[CHOOSER_PLAYBACK] State: %d | Time: %.2f / %.2fs | Anim: %s | OverrideMM: %d"),
+            static_cast<int32>(StateControllerPlaybackHoldState),
+            StateControllerPlaybackHoldElapsed,
+            StateControllerPlaybackHoldDuration,
+            StateControllerSelectedAnimation ? *StateControllerSelectedAnimation->GetName() : TEXT("None"),
+            ThreadSafeData.StateController.bShouldOverrideMotionMatching ? 1 : 0
+        );
+        FString Line2 = FString::Printf(
+            TEXT("[MOTION_MATCHING] ActivePSD: %s | LocomotionState: %d"),
+            CurrentActivePoseSearchDatabase ? *CurrentActivePoseSearchDatabase->GetName() : TEXT("None"),
+            CachedLocomotionStateComponent ? static_cast<int32>(CachedLocomotionStateComponent->CurrentState) : -1
+        );
+
+        GEngine->AddOnScreenDebugMessage(1003, 0.0f, FColor::Yellow, Line1);
+        GEngine->AddOnScreenDebugMessage(1004, 0.0f, FColor::Cyan, Line2);
+    }
+    if (CachedLocomotionStateComponent)
+    {
+        ThreadSafeData.StateController.TurnInPlaceRootYawDelta = CachedLocomotionStateComponent->TurnInPlaceRootYawDelta;
+    }
+
+    StateControllerPresentationState = StateControllerPlaybackHoldState;
+    StateControllerMovementDirection = CurrentMovementDirection;
+    StateControllerPreviousMovementDirection = MovementDirectionLastFrame;
+    bStateControllerIsPivoting = ThreadSafeData.InputData.bSharpTurnRequested;
+    if (bHasStateControllerLandGaitLock)
+    {
+        StateControllerGait = StateControllerLandGaitLock;
+    }
+    else
+    {
+        StateControllerGait = (ThreadSafeData.GroundData.bStartRequested ? EGaitIntent::Sprint : (ThreadSafeData.MovementData.Velocity.Size2D() > 10.0f || ThreadSafeData.InputData.bHasMoveInput ? EGaitIntent::Run : EGaitIntent::Walk));
+    }
+    StateControllerSpeed2D = ThreadSafeData.MovementData.Velocity.Size2D();
+    StateControllerDesiredFacingDeltaYaw = CachedLocomotionStateComponent ? CachedLocomotionStateComponent->DesiredFacingDeltaYaw : 0.0f;
+    bStateControllerIsHeavyLand = ThreadSafeData.LandingData.bUseHeavyLand;
+    bStateControllerIsMovingLand = ThreadSafeData.InputData.bHasMoveInput || ThreadSafeData.MovementData.Velocity.Size2D() > 10.0f;
+    bStateControllerIsInAir = ThreadSafeData.AirData.bIsInAir;
+    bStateControllerIsJumping = ThreadSafeData.AirData.bIsJumping;
+    bStateControllerIsFallOff = ThreadSafeData.AirData.bIsInAir && !ThreadSafeData.AirData.bIsJumping;
+    bStateControllerShouldTurnInPlace = CachedLocomotionStateComponent ? CachedLocomotionStateComponent->bShouldTurnInPlace : false;
+}
+
+void UMotionMatchingAnimInstance::UpdateMovementDirection()
+{
+    FAnimThreadSafeData& ThreadSafeData = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    MovementDirectionLastFrame = CurrentMovementDirection;
+
+    const bool bMoving = ThreadSafeData.InputData.bHasMoveInput || ThreadSafeData.MovementData.Velocity.Size2D() > 10.0f;
+    if (!bMoving)
+    {
+        return;
+    }
+
+    const bool bSprinting = ThreadSafeData.GroundData.bStartRequested;
+    if (bSprinting)
+    {
+        CurrentMovementDirection = EMovementDirection::Forward;
+        return;
+    }
+
+    float Direction = 0.0f;
+    FVector VelocityDir = FVector::ZeroVector;
+    if (CachedBasePlayer)
+    {
+        FRotator ActorRotation = CachedBasePlayer->GetActorRotation();
+        VelocityDir = ThreadSafeData.MovementData.Velocity.GetSafeNormal2D();
+        if (!VelocityDir.IsNearlyZero())
+        {
+            Direction = FRotator::NormalizeAxis(VelocityDir.Rotation().Yaw - ActorRotation.Yaw);
+        }
+    }
+
+    FVector AccelDir = ThreadSafeData.MovementData.Acceleration.GetSafeNormal2D();
+    float TrajectoryTurnAngle = 0.0f;
+    if (!VelocityDir.IsNearlyZero() && !AccelDir.IsNearlyZero())
+    {
+        TrajectoryTurnAngle = FRotator::NormalizeAxis(AccelDir.Rotation().Yaw - VelocityDir.Rotation().Yaw);
+    }
+
+    const bool bIsPivoting = (FMath::Abs(TrajectoryTurnAngle) >= 30.0f);
+    ThreadSafeData.InputData.bSharpTurnRequested = bIsPivoting;
+
+    if (Direction >= -22.5f && Direction <= 22.5f)
+    {
+        CurrentMovementDirection = EMovementDirection::Forward;
+    }
+    else if (Direction > 22.5f && Direction <= 67.5f)
+    {
+        CurrentMovementDirection = EMovementDirection::ForwardRight;
+    }
+    else if (Direction > 67.5f && Direction <= 112.5f)
+    {
+        CurrentMovementDirection = EMovementDirection::Right;
+    }
+    else if (Direction > 112.5f && Direction <= 157.5f)
+    {
+        CurrentMovementDirection = EMovementDirection::BackwardRight;
+    }
+    else if (Direction < -22.5f && Direction >= -67.5f)
+    {
+        CurrentMovementDirection = EMovementDirection::ForwardLeft;
+    }
+    else if (Direction < -67.5f && Direction >= -112.5f)
+    {
+        CurrentMovementDirection = EMovementDirection::Left;
+    }
+    else if (Direction < -112.5f && Direction >= -157.5f)
+    {
+        CurrentMovementDirection = EMovementDirection::BackwardLeft;
+    }
+    else
+    {
+        CurrentMovementDirection = EMovementDirection::Backward;
+    }
+}
+
+void UMotionMatchingAnimInstance::CalculateAOValueAndEnableAO()
+{
+    if (!CachedBasePlayer)
+    {
+        return;
+    }
+
+    FAnimThreadSafeData& ThreadSafeData = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    FRotator ControlRotation = CachedBasePlayer->GetControlRotation();
+    FRotator ActorRotation = CachedBasePlayer->GetActorRotation();
+    FRotator DeltaRot = (ControlRotation - ActorRotation).GetNormalized();
+
+    ThreadSafeData.AimData.AimYaw = DeltaRot.Yaw;
+    ThreadSafeData.AimData.AimPitch = DeltaRot.Pitch;
+
+    const float AbsYaw = FMath::Abs(DeltaRot.Yaw);
+    const bool bMoving = ThreadSafeData.InputData.bHasMoveInput || ThreadSafeData.MovementData.Velocity.Size2D() > 10.0f;
+    const float YawThreshold = bMoving ? 180.0f : 115.0f;
+
+    bool bEnableAO = (AbsYaw <= YawThreshold);
+
+    if (GetSlotMontageLocalWeight(FName(TEXT("DefaultSlot"))) >= 0.5f)
+    {
+        bEnableAO = false;
+    }
+
+    ThreadSafeData.StateController.bEnableAO = bEnableAO;
+    ThreadSafeData.StateController.AOValue = FVector2D(DeltaRot.Yaw, DeltaRot.Pitch);
+}
+
+EStateControllerPresentationState UMotionMatchingAnimInstance::GetThreadSafeStateControllerPresentationState() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.PresentationState;
+}
+
+EMovementDirection UMotionMatchingAnimInstance::GetThreadSafeStateControllerMovementDirection() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.MovementDirection;
+}
+
+UAnimationAsset* UMotionMatchingAnimInstance::GetThreadSafeStateControllerSelectedAnimation() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.SelectedAnimation;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeStateControllerSelectedAnimationBlendTime() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.SelectedAnimationBlendTime;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeShouldOverrideMotionMatching() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.bShouldOverrideMotionMatching;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeStateControllerTurnInPlaceSteeringAlpha() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.TurnInPlaceSteeringAlpha;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeStateControllerCombatStateOrientationWarpingAngle() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    const FVector VelocityDir = ThreadSafeData.MovementData.Velocity.GetSafeNormal2D();
+    if (!VelocityDir.IsNearlyZero() && CachedBasePlayer)
+    {
+        const FRotator ActorRot = CachedBasePlayer->GetActorRotation();
+        return FRotator::NormalizeAxis(VelocityDir.Rotation().Yaw - ActorRot.Yaw);
+    }
+    return 0.0f;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeStateControllerCombatStateOrientationWarpingAlpha() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return (ThreadSafeData.MovementData.Velocity.Size2D() > 10.0f || ThreadSafeData.InputData.bHasMoveInput) ? 1.0f : 0.0f;
+}
+
+FRotator UMotionMatchingAnimInstance::GetThreadSafeStateControllerDesiredFacingRotator() const
+{
+    if (CachedLocomotionStateComponent)
+    {
+        return FRotator(0.0f, CachedLocomotionStateComponent->DesiredFacingDeltaYaw, 0.0f);
+    }
+    return FRotator::ZeroRotator;
+}
+
+FRotator UMotionMatchingAnimInstance::GetThreadSafeOffsetRootRotation() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return FRotator(0.0, static_cast<double>(ThreadSafeData.StateController.TurnInPlaceRootYawDelta), 0.0);
+}
+
+FVector2D UMotionMatchingAnimInstance::GetThreadSafeAOValue() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.AOValue;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeEnableAO() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.bEnableAO;
+}
+
+EGaitIntent UMotionMatchingAnimInstance::GetThreadSafeGait() const
+{
+    if (bHasStateControllerLandGaitLock)
+    {
+        return StateControllerLandGaitLock;
+    }
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    if (ThreadSafeData.GroundData.bStartRequested)
+    {
+        return EGaitIntent::Sprint;
+    }
+    const float GroundSpeed = ThreadSafeData.MovementData.Velocity.Size2D();
+    if (GroundSpeed > 10.0f || ThreadSafeData.InputData.bHasMoveInput)
+    {
+        return EGaitIntent::Run;
+    }
+    return EGaitIntent::Walk;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeSpeed2D() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return ThreadSafeData.MovementData.Velocity.Size2D();
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeDesiredFacingDeltaYaw() const
+{
+    if (CachedLocomotionStateComponent)
+    {
+        return CachedLocomotionStateComponent->DesiredFacingDeltaYaw;
+    }
+    return 0.0f;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsHeavyLand() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return ThreadSafeData.LandingData.bUseHeavyLand;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsMovingLand() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return ThreadSafeData.InputData.bHasMoveInput || ThreadSafeData.MovementData.Velocity.Size2D() > 10.0f;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsInAir() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return ThreadSafeData.AirData.bIsInAir;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsJumping() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return ThreadSafeData.AirData.bIsJumping;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsFallOff() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return ThreadSafeData.AirData.bIsInAir && !ThreadSafeData.AirData.bIsJumping;
+}
+
+EMovementDirection UMotionMatchingAnimInstance::GetThreadSafeStateControllerPreviousMovementDirection() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.MovementDirection;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeIsPivoting() const
+{
+    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return ThreadSafeData.InputData.bSharpTurnRequested;
+}
+
+bool UMotionMatchingAnimInstance::GetThreadSafeShouldTurnInPlace() const
+{
+    if (CachedLocomotionStateComponent)
+    {
+        return CachedLocomotionStateComponent->bShouldTurnInPlace;
+    }
+    return false;
 }

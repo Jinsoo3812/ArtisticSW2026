@@ -21,6 +21,62 @@ enum class ELocomotionState : uint8
 };
 
 UENUM(BlueprintType)
+enum class EStateControllerPresentationState : uint8
+{
+    None = 0 UMETA(DisplayName = "None"),
+    IdleLoop = 1 UMETA(DisplayName = "Idle Loop"),
+    TransitionToStart = 2 UMETA(DisplayName = "Transition To Start"),
+    LocomotionLoop = 3 UMETA(DisplayName = "Locomotion Loop"),
+    TransitionToStop = 4 UMETA(DisplayName = "Transition To Stop"),
+    TransitionToPivot = 5 UMETA(DisplayName = "Transition To Pivot"),
+    TransitionToJump = 6 UMETA(DisplayName = "Transition To Jump"),
+    TransitionToLand = 7 UMETA(DisplayName = "Transition To Land"),
+    TurnInPlace = 8 UMETA(DisplayName = "Turn In Place")
+};
+
+UENUM(BlueprintType)
+enum class EMovementDirection : uint8
+{
+    Forward = 0 UMETA(DisplayName = "Forward (F)"),
+    ForwardLeft = 1 UMETA(DisplayName = "Forward Left (FL)"),
+    Left = 2 UMETA(DisplayName = "Left (L)"),
+    BackwardLeft = 3 UMETA(DisplayName = "Backward Left (BL)"),
+    Backward = 4 UMETA(DisplayName = "Backward (B)"),
+    BackwardRight = 5 UMETA(DisplayName = "Backward Right (BR)"),
+    Right = 6 UMETA(DisplayName = "Right (R)"),
+    ForwardRight = 7 UMETA(DisplayName = "Forward Right (FR)")
+};
+
+UENUM(BlueprintType)
+enum class EGaitIntent : uint8
+{
+    Walk = 0 UMETA(DisplayName = "Walk"),
+    Run = 1 UMETA(DisplayName = "Run"),
+    Sprint = 2 UMETA(DisplayName = "Sprint")
+};
+
+USTRUCT(BlueprintType)
+struct FStateControllerContextSnapshot
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    EStateControllerPresentationState CurrentPresentationState = EStateControllerPresentationState::IdleLoop;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    EStateControllerPresentationState DesiredPresentationState = EStateControllerPresentationState::IdleLoop;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bShouldTurnInPlace = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float DesiredFacingDeltaYaw = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float TurnInPlaceRootYawDelta = 0.0f;
+};
+
+UENUM(BlueprintType)
 enum class EReplicatedLocomotionEvent : uint8
 {
     None,
@@ -236,6 +292,15 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     bool bIsTurningInPlace = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    bool bShouldTurnInPlace = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float DesiredFacingDeltaYaw = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float TurnInPlaceRootYawDelta = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     bool bIsLocomotionTransitioning = false;

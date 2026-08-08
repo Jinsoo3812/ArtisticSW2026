@@ -112,6 +112,12 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PostInitializeComponents() override;
 
+	UFUNCTION(BlueprintCallable, Category = "Locomotion|TurnInPlace")
+	void ApplyCombatTurnInPlaceRotation(float DeltaTime);
+
+	UFUNCTION(BlueprintPure, Category = "Locomotion|TurnInPlace")
+	float GetDesiredFacingDeltaYaw() const;
+
 	UFUNCTION()
 	void HandleDeathFinished(UBaseHealthComponent* InHealthComponent);
 

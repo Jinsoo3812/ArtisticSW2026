@@ -340,6 +340,7 @@ void ABasePlayer::Tick(float DeltaTime)
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->UpdateAnimationState(DeltaTime);
+		ApplyCombatTurnInPlaceRotation(DeltaTime);
 	}
 	if (HasAuthority())
 	{
@@ -2294,4 +2295,65 @@ bool ABasePlayer::CanSprintFromServerState() const
 		CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
 
 	return !bBlockedByAbilityState && !bIsAttacking && !bIsDodging && !bIsHitReacting;
+}
+
+float ABasePlayer::GetDesiredFacingDeltaYaw() const
+{
+	float ActorYaw = GetActorRotation().Yaw;
+	float ControlYaw = ActorYaw;
+	if (GetController())
+	{
+		ControlYaw = GetController()->GetControlRotation().Yaw;
+	}
+	return FRotator::NormalizeAxis(ControlYaw - ActorYaw);
+}
+
+void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
+{
+	if (!AnimStateComponent)
+	{
+		return;
+	}
+
+	const float FacingDeltaYaw = GetDesiredFacingDeltaYaw();
+	const bool bMoving = AnimStateComponent->bHasMoveInput || AnimStateComponent->GroundSpeed > 10.0f;
+
+	if (!bMoving && FMath::Abs(FacingDeltaYaw) > 75.0f)
+	{
+		AnimStateComponent->bShouldTurnInPlace = true;
+		AnimStateComponent->DesiredFacingDeltaYaw = FacingDeltaYaw;
+	}
+
+	if (!AnimStateComponent->bShouldTurnInPlace)
+	{
+		AnimStateComponent->TurnInPlaceRootYawDelta = 0.0f;
+		return;
+	}
+
+	float AnimRootYawDelta = 0.0f;
+	if (UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+	{
+		AnimRootYawDelta = AnimInst->ConsumeExtractedRootMotion(0.0f).GetRootMotionTransform().GetRotation().Rotator().Yaw;
+	}
+
+	float ClampedRootYawDelta = 0.0f;
+	if (FacingDeltaYaw >= 0.0f)
+	{
+		ClampedRootYawDelta = FMath::Min(AnimRootYawDelta, FMath::Max(FacingDeltaYaw, 0.0f));
+	}
+	else
+	{
+		ClampedRootYawDelta = FMath::Max(AnimRootYawDelta, FMath::Min(FacingDeltaYaw, 0.0f));
+	}
+
+	AnimStateComponent->TurnInPlaceRootYawDelta = ClampedRootYawDelta;
+
+	FRotator NewRotation = GetActorRotation();
+	NewRotation.Yaw += ClampedRootYawDelta;
+	SetActorRotation(NewRotation);
+
+	if (bMoving || FMath::Abs(FacingDeltaYaw - ClampedRootYawDelta) < 45.0f)
+	{
+		AnimStateComponent->bShouldTurnInPlace = false;
+	}
 }

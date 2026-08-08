@@ -249,6 +249,63 @@ struct FAnimBowData
 };
 
 USTRUCT(BlueprintType)
+struct FS_ChooserOutputs
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "Chooser")
+    float StartTime = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Chooser")
+    bool bUseMM = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Chooser")
+    float MMCostLimit = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Chooser")
+    float BlendTime = 0.2f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Chooser")
+    FName BlendProfile = NAME_None;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Chooser")
+    FGameplayTagContainer Tags;
+};
+
+USTRUCT(BlueprintType)
+struct FAnimStateControllerThreadSafeData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    EStateControllerPresentationState PresentationState = EStateControllerPresentationState::IdleLoop;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    EMovementDirection MovementDirection = EMovementDirection::Forward;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    TObjectPtr<UAnimationAsset> SelectedAnimation = nullptr;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float SelectedAnimationBlendTime = 0.2f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bShouldOverrideMotionMatching = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float TurnInPlaceSteeringAlpha = 1.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float TurnInPlaceRootYawDelta = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bEnableAO = true;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    FVector2D AOValue = FVector2D::ZeroVector;
+};
+
+USTRUCT(BlueprintType)
 struct FAnimThreadSafeData
 {
     GENERATED_BODY()
@@ -279,6 +336,9 @@ struct FAnimThreadSafeData
 
     UPROPERTY(BlueprintReadOnly, Category = "Swimming")
     FSwimmingAnimationState SwimData;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    FAnimStateControllerThreadSafeData StateController;
 };
 
 struct FCachedMotionMatchingNodeInfo
@@ -478,6 +538,115 @@ public:
     UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
     FFootPlacementInterpolationSettings Get_FootPlacementInterpolationSettings() const;
 
+    // State Controller ThreadSafe Getters for AnimGraph
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    EStateControllerPresentationState GetThreadSafeStateControllerPresentationState() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    EMovementDirection GetThreadSafeStateControllerMovementDirection() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    UAnimationAsset* GetThreadSafeStateControllerSelectedAnimation() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    float GetThreadSafeStateControllerSelectedAnimationBlendTime() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeShouldOverrideMotionMatching() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    float GetThreadSafeStateControllerTurnInPlaceSteeringAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    float GetThreadSafeStateControllerCombatStateOrientationWarpingAngle() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    float GetThreadSafeStateControllerCombatStateOrientationWarpingAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    FRotator GetThreadSafeStateControllerDesiredFacingRotator() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    FRotator GetThreadSafeOffsetRootRotation() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    FVector2D GetThreadSafeAOValue() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeEnableAO() const;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    EStateControllerPresentationState StateControllerPresentationState = EStateControllerPresentationState::IdleLoop;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    EMovementDirection StateControllerMovementDirection = EMovementDirection::Forward;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    EGaitIntent StateControllerGait = EGaitIntent::Run;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    float StateControllerSpeed2D = 0.0f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    float StateControllerDesiredFacingDeltaYaw = 0.0f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    bool bStateControllerIsHeavyLand = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    bool bStateControllerIsMovingLand = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    bool bStateControllerIsInAir = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    bool bStateControllerIsJumping = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    bool bStateControllerIsFallOff = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    EMovementDirection StateControllerPreviousMovementDirection = EMovementDirection::Forward;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    bool bStateControllerIsPivoting = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    bool bStateControllerShouldTurnInPlace = false;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    EGaitIntent GetThreadSafeGait() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    float GetThreadSafeSpeed2D() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    float GetThreadSafeDesiredFacingDeltaYaw() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsHeavyLand() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsMovingLand() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsInAir() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsJumping() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsFallOff() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    EMovementDirection GetThreadSafeStateControllerPreviousMovementDirection() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsPivoting() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeShouldTurnInPlace() const;
+
     FStructProperty* CachedTrajectoryProperty = nullptr;
 
 protected:
@@ -497,6 +666,49 @@ protected:
 
     UPROPERTY(Transient, BlueprintReadOnly, Category = "Animation")
     TObjectPtr<ULocomotionAnimStateComponent> CachedLocomotionStateComponent;
+
+    // Master Chooser Table for State Controller
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    TObjectPtr<UChooserTable> MainChooserTable;
+
+    // Optional Sub-Chooser Tables (Fallbacks if MainChooserTable is not assigned)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    TObjectPtr<UChooserTable> StartChooserTable;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    TObjectPtr<UChooserTable> StopChooserTable;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    TObjectPtr<UChooserTable> LandChooserTable;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    TObjectPtr<UChooserTable> InAirChooserTable;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    TObjectPtr<UChooserTable> PivotChooserTable;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    TObjectPtr<UChooserTable> TurnInPlaceChooserTable;
+
+    // State Controller Runtime Playback Hold Data
+    EStateControllerPresentationState StateControllerPlaybackHoldState = EStateControllerPresentationState::None;
+    float StateControllerPlaybackHoldElapsed = 0.0f;
+    float StateControllerPlaybackHoldDuration = 0.0f;
+    TObjectPtr<UAnimationAsset> StateControllerSelectedAnimation = nullptr;
+    float StateControllerSelectedAnimationBlendTime = 0.2f;
+
+    // Movement Direction & Quadrant Thresholds
+    EMovementDirection CurrentMovementDirection = EMovementDirection::Forward;
+    EMovementDirection MovementDirectionLastFrame = EMovementDirection::Forward;
+
+    // Land Gait Lock
+    EGaitIntent StateControllerLandGaitLock = EGaitIntent::Walk;
+    bool bHasStateControllerLandGaitLock = false;
+
+    void EvaluateStateControllerPresentationState();
+    void EvaluateStateControllerPlaybackHold(EStateControllerPresentationState DesiredState);
+    void UpdateMovementDirection();
+    void CalculateAOValueAndEnableAO();
 
     // Motion Matching PSD assets (Direct C++ selection)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
