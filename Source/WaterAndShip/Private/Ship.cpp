@@ -37,7 +37,6 @@
 #include "DrawDebugHelpers.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
-#include "CollisionChannels.h"
 #include "Bombardment.h"
 #include "Cannon.h"
 #include "Cannonball.h"
@@ -50,7 +49,7 @@ namespace
 	TAutoConsoleVariable<int32> CVarShowShipNetworkBuoyancyDebug(
 		TEXT("p.ShowShipNetworkBuoyancyDebug"),
 		0,
-		TEXT("Draw local and replicated ship buoyancy pontoons. 0=off, 1=on."),
+		TEXT("Draw local/predicted (cyan) and replicated server (magenta) ship pontoons. 0=off, 1=on."),
 		ECVF_Cheat);
 
 	bool EvaluateGameThreadWaveOffset(
@@ -97,38 +96,45 @@ AShip::AShip()
 	BuoyancyRoot->SetSimulatePhysics(true);
 	BuoyancyRoot->SetCollisionProfileName(TEXT("PlayerShip"));
 	BuoyancyRoot->SetGenerateOverlapEvents(false);
+	BuoyancyRoot->SetVisibility(false, false);
+	BuoyancyRoot->SetHiddenInGame(true, false);
+	BuoyancyRoot->SetCastShadow(false);
+	BuoyancyRoot->SetCastHiddenShadow(false);
+	BuoyancyRoot->bDisallowNanite = true;
 	BuoyancyRoot->SetLinearDamping(0.8f);
 	BuoyancyRoot->SetAngularDamping(3.0f);
 
-	// Split presentation and gameplay queries away from the Chaos body. Existing
-	// Blueprint assets keep assigning their mesh to BuoyancyRoot; OnConstruction
-	// mirrors that asset until dedicated meshes are authored.
+	// Split presentation and gameplay queries away from the Chaos body. Each mesh
+	// is assigned independently by derived Blueprints.
 	ShipVisualMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipVisualMesh"));
 	ShipVisualMesh->SetupAttachment(BuoyancyRoot);
-	ShipVisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ShipVisualMesh->SetCollisionProfileName(TEXT("ShipVisual"));
 	ShipVisualMesh->SetGenerateOverlapEvents(false);
+	ShipVisualMesh->SetVisibility(true, false);
+	ShipVisualMesh->SetHiddenInGame(false, false);
+	ShipVisualMesh->SetCastShadow(true);
+	ShipVisualMesh->SetCastHiddenShadow(false);
+	ShipVisualMesh->bDisallowNanite = false;
 
 	ShipDamageMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipDamageMesh"));
 	ShipDamageMesh->SetupAttachment(BuoyancyRoot);
-	ShipDamageMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	ShipDamageMesh->SetCollisionObjectType(ECC_ShipDamage);
-	ShipDamageMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-	ShipDamageMesh->SetCollisionResponseToChannel(ECC_GameTraceChannel3, ECR_Block);
+	ShipDamageMesh->SetCollisionProfileName(TEXT("PlayerShipDamage"));
 	ShipDamageMesh->SetGenerateOverlapEvents(false);
 	ShipDamageMesh->SetVisibility(false, false);
 	ShipDamageMesh->SetHiddenInGame(true, false);
 	ShipDamageMesh->SetCastShadow(false);
+	ShipDamageMesh->SetCastHiddenShadow(false);
+	ShipDamageMesh->bDisallowNanite = true;
 
 	ShipDeckMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipDeckMesh"));
 	ShipDeckMesh->SetupAttachment(BuoyancyRoot);
-	ShipDeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
-	ShipDeckMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-	ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+	ShipDeckMesh->SetCollisionProfileName(TEXT("ShipDeck"));
 	ShipDeckMesh->SetGenerateOverlapEvents(false);
 	ShipDeckMesh->SetVisibility(false, false);
 	ShipDeckMesh->SetHiddenInGame(true, false);
 	ShipDeckMesh->SetCastShadow(false);
+	ShipDeckMesh->SetCastHiddenShadow(false);
+	ShipDeckMesh->bDisallowNanite = true;
 
 	SWBuoyancyComponent = CreateDefaultSubobject<USWBuoyancyComponent>(TEXT("SWBuoyancyComponent"));
 	SWBuoyancyComponent->ExecutionMode = ESWBuoyancyExecutionMode::ExternalNetworkPhysics;
@@ -230,22 +236,13 @@ void AShip::BeginPlay()
 		InitializeDefaultAttributes();
 	}
 
-	SynchronizeSplitShipMeshes();
-
 	// The legacy Water plugin component may have enabled root overlap during its
-	// initialization. It is no longer a settings or force source, so disable it
-	// before applying the final split collision policy.
+	// initialization. It is no longer a settings or force source, so disable it.
 	if (UBuoyancyComponent* LegacyBuoyancy = FindComponentByClass<UBuoyancyComponent>())
 	{
 		LegacyBuoyancy->SetAutoActivate(false);
 		LegacyBuoyancy->SetComponentTickEnabled(false);
 		LegacyBuoyancy->Deactivate();
-	}
-
-	ConfigureSplitShipCollision();
-	if (BuoyancyRoot)
-	{
-		BuoyancyRoot->SetSimulatePhysics(true);
 	}
 
 	bool bPredictionEnabled = UPhysicsSettings::Get()->PhysicsPrediction.bEnablePhysicsPrediction;
@@ -314,103 +311,6 @@ void AShip::BeginPlay()
 			FText::FromString(TEXT("승선하기"))
 		);
 		StarboardSeaBoardingInteractable->OnInteracted.AddUniqueDynamic(this, &AShip::HandleStarboardSeaBoarding);
-	}
-}
-
-void AShip::OnConstruction(const FTransform& Transform)
-{
-	Super::OnConstruction(Transform);
-	SynchronizeSplitShipMeshes();
-	ConfigureSplitShipCollision();
-}
-
-void AShip::SynchronizeSplitShipMeshes()
-{
-	if (!bMirrorPhysicsRootMeshToSplitMeshes || !BuoyancyRoot)
-	{
-		return;
-	}
-
-	UStaticMesh* SourceMesh = BuoyancyRoot->GetStaticMesh();
-	if (!SourceMesh)
-	{
-		return;
-	}
-
-	const auto MirrorMeshAndMaterials = [this, SourceMesh](UStaticMeshComponent* Target)
-	{
-		if (!Target)
-		{
-			return;
-		}
-
-		Target->SetStaticMesh(SourceMesh);
-		for (int32 MaterialIndex = 0; MaterialIndex < BuoyancyRoot->GetNumMaterials(); ++MaterialIndex)
-		{
-			Target->SetMaterial(MaterialIndex, BuoyancyRoot->GetMaterial(MaterialIndex));
-		}
-	};
-
-	MirrorMeshAndMaterials(ShipVisualMesh);
-	MirrorMeshAndMaterials(ShipDamageMesh);
-	MirrorMeshAndMaterials(ShipDeckMesh);
-
-	// Only the visual copy renders. The original component remains the serialized
-	// Chaos body and supplies collision geometry, mass, and inertia.
-	BuoyancyRoot->SetVisibility(false, false);
-	BuoyancyRoot->SetHiddenInGame(true, false);
-	if (ShipVisualMesh)
-	{
-		ShipVisualMesh->SetVisibility(true, false);
-		ShipVisualMesh->SetHiddenInGame(false, false);
-	}
-}
-
-void AShip::ConfigureSplitShipCollision()
-{
-	const bool bEnemyShip = ActorHasTag(TEXT("Enemy"));
-	if (BuoyancyRoot)
-	{
-		BuoyancyRoot->SetCollisionProfileName(bEnemyShip ? TEXT("EnemyShip") : TEXT("PlayerShip"));
-		BuoyancyRoot->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-		BuoyancyRoot->SetCollisionResponseToChannel(ECC_GameTraceChannel2, ECR_Ignore);
-		BuoyancyRoot->SetCollisionResponseToChannel(ECC_GameTraceChannel3, ECR_Ignore);
-		BuoyancyRoot->SetGenerateOverlapEvents(false);
-	}
-
-	if (ShipVisualMesh)
-	{
-		ShipVisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		ShipVisualMesh->SetGenerateOverlapEvents(false);
-	}
-
-	if (ShipDamageMesh)
-	{
-		ShipDamageMesh->SetCollisionObjectType(ECC_ShipDamage);
-		ShipDamageMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-		ShipDamageMesh->SetGenerateOverlapEvents(false);
-		// Damage is server authoritative. The hull never generates persistent
-		// overlap pairs; the opposing projectile sweeps against this query body.
-		if (HasAuthority())
-		{
-			ShipDamageMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-			ShipDamageMesh->SetCollisionResponseToChannel(
-				bEnemyShip ? ECC_GameTraceChannel2 : ECC_GameTraceChannel3,
-				ECR_Block);
-		}
-		else
-		{
-			ShipDamageMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		}
-	}
-
-	if (ShipDeckMesh)
-	{
-		ShipDeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-		ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
-		ShipDeckMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-		ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
-		ShipDeckMesh->SetGenerateOverlapEvents(false);
 	}
 }
 
@@ -529,26 +429,35 @@ void AShip::Tick(float DeltaTime)
 	{
 		if (SWBuoyancyComponent && CVarShowShipNetworkBuoyancyDebug.GetValueOnGameThread() > 0)
 		{
-			FVector ShipLocation = GetActorLocation();
-			FRotator ShipRotation = GetActorRotation();
+			const FTransform LocalBodyTransform = BuoyancyRoot
+				? BuoyancyRoot->GetComponentTransform()
+				: GetActorTransform();
 
-			// 1. 클라이언트 로컬 물리 위치 기준 폰툰 (연두색 - Green)
+			// Local predicted/corrected Physics Root transform (cyan).
 			for (const FSWBuoyancyPontoon& Pontoon : SWBuoyancyComponent->GetPontoons())
 			{
-				FVector PontoonLocalWorldPos = ShipLocation + ShipRotation.RotateVector(Pontoon.RelativeLocation);
-				DrawDebugSphere(GetWorld(), PontoonLocalWorldPos, Pontoon.Radius, 8, FColor::Green, false, 0.0f, 0, 1.5f);
+				const FVector PontoonLocalWorldPos = LocalBodyTransform.TransformPosition(Pontoon.RelativeLocation);
+				DrawDebugSphere(GetWorld(), PontoonLocalWorldPos, Pontoon.Radius, 12, FColor::Cyan, false, 0.0f, 0, 1.75f);
 			}
 
-			// 2. 서버 공인 복제 위치 기준 폰툰 (빨간색 - Red)
+			// Latest authoritative server snapshot (smaller magenta shell).
 			if (!HasAuthority())
 			{
-				FVector RepLocation = ReplicatedState.Location;
-				FRotator RepRotation = ReplicatedState.Rotation;
+				const FTransform ServerBodyTransform(
+					ReplicatedState.Rotation,
+					ReplicatedState.Location,
+					LocalBodyTransform.GetScale3D());
 				for (const FSWBuoyancyPontoon& Pontoon : SWBuoyancyComponent->GetPontoons())
 				{
-					FVector PontoonRepWorldPos = RepLocation + RepRotation.RotateVector(Pontoon.RelativeLocation);
-					// 로컬 물리 구체와 구분되도록 크기를 살짝 줄여 드로우
-					DrawDebugSphere(GetWorld(), PontoonRepWorldPos, Pontoon.Radius * 0.9f, 8, FColor::Red, false, 0.0f, 0, 1.5f);
+					const FVector PontoonLocalWorldPos = LocalBodyTransform.TransformPosition(Pontoon.RelativeLocation);
+					const FVector PontoonRepWorldPos = ServerBodyTransform.TransformPosition(Pontoon.RelativeLocation);
+					// The center line and label expose the correction error directly.
+					DrawDebugSphere(GetWorld(), PontoonRepWorldPos, Pontoon.Radius * 0.85f, 8, FColor::Magenta, false, 0.0f, 0, 1.75f);
+					DrawDebugLine(GetWorld(), PontoonLocalWorldPos, PontoonRepWorldPos, FColor::Yellow, false, 0.0f, 0, 1.25f);
+					DrawDebugString(
+						GetWorld(), (PontoonLocalWorldPos + PontoonRepWorldPos) * 0.5f,
+						FString::Printf(TEXT("%.1f cm"), FVector::Distance(PontoonLocalWorldPos, PontoonRepWorldPos)),
+						this, FColor::Yellow, 0.0f, false, 1.0f);
 				}
 			}
 		}

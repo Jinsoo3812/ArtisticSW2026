@@ -3,7 +3,6 @@
 #include "BuoyancyComponent.h"
 #include "BuoyancyTypes.h"
 #include "Components/PrimitiveComponent.h"
-#include "DrawDebugHelpers.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
 #include "Misc/CommandLine.h"
@@ -101,15 +100,6 @@ void USWBuoyancyComponent::TickComponent(
 				WorldPosition);
 		}
 
-#if ENABLE_DRAW_DEBUG
-		if (bDrawDebugPontoons)
-		{
-			DrawDebugSphere(
-				GetWorld(), WorldPosition, Pontoon.Radius, 12,
-				Result.bIsInWater ? FColor::Cyan : FColor::Green,
-				false, 0.0f, 0, 1.5f);
-		}
-#endif
 	}
 }
 
