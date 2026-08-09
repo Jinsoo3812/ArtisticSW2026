@@ -1090,6 +1090,13 @@ float ULocomotionAnimStateComponent::GetStateControllerDebugLandingFallbackRemai
     return -1.f;
 }
 
+bool ULocomotionAnimStateComponent::ConsumeMotionMatchingReselectionRequest()
+{
+    const bool bRequested = bMotionMatchingReselectionRequested;
+    bMotionMatchingReselectionRequested = false;
+    return bRequested;
+}
+
 void ULocomotionAnimStateComponent::RefreshOneShotFallbackTimer(float SelectedAnimationDuration)
 {
     UWorld* World = GetWorld();
@@ -1769,6 +1776,11 @@ void ULocomotionAnimStateComponent::InterruptLandingForDirectionChange()
     bUseStartDatabase = false;
     bUseLoopDatabase = true;
     bUseSharpTurnDatabase = false;
+
+    // The graph is about to expose the MM branch after a direct Land pose.
+    // Make its first search use Pose History rather than continuing the
+    // locomotion pose that was hidden while the Land Blend Stack owned output.
+    bMotionMatchingReselectionRequested = true;
 
     ForceStateTransition((bHasMoveInput || GroundSpeed > IdleSpeedThreshold)
         ? ELocomotionState::Locomotion

@@ -325,6 +325,14 @@ struct FAnimStateControllerThreadSafeData
     UPROPERTY(BlueprintReadOnly, Category = "StateController")
     bool bShouldOverrideMotionMatching = false;
 
+    /**
+     * Raised only for an intentional Land redirect.  It forces the next MM
+     * query to use the outgoing graph Pose History instead of a continuing
+     * search result that was accumulated behind the direct Land pose.
+     */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bForceMotionMatchingReselection = false;
+
     UPROPERTY(BlueprintReadOnly, Category = "StateController")
     float TurnInPlaceSteeringAlpha = 0.0f;
 
@@ -793,14 +801,6 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Landing", meta = (ClampMin = "0.0", Units = "s"))
     float StateControllerLandCompletionLeadTime = 0.05f;
 
-    /**
-     * A diagonal moving land has no dedicated diagonal landing clip in the current
-     * asset set. Wait briefly before committing the generic forward/back land clip,
-     * so a tap-and-release can hand off directly to the latched diagonal Stop.
-     */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Landing", meta = (ClampMin = "0.0", ClampMax = "0.2", Units = "s"))
-    float StateControllerDiagonalLandCommitDelay = 0.06f;
-
     /** Start is cancellable when the player clearly changes move or facing intent. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Start", meta = (ClampMin = "0.0", ClampMax = "180.0"))
     float StateControllerStartInputInterruptAngle = 12.0f;
@@ -862,7 +862,6 @@ protected:
     float StateControllerLandingSteeringTargetYaw = 0.0f;
     /** Same impact direction as above, expressed in actor-local degrees for Orientation Warping. */
     float StateControllerLandingOrientationWarpingAngle = 0.0f;
-    bool bStateControllerDeferringDiagonalLand = false;
 
     void EvaluateStateControllerPresentationState();
     void EvaluateStateControllerPlaybackHold(EStateControllerPresentationState DesiredState);

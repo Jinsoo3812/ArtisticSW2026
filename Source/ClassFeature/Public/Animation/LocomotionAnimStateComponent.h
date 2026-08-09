@@ -205,6 +205,15 @@ public:
     float GetStateControllerDebugEffectiveMinimumLandingDuration() const { return GetEffectiveMinimumLandingDuration(); }
     float GetStateControllerDebugLandingFallbackRemaining() const;
 
+    /**
+     * One-shot request consumed by the primary AnimInstance when a Land is
+     * deliberately redirected to Motion Matching.  The MM node must discard
+     * its continuing search pose and build the first query from Pose History;
+     * otherwise a hidden/stale MM branch visibly pops when the graph bool
+     * switches away from the Land Blend Stack.
+     */
+    bool ConsumeMotionMatchingReselectionRequest();
+
 protected:
     void CacheOwner();
     bool PerformGroundProbe() const;
@@ -597,4 +606,5 @@ protected:
     float GroundedConfirmTimer = 0.0f;
     int32 StateControllerDebugEventRevision = 0;
     FString StateControllerDebugLastEvent;
+    bool bMotionMatchingReselectionRequested = false;
 };

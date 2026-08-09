@@ -204,6 +204,38 @@ namespace
         return true;
     }
 
+    // Blend Stack stores the pose currently winning the blend at an arbitrary
+    // array index while a blend is in progress.  For an air loop we must keep
+    // that pose, not blindly index zero: keeping an older low-weight player
+    // makes the loop jump between several sampled times when a duplicate
+    // BlendTo request arrives.
+    bool CollapseBlendStackToDominantPlayer(FAnimNode_MotionMatching& MotionMatchingNode)
+    {
+        if (MotionMatchingNode.AnimPlayers.Num() <= 1)
+        {
+            return false;
+        }
+
+        int32 DominantIndex = 0;
+        float DominantWeight = MotionMatchingNode.AnimPlayers[0].GetBlendInWeight();
+        for (int32 PlayerIndex = 1; PlayerIndex < MotionMatchingNode.AnimPlayers.Num(); ++PlayerIndex)
+        {
+            const float PlayerWeight = MotionMatchingNode.AnimPlayers[PlayerIndex].GetBlendInWeight();
+            if (PlayerWeight > DominantWeight)
+            {
+                DominantWeight = PlayerWeight;
+                DominantIndex = PlayerIndex;
+            }
+        }
+
+        if (DominantIndex != 0)
+        {
+            MotionMatchingNode.AnimPlayers.Swap(0, DominantIndex);
+        }
+        MotionMatchingNode.AnimPlayers.RemoveAt(1, MotionMatchingNode.AnimPlayers.Num() - 1, EAllowShrinking::No);
+        return true;
+    }
+
     bool StabilizeJumpStartBlendStackPlayer(
         const FAnimationUpdateContext& Context,
         FAnimNode_MotionMatching& MotionMatchingNode,
@@ -993,7 +1025,28 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     !ThreadSafeData.InputData.bHasMoveInput &&
                     !bSearchResultDatabaseChanged &&
                     !bAppliedDatabaseChanged;
-                if (bAppliedDatabaseChanged)
+                const bool bForceLandRedirectReselection =
+                    ThreadSafeData.StateController.bForceMotionMatchingReselection;
+                if (bForceLandRedirectReselection)
+                {
+                    // Land -> MM is a graph hand-off, not a normal database
+                    // change.  Force a fresh query from Pose History so the
+                    // visible Land pose is the query source, rather than the
+                    // MM node's old continuing pose behind the bool blend.
+                    if (CurrentActivePoseSearchDatabase)
+                    {
+                        MMNode->SetDatabaseToSearch(
+                            CurrentActivePoseSearchDatabase,
+                            EPoseSearchInterruptMode::ForceInterruptAndInvalidateContinuingPose);
+                    }
+                    else
+                    {
+                        MMNode->ResetDatabasesToSearch(
+                            EPoseSearchInterruptMode::ForceInterruptAndInvalidateContinuingPose);
+                    }
+                    Info.AppliedDatabase = CurrentActivePoseSearchDatabase;
+                }
+                else if (bAppliedDatabaseChanged)
                 {
                     // Jump start must replace a continuing ground pose on the
                     // very first airborne frame. General air loops retain
@@ -1072,7 +1125,13 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     {
                         UMotionMatchingAnimInstance* MMAnim = Cast<UMotionMatchingAnimInstance>(AnimInstanceObj);
                         const ULocomotionAnimStateComponent* StateComp = MMAnim ? MMAnim->CachedLocomotionStateComponent.Get() : nullptr;
-                        if (bIsJumpStartPhase || (StateComp && (StateComp->CurrentState == ELocomotionState::Start || StateComp->CurrentState == ELocomotionState::Stop || StateComp->CurrentState == ELocomotionState::Landing)))
+                        if (bForceLandRedirectReselection)
+                        {
+                            // This frame must execute the reselect request;
+                            // do not inherit the one-shot search suppression.
+                            SearchThrottleTime = Info.DefaultSearchThrottleTime;
+                        }
+                        else if (bIsJumpStartPhase || (StateComp && (StateComp->CurrentState == ELocomotionState::Start || StateComp->CurrentState == ELocomotionState::Stop || StateComp->CurrentState == ELocomotionState::Landing)))
                         {
                             // Start 및 Stop 상태에서는 최초 진입 프레임(bAppliedDatabaseChanged) 및 에셋 교체 직후 프레임(bSearchResultDatabaseChanged)에만 검색을 허용하고,
                             // 그 외의 프레임에서는 추가 평가(재검색)를 차단하여 재생 중인 에셋이 중간에 끊기거나 오매칭되는 현상을 방지합니다.
@@ -1122,7 +1181,17 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
         UpdatedPawn &&
         UpdatedPawn->GetLocalRole() == ROLE_SimulatedProxy &&
         UpdatedMotionState == ELocomotionState::Landing;
-    if (bStabilizeJumpStart || bStabilizeRemoteTransition)
+    const bool bStabilizeAirLoop =
+        ThreadSafeData.AirData.bIsInAir &&
+        !ThreadSafeData.AirData.bIsJumping &&
+        !ThreadSafeData.AirData.bIsFallOffStart &&
+        !ThreadSafeData.LandingData.bIsLanding &&
+        !ThreadSafeData.LandingData.bLandingRequested;
+    const bool bStabilizeFallOffLoop =
+        ThreadSafeData.AirData.bIsInAir &&
+        !ThreadSafeData.AirData.bIsJumping &&
+        ThreadSafeData.AirData.bIsFallOffStart;
+    if (bStabilizeJumpStart || bStabilizeRemoteTransition || bStabilizeAirLoop || bStabilizeFallOffLoop)
     {
         for (FCachedMotionMatchingNodeInfo& Info : CachedMMNodes)
         {
@@ -1134,9 +1203,25 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     Info.NodeProperty->ContainerPtrToValuePtr<FAnimNode_MotionMatching>(AnimInstanceObj);
                 if (MMNode)
                 {
-                    Info.bPostUpdateRestoredTransitionStack = bStabilizeJumpStart
-                        ? StabilizeJumpStartBlendStackPlayer(InContext, *MMNode, Info)
-                        : StabilizeRemoteTransitionBlendStackPlayer(InContext, *MMNode, Info, UpdatedMotionState);
+                    if (bStabilizeJumpStart)
+                    {
+                        Info.bPostUpdateRestoredTransitionStack =
+                            StabilizeJumpStartBlendStackPlayer(InContext, *MMNode, Info);
+                    }
+                    else if (bStabilizeRemoteTransition)
+                    {
+                        Info.bPostUpdateRestoredTransitionStack =
+                            StabilizeRemoteTransitionBlendStackPlayer(InContext, *MMNode, Info, UpdatedMotionState);
+                    }
+                    else
+                    {
+                        // The air PSD has a single loop asset.  The node must
+                        // never mix multiple phase offsets of that same loop.
+                        // This runs after the graph update, which is where
+                        // duplicate BlendTo requests are materialized.
+                        Info.bPostUpdateCollapsedTransitionStack =
+                            CollapseBlendStackToDominantPlayer(*MMNode);
+                    }
                 }
             }
         }
@@ -2009,6 +2094,8 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     // of overwriting it with the default-constructed StateController payload.
     FAnimThreadSafeData ThreadSafeData;
     ThreadSafeData.StateController = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController;
+    ThreadSafeData.StateController.bForceMotionMatchingReselection =
+        CachedLocomotionStateComponent->ConsumeMotionMatchingReselectionRequest();
 
     // Movement Data
     ThreadSafeData.MovementData.Velocity = CachedLocomotionStateComponent->Velocity;
@@ -2857,28 +2944,30 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     const bool bLanding = CachedLocomotionStateComponent->bIsLanding && CachedLocomotionStateComponent->bLandingRequested;
     const bool bShouldTurnInPlace = CachedLocomotionStateComponent->bShouldTurnInPlace;
     const bool bInPlaybackHold = (StateControllerPlaybackHoldElapsed < StateControllerPlaybackHoldDuration);
-    const bool bDiagonalMovingLand =
-        bLanding &&
-        CachedLocomotionStateComponent->bLandWasMoving &&
-        CachedLocomotionStateComponent->GetStateControllerDebugIsDiagonalLanding();
-    bStateControllerDeferringDiagonalLand =
-        bDiagonalMovingLand &&
-        CachedLocomotionStateComponent->LandingElapsedTime < StateControllerDiagonalLandCommitDelay;
-
     // StartLanding deliberately keeps bIsInAir true until the landing pose is
     // released.  Landing must therefore take precedence over the air flag.
     if (bLanding)
     {
-        // Do not flash a generic F/B landing clip when a diagonal moving land is
-        // released immediately. The component will enter Stop on the next update,
-        // and the already-latched impact sector then selects the correct Stop clip.
-        DesiredState = bStateControllerDeferringDiagonalLand
-            ? EStateControllerPresentationState::LocomotionLoop
-            : EStateControllerPresentationState::TransitionToLand;
+        // Project_J's Strafe path enters its Land chooser on the impact frame.
+        // Artistic already records an immutable impact direction, so diagonals
+        // must use that snapshot directly rather than briefly falling through
+        // to Motion Matching before their direct Land is selected.
+        DesiredState = EStateControllerPresentationState::TransitionToLand;
     }
     else if (bInAir)
     {
-        DesiredState = EStateControllerPresentationState::TransitionToJump;
+        // JumpStart/FallOffStart are direct Blend Stack one-shots only.  Once
+        // their component flags clear, the character is still airborne but the
+        // output must return to the InAir PSD's Motion Matching node.  Routing
+        // every airborne frame to TransitionToJump kept the direct branch
+        // active forever, which is why the authored In Air Loop never became
+        // visible.
+        const bool bDirectAirOneShot =
+            CachedLocomotionStateComponent->bIsJumping ||
+            CachedLocomotionStateComponent->bIsFallOffStart;
+        DesiredState = bDirectAirOneShot
+            ? EStateControllerPresentationState::TransitionToJump
+            : EStateControllerPresentationState::LocomotionLoop;
     }
     // The locomotion component's transitional phase is authoritative for a
     // direct one-shot.  In particular, Stop must pre-empt Start immediately;
@@ -3503,20 +3592,10 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
         LocomotionState == ELocomotionState::Landing ||
         StateController.PresentationState == EStateControllerPresentationState::TransitionToLand ||
         StateControllerRequestedPresentationState == EStateControllerPresentationState::TransitionToLand;
-    const bool bStartDiagnostic =
-        LocomotionState == ELocomotionState::Start ||
-        StateController.PresentationState == EStateControllerPresentationState::TransitionToStart ||
-        StateControllerRequestedPresentationState == EStateControllerPresentationState::TransitionToStart;
-    const bool bStopDiagnostic =
-        LocomotionState == ELocomotionState::Stop ||
-        StateController.PresentationState == EStateControllerPresentationState::TransitionToStop ||
-        StateControllerRequestedPresentationState == EStateControllerPresentationState::TransitionToStop;
-    const bool bPivotDiagnostic =
-        CachedLocomotionStateComponent->bSharpTurnRequested ||
-        StateController.PresentationState == EStateControllerPresentationState::TransitionToPivot ||
-        StateControllerRequestedPresentationState == EStateControllerPresentationState::TransitionToPivot ||
-        (CachedLocomotionStateComponent->bHasMoveInput &&
-            FMath::Abs(CachedLocomotionStateComponent->MoveInputTurnAngle) >= CachedLocomotionStateComponent->MoveInputTurnDeadZoneAngle);
+    const bool bAirDiagnostic =
+        CachedLocomotionStateComponent->bIsInAir ||
+        StateController.PresentationState == EStateControllerPresentationState::TransitionToJump ||
+        StateControllerRequestedPresentationState == EStateControllerPresentationState::TransitionToJump;
     // The Land exit transition itself is the key evidence for this issue.  It
     // must remain visible for the single frame after the component has already
     // changed to Idle/Locomotion, when the ordinary "currently Landing" filter
@@ -3525,20 +3604,17 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
         (CachedLocomotionStateComponent->GetStateControllerDebugLastEvent().Contains(TEXT("Landing")) ||
          CachedLocomotionStateComponent->GetStateControllerDebugLastEvent().Contains(TEXT("Land clip")));
     const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
-    const bool bTurnInPlaceSampleDue = bTurnInPlace && Now >= NextStateControllerTurnInPlaceDebugTime;
-    const bool bOneShotSampleDue = StateController.bShouldOverrideMotionMatching &&
+    const bool bOneShotSampleDue = (bLandDiagnostic || bAirDiagnostic) && StateController.bShouldOverrideMotionMatching &&
         StateController.bHasSelectedAnimation && Now >= NextStateControllerOneShotDebugTime;
-    const bool bPivotSampleDue = bPivotDiagnostic && Now >= NextStateControllerPivotDebugTime;
 
-    if (!((bPresentationChanged || bSelectionChanged) && bDirectOneShot) && !bTurnInPlaceSampleDue && !bOneShotSampleDue && !bPivotSampleDue && !bComponentEventChanged)
+    if (!((bPresentationChanged || bSelectionChanged) && bDirectOneShot) && !bOneShotSampleDue && !bComponentEventChanged)
     {
         return;
     }
 
-    // Keep a.StateControllerDebug focused on the active land-direction issue.
-    // Stop/Start traces are intentionally suppressed; their revision state is
-    // still advanced so they cannot surface later as stale changes.
-    if (!bLandDiagnostic && !bStartDiagnostic && !bStopDiagnostic && !bTurnInPlace && !bPivotDiagnostic && !bLandExitEvent)
+    // Keep the capture focused on Land/Air hand-offs.  Start/Stop/Pivot/TIP
+    // samples remain suppressed so one jump gives a usable timeline.
+    if (!bLandDiagnostic && !bLandExitEvent && !bAirDiagnostic)
     {
         LastStateControllerDebugPresentation = StateController.PresentationState;
         LastStateControllerDebugSelectionRevision = StateController.SelectionRevision;
@@ -3575,12 +3651,10 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
         ? GaitEnum->GetNameStringByValue(static_cast<int64>(StateControllerGait))
         : FString::FromInt(static_cast<int32>(StateControllerGait));
     const TCHAR* Reason = bSelectionChanged ? TEXT("Selection")
-        : (bPresentationChanged ? TEXT("Presentation")
-            : (bPivotSampleDue ? TEXT("PivotSample")
-                : (bTurnInPlaceSampleDue ? TEXT("TIPSample") : TEXT("HoldSample"))));
+        : (bPresentationChanged ? TEXT("Presentation") : TEXT("LandSample"));
 
     UE_LOG(LogMotionMatchingCapture, Display,
-        TEXT("[SC_TRACE] Reason=%s Pawn=%s Locomotion=%s Requested=%s Presentation=%s Rev=%d OverrideMM=%d Asset=%s Start=%.3f Length=%.3f Elapsed=%.3f Blend=%.3f Loop=%d PSD=%s Input=(R=%.2f,F=%.2f) Speed=%.1f Direction=%s PrevDirection=%s LandStopLatch=%s Pivot=%d InputTurn=%.1f TrajectoryTurn=%.1f PivotThreshold=%.1f PivotMinSpeed=%.1f RedirectThreshold=%.1f Steering=%d TargetYaw=%.1f StartInputChanged=%d(%.1f/%.1f) StartYawChanged=%d(%.1f/%.1f) LandDir=(R=%.2f,F=%.2f) LandDirSource=%s LandDiagonal=%d LandCommitDeferred=%d EffectiveLandMin=%.2f LandCompletionLead=%.2f LandRedirect=Input%d(%.1f/%.1f) Yaw%d(%.1f/%.1f) Timer=%.3f Gait=%s Foot=%s Jump=%d FallOff=%d Landing=%d HeavyLand=%d MovingLand=%d MovingLandSprint=%d LandingFromFallOff=%d LastFallSpeed=%.1f LandTime=%.3f LandPostInput=%d(%.3f/%.3f) Chooser=%s Outputs=%s"),
+        TEXT("[SC_TRACE] Reason=%s Pawn=%s Locomotion=%s Requested=%s Presentation=%s Rev=%d OverrideMM=%d Asset=%s Start=%.3f Length=%.3f Elapsed=%.3f Blend=%.3f Loop=%d PSD=%s Input=(R=%.2f,F=%.2f) Speed=%.1f Direction=%s PrevDirection=%s LandStopLatch=%s Pivot=%d InputTurn=%.1f TrajectoryTurn=%.1f PivotThreshold=%.1f PivotMinSpeed=%.1f RedirectThreshold=%.1f Steering=%d TargetYaw=%.1f StartInputChanged=%d(%.1f/%.1f) StartYawChanged=%d(%.1f/%.1f) LandDir=(R=%.2f,F=%.2f) LandDirSource=%s LandDiagonal=%d LandDirectAtImpact=1 EffectiveLandMin=%.2f LandCompletionLead=%.2f LandRedirect=Input%d(%.1f/%.1f) Yaw%d(%.1f/%.1f) Timer=%.3f Gait=%s Foot=%s Jump=%d FallOff=%d Landing=%d HeavyLand=%d MovingLand=%d MovingLandSprint=%d LandingFromFallOff=%d LastFallSpeed=%.1f LandTime=%.3f LandPostInput=%d(%.3f/%.3f) Chooser=%s Outputs=%s"),
         Reason,
         *CachedBasePlayer->GetName(),
         *LocomotionName,
@@ -3619,7 +3693,6 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
         CachedLocomotionStateComponent->LandMoveDirection.Y,
         CachedLocomotionStateComponent->bLandDirectionFromVelocity ? TEXT("ImpactVelocity") : TEXT("InputFallback"),
         CachedLocomotionStateComponent->GetStateControllerDebugIsDiagonalLanding() ? 1 : 0,
-        bStateControllerDeferringDiagonalLand ? 1 : 0,
         CachedLocomotionStateComponent->GetStateControllerDebugEffectiveMinimumLandingDuration(),
         StateControllerLandCompletionLeadTime,
         CachedLocomotionStateComponent->bLastLandingInputDirectionChanged ? 1 : 0,
@@ -3709,7 +3782,7 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
     NextStateControllerOneShotDebugTime = StateController.bShouldOverrideMotionMatching && StateController.bHasSelectedAnimation
         ? Now + 0.5
         : Now;
-    NextStateControllerPivotDebugTime = bPivotDiagnostic ? Now + 0.25 : Now;
+    NextStateControllerPivotDebugTime = Now;
 
     LastStateControllerDebugPresentation = StateController.PresentationState;
     LastStateControllerDebugSelectionRevision = StateController.SelectionRevision;
