@@ -203,6 +203,7 @@ public:
     const FString& GetStateControllerDebugLastEvent() const { return StateControllerDebugLastEvent; }
     bool GetStateControllerDebugIsDiagonalLanding() const { return IsDiagonalLanding(); }
     float GetStateControllerDebugEffectiveMinimumLandingDuration() const { return GetEffectiveMinimumLandingDuration(); }
+    float GetStateControllerDebugLandingFallbackRemaining() const;
 
 protected:
     void CacheOwner();
@@ -224,6 +225,7 @@ protected:
     void StartLanding(float ImpactFallSpeed, bool bTriggerRealLandEvent);
     void FinishLanding();
     void FinishLandingRequest();
+    void CompleteLandingFromSelectedAnimation(const TCHAR* CompletionSource);
     void InterruptLandingForMoveInput();
     void InterruptLandingForDirectionChange();
     void InterruptLandingForStop();
@@ -399,13 +401,32 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
     FVector2D LandingStartMoveInput;
 
-    /** A release after the player deliberately moved during a landing must be
-     *  allowed to select Stop immediately instead of leaking into a loop. */
+    /**
+     * True only after movement intent has survived touchdown for
+     * LandingExitStopInputHoldTime.  This deliberately excludes input that was
+     * merely held in the air and released on the landing frame.
+     */
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
     bool bLandingReceivedMoveInput = false;
 
+    /** Input that was already held at the precise touchdown frame.  Holding
+     * the same direction must not be treated as a new Land redirect. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
+    bool bLandingInputHeldAtTouchdown = false;
+
+    /** Accumulates real move intent after touchdown for the Land -> Stop contract. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
+    float LandingPostTouchdownMoveInputTime = 0.f;
+
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
     float LandingElapsedTime;
+
+    // Last evaluated redirect gates.  They are diagnostic snapshots only; the
+    // actual landing behaviour continues to use the values evaluated in Tick.
+    float LastLandingInputDirectionDelta = 0.f;
+    float LastLandingControlYawDelta = 0.f;
+    bool bLastLandingInputDirectionChanged = false;
+    bool bLastLandingControlYawChanged = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
     float LandingStartControlYaw = 0.f;
@@ -434,6 +455,15 @@ public:
     /** Prevents held/released movement input from cancelling the landing pose immediately. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0"))
     float MinimumLandingDuration = 0.45f;
+
+    /**
+     * Project_J-style grace time: only an input held for this long after
+     * touchdown may cancel a moving Land directly into Stop.  A release before
+     * this point leaves the authored Land pose intact and prevents Land -> Stop
+     * blend flashes.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0", ClampMax = "0.25", Units = "s"))
+    float LandingExitStopInputHoldTime = 0.06f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0"))
     float RemoteMinimumLandingDuration = 0.65f;

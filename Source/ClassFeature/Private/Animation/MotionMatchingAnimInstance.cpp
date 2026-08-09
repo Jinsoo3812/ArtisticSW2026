@@ -2946,7 +2946,14 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
         DesiredState == EStateControllerPresentationState::LocomotionLoop ||
         DesiredState == EStateControllerPresentationState::IdleLoop ||
         DesiredState == EStateControllerPresentationState::TurnInPlace;
+    // Only preserve the authored Land while gameplay still owns a Landing
+    // request.  A redirect has already changed the component to Locomotion;
+    // holding the old clip in that case visually defeats the MM hand-off.
+    const bool bGameplayLandStillActive =
+        CachedLocomotionStateComponent->bIsLanding &&
+        CachedLocomotionStateComponent->bLandingRequested;
     if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToLand &&
+        bGameplayLandStillActive &&
         bReturningFromLandToGroundPresentation &&
         StateControllerSelectedAnimation &&
         StateControllerPlaybackHoldElapsed < LandCompletionTime)
@@ -3013,7 +3020,10 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
             const bool bMovingLand = CachedLocomotionStateComponent->bLandWasMoving;
             if (bMovingLand)
             {
-                StateControllerLandGaitLock = CachedLocomotionStateComponent->bIsSprinting ? EGaitIntent::Sprint : EGaitIntent::Run;
+                // The selected Land must retain the gait at impact.  Reading the
+                // live sprint input here can switch a Sprint Land to Run midway
+                // through the first frame after Shift is released.
+                StateControllerLandGaitLock = CachedLocomotionStateComponent->bLandWasSprinting ? EGaitIntent::Sprint : EGaitIntent::Run;
             }
             else
             {
@@ -3059,6 +3069,8 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         if (DesiredState == EStateControllerPresentationState::TransitionToLand)
         {
             bHasStateControllerLandingDirectionLatch = false;
+            StateControllerLandingSteeringTargetYaw = 0.0f;
+            StateControllerLandingOrientationWarpingAngle = 0.0f;
         }
 
         StateControllerPresentationState = StateControllerPlaybackHoldState;
@@ -3123,6 +3135,22 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         bStateControllerIsFallOff = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsFallOffStart;
         bStateControllerShouldTurnInPlace = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bShouldTurnInPlace;
 
+        // The Land Chooser calls BlueprintThreadSafe getters.  NativeUpdate's
+        // normal proxy pack happens later, so without this pre-publish the
+        // first Land selection reads the previous landing's Heavy/Light flag.
+        // Publish the complete impact snapshot before evaluating child rows.
+        if (CachedLocomotionStateComponent)
+        {
+            ThreadSafeData.LandingData.bUseHeavyLand = CachedLocomotionStateComponent->bUseHeavyLand;
+            ThreadSafeData.LandingData.bLandWasMoving = CachedLocomotionStateComponent->bLandWasMoving;
+            ThreadSafeData.LandingData.bLandWasSprinting = CachedLocomotionStateComponent->bLandWasSprinting;
+            ThreadSafeData.LandingData.LandStartFallSpeed = CachedLocomotionStateComponent->LandStartFallSpeed;
+            ThreadSafeData.LandingData.LandStartGroundSpeed = CachedLocomotionStateComponent->LandStartGroundSpeed;
+            ThreadSafeData.LandingData.LandMoveDirection = CachedLocomotionStateComponent->LandMoveDirection;
+            ThreadSafeData.LandingData.bIsLanding = CachedLocomotionStateComponent->bIsLanding;
+            ThreadSafeData.LandingData.bLandingRequested = CachedLocomotionStateComponent->bLandingRequested;
+        }
+
         // Velocity is still near zero on the first Start frame.  For a
         // permanently-strafe character, select the Start row from the actual
         // local input instead of incorrectly reusing the previous Forward row.
@@ -3159,6 +3187,13 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
             StateControllerMovementDirection = CurrentMovementDirection;
             StateControllerLandingDirectionLatch = CurrentMovementDirection;
             bHasStateControllerLandingDirectionLatch = true;
+            const float LandingDirectionLocalYaw = FMath::RadiansToDegrees(FMath::Atan2(
+                CachedLocomotionStateComponent->LandMoveDirection.X,
+                CachedLocomotionStateComponent->LandMoveDirection.Y));
+            StateControllerLandingSteeringTargetYaw = CachedBasePlayer
+                ? CachedBasePlayer->GetActorRotation().Yaw + LandingDirectionLocalYaw
+                : LandingDirectionLocalYaw;
+            StateControllerLandingOrientationWarpingAngle = LandingDirectionLocalYaw;
         }
 
         UChooserTable* TargetChooser = MainChooserTable;
@@ -3194,6 +3229,10 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         {
             StateControllerLastChooserPath = GetNameSafe(TargetChooser);
             StateControllerLastChooserOutputTrace.Reset();
+            const bool bLandChooserEvaluation = DesiredState == EStateControllerPresentationState::TransitionToLand;
+            const bool bProxyHeavyBeforeChooser = ThreadSafeData.LandingData.bUseHeavyLand;
+            const bool bGetterHeavyBeforeChooser = GetThreadSafeIsHeavyLand();
+            const bool bComponentHeavyBeforeChooser = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bUseHeavyLand;
             FChooserEvaluationContext ChooserContext;
             ChooserContext.AddObjectParam(this);
 
@@ -3231,6 +3270,21 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
             }
 
             StateControllerSelectedAnimation = Cast<UAnimationAsset>(EvaluatedObject);
+            if (CVarAnimStateControllerDebug.GetValueOnGameThread() > 0 && bLandChooserEvaluation)
+            {
+                UE_LOG(LogMotionMatchingCapture, Display,
+                    TEXT("[SC_LAND_CHOOSER] Impact=%.1f Threshold=%.1f ComponentHeavy=%d ReflectedHeavy=%d ProxyHeavy=%d GetterHeavy=%d Moving=%d Direction=%s Result=%s Path=%s"),
+                    CachedLocomotionStateComponent ? CachedLocomotionStateComponent->LandStartFallSpeed : 0.0f,
+                    CachedLocomotionStateComponent ? CachedLocomotionStateComponent->HeavyLandSpeedThreshold : 0.0f,
+                    bComponentHeavyBeforeChooser ? 1 : 0,
+                    bStateControllerIsHeavyLand ? 1 : 0,
+                    bProxyHeavyBeforeChooser ? 1 : 0,
+                    bGetterHeavyBeforeChooser ? 1 : 0,
+                    CachedLocomotionStateComponent && CachedLocomotionStateComponent->bLandWasMoving ? 1 : 0,
+                    *StaticEnum<EMovementDirection>()->GetNameStringByValue(static_cast<int64>(StateControllerMovementDirection)),
+                    *GetNameSafe(StateControllerSelectedAnimation),
+                    *StateControllerLastChooserPath);
+            }
             if (!StateControllerSelectedAnimation)
             {
                 StateControllerLastChooserPath += TEXT(" -> <No Animation Row>");
@@ -3296,26 +3350,36 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         StateControllerPlaybackHoldState != EStateControllerPresentationState::LocomotionLoop &&
         StateControllerPlaybackHoldState != EStateControllerPresentationState::IdleLoop;
 
-    // Match GASP's EnableSteering contract: root-motion steering applies only
-    // while a Blend Stack clip is actually active and the character is moving
-    // or airborne.  In particular, Stop/Land/TIP clips must not inherit a
-    // stale DesiredFacingDeltaYaw and be visually rotated after the Chooser
-    // has selected the correct directional asset.
+    // Match Project_J's combat-Strafe contract: a Land and an immediate Stop
+    // hand-off share the exact impact direction.  The current trajectory can
+    // collapse to zero on input release, so it is not a valid Steering target
+    // for these two one-shots.
     const bool bBlendStackClipActive = ThreadSafeData.StateController.bHasSelectedAnimation;
     const bool bMovingForSteering =
         ThreadSafeData.MovementData.Velocity.Size2D() > 10.0f ||
         ThreadSafeData.InputData.bHasMoveInput;
     const bool bAirborneForSteering = ThreadSafeData.AirData.bIsInAir;
-    const bool bEnableBlendStackSteering = bBlendStackClipActive && (bMovingForSteering || bAirborneForSteering);
+    const bool bUseLatchedLandingSteering =
+        bHasStateControllerLandingDirectionLatch &&
+        (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToLand ||
+         StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop);
+    const bool bEnableBlendStackSteering = bBlendStackClipActive &&
+        (bMovingForSteering || bAirborneForSteering || bUseLatchedLandingSteering);
     ThreadSafeData.StateController.BlendStackSteeringAlpha = bEnableBlendStackSteering ? 1.0f : 0.0f;
     // Kept as a compatibility alias because the existing Artistic graph is
     // already wired to this getter.  New graph wiring should use the explicit
     // BlendStackSteering name below.
     ThreadSafeData.StateController.TurnInPlaceSteeringAlpha = ThreadSafeData.StateController.BlendStackSteeringAlpha;
 
-    const FTransformTrajectorySample* FutureFacingSample = FindClosestTrajectorySample(
-        ThreadSafeData.MovementData.Trajectory, 0.5f);
-    if (FutureFacingSample)
+    if (bUseLatchedLandingSteering && CachedBasePlayer)
+    {
+        ThreadSafeData.StateController.BlendStackSteeringTargetOrientation = FRotator(
+            0.0f,
+            StateControllerLandingSteeringTargetYaw,
+            0.0f);
+    }
+    else if (const FTransformTrajectorySample* FutureFacingSample = FindClosestTrajectorySample(
+        ThreadSafeData.MovementData.Trajectory, 0.5f))
     {
         const FRotator FutureFacing = FutureFacingSample->GetTransform().Rotator();
         ThreadSafeData.StateController.BlendStackSteeringTargetOrientation =
@@ -3330,6 +3394,44 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
     {
         ThreadSafeData.StateController.BlendStackSteeringTargetOrientation = FRotator::ZeroRotator;
     }
+
+    // Project_J's Strafe contract keeps the direction that selected a direct
+    // one-shot, rather than re-deriving it from a velocity that may already be
+    // zero.  The authored `enable_warping` curve remains the final per-frame
+    // gate in the Blend Stack graph.
+    const bool bDirectStrafeOneShot = bBlendStackClipActive &&
+        !ThreadSafeData.StateController.bSelectedAnimationShouldLoop &&
+        (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart ||
+         StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop ||
+         StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToJump ||
+         StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToLand ||
+         StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToPivot);
+
+    float OrientationWarpingAngle = 0.0f;
+    bool bHasOrientationWarpingDirection = false;
+    if (bUseLatchedLandingSteering)
+    {
+        OrientationWarpingAngle = StateControllerLandingOrientationWarpingAngle;
+        bHasOrientationWarpingDirection = true;
+    }
+    else if (!ThreadSafeData.MovementData.VelocityLocal.IsNearlyZero(10.0f))
+    {
+        OrientationWarpingAngle = FMath::RadiansToDegrees(FMath::Atan2(
+            ThreadSafeData.MovementData.VelocityLocal.Y,
+            ThreadSafeData.MovementData.VelocityLocal.X));
+        bHasOrientationWarpingDirection = true;
+    }
+    else if (ThreadSafeData.InputData.bHasMoveInput)
+    {
+        // MoveInput is already character-local in this project: X=right, Y=forward.
+        OrientationWarpingAngle = FMath::RadiansToDegrees(FMath::Atan2(
+            ThreadSafeData.InputData.MoveInput.X,
+            ThreadSafeData.InputData.MoveInput.Y));
+        bHasOrientationWarpingDirection = true;
+    }
+    ThreadSafeData.StateController.CombatStateOrientationWarpingAngle = OrientationWarpingAngle;
+    ThreadSafeData.StateController.CombatStateOrientationWarpingAlpha =
+        bDirectStrafeOneShot && bHasOrientationWarpingDirection ? 1.0f : 0.0f;
 
     const FVector VelocityDirection = ThreadSafeData.MovementData.Velocity.GetSafeNormal2D();
     const FVector AccelerationDirection = ThreadSafeData.MovementData.Acceleration.GetSafeNormal2D();
@@ -3415,6 +3517,13 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
         StateControllerRequestedPresentationState == EStateControllerPresentationState::TransitionToPivot ||
         (CachedLocomotionStateComponent->bHasMoveInput &&
             FMath::Abs(CachedLocomotionStateComponent->MoveInputTurnAngle) >= CachedLocomotionStateComponent->MoveInputTurnDeadZoneAngle);
+    // The Land exit transition itself is the key evidence for this issue.  It
+    // must remain visible for the single frame after the component has already
+    // changed to Idle/Locomotion, when the ordinary "currently Landing" filter
+    // would otherwise suppress the trace.
+    const bool bLandExitEvent = bComponentEventChanged &&
+        (CachedLocomotionStateComponent->GetStateControllerDebugLastEvent().Contains(TEXT("Landing")) ||
+         CachedLocomotionStateComponent->GetStateControllerDebugLastEvent().Contains(TEXT("Land clip")));
     const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
     const bool bTurnInPlaceSampleDue = bTurnInPlace && Now >= NextStateControllerTurnInPlaceDebugTime;
     const bool bOneShotSampleDue = StateController.bShouldOverrideMotionMatching &&
@@ -3429,7 +3538,7 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
     // Keep a.StateControllerDebug focused on the active land-direction issue.
     // Stop/Start traces are intentionally suppressed; their revision state is
     // still advanced so they cannot surface later as stale changes.
-    if (!bLandDiagnostic && !bStartDiagnostic && !bStopDiagnostic && !bTurnInPlace && !bPivotDiagnostic)
+    if (!bLandDiagnostic && !bStartDiagnostic && !bStopDiagnostic && !bTurnInPlace && !bPivotDiagnostic && !bLandExitEvent)
     {
         LastStateControllerDebugPresentation = StateController.PresentationState;
         LastStateControllerDebugSelectionRevision = StateController.SelectionRevision;
@@ -3471,7 +3580,7 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
                 : (bTurnInPlaceSampleDue ? TEXT("TIPSample") : TEXT("HoldSample"))));
 
     UE_LOG(LogMotionMatchingCapture, Display,
-        TEXT("[SC_TRACE] Reason=%s Pawn=%s Locomotion=%s Requested=%s Presentation=%s Rev=%d OverrideMM=%d Asset=%s Start=%.3f Length=%.3f Elapsed=%.3f Blend=%.3f Loop=%d PSD=%s Input=(R=%.2f,F=%.2f) Speed=%.1f Direction=%s PrevDirection=%s LandStopLatch=%s Pivot=%d InputTurn=%.1f TrajectoryTurn=%.1f PivotThreshold=%.1f PivotMinSpeed=%.1f RedirectThreshold=%.1f Steering=%d TargetYaw=%.1f StartInputChanged=%d(%.1f/%.1f) StartYawChanged=%d(%.1f/%.1f) LandDir=(R=%.2f,F=%.2f) LandDirSource=%s LandDiagonal=%d LandCommitDeferred=%d EffectiveLandMin=%.2f LandCompletionLead=%.2f Gait=%s Foot=%s Jump=%d FallOff=%d Landing=%d HeavyLand=%d MovingLand=%d MovingLandSprint=%d LandingFromFallOff=%d LastFallSpeed=%.1f LandTime=%.3f Chooser=%s Outputs=%s"),
+        TEXT("[SC_TRACE] Reason=%s Pawn=%s Locomotion=%s Requested=%s Presentation=%s Rev=%d OverrideMM=%d Asset=%s Start=%.3f Length=%.3f Elapsed=%.3f Blend=%.3f Loop=%d PSD=%s Input=(R=%.2f,F=%.2f) Speed=%.1f Direction=%s PrevDirection=%s LandStopLatch=%s Pivot=%d InputTurn=%.1f TrajectoryTurn=%.1f PivotThreshold=%.1f PivotMinSpeed=%.1f RedirectThreshold=%.1f Steering=%d TargetYaw=%.1f StartInputChanged=%d(%.1f/%.1f) StartYawChanged=%d(%.1f/%.1f) LandDir=(R=%.2f,F=%.2f) LandDirSource=%s LandDiagonal=%d LandCommitDeferred=%d EffectiveLandMin=%.2f LandCompletionLead=%.2f LandRedirect=Input%d(%.1f/%.1f) Yaw%d(%.1f/%.1f) Timer=%.3f Gait=%s Foot=%s Jump=%d FallOff=%d Landing=%d HeavyLand=%d MovingLand=%d MovingLandSprint=%d LandingFromFallOff=%d LastFallSpeed=%.1f LandTime=%.3f LandPostInput=%d(%.3f/%.3f) Chooser=%s Outputs=%s"),
         Reason,
         *CachedBasePlayer->GetName(),
         *LocomotionName,
@@ -3513,6 +3622,13 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
         bStateControllerDeferringDiagonalLand ? 1 : 0,
         CachedLocomotionStateComponent->GetStateControllerDebugEffectiveMinimumLandingDuration(),
         StateControllerLandCompletionLeadTime,
+        CachedLocomotionStateComponent->bLastLandingInputDirectionChanged ? 1 : 0,
+        CachedLocomotionStateComponent->LastLandingInputDirectionDelta,
+        CachedLocomotionStateComponent->LandingInputDirectionInterruptAngle,
+        CachedLocomotionStateComponent->bLastLandingControlYawChanged ? 1 : 0,
+        CachedLocomotionStateComponent->LastLandingControlYawDelta,
+        CachedLocomotionStateComponent->LandingControlYawInterruptAngle,
+        CachedLocomotionStateComponent->GetStateControllerDebugLandingFallbackRemaining(),
         *GaitName,
         StateControllerOneShotFoot == EStateControllerOneShotFoot::Left ? TEXT("Left") : TEXT("Right"),
         CachedLocomotionStateComponent->bIsJumping ? 1 : 0,
@@ -3524,13 +3640,16 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
         CachedLocomotionStateComponent->bLandingFromFallOff ? 1 : 0,
         CachedLocomotionStateComponent->LastFallSpeed,
         CachedLocomotionStateComponent->LandingElapsedTime,
+        CachedLocomotionStateComponent->bLandingReceivedMoveInput ? 1 : 0,
+        CachedLocomotionStateComponent->LandingPostTouchdownMoveInputTime,
+        CachedLocomotionStateComponent->LandingExitStopInputHoldTime,
         *StateControllerLastChooserPath,
         *StateControllerLastChooserOutputTrace);
 
     if (bComponentEventChanged)
     {
         UE_LOG(LogMotionMatchingCapture, Display,
-            TEXT("[SC_COMPONENT] Pawn=%s EventRev=%d Event=%s Current=%s Air=%d PhysicalAir=%d Landing=%d Requested=%d LandMoving=%d LandInputSeen=%d HasInput=%d PrevInput=%d Input=(%.2f,%.2f) LandTime=%.3f MinLand=%.3f FallSpeed=%.1f"),
+            TEXT("[SC_COMPONENT] Pawn=%s EventRev=%d Event=%s Current=%s Air=%d PhysicalAir=%d Landing=%d Requested=%d LandMoving=%d LandPostInput=%d(%.3f/%.3f) HasInput=%d PrevInput=%d Input=(%.2f,%.2f) LandTime=%.3f MinLand=%.3f FallSpeed=%.1f"),
             *CachedBasePlayer->GetName(),
             CachedLocomotionStateComponent->GetStateControllerDebugEventRevision(),
             *CachedLocomotionStateComponent->GetStateControllerDebugLastEvent(),
@@ -3541,6 +3660,8 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
             CachedLocomotionStateComponent->bLandingRequested ? 1 : 0,
             CachedLocomotionStateComponent->bLandWasMoving ? 1 : 0,
             CachedLocomotionStateComponent->bLandingReceivedMoveInput ? 1 : 0,
+            CachedLocomotionStateComponent->LandingPostTouchdownMoveInputTime,
+            CachedLocomotionStateComponent->LandingExitStopInputHoldTime,
             CachedLocomotionStateComponent->bHasMoveInput ? 1 : 0,
             CachedLocomotionStateComponent->bPrevHasMoveInput ? 1 : 0,
             CachedLocomotionStateComponent->CachedMoveInput.X,
@@ -3788,20 +3909,14 @@ float UMotionMatchingAnimInstance::GetThreadSafeStateControllerBlendStackSteerin
 
 float UMotionMatchingAnimInstance::GetThreadSafeStateControllerCombatStateOrientationWarpingAngle() const
 {
-    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
-    const FVector VelocityDir = ThreadSafeData.MovementData.Velocity.GetSafeNormal2D();
-    if (!VelocityDir.IsNearlyZero() && CachedBasePlayer)
-    {
-        const FRotator ActorRot = CachedBasePlayer->GetActorRotation();
-        return FRotator::NormalizeAxis(VelocityDir.Rotation().Yaw - ActorRot.Yaw);
-    }
-    return 0.0f;
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>()
+        .ThreadSafeData.StateController.CombatStateOrientationWarpingAngle;
 }
 
 float UMotionMatchingAnimInstance::GetThreadSafeStateControllerCombatStateOrientationWarpingAlpha() const
 {
-    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
-    return (ThreadSafeData.MovementData.Velocity.Size2D() > 10.0f || ThreadSafeData.InputData.bHasMoveInput) ? 1.0f : 0.0f;
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>()
+        .ThreadSafeData.StateController.CombatStateOrientationWarpingAlpha;
 }
 
 FRotator UMotionMatchingAnimInstance::GetThreadSafeStateControllerDesiredFacingRotator() const
@@ -3895,8 +4010,11 @@ float UMotionMatchingAnimInstance::GetThreadSafeDesiredFacingDeltaYaw() const
 
 bool UMotionMatchingAnimInstance::GetThreadSafeIsHeavyLand() const
 {
-    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
-    return ThreadSafeData.LandingData.bUseHeavyLand;
+    // This getter is bound only by the game-thread Chooser evaluation.  The
+    // reflected value is published immediately before EvaluateObjectChooserBase;
+    // reading the animation proxy here was one update behind and selected the
+    // previous landing's Heavy/Light row on the first frame.
+    return bStateControllerIsHeavyLand;
 }
 
 bool UMotionMatchingAnimInstance::GetThreadSafeIsMovingLand() const

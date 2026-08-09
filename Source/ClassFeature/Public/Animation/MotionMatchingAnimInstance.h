@@ -340,6 +340,18 @@ struct FAnimStateControllerThreadSafeData
     UPROPERTY(BlueprintReadOnly, Category = "StateController")
     FRotator BlendStackSteeringTargetOrientation = FRotator::ZeroRotator;
 
+    /**
+     * Local (actor-relative) movement angle for the current direct one-shot.
+     * This deliberately comes from the one-shot direction latch when one is
+     * active; live velocity becomes zero before a Land -> Stop hand-off.
+     */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float CombatStateOrientationWarpingAngle = 0.0f;
+
+    /** Authored curve still decides the final weight; this is the state gate. */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float CombatStateOrientationWarpingAlpha = 0.0f;
+
     /** Velocity-to-acceleration turn angle; diagnostics only, never a direct Pivot trigger. */
     UPROPERTY(BlueprintReadOnly, Category = "StateController")
     float TrajectoryTurnAngleDegrees = 0.0f;
@@ -845,6 +857,11 @@ protected:
      *  It is consumed only by the immediate Land -> Stop one-shot hand-off. */
     EMovementDirection StateControllerLandingDirectionLatch = EMovementDirection::Forward;
     bool bHasStateControllerLandingDirectionLatch = false;
+    /** Exact world-space impact facing (not only the quantized eight-way sector).
+     *  Land and its immediate Stop hand-off use this as their common Steering target. */
+    float StateControllerLandingSteeringTargetYaw = 0.0f;
+    /** Same impact direction as above, expressed in actor-local degrees for Orientation Warping. */
+    float StateControllerLandingOrientationWarpingAngle = 0.0f;
     bool bStateControllerDeferringDiagonalLand = false;
 
     void EvaluateStateControllerPresentationState();
