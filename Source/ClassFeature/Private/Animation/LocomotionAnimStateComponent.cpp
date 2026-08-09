@@ -1512,20 +1512,18 @@ void ULocomotionAnimStateComponent::HandleRemoteLanded(float ImpactFallSpeed, in
 
 bool ULocomotionAnimStateComponent::IsDiagonalLanding() const
 {
-    const FVector2D InputDirection = CachedMoveInput.GetSafeNormal();
     const FVector2D LandingDirection = LandMoveDirection.GetSafeNormal();
 
-    const bool bInputDiagonal =
-        bHasMoveInput &&
-        FMath::Abs(InputDirection.X) >= SprintDiagonalLandingRightThreshold &&
-        FMath::Abs(InputDirection.Y) >= DiagonalLandingForwardThreshold;
-
+    // This must be an impact-time classification.  Using the *current* WASD
+    // vector here made a standing land become a diagonal moving-land halfway
+    // through its clip, bypassing Start when the player pressed a diagonal key
+    // after contact.
     const bool bLandingDirectionDiagonal =
         bLandWasMoving &&
         FMath::Abs(LandingDirection.X) >= SprintDiagonalLandingRightThreshold &&
         FMath::Abs(LandingDirection.Y) >= DiagonalLandingForwardThreshold;
 
-    return bInputDiagonal || bLandingDirectionDiagonal;
+    return bLandingDirectionDiagonal;
 }
 
 float ULocomotionAnimStateComponent::GetEffectiveMinimumLandingDuration() const

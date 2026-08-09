@@ -37,6 +37,8 @@
 #include "Item/Weapons/BowItem.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimSequence.h"
+#include "Animation/MotionMatchingAnimInstance.h"
 #include "Components/BaseHealthComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Ship.h"
@@ -2330,10 +2332,34 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
 		return;
 	}
 
+
+	// A direct Blend Stack sequence does not populate AnimInstance's consumed
+	// root-motion buffer.  Extract the selected TIP clip's root delta ourselves,
+	// as Project_J does, so the capsule follows the authored 90/180 turn.
 	float AnimRootYawDelta = 0.0f;
-	if (UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+	if (const UMotionMatchingAnimInstance* MotionMatchingAnim =
+		Cast<UMotionMatchingAnimInstance>(GetMesh() ? GetMesh()->GetAnimInstance() : nullptr))
 	{
-		AnimRootYawDelta = AnimInst->ConsumeExtractedRootMotion(0.0f).GetRootMotionTransform().GetRotation().Rotator().Yaw;
+		const bool bInTurnInPlace = MotionMatchingAnim->GetThreadSafeStateControllerPresentationState() ==
+			EStateControllerPresentationState::TurnInPlace;
+		if (bInTurnInPlace)
+		{
+			if (const UAnimSequence* TurnSequence = Cast<UAnimSequence>(
+				MotionMatchingAnim->GetThreadSafeStateControllerSelectedAnimation()))
+			{
+				const float StartTime = MotionMatchingAnim->GetThreadSafeStateControllerSelectedAnimationStartTime();
+				const float ElapsedTime = MotionMatchingAnim->GetThreadSafeStateControllerSelectedAnimationElapsedTime();
+				const float PreviousTime = FMath::Clamp(StartTime + ElapsedTime - DeltaTime, 0.0f, TurnSequence->GetPlayLength());
+				const float CurrentTime = FMath::Clamp(StartTime + ElapsedTime, 0.0f, TurnSequence->GetPlayLength());
+				if (CurrentTime > PreviousTime)
+				{
+					FAnimExtractContext ExtractionContext(static_cast<double>(CurrentTime));
+					const FTransform RootMotionTransform = TurnSequence->ExtractRootMotionFromRange(
+						static_cast<double>(PreviousTime), static_cast<double>(CurrentTime), ExtractionContext);
+					AnimRootYawDelta = RootMotionTransform.Rotator().Yaw;
+				}
+			}
+		}
 	}
 
 	float ClampedRootYawDelta = 0.0f;

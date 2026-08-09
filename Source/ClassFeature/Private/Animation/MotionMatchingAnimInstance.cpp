@@ -1945,8 +1945,10 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         }
     }
 
-    // Direct Chooser one-shots own completion through animation notifies and
-    // component fallback timers. MM must not complete hidden fallback clips.
+    // Direct Chooser one-shots own completion through their elapsed playback
+    // time and component fallback timers.  Do not let animation Notifies end a
+    // state: the same source clips are also used by Motion Matching and their
+    // authored Notifies must remain cosmetic/gameplay-only.
 #if 0
     // Simulated proxies follow replicated state; do not locally finish transition states.
     if (CachedLocomotionStateComponent && CachedBasePlayer && CachedBasePlayer->GetLocalRole() != ROLE_SimulatedProxy)
@@ -3261,6 +3263,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
     ThreadSafeData.StateController.SelectedAnimationOutput = StateControllerSelectedAnimationOutput;
     ThreadSafeData.StateController.SelectedAnimationBlendTime = StateControllerSelectedAnimationBlendTime;
     ThreadSafeData.StateController.SelectedAnimationStartTime = StateControllerSelectedAnimationStartTime;
+    ThreadSafeData.StateController.SelectedAnimationElapsedTime = StateControllerPlaybackHoldElapsed;
     ThreadSafeData.StateController.bSelectedAnimationShouldLoop = bStateControllerSelectedAnimationShouldLoop;
     ThreadSafeData.StateController.bHasSelectedAnimation = StateControllerSelectedAnimation != nullptr;
     ThreadSafeData.StateController.SelectionRevision = StateControllerSelectionRevision;
@@ -3268,7 +3271,48 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         ThreadSafeData.StateController.bHasSelectedAnimation &&
         StateControllerPlaybackHoldState != EStateControllerPresentationState::LocomotionLoop &&
         StateControllerPlaybackHoldState != EStateControllerPresentationState::IdleLoop;
-    ThreadSafeData.StateController.TurnInPlaceSteeringAlpha = 1.0f;
+
+    // Match GASP's EnableSteering contract: root-motion steering applies only
+    // while a Blend Stack clip is actually active and the character is moving
+    // or airborne.  In particular, Stop/Land/TIP clips must not inherit a
+    // stale DesiredFacingDeltaYaw and be visually rotated after the Chooser
+    // has selected the correct directional asset.
+    const bool bBlendStackClipActive = ThreadSafeData.StateController.bHasSelectedAnimation;
+    const bool bMovingForSteering =
+        ThreadSafeData.MovementData.Velocity.Size2D() > 10.0f ||
+        ThreadSafeData.InputData.bHasMoveInput;
+    const bool bAirborneForSteering = ThreadSafeData.AirData.bIsInAir;
+    const bool bEnableBlendStackSteering = bBlendStackClipActive && (bMovingForSteering || bAirborneForSteering);
+    ThreadSafeData.StateController.BlendStackSteeringAlpha = bEnableBlendStackSteering ? 1.0f : 0.0f;
+    // Kept as a compatibility alias because the existing Artistic graph is
+    // already wired to this getter.  New graph wiring should use the explicit
+    // BlendStackSteering name below.
+    ThreadSafeData.StateController.TurnInPlaceSteeringAlpha = ThreadSafeData.StateController.BlendStackSteeringAlpha;
+
+    const FTransformTrajectorySample* FutureFacingSample = FindClosestTrajectorySample(
+        ThreadSafeData.MovementData.Trajectory, 0.5f);
+    if (FutureFacingSample)
+    {
+        const FRotator FutureFacing = FutureFacingSample->GetTransform().Rotator();
+        ThreadSafeData.StateController.BlendStackSteeringTargetOrientation =
+            FRotator(0.0f, FutureFacing.Yaw, 0.0f);
+    }
+    else if (!ThreadSafeData.MovementData.Velocity.IsNearlyZero(10.0f))
+    {
+        ThreadSafeData.StateController.BlendStackSteeringTargetOrientation =
+            FRotator(0.0f, ThreadSafeData.MovementData.Velocity.Rotation().Yaw, 0.0f);
+    }
+    else
+    {
+        ThreadSafeData.StateController.BlendStackSteeringTargetOrientation = FRotator::ZeroRotator;
+    }
+
+    const FVector VelocityDirection = ThreadSafeData.MovementData.Velocity.GetSafeNormal2D();
+    const FVector AccelerationDirection = ThreadSafeData.MovementData.Acceleration.GetSafeNormal2D();
+    ThreadSafeData.StateController.TrajectoryTurnAngleDegrees =
+        !VelocityDirection.IsNearlyZero() && !AccelerationDirection.IsNearlyZero()
+        ? FRotator::NormalizeAxis(AccelerationDirection.Rotation().Yaw - VelocityDirection.Rotation().Yaw)
+        : 0.0f;
 
     if (CachedLocomotionStateComponent)
     {
@@ -3403,7 +3447,7 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
                 : (bTurnInPlaceSampleDue ? TEXT("TIPSample") : TEXT("HoldSample"))));
 
     UE_LOG(LogMotionMatchingCapture, Display,
-        TEXT("[SC_TRACE] Reason=%s Pawn=%s Locomotion=%s Requested=%s Presentation=%s Rev=%d OverrideMM=%d Asset=%s Start=%.3f Length=%.3f Elapsed=%.3f Blend=%.3f Loop=%d PSD=%s Input=(R=%.2f,F=%.2f) Speed=%.1f Direction=%s PrevDirection=%s LandStopLatch=%s Pivot=%d TurnAngle=%.1f PivotThreshold=%.1f PivotMinSpeed=%.1f RedirectThreshold=%.1f StartInputChanged=%d(%.1f/%.1f) StartYawChanged=%d(%.1f/%.1f) LandDir=(R=%.2f,F=%.2f) LandDirSource=%s LandDiagonal=%d EffectiveLandMin=%.2f LandCompletionLead=%.2f Gait=%s Foot=%s Jump=%d FallOff=%d Landing=%d HeavyLand=%d MovingLand=%d MovingLandSprint=%d LandingFromFallOff=%d LastFallSpeed=%.1f LandTime=%.3f Chooser=%s Outputs=%s"),
+        TEXT("[SC_TRACE] Reason=%s Pawn=%s Locomotion=%s Requested=%s Presentation=%s Rev=%d OverrideMM=%d Asset=%s Start=%.3f Length=%.3f Elapsed=%.3f Blend=%.3f Loop=%d PSD=%s Input=(R=%.2f,F=%.2f) Speed=%.1f Direction=%s PrevDirection=%s LandStopLatch=%s Pivot=%d InputTurn=%.1f TrajectoryTurn=%.1f PivotThreshold=%.1f PivotMinSpeed=%.1f RedirectThreshold=%.1f Steering=%d TargetYaw=%.1f StartInputChanged=%d(%.1f/%.1f) StartYawChanged=%d(%.1f/%.1f) LandDir=(R=%.2f,F=%.2f) LandDirSource=%s LandDiagonal=%d EffectiveLandMin=%.2f LandCompletionLead=%.2f Gait=%s Foot=%s Jump=%d FallOff=%d Landing=%d HeavyLand=%d MovingLand=%d MovingLandSprint=%d LandingFromFallOff=%d LastFallSpeed=%.1f LandTime=%.3f Chooser=%s Outputs=%s"),
         Reason,
         *CachedBasePlayer->GetName(),
         *LocomotionName,
@@ -3426,9 +3470,12 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
         *LandingLatchName,
         CachedLocomotionStateComponent->bSharpTurnRequested ? 1 : 0,
         CachedLocomotionStateComponent->MoveInputTurnAngle,
+        StateController.TrajectoryTurnAngleDegrees,
         CachedLocomotionStateComponent->PivotAngleThreshold,
         CachedLocomotionStateComponent->PivotMinSpeed,
         CachedLocomotionStateComponent->SharpTurnAngleThreshold,
+        StateController.BlendStackSteeringAlpha > 0.0f ? 1 : 0,
+        StateController.BlendStackSteeringTargetOrientation.Yaw,
         bStateControllerStartInputChanged ? 1 : 0,
         StateControllerStartInputDeltaDegrees,
         StateControllerStartInputInterruptAngle,
@@ -3679,6 +3726,11 @@ float UMotionMatchingAnimInstance::GetThreadSafeStateControllerSelectedAnimation
     return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.SelectedAnimationStartTime;
 }
 
+float UMotionMatchingAnimInstance::GetThreadSafeStateControllerSelectedAnimationElapsedTime() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.SelectedAnimationElapsedTime;
+}
+
 bool UMotionMatchingAnimInstance::GetThreadSafeStateControllerSelectedAnimationShouldLoop() const
 {
     return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.bSelectedAnimationShouldLoop;
@@ -3704,6 +3756,11 @@ float UMotionMatchingAnimInstance::GetThreadSafeStateControllerTurnInPlaceSteeri
     return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.TurnInPlaceSteeringAlpha;
 }
 
+float UMotionMatchingAnimInstance::GetThreadSafeStateControllerBlendStackSteeringAlpha() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.BlendStackSteeringAlpha;
+}
+
 float UMotionMatchingAnimInstance::GetThreadSafeStateControllerCombatStateOrientationWarpingAngle() const
 {
     const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
@@ -3724,11 +3781,15 @@ float UMotionMatchingAnimInstance::GetThreadSafeStateControllerCombatStateOrient
 
 FRotator UMotionMatchingAnimInstance::GetThreadSafeStateControllerDesiredFacingRotator() const
 {
-    if (CachedLocomotionStateComponent)
-    {
-        return FRotator(0.0f, CachedLocomotionStateComponent->DesiredFacingDeltaYaw, 0.0f);
-    }
-    return FRotator::ZeroRotator;
+    // Compatibility alias for the pin used by the existing Blend Stack graph.
+    // It deliberately no longer returns the TIP-only DesiredFacingDeltaYaw.
+    return GetThreadSafeStateControllerBlendStackSteeringTargetOrientation();
+}
+
+FRotator UMotionMatchingAnimInstance::GetThreadSafeStateControllerBlendStackSteeringTargetOrientation() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>()
+        .ThreadSafeData.StateController.BlendStackSteeringTargetOrientation;
 }
 
 EOffsetRootBoneMode UMotionMatchingAnimInstance::GetThreadSafeOffsetRootRotationMode() const

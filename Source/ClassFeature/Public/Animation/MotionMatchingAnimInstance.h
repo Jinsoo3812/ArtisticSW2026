@@ -309,6 +309,10 @@ struct FAnimStateControllerThreadSafeData
     UPROPERTY(BlueprintReadOnly, Category = "StateController")
     float SelectedAnimationStartTime = 0.0f;
 
+    /** Playback time in the direct Blend Stack one-shot, before StartTime is applied. */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float SelectedAnimationElapsedTime = 0.0f;
+
     UPROPERTY(BlueprintReadOnly, Category = "StateController")
     bool bSelectedAnimationShouldLoop = false;
 
@@ -322,7 +326,23 @@ struct FAnimStateControllerThreadSafeData
     bool bShouldOverrideMotionMatching = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "StateController")
-    float TurnInPlaceSteeringAlpha = 1.0f;
+    float TurnInPlaceSteeringAlpha = 0.0f;
+
+    /**
+     * GASP-style steering gate for the current Blend Stack clip.  This is
+     * intentionally separate from authored Turn In Place rotation: only a
+     * moving/in-air character may steer root motion.
+     */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float BlendStackSteeringAlpha = 0.0f;
+
+    /** Future (0.5 s) trajectory facing used by the generic Steering node. */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    FRotator BlendStackSteeringTargetOrientation = FRotator::ZeroRotator;
+
+    /** Velocity-to-acceleration turn angle; diagnostics only, never a direct Pivot trigger. */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float TrajectoryTurnAngleDegrees = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category = "StateController")
     float TurnInPlaceRootYawDelta = 0.0f;
@@ -585,6 +605,9 @@ public:
     float GetThreadSafeStateControllerSelectedAnimationStartTime() const;
 
     UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    float GetThreadSafeStateControllerSelectedAnimationElapsedTime() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
     bool GetThreadSafeStateControllerSelectedAnimationShouldLoop() const;
 
     UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
@@ -599,6 +622,10 @@ public:
     UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
     float GetThreadSafeStateControllerTurnInPlaceSteeringAlpha() const;
 
+    /** GASP-compatible generic steering alpha. Prefer this name for new AnimGraph wiring. */
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    float GetThreadSafeStateControllerBlendStackSteeringAlpha() const;
+
     UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
     float GetThreadSafeStateControllerCombatStateOrientationWarpingAngle() const;
 
@@ -607,6 +634,10 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
     FRotator GetThreadSafeStateControllerDesiredFacingRotator() const;
+
+    /** GASP-compatible generic Steering target (the predicted trajectory facing at +0.5 s). */
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    FRotator GetThreadSafeStateControllerBlendStackSteeringTargetOrientation() const;
 
     /** Offset Root Bone modes: keep translation centered; only TIP may retain rotational offset. */
     UFUNCTION(BlueprintPure, Category = "Offset Root", meta = (BlueprintThreadSafe))
