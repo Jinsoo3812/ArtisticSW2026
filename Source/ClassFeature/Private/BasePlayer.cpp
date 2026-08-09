@@ -2378,8 +2378,14 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
 	NewRotation.Yaw += ClampedRootYawDelta;
 	SetActorRotation(NewRotation);
 
-	if (bMoving || FMath::Abs(FacingDeltaYaw - ClampedRootYawDelta) < 45.0f)
-	{
-		AnimStateComponent->bShouldTurnInPlace = false;
-	}
+    // Compare the residual yaw *after* the extracted root delta was applied.
+    // The previous test compared the full remaining yaw against a one-frame
+    // delta and therefore cancelled a 90-degree TIP with roughly 45 degrees
+    // still left to turn.
+    const float RemainingFacingDeltaYaw = FRotator::NormalizeAxis(FacingDeltaYaw - ClampedRootYawDelta);
+    constexpr float TurnInPlaceExitAngle = 12.0f;
+    if (bMoving || FMath::Abs(RemainingFacingDeltaYaw) <= TurnInPlaceExitAngle)
+    {
+        AnimStateComponent->bShouldTurnInPlace = false;
+    }
 }

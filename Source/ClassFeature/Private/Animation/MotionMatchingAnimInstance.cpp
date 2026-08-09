@@ -2857,12 +2857,24 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     const bool bLanding = CachedLocomotionStateComponent->bIsLanding && CachedLocomotionStateComponent->bLandingRequested;
     const bool bShouldTurnInPlace = CachedLocomotionStateComponent->bShouldTurnInPlace;
     const bool bInPlaybackHold = (StateControllerPlaybackHoldElapsed < StateControllerPlaybackHoldDuration);
+    const bool bDiagonalMovingLand =
+        bLanding &&
+        CachedLocomotionStateComponent->bLandWasMoving &&
+        CachedLocomotionStateComponent->GetStateControllerDebugIsDiagonalLanding();
+    bStateControllerDeferringDiagonalLand =
+        bDiagonalMovingLand &&
+        CachedLocomotionStateComponent->LandingElapsedTime < StateControllerDiagonalLandCommitDelay;
 
     // StartLanding deliberately keeps bIsInAir true until the landing pose is
     // released.  Landing must therefore take precedence over the air flag.
     if (bLanding)
     {
-        DesiredState = EStateControllerPresentationState::TransitionToLand;
+        // Do not flash a generic F/B landing clip when a diagonal moving land is
+        // released immediately. The component will enter Stop on the next update,
+        // and the already-latched impact sector then selects the correct Stop clip.
+        DesiredState = bStateControllerDeferringDiagonalLand
+            ? EStateControllerPresentationState::LocomotionLoop
+            : EStateControllerPresentationState::TransitionToLand;
     }
     else if (bInAir)
     {
@@ -3119,6 +3131,18 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         {
             StateControllerPreviousMovementDirection = CurrentMovementDirection;
             CurrentMovementDirection = ResolveStateControllerDirectionFromInput(CachedLocomotionStateComponent->CachedMoveInput);
+            StateControllerMovementDirection = CurrentMovementDirection;
+        }
+        else if (DesiredState == EStateControllerPresentationState::TransitionToJump && CachedLocomotionStateComponent &&
+            CachedLocomotionStateComponent->bJumpStartWasMoving &&
+            !CachedLocomotionStateComponent->JumpStartMoveDirection.IsNearlyZero())
+        {
+            // CMC may not have accelerated yet on the first jump frame. Use the
+            // accepted ground launch snapshot rather than stale/current velocity
+            // so the direct Jump chooser receives the intended diagonal sector.
+            StateControllerPreviousMovementDirection = CurrentMovementDirection;
+            CurrentMovementDirection = ResolveStateControllerDirectionFromInput(
+                CachedLocomotionStateComponent->JumpStartMoveDirection);
             StateControllerMovementDirection = CurrentMovementDirection;
         }
         else if (DesiredState == EStateControllerPresentationState::TransitionToLand && CachedLocomotionStateComponent &&
@@ -3447,7 +3471,7 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
                 : (bTurnInPlaceSampleDue ? TEXT("TIPSample") : TEXT("HoldSample"))));
 
     UE_LOG(LogMotionMatchingCapture, Display,
-        TEXT("[SC_TRACE] Reason=%s Pawn=%s Locomotion=%s Requested=%s Presentation=%s Rev=%d OverrideMM=%d Asset=%s Start=%.3f Length=%.3f Elapsed=%.3f Blend=%.3f Loop=%d PSD=%s Input=(R=%.2f,F=%.2f) Speed=%.1f Direction=%s PrevDirection=%s LandStopLatch=%s Pivot=%d InputTurn=%.1f TrajectoryTurn=%.1f PivotThreshold=%.1f PivotMinSpeed=%.1f RedirectThreshold=%.1f Steering=%d TargetYaw=%.1f StartInputChanged=%d(%.1f/%.1f) StartYawChanged=%d(%.1f/%.1f) LandDir=(R=%.2f,F=%.2f) LandDirSource=%s LandDiagonal=%d EffectiveLandMin=%.2f LandCompletionLead=%.2f Gait=%s Foot=%s Jump=%d FallOff=%d Landing=%d HeavyLand=%d MovingLand=%d MovingLandSprint=%d LandingFromFallOff=%d LastFallSpeed=%.1f LandTime=%.3f Chooser=%s Outputs=%s"),
+        TEXT("[SC_TRACE] Reason=%s Pawn=%s Locomotion=%s Requested=%s Presentation=%s Rev=%d OverrideMM=%d Asset=%s Start=%.3f Length=%.3f Elapsed=%.3f Blend=%.3f Loop=%d PSD=%s Input=(R=%.2f,F=%.2f) Speed=%.1f Direction=%s PrevDirection=%s LandStopLatch=%s Pivot=%d InputTurn=%.1f TrajectoryTurn=%.1f PivotThreshold=%.1f PivotMinSpeed=%.1f RedirectThreshold=%.1f Steering=%d TargetYaw=%.1f StartInputChanged=%d(%.1f/%.1f) StartYawChanged=%d(%.1f/%.1f) LandDir=(R=%.2f,F=%.2f) LandDirSource=%s LandDiagonal=%d LandCommitDeferred=%d EffectiveLandMin=%.2f LandCompletionLead=%.2f Gait=%s Foot=%s Jump=%d FallOff=%d Landing=%d HeavyLand=%d MovingLand=%d MovingLandSprint=%d LandingFromFallOff=%d LastFallSpeed=%.1f LandTime=%.3f Chooser=%s Outputs=%s"),
         Reason,
         *CachedBasePlayer->GetName(),
         *LocomotionName,
@@ -3486,6 +3510,7 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
         CachedLocomotionStateComponent->LandMoveDirection.Y,
         CachedLocomotionStateComponent->bLandDirectionFromVelocity ? TEXT("ImpactVelocity") : TEXT("InputFallback"),
         CachedLocomotionStateComponent->GetStateControllerDebugIsDiagonalLanding() ? 1 : 0,
+        bStateControllerDeferringDiagonalLand ? 1 : 0,
         CachedLocomotionStateComponent->GetStateControllerDebugEffectiveMinimumLandingDuration(),
         StateControllerLandCompletionLeadTime,
         *GaitName,

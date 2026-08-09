@@ -781,6 +781,14 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Landing", meta = (ClampMin = "0.0", Units = "s"))
     float StateControllerLandCompletionLeadTime = 0.05f;
 
+    /**
+     * A diagonal moving land has no dedicated diagonal landing clip in the current
+     * asset set. Wait briefly before committing the generic forward/back land clip,
+     * so a tap-and-release can hand off directly to the latched diagonal Stop.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Landing", meta = (ClampMin = "0.0", ClampMax = "0.2", Units = "s"))
+    float StateControllerDiagonalLandCommitDelay = 0.06f;
+
     /** Start is cancellable when the player clearly changes move or facing intent. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Start", meta = (ClampMin = "0.0", ClampMax = "180.0"))
     float StateControllerStartInputInterruptAngle = 12.0f;
@@ -837,6 +845,7 @@ protected:
      *  It is consumed only by the immediate Land -> Stop one-shot hand-off. */
     EMovementDirection StateControllerLandingDirectionLatch = EMovementDirection::Forward;
     bool bHasStateControllerLandingDirectionLatch = false;
+    bool bStateControllerDeferringDiagonalLand = false;
 
     void EvaluateStateControllerPresentationState();
     void EvaluateStateControllerPlaybackHold(EStateControllerPresentationState DesiredState);
