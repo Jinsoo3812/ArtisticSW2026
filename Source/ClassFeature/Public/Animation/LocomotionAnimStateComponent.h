@@ -175,6 +175,13 @@ public:
     // Forces immediate state transition
     void ForceStateTransition(ELocomotionState NewState);
 
+    /**
+     * Re-arms the currently active one-shot safety timer to the duration of the
+     * animation selected by the State Controller.  This is only a fallback;
+     * an authored notify can still finish the state earlier.
+     */
+    void RefreshOneShotFallbackTimer(float SelectedAnimationDuration);
+
     // Backward-compatibility stubs for ABasePlayer
     UFUNCTION(BlueprintCallable, Category = "Locomotion|Stubs")
     void MarkGroundStartFinished() { NotifyStartFinished(); }
@@ -190,6 +197,12 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Locomotion|Stubs")
     void FinishFallOffStart();
+
+    /** Event history consumed by the State Controller diagnostic trace. */
+    int32 GetStateControllerDebugEventRevision() const { return StateControllerDebugEventRevision; }
+    const FString& GetStateControllerDebugLastEvent() const { return StateControllerDebugLastEvent; }
+    bool GetStateControllerDebugIsDiagonalLanding() const { return IsDiagonalLanding(); }
+    float GetStateControllerDebugEffectiveMinimumLandingDuration() const { return GetEffectiveMinimumLandingDuration(); }
 
 protected:
     void CacheOwner();
@@ -214,6 +227,7 @@ protected:
     void InterruptLandingForMoveInput();
     void InterruptLandingForDirectionChange();
     void InterruptLandingForStop();
+    void RecordStateControllerDebugEvent(const FString& Event);
     bool ShouldAcceptRemoteAnimEvent(int32 EventSequence);
     bool IsDiagonalLanding() const;
     float GetEffectiveMinimumLandingDuration() const;
@@ -251,6 +265,7 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Input")
     FVector2D MoveInput;
+
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Transitions")
     bool bSharpTurnRequested;
@@ -376,9 +391,18 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
     FVector2D LandMoveDirection;
 
+    /** True when LandMoveDirection came from impact velocity rather than input. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
+    bool bLandDirectionFromVelocity = false;
+
     /** Input direction captured at impact. Kept separate from velocity so camera-relative steering does not invalidate a landing spuriously. */
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
     FVector2D LandingStartMoveInput;
+
+    /** A release after the player deliberately moved during a landing must be
+     *  allowed to select Stop immediately instead of leaking into a loop. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
+    bool bLandingReceivedMoveInput = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
     float LandingElapsedTime;
@@ -481,6 +505,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Tuning")
     float SharpTurnMinSpeed;
 
+    /** A direct Pivot is a high-commitment reversal. Smaller turns stay in the
+     *  Motion Matching transition PSD. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Tuning")
+    float PivotAngleThreshold;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Tuning")
+    float PivotMinSpeed;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Tuning")
     float HeavyLandSpeedThreshold;
 
@@ -533,4 +565,6 @@ protected:
     bool bSuppressFallOffStart = false;
     int32 LastRemoteAnimEventSequence = 0;
     float GroundedConfirmTimer = 0.0f;
+    int32 StateControllerDebugEventRevision = 0;
+    FString StateControllerDebugLastEvent;
 };

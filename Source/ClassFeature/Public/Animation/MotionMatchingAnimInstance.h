@@ -6,6 +6,7 @@
 #include "Animation/TrajectoryTypes.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "BoneControllers/AnimNode_FootPlacement.h"
+#include "BoneControllers/AnimNode_OffsetRootBone.h"
 #include "GameplayTagContainer.h"
 #include "SwimmingComponent.h"
 #include "MotionMatchingAnimInstance.generated.h"
@@ -34,6 +35,14 @@ enum class EWeaponUpperBodyOverlayState : uint8
     Idle,
     Run,
     Sprint
+};
+
+/** The foot that should initiate a one-shot locomotion transition. */
+UENUM(BlueprintType)
+enum class EStateControllerOneShotFoot : uint8
+{
+    Left,
+    Right
 };
 
 USTRUCT(BlueprintType)
@@ -253,22 +262,23 @@ struct FS_ChooserOutputs
 {
     GENERATED_BODY()
 
-    UPROPERTY(BlueprintReadOnly, Category = "Chooser")
+    /** Per-row playback offset, written by a Chooser struct-output column. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chooser", meta = (ClampMin = "0.0", Units = "s"))
     float StartTime = 0.0f;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Chooser")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chooser")
     bool bUseMM = false;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Chooser")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chooser", meta = (ClampMin = "0.0"))
     float MMCostLimit = 0.0f;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Chooser")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chooser", meta = (ClampMin = "0.0", Units = "s"))
     float BlendTime = 0.2f;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Chooser")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chooser")
     FName BlendProfile = NAME_None;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Chooser")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chooser")
     FGameplayTagContainer Tags;
 };
 
@@ -284,10 +294,29 @@ struct FAnimStateControllerThreadSafeData
     EMovementDirection MovementDirection = EMovementDirection::Forward;
 
     UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    EMovementDirection PreviousMovementDirection = EMovementDirection::Forward;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
     TObjectPtr<UAnimationAsset> SelectedAnimation = nullptr;
+
+    /** Full authored Chooser metadata cached beside SelectedAnimation (Project_J/GASP contract). */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    FS_ChooserOutputs SelectedAnimationOutput;
 
     UPROPERTY(BlueprintReadOnly, Category = "StateController")
     float SelectedAnimationBlendTime = 0.2f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float SelectedAnimationStartTime = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bSelectedAnimationShouldLoop = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bHasSelectedAnimation = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    int32 SelectionRevision = 0;
 
     UPROPERTY(BlueprintReadOnly, Category = "StateController")
     bool bShouldOverrideMotionMatching = false;
@@ -425,6 +454,7 @@ public:
 
     virtual void NativeInitializeAnimation() override;
     virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+    virtual void NativePostEvaluateAnimation() override;
 
     /**
      * The main AnimInstance calls this for linked animation-layer instances.
@@ -552,6 +582,18 @@ public:
     float GetThreadSafeStateControllerSelectedAnimationBlendTime() const;
 
     UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    float GetThreadSafeStateControllerSelectedAnimationStartTime() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeStateControllerSelectedAnimationShouldLoop() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeStateControllerHasSelectedAnimation() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    int32 GetThreadSafeStateControllerSelectionRevision() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
     bool GetThreadSafeShouldOverrideMotionMatching() const;
 
     UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
@@ -566,8 +608,18 @@ public:
     UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
     FRotator GetThreadSafeStateControllerDesiredFacingRotator() const;
 
-    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
-    FRotator GetThreadSafeOffsetRootRotation() const;
+    /** Offset Root Bone modes: keep translation centered; only TIP may retain rotational offset. */
+    UFUNCTION(BlueprintPure, Category = "Offset Root", meta = (BlueprintThreadSafe))
+    EOffsetRootBoneMode GetThreadSafeOffsetRootRotationMode() const;
+
+    UFUNCTION(BlueprintPure, Category = "Offset Root", meta = (BlueprintThreadSafe))
+    EOffsetRootBoneMode GetThreadSafeOffsetRootTranslationMode() const;
+
+    UFUNCTION(BlueprintPure, Category = "Offset Root", meta = (BlueprintThreadSafe))
+    float GetThreadSafeOffsetRootTranslationHalfLife() const;
+
+    UFUNCTION(BlueprintPure, Category = "Offset Root", meta = (BlueprintThreadSafe))
+    float GetThreadSafeOffsetRootTranslationRadius() const;
 
     UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
     FVector2D GetThreadSafeAOValue() const;
@@ -613,6 +665,10 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
     bool bStateControllerShouldTurnInPlace = false;
+
+    /** Latched when entering a one-shot state; expose this property as a Chooser enum column. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    EStateControllerOneShotFoot StateControllerOneShotFoot = EStateControllerOneShotFoot::Left;
 
     UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
     EGaitIntent GetThreadSafeGait() const;
@@ -690,12 +746,54 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
     TObjectPtr<UChooserTable> TurnInPlaceChooserTable;
 
+    /** Amount reserved at the end of a land one-shot before Motion Matching resumes. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Landing", meta = (ClampMin = "0.0", Units = "s"))
+    float StateControllerLandCompletionLeadTime = 0.05f;
+
+    /** Start is cancellable when the player clearly changes move or facing intent. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Start", meta = (ClampMin = "0.0", ClampMax = "180.0"))
+    float StateControllerStartInputInterruptAngle = 12.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Start", meta = (ClampMin = "0.0", ClampMax = "180.0"))
+    float StateControllerStartControlYawInterruptAngle = 15.0f;
+
     // State Controller Runtime Playback Hold Data
     EStateControllerPresentationState StateControllerPlaybackHoldState = EStateControllerPresentationState::None;
+    /** Current gameplay presentation request, before the one-shot hold policy is applied. */
+    EStateControllerPresentationState StateControllerRequestedPresentationState = EStateControllerPresentationState::None;
     float StateControllerPlaybackHoldElapsed = 0.0f;
     float StateControllerPlaybackHoldDuration = 0.0f;
+    FVector2D StateControllerStartMoveInput = FVector2D::ZeroVector;
+    float StateControllerStartControlYaw = 0.0f;
+    bool bStateControllerStartInputChanged = false;
+    bool bStateControllerStartControlYawChanged = false;
+    float StateControllerStartInputDeltaDegrees = 0.0f;
+    float StateControllerStartControlYawDeltaDegrees = 0.0f;
     TObjectPtr<UAnimationAsset> StateControllerSelectedAnimation = nullptr;
+    FS_ChooserOutputs StateControllerSelectedAnimationOutput;
     float StateControllerSelectedAnimationBlendTime = 0.2f;
+    float StateControllerSelectedAnimationStartTime = 0.0f;
+    bool bStateControllerSelectedAnimationShouldLoop = false;
+    int32 StateControllerSelectionRevision = 0;
+
+    // Foot-contact values are captured after animation evaluation, then latched at the next one-shot entry.
+    UPROPERTY(EditDefaultsOnly, Category = "StateController|Foot Phase")
+    FName StateControllerLeftFootContactCurveName = TEXT("contact_l");
+
+    UPROPERTY(EditDefaultsOnly, Category = "StateController|Foot Phase")
+    FName StateControllerRightFootContactCurveName = TEXT("contact_r");
+
+    UPROPERTY(EditDefaultsOnly, Category = "StateController|Foot Phase", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float StateControllerFootContactDifferenceThreshold = 0.2f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "StateController|Foot Phase")
+    EStateControllerOneShotFoot StateControllerNoPhaseFootFallback = EStateControllerOneShotFoot::Left;
+
+    float CachedStateControllerLeftFootContact = 0.0f;
+    float CachedStateControllerRightFootContact = 0.0f;
+    bool bHasStateControllerFootContactCurves = false;
+    bool bHasStateControllerFootPhaseHistory = false;
+    EStateControllerOneShotFoot StateControllerFootPhaseHistory = EStateControllerOneShotFoot::Left;
 
     // Movement Direction & Quadrant Thresholds
     EMovementDirection CurrentMovementDirection = EMovementDirection::Forward;
@@ -704,9 +802,16 @@ protected:
     // Land Gait Lock
     EGaitIntent StateControllerLandGaitLock = EGaitIntent::Walk;
     bool bHasStateControllerLandGaitLock = false;
+    /** The impact direction remains meaningful after velocity has reached zero.
+     *  It is consumed only by the immediate Land -> Stop one-shot hand-off. */
+    EMovementDirection StateControllerLandingDirectionLatch = EMovementDirection::Forward;
+    bool bHasStateControllerLandingDirectionLatch = false;
 
     void EvaluateStateControllerPresentationState();
     void EvaluateStateControllerPlaybackHold(EStateControllerPresentationState DesiredState);
+    /** Emits event-driven diagnostics for direct Chooser one-shots and TIP rotation. */
+    void EmitStateControllerDebugTrace(const FAnimThreadSafeData& ThreadSafeData);
+    EStateControllerOneShotFoot ResolveStateControllerOneShotFoot(bool bAllowPhaseHistoryFallback) const;
     void UpdateMovementDirection();
     void CalculateAOValueAndEnableAO();
 
@@ -715,82 +820,20 @@ protected:
     TObjectPtr<UPoseSearchDatabase> IdleDatabase;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
-    TObjectPtr<UPoseSearchDatabase> TurnInPlaceDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
-    TObjectPtr<UPoseSearchDatabase> StartDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
-    TObjectPtr<UPoseSearchDatabase> StartDatabaseRemote;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
-    TObjectPtr<UPoseSearchDatabase> RunStartRefaceDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
     TObjectPtr<UPoseSearchDatabase> LocomotionDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
-    TObjectPtr<UPoseSearchDatabase> LocomotionDatabaseRemote;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
     TObjectPtr<UPoseSearchDatabase> LocomotionTransitionDatabase;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
-    TObjectPtr<UPoseSearchDatabase> LocomotionTransitionDatabaseRemote;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
-    TObjectPtr<UPoseSearchDatabase> StopDatabase;
-
-    // Sprint PSDs
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
-    TObjectPtr<UPoseSearchDatabase> SprintStartDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
-    TObjectPtr<UPoseSearchDatabase> SprintStartDatabaseRemote;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
-    TObjectPtr<UPoseSearchDatabase> SprintStartRefaceDatabase;
-
+    // Sprint uses only a sustained Motion Matching database. Its start/stop
+    // one-shots are selected by the State Controller Choosers.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
     TObjectPtr<UPoseSearchDatabase> SprintLocomotionDatabase;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
-    TObjectPtr<UPoseSearchDatabase> SprintStopDatabase;
-
-    // Air / Landing PSDs
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> JumpStartDatabase;
-
-    /** Optional filtered PSDs. Assign normal stand/move jump assets only; JumpStartDatabase remains the compatibility fallback. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> JumpStartStandDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> JumpStartMovingDatabase;
-
+    // Only the sustained air loop belongs to Motion Matching. Jump, fall-off,
+    // land, TIP, start and stop are direct State Controller Chooser one-shots.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
     TObjectPtr<UPoseSearchDatabase> InAirDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> FallOffDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> StandLandLightDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> StandLandHeavyDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> RunLandLightDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> RunLandHeavyDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> SprintLandLightDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> SprintLandHeavyDatabase;
 
     UPROPERTY(BlueprintReadOnly, Category = "Motion Matching")
     TObjectPtr<UPoseSearchDatabase> CurrentActivePoseSearchDatabase;
@@ -898,6 +941,24 @@ private:
     ELocomotionState LastState = ELocomotionState::Idle;
     FName LastDatabaseName = NAME_None;
     float StateLogTimer = 0.0f;
+
+    // State-controller diagnostics are intentionally event-driven.  These keep
+    // a small amount of game-thread history so normal locomotion never floods
+    // the output log while a.StateControllerDebug is enabled.
+    EStateControllerPresentationState LastStateControllerDebugPresentation = EStateControllerPresentationState::None;
+    int32 LastStateControllerDebugSelectionRevision = INDEX_NONE;
+    int32 LastStateControllerDebugComponentEventRevision = INDEX_NONE;
+    float LastStateControllerDebugActorYaw = 0.0f;
+    double NextStateControllerTurnInPlaceDebugTime = 0.0;
+    double NextStateControllerOneShotDebugTime = 0.0;
+    double NextStateControllerPivotDebugTime = 0.0;
+    bool bHasStateControllerDebugActorYaw = false;
+
+    /** Debug-only: records the Main -> SubChooser chain selected for the current one-shot. */
+    FString StateControllerLastChooserPath;
+    /** Debug-only: captures StartTime immediately after each parent/child Chooser evaluation. */
+    FString StateControllerLastChooserOutputTrace;
+
     bool bWasFallOffForDebug = false;
     float FallOffDebugElapsedTime = 0.0f;
     bool bSuppressDatabaseSearchThreadSafe = false;

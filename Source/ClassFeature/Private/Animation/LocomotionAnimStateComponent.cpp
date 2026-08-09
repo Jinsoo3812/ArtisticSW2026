@@ -83,6 +83,7 @@ ULocomotionAnimStateComponent::ULocomotionAnimStateComponent()
     bLandWasMoving = false;
     bLandWasSprinting = false;
     LandMoveDirection = FVector2D::ZeroVector;
+    bLandDirectionFromVelocity = false;
     LandingStartMoveInput = FVector2D::ZeroVector;
     LandingElapsedTime = 0.f;
     LandingStartControlYaw = 0.f;
@@ -97,6 +98,8 @@ ULocomotionAnimStateComponent::ULocomotionAnimStateComponent()
     IdleSpeedThreshold = 15.f;
     SharpTurnAngleThreshold = 60.f;
     SharpTurnMinSpeed = 450.f;
+    PivotAngleThreshold = 110.f;
+    PivotMinSpeed = 350.f;
     HeavyLandSpeedThreshold = 600.f;
     MoveInputDeadZone = 0.1f;
     StopIntentSpeedThreshold = 80.f;
@@ -530,12 +533,14 @@ void ULocomotionAnimStateComponent::UpdateMovementRequestState(float DeltaTime)
         bStartWasSprinting = false;
     }
 
+    // Project_J distinguishes a normal turn redirect from a direct Pivot.
+    // Artistic keeps 45/90 degree steering inside PSD_Run_Transition; only a
+    // fast 180-ish reversal receives the authored Pivot one-shot.
     bSharpTurnRequested =
-        bIsSprinting &&
         bHasMoveInput &&
         bPrevHasMoveInput &&
-        GroundSpeed >= SharpTurnMinSpeed &&
-        FMath::Abs(MoveInputTurnAngle) >= SharpTurnAngleThreshold;
+        GroundSpeed >= PivotMinSpeed &&
+        FMath::Abs(MoveInputTurnAngle) >= PivotAngleThreshold;
 
     bStartRequested = ShouldUseLocalInput() && bJustStartedMoving;
     bStopRequested = bJustStoppedMoving && GroundSpeed > StopIntentSpeedThreshold;
@@ -832,12 +837,43 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
         }
         case ELocomotionState::Landing:
         {
+            const bool bReceivedNewStandingLandInput = !bLandingReceivedMoveInput && bHasMoveInput;
+            bLandingReceivedMoveInput |= bHasMoveInput;
+            if (bReceivedNewStandingLandInput)
+            {
+                RecordStateControllerDebugEvent(FString::Printf(
+                    TEXT("Standing land received move input Time=%.3f Input=(%.2f,%.2f) Min=%.3f"),
+                    LandingElapsedTime,
+                    CachedMoveInput.X,
+                    CachedMoveInput.Y,
+                    MinimumLandingDuration));
+            }
             if (bIsPhysicallyInAir)
             {
                 ForceStateTransition(ELocomotionState::InAir);
             }
+            // Do not make the player wait through the landing minimum after a
+            // deliberate post-impact tap.  This is the strafe equivalent of
+            // Project_J's land -> stop interruption: pressing WASD briefly and
+            // releasing it must choose the Stop chooser, never a run loop.
+            else if (bLandingReceivedMoveInput && bPrevHasMoveInput && !bHasMoveInput)
+            {
+                RecordStateControllerDebugEvent(FString::Printf(
+                    TEXT("Landing tap released -> Stop Time=%.3f"), LandingElapsedTime));
+                InterruptLandingForStop();
+            }
             else if (IsDiagonalLanding() && LandingElapsedTime >= GetEffectiveMinimumLandingDuration())
             {
+                // The previous diagonal fast-path always called FinishLandingRequest,
+                // which converts a released moving land to Idle and bypasses the
+                // direct Stop Chooser entirely.
+                if (bLandWasMoving && !bHasMoveInput)
+                {
+                    RecordStateControllerDebugEvent(FString::Printf(
+                        TEXT("Diagonal landing released -> Stop Time=%.3f"), LandingElapsedTime));
+                    InterruptLandingForStop();
+                    break;
+                }
                 if (IsMotionMatchingCaptureEnabled())
                 {
                     const FString DebugLine = FString::Printf(
@@ -959,11 +995,16 @@ void ULocomotionAnimStateComponent::ForceStateTransition(ELocomotionState NewSta
         bIsLanding = false;
         bLandingRequested = false;
         bLandingFromFallOff = false;
+        bLandingReceivedMoveInput = false;
         bSuppressFallOffStart = false;
     }
 
     PreviousState = CurrentState;
     CurrentState = NewState;
+    RecordStateControllerDebugEvent(FString::Printf(
+        TEXT("ForceStateTransition %s -> %s"),
+        *StaticEnum<ELocomotionState>()->GetNameStringByValue(static_cast<int64>(PreviousState)),
+        *StaticEnum<ELocomotionState>()->GetNameStringByValue(static_cast<int64>(CurrentState))));
 
     if (IsMotionMatchingCaptureEnabled())
     {
@@ -1009,6 +1050,49 @@ void ULocomotionAnimStateComponent::ForceStateTransition(ELocomotionState NewSta
         bIsFallOffStart = false;
         LandingElapsedTime = 0.f;
         GetWorld()->GetTimerManager().SetTimer(LandingFallbackTimerHandle, this, &ULocomotionAnimStateComponent::OnLandingFallbackTimeout, FMath::Max(0.1f, LandingMaxDuration), false);
+    }
+}
+
+void ULocomotionAnimStateComponent::RecordStateControllerDebugEvent(const FString& Event)
+{
+    ++StateControllerDebugEventRevision;
+    StateControllerDebugLastEvent = Event;
+}
+
+void ULocomotionAnimStateComponent::RefreshOneShotFallbackTimer(float SelectedAnimationDuration)
+{
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
+
+    const float Duration = FMath::Max(0.1f, SelectedAnimationDuration);
+    FTimerManager& TimerManager = World->GetTimerManager();
+
+    switch (CurrentState)
+    {
+    case ELocomotionState::Start:
+        TimerManager.SetTimer(StartFallbackTimerHandle, this, &ULocomotionAnimStateComponent::OnStartFallbackTimeout, Duration, false);
+        break;
+    case ELocomotionState::Stop:
+        TimerManager.SetTimer(StopFallbackTimerHandle, this, &ULocomotionAnimStateComponent::OnStopFallbackTimeout, Duration, false);
+        break;
+    case ELocomotionState::Landing:
+        TimerManager.SetTimer(LandingFallbackTimerHandle, this, &ULocomotionAnimStateComponent::OnLandingFallbackTimeout, Duration, false);
+        break;
+    case ELocomotionState::InAir:
+        if (bIsJumping)
+        {
+            TimerManager.SetTimer(JumpStartTimerHandle, this, &ULocomotionAnimStateComponent::FinishJumpStart, Duration, false);
+        }
+        else if (bIsFallOffStart)
+        {
+            TimerManager.SetTimer(FallOffStartTimerHandle, this, &ULocomotionAnimStateComponent::FinishFallOffStart, Duration, false);
+        }
+        break;
+    default:
+        break;
     }
 }
 
@@ -1177,6 +1261,7 @@ void ULocomotionAnimStateComponent::ApplyAuthoritativeSnapshot(const FReplicated
 
 void ULocomotionAnimStateComponent::HandleLanded(const FHitResult& Hit, float ImpactFallSpeed)
 {
+    RecordStateControllerDebugEvent(FString::Printf(TEXT("HandleLanded Impact=%.1f"), ImpactFallSpeed));
     StartLanding(ImpactFallSpeed, true);
 }
 
@@ -1277,6 +1362,7 @@ void ULocomotionAnimStateComponent::StartLanding(float ImpactFallSpeed, bool bTr
     // confirmation path. A second delivery must not rewind the one-shot pose.
     if (CurrentState == ELocomotionState::Landing && bIsLanding && bLandingRequested)
     {
+        RecordStateControllerDebugEvent(TEXT("StartLanding ignored: already landing"));
         return;
     }
 
@@ -1318,10 +1404,12 @@ void ULocomotionAnimStateComponent::StartLanding(float ImpactFallSpeed, bool bTr
         const FVector LocalDirection = CachedBasePlayer->GetActorTransform()
             .InverseTransformVectorNoScale(HorizontalVelocity.GetSafeNormal());
         LandMoveDirection = FVector2D(LocalDirection.Y, LocalDirection.X).GetSafeNormal();
+        bLandDirectionFromVelocity = true;
     }
     else
     {
         LandMoveDirection = CachedMoveInput.GetSafeNormal();
+        bLandDirectionFromVelocity = false;
     }
     LandingStartMoveInput = CachedMoveInput.GetSafeNormal();
 
@@ -1349,8 +1437,16 @@ void ULocomotionAnimStateComponent::StartLanding(float ImpactFallSpeed, bool bTr
     bCanEnterGround = false;
     LandingElapsedTime = 0.f;
     LandingStartControlYaw = CachedBasePlayer ? CachedBasePlayer->GetControlRotation().Yaw : 0.f;
+    bLandingReceivedMoveInput = bHasMoveInput;
 
     ForceStateTransition(ELocomotionState::Landing);
+    RecordStateControllerDebugEvent(FString::Printf(
+        TEXT("StartLanding accepted Impact=%.1f Moving=%d Heavy=%d Input=(%.2f,%.2f)"),
+        LandStartFallSpeed,
+        bLandWasMoving ? 1 : 0,
+        bUseHeavyLand ? 1 : 0,
+        CachedMoveInput.X,
+        CachedMoveInput.Y));
 
     if (IsMotionMatchingCaptureEnabled())
     {
@@ -1504,6 +1600,7 @@ void ULocomotionAnimStateComponent::FinishLandingRequest()
     bCanEnterLand = false;
     bCanEnterGround = true;
     LastFallSpeed = 0.f;
+    RecordStateControllerDebugEvent(FString::Printf(TEXT("FinishLandingRequest Time=%.3f HasInput=%d"), LandingElapsedTime, bHasMoveInput ? 1 : 0));
 
     if (bHasMoveInput)
     {
@@ -1517,6 +1614,11 @@ void ULocomotionAnimStateComponent::FinishLandingRequest()
 
 void ULocomotionAnimStateComponent::InterruptLandingForMoveInput()
 {
+    RecordStateControllerDebugEvent(FString::Printf(
+        TEXT("Standing land input -> Start Time=%.3f Input=(%.2f,%.2f)"),
+        LandingElapsedTime,
+        CachedMoveInput.X,
+        CachedMoveInput.Y));
     if (IsMotionMatchingCaptureEnabled())
     {
         const FString DebugLine = FString::Printf(TEXT("[MMCAP_EVENT] InterruptLandingForMoveInput LandTime=%.3f LandWasMoving=%d MinLandTime=%.3f Input=(R=%.2f,F=%.2f)"),
