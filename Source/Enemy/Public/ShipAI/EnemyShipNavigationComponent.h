@@ -27,6 +27,7 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void TickComponent(
 		float DeltaTime,
 		ELevelTick TickType,
@@ -48,13 +49,13 @@ public:
 	void SetTargetShip(AShip* InTargetShip);
 
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation")
-	AShip* GetTargetShip() const { return TargetShip.Get(); }
+	AShip* GetTargetShip() const { return TargetShip; }
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy Ship|Navigation")
 	void SetHomeActor(AActor* InHomeActor);
 
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation")
-	AActor* GetHomeActor() const { return HomeActor.Get(); }
+	AActor* GetHomeActor() const { return HomeActor; }
 
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation")
 	ENavalCombatState GetCurrentState() const { return CurrentState; }
@@ -80,7 +81,7 @@ public:
 	FOnEnemyShipNavigationStateChanged OnNavigationStateChanged;
 
 protected:
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy Ship|Navigation")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category = "Enemy Ship|Navigation")
 	FEnemyShipNavigationProfile NavigationProfile;
 
 private:
@@ -100,13 +101,18 @@ private:
 	void StopOwnerShip();
 
 	TWeakObjectPtr<AEnemyShip> OwnerShip;
-	TWeakObjectPtr<AShip> TargetShip;
-	TWeakObjectPtr<AActor> HomeActor;
+	UPROPERTY(Replicated)
+	TObjectPtr<AShip> TargetShip;
+
+	UPROPERTY(Replicated)
+	TObjectPtr<AActor> HomeActor;
 	TMap<FGuid, FRuntimeOverride> Overrides;
 	uint64 NextOverrideSequence = 1;
+	UPROPERTY(Replicated)
 	ENavalCombatState CurrentState = ENavalCombatState::Idle;
 	FEnemyShipNavigationOutput LastNavigationOutput;
 	FVector CachedAvoidanceHeading = FVector::ZeroVector;
 	double LastAvoidanceDecisionTime = -1.0;
+	UPROPERTY(Replicated)
 	bool bNavigationEnabled = true;
 };

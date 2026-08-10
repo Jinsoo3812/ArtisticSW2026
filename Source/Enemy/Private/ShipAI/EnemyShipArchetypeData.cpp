@@ -1,14 +1,9 @@
 #include "ShipAI/EnemyShipArchetypeData.h"
 
-#include "Abilities/GameplayAbility.h"
-#include "AbilitySystemComponent.h"
 #include "Misc/DataValidation.h"
 #include "Ship.h"
 #include "ShipAI/EnemyShip.h"
-#include "ShipAI/EnemyShipAbilitySet.h"
-#include "ShipAI/EnemyShipNavigationComponent.h"
 #include "ShipAI/EnemyShipPatternData.h"
-#include "ShipAI/EnemyShipPatternRuntimeComponent.h"
 
 bool UEnemyShipArchetypeData::ApplyToShip(AEnemyShip* Ship) const
 {
@@ -43,16 +38,7 @@ bool UEnemyShipArchetypeData::ApplyToShip(AEnemyShip* Ship) const
 		Ship->ApplyStatSnapshot(Snapshot, true);
 	}
 
-	if (UEnemyShipNavigationComponent* Navigation = Ship->GetNavigationComponent())
-	{
-		Navigation->SetNavigationProfile(Pattern->NavigationProfile);
-	}
-	if (UEnemyShipPatternRuntimeComponent* Runtime = Ship->GetPatternRuntimeComponent())
-	{
-		Runtime->SetPattern(Pattern);
-	}
-	Ship->GrantEnemyShipAbilities(AbilitySet);
-	return true;
+	return Ship->ConfigureEnemyShipPattern(Pattern);
 }
 
 EDataValidationResult UEnemyShipArchetypeData::IsDataValid(FDataValidationContext& Context) const
@@ -61,11 +47,6 @@ EDataValidationResult UEnemyShipArchetypeData::IsDataValid(FDataValidationContex
 	if (!Pattern)
 	{
 		Context.AddError(FText::FromString(TEXT("Enemy Ship Archetype requires a Pattern.")));
-		Result = EDataValidationResult::Invalid;
-	}
-	if (!AbilitySet)
-	{
-		Context.AddError(FText::FromString(TEXT("Enemy Ship Archetype requires an Ability Set.")));
 		Result = EDataValidationResult::Invalid;
 	}
 	if ((SpecRow.DataTable == nullptr) != SpecRow.RowName.IsNone())
@@ -79,26 +60,5 @@ EDataValidationResult UEnemyShipArchetypeData::IsDataValid(FDataValidationContex
 		Result = EDataValidationResult::Invalid;
 	}
 
-	if (Pattern && AbilitySet)
-	{
-		FGameplayTagContainer GrantedTags;
-		for (const TSubclassOf<UGameplayAbility>& AbilityClass : AbilitySet->Abilities)
-		{
-			if (const UGameplayAbility* AbilityCDO = AbilityClass ? AbilityClass->GetDefaultObject<UGameplayAbility>() : nullptr)
-			{
-				GrantedTags.AppendTags(AbilityCDO->GetAssetTags());
-			}
-		}
-		for (const FEnemyShipSkillRule& Rule : Pattern->SkillRules)
-		{
-			if (Rule.AbilityTag.IsValid() && !GrantedTags.HasTagExact(Rule.AbilityTag))
-			{
-				Context.AddError(FText::Format(
-					NSLOCTEXT("EnemyShipArchetype", "MissingAbility", "Pattern ability {0} is not granted by AbilitySet."),
-					FText::FromString(Rule.AbilityTag.ToString())));
-				Result = EDataValidationResult::Invalid;
-			}
-		}
-	}
 	return Result;
 }

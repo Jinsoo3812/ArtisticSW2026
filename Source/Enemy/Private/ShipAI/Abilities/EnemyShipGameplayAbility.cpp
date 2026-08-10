@@ -48,11 +48,22 @@ void UEnemyShipGameplayAbility::SetNativeAbilityAndCooldownTags(
 	FGameplayTag AbilityTag,
 	FGameplayTag InCooldownTag)
 {
-	FGameplayTagContainer NativeAbilityTags;
-	NativeAbilityTags.AddTag(AbilityTag);
-	SetAssetTags(NativeAbilityTags);
+	SetNativeAbilityTag(AbilityTag);
 
 	CooldownTag = InCooldownTag;
 	NativeCooldownTags.Reset();
-	NativeCooldownTags.AddTag(InCooldownTag);
+	if (InCooldownTag.IsValid())
+	{
+		NativeCooldownTags.AddTag(InCooldownTag);
+	}
+}
+
+void UEnemyShipGameplayAbility::SetNativeAbilityTag(FGameplayTag AbilityTag)
+{
+	FGameplayTagContainer NativeAbilityTags;
+	if (AbilityTag.IsValid())
+	{
+		NativeAbilityTags.AddTag(AbilityTag);
+	}
+	SetAssetTags(NativeAbilityTags);
 }

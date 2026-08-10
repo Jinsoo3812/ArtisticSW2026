@@ -4,9 +4,11 @@
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
 #include "ShipAI/EnemyShipNavigationTypes.h"
+#include "ShipAI/EnemyShipPatternData.h"
 #include "EnemyShipPatternRuntimeComponent.generated.h"
 
 class UEnemyShipPatternData;
+class UEnemyShipSkillModuleData;
 
 USTRUCT(BlueprintType)
 struct ENEMY_API FEnemyShipAbilitySelection
@@ -20,9 +22,9 @@ struct ENEMY_API FEnemyShipAbilitySelection
 	EEnemyShipSkillMovementPolicy MovementPolicy = EEnemyShipSkillMovementPolicy::ContinueNavigation;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Enemy Ship|Pattern")
-	int32 RuleIndex = INDEX_NONE;
+	FName RuleId;
 
-	bool IsValid() const { return AbilityTag.IsValid() && RuleIndex != INDEX_NONE; }
+	bool IsValid() const { return AbilityTag.IsValid() && !RuleId.IsNone(); }
 };
 
 /** Per-ship mutable scheduler state for an immutable Pattern Data Asset. */
@@ -36,6 +38,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy Ship|Pattern")
 	void SetPattern(UEnemyShipPatternData* InPattern);
+
+	UFUNCTION(BlueprintCallable, Category = "Enemy Ship|Pattern")
+	void SetCoreSkillModules(const TArray<UEnemyShipSkillModuleData*>& InCoreModules);
 
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Pattern")
 	UEnemyShipPatternData* GetPattern() const { return Pattern; }
@@ -54,7 +59,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Enemy Ship|Pattern")
 	void ResetRuntimeState(int32 RandomSeed = 0);
 
-	double GetLastCommittedTime(int32 RuleIndex) const;
+	double GetLastCommittedTime(FName RuleId) const;
+	int32 GetResolvedRuleCount() const { return ResolvedRules.Num(); }
 
 private:
 	bool IsRuleEligible(
@@ -65,14 +71,20 @@ private:
 		const FGameplayTagContainer& OwnerTags) const;
 	bool IsGrantedAbilityAvailable(const FGameplayTag& AbilityTag) const;
 	int32 SelectEligibleIndex(const TArray<int32>& EligibleIndices);
+	void RebuildResolvedRules();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UEnemyShipPatternData> Pattern;
 
-	TMap<int32, double> LastCommittedTimes;
-	TSet<int32> ConsumedOneShotRules;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UEnemyShipSkillModuleData>> CoreSkillModules;
+
+	TArray<FEnemyShipSkillRule> ResolvedRules;
+
+	TMap<FName, double> LastCommittedTimes;
+	TSet<FName> ConsumedOneShotRules;
 	FRandomStream RandomStream;
 	int32 SequenceCursor = 0;
 	double PendingSelectionTime = 0.0;
-	int32 PendingRuleIndex = INDEX_NONE;
+	FName PendingRuleId;
 };

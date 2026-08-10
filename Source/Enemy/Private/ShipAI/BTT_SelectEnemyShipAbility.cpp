@@ -1,7 +1,6 @@
 #include "ShipAI/BTT_SelectEnemyShipAbility.h"
 
 #include "AIController.h"
-#include "BehaviorTree/Blackboard/BlackboardKeyType_Int.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Name.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "BehaviorTree/BlackboardComponent.h"
@@ -15,8 +14,8 @@ UBTT_SelectEnemyShipAbility::UBTT_SelectEnemyShipAbility()
 	TargetShipKey.AddObjectFilter(this, GET_MEMBER_NAME_CHECKED(UBTT_SelectEnemyShipAbility, TargetShipKey), AActor::StaticClass());
 	SelectedAbilityTagKey.SelectedKeyName = TEXT("SelectedAbilityTag");
 	SelectedAbilityTagKey.AddNameFilter(this, GET_MEMBER_NAME_CHECKED(UBTT_SelectEnemyShipAbility, SelectedAbilityTagKey));
-	SelectedRuleIndexKey.SelectedKeyName = TEXT("SelectedAbilityRuleIndex");
-	SelectedRuleIndexKey.AddIntFilter(this, GET_MEMBER_NAME_CHECKED(UBTT_SelectEnemyShipAbility, SelectedRuleIndexKey));
+	SelectedRuleIdKey.SelectedKeyName = TEXT("SelectedAbilityRuleId");
+	SelectedRuleIdKey.AddNameFilter(this, GET_MEMBER_NAME_CHECKED(UBTT_SelectEnemyShipAbility, SelectedRuleIdKey));
 }
 
 EBTNodeResult::Type UBTT_SelectEnemyShipAbility::ExecuteTask(
@@ -39,11 +38,11 @@ EBTNodeResult::Type UBTT_SelectEnemyShipAbility::ExecuteTask(
 	if (!Runtime->SelectAbility(Target, Selection))
 	{
 		Blackboard->ClearValue(SelectedAbilityTagKey.SelectedKeyName);
-		Blackboard->SetValueAsInt(SelectedRuleIndexKey.SelectedKeyName, INDEX_NONE);
+		Blackboard->ClearValue(SelectedRuleIdKey.SelectedKeyName);
 		return EBTNodeResult::Failed;
 	}
 
 	Blackboard->SetValueAsName(SelectedAbilityTagKey.SelectedKeyName, Selection.AbilityTag.GetTagName());
-	Blackboard->SetValueAsInt(SelectedRuleIndexKey.SelectedKeyName, Selection.RuleIndex);
+	Blackboard->SetValueAsName(SelectedRuleIdKey.SelectedKeyName, Selection.RuleId);
 	return EBTNodeResult::Succeeded;
 }

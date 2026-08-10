@@ -7,6 +7,7 @@
 #include "EnemyShipPatternData.generated.h"
 
 class UGameplayAbility;
+class UEnemyShipSkillModuleData;
 
 UENUM(BlueprintType)
 enum class EEnemyShipPatternSelectionPolicy : uint8
@@ -20,6 +21,10 @@ USTRUCT(BlueprintType)
 struct ENEMY_API FEnemyShipSkillRule
 {
 	GENERATED_BODY()
+
+	/** Stable identifier used across composed modules and Behavior Tree commits. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill")
+	FName RuleId;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill")
 	FGameplayTag AbilityTag;
@@ -74,8 +79,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skills")
 	EEnemyShipPatternSelectionPolicy SelectionPolicy = EEnemyShipPatternSelectionPolicy::HighestPriority;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skills", meta = (TitleProperty = "AbilityTag"))
-	TArray<FEnemyShipSkillRule> SkillRules;
+	/** Optional skill modules composed with the Enemy Ship's always-on Core modules. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skills", meta = (TitleProperty = "ModuleId"))
+	TArray<TObjectPtr<UEnemyShipSkillModuleData>> SkillModules;
 
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 };

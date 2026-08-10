@@ -404,6 +404,61 @@ bool ACannon::FireCannon()
 	return true;
 }
 
+bool ACannon::CanFireCannon() const
+{
+	return bCanFire && !bWaterBombMode && !IsOwningShipCannonDisabled();
+}
+
+float ACannon::GetFireCooldownRemaining() const
+{
+	return FMath::Max(0.0f, GetWorldTimerManager().GetTimerRemaining(CooldownTimerHandle));
+}
+
+bool ACannon::CanAimAtWorldDirection(const FVector& WorldDirection) const
+{
+	if (WorldDirection.IsNearlyZero())
+	{
+		return false;
+	}
+
+	const FVector LocalDirection = GetActorTransform().InverseTransformVectorNoScale(
+		WorldDirection.GetSafeNormal());
+	const FRotator LocalRotation = LocalDirection.Rotation();
+	return LocalRotation.Pitch >= MinPitch && LocalRotation.Pitch <= MaxPitch
+		&& FMath::Abs(FMath::UnwindDegrees(LocalRotation.Yaw)) <= MaxYawOffset;
+}
+
+bool ACannon::FireAICannonAtDirection(const FVector& WorldDirection)
+{
+	if (!HasAuthority() || !CanFireCannon() || !CanAimAtWorldDirection(WorldDirection))
+	{
+		return false;
+	}
+
+	const FVector NormalizedDirection = WorldDirection.GetSafeNormal();
+	const FRotator LocalRotation = GetActorTransform()
+		.InverseTransformVectorNoScale(NormalizedDirection)
+		.Rotation();
+	SetAIAimRotation(LocalRotation.Pitch, FMath::UnwindDegrees(LocalRotation.Yaw));
+
+	bCanFire = false;
+	const FCannonResolvedFiringStats FiringStats = GetResolvedFiringStats();
+	GetWorldTimerManager().SetTimer(
+		CooldownTimerHandle,
+		this,
+		&ACannon::ResetCooldown,
+		FMath::Max(0.05f, FiringStats.CooldownSeconds),
+		false);
+
+	const FTransform MuzzleTransform = GetProjectileMuzzleTransform();
+	SpawnCannonball(
+		MuzzleTransform.GetLocation(),
+		NormalizedDirection.Rotation(),
+		FiringStats.Damage,
+		FiringStats.ProjectileSpeed);
+	return true;
+}
+
 void ACannon::SetAIAimRotation(float NewPitch, float NewYaw)
 {
 	if (HasAuthority())

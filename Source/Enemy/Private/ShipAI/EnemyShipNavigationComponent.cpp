@@ -3,11 +3,24 @@
 #include "Ship.h"
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/ShipSwarmSubsystem.h"
+#include "Net/UnrealNetwork.h"
 
 UEnemyShipNavigationComponent::UEnemyShipNavigationComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
+	SetIsReplicatedByDefault(true);
+}
+
+void UEnemyShipNavigationComponent::GetLifetimeReplicatedProps(
+	TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(UEnemyShipNavigationComponent, NavigationProfile);
+	DOREPLIFETIME(UEnemyShipNavigationComponent, TargetShip);
+	DOREPLIFETIME(UEnemyShipNavigationComponent, HomeActor);
+	DOREPLIFETIME(UEnemyShipNavigationComponent, CurrentState);
+	DOREPLIFETIME(UEnemyShipNavigationComponent, bNavigationEnabled);
 }
 
 void UEnemyShipNavigationComponent::BeginPlay()
@@ -25,8 +38,8 @@ void UEnemyShipNavigationComponent::EndPlay(const EEndPlayReason::Type EndPlayRe
 	ClearAllOverrides();
 	StopOwnerShip();
 	OwnerShip.Reset();
-	TargetShip.Reset();
-	HomeActor.Reset();
+	TargetShip = nullptr;
+	HomeActor = nullptr;
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -63,9 +76,12 @@ void UEnemyShipNavigationComponent::TickComponent(
 		OnNavigationStateChanged.Broadcast(PreviousState, CurrentState);
 	}
 
-	Ship->SetAITarget(TargetShip.Get());
-	Ship->SetNavalCombatState(CurrentState);
-	Ship->SetMaxActiveCannons(NavigationProfile.MaxActiveCannons);
+	if (Ship->IsUsingLegacyAICompatibility())
+	{
+		Ship->SetAITarget(TargetShip);
+		Ship->SetNavalCombatState(CurrentState);
+		Ship->SetMaxActiveCannons(NavigationProfile.MaxActiveCannons);
+	}
 	ApplyControl(LastNavigationOutput);
 }
 
@@ -187,12 +203,12 @@ FEnemyShipNavigationContext UEnemyShipNavigationComponent::BuildContext() const
 		Context.ShipForward = Ship->GetActorForwardVector();
 		Context.ShipRight = Ship->GetActorRightVector();
 	}
-	if (const AShip* Target = TargetShip.Get())
+	if (const AShip* Target = TargetShip)
 	{
 		Context.bHasTarget = true;
 		Context.TargetLocation = Target->GetActorLocation();
 	}
-	if (const AActor* Home = HomeActor.Get())
+	if (const AActor* Home = HomeActor)
 	{
 		Context.bHasHome = true;
 		Context.HomeLocation = Home->GetActorLocation();

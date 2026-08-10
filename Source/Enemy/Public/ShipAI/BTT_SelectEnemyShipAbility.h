@@ -13,6 +13,9 @@ class ENEMY_API UBTT_SelectEnemyShipAbility : public UBTTaskNode
 public:
 	UBTT_SelectEnemyShipAbility();
 	virtual EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
+	FName GetTargetShipKeyName() const { return TargetShipKey.SelectedKeyName; }
+	FName GetSelectedAbilityTagKeyName() const { return SelectedAbilityTagKey.SelectedKeyName; }
+	FName GetSelectedRuleIdKeyName() const { return SelectedRuleIdKey.SelectedKeyName; }
 
 protected:
 	UPROPERTY(EditAnywhere, Category = "Blackboard")
@@ -22,5 +25,5 @@ protected:
 	FBlackboardKeySelector SelectedAbilityTagKey;
 
 	UPROPERTY(EditAnywhere, Category = "Blackboard")
-	FBlackboardKeySelector SelectedRuleIndexKey;
+	FBlackboardKeySelector SelectedRuleIdKey;
 };

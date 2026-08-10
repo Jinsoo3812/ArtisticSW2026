@@ -34,6 +34,7 @@ public:
 	float GetCooldownDuration() const { return CooldownDurationSeconds; }
 
 protected:
+	void SetNativeAbilityTag(FGameplayTag AbilityTag);
 	void SetNativeAbilityAndCooldownTags(FGameplayTag AbilityTag, FGameplayTag InCooldownTag);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Ability|Cooldown", meta = (ClampMin = "0.0", Units = "s"))

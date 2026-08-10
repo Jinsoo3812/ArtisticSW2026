@@ -1,41 +1,47 @@
 #include "ShipAI/EnemyShipPatternData.h"
 
 #include "Misc/DataValidation.h"
+#include "ShipAI/EnemyShipSkillModuleData.h"
 
 EDataValidationResult UEnemyShipPatternData::IsDataValid(FDataValidationContext& Context) const
 {
 	EDataValidationResult Result = Super::IsDataValid(Context);
+	TSet<FName> SeenModuleIds;
+	TSet<FName> SeenRuleIds;
 	TSet<FGameplayTag> SeenTags;
-	for (const FEnemyShipSkillRule& Rule : SkillRules)
+	for (const UEnemyShipSkillModuleData* Module : SkillModules)
 	{
-		if (!Rule.AbilityTag.IsValid())
+		if (!Module)
 		{
-			Context.AddError(FText::FromString(TEXT("Enemy Ship skill rule has no AbilityTag.")));
+			Context.AddError(FText::FromString(TEXT("Enemy Ship Pattern contains a null Skill Module.")));
+			Result = EDataValidationResult::Invalid;
+			continue;
+		}
+		if (Module->ModuleId.IsNone() || SeenModuleIds.Contains(Module->ModuleId))
+		{
+			Context.AddError(FText::FromString(TEXT("Enemy Ship Pattern contains a missing or duplicate Skill Module ID.")));
 			Result = EDataValidationResult::Invalid;
 		}
-		else if (SeenTags.Contains(Rule.AbilityTag))
+		SeenModuleIds.Add(Module->ModuleId);
+		for (const FEnemyShipSkillRule& Rule : Module->SkillRules)
 		{
-			Context.AddError(FText::Format(
-				NSLOCTEXT("EnemyShipPattern", "DuplicateAbilityTag", "Duplicate AbilityTag: {0}"),
-				FText::FromString(Rule.AbilityTag.ToString())));
-			Result = EDataValidationResult::Invalid;
-		}
-		SeenTags.Add(Rule.AbilityTag);
-
-		if (Rule.MinimumDistance > Rule.MaximumDistance)
-		{
-			Context.AddError(FText::FromString(TEXT("Skill rule MinimumDistance exceeds MaximumDistance.")));
-			Result = EDataValidationResult::Invalid;
-		}
-		if (Rule.MinimumHealthRatio > Rule.MaximumHealthRatio)
-		{
-			Context.AddError(FText::FromString(TEXT("Skill rule MinimumHealthRatio exceeds MaximumHealthRatio.")));
-			Result = EDataValidationResult::Invalid;
-		}
-		if (SelectionPolicy == EEnemyShipPatternSelectionPolicy::WeightedRandom && Rule.Weight <= 0.0f)
-		{
-			Context.AddError(FText::FromString(TEXT("WeightedRandom skill rules require Weight > 0.")));
-			Result = EDataValidationResult::Invalid;
+			if (Rule.RuleId.IsNone() || SeenRuleIds.Contains(Rule.RuleId))
+			{
+				Context.AddError(FText::FromString(TEXT("Composed Skill Rules require unique non-empty RuleId values.")));
+				Result = EDataValidationResult::Invalid;
+			}
+			SeenRuleIds.Add(Rule.RuleId);
+			if (Rule.AbilityTag.IsValid() && SeenTags.Contains(Rule.AbilityTag))
+			{
+				Context.AddError(FText::FromString(TEXT("Composed Skill Modules contain a duplicate AbilityTag.")));
+				Result = EDataValidationResult::Invalid;
+			}
+			SeenTags.Add(Rule.AbilityTag);
+			if (SelectionPolicy == EEnemyShipPatternSelectionPolicy::WeightedRandom && Rule.Weight <= 0.0f)
+			{
+				Context.AddError(FText::FromString(TEXT("WeightedRandom skill rules require Weight > 0.")));
+				Result = EDataValidationResult::Invalid;
+			}
 		}
 	}
 

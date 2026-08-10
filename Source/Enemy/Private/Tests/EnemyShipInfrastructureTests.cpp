@@ -13,6 +13,7 @@
 #include "ShipAI/EnemyShipNavigationComponent.h"
 #include "ShipAI/EnemyShipPatternData.h"
 #include "ShipAI/EnemyShipPatternRuntimeComponent.h"
+#include "ShipAI/EnemyShipSkillModuleData.h"
 #include "BaseGameplayTags.h"
 #include "ShipAI/NavalAIController.h"
 #include "ShipAI/Abilities/GA_EnemyShipCharge.h"
@@ -109,12 +110,19 @@ bool FEnemyShipPatternRuntimeIntervalTest::RunTest(const FString& Parameters)
 		Ship->GrantEnemyShipAbilityClasses({UGA_EnemyShipCharge::StaticClass()}));
 
 	UEnemyShipPatternData* Pattern = NewObject<UEnemyShipPatternData>();
-	FEnemyShipSkillRule& RepeatRule = Pattern->SkillRules.AddDefaulted_GetRef();
+	UEnemyShipAbilitySet* AbilitySet = NewObject<UEnemyShipAbilitySet>();
+	AbilitySet->Abilities.Add(UGA_EnemyShipCharge::StaticClass());
+	UEnemyShipSkillModuleData* Module = NewObject<UEnemyShipSkillModuleData>();
+	Module->ModuleId = TEXT("IntervalTest");
+	Module->AbilitySet = AbilitySet;
+	FEnemyShipSkillRule& RepeatRule = Module->SkillRules.AddDefaulted_GetRef();
+	RepeatRule.RuleId = TEXT("IntervalCharge");
 	RepeatRule.AbilityTag = GameplayAbility_EnemyShip_Charge;
 	RepeatRule.AbilityClass = UGA_EnemyShipCharge::StaticClass();
 	RepeatRule.MinimumInterval = 5.0f;
 	RepeatRule.MaximumDistance = 2000.0f;
 	RepeatRule.Priority = 10;
+	Pattern->SkillModules.Add(Module);
 
 	UEnemyShipPatternRuntimeComponent* Runtime = Ship->GetPatternRuntimeComponent();
 	Runtime->SetPattern(Pattern);
@@ -124,8 +132,8 @@ bool FEnemyShipPatternRuntimeIntervalTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Rule is blocked before interval"), Runtime->SelectAbilityAtTime(Target, 4.99, Selection));
 	TestTrue(TEXT("Rule is eligible at interval boundary"), Runtime->SelectAbilityAtTime(Target, 5.0, Selection));
 
-	Pattern->SkillRules[0].bUseOnlyOnce = true;
-	Runtime->ResetRuntimeState(0);
+	Module->SkillRules[0].bUseOnlyOnce = true;
+	Runtime->SetPattern(Pattern);
 	TestTrue(TEXT("One-shot rule selects once"), Runtime->SelectAbilityAtTime(Target, 10.0, Selection));
 	TestTrue(TEXT("One-shot selection commits"), Runtime->CommitSelection(Selection));
 	TestFalse(TEXT("One-shot rule cannot select again"), Runtime->SelectAbilityAtTime(Target, 100.0, Selection));
@@ -162,11 +170,19 @@ bool FEnemyShipArchetypeAssemblyTest::RunTest(const FString& Parameters)
 	Pattern->NavigationProfile.IdealDistance = 3300.0f;
 	Pattern->NavigationProfile.MaxActiveCannons = 4;
 	UEnemyShipAbilitySet* AbilitySet = NewObject<UEnemyShipAbilitySet>();
+	AbilitySet->Abilities.Add(UGA_EnemyShipCharge::StaticClass());
+	UEnemyShipSkillModuleData* Module = NewObject<UEnemyShipSkillModuleData>();
+	Module->ModuleId = TEXT("AssemblyCharge");
+	Module->AbilitySet = AbilitySet;
+	FEnemyShipSkillRule& Rule = Module->SkillRules.AddDefaulted_GetRef();
+	Rule.RuleId = TEXT("AssemblyChargeRule");
+	Rule.AbilityTag = GameplayAbility_EnemyShip_Charge;
+	Rule.AbilityClass = UGA_EnemyShipCharge::StaticClass();
+	Pattern->SkillModules.Add(Module);
 	UEnemyShipArchetypeData* Archetype = NewObject<UEnemyShipArchetypeData>();
 	Archetype->SpecRow.DataTable = SpecTable;
 	Archetype->SpecRow.RowName = TEXT("SpecC");
 	Archetype->Pattern = Pattern;
-	Archetype->AbilitySet = AbilitySet;
 
 	TestTrue(TEXT("Archetype applies"), Archetype->ApplyToShip(Ship));
 	const UAbilitySystemComponent* ASC = Ship->GetAbilitySystemComponent();

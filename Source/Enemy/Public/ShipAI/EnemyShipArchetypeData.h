@@ -6,7 +6,6 @@
 #include "EnemyShipArchetypeData.generated.h"
 
 class AEnemyShip;
-class UEnemyShipAbilitySet;
 class UEnemyShipPatternData;
 
 UCLASS(BlueprintType)
@@ -20,9 +19,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI")
 	TObjectPtr<UEnemyShipPatternData> Pattern;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Abilities")
-	TObjectPtr<UEnemyShipAbilitySet> AbilitySet;
 
 	bool ApplyToShip(AEnemyShip* Ship) const;
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;

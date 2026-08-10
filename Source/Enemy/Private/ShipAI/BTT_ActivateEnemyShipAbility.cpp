@@ -3,7 +3,6 @@
 #include "AIController.h"
 #include "Abilities/GameplayAbility.h"
 #include "AbilitySystemComponent.h"
-#include "BehaviorTree/Blackboard/BlackboardKeyType_Int.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Name.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "ShipAI/EnemyShip.h"
@@ -16,8 +15,8 @@ UBTT_ActivateEnemyShipAbility::UBTT_ActivateEnemyShipAbility()
 	bNotifyTaskFinished = true;
 	SelectedAbilityTagKey.SelectedKeyName = TEXT("SelectedAbilityTag");
 	SelectedAbilityTagKey.AddNameFilter(this, GET_MEMBER_NAME_CHECKED(UBTT_ActivateEnemyShipAbility, SelectedAbilityTagKey));
-	SelectedRuleIndexKey.SelectedKeyName = TEXT("SelectedAbilityRuleIndex");
-	SelectedRuleIndexKey.AddIntFilter(this, GET_MEMBER_NAME_CHECKED(UBTT_ActivateEnemyShipAbility, SelectedRuleIndexKey));
+	SelectedRuleIdKey.SelectedKeyName = TEXT("SelectedAbilityRuleId");
+	SelectedRuleIdKey.AddNameFilter(this, GET_MEMBER_NAME_CHECKED(UBTT_ActivateEnemyShipAbility, SelectedRuleIdKey));
 }
 
 EBTNodeResult::Type UBTT_ActivateEnemyShipAbility::ExecuteTask(
@@ -41,8 +40,8 @@ EBTNodeResult::Type UBTT_ActivateEnemyShipAbility::ExecuteTask(
 
 	const FName AbilityTagName = Blackboard->GetValueAsName(SelectedAbilityTagKey.SelectedKeyName);
 	const FGameplayTag AbilityTag = FGameplayTag::RequestGameplayTag(AbilityTagName, false);
-	const int32 RuleIndex = Blackboard->GetValueAsInt(SelectedRuleIndexKey.SelectedKeyName);
-	if (!AbilityTag.IsValid() || RuleIndex == INDEX_NONE)
+	const FName RuleId = Blackboard->GetValueAsName(SelectedRuleIdKey.SelectedKeyName);
+	if (!AbilityTag.IsValid() || RuleId.IsNone())
 	{
 		return EBTNodeResult::Failed;
 	}
@@ -75,7 +74,7 @@ EBTNodeResult::Type UBTT_ActivateEnemyShipAbility::ExecuteTask(
 
 	FEnemyShipAbilitySelection Selection;
 	Selection.AbilityTag = AbilityTag;
-	Selection.RuleIndex = RuleIndex;
+	Selection.RuleId = RuleId;
 	if (!Runtime->CommitSelection(Selection))
 	{
 		ASC->CancelAbilityHandle(ActiveHandle);
@@ -84,7 +83,7 @@ EBTNodeResult::Type UBTT_ActivateEnemyShipAbility::ExecuteTask(
 	}
 
 	Blackboard->ClearValue(SelectedAbilityTagKey.SelectedKeyName);
-	Blackboard->SetValueAsInt(SelectedRuleIndexKey.SelectedKeyName, INDEX_NONE);
+	Blackboard->ClearValue(SelectedRuleIdKey.SelectedKeyName);
 	if (bCompletedSynchronously)
 	{
 		const EBTNodeResult::Type Result = bSynchronousCancelled

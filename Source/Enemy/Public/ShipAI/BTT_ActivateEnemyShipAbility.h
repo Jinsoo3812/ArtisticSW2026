@@ -19,13 +19,16 @@ public:
 	virtual EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
 	virtual EBTNodeResult::Type AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
 	virtual void OnTaskFinished(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, EBTNodeResult::Type TaskResult) override;
+	FName GetSelectedAbilityTagKeyName() const { return SelectedAbilityTagKey.SelectedKeyName; }
+	FName GetSelectedRuleIdKeyName() const { return SelectedRuleIdKey.SelectedKeyName; }
+	bool GetCancelAbilityOnAbort() const { return bCancelAbilityOnAbort; }
 
 protected:
 	UPROPERTY(EditAnywhere, Category = "Blackboard")
 	FBlackboardKeySelector SelectedAbilityTagKey;
 
 	UPROPERTY(EditAnywhere, Category = "Blackboard")
-	FBlackboardKeySelector SelectedRuleIndexKey;
+	FBlackboardKeySelector SelectedRuleIdKey;
 
 	UPROPERTY(EditAnywhere, Category = "Ability")
 	bool bCancelAbilityOnAbort = true;

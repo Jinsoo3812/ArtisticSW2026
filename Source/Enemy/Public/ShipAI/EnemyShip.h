@@ -19,6 +19,8 @@ class UEnemyShipArchetypeData;
 class UEnemyShipAbilitySet;
 class UEnemyShipNavigationComponent;
 class UEnemyShipPatternRuntimeComponent;
+class UEnemyShipPatternData;
+class UEnemyShipSkillModuleData;
 class UGameplayAbility;
 
 UCLASS()
@@ -48,9 +50,15 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Death")
 	bool IsDeathHandled() const { return bDeathHandled; }
+	bool IsUsingLegacyAICompatibility() const
+	{
+		return !EnemyShipArchetype && bLegacyAutomaticCannonFireWithoutArchetype;
+	}
 
 	bool GrantEnemyShipAbilities(const UEnemyShipAbilitySet* AbilitySet);
 	bool GrantEnemyShipAbilityClasses(const TArray<TSubclassOf<UGameplayAbility>>& AbilityClasses);
+	bool ConfigureEnemyShipPattern(UEnemyShipPatternData* Pattern);
+	void SetCoreSkillModules(const TArray<UEnemyShipSkillModuleData*>& InCoreModules);
 
 	// AI Control APIs
 	UFUNCTION(BlueprintCallable, Category = "Ship|AI")
@@ -81,17 +89,29 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|AI|Data")
 	TObjectPtr<UEnemyShipArchetypeData> EnemyShipArchetype;
 
+	/** Always-on modules, normally just CannonVolley. Pattern modules are composed on top. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|AI|Data", meta = (TitleProperty = "ModuleId"))
+	TArray<TObjectPtr<UEnemyShipSkillModuleData>> CoreSkillModules;
+
 	/** LEGACY bootstrap only: delete after every Enemy Ship Archetype has an AbilitySet. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "LEGACY|Ship AI", meta = (
 		DisplayName = "[LEGACY] Native Ability Bootstrap Without Archetype",
 		DeprecatedProperty,
-		DeprecationMessage = "Assign Charge/Torpedo through EnemyShipArchetype.AbilitySet",
+		DeprecationMessage = "Assign abilities through EnemyShip Pattern Skill Modules",
 		AdvancedDisplay))
 	TArray<TSubclassOf<UGameplayAbility>> LegacyAbilityBootstrapClasses;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "LEGACY|Ship AI", meta = (
+		DisplayName = "[LEGACY] Automatic Cannon Fire Without Archetype",
+		DeprecatedProperty,
+		DeprecationMessage = "Assign an Archetype and use the CannonVolley Core Skill Module",
+		AdvancedDisplay))
+	bool bLegacyAutomaticCannonFireWithoutArchetype = true;
 
 protected:
 	void UpdateActiveCannons();
 	void MigrateLegacyNavigationAuthoring();
+	void DrawEnemyShipAIDebug() const;
 
 	// Aiming and firing logic
 	void TickAIAimingAndFiring(float DeltaTime);

@@ -5,6 +5,7 @@
 #include "BaseAttributeSet.h"
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipPatternData.h"
+#include "ShipAI/EnemyShipSkillModuleData.h"
 
 UEnemyShipPatternRuntimeComponent::UEnemyShipPatternRuntimeComponent()
 {
@@ -15,6 +16,22 @@ UEnemyShipPatternRuntimeComponent::UEnemyShipPatternRuntimeComponent()
 void UEnemyShipPatternRuntimeComponent::SetPattern(UEnemyShipPatternData* InPattern)
 {
 	Pattern = InPattern;
+	RebuildResolvedRules();
+	ResetRuntimeState(0);
+}
+
+void UEnemyShipPatternRuntimeComponent::SetCoreSkillModules(
+	const TArray<UEnemyShipSkillModuleData*>& InCoreModules)
+{
+	CoreSkillModules.Reset();
+	for (UEnemyShipSkillModuleData* Module : InCoreModules)
+	{
+		if (IsValid(Module))
+		{
+			CoreSkillModules.AddUnique(Module);
+		}
+	}
+	RebuildResolvedRules();
 	ResetRuntimeState(0);
 }
 
@@ -32,7 +49,7 @@ bool UEnemyShipPatternRuntimeComponent::SelectAbilityAtTime(
 	FEnemyShipAbilitySelection& OutSelection)
 {
 	OutSelection = FEnemyShipAbilitySelection();
-	PendingRuleIndex = INDEX_NONE;
+	PendingRuleId = NAME_None;
 	PendingSelectionTime = CurrentTimeSeconds;
 
 	const AEnemyShip* Ship = Cast<AEnemyShip>(GetOwner());
@@ -52,7 +69,7 @@ bool UEnemyShipPatternRuntimeComponent::SelectAbilityAtTime(
 	}
 
 	TArray<int32> EligibleIndices;
-	for (int32 RuleIndex = 0; RuleIndex < Pattern->SkillRules.Num(); ++RuleIndex)
+	for (int32 RuleIndex = 0; RuleIndex < ResolvedRules.Num(); ++RuleIndex)
 	{
 		if (IsRuleEligible(RuleIndex, TargetActor, CurrentTimeSeconds, HealthRatio, OwnerTags))
 		{
@@ -61,38 +78,42 @@ bool UEnemyShipPatternRuntimeComponent::SelectAbilityAtTime(
 	}
 
 	const int32 SelectedIndex = SelectEligibleIndex(EligibleIndices);
-	if (!Pattern->SkillRules.IsValidIndex(SelectedIndex))
+	if (!ResolvedRules.IsValidIndex(SelectedIndex))
 	{
 		return false;
 	}
 
-	const FEnemyShipSkillRule& Rule = Pattern->SkillRules[SelectedIndex];
+	const FEnemyShipSkillRule& Rule = ResolvedRules[SelectedIndex];
 	OutSelection.AbilityTag = Rule.AbilityTag;
 	OutSelection.MovementPolicy = Rule.MovementPolicy;
-	OutSelection.RuleIndex = SelectedIndex;
-	PendingRuleIndex = SelectedIndex;
+	OutSelection.RuleId = Rule.RuleId;
+	PendingRuleId = Rule.RuleId;
 	return true;
 }
 
 bool UEnemyShipPatternRuntimeComponent::CommitSelection(const FEnemyShipAbilitySelection& Selection)
 {
-	if (!Pattern || Selection.RuleIndex != PendingRuleIndex
-		|| !Pattern->SkillRules.IsValidIndex(Selection.RuleIndex)
-		|| Pattern->SkillRules[Selection.RuleIndex].AbilityTag != Selection.AbilityTag)
+	const int32 RuleIndex = ResolvedRules.IndexOfByPredicate([&Selection](const FEnemyShipSkillRule& Rule)
+	{
+		return Rule.RuleId == Selection.RuleId;
+	});
+	if (!Pattern || Selection.RuleId != PendingRuleId
+		|| !ResolvedRules.IsValidIndex(RuleIndex)
+		|| ResolvedRules[RuleIndex].AbilityTag != Selection.AbilityTag)
 	{
 		return false;
 	}
 
-	LastCommittedTimes.FindOrAdd(Selection.RuleIndex) = PendingSelectionTime;
-	if (Pattern->SkillRules[Selection.RuleIndex].bUseOnlyOnce)
+	LastCommittedTimes.FindOrAdd(Selection.RuleId) = PendingSelectionTime;
+	if (ResolvedRules[RuleIndex].bUseOnlyOnce)
 	{
-		ConsumedOneShotRules.Add(Selection.RuleIndex);
+		ConsumedOneShotRules.Add(Selection.RuleId);
 	}
-	if (Pattern->SelectionPolicy == EEnemyShipPatternSelectionPolicy::Sequence && Pattern->SkillRules.Num() > 0)
+	if (Pattern->SelectionPolicy == EEnemyShipPatternSelectionPolicy::Sequence && !ResolvedRules.IsEmpty())
 	{
-		SequenceCursor = (Selection.RuleIndex + 1) % Pattern->SkillRules.Num();
+		SequenceCursor = (RuleIndex + 1) % ResolvedRules.Num();
 	}
-	PendingRuleIndex = INDEX_NONE;
+	PendingRuleId = NAME_None;
 	return true;
 }
 
@@ -103,12 +124,12 @@ void UEnemyShipPatternRuntimeComponent::ResetRuntimeState(int32 RandomSeed)
 	RandomStream.Initialize(RandomSeed);
 	SequenceCursor = 0;
 	PendingSelectionTime = 0.0;
-	PendingRuleIndex = INDEX_NONE;
+	PendingRuleId = NAME_None;
 }
 
-double UEnemyShipPatternRuntimeComponent::GetLastCommittedTime(int32 RuleIndex) const
+double UEnemyShipPatternRuntimeComponent::GetLastCommittedTime(FName RuleId) const
 {
-	if (const double* Time = LastCommittedTimes.Find(RuleIndex))
+	if (const double* Time = LastCommittedTimes.Find(RuleId))
 	{
 		return *Time;
 	}
@@ -122,12 +143,13 @@ bool UEnemyShipPatternRuntimeComponent::IsRuleEligible(
 	float OwnerHealthRatio,
 	const FGameplayTagContainer& OwnerTags) const
 {
-	if (!Pattern || !Pattern->SkillRules.IsValidIndex(RuleIndex) || ConsumedOneShotRules.Contains(RuleIndex))
+	if (!Pattern || !ResolvedRules.IsValidIndex(RuleIndex)
+		|| ConsumedOneShotRules.Contains(ResolvedRules[RuleIndex].RuleId))
 	{
 		return false;
 	}
 
-	const FEnemyShipSkillRule& Rule = Pattern->SkillRules[RuleIndex];
+	const FEnemyShipSkillRule& Rule = ResolvedRules[RuleIndex];
 	if (!Rule.AbilityTag.IsValid() || !IsValid(TargetActor))
 	{
 		return false;
@@ -150,7 +172,7 @@ bool UEnemyShipPatternRuntimeComponent::IsRuleEligible(
 	{
 		return false;
 	}
-	if (const double* LastTime = LastCommittedTimes.Find(RuleIndex))
+	if (const double* LastTime = LastCommittedTimes.Find(Rule.RuleId))
 	{
 		if (CurrentTimeSeconds - *LastTime < Rule.MinimumInterval)
 		{
@@ -191,9 +213,9 @@ int32 UEnemyShipPatternRuntimeComponent::SelectEligibleIndex(const TArray<int32>
 
 	if (Pattern->SelectionPolicy == EEnemyShipPatternSelectionPolicy::Sequence)
 	{
-		for (int32 Offset = 0; Offset < Pattern->SkillRules.Num(); ++Offset)
+		for (int32 Offset = 0; Offset < ResolvedRules.Num(); ++Offset)
 		{
-			const int32 Candidate = (SequenceCursor + Offset) % Pattern->SkillRules.Num();
+			const int32 Candidate = (SequenceCursor + Offset) % ResolvedRules.Num();
 			if (EligibleIndices.Contains(Candidate))
 			{
 				return Candidate;
@@ -207,7 +229,7 @@ int32 UEnemyShipPatternRuntimeComponent::SelectEligibleIndex(const TArray<int32>
 		float TotalWeight = 0.0f;
 		for (const int32 Index : EligibleIndices)
 		{
-			TotalWeight += FMath::Max(0.0f, Pattern->SkillRules[Index].Weight);
+			TotalWeight += FMath::Max(0.0f, ResolvedRules[Index].Weight);
 		}
 		if (TotalWeight <= KINDA_SMALL_NUMBER)
 		{
@@ -217,7 +239,7 @@ int32 UEnemyShipPatternRuntimeComponent::SelectEligibleIndex(const TArray<int32>
 		float Roll = RandomStream.FRandRange(0.0f, TotalWeight);
 		for (const int32 Index : EligibleIndices)
 		{
-			Roll -= FMath::Max(0.0f, Pattern->SkillRules[Index].Weight);
+			Roll -= FMath::Max(0.0f, ResolvedRules[Index].Weight);
 			if (Roll <= 0.0f)
 			{
 				return Index;
@@ -229,10 +251,51 @@ int32 UEnemyShipPatternRuntimeComponent::SelectEligibleIndex(const TArray<int32>
 	int32 BestIndex = EligibleIndices[0];
 	for (const int32 Index : EligibleIndices)
 	{
-		if (Pattern->SkillRules[Index].Priority > Pattern->SkillRules[BestIndex].Priority)
+		if (ResolvedRules[Index].Priority > ResolvedRules[BestIndex].Priority)
 		{
 			BestIndex = Index;
 		}
 	}
 	return BestIndex;
+}
+
+void UEnemyShipPatternRuntimeComponent::RebuildResolvedRules()
+{
+	ResolvedRules.Reset();
+	TSet<FName> SeenModuleIds;
+	TSet<FName> SeenRuleIds;
+	TSet<FGameplayTag> SeenAbilityTags;
+
+	auto AppendModule = [this, &SeenModuleIds, &SeenRuleIds, &SeenAbilityTags](
+		const UEnemyShipSkillModuleData* Module)
+	{
+		if (!IsValid(Module) || Module->ModuleId.IsNone() || SeenModuleIds.Contains(Module->ModuleId))
+		{
+			return;
+		}
+		SeenModuleIds.Add(Module->ModuleId);
+		for (const FEnemyShipSkillRule& Rule : Module->SkillRules)
+		{
+			if (Rule.RuleId.IsNone() || !Rule.AbilityTag.IsValid()
+				|| SeenRuleIds.Contains(Rule.RuleId) || SeenAbilityTags.Contains(Rule.AbilityTag))
+			{
+				continue;
+			}
+			SeenRuleIds.Add(Rule.RuleId);
+			SeenAbilityTags.Add(Rule.AbilityTag);
+			ResolvedRules.Add(Rule);
+		}
+	};
+
+	for (const UEnemyShipSkillModuleData* Module : CoreSkillModules)
+	{
+		AppendModule(Module);
+	}
+	if (Pattern)
+	{
+		for (const UEnemyShipSkillModuleData* Module : Pattern->SkillModules)
+		{
+			AppendModule(Module);
+		}
+	}
 }
