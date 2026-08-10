@@ -50,7 +50,7 @@ namespace
 	TAutoConsoleVariable<int32> CVarShowShipNetworkBuoyancyDebug(
 		TEXT("p.ShowShipNetworkBuoyancyDebug"),
 		0,
-		TEXT("Draw local/predicted (cyan) and replicated server (magenta) ship pontoons. 0=off, 1=on."),
+		TEXT("Draw all SW buoyancy pontoons. Ships show local/predicted (cyan) and replicated server (magenta); other owners show active/inactive state. 0=off, 1=on."),
 		ECVF_Cheat);
 
 	bool EvaluateGameThreadWaveOffset(

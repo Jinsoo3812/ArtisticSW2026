@@ -73,6 +73,7 @@ void ACannonball::BeginPlay()
 void ACannonball::PostNetReceiveLocationAndRotation()
 {
 	if (ProjectileMovement
+		&& ProjectileMovement->IsActive()
 		&& ProjectileMovement->bInterpMovement
 		&& ProjectileMovement->GetInterpolatedComponent())
 	{
@@ -92,7 +93,7 @@ void ACannonball::PostNetReceiveVelocity(const FVector& NewVelocity)
 	// AActor's default implementation does not feed replicated velocity into a
 	// ProjectileMovementComponent. Without this, simulated clients travel at the
 	// Blueprint default speed and are repeatedly snapped back by server updates.
-	if (ProjectileMovement)
+	if (ProjectileMovement && ProjectileMovement->IsActive())
 	{
 		ProjectileMovement->Velocity = NewVelocity;
 		ProjectileMovement->UpdateComponentVelocity();
@@ -191,8 +192,7 @@ void ACannonball::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* Ot
 	{
 		if (!bHasHitWater)
 		{
-			// UE_LOG(LogTemp, Warning, TEXT("ACannonball: Hit Water at Location %s! Triggering Ripple..."), *GetActorLocation().ToString());
-			TriggerWaterRipple(GetActorLocation());
+			HandleWaterOverlap(OtherActor, OtherComp, bFromSweep, SweepResult);
 		}
 		return;
 	}
@@ -285,6 +285,22 @@ void ACannonball::TriggerWaterRipple(const FVector& HitLocation)
 
 	// Schedule destruction after N seconds
 	SetLifeSpan(LifeTimeAfterWaterHit);
+}
+
+void ACannonball::HandleWaterOverlap(
+	AActor* WaterActor,
+	UPrimitiveComponent* WaterComponent,
+	bool bFromSweep,
+	const FHitResult& SweepResult)
+{
+	TriggerWaterRipple(GetActorLocation());
+}
+
+void ACannonball::MarkWaterHitHandledWithoutDeactivation()
+{
+	bHasHitWater = true;
+	bHasDesignatedImpact = false;
+	GetWorldTimerManager().ClearTimer(WaterHitTimerHandle);
 }
 
 void ACannonball::DeactivateProjectile()

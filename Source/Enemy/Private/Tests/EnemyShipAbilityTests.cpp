@@ -5,11 +5,14 @@
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
+#include "Buoyancy/SWBuoyancyComponent.h"
 #include "Cannon.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "GameFramework/ProjectileMovementComponent.h"
 #include "Ship.h"
 #include "ShipAttributeSet.h"
 #include "ShipAI/Abilities/EnemyShipSkillMath.h"
@@ -98,32 +101,39 @@ bool FEnemyShipChargeDamageMathTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEnemyShipTorpedoBallisticsTest,
-	"ArtisticSW.Enemy.Ship.Ability.TorpedoFixedSpeedTargetBallistics",
+	FEnemyShipTorpedoStraightTargetTest,
+	"ArtisticSW.Enemy.Ship.Ability.TorpedoStraightLineTarget",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FEnemyShipTorpedoBallisticsTest::RunTest(const FString& Parameters)
+bool FEnemyShipTorpedoStraightTargetTest::RunTest(const FString& Parameters)
 {
-	const FVector Start(0.0f, 0.0f, 100.0f);
-	const FVector Target(3000.0f, 0.0f, 100.0f);
-	FVector Velocity;
-	float FlightTime = 0.0f;
-	float SolvedAngle = 0.0f;
+	const FVector EnemyLocation(0.0f, 0.0f, 300.0f);
+	const FVector PlayerLocation(3000.0f, 4000.0f, 125.0f);
+	const FVector TargetPoint = UGA_EnemyShipLaunchTorpedo::CalculateLineTargetPoint(
+		EnemyLocation,
+		PlayerLocation,
+		0.3f);
 	TestTrue(
-		TEXT("A fixed-speed solution exists"),
-		FEnemyShipSkillMath::SuggestBallisticVelocity(
-			Start, Target, 3000.0f, 980.0f, 70.0f, Velocity, FlightTime, SolvedAngle));
-	TestTrue(TEXT("Launch speed remains fixed"), FMath::IsNearlyEqual(Velocity.Size(), 3000.0f, 0.1f));
-	TestTrue(TEXT("70-degree preference selects the high solution"), SolvedAngle > 45.0f);
-	const FVector IntegratedEndpoint = Start + Velocity * FlightTime
-		+ FVector(0.0f, 0.0f, -0.5f * 980.0f * FlightTime * FlightTime);
-	TestTrue(TEXT("Solved arc reaches the fixed target"), IntegratedEndpoint.Equals(Target, 0.5f));
-
-	TestFalse(
-		TEXT("Unreachable fixed speed and target fail without NaN"),
-		FEnemyShipSkillMath::SuggestBallisticVelocity(
-			Start, FVector(20000.0f, 0.0f, 100.0f), 1000.0f, 980.0f, 70.0f,
-			Velocity, FlightTime, SolvedAngle));
+		TEXT("Alpha 0.3 internally divides the Enemy-to-Player segment"),
+		TargetPoint.Equals(FVector(900.0f, 1200.0f, 247.5f), 0.01f));
+	TestTrue(
+		TEXT("Alpha 0 resolves to the Enemy location"),
+		UGA_EnemyShipLaunchTorpedo::CalculateLineTargetPoint(
+			EnemyLocation,
+			PlayerLocation,
+			0.0f).Equals(EnemyLocation));
+	TestTrue(
+		TEXT("Alpha 1 resolves to the Player location"),
+		UGA_EnemyShipLaunchTorpedo::CalculateLineTargetPoint(
+			EnemyLocation,
+			PlayerLocation,
+			1.0f).Equals(PlayerLocation));
+	TestTrue(
+		TEXT("Alpha is clamped above one"),
+		UGA_EnemyShipLaunchTorpedo::CalculateLineTargetPoint(
+			EnemyLocation,
+			PlayerLocation,
+			2.0f).Equals(PlayerLocation));
 	return true;
 }
 
@@ -244,6 +254,9 @@ bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 
 	FGameplayTagContainer TorpedoTags(GameplayAbility_EnemyShip_LaunchTorpedo);
 	TestTrue(TEXT("Torpedo cooldown is independent from Charge cooldown"), EnemyASC->TryActivateAbilitiesByTag(TorpedoTags, false));
+	const FGameplayAbilitySpec* ActiveTorpedoSpec = EnemyShipAbilityTests::FindAbilitySpec(
+		EnemyASC, GameplayAbility_EnemyShip_LaunchTorpedo);
+	TestTrue(TEXT("Torpedo volley remains active between scheduled launches"), ActiveTorpedoSpec && ActiveTorpedoSpec->IsActive());
 	AEnemyShipTorpedo* SpawnedTorpedo = nullptr;
 	for (TActorIterator<AEnemyShipTorpedo> It(TestWorld.World); It; ++It)
 	{
@@ -252,6 +265,20 @@ bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 	}
 	if (TestNotNull(TEXT("Torpedo GA spawns a dedicated Torpedo Actor"), SpawnedTorpedo))
 	{
+		USWBuoyancyComponent* TorpedoBuoyancy = SpawnedTorpedo->FindComponentByClass<USWBuoyancyComponent>();
+		UProjectileMovementComponent* TorpedoMovement =
+			SpawnedTorpedo->FindComponentByClass<UProjectileMovementComponent>();
+		TestNotNull(
+			TEXT("Torpedo owns the same server-authority SW buoyancy component pattern as floating chests"),
+			TorpedoBuoyancy);
+		TestTrue(
+			TEXT("Torpedo keeps buoyancy disabled during projectile flight"),
+			TorpedoBuoyancy && !TorpedoBuoyancy->IsActive());
+		TestEqual(
+			TEXT("Torpedo flight is straight before water entry"),
+			TorpedoMovement ? TorpedoMovement->ProjectileGravityScale : -1.0f,
+			0.0f);
+		TestTrue(TEXT("Torpedo receives a configurable total lifetime"), SpawnedTorpedo->GetLifeSpan() > 0.0f);
 		TestEqual(TEXT("Torpedo snapshots CannonDamage x multiplier at launch"), SpawnedTorpedo->GetSnapshotDamage(), 60.0f);
 		TestTrue(TEXT("Torpedo is locked to the selected Player Ship"), SpawnedTorpedo->GetDesignatedTarget() == PlayerShip);
 		EnemyStats.CannonDamage = 100.0f;
@@ -259,18 +286,49 @@ bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Later attack-stat changes do not alter snapshot damage"), SpawnedTorpedo->GetSnapshotDamage(), 60.0f);
 
 		const float HealthBeforeTorpedo = PlayerASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
-		FHitResult TorpedoHit(PlayerShip, PlayerShip->ShipDamageMesh, PlayerShip->GetActorLocation(), FVector(-1.0f, 0.0f, 0.0f));
+		TestFalse(
+			TEXT("Player ShipDamageMesh does not require overlap generation"),
+			PlayerShip->ShipDamageMesh->GetGenerateOverlapEvents());
+		TestEqual(
+			TEXT("Player ShipDamageMesh blocks the EnemyCannon object channel"),
+			PlayerShip->ShipDamageMesh->GetCollisionResponseToChannel(ECC_GameTraceChannel3),
+			ECR_Block);
 		if (UPrimitiveComponent* TorpedoCollision = Cast<UPrimitiveComponent>(SpawnedTorpedo->GetRootComponent()))
 		{
-			TorpedoCollision->OnComponentHit.Broadcast(
+			UStaticMesh* DamageTestMesh = LoadObject<UStaticMesh>(
+				nullptr,
+				TEXT("/Engine/BasicShapes/Cube.Cube"));
+			TestNotNull(TEXT("Damage Mesh test shape loads"), DamageTestMesh);
+			PlayerShip->ShipDamageMesh->SetStaticMesh(DamageTestMesh);
+			PlayerShip->ShipDamageMesh->SetWorldScale3D(FVector(2.0f));
+			PlayerShip->ShipDamageMesh->SetCollisionProfileName(TEXT("PlayerShipDamage"));
+			PlayerShip->ShipDamageMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+
+			UStaticMeshComponent* WaterTestComponent = NewObject<UStaticMeshComponent>(
+				PlayerShip,
+				TEXT("WaterTestComponent"));
+			WaterTestComponent->RegisterComponent();
+			FHitResult WaterEntryHit;
+			TorpedoCollision->OnComponentBeginOverlap.Broadcast(
 				TorpedoCollision,
 				PlayerShip,
-				PlayerShip->ShipDamageMesh,
-				FVector::ZeroVector,
-				TorpedoHit);
+				WaterTestComponent,
+				0,
+				true,
+				WaterEntryHit);
+			TestTrue(
+				TEXT("Torpedo enters its physics/buoyancy water phase"),
+				SpawnedTorpedo->HasEnteredWaterForDiagnostics());
+
+			SpawnedTorpedo->SetActorLocation(
+				PlayerShip->ShipDamageMesh->GetComponentLocation(),
+				false,
+				nullptr,
+				ETeleportType::TeleportPhysics);
+			SpawnedTorpedo->Tick(0.016f);
 		}
 		TestEqual(
-			TEXT("Torpedo direct hit applies exactly its launch-time snapshot"),
+			TEXT("Floating Torpedo sweeps the query-only ShipDamageMesh and applies its snapshot"),
 			PlayerASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()),
 			HealthBeforeTorpedo - 60.0f);
 		TestTrue(TEXT("Torpedo destroys itself after one Player Ship hit"), SpawnedTorpedo->IsActorBeingDestroyed());
