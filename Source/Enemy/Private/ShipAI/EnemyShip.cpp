@@ -4,6 +4,7 @@
 #include "Cannon.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
+#include "BaseGameplayTags.h"
 #include "Storage/StorageChest.h"
 #include "Storage/StorageComponent.h"
 #include "TimerManager.h"
@@ -397,21 +398,11 @@ void AEnemyShip::DrawEnemyShipAIDebug() const
 	{
 		Pattern = EnemyShipArchetype->Pattern;
 	}
-	FString DebugText = FString::Printf(
-		TEXT("%s [%s]\nNav=%s State=%s Override=%s\nTarget=%s Dist=%s\nPattern=%s Rules=%d"),
-		*GetName(),
-		HasAuthority() ? TEXT("AUTH") : TEXT("CLIENT"),
-		NavigationComponent->IsNavigationEnabled() ? TEXT("ON") : TEXT("OFF"),
-		*StateName,
-		NavigationComponent->HasActiveOverride() ? TEXT("YES") : TEXT("NO"),
-		TargetShip ? *TargetShip->GetName() : TEXT("None"),
-		TargetDistance >= 0.0f ? *FString::Printf(TEXT("%.0fcm"), TargetDistance) : TEXT("-"),
-		Pattern ? *Pattern->GetName() : TEXT("None"),
-		PatternRuntimeComponent ? PatternRuntimeComponent->GetResolvedRuleCount() : 0);
-
+	FString CastingSummary = TEXT("None");
+	FString AbilityDebugText;
 	if (const UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
 	{
-		DebugText += TEXT("\nAbilities:");
+		TArray<FString> ActiveAbilityNames;
 		for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
 		{
 			if (!Spec.Ability)
@@ -430,8 +421,42 @@ void AEnemyShip::DrawEnemyShipAIDebug() const
 				: Remaining > 0.0f
 					? FString::Printf(TEXT("CD %.1f/%.1fs"), Remaining, Duration)
 					: TEXT("READY");
-			DebugText += FString::Printf(TEXT("\n- %s: %s"), *AbilityName, *AbilityState);
+			AbilityDebugText += FString::Printf(TEXT("\n- %s: %s"), *AbilityName, *AbilityState);
+
+			if (Spec.IsActive())
+			{
+				FString ActiveName = AbilityName;
+				if (Spec.Ability->GetAssetTags().HasTagExact(GameplayAbility_EnemyShip_Charge))
+				{
+					ActiveName += ASC->HasMatchingGameplayTag(State_EnemyShip_Charging)
+						? TEXT(" [CHARGING]")
+						: TEXT(" [AIMING]");
+				}
+				ActiveAbilityNames.Add(MoveTemp(ActiveName));
+			}
 		}
+		if (!ActiveAbilityNames.IsEmpty())
+		{
+			CastingSummary = FString::Join(ActiveAbilityNames, TEXT(", "));
+		}
+	}
+
+	FString DebugText = FString::Printf(
+		TEXT("%s [%s]\nCASTING: %s\nNav=%s State=%s Override=%s\nTarget=%s Dist=%s\nPattern=%s Rules=%d"),
+		*GetName(),
+		HasAuthority() ? TEXT("AUTH") : TEXT("CLIENT"),
+		*CastingSummary,
+		NavigationComponent->IsNavigationEnabled() ? TEXT("ON") : TEXT("OFF"),
+		*StateName,
+		NavigationComponent->HasActiveOverride() ? TEXT("YES") : TEXT("NO"),
+		TargetShip ? *TargetShip->GetName() : TEXT("None"),
+		TargetDistance >= 0.0f ? *FString::Printf(TEXT("%.0fcm"), TargetDistance) : TEXT("-"),
+		Pattern ? *Pattern->GetName() : TEXT("None"),
+		PatternRuntimeComponent ? PatternRuntimeComponent->GetResolvedRuleCount() : 0);
+
+	if (!AbilityDebugText.IsEmpty())
+	{
+		DebugText += TEXT("\nAbilities:") + AbilityDebugText;
 	}
 
 	int32 ReadyCannons = 0;

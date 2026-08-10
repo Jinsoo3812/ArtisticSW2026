@@ -853,12 +853,19 @@ void AShip::SetAIControlInput(
 		return;
 	}
 
+	const float PreviousPropulsionScale = CurrentAIPropulsionScale;
+	const float PreviousTurnScale = CurrentAITurnScale;
 	if (IsPropulsionSuppressed())
 	{
 		CurrentMoveInput = 0.0f;
 		CurrentTurnInput = 0.0f;
 		CurrentAIPropulsionScale = 1.0f;
 		CurrentAITurnScale = 1.0f;
+		if (!FMath::IsNearlyEqual(PreviousPropulsionScale, CurrentAIPropulsionScale)
+			|| !FMath::IsNearlyEqual(PreviousTurnScale, CurrentAITurnScale))
+		{
+			ForceNetUpdate();
+		}
 		return;
 	}
 
@@ -866,6 +873,11 @@ void AShip::SetAIControlInput(
 	CurrentTurnInput = FMath::Clamp(TurnInput, -1.0f, 1.0f);
 	CurrentAIPropulsionScale = FMath::Max(0.0f, PropulsionScale);
 	CurrentAITurnScale = FMath::Max(0.0f, TurnScale);
+	if (!FMath::IsNearlyEqual(PreviousPropulsionScale, CurrentAIPropulsionScale)
+		|| !FMath::IsNearlyEqual(PreviousTurnScale, CurrentAITurnScale))
+	{
+		ForceNetUpdate();
+	}
 }
 
 void AShip::SetExternalAccelerationSource(const FGuid& SourceId, const FVector& WorldAcceleration)
@@ -920,6 +932,8 @@ void AShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 	DOREPLIFETIME(AShip, ReplicatedState);
 	DOREPLIFETIME(AShip, ServerPhysicsTimeOrigin);
 	DOREPLIFETIME(AShip, ServerPhysicsStepSeconds);
+	DOREPLIFETIME(AShip, CurrentAIPropulsionScale);
+	DOREPLIFETIME(AShip, CurrentAITurnScale);
 }
 
 void AShip::Board(APawn* PlayerPawn)

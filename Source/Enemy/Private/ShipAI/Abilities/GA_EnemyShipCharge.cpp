@@ -1,6 +1,7 @@
 #include "ShipAI/Abilities/GA_EnemyShipCharge.h"
 
 #include "AbilitySystemComponent.h"
+#include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "Components/StaticMeshComponent.h"
 #include "GASCombatLibrary.h"
@@ -46,32 +47,20 @@ void UGA_EnemyShipCharge::ActivateAbility(
 	ActiveShip = Ship;
 	ActiveTarget = Target;
 	bCollisionConsumed = false;
+	bChargeStarted = false;
 
 	FEnemyShipNavigationOverrideRequest Request;
-	Request.MoveInput = 1.0f;
-	Request.PropulsionMultiplier = FMath::Max(1.0f, ChargePropulsionMultiplier);
+	Request.MoveInput = 0.0f;
+	Request.PropulsionMultiplier = 1.0f;
+	Request.TurnMultiplier = FMath::Max(0.0f, ChargeTurnMultiplier);
 	NavigationOverrideHandle = Navigation->AcquireOverride(this, 100, Request);
 	if (!NavigationOverrideHandle.IsValid())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
+	UE_LOG(LogTemp, Log, TEXT("차지 선회 시작"));
 
-	if (FBodyInstance* BodyInstance = Ship->BuoyancyRoot->GetBodyInstance())
-	{
-		bPreviousNotifyRigidBodyCollision = BodyInstance->bNotifyRigidBodyCollision;
-	}
-	Ship->BuoyancyRoot->SetNotifyRigidBodyCollision(true);
-	Ship->BuoyancyRoot->OnComponentHit.AddUniqueDynamic(this, &UGA_EnemyShipCharge::HandlePhysicsRootHit);
-	bBoundPhysicsHit = true;
-
-	if (UAbilitySystemComponent* ASC = Ship->GetAbilitySystemComponent())
-	{
-		ASC->AddLooseGameplayTag(State_EnemyShip_Charging);
-		bAddedChargingTag = true;
-	}
-
-	UpdateChargeSteering();
 	Ship->GetWorldTimerManager().SetTimer(
 		SteeringTimerHandle,
 		this,
@@ -79,11 +68,12 @@ void UGA_EnemyShipCharge::ActivateAbility(
 		FMath::Max(0.01f, SteeringUpdateInterval),
 		true);
 	Ship->GetWorldTimerManager().SetTimer(
-		DurationTimerHandle,
+		AimTimeoutTimerHandle,
 		this,
-		&UGA_EnemyShipCharge::FinishChargeByTimeout,
-		FMath::Max(0.05f, ChargeDurationSeconds),
+		&UGA_EnemyShipCharge::FinishAimByTimeout,
+		FMath::Max(0.1f, MaximumAimDurationSeconds),
 		false);
+	UpdateChargeSteering();
 }
 
 void UGA_EnemyShipCharge::EndAbility(
@@ -96,6 +86,7 @@ void UGA_EnemyShipCharge::EndAbility(
 	if (AEnemyShip* Ship = ActiveShip.Get())
 	{
 		Ship->GetWorldTimerManager().ClearTimer(SteeringTimerHandle);
+		Ship->GetWorldTimerManager().ClearTimer(AimTimeoutTimerHandle);
 		Ship->GetWorldTimerManager().ClearTimer(DurationTimerHandle);
 		if (bBoundPhysicsHit && Ship->BuoyancyRoot)
 		{
@@ -120,10 +111,12 @@ void UGA_EnemyShipCharge::EndAbility(
 	ActiveTarget.Reset();
 	NavigationOverrideHandle.Reset();
 	SteeringTimerHandle.Invalidate();
+	AimTimeoutTimerHandle.Invalidate();
 	DurationTimerHandle.Invalidate();
 	bBoundPhysicsHit = false;
 	bAddedChargingTag = false;
 	bCollisionConsumed = false;
+	bChargeStarted = false;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -174,6 +167,14 @@ void UGA_EnemyShipCharge::HandlePhysicsRootHit(
 		if (DamageSpec.IsValid() && DamageSpec.Data.IsValid())
 		{
 			TargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpec.Data.Get());
+			const float CurrentHealth = TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("EnemyShip Charge: Hit Ship %s! Dealt %f damage. Current Health: %f"),
+				*Target->GetName(),
+				Damage,
+				CurrentHealth);
 		}
 	}
 
@@ -204,16 +205,66 @@ void UGA_EnemyShipCharge::UpdateChargeSteering()
 		FVector::DotProduct(Forward, ToTarget));
 
 	FEnemyShipNavigationOverrideRequest Request;
-	Request.MoveInput = 1.0f;
+	Request.MoveInput = bChargeStarted ? 1.0f : 0.0f;
 	Request.TurnInput = FMath::Clamp(
 		SignedAngle * FMath::Max(0.0f, SteeringResponsiveness),
 		-FMath::Clamp(MaximumTurnInput, 0.0f, 1.0f),
 		FMath::Clamp(MaximumTurnInput, 0.0f, 1.0f));
-	Request.PropulsionMultiplier = FMath::Max(1.0f, ChargePropulsionMultiplier);
+	Request.PropulsionMultiplier = bChargeStarted
+		? FMath::Max(1.0f, ChargePropulsionMultiplier)
+		: 1.0f;
+	Request.TurnMultiplier = FMath::Max(0.0f, ChargeTurnMultiplier);
 	if (!Navigation->UpdateOverride(NavigationOverrideHandle, Request))
 	{
 		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
+		return;
 	}
+
+	if (!bChargeStarted
+		&& FMath::Abs(FMath::RadiansToDegrees(SignedAngle)) <= FMath::Max(0.0f, AimAlignmentToleranceDegrees))
+	{
+		BeginCharge();
+	}
+}
+
+void UGA_EnemyShipCharge::BeginCharge()
+{
+	AEnemyShip* Ship = ActiveShip.Get();
+	if (bChargeStarted || !Ship || !Ship->BuoyancyRoot)
+	{
+		return;
+	}
+
+	bChargeStarted = true;
+	Ship->GetWorldTimerManager().ClearTimer(AimTimeoutTimerHandle);
+	UE_LOG(LogTemp, Log, TEXT("차지 돌진"));
+
+	if (FBodyInstance* BodyInstance = Ship->BuoyancyRoot->GetBodyInstance())
+	{
+		bPreviousNotifyRigidBodyCollision = BodyInstance->bNotifyRigidBodyCollision;
+	}
+	Ship->BuoyancyRoot->SetNotifyRigidBodyCollision(true);
+	Ship->BuoyancyRoot->OnComponentHit.AddUniqueDynamic(this, &UGA_EnemyShipCharge::HandlePhysicsRootHit);
+	bBoundPhysicsHit = true;
+
+	if (UAbilitySystemComponent* ASC = Ship->GetAbilitySystemComponent())
+	{
+		ASC->AddLooseGameplayTag(State_EnemyShip_Charging);
+		bAddedChargingTag = true;
+	}
+
+	Ship->GetWorldTimerManager().SetTimer(
+		DurationTimerHandle,
+		this,
+		&UGA_EnemyShipCharge::FinishChargeByTimeout,
+		FMath::Max(0.05f, ChargeDurationSeconds),
+		false);
+	UpdateChargeSteering();
+}
+
+void UGA_EnemyShipCharge::FinishAimByTimeout()
+{
+	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
 }
 
 void UGA_EnemyShipCharge::FinishChargeByTimeout()

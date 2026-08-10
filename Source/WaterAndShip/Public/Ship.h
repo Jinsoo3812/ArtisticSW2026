@@ -837,7 +837,12 @@ private:
 
 	float CurrentMoveInput = 0.0f;
 	float CurrentTurnInput = 0.0f;
+
+	/** Server-authored transient force scales must match on simulated proxies during Network Physics resimulation. */
+	UPROPERTY(Replicated)
 	float CurrentAIPropulsionScale = 1.0f;
+
+	UPROPERTY(Replicated)
 	float CurrentAITurnScale = 1.0f;
 	FVector CurrentExternalAcceleration = FVector::ZeroVector;
 	TMap<FGuid, FVector> ExternalAccelerationSources;

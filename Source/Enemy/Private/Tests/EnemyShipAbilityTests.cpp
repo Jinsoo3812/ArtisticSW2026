@@ -136,7 +136,7 @@ bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 {
 	EnemyShipAbilityTests::FTestWorld TestWorld;
 	AEnemyShip* EnemyShip = TestWorld.World->SpawnActor<AEnemyShip>(
-		AEnemyShip::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator);
+		AEnemyShip::StaticClass(), FVector::ZeroVector, FRotator(0.0f, 90.0f, 0.0f));
 	AShip* PlayerShip = TestWorld.World->SpawnActor<AShip>(
 		AShip::StaticClass(), FVector(1000.0f, 0.0f, 0.0f), FRotator::ZeroRotator);
 	ACannon* Cannon = TestWorld.World->SpawnActor<ACannon>(
@@ -196,13 +196,35 @@ bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 	FGameplayTagContainer ChargeTags(GameplayAbility_EnemyShip_Charge);
 	TestTrue(TEXT("Charge activates by its GAS tag"), EnemyASC->TryActivateAbilitiesByTag(ChargeTags, false));
 	EnemyShip->GetNavigationComponent()->TickComponent(0.016f, LEVELTICK_All, nullptr);
+	TestEqual(TEXT("Charge aiming phase does not apply forward propulsion"), EnemyShip->GetCurrentAIPropulsionScale(), 1.0f);
+	TestEqual(TEXT("Charge aiming phase applies its transient turn scale"), EnemyShip->GetCurrentAITurnScale(), 2.0f);
+	TestFalse(TEXT("Charge aiming phase does not own the charging-state tag"), EnemyASC->HasMatchingGameplayTag(State_EnemyShip_Charging));
+	const FGameplayAbilitySpec* ActiveChargeSpec = EnemyShipAbilityTests::FindAbilitySpec(
+		EnemyASC, GameplayAbility_EnemyShip_Charge);
+	TestTrue(TEXT("Charge ability remains active while aiming"), ActiveChargeSpec && ActiveChargeSpec->IsActive());
+
+	EnemyASC->CancelAbilities(&ChargeTags);
+	FGameplayTagContainer ChargeCooldownTags(Cooldown_EnemyShip_Charge);
+	EnemyASC->RemoveActiveEffectsWithGrantedTags(ChargeCooldownTags);
+	const FVector AlignedTargetLocation = EnemyShip->GetActorLocation()
+		+ EnemyShip->GetActorForwardVector() * 1000.0f;
+	PlayerShip->SetActorLocation(
+		AlignedTargetLocation,
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics);
+	TestTrue(TEXT("Charge reactivates after the test removes its first cooldown"), EnemyASC->TryActivateAbilitiesByTag(ChargeTags, false));
+	EnemyShip->GetNavigationComponent()->TickComponent(0.016f, LEVELTICK_All, nullptr);
 	TestEqual(TEXT("Charge applies 2x transient propulsion scale"), EnemyShip->GetCurrentAIPropulsionScale(), 2.0f);
+	TestEqual(TEXT("Charge keeps its transient turn scale while charging"), EnemyShip->GetCurrentAITurnScale(), 2.0f);
 	TestTrue(TEXT("Charge owns its active-state tag"), EnemyASC->HasMatchingGameplayTag(State_EnemyShip_Charging));
 	TestTrue(TEXT("Charge applies an independent GAS cooldown tag"), EnemyASC->HasMatchingGameplayTag(Cooldown_EnemyShip_Charge));
 
-	EnemyShip->BuoyancyRoot->SetSimulatePhysics(false);
-	PlayerShip->BuoyancyRoot->SetSimulatePhysics(false);
-	EnemyShip->BuoyancyRoot->ComponentVelocity = FVector(1000.0f, 0.0f, 0.0f);
+	const FVector ChargeVelocity = (PlayerShip->GetActorLocation() - EnemyShip->GetActorLocation())
+		.GetSafeNormal2D() * 1000.0f;
+	EnemyShip->BuoyancyRoot->SetPhysicsLinearVelocity(ChargeVelocity);
+	PlayerShip->BuoyancyRoot->SetPhysicsLinearVelocity(FVector::ZeroVector);
+	EnemyShip->BuoyancyRoot->ComponentVelocity = ChargeVelocity;
 	PlayerShip->BuoyancyRoot->ComponentVelocity = FVector::ZeroVector;
 	const float HealthBeforeCharge = PlayerASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
 	FHitResult ChargeHit(PlayerShip, PlayerShip->BuoyancyRoot, PlayerShip->GetActorLocation(), FVector(-1.0f, 0.0f, 0.0f));
@@ -217,6 +239,7 @@ bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Charge ends on valid Player Physics Root collision"), EnemyASC->HasMatchingGameplayTag(State_EnemyShip_Charging));
 	EnemyShip->GetNavigationComponent()->TickComponent(0.016f, LEVELTICK_All, nullptr);
 	TestEqual(TEXT("Charge releases Navigation Override on end"), EnemyShip->GetCurrentAIPropulsionScale(), 1.0f);
+	TestEqual(TEXT("Charge releases transient turn scale on end"), EnemyShip->GetCurrentAITurnScale(), 1.0f);
 	TestFalse(TEXT("Charge cannot reactivate during its own cooldown"), EnemyASC->TryActivateAbilitiesByTag(ChargeTags, false));
 
 	FGameplayTagContainer TorpedoTags(GameplayAbility_EnemyShip_LaunchTorpedo);

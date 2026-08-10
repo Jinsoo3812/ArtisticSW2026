@@ -10,7 +10,7 @@ class AShip;
 class UGameplayEffect;
 class UPrimitiveComponent;
 
-/** Drives toward the selected Player Ship and damages that ship on one Physics Root collision. */
+/** Turns toward the selected Player Ship, then charges and damages it on one Physics Root collision. */
 UCLASS(Blueprintable)
 class ENEMY_API UGA_EnemyShipCharge : public UEnemyShipGameplayAbility
 {
@@ -35,16 +35,31 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Charge")
 	float GetChargePropulsionMultiplier() const { return ChargePropulsionMultiplier; }
 
+	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Charge")
+	float GetChargeTurnMultiplier() const { return ChargeTurnMultiplier; }
+
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge", meta = (ClampMin = "0.05", Units = "s"))
 	float ChargeDurationSeconds = 3.0f;
+
+	/** The charge starts only after the horizontal bow-to-target angle is within this tolerance. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Aiming", meta = (ClampMin = "0.0", ClampMax = "180.0", Units = "deg"))
+	float AimAlignmentToleranceDegrees = 5.0f;
+
+	/** Cancels the ability if the ship cannot face the target in time. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Aiming", meta = (ClampMin = "0.1", Units = "s"))
+	float MaximumAimDurationSeconds = 5.0f;
 
 	/** Multiplies the ship's DT/ASC ForwardPropulsionMultiplier at the physics input layer. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge", meta = (ClampMin = "1.0"))
 	float ChargePropulsionMultiplier = 2.0f;
 
+	/** Multiplies the ship's DT/ASC TurnTorqueMultiplier during both aiming and charging. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge", meta = (ClampMin = "0.0"))
+	float ChargeTurnMultiplier = 2.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge", meta = (ClampMin = "0.01", Units = "s"))
-	float SteeringUpdateInterval = 0.05f;
+	float SteeringUpdateInterval = 1.0f / 60.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge", meta = (ClampMin = "0.0"))
 	float SteeringResponsiveness = 1.5f;
@@ -75,6 +90,8 @@ private:
 		const FHitResult& Hit);
 
 	void UpdateChargeSteering();
+	void BeginCharge();
+	void FinishAimByTimeout();
 	void FinishChargeByTimeout();
 	bool IsValidPlayerTarget(const AShip* Candidate) const;
 
@@ -82,9 +99,11 @@ private:
 	TWeakObjectPtr<AShip> ActiveTarget;
 	FEnemyShipNavigationOverrideHandle NavigationOverrideHandle;
 	FTimerHandle SteeringTimerHandle;
+	FTimerHandle AimTimeoutTimerHandle;
 	FTimerHandle DurationTimerHandle;
 	bool bPreviousNotifyRigidBodyCollision = false;
 	bool bBoundPhysicsHit = false;
 	bool bAddedChargingTag = false;
 	bool bCollisionConsumed = false;
+	bool bChargeStarted = false;
 };
