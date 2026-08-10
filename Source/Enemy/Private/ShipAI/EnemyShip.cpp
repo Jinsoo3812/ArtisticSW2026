@@ -22,6 +22,8 @@
 #include "ShipAI/EnemyShipAbilitySet.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
 #include "ShipAI/EnemyShipPatternRuntimeComponent.h"
+#include "ShipAI/Abilities/GA_EnemyShipCharge.h"
+#include "ShipAI/Abilities/GA_EnemyShipLaunchTorpedo.h"
 #include "UObject/UnrealType.h"
 
 AEnemyShip::AEnemyShip()
@@ -46,6 +48,10 @@ AEnemyShip::AEnemyShip()
 
 	Tags.Remove(TEXT("Player"));
 	Tags.AddUnique(TEXT("Enemy"));
+	LegacyAbilityBootstrapClasses = {
+		UGA_EnemyShipCharge::StaticClass(),
+		UGA_EnemyShipLaunchTorpedo::StaticClass()
+	};
 
 	if (BuoyancyRoot)
 	{
@@ -92,6 +98,7 @@ void AEnemyShip::BeginPlay()
 			LegacyProfile.ReturnArrivalDistance = FMath::Max(0.0f, NavigationHomeArrivalDistance);
 			LegacyProfile.MaxActiveCannons = FMath::Max(1, MaxActiveCannons);
 			NavigationComponent->SetNavigationProfile(LegacyProfile);
+			GrantEnemyShipAbilityClasses(LegacyAbilityBootstrapClasses);
 		}
 
 		if (NavigationComponent)
@@ -186,6 +193,16 @@ bool AEnemyShip::GrantEnemyShipAbilities(const UEnemyShipAbilitySet* AbilitySet)
 	{
 		return false;
 	}
+	return GrantEnemyShipAbilityClasses(AbilitySet->Abilities);
+}
+
+bool AEnemyShip::GrantEnemyShipAbilityClasses(
+	const TArray<TSubclassOf<UGameplayAbility>>& AbilityClasses)
+{
+	if (!HasAuthority())
+	{
+		return false;
+	}
 
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
 	if (!ASC)
@@ -199,14 +216,14 @@ bool AEnemyShip::GrantEnemyShipAbilities(const UEnemyShipAbilitySet* AbilitySet)
 	}
 	GrantedEnemyShipAbilityHandles.Reset();
 
-	for (const TSubclassOf<UGameplayAbility>& AbilityClass : AbilitySet->Abilities)
+	for (const TSubclassOf<UGameplayAbility>& AbilityClass : AbilityClasses)
 	{
 		if (AbilityClass)
 		{
 			GrantedEnemyShipAbilityHandles.Add(ASC->GiveAbility(FGameplayAbilitySpec(AbilityClass, 1)));
 		}
 	}
-	return GrantedEnemyShipAbilityHandles.Num() == AbilitySet->Abilities.Num();
+	return GrantedEnemyShipAbilityHandles.Num() == AbilityClasses.Num();
 }
 
 void AEnemyShip::Tick(float DeltaTime)

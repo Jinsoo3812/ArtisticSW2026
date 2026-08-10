@@ -19,6 +19,7 @@ class UEnemyShipArchetypeData;
 class UEnemyShipAbilitySet;
 class UEnemyShipNavigationComponent;
 class UEnemyShipPatternRuntimeComponent;
+class UGameplayAbility;
 
 UCLASS()
 class ENEMY_API AEnemyShip : public AShip
@@ -49,6 +50,7 @@ public:
 	bool IsDeathHandled() const { return bDeathHandled; }
 
 	bool GrantEnemyShipAbilities(const UEnemyShipAbilitySet* AbilitySet);
+	bool GrantEnemyShipAbilityClasses(const TArray<TSubclassOf<UGameplayAbility>>& AbilityClasses);
 
 	// AI Control APIs
 	UFUNCTION(BlueprintCallable, Category = "Ship|AI")
@@ -78,6 +80,14 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|AI|Data")
 	TObjectPtr<UEnemyShipArchetypeData> EnemyShipArchetype;
+
+	/** LEGACY bootstrap only: delete after every Enemy Ship Archetype has an AbilitySet. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "LEGACY|Ship AI", meta = (
+		DisplayName = "[LEGACY] Native Ability Bootstrap Without Archetype",
+		DeprecatedProperty,
+		DeprecationMessage = "Assign Charge/Torpedo through EnemyShipArchetype.AbilitySet",
+		AdvancedDisplay))
+	TArray<TSubclassOf<UGameplayAbility>> LegacyAbilityBootstrapClasses;
 
 protected:
 	void UpdateActiveCannons();

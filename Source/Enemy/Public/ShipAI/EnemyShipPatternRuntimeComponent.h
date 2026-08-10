@@ -63,6 +63,7 @@ private:
 		double CurrentTimeSeconds,
 		float OwnerHealthRatio,
 		const FGameplayTagContainer& OwnerTags) const;
+	bool IsGrantedAbilityAvailable(const FGameplayTag& AbilityTag) const;
 	int32 SelectEligibleIndex(const TArray<int32>& EligibleIndices);
 
 	UPROPERTY(Transient)

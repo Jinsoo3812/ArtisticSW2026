@@ -31,6 +31,11 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Weapon_AimCycle, "GameplayAbility.Weapon.
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_GravityVortex, "GameplayAbility.Skill.GravityVortex");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_WaterBomb, "GameplayAbility.Skill.WaterBomb");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_Bombardment, "GameplayAbility.Skill.Bombardment");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_Charge, "GameplayAbility.EnemyShip.Charge");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_LaunchTorpedo, "GameplayAbility.EnemyShip.LaunchTorpedo");
+UE_DEFINE_GAMEPLAY_TAG(State_EnemyShip_Charging, "State.EnemyShip.Charging");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_Charge, "Cooldown.EnemyShip.Charge");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_LaunchTorpedo, "Cooldown.EnemyShip.LaunchTorpedo");
 // Event
 UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Changed, "Event.Ability.Changed");
 UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_Start, "Event.HandleScan.Start");

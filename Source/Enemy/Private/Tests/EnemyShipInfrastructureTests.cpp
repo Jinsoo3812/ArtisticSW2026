@@ -15,6 +15,7 @@
 #include "ShipAI/EnemyShipPatternRuntimeComponent.h"
 #include "BaseGameplayTags.h"
 #include "ShipAI/NavalAIController.h"
+#include "ShipAI/Abilities/GA_EnemyShipCharge.h"
 
 namespace EnemyShipInfrastructureTests
 {
@@ -102,10 +103,15 @@ bool FEnemyShipPatternRuntimeIntervalTest::RunTest(const FString& Parameters)
 	Ship->BuoyancyRoot->SetSimulatePhysics(false);
 	Target->BuoyancyRoot->SetSimulatePhysics(false);
 	Target->SetActorLocation(FVector(1000.0f, 0.0f, 0.0f));
+	Ship->GetAbilitySystemComponent()->InitAbilityActorInfo(Ship, Ship);
+	TestTrue(
+		TEXT("Pattern test ability is granted"),
+		Ship->GrantEnemyShipAbilityClasses({UGA_EnemyShipCharge::StaticClass()}));
 
 	UEnemyShipPatternData* Pattern = NewObject<UEnemyShipPatternData>();
 	FEnemyShipSkillRule& RepeatRule = Pattern->SkillRules.AddDefaulted_GetRef();
-	RepeatRule.AbilityTag = GameplayAbility_BasicAttack;
+	RepeatRule.AbilityTag = GameplayAbility_EnemyShip_Charge;
+	RepeatRule.AbilityClass = UGA_EnemyShipCharge::StaticClass();
 	RepeatRule.MinimumInterval = 5.0f;
 	RepeatRule.MaximumDistance = 2000.0f;
 	RepeatRule.Priority = 10;

@@ -211,6 +211,19 @@ FCannonResolvedFiringStats ACannon::GetResolvedFiringStats() const
 	return Stats;
 }
 
+FTransform ACannon::GetProjectileMuzzleTransform() const
+{
+	if (!BarrelMesh)
+	{
+		return GetActorTransform();
+	}
+
+	const FVector Forward = BarrelMesh->GetForwardVector();
+	return FTransform(
+		BarrelMesh->GetComponentRotation(),
+		BarrelMesh->GetComponentLocation() + Forward * 200.0f);
+}
+
 void ACannon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);

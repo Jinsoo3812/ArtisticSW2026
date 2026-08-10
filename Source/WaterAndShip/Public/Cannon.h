@@ -91,6 +91,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Cannon|Stats")
 	FCannonResolvedFiringStats GetResolvedFiringStats() const;
 
+	/** Canonical world-space projectile origin authored by this cannon. */
+	UFUNCTION(BlueprintPure, Category = "Cannon|Projectile")
+	FTransform GetProjectileMuzzleTransform() const;
+
 	UFUNCTION(BlueprintPure, Category = "Cannon|Water Bomb")
 	bool IsWaterBombMode() const { return bWaterBombMode; }
 	FOnWaterBombModeChanged OnWaterBombModeChanged;

@@ -1,5 +1,6 @@
 #include "ShipAI/EnemyShipPatternRuntimeComponent.h"
 
+#include "Abilities/GameplayAbility.h"
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
 #include "ShipAI/EnemyShip.h"
@@ -131,6 +132,10 @@ bool UEnemyShipPatternRuntimeComponent::IsRuleEligible(
 	{
 		return false;
 	}
+	if (!IsGrantedAbilityAvailable(Rule.AbilityTag))
+	{
+		return false;
+	}
 	if (OwnerHealthRatio < Rule.MinimumHealthRatio || OwnerHealthRatio > Rule.MaximumHealthRatio)
 	{
 		return false;
@@ -153,6 +158,28 @@ bool UEnemyShipPatternRuntimeComponent::IsRuleEligible(
 		}
 	}
 	return true;
+}
+
+bool UEnemyShipPatternRuntimeComponent::IsGrantedAbilityAvailable(const FGameplayTag& AbilityTag) const
+{
+	const AEnemyShip* Ship = Cast<AEnemyShip>(GetOwner());
+	const UAbilitySystemComponent* ASC = Ship ? Ship->GetAbilitySystemComponent() : nullptr;
+	const FGameplayAbilityActorInfo* ActorInfo = ASC ? ASC->AbilityActorInfo.Get() : nullptr;
+	if (!ASC || !ActorInfo || !AbilityTag.IsValid())
+	{
+		return false;
+	}
+
+	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+	{
+		if (Spec.Ability
+			&& Spec.Ability->GetAssetTags().HasTagExact(AbilityTag)
+			&& Spec.Ability->CanActivateAbility(Spec.Handle, ActorInfo))
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 int32 UEnemyShipPatternRuntimeComponent::SelectEligibleIndex(const TArray<int32>& EligibleIndices)
