@@ -67,20 +67,6 @@ float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, fl
 		}
 	}
 
-	// 1초에 한 번씩 서버/클라 파고 쿼리값 출력 (대조 디버깅용)
-	if (World)
-	{
-		static float LastLogTime = 0.f;
-		float RealTime = World->GetTimeSeconds();
-		if (RealTime - LastLogTime >= 1.f)
-		{
-			LastLogTime = RealTime;
-			UE_LOG(LogTemp, Warning, TEXT("[%s] WaveQuery - PosX: %.2f | Time: %.4f | WaveHeightZ: %.4f"),
-				World->IsNetMode(NM_DedicatedServer) ? TEXT("SERVER") : TEXT("CLIENT"),
-				InPosition.X, SyncTime, Height);
-		}
-	}
-
 	return Height;
 }
 

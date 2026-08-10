@@ -71,6 +71,8 @@ void ACannon::BeginPlay()
 	{
 		InitialBarrelRotation = BarrelMesh->GetRelativeRotation();
 	}
+
+	RefreshPlayerInteractionAvailability();
 }
 
 void ACannon::Tick(float DeltaTime)
@@ -173,6 +175,42 @@ AShip* ACannon::GetOwningShip() const
 	return nullptr;
 }
 
+bool ACannon::AllowsPlayerControl() const
+{
+	const AShip* OwningShip = GetOwningShip();
+	return !OwningShip || OwningShip->AllowsPlayerCannonControl();
+}
+
+void ACannon::RefreshPlayerInteractionAvailability()
+{
+	if (InteractableComponent)
+	{
+		InteractableComponent->SetCollisionEnabled(
+			AllowsPlayerControl() && !RidingPlayer
+				? ECollisionEnabled::QueryOnly
+				: ECollisionEnabled::NoCollision);
+	}
+}
+
+FCannonResolvedFiringStats ACannon::GetResolvedFiringStats() const
+{
+	FCannonResolvedFiringStats Stats;
+	Stats.CooldownSeconds = FireCooldown;
+	Stats.ProjectileSpeed = FireVelocity;
+
+	if (AShip* Ship = GetOwningShip())
+	{
+		if (const UAbilitySystemComponent* ShipASC = Ship->GetAbilitySystemComponent())
+		{
+			Stats.Damage = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonDamageAttribute());
+			Stats.CooldownSeconds = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonFireCooldownAttribute());
+			Stats.ProjectileSpeed = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute());
+		}
+	}
+
+	return Stats;
+}
+
 void ACannon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -191,6 +229,11 @@ void ACannon::Board(APawn* PlayerPawn)
 		RidingPlayer ? *RidingPlayer->GetName() : TEXT("None"));
 
 	if (!HasAuthority()) return;
+	if (!AllowsPlayerControl())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ACannon::Board - [SERVER] Failed: player control is disabled for %s."), *GetName());
+		return;
+	}
 	if (!PlayerPawn)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("ACannon::Board - [SERVER] Failed: PlayerPawn is null!"));
@@ -214,6 +257,7 @@ void ACannon::Board(APawn* PlayerPawn)
 	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board initiated by player pawn %s. Cannon location: %s, Player location: %s"), *PlayerPawn->GetName(), *GetActorLocation().ToString(), *PlayerPawn->GetActorLocation().ToString());
 
 	RidingPlayer = PlayerPawn;
+	RefreshPlayerInteractionAvailability();
 
 	// Disable player collision
 	RidingPlayer->SetActorEnableCollision(false);
@@ -323,36 +367,21 @@ bool ACannon::FireCannon()
 	}
 	bLoggedWaterBombFireBlock = false;
 
-	AShip* MyShip = GetOwningShip();
-	// UE_LOG(LogTemp, Warning, TEXT("ACannon::FireCannon - Fire! Cannon: %s, Ship: %s"), *GetName(), MyShip ? *MyShip->GetName() : TEXT("None"));
-
 	bCanFire = false;
-
-	// 배의 스탯 초기값 (Fallback)
-	float TargetCooldown = FireCooldown;
-	float TargetDamage = 10.0f;
-	float TargetSpeed = FireVelocity;
-
-	// 배가 존재하면 배의 GAS Attribute에서 실시간으로 대포 스탯들을 긁어옴
-	if (MyShip)
-	{
-		if (UAbilitySystemComponent* ShipASC = MyShip->GetAbilitySystemComponent())
-		{
-			TargetCooldown = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonFireCooldownAttribute());
-			TargetDamage = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonDamageAttribute());
-			TargetSpeed = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute());
-		}
-	}
-
-	// 스탯 기반의 발사 쿨타임 타이머 작동
-	GetWorldTimerManager().SetTimer(CooldownTimerHandle, this, &ACannon::ResetCooldown, TargetCooldown, false);
+	const FCannonResolvedFiringStats FiringStats = GetResolvedFiringStats();
+	GetWorldTimerManager().SetTimer(
+		CooldownTimerHandle,
+		this,
+		&ACannon::ResetCooldown,
+		FMath::Max(0.05f, FiringStats.CooldownSeconds),
+		false);
 
 	FVector MuzzleLocation = BarrelMesh ? BarrelMesh->GetComponentLocation() + BarrelMesh->GetForwardVector() * 200.0f : GetActorLocation();
 	FRotator LaunchRotation = BarrelMesh ? BarrelMesh->GetComponentRotation() : GetActorRotation();
 
 	if (HasAuthority())
 	{
-		SpawnCannonball(MuzzleLocation, LaunchRotation, TargetDamage, TargetSpeed);
+		SpawnCannonball(MuzzleLocation, LaunchRotation, FiringStats.Damage, FiringStats.ProjectileSpeed);
 	}
 	else
 	{
@@ -407,6 +436,7 @@ void ACannon::ExitAimMode()
 	PC->Possess(RidingPlayer);
 
 	RidingPlayer = nullptr;
+	RefreshPlayerInteractionAvailability();
 }
 
 void ACannon::ForceExit()
@@ -444,26 +474,14 @@ void ACannon::ServerFire_Implementation()
 	}
 	bLoggedWaterBombFireBlock = false;
 
-	float AuthoritativeCooldown = FireCooldown;
-	float AuthoritativeDamage = 10.0f;
-	float AuthoritativeSpeed = FireVelocity;
-	if (AShip* Ship = GetOwningShip())
-	{
-		if (UAbilitySystemComponent* ShipASC = Ship->GetAbilitySystemComponent())
-		{
-			AuthoritativeCooldown = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonFireCooldownAttribute());
-			AuthoritativeDamage = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonDamageAttribute());
-			AuthoritativeSpeed = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute());
-		}
-	}
-
 	bCanFire = false;
-	GetWorldTimerManager().SetTimer(CooldownTimerHandle, this, &ACannon::ResetCooldown, FMath::Max(0.05f, AuthoritativeCooldown), false);
+	const FCannonResolvedFiringStats FiringStats = GetResolvedFiringStats();
+	GetWorldTimerManager().SetTimer(CooldownTimerHandle, this, &ACannon::ResetCooldown, FMath::Max(0.05f, FiringStats.CooldownSeconds), false);
 	const FVector MuzzleLocation = BarrelMesh
 		? BarrelMesh->GetComponentLocation() + BarrelMesh->GetForwardVector() * 200.0f
 		: GetActorLocation();
 	const FRotator LaunchRotation = BarrelMesh ? BarrelMesh->GetComponentRotation() : GetActorRotation();
-	SpawnCannonball(MuzzleLocation, LaunchRotation, AuthoritativeDamage, AuthoritativeSpeed);
+	SpawnCannonball(MuzzleLocation, LaunchRotation, FiringStats.Damage, FiringStats.ProjectileSpeed);
 }
 
 void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed)
@@ -683,6 +701,8 @@ void ACannon::OnRep_WaterBombMode()
 // Ship의 OnRep_RidingPlayer()와 동일 패턴
 void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 {
+	RefreshPlayerInteractionAvailability();
+
 	// UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer. OldPlayer: %s, RidingPlayer: %s"), 
 	// 	OldPlayer ? *OldPlayer->GetName() : TEXT("Null"), 
 	// 	RidingPlayer ? *RidingPlayer->GetName() : TEXT("Null"));

@@ -4,6 +4,7 @@
 #include "Ship.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Components/ChildActorComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "InteractableComponent.h"
 #include "EnhancedInputComponent.h"
@@ -37,7 +38,6 @@
 #include "DrawDebugHelpers.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
-#include "CollisionChannels.h"
 #include "Bombardment.h"
 #include "Cannon.h"
 #include "Cannonball.h"
@@ -50,7 +50,7 @@ namespace
 	TAutoConsoleVariable<int32> CVarShowShipNetworkBuoyancyDebug(
 		TEXT("p.ShowShipNetworkBuoyancyDebug"),
 		0,
-		TEXT("Draw local and replicated ship buoyancy pontoons. 0=off, 1=on."),
+		TEXT("Draw local/predicted (cyan) and replicated server (magenta) ship pontoons. 0=off, 1=on."),
 		ECVF_Cheat);
 
 	bool EvaluateGameThreadWaveOffset(
@@ -97,38 +97,45 @@ AShip::AShip()
 	BuoyancyRoot->SetSimulatePhysics(true);
 	BuoyancyRoot->SetCollisionProfileName(TEXT("PlayerShip"));
 	BuoyancyRoot->SetGenerateOverlapEvents(false);
+	BuoyancyRoot->SetVisibility(false, false);
+	BuoyancyRoot->SetHiddenInGame(true, false);
+	BuoyancyRoot->SetCastShadow(false);
+	BuoyancyRoot->SetCastHiddenShadow(false);
+	BuoyancyRoot->bDisallowNanite = true;
 	BuoyancyRoot->SetLinearDamping(0.8f);
 	BuoyancyRoot->SetAngularDamping(3.0f);
 
-	// Split presentation and gameplay queries away from the Chaos body. Existing
-	// Blueprint assets keep assigning their mesh to BuoyancyRoot; OnConstruction
-	// mirrors that asset until dedicated meshes are authored.
+	// Split presentation and gameplay queries away from the Chaos body. Each mesh
+	// is assigned independently by derived Blueprints.
 	ShipVisualMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipVisualMesh"));
 	ShipVisualMesh->SetupAttachment(BuoyancyRoot);
-	ShipVisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ShipVisualMesh->SetCollisionProfileName(TEXT("ShipVisual"));
 	ShipVisualMesh->SetGenerateOverlapEvents(false);
+	ShipVisualMesh->SetVisibility(true, false);
+	ShipVisualMesh->SetHiddenInGame(false, false);
+	ShipVisualMesh->SetCastShadow(true);
+	ShipVisualMesh->SetCastHiddenShadow(false);
+	ShipVisualMesh->bDisallowNanite = false;
 
 	ShipDamageMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipDamageMesh"));
 	ShipDamageMesh->SetupAttachment(BuoyancyRoot);
-	ShipDamageMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	ShipDamageMesh->SetCollisionObjectType(ECC_ShipDamage);
-	ShipDamageMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-	ShipDamageMesh->SetCollisionResponseToChannel(ECC_GameTraceChannel3, ECR_Block);
+	ShipDamageMesh->SetCollisionProfileName(TEXT("PlayerShipDamage"));
 	ShipDamageMesh->SetGenerateOverlapEvents(false);
 	ShipDamageMesh->SetVisibility(false, false);
 	ShipDamageMesh->SetHiddenInGame(true, false);
 	ShipDamageMesh->SetCastShadow(false);
+	ShipDamageMesh->SetCastHiddenShadow(false);
+	ShipDamageMesh->bDisallowNanite = true;
 
 	ShipDeckMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipDeckMesh"));
 	ShipDeckMesh->SetupAttachment(BuoyancyRoot);
-	ShipDeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
-	ShipDeckMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-	ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+	ShipDeckMesh->SetCollisionProfileName(TEXT("ShipDeck"));
 	ShipDeckMesh->SetGenerateOverlapEvents(false);
 	ShipDeckMesh->SetVisibility(false, false);
 	ShipDeckMesh->SetHiddenInGame(true, false);
 	ShipDeckMesh->SetCastShadow(false);
+	ShipDeckMesh->SetCastHiddenShadow(false);
+	ShipDeckMesh->bDisallowNanite = true;
 
 	SWBuoyancyComponent = CreateDefaultSubobject<USWBuoyancyComponent>(TEXT("SWBuoyancyComponent"));
 	SWBuoyancyComponent->ExecutionMode = ESWBuoyancyExecutionMode::ExternalNetworkPhysics;
@@ -168,27 +175,25 @@ AShip::AShip()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
-	// Interactable Component
-	InteractableComponent = CreateDefaultSubobject<UInteractableComponent>(TEXT("InteractableComponent"));
-	InteractableComponent->SetupAttachment(BuoyancyRoot);
-	// Set default collision preset for interactables
-	InteractableComponent->SetCollisionProfileName(TEXT("Interactable"));
+	// Helm authoring components. Visuals and interaction collision remain separate
+	// so designers can scale either without affecting the other.
+	HelmMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HelmMesh"));
+	HelmMesh->SetupAttachment(BuoyancyRoot);
+	HelmMesh->SetCollisionProfileName(TEXT("NoCollision"));
 
-	// Port Sea Boarding Component
-	PortSeaBoardingInteractable = CreateDefaultSubobject<UInteractableComponent>(TEXT("PortSeaBoardingInteractable"));
-	PortSeaBoardingInteractable->SetupAttachment(BuoyancyRoot);
-	PortSeaBoardingInteractable->SetCollisionProfileName(TEXT("Interactable"));
+	HelmInteractable = CreateDefaultSubobject<UInteractableComponent>(TEXT("HelmInteractable"));
+	HelmInteractable->SetupAttachment(BuoyancyRoot);
+	HelmInteractable->SetCollisionProfileName(TEXT("Interactable"));
+	HelmInteractable->InteractionTag = Interaction_ShipBoard;
 
-	PortSeaBoardingDestination = CreateDefaultSubobject<USceneComponent>(TEXT("PortSeaBoardingDestination"));
-	PortSeaBoardingDestination->SetupAttachment(BuoyancyRoot);
+	HelmSeatPoint = CreateDefaultSubobject<USceneComponent>(TEXT("HelmSeatPoint"));
+	HelmSeatPoint->SetupAttachment(BuoyancyRoot);
 
-	// Starboard Sea Boarding Component
-	StarboardSeaBoardingInteractable = CreateDefaultSubobject<UInteractableComponent>(TEXT("StarboardSeaBoardingInteractable"));
-	StarboardSeaBoardingInteractable->SetupAttachment(BuoyancyRoot);
-	StarboardSeaBoardingInteractable->SetCollisionProfileName(TEXT("Interactable"));
+	HelmExitPoint = CreateDefaultSubobject<USceneComponent>(TEXT("HelmExitPoint"));
+	HelmExitPoint->SetupAttachment(BuoyancyRoot);
 
-	StarboardSeaBoardingDestination = CreateDefaultSubobject<USceneComponent>(TEXT("StarboardSeaBoardingDestination"));
-	StarboardSeaBoardingDestination->SetupAttachment(BuoyancyRoot);
+	BoardingArrivalPoint = CreateDefaultSubobject<USceneComponent>(TEXT("BoardingArrivalPoint"));
+	BoardingArrivalPoint->SetupAttachment(BuoyancyRoot);
 
 	// Ability System Component
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
@@ -230,22 +235,13 @@ void AShip::BeginPlay()
 		InitializeDefaultAttributes();
 	}
 
-	SynchronizeSplitShipMeshes();
-
 	// The legacy Water plugin component may have enabled root overlap during its
-	// initialization. It is no longer a settings or force source, so disable it
-	// before applying the final split collision policy.
+	// initialization. It is no longer a settings or force source, so disable it.
 	if (UBuoyancyComponent* LegacyBuoyancy = FindComponentByClass<UBuoyancyComponent>())
 	{
 		LegacyBuoyancy->SetAutoActivate(false);
 		LegacyBuoyancy->SetComponentTickEnabled(false);
 		LegacyBuoyancy->Deactivate();
-	}
-
-	ConfigureSplitShipCollision();
-	if (BuoyancyRoot)
-	{
-		BuoyancyRoot->SetSimulatePhysics(true);
 	}
 
 	bool bPredictionEnabled = UPhysicsSettings::Get()->PhysicsPrediction.bEnablePhysicsPrediction;
@@ -296,121 +292,47 @@ void AShip::BeginPlay()
 	ReplicatedState.Location = GetActorLocation();
 	ReplicatedState.Rotation = GetActorRotation();
 
+	if (HelmInteractable)
+	{
+		const FText ObjectName = HelmInteractable->InteractUIInfo.ObjectName.IsEmpty()
+			? NSLOCTEXT("ShipInteraction", "HelmObject", "Ship Helm")
+			: HelmInteractable->InteractUIInfo.ObjectName;
+		const FText ActionText = HelmInteractable->InteractUIInfo.ActionText.IsEmpty()
+			? NSLOCTEXT("ShipInteraction", "HelmAction", "Take Control")
+			: HelmInteractable->InteractUIInfo.ActionText;
+		HelmInteractable->InitializeInteractable(ObjectName, ActionText);
+	}
+	UpdateHelmInteractionAvailability();
+	RefreshMountedCannons();
+
 	// 좌현 바다 승선 상호작용 바인딩
 	if (PortSeaBoardingInteractable)
 	{
-		PortSeaBoardingInteractable->InitializeInteractable(
-			FText::FromString(TEXT("배")),
-			FText::FromString(TEXT("승선하기"))
-		);
-		PortSeaBoardingInteractable->OnInteracted.AddUniqueDynamic(this, &AShip::HandlePortSeaBoarding);
+		PortSeaBoardingInteractable->SetCollisionEnabled(
+			AllowsPlayerBoarding() ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+		if (AllowsPlayerBoarding())
+		{
+			PortSeaBoardingInteractable->InitializeInteractable(
+				FText::FromString(TEXT("배")),
+				FText::FromString(TEXT("승선하기"))
+			);
+			PortSeaBoardingInteractable->OnInteracted.AddUniqueDynamic(this, &AShip::HandlePortSeaBoarding);
+		}
 	}
 
 	// 우현 바다 승선 상호작용 바인딩
 	if (StarboardSeaBoardingInteractable)
 	{
-		StarboardSeaBoardingInteractable->InitializeInteractable(
-			FText::FromString(TEXT("배")),
-			FText::FromString(TEXT("승선하기"))
-		);
-		StarboardSeaBoardingInteractable->OnInteracted.AddUniqueDynamic(this, &AShip::HandleStarboardSeaBoarding);
-	}
-}
-
-void AShip::OnConstruction(const FTransform& Transform)
-{
-	Super::OnConstruction(Transform);
-	SynchronizeSplitShipMeshes();
-	ConfigureSplitShipCollision();
-}
-
-void AShip::SynchronizeSplitShipMeshes()
-{
-	if (!bMirrorPhysicsRootMeshToSplitMeshes || !BuoyancyRoot)
-	{
-		return;
-	}
-
-	UStaticMesh* SourceMesh = BuoyancyRoot->GetStaticMesh();
-	if (!SourceMesh)
-	{
-		return;
-	}
-
-	const auto MirrorMeshAndMaterials = [this, SourceMesh](UStaticMeshComponent* Target)
-	{
-		if (!Target)
+		StarboardSeaBoardingInteractable->SetCollisionEnabled(
+			AllowsPlayerBoarding() ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+		if (AllowsPlayerBoarding())
 		{
-			return;
+			StarboardSeaBoardingInteractable->InitializeInteractable(
+				FText::FromString(TEXT("배")),
+				FText::FromString(TEXT("승선하기"))
+			);
+			StarboardSeaBoardingInteractable->OnInteracted.AddUniqueDynamic(this, &AShip::HandleStarboardSeaBoarding);
 		}
-
-		Target->SetStaticMesh(SourceMesh);
-		for (int32 MaterialIndex = 0; MaterialIndex < BuoyancyRoot->GetNumMaterials(); ++MaterialIndex)
-		{
-			Target->SetMaterial(MaterialIndex, BuoyancyRoot->GetMaterial(MaterialIndex));
-		}
-	};
-
-	MirrorMeshAndMaterials(ShipVisualMesh);
-	MirrorMeshAndMaterials(ShipDamageMesh);
-	MirrorMeshAndMaterials(ShipDeckMesh);
-
-	// Only the visual copy renders. The original component remains the serialized
-	// Chaos body and supplies collision geometry, mass, and inertia.
-	BuoyancyRoot->SetVisibility(false, false);
-	BuoyancyRoot->SetHiddenInGame(true, false);
-	if (ShipVisualMesh)
-	{
-		ShipVisualMesh->SetVisibility(true, false);
-		ShipVisualMesh->SetHiddenInGame(false, false);
-	}
-}
-
-void AShip::ConfigureSplitShipCollision()
-{
-	const bool bEnemyShip = ActorHasTag(TEXT("Enemy"));
-	if (BuoyancyRoot)
-	{
-		BuoyancyRoot->SetCollisionProfileName(bEnemyShip ? TEXT("EnemyShip") : TEXT("PlayerShip"));
-		BuoyancyRoot->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-		BuoyancyRoot->SetCollisionResponseToChannel(ECC_GameTraceChannel2, ECR_Ignore);
-		BuoyancyRoot->SetCollisionResponseToChannel(ECC_GameTraceChannel3, ECR_Ignore);
-		BuoyancyRoot->SetGenerateOverlapEvents(false);
-	}
-
-	if (ShipVisualMesh)
-	{
-		ShipVisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		ShipVisualMesh->SetGenerateOverlapEvents(false);
-	}
-
-	if (ShipDamageMesh)
-	{
-		ShipDamageMesh->SetCollisionObjectType(ECC_ShipDamage);
-		ShipDamageMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-		ShipDamageMesh->SetGenerateOverlapEvents(false);
-		// Damage is server authoritative. The hull never generates persistent
-		// overlap pairs; the opposing projectile sweeps against this query body.
-		if (HasAuthority())
-		{
-			ShipDamageMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-			ShipDamageMesh->SetCollisionResponseToChannel(
-				bEnemyShip ? ECC_GameTraceChannel2 : ECC_GameTraceChannel3,
-				ECR_Block);
-		}
-		else
-		{
-			ShipDamageMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		}
-	}
-
-	if (ShipDeckMesh)
-	{
-		ShipDeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-		ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
-		ShipDeckMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
-		ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
-		ShipDeckMesh->SetGenerateOverlapEvents(false);
 	}
 }
 
@@ -529,26 +451,35 @@ void AShip::Tick(float DeltaTime)
 	{
 		if (SWBuoyancyComponent && CVarShowShipNetworkBuoyancyDebug.GetValueOnGameThread() > 0)
 		{
-			FVector ShipLocation = GetActorLocation();
-			FRotator ShipRotation = GetActorRotation();
+			const FTransform LocalBodyTransform = BuoyancyRoot
+				? BuoyancyRoot->GetComponentTransform()
+				: GetActorTransform();
 
-			// 1. 클라이언트 로컬 물리 위치 기준 폰툰 (연두색 - Green)
+			// Local predicted/corrected Physics Root transform (cyan).
 			for (const FSWBuoyancyPontoon& Pontoon : SWBuoyancyComponent->GetPontoons())
 			{
-				FVector PontoonLocalWorldPos = ShipLocation + ShipRotation.RotateVector(Pontoon.RelativeLocation);
-				DrawDebugSphere(GetWorld(), PontoonLocalWorldPos, Pontoon.Radius, 8, FColor::Green, false, 0.0f, 0, 1.5f);
+				const FVector PontoonLocalWorldPos = LocalBodyTransform.TransformPosition(Pontoon.RelativeLocation);
+				DrawDebugSphere(GetWorld(), PontoonLocalWorldPos, Pontoon.Radius, 12, FColor::Cyan, false, 0.0f, 0, 1.75f);
 			}
 
-			// 2. 서버 공인 복제 위치 기준 폰툰 (빨간색 - Red)
+			// Latest authoritative server snapshot (smaller magenta shell).
 			if (!HasAuthority())
 			{
-				FVector RepLocation = ReplicatedState.Location;
-				FRotator RepRotation = ReplicatedState.Rotation;
+				const FTransform ServerBodyTransform(
+					ReplicatedState.Rotation,
+					ReplicatedState.Location,
+					LocalBodyTransform.GetScale3D());
 				for (const FSWBuoyancyPontoon& Pontoon : SWBuoyancyComponent->GetPontoons())
 				{
-					FVector PontoonRepWorldPos = RepLocation + RepRotation.RotateVector(Pontoon.RelativeLocation);
-					// 로컬 물리 구체와 구분되도록 크기를 살짝 줄여 드로우
-					DrawDebugSphere(GetWorld(), PontoonRepWorldPos, Pontoon.Radius * 0.9f, 8, FColor::Red, false, 0.0f, 0, 1.5f);
+					const FVector PontoonLocalWorldPos = LocalBodyTransform.TransformPosition(Pontoon.RelativeLocation);
+					const FVector PontoonRepWorldPos = ServerBodyTransform.TransformPosition(Pontoon.RelativeLocation);
+					// The center line and label expose the correction error directly.
+					DrawDebugSphere(GetWorld(), PontoonRepWorldPos, Pontoon.Radius * 0.85f, 8, FColor::Magenta, false, 0.0f, 0, 1.75f);
+					DrawDebugLine(GetWorld(), PontoonLocalWorldPos, PontoonRepWorldPos, FColor::Yellow, false, 0.0f, 0, 1.25f);
+					DrawDebugString(
+						GetWorld(), (PontoonLocalWorldPos + PontoonRepWorldPos) * 0.5f,
+						FString::Printf(TEXT("%.1f cm"), FVector::Distance(PontoonLocalWorldPos, PontoonRepWorldPos)),
+						this, FColor::Yellow, 0.0f, false, 1.0f);
 				}
 			}
 		}
@@ -981,6 +912,11 @@ void AShip::Board(APawn* PlayerPawn)
 		RidingPlayer ? *RidingPlayer->GetName() : TEXT("None"));
 
 	if (!HasAuthority()) return;
+	if (!AllowsPlayerHelmControl())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AShip::Board - [SERVER] Failed: player helm control is disabled for %s."), *GetName());
+		return;
+	}
 	if (!PlayerPawn)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("AShip::Board - [SERVER] Failed: PlayerPawn is null!"));
@@ -1004,6 +940,7 @@ void AShip::Board(APawn* PlayerPawn)
 	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board initiated by player pawn %s. Ship location: %s, Player location: %s"), *PlayerPawn->GetName(), *GetActorLocation().ToString(), *PlayerPawn->GetActorLocation().ToString());
 
 	RidingPlayer = PlayerPawn;
+	UpdateHelmInteractionAvailability();
 
 	// Disable player collision
 	RidingPlayer->SetActorEnableCollision(false);
@@ -1020,10 +957,11 @@ void AShip::Board(APawn* PlayerPawn)
 	RidingPlayer->SetReplicateMovement(false);
 	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board - Player bReplicateMovement after disable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
 
-	// Attach to buoyancy root directly without welding physics bodies to avoid physics conflicts
-	FAttachmentTransformRules AttachmentRules(EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, false);
-	RidingPlayer->AttachToComponent(BuoyancyRoot, AttachmentRules);
-	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board - Player attached to BuoyancyRoot. Relative location: %s, relative rotation: %s"), 
+	// Snap the character to the authored helm point. Attaching without welding keeps
+	// the character capsule out of the Chaos ship body while control is transferred.
+	USceneComponent* SeatComponent = HelmSeatPoint ? HelmSeatPoint.Get() : BuoyancyRoot;
+	RidingPlayer->AttachToComponent(SeatComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board - Player attached to HelmSeatPoint. Relative location: %s, relative rotation: %s"),
 		*RidingPlayer->GetRootComponent()->GetRelativeLocation().ToString(), 
 		*RidingPlayer->GetRootComponent()->GetRelativeRotation().ToString());
 
@@ -1056,9 +994,18 @@ void AShip::Disembark()
 	ResetToFollowCamera();
 	RememberFollowCameraState(PC);
 
-	// Detach player preserving their current world position on the ship
+	// Detach, then move to the single authored exit point while collision is still
+	// disabled. This avoids the ship hull rejecting the teleport.
 	RidingPlayer->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark - Detached player. World location: %s"), *RidingPlayer->GetActorLocation().ToString());
+	if (HelmExitPoint)
+	{
+		RidingPlayer->TeleportTo(
+			HelmExitPoint->GetComponentLocation(),
+			HelmExitPoint->GetComponentRotation(),
+			false,
+			true);
+	}
+	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark - Moved player to exit. World location: %s"), *RidingPlayer->GetActorLocation().ToString());
 
 	RidingPlayer->SetActorEnableCollision(true);
 	RidingPlayer->SetActorHiddenInGame(false);
@@ -1076,6 +1023,12 @@ void AShip::Disembark()
 	PC->Possess(RidingPlayer);
 
 	RidingPlayer = nullptr;
+	UpdateHelmInteractionAvailability();
+}
+
+void AShip::ForceDisembark()
+{
+	Disembark();
 }
 
 void AShip::ShipMove(const FInputActionValue& Value)
@@ -1637,6 +1590,19 @@ bool AShip::ValidateAndResolveBombardmentTarget(const FVector& RequestedLocation
 
 TSubclassOf<AActor> AShip::ResolveNormalCannonballClass() const
 {
+	for (const ACannon* Cannon : MountedCannons)
+	{
+		if (IsValid(Cannon))
+		{
+			TSubclassOf<AActor> ProjectileClass = Cannon->GetCannonballClass();
+			if (ProjectileClass && ProjectileClass->IsChildOf(ACannonball::StaticClass()))
+			{
+				return ProjectileClass;
+			}
+		}
+	}
+
+	// Keep legacy level-authored attached cannons working during migration.
 	if (!GetWorld())
 	{
 		return nullptr;
@@ -1821,6 +1787,8 @@ void AShip::RestoreRememberedFollowCameraState(APlayerController* PlayerControll
 
 void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 {
+	UpdateHelmInteractionAvailability();
+
 	// UE_LOG(LogTemp, Log, TEXT("AShip: [CLIENT] OnRep_RidingPlayer. OldRidingPlayer: %s, RidingPlayer: %s"), 
 	// 	OldRidingPlayer ? *OldRidingPlayer->GetName() : TEXT("Null"), 
 	// 	RidingPlayer ? *RidingPlayer->GetName() : TEXT("Null"));
@@ -2021,6 +1989,79 @@ bool AShip::ApplyPlayerUpgrades(APlayerState* InPlayerState, bool bRefillHealth)
 	UpgradeComponent->SetPreviewBaseStats(GetBaseStatSnapshot());
 	ApplyStatSnapshot(UpgradeComponent->GetCurrentShipStats(), bRefillHealth);
 	return true;
+}
+
+void AShip::UpdateHelmInteractionAvailability()
+{
+	if (HelmInteractable)
+	{
+		HelmInteractable->SetCollisionEnabled(
+			AllowsPlayerHelmControl() && !RidingPlayer
+				? ECollisionEnabled::QueryOnly
+				: ECollisionEnabled::NoCollision);
+	}
+}
+
+void AShip::BoardFromSea(AActor* Interactor)
+{
+	if (!HasAuthority() || !AllowsPlayerBoarding() || !IsValid(Interactor))
+	{
+		return;
+	}
+
+	if (ACharacter* Character = Cast<ACharacter>(Interactor))
+	{
+		if (UCharacterMovementComponent* MoveComp = Character->GetCharacterMovement())
+		{
+			MoveComp->SetMovementMode(MOVE_Walking);
+		}
+	}
+
+	const FVector DestinationLocation = BoardingArrivalPoint
+		? BoardingArrivalPoint->GetComponentLocation()
+		: GetActorLocation() + FVector(0.0f, 0.0f, 200.0f);
+	const FRotator DestinationRotation = BoardingArrivalPoint
+		? BoardingArrivalPoint->GetComponentRotation()
+		: GetActorRotation();
+	Interactor->TeleportTo(DestinationLocation, DestinationRotation, false, true);
+}
+
+void AShip::RefreshMountedCannons()
+{
+	MountedCannons.Reset();
+
+	TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
+	for (UChildActorComponent* ChildActorComponent : ChildActorComponents)
+	{
+		if (ChildActorComponent)
+		{
+			if (ACannon* Cannon = Cast<ACannon>(ChildActorComponent->GetChildActor()))
+			{
+				MountedCannons.AddUnique(Cannon);
+			}
+		}
+	}
+
+	// Temporary migration compatibility for cannons placed in a level and attached
+	// to a ship actor. AddUnique also prevents a child actor from being registered
+	// twice if Unreal reports it through both discovery paths.
+	TArray<AActor*> AttachedActors;
+	GetAttachedActors(AttachedActors);
+	for (AActor* AttachedActor : AttachedActors)
+	{
+		if (ACannon* Cannon = Cast<ACannon>(AttachedActor))
+		{
+			MountedCannons.AddUnique(Cannon);
+		}
+	}
+
+	for (ACannon* Cannon : MountedCannons)
+	{
+		if (IsValid(Cannon))
+		{
+			Cannon->RefreshPlayerInteractionAvailability();
+		}
+	}
 }
 
 void AShip::HandlePortSeaBoarding(AActor* Interactor)
