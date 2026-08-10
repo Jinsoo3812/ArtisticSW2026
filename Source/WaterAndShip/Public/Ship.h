@@ -421,8 +421,19 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Stats")
 	bool ApplyPlayerUpgrades(APlayerState* InPlayerState, bool bRefillHealth = true);
 
-	/** Sets normalized server-authored control input for AI-controlled ships. */
-	void SetAIControlInput(float MoveInput, float TurnInput);
+	/**
+	 * Sets normalized server-authored control input for AI-controlled ships.
+	 * The optional scales multiply the DT/ASC-backed physical force after input
+	 * clamping, allowing temporary skills such as charge to exceed normal thrust.
+	 */
+	void SetAIControlInput(
+		float MoveInput,
+		float TurnInput,
+		float PropulsionScale = 1.0f,
+		float TurnScale = 1.0f);
+
+	float GetCurrentAIPropulsionScale() const { return CurrentAIPropulsionScale; }
+	float GetCurrentAITurnScale() const { return CurrentAITurnScale; }
 
 	/** Identifies hostile ships without making WaterAndShip depend on Enemy. */
 	virtual bool IsEnemyShipForEffects() const { return false; }
@@ -826,6 +837,8 @@ private:
 
 	float CurrentMoveInput = 0.0f;
 	float CurrentTurnInput = 0.0f;
+	float CurrentAIPropulsionScale = 1.0f;
+	float CurrentAITurnScale = 1.0f;
 	FVector CurrentExternalAcceleration = FVector::ZeroVector;
 	TMap<FGuid, FVector> ExternalAccelerationSources;
 	TSet<FGuid> PropulsionSuppressionSources;

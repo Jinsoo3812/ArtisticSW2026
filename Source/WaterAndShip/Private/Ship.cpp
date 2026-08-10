@@ -595,8 +595,12 @@ void AShip::Tick(float DeltaTime)
 			float LateralDrag = LateralDragCoefficient;
 			float ForwardForceValue = ForwardForce;
 			float TurnTorqueValue = TurnTorque;
-			float ForwardPropulsionMultiplier = AttributeSet ? AttributeSet->GetForwardPropulsionMultiplier() : 1.0f;
-			float TurnTorqueMultiplier = AttributeSet ? AttributeSet->GetTurnTorqueMultiplier() : 1.0f;
+			float ForwardPropulsionMultiplier =
+				(AttributeSet ? AttributeSet->GetForwardPropulsionMultiplier() : 1.0f)
+				* FMath::Max(0.0f, CurrentAIPropulsionScale);
+			float TurnTorqueMultiplier =
+				(AttributeSet ? AttributeSet->GetTurnTorqueMultiplier() : 1.0f)
+				* FMath::Max(0.0f, CurrentAITurnScale);
 			float BuoyancyRadius = 150.f;
 			float BuoyancyForceMultiplier = 1.3f;
 			float WaterDamping = 3.0f;
@@ -726,6 +730,8 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	CachedPlayerController = Cast<APlayerController>(GetController());
 	CurrentMoveInput = 0.0f;
 	CurrentTurnInput = 0.0f;
+	CurrentAIPropulsionScale = 1.0f;
+	CurrentAITurnScale = 1.0f;
 
 	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
@@ -793,6 +799,8 @@ void AShip::PossessedBy(AController* NewController)
 	Super::PossessedBy(NewController);
 	CurrentMoveInput = 0.0f;
 	CurrentTurnInput = 0.0f;
+	CurrentAIPropulsionScale = 1.0f;
+	CurrentAITurnScale = 1.0f;
 
 	if (NetworkPhysicsComponent)
 	{
@@ -823,6 +831,8 @@ void AShip::UnPossessed()
 	EndLocalBombardmentTargeting();
 	CurrentMoveInput = 0.0f;
 	CurrentTurnInput = 0.0f;
+	CurrentAIPropulsionScale = 1.0f;
+	CurrentAITurnScale = 1.0f;
 
 	if (NetworkPhysicsComponent)
 	{
@@ -832,7 +842,11 @@ void AShip::UnPossessed()
 	Super::UnPossessed();
 }
 
-void AShip::SetAIControlInput(float MoveInput, float TurnInput)
+void AShip::SetAIControlInput(
+	float MoveInput,
+	float TurnInput,
+	float PropulsionScale,
+	float TurnScale)
 {
 	if (!HasAuthority())
 	{
@@ -843,11 +857,15 @@ void AShip::SetAIControlInput(float MoveInput, float TurnInput)
 	{
 		CurrentMoveInput = 0.0f;
 		CurrentTurnInput = 0.0f;
+		CurrentAIPropulsionScale = 1.0f;
+		CurrentAITurnScale = 1.0f;
 		return;
 	}
 
 	CurrentMoveInput = FMath::Clamp(MoveInput, -1.0f, 1.0f);
 	CurrentTurnInput = FMath::Clamp(TurnInput, -1.0f, 1.0f);
+	CurrentAIPropulsionScale = FMath::Max(0.0f, PropulsionScale);
+	CurrentAITurnScale = FMath::Max(0.0f, TurnScale);
 }
 
 void AShip::SetExternalAccelerationSource(const FGuid& SourceId, const FVector& WorldAcceleration)

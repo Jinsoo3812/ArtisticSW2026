@@ -4,8 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "Ship.h"
-#include "ShipAI/BTTask_NavalDrive.h" // For ENavalCombatState
+#include "ShipAI/EnemyShipNavigationTypes.h"
 #include "EnemyDropData.h"
+#include "GameplayAbilitySpecHandle.h"
 #include "UI/EnemyHealthBarTypes.h"
 #include "EnemyShip.generated.h"
 
@@ -14,6 +15,10 @@ class AStorageChest;
 class UBaseHealthComponent;
 class UHealthBarWidget;
 class UWidgetComponent;
+class UEnemyShipArchetypeData;
+class UEnemyShipAbilitySet;
+class UEnemyShipNavigationComponent;
+class UEnemyShipPatternRuntimeComponent;
 
 UCLASS()
 class ENEMY_API AEnemyShip : public AShip
@@ -34,6 +39,17 @@ protected:
 public:
 	virtual void Tick(float DeltaTime) override;
 
+	UFUNCTION(BlueprintPure, Category = "Ship|AI")
+	UEnemyShipNavigationComponent* GetNavigationComponent() const { return NavigationComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|AI")
+	UEnemyShipPatternRuntimeComponent* GetPatternRuntimeComponent() const { return PatternRuntimeComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Death")
+	bool IsDeathHandled() const { return bDeathHandled; }
+
+	bool GrantEnemyShipAbilities(const UEnemyShipAbilitySet* AbilitySet);
+
 	// AI Control APIs
 	UFUNCTION(BlueprintCallable, Category = "Ship|AI")
 	void SetAITarget(AActor* Target) { AITargetShip = Target; }
@@ -47,11 +63,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI")
 	FName SquadID = TEXT("Squad_Alpha");
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LEGACY|Ship AI", meta = (
+		DisplayName = "[LEGACY] Ideal Distance",
+		DeprecatedProperty,
+		DeprecationMessage = "Use EnemyShipArchetype.Pattern.NavigationProfile.IdealDistance",
+		AdvancedDisplay))
 	float IdealDistance = 2000.f;
+
+	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Ship|AI|Navigation")
+	TObjectPtr<AActor> NavigationHomeActor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI|Navigation", meta = (ClampMin = "0.0", Units = "cm"))
+	float NavigationHomeArrivalDistance = 800.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|AI|Data")
+	TObjectPtr<UEnemyShipArchetypeData> EnemyShipArchetype;
 
 protected:
 	void UpdateActiveCannons();
+	void MigrateLegacyNavigationAuthoring();
 
 	// Aiming and firing logic
 	void TickAIAimingAndFiring(float DeltaTime);
@@ -114,6 +144,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBaseHealthComponent> HealthComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UEnemyShipNavigationComponent> NavigationComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UEnemyShipPatternRuntimeComponent> PatternRuntimeComponent;
+
 	// ================= Health Bar =================
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UWidgetComponent> HealthBarWidgetComponent;
@@ -141,7 +177,11 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|AI Cannon")
 	TArray<TObjectPtr<ACannon>> ActiveAICannons;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI Cannon")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LEGACY|Ship AI", meta = (
+		DisplayName = "[LEGACY] Max Active Cannons",
+		DeprecatedProperty,
+		DeprecationMessage = "Use EnemyShipArchetype.Pattern.NavigationProfile.MaxActiveCannons",
+		AdvancedDisplay))
 	int32 MaxActiveCannons = 2;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|AI Cannon")
@@ -151,4 +191,5 @@ protected:
 	ENavalCombatState CurrentCombatState = ENavalCombatState::Idle;
 
 	FTimerHandle ActiveCannonsTimerHandle;
+	TArray<FGameplayAbilitySpecHandle> GrantedEnemyShipAbilityHandles;
 };

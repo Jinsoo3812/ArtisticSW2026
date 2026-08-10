@@ -1,15 +1,15 @@
-#include "ShipAI/BTTask_NavalDrive.h"
+#include "ShipAI/BTT_EnableEnemyShipNavigation.h"
 
 #include "AIController.h"
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
 
-UBTTask_NavalDrive::UBTTask_NavalDrive()
+UBTT_EnableEnemyShipNavigation::UBTT_EnableEnemyShipNavigation()
 {
-	NodeName = TEXT("[LEGACY] Enable Enemy Ship Navigation Compatibility");
+	NodeName = TEXT("Set Enemy Ship Navigation Enabled");
 }
 
-EBTNodeResult::Type UBTTask_NavalDrive::ExecuteTask(
+EBTNodeResult::Type UBTT_EnableEnemyShipNavigation::ExecuteTask(
 	UBehaviorTreeComponent& OwnerComp,
 	uint8* NodeMemory)
 {
@@ -21,6 +21,6 @@ EBTNodeResult::Type UBTTask_NavalDrive::ExecuteTask(
 		return EBTNodeResult::Failed;
 	}
 
-	Navigation->SetNavigationEnabled(true);
+	Navigation->SetNavigationEnabled(bEnableNavigation);
 	return EBTNodeResult::Succeeded;
 }

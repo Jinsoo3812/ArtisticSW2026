@@ -18,12 +18,19 @@
 #include "UI/HealthBarWidget.h"
 #include "UObject/ConstructorHelpers.h"
 #include "ShipAI/ShipSwarmSubsystem.h"
+#include "ShipAI/EnemyShipArchetypeData.h"
+#include "ShipAI/EnemyShipAbilitySet.h"
+#include "ShipAI/EnemyShipNavigationComponent.h"
+#include "ShipAI/EnemyShipPatternRuntimeComponent.h"
+#include "UObject/UnrealType.h"
 
 AEnemyShip::AEnemyShip()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
+	NavigationComponent = CreateDefaultSubobject<UEnemyShipNavigationComponent>(TEXT("EnemyShipNavigationComponent"));
+	PatternRuntimeComponent = CreateDefaultSubobject<UEnemyShipPatternRuntimeComponent>(TEXT("EnemyShipPatternRuntimeComponent"));
 	HealthBarWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarWidgetComponent"));
 	HealthBarWidgetComponent->SetupAttachment(RootComponent);
 	HealthBarWidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
@@ -70,6 +77,29 @@ void AEnemyShip::BeginPlay()
 
 	InitializeHealthBarWidget();
 
+	if (HasAuthority())
+	{
+		MigrateLegacyNavigationAuthoring();
+		if (EnemyShipArchetype)
+		{
+			EnemyShipArchetype->ApplyToShip(this);
+		}
+		else if (NavigationComponent)
+		{
+			// LEGACY: Remove this fallback after every Enemy Ship BP has an Archetype.
+			FEnemyShipNavigationProfile LegacyProfile = NavigationComponent->GetNavigationProfile();
+			LegacyProfile.IdealDistance = FMath::Max(1.0f, IdealDistance);
+			LegacyProfile.ReturnArrivalDistance = FMath::Max(0.0f, NavigationHomeArrivalDistance);
+			LegacyProfile.MaxActiveCannons = FMath::Max(1, MaxActiveCannons);
+			NavigationComponent->SetNavigationProfile(LegacyProfile);
+		}
+
+		if (NavigationComponent)
+		{
+			NavigationComponent->SetHomeActor(NavigationHomeActor);
+		}
+	}
+
 	// 캐싱된 대포 목록 탐색
 	// Drop에 관한 정보 초기화
 	InitializeEnemyDropData();
@@ -83,6 +113,11 @@ void AEnemyShip::BeginPlay()
 	// 군집 서브시스템에 등록
 	if (HasAuthority())
 	{
+		if (NavigationComponent)
+		{
+			NavigationComponent->ClearAllOverrides();
+			NavigationComponent->SetNavigationEnabled(false);
+		}
 		if (UShipSwarmSubsystem* SwarmSubsystem = GetWorld()->GetSubsystem<UShipSwarmSubsystem>())
 		{
 			SwarmSubsystem->RegisterShip(this);
@@ -94,6 +129,15 @@ void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (HasAuthority())
 	{
+		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+		{
+			for (const FGameplayAbilitySpecHandle Handle : GrantedEnemyShipAbilityHandles)
+			{
+				ASC->ClearAbility(Handle);
+			}
+		}
+		GrantedEnemyShipAbilityHandles.Reset();
+
 		if (UShipSwarmSubsystem* SwarmSubsystem = GetWorld()->GetSubsystem<UShipSwarmSubsystem>())
 		{
 			SwarmSubsystem->UnregisterShip(this);
@@ -111,6 +155,58 @@ void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	GetWorldTimerManager().ClearTimer(HealthBarHideTimerHandle);
 
 	Super::EndPlay(EndPlayReason);
+}
+
+void AEnemyShip::MigrateLegacyNavigationAuthoring()
+{
+	// LEGACY: One-time bridge for old BP-authored ReturnPointActor and
+	// ReturnArrivalOffset variables. Delete after content migration M11.
+	if (!NavigationHomeActor)
+	{
+		if (const FObjectPropertyBase* ReturnPointProperty = FindFProperty<FObjectPropertyBase>(GetClass(), TEXT("ReturnPointActor")))
+		{
+			NavigationHomeActor = Cast<AActor>(ReturnPointProperty->GetObjectPropertyValue_InContainer(this));
+		}
+	}
+
+	if (const FNumericProperty* ArrivalOffsetProperty = FindFProperty<FNumericProperty>(GetClass(), TEXT("ReturnArrivalOffset")))
+	{
+		const void* ValueAddress = ArrivalOffsetProperty->ContainerPtrToValuePtr<void>(this);
+		const float LegacyDistance = static_cast<float>(ArrivalOffsetProperty->GetFloatingPointPropertyValue(ValueAddress));
+		if (LegacyDistance > 0.0f)
+		{
+			NavigationHomeArrivalDistance = LegacyDistance;
+		}
+	}
+}
+
+bool AEnemyShip::GrantEnemyShipAbilities(const UEnemyShipAbilitySet* AbilitySet)
+{
+	if (!HasAuthority() || !AbilitySet)
+	{
+		return false;
+	}
+
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	if (!ASC)
+	{
+		return false;
+	}
+
+	for (const FGameplayAbilitySpecHandle Handle : GrantedEnemyShipAbilityHandles)
+	{
+		ASC->ClearAbility(Handle);
+	}
+	GrantedEnemyShipAbilityHandles.Reset();
+
+	for (const TSubclassOf<UGameplayAbility>& AbilityClass : AbilitySet->Abilities)
+	{
+		if (AbilityClass)
+		{
+			GrantedEnemyShipAbilityHandles.Add(ASC->GiveAbility(FGameplayAbilitySpec(AbilityClass, 1)));
+		}
+	}
+	return GrantedEnemyShipAbilityHandles.Num() == AbilitySet->Abilities.Num();
 }
 
 void AEnemyShip::Tick(float DeltaTime)
@@ -211,6 +307,15 @@ void AEnemyShip::HandleShipDeath()
 {
 	if (!HasAuthority()) return;
 	SetAIControlInput(0.0f, 0.0f);
+	if (NavigationComponent)
+	{
+		NavigationComponent->ClearAllOverrides();
+		NavigationComponent->SetNavigationEnabled(false);
+	}
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		ASC->CancelAllAbilities();
+	}
 
 	const FVector DeathLocation = GetActorLocation();
 	const FRotator DeathRotation = GetActorRotation();
