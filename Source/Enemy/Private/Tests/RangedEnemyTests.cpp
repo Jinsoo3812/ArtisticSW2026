@@ -9,6 +9,7 @@
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "BehaviorTree/BehaviorTree.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Vector.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/Composites/BTComposite_Selector.h"
 #include "BehaviorTree/Composites/BTComposite_Sequence.h"
@@ -292,6 +293,20 @@ bool FRangedEnemyCombatTreeContractTest::RunTest(const FString& Parameters)
 	if (!TestNotNull(TEXT("Ranged combat behavior tree exists"), CombatTree))
 	{
 		return false;
+	}
+
+	const UBlackboardData* BlackboardAsset = CombatTree->BlackboardAsset;
+	if (TestNotNull(TEXT("Ranged combat tree has a Blackboard asset"), BlackboardAsset))
+	{
+		const FBlackboard::FKey PointOfInterestKey = BlackboardAsset->GetKeyID(TEXT("PointOfInterest"));
+		TestTrue(TEXT("PointOfInterest Blackboard key exists"),
+			PointOfInterestKey != FBlackboard::InvalidKey);
+		if (PointOfInterestKey != FBlackboard::InvalidKey)
+		{
+			TestEqual(TEXT("PointOfInterest stores EQS point results as a Vector"),
+				BlackboardAsset->GetKeyType(PointOfInterestKey),
+				TSubclassOf<UBlackboardKeyType>(UBlackboardKeyType_Vector::StaticClass()));
+		}
 	}
 
 	const UBTComposite_Selector* RootSelector = Cast<UBTComposite_Selector>(CombatTree->RootNode);
