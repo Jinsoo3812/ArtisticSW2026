@@ -7,8 +7,13 @@
 #include "BaseGameplayTags.h"
 #include "Buoyancy/SWBuoyancyComponent.h"
 #include "Cannon.h"
+#include "Cannonball.h"
+#include "CollisionChannels.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/BoxComponent.h"
+#include "Components/SphereComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/CollisionProfile.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -17,7 +22,10 @@
 #include "ShipAttributeSet.h"
 #include "ShipAI/Abilities/EnemyShipSkillMath.h"
 #include "ShipAI/Abilities/EnemyShipTorpedo.h"
+#include "ShipAI/Abilities/EnemyShipObstacle.h"
+#include "ShipAI/Abilities/EnemyShipObstacleProjectile.h"
 #include "ShipAI/Abilities/GA_EnemyShipCharge.h"
+#include "ShipAI/Abilities/GA_EnemyShipDeployObstacle.h"
 #include "ShipAI/Abilities/GA_EnemyShipLaunchTorpedo.h"
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
@@ -134,6 +142,198 @@ bool FEnemyShipTorpedoStraightTargetTest::RunTest(const FString& Parameters)
 			EnemyLocation,
 			PlayerLocation,
 			2.0f).Equals(PlayerLocation));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipObstacleTrajectoryTest,
+	"ArtisticSW.Enemy.Ship.Ability.ObstacleTrajectoryAndTarget",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipObstacleTrajectoryTest::RunTest(const FString& Parameters)
+{
+	const FVector EnemyLocation(0.0f, 0.0f, 250.0f);
+	const FVector PlayerLocation(4000.0f, 2000.0f, 125.0f);
+	const FVector TargetPoint = UGA_EnemyShipDeployObstacle::CalculateTargetPoint(
+		EnemyLocation,
+		PlayerLocation,
+		0.25f,
+		700.0f);
+	TestTrue(
+		TEXT("Obstacle target uses internal-division XY and independent absolute Z"),
+		TargetPoint.Equals(FVector(1000.0f, 500.0f, 700.0f), 0.01f));
+
+	const FVector Start(100.0f, -200.0f, 300.0f);
+	FVector LaunchVelocity = FVector::ZeroVector;
+	float TravelSeconds = 0.0f;
+	if (TestTrue(
+		TEXT("A reachable low ballistic arc resolves"),
+		UGA_EnemyShipDeployObstacle::CalculateBallisticLaunchVelocity(
+			Start,
+			TargetPoint,
+			3000.0f,
+			-980.0f,
+			false,
+			LaunchVelocity,
+			TravelSeconds)))
+	{
+		const FVector ReconstructedTarget = Start
+			+ LaunchVelocity * TravelSeconds
+			+ FVector(0.0f, 0.0f, -490.0f * FMath::Square(TravelSeconds));
+		TestTrue(
+			TEXT("Ballistic velocity reaches the authored conversion point"),
+			ReconstructedTarget.Equals(TargetPoint, 0.1f));
+		TestTrue(TEXT("The carrier has a non-zero curved flight duration"), TravelSeconds > 0.0f);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipObstacleActorContractTest,
+	"ArtisticSW.Enemy.Ship.Ability.ObstacleActorContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipObstacleActorContractTest::RunTest(const FString& Parameters)
+{
+	EnemyShipAbilityTests::FTestWorld TestWorld;
+	AEnemyShipObstacle* Obstacle = TestWorld.World->SpawnActor<AEnemyShipObstacle>();
+	AEnemyShipObstacleProjectile* Projectile = TestWorld.World->SpawnActor<AEnemyShipObstacleProjectile>();
+	if (!TestNotNull(TEXT("Obstacle actor spawns"), Obstacle)
+		|| !TestNotNull(TEXT("Obstacle carrier spawns"), Projectile))
+	{
+		return false;
+	}
+
+	USphereComponent* ObstacleCollision = Obstacle->FindComponentByClass<USphereComponent>();
+	UBoxComponent* ObstacleBlocker = Obstacle->FindComponentByClass<UBoxComponent>();
+	USWBuoyancyComponent* ObstacleBuoyancy = Obstacle->FindComponentByClass<USWBuoyancyComponent>();
+	UProjectileMovementComponent* CarrierMovement = Projectile->FindComponentByClass<UProjectileMovementComponent>();
+	TestNotNull(TEXT("Obstacle owns a physics collision root"), ObstacleCollision);
+	TestNotNull(TEXT("Obstacle owns SW buoyancy"), ObstacleBuoyancy);
+	TestNotNull(TEXT("Carrier owns projectile movement"), CarrierMovement);
+	if (ObstacleCollision)
+	{
+		TestEqual(TEXT("Obstacle uses its dedicated object channel"), ObstacleCollision->GetCollisionObjectType(), ECC_GameTraceChannel6);
+		TestEqual(TEXT("Obstacle blocks Player cannonballs"), ObstacleCollision->GetCollisionResponseToChannel(ECC_GameTraceChannel2), ECR_Block);
+		TestEqual(TEXT("Obstacle ignores Enemy cannonballs"), ObstacleCollision->GetCollisionResponseToChannel(ECC_GameTraceChannel3), ECR_Ignore);
+		TestTrue(TEXT("Obstacle locks horizontal translation"), ObstacleCollision->BodyInstance.bLockXTranslation && ObstacleCollision->BodyInstance.bLockYTranslation);
+		TestFalse(TEXT("Obstacle keeps vertical translation free for buoyancy"), ObstacleCollision->BodyInstance.bLockZTranslation);
+	}
+	if (TestNotNull(TEXT("Obstacle owns a separate kinematic blocker"), ObstacleBlocker))
+	{
+		TestTrue(TEXT("Obstacle blocks across the authored visual footprint"), ObstacleBlocker->GetUnscaledBoxExtent().Equals(FVector(512.0f)));
+		TestFalse(TEXT("Obstacle blocker is kinematic"), ObstacleBlocker->IsSimulatingPhysics());
+		TestEqual(TEXT("Obstacle blocker uses its dedicated object channel"), ObstacleBlocker->GetCollisionObjectType(), ECC_GameTraceChannel6);
+	}
+	if (ObstacleBuoyancy)
+	{
+		TestEqual(TEXT("Obstacle owns one buoyancy pontoon"), ObstacleBuoyancy->GetPontoons().Num(), 1);
+		if (!ObstacleBuoyancy->GetPontoons().IsEmpty())
+		{
+			TestEqual(TEXT("Obstacle uses torpedo-matched pontoon radius"), ObstacleBuoyancy->GetPontoons()[0].Radius, 50.0f);
+		}
+		TestEqual(TEXT("Obstacle uses torpedo-matched deep recovery"), ObstacleBuoyancy->GetForceSettings().DeepWaterBuoyancyMultiplier, 3.0f);
+	}
+	if (CarrierMovement)
+	{
+		TestFalse(TEXT("Carrier sweep collision is disabled"), CarrierMovement->bSweepCollision);
+		TestEqual(TEXT("Carrier preserves the normal cannonball gravity scale"), CarrierMovement->ProjectileGravityScale, 1.0f);
+	}
+
+	FCollisionResponseTemplate WaterBodyProfile;
+	if (TestTrue(
+		TEXT("WaterBodyCollision profile exists"),
+		UCollisionProfile::Get()->GetProfileTemplate(TEXT("WaterBodyCollision"), WaterBodyProfile)))
+	{
+		TestEqual(
+			TEXT("WaterBody reciprocates the obstacle overlap so buoyancy can activate"),
+			WaterBodyProfile.ResponseToChannels.GetResponse(ECC_EnemyShipObstacle),
+			ECR_Overlap);
+	}
+
+	const UGameplayAbility* AbilityCDO = UGA_EnemyShipDeployObstacle::StaticClass()->GetDefaultObject<UGameplayAbility>();
+	TestTrue(
+		TEXT("Obstacle ability exposes the tag consumed by SkillModule/Pattern/BT selection"),
+		AbilityCDO && AbilityCDO->GetAssetTags().HasTagExact(GameplayAbility_EnemyShip_DeployObstacle));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipObstacleCannonSweepTest,
+	"ArtisticSW.Enemy.Ship.Ability.ObstacleCannonSweepByTeam",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipObstacleCannonSweepTest::RunTest(const FString& Parameters)
+{
+	EnemyShipAbilityTests::FTestWorld TestWorld;
+	AEnemyShipObstacle* Obstacle = TestWorld.World->SpawnActor<AEnemyShipObstacle>(
+		AEnemyShipObstacle::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator);
+	AShip* PlayerShip = TestWorld.World->SpawnActor<AShip>(
+		AShip::StaticClass(), FVector(0.0f, 5000.0f, 0.0f), FRotator::ZeroRotator);
+	AShip* EnemyShip = TestWorld.World->SpawnActor<AShip>(
+		AShip::StaticClass(), FVector(0.0f, -5000.0f, 0.0f), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("Obstacle spawned"), Obstacle)
+		|| !TestNotNull(TEXT("Player launching ship spawned"), PlayerShip)
+		|| !TestNotNull(TEXT("Enemy launching ship spawned"), EnemyShip))
+	{
+		return false;
+	}
+
+	EnemyShip->Tags.Remove(TEXT("Player"));
+	EnemyShip->Tags.AddUnique(TEXT("Enemy"));
+	USphereComponent* ObstacleCollision = Obstacle->FindComponentByClass<USphereComponent>();
+	UBoxComponent* ObstacleBlocker = Obstacle->FindComponentByClass<UBoxComponent>();
+	if (!TestNotNull(TEXT("Obstacle buoyancy root exists"), ObstacleCollision)
+		|| !TestNotNull(TEXT("Obstacle blocking box exists"), ObstacleBlocker))
+	{
+		return false;
+	}
+	ObstacleCollision->SetSimulatePhysics(false);
+	ObstacleCollision->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	ObstacleBlocker->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+
+	ACannonball* PlayerCannonball = TestWorld.World->SpawnActor<ACannonball>(
+		ACannonball::StaticClass(), FVector(-1000.0f, 0.0f, 0.0f), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("Player cannonball spawned"), PlayerCannonball))
+	{
+		return false;
+	}
+	PlayerCannonball->InitializeProjectile(PlayerShip, 10.0f, 3000.0f);
+	USphereComponent* PlayerSphere = PlayerCannonball->FindComponentByClass<USphereComponent>();
+	FHitResult PlayerHit;
+	if (TestNotNull(TEXT("Player cannonball collision exists"), PlayerSphere))
+	{
+		PlayerSphere->MoveComponent(
+			FVector(2000.0f, 0.0f, 0.0f),
+			FRotator::ZeroRotator,
+			true,
+			&PlayerHit,
+			MOVECOMP_NoFlags,
+			ETeleportType::None);
+		TestTrue(TEXT("Player cannonball sweep blocks on obstacle"), PlayerHit.bBlockingHit);
+		TestEqual(TEXT("Player cannonball sweep hits obstacle actor"), PlayerHit.GetActor(), static_cast<AActor*>(Obstacle));
+	}
+
+	ACannonball* EnemyCannonball = TestWorld.World->SpawnActor<ACannonball>(
+		ACannonball::StaticClass(), FVector(-1000.0f, 0.0f, 100.0f), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("Enemy cannonball spawned"), EnemyCannonball))
+	{
+		return false;
+	}
+	EnemyCannonball->InitializeProjectile(EnemyShip, 10.0f, 3000.0f);
+	USphereComponent* EnemySphere = EnemyCannonball->FindComponentByClass<USphereComponent>();
+	FHitResult EnemyHit;
+	if (TestNotNull(TEXT("Enemy cannonball collision exists"), EnemySphere))
+	{
+		EnemySphere->MoveComponent(
+			FVector(2000.0f, 0.0f, 0.0f),
+			FRotator::ZeroRotator,
+			true,
+			&EnemyHit,
+			MOVECOMP_NoFlags,
+			ETeleportType::None);
+		TestFalse(TEXT("Enemy cannonball sweep passes through obstacle"), EnemyHit.bBlockingHit);
+	}
 	return true;
 }
 

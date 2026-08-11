@@ -148,6 +148,10 @@ void ACannonball::InitializeProjectile(AShip* InLaunchingShip, float InDamage, f
 		// actor overlap used by URippleSubsystem.
 		SphereCollision->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Overlap);
 		SphereCollision->SetCollisionResponseToChannel(ECC_ShipDamage, ECR_Block);
+		if (!bEnemyProjectile)
+		{
+			SphereCollision->SetCollisionResponseToChannel(ECC_EnemyShipObstacle, ECR_Block);
+		}
 		SphereCollision->SetGenerateOverlapEvents(true);
 		SphereCollision->SetNotifyRigidBodyCollision(true);
 
@@ -222,6 +226,12 @@ void ACannonball::OnHit(
 
 		bHasProcessedShipHit = true;
 		HandleShipHit(HitShip);
+	}
+	else if (OtherComp && OtherComp->GetCollisionObjectType() == ECC_EnemyShipObstacle)
+	{
+		// Enemy obstacles are projectile shields. Only PlayerCannon projectiles can
+		// block against this channel, so consuming the projectile here is team-safe.
+		Destroy();
 	}
 }
 

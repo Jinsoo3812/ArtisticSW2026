@@ -31,6 +31,7 @@
 #include "ShipAI/EnemyShipSkillModuleData.h"
 #include "ShipAI/Abilities/GA_EnemyShipCharge.h"
 #include "ShipAI/Abilities/GA_EnemyShipLaunchTorpedo.h"
+#include "ShipAI/Abilities/GA_EnemyShipDeployObstacle.h"
 #include "UObject/UnrealType.h"
 
 namespace
@@ -72,7 +73,8 @@ AEnemyShip::AEnemyShip()
 	Tags.AddUnique(TEXT("Enemy"));
 	LegacyAbilityBootstrapClasses = {
 		UGA_EnemyShipCharge::StaticClass(),
-		UGA_EnemyShipLaunchTorpedo::StaticClass()
+		UGA_EnemyShipLaunchTorpedo::StaticClass(),
+		UGA_EnemyShipDeployObstacle::StaticClass()
 	};
 
 	if (BuoyancyRoot)
