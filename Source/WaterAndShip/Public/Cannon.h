@@ -84,12 +84,32 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Cannon")
 	bool FireCannon();
 
+	/** True when the cannon's own reload/effect state permits a normal AI shot. */
+	UFUNCTION(BlueprintPure, Category = "Cannon|AI")
+	bool CanFireCannon() const;
+
+	/** Remaining per-cannon reload time. Zero means ready; negative timer states are normalized to zero. */
+	UFUNCTION(BlueprintPure, Category = "Cannon|AI")
+	float GetFireCooldownRemaining() const;
+
+	/** Checks authored pitch/yaw limits without changing the replicated aim. */
+	UFUNCTION(BlueprintPure, Category = "Cannon|AI")
+	bool CanAimAtWorldDirection(const FVector& WorldDirection) const;
+
+	/** Server-only deterministic AI shot using the supplied ballistic direction. */
+	UFUNCTION(BlueprintCallable, Category = "Cannon|AI")
+	bool FireAICannonAtDirection(const FVector& WorldDirection);
+
 	/** Normal projectile class used by this cannon; ship skills may reuse its authored mesh/effects. */
 	TSubclassOf<AActor> GetCannonballClass() const { return CannonballClass; }
 
 	/** Resolves fallback values or the owning ship's live DT/upgrade-backed attributes. */
 	UFUNCTION(BlueprintPure, Category = "Cannon|Stats")
 	FCannonResolvedFiringStats GetResolvedFiringStats() const;
+
+	/** Canonical world-space projectile origin authored by this cannon. */
+	UFUNCTION(BlueprintPure, Category = "Cannon|Projectile")
+	FTransform GetProjectileMuzzleTransform() const;
 
 	UFUNCTION(BlueprintPure, Category = "Cannon|Water Bomb")
 	bool IsWaterBombMode() const { return bWaterBombMode; }
