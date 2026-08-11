@@ -389,6 +389,7 @@ void USwimmingComponent::CheckWaterTransitions()
 	// If we are not swimming and not overlapping any water bodies, do not check transitions or query water height.
 	if (!bIsCustomSwimming && OverlappingWaterBodies.Num() == 0)
 	{
+		bIsInShallowWater = false;
 		return;
 	}
 
@@ -400,6 +401,12 @@ void USwimmingComponent::CheckWaterTransitions()
 	bool bFeetInWater = GetWaterHeightAtLocation(FeetLocation, FeetWaterHeight);
 
 	float FeetSubmersion = bFeetInWater ? (FeetWaterHeight - FeetLocation.Z) : -100000.f;
+	const float CapsuleHeight = CapsuleHalfHeight * 2.0f;
+	const float SwimEntryDepth = CapsuleHeight * SwimEntryCapsuleSubmersionRatio;
+	const float SwimExitDepth = CapsuleHeight * SwimExitCapsuleSubmersionRatio;
+
+	// Contact with water slows ground movement. Swimming remains a separate state.
+	bIsInShallowWater = !bIsCustomSwimming && bFeetInWater && FeetSubmersion >= 0.0f;
 
 	// Throttled logging (every 30 frames)
 	// static int32 FrameCount = 0;
@@ -422,10 +429,11 @@ void USwimmingComponent::CheckWaterTransitions()
 	if (!bIsCustomSwimming)
 	{
 		// Entry: 물 표면이 발밑에서부터 SwimEntryOffset 이상 깊어졌을 때 수영 상태 진입
-		if (bFeetInWater && FeetSubmersion > SwimEntryOffset)
+		if (bFeetInWater && FeetSubmersion >= SwimEntryDepth)
 		{
 			CharacterMovement->SetMovementMode(MOVE_Custom, static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming));
 			DepthMode = ESwimDepthMode::Surface;
+			bIsInShallowWater = false;
 			CharacterMovement->Buoyancy = 0.f; // CMC의 기본 부력 사용 정지
 			
 			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
@@ -440,8 +448,7 @@ void USwimmingComponent::CheckWaterTransitions()
 		CharacterMovement->FindFloor(ActorLocation, FloorResult, false);
 		bool bOnWalkableFloor = FloorResult.IsWalkableFloor();
 
-		float EffectiveExitOffset = FMath::Max(SwimExitOffset, SwimEntryOffset - 2.0f);
-		bool bExitSubmersion = !bFeetInWater || (FeetSubmersion < EffectiveExitOffset);
+		bool bExitSubmersion = !bFeetInWater || (FeetSubmersion < SwimExitDepth);
 		
 		// if (bShouldLog)
 		// {
@@ -458,7 +465,8 @@ void USwimmingComponent::CheckWaterTransitions()
 			
 			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
 			FString ContextStr = (GetOwner() && GetOwner()->HasAuthority()) ? TEXT("Server") : TEXT("Client");
-			UE_LOG(LogTemp, Warning, TEXT("[%s] %s <<< Exited Swimming State (Walking) (FeetSubmersion: %.2f, ExitOffset: %.2f) >>>"), *ContextStr, *OwnerName, FeetSubmersion, EffectiveExitOffset);
+			UE_LOG(LogTemp, Warning, TEXT("[%s] %s <<< Exited Swimming State (Walking) (FeetSubmersion: %.2f, ExitDepth: %.2f) >>>"), *ContextStr, *OwnerName, FeetSubmersion, SwimExitDepth);
+			bIsInShallowWater = bFeetInWater && FeetSubmersion >= 0.0f;
 		}
 		else if (!bFeetInWater || FeetSubmersion < -100.f)
 		{
@@ -478,6 +486,10 @@ void USwimmingComponent::CheckWaterTransitions()
 	else
 	{
 		bIsUnderwater = false;
+		if (!bFeetInWater)
+		{
+			bIsInShallowWater = false;
+		}
 		VerticalSwimInput = 0.0f;
 		DepthMode = ESwimDepthMode::Surface;
 	}

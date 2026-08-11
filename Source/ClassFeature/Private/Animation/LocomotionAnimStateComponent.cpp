@@ -1,5 +1,6 @@
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "BasePlayer.h"
+#include "SwimmingComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -648,15 +649,20 @@ void ULocomotionAnimStateComponent::UpdateMaxWalkSpeed() const
         return;
     }
 
-    const bool bCanSprint =
-        bIsSprinting &&
-        !CachedBasePlayer->bIsAttacking &&
+	const USwimmingComponent* SwimmingComponent = CachedBasePlayer->GetSwimmingComponent();
+	const bool bIsInShallowWater = SwimmingComponent && SwimmingComponent->IsInShallowWater();
+	const bool bCanSprint =
+		bIsSprinting &&
+		!bIsInShallowWater &&
+		!CachedBasePlayer->bIsAttacking &&
         !CachedBasePlayer->bIsDodging &&
         !CachedBasePlayer->bIsHitReacting;
 
     float TargetRotationRate = bCanSprint ? SprintRotationRateYaw : WalkRotationRateYaw;
 
-    MovementComponent->MaxWalkSpeed = bCanSprint ? SprintSpeed : WalkSpeed;
+	MovementComponent->MaxWalkSpeed = bIsInShallowWater
+		? SwimmingComponent->GetShallowWaterMaxWalkSpeed()
+		: (bCanSprint ? SprintSpeed : WalkSpeed);
     MovementComponent->RotationRate = FRotator(
         0.f,
         TargetRotationRate,
