@@ -50,7 +50,7 @@ namespace
 	TAutoConsoleVariable<int32> CVarShowShipNetworkBuoyancyDebug(
 		TEXT("p.ShowShipNetworkBuoyancyDebug"),
 		0,
-		TEXT("Draw local/predicted (cyan) and replicated server (magenta) ship pontoons. 0=off, 1=on."),
+		TEXT("Draw all SW buoyancy pontoons. Ships show local/predicted (cyan) and replicated server (magenta); other owners show active/inactive state. 0=off, 1=on."),
 		ECVF_Cheat);
 
 	bool EvaluateGameThreadWaveOffset(
@@ -595,8 +595,12 @@ void AShip::Tick(float DeltaTime)
 			float LateralDrag = LateralDragCoefficient;
 			float ForwardForceValue = ForwardForce;
 			float TurnTorqueValue = TurnTorque;
-			float ForwardPropulsionMultiplier = AttributeSet ? AttributeSet->GetForwardPropulsionMultiplier() : 1.0f;
-			float TurnTorqueMultiplier = AttributeSet ? AttributeSet->GetTurnTorqueMultiplier() : 1.0f;
+			float ForwardPropulsionMultiplier =
+				(AttributeSet ? AttributeSet->GetForwardPropulsionMultiplier() : 1.0f)
+				* FMath::Max(0.0f, CurrentAIPropulsionScale);
+			float TurnTorqueMultiplier =
+				(AttributeSet ? AttributeSet->GetTurnTorqueMultiplier() : 1.0f)
+				* FMath::Max(0.0f, CurrentAITurnScale);
 			float BuoyancyRadius = 150.f;
 			float BuoyancyForceMultiplier = 1.3f;
 			float WaterDamping = 3.0f;
@@ -726,6 +730,8 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	CachedPlayerController = Cast<APlayerController>(GetController());
 	CurrentMoveInput = 0.0f;
 	CurrentTurnInput = 0.0f;
+	CurrentAIPropulsionScale = 1.0f;
+	CurrentAITurnScale = 1.0f;
 
 	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
@@ -793,6 +799,8 @@ void AShip::PossessedBy(AController* NewController)
 	Super::PossessedBy(NewController);
 	CurrentMoveInput = 0.0f;
 	CurrentTurnInput = 0.0f;
+	CurrentAIPropulsionScale = 1.0f;
+	CurrentAITurnScale = 1.0f;
 
 	if (NetworkPhysicsComponent)
 	{
@@ -823,6 +831,8 @@ void AShip::UnPossessed()
 	EndLocalBombardmentTargeting();
 	CurrentMoveInput = 0.0f;
 	CurrentTurnInput = 0.0f;
+	CurrentAIPropulsionScale = 1.0f;
+	CurrentAITurnScale = 1.0f;
 
 	if (NetworkPhysicsComponent)
 	{
@@ -832,22 +842,42 @@ void AShip::UnPossessed()
 	Super::UnPossessed();
 }
 
-void AShip::SetAIControlInput(float MoveInput, float TurnInput)
+void AShip::SetAIControlInput(
+	float MoveInput,
+	float TurnInput,
+	float PropulsionScale,
+	float TurnScale)
 {
 	if (!HasAuthority())
 	{
 		return;
 	}
 
+	const float PreviousPropulsionScale = CurrentAIPropulsionScale;
+	const float PreviousTurnScale = CurrentAITurnScale;
 	if (IsPropulsionSuppressed())
 	{
 		CurrentMoveInput = 0.0f;
 		CurrentTurnInput = 0.0f;
+		CurrentAIPropulsionScale = 1.0f;
+		CurrentAITurnScale = 1.0f;
+		if (!FMath::IsNearlyEqual(PreviousPropulsionScale, CurrentAIPropulsionScale)
+			|| !FMath::IsNearlyEqual(PreviousTurnScale, CurrentAITurnScale))
+		{
+			ForceNetUpdate();
+		}
 		return;
 	}
 
 	CurrentMoveInput = FMath::Clamp(MoveInput, -1.0f, 1.0f);
 	CurrentTurnInput = FMath::Clamp(TurnInput, -1.0f, 1.0f);
+	CurrentAIPropulsionScale = FMath::Max(0.0f, PropulsionScale);
+	CurrentAITurnScale = FMath::Max(0.0f, TurnScale);
+	if (!FMath::IsNearlyEqual(PreviousPropulsionScale, CurrentAIPropulsionScale)
+		|| !FMath::IsNearlyEqual(PreviousTurnScale, CurrentAITurnScale))
+	{
+		ForceNetUpdate();
+	}
 }
 
 void AShip::SetExternalAccelerationSource(const FGuid& SourceId, const FVector& WorldAcceleration)
@@ -902,6 +932,8 @@ void AShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 	DOREPLIFETIME(AShip, ReplicatedState);
 	DOREPLIFETIME(AShip, ServerPhysicsTimeOrigin);
 	DOREPLIFETIME(AShip, ServerPhysicsStepSeconds);
+	DOREPLIFETIME(AShip, CurrentAIPropulsionScale);
+	DOREPLIFETIME(AShip, CurrentAITurnScale);
 }
 
 void AShip::Board(APawn* PlayerPawn)
