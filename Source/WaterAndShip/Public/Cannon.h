@@ -31,6 +31,21 @@ struct FCannonAimRotation
 	float Yaw = 0.0f;
 };
 
+USTRUCT(BlueprintType)
+struct FCannonResolvedFiringStats
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Cannon|Stats")
+	float Damage = 10.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Cannon|Stats")
+	float CooldownSeconds = 1.5f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Cannon|Stats")
+	float ProjectileSpeed = 3000.0f;
+};
+
 UCLASS()
 class WATERANDSHIP_API ACannon : public APawn
 {
@@ -50,6 +65,15 @@ public:
 	class AShip* GetOwningShip() const;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	/** Returns false for cannons mounted on ships that prohibit player cannon control. */
+	UFUNCTION(BlueprintPure, Category = "Cannon|Control")
+	bool AllowsPlayerControl() const;
+
+	/** Re-evaluates interaction collision after mounting or attachment changes. */
+	void RefreshPlayerInteractionAvailability();
+
+	UInteractableComponent* GetInteractableComponent() const { return InteractableComponent; }
+
 	/* Boarding Interaction - Ship의 Board()와 완전히 동일한 패턴 */
 	void Board(APawn* PlayerPawn);
 
@@ -62,6 +86,10 @@ public:
 
 	/** Normal projectile class used by this cannon; ship skills may reuse its authored mesh/effects. */
 	TSubclassOf<AActor> GetCannonballClass() const { return CannonballClass; }
+
+	/** Resolves fallback values or the owning ship's live DT/upgrade-backed attributes. */
+	UFUNCTION(BlueprintPure, Category = "Cannon|Stats")
+	FCannonResolvedFiringStats GetResolvedFiringStats() const;
 
 	UFUNCTION(BlueprintPure, Category = "Cannon|Water Bomb")
 	bool IsWaterBombMode() const { return bWaterBombMode; }

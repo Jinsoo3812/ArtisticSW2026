@@ -64,9 +64,6 @@ public:
 		meta = (DisplayName = "Import Legacy When SW Pontoons Are Empty"))
 	bool bImportLegacyWaterBuoyancy = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SW Buoyancy|Debug")
-	bool bDrawDebugPontoons = false;
-
 private:
 	bool ShouldApplyForces() const;
 	bool QueryWaterSurface(const FVector& Position, float& OutWaterHeight, FVector& OutWaterVelocity) const;
