@@ -18,7 +18,11 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "PhysicsEngine/PhysicsConstraintComponent.h"
 #include "Ship.h"
+#include "ShipAI/Abilities/EnemyShipTimeStopAimLine.h"
+#include "ShipAI/Abilities/EnemyShipTimeStopField.h"
+#include "ShipAI/Abilities/EnemyShipTimeStopProjectile.h"
 #include "ShipAttributeSet.h"
 #include "ShipAI/Abilities/EnemyShipSkillMath.h"
 #include "ShipAI/Abilities/EnemyShipTorpedo.h"
@@ -27,6 +31,7 @@
 #include "ShipAI/Abilities/GA_EnemyShipCharge.h"
 #include "ShipAI/Abilities/GA_EnemyShipDeployObstacle.h"
 #include "ShipAI/Abilities/GA_EnemyShipLaunchTorpedo.h"
+#include "ShipAI/Abilities/GA_EnemyShipTimeStop.h"
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
 
@@ -255,6 +260,129 @@ bool FEnemyShipObstacleActorContractTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("Obstacle ability exposes the tag consumed by SkillModule/Pattern/BT selection"),
 		AbilityCDO && AbilityCDO->GetAssetTags().HasTagExact(GameplayAbility_EnemyShip_DeployObstacle));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipTimeStopActorContractTest,
+	"ArtisticSW.Enemy.Ship.Ability.TimeStopActorContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipTimeStopActorContractTest::RunTest(const FString& Parameters)
+{
+	EnemyShipAbilityTests::FTestWorld TestWorld;
+	AEnemyShipTimeStopProjectile* Projectile =
+		TestWorld.World->SpawnActor<AEnemyShipTimeStopProjectile>();
+	AEnemyShipTimeStopAimLine* AimLine =
+		TestWorld.World->SpawnActor<AEnemyShipTimeStopAimLine>();
+	AShip* PlayerShip = TestWorld.World->SpawnActor<AShip>(
+		AShip::StaticClass(), FVector(1000.0f, 0.0f, 0.0f), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("Time Stop projectile spawns"), Projectile)
+		|| !TestNotNull(TEXT("Time Stop aim line spawns"), AimLine)
+		|| !TestNotNull(TEXT("Player Ship spawns"), PlayerShip))
+	{
+		return false;
+	}
+
+	Projectile->InitializeTimeStopProjectile(
+		nullptr, FVector::ForwardVector, 4321.0f, 4.0f, 800.0f, 2.0f,
+		AEnemyShipTimeStopField::StaticClass());
+	USphereComponent* ProjectileCollision = Projectile->FindComponentByClass<USphereComponent>();
+	UProjectileMovementComponent* ProjectileMovement =
+		Projectile->FindComponentByClass<UProjectileMovementComponent>();
+	if (TestNotNull(TEXT("Time Stop projectile owns sweep collision"), ProjectileCollision))
+	{
+		TestEqual(TEXT("Time Stop projectile uses EnemyCannon object channel"),
+			ProjectileCollision->GetCollisionObjectType(), ECC_GameTraceChannel3);
+		TestEqual(TEXT("Time Stop projectile blocks Player ShipDamage"),
+			ProjectileCollision->GetCollisionResponseToChannel(ECC_ShipDamage), ECR_Block);
+	}
+	if (TestNotNull(TEXT("Time Stop projectile owns projectile movement"), ProjectileMovement))
+	{
+		TestTrue(TEXT("Time Stop projectile sweeps"), ProjectileMovement->bSweepCollision);
+		TestEqual(TEXT("Time Stop projectile has no gravity"), ProjectileMovement->ProjectileGravityScale, 0.0f);
+		TestEqual(TEXT("Time Stop projectile uses configured speed"), ProjectileMovement->MaxSpeed, 4321.0f);
+	}
+	TestTrue(TEXT("Time Stop projectile has miss lifetime"), Projectile->GetLifeSpan() > 0.0f);
+
+	const FVector FixedStart(10.0f, 20.0f, 30.0f);
+	const FVector FixedDirection = FVector::ForwardVector;
+	constexpr float TestMaximumDistance = 5000.0f;
+	UStaticMesh* TargetHullMesh = LoadObject<UStaticMesh>(
+		nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	TestNotNull(TEXT("Aim-line target hull mesh loads"), TargetHullMesh);
+	PlayerShip->ShipDamageMesh->SetStaticMesh(TargetHullMesh);
+	PlayerShip->ShipDamageMesh->SetWorldLocation(FVector(1000.0f, 20.0f, 30.0f));
+	PlayerShip->ShipDamageMesh->SetWorldScale3D(FVector(2.0f));
+	PlayerShip->ShipDamageMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	PlayerShip->ShipDamageMesh->UpdateBounds();
+
+	const FVector ClippedEnd = AEnemyShipTimeStopAimLine::ResolveClippedLineEnd(
+		FixedStart, FixedDirection, PlayerShip, TestMaximumDistance);
+	TestTrue(TEXT("Laser clips at the current Player Ship hull surface"),
+		ClippedEnd.X > FixedStart.X && ClippedEnd.X < 1000.0f);
+
+	PlayerShip->ShipDamageMesh->SetWorldLocation(FVector(1000.0f, 2000.0f, 30.0f));
+	PlayerShip->ShipDamageMesh->UpdateBounds();
+	const FVector FullLengthEnd = FixedStart + FixedDirection * TestMaximumDistance;
+	TestTrue(TEXT("Laser extends to maximum distance after the Player Ship leaves the ray"),
+		AEnemyShipTimeStopAimLine::ResolveClippedLineEnd(
+			FixedStart, FixedDirection, PlayerShip, TestMaximumDistance).Equals(FullLengthEnd));
+
+	AimLine->InitializeAimLine(
+		FixedStart, FixedDirection, PlayerShip, TestMaximumDistance, 0.05f);
+	TestTrue(TEXT("Aim line keeps its captured start"), AimLine->GetLineStart().Equals(FixedStart));
+	TestTrue(TEXT("Aim line initially renders full length while the ship is outside the ray"),
+		AimLine->GetLineEnd().Equals(FullLengthEnd));
+	PlayerShip->ShipDamageMesh->SetWorldLocation(FVector(1000.0f, 20.0f, 30.0f));
+	PlayerShip->ShipDamageMesh->UpdateBounds();
+	AimLine->Tick(0.06f);
+	TestTrue(TEXT("Aim line shortens when the moving Player Ship enters the fixed ray"),
+		AimLine->GetLineEnd().X < 1000.0f);
+	PlayerShip->ShipDamageMesh->SetWorldLocation(FVector(1000.0f, 2000.0f, 30.0f));
+	PlayerShip->ShipDamageMesh->UpdateBounds();
+	AimLine->Tick(0.06f);
+	TestTrue(TEXT("Aim line returns to full length when the Player Ship leaves again"),
+		AimLine->GetLineEnd().Equals(FullLengthEnd));
+	if (UStaticMeshComponent* LaserMesh = AimLine->FindComponentByClass<UStaticMeshComponent>())
+	{
+		TestTrue(TEXT("Aim line uses a round Cylinder instead of the temporary Cube"),
+			LaserMesh->GetStaticMesh()
+			&& LaserMesh->GetStaticMesh()->GetName().Contains(TEXT("Cylinder")));
+	}
+
+	PlayerShip->Tags.AddUnique(TEXT("Player"));
+	PlayerShip->Tags.Remove(TEXT("Enemy"));
+	PlayerShip->BuoyancyRoot->SetSimulatePhysics(true);
+	AEnemyShipTimeStopField* Field = TestWorld.World->SpawnActor<AEnemyShipTimeStopField>(
+		AEnemyShipTimeStopField::StaticClass(), PlayerShip->GetActorLocation(), FRotator::ZeroRotator);
+	if (TestNotNull(TEXT("Time Stop field spawns"), Field))
+	{
+		Field->InitializeTimeStop(800.0f, 2.0f);
+		TestTrue(TEXT("Field gathers the Player Ship"),
+			Field->GetAffectedTargetsForDiagnostics().ContainsByPredicate(
+				[PlayerShip](const FEnemyShipTimeStopTarget& Entry)
+				{
+					return Entry.Actor == PlayerShip
+						&& Entry.Type == EEnemyShipTimeStopTargetType::PlayerShip;
+				}));
+		TestTrue(TEXT("Field suppresses ship propulsion externally"), PlayerShip->IsPropulsionSuppressed());
+		TestNotNull(TEXT("Field creates an external world-lock constraint"),
+			Field->FindComponentByClass<UPhysicsConstraintComponent>());
+		TestTrue(TEXT("Field applies the TimeStopped state tag"),
+			PlayerShip->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Debuff_TimeStopped));
+		Field->EndPlay(EEndPlayReason::Destroyed);
+		Field->Destroy();
+		TestFalse(TEXT("Destroying the field releases propulsion suppression"),
+			PlayerShip->IsPropulsionSuppressed());
+		TestFalse(TEXT("Destroying the field removes the TimeStopped tag"),
+			PlayerShip->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Debuff_TimeStopped));
+	}
+
+	const UGameplayAbility* AbilityCDO =
+		UGA_EnemyShipTimeStop::StaticClass()->GetDefaultObject<UGameplayAbility>();
+	TestTrue(TEXT("Time Stop exposes the BT/SkillModule ability tag"),
+		AbilityCDO && AbilityCDO->GetAssetTags().HasTagExact(GameplayAbility_EnemyShip_TimeStop));
 	return true;
 }
 

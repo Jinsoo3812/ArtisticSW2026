@@ -264,7 +264,7 @@ void UGA_EnemyShipCharge::BeginCharge()
 
 void UGA_EnemyShipCharge::FinishAimByTimeout()
 {
-	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
+	BeginCharge();
 }
 
 void UGA_EnemyShipCharge::FinishChargeByTimeout()

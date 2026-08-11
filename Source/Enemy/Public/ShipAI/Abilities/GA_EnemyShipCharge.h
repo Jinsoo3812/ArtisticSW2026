@@ -46,7 +46,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Aiming", meta = (ClampMin = "0.0", ClampMax = "180.0", Units = "deg"))
 	float AimAlignmentToleranceDegrees = 5.0f;
 
-	/** Cancels the ability if the ship cannot face the target in time. */
+	/** Starts the charge from the final facing if the ship cannot align in time. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Aiming", meta = (ClampMin = "0.1", Units = "s"))
 	float MaximumAimDurationSeconds = 5.0f;
 

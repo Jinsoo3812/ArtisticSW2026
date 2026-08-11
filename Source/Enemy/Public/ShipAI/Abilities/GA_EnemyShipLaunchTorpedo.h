@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "ShipAI/Abilities/EnemyShipGameplayAbility.h"
+#include "ShipAI/EnemyShipNavigationTypes.h"
 #include "GA_EnemyShipLaunchTorpedo.generated.h"
 
 class ACannon;
@@ -58,13 +59,26 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo", meta = (DisplayName = "Torpedo Lifetime Seconds", ClampMin = "0.1", Units = "s"))
 	float MaximumFlightSeconds = 12.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Aiming", meta = (ClampMin = "0.01", Units = "s"))
+	float AimUpdateIntervalSeconds = 0.05f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Aiming", meta = (ClampMin = "0.0"))
+	float ShipTurnResponsiveness = 1.5f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Aiming", meta = (ClampMin = "0.0"))
+	float ShipTurnMultiplier = 2.0f;
+
 private:
 	void LaunchNextTorpedo();
+	void UpdateVolleyAiming();
 	bool FireSingleTorpedo();
 	bool IsValidPlayerTarget(const AShip* Candidate) const;
 
 	TWeakObjectPtr<AEnemyShip> ActiveShip;
 	TWeakObjectPtr<AShip> ActiveTarget;
+	TWeakObjectPtr<ACannon> ActiveCannon;
+	FEnemyShipNavigationOverrideHandle NavigationOverrideHandle;
 	FTimerHandle VolleyTimerHandle;
+	FTimerHandle AimTimerHandle;
 	int32 LaunchedTorpedoCount = 0;
 };
