@@ -13,6 +13,7 @@ UE_DEFINE_GAMEPLAY_TAG(State_Bow_FullyDrawn, "State.Bow.FullyDrawn");
 UE_DEFINE_GAMEPLAY_TAG(State_Bow_Releasing, "State.Bow.Releasing");
 UE_DEFINE_GAMEPLAY_TAG(State_Ship_CannonDisabled, "State.Ship.CannonDisabled");
 UE_DEFINE_GAMEPLAY_TAG(State_Debuff_WaterBomb, "State.Debuff.WaterBomb");
+UE_DEFINE_GAMEPLAY_TAG(State_Debuff_TimeStopped, "State.Debuff.TimeStopped");
 
 // Team
 UE_DEFINE_GAMEPLAY_TAG(Team_Player, "Team.Player");
@@ -31,6 +32,16 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Weapon_AimCycle, "GameplayAbility.Weapon.
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_GravityVortex, "GameplayAbility.Skill.GravityVortex");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_WaterBomb, "GameplayAbility.Skill.WaterBomb");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_Bombardment, "GameplayAbility.Skill.Bombardment");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_Charge, "GameplayAbility.EnemyShip.Charge");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_LaunchTorpedo, "GameplayAbility.EnemyShip.LaunchTorpedo");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_CannonVolley, "GameplayAbility.EnemyShip.CannonVolley");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_DeployObstacle, "GameplayAbility.EnemyShip.DeployObstacle");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_TimeStop, "GameplayAbility.EnemyShip.TimeStop");
+UE_DEFINE_GAMEPLAY_TAG(State_EnemyShip_Charging, "State.EnemyShip.Charging");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_Charge, "Cooldown.EnemyShip.Charge");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_LaunchTorpedo, "Cooldown.EnemyShip.LaunchTorpedo");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_DeployObstacle, "Cooldown.EnemyShip.DeployObstacle");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_TimeStop, "Cooldown.EnemyShip.TimeStop");
 // Event
 UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Changed, "Event.Ability.Changed");
 UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_Start, "Event.HandleScan.Start");
