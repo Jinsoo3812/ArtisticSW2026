@@ -61,6 +61,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Warning", meta = (ClampMin = "0.01", Units = "s"))
 	float AimLineTraceIntervalSeconds = 0.05f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Aiming", meta = (ClampMin = "0.01", Units = "s"))
+	float AimUpdateIntervalSeconds = 0.05f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Aiming", meta = (ClampMin = "0.0"))
+	float ShipTurnResponsiveness = 1.5f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Aiming", meta = (ClampMin = "0.0"))
+	float ShipTurnMultiplier = 2.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Projectile", meta = (ClampMin = "1.0", Units = "cm/s"))
 	float ProjectileSpeed = 5000.0f;
 
@@ -75,6 +84,7 @@ protected:
 
 private:
 	void FireTimeStopProjectile();
+	void UpdateChargeAiming();
 	bool IsValidPlayerTarget(const AShip* Candidate) const;
 
 	TWeakObjectPtr<AEnemyShip> ActiveShip;
@@ -83,7 +93,9 @@ private:
 	TWeakObjectPtr<AEnemyShipTimeStopAimLine> AimLineActor;
 	FEnemyShipNavigationOverrideHandle NavigationOverrideHandle;
 	FTimerHandle ChargeTimerHandle;
+	FTimerHandle AimUpdateTimerHandle;
 	FVector FixedLineStart = FVector::ZeroVector;
 	FVector FixedLineEnd = FVector::ZeroVector;
+	FVector FixedTargetPoint = FVector::ZeroVector;
 	FVector FixedLaunchDirection = FVector::ForwardVector;
 };

@@ -8,6 +8,7 @@ class UStaticMeshComponent;
 class USceneComponent;
 class UMaterialInterface;
 class AShip;
+class ACannon;
 
 /** Fixed-direction warning laser whose length clips dynamically against the designated Player Ship. */
 UCLASS(Blueprintable)
@@ -21,6 +22,12 @@ public:
 	void InitializeAimLine(
 		const FVector& InStart,
 		const FVector& InDirection,
+		AShip* InTargetShip,
+		float InMaximumDistance,
+		float InTraceIntervalSeconds);
+	void InitializeAimLineFromCannon(
+		ACannon* InSourceCannon,
+		const FVector& InFixedTargetPoint,
 		AShip* InTargetShip,
 		float InMaximumDistance,
 		float InTraceIntervalSeconds);
@@ -70,6 +77,8 @@ private:
 	FVector_NetQuantize LineEnd = FVector::ZeroVector;
 
 	TWeakObjectPtr<AShip> TargetShip;
+	TWeakObjectPtr<ACannon> SourceCannon;
+	FVector FixedTargetPoint = FVector::ZeroVector;
 	FVector FixedDirection = FVector::ForwardVector;
 	float MaximumDistance = 200000.0f;
 	float TraceIntervalSeconds = 0.05f;

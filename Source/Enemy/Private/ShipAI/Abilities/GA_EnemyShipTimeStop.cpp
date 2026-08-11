@@ -62,7 +62,8 @@ void UGA_EnemyShipTimeStop::ActivateAbility(
 	ActiveTarget = Target;
 	SelectedCannon = Cannon;
 	FixedLineStart = Cannon->GetProjectileMuzzleTransform().GetLocation();
-	FixedLaunchDirection = (TargetLocation - FixedLineStart).GetSafeNormal();
+	FixedTargetPoint = TargetLocation;
+	FixedLaunchDirection = (FixedTargetPoint - FixedLineStart).GetSafeNormal();
 	if (FixedLaunchDirection.IsNearlyZero())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -70,13 +71,11 @@ void UGA_EnemyShipTimeStop::ActivateAbility(
 	}
 	FixedLineEnd = ResolveFixedLineEnd(FixedLineStart, Target, AimLineMaximumDistance);
 
-	const FVector LocalDirection = Cannon->GetActorTransform()
-		.InverseTransformVectorNoScale(FixedLaunchDirection);
-	const FRotator AimRotation = LocalDirection.Rotation();
-	Cannon->SetAIAimRotation(AimRotation.Pitch, FMath::UnwindDegrees(AimRotation.Yaw));
-
 	FEnemyShipNavigationOverrideRequest Request;
-	Request.Mode = EEnemyShipNavigationOverrideMode::StopMovement;
+	Request.MoveInput = 0.0f;
+	Request.TurnInput = 0.0f;
+	Request.PropulsionMultiplier = 1.0f;
+	Request.TurnMultiplier = FMath::Max(0.0f, ShipTurnMultiplier);
 	NavigationOverrideHandle = Navigation->AcquireOverride(this, 100, Request);
 	if (!NavigationOverrideHandle.IsValid())
 	{
@@ -95,12 +94,20 @@ void UGA_EnemyShipTimeStop::ActivateAbility(
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
-	AimLineActor->InitializeAimLine(
-		FixedLineStart,
-		FixedLaunchDirection,
+	AimLineActor->InitializeAimLineFromCannon(
+		Cannon,
+		FixedTargetPoint,
 		Target,
 		AimLineMaximumDistance,
 		AimLineTraceIntervalSeconds);
+	UpdateChargeAiming();
+	if (!IsActive())
+	{
+		return;
+	}
+	Ship->GetWorldTimerManager().SetTimer(
+		AimUpdateTimerHandle, this, &UGA_EnemyShipTimeStop::UpdateChargeAiming,
+		FMath::Max(0.01f, AimUpdateIntervalSeconds), true);
 
 	UE_LOG(LogTemp, Warning,
 		TEXT("[EnemyShipTimeStop] Charge started. Ship=%s Target=%s Cannon=%s Duration=%.2fs Start=%s End=%s"),
@@ -128,6 +135,7 @@ void UGA_EnemyShipTimeStop::EndAbility(
 	if (AEnemyShip* Ship = ActiveShip.Get())
 	{
 		Ship->GetWorldTimerManager().ClearTimer(ChargeTimerHandle);
+		Ship->GetWorldTimerManager().ClearTimer(AimUpdateTimerHandle);
 		if (UEnemyShipNavigationComponent* Navigation = Ship->GetNavigationComponent())
 		{
 			Navigation->ReleaseOverride(NavigationOverrideHandle);
@@ -145,8 +153,10 @@ void UGA_EnemyShipTimeStop::EndAbility(
 	AimLineActor.Reset();
 	NavigationOverrideHandle.Reset();
 	ChargeTimerHandle.Invalidate();
+	AimUpdateTimerHandle.Invalidate();
 	FixedLineStart = FVector::ZeroVector;
 	FixedLineEnd = FVector::ZeroVector;
+	FixedTargetPoint = FVector::ZeroVector;
 	FixedLaunchDirection = FVector::ForwardVector;
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -175,7 +185,14 @@ void UGA_EnemyShipTimeStop::FireTimeStopProjectile()
 	AEnemyShip* Ship = ActiveShip.Get();
 	ACannon* Cannon = SelectedCannon.Get();
 	if (!Ship || !Ship->HasAuthority() || Ship->IsDeathHandled() || !Cannon
-		|| !ProjectileClass || FixedLaunchDirection.IsNearlyZero())
+		|| !ProjectileClass)
+	{
+		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
+		return;
+	}
+	FixedLineStart = Cannon->GetProjectileMuzzleTransform().GetLocation();
+	FixedLaunchDirection = (FixedTargetPoint - FixedLineStart).GetSafeNormal();
+	if (FixedLaunchDirection.IsNearlyZero())
 	{
 		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
 		return;
@@ -201,6 +218,43 @@ void UGA_EnemyShipTimeStop::FireTimeStopProjectile()
 		*GetNameSafe(Ship), *GetNameSafe(Cannon), *GetNameSafe(Projectile),
 		*FixedLaunchDirection.ToCompactString());
 	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
+}
+
+void UGA_EnemyShipTimeStop::UpdateChargeAiming()
+{
+	AEnemyShip* Ship = ActiveShip.Get();
+	ACannon* Cannon = SelectedCannon.Get();
+	UEnemyShipNavigationComponent* Navigation = Ship ? Ship->GetNavigationComponent() : nullptr;
+	if (!Ship || Ship->IsDeathHandled() || !Cannon || !Navigation)
+	{
+		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
+		return;
+	}
+
+	const FVector MuzzleLocation = Cannon->GetProjectileMuzzleTransform().GetLocation();
+	const FVector AimDirection = (FixedTargetPoint - MuzzleLocation).GetSafeNormal();
+	if (AimDirection.IsNearlyZero())
+	{
+		return;
+	}
+	const FVector LocalDirection = Cannon->GetActorTransform()
+		.InverseTransformVectorNoScale(AimDirection);
+	const FRotator LocalRotation = LocalDirection.Rotation();
+	const float LocalYaw = FMath::UnwindDegrees(LocalRotation.Yaw);
+	Cannon->SetAIAimRotation(LocalRotation.Pitch, LocalYaw);
+
+	FEnemyShipNavigationOverrideRequest Request;
+	Request.MoveInput = 0.0f;
+	Request.TurnInput = FMath::Clamp(
+		FMath::DegreesToRadians(LocalYaw) * FMath::Max(0.0f, ShipTurnResponsiveness),
+		-1.0f,
+		1.0f);
+	Request.PropulsionMultiplier = 1.0f;
+	Request.TurnMultiplier = FMath::Max(0.0f, ShipTurnMultiplier);
+	if (!Navigation->UpdateOverride(NavigationOverrideHandle, Request))
+	{
+		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
+	}
 }
 
 bool UGA_EnemyShipTimeStop::IsValidPlayerTarget(const AShip* Candidate) const

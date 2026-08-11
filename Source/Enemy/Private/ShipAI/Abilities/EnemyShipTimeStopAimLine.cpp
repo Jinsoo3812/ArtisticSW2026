@@ -1,5 +1,6 @@
 #include "ShipAI/Abilities/EnemyShipTimeStopAimLine.h"
 
+#include "Cannon.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Materials/MaterialInterface.h"
@@ -58,7 +59,31 @@ void AEnemyShipTimeStopAimLine::InitializeAimLine(
 		return;
 	}
 	LineStart = InStart;
+	SourceCannon.Reset();
+	FixedTargetPoint = FVector::ZeroVector;
 	FixedDirection = InDirection.GetSafeNormal();
+	TargetShip = InTargetShip;
+	MaximumDistance = FMath::Max(1.0f, InMaximumDistance);
+	TraceIntervalSeconds = FMath::Max(0.01f, InTraceIntervalSeconds);
+	TraceTimeAccumulator = 0.0f;
+	UpdateClippedEndpoint();
+}
+
+void AEnemyShipTimeStopAimLine::InitializeAimLineFromCannon(
+	ACannon* InSourceCannon,
+	const FVector& InFixedTargetPoint,
+	AShip* InTargetShip,
+	float InMaximumDistance,
+	float InTraceIntervalSeconds)
+{
+	if (!HasAuthority() || !InSourceCannon)
+	{
+		return;
+	}
+	SourceCannon = InSourceCannon;
+	FixedTargetPoint = InFixedTargetPoint;
+	LineStart = InSourceCannon->GetProjectileMuzzleTransform().GetLocation();
+	FixedDirection = (FixedTargetPoint - FVector(LineStart)).GetSafeNormal();
 	TargetShip = InTargetShip;
 	MaximumDistance = FMath::Max(1.0f, InMaximumDistance);
 	TraceIntervalSeconds = FMath::Max(0.01f, InTraceIntervalSeconds);
@@ -118,11 +143,30 @@ void AEnemyShipTimeStopAimLine::OnRep_LineEndpoints()
 
 void AEnemyShipTimeStopAimLine::UpdateClippedEndpoint()
 {
+	bool bEndpointsChanged = false;
+	if (ACannon* Cannon = SourceCannon.Get())
+	{
+		const FVector NewStart = Cannon->GetProjectileMuzzleTransform().GetLocation();
+		const FVector NewDirection = (FixedTargetPoint - NewStart).GetSafeNormal();
+		if (!FVector(LineStart).Equals(NewStart, 0.5f))
+		{
+			LineStart = NewStart;
+			bEndpointsChanged = true;
+		}
+		if (!NewDirection.IsNearlyZero())
+		{
+			FixedDirection = NewDirection;
+		}
+	}
 	const FVector NewEnd = ResolveClippedLineEnd(
 		FVector(LineStart), FixedDirection, TargetShip.Get(), MaximumDistance);
 	if (!FVector(LineEnd).Equals(NewEnd, 0.5f))
 	{
 		LineEnd = NewEnd;
+		bEndpointsChanged = true;
+	}
+	if (bEndpointsChanged)
+	{
 		RefreshLineVisual();
 		ForceNetUpdate();
 	}

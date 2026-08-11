@@ -351,6 +351,27 @@ bool FEnemyShipTimeStopActorContractTest::RunTest(const FString& Parameters)
 			&& LaserMesh->GetStaticMesh()->GetName().Contains(TEXT("Cylinder")));
 	}
 
+	ACannon* MovingCannon = TestWorld.World->SpawnActor<ACannon>(
+		ACannon::StaticClass(), FVector(100.0f, -500.0f, 100.0f), FRotator::ZeroRotator);
+	if (TestNotNull(TEXT("Moving source Cannon spawns"), MovingCannon))
+	{
+		const FVector InitialMuzzle = MovingCannon->GetProjectileMuzzleTransform().GetLocation();
+		const FVector CapturedTargetPoint = InitialMuzzle + FVector(5000.0f, 0.0f, 0.0f);
+		AimLine->InitializeAimLineFromCannon(
+			MovingCannon, CapturedTargetPoint, nullptr, TestMaximumDistance, 0.05f);
+		TestTrue(TEXT("Laser starts at the current Cannon muzzle"),
+			AimLine->GetLineStart().Equals(InitialMuzzle, 0.5f));
+		MovingCannon->SetActorLocation(MovingCannon->GetActorLocation() + FVector(0.0f, 300.0f, 0.0f));
+		AimLine->Tick(0.06f);
+		const FVector MovedMuzzle = MovingCannon->GetProjectileMuzzleTransform().GetLocation();
+		TestTrue(TEXT("Laser origin follows a moving Cannon instead of staying in world space"),
+			AimLine->GetLineStart().Equals(MovedMuzzle, 0.5f));
+		TestTrue(TEXT("Laser re-aims from the moved muzzle toward the captured target point"),
+			AimLine->GetLineEnd().Equals(
+				MovedMuzzle + (CapturedTargetPoint - MovedMuzzle).GetSafeNormal() * TestMaximumDistance,
+				1.0f));
+	}
+
 	PlayerShip->Tags.AddUnique(TEXT("Player"));
 	PlayerShip->Tags.Remove(TEXT("Enemy"));
 	PlayerShip->BuoyancyRoot->SetSimulatePhysics(true);
