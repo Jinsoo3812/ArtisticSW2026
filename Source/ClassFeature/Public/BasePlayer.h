@@ -31,6 +31,7 @@ class AShip;
 class ACannon;
 class USwimmingComponent;
 class UPlayerSkillComponent;
+class UAnimSequence;
 
 // Item Slot 관리 구조체
 USTRUCT(BlueprintType)
@@ -633,6 +634,14 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<ULocomotionAnimStateComponent> AnimStateComponent;
+
+	// Cvar-gated GASP-style TIP diagnostics. These are strictly local debug
+	// state; they never participate in gameplay or replication.
+	float LastGaspTurnInPlaceDebugActorYaw = 0.0f;
+	float LastGaspTurnInPlaceDebugControlYaw = 0.0f;
+	int32 LastGaspTurnInPlaceDebugSelectionRevision = INDEX_NONE;
+	bool bLastGaspTurnInPlaceDebugRequested = false;
+	double NextGaspTurnInPlaceDebugSampleTime = 0.0;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<USWTrajectoryComponent> TrajectoryComponent;

@@ -2098,8 +2098,15 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         CachedLocomotionStateComponent->ConsumeMotionMatchingReselectionRequest();
 
     // Movement Data
+    const FAnimThreadSafeData& PreviousThreadSafeData =
+        GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
     ThreadSafeData.MovementData.Velocity = CachedLocomotionStateComponent->Velocity;
     ThreadSafeData.MovementData.VelocityLocal = CachedBasePlayer->GetActorTransform().InverseTransformVectorNoScale(CachedLocomotionStateComponent->Velocity);
+    ThreadSafeData.MovementData.LastNonZeroVelocity = PreviousThreadSafeData.MovementData.LastNonZeroVelocity;
+    if (!ThreadSafeData.MovementData.Velocity.IsNearlyZero(10.0f))
+    {
+        ThreadSafeData.MovementData.LastNonZeroVelocity = ThreadSafeData.MovementData.Velocity;
+    }
     ThreadSafeData.MovementData.Acceleration = CachedLocomotionStateComponent->Acceleration;
     const bool bIsFallOffForDebug =
         CachedLocomotionStateComponent->CurrentState == ELocomotionState::InAir &&
@@ -2718,6 +2725,12 @@ FTransform UMotionMatchingAnimInstance::GetThreadSafeBowStringIKTargetTransform(
     return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.BowData.StringIKTargetTransform;
 }
 
+void UMotionMatchingAnimInstance::SetGaspOffsetRootTransform(const FTransform& InOffsetRootTransform)
+{
+    // Compatibility stub for ABP_Player until its old callback is removed.
+    // TIP no longer consumes Offset Root Bone transforms.
+}
+
 void UMotionMatchingAnimInstance::NativePostEvaluateAnimation()
 {
     Super::NativePostEvaluateAnimation();
@@ -2942,7 +2955,9 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     const float GroundSpeed = CachedLocomotionStateComponent->GroundSpeed;
     const bool bInAir = CachedLocomotionStateComponent->bIsInAir;
     const bool bLanding = CachedLocomotionStateComponent->bIsLanding && CachedLocomotionStateComponent->bLandingRequested;
-    const bool bShouldTurnInPlace = CachedLocomotionStateComponent->bShouldTurnInPlace;
+    // TIP is retired. Keep the local name only to avoid perturbing the rest of
+    // this presentation-state evaluation while old reflected properties exist.
+    const bool bShouldTurnInPlace = false;
     const bool bInPlaybackHold = (StateControllerPlaybackHoldElapsed < StateControllerPlaybackHoldDuration);
     // StartLanding deliberately keeps bIsInAir true until the landing pose is
     // released.  Landing must therefore take precedence over the air flag.
@@ -3007,11 +3022,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     }
     else
     {
-        if (bShouldTurnInPlace)
-        {
-            DesiredState = EStateControllerPresentationState::TurnInPlace;
-        }
-        else if (bInPlaybackHold && StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop)
+        if (bInPlaybackHold && StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop)
         {
             DesiredState = EStateControllerPresentationState::TransitionToStop;
         }
@@ -3126,6 +3137,8 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
         bHasStateControllerLandGaitLock = false;
     }
 
+    bStateControllerForceTurnInPlaceReselect = false;
+
     EvaluateStateControllerPlaybackHold(DesiredState);
 }
 
@@ -3135,6 +3148,10 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
     const float DeltaTime = GetWorld()->GetDeltaSeconds();
     const bool bStateChanged = (DesiredState != StateControllerPlaybackHoldState);
     const EStateControllerPresentationState PreviousState = StateControllerPlaybackHoldState;
+    // This is intentionally a one-update signal.  It is consumed by an
+    // AnimGraph OnUpdate function calling BlendStack::ForceBlendNextUpdate,
+    // not by a per-frame Chooser query.
+    bStateControllerForceBlendStackOnNextUpdate = false;
 
     bool bInterruptLandForMotionMatching = false;
     if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToLand &&
@@ -3217,12 +3234,14 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         // evaluate with the previous state's conditions.
         StateControllerSpeed2D = CachedLocomotionStateComponent ? CachedLocomotionStateComponent->GroundSpeed : 0.0f;
         StateControllerDesiredFacingDeltaYaw = CachedLocomotionStateComponent ? CachedLocomotionStateComponent->DesiredFacingDeltaYaw : 0.0f;
+        StateControllerTurnInPlaceIndexForChooser = 0.0f;
+        StateControllerTurnInPlaceSelectionFacingDeltaYaw = 0.0f;
         bStateControllerIsHeavyLand = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bUseHeavyLand;
         bStateControllerIsMovingLand = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bLandWasMoving;
         bStateControllerIsInAir = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsInAir;
         bStateControllerIsJumping = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsJumping;
         bStateControllerIsFallOff = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsFallOffStart;
-        bStateControllerShouldTurnInPlace = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bShouldTurnInPlace;
+        bStateControllerShouldTurnInPlace = false;
 
         // The Land Chooser calls BlueprintThreadSafe getters.  NativeUpdate's
         // normal proxy pack happens later, so without this pre-publish the
@@ -3306,7 +3325,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
                 TargetChooser = PivotChooserTable;
                 break;
             case EStateControllerPresentationState::TurnInPlace:
-                TargetChooser = TurnInPlaceChooserTable;
+                TargetChooser = nullptr;
                 break;
             default:
                 TargetChooser = nullptr;
@@ -3382,9 +3401,12 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
             // StartTime/BlendTime remain one atomic authored contract with the
             // chosen asset rather than unrelated transient float values.
             StateControllerSelectedAnimationOutput = ChooserOutputs;
+            const float DefaultBlendTime = DesiredState == EStateControllerPresentationState::TurnInPlace
+                ? StateControllerTurnInPlaceDefaultBlendTime
+                : 0.2f;
             StateControllerSelectedAnimationBlendTime = StateControllerSelectedAnimationOutput.BlendTime > 0.0f
                 ? StateControllerSelectedAnimationOutput.BlendTime
-                : 0.2f;
+                : DefaultBlendTime;
             StateControllerSelectedAnimationStartTime = StateControllerSelectedAnimation
                 ? FMath::Clamp(StateControllerSelectedAnimationOutput.StartTime, 0.0f, StateControllerSelectedAnimation->GetPlayLength())
                 : 0.0f;
@@ -3434,6 +3456,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
     ThreadSafeData.StateController.bSelectedAnimationShouldLoop = bStateControllerSelectedAnimationShouldLoop;
     ThreadSafeData.StateController.bHasSelectedAnimation = StateControllerSelectedAnimation != nullptr;
     ThreadSafeData.StateController.SelectionRevision = StateControllerSelectionRevision;
+    ThreadSafeData.StateController.bForceBlendStackOnNextUpdate = bStateControllerForceBlendStackOnNextUpdate;
     ThreadSafeData.StateController.bShouldOverrideMotionMatching =
         ThreadSafeData.StateController.bHasSelectedAnimation &&
         StateControllerPlaybackHoldState != EStateControllerPresentationState::LocomotionLoop &&
@@ -3455,10 +3478,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
     const bool bEnableBlendStackSteering = bBlendStackClipActive &&
         (bMovingForSteering || bAirborneForSteering || bUseLatchedLandingSteering);
     ThreadSafeData.StateController.BlendStackSteeringAlpha = bEnableBlendStackSteering ? 1.0f : 0.0f;
-    // Kept as a compatibility alias because the existing Artistic graph is
-    // already wired to this getter.  New graph wiring should use the explicit
-    // BlendStackSteering name below.
-    ThreadSafeData.StateController.TurnInPlaceSteeringAlpha = ThreadSafeData.StateController.BlendStackSteeringAlpha;
+    ThreadSafeData.StateController.TurnInPlaceSteeringAlpha = 0.0f;
 
     if (bUseLatchedLandingSteering && CachedBasePlayer)
     {
@@ -3561,7 +3581,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
     bStateControllerIsInAir = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsInAir;
     bStateControllerIsJumping = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsJumping;
     bStateControllerIsFallOff = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsFallOffStart;
-    bStateControllerShouldTurnInPlace = CachedLocomotionStateComponent ? CachedLocomotionStateComponent->bShouldTurnInPlace : false;
+    bStateControllerShouldTurnInPlace = false;
 
     EmitStateControllerDebugTrace(ThreadSafeData);
 }
@@ -3585,9 +3605,7 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
         LocomotionState == ELocomotionState::TurnInPlace ||
         LocomotionState == ELocomotionState::Landing ||
         LocomotionState == ELocomotionState::InAir;
-    const bool bTurnInPlace =
-        StateController.PresentationState == EStateControllerPresentationState::TurnInPlace ||
-        CachedLocomotionStateComponent->bShouldTurnInPlace;
+    const bool bTurnInPlace = false;
     const bool bLandDiagnostic =
         LocomotionState == ELocomotionState::Landing ||
         StateController.PresentationState == EStateControllerPresentationState::TransitionToLand ||
@@ -3610,6 +3628,31 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
     if (!((bPresentationChanged || bSelectionChanged) && bDirectOneShot) && !bOneShotSampleDue && !bComponentEventChanged)
     {
         return;
+    }
+
+    if (bTurnInPlace && (bPresentationChanged || bSelectionChanged))
+    {
+        const float ActorYaw = CachedBasePlayer->GetActorRotation().Yaw;
+        const float ControlYaw = CachedBasePlayer->GetControlRotation().Yaw;
+        UE_LOG(LogMotionMatchingCapture, Display,
+            TEXT("[SC_TIP] Pawn=%s Rev=%d Asset=%s Index=%.0f Elapsed=%.3f/%.3f Start=%.3f Blend=%.3f Loop=%d OverrideMM=%d SelectedYaw=%.1f CurrentYaw=%.1f ActorYaw=%.1f ControlYaw=%.1f RootYaw=%.2f Retarget=%d ForceBlend=%d"),
+            *CachedBasePlayer->GetName(),
+            StateController.SelectionRevision,
+            *GetNameSafe(StateController.SelectedAnimation),
+            StateControllerTurnInPlaceIndexForChooser,
+            StateControllerPlaybackHoldElapsed,
+            StateControllerPlaybackHoldDuration,
+            StateController.SelectedAnimationStartTime,
+            StateController.SelectedAnimationBlendTime,
+            StateController.bSelectedAnimationShouldLoop ? 1 : 0,
+            StateController.bShouldOverrideMotionMatching ? 1 : 0,
+            StateControllerTurnInPlaceSelectionFacingDeltaYaw,
+            CachedLocomotionStateComponent->DesiredFacingDeltaYaw,
+            ActorYaw,
+            ControlYaw,
+            CachedLocomotionStateComponent->TurnInPlaceRootYawDelta,
+            bStateControllerForceTurnInPlaceReselect ? 1 : 0,
+            StateController.bForceBlendStackOnNextUpdate ? 1 : 0);
     }
 
     // Keep the capture focused on Land/Air hand-offs.  Start/Stop/Pivot/TIP
@@ -3965,6 +4008,17 @@ int32 UMotionMatchingAnimInstance::GetThreadSafeStateControllerSelectionRevision
     return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.SelectionRevision;
 }
 
+bool UMotionMatchingAnimInstance::GetThreadSafeStateControllerForceBlendStackOnNextUpdate() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>()
+        .ThreadSafeData.StateController.bForceBlendStackOnNextUpdate;
+}
+
+float UMotionMatchingAnimInstance::GetStateControllerTurnInPlaceIndexForChooser() const
+{
+    return StateControllerTurnInPlaceIndexForChooser;
+}
+
 bool UMotionMatchingAnimInstance::GetThreadSafeShouldOverrideMotionMatching() const
 {
     return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController.bShouldOverrideMotionMatching;
@@ -4005,19 +4059,14 @@ FRotator UMotionMatchingAnimInstance::GetThreadSafeStateControllerBlendStackStee
         .ThreadSafeData.StateController.BlendStackSteeringTargetOrientation;
 }
 
+FVector UMotionMatchingAnimInstance::GetThreadSafeLastNonZeroVelocity() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.MovementData.LastNonZeroVelocity;
+}
+
 EOffsetRootBoneMode UMotionMatchingAnimInstance::GetThreadSafeOffsetRootRotationMode() const
 {
-    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
-    if (ThreadSafeData.AirData.bIsInAir)
-    {
-        return EOffsetRootBoneMode::Release;
-    }
-
-    // Artistic is always Strafe. Keep the visual mesh centered during normal
-    // locomotion and permit root rotation interpolation only for authored TIP.
-    return ThreadSafeData.StateController.PresentationState == EStateControllerPresentationState::TurnInPlace
-        ? EOffsetRootBoneMode::Interpolate
-        : EOffsetRootBoneMode::Release;
+	return EOffsetRootBoneMode::Release;
 }
 
 EOffsetRootBoneMode UMotionMatchingAnimInstance::GetThreadSafeOffsetRootTranslationMode() const
@@ -4127,9 +4176,5 @@ bool UMotionMatchingAnimInstance::GetThreadSafeIsPivoting() const
 
 bool UMotionMatchingAnimInstance::GetThreadSafeShouldTurnInPlace() const
 {
-    if (CachedLocomotionStateComponent)
-    {
-        return CachedLocomotionStateComponent->bShouldTurnInPlace;
-    }
     return false;
 }

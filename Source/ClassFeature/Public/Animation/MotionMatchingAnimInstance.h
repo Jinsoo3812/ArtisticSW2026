@@ -56,6 +56,10 @@ struct FAnimMovementData
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     FVector VelocityLocal = FVector::ZeroVector;
 
+    /** Last valid world-space movement vector; mirrors GASP's Last Non Zero Velocity node. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    FVector LastNonZeroVelocity = FVector::ZeroVector;
+
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     FVector Acceleration = FVector::ZeroVector;
 
@@ -322,6 +326,15 @@ struct FAnimStateControllerThreadSafeData
     UPROPERTY(BlueprintReadOnly, Category = "StateController")
     int32 SelectionRevision = 0;
 
+    /**
+     * One-frame request consumed by the Blend Stack AnimGraph function.  A
+     * TIP may deliberately select the same Sequence again after the camera
+     * crosses a retarget threshold; Blend Stack otherwise treats that as an
+     * unchanged input and continues the old playback cursor.
+     */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bForceBlendStackOnNextUpdate = false;
+
     UPROPERTY(BlueprintReadOnly, Category = "StateController")
     bool bShouldOverrideMotionMatching = false;
 
@@ -497,6 +510,17 @@ public:
     virtual void NativePostEvaluateAnimation() override;
 
     /**
+     * Written by ABP_Player from the Offset Root Bone node's actual transform.
+     * This is the GASP visual-root reference used for stationary TIP, not the
+     * capsule/component transform.
+     */
+    UFUNCTION(BlueprintCallable, Category = "StateController|Turn In Place", meta = (BlueprintThreadSafe))
+    void SetGaspOffsetRootTransform(const FTransform& InOffsetRootTransform);
+
+    bool HasGaspOffsetRootTransform() const { return false; }
+    FTransform GetGaspOffsetRootTransform() const { return FTransform::Identity; }
+
+    /**
      * The main AnimInstance calls this for linked animation-layer instances.
      * Linked instances own a separate proxy, so swim state must be copied to
      * that proxy instead of relying on their update order.
@@ -636,6 +660,13 @@ public:
     UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
     int32 GetThreadSafeStateControllerSelectionRevision() const;
 
+    /** True for one AnimGraph update when a same-asset TIP must restart. */
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeStateControllerForceBlendStackOnNextUpdate() const;
+
+    /** Game-thread Chooser value for the currently selected TIP asset. */
+    float GetStateControllerTurnInPlaceIndexForChooser() const;
+
     UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
     bool GetThreadSafeShouldOverrideMotionMatching() const;
 
@@ -658,6 +689,10 @@ public:
     /** GASP-compatible generic Steering target (the predicted trajectory facing at +0.5 s). */
     UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
     FRotator GetThreadSafeStateControllerBlendStackSteeringTargetOrientation() const;
+
+    /** GASP-compatible direction input for Orientation Warping in Blend Stack graphs. */
+    UFUNCTION(BlueprintPure, Category = "Locomotion", meta = (BlueprintThreadSafe))
+    FVector GetThreadSafeLastNonZeroVelocity() const;
 
     /** Offset Root Bone modes: keep translation centered; only TIP may retain rotational offset. */
     UFUNCTION(BlueprintPure, Category = "Offset Root", meta = (BlueprintThreadSafe))
@@ -692,6 +727,13 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
     float StateControllerDesiredFacingDeltaYaw = 0.0f;
+
+    /** Last transform supplied by ABP_Player's Offset Root Bone graph. */
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "StateController|Turn In Place")
+    FTransform GaspOffsetRootTransform = FTransform::Identity;
+
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "StateController|Turn In Place")
+    bool bHasGaspOffsetRootTransform = false;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
     bool bStateControllerIsHeavyLand = false;
@@ -797,6 +839,41 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
     TObjectPtr<UChooserTable> TurnInPlaceChooserTable;
 
+    /**
+     * 1.0 (Left 90), 2.0 (Left 180), 3.0 (Right 90), 4.0 (Right 180).
+     * Bind this exact property to the Float Range column of the TIP chooser.
+     */
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "StateController|Chooser")
+    float StateControllerTurnInPlaceIndexForChooser = 0.0f;
+
+    /** Preserve the authored contact/steering lead-in before a TIP can be replaced. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "0.0", ClampMax = "1.0", Units = "s"))
+    float StateControllerTurnInPlaceReselectMinElapsed = 0.15f;
+
+    /** An opposite-direction request must reach this magnitude before replacing the active TIP. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "1.0", ClampMax = "180.0", Units = "deg"))
+    float StateControllerTurnInPlaceReverseDirectionReselectAngle = 55.0f;
+
+    /**
+     * Minimum elapsed time before an active TIP may re-enter the chooser.
+     * This matches GASP's TurnInPlace-tag branch: a fresh TIP enters at once,
+     * while another TIP waits for 0.75 seconds of the current one-shot.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "0.1", ClampMax = "2.0", Units = "s"))
+    float StateControllerTurnInPlaceReplayElapsed = 0.75f;
+
+    /** Legacy threshold retained for existing ABP defaults; active TIP replay is governed by ShouldTurnInPlace. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "0.0", ClampMax = "45.0", Units = "deg"))
+    float StateControllerTurnInPlaceReplayRemainingAngle = 12.0f;
+
+    /**
+     * Fallback used when the TIP Chooser row intentionally leaves BlendTime
+     * unset.  Direct root-yaw application owns gameplay rotation, so this
+     * stays short enough that repeated 90/180 turns remain visually legible.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "0.0", ClampMax = "0.25", Units = "s"))
+    float StateControllerTurnInPlaceDefaultBlendTime = 0.06f;
+
     /** Amount reserved at the end of a land one-shot before Motion Matching resumes. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Landing", meta = (ClampMin = "0.0", Units = "s"))
     float StateControllerLandCompletionLeadTime = 0.05f;
@@ -814,6 +891,12 @@ protected:
     EStateControllerPresentationState StateControllerRequestedPresentationState = EStateControllerPresentationState::None;
     float StateControllerPlaybackHoldElapsed = 0.0f;
     float StateControllerPlaybackHoldDuration = 0.0f;
+    /** Signed camera-minus-actor yaw captured at the most recent TIP Chooser evaluation. */
+    float StateControllerTurnInPlaceSelectionFacingDeltaYaw = 0.0f;
+    /** Set only for an eligible camera retarget; never produces a per-frame Chooser query. */
+    bool bStateControllerForceTurnInPlaceReselect = false;
+    /** Published for one AnimGraph update when that retarget kept the same Sequence. */
+    bool bStateControllerForceBlendStackOnNextUpdate = false;
     FVector2D StateControllerStartMoveInput = FVector2D::ZeroVector;
     float StateControllerStartControlYaw = 0.0f;
     bool bStateControllerStartInputChanged = false;

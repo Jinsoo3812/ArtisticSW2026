@@ -328,6 +328,10 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     float TurnInPlaceRootYawDelta = 0.0f;
 
+    /** Increments only when an active TIP receives a deliberate additional turn input. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    int32 TurnInPlaceContinuationSerial = 0;
+
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     bool bIsLocomotionTransitioning = false;
 
