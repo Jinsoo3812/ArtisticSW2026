@@ -33,6 +33,7 @@ ABaseEnemy::ABaseEnemy()
 	bReplicates = true;
 	SetReplicateMovement(true);
 	bAlwaysRelevant = true;
+	bUseControllerRotationYaw = true;
 
 	SetNetUpdateFrequency(30.0f);
 	SetMinNetUpdateFrequency(15.0f);
@@ -74,6 +75,7 @@ ABaseEnemy::ABaseEnemy()
 
 		// Enemies may stand on physics-driven ship decks. CharacterMovement's
 		// default push/touch forces feed back into the ship body and cause jitter.
+		MovementComponent->bOrientRotationToMovement = false;
 		MovementComponent->bEnablePhysicsInteraction = false;
 		MovementComponent->bTouchForceScaledToMass = false;
 		MovementComponent->InitialPushForceFactor = 0.0f;
