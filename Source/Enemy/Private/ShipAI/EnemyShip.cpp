@@ -33,6 +33,9 @@
 #include "ShipAI/Abilities/GA_EnemyShipLaunchTorpedo.h"
 #include "ShipAI/Abilities/GA_EnemyShipDeployObstacle.h"
 #include "ShipAI/Abilities/GA_EnemyShipTimeStop.h"
+#include "DeckAI/DeckRangedEnemy.h"
+#include "DeckAI/DeckWaypointComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "UObject/UnrealType.h"
 
 namespace
@@ -146,6 +149,9 @@ void AEnemyShip::BeginPlay()
 	// 군집 서브시스템에 등록
 	if (HasAuthority())
 	{
+		InitializeDeckWaypoints();
+		InitializeDeckEnemyPool();
+
 		if (NavigationComponent)
 		{
 			NavigationComponent->ClearAllOverrides();
@@ -162,6 +168,10 @@ void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (HasAuthority())
 	{
+		GetWorldTimerManager().ClearTimer(DeckEnemySightDelayTimerHandle);
+		GetWorldTimerManager().ClearTimer(DeckEnemyDeploymentTimerHandle);
+		DestroyDeckEnemyPool();
+
 		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
 		{
 			for (const FGameplayAbilitySpecHandle Handle : GrantedEnemyShipAbilityHandles)
@@ -188,6 +198,332 @@ void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	GetWorldTimerManager().ClearTimer(HealthBarHideTimerHandle);
 
 	Super::EndPlay(EndPlayReason);
+}
+
+void AEnemyShip::InitializeDeckWaypoints()
+{
+	DeckWaypointsById.Reset();
+	DeckSpawnWaypoints.Reset();
+
+	TArray<UDeckWaypointComponent*> Components;
+	GetComponents<UDeckWaypointComponent>(Components);
+	for (UDeckWaypointComponent* Waypoint : Components)
+	{
+		if (!IsValid(Waypoint))
+		{
+			continue;
+		}
+
+		const int32 WaypointId = Waypoint->GetWaypointId();
+		if (DeckWaypointsById.Contains(WaypointId))
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[DeckEnemyMVP] Duplicate WaypointId. Ship=%s WaypointId=%d Component=%s"),
+				*GetName(), WaypointId, *GetNameSafe(Waypoint));
+			continue;
+		}
+
+		if (ShipDeckMesh && !Waypoint->IsAttachedTo(ShipDeckMesh))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[DeckEnemyMVP] Waypoint is not attached below ShipDeckMesh. Ship=%s Waypoint=%s"),
+				*GetName(), *GetNameSafe(Waypoint));
+		}
+
+		DeckWaypointsById.Add(WaypointId, Waypoint);
+		if (Waypoint->CanSpawnEnemy())
+		{
+			DeckSpawnWaypoints.Add(Waypoint);
+		}
+	}
+
+	DeckSpawnWaypoints.Sort([](const UDeckWaypointComponent& Left, const UDeckWaypointComponent& Right)
+	{
+		return Left.GetWaypointId() < Right.GetWaypointId();
+	});
+
+	for (const TPair<int32, TObjectPtr<UDeckWaypointComponent>>& Pair : DeckWaypointsById)
+	{
+		for (const int32 LinkedId : Pair.Value->GetLinkedWaypointIds())
+		{
+			if (!DeckWaypointsById.Contains(LinkedId))
+			{
+				UE_LOG(LogTemp, Error,
+					TEXT("[DeckEnemyMVP] Waypoint link is invalid. Ship=%s WaypointId=%d LinkedId=%d"),
+					*GetName(), Pair.Key, LinkedId);
+			}
+		}
+	}
+}
+
+void AEnemyShip::InitializeDeckEnemyPool()
+{
+	if (!HasAuthority() || !bEnableDeckEnemyMVP)
+	{
+		return;
+	}
+	if (!DeckEnemyClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[DeckEnemyMVP] DeckEnemyClass is not configured. Ship=%s"), *GetName());
+		return;
+	}
+	if (DeckSpawnWaypoints.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[DeckEnemyMVP] No bCanSpawn waypoint exists. Ship=%s"), *GetName());
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const int32 PoolSize = FMath::Clamp(DeckEnemyPoolSize, 1, 8);
+	DeckEnemyPool.Reserve(PoolSize);
+	for (int32 PoolIndex = 0; PoolIndex < PoolSize; ++PoolIndex)
+	{
+		ADeckRangedEnemy* PooledEnemy = World->SpawnActorDeferred<ADeckRangedEnemy>(
+			DeckEnemyClass,
+			GetActorTransform(),
+			this,
+			nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!PooledEnemy)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[DeckEnemyMVP] Failed to allocate pooled enemy. Ship=%s PoolIndex=%d"),
+				*GetName(), PoolIndex);
+			continue;
+		}
+
+		PooledEnemy->PrepareForPool();
+		PooledEnemy->FinishSpawning(GetActorTransform());
+		PooledEnemy->SetHostShip(this);
+		PooledEnemy->DeactivateToPool();
+		DeckEnemyPool.Add(PooledEnemy);
+	}
+}
+
+void AEnemyShip::DestroyDeckEnemyPool()
+{
+	for (ADeckRangedEnemy* Enemy : DeckEnemyPool)
+	{
+		if (IsValid(Enemy))
+		{
+			Enemy->Destroy();
+		}
+	}
+	DeckEnemyPool.Reset();
+}
+
+void AEnemyShip::NotifyPlayerShipSighted(AShip* SensedPlayerShip)
+{
+	if (!HasAuthority() || !bEnableDeckEnemyMVP || bDeckDeploymentTriggered || bDeathHandled
+		|| !IsValid(SensedPlayerShip) || SensedPlayerShip == this
+		|| SensedPlayerShip->IsEnemyShipForEffects()
+		|| !SensedPlayerShip->ActorHasTag(TEXT("Player"))
+		|| SensedPlayerShip->ActorHasTag(TEXT("Enemy")))
+	{
+		return;
+	}
+
+	if (DeckEnemyPool.IsEmpty())
+	{
+		InitializeDeckEnemyPool();
+	}
+	if (DeckEnemyPool.IsEmpty())
+	{
+		return;
+	}
+
+	bDeckDeploymentTriggered = true;
+	if (DeckEnemySightActivationDelay <= 0.0f)
+	{
+		BeginDeckEnemyDeployment();
+		return;
+	}
+	GetWorldTimerManager().SetTimer(
+		DeckEnemySightDelayTimerHandle,
+		this,
+		&AEnemyShip::BeginDeckEnemyDeployment,
+		DeckEnemySightActivationDelay,
+		false);
+}
+
+void AEnemyShip::BeginDeckEnemyDeployment()
+{
+	if (!HasAuthority() || bDeathHandled)
+	{
+		return;
+	}
+
+	NextDeckEnemyPoolIndex = 0;
+	CurrentDeckSpawnRetryCount = 0;
+	DeployNextDeckEnemy();
+}
+
+void AEnemyShip::DeployNextDeckEnemy()
+{
+	GetWorldTimerManager().ClearTimer(DeckEnemyDeploymentTimerHandle);
+	if (!HasAuthority() || bDeathHandled || !DeckEnemyPool.IsValidIndex(NextDeckEnemyPoolIndex))
+	{
+		return;
+	}
+
+	ADeckRangedEnemy* Enemy = DeckEnemyPool[NextDeckEnemyPoolIndex];
+	UDeckWaypointComponent* SpawnWaypoint = SelectDeckSpawnWaypoint(NextDeckEnemyPoolIndex);
+	FTransform SpawnTransform;
+	const bool bCanActivate = IsValid(Enemy) && !Enemy->IsPoolActive()
+		&& ResolveDeckEnemySpawnTransform(SpawnWaypoint, SpawnTransform);
+
+	if (!bCanActivate)
+	{
+		++CurrentDeckSpawnRetryCount;
+		if (CurrentDeckSpawnRetryCount <= FMath::Max(0, MaxDeckSpawnRetries))
+		{
+			GetWorldTimerManager().SetTimer(
+				DeckEnemyDeploymentTimerHandle,
+				this,
+				&AEnemyShip::DeployNextDeckEnemy,
+				FMath::Max(0.05f, DeckSpawnRetryInterval),
+				false);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[DeckEnemyMVP] Pool activation abandoned after retries. Ship=%s PoolIndex=%d"),
+				*GetName(), NextDeckEnemyPoolIndex);
+			++NextDeckEnemyPoolIndex;
+			CurrentDeckSpawnRetryCount = 0;
+			if (DeckEnemyPool.IsValidIndex(NextDeckEnemyPoolIndex))
+			{
+				GetWorldTimerManager().SetTimer(
+					DeckEnemyDeploymentTimerHandle,
+					this,
+					&AEnemyShip::DeployNextDeckEnemy,
+					FMath::Max(0.05f, DeckEnemyActivationInterval),
+					false);
+			}
+		}
+		return;
+	}
+
+	const int32 Seed = static_cast<int32>(HashCombine(
+		static_cast<uint32>(DeckEnemyRandomSeed),
+		HashCombine(GetTypeHash(GetFName()), static_cast<uint32>(NextDeckEnemyPoolIndex))));
+	if (!Enemy->ActivateFromPool(this, SpawnTransform, SpawnWaypoint->GetWaypointId(), Seed))
+	{
+		return;
+	}
+
+	++NextDeckEnemyPoolIndex;
+	CurrentDeckSpawnRetryCount = 0;
+	if (DeckEnemyPool.IsValidIndex(NextDeckEnemyPoolIndex))
+	{
+		GetWorldTimerManager().SetTimer(
+			DeckEnemyDeploymentTimerHandle,
+			this,
+			&AEnemyShip::DeployNextDeckEnemy,
+			FMath::Max(0.05f, DeckEnemyActivationInterval),
+			false);
+	}
+}
+
+bool AEnemyShip::ResolveDeckEnemySpawnTransform(
+	const UDeckWaypointComponent* SpawnWaypoint,
+	FTransform& OutTransform) const
+{
+	if (!IsValid(SpawnWaypoint) || !ShipDeckMesh || !DeckEnemyClass || !GetWorld())
+	{
+		return false;
+	}
+
+	const FVector DeckUp = ShipDeckMesh->GetUpVector().GetSafeNormal();
+	const FVector AnchorLocation = SpawnWaypoint->GetComponentLocation();
+	const FVector TraceStart = AnchorLocation + DeckUp * 150.0f;
+	const FVector TraceEnd = AnchorLocation - DeckUp * 250.0f;
+	FCollisionObjectQueryParams ObjectQuery;
+	ObjectQuery.AddObjectTypesToQuery(ECC_WorldDynamic);
+	// Do not ignore this EnemyShip: the component we intentionally need to hit
+	// (ShipDeckMesh) belongs to this actor. We collect all WorldDynamic hits and
+	// select that exact component below, so the ship's other query meshes are safe.
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DeckEnemySpawn), false);
+	TArray<FHitResult> Hits;
+	GetWorld()->LineTraceMultiByObjectType(Hits, TraceStart, TraceEnd, ObjectQuery, QueryParams);
+
+	const FHitResult* DeckHit = Hits.FindByPredicate([this](const FHitResult& Hit)
+	{
+		return Hit.GetComponent() == ShipDeckMesh;
+	});
+	if (!DeckHit)
+	{
+		return false;
+	}
+
+	const ADeckRangedEnemy* EnemyCDO = DeckEnemyClass->GetDefaultObject<ADeckRangedEnemy>();
+	const UCapsuleComponent* Capsule = EnemyCDO ? EnemyCDO->GetCapsuleComponent() : nullptr;
+	const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0f;
+	const FVector SpawnLocation = DeckHit->ImpactPoint + FVector::UpVector * (HalfHeight + 2.0f);
+	const FRotator AnchorRotation = SpawnWaypoint->GetComponentRotation();
+	OutTransform = FTransform(FRotator(0.0f, AnchorRotation.Yaw, 0.0f), SpawnLocation);
+	return true;
+}
+
+UDeckWaypointComponent* AEnemyShip::SelectDeckSpawnWaypoint(int32 DeploymentIndex) const
+{
+	return DeckSpawnWaypoints.IsEmpty()
+		? nullptr
+		: DeckSpawnWaypoints[DeploymentIndex % DeckSpawnWaypoints.Num()];
+}
+
+UDeckWaypointComponent* AEnemyShip::GetDeckWaypoint(int32 WaypointId) const
+{
+	const TObjectPtr<UDeckWaypointComponent>* Found = DeckWaypointsById.Find(WaypointId);
+	return Found ? Found->Get() : nullptr;
+}
+
+FVector AEnemyShip::GetDeckWaypointWorldLocation(int32 WaypointId) const
+{
+	const UDeckWaypointComponent* Waypoint = GetDeckWaypoint(WaypointId);
+	return Waypoint ? Waypoint->GetComponentLocation() : GetActorLocation();
+}
+
+void AEnemyShip::GetConnectedDeckWaypointIds(int32 WaypointId, TArray<int32>& OutWaypointIds) const
+{
+	OutWaypointIds.Reset();
+	if (const UDeckWaypointComponent* Waypoint = GetDeckWaypoint(WaypointId))
+	{
+		for (const int32 LinkedId : Waypoint->GetLinkedWaypointIds())
+		{
+			if (DeckWaypointsById.Contains(LinkedId))
+			{
+				OutWaypointIds.Add(LinkedId);
+			}
+		}
+	}
+}
+
+int32 AEnemyShip::FindNearestDeckWaypoint(const FVector& WorldLocation, bool bRequirePatrolPoint) const
+{
+	int32 BestWaypointId = INDEX_NONE;
+	float BestDistanceSquared = TNumericLimits<float>::Max();
+	for (const TPair<int32, TObjectPtr<UDeckWaypointComponent>>& Pair : DeckWaypointsById)
+	{
+		const UDeckWaypointComponent* Waypoint = Pair.Value;
+		if (!IsValid(Waypoint) || (bRequirePatrolPoint && !Waypoint->CanPatrol()))
+		{
+			continue;
+		}
+
+		const float DistanceSquared = FVector::DistSquared(WorldLocation, Waypoint->GetComponentLocation());
+		if (DistanceSquared < BestDistanceSquared)
+		{
+			BestDistanceSquared = DistanceSquared;
+			BestWaypointId = Pair.Key;
+		}
+	}
+	return BestWaypointId;
 }
 
 void AEnemyShip::MigrateLegacyNavigationAuthoring()

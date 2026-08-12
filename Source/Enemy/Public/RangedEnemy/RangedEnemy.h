@@ -69,6 +69,8 @@ public:
 	UAnimMontage* GetRangedAttackMontage() const { return AttackMontage; }
 	FGameplayTag GetRangedFireEventTag() const { return FireEventTag; }
 	float GetRangedProjectileSpeed() const { return ProjectileSpeed; }
+	float GetMinAttackRange() const { return MinAttackRange; }
+	float GetMaxAttackRange() const { return MaxAttackRange; }
 
 protected:
 	virtual void BeginPlay() override;

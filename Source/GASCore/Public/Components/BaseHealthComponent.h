@@ -65,6 +65,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Health")
 	void FinishDeath();
 
+	/** Authority-only reset used when a pooled actor is acquired again. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Health|Pooling")
+	bool ResetForReuse();
+
 	UPROPERTY(BlueprintAssignable, Category = "Health")
 	FBaseHealthAttributeChangedSignature OnHealthChanged;
 

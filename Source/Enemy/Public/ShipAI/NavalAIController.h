@@ -53,6 +53,9 @@ protected:
 	float TargetRefreshInterval = 0.2f;
 
 private:
+	UFUNCTION()
+	void HandleTargetPerceptionUpdated(AActor* SensedActor, FAIStimulus Stimulus);
+
 	AShip* FindClosestPlayerShip() const;
 
 	TWeakObjectPtr<AShip> TargetShip;

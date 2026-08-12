@@ -156,6 +156,24 @@ void UBaseHealthComponent::FinishDeath()
 	SetDeathState(EBaseDeathState::DeathFinished);
 }
 
+bool UBaseHealthComponent::ResetForReuse()
+{
+	AActor* Owner = GetOwningActor();
+	if (!Owner || !Owner->HasAuthority() || !AbilitySystemComponent)
+	{
+		return false;
+	}
+
+	AbilitySystemComponent->CancelAllAbilities();
+	AbilitySystemComponent->SetLooseGameplayTagCount(State_Dead, 0);
+	ClearPendingDamageContext();
+	SetDeathState(EBaseDeathState::NotDead);
+	AbilitySystemComponent->SetNumericAttributeBase(
+		UBaseAttributeSet::GetHealthAttribute(),
+		GetMaxHealth());
+	return true;
+}
+
 void UBaseHealthComponent::HandleHealthChanged(const FOnAttributeChangeData& Data)
 {
 	AActor* SourceActor = nullptr;
