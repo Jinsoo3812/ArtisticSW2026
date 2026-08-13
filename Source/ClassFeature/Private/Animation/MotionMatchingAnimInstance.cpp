@@ -58,6 +58,13 @@ static TAutoConsoleVariable<int32> CVarMotionMatchingDebugLogging(
     ECVF_Default
 );
 
+static TAutoConsoleVariable<int32> CVarStrafeMotionMatchingDebug(
+    TEXT("a.StrafeMMDebug"),
+    0,
+    TEXT("Moving-Strafe Pose Search diagnostics. 0: Disabled, 1: selected-asset/trajectory changes, 2: 0.25s samples."),
+    ECVF_Cheat
+);
+
 DEFINE_LOG_CATEGORY_STATIC(LogMotionMatchingCapture, Log, All);
 
 namespace
@@ -1032,6 +1039,14 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
     {
         DebugLogAccumulator = 0.f;
     }
+    StrafeMotionMatchingDebugAccumulator += InContext.GetDeltaTime();
+    const int32 StrafeMotionMatchingDebugLevel = CVarStrafeMotionMatchingDebug.GetValueOnAnyThread();
+    const bool bStrafeMotionMatchingSampleDue =
+        StrafeMotionMatchingDebugLevel >= 2 && StrafeMotionMatchingDebugAccumulator >= 0.25f;
+    if (bStrafeMotionMatchingSampleDue)
+    {
+        StrafeMotionMatchingDebugAccumulator = 0.f;
+    }
     const bool bIsAirLoopDebugPhase =
         ThreadSafeData.AirData.bIsInAir &&
         !ThreadSafeData.AirData.bIsJumping &&
@@ -1399,6 +1414,54 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                             bSelectedRewound ||
                             bTopChanged ||
                             bTopRewound);
+
+                    // This is intentionally distinct from p.MMDebugging: it
+                    // answers the moving-Strafe question without flooding logs
+                    // with landing/fall capture.  In particular it records
+                    // whether a new Pose Search was permitted, whether the
+                    // continuing pose won, and what trajectory the query saw.
+                    const bool bMovingStrafePhase =
+                        ThreadSafeData.InputData.bHasMoveInput &&
+                        !ThreadSafeData.AirData.bIsInAir &&
+                        !ThreadSafeData.StateController.bShouldOverrideMotionMatching;
+                    const bool bStrafeSelectionChanged =
+                        Info.LastStrafeDebugSelectedAnim.Get() != Result.SelectedAnim.Get() ||
+                        FMath::Abs(Info.LastStrafeDebugSelectedTime - Result.SelectedTime) > 0.35f;
+                    if (StrafeMotionMatchingDebugLevel > 0 && bMovingStrafePhase &&
+                        (bStrafeSelectionChanged || bStrafeMotionMatchingSampleDue))
+                    {
+                        const FTransform OwnerComponentTransform = AnimInstanceObj->GetOwningComponent()
+                            ? AnimInstanceObj->GetOwningComponent()->GetComponentTransform()
+                            : FTransform::Identity;
+                        const FString InterruptModeName = ReadPoseSearchInterruptMode(Info, *MMNode);
+                        const FString StrafeDebugLine = FString::Printf(
+                            TEXT("[STRAFE_MM] Pawn=%s Node=%d Event=%s PSD=%s SelPSD=%s Asset=%s@%.3f Cost=%.3f Continue=%d Search=%d Throttle=%.3f Interrupt=%s Input=(R=%.2f,F=%.2f) VelLocal=(R=%.1f,F=%.1f) Accel=(%.1f,%.1f) AimYaw=%.1f Traj={%s %s} Stack={%s}"),
+                            *DebugPawnName,
+                            MotionMatchingNodeIndex,
+                            bStrafeSelectionChanged ? TEXT("SELECTION") : TEXT("SAMPLE"),
+                            *GetNameSafe(CurrentActivePoseSearchDatabase),
+                            *GetNameSafe(Result.SelectedDatabase),
+                            *GetNameSafe(Result.SelectedAnim),
+                            Result.SelectedTime,
+                            Result.SearchCost,
+                            Result.bIsContinuingPoseSearch ? 1 : 0,
+                            Info.bPreUpdateShouldSearch ? 1 : 0,
+                            Info.PreUpdateThrottle,
+                            *InterruptModeName,
+                            ThreadSafeData.InputData.MoveInput.X,
+                            ThreadSafeData.InputData.MoveInput.Y,
+                            ThreadSafeData.MovementData.VelocityLocal.Y,
+                            ThreadSafeData.MovementData.VelocityLocal.X,
+                            ThreadSafeData.MovementData.Acceleration.X,
+                            ThreadSafeData.MovementData.Acceleration.Y,
+                            ThreadSafeData.AimData.AimYaw,
+                            *FormatTrajectorySample(ThreadSafeData.MovementData.Trajectory, OwnerComponentTransform, 0.5f),
+                            *FormatTrajectorySample(ThreadSafeData.MovementData.Trajectory, OwnerComponentTransform, 1.0f),
+                            *FormatCompactBlendStackHead(*MMNode));
+                        UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *StrafeDebugLine);
+                        Info.LastStrafeDebugSelectedAnim = Result.SelectedAnim.Get();
+                        Info.LastStrafeDebugSelectedTime = Result.SelectedTime;
+                    }
 
                     if (bShouldLogTransitionFrame || bShouldLogStackEvent || (DebugLevel >= 2 && bChangedSinceLastLog))
                     {
@@ -3113,6 +3176,18 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     const bool bIsPivoting = CachedLocomotionStateComponent->bSharpTurnRequested;
     const bool bIsMoving = bHasMoveInput || GroundSpeed > 10.0f;
     const bool bInPlaybackHold = (StateControllerPlaybackHoldElapsed < StateControllerPlaybackHoldDuration);
+    const float DesiredFacingDeltaYaw = CachedLocomotionStateComponent->DesiredFacingDeltaYaw;
+    const float AbsDesiredFacingDeltaYaw = FMath::Abs(DesiredFacingDeltaYaw);
+    const bool bActiveTurnInPlaceClip =
+        StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace &&
+        StateControllerSelectedAnimation != nullptr;
+    // Do not manufacture a 090 clip for a small mouse adjustment. Once a
+    // direct TIP was legitimately selected, however, keep it until its real
+    // authored duration rather than cutting to Idle at the 0.75s re-check.
+    const bool bKeepActiveTurnInPlaceClip = bActiveTurnInPlaceClip &&
+        StateControllerPlaybackHoldElapsed < StateControllerPlaybackHoldDuration;
+    const bool bCanStartTurnInPlace = bShouldTurnInPlace &&
+        AbsDesiredFacingDeltaYaw >= StateControllerTurnInPlaceEntryAngle;
     const EStateControllerPresentationState HoldStateBeforeEvaluation = StateControllerPlaybackHoldState;
     const int32 SelectionRevisionBeforeEvaluation = StateControllerSelectionRevision;
     // StartLanding deliberately keeps bIsInAir true until the landing pose is
@@ -3181,7 +3256,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
         {
             DesiredState = EStateControllerPresentationState::TransitionToStop;
         }
-        else if (bShouldTurnInPlace)
+        else if (bKeepActiveTurnInPlaceClip || bCanStartTurnInPlace)
         {
             DesiredState = EStateControllerPresentationState::TurnInPlace;
         }
@@ -3302,19 +3377,18 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
         bHasStateControllerLandGaitLock = false;
     }
 
-    const float DesiredFacingDeltaYaw = CachedLocomotionStateComponent->DesiredFacingDeltaYaw;
-    const float AbsDesiredFacingDeltaYaw = FMath::Abs(DesiredFacingDeltaYaw);
     StateControllerTurnInPlaceIndexForChooser = 0.0f;
-    // Match Project_J exactly: the locomotion component owns the raw entry
-    // threshold and semantic 90/180 bucket; StateController only decides when
-    // to evaluate that chosen bucket again.
-    if (bShouldTurnInPlace && AbsDesiredFacingDeltaYaw > 5.0f)
+    // The component still owns the semantic 090/180 bucket. The presentation
+    // layer adds only the visible-clip entry gate, so a 30-degree adjustment
+    // remains idle while an active authored turn is allowed to finish.
+    if (bCanStartTurnInPlace)
     {
         const bool bLeft = DesiredFacingDeltaYaw < 0.0f;
         StateControllerTurnInPlaceIndexForChooser = bLeft
             ? (AbsDesiredFacingDeltaYaw >= 135.0f ? 2.0f : 1.0f)
             : (AbsDesiredFacingDeltaYaw >= 135.0f ? 4.0f : 3.0f);
     }
+
     StateControllerTurnInPlaceSelectionFacingDeltaYaw = DesiredFacingDeltaYaw;
     bStateControllerForceTurnInPlaceReselect = false;
 
@@ -3443,13 +3517,25 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         RequestedTurnIndex > 0 &&
         StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace &&
         RequestedTurnIndex != ActiveTurnIndex;
+    const bool bTurnInPlaceSameDirection =
+        RequestedTurnIndex > 0 && RequestedTurnIndex == ActiveTurnIndex;
+    const bool bTurnInPlaceReplayHasEnoughResidual =
+        CachedLocomotionStateComponent &&
+        FMath::Abs(CachedLocomotionStateComponent->DesiredFacingDeltaYaw) >=
+            StateControllerTurnInPlaceReplayRemainingAngle;
+    // Retain Project_J's two re-evaluation reasons. A semantic bucket change
+    // (most importantly a reverse turn) always wins immediately. The 0.75s
+    // same-direction path remains a timer, but it is allowed to restart an
+    // authored 090 root track only when enough yaw remains to use that track.
     const bool bTurnInPlaceReplayDue =
         RequestedTurnIndex > 0 &&
         StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace &&
         DesiredState == EStateControllerPresentationState::TurnInPlace &&
         CachedLocomotionStateComponent && CachedLocomotionStateComponent->bShouldTurnInPlace &&
-		(bTurnInPlaceBucketChanged ||
-			StateControllerPlaybackHoldElapsed >= StateControllerTurnInPlaceReplayElapsed);
+        (bTurnInPlaceBucketChanged ||
+            (bTurnInPlaceSameDirection &&
+                bTurnInPlaceReplayHasEnoughResidual &&
+                StateControllerPlaybackHoldElapsed >= StateControllerTurnInPlaceReplayElapsed));
     bStateControllerForceTurnInPlaceReselect = bTurnInPlaceReplayDue;
     const bool bStartInputReselectDue =
         bStateControllerInitialStartInputReselect &&

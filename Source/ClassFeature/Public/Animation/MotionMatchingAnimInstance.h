@@ -434,6 +434,9 @@ struct FCachedMotionMatchingNodeInfo
     TObjectPtr<UPoseSearchDatabase> AppliedDatabase = nullptr;
     TWeakObjectPtr<const UObject> LastSelectedAnim;
     float LastSelectedTime = 0.f;
+    /** Lightweight moving-strafe diagnostic history; independent of p.MMDebugging capture history. */
+    TWeakObjectPtr<const UObject> LastStrafeDebugSelectedAnim;
+    float LastStrafeDebugSelectedTime = 0.f;
     float DefaultSearchThrottleTime = 0.f;
     bool bDefaultSearchThrottleCached = false;
     int32 DefaultMaxActiveBlends = 4;
@@ -493,6 +496,7 @@ public:
     TArray<FCachedHistoryCollectorNodeInfo> CachedHistoryNodes;
     bool bNodesCached = false;
     float DebugLogAccumulator = 0.f;
+    float StrafeMotionMatchingDebugAccumulator = 0.f;
 
     void CacheNodes(UAnimInstance* InAnimInstance);
 };
@@ -875,9 +879,23 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "0.1", ClampMax = "2.0", Units = "s"))
     float StateControllerTurnInPlaceReplayElapsed = 0.75f;
 
-    /** Legacy threshold retained for existing ABP defaults; active TIP replay is governed by ShouldTurnInPlace. */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "0.0", ClampMax = "45.0", Units = "deg"))
-    float StateControllerTurnInPlaceReplayRemainingAngle = 12.0f;
+    /**
+     * At a 0.75-second Project_J-style re-evaluation, a same-direction 090
+     * clip restarts only when this much yaw still remains. A smaller residual
+     * would make a full 90-degree root track visibly stop at its clamp.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "15.0", ClampMax = "90.0", Units = "deg"))
+    float StateControllerTurnInPlaceReplayRemainingAngle = 45.0f;
+
+    /**
+     * A fresh stationary turn must have enough camera-to-actor separation to
+     * justify playing an authored 090/180 clip.  The locomotion component's
+     * lower ShouldTIP threshold is deliberately more sensitive; it remains
+     * useful for data/debugging, but it must not start a visible full-turn clip
+     * for a small 30-degree mouse adjustment.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "15.0", ClampMax = "90.0", Units = "deg"))
+    float StateControllerTurnInPlaceEntryAngle = 45.0f;
 
     /**
      * Fallback used when the TIP Chooser row intentionally leaves BlendTime
