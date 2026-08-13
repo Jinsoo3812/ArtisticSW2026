@@ -246,6 +246,8 @@ protected:
     void CompleteLandingFromSelectedAnimation(const TCHAR* CompletionSource);
     void InterruptLandingForMoveInput();
     void InterruptLandingForDirectionChange();
+    /** Sprint Land may hand off directly to moving MM when Sprint intent is released. */
+    void InterruptSprintLandingForSprintRelease();
     void InterruptLandingForStop();
     void RecordStateControllerDebugEvent(const FString& Event);
     bool ShouldAcceptRemoteAnimEvent(int32 EventSequence);

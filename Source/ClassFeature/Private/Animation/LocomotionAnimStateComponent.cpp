@@ -945,6 +945,16 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             {
                 ForceStateTransition(ELocomotionState::InAir);
             }
+            // Sprint Land is authored for the sprint gait captured at impact.
+            // If Sprint is released while movement input continues, retaining
+            // that root-motion clip is visually wrong. Hand straight to the
+            // regular moving Motion Matching query; its Pose History redirect
+            // makes the graph transition seamless instead of exposing a stale
+            // hidden locomotion loop.
+            else if (bLandWasSprinting && !bIsSprinting && bHasMoveInput)
+            {
+                InterruptSprintLandingForSprintRelease();
+            }
             // A Land -> Stop hand-off is permitted only after genuine movement
             // intent survived touchdown.  Project_J uses the same distinction:
             // an input released on/just after touchdown must not first commit a
@@ -1872,6 +1882,57 @@ void ULocomotionAnimStateComponent::InterruptLandingForDirectionChange()
     ForceStateTransition((bHasMoveInput || GroundSpeed > IdleSpeedThreshold)
         ? ELocomotionState::Locomotion
         : ELocomotionState::Idle);
+}
+
+void ULocomotionAnimStateComponent::InterruptSprintLandingForSprintRelease()
+{
+    RecordStateControllerDebugEvent(FString::Printf(
+        TEXT("Sprint Land sprint-release -> MotionMatching Time=%.3f Input=(%.2f,%.2f)"),
+        LandingElapsedTime,
+        CachedMoveInput.X,
+        CachedMoveInput.Y));
+
+    if (IsMotionMatchingCaptureEnabled())
+    {
+        const FString DebugLine = FString::Printf(
+            TEXT("[MMCAP_EVENT] InterruptSprintLandingForSprintRelease LandTime=%.3f Input=(R=%.2f,F=%.2f) Ground=%.1f"),
+            LandingElapsedTime,
+            CachedMoveInput.X,
+            CachedMoveInput.Y,
+            GroundSpeed);
+        UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+        AppendMotionMatchingCaptureLine(DebugLine);
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
+    }
+
+    bIsLanding = false;
+    bLandingRequested = false;
+    bIsInAir = false;
+    bWasInAir = false;
+    bWasAirborneLastFrame = false;
+    AirborneDuration = 0.f;
+    bSuppressFallOffStart = false;
+    bLandingFromFallOff = false;
+    bCanEnterLand = false;
+    bCanEnterGround = true;
+    LastFallSpeed = 0.f;
+
+    bIsLocomotionTransitioning = true;
+    LocomotionTransitionTimer = FMath::Max(LocomotionTransitionTimer, MinTransitionDuration);
+    bGroundStartFinished = true;
+    bPendingGroundStartFinish = false;
+    bUseStartDatabase = false;
+    bUseLoopDatabase = true;
+    bUseSharpTurnDatabase = false;
+
+    // The direct Sprint Land was visible while the MM branch was hidden. Its
+    // first query must use Pose History and not continue the old hidden pose.
+    bMotionMatchingReselectionRequested = true;
+    ForceStateTransition(ELocomotionState::Locomotion);
 }
 
 void ULocomotionAnimStateComponent::InterruptLandingForStop()
