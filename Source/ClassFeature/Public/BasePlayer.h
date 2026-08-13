@@ -635,13 +635,17 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<ULocomotionAnimStateComponent> AnimStateComponent;
 
-	// Cvar-gated GASP-style TIP diagnostics. These are strictly local debug
-	// state; they never participate in gameplay or replication.
-	float LastGaspTurnInPlaceDebugActorYaw = 0.0f;
-	float LastGaspTurnInPlaceDebugControlYaw = 0.0f;
-	int32 LastGaspTurnInPlaceDebugSelectionRevision = INDEX_NONE;
-	bool bLastGaspTurnInPlaceDebugRequested = false;
-	double NextGaspTurnInPlaceDebugSampleTime = 0.0;
+	TWeakObjectPtr<class UAnimSequence> CachedTurnInPlaceSequence;
+	int32 CachedTurnInPlaceSelectionRevision = INDEX_NONE;
+	int32 LastTurnInPlaceDebugSelectionRevision = INDEX_NONE;
+	double NextTurnInPlaceDebugSampleTime = 0.0;
+	/** Debug-only baseline used to report the total capsule yaw consumed by one
+	 * selected TIP clip. Never participates in gameplay or replication. */
+	float TurnInPlaceDebugSelectionStartActorYaw = 0.0f;
+	/** Debug-only visual baselines. They expose the Offset Root Bone / Steering
+	 * contribution separately from the capsule's authored root-motion yaw. */
+	float TurnInPlaceDebugSelectionStartMeshYaw = 0.0f;
+	float TurnInPlaceDebugSelectionStartRootBoneYaw = 0.0f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<USWTrajectoryComponent> TrajectoryComponent;

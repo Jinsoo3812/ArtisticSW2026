@@ -19,6 +19,22 @@
 
 namespace
 {
+    bool IsStopDebugEnabled()
+    {
+        const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("a.StopDebug"));
+        return DebugCVar && DebugCVar->GetInt() > 0;
+    }
+
+    void EmitStopDebug(const FString& Line)
+    {
+        if (IsStopDebugEnabled())
+        {
+            // This translation unit intentionally undefines UE_LOG to prevent
+            // legacy capture spam. Use FMsg directly for the opt-in Stop probe.
+            FMsg::Logf(__FILE__, __LINE__, FName(TEXT("LogTemp")), ELogVerbosity::Display, TEXT("%s"), *Line);
+        }
+    }
+
     bool IsMotionMatchingCaptureEnabled()
     {
         const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MMDebugging"));
@@ -47,6 +63,7 @@ ULocomotionAnimStateComponent::ULocomotionAnimStateComponent()
     bSharpTurnRequested = false;
     bStartRequested = false;
     bStopRequested = false;
+    bGroundMoveEpisodeActive = false;
     bIsInAir = false;
     bIsJumping = false;
     bJumpStartWasMoving = false;
@@ -57,6 +74,8 @@ ULocomotionAnimStateComponent::ULocomotionAnimStateComponent()
     LastFallSpeed = 0.f;
     bIsCombatMode = false;
     bIsTurningInPlace = false;
+    bTurnInPlacePhaseActive = false;
+    TurnInPlacePhaseElapsed = 0.0f;
     bIsLocomotionTransitioning = false;
     LocomotionTransitionTimer = 0.f;
 
@@ -229,12 +248,15 @@ void ULocomotionAnimStateComponent::UpdateAnimationState(float DeltaTime)
     UpdateAirState(DeltaTime);
     UpdateMovementRequestState(DeltaTime);
     UpdateStateTransitions(DeltaTime);
+    UpdateTurnInPlacePhase(DeltaTime);
 
     UpdateMaxWalkSpeed();
     UpdateCombatMovementState();
 
     // ?쒖옄由??뚯쟾(Turn In Place) ?곹깭 癒몄떊 湲곕컲 Desired Rotation ?쒖뼱
-    bIsTurningInPlace = (CurrentState == ELocomotionState::TurnInPlace);
+    // TIP is a derived presentation phase, never the legacy transient
+    // ELocomotionState::TurnInPlace. Do not overwrite the phase result.
+    bIsTurningInPlace = bTurnInPlacePhaseActive;
 
     // ?낅젰 諛⑺뼢怨??ㅼ젣 ?띾룄 諛⑺뼢???ㅼ감瑜?怨꾩궛?섏뿬 諛⑺뼢 ?꾪솚 ?곹깭(Transition) ?먮퀎
     bool bPhysicallyTransitioning = false;
@@ -480,6 +502,7 @@ void ULocomotionAnimStateComponent::UpdateMovementRequestState(float DeltaTime)
         bSharpTurnRequested = false;
         bStartRequested = false;
         bStopRequested = false;
+        bGroundMoveEpisodeActive = false;
         bUseStartDatabase = false;
         bUseLoopDatabase = bHasMoveInput;
         bUseSharpTurnDatabase = false;
@@ -490,7 +513,6 @@ void ULocomotionAnimStateComponent::UpdateMovementRequestState(float DeltaTime)
     MoveInputTurnAngle = 0.f;
     bSharpTurnRequested = false;
     bStartRequested = false;
-    bStopRequested = false;
     bUseStartDatabase = false;
     bUseLoopDatabase = false;
     bUseSharpTurnDatabase = false;
@@ -516,8 +538,18 @@ void ULocomotionAnimStateComponent::UpdateMovementRequestState(float DeltaTime)
         return;
     }
 
+    // Do not derive Stop exclusively from bPrevHasMoveInput.  The movement
+    // input is often cleared before this AnimStateComponent ticks, making the
+    // sampled "previous" value already false on the release frame.  A move
+    // episode is armed by any grounded input and consumed exactly once by the
+    // State Controller when its direct Stop Blend Stack one-shot is selected.
+    if (bHasMoveInput)
+    {
+        bGroundMoveEpisodeActive = true;
+        bStopRequested = false;
+    }
+
     const bool bJustStartedMoving = !bPrevHasMoveInput && bHasMoveInput;
-    const bool bJustStoppedMoving = bPrevHasMoveInput && !bHasMoveInput;
 
     if (bJustStartedMoving)
     {
@@ -525,6 +557,8 @@ void ULocomotionAnimStateComponent::UpdateMovementRequestState(float DeltaTime)
         bGroundStartFinished = !ShouldUseLocalInput();
         bPendingGroundStartFinish = false;
         bStartWasSprinting = bIsSprinting;
+        // A fresh movement episode invalidates an unconsumed release request.
+        bStopRequested = false;
     }
 
     if (!bHasMoveInput)
@@ -544,7 +578,27 @@ void ULocomotionAnimStateComponent::UpdateMovementRequestState(float DeltaTime)
         FMath::Abs(MoveInputTurnAngle) >= PivotAngleThreshold;
 
     bStartRequested = ShouldUseLocalInput() && bJustStartedMoving;
-    bStopRequested = bJustStoppedMoving && GroundSpeed > StopIntentSpeedThreshold;
+    // Keep this request until State Controller has actually committed the
+    // direct Stop chooser.  The episode latch, rather than the raw edge or
+    // instantaneous speed, is the authority for whether a Stop is owed.
+    const bool bNewStopRequest = !bHasMoveInput && bGroundMoveEpisodeActive && !bStopRequested;
+    bStopRequested = bStopRequested || bNewStopRequest;
+    if (bNewStopRequest)
+    {
+        const FString StopEvent = FString::Printf(
+            TEXT("Stop requested InputRelease Ground=%.1f PreviousState=%s"),
+            GroundSpeed,
+            *StaticEnum<ELocomotionState>()->GetNameStringByValue(static_cast<int64>(CurrentState)));
+        RecordStateControllerDebugEvent(StopEvent);
+        EmitStopDebug(FString::Printf(
+            TEXT("[SC_STOP_COMPONENT] Event=Requested Input=%d PrevInput=%d Ground=%.1f State=%s Episode=%d Pending=%d"),
+            bHasMoveInput ? 1 : 0,
+            bPrevHasMoveInput ? 1 : 0,
+            GroundSpeed,
+            *StaticEnum<ELocomotionState>()->GetNameStringByValue(static_cast<int64>(CurrentState)),
+            bGroundMoveEpisodeActive ? 1 : 0,
+            bStopRequested ? 1 : 0));
+    }
     CurrentStartToLoopDelay = 0.f;
     bUseStartDatabase = ShouldUseLocalInput() && bHasMoveInput && !bGroundStartFinished;
     bUseSharpTurnDatabase = ShouldUseLocalInput() && bSharpTurnRequested;
@@ -584,6 +638,64 @@ void ULocomotionAnimStateComponent::UpdateCombatMovementState()
     }
 }
 
+void ULocomotionAnimStateComponent::UpdateTurnInPlacePhase(float DeltaTime)
+{
+    // This deliberately mirrors Project_J's derived locomotion phase rather
+    // than using Artistic's legacy ELocomotionState::TurnInPlace transition.
+    // The latter is a transient state and immediately returns to Idle; a TIP
+    // must instead remain a presentation request over stationary Idle/Stop
+    // while the State Controller restarts the selected clip when needed.
+    const bool bLocallyOwnedRotation = CachedBasePlayer &&
+        (CachedBasePlayer->IsLocallyControlled() || CachedBasePlayer->HasAuthority());
+    const bool bHighPriorityAction = CachedBasePlayer &&
+        (CachedBasePlayer->bIsAttacking || CachedBasePlayer->bIsDodging || CachedBasePlayer->bIsHitReacting);
+    const bool bStationary = !bHasMoveInput && GroundSpeed <= IdleSpeedThreshold;
+    const bool bCanTurnInPlace = bLocallyOwnedRotation && bStationary && !bHighPriorityAction &&
+        !bIsInAir && !bIsLanding && !bLandingRequested;
+    const float FacingDeltaYaw = CachedBasePlayer ? CachedBasePlayer->GetDesiredFacingDeltaYaw() : 0.0f;
+
+    constexpr float EntryAngleDegrees = 30.0f;
+    constexpr float ContinuationAngleDegrees = 5.0f;
+    constexpr float MaximumPhaseSeconds = 1.5f;
+
+    DesiredFacingDeltaYaw = FacingDeltaYaw;
+    const bool bRawEntry = bCanTurnInPlace && FMath::Abs(FacingDeltaYaw) >= EntryAngleDegrees;
+    const bool bContinue = bTurnInPlacePhaseActive && bCanTurnInPlace &&
+        FMath::Abs(FacingDeltaYaw) > ContinuationAngleDegrees &&
+        TurnInPlacePhaseElapsed < MaximumPhaseSeconds;
+
+    if (!bTurnInPlacePhaseActive && bRawEntry)
+    {
+        TurnInPlacePhaseElapsed = 0.0f;
+    }
+    else if (bTurnInPlacePhaseActive && (bRawEntry || bContinue))
+    {
+        TurnInPlacePhaseElapsed += FMath::Max(DeltaTime, 0.0f);
+    }
+    else
+    {
+        TurnInPlacePhaseElapsed = 0.0f;
+    }
+
+    bTurnInPlacePhaseActive = bRawEntry || bContinue;
+    bShouldTurnInPlace = bTurnInPlacePhaseActive;
+    bIsTurningInPlace = bTurnInPlacePhaseActive;
+    TurnInPlaceRootYawDelta = 0.0f;
+
+    // TIP owns a stationary release episode.  Do not defer its old Stop
+    // request until after the turn, otherwise Stop -> TIP -> Stop returns.
+    if (bTurnInPlacePhaseActive)
+    {
+        if (bStopRequested)
+        {
+            EmitStopDebug(TEXT("[SC_STOP_COMPONENT] Event=CancelledByTIP"));
+        }
+        bStopRequested = false;
+        bGroundMoveEpisodeActive = false;
+    }
+
+}
+
 void ULocomotionAnimStateComponent::UpdateCharacterRotation(float DeltaTime)
 {
     UCharacterMovementComponent* MovementComponent = CachedBasePlayer ? CachedBasePlayer->GetCharacterMovement() : nullptr;
@@ -592,22 +704,11 @@ void ULocomotionAnimStateComponent::UpdateCharacterRotation(float DeltaTime)
     // Always keep camera-oriented rotation settings (showing back)
     MovementComponent->bOrientRotationToMovement = false;
 
-    if (CachedBasePlayer && CachedBasePlayer->GetLocalRole() == ROLE_SimulatedProxy)
-    {
-        MovementComponent->bUseControllerDesiredRotation = false;
-    }
-    else
-    {
-        // Keep idle/stop poses from rotating with camera-only look input.
-        // Keep the actor's facing stable while a landing asset consumes its
-        // captured movement direction. Rotating to a newly moved camera here
-        // changes the pose-search reference frame half way through the asset.
-        MovementComponent->bUseControllerDesiredRotation =
-            CurrentState != ELocomotionState::Idle &&
-            CurrentState != ELocomotionState::Stop &&
-            CurrentState != ELocomotionState::TurnInPlace &&
-            CurrentState != ELocomotionState::Landing;
-    }
+    // Project_J rotation ownership: controller yaw is applied by the
+    // character only while moving; stationary TIP applies the selected root
+    // track.  CMC ControllerDesiredRotation must stay disabled in both cases
+    // so it cannot overwrite that direct root-yaw delta a frame later.
+    MovementComponent->bUseControllerDesiredRotation = false;
 
     // Interpolate mesh relative rotation offset back to default
     if (FMath::Abs(MeshYawOffset) > 0.01f)
@@ -674,6 +775,7 @@ void ULocomotionAnimStateComponent::ClearMovementRequests()
 {
     bStartRequested = false;
     bStopRequested = false;
+    bGroundMoveEpisodeActive = false;
     bUseStartDatabase = false;
     bUseLoopDatabase = false;
     bUseSharpTurnDatabase = false;
@@ -1103,6 +1205,18 @@ bool ULocomotionAnimStateComponent::ConsumeMotionMatchingReselectionRequest()
     return bRequested;
 }
 
+bool ULocomotionAnimStateComponent::ConsumeStopPresentationRequest()
+{
+    const bool bRequested = bStopRequested;
+    bStopRequested = false;
+    bGroundMoveEpisodeActive = false;
+    if (bRequested)
+    {
+        EmitStopDebug(TEXT("[SC_STOP_COMPONENT] Event=ConsumedByStateController"));
+    }
+    return bRequested;
+}
+
 void ULocomotionAnimStateComponent::RefreshOneShotFallbackTimer(float SelectedAnimationDuration)
 {
     UWorld* World = GetWorld();
@@ -1142,32 +1256,20 @@ void ULocomotionAnimStateComponent::RefreshOneShotFallbackTimer(float SelectedAn
 
 void ULocomotionAnimStateComponent::NotifyStartFinished()
 {
-    if (CurrentState == ELocomotionState::Start)
-    {
-        GetWorld()->GetTimerManager().ClearTimer(StartFallbackTimerHandle);
-        if (bHasMoveInput)
-        {
-            ForceStateTransition(ELocomotionState::Locomotion);
-        }
-        else
-        {
-            ForceStateTransition(ELocomotionState::Stop);
-        }
-    }
+    // Intentionally empty. Existing animation notifies remain compatible but
+    // cannot mutate locomotion/presentation state. Native timers own fallback
+    // completion so authored assets no longer affect control flow.
 }
 
 void ULocomotionAnimStateComponent::NotifyStopFinished()
 {
-    if (CurrentState == ELocomotionState::Stop)
-    {
-        GetWorld()->GetTimerManager().ClearTimer(StopFallbackTimerHandle);
-        ForceStateTransition(ELocomotionState::Idle);
-    }
+    // Intentionally empty. See NotifyStartFinished.
 }
 
 void ULocomotionAnimStateComponent::NotifyLandingFinished()
 {
-    CompleteLandingFromSelectedAnimation(TEXT("External"));
+    // Intentionally empty. Landing completion is driven by native request
+    // lifetime/timer policy; anim notifies are informational only.
 }
 
 void ULocomotionAnimStateComponent::CompleteLandingFromSelectedAnimation(const TCHAR* CompletionSource)
@@ -1190,12 +1292,20 @@ void ULocomotionAnimStateComponent::CompleteLandingFromSelectedAnimation(const T
 
 void ULocomotionAnimStateComponent::OnStartFallbackTimeout()
 {
-    NotifyStartFinished();
+    if (CurrentState == ELocomotionState::Start)
+    {
+        ForceStateTransition(bHasMoveInput
+            ? ELocomotionState::Locomotion
+            : ELocomotionState::Stop);
+    }
 }
 
 void ULocomotionAnimStateComponent::OnStopFallbackTimeout()
 {
-    NotifyStopFinished();
+    if (CurrentState == ELocomotionState::Stop)
+    {
+        ForceStateTransition(ELocomotionState::Idle);
+    }
 }
 
 void ULocomotionAnimStateComponent::OnLandingFallbackTimeout()

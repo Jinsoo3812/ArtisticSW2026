@@ -146,7 +146,9 @@ public:
     // Updates the locomotion state machine
     void UpdateAnimationState(float DeltaTime);
 
-    // AnimNotify callback functions
+    // Legacy AnimNotify callback functions. These are intentionally inert:
+    // State Controller one-shots are completed by native request/clock policy
+    // and fallback timers, never by animation asset notifies.
     UFUNCTION(BlueprintCallable, Category = "Locomotion|Animation")
     void NotifyStartFinished();
 
@@ -155,6 +157,10 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Locomotion|Animation")
     void NotifyLandingFinished();
+
+    /** Consumes a pending input-release Stop after State Controller has
+     * committed the corresponding direct Blend Stack one-shot. */
+    bool ConsumeStopPresentationRequest();
 
     // Setters called from input system
     void SetMoveInput(float Right, float Forward);
@@ -225,6 +231,9 @@ protected:
     void UpdateAirState(float DeltaTime);
     void UpdateMovementRequestState(float DeltaTime);
     void UpdateCombatMovementState();
+    /** Project_J-style derived stationary Strafe TIP phase. This component is
+     * the sole owner of the request consumed by State Controller/Chooser. */
+    void UpdateTurnInPlacePhase(float DeltaTime);
     void UpdateCharacterRotation(float DeltaTime);
     void UpdateMaxWalkSpeed() const;
     void ClearMovementRequests();
@@ -287,6 +296,15 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Transitions")
     bool bStopRequested;
 
+    /**
+     * Latches a locally controlled grounded movement episode until its Stop
+     * presentation has been committed.  Input is written by the movement
+     * layer before this component updates, so bPrevHasMoveInput alone can
+     * miss the release edge on a frame where input is cleared early.
+     */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Transitions")
+    bool bGroundMoveEpisodeActive = false;
+
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Air")
     bool bIsInAir;
 
@@ -321,6 +339,14 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     bool bShouldTurnInPlace = false;
+
+    /** Project_J-style derived TIP phase. It outlives the raw entry threshold
+     * so an authored turn root track can finish and reselect cleanly. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    bool bTurnInPlacePhaseActive = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float TurnInPlacePhaseElapsed = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     float DesiredFacingDeltaYaw = 0.0f;

@@ -37,6 +37,20 @@ static TAutoConsoleVariable<int32> CVarAnimStateControllerDebug(
     ECVF_Cheat
 );
 
+static TAutoConsoleVariable<int32> CVarStopDebug(
+    TEXT("a.StopDebug"),
+    0,
+    TEXT("Ground Stop presentation diagnostics. 0: Disabled, 1: request/selection/consume events."),
+    ECVF_Cheat
+);
+
+static TAutoConsoleVariable<int32> CVarStartDebug(
+    TEXT("a.StartDebug"),
+    0,
+    TEXT("Ground Start presentation diagnostics. 0: Disabled, 1: Start selection and bypass events."),
+    ECVF_Cheat
+);
+
 static TAutoConsoleVariable<int32> CVarMotionMatchingDebugLogging(
     TEXT("p.MMDebugging"),
     0,
@@ -138,6 +152,28 @@ namespace
         return FMath::Clamp(Time, 0.f, FMath::Max(0.f, PlayLength - KINDA_SMALL_NUMBER));
     }
 
+    bool CollapseBlendStackToDominantPlayer(FAnimNode_MotionMatching& MotionMatchingNode);
+
+    float NormalizeAnimationAssetTime(const UAnimationAsset* AnimationAsset, float Time, bool bLooping)
+    {
+        if (!bLooping || !AnimationAsset)
+        {
+            return ClampAnimationAssetTime(AnimationAsset, Time);
+        }
+
+        const float PlayLength = AnimationAsset->GetPlayLength();
+        if (PlayLength <= UE_SMALL_NUMBER)
+        {
+            return 0.f;
+        }
+
+        // FAnimExtractContext expects the incoming position to be within one
+        // asset cycle.  Blend Stack's accumulated clock can survive a graph
+        // hand-off, so a Fall loop may otherwise enter root-motion extraction
+        // with e.g. 9.07 seconds on a ~3.33 second sequence.
+        return FMath::Fmod(FMath::Max(0.f, Time), PlayLength);
+    }
+
     bool RestoreBlendStackTopPlayer(
         const FAnimationUpdateContext& Context,
         FAnimNode_MotionMatching& MotionMatchingNode,
@@ -154,7 +190,7 @@ namespace
         TopPlayer.Initialize(
             InitContext,
             AnimationAsset,
-            ClampAnimationAssetTime(AnimationAsset, AccumulatedTime),
+            NormalizeAnimationAssetTime(AnimationAsset, AccumulatedTime, TopPlayer.IsLooping()),
             TopPlayer.IsLooping(),
             TopPlayer.GetMirror(),
             nullptr,
@@ -170,6 +206,48 @@ namespace
             EAnimSyncMethod::DoNotSync,
             false);
         return true;
+    }
+
+    bool StabilizeAirLoopBlendStackBeforeUpdate(
+        const FAnimationUpdateContext& Context,
+        FAnimNode_MotionMatching& MotionMatchingNode,
+        FCachedMotionMatchingNodeInfo& NodeInfo)
+    {
+        NodeInfo.bPreUpdateNormalizedLoopTime = false;
+        NodeInfo.bPreUpdateCollapsedLoopStack = false;
+
+        if (MotionMatchingNode.AnimPlayers.IsEmpty())
+        {
+            return false;
+        }
+
+        // Only one phase of the sustained Fall loop is meaningful.  Retaining
+        // an old lower-weight phase lets it later become the evaluated player
+        // during a relevance/weight change, which is exactly how a stale
+        // accumulated time can reach root-motion extraction.
+        NodeInfo.bPreUpdateCollapsedLoopStack = CollapseBlendStackToDominantPlayer(MotionMatchingNode);
+
+        FBlendStackAnimPlayer& TopPlayer = MotionMatchingNode.AnimPlayers[0];
+        UAnimationAsset* TopAsset = TopPlayer.GetAnimationAsset();
+        if (!TopAsset || !TopPlayer.IsLooping())
+        {
+            return NodeInfo.bPreUpdateCollapsedLoopStack;
+        }
+
+        const float PlayLength = TopAsset->GetPlayLength();
+        const float TopTime = TopPlayer.GetAccumulatedTime();
+        if (PlayLength <= UE_SMALL_NUMBER || TopTime < PlayLength - KINDA_SMALL_NUMBER)
+        {
+            return NodeInfo.bPreUpdateCollapsedLoopStack;
+        }
+
+        const float NormalizedTime = NormalizeAnimationAssetTime(TopAsset, TopTime, true);
+        NodeInfo.bPreUpdateNormalizedLoopTime = RestoreBlendStackTopPlayer(
+            Context,
+            MotionMatchingNode,
+            TopAsset,
+            NormalizedTime);
+        return NodeInfo.bPreUpdateCollapsedLoopStack || NodeInfo.bPreUpdateNormalizedLoopTime;
     }
 
     bool RemoveLowerTransitionPlayersForState(FAnimNode_MotionMatching& MotionMatchingNode, ELocomotionState State)
@@ -1019,6 +1097,15 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     !ThreadSafeData.AirData.bIsFallOffStart &&
                     !ThreadSafeData.LandingData.bIsLanding &&
                     !ThreadSafeData.LandingData.bLandingRequested;
+
+                // Normalize before FAnimNode_MotionMatching copies the top
+                // Blend Stack time into SearchResult and extracts root motion.
+                // Doing it after the graph update is one frame too late for a
+                // stale looping Fall player.
+                if (bIsAirLoopPhase)
+                {
+                    StabilizeAirLoopBlendStackBeforeUpdate(InContext, *MMNode, Info);
+                }
                 const bool bIsRemoteIdleHold =
                     bIsRemoteSimProxy &&
                     CurrentMotionState == ELocomotionState::Idle &&
@@ -1131,7 +1218,8 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                             // do not inherit the one-shot search suppression.
                             SearchThrottleTime = Info.DefaultSearchThrottleTime;
                         }
-                        else if (bIsJumpStartPhase || (StateComp && (StateComp->CurrentState == ELocomotionState::Start || StateComp->CurrentState == ELocomotionState::Stop || StateComp->CurrentState == ELocomotionState::Landing)))
+                        else if (bIsJumpStartPhase || (StateComp &&
+                            (StateComp->bStartRequested || StateComp->bStopRequested || StateComp->bIsLanding)))
                         {
                             // Start 및 Stop 상태에서는 최초 진입 프레임(bAppliedDatabaseChanged) 및 에셋 교체 직후 프레임(bSearchResultDatabaseChanged)에만 검색을 허용하고,
                             // 그 외의 프레임에서는 추가 평가(재검색)를 차단하여 재생 중인 에셋이 중간에 끊기거나 오매칭되는 현상을 방지합니다.
@@ -2204,8 +2292,10 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     ThreadSafeData.InputData.MoveInput = CachedLocomotionStateComponent->CachedMoveInput;
 
     // Ground Data
-    ThreadSafeData.GroundData.bStartRequested = (CachedLocomotionStateComponent->CurrentState == ELocomotionState::Start);
-    ThreadSafeData.GroundData.bStopRequested = (CachedLocomotionStateComponent->CurrentState == ELocomotionState::Stop);
+    // Use transient input-derived requests, not persistent legacy states.
+    // Otherwise a completed Stop can be resurrected after a stationary TIP.
+    ThreadSafeData.GroundData.bStartRequested = CachedLocomotionStateComponent->bStartRequested;
+    ThreadSafeData.GroundData.bStopRequested = CachedLocomotionStateComponent->bStopRequested;
     ThreadSafeData.GroundData.GroundMotionMode = static_cast<uint8>(CachedLocomotionStateComponent->CurrentState);
 
     // Air Data
@@ -2217,7 +2307,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     ThreadSafeData.AirData.JumpStartMoveDirection = CachedLocomotionStateComponent->JumpStartMoveDirection;
 
     // Landing Data
-    ThreadSafeData.LandingData.bIsLanding = (CachedLocomotionStateComponent->CurrentState == ELocomotionState::Landing);
+    ThreadSafeData.LandingData.bIsLanding = CachedLocomotionStateComponent->bIsLanding;
     ThreadSafeData.LandingData.bUseHeavyLand = CachedLocomotionStateComponent->bUseHeavyLand;
     ThreadSafeData.LandingData.LastFallSpeed = CachedLocomotionStateComponent->LastFallSpeed;
     ThreadSafeData.LandingData.GroundSpeed = CachedLocomotionStateComponent->GroundSpeed;
@@ -2845,6 +2935,14 @@ FFootPlacementInterpolationSettings UMotionMatchingAnimInstance::Get_FootPlaceme
     return ThreadSafeData.GroundData.bStopRequested ? FootPlacementInterpolationSettingsStops : FootPlacementInterpolationSettingsDefault;
 }
 
+float UMotionMatchingAnimInstance::GetThreadSafeFootPlacementAlpha() const
+{
+    const FAnimThreadSafeData& Data = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    return Data.StateController.PresentationState == EStateControllerPresentationState::TurnInPlace
+        ? 0.0f
+        : 1.0f;
+}
+
 bool UMotionMatchingAnimInstance::ShouldEvaluateMotionMatchingThisFrame(float DeltaSeconds)
 {
     if (!CachedBasePlayer || IsDedicatedServerAnimationContext())
@@ -2955,10 +3053,19 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     const float GroundSpeed = CachedLocomotionStateComponent->GroundSpeed;
     const bool bInAir = CachedLocomotionStateComponent->bIsInAir;
     const bool bLanding = CachedLocomotionStateComponent->bIsLanding && CachedLocomotionStateComponent->bLandingRequested;
-    // TIP is retired. Keep the local name only to avoid perturbing the rest of
-    // this presentation-state evaluation while old reflected properties exist.
-    const bool bShouldTurnInPlace = false;
+    // Artistic is permanently Strafe.  Presentation is intentionally derived
+    // from current input/kinematics and transient requests, not from the
+    // legacy ELocomotionState.  The latter is retained for movement/component
+    // compatibility, but it must never be allowed to replay Start/Stop after
+    // a newer presentation phase (especially stationary TIP) has finished.
+    const bool bShouldTurnInPlace = CachedLocomotionStateComponent->bShouldTurnInPlace;
+    const bool bStartRequested = CachedLocomotionStateComponent->bStartRequested;
+    const bool bStopRequested = CachedLocomotionStateComponent->bStopRequested;
+    const bool bIsPivoting = CachedLocomotionStateComponent->bSharpTurnRequested;
+    const bool bIsMoving = bHasMoveInput || GroundSpeed > 10.0f;
     const bool bInPlaybackHold = (StateControllerPlaybackHoldElapsed < StateControllerPlaybackHoldDuration);
+    const EStateControllerPresentationState HoldStateBeforeEvaluation = StateControllerPlaybackHoldState;
+    const int32 SelectionRevisionBeforeEvaluation = StateControllerSelectionRevision;
     // StartLanding deliberately keeps bIsInAir true until the landing pose is
     // released.  Landing must therefore take precedence over the air flag.
     if (bLanding)
@@ -2984,28 +3091,19 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
             ? EStateControllerPresentationState::TransitionToJump
             : EStateControllerPresentationState::LocomotionLoop;
     }
-    // The locomotion component's transitional phase is authoritative for a
-    // direct one-shot.  In particular, Stop must pre-empt Start immediately;
-    // deriving it only from decelerating velocity can leave Start held for one
-    // or more updates and makes diagonal Stop selection appear intermittent.
-    else if (CachedLocomotionStateComponent->CurrentState == ELocomotionState::Stop)
+    else if (bHasMoveInput)
     {
-        DesiredState = EStateControllerPresentationState::TransitionToStop;
-    }
-    else if (CachedLocomotionStateComponent->CurrentState == ELocomotionState::Start)
-    {
-        DesiredState = bHasMoveInput
-            ? EStateControllerPresentationState::TransitionToStart
-            : EStateControllerPresentationState::TransitionToStop;
-    }
-    else if (bHasMoveInput || GroundSpeed > 10.0f)
-    {
-        const bool bIsPivoting = CachedLocomotionStateComponent->bSharpTurnRequested;
+        // A fresh input during an authored Stop is a new movement episode, not
+        // a request to reveal the Motion Matching fallback.  Project_J enters
+        // Start again first; only a subsequent clear change of direction or
+        // camera-facing intent may replace that Start with the locomotion PSD.
         if (bIsPivoting && (StateControllerPlaybackHoldState == EStateControllerPresentationState::LocomotionLoop || StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart))
         {
             DesiredState = EStateControllerPresentationState::TransitionToPivot;
         }
-        else if (StateControllerPlaybackHoldState == EStateControllerPresentationState::IdleLoop ||
+        else if (bStartRequested ||
+            StateControllerPlaybackHoldState == EStateControllerPresentationState::IdleLoop ||
+            StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop ||
             StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace ||
             StateControllerPlaybackHoldState == EStateControllerPresentationState::None)
         {
@@ -3022,13 +3120,21 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     }
     else
     {
-        if (bInPlaybackHold && StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop)
+        // Input release is a one-update presentation event.  A committed Stop
+        // owns its complete direct-clip hold while input remains absent.  This
+        // also prevents a stationary camera offset from preempting Stop with
+        // TIP midway through deceleration.
+        const bool bStopHoldActive = bInPlaybackHold &&
+            StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop;
+        const bool bStopFallbackFromDeceleration = GroundSpeed > 10.0f;
+        if (bStopRequested || bStopHoldActive || bStopFallbackFromDeceleration ||
+            (bInPlaybackHold && StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart))
         {
             DesiredState = EStateControllerPresentationState::TransitionToStop;
         }
-        else if (GroundSpeed > 100.0f || (bInPlaybackHold && StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart))
+        else if (bShouldTurnInPlace)
         {
-            DesiredState = EStateControllerPresentationState::TransitionToStop;
+            DesiredState = EStateControllerPresentationState::TurnInPlace;
         }
         else
         {
@@ -3067,6 +3173,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     // Start entry and hand straight back to the locomotion PSD on a change.
     bStateControllerStartInputChanged = false;
     bStateControllerStartControlYawChanged = false;
+    bStateControllerInitialStartInputReselect = false;
     StateControllerStartInputDeltaDegrees = 0.0f;
     StateControllerStartControlYawDeltaDegrees = 0.0f;
     if (CachedLocomotionStateComponent &&
@@ -3098,18 +3205,27 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
         if ((bStateControllerStartInputChanged || bStateControllerStartControlYawChanged) &&
             DesiredState == EStateControllerPresentationState::TransitionToStart)
         {
-            const bool bContinueMoving = bHasMoveInput || GroundSpeed > 10.0f;
-            DesiredState = bContinueMoving
-                ? EStateControllerPresentationState::LocomotionLoop
-                : EStateControllerPresentationState::TransitionToStop;
-            StateControllerRequestedPresentationState = DesiredState;
-
-            // A presentation-only exit is insufficient: the component would
-            // still report Start on the next tick and re-enter its Chooser.
-            // Commit the same semantic transition now, matching Project_J's
-            // responsive Start exit policy.
-            CachedLocomotionStateComponent->ForceStateTransition(
-                bContinueMoving ? ELocomotionState::Locomotion : ELocomotionState::Stop);
+            // Keyboard diagonals are assembled over one or two input updates:
+            // e.g. Left Start can be selected before Forward reaches the
+            // component, then ForwardLeft arrives on the next frame.  Treat
+            // only that tiny, input-only window as a Start reselect. Camera
+            // yaw changes always remain an intentional MM redirect.
+            const bool bAssemblingInitialDiagonal =
+                bStateControllerStartInputChanged &&
+                !bStateControllerStartControlYawChanged &&
+                StateControllerPlaybackHoldElapsed < StateControllerStartInputAssemblyWindow;
+            if (bAssemblingInitialDiagonal)
+            {
+                bStateControllerInitialStartInputReselect = true;
+            }
+            else
+            {
+                const bool bContinueMoving = bIsMoving;
+                DesiredState = bContinueMoving
+                    ? EStateControllerPresentationState::LocomotionLoop
+                    : EStateControllerPresentationState::TransitionToStop;
+                StateControllerRequestedPresentationState = DesiredState;
+            }
         }
     }
 
@@ -3137,9 +3253,124 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
         bHasStateControllerLandGaitLock = false;
     }
 
+    const float DesiredFacingDeltaYaw = CachedLocomotionStateComponent->DesiredFacingDeltaYaw;
+    const float AbsDesiredFacingDeltaYaw = FMath::Abs(DesiredFacingDeltaYaw);
+    StateControllerTurnInPlaceIndexForChooser = 0.0f;
+    // A 090 root track is authored at roughly 45 degrees of yaw.  During the
+    // Project_J-style continuation phase, keep selecting its bucket while the
+    // remaining yaw is between the raw 30-degree entry threshold and 5 degrees.
+    if (bShouldTurnInPlace && AbsDesiredFacingDeltaYaw > 5.0f)
+    {
+        const bool bLeft = DesiredFacingDeltaYaw < 0.0f;
+        StateControllerTurnInPlaceIndexForChooser = bLeft
+            ? (AbsDesiredFacingDeltaYaw >= 135.0f ? 2.0f : 1.0f)
+            : (AbsDesiredFacingDeltaYaw >= 135.0f ? 4.0f : 3.0f);
+    }
+    StateControllerTurnInPlaceSelectionFacingDeltaYaw = DesiredFacingDeltaYaw;
     bStateControllerForceTurnInPlaceReselect = false;
 
     EvaluateStateControllerPlaybackHold(DesiredState);
+
+    if (CVarStartDebug.GetValueOnGameThread() > 0 && bHasMoveInput)
+    {
+        const bool bEnteredStart =
+            DesiredState == EStateControllerPresentationState::TransitionToStart &&
+            (HoldStateBeforeEvaluation != EStateControllerPresentationState::TransitionToStart ||
+             StateControllerSelectionRevision != SelectionRevisionBeforeEvaluation);
+        const bool bBypassedExpectedStart =
+            (HoldStateBeforeEvaluation == EStateControllerPresentationState::IdleLoop ||
+             HoldStateBeforeEvaluation == EStateControllerPresentationState::TransitionToStop ||
+             HoldStateBeforeEvaluation == EStateControllerPresentationState::TurnInPlace ||
+             HoldStateBeforeEvaluation == EStateControllerPresentationState::None) &&
+            DesiredState != EStateControllerPresentationState::TransitionToStart;
+        const bool bStartInterrupted =
+            HoldStateBeforeEvaluation == EStateControllerPresentationState::TransitionToStart &&
+            DesiredState == EStateControllerPresentationState::LocomotionLoop &&
+            (bStateControllerStartInputChanged || bStateControllerStartControlYawChanged);
+
+        if (bEnteredStart || bBypassedExpectedStart || bStartInterrupted)
+        {
+            const FVector2D Input = CachedLocomotionStateComponent->CachedMoveInput;
+            const float InputYaw = Input.IsNearlyZero()
+                ? 0.0f
+                : FMath::RadiansToDegrees(FMath::Atan2(Input.X, Input.Y));
+            const EMovementDirection InputDirection = ResolveStateControllerDirectionFromInput(Input);
+            UE_LOG(LogTemp, Display,
+                TEXT("[SC_START] Event=%s Input=(R=%.2f,F=%.2f) Yaw=%.1f Dir=%s StartReq=%d HoldBefore=%d Desired=%d HoldAfter=%d Rev=%d Asset=%s Chooser=%s InputRedirect=%d(%.1f) YawRedirect=%d(%.1f)"),
+                bStateControllerInitialStartInputReselect ? TEXT("ReselectedInitialDiagonal") :
+                    (bEnteredStart ? TEXT("Selected") : (bStartInterrupted ? TEXT("InterruptedToMM") : TEXT("Bypassed"))),
+                Input.X,
+                Input.Y,
+                InputYaw,
+                *StaticEnum<EMovementDirection>()->GetNameStringByValue(static_cast<int64>(InputDirection)),
+                bStartRequested ? 1 : 0,
+                static_cast<int32>(HoldStateBeforeEvaluation),
+                static_cast<int32>(DesiredState),
+                static_cast<int32>(StateControllerPlaybackHoldState),
+                StateControllerSelectionRevision,
+                *GetNameSafe(StateControllerSelectedAnimation),
+                *StateControllerLastChooserPath,
+                bStateControllerStartInputChanged ? 1 : 0,
+                StateControllerStartInputDeltaDegrees,
+                bStateControllerStartControlYawChanged ? 1 : 0,
+                StateControllerStartControlYawDeltaDegrees);
+        }
+    }
+
+    if (CVarStopDebug.GetValueOnGameThread() > 0 && bStopRequested)
+    {
+        UE_LOG(LogTemp, Display,
+            TEXT("[SC_STOP_CONTROLLER] Request=%d Desired=%d Hold=%d Input=%d Speed=%.1f TIP=%d Rev=%d Asset=%s Clock=%.3f/%.3f"),
+            bStopRequested ? 1 : 0,
+            static_cast<int32>(DesiredState),
+            static_cast<int32>(StateControllerPlaybackHoldState),
+            bHasMoveInput ? 1 : 0,
+            GroundSpeed,
+            bShouldTurnInPlace ? 1 : 0,
+            StateControllerSelectionRevision,
+            *GetNameSafe(StateControllerSelectedAnimation),
+            StateControllerPlaybackHoldElapsed,
+            StateControllerPlaybackHoldDuration);
+    }
+
+    // Level 2 is deliberately a polling probe. It must print even if a Stop
+    // request is never generated, so we can distinguish bad input sampling
+    // from a State Controller/Chooser failure without relying on another
+    // event-driven debug channel.
+    if (CVarStopDebug.GetValueOnGameThread() >= 2)
+    {
+        const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+        if (Now >= NextStopDebugSampleTime)
+        {
+            UE_LOG(LogTemp, Display,
+                TEXT("[SC_STOP_SAMPLE] Input=%d PrevInput=%d Ground=%.1f Legacy=%d StartReq=%d StopReq=%d TIP=%d Air=%d Land=%d Desired=%d Hold=%d Rev=%d Asset=%s Clock=%.3f/%.3f"),
+                bHasMoveInput ? 1 : 0,
+                CachedLocomotionStateComponent->bPrevHasMoveInput ? 1 : 0,
+                GroundSpeed,
+                static_cast<int32>(CachedLocomotionStateComponent->CurrentState),
+                bStartRequested ? 1 : 0,
+                bStopRequested ? 1 : 0,
+                bShouldTurnInPlace ? 1 : 0,
+                bInAir ? 1 : 0,
+                bLanding ? 1 : 0,
+                static_cast<int32>(DesiredState),
+                static_cast<int32>(StateControllerPlaybackHoldState),
+                StateControllerSelectionRevision,
+                *GetNameSafe(StateControllerSelectedAnimation),
+                StateControllerPlaybackHoldElapsed,
+                StateControllerPlaybackHoldDuration);
+            NextStopDebugSampleTime = Now + 0.25;
+        }
+    }
+
+    // Stop is a persistent request until this point.  Consume only after the
+    // State Controller has installed its direct one-shot hold, never merely
+    // because legacy CurrentState happened to change.
+    if (DesiredState == EStateControllerPresentationState::TransitionToStop &&
+        StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop)
+    {
+        CachedLocomotionStateComponent->ConsumeStopPresentationRequest();
+    }
 }
 
 void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateControllerPresentationState DesiredState)
@@ -3152,6 +3383,28 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
     // AnimGraph OnUpdate function calling BlendStack::ForceBlendNextUpdate,
     // not by a per-frame Chooser query.
     bStateControllerForceBlendStackOnNextUpdate = false;
+
+    // Project_J policy: a change to another semantic turn bucket preempts the
+    // active clip immediately (especially important for reverse turns).  The
+    // same bucket may replay after a short delay, allowing a long camera turn
+    // to continue without waiting for the authored clip to finish.
+    const int32 RequestedTurnIndex = FMath::RoundToInt(StateControllerTurnInPlaceIndexForChooser);
+    const int32 ActiveTurnIndex = StateControllerActiveTurnInPlaceIndex;
+    const bool bTurnInPlaceBucketChanged =
+        RequestedTurnIndex > 0 &&
+        StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace &&
+        RequestedTurnIndex != ActiveTurnIndex;
+    const bool bTurnInPlaceReplayDue =
+        RequestedTurnIndex > 0 &&
+        StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace &&
+        DesiredState == EStateControllerPresentationState::TurnInPlace &&
+        CachedLocomotionStateComponent && CachedLocomotionStateComponent->bShouldTurnInPlace &&
+        (bTurnInPlaceBucketChanged || StateControllerPlaybackHoldElapsed >= StateControllerTurnInPlaceReplayElapsed);
+    bStateControllerForceTurnInPlaceReselect = bTurnInPlaceReplayDue;
+    const bool bStartInputReselectDue =
+        bStateControllerInitialStartInputReselect &&
+        StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart &&
+        DesiredState == EStateControllerPresentationState::TransitionToStart;
 
     bool bInterruptLandForMotionMatching = false;
     if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToLand &&
@@ -3167,7 +3420,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         }
     }
 
-    if (bStateChanged || bInterruptLandForMotionMatching)
+    if (bStateChanged || bInterruptLandForMotionMatching || bTurnInPlaceReplayDue || bStartInputReselectDue)
     {
         StateControllerPlaybackHoldState = DesiredState;
         StateControllerPlaybackHoldElapsed = 0.0f;
@@ -3234,14 +3487,15 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         // evaluate with the previous state's conditions.
         StateControllerSpeed2D = CachedLocomotionStateComponent ? CachedLocomotionStateComponent->GroundSpeed : 0.0f;
         StateControllerDesiredFacingDeltaYaw = CachedLocomotionStateComponent ? CachedLocomotionStateComponent->DesiredFacingDeltaYaw : 0.0f;
-        StateControllerTurnInPlaceIndexForChooser = 0.0f;
-        StateControllerTurnInPlaceSelectionFacingDeltaYaw = 0.0f;
+        // These values were refreshed before entering this function.  Do not
+        // clear them here: the nested TIP Chooser reads them on this first
+        // selection frame.
         bStateControllerIsHeavyLand = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bUseHeavyLand;
         bStateControllerIsMovingLand = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bLandWasMoving;
         bStateControllerIsInAir = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsInAir;
         bStateControllerIsJumping = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsJumping;
         bStateControllerIsFallOff = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsFallOffStart;
-        bStateControllerShouldTurnInPlace = false;
+        bStateControllerShouldTurnInPlace = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bShouldTurnInPlace;
 
         // The Land Chooser calls BlueprintThreadSafe getters.  NativeUpdate's
         // normal proxy pack happens later, so without this pre-publish the
@@ -3325,7 +3579,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
                 TargetChooser = PivotChooserTable;
                 break;
             case EStateControllerPresentationState::TurnInPlace:
-                TargetChooser = nullptr;
+                TargetChooser = TurnInPlaceChooserTable;
                 break;
             default:
                 TargetChooser = nullptr;
@@ -3422,7 +3676,22 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
             {
                 CachedLocomotionStateComponent->RefreshOneShotFallbackTimer(StateControllerPlaybackHoldDuration);
             }
+            if (DesiredState == EStateControllerPresentationState::TurnInPlace)
+            {
+                StateControllerActiveTurnInPlaceIndex = FMath::RoundToInt(StateControllerTurnInPlaceIndexForChooser);
+            }
+            else
+            {
+                StateControllerActiveTurnInPlaceIndex = 0;
+            }
             ++StateControllerSelectionRevision;
+            // Project_J pulses Force Blend for every direct TIP selection, not
+            // only when the selected asset identity is unchanged.  The Blend
+            // Stack otherwise may retain its previous player/time and expose a
+            // Motion Matching Idle frame between two semantic TIP entries.
+            bStateControllerForceBlendStackOnNextUpdate =
+                DesiredState == EStateControllerPresentationState::TurnInPlace &&
+                StateControllerSelectedAnimation != nullptr;
 
         }
         else
@@ -3434,6 +3703,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
             StateControllerPlaybackHoldDuration = 0.0f;
             StateControllerSelectedAnimationStartTime = 0.0f;
             bStateControllerSelectedAnimationShouldLoop = false;
+            StateControllerActiveTurnInPlaceIndex = 0;
             ++StateControllerSelectionRevision;
         }
     }
@@ -3478,9 +3748,28 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
     const bool bEnableBlendStackSteering = bBlendStackClipActive &&
         (bMovingForSteering || bAirborneForSteering || bUseLatchedLandingSteering);
     ThreadSafeData.StateController.BlendStackSteeringAlpha = bEnableBlendStackSteering ? 1.0f : 0.0f;
-    ThreadSafeData.StateController.TurnInPlaceSteeringAlpha = 0.0f;
+    // Project_J gates authored TIP Steering from the locomotion phase itself.
+    // Presentation may still be finishing its current direct clip while the
+    // next gameplay evaluation falls below the 30-degree selection threshold;
+    // do not drop Steering during that visual tail.
+    const bool bTurnInPlaceClipActive = bBlendStackClipActive &&
+        StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace;
+    // This alpha is intentionally independent from the generic movement
+    // Steering alpha.  The AnimGraph multiplies it with the authored
+    // Enable_TurnInPlaceSteering curve, so visual steering exists only during
+    // the intended portion of a TIP clip.
+    ThreadSafeData.StateController.TurnInPlaceSteeringAlpha = bTurnInPlaceClipActive ? 1.0f : 0.0f;
 
-    if (bUseLatchedLandingSteering && CachedBasePlayer)
+    if (bTurnInPlaceClipActive && CachedBasePlayer)
+    {
+        // TIP follows camera/control facing, never movement trajectory.  Actor
+        // yaw is advanced separately from the selected sequence's root track.
+        ThreadSafeData.StateController.BlendStackSteeringTargetOrientation = FRotator(
+            0.0f,
+            CachedBasePlayer->GetControlRotation().Yaw,
+            0.0f);
+    }
+    else if (bUseLatchedLandingSteering && CachedBasePlayer)
     {
         ThreadSafeData.StateController.BlendStackSteeringTargetOrientation = FRotator(
             0.0f,
@@ -3581,7 +3870,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
     bStateControllerIsInAir = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsInAir;
     bStateControllerIsJumping = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsJumping;
     bStateControllerIsFallOff = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsFallOffStart;
-    bStateControllerShouldTurnInPlace = false;
+	 bStateControllerShouldTurnInPlace = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bShouldTurnInPlace;
 
     EmitStateControllerDebugTrace(ThreadSafeData);
 }
@@ -3605,7 +3894,15 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
         LocomotionState == ELocomotionState::TurnInPlace ||
         LocomotionState == ELocomotionState::Landing ||
         LocomotionState == ELocomotionState::InAir;
-    const bool bTurnInPlace = false;
+
+    const bool bStopDiagnostic =
+        CachedLocomotionStateComponent->bStopRequested ||
+        StateController.PresentationState == EStateControllerPresentationState::TransitionToStop ||
+        StateControllerRequestedPresentationState == EStateControllerPresentationState::TransitionToStop;
+	const bool bTurnInPlace =
+		StateController.PresentationState == EStateControllerPresentationState::TurnInPlace ||
+		StateControllerRequestedPresentationState == EStateControllerPresentationState::TurnInPlace ||
+		CachedLocomotionStateComponent->bTurnInPlacePhaseActive;
     const bool bLandDiagnostic =
         LocomotionState == ELocomotionState::Landing ||
         StateController.PresentationState == EStateControllerPresentationState::TransitionToLand ||
@@ -3625,7 +3922,8 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
     const bool bOneShotSampleDue = (bLandDiagnostic || bAirDiagnostic) && StateController.bShouldOverrideMotionMatching &&
         StateController.bHasSelectedAnimation && Now >= NextStateControllerOneShotDebugTime;
 
-    if (!((bPresentationChanged || bSelectionChanged) && bDirectOneShot) && !bOneShotSampleDue && !bComponentEventChanged)
+    if (!((bPresentationChanged || bSelectionChanged) && (bDirectOneShot || bStopDiagnostic)) &&
+        !bOneShotSampleDue && !bComponentEventChanged)
     {
         return;
     }
@@ -3635,11 +3933,12 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
         const float ActorYaw = CachedBasePlayer->GetActorRotation().Yaw;
         const float ControlYaw = CachedBasePlayer->GetControlRotation().Yaw;
         UE_LOG(LogMotionMatchingCapture, Display,
-            TEXT("[SC_TIP] Pawn=%s Rev=%d Asset=%s Index=%.0f Elapsed=%.3f/%.3f Start=%.3f Blend=%.3f Loop=%d OverrideMM=%d SelectedYaw=%.1f CurrentYaw=%.1f ActorYaw=%.1f ControlYaw=%.1f RootYaw=%.2f Retarget=%d ForceBlend=%d"),
+			TEXT("[SC_TIP] Pawn=%s Rev=%d Asset=%s Index=%.0f ActiveIndex=%d Elapsed=%.3f/%.3f Start=%.3f Blend=%.3f Loop=%d OverrideMM=%d SelectedYaw=%.1f CurrentYaw=%.1f ActorYaw=%.1f ControlYaw=%.1f RootYaw=%.2f Phase=%d PhaseTime=%.3f RawEntry=%d Retarget=%d ForceBlend=%d"),
             *CachedBasePlayer->GetName(),
-            StateController.SelectionRevision,
-            *GetNameSafe(StateController.SelectedAnimation),
-            StateControllerTurnInPlaceIndexForChooser,
+			StateController.SelectionRevision,
+			*GetNameSafe(StateController.SelectedAnimation),
+			StateControllerTurnInPlaceIndexForChooser,
+			StateControllerActiveTurnInPlaceIndex,
             StateControllerPlaybackHoldElapsed,
             StateControllerPlaybackHoldDuration,
             StateController.SelectedAnimationStartTime,
@@ -3650,9 +3949,31 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
             CachedLocomotionStateComponent->DesiredFacingDeltaYaw,
             ActorYaw,
             ControlYaw,
-            CachedLocomotionStateComponent->TurnInPlaceRootYawDelta,
-            bStateControllerForceTurnInPlaceReselect ? 1 : 0,
+			CachedLocomotionStateComponent->TurnInPlaceRootYawDelta,
+			CachedLocomotionStateComponent->bTurnInPlacePhaseActive ? 1 : 0,
+			CachedLocomotionStateComponent->TurnInPlacePhaseElapsed,
+			FMath::Abs(CachedLocomotionStateComponent->DesiredFacingDeltaYaw) >= 30.0f ? 1 : 0,
+			bStateControllerForceTurnInPlaceReselect ? 1 : 0,
             StateController.bForceBlendStackOnNextUpdate ? 1 : 0);
+    }
+
+    if (bStopDiagnostic && (bPresentationChanged || bSelectionChanged || bComponentEventChanged))
+    {
+        UE_LOG(LogMotionMatchingCapture, Display,
+            TEXT("[SC_STOP] Pawn=%s Requested=%d Presentation=%d LegacyState=%d Input=%d PrevInput=%d Speed=%.1f StopRequest=%d TIP=%d Rev=%d Asset=%s Elapsed=%.3f/%.3f"),
+            *CachedBasePlayer->GetName(),
+            static_cast<int32>(StateControllerRequestedPresentationState),
+            static_cast<int32>(StateController.PresentationState),
+            static_cast<int32>(LocomotionState),
+            CachedLocomotionStateComponent->bHasMoveInput ? 1 : 0,
+            CachedLocomotionStateComponent->bPrevHasMoveInput ? 1 : 0,
+            CachedLocomotionStateComponent->GroundSpeed,
+            CachedLocomotionStateComponent->bStopRequested ? 1 : 0,
+            CachedLocomotionStateComponent->bShouldTurnInPlace ? 1 : 0,
+            StateController.SelectionRevision,
+            *GetNameSafe(StateController.SelectedAnimation),
+            StateControllerPlaybackHoldElapsed,
+            StateControllerPlaybackHoldDuration);
     }
 
     // Keep the capture focused on Land/Air hand-offs.  Start/Stop/Pivot/TIP
@@ -4066,7 +4387,20 @@ FVector UMotionMatchingAnimInstance::GetThreadSafeLastNonZeroVelocity() const
 
 EOffsetRootBoneMode UMotionMatchingAnimInstance::GetThreadSafeOffsetRootRotationMode() const
 {
-	return EOffsetRootBoneMode::Release;
+	const FAnimThreadSafeData& Data = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+	const bool bIsTurnInPlace =
+		Data.StateController.PresentationState == EStateControllerPresentationState::TurnInPlace;
+
+	// Match Project_J's TIP visual-root contract.  During the selected direct
+	// turn clip, Steering must be allowed to retain and smoothly interpolate its
+	// rotational offset.  Returning Release here every frame cancels that offset
+	// while the clip is still turning, which makes the authored root yaw look
+	// short and then snap back toward Idle at the end of the clip.
+	return Data.StateController.bHasSelectedAnimation &&
+		bIsTurnInPlace &&
+		!Data.AirData.bIsInAir
+		? EOffsetRootBoneMode::Interpolate
+		: EOffsetRootBoneMode::Release;
 }
 
 EOffsetRootBoneMode UMotionMatchingAnimInstance::GetThreadSafeOffsetRootTranslationMode() const

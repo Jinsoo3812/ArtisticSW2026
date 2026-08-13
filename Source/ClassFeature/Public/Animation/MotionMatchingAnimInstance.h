@@ -447,6 +447,8 @@ struct FCachedMotionMatchingNodeInfo
     bool bPreUpdateContinue = false;
     bool bPreUpdateDbChanged = false;
     bool bPreUpdateAppliedDbChanged = false;
+    bool bPreUpdateNormalizedLoopTime = false;
+    bool bPreUpdateCollapsedLoopStack = false;
     float PreUpdateThrottle = 0.f;
     int32 PreUpdateMaxActiveBlends = 0;
     bool bPreUpdateShouldSearch = false;
@@ -631,6 +633,14 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
     FFootPlacementInterpolationSettings Get_FootPlacementInterpolationSettings() const;
+
+    /**
+     * Foot placement and leg IK pin feet in world space.  They must yield while
+     * an authored Turn In Place clip rotates the root, otherwise their final
+     * solve visibly fights Offset Root Bone as the turn ends.
+     */
+    UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
+    float GetThreadSafeFootPlacementAlpha() const;
 
     // State Controller ThreadSafe Getters for AnimGraph
     UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
@@ -846,6 +856,9 @@ protected:
     UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "StateController|Chooser")
     float StateControllerTurnInPlaceIndexForChooser = 0.0f;
 
+    /** Semantic 90/180 bucket of the currently playing TIP clip. */
+    int32 StateControllerActiveTurnInPlaceIndex = 0;
+
     /** Preserve the authored contact/steering lead-in before a TIP can be replaced. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "0.0", ClampMax = "1.0", Units = "s"))
     float StateControllerTurnInPlaceReselectMinElapsed = 0.15f;
@@ -885,6 +898,14 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Start", meta = (ClampMin = "0.0", ClampMax = "180.0"))
     float StateControllerStartControlYawInterruptAngle = 15.0f;
 
+    /**
+     * Small input-assembly window for keyboard diagonals. A and W may arrive
+     * on adjacent animation updates; during this window Start is reselected
+     * from the completed input instead of being prematurely handed to MM.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Start", meta = (ClampMin = "0.0", ClampMax = "0.25", Units = "s"))
+    float StateControllerStartInputAssemblyWindow = 0.12f;
+
     // State Controller Runtime Playback Hold Data
     EStateControllerPresentationState StateControllerPlaybackHoldState = EStateControllerPresentationState::None;
     /** Current gameplay presentation request, before the one-shot hold policy is applied. */
@@ -901,6 +922,8 @@ protected:
     float StateControllerStartControlYaw = 0.0f;
     bool bStateControllerStartInputChanged = false;
     bool bStateControllerStartControlYawChanged = false;
+    /** Set for one game-thread evaluation when a just-entered Start must use its completed diagonal input. */
+    bool bStateControllerInitialStartInputReselect = false;
     float StateControllerStartInputDeltaDegrees = 0.0f;
     float StateControllerStartControlYawDeltaDegrees = 0.0f;
     TObjectPtr<UAnimationAsset> StateControllerSelectedAnimation = nullptr;
@@ -1091,6 +1114,9 @@ private:
     double NextStateControllerTurnInPlaceDebugTime = 0.0;
     double NextStateControllerOneShotDebugTime = 0.0;
     double NextStateControllerPivotDebugTime = 0.0;
+    /** Independent from event traces: a.StopDebug 2 prints the derived Stop
+     * inputs at a low fixed cadence even when no request is generated. */
+    double NextStopDebugSampleTime = 0.0;
     bool bHasStateControllerDebugActorYaw = false;
 
     /** Debug-only: records the Main -> SubChooser chain selected for the current one-shot. */
