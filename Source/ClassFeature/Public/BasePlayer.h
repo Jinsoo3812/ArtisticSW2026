@@ -31,6 +31,7 @@ class AShip;
 class ACannon;
 class USwimmingComponent;
 class UPlayerSkillComponent;
+class UAnimSequence;
 
 // Item Slot 관리 구조체
 USTRUCT(BlueprintType)
@@ -111,6 +112,12 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PostInitializeComponents() override;
+
+	UFUNCTION(BlueprintCallable, Category = "Locomotion|TurnInPlace")
+	void ApplyCombatTurnInPlaceRotation(float DeltaTime);
+
+	UFUNCTION(BlueprintPure, Category = "Locomotion|TurnInPlace")
+	float GetDesiredFacingDeltaYaw() const;
 
 	UFUNCTION()
 	void HandleDeathFinished(UBaseHealthComponent* InHealthComponent);
@@ -627,6 +634,21 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<ULocomotionAnimStateComponent> AnimStateComponent;
+
+	TWeakObjectPtr<class UAnimSequence> CachedTurnInPlaceSequence;
+	int32 CachedTurnInPlaceSelectionRevision = INDEX_NONE;
+	/** Gameplay baseline for the currently selected direct TIP clip.  The
+	 * capsule follows the clip's cumulative authored root yaw from this yaw. */
+	float TurnInPlaceSelectionStartActorYaw = 0.0f;
+	int32 LastTurnInPlaceDebugSelectionRevision = INDEX_NONE;
+	double NextTurnInPlaceDebugSampleTime = 0.0;
+	/** Debug-only baseline used to report the total capsule yaw consumed by one
+	 * selected TIP clip. Never participates in gameplay or replication. */
+	float TurnInPlaceDebugSelectionStartActorYaw = 0.0f;
+	/** Debug-only visual baselines. They expose the Offset Root Bone / Steering
+	 * contribution separately from the capsule's authored root-motion yaw. */
+	float TurnInPlaceDebugSelectionStartMeshYaw = 0.0f;
+	float TurnInPlaceDebugSelectionStartRootBoneYaw = 0.0f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<USWTrajectoryComponent> TrajectoryComponent;
