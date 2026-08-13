@@ -4,9 +4,11 @@
 #include "BasePlayerController.h"
 #include "Components/Button.h"
 #include "Components/PanelWidget.h"
+#include "Components/SizeBox.h"
 #include "Components/WidgetSwitcher.h"
 #include "Crafting/CraftingComponent.h"
 #include "UI/Crafting/CraftingPanelWidget.h"
+#include "UI/SkillUpgradePanel.h"
 
 void UFacilityHubWidget::NativeConstruct()
 {
@@ -14,8 +16,16 @@ void UFacilityHubWidget::NativeConstruct()
 
 	ResolveCraftingComponent();
 	EnsureCraftingPanel();
+	ResolveSkillUpgradePanel();
 	BindCraftingEvents();
 	BindNavigation();
+	RefreshSkillSubmenuExpandedHeight();
+	if (SizeBox_SkillUpgradeMenu)
+	{
+		SizeBox_SkillUpgradeMenu->SetClipping(EWidgetClipping::ClipToBounds);
+		SizeBox_SkillUpgradeMenu->SetHeightOverride(0.0f);
+		SizeBox_SkillUpgradeMenu->SetIsEnabled(false);
+	}
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[FacilityHubFlow][CLIENT] Hub constructed. Widget=%s Context=%s Switcher=%s Children=%d ShipButton=%s CraftButton=%s"),
 		*GetNameSafe(this),
@@ -37,6 +47,33 @@ void UFacilityHubWidget::NativeDestruct()
 	UnbindNavigation();
 	UnbindCraftingEvents();
 	Super::NativeDestruct();
+}
+
+void UFacilityHubWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	if (!bSkillSubmenuAnimating || !SizeBox_SkillUpgradeMenu)
+	{
+		return;
+	}
+
+	SkillSubmenuAnimationElapsed += InDeltaTime;
+	const float Duration = FMath::Max(SkillSubmenuAnimationDuration, UE_SMALL_NUMBER);
+	const float LinearAlpha = FMath::Clamp(SkillSubmenuAnimationElapsed / Duration, 0.0f, 1.0f);
+	const float EasedAlpha = FMath::InterpEaseIn(0.0f, 1.0f, LinearAlpha, 2.0f);
+	const float CurrentHeight = FMath::Lerp(
+		SkillSubmenuAnimationStartHeight,
+		SkillSubmenuAnimationTargetHeight,
+		EasedAlpha);
+	SizeBox_SkillUpgradeMenu->SetHeightOverride(CurrentHeight);
+
+	if (LinearAlpha >= 1.0f)
+	{
+		bSkillSubmenuAnimating = false;
+		SizeBox_SkillUpgradeMenu->SetHeightOverride(SkillSubmenuAnimationTargetHeight);
+		SizeBox_SkillUpgradeMenu->SetIsEnabled(bSkillSubmenuExpanded);
+	}
 }
 
 void UFacilityHubWidget::InitializeForContext(AActor* InContextActor)
@@ -69,6 +106,7 @@ void UFacilityHubWidget::ShowShipUpgradeTab()
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[FacilityHubFlow][CLIENT] Ship Upgrade tab requested. TargetIndex=%d"),
 		ShipUpgradeTabIndex); */
+	SetSkillSubmenuExpanded(false);
 	CloseCraftingTabIfActive();
 	ShowTab(ShipUpgradeTabIndex);
 }
@@ -78,13 +116,27 @@ void UFacilityHubWidget::ShowItemCraftingTab()
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[FacilityHubFlow][CLIENT] Item Crafting tab requested; waiting for server approval. Context=%s"),
 		*GetNameSafe(ContextActor)); */
+	SetSkillSubmenuExpanded(false);
 	RequestOpenCraftingTab();
 }
 
 void UFacilityHubWidget::ShowSkillUpgradeTab()
 {
+	SetSkillSubmenuExpanded(true);
+}
+
+void UFacilityHubWidget::SelectSkillUpgrade(ESkillUpgradeSelection Skill)
+{
+	SetSkillSubmenuExpanded(true);
 	CloseCraftingTabIfActive();
+	ResolveSkillUpgradePanel();
+	if (SkillUpgradePanelWidget)
+	{
+		SkillUpgradePanelWidget->SetSelectedSkill(Skill);
+	}
 	ShowTab(SkillUpgradeTabIndex);
+	OnSkillUpgradeSelected.Broadcast(Skill);
+	BP_OnSkillUpgradeSelected(Skill);
 }
 
 void UFacilityHubWidget::RequestCloseFacilityHub()
@@ -220,6 +272,18 @@ void UFacilityHubWidget::BindNavigation()
 	{
 		Button_SkillUpgrade->OnClicked.AddUniqueDynamic(this, &UFacilityHubWidget::ShowSkillUpgradeTab);
 	}
+	if (Button_GravityVortex)
+	{
+		Button_GravityVortex->OnClicked.AddUniqueDynamic(this, &UFacilityHubWidget::HandleGravityVortexClicked);
+	}
+	if (Button_WaterBomb)
+	{
+		Button_WaterBomb->OnClicked.AddUniqueDynamic(this, &UFacilityHubWidget::HandleWaterBombClicked);
+	}
+	if (Button_Bombardment)
+	{
+		Button_Bombardment->OnClicked.AddUniqueDynamic(this, &UFacilityHubWidget::HandleBombardmentClicked);
+	}
 	if (Button_Close)
 	{
 		Button_Close->OnClicked.AddUniqueDynamic(this, &UFacilityHubWidget::RequestCloseFacilityHub);
@@ -242,6 +306,18 @@ void UFacilityHubWidget::UnbindNavigation()
 	{
 		Button_SkillUpgrade->OnClicked.RemoveDynamic(this, &UFacilityHubWidget::ShowSkillUpgradeTab);
 	}
+	if (Button_GravityVortex)
+	{
+		Button_GravityVortex->OnClicked.RemoveDynamic(this, &UFacilityHubWidget::HandleGravityVortexClicked);
+	}
+	if (Button_WaterBomb)
+	{
+		Button_WaterBomb->OnClicked.RemoveDynamic(this, &UFacilityHubWidget::HandleWaterBombClicked);
+	}
+	if (Button_Bombardment)
+	{
+		Button_Bombardment->OnClicked.RemoveDynamic(this, &UFacilityHubWidget::HandleBombardmentClicked);
+	}
 	if (Button_Close)
 	{
 		Button_Close->OnClicked.RemoveDynamic(this, &UFacilityHubWidget::RequestCloseFacilityHub);
@@ -254,6 +330,77 @@ void UFacilityHubWidget::CloseCraftingTabIfActive()
 	{
 		CraftingComponent->CloseCraftingScreen();
 	}
+}
+
+void UFacilityHubWidget::ResolveSkillUpgradePanel()
+{
+	if (SkillUpgradePanelWidget)
+	{
+		return;
+	}
+
+	UWidgetSwitcher* Switcher = GetTabSwitcher();
+	if (Switcher && Switcher->GetChildrenCount() > SkillUpgradeTabIndex)
+	{
+		SkillUpgradePanelWidget = Cast<USkillUpgradePanel>(Switcher->GetChildAt(SkillUpgradeTabIndex));
+	}
+}
+
+void UFacilityHubWidget::SetSkillSubmenuExpanded(bool bExpanded)
+{
+	if (!SizeBox_SkillUpgradeMenu || bSkillSubmenuExpanded == bExpanded)
+	{
+		return;
+	}
+
+	if (bExpanded)
+	{
+		RefreshSkillSubmenuExpandedHeight();
+		SizeBox_SkillUpgradeMenu->SetIsEnabled(true);
+	}
+
+	bSkillSubmenuExpanded = bExpanded;
+	bSkillSubmenuAnimating = true;
+	SkillSubmenuAnimationElapsed = 0.0f;
+	SkillSubmenuAnimationStartHeight = SizeBox_SkillUpgradeMenu->GetHeightOverride();
+	SkillSubmenuAnimationTargetHeight = bExpanded ? SkillSubmenuExpandedHeight : 0.0f;
+}
+
+void UFacilityHubWidget::RefreshSkillSubmenuExpandedHeight()
+{
+	if (!SizeBox_SkillUpgradeMenu)
+	{
+		return;
+	}
+
+	const float PreviousOverride = SizeBox_SkillUpgradeMenu->GetHeightOverride();
+	SizeBox_SkillUpgradeMenu->ClearHeightOverride();
+	SizeBox_SkillUpgradeMenu->ForceLayoutPrepass();
+	if (UWidget* Content = SizeBox_SkillUpgradeMenu->GetContent())
+	{
+		Content->ForceLayoutPrepass();
+		SkillSubmenuExpandedHeight = Content->GetDesiredSize().Y;
+	}
+	else
+	{
+		SkillSubmenuExpandedHeight = SizeBox_SkillUpgradeMenu->GetDesiredSize().Y;
+	}
+	SizeBox_SkillUpgradeMenu->SetHeightOverride(PreviousOverride);
+}
+
+void UFacilityHubWidget::HandleGravityVortexClicked()
+{
+	SelectSkillUpgrade(ESkillUpgradeSelection::GravityVortex);
+}
+
+void UFacilityHubWidget::HandleWaterBombClicked()
+{
+	SelectSkillUpgrade(ESkillUpgradeSelection::WaterBomb);
+}
+
+void UFacilityHubWidget::HandleBombardmentClicked()
+{
+	SelectSkillUpgrade(ESkillUpgradeSelection::Bombardment);
 }
 
 void UFacilityHubWidget::ShowTab(int32 TabIndex)
