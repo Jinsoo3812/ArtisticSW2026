@@ -10,6 +10,7 @@ class ABasePlayer;
 class UAnimMontage;
 class UAnimInstance;
 class UAnimSequenceBase;
+class UGameplayEffect;
 class UWeaponAnimationDataAsset;
 struct FWeaponAnimationEntry;
 
@@ -143,6 +144,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Animation")
 	TArray<FWeaponAnimationDataMapping> WeaponAnimationDataByTag;
+
+	/** Common infinite GE used for an equipped item's Data.StrengthBonus. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Strength")
+	TSubclassOf<UGameplayEffect> StrengthEquipmentEffectClass;
 
 	UPROPERTY(Transient)
 	TObjectPtr<ABaseItem> PendingEquipItem;

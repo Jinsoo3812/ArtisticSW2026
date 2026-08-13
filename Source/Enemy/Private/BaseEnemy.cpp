@@ -6,6 +6,7 @@
 #include "Weapon/WeaponDataAsset.h"
 #include "Weapon/BaseWeaponComponent.h"
 #include "BaseGameplayTags.h"
+#include "BasePlayer.h"
 
 #include "Storage/StorageChest.h"
 
@@ -21,6 +22,7 @@
 #include "Components/BaseHealthComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Perception/AISense_Damage.h"
 #include "UI/HealthBarWidget.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -209,11 +211,41 @@ void ABaseEnemy::OnHealthChanged(UBaseHealthComponent* InHealthComponent, float 
 {
 	RefreshHealthBarWidget();
 	UpdateHealthBarVisibilityAfterHealthChanged(OldValue, NewValue);
+
+	// GAS attribute changes do not automatically create an AI Damage stimulus.
+	// Report only authoritative, real health loss and keep synthetic Player input out of production code.
+	if (HasAuthority() && OldValue > NewValue && IsValid(InstigatorActor) && InstigatorActor != this)
+	{
+		const FVector DamageLocation = GetActorLocation();
+		UAISense_Damage::ReportDamageEvent(
+			this,
+			this,
+			InstigatorActor,
+			OldValue - NewValue,
+			DamageLocation,
+			DamageLocation);
+	}
 }
 
 void ABaseEnemy::OnMaxHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
 {
 	RefreshHealthBarWidget();
+}
+
+bool ABaseEnemy::CanEngageActor_Implementation(AActor* Candidate) const
+{
+	const ABasePlayer* Player = Cast<ABasePlayer>(Candidate);
+	if (!IsValid(Player) || Player->IsActorBeingDestroyed())
+	{
+		return false;
+	}
+
+	if (const UBaseHealthComponent* TargetHealth = Player->FindComponentByClass<UBaseHealthComponent>())
+	{
+		return !TargetHealth->IsDead();
+	}
+
+	return true;
 }
 
 void ABaseEnemy::InitializeHealthBarWidget()

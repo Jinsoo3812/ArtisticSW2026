@@ -4,15 +4,12 @@
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Animation/AnimMontage.h"
-#include "Attacker/BasicMeleeDamageGameplayEffect.h"
-#include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "Equipment/PlayerEquipmentComponent.h"
 #include "GASCombatLibrary.h"
+#include "GASDamageInstantGameplayEffect.h"
 #include "Item/Weapons/SwordItem.h"
-
-DEFINE_LOG_CATEGORY_STATIC(LogPlayerBasicAttack, Log, All);
 
 UGA_PlayerBasicAttack::UGA_PlayerBasicAttack()
 {
@@ -21,7 +18,9 @@ UGA_PlayerBasicAttack::UGA_PlayerBasicAttack()
 
 	FGameplayTagContainer AssetTags;
 	AssetTags.AddTag(GameplayAbility_BasicAttack);
+	AssetTags.AddTag(GameplayAbility_InterruptibleByHit);
 	SetAssetTags(AssetTags);
+	ActivationBlockedTags.AddTag(State_Damaged);
 }
 
 void UGA_PlayerBasicAttack::ActivateAbility(
@@ -36,9 +35,6 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 	bHitScanActive = false;
 	bComboInputBuffered = false;
 	bServerCombatPoseRefreshAcquired = false;
-	HitScanWindowStartTime = -1.0;
-	ExpectedHitScanWindowDuration = 0.0f;
-	HitScanWindowTickCount = 0;
 	CurrentComboIndex = INDEX_NONE;
 
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
@@ -173,9 +169,6 @@ void UGA_PlayerBasicAttack::EndAbility(
 	CurrentComboIndex = INDEX_NONE;
 	bComboInputBuffered = false;
 	bAttackFinished = false;
-	HitScanWindowStartTime = -1.0;
-	ExpectedHitScanWindowDuration = 0.0f;
-	HitScanWindowTickCount = 0;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -206,19 +199,18 @@ bool UGA_PlayerBasicAttack::CacheAttackData()
 	TSubclassOf<UGameplayEffect> DamageEffectClass = CachedSword->GetDamageEffectClass();
 	if (!DamageEffectClass)
 	{
-		DamageEffectClass = UBasicMeleeDamageGameplayEffect::StaticClass();
+		DamageEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
 	}
 
-	const float AttackPower = SourceASC->GetNumericAttribute(UBaseAttributeSet::GetAttackPowerAttribute());
-	const float Damage = CachedSword->CalculateDamage(AttackPower);
-	CachedDamageSpecHandle = UGASCombatLibrary::MakeDamageEffectSpec(
-		SourceASC,
-		DamageEffectClass,
-		Damage,
-		Player,
-		CachedSword,
-		GetAbilityLevel(),
-		false);
+	FStrengthDamageRequest DamageRequest;
+	DamageRequest.SourceASC = SourceASC;
+	DamageRequest.DamageEffectClass = DamageEffectClass;
+	DamageRequest.AttackCoefficient = CachedSword->GetAttackCoefficient();
+	DamageRequest.ChargeMultiplier = 1.0f;
+	DamageRequest.InstigatorActor = Player;
+	DamageRequest.EffectCauser = CachedSword;
+	DamageRequest.EffectLevel = GetAbilityLevel();
+	CachedDamageSpecHandle = UGASCombatLibrary::MakeStrengthDamageEffectSpec(DamageRequest);
 
 	return CachedDamageSpecHandle.IsValid();
 }
@@ -390,30 +382,11 @@ void UGA_PlayerBasicAttack::OnAttackMontageCancelled()
 
 void UGA_PlayerBasicAttack::OnHitScanStartEvent(FGameplayEventData Payload)
 {
-	UWorld* World = GetWorld();
-	AActor* Avatar = GetAvatarActorFromActorInfo();
-	HitScanWindowStartTime = World ? World->GetTimeSeconds() : -1.0;
-	ExpectedHitScanWindowDuration = Payload.EventMagnitude / FMath::Max(CachedAttackMontagePlayRate, KINDA_SMALL_NUMBER);
-	HitScanWindowTickCount = 0;
-
-	UE_LOG(
-		LogPlayerBasicAttack,
-		Log,
-		TEXT("[HitScanWindow Begin] Avatar=%s Authority=%d Role=%d NetMode=%d ExpectedDuration=%.4f ComboIndex=%d"),
-		*GetNameSafe(Avatar),
-		Avatar && Avatar->HasAuthority() ? 1 : 0,
-		Avatar ? static_cast<int32>(Avatar->GetLocalRole()) : static_cast<int32>(ROLE_None),
-		World ? static_cast<int32>(World->GetNetMode()) : static_cast<int32>(NM_Standalone),
-		ExpectedHitScanWindowDuration,
-		CurrentComboIndex);
-
 	StartHitScan();
 }
 
 void UGA_PlayerBasicAttack::OnHitScanTickEvent(FGameplayEventData Payload)
 {
-	++HitScanWindowTickCount;
-
 	AActor* Avatar = GetAvatarActorFromActorInfo();
 	if (Avatar && Avatar->HasAuthority() && bHitScanActive && CachedSword)
 	{
@@ -423,29 +396,7 @@ void UGA_PlayerBasicAttack::OnHitScanTickEvent(FGameplayEventData Payload)
 
 void UGA_PlayerBasicAttack::OnHitScanEndEvent(FGameplayEventData Payload)
 {
-	UWorld* World = GetWorld();
-	AActor* Avatar = GetAvatarActorFromActorInfo();
-	const double ActualDuration = World && HitScanWindowStartTime >= 0.0
-		? World->GetTimeSeconds() - HitScanWindowStartTime
-		: -1.0;
-
-	UE_LOG(
-		LogPlayerBasicAttack,
-		Log,
-		TEXT("[HitScanWindow End] Avatar=%s Authority=%d Role=%d NetMode=%d ExpectedDuration=%.4f ActualDuration=%.4f TickCount=%d ComboIndex=%d"),
-		*GetNameSafe(Avatar),
-		Avatar && Avatar->HasAuthority() ? 1 : 0,
-		Avatar ? static_cast<int32>(Avatar->GetLocalRole()) : static_cast<int32>(ROLE_None),
-		World ? static_cast<int32>(World->GetNetMode()) : static_cast<int32>(NM_Standalone),
-		ExpectedHitScanWindowDuration,
-		ActualDuration,
-		HitScanWindowTickCount,
-		CurrentComboIndex);
-
 	EndHitScan();
-	HitScanWindowStartTime = -1.0;
-	ExpectedHitScanWindowDuration = 0.0f;
-	HitScanWindowTickCount = 0;
 }
 
 void UGA_PlayerBasicAttack::OnComboCommitEvent(FGameplayEventData Payload)

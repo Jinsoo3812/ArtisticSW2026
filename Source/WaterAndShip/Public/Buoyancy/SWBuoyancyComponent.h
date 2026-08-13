@@ -9,6 +9,24 @@ class UBuoyancyComponent;
 class UPrimitiveComponent;
 class UWaterBodyComponent;
 
+/** Last game-thread buoyancy solve, retained so owning actors can emit correlated diagnostics. */
+struct WATERANDSHIP_API FSWBuoyancyRuntimeDiagnostic
+{
+	bool bForceApplicationAllowed = false;
+	bool bResolvedSimulatingComponent = false;
+	bool bPhysicsSimulationActive = false;
+	bool bWaterSurfaceFound = false;
+	bool bPontoonInWater = false;
+	int32 WaterBodyCount = 0;
+	FVector PontoonWorldPosition = FVector::ZeroVector;
+	float WaterHeight = -BIG_NUMBER;
+	float ImmersionDepth = 0.0f;
+	float RelativeVelocityZ = 0.0f;
+	float BuoyantForceZ = 0.0f;
+	FString SimulatingComponentName;
+	double WorldTimeSeconds = 0.0;
+};
+
 UENUM(BlueprintType)
 enum class ESWBuoyancyExecutionMode : uint8
 {
@@ -46,6 +64,8 @@ public:
 	const TArray<FSWBuoyancyPontoon>& GetPontoons() const { return Pontoons; }
 	const FSWBuoyancyForceSettings& GetForceSettings() const { return ForceSettings; }
 	ESWBuoyancyExecutionMode GetExecutionMode() const { return ExecutionMode; }
+	const FSWBuoyancyRuntimeDiagnostic& GetLastRuntimeDiagnostic() const { return LastRuntimeDiagnostic; }
+	int32 GetCachedWaterBodyCount() const { return WaterBodies.Num(); }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SW Buoyancy")
 	ESWBuoyancyExecutionMode ExecutionMode = ESWBuoyancyExecutionMode::ServerAuthority;
@@ -64,9 +84,6 @@ public:
 		meta = (DisplayName = "Import Legacy When SW Pontoons Are Empty"))
 	bool bImportLegacyWaterBuoyancy = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SW Buoyancy|Debug")
-	bool bDrawDebugPontoons = false;
-
 private:
 	bool ShouldApplyForces() const;
 	bool QueryWaterSurface(const FVector& Position, float& OutWaterHeight, FVector& OutWaterVelocity) const;
@@ -78,4 +95,5 @@ private:
 	bool bCommandLineDiagnostics = false;
 	bool bUsingLegacyFallback = false;
 	float NextDiagnosticTime = 0.0f;
+	FSWBuoyancyRuntimeDiagnostic LastRuntimeDiagnostic;
 };

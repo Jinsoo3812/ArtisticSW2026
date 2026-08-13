@@ -6,6 +6,8 @@
 #include "Components/SceneComponent.h"
 #include "InteractableComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "StatusEffectLibrary.h"
+#include "WeaponFeedback/WeaponFeedbackComponent.h"
 
 ASwordItem::ASwordItem()
 {
@@ -14,6 +16,11 @@ ASwordItem::ASwordItem()
 
 	TraceEndPoint = CreateDefaultSubobject<USceneComponent>(TEXT("TraceEndPoint"));
 	TraceEndPoint->SetupAttachment(ItemMesh);
+
+	if (WeaponFeedbackComponent)
+	{
+		WeaponFeedbackComponent->SetTrailEndpointComponents(TraceStartPoint, TraceEndPoint);
+	}
 
 	TraceObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECC_Pawn));
 
@@ -45,12 +52,21 @@ bool ASwordItem::HitScanStart(const FGameplayEffectSpecHandle& DamageEffectSpecH
 
 	if (!DamageEffectSpecHandle.IsValid() || !DamageEffectSpecHandle.Data.IsValid())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("ASwordItem::HitScanStart: invalid Damage Spec."));
+		return false;
+	}
+
+	UAbilitySystemComponent* SourceASC = ResolveSourceAbilitySystem();
+	if (!SourceASC)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ASwordItem::HitScanStart: SourceASC is missing."));
 		return false;
 	}
 
 	HitScanEnd();
 
 	CachedDamageEffectSpecHandle = DamageEffectSpecHandle;
+	BuildStatusEffectSpecs(SourceASC);
 	HitActors.Reset();
 	bHitScanActive = true;
 	bHasPreviousTracePoints = true;
@@ -147,7 +163,13 @@ void ASwordItem::HandleHit(const FHitResult& HitResult)
 	}
 
 	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(HitActor);
-	if (!TargetASC || ShouldIgnoreActor(HitActor, TargetASC))
+	if (!TargetASC)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ASwordItem::HandleHit: TargetASC is missing for %s."), *GetNameSafe(HitActor));
+		return;
+	}
+
+	if (ShouldIgnoreActor(HitActor, TargetASC))
 	{
 		return;
 	}
@@ -174,6 +196,51 @@ void ASwordItem::ApplyEffectToTarget(UAbilitySystemComponent* TargetASC, const F
 	TargetEffectSpec.SetContext(EffectContext);
 
 	TargetASC->ApplyGameplayEffectSpecToSelf(TargetEffectSpec);
+
+	for (const FGameplayEffectSpecHandle& StatusSpecHandle : CachedStatusEffectSpecHandles)
+	{
+		if (!StatusSpecHandle.IsValid() || !StatusSpecHandle.Data.IsValid())
+		{
+			continue;
+		}
+
+		FGameplayEffectSpec TargetStatusSpec(*StatusSpecHandle.Data.Get());
+		FGameplayEffectContextHandle StatusContext = TargetStatusSpec.GetContext();
+		StatusContext.AddInstigator(SourceActor, this);
+		StatusContext.AddSourceObject(this);
+		StatusContext.AddHitResult(HitResult, true);
+		TargetStatusSpec.SetContext(StatusContext);
+		const FGameplayEffectSpecHandle TargetStatusSpecHandle(new FGameplayEffectSpec(TargetStatusSpec));
+		UStatusEffectLibrary::ApplyDurationDamageEffectSpecToTarget(TargetASC, TargetStatusSpecHandle, FGameplayTag());
+	}
+}
+
+bool ASwordItem::BuildStatusEffectSpecs(UAbilitySystemComponent* SourceASC)
+{
+	CachedStatusEffectSpecHandles.Reset();
+	if (!SourceASC)
+	{
+		return false;
+	}
+
+	for (const TSubclassOf<UGameplayEffect>& StatusEffectClass : StatusEffectClasses)
+	{
+		if (!StatusEffectClass)
+		{
+			continue;
+		}
+
+		FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
+		ContextHandle.AddInstigator(ResolveSourceActor(), this);
+		ContextHandle.AddSourceObject(this);
+		FGameplayEffectSpecHandle StatusSpec = SourceASC->MakeOutgoingSpec(StatusEffectClass, 1.0f, ContextHandle);
+		if (StatusSpec.IsValid() && StatusSpec.Data.IsValid())
+		{
+			CachedStatusEffectSpecHandles.Add(StatusSpec);
+		}
+	}
+
+	return true;
 }
 
 bool ASwordItem::ShouldIgnoreActor(const AActor* OtherActor, const UAbilitySystemComponent* TargetASC) const
@@ -233,6 +300,7 @@ void ASwordItem::ClearHitScanState()
 	bHitScanActive = false;
 	bHasPreviousTracePoints = false;
 	CachedDamageEffectSpecHandle = FGameplayEffectSpecHandle();
+	CachedStatusEffectSpecHandles.Reset();
 	HitActors.Reset();
 	PreviousTraceStart = FVector::ZeroVector;
 	PreviousTraceEnd = FVector::ZeroVector;

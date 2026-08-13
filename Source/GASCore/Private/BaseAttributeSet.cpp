@@ -16,6 +16,7 @@ UBaseAttributeSet::UBaseAttributeSet()
 	// 기본 체력값입니다. 이후 초기화 GE나 캐릭터별 AttributeSet에서 덮어쓸 수 있습니다.
 	MaxHealth = 100.0f;
 	Health = 100.0f;
+	Strength = 10.0f;
 	AttackSpeedMultiplier = 1.0f;
 }
 
@@ -27,6 +28,7 @@ void UBaseAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, Health, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, AttackPower, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, Strength, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, MoveSpeed, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, AttackSpeedMultiplier, COND_None, REPNOTIFY_Always);
 
@@ -44,6 +46,11 @@ void UBaseAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, 
 	}
 
 	if (Attribute == GetMaxHealthAttribute())
+	{
+		NewValue = FMath::Max(0.0f, NewValue);
+	}
+
+	if (Attribute == GetStrengthAttribute())
 	{
 		NewValue = FMath::Max(0.0f, NewValue);
 	}
@@ -140,6 +147,11 @@ void UBaseAttributeSet::OnRep_MaxHealth(const FGameplayAttributeData& OldMaxHeal
 void UBaseAttributeSet::OnRep_AttackPower(const FGameplayAttributeData& OldAttackPower)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UBaseAttributeSet, AttackPower, OldAttackPower);
+}
+
+void UBaseAttributeSet::OnRep_Strength(const FGameplayAttributeData& OldStrength)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UBaseAttributeSet, Strength, OldStrength);
 }
 
 void UBaseAttributeSet::OnRep_MoveSpeed(const FGameplayAttributeData& OldMoveSpeed)
