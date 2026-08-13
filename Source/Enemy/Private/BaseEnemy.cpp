@@ -116,7 +116,14 @@ void ABaseEnemy::BeginPlay()
 		// 무기 관리
 		if (WeaponComponent && DefaultWeaponTag.IsValid())
 		{
-			WeaponComponent->InitializeLoadout(DefaultWeaponTag);
+			if (bEquipWeaponOnSpawn)
+			{
+				WeaponComponent->InitializeLoadout(DefaultWeaponTag);
+			}
+			else
+			{
+				WeaponComponent->InitializeHolsteredLoadout(DefaultWeaponTag);
+			}
 		}
 	}
 

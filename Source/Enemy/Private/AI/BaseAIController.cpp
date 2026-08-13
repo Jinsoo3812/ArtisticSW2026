@@ -267,7 +267,13 @@ void ABaseAIController::HandleSightStimulus(AActor* SensedActor, const FAIStimul
 {
 	if (Stimulus.WasSuccessfullySensed())
 	{
-		SetCombatTarget(SensedActor);
+		// Keep a valid current target stable. With two players, perception update
+		// ordering must not make the enemy switch targets every time either player
+		// produces a new sight stimulus.
+		if (!GetCombatTarget())
+		{
+			SetCombatTarget(SensedActor);
+		}
 		return;
 	}
 
@@ -297,7 +303,7 @@ void ABaseAIController::HandleHearingStimulus(AActor* SensedActor, const FAIStim
 
 void ABaseAIController::HandleDamageStimulus(AActor* SensedActor, const FAIStimulus& Stimulus)
 {
-	if (Stimulus.WasSuccessfullySensed())
+	if (Stimulus.WasSuccessfullySensed() && !GetCombatTarget())
 	{
 		SetCombatTarget(SensedActor);
 	}
