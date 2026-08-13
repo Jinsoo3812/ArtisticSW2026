@@ -30,6 +30,10 @@ class ENEMY_API UBaseWeaponComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRangedEnemyAttackIntegrationTest;
+#endif
+
 public:
 	UBaseWeaponComponent();
 
