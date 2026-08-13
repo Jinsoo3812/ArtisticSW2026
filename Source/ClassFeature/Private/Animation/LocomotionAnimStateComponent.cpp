@@ -790,53 +790,11 @@ void ULocomotionAnimStateComponent::ClearMovementRequests()
 
 void ULocomotionAnimStateComponent::AlignActorYawToControlYawForStartIfNeeded()
 {
-    if (!bUseInstantRotationSnap)
-    {
-        return;
-    }
-
-    if (!CachedBasePlayer ||
-        (!CachedBasePlayer->IsLocallyControlled() && !CachedBasePlayer->HasAuthority()))
-    {
-        return;
-    }
-
-    const float ActorYaw = CachedBasePlayer->GetActorRotation().Yaw;
-    const float ControlYaw = CachedBasePlayer->GetControlRotation().Yaw;
-    const float YawDelta = FMath::FindDeltaAngleDegrees(ActorYaw, ControlYaw);
-    if (FMath::Abs(YawDelta) < StartAlignControlYawThreshold)
-    {
-        return;
-    }
-
-    FRotator NewRotation = CachedBasePlayer->GetActorRotation();
-    NewRotation.Yaw = ControlYaw;
-    CachedBasePlayer->SetActorRotation(NewRotation);
-
-    // Apply negative yaw offset to mesh so it visually stays at the old rotation
-    MeshYawOffset -= YawDelta;
-    MeshYawOffset = FRotator::NormalizeAxis(MeshYawOffset);
-
-    if (USkeletalMeshComponent* Mesh = CachedBasePlayer->GetMesh())
-    {
-        FRotator MeshRot = DefaultMeshRelativeRotation;
-        MeshRot.Yaw += MeshYawOffset;
-        Mesh->SetRelativeRotation(MeshRot);
-    }
-
-    if (IsMotionMatchingCaptureEnabled())
-    {
-        const FString DebugLine = FString::Printf(
-            TEXT("[MMCAP_EVENT] AlignStartYaw ActorYaw=%.1f ControlYaw=%.1f Delta=%.1f Threshold=%.1f Input=(R=%.2f,F=%.2f)"),
-            ActorYaw,
-            ControlYaw,
-            YawDelta,
-            StartAlignControlYawThreshold,
-            CachedMoveInput.X,
-            CachedMoveInput.Y);
-        UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
-        AppendMotionMatchingCaptureLine(DebugLine);
-    }
+	// Kept only as a compatibility call-site for the legacy locomotion enum.
+	// Artistic is permanently Strafe: moving capsule yaw belongs to the
+	// controller, stationary yaw belongs to the selected TIP root track.  A
+	// Start-time SetActorRotation would introduce a third owner and visually
+	// shorten the following direct turn or Start asset.
 }
 
 void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)

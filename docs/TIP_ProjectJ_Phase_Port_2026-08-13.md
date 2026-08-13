@@ -315,3 +315,72 @@ eight-way sector, the evaluated Chooser path, and any Start-to-MM interruption.
 It also marks `ReselectedInitialDiagonal`: this is the short native input
 assembly window that fixes A/W or D/W arriving on adjacent updates without
 turning ordinary later direction changes into another Start clip.
+
+## 2026-08-13: Project_J rotation-ownership parity pass
+
+The earlier port matched the final TIP root-yaw consumer but still left three
+separate presentation sources alive in Artistic: the legacy `ELocomotionState`
+database switch, State Controller direct-clip playback, and a legacy Start yaw
+snap.  This made it possible for an Idle/Stop legacy state to alter the hidden
+Motion Matching branch while a direct TIP was still visible.
+
+The active policy is now:
+
+```text
+State Controller presentation
+  -> chooses the warm Motion Matching fallback PSD
+  -> owns every direct Blend Stack one-shot
+  -> pulses Force Blend for every new direct selection
+  -> owns the captured Strafe warping direction until that clip exits
+```
+
+- `IdleLoop` and `TurnInPlace` keep `IdleDatabase` warm.
+- `LocomotionLoop` keeps the locomotion/sprint PSD warm (or InAir PSD in air).
+- Start, Stop and Pivot keep a locomotion PSD warm but the direct Blend Stack
+  override prevents it from becoming visible until the authored clip releases.
+- Jump uses InAir PSD; Land uses its impact-compatible locomotion/idle fallback.
+- `Force Blend On Next Update` now pulses for **all** direct selections, not
+  only TIP. This matters when a chooser intentionally selects the same asset
+  again from time zero.
+- A direct Start/Stop/Pivot/Jump/Land captures its local Strafe yaw once. The
+  Orientation Warping input no longer drifts when velocity decelerates or an
+  additional WASD key arrives during the clip.
+- `AlignActorYawToControlYawForStartIfNeeded` is intentionally a no-op. Artistic
+  is permanently Strafe, so controller yaw owns a moving capsule and selected
+  TIP root motion owns a stationary capsule. A Start-time capsule snap would be
+  a third owner and can visibly shorten a 90-degree turn.
+
+The legacy locomotion enum is retained only for movement, replication and
+compatibility data. It is not the animation-presentation authority.
+
+### Required editor wiring
+
+No asset graph rewiring is required for this pass. The existing Blend Stack
+`On Update` binding must continue to call `Force Blend On Next Update` whenever
+`GetThreadSafeStateControllerShouldForceBlend()` is true. Keep the existing
+Steering and Offset Root Bone wiring:
+
+- Steering Alpha = `TurnInPlaceSteeringAlpha * enable_turninplacesteering`
+  for TIP.
+- Steering Target Orientation = `GetThreadSafeStateControllerDesiredFacingRotator`.
+- Offset Root Bone Rotation Mode =
+  `GetThreadSafeOffsetRootRotationMode`.
+
+### Verification
+
+2026-08-13 C++ validation succeeded:
+
+```text
+ArtisticSW2026Editor Win64 Development — Result: Succeeded
+```
+
+Test these in PIE:
+
+1. Idle, rotate camera ~90 degrees: a single selected 090 clip should keep
+   ownership through its authored end; no legacy Stop/Idle should enter midway.
+2. Continue past 90 degrees: the direct TIP replay/reselect should advance the
+   capsule by each clip's authored root yaw, bounded by remaining facing yaw.
+3. Reverse direction during TIP: the opposite bucket must preempt/reselect;
+   it must not wait for the old direction clip to finish.
+4. Start, Stop, Pivot and diagonal Start: the visible one-shot must retain its
+   selected direction while the hidden MM branch stays protected.

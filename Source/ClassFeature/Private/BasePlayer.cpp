@@ -2438,6 +2438,7 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
 	{
 		CachedTurnInPlaceSequence = const_cast<UAnimSequence*>(TurnSequence);
 		CachedTurnInPlaceSelectionRevision = SelectionRevision;
+		TurnInPlaceSelectionStartActorYaw = GetActorRotation().Yaw;
 		TurnInPlaceDebugSelectionStartActorYaw = GetActorRotation().Yaw;
 		if (const USkeletalMeshComponent* SkeletalMesh = GetMesh())
 		{
@@ -2448,15 +2449,25 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
 		}
 	}
 
-	// Same contract as Project_J: direct Blend Stack playback does not feed the
-	// character's root-motion consumer, so apply this frame's authored root yaw
-	// delta ourselves.  Do not rescale it by the chooser's semantic 90/180 name;
-	// these projects share the same authored turn assets.
+	// Same StateController contract as Project_J: direct Blend Stack playback
+	// does not feed the character's root-motion consumer, so the actor must
+	// receive the authored TIP yaw here.  This sequence's composed root transform
+	// has a cumulative yaw of +/-90, while summing short-range Transform.Rotator()
+	// yaws produces only ~45.  Follow the authored cumulative yaw from the
+	// selection baseline instead of composing Euler deltas frame by frame.
 	const float PreviousTime = FMath::Clamp(ElapsedTime - DeltaTime, 0.0f, TurnSequence->GetPlayLength());
 	const float CurrentTime = FMath::Clamp(ElapsedTime, 0.0f, TurnSequence->GetPlayLength());
-	FAnimExtractContext CurrentContext(static_cast<double>(CurrentTime));
-	const float RootYawDelta = TurnSequence->ExtractRootMotionFromRange(
-		static_cast<double>(PreviousTime), static_cast<double>(CurrentTime), CurrentContext).Rotator().Yaw;
+	const float StartTime = FMath::Clamp(
+		MotionMatchingAnim->GetThreadSafeStateControllerSelectedAnimationStartTime(),
+		0.0f,
+		TurnSequence->GetPlayLength());
+	const float CumulativeCurrentTime = FMath::Clamp(StartTime + CurrentTime, StartTime, TurnSequence->GetPlayLength());
+	FAnimExtractContext CurrentCumulativeContext(static_cast<double>(CumulativeCurrentTime));
+	const float CurrentCumulativeYaw = TurnSequence->ExtractRootMotionFromRange(
+		static_cast<double>(StartTime), static_cast<double>(CumulativeCurrentTime), CurrentCumulativeContext).Rotator().Yaw;
+	const float AuthoredTargetActorYaw = FRotator::NormalizeAxis(
+		TurnInPlaceSelectionStartActorYaw + CurrentCumulativeYaw);
+	const float RootYawDelta = FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, AuthoredTargetActorYaw);
 	const float ClampedDeltaYaw = RootYawDelta >= 0.0f
 		? FMath::Min(RootYawDelta, FMath::Max(FacingDeltaYaw, 0.0f))
 		: FMath::Max(RootYawDelta, FMath::Min(FacingDeltaYaw, 0.0f));
@@ -2481,6 +2492,18 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
 		const double Now = World ? World->GetTimeSeconds() : 0.0;
 		if (SelectionRevision != LastTurnInPlaceDebugSelectionRevision || Now >= NextTurnInPlaceDebugSampleTime)
 		{
+			// Diagnostic only: distinguish an authored 45-degree root track from a
+			// range-extraction/time-base issue.  Do not use these values to alter
+			// gameplay rotation; Project_J-style direct TIP still applies RootYawDelta.
+			FAnimExtractContext FullRangeContext(static_cast<double>(TurnSequence->GetPlayLength()));
+			FAnimExtractContext FirstHalfContext(static_cast<double>(TurnSequence->GetPlayLength() * 0.5f));
+			FAnimExtractContext CurrentCumulativeDebugContext(static_cast<double>(CurrentTime));
+			const float FullTrackRootYaw = TurnSequence->ExtractRootMotionFromRange(
+				0.0, static_cast<double>(TurnSequence->GetPlayLength()), FullRangeContext).Rotator().Yaw;
+			const float FirstHalfTrackRootYaw = TurnSequence->ExtractRootMotionFromRange(
+				0.0, static_cast<double>(TurnSequence->GetPlayLength() * 0.5f), FirstHalfContext).Rotator().Yaw;
+			const float CurrentCumulativeRootYaw = TurnSequence->ExtractRootMotionFromRange(
+				0.0, static_cast<double>(CurrentTime), CurrentCumulativeDebugContext).Rotator().Yaw;
 			const float AppliedThisSelection = FMath::FindDeltaAngleDegrees(
 				TurnInPlaceDebugSelectionStartActorYaw, ActorYawAfterApply);
 			const USkeletalMeshComponent* SkeletalMesh = GetMesh();
@@ -2493,9 +2516,9 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
 			const float RootBoneTurnThisSelection = FMath::FindDeltaAngleDegrees(
 				TurnInPlaceDebugSelectionStartRootBoneYaw, RootBoneYaw);
 			UE_LOG(LogTemp, Display,
-				TEXT("[SC_TIP_ROOT] Pawn=%s Rev=%d Seq=%s Clock=%.3f/%.3f Prev=%.3f Curr=%.3f RootDelta=%.3f AppliedTotal=%.2f Ctrl=%.2f ActorBefore=%.2f ActorAfter=%.2f MeshYaw=%.2f MeshVsActor=%.2f RootBoneYaw=%.2f RootVsActor=%.2f MeshTotal=%.2f RootTotal=%.2f Facing=%.2f Applied=%.3f Remaining=%.2f Phase=%d PhaseTime=%.3f RawEntry=%d CMCDesired=%d OrientMove=%d"),
+				TEXT("[SC_TIP_ROOT] Pawn=%s Rev=%d Seq=%s Clock=%.3f/%.3f Prev=%.3f Curr=%.3f RootDelta=%.3f TrackFull=%.2f TrackHalf=%.2f TrackNow=%.2f AppliedTotal=%.2f Ctrl=%.2f ActorBefore=%.2f ActorAfter=%.2f MeshYaw=%.2f MeshVsActor=%.2f RootBoneYaw=%.2f RootVsActor=%.2f MeshTotal=%.2f RootTotal=%.2f Facing=%.2f Applied=%.3f Remaining=%.2f Phase=%d PhaseTime=%.3f RawEntry=%d CMCDesired=%d OrientMove=%d"),
 				*GetName(), SelectionRevision, *TurnSequence->GetName(), ElapsedTime, TurnSequence->GetPlayLength(), PreviousTime, CurrentTime,
-				RootYawDelta, AppliedThisSelection, GetControlRotation().Yaw, ActorYawBeforeApply, ActorYawAfterApply,
+				RootYawDelta, FullTrackRootYaw, FirstHalfTrackRootYaw, CurrentCumulativeRootYaw, AppliedThisSelection, GetControlRotation().Yaw, ActorYawBeforeApply, ActorYawAfterApply,
 				MeshYaw, FMath::FindDeltaAngleDegrees(ActorYawAfterApply, MeshYaw),
 				RootBoneYaw, FMath::FindDeltaAngleDegrees(ActorYawAfterApply, RootBoneYaw),
 				MeshTurnThisSelection, RootBoneTurnThisSelection,

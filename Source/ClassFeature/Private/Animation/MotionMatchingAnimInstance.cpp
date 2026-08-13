@@ -1086,11 +1086,18 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                 Info.bPreUpdateDbChanged = bSearchResultDatabaseChanged;
                 Info.bPreUpdateAppliedDbChanged = bAppliedDatabaseChanged;
                 const ELocomotionState CurrentMotionState = static_cast<ELocomotionState>(ThreadSafeData.GroundData.GroundMotionMode);
+                const EStateControllerPresentationState PresentationState =
+                    ThreadSafeData.StateController.PresentationState;
                 const bool bIsTransitionState = IsTransitionMotionMatchingState(CurrentMotionState);
                 const bool bIsJumpStartPhase =
-                    CurrentMotionState == ELocomotionState::InAir &&
-                    ThreadSafeData.AirData.bIsJumping;
-                const bool bIsProtectedOneShotState = bIsTransitionState || bIsJumpStartPhase;
+                    PresentationState == EStateControllerPresentationState::TransitionToJump;
+                // StateController owns direct clips.  Legacy CurrentState may
+                // already be Idle/Locomotion while a visible Blend Stack TIP,
+                // Start, Stop, Pivot or Land still owns output.
+                const bool bIsProtectedOneShotState =
+                    ThreadSafeData.StateController.bShouldOverrideMotionMatching ||
+                    bIsTransitionState ||
+                    bIsJumpStartPhase;
                 const bool bIsAirLoopPhase =
                     ThreadSafeData.AirData.bIsInAir &&
                     !ThreadSafeData.AirData.bIsJumping &&
@@ -1963,7 +1970,49 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     // 1. C++ 직접 상태 분기 및 알맞은 PSD 할당 (Chooser Table 미사용)
     CurrentActivePoseSearchDatabase = nullptr;
 
+    // Project_J policy: State Controller is the one animation-presentation
+    // authority.  Keep a suitable PSD warm behind a direct Blend Stack clip,
+    // but never choose that PSD from the legacy CurrentState.
     if (CachedLocomotionStateComponent)
+    {
+        const bool bSprinting = CachedLocomotionStateComponent->bIsSprinting;
+        switch (StateControllerPlaybackHoldState)
+        {
+        case EStateControllerPresentationState::TransitionToJump:
+            CurrentActivePoseSearchDatabase = InAirDatabase;
+            break;
+
+        case EStateControllerPresentationState::TransitionToLand:
+            CurrentActivePoseSearchDatabase = CachedLocomotionStateComponent->bLandWasMoving
+                ? (CachedLocomotionStateComponent->bLandWasSprinting ? SprintLocomotionDatabase : LocomotionDatabase)
+                : IdleDatabase;
+            break;
+
+        case EStateControllerPresentationState::LocomotionLoop:
+            if (CachedLocomotionStateComponent->bIsInAir)
+            {
+                CurrentActivePoseSearchDatabase = InAirDatabase;
+            }
+            else
+            {
+                CurrentActivePoseSearchDatabase = bSprinting ? SprintLocomotionDatabase : LocomotionDatabase;
+            }
+            break;
+
+        case EStateControllerPresentationState::IdleLoop:
+        case EStateControllerPresentationState::TurnInPlace:
+            CurrentActivePoseSearchDatabase = IdleDatabase;
+            break;
+
+        default:
+            // Start, Stop and Pivot are direct assets.  Their MM fallback is a
+            // locomotion cycle and is protected by bShouldOverrideMotionMatching.
+            CurrentActivePoseSearchDatabase = bSprinting ? SprintLocomotionDatabase : LocomotionDatabase;
+            break;
+        }
+    }
+
+    if (false && CachedLocomotionStateComponent) // Legacy DB routing kept for reference only.
     {
         const bool bSprinting = CachedLocomotionStateComponent->bIsSprinting;
 
@@ -3471,6 +3520,37 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
                 DesiredState != EStateControllerPresentationState::TransitionToStart &&
                 PreviousState != EStateControllerPresentationState::IdleLoop;
             StateControllerOneShotFoot = ResolveStateControllerOneShotFoot(bAllowPhaseHistoryFallback);
+
+            // Project_J freezes the direction used by a direct Strafe clip at
+            // selection time.  Re-reading velocity each update lets braking or
+            // a second WASD key bend an authored Start/Stop/Pivot in mid-play.
+            bHasStateControllerOneShotOrientationWarpingAngle = false;
+            StateControllerOneShotOrientationWarpingAngle = 0.0f;
+            if (DesiredState != EStateControllerPresentationState::TurnInPlace)
+            {
+                FVector2D DirectionInput = CachedLocomotionStateComponent
+                    ? CachedLocomotionStateComponent->CachedMoveInput
+                    : FVector2D::ZeroVector;
+                if (DesiredState == EStateControllerPresentationState::TransitionToJump &&
+                    CachedLocomotionStateComponent &&
+                    !CachedLocomotionStateComponent->JumpStartMoveDirection.IsNearlyZero())
+                {
+                    DirectionInput = CachedLocomotionStateComponent->JumpStartMoveDirection;
+                }
+                else if (DesiredState == EStateControllerPresentationState::TransitionToLand &&
+                    CachedLocomotionStateComponent &&
+                    !CachedLocomotionStateComponent->LandMoveDirection.IsNearlyZero())
+                {
+                    DirectionInput = CachedLocomotionStateComponent->LandMoveDirection;
+                }
+
+                if (!DirectionInput.IsNearlyZero())
+                {
+                    StateControllerOneShotOrientationWarpingAngle = FMath::RadiansToDegrees(
+                        FMath::Atan2(DirectionInput.X, DirectionInput.Y));
+                    bHasStateControllerOneShotOrientationWarpingAngle = true;
+                }
+            }
         }
 
         if (DesiredState == EStateControllerPresentationState::TransitionToStart && CachedLocomotionStateComponent)
@@ -3689,9 +3769,11 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
             // only when the selected asset identity is unchanged.  The Blend
             // Stack otherwise may retain its previous player/time and expose a
             // Motion Matching Idle frame between two semantic TIP entries.
-            bStateControllerForceBlendStackOnNextUpdate =
-                DesiredState == EStateControllerPresentationState::TurnInPlace &&
-                StateControllerSelectedAnimation != nullptr;
+			// Force Blend is a selection pulse, not a TIP-only workaround.  A
+			// Blend Stack does not restart an identical asset by itself, so every
+			// direct Start/Stop/Pivot/Jump/Land/TIP selection must publish it.
+			bStateControllerForceBlendStackOnNextUpdate =
+				bEnteringOneShot && StateControllerSelectedAnimation != nullptr;
 
         }
         else
@@ -3810,6 +3892,11 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
     if (bUseLatchedLandingSteering)
     {
         OrientationWarpingAngle = StateControllerLandingOrientationWarpingAngle;
+        bHasOrientationWarpingDirection = true;
+    }
+    else if (bDirectStrafeOneShot && bHasStateControllerOneShotOrientationWarpingAngle)
+    {
+        OrientationWarpingAngle = StateControllerOneShotOrientationWarpingAngle;
         bHasOrientationWarpingDirection = true;
     }
     else if (!ThreadSafeData.MovementData.VelocityLocal.IsNearlyZero(10.0f))

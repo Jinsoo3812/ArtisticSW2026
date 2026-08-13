@@ -969,6 +969,12 @@ protected:
     /** Same impact direction as above, expressed in actor-local degrees for Orientation Warping. */
     float StateControllerLandingOrientationWarpingAngle = 0.0f;
 
+    /** Immutable direction captured when a direct Strafe one-shot is selected. */
+    float StateControllerOneShotOrientationWarpingAngle = 0.0f;
+
+    /** True while the current direct Start/Stop/Pivot/Jump/Land owns that angle. */
+    bool bHasStateControllerOneShotOrientationWarpingAngle = false;
+
     void EvaluateStateControllerPresentationState();
     void EvaluateStateControllerPlaybackHold(EStateControllerPresentationState DesiredState);
     /** Emits event-driven diagnostics for direct Chooser one-shots and TIP rotation. */

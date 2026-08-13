@@ -637,6 +637,9 @@ protected:
 
 	TWeakObjectPtr<class UAnimSequence> CachedTurnInPlaceSequence;
 	int32 CachedTurnInPlaceSelectionRevision = INDEX_NONE;
+	/** Gameplay baseline for the currently selected direct TIP clip.  The
+	 * capsule follows the clip's cumulative authored root yaw from this yaw. */
+	float TurnInPlaceSelectionStartActorYaw = 0.0f;
 	int32 LastTurnInPlaceDebugSelectionRevision = INDEX_NONE;
 	double NextTurnInPlaceDebugSampleTime = 0.0;
 	/** Debug-only baseline used to report the total capsule yaw consumed by one
