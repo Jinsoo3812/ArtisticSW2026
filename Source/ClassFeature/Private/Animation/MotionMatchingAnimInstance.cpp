@@ -3443,12 +3443,23 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         RequestedTurnIndex > 0 &&
         StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace &&
         RequestedTurnIndex != ActiveTurnIndex;
+	// A same-direction replay is useful only for a new, substantial turn.  If
+	// the first 090 clip has already brought the capsule close to the camera
+	// (for example 14 degrees remain), restarting it at the 0.75s timer makes
+	// the root/steering pair visibly hitch at the arrival radius.  Keep immediate
+	// bucket changes for reverse turns, but require the normal TIP entry angle
+	// before replaying the same bucket.
+	constexpr float TurnInPlaceReplayMinimumFacingDegrees = 30.0f;
+	const bool bTurnInPlaceReplayHasMeaningfulResidual = CachedLocomotionStateComponent &&
+		FMath::Abs(CachedLocomotionStateComponent->DesiredFacingDeltaYaw) >= TurnInPlaceReplayMinimumFacingDegrees;
     const bool bTurnInPlaceReplayDue =
         RequestedTurnIndex > 0 &&
         StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace &&
         DesiredState == EStateControllerPresentationState::TurnInPlace &&
         CachedLocomotionStateComponent && CachedLocomotionStateComponent->bShouldTurnInPlace &&
-        (bTurnInPlaceBucketChanged || StateControllerPlaybackHoldElapsed >= StateControllerTurnInPlaceReplayElapsed);
+		(bTurnInPlaceBucketChanged ||
+			(bTurnInPlaceReplayHasMeaningfulResidual &&
+				StateControllerPlaybackHoldElapsed >= StateControllerTurnInPlaceReplayElapsed));
     bStateControllerForceTurnInPlaceReselect = bTurnInPlaceReplayDue;
     const bool bStartInputReselectDue =
         bStateControllerInitialStartInputReselect &&

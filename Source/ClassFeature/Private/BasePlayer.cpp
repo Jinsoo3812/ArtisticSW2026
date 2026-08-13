@@ -2471,6 +2471,7 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
 	const float ClampedDeltaYaw = RootYawDelta >= 0.0f
 		? FMath::Min(RootYawDelta, FMath::Max(FacingDeltaYaw, 0.0f))
 		: FMath::Max(RootYawDelta, FMath::Min(FacingDeltaYaw, 0.0f));
+	const bool bClampedToFacingTarget = !FMath::IsNearlyEqual(RootYawDelta, ClampedDeltaYaw, 0.01f);
 
 	AnimStateComponent->TurnInPlaceRootYawDelta = ClampedDeltaYaw;
 	const float ActorYawBeforeApply = GetActorRotation().Yaw;
@@ -2492,9 +2493,9 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
 		const double Now = World ? World->GetTimeSeconds() : 0.0;
 		if (SelectionRevision != LastTurnInPlaceDebugSelectionRevision || Now >= NextTurnInPlaceDebugSampleTime)
 		{
-			// Diagnostic only: distinguish an authored 45-degree root track from a
-			// range-extraction/time-base issue.  Do not use these values to alter
-			// gameplay rotation; Project_J-style direct TIP still applies RootYawDelta.
+			// Diagnostic only: classify end-of-turn jitter.  TrackFull/Now prove the
+			// authored clip; AuthoredTarget/ClipError expose its desired capsule yaw;
+			// Clamp=1 means camera-facing, rather than the clip, limited this frame.
 			FAnimExtractContext FullRangeContext(static_cast<double>(TurnSequence->GetPlayLength()));
 			FAnimExtractContext FirstHalfContext(static_cast<double>(TurnSequence->GetPlayLength() * 0.5f));
 			FAnimExtractContext CurrentCumulativeDebugContext(static_cast<double>(CurrentTime));
@@ -2516,9 +2517,9 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
 			const float RootBoneTurnThisSelection = FMath::FindDeltaAngleDegrees(
 				TurnInPlaceDebugSelectionStartRootBoneYaw, RootBoneYaw);
 			UE_LOG(LogTemp, Display,
-				TEXT("[SC_TIP_ROOT] Pawn=%s Rev=%d Seq=%s Clock=%.3f/%.3f Prev=%.3f Curr=%.3f RootDelta=%.3f TrackFull=%.2f TrackHalf=%.2f TrackNow=%.2f AppliedTotal=%.2f Ctrl=%.2f ActorBefore=%.2f ActorAfter=%.2f MeshYaw=%.2f MeshVsActor=%.2f RootBoneYaw=%.2f RootVsActor=%.2f MeshTotal=%.2f RootTotal=%.2f Facing=%.2f Applied=%.3f Remaining=%.2f Phase=%d PhaseTime=%.3f RawEntry=%d CMCDesired=%d OrientMove=%d"),
+				TEXT("[SC_TIP_ROOT] Pawn=%s Rev=%d Seq=%s Clock=%.3f/%.3f Prev=%.3f Curr=%.3f RootDelta=%.3f TrackFull=%.2f TrackHalf=%.2f TrackNow=%.2f TargetYaw=%.2f ClipError=%.2f Clamp=%d AppliedTotal=%.2f Ctrl=%.2f ActorBefore=%.2f ActorAfter=%.2f MeshYaw=%.2f MeshVsActor=%.2f RootBoneYaw=%.2f RootVsActor=%.2f MeshTotal=%.2f RootTotal=%.2f Facing=%.2f Applied=%.3f Remaining=%.2f Phase=%d PhaseTime=%.3f RawEntry=%d CMCDesired=%d OrientMove=%d"),
 				*GetName(), SelectionRevision, *TurnSequence->GetName(), ElapsedTime, TurnSequence->GetPlayLength(), PreviousTime, CurrentTime,
-				RootYawDelta, FullTrackRootYaw, FirstHalfTrackRootYaw, CurrentCumulativeRootYaw, AppliedThisSelection, GetControlRotation().Yaw, ActorYawBeforeApply, ActorYawAfterApply,
+				RootYawDelta, FullTrackRootYaw, FirstHalfTrackRootYaw, CurrentCumulativeRootYaw, AuthoredTargetActorYaw, RootYawDelta, bClampedToFacingTarget ? 1 : 0, AppliedThisSelection, GetControlRotation().Yaw, ActorYawBeforeApply, ActorYawAfterApply,
 				MeshYaw, FMath::FindDeltaAngleDegrees(ActorYawAfterApply, MeshYaw),
 				RootBoneYaw, FMath::FindDeltaAngleDegrees(ActorYawAfterApply, RootBoneYaw),
 				MeshTurnThisSelection, RootBoneTurnThisSelection,
