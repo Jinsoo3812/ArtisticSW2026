@@ -3305,9 +3305,9 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     const float DesiredFacingDeltaYaw = CachedLocomotionStateComponent->DesiredFacingDeltaYaw;
     const float AbsDesiredFacingDeltaYaw = FMath::Abs(DesiredFacingDeltaYaw);
     StateControllerTurnInPlaceIndexForChooser = 0.0f;
-    // A 090 root track is authored at roughly 45 degrees of yaw.  During the
-    // Project_J-style continuation phase, keep selecting its bucket while the
-    // remaining yaw is between the raw 30-degree entry threshold and 5 degrees.
+    // Match Project_J exactly: the locomotion component owns the raw entry
+    // threshold and semantic 90/180 bucket; StateController only decides when
+    // to evaluate that chosen bucket again.
     if (bShouldTurnInPlace && AbsDesiredFacingDeltaYaw > 5.0f)
     {
         const bool bLeft = DesiredFacingDeltaYaw < 0.0f;
@@ -3443,23 +3443,13 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         RequestedTurnIndex > 0 &&
         StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace &&
         RequestedTurnIndex != ActiveTurnIndex;
-	// A same-direction replay is useful only for a new, substantial turn.  If
-	// the first 090 clip has already brought the capsule close to the camera
-	// (for example 14 degrees remain), restarting it at the 0.75s timer makes
-	// the root/steering pair visibly hitch at the arrival radius.  Keep immediate
-	// bucket changes for reverse turns, but require the normal TIP entry angle
-	// before replaying the same bucket.
-	constexpr float TurnInPlaceReplayMinimumFacingDegrees = 30.0f;
-	const bool bTurnInPlaceReplayHasMeaningfulResidual = CachedLocomotionStateComponent &&
-		FMath::Abs(CachedLocomotionStateComponent->DesiredFacingDeltaYaw) >= TurnInPlaceReplayMinimumFacingDegrees;
     const bool bTurnInPlaceReplayDue =
         RequestedTurnIndex > 0 &&
         StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace &&
         DesiredState == EStateControllerPresentationState::TurnInPlace &&
         CachedLocomotionStateComponent && CachedLocomotionStateComponent->bShouldTurnInPlace &&
 		(bTurnInPlaceBucketChanged ||
-			(bTurnInPlaceReplayHasMeaningfulResidual &&
-				StateControllerPlaybackHoldElapsed >= StateControllerTurnInPlaceReplayElapsed));
+			StateControllerPlaybackHoldElapsed >= StateControllerTurnInPlaceReplayElapsed);
     bStateControllerForceTurnInPlaceReselect = bTurnInPlaceReplayDue;
     const bool bStartInputReselectDue =
         bStateControllerInitialStartInputReselect &&
