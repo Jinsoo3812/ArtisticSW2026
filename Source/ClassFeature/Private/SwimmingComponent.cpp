@@ -468,9 +468,9 @@ void USwimmingComponent::CheckWaterTransitions()
 			UE_LOG(LogTemp, Warning, TEXT("[%s] %s <<< Exited Swimming State (Walking) (FeetSubmersion: %.2f, ExitDepth: %.2f) >>>"), *ContextStr, *OwnerName, FeetSubmersion, SwimExitDepth);
 			bIsInShallowWater = bFeetInWater && FeetSubmersion >= 0.0f;
 		}
-		else if (!bFeetInWater || FeetSubmersion < -100.f)
+		else if (!bFeetInWater || FeetSubmersion < 0.0f)
 		{
-			// 물높이가 감지되지 않거나 발밑이 물높이보다 100cm 이상으로 떠버린 경우 (완전히 뭍으로 탈출 또는 공중 점프 등)
+			// 물높이가 감지되지 않거나 발밑이 물높이보다 위로 떠버린 경우 (완전히 뭍으로 탈출 또는 공중 점프 등)
 			CharacterMovement->SetMovementMode(MOVE_Falling);
 			
 			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));

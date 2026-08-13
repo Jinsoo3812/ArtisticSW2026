@@ -946,6 +946,8 @@ protected:
     bool bStateControllerForceBlendStackOnNextUpdate = false;
     FVector2D StateControllerStartMoveInput = FVector2D::ZeroVector;
     float StateControllerStartControlYaw = 0.0f;
+    /** Gait frozen when the current direct Start clip was selected. */
+    bool bStateControllerSelectedSprintStart = false;
     bool bStateControllerStartInputChanged = false;
     bool bStateControllerStartControlYawChanged = false;
     /** Set for one game-thread evaluation when a just-entered Start must use its completed diagonal input. */

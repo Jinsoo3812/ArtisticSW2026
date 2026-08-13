@@ -3262,6 +3262,17 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     const bool bStopRequested = CachedLocomotionStateComponent->bStopRequested;
     const bool bIsPivoting = CachedLocomotionStateComponent->bSharpTurnRequested;
     const bool bIsMoving = bHasMoveInput || GroundSpeed > 10.0f;
+    // The Start request can predate the actual chooser selection (for example,
+    // Shift may be pressed just after move input).  Therefore use the gait
+    // frozen when the direct Start clip was selected, rather than either the
+    // raw input edge or the mutable current StateControllerGait.
+    // Releasing Sprint during an authored Sprint Start must bypass its remaining
+    // one-shot hold and resume the regular locomotion MM database immediately.
+    const bool bInterruptSprintStartForMotionMatching =
+        StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart &&
+        bStateControllerSelectedSprintStart &&
+        !CachedLocomotionStateComponent->bIsSprinting &&
+        bHasMoveInput;
     const bool bInPlaybackHold = (StateControllerPlaybackHoldElapsed < StateControllerPlaybackHoldDuration);
     const float DesiredFacingDeltaYaw = CachedLocomotionStateComponent->DesiredFacingDeltaYaw;
     const float AbsDesiredFacingDeltaYaw = FMath::Abs(DesiredFacingDeltaYaw);
@@ -3311,6 +3322,10 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
         if (bIsPivoting && (StateControllerPlaybackHoldState == EStateControllerPresentationState::LocomotionLoop || StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart))
         {
             DesiredState = EStateControllerPresentationState::TransitionToPivot;
+        }
+        else if (bInterruptSprintStartForMotionMatching)
+        {
+            DesiredState = EStateControllerPresentationState::LocomotionLoop;
         }
         else if (bStartRequested ||
             StateControllerPlaybackHoldState == EStateControllerPresentationState::IdleLoop ||
@@ -3678,6 +3693,9 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         {
             StateControllerGait = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsSprinting ? EGaitIntent::Sprint : EGaitIntent::Run;
         }
+        bStateControllerSelectedSprintStart =
+            DesiredState == EStateControllerPresentationState::TransitionToStart &&
+            StateControllerGait == EGaitIntent::Sprint;
 
         const bool bEnteringOneShot =
             DesiredState == EStateControllerPresentationState::TransitionToStart ||
