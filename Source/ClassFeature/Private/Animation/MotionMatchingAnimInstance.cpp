@@ -61,7 +61,7 @@ static TAutoConsoleVariable<int32> CVarMotionMatchingDebugLogging(
 static TAutoConsoleVariable<int32> CVarStrafeMotionMatchingDebug(
     TEXT("a.StrafeMMDebug"),
     0,
-    TEXT("Moving-Strafe Pose Search diagnostics. 0: Disabled, 1: selected-asset/trajectory changes, 2: 0.25s samples."),
+    TEXT("Moving-Strafe Pose Search diagnostics. 0: Disabled, 1: guaranteed game-thread heartbeat plus reselect events, 2: also 0.25s anim-thread selection samples."),
     ECVF_Cheat
 );
 
@@ -1113,6 +1113,18 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     ThreadSafeData.StateController.bShouldOverrideMotionMatching ||
                     bIsTransitionState ||
                     bIsJumpStartPhase;
+                // A direct State Controller one-shot owns its visual output.
+                // Conversely, this flag is only raised for a moving Strafe
+                // directional redirect, where PSD_Run_Tnasition contains the
+                // Box/Diamond clips that a steady loop PSD cannot select.
+                const bool bMovingStrafeTransitionQuery =
+                    ThreadSafeData.InputData.bHasMoveInput &&
+                    !ThreadSafeData.AirData.bIsInAir &&
+                    !bIsProtectedOneShotState &&
+                    ThreadSafeData.StateController.bUseLocomotionTransitionDatabase;
+                const bool bForceMovingStrafeReselect =
+                    bMovingStrafeTransitionQuery && !Info.bWasStrafeTurnReselectRequested;
+                Info.bPreUpdateStrafeTurnReselect = bForceMovingStrafeReselect;
                 const bool bIsAirLoopPhase =
                     ThreadSafeData.AirData.bIsInAir &&
                     !ThreadSafeData.AirData.bIsJumping &&
@@ -1180,6 +1192,14 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     }
                     Info.AppliedDatabase = CurrentActivePoseSearchDatabase;
                 }
+                else if (bForceMovingStrafeReselect)
+                {
+                    // Do not invalidate the continuing pose here.  We merely
+                    // make the next query compare it against Box/Diamond
+                    // candidates in the transition PSD, which preserves a
+                    // smooth loop when no directional clip is actually better.
+                    MMNode->SetInterruptMode(EPoseSearchInterruptMode::ForceInterrupt);
+                }
                 else if (bIsProtectedOneShotState)
                 {
                     MMNode->SetInterruptMode(EPoseSearchInterruptMode::DoNotInterrupt);
@@ -1196,6 +1216,8 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                 {
                     MMNode->SetInterruptMode(EPoseSearchInterruptMode::DoNotInterrupt);
                 }
+
+                Info.bWasStrafeTurnReselectRequested = bMovingStrafeTransitionQuery;
 
                 if (bIsJumpStartPhase || bIsFallOffStartPhase || bIsAirLoopPhase)
                 {
@@ -1435,7 +1457,7 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                             : FTransform::Identity;
                         const FString InterruptModeName = ReadPoseSearchInterruptMode(Info, *MMNode);
                         const FString StrafeDebugLine = FString::Printf(
-                            TEXT("[STRAFE_MM] Pawn=%s Node=%d Event=%s PSD=%s SelPSD=%s Asset=%s@%.3f Cost=%.3f Continue=%d Search=%d Throttle=%.3f Interrupt=%s Input=(R=%.2f,F=%.2f) VelLocal=(R=%.1f,F=%.1f) Accel=(%.1f,%.1f) AimYaw=%.1f Traj={%s %s} Stack={%s}"),
+                            TEXT("[STRAFE_MM] Pawn=%s Node=%d Event=%s PSD=%s SelPSD=%s Asset=%s@%.3f Cost=%.3f Continue=%d Search=%d Throttle=%.3f Interrupt=%s TurnPSD=%d TurnReselect=%d Input=(R=%.2f,F=%.2f) VelLocal=(R=%.1f,F=%.1f) Accel=(%.1f,%.1f) AimYaw=%.1f Traj={%s %s} Stack={%s}"),
                             *DebugPawnName,
                             MotionMatchingNodeIndex,
                             bStrafeSelectionChanged ? TEXT("SELECTION") : TEXT("SAMPLE"),
@@ -1448,6 +1470,8 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                             Info.bPreUpdateShouldSearch ? 1 : 0,
                             Info.PreUpdateThrottle,
                             *InterruptModeName,
+                            ThreadSafeData.StateController.bUseLocomotionTransitionDatabase ? 1 : 0,
+                            Info.bPreUpdateStrafeTurnReselect ? 1 : 0,
                             ThreadSafeData.InputData.MoveInput.X,
                             ThreadSafeData.InputData.MoveInput.Y,
                             ThreadSafeData.MovementData.VelocityLocal.Y,
@@ -1894,6 +1918,16 @@ void UMotionMatchingAnimInstance::NativeInitializeAnimation()
     {
         CachedLocomotionStateComponent = CachedBasePlayer->FindComponentByClass<ULocomotionAnimStateComponent>();
 
+        // The State Controller only needs the sustained loop and this one
+        // moving-Strafe redirect PSD.  Keep the asset assignment self-healing
+        // for existing ABP instances that predate LocomotionTransitionDatabase.
+        if (!LocomotionTransitionDatabase)
+        {
+            LocomotionTransitionDatabase = LoadObject<UPoseSearchDatabase>(
+                nullptr,
+                TEXT("/Game/Anim_Logic/PSD/PSD_Run_Tnasition.PSD_Run_Tnasition"));
+        }
+
         UCharacterTrajectoryComponent* TrajectoryComp = CachedBasePlayer->FindComponentByClass<UCharacterTrajectoryComponent>();
         if (TrajectoryComp)
         {
@@ -2058,7 +2092,18 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             }
             else
             {
-                CurrentActivePoseSearchDatabase = bSprinting ? SprintLocomotionDatabase : LocomotionDatabase;
+                // Project_J's moving-Strafe policy: a brief meaningful
+                // direction redirect searches the dedicated transition PSD;
+                // steady movement stays in the cheap stable loop PSD.  The
+                // transition component already latches this for a short
+                // duration, preventing a database flip every frame.
+                const bool bUseRunTransitionDatabase =
+                    !bSprinting &&
+                    CachedLocomotionStateComponent->bIsLocomotionTransitioning &&
+                    LocomotionTransitionDatabase;
+                CurrentActivePoseSearchDatabase = bSprinting
+                    ? SprintLocomotionDatabase
+                    : (bUseRunTransitionDatabase ? LocomotionTransitionDatabase : LocomotionDatabase);
             }
             break;
 
@@ -2296,6 +2341,10 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     ThreadSafeData.StateController = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.StateController;
     ThreadSafeData.StateController.bForceMotionMatchingReselection =
         CachedLocomotionStateComponent->ConsumeMotionMatchingReselectionRequest();
+    ThreadSafeData.StateController.bUseLocomotionTransitionDatabase =
+        CurrentActivePoseSearchDatabase &&
+        LocomotionTransitionDatabase &&
+        CurrentActivePoseSearchDatabase == LocomotionTransitionDatabase;
 
     // Movement Data
     const FAnimThreadSafeData& PreviousThreadSafeData =
@@ -2551,6 +2600,44 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     FMotionMatchingAnimInstanceProxy& MyProxy = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>();
     MyProxy.ThreadSafeData = ThreadSafeData;
     MyProxy.CurrentActivePoseSearchDatabase = CurrentActivePoseSearchDatabase;
+
+    // This game-thread heartbeat deliberately does not depend on a Motion
+    // Matching node having produced a selection. It therefore distinguishes a
+    // routing/input failure from a legitimate "loop won the Pose Search" result.
+    if (CVarStrafeMotionMatchingDebug.GetValueOnGameThread() > 0 && CachedBasePlayer &&
+        CachedBasePlayer->IsLocallyControlled())
+    {
+        const double Now = GetWorld()->GetTimeSeconds();
+        if (Now >= NextStrafeMotionMatchingGameThreadDebugTime)
+        {
+            NextStrafeMotionMatchingGameThreadDebugTime = Now + 0.25;
+            const FString PresentationName = StaticEnum<EStateControllerPresentationState>()->GetNameStringByValue(
+                static_cast<int64>(ThreadSafeData.StateController.PresentationState));
+            const FString LegacyStateName = StaticEnum<ELocomotionState>()->GetNameStringByValue(
+                static_cast<int64>(CachedLocomotionStateComponent->CurrentState));
+            const FString StrafeLine = FString::Printf(
+                TEXT("[STRAFE_MM_GT] Pawn=%s State=%s Present=%s Input=(R=%.2f,F=%.2f,H=%d) Ground=%.1f VelLocal=(R=%.1f,F=%.1f) Accel=(%.1f,%.1f) AimYaw=%.1f TurnAngle=%.1f Transition=%d TurnPSD=%d Override=%d PSD=%s Direct=%s"),
+                *CachedBasePlayer->GetName(),
+                *LegacyStateName,
+                *PresentationName,
+                ThreadSafeData.InputData.MoveInput.X,
+                ThreadSafeData.InputData.MoveInput.Y,
+                ThreadSafeData.InputData.bHasMoveInput ? 1 : 0,
+                ThreadSafeData.LandingData.GroundSpeed,
+                ThreadSafeData.MovementData.VelocityLocal.Y,
+                ThreadSafeData.MovementData.VelocityLocal.X,
+                ThreadSafeData.MovementData.Acceleration.X,
+                ThreadSafeData.MovementData.Acceleration.Y,
+                ThreadSafeData.AimData.AimYaw,
+                ThreadSafeData.StateController.TrajectoryTurnAngleDegrees,
+                CachedLocomotionStateComponent->bIsLocomotionTransitioning ? 1 : 0,
+                ThreadSafeData.StateController.bUseLocomotionTransitionDatabase ? 1 : 0,
+                ThreadSafeData.StateController.bShouldOverrideMotionMatching ? 1 : 0,
+                *GetNameSafe(CurrentActivePoseSearchDatabase),
+                *GetNameSafe(ThreadSafeData.StateController.SelectedAnimation));
+            UE_LOG(LogMotionMatchingCapture, Display, TEXT("%s"), *StrafeLine);
+        }
+    }
 
     // Debug logging for both the local pawn and observed simulated proxies.
     if (CVarMotionMatchingDebugLogging.GetValueOnGameThread() > 0 && CachedBasePlayer)

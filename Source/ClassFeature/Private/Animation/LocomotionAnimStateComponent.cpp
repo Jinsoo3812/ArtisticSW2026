@@ -270,7 +270,20 @@ void ULocomotionAnimStateComponent::UpdateAnimationState(float DeltaTime)
         const float VelocityYaw = FMath::RadiansToDegrees(FMath::Atan2(LocalVelocity.Y, LocalVelocity.X));
 
         const float AngleDiff = FMath::Abs(FMath::FindDeltaAngleDegrees(InputYaw, VelocityYaw));
-        bPhysicallyTransitioning = (AngleDiff > 20.f);
+        const FVector HorizontalAcceleration = FVector(Acceleration.X, Acceleration.Y, 0.f);
+        const float WorldTrajectoryTurn =
+            !HorizontalVelocity.IsNearlyZero() && !HorizontalAcceleration.IsNearlyZero()
+            ? FMath::Abs(FMath::FindDeltaAngleDegrees(
+                HorizontalVelocity.Rotation().Yaw,
+                HorizontalAcceleration.Rotation().Yaw))
+            : 0.f;
+
+        // In an always-Strafe controller, holding W while rotating the camera
+        // rotates actor, input and velocity together. Their *local* angle is
+        // then still zero, so the old test never exposed PSD_Run_Tnasition.
+        // World velocity lags behind the newly accelerated control direction
+        // for that short redirect; include it to expose Box/Diamond candidates.
+        bPhysicallyTransitioning = (AngleDiff > 20.f) || (WorldTrajectoryTurn > 20.f);
     }
 
     if (bPhysicallyTransitioning)

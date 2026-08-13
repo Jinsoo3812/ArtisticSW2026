@@ -338,6 +338,10 @@ struct FAnimStateControllerThreadSafeData
     UPROPERTY(BlueprintReadOnly, Category = "StateController")
     bool bShouldOverrideMotionMatching = false;
 
+    /** True only while moving Strafe is routed through the directional transition PSD. */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bUseLocomotionTransitionDatabase = false;
+
     /**
      * Raised only for an intentional Land redirect.  It forces the next MM
      * query to use the outgoing graph Pose History instead of a continuing
@@ -455,6 +459,10 @@ struct FCachedMotionMatchingNodeInfo
     float PreUpdateThrottle = 0.f;
     int32 PreUpdateMaxActiveBlends = 0;
     bool bPreUpdateShouldSearch = false;
+    /** Rising-edge latch: a meaningful moving-Strafe trajectory turn requests one fresh MM query. */
+    bool bWasStrafeTurnReselectRequested = false;
+    /** Debug-only record of the rising-edge request applied before this node update. */
+    bool bPreUpdateStrafeTurnReselect = false;
     bool bPostUpdateRestoredTransitionStack = false;
     bool bPostUpdateCollapsedTransitionStack = false;
     TWeakObjectPtr<const UObject> LastStackTopAnim;
@@ -1138,6 +1146,8 @@ private:
     double NextStateControllerTurnInPlaceDebugTime = 0.0;
     double NextStateControllerOneShotDebugTime = 0.0;
     double NextStateControllerPivotDebugTime = 0.0;
+    /** Game-thread heartbeat for a.StrafeMMDebug; works even before proxy-node diagnostics are available. */
+    double NextStrafeMotionMatchingGameThreadDebugTime = 0.0;
     /** Independent from event traces: a.StopDebug 2 prints the derived Stop
      * inputs at a low fixed cadence even when no request is generated. */
     double NextStopDebugSampleTime = 0.0;
