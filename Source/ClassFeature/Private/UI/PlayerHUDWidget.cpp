@@ -26,6 +26,8 @@
 #include "Skills/PlayerSkillComponent.h"
 #include "Cannon.h"
 #include "Ship.h"
+#include "AbilitySystemComponent.h"
+#include "BaseAttributeSet.h"
 #include "GameFramework/PlayerController.h"
 
 #include "BaseGameplayTags.h"
@@ -117,6 +119,12 @@ void UPlayerHUDWidget::NativeConstruct()
 			this, &UPlayerHUDWidget::HandlePossessedPawnChanged);
 		BoundPossessionController = PlayerController;
 		BindSkillStateSource(PlayerController->GetPawn());
+		RefreshShipHealthSource(PlayerController->GetPawn());
+	}
+
+	if (HealthBarWidget)
+	{
+		HealthBarWidget->SetShipHealthVisible(true);
 	}
 }
 
@@ -141,6 +149,7 @@ void UPlayerHUDWidget::NativeDestruct()
 	}
 
 	UnbindHealthComponent();
+	UnbindShipHealthSource();
 	UnbindBowComponent();
 	UnbindSkillComponent();
 	UnbindSkillStateSource();
@@ -201,6 +210,8 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 		InventoryPanelWidget->InitializeForPlayer(CachedPlayer.Get());
 	}
 	RefreshHealth();
+	RefreshShipHealthSource(GetOwningPlayerPawn());
+	RefreshShipHealth();
 	RefreshBowCrosshairBinding();
 }
 
@@ -424,6 +435,7 @@ void UPlayerHUDWidget::RefreshEquippedSkillBorders()
 void UPlayerHUDWidget::HandlePossessedPawnChanged(APawn*, APawn* NewPawn)
 {
 	BindSkillStateSource(NewPawn);
+	RefreshShipHealthSource(NewPawn);
 }
 
 void UPlayerHUDWidget::HandleSkillActiveStateChanged(bool)
@@ -478,10 +490,113 @@ void UPlayerHUDWidget::RefreshHealth()
 		return;
 	}
 
-	HealthBarWidget->SetHealthValues(
+	HealthBarWidget->SetPlayerHealthValues(
 		CachedHealthComponent->GetHealth(),
 		CachedHealthComponent->GetMaxHealth()
 	);
+}
+
+void UPlayerHUDWidget::RefreshShipHealthSource(APawn* ControlledPawn)
+{
+	AShip* Ship = Cast<AShip>(ControlledPawn);
+	if (!Ship)
+	{
+		if (ACannon* Cannon = Cast<ACannon>(ControlledPawn))
+		{
+			Ship = Cannon->GetOwningShip();
+		}
+	}
+
+	// Keep the last controlled ship visible after returning possession to the player.
+	if (Ship)
+	{
+		BindShipHealthSource(Ship);
+	}
+	else
+	{
+		RefreshShipHealth();
+	}
+}
+
+void UPlayerHUDWidget::BindShipHealthSource(AShip* Ship)
+{
+	if (CachedShipHealthSource.Get() == Ship)
+	{
+		RefreshShipHealth();
+		return;
+	}
+
+	UnbindShipHealthSource();
+	CachedShipHealthSource = Ship;
+
+	UAbilitySystemComponent* ShipAbilitySystem = Ship ? Ship->GetAbilitySystemComponent() : nullptr;
+	if (ShipAbilitySystem)
+	{
+		ShipHealthChangedDelegateHandle = ShipAbilitySystem
+			->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute())
+			.AddUObject(this, &UPlayerHUDWidget::HandleShipHealthChanged);
+		ShipMaxHealthChangedDelegateHandle = ShipAbilitySystem
+			->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetMaxHealthAttribute())
+			.AddUObject(this, &UPlayerHUDWidget::HandleShipMaxHealthChanged);
+	}
+
+	RefreshShipHealth();
+}
+
+void UPlayerHUDWidget::UnbindShipHealthSource()
+{
+	AShip* Ship = CachedShipHealthSource.Get();
+	UAbilitySystemComponent* ShipAbilitySystem = Ship ? Ship->GetAbilitySystemComponent() : nullptr;
+	if (ShipAbilitySystem)
+	{
+		if (ShipHealthChangedDelegateHandle.IsValid())
+		{
+			ShipAbilitySystem
+				->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute())
+				.Remove(ShipHealthChangedDelegateHandle);
+		}
+		if (ShipMaxHealthChangedDelegateHandle.IsValid())
+		{
+			ShipAbilitySystem
+				->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetMaxHealthAttribute())
+				.Remove(ShipMaxHealthChangedDelegateHandle);
+		}
+	}
+
+	ShipHealthChangedDelegateHandle.Reset();
+	ShipMaxHealthChangedDelegateHandle.Reset();
+	CachedShipHealthSource.Reset();
+}
+
+void UPlayerHUDWidget::RefreshShipHealth()
+{
+	if (!HealthBarWidget)
+	{
+		return;
+	}
+
+	HealthBarWidget->SetShipHealthVisible(true);
+	AShip* Ship = CachedShipHealthSource.Get();
+	UAbilitySystemComponent* ShipAbilitySystem = Ship ? Ship->GetAbilitySystemComponent() : nullptr;
+	if (!ShipAbilitySystem)
+	{
+		HealthBarWidget->SetShipHealthValues(0.0f, 0.0f);
+		return;
+	}
+
+	HealthBarWidget->SetShipHealthValues(
+		ShipAbilitySystem->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()),
+		ShipAbilitySystem->GetNumericAttribute(UBaseAttributeSet::GetMaxHealthAttribute()));
+}
+
+void UPlayerHUDWidget::HandleShipHealthChanged(const FOnAttributeChangeData&)
+{
+	RefreshShipHealth();
+}
+
+void UPlayerHUDWidget::HandleShipMaxHealthChanged(const FOnAttributeChangeData&)
+{
+	RefreshShipHealth();
 }
 
 // BowCrossHair를 생성 (실제로 그리는 것은 BowCrossHairWidget.cpp에서 처리) 여기서는 그리는 준비 

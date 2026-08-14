@@ -30,6 +30,7 @@ class APlayerController;
 class APawn;
 class ACannon;
 class AShip;
+struct FOnAttributeChangeData;
 
 UCLASS()
 class CLASSFEATURE_API UPlayerHUDWidget : public UUserWidget
@@ -126,6 +127,10 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UBaseHealthComponent> CachedHealthComponent;
 
+	TWeakObjectPtr<AShip> CachedShipHealthSource;
+	FDelegateHandle ShipHealthChangedDelegateHandle;
+	FDelegateHandle ShipMaxHealthChangedDelegateHandle;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crosshair|Dot", meta = (ClampMin = "0.0"))
 	float CenterDotSize = 6.0f;
 
@@ -157,6 +162,12 @@ protected:
 	void BindHealthComponent(UBaseHealthComponent* HealthComponent);
 	void UnbindHealthComponent();
 	void RefreshHealth();
+	void RefreshShipHealthSource(APawn* ControlledPawn);
+	void BindShipHealthSource(AShip* Ship);
+	void UnbindShipHealthSource();
+	void RefreshShipHealth();
+	void HandleShipHealthChanged(const FOnAttributeChangeData& Data);
+	void HandleShipMaxHealthChanged(const FOnAttributeChangeData& Data);
 	void CreateBowCrosshairWidget();
 	void RefreshBowCrosshairBinding();
 	void BindBowComponent(UBowComponent* BowComponent);
