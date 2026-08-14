@@ -44,8 +44,6 @@ protected:
 	float ShipBasedClientAuthorityMaxError = 15.0f;
 
 private:
-	double NextShipBasedSyncDiagnosticTime = 0.0;
-
 	bool CanUseShipBasedClientPosition(
 		const FVector& RelativeClientLocation,
 		UPrimitiveComponent* ClientMovementBase,

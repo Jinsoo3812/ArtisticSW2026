@@ -23,7 +23,6 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	TArray<float> PontoonForceScales;
 	TArray<FGerstnerWave> GerstnerWaves;
 	TArray<FSWRippleEvent> RippleEvents;
-	uint32 RippleRevision = 0;
 
 	float GravityZ = -980.f;
 	float LateralDrag = 0.5f;
@@ -59,7 +58,6 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 		PontoonForceScales.Empty();
 		GerstnerWaves.Empty();
 		RippleEvents.Empty();
-		RippleRevision = 0;
 		ServerPhysicsTimeOrigin = -1.0;
 		ServerPhysicsStepSeconds = 0.0f;
 		NetworkPhysicsTickOffset = 0;
@@ -73,47 +71,17 @@ struct FAsyncOutputShip : public Chaos::FSimCallbackOutput
 {
 	bool bWaveSampleValid = false;
 	bool bWasResimming = false;
-	bool bDiagnosticSampleValid = false;
 	FVector WaveSamplePosition = FVector::ZeroVector;
 	double WaveSampleServerTime = 0.0;
 	float PTWaveHeight = 0.0f;
-	int32 PhysicsStep = INDEX_NONE;
-	int32 ServerFrame = INDEX_NONE;
-	int32 NetworkPhysicsTickOffset = 0;
-	FVector PhysicsPosition = FVector::ZeroVector;
-	FQuat PhysicsRotation = FQuat::Identity;
-	uint64 CorrectionSerial = 0;
-	int32 LastCorrectionServerFrame = INDEX_NONE;
-	float LastCorrectionDistanceCm = 0.0f;
-	float LastCorrectionRotationDeg = 0.0f;
-	uint32 RippleRevision = 0;
-	uint64 ActiveRippleHash = 0;
-	int32 ActiveRippleCount = 0;
-	uint64 ResimStepCount = 0;
-	int32 LastResimPhysicsStep = INDEX_NONE;
 
 	void Reset()
 	{
 		bWaveSampleValid = false;
 		bWasResimming = false;
-		bDiagnosticSampleValid = false;
 		WaveSamplePosition = FVector::ZeroVector;
 		WaveSampleServerTime = 0.0;
 		PTWaveHeight = 0.0f;
-		PhysicsStep = INDEX_NONE;
-		ServerFrame = INDEX_NONE;
-		NetworkPhysicsTickOffset = 0;
-		PhysicsPosition = FVector::ZeroVector;
-		PhysicsRotation = FQuat::Identity;
-		CorrectionSerial = 0;
-		LastCorrectionServerFrame = INDEX_NONE;
-		LastCorrectionDistanceCm = 0.0f;
-		LastCorrectionRotationDeg = 0.0f;
-		RippleRevision = 0;
-		ActiveRippleHash = 0;
-		ActiveRippleCount = 0;
-		ResimStepCount = 0;
-		LastResimPhysicsStep = INDEX_NONE;
 	}
 };
 
@@ -161,7 +129,6 @@ private:
 	TArray<float> CachedPontoonForceScales;
 	TArray<FGerstnerWave> CachedGerstnerWaves;
 	TArray<FSWRippleEvent> CachedRippleEvents;
-	uint32 CachedRippleRevision = 0;
 	
 	float CachedGravityZ = -980.f;
 	float CachedLateralDrag = 0.5f;
@@ -185,10 +152,4 @@ private:
 	float CachedResimLocationThreshold = 5.f;
 	float CachedResimRotationThreshold = 5.f;
 
-	uint64 CorrectionSerial = 0;
-	int32 LastCorrectionServerFrame = INDEX_NONE;
-	float LastCorrectionDistanceCm = 0.0f;
-	float LastCorrectionRotationDeg = 0.0f;
-	uint64 ResimStepCount = 0;
-	int32 LastResimPhysicsStep = INDEX_NONE;
 };

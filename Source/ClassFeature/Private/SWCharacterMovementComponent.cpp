@@ -65,10 +65,6 @@ bool USWCharacterMovementComponent::ServerExceedsAllowablePositionError(
 		ClientMovementMode,
 		RelativeError))
 	{
-		UE_CLOG(IsShipJitterDiagnosticsCommandEnabled(), LogTemp, Warning,
-			TEXT("[SHIP-CMC-RELATIVE-ACCEPT] Character=%s Ship=%s Error=%.3fcm Limit=%.3fcm Time=%.3f"),
-			*GetNameSafe(CharacterOwner), *GetNameSafe(ClientMovementBase->GetOwner()),
-			RelativeError, ShipBasedClientAuthorityMaxError, ClientTimeStamp);
 		return false;
 	}
 
@@ -93,17 +89,6 @@ bool USWCharacterMovementComponent::ServerShouldUseAuthoritativePosition(
 		ClientMovementMode,
 		RelativeError))
 	{
-		if (IsShipJitterDiagnosticsCommandEnabled()
-			&& GetWorld()
-			&& GetWorld()->GetTimeSeconds() >= NextShipBasedSyncDiagnosticTime)
-		{
-			NextShipBasedSyncDiagnosticTime = GetWorld()->GetTimeSeconds() + 5.0;
-			UE_LOG(LogTemp, Warning,
-				TEXT("[SHIP-CMC-RELATIVE-SYNC] Character=%s Ship=%s Error=%.3fcm Limit=%.3fcm Time=%.3f"),
-				*GetNameSafe(CharacterOwner), *GetNameSafe(ClientMovementBase->GetOwner()),
-				RelativeError, ShipBasedClientAuthorityMaxError, ClientTimeStamp);
-		}
-
 		// Reconstructing ClientWorldLocation from the server's current ship
 		// transform maps the client's predicted base-relative result onto the
 		// authoritative ship without requiring both game threads to sample the

@@ -11,29 +11,6 @@
 #include "Ship.generated.h"
 
 class USWBuoyancyComponent;
-class UShipJitterDiagnosticsComponent;
-WATERANDSHIP_API bool IsShipJitterDiagnosticsCommandEnabled();
-
-struct FShipRuntimeDiagnosticSnapshot
-{
-	bool bValid = false;
-	bool bWasResimming = false;
-	int32 PhysicsStep = INDEX_NONE;
-	int32 ServerFrame = INDEX_NONE;
-	int32 NetworkPhysicsTickOffset = 0;
-	FVector PhysicsPosition = FVector::ZeroVector;
-	FQuat PhysicsRotation = FQuat::Identity;
-	uint64 CorrectionSerial = 0;
-	int32 LastCorrectionServerFrame = INDEX_NONE;
-	float LastCorrectionDistanceCm = 0.0f;
-	float LastCorrectionRotationDeg = 0.0f;
-	uint32 RippleRevision = 0;
-	uint64 ActiveRippleHash = 0;
-	int32 ActiveRippleCount = 0;
-	uint64 ResimStepCount = 0;
-	int32 LastResimPhysicsStep = INDEX_NONE;
-};
-
 USTRUCT()
 struct FNetInputShip : public FNetworkPhysicsPayload
 {
@@ -238,14 +215,6 @@ struct FNetStatePhysicsShip : public FNetworkPhysicsPayload
 		const bool bPositionMatch = DistSq <= TargetLocThreshold;
 		const bool bRotationMatch = RotDist <= TargetRotThreshold;
 		bool bMatch = bPositionMatch && bRotationMatch;
-		if (!bMatch && IsShipJitterDiagnosticsCommandEnabled())
-		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("[SHIP-NETPHYS-COMPARE] AuthSF=%d AuthLF=%d PredSF=%d PredLF=%d Dist=%.4fcm Threshold=%.4fcm Rot=%.5fdeg RotThreshold=%.5fdeg"),
-				ServerFrame, LocalFrame, PredState.ServerFrame, PredState.LocalFrame,
-				FMath::Sqrt(DistSq), FMath::Sqrt(TargetLocThreshold),
-				FMath::RadiansToDegrees(RotDist), FMath::RadiansToDegrees(TargetRotThreshold));
-		}
 		/* Network Physics comparison diagnostic logs disabled after validation.
 		float LinearVelocityDistSq = FVector::DistSquared(LinearVelocity, PredState.LinearVelocity);
 		float AngularVelocityDist = FVector::Distance(AngularVelocity, PredState.AngularVelocity);
@@ -438,8 +407,6 @@ public:
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void UnPossessed() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-	const FShipRuntimeDiagnosticSnapshot& GetRuntimeDiagnosticSnapshot() const { return RuntimeDiagnosticSnapshot; }
-	bool IsShipJitterDiagnosticsEnabled() const { return bShipJitterDiagnostics; }
 
 	/** Returns the selected DT row, with legacy movement fields safely migrated in memory. */
 	UFUNCTION(BlueprintPure, Category = "Ship|Stats")
@@ -564,9 +531,6 @@ public:
 	/** Shared pontoon/settings source; FShipPhysicsAsync remains the force executor. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USWBuoyancyComponent> SWBuoyancyComponent;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UShipJitterDiagnosticsComponent> ShipJitterDiagnosticsComponent;
 
 	/** Camera boom for orbiting camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -796,9 +760,6 @@ protected:
 
 	UPROPERTY(Replicated)
 	float ServerPhysicsStepSeconds = 0.0f;
-
-	bool bShipJitterDiagnostics = false;
-	FShipRuntimeDiagnosticSnapshot RuntimeDiagnosticSnapshot;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Replication")
 	float LocationInterpSpeed = 10.0f;
