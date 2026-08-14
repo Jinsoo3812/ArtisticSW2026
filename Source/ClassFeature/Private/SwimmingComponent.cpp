@@ -386,8 +386,8 @@ void USwimmingComponent::CheckWaterTransitions()
 
 	bool bIsCustomSwimming = IsCustomSwimming();
 
-	// If we are not swimming and not overlapping any water bodies, do not check transitions or query water height.
-	if (!bIsCustomSwimming && OverlappingWaterBodies.Num() == 0)
+	// If we are not swimming and have no overlapping water bodies AND no cached active water body, do not check transitions.
+	if (!bIsCustomSwimming && OverlappingWaterBodies.Num() == 0 && !LastActiveWaterBody.IsValid())
 	{
 		bIsInShallowWater = false;
 		return;
@@ -408,27 +408,9 @@ void USwimmingComponent::CheckWaterTransitions()
 	// Contact with water slows ground movement. Swimming remains a separate state.
 	bIsInShallowWater = !bIsCustomSwimming && bFeetInWater && FeetSubmersion >= 0.0f;
 
-	// Throttled logging (every 30 frames)
-	// static int32 FrameCount = 0;
-	// FrameCount++;
-	// bool bShouldLog = (FrameCount % 30 == 0);
-
-	// if (bShouldLog)
-	// {
-	// 	UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Transitions Check: OverlappingWaterBodies=%d | FeetLoc=%s | bFeetInWater=%s | FeetWaterHeight=%.2f | FeetSubmersion=%.2f | EntryOffset=%.2f | Mode=%d | CustomMode=%d"),
-	// 		OverlappingWaterBodies.Num(),
-	// 		*FeetLocation.ToString(),
-	// 		bFeetInWater ? TEXT("True") : TEXT("False"),
-	// 		FeetWaterHeight,
-	// 		FeetSubmersion,
-	// 		SwimEntryOffset,
-	// 		(int32)CharacterMovement->MovementMode,
-	// 		CharacterMovement->CustomMovementMode);
-	// }
-
 	if (!bIsCustomSwimming)
 	{
-		// Entry: 물 표면이 발밑에서부터 SwimEntryOffset 이상 깊어졌을 때 수영 상태 진입
+		// Entry: 물 표면이 발밑에서부터 SwimEntryDepth 이상 깊어졌을 때 수영 상태 진입
 		if (bFeetInWater && FeetSubmersion >= SwimEntryDepth)
 		{
 			CharacterMovement->SetMovementMode(MOVE_Custom, static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming));
@@ -449,15 +431,6 @@ void USwimmingComponent::CheckWaterTransitions()
 		bool bOnWalkableFloor = FloorResult.IsWalkableFloor();
 
 		bool bExitSubmersion = !bFeetInWater || (FeetSubmersion < SwimExitDepth);
-		
-		// if (bShouldLog)
-		// {
-		// 	UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Exit Check: bExitSubmersion=%s (Submersion=%.2f, ExitOffset=%.2f) | bOnWalkableFloor=%s"),
-		// 		bExitSubmersion ? TEXT("True") : TEXT("False"),
-		// 		FeetSubmersion,
-		// 		SwimExitOffset,
-		// 		bOnWalkableFloor ? TEXT("True") : TEXT("False"));
-		// }
 
 		if (bExitSubmersion && bOnWalkableFloor)
 		{
@@ -468,9 +441,9 @@ void USwimmingComponent::CheckWaterTransitions()
 			UE_LOG(LogTemp, Warning, TEXT("[%s] %s <<< Exited Swimming State (Walking) (FeetSubmersion: %.2f, ExitDepth: %.2f) >>>"), *ContextStr, *OwnerName, FeetSubmersion, SwimExitDepth);
 			bIsInShallowWater = bFeetInWater && FeetSubmersion >= 0.0f;
 		}
-		else if (!bFeetInWater || FeetSubmersion < 0.0f)
+		else if (!bFeetInWater || FeetSubmersion < -50.0f)
 		{
-			// 물높이가 감지되지 않거나 발밑이 물높이보다 위로 떠버린 경우 (완전히 뭍으로 탈출 또는 공중 점프 등)
+			// 물높이가 전혀 감지되지 않거나 발밑이 수면 위 50cm 이상 완전히 공중으로 점프/이탈한 경우에만 Falling 전환
 			CharacterMovement->SetMovementMode(MOVE_Falling);
 			
 			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
@@ -512,33 +485,50 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 	const bool bHasVerticalInput = HasVerticalSwimInput();
 	const bool bUseCameraDirectedMovement = ShouldUseCameraDirectedUnderwaterMovement();
 
-	// Throttled logging (every 30 frames)
-	// static int32 FrameCount = 0;
-	// FrameCount++;
-	// bool bShouldLog = (FrameCount % 30 == 0);
-
-	// if (bShouldLog)
-	// {
-	// 	UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Movement Update: bPontoonInWater=%s | PontoonLoc=%s | WaterHeight=%.2f | Submersion=%.2f | SubVolume=%.2f | DampFactor=%.2f | BuoyantForce=%.2f | BuoyantAccZ=%.2f | GravityZ=%.2f | TotalVertAccel=%.2f | CurrentVelZ=%.2f"),
-	// 		bPontoonInWater ? TEXT("True") : TEXT("False"),
-	// 		*PontoonLocation.ToString(),
-	// 		WaterHeight,
-	// 		Submersion,
-	// 		SubVolume,
-	// 		DampingFactor,
-	// 		BuoyantForce,
-	// 		BuoyantAccelerationZ,
-	// 		GravityZ,
-	// 		TotalVertAccel,
-	// 		CharacterMovement->Velocity.Z);
-	// }
+	const float TargetActorZ = WaterHeight - SurfaceTargetDepth;
+	const bool bIsAtOrAboveSurface = bPontoonInWater && (ActorLocation.Z >= TargetActorZ - 5.0f);
 
 	// 수직 속도 업데이트
-	if (!bHasVerticalInput && DepthMode == ESwimDepthMode::Surface && bPontoonInWater)
+	if (bHasVerticalInput && VerticalSwimInput < -KINDA_SMALL_NUMBER)
 	{
-		// Follow the wave with a damped height spring. This replaces a permanent
-		// upward force, so the surface position is stable instead of drifting up.
-		const float TargetActorZ = WaterHeight - SurfaceTargetDepth;
+		// Descending (Ctrl held) - dive downward
+		float NewVerticalVelocity = FMath::Clamp(
+			CharacterMovement->Velocity.Z + InputVerticalAcceleration * DeltaTime,
+			-MaxVerticalSwimSpeed,
+			MaxVerticalSwimSpeed);
+		CharacterMovement->Velocity.Z = NewVerticalVelocity;
+	}
+	else if (bHasVerticalInput && VerticalSwimInput > KINDA_SMALL_NUMBER)
+	{
+		// Ascending (Space held)
+		if (bIsAtOrAboveSurface || DepthMode == ESwimDepthMode::Surface)
+		{
+			// At the surface: maintain surface height with damped spring so character never drops below wave or flies away
+			const float SurfaceAcceleration = (TargetActorZ - ActorLocation.Z) * SurfaceHeightSpring
+				- CharacterMovement->Velocity.Z * SurfaceHeightDamping;
+			CharacterMovement->Velocity.Z = FMath::Clamp(
+				CharacterMovement->Velocity.Z + SurfaceAcceleration * DeltaTime,
+				-MaxVerticalSwimSpeed,
+				MaxVerticalSwimSpeed);
+			DepthMode = ESwimDepthMode::Surface;
+			bIsUnderwater = false;
+		}
+		else
+		{
+			// Underwater: rise towards surface
+			float NewVerticalVelocity = FMath::Clamp(
+				CharacterMovement->Velocity.Z + InputVerticalAcceleration * DeltaTime,
+				-MaxVerticalSwimSpeed,
+				MaxVerticalSwimSpeed);
+			const float RemainingRise = TargetActorZ - ActorLocation.Z;
+			const float MaxUpwardVelocityToSurface = FMath::Max(0.0f, RemainingRise / FMath::Max(DeltaTime, KINDA_SMALL_NUMBER));
+			NewVerticalVelocity = FMath::Min(NewVerticalVelocity, MaxUpwardVelocityToSurface);
+			CharacterMovement->Velocity.Z = NewVerticalVelocity;
+		}
+	}
+	else if (DepthMode == ESwimDepthMode::Surface && bPontoonInWater)
+	{
+		// Neutral surface swimming: follow wave surface with damped spring
 		const float SurfaceAcceleration = (TargetActorZ - ActorLocation.Z) * SurfaceHeightSpring
 			- CharacterMovement->Velocity.Z * SurfaceHeightDamping;
 		CharacterMovement->Velocity.Z = FMath::Clamp(
@@ -546,33 +536,9 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 			-MaxVerticalSwimSpeed,
 			MaxVerticalSwimSpeed);
 	}
-	else if (bHasVerticalInput)
-	{
-		// Ctrl/Space own the full body. Do not retain a horizontal movement input
-		// while a dedicated descend/ascend animation is playing.
-		float NewVerticalVelocity = FMath::Clamp(
-			CharacterMovement->Velocity.Z + InputVerticalAcceleration * DeltaTime,
-			-MaxVerticalSwimSpeed,
-			MaxVerticalSwimSpeed);
-
-		if (VerticalSwimInput > KINDA_SMALL_NUMBER && bPontoonInWater)
-		{
-			// Space may bring the player to the surface, but it must not propel the
-			// capsule through it. Use the same wave-aware target as surface swimming
-			// and cap this frame's upward travel before SafeMoveUpdatedComponent.
-			const float SurfaceTargetActorZ = WaterHeight - SurfaceTargetDepth;
-			const float RemainingRise = SurfaceTargetActorZ - ActorLocation.Z;
-			const float MaxUpwardVelocityToSurface = FMath::Max(0.0f, RemainingRise / FMath::Max(DeltaTime, KINDA_SMALL_NUMBER));
-			NewVerticalVelocity = FMath::Min(NewVerticalVelocity, MaxUpwardVelocityToSurface);
-		}
-
-		CharacterMovement->Velocity.Z = NewVerticalVelocity;
-	}
 	else if (!bUseCameraDirectedMovement)
 	{
-		// Underwater movement is neutrally buoyant. With no input, drag settles Z
-		// velocity to zero and retains the depth selected by the player.
-		CharacterMovement->Velocity.Z += InputVerticalAcceleration * DeltaTime;
+		// Underwater neutral movement: drag settles Z velocity to zero
 		CharacterMovement->Velocity.Z = FMath::FInterpTo(
 			CharacterMovement->Velocity.Z,
 			0.0f,
@@ -586,8 +552,7 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 
 	if (bUseCameraDirectedMovement)
 	{
-		// Neutral underwater W movement follows the full control rotation, including
-		// pitch. This keeps W/A/S/D diagonals while allowing the camera to steer depth.
+		// Neutral underwater W movement follows full control rotation, including pitch
 		const FVector InputDirection = CharacterMovement->GetCurrentAcceleration().GetSafeNormal();
 		FVector NewVelocity = CharacterMovement->Velocity
 			+ (InputDirection * SwimAcceleration - CharacterMovement->Velocity * SwimFriction) * DeltaTime;
@@ -595,8 +560,7 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 	}
 	else
 	{
-		// Surface movement and Ctrl/Space movement remain planar. While Ctrl/Space is
-		// held, this applies drag only so the character transitions to vertical travel.
+		// Surface movement and horizontal swim
 		const FVector InputDirection = bHasVerticalInput
 			? FVector::ZeroVector
 			: CharacterMovement->GetCurrentAcceleration().GetSafeNormal2D();
