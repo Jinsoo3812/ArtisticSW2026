@@ -100,6 +100,10 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->TargetArmLength = 400.0f;
 	CameraBoom->bUsePawnControlRotation = true;
+	CameraBoom->bEnableCameraRotationLag = bEnableCameraRotationSmoothing;
+	CameraBoom->CameraRotationLagSpeed = CameraRotationSmoothingSpeed;
+	CameraBoom->bUseCameraLagSubstepping = true;
+	CameraBoom->CameraLagMaxTimeStep = CameraRotationSmoothingMaxTimeStep;
 
 	// Follow 카메라 생성 및 설정
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
@@ -211,6 +215,16 @@ void ABasePlayer::BeginPlay()
 {
 	Super::BeginPlay();
 	InitializeSwimmingAnimLayers();
+
+	// Apply presentation-only smoothing after Blueprint defaults are loaded.
+	// ControlRotation remains immediate; only the SpringArm view catches up.
+	if (CameraBoom)
+	{
+		CameraBoom->bEnableCameraRotationLag = bEnableCameraRotationSmoothing;
+		CameraBoom->CameraRotationLagSpeed = CameraRotationSmoothingSpeed;
+		CameraBoom->bUseCameraLagSubstepping = bEnableCameraRotationSmoothing;
+		CameraBoom->CameraLagMaxTimeStep = CameraRotationSmoothingMaxTimeStep;
+	}
 
 	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
 	{

@@ -5,6 +5,8 @@
 #include "ShipJitterDiagnosticsComponent.generated.h"
 
 class AShip;
+struct FShipRenderProbeState;
+class FShipRenderProbeViewExtension;
 
 UCLASS(ClassGroup=(Diagnostics), meta=(BlueprintSpawnableComponent))
 class WATERANDSHIP_API UShipJitterDiagnosticsComponent : public UActorComponent
@@ -21,9 +23,13 @@ protected:
 
 private:
 	void WriteCsvLine(const FString& Line);
+	void WriteRenderCsvLine(const FString& Line);
 	void CloseCsv();
 
 	TUniquePtr<FArchive> CsvArchive;
+	TUniquePtr<FArchive> RenderCsvArchive;
+	TSharedPtr<FShipRenderProbeState, ESPMode::ThreadSafe> RenderProbeState;
+	TSharedPtr<FShipRenderProbeViewExtension, ESPMode::ThreadSafe> RenderViewExtension;
 	TWeakObjectPtr<AShip> CachedShip;
 	FTransform PreviousRootTransform = FTransform::Identity;
 	FTransform PreviousCameraTransform = FTransform::Identity;
@@ -32,6 +38,11 @@ private:
 	FVector MarkerLocalPosition = FVector::ZeroVector;
 	double NextSummaryTime = 0.0;
 	uint64 PreviousCorrectionSerial = 0;
+	uint64 PreviousRenderRequestFrame = 0;
+	uint64 PreviousRenderFrame = 0;
+	FTransform PreviousRequestedVisualTransform = FTransform::Identity;
+	FTransform PreviousRenderProxyTransform = FTransform::Identity;
+	bool bHasPreviousRenderSample = false;
 	bool bHasPreviousSample = false;
 	bool bAutoCamera = false;
 	bool bHasAutoCameraBaseRotation = false;
