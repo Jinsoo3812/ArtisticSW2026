@@ -71,6 +71,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI | Behavior Tree")
 	TObjectPtr<UEnemyBehaviorSet> BehaviorSet;
 
+	/** If false, the default weapon is spawned on its back and equipped by combat behavior. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	bool bEquipWeaponOnSpawn = true;
+
 	// ------------------- WeaponTag
 
 	// Enemy가 가지고 시작할 무기 Tag
@@ -178,6 +182,7 @@ public:
 	FORCEINLINE TObjectPtr<ABaseAIController> GetAIController() const { check(AIController) return AIController; }
 	FORCEINLINE TObjectPtr<UBehaviorTree> GetBehaviorTree() const { return BehaviorTree; }
 	FORCEINLINE UEnemyBehaviorSet* GetBehaviorSet() const { return BehaviorSet; }
+	FORCEINLINE bool ShouldEquipWeaponOnSpawn() const { return bEquipWeaponOnSpawn; }
 	FORCEINLINE FGameplayTag GetDefaultWeaponTag() const { return DefaultWeaponTag; }
 	FORCEINLINE TObjectPtr<UBaseWeaponComponent> GetWeaponComponent() const { check(WeaponComponent) return WeaponComponent; }
 	//FORCEINLINE TObjectPtr<UPathMovement> GetPathMovementComponent() const { check(PathMovement) return PathMovement;}
