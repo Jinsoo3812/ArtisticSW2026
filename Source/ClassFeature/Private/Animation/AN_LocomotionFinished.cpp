@@ -17,46 +17,10 @@ void UAN_LocomotionFinished::Notify(USkeletalMeshComponent* MeshComp, UAnimSeque
 {
 	Super::Notify(MeshComp, Animation, EventReference);
 
-	if (!MeshComp) return;
-
-	UAnimInstance* AnimInstance = MeshComp->GetAnimInstance();
-	if (!AnimInstance) return;
-
-	APawn* Pawn = AnimInstance->TryGetPawnOwner();
-	if (!Pawn) return;
-
-	ULocomotionAnimStateComponent* StateComp = Pawn->FindComponentByClass<ULocomotionAnimStateComponent>();
-	if (!StateComp) return;
-
-	if (NotifyType == ELocomotionNotifyType::StartFinished)
-	{
-		if (StateComp->CurrentState == ELocomotionState::Start)
-		{
-			StateComp->NotifyStartFinished();
-		}
-		else if (StateComp->CurrentState == ELocomotionState::InAir)
-		{
-			StateComp->FinishJumpStart();
-		}
-	}
-	else if (NotifyType == ELocomotionNotifyType::StopFinished)
-	{
-		if (StateComp->CurrentState == ELocomotionState::Stop)
-		{
-			StateComp->NotifyStopFinished();
-		}
-		else if (StateComp->CurrentState == ELocomotionState::Landing)
-		{
-			StateComp->NotifyLandingFinished();
-		}
-		else if (StateComp->CurrentState == ELocomotionState::InAir)
-		{
-			if (StateComp->bIsFallOffStart)
-			{
-				StateComp->FinishFallOffStart();
-			}
-		}
-	}
+	// State transitions are deliberately independent of animation Notifies.
+	// These clips are shared with Pose Search and their old "Stop Finished"
+	// marker could prematurely convert Landing -> Locomotion (around 0.19 s).
+	// Completion is now driven by the State Controller's selected asset time.
 }
 
 FString UAN_LocomotionFinished::GetNotifyName_Implementation() const
