@@ -142,6 +142,13 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 		MovementComponent->InitialPushForceFactor = 0.0f;
 		MovementComponent->PushForceFactor = 0.0f;
 
+		// ShipDeckMesh is a query-only child of the Network Physics body. Keep
+		// CharacterMovement based on the attachment root so based movement,
+		// relative acceleration, and server validation all consume the actual
+		// predicted Chaos body (BuoyancyRoot), including its linear/angular
+		// velocity, instead of a presentation/query child component.
+		MovementComponent->bBaseOnAttachmentRoot = true;
+
 		// 이동 방향으로 몸 회전 방지
 		MovementComponent->bOrientRotationToMovement = false;
 		// 컨트롤러 지향 방향으로 부드러운 정렬 사용

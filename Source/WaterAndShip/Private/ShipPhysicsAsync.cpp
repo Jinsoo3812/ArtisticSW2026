@@ -215,6 +215,14 @@ void FShipPhysicsAsync::ApplyState_Internal(const FNetStatePhysicsShip& State)
 		Chaos::FWritePhysicsObjectInterface_Internal Interface = Chaos::FPhysicsObjectInternalInterface::GetWrite();
 		if (Chaos::FPBDRigidParticleHandle* ParticleHandle = Interface.GetRigidParticle(PhysicsObject))
 		{
+			const FVector PreviousPosition = ParticleHandle->GetX();
+			const FQuat PreviousRotation = ParticleHandle->GetR();
+			LastCorrectionDistanceCm = FVector::Distance(PreviousPosition, State.Position);
+			LastCorrectionRotationDeg = FMath::RadiansToDegrees(
+				PreviousRotation.AngularDistance(State.Rotation));
+			LastCorrectionServerFrame = State.ServerFrame;
+			++CorrectionSerial;
+
 			/* Network Physics state apply diagnostic log disabled after validation.
 			// 물리 롤백 수신 및 강제 롤백 적용 시 실시간 데이터 출력 (필터 해제하여 모든 롤백 실측)
 			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT-CL-APPLY] ApplyState - Step: %d | ServerFrame: %d | LocalFrame: %d | RecvPos: %s | RecvVel: %s | CurPos: %s"),
@@ -244,6 +252,11 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 	{
 		bIsResimming = CurrentSolver->IsResimming();
 		CurrentPhysicsStep = PhysicsStep;
+		if (bIsResimming)
+		{
+			++ResimStepCount;
+			LastResimPhysicsStep = CurrentPhysicsStep;
+		}
 
 		if (!bIsResimming)
 		{
@@ -283,6 +296,7 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 					CachedGerstnerWaves = AsyncInput->GerstnerWaves;
 				}
 				CachedRippleEvents = AsyncInput->RippleEvents;
+				CachedRippleRevision = AsyncInput->RippleRevision;
 				if (AsyncInput->ServerPhysicsTimeOrigin >= 0.0 && AsyncInput->ServerPhysicsStepSeconds > UE_SMALL_NUMBER)
 				{
 					CachedServerPhysicsTimeOrigin = AsyncInput->ServerPhysicsTimeOrigin;
@@ -613,6 +627,39 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 			*ParticleHandle->GetV().ToString());
 	}
 	*/
+
+	if (bQueryDiagnostics_Internal)
+	{
+		uint64 ActiveRippleHash = 1469598103934665603ull;
+		int32 ActiveRippleCount = 0;
+		for (const FSWRippleEvent& RippleEvent : CachedRippleEvents)
+		{
+			if (RippleEvent.IsActiveAt(SimTimeSeconds))
+			{
+				++ActiveRippleCount;
+				ActiveRippleHash ^= static_cast<uint64>(static_cast<uint32>(RippleEvent.EventId));
+				ActiveRippleHash *= 1099511628211ull;
+			}
+		}
+
+		FAsyncOutputShip& Output = GetProducerOutputData_Internal();
+		Output.bDiagnosticSampleValid = true;
+		Output.bWasResimming = bIsResimming;
+		Output.PhysicsStep = CurrentPhysicsStep;
+		Output.ServerFrame = CurrentServerPhysicsFrame;
+		Output.NetworkPhysicsTickOffset = CachedNetworkPhysicsTickOffset;
+		Output.PhysicsPosition = ParticleHandle->GetX();
+		Output.PhysicsRotation = ParticleHandle->GetR();
+		Output.CorrectionSerial = CorrectionSerial;
+		Output.LastCorrectionServerFrame = LastCorrectionServerFrame;
+		Output.LastCorrectionDistanceCm = LastCorrectionDistanceCm;
+		Output.LastCorrectionRotationDeg = LastCorrectionRotationDeg;
+		Output.RippleRevision = CachedRippleRevision;
+		Output.ActiveRippleHash = ActiveRippleHash;
+		Output.ActiveRippleCount = ActiveRippleCount;
+		Output.ResimStepCount = ResimStepCount;
+		Output.LastResimPhysicsStep = LastResimPhysicsStep;
+	}
 }
 
 void FShipPhysicsAsync::OnPreSimulate_Internal()

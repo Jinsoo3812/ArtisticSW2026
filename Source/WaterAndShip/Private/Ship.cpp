@@ -44,6 +44,7 @@
 #include "LandscapeProxy.h"
 #include "WaterSurfaceQueryLibrary.h"
 #include "Upgrade/ShipUpgradeComponent.h"
+#include "Diagnostics/ShipJitterDiagnosticsComponent.h"
 
 namespace
 {
@@ -84,6 +85,11 @@ namespace
 	}
 }
 
+bool IsShipJitterDiagnosticsCommandEnabled()
+{
+	static const bool bEnabled = FParse::Param(FCommandLine::Get(), TEXT("ShipJitterDiagnostics"));
+	return bEnabled;
+}
 
 // Sets default values
 AShip::AShip()
@@ -159,6 +165,8 @@ AShip::AShip()
 	SWBuoyancyComponent->ForceSettings.BuoyancyDamp2 = 1.0f;
 	SWBuoyancyComponent->ForceSettings.MaxBuoyantForce = 5000000.0f;
 
+	ShipJitterDiagnosticsComponent = CreateDefaultSubobject<UShipJitterDiagnosticsComponent>(TEXT("ShipJitterDiagnosticsComponent"));
+
 	Tags.AddUnique(TEXT("Player"));
 
 	// Camera Boom
@@ -222,7 +230,8 @@ AShip::AShip()
 void AShip::BeginPlay()
 {
 	Super::BeginPlay();
-	bBuoyancyQueryDiagnostics = FParse::Param(
+	bShipJitterDiagnostics = FParse::Param(FCommandLine::Get(), TEXT("ShipJitterDiagnostics"));
+	bBuoyancyQueryDiagnostics = bShipJitterDiagnostics || FParse::Param(
 		FCommandLine::Get(), TEXT("BuoyancyQueryDiagnostics"));
 
 	if (AbilitySystemComponent)
@@ -381,6 +390,25 @@ void AShip::Tick(float DeltaTime)
 		float LatestPTHeight = 0.0f;
 		while (auto Output = ShipPhysicsAsync->PopOutputData_External())
 		{
+			if (Output->bDiagnosticSampleValid)
+			{
+				RuntimeDiagnosticSnapshot.bValid = true;
+				RuntimeDiagnosticSnapshot.bWasResimming = Output->bWasResimming;
+				RuntimeDiagnosticSnapshot.PhysicsStep = Output->PhysicsStep;
+				RuntimeDiagnosticSnapshot.ServerFrame = Output->ServerFrame;
+				RuntimeDiagnosticSnapshot.NetworkPhysicsTickOffset = Output->NetworkPhysicsTickOffset;
+				RuntimeDiagnosticSnapshot.PhysicsPosition = Output->PhysicsPosition;
+				RuntimeDiagnosticSnapshot.PhysicsRotation = Output->PhysicsRotation;
+				RuntimeDiagnosticSnapshot.CorrectionSerial = Output->CorrectionSerial;
+				RuntimeDiagnosticSnapshot.LastCorrectionServerFrame = Output->LastCorrectionServerFrame;
+				RuntimeDiagnosticSnapshot.LastCorrectionDistanceCm = Output->LastCorrectionDistanceCm;
+				RuntimeDiagnosticSnapshot.LastCorrectionRotationDeg = Output->LastCorrectionRotationDeg;
+				RuntimeDiagnosticSnapshot.RippleRevision = Output->RippleRevision;
+				RuntimeDiagnosticSnapshot.ActiveRippleHash = Output->ActiveRippleHash;
+				RuntimeDiagnosticSnapshot.ActiveRippleCount = Output->ActiveRippleCount;
+				RuntimeDiagnosticSnapshot.ResimStepCount = Output->ResimStepCount;
+				RuntimeDiagnosticSnapshot.LastResimPhysicsStep = Output->LastResimPhysicsStep;
+			}
 			if (Output->bWaveSampleValid)
 			{
 				bHasLatestSample = true;
@@ -622,9 +650,11 @@ void AShip::Tick(float DeltaTime)
 			}
 
 			TArray<FSWRippleEvent> TempRippleEvents;
+			uint32 TempRippleRevision = 0;
 			if (USWRippleStateSubsystem* RippleState = GetWorld()->GetSubsystem<USWRippleStateSubsystem>())
 			{
 				RippleState->GetEventsSnapshot(TempRippleEvents);
+				TempRippleRevision = RippleState->GetRevision();
 			}
 
 			// A. 비동기 인풋 버퍼(GetProducerInputData_External)가 유효하다면 인풋 히스토리에 적재
@@ -638,6 +668,7 @@ void AShip::Tick(float DeltaTime)
 				AsyncInput->PontoonForceScales = TempPontoonForceScales;
 				AsyncInput->GerstnerWaves = TempWaves;
 				AsyncInput->RippleEvents = MoveTemp(TempRippleEvents);
+				AsyncInput->RippleRevision = TempRippleRevision;
 				AsyncInput->GravityZ = Gravity;
 				AsyncInput->LateralDrag = LateralDrag;
 				AsyncInput->ForwardForceValue = ForwardForceValue;
