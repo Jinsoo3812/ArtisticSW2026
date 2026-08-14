@@ -37,6 +37,8 @@
 #include "Item/Weapons/BowItem.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimSequence.h"
+#include "Animation/MotionMatchingAnimInstance.h"
 #include "Components/BaseHealthComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Ship.h"
@@ -56,6 +58,12 @@ namespace
 	bool IsBasePlayerMotionMatchingCaptureEnabled()
 	{
 		const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MMDebugging"));
+		return DebugCVar && DebugCVar->GetInt() > 0;
+	}
+
+	bool IsBasePlayerStateControllerDebugEnabled()
+	{
+		const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("a.StateControllerDebug"));
 		return DebugCVar && DebugCVar->GetInt() > 0;
 	}
 
@@ -92,6 +100,10 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->TargetArmLength = 400.0f;
 	CameraBoom->bUsePawnControlRotation = true;
+	CameraBoom->bEnableCameraRotationLag = bEnableCameraRotationSmoothing;
+	CameraBoom->CameraRotationLagSpeed = CameraRotationSmoothingSpeed;
+	CameraBoom->bUseCameraLagSubstepping = true;
+	CameraBoom->CameraLagMaxTimeStep = CameraRotationSmoothingMaxTimeStep;
 
 	// Follow 카메라 생성 및 설정
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
@@ -133,6 +145,13 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 		// 힘의 계수를 0으로 설정
 		MovementComponent->InitialPushForceFactor = 0.0f;
 		MovementComponent->PushForceFactor = 0.0f;
+
+		// ShipDeckMesh is a query-only child of the Network Physics body. Keep
+		// CharacterMovement based on the attachment root so based movement,
+		// relative acceleration, and server validation all consume the actual
+		// predicted Chaos body (BuoyancyRoot), including its linear/angular
+		// velocity, instead of a presentation/query child component.
+		MovementComponent->bBaseOnAttachmentRoot = true;
 
 		// 이동 방향으로 몸 회전 방지
 		MovementComponent->bOrientRotationToMovement = false;
@@ -196,6 +215,16 @@ void ABasePlayer::BeginPlay()
 {
 	Super::BeginPlay();
 	InitializeSwimmingAnimLayers();
+
+	// Apply presentation-only smoothing after Blueprint defaults are loaded.
+	// ControlRotation remains immediate; only the SpringArm view catches up.
+	if (CameraBoom)
+	{
+		CameraBoom->bEnableCameraRotationLag = bEnableCameraRotationSmoothing;
+		CameraBoom->CameraRotationLagSpeed = CameraRotationSmoothingSpeed;
+		CameraBoom->bUseCameraLagSubstepping = bEnableCameraRotationSmoothing;
+		CameraBoom->CameraLagMaxTimeStep = CameraRotationSmoothingMaxTimeStep;
+	}
 
 	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
 	{
@@ -340,6 +369,8 @@ void ABasePlayer::Tick(float DeltaTime)
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->UpdateAnimationState(DeltaTime);
+		ApplyCombatRotationMode(true);
+		ApplyCombatTurnInPlaceRotation(DeltaTime);
 	}
 	if (HasAuthority())
 	{
@@ -371,15 +402,10 @@ void ABasePlayer::Tick(float DeltaTime)
 		TargetSocketOffset = AimingSocketOffset;
 	}
 
-	const bool bShouldLockRotation = true;
-	bUseControllerRotationYaw = false;
-	/*
-	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
-	{
-		MovementComponent->bOrientRotationToMovement = false;
-		MovementComponent->bUseControllerDesiredRotation = true;
-	}
-	*/
+	// Rotation ownership is selected by ApplyCombatRotationMode() above:
+	// controller yaw while moving in Strafe, selected TIP root yaw while idle.
+	// Do not overwrite bUseControllerRotationYaw here; doing so prevents WASD
+	// locomotion from following the mouse/control direction every frame.
 
 	if (CameraBoom)
 	{
@@ -1758,7 +1784,8 @@ void ABasePlayer::DoLook(float Yaw, float Pitch)
 			Multiplier = SnipingMouseSensitivity;
 		}
 
-		AddControllerYawInput(Yaw * Multiplier);
+		const float AppliedYaw = Yaw * Multiplier;
+		AddControllerYawInput(AppliedYaw);
 		AddControllerPitchInput(Pitch * Multiplier);
 	}
 }
@@ -2068,12 +2095,18 @@ void ABasePlayer::OnRep_QuickSlots()
 
 void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
 {
-	bUseControllerRotationYaw = false;
+	// Artistic is an always-Strafe project.  Keep the Project_J split: while
+	// movement is present the controller owns capsule yaw; while stationary the
+	// selected Turn-In-Place root track owns it.  Do not leave a second CMC
+	// ControllerDesiredRotation path alive, as it races the root-yaw delta.
+	const bool bIsMovingInStrafe =
+		(GetPendingMovementInputVector().SizeSquared() > 0.001f || GetVelocity().SizeSquared2D() > 100.0f);
+	bUseControllerRotationYaw = bEnableCombatRotation && bIsMovingInStrafe;
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
 		MovementComponent->bOrientRotationToMovement = false;
-		MovementComponent->bUseControllerDesiredRotation = true;
+		MovementComponent->bUseControllerDesiredRotation = false;
 	}
 }
 
@@ -2294,4 +2327,523 @@ bool ABasePlayer::CanSprintFromServerState() const
 		CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
 
 	return !bBlockedByAbilityState && !bIsAttacking && !bIsDodging && !bIsHitReacting;
+}
+
+float ABasePlayer::GetDesiredFacingDeltaYaw() const
+{
+	float ActorYaw = GetActorRotation().Yaw;
+	float ControlYaw = ActorYaw;
+	if (GetController())
+	{
+		ControlYaw = GetController()->GetControlRotation().Yaw;
+	}
+	return FRotator::NormalizeAxis(ControlYaw - ActorYaw);
+}
+
+/*
+void ABasePlayer::QueueGaspStyleTurnInPlaceLook(float YawDelta)
+{
+	if (!IsLocallyControlled() || FMath::IsNearlyZero(YawDelta))
+	{
+		return;
+	}
+
+	const bool bCanQueue = AnimStateComponent &&
+		!AnimStateComponent->bHasMoveInput &&
+		AnimStateComponent->GroundSpeed <= 10.0f &&
+		!AnimStateComponent->bIsInAir &&
+		!bIsAttacking && !bIsDodging && !bIsHitReacting;
+	if (!bCanQueue)
+	{
+		if (IsBasePlayerStateControllerDebugEnabled() && !FMath::IsNearlyZero(QueuedTurnInPlaceLookYaw))
+		{
+			UE_LOG(LogTemp, Display,
+				TEXT("[SC_TIP_INPUT] Pawn=%s Accepted=0 Input=%.2f ClearedQueue=%.2f Move=%d Speed=%.1f Air=%d Action=%d"),
+				*GetName(), YawDelta, QueuedTurnInPlaceLookYaw,
+				AnimStateComponent->bHasMoveInput ? 1 : 0, AnimStateComponent->GroundSpeed,
+				AnimStateComponent->bIsInAir ? 1 : 0,
+				(bIsAttacking || bIsDodging || bIsHitReacting) ? 1 : 0);
+		}
+		QueuedTurnInPlaceLookYaw = 0.0f;
+		return;
+	}
+
+	const float PreviousQueueYaw = QueuedTurnInPlaceLookYaw;
+	QueuedTurnInPlaceLookYaw = FRotator::NormalizeAxis(QueuedTurnInPlaceLookYaw + YawDelta);
+	if (IsBasePlayerStateControllerDebugEnabled() &&
+		FMath::Abs(PreviousQueueYaw) < 45.0f && FMath::Abs(QueuedTurnInPlaceLookYaw) >= 45.0f)
+	{
+		UE_LOG(LogTemp, Display,
+			TEXT("[SC_TIP_INPUT] Pawn=%s Accepted=1 ThresholdCrossed=1 Input=%.2f QueueBefore=%.2f QueueAfter=%.2f Actor=%.2f Control=%.2f"),
+			*GetName(), YawDelta, PreviousQueueYaw, QueuedTurnInPlaceLookYaw,
+			GetActorRotation().Yaw,
+			GetController() ? GetController()->GetControlRotation().Yaw : GetActorRotation().Yaw);
+	}
+}
+
+bool ABasePlayer::UpdateGaspStyleTurnInPlaceRequest(float& OutDesiredYaw)
+{
+	OutDesiredYaw = 0.0f;
+	const UWorld* World = GetWorld();
+	const double Now = World ? World->GetTimeSeconds() : 0.0;
+	constexpr float MinimumTurnAngle = 45.0f;
+	constexpr float ActiveContinuationAngle = 20.0f;
+	constexpr double VisualRequestDuration = 0.75;
+
+	if (ActiveTurnInPlaceVisualUntil > Now)
+	{
+		// The first one-shot needs a stable 45-degree entry threshold.  Once it
+		// is playing, however, a further same-direction camera turn is meaningful
+		// at a smaller angle.  Promote it back to the signed 90 row so the chooser
+		// always has a valid semantic clip instead of a <45-degree "None" row.
+		if (FMath::Abs(QueuedTurnInPlaceLookYaw) >= ActiveContinuationAngle &&
+			FMath::Sign(QueuedTurnInPlaceLookYaw) == FMath::Sign(ActiveTurnInPlaceVisualYaw))
+		{
+			const float ContinuationYaw = QueuedTurnInPlaceLookYaw;
+			ActiveTurnInPlaceVisualYaw = FMath::Sign(ActiveTurnInPlaceVisualYaw) * MinimumTurnAngle;
+			QueuedTurnInPlaceLookYaw = 0.0f;
+			ActiveTurnInPlaceVisualUntil = Now + VisualRequestDuration;
+			if (IsBasePlayerStateControllerDebugEnabled())
+			{
+				UE_LOG(LogTemp, Display,
+					TEXT("[SC_TIP_INPUT] Pawn=%s ActiveContinuation=1 Queue=%.1f ReissuedDesired=%.1f"),
+					*GetName(), ContinuationYaw, ActiveTurnInPlaceVisualYaw);
+			}
+		}
+		OutDesiredYaw = ActiveTurnInPlaceVisualYaw;
+		return true;
+	}
+
+	if (FMath::Abs(QueuedTurnInPlaceLookYaw) < MinimumTurnAngle)
+	{
+		ActiveTurnInPlaceVisualYaw = 0.0f;
+		return false;
+	}
+
+	ActiveTurnInPlaceVisualYaw = QueuedTurnInPlaceLookYaw;
+	QueuedTurnInPlaceLookYaw = 0.0f;
+	ActiveTurnInPlaceVisualUntil = Now + VisualRequestDuration;
+	OutDesiredYaw = ActiveTurnInPlaceVisualYaw;
+	return true;
+}
+*/
+
+void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
+{
+	if (!AnimStateComponent)
+	{
+		return;
+	}
+
+	const UMotionMatchingAnimInstance* MotionMatchingAnim =
+		Cast<UMotionMatchingAnimInstance>(GetMesh() ? GetMesh()->GetAnimInstance() : nullptr);
+	const float FacingDeltaYaw = GetDesiredFacingDeltaYaw();
+	// Project_J applies direct root yaw for the currently presented TIP clip,
+	// not only while the raw 30-degree entry condition is true.
+	if (!MotionMatchingAnim ||
+		MotionMatchingAnim->GetThreadSafeStateControllerPresentationState() != EStateControllerPresentationState::TurnInPlace)
+	{
+		return;
+	}
+
+	const UAnimSequence* TurnSequence = Cast<UAnimSequence>(
+		MotionMatchingAnim->GetThreadSafeStateControllerSelectedAnimation());
+	if (!TurnSequence)
+	{
+		return;
+	}
+
+	const int32 SelectionRevision = MotionMatchingAnim->GetThreadSafeStateControllerSelectionRevision();
+	const float ElapsedTime = MotionMatchingAnim->GetThreadSafeStateControllerSelectedAnimationElapsedTime();
+	if (CachedTurnInPlaceSequence.Get() != TurnSequence || CachedTurnInPlaceSelectionRevision != SelectionRevision)
+	{
+		CachedTurnInPlaceSequence = const_cast<UAnimSequence*>(TurnSequence);
+		CachedTurnInPlaceSelectionRevision = SelectionRevision;
+		TurnInPlaceSelectionStartActorYaw = GetActorRotation().Yaw;
+		TurnInPlaceDebugSelectionStartActorYaw = GetActorRotation().Yaw;
+		if (const USkeletalMeshComponent* SkeletalMesh = GetMesh())
+		{
+			TurnInPlaceDebugSelectionStartMeshYaw = SkeletalMesh->GetComponentRotation().Yaw;
+			TurnInPlaceDebugSelectionStartRootBoneYaw = SkeletalMesh->GetNumBones() > 0
+				? SkeletalMesh->GetBoneTransform(0).Rotator().Yaw
+				: TurnInPlaceDebugSelectionStartMeshYaw;
+		}
+	}
+
+	// Same StateController contract as Project_J: direct Blend Stack playback
+	// does not feed the character's root-motion consumer, so the actor must
+	// receive the authored TIP yaw here.  This sequence's composed root transform
+	// has a cumulative yaw of +/-90, while summing short-range Transform.Rotator()
+	// yaws produces only ~45.  Follow the authored cumulative yaw from the
+	// selection baseline instead of composing Euler deltas frame by frame.
+	const float PreviousTime = FMath::Clamp(ElapsedTime - DeltaTime, 0.0f, TurnSequence->GetPlayLength());
+	const float CurrentTime = FMath::Clamp(ElapsedTime, 0.0f, TurnSequence->GetPlayLength());
+	const float StartTime = FMath::Clamp(
+		MotionMatchingAnim->GetThreadSafeStateControllerSelectedAnimationStartTime(),
+		0.0f,
+		TurnSequence->GetPlayLength());
+	const float CumulativeCurrentTime = FMath::Clamp(StartTime + CurrentTime, StartTime, TurnSequence->GetPlayLength());
+	FAnimExtractContext CurrentCumulativeContext(static_cast<double>(CumulativeCurrentTime));
+	const float CurrentCumulativeYaw = TurnSequence->ExtractRootMotionFromRange(
+		static_cast<double>(StartTime), static_cast<double>(CumulativeCurrentTime), CurrentCumulativeContext).Rotator().Yaw;
+	const float AuthoredTargetActorYaw = FRotator::NormalizeAxis(
+		TurnInPlaceSelectionStartActorYaw + CurrentCumulativeYaw);
+	const float RootYawDelta = FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, AuthoredTargetActorYaw);
+	const float ClampedDeltaYaw = RootYawDelta >= 0.0f
+		? FMath::Min(RootYawDelta, FMath::Max(FacingDeltaYaw, 0.0f))
+		: FMath::Max(RootYawDelta, FMath::Min(FacingDeltaYaw, 0.0f));
+	const bool bClampedToFacingTarget = !FMath::IsNearlyEqual(RootYawDelta, ClampedDeltaYaw, 0.01f);
+
+	AnimStateComponent->TurnInPlaceRootYawDelta = ClampedDeltaYaw;
+	const float ActorYawBeforeApply = GetActorRotation().Yaw;
+	if (!FMath::IsNearlyZero(ClampedDeltaYaw))
+	{
+		AddActorWorldRotation(FRotator(0.0f, ClampedDeltaYaw, 0.0f));
+	}
+	const float ActorYawAfterApply = GetActorRotation().Yaw;
+
+	const float RemainingFacingDeltaYaw = GetDesiredFacingDeltaYaw();
+	// UpdateCombatTurnInPlaceRequest is the single authority for ending TIP,
+	// just as Project_J's derived locomotion context is.  Do not clear its
+	// request here from a partially consumed root-motion sample: doing so makes
+	// the direct Blend Stack disappear mid-clip and lets Idle MM take over.
+
+	if (IsBasePlayerStateControllerDebugEnabled())
+	{
+		const UWorld* World = GetWorld();
+		const double Now = World ? World->GetTimeSeconds() : 0.0;
+		if (SelectionRevision != LastTurnInPlaceDebugSelectionRevision || Now >= NextTurnInPlaceDebugSampleTime)
+		{
+			// Diagnostic only: classify end-of-turn jitter.  TrackFull/Now prove the
+			// authored clip; AuthoredTarget/ClipError expose its desired capsule yaw;
+			// Clamp=1 means camera-facing, rather than the clip, limited this frame.
+			FAnimExtractContext FullRangeContext(static_cast<double>(TurnSequence->GetPlayLength()));
+			FAnimExtractContext FirstHalfContext(static_cast<double>(TurnSequence->GetPlayLength() * 0.5f));
+			FAnimExtractContext CurrentCumulativeDebugContext(static_cast<double>(CurrentTime));
+			const float FullTrackRootYaw = TurnSequence->ExtractRootMotionFromRange(
+				0.0, static_cast<double>(TurnSequence->GetPlayLength()), FullRangeContext).Rotator().Yaw;
+			const float FirstHalfTrackRootYaw = TurnSequence->ExtractRootMotionFromRange(
+				0.0, static_cast<double>(TurnSequence->GetPlayLength() * 0.5f), FirstHalfContext).Rotator().Yaw;
+			const float CurrentCumulativeRootYaw = TurnSequence->ExtractRootMotionFromRange(
+				0.0, static_cast<double>(CurrentTime), CurrentCumulativeDebugContext).Rotator().Yaw;
+			const float AppliedThisSelection = FMath::FindDeltaAngleDegrees(
+				TurnInPlaceDebugSelectionStartActorYaw, ActorYawAfterApply);
+			const USkeletalMeshComponent* SkeletalMesh = GetMesh();
+			const float MeshYaw = SkeletalMesh ? SkeletalMesh->GetComponentRotation().Yaw : ActorYawAfterApply;
+			const float RootBoneYaw = SkeletalMesh && SkeletalMesh->GetNumBones() > 0
+				? SkeletalMesh->GetBoneTransform(0).Rotator().Yaw
+				: MeshYaw;
+			const float MeshTurnThisSelection = FMath::FindDeltaAngleDegrees(
+				TurnInPlaceDebugSelectionStartMeshYaw, MeshYaw);
+			const float RootBoneTurnThisSelection = FMath::FindDeltaAngleDegrees(
+				TurnInPlaceDebugSelectionStartRootBoneYaw, RootBoneYaw);
+			UE_LOG(LogTemp, Display,
+				TEXT("[SC_TIP_ROOT] Pawn=%s Rev=%d Seq=%s Clock=%.3f/%.3f Prev=%.3f Curr=%.3f RootDelta=%.3f TrackFull=%.2f TrackHalf=%.2f TrackNow=%.2f TargetYaw=%.2f ClipError=%.2f Clamp=%d AppliedTotal=%.2f Ctrl=%.2f ActorBefore=%.2f ActorAfter=%.2f MeshYaw=%.2f MeshVsActor=%.2f RootBoneYaw=%.2f RootVsActor=%.2f MeshTotal=%.2f RootTotal=%.2f Facing=%.2f Applied=%.3f Remaining=%.2f Phase=%d PhaseTime=%.3f RawEntry=%d CMCDesired=%d OrientMove=%d"),
+				*GetName(), SelectionRevision, *TurnSequence->GetName(), ElapsedTime, TurnSequence->GetPlayLength(), PreviousTime, CurrentTime,
+				RootYawDelta, FullTrackRootYaw, FirstHalfTrackRootYaw, CurrentCumulativeRootYaw, AuthoredTargetActorYaw, RootYawDelta, bClampedToFacingTarget ? 1 : 0, AppliedThisSelection, GetControlRotation().Yaw, ActorYawBeforeApply, ActorYawAfterApply,
+				MeshYaw, FMath::FindDeltaAngleDegrees(ActorYawAfterApply, MeshYaw),
+				RootBoneYaw, FMath::FindDeltaAngleDegrees(ActorYawAfterApply, RootBoneYaw),
+				MeshTurnThisSelection, RootBoneTurnThisSelection,
+				FacingDeltaYaw, ClampedDeltaYaw, RemainingFacingDeltaYaw,
+				AnimStateComponent->bTurnInPlacePhaseActive ? 1 : 0,
+				AnimStateComponent->TurnInPlacePhaseElapsed,
+				FMath::Abs(FacingDeltaYaw) >= 30.0f ? 1 : 0,
+				GetCharacterMovement() && GetCharacterMovement()->bUseControllerDesiredRotation ? 1 : 0,
+				GetCharacterMovement() && GetCharacterMovement()->bOrientRotationToMovement ? 1 : 0);
+			LastTurnInPlaceDebugSelectionRevision = SelectionRevision;
+			NextTurnInPlaceDebugSampleTime = Now + 0.10;
+		}
+	}
+	return;
+
+#if 0 // Legacy GASP experiment; unreachable and excluded from the active TIP path.
+	const bool bMoving = AnimStateComponent->bHasMoveInput || AnimStateComponent->GroundSpeed > 10.0f;
+	const bool bHighPriorityAction = bIsAttacking || bIsDodging || bIsHitReacting;
+	const bool bCannotTurnInPlace = bMoving || bHighPriorityAction || AnimStateComponent->bIsInAir;
+	const UMotionMatchingAnimInstance* MotionMatchingAnim =
+		Cast<UMotionMatchingAnimInstance>(GetMesh() ? GetMesh()->GetAnimInstance() : nullptr);
+
+	// Exact GASP contract: OrientationIntent is ActorRotation (not raw mouse or
+	// ControlRotation), and the other operand is the Offset Root Bone's cached
+	// root transform.  The latter is supplied by ABP_Player every update.
+	const float ActorYaw = GetActorRotation().Yaw;
+	const bool bHasOffsetRootTransform = MotionMatchingAnim && MotionMatchingAnim->HasGaspOffsetRootTransform();
+	const float RawOffsetRootYaw = bHasOffsetRootTransform
+		? MotionMatchingAnim->GetGaspOffsetRootTransform().Rotator().Yaw
+		: ActorYaw;
+	// GASP's reference skeleton is authored with a -90 degree mesh yaw.  The
+	// Offset Root node reports that mesh-space baseline too, so comparing it
+	// directly against the capsule makes a stationary character look like a
+	// permanent 90 degree TIP request.  Normalize against the actual mesh
+	// relative rotation rather than hard-coding +90: this also works for a mesh
+	// whose import basis changes later.
+	const float MeshYawBaseline = GetMesh() ? GetMesh()->GetRelativeRotation().Yaw : 0.0f;
+	const float OffsetRootYaw = FRotator::NormalizeAxis(RawOffsetRootYaw - MeshYawBaseline);
+	const float FacingDeltaYaw = FRotator::NormalizeAxis(ActorYaw - OffsetRootYaw);
+	constexpr float GaspTurnInPlaceEntryAngle = 30.0f;
+	const bool bHasVisualTurnRequest = !bCannotTurnInPlace && bHasOffsetRootTransform &&
+		FMath::Abs(FacingDeltaYaw) >= GaspTurnInPlaceEntryAngle;
+
+	AnimStateComponent->DesiredFacingDeltaYaw = FacingDeltaYaw;
+	AnimStateComponent->bShouldTurnInPlace = bHasVisualTurnRequest;
+	AnimStateComponent->TurnInPlaceRootYawDelta = 0.0f;
+
+	if (IsBasePlayerStateControllerDebugEnabled())
+	{
+		const UWorld* World = GetWorld();
+		const double Now = World ? World->GetTimeSeconds() : 0.0;
+		const float ControlYaw = GetController() ? GetController()->GetControlRotation().Yaw : ActorYaw;
+		const float ActorStepYaw = FRotator::NormalizeAxis(ActorYaw - LastGaspTurnInPlaceDebugActorYaw);
+		const float ControlStepYaw = FRotator::NormalizeAxis(ControlYaw - LastGaspTurnInPlaceDebugControlYaw);
+		const float ControlActorErrorYaw = FRotator::NormalizeAxis(ControlYaw - ActorYaw);
+		const UCharacterMovementComponent* Movement = GetCharacterMovement();
+
+		int32 SelectionRevision = INDEX_NONE;
+		int32 PresentationState = INDEX_NONE;
+		float ClipElapsed = 0.0f;
+		float TurnIndex = 0.0f;
+		float SteeringAlpha = 0.0f;
+		bool bForceBlend = false;
+		FString AssetName = TEXT("<None>");
+		if (MotionMatchingAnim)
+		{
+			SelectionRevision = MotionMatchingAnim->GetThreadSafeStateControllerSelectionRevision();
+			PresentationState = static_cast<int32>(MotionMatchingAnim->GetThreadSafeStateControllerPresentationState());
+			ClipElapsed = MotionMatchingAnim->GetThreadSafeStateControllerSelectedAnimationElapsedTime();
+			TurnIndex = MotionMatchingAnim->GetStateControllerTurnInPlaceIndexForChooser();
+			SteeringAlpha = MotionMatchingAnim->GetThreadSafeStateControllerTurnInPlaceSteeringAlpha();
+			bForceBlend = MotionMatchingAnim->GetThreadSafeStateControllerForceBlendStackOnNextUpdate();
+			if (const UAnimationAsset* SelectedAsset = MotionMatchingAnim->GetThreadSafeStateControllerSelectedAnimation())
+			{
+				AssetName = SelectedAsset->GetName();
+			}
+		}
+
+		const bool bRequestChanged = bHasVisualTurnRequest != bLastGaspTurnInPlaceDebugRequested;
+		const bool bSelectionChanged = SelectionRevision != LastGaspTurnInPlaceDebugSelectionRevision;
+		// Keep one concise sample flowing while idle even before ABP has supplied
+		// the Offset Root node transform. RootValid=0 then identifies a missing
+		// graph hand-off immediately instead of looking like a chooser failure.
+		const bool bRelevant = bHasVisualTurnRequest || bHasOffsetRootTransform ||
+			(!bCannotTurnInPlace && IsLocallyControlled());
+		if ((bRelevant && Now >= NextGaspTurnInPlaceDebugSampleTime) || bRequestChanged || bSelectionChanged)
+		{
+			UE_LOG(LogTemp, Display,
+				TEXT("[SC_TIP_GASP] World=%s Net=%d Role=%d Local=%d Pawn=%s Req=%d Delta=%.1f Actor=%.1f Root=%.1f RawRoot=%.1f MeshBase=%.1f RootValid=%d ActorStep=%.2f Control=%.1f Step=%.2f Err=%.1f CMCDesired=%d OrientMove=%d Rate=%.1f State=%d Rev=%d Asset=%s Clip=%.2f Index=%.0f TipSteer=%.1f Force=%d Cannot=%d"),
+				World ? *World->GetName() : TEXT("None"), static_cast<int32>(GetNetMode()), static_cast<int32>(GetLocalRole()), IsLocallyControlled() ? 1 : 0,
+				*GetName(), bHasVisualTurnRequest ? 1 : 0, FacingDeltaYaw, ActorYaw, OffsetRootYaw, RawOffsetRootYaw, MeshYawBaseline, bHasOffsetRootTransform ? 1 : 0,
+				ActorStepYaw, ControlYaw, ControlStepYaw, ControlActorErrorYaw,
+				Movement && Movement->bUseControllerDesiredRotation ? 1 : 0,
+				Movement && Movement->bOrientRotationToMovement ? 1 : 0,
+				Movement ? Movement->RotationRate.Yaw : 0.0f,
+				PresentationState, SelectionRevision, *AssetName, ClipElapsed, TurnIndex, SteeringAlpha, bForceBlend ? 1 : 0,
+				bCannotTurnInPlace ? 1 : 0);
+
+			NextGaspTurnInPlaceDebugSampleTime = Now + 0.15;
+		}
+
+		if (bHasVisualTurnRequest && FMath::Abs(ControlActorErrorYaw) > 10.0f &&
+			FMath::Abs(ActorStepYaw) < 0.1f && Movement && Movement->bUseControllerDesiredRotation)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[SC_TIP_STALL] Pawn=%s Actor is not following control: Err=%.1f ActorStep=%.2f ControlStep=%.2f"),
+				*GetName(), ControlActorErrorYaw, ActorStepYaw, ControlStepYaw);
+		}
+
+		LastGaspTurnInPlaceDebugActorYaw = ActorYaw;
+		LastGaspTurnInPlaceDebugControlYaw = ControlYaw;
+		LastGaspTurnInPlaceDebugSelectionRevision = SelectionRevision;
+		bLastGaspTurnInPlaceDebugRequested = bHasVisualTurnRequest;
+	}
+	// GASP ownership split: CMC owns the gameplay capsule yaw and the Blend
+	// Stack/Offset Root path owns the visual turn. Never apply authored root
+	// delta to the actor or send a parallel yaw RPC from this path.
+	return;
+
+#if 0 // Retained temporarily as reference while migrating existing diagnostics.
+	// A direct Blend Stack sequence does not populate AnimInstance's consumed
+	// root-motion buffer.  Extract the selected TIP clip's root delta ourselves,
+	// as Project_J does, so the capsule follows the authored 90/180 turn.
+	float AnimRootYawDelta = 0.0f;
+	float RawAnimRootYawDelta = 0.0f;
+	float StartTime = 0.0f;
+	float ElapsedTime = 0.0f;
+	float PreviousTime = 0.0f;
+	float CurrentTime = 0.0f;
+	float TurnIndex = 0.0f;
+	float DesiredAssetYaw = 0.0f;
+	float PreviousCumulativeRootYaw = 0.0f;
+	float CurrentCumulativeRootYaw = 0.0f;
+	float BlendTime = 0.0f;
+	float SequenceLength = 0.0f;
+	int32 SelectionRevision = INDEX_NONE;
+	bool bInTurnInPlacePresentation = false;
+	bool bSelectedAnimationLoops = false;
+	bool bOverridesMotionMatching = false;
+	bool bForceBlendStack = false;
+	FString TurnSequenceName = TEXT("<None>");
+	if (const UMotionMatchingAnimInstance* MotionMatchingAnim =
+		Cast<UMotionMatchingAnimInstance>(GetMesh() ? GetMesh()->GetAnimInstance() : nullptr))
+	{
+		bInTurnInPlacePresentation = MotionMatchingAnim->GetThreadSafeStateControllerPresentationState() ==
+			EStateControllerPresentationState::TurnInPlace;
+		if (bInTurnInPlacePresentation)
+		{
+			if (const UAnimSequence* TurnSequence = Cast<UAnimSequence>(
+				MotionMatchingAnim->GetThreadSafeStateControllerSelectedAnimation()))
+			{
+				TurnSequenceName = TurnSequence->GetName();
+				SequenceLength = TurnSequence->GetPlayLength();
+				StartTime = MotionMatchingAnim->GetThreadSafeStateControllerSelectedAnimationStartTime();
+				ElapsedTime = MotionMatchingAnim->GetThreadSafeStateControllerSelectedAnimationElapsedTime();
+				BlendTime = MotionMatchingAnim->GetThreadSafeStateControllerSelectedAnimationBlendTime();
+				bSelectedAnimationLoops = MotionMatchingAnim->GetThreadSafeStateControllerSelectedAnimationShouldLoop();
+				bOverridesMotionMatching = MotionMatchingAnim->GetThreadSafeShouldOverrideMotionMatching();
+				bForceBlendStack = MotionMatchingAnim->GetThreadSafeStateControllerForceBlendStackOnNextUpdate();
+				SelectionRevision = MotionMatchingAnim->GetThreadSafeStateControllerSelectionRevision();
+				const float ClampedStartTime = FMath::Clamp(StartTime, 0.0f, TurnSequence->GetPlayLength());
+				if (CachedTurnInPlaceSequence.Get() != TurnSequence ||
+					CachedTurnInPlaceSelectionRevision != SelectionRevision)
+				{
+					CachedTurnInPlaceSequence = TurnSequence;
+					CachedTurnInPlaceSelectionRevision = SelectionRevision;
+
+					FAnimExtractContext FullRangeContext(static_cast<double>(TurnSequence->GetPlayLength()));
+					CachedTurnInPlaceAuthoredRootYaw = TurnSequence->ExtractRootMotionFromRange(
+						static_cast<double>(ClampedStartTime),
+						static_cast<double>(TurnSequence->GetPlayLength()),
+						FullRangeContext).Rotator().Yaw;
+
+					// The Chooser index is the semantic turn contract. Imported assets
+					// in this project currently expose roughly half their named yaw in
+					// the root track, so normalize that authored range once per clip.
+					TurnIndex = MotionMatchingAnim->GetStateControllerTurnInPlaceIndexForChooser();
+					DesiredAssetYaw =
+						TurnIndex == 2.0f ? -180.0f :
+						TurnIndex == 4.0f ? 180.0f :
+						TurnIndex == 1.0f ? -90.0f : 90.0f;
+					CachedTurnInPlaceRootYawScale = FMath::Abs(CachedTurnInPlaceAuthoredRootYaw) > 1.0f
+						? FMath::Clamp(DesiredAssetYaw / CachedTurnInPlaceAuthoredRootYaw, -3.0f, 3.0f)
+						: 0.0f;
+				}
+				else
+				{
+					TurnIndex = MotionMatchingAnim->GetStateControllerTurnInPlaceIndexForChooser();
+					DesiredAssetYaw =
+						TurnIndex == 2.0f ? -180.0f :
+						TurnIndex == 4.0f ? 180.0f :
+						TurnIndex == 1.0f ? -90.0f : 90.0f;
+				}
+
+				PreviousTime = FMath::Clamp(StartTime + ElapsedTime - DeltaTime, 0.0f, TurnSequence->GetPlayLength());
+				CurrentTime = FMath::Clamp(StartTime + ElapsedTime, 0.0f, TurnSequence->GetPlayLength());
+				if (CurrentTime >= PreviousTime)
+				{
+					// Do not accumulate independent short-range transforms here.  These
+					// assets report the expected 90/180 degrees over their whole range,
+					// but the sum of their per-frame extracted yaw deltas stopped near
+					// half that value after the authored root curve settled.  Comparing
+					// two cumulative samples preserves the actual authored endpoint.
+					FAnimExtractContext PreviousContext(static_cast<double>(PreviousTime));
+					FAnimExtractContext CurrentContext(static_cast<double>(CurrentTime));
+					const float PreviousRawCumulativeRootYaw = TurnSequence->ExtractRootMotionFromRange(
+						static_cast<double>(ClampedStartTime), static_cast<double>(PreviousTime), PreviousContext).Rotator().Yaw;
+					const float CurrentRawCumulativeRootYaw = TurnSequence->ExtractRootMotionFromRange(
+						static_cast<double>(ClampedStartTime), static_cast<double>(CurrentTime), CurrentContext).Rotator().Yaw;
+					PreviousCumulativeRootYaw = FRotator::NormalizeAxis(
+						PreviousRawCumulativeRootYaw * CachedTurnInPlaceRootYawScale);
+					CurrentCumulativeRootYaw = FRotator::NormalizeAxis(
+						CurrentRawCumulativeRootYaw * CachedTurnInPlaceRootYawScale);
+					RawAnimRootYawDelta = FMath::FindDeltaAngleDegrees(
+						PreviousRawCumulativeRootYaw, CurrentRawCumulativeRootYaw);
+					AnimRootYawDelta = FMath::FindDeltaAngleDegrees(
+						PreviousCumulativeRootYaw, CurrentCumulativeRootYaw);
+				}
+			}
+		}
+	}
+
+	float ClampedRootYawDelta = 0.0f;
+	if (FacingDeltaYaw >= 0.0f)
+	{
+		ClampedRootYawDelta = FMath::Min(AnimRootYawDelta, FMath::Max(FacingDeltaYaw, 0.0f));
+	}
+	else
+	{
+		ClampedRootYawDelta = FMath::Max(AnimRootYawDelta, FMath::Min(FacingDeltaYaw, 0.0f));
+	}
+
+	AnimStateComponent->TurnInPlaceRootYawDelta = ClampedRootYawDelta;
+
+	const float ActorYawBeforeApply = GetActorRotation().Yaw;
+	// Keep direct root-yaw ownership, but route the delta through the actor's
+	// movement-aware transform operation so autonomous prediction and server
+	// movement reconciliation observe the same rotation change.
+	AddActorWorldRotation(FRotator(0.0f, ClampedRootYawDelta, 0.0f));
+	const float ActorYawAfterApply = GetActorRotation().Yaw;
+	PublishTurnInPlaceNetworkYaw(ActorYawAfterApply, true);
+    // Compare the residual yaw *after* the extracted root delta was applied.
+    // The previous test compared the full remaining yaw against a one-frame
+    // delta and therefore cancelled a 90-degree TIP with roughly 45 degrees
+    // still left to turn.
+	const float RemainingFacingDeltaYaw = FRotator::NormalizeAxis(FacingDeltaYaw - ClampedRootYawDelta);
+	// Keep this detailed sample permanently behind a.StateControllerDebug.  It
+	// separates every failure mode which otherwise looks like “TIP only turned
+	// 30 degrees”: no selected sequence, stale StateController clock, no root
+	// track delta, wrong imported total yaw, clamp suppression, or SetActorRotation
+	// being overridden by a later rotation system.
+	const UWorld* World = GetWorld();
+	const double Now = World ? World->GetTimeSeconds() : 0.0;
+	const bool bSelectionChangedForDebug = SelectionRevision != LastTurnInPlaceDebugSelectionRevision;
+	if (IsBasePlayerStateControllerDebugEnabled() &&
+		(bSelectionChangedForDebug || Now >= NextTurnInPlaceDebugSampleTime))
+	{
+		UE_LOG(LogTemp, Display,
+			TEXT("[SC_TIP_ROOT] World=%s Net=%d Role=%d Local=%d Authority=%d Pawn=%s Rev=%d Seq=%s InTIP=%d Clock=%.3f Prev=%.3f Curr=%.3f Len=%.3f Start=%.3f Blend=%.3f Loop=%d OverrideMM=%d ForceBlend=%d Index=%.0f Semantic=%.1f AuthoredTotal=%.2f Scale=%.3f CumPrev=%.2f CumCurr=%.2f RawDelta=%.3f ScaledDelta=%.3f CtrlYaw=%.2f FacingBefore=%.2f Clamped=%.3f ActorBefore=%.2f ActorAfter=%.2f Remaining=%.2f Cannot=%d CtrlDesired=%d OrientToMove=%d CharCtrlYaw=%d"),
+			World ? *World->GetMapName() : TEXT("<None>"),
+			World ? static_cast<int32>(World->GetNetMode()) : -1,
+			static_cast<int32>(GetLocalRole()),
+			IsLocallyControlled() ? 1 : 0,
+			HasAuthority() ? 1 : 0,
+			*GetName(),
+			SelectionRevision,
+			*TurnSequenceName,
+			bInTurnInPlacePresentation ? 1 : 0,
+			ElapsedTime,
+			PreviousTime,
+			CurrentTime,
+			SequenceLength,
+			StartTime,
+			BlendTime,
+			bSelectedAnimationLoops ? 1 : 0,
+			bOverridesMotionMatching ? 1 : 0,
+			bForceBlendStack ? 1 : 0,
+			TurnIndex,
+			DesiredAssetYaw,
+			CachedTurnInPlaceAuthoredRootYaw,
+			CachedTurnInPlaceRootYawScale,
+			PreviousCumulativeRootYaw,
+			CurrentCumulativeRootYaw,
+			RawAnimRootYawDelta,
+			AnimRootYawDelta,
+			GetController() ? GetController()->GetControlRotation().Yaw : ActorYawBeforeApply,
+			FacingDeltaYaw,
+			ClampedRootYawDelta,
+			ActorYawBeforeApply,
+			ActorYawAfterApply,
+			RemainingFacingDeltaYaw,
+			bCannotTurnInPlace ? 1 : 0,
+			GetCharacterMovement() && GetCharacterMovement()->bUseControllerDesiredRotation ? 1 : 0,
+			GetCharacterMovement() && GetCharacterMovement()->bOrientRotationToMovement ? 1 : 0,
+			bUseControllerRotationYaw ? 1 : 0);
+
+		LastTurnInPlaceDebugSelectionRevision = SelectionRevision;
+		NextTurnInPlaceDebugSampleTime = Now + 0.10;
+	}
+	if (bCannotTurnInPlace || FMath::Abs(RemainingFacingDeltaYaw) < TurnInPlaceExitAngle)
+    {
+        AnimStateComponent->bShouldTurnInPlace = false;
+    }
+#endif
+#endif
 }

@@ -84,7 +84,6 @@ namespace
 	}
 }
 
-
 // Sets default values
 AShip::AShip()
 {
