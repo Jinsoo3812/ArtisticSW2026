@@ -11,7 +11,6 @@
 #include "Ship.generated.h"
 
 class USWBuoyancyComponent;
-
 USTRUCT()
 struct FNetInputShip : public FNetworkPhysicsPayload
 {

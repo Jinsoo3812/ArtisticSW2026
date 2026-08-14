@@ -614,6 +614,21 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float CameraInterpSpeed = 10.f;
 
+	/**
+	 * Smooth only the presented camera rotation. ControlRotation still receives the
+	 * full mouse delta immediately, so gameplay aim and network input are not delayed.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Rotation Smoothing")
+	bool bEnableCameraRotationSmoothing = true;
+
+	/** Larger values follow ControlRotation faster. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Rotation Smoothing", meta = (EditCondition = "bEnableCameraRotationSmoothing", ClampMin = "0.0", UIMin = "0.0"))
+	float CameraRotationSmoothingSpeed = 35.f;
+
+	/** Maximum integration step used by SpringArm rotation-lag substepping. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Rotation Smoothing", meta = (EditCondition = "bEnableCameraRotationSmoothing", ClampMin = "0.001", UIMin = "0.001", Units = "s"))
+	float CameraRotationSmoothingMaxTimeStep = 0.008333333f;
+
 	/* --- 인벤토리 ---*/
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")

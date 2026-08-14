@@ -100,6 +100,10 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->TargetArmLength = 400.0f;
 	CameraBoom->bUsePawnControlRotation = true;
+	CameraBoom->bEnableCameraRotationLag = bEnableCameraRotationSmoothing;
+	CameraBoom->CameraRotationLagSpeed = CameraRotationSmoothingSpeed;
+	CameraBoom->bUseCameraLagSubstepping = true;
+	CameraBoom->CameraLagMaxTimeStep = CameraRotationSmoothingMaxTimeStep;
 
 	// Follow 카메라 생성 및 설정
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
@@ -141,6 +145,13 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 		// 힘의 계수를 0으로 설정
 		MovementComponent->InitialPushForceFactor = 0.0f;
 		MovementComponent->PushForceFactor = 0.0f;
+
+		// ShipDeckMesh is a query-only child of the Network Physics body. Keep
+		// CharacterMovement based on the attachment root so based movement,
+		// relative acceleration, and server validation all consume the actual
+		// predicted Chaos body (BuoyancyRoot), including its linear/angular
+		// velocity, instead of a presentation/query child component.
+		MovementComponent->bBaseOnAttachmentRoot = true;
 
 		// 이동 방향으로 몸 회전 방지
 		MovementComponent->bOrientRotationToMovement = false;
@@ -204,6 +215,16 @@ void ABasePlayer::BeginPlay()
 {
 	Super::BeginPlay();
 	InitializeSwimmingAnimLayers();
+
+	// Apply presentation-only smoothing after Blueprint defaults are loaded.
+	// ControlRotation remains immediate; only the SpringArm view catches up.
+	if (CameraBoom)
+	{
+		CameraBoom->bEnableCameraRotationLag = bEnableCameraRotationSmoothing;
+		CameraBoom->CameraRotationLagSpeed = CameraRotationSmoothingSpeed;
+		CameraBoom->bUseCameraLagSubstepping = bEnableCameraRotationSmoothing;
+		CameraBoom->CameraLagMaxTimeStep = CameraRotationSmoothingMaxTimeStep;
+	}
 
 	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
 	{
