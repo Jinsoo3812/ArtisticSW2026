@@ -9,8 +9,7 @@
 #include "GASDamageInstantGameplayEffect.h"
 #include "RangedEnemy/RangedEnemy.h"
 #include "Ship.h"
-#include "Weapon/BaseWeapon.h"
-#include "Weapon/BaseWeaponComponent.h"
+#include "Weapon/EnemyBow.h"
 
 UGA_RangedEnemyAttack::UGA_RangedEnemyAttack()
 {
@@ -162,9 +161,16 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 		return false;
 	}
 
+	AEnemyBow* Bow = CachedEnemy->GetEquippedBow();
+	FTransform ArrowSpawnTransform;
+	if (!Bow || !Bow->GetArrowSpawnTransform(ArrowSpawnTransform))
+	{
+		return false;
+	}
+
 	UWorld* World = CachedEnemy->GetWorld();
 	UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
-	TSubclassOf<AArrowProjectile> ProjectileClass = CachedEnemy->GetRangedProjectileClass();
+	TSubclassOf<AArrowProjectile> ProjectileClass = Bow->GetProjectileClass();
 	if (!World)
 	{
 		return false;
@@ -178,7 +184,7 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 		return false;
 	}
 
-	const FVector SpawnLocation = CachedEnemy->GetRangedAttackOrigin();
+	const FVector SpawnLocation = ArrowSpawnTransform.GetLocation();
 	const FVector AimLocation = CachedEnemy->GetRangedAimLocation(CachedTarget);
 	const FVector LaunchDirection = (AimLocation - SpawnLocation).GetSafeNormal();
 	if (LaunchDirection.IsNearlyZero())
@@ -203,13 +209,7 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 	{
 		Projectile->IgnoreActorForMovement(HostShip);
 	}
-	if (UBaseWeaponComponent* WeaponComponent = CachedEnemy->GetWeaponComponent())
-	{
-		if (ABaseWeapon* Weapon = WeaponComponent->GetCurrentWeapon())
-		{
-			Projectile->IgnoreActorForMovement(Weapon);
-		}
-	}
+	Projectile->IgnoreActorForMovement(Bow);
 
 	TSubclassOf<UGameplayEffect> DamageEffectClass = Projectile->GetDirectDamageEffectClass();
 	if (!DamageEffectClass)
@@ -233,7 +233,7 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 	Projectile->SetOwner(CachedEnemy);
 	Projectile->SetInstigator(CachedEnemy);
 	Projectile->FinishSpawning(SpawnTransform);
-	Projectile->LaunchArrow(LaunchDirection * CachedEnemy->GetRangedProjectileSpeed());
+	Projectile->LaunchArrow(LaunchDirection * Bow->GetProjectileSpeed());
 	bProjectileFired = true;
 	return true;
 }
@@ -250,7 +250,7 @@ bool UGA_RangedEnemyAttack::PlayAttackMontage()
 		this,
 		FName(TEXT("RangedEnemyAttackMontage")),
 		Montage,
-		1.0f,
+		CachedEnemy->GetRangedAttackMontagePlayRate(),
 		NAME_None,
 		true);
 	if (!AttackMontageTask)

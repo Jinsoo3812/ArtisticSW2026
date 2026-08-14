@@ -13,6 +13,12 @@
 #include "Weapon/BaseWeaponComponent.h"
 #include "Weapon/WeaponDataAsset.h"
 
+UEnemyBasicAttackCooldownEffect::UEnemyBasicAttackCooldownEffect()
+{
+	DurationPolicy = EGameplayEffectDurationType::HasDuration;
+	DurationMagnitude = FScalableFloat(1.0f);
+}
+
 UGA_BasicAttack::UGA_BasicAttack()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
@@ -23,6 +29,39 @@ UGA_BasicAttack::UGA_BasicAttack()
 	BasicAttackTags.AddTag(GameplayAbility_InterruptibleByHit);
 	SetAssetTags(BasicAttackTags);
 	ActivationBlockedTags.AddTag(State_Damaged);
+	NativeCooldownTags.AddTag(Cooldown_Enemy_BasicAttack);
+}
+
+const FGameplayTagContainer* UGA_BasicAttack::GetCooldownTags() const
+{
+	return &NativeCooldownTags;
+}
+
+void UGA_BasicAttack::ApplyCooldown(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo) const
+{
+	UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+	if (!ASC || NativeCooldownTags.IsEmpty() || AttackCooldownDuration <= 0.0f)
+	{
+		return;
+	}
+
+	FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
+	Context.AddSourceObject(this);
+	FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(
+		UEnemyBasicAttackCooldownEffect::StaticClass(),
+		GetAbilityLevel(Handle, ActorInfo),
+		Context);
+	if (!SpecHandle.IsValid() || !SpecHandle.Data.IsValid())
+	{
+		return;
+	}
+
+	SpecHandle.Data->SetDuration(AttackCooldownDuration, true);
+	SpecHandle.Data->DynamicGrantedTags.AppendTags(NativeCooldownTags);
+	ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 }
 
 void UGA_BasicAttack::ActivateAbility(

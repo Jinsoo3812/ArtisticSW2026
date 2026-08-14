@@ -56,17 +56,9 @@ struct FWeaponCombatData
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta=(ClampMin="0.001"))
 	float AttackMontagePlayRate = 1.f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	float IdealRange = 150.f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	float MinAttackRange = 0.f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	float MaxAttackRange = 200.f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta=(ClampMin="0.0"))
-	float AttackCooldown = 1.f;
+	/** Maximum 2D distance at which this weapon's basic attack should be started. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta=(ClampMin="0.0", Units="cm"))
+	float AttackRange = 180.f;
 };
 
 USTRUCT(BlueprintType)

@@ -35,6 +35,10 @@ void ABaseAIController::SetupPerceptionSystem()
 {
 	UAIPerceptionComponent* PerceptionComp =
 		CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("PerceptionComponent"));
+	// AI|Perception controller defaults are the single editor-facing source of truth.
+	// The component remains visible for inspection, but inherited Blueprints must not
+	// edit its generated sense configurations independently.
+	PerceptionComp->bEditableWhenInherited = false;
 	SetPerceptionComponent(*PerceptionComp);
 
 	SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));
@@ -122,6 +126,7 @@ void ABaseAIController::OnPossess(APawn* PossessedPawn)
 void ABaseAIController::OnUnPossess()
 {
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
+	CachedTargetActor.Reset();
 	UnbindPerceivedTargetDeath();
 	UnbindPossessedEnemyDeath();
 	Super::OnUnPossess();
@@ -130,6 +135,7 @@ void ABaseAIController::OnUnPossess()
 void ABaseAIController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
+	CachedTargetActor.Reset();
 	UnbindPerceivedTargetDeath();
 	UnbindPossessedEnemyDeath();
 	Super::EndPlay(EndPlayReason);
@@ -173,15 +179,28 @@ bool ABaseAIController::SetCombatTarget(AActor* TargetActor)
 	}
 
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
+	CachedTargetActor = TargetActor;
 	BlackboardComponent->SetValueAsObject(TargetActorKeyName, TargetActor);
 	BindPerceivedTargetDeath(TargetActor);
 	SetEnemyState(EEnemyAIState::Combat);
 	return true;
 }
 
+AActor* ABaseAIController::GetCombatTarget() const
+{
+	AActor* TargetActor = CachedTargetActor.Get();
+	return IsValid(TargetActor) ? TargetActor : nullptr;
+}
+
+void ABaseAIController::SetEQSPreviewTarget(AActor* TargetActor)
+{
+	CachedTargetActor = IsValid(TargetActor) ? TargetActor : nullptr;
+}
+
 void ABaseAIController::ClearCombatTarget(bool bReturnToPassive)
 {
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
+	CachedTargetActor.Reset();
 
 	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
 	if (BlackboardComponent)
@@ -248,7 +267,13 @@ void ABaseAIController::HandleSightStimulus(AActor* SensedActor, const FAIStimul
 {
 	if (Stimulus.WasSuccessfullySensed())
 	{
-		SetCombatTarget(SensedActor);
+		// Keep a valid current target stable. With two players, perception update
+		// ordering must not make the enemy switch targets every time either player
+		// produces a new sight stimulus.
+		if (!GetCombatTarget())
+		{
+			SetCombatTarget(SensedActor);
+		}
 		return;
 	}
 
@@ -278,7 +303,7 @@ void ABaseAIController::HandleHearingStimulus(AActor* SensedActor, const FAIStim
 
 void ABaseAIController::HandleDamageStimulus(AActor* SensedActor, const FAIStimulus& Stimulus)
 {
-	if (Stimulus.WasSuccessfullySensed())
+	if (Stimulus.WasSuccessfullySensed() && !GetCombatTarget())
 	{
 		SetCombatTarget(SensedActor);
 	}
@@ -327,6 +352,8 @@ void ABaseAIController::OnPossessedEnemyDeathStarted(UBaseHealthComponent* Healt
 
 void ABaseAIController::InitializeBlackboardValues(APawn* PossessedPawn)
 {
+	CachedTargetActor.Reset();
+
 	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
 	if (!BlackboardComponent || !PossessedPawn)
 	{

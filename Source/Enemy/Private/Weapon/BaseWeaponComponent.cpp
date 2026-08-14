@@ -47,6 +47,16 @@ const FWeaponDefinition* UBaseWeaponComponent::GetCurrentWeaponDefinition() cons
 
 void UBaseWeaponComponent::InitializeLoadout(FGameplayTag InWeaponTag)
 {
+	InitializeLoadoutInternal(InWeaponTag, true);
+}
+
+void UBaseWeaponComponent::InitializeHolsteredLoadout(FGameplayTag InWeaponTag)
+{
+	InitializeLoadoutInternal(InWeaponTag, false);
+}
+
+void UBaseWeaponComponent::InitializeLoadoutInternal(FGameplayTag InWeaponTag, bool bEquipImmediately)
+{
 	ABaseEnemy* OwnerEnemy = GetOwningEnemy();
 	// Owner가 없거나, 서버가 아니라면 return
 	if (!OwnerEnemy || !OwnerEnemy->HasAuthority())
@@ -87,7 +97,20 @@ void UBaseWeaponComponent::InitializeLoadout(FGameplayTag InWeaponTag)
 	CurrentWeapon->SetOwner(OwnerEnemy);
 	// 무기의 초기 상태 지정
 	WeaponState = EEnemyWeaponState::Holstered;
-	EquipCurrentWeapon();
+	if (bEquipImmediately)
+	{
+		EquipCurrentWeapon();
+	}
+	else
+	{
+		AttachWeaponToBack();
+	}
+}
+
+float UBaseWeaponComponent::GetCurrentAttackRange() const
+{
+	const FWeaponDefinition* WeaponDefinition = GetCurrentWeaponDefinition();
+	return WeaponDefinition ? FMath::Max(0.0f, WeaponDefinition->CombatData.AttackRange) : 0.0f;
 }
 
 void UBaseWeaponComponent::EquipCurrentWeapon()
