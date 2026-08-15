@@ -32,6 +32,7 @@ class ACannon;
 class USwimmingComponent;
 class UPlayerSkillComponent;
 class UAnimSequence;
+class UPlayerDialogueComponent;
 
 // Item Slot 관리 구조체
 USTRUCT(BlueprintType)
@@ -636,6 +637,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
 	TObjectPtr<UCraftingComponent> CraftingComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Dialogue")
+	TObjectPtr<UPlayerDialogueComponent> DialogueComponent;
 	/** 에디터 테스트 시작 시 특정 아이템을 인벤토리에 지급한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory")
 	bool bGiveStartingItemForTest = false;
@@ -702,6 +706,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Crafting")
 	UCraftingComponent* GetCraftingComponent() const { return CraftingComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "NPC|Dialogue")
+	UPlayerDialogueComponent* GetDialogueComponent() const { return DialogueComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Animation")
 	ULocomotionAnimStateComponent* GetAnimStateComponent() const { return AnimStateComponent; }

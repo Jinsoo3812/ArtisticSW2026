@@ -83,6 +83,14 @@ bool UStoryFacadeSubsystem::IsStoryNodeReached(EStoryNode Node) const
 	return Story && NodeTag.IsValid() && Story->HasFact(NodeTag);
 }
 
+bool UStoryFacadeSubsystem::CanCompleteStoryNode(EStoryNode Node) const
+{
+	const UStorySubsystem* Story = ResolveStory();
+	const FGameplayTag NodeTag = GetInternalTag(Node);
+	return Story && NodeTag.IsValid()
+		&& (IsStoryNodeReached(Node) || ArePrerequisitesReached(Node));
+}
+
 bool UStoryFacadeSubsystem::SaveCampaign(const FString& SlotName)
 {
 	UStorySubsystem* Story = ResolveStory();

@@ -2,6 +2,7 @@
 
 
 #include "BasePlayer.h"
+#include "PlayerDialogueComponent.h"
 #include "BasePlayerState.h"
 #include "Misc/Crc.h"
 #include "AbilitySystemComponent.h"
@@ -117,6 +118,7 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	// 인벤토리 컴포넌트 부착
 	InventoryComponent = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComponent"));
 	CraftingComponent = CreateDefaultSubobject<UCraftingComponent>(TEXT("CraftingComponent"));
+	DialogueComponent = CreateDefaultSubobject<UPlayerDialogueComponent>(TEXT("DialogueComponent"));
 	AnimStateComponent = CreateDefaultSubobject<ULocomotionAnimStateComponent>(TEXT("AnimStateComponent"));
 	TrajectoryComponent = CreateDefaultSubobject<USWTrajectoryComponent>(TEXT("TrajectoryComponent"));
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));

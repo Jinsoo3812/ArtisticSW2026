@@ -34,6 +34,16 @@
 			]
 		},
 		{
+			"Name": "NPCDialogue",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine",
+				"Story",
+				"ArtisticSWCore"
+			]
+		},
+		{
 			"Name": "GASCore",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
