@@ -30,6 +30,10 @@ class ENEMY_API UBaseWeaponComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FRangedEnemyAttackIntegrationTest;
+#endif
+
 public:
 	UBaseWeaponComponent();
 
@@ -97,6 +101,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Weapon")
 	void InitializeLoadout(FGameplayTag InWeaponTag);
 
+	/** Spawns the loadout on the back without granting its attack abilities yet. */
+	UFUNCTION(BlueprintCallable, Category = "Weapon")
+	void InitializeHolsteredLoadout(FGameplayTag InWeaponTag);
+
 	UFUNCTION(BlueprintCallable, Category = "Weapon")
 	void EquipCurrentWeapon();
 
@@ -120,6 +128,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Weapon")
 	bool IsWeaponEquipped() const { return WeaponState == EEnemyWeaponState::Equipped; }
 
+	UFUNCTION(BlueprintPure, Category = "Weapon")
+	float GetCurrentAttackRange() const;
+
 	const FWeaponDefinition* GetCurrentWeaponDefinition() const;
 	
 	// Owner Getter함수
@@ -127,4 +138,7 @@ public:
 	
 	// RepNotify함수에서 호출되는 함수들
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+private:
+	void InitializeLoadoutInternal(FGameplayTag InWeaponTag, bool bEquipImmediately);
 };

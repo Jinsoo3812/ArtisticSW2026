@@ -7,6 +7,7 @@ UE_DEFINE_GAMEPLAY_TAG(State_Damaged, "State.Damaged");
 UE_DEFINE_GAMEPLAY_TAG(State_Aiming, "State.Aiming");
 UE_DEFINE_GAMEPLAY_TAG(State_Sniping, "State.Sniping");
 UE_DEFINE_GAMEPLAY_TAG(State_Crafting, "State.Crafting");
+UE_DEFINE_GAMEPLAY_TAG(State_Dialogue, "State.Dialogue");
 UE_DEFINE_GAMEPLAY_TAG(State_Poisoned, "State.Poisoned");
 UE_DEFINE_GAMEPLAY_TAG(State_Bow_Drawing, "State.Bow.Drawing");
 UE_DEFINE_GAMEPLAY_TAG(State_Bow_FullyDrawn, "State.Bow.FullyDrawn");
@@ -37,6 +38,7 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_LaunchTorpedo, "GameplayAbility
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_CannonVolley, "GameplayAbility.EnemyShip.CannonVolley");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_DeployObstacle, "GameplayAbility.EnemyShip.DeployObstacle");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_TimeStop, "GameplayAbility.EnemyShip.TimeStop");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_Enemy_BasicAttack, "Cooldown.Enemy.BasicAttack");
 UE_DEFINE_GAMEPLAY_TAG(State_EnemyShip_Charging, "State.EnemyShip.Charging");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_Charge, "Cooldown.EnemyShip.Charge");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_LaunchTorpedo, "Cooldown.EnemyShip.LaunchTorpedo");
@@ -199,6 +201,7 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Category_Skill, "Item.Category.Skill");
 // Enemy
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Sword, "Item.EnemyWeapon.Sword");
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Hand, "Item.EnemyWeapon.Hand");
+UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Bow, "Item.EnemyWeapon.Bow");
 
 // Enemy Type
 // 적 구분 태그
@@ -240,3 +243,4 @@ UE_DEFINE_GAMEPLAY_TAG(Interaction_PickUp, "Interaction.PickUp");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_Craft, "Interaction.Craft");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_ShipBoard, "Interaction.ShipBoard");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_CannonBoard, "Interaction.CannonBoard");
+UE_DEFINE_GAMEPLAY_TAG(Interaction_Dialogue, "Interaction.Dialogue");

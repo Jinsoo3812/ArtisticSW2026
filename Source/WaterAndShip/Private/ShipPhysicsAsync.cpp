@@ -244,7 +244,6 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 	{
 		bIsResimming = CurrentSolver->IsResimming();
 		CurrentPhysicsStep = PhysicsStep;
-
 		if (!bIsResimming)
 		{
 			const FAsyncInputShip* AsyncInput = GetConsumerInput_Internal();
@@ -613,6 +612,7 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 			*ParticleHandle->GetV().ToString());
 	}
 	*/
+
 }
 
 void FShipPhysicsAsync::OnPreSimulate_Internal()

@@ -6,6 +6,7 @@
 #include "Animation/TrajectoryTypes.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "BoneControllers/AnimNode_FootPlacement.h"
+#include "BoneControllers/AnimNode_OffsetRootBone.h"
 #include "GameplayTagContainer.h"
 #include "SwimmingComponent.h"
 #include "MotionMatchingAnimInstance.generated.h"
@@ -36,6 +37,14 @@ enum class EWeaponUpperBodyOverlayState : uint8
     Sprint
 };
 
+/** The foot that should initiate a one-shot locomotion transition. */
+UENUM(BlueprintType)
+enum class EStateControllerOneShotFoot : uint8
+{
+    Left,
+    Right
+};
+
 USTRUCT(BlueprintType)
 struct FAnimMovementData
 {
@@ -46,6 +55,10 @@ struct FAnimMovementData
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     FVector VelocityLocal = FVector::ZeroVector;
+
+    /** Last valid world-space movement vector; mirrors GASP's Last Non Zero Velocity node. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    FVector LastNonZeroVelocity = FVector::ZeroVector;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     FVector Acceleration = FVector::ZeroVector;
@@ -249,6 +262,136 @@ struct FAnimBowData
 };
 
 USTRUCT(BlueprintType)
+struct FS_ChooserOutputs
+{
+    GENERATED_BODY()
+
+    /** Per-row playback offset, written by a Chooser struct-output column. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chooser", meta = (ClampMin = "0.0", Units = "s"))
+    float StartTime = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chooser")
+    bool bUseMM = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chooser", meta = (ClampMin = "0.0"))
+    float MMCostLimit = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chooser", meta = (ClampMin = "0.0", Units = "s"))
+    float BlendTime = 0.2f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chooser")
+    FName BlendProfile = NAME_None;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chooser")
+    FGameplayTagContainer Tags;
+};
+
+USTRUCT(BlueprintType)
+struct FAnimStateControllerThreadSafeData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    EStateControllerPresentationState PresentationState = EStateControllerPresentationState::IdleLoop;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    EMovementDirection MovementDirection = EMovementDirection::Forward;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    EMovementDirection PreviousMovementDirection = EMovementDirection::Forward;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    TObjectPtr<UAnimationAsset> SelectedAnimation = nullptr;
+
+    /** Full authored Chooser metadata cached beside SelectedAnimation (Project_J/GASP contract). */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    FS_ChooserOutputs SelectedAnimationOutput;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float SelectedAnimationBlendTime = 0.2f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float SelectedAnimationStartTime = 0.0f;
+
+    /** Playback time in the direct Blend Stack one-shot, before StartTime is applied. */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float SelectedAnimationElapsedTime = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bSelectedAnimationShouldLoop = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bHasSelectedAnimation = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    int32 SelectionRevision = 0;
+
+    /**
+     * One-frame request consumed by the Blend Stack AnimGraph function.  A
+     * TIP may deliberately select the same Sequence again after the camera
+     * crosses a retarget threshold; Blend Stack otherwise treats that as an
+     * unchanged input and continues the old playback cursor.
+     */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bForceBlendStackOnNextUpdate = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bShouldOverrideMotionMatching = false;
+
+    /** True only while moving Strafe is routed through the directional transition PSD. */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bUseLocomotionTransitionDatabase = false;
+
+    /**
+     * Raised only for an intentional Land redirect.  It forces the next MM
+     * query to use the outgoing graph Pose History instead of a continuing
+     * search result that was accumulated behind the direct Land pose.
+     */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bForceMotionMatchingReselection = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float TurnInPlaceSteeringAlpha = 0.0f;
+
+    /**
+     * GASP-style steering gate for the current Blend Stack clip.  This is
+     * intentionally separate from authored Turn In Place rotation: only a
+     * moving/in-air character may steer root motion.
+     */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float BlendStackSteeringAlpha = 0.0f;
+
+    /** Future (0.5 s) trajectory facing used by the generic Steering node. */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    FRotator BlendStackSteeringTargetOrientation = FRotator::ZeroRotator;
+
+    /**
+     * Local (actor-relative) movement angle for the current direct one-shot.
+     * This deliberately comes from the one-shot direction latch when one is
+     * active; live velocity becomes zero before a Land -> Stop hand-off.
+     */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float CombatStateOrientationWarpingAngle = 0.0f;
+
+    /** Authored curve still decides the final weight; this is the state gate. */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float CombatStateOrientationWarpingAlpha = 0.0f;
+
+    /** Velocity-to-acceleration turn angle; diagnostics only, never a direct Pivot trigger. */
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float TrajectoryTurnAngleDegrees = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float TurnInPlaceRootYawDelta = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bEnableAO = true;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    FVector2D AOValue = FVector2D::ZeroVector;
+};
+
+USTRUCT(BlueprintType)
 struct FAnimThreadSafeData
 {
     GENERATED_BODY()
@@ -279,6 +422,9 @@ struct FAnimThreadSafeData
 
     UPROPERTY(BlueprintReadOnly, Category = "Swimming")
     FSwimmingAnimationState SwimData;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    FAnimStateControllerThreadSafeData StateController;
 };
 
 struct FCachedMotionMatchingNodeInfo
@@ -292,6 +438,9 @@ struct FCachedMotionMatchingNodeInfo
     TObjectPtr<UPoseSearchDatabase> AppliedDatabase = nullptr;
     TWeakObjectPtr<const UObject> LastSelectedAnim;
     float LastSelectedTime = 0.f;
+    /** Lightweight moving-strafe diagnostic history; independent of p.MMDebugging capture history. */
+    TWeakObjectPtr<const UObject> LastStrafeDebugSelectedAnim;
+    float LastStrafeDebugSelectedTime = 0.f;
     float DefaultSearchThrottleTime = 0.f;
     bool bDefaultSearchThrottleCached = false;
     int32 DefaultMaxActiveBlends = 4;
@@ -305,9 +454,15 @@ struct FCachedMotionMatchingNodeInfo
     bool bPreUpdateContinue = false;
     bool bPreUpdateDbChanged = false;
     bool bPreUpdateAppliedDbChanged = false;
+    bool bPreUpdateNormalizedLoopTime = false;
+    bool bPreUpdateCollapsedLoopStack = false;
     float PreUpdateThrottle = 0.f;
     int32 PreUpdateMaxActiveBlends = 0;
     bool bPreUpdateShouldSearch = false;
+    /** Rising-edge latch: a meaningful moving-Strafe trajectory turn requests one fresh MM query. */
+    bool bWasStrafeTurnReselectRequested = false;
+    /** Debug-only record of the rising-edge request applied before this node update. */
+    bool bPreUpdateStrafeTurnReselect = false;
     bool bPostUpdateRestoredTransitionStack = false;
     bool bPostUpdateCollapsedTransitionStack = false;
     TWeakObjectPtr<const UObject> LastStackTopAnim;
@@ -349,6 +504,7 @@ public:
     TArray<FCachedHistoryCollectorNodeInfo> CachedHistoryNodes;
     bool bNodesCached = false;
     float DebugLogAccumulator = 0.f;
+    float StrafeMotionMatchingDebugAccumulator = 0.f;
 
     void CacheNodes(UAnimInstance* InAnimInstance);
 };
@@ -365,6 +521,18 @@ public:
 
     virtual void NativeInitializeAnimation() override;
     virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+    virtual void NativePostEvaluateAnimation() override;
+
+    /**
+     * Written by ABP_Player from the Offset Root Bone node's actual transform.
+     * This is the GASP visual-root reference used for stationary TIP, not the
+     * capsule/component transform.
+     */
+    UFUNCTION(BlueprintCallable, Category = "StateController|Turn In Place", meta = (BlueprintThreadSafe))
+    void SetGaspOffsetRootTransform(const FTransform& InOffsetRootTransform);
+
+    bool HasGaspOffsetRootTransform() const { return false; }
+    FTransform GetGaspOffsetRootTransform() const { return FTransform::Identity; }
 
     /**
      * The main AnimInstance calls this for linked animation-layer instances.
@@ -478,6 +646,178 @@ public:
     UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
     FFootPlacementInterpolationSettings Get_FootPlacementInterpolationSettings() const;
 
+    /**
+     * Foot placement and leg IK pin feet in world space.  They must yield while
+     * an authored Turn In Place clip rotates the root, otherwise their final
+     * solve visibly fights Offset Root Bone as the turn ends.
+     */
+    UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
+    float GetThreadSafeFootPlacementAlpha() const;
+
+    // State Controller ThreadSafe Getters for AnimGraph
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    EStateControllerPresentationState GetThreadSafeStateControllerPresentationState() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    EMovementDirection GetThreadSafeStateControllerMovementDirection() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    UAnimationAsset* GetThreadSafeStateControllerSelectedAnimation() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    float GetThreadSafeStateControllerSelectedAnimationBlendTime() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    float GetThreadSafeStateControllerSelectedAnimationStartTime() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    float GetThreadSafeStateControllerSelectedAnimationElapsedTime() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeStateControllerSelectedAnimationShouldLoop() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeStateControllerHasSelectedAnimation() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    int32 GetThreadSafeStateControllerSelectionRevision() const;
+
+    /** True for one AnimGraph update when a same-asset TIP must restart. */
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeStateControllerForceBlendStackOnNextUpdate() const;
+
+    /** Game-thread Chooser value for the currently selected TIP asset. */
+    float GetStateControllerTurnInPlaceIndexForChooser() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeShouldOverrideMotionMatching() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    float GetThreadSafeStateControllerTurnInPlaceSteeringAlpha() const;
+
+    /** GASP-compatible generic steering alpha. Prefer this name for new AnimGraph wiring. */
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    float GetThreadSafeStateControllerBlendStackSteeringAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    float GetThreadSafeStateControllerCombatStateOrientationWarpingAngle() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    float GetThreadSafeStateControllerCombatStateOrientationWarpingAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    FRotator GetThreadSafeStateControllerDesiredFacingRotator() const;
+
+    /** GASP-compatible generic Steering target (the predicted trajectory facing at +0.5 s). */
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    FRotator GetThreadSafeStateControllerBlendStackSteeringTargetOrientation() const;
+
+    /** GASP-compatible direction input for Orientation Warping in Blend Stack graphs. */
+    UFUNCTION(BlueprintPure, Category = "Locomotion", meta = (BlueprintThreadSafe))
+    FVector GetThreadSafeLastNonZeroVelocity() const;
+
+    /** Offset Root Bone modes: keep translation centered; only TIP may retain rotational offset. */
+    UFUNCTION(BlueprintPure, Category = "Offset Root", meta = (BlueprintThreadSafe))
+    EOffsetRootBoneMode GetThreadSafeOffsetRootRotationMode() const;
+
+    UFUNCTION(BlueprintPure, Category = "Offset Root", meta = (BlueprintThreadSafe))
+    EOffsetRootBoneMode GetThreadSafeOffsetRootTranslationMode() const;
+
+    UFUNCTION(BlueprintPure, Category = "Offset Root", meta = (BlueprintThreadSafe))
+    float GetThreadSafeOffsetRootTranslationHalfLife() const;
+
+    UFUNCTION(BlueprintPure, Category = "Offset Root", meta = (BlueprintThreadSafe))
+    float GetThreadSafeOffsetRootTranslationRadius() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    FVector2D GetThreadSafeAOValue() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeEnableAO() const;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    EStateControllerPresentationState StateControllerPresentationState = EStateControllerPresentationState::IdleLoop;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    EMovementDirection StateControllerMovementDirection = EMovementDirection::Forward;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    EGaitIntent StateControllerGait = EGaitIntent::Run;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    float StateControllerSpeed2D = 0.0f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    float StateControllerDesiredFacingDeltaYaw = 0.0f;
+
+    /** Last transform supplied by ABP_Player's Offset Root Bone graph. */
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "StateController|Turn In Place")
+    FTransform GaspOffsetRootTransform = FTransform::Identity;
+
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "StateController|Turn In Place")
+    bool bHasGaspOffsetRootTransform = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    bool bStateControllerIsHeavyLand = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    bool bStateControllerIsMovingLand = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    bool bStateControllerIsInAir = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    bool bStateControllerIsJumping = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    bool bStateControllerIsFallOff = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    EMovementDirection StateControllerPreviousMovementDirection = EMovementDirection::Forward;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    bool bStateControllerIsPivoting = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    bool bStateControllerShouldTurnInPlace = false;
+
+    /** Latched when entering a one-shot state; expose this property as a Chooser enum column. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    EStateControllerOneShotFoot StateControllerOneShotFoot = EStateControllerOneShotFoot::Left;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    EGaitIntent GetThreadSafeGait() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    float GetThreadSafeSpeed2D() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    float GetThreadSafeDesiredFacingDeltaYaw() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsHeavyLand() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsMovingLand() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsInAir() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsJumping() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsFallOff() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    EMovementDirection GetThreadSafeStateControllerPreviousMovementDirection() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeIsPivoting() const;
+
+    UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
+    bool GetThreadSafeShouldTurnInPlace() const;
+
     FStructProperty* CachedTrajectoryProperty = nullptr;
 
 protected:
@@ -498,87 +838,198 @@ protected:
     UPROPERTY(Transient, BlueprintReadOnly, Category = "Animation")
     TObjectPtr<ULocomotionAnimStateComponent> CachedLocomotionStateComponent;
 
+    // Master Chooser Table for State Controller
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    TObjectPtr<UChooserTable> MainChooserTable;
+
+    // Optional Sub-Chooser Tables (Fallbacks if MainChooserTable is not assigned)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    TObjectPtr<UChooserTable> StartChooserTable;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    TObjectPtr<UChooserTable> StopChooserTable;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    TObjectPtr<UChooserTable> LandChooserTable;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    TObjectPtr<UChooserTable> InAirChooserTable;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    TObjectPtr<UChooserTable> PivotChooserTable;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
+    TObjectPtr<UChooserTable> TurnInPlaceChooserTable;
+
+    /**
+     * 1.0 (Left 90), 2.0 (Left 180), 3.0 (Right 90), 4.0 (Right 180).
+     * Bind this exact property to the Float Range column of the TIP chooser.
+     */
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "StateController|Chooser")
+    float StateControllerTurnInPlaceIndexForChooser = 0.0f;
+
+    /** Semantic 90/180 bucket of the currently playing TIP clip. */
+    int32 StateControllerActiveTurnInPlaceIndex = 0;
+
+    /** Preserve the authored contact/steering lead-in before a TIP can be replaced. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "0.0", ClampMax = "1.0", Units = "s"))
+    float StateControllerTurnInPlaceReselectMinElapsed = 0.15f;
+
+    /** An opposite-direction request must reach this magnitude before replacing the active TIP. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "1.0", ClampMax = "180.0", Units = "deg"))
+    float StateControllerTurnInPlaceReverseDirectionReselectAngle = 55.0f;
+
+    /**
+     * Minimum elapsed time before an active TIP may re-enter the chooser.
+     * This matches GASP's TurnInPlace-tag branch: a fresh TIP enters at once,
+     * while another TIP waits for 0.75 seconds of the current one-shot.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "0.1", ClampMax = "2.0", Units = "s"))
+    float StateControllerTurnInPlaceReplayElapsed = 0.75f;
+
+    /**
+     * At a 0.75-second Project_J-style re-evaluation, a same-direction 090
+     * clip restarts only when this much yaw still remains. A smaller residual
+     * would make a full 90-degree root track visibly stop at its clamp.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "15.0", ClampMax = "90.0", Units = "deg"))
+    float StateControllerTurnInPlaceReplayRemainingAngle = 45.0f;
+
+    /**
+     * A fresh stationary turn must have enough camera-to-actor separation to
+     * justify playing an authored 090/180 clip.  The locomotion component's
+     * lower ShouldTIP threshold is deliberately more sensitive; it remains
+     * useful for data/debugging, but it must not start a visible full-turn clip
+     * for a small 30-degree mouse adjustment.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "15.0", ClampMax = "90.0", Units = "deg"))
+    float StateControllerTurnInPlaceEntryAngle = 45.0f;
+
+    /**
+     * Fallback used when the TIP Chooser row intentionally leaves BlendTime
+     * unset.  Direct root-yaw application owns gameplay rotation, so this
+     * stays short enough that repeated 90/180 turns remain visually legible.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "0.0", ClampMax = "0.25", Units = "s"))
+    float StateControllerTurnInPlaceDefaultBlendTime = 0.06f;
+
+    /** Amount reserved at the end of a land one-shot before Motion Matching resumes. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Landing", meta = (ClampMin = "0.0", Units = "s"))
+    float StateControllerLandCompletionLeadTime = 0.05f;
+
+    /** Start is cancellable when the player clearly changes move or facing intent. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Start", meta = (ClampMin = "0.0", ClampMax = "180.0"))
+    float StateControllerStartInputInterruptAngle = 12.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Start", meta = (ClampMin = "0.0", ClampMax = "180.0"))
+    float StateControllerStartControlYawInterruptAngle = 15.0f;
+
+    /**
+     * Small input-assembly window for keyboard diagonals. A and W may arrive
+     * on adjacent animation updates; during this window Start is reselected
+     * from the completed input instead of being prematurely handed to MM.
+     */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Start", meta = (ClampMin = "0.0", ClampMax = "0.25", Units = "s"))
+    float StateControllerStartInputAssemblyWindow = 0.12f;
+
+    // State Controller Runtime Playback Hold Data
+    EStateControllerPresentationState StateControllerPlaybackHoldState = EStateControllerPresentationState::None;
+    /** Current gameplay presentation request, before the one-shot hold policy is applied. */
+    EStateControllerPresentationState StateControllerRequestedPresentationState = EStateControllerPresentationState::None;
+    float StateControllerPlaybackHoldElapsed = 0.0f;
+    float StateControllerPlaybackHoldDuration = 0.0f;
+    /** Signed camera-minus-actor yaw captured at the most recent TIP Chooser evaluation. */
+    float StateControllerTurnInPlaceSelectionFacingDeltaYaw = 0.0f;
+    /** Set only for an eligible camera retarget; never produces a per-frame Chooser query. */
+    bool bStateControllerForceTurnInPlaceReselect = false;
+    /** Published for one AnimGraph update when that retarget kept the same Sequence. */
+    bool bStateControllerForceBlendStackOnNextUpdate = false;
+    FVector2D StateControllerStartMoveInput = FVector2D::ZeroVector;
+    float StateControllerStartControlYaw = 0.0f;
+    /** Gait frozen when the current direct Start clip was selected. */
+    bool bStateControllerSelectedSprintStart = false;
+    bool bStateControllerStartInputChanged = false;
+    bool bStateControllerStartControlYawChanged = false;
+    /** Set for one game-thread evaluation when a just-entered Start must use its completed diagonal input. */
+    bool bStateControllerInitialStartInputReselect = false;
+    float StateControllerStartInputDeltaDegrees = 0.0f;
+    float StateControllerStartControlYawDeltaDegrees = 0.0f;
+    TObjectPtr<UAnimationAsset> StateControllerSelectedAnimation = nullptr;
+    FS_ChooserOutputs StateControllerSelectedAnimationOutput;
+    float StateControllerSelectedAnimationBlendTime = 0.2f;
+    float StateControllerSelectedAnimationStartTime = 0.0f;
+    bool bStateControllerSelectedAnimationShouldLoop = false;
+    int32 StateControllerSelectionRevision = 0;
+
+    // Foot-contact values are captured after animation evaluation, then latched at the next one-shot entry.
+    UPROPERTY(EditDefaultsOnly, Category = "StateController|Foot Phase")
+    FName StateControllerLeftFootContactCurveName = TEXT("contact_l");
+
+    UPROPERTY(EditDefaultsOnly, Category = "StateController|Foot Phase")
+    FName StateControllerRightFootContactCurveName = TEXT("contact_r");
+
+    UPROPERTY(EditDefaultsOnly, Category = "StateController|Foot Phase", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float StateControllerFootContactDifferenceThreshold = 0.2f;
+
+    UPROPERTY(EditDefaultsOnly, Category = "StateController|Foot Phase")
+    EStateControllerOneShotFoot StateControllerNoPhaseFootFallback = EStateControllerOneShotFoot::Left;
+
+    float CachedStateControllerLeftFootContact = 0.0f;
+    float CachedStateControllerRightFootContact = 0.0f;
+    bool bHasStateControllerFootContactCurves = false;
+    bool bHasStateControllerFootPhaseHistory = false;
+    EStateControllerOneShotFoot StateControllerFootPhaseHistory = EStateControllerOneShotFoot::Left;
+
+    // Movement Direction & Quadrant Thresholds
+    EMovementDirection CurrentMovementDirection = EMovementDirection::Forward;
+    EMovementDirection MovementDirectionLastFrame = EMovementDirection::Forward;
+
+    // Land Gait Lock
+    EGaitIntent StateControllerLandGaitLock = EGaitIntent::Walk;
+    bool bHasStateControllerLandGaitLock = false;
+    /** The impact direction remains meaningful after velocity has reached zero.
+     *  It is consumed only by the immediate Land -> Stop one-shot hand-off. */
+    EMovementDirection StateControllerLandingDirectionLatch = EMovementDirection::Forward;
+    bool bHasStateControllerLandingDirectionLatch = false;
+    /** Exact world-space impact facing (not only the quantized eight-way sector).
+     *  Land and its immediate Stop hand-off use this as their common Steering target. */
+    float StateControllerLandingSteeringTargetYaw = 0.0f;
+    /** Same impact direction as above, expressed in actor-local degrees for Orientation Warping. */
+    float StateControllerLandingOrientationWarpingAngle = 0.0f;
+
+    /** Immutable direction captured when a direct Strafe one-shot is selected. */
+    float StateControllerOneShotOrientationWarpingAngle = 0.0f;
+
+    /** True while the current direct Start/Stop/Pivot/Jump/Land owns that angle. */
+    bool bHasStateControllerOneShotOrientationWarpingAngle = false;
+
+    void EvaluateStateControllerPresentationState();
+    void EvaluateStateControllerPlaybackHold(EStateControllerPresentationState DesiredState);
+    /** Emits event-driven diagnostics for direct Chooser one-shots and TIP rotation. */
+    void EmitStateControllerDebugTrace(const FAnimThreadSafeData& ThreadSafeData);
+    EStateControllerOneShotFoot ResolveStateControllerOneShotFoot(bool bAllowPhaseHistoryFallback) const;
+    void UpdateMovementDirection();
+    void CalculateAOValueAndEnableAO();
+
     // Motion Matching PSD assets (Direct C++ selection)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
     TObjectPtr<UPoseSearchDatabase> IdleDatabase;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
-    TObjectPtr<UPoseSearchDatabase> TurnInPlaceDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
-    TObjectPtr<UPoseSearchDatabase> StartDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
-    TObjectPtr<UPoseSearchDatabase> StartDatabaseRemote;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
-    TObjectPtr<UPoseSearchDatabase> RunStartRefaceDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
     TObjectPtr<UPoseSearchDatabase> LocomotionDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
-    TObjectPtr<UPoseSearchDatabase> LocomotionDatabaseRemote;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
     TObjectPtr<UPoseSearchDatabase> LocomotionTransitionDatabase;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
-    TObjectPtr<UPoseSearchDatabase> LocomotionTransitionDatabaseRemote;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching")
-    TObjectPtr<UPoseSearchDatabase> StopDatabase;
-
-    // Sprint PSDs
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
-    TObjectPtr<UPoseSearchDatabase> SprintStartDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
-    TObjectPtr<UPoseSearchDatabase> SprintStartDatabaseRemote;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
-    TObjectPtr<UPoseSearchDatabase> SprintStartRefaceDatabase;
-
+    // Sprint uses only a sustained Motion Matching database. Its start/stop
+    // one-shots are selected by the State Controller Choosers.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
     TObjectPtr<UPoseSearchDatabase> SprintLocomotionDatabase;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Sprint")
-    TObjectPtr<UPoseSearchDatabase> SprintStopDatabase;
-
-    // Air / Landing PSDs
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> JumpStartDatabase;
-
-    /** Optional filtered PSDs. Assign normal stand/move jump assets only; JumpStartDatabase remains the compatibility fallback. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> JumpStartStandDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> JumpStartMovingDatabase;
-
+    // Only the sustained air loop belongs to Motion Matching. Jump, fall-off,
+    // land, TIP, start and stop are direct State Controller Chooser one-shots.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
     TObjectPtr<UPoseSearchDatabase> InAirDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> FallOffDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> StandLandLightDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> StandLandHeavyDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> RunLandLightDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> RunLandHeavyDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> SprintLandLightDatabase;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Motion Matching|Air")
-    TObjectPtr<UPoseSearchDatabase> SprintLandHeavyDatabase;
 
     UPROPERTY(BlueprintReadOnly, Category = "Motion Matching")
     TObjectPtr<UPoseSearchDatabase> CurrentActivePoseSearchDatabase;
@@ -686,6 +1137,29 @@ private:
     ELocomotionState LastState = ELocomotionState::Idle;
     FName LastDatabaseName = NAME_None;
     float StateLogTimer = 0.0f;
+
+    // State-controller diagnostics are intentionally event-driven.  These keep
+    // a small amount of game-thread history so normal locomotion never floods
+    // the output log while a.StateControllerDebug is enabled.
+    EStateControllerPresentationState LastStateControllerDebugPresentation = EStateControllerPresentationState::None;
+    int32 LastStateControllerDebugSelectionRevision = INDEX_NONE;
+    int32 LastStateControllerDebugComponentEventRevision = INDEX_NONE;
+    float LastStateControllerDebugActorYaw = 0.0f;
+    double NextStateControllerTurnInPlaceDebugTime = 0.0;
+    double NextStateControllerOneShotDebugTime = 0.0;
+    double NextStateControllerPivotDebugTime = 0.0;
+    /** Game-thread heartbeat for a.StrafeMMDebug; works even before proxy-node diagnostics are available. */
+    double NextStrafeMotionMatchingGameThreadDebugTime = 0.0;
+    /** Independent from event traces: a.StopDebug 2 prints the derived Stop
+     * inputs at a low fixed cadence even when no request is generated. */
+    double NextStopDebugSampleTime = 0.0;
+    bool bHasStateControllerDebugActorYaw = false;
+
+    /** Debug-only: records the Main -> SubChooser chain selected for the current one-shot. */
+    FString StateControllerLastChooserPath;
+    /** Debug-only: captures StartTime immediately after each parent/child Chooser evaluation. */
+    FString StateControllerLastChooserOutputTrace;
+
     bool bWasFallOffForDebug = false;
     float FallOffDebugElapsedTime = 0.0f;
     bool bSuppressDatabaseSearchThreadSafe = false;

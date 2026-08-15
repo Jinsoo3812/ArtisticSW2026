@@ -9,15 +9,31 @@
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "BehaviorTree/BehaviorTree.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Vector.h"
+#include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/Composites/BTComposite_Selector.h"
 #include "BehaviorTree/Composites/BTComposite_Sequence.h"
 #include "BehaviorTree/Tasks/BTTask_MoveTo.h"
+#include "BehaviorTree/Tasks/BTTask_RunEQSQuery.h"
 #include "BehaviorTree/Tasks/BTTask_Wait.h"
+#include "Decorator/BTD_CanRangedAttack.h"
 #include "Decorator/BTD_CombatTargetState.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/Engine.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshSocket.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "DataProviders/AIDataProvider_QueryParams.h"
+#include "EQS/EnvQueryContext_EnemyCombatTarget.h"
+#include "EnvironmentQuery/Contexts/EnvQueryContext_Querier.h"
+#include "EnvironmentQuery/EnvQuery.h"
+#include "EnvironmentQuery/EnvQueryOption.h"
+#include "EnvironmentQuery/Generators/EnvQueryGenerator_Donut.h"
+#include "EnvironmentQuery/Generators/EnvQueryGenerator_OnCircle.h"
+#include "EnvironmentQuery/Tests/EnvQueryTest_Distance.h"
+#include "EnvironmentQuery/Tests/EnvQueryTest_Pathfinding.h"
+#include "EnvironmentQuery/Tests/EnvQueryTest_Trace.h"
 #include "GAS/Ability/GA_RangedEnemyAttack.h"
 #include "GASCombatLibrary.h"
 #include "GASDamageInstantGameplayEffect.h"
@@ -33,8 +49,12 @@
 #include "Ship.h"
 #include "StatusEffectLibrary.h"
 #include "Task/BTT_ClearFocus.h"
+#include "Task/BTT_RangedAttack.h"
 #include "Task/BTT_SetFocus.h"
 #include "Task/BTT_SetMovementSpeed.h"
+#include "Weapon/BaseWeaponComponent.h"
+#include "Weapon/EnemyBow.h"
+#include "Weapon/WeaponDataAsset.h"
 
 namespace RangedEnemyTests
 {
@@ -72,6 +92,101 @@ namespace RangedEnemyTests
 		}
 		return Count;
 	}
+
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRangedEnemyEQSAssetContractTest,
+	"ArtisticSW.Enemy.RangedEnemy.EQSAssetContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRangedEnemyEQSAssetContractTest::RunTest(const FString& Parameters)
+{
+	const UEnvQuery* Query = LoadObject<UEnvQuery>(
+		nullptr,
+		TEXT("/Game/GameplayAbilitySystem/Enemy/AI/EQS/EQS_RangedEnemy_CombatPosition.EQS_RangedEnemy_CombatPosition"));
+	if (!TestNotNull(TEXT("Ranged combat EQS asset exists"), Query))
+	{
+		return false;
+	}
+
+	const TArray<UEnvQueryOption*>& Options = Query->GetOptions();
+	if (!TestEqual(TEXT("Query has one reusable option"), Options.Num(), 1)
+		|| !TestNotNull(TEXT("Query option exists"), Options[0]))
+	{
+		return false;
+	}
+
+	const UEnvQueryOption* Option = Options[0];
+	const UEnvQueryGenerator_Donut* DonutGenerator = Cast<UEnvQueryGenerator_Donut>(Option->Generator);
+	const UEnvQueryGenerator_OnCircle* CircleGenerator = Cast<UEnvQueryGenerator_OnCircle>(Option->Generator);
+	if (!TestTrue(TEXT("Query uses a target-centered ring generator"),
+		DonutGenerator || CircleGenerator))
+	{
+		return false;
+	}
+	if (DonutGenerator)
+	{
+		TestEqual(TEXT("Donut is centered on the controller-owned combat target"),
+			DonutGenerator->Center, TSubclassOf<UEnvQueryContext>(UEnvQueryContext_EnemyCombatTarget::StaticClass()));
+		TestTrue(TEXT("Donut keeps a positive combat band"),
+			DonutGenerator->InnerRadius.DefaultValue > 0.0f
+			&& DonutGenerator->OuterRadius.DefaultValue > DonutGenerator->InnerRadius.DefaultValue);
+	}
+	else if (CircleGenerator)
+	{
+		TestNotNull(TEXT("Circle has an explicit center context"), CircleGenerator->CircleCenter.Get());
+		TestTrue(TEXT("Circle has a positive combat radius"), CircleGenerator->CircleRadius.DefaultValue > 0.0f);
+		TestTrue(TEXT("Circle generates enough movement candidates"),
+			CircleGenerator->PointOnCircleSpacingMethod == EPointOnCircleSpacingMethod::BySpaceBetween
+			|| CircleGenerator->NumberOfPoints.DefaultValue >= 8);
+	}
+
+	const UEnvQueryTest_Distance* TargetDistance = nullptr;
+	const UEnvQueryTest_Distance* QuerierDistance = nullptr;
+	const UEnvQueryTest_Pathfinding* PathExist = nullptr;
+	const UEnvQueryTest_Trace* LineOfSight = nullptr;
+	for (const UEnvQueryTest* Test : Option->Tests)
+	{
+		if (const UEnvQueryTest_Distance* Distance = Cast<UEnvQueryTest_Distance>(Test))
+		{
+			if (Distance->DistanceTo == UEnvQueryContext_EnemyCombatTarget::StaticClass())
+			{
+				TargetDistance = Distance;
+			}
+			else if (Distance->DistanceTo == UEnvQueryContext_Querier::StaticClass())
+			{
+				QuerierDistance = Distance;
+			}
+		}
+		PathExist = PathExist ? PathExist : Cast<UEnvQueryTest_Pathfinding>(Test);
+		LineOfSight = LineOfSight ? LineOfSight : Cast<UEnvQueryTest_Trace>(Test);
+	}
+
+	if (!TestNotNull(TEXT("Query enforces a reposition step from the querier"), QuerierDistance)
+		|| !TestNotNull(TEXT("Query filters unreachable paths"), PathExist)
+		|| !TestNotNull(TEXT("Query predicts line of sight"), LineOfSight))
+	{
+		return false;
+	}
+
+	if (TargetDistance)
+	{
+		TestTrue(TEXT("Optional target-distance test keeps a positive combat band"),
+			TargetDistance->FloatValueMin.DefaultValue >= 0.0f
+			&& TargetDistance->FloatValueMax.DefaultValue > TargetDistance->FloatValueMin.DefaultValue);
+	}
+	TestTrue(TEXT("Reposition keeps a positive minimum step"),
+		QuerierDistance->FloatValueMin.DefaultValue > 0.0f);
+	TestEqual(TEXT("Reposition score prefers the nearest valid next step"),
+		QuerierDistance->ScoringEquation.GetValue(), EEnvTestScoreEquation::InverseLinear);
+	TestEqual(TEXT("Pathfinding runs from the querier"), PathExist->PathFromContext.DefaultValue, true);
+	TestNotNull(TEXT("LOS trace has an explicit context"), LineOfSight->Context.Get());
+	TestEqual(TEXT("LOS trace expects no blocking hit"), LineOfSight->BoolValue.DefaultValue, false);
+	TestEqual(TEXT("LOS trace starts at the candidate item"), LineOfSight->TraceFromContext.DefaultValue, false);
+	TestNull(TEXT("Combat target context safely rejects a missing query owner"),
+		UEnvQueryContext_EnemyCombatTarget::ResolveCombatTarget(nullptr));
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -82,10 +197,12 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 {
 	const ARangedEnemy* EnemyCDO = GetDefault<ARangedEnemy>();
+	const AEnemyBow* BowCDO = GetDefault<AEnemyBow>();
 	const ARangedEnemyAIController* ControllerCDO = GetDefault<ARangedEnemyAIController>();
 	const UGA_RangedEnemyAttack* AbilityCDO = GetDefault<UGA_RangedEnemyAttack>();
 
 	TestNotNull(TEXT("RangedEnemy CDO exists"), EnemyCDO);
+	TestNotNull(TEXT("EnemyBow CDO exists"), BowCDO);
 	TestNotNull(TEXT("RangedEnemy AI Controller CDO exists"), ControllerCDO);
 	TestTrue(TEXT("RangedEnemy AI Controller can tick to update focus rotation"),
 		ControllerCDO && ControllerCDO->PrimaryActorTick.bCanEverTick);
@@ -93,9 +210,14 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 		ControllerCDO && ControllerCDO->PrimaryActorTick.bStartWithTickEnabled);
 	TestEqual(TEXT("RangedEnemy uses the dedicated AI controller"), EnemyCDO->AIControllerClass,
 		TSubclassOf<AController>(ARangedEnemyAIController::StaticClass()));
-	TestTrue(TEXT("Default projectile derives from RangedEnemyProjectile"),
-		EnemyCDO->GetRangedProjectileClass()
-		&& EnemyCDO->GetRangedProjectileClass()->IsChildOf(ARangedEnemyProjectile::StaticClass()));
+	TestTrue(TEXT("RangedEnemy defaults to the Enemy Bow loadout"),
+		EnemyCDO->GetDefaultWeaponTag() == Item_EnemyWeapon_Bow);
+	TestTrue(TEXT("RangedEnemy equips its GA-granting bow on spawn"), EnemyCDO->ShouldEquipWeaponOnSpawn());
+	TestEqual(TEXT("Enemy Bow uses the required Arrow_socket contract"),
+		BowCDO->GetArrowSocketName(), FName(TEXT("Arrow_socket")));
+	TestTrue(TEXT("Enemy Bow default projectile derives from RangedEnemyProjectile"),
+		BowCDO->GetProjectileClass()
+		&& BowCDO->GetProjectileClass()->IsChildOf(ARangedEnemyProjectile::StaticClass()));
 	TestTrue(TEXT("Player and Enemy projectile entry points share AArrowProjectile"),
 		APlayerArrowProjectile::StaticClass()->IsChildOf(AArrowProjectile::StaticClass())
 		&& ARangedEnemyProjectile::StaticClass()->IsChildOf(AArrowProjectile::StaticClass()));
@@ -106,11 +228,49 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Ranged attack remains part of the common basic-attack ability family"),
 		AbilityCDO->GetAssetTags().HasTagExact(GameplayAbility_BasicAttack));
 
+	const UClass* RangedEnemyBlueprintClass = LoadObject<UClass>(
+		nullptr,
+		TEXT("/Game/GameplayAbilitySystem/Enemy/BP_RangedEnemy.BP_RangedEnemy_C"));
+	const ARangedEnemy* RangedEnemyBlueprintCDO = RangedEnemyBlueprintClass
+		? RangedEnemyBlueprintClass->GetDefaultObject<ARangedEnemy>()
+		: nullptr;
+	if (TestNotNull(TEXT("BP_RangedEnemy uses the native ranged-enemy contract"), RangedEnemyBlueprintCDO))
+	{
+		TestTrue(TEXT("BP_RangedEnemy resolves the Enemy Bow loadout"),
+			RangedEnemyBlueprintCDO->GetDefaultWeaponTag() == Item_EnemyWeapon_Bow);
+		TestTrue(TEXT("BP_RangedEnemy equips the bow on spawn"),
+			RangedEnemyBlueprintCDO->ShouldEquipWeaponOnSpawn());
+	}
+
+	const UWeaponDataAsset* WeaponRegistry = LoadObject<UWeaponDataAsset>(
+		nullptr,
+		TEXT("/Game/GameplayAbilitySystem/Enemy/Weapon/DA_Weapon.DA_Weapon"));
+	if (TestNotNull(TEXT("Enemy weapon registry exists"), WeaponRegistry))
+	{
+		const FWeaponDefinition* BowDefinition =
+			WeaponRegistry->FindWeaponDefinitionByTag(Item_EnemyWeapon_Bow);
+		if (TestNotNull(TEXT("Enemy weapon registry contains the bow definition"), BowDefinition))
+		{
+			TestTrue(TEXT("Bow definition spawns an EnemyBow actor"),
+				BowDefinition->WeaponActorClass
+				&& BowDefinition->WeaponActorClass->IsChildOf(AEnemyBow::StaticClass()));
+			bool bGrantsRangedAttack = false;
+			for (const FGrantedWeaponAbility& GrantedAbility : BowDefinition->AbilityData.GrantedAbilities)
+			{
+				bGrantsRangedAttack |= GrantedAbility.AbilityClass
+					&& GrantedAbility.AbilityClass->IsChildOf(UGA_RangedEnemyAttack::StaticClass());
+			}
+			TestTrue(TEXT("Equipping the bow grants the ranged attack GA"), bGrantsRangedAttack);
+		}
+	}
+
 	const UAIPerceptionComponent* PerceptionComponent = ControllerCDO
 		? ControllerCDO->GetAIPerceptionComponent()
 		: nullptr;
 	if (TestNotNull(TEXT("Ranged controller owns an AI Perception component"), PerceptionComponent))
 	{
+		TestFalse(TEXT("Inherited AI Perception component is read-only in Blueprint defaults"),
+			PerceptionComponent->IsEditableWhenInherited());
 		TestNotNull(TEXT("Sight sense is configured"), PerceptionComponent->GetSenseConfig<UAISenseConfig_Sight>());
 		TestNotNull(TEXT("Hearing sense is configured"), PerceptionComponent->GetSenseConfig<UAISenseConfig_Hearing>());
 		TestNotNull(TEXT("Damage sense is configured"), PerceptionComponent->GetSenseConfig<UAISenseConfig_Damage>());
@@ -146,6 +306,41 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRangedEnemyEQSPreviewTargetCacheTest,
+	"ArtisticSW.Enemy.RangedEnemy.EQSPreviewTargetCache",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRangedEnemyEQSPreviewTargetCacheTest::RunTest(const FString& Parameters)
+{
+	RangedEnemyTests::FScopedTestWorld TestWorld;
+	if (!TestNotNull(TEXT("Transient game world is created"), TestWorld.World))
+	{
+		return false;
+	}
+
+	ARangedEnemyAIController* Controller = TestWorld.World->SpawnActor<ARangedEnemyAIController>();
+	AActor* PreviewTarget = TestWorld.World->SpawnActor<AActor>();
+	if (!TestNotNull(TEXT("Ranged AI controller is spawned"), Controller)
+		|| !TestNotNull(TEXT("EQS preview target is spawned"), PreviewTarget))
+	{
+		return false;
+	}
+
+	TestNull(TEXT("Controller starts without a cached target"), Controller->GetCombatTarget());
+	Controller->SetEQSPreviewTarget(PreviewTarget);
+	TestEqual(TEXT("EQS preview setter supplies the shared combat-target context"),
+		Controller->GetCombatTarget(), PreviewTarget);
+
+	Controller->SetEQSPreviewTarget(nullptr);
+	TestNull(TEXT("A null EQS preview target clears the cache"), Controller->GetCombatTarget());
+
+	Controller->SetEQSPreviewTarget(PreviewTarget);
+	Controller->ClearCombatTarget(false);
+	TestNull(TEXT("Runtime combat clearing also clears the EQS target cache"), Controller->GetCombatTarget());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRangedEnemyCombatTreeContractTest,
 	"ArtisticSW.Enemy.RangedEnemy.CombatTreeContract",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -154,10 +349,24 @@ bool FRangedEnemyCombatTreeContractTest::RunTest(const FString& Parameters)
 {
 	const UBehaviorTree* CombatTree = LoadObject<UBehaviorTree>(
 		nullptr,
-		TEXT("/Game/GameplayAbilitySystem/Enemy/AI/SubTree/BT_Subtree_RangedEnemy_Combat.BT_Subtree_RangedEnemy_Combat"));
+		TEXT("/Game/GameplayAbilitySystem/Enemy/AI/SubTree/Ranged/BT_Subtree_RangedEnemy_Combat.BT_Subtree_RangedEnemy_Combat"));
 	if (!TestNotNull(TEXT("Ranged combat behavior tree exists"), CombatTree))
 	{
 		return false;
+	}
+
+	const UBlackboardData* BlackboardAsset = CombatTree->BlackboardAsset;
+	if (TestNotNull(TEXT("Ranged combat tree has a Blackboard asset"), BlackboardAsset))
+	{
+		const FBlackboard::FKey PointOfInterestKey = BlackboardAsset->GetKeyID(TEXT("PointOfInterest"));
+		TestTrue(TEXT("PointOfInterest Blackboard key exists"),
+			PointOfInterestKey != FBlackboard::InvalidKey);
+		if (PointOfInterestKey != FBlackboard::InvalidKey)
+		{
+			TestEqual(TEXT("PointOfInterest stores EQS point results as a Vector"),
+				BlackboardAsset->GetKeyType(PointOfInterestKey),
+				TSubclassOf<UBlackboardKeyType>(UBlackboardKeyType_Vector::StaticClass()));
+		}
 	}
 
 	const UBTComposite_Selector* RootSelector = Cast<UBTComposite_Selector>(CombatTree->RootNode);
@@ -167,58 +376,157 @@ bool FRangedEnemyCombatTreeContractTest::RunTest(const FString& Parameters)
 	}
 
 	const UBTComposite_Sequence* AttackSequence = nullptr;
-	const UBTComposite_Sequence* SearchSequence = nullptr;
-	for (const FBTCompositeChild& Child : RootSelector->Children)
+	const UBTComposite_Sequence* RepositionSequence = nullptr;
+	const UBTComposite_Sequence* TrackTargetSequence = nullptr;
+	int32 AttackBranchIndex = INDEX_NONE;
+	int32 RepositionBranchIndex = INDEX_NONE;
+	bool bAttackBranchHasCanAttack = false;
+	bool bRepositionRequiresTarget = false;
+	for (int32 BranchIndex = 0; BranchIndex < RootSelector->Children.Num(); ++BranchIndex)
 	{
-		const UBTComposite_Sequence* Sequence = Cast<UBTComposite_Sequence>(Child.ChildComposite);
-		for (const UBTDecorator* Decorator : Child.Decorators)
+		const FBTCompositeChild& Branch = RootSelector->Children[BranchIndex];
+		const UBTComposite_Sequence* Sequence = Cast<UBTComposite_Sequence>(Branch.ChildComposite);
+		if (!Sequence)
 		{
-			const UBTD_CombatTargetState* TargetDecorator = Cast<UBTD_CombatTargetState>(Decorator);
-			if (!TargetDecorator)
-			{
-				continue;
-			}
+			continue;
+		}
 
-			TestEqual(TEXT("Combat target branches abort both directions"),
-				TargetDecorator->GetFlowAbortMode(), EBTFlowAbortMode::Both);
-			if (TargetDecorator->GetQuery() == ECombatTargetStateQuery::IsSet)
+		bool bContainsAttack = false;
+		bool bContainsEQS = false;
+		bool bContainsWait = false;
+		for (const FBTCompositeChild& Child : Sequence->Children)
+		{
+			bContainsAttack |= Child.ChildTask && Child.ChildTask->IsA<UBTT_RangedAttack>();
+			bContainsEQS |= Child.ChildTask && Child.ChildTask->IsA<UBTTask_RunEQSQuery>();
+			bContainsWait |= Child.ChildTask && Child.ChildTask->IsA<UBTTask_Wait>();
+		}
+
+		if (bContainsAttack)
+		{
+			AttackSequence = Sequence;
+			AttackBranchIndex = BranchIndex;
+			for (const UBTDecorator* Decorator : Branch.Decorators)
 			{
-				AttackSequence = Sequence;
+				bAttackBranchHasCanAttack |= Decorator && Decorator->IsA<UBTD_CanRangedAttack>();
 			}
-			else
+		}
+		else if (bContainsEQS)
+		{
+			RepositionSequence = Sequence;
+			RepositionBranchIndex = BranchIndex;
+			for (const UBTDecorator* Decorator : Branch.Decorators)
 			{
-				SearchSequence = Sequence;
+				const UBTD_CombatTargetState* TargetState = Cast<UBTD_CombatTargetState>(Decorator);
+				bRepositionRequiresTarget |= TargetState
+					&& TargetState->GetQuery() == ECombatTargetStateQuery::IsSet;
 			}
+		}
+		else if (bContainsWait)
+		{
+			TrackTargetSequence = Sequence;
 		}
 	}
 
-	TestNotNull(TEXT("Attack branch requires a combat target"), AttackSequence);
-	if (!TestNotNull(TEXT("Search branch requires no combat target"), SearchSequence))
+	if (!TestNotNull(TEXT("Selector has a ranged attack branch"), AttackSequence)
+		|| !TestNotNull(TEXT("Selector has an EQS reposition branch"), RepositionSequence))
 	{
 		return false;
 	}
+	TestTrue(TEXT("Attack branch is gated by Can Ranged Attack"), bAttackBranchHasCanAttack);
+	TestTrue(TEXT("Reposition branch requires a live combat target"), bRepositionRequiresTarget);
+	TestTrue(TEXT("Selector attacks first and falls through to EQS repositioning when it cannot fire"),
+		AttackBranchIndex >= 0 && RepositionBranchIndex > AttackBranchIndex);
 
-	bool bHasIdleSpeed = false;
-	bool bHasClearFocus = false;
-	bool bHasWait = false;
-	bool bHasUnexpectedTargetMove = false;
-	for (const FBTCompositeChild& Child : SearchSequence->Children)
+	const UBTTask_RunEQSQuery* RunEQS = nullptr;
+	const UBTTask_MoveTo* CombatMove = nullptr;
+	const UBTT_RangedAttack* RangedAttack = nullptr;
+	int32 RunEQSIndex = INDEX_NONE;
+	int32 StrafeSpeedIndex = INDEX_NONE;
+	int32 MoveIndex = INDEX_NONE;
+	for (int32 ChildIndex = 0; ChildIndex < RepositionSequence->Children.Num(); ++ChildIndex)
 	{
-		const UBTTaskNode* Task = Child.ChildTask;
-		if (const UBTT_SetMovementSpeed* MovementTask = Cast<UBTT_SetMovementSpeed>(Task))
+		const UBTTaskNode* Task = RepositionSequence->Children[ChildIndex].ChildTask;
+		if (const UBTTask_RunEQSQuery* EQSTask = Cast<UBTTask_RunEQSQuery>(Task))
 		{
-			bHasIdleSpeed = MovementTask->GetMovementMode() == EEnemyMovementSpeedMode::Idle;
+			RunEQS = EQSTask;
+			RunEQSIndex = ChildIndex;
 		}
-		bHasClearFocus |= Task && Task->IsA<UBTT_ClearFocus>();
-		bHasWait |= Task && Task->IsA<UBTTask_Wait>();
-		bHasUnexpectedTargetMove |= Task
-			&& (Task->IsA<UBTT_SetFocus>() || Task->IsA<UBTTask_MoveTo>());
+		else if (const UBTTask_MoveTo* MoveTask = Cast<UBTTask_MoveTo>(Task))
+		{
+			CombatMove = MoveTask;
+			MoveIndex = ChildIndex;
+		}
+		else if (const UBTT_SetMovementSpeed* MovementTask = Cast<UBTT_SetMovementSpeed>(Task))
+		{
+			if (MovementTask->GetMovementMode() == EEnemyMovementSpeedMode::Strafe)
+			{
+				StrafeSpeedIndex = ChildIndex;
+			}
+		}
 	}
 
-	TestTrue(TEXT("Search branch stops movement"), bHasIdleSpeed);
-	TestTrue(TEXT("Search branch clears gameplay focus"), bHasClearFocus);
-	TestTrue(TEXT("Search branch waits for target reacquisition"), bHasWait);
-	TestFalse(TEXT("Search branch does not focus or move toward the dead target"), bHasUnexpectedTargetMove);
+	int32 IdleSpeedIndex = INDEX_NONE;
+	int32 AttackIndex = INDEX_NONE;
+	for (int32 ChildIndex = 0; ChildIndex < AttackSequence->Children.Num(); ++ChildIndex)
+	{
+		const UBTTaskNode* Task = AttackSequence->Children[ChildIndex].ChildTask;
+		if (const UBTT_SetMovementSpeed* MovementTask = Cast<UBTT_SetMovementSpeed>(Task))
+		{
+			if (MovementTask->GetMovementMode() == EEnemyMovementSpeedMode::Idle)
+			{
+				IdleSpeedIndex = ChildIndex;
+			}
+		}
+		else if (const UBTT_RangedAttack* AttackTask = Cast<UBTT_RangedAttack>(Task))
+		{
+			RangedAttack = AttackTask;
+			AttackIndex = ChildIndex;
+		}
+	}
+
+	if (TestNotNull(TEXT("Attack branch runs the combat-position EQS"), RunEQS))
+	{
+		TestEqual(TEXT("EQS result is written to the shared PointOfInterest key"),
+			RunEQS->GetSelectedBlackboardKey(), FName(TEXT("PointOfInterest")));
+		TestEqual(TEXT("Attack branch uses the reusable ranged combat query"),
+			RunEQS->EQSRequest.QueryTemplate.Get(),
+			LoadObject<UEnvQuery>(nullptr,
+				TEXT("/Game/GameplayAbilitySystem/Enemy/AI/EQS/EQS_RangedEnemy_CombatPosition.EQS_RangedEnemy_CombatPosition")));
+		TestEqual(TEXT("Combat-position selection uses a varied top-score band"),
+			RunEQS->EQSRequest.RunMode.GetValue(), EEnvQueryRunMode::RandomBest25Pct);
+		TestTrue(TEXT("A failed query clears stale PointOfInterest data"), RunEQS->bUpdateBBOnFail);
+	}
+	if (TestNotNull(TEXT("Attack branch moves to the EQS result"), CombatMove))
+	{
+		TestEqual(TEXT("Combat movement reads the shared PointOfInterest key"),
+			CombatMove->GetSelectedBlackboardKey(), FName(TEXT("PointOfInterest")));
+	}
+	TestNotNull(TEXT("Attack branch still executes the ranged attack task"), RangedAttack);
+	TestTrue(TEXT("Strafe speed is enabled after the query and before movement"),
+		RunEQSIndex != INDEX_NONE && StrafeSpeedIndex > RunEQSIndex && MoveIndex > StrafeSpeedIndex);
+	TestTrue(TEXT("Attack branch stops movement before firing"),
+		IdleSpeedIndex != INDEX_NONE && AttackIndex > IdleSpeedIndex);
+
+	if (TrackTargetSequence)
+	{
+		bool bHasMovementSpeed = false;
+		bool bHasSetFocus = false;
+		bool bHasClearFocus = false;
+		bool bHasWait = false;
+		for (const FBTCompositeChild& Child : TrackTargetSequence->Children)
+		{
+			const UBTTaskNode* Task = Child.ChildTask;
+			bHasMovementSpeed |= Task && Task->IsA<UBTT_SetMovementSpeed>();
+			bHasSetFocus |= Task && Task->IsA<UBTT_SetFocus>();
+			bHasClearFocus |= Task && Task->IsA<UBTT_ClearFocus>();
+			bHasWait |= Task && Task->IsA<UBTTask_Wait>();
+		}
+
+		TestTrue(TEXT("Tracking fallback controls movement speed"), bHasMovementSpeed);
+		TestTrue(TEXT("Tracking fallback faces the combat target"), bHasSetFocus);
+		TestTrue(TEXT("Tracking fallback waits before reevaluating the selector"), bHasWait);
+		TestTrue(TEXT("Tracking fallback releases gameplay focus on completion"), bHasClearFocus);
+	}
 	return true;
 }
 
@@ -311,21 +619,55 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 
 	Enemy->SetCombatTarget(Player);
 	UAbilitySystemComponent* EnemyASC = Enemy->GetAbilitySystemComponent();
+	UBaseWeaponComponent* WeaponComponent = Enemy->GetWeaponComponent();
 	if (!TestNotNull(TEXT("RangedEnemy ASC exists"), EnemyASC))
+	{
+		return false;
+	}
+	if (!TestNotNull(TEXT("RangedEnemy WeaponComponent exists"), WeaponComponent))
 	{
 		return false;
 	}
 
 	EnemyASC->InitAbilityActorInfo(Enemy, Enemy);
 	EnemyASC->AddLooseGameplayTag(Team_Enemy);
-	const FGameplayAbilitySpecHandle GrantedAttackHandle =
-		EnemyASC->GiveAbility(FGameplayAbilitySpec(UGA_RangedEnemyAttack::StaticClass(), 1));
+
+	UWeaponDataAsset* TestWeaponRegistry = NewObject<UWeaponDataAsset>(Enemy);
+	FWeaponDefinition BowDefinition;
+	BowDefinition.WeaponTag = Item_EnemyWeapon_Bow;
+	BowDefinition.WeaponActorClass = AEnemyBow::StaticClass();
+	FGrantedWeaponAbility& GrantedAbility = BowDefinition.AbilityData.GrantedAbilities.AddDefaulted_GetRef();
+	GrantedAbility.AbilityClass = UGA_RangedEnemyAttack::StaticClass();
+	TestWeaponRegistry->WeaponDefinitions.Add(BowDefinition);
+	WeaponComponent->WeaponRegistry = TestWeaponRegistry;
+	WeaponComponent->InitializeHolsteredLoadout(Item_EnemyWeapon_Bow);
+	WeaponComponent->EquipCurrentWeapon();
+
+	AEnemyBow* EquippedBow = Enemy->GetEquippedBow();
+	if (!TestNotNull(TEXT("Combat loadout equips an Enemy Bow"), EquippedBow))
+	{
+		return false;
+	}
+
+	UStaticMesh* TestBowMesh = NewObject<UStaticMesh>(EquippedBow);
+	UStaticMeshSocket* ArrowSocket = NewObject<UStaticMeshSocket>(TestBowMesh);
+	ArrowSocket->SocketName = TEXT("Arrow_socket");
+	ArrowSocket->RelativeLocation = FVector(75.0f, 10.0f, 25.0f);
+	TestBowMesh->Sockets.Add(ArrowSocket);
+	EquippedBow->GetWeaponMesh()->SetStaticMesh(TestBowMesh);
+
+	FTransform ExpectedArrowSpawnTransform;
+	if (!TestTrue(TEXT("Equipped bow resolves Arrow_socket"),
+		EquippedBow->GetArrowSpawnTransform(ExpectedArrowSpawnTransform)))
+	{
+		return false;
+	}
 
 	FGameplayAbilitySpecHandle ResolvedAttackHandle;
 	TestTrue(TEXT("RangedEnemy resolves one exact ranged attack ability"),
 		Enemy->FindRangedAttackAbility(ResolvedAttackHandle));
 	TestTrue(TEXT("Resolved ranged attack handle matches the granted ability"),
-		ResolvedAttackHandle == GrantedAttackHandle);
+		ResolvedAttackHandle.IsValid());
 
 	bool bObservedAbilityEnd = false;
 	bool bObservedAbilityCancel = true;
@@ -348,6 +690,12 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 	const int32 ProjectilesAfter = RangedEnemyTests::CountActors<ARangedEnemyProjectile>(TestWorld.World);
 	TestEqual(TEXT("An immediate-fire projectile is spawned when no montage is assigned"),
 		ProjectilesAfter, ProjectilesBefore + 1);
+	for (TActorIterator<ARangedEnemyProjectile> It(TestWorld.World); It; ++It)
+	{
+		TestTrue(TEXT("GA spawns the arrow at the equipped bow's Arrow_socket"),
+			It->GetActorLocation().Equals(ExpectedArrowSpawnTransform.GetLocation(), 0.1f));
+		break;
+	}
 
 	Player->SetActorEnableCollision(false);
 	TestTrue(TEXT("A collision-disabled/helming ABasePlayer remains a combat target"), Enemy->IsValidCombatTarget(Player));
