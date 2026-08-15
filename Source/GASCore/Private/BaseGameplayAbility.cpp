@@ -3,6 +3,7 @@
 
 #include "BaseGameplayAbility.h"
 #include "AbilitySystemComponent.h"
+#include "BaseGameplayTags.h"
 
 UBaseGameplayAbility::UBaseGameplayAbility()
 {
@@ -13,6 +14,10 @@ UBaseGameplayAbility::UBaseGameplayAbility()
 	// 로컬 클라이언트에서 먼저 예측 실행하고 서버가 검증합니다.
 	// 입력 반응성이 중요한 플레이어 Ability의 기본값으로 적합합니다.
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+
+	// Dialogue owns player input until the session ends. All project abilities
+	// derive from this base, so one shared rule prevents combat/interaction races.
+	ActivationBlockedTags.AddTag(State_Dialogue);
 }
 
 void UBaseGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,

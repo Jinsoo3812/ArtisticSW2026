@@ -35,7 +35,8 @@ public class ClassFeature: ModuleRules
             "Chooser",
             "MotionTrajectory",
             "WaterAndShip",
-            "Water"
+            "Water",
+            "NPCDialogue"
         });
 
         PublicIncludePaths.AddRange(new string[] {

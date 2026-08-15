@@ -428,41 +428,9 @@ bool UInventoryComponent::CanAddItem(const FGameplayTag& ItemTag, int32 Amount) 
 
 bool UInventoryComponent::TryApplyCraftingTransaction(const TArray<FCraftingItemStack>& Costs, const FCraftingItemStack& Result)
 {
-	if (!GetOwner() || !GetOwner()->HasAuthority() || !Result.ItemTag.IsValid() || Result.Quantity <= 0)
-	{
-		return false;
-	}
-
-	InitializeInventoryPages();
-	TArray<FInventoryTabPage> WorkingPages = InventoryPages;
-	for (const FCraftingItemStack& Cost : Costs)
-	{
-		if (!Cost.ItemTag.IsValid() || Cost.Quantity <= 0)
-		{
-			return false;
-		}
-
-		FInventoryTabPage* CostPage = FindPageInArray(WorkingPages, GetInventoryTabForItem(Cost.ItemTag));
-		if (!CostPage || !RemoveFromSlots(CostPage->Slots, Cost.ItemTag, Cost.Quantity))
-		{
-			return false;
-		}
-	}
-
-	FInventoryTabPage* ResultPage = FindPageInArray(WorkingPages, GetInventoryTabForItem(Result.ItemTag));
-	if (!ResultPage || !AddToSlots(ResultPage->Slots, Result.ItemTag, Result.Quantity, GetMaxStack(Result.ItemTag)))
-	{
-		return false;
-	}
-
-	InventoryPages = MoveTemp(WorkingPages);
-	if (const FInventoryTabPage* ActivePage = FindPage(ActiveTab))
-	{
-		InventorySlots = ActivePage->Slots;
-	}
-	OnInventoryChanged.Broadcast();
-	PrintInventoryToScreen();
-	return true;
+	TArray<FCraftingItemStack> Results;
+	Results.Add(Result);
+	return TryApplyItemTransaction(Costs, Results);
 }
 
 bool UInventoryComponent::RemoveItemsAtomically(const TArray<FCraftingItemStack>& Costs)
@@ -516,6 +484,89 @@ bool UInventoryComponent::AddItemsAtomically(const TArray<FCraftingItemStack>& I
 
 		FInventoryTabPage* ItemPage = FindPageInArray(WorkingPages, GetInventoryTabForItem(Item.ItemTag));
 		if (!ItemPage || !AddToSlots(ItemPage->Slots, Item.ItemTag, Item.Quantity, GetMaxStack(Item.ItemTag)))
+		{
+			return false;
+		}
+	}
+
+	InventoryPages = MoveTemp(WorkingPages);
+	if (const FInventoryTabPage* ActivePage = FindPage(ActiveTab))
+	{
+		InventorySlots = ActivePage->Slots;
+	}
+	OnInventoryChanged.Broadcast();
+	PrintInventoryToScreen();
+	return true;
+}
+
+bool UInventoryComponent::CanApplyItemTransaction(
+	const TArray<FCraftingItemStack>& RemovedItems,
+	const TArray<FCraftingItemStack>& AddedItems) const
+{
+	TArray<FInventoryTabPage> WorkingPages = InventoryPages;
+	if (WorkingPages.IsEmpty())
+	{
+		return RemovedItems.IsEmpty() && AddedItems.IsEmpty();
+	}
+
+	for (const FCraftingItemStack& Item : RemovedItems)
+	{
+		if (!Item.ItemTag.IsValid() || Item.Quantity <= 0)
+		{
+			return false;
+		}
+		FInventoryTabPage* Page = FindPageInArray(WorkingPages, GetInventoryTabForItem(Item.ItemTag));
+		if (!Page || !RemoveFromSlots(Page->Slots, Item.ItemTag, Item.Quantity))
+		{
+			return false;
+		}
+	}
+	for (const FCraftingItemStack& Item : AddedItems)
+	{
+		if (!Item.ItemTag.IsValid() || Item.Quantity <= 0)
+		{
+			return false;
+		}
+		FInventoryTabPage* Page = FindPageInArray(WorkingPages, GetInventoryTabForItem(Item.ItemTag));
+		if (!Page || !AddToSlots(Page->Slots, Item.ItemTag, Item.Quantity, GetMaxStack(Item.ItemTag)))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool UInventoryComponent::TryApplyItemTransaction(
+	const TArray<FCraftingItemStack>& RemovedItems,
+	const TArray<FCraftingItemStack>& AddedItems)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return false;
+	}
+
+	InitializeInventoryPages();
+	TArray<FInventoryTabPage> WorkingPages = InventoryPages;
+	for (const FCraftingItemStack& Item : RemovedItems)
+	{
+		if (!Item.ItemTag.IsValid() || Item.Quantity <= 0)
+		{
+			return false;
+		}
+		FInventoryTabPage* Page = FindPageInArray(WorkingPages, GetInventoryTabForItem(Item.ItemTag));
+		if (!Page || !RemoveFromSlots(Page->Slots, Item.ItemTag, Item.Quantity))
+		{
+			return false;
+		}
+	}
+	for (const FCraftingItemStack& Item : AddedItems)
+	{
+		if (!Item.ItemTag.IsValid() || Item.Quantity <= 0)
+		{
+			return false;
+		}
+		FInventoryTabPage* Page = FindPageInArray(WorkingPages, GetInventoryTabForItem(Item.ItemTag));
+		if (!Page || !AddToSlots(Page->Slots, Item.ItemTag, Item.Quantity, GetMaxStack(Item.ItemTag)))
 		{
 			return false;
 		}
