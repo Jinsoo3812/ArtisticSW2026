@@ -15,6 +15,13 @@ UE_DEFINE_GAMEPLAY_TAG(State_Bow_Releasing, "State.Bow.Releasing");
 UE_DEFINE_GAMEPLAY_TAG(State_Ship_CannonDisabled, "State.Ship.CannonDisabled");
 UE_DEFINE_GAMEPLAY_TAG(State_Debuff_WaterBomb, "State.Debuff.WaterBomb");
 UE_DEFINE_GAMEPLAY_TAG(State_Debuff_TimeStopped, "State.Debuff.TimeStopped");
+UE_DEFINE_GAMEPLAY_TAG(AI_State_Boss_Intro, "AI.State.Boss.Intro");
+UE_DEFINE_GAMEPLAY_TAG(AI_State_Boss_Combat, "AI.State.Boss.Combat");
+UE_DEFINE_GAMEPLAY_TAG(AI_State_Boss_Dead, "AI.State.Boss.Dead");
+UE_DEFINE_GAMEPLAY_TAG(State_Boss_Busy, "State.Boss.Busy");
+UE_DEFINE_GAMEPLAY_TAG(State_Boss_Hidden, "State.Boss.Hidden");
+UE_DEFINE_GAMEPLAY_TAG(State_Boss_Dashing, "State.Boss.Dashing");
+UE_DEFINE_GAMEPLAY_TAG(State_CrowdControl_Knockback, "State.CrowdControl.Knockback");
 
 // Team
 UE_DEFINE_GAMEPLAY_TAG(Team_Player, "Team.Player");
@@ -38,7 +45,13 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_LaunchTorpedo, "GameplayAbility
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_CannonVolley, "GameplayAbility.EnemyShip.CannonVolley");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_DeployObstacle, "GameplayAbility.EnemyShip.DeployObstacle");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_TimeStop, "GameplayAbility.EnemyShip.TimeStop");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_Knockback, "GameplayAbility.Boss.Knockback");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_Vanish, "GameplayAbility.Boss.Vanish");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_DashSlash, "GameplayAbility.Boss.DashSlash");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Enemy_BasicAttack, "Cooldown.Enemy.BasicAttack");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_Knockback, "Cooldown.Boss.Knockback");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_Vanish, "Cooldown.Boss.Vanish");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_DashSlash, "Cooldown.Boss.DashSlash");
 UE_DEFINE_GAMEPLAY_TAG(State_EnemyShip_Charging, "State.EnemyShip.Charging");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_Charge, "Cooldown.EnemyShip.Charge");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_LaunchTorpedo, "Cooldown.EnemyShip.LaunchTorpedo");

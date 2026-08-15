@@ -23,6 +23,7 @@ class UEnemyShipPatternData;
 class UEnemyShipSkillModuleData;
 class UGameplayAbility;
 class UDeckWaypointComponent;
+class UBossEncounterComponent;
 class ADeckRangedEnemy;
 
 UCLASS()
@@ -50,6 +51,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ship|AI")
 	UEnemyShipPatternRuntimeComponent* GetPatternRuntimeComponent() const { return PatternRuntimeComponent; }
 
+	UFUNCTION(BlueprintPure, Category = "Ship|Boss Encounter")
+	UBossEncounterComponent* GetBossEncounterComponent() const { return BossEncounterComponent; }
+
 	UFUNCTION(BlueprintPure, Category = "Ship|Death")
 	bool IsDeathHandled() const { return bDeathHandled; }
 
@@ -61,9 +65,14 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Deck AI")
 	FVector GetDeckWaypointWorldLocation(int32 WaypointId) const;
+	bool ResolveDeckCharacterTransform(int32 WaypointId, float CapsuleHalfHeight, FTransform& OutTransform) const;
+
+	/** Returns deterministic, ID-sorted deck points usable by ability and movement selectors. */
+	void GetDeckWaypointIds(TArray<int32>& OutWaypointIds, bool bRequireCombatPoint = false) const;
 
 	void GetConnectedDeckWaypointIds(int32 WaypointId, TArray<int32>& OutWaypointIds) const;
 	int32 FindNearestDeckWaypoint(const FVector& WorldLocation, bool bRequirePatrolPoint = true) const;
+	UStaticMeshComponent* GetShipDeckMesh() const { return ShipDeckMesh; }
 	bool IsUsingLegacyAICompatibility() const
 	{
 		return !EnemyShipArchetype && bLegacyAutomaticCannonFireWithoutArchetype;
@@ -285,6 +294,9 @@ protected:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<ADeckRangedEnemy>> DeckEnemyPool;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Boss Encounter")
+	TObjectPtr<UBossEncounterComponent> BossEncounterComponent;
 
 	bool bDeckDeploymentTriggered = false;
 	int32 NextDeckEnemyPoolIndex = 0;

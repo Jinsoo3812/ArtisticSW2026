@@ -35,6 +35,7 @@
 #include "ShipAI/Abilities/GA_EnemyShipTimeStop.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckWaypointComponent.h"
+#include "BossAI/BossEncounterComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "UObject/UnrealType.h"
 
@@ -55,6 +56,7 @@ namespace
 
 AEnemyShip::AEnemyShip()
 {
+	BossEncounterComponent = CreateDefaultSubobject<UBossEncounterComponent>(TEXT("BossEncounterComponent"));
 	PrimaryActorTick.bCanEverTick = true;
 
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
@@ -434,29 +436,7 @@ bool AEnemyShip::ResolveDeckEnemySpawnTransform(
 	const UDeckWaypointComponent* SpawnWaypoint,
 	FTransform& OutTransform) const
 {
-	if (!IsValid(SpawnWaypoint) || !ShipDeckMesh || !DeckEnemyClass || !GetWorld())
-	{
-		return false;
-	}
-
-	const FVector DeckUp = ShipDeckMesh->GetUpVector().GetSafeNormal();
-	const FVector AnchorLocation = SpawnWaypoint->GetComponentLocation();
-	const FVector TraceStart = AnchorLocation + DeckUp * 150.0f;
-	const FVector TraceEnd = AnchorLocation - DeckUp * 250.0f;
-	FCollisionObjectQueryParams ObjectQuery;
-	ObjectQuery.AddObjectTypesToQuery(ECC_WorldDynamic);
-	// Do not ignore this EnemyShip: the component we intentionally need to hit
-	// (ShipDeckMesh) belongs to this actor. We collect all WorldDynamic hits and
-	// select that exact component below, so the ship's other query meshes are safe.
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DeckEnemySpawn), false);
-	TArray<FHitResult> Hits;
-	GetWorld()->LineTraceMultiByObjectType(Hits, TraceStart, TraceEnd, ObjectQuery, QueryParams);
-
-	const FHitResult* DeckHit = Hits.FindByPredicate([this](const FHitResult& Hit)
-	{
-		return Hit.GetComponent() == ShipDeckMesh;
-	});
-	if (!DeckHit)
+	if (!IsValid(SpawnWaypoint) || !DeckEnemyClass)
 	{
 		return false;
 	}
@@ -464,10 +444,7 @@ bool AEnemyShip::ResolveDeckEnemySpawnTransform(
 	const ADeckRangedEnemy* EnemyCDO = DeckEnemyClass->GetDefaultObject<ADeckRangedEnemy>();
 	const UCapsuleComponent* Capsule = EnemyCDO ? EnemyCDO->GetCapsuleComponent() : nullptr;
 	const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0f;
-	const FVector SpawnLocation = DeckHit->ImpactPoint + FVector::UpVector * (HalfHeight + 2.0f);
-	const FRotator AnchorRotation = SpawnWaypoint->GetComponentRotation();
-	OutTransform = FTransform(FRotator(0.0f, AnchorRotation.Yaw, 0.0f), SpawnLocation);
-	return true;
+	return ResolveDeckCharacterTransform(SpawnWaypoint->GetWaypointId(), HalfHeight, OutTransform);
 }
 
 UDeckWaypointComponent* AEnemyShip::SelectDeckSpawnWaypoint(int32 DeploymentIndex) const
@@ -487,6 +464,60 @@ FVector AEnemyShip::GetDeckWaypointWorldLocation(int32 WaypointId) const
 {
 	const UDeckWaypointComponent* Waypoint = GetDeckWaypoint(WaypointId);
 	return Waypoint ? Waypoint->GetComponentLocation() : GetActorLocation();
+}
+
+bool AEnemyShip::ResolveDeckCharacterTransform(
+	int32 WaypointId,
+	float CapsuleHalfHeight,
+	FTransform& OutTransform) const
+{
+	const UDeckWaypointComponent* Waypoint = GetDeckWaypoint(WaypointId);
+	if (!IsValid(Waypoint) || !ShipDeckMesh || !GetWorld())
+	{
+		return false;
+	}
+
+	const FVector DeckUp = ShipDeckMesh->GetUpVector().GetSafeNormal();
+	const FVector AnchorLocation = Waypoint->GetComponentLocation();
+	const FVector TraceStart = AnchorLocation + DeckUp * 150.0f;
+	const FVector TraceEnd = AnchorLocation - DeckUp * 250.0f;
+	FCollisionObjectQueryParams ObjectQuery;
+	ObjectQuery.AddObjectTypesToQuery(ECC_WorldDynamic);
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DeckCharacterTransform), false);
+	TArray<FHitResult> Hits;
+	GetWorld()->LineTraceMultiByObjectType(Hits, TraceStart, TraceEnd, ObjectQuery, QueryParams);
+	const FHitResult* DeckHit = Hits.FindByPredicate([this](const FHitResult& Hit)
+	{
+		return Hit.GetComponent() == ShipDeckMesh;
+	});
+	if (!DeckHit)
+	{
+		return false;
+	}
+
+	FVector Forward = FVector::VectorPlaneProject(Waypoint->GetForwardVector(), DeckUp).GetSafeNormal();
+	if (Forward.IsNearlyZero())
+	{
+		Forward = ShipDeckMesh->GetForwardVector();
+	}
+	const FVector CharacterLocation = DeckHit->ImpactPoint
+		+ DeckUp * (FMath::Max(0.0f, CapsuleHalfHeight) + 2.0f);
+	OutTransform = FTransform(FRotationMatrix::MakeFromXZ(Forward, DeckUp).ToQuat(), CharacterLocation);
+	return true;
+}
+
+void AEnemyShip::GetDeckWaypointIds(TArray<int32>& OutWaypointIds, bool bRequireCombatPoint) const
+{
+	OutWaypointIds.Reset();
+	for (const TPair<int32, TObjectPtr<UDeckWaypointComponent>>& Pair : DeckWaypointsById)
+	{
+		const UDeckWaypointComponent* Waypoint = Pair.Value;
+		if (IsValid(Waypoint) && (!bRequireCombatPoint || Waypoint->CanUseInCombat()))
+		{
+			OutWaypointIds.Add(Pair.Key);
+		}
+	}
+	OutWaypointIds.Sort();
 }
 
 void AEnemyShip::GetConnectedDeckWaypointIds(int32 WaypointId, TArray<int32>& OutWaypointIds) const
