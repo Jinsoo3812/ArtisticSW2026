@@ -32,11 +32,12 @@ ABaseEnemy::ABaseEnemy()
 	
 	bReplicates = true;
 	SetReplicateMovement(true);
-	bAlwaysRelevant = true;
+	bAlwaysRelevant = false;
 	bUseControllerRotationYaw = true;
 
 	SetNetUpdateFrequency(30.0f);
-	SetMinNetUpdateFrequency(15.0f);
+	SetMinNetUpdateFrequency(5.0f);
+	SetNetCullDistanceSquared(FMath::Square(15000.0f));
 	
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	
@@ -98,6 +99,7 @@ void ABaseEnemy::BeginPlay()
 		if (HealthComponent)
 		{
 			HealthComponent->OnDeathStarted.AddUniqueDynamic(this, &ABaseEnemy::OnDeathStarted);
+			HealthComponent->OnDeathFinished.AddUniqueDynamic(this, &ABaseEnemy::OnDeathFinished);
 			HealthComponent->OnHealthChanged.AddUniqueDynamic(this, &ABaseEnemy::OnHealthChanged);
 			HealthComponent->OnMaxHealthChanged.AddUniqueDynamic(this, &ABaseEnemy::OnMaxHealthChanged);
 			HealthComponent->InitializeWithAbilitySystem(AbilitySystemComponent);
@@ -135,6 +137,7 @@ void ABaseEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (HealthComponent)
 	{
 		HealthComponent->OnDeathStarted.RemoveDynamic(this, &ABaseEnemy::OnDeathStarted);
+		HealthComponent->OnDeathFinished.RemoveDynamic(this, &ABaseEnemy::OnDeathFinished);
 		HealthComponent->OnHealthChanged.RemoveDynamic(this, &ABaseEnemy::OnHealthChanged);
 		HealthComponent->OnMaxHealthChanged.RemoveDynamic(this, &ABaseEnemy::OnMaxHealthChanged);
 		HealthComponent->UninitializeFromAbilitySystem();
@@ -214,6 +217,22 @@ void ABaseEnemy::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 
 		HandleDeath();
 	}
+}
+
+void ABaseEnemy::OnDeathFinished(UBaseHealthComponent* InHealthComponent)
+{
+	if (!HasAuthority() || !bDestroyAfterDeathFinished || IsActorBeingDestroyed())
+	{
+		return;
+	}
+
+	if (CorpseLifetimeAfterDeathFinished <= 0.0f)
+	{
+		Destroy();
+		return;
+	}
+
+	SetLifeSpan(CorpseLifetimeAfterDeathFinished);
 }
 
 void ABaseEnemy::OnHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
