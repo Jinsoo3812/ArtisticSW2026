@@ -35,7 +35,7 @@ FReply UNPCDialogueWidget::NativeOnPreviewKeyDown(
 	const FKeyEvent& InKeyEvent)
 {
 	// Preview receives Escape even when a reply button currently owns focus.
-	if (InKeyEvent.GetKey() == EKeys::Escape)
+	if (InKeyEvent.GetKey() == EKeys::Escape || InKeyEvent.GetKey() == EKeys::F)
 	{
 		if (UPlayerDialogueComponent* Component = DialogueComponent.Get())
 		{
@@ -51,7 +51,7 @@ FReply UNPCDialogueWidget::NativeOnKeyDown(
 	const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
-	if (Key == EKeys::Escape)
+	if (Key == EKeys::Escape || Key == EKeys::F)
 	{
 		if (UPlayerDialogueComponent* Component = DialogueComponent.Get())
 		{

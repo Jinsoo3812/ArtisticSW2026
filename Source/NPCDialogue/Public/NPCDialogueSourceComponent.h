@@ -8,6 +8,7 @@
 class IDialogueInventoryProvider;
 class UNPCDialogueData;
 class UStoryFacadeSubsystem;
+class USceneComponent;
 
 /** Server-authoritative dialogue source and exclusive per-NPC reservation. */
 UCLASS(ClassGroup = (NPC), meta = (BlueprintSpawnableComponent))
@@ -43,6 +44,7 @@ public:
 		const IDialogueInventoryProvider* Inventory) const;
 
 	FTransform GetDialogueCameraTransform() const;
+	USceneComponent* GetDialogueCameraAnchor() const;
 
 protected:
 	UPROPERTY(EditAnywhere, Replicated, BlueprintReadOnly, Category = "NPC|Dialogue")

@@ -9,6 +9,7 @@
 #include "StoryFacadeSubsystem.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
+#include "Components/SceneComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
@@ -556,6 +557,12 @@ void UPlayerDialogueComponent::StartClientCamera()
 	}
 	const FVector CameraLocation = DialogueCameraActor->GetActorLocation();
 	DialogueCameraActor->SetActorRotation((NPC->GetActorLocation() + Data->CameraLookAtOffset - CameraLocation).Rotation());
+	// Keep the authored world framing, then inherit subsequent ship/platform/NPC
+	// movement from the camera anchor for the duration of the conversation.
+	if (USceneComponent* CameraAnchor = Source->GetDialogueCameraAnchor())
+	{
+		DialogueCameraActor->AttachToComponent(CameraAnchor, FAttachmentTransformRules::KeepWorldTransform);
+	}
 	DialogueCameraActor->GetCameraComponent()->SetFieldOfView(Data->CameraFieldOfView);
 	PC->SetViewTargetWithBlend(DialogueCameraActor, Data->CameraBlendInTime, VTBlend_Cubic);
 }

@@ -131,20 +131,32 @@ bool UNPCDialogueSourceComponent::IsRuleAvailable(
 
 FTransform UNPCDialogueSourceComponent::GetDialogueCameraTransform() const
 {
+	if (const USceneComponent* Anchor = GetDialogueCameraAnchor())
+	{
+		return Anchor->GetComponentTransform();
+	}
+	if (const AActor* Owner = GetOwner())
+	{
+		return Owner->GetActorTransform();
+	}
+	return FTransform::Identity;
+}
+
+USceneComponent* UNPCDialogueSourceComponent::GetDialogueCameraAnchor() const
+{
 	if (const AActor* Owner = GetOwner())
 	{
 		TArray<USceneComponent*> SceneComponents;
 		Owner->GetComponents(SceneComponents);
-		for (const USceneComponent* Component : SceneComponents)
+		for (USceneComponent* Component : SceneComponents)
 		{
 			if (Component && Component->ComponentHasTag(TEXT("DialogueCamera")))
 			{
-				return Component->GetComponentTransform();
+				return Component;
 			}
 		}
-		return Owner->GetActorTransform();
 	}
-	return FTransform::Identity;
+	return nullptr;
 }
 
 void UNPCDialogueSourceComponent::HandleReservationTimeout()
