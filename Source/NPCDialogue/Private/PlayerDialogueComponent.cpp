@@ -7,7 +7,6 @@
 #include "NPCDialogueData.h"
 #include "NPCDialogueSourceComponent.h"
 #include "StoryFacadeSubsystem.h"
-#include "Blueprint/UserWidget.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/Character.h"
@@ -15,6 +14,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
+#include "UI/NPCDialogueWidget.h"
 
 UPlayerDialogueComponent::UPlayerDialogueComponent()
 {
@@ -67,6 +67,14 @@ void UPlayerDialogueComponent::CancelDialogue()
 	if (bClientDialogueActive)
 	{
 		ServerCancelDialogue(ClientSessionId);
+	}
+}
+
+void UPlayerDialogueComponent::SelectReply(FName ReplyId)
+{
+	if (bClientDialogueActive && !ReplyId.IsNone())
+	{
+		ServerSelectReply(ClientSessionId, ReplyId);
 	}
 }
 
@@ -266,6 +274,7 @@ FNPCDialogueView UPlayerDialogueComponent::MakeView(
 	if (Rule.Lines.IsValidIndex(LineIndex))
 	{
 		View.CurrentLine = Rule.Lines[LineIndex];
+		View.Replies = View.CurrentLine.Replies;
 	}
 	return View;
 }
@@ -325,11 +334,82 @@ void UPlayerDialogueComponent::ServerAdvanceDialogue_Implementation(int32 Expect
 		EndServerDialogue();
 		return;
 	}
+	if (Rule->Lines.IsValidIndex(ServerLineIndex)
+		&& !Rule->Lines[ServerLineIndex].Replies.IsEmpty())
+	{
+		return;
+	}
 
 	if (Rule->Lines.IsValidIndex(ServerLineIndex + 1))
 	{
 		++ServerLineIndex;
 		ClientUpdateDialogue(ServerSessionId, MakeView(ServerDialogueSource->GetOwner(), *Rule, ServerLineIndex));
+		return;
+	}
+
+	if (!CommitServerOutcome(*Rule, Inventory))
+	{
+		ClientDialogueFailed(Rule->ConsumedItems.IsEmpty() && Rule->RewardItems.IsEmpty()
+			? ENPCDialogueFailureReason::StoryCommitFailed
+			: ENPCDialogueFailureReason::InventoryTransactionFailed);
+		return;
+	}
+	ClientCloseDialogue(ServerSessionId);
+	EndServerDialogue();
+}
+
+void UPlayerDialogueComponent::ServerSelectReply_Implementation(
+	int32 ExpectedSessionId,
+	FName ReplyId)
+{
+	if (ExpectedSessionId != ServerSessionId || ReplyId.IsNone())
+	{
+		return;
+	}
+
+	const FNPCDialogueRule* Rule = nullptr;
+	IDialogueInventoryProvider* Inventory = nullptr;
+	ENPCDialogueFailureReason Failure = ENPCDialogueFailureReason::RequirementsChanged;
+	if (!ValidateServerSession(Rule, Inventory, Failure))
+	{
+		ClientDialogueFailed(Failure);
+		ClientCloseDialogue(ServerSessionId);
+		EndServerDialogue();
+		return;
+	}
+	if (!Rule || !Rule->Lines.IsValidIndex(ServerLineIndex))
+	{
+		return;
+	}
+
+	const FNPCDialogueReply* Reply = Rule->Lines[ServerLineIndex].Replies.FindByPredicate(
+		[ReplyId](const FNPCDialogueReply& Candidate)
+		{
+			return Candidate.ReplyId == ReplyId;
+		});
+	if (!Reply)
+	{
+		return;
+	}
+
+	if (!Reply->NextLineId.IsNone())
+	{
+		const int32 NextLineIndex = Rule->Lines.IndexOfByPredicate(
+			[Reply](const FNPCDialogueLine& Line)
+			{
+				return Line.LineId == Reply->NextLineId;
+			});
+		if (NextLineIndex == INDEX_NONE)
+		{
+			ClientDialogueFailed(ENPCDialogueFailureReason::RequirementsChanged);
+			ClientCloseDialogue(ServerSessionId);
+			EndServerDialogue();
+			return;
+		}
+		ServerLineIndex = NextLineIndex;
+		ClientUpdateDialogue(
+			ServerSessionId,
+			MakeView(ServerDialogueSource->GetOwner(), *Rule, ServerLineIndex));
 		return;
 	}
 
@@ -371,6 +451,10 @@ void UPlayerDialogueComponent::ClientUpdateDialogue_Implementation(
 	if (bClientDialogueActive && SessionId == ClientSessionId)
 	{
 		CurrentView = View;
+		if (ActiveDialogueWidget)
+		{
+			ActiveDialogueWidget->ApplyDialogueView(CurrentView);
+		}
 		OnDialogueLineChanged.Broadcast();
 	}
 }
@@ -398,20 +482,26 @@ void UPlayerDialogueComponent::OpenClientPresentation()
 		return;
 	}
 	StartClientCamera();
+	// Release any movement key that was held as dialogue opened. SetIgnoreMoveInput
+	// blocks movement application, but does not clear custom locomotion input state.
+	PC->FlushPressedKeys();
 	PC->SetIgnoreMoveInput(true);
 	PC->SetIgnoreLookInput(true);
 
 	if (DialogueWidgetClass)
 	{
-		ActiveDialogueWidget = CreateWidget<UUserWidget>(PC, DialogueWidgetClass);
+		ActiveDialogueWidget = CreateWidget<UNPCDialogueWidget>(PC, DialogueWidgetClass);
 		if (ActiveDialogueWidget)
 		{
+			ActiveDialogueWidget->InitializeDialogue(this, CurrentView);
 			ActiveDialogueWidget->AddToViewport();
-			FInputModeGameAndUI InputMode;
+			// Dialogue owns keyboard input. GameAndUI lets an unhandled Escape fall
+			// through to the PIE viewport after a mouse click, which stops PIE.
+			FInputModeUIOnly InputMode;
 			InputMode.SetWidgetToFocus(ActiveDialogueWidget->TakeWidget());
-			InputMode.SetHideCursorDuringCapture(false);
 			PC->SetInputMode(InputMode);
 			PC->bShowMouseCursor = bShowMouseCursorDuringDialogue;
+			ActiveDialogueWidget->SetKeyboardFocus();
 		}
 	}
 }
@@ -433,6 +523,7 @@ void UPlayerDialogueComponent::CloseClientPresentation()
 	APawn* Pawn = Cast<APawn>(GetOwner());
 	if (APlayerController* PC = Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr)
 	{
+		PC->FlushPressedKeys();
 		PC->SetIgnoreMoveInput(false);
 		PC->SetIgnoreLookInput(false);
 		FInputModeGameOnly InputMode;

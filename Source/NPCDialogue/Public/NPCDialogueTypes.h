@@ -21,6 +21,23 @@ enum class ENPCDialogueFailureReason : uint8
 };
 
 USTRUCT(BlueprintType)
+struct NPCDIALOGUE_API FNPCDialogueReply
+{
+	GENERATED_BODY()
+
+	/** Stable within the line and sent back to the authoritative server on selection. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dialogue")
+	FName ReplyId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dialogue")
+	FText Text;
+
+	/** Target line in the same rule. None commits the rule outcome and closes the dialogue. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dialogue")
+	FName NextLineId = NAME_None;
+};
+
+USTRUCT(BlueprintType)
 struct NPCDIALOGUE_API FNPCDialogueLine
 {
 	GENERATED_BODY()
@@ -31,6 +48,10 @@ struct NPCDIALOGUE_API FNPCDialogueLine
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dialogue", meta = (MultiLine = true))
 	FText Text;
+
+	/** When non-empty, normal advance is disabled until one reply is selected. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dialogue", meta = (TitleProperty = "ReplyId"))
+	TArray<FNPCDialogueReply> Replies;
 };
 
 USTRUCT(BlueprintType)
@@ -98,6 +119,9 @@ struct NPCDIALOGUE_API FNPCDialogueView
 
 	UPROPERTY(BlueprintReadOnly, Category = "Dialogue")
 	bool bIsLastLine = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Dialogue")
+	TArray<FNPCDialogueReply> Replies;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Dialogue")
 	TObjectPtr<AActor> NPC = nullptr;

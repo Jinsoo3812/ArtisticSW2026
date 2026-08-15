@@ -23,23 +23,24 @@
 - 퀘스트 제안/진행: Required Story Nodes와 Blocked Story Nodes를 지정하고 일상 대화보다 높은 Priority를 준다.
 - 퀘스트 완료: Consumed Items, Reward Items, Complete Story Node를 설정한다. 마지막 줄을 넘길 때 서버가 아이템 변경과 스토리 완료를 커밋한다.
 - 한 번만 보는 공유 대화: Complete Story Node와 Hide After Story Completion을 켠다. 한 플레이어가 끝내면 공유 Story 상태가 갱신되어 다른 플레이어에게도 더 이상 선택되지 않는다.
+- 선택지: Line의 Replies에 Reply Id, Text, Next Line Id를 설정한다. Next Line Id가 비어 있으면 선택 즉시 결과를 커밋하고 종료한다. 값이 있으면 같은 Rule 안의 해당 Line Id로 이동한다.
 
 아이템 변경과 스토리 완료는 마지막 줄 직전에 다시 검증된다. 같은 공유 노드를 두 플레이어가 거의 동시에 진행해도 먼저 완료한 한 명만 보상을 받을 수 있다.
 
-## 향후 WBP 연결
+## WBP Designer 편집
 
-UI 클래스는 아직 만들지 않았다. 플레이어 블루프린트의 `PlayerDialogueComponent`에서 `DialogueWidgetClass`에 만든 WBP를 지정하면 시스템이 대화 시작 시 자동 생성하고 종료 시 제거한다.
+Designer 전용 UI는 `/Game/New/NPC/Blueprints/UI/WBP_NPCDialogue`와 `WBP_NPCDialogueReply`이다. `BP_Player`와 `BP_BasePlayerTest`의 `PlayerDialogueComponent.DialogueWidgetClass`에 연결되어 있다. 대화 시작 시 자동 생성되고 종료 시 제거된다.
 
-WBP를 지정하기 전에는 안전하게 `MissingDialogueWidget` 실패 이벤트만 발생하며, 카메라나 입력을 잠그지 않는다.
+WBP Graph와 프로퍼티 바인딩은 사용하지 않는다. 디자이너는 Designer 탭에서 하단 박스, 이름/대화문, 우측 상단 Reply의 위치·크기·폰트·색상만 조정한다. 네이티브 `BindWidget`에 사용하는 다음 이름은 변경하면 안 된다.
 
-WBP의 Construct에서 Owning Player Pawn의 `GetDialogueComponent`를 가져와 다음 이벤트에 바인딩한다.
+- `Text_NPCName`
+- `Text_Dialogue`
+- `VerticalBox_Replies`
+- `Text_ContinueHint`
+- Reply WBP의 `Button_Reply`
+- Reply WBP의 `Text_Reply`
 
-- `OnDialogueOpened`
-- `OnDialogueLineChanged`
-- `OnDialogueClosed`
-- `OnDialogueFailed`
-
-표시할 데이터는 `GetCurrentDialogueView`에서 읽는다. 다음 버튼은 `AdvanceDialogue`, 닫기 버튼은 `CancelDialogue`를 호출한다. 초상화 필드는 의도적으로 포함하지 않았다.
+일반 대사는 화면 클릭, Enter, Space 또는 게임패드 확인으로 진행한다. Reply가 표시된 동안에는 일반 진행 입력이 차단되고 선택한 Reply Id만 서버로 전달된다. Escape는 대화를 취소한다. 초상화 필드는 의도적으로 포함하지 않았다.
 
 ## 멀티플레이 동작
 

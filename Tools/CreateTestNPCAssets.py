@@ -35,10 +35,26 @@ def get_or_create_data(asset_tools):
         "text", "추후 WBP는 PlayerDialogueComponent의 현재 상태를 표시하면 됩니다."
     )
 
+    ask_reply = unreal.NPCDialogueReply()
+    ask_reply.set_editor_property("reply_id", "AskAgain")
+    ask_reply.set_editor_property("text", "조금 더 설명해 주세요.")
+    ask_reply.set_editor_property("next_line_id", "Ambient_03")
+
+    leave_reply = unreal.NPCDialogueReply()
+    leave_reply.set_editor_property("reply_id", "Leave")
+    leave_reply.set_editor_property("text", "이만 가보겠습니다.")
+    second_line.set_editor_property("replies", [ask_reply, leave_reply])
+
+    third_line = unreal.NPCDialogueLine()
+    third_line.set_editor_property("line_id", "Ambient_03")
+    third_line.set_editor_property(
+        "text", "선택지는 서버에서 검증되며, 이 문장 이후 대화가 종료됩니다."
+    )
+
     ambient_rule = unreal.NPCDialogueRule()
     ambient_rule.set_editor_property("rule_id", "Ambient_Default")
     ambient_rule.set_editor_property("priority", 0)
-    ambient_rule.set_editor_property("lines", [first_line, second_line])
+    ambient_rule.set_editor_property("lines", [first_line, second_line, third_line])
     data.set_editor_property("rules", [ambient_rule])
     unreal.EditorAssetLibrary.save_loaded_asset(data, only_if_is_dirty=False)
     return data

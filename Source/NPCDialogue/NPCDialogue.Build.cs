@@ -18,13 +18,17 @@ public class NPCDialogue : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"GameplayAbilities",
-			"NetCore"
+			"InputCore",
+			"NetCore",
+			"Slate",
+			"SlateCore"
 		});
 
 		PublicIncludePaths.AddRange(new string[]
 		{
 			"NPCDialogue",
-			"NPCDialogue/Public"
+			"NPCDialogue/Public",
+			"NPCDialogue/Public/UI"
 		});
 	}
 }

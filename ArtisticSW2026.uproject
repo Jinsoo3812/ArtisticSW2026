@@ -44,6 +44,11 @@
 			]
 		},
 		{
+			"Name": "NPCDialogueEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		},
+		{
 			"Name": "GASCore",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"

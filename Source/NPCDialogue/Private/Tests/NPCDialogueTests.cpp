@@ -38,7 +38,14 @@ bool FNPCDialogueDataValidationTest::RunTest(const FString& Parameters)
 {
 	UNPCDialogueData* Data = NewObject<UNPCDialogueData>();
 	Data->DisplayName = FText::FromString(TEXT("Test NPC"));
-	Data->Rules.Add(NPCDialogueTests::MakeRule(TEXT("Ambient"), 0, TEXT("Hello")));
+	FNPCDialogueRule ValidRule = NPCDialogueTests::MakeRule(TEXT("Ambient"), 0, TEXT("Hello"));
+	ValidRule.Lines.Add(NPCDialogueTests::MakeLine(TEXT("Accepted"), TEXT("Good choice")));
+	FNPCDialogueReply Reply;
+	Reply.ReplyId = TEXT("Accept");
+	Reply.Text = FText::FromString(TEXT("I accept"));
+	Reply.NextLineId = TEXT("Accepted");
+	ValidRule.Lines[0].Replies.Add(Reply);
+	Data->Rules.Add(ValidRule);
 
 	FDataValidationContext ValidContext;
 	TestEqual(TEXT("A named NPC with one complete rule validates"),
@@ -48,6 +55,12 @@ bool FNPCDialogueDataValidationTest::RunTest(const FString& Parameters)
 	FDataValidationContext InvalidContext;
 	TestEqual(TEXT("Duplicate stable rule IDs are rejected"),
 		Data->IsDataValid(InvalidContext), EDataValidationResult::Invalid);
+
+	Data->Rules.SetNum(1);
+	Data->Rules[0].Lines[0].Replies[0].NextLineId = TEXT("MissingLine");
+	FDataValidationContext MissingTargetContext;
+	TestEqual(TEXT("A reply cannot target a missing line"),
+		Data->IsDataValid(MissingTargetContext), EDataValidationResult::Invalid);
 	return true;
 }
 
@@ -113,6 +126,43 @@ bool FNPCDialogueExclusiveReservationTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Reservation belongs to the first player"), Source->IsReservedBy(FirstPlayer));
 	Source->Release(FirstPlayer);
 	TestTrue(TEXT("Second player can reserve after release"), Source->TryReserve(SecondPlayer));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FNPCDialogueAuthoredTestAssetTest,
+	"ArtisticSW.NPCDialogue.AuthoredTestAsset",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FNPCDialogueAuthoredTestAssetTest::RunTest(const FString& Parameters)
+{
+	UNPCDialogueData* Data = LoadObject<UNPCDialogueData>(
+		nullptr,
+		TEXT("/Game/New/NPC/Data/DA_TestNPCDialogue.DA_TestNPCDialogue"));
+	if (!TestNotNull(TEXT("DA_TestNPCDialogue loads"), Data))
+	{
+		return false;
+	}
+
+	FDataValidationContext Context;
+	TestEqual(TEXT("Authored test dialogue validates"),
+		Data->IsDataValid(Context), EDataValidationResult::Valid);
+	const FNPCDialogueRule* Rule = Data->FindRule(TEXT("Ambient_Default"));
+	TestNotNull(TEXT("Test asset contains Ambient_Default"), Rule);
+	if (Rule)
+	{
+		const FNPCDialogueLine* ReplyLine = Rule->Lines.FindByPredicate(
+			[](const FNPCDialogueLine& Line)
+			{
+				return Line.LineId == TEXT("Ambient_02");
+			});
+		TestNotNull(TEXT("Test asset contains its reply line"), ReplyLine);
+		if (ReplyLine)
+		{
+			TestEqual(TEXT("Reply line contains the two storyboard choices"),
+				ReplyLine->Replies.Num(), 2);
+		}
+	}
 	return true;
 }
 

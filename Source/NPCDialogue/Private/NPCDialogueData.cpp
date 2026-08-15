@@ -71,6 +71,36 @@ EDataValidationResult UNPCDialogueData::IsDataValid(FDataValidationContext& Cont
 			SeenLineIds.Add(Line.LineId);
 		}
 
+		for (const FNPCDialogueLine& Line : Rule.Lines)
+		{
+			TSet<FName> SeenReplyIds;
+			for (const FNPCDialogueReply& Reply : Line.Replies)
+			{
+				if (Reply.ReplyId.IsNone() || Reply.Text.IsEmpty())
+				{
+					Context.AddError(FText::Format(
+						NSLOCTEXT("NPCDialogue", "InvalidReply", "Line {0} has a reply with an empty id or text."),
+						FText::FromName(Line.LineId)));
+					Result = EDataValidationResult::Invalid;
+				}
+				else if (SeenReplyIds.Contains(Reply.ReplyId))
+				{
+					Context.AddError(FText::Format(
+						NSLOCTEXT("NPCDialogue", "DuplicateReply", "Line {0} has duplicate ReplyId {1}."),
+						FText::FromName(Line.LineId), FText::FromName(Reply.ReplyId)));
+					Result = EDataValidationResult::Invalid;
+				}
+				if (!Reply.NextLineId.IsNone() && !SeenLineIds.Contains(Reply.NextLineId))
+				{
+					Context.AddError(FText::Format(
+						NSLOCTEXT("NPCDialogue", "MissingReplyTarget", "Reply {0} targets missing line {1}."),
+						FText::FromName(Reply.ReplyId), FText::FromName(Reply.NextLineId)));
+					Result = EDataValidationResult::Invalid;
+				}
+				SeenReplyIds.Add(Reply.ReplyId);
+			}
+		}
+
 		auto ValidateStacks = [&Context, &Result, &Rule](const TArray<FCraftingItemStack>& Stacks, const TCHAR* Label)
 		{
 			for (const FCraftingItemStack& Stack : Stacks)

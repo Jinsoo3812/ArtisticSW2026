@@ -8,8 +8,8 @@
 class ACameraActor;
 class IDialogueInventoryProvider;
 class UAbilitySystemComponent;
+class UNPCDialogueWidget;
 class UNPCDialogueSourceComponent;
-class UUserWidget;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FNPCDialogueEvent);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
@@ -39,11 +39,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "NPC|Dialogue")
 	void CancelDialogue();
 
+	UFUNCTION(BlueprintCallable, Category = "NPC|Dialogue")
+	void SelectReply(FName ReplyId);
+
 	UFUNCTION(BlueprintPure, Category = "NPC|Dialogue")
 	bool IsDialogueActive() const { return bClientDialogueActive; }
 
 	UFUNCTION(BlueprintPure, Category = "NPC|Dialogue")
 	const FNPCDialogueView& GetCurrentDialogueView() const { return CurrentView; }
+
+	void SetDialogueWidgetClass(TSubclassOf<UNPCDialogueWidget> InClass) { DialogueWidgetClass = InClass; }
+	TSubclassOf<UNPCDialogueWidget> GetDialogueWidgetClass() const { return DialogueWidgetClass; }
 
 	UPROPERTY(BlueprintAssignable, Category = "NPC|Dialogue|UI")
 	FNPCDialogueEvent OnDialogueOpened;
@@ -58,9 +64,9 @@ public:
 	FNPCDialogueFailedEvent OnDialogueFailed;
 
 protected:
-	/** Optional. Assign the future WBP here; the system already works without one. */
+	/** Designer-only WBP whose parent is UNPCDialogueWidget. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Dialogue|UI")
-	TSubclassOf<UUserWidget> DialogueWidgetClass;
+	TSubclassOf<UNPCDialogueWidget> DialogueWidgetClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC|Dialogue|UI")
 	bool bShowMouseCursorDuringDialogue = true;
@@ -85,6 +91,9 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void ServerCancelDialogue(int32 ExpectedSessionId);
+
+	UFUNCTION(Server, Reliable)
+	void ServerSelectReply(int32 ExpectedSessionId, FName ReplyId);
 
 	UFUNCTION(Client, Reliable)
 	void ClientOpenDialogue(int32 SessionId, const FNPCDialogueView& View);
@@ -115,7 +124,7 @@ private:
 	FNPCDialogueView CurrentView;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UUserWidget> ActiveDialogueWidget = nullptr;
+	TObjectPtr<UNPCDialogueWidget> ActiveDialogueWidget = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<ACameraActor> DialogueCameraActor = nullptr;
