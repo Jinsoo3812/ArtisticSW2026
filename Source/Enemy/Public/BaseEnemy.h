@@ -123,6 +123,14 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Damage")
 	bool bDeathHandled = false;
 
+	/** Death presentation이 끝난 뒤 서버가 시체 Actor를 유지하는 시간입니다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death", meta = (ClampMin = "0.0"))
+	float CorpseLifetimeAfterDeathFinished = 5.0f;
+
+	/** false이면 기존처럼 외부 시스템이 시체 Actor의 수명을 관리합니다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death")
+	bool bDestroyAfterDeathFinished = true;
+
 protected:
 	// Ability를 ASC Owner에 부여하는 함수
 	UFUNCTION(BlueprintCallable, Category = "AbilitySystem")
@@ -152,6 +160,9 @@ protected:
 	// HealthComponent가 죽음을 감지했을 때 기존 Enemy 사망 처리를 실행합니다.
 	UFUNCTION()
 	void OnDeathStarted(UBaseHealthComponent* InHealthComponent);
+
+	UFUNCTION()
+	void OnDeathFinished(UBaseHealthComponent* InHealthComponent);
 
 	// ================= Health Bar =================
 	UFUNCTION()
@@ -189,6 +200,9 @@ public:
 	FORCEINLINE virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { check(AbilitySystemComponent) return AbilitySystemComponent; }
 	FORCEINLINE UEnemyWaypointMoveComponent* GetWaypointMoveComponent() const {return WaypointMoveComponent;}
 	FORCEINLINE UBaseHealthComponent* GetHealthComponent() const { return HealthComponent; }
+	FORCEINLINE EGameplayEffectReplicationMode GetASCReplicationMode() const { return ASCReplicationMode; }
+	FORCEINLINE float GetCorpseLifetimeAfterDeathFinished() const { return CorpseLifetimeAfterDeathFinished; }
+	FORCEINLINE bool ShouldDestroyAfterDeathFinished() const { return bDestroyAfterDeathFinished; }
 
 	// Enemy소환 API
 	UFUNCTION(BlueprintCallable, Category = "Wave")
