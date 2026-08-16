@@ -16,6 +16,10 @@
 #include "WaterBodyActor.h"
 #include "WaterBodyComponent.h"
 
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+#endif
+
 DEFINE_LOG_CATEGORY_STATIC(LogSWShipWake, Log, All);
 
 namespace SWShipWakeMaterial
@@ -63,15 +67,139 @@ namespace SWShipWakeField
 	TAutoConsoleVariable<float> SimulationHz(
 		TEXT("sw.ShipWake.FieldSimulationHz"), 20.0f,
 		TEXT("M5 Golden-history fixed update rate."));
+	TAutoConsoleVariable<float> StateInterpolationDelay(
+		TEXT("sw.ShipWake.StateInterpolationDelay"), 0.10f,
+		TEXT("Seconds of emitter sample history used to bracket and interpolate each fixed step."));
 	TAutoConsoleVariable<float> HistoryResponseRate(
 		TEXT("sw.ShipWake.HistoryResponseRate"), 4.0f,
 		TEXT("Rate at which the recorded field accepts newly selected Golden slices."));
 	TAutoConsoleVariable<float> HistoryMomentum(
-		TEXT("sw.ShipWake.HistoryMomentum"), 0.08f,
+		TEXT("sw.ShipWake.HistoryMomentum"), 0.0f,
 		TEXT("Previous/current state momentum. Keep below 0.5 to avoid ringing."));
 	TAutoConsoleVariable<float> MaximumHeightCm(
 		TEXT("sw.ShipWake.FieldMaximumHeightCm"), 200.0f,
 		TEXT("Absolute M5 recorded displacement clamp in centimeters."));
+}
+
+namespace
+{
+	FSWShipWakeEvent InterpolateWakeSample(
+		const FSWShipWakeEvent& Previous,
+		const FSWShipWakeEvent& Next,
+		const double EvaluationServerTime)
+	{
+		const double SampleDuration = Next.UpdateServerTime - Previous.UpdateServerTime;
+		const float Alpha = SampleDuration > UE_DOUBLE_SMALL_NUMBER
+			? FMath::Clamp(static_cast<float>(
+				(EvaluationServerTime - Previous.UpdateServerTime) / SampleDuration), 0.0f, 1.0f)
+			: 0.0f;
+
+		FSWShipWakeEvent Result = Previous;
+		Result.Origin = FMath::Lerp(Previous.Origin, Next.Origin, Alpha);
+		const FVector2D BlendedForward = FMath::Lerp(Previous.Forward, Next.Forward, Alpha);
+		Result.Forward = BlendedForward.IsNearlyZero()
+			? Previous.Forward.GetSafeNormal()
+			: BlendedForward.GetSafeNormal();
+		Result.UpdateServerTime = EvaluationServerTime;
+		Result.Amplitude = FMath::Lerp(Previous.Amplitude, Next.Amplitude, Alpha);
+		Result.SpeedCmPerSecond = FMath::Lerp(
+			Previous.SpeedCmPerSecond, Next.SpeedCmPerSecond, Alpha);
+		Result.AdvectionSpeedCmPerSecond = FMath::Lerp(
+			Previous.AdvectionSpeedCmPerSecond, Next.AdvectionSpeedCmPerSecond, Alpha);
+		Result.PressureSizeCm = FMath::Lerp(Previous.PressureSizeCm, Next.PressureSizeCm, Alpha);
+		Result.LongitudinalScale = FMath::Lerp(
+			Previous.LongitudinalScale, Next.LongitudinalScale, Alpha);
+		Result.LateralScale = FMath::Lerp(Previous.LateralScale, Next.LateralScale, Alpha);
+		Result.NearHullSuppressDistanceCm = FMath::Lerp(
+			Previous.NearHullSuppressDistanceCm, Next.NearHullSuppressDistanceCm, Alpha);
+		Result.HullLengthCm = FMath::Lerp(Previous.HullLengthCm, Next.HullLengthCm, Alpha);
+		Result.BeamWidthCm = FMath::Lerp(Previous.BeamWidthCm, Next.BeamWidthCm, Alpha);
+		Result.DraftCm = FMath::Lerp(Previous.DraftCm, Next.DraftCm, Alpha);
+		Result.WakeLengthCm = FMath::Lerp(Previous.WakeLengthCm, Next.WakeLengthCm, Alpha);
+		Result.StateLifetime = FMath::Max(Previous.StateLifetime, Next.StateLifetime);
+		Result.TransverseStrength = FMath::Lerp(
+			Previous.TransverseStrength, Next.TransverseStrength, Alpha);
+		Result.DivergentStrength = FMath::Lerp(
+			Previous.DivergentStrength, Next.DivergentStrength, Alpha);
+		Result.SternStrength = FMath::Lerp(Previous.SternStrength, Next.SternStrength, Alpha);
+		Result.SternPhaseOffsetRadians = FMath::Lerp(
+			Previous.SternPhaseOffsetRadians, Next.SternPhaseOffsetRadians, Alpha);
+
+		if (Previous.TrajectoryPoints.Num() == Next.TrajectoryPoints.Num())
+		{
+			Result.TrajectoryPoints.SetNum(Previous.TrajectoryPoints.Num());
+			for (int32 Index = 0; Index < Result.TrajectoryPoints.Num(); ++Index)
+			{
+				Result.TrajectoryPoints[Index] = FMath::Lerp(
+					Previous.TrajectoryPoints[Index], Next.TrajectoryPoints[Index], Alpha);
+			}
+		}
+		if (!Result.TrajectoryPoints.IsEmpty())
+		{
+			Result.TrajectoryPoints[0] = Result.Origin;
+		}
+		return Result;
+	}
+
+	void ResolveWakeSamplesAtTime(
+		TConstArrayView<FSWShipWakeEvent> Samples,
+		const double EvaluationServerTime,
+		TArray<FSWShipWakeEvent>& OutEvents)
+	{
+		OutEvents.Reset();
+		struct FSampleBracket
+		{
+			int32 EventId = 0;
+			const FSWShipWakeEvent* Previous = nullptr;
+			const FSWShipWakeEvent* Next = nullptr;
+		};
+		TArray<FSampleBracket, TInlineAllocator<USWShipWakeSubsystem::WakeCapacity>> Brackets;
+		for (const FSWShipWakeEvent& Sample : Samples)
+		{
+			FSampleBracket* Bracket = Brackets.FindByPredicate(
+				[&Sample](const FSampleBracket& Candidate)
+				{
+					return Candidate.EventId == Sample.EventId;
+				});
+			if (!Bracket)
+			{
+				Bracket = &Brackets.AddDefaulted_GetRef();
+				Bracket->EventId = Sample.EventId;
+			}
+			if (Sample.UpdateServerTime <= EvaluationServerTime)
+			{
+				if (!Bracket->Previous
+					|| Sample.UpdateServerTime > Bracket->Previous->UpdateServerTime)
+				{
+					Bracket->Previous = &Sample;
+				}
+			}
+			else if (!Bracket->Next
+				|| Sample.UpdateServerTime < Bracket->Next->UpdateServerTime)
+			{
+				Bracket->Next = &Sample;
+			}
+		}
+
+		OutEvents.Reserve(Brackets.Num());
+		for (const FSampleBracket& Bracket : Brackets)
+		{
+			if (!Bracket.Previous)
+			{
+				continue;
+			}
+			if (Bracket.Next
+				&& Bracket.Next->UpdateServerTime < Bracket.Previous->GetExpireServerTime())
+			{
+				OutEvents.Add(InterpolateWakeSample(
+					*Bracket.Previous, *Bracket.Next, EvaluationServerTime));
+			}
+			else if (Bracket.Previous->IsActiveAt(EvaluationServerTime))
+			{
+				OutEvents.Add(*Bracket.Previous);
+			}
+		}
+	}
 }
 
 void USWShipWakeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -148,13 +276,19 @@ void USWShipWakeSubsystem::Tick(float DeltaTime)
 	const float SimulationHz = FMath::Clamp(
 		SWShipWakeField::SimulationHz.GetValueOnGameThread(), 1.0f, 60.0f);
 	const float FixedDeltaTime = 1.0f / SimulationHz;
+	const double InterpolationDelay = FMath::Max(
+		static_cast<double>(SWShipWakeField::StateInterpolationDelay.GetValueOnGameThread()),
+		static_cast<double>(FixedDeltaTime));
+	const double RenderEvaluationTime = ServerTime - InterpolationDelay;
 	if (SWShipWakeField::FreezeHistory.GetValueOnGameThread() == 0)
 	{
 		HeightFieldAccumulator = FMath::Min(HeightFieldAccumulator + DeltaTime, FixedDeltaTime * 3.0f);
 		int32 StepCount = 0;
 		while (HeightFieldAccumulator >= FixedDeltaTime && StepCount < 2)
 		{
-			StepHeightHistory(ServerTime - HeightFieldAccumulator + FixedDeltaTime, FixedDeltaTime);
+			StepHeightHistory(
+				ServerTime - InterpolationDelay - HeightFieldAccumulator + FixedDeltaTime,
+				FixedDeltaTime);
 			HeightFieldAccumulator -= FixedDeltaTime;
 			++StepCount;
 		}
@@ -166,8 +300,8 @@ void USWShipWakeSubsystem::Tick(float DeltaTime)
 	}
 	if (!IsRunningDedicatedServer())
 	{
-		UpdateTexture(ServerTime);
-		BindToWaterMaterials(ServerTime);
+		UpdateTexture(RenderEvaluationTime);
+		BindToWaterMaterials(RenderEvaluationTime);
 	}
 	LogRuntimeDiagnostics(ServerTime, DeltaTime);
 }
@@ -180,14 +314,18 @@ void USWShipWakeSubsystem::AddOrUpdateEvent(const FSWShipWakeEvent& Event)
 	}
 
 	FWriteScopeLock Lock(EventsLock);
-	if (FSWShipWakeEvent* Existing = Events.FindByPredicate(
-		[&Event](const FSWShipWakeEvent& Candidate) { return Candidate.EventId == Event.EventId; }))
+	if (FSWShipWakeEvent* Duplicate = Events.FindByPredicate(
+		[&Event](const FSWShipWakeEvent& Candidate)
+		{
+			return Candidate.EventId == Event.EventId
+				&& FMath::IsNearlyEqual(Candidate.UpdateServerTime, Event.UpdateServerTime, 1.e-6);
+		}))
 	{
-		*Existing = Event;
+		*Duplicate = Event;
 		return;
 	}
 
-	while (Events.Num() >= WakeCapacity)
+	while (Events.Num() >= WakeSampleCapacity)
 	{
 		int32 OldestIndex = 0;
 		for (int32 Index = 1; Index < Events.Num(); ++Index)
@@ -213,15 +351,7 @@ void USWShipWakeSubsystem::GetActiveEventsSnapshot(
 	TArray<FSWShipWakeEvent>& OutEvents) const
 {
 	FReadScopeLock Lock(EventsLock);
-	OutEvents.Reset();
-	OutEvents.Reserve(Events.Num());
-	for (const FSWShipWakeEvent& Event : Events)
-	{
-		if (Event.IsActiveAt(ServerTime))
-		{
-			OutEvents.Add(Event);
-		}
-	}
+	ResolveWakeSamplesAtTime(Events, ServerTime, OutEvents);
 }
 
 float USWShipWakeSubsystem::GetWakeHeight(const FVector& WorldPosition, const double ServerTime) const
@@ -234,8 +364,9 @@ float USWShipWakeSubsystem::GetWakeHeight(const FVector& WorldPosition, const do
 	{
 		return SampleHeightHistory(FVector2D(WorldPosition));
 	}
-	FReadScopeLock Lock(EventsLock);
-	return FSWShipWakeEvaluator::EvaluateHeight(FVector2D(WorldPosition), ServerTime, Events);
+	TArray<FSWShipWakeEvent> ActiveEvents;
+	GetActiveEventsSnapshot(ServerTime, ActiveEvents);
+	return FSWShipWakeEvaluator::EvaluateHeight(FVector2D(WorldPosition), ServerTime, ActiveEvents);
 }
 
 FVector2D USWShipWakeSubsystem::GetWakeGradient(const FVector& WorldPosition, const double ServerTime) const
@@ -254,8 +385,9 @@ FVector2D USWShipWakeSubsystem::GetWakeGradient(const FVector& WorldPosition, co
 			(SampleHeightHistory(Position + FVector2D(0.0, SampleDistance))
 				- SampleHeightHistory(Position - FVector2D(0.0, SampleDistance))) / (2.0f * SampleDistance));
 	}
-	FReadScopeLock Lock(EventsLock);
-	return FSWShipWakeEvaluator::EvaluateGradient(FVector2D(WorldPosition), ServerTime, Events);
+	TArray<FSWShipWakeEvent> ActiveEvents;
+	GetActiveEventsSnapshot(ServerTime, ActiveEvents);
+	return FSWShipWakeEvaluator::EvaluateGradient(FVector2D(WorldPosition), ServerTime, ActiveEvents);
 }
 
 double USWShipWakeSubsystem::GetServerTime() const
@@ -507,12 +639,12 @@ FVector2D USWShipWakeSubsystem::ResolveDesiredFieldCenter(const double ServerTim
 		return HeightHistoryCenters[CurrentHeightStateIndex];
 	}
 
-	FReadScopeLock Lock(EventsLock);
+	TArray<FSWShipWakeEvent> ActiveEvents;
+	GetActiveEventsSnapshot(ServerTime, ActiveEvents);
 	const FSWShipWakeEvent* NewestEvent = nullptr;
-	for (const FSWShipWakeEvent& Event : Events)
+	for (const FSWShipWakeEvent& Event : ActiveEvents)
 	{
-		if (Event.IsActiveAt(ServerTime)
-			&& (!NewestEvent || Event.UpdateServerTime > NewestEvent->UpdateServerTime))
+		if (!NewestEvent || Event.UpdateServerTime > NewestEvent->UpdateServerTime)
 		{
 			NewestEvent = &Event;
 		}
@@ -659,6 +791,7 @@ void USWShipWakeSubsystem::StepHeightHistory(const double ServerTime, const floa
 	RuntimeStats.SaturatedFraction = static_cast<float>(SaturatedCount) / FMath::Max(TexelCount, 1);
 	RuntimeStats.CenterDelta = OutputCenter - CurrentCenter;
 	RuntimeStats.ActiveEventCount = EventSnapshot.Num();
+	RuntimeStats.EvaluationServerTime = ServerTime;
 
 	HeightHistoryCenters[NextHeightStateIndex] = OutputCenter;
 	UploadHeightHistoryState(NextHeightStateIndex);
@@ -845,8 +978,9 @@ void USWShipWakeSubsystem::LogRuntimeDiagnostics(
 		EffectiveAlpha = GetEffectiveHistoryAlpha();
 	}
 
+	const double EvaluationServerTime = Stats.EvaluationServerTime;
 	TArray<FSWShipWakeEvent> EventSnapshot;
-	GetActiveEventsSnapshot(ServerTime, EventSnapshot);
+	GetActiveEventsSnapshot(EvaluationServerTime, EventSnapshot);
 	const FSWShipWakeEvent* NewestEvent = nullptr;
 	for (const FSWShipWakeEvent& Event : EventSnapshot)
 	{
@@ -856,14 +990,34 @@ void USWShipWakeSubsystem::LogRuntimeDiagnostics(
 		}
 	}
 	const float EventAge = NewestEvent
-		? static_cast<float>(ServerTime - NewestEvent->UpdateServerTime)
+		? static_cast<float>(EvaluationServerTime - NewestEvent->UpdateServerTime)
 		: -1.0f;
 	const float EventAmplitude = NewestEvent ? NewestEvent->Amplitude : 0.0f;
 	const float EventSpeed = NewestEvent ? NewestEvent->SpeedCmPerSecond : 0.0f;
 	const FVector2D EventOrigin = NewestEvent ? NewestEvent->Origin : FVector2D::ZeroVector;
+	int32 RawEventCount = 0;
+	int32 FutureSampleCount = 0;
+	double NewestSampleSignedAge = -1.0;
+	{
+		FReadScopeLock Lock(EventsLock);
+		RawEventCount = Events.Num();
+		const FSWShipWakeEvent* NewestRawEvent = nullptr;
+		for (const FSWShipWakeEvent& Event : Events)
+		{
+			FutureSampleCount += Event.UpdateServerTime > EvaluationServerTime ? 1 : 0;
+			if (!NewestRawEvent || Event.UpdateServerTime > NewestRawEvent->UpdateServerTime)
+			{
+				NewestRawEvent = &Event;
+			}
+		}
+		if (NewestRawEvent)
+		{
+			NewestSampleSignedAge = EvaluationServerTime - NewestRawEvent->UpdateServerTime;
+		}
+	}
 
 	UE_LOG(LogSWShipWake, Warning,
-		TEXT("[M5Runtime] World=%s NetMode=%d Enable=%d Freeze=%d LockCenter=%d FrameMs=%.3f StepMs=%.3f Hz=%.1f AlphaAuto=%.3f AlphaUsed=%.3f Idx=%d/%d/%d PrevCenter=(%.1f,%.1f) CurrCenter=(%.1f,%.1f) CenterStep=(%.1f,%.1f) Events=%d EventAge=%.3f Amp=%.1f Speed=%.1f Origin=(%.1f,%.1f) Target=[%.2f,%.2f] TargetRMS=%.3f Output=[%.2f,%.2f] OutputRMS=%.3f MaxDelta=%.3f Saturated=%.2f%%"),
+		TEXT("[M5Runtime] World=%s NetMode=%d Enable=%d Freeze=%d LockCenter=%d FrameMs=%.3f StepMs=%.3f Hz=%.1f EvalLagMs=%.1f AlphaAuto=%.3f AlphaUsed=%.3f Idx=%d/%d/%d PrevCenter=(%.1f,%.1f) CurrCenter=(%.1f,%.1f) CenterStep=(%.1f,%.1f) Events=%d StepEvents=%d TimelineSamples=%d FutureSamples=%d EventAge=%.3f NewestSampleAge=%.3f Amp=%.1f Speed=%.1f Origin=(%.1f,%.1f) Target=[%.2f,%.2f] TargetRMS=%.3f Output=[%.2f,%.2f] OutputRMS=%.3f MaxDelta=%.3f Saturated=%.2f%%"),
 		*GetWorld()->GetName(),
 		static_cast<int32>(GetWorld()->GetNetMode()),
 		SWShipWakeField::Enable.GetValueOnGameThread(),
@@ -872,6 +1026,7 @@ void USWShipWakeSubsystem::LogRuntimeDiagnostics(
 		FrameDeltaTime * 1000.0f,
 		Stats.StepMilliseconds,
 		SWShipWakeField::SimulationHz.GetValueOnGameThread(),
+		static_cast<float>((ServerTime - EvaluationServerTime) * 1000.0),
 		AutomaticAlpha,
 		EffectiveAlpha,
 		PreviousIndex,
@@ -881,7 +1036,11 @@ void USWShipWakeSubsystem::LogRuntimeDiagnostics(
 		CurrentCenter.X, CurrentCenter.Y,
 		Stats.CenterDelta.X, Stats.CenterDelta.Y,
 		EventSnapshot.Num(),
+		Stats.ActiveEventCount,
+		RawEventCount,
+		FutureSampleCount,
 		EventAge,
+		NewestSampleSignedAge,
 		EventAmplitude,
 		EventSpeed,
 		EventOrigin.X, EventOrigin.Y,
@@ -892,4 +1051,73 @@ void USWShipWakeSubsystem::LogRuntimeDiagnostics(
 		Stats.MaximumStepDelta,
 		Stats.SaturatedFraction * 100.0f);
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSWShipWakeTimelineInterpolationTest,
+	"ArtisticSW.Water.ShipWake.M5TimelineInterpolation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSWShipWakeTimelineInterpolationTest::RunTest(const FString& Parameters)
+{
+	FSWShipWakeEvent Previous;
+	Previous.EventId = 17;
+	Previous.Origin = FVector2D(100.0, 200.0);
+	Previous.Forward = FVector2D(1.0, 0.0);
+	Previous.TrajectoryPoints = { Previous.Origin, FVector2D(0.0, 200.0) };
+	Previous.UpdateServerTime = 10.0;
+	Previous.Amplitude = 100.0f;
+	Previous.SpeedCmPerSecond = 400.0f;
+	Previous.AdvectionSpeedCmPerSecond = 500.0f;
+	Previous.PressureSizeCm = 2400.0f;
+	Previous.StateLifetime = 1.0f;
+
+	FSWShipWakeEvent Next = Previous;
+	Next.Origin = FVector2D(200.0, 300.0);
+	Next.Forward = FVector2D(0.0, 1.0);
+	Next.TrajectoryPoints = { Next.Origin, FVector2D(0.0, 300.0) };
+	Next.UpdateServerTime = 10.1;
+	Next.Amplitude = 200.0f;
+	Next.SpeedCmPerSecond = 600.0f;
+	Next.AdvectionSpeedCmPerSecond = 700.0f;
+
+	const FSWShipWakeEvent Resolved = InterpolateWakeSample(Previous, Next, 10.05);
+	TestTrue(TEXT("Interpolated event is active at its fixed-step time"), Resolved.IsActiveAt(10.05));
+	TestTrue(TEXT("Origin X is continuous"), FMath::IsNearlyEqual(Resolved.Origin.X, 150.0, 0.01));
+	TestTrue(TEXT("Origin Y is continuous"), FMath::IsNearlyEqual(Resolved.Origin.Y, 250.0, 0.01));
+	TestTrue(TEXT("Amplitude is continuous"), FMath::IsNearlyEqual(Resolved.Amplitude, 150.0f, 0.01f));
+	TestTrue(TEXT("Spectrum speed is continuous"),
+		FMath::IsNearlyEqual(Resolved.SpeedCmPerSecond, 500.0f, 0.01f));
+	TestTrue(TEXT("Advection speed is continuous"),
+		FMath::IsNearlyEqual(Resolved.AdvectionSpeedCmPerSecond, 600.0f, 0.01f));
+	TestTrue(TEXT("Timeline timestamp equals evaluation time"),
+		FMath::IsNearlyEqual(Resolved.UpdateServerTime, 10.05, 1.e-6));
+	TestTrue(TEXT("First trajectory point follows the interpolated apex"),
+		Resolved.TrajectoryPoints[0].Equals(Resolved.Origin, 0.01));
+
+	TArray<FSWShipWakeEvent> Timeline { Previous, Next };
+	FSWShipWakeEvent Later = Next;
+	Later.Origin = FVector2D(300.0, 400.0);
+	Later.UpdateServerTime = 10.2;
+	Timeline.Add(Later);
+	TArray<FSWShipWakeEvent> TimelineResult;
+	ResolveWakeSamplesAtTime(Timeline, 10.05, TimelineResult);
+	TestEqual(TEXT("A bracketed timeline resolves exactly one vessel"), TimelineResult.Num(), 1);
+	if (TimelineResult.Num() == 1)
+	{
+		TestTrue(TEXT("Resolved vessel never becomes future-inactive at its fixed step"),
+			TimelineResult[0].IsActiveAt(10.05));
+		TestTrue(TEXT("Timeline uses the samples bracketing the fixed step"),
+			TimelineResult[0].Origin.Equals(FVector2D(150.0, 250.0), 0.01));
+	}
+	ResolveWakeSamplesAtTime(Timeline, 10.15, TimelineResult);
+	TestEqual(TEXT("Later fixed step also resolves exactly one vessel"), TimelineResult.Num(), 1);
+	if (TimelineResult.Num() == 1)
+	{
+		TestTrue(TEXT("Later state remains active instead of producing StepEvents=0"),
+			TimelineResult[0].IsActiveAt(10.15));
+	}
+	return true;
+}
+#endif
 

@@ -40,6 +40,7 @@ public:
 	UTexture2D* GetPreviousHeightField() const;
 
 	static constexpr int32 WakeCapacity = 64;
+	static constexpr int32 WakeSampleCapacity = WakeCapacity * 8;
 	static constexpr int32 TrajectoryCapacity = 16;
 
 private:
@@ -56,6 +57,10 @@ private:
 	FVector2D ResolveDesiredFieldCenter(double ServerTime) const;
 
 	mutable FRWLock EventsLock;
+	/** Immutable, time-ordered-in-evaluation emitter samples. Multiple entries
+	 * with the same EventId are retained so a fixed simulation step can resolve
+	 * the state that existed at its own server time instead of seeing a future
+	 * replacement or an empty source. */
 	TArray<FSWShipWakeEvent> Events;
 
 	UPROPERTY(Transient)
@@ -95,6 +100,7 @@ private:
 		float SaturatedFraction = 0.0f;
 		FVector2D CenterDelta = FVector2D::ZeroVector;
 		int32 ActiveEventCount = 0;
+		double EvaluationServerTime = 0.0;
 	};
 
 	FHeightHistoryRuntimeStats RuntimeStats;

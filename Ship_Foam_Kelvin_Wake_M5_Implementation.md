@@ -278,3 +278,190 @@ sw.ShipWake.DebugLockFieldCenter 0
 - `Saturated`: ±`FieldMaximumHeightCm`에 붙은 텍셀 비율. 0보다 지속적으로 크면 amplitude 테스트가 포화됐다.
 
 멀티플레이 PIE에서는 서버와 클라이언트 world가 모두 기록된다. 화면에 보이는 클라이언트는 일반적으로 `NetMode=3`, listen server는 `NetMode=2`다. 로그 파일은 `Saved/Logs/ArtisticSW2026.log`이며 `[M5Runtime]`로 필터링한다.
+
+## 13. M5.2 네트워크 이벤트 연속성 수정
+
+### 런타임에서 확인한 현상
+
+두 번의 PIE 격리 시험에서 시각 관측은 `정상 → 진동 → 정상 → 정상 → 진동` 순서였다. 로그를 명령 입력 시점별로 분리해 확인한 결과는 다음과 같다.
+
+- `sw.ShipWake.Enable=0`에서는 Kelvin material 기여가 제거되어 진동이 사라졌다.
+- `DebugLockFieldCenter=1`일 때 `CenterStep=(0,0)`이었지만 클라이언트 `MaxDelta`는 평균 약 17.74 cm, 최대 약 34.99 cm였다. 필드 중심 GridSnap은 주원인이 아니다.
+- 서버에서 활성 이벤트가 있던 대응 샘플 75개 중 서버의 `Events=0`은 0개였지만, 클라이언트 `NetMode=3`은 35개, 약 46.7%가 `Events=0`이었다.
+- 같은 구간의 클라이언트 필드는 평균 약 18.39 cm, 최대 약 36.25 cm/fixed-step만큼 변했다.
+- `FreezeHistory + Alpha 0/1` 시험은 명령 입력 전에 이미 `Events=0`, `TargetRMS=0`, `OutputRMS≈0`이었으므로 활성 히스토리 보간을 검증한 시험으로 보지 않는다.
+
+### 원인
+
+동일 `EventId`의 multicast 갱신을 받으면 기존 이벤트를 즉시 덮어썼고, 이벤트 활성 조건은 `LocalEstimatedServerTime >= Event.UpdateServerTime`을 요구했다. 클라이언트의 보정된 서버 시계가 수 ms 뒤에 있을 때 새 이벤트는 잠시 미래 상태가 된다. 이때 직전의 유효한 이벤트가 이미 사라졌으므로 active snapshot이 다음처럼 끊겼다.
+
+```text
+Current active event
+  -> future-dated update immediately replaces Current
+  -> ActiveEvents=0
+  -> client clock catches up
+  -> ActiveEvents=1
+```
+
+세 장의 높이 텍스처 자체는 순환하고 있었지만, 기록식의 `GoldenTarget` 입력이 Kelvin과 0 사이를 반복했다. 따라서 세 텍스처 모두 불연속 입력을 추적하며 파면이 펄스처럼 움찔했다.
+
+### 구현
+
+`USWShipWakeSubsystem`에 emitter별 대기 상태를 추가했다.
+
+- 도착한 이벤트가 로컬 추정 서버 시간보다 미래이면 현재 `Events`를 덮어쓰지 않는다.
+- `PendingEvents`에는 해당 emitter의 가장 이른 미래 갱신을 유지한다. 더 새로운 패킷으로 대기 시각을 계속 뒤로 미루지 않는다.
+- 매 tick 시작 시 `PromotePendingEvents(ServerTime)`를 호출한다.
+- 대기 이벤트의 시작 시간이 되면 같은 `EventId`의 현재 상태를 교체한다.
+- 오래되거나 순서가 뒤바뀐 갱신은 현재 상태보다 새로울 때만 적용한다.
+- current와 pending 모두 기존 retention 정책으로 정리한다.
+
+이 방식은 자주 보내는 unreliable 상태 RPC를 reliable로 바꾸어 큐를 누적시키지 않으면서, 패킷 사이에 직전의 정상 상태를 유지한다. 첫 이벤트가 실제 시작 시각에 도달하기 전의 초기 대기는 허용하지만, 이후 갱신마다 active event가 0이 되는 현상은 제거한다.
+
+### 추가 런타임 로그
+
+`[M5Runtime]`에 다음 필드를 추가했다.
+
+| 필드 | 의미 |
+|---|---|
+| `Events` | 로그 시각에 실제 활성인 이벤트 수 |
+| `StepEvents` | 마지막 fixed field step이 사용한 이벤트 수 |
+| `RawEvents` | 활성 여부와 무관한 현재 이벤트 수 |
+| `Pending` | 미래 시각이라 현재 상태 뒤에서 대기 중인 이벤트 수 |
+| `RawSignedAge` | 현재 이벤트의 signed age. 음수이면 미래 이벤트가 current에 잘못 들어간 것 |
+| `PendingLead` | 가장 가까운 pending 이벤트까지 남은 초. 양수이면 정상적으로 대기 중 |
+
+`Events`와 `StepEvents`는 서로 다른 시각을 측정한다. 전자는 로그 시각 snapshot이고 후자는 마지막 20 Hz step 통계이므로 한 줄에서 잠시 다를 수 있다.
+
+### M5.2 재검증 기준
+
+`MaximumAmplitudeCm=200`, `DebugLogInterval=0.05~0.25`로 클라이언트 `NetMode=3`을 확인한다.
+
+1. 배가 계속 움직이는 동안 `RawEvents=1`이면 `Events=1`이 연속적으로 유지되어야 한다.
+2. 시계가 뒤처진 갱신을 받으면 `Pending=1`, `PendingLead>0`이 잠시 나타날 수 있다.
+3. 이때 `Events`는 0으로 내려가면 안 된다. 기존 current가 계속 사용되어야 한다.
+4. `RawSignedAge`가 음수가 되면 미래 이벤트가 current로 승격된 결함이다.
+5. 네트워크 단절이나 배 정지로 `StateLifetime`이 실제 만료된 경우의 `Events=0`은 정상이다.
+6. 이벤트 연속성이 확보된 뒤에도 진동하면 활성 파면을 유지한 상태에서 `FreezeHistory` 및 Alpha 0/1 시험을 다시 수행하여 field step/texture interpolation을 다음 원인으로 분리한다.
+
+### 구현 검증
+
+- 2026-08-16 `ArtisticSW2026Editor Win64 Development` 전체 빌드 성공.
+- `SWShipWakeSubsystem.cpp`는 adaptive non-unity 대상으로 직접 컴파일되었다.
+- 자동화 테스트 `ArtisticSW.Water.ShipWake.M4AtlasShape`: `Success` (1/1).
+- 빌드 중 출력된 경고는 UE 5.7의 기존 NetworkPhysics/Chaos deprecated API 및 비권장 MSVC 버전 경고이며 M5.2 변경으로 추가된 컴파일 경고나 오류는 없다.
+- 네트워크 시계 편차와 multicast 순서는 실제 PIE world가 필요한 동적 조건이므로 최종 판정은 위의 `Pending/RawSignedAge/Events` 런타임 로그로 수행한다.
+
+## 14. M5.3 고정 스텝 선박 상태 타임라인
+
+> M5.2의 `Current + Pending`은 클라이언트의 `Events=0`을 제거한 중간 수정이다. M5.3은 해당 구조를 여러 불변 샘플을 가진 시간축으로 대체한다. 따라서 M5.2의 `Pending`, `RawSignedAge`, `PendingLead` 판독법은 과거 로그 분석용이며 현재 런타임 필드는 아래 표를 사용한다.
+
+### M5.2 이후 런타임 증거
+
+M5.2 재시험에서 현재 시각의 이벤트 연속성은 확보되었다.
+
+- 서버 66행과 클라이언트 64행 모두 `Events=0`은 0회였다.
+- 클라이언트는 64행 중 35행에서 `Pending=1`이었지만 기존 `Events=1`을 유지했다.
+
+그러나 서버 66행 중 13행에서 `Events=1`과 동시에 `StepEvents=0`, `TargetRMS=0`이 기록됐다. emitter가 현재 서버 시각으로 같은 `EventId`를 덮어쓴 직후, 높이 필드는 accumulator 때문에 그보다 과거인 fixed-step 시각을 평가했다. 새 상태는 fixed-step 기준 미래였고 이전 상태는 이미 삭제되어 target이 0이 됐다.
+
+클라이언트는 active event가 끊기지 않았지만 future pending을 승격할 때 원점, 속도, 파장, Froude slice, 진폭, trajectory가 한 번에 바뀌었다. 전체 256² Golden target을 이 새 상태로 다시 평가했기 때문에 평균 약 33.55 cm, 최대 약 64.04 cm/fixed-step의 변화가 발생했다.
+
+`MaximumAmplitudeCm=300` 시험에서 실제 이벤트 진폭은 Froude 배율 1.5로 최대 450 cm였다. 클라이언트 64행 중 62행에서 Golden target이 `-200/+200 cm` 양쪽 clamp에 도달했다. 큰 진폭은 원인을 만들지는 않지만 시간축 불연속을 매우 강하게 드러냈다.
+
+### Ripple과의 차이에서 가져온 원칙
+
+Ripple은 충돌마다 고유하고 불변인 이벤트를 추가하고, shader/CPU evaluator가 연속 ServerTime으로 파면을 계산한다. Kelvin은 배 하나가 같은 이벤트를 계속 덮어썼다. M5.3은 Kelvin의 연속 선박 상태를 Ripple의 불변 이벤트 원칙에 맞춰 다음과 같이 저장한다.
+
+```text
+EventId = vessel identity
+
+Samples[EventId] =
+    S0(time, origin, speed, trajectory, spectrum...)
+    S1(time, origin, speed, trajectory, spectrum...)
+    S2(time, origin, speed, trajectory, spectrum...)
+    ...
+```
+
+같은 `EventId`와 같은 timestamp만 중복 갱신으로 교체한다. 시간이 다른 갱신은 서버와 클라이언트 모두 immutable sample로 추가한다. 전체 샘플 큐는 `WakeCapacity * 8 = 512`로 제한하고, 기존 `StateLifetime + PhysicsHistoryRetentionSeconds`가 지난 샘플을 제거한다.
+
+### 고정 스텝 평가
+
+새 CVar 기본값은 다음과 같다.
+
+```text
+sw.ShipWake.StateInterpolationDelay 0.10
+sw.ShipWake.HistoryMomentum 0
+```
+
+고정 스텝과 legacy descriptor texture/material time은 현재 시각보다 `StateInterpolationDelay`만큼 뒤의 동일한 평가 시각을 사용한다. delay는 최소 한 fixed-step 이상으로 제한한다.
+
+```text
+EvaluationTime = ServerTime
+               - max(StateInterpolationDelay, FixedDeltaTime)
+               - AccumulatorRemainder
+
+Previous = newest sample where SampleTime <= EvaluationTime
+Next     = oldest sample where SampleTime >  EvaluationTime
+Alpha    = (EvaluationTime - Previous.Time) / (Next.Time - Previous.Time)
+
+ResolvedState = lerp(Previous, Next, Alpha)
+```
+
+보간 대상은 다음과 같다.
+
+- apex origin과 forward
+- amplitude와 spectrum speed
+- advection speed와 pressure size
+- longitudinal/lateral scale
+- hull/beam/draft/wake length
+- transverse/divergent/stern strength와 stern phase
+- 두 샘플의 trajectory point 수가 같으면 각 world-space point
+
+보간된 상태의 timestamp는 `EvaluationTime`으로 설정하므로 evaluator에서 age가 음수가 되지 않는다. 다음 샘플이 아직 없으면 마지막 과거 샘플을 기존 advection prediction과 lifetime/freshness로 평가한다. unreliable packet이 하나 누락되어도 이전 샘플은 삭제되지 않는다.
+
+`HistoryMomentum` 기본값은 `0.08`에서 `0`으로 변경했다. 시간축이 연속해진 뒤에도 두 이전 필드의 차이를 추가하는 momentum은 파고가 큰 상태에서 불필요한 링잉을 만들 수 있기 때문이다. 필요하면 연속성 검증 이후 소량만 다시 시험한다.
+
+### 렌더와 부력 일치
+
+M5.3도 최종 Golden target을 CPU authoritative 3중 signed-height field에 기록한다. 물 material은 Previous/Current field와 alpha를 샘플링하고, game-thread 및 async buoyancy query는 같은 CPU field와 같은 alpha를 샘플링한다. 상태 보간을 GPU shader에만 추가하지 않았으므로 시각과 부력의 파면 정의는 갈라지지 않는다.
+
+### M5.3 런타임 로그
+
+기존 `[M5Runtime]`의 네트워크 pending 필드를 시간축 필드로 교체했다.
+
+| 필드 | 의미 |
+|---|---|
+| `EvalLagMs` | 현재 서버 시각과 마지막 field evaluation 시각의 차이. 기본값은 약 100~150 ms |
+| `Events` | 마지막 평가 시각에서 해석된 emitter 수 |
+| `StepEvents` | 마지막 fixed-step이 실제 사용한 emitter 수 |
+| `TimelineSamples` | retention을 포함해 저장된 불변 선박 상태 샘플 수 |
+| `FutureSamples` | 마지막 평가 시각보다 뒤에 있어 보간의 Next 후보가 되는 샘플 수 |
+| `NewestSampleAge` | 평가 시각 - 가장 새 raw sample 시각. 보간 버퍼가 있으면 음수여도 정상 |
+
+### 합격 조건
+
+`MaximumAmplitudeCm=200`부터 시험한다. `300`이면 실제 event amplitude가 최대 450 cm까지 갈 수 있다.
+
+```text
+sw.ShipWake.DebugLog 1
+sw.ShipWake.DebugLogInterval 0.1
+sw.ShipWake.StateInterpolationDelay 0.10
+sw.ShipWake.HistoryMomentum 0
+```
+
+1. 지속 직진 중 서버와 클라이언트 모두 `Events=1`, `StepEvents=1`이 유지되어야 한다.
+2. `TimelineSamples`는 증가한 뒤 retention window에 맞춰 제한되어야 한다.
+3. `FutureSamples>=1`이 자주 나타나는 것은 정상이며 이것이 Previous/Next 보간 버퍼다.
+4. 서버가 `Events=1`인데 `StepEvents=0`, `TargetRMS=0`으로 내려가는 과거 패턴은 없어야 한다.
+5. 서버와 클라이언트의 `TargetRMS/OutputRMS` 추세가 크게 갈라지지 않아야 한다.
+6. 이벤트 연속성은 정상인데도 파면이 흔들리면 다음 분리는 전체 target 재평가와 field 기록 필터다. 그 단계에서는 Golden target의 이동 차분 주입 또는 세계공간 source-segment deposition을 검토한다.
+
+### M5.3 정적 검증
+
+- `ArtisticSW2026Editor Win64 Development` 전체 빌드 성공.
+- adaptive non-unity 대상으로 `SWShipWakeSubsystem.cpp` 직접 컴파일 성공.
+- 자동화 테스트 `ArtisticSW.Water.ShipWake.M4AtlasShape`: Success.
+- 신규 자동화 테스트 `ArtisticSW.Water.ShipWake.M5TimelineInterpolation`: Success.
+- 신규 테스트는 두 선박 상태 중간 시각에서 origin, forward, amplitude, spectrum/advection speed, timestamp 및 첫 trajectory point가 연속 보간되는지 검증한다. 또한 세 개의 같은-vessel 샘플 사이 두 fixed-step 시각에서 각각 정확히 하나의 활성 상태가 해석되어 과거의 `StepEvents=0` 공백이 재발하지 않는지 검증한다.
+- 실제 네트워크 패킷 순서와 플레이 화면의 진동 제거 여부는 PIE의 M5.3 로그 합격 조건으로 최종 검증한다.
