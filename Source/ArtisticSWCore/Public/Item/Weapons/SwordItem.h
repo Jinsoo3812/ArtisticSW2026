@@ -21,6 +21,8 @@ class ARTISTICSWCORE_API ASwordItem : public ABaseItem
 {
 	GENERATED_BODY()
 
+	friend class FStrengthMeleePayloadTest;
+
 public:
 	ASwordItem();
 
@@ -48,6 +50,9 @@ public:
 	TSubclassOf<UGameplayEffect> GetDamageEffectClass() const { return DamageEffectClass; }
 
 	UFUNCTION(BlueprintPure, Category = "Sword|Damage")
+	float GetAttackCoefficient() const { return AttackCoefficient; }
+
+	UFUNCTION(BlueprintPure, Category = "Sword|Damage", meta = (DeprecatedFunction, DeprecationMessage = "Strength attacks use UGASCombatLibrary::CalculateStrengthDamage."))
 	float CalculateDamage(float AttackPower) const;
 
 protected:
@@ -77,9 +82,16 @@ protected:
 	TSubclassOf<UGameplayEffect> DamageEffectClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Damage", meta = (ClampMin = "0.0"))
+	float AttackCoefficient = 1.0f;
+
+	/** Applied after direct damage, once per target in an attack window. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Status")
+	TArray<TSubclassOf<UGameplayEffect>> StatusEffectClasses;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Damage", meta = (ClampMin = "0.0", DeprecatedProperty, DeprecationMessage = "Unused by Strength-based attacks."))
 	float BaseDamage = 10.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Damage", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Damage", meta = (ClampMin = "0.0", DeprecatedProperty, DeprecationMessage = "Use AttackCoefficient."))
 	float AttackPowerMultiplier = 1.0f;
 
 private:
@@ -90,8 +102,10 @@ private:
 	UAbilitySystemComponent* ResolveSourceAbilitySystem() const;
 	AActor* ResolveSourceActor() const;
 	void ClearHitScanState();
+	bool BuildStatusEffectSpecs(UAbilitySystemComponent* SourceASC);
 
 	FGameplayEffectSpecHandle CachedDamageEffectSpecHandle;
+	TArray<FGameplayEffectSpecHandle> CachedStatusEffectSpecHandles;
 	TSet<TWeakObjectPtr<AActor>> HitActors;
 	FVector PreviousTraceStart = FVector::ZeroVector;
 	FVector PreviousTraceEnd = FVector::ZeroVector;

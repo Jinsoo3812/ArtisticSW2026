@@ -86,6 +86,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Swimming")
 	bool IsCustomSwimming() const;
 
+	/** True while water has reached the feet, but the capsule is not submerged enough to swim. */
+	UFUNCTION(BlueprintPure, Category = "Swimming")
+	bool IsInShallowWater() const { return bIsInShallowWater; }
+
+	UFUNCTION(BlueprintPure, Category = "Swimming")
+	float GetShallowWaterMaxWalkSpeed() const { return ShallowWaterMaxWalkSpeed; }
+
 	/** True when the top of the capsule is below the queried water surface. */
 	UFUNCTION(BlueprintPure, Category = "Swimming")
 	bool IsUnderwater() const { return bIsUnderwater; }
@@ -134,7 +141,7 @@ private:
 	void InitializeOverlaps();
 
 protected:
-	/** Distance above the feet the water surface must reach to trigger swimming */
+	/** Deprecated absolute entry depth retained for existing assets; use SwimEntryCapsuleSubmersionRatio. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection")
 	float SwimEntryOffset = 20.0f;
 
@@ -142,7 +149,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection")
 	float MinEntryVelocityThreshold = 100.0f;
 
-	/** Distance below the feet the water surface must reach to exit swimming */
+	/** Deprecated absolute exit depth retained for existing assets; use SwimExitCapsuleSubmersionRatio. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection")
 	float SwimExitOffset = 10.0f;
 
@@ -150,6 +157,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection",
 		meta = (ClampMin = "0.0", Units = "s"))
 	float WaterQueryFailureGraceTime = 0.2f;
+
+	/** Fraction of capsule height required to enter swimming. 0.5 means the capsule is half submerged. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float SwimEntryCapsuleSubmersionRatio = 0.5f;
+
+	/** Lower exit fraction prevents state flicker at the waterline. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float SwimExitCapsuleSubmersionRatio = 0.45f;
 
 	/** Radius of the virtual pontoon sphere used for buoyancy */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Buoyancy", meta = (ClampMin = "1.0", Units = "cm"))
@@ -170,6 +185,10 @@ protected:
 	/** Max speed on the XY plane when swimming */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Movement")
 	float MaxSwimSpeed = 300.0f;
+
+	/** Maximum ground movement speed while the character's feet are in water. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Movement", meta = (ClampMin = "0.0"))
+	float ShallowWaterMaxWalkSpeed = 300.0f;
 
 	/** Horizontal swimming acceleration coefficient */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Movement")
@@ -265,6 +284,9 @@ private:
 
 	UPROPERTY(Transient)
 	bool bIsUnderwater = false;
+
+	UPROPERTY(Transient)
+	bool bIsInShallowWater = false;
 
 	void UpdateDepthMode();
 	void UpdateUnderwaterState();

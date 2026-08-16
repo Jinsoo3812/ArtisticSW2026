@@ -7,6 +7,7 @@
 #include "GameplayTagContainer.h"
 #include "Crafting/CraftingRecipeTypes.h"
 #include "Upgrade/ShipUpgradeInventoryProvider.h"
+#include "DialogueInventoryProvider.h"
 #include "InventoryComponent.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnInventoryChanged);
@@ -106,7 +107,9 @@ struct FInventoryTabPage
 * 인벤토리 컴포넌트 (Material.~ 아이템을 주울 때, 인벤토리로 들어옴)
 */
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
-class CLASSFEATURE_API UInventoryComponent : public UActorComponent, public IShipUpgradeInventoryProvider
+class CLASSFEATURE_API UInventoryComponent : public UActorComponent,
+	public IShipUpgradeInventoryProvider,
+	public IDialogueInventoryProvider
 {
 	GENERATED_BODY()
 
@@ -147,6 +150,28 @@ public:
 
 	/** Best-effort rollback path for a receiver that rejected after preflight. */
 	bool AddItemsAtomically(const TArray<FCraftingItemStack>& Items);
+
+	/** Simulates and commits removals plus additions against one temporary inventory snapshot. */
+	bool CanApplyItemTransaction(
+		const TArray<FCraftingItemStack>& RemovedItems,
+		const TArray<FCraftingItemStack>& AddedItems) const;
+	bool TryApplyItemTransaction(
+		const TArray<FCraftingItemStack>& RemovedItems,
+		const TArray<FCraftingItemStack>& AddedItems);
+
+	virtual int32 GetDialogueItemCount(const FGameplayTag& ItemTag) const override { return GetItemCount(ItemTag); }
+	virtual bool CanApplyDialogueItemTransaction(
+		const TArray<FCraftingItemStack>& RemovedItems,
+		const TArray<FCraftingItemStack>& AddedItems) const override
+	{
+		return CanApplyItemTransaction(RemovedItems, AddedItems);
+	}
+	virtual bool ApplyDialogueItemTransaction(
+		const TArray<FCraftingItemStack>& RemovedItems,
+		const TArray<FCraftingItemStack>& AddedItems) override
+	{
+		return TryApplyItemTransaction(RemovedItems, AddedItems);
+	}
 
 	virtual int32 GetShipUpgradeItemCount(const FGameplayTag& ItemTag) const override { return GetItemCount(ItemTag); }
 	virtual bool RemoveShipUpgradeItemsAtomically(const TArray<FCraftingItemStack>& Costs) override { return RemoveItemsAtomically(Costs); }

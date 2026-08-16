@@ -37,9 +37,6 @@ protected:
 	void OnHitReactionMontageCompleted();
 
 	UFUNCTION()
-	void OnHitReactionMontageBlendOut();
-
-	UFUNCTION()
 	void OnHitReactionMontageInterrupted();
 
 	UFUNCTION()
@@ -96,9 +93,6 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HitReaction|Montage")
 	bool bStopHitReactionMontageWhenAbilityEnds = true;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HitReaction")
-	bool bFinishHitReactionWhenMontageEnds = true;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HitReaction")
 	bool bAutoFinishHitReactionWithoutMontage = true;

@@ -6,6 +6,7 @@
 #include "Weapon/WeaponDataAsset.h"
 #include "Weapon/BaseWeaponComponent.h"
 #include "BaseGameplayTags.h"
+#include "BasePlayer.h"
 
 #include "Storage/StorageChest.h"
 
@@ -21,6 +22,7 @@
 #include "Components/BaseHealthComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Perception/AISense_Damage.h"
 #include "UI/HealthBarWidget.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -31,6 +33,7 @@ ABaseEnemy::ABaseEnemy()
 	bReplicates = true;
 	SetReplicateMovement(true);
 	bAlwaysRelevant = true;
+	bUseControllerRotationYaw = true;
 
 	SetNetUpdateFrequency(30.0f);
 	SetMinNetUpdateFrequency(15.0f);
@@ -72,6 +75,7 @@ ABaseEnemy::ABaseEnemy()
 
 		// Enemies may stand on physics-driven ship decks. CharacterMovement's
 		// default push/touch forces feed back into the ship body and cause jitter.
+		MovementComponent->bOrientRotationToMovement = false;
 		MovementComponent->bEnablePhysicsInteraction = false;
 		MovementComponent->bTouchForceScaledToMass = false;
 		MovementComponent->InitialPushForceFactor = 0.0f;
@@ -112,7 +116,14 @@ void ABaseEnemy::BeginPlay()
 		// 무기 관리
 		if (WeaponComponent && DefaultWeaponTag.IsValid())
 		{
-			WeaponComponent->InitializeLoadout(DefaultWeaponTag);
+			if (bEquipWeaponOnSpawn)
+			{
+				WeaponComponent->InitializeLoadout(DefaultWeaponTag);
+			}
+			else
+			{
+				WeaponComponent->InitializeHolsteredLoadout(DefaultWeaponTag);
+			}
 		}
 	}
 
@@ -209,11 +220,41 @@ void ABaseEnemy::OnHealthChanged(UBaseHealthComponent* InHealthComponent, float 
 {
 	RefreshHealthBarWidget();
 	UpdateHealthBarVisibilityAfterHealthChanged(OldValue, NewValue);
+
+	// GAS attribute changes do not automatically create an AI Damage stimulus.
+	// Report only authoritative, real health loss and keep synthetic Player input out of production code.
+	if (HasAuthority() && OldValue > NewValue && IsValid(InstigatorActor) && InstigatorActor != this)
+	{
+		const FVector DamageLocation = GetActorLocation();
+		UAISense_Damage::ReportDamageEvent(
+			this,
+			this,
+			InstigatorActor,
+			OldValue - NewValue,
+			DamageLocation,
+			DamageLocation);
+	}
 }
 
 void ABaseEnemy::OnMaxHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
 {
 	RefreshHealthBarWidget();
+}
+
+bool ABaseEnemy::CanEngageActor_Implementation(AActor* Candidate) const
+{
+	const ABasePlayer* Player = Cast<ABasePlayer>(Candidate);
+	if (!IsValid(Player) || Player->IsActorBeingDestroyed())
+	{
+		return false;
+	}
+
+	if (const UBaseHealthComponent* TargetHealth = Player->FindComponentByClass<UBaseHealthComponent>())
+	{
+		return !TargetHealth->IsDead();
+	}
+
+	return true;
 }
 
 void ABaseEnemy::InitializeHealthBarWidget()

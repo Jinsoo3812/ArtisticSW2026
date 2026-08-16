@@ -1,6 +1,12 @@
 #include "Skills/PlayerSkillGameplayAbility.h"
 
+#include "BaseGameplayTags.h"
 #include "Skills/SkillUseProvider.h"
+
+UPlayerSkillGameplayAbility::UPlayerSkillGameplayAbility()
+{
+	ActivationBlockedTags.AddTag(State_Debuff_TimeStopped);
+}
 
 bool UPlayerSkillGameplayAbility::CanActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,

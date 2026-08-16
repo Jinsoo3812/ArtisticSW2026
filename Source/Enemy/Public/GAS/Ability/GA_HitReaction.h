@@ -9,10 +9,7 @@
 
 class AAIController;
 
-/**
- * Enemy hit reaction that temporarily owns AI movement and applies a short,
- * server-authoritative knockback away from the hit source.
- */
+/** Enemy hit reaction that temporarily owns AI movement. */
 UCLASS()
 class ENEMY_API UGA_HitReaction : public UBaseHitReactionGameplayAbility
 {
@@ -31,21 +28,9 @@ protected:
 		bool bReplicateEndAbility,
 		bool bWasCancelled) override;
 
-	/** Minimum horizontal speed away from the hit source after the impulse is applied. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HitReaction|Knockback", meta = (ClampMin = "0.0", Units = "cm/s"))
-	float KnockbackStrength = 250.0f;
-
-	/** Optional upward velocity added together with the horizontal knockback. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HitReaction|Knockback", meta = (ClampMin = "0.0", Units = "cm/s"))
-	float KnockbackUpwardStrength = 0.0f;
-
 private:
 	void SuspendAIForHitReaction();
 	void RestoreAIAfterHitReaction();
-	void ApplyKnockback(const FGameplayEventData& TriggerEventData, EBaseHitReactionDirection Direction) const;
-	FVector CalculateKnockbackDirection(
-		const FGameplayEventData& TriggerEventData,
-		EBaseHitReactionDirection Direction) const;
 
 	TWeakObjectPtr<AAIController> SuspendedAIController;
 	FAIRequestID SuspendedMoveRequestId;

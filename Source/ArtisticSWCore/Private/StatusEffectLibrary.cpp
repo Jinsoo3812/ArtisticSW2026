@@ -1,6 +1,7 @@
 #include "StatusEffectLibrary.h"
 
 #include "AbilitySystemComponent.h"
+#include "GameplayEffect.h"
 
 FActiveGameplayEffectHandle UStatusEffectLibrary::ApplyDurationDamageEffectSpecToTarget(
 	UAbilitySystemComponent* TargetASC,
@@ -12,6 +13,18 @@ FActiveGameplayEffectHandle UStatusEffectLibrary::ApplyDurationDamageEffectSpecT
 		return FActiveGameplayEffectHandle();
 	}
 
+	const FGameplayEffectSpec& EffectSpec = *EffectSpecHandle.Data.Get();
+	if (!EffectSpec.Def)
+	{
+		return FActiveGameplayEffectHandle();
+	}
+
+	// The GE class is the default status identity. Removing and reapplying the
+	// effect guarantees one active timer and resets both duration and period.
+	FGameplayEffectQuery SameEffectClassQuery;
+	SameEffectClassQuery.EffectDefinition = EffectSpec.Def->GetClass();
+	TargetASC->RemoveActiveEffects(SameEffectClassQuery);
+
 	if (RefreshGrantedTag.IsValid())
 	{
 		FGameplayTagContainer RefreshGrantedTags;
@@ -19,5 +32,5 @@ FActiveGameplayEffectHandle UStatusEffectLibrary::ApplyDurationDamageEffectSpecT
 		TargetASC->RemoveActiveEffectsWithGrantedTags(RefreshGrantedTags);
 	}
 
-	return TargetASC->ApplyGameplayEffectSpecToSelf(*EffectSpecHandle.Data.Get());
+	return TargetASC->ApplyGameplayEffectSpecToSelf(EffectSpec);
 }

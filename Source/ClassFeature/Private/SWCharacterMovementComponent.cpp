@@ -1,5 +1,6 @@
 #include "SWCharacterMovementComponent.h"
 #include "GameFramework/Character.h"
+#include "Ship.h"
 #include "SwimmingComponent.h"
 
 namespace
@@ -203,4 +204,120 @@ void USWCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float Del
 			SwimComp->CheckWaterTransitions(DeltaSeconds);
 		}
 	}
+}
+
+bool USWCharacterMovementComponent::ServerExceedsAllowablePositionError(
+	float ClientTimeStamp,
+	float DeltaTime,
+	const FVector& Accel,
+	const FVector& ClientWorldLocation,
+	const FVector& RelativeClientLocation,
+	UPrimitiveComponent* ClientMovementBase,
+	FName ClientBaseBoneName,
+	uint8 ClientMovementMode)
+{
+	const bool bExceedsDefaultTolerance = Super::ServerExceedsAllowablePositionError(
+		ClientTimeStamp,
+		DeltaTime,
+		Accel,
+		ClientWorldLocation,
+		RelativeClientLocation,
+		ClientMovementBase,
+		ClientBaseBoneName,
+		ClientMovementMode);
+
+	if (!bExceedsDefaultTolerance)
+	{
+		return false;
+	}
+
+	float RelativeError = 0.0f;
+	if (CanUseShipBasedClientPosition(
+		RelativeClientLocation,
+		ClientMovementBase,
+		ClientBaseBoneName,
+		ClientMovementMode,
+		RelativeError))
+	{
+		return false;
+	}
+
+	return true;
+}
+
+bool USWCharacterMovementComponent::ServerShouldUseAuthoritativePosition(
+	float ClientTimeStamp,
+	float DeltaTime,
+	const FVector& Accel,
+	const FVector& ClientWorldLocation,
+	const FVector& RelativeClientLocation,
+	UPrimitiveComponent* ClientMovementBase,
+	FName ClientBaseBoneName,
+	uint8 ClientMovementMode)
+{
+	float RelativeError = 0.0f;
+	if (CanUseShipBasedClientPosition(
+		RelativeClientLocation,
+		ClientMovementBase,
+		ClientBaseBoneName,
+		ClientMovementMode,
+		RelativeError))
+	{
+		// Reconstructing ClientWorldLocation from the server's current ship
+		// transform maps the client's predicted base-relative result onto the
+		// authoritative ship without requiring both game threads to sample the
+		// async physics body on the same render frame.
+		return true;
+	}
+
+	return Super::ServerShouldUseAuthoritativePosition(
+		ClientTimeStamp,
+		DeltaTime,
+		Accel,
+		ClientWorldLocation,
+		RelativeClientLocation,
+		ClientMovementBase,
+		ClientBaseBoneName,
+		ClientMovementMode);
+}
+
+bool USWCharacterMovementComponent::CanUseShipBasedClientPosition(
+	const FVector& RelativeClientLocation,
+	UPrimitiveComponent* ClientMovementBase,
+	FName ClientBaseBoneName,
+	uint8 ClientMovementMode,
+	float& OutRelativeError) const
+{
+	OutRelativeError = TNumericLimits<float>::Max();
+
+	if (ShipBasedClientAuthorityMaxError <= 0.0f
+		|| !CharacterOwner
+		|| !UpdatedComponent
+		|| MovementMode != MOVE_Walking
+		|| PackNetworkMovementMode() != ClientMovementMode
+		|| !ClientMovementBase)
+	{
+		return false;
+	}
+
+	UPrimitiveComponent* ServerMovementBase = CharacterOwner->GetMovementBase();
+	AShip* ClientShip = Cast<AShip>(ClientMovementBase->GetOwner());
+	AShip* ServerShip = ServerMovementBase ? Cast<AShip>(ServerMovementBase->GetOwner()) : nullptr;
+	if (!ClientShip || ClientShip != ServerShip
+		|| ClientBaseBoneName != CharacterOwner->GetBasedMovement().BoneName
+		|| !MovementBaseUtility::UseRelativeLocation(ClientMovementBase)
+		|| !MovementBaseUtility::UseRelativeLocation(ServerMovementBase))
+	{
+		return false;
+	}
+
+	FVector ServerRelativeLocation = FVector::ZeroVector;
+	MovementBaseUtility::TransformLocationToLocal(
+		ServerMovementBase,
+		CharacterOwner->GetBasedMovement().BoneName,
+		UpdatedComponent->GetComponentLocation(),
+		ServerRelativeLocation);
+
+	OutRelativeError = FVector::Distance(ServerRelativeLocation, RelativeClientLocation);
+	return OutRelativeError <= ShipBasedClientAuthorityMaxError;
 }

@@ -11,7 +11,6 @@
 #include "Ship.generated.h"
 
 class USWBuoyancyComponent;
-
 USTRUCT()
 struct FNetInputShip : public FNetworkPhysicsPayload
 {
@@ -360,12 +359,14 @@ class UInputMappingContext;
 class UInputAction;
 class APlayerController;
 class UPrimitiveComponent;
+class USceneComponent;
 class UAbilitySystemComponent;
 class UBaseAttributeSet;
 class UShipAttributeSet;
 class UGameplayAbility;
 class ABombardment;
 class ABombardmentPreview;
+class ACannon;
 
 USTRUCT(BlueprintType)
 struct FShipStatRow : public FTableRowBase
@@ -425,13 +426,6 @@ public:
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
-	virtual void OnConstruction(const FTransform& Transform) override;
-
-	/** Mirrors the legacy BuoyancyRoot asset into the split render/query meshes. */
-	void SynchronizeSplitShipMeshes();
-
-	/** Applies role-specific collision without re-enabling overlap on the physics root. */
-	void ConfigureSplitShipCollision();
 
 public:	
 	// Called every frame
@@ -456,11 +450,34 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Stats")
 	bool ApplyPlayerUpgrades(APlayerState* InPlayerState, bool bRefillHealth = true);
 
-	/** Sets normalized server-authored control input for AI-controlled ships. */
-	void SetAIControlInput(float MoveInput, float TurnInput);
+	/**
+	 * Sets normalized server-authored control input for AI-controlled ships.
+	 * The optional scales multiply the DT/ASC-backed physical force after input
+	 * clamping, allowing temporary skills such as charge to exceed normal thrust.
+	 */
+	void SetAIControlInput(
+		float MoveInput,
+		float TurnInput,
+		float PropulsionScale = 1.0f,
+		float TurnScale = 1.0f);
+
+	float GetCurrentAIPropulsionScale() const { return CurrentAIPropulsionScale; }
+	float GetCurrentAITurnScale() const { return CurrentAITurnScale; }
 
 	/** Identifies hostile ships without making WaterAndShip depend on Enemy. */
 	virtual bool IsEnemyShipForEffects() const { return false; }
+
+	/** Class policy used by interaction collision and the authoritative Board guard. */
+	UFUNCTION(BlueprintPure, Category = "Ship|Control")
+	virtual bool AllowsPlayerHelmControl() const { return true; }
+
+	/** Class policy inherited by every cannon mounted on this ship. */
+	UFUNCTION(BlueprintPure, Category = "Ship|Control")
+	virtual bool AllowsPlayerCannonControl() const { return true; }
+
+	/** Class policy used by reusable and legacy sea-boarding points. */
+	UFUNCTION(BlueprintPure, Category = "Ship|Control")
+	virtual bool AllowsPlayerBoarding() const { return true; }
 
 	void SetExternalAccelerationSource(const FGuid& SourceId, const FVector& WorldAcceleration);
 	void RemoveExternalAccelerationSource(const FGuid& SourceId);
@@ -485,8 +502,40 @@ public:
 	FOnBombardmentTargetingChanged OnBombardmentTargetingChanged;
 	APawn* GetRidingPlayer() const { return RidingPlayer; }
 
+	UFUNCTION(BlueprintPure, Category = "Ship|Helm")
+	bool IsHelmOccupied() const { return RidingPlayer != nullptr; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Helm")
+	UInteractableComponent* GetHelmInteractable() const { return HelmInteractable; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Helm")
+	USceneComponent* GetHelmSeatPoint() const { return HelmSeatPoint; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Helm")
+	USceneComponent* GetHelmExitPoint() const { return HelmExitPoint; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Boarding")
+	USceneComponent* GetBoardingArrivalPoint() const { return BoardingArrivalPoint; }
+
 	/* Boarding Interaction */
 	void Board(APawn* PlayerPawn);
+
+	/** Teleports a character from any authored sea-boarding point to the shared arrival point. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Boarding")
+	void BoardFromSea(AActor* Interactor);
+
+	/** Safely returns the current helmsman to the authored exit point. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Helm")
+	void ForceDisembark();
+
+	/** Rebuilds the canonical runtime list from BP child actors and legacy attached cannon actors. */
+	UFUNCTION(BlueprintCallable, Category = "Ship|Cannons")
+	void RefreshMountedCannons();
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Cannons")
+	int32 GetMountedCannonCount() const { return MountedCannons.Num(); }
+
+	const TArray<TObjectPtr<ACannon>>& GetMountedCannons() const { return MountedCannons; }
 
 	/* Components */
 
@@ -497,7 +546,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (DisplayName = "Physics Root (BuoyancyRoot)"))
 	UStaticMeshComponent* BuoyancyRoot;
 
-	/** Collision-free visual copy of the Physics Root mesh. */
+	/** Collision-free visual mesh. Assigned independently from the Physics Root. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> ShipVisualMesh;
 
@@ -505,13 +554,9 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> ShipDamageMesh;
 
-	/** Query-only walkable copy; currently mirrors the root mesh until a deck-only asset is supplied. */
+	/** Query-only walkable mesh. Assigned independently from the Physics Root. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> ShipDeckMesh;
-
-	/** Temporary migration switch. Disable after dedicated visual/damage/deck meshes are assigned. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Mesh Split")
-	bool bMirrorPhysicsRootMeshToSplitMeshes = true;
 
 	/** Shared pontoon/settings source; FShipPhysicsAsync remains the force executor. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -525,25 +570,43 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UCameraComponent* FollowCamera;
 
-	/** Interactable component to allow player interactions */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UInteractableComponent* InteractableComponent;
+	/** Optional visible helm mesh. Its collision is independent from the interaction range. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Helm")
+	TObjectPtr<UStaticMeshComponent> HelmMesh;
 
-	/** Port (left) side boarding interactable component */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UInteractableComponent* PortSeaBoardingInteractable;
+	/** Interaction range used only to enter ship-control mode. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Helm")
+	TObjectPtr<UInteractableComponent> HelmInteractable;
 
-	/** Location point where the player will be teleported when boarding from the Port side */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	USceneComponent* PortSeaBoardingDestination;
+	/** Exact relative transform used while the player controls the ship. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Helm")
+	TObjectPtr<USceneComponent> HelmSeatPoint;
 
-	/** Starboard (right) side boarding interactable component */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UInteractableComponent* StarboardSeaBoardingInteractable;
+	/** Exact relative transform used when the player leaves ship-control mode. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Helm")
+	TObjectPtr<USceneComponent> HelmExitPoint;
 
-	/** Location point where the player will be teleported when boarding from the Starboard side */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	USceneComponent* StarboardSeaBoardingDestination;
+	/** Shared destination for every ShipBoardingPoint attached to this ship. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Boarding")
+	TObjectPtr<USceneComponent> BoardingArrivalPoint;
+
+	/** Canonical runtime references for both BP child actors and legacy attached actors. */
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Ship|Cannons")
+	TArray<TObjectPtr<ACannon>> MountedCannons;
+
+	// Kept only so legacy test-ship Blueprints deserialize without hard errors.
+	// BP_PlayerShip uses ShipBoardingPoint child actors and BoardingArrivalPoint.
+	UPROPERTY(Transient, meta = (DeprecatedProperty, DeprecationMessage = "Use ShipBoardingPoint child actors"))
+	TObjectPtr<UInteractableComponent> PortSeaBoardingInteractable;
+
+	UPROPERTY(Transient, meta = (DeprecatedProperty, DeprecationMessage = "Use BoardingArrivalPoint"))
+	TObjectPtr<USceneComponent> PortSeaBoardingDestination;
+
+	UPROPERTY(Transient, meta = (DeprecatedProperty, DeprecationMessage = "Use ShipBoardingPoint child actors"))
+	TObjectPtr<UInteractableComponent> StarboardSeaBoardingInteractable;
+
+	UPROPERTY(Transient, meta = (DeprecatedProperty, DeprecationMessage = "Use BoardingArrivalPoint"))
+	TObjectPtr<USceneComponent> StarboardSeaBoardingDestination;
 
 	/** World location of the fixed observation camera (set XYZ in editor) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Fixed Camera")
@@ -677,6 +740,7 @@ protected:
 	void ServerCancelBombardmentAbility();
 
 	void Disembark();
+	void UpdateHelmInteractionAvailability();
 
 	// ---- Camera State ----
 	bool bUsingFixedCamera = false;
@@ -802,6 +866,13 @@ private:
 
 	float CurrentMoveInput = 0.0f;
 	float CurrentTurnInput = 0.0f;
+
+	/** Server-authored transient force scales must match on simulated proxies during Network Physics resimulation. */
+	UPROPERTY(Replicated)
+	float CurrentAIPropulsionScale = 1.0f;
+
+	UPROPERTY(Replicated)
+	float CurrentAITurnScale = 1.0f;
 	FVector CurrentExternalAcceleration = FVector::ZeroVector;
 	TMap<FGuid, FVector> ExternalAccelerationSources;
 	TSet<FGuid> PropulsionSuppressionSources;

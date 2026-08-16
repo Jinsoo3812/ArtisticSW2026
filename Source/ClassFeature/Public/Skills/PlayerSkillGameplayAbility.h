@@ -15,6 +15,8 @@ class CLASSFEATURE_API UPlayerSkillGameplayAbility : public UBaseGameplayAbility
 	GENERATED_BODY()
 
 public:
+	UPlayerSkillGameplayAbility();
+
 	virtual bool CanActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,

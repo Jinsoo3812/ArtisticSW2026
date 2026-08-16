@@ -52,7 +52,17 @@ struct FArrowDamageData
 {
 	GENERATED_BODY()
 
+	/** Common direct-damage GE. The firing ability snapshots Strength into its spec. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage")
+	TSubclassOf<UGameplayEffect> DirectDamageEffectClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage", meta = (ClampMin = "0.0"))
+	float AttackCoefficient = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage", meta = (ClampMin = "1"))
+	int32 DirectDamageEffectLevel = 1;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage", meta = (DeprecatedProperty, DeprecationMessage = "Use DirectDamageEffectClass and AttackCoefficient."))
 	TArray<FArrowDamageEffect> DamageEffects;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage")
@@ -82,6 +92,8 @@ class ARTISTICSWCORE_API AArrowProjectile : public ABaseProjectile
 {
 	GENERATED_BODY()
 
+	friend class FStrengthProjectilePayloadTest;
+
 public:
 	AArrowProjectile();
 
@@ -98,12 +110,41 @@ public:
 	void SetArrowMesh(UStaticMesh* InMesh);
 
 	UFUNCTION(BlueprintCallable, Category = "Arrow")
+	void InitializeStrengthDamage(
+		UAbilitySystemComponent* InSourceASC,
+		AActor* InInstigatorActor,
+		const FGameplayEffectSpecHandle& InDirectDamageSpec);
+
+	UFUNCTION(BlueprintCallable, Category = "Arrow", meta = (DeprecatedFunction, DeprecationMessage = "Use InitializeStrengthDamage with a launch-time Strength damage spec."))
 	void InitializeDamage(UAbilitySystemComponent* InSourceASC, AActor* InInstigatorActor, float InChargeDamageMultiplier);
 
-	UFUNCTION(BlueprintCallable, Category = "Arrow", meta = (DeprecatedFunction, DeprecationMessage = "Use DamageData.DamageEffects on the arrow class instead."))
+	UFUNCTION(BlueprintPure, Category = "Arrow|Damage")
+	TSubclassOf<UGameplayEffect> GetDirectDamageEffectClass() const;
+
+	UFUNCTION(BlueprintPure, Category = "Arrow|Damage")
+	float GetAttackCoefficient() const { return DamageData.AttackCoefficient; }
+
+	UFUNCTION(BlueprintPure, Category = "Arrow|Damage")
+	int32 GetDirectDamageEffectLevel() const { return FMath::Max(1, DamageData.DirectDamageEffectLevel); }
+
+	/**
+	 * Returns whether this arrow may apply its embedded DamageData to TargetActor.
+	 * Team filtering is disabled by default so normal gameplay does not distinguish factions.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Arrow|Damage")
+	bool IsValidDamageTarget(const AActor* TargetActor) const;
+
+	/** Runtime/debug override for testing friendly-fire behavior. */
+	UFUNCTION(BlueprintCallable, Category = "Arrow|Debug")
+	void SetTeamDamageFilteringEnabled(bool bEnabled) { bEnableTeamDamageFiltering = bEnabled; }
+
+	UFUNCTION(BlueprintPure, Category = "Arrow|Debug")
+	bool IsTeamDamageFilteringEnabled() const { return bEnableTeamDamageFiltering; }
+
+	UFUNCTION(BlueprintCallable, Category = "Arrow", meta = (DeprecatedFunction, DeprecationMessage = "Use InitializeStrengthDamage."))
 	void SetDamageEffectSpecHandle(const FGameplayEffectSpecHandle& InDamageEffectSpecHandle);
 
-	UFUNCTION(BlueprintCallable, Category = "Arrow", meta = (DeprecatedFunction, DeprecationMessage = "Use DamageData.DamageEffects on the arrow class instead."))
+	UFUNCTION(BlueprintCallable, Category = "Arrow", meta = (DeprecatedFunction, DeprecationMessage = "Strength MVP uses one direct damage spec."))
 	void SetAdditionalDamageEffectSpecHandles(const TArray<FGameplayEffectSpecHandle>& InAdditionalDamageEffectSpecHandles);
 
 	UFUNCTION(NetMulticast, Unreliable, BlueprintCallable, Category = "Arrow")
@@ -113,8 +154,9 @@ protected:
 	UFUNCTION()
 	void OnArrowHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 
-	bool ShouldIgnoreHitActor(const AActor* OtherActor) const;
-	void BuildDamageEffectSpecs();
+	virtual bool ShouldIgnoreHitActor(const AActor* OtherActor) const;
+	virtual bool CanApplyDamageToActor(const AActor* OtherActor) const;
+	void BuildStatusEffectSpecs();
 	void ApplyDamageToActor(AActor* TargetActor);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arrow")
@@ -140,20 +182,21 @@ protected:
 	TObjectPtr<AActor> InstigatorActor;
 
 	UPROPERTY(Transient)
-	float ChargeDamageMultiplier = 1.0f;
-
-	UPROPERTY(Transient)
-	bool bHasRolledCritical = false;
-
-	UPROPERTY(Transient)
-	bool bCriticalHit = false;
-
-	UPROPERTY(Transient)
 	TArray<TWeakObjectPtr<AActor>> MovementIgnoredActors;
+
+	/** Guarantees one direct/status application per target even for piercing arrows. */
+	TSet<TWeakObjectPtr<AActor>> AppliedActors;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Movement", meta = (ClampMin = "0.0"))
 	float FlightGravityScale = 0.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow")
 	bool bDestroyOnImpact = true;
+
+	/**
+	 * Debug option. When enabled, arrows reject targets that share Team.Player
+	 * or Team.Enemy with their source. Disabled by default for faction-agnostic gameplay.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Debug")
+	bool bEnableTeamDamageFiltering = false;
 };

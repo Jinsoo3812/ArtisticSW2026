@@ -31,6 +31,8 @@ class AShip;
 class ACannon;
 class USwimmingComponent;
 class UPlayerSkillComponent;
+class UAnimSequence;
+class UPlayerDialogueComponent;
 
 // Item Slot 관리 구조체
 USTRUCT(BlueprintType)
@@ -111,6 +113,12 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PostInitializeComponents() override;
+
+	UFUNCTION(BlueprintCallable, Category = "Locomotion|TurnInPlace")
+	void ApplyCombatTurnInPlaceRotation(float DeltaTime);
+
+	UFUNCTION(BlueprintPure, Category = "Locomotion|TurnInPlace")
+	float GetDesiredFacingDeltaYaw() const;
 
 	UFUNCTION()
 	void HandleDeathFinished(UBaseHealthComponent* InHealthComponent);
@@ -603,6 +611,21 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float CameraInterpSpeed = 10.f;
 
+	/**
+	 * Smooth only the presented camera rotation. ControlRotation still receives the
+	 * full mouse delta immediately, so gameplay aim and network input are not delayed.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Rotation Smoothing")
+	bool bEnableCameraRotationSmoothing = true;
+
+	/** Larger values follow ControlRotation faster. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Rotation Smoothing", meta = (EditCondition = "bEnableCameraRotationSmoothing", ClampMin = "0.0", UIMin = "0.0"))
+	float CameraRotationSmoothingSpeed = 35.f;
+
+	/** Maximum integration step used by SpringArm rotation-lag substepping. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Rotation Smoothing", meta = (EditCondition = "bEnableCameraRotationSmoothing", ClampMin = "0.001", UIMin = "0.001", Units = "s"))
+	float CameraRotationSmoothingMaxTimeStep = 0.008333333f;
+
 	/* --- 인벤토리 ---*/
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
@@ -610,6 +633,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
 	TObjectPtr<UCraftingComponent> CraftingComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Dialogue")
+	TObjectPtr<UPlayerDialogueComponent> DialogueComponent;
 	/** 에디터 테스트 시작 시 특정 아이템을 인벤토리에 지급한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory")
 	bool bGiveStartingItemForTest = false;
@@ -623,6 +649,21 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<ULocomotionAnimStateComponent> AnimStateComponent;
+
+	TWeakObjectPtr<class UAnimSequence> CachedTurnInPlaceSequence;
+	int32 CachedTurnInPlaceSelectionRevision = INDEX_NONE;
+	/** Gameplay baseline for the currently selected direct TIP clip.  The
+	 * capsule follows the clip's cumulative authored root yaw from this yaw. */
+	float TurnInPlaceSelectionStartActorYaw = 0.0f;
+	int32 LastTurnInPlaceDebugSelectionRevision = INDEX_NONE;
+	double NextTurnInPlaceDebugSampleTime = 0.0;
+	/** Debug-only baseline used to report the total capsule yaw consumed by one
+	 * selected TIP clip. Never participates in gameplay or replication. */
+	float TurnInPlaceDebugSelectionStartActorYaw = 0.0f;
+	/** Debug-only visual baselines. They expose the Offset Root Bone / Steering
+	 * contribution separately from the capsule's authored root-motion yaw. */
+	float TurnInPlaceDebugSelectionStartMeshYaw = 0.0f;
+	float TurnInPlaceDebugSelectionStartRootBoneYaw = 0.0f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<USWTrajectoryComponent> TrajectoryComponent;
@@ -661,6 +702,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Crafting")
 	UCraftingComponent* GetCraftingComponent() const { return CraftingComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "NPC|Dialogue")
+	UPlayerDialogueComponent* GetDialogueComponent() const { return DialogueComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Animation")
 	ULocomotionAnimStateComponent* GetAnimStateComponent() const { return AnimStateComponent; }
