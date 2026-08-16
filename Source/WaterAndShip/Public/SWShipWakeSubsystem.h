@@ -7,11 +7,10 @@
 #include "SWShipWakeTypes.h"
 #include "SWShipWakeSubsystem.generated.h"
 
-class UMaterialInstanceDynamic;
-class UTextureRenderTarget2D;
-
 /**
- * M4 wake cache. GPU WPO and CPU/Async buoyancy sample the same baked FP16 atlas.
+ * M5 wake history. A CPU-authoritative triple-buffered signed-height field is
+ * uploaded to three matching GPU textures. Rendering and buoyancy therefore
+ * observe the same temporally accumulated Golden Atlas result.
  */
 UCLASS()
 class WATERANDSHIP_API USWShipWakeSubsystem : public UWorldSubsystem, public FTickableGameObject
@@ -37,7 +36,8 @@ public:
 	UTexture2D* GetWakeTexture() const { return WakeTexture; }
 	UTexture2D* GetTrajectoryTexture() const { return TrajectoryTexture; }
 	UTexture2D* GetKelvinAtlasTexture() const { return KelvinAtlasTexture; }
-	UTextureRenderTarget2D* GetHeightField() const;
+	UTexture2D* GetHeightField() const;
+	UTexture2D* GetPreviousHeightField() const;
 
 	static constexpr int32 WakeCapacity = 64;
 	static constexpr int32 TrajectoryCapacity = 16;
@@ -46,10 +46,14 @@ private:
 	void RemoveExpiredEvents(double ServerTime);
 	void UpdateTexture(double ServerTime);
 	void BindToWaterMaterials(double ServerTime);
-	bool InitializeHeightField();
-	void StepHeightField(double ServerTime, float DeltaTime);
+	bool InitializeHeightHistory();
+	void ResetHeightHistory();
+	void StepHeightHistory(double ServerTime, float DeltaTime);
+	void UploadHeightHistoryState(int32 StateIndex);
+	float SampleHeightHistory(const FVector2D& WorldPosition) const;
+	float GetEffectiveHistoryAlpha() const;
+	void LogRuntimeDiagnostics(double ServerTime, float FrameDeltaTime);
 	FVector2D ResolveDesiredFieldCenter(double ServerTime) const;
-	UTextureRenderTarget2D* CreateHeightRenderTarget(const FName& Name);
 
 	mutable FRWLock EventsLock;
 	TArray<FSWShipWakeEvent> Events;
@@ -64,17 +68,37 @@ private:
 	TObjectPtr<UTexture2D> KelvinAtlasTexture;
 
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<UTextureRenderTarget2D>> HeightStates;
+	TArray<TObjectPtr<UTexture2D>> HeightHistoryTextures;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> HeightFieldUpdateMID;
-
-	TArray<FVector2D> HeightStateCenters;
+	mutable FRWLock HeightHistoryLock;
+	TArray<TArray<float>> HeightHistoryValues;
+	TArray<FVector2D> HeightHistoryCenters;
 	int32 PreviousHeightStateIndex = 0;
 	int32 CurrentHeightStateIndex = 1;
 	int32 NextHeightStateIndex = 2;
 	float HeightFieldAccumulator = 0.0f;
+	float HeightHistoryInterpolationAlpha = 0.0f;
 	bool bHeightFieldInitialized = false;
+	int32 HeightFieldResolution = 0;
+	float HeightFieldWorldSizeCm = 0.0f;
+
+	struct FHeightHistoryRuntimeStats
+	{
+		double StepMilliseconds = 0.0;
+		float TargetMinimum = 0.0f;
+		float TargetMaximum = 0.0f;
+		float TargetRms = 0.0f;
+		float OutputMinimum = 0.0f;
+		float OutputMaximum = 0.0f;
+		float OutputRms = 0.0f;
+		float MaximumStepDelta = 0.0f;
+		float SaturatedFraction = 0.0f;
+		FVector2D CenterDelta = FVector2D::ZeroVector;
+		int32 ActiveEventCount = 0;
+	};
+
+	FHeightHistoryRuntimeStats RuntimeStats;
+	double LastRuntimeLogServerTime = -DBL_MAX;
 
 	int32 LastUploadedCount = 0;
 	float PhysicsHistoryRetentionSeconds = 2.0f;

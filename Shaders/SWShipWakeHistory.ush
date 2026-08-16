@@ -1,0 +1,21 @@
+// M5 CPU/GPU shared Golden-image history field sampling.
+// The runtime owns three signed-height textures and rotates Previous/Current/Next.
+// Rendering and CPU buoyancy interpolate Previous -> Current with the same
+// fixed-step alpha, keeping texture rotation continuous at render frequency.
+#pragma once
+
+#define SW_M5_SAMPLE_GOLDEN_HISTORY(WORLD_XY, PREVIOUS_TEXTURE, PREVIOUS_SAMPLER, PREVIOUS_CENTER, CURRENT_TEXTURE, CURRENT_SAMPLER, CURRENT_CENTER, FIELD_SIZE, HISTORY_ALPHA, ENABLE, OUT_HEIGHT) \
+{ \
+    const float SW_FieldSizeSafe = max(FIELD_SIZE, 1.0); \
+    const float2 SW_PreviousUV = ((WORLD_XY) - (PREVIOUS_CENTER)) / SW_FieldSizeSafe + 0.5; \
+    const float2 SW_CurrentUV = ((WORLD_XY) - (CURRENT_CENTER)) / SW_FieldSizeSafe + 0.5; \
+    const float SW_PreviousInside = step(0.0, SW_PreviousUV.x) * step(SW_PreviousUV.x, 1.0) \
+        * step(0.0, SW_PreviousUV.y) * step(SW_PreviousUV.y, 1.0); \
+    const float SW_CurrentInside = step(0.0, SW_CurrentUV.x) * step(SW_CurrentUV.x, 1.0) \
+        * step(0.0, SW_CurrentUV.y) * step(SW_CurrentUV.y, 1.0); \
+    const float SW_PreviousHeight = Texture2DSampleLevel( \
+        PREVIOUS_TEXTURE, PREVIOUS_SAMPLER, saturate(SW_PreviousUV), 0.0).r * SW_PreviousInside; \
+    const float SW_CurrentHeight = Texture2DSampleLevel( \
+        CURRENT_TEXTURE, CURRENT_SAMPLER, saturate(SW_CurrentUV), 0.0).r * SW_CurrentInside; \
+    OUT_HEIGHT = lerp(SW_PreviousHeight, SW_CurrentHeight, saturate(HISTORY_ALPHA)) * saturate(ENABLE); \
+}
