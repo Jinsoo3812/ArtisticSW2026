@@ -8,9 +8,9 @@
 #include "SWShipWakeSubsystem.generated.h"
 
 /**
- * M5 wake history. A CPU-authoritative triple-buffered signed-height field is
- * uploaded to three matching GPU textures. Rendering and buoyancy therefore
- * observe the same temporally accumulated Golden Atlas result.
+ * M6 persistent dispersive wake field. A CPU-authoritative spectral deep-water
+ * solver advances the signed height field while three spatial states are
+ * uploaded for identical rendering and buoyancy sampling.
  */
 UCLASS()
 class WATERANDSHIP_API USWShipWakeSubsystem : public UWorldSubsystem, public FTickableGameObject
@@ -78,6 +78,11 @@ private:
 	mutable FRWLock HeightHistoryLock;
 	TArray<TArray<float>> HeightHistoryValues;
 	TArray<FVector2D> HeightHistoryCenters;
+	/** Complex Fourier coefficients: X=real, Y=imaginary. */
+	TArray<FVector2f> SpectralHeight;
+	TArray<FVector2f> SpectralVelocity;
+	FVector2D SpectralFieldCenter = FVector2D::ZeroVector;
+	TArray<FSWShipWakeEvent> PreviousSolverEvents;
 	int32 PreviousHeightStateIndex = 0;
 	int32 CurrentHeightStateIndex = 1;
 	int32 NextHeightStateIndex = 2;

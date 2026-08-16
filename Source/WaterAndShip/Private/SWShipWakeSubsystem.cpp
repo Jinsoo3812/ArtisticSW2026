@@ -42,16 +42,16 @@ namespace SWShipWakeField
 {
 	TAutoConsoleVariable<int32> Enable(
 		TEXT("sw.ShipWake.Enable"), 1,
-		TEXT("Enables M5 Kelvin output for rendering and CPU buoyancy queries."));
+		TEXT("Enables M6 spectral Kelvin output for rendering and CPU buoyancy queries."));
 	TAutoConsoleVariable<int32> FreezeHistory(
 		TEXT("sw.ShipWake.FreezeHistory"), 0,
-		TEXT("Freezes M5 field stepping and interpolation for runtime isolation."));
+		TEXT("Freezes M6 field stepping and interpolation for runtime isolation."));
 	TAutoConsoleVariable<int32> DebugLog(
 		TEXT("sw.ShipWake.DebugLog"), 0,
-		TEXT("Logs bounded M5 runtime field, timing, event and interpolation diagnostics."));
+		TEXT("Logs bounded M6 spectral field, timing, source and interpolation diagnostics."));
 	TAutoConsoleVariable<float> DebugLogInterval(
 		TEXT("sw.ShipWake.DebugLogInterval"), 0.5f,
-		TEXT("Seconds between M5 runtime diagnostic records."));
+		TEXT("Seconds between M6 runtime diagnostic records."));
 	TAutoConsoleVariable<float> DebugForceHistoryAlpha(
 		TEXT("sw.ShipWake.DebugForceHistoryAlpha"), -1.0f,
 		TEXT("-1 uses automatic interpolation; 0 freezes Previous; 1 freezes Current."));
@@ -60,25 +60,28 @@ namespace SWShipWakeField
 		TEXT("Locks the field center at its current value while source/history still update."));
 	TAutoConsoleVariable<int32> Resolution(
 		TEXT("sw.ShipWake.FieldResolution"), 256,
-		TEXT("M5 CPU/GPU Golden-history field resolution per axis."));
+		TEXT("M6 CPU/GPU spectral field resolution per axis. Must be a power of two."));
 	TAutoConsoleVariable<float> WorldSizeCm(
 		TEXT("sw.ShipWake.FieldWorldSizeCm"), 80000.0f,
-		TEXT("M5 Golden-history field width and height in centimeters."));
+		TEXT("M6 persistent spectral field width and height in centimeters."));
 	TAutoConsoleVariable<float> SimulationHz(
 		TEXT("sw.ShipWake.FieldSimulationHz"), 20.0f,
-		TEXT("M5 Golden-history fixed update rate."));
+		TEXT("M6 deep-water spectral solver fixed update rate."));
 	TAutoConsoleVariable<float> StateInterpolationDelay(
 		TEXT("sw.ShipWake.StateInterpolationDelay"), 0.10f,
 		TEXT("Seconds of emitter sample history used to bracket and interpolate each fixed step."));
-	TAutoConsoleVariable<float> HistoryResponseRate(
-		TEXT("sw.ShipWake.HistoryResponseRate"), 4.0f,
-		TEXT("Rate at which the recorded field accepts newly selected Golden slices."));
-	TAutoConsoleVariable<float> HistoryMomentum(
-		TEXT("sw.ShipWake.HistoryMomentum"), 0.0f,
-		TEXT("Previous/current state momentum. Keep below 0.5 to avoid ringing."));
+	TAutoConsoleVariable<float> SpectralDamping(
+		TEXT("sw.ShipWake.SpectralDamping"), 0.10f,
+		TEXT("Exponential damping rate in 1/s for persistent M6 waves."));
+	TAutoConsoleVariable<float> SpectralSourceScale(
+		TEXT("sw.ShipWake.SpectralSourceScale"), 0.35f,
+		TEXT("Converts emitter amplitude to moving bow/stern pressure-equilibrium depth."));
+	TAutoConsoleVariable<float> MinimumWavelengthCm(
+		TEXT("sw.ShipWake.MinimumWavelengthCm"), 600.0f,
+		TEXT("Suppresses unresolved short deep-water wavelengths."));
 	TAutoConsoleVariable<float> MaximumHeightCm(
 		TEXT("sw.ShipWake.FieldMaximumHeightCm"), 200.0f,
-		TEXT("Absolute M5 recorded displacement clamp in centimeters."));
+		TEXT("Absolute M6 displacement safety limit in centimeters."));
 }
 
 namespace
@@ -113,6 +116,7 @@ namespace
 		Result.NearHullSuppressDistanceCm = FMath::Lerp(
 			Previous.NearHullSuppressDistanceCm, Next.NearHullSuppressDistanceCm, Alpha);
 		Result.HullLengthCm = FMath::Lerp(Previous.HullLengthCm, Next.HullLengthCm, Alpha);
+		Result.SternOffsetCm = FMath::Lerp(Previous.SternOffsetCm, Next.SternOffsetCm, Alpha);
 		Result.BeamWidthCm = FMath::Lerp(Previous.BeamWidthCm, Next.BeamWidthCm, Alpha);
 		Result.DraftCm = FMath::Lerp(Previous.DraftCm, Next.DraftCm, Alpha);
 		Result.WakeLengthCm = FMath::Lerp(Previous.WakeLengthCm, Next.WakeLengthCm, Alpha);
@@ -200,6 +204,125 @@ namespace
 			}
 		}
 	}
+
+	FVector2f ComplexMultiply(const FVector2f& A, const FVector2f& B)
+	{
+		return FVector2f(A.X * B.X - A.Y * B.Y, A.X * B.Y + A.Y * B.X);
+	}
+
+	void Transform1D(FVector2f* Values, const int32 Count, const bool bInverse)
+	{
+		for (int32 I = 1, J = 0; I < Count; ++I)
+		{
+			int32 Bit = Count >> 1;
+			for (; J & Bit; Bit >>= 1)
+			{
+				J ^= Bit;
+			}
+			J ^= Bit;
+			if (I < J)
+			{
+				Swap(Values[I], Values[J]);
+			}
+		}
+
+		for (int32 Length = 2; Length <= Count; Length <<= 1)
+		{
+			const float Angle = (bInverse ? 2.0f : -2.0f) * PI / Length;
+			const FVector2f Root(FMath::Cos(Angle), FMath::Sin(Angle));
+			for (int32 Start = 0; Start < Count; Start += Length)
+			{
+				FVector2f W(1.0f, 0.0f);
+				for (int32 Offset = 0; Offset < Length / 2; ++Offset)
+				{
+					const FVector2f Even = Values[Start + Offset];
+					const FVector2f Odd = ComplexMultiply(
+						Values[Start + Offset + Length / 2], W);
+					Values[Start + Offset] = Even + Odd;
+					Values[Start + Offset + Length / 2] = Even - Odd;
+					W = ComplexMultiply(W, Root);
+				}
+			}
+		}
+
+		if (bInverse)
+		{
+			const float Scale = 1.0f / Count;
+			for (int32 Index = 0; Index < Count; ++Index)
+			{
+				Values[Index] *= Scale;
+			}
+		}
+	}
+
+	void Transform2D(TArray<FVector2f>& Values, const int32 Resolution, const bool bInverse)
+	{
+		check(FMath::IsPowerOfTwo(Resolution));
+		check(Values.Num() == Resolution * Resolution);
+		for (int32 Y = 0; Y < Resolution; ++Y)
+		{
+			Transform1D(Values.GetData() + Y * Resolution, Resolution, bInverse);
+		}
+
+		TArray<FVector2f> Column;
+		Column.SetNumUninitialized(Resolution);
+		for (int32 X = 0; X < Resolution; ++X)
+		{
+			for (int32 Y = 0; Y < Resolution; ++Y)
+			{
+				Column[Y] = Values[Y * Resolution + X];
+			}
+			Transform1D(Column.GetData(), Resolution, bInverse);
+			for (int32 Y = 0; Y < Resolution; ++Y)
+			{
+				Values[Y * Resolution + X] = Column[Y];
+			}
+		}
+	}
+
+	void ShiftSpectrum(
+		TArray<FVector2f>& Spectrum,
+		const int32 Resolution,
+		const float WorldSizeCm,
+		const FVector2D& CenterDelta)
+	{
+		if (CenterDelta.IsNearlyZero())
+		{
+			return;
+		}
+		for (int32 Y = 0; Y < Resolution; ++Y)
+		{
+			const int32 SignedY = Y <= Resolution / 2 ? Y : Y - Resolution;
+			const float Ky = 2.0f * PI * SignedY / WorldSizeCm;
+			for (int32 X = 0; X < Resolution; ++X)
+			{
+				const int32 SignedX = X <= Resolution / 2 ? X : X - Resolution;
+				const float Kx = 2.0f * PI * SignedX / WorldSizeCm;
+				const float Phase = Kx * CenterDelta.X + Ky * CenterDelta.Y;
+				Spectrum[Y * Resolution + X] = ComplexMultiply(
+					Spectrum[Y * Resolution + X],
+					FVector2f(FMath::Cos(Phase), FMath::Sin(Phase)));
+			}
+		}
+	}
+
+	const FSWShipWakeEvent* FindEventById(
+		TConstArrayView<FSWShipWakeEvent> Events,
+		const int32 EventId)
+	{
+		return Events.FindByPredicate(
+			[EventId](const FSWShipWakeEvent& Candidate)
+			{
+				return Candidate.EventId == EventId;
+			});
+	}
+
+	int32 ResolveSpectralResolution()
+	{
+		const uint32 Requested = static_cast<uint32>(FMath::Clamp(
+			SWShipWakeField::Resolution.GetValueOnGameThread(), 64, 512));
+		return static_cast<int32>(FMath::RoundUpToPowerOfTwo(Requested));
+	}
 }
 
 void USWShipWakeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -251,6 +374,9 @@ void USWShipWakeSubsystem::Deinitialize()
 	HeightHistoryTextures.Reset();
 	HeightHistoryValues.Reset();
 	HeightHistoryCenters.Reset();
+	SpectralHeight.Reset();
+	SpectralVelocity.Reset();
+	PreviousSolverEvents.Reset();
 	bHeightFieldInitialized = false;
 	Super::Deinitialize();
 }
@@ -544,8 +670,7 @@ bool USWShipWakeSubsystem::InitializeHeightHistory()
 	{
 		return false;
 	}
-	const int32 RequestedResolution = FMath::Clamp(
-		SWShipWakeField::Resolution.GetValueOnGameThread(), 64, 512);
+	const int32 RequestedResolution = ResolveSpectralResolution();
 	const float RequestedWorldSize = FMath::Max(
 		SWShipWakeField::WorldSizeCm.GetValueOnGameThread(), 1000.0f);
 	if (bHeightFieldInitialized
@@ -564,6 +689,9 @@ bool USWShipWakeSubsystem::InitializeHeightHistory()
 	{
 		State.SetNumZeroed(HeightFieldResolution * HeightFieldResolution);
 	}
+	SpectralHeight.SetNumZeroed(HeightFieldResolution * HeightFieldResolution);
+	SpectralVelocity.SetNumZeroed(HeightFieldResolution * HeightFieldResolution);
+	PreviousSolverEvents.Reset();
 	PreviousHeightStateIndex = 0;
 	CurrentHeightStateIndex = 1;
 	NextHeightStateIndex = 2;
@@ -575,6 +703,7 @@ bool USWShipWakeSubsystem::InitializeHeightHistory()
 	{
 		Center = InitialCenter;
 	}
+	SpectralFieldCenter = InitialCenter;
 
 	HeightHistoryTextures.Reset();
 	if (!IsRunningDedicatedServer())
@@ -608,8 +737,8 @@ bool USWShipWakeSubsystem::InitializeHeightHistory()
 	}
 
 	UE_LOG(LogSWShipWake, Display,
-		TEXT("M5 Golden history initialized: 3 states, Resolution=%d SizeCm=%.0f AtlasSlices=%d"),
-		HeightFieldResolution, HeightFieldWorldSizeCm, FSWKelvinWakeAtlas::NumSlices);
+		TEXT("M6 persistent spectral wake initialized: 3 spatial states, Resolution=%d SizeCm=%.0f"),
+		HeightFieldResolution, HeightFieldWorldSizeCm);
 	return true;
 }
 
@@ -625,13 +754,16 @@ void USWShipWakeSubsystem::ResetHeightHistory()
 	{
 		StateCenter = Center;
 	}
+	FMemory::Memzero(SpectralHeight.GetData(), SpectralHeight.Num() * sizeof(FVector2f));
+	FMemory::Memzero(SpectralVelocity.GetData(), SpectralVelocity.Num() * sizeof(FVector2f));
+	SpectralFieldCenter = Center;
+	PreviousSolverEvents.Reset();
 }
 
 FVector2D USWShipWakeSubsystem::ResolveDesiredFieldCenter(const double ServerTime) const
 {
 	const float FieldSize = FMath::Max(SWShipWakeField::WorldSizeCm.GetValueOnGameThread(), 1000.0f);
-	const int32 FieldResolution = FMath::Clamp(
-		SWShipWakeField::Resolution.GetValueOnGameThread(), 128, 1024);
+	const int32 FieldResolution = ResolveSpectralResolution();
 	const float TexelWorldSize = FieldSize / static_cast<float>(FieldResolution);
 	if (SWShipWakeField::DebugLockFieldCenter.GetValueOnAnyThread() != 0
 		&& HeightHistoryCenters.IsValidIndex(CurrentHeightStateIndex))
@@ -675,8 +807,7 @@ FVector2D USWShipWakeSubsystem::ResolveDesiredFieldCenter(const double ServerTim
 void USWShipWakeSubsystem::StepHeightHistory(const double ServerTime, const float DeltaTime)
 {
 	const double StepStartSeconds = FPlatformTime::Seconds();
-	const int32 RequestedResolution = FMath::Clamp(
-		SWShipWakeField::Resolution.GetValueOnGameThread(), 64, 512);
+	const int32 RequestedResolution = ResolveSpectralResolution();
 	const float RequestedWorldSize = FMath::Max(
 		SWShipWakeField::WorldSizeCm.GetValueOnGameThread(), 1000.0f);
 	if (!bHeightFieldInitialized
@@ -685,7 +816,10 @@ void USWShipWakeSubsystem::StepHeightHistory(const double ServerTime, const floa
 	{
 		InitializeHeightHistory();
 	}
-	if (!bHeightFieldInitialized || HeightHistoryValues.Num() != 3)
+	if (!bHeightFieldInitialized
+		|| HeightHistoryValues.Num() != 3
+		|| SpectralHeight.Num() != HeightFieldResolution * HeightFieldResolution
+		|| SpectralVelocity.Num() != HeightFieldResolution * HeightFieldResolution)
 	{
 		return;
 	}
@@ -704,67 +838,170 @@ void USWShipWakeSubsystem::StepHeightHistory(const double ServerTime, const floa
 				HeightHistoryValues[Index].Num() * sizeof(float));
 			HeightHistoryCenters[Index] = OutputCenter;
 		}
+		FMemory::Memzero(SpectralHeight.GetData(), SpectralHeight.Num() * sizeof(FVector2f));
+		FMemory::Memzero(SpectralVelocity.GetData(), SpectralVelocity.Num() * sizeof(FVector2f));
+		SpectralFieldCenter = OutputCenter;
+		PreviousSolverEvents.Reset();
 	}
 
-	const TArray<float>& PreviousState = HeightHistoryValues[PreviousHeightStateIndex];
 	const TArray<float>& CurrentState = HeightHistoryValues[CurrentHeightStateIndex];
 	TArray<float>& NextState = HeightHistoryValues[NextHeightStateIndex];
-	const FVector2D PreviousCenter = HeightHistoryCenters[PreviousHeightStateIndex];
 	const FVector2D CurrentCenter = HeightHistoryCenters[CurrentHeightStateIndex];
-	const float ResponseAlpha = 1.0f - FMath::Exp(
-		-FMath::Max(SWShipWakeField::HistoryResponseRate.GetValueOnGameThread(), 0.0f) * DeltaTime);
-	const float Momentum = FMath::Clamp(
-		SWShipWakeField::HistoryMomentum.GetValueOnGameThread(), 0.0f, 0.49f);
 	const float MaximumHeight = FMath::Max(
 		SWShipWakeField::MaximumHeightCm.GetValueOnGameThread(), 1.0f);
 	const int32 Resolution = HeightFieldResolution;
 	const float WorldSize = HeightFieldWorldSizeCm;
-	struct FRowStats
-	{
-		float TargetMinimum = TNumericLimits<float>::Max();
-		float TargetMaximum = TNumericLimits<float>::Lowest();
-		float OutputMinimum = TNumericLimits<float>::Max();
-		float OutputMaximum = TNumericLimits<float>::Lowest();
-		float MaximumStepDelta = 0.0f;
-		double TargetSumSquares = 0.0;
-		double OutputSumSquares = 0.0;
-		int32 SaturatedCount = 0;
-	};
-	TArray<FRowStats> RowStats;
-	RowStats.SetNum(Resolution);
+	const float TexelSize = WorldSize / Resolution;
 
+	// A moving window is a coordinate change, not a new water state. Apply the
+	// Fourier shift theorem so existing world-space waves remain stationary.
+	const FVector2D CenterDelta = OutputCenter - SpectralFieldCenter;
+	ShiftSpectrum(SpectralHeight, Resolution, WorldSize, CenterDelta);
+	ShiftSpectrum(SpectralVelocity, Resolution, WorldSize, CenterDelta);
+	SpectralFieldCenter = OutputCenter;
+
+	// Build only the pressure footprint applied during this step. This is not a
+	// completed Kelvin image: old waves live exclusively in spectral state.
+	TArray<float> EquilibriumHeight;
+	EquilibriumHeight.SetNumZeroed(Resolution * Resolution);
+	const float SourceScale = FMath::Max(
+		SWShipWakeField::SpectralSourceScale.GetValueOnGameThread(), 0.0f);
 	ParallelFor(Resolution, [&](const int32 Y)
 	{
-		FRowStats& Stats = RowStats[Y];
 		for (int32 X = 0; X < Resolution; ++X)
 		{
 			const FVector2D UV(
 				(static_cast<double>(X) + 0.5) / Resolution,
 				(static_cast<double>(Y) + 0.5) / Resolution);
 			const FVector2D WorldPosition = OutputCenter + (UV - FVector2D(0.5, 0.5)) * WorldSize;
-			const float PreviousHeight = SampleHeightState(
-				PreviousState, Resolution, WorldSize, PreviousCenter, WorldPosition);
-			const float CurrentHeight = SampleHeightState(
-				CurrentState, Resolution, WorldSize, CurrentCenter, WorldPosition);
-			const float GoldenTarget = FSWShipWakeEvaluator::EvaluateHeight(
-				WorldPosition, ServerTime, EventSnapshot);
-			const float RecordedHeight = CurrentHeight
-				+ (CurrentHeight - PreviousHeight) * Momentum
-				+ (GoldenTarget - CurrentHeight) * ResponseAlpha;
-			NextState[Y * Resolution + X] = FMath::Clamp(
-				RecordedHeight, -MaximumHeight, MaximumHeight);
-			const float OutputHeight = NextState[Y * Resolution + X];
-			Stats.TargetMinimum = FMath::Min(Stats.TargetMinimum, GoldenTarget);
-			Stats.TargetMaximum = FMath::Max(Stats.TargetMaximum, GoldenTarget);
-			Stats.OutputMinimum = FMath::Min(Stats.OutputMinimum, OutputHeight);
-			Stats.OutputMaximum = FMath::Max(Stats.OutputMaximum, OutputHeight);
-			Stats.MaximumStepDelta = FMath::Max(
-				Stats.MaximumStepDelta, FMath::Abs(OutputHeight - CurrentHeight));
-			Stats.TargetSumSquares += static_cast<double>(GoldenTarget) * GoldenTarget;
-			Stats.OutputSumSquares += static_cast<double>(OutputHeight) * OutputHeight;
-			Stats.SaturatedCount += FMath::Abs(OutputHeight) >= MaximumHeight - 0.01f ? 1 : 0;
+			float Equilibrium = 0.0f;
+			for (const FSWShipWakeEvent& Event : EventSnapshot)
+			{
+				const FSWShipWakeEvent* PreviousEvent = FindEventById(
+					PreviousSolverEvents, Event.EventId);
+				const FVector2D StartOrigin = PreviousEvent ? PreviousEvent->Origin : Event.Origin;
+				const FVector2D StartForward = PreviousEvent
+					? PreviousEvent->Forward.GetSafeNormal()
+					: Event.Forward.GetSafeNormal();
+				const float SegmentLength = FVector2D::Distance(StartOrigin, Event.Origin);
+				const float SampleSpacing = FMath::Max(
+					TexelSize * 0.75f, Event.PressureSizeCm * 0.20f);
+				const int32 SegmentSamples = FMath::Clamp(
+					FMath::CeilToInt(SegmentLength / SampleSpacing) + 1, 1, 8);
+				const float SigmaLongitudinal = FMath::Max(
+					Event.PressureSizeCm * 0.35f * Event.LongitudinalScale,
+					TexelSize * 0.75f);
+				const float SigmaLateral = FMath::Max(
+					Event.BeamWidthCm * 0.35f * Event.LateralScale,
+					TexelSize * 0.75f);
+				const float SpectrumStrength = 0.5f * (
+					FMath::Max(Event.TransverseStrength, 0.0f)
+					+ FMath::Max(Event.DivergentStrength, 0.0f));
+				const float PressureDepth = Event.Amplitude * SourceScale * SpectrumStrength;
+				float EventFootprint = 0.0f;
+				for (int32 SampleIndex = 0; SampleIndex < SegmentSamples; ++SampleIndex)
+				{
+					const float Alpha = SegmentSamples > 1
+						? static_cast<float>(SampleIndex) / (SegmentSamples - 1)
+						: 1.0f;
+					const FVector2D SourceOrigin = FMath::Lerp(StartOrigin, Event.Origin, Alpha);
+					const FVector2D BlendedForward = FMath::Lerp(
+						StartForward, Event.Forward.GetSafeNormal(), Alpha).GetSafeNormal();
+					const FVector2D Forward = BlendedForward.IsNearlyZero()
+						? FVector2D(1.0, 0.0)
+						: BlendedForward;
+					const FVector2D Right(-Forward.Y, Forward.X);
+					auto EvaluateFootprint = [&](const FVector2D& Center)
+					{
+						const FVector2D Offset = WorldPosition - Center;
+						const float Longitudinal = static_cast<float>(Offset.Dot(Forward));
+						const float Lateral = static_cast<float>(Offset.Dot(Right));
+						return FMath::Exp(-0.5f * (
+							FMath::Square(Longitudinal / SigmaLongitudinal)
+							+ FMath::Square(Lateral / SigmaLateral)));
+					};
+					const FVector2D SternOrigin = SourceOrigin
+						- Forward * FMath::Max(Event.SternOffsetCm, 0.0f);
+					EventFootprint += EvaluateFootprint(SourceOrigin)
+						+ FMath::Max(Event.SternStrength, 0.0f) * EvaluateFootprint(SternOrigin);
+				}
+				Equilibrium -= PressureDepth * EventFootprint / SegmentSamples;
+			}
+			EquilibriumHeight[Y * Resolution + X] = Equilibrium;
 		}
 	});
+
+	TArray<FVector2f> EquilibriumSpectrum;
+	EquilibriumSpectrum.SetNumUninitialized(Resolution * Resolution);
+	for (int32 Index = 0; Index < EquilibriumHeight.Num(); ++Index)
+	{
+		EquilibriumSpectrum[Index] = FVector2f(EquilibriumHeight[Index], 0.0f);
+	}
+	Transform2D(EquilibriumSpectrum, Resolution, false);
+
+	const float GravityCmPerSecondSquared = 980.0f;
+	const float DampingRate = FMath::Max(
+		SWShipWakeField::SpectralDamping.GetValueOnGameThread(), 0.0f);
+	const float Damping = FMath::Exp(-DampingRate * DeltaTime);
+	const float MinimumWavelength = FMath::Max(
+		SWShipWakeField::MinimumWavelengthCm.GetValueOnGameThread(), TexelSize * 2.0f);
+	for (int32 Y = 0; Y < Resolution; ++Y)
+	{
+		const int32 SignedY = Y <= Resolution / 2 ? Y : Y - Resolution;
+		const float Ky = 2.0f * PI * SignedY / WorldSize;
+		for (int32 X = 0; X < Resolution; ++X)
+		{
+			const int32 Index = Y * Resolution + X;
+			const int32 SignedX = X <= Resolution / 2 ? X : X - Resolution;
+			const float Kx = 2.0f * PI * SignedX / WorldSize;
+			const float WaveNumber = FMath::Sqrt(Kx * Kx + Ky * Ky);
+			if (WaveNumber <= UE_SMALL_NUMBER)
+			{
+				SpectralHeight[Index] = FVector2f::ZeroVector;
+				SpectralVelocity[Index] = FVector2f::ZeroVector;
+				continue;
+			}
+
+			const float Wavelength = 2.0f * PI / WaveNumber;
+			const FVector2f Equilibrium = Wavelength >= MinimumWavelength
+				? EquilibriumSpectrum[Index]
+				: FVector2f::ZeroVector;
+			const float Omega = FMath::Sqrt(GravityCmPerSecondSquared * WaveNumber);
+			const float Angle = Omega * DeltaTime;
+			const float Cosine = FMath::Cos(Angle);
+			const float Sine = FMath::Sin(Angle);
+			const FVector2f Height = SpectralHeight[Index];
+			const FVector2f Velocity = SpectralVelocity[Index];
+			SpectralHeight[Index] = (
+				Height * Cosine
+				+ Velocity * (Sine / Omega)
+				+ Equilibrium * (1.0f - Cosine)) * Damping;
+			SpectralVelocity[Index] = (
+				Height * (-Omega * Sine)
+				+ Velocity * Cosine
+				+ Equilibrium * (Omega * Sine)) * Damping;
+		}
+	}
+
+	TArray<FVector2f> SpatialHeight = SpectralHeight;
+	Transform2D(SpatialHeight, Resolution, true);
+	float MaximumAbsoluteHeight = 0.0f;
+	for (const FVector2f& Value : SpatialHeight)
+	{
+		MaximumAbsoluteHeight = FMath::Max(MaximumAbsoluteHeight, FMath::Abs(Value.X));
+	}
+	const float SafetyScale = MaximumAbsoluteHeight > MaximumHeight
+		? MaximumHeight / MaximumAbsoluteHeight
+		: 1.0f;
+	if (SafetyScale < 1.0f)
+	{
+		for (int32 Index = 0; Index < SpectralHeight.Num(); ++Index)
+		{
+			SpectralHeight[Index] *= SafetyScale;
+			SpectralVelocity[Index] *= SafetyScale;
+			SpatialHeight[Index] *= SafetyScale;
+		}
+	}
 
 	RuntimeStats.TargetMinimum = TNumericLimits<float>::Max();
 	RuntimeStats.TargetMaximum = TNumericLimits<float>::Lowest();
@@ -774,16 +1011,28 @@ void USWShipWakeSubsystem::StepHeightHistory(const double ServerTime, const floa
 	double TargetSumSquares = 0.0;
 	double OutputSumSquares = 0.0;
 	int32 SaturatedCount = 0;
-	for (const FRowStats& Stats : RowStats)
+	for (int32 Index = 0; Index < SpatialHeight.Num(); ++Index)
 	{
-		RuntimeStats.TargetMinimum = FMath::Min(RuntimeStats.TargetMinimum, Stats.TargetMinimum);
-		RuntimeStats.TargetMaximum = FMath::Max(RuntimeStats.TargetMaximum, Stats.TargetMaximum);
-		RuntimeStats.OutputMinimum = FMath::Min(RuntimeStats.OutputMinimum, Stats.OutputMinimum);
-		RuntimeStats.OutputMaximum = FMath::Max(RuntimeStats.OutputMaximum, Stats.OutputMaximum);
-		RuntimeStats.MaximumStepDelta = FMath::Max(RuntimeStats.MaximumStepDelta, Stats.MaximumStepDelta);
-		TargetSumSquares += Stats.TargetSumSquares;
-		OutputSumSquares += Stats.OutputSumSquares;
-		SaturatedCount += Stats.SaturatedCount;
+		const float SourceHeight = EquilibriumHeight[Index];
+		const float OutputHeight = SpatialHeight[Index].X;
+		NextState[Index] = OutputHeight;
+		RuntimeStats.TargetMinimum = FMath::Min(RuntimeStats.TargetMinimum, SourceHeight);
+		RuntimeStats.TargetMaximum = FMath::Max(RuntimeStats.TargetMaximum, SourceHeight);
+		RuntimeStats.OutputMinimum = FMath::Min(RuntimeStats.OutputMinimum, OutputHeight);
+		RuntimeStats.OutputMaximum = FMath::Max(RuntimeStats.OutputMaximum, OutputHeight);
+		const int32 X = Index % Resolution;
+		const int32 Y = Index / Resolution;
+		const FVector2D UV(
+			(static_cast<double>(X) + 0.5) / Resolution,
+			(static_cast<double>(Y) + 0.5) / Resolution);
+		const FVector2D WorldPosition = OutputCenter + (UV - FVector2D(0.5, 0.5)) * WorldSize;
+		const float PriorHeight = SampleHeightState(
+			CurrentState, Resolution, WorldSize, CurrentCenter, WorldPosition);
+		RuntimeStats.MaximumStepDelta = FMath::Max(
+			RuntimeStats.MaximumStepDelta, FMath::Abs(OutputHeight - PriorHeight));
+		TargetSumSquares += static_cast<double>(SourceHeight) * SourceHeight;
+		OutputSumSquares += static_cast<double>(OutputHeight) * OutputHeight;
+		SaturatedCount += FMath::Abs(OutputHeight) >= MaximumHeight - 0.01f ? 1 : 0;
 	}
 	const int32 TexelCount = Resolution * Resolution;
 	RuntimeStats.TargetRms = FMath::Sqrt(static_cast<float>(TargetSumSquares / FMath::Max(TexelCount, 1)));
@@ -792,6 +1041,7 @@ void USWShipWakeSubsystem::StepHeightHistory(const double ServerTime, const floa
 	RuntimeStats.CenterDelta = OutputCenter - CurrentCenter;
 	RuntimeStats.ActiveEventCount = EventSnapshot.Num();
 	RuntimeStats.EvaluationServerTime = ServerTime;
+	PreviousSolverEvents = EventSnapshot;
 
 	HeightHistoryCenters[NextHeightStateIndex] = OutputCenter;
 	UploadHeightHistoryState(NextHeightStateIndex);
@@ -1017,7 +1267,7 @@ void USWShipWakeSubsystem::LogRuntimeDiagnostics(
 	}
 
 	UE_LOG(LogSWShipWake, Warning,
-		TEXT("[M5Runtime] World=%s NetMode=%d Enable=%d Freeze=%d LockCenter=%d FrameMs=%.3f StepMs=%.3f Hz=%.1f EvalLagMs=%.1f AlphaAuto=%.3f AlphaUsed=%.3f Idx=%d/%d/%d PrevCenter=(%.1f,%.1f) CurrCenter=(%.1f,%.1f) CenterStep=(%.1f,%.1f) Events=%d StepEvents=%d TimelineSamples=%d FutureSamples=%d EventAge=%.3f NewestSampleAge=%.3f Amp=%.1f Speed=%.1f Origin=(%.1f,%.1f) Target=[%.2f,%.2f] TargetRMS=%.3f Output=[%.2f,%.2f] OutputRMS=%.3f MaxDelta=%.3f Saturated=%.2f%%"),
+		TEXT("[M6Runtime] Solver=DeepWaterFFT World=%s NetMode=%d Enable=%d Freeze=%d LockCenter=%d FrameMs=%.3f StepMs=%.3f Hz=%.1f EvalLagMs=%.1f AlphaAuto=%.3f AlphaUsed=%.3f Idx=%d/%d/%d PrevCenter=(%.1f,%.1f) CurrCenter=(%.1f,%.1f) CenterStep=(%.1f,%.1f) Events=%d StepEvents=%d TimelineSamples=%d FutureSamples=%d EventAge=%.3f NewestSampleAge=%.3f Amp=%.1f Speed=%.1f Origin=(%.1f,%.1f) Source=[%.2f,%.2f] SourceRMS=%.3f Output=[%.2f,%.2f] OutputRMS=%.3f MaxDelta=%.3f Saturated=%.2f%%"),
 		*GetWorld()->GetName(),
 		static_cast<int32>(GetWorld()->GetNetMode()),
 		SWShipWakeField::Enable.GetValueOnGameThread(),
@@ -1117,6 +1367,61 @@ bool FSWShipWakeTimelineInterpolationTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Later state remains active instead of producing StepEvents=0"),
 			TimelineResult[0].IsActiveAt(10.15));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSWShipWakeSpectralTransformTest,
+	"ArtisticSW.Water.ShipWake.M6SpectralTransform",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSWShipWakeSpectralTransformTest::RunTest(const FString& Parameters)
+{
+	constexpr int32 Resolution = 16;
+	TArray<FVector2f> Values;
+	Values.SetNumZeroed(Resolution * Resolution);
+	for (int32 Y = 0; Y < Resolution; ++Y)
+	{
+		for (int32 X = 0; X < Resolution; ++X)
+		{
+			Values[Y * Resolution + X].X =
+				FMath::Sin(2.0f * PI * X / Resolution)
+				+ 0.25f * FMath::Cos(4.0f * PI * Y / Resolution);
+		}
+	}
+	const TArray<FVector2f> Original = Values;
+	Transform2D(Values, Resolution, false);
+	Transform2D(Values, Resolution, true);
+	float MaximumError = 0.0f;
+	float MaximumImaginary = 0.0f;
+	for (int32 Index = 0; Index < Values.Num(); ++Index)
+	{
+		MaximumError = FMath::Max(
+			MaximumError, FMath::Abs(Values[Index].X - Original[Index].X));
+		MaximumImaginary = FMath::Max(MaximumImaginary, FMath::Abs(Values[Index].Y));
+	}
+	TestTrue(TEXT("2D FFT round-trip preserves signed height"), MaximumError < 1.e-4f);
+	TestTrue(TEXT("A real height field returns negligible imaginary residue"),
+		MaximumImaginary < 1.e-4f);
+
+	TArray<FVector2f> Shifted;
+	Shifted.SetNumZeroed(Resolution * Resolution);
+	const int32 SourceX = 6;
+	const int32 SourceY = 8;
+	Shifted[SourceY * Resolution + SourceX].X = 1.0f;
+	Transform2D(Shifted, Resolution, false);
+	ShiftSpectrum(Shifted, Resolution, 1600.0f, FVector2D(100.0, 0.0));
+	Transform2D(Shifted, Resolution, true);
+	int32 PeakIndex = 0;
+	for (int32 Index = 1; Index < Shifted.Num(); ++Index)
+	{
+		if (Shifted[Index].X > Shifted[PeakIndex].X)
+		{
+			PeakIndex = Index;
+		}
+	}
+	TestEqual(TEXT("Moving the field center preserves a fixed world-space crest"),
+		PeakIndex, SourceY * Resolution + SourceX - 1);
 	return true;
 }
 #endif

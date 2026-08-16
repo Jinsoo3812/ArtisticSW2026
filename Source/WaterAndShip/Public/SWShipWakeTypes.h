@@ -54,6 +54,10 @@ struct WATERANDSHIP_API FSWShipWakeEvent
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake")
 	float HullLengthCm = 2400.0f;
 
+	/** Distance from the bow pressure source to the stern pressure source. */
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake|M6")
+	float SternOffsetCm = 900.0f;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake")
 	float BeamWidthCm = 600.0f;
 

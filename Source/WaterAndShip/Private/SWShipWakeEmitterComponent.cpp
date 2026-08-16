@@ -141,6 +141,7 @@ void USWShipWakeEmitterComponent::PublishWakeState(
 	Event.LateralScale = FMath::Max(LateralScale, 0.1f);
 	Event.NearHullSuppressDistanceCm = FMath::Max(NearHullSuppressDistanceCm, 0.0f);
 	Event.HullLengthCm = SafeHullLength;
+	Event.SternOffsetCm = FMath::Clamp(SternOffsetCm, 0.0f, SafeHullLength);
 	Event.BeamWidthCm = FMath::Max(BeamWidthCm, 50.0f);
 	Event.DraftCm = FMath::Max(DraftCm, 1.0f);
 	Event.WakeLengthCm = FMath::Clamp(
