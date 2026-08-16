@@ -3,134 +3,56 @@
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "SWKelvinWakeAtlas.h"
 
-namespace SWShipWake
+namespace
 {
-	constexpr float GravityCmPerSecondSquared = 980.0f;
-	constexpr float TwoPi = 2.0f * PI;
-
-	struct FTrajectoryCoordinate
-	{
-		float DownstreamCm = -1.0f;
-		float LateralCm = 0.0f;
-	};
-
-	FTrajectoryCoordinate MapToTrajectory(
-		const FVector2D& QueryPosition,
-		const FSWShipWakeEvent& Event,
-		const FVector2D& PredictedApex)
-	{
-		const FVector2D DefaultForward = Event.Forward.IsNearlyZero()
-			? FVector2D(1.0f, 0.0f)
-			: Event.Forward.GetSafeNormal();
-		const int32 PointCount = FMath::Min(Event.TrajectoryPoints.Num(), 16);
-		if (PointCount < 2)
-		{
-			const FVector2D Delta = QueryPosition - PredictedApex;
-			return {
-				static_cast<float>(-FVector2D::DotProduct(Delta, DefaultForward)),
-				static_cast<float>(FVector2D::DotProduct(
-					Delta, FVector2D(-DefaultForward.Y, DefaultForward.X)))
-			};
-		}
-
-		float BestDistanceSquared = TNumericLimits<float>::Max();
-		FTrajectoryCoordinate Best;
-		float CumulativeDistance = 0.0f;
-		FVector2D LastForward = DefaultForward;
-		for (int32 Index = 0; Index < PointCount - 1; ++Index)
-		{
-			const FVector2D A = Index == 0 ? PredictedApex : Event.TrajectoryPoints[Index];
-			const FVector2D B = Event.TrajectoryPoints[Index + 1];
-			const FVector2D Segment = B - A;
-			const float SegmentLength = Segment.Size();
-			if (SegmentLength <= 1.0f)
-			{
-				continue;
-			}
-
-			const FVector2D TowardPast = Segment / SegmentLength;
-			const FVector2D VesselForward = -TowardPast;
-			LastForward = VesselForward;
-			const float T = FMath::Clamp(
-				FVector2D::DotProduct(QueryPosition - A, Segment) / FMath::Square(SegmentLength),
-				0.0f, 1.0f);
-			const FVector2D Closest = A + Segment * T;
-			const FVector2D Offset = QueryPosition - Closest;
-			const float DistanceSquared = Offset.SizeSquared();
-			if (DistanceSquared < BestDistanceSquared)
-			{
-				BestDistanceSquared = DistanceSquared;
-				Best.DownstreamCm = CumulativeDistance + SegmentLength * T;
-				Best.LateralCm = FVector2D::DotProduct(
-					Offset, FVector2D(-VesselForward.Y, VesselForward.X));
-			}
-			CumulativeDistance += SegmentLength;
-		}
-
-		const FVector2D TailOrigin = Event.TrajectoryPoints[PointCount - 1];
-		const FVector2D TailDelta = QueryPosition - TailOrigin;
-		const float TailDownstream = FMath::Max(-FVector2D::DotProduct(TailDelta, LastForward), 0.0f);
-		const FVector2D TailClosest = TailOrigin - LastForward * TailDownstream;
-		const FVector2D TailOffset = QueryPosition - TailClosest;
-		if (TailOffset.SizeSquared() < BestDistanceSquared)
-		{
-			Best.DownstreamCm = CumulativeDistance + TailDownstream;
-			Best.LateralCm = FVector2D::DotProduct(
-				TailOffset, FVector2D(-LastForward.Y, LastForward.X));
-		}
-
-		if (Best.DownstreamCm <= 1.0f
-			&& FVector2D::DotProduct(QueryPosition - PredictedApex, DefaultForward) > 0.0f)
-		{
-			Best.DownstreamCm = -1.0f;
-		}
-		return Best;
-	}
-
-	float EvaluateEventHeight(
+	bool EvaluateGoldenSample(
 		const FVector2D& QueryPosition,
 		const double ServerTime,
-		const FSWShipWakeEvent& Event)
+		const FSWShipWakeEvent& Event,
+		float& OutWeightedHeight,
+		float& OutBlendWeight)
 	{
-		if (!Event.IsActiveAt(ServerTime) || !FSWKelvinWakeAtlas::Get().IsReady())
-		{
-			return 0.0f;
-		}
-
+		OutWeightedHeight = 0.0f;
+		OutBlendWeight = 0.0f;
+		if (!Event.IsActiveAt(ServerTime) || !FSWKelvinWakeAtlas::Get().IsReady()) return false;
 		const FVector2D Forward = Event.Forward.IsNearlyZero()
-			? FVector2D(1.0f, 0.0f)
-			: Event.Forward.GetSafeNormal();
-		const float Age = static_cast<float>(ServerTime - Event.UpdateServerTime);
-		const FVector2D PredictedApex = Event.Origin
-			+ Forward * FMath::Max(Event.AdvectionSpeedCmPerSecond, 0.0f)
-			* FMath::Clamp(Age, 0.0f, 0.20f);
-		const FTrajectoryCoordinate Coordinate = MapToTrajectory(QueryPosition, Event, PredictedApex);
-		if (Coordinate.DownstreamCm < 0.0f)
-		{
-			return 0.0f;
-		}
+			? FVector2D(1.0, 0.0) : Event.Forward.GetSafeNormal();
+		const FVector2D Right(-Forward.Y, Forward.X);
+		const FVector2D Delta = QueryPosition - Event.Origin;
+		const float Downstream = -FVector2D::DotProduct(Delta, Forward);
+		const float Lateral = FVector2D::DotProduct(Delta, Right);
+		const float Length = FMath::Max(Event.WakeLengthCm, 1.0f);
+		const float HalfWidth = FMath::Max(Event.WakeHalfWidthCm, 1.0f);
+		if (Downstream < 0.0f || Downstream > Length || FMath::Abs(Lateral) > HalfWidth) return false;
 
-		const float Speed = FMath::Max(Event.SpeedCmPerSecond, 1.0f);
-		const float PressureSize = FMath::Max(Event.PressureSizeCm, 1.0f);
-		const float Froude = Speed / FMath::Sqrt(GravityCmPerSecondSquared * PressureSize);
-		const float WavelengthCm = TwoPi * FMath::Square(Speed) / GravityCmPerSecondSquared;
-		const float U = Coordinate.DownstreamCm
-			/ (WavelengthCm * FMath::Max(Event.LongitudinalScale, 0.01f));
-		const float V = Coordinate.LateralCm
-			/ (WavelengthCm * FMath::Max(Event.LateralScale, 0.01f));
-		const float NormalizedHeight = FSWKelvinWakeAtlas::Get().SampleNormalized(U, V, Froude);
-		const float Radius = FMath::Sqrt(
-			FMath::Square(Coordinate.DownstreamCm) + FMath::Square(Coordinate.LateralCm));
-		const float NearMask = Event.NearHullSuppressDistanceCm <= 0.0f
-			? 1.0f
-			: FMath::SmoothStep(
-				Event.NearHullSuppressDistanceCm,
-				Event.NearHullSuppressDistanceCm + PressureSize * 0.25f,
-				Radius);
-		const float Freshness = 1.0f - FMath::SmoothStep(
-			Event.StateLifetime * 0.55f, Event.StateLifetime, Age);
-		return Event.Amplitude * NormalizedHeight * NearMask * Freshness;
+		const float Age = static_cast<float>(ServerTime - Event.StartServerTime);
+		const float Radius = FMath::Sqrt(Downstream * Downstream + Lateral * Lateral);
+		const float Front = Event.PropagationSpeedCmPerSecond * Age;
+		const float EnvelopeWidth = FMath::Max(Event.EnvelopeWidthCm, 1.0f);
+		const float FrontDistance = FMath::Abs(Radius - Front);
+		if (FrontDistance >= EnvelopeWidth) return false;
+
+		const float FrontEnvelope = 1.0f - FMath::SmoothStep(0.0f, EnvelopeWidth, FrontDistance);
+		const float FadeIn = Event.FadeInSeconds > UE_SMALL_NUMBER
+			? FMath::SmoothStep(0.0f, Event.FadeInSeconds, Age) : 1.0f;
+		const float Decay = FMath::Exp(-FMath::Max(Event.DecayRate, 0.0f) * Age);
+		const float Golden = FSWKelvinWakeAtlas::Get().SampleFixedNormalized(
+			Downstream / Length, Lateral / HalfWidth);
+		OutBlendWeight = FrontEnvelope * FadeIn;
+		OutWeightedHeight = Event.InitialAmplitudeCm * Golden * OutBlendWeight * Decay;
+		return OutBlendWeight > 0.0f;
 	}
+}
+
+float FSWShipWakeEvaluator::EvaluateEventHeight(
+	const FVector2D& QueryPosition,
+	const double ServerTime,
+	const FSWShipWakeEvent& Event)
+{
+	float Height = 0.0f;
+	float Weight = 0.0f;
+	EvaluateGoldenSample(QueryPosition, ServerTime, Event, Height, Weight);
+	return Height;
 }
 
 float FSWShipWakeEvaluator::EvaluateHeight(
@@ -138,13 +60,22 @@ float FSWShipWakeEvaluator::EvaluateHeight(
 	const double ServerTime,
 	TConstArrayView<FSWShipWakeEvent> Events)
 {
-	TRACE_CPUPROFILER_EVENT_SCOPE(SW_ShipWake_EvaluateHeight_M4Atlas);
-	float TotalHeight = 0.0f;
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_ShipWake_M7_EvaluateHeight);
+	float WeightedHeight = 0.0f;
+	float BlendWeight = 0.0f;
 	for (const FSWShipWakeEvent& Event : Events)
 	{
-		TotalHeight += SWShipWake::EvaluateEventHeight(QueryPosition, ServerTime, Event);
+		float EventHeight = 0.0f;
+		float EventWeight = 0.0f;
+		if (EvaluateGoldenSample(QueryPosition, ServerTime, Event, EventHeight, EventWeight))
+		{
+			WeightedHeight += EventHeight;
+			BlendWeight += EventWeight;
+		}
 	}
-	return FMath::Clamp(TotalHeight, -200.0f, 200.0f);
+	// Golden is already a complete wake solution. Normalized overlap reconstructs
+	// one continuous moving source instead of summing many complete wakes.
+	return FMath::Clamp(WeightedHeight / FMath::Max(BlendWeight, 1.0f), -200.0f, 200.0f);
 }
 
 FVector2D FSWShipWakeEvaluator::EvaluateGradient(
@@ -153,12 +84,10 @@ FVector2D FSWShipWakeEvaluator::EvaluateGradient(
 	TConstArrayView<FSWShipWakeEvent> Events,
 	const float SampleDistance)
 {
-	const float SafeDistance = FMath::Max(SampleDistance, 1.0f);
-	const FVector2D DX(SafeDistance, 0.0f);
-	const FVector2D DY(0.0f, SafeDistance);
+	const float D = FMath::Max(SampleDistance, 1.0f);
 	return FVector2D(
-		(EvaluateHeight(QueryPosition + DX, ServerTime, Events)
-			- EvaluateHeight(QueryPosition - DX, ServerTime, Events)) / (2.0f * SafeDistance),
-		(EvaluateHeight(QueryPosition + DY, ServerTime, Events)
-			- EvaluateHeight(QueryPosition - DY, ServerTime, Events)) / (2.0f * SafeDistance));
+		(EvaluateHeight(QueryPosition + FVector2D(D, 0.0), ServerTime, Events)
+			- EvaluateHeight(QueryPosition - FVector2D(D, 0.0), ServerTime, Events)) / (2.0f * D),
+		(EvaluateHeight(QueryPosition + FVector2D(0.0, D), ServerTime, Events)
+			- EvaluateHeight(QueryPosition - FVector2D(0.0, D), ServerTime, Events)) / (2.0f * D));
 }

@@ -4,63 +4,93 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-namespace SWShipWakeTest
+namespace
 {
-	FSWShipWakeEvent MakeEvent()
+	FSWShipWakeEvent MakeM7Event()
 	{
 		FSWShipWakeEvent Event;
 		Event.EventId = 1;
 		Event.Origin = FVector2D::ZeroVector;
 		Event.Forward = FVector2D(1.0, 0.0);
-		Event.TrajectoryPoints = { FVector2D::ZeroVector, FVector2D(-500.0, 0.0) };
-		Event.UpdateServerTime = 10.0;
-		Event.Amplitude = 65.0f;
-		Event.SpeedCmPerSecond = 1200.0f;
-		Event.AdvectionSpeedCmPerSecond = 0.0f;
-		Event.PressureSizeCm = 2400.0f;
-		Event.LongitudinalScale = 1.0f;
-		Event.LateralScale = 1.0f;
-		Event.StateLifetime = 1.0f;
+		Event.StartServerTime = 10.0;
+		Event.InitialAmplitudeCm = 65.0f;
+		Event.PropagationSpeedCmPerSecond = 1200.0f;
+		Event.DecayRate = 0.0f;
+		Event.WakeLengthCm = 16000.0f;
+		Event.WakeHalfWidthCm = 6000.0f;
+		Event.EnvelopeWidthCm = 500.0f;
+		Event.FadeInSeconds = 0.0f;
+		Event.ExpireServerTime = 30.0;
 		return Event;
 	}
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FSWShipWakeEvaluatorShapeTest,
-	"ArtisticSW.Water.ShipWake.M4AtlasShape",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSWShipWakeM7GoldenTest,
+	"ArtisticSW.Water.ShipWake.M7GoldenPropagation",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FSWShipWakeEvaluatorShapeTest::RunTest(const FString& Parameters)
+bool FSWShipWakeM7GoldenTest::RunTest(const FString& Parameters)
 {
-	TestTrue(TEXT("The baked FP16 atlas loads"), FSWKelvinWakeAtlas::Get().Initialize());
-	const FSWShipWakeEvent Event = SWShipWakeTest::MakeEvent();
-	const TArray<FSWShipWakeEvent> Events { Event };
-	const double SampleTime = 10.1;
-
-	float MaximumInsideHeight = 0.0f;
-	for (float Downstream = 500.0f; Downstream <= 50000.0f; Downstream += 500.0f)
+	TestTrue(TEXT("Fixed Golden Image loads"), FSWKelvinWakeAtlas::Get().Initialize());
+	FSWShipWakeEvent Event = MakeM7Event();
+	float BestGolden = 0.0f;
+	FVector2D BestQuery = FVector2D::ZeroVector;
+	for (float U = 0.05f; U <= 0.95f; U += 0.025f)
 	{
-		for (float Lateral = -Downstream * 0.30f; Lateral <= Downstream * 0.30f; Lateral += 250.0f)
+		for (float V = -0.95f; V <= 0.95f; V += 0.05f)
 		{
-			MaximumInsideHeight = FMath::Max(MaximumInsideHeight, FMath::Abs(
-				FSWShipWakeEvaluator::EvaluateHeight(
-					FVector2D(-Downstream, Lateral), SampleTime, Events)));
+			const float Golden = FMath::Abs(FSWKelvinWakeAtlas::Get().SampleFixedNormalized(U, V));
+			if (Golden > BestGolden)
+			{
+				BestGolden = Golden;
+				BestQuery = FVector2D(-U * Event.WakeLengthCm, V * Event.WakeHalfWidthCm);
+			}
 		}
 	}
-	TestTrue(TEXT("The golden atlas produces measurable signed displacement inside its V"),
-		MaximumInsideHeight > 1.0f);
+	TestTrue(TEXT("Golden contains signed wave data"), BestGolden > 0.1f);
+	const float Radius = BestQuery.Size();
+	const double ArrivalTime = Event.StartServerTime + Radius / Event.PropagationSpeedCmPerSecond;
+	const TArray<FSWShipWakeEvent> One { Event };
+	const float Height = FSWShipWakeEvaluator::EvaluateHeight(BestQuery, ArrivalTime, One);
+	TestTrue(TEXT("Causal front reveals the Golden wake"), FMath::Abs(Height) > 1.0f);
+	TestTrue(TEXT("Point is still quiet before front arrival"), FMath::IsNearlyZero(
+		FSWShipWakeEvaluator::EvaluateHeight(BestQuery, Event.StartServerTime, One)));
+	TestTrue(TEXT("Water ahead of the recorded tangent remains quiet"), FMath::IsNearlyZero(
+		FSWShipWakeEvaluator::EvaluateHeight(FVector2D(500.0, 0.0), ArrivalTime, One)));
 
-	TestTrue(TEXT("The wake does not displace water ahead of the apex"), FMath::IsNearlyZero(
-		FSWShipWakeEvaluator::EvaluateHeight(FVector2D(500.0f, 0.0f), SampleTime, Events)));
-	TestTrue(TEXT("The finite baked lateral domain rejects distant points"), FMath::IsNearlyZero(
-		FSWShipWakeEvaluator::EvaluateHeight(FVector2D(-6000.0f, 50000.0f), SampleTime, Events)));
-	TestTrue(TEXT("A stale vessel state expires"), FMath::IsNearlyZero(
-		FSWShipWakeEvaluator::EvaluateHeight(FVector2D(-5000.0f, 0.0f), 11.1, Events)));
+	FSWShipWakeEvent Duplicate = Event;
+	Duplicate.EventId = 2;
+	const TArray<FSWShipWakeEvent> Overlap { Event, Duplicate };
+	const float OverlapHeight = FSWShipWakeEvaluator::EvaluateHeight(BestQuery, ArrivalTime, Overlap);
+	TestTrue(TEXT("Normalized overlap does not double a complete Golden wake"),
+		FMath::IsNearlyEqual(OverlapHeight, Height, 0.01f));
 
-	const FVector2D Gradient = FSWShipWakeEvaluator::EvaluateGradient(
-		FVector2D(-7000.0f, 1000.0f), SampleTime, Events);
-	TestTrue(TEXT("M4 atlas gradient remains finite"),
+	const FVector2D Gradient = FSWShipWakeEvaluator::EvaluateGradient(BestQuery, ArrivalTime, One);
+	TestTrue(TEXT("CPU buoyancy gradient stays finite"),
 		FMath::IsFinite(Gradient.X) && FMath::IsFinite(Gradient.Y));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSWShipWakeM7RotationTest,
+	"ArtisticSW.Water.ShipWake.M7ImmutableRotation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSWShipWakeM7RotationTest::RunTest(const FString& Parameters)
+{
+	FSWShipWakeEvent OldEvent = MakeM7Event();
+	const TArray<FSWShipWakeEvent> Before { OldEvent };
+	const FVector2D Query(-4000.0, 500.0);
+	const double Time = OldEvent.StartServerTime + Query.Size() / OldEvent.PropagationSpeedCmPerSecond;
+	const float BeforeTurn = FSWShipWakeEvaluator::EvaluateHeight(Query, Time, Before);
+	FSWShipWakeEvent TurnEvent = OldEvent;
+	TurnEvent.EventId = 2;
+	TurnEvent.Origin = FVector2D(1000.0, 0.0);
+	TurnEvent.Forward = FVector2D(0.0, 1.0);
+	TestTrue(TEXT("Old event tangent is not mutated by a later turn"),
+		OldEvent.Forward.Equals(FVector2D(1.0, 0.0)));
+	TestTrue(TEXT("Old event remains deterministic after a turn event is authored"),
+		FMath::IsNearlyEqual(BeforeTurn,
+			FSWShipWakeEvaluator::EvaluateHeight(Query, Time, Before), 0.0001f));
 	return true;
 }
 

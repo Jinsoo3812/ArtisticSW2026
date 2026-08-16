@@ -1,6 +1,7 @@
 #include "SWShipWakeEmitterComponent.h"
 
 #include "GameFramework/Actor.h"
+#include "GameFramework/Pawn.h"
 #include "SWShipWakeSubsystem.h"
 
 USWShipWakeEmitterComponent::USWShipWakeEmitterComponent()
@@ -13,157 +14,117 @@ USWShipWakeEmitterComponent::USWShipWakeEmitterComponent()
 void USWShipWakeEmitterComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	FVector2D Apex;
-	FVector2D Forward;
-	ResolveKelvinFrame(Apex, Forward);
-	LastEmissionPosition = Apex;
-	TrajectoryAnchors = { Apex };
-	bHasEmissionOrigin = true;
+	ResolveKelvinFrame(LastSamplePosition, LastSampleForward);
+	if (const USWShipWakeSubsystem* State = GetWorld()
+		? GetWorld()->GetSubsystem<USWShipWakeSubsystem>() : nullptr)
+	{
+		LastSampleServerTime = State->GetServerTime();
+	}
+	bHasSample = true;
 }
 
-void USWShipWakeEmitterComponent::ResolveKelvinFrame(FVector2D& OutApex, FVector2D& OutForward) const
+void USWShipWakeEmitterComponent::ResolveKelvinFrame(
+	FVector2D& OutApex, FVector2D& OutForward) const
 {
 	const AActor* Owner = GetOwner();
 	if (!Owner)
 	{
 		OutApex = FVector2D::ZeroVector;
-		OutForward = FVector2D(1.0f, 0.0f);
+		OutForward = FVector2D(1.0, 0.0);
 		return;
 	}
-
-	const FVector WorldApex = Owner->GetActorTransform().TransformPosition(KelvinApexLocalOffset);
-	const float YawRadians = FMath::DegreesToRadians(KelvinDirectionYawDegrees);
-	const FVector LocalDirection(FMath::Cos(YawRadians), FMath::Sin(YawRadians), 0.0f);
-	const FVector WorldDirection = Owner->GetActorTransform().TransformVectorNoScale(LocalDirection);
-	OutApex = FVector2D(WorldApex);
-	OutForward = FVector2D(WorldDirection).GetSafeNormal();
+	const FVector Apex = Owner->GetActorTransform().TransformPosition(KelvinApexLocalOffset);
+	const float Yaw = FMath::DegreesToRadians(KelvinDirectionYawDegrees);
+	const FVector LocalForward(FMath::Cos(Yaw), FMath::Sin(Yaw), 0.0f);
+	const FVector WorldForward = Owner->GetActorTransform().TransformVectorNoScale(LocalForward);
+	OutApex = FVector2D(Apex);
+	OutForward = FVector2D(WorldForward).GetSafeNormal();
 }
 
 void USWShipWakeEmitterComponent::TickComponent(
-	const float DeltaTime,
-	const ELevelTick TickType,
+	const float DeltaTime, const ELevelTick TickType,
 	FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	AActor* Owner = GetOwner();
 	UWorld* World = GetWorld();
-	if (!Owner || !World || !Owner->HasAuthority())
-	{
-		return;
-	}
+	if (!Owner || !World) return;
 
-	const FVector Velocity = Owner->GetVelocity();
-	const float HorizontalSpeed = FVector2D(Velocity.X, Velocity.Y).Size();
-	SmoothedSpectrumSpeed = SmoothedSpectrumSpeed <= UE_SMALL_NUMBER
-		? HorizontalSpeed
-		: FMath::FInterpTo(
-			SmoothedSpectrumSpeed,
-			HorizontalSpeed,
-			DeltaTime,
-			FMath::Max(SpectrumSpeedSmoothingRate, 0.1f));
-	if (HorizontalSpeed < MinimumSpeedCmPerSecond)
-	{
-		return;
-	}
+	const bool bAuthority = Owner->HasAuthority();
+	const APawn* Pawn = Cast<APawn>(Owner);
+	const bool bPredicted = !bAuthority && bEnableClientPrediction && Pawn && Pawn->IsLocallyControlled();
+	if (!bAuthority && !bPredicted) return;
 
 	FVector2D Apex;
 	FVector2D Forward;
 	ResolveKelvinFrame(Apex, Forward);
-	if (Forward.IsNearlyZero())
+	USWShipWakeSubsystem* State = World->GetSubsystem<USWShipWakeSubsystem>();
+	if (!State || Forward.IsNearlyZero()) return;
+	const double ServerTime = State->GetServerTime();
+	const FVector Velocity = Owner->GetVelocity();
+	const float Speed = FVector2D(Velocity.X, Velocity.Y).Size();
+
+	if (!bHasSample || Speed < MinimumSpeedCmPerSecond)
 	{
+		LastSamplePosition = Apex;
+		LastSampleForward = Forward;
+		LastSampleServerTime = ServerTime;
+		bHasSample = true;
 		return;
 	}
-
-	USWShipWakeSubsystem* Subsystem = World->GetSubsystem<USWShipWakeSubsystem>();
-	const double ServerTime = Subsystem ? Subsystem->GetServerTime() : World->GetTimeSeconds();
-	const bool bMovedFarEnough = !bHasEmissionOrigin
-		|| FVector2D::DistSquared(Apex, LastEmissionPosition) >= FMath::Square(EmissionDistanceCm);
-	const bool bWaitedLongEnough = ServerTime - LastEmissionServerTime >= MinimumEmissionInterval;
-	if (!bMovedFarEnough || !bWaitedLongEnough)
-	{
-		return;
-	}
-
-	PublishWakeState(Apex, Forward, HorizontalSpeed);
-	LastEmissionPosition = Apex;
-	LastEmissionServerTime = ServerTime;
-	bHasEmissionOrigin = true;
+	EmitResampledSegment(Apex, Forward, Speed, ServerTime, bPredicted);
 }
 
-void USWShipWakeEmitterComponent::PublishWakeState(
-	const FVector2D& Apex,
-	const FVector2D& Forward,
-	const float HorizontalSpeed)
+void USWShipWakeEmitterComponent::EmitResampledSegment(
+	const FVector2D& Apex, const FVector2D& Forward,
+	const float HorizontalSpeed, const double ServerTime, const bool bPredicted)
 {
-	USWShipWakeSubsystem* Subsystem = GetWorld() ? GetWorld()->GetSubsystem<USWShipWakeSubsystem>() : nullptr;
-	if (!Subsystem)
+	USWShipWakeSubsystem* State = GetWorld()->GetSubsystem<USWShipWakeSubsystem>();
+	if (!State) return;
+
+	const float Distance = FVector2D::Distance(LastSamplePosition, Apex);
+	const float Dot = FMath::Clamp(
+		static_cast<float>(FVector2D::DotProduct(LastSampleForward, Forward)), -1.0f, 1.0f);
+	const float TurnDegrees = FMath::RadiansToDegrees(FMath::Acos(Dot));
+	const float Spacing = FMath::Max(EmissionDistanceCm, 50.0f);
+	const float MaxTurn = FMath::Max(MaximumTurnAngleDegrees, 1.0f);
+	const double Elapsed = ServerTime - LastSampleServerTime;
+	const bool bDistanceTrigger = Distance >= Spacing;
+	const bool bTurnTrigger = Distance >= Spacing * 0.25f && TurnDegrees >= MaxTurn;
+	const bool bTimeTrigger = Distance >= Spacing * 0.25f && Elapsed >= MaximumEmissionInterval;
+	if (!bDistanceTrigger && !bTurnTrigger && !bTimeTrigger) return;
+
+	const int32 SegmentCount = FMath::Clamp(FMath::CeilToInt(FMath::Max3(
+		Distance / Spacing, TurnDegrees / MaxTurn, 1.0f)), 1, MaximumCatchUpEvents);
+	const float SpeedFade = FMath::SmoothStep(
+		MinimumSpeedCmPerSecond, MinimumSpeedCmPerSecond * 2.0f, HorizontalSpeed);
+	const float MaximumRadius = FMath::Sqrt(
+		FMath::Square(WakeLengthCm) + FMath::Square(WakeHalfWidthCm));
+	const float Lifetime = FMath::Max(
+		(MaximumRadius + EnvelopeWidthCm) / FMath::Max(PropagationSpeedCmPerSecond, 1.0f), 1.0f);
+
+	for (int32 Segment = 1; Segment <= SegmentCount; ++Segment)
 	{
-		return;
+		const float Alpha = static_cast<float>(Segment) / SegmentCount;
+		FVector2D Tangent = FMath::Lerp(LastSampleForward, Forward, Alpha);
+		Tangent = Tangent.IsNearlyZero() ? Forward : Tangent.GetSafeNormal();
+		FSWShipWakeEvent Event;
+		Event.Origin = FMath::Lerp(LastSamplePosition, Apex, Alpha);
+		Event.Forward = Tangent;
+		Event.StartServerTime = FMath::Lerp(LastSampleServerTime, ServerTime, Alpha);
+		Event.ExpireServerTime = Event.StartServerTime + Lifetime;
+		Event.InitialAmplitudeCm = MaximumAmplitudeCm * SpeedFade;
+		Event.PropagationSpeedCmPerSecond = FMath::Max(PropagationSpeedCmPerSecond, 1.0f);
+		Event.DecayRate = FMath::Max(DecayRate, 0.0f);
+		Event.WakeLengthCm = FMath::Max(WakeLengthCm, 100.0f);
+		Event.WakeHalfWidthCm = FMath::Max(WakeHalfWidthCm, 100.0f);
+		Event.EnvelopeWidthCm = FMath::Max(EnvelopeWidthCm, 10.0f);
+		Event.FadeInSeconds = FMath::Max(FadeInSeconds, 0.0f);
+		if (bPredicted) State->SubmitPredictedEvent(Event);
+		else State->SubmitAuthoritativeEvent(Event);
 	}
 
-	const float SafeHullLength = FMath::Max(HullLengthCm, 100.0f);
-	const float SafePressureSize = FMath::Max(PressureSizeCm, 10.0f);
-	const float Froude = HorizontalSpeed / FMath::Sqrt(980.0f * SafePressureSize);
-	const float SpeedAlpha = FMath::SmoothStep(
-		MinimumSpeedCmPerSecond,
-		MinimumSpeedCmPerSecond * 3.0f,
-		HorizontalSpeed);
-
-	FSWShipWakeEvent Event;
-	const uint32 OwnerHash = static_cast<uint32>(GetTypeHash(GetOwner()->GetPathName())) & 0x7FFFFFFFu;
-	Event.EventId = static_cast<int32>(FMath::Max(OwnerHash, 1u));
-	Event.Origin = Apex;
-	Event.Forward = Forward;
-	const float PathSpacing = FMath::Max(TrajectorySampleDistanceCm, 50.0f);
-	if (TrajectoryAnchors.IsEmpty())
-	{
-		TrajectoryAnchors.Add(Apex);
-	}
-	else if (FVector2D::Distance(Apex, TrajectoryAnchors[0]) >= PathSpacing)
-	{
-		TrajectoryAnchors.Insert(Apex, 0);
-		TrajectoryAnchors.SetNum(FMath::Min(TrajectoryAnchors.Num(), 15), EAllowShrinking::No);
-	}
-	Event.TrajectoryPoints.Add(Apex);
-	for (const FVector2D& Anchor : TrajectoryAnchors)
-	{
-		if (!Anchor.Equals(Event.TrajectoryPoints.Last(), 1.0f) && Event.TrajectoryPoints.Num() < 16)
-		{
-			Event.TrajectoryPoints.Add(Anchor);
-		}
-	}
-	Event.UpdateServerTime = Subsystem->GetServerTime();
-	Event.Amplitude = MaximumAmplitudeCm * SpeedAlpha * FMath::Clamp(Froude / 0.35f, 0.40f, 1.50f);
-	Event.SpeedCmPerSecond = FMath::Max(SmoothedSpectrumSpeed, MinimumSpeedCmPerSecond);
-	Event.AdvectionSpeedCmPerSecond = HorizontalSpeed;
-	Event.PressureSizeCm = SafePressureSize;
-	Event.LongitudinalScale = FMath::Max(LongitudinalScale, 0.1f);
-	Event.LateralScale = FMath::Max(LateralScale, 0.1f);
-	Event.NearHullSuppressDistanceCm = FMath::Max(NearHullSuppressDistanceCm, 0.0f);
-	Event.HullLengthCm = SafeHullLength;
-	Event.SternOffsetCm = FMath::Clamp(SternOffsetCm, 0.0f, SafeHullLength);
-	Event.BeamWidthCm = FMath::Max(BeamWidthCm, 50.0f);
-	Event.DraftCm = FMath::Max(DraftCm, 1.0f);
-	Event.WakeLengthCm = FMath::Clamp(
-		SafeHullLength * WakeLengthMultiplier * FMath::Clamp(Froude / 0.35f, 0.60f, 2.0f),
-		SafeHullLength * 2.0f,
-		60000.0f);
-	Event.StateLifetime = FMath::Max(LifetimeSeconds, 0.1f);
-	Event.TransverseStrength = FMath::Max(TransverseStrength, 0.0f);
-	Event.DivergentStrength = FMath::Max(DivergentStrength, 0.0f);
-	Event.SternStrength = FMath::Max(SternStrength, 0.0f);
-	Event.SternPhaseOffsetRadians = FMath::Fmod(FMath::Max(SternPhaseOffsetRadians, 0.0f), 2.0f * PI);
-	MulticastUpdateWakeEvent(Event);
+	LastSamplePosition = Apex;
+	LastSampleForward = Forward;
+	LastSampleServerTime = ServerTime;
 }
-
-void USWShipWakeEmitterComponent::MulticastUpdateWakeEvent_Implementation(const FSWShipWakeEvent& Event)
-{
-	if (UWorld* World = GetWorld())
-	{
-		if (USWShipWakeSubsystem* Subsystem = World->GetSubsystem<USWShipWakeSubsystem>())
-		{
-			Subsystem->AddOrUpdateEvent(Event);
-		}
-	}
-}
-

@@ -4,27 +4,23 @@
 
 class UTexture2D;
 
-/** Immutable FP16 payload shared by the M4 CPU sampler and runtime GPU atlas. */
+/** Fixed Fr=0.50 Golden Image used identically by M7 CPU and GPU. */
 class WATERANDSHIP_API FSWKelvinWakeAtlas
 {
 public:
 	static FSWKelvinWakeAtlas& Get();
-
 	bool Initialize();
 	bool IsReady() const { return bReady; }
-	float SampleNormalized(float DownstreamLambda, float LateralLambda, float Froude) const;
+	float SampleFixedNormalized(float Downstream01, float LateralSigned01) const;
 	UTexture2D* CreateTransientTexture(const FName& Name) const;
 
-	static constexpr int32 NumSlices = 12;
 	static constexpr int32 ResolutionU = 512;
 	static constexpr int32 ResolutionV = 256;
 	static constexpr int32 TextureWidth = ResolutionV;
-	static constexpr int32 TextureHeight = ResolutionU * NumSlices;
+	static constexpr int32 TextureHeight = ResolutionU;
 
 private:
-	float SampleSlice(int32 SliceIndex, float DownstreamLambda, float LateralLambda) const;
-	float ReadTexel(int32 SliceIndex, int32 UIndex, int32 VIndex) const;
-
+	float ReadTexel(int32 UIndex, int32 VIndex) const;
 	TArray<uint8> Payload;
 	FCriticalSection InitializeLock;
 	bool bReady = false;
