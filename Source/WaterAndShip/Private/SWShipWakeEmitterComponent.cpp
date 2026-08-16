@@ -36,6 +36,13 @@ void USWShipWakeEmitterComponent::TickComponent(
 
 	const FVector Velocity = Owner->GetVelocity();
 	const float HorizontalSpeed = FVector2D(Velocity.X, Velocity.Y).Size();
+	SmoothedSpectrumSpeed = SmoothedSpectrumSpeed <= UE_SMALL_NUMBER
+		? HorizontalSpeed
+		: FMath::FInterpTo(
+			SmoothedSpectrumSpeed,
+			HorizontalSpeed,
+			DeltaTime,
+			FMath::Max(SpectrumSpeedSmoothingRate, 0.1f));
 	if (HorizontalSpeed < MinimumSpeedCmPerSecond)
 	{
 		return;
@@ -60,13 +67,13 @@ void USWShipWakeEmitterComponent::TickComponent(
 		return;
 	}
 
-	EmitWakePacket(Location, Forward, HorizontalSpeed);
+	PublishWakeState(Location, Forward, HorizontalSpeed);
 	LastEmissionPosition = Position;
 	LastEmissionServerTime = ServerTime;
 	bHasEmissionOrigin = true;
 }
 
-void USWShipWakeEmitterComponent::EmitWakePacket(
+void USWShipWakeEmitterComponent::PublishWakeState(
 	const FVector& OwnerLocation,
 	const FVector2D& Forward,
 	const float HorizontalSpeed)
@@ -85,23 +92,31 @@ void USWShipWakeEmitterComponent::EmitWakePacket(
 		HorizontalSpeed);
 
 	FSWShipWakeEvent Event;
-	const uint32 OwnerBits = static_cast<uint32>(GetTypeHash(GetOwner()->GetFName())) & 0x7FFFu;
-	Event.EventId = static_cast<int32>((OwnerBits << 16) | (static_cast<uint32>(++LocalSequence) & 0xFFFFu));
+	const uint32 OwnerHash = static_cast<uint32>(GetTypeHash(GetOwner()->GetPathName())) & 0x7FFFFFFFu;
+	Event.EventId = static_cast<int32>(FMath::Max(OwnerHash, 1u));
+	// Origin is the stern source. The bow source is derived as Origin + Forward * HullLength.
 	Event.Origin = FVector2D(OwnerLocation) - Forward * SternOffsetCm;
 	Event.Forward = Forward;
-	Event.StartServerTime = Subsystem->GetServerTime();
-	Event.InitialAmplitude = MaximumAmplitudeCm * SpeedAlpha * FMath::Clamp(Froude / 0.55f, 0.35f, 1.35f);
-	Event.WaveLength = FMath::Clamp(
-		(2.0f * PI * HorizontalSpeed * HorizontalSpeed) / (980.0f * 5.0f),
-		300.0f,
-		1800.0f);
-	Event.PhaseSpeed = FMath::Sqrt(980.0f * Event.WaveLength / (2.0f * PI));
-	Event.Lifetime = LifetimeSeconds;
-	Event.KelvinHalfAngleRadians = FMath::DegreesToRadians(KelvinHalfAngleDegrees);
-	MulticastAddWakeEvent(Event);
+	Event.UpdateServerTime = Subsystem->GetServerTime();
+	Event.Amplitude = MaximumAmplitudeCm * SpeedAlpha * FMath::Clamp(Froude / 0.35f, 0.40f, 1.50f);
+	Event.SpeedCmPerSecond = FMath::Max(SmoothedSpectrumSpeed, MinimumSpeedCmPerSecond);
+	Event.AdvectionSpeedCmPerSecond = HorizontalSpeed;
+	Event.HullLengthCm = SafeHullLength;
+	Event.BeamWidthCm = FMath::Max(BeamWidthCm, 50.0f);
+	Event.DraftCm = FMath::Max(DraftCm, 1.0f);
+	Event.WakeLengthCm = FMath::Clamp(
+		SafeHullLength * WakeLengthMultiplier * FMath::Clamp(Froude / 0.35f, 0.60f, 2.0f),
+		SafeHullLength * 2.0f,
+		60000.0f);
+	Event.StateLifetime = FMath::Max(LifetimeSeconds, 0.1f);
+	Event.TransverseStrength = FMath::Max(TransverseStrength, 0.0f);
+	Event.DivergentStrength = FMath::Max(DivergentStrength, 0.0f);
+	Event.SternStrength = FMath::Max(SternStrength, 0.0f);
+	Event.SternPhaseOffsetRadians = FMath::Fmod(FMath::Max(SternPhaseOffsetRadians, 0.0f), 2.0f * PI);
+	MulticastUpdateWakeEvent(Event);
 }
 
-void USWShipWakeEmitterComponent::MulticastAddWakeEvent_Implementation(const FSWShipWakeEvent& Event)
+void USWShipWakeEmitterComponent::MulticastUpdateWakeEvent_Implementation(const FSWShipWakeEvent& Event)
 {
 	if (UWorld* World = GetWorld())
 	{

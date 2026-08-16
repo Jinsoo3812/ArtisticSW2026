@@ -1,18 +1,20 @@
-// Ship wake evaluator for Unreal Material Custom expressions.
+// M2 steady Kelvin wake evaluator for Unreal Material Custom expressions.
 //
-// Include File Paths are expanded inside Unreal's generated CustomExpression
-// function. Global HLSL function declarations are therefore invalid here.
-// Keep this file macro-only so the evaluator can be shared by WPO and foam
-// Custom nodes without producing nested function definitions.
+// Unreal expands Include File Paths inside its generated CustomExpression
+// function, so this file intentionally contains macros instead of functions.
+// CPU parity: Source/WaterAndShip/Private/SWShipWakeTypes.cpp.
 #pragma once
 
 #define SW_SHIP_WAKE_CAPACITY 64
-#define SW_SHIP_WAKE_PI 3.14159265358979323846
+#define SW_KELVIN_DIRECTION_SAMPLES 16
+#define SW_KELVIN_PI 3.14159265358979323846
+#define SW_KELVIN_MAX_WAVE_VECTOR_ANGLE 1.22173048
+#define SW_KELVIN_HALF_ANGLE_TANGENT 0.35355339
+#define SW_KELVIN_GRAVITY_CM 980.0
 
-#define SW_EVALUATE_SHIP_WAKE(QUERY_POSITION, SERVER_TIME, EVENT_COUNT, WAKE_TEXTURE, WAKE_SAMPLER, OUT_HEIGHT, OUT_FOAM) \
+#define SW_EVALUATE_SHIP_WAKE_M2(QUERY_POSITION, SERVER_TIME, EVENT_COUNT, WAKE_TEXTURE, WAKE_SAMPLER, OUT_HEIGHT) \
 { \
     OUT_HEIGHT = 0.0; \
-    OUT_FOAM = 0.0; \
     const float2 SW_QueryPosition = QUERY_POSITION; \
     const float SW_ServerTime = SERVER_TIME; \
     const int SW_Count = clamp((int)round(EVENT_COUNT), 0, SW_SHIP_WAKE_CAPACITY); \
@@ -24,63 +26,96 @@
             break; \
         } \
         const float SW_U = (float(SW_Index) + 0.5) / float(SW_SHIP_WAKE_CAPACITY); \
-        const float4 SW_Row0 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_U, 1.0 / 6.0), 0.0); \
-        const float4 SW_Row1 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_U, 3.0 / 6.0), 0.0); \
-        const float4 SW_Row2 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_U, 5.0 / 6.0), 0.0); \
-        const float2 SW_Origin = SW_Row0.xy; \
-        const float SW_StartTime = SW_Row0.z; \
+        const float4 SW_Row0 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_U, 1.0 / 10.0), 0.0); \
+        const float4 SW_Row1 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_U, 3.0 / 10.0), 0.0); \
+        const float4 SW_Row2 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_U, 5.0 / 10.0), 0.0); \
+        const float4 SW_Row3 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_U, 7.0 / 10.0), 0.0); \
+        const float4 SW_Row4 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_U, 9.0 / 10.0), 0.0); \
+        const float2 SW_StoredSternOrigin = SW_Row0.xy; \
+        const float SW_UpdateTime = SW_Row0.z; \
         const float SW_Amplitude = SW_Row0.w; \
         const float2 SW_Forward = normalize(SW_Row1.xy + float2(1.0e-8, 0.0)); \
-        const float SW_WaveLength = max(SW_Row1.z, 1.0); \
-        const float SW_PhaseSpeed = max(SW_Row1.w, 0.0); \
-        const float SW_Lifetime = max(SW_Row2.x, 0.1); \
-        const float SW_HalfAngle = clamp(SW_Row2.y, 0.1, 0.7); \
-        const float SW_Age = SW_ServerTime - SW_StartTime; \
-        if (SW_Amplitude > 0.0 && SW_Age >= 0.0 && SW_Age < SW_Lifetime && SW_Row2.w >= 0.5) \
+        const float SW_Speed = max(SW_Row1.z, 1.0); \
+        const float SW_HullLength = max(SW_Row1.w, 100.0); \
+        const float SW_Beam = max(SW_Row2.x, 50.0); \
+        const float SW_Draft = max(SW_Row2.y, 1.0); \
+        const float SW_WakeLength = max(SW_Row2.z, SW_HullLength * 2.0); \
+        const float SW_StateLifetime = max(SW_Row2.w, 0.1); \
+        const float SW_TransverseStrength = max(SW_Row3.x, 0.0); \
+        const float SW_DivergentStrength = max(SW_Row3.y, 0.0); \
+        const float SW_SternStrength = max(SW_Row3.z, 0.0); \
+        const float SW_SternPhase = SW_Row3.w; \
+		const float SW_AdvectionSpeed = max(SW_Row4.x, 0.0); \
+        const float SW_Age = SW_ServerTime - SW_UpdateTime; \
+        if (SW_Amplitude > 0.0 && SW_Age >= 0.0 && SW_Age < SW_StateLifetime) \
         { \
             const float2 SW_Right = float2(-SW_Forward.y, SW_Forward.x); \
-            const float2 SW_Delta = SW_QueryPosition - SW_Origin; \
-            const float SW_Behind = -dot(SW_Delta, SW_Forward); \
-            if (SW_Behind > 0.0) \
+            const float SW_PredictionTime = clamp(SW_Age, 0.0, 0.20); \
+            const float2 SW_SternOrigin = SW_StoredSternOrigin + SW_Forward * SW_AdvectionSpeed * SW_PredictionTime; \
+            const float2 SW_BowOrigin = SW_SternOrigin + SW_Forward * SW_HullLength; \
+            const float SW_Freshness = 1.0 - smoothstep(SW_StateLifetime * 0.55, SW_StateLifetime, SW_Age); \
+            float SW_EventHeight = 0.0; \
+            [unroll] \
+            for (int SW_SourceIndex = 0; SW_SourceIndex < 2; ++SW_SourceIndex) \
             { \
-                const float SW_Lateral = abs(dot(SW_Delta, SW_Right)); \
-                const float SW_RadiusSquared = SW_Behind * SW_Behind + SW_Lateral * SW_Lateral; \
-                const float SW_WavefrontRadius = SW_PhaseSpeed * SW_Age; \
-                const float SW_EnvelopeWidth = max(SW_WaveLength * 2.75, 1.0); \
-                const float SW_MinimumRadius = max(0.0, SW_WavefrontRadius - SW_EnvelopeWidth); \
-                const float SW_MaximumRadius = SW_WavefrontRadius + SW_EnvelopeWidth; \
-                if (SW_RadiusSquared >= SW_MinimumRadius * SW_MinimumRadius && SW_RadiusSquared <= SW_MaximumRadius * SW_MaximumRadius) \
+                const float SW_IsStern = (float)SW_SourceIndex; \
+                const float2 SW_SourceOrigin = lerp(SW_BowOrigin, SW_SternOrigin, SW_IsStern); \
+                const float SW_SourceStrength = lerp(1.0, SW_SternStrength, SW_IsStern); \
+                const float SW_SourcePhase = SW_SternPhase * SW_IsStern; \
+                const float2 SW_Delta = SW_QueryPosition - SW_SourceOrigin; \
+                const float SW_Downstream = -dot(SW_Delta, SW_Forward); \
+                if (SW_SourceStrength > 0.0 && SW_Downstream > 0.0 && SW_Downstream < SW_WakeLength) \
                 { \
-                    const float SW_Radius = sqrt(SW_RadiusSquared); \
-                    const float SW_Angle = atan2(SW_Lateral, max(SW_Behind, 1.0)); \
-                    const float SW_WedgeEdge = SW_HalfAngle + 0.12; \
-                    if (SW_Angle < SW_WedgeEdge) \
+                    const float SW_Lateral = dot(SW_Delta, SW_Right); \
+                    const float SW_AbsLateral = abs(SW_Lateral); \
+                    const float SW_LateralRatio = SW_AbsLateral / max(SW_Downstream, 1.0); \
+                    const float SW_EdgeBlend = clamp(SW_Beam / SW_HullLength * 0.45, 0.025, 0.12); \
+                    const float SW_WedgeMask = 1.0 - smoothstep( \
+                        SW_KELVIN_HALF_ANGLE_TANGENT, \
+                        SW_KELVIN_HALF_ANGLE_TANGENT + SW_EdgeBlend, \
+                        SW_LateralRatio); \
+                    if (SW_WedgeMask > 0.0) \
                     { \
-                        const float SW_WedgeMask = 1.0 - smoothstep(SW_HalfAngle, SW_WedgeEdge, SW_Angle); \
-                        const float SW_RadialOffset = SW_Radius - SW_WavefrontRadius; \
-                        const float SW_NormalizedEnvelope = saturate(abs(SW_RadialOffset) / SW_EnvelopeWidth); \
-                        const float SW_RadialEnvelope = 1.0 - smoothstep(0.45, 1.0, SW_NormalizedEnvelope); \
-                        const float SW_DivergentAngularWidth = max(SW_HalfAngle * 0.24, 0.035); \
-                        const float SW_DivergentAngularOffset = (SW_Angle - SW_HalfAngle) / SW_DivergentAngularWidth; \
-                        const float SW_DivergentMask = exp(-SW_DivergentAngularOffset * SW_DivergentAngularOffset); \
-                        const float SW_TransverseAngularScale = max(SW_HalfAngle * 0.72, 0.035); \
-                        const float SW_TransverseRatio = SW_Angle / SW_TransverseAngularScale; \
-                        const float SW_TransverseMask = exp(-pow(SW_TransverseRatio, 4.0)); \
-                        const float SW_Phase = (SW_RadialOffset / SW_WaveLength) * (2.0 * SW_SHIP_WAKE_PI); \
-                        const float SW_DivergentWave = cos(SW_Phase) * SW_DivergentMask; \
-                        const float SW_TransverseWave = cos(SW_Phase * 0.72 + 0.65) * SW_TransverseMask * 0.42; \
-                        const float SW_TimeDecay = exp(-SW_Age / max(SW_Lifetime * 0.72, 0.1)); \
-                        const float SW_DistanceDecay = rsqrt(1.0 + SW_Radius / (SW_WaveLength * 2.0)); \
-                        const float SW_Envelope = SW_WedgeMask * SW_RadialEnvelope * SW_TimeDecay * SW_DistanceDecay; \
-                        const float SW_EventHeight = SW_Amplitude * (SW_DivergentWave + SW_TransverseWave) * SW_Envelope; \
-                        OUT_HEIGHT += SW_EventHeight; \
-                        const float SW_Crest = saturate((SW_EventHeight / max(SW_Amplitude, 1.0) - 0.08) * 5.0); \
-                        const float SW_EdgeBreak = saturate(SW_DivergentMask * 1.35 + SW_TransverseMask * 0.25); \
-                        OUT_FOAM = saturate(OUT_FOAM + SW_Crest * SW_EdgeBreak * saturate(SW_Envelope * 2.0)); \
+                        const float SW_Radius = sqrt(SW_Downstream * SW_Downstream + SW_Lateral * SW_Lateral); \
+                        const float SW_SuppressRadius = max(SW_Beam * 0.35, 25.0); \
+                        const float SW_NearFieldMask = smoothstep(SW_SuppressRadius, SW_SuppressRadius + SW_Beam, SW_Radius); \
+                        const float SW_DistanceFade = 1.0 - smoothstep(SW_WakeLength * 0.72, SW_WakeLength, SW_Downstream); \
+                        const float SW_GeometricDecay = rsqrt(1.0 + SW_Downstream / (SW_HullLength * 3.0)); \
+                        float SW_DirectionalSum = 0.0; \
+                        [unroll] \
+                        for (int SW_DirectionIndex = 0; SW_DirectionIndex < SW_KELVIN_DIRECTION_SAMPLES; ++SW_DirectionIndex) \
+                        { \
+                            const float SW_DirectionAlpha = (float(SW_DirectionIndex) + 0.5) / float(SW_KELVIN_DIRECTION_SAMPLES); \
+                            const float SW_Theta = lerp(-SW_KELVIN_MAX_WAVE_VECTOR_ANGLE, SW_KELVIN_MAX_WAVE_VECTOR_ANGLE, SW_DirectionAlpha); \
+                            const float SW_CosTheta = cos(SW_Theta); \
+                            const float SW_SinTheta = sin(SW_Theta); \
+                            const float SW_WaveNumber = SW_KELVIN_GRAVITY_CM / max(SW_Speed * SW_Speed * SW_CosTheta * SW_CosTheta, 1.0); \
+                            const float SW_SpectrumAlpha = abs(SW_Theta) / SW_KELVIN_MAX_WAVE_VECTOR_ANGLE; \
+                            const float SW_SpectrumBlend = smoothstep(0.22, 0.78, SW_SpectrumAlpha); \
+                            const float SW_SpectrumMagnitude = lerp(SW_TransverseStrength, SW_DivergentStrength, SW_SpectrumBlend); \
+                            const float SW_DraftFilter = exp(-SW_WaveNumber * SW_Draft * 0.35); \
+                            const float SW_BeamTerm = SW_WaveNumber * SW_Beam * 0.40; \
+                            const float SW_BeamFilter = rsqrt(1.0 + SW_BeamTerm * SW_BeamTerm); \
+                            const float SW_QuadratureWeight = SW_SpectrumMagnitude * SW_DraftFilter * SW_BeamFilter * SW_CosTheta; \
+                            const float SW_Phase = SW_WaveNumber * (-SW_Downstream * SW_CosTheta + SW_Lateral * SW_SinTheta) + SW_SourcePhase; \
+                            SW_DirectionalSum += SW_QuadratureWeight * cos(SW_Phase); \
+                        } \
+                        const float SW_NormalizedSpectrum = SW_DirectionalSum * (2.0 / float(SW_KELVIN_DIRECTION_SAMPLES)); \
+                        SW_EventHeight += SW_Amplitude * SW_SourceStrength * SW_NormalizedSpectrum \
+                            * SW_WedgeMask * SW_NearFieldMask * SW_DistanceFade * SW_GeometricDecay; \
                     } \
                 } \
             } \
+            OUT_HEIGHT += SW_EventHeight * SW_Freshness; \
         } \
     } \
-    OUT_HEIGHT = clamp(OUT_HEIGHT, -100.0, 100.0); \
+    OUT_HEIGHT = clamp(OUT_HEIGHT, -150.0, 150.0); \
+}
+
+// M1 call-site compatibility. Foam is deliberately disabled for the M2 wake
+// shape pass; the material's existing foam path is not modified here.
+#define SW_EVALUATE_SHIP_WAKE(QUERY_POSITION, SERVER_TIME, EVENT_COUNT, WAKE_TEXTURE, WAKE_SAMPLER, OUT_HEIGHT, OUT_FOAM) \
+{ \
+    SW_EVALUATE_SHIP_WAKE_M2(QUERY_POSITION, SERVER_TIME, EVENT_COUNT, WAKE_TEXTURE, WAKE_SAMPLER, OUT_HEIGHT); \
+    OUT_FOAM = 0.0; \
 }

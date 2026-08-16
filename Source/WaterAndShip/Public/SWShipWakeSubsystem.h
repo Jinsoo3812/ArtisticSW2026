@@ -7,12 +7,16 @@
 #include "SWShipWakeTypes.h"
 #include "SWShipWakeSubsystem.generated.h"
 
+class UMaterialInstanceDynamic;
+class UTextureRenderTarget2D;
+
 /**
- * Authoritative CPU wake cache plus a compact material parameter texture.
+ * Authoritative CPU wake cache, compact source texture and M3 signed-height field.
  *
- * This mirrors RippleSubsystem's proven split: water/physics queries use the
- * thread-safe event cache while the water material evaluates the same packets
- * from a small float texture. It never reads a GPU height texture back to CPU.
+ * Water/physics queries use the thread-safe event cache and the M2 analytic
+ * approximation. The visual surface integrates the same live hull sources into
+ * a persistent triple-buffer GPU field. Exact GPU/CPU parity is deferred until
+ * an asynchronous field readback or shared lower-resolution solver is added.
  */
 UCLASS()
 class WATERANDSHIP_API USWShipWakeSubsystem : public UWorldSubsystem, public FTickableGameObject
@@ -36,6 +40,7 @@ public:
 	int32 GetEventCount() const;
 
 	UTexture2D* GetWakeTexture() const { return WakeTexture; }
+	UTextureRenderTarget2D* GetHeightField() const;
 
 	static constexpr int32 WakeCapacity = 64;
 
@@ -43,12 +48,29 @@ private:
 	void RemoveExpiredEvents(double ServerTime);
 	void UpdateTexture(double ServerTime);
 	void BindToWaterMaterials(double ServerTime);
+	bool InitializeHeightField();
+	void StepHeightField(double ServerTime, float DeltaTime);
+	FVector2D ResolveDesiredFieldCenter(double ServerTime) const;
+	UTextureRenderTarget2D* CreateHeightRenderTarget(const FName& Name);
 
 	mutable FRWLock EventsLock;
 	TArray<FSWShipWakeEvent> Events;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture2D> WakeTexture;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTextureRenderTarget2D>> HeightStates;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> HeightFieldUpdateMID;
+
+	TArray<FVector2D> HeightStateCenters;
+	int32 PreviousHeightStateIndex = 0;
+	int32 CurrentHeightStateIndex = 1;
+	int32 NextHeightStateIndex = 2;
+	float HeightFieldAccumulator = 0.0f;
+	bool bHeightFieldInitialized = false;
 
 	int32 LastUploadedCount = 0;
 	float PhysicsHistoryRetentionSeconds = 2.0f;

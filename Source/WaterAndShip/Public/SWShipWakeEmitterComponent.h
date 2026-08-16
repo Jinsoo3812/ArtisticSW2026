@@ -5,7 +5,7 @@
 #include "SWShipWakeTypes.h"
 #include "SWShipWakeEmitterComponent.generated.h"
 
-/** Samples a replicated ship path and emits server-authored Kelvin wake packets. */
+/** Publishes replicated hull state for the M3 GPU field and CPU buoyancy approximation. */
 UCLASS(ClassGroup = (Water), BlueprintType, Blueprintable, meta = (BlueprintSpawnableComponent))
 class WATERANDSHIP_API USWShipWakeEmitterComponent : public UActorComponent
 {
@@ -23,35 +23,57 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Hull", meta = (ClampMin = "100.0", Units = "cm"))
 	float HullLengthCm = 2400.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Hull", meta = (ClampMin = "50.0", Units = "cm"))
+	float BeamWidthCm = 600.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Hull", meta = (ClampMin = "1.0", Units = "cm"))
+	float DraftCm = 250.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Hull", meta = (ClampMin = "0.0", Units = "cm"))
 	float SternOffsetCm = 900.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Emission", meta = (ClampMin = "0.01", Units = "s"))
-	float MinimumEmissionInterval = 0.12f;
+	float MinimumEmissionInterval = 0.05f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Emission", meta = (ClampMin = "10.0", Units = "cm"))
-	float EmissionDistanceCm = 180.0f;
+	float EmissionDistanceCm = 50.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Emission", meta = (ClampMin = "0.0", Units = "cm/s"))
 	float MinimumSpeedCmPerSecond = 250.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Wave", meta = (ClampMin = "0.0", Units = "cm"))
-	float MaximumAmplitudeCm = 42.0f;
+	float MaximumAmplitudeCm = 65.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Wave", meta = (ClampMin = "0.1", Units = "s"))
-	float LifetimeSeconds = 12.0f;
+	float LifetimeSeconds = 1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Wave", meta = (ClampMin = "5.0", ClampMax = "35.0", Units = "deg"))
-	float KelvinHalfAngleDegrees = 19.47f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Wave", meta = (ClampMin = "2.0"))
+	float WakeLengthMultiplier = 8.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Spectrum", meta = (ClampMin = "0.0"))
+	float TransverseStrength = 0.55f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Spectrum", meta = (ClampMin = "0.0"))
+	float DivergentStrength = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Spectrum", meta = (ClampMin = "0.0"))
+	float SternStrength = 0.72f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Spectrum", meta = (ClampMin = "0.0", ClampMax = "6.283185", Units = "rad"))
+	float SternPhaseOffsetRadians = 2.15f;
+
+	/** Low-pass rate for wavelength/spectrum speed. Hull position still uses raw speed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Spectrum", meta = (ClampMin = "0.1"))
+	float SpectrumSpeedSmoothingRate = 2.5f;
 
 private:
-	void EmitWakePacket(const FVector& OwnerLocation, const FVector2D& Forward, float HorizontalSpeed);
+	void PublishWakeState(const FVector& OwnerLocation, const FVector2D& Forward, float HorizontalSpeed);
 
-	UFUNCTION(NetMulticast, Reliable)
-	void MulticastAddWakeEvent(const FSWShipWakeEvent& Event);
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastUpdateWakeEvent(const FSWShipWakeEvent& Event);
 
 	FVector2D LastEmissionPosition = FVector2D::ZeroVector;
 	double LastEmissionServerTime = -DBL_MAX;
-	int32 LocalSequence = 0;
+	float SmoothedSpectrumSpeed = 0.0f;
 	bool bHasEmissionOrigin = false;
 };

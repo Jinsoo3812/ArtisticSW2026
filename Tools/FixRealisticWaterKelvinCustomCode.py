@@ -7,8 +7,7 @@ MATERIAL_PATHS = (
 )
 
 WPO_CODE = """float Height;
-float Foam;
-SW_EVALUATE_SHIP_WAKE(WorldPosition.xy, ShipWakeServerTime, ShipWakeCount, ShipWakeTex, ShipWakeTexSampler, Height, Foam);
+SW_EVALUATE_SHIP_WAKE_M2(WorldPosition.xy, ShipWakeServerTime, ShipWakeCount, ShipWakeTex, ShipWakeTexSampler, Height);
 return float3(0.0, 0.0, Height * HeightScale * saturate(Enable));"""
 
 FOAM_CODE = """float Height;
