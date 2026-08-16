@@ -2,6 +2,7 @@
 #include "RippleSubsystem.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
+#include "SWShipWakeSubsystem.h"
 #include "Water/SWRippleStateSubsystem.h"
 
 USWRippleWaterWaves::USWRippleWaterWaves()
@@ -19,9 +20,8 @@ float USWRippleWaterWaves::GetMaxWaveHeight() const
 		}
 	}
 	
-	// Add an arbitrary maximum ripple allowance (e.g. 50cm) to let the physics engine
-	// know that waves might peak slightly higher than the base Gerstner waves.
-	return MaxHeight + 50.0f;
+	// Advertise the shared signed allowance used by ripple and ship-wake overlays.
+	return MaxHeight + 100.0f;
 }
 
 float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, float InWaterDepth, float InTime, FVector& OutNormal) const
@@ -65,6 +65,16 @@ float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, fl
 		{
 			Height += Subsystem->GetRippleHeight(InPosition, static_cast<double>(SyncTime));
 		}
+
+		if (USWShipWakeSubsystem* WakeSubsystem = World->GetSubsystem<USWShipWakeSubsystem>())
+		{
+			Height += WakeSubsystem->GetWakeHeight(InPosition, static_cast<double>(SyncTime));
+			const FVector2D WakeGradient = WakeSubsystem->GetWakeGradient(InPosition, static_cast<double>(SyncTime));
+			OutNormal = FVector(
+				OutNormal.X - WakeGradient.X,
+				OutNormal.Y - WakeGradient.Y,
+				OutNormal.Z).GetSafeNormal();
+		}
 	}
 
 	return Height;
@@ -100,6 +110,10 @@ float USWRippleWaterWaves::GetSimpleWaveHeightAtPosition(const FVector& InPositi
 		if (USWRippleStateSubsystem* Subsystem = World->GetSubsystem<USWRippleStateSubsystem>())
 		{
 			Height += Subsystem->GetRippleHeight(InPosition, static_cast<double>(SyncTime));
+		}
+		if (USWShipWakeSubsystem* WakeSubsystem = World->GetSubsystem<USWShipWakeSubsystem>())
+		{
+			Height += WakeSubsystem->GetWakeHeight(InPosition, static_cast<double>(SyncTime));
 		}
 	}
 

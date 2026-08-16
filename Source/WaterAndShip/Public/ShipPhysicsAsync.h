@@ -6,6 +6,7 @@
 #include "Physics/NetworkPhysicsComponent.h"
 #include "GerstnerWaterWaves.h"
 #include "Water/SWRippleTypes.h"
+#include "SWShipWakeTypes.h"
 #include "Ship.h"
 
 struct FAsyncInputShip : public Chaos::FSimCallbackInput
@@ -26,6 +27,7 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	TArray<float> PontoonForceScales;
 	TArray<FGerstnerWave> GerstnerWaves;
 	TArray<FSWRippleEvent> RippleEvents;
+	TArray<FSWShipWakeEvent> ShipWakeEvents;
 
 	float GravityZ = -980.f;
 	float LateralDrag = 0.5f;
@@ -63,6 +65,7 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 		PontoonForceScales.Empty();
 		GerstnerWaves.Empty();
 		RippleEvents.Empty();
+		ShipWakeEvents.Empty();
 		ServerPhysicsTimeOrigin = -1.0;
 		ServerPhysicsStepSeconds = 0.0f;
 		NetworkPhysicsTickOffset = 0;
@@ -136,6 +139,7 @@ private:
 	TArray<float> CachedPontoonForceScales;
 	TArray<FGerstnerWave> CachedGerstnerWaves;
 	TArray<FSWRippleEvent> CachedRippleEvents;
+	TArray<FSWShipWakeEvent> CachedShipWakeEvents;
 	
 	float CachedGravityZ = -980.f;
 	float CachedLateralDrag = 0.5f;

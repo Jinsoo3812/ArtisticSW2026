@@ -293,6 +293,7 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 					CachedGerstnerWaves = AsyncInput->GerstnerWaves;
 				}
 				CachedRippleEvents = AsyncInput->RippleEvents;
+				CachedShipWakeEvents = AsyncInput->ShipWakeEvents;
 				if (AsyncInput->ServerPhysicsTimeOrigin >= 0.0 && AsyncInput->ServerPhysicsStepSeconds > UE_SMALL_NUMBER)
 				{
 					CachedServerPhysicsTimeOrigin = AsyncInput->ServerPhysicsTimeOrigin;
@@ -642,6 +643,11 @@ float FShipPhysicsAsync::GetWaveHeightAtPosition_Internal(const FVector& Positio
 		FVector2D(Position.X, Position.Y),
 		static_cast<double>(Time),
 		CachedRippleEvents);
+
+	TotalZOffset += FSWShipWakeEvaluator::EvaluateHeight(
+		FVector2D(Position.X, Position.Y),
+		static_cast<double>(Time),
+		CachedShipWakeEvents);
 
 	return TotalZOffset;
 }

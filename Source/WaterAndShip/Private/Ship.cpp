@@ -25,6 +25,7 @@
 #include "PBDRigidsSolver.h"
 #include "BuoyancyComponent.h"
 #include "Buoyancy/SWBuoyancyComponent.h"
+#include "SWShipWakeSubsystem.h"
 #include "Water/SWRippleStateSubsystem.h"
 #include "WaterBodyActor.h"
 #include "EngineUtils.h"
@@ -626,6 +627,12 @@ void AShip::Tick(float DeltaTime)
 				RippleState->GetEventsSnapshot(TempRippleEvents);
 			}
 
+			TArray<FSWShipWakeEvent> TempShipWakeEvents;
+			if (USWShipWakeSubsystem* ShipWakeState = GetWorld()->GetSubsystem<USWShipWakeSubsystem>())
+			{
+				ShipWakeState->GetEventsSnapshot(TempShipWakeEvents);
+			}
+
 			// A. 비동기 인풋 버퍼(GetProducerInputData_External)가 유효하다면 인풋 히스토리에 적재
 			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
 			{
@@ -639,6 +646,7 @@ void AShip::Tick(float DeltaTime)
 				AsyncInput->PontoonForceScales = TempPontoonForceScales;
 				AsyncInput->GerstnerWaves = TempWaves;
 				AsyncInput->RippleEvents = MoveTemp(TempRippleEvents);
+				AsyncInput->ShipWakeEvents = MoveTemp(TempShipWakeEvents);
 				AsyncInput->GravityZ = Gravity;
 				AsyncInput->LateralDrag = LateralDrag;
 				AsyncInput->ForwardForceValue = ForwardForceValue;
