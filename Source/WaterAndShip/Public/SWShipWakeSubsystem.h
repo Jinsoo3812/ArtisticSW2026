@@ -11,12 +11,7 @@ class UMaterialInstanceDynamic;
 class UTextureRenderTarget2D;
 
 /**
- * Authoritative CPU wake cache, compact source texture and M3 signed-height field.
- *
- * Water/physics queries use the thread-safe event cache and the M2 analytic
- * approximation. The visual surface integrates the same live hull sources into
- * a persistent triple-buffer GPU field. Exact GPU/CPU parity is deferred until
- * an asynchronous field readback or shared lower-resolution solver is added.
+ * M4 wake cache. GPU WPO and CPU/Async buoyancy sample the same baked FP16 atlas.
  */
 UCLASS()
 class WATERANDSHIP_API USWShipWakeSubsystem : public UWorldSubsystem, public FTickableGameObject
@@ -40,9 +35,12 @@ public:
 	int32 GetEventCount() const;
 
 	UTexture2D* GetWakeTexture() const { return WakeTexture; }
+	UTexture2D* GetTrajectoryTexture() const { return TrajectoryTexture; }
+	UTexture2D* GetKelvinAtlasTexture() const { return KelvinAtlasTexture; }
 	UTextureRenderTarget2D* GetHeightField() const;
 
 	static constexpr int32 WakeCapacity = 64;
+	static constexpr int32 TrajectoryCapacity = 16;
 
 private:
 	void RemoveExpiredEvents(double ServerTime);
@@ -58,6 +56,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture2D> WakeTexture;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> TrajectoryTexture;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> KelvinAtlasTexture;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UTextureRenderTarget2D>> HeightStates;

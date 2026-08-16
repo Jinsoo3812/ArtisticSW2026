@@ -1,121 +1,126 @@
-// M2 steady Kelvin wake evaluator for Unreal Material Custom expressions.
-//
-// Unreal expands Include File Paths inside its generated CustomExpression
-// function, so this file intentionally contains macros instead of functions.
-// CPU parity: Source/WaterAndShip/Private/SWShipWakeTypes.cpp.
+// M4 Kelvin wake atlas evaluator. Macro-only because Unreal expands Custom
+// include paths inside the generated CustomExpression function.
 #pragma once
 
-#define SW_SHIP_WAKE_CAPACITY 64
-#define SW_KELVIN_DIRECTION_SAMPLES 16
-#define SW_KELVIN_PI 3.14159265358979323846
-#define SW_KELVIN_MAX_WAVE_VECTOR_ANGLE 1.22173048
-#define SW_KELVIN_HALF_ANGLE_TANGENT 0.35355339
+#define SW_WAKE_CAPACITY 64
+#define SW_TRAJECTORY_CAPACITY 16
+#define SW_ATLAS_SLICES 12
+#define SW_ATLAS_RES_U 512
+#define SW_ATLAS_RES_V 256
+#define SW_ATLAS_PACKED_HEIGHT 6144
 #define SW_KELVIN_GRAVITY_CM 980.0
+#define SW_KELVIN_TWO_PI 6.283185307179586
 
-#define SW_EVALUATE_SHIP_WAKE_M2(QUERY_POSITION, SERVER_TIME, EVENT_COUNT, WAKE_TEXTURE, WAKE_SAMPLER, OUT_HEIGHT) \
+#define SW_M4_SAMPLE_ATLAS_SLICE(ATLAS, SAMPLER, SLICE, U, V, OUT_VALUE) \
 { \
-    OUT_HEIGHT = 0.0; \
-    const float2 SW_QueryPosition = QUERY_POSITION; \
-    const float SW_ServerTime = SERVER_TIME; \
-    const int SW_Count = clamp((int)round(EVENT_COUNT), 0, SW_SHIP_WAKE_CAPACITY); \
-    [loop] \
-    for (int SW_Index = 0; SW_Index < SW_SHIP_WAKE_CAPACITY; ++SW_Index) \
-    { \
-        if (SW_Index >= SW_Count) \
-        { \
-            break; \
-        } \
-        const float SW_U = (float(SW_Index) + 0.5) / float(SW_SHIP_WAKE_CAPACITY); \
-        const float4 SW_Row0 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_U, 1.0 / 10.0), 0.0); \
-        const float4 SW_Row1 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_U, 3.0 / 10.0), 0.0); \
-        const float4 SW_Row2 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_U, 5.0 / 10.0), 0.0); \
-        const float4 SW_Row3 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_U, 7.0 / 10.0), 0.0); \
-        const float4 SW_Row4 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_U, 9.0 / 10.0), 0.0); \
-        const float2 SW_StoredSternOrigin = SW_Row0.xy; \
-        const float SW_UpdateTime = SW_Row0.z; \
-        const float SW_Amplitude = SW_Row0.w; \
-        const float2 SW_Forward = normalize(SW_Row1.xy + float2(1.0e-8, 0.0)); \
-        const float SW_Speed = max(SW_Row1.z, 1.0); \
-        const float SW_HullLength = max(SW_Row1.w, 100.0); \
-        const float SW_Beam = max(SW_Row2.x, 50.0); \
-        const float SW_Draft = max(SW_Row2.y, 1.0); \
-        const float SW_WakeLength = max(SW_Row2.z, SW_HullLength * 2.0); \
-        const float SW_StateLifetime = max(SW_Row2.w, 0.1); \
-        const float SW_TransverseStrength = max(SW_Row3.x, 0.0); \
-        const float SW_DivergentStrength = max(SW_Row3.y, 0.0); \
-        const float SW_SternStrength = max(SW_Row3.z, 0.0); \
-        const float SW_SternPhase = SW_Row3.w; \
-		const float SW_AdvectionSpeed = max(SW_Row4.x, 0.0); \
-        const float SW_Age = SW_ServerTime - SW_UpdateTime; \
-        if (SW_Amplitude > 0.0 && SW_Age >= 0.0 && SW_Age < SW_StateLifetime) \
-        { \
-            const float2 SW_Right = float2(-SW_Forward.y, SW_Forward.x); \
-            const float SW_PredictionTime = clamp(SW_Age, 0.0, 0.20); \
-            const float2 SW_SternOrigin = SW_StoredSternOrigin + SW_Forward * SW_AdvectionSpeed * SW_PredictionTime; \
-            const float2 SW_BowOrigin = SW_SternOrigin + SW_Forward * SW_HullLength; \
-            const float SW_Freshness = 1.0 - smoothstep(SW_StateLifetime * 0.55, SW_StateLifetime, SW_Age); \
-            float SW_EventHeight = 0.0; \
-            [unroll] \
-            for (int SW_SourceIndex = 0; SW_SourceIndex < 2; ++SW_SourceIndex) \
-            { \
-                const float SW_IsStern = (float)SW_SourceIndex; \
-                const float2 SW_SourceOrigin = lerp(SW_BowOrigin, SW_SternOrigin, SW_IsStern); \
-                const float SW_SourceStrength = lerp(1.0, SW_SternStrength, SW_IsStern); \
-                const float SW_SourcePhase = SW_SternPhase * SW_IsStern; \
-                const float2 SW_Delta = SW_QueryPosition - SW_SourceOrigin; \
-                const float SW_Downstream = -dot(SW_Delta, SW_Forward); \
-                if (SW_SourceStrength > 0.0 && SW_Downstream > 0.0 && SW_Downstream < SW_WakeLength) \
-                { \
-                    const float SW_Lateral = dot(SW_Delta, SW_Right); \
-                    const float SW_AbsLateral = abs(SW_Lateral); \
-                    const float SW_LateralRatio = SW_AbsLateral / max(SW_Downstream, 1.0); \
-                    const float SW_EdgeBlend = clamp(SW_Beam / SW_HullLength * 0.45, 0.025, 0.12); \
-                    const float SW_WedgeMask = 1.0 - smoothstep( \
-                        SW_KELVIN_HALF_ANGLE_TANGENT, \
-                        SW_KELVIN_HALF_ANGLE_TANGENT + SW_EdgeBlend, \
-                        SW_LateralRatio); \
-                    if (SW_WedgeMask > 0.0) \
-                    { \
-                        const float SW_Radius = sqrt(SW_Downstream * SW_Downstream + SW_Lateral * SW_Lateral); \
-                        const float SW_SuppressRadius = max(SW_Beam * 0.35, 25.0); \
-                        const float SW_NearFieldMask = smoothstep(SW_SuppressRadius, SW_SuppressRadius + SW_Beam, SW_Radius); \
-                        const float SW_DistanceFade = 1.0 - smoothstep(SW_WakeLength * 0.72, SW_WakeLength, SW_Downstream); \
-                        const float SW_GeometricDecay = rsqrt(1.0 + SW_Downstream / (SW_HullLength * 3.0)); \
-                        float SW_DirectionalSum = 0.0; \
-                        [unroll] \
-                        for (int SW_DirectionIndex = 0; SW_DirectionIndex < SW_KELVIN_DIRECTION_SAMPLES; ++SW_DirectionIndex) \
-                        { \
-                            const float SW_DirectionAlpha = (float(SW_DirectionIndex) + 0.5) / float(SW_KELVIN_DIRECTION_SAMPLES); \
-                            const float SW_Theta = lerp(-SW_KELVIN_MAX_WAVE_VECTOR_ANGLE, SW_KELVIN_MAX_WAVE_VECTOR_ANGLE, SW_DirectionAlpha); \
-                            const float SW_CosTheta = cos(SW_Theta); \
-                            const float SW_SinTheta = sin(SW_Theta); \
-                            const float SW_WaveNumber = SW_KELVIN_GRAVITY_CM / max(SW_Speed * SW_Speed * SW_CosTheta * SW_CosTheta, 1.0); \
-                            const float SW_SpectrumAlpha = abs(SW_Theta) / SW_KELVIN_MAX_WAVE_VECTOR_ANGLE; \
-                            const float SW_SpectrumBlend = smoothstep(0.22, 0.78, SW_SpectrumAlpha); \
-                            const float SW_SpectrumMagnitude = lerp(SW_TransverseStrength, SW_DivergentStrength, SW_SpectrumBlend); \
-                            const float SW_DraftFilter = exp(-SW_WaveNumber * SW_Draft * 0.35); \
-                            const float SW_BeamTerm = SW_WaveNumber * SW_Beam * 0.40; \
-                            const float SW_BeamFilter = rsqrt(1.0 + SW_BeamTerm * SW_BeamTerm); \
-                            const float SW_QuadratureWeight = SW_SpectrumMagnitude * SW_DraftFilter * SW_BeamFilter * SW_CosTheta; \
-                            const float SW_Phase = SW_WaveNumber * (-SW_Downstream * SW_CosTheta + SW_Lateral * SW_SinTheta) + SW_SourcePhase; \
-                            SW_DirectionalSum += SW_QuadratureWeight * cos(SW_Phase); \
-                        } \
-                        const float SW_NormalizedSpectrum = SW_DirectionalSum * (2.0 / float(SW_KELVIN_DIRECTION_SAMPLES)); \
-                        SW_EventHeight += SW_Amplitude * SW_SourceStrength * SW_NormalizedSpectrum \
-                            * SW_WedgeMask * SW_NearFieldMask * SW_DistanceFade * SW_GeometricDecay; \
-                    } \
-                } \
-            } \
-            OUT_HEIGHT += SW_EventHeight * SW_Freshness; \
-        } \
-    } \
-    OUT_HEIGHT = clamp(OUT_HEIGHT, -150.0, 150.0); \
+    const float SW_UCoord = saturate((U) / 10.0) * float(SW_ATLAS_RES_U - 1); \
+    const float SW_VCoord = saturate(((V) + 3.0) / 6.0) * float(SW_ATLAS_RES_V - 1); \
+    const int SW_U0 = clamp((int)floor(SW_UCoord), 0, SW_ATLAS_RES_U - 1); \
+    const int SW_V0 = clamp((int)floor(SW_VCoord), 0, SW_ATLAS_RES_V - 1); \
+    const int SW_U1 = min(SW_U0 + 1, SW_ATLAS_RES_U - 1); \
+    const int SW_V1 = min(SW_V0 + 1, SW_ATLAS_RES_V - 1); \
+    const float SW_UAlpha = SW_UCoord - float(SW_U0); \
+    const float SW_VAlpha = SW_VCoord - float(SW_V0); \
+    const float2 SW_UV00 = float2((float(SW_V0) + 0.5) / float(SW_ATLAS_RES_V), (float((SLICE) * SW_ATLAS_RES_U + SW_U0) + 0.5) / float(SW_ATLAS_PACKED_HEIGHT)); \
+    const float2 SW_UV01 = float2((float(SW_V1) + 0.5) / float(SW_ATLAS_RES_V), (float((SLICE) * SW_ATLAS_RES_U + SW_U0) + 0.5) / float(SW_ATLAS_PACKED_HEIGHT)); \
+    const float2 SW_UV10 = float2((float(SW_V0) + 0.5) / float(SW_ATLAS_RES_V), (float((SLICE) * SW_ATLAS_RES_U + SW_U1) + 0.5) / float(SW_ATLAS_PACKED_HEIGHT)); \
+    const float2 SW_UV11 = float2((float(SW_V1) + 0.5) / float(SW_ATLAS_RES_V), (float((SLICE) * SW_ATLAS_RES_U + SW_U1) + 0.5) / float(SW_ATLAS_PACKED_HEIGHT)); \
+    const float SW_A = lerp(Texture2DSampleLevel(ATLAS, SAMPLER, SW_UV00, 0.0).r, Texture2DSampleLevel(ATLAS, SAMPLER, SW_UV01, 0.0).r, SW_VAlpha); \
+    const float SW_B = lerp(Texture2DSampleLevel(ATLAS, SAMPLER, SW_UV10, 0.0).r, Texture2DSampleLevel(ATLAS, SAMPLER, SW_UV11, 0.0).r, SW_VAlpha); \
+    OUT_VALUE = lerp(SW_A, SW_B, SW_UAlpha); \
 }
 
-// M1 call-site compatibility. Foam is deliberately disabled for the M2 wake
-// shape pass; the material's existing foam path is not modified here.
-#define SW_EVALUATE_SHIP_WAKE(QUERY_POSITION, SERVER_TIME, EVENT_COUNT, WAKE_TEXTURE, WAKE_SAMPLER, OUT_HEIGHT, OUT_FOAM) \
+#define SW_M4_EVALUATE_KELVIN(WORLD_XY, SERVER_TIME, EVENT_COUNT, WAKE_TEXTURE, WAKE_SAMPLER, TRAJECTORY_TEXTURE, TRAJECTORY_SAMPLER, ATLAS, ATLAS_SAMPLER, OUT_HEIGHT) \
 { \
-    SW_EVALUATE_SHIP_WAKE_M2(QUERY_POSITION, SERVER_TIME, EVENT_COUNT, WAKE_TEXTURE, WAKE_SAMPLER, OUT_HEIGHT); \
-    OUT_FOAM = 0.0; \
+    OUT_HEIGHT = 0.0; \
+    const float2 SW_Query = WORLD_XY; \
+    const int SW_Count = clamp((int)round(EVENT_COUNT), 0, SW_WAKE_CAPACITY); \
+    [loop] \
+    for (int SW_EventIndex = 0; SW_EventIndex < SW_WAKE_CAPACITY; ++SW_EventIndex) \
+    { \
+        if (SW_EventIndex >= SW_Count) break; \
+        const float SW_EventU = (float(SW_EventIndex) + 0.5) / float(SW_WAKE_CAPACITY); \
+        const float4 SW_Row0 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_EventU, 0.1), 0.0); \
+        const float4 SW_Row1 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_EventU, 0.3), 0.0); \
+        const float4 SW_Row2 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_EventU, 0.5), 0.0); \
+        const float4 SW_Row3 = Texture2DSampleLevel(WAKE_TEXTURE, WAKE_SAMPLER, float2(SW_EventU, 0.7), 0.0); \
+        const float SW_Age = (SERVER_TIME) - SW_Row0.z; \
+        const float SW_Lifetime = max(SW_Row2.y, 0.1); \
+        if (SW_Row0.w <= 0.0 || SW_Age < 0.0 || SW_Age >= SW_Lifetime) continue; \
+        const float2 SW_Forward = normalize(SW_Row1.xy + float2(1.0e-8, 0.0)); \
+        const float2 SW_PredictedApex = SW_Row0.xy + SW_Forward * max(SW_Row2.x, 0.0) * clamp(SW_Age, 0.0, 0.2); \
+        const int SW_PathCount = clamp((int)round(SW_Row3.y), 0, SW_TRAJECTORY_CAPACITY); \
+        float SW_Downstream = -dot(SW_Query - SW_PredictedApex, SW_Forward); \
+        float SW_Lateral = dot(SW_Query - SW_PredictedApex, float2(-SW_Forward.y, SW_Forward.x)); \
+        if (SW_PathCount >= 2) \
+        { \
+            float SW_BestDistance2 = 3.402823466e+38; \
+            float SW_Cumulative = 0.0; \
+            float2 SW_LastForward = SW_Forward; \
+            [loop] \
+            for (int SW_PathIndex = 0; SW_PathIndex < SW_TRAJECTORY_CAPACITY - 1; ++SW_PathIndex) \
+            { \
+                if (SW_PathIndex >= SW_PathCount - 1) break; \
+                const float SW_PathY = (float(SW_EventIndex) + 0.5) / float(SW_WAKE_CAPACITY); \
+                float2 SW_A = SW_PredictedApex; \
+                if (SW_PathIndex > 0) SW_A = Texture2DSampleLevel(TRAJECTORY_TEXTURE, TRAJECTORY_SAMPLER, float2((float(SW_PathIndex) + 0.5) / float(SW_TRAJECTORY_CAPACITY), SW_PathY), 0.0).xy; \
+                const float2 SW_B = Texture2DSampleLevel(TRAJECTORY_TEXTURE, TRAJECTORY_SAMPLER, float2((float(SW_PathIndex + 1) + 0.5) / float(SW_TRAJECTORY_CAPACITY), SW_PathY), 0.0).xy; \
+                const float2 SW_Segment = SW_B - SW_A; \
+                const float SW_SegmentLength = length(SW_Segment); \
+                if (SW_SegmentLength <= 1.0) continue; \
+                const float2 SW_SegmentForward = -SW_Segment / SW_SegmentLength; \
+                SW_LastForward = SW_SegmentForward; \
+                const float SW_T = saturate(dot(SW_Query - SW_A, SW_Segment) / (SW_SegmentLength * SW_SegmentLength)); \
+                const float2 SW_Offset = SW_Query - (SW_A + SW_Segment * SW_T); \
+                const float SW_Distance2 = dot(SW_Offset, SW_Offset); \
+                if (SW_Distance2 < SW_BestDistance2) \
+                { \
+                    SW_BestDistance2 = SW_Distance2; \
+                    SW_Downstream = SW_Cumulative + SW_SegmentLength * SW_T; \
+                    SW_Lateral = dot(SW_Offset, float2(-SW_SegmentForward.y, SW_SegmentForward.x)); \
+                } \
+                SW_Cumulative += SW_SegmentLength; \
+            } \
+            const float SW_PathY = (float(SW_EventIndex) + 0.5) / float(SW_WAKE_CAPACITY); \
+            const float2 SW_TailOrigin = Texture2DSampleLevel(TRAJECTORY_TEXTURE, TRAJECTORY_SAMPLER, float2((float(SW_PathCount - 1) + 0.5) / float(SW_TRAJECTORY_CAPACITY), SW_PathY), 0.0).xy; \
+            const float SW_TailDistance = max(-dot(SW_Query - SW_TailOrigin, SW_LastForward), 0.0); \
+            const float2 SW_TailOffset = SW_Query - (SW_TailOrigin - SW_LastForward * SW_TailDistance); \
+            if (dot(SW_TailOffset, SW_TailOffset) < SW_BestDistance2) \
+            { \
+                SW_Downstream = SW_Cumulative + SW_TailDistance; \
+                SW_Lateral = dot(SW_TailOffset, float2(-SW_LastForward.y, SW_LastForward.x)); \
+            } \
+        } \
+        if (SW_Downstream < 0.0 || (SW_Downstream <= 1.0 && dot(SW_Query - SW_PredictedApex, SW_Forward) > 0.0)) continue; \
+        const float SW_Speed = max(SW_Row1.z, 1.0); \
+        const float SW_PressureSize = max(SW_Row1.w, 1.0); \
+        const float SW_Froude = SW_Speed / sqrt(SW_KELVIN_GRAVITY_CM * SW_PressureSize); \
+        const float SW_Wavelength = SW_KELVIN_TWO_PI * SW_Speed * SW_Speed / SW_KELVIN_GRAVITY_CM; \
+        const float SW_AtlasU = SW_Downstream / (SW_Wavelength * max(SW_Row2.z, 0.01)); \
+        const float SW_AtlasV = SW_Lateral / (SW_Wavelength * max(SW_Row2.w, 0.01)); \
+        if (SW_AtlasU < 0.0 || SW_AtlasU > 10.0 || SW_AtlasV < -3.0 || SW_AtlasV > 3.0 || SW_Froude <= 0.2) continue; \
+        int SW_Upper = 1; float SW_F0 = 0.2; float SW_F1 = 0.3; float SW_Peak0 = 0.0000000420757; float SW_Peak1 = 0.0315173446; \
+        if (SW_Froude > 0.3) { SW_Upper=2; SW_F0=0.3; SW_F1=0.4; SW_Peak0=0.0315173446; SW_Peak1=0.4836892680; } \
+        if (SW_Froude > 0.4) { SW_Upper=3; SW_F0=0.4; SW_F1=0.5; SW_Peak0=0.4836892680; SW_Peak1=1.3871971383; } \
+        if (SW_Froude > 0.5) { SW_Upper=4; SW_F0=0.5; SW_F1=0.6; SW_Peak0=1.3871971383; SW_Peak1=2.5378550849; } \
+        if (SW_Froude > 0.6) { SW_Upper=5; SW_F0=0.6; SW_F1=0.7; SW_Peak0=2.5378550849; SW_Peak1=3.9109640445; } \
+        if (SW_Froude > 0.7) { SW_Upper=6; SW_F0=0.7; SW_F1=0.8; SW_Peak0=3.9109640445; SW_Peak1=5.5341061850; } \
+        if (SW_Froude > 0.8) { SW_Upper=7; SW_F0=0.8; SW_F1=1.0; SW_Peak0=5.5341061850; SW_Peak1=9.6514712048; } \
+        if (SW_Froude > 1.0) { SW_Upper=8; SW_F0=1.0; SW_F1=1.25; SW_Peak0=9.6514712048; SW_Peak1=16.0166310274; } \
+        if (SW_Froude > 1.25) { SW_Upper=9; SW_F0=1.25; SW_F1=1.5; SW_Peak0=16.0166310274; SW_Peak1=21.9746402757; } \
+        if (SW_Froude > 1.5) { SW_Upper=10; SW_F0=1.5; SW_F1=1.75; SW_Peak0=21.9746402757; SW_Peak1=27.1834687593; } \
+        if (SW_Froude > 1.75) { SW_Upper=11; SW_F0=1.75; SW_F1=2.0; SW_Peak0=27.1834687593; SW_Peak1=35.4332880637; } \
+        const int SW_Lower = SW_Upper - 1; \
+        const float SW_FrAlpha = saturate((SW_Froude - SW_F0) / (SW_F1 - SW_F0)); \
+        float SW_Z0 = 0.0; float SW_Z1 = 0.0; \
+        SW_M4_SAMPLE_ATLAS_SLICE(ATLAS, ATLAS_SAMPLER, SW_Lower, SW_AtlasU, SW_AtlasV, SW_Z0); \
+        SW_M4_SAMPLE_ATLAS_SLICE(ATLAS, ATLAS_SAMPLER, SW_Upper, SW_AtlasU, SW_AtlasV, SW_Z1); \
+        SW_Z0 = SW_Peak0 >= 0.001 ? SW_Z0 / SW_Peak0 : 0.0; \
+        SW_Z1 = SW_Peak1 >= 0.001 ? SW_Z1 / SW_Peak1 : 0.0; \
+        const float SW_Radius = sqrt(SW_Downstream * SW_Downstream + SW_Lateral * SW_Lateral); \
+        const float SW_NearMask = SW_Row3.x <= 0.0 ? 1.0 : smoothstep(SW_Row3.x, SW_Row3.x + SW_PressureSize * 0.25, SW_Radius); \
+        const float SW_Freshness = 1.0 - smoothstep(SW_Lifetime * 0.55, SW_Lifetime, SW_Age); \
+        OUT_HEIGHT += SW_Row0.w * lerp(SW_Z0, SW_Z1, SW_FrAlpha) * smoothstep(0.2, 0.3, SW_Froude) * SW_NearMask * SW_Freshness; \
+    } \
+    OUT_HEIGHT = clamp(OUT_HEIGHT, -200.0, 200.0); \
 }

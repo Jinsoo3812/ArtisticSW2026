@@ -1,5 +1,7 @@
 #include "SWShipWakeSubsystem.h"
 
+#include "SWKelvinWakeAtlas.h"
+
 #include "Engine/World.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "EngineUtils.h"
@@ -19,6 +21,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogSWShipWake, Log, All);
 namespace SWShipWakeMaterial
 {
 	const FName TextureParameter(TEXT("ShipWakeTex"));
+	const FName TrajectoryTextureParameter(TEXT("ShipWakeTrajectoryTex"));
+	const FName AtlasTextureParameter(TEXT("ShipWakeAtlas"));
 	const FName CountParameter(TEXT("ShipWakeCount"));
 	const FName TimeParameter(TEXT("ShipWakeServerTime"));
 	const FName HeightFieldParameter(TEXT("ShipWakeHeightField"));
@@ -63,6 +67,7 @@ namespace SWShipWakeField
 void USWShipWakeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+	FSWKelvinWakeAtlas::Get().Initialize();
 	if (IsRunningDedicatedServer())
 	{
 		return;
@@ -79,6 +84,20 @@ void USWShipWakeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		WakeTexture->NeverStream = true;
 		WakeTexture->UpdateResource();
 	}
+
+	TrajectoryTexture = UTexture2D::CreateTransient(
+		TrajectoryCapacity, WakeCapacity, PF_A32B32G32R32F, TEXT("SWShipWakeTrajectoryTex"));
+	if (TrajectoryTexture)
+	{
+		TrajectoryTexture->SRGB = false;
+		TrajectoryTexture->CompressionSettings = TC_VectorDisplacementmap;
+		TrajectoryTexture->Filter = TF_Nearest;
+		TrajectoryTexture->AddressX = TA_Clamp;
+		TrajectoryTexture->AddressY = TA_Clamp;
+		TrajectoryTexture->NeverStream = true;
+		TrajectoryTexture->UpdateResource();
+	}
+	KelvinAtlasTexture = FSWKelvinWakeAtlas::Get().CreateTransientTexture(TEXT("SWKelvinWakeAtlasR16F"));
 }
 
 void USWShipWakeSubsystem::Deinitialize()
@@ -88,6 +107,8 @@ void USWShipWakeSubsystem::Deinitialize()
 		Events.Reset();
 	}
 	WakeTexture = nullptr;
+	TrajectoryTexture = nullptr;
+	KelvinAtlasTexture = nullptr;
 	HeightStates.Reset();
 	HeightStateCenters.Reset();
 	HeightFieldUpdateMID = nullptr;
@@ -112,14 +133,6 @@ void USWShipWakeSubsystem::Tick(float DeltaTime)
 	if (!IsRunningDedicatedServer())
 	{
 		UpdateTexture(ServerTime);
-		HeightFieldAccumulator += FMath::Min(DeltaTime, 0.1f);
-		const float FixedStep = 1.0f / FMath::Clamp(
-			SWShipWakeField::SimulationHz.GetValueOnGameThread(), 15.0f, 60.0f);
-		if (HeightFieldAccumulator >= FixedStep && InitializeHeightField())
-		{
-			StepHeightField(ServerTime, FixedStep);
-			HeightFieldAccumulator = FMath::Fmod(HeightFieldAccumulator, FixedStep);
-		}
 		BindToWaterMaterials(ServerTime);
 	}
 }
@@ -222,7 +235,7 @@ void USWShipWakeSubsystem::RemoveExpiredEvents(const double ServerTime)
 void USWShipWakeSubsystem::UpdateTexture(const double ServerTime)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(SW_ShipWake_UpdateTexture);
-	if (!WakeTexture)
+	if (!WakeTexture || !TrajectoryTexture)
 	{
 		return;
 	}
@@ -237,6 +250,8 @@ void USWShipWakeSubsystem::UpdateTexture(const double ServerTime)
 
 	TArray<FLinearColor> Pixels;
 	Pixels.SetNumZeroed(WakeCapacity * 5);
+	TArray<FLinearColor> TrajectoryPixels;
+	TrajectoryPixels.SetNumZeroed(WakeCapacity * TrajectoryCapacity);
 	for (int32 Index = 0; Index < Count; ++Index)
 	{
 		const FSWShipWakeEvent& Event = ActiveEvents[Index];
@@ -249,22 +264,25 @@ void USWShipWakeSubsystem::UpdateTexture(const double ServerTime)
 			Event.Forward.X,
 			Event.Forward.Y,
 			Event.SpeedCmPerSecond,
-			Event.HullLengthCm);
+			Event.PressureSizeCm);
 		Pixels[Index + WakeCapacity * 2] = FLinearColor(
-			Event.BeamWidthCm,
-			Event.DraftCm,
-			Event.WakeLengthCm,
-			Event.StateLifetime);
-		Pixels[Index + WakeCapacity * 3] = FLinearColor(
-			Event.TransverseStrength,
-			Event.DivergentStrength,
-			Event.SternStrength,
-			Event.SternPhaseOffsetRadians);
-		Pixels[Index + WakeCapacity * 4] = FLinearColor(
 			Event.AdvectionSpeedCmPerSecond,
-			0.0f,
-			0.0f,
+			Event.StateLifetime,
+			Event.LongitudinalScale,
+			Event.LateralScale);
+		Pixels[Index + WakeCapacity * 3] = FLinearColor(
+			Event.NearHullSuppressDistanceCm,
+			static_cast<float>(FMath::Min(Event.TrajectoryPoints.Num(), TrajectoryCapacity)),
+			Event.HullLengthCm,
 			0.0f);
+		for (int32 PointIndex = 0;
+			PointIndex < Event.TrajectoryPoints.Num() && PointIndex < TrajectoryCapacity;
+			++PointIndex)
+		{
+			const FVector2D& Point = Event.TrajectoryPoints[PointIndex];
+			TrajectoryPixels[Index * TrajectoryCapacity + PointIndex] = FLinearColor(
+				Point.X, Point.Y, 0.0f, 1.0f);
+		}
 	}
 
 	if (FTexture2DResource* TextureResource = static_cast<FTexture2DResource*>(WakeTexture->GetResource()))
@@ -278,6 +296,23 @@ void USWShipWakeSubsystem::UpdateTexture(const double ServerTime)
 					0,
 					Region,
 					USWShipWakeSubsystem::WakeCapacity * sizeof(FLinearColor),
+					reinterpret_cast<const uint8*>(Data.GetData()));
+			});
+	}
+	if (FTexture2DResource* TextureResource = static_cast<FTexture2DResource*>(TrajectoryTexture->GetResource()))
+	{
+		ENQUEUE_RENDER_COMMAND(UpdateSWShipWakeTrajectoryTexture)(
+			[TextureResource, Data = MoveTemp(TrajectoryPixels)](FRHICommandListImmediate& RHICmdList)
+			{
+				const FUpdateTextureRegion2D Region(
+					0, 0, 0, 0,
+					USWShipWakeSubsystem::TrajectoryCapacity,
+					USWShipWakeSubsystem::WakeCapacity);
+				RHICmdList.UpdateTexture2D(
+					TextureResource->GetTexture2DRHI(),
+					0,
+					Region,
+					USWShipWakeSubsystem::TrajectoryCapacity * sizeof(FLinearColor),
 					reinterpret_cast<const uint8*>(Data.GetData()));
 			});
 	}
@@ -476,7 +511,7 @@ UTextureRenderTarget2D* USWShipWakeSubsystem::GetHeightField() const
 
 void USWShipWakeSubsystem::BindToWaterMaterials(const double ServerTime)
 {
-	if (!GetWorld() || !WakeTexture)
+	if (!GetWorld() || !WakeTexture || !TrajectoryTexture || !KelvinAtlasTexture)
 	{
 		return;
 	}
@@ -490,18 +525,12 @@ void USWShipWakeSubsystem::BindToWaterMaterials(const double ServerTime)
 			continue;
 		}
 		WaterMID->SetTextureParameterValue(SWShipWakeMaterial::TextureParameter, WakeTexture);
+		WaterMID->SetTextureParameterValue(
+			SWShipWakeMaterial::TrajectoryTextureParameter, TrajectoryTexture);
+		WaterMID->SetTextureParameterValue(
+			SWShipWakeMaterial::AtlasTextureParameter, KelvinAtlasTexture);
 		WaterMID->SetScalarParameterValue(SWShipWakeMaterial::CountParameter, static_cast<float>(LastUploadedCount));
 		WaterMID->SetScalarParameterValue(SWShipWakeMaterial::TimeParameter, static_cast<float>(ServerTime));
-		if (UTextureRenderTarget2D* HeightField = GetHeightField())
-		{
-			WaterMID->SetTextureParameterValue(SWShipWakeMaterial::HeightFieldParameter, HeightField);
-			WaterMID->SetVectorParameterValue(
-				SWShipWakeMaterial::FieldCenterParameter,
-				FLinearColor(HeightStateCenters[CurrentHeightStateIndex].X, HeightStateCenters[CurrentHeightStateIndex].Y, 0.0f, 0.0f));
-			WaterMID->SetScalarParameterValue(
-				SWShipWakeMaterial::FieldSizeParameter,
-				FMath::Max(SWShipWakeField::WorldSizeCm.GetValueOnGameThread(), 1000.0f));
-		}
 	}
 }
 

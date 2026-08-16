@@ -4,12 +4,8 @@
 #include "SWShipWakeTypes.generated.h"
 
 /**
- * One server-authored steady Kelvin wake generator.
- *
- * M2 stores the current hull state rather than an expanding circular packet.
- * M3 uses it as a moving GPU-field source while CPU buoyancy queries retain the
- * M2 directional-spectrum approximation. The plain-data struct is safe to copy
- * into the async Network Physics input snapshot.
+ * One server-authored M4 Kelvin atlas generator. The same state and baked FP16
+ * atlas are consumed by Water WPO, game-thread water queries and Async Physics.
  */
 USTRUCT(BlueprintType)
 struct WATERANDSHIP_API FSWShipWakeEvent
@@ -25,6 +21,10 @@ struct WATERANDSHIP_API FSWShipWakeEvent
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake")
 	FVector2D Forward = FVector2D(1.0, 0.0);
 
+	/** Newest-to-oldest vessel path. Point zero is the current Kelvin apex. */
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake|M4")
+	TArray<FVector2D> TrajectoryPoints;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake")
 	double UpdateServerTime = 0.0;
 
@@ -37,6 +37,19 @@ struct WATERANDSHIP_API FSWShipWakeEvent
 	/** Raw hull translation speed used only to extrapolate source position between updates. */
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake")
 	float AdvectionSpeedCmPerSecond = 0.0f;
+
+	/** Gaussian pressure length b used by Fr = V / sqrt(g b). */
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake|M4")
+	float PressureSizeCm = 2400.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake|M4")
+	float LongitudinalScale = 1.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake|M4")
+	float LateralScale = 1.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake|M4")
+	float NearHullSuppressDistanceCm = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake")
 	float HullLengthCm = 2400.0f;
@@ -72,7 +85,7 @@ struct WATERANDSHIP_API FSWShipWakeEvent
 	{
 		return Amplitude > 0.0f
 			&& SpeedCmPerSecond > UE_SMALL_NUMBER
-			&& HullLengthCm > UE_SMALL_NUMBER
+			&& PressureSizeCm > UE_SMALL_NUMBER
 			&& ServerTime >= UpdateServerTime
 			&& ServerTime < GetExpireServerTime();
 	}
