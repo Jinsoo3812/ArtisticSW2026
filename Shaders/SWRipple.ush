@@ -1,0 +1,53 @@
+#pragma once
+
+// Ripple Subsystem Evaluator for WPO and Normal Computation
+// Macro-only design for Unreal Engine Material Custom Nodes
+
+#define SW_RIPPLE_CAPACITY 32
+
+#define SW_EVALUATE_RIPPLE_HEIGHT(WORLD_XY, SERVER_TIME, RIPPLE_TEX, OUT_HEIGHT) \
+{ \
+    const float2 SW_R_WorldPos = (WORLD_XY); \
+    const float SW_R_ServerTime = (SERVER_TIME); \
+    float SW_R_TotalHeight = 0.0; \
+    [loop] \
+    for (int SW_R_Index = 0; SW_R_Index < SW_RIPPLE_CAPACITY; ++SW_R_Index) \
+    { \
+        const float4 SW_R_Row1 = (RIPPLE_TEX).Load(int3(SW_R_Index, 0, 0)); \
+        const float4 SW_R_Row2 = (RIPPLE_TEX).Load(int3(SW_R_Index, 1, 0)); \
+        const float2 SW_R_Origin = SW_R_Row1.xy; \
+        const float SW_R_StartTime = SW_R_Row1.z; \
+        const float SW_R_InitialAmp = SW_R_Row1.w; \
+        const float SW_R_WaveSpeed = SW_R_Row2.x; \
+        const float SW_R_DecayRate = SW_R_Row2.y; \
+        const float SW_R_WaveLength = SW_R_Row2.z; \
+        const float SW_R_ExpireTime = SW_R_Row2.w; \
+        if (SW_R_InitialAmp <= 0.0 || SW_R_ServerTime >= SW_R_ExpireTime) continue; \
+        const float SW_R_dt = SW_R_ServerTime - SW_R_StartTime; \
+        if (SW_R_dt < 0.0) continue; \
+        const float SW_R_d = distance(SW_R_WorldPos, SW_R_Origin); \
+        const float SW_R_R = SW_R_WaveSpeed * SW_R_dt; \
+        const float SW_R_W = SW_R_WaveLength * 2.0; \
+        if (SW_R_d > SW_R_R + SW_R_W || (SW_R_R > SW_R_W && SW_R_d < SW_R_R - SW_R_W)) continue; \
+        const float SW_R_Decay = exp(-SW_R_DecayRate * SW_R_dt); \
+        const float SW_R_DistFromFront = abs(SW_R_d - SW_R_R); \
+        const float SW_R_Envelope = 1.0 - smoothstep(0.0, SW_R_W, SW_R_DistFromFront); \
+        const float SW_R_Phase = (SW_R_d - SW_R_R) / SW_R_WaveLength * 2.0 * 3.14159265; \
+        SW_R_TotalHeight += SW_R_InitialAmp * SW_R_Decay * cos(SW_R_Phase) * SW_R_Envelope; \
+    } \
+    OUT_HEIGHT = SW_R_TotalHeight; \
+}
+
+#define SW_EVALUATE_RIPPLE_NORMAL(WORLD_XY, SERVER_TIME, RIPPLE_TEX, NORMAL_STRENGTH, OUT_NORMAL) \
+{ \
+    float SW_R_H_Center = 0.0; \
+    float SW_R_H_PosX = 0.0; \
+    float SW_R_H_PosY = 0.0; \
+    const float SW_R_NormDelta = 25.0; /* 25cm finite difference for ripple curvature */ \
+    SW_EVALUATE_RIPPLE_HEIGHT(WORLD_XY, SERVER_TIME, RIPPLE_TEX, SW_R_H_Center); \
+    SW_EVALUATE_RIPPLE_HEIGHT((WORLD_XY) + float2(SW_R_NormDelta, 0.0), SERVER_TIME, RIPPLE_TEX, SW_R_H_PosX); \
+    SW_EVALUATE_RIPPLE_HEIGHT((WORLD_XY) + float2(0.0, SW_R_NormDelta), SERVER_TIME, RIPPLE_TEX, SW_R_H_PosY); \
+    const float SW_R_dHdX = (SW_R_H_PosX - SW_R_H_Center) / SW_R_NormDelta; \
+    const float SW_R_dHdY = (SW_R_H_PosY - SW_R_H_Center) / SW_R_NormDelta; \
+    OUT_NORMAL = normalize(float3(-SW_R_dHdX * (NORMAL_STRENGTH), -SW_R_dHdY * (NORMAL_STRENGTH), 1.0)); \
+}
