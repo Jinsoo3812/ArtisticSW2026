@@ -6,12 +6,12 @@
 #include "UI/InventoryPanelWidget.h"
 #include "BasePlayer.h"
 #include "Inventory/InventoryComponent.h"
-#include "Components/HorizontalBox.h"
 #include "Components/Border.h"
 #include "UI/InventoryCursorWidget.h"
 #include "UI/HealthBarWidget.h"
 #include "UI/BowCrosshairWidget.h"
 #include "UI/SkillQuickSlotWidget.h"
+#include "UI/WeaponQuickSlotWidget.h"
 #include "UI/StorageWindowWidget.h"
 #include "Storage/StorageChest.h"
 #include "Components/CanvasPanel.h"
@@ -188,6 +188,10 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	UnbindSkillComponent();
 
 	CachedPlayer = InPlayer;
+	if (WeaponQuickSlot)
+	{
+		WeaponQuickSlot->InitializeForPlayer(InPlayer);
+	}
 
 	if (CachedPlayer.IsValid())
 	{
@@ -711,74 +715,37 @@ float UPlayerHUDWidget::GetCrosshairResponsiveScale(const FVector2D& LocalSize) 
 
 void UPlayerHUDWidget::RefreshQuickSlots()
 {
-	constexpr int32 QuickSlotCount = 5;
-	TArray<UQuickSlotEntryWidget*> EditorPlacedEntries =
+	constexpr int32 FirstConsumableQuickSlotIndex = 2;
+	constexpr int32 ConsumableQuickSlotCount = 3;
+	UQuickSlotEntryWidget* ConsumableEntries[ConsumableQuickSlotCount] =
 	{
-		WeaponQuickSlot1, WeaponQuickSlot2, ConsumableQuickSlot3, ConsumableQuickSlot4, ConsumableQuickSlot5
+		ConsumableQuickSlot3, ConsumableQuickSlot4, ConsumableQuickSlot5
 	};
-	const bool bHasEditorPlacedEntries = EditorPlacedEntries.ContainsByPredicate([](const UQuickSlotEntryWidget* Entry)
+	const FGameplayTag FallbackSlotTags[ConsumableQuickSlotCount] =
 	{
-		return Entry != nullptr;
-	});
-
-	if (bHasEditorPlacedEntries)
-	{
-		QuickSlotEntries.Reset();
-		for (UQuickSlotEntryWidget* Entry : EditorPlacedEntries)
-		{
-			QuickSlotEntries.Add(Entry);
-		}
-	}
-	else if (QuickSlotBox && QuickSlotEntryClass &&
-		(QuickSlotEntries.Num() != QuickSlotCount || QuickSlotBox->GetChildrenCount() != QuickSlotCount))
-	{
-		QuickSlotBox->ClearChildren();
-		QuickSlotEntries.Reset();
-
-		for (int32 Index = 0; Index < QuickSlotCount; ++Index)
-		{
-			UQuickSlotEntryWidget* EntryWidget = CreateWidget<UQuickSlotEntryWidget>(this, QuickSlotEntryClass);
-			if (!EntryWidget)
-			{
-				continue;
-			}
-
-			EntryWidget->SetVisibility(ESlateVisibility::Visible);
-			QuickSlotBox->AddChild(EntryWidget);
-			QuickSlotEntries.Add(EntryWidget);
-		}
-	}
-	else if (!QuickSlotBox || !QuickSlotEntryClass)
-	{
-		return;
-	}
-
-	const FGameplayTag FallbackSlotTags[QuickSlotCount] =
-	{
-		Key_Item_1,
-		Key_Item_2,
 		Key_Item_3,
 		Key_Item_4,
 		Key_Item_5
 	};
 
-	for (int32 Index = 0; Index < QuickSlotEntries.Num(); ++Index)
+	for (int32 LocalIndex = 0; LocalIndex < ConsumableQuickSlotCount; ++LocalIndex)
 	{
-		UQuickSlotEntryWidget* EntryWidget = QuickSlotEntries[Index];
+		UQuickSlotEntryWidget* EntryWidget = ConsumableEntries[LocalIndex];
 		if (!EntryWidget)
 		{
 			continue;
 		}
+		const int32 QuickSlotIndex = FirstConsumableQuickSlotIndex + LocalIndex;
 
-		FGameplayTag SlotTag = FallbackSlotTags[Index];
+		FGameplayTag SlotTag = FallbackSlotTags[LocalIndex];
 		UTexture2D* Icon = nullptr;
 		FText ItemName = FText::GetEmpty();
 		bool bEquipped = false;
 		int32 Count = 0;
 
-		if (CachedPlayer.IsValid() && CachedPlayer->QuickSlots.IsValidIndex(Index))
+		if (CachedPlayer.IsValid() && CachedPlayer->QuickSlots.IsValidIndex(QuickSlotIndex))
 		{
-			const FQuickSlotReference& QuickSlot = CachedPlayer->QuickSlots[Index];
+			const FQuickSlotReference& QuickSlot = CachedPlayer->QuickSlots[QuickSlotIndex];
 			SlotTag = QuickSlot.KeyTag.IsValid() ? QuickSlot.KeyTag : SlotTag;
 
 			if (QuickSlot.ItemTag.IsValid())
@@ -794,7 +761,7 @@ void UPlayerHUDWidget::RefreshQuickSlots()
 		}
 
 		EntryWidget->SetVisibility(ESlateVisibility::Visible);
-		EntryWidget->ConfigureInteraction(Index, false);
+		EntryWidget->ConfigureInteraction(QuickSlotIndex, false);
 		EntryWidget->SetupFromData(SlotTag, ItemName, Icon, bEquipped, Count);
 	}
 }

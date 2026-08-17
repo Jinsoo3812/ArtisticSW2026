@@ -11,9 +11,9 @@
  * 
  */
 class ABasePlayer;
-class UHorizontalBox;
 class UBorder;
 class UQuickSlotEntryWidget;
+class UWeaponQuickSlotWidget;
 class UInventoryPanelWidget;
 class UInventoryCursorWidget;
 class UCanvasPanel;
@@ -62,13 +62,9 @@ protected:
 		const FWidgetStyle& InWidgetStyle,
 		bool bParentEnabled) const override;
 
+	/** Designer-placed HUD-only weapon quick slot container: WeaponQuickSlot. */
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UHorizontalBox> QuickSlotBox;
-
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UQuickSlotEntryWidget> WeaponQuickSlot1;
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UQuickSlotEntryWidget> WeaponQuickSlot2;
+	TObjectPtr<UWeaponQuickSlotWidget> WeaponQuickSlot;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UQuickSlotEntryWidget> ConsumableQuickSlot3;
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -82,13 +78,7 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UInventoryPanelWidget> InventoryPanelWidget;
 
-	UPROPERTY(EditDefaultsOnly, Category = "UI")
-	TSubclassOf<UQuickSlotEntryWidget> QuickSlotEntryClass;
-
 	TWeakObjectPtr<ABasePlayer> CachedPlayer;
-
-	UPROPERTY()
-	TArray<TObjectPtr<UQuickSlotEntryWidget>> QuickSlotEntries;
 
 	/** Designer-placed USkillQuickSlotWidget children are discovered automatically. */
 	UPROPERTY()

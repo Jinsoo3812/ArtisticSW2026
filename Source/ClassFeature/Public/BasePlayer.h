@@ -15,6 +15,7 @@
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
 DECLARE_MULTICAST_DELEGATE(FOnItemSlotsChangedDelegate);
 DECLARE_MULTICAST_DELEGATE(FOnQuickSlotsChangedDelegate);
+DECLARE_MULTICAST_DELEGATE(FOnConsumableQuickSlotInputChangedDelegate);
 
 class USpringArmComponent;
 class UCameraComponent;
@@ -458,6 +459,13 @@ public:
 	TArray<FQuickSlotReference> QuickSlots;
 
 	FOnQuickSlotsChangedDelegate OnQuickSlotsChanged;
+	FOnConsumableQuickSlotInputChangedDelegate OnConsumableQuickSlotInputChanged;
+
+	UFUNCTION(BlueprintPure, Category = "QuickSlot")
+	int32 GetPressedConsumableQuickSlotIndex() const;
+
+	void BeginConsumableQuickSlotInput(int32 QuickSlotIndex);
+	void EndConsumableQuickSlotInput(int32 QuickSlotIndex);
 
 	UFUNCTION(BlueprintCallable, Category = "QuickSlot")
 	void AssignQuickSlotFromInventory(int32 QuickSlotIndex);
@@ -512,15 +520,20 @@ protected:
 	void EquipItemFromSlot(FGameplayTag SlotTag);
 	void ActivateQuickSlot1();
 	void ActivateQuickSlot2();
-	void ActivateQuickSlot3();
-	void ActivateQuickSlot4();
-	void ActivateQuickSlot5();
+	void PressQuickSlot3();
+	void ReleaseQuickSlot3();
+	void PressQuickSlot4();
+	void ReleaseQuickSlot4();
+	void PressQuickSlot5();
+	void ReleaseQuickSlot5();
 	void InitializeQuickSlots();
 	void UnequipCurrentItem();
 	bool EquipInventoryWeapon(FGameplayTag ItemTag);
 	bool ConsumeInventoryItem(FGameplayTag ItemTag);
 	void HandleInventoryContentsChanged();
 	bool IsEquippedItemOwnedByLegacySlot() const;
+
+	TArray<int32> PressedConsumableQuickSlotIndices;
 
 	// 서버에서 먼저 ItemSlot 처리를 해준 후 클라이언트가 수행하기 위해
 	UFUNCTION(Server, Reliable)

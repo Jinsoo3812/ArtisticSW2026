@@ -113,6 +113,20 @@ bool FPlayerSkillUnlockAndConsumptionTest::RunTest(const FString& Parameters)
 		Player->TryConsumeSkillUse(GameplayAbility_Skill_GravityVortex));
 	TestEqual(TEXT("Rejected use preserves the material count"),
 		Inventory->GetItemCount(Item_Id_Material_SkillMaterial_RareSkill), 2);
+	TestEqual(TEXT("Gravity Vortex skill identity is added"),
+		Inventory->AddItem(Item_Id_Skill_GravityVortex, 1), 1);
+	TestTrue(TEXT("Owning the skill identity unlocks the skill"),
+		SkillComponent->IsSkillUnlocked(GameplayAbility_Skill_GravityVortex));
+	TestTrue(TEXT("Inventory-unlocked skill with material can be used"),
+		Player->CanUseSkill(GameplayAbility_Skill_GravityVortex));
+	TestTrue(TEXT("Inventory-unlocked skill consumes one material"),
+		Player->TryConsumeSkillUse(GameplayAbility_Skill_GravityVortex));
+	TestEqual(TEXT("Inventory unlock remains while the skill identity is owned"),
+		SkillComponent->GetSkillUseCount(GameplayAbility_Skill_GravityVortex), 1);
+	TestTrue(TEXT("Skill identity can be removed"),
+		Inventory->RemoveItem(Item_Id_Skill_GravityVortex, 1));
+	TestFalse(TEXT("Removing the skill identity restores the progression lock"),
+		SkillComponent->IsSkillUnlocked(GameplayAbility_Skill_GravityVortex));
 
 	Player->bBypassSkillRequirementsForTesting = true;
 	TestTrue(TEXT("Common player test switch bypasses lock and material requirements"),
@@ -120,7 +134,7 @@ bool FPlayerSkillUnlockAndConsumptionTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Bypassed use succeeds without consuming an item"),
 		Player->TryConsumeSkillUse(GameplayAbility_Skill_WaterBomb));
 	TestEqual(TEXT("Bypassed use does not change unrelated inventory"),
-		Inventory->GetItemCount(Item_Id_Material_SkillMaterial_RareSkill), 2);
+		Inventory->GetItemCount(Item_Id_Material_SkillMaterial_RareSkill), 1);
 	Player->bBypassSkillRequirementsForTesting = false;
 
 	TestTrue(TEXT("Story API unlocks the skill"),
@@ -130,7 +144,7 @@ bool FPlayerSkillUnlockAndConsumptionTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Completed skill use consumes one material"),
 		Player->TryConsumeSkillUse(GameplayAbility_Skill_GravityVortex));
 	TestEqual(TEXT("Remaining use count mirrors inventory"),
-		SkillComponent->GetSkillUseCount(GameplayAbility_Skill_GravityVortex), 1);
+		SkillComponent->GetSkillUseCount(GameplayAbility_Skill_GravityVortex), 0);
 
 	CleanupWorld();
 	return true;

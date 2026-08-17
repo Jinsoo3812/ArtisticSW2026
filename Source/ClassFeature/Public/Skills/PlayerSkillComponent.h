@@ -73,6 +73,7 @@ public:
 
 	bool CanUseSkillWithInventory(FGameplayTag SkillTag, const UInventoryComponent* Inventory) const;
 	bool TryConsumeSkillUseWithInventory(FGameplayTag SkillTag, UInventoryComponent* Inventory);
+	bool IsSkillUnlockedWithInventory(FGameplayTag SkillTag, const UInventoryComponent* Inventory) const;
 
 	/** Keeps HUD queries valid while the controller is possessing a ship or cannon. */
 	void RegisterInventorySource(UInventoryComponent* Inventory);
