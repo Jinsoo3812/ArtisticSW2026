@@ -101,10 +101,28 @@ void USWShipWakeSubsystem::Tick(const float DeltaTime)
 		if (ServerTime - LastLog >= 1.0)
 		{
 			LastLog = ServerTime;
+			float CpuSampleHeight = 0.0f;
+			FString FirstEventInfo = TEXT("None");
+			{
+				FReadScopeLock Lock(EventsLock);
+				if (!Events.IsEmpty())
+				{
+					const FSWShipWakeEvent& E0 = Events.Last();
+					const double Age = ServerTime - E0.StartServerTime;
+					// 배 뒤쪽 10m 지점 파고 계산
+					const FVector2D TestPos = E0.Origin - E0.Forward * 1000.0f;
+					CpuSampleHeight = GetWakeHeight(FVector(TestPos.X, TestPos.Y, 0.0), ServerTime);
+					FirstEventInfo = FString::Printf(
+						TEXT("Origin=(%.0f, %.0f), Fwd=(%.2f, %.2f), Amp=%.1f, Age=%.2fs, CpuHeightBehind10m=%.2fcm"),
+						E0.Origin.X, E0.Origin.Y, E0.Forward.X, E0.Forward.Y, E0.InitialAmplitudeCm, Age, CpuSampleHeight);
+				}
+			}
 			UE_LOG(LogSWShipWake, Warning,
-				TEXT("[M7Runtime] NetMode=%d Enable=%d Stored=%d Uploaded=%d Revision=%u"),
+				TEXT("[M7Runtime] NetMode=%d Enable=%d Stored=%d Uploaded=%d Rev=%u Mats=%d EventTex=%d GoldenTex=%d Time=%.2f | LastEvent: %s"),
 				static_cast<int32>(GetWorld()->GetNetMode()), CVarEnable.GetValueOnGameThread(),
-				GetEventCount(), LastUploadedCount, Revision.Load());
+				GetEventCount(), LastUploadedCount, Revision.Load(),
+				WaterMaterials.Num(), EventTexture != nullptr, GoldenTexture != nullptr, ServerTime,
+				*FirstEventInfo);
 		}
 	}
 }
@@ -329,13 +347,27 @@ void USWShipWakeSubsystem::RefreshWaterMaterials()
 {
 	WaterMaterials.Reset();
 	if (!GetWorld()) return;
+	int32 WaterBodyCount = 0;
 	for (TActorIterator<AWaterBody> It(GetWorld()); It; ++It)
 	{
+		++WaterBodyCount;
 		UWaterBodyComponent* Component = It->GetWaterBodyComponent();
 		if (UMaterialInstanceDynamic* MID = Component ? Component->GetWaterMaterialInstance() : nullptr)
 		{
 			WaterMaterials.AddUnique(MID);
+			if (CVarDebugLog.GetValueOnGameThread() != 0)
+			{
+				FString ParentName = MID->Parent ? MID->Parent->GetName() : TEXT("None");
+				UE_LOG(LogSWShipWake, Log, TEXT("[M7Runtime] Bound WaterMaterial: %s (Parent: %s, Actor: %s)"),
+					*MID->GetName(), *ParentName, *It->GetName());
+			}
 		}
+	}
+	if (CVarDebugLog.GetValueOnGameThread() != 0 && WaterMaterials.IsEmpty())
+	{
+		UE_LOG(LogSWShipWake, Warning,
+			TEXT("[M7Runtime] RefreshWaterMaterials found %d AWaterBody actors but 0 dynamic water materials!"),
+			WaterBodyCount);
 	}
 }
 
