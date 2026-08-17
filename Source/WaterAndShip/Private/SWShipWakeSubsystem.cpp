@@ -21,6 +21,9 @@ namespace
 		TEXT("sw.ShipWake.Enable"), 1, TEXT("Enable M7 Golden Image Kelvin wake."));
 	TAutoConsoleVariable<int32> CVarDebugLog(
 		TEXT("sw.ShipWake.DebugLog"), 0, TEXT("Log compact M7 event state once per second."));
+	TAutoConsoleVariable<int32> CVarFroudeProfile(
+		TEXT("sw.ShipWake.FroudeProfile"), -1,
+		TEXT("Override Froude Profile: -1=Auto/Emitter, 0=Fr0.30, 1=Fr0.50, 2=Fr0.70, 3=Fr1.00"));
 	constexpr float PredictionDistanceCm = 750.0f;
 	constexpr double PredictionTimeSeconds = 1.0;
 
@@ -49,7 +52,19 @@ void USWShipWakeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		EventTexture->NeverStream = true;
 		EventTexture->UpdateResource();
 	}
-	GoldenTexture = FSWKelvinWakeAtlas::Get().CreateTransientTexture(TEXT("SWKelvinWakeM7Golden"));
+
+	const ESWKelvinFroudeProfile Profiles[FSWKelvinWakeAtlas::ProfileCount] = {
+		ESWKelvinFroudeProfile::Fr_0_30,
+		ESWKelvinFroudeProfile::Fr_0_50,
+		ESWKelvinFroudeProfile::Fr_0_70,
+		ESWKelvinFroudeProfile::Fr_1_00
+	};
+	GoldenTextures.SetNumZeroed(FSWKelvinWakeAtlas::ProfileCount);
+	for (int32 Index = 0; Index < FSWKelvinWakeAtlas::ProfileCount; ++Index)
+	{
+		const FName TexName(*FString::Printf(TEXT("SWKelvinWakeM7Golden_P%d"), Index));
+		GoldenTextures[Index] = FSWKelvinWakeAtlas::Get().CreateTransientTexture(Profiles[Index], TexName);
+	}
 }
 
 void USWShipWakeSubsystem::Deinitialize()
@@ -61,7 +76,7 @@ void USWShipWakeSubsystem::Deinitialize()
 	WaterMaterials.Reset();
 	Replicator.Reset();
 	EventTexture = nullptr;
-	GoldenTexture = nullptr;
+	GoldenTextures.Reset();
 	Super::Deinitialize();
 }
 
@@ -117,11 +132,15 @@ void USWShipWakeSubsystem::Tick(const float DeltaTime)
 						E0.Origin.X, E0.Origin.Y, E0.Forward.X, E0.Forward.Y, E0.InitialAmplitudeCm, Age, CpuSampleHeight);
 				}
 			}
+			UTexture2D* ActiveGolden = GetActiveGoldenTexture();
+			const TCHAR* ProfileNames[] = { TEXT("Fr0.30"), TEXT("Fr0.50"), TEXT("Fr0.70"), TEXT("Fr1.00") };
+			const int32 ProfileIdx = FMath::Clamp(static_cast<int32>(GetActiveFroudeProfile()), 0, 3);
 			UE_LOG(LogSWShipWake, Warning,
-				TEXT("[M7Runtime] NetMode=%d Enable=%d Stored=%d Uploaded=%d Rev=%u Mats=%d EventTex=%d GoldenTex=%d Time=%.2f | LastEvent: %s"),
+				TEXT("[M7Runtime] NetMode=%d Enable=%d Profile=%s Stored=%d Uploaded=%d Rev=%u Mats=%d EventTex=%d GoldenTex=%d Time=%.2f | LastEvent: %s"),
 				static_cast<int32>(GetWorld()->GetNetMode()), CVarEnable.GetValueOnGameThread(),
+				ProfileNames[ProfileIdx],
 				GetEventCount(), LastUploadedCount, Revision.Load(),
-				WaterMaterials.Num(), EventTexture != nullptr, GoldenTexture != nullptr, ServerTime,
+				WaterMaterials.Num(), EventTexture != nullptr, ActiveGolden != nullptr, ServerTime,
 				*FirstEventInfo);
 		}
 	}
@@ -371,9 +390,51 @@ void USWShipWakeSubsystem::RefreshWaterMaterials()
 	}
 }
 
+void USWShipWakeSubsystem::SetActiveFroudeProfile(const ESWKelvinFroudeProfile Profile)
+{
+	ActiveFroudeProfile = Profile;
+}
+
+ESWKelvinFroudeProfile USWShipWakeSubsystem::GetActiveFroudeProfile() const
+{
+	const int32 OverrideIdx = CVarFroudeProfile.GetValueOnGameThread();
+	if (OverrideIdx >= 0 && OverrideIdx < FSWKelvinWakeAtlas::ProfileCount)
+	{
+		return static_cast<ESWKelvinFroudeProfile>(OverrideIdx);
+	}
+	{
+		FReadScopeLock Lock(EventsLock);
+		if (!Events.IsEmpty())
+		{
+			return Events.Last().FroudeProfile;
+		}
+	}
+	return ActiveFroudeProfile;
+}
+
+UTexture2D* USWShipWakeSubsystem::GetActiveGoldenTexture() const
+{
+	const ESWKelvinFroudeProfile Profile = GetActiveFroudeProfile();
+	int32 ProfileIndex = 1;
+	switch (Profile)
+	{
+	case ESWKelvinFroudeProfile::Fr_0_30: ProfileIndex = 0; break;
+	case ESWKelvinFroudeProfile::Fr_0_50: ProfileIndex = 1; break;
+	case ESWKelvinFroudeProfile::Fr_0_70: ProfileIndex = 2; break;
+	case ESWKelvinFroudeProfile::Fr_1_00: ProfileIndex = 3; break;
+	default: ProfileIndex = 1; break;
+	}
+	if (GoldenTextures.IsValidIndex(ProfileIndex))
+	{
+		return GoldenTextures[ProfileIndex];
+	}
+	return GoldenTextures.IsEmpty() ? nullptr : GoldenTextures[0];
+}
+
 void USWShipWakeSubsystem::BindToWaterMaterials(const double ServerTime)
 {
-	if (!EventTexture || !GoldenTexture) return;
+	UTexture2D* ActiveGolden = GetActiveGoldenTexture();
+	if (!EventTexture || !ActiveGolden) return;
 	for (int32 Index = WaterMaterials.Num() - 1; Index >= 0; --Index)
 	{
 		UMaterialInstanceDynamic* MID = WaterMaterials[Index].Get();
@@ -383,7 +444,7 @@ void USWShipWakeSubsystem::BindToWaterMaterials(const double ServerTime)
 			continue;
 		}
 		MID->SetTextureParameterValue(EventTextureParameter, EventTexture);
-		MID->SetTextureParameterValue(GoldenTextureParameter, GoldenTexture);
+		MID->SetTextureParameterValue(GoldenTextureParameter, ActiveGolden);
 		MID->SetScalarParameterValue(CountParameter, static_cast<float>(LastUploadedCount));
 		MID->SetScalarParameterValue(TimeParameter, static_cast<float>(ServerTime));
 		MID->SetScalarParameterValue(EnableParameter,

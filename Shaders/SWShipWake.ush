@@ -40,7 +40,7 @@
         const float SW_Weight = SW_Envelope * SW_FadeIn; \
         const float SW_Decay = exp(-max(SW_R1.w, 0.0) * SW_Age); \
         const float2 SW_GoldenUV = float2(SW_Lateral / SW_HalfWidth * 0.5 + 0.5, SW_Downstream / SW_Length); \
-        const float SW_Golden = Texture2DSampleLevel(GOLDEN_TEX, GOLDEN_SAMPLER, SW_GoldenUV, 0.0).r / SW_M7_GOLDEN_PEAK; \
+        const float SW_Golden = Texture2DSampleLevel(GOLDEN_TEX, GOLDEN_SAMPLER, SW_GoldenUV, 0.0).r; \
         SW_WeightedHeight += SW_R1.y * SW_Golden * SW_Weight * SW_Decay; \
         SW_BlendWeight += SW_Weight; \
     } \

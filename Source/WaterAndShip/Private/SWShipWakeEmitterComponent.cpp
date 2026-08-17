@@ -120,6 +120,7 @@ void USWShipWakeEmitterComponent::EmitResampledSegment(
 		Event.WakeHalfWidthCm = FMath::Max(WakeHalfWidthCm, 100.0f);
 		Event.EnvelopeWidthCm = FMath::Max(EnvelopeWidthCm, 10.0f);
 		Event.FadeInSeconds = FMath::Max(FadeInSeconds, 0.0f);
+		Event.FroudeProfile = FroudeProfile;
 		if (bPredicted) State->SubmitPredictedEvent(Event);
 		else State->SubmitAuthoritativeEvent(Event);
 	}

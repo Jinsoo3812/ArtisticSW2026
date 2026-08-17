@@ -3,6 +3,15 @@
 #include "CoreMinimal.h"
 #include "SWShipWakeTypes.generated.h"
 
+UENUM(BlueprintType)
+enum class ESWKelvinFroudeProfile : uint8
+{
+	Fr_0_30 UMETA(DisplayName = "Fr 0.30 (Transverse Dominant)"),
+	Fr_0_50 UMETA(DisplayName = "Fr 0.50 (Balanced Classical Kelvin)"),
+	Fr_0_70 UMETA(DisplayName = "Fr 0.70 (Transition Wake)"),
+	Fr_1_00 UMETA(DisplayName = "Fr 1.00 (Narrow Divergent Wake 14.3 deg)")
+};
+
 /** M7 immutable source event; Forward is the trajectory tangent at emission. */
 USTRUCT(BlueprintType)
 struct WATERANDSHIP_API FSWShipWakeEvent
@@ -21,6 +30,7 @@ struct WATERANDSHIP_API FSWShipWakeEvent
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float WakeHalfWidthCm = 6000.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float EnvelopeWidthCm = 2500.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float FadeInSeconds = 0.08f;
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") ESWKelvinFroudeProfile FroudeProfile = ESWKelvinFroudeProfile::Fr_0_50;
 
 	bool IsActiveAt(const double ServerTime) const
 	{

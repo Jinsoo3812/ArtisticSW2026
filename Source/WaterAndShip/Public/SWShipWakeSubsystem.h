@@ -34,6 +34,9 @@ public:
 	double GetServerTime() const;
 	int32 GetEventCount() const;
 
+	void SetActiveFroudeProfile(ESWKelvinFroudeProfile Profile);
+	ESWKelvinFroudeProfile GetActiveFroudeProfile() const;
+
 	static constexpr int32 WakeCapacity = 64;
 
 private:
@@ -42,6 +45,7 @@ private:
 	void UpdateEventTexture();
 	void RefreshWaterMaterials();
 	void BindToWaterMaterials(double ServerTime);
+	UTexture2D* GetActiveGoldenTexture() const;
 
 	mutable FRWLock EventsLock;
 	TArray<FSWShipWakeEvent> Events;
@@ -51,10 +55,11 @@ private:
 	int32 NextPredictedEventId = -1;
 	float PhysicsHistoryRetentionSeconds = 2.0f;
 	float MaterialRefreshAccumulator = 0.0f;
+	ESWKelvinFroudeProfile ActiveFroudeProfile = ESWKelvinFroudeProfile::Fr_0_50;
 
 	TWeakObjectPtr<ASWShipWakeReplicator> Replicator;
 	TArray<TWeakObjectPtr<UMaterialInstanceDynamic>> WaterMaterials;
 
 	UPROPERTY(Transient) TObjectPtr<UTexture2D> EventTexture;
-	UPROPERTY(Transient) TObjectPtr<UTexture2D> GoldenTexture;
+	UPROPERTY(Transient) TArray<TObjectPtr<UTexture2D>> GoldenTextures;
 };

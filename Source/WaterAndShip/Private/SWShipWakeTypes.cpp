@@ -37,7 +37,7 @@ namespace
 			? FMath::SmoothStep(0.0f, Event.FadeInSeconds, Age) : 1.0f;
 		const float Decay = FMath::Exp(-FMath::Max(Event.DecayRate, 0.0f) * Age);
 		const float Golden = FSWKelvinWakeAtlas::Get().SampleFixedNormalized(
-			Downstream / Length, Lateral / HalfWidth);
+			Downstream / Length, Lateral / HalfWidth, Event.FroudeProfile);
 		OutBlendWeight = FrontEnvelope * FadeIn;
 		OutWeightedHeight = Event.InitialAmplitudeCm * Golden * OutBlendWeight * Decay;
 		return OutBlendWeight > 0.0f;

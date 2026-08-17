@@ -56,6 +56,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Shape", meta = (ClampMin = "10.0", Units = "cm"))
 	float EnvelopeWidthCm = 2500.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Shape")
+	ESWKelvinFroudeProfile FroudeProfile = ESWKelvinFroudeProfile::Fr_0_50;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Wave", meta = (ClampMin = "0.0", Units = "s"))
 	float FadeInSeconds = 0.08f;
 
