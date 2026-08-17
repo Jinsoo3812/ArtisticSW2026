@@ -99,7 +99,13 @@ void USWShipWakeSubsystem::Tick(const float DeltaTime)
 {
 	const double ServerTime = GetServerTime();
 	RemoveExpiredEvents(ServerTime);
-	if (!IsRunningDedicatedServer())
+
+	const UWorld* World = GetWorld();
+	const bool bIsRenderingClient = World && World->IsGameWorld()
+		&& (World->GetNetMode() != NM_DedicatedServer)
+		&& (World->GetFirstLocalPlayerFromController() != nullptr || World->GetNetMode() == NM_Standalone);
+
+	if (bIsRenderingClient)
 	{
 		UpdateEventTexture();
 		MaterialRefreshAccumulator += DeltaTime;
@@ -110,38 +116,79 @@ void USWShipWakeSubsystem::Tick(const float DeltaTime)
 		}
 		BindToWaterMaterials(ServerTime);
 	}
-	if (CVarDebugLog.GetValueOnGameThread() != 0)
+	const int32 DebugLogLevel = CVarDebugLog.GetValueOnGameThread();
+	if (DebugLogLevel > 0 && bIsRenderingClient)
 	{
-		static double LastLog = -DBL_MAX;
-		if (ServerTime - LastLog >= 1.0)
+		// First event origin initialization as fixed probe point
 		{
-			LastLog = ServerTime;
-			float CpuSampleHeight = 0.0f;
-			FString FirstEventInfo = TEXT("None");
+			FReadScopeLock Lock(EventsLock);
+			if (!bHasLockedProbe && !Events.IsEmpty())
+			{
+				const FSWShipWakeEvent& FirstE = Events[0];
+				LockedProbeLocation = FirstE.Origin - FirstE.Forward * 2000.0f; // 20m behind first emission
+				bHasLockedProbe = true;
+			}
+		}
+
+		if (DebugLogLevel == 1)
+		{
+			static double LastLog = -DBL_MAX;
+			if (ServerTime - LastLog >= 1.0)
+			{
+				LastLog = ServerTime;
+				float CpuSampleHeight = 0.0f;
+				FString FirstEventInfo = TEXT("None");
+				{
+					FReadScopeLock Lock(EventsLock);
+					if (!Events.IsEmpty())
+					{
+						const FSWShipWakeEvent& E0 = Events.Last();
+						const double Age = ServerTime - E0.StartServerTime;
+						const FVector2D TestPos = E0.Origin - E0.Forward * 1000.0f;
+						CpuSampleHeight = GetWakeHeight(FVector(TestPos.X, TestPos.Y, 0.0), ServerTime);
+						FirstEventInfo = FString::Printf(
+							TEXT("Origin=(%.0f, %.0f), Fwd=(%.2f, %.2f), Amp=%.1f, Age=%.2fs, CpuHeightBehind10m=%.2fcm"),
+							E0.Origin.X, E0.Origin.Y, E0.Forward.X, E0.Forward.Y, E0.InitialAmplitudeCm, Age, CpuSampleHeight);
+					}
+				}
+				UTexture2D* ActiveGolden = GetActiveGoldenTexture();
+				const TCHAR* ProfileNames[] = { TEXT("Fr0.30"), TEXT("Fr0.50"), TEXT("Fr0.70"), TEXT("Fr1.00") };
+				const int32 ProfileIdx = FMath::Clamp(static_cast<int32>(GetActiveFroudeProfile()), 0, 3);
+				UE_LOG(LogSWShipWake, Warning,
+					TEXT("[M7Runtime] NetMode=%d Enable=%d Profile=%s Stored=%d Uploaded=%d Rev=%u Mats=%d EventTex=%d GoldenTex=%d Time=%.2f | LastEvent: %s"),
+					static_cast<int32>(GetWorld()->GetNetMode()), CVarEnable.GetValueOnGameThread(),
+					ProfileNames[ProfileIdx],
+					GetEventCount(), LastUploadedCount, Revision.Load(),
+					WaterMaterials.Num(), EventTexture != nullptr, ActiveGolden != nullptr, ServerTime,
+					*FirstEventInfo);
+			}
+		}
+		else if (DebugLogLevel >= 2 && bHasLockedProbe)
+		{
+			// Level 2 & 3: Frame-by-frame continuous time-series probe at fixed coordinate
+			FSWShipWakeDebugSample Sample;
 			{
 				FReadScopeLock Lock(EventsLock);
-				if (!Events.IsEmpty())
-				{
-					const FSWShipWakeEvent& E0 = Events.Last();
-					const double Age = ServerTime - E0.StartServerTime;
-					// 배 뒤쪽 10m 지점 파고 계산
-					const FVector2D TestPos = E0.Origin - E0.Forward * 1000.0f;
-					CpuSampleHeight = GetWakeHeight(FVector(TestPos.X, TestPos.Y, 0.0), ServerTime);
-					FirstEventInfo = FString::Printf(
-						TEXT("Origin=(%.0f, %.0f), Fwd=(%.2f, %.2f), Amp=%.1f, Age=%.2fs, CpuHeightBehind10m=%.2fcm"),
-						E0.Origin.X, E0.Origin.Y, E0.Forward.X, E0.Forward.Y, E0.InitialAmplitudeCm, Age, CpuSampleHeight);
-				}
+				Sample = FSWShipWakeEvaluator::EvaluateDebug(
+					LockedProbeLocation, ServerTime, Events, DebugLogLevel >= 3);
 			}
-			UTexture2D* ActiveGolden = GetActiveGoldenTexture();
-			const TCHAR* ProfileNames[] = { TEXT("Fr0.30"), TEXT("Fr0.50"), TEXT("Fr0.70"), TEXT("Fr1.00") };
-			const int32 ProfileIdx = FMath::Clamp(static_cast<int32>(GetActiveFroudeProfile()), 0, 3);
-			UE_LOG(LogSWShipWake, Warning,
-				TEXT("[M7Runtime] NetMode=%d Enable=%d Profile=%s Stored=%d Uploaded=%d Rev=%u Mats=%d EventTex=%d GoldenTex=%d Time=%.2f | LastEvent: %s"),
-				static_cast<int32>(GetWorld()->GetNetMode()), CVarEnable.GetValueOnGameThread(),
-				ProfileNames[ProfileIdx],
-				GetEventCount(), LastUploadedCount, Revision.Load(),
-				WaterMaterials.Num(), EventTexture != nullptr, ActiveGolden != nullptr, ServerTime,
-				*FirstEventInfo);
+
+			if (DebugLogLevel == 2)
+			{
+				UE_LOG(LogSWShipWake, Warning,
+					TEXT("[WakeProbe] Frame=%llu Time=%.3fs | Height=%6.2fcm (Weight=%.3f, Active=%d/%d) @ Probe=(%.0f, %.0f)"),
+					GFrameCounter, ServerTime, Sample.FinalHeight, Sample.BlendWeight,
+					Sample.ActiveContributingEvents, Sample.TotalEventsChecked,
+					LockedProbeLocation.X, LockedProbeLocation.Y);
+			}
+			else // Level 3: Full detail
+			{
+				UE_LOG(LogSWShipWake, Warning,
+					TEXT("[WakeProbe-Detail] Frame=%llu Time=%.3fs | Height=%6.2fcm (Weight=%.3f, Active=%d) | %s"),
+					GFrameCounter, ServerTime, Sample.FinalHeight, Sample.BlendWeight,
+					Sample.ActiveContributingEvents,
+					Sample.DetailLog.IsEmpty() ? TEXT("[No Active Events In Envelope]") : *Sample.DetailLog);
+			}
 		}
 	}
 }

@@ -41,6 +41,16 @@ struct WATERANDSHIP_API FSWShipWakeEvent
 	}
 };
 
+struct FSWShipWakeDebugSample
+{
+	float WeightedHeight = 0.0f;
+	float BlendWeight = 0.0f;
+	float FinalHeight = 0.0f;
+	int32 ActiveContributingEvents = 0;
+	int32 TotalEventsChecked = 0;
+	FString DetailLog;
+};
+
 /** Identical deterministic function used by GT water queries and Async Physics. */
 struct WATERANDSHIP_API FSWShipWakeEvaluator
 {
@@ -53,6 +63,12 @@ struct WATERANDSHIP_API FSWShipWakeEvaluator
 		const FVector2D& QueryPosition,
 		double ServerTime,
 		TConstArrayView<FSWShipWakeEvent> Events);
+
+	static FSWShipWakeDebugSample EvaluateDebug(
+		const FVector2D& QueryPosition,
+		double ServerTime,
+		TConstArrayView<FSWShipWakeEvent> Events,
+		bool bIncludeEventDetails = false);
 
 	static FVector2D EvaluateGradient(
 		const FVector2D& QueryPosition,

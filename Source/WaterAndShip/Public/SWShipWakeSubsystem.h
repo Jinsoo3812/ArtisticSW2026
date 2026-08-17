@@ -56,6 +56,8 @@ private:
 	float PhysicsHistoryRetentionSeconds = 2.0f;
 	float MaterialRefreshAccumulator = 0.0f;
 	ESWKelvinFroudeProfile ActiveFroudeProfile = ESWKelvinFroudeProfile::Fr_0_50;
+	FVector2D LockedProbeLocation = FVector2D::ZeroVector;
+	bool bHasLockedProbe = false;
 
 	TWeakObjectPtr<ASWShipWakeReplicator> Replicator;
 	TArray<TWeakObjectPtr<UMaterialInstanceDynamic>> WaterMaterials;

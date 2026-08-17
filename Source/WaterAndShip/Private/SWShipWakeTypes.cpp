@@ -78,6 +78,41 @@ float FSWShipWakeEvaluator::EvaluateHeight(
 	return FMath::Clamp(WeightedHeight / FMath::Max(BlendWeight, 1.0f), -200.0f, 200.0f);
 }
 
+FSWShipWakeDebugSample FSWShipWakeEvaluator::EvaluateDebug(
+	const FVector2D& QueryPosition,
+	const double ServerTime,
+	TConstArrayView<FSWShipWakeEvent> Events,
+	const bool bIncludeEventDetails)
+{
+	FSWShipWakeDebugSample Sample;
+	Sample.TotalEventsChecked = Events.Num();
+	TArray<FString> ContribDetails;
+
+	for (const FSWShipWakeEvent& Event : Events)
+	{
+		float EventHeight = 0.0f;
+		float EventWeight = 0.0f;
+		if (EvaluateGoldenSample(QueryPosition, ServerTime, Event, EventHeight, EventWeight))
+		{
+			Sample.WeightedHeight += EventHeight;
+			Sample.BlendWeight += EventWeight;
+			++Sample.ActiveContributingEvents;
+
+			if (bIncludeEventDetails)
+			{
+				const float Age = static_cast<float>(ServerTime - Event.StartServerTime);
+				ContribDetails.Add(FString::Printf(
+					TEXT("[E%d: Age=%.2fs, W=%.2f, H=%.1fcm]"),
+					Event.EventId, Age, EventWeight, EventHeight));
+			}
+		}
+	}
+	Sample.FinalHeight = FMath::Clamp(
+		Sample.WeightedHeight / FMath::Max(Sample.BlendWeight, 1.0f), -200.0f, 200.0f);
+	Sample.DetailLog = FString::Join(ContribDetails, TEXT(" "));
+	return Sample;
+}
+
 FVector2D FSWShipWakeEvaluator::EvaluateGradient(
 	const FVector2D& QueryPosition,
 	const double ServerTime,
