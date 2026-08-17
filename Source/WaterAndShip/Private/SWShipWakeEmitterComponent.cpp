@@ -24,7 +24,7 @@ void USWShipWakeEmitterComponent::BeginPlay()
 }
 
 void USWShipWakeEmitterComponent::ResolveKelvinFrame(
-	FVector2D& OutApex, FVector2D& OutForward) const
+	FVector2D& OutApex, FVector2D& OutForward, const bool bReversing) const
 {
 	const AActor* Owner = GetOwner();
 	if (!Owner)
@@ -33,9 +33,11 @@ void USWShipWakeEmitterComponent::ResolveKelvinFrame(
 		OutForward = FVector2D(1.0, 0.0);
 		return;
 	}
-	const FVector Apex = Owner->GetActorTransform().TransformPosition(KelvinApexLocalOffset);
+	const FVector ChosenOffset = bReversing ? KelvinSternLocalOffset : KelvinApexLocalOffset;
+	const FVector Apex = Owner->GetActorTransform().TransformPosition(ChosenOffset);
 	const float Yaw = FMath::DegreesToRadians(KelvinDirectionYawDegrees);
-	const FVector LocalForward(FMath::Cos(Yaw), FMath::Sin(Yaw), 0.0f);
+	const float DirectionSign = bReversing ? -1.0f : 1.0f;
+	const FVector LocalForward(DirectionSign * FMath::Cos(Yaw), DirectionSign * FMath::Sin(Yaw), 0.0f);
 	const FVector WorldForward = Owner->GetActorTransform().TransformVectorNoScale(LocalForward);
 	OutApex = FVector2D(Apex);
 	OutForward = FVector2D(WorldForward).GetSafeNormal();
@@ -55,16 +57,30 @@ void USWShipWakeEmitterComponent::TickComponent(
 	const bool bPredicted = !bAuthority && bEnableClientPrediction && Pawn && Pawn->IsLocallyControlled();
 	if (!bAuthority && !bPredicted) return;
 
+	USWShipWakeSubsystem* State = World->GetSubsystem<USWShipWakeSubsystem>();
+	if (!State) return;
+
+	const FVector Velocity = Owner->GetVelocity();
+	const FVector2D Velocity2D(Velocity.X, Velocity.Y);
+	const float Speed = Velocity2D.Size();
+
+	// 선박의 전방 벡터와 수평 속도의 내적으로 후진 여부 판별
+	const FVector ActorForward3D = Owner->GetActorForwardVector();
+	const FVector2D ActorForward2D = FVector2D(ActorForward3D.X, ActorForward3D.Y).GetSafeNormal();
+	const float ForwardVelocityComponent = FVector2D::DotProduct(Velocity2D, ActorForward2D);
+	const bool bIsReversing = bAutoReverseWakeOnBackward && (ForwardVelocityComponent < -10.0f);
+
 	FVector2D Apex;
 	FVector2D Forward;
-	ResolveKelvinFrame(Apex, Forward);
-	USWShipWakeSubsystem* State = World->GetSubsystem<USWShipWakeSubsystem>();
-	if (!State || Forward.IsNearlyZero()) return;
+	ResolveKelvinFrame(Apex, Forward, bIsReversing);
+	if (Forward.IsNearlyZero()) return;
 	const double ServerTime = State->GetServerTime();
-	const FVector Velocity = Owner->GetVelocity();
-	const float Speed = FVector2D(Velocity.X, Velocity.Y).Size();
 
-	if (!bHasSample || Speed < MinimumSpeedCmPerSecond)
+	// 전진 <-> 후진 방향이 반전되거나 속도가 임계치 미만일 때 샘플 리셋
+	const bool bDirectionFlipped = (bLastReversing != bIsReversing);
+	bLastReversing = bIsReversing;
+
+	if (!bHasSample || Speed < MinimumSpeedCmPerSecond || bDirectionFlipped)
 	{
 		LastSamplePosition = Apex;
 		LastSampleForward = Forward;

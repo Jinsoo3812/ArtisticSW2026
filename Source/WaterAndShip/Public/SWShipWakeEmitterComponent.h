@@ -20,6 +20,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Source", meta = (Units = "cm", MakeEditWidget = "true"))
 	FVector KelvinApexLocalOffset = FVector(1500.0f, 0.0f, 0.0f);
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Source", meta = (Units = "cm", MakeEditWidget = "true"))
+	FVector KelvinSternLocalOffset = FVector(-1500.0f, 0.0f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Source")
+	bool bAutoReverseWakeOnBackward = true;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Source", meta = (Units = "deg"))
 	float KelvinDirectionYawDegrees = 0.0f;
 
@@ -66,7 +72,7 @@ public:
 	bool bEnableClientPrediction = true;
 
 private:
-	void ResolveKelvinFrame(FVector2D& OutApex, FVector2D& OutForward) const;
+	void ResolveKelvinFrame(FVector2D& OutApex, FVector2D& OutForward, bool bReversing = false) const;
 	void EmitResampledSegment(const FVector2D& Apex, const FVector2D& Forward,
 		float HorizontalSpeed, double ServerTime, bool bPredicted);
 
@@ -74,4 +80,5 @@ private:
 	FVector2D LastSampleForward = FVector2D(1.0, 0.0);
 	double LastSampleServerTime = 0.0;
 	bool bHasSample = false;
+	bool bLastReversing = false;
 };
