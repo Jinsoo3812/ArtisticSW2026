@@ -15,19 +15,18 @@ namespace
 		OutWeightedHeight = 0.0f;
 		OutBlendWeight = 0.0f;
 		if (!Event.IsActiveAt(ServerTime) || !FSWKelvinWakeAtlas::Get().IsReady()) return false;
+
+		const float Age = static_cast<float>(ServerTime - Event.StartServerTime);
+		const float Decay = FMath::Exp(-FMath::Max(Event.DecayRate, 0.0f) * Age);
+		if (Decay < 0.001f) return false;
+
 		const FVector2D Forward = Event.Forward.IsNearlyZero()
 			? FVector2D(1.0, 0.0) : Event.Forward.GetSafeNormal();
 		const FVector2D Right(-Forward.Y, Forward.X);
 		const FVector2D Delta = QueryPosition - Event.Origin;
 		const float Downstream = -FVector2D::DotProduct(Delta, Forward);
 		const float Lateral = FVector2D::DotProduct(Delta, Right);
-		const float Length = FMath::Max(Event.WakeLengthCm, 1.0f);
-		const float HalfWidth = FMath::Max(Event.WakeHalfWidthCm, 1.0f);
-		const float LengthCut = Length * FMath::Clamp(Event.LengthCutRatio, 0.01f, 1.0f);
-		const float HalfWidthCut = HalfWidth * FMath::Clamp(Event.WidthCutRatio, 0.01f, 1.0f);
-		if (Downstream < 0.0f || Downstream > LengthCut || FMath::Abs(Lateral) > HalfWidthCut) return false;
 
-		const float Age = static_cast<float>(ServerTime - Event.StartServerTime);
 		const float Radius = FMath::Sqrt(Downstream * Downstream + Lateral * Lateral);
 		const float Front = Event.PropagationSpeedCmPerSecond * Age;
 		const float EnvelopeWidth = FMath::Max(Event.EnvelopeWidthCm, 1.0f);
@@ -37,12 +36,35 @@ namespace
 		const float FrontEnvelope = 1.0f - FMath::SmoothStep(0.0f, EnvelopeWidth, FrontDistance);
 		const float FadeIn = Event.FadeInSeconds > UE_SMALL_NUMBER
 			? FMath::SmoothStep(0.0f, Event.FadeInSeconds, Age) : 1.0f;
-		const float Decay = FMath::Exp(-FMath::Max(Event.DecayRate, 0.0f) * Age);
-		const float Golden = FSWKelvinWakeAtlas::Get().SampleFixedNormalized(
-			Downstream / Length, Lateral / HalfWidth, Event.FroudeProfile);
 		OutBlendWeight = FrontEnvelope * FadeIn;
+		if (OutBlendWeight <= 0.0f) return false;
+
+		const float Length = FMath::Max(Event.WakeLengthCm, 1.0f);
+		const float HalfWidth = FMath::Max(Event.WakeHalfWidthCm, 1.0f);
+		const float LengthCut = FMath::Clamp(Event.LengthCutRatio, 0.01f, 1.0f);
+		const float WidthCut = FMath::Clamp(Event.WidthCutRatio, 0.01f, 1.0f);
+
+		const float U = Downstream / Length;
+		const float V_signed = Lateral / HalfWidth;
+
+		float Golden = 0.0f;
+		if (U >= 0.0f && U <= LengthCut && FMath::Abs(V_signed) <= WidthCut)
+		{
+			const float UFadeIn = FMath::SmoothStep(0.0f, 0.03f, U);
+			const float UFadeOut = 1.0f - FMath::SmoothStep(LengthCut * 0.70f, LengthCut, U);
+			const float VNorm = FMath::Abs(V_signed) / WidthCut;
+			const float VFade = 1.0f - FMath::SmoothStep(0.60f, 1.0f, VNorm);
+			const float StampMask = UFadeIn * UFadeOut * VFade;
+
+			if (StampMask > 0.0001f)
+			{
+				Golden = FSWKelvinWakeAtlas::Get().SampleFixedNormalized(
+					U, V_signed, Event.FroudeProfile) * StampMask;
+			}
+		}
+
 		OutWeightedHeight = Event.InitialAmplitudeCm * Golden * OutBlendWeight * Decay;
-		return OutBlendWeight > 0.0f;
+		return true;
 	}
 }
 

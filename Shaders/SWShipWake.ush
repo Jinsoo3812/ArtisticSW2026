@@ -22,16 +22,13 @@
         const float4 SW_R3 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.875), 0.0); \
         const float SW_Age = (SERVER_TIME) - SW_R1.x; \
         if (SW_R1.y <= 0.0 || SW_Age < 0.0 || (SERVER_TIME) >= SW_R2.x) continue; \
+        const float SW_Decay = exp(-max(SW_R1.w, 0.0) * SW_Age); \
+        if (SW_Decay < 0.001) continue; \
         const float2 SW_Forward = normalize(SW_R0.zw + float2(1.0e-8, 0.0)); \
         const float2 SW_Right = float2(-SW_Forward.y, SW_Forward.x); \
         const float2 SW_Delta = SW_Query - SW_R0.xy; \
         const float SW_Downstream = -dot(SW_Delta, SW_Forward); \
         const float SW_Lateral = dot(SW_Delta, SW_Right); \
-        const float SW_Length = max(SW_R2.y, 1.0); \
-        const float SW_HalfWidth = max(SW_R2.z, 1.0); \
-        const float SW_LengthCut = SW_Length * clamp(SW_R3.y > 0.001 ? SW_R3.y : 1.0, 0.01, 1.0); \
-        const float SW_HalfWidthCut = SW_HalfWidth * clamp(SW_R3.z > 0.001 ? SW_R3.z : 1.0, 0.01, 1.0); \
-        if (SW_Downstream < 0.0 || SW_Downstream > SW_LengthCut || abs(SW_Lateral) > SW_HalfWidthCut) continue; \
         const float SW_Radius = length(float2(SW_Downstream, SW_Lateral)); \
         const float SW_Front = max(SW_R1.z, 1.0) * SW_Age; \
         const float SW_EnvelopeWidth = max(SW_R2.w, 1.0); \
@@ -40,9 +37,26 @@
         const float SW_Envelope = 1.0 - smoothstep(0.0, SW_EnvelopeWidth, SW_FrontDistance); \
         const float SW_FadeIn = SW_R3.x > 1.0e-6 ? smoothstep(0.0, SW_R3.x, SW_Age) : 1.0; \
         const float SW_Weight = SW_Envelope * SW_FadeIn; \
-        const float SW_Decay = exp(-max(SW_R1.w, 0.0) * SW_Age); \
-        const float2 SW_GoldenUV = float2(SW_Lateral / SW_HalfWidth * 0.5 + 0.5, SW_Downstream / SW_Length); \
-        const float SW_Golden = Texture2DSampleLevel(GOLDEN_TEX, GOLDEN_SAMPLER, SW_GoldenUV, 0.0).r; \
+        const float SW_Length = max(SW_R2.y, 1.0); \
+        const float SW_HalfWidth = max(SW_R2.z, 1.0); \
+        const float SW_LengthCut = clamp(SW_R3.y > 0.001 ? SW_R3.y : 1.0, 0.01, 1.0); \
+        const float SW_WidthCut = clamp(SW_R3.z > 0.001 ? SW_R3.z : 1.0, 0.01, 1.0); \
+        const float SW_U = SW_Downstream / SW_Length; \
+        const float SW_V_signed = SW_Lateral / SW_HalfWidth; \
+        float SW_Golden = 0.0; \
+        if (SW_U >= 0.0 && SW_U <= SW_LengthCut && abs(SW_V_signed) <= SW_WidthCut) \
+        { \
+            const float SW_UFadeIn = smoothstep(0.0, 0.03, SW_U); \
+            const float SW_UFadeOut = 1.0 - smoothstep(SW_LengthCut * 0.70, SW_LengthCut, SW_U); \
+            const float SW_VNorm = abs(SW_V_signed) / SW_WidthCut; \
+            const float SW_VFade = 1.0 - smoothstep(0.60, 1.0, SW_VNorm); \
+            const float SW_StampMask = SW_UFadeIn * SW_UFadeOut * SW_VFade; \
+            if (SW_StampMask > 0.0001) \
+            { \
+                const float2 SW_GoldenUV = float2(SW_V_signed * 0.5 + 0.5, SW_U); \
+                SW_Golden = Texture2DSampleLevel(GOLDEN_TEX, GOLDEN_SAMPLER, SW_GoldenUV, 0.0).r * SW_StampMask; \
+            } \
+        } \
         SW_WeightedHeight += SW_R1.y * SW_Golden * SW_Weight * SW_Decay; \
         SW_BlendWeight += SW_Weight; \
     } \
