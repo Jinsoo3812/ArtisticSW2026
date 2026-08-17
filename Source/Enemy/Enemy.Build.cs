@@ -25,6 +25,7 @@ public class Enemy: ModuleRules
             "GASCore",
             "WaterAndShip",
             "Water",
+            "AnimGraphRuntime",
         });
 
         PublicIncludePaths.AddRange(new string[] {
@@ -32,6 +33,7 @@ public class Enemy: ModuleRules
 			"Enemy",
 			"Enemy/Public",
             "Enemy/Public/AI",
+            "Enemy/Public/Animation",
             "Enemy/Public/GAS",
             "Enemy/Public/ShipAI",
             "Enemy/Public/UI"
