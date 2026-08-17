@@ -78,7 +78,8 @@ bool ASWShipWakeReplicator::AddServerEvent(const FSWShipWakeEvent& EventTemplate
 		? GetWorld()->GetSubsystem<USWShipWakeSubsystem>() : nullptr;
 	if (!State) return false;
 	RemoveExpired(State->GetServerTime());
-	while (ReplicatedEvents.Items.Num() >= USWShipWakeSubsystem::WakeCapacity)
+	const int32 MaxCapacity = USWShipWakeSubsystem::GetMaxCapacity();
+	while (ReplicatedEvents.Items.Num() >= MaxCapacity)
 	{
 		int32 Oldest = 0;
 		for (int32 Index = 1; Index < ReplicatedEvents.Items.Num(); ++Index)

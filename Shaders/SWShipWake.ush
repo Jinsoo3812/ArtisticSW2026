@@ -2,7 +2,7 @@
 // include paths inside a generated function, where free functions are illegal.
 #pragma once
 
-#define SW_M7_WAKE_CAPACITY 64
+#define SW_M7_WAKE_CAPACITY 1024
 #define SW_M7_GOLDEN_PEAK 1.3871971383
 
 #define SW_M7_EVALUATE_KELVIN(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, OUT_HEIGHT) \

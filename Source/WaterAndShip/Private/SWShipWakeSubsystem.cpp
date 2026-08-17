@@ -1,5 +1,6 @@
 #include "SWShipWakeSubsystem.h"
 
+#include "Engine/Engine.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -24,6 +25,15 @@ namespace
 	TAutoConsoleVariable<int32> CVarFroudeProfile(
 		TEXT("sw.ShipWake.FroudeProfile"), -1,
 		TEXT("Override Froude Profile: -1=Auto/Emitter, 0=Fr0.30, 1=Fr0.50, 2=Fr0.70, 3=Fr1.00"));
+	TAutoConsoleVariable<int32> CVarMaxCapacity(
+		TEXT("sw.ShipWake.MaxCapacity"), USWShipWakeSubsystem::DefaultWakeCapacity,
+		TEXT("Maximum active Kelvin wake buffer capacity (1-1024). Dynamically cached on change."),
+		ECVF_Default);
+	TAutoConsoleVariable<int32> CVarOnScreenDebug(
+		TEXT("sw.ShipWake.OnScreenDebug"), 1,
+		TEXT("Display real-time Kelvin wake buffer metrics (Current/Max) on top of the screen (0=Off, 1=On)."),
+		ECVF_Default);
+
 	constexpr float PredictionDistanceCm = 750.0f;
 	constexpr double PredictionTimeSeconds = 1.0;
 
@@ -32,6 +42,16 @@ namespace
 	const FName CountParameter(TEXT("ShipWakeCount"));
 	const FName TimeParameter(TEXT("ShipWakeServerTime"));
 	const FName EnableParameter(TEXT("ShipWakeEnable"));
+
+	TAtomic<int32> GCachedMaxCapacity(USWShipWakeSubsystem::DefaultWakeCapacity);
+}
+
+int32 USWShipWakeSubsystem::GetMaxCapacity()
+{
+	const int32 CVarVal = CVarMaxCapacity.GetValueOnAnyThread();
+	const int32 Clamped = FMath::Clamp(CVarVal, 1, MaxWakeCapacity);
+	GCachedMaxCapacity.Store(Clamped);
+	return Clamped;
 }
 
 void USWShipWakeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -40,7 +60,7 @@ void USWShipWakeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	FSWKelvinWakeAtlas::Get().Initialize();
 	if (IsRunningDedicatedServer()) return;
 
-	EventTexture = UTexture2D::CreateTransient(WakeCapacity, 4, PF_A32B32G32R32F,
+	EventTexture = UTexture2D::CreateTransient(MaxWakeCapacity, 4, PF_A32B32G32R32F,
 		TEXT("SWShipWakeM7Events"));
 	if (EventTexture)
 	{
@@ -116,6 +136,33 @@ void USWShipWakeSubsystem::Tick(const float DeltaTime)
 		}
 		BindToWaterMaterials(ServerTime);
 	}
+
+	// 온스크린 디버그 메시지: 화면 상단에 실시간 버퍼 수치 표시 (현재/최대 버퍼 수)
+	if (CVarOnScreenDebug.GetValueOnGameThread() > 0 && GEngine && bIsRenderingClient)
+	{
+		const int32 StoredCount = GetEventCount();
+		const int32 MaxCap = GetMaxCapacity();
+		int32 ActiveCount = 0;
+		{
+			FReadScopeLock Lock(EventsLock);
+			for (const FSWShipWakeEvent& Event : Events)
+			{
+				if (Event.IsActiveAt(ServerTime))
+				{
+					++ActiveCount;
+				}
+			}
+		}
+
+		const uint64 DebugKey = 0x53574B454C56494E; // "SWKELVIN"
+		const FString DebugMsg = FString::Printf(
+			TEXT("[Kelvin Wake Buffer] Current: %d / Max: %d (Active: %d, CVar: %d) | ServerTime: %.2fs"),
+			StoredCount, MaxCap, ActiveCount, CVarMaxCapacity.GetValueOnGameThread(), ServerTime);
+
+		const FColor MsgColor = (StoredCount >= MaxCap) ? FColor::Yellow : FColor::Cyan;
+		GEngine->AddOnScreenDebugMessage(DebugKey, 0.0f, MsgColor, DebugMsg, true, FVector2D(1.15f, 1.15f));
+	}
+
 	const int32 DebugLogLevel = CVarDebugLog.GetValueOnGameThread();
 	if (DebugLogLevel > 0 && bIsRenderingClient)
 	{
@@ -155,10 +202,10 @@ void USWShipWakeSubsystem::Tick(const float DeltaTime)
 				const TCHAR* ProfileNames[] = { TEXT("Fr0.30"), TEXT("Fr0.50"), TEXT("Fr0.70"), TEXT("Fr1.00") };
 				const int32 ProfileIdx = FMath::Clamp(static_cast<int32>(GetActiveFroudeProfile()), 0, 3);
 				UE_LOG(LogSWShipWake, Warning,
-					TEXT("[M7Runtime] NetMode=%d Enable=%d Profile=%s Stored=%d Uploaded=%d Rev=%u Mats=%d EventTex=%d GoldenTex=%d Time=%.2f | LastEvent: %s"),
+					TEXT("[M7Runtime] NetMode=%d Enable=%d Profile=%s Stored=%d/%d Uploaded=%d Rev=%u Mats=%d EventTex=%d GoldenTex=%d Time=%.2f | LastEvent: %s"),
 					static_cast<int32>(GetWorld()->GetNetMode()), CVarEnable.GetValueOnGameThread(),
 					ProfileNames[ProfileIdx],
-					GetEventCount(), LastUploadedCount, Revision.Load(),
+					GetEventCount(), GetMaxCapacity(), LastUploadedCount, Revision.Load(),
 					WaterMaterials.Num(), EventTexture != nullptr, ActiveGolden != nullptr, ServerTime,
 					*FirstEventInfo);
 			}
@@ -257,7 +304,8 @@ void USWShipWakeSubsystem::AddOrUpdateReplicatedEvent(const FSWShipWakeEvent& Ev
 				Events.RemoveAtSwap(BestIndex, 1, EAllowShrinking::No);
 			}
 		}
-		while (Events.Num() >= WakeCapacity)
+		const int32 MaxCapacity = GetMaxCapacity();
+		while (Events.Num() >= MaxCapacity)
 		{
 			int32 Oldest = 0;
 			for (int32 Index = 1; Index < Events.Num(); ++Index)
@@ -275,7 +323,8 @@ void USWShipWakeSubsystem::AddOrUpdateCapped(const FSWShipWakeEvent& Event)
 {
 	{
 		FWriteScopeLock Lock(EventsLock);
-		while (Events.Num() >= WakeCapacity)
+		const int32 MaxCapacity = GetMaxCapacity();
+		while (Events.Num() >= MaxCapacity)
 		{
 			int32 Oldest = 0;
 			for (int32 Index = 1; Index < Events.Num(); ++Index)
@@ -315,9 +364,10 @@ float USWShipWakeSubsystem::GetWakeHeight(
 	const FVector& WorldPosition, const double ServerTime) const
 {
 	if (CVarEnable.GetValueOnAnyThread() == 0) return 0.0f;
-	TArray<FSWShipWakeEvent, TInlineAllocator<WakeCapacity>> Active;
+	TArray<FSWShipWakeEvent> Active;
 	{
 		FReadScopeLock Lock(EventsLock);
+		Active.Reserve(FMath::Min(Events.Num(), 128));
 		for (const FSWShipWakeEvent& Event : Events)
 		{
 			if (Event.IsActiveAt(ServerTime)) Active.Add(Event);
@@ -330,9 +380,10 @@ FVector2D USWShipWakeSubsystem::GetWakeGradient(
 	const FVector& WorldPosition, const double ServerTime) const
 {
 	if (CVarEnable.GetValueOnAnyThread() == 0) return FVector2D::ZeroVector;
-	TArray<FSWShipWakeEvent, TInlineAllocator<WakeCapacity>> Active;
+	TArray<FSWShipWakeEvent> Active;
 	{
 		FReadScopeLock Lock(EventsLock);
+		Active.Reserve(FMath::Min(Events.Num(), 128));
 		for (const FSWShipWakeEvent& Event : Events)
 		{
 			if (Event.IsActiveAt(ServerTime)) Active.Add(Event);
@@ -380,29 +431,30 @@ void USWShipWakeSubsystem::UpdateEventTexture()
 	{
 		return A.StartServerTime < B.StartServerTime;
 	});
-	const int32 Count = FMath::Min(Snapshot.Num(), WakeCapacity);
+	const int32 MaxCap = GetMaxCapacity();
+	const int32 Count = FMath::Min(Snapshot.Num(), MaxCap);
 	TArray<FLinearColor> Pixels;
-	Pixels.SetNumZeroed(WakeCapacity * 4);
+	Pixels.SetNumZeroed(MaxWakeCapacity * 4);
 	for (int32 Index = 0; Index < Count; ++Index)
 	{
 		const FSWShipWakeEvent& E = Snapshot[Index];
 		Pixels[Index] = FLinearColor(E.Origin.X, E.Origin.Y, E.Forward.X, E.Forward.Y);
-		Pixels[Index + WakeCapacity] = FLinearColor(
+		Pixels[Index + MaxWakeCapacity] = FLinearColor(
 			static_cast<float>(E.StartServerTime), E.InitialAmplitudeCm,
 			E.PropagationSpeedCmPerSecond, E.DecayRate);
-		Pixels[Index + WakeCapacity * 2] = FLinearColor(
+		Pixels[Index + MaxWakeCapacity * 2] = FLinearColor(
 			static_cast<float>(E.ExpireServerTime), E.WakeLengthCm,
 			E.WakeHalfWidthCm, E.EnvelopeWidthCm);
-		Pixels[Index + WakeCapacity * 3] = FLinearColor(E.FadeInSeconds, 0.0f, 0.0f, 0.0f);
+		Pixels[Index + MaxWakeCapacity * 3] = FLinearColor(E.FadeInSeconds, 0.0f, 0.0f, 0.0f);
 	}
 	if (FTexture2DResource* Resource = static_cast<FTexture2DResource*>(EventTexture->GetResource()))
 	{
 		ENQUEUE_RENDER_COMMAND(UpdateSWShipWakeM7Events)(
 			[Resource, Data = MoveTemp(Pixels)](FRHICommandListImmediate& RHICmdList)
 			{
-				const FUpdateTextureRegion2D Region(0, 0, 0, 0, WakeCapacity, 4);
+				const FUpdateTextureRegion2D Region(0, 0, 0, 0, MaxWakeCapacity, 4);
 				RHICmdList.UpdateTexture2D(Resource->GetTexture2DRHI(), 0, Region,
-					WakeCapacity * sizeof(FLinearColor), reinterpret_cast<const uint8*>(Data.GetData()));
+					MaxWakeCapacity * sizeof(FLinearColor), reinterpret_cast<const uint8*>(Data.GetData()));
 			});
 	}
 	LastUploadedCount = Count;

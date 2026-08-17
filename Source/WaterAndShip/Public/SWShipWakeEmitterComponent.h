@@ -71,6 +71,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Network")
 	bool bEnableClientPrediction = true;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Debug")
+	bool bEnableDebugLog = false;
+
+	UFUNCTION(BlueprintCallable, Category = "Ship Wake|Debug")
+	void SetDebugLogEnabled(bool bEnabled) { bEnableDebugLog = bEnabled; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship Wake|Debug")
+	bool IsDebugLogEnabled() const;
+
 private:
 	void ResolveKelvinFrame(FVector2D& OutApex, FVector2D& OutForward, bool bReversing = false) const;
 	void EmitResampledSegment(const FVector2D& Apex, const FVector2D& Forward,
