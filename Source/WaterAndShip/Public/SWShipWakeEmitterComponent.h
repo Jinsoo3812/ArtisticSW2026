@@ -23,7 +23,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Source", meta = (Units = "deg"))
 	float KelvinDirectionYawDegrees = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Emission", meta = (ClampMin = "50.0", Units = "cm"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Emission", meta = (ClampMin = "1.0", Units = "cm"))
 	float EmissionDistanceCm = 250.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Emission", meta = (ClampMin = "1.0", ClampMax = "45.0", Units = "deg"))

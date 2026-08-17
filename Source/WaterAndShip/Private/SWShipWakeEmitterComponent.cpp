@@ -86,7 +86,7 @@ void USWShipWakeEmitterComponent::EmitResampledSegment(
 	const float Dot = FMath::Clamp(
 		static_cast<float>(FVector2D::DotProduct(LastSampleForward, Forward)), -1.0f, 1.0f);
 	const float TurnDegrees = FMath::RadiansToDegrees(FMath::Acos(Dot));
-	const float Spacing = FMath::Max(EmissionDistanceCm, 50.0f);
+	const float Spacing = FMath::Max(EmissionDistanceCm, 1.0f);
 	const float MaxTurn = FMath::Max(MaximumTurnAngleDegrees, 1.0f);
 	const double Elapsed = ServerTime - LastSampleServerTime;
 	const bool bDistanceTrigger = Distance >= Spacing;
