@@ -201,8 +201,8 @@ void USWShipWakeEmitterComponent::EmitResampledSegment(
 			TEXT("  >> Parameters: Profile=%s | Segments=%d | Lifetime=%.2fs | MaxRadius=%.1f cm | WaveSpeed=%.1f cm/s | Decay=%.4f"),
 			GetProfileName(FroudeProfile), SegmentCount, Lifetime, MaximumRadius, PropagationSpeedCmPerSecond, DecayRate);
 		UE_LOG(LogSWShipWakeEmitter, Log,
-			TEXT("  >> Geometry: Length=%.1f cm | HalfWidth=%.1f cm | EnvelopeWidth=%.1f cm | FadeIn=%.3fs | BaseAmp=%.1f cm"),
-			WakeLengthCm, WakeHalfWidthCm, EnvelopeWidthCm, FadeInSeconds, MaximumAmplitudeCm);
+			TEXT("  >> Geometry: Length=%.1f cm | HalfWidth=%.1f cm | CutRatio=(Len:%.2f, Wid:%.2f) | EnvelopeWidth=%.1f cm | FadeIn=%.3fs | BaseAmp=%.1f cm"),
+			WakeLengthCm, WakeHalfWidthCm, LengthCutRatio, WidthCutRatio, EnvelopeWidthCm, FadeInSeconds, MaximumAmplitudeCm);
 	}
 
 	for (int32 Segment = 1; Segment <= SegmentCount; ++Segment)
@@ -220,6 +220,8 @@ void USWShipWakeEmitterComponent::EmitResampledSegment(
 		Event.DecayRate = FMath::Max(DecayRate, 0.0f);
 		Event.WakeLengthCm = FMath::Max(WakeLengthCm, 100.0f);
 		Event.WakeHalfWidthCm = FMath::Max(WakeHalfWidthCm, 100.0f);
+		Event.LengthCutRatio = FMath::Clamp(LengthCutRatio, 0.01f, 1.0f);
+		Event.WidthCutRatio = FMath::Clamp(WidthCutRatio, 0.01f, 1.0f);
 		Event.EnvelopeWidthCm = FMath::Max(EnvelopeWidthCm, 10.0f);
 		Event.FadeInSeconds = FMath::Max(FadeInSeconds, 0.0f);
 		Event.FroudeProfile = FroudeProfile;
@@ -230,11 +232,12 @@ void USWShipWakeEmitterComponent::EmitResampledSegment(
 		if (bLogging)
 		{
 			UE_LOG(LogSWShipWakeEmitter, Log,
-				TEXT("    [Segment %d/%d] Origin=(%.1f, %.1f) | Fwd=(%.3f, %.3f) | StartT=%.3fs | ExpireT=%.3fs | Amp=%.2f cm | Profile=%d"),
+				TEXT("    [Segment %d/%d] Origin=(%.1f, %.1f) | Fwd=(%.3f, %.3f) | StartT=%.3fs | ExpireT=%.3fs | Amp=%.2f cm | Cut=(%.2f, %.2f) | Profile=%d"),
 				Segment, SegmentCount,
 				Event.Origin.X, Event.Origin.Y, Event.Forward.X, Event.Forward.Y,
 				Event.StartServerTime, Event.ExpireServerTime,
-				Event.InitialAmplitudeCm, static_cast<int32>(Event.FroudeProfile));
+				Event.InitialAmplitudeCm, Event.LengthCutRatio, Event.WidthCutRatio,
+				static_cast<int32>(Event.FroudeProfile));
 		}
 	}
 

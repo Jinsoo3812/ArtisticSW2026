@@ -23,7 +23,9 @@ namespace
 		const float Lateral = FVector2D::DotProduct(Delta, Right);
 		const float Length = FMath::Max(Event.WakeLengthCm, 1.0f);
 		const float HalfWidth = FMath::Max(Event.WakeHalfWidthCm, 1.0f);
-		if (Downstream < 0.0f || Downstream > Length || FMath::Abs(Lateral) > HalfWidth) return false;
+		const float LengthCut = Length * FMath::Clamp(Event.LengthCutRatio, 0.01f, 1.0f);
+		const float HalfWidthCut = HalfWidth * FMath::Clamp(Event.WidthCutRatio, 0.01f, 1.0f);
+		if (Downstream < 0.0f || Downstream > LengthCut || FMath::Abs(Lateral) > HalfWidthCut) return false;
 
 		const float Age = static_cast<float>(ServerTime - Event.StartServerTime);
 		const float Radius = FMath::Sqrt(Downstream * Downstream + Lateral * Lateral);

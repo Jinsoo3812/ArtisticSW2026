@@ -29,7 +29,9 @@
         const float SW_Lateral = dot(SW_Delta, SW_Right); \
         const float SW_Length = max(SW_R2.y, 1.0); \
         const float SW_HalfWidth = max(SW_R2.z, 1.0); \
-        if (SW_Downstream < 0.0 || SW_Downstream > SW_Length || abs(SW_Lateral) > SW_HalfWidth) continue; \
+        const float SW_LengthCut = SW_Length * clamp(SW_R3.y > 0.001 ? SW_R3.y : 1.0, 0.01, 1.0); \
+        const float SW_HalfWidthCut = SW_HalfWidth * clamp(SW_R3.z > 0.001 ? SW_R3.z : 1.0, 0.01, 1.0); \
+        if (SW_Downstream < 0.0 || SW_Downstream > SW_LengthCut || abs(SW_Lateral) > SW_HalfWidthCut) continue; \
         const float SW_Radius = length(float2(SW_Downstream, SW_Lateral)); \
         const float SW_Front = max(SW_R1.z, 1.0) * SW_Age; \
         const float SW_EnvelopeWidth = max(SW_R2.w, 1.0); \

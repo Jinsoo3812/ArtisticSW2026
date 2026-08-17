@@ -16,8 +16,8 @@ namespace
 		Event.InitialAmplitudeCm = 65.0f;
 		Event.PropagationSpeedCmPerSecond = 1200.0f;
 		Event.DecayRate = 0.0f;
-		Event.WakeLengthCm = 16000.0f;
-		Event.WakeHalfWidthCm = 6000.0f;
+		Event.WakeLengthCm = 25000.0f;
+		Event.WakeHalfWidthCm = 12000.0f;
 		Event.EnvelopeWidthCm = 500.0f;
 		Event.FadeInSeconds = 0.0f;
 		Event.ExpireServerTime = 30.0;

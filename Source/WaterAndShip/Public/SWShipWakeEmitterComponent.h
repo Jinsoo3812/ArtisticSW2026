@@ -54,10 +54,16 @@ public:
 	float DecayRate = 0.12f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Shape", meta = (ClampMin = "100.0", Units = "cm"))
-	float WakeLengthCm = 16000.0f;
+	float WakeLengthCm = 25000.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Shape", meta = (ClampMin = "100.0", Units = "cm"))
-	float WakeHalfWidthCm = 6000.0f;
+	float WakeHalfWidthCm = 12000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Shape", meta = (ClampMin = "0.01", ClampMax = "1.0", DisplayName = "Length Cut Ratio"))
+	float LengthCutRatio = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Shape", meta = (ClampMin = "0.01", ClampMax = "1.0", DisplayName = "Width Cut Ratio"))
+	float WidthCutRatio = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Shape", meta = (ClampMin = "10.0", Units = "cm"))
 	float EnvelopeWidthCm = 2500.0f;

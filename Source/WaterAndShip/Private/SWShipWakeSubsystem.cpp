@@ -445,7 +445,8 @@ void USWShipWakeSubsystem::UpdateEventTexture()
 		Pixels[Index + MaxWakeCapacity * 2] = FLinearColor(
 			static_cast<float>(E.ExpireServerTime), E.WakeLengthCm,
 			E.WakeHalfWidthCm, E.EnvelopeWidthCm);
-		Pixels[Index + MaxWakeCapacity * 3] = FLinearColor(E.FadeInSeconds, 0.0f, 0.0f, 0.0f);
+		Pixels[Index + MaxWakeCapacity * 3] = FLinearColor(
+			E.FadeInSeconds, E.LengthCutRatio, E.WidthCutRatio, 0.0f);
 	}
 	if (FTexture2DResource* Resource = static_cast<FTexture2DResource*>(EventTexture->GetResource()))
 	{

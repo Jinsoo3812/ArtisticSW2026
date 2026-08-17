@@ -26,8 +26,10 @@ struct WATERANDSHIP_API FSWShipWakeEvent
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float InitialAmplitudeCm = 0.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float PropagationSpeedCmPerSecond = 1200.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float DecayRate = 0.12f;
-	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float WakeLengthCm = 16000.0f;
-	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float WakeHalfWidthCm = 6000.0f;
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float WakeLengthCm = 25000.0f;
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float WakeHalfWidthCm = 12000.0f;
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float LengthCutRatio = 1.0f;
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float WidthCutRatio = 1.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float EnvelopeWidthCm = 2500.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float FadeInSeconds = 0.08f;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") ESWKelvinFroudeProfile FroudeProfile = ESWKelvinFroudeProfile::Fr_0_50;
