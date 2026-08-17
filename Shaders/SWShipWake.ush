@@ -46,3 +46,17 @@
     } \
     OUT_HEIGHT = clamp(SW_WeightedHeight / max(SW_BlendWeight, 1.0), -200.0, 200.0); \
 }
+
+#define SW_M7_EVALUATE_KELVIN_NORMAL(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, NORMAL_STRENGTH, OUT_NORMAL) \
+{ \
+    float SW_H_Center = 0.0; \
+    float SW_H_PosX = 0.0; \
+    float SW_H_PosY = 0.0; \
+    const float SW_NormDelta = 35.0; /* 35cm high-precision finite difference offset */ \
+    SW_M7_EVALUATE_KELVIN(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, SW_H_Center); \
+    SW_M7_EVALUATE_KELVIN((WORLD_XY) + float2(SW_NormDelta, 0.0), SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, SW_H_PosX); \
+    SW_M7_EVALUATE_KELVIN((WORLD_XY) + float2(0.0, SW_NormDelta), SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, SW_H_PosY); \
+    const float SW_dHdX = (SW_H_PosX - SW_H_Center) / SW_NormDelta; \
+    const float SW_dHdY = (SW_H_PosY - SW_H_Center) / SW_NormDelta; \
+    OUT_NORMAL = normalize(float3(-SW_dHdX * (NORMAL_STRENGTH), -SW_dHdY * (NORMAL_STRENGTH), 1.0)); \
+}
