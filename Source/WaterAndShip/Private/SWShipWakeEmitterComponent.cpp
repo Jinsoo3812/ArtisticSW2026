@@ -1,8 +1,11 @@
 #include "SWShipWakeEmitterComponent.h"
 
+#include "Camera/PlayerCameraManager.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
+#include "Ship.h"
 #include "SWShipWakeSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogSWShipWakeEmitter, Log, All);
@@ -43,6 +46,58 @@ bool USWShipWakeEmitterComponent::IsDebugLogEnabled() const
 	return (CVarVal > 0) || bEnableDebugLog;
 }
 
+bool USWShipWakeEmitterComponent::IsEnemyShip() const
+{
+	if (bIsEnemyShip) return true;
+	if (bAutoDetectEnemyShip)
+	{
+		if (const AActor* Owner = GetOwner())
+		{
+			if (Owner->ActorHasTag(TEXT("Enemy")) || Owner->GetClass()->GetName().Contains(TEXT("Enemy")))
+			{
+				return true;
+			}
+			if (const AShip* Ship = Cast<AShip>(Owner))
+			{
+				if (Ship->IsEnemyShipForEffects()) return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool USWShipWakeEmitterComponent::IsCulledByCamera(const FVector2D& Apex) const
+{
+	if (MaxCameraCullingDistanceCm <= 0.0f) return false;
+	const UWorld* World = GetWorld();
+	if (!World) return false;
+	if (World->GetNetMode() == NM_DedicatedServer) return false;
+
+	FVector CameraLocation = FVector::ZeroVector;
+	bool bFoundCamera = false;
+
+	if (const APlayerController* PC = World->GetFirstPlayerController())
+	{
+		if (const APlayerCameraManager* CamMgr = PC->PlayerCameraManager)
+		{
+			CameraLocation = CamMgr->GetCameraLocation();
+			bFoundCamera = true;
+		}
+		else if (const APawn* PlayerPawn = PC->GetPawn())
+		{
+			CameraLocation = PlayerPawn->GetActorLocation();
+			bFoundCamera = true;
+		}
+	}
+
+	if (bFoundCamera)
+	{
+		const float DistSq = FVector2D::DistSquared(Apex, FVector2D(CameraLocation.X, CameraLocation.Y));
+		return DistSq > FMath::Square(MaxCameraCullingDistanceCm);
+	}
+	return false;
+}
+
 void USWShipWakeEmitterComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -58,8 +113,9 @@ void USWShipWakeEmitterComponent::BeginPlay()
 	{
 		const AActor* Owner = GetOwner();
 		UE_LOG(LogSWShipWakeEmitter, Log,
-			TEXT("[WakeEmitter::BeginPlay] Owner='%s' | InitApex=(%.1f, %.1f) | InitFwd=(%.3f, %.3f) | Profile=%s | ServerTime=%.2fs"),
+			TEXT("[WakeEmitter::BeginPlay] Owner='%s' (Enemy=%d) | InitApex=(%.1f, %.1f) | InitFwd=(%.3f, %.3f) | Profile=%s | ServerTime=%.2fs"),
 			Owner ? *Owner->GetName() : TEXT("None"),
+			IsEnemyShip(),
 			LastSamplePosition.X, LastSamplePosition.Y,
 			LastSampleForward.X, LastSampleForward.Y,
 			GetProfileName(FroudeProfile), LastSampleServerTime);
@@ -97,7 +153,13 @@ void USWShipWakeEmitterComponent::TickComponent(
 
 	const bool bAuthority = Owner->HasAuthority();
 	const APawn* Pawn = Cast<APawn>(Owner);
-	const bool bPredicted = !bAuthority && bEnableClientPrediction && Pawn && Pawn->IsLocallyControlled();
+	const bool bIsLocallyControlledPlayer = Pawn && Pawn->IsLocallyControlled();
+
+	// PlayerShip과 완벽히 동일한 네트워크 실행 파이프라인:
+	// - 서버/로컬 권한(bAuthority): Standalone, ListenServer, Server 모두 정상 실행 (복제 이벤트 생성)
+	// - 클라이언트(!bAuthority): bEnableClientPrediction이 켜져 있으면 로컬 플레이어/적 배 모두 로컬 예측으로 즉시 생성
+	const bool bPredicted = !bAuthority && bEnableClientPrediction;
+
 	if (!bAuthority && !bPredicted) return;
 
 	USWShipWakeSubsystem* State = World->GetSubsystem<USWShipWakeSubsystem>();
@@ -105,7 +167,14 @@ void USWShipWakeEmitterComponent::TickComponent(
 
 	const FVector Velocity = Owner->GetVelocity();
 	const FVector2D Velocity2D(Velocity.X, Velocity.Y);
-	const float Speed = Velocity2D.Size();
+	float Speed = Velocity2D.Size();
+
+	// 위치 차이 기반 속도 계산 보조 (특수 AI 이동 등으로 Velocity가 0인 경우 대비)
+	if (Speed < 1.0f && bHasSample && DeltaTime > UE_SMALL_NUMBER)
+	{
+		const float FrameDist = FVector2D::Distance(LastSamplePosition, FVector2D(Owner->GetActorLocation()));
+		Speed = FrameDist / DeltaTime;
+	}
 
 	// 선박의 전방 벡터와 수평 속도의 내적으로 후진 여부 판별
 	const FVector ActorForward3D = Owner->GetActorForwardVector();
@@ -118,6 +187,16 @@ void USWShipWakeEmitterComponent::TickComponent(
 	ResolveKelvinFrame(Apex, Forward, bIsReversing);
 	if (Forward.IsNearlyZero()) return;
 	const double ServerTime = State->GetServerTime();
+
+	// 카메라 거리 컬링 검사 (플레이어 카메라와 멀면 생성 스킵)
+	if (IsCulledByCamera(Apex))
+	{
+		LastSamplePosition = Apex;
+		LastSampleForward = Forward;
+		LastSampleServerTime = ServerTime;
+		bHasSample = true;
+		return;
+	}
 
 	// 전진 <-> 후진 방향이 반전되거나 속도가 임계치 미만일 때 샘플 리셋
 	const bool bDirectionFlipped = (bLastReversing != bIsReversing);

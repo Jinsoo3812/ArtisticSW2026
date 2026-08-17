@@ -77,6 +77,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Network")
 	bool bEnableClientPrediction = true;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Enemy")
+	bool bIsEnemyShip = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Enemy")
+	bool bAutoDetectEnemyShip = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Enemy")
+	bool bSimulateEnemyOnClientLocally = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Culling", meta = (ClampMin = "0.0", Units = "cm"))
+	float MaxCameraCullingDistanceCm = 35000.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Wake|Debug")
 	bool bEnableDebugLog = false;
 
@@ -85,6 +97,15 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ship Wake|Debug")
 	bool IsDebugLogEnabled() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Ship Wake|Enemy")
+	void SetIsEnemyShip(bool bInIsEnemy) { bIsEnemyShip = bInIsEnemy; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship Wake|Enemy")
+	bool IsEnemyShip() const;
+
+	UFUNCTION(BlueprintPure, Category = "Ship Wake|Culling")
+	bool IsCulledByCamera(const FVector2D& Apex) const;
 
 private:
 	void ResolveKelvinFrame(FVector2D& OutApex, FVector2D& OutForward, bool bReversing = false) const;

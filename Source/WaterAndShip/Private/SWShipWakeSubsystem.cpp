@@ -254,7 +254,7 @@ bool USWShipWakeSubsystem::SubmitAuthoritativeEvent(const FSWShipWakeEvent& Even
 
 bool USWShipWakeSubsystem::SubmitPredictedEvent(const FSWShipWakeEvent& EventTemplate)
 {
-	if (!GetWorld() || GetWorld()->GetNetMode() != NM_Client) return false;
+	if (!GetWorld() || IsRunningDedicatedServer()) return false;
 	FSWShipWakeEvent Event = EventTemplate;
 	Event.EventId = NextPredictedEventId--;
 	AddOrUpdateCapped(Event);
