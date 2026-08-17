@@ -43,6 +43,26 @@ Dash adds one purpose-specific check: the boss-to-point segment must pass throug
 
 ## Blueprint setup
 
+### Automatic editable deck waypoints
+
+1. Open `BP_EnemyShip`, select **Class Defaults**, and assign the simplified walkable floor asset to `ShipDeckMesh`. The mesh must have query collision.
+2. Under `Ship > Deck AI > Generation`, tune `Grid Spacing`, `Edge Clearance`, slope, and step-height limits.
+3. In the **Deck Waypoint Generation** section, press `Generate Deck Waypoints From Deck Mesh`. In the Blueprint editor this writes ordinary `UDeckWaypointComponent` nodes directly into the Blueprint SCS, so no level instance or `Apply Instance Changes` step is required.
+4. Compile/save the Blueprint, inspect the colored spheres in its viewport, and select each generated component to edit its transform or `Can Spawn`, `Can Patrol`, and `Can Use In Combat` flags.
+5. New points default to `Can Spawn = false`. Explicitly enable it only on safe enemy or boss spawn locations.
+6. Enable `Lock Generated Location` on a hand-moved point before regenerating. Usage flags are preserved automatically for matching generated grid points.
+7. Press `Validate Deck Waypoints` after edits. The Output Log reports duplicate IDs, invalid links, unsafe deck support, and attachment errors.
+8. Generation on a placed level actor remains supported and creates instance components for per-level overrides.
+
+Viewport colors:
+
+- cyan: spawn-enabled;
+- green: combat-enabled;
+- yellow: patrol-only;
+- red: excluded from both combat and patrol.
+
+`Clear Generated Deck Waypoints` removes only mesh-generated components and preserves manually authored waypoint components.
+
 ### Boss
 
 1. Create `BP_ShipBossEnemy` from `AShipBossEnemy`.
@@ -53,10 +73,10 @@ Dash adds one purpose-specific check: the boss-to-point segment must pass throug
 
 ### Enemy Item Box and ship
 
-1. Create `BP_EnemyItemBox` from `AEnemyItemBox` and attach it below the enemy ship deck/visual hierarchy.
+1. Create `BP_EnemyItemBox` from `AEnemyItemBox` and add it to `BP_EnemyShip` as a Child Actor Component below the deck/visual hierarchy.
 2. In `BP_EnemyShip`, enable `BossEncounterComponent.bEncounterEnabled`.
 3. Assign `BossClass = BP_ShipBossEnemy` and a valid `BossSpawnPointId`.
-4. Assign the placed item box to `EnemyItemBox`, or leave it empty when it is an attached child; the component finds the first attached `AEnemyItemBox`.
+4. On `BossEncounterComponent`, set `Enemy Item Box Component` to that specific Child Actor Component. Runtime code resolves only this editor-selected component; it does not guess by scanning every attached actor. The instance-only `EnemyItemBox` reference still takes priority for placed-actor special cases.
 5. Mark at least one deck waypoint as `bCanSpawn` and `bCanUseInCombat`. Mobility needs several combat points behind possible player facing directions.
 
 ## Gameplay assets still required

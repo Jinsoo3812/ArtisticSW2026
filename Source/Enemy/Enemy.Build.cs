@@ -36,5 +36,15 @@ public class Enemy: ModuleRules
             "Enemy/Public/ShipAI",
             "Enemy/Public/UI"
         });
+
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.AddRange(new string[] {
+                "UnrealEd",
+                "PropertyEditor",
+                "Slate",
+                "SlateCore"
+            });
+        }
     }
 }

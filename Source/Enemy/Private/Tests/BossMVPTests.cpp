@@ -14,12 +14,14 @@
 #include "GAS/Ability/Boss/GA_BossKnockback.h"
 #include "GAS/Ability/Boss/GA_BossVanish.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Components/ChildActorComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "Interactable/InteractableComponent.h"
 #include "ShipAI/EnemyShip.h"
 #include "Task/BTT_ActivateBossAbility.h"
 #include "Task/BTT_SelectBossDestinationPoint.h"
+#include "UObject/UnrealType.h"
 
 namespace BossMVPTests
 {
@@ -124,6 +126,57 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Boss cooldown effect has duration policy"),
 			CooldownEffect->DurationPolicy, EGameplayEffectDurationType::HasDuration);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FBossEncounterConfiguredChildActorBoxTest,
+	"ArtisticSW.Enemy.BossMVP.ConfiguredChildActorBox",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBossEncounterConfiguredChildActorBoxTest::RunTest(const FString& Parameters)
+{
+	BossMVPTests::FScopedTestWorld TestWorld;
+	AEnemyShip* Ship = TestWorld.World->SpawnActor<AEnemyShip>();
+	if (!TestNotNull(TEXT("Enemy ship is spawned"), Ship))
+	{
+		return false;
+	}
+
+	UChildActorComponent* BoxComponent = NewObject<UChildActorComponent>(
+		Ship, TEXT("BossEncounterBoxChildActor"));
+	BoxComponent->SetChildActorClass(AEnemyItemBox::StaticClass());
+	Ship->AddInstanceComponent(BoxComponent);
+	BoxComponent->OnComponentCreated();
+	BoxComponent->SetupAttachment(Ship->GetShipDeckMesh());
+	BoxComponent->RegisterComponent();
+	if (!BoxComponent->GetChildActor())
+	{
+		BoxComponent->CreateChildActor();
+	}
+	AEnemyItemBox* ItemBox = Cast<AEnemyItemBox>(BoxComponent->GetChildActor());
+	if (!TestNotNull(TEXT("EnemyItemBox child actor is created from the ship Blueprint-style component"), ItemBox))
+	{
+		return false;
+	}
+
+	UBossEncounterComponent* Encounter = Ship->GetBossEncounterComponent();
+	if (!TestNotNull(TEXT("Boss encounter component exists"), Encounter))
+	{
+		return false;
+	}
+	FStructProperty* BoxReferenceProperty = FindFProperty<FStructProperty>(
+		Encounter->GetClass(), TEXT("EnemyItemBoxComponent"));
+	if (!TestNotNull(TEXT("Encounter exposes an editor-configurable box component reference"),
+		BoxReferenceProperty))
+	{
+		return false;
+	}
+	FComponentReference* BoxReference = BoxReferenceProperty->ContainerPtrToValuePtr<FComponentReference>(Encounter);
+	BoxReference->OverrideComponent = BoxComponent;
+	Encounter->ConfigureEncounter(nullptr, AShipBossEnemy::StaticClass());
+	TestEqual(TEXT("Encounter resolves the EnemyItemBox child actor selected by component reference"),
+		Encounter->GetEnemyItemBox(), static_cast<AStorageChest*>(ItemBox));
 	return true;
 }
 

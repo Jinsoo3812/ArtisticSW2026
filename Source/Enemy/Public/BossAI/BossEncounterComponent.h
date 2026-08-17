@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Engine/EngineTypes.h"
 #include "BossEncounterComponent.generated.h"
 
 class AEnemyShip;
@@ -44,6 +45,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Boss|Encounter")
 	bool IsEncounterEnabled() const { return bEncounterEnabled; }
 
+	UFUNCTION(BlueprintPure, Category = "Boss|Encounter")
+	AStorageChest* GetEnemyItemBox() const { return EnemyItemBox; }
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Encounter")
 	void ConfigureEncounter(
 		AStorageChest* InEnemyItemBox,
@@ -71,12 +75,18 @@ protected:
 
 	bool SpawnBossFor(AActor* Interactor);
 	bool ResolveSpawnPoint(AEnemyShip& HostShip, int32& OutPointId, FTransform& OutTransform) const;
+	AStorageChest* ResolveConfiguredEnemyItemBox() const;
 	void BindItemBox();
 	void UnbindItemBox();
 	void SetEncounterState(EBossEncounterState NewState);
 
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Boss|Encounter")
 	TObjectPtr<AStorageChest> EnemyItemBox = nullptr;
+
+	/** Child Actor Component selected in BP_EnemyShip that owns the encounter item box. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter",
+		meta = (UseComponentPicker, AllowedClasses = "/Script/Engine.ChildActorComponent"))
+	FComponentReference EnemyItemBoxComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
 	bool bEncounterEnabled = false;

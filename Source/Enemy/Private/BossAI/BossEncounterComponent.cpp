@@ -1,9 +1,9 @@
 #include "BossAI/BossEncounterComponent.h"
 
-#include "BossAI/EnemyItemBox.h"
 #include "BossAI/ShipBossEnemy.h"
 #include "Components/BaseHealthComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/ChildActorComponent.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "Engine/World.h"
 #include "Interactable/InteractableComponent.h"
@@ -28,19 +28,9 @@ void UBossEncounterComponent::BeginPlay()
 	{
 		HostShip->OnDestroyed.AddUniqueDynamic(this, &UBossEncounterComponent::HandleHostShipDestroyed);
 	}
-
 	if (!EnemyItemBox)
 	{
-		TArray<AActor*> AttachedActors;
-		GetOwner()->GetAttachedActors(AttachedActors, true, true);
-		for (AActor* AttachedActor : AttachedActors)
-		{
-			if (AEnemyItemBox* Chest = Cast<AEnemyItemBox>(AttachedActor))
-			{
-				EnemyItemBox = Chest;
-				break;
-			}
-		}
+		EnemyItemBox = ResolveConfiguredEnemyItemBox();
 	}
 
 	BindItemBox();
@@ -85,7 +75,7 @@ void UBossEncounterComponent::ConfigureEncounter(
 
 	UnbindItemBox();
 	bEncounterEnabled = true;
-	EnemyItemBox = InEnemyItemBox;
+	EnemyItemBox = InEnemyItemBox ? InEnemyItemBox : ResolveConfiguredEnemyItemBox();
 	BossClass = InBossClass;
 	BossSpawnPointId = InBossSpawnPointId;
 	BindItemBox();
@@ -98,6 +88,17 @@ void UBossEncounterComponent::ConfigureEncounter(
 		EnemyItemBox->SetPhysicsAndBuoyancyEnabled(false);
 		EnemyItemBox->SetLocked(true);
 	}
+}
+
+AStorageChest* UBossEncounterComponent::ResolveConfiguredEnemyItemBox() const
+{
+	UChildActorComponent* BoxComponent = Cast<UChildActorComponent>(
+		EnemyItemBoxComponent.GetComponent(GetOwner()));
+	if (!BoxComponent)
+	{
+		return nullptr;
+	}
+	return Cast<AStorageChest>(BoxComponent->GetChildActor());
 }
 
 void UBossEncounterComponent::HandleItemBoxInteracted(AActor* Interactor)
