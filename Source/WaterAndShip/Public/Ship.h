@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
@@ -688,6 +688,21 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera|Zoom", meta = (ClampMin = "0.0", Units = "cm"))
 	float MaxShipZoomArmLength = 1800.0f;
+
+	/**
+	 * Smooth only the presented camera rotation. ControlRotation still receives the
+	 * full mouse delta immediately, so gameplay aim and network input are not delayed.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Camera|Rotation Smoothing")
+	bool bEnableCameraRotationSmoothing = true;
+
+	/** Larger values follow ControlRotation faster. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Camera|Rotation Smoothing", meta = (EditCondition = "bEnableCameraRotationSmoothing", ClampMin = "0.0", UIMin = "0.0"))
+	float CameraRotationSmoothingSpeed = 35.f;
+
+	/** Maximum integration step used by SpringArm rotation-lag substepping. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Camera|Rotation Smoothing", meta = (EditCondition = "bEnableCameraRotationSmoothing", ClampMin = "0.001", UIMin = "0.001", Units = "s"))
+	float CameraRotationSmoothingMaxTimeStep = 0.008333333f;
 
 protected:
 	// ---- Input Handlers ----

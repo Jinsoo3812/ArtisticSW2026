@@ -169,6 +169,10 @@ AShip::AShip()
 	CameraBoom->bInheritPitch = true;
 	CameraBoom->bInheritYaw = true;
 	CameraBoom->bInheritRoll = false;
+	CameraBoom->bEnableCameraRotationLag = bEnableCameraRotationSmoothing;
+	CameraBoom->CameraRotationLagSpeed = CameraRotationSmoothingSpeed;
+	CameraBoom->bUseCameraLagSubstepping = true;
+	CameraBoom->CameraLagMaxTimeStep = CameraRotationSmoothingMaxTimeStep;
 
 	// Follow Camera
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
