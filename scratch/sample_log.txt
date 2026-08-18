@@ -1,0 +1,28 @@
+LogCsvProfiler: Display: CSVEvent "Cmd: DebugManager.CycleToPreviousColumn" [Frame 1199]
+Cmd: ProfileGPU
+LogCsvProfiler: Display: CSVEvent "Cmd: ProfileGPU" [Frame 1304]
+Cmd: stat dumpframe
+Cmd: csvprofile stop
+LogCsvProfiler: Display: CSVEvent "Cmd: csvprofile stop" [Frame 1304]
+LogCsvProfiler: Display: Metadata set : endtimestamp="1787037190"
+LogCsvProfiler: Display: Metadata set : captureduration="18.257437"
+LogRHI: Display: GPU Profile for Frame 13089 - Copy 0 - GPU 0
+LogRHI: Display:     - Frame Time                    : 0.00ms
+LogRHI: Display:     - r.ProfileGPU.Root             : "*"
+LogRHI: Display:     - r.ProfileGPU.ThresholdPercent : 0.00%
+LogRHI: Display:     - r.ProfileGPU.ShowLeafEvents   : true
+LogRHI: Display:     No recorded work for this queue.
+LogRHI: Display: GPU Profile for Frame 13089 - Compute 0 - GPU 0
+LogRHI: Display:     - Frame Time                    : 1.69ms
+LogRHI: Display:     - r.ProfileGPU.Root             : "*"
+LogRHI: Display:     - r.ProfileGPU.ThresholdPercent : 0.00%
+LogRHI: Display:     - r.ProfileGPU.ShowLeafEvents   : true
+LogRHI: Display:     ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+LogRHI: Display:     ┃                         Exclusive                          ┃                          Inclusive                          ┃                                                                                          ┃
+LogRHI: Display:     ┠───────┬────────┬──────┬──────┬──────────────────┬──────────╂───────┬────────┬──────┬──────┬───────────────────┬──────────┨                                          Events                                          ┃
+LogRHI: Display:     ┃ Draws │ Dsptch │ Prim │ Vert │     Percent      │   Time   ┃ Draws │ Dsptch │ Prim │ Vert │      Percent      │   Time   ┃                                                                                          ┃
+LogRHI: Display:     ┠───────┼────────┼──────┼──────┼──────────────────┼──────────╂───────┼────────┼──────┼──────┼───────────────────┼──────────╂──────────────────────────────────────────────────────────────────────────────────────────┨
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.3% ┊          │ 0.005 ms ┃     0 │     96 │    0 │    0 │ 100.0% ┊ ████████ │ 1.692 ms ┃ <root>                                                                                   ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.1% ┊          │ 0.002 ms ┃     0 │      0 │    0 │    0 │   0.1% ┊          │ 0.002 ms ┃    Frame 13082 (CsvFrame 1302)                                                           ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.0% ┊          │ 0.001 ms ┃     0 │      0 │    0 │    0 │   0.0% ┊          │ 0.001 ms ┃       RenderGraphExecute - UpdateAllPrimitiveSceneInfos                                  ┃
+LogRHI: Display:     ┃  
