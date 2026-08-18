@@ -9,8 +9,9 @@ DEFINE_LOG_CATEGORY_STATIC(LogSWKelvinGolden, Log, All);
 
 namespace
 {
+	constexpr int64 ChannelsPerTexel = 4;
 	constexpr int64 GoldenBytes = static_cast<int64>(FSWKelvinWakeAtlas::ResolutionU)
-		* FSWKelvinWakeAtlas::ResolutionV * sizeof(uint16);
+		* FSWKelvinWakeAtlas::ResolutionV * ChannelsPerTexel * sizeof(uint16);
 
 	const TCHAR* ProfileFileNames[FSWKelvinWakeAtlas::ProfileCount] = {
 		TEXT("New/Water/Realistic_Water/Kelvin/kelvin_wake_golden_fr030_fp16.bin"),
@@ -70,7 +71,7 @@ bool FSWKelvinWakeAtlas::Initialize()
 
 	bReady = (LoadedCount > 0);
 	UE_LOG(LogSWKelvinGolden, Display,
-		TEXT("M7 Multi-Profile Golden Images loaded: %d/%d profiles ready (%dx%d R16F Normalized)"),
+		TEXT("M7 Multi-Profile Golden Images loaded: %d/%d profiles ready (%dx%d RGBA16F Normalized)"),
 		LoadedCount, ProfileCount, TextureWidth, TextureHeight);
 	return bReady;
 }
@@ -87,7 +88,8 @@ float FSWKelvinWakeAtlas::ReadTexel(const int32 ProfileIndex, const int32 UIndex
 	{
 		return 0.0f;
 	}
-	const int64 ByteIndex = (static_cast<int64>(UIndex) * ResolutionV + VIndex) * sizeof(uint16);
+	// Stride across 4 channels (R=Height, G=GradU, B=GradV, A=Mask); Channel 0 (R) is at offset 0
+	const int64 ByteIndex = (static_cast<int64>(UIndex) * ResolutionV + VIndex) * ChannelsPerTexel * sizeof(uint16);
 	if (!Payloads[ProfileIndex].IsValidIndex(ByteIndex + 1))
 	{
 		return 0.0f;
@@ -127,7 +129,7 @@ UTexture2D* FSWKelvinWakeAtlas::CreateTransientTexture(const ESWKelvinFroudeProf
 	{
 		return nullptr;
 	}
-	UTexture2D* Texture = UTexture2D::CreateTransient(TextureWidth, TextureHeight, PF_R16F, Name,
+	UTexture2D* Texture = UTexture2D::CreateTransient(TextureWidth, TextureHeight, PF_FloatRGBA, Name,
 		TConstArrayView64<uint8>(Payloads[Index].GetData(), Payloads[Index].Num()));
 	if (Texture)
 	{

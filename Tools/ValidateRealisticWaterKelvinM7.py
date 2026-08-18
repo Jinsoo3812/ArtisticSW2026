@@ -35,13 +35,14 @@ if len(inputs) != len(expected) or any(node is None for node in inputs):
     raise RuntimeError("M7 Custom input connection is incomplete")
 
 ship_wake_parameters = []
-for obj in unreal.get_objects_with_outer(material, include_nested_objects=True):
-    if isinstance(obj, (unreal.MaterialExpressionScalarParameter,
-                        unreal.MaterialExpressionVectorParameter,
-                        unreal.MaterialExpressionTextureObjectParameter)):
-        name = str(obj.get_editor_property("parameter_name"))
-        if name.startswith("ShipWake"):
-            ship_wake_parameters.append(name)
+for inp in inputs:
+    if inp:
+        try:
+            name = str(inp.get_editor_property("parameter_name"))
+            if name.startswith("ShipWake"):
+                ship_wake_parameters.append(name)
+        except Exception:
+            pass
 expected_parameters = sorted(expected[1:])
 if sorted(ship_wake_parameters) != expected_parameters:
     raise RuntimeError(f"Obsolete or duplicate ShipWake parameters remain: {ship_wake_parameters}")
