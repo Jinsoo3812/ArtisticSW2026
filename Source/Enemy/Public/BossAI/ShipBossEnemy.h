@@ -5,6 +5,7 @@
 #include "ShipBossEnemy.generated.h"
 
 class AEnemyShip;
+class USphereComponent;
 
 /** Server-authored boss pawn whose tactical positions live on a moving enemy ship. */
 UCLASS(Blueprintable)
@@ -52,6 +53,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Boss|State")
 	bool IsBossHidden() const { return bBossHidden; }
 
+	/** Query-only sensor enabled by DashSlash; the character capsule remains the movement body. */
+	UFUNCTION(BlueprintPure, Category = "Boss|Combat")
+	USphereComponent* GetDashDamageVolume() const { return DashDamageVolume; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -85,6 +90,9 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> BossCombatTarget = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss|Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USphereComponent> DashDamageVolume = nullptr;
 
 	ECollisionEnabled::Type InitialCapsuleCollision = ECollisionEnabled::QueryAndPhysics;
 };

@@ -15,6 +15,7 @@ UGA_BossKnockback::UGA_BossKnockback()
 	SetBossAbilityTags(GameplayAbility_Boss_Knockback, Cooldown_Boss_Knockback);
 	CooldownDuration = 6.0f;
 	DamageEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
+	ImpactGameplayCueTag = GameplayCue_Impact_Boss_Knockback;
 }
 
 void UGA_BossKnockback::ActivateAbility(

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "BossAI/BossDeckPointSelector.h"
 #include "GAS/Ability/Boss/BossGameplayAbility.h"
 #include "GA_BossVanish.generated.h"
 
@@ -40,7 +39,7 @@ protected:
 	UFUNCTION()
 	void HandleMontageInterrupted();
 
-	bool ResolveDestination();
+	bool ValidatePreselectedDestination() const;
 	void FinishVanish(bool bWasCancelled);
 	void ClearHiddenState();
 
@@ -52,9 +51,6 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Vanish", meta = (ClampMin = "0.01", Units = "s"))
 	float HiddenDuration = 0.35f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Point")
-	FBossDestinationSelectionSettings PointSelectionSettings;
 
 	UPROPERTY()
 	TObjectPtr<UAbilityTask_PlayMontageAndWait> MontageTask = nullptr;

@@ -6,12 +6,18 @@
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "BaseEnemy.h"
 #include "BaseGameplayTags.h"
 #include "BaseAttributeSet.h"
+#include "BossAI/ShipBossEnemy.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Weapon/BaseWeapon.h"
 #include "Weapon/BaseWeaponComponent.h"
 #include "Weapon/WeaponDataAsset.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogEnemyBasicAttack, Log, All);
 
 UEnemyBasicAttackCooldownEffect::UEnemyBasicAttackCooldownEffect()
 {
@@ -29,6 +35,7 @@ UGA_BasicAttack::UGA_BasicAttack()
 	BasicAttackTags.AddTag(GameplayAbility_InterruptibleByHit);
 	SetAssetTags(BasicAttackTags);
 	ActivationBlockedTags.AddTag(State_Damaged);
+	ActivationBlockedTags.AddTag(State_Boss_Busy);
 	NativeCooldownTags.AddTag(Cooldown_Enemy_BasicAttack);
 }
 
@@ -88,6 +95,9 @@ void UGA_BasicAttack::ActivateAbility(
 	const FWeaponDefinition* WeaponDefinition = CacheAttackData(EnemyOwner);
 	if (!WeaponDefinition)
 	{
+		UE_LOG(LogEnemyBasicAttack, Warning,
+			TEXT("Basic attack has no valid weapon damage data. Enemy=%s SourceObject=%s"),
+			*GetNameSafe(EnemyOwner), *GetNameSafe(GetCurrentSourceObject()));
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
@@ -171,6 +181,12 @@ const FWeaponDefinition* UGA_BasicAttack::CacheAttackData(ABaseEnemy* EnemyOwner
 		WeaponDefinition->CombatData.DamageEffectClass,
 		1,
 		ContextHandle);
+	if (CachedDamageSpecHandle.IsValid() && CachedDamageSpecHandle.Data.IsValid()
+		&& WeaponDefinition->CombatData.ImpactGameplayCueTag.IsValid())
+	{
+		CachedDamageSpecHandle.Data->AddDynamicAssetTag(
+			WeaponDefinition->CombatData.ImpactGameplayCueTag);
+	}
 
 	return CachedDamageSpecHandle.IsValid() ? WeaponDefinition : nullptr;
 }
@@ -180,6 +196,18 @@ bool UGA_BasicAttack::PlayAttackMontage(const FWeaponDefinition& WeaponDefinitio
 	UAnimMontage* AttackMontage = WeaponDefinition.CombatData.AttackMontage;
 	if (!AttackMontage)
 	{
+		UE_LOG(LogEnemyBasicAttack, Warning,
+			TEXT("Basic attack weapon has no AttackMontage. Weapon=%s"),
+			*GetNameSafe(CachedWeapon));
+		return false;
+	}
+
+	const ABaseEnemy* EnemyOwner = Cast<ABaseEnemy>(GetAvatarActorFromActorInfo());
+	if (!EnemyOwner || !EnemyOwner->GetMesh() || !EnemyOwner->GetMesh()->GetAnimInstance())
+	{
+		UE_LOG(LogEnemyBasicAttack, Warning,
+			TEXT("Basic attack cannot play montage because the enemy AnimInstance is missing. Enemy=%s Montage=%s"),
+			*GetNameSafe(EnemyOwner), *GetNameSafe(AttackMontage));
 		return false;
 	}
 
@@ -188,6 +216,10 @@ bool UGA_BasicAttack::PlayAttackMontage(const FWeaponDefinition& WeaponDefinitio
 		? FMath::Clamp(ASC->GetNumericAttribute(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute()), 0.1f, 3.0f)
 		: 1.0f;
 	const float EffectivePlayRate = WeaponDefinition.CombatData.AttackMontagePlayRate * AttackSpeedMultiplier;
+	UE_LOG(LogEnemyBasicAttack, Verbose,
+		TEXT("Playing basic attack montage. Enemy=%s Ability=%s Source=%s Montage=%s Rate=%.2f"),
+		*GetNameSafe(EnemyOwner), *GetNameSafe(this), *GetNameSafe(GetCurrentSourceObject()),
+		*GetNameSafe(AttackMontage), EffectivePlayRate);
 
 	AttackMontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
 		this,
@@ -287,13 +319,22 @@ void UGA_BasicAttack::AddAttackStateTag()
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
 		ASC->AddLooseGameplayTag(State_Attacking);
+		if (Cast<AShipBossEnemy>(GetAvatarActorFromActorInfo()))
+		{
+			ASC->AddLooseGameplayTag(State_Boss_Busy);
+		}
 	}
 }
+
 
 void UGA_BasicAttack::RemoveAttackStateTag()
 {
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
 		ASC->RemoveLooseGameplayTag(State_Attacking);
+		if (Cast<AShipBossEnemy>(GetAvatarActorFromActorInfo()))
+		{
+			ASC->RemoveLooseGameplayTag(State_Boss_Busy);
+		}
 	}
 }

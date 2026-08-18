@@ -34,7 +34,7 @@ EBTNodeResult::Type UBTT_SelectBossDestinationPoint::ExecuteTask(
 	{
 		Target = Boss->GetBossCombatTarget();
 	}
-	if (!Boss || !Blackboard || !Target)
+	if (!Boss || !Blackboard || !Boss->CanEngageActor(Target))
 	{
 		return EBTNodeResult::Failed;
 	}
@@ -43,7 +43,7 @@ EBTNodeResult::Type UBTT_SelectBossDestinationPoint::ExecuteTask(
 	if (!UBossDeckPointSelector::SelectDestinationPoint(
 		Boss->GetHostShip(), Boss, Target, SelectionPurpose, SelectionSettings, PointId))
 	{
-		Blackboard->ClearValue(GetSelectedBlackboardKey());
+		Blackboard->SetValueAsInt(GetSelectedBlackboardKey(), INDEX_NONE);
 		Boss->SetDestinationPointId(INDEX_NONE);
 		return EBTNodeResult::Failed;
 	}

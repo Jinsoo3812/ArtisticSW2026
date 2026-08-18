@@ -42,12 +42,19 @@ public:
 
 	float GetBossCooldownDuration() const { return CooldownDuration; }
 	FGameplayTag GetBossCooldownTag() const { return CooldownTag; }
+	FGameplayTag GetStartupGameplayCueTag() const { return StartupGameplayCueTag; }
+	FGameplayTag GetImpactGameplayCueTag() const { return ImpactGameplayCueTag; }
 
 protected:
 	void SetBossAbilityTags(FGameplayTag AbilityTag, FGameplayTag InCooldownTag);
+	void ExecuteStartupGameplayCue() const;
 	AShipBossEnemy* GetBossAvatar() const;
 	AActor* GetBossTarget() const;
-	bool ApplyDamageToTarget(AActor* Target, TSubclassOf<UGameplayEffect> DamageEffectClass, float Damage) const;
+	bool ApplyDamageToTarget(
+		AActor* Target,
+		TSubclassOf<UGameplayEffect> DamageEffectClass,
+		float Damage,
+		const FHitResult* HitResult = nullptr) const;
 	FActiveGameplayEffectHandle ApplyTimedStateTag(
 		UAbilitySystemComponent& TargetASC,
 		FGameplayTag StateTag,
@@ -58,6 +65,14 @@ protected:
 
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Boss|Cooldown")
 	FGameplayTag CooldownTag;
+
+	/** One-shot cosmetic feedback emitted by the authoritative GA after commit. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Feedback", meta = (Categories = "GameplayCue"))
+	FGameplayTag StartupGameplayCueTag;
+
+	/** Added to outgoing damage specs and executed by the victim after confirmed health loss. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Feedback", meta = (Categories = "GameplayCue.Impact"))
+	FGameplayTag ImpactGameplayCueTag;
 
 private:
 	UPROPERTY()

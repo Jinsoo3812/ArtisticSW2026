@@ -25,8 +25,27 @@ UBossGameplayAbility::UBossGameplayAbility()
 	ActivationOwnedTags.AddTag(State_Boss_Busy);
 	ActivationOwnedTags.AddTag(State_Attacking);
 	ActivationBlockedTags.AddTag(State_Boss_Busy);
+	ActivationBlockedTags.AddTag(State_Attacking);
 	ActivationBlockedTags.AddTag(State_Damaged);
 	ActivationBlockedTags.AddTag(State_Dead);
+}
+
+void UBossGameplayAbility::ExecuteStartupGameplayCue() const
+{
+	AShipBossEnemy* Boss = GetBossAvatar();
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (!Boss || !Boss->HasAuthority() || !ASC || !StartupGameplayCueTag.IsValid())
+	{
+		return;
+	}
+
+	FGameplayCueParameters Parameters;
+	Parameters.Location = Boss->GetActorLocation();
+	Parameters.Normal = Boss->GetActorForwardVector();
+	Parameters.Instigator = Boss;
+	Parameters.EffectCauser = Boss;
+	Parameters.bReplicateLocationWhenUsingMinimalRepProxy = true;
+	ASC->ExecuteGameplayCue(StartupGameplayCueTag, Parameters);
 }
 
 const FGameplayTagContainer* UBossGameplayAbility::GetCooldownTags() const
@@ -92,7 +111,8 @@ AActor* UBossGameplayAbility::GetBossTarget() const
 bool UBossGameplayAbility::ApplyDamageToTarget(
 	AActor* Target,
 	TSubclassOf<UGameplayEffect> DamageEffectClass,
-	float Damage) const
+	float Damage,
+	const FHitResult* HitResult) const
 {
 	UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
 	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Target);
@@ -107,10 +127,17 @@ bool UBossGameplayAbility::ApplyDamageToTarget(
 		DamageEffectClass,
 		Damage,
 		Boss,
-		Boss);
+		Boss,
+		1,
+		HitResult != nullptr,
+		HitResult ? *HitResult : FHitResult());
 	if (!Spec.IsValid() || !Spec.Data.IsValid())
 	{
 		return false;
+	}
+	if (ImpactGameplayCueTag.IsValid())
+	{
+		Spec.Data->AddDynamicAssetTag(ImpactGameplayCueTag);
 	}
 	TargetASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
 	return true;

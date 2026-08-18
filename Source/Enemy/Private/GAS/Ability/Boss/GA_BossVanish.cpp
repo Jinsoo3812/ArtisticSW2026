@@ -12,8 +12,6 @@ UGA_BossVanish::UGA_BossVanish()
 {
 	SetBossAbilityTags(GameplayAbility_Boss_Vanish, Cooldown_Boss_Vanish);
 	CooldownDuration = 7.0f;
-	PointSelectionSettings.MaximumRearDot = 0.0f;
-	PointSelectionSettings.MinimumTravelDistance = 100.0f;
 }
 
 void UGA_BossVanish::ActivateAbility(
@@ -23,7 +21,7 @@ void UGA_BossVanish::ActivateAbility(
 	const FGameplayEventData* TriggerEventData)
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
-	if (!ResolveDestination() || !CommitAbility(Handle, ActorInfo, ActivationInfo))
+	if (!ValidatePreselectedDestination() || !CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
 		FinishVanish(true);
 		return;
@@ -58,6 +56,13 @@ void UGA_BossVanish::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
+	if (bWasCancelled)
+	{
+		if (AShipBossEnemy* Boss = GetBossAvatar())
+		{
+			Boss->SetDestinationPointId(INDEX_NONE);
+		}
+	}
 	ClearHiddenState();
 	MontageTask = nullptr;
 	PreparationTask = nullptr;
@@ -123,24 +128,17 @@ void UGA_BossVanish::HandleMontageInterrupted()
 	FinishVanish(true);
 }
 
-bool UGA_BossVanish::ResolveDestination()
+bool UGA_BossVanish::ValidatePreselectedDestination() const
 {
-	AShipBossEnemy* Boss = GetBossAvatar();
+	const AShipBossEnemy* Boss = GetBossAvatar();
 	AActor* Target = GetBossTarget();
-	if (!Boss || !Target || !Boss->GetHostShip())
+	FTransform Destination;
+	if (!Boss || !Boss->CanEngageActor(Target) || !Boss->GetHostShip()
+		|| Boss->GetDestinationPointId() == INDEX_NONE
+		|| !Boss->ResolvePointTransform(Boss->GetDestinationPointId(), Destination))
 	{
 		return false;
 	}
-
-	int32 PointId = INDEX_NONE;
-	if (!UBossDeckPointSelector::SelectDestinationPoint(
-		Boss->GetHostShip(), Boss, Target, EBossDestinationPurpose::Vanish,
-		PointSelectionSettings, PointId))
-	{
-		Boss->SetDestinationPointId(INDEX_NONE);
-		return false;
-	}
-	Boss->SetDestinationPointId(PointId);
 	return true;
 }
 

@@ -8,7 +8,9 @@
 #include "GAS/Ability/Boss/GA_BossKnockback.h"
 #include "GAS/Ability/Boss/GA_BossVanish.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/BaseHealthComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/SphereComponent.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -16,6 +18,16 @@
 
 AShipBossEnemy::AShipBossEnemy()
 {
+	DashDamageVolume = CreateDefaultSubobject<USphereComponent>(TEXT("DashDamageVolume"));
+	DashDamageVolume->SetupAttachment(GetRootComponent());
+	DashDamageVolume->InitSphereRadius(120.0f);
+	DashDamageVolume->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	DashDamageVolume->SetCollisionObjectType(ECC_WorldDynamic);
+	DashDamageVolume->SetCollisionResponseToAllChannels(ECR_Ignore);
+	DashDamageVolume->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+	DashDamageVolume->SetGenerateOverlapEvents(true);
+	DashDamageVolume->SetCanEverAffectNavigation(false);
+
 	AIControllerClass = AShipBossAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	bUseControllerRotationYaw = true;
@@ -26,6 +38,10 @@ AShipBossEnemy::AShipBossEnemy()
 	StartingAbilities.Add(UGA_BossKnockback::StaticClass());
 	StartingAbilities.Add(UGA_BossVanish::StaticClass());
 	StartingAbilities.Add(UGA_BossDashSlash::StaticClass());
+	if (HealthComponent)
+	{
+		HealthComponent->SetDamageGameplayCueTag(GameplayCue_Boss_Hit);
+	}
 
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
