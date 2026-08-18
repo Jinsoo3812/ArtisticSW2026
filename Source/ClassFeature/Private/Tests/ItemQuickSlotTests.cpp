@@ -33,9 +33,9 @@ bool FItemQuickSlotWidgetAssetTest::RunTest(const FString& Parameters)
 
 	const FName RequiredWidgetNames[] =
 	{
-		TEXT("ItemIconImage3"), TEXT("ItemNameText3"), TEXT("CountText3"), TEXT("KeyText3"), TEXT("PressedHighlightBorder3"), TEXT("ItemInfoOverlay3"),
-		TEXT("ItemIconImage4"), TEXT("ItemNameText4"), TEXT("CountText4"), TEXT("KeyText4"), TEXT("PressedHighlightBorder4"), TEXT("ItemInfoOverlay4"),
-		TEXT("ItemIconImage5"), TEXT("ItemNameText5"), TEXT("CountText5"), TEXT("KeyText5"), TEXT("PressedHighlightBorder5"), TEXT("ItemInfoOverlay5")
+		TEXT("ItemIconImage3"), TEXT("ItemNameText3"), TEXT("CountText3"), TEXT("PressedHighlightBorder3"), TEXT("ItemInfoOverlay3"),
+		TEXT("ItemIconImage4"), TEXT("ItemNameText4"), TEXT("CountText4"), TEXT("PressedHighlightBorder4"), TEXT("ItemInfoOverlay4"),
+		TEXT("ItemIconImage5"), TEXT("ItemNameText5"), TEXT("CountText5"), TEXT("PressedHighlightBorder5"), TEXT("ItemInfoOverlay5")
 	};
 	for (const FName WidgetName : RequiredWidgetNames)
 	{

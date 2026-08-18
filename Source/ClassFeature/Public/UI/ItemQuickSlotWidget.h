@@ -33,8 +33,6 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> CountText3;
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UTextBlock> KeyText3;
-	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UBorder> PressedHighlightBorder3;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UOverlay> ItemInfoOverlay3;
@@ -45,8 +43,6 @@ protected:
 	TObjectPtr<UTextBlock> ItemNameText4;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> CountText4;
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UTextBlock> KeyText4;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UBorder> PressedHighlightBorder4;
 	UPROPERTY(meta = (BindWidget))
@@ -59,8 +55,6 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> CountText5;
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UTextBlock> KeyText5;
-	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UBorder> PressedHighlightBorder5;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UOverlay> ItemInfoOverlay5;
@@ -68,7 +62,7 @@ protected:
 private:
 	void UnbindPlayer();
 	void RefreshSlot(int32 QuickSlotIndex, UImage* IconImage, UTextBlock* NameText,
-		UTextBlock* CountText, UTextBlock* KeyText, UBorder* PressedHighlightBorder,
+		UTextBlock* CountText, UBorder* PressedHighlightBorder,
 		UOverlay* ItemInfoOverlay) const;
 
 	TWeakObjectPtr<ABasePlayer> CachedPlayer;

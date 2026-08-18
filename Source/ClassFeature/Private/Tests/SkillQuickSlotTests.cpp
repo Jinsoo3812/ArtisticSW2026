@@ -22,17 +22,14 @@ bool FSkillQuickSlotWidgetContractTest::RunTest(const FString& Parameters)
 		TEXT("GravityVortexSlotPanel"),
 		TEXT("GravityVortexIconImage"),
 		TEXT("GravityVortexCooldownImage"),
-		TEXT("GravityVortexInputKeyText"),
 		TEXT("GravityVortexLockOverlay"),
 		TEXT("WaterBombSlotPanel"),
 		TEXT("WaterBombIconImage"),
 		TEXT("WaterBombCooldownImage"),
-		TEXT("WaterBombInputKeyText"),
 		TEXT("WaterBombLockOverlay"),
 		TEXT("BombardmentSlotPanel"),
 		TEXT("BombardmentIconImage"),
 		TEXT("BombardmentCooldownImage"),
-		TEXT("BombardmentInputKeyText"),
 		TEXT("BombardmentLockOverlay")
 	};
 
@@ -49,6 +46,20 @@ bool FSkillQuickSlotWidgetContractTest::RunTest(const FString& Parameters)
 	TestNotNull(
 		TEXT("Blueprint front-skill query exists"),
 		WidgetClass->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(USkillQuickSlotWidget, GetFrontSkillTag)));
+
+	const FName AnimationProperties[] =
+	{
+		TEXT("ShuffleDuration"),
+		TEXT("ShuffleOffset"),
+		TEXT("ShufflePeakScale"),
+		TEXT("ShufflePeakAngle")
+	};
+	for (const FName PropertyName : AnimationProperties)
+	{
+		TestNotNull(
+			*FString::Printf(TEXT("Shuffle animation setting exists: %s"), *PropertyName.ToString()),
+			WidgetClass->FindPropertyByName(PropertyName));
+	}
 
 	UClass* DesignerClass = LoadClass<USkillQuickSlotWidget>(
 		nullptr,

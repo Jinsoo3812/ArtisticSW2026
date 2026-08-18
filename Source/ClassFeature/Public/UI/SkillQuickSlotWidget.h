@@ -9,7 +9,6 @@
 class ABasePlayer;
 class UBorder;
 class UImage;
-class UTextBlock;
 class UWidget;
 
 /**
@@ -63,6 +62,22 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Cooldown")
 	FName CooldownPercentParameterName = TEXT("Percent");
 
+	/** Total time for a selected card to move out, change layers, and settle back. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Animation", meta = (ClampMin = "0.0"))
+	float ShuffleDuration = 0.3f;
+
+	/** Render-space offset reached immediately before the selected card changes layers. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Animation")
+	FVector2D ShuffleOffset = FVector2D(35.0f, -12.0f);
+
+	/** Scale multiplier reached at the middle of the shuffle. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Animation", meta = (ClampMin = "0.01"))
+	float ShufflePeakScale = 1.08f;
+
+	/** Additional clockwise rotation reached at the middle of the shuffle. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Animation")
+	float ShufflePeakAngle = 4.0f;
+
 	/** Panel component: GravityVortexSlotPanel (direct SkillSlotCanvas child). */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> GravityVortexSlotPanel;
@@ -74,10 +89,6 @@ protected:
 	/** Image component: GravityVortexCooldownImage (circular UI material brush). */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> GravityVortexCooldownImage;
-
-	/** Text component: GravityVortexInputKeyText. */
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> GravityVortexInputKeyText;
 
 	/** Border component: GravityVortexLockOverlay. */
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -95,10 +106,6 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> WaterBombCooldownImage;
 
-	/** Text component: WaterBombInputKeyText. */
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> WaterBombInputKeyText;
-
 	/** Border component: WaterBombLockOverlay. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> WaterBombLockOverlay;
@@ -115,10 +122,6 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> BombardmentCooldownImage;
 
-	/** Text component: BombardmentInputKeyText. */
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> BombardmentInputKeyText;
-
 	/** Border component: BombardmentLockOverlay. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> BombardmentLockOverlay;
@@ -129,16 +132,25 @@ private:
 
 	void UnbindPlayer();
 	void RefreshSkill(FGameplayTag SkillTag, UImage* IconImage, UBorder* LockOverlay) const;
-	void RefreshInputLabels() const;
 	void RefreshInputState();
 	void InitializeInputState();
 	void PromoteSkill(FGameplayTag SkillTag, UWidget* SlotPanel);
-	int32 ResolveHighestSlotZOrder() const;
+	void UpdateShuffleAnimation(float InDeltaTime);
+	void ApplyPromotedZOrder();
+	void FinishShuffleAnimation();
+	void ResetShuffleAnimation();
 	UImage* FindCooldownImage(FGameplayTag SkillTag) const;
 
 	TWeakObjectPtr<ABasePlayer> CachedPlayer;
 	FGameplayTag FrontSkillTag;
-	int32 NextSlotZOrder = 0;
+	FGameplayTag PendingFrontSkillTag;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> ShufflingSlotPanel;
+
+	FWidgetTransform ShuffleStartTransform;
+	float ShuffleElapsed = 0.0f;
+	bool bShuffleZOrderChanged = false;
 	bool bGravityVortexKeyWasDown = false;
 	bool bWaterBombKeyWasDown = false;
 	bool bBombardmentKeyWasDown = false;

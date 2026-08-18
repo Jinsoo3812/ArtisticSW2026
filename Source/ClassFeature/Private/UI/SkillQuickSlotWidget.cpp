@@ -5,7 +5,6 @@
 #include "Components/Border.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
-#include "Components/TextBlock.h"
 #include "Components/Widget.h"
 #include "GameFramework/PlayerController.h"
 #include "Inventory/InventoryComponent.h"
@@ -27,18 +26,6 @@ UCanvasPanelSlot* FindCanvasLayerSlot(UWidget* Widget)
 	return nullptr;
 }
 
-const UCanvasPanelSlot* FindCanvasLayerSlot(const UWidget* Widget)
-{
-	for (const UWidget* Current = Widget; Current; Current = Current->GetParent())
-	{
-		if (const UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Current->Slot))
-		{
-			return CanvasSlot;
-		}
-	}
-
-	return nullptr;
-}
 }
 
 void USkillQuickSlotWidget::NativeConstruct()
@@ -49,6 +36,7 @@ void USkillQuickSlotWidget::NativeConstruct()
 
 void USkillQuickSlotWidget::NativeDestruct()
 {
+	ResetShuffleAnimation();
 	UnbindPlayer();
 	Super::NativeDestruct();
 }
@@ -57,12 +45,12 @@ void USkillQuickSlotWidget::NativeTick(const FGeometry& MyGeometry, const float 
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	RefreshInputState();
+	UpdateShuffleAnimation(InDeltaTime);
 }
 
 void USkillQuickSlotWidget::SynchronizeProperties()
 {
 	Super::SynchronizeProperties();
-	RefreshInputLabels();
 
 	if (GravityVortexLockOverlay)
 	{
@@ -98,7 +86,6 @@ void USkillQuickSlotWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 		}
 	}
 
-	NextSlotZOrder = ResolveHighestSlotZOrder();
 	InitializeInputState();
 	RefreshSlots();
 }
@@ -127,7 +114,6 @@ void USkillQuickSlotWidget::UnbindPlayer()
 
 void USkillQuickSlotWidget::RefreshSlots()
 {
-	RefreshInputLabels();
 	RefreshSkill(GameplayAbility_Skill_GravityVortex, GravityVortexIconImage, GravityVortexLockOverlay);
 	RefreshSkill(GameplayAbility_Skill_WaterBomb, WaterBombIconImage, WaterBombLockOverlay);
 	RefreshSkill(GameplayAbility_Skill_Bombardment, BombardmentIconImage, BombardmentLockOverlay);
@@ -162,21 +148,6 @@ void USkillQuickSlotWidget::RefreshSkill(
 			? ESlateVisibility::Hidden
 			: ESlateVisibility::HitTestInvisible);
 	}
-}
-
-void USkillQuickSlotWidget::RefreshInputLabels() const
-{
-	auto SetKeyText = [](UTextBlock* TextBlock, const FKey& Key)
-	{
-		if (TextBlock)
-		{
-			TextBlock->SetText(Key.IsValid() ? Key.GetDisplayName(false) : FText::GetEmpty());
-		}
-	};
-
-	SetKeyText(GravityVortexInputKeyText, GravityVortexInputKey);
-	SetKeyText(WaterBombInputKeyText, WaterBombInputKey);
-	SetKeyText(BombardmentInputKeyText, BombardmentInputKey);
 }
 
 void USkillQuickSlotWidget::InitializeInputState()
@@ -233,25 +204,130 @@ void USkillQuickSlotWidget::PromoteSkill(const FGameplayTag SkillTag, UWidget* S
 		return;
 	}
 
-	if (UCanvasPanelSlot* CanvasSlot = FindCanvasLayerSlot(SlotPanel))
+	if (ShufflingSlotPanel)
 	{
-		CanvasSlot->SetZOrder(++NextSlotZOrder);
-		FrontSkillTag = SkillTag;
+		FinishShuffleAnimation();
+	}
+
+	ShufflingSlotPanel = SlotPanel;
+	PendingFrontSkillTag = SkillTag;
+	ShuffleStartTransform = SlotPanel->GetRenderTransform();
+	ShuffleElapsed = 0.0f;
+	bShuffleZOrderChanged = false;
+
+	if (ShuffleDuration <= KINDA_SMALL_NUMBER)
+	{
+		FinishShuffleAnimation();
 	}
 }
 
-int32 USkillQuickSlotWidget::ResolveHighestSlotZOrder() const
+void USkillQuickSlotWidget::UpdateShuffleAnimation(const float InDeltaTime)
 {
-	int32 HighestZOrder = 0;
-	const UWidget* SlotPanels[] = { GravityVortexSlotPanel, WaterBombSlotPanel, BombardmentSlotPanel };
-	for (const UWidget* SlotPanel : SlotPanels)
+	if (!ShufflingSlotPanel)
 	{
-		if (const UCanvasPanelSlot* CanvasSlot = FindCanvasLayerSlot(SlotPanel))
+		return;
+	}
+
+	ShuffleElapsed += FMath::Max(InDeltaTime, 0.0f);
+	const float NormalizedTime = FMath::Clamp(ShuffleElapsed / ShuffleDuration, 0.0f, 1.0f);
+	const bool bMovingOut = NormalizedTime < 0.5f;
+	const float HalfAlpha = bMovingOut
+		? NormalizedTime * 2.0f
+		: (1.0f - NormalizedTime) * 2.0f;
+	const float ExcursionAlpha = FMath::InterpEaseInOut(0.0f, 1.0f, HalfAlpha, 2.0f);
+
+	if (!bMovingOut && !bShuffleZOrderChanged)
+	{
+		ApplyPromotedZOrder();
+	}
+
+	FWidgetTransform AnimatedTransform = ShuffleStartTransform;
+	AnimatedTransform.Translation += ShuffleOffset * ExcursionAlpha;
+	const float ScaleMultiplier = FMath::Lerp(1.0f, ShufflePeakScale, ExcursionAlpha);
+	AnimatedTransform.Scale = ShuffleStartTransform.Scale * ScaleMultiplier;
+	AnimatedTransform.Angle += ShufflePeakAngle * ExcursionAlpha;
+	ShufflingSlotPanel->SetRenderTransform(AnimatedTransform);
+
+	if (NormalizedTime >= 1.0f)
+	{
+		FinishShuffleAnimation();
+	}
+}
+
+void USkillQuickSlotWidget::ApplyPromotedZOrder()
+{
+	if (!ShufflingSlotPanel || bShuffleZOrderChanged)
+	{
+		return;
+	}
+
+	struct FSlotLayer
+	{
+		UCanvasPanelSlot* CanvasSlot = nullptr;
+		int32 ZOrder = 0;
+	};
+
+	TArray<FSlotLayer> OtherLayers;
+	UWidget* SlotPanels[] = { GravityVortexSlotPanel, WaterBombSlotPanel, BombardmentSlotPanel };
+	for (UWidget* SlotPanel : SlotPanels)
+	{
+		if (SlotPanel == ShufflingSlotPanel)
 		{
-			HighestZOrder = FMath::Max(HighestZOrder, CanvasSlot->GetZOrder());
+			continue;
+		}
+
+		if (UCanvasPanelSlot* CanvasSlot = FindCanvasLayerSlot(SlotPanel))
+		{
+			OtherLayers.Add({ CanvasSlot, CanvasSlot->GetZOrder() });
 		}
 	}
-	return HighestZOrder;
+
+	OtherLayers.StableSort([](const FSlotLayer& Left, const FSlotLayer& Right)
+	{
+		return Left.ZOrder < Right.ZOrder;
+	});
+
+	int32 LayerIndex = 0;
+	for (FSlotLayer& Layer : OtherLayers)
+	{
+		Layer.CanvasSlot->SetZOrder(LayerIndex++);
+	}
+
+	if (UCanvasPanelSlot* PromotedCanvasSlot = FindCanvasLayerSlot(ShufflingSlotPanel))
+	{
+		PromotedCanvasSlot->SetZOrder(LayerIndex);
+		FrontSkillTag = PendingFrontSkillTag;
+	}
+
+	bShuffleZOrderChanged = true;
+}
+
+void USkillQuickSlotWidget::FinishShuffleAnimation()
+{
+	if (!ShufflingSlotPanel)
+	{
+		return;
+	}
+
+	ApplyPromotedZOrder();
+	ShufflingSlotPanel->SetRenderTransform(ShuffleStartTransform);
+	ShufflingSlotPanel = nullptr;
+	PendingFrontSkillTag = FGameplayTag();
+	ShuffleElapsed = 0.0f;
+	bShuffleZOrderChanged = false;
+}
+
+void USkillQuickSlotWidget::ResetShuffleAnimation()
+{
+	if (ShufflingSlotPanel)
+	{
+		ShufflingSlotPanel->SetRenderTransform(ShuffleStartTransform);
+	}
+
+	ShufflingSlotPanel = nullptr;
+	PendingFrontSkillTag = FGameplayTag();
+	ShuffleElapsed = 0.0f;
+	bShuffleZOrderChanged = false;
 }
 
 void USkillQuickSlotWidget::SetSkillCooldown(
