@@ -106,6 +106,16 @@ Notify가 누락되어도 `WindupDuration` 후 Dash가 시작되지만, 애니�
 
 ## 6. DashSlash BT 분기
 
+`GA_BossDashSlash`의 `Dash Acceptance Radius` 기본값은 75cm다. Dash는
+목적지의 갑판 로컬 평면 허용 범위에 들어오면 종료되며, 마지막 프레임에
+Deck Point의 정확한 좌표로 강제 스냅하지 않는다.
+
+필요한 연출에 따라 DashSlash Sequence의 `BTT_SelectBossDestinationPoint`
+앞에 `BTT_BossStrafe`를 배치할 수 있다. 이 Task는 쿨다운 fallback이
+아니며, Task 시작 시 Target 반지름의 좌·우 접선 중 하나만 선택한다.
+공간 검사나 목적지 도착 판정 없이 기본 0.75초 동안 이동 입력을 주며,
+벽에 막혀 실제 이동량이 적어도 성공한 뒤 DashSlash Sequence를 계속한다.
+
 순서는 반드시 다음과 같아야 한다.
 
 1. `BTD_CanActivateAbilityByTag`

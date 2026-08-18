@@ -6,6 +6,7 @@
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimMontage.h"
 #include "BaseGameplayTags.h"
+#include "BossAI/BossDeckMovementUtils.h"
 #include "BossAI/ShipBossEnemy.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -140,6 +141,7 @@ void UGA_BossDashSlash::EndAbility(
 	RecoveryTimeoutTask = nullptr;
 	MontageTask = nullptr;
 	DashElapsed = 0.0f;
+	EffectiveDashAcceptanceRadius = 0.0f;
 	HitActorsThisDash.Reset();
 	bDashStarted = false;
 	bSlashFinished = false;
@@ -204,6 +206,11 @@ void UGA_BossDashSlash::BeginDash()
 	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
 	DashStartLocal = DeckTransform.InverseTransformPosition(Boss->GetActorLocation());
 	DashEndLocal = DeckTransform.InverseTransformPosition(Destination.GetLocation());
+	const float DashTravelDistance = FVector2D::Distance(
+		FVector2D(DashStartLocal.X, DashStartLocal.Y),
+		FVector2D(DashEndLocal.X, DashEndLocal.Y));
+	EffectiveDashAcceptanceRadius = BossDeckMovement::ResolveAcceptanceRadius(
+		DashAcceptanceRadius, DashTravelDistance);
 	PreviousWorldLocation = Boss->GetActorLocation();
 	DashElapsed = 0.0f;
 	HitActorsThisDash.Reset();
@@ -262,7 +269,11 @@ void UGA_BossDashSlash::TickDash()
 	ApplySweptDashHits(PreviousWorldLocation, NewWorldLocation);
 	PreviousWorldLocation = NewWorldLocation;
 
-	if (Alpha >= 1.0f - KINDA_SMALL_NUMBER)
+	const FVector NewLocalLocation = DeckMesh->GetComponentTransform().InverseTransformPosition(
+		NewWorldLocation);
+	if (BossDeckMovement::IsWithinPlanarAcceptance(
+		NewLocalLocation, DashEndLocal, EffectiveDashAcceptanceRadius)
+		|| Alpha >= 1.0f - KINDA_SMALL_NUMBER)
 	{
 		HandleDestinationReached();
 	}

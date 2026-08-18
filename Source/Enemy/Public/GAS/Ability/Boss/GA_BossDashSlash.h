@@ -21,6 +21,7 @@ public:
 	FName GetDashSlashSectionName() const { return DashSlashSectionName; }
 	FName GetDashHoldSectionName() const { return DashHoldSectionName; }
 	FName GetRecoverySectionName() const { return RecoverySectionName; }
+	float GetDashAcceptanceRadius() const { return DashAcceptanceRadius; }
 
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
@@ -104,6 +105,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash", meta = (ClampMin = "0.05", Units = "s"))
 	float DashDuration = 0.45f;
 
+	/** Stops inside this deck-local planar range instead of snapping to one exact point. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash", meta = (ClampMin = "0.0", Units = "cm"))
+	float DashAcceptanceRadius = 75.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash", meta = (ClampMin = "1.0", Units = "cm"))
 	float DashHitRadius = 120.0f;
 
@@ -133,6 +138,7 @@ protected:
 	FVector DashStartLocal = FVector::ZeroVector;
 	FVector DashEndLocal = FVector::ZeroVector;
 	FVector PreviousWorldLocation = FVector::ZeroVector;
+	float EffectiveDashAcceptanceRadius = 0.0f;
 	float DashElapsed = 0.0f;
 	float DashTickInterval = 1.0f / 60.0f;
 	TSet<TWeakObjectPtr<AActor>> HitActorsThisDash;

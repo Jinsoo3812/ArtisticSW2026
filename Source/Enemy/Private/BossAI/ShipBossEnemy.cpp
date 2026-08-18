@@ -8,7 +8,6 @@
 #include "GAS/Ability/Boss/GA_BossKnockback.h"
 #include "GAS/Ability/Boss/GA_BossVanish.h"
 #include "Components/CapsuleComponent.h"
-#include "Components/BaseHealthComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "DeckAI/DeckWaypointComponent.h"
@@ -38,10 +37,6 @@ AShipBossEnemy::AShipBossEnemy()
 	StartingAbilities.Add(UGA_BossKnockback::StaticClass());
 	StartingAbilities.Add(UGA_BossVanish::StaticClass());
 	StartingAbilities.Add(UGA_BossDashSlash::StaticClass());
-	if (HealthComponent)
-	{
-		HealthComponent->SetDamageGameplayCueTag(GameplayCue_Boss_Hit);
-	}
 
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{

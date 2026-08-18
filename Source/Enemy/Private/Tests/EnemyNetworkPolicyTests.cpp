@@ -4,7 +4,13 @@
 
 #include "AbilitySystemComponent.h"
 #include "BaseEnemy.h"
+#include "BaseGameplayTags.h"
+#include "BossAI/ShipBossEnemy.h"
+#include "Components/BaseHealthComponent.h"
+#include "DeckAI/DeckRangedEnemy.h"
 #include "HAL/IConsoleManager.h"
+#include "MeleeEnemy/MeleeEnemy.h"
+#include "RangedEnemy/RangedEnemy.h"
 #include "RangedEnemy/RangedEnemyProjectile.h"
 #include "Weapon/BaseWeapon.h"
 
@@ -35,6 +41,48 @@ bool FEnemyNetworkPolicyDefaultsTest::RunTest(const FString& Parameters)
 		TestNotNull(TEXT("Enemy ASC exists"), EnemyCDO->GetAbilitySystemComponent());
 		TestEqual(TEXT("Enemy ASC uses Minimal replication"),
 			EnemyCDO->GetASCReplicationMode(), EGameplayEffectReplicationMode::Minimal);
+	}
+
+	const ABaseEnemy* EnemyArchetypes[] =
+	{
+		GetDefault<ABaseEnemy>(),
+		GetDefault<AMeleeEnemy>(),
+		GetDefault<ARangedEnemy>(),
+		GetDefault<ADeckRangedEnemy>(),
+		GetDefault<AShipBossEnemy>()
+	};
+	for (const ABaseEnemy* EnemyArchetype : EnemyArchetypes)
+	{
+		if (TestNotNull(TEXT("Enemy archetype owns a health component"),
+			EnemyArchetype ? EnemyArchetype->GetHealthComponent() : nullptr))
+		{
+			TestEqual(
+				*FString::Printf(TEXT("%s inherits the shared confirmed-damage cue"), *GetNameSafe(EnemyArchetype)),
+				EnemyArchetype->GetHealthComponent()->GetDamageGameplayCueTag(),
+				GameplayCue_Boss_Hit.GetTag());
+		}
+	}
+
+	const TCHAR* EnemyBlueprintPaths[] =
+	{
+		TEXT("/Game/GameplayAbilitySystem/Enemy/BP_MeleeEnemy.BP_MeleeEnemy_C"),
+		TEXT("/Game/GameplayAbilitySystem/Enemy/BP_RangedEnemy.BP_RangedEnemy_C"),
+		TEXT("/Game/GameplayAbilitySystem/Enemy/BP_DeckRangedEnemy.BP_DeckRangedEnemy_C"),
+		TEXT("/Game/GameplayAbilitySystem/Enemy/BP_Ship_BossEnemy.BP_Ship_BossEnemy_C")
+	};
+	for (const TCHAR* BlueprintPath : EnemyBlueprintPaths)
+	{
+		const UClass* BlueprintClass = LoadObject<UClass>(nullptr, BlueprintPath);
+		const ABaseEnemy* BlueprintCDO = BlueprintClass
+			? Cast<ABaseEnemy>(BlueprintClass->GetDefaultObject())
+			: nullptr;
+		if (TestNotNull(*FString::Printf(TEXT("Enemy Blueprint loads: %s"), BlueprintPath), BlueprintCDO))
+		{
+			TestEqual(
+				*FString::Printf(TEXT("%s inherits the shared confirmed-damage cue"), BlueprintPath),
+				BlueprintCDO->GetHealthComponent()->GetDamageGameplayCueTag(),
+				GameplayCue_Boss_Hit.GetTag());
+		}
 	}
 
 	const ABaseWeapon* WeaponCDO = GetDefault<ABaseWeapon>();

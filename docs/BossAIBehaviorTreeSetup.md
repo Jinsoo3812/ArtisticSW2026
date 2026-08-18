@@ -4,6 +4,9 @@
 
 - Blackboard and Behavior Tree decide **when** an action is appropriate and prepare its inputs.
 - `BTT_SelectBossDestinationPoint` selects and records `DestinationPointId`.
+- `BTT_BossStrafe` is an optional positioning action that can be inserted before
+  or after any individual ability. It is not a cooldown fallback and does not
+  inspect ability cooldowns.
 - `BTD_CanActivateAbilityByTag` checks whether the registered Gameplay Ability is currently available. This is an advisory branch condition; the GA remains authoritative.
 - `BTT_ActivateBossAbility` activates the GA by asset tag, waits for the exact ability instance to finish, and clears prepared destination state.
 - A boss GA owns only the atomic action: commit/cooldown, montage or movement execution, hit detection, damage, cancellation cleanup, and ending itself.
@@ -38,24 +41,49 @@ BT_RogueBoss
 
 BT_Subtree_RogueBoss_Combat
 └─ Random/priority Selector
-   ├─ Sequence: DashSlash
-   │  ├─ BTD_CanActivateAbilityByTag(GameplayAbility.Boss.DashSlash)
-   │  ├─ BTT_SelectBossDestinationPoint(Dash policy)
-   │  └─ BTT_ActivateBossAbility(DashSlash, RequirePreselectedDestination=true)
-   ├─ Sequence: Vanish
-   │  ├─ BTD_CanActivateAbilityByTag(GameplayAbility.Boss.Vanish)
-   │  ├─ BTT_SelectBossDestinationPoint(Behind-target policy)
-   │  └─ BTT_ActivateBossAbility(Vanish, RequirePreselectedDestination=true)
-   ├─ Sequence: Knockback
-   │  ├─ close-range decorator
-   │  ├─ BTD_CanActivateAbilityByTag(GameplayAbility.Boss.Knockback)
-   │  └─ BTT_ActivateBossAbility(Knockback)
-   ├─ Sequence: BasicAttack
-   │  ├─ attack-range decorator
-   │  ├─ BTD_CanActivateAbilityByTag(GameplayAbility.Boss.BasicAttack)
-   │  └─ BTT_ActivateBossAbility(BasicAttack)
-   └─ Wait(0.1–0.3 seconds)
+	├─ Sequence: DashSlash
+	│  ├─ BTD_CanActivateAbilityByTag(GameplayAbility.Boss.DashSlash)
+	│  ├─ BTT_BossStrafe (optional: before ability)
+	│  ├─ BTT_SelectBossDestinationPoint(Dash policy)
+	│  └─ BTT_ActivateBossAbility(DashSlash, RequirePreselectedDestination=true)
+	├─ Sequence: Vanish
+	│  ├─ BTD_CanActivateAbilityByTag(GameplayAbility.Boss.Vanish)
+	│  ├─ BTT_SelectBossDestinationPoint(Behind-target policy)
+	│  ├─ BTT_ActivateBossAbility(Vanish, RequirePreselectedDestination=true)
+	│  └─ BTT_BossStrafe (optional: after ability)
+	├─ Sequence: Knockback
+	│  ├─ close-range decorator
+	│  ├─ BTD_CanActivateAbilityByTag(GameplayAbility.Boss.Knockback)
+	│  ├─ BTT_ActivateBossAbility(Knockback)
+	│  └─ BTT_BossStrafe (optional: after ability)
+	├─ Sequence: BasicAttack
+	│  ├─ attack-range decorator
+	│  ├─ BTD_CanActivateAbilityByTag(GameplayAbility.BasicAttack)
+	│  ├─ BTT_BossStrafe (optional: before ability)
+	│  └─ BTT_ActivateBossAbility(BasicAttack)
+	└─ Wait(0.1–0.3 seconds)
 ```
+
+The shown Strafe locations are examples, not mandatory placements. Author each
+ability sequence with no Strafe, a pre-ability Strafe, a post-ability Strafe,
+or both. Strafe is a timed movement flourish: walls can reduce its actual travel,
+but they do not fail the task or prevent the containing sequence from continuing.
+
+## Boss Strafe movement contract
+
+`BTT_BossStrafe` snapshots the initial target radius in ship-deck local space
+and chooses its left or right tangent once. It then applies that fixed local
+direction through the live deck transform for `Strafe Duration` (0.75 seconds
+by default). It performs no clearance query, destination arrival test, radius
+limit, or replanning.
+
+CharacterMovement remains responsible for real collision, so the boss may stop
+or slide against a wall without failing the task. Blocked movement never extends
+the duration and the task succeeds when the timer ends. Only invalid runtime
+ownership (missing boss, target, host ship, deck, or movement component) fails.
+
+DashSlash separately uses a deck-local planar acceptable range to avoid snapping
+to its exact destination.
 
 Damage feedback is not emitted by the BT task or at ability startup. The attack stamps an impact cue into its outgoing damage spec, and the damaged actor's HealthComponent executes it only after authoritative health loss.
 
@@ -76,5 +104,7 @@ Damage feedback is not emitted by the BT task or at ability startup. The attack 
 2. Confirm every BPGA has the exact ability asset tag used by its decorator and task.
 3. For DashSlash and Vanish, enable `RequirePreselectedDestination` on the activation task.
 4. Keep destination selection immediately before activation so another branch cannot consume stale state.
-5. Confirm `GCN_Boss_Attack` and `GCN_Boss_Hit` are discovered under `/Game/GameplayCues`.
-6. In a two-client PIE session, verify one replicated VFX per hit, weak attack shake in range, and strong hit-confirm shake only for the damaging player.
+5. Insert `BTT_BossStrafe` before/after only the abilities whose authored pattern needs it; do not add a global cooldown gate.
+6. Keep `BTT_SetFocus(TargetActor)` active while Strafe should face the player, and use the Strafe movement-speed mode.
+7. Confirm `GCN_Boss_Attack` and `GCN_Boss_Hit` are discovered under `/Game/GameplayCues`.
+8. In a two-client PIE session, verify one replicated VFX per hit, weak attack shake in range, and strong hit-confirm shake only for the damaging player.

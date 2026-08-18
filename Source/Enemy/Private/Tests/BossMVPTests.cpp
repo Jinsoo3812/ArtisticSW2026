@@ -15,6 +15,7 @@
 #include "BehaviorTree/BTCompositeNode.h"
 #include "BehaviorTree/Tasks/BTTask_RunBehaviorDynamic.h"
 #include "BossAI/BossDeckPointSelector.h"
+#include "BossAI/BossDeckMovementUtils.h"
 #include "BossAI/BossEncounterComponent.h"
 #include "BossAI/EnemyItemBox.h"
 #include "BossAI/ShipBossAIController.h"
@@ -35,6 +36,7 @@
 #include "Interactable/InteractableComponent.h"
 #include "ShipAI/EnemyShip.h"
 #include "Task/BTT_ActivateBossAbility.h"
+#include "Task/BTT_BossStrafe.h"
 #include "Task/BTT_SelectBossDestinationPoint.h"
 #include "UObject/UnrealType.h"
 #include "Weapon/WeaponDataAsset.h"
@@ -110,6 +112,7 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 	const AEnemyItemBox* ItemBoxCDO = GetDefault<AEnemyItemBox>();
 	const UBTT_SelectBossDestinationPoint* SelectTaskCDO = GetDefault<UBTT_SelectBossDestinationPoint>();
 	const UBTT_ActivateBossAbility* ActivateTaskCDO = GetDefault<UBTT_ActivateBossAbility>();
+	const UBTT_BossStrafe* StrafeTaskCDO = GetDefault<UBTT_BossStrafe>();
 	const UBTD_CanActivateAbilityByTag* AbilityDecoratorCDO = GetDefault<UBTD_CanActivateAbilityByTag>();
 	const AShipBossAIController* BossControllerCDO = GetDefault<AShipBossAIController>();
 
@@ -155,6 +158,15 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 	}
 	TestNotNull(TEXT("Shared destination BT task exists"), SelectTaskCDO);
 	TestNotNull(TEXT("Generic boss ability BT task exists"), ActivateTaskCDO);
+	if (TestNotNull(TEXT("Reusable boss strafe BT task exists"), StrafeTaskCDO))
+	{
+		TestTrue(TEXT("Boss strafe has a visible positive duration"),
+			StrafeTaskCDO->GetStrafeDuration() > 0.0f);
+		TestTrue(TEXT("Boss strafe always completes within one second"),
+			StrafeTaskCDO->GetStrafeDuration() <= 1.0f);
+		TestTrue(TEXT("Boss strafe applies a positive movement speed"),
+			StrafeTaskCDO->GetMoveSpeed() > 0.0f);
+	}
 	TestNotNull(TEXT("Ability readiness decorator exists"), AbilityDecoratorCDO);
 	if (TestNotNull(TEXT("BT-only boss controller exists"), BossControllerCDO))
 	{
@@ -368,6 +380,8 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 			Dash->GetDashHoldSectionName(), FName(TEXT("DashHold")));
 		TestEqual(TEXT("Dash montage recovery section contract"),
 			Dash->GetRecoverySectionName(), FName(TEXT("Recover")));
+		TestTrue(TEXT("Dash stops within a configurable acceptance radius"),
+			Dash->GetDashAcceptanceRadius() > 0.0f);
 	}
 	if (TestNotNull(TEXT("Boss basic attack specialization exists"), Basic))
 	{
@@ -379,6 +393,37 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Boss cooldown effect has duration policy"),
 			CooldownEffect->DurationPolicy, EGameplayEffectDurationType::HasDuration);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FBossStrafeDirectionMathTest,
+	"ArtisticSW.Enemy.BossMVP.StrafeDirectionMath",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBossStrafeDirectionMathTest::RunTest(const FString& Parameters)
+{
+	const FVector BossLocal(500.0f, 0.0f, 90.0f);
+	const FVector TargetLocal(0.0f, 0.0f, 90.0f);
+	const FVector Left = UBTT_BossStrafe::CalculateLocalTangent(
+		BossLocal, TargetLocal, FVector::ForwardVector, true);
+	const FVector Right = UBTT_BossStrafe::CalculateLocalTangent(
+		BossLocal, TargetLocal, FVector::ForwardVector, false);
+	const FVector Radial = (BossLocal - TargetLocal).GetSafeNormal2D();
+
+	TestTrue(TEXT("Left strafe is perpendicular to the initial target radius"),
+		FMath::IsNearlyZero(FVector::DotProduct(Radial, Left), KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("Right strafe is the exact opposite tangent"),
+		Right.Equals(-Left, KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("Coincident target still produces a fallback movement direction"),
+		!UBTT_BossStrafe::CalculateLocalTangent(
+			FVector::ZeroVector, FVector::ZeroVector, FVector::ForwardVector, true).IsNearlyZero());
+
+	const float Acceptance = BossDeckMovement::ResolveAcceptanceRadius(75.0f, 100.0f);
+	TestEqual(TEXT("Acceptance cannot consume most of a short movement"), Acceptance, 45.0f);
+	TestTrue(TEXT("Planar acceptance ignores deck-local height"),
+		BossDeckMovement::IsWithinPlanarAcceptance(
+			FVector(10.0f, 0.0f, 500.0f), FVector::ZeroVector, 10.0f));
 	return true;
 }
 
