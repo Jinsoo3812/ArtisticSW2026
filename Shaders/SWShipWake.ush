@@ -4,6 +4,8 @@
 
 #define SW_M7_WAKE_CAPACITY 1024
 #define SW_M7_GOLDEN_PEAK 1.3871971383
+#define SW_M7_DOMAIN_U_RANGE 10.0
+#define SW_M7_DOMAIN_V_MAX 3.0
 
 #define SW_M7_EVALUATE_KELVIN(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, OUT_HEIGHT) \
 { \
@@ -247,8 +249,8 @@
                 const float SW_FadeInSec = SW_R3.z; \
                 const float SW_FadeIn = SW_FadeInSec > 1.0e-6 ? smoothstep(0.0, SW_FadeInSec, SW_Age) : 1.0; \
                 const float SW_Weight = SW_Amp * SW_FadeIn * SW_Decay; \
-                const float SW_dH_dDownstream = (SW_Weight / SW_Length) * SW_GradU; \
-                const float SW_dH_dLateral = (SW_Weight / SW_HalfWidth) * SW_GradV; \
+                const float SW_dH_dDownstream = (SW_Weight / SW_Length) * (SW_GradU * SW_M7_DOMAIN_U_RANGE); \
+                const float SW_dH_dLateral = (SW_Weight / SW_HalfWidth) * (SW_GradV * SW_M7_DOMAIN_V_MAX); \
                 const float2 SW_GradWorld = SW_dH_dDownstream * (-SW_Forward) + SW_dH_dLateral * SW_Right; \
                 SW_TotalGradWorld += SW_GradWorld; \
             } \
