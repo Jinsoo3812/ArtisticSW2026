@@ -41,13 +41,20 @@
 #define SW_EVALUATE_RIPPLE_NORMAL(WORLD_XY, SERVER_TIME, RIPPLE_TEX, NORMAL_STRENGTH, OUT_NORMAL) \
 { \
     float SW_R_H_Center = 0.0; \
-    float SW_R_H_PosX = 0.0; \
-    float SW_R_H_PosY = 0.0; \
-    const float SW_R_NormDelta = 25.0; /* 25cm finite difference for ripple curvature */ \
     SW_EVALUATE_RIPPLE_HEIGHT(WORLD_XY, SERVER_TIME, RIPPLE_TEX, SW_R_H_Center); \
-    SW_EVALUATE_RIPPLE_HEIGHT((WORLD_XY) + float2(SW_R_NormDelta, 0.0), SERVER_TIME, RIPPLE_TEX, SW_R_H_PosX); \
-    SW_EVALUATE_RIPPLE_HEIGHT((WORLD_XY) + float2(0.0, SW_R_NormDelta), SERVER_TIME, RIPPLE_TEX, SW_R_H_PosY); \
-    const float SW_R_dHdX = (SW_R_H_PosX - SW_R_H_Center) / SW_R_NormDelta; \
-    const float SW_R_dHdY = (SW_R_H_PosY - SW_R_H_Center) / SW_R_NormDelta; \
+    const float2 SW_R_Pos2D = (WORLD_XY); \
+    const float2 SW_R_dX = ddx(SW_R_Pos2D); \
+    const float2 SW_R_dY = ddy(SW_R_Pos2D); \
+    const float SW_R_dH_dX = ddx(SW_R_H_Center); \
+    const float SW_R_dH_dY = ddy(SW_R_H_Center); \
+    const float SW_R_Det = SW_R_dX.x * SW_R_dY.y - SW_R_dX.y * SW_R_dY.x; \
+    float SW_R_dHdX = 0.0; \
+    float SW_R_dHdY = 0.0; \
+    if (abs(SW_R_Det) > 1.0e-7) \
+    { \
+        const float SW_R_InvDet = 1.0 / SW_R_Det; \
+        SW_R_dHdX = (SW_R_dH_dX * SW_R_dY.y - SW_R_dH_dY * SW_R_dX.y) * SW_R_InvDet; \
+        SW_R_dHdY = (SW_R_dH_dY * SW_R_dX.x - SW_R_dH_dX * SW_R_dY.x) * SW_R_InvDet; \
+    } \
     OUT_NORMAL = normalize(float3(-SW_R_dHdX * (NORMAL_STRENGTH), -SW_R_dHdY * (NORMAL_STRENGTH), 1.0)); \
 }

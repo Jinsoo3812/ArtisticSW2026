@@ -1,0 +1,35 @@
+Loaded Ship Mesh: <Object '/Game/New/Ship/Mesh/SM_Ship.SM_Ship' (0x000001AC138F9000) Class 'StaticMesh'>
+  Total Material Slots: 32
+    - Slot [0] 'MI_Window': MI_Window
+    - Slot [1] 'MI_Anchor': MI_Anchor
+    - Slot [2] 'MI_Hull': MI_Hull
+    - Slot [3] 'MI_Cauldron01a': MI_Cauldron01a
+    - Slot [4] 'MI_Cauldron02a': MI_Cauldron02a
+    - Slot [5] 'MI_Cauldron03a': MI_Cauldron03a
+    - Slot [6] 'MI_Door01a': MI_Door01a
+    - Slot [7] 'MI_WoodR': MI_WoodR
+    - Slot [8] 'MI_Wall': MI_Wall
+    - Slot [9] 'MI_WoodG': MI_WoodG
+    - Slot [10] 'MI_Fence01c': MI_Fence01c
+    - Slot [11] 'MI_Firewood': MI_Firewood
+    - Slot [12] 'MI_Flag01b_Feathers': MI_Flag01b_Feathers
+    - Slot [13] 'MI_Flag01b_flagpole': MI_Flag01b_flagpole
+    - Slot [14] 'MI_Flag01b_Flag': MI_Flag01b_Flag
+    - Slot [15] 'MI_Flag01c': MI_Flag01c
+    - Slot [16] 'MI_Floor': MI_Floor
+    - Slot [17] 'MI_Horong_Rope': MI_Horong_Rope
+    - Slot [18] 'MI_Lintel01a': MI_Lintel01a
+    - Slot [19] 'MI_Mast01a': MI_Mast01a
+    - Slot [20] 'MI_Mast02a_Feathers': MI_Mast02a_Feathers
+    - Slot [21] 'MI_Roof': MI_Roof
+    - Slot [22] 'MI_Rope01a': MI_Rope01a
+    - Slot [23] 'MI_Wood': MI_Wood
+    - Slot [24] 'MI_StrawBag': MI_StrawBag
+    - Slot [25] 'MI_StrawBag_Rope': MI_StrawBag_Rope
+    - Slot [26] 'MI_Wall01a_01': MI_Wall01a_01
+    - Slot [27] 'MI_Wall01a_02': MI_Wall01a_02
+    - Slot [28] 'MI_Wall01a_03': MI_Wall01a_03
+    - Slot [29] 'MI_Wall01a_04': MI_Wall01a_04
+    - Slot [30] 'MI_Wall01a_05': MI_Wall01a_05
+    - Slot [31] 'MI_Wall01a_06': MI_Wall01a_06
+  Nanite Enabled: True

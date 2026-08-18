@@ -1,0 +1,22 @@
+Node15: <Object '/Game/New/Water/Realistic_Water/M_Realistic_Water.M_Realistic_Water:MaterialExpressionCustom_15' (0x000001DF11D51800) Class 'MaterialExpressionCustom'>
+Node15 Inputs (5):
+  - FoamNormal: MaterialExpressionTextureObjectParameter_7 (MaterialExpressionTextureObjectParameter)
+      prop 'parameter_name' = FrothFoamNormal
+  - FoamHeight: MaterialExpressionTextureObjectParameter_10 (MaterialExpressionTextureObjectParameter)
+      prop 'parameter_name' = FrothFoamBaseColor
+  - FoamORM: MaterialExpressionTextureObjectParameter_11 (MaterialExpressionTextureObjectParameter)
+      prop 'parameter_name' = FrothFoamORM
+  - Time: MaterialExpressionTime_11 (MaterialExpressionTime)
+  - UV: MaterialExpressionWorldPosition_2 (MaterialExpressionWorldPosition)
+
+Node16: <Object '/Game/New/Water/Realistic_Water/M_Realistic_Water.M_Realistic_Water:MaterialExpressionCustom_16' (0x000001DF11D52D00) Class 'MaterialExpressionCustom'>
+Node16 Inputs (9):
+  - ScaleFoam: MaterialExpressionCustom_15 (MaterialExpressionCustom)
+  - WhiteFoam: MaterialExpressionCustom_15 (MaterialExpressionCustom)
+  - WaveHeight: MaterialExpressionComponentMask_9 (MaterialExpressionComponentMask)
+  - WaveSteepness: MaterialExpressionOneMinus_0 (MaterialExpressionOneMinus)
+  - FoamColor: MaterialExpressionConstant3Vector_3 (MaterialExpressionConstant3Vector)
+  - TranslucentColor: MaterialExpressionConstant3Vector_1 (MaterialExpressionConstant3Vector)
+  - SlopeBounds: MaterialExpressionVectorParameter_5 (MaterialExpressionVectorParameter)
+  - CrestBounds: MaterialExpressionVectorParameter_6 (MaterialExpressionVectorParameter)
+  - SSSIntensity: MaterialExpressionScalarParameter_60 (MaterialExpressionScalarParameter)

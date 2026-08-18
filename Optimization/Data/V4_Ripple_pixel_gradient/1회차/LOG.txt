@@ -1,0 +1,385 @@
+Cmd: ProfileGPU
+LogCsvProfiler: Display: CSVEvent "Cmd: ProfileGPU" [Frame 1202]
+Cmd: stat dumpframe
+Cmd: csvprofile stop
+LogCsvProfiler: Display: CSVEvent "Cmd: csvprofile stop" [Frame 1202]
+LogCsvProfiler: Display: Metadata set : endtimestamp="1787050274"
+LogCsvProfiler: Display: Metadata set : captureduration="15.286187"
+LogCsvProfiler: Display: Capture Stop requested
+LogStreaming: Display: Dumping async load requests & callstacks to ../../../../../../Unreal Projects/ArtisticSW2026/Saved/Profiling/AsyncLoadRequests_2026.08.18-19.51.14.log
+LogRHI: Display: GPU Profile for Frame 4481 - Copy 0 - GPU 0
+LogRHI: Display:     - Frame Time                    : 0.00ms
+LogRHI: Display:     - r.ProfileGPU.Root             : "*"
+LogRHI: Display:     - r.ProfileGPU.ThresholdPercent : 0.00%
+LogRHI: Display:     - r.ProfileGPU.ShowLeafEvents   : true
+LogRHI: Display:     No recorded work for this queue.
+LogRHI: Display: GPU Profile for Frame 4481 - Compute 0 - GPU 0
+LogRHI: Display:     - Frame Time                    : 1.33ms
+LogRHI: Display:     - r.ProfileGPU.Root             : "*"
+LogRHI: Display:     - r.ProfileGPU.ThresholdPercent : 0.00%
+LogRHI: Display:     - r.ProfileGPU.ShowLeafEvents   : true
+LogRHI: Display:     ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+LogRHI: Display:     ┃                         Exclusive                          ┃                          Inclusive                          ┃                                                                                          ┃
+LogRHI: Display:     ┠───────┬────────┬──────┬──────┬──────────────────┬──────────╂───────┬────────┬──────┬──────┬───────────────────┬──────────┨                                          Events                                          ┃
+LogRHI: Display:     ┃ Draws │ Dsptch │ Prim │ Vert │     Percent      │   Time   ┃ Draws │ Dsptch │ Prim │ Vert │      Percent      │   Time   ┃                                                                                          ┃
+LogRHI: Display:     ┠───────┼────────┼──────┼──────┼──────────────────┼──────────╂───────┼────────┼──────┼──────┼───────────────────┼──────────╂──────────────────────────────────────────────────────────────────────────────────────────┨
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.4% ┊          │ 0.005 ms ┃     0 │     96 │    0 │    0 │ 100.0% ┊ ████████ │ 1.329 ms ┃ <root>                                                                                   ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.1% ┊          │ 0.002 ms ┃     0 │      0 │    0 │    0 │   0.2% ┊          │ 0.002 ms ┃    Frame 4474 (CsvFrame 1200)                                                            ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │    0 │    0 │   0.0% ┊          │ 0.000 ms ┃       RenderGraphExecute - UpdateAllPrimitiveSceneInfos                                  ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.1% ┊          │ 0.001 ms ┃     0 │      0 │    0 │    0 │   0.1% ┊          │ 0.001 ms ┃    BufferPoolCopyOps                                                                     ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │    0 │    0 │   0.0% ┊          │ 0.000 ms ┃    TexturePoolCopyOps                                                                    ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.7% ┊          │ 0.009 ms ┃     0 │     96 │    0 │    0 │  99.4% ┊ ███████▉ │ 1.320 ms ┃    Frame 4475 (CsvFrame 1201)                                                            ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.3% ┊          │ 0.004 ms ┃     0 │     96 │    0 │    0 │  98.0% ┊ ███████▊ │ 1.302 ms ┃       SceneRender - ViewFamilies                                                         ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.2% ┊          │ 0.002 ms ┃     0 │     96 │    0 │    0 │  97.7% ┊ ███████▊ │ 1.298 ms ┃          RenderGraphExecute - /ViewFamilies                                              ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  1.0% ┊          │ 0.014 ms ┃     0 │     96 │    0 │    0 │  97.6% ┊ ███████▊ │ 1.296 ms ┃             Scene                                                                        ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.0% ┊          │ 0.001 ms ┃     0 │      0 │    0 │    0 │   0.0% ┊          │ 0.001 ms ┃                FXSystemPreRender                                                         ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.1% ┊          │ 0.001 ms ┃     0 │      2 │    0 │    0 │   1.5% ┊          │ 0.020 ms ┃                PrepareImageBasedVRS                                                      ┃
+LogRHI: Display:     ┃     0 │      2 │    0 │    0 │  1.4% ┊          │ 0.019 ms ┃     0 │      2 │    0 │    0 │   1.4% ┊          │ 0.019 ms ┃                   ContrastAdaptiveShading                                                ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.3% ┊          │ 0.004 ms ┃     0 │      0 │    0 │    0 │   0.3% ┊          │ 0.004 ms ┃                CaptureConvolveSkyEnvMap                                                  ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.0% ┊          │ 0.001 ms ┃     0 │      0 │    0 │    0 │   0.0% ┊          │ 0.001 ms ┃                   ConvolutionMip0Face45                                                  ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.0% ┊          │ 0.001 ms ┃     0 │      0 │    0 │    0 │   0.0% ┊          │ 0.001 ms ┃                LumenSceneUpdate: 2 card captures 0.031M texels                           ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.1% ┊          │ 0.002 ms ┃     0 │      0 │    0 │    0 │   0.2% ┊          │ 0.002 ms ┃                RayTracingDynamicGeometry                                                 ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.0% ┊          │ 0.001 ms ┃     0 │      0 │    0 │    0 │   0.0% ┊          │ 0.001 ms ┃                   RayTracingDynamicGeometryUpdate                                        ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.2% ┊          │ 0.003 ms ┃     0 │     26 │    0 │    0 │  27.8% ┊ ██▏      │ 0.369 ms ┃                LumenSceneLighting                                                        ┃
+LogRHI: Display:     ┃     0 │      5 │    0 │    0 │  0.8% ┊          │ 0.010 ms ┃     0 │      5 │    0 │    0 │   0.8% ┊          │ 0.010 ms ┃                   BuildCardUpdateContext                                                 ┃
+LogRHI: Display:     ┃     0 │      2 │    0 │    0 │  1.4% ┊          │ 0.019 ms ┃     0 │     14 │    0 │    0 │  11.2% ┊ ▉        │ 0.148 ms ┃                   DirectLighting                                                         ┃
+LogRHI: Display:     ┃     0 │      7 │    0 │    0 │  2.4% ┊ ▏        │ 0.032 ms ┃     0 │      7 │    0 │    0 │   2.4% ┊ ▏        │ 0.032 ms ┃                      CullTiles 2 lights                                                  ┃
+LogRHI: Display:     ┃     0 │      2 │    0 │    0 │  1.2% ┊          │ 0.016 ms ┃     0 │      2 │    0 │    0 │   1.2% ┊          │ 0.016 ms ┃                      Light Attenuation ShadowMask                                        ┃
+LogRHI: Display:     ┃     0 │      2 │    0 │    0 │  4.6% ┊ ▎        │ 0.061 ms ┃     0 │      2 │    0 │    0 │   4.6% ┊ ▎        │ 0.061 ms ┃                      Offscreen shadows                                                   ┃
+LogRHI: Display:     ┃     0 │      1 │    0 │    0 │  1.6% ┊          │ 0.021 ms ┃     0 │      1 │    0 │    0 │   1.6% ┊          │ 0.021 ms ┃                      Lights                                                              ┃
+LogRHI: Display:     ┃     0 │      7 │    0 │    0 │ 15.6% ┊ █▏       │ 0.207 ms ┃     0 │      7 │    0 │    0 │  15.6% ┊ █▏       │ 0.207 ms ┃                   Radiosity                                                              ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.2% ┊          │ 0.003 ms ┃     0 │     65 │    0 │    0 │  55.1% ┊ ████▍    │ 0.732 ms ┃                DiffuseIndirectAndAO                                                      ┃
+LogRHI: Display:     ┃     0 │     28 │    0 │    0 │ 29.9% ┊ ██▍      │ 0.397 ms ┃     0 │     60 │    0 │    0 │  45.5% ┊ ███▋     │ 0.604 ms ┃                   LumenScreenProbeGather                                                 ┃
+LogRHI: Display:     ┃     0 │     26 │    0 │    0 │ 10.7% ┊ ▊        │ 0.142 ms ┃     0 │     26 │    0 │    0 │  10.7% ┊ ▊        │ 0.142 ms ┃                      UpdateRadianceCaches                                                ┃
+LogRHI: Display:     ┃     0 │      6 │    0 │    0 │  4.9% ┊ ▍        │ 0.065 ms ┃     0 │      6 │    0 │    0 │   4.9% ┊ ▍        │ 0.065 ms ┃                      Integrate                                                           ┃
+LogRHI: Display:     ┃     0 │      5 │    0 │    0 │  9.4% ┊ ▊        │ 0.125 ms ┃     0 │      5 │    0 │    0 │   9.4% ┊ ▊        │ 0.125 ms ┃                   TranslucencyVolumeLighting                                             ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.2% ┊          │ 0.002 ms ┃     0 │      3 │    0 │    0 │  11.6% ┊ ▉        │ 0.154 ms ┃                PostProcessing                                                            ┃
+LogRHI: Display:     ┃     0 │      3 │    0 │    0 │ 11.4% ┊ ▉        │ 0.152 ms ┃     0 │      3 │    0 │    0 │  11.4% ┊ ▉        │ 0.152 ms ┃                   TemporalSuperResolution(sg.AntiAliasingQuality=3) 1506x724 -> 2038x980 ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.2% ┊          │ 0.003 ms ┃     0 │      0 │    0 │    0 │   0.2% ┊          │ 0.003 ms ┃       RenderGraphExecute - Slate                                                         ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │    0 │    0 │   0.0% ┊          │ 0.000 ms ┃          FRDGBuilder::SubmitBufferUploads                                                ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.1% ┊          │ 0.002 ms ┃     0 │      0 │    0 │    0 │   0.1% ┊          │ 0.002 ms ┃       RenderGraphExecute - UpdateAllPrimitiveSceneInfos                                  ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.2% ┊          │ 0.002 ms ┃     0 │      0 │    0 │    0 │   0.2% ┊          │ 0.002 ms ┃       RenderGraphExecute - UpdateAllPrimitiveSceneInfos                                  ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.1% ┊          │ 0.002 ms ┃     0 │      0 │    0 │    0 │   0.1% ┊          │ 0.002 ms ┃       RenderGraphExecute - UpdateAllPrimitiveSceneInfos                                  ┃
+LogRHI: Display:     ┃     0 │      0 │    0 │    0 │  0.1% ┊          │ 0.001 ms ┃     0 │      0 │    0 │    0 │   0.1% ┊          │ 0.001 ms ┃       RenderGraphExecute - UpdateAllPrimitiveSceneInfos                                  ┃
+LogRHI: Display:     ┗━━━━━━━┷━━━━━━━━┷━━━━━━┷━━━━━━┷━━━━━━━━━━━━━━━━━━┷━━━━━━━━━━┻━━━━━━━┷━━━━━━━━┷━━━━━━┷━━━━━━┷━━━━━━━━━━━━━━━━━━━┷━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+LogRHI: Display: GPU Profile for Frame 4481 - Graphics 0 - GPU 0
+LogRHI: Display:     - Frame Time                    : 11.19ms
+LogRHI: Display:     - r.ProfileGPU.Root             : "*"
+LogRHI: Display:     - r.ProfileGPU.ThresholdPercent : 0.00%
+LogRHI: Display:     - r.ProfileGPU.ShowLeafEvents   : true
+LogRHI: Display:     ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+LogRHI: Display:     ┃                           Exclusive                            ┃                            Inclusive                             ┃                                                                                                   ┃
+LogRHI: Display:     ┠───────┬────────┬────────┬────────┬──────────────────┬──────────╂───────┬────────┬────────┬────────┬───────────────────┬───────────┨                                              Events                                               ┃
+LogRHI: Display:     ┃ Draws │ Dsptch │  Prim  │  Vert  │     Percent      │   Time   ┃ Draws │ Dsptch │  Prim  │  Vert  │      Percent      │   Time    ┃                                                                                                   ┃
+LogRHI: Display:     ┠───────┼────────┼────────┼────────┼──────────────────┼──────────╂───────┼────────┼────────┼────────┼───────────────────┼───────────╂───────────────────────────────────────────────────────────────────────────────────────────────────┨
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃   331 │    353 │ 967142 │ 545359 │ 100.0% ┊ ████████ │ 11.192 ms ┃ <root>                                                                                            ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃    BufferPoolCopyOps                                                                              ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃    TexturePoolCopyOps                                                                             ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.2% ┊          │ 0.020 ms ┃   331 │    353 │ 967142 │ 545359 │ 100.0% ┊ ███████▉ │ 11.190 ms ┃    Frame 4475 (CsvFrame 1201)                                                                     ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃       WorldTick                                                                                   ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃       WorldTick                                                                                   ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃       WorldTick                                                                                   ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃       SendAllEndOfFrameUpdates                                                                    ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃       SendAllEndOfFrameUpdates                                                                    ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.2% ┊          │ 0.017 ms ┃   183 │    339 │ 962262 │ 535963 │  98.0% ┊ ███████▊ │ 10.972 ms ┃       SceneRender - ViewFamilies                                                                  ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃          RayTracingGeometry                                                                       ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃          GPUSkinCache_UpdateSkinningBatches                                                       ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃          ScaleVariableRateShadingTexture                                                          ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.002 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.002 ms ┃          UpdateLumenSceneBuffers                                                                  ┃
+LogRHI: Display:     ┃     0 │      2 │      0 │      0 │  0.1% ┊          │ 0.012 ms ┃   183 │    338 │ 962262 │ 535963 │  97.9% ┊ ███████▊ │ 10.953 ms ┃          RenderGraphExecute - /ViewFamilies                                                       ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.2% ┊          │ 0.020 ms ┃     0 │      0 │      0 │      0 │   0.2% ┊          │  0.020 ms ┃             FRDGBuilder::SubmitBufferUploads                                                      ┃
+LogRHI: Display:     ┃     0 │      2 │      0 │      0 │  0.0% ┊          │ 0.002 ms ┃     0 │      6 │      0 │      0 │   0.1% ┊          │  0.007 ms ┃             UpdateAllPrimitiveSceneInfos                                                          ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      4 │      0 │      0 │   0.0% ┊          │  0.005 ms ┃                GPUSceneUpdate                                                                     ┃
+LogRHI: Display:     ┃     0 │      2 │      0 │      0 │  0.0% ┊          │ 0.003 ms ┃     0 │      4 │      0 │      0 │   0.0% ┊          │  0.005 ms ┃                   GPUScene.Update                                                                 ┃
+LogRHI: Display:     ┃     0 │      2 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │      2 │      0 │      0 │   0.0% ┊          │  0.001 ms ┃                      UpdateGPUScene NumPrimitiveDataUploads 23                                    ┃
+LogRHI: Display:     ┃     0 │      2 │      0 │      0 │  0.0% ┊          │ 0.004 ms ┃     0 │      2 │      0 │      0 │   0.0% ┊          │  0.004 ms ┃             UpdateDistanceFieldObjectBuffers                                                      ┃
+LogRHI: Display:     ┃     0 │      2 │      0 │      0 │  0.1% ┊          │ 0.008 ms ┃     0 │      2 │      0 │      0 │   0.1% ┊          │  0.008 ms ┃             UpdateDistanceFieldAtlas                                                              ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      1 │      0 │      0 │   0.1% ┊          │  0.010 ms ┃             Nanite::Streaming                                                                     ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.1% ┊          │ 0.010 ms ┃     0 │      1 │      0 │      0 │   0.1% ┊          │  0.010 ms ┃                Nanite::Readback                                                                   ┃
+LogRHI: Display:     ┃     2 │     12 │      2 │      6 │  0.7% ┊          │ 0.074 ms ┃   183 │    325 │ 962262 │ 535963 │  97.3% ┊ ███████▊ │ 10.892 ms ┃             Scene                                                                                 ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃                FXSystemPreRender                                                                  ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃                   GPUParticles_PreRender                                                          ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.001 ms ┃                GPUSceneUpdate                                                                     ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.0% ┊          │ 0.005 ms ┃     0 │      1 │      0 │      0 │   0.0% ┊          │  0.005 ms ┃                SceneCulling_ComputeExplicitChunkBounds                                            ┃
+LogRHI: Display:     ┃     0 │      2 │      0 │      0 │  0.0% ┊          │ 0.005 ms ┃     0 │      2 │      0 │      0 │   0.0% ┊          │  0.005 ms ┃                BuildRenderingCommandsDeferred(Culling=On)                                         ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │      1 │      0 │      0 │   0.0% ┊          │  0.001 ms ┃                Shadow.Virtual.ProcessInvalidationsGPU                                             ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.005 ms ┃     7 │      0 │  37518 │  22432 │   0.1% ┊          │  0.013 ms ┃                PrePass DDM_AllOpaqueNoVelocity (Forced by Nanite)                                 ┃
+LogRHI: Display:     ┃     7 │      0 │  37518 │  22432 │  0.1% ┊          │ 0.008 ms ┃     7 │      0 │  37518 │  22432 │   0.1% ┊          │  0.008 ms ┃                   ParallelDraw (Index: 0, Num: 1)                                                 ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.1% ┊          │ 0.008 ms ┃     3 │      0 │   1948 │   2123 │   0.1% ┊          │  0.013 ms ┃                RenderVelocities(Opaque)                                                           ┃
+LogRHI: Display:     ┃     3 │      0 │   1948 │   2123 │  0.0% ┊          │ 0.005 ms ┃     3 │      0 │   1948 │   2123 │   0.0% ┊          │  0.005 ms ┃                   ParallelDraw (Index: 0, Num: 1)                                                 ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      1 │      0 │      0 │   0.1% ┊          │  0.006 ms ┃                Nanite::VisBuffer                                                                  ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.1% ┊          │ 0.006 ms ┃     0 │      1 │      0 │      0 │   0.1% ┊          │  0.006 ms ┃                   Nanite::InitContext                                                             ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃    22 │     71 │      0 │      0 │   2.1% ┊ ▏        │  0.238 ms ┃                Nanite::VisBuffer                                                                  ┃
+LogRHI: Display:     ┃     0 │      4 │      0 │      0 │  0.1% ┊          │ 0.010 ms ┃    22 │     71 │      0 │      0 │   2.1% ┊ ▏        │  0.238 ms ┃                   Nanite::DrawGeometry                                                            ┃
+LogRHI: Display:     ┃    11 │     18 │      0 │      0 │  0.8% ┊          │ 0.085 ms ┃    11 │     32 │      0 │      0 │   1.4% ┊          │  0.157 ms ┃                      MainPass                                                                     ┃
+LogRHI: Display:     ┃     0 │      4 │      0 │      0 │  0.1% ┊          │ 0.010 ms ┃     0 │      4 │      0 │      0 │   0.1% ┊          │  0.010 ms ┃                         InstanceCulling                                                           ┃
+LogRHI: Display:     ┃     0 │      9 │      0 │      0 │  0.5% ┊          │ 0.061 ms ┃     0 │      9 │      0 │      0 │   0.5% ┊          │  0.061 ms ┃                         NodeAndClusterCull                                                        ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │      1 │      0 │      0 │   0.0% ┊          │  0.001 ms ┃                         PatchSplit                                                                ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │      3 │      0 │      0 │   0.1% ┊          │  0.011 ms ┃                      BuildPreviousOccluderHZB                                                     ┃
+LogRHI: Display:     ┃     0 │      3 │      0 │      0 │  0.1% ┊          │ 0.010 ms ┃     0 │      3 │      0 │      0 │   0.1% ┊          │  0.010 ms ┃                         BuildHZB                                                                  ┃
+LogRHI: Display:     ┃    11 │     18 │      0 │      0 │  0.3% ┊          │ 0.035 ms ┃    11 │     32 │      0 │      0 │   0.5% ┊          │  0.059 ms ┃                      PostPass                                                                     ┃
+LogRHI: Display:     ┃     0 │      4 │      0 │      0 │  0.0% ┊          │ 0.003 ms ┃     0 │      4 │      0 │      0 │   0.0% ┊          │  0.003 ms ┃                         InstanceCulling                                                           ┃
+LogRHI: Display:     ┃     0 │      9 │      0 │      0 │  0.2% ┊          │ 0.019 ms ┃     0 │      9 │      0 │      0 │   0.2% ┊          │  0.019 ms ┃                         NodeAndClusterCull                                                        ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │      1 │      0 │      0 │   0.0% ┊          │  0.001 ms ┃                         PatchSplit                                                                ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     2 │      0 │      2 │      6 │   0.2% ┊          │  0.027 ms ┃                NaniteBasePass                                                                     ┃
+LogRHI: Display:     ┃     2 │      0 │      2 │      6 │  0.2% ┊          │ 0.026 ms ┃     2 │      0 │      2 │      6 │   0.2% ┊          │  0.026 ms ┃                   Nanite::EmitDepthTargets                                                        ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃    14 │      0 │    168 │    112 │   0.1% ┊          │  0.006 ms ┃                HZB                                                                                ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃    14 │      0 │    168 │    112 │   0.1% ┊          │  0.006 ms ┃                   BeginOcclusionTests                                                             ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃    14 │      0 │    168 │    112 │   0.1% ┊          │  0.006 ms ┃                      BeginOcclusionTests                                                          ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃    14 │      0 │    168 │    112 │   0.1% ┊          │  0.006 ms ┃                         ViewOcclusionTests 0                                                      ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃    14 │      0 │    168 │    112 │   0.0% ┊          │  0.005 ms ┃                            BeginOcclusionTests                                                    ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃                               ShadowFrustumQueries                                                ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃                               GroupedQueries                                                      ┃
+LogRHI: Display:     ┃    14 │      0 │    168 │    112 │  0.0% ┊          │ 0.005 ms ┃    14 │      0 │    168 │    112 │   0.0% ┊          │  0.005 ms ┃                               IndividualQueries                                                   ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      5 │      0 │      0 │   0.1% ┊          │  0.007 ms ┃                HZB                                                                                ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      5 │      0 │      0 │   0.1% ┊          │  0.007 ms ┃                   BuildHZB(ViewId=0)                                                              ┃
+LogRHI: Display:     ┃     0 │      5 │      0 │      0 │  0.1% ┊          │ 0.006 ms ┃     0 │      5 │      0 │      0 │   0.1% ┊          │  0.006 ms ┃                      BuildHZB                                                                     ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │      2 │      0 │      0 │   0.1% ┊          │  0.010 ms ┃                ComputeLightGrid                                                                   ┃
+LogRHI: Display:     ┃     0 │      2 │      0 │      0 │  0.1% ┊          │ 0.009 ms ┃     0 │      2 │      0 │      0 │   0.1% ┊          │  0.009 ms ┃                   CullLights 24x12x32 NumLights 1 NumCaptures 0                                   ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃                LightFunctionAtlasGeneration                                                       ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.1% ┊          │ 0.016 ms ┃     0 │      5 │      0 │      0 │   0.7% ┊          │  0.075 ms ┃                SkyAtmosphereLUTs                                                                  ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.0% ┊          │ 0.005 ms ┃     0 │      1 │      0 │      0 │   0.0% ┊          │  0.005 ms ┃                   SkyAtmosphere::DistantSkyLightLut                                               ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.1% ┊          │ 0.008 ms ┃     0 │      1 │      0 │      0 │   0.1% ┊          │  0.008 ms ┃                   SkyAtmosphere::RealTimeCaptureSkyViewLut                                        ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.1% ┊          │ 0.009 ms ┃     0 │      1 │      0 │      0 │   0.1% ┊          │  0.009 ms ┃                   SkyAtmosphere::RealTimeCaptureCamera360VolumeLut                                ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.2% ┊          │ 0.021 ms ┃     0 │      1 │      0 │      0 │   0.2% ┊          │  0.021 ms ┃                   SkyAtmosphere::SkyViewLut                                                       ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.2% ┊          │ 0.018 ms ┃     0 │      1 │      0 │      0 │   0.2% ┊          │  0.018 ms ┃                   SkyAtmosphere::CameraVolumeLut                                                  ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      1 │      0 │      0 │   0.1% ┊          │  0.009 ms ┃                CaptureConvolveSkyEnvMap                                                           ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.1% ┊          │ 0.009 ms ┃     0 │      1 │      0 │      0 │   0.1% ┊          │  0.009 ms ┃                   ConvolutionMip0Face45                                                           ┃
+LogRHI: Display:     ┃     2 │      8 │      2 │      6 │  0.2% ┊          │ 0.022 ms ┃     6 │      8 │ 358434 │ 186854 │   4.0% ┊ ▎        │  0.450 ms ┃                SingleLayerWaterDepthPrepass                                                       ┃
+LogRHI: Display:     ┃     4 │      0 │ 358432 │ 186848 │  3.8% ┊ ▎        │ 0.428 ms ┃     4 │      0 │ 358432 │ 186848 │   3.8% ┊ ▎        │  0.428 ms ┃                   ParallelDraw (Index: 0, Num: 1)                                                 ┃
+LogRHI: Display:     ┃     1 │      5 │      4 │     12 │  0.1% ┊          │ 0.013 ms ┃    25 │      7 │ 142912 │  73812 │   0.4% ┊          │  0.046 ms ┃                LumenSceneUpdate: 2 card captures 0.031M texels                                    ┃
+LogRHI: Display:     ┃     0 │      2 │      0 │      0 │  0.0% ┊          │ 0.003 ms ┃     0 │      2 │      0 │      0 │   0.0% ┊          │  0.003 ms ┃                   BuildRenderingCommands(Culling=Off)                                             ┃
+LogRHI: Display:     ┃     9 │      0 │  71442 │  36864 │  0.1% ┊          │ 0.007 ms ┃     9 │      0 │  71442 │  36864 │   0.1% ┊          │  0.007 ms ┃                   MeshCardCapture Pages:2 Draws:18 Instances:18 Tris:142884                       ┃
+LogRHI: Display:     ┃     9 │      0 │  71442 │  36864 │  0.0% ┊          │ 0.003 ms ┃     9 │      0 │  71442 │  36864 │   0.0% ┊          │  0.003 ms ┃                   MeshCardCapture Pages:2 Draws:18 Instances:18 Tris:142884                       ┃
+LogRHI: Display:     ┃     6 │      0 │     24 │     72 │  0.2% ┊          │ 0.021 ms ┃     6 │      0 │     24 │     72 │   0.2% ┊          │  0.021 ms ┃                   CopyCardsToSurfaceCache                                                         ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │      4 │      0 │      0 │   0.4% ┊          │  0.041 ms ┃                RayTracingDynamicGeometry                                                          ┃
+LogRHI: Display:     ┃     0 │      4 │      0 │      0 │  0.0% ┊          │ 0.005 ms ┃     0 │      4 │      0 │      0 │   0.0% ┊          │  0.005 ms ┃                   RayTracingDynamicGeometryUpdate                                                 ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.3% ┊          │ 0.035 ms ┃     0 │      0 │      0 │      0 │   0.3% ┊          │  0.035 ms ┃                   Build                                                                           ┃
+LogRHI: Display:     ┃     0 │      2 │      0 │      0 │  0.4% ┊          │ 0.043 ms ┃     0 │      2 │      0 │      0 │   0.4% ┊          │  0.043 ms ┃                RayTracingScene                                                                    ┃
+LogRHI: Display:     ┃     1 │      0 │      1 │      3 │  0.2% ┊          │ 0.020 ms ┃     1 │      0 │      1 │      3 │   0.2% ┊          │  0.020 ms ┃                SkyAtmosphereEditor                                                                ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.1% ┊          │ 0.008 ms ┃    11 │     35 │  43434 │  26763 │   1.6% ┊ ▏        │  0.183 ms ┃                BasePass                                                                           ┃
+LogRHI: Display:     ┃    10 │      0 │  39466 │  24555 │  0.8% ┊          │ 0.086 ms ┃    10 │      0 │  39466 │  24555 │   0.8% ┊          │  0.086 ms ┃                   ParallelDraw (Index: 0, Num: 1)                                                 ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │     35 │      0 │      0 │   0.7% ┊          │  0.078 ms ┃                   NaniteBasePass                                                                  ┃
+LogRHI: Display:     ┃     0 │     32 │      0 │      0 │  0.5% ┊          │ 0.060 ms ┃     0 │     35 │      0 │      0 │   0.7% ┊          │  0.077 ms ┃                      Nanite::BasePass                                                             ┃
+LogRHI: Display:     ┃     0 │      3 │      0 │      0 │  0.2% ┊          │ 0.017 ms ┃     0 │      3 │      0 │      0 │   0.2% ┊          │  0.017 ms ┃                         Nanite::ShadeBinning                                                      ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.002 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.002 ms ┃                   EditorPrimitives                                                                ┃
+LogRHI: Display:     ┃     1 │      0 │   3968 │   2208 │  0.1% ┊          │ 0.009 ms ┃     1 │      0 │   3968 │   2208 │   0.1% ┊          │  0.009 ms ┃                   ParallelDraw (Index: 0, Num: 1)                                                 ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.4% ┊          │ 0.045 ms ┃     0 │      1 │      0 │      0 │   0.4% ┊          │  0.045 ms ┃                StochasticLighting                                                                 ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      1 │      0 │      0 │   0.1% ┊          │  0.008 ms ┃                DiffuseIndirectAndAO                                                               ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      1 │      0 │      0 │   0.1% ┊          │  0.007 ms ┃                   LumenScreenProbeGather                                                          ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.1% ┊          │ 0.007 ms ┃     0 │      1 │      0 │      0 │   0.1% ┊          │  0.007 ms ┃                      UpdateRadianceCaches                                                         ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │     12 │      0 │      0 │   0.5% ┊          │  0.052 ms ┃                VirtualShadowMapMarkPages                                                          ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │     12 │      0 │      0 │   0.5% ┊          │  0.051 ms ┃                   ShadowDepths                                                                    ┃
+LogRHI: Display:     ┃     0 │     12 │      0 │      0 │  0.4% ┊          │ 0.050 ms ┃     0 │     12 │      0 │      0 │   0.4% ┊          │  0.050 ms ┃                      FVirtualShadowMapArray::BeginMarkPages                                       ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.0% ┊          │ 0.005 ms ┃    36 │    104 │      0 │      0 │   5.5% ┊ ▍        │  0.618 ms ┃                ShadowDepths                                                                       ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃                   BuildRenderingCommandsDeferred(Culling=On)                                      ┃
+LogRHI: Display:     ┃     0 │     13 │      0 │      0 │  0.3% ┊          │ 0.030 ms ┃     0 │     15 │      0 │      0 │   0.4% ┊          │  0.045 ms ┃                   FVirtualShadowMapArray::BuildPageAllocation                                     ┃
+LogRHI: Display:     ┃     0 │      2 │      0 │      0 │  0.1% ┊          │ 0.015 ms ┃     0 │      2 │      0 │      0 │   0.1% ┊          │  0.015 ms ┃                      InitializePhysicalPages                                                      ┃
+LogRHI: Display:     ┃     0 │      5 │      0 │      0 │  0.2% ┊          │ 0.021 ms ┃    22 │     80 │      0 │      0 │   4.5% ┊ ▎        │  0.506 ms ┃                   RenderVirtualShadowMaps(Nanite)                                                 ┃
+LogRHI: Display:     ┃     0 │      6 │      0 │      0 │  0.2% ┊          │ 0.024 ms ┃    22 │     75 │      0 │      0 │   4.3% ┊ ▎        │  0.486 ms ┃                      Nanite::DrawGeometry                                                         ┃
+LogRHI: Display:     ┃    11 │     18 │      0 │      0 │  1.8% ┊ ▏        │ 0.206 ms ┃    11 │     33 │      0 │      0 │   3.4% ┊ ▎        │  0.381 ms ┃                         MainPass                                                                  ┃
+LogRHI: Display:     ┃     0 │      5 │      0 │      0 │  0.6% ┊          │ 0.070 ms ┃     0 │      5 │      0 │      0 │   0.6% ┊          │  0.070 ms ┃                            InstanceCulling                                                        ┃
+LogRHI: Display:     ┃     0 │      9 │      0 │      0 │  0.9% ┊          │ 0.103 ms ┃     0 │      9 │      0 │      0 │   0.9% ┊          │  0.103 ms ┃                            NodeAndClusterCull                                                     ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │      1 │      0 │      0 │   0.0% ┊          │  0.001 ms ┃                            PatchSplit                                                             ┃
+LogRHI: Display:     ┃     0 │      4 │      0 │      0 │  0.1% ┊          │ 0.008 ms ┃     0 │      4 │      0 │      0 │   0.1% ┊          │  0.008 ms ┃                         BuildPreviousOccluderHZB(VSM)                                             ┃
+LogRHI: Display:     ┃    11 │     18 │      0 │      0 │  0.4% ┊          │ 0.042 ms ┃    11 │     32 │      0 │      0 │   0.7% ┊          │  0.073 ms ┃                         PostPass                                                                  ┃
+LogRHI: Display:     ┃     0 │      4 │      0 │      0 │  0.0% ┊          │ 0.004 ms ┃     0 │      4 │      0 │      0 │   0.0% ┊          │  0.004 ms ┃                            InstanceCulling                                                        ┃
+LogRHI: Display:     ┃     0 │      9 │      0 │      0 │  0.2% ┊          │ 0.026 ms ┃     0 │      9 │      0 │      0 │   0.2% ┊          │  0.026 ms ┃                            NodeAndClusterCull                                                     ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.0% ┊          │ 0.002 ms ┃     0 │      1 │      0 │      0 │   0.0% ┊          │  0.002 ms ┃                            PatchSplit                                                             ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃    14 │      5 │      0 │      0 │   0.5% ┊          │  0.059 ms ┃                   RenderVirtualShadowMaps(Non-Nanite)                                             ┃
+LogRHI: Display:     ┃    14 │      0 │      0 │      0 │  0.1% ┊          │ 0.006 ms ┃    14 │      5 │      0 │      0 │   0.5% ┊          │  0.058 ms ┃                      Batched                                                                      ┃
+LogRHI: Display:     ┃     0 │      5 │      0 │      0 │  0.5% ┊          │ 0.052 ms ┃     0 │      5 │      0 │      0 │   0.5% ┊          │  0.052 ms ┃                         CullingPasses                                                             ┃
+LogRHI: Display:     ┃     0 │      3 │      0 │      0 │  0.0% ┊          │ 0.002 ms ┃     0 │      3 │      0 │      0 │   0.0% ┊          │  0.002 ms ┃                   FVirtualShadowMapArray::MergeStaticPhysicalPages                                ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.004 ms ┃    13 │     16 │   1297 │    744 │   3.1% ┊ ▎        │  0.351 ms ┃                RenderDeferredLighting                                                             ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │     14 │      0 │      0 │   1.2% ┊          │  0.136 ms ┃                   DiffuseIndirectAndAO                                                            ┃
+LogRHI: Display:     ┃     0 │     14 │      0 │      0 │  1.2% ┊          │ 0.136 ms ┃     0 │     14 │      0 │      0 │   1.2% ┊          │  0.136 ms ┃                      LumenReflections                                                             ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃    10 │      2 │   1297 │    744 │   1.7% ┊ ▏        │  0.185 ms ┃                   Lights                                                                          ┃
+LogRHI: Display:     ┃     3 │      0 │      0 │      0 │  0.1% ┊          │ 0.010 ms ┃    10 │      2 │   1297 │    744 │   1.6% ┊ ▏        │  0.184 ms ┃                      DirectLighting                                                               ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.4% ┊          │ 0.040 ms ┃     0 │      1 │      0 │      0 │   0.4% ┊          │  0.040 ms ┃                         VirtualShadowMapProjectionMaskBits                                        ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.002 ms ┃     7 │      1 │   1297 │    744 │   1.2% ┊          │  0.135 ms ┃                         UnbatchedLights                                                           ┃
+LogRHI: Display:     ┃     3 │      0 │      0 │      0 │  0.3% ┊          │ 0.029 ms ┃     4 │      1 │      1 │      3 │   1.2% ┊          │  0.133 ms ┃                            UEDPIE_1_Realistic_Water.DirectionalLight                              ┃
+LogRHI: Display:     ┃     1 │      1 │      1 │      3 │  0.9% ┊          │ 0.103 ms ┃     1 │      1 │      1 │      3 │   0.9% ┊          │  0.103 ms ┃                               ShadowProjectionOnOpaque                                            ┃
+LogRHI: Display:     ┃     3 │      0 │   1296 │    741 │  0.0% ┊          │ 0.000 ms ┃     3 │      0 │   1296 │    741 │   0.0% ┊          │  0.000 ms ┃                            UEDPIE_1_Realistic_Water.BP_PlayerShip_Kelvin                          ┃
+LogRHI: Display:     ┃     3 │      0 │      0 │      0 │  0.2% ┊          │ 0.027 ms ┃     3 │      0 │      0 │      0 │   0.2% ┊          │  0.027 ms ┃                   DiffuseIndirectAndAO                                                            ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  6.7% ┊ ▌        │ 0.746 ms ┃     0 │      1 │      0 │      0 │   6.7% ┊ ▌        │  0.746 ms ┃                VolumetricCloud                                                                    ┃
+LogRHI: Display:     ┃     1 │      0 │      1 │      3 │  0.1% ┊          │ 0.010 ms ┃     1 │      0 │      1 │      3 │   0.1% ┊          │  0.010 ms ┃                VolCloudReconstruction                                                             ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.1% ┊          │ 0.006 ms ┃     0 │      1 │      0 │      0 │   0.1% ┊          │  0.006 ms ┃                TemporalSuperResolution                                                            ┃
+LogRHI: Display:     ┃     1 │      0 │      0 │      0 │  0.3% ┊          │ 0.030 ms ┃     6 │      9 │ 358433 │ 186851 │  59.1% ┊ ████▋    │  6.615 ms ┃                SingleLayerWater                                                                   ┃
+LogRHI: Display:     ┃     1 │      0 │      1 │      3 │  0.0% ┊          │ 0.001 ms ┃     1 │      0 │      1 │      3 │   0.0% ┊          │  0.001 ms ┃                   SLW::CopySceneWithoutWater                                                      ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.5% ┊          │ 0.054 ms ┃     4 │      0 │ 358432 │ 186848 │  57.9% ┊ ████▋    │  6.480 ms ┃                   SLW::Draw                                                                       ┃
+LogRHI: Display:     ┃     4 │      0 │ 358432 │ 186848 │ 57.4% ┊ ████▌    │ 6.426 ms ┃     4 │      0 │ 358432 │ 186848 │  57.4% ┊ ████▌    │  6.426 ms ┃                      ParallelDraw (Index: 0, Num: 1)                                              ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      9 │      0 │      0 │   0.9% ┊          │  0.104 ms ┃                   SLW::LumenReflections                                                           ┃
+LogRHI: Display:     ┃     0 │      9 │      0 │      0 │  0.9% ┊          │ 0.104 ms ┃     0 │      9 │      0 │      0 │   0.9% ┊          │  0.104 ms ┃                      LumenReflections                                                             ┃
+LogRHI: Display:     ┃     1 │      0 │      1 │      3 │  0.4% ┊          │ 0.039 ms ┃     1 │      0 │      1 │      3 │   0.4% ┊          │  0.039 ms ┃                SkyAtmosphere                                                                      ┃
+LogRHI: Display:     ┃     1 │      0 │      2 │      4 │  0.6% ┊          │ 0.067 ms ┃     1 │      0 │      2 │      4 │   0.6% ┊          │  0.067 ms ┃                ExponentialHeightFog                                                               ┃
+LogRHI: Display:     ┃     1 │      0 │      1 │      3 │  0.1% ┊          │ 0.016 ms ┃     1 │      0 │      1 │      3 │   0.1% ┊          │  0.016 ms ┃                VolCloudComposeOverScene                                                           ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.001 ms ┃                PostRenderOpsFX                                                                    ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.001 ms ┃                   FXSystemPostRenderOpaque                                                        ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃                      GPUParticles_PostRenderOpaque                                                ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.1% ┊          │  0.007 ms ┃                Translucency                                                                       ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.1% ┊          │ 0.006 ms ┃     0 │      0 │      0 │      0 │   0.1% ┊          │  0.006 ms ┃                   RenderTranslucency                                                              ┃
+LogRHI: Display:     ┃     2 │      1 │      2 │      6 │  0.5% ┊          │ 0.061 ms ┃    31 │     17 │  18108 │  36244 │   9.1% ┊ ▋        │  1.018 ms ┃                PostProcessing                                                                     ┃
+LogRHI: Display:     ┃     0 │      4 │      0 │      0 │  5.1% ┊ ▍        │ 0.576 ms ┃     0 │      4 │      0 │      0 │   5.1% ┊ ▍        │  0.576 ms ┃                   TemporalSuperResolution(sg.AntiAliasingQuality=3) 1506x724 -> 2038x980          ┃
+LogRHI: Display:     ┃     2 │      3 │  17504 │  35008 │  0.3% ┊          │ 0.034 ms ┃     2 │      7 │  17504 │  35008 │   0.5% ┊          │  0.055 ms ┃                   MotionBlur                                                                      ┃
+LogRHI: Display:     ┃     0 │      4 │      0 │      0 │  0.2% ┊          │ 0.021 ms ┃     0 │      4 │      0 │      0 │   0.2% ┊          │  0.021 ms ┃                      MotionBlur FullResFilter(BlurDirections=1 MaxSamples=16 OutputMip1) 2038x980 ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.1% ┊          │ 0.014 ms ┃     0 │      1 │      0 │      0 │   0.1% ┊          │  0.014 ms ┃                   LocalExposure                                                                   ┃
+LogRHI: Display:     ┃     0 │      3 │      0 │      0 │  0.1% ┊          │ 0.010 ms ┃     0 │      3 │      0 │      0 │   0.1% ┊          │  0.010 ms ┃                   Histogram                                                                       ┃
+LogRHI: Display:     ┃     4 │      0 │      4 │     12 │  0.1% ┊          │ 0.011 ms ┃     4 │      0 │      4 │     12 │   0.1% ┊          │  0.011 ms ┃                   TextureDownsampleChain                                                          ┃
+LogRHI: Display:     ┃     2 │      1 │      2 │      6 │  0.1% ┊          │ 0.008 ms ┃     2 │      1 │      2 │      6 │   0.1% ┊          │  0.008 ms ┃                   LocalExposure - Blurred Luminance                                               ┃
+LogRHI: Display:     ┃     5 │      0 │      5 │     15 │  0.1% ┊          │ 0.015 ms ┃     5 │      0 │      5 │     15 │   0.1% ┊          │  0.015 ms ┃                   TextureDownsampleChain                                                          ┃
+LogRHI: Display:     ┃    12 │      0 │     12 │     36 │  0.6% ┊          │ 0.064 ms ┃    12 │      0 │     12 │     36 │   0.6% ┊          │  0.064 ms ┃                   Bloom                                                                           ┃
+LogRHI: Display:     ┃     4 │      0 │    579 │   1161 │  1.8% ┊ ▏        │ 0.203 ms ┃     4 │      0 │    579 │   1161 │   1.8% ┊ ▏        │  0.203 ms ┃                   CompositeDebugPrimitives                                                        ┃
+LogRHI: Display:     ┃     0 │      3 │      0 │      0 │  0.1% ┊          │ 0.013 ms ┃     0 │      3 │      0 │      0 │   0.1% ┊          │  0.013 ms ┃                VirtualTextureUpdate                                                               ┃
+LogRHI: Display:     ┃     0 │      3 │      0 │      0 │  0.1% ┊          │ 0.009 ms ┃     0 │      3 │      0 │      0 │   0.1% ┊          │  0.009 ms ┃                Submit Lumen surface cache feedback                                                ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.004 ms ┃   148 │      0 │   4880 │   9396 │   1.5% ┊          │  0.168 ms ┃       RenderGraphExecute - Slate                                                                  ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃          FRDGBuilder::SubmitBufferUploads                                                         ┃
+LogRHI: Display:     ┃   143 │      0 │   4236 │   8128 │  1.4% ┊          │ 0.158 ms ┃   146 │      0 │   4730 │   9116 │   1.4% ┊          │  0.162 ms ┃          SlateUI Title = ArtisticSW2026 - Unreal Editor                                           ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     3 │      0 │    494 │    988 │   0.0% ┊          │  0.004 ms ┃             DrawDebugCanvas                                                                       ┃
+LogRHI: Display:     ┃     3 │      0 │    494 │    988 │  0.0% ┊          │ 0.004 ms ┃     3 │      0 │    494 │    988 │   0.0% ┊          │  0.004 ms ┃                CanvasFlush                                                                        ┃
+LogRHI: Display:     ┃     2 │      0 │    150 │    280 │  0.0% ┊          │ 0.002 ms ┃     2 │      0 │    150 │    280 │   0.0% ┊          │  0.002 ms ┃          SlateUI Title = <none>                                                                   ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃       GPUSkinCache_UpdateSkinningBatches                                                          ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.002 ms ┃     0 │      2 │      0 │      0 │   0.0% ┊          │  0.005 ms ┃       RenderGraphExecute - UpdateAllPrimitiveSceneInfos                                           ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.002 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.002 ms ┃          FRDGBuilder::SubmitBufferUploads                                                         ┃
+LogRHI: Display:     ┃     0 │      2 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │      2 │      0 │      0 │   0.0% ┊          │  0.001 ms ┃          UpdateAllPrimitiveSceneInfos                                                             ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃       GPUSkinCache_UpdateSkinningBatches                                                          ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.002 ms ┃     0 │      2 │      0 │      0 │   0.0% ┊          │  0.005 ms ┃       RenderGraphExecute - UpdateAllPrimitiveSceneInfos                                           ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.002 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.002 ms ┃          FRDGBuilder::SubmitBufferUploads                                                         ┃
+LogRHI: Display:     ┃     0 │      2 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │      2 │      0 │      0 │   0.0% ┊          │  0.001 ms ┃          UpdateAllPrimitiveSceneInfos                                                             ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃       GPUSkinCache_UpdateSkinningBatches                                                          ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.002 ms ┃     0 │      2 │      0 │      0 │   0.0% ┊          │  0.005 ms ┃       RenderGraphExecute - UpdateAllPrimitiveSceneInfos                                           ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.002 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.002 ms ┃          FRDGBuilder::SubmitBufferUploads                                                         ┃
+LogRHI: Display:     ┃     0 │      2 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │      2 │      0 │      0 │   0.0% ┊          │  0.001 ms ┃          UpdateAllPrimitiveSceneInfos                                                             ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.000 ms ┃       GPUSkinCache_UpdateSkinningBatches                                                          ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.002 ms ┃     0 │      7 │      0 │      0 │   0.1% ┊          │  0.015 ms ┃       RenderGraphExecute - UpdateAllPrimitiveSceneInfos                                           ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.003 ms ┃     0 │      0 │      0 │      0 │   0.0% ┊          │  0.003 ms ┃          FRDGBuilder::SubmitBufferUploads                                                         ┃
+LogRHI: Display:     ┃     0 │      3 │      0 │      0 │  0.0% ┊          │ 0.002 ms ┃     0 │      7 │      0 │      0 │   0.1% ┊          │  0.010 ms ┃          UpdateAllPrimitiveSceneInfos                                                             ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.1% ┊          │ 0.006 ms ┃     0 │      1 │      0 │      0 │   0.1% ┊          │  0.006 ms ┃             SceneCulling_ComputeExplicitChunkBounds                                               ┃
+LogRHI: Display:     ┃     0 │      0 │      0 │      0 │  0.0% ┊          │ 0.000 ms ┃     0 │      3 │      0 │      0 │   0.0% ┊          │  0.003 ms ┃             GPUSceneUpdate                                                                        ┃
+LogRHI: Display:     ┃     0 │      1 │      0 │      0 │  0.0% ┊          │ 0.002 ms ┃     0 │      3 │      0 │      0 │   0.0% ┊          │  0.003 ms ┃                GPUScene.Update                                                                    ┃
+LogRHI: Display:     ┃     0 │      2 │      0 │      0 │  0.0% ┊          │ 0.001 ms ┃     0 │      2 │      0 │      0 │   0.0% ┊          │  0.001 ms ┃                   UpdateGPUScene NumPrimitiveDataUploads 22                                       ┃
+LogRHI: Display:     ┗━━━━━━━┷━━━━━━━━┷━━━━━━━━┷━━━━━━━━┷━━━━━━━━━━━━━━━━━━┷━━━━━━━━━━┻━━━━━━━┷━━━━━━━━┷━━━━━━━━┷━━━━━━━━┷━━━━━━━━━━━━━━━━━━━┷━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+LogCsvProfiler: Display: Capture Ending
+LogCsvProfiler: Display: Capture Ended. Writing CSV to file : ../../../../../../Unreal Projects/ArtisticSW2026/Saved/Profiling/CSV/Profile(20260818_195059).csv
+LogCsvProfiler: Display:   Frames : 1203
+LogCsvProfiler: Display:   Peak memory usage  : 1.14MB
+LogCsvProfiler: Display:   CSV finalize time : 0.007 seconds
+LogSlateStyle: Warning: Missing Resource from 'ProfileVisualizerStyle' Style: 'Unable to find SlateColor 'DefaultForeground'.'
+LogStats: Single Frame 4480 ---------------------------------
+LogStats: Culled to 1.000000ms, use -ms=0, for all data and aggregates.
+LogStats: Stack ---------------
+LogStats:          Invalid  -  ThreadRoot
+LogStats:     64.746ms (   4)  -  Thread_4a4c_0 - GameThread - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       64.745ms (   2)  -  FrameTime - STAT_FrameTime - STATGROUP_Engine - STATCAT_Advanced
+LogStats:         51.986ms (   1)  -  STAT_FCsvProfiler_EndFrame_Stop - STATGROUP_Quick - STATCAT_Advanced
+LogStats:           38.616ms (   2)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:           13.363ms (   1)  -  Self
+LogStats:           0.007ms (   2)  -  OtherChildren
+LogStats:         5.193ms (   1)  -  Frame Sync Time - STAT_FrameSyncTime - STATGROUP_RenderThreadProcessing - STATCAT_Advanced
+LogStats:           5.188ms (   1)  -  Game thread idle time - STAT_GameIdleTime - STATGROUP_Threading - STATCAT_Advanced
+LogStats:             5.179ms (   4)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:             0.008ms (   5)  -  OtherChildren
+LogStats:           0.005ms (   2)  -  OtherChildren
+LogStats:         3.017ms (   2)  -  Total Slate Tick Time - STAT_SlateTickTime - STATGROUP_Slate - STATCAT_Advanced
+LogStats:           1.769ms (   1)  -  Draw Window And Children Time - STAT_SlateDrawWindowTime - STATGROUP_Slate - STATCAT_Advanced
+LogStats:             1.769ms ( 844)  -  OtherChildren
+LogStats:           1.247ms (   7)  -  OtherChildren
+LogStats:         2.643ms (   2)  -  FrameTime - STAT_FrameTime - STATGROUP_Engine - STATCAT_Advanced
+LogStats:           2.634ms (   2)  -  World Tick Time - STAT_WorldTickTime - STATGROUP_Game - STATCAT_Advanced
+LogStats:             1.617ms (   8)  -  Tick Time - STAT_TickTime - STATGROUP_Game - STATCAT_Advanced
+LogStats:               1.617ms (  27)  -  OtherChildren
+LogStats:             1.017ms (  23)  -  OtherChildren
+LogStats:           0.009ms (   6)  -  OtherChildren
+LogStats:         1.906ms (  52)  -  OtherChildren
+LogStats:       0.001ms (   2)  -  OtherChildren
+LogStats:     52.084ms ( 143)  -  Thread_de0_0 - RenderThread - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       38.642ms (   9)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       12.562ms (   1)  -  SceneRenderBuilder_Render - STATGROUP_RenderThreadCommands - STATCAT_Advanced
+LogStats:         11.682ms (   1)  -  RenderViewFamily - STAT_TotalSceneRenderingTime - STATGROUP_SceneRendering - STATCAT_Advanced
+LogStats:           7.766ms (   1)  -  InitViews - STAT_InitViewsTime - STATGROUP_SceneRendering - STATCAT_Advanced
+LogStats:             7.699ms (   1)  -  View Visibility - STAT_ViewVisibilityTime - STATGROUP_InitViews - STATCAT_Advanced
+LogStats:               7.683ms (   1)  -  Render Local Queue Stalls - STAT_TaskGraph_RenderStalls - STATGROUP_Threading - STATCAT_Advanced
+LogStats:                 7.683ms (   1)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:                 0.000ms (   1)  -  OtherChildren
+LogStats:               0.016ms (   3)  -  OtherChildren
+LogStats:             0.067ms (   5)  -  OtherChildren
+LogStats:           2.188ms (  73)  -  OtherChildren
+LogStats:           1.728ms (   1)  -  Self
+LogStats:         0.881ms (   9)  -  OtherChildren
+LogStats:       0.880ms ( 133)  -  OtherChildren
+LogStats:     24.500ms (   4)  -  Thread_57ec_0 - FMessageBus.DefaultBus.Router - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       24.500ms (   4)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:     20.056ms (   2)  -  Thread_6acc_0 - OnlineAsyncTaskThreadNull Context_5(5) - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       20.054ms (   1)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.002ms (   1)  -  OtherChildren
+LogStats:     19.993ms (   2)  -  Thread_1df8_0 - AudioMixerRenderThread(1) - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       19.972ms (   1)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.022ms (   1)  -  OtherChildren
+LogStats:     19.985ms (   2)  -  Thread_4dec_0 - AudioMixerRenderThread(3) - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       19.961ms (   1)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.024ms (   1)  -  OtherChildren
+LogStats:     14.732ms (  35)  -  Thread_25f8_0 - Foreground Worker (Standby #1) - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       14.084ms (  16)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.648ms (  19)  -  OtherChildren
+LogStats:     12.681ms (  53)  -  Thread_6b58_0 - RHIThread - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       7.198ms (  22)  -  RHITaskPipe - STATGROUP_TaskGraphTasks - STATCAT_Advanced
+LogStats:         6.914ms (  22)  -  Self
+LogStats:         0.284ms (  49)  -  OtherChildren
+LogStats:       4.461ms (  16)  -  Other TaskGraph Stalls - STAT_TaskGraph_OtherStalls - STATGROUP_Threading - STATCAT_Advanced
+LogStats:         4.453ms (  16)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:         0.008ms (  16)  -  OtherChildren
+LogStats:       1.022ms (  15)  -  Other TaskGraph Tasks - STAT_TaskGraph_OtherTasks - STATGROUP_Threading - STATCAT_Advanced
+LogStats:         1.022ms (  31)  -  OtherChildren
+LogStats:     11.314ms ( 309)  -  Thread_5aac_0 - Foreground Worker #0 - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       8.091ms (  42)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       3.222ms ( 267)  -  OtherChildren
+LogStats:     11.227ms (  47)  -  Thread_6e4_0 - Background Worker #11 - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       11.138ms (   8)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.089ms (  39)  -  OtherChildren
+LogStats:     11.217ms (  78)  -  Thread_2904_0 - Background Worker #5 - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       11.100ms (  12)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.117ms (  66)  -  OtherChildren
+LogStats:     10.121ms (  70)  -  Thread_1e0c_0 - Background Worker #3 - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       9.367ms (  11)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.753ms (  59)  -  OtherChildren
+LogStats:     10.115ms (  15)  -  Thread_6a94_0 - Foreground Worker (Standby #0) - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       8.924ms (  12)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       1.191ms (   1)  -  StatsNew Tick - STAT_StatsNewTick - STATGROUP_StatSystem - STATCAT_Advanced
+LogStats:         1.096ms (   1)  -  Parse Meta - STAT_StatsNewParseMeta - STATGROUP_StatSystem - STATCAT_Advanced
+LogStats:         0.095ms (   3)  -  OtherChildren
+LogStats:       0.001ms (   2)  -  OtherChildren
+LogStats:     10.049ms (   1)  -  Thread_4db8_0 - FUdpMessageProcessor - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       10.049ms (   1)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:     9.721ms (  64)  -  Thread_5cd4_0 - Background Worker #9 - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       9.156ms (  19)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.564ms (  45)  -  OtherChildren
+LogStats:     6.523ms (   1)  -  Thread_33c0_0 - RTHeartBeat 0 - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       6.523ms (   1)  -  CPU Stall - Sleep - STAT_Sleep - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:     3.974ms ( 178)  -  Thread_5184_0 - Background Worker #8 - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       3.240ms (  11)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.733ms ( 167)  -  OtherChildren
+LogStats:     3.958ms (  64)  -  Thread_6814_0 - Background Worker #0 - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       3.730ms (   5)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.228ms (  59)  -  OtherChildren
+LogStats:     3.915ms (  63)  -  Thread_10d0_0 - Background Worker #6 - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       3.755ms (  10)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.160ms (  53)  -  OtherChildren
+LogStats:     2.956ms (  96)  -  Thread_6290_0 - Foreground Worker #1 - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       2.368ms (  23)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.588ms (  73)  -  OtherChildren
+LogStats:     1.481ms (  54)  -  Thread_1efc_0 - Background Worker #1 - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       1.430ms (   1)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.052ms (  53)  -  OtherChildren
+LogStats:     1.433ms (  30)  -  Thread_62d4_0 - Background Worker #4 - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       1.370ms (   2)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.063ms (  28)  -  OtherChildren
+LogStats:     1.374ms (  55)  -  Thread_6ef4_0 - Background Worker #10 - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       1.340ms (   2)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.034ms (  53)  -  OtherChildren
+LogStats:     1.134ms (  17)  -  Thread_5c70_0 - Background Worker #7 - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       1.014ms (   2)  -  CPU Stall - Wait For Event - STAT_EventWait - STATGROUP_CPUStalls - STATCAT_Advanced
+LogStats:       0.120ms (  15)  -  OtherChildren
+LogStats:     1.129ms (  14)  -  Thread_2578_0 - RHISubmissionThread - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       1.129ms (  14)  -  Submit - STAT_D3D12Submit - STATGROUP_D3D12RHI - STATCAT_Advanced
+LogStats:     1.000ms (  44)  -  Thread_59d8_0 - Background Worker #2 - STATGROUP_Threads - STATCAT_Advanced
+LogStats:       1.000ms (  44)  -  OtherChildren
+LogStats:     0.127ms (   3)  -  OtherChildren
