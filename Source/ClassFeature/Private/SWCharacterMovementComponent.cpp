@@ -197,6 +197,17 @@ void USWCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float Del
 {
 	Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
 
+	if (MovementMode == MOVE_Walking)
+	{
+		UPrimitiveComponent* Base = CharacterOwner ? CharacterOwner->GetMovementBase() : nullptr;
+		AShip* Ship = Base ? Cast<AShip>(Base->GetOwner()) : nullptr;
+		LastStandingShip = Ship;
+	}
+	else if (MovementMode == MOVE_Swimming || CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming))
+	{
+		LastStandingShip = nullptr;
+	}
+
 	if (ACharacter* CharOwner = CharacterOwner)
 	{
 		if (USwimmingComponent* SwimComp = CharOwner->FindComponentByClass<USwimmingComponent>())
@@ -227,6 +238,12 @@ bool USWCharacterMovementComponent::ServerExceedsAllowablePositionError(
 		ClientMovementMode);
 
 	if (!bExceedsDefaultTolerance)
+	{
+		return false;
+	}
+
+	// 배 위에서 점프/낙하 중(MOVE_Falling)일 때, 네트워크 물리 시뮬레이션 지연으로 인한 월드 좌표 오차를 수용하여 클라이언트 보정 스냅 방지
+	if (LastStandingShip.IsValid() && (MovementMode == MOVE_Falling || ClientMovementMode == MOVE_Falling))
 	{
 		return false;
 	}
@@ -303,6 +320,10 @@ bool USWCharacterMovementComponent::CanUseShipBasedClientPosition(
 	UPrimitiveComponent* ServerMovementBase = CharacterOwner->GetMovementBase();
 	AShip* ClientShip = Cast<AShip>(ClientMovementBase->GetOwner());
 	AShip* ServerShip = ServerMovementBase ? Cast<AShip>(ServerMovementBase->GetOwner()) : nullptr;
+	if (ServerShip)
+	{
+		const_cast<USWCharacterMovementComponent*>(this)->LastStandingShip = ServerShip;
+	}
 	if (!ClientShip || ClientShip != ServerShip
 		|| ClientBaseBoneName != CharacterOwner->GetBasedMovement().BoneName
 		|| !MovementBaseUtility::UseRelativeLocation(ClientMovementBase)

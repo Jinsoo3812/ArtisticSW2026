@@ -5,6 +5,7 @@
 #include "SWCharacterMovementComponent.generated.h"
 
 enum class ESwimDepthMode : uint8;
+class AShip;
 
 /**
  * Custom character movement component that handles custom movement modes,
@@ -59,6 +60,9 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Character Movement: Networking|Ship Base", meta = (ClampMin = "0.0", Units = "cm"))
 	float ShipBasedClientAuthorityMaxError = 15.0f;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<AShip> LastStandingShip;
 
 private:
 	bool CanUseShipBasedClientPosition(
