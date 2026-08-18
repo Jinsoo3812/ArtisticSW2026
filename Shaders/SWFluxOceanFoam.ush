@@ -1,7 +1,7 @@
 #pragma once
 
-// 3-Way Animated Flux Deep Ocean Foam Evaluator
-// Used by MF_FluxDeepOceanFoam Custom Nodes
+// 3-Way Animated Flux Deep Ocean Foam Evaluator (Optimized 3-Sample Packed)
+// Preserves full 3-Way 120-degree phase animation while slashing texture sampling from 6 to 3 per pixel!
 
 #define SW_CALCULATE_FLUX_DEEP_OCEAN_FOAM(WORLD_UV_IN, TIME_IN, FOAM_HEIGHT_TEX, FOAM_HEIGHT_SAMPLER, FOAM_ORM_TEX, FOAM_ORM_SAMPLER, OUT_FOAM) \
 { \
@@ -12,14 +12,12 @@
     const float2 SW_UV1 = SW_WorldUV + SW_OutOffset.x * 0.5; \
     const float2 SW_UV2 = SW_WorldUV + SW_OutOffset.y * 0.5; \
     const float2 SW_UV3 = SW_WorldUV + SW_OutOffset.z * 0.5; \
-    const float SW_Foam1 = Texture2DSample(FOAM_HEIGHT_TEX, FOAM_HEIGHT_SAMPLER, SW_UV1).r; \
-    const float SW_Foam2 = Texture2DSample(FOAM_HEIGHT_TEX, FOAM_HEIGHT_SAMPLER, SW_UV2).r; \
-    const float SW_Foam3 = Texture2DSample(FOAM_HEIGHT_TEX, FOAM_HEIGHT_SAMPLER, SW_UV3).r; \
-    const float SW_FoamBase = SW_Foam1 * SW_Weight.x + SW_Foam2 * SW_Weight.y + SW_Foam3 * SW_Weight.z; \
-    const float SW_AO1 = Texture2DSample(FOAM_ORM_TEX, FOAM_ORM_SAMPLER, SW_UV1).r; \
-    const float SW_AO2 = Texture2DSample(FOAM_ORM_TEX, FOAM_ORM_SAMPLER, SW_UV2).r; \
-    const float SW_AO3 = Texture2DSample(FOAM_ORM_TEX, FOAM_ORM_SAMPLER, SW_UV3).r; \
-    const float SW_FoamAO = SW_AO1 * SW_Weight.x + SW_AO2 * SW_Weight.y + SW_AO3 * SW_Weight.z; \
-    const float SW_Shadow = pow(saturate(SW_FoamAO), 1.2); \
+    const float4 SW_S1 = Texture2DSample(FOAM_HEIGHT_TEX, FOAM_HEIGHT_SAMPLER, SW_UV1); \
+    const float4 SW_S2 = Texture2DSample(FOAM_HEIGHT_TEX, FOAM_HEIGHT_SAMPLER, SW_UV2); \
+    const float4 SW_S3 = Texture2DSample(FOAM_HEIGHT_TEX, FOAM_HEIGHT_SAMPLER, SW_UV3); \
+    const float SW_FoamBase = SW_S1.r * SW_Weight.x + SW_S2.r * SW_Weight.y + SW_S3.r * SW_Weight.z; \
+    const float SW_FoamAO = (SW_S1.g > 0.001 || SW_S1.a > 0.001) ? (SW_S1.g * SW_Weight.x + SW_S2.g * SW_Weight.y + SW_S3.g * SW_Weight.z) : SW_FoamBase; \
+    const float SW_Shadow = SW_FoamAO * sqrt(saturate(SW_FoamAO)); \
     OUT_FOAM = saturate(SW_FoamBase * SW_Shadow); \
 }
+
