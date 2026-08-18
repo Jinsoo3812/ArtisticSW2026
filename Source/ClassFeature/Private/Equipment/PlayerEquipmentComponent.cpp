@@ -270,13 +270,25 @@ float UPlayerEquipmentComponent::GetEquippedBasicAttackPlayRate() const
 
 UAnimSequenceBase* UPlayerEquipmentComponent::GetEquippedPreviewIdleAnimation() const
 {
-	const FWeaponAnimationEntry* Entry = GetEquippedWeaponAnimationEntry();
+	const ABasePlayer* OwnerPlayer = PlayerOwner ? PlayerOwner.Get() : Cast<ABasePlayer>(GetOwner());
+	return GetPreviewIdleAnimationForItem(OwnerPlayer ? OwnerPlayer->EquippedItem : nullptr);
+}
+
+UAnimSequenceBase* UPlayerEquipmentComponent::GetPreviewIdleAnimationForItem(const ABaseItem* Item) const
+{
+	const FWeaponAnimationEntry* Entry = ResolveWeaponAnimationEntry(Item);
 	return Entry ? Entry->PreviewIdleAnimation.LoadSynchronous() : nullptr;
 }
 
 float UPlayerEquipmentComponent::GetEquippedPreviewIdlePlayRate() const
 {
-	const FWeaponAnimationEntry* Entry = GetEquippedWeaponAnimationEntry();
+	const ABasePlayer* OwnerPlayer = PlayerOwner ? PlayerOwner.Get() : Cast<ABasePlayer>(GetOwner());
+	return GetPreviewIdlePlayRateForItem(OwnerPlayer ? OwnerPlayer->EquippedItem : nullptr);
+}
+
+float UPlayerEquipmentComponent::GetPreviewIdlePlayRateForItem(const ABaseItem* Item) const
+{
+	const FWeaponAnimationEntry* Entry = ResolveWeaponAnimationEntry(Item);
 	return Entry ? FMath::Max(Entry->PreviewIdlePlayRate, KINDA_SMALL_NUMBER) : 1.f;
 }
 
@@ -338,7 +350,37 @@ const UWeaponAnimationDataAsset* UPlayerEquipmentComponent::ResolveWeaponAnimati
 FResolvedEquipmentAttachment UPlayerEquipmentComponent::GetEquippedAttachmentProfile() const
 {
 	const ABasePlayer* OwnerPlayer = PlayerOwner ? PlayerOwner.Get() : Cast<ABasePlayer>(GetOwner());
-	return ResolveAttachmentProfile(OwnerPlayer ? OwnerPlayer->EquippedItem : nullptr, EEquipmentAttachmentTarget::Equipped);
+	return GetEquippedAttachmentProfileForItem(OwnerPlayer ? OwnerPlayer->EquippedItem : nullptr);
+}
+
+FResolvedEquipmentAttachment UPlayerEquipmentComponent::GetEquippedAttachmentProfileForItem(const ABaseItem* Item) const
+{
+	return ResolveAttachmentProfile(Item, EEquipmentAttachmentTarget::Equipped);
+}
+
+FResolvedEquipmentAttachment UPlayerEquipmentComponent::GetPreviewAttachmentProfileForItem(const ABaseItem* Item) const
+{
+	FResolvedEquipmentAttachment Profile;
+	const FWeaponAnimationEntry* Entry = ResolveWeaponAnimationEntry(Item);
+	Profile.ItemGripSocketName = Entry ? Entry->ItemGripSocketName : NAME_None;
+
+	const FName ConfiguredSocketName = Entry ? Entry->EquipSocketName : NAME_None;
+	const FName CandidateSocketNames[] =
+	{
+		ConfiguredSocketName,
+		FName(TEXT("GripPoint")),
+		FName(TEXT("hand_r"))
+	};
+	for (const FName SocketName : CandidateSocketNames)
+	{
+		if (IsCharacterSocketValid(SocketName))
+		{
+			Profile.CharacterSocketName = SocketName;
+			break;
+		}
+	}
+
+	return Profile;
 }
 
 FResolvedEquipmentAttachment UPlayerEquipmentComponent::ResolveAttachmentProfile(

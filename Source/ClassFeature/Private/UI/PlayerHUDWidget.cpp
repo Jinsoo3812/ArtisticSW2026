@@ -739,7 +739,6 @@ void UPlayerHUDWidget::RefreshQuickSlots()
 
 		FGameplayTag SlotTag = FallbackSlotTags[LocalIndex];
 		UTexture2D* Icon = nullptr;
-		FText ItemName = FText::GetEmpty();
 		bool bEquipped = false;
 		int32 Count = 0;
 
@@ -753,7 +752,6 @@ void UPlayerHUDWidget::RefreshQuickSlots()
 				if (UInventoryComponent* Inventory = CachedPlayer->GetInventoryComponent())
 				{
 					Icon = Inventory->GetMaterialIcon(QuickSlot.ItemTag);
-					ItemName = Inventory->GetMaterialName(QuickSlot.ItemTag);
 					Count = Inventory->GetMaterialCount(QuickSlot.ItemTag);
 				}
 				bEquipped = IsValid(CachedPlayer->EquippedItem) && CachedPlayer->EquippedItem->ItemTag == QuickSlot.ItemTag;
@@ -762,7 +760,7 @@ void UPlayerHUDWidget::RefreshQuickSlots()
 
 		EntryWidget->SetVisibility(ESlateVisibility::Visible);
 		EntryWidget->ConfigureInteraction(QuickSlotIndex, false);
-		EntryWidget->SetupFromData(SlotTag, ItemName, Icon, bEquipped, Count);
+		EntryWidget->SetupFromData(SlotTag, Icon, bEquipped, Count);
 	}
 }
 

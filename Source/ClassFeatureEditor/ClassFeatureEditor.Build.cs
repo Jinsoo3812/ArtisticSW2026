@@ -9,6 +9,7 @@ public class ClassFeatureEditor : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"GameplayTags",
 			"UnrealEd",
 			"AnimationBlueprintLibrary",
 			"AnimationModifiers",

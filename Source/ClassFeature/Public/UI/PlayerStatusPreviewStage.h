@@ -2,9 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "GameplayTagContainer.h"
 #include "PlayerStatusPreviewStage.generated.h"
 
 class ABasePlayer;
+class ABaseItem;
 class UImage;
 class UMeshComponent;
 class UPointLightComponent;
@@ -32,6 +34,7 @@ public:
 	void RefreshFromPlayer();
 	void SetPreviewEnabled(bool bEnabled);
 	UTextureRenderTarget2D* GetRenderTarget() const;
+	FGameplayTag GetPreviewWeaponTag() const { return PreviewWeaponTag; }
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Preview")
@@ -58,12 +61,20 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UMeshComponent>> ClonedWeaponMeshes;
 
+	UPROPERTY(Transient)
+	TObjectPtr<ABaseItem> PreviewWeaponActor;
+
+	FGameplayTag PreviewWeaponTag;
+
 	TWeakObjectPtr<ABasePlayer> SourcePlayer;
 
 	void EnsureRenderTarget();
 	void CopyPlayerMesh();
-	void CopyEquippedWeapon();
+	void CopyPreviewWeapon();
 	void ClearWeaponMeshes();
+	FGameplayTag ResolvePreviewWeaponTag() const;
+	ABaseItem* EnsurePreviewWeaponActor();
+	void DestroyPreviewWeaponActor();
 	void ApplyPreviewIdle();
 	void FramePreview();
 	void LogRenderTargetCoverage();

@@ -1,6 +1,7 @@
 #include "UI/PlayerStatusPreviewStage.h"
 
 #include "Animation/AnimSequenceBase.h"
+#include "Animation/Skeleton.h"
 #include "BaseGameplayTags.h"
 #include "BaseItem.h"
 #include "BasePlayer.h"
@@ -12,13 +13,52 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Equipment/PlayerEquipmentComponent.h"
+#include "ItemSubsystem.h"
 #include "TimerManager.h"
 
 namespace
 {
 	const FSoftObjectPath DefaultIdlePath(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/MM_Idle.MM_Idle"));
-	const FSoftObjectPath BowIdlePath(TEXT("/Game/Anim_Logic/Anim_Assets/Bow/Standing_Idle_01_Anim.Standing_Idle_01_Anim"));
+	const FSoftObjectPath BowIdlePath(TEXT("/Game/Anim_Logic/Anim_Assets/Bow/Bow_Anims/Standing_Idle_01_Anim.Standing_Idle_01_Anim"));
 	const FSoftObjectPath SwordIdlePath(TEXT("/Game/Sword_Anims/Animations/HandsomeSwordV2/Manny_UE5/RootMotion/Idle/Anim_SwordV2_Idle.Anim_SwordV2_Idle"));
+
+	bool HaveCompatibleBoneHierarchy(const USkeleton* TargetSkeleton, const USkeleton* AnimationSkeleton)
+	{
+		if (!TargetSkeleton || !AnimationSkeleton)
+		{
+			return false;
+		}
+		if (TargetSkeleton == AnimationSkeleton || TargetSkeleton->IsCompatibleForEditor(AnimationSkeleton))
+		{
+			return true;
+		}
+
+		const FReferenceSkeleton& TargetReference = TargetSkeleton->GetReferenceSkeleton();
+		const FReferenceSkeleton& AnimationReference = AnimationSkeleton->GetReferenceSkeleton();
+		for (int32 AnimationBoneIndex = 0; AnimationBoneIndex < AnimationReference.GetNum(); ++AnimationBoneIndex)
+		{
+			const FName BoneName = AnimationReference.GetBoneName(AnimationBoneIndex);
+			const int32 TargetBoneIndex = TargetReference.FindBoneIndex(BoneName);
+			if (TargetBoneIndex == INDEX_NONE)
+			{
+				return false;
+			}
+
+			const int32 AnimationParentIndex = AnimationReference.GetParentIndex(AnimationBoneIndex);
+			const int32 TargetParentIndex = TargetReference.GetParentIndex(TargetBoneIndex);
+			if ((AnimationParentIndex == INDEX_NONE) != (TargetParentIndex == INDEX_NONE))
+			{
+				return false;
+			}
+			if (AnimationParentIndex != INDEX_NONE
+				&& AnimationReference.GetBoneName(AnimationParentIndex) != TargetReference.GetBoneName(TargetParentIndex))
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
 
 	void CopyMeshPresentation(const UMeshComponent* Source, UMeshComponent* Target)
 	{
@@ -94,6 +134,7 @@ void APlayerStatusPreviewStage::PostInitializeComponents()
 void APlayerStatusPreviewStage::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ClearWeaponMeshes();
+	DestroyPreviewWeaponActor();
 	SourcePlayer.Reset();
 	OwnedRenderTarget = nullptr;
 	Super::EndPlay(EndPlayReason);
@@ -119,7 +160,7 @@ void APlayerStatusPreviewStage::RefreshFromPlayer()
 	}
 
 	CopyPlayerMesh();
-	CopyEquippedWeapon();
+	CopyPreviewWeapon();
 	ApplyPreviewIdle();
 	PreviewMesh->TickAnimation(0.f, false);
 	PreviewMesh->RefreshBoneTransforms();
@@ -198,17 +239,19 @@ void APlayerStatusPreviewStage::CopyPlayerMesh()
 	SceneCapture->ShowOnlyComponents.AddUnique(PreviewMesh);
 }
 
-void APlayerStatusPreviewStage::CopyEquippedWeapon()
+void APlayerStatusPreviewStage::CopyPreviewWeapon()
 {
 	ClearWeaponMeshes();
-	if (!SourcePlayer.IsValid() || !IsValid(SourcePlayer->EquippedItem) || !SourcePlayer->GetMesh())
+	PreviewWeaponTag = ResolvePreviewWeaponTag();
+	ABaseItem* PreviewWeapon = EnsurePreviewWeaponActor();
+	if (!SourcePlayer.IsValid() || !IsValid(PreviewWeapon) || !SourcePlayer->GetMesh())
 	{
 		return;
 	}
 
 	const UPlayerEquipmentComponent* Equipment = SourcePlayer->GetEquipmentComponent();
 	const FResolvedEquipmentAttachment Attachment = Equipment
-		? Equipment->GetEquippedAttachmentProfile()
+		? Equipment->GetPreviewAttachmentProfileForItem(PreviewWeapon)
 		: FResolvedEquipmentAttachment();
 	if (!Attachment.IsValid())
 	{
@@ -218,7 +261,25 @@ void APlayerStatusPreviewStage::CopyEquippedWeapon()
 	const FTransform SourceSocketTransform = SourcePlayer->GetMesh()->GetSocketTransform(
 		Attachment.CharacterSocketName,
 		RTS_World);
-	TInlineComponentArray<UMeshComponent*> SourceMeshes(SourcePlayer->EquippedItem);
+	if (USceneComponent* WeaponRootComponent = PreviewWeapon->GetRootComponent())
+	{
+		FTransform RootWorldTransform = SourceSocketTransform;
+		if (!Attachment.ItemGripSocketName.IsNone())
+		{
+			USceneComponent* GripComponent = PreviewWeapon->GetAttachmentReferenceComponent();
+			if (GripComponent && GripComponent->DoesSocketExist(Attachment.ItemGripSocketName))
+			{
+				const FTransform GripRelativeToRoot = GripComponent->GetSocketTransform(
+					Attachment.ItemGripSocketName,
+					RTS_World).GetRelativeTransform(WeaponRootComponent->GetComponentTransform());
+				RootWorldTransform = GripRelativeToRoot.Inverse() * SourceSocketTransform;
+			}
+		}
+		PreviewWeapon->SetActorTransform(RootWorldTransform, false, nullptr, ETeleportType::TeleportPhysics);
+	}
+
+	PreviewWeapon->SetActorHiddenInGame(false);
+	TInlineComponentArray<UMeshComponent*> SourceMeshes(PreviewWeapon);
 	for (UMeshComponent* SourceMesh : SourceMeshes)
 	{
 		if (!SourceMesh || !SourceMesh->IsVisible() || SourceMesh->bHiddenInGame)
@@ -265,6 +326,81 @@ void APlayerStatusPreviewStage::CopyEquippedWeapon()
 		ClonedWeaponMeshes.Add(NewMesh);
 		SceneCapture->ShowOnlyComponents.AddUnique(NewMesh);
 	}
+	PreviewWeapon->SetActorHiddenInGame(true);
+}
+
+FGameplayTag APlayerStatusPreviewStage::ResolvePreviewWeaponTag() const
+{
+	if (!SourcePlayer.IsValid())
+	{
+		return FGameplayTag();
+	}
+
+	constexpr int32 WeaponQuickSlotCount = 2;
+	for (int32 Index = 0; Index < WeaponQuickSlotCount && SourcePlayer->QuickSlots.IsValidIndex(Index); ++Index)
+	{
+		const FQuickSlotReference& Slot = SourcePlayer->QuickSlots[Index];
+		if (Slot.SlotType == EQuickSlotType::Weapon && Slot.ItemTag.IsValid())
+		{
+			return Slot.ItemTag;
+		}
+	}
+
+	return FGameplayTag();
+}
+
+ABaseItem* APlayerStatusPreviewStage::EnsurePreviewWeaponActor()
+{
+	if (!PreviewWeaponTag.IsValid())
+	{
+		DestroyPreviewWeaponActor();
+		return nullptr;
+	}
+
+	if (IsValid(PreviewWeaponActor) && PreviewWeaponActor->ItemTag.MatchesTagExact(PreviewWeaponTag))
+	{
+		return PreviewWeaponActor;
+	}
+
+	DestroyPreviewWeaponActor();
+	UWorld* World = GetWorld();
+	UItemSubsystem* ItemSubsystem = World ? World->GetSubsystem<UItemSubsystem>() : nullptr;
+	if (!World || !ItemSubsystem)
+	{
+		return nullptr;
+	}
+
+	TSubclassOf<ABaseItem> SpawnClass = ItemSubsystem->GetSpawnClassByCrafting(PreviewWeaponTag).LoadSynchronous();
+	if (!SpawnClass)
+	{
+		SpawnClass = ABaseItem::StaticClass();
+	}
+
+	PreviewWeaponActor = World->SpawnActorDeferred<ABaseItem>(
+		SpawnClass,
+		GetActorTransform(),
+		this,
+		nullptr,
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!PreviewWeaponActor)
+	{
+		return nullptr;
+	}
+
+	PreviewWeaponActor->ItemTag = PreviewWeaponTag;
+	PreviewWeaponActor->FinishSpawning(GetActorTransform());
+	PreviewWeaponActor->SetReplicates(false);
+	PreviewWeaponActor->SetItemState(EItemState::Equipped);
+	return PreviewWeaponActor;
+}
+
+void APlayerStatusPreviewStage::DestroyPreviewWeaponActor()
+{
+	if (IsValid(PreviewWeaponActor))
+	{
+		PreviewWeaponActor->Destroy();
+	}
+	PreviewWeaponActor = nullptr;
 }
 
 void APlayerStatusPreviewStage::ClearWeaponMeshes()
@@ -294,18 +430,23 @@ void APlayerStatusPreviewStage::ApplyPreviewIdle()
 	float PlayRate = 1.f;
 	if (const UPlayerEquipmentComponent* Equipment = SourcePlayer->GetEquipmentComponent())
 	{
-		IdleAnimation = Equipment->GetEquippedPreviewIdleAnimation();
-		PlayRate = Equipment->GetEquippedPreviewIdlePlayRate();
+		IdleAnimation = Equipment->GetPreviewIdleAnimationForItem(PreviewWeaponActor);
+		PlayRate = Equipment->GetPreviewIdlePlayRateForItem(PreviewWeaponActor);
 	}
 
-	if (!IdleAnimation && IsValid(SourcePlayer->EquippedItem))
+	const USkeleton* PreviewSkeleton = PreviewMesh->GetSkeletalMeshAsset()->GetSkeleton();
+	if (IdleAnimation && !HaveCompatibleBoneHierarchy(PreviewSkeleton, IdleAnimation->GetSkeleton()))
 	{
-		const FGameplayTag ItemTag = SourcePlayer->EquippedItem->ItemTag;
-		if (ItemTag.MatchesTag(Item_Id_Weapon_Bow))
+		IdleAnimation = nullptr;
+	}
+
+	if (!IdleAnimation && PreviewWeaponTag.IsValid())
+	{
+		if (PreviewWeaponTag.MatchesTag(Item_Id_Weapon_Bow))
 		{
 			IdleAnimation = Cast<UAnimSequenceBase>(BowIdlePath.TryLoad());
 		}
-		else if (ItemTag.MatchesTag(Item_Id_Weapon_Sword))
+		else if (PreviewWeaponTag.MatchesTag(Item_Id_Weapon_Sword))
 		{
 			IdleAnimation = Cast<UAnimSequenceBase>(SwordIdlePath.TryLoad());
 		}
@@ -316,7 +457,9 @@ void APlayerStatusPreviewStage::ApplyPreviewIdle()
 		IdleAnimation = Cast<UAnimSequenceBase>(DefaultIdlePath.TryLoad());
 	}
 
-	if (!IdleAnimation || IdleAnimation->GetSkeleton() != PreviewMesh->GetSkeletalMeshAsset()->GetSkeleton())
+	const USkeleton* AnimationSkeleton = IdleAnimation ? IdleAnimation->GetSkeleton() : nullptr;
+	const bool bCompatibleSkeleton = HaveCompatibleBoneHierarchy(PreviewSkeleton, AnimationSkeleton);
+	if (!IdleAnimation || !bCompatibleSkeleton)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Status preview idle is missing or incompatible for %s"), *GetNameSafe(SourcePlayer.Get()));
 		return;
@@ -335,14 +478,9 @@ void APlayerStatusPreviewStage::FramePreview()
 		return;
 	}
 
-	FBox Bounds = PreviewMesh->Bounds.GetBox();
-	for (const UMeshComponent* Mesh : ClonedWeaponMeshes)
-	{
-		if (IsValid(Mesh))
-		{
-			Bounds += Mesh->Bounds.GetBox();
-		}
-	}
+	const FBoxSphereBounds ReferenceBounds = PreviewMesh->GetSkeletalMeshAsset()->GetBounds().TransformBy(
+		PreviewMesh->GetComponentTransform());
+	const FBox Bounds = ReferenceBounds.GetBox();
 	if (!Bounds.IsValid)
 	{
 		return;

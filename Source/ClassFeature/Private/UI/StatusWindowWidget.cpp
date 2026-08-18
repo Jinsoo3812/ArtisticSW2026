@@ -388,7 +388,6 @@ void UStatusWindowWidget::RefreshQuickSlots()
 		}
 
 		FGameplayTag SlotKeyTag = FallbackTags[Index];
-		FText ItemName;
 		UTexture2D* Icon = nullptr;
 		int32 Count = 0;
 		bool bEquipped = false;
@@ -398,7 +397,6 @@ void UStatusWindowWidget::RefreshQuickSlots()
 			SlotKeyTag = QuickSlot.KeyTag.IsValid() ? QuickSlot.KeyTag : SlotKeyTag;
 			if (Inventory && QuickSlot.ItemTag.IsValid())
 			{
-				ItemName = Inventory->GetMaterialName(QuickSlot.ItemTag);
 				Icon = Inventory->GetMaterialIcon(QuickSlot.ItemTag);
 				Count = Inventory->GetMaterialCount(QuickSlot.ItemTag);
 				bEquipped = IsValid(CachedPlayer->EquippedItem) && CachedPlayer->EquippedItem->ItemTag == QuickSlot.ItemTag;
@@ -406,7 +404,7 @@ void UStatusWindowWidget::RefreshQuickSlots()
 		}
 
 		Entry->ConfigureInteraction(Index, true);
-		Entry->SetupFromData(SlotKeyTag, ItemName, Icon, bEquipped, Count);
+		Entry->SetupFromData(SlotKeyTag, Icon, bEquipped, Count);
 	}
 	RefreshPlayerPreview();
 }

@@ -21,7 +21,7 @@ class CLASSFEATURE_API UQuickSlotEntryWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	void SetupFromData(const FGameplayTag& InSlotTag, const FText& InItemName, UTexture2D* InIcon, bool bEquipped, int32 InCount = 0);
+	void SetupFromData(const FGameplayTag& InSlotTag, UTexture2D* InIcon, bool bEquipped, int32 InCount = 0);
 	void ConfigureInteraction(int32 InQuickSlotIndex, bool bInInteractive);
 
 protected:
@@ -32,9 +32,6 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> SlotText;
-
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UTextBlock> ItemNameText;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> CountText;
