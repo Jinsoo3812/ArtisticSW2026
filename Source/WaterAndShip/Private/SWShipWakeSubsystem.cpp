@@ -27,7 +27,7 @@ namespace
 		TEXT("Override Froude Profile: -1=Auto/Emitter, 0=Fr0.30, 1=Fr0.50, 2=Fr0.70, 3=Fr1.00"));
 	TAutoConsoleVariable<int32> CVarMaxCapacity(
 		TEXT("sw.ShipWake.MaxCapacity"), USWShipWakeSubsystem::DefaultWakeCapacity,
-		TEXT("Maximum active Kelvin wake buffer capacity (1-1024). Dynamically cached on change."),
+		TEXT("Maximum active Kelvin wake buffer capacity (1-256). Dynamically cached on change."),
 		ECVF_Default);
 	TAutoConsoleVariable<int32> CVarOnScreenDebug(
 		TEXT("sw.ShipWake.OnScreenDebug"), 1,
@@ -458,12 +458,13 @@ void USWShipWakeSubsystem::UpdateEventTexture()
 		Pixels[Index + MaxWakeCapacity * 3] = FLinearColor(
 			Yaw0, Yaw1, E.FadeInSeconds, E.LengthCutRatio);
 	}
+	const int32 UploadCount = FMath::Clamp(Count, 1, MaxWakeCapacity);
 	if (FTexture2DResource* Resource = static_cast<FTexture2DResource*>(EventTexture->GetResource()))
 	{
 		ENQUEUE_RENDER_COMMAND(UpdateSWShipWakeM7Events)(
-			[Resource, Data = MoveTemp(Pixels)](FRHICommandListImmediate& RHICmdList)
+			[Resource, Data = MoveTemp(Pixels), UploadCount](FRHICommandListImmediate& RHICmdList)
 			{
-				const FUpdateTextureRegion2D Region(0, 0, 0, 0, MaxWakeCapacity, 4);
+				const FUpdateTextureRegion2D Region(0, 0, 0, 0, UploadCount, 4);
 				RHICmdList.UpdateTexture2D(Resource->GetTexture2DRHI(), 0, Region,
 					MaxWakeCapacity * sizeof(FLinearColor), reinterpret_cast<const uint8*>(Data.GetData()));
 			});

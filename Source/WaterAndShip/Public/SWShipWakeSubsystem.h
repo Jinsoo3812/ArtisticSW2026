@@ -37,9 +37,9 @@ public:
 	void SetActiveFroudeProfile(ESWKelvinFroudeProfile Profile);
 	ESWKelvinFroudeProfile GetActiveFroudeProfile() const;
 
-	static constexpr int32 MaxWakeCapacity = 1024;
-	static constexpr int32 DefaultWakeCapacity = 1024;
-	static constexpr int32 WakeCapacity = 1024;
+	static constexpr int32 MaxWakeCapacity = 256;
+	static constexpr int32 DefaultWakeCapacity = 256;
+	static constexpr int32 WakeCapacity = 256;
 
 	/** Returns dynamic maximum buffer capacity controlled by sw.ShipWake.MaxCapacity CVar and cached. */
 	static int32 GetMaxCapacity();
