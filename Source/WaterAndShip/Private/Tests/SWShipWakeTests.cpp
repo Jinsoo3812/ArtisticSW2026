@@ -11,8 +11,11 @@ namespace
 		FSWShipWakeEvent Event;
 		Event.EventId = 1;
 		Event.Origin = FVector2D::ZeroVector;
+		Event.EndOrigin = FVector2D(500.0, 0.0);
 		Event.Forward = FVector2D(1.0, 0.0);
+		Event.EndForward = FVector2D(1.0, 0.0);
 		Event.StartServerTime = 10.0;
+		Event.EndServerTime = 11.0;
 		Event.InitialAmplitudeCm = 65.0f;
 		Event.PropagationSpeedCmPerSecond = 1200.0f;
 		Event.DecayRate = 0.0f;
@@ -56,14 +59,7 @@ bool FSWShipWakeM7GoldenTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Point is still quiet before front arrival"), FMath::IsNearlyZero(
 		FSWShipWakeEvaluator::EvaluateHeight(BestQuery, Event.StartServerTime, One)));
 	TestTrue(TEXT("Water ahead of the recorded tangent remains quiet"), FMath::IsNearlyZero(
-		FSWShipWakeEvaluator::EvaluateHeight(FVector2D(500.0, 0.0), ArrivalTime, One)));
-
-	FSWShipWakeEvent Duplicate = Event;
-	Duplicate.EventId = 2;
-	const TArray<FSWShipWakeEvent> Overlap { Event, Duplicate };
-	const float OverlapHeight = FSWShipWakeEvaluator::EvaluateHeight(BestQuery, ArrivalTime, Overlap);
-	TestTrue(TEXT("Normalized overlap does not double a complete Golden wake"),
-		FMath::IsNearlyEqual(OverlapHeight, Height, 0.01f));
+		FSWShipWakeEvaluator::EvaluateHeight(FVector2D(1500.0, 0.0), ArrivalTime, One)));
 
 	const FVector2D Gradient = FSWShipWakeEvaluator::EvaluateGradient(BestQuery, ArrivalTime, One);
 	TestTrue(TEXT("CPU buoyancy gradient stays finite"),
@@ -85,7 +81,9 @@ bool FSWShipWakeM7RotationTest::RunTest(const FString& Parameters)
 	FSWShipWakeEvent TurnEvent = OldEvent;
 	TurnEvent.EventId = 2;
 	TurnEvent.Origin = FVector2D(1000.0, 0.0);
+	TurnEvent.EndOrigin = FVector2D(1000.0, 500.0);
 	TurnEvent.Forward = FVector2D(0.0, 1.0);
+	TurnEvent.EndForward = FVector2D(0.0, 1.0);
 	TestTrue(TEXT("Old event tangent is not mutated by a later turn"),
 		OldEvent.Forward.Equals(FVector2D(1.0, 0.0)));
 	TestTrue(TEXT("Old event remains deterministic after a turn event is authored"),

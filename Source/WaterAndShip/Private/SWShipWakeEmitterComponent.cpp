@@ -286,14 +286,22 @@ void USWShipWakeEmitterComponent::EmitResampledSegment(
 
 	for (int32 Segment = 1; Segment <= SegmentCount; ++Segment)
 	{
-		const float Alpha = static_cast<float>(Segment) / SegmentCount;
-		FVector2D Tangent = FMath::Lerp(LastSampleForward, Forward, Alpha);
-		Tangent = Tangent.IsNearlyZero() ? Forward : Tangent.GetSafeNormal();
+		const float Alpha0 = static_cast<float>(Segment - 1) / SegmentCount;
+		const float Alpha1 = static_cast<float>(Segment) / SegmentCount;
+
+		FVector2D Tangent0 = FMath::Lerp(LastSampleForward, Forward, Alpha0);
+		Tangent0 = Tangent0.IsNearlyZero() ? LastSampleForward : Tangent0.GetSafeNormal();
+		FVector2D Tangent1 = FMath::Lerp(LastSampleForward, Forward, Alpha1);
+		Tangent1 = Tangent1.IsNearlyZero() ? Forward : Tangent1.GetSafeNormal();
+
 		FSWShipWakeEvent Event;
-		Event.Origin = FMath::Lerp(LastSamplePosition, Apex, Alpha);
-		Event.Forward = Tangent;
-		Event.StartServerTime = FMath::Lerp(LastSampleServerTime, ServerTime, Alpha);
-		Event.ExpireServerTime = Event.StartServerTime + Lifetime;
+		Event.Origin = FMath::Lerp(LastSamplePosition, Apex, Alpha0);
+		Event.EndOrigin = FMath::Lerp(LastSamplePosition, Apex, Alpha1);
+		Event.Forward = Tangent0;
+		Event.EndForward = Tangent1;
+		Event.StartServerTime = FMath::Lerp(LastSampleServerTime, ServerTime, Alpha0);
+		Event.EndServerTime = FMath::Lerp(LastSampleServerTime, ServerTime, Alpha1);
+		Event.ExpireServerTime = Event.EndServerTime + Lifetime;
 		Event.InitialAmplitudeCm = MaximumAmplitudeCm * SpeedFade;
 		Event.PropagationSpeedCmPerSecond = FMath::Max(PropagationSpeedCmPerSecond, 1.0f);
 		Event.DecayRate = FMath::Max(DecayRate, 0.0f);
@@ -311,12 +319,12 @@ void USWShipWakeEmitterComponent::EmitResampledSegment(
 		if (bLogging)
 		{
 			UE_LOG(LogSWShipWakeEmitter, Log,
-				TEXT("    [Segment %d/%d] Origin=(%.1f, %.1f) | Fwd=(%.3f, %.3f) | StartT=%.3fs | ExpireT=%.3fs | Amp=%.2f cm | Cut=(%.2f, %.2f) | Profile=%d"),
+				TEXT("    [Segment %d/%d] P0=(%.1f, %.1f) P1=(%.1f, %.1f) | Fwd0=(%.2f, %.2f) Fwd1=(%.2f, %.2f) | T=[%.2f..%.2f] Exp=%.2f | Amp=%.1f | Profile=%d"),
 				Segment, SegmentCount,
-				Event.Origin.X, Event.Origin.Y, Event.Forward.X, Event.Forward.Y,
-				Event.StartServerTime, Event.ExpireServerTime,
-				Event.InitialAmplitudeCm, Event.LengthCutRatio, Event.WidthCutRatio,
-				static_cast<int32>(Event.FroudeProfile));
+				Event.Origin.X, Event.Origin.Y, Event.EndOrigin.X, Event.EndOrigin.Y,
+				Event.Forward.X, Event.Forward.Y, Event.EndForward.X, Event.EndForward.Y,
+				Event.StartServerTime, Event.EndServerTime, Event.ExpireServerTime,
+				Event.InitialAmplitudeCm, static_cast<int32>(Event.FroudeProfile));
 		}
 	}
 

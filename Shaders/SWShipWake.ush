@@ -9,8 +9,7 @@
 { \
     const float2 SW_Query = (WORLD_XY); \
     const int SW_Count = clamp((int)round(EVENT_COUNT), 0, SW_M7_WAKE_CAPACITY); \
-    float SW_WeightedHeight = 0.0; \
-    float SW_BlendWeight = 0.0; \
+    float SW_TotalHeight = 0.0; \
     [loop] \
     for (int SW_Index = 0; SW_Index < SW_M7_WAKE_CAPACITY; ++SW_Index) \
     { \
@@ -20,29 +19,94 @@
         const float4 SW_R1 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.375), 0.0); \
         const float4 SW_R2 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.625), 0.0); \
         const float4 SW_R3 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.875), 0.0); \
-        const float SW_Age = (SERVER_TIME) - SW_R1.x; \
-        if (SW_R1.y <= 0.0 || SW_Age < 0.0 || (SERVER_TIME) >= SW_R2.x) continue; \
-        const float SW_Decay = exp(-max(SW_R1.w, 0.0) * SW_Age); \
+        \
+        const float2 SW_P0 = SW_R0.xy; \
+        const float2 SW_P1 = SW_R0.zw; \
+        const float SW_T0 = SW_R1.x; \
+        const float SW_T1 = max(SW_R1.y, SW_T0); \
+        const float SW_Amp = SW_R1.z; \
+        const float SW_c = max(SW_R1.w, 1.0); \
+        \
+        if (SW_Amp <= 0.0 || (SERVER_TIME) < SW_T0 || (SERVER_TIME) >= SW_R2.x) continue; \
+        \
+        const float SW_DeltaT = max(SW_T1 - SW_T0, 1.0e-4); \
+        const float2 SW_V = (SW_P1 - SW_P0) / SW_DeltaT; \
+        const float SW_V2 = dot(SW_V, SW_V); \
+        const float SW_C2 = SW_c * SW_c; \
+        const float2 SW_D = SW_P0 - SW_Query; \
+        const float SW_Trem = (float)((SERVER_TIME) - SW_T0); \
+        \
+        const float SW_A = SW_V2 - SW_C2; \
+        const float SW_B = 2.0 * (dot(SW_D, SW_V) + SW_C2 * SW_Trem); \
+        const float SW_C = dot(SW_D, SW_D) - SW_C2 * SW_Trem * SW_Trem; \
+        \
+        float SW_Tau = -1.0; \
+        if (abs(SW_A) < 1.0e-5) \
+        { \
+            if (abs(SW_B) > 1.0e-5) \
+            { \
+                float SW_LinearTau = -SW_C / SW_B; \
+                if (SW_LinearTau >= -1.0e-3 && SW_LinearTau <= SW_DeltaT + 1.0e-3 && SW_LinearTau <= SW_Trem) \
+                { \
+                    SW_Tau = clamp(SW_LinearTau, 0.0, SW_DeltaT); \
+                } \
+            } \
+        } \
+        else \
+        { \
+            const float SW_Disc = SW_B * SW_B - 4.0 * SW_A * SW_C; \
+            if (SW_Disc >= 0.0) \
+            { \
+                const float SW_SqrtDisc = sqrt(SW_Disc); \
+                const float SW_Tau1 = (-SW_B - SW_SqrtDisc) / (2.0 * SW_A); \
+                const float SW_Tau2 = (-SW_B + SW_SqrtDisc) / (2.0 * SW_A); \
+                const bool bValid1 = (SW_Tau1 >= -1.0e-3 && SW_Tau1 <= SW_DeltaT + 1.0e-3 && SW_Tau1 <= SW_Trem); \
+                const bool bValid2 = (SW_Tau2 >= -1.0e-3 && SW_Tau2 <= SW_DeltaT + 1.0e-3 && SW_Tau2 <= SW_Trem); \
+                if (bValid1 && bValid2) \
+                { \
+                    SW_Tau = (SW_Tau1 >= 0.0 && SW_Tau1 <= SW_DeltaT) ? SW_Tau1 : SW_Tau2; \
+                } \
+                else if (bValid1) \
+                { \
+                    SW_Tau = clamp(SW_Tau1, 0.0, SW_DeltaT); \
+                } \
+                else if (bValid2) \
+                { \
+                    SW_Tau = clamp(SW_Tau2, 0.0, SW_DeltaT); \
+                } \
+            } \
+        } \
+        \
+        if (SW_Tau < 0.0) continue; \
+        \
+        const float SW_Alpha = clamp(SW_Tau / SW_DeltaT, 0.0, 1.0); \
+        const float SW_Age = SW_Trem - SW_Tau; \
+        if (SW_Age < 0.0) continue; \
+        \
+        const float SW_DecayRate = max(SW_R2.w, 0.0); \
+        const float SW_Decay = exp(-SW_DecayRate * SW_Age); \
         if (SW_Decay < 0.001) continue; \
-        const float2 SW_Forward = normalize(SW_R0.zw + float2(1.0e-8, 0.0)); \
+        \
+        const float2 SW_Apex = lerp(SW_P0, SW_P1, SW_Alpha); \
+        const float SW_Yaw0 = SW_R3.x; \
+        const float SW_Yaw1 = SW_R3.y; \
+        const float2 SW_Fwd0 = float2(cos(SW_Yaw0), sin(SW_Yaw0)); \
+        const float2 SW_Fwd1 = float2(cos(SW_Yaw1), sin(SW_Yaw1)); \
+        const float2 SW_Forward = normalize(lerp(SW_Fwd0, SW_Fwd1, SW_Alpha) + float2(1.0e-8, 0.0)); \
         const float2 SW_Right = float2(-SW_Forward.y, SW_Forward.x); \
-        const float2 SW_Delta = SW_Query - SW_R0.xy; \
+        \
+        const float2 SW_Delta = SW_Query - SW_Apex; \
         const float SW_Downstream = -dot(SW_Delta, SW_Forward); \
         const float SW_Lateral = dot(SW_Delta, SW_Right); \
-        const float SW_Radius = length(float2(SW_Downstream, SW_Lateral)); \
-        const float SW_Front = max(SW_R1.z, 1.0) * SW_Age; \
-        const float SW_EnvelopeWidth = max(SW_R2.w, 1.0); \
-        const float SW_FrontDistance = abs(SW_Radius - SW_Front); \
-        if (SW_FrontDistance >= SW_EnvelopeWidth) continue; \
-        const float SW_Envelope = 1.0 - smoothstep(0.0, SW_EnvelopeWidth, SW_FrontDistance); \
-        const float SW_FadeIn = SW_R3.x > 1.0e-6 ? smoothstep(0.0, SW_R3.x, SW_Age) : 1.0; \
-        const float SW_Weight = SW_Envelope * SW_FadeIn; \
+        \
         const float SW_Length = max(SW_R2.y, 1.0); \
         const float SW_HalfWidth = max(SW_R2.z, 1.0); \
-        const float SW_LengthCut = clamp(SW_R3.y > 0.001 ? SW_R3.y : 1.0, 0.01, 1.0); \
-        const float SW_WidthCut = clamp(SW_R3.z > 0.001 ? SW_R3.z : 1.0, 0.01, 1.0); \
+        const float SW_LengthCut = clamp(SW_R3.w > 0.001 ? SW_R3.w : 1.0, 0.01, 1.0); \
+        const float SW_WidthCut = 1.0; \
+        \
         const float SW_U = SW_Downstream / SW_Length; \
         const float SW_V_signed = SW_Lateral / SW_HalfWidth; \
+        \
         float SW_Golden = 0.0; \
         if (SW_U >= 0.0 && SW_U <= SW_LengthCut && abs(SW_V_signed) <= SW_WidthCut) \
         { \
@@ -57,10 +121,12 @@
                 SW_Golden = Texture2DSampleLevel(GOLDEN_TEX, GOLDEN_SAMPLER, SW_GoldenUV, 0.0).r * SW_StampMask; \
             } \
         } \
-        SW_WeightedHeight += SW_R1.y * SW_Golden * SW_Weight * SW_Decay; \
-        SW_BlendWeight += SW_Weight; \
+        \
+        const float SW_FadeInSec = SW_R3.z; \
+        const float SW_FadeIn = SW_FadeInSec > 1.0e-6 ? smoothstep(0.0, SW_FadeInSec, SW_Age) : 1.0; \
+        SW_TotalHeight += SW_Amp * SW_Golden * SW_FadeIn * SW_Decay; \
     } \
-    OUT_HEIGHT = clamp(SW_WeightedHeight / max(SW_BlendWeight, 1.0), -200.0, 200.0); \
+    OUT_HEIGHT = clamp(SW_TotalHeight, -200.0, 200.0); \
 }
 
 #define SW_M7_EVALUATE_KELVIN_NORMAL(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, NORMAL_STRENGTH, OUT_NORMAL) \
@@ -76,3 +142,4 @@
     const float SW_dHdY = (SW_H_PosY - SW_H_Center) / SW_NormDelta; \
     OUT_NORMAL = normalize(float3(-SW_dHdX * (NORMAL_STRENGTH), -SW_dHdY * (NORMAL_STRENGTH), 1.0)); \
 }
+

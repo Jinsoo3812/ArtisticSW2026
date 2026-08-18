@@ -438,15 +438,25 @@ void USWShipWakeSubsystem::UpdateEventTexture()
 	for (int32 Index = 0; Index < Count; ++Index)
 	{
 		const FSWShipWakeEvent& E = Snapshot[Index];
-		Pixels[Index] = FLinearColor(E.Origin.X, E.Origin.Y, E.Forward.X, E.Forward.Y);
+		const FVector2D P0 = E.Origin;
+		const FVector2D P1 = (E.EndOrigin.IsNearlyZero() && E.EndServerTime <= E.StartServerTime)
+			? E.Origin : E.EndOrigin;
+		const double T0 = E.StartServerTime;
+		const double T1 = FMath::Max(E.EndServerTime, T0);
+		const FVector2D Fwd0 = E.Forward.IsNearlyZero() ? FVector2D(1.0, 0.0) : E.Forward.GetSafeNormal();
+		const FVector2D Fwd1 = E.EndForward.IsNearlyZero() ? Fwd0 : E.EndForward.GetSafeNormal();
+		const float Yaw0 = FMath::Atan2(static_cast<float>(Fwd0.Y), static_cast<float>(Fwd0.X));
+		const float Yaw1 = FMath::Atan2(static_cast<float>(Fwd1.Y), static_cast<float>(Fwd1.X));
+
+		Pixels[Index] = FLinearColor(P0.X, P0.Y, P1.X, P1.Y);
 		Pixels[Index + MaxWakeCapacity] = FLinearColor(
-			static_cast<float>(E.StartServerTime), E.InitialAmplitudeCm,
-			E.PropagationSpeedCmPerSecond, E.DecayRate);
+			static_cast<float>(T0), static_cast<float>(T1),
+			E.InitialAmplitudeCm, E.PropagationSpeedCmPerSecond);
 		Pixels[Index + MaxWakeCapacity * 2] = FLinearColor(
 			static_cast<float>(E.ExpireServerTime), E.WakeLengthCm,
-			E.WakeHalfWidthCm, E.EnvelopeWidthCm);
+			E.WakeHalfWidthCm, E.DecayRate);
 		Pixels[Index + MaxWakeCapacity * 3] = FLinearColor(
-			E.FadeInSeconds, E.LengthCutRatio, E.WidthCutRatio, 0.0f);
+			Yaw0, Yaw1, E.FadeInSeconds, E.LengthCutRatio);
 	}
 	if (FTexture2DResource* Resource = static_cast<FTexture2DResource*>(EventTexture->GetResource()))
 	{

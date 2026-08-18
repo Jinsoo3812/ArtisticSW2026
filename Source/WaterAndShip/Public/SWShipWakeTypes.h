@@ -12,7 +12,7 @@ enum class ESWKelvinFroudeProfile : uint8
 	Fr_1_00 UMETA(DisplayName = "Fr 1.00 (Narrow Divergent Wake 14.3 deg)")
 };
 
-/** M7 immutable source event; Forward is the trajectory tangent at emission. */
+/** M7 immutable trajectory segment; represents continuous motion from Origin (StartServerTime) to EndOrigin (EndServerTime). */
 USTRUCT(BlueprintType)
 struct WATERANDSHIP_API FSWShipWakeEvent
 {
@@ -20,8 +20,11 @@ struct WATERANDSHIP_API FSWShipWakeEvent
 
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") int32 EventId = 0;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") FVector2D Origin = FVector2D::ZeroVector;
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") FVector2D EndOrigin = FVector2D::ZeroVector;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") FVector2D Forward = FVector2D(1.0, 0.0);
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") FVector2D EndForward = FVector2D(1.0, 0.0);
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") double StartServerTime = 0.0;
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") double EndServerTime = 0.0;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") double ExpireServerTime = 0.0;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float InitialAmplitudeCm = 0.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") float PropagationSpeedCmPerSecond = 1200.0f;
