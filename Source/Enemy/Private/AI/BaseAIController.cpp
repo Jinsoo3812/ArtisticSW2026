@@ -236,6 +236,38 @@ bool ABaseAIController::StartInvestigation(const FVector& PointOfInterest)
 	return SetEnemyState(EEnemyAIState::Investigating);
 }
 
+bool ABaseAIController::RefreshBehaviorRouting()
+{
+	if (!HasAuthority())
+	{
+		return false;
+	}
+
+	ABaseEnemy* PossessedEnemy = Cast<ABaseEnemy>(GetPawn());
+	UBehaviorTreeComponent* BehaviorTreeComponent = Cast<UBehaviorTreeComponent>(GetBrainComponent());
+	if (!PossessedEnemy || !BehaviorTreeComponent)
+	{
+		UE_LOG(LogEnemyAI, Warning,
+			TEXT("Failed to refresh behavior routing. Pawn=%s Brain=%s"),
+			*GetNameSafe(GetPawn()), *GetNameSafe(GetBrainComponent()));
+		return false;
+	}
+
+	// RunBehaviorDynamic resets its runtime BehaviorAsset to the node's default
+	// whenever a complete tree restart recreates node instances. Resume the
+	// stopped pooled tree first, then inject the pawn-specific BehaviorSet again.
+	BehaviorTreeComponent->RestartLogic();
+	ApplyBehaviorSet(PossessedEnemy->GetBehaviorSet());
+	BehaviorTreeComponent->RestartTree(EBTRestartMode::ForceReevaluateRootNode);
+
+	UE_LOG(LogEnemyAI, Log,
+		TEXT("Refreshed behavior routing. Pawn=%s BehaviorSet=%s RootTree=%s"),
+		*GetNameSafe(PossessedEnemy),
+		*GetNameSafe(PossessedEnemy->GetBehaviorSet()),
+		*GetNameSafe(PossessedEnemy->GetBehaviorTree()));
+	return true;
+}
+
 void ABaseAIController::OnTargetPerceptionUpdated(AActor* SensedActor, FAIStimulus Stimulus)
 {
 	if (!HasAuthority() || !IsValid(SensedActor) || SensedActor == GetPawn())
@@ -398,6 +430,12 @@ void ABaseAIController::ApplyBehaviorSet(const UEnemyBehaviorSet* BehaviorSet)
 		}
 
 		BehaviorTreeComponent->SetDynamicSubtree(Entry.InjectionTag, Entry.Subtree);
+		UE_LOG(LogEnemyAI, Log,
+			TEXT("Injected dynamic subtree. Pawn=%s State=%d Tag=%s Subtree=%s"),
+			*GetNameSafe(GetPawn()),
+			static_cast<uint8>(Entry.State),
+			*Entry.InjectionTag.ToString(),
+			*GetNameSafe(Entry.Subtree));
 		InjectedTags.Add(Entry.InjectionTag);
 		ConfiguredStates.Add(Entry.State);
 	}

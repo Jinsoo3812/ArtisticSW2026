@@ -543,7 +543,7 @@ void ULocomotionAnimStateComponent::UpdateMovementRequestState(float DeltaTime)
         }
     }
 
-    const bool bCanRequestGroundMove = !bIsInAir && !bIsLanding && !bIsJumping && !bIsFallOffStart;
+    const bool bCanRequestGroundMove = !bIsInAir && !bIsJumping && !bIsFallOffStart;
     if (!bCanRequestGroundMove)
     {
         ClearMovementRequests();
@@ -662,9 +662,9 @@ void ULocomotionAnimStateComponent::UpdateTurnInPlacePhase(float DeltaTime)
         (CachedBasePlayer->IsLocallyControlled() || CachedBasePlayer->HasAuthority());
     const bool bHighPriorityAction = CachedBasePlayer &&
         (CachedBasePlayer->bIsAttacking || CachedBasePlayer->bIsDodging || CachedBasePlayer->bIsHitReacting);
-    const bool bStationary = !bHasMoveInput && GroundSpeed <= IdleSpeedThreshold;
-    const bool bCanTurnInPlace = bLocallyOwnedRotation && bStationary && !bHighPriorityAction &&
-        !bIsInAir && !bIsLanding && !bLandingRequested;
+    // Allow TIP when there is no move input (even if slowing down from Stop or recovering from Land)
+    const bool bStationaryOrStopping = !bHasMoveInput && (GroundSpeed <= 150.0f || bStopRequested || bIsLanding);
+    const bool bCanTurnInPlace = bLocallyOwnedRotation && bStationaryOrStopping && !bHighPriorityAction && !bIsInAir;
     const float FacingDeltaYaw = CachedBasePlayer ? CachedBasePlayer->GetDesiredFacingDeltaYaw() : 0.0f;
 
     constexpr float EntryAngleDegrees = 30.0f;
@@ -695,8 +695,7 @@ void ULocomotionAnimStateComponent::UpdateTurnInPlacePhase(float DeltaTime)
     bIsTurningInPlace = bTurnInPlacePhaseActive;
     TurnInPlaceRootYawDelta = 0.0f;
 
-    // TIP owns a stationary release episode.  Do not defer its old Stop
-    // request until after the turn, otherwise Stop -> TIP -> Stop returns.
+    // TIP owns a stationary release episode. Do not defer old Stop or Landing requests
     if (bTurnInPlacePhaseActive)
     {
         if (bStopRequested)
@@ -705,6 +704,8 @@ void ULocomotionAnimStateComponent::UpdateTurnInPlacePhase(float DeltaTime)
         }
         bStopRequested = false;
         bGroundMoveEpisodeActive = false;
+        bLandingRequested = false;
+        bIsLanding = false;
     }
 
 }
@@ -955,14 +956,11 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             {
                 InterruptSprintLandingForSprintRelease();
             }
-            // A Land -> Stop hand-off is permitted only after genuine movement
-            // intent survived touchdown.  Project_J uses the same distinction:
-            // an input released on/just after touchdown must not first commit a
-            // generic F/B land and then immediately blend into Stop.
-            else if (bLandingReceivedMoveInput && bPrevHasMoveInput && !bHasMoveInput)
+            // Immediately hand off to Stop when the player releases movement input during a moving land
+            else if (bLandWasMoving && !bHasMoveInput)
             {
                 RecordStateControllerDebugEvent(FString::Printf(
-                    TEXT("Landing tap released -> Stop Time=%.3f"), LandingElapsedTime));
+                    TEXT("Landing input released -> Instant Stop Time=%.3f"), LandingElapsedTime));
                 InterruptLandingForStop();
             }
             // A deliberate redirect has priority over the authored minimum Land
@@ -987,7 +985,7 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
 
                 bool bControlYawChanged = false;
                 float ControlYawDelta = 0.f;
-                if (CachedBasePlayer && (bHasMoveInput || bLandWasMoving || GroundSpeed > IdleSpeedThreshold))
+                if (CachedBasePlayer)
                 {
                     ControlYawDelta = FMath::Abs(FMath::FindDeltaAngleDegrees(
                         LandingStartControlYaw,
@@ -1540,7 +1538,8 @@ void ULocomotionAnimStateComponent::StartLanding(float ImpactFallSpeed, bool bTr
     LandStartGroundSpeed = GroundSpeed;
     LandStartFallSpeed = ImpactFallSpeed;
     LastFallSpeed = ImpactFallSpeed;
-    bLandWasMoving = LandStartGroundSpeed > IdleSpeedThreshold || bHasMoveInput;
+    // If the player released move input before landing, always select Stand Land even with residual velocity
+    bLandWasMoving = bHasMoveInput && (LandStartGroundSpeed > IdleSpeedThreshold || Acceleration.SizeSquared2D() > 1.0f);
     bUseHeavyLand = LandStartFallSpeed >= HeavyLandSpeedThreshold;
 
     FVector HorizontalVelocity = Velocity;
@@ -1874,6 +1873,12 @@ void ULocomotionAnimStateComponent::InterruptLandingForDirectionChange()
     bUseLoopDatabase = true;
     bUseSharpTurnDatabase = false;
 
+    if (bHasMoveInput)
+    {
+        bGroundMoveEpisodeActive = true;
+        bStopRequested = false;
+    }
+
     // The graph is about to expose the MM branch after a direct Land pose.
     // Make its first search use Pose History rather than continuing the
     // locomotion pose that was hidden while the Land Blend Stack owned output.
@@ -1959,11 +1964,7 @@ void ULocomotionAnimStateComponent::InterruptLandingForStop()
     bWasInAir = false;
     bWasAirborneLastFrame = false;
     AirborneDuration = 0.f;
-    bSuppressFallOffStart = false;
-    bLandingFromFallOff = false;
-    bCanEnterLand = false;
-    bCanEnterGround = true;
-    LastFallSpeed = 0.f;
-
+    bStopRequested = true;
+    bGroundMoveEpisodeActive = true;
     ForceStateTransition(ELocomotionState::Stop);
 }

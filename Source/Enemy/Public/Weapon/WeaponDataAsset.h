@@ -50,6 +50,10 @@ struct FWeaponCombatData
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TSubclassOf<UGameplayEffect> DamageEffectClass = nullptr;
 
+	/** Executed on the damaged actor only after authoritative health loss is confirmed. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback", meta = (Categories = "GameplayCue.Impact"))
+	FGameplayTag ImpactGameplayCueTag;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TObjectPtr<UAnimMontage> AttackMontage = nullptr;
 

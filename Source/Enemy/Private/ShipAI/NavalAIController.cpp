@@ -3,7 +3,9 @@
 
 #include "ShipAI/NavalAIController.h"
 #include "Perception/AIPerceptionComponent.h"
+#include "Perception/AISense.h"
 #include "Perception/AISenseConfig_Sight.h"
+#include "Perception/AISense_Sight.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Ship.h"
@@ -33,8 +35,32 @@ ANavalAIController::ANavalAIController()
 
 		PerceptionComp->ConfigureSense(*SightConfig);
 		PerceptionComp->SetDominantSense(SightConfig->GetSenseImplementation());
+		PerceptionComp->OnTargetPerceptionUpdated.AddDynamic(
+			this,
+			&ANavalAIController::HandleTargetPerceptionUpdated);
 	}
 
+}
+
+void ANavalAIController::HandleTargetPerceptionUpdated(AActor* SensedActor, FAIStimulus Stimulus)
+{
+	if (!HasAuthority() || !Stimulus.WasSuccessfullySensed()
+		|| Stimulus.Type != UAISense::GetSenseID<UAISense_Sight>())
+	{
+		return;
+	}
+
+	AEnemyShip* EnemyShip = Cast<AEnemyShip>(GetPawn());
+	AShip* PlayerShip = Cast<AShip>(SensedActor);
+	if (!EnemyShip || !PlayerShip || PlayerShip == EnemyShip
+		|| PlayerShip->IsEnemyShipForEffects()
+		|| !PlayerShip->ActorHasTag(TEXT("Player"))
+		|| PlayerShip->ActorHasTag(TEXT("Enemy")))
+	{
+		return;
+	}
+
+	EnemyShip->NotifyPlayerShipSighted(PlayerShip);
 }
 
 void ANavalAIController::Tick(float DeltaSeconds)
