@@ -32,10 +32,12 @@ ABaseEnemy::ABaseEnemy()
 	
 	bReplicates = true;
 	SetReplicateMovement(true);
-	bAlwaysRelevant = true;
+	bAlwaysRelevant = false;
+	bUseControllerRotationYaw = true;
 
 	SetNetUpdateFrequency(30.0f);
-	SetMinNetUpdateFrequency(15.0f);
+	SetMinNetUpdateFrequency(5.0f);
+	SetNetCullDistanceSquared(FMath::Square(15000.0f));
 	
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	
@@ -52,6 +54,8 @@ ABaseEnemy::ABaseEnemy()
 	WeaponComponent = CreateDefaultSubobject<UBaseWeaponComponent>(TEXT("WeaponComponent"));
 	WaypointMoveComponent = CreateDefaultSubobject<UEnemyWaypointMoveComponent>(TEXT("WaypointMoveComponent"));
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
+	// Confirmed damage feedback is a character-enemy policy, not a boss-only policy.
+	HealthComponent->SetDamageGameplayCueTag(GameplayCue_Boss_Hit);
 
 	// ================= Health Bar =================
 	HealthBarWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarWidgetComponent"));
@@ -74,6 +78,7 @@ ABaseEnemy::ABaseEnemy()
 
 		// Enemies may stand on physics-driven ship decks. CharacterMovement's
 		// default push/touch forces feed back into the ship body and cause jitter.
+		MovementComponent->bOrientRotationToMovement = false;
 		MovementComponent->bEnablePhysicsInteraction = false;
 		MovementComponent->bTouchForceScaledToMass = false;
 		MovementComponent->InitialPushForceFactor = 0.0f;
@@ -96,6 +101,7 @@ void ABaseEnemy::BeginPlay()
 		if (HealthComponent)
 		{
 			HealthComponent->OnDeathStarted.AddUniqueDynamic(this, &ABaseEnemy::OnDeathStarted);
+			HealthComponent->OnDeathFinished.AddUniqueDynamic(this, &ABaseEnemy::OnDeathFinished);
 			HealthComponent->OnHealthChanged.AddUniqueDynamic(this, &ABaseEnemy::OnHealthChanged);
 			HealthComponent->OnMaxHealthChanged.AddUniqueDynamic(this, &ABaseEnemy::OnMaxHealthChanged);
 			HealthComponent->InitializeWithAbilitySystem(AbilitySystemComponent);
@@ -114,7 +120,14 @@ void ABaseEnemy::BeginPlay()
 		// 무기 관리
 		if (WeaponComponent && DefaultWeaponTag.IsValid())
 		{
-			WeaponComponent->InitializeLoadout(DefaultWeaponTag);
+			if (bEquipWeaponOnSpawn)
+			{
+				WeaponComponent->InitializeLoadout(DefaultWeaponTag);
+			}
+			else
+			{
+				WeaponComponent->InitializeHolsteredLoadout(DefaultWeaponTag);
+			}
 		}
 	}
 
@@ -126,6 +139,7 @@ void ABaseEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (HealthComponent)
 	{
 		HealthComponent->OnDeathStarted.RemoveDynamic(this, &ABaseEnemy::OnDeathStarted);
+		HealthComponent->OnDeathFinished.RemoveDynamic(this, &ABaseEnemy::OnDeathFinished);
 		HealthComponent->OnHealthChanged.RemoveDynamic(this, &ABaseEnemy::OnHealthChanged);
 		HealthComponent->OnMaxHealthChanged.RemoveDynamic(this, &ABaseEnemy::OnMaxHealthChanged);
 		HealthComponent->UninitializeFromAbilitySystem();
@@ -205,6 +219,22 @@ void ABaseEnemy::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 
 		HandleDeath();
 	}
+}
+
+void ABaseEnemy::OnDeathFinished(UBaseHealthComponent* InHealthComponent)
+{
+	if (!HasAuthority() || !bDestroyAfterDeathFinished || IsActorBeingDestroyed())
+	{
+		return;
+	}
+
+	if (CorpseLifetimeAfterDeathFinished <= 0.0f)
+	{
+		Destroy();
+		return;
+	}
+
+	SetLifeSpan(CorpseLifetimeAfterDeathFinished);
 }
 
 void ABaseEnemy::OnHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)

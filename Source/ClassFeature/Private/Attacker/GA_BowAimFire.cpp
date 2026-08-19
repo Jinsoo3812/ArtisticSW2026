@@ -14,7 +14,7 @@
 #include "Item/Projectiles/ArrowProjectile.h"
 #include "Item/Weapons/BowItem.h"
 #include "GASCombatLibrary.h"
-#include "GASDamageInstantGameplayEffect.h"
+#include "GASAttributeDamageGameplayEffect.h"
 
 UGA_BowAimFire::UGA_BowAimFire()
 {
@@ -479,7 +479,7 @@ void UGA_BowAimFire::FireArrow(const FGameplayEventData& Payload)
 		TSubclassOf<UGameplayEffect> DamageEffectClass = Arrow->GetDirectDamageEffectClass();
 		if (!DamageEffectClass)
 		{
-			DamageEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
+			DamageEffectClass = UGASAttributeDamageGameplayEffect::StaticClass();
 		}
 
 		FStrengthDamageRequest DamageRequest;

@@ -7,10 +7,13 @@
   - Infinite
   - `Data.StrengthBonus` SetByCaller
   - `Strength` Additive
-- 직접 피해의 네이티브 기본 클래스는 `UGASDamageInstantGameplayEffect`입니다.
+- 신규 Player 무기 직접 피해의 네이티브 기본 클래스는 `UGASAttributeDamageGameplayEffect`입니다.
   - Instant
-  - `Data.Damage` SetByCaller
-  - `UBaseAttributeSet::Damage` Meta Attribute만 수정
+  - `UGASAttributeDamageExecution`에서 Source/Target Attribute 캡처 및 최종 계산
+  - 현재는 Source `Strength`를 Spec 생성 시 snapshot
+  - `Data.AttackCoefficient`, `Data.ChargeMultiplier`를 무기/GA 입력으로 사용
+  - 계산 결과는 `UBaseAttributeSet::Damage` Meta Attribute에만 출력
+- `UGASDamageInstantGameplayEffect`와 `Data.Damage`는 기존 BP GE 직렬화 호환 경로로 유지됩니다.
 - 직접 피해 공식은 다음과 같습니다.
 
   `max(1, Strength * AttackCoefficient * ChargeMultiplier)`
@@ -41,8 +44,9 @@
 
 1. `Sword > Damage > Attack Coefficient`
 2. 필요 시 `Damage Effect Class`
-   - 비어 있으면 네이티브 `UGASDamageInstantGameplayEffect` 사용
-   - 에셋이 필요하면 해당 네이티브 클래스를 부모로 `GE_Damage_Instant` 생성
+   - 비어 있으면 네이티브 `UGASAttributeDamageGameplayEffect` 사용
+   - 에셋이 필요하면 해당 네이티브 클래스를 부모로 `GE_WeaponDamage_Attribute` 생성
+   - 기존 `UGASDamageInstantGameplayEffect` 기반 GE도 동작하지만, 이는 최종 피해를 GA 쪽에서 미리 계산하는 호환 경로입니다.
 3. `Sword > Status > Status Effect Classes`
    - 일반 검: 빈 배열
    - 불검: 화상 Duration/Periodic GE 추가
@@ -60,7 +64,8 @@
 각 Projectile BP의 `Arrow > Damage > Damage Data`에서 다음을 설정합니다.
 
 1. `Direct Damage Effect Class`
-   - 비워 두면 공통 네이티브 즉시 피해 GE 사용
+   - 비워 두면 `UGASAttributeDamageGameplayEffect` 사용
+   - 현재 `GE_Instant_Arrow`처럼 구형 `Data.Damage` Modifier GE가 지정되어 있다면 새 부모 기반 GE로 교체해야 ExecutionCalculation 경로를 사용합니다.
 2. `Attack Coefficient`
 3. `Direct Damage Effect Level`
 4. `Status Effects`
@@ -70,7 +75,9 @@
 
 기존 `Damage Effects`, Crit 관련 필드는 이전 BP 직렬화 호환용입니다. 직접 피해 클래스는 구형 배열의 첫 유효 클래스를 임시 fallback으로 읽지만, 피해량은 항상 Strength 공식으로 계산됩니다. MVP에서 Crit 계산은 하지 않습니다.
 
-Projectile은 발사 GA가 만든 최종 Damage Spec을 발사 시점에 보관합니다. 따라서 화살 비행 중 무기를 해제하거나 Strength가 바뀌어도 이미 발사된 화살의 피해는 변하지 않습니다. 상태이상 Spec도 발사 시 Source ASC 문맥을 포함한 상태로 생성됩니다.
+Projectile은 발사 GA가 만든 Damage Spec을 발사 시점에 보관합니다. ExecutionCalculation의 Source Strength 캡처도 snapshot이므로 화살 비행 중 무기를 해제하거나 Strength가 바뀌어도 이미 발사된 화살의 피해는 변하지 않습니다. 상태이상 Spec도 발사 시 Source ASC 문맥을 포함한 상태로 생성됩니다.
+
+향후 민첩, 치명타, 방어력 같은 Attribute를 추가할 때는 GA나 무기 Actor에 공식을 추가하지 않습니다. `UGASAttributeDamageExecution`에 Source/Target Capture Definition과 공식을 확장하고, 무기는 계수·공격 타입·원소 태그 같은 설계 입력만 보관합니다. 방어력처럼 피격 순간 값이 필요한 Target Attribute는 snapshot을 끄는 것이 적절합니다.
 
 ## 5. 상태이상 GE 주의사항
 
@@ -102,6 +109,7 @@ Projectile은 발사 GA가 만든 최종 Damage Spec을 발사 시점에 보관�
 - `ArtisticSW.GAS.Strength`
   - 기본 Strength와 공식/최소 피해
   - 발사 시점 Damage Spec 스냅샷
+  - ExecutionCalculation의 계수 전달과 Strength snapshot
   - Damage Meta Attribute 단일 입력
   - 장착 +5, 중복 장착 방지, 해제 원복
   - 근접 직접 피해 후 복수 상태이상, 대상별 1회, Source 문맥

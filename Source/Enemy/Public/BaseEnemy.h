@@ -71,6 +71,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI | Behavior Tree")
 	TObjectPtr<UEnemyBehaviorSet> BehaviorSet;
 
+	/** If false, the default weapon is spawned on its back and equipped by combat behavior. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	bool bEquipWeaponOnSpawn = true;
+
 	// ------------------- WeaponTag
 
 	// Enemy가 가지고 시작할 무기 Tag
@@ -119,6 +123,14 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Damage")
 	bool bDeathHandled = false;
 
+	/** Death presentation이 끝난 뒤 서버가 시체 Actor를 유지하는 시간입니다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death", meta = (ClampMin = "0.0"))
+	float CorpseLifetimeAfterDeathFinished = 5.0f;
+
+	/** false이면 기존처럼 외부 시스템이 시체 Actor의 수명을 관리합니다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death")
+	bool bDestroyAfterDeathFinished = true;
+
 protected:
 	// Ability를 ASC Owner에 부여하는 함수
 	UFUNCTION(BlueprintCallable, Category = "AbilitySystem")
@@ -149,6 +161,9 @@ protected:
 	UFUNCTION()
 	void OnDeathStarted(UBaseHealthComponent* InHealthComponent);
 
+	UFUNCTION()
+	void OnDeathFinished(UBaseHealthComponent* InHealthComponent);
+
 	// ================= Health Bar =================
 	UFUNCTION()
 	void OnHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor);
@@ -178,12 +193,16 @@ public:
 	FORCEINLINE TObjectPtr<ABaseAIController> GetAIController() const { check(AIController) return AIController; }
 	FORCEINLINE TObjectPtr<UBehaviorTree> GetBehaviorTree() const { return BehaviorTree; }
 	FORCEINLINE UEnemyBehaviorSet* GetBehaviorSet() const { return BehaviorSet; }
+	FORCEINLINE bool ShouldEquipWeaponOnSpawn() const { return bEquipWeaponOnSpawn; }
 	FORCEINLINE FGameplayTag GetDefaultWeaponTag() const { return DefaultWeaponTag; }
 	FORCEINLINE TObjectPtr<UBaseWeaponComponent> GetWeaponComponent() const { check(WeaponComponent) return WeaponComponent; }
 	//FORCEINLINE TObjectPtr<UPathMovement> GetPathMovementComponent() const { check(PathMovement) return PathMovement;}
 	FORCEINLINE virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { check(AbilitySystemComponent) return AbilitySystemComponent; }
 	FORCEINLINE UEnemyWaypointMoveComponent* GetWaypointMoveComponent() const {return WaypointMoveComponent;}
 	FORCEINLINE UBaseHealthComponent* GetHealthComponent() const { return HealthComponent; }
+	FORCEINLINE EGameplayEffectReplicationMode GetASCReplicationMode() const { return ASCReplicationMode; }
+	FORCEINLINE float GetCorpseLifetimeAfterDeathFinished() const { return CorpseLifetimeAfterDeathFinished; }
+	FORCEINLINE bool ShouldDestroyAfterDeathFinished() const { return bDestroyAfterDeathFinished; }
 
 	// Enemy소환 API
 	UFUNCTION(BlueprintCallable, Category = "Wave")

@@ -35,6 +35,10 @@ void ABaseAIController::SetupPerceptionSystem()
 {
 	UAIPerceptionComponent* PerceptionComp =
 		CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("PerceptionComponent"));
+	// AI|Perception controller defaults are the single editor-facing source of truth.
+	// The component remains visible for inspection, but inherited Blueprints must not
+	// edit its generated sense configurations independently.
+	PerceptionComp->bEditableWhenInherited = false;
 	SetPerceptionComponent(*PerceptionComp);
 
 	SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));
@@ -122,6 +126,7 @@ void ABaseAIController::OnPossess(APawn* PossessedPawn)
 void ABaseAIController::OnUnPossess()
 {
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
+	CachedTargetActor.Reset();
 	UnbindPerceivedTargetDeath();
 	UnbindPossessedEnemyDeath();
 	Super::OnUnPossess();
@@ -130,6 +135,7 @@ void ABaseAIController::OnUnPossess()
 void ABaseAIController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
+	CachedTargetActor.Reset();
 	UnbindPerceivedTargetDeath();
 	UnbindPossessedEnemyDeath();
 	Super::EndPlay(EndPlayReason);
@@ -173,15 +179,28 @@ bool ABaseAIController::SetCombatTarget(AActor* TargetActor)
 	}
 
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
+	CachedTargetActor = TargetActor;
 	BlackboardComponent->SetValueAsObject(TargetActorKeyName, TargetActor);
 	BindPerceivedTargetDeath(TargetActor);
 	SetEnemyState(EEnemyAIState::Combat);
 	return true;
 }
 
+AActor* ABaseAIController::GetCombatTarget() const
+{
+	AActor* TargetActor = CachedTargetActor.Get();
+	return IsValid(TargetActor) ? TargetActor : nullptr;
+}
+
+void ABaseAIController::SetEQSPreviewTarget(AActor* TargetActor)
+{
+	CachedTargetActor = IsValid(TargetActor) ? TargetActor : nullptr;
+}
+
 void ABaseAIController::ClearCombatTarget(bool bReturnToPassive)
 {
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
+	CachedTargetActor.Reset();
 
 	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
 	if (BlackboardComponent)
@@ -217,6 +236,38 @@ bool ABaseAIController::StartInvestigation(const FVector& PointOfInterest)
 	return SetEnemyState(EEnemyAIState::Investigating);
 }
 
+bool ABaseAIController::RefreshBehaviorRouting()
+{
+	if (!HasAuthority())
+	{
+		return false;
+	}
+
+	ABaseEnemy* PossessedEnemy = Cast<ABaseEnemy>(GetPawn());
+	UBehaviorTreeComponent* BehaviorTreeComponent = Cast<UBehaviorTreeComponent>(GetBrainComponent());
+	if (!PossessedEnemy || !BehaviorTreeComponent)
+	{
+		UE_LOG(LogEnemyAI, Warning,
+			TEXT("Failed to refresh behavior routing. Pawn=%s Brain=%s"),
+			*GetNameSafe(GetPawn()), *GetNameSafe(GetBrainComponent()));
+		return false;
+	}
+
+	// RunBehaviorDynamic resets its runtime BehaviorAsset to the node's default
+	// whenever a complete tree restart recreates node instances. Resume the
+	// stopped pooled tree first, then inject the pawn-specific BehaviorSet again.
+	BehaviorTreeComponent->RestartLogic();
+	ApplyBehaviorSet(PossessedEnemy->GetBehaviorSet());
+	BehaviorTreeComponent->RestartTree(EBTRestartMode::ForceReevaluateRootNode);
+
+	UE_LOG(LogEnemyAI, Log,
+		TEXT("Refreshed behavior routing. Pawn=%s BehaviorSet=%s RootTree=%s"),
+		*GetNameSafe(PossessedEnemy),
+		*GetNameSafe(PossessedEnemy->GetBehaviorSet()),
+		*GetNameSafe(PossessedEnemy->GetBehaviorTree()));
+	return true;
+}
+
 void ABaseAIController::OnTargetPerceptionUpdated(AActor* SensedActor, FAIStimulus Stimulus)
 {
 	if (!HasAuthority() || !IsValid(SensedActor) || SensedActor == GetPawn())
@@ -248,7 +299,13 @@ void ABaseAIController::HandleSightStimulus(AActor* SensedActor, const FAIStimul
 {
 	if (Stimulus.WasSuccessfullySensed())
 	{
-		SetCombatTarget(SensedActor);
+		// Keep a valid current target stable. With two players, perception update
+		// ordering must not make the enemy switch targets every time either player
+		// produces a new sight stimulus.
+		if (!GetCombatTarget())
+		{
+			SetCombatTarget(SensedActor);
+		}
 		return;
 	}
 
@@ -278,7 +335,7 @@ void ABaseAIController::HandleHearingStimulus(AActor* SensedActor, const FAIStim
 
 void ABaseAIController::HandleDamageStimulus(AActor* SensedActor, const FAIStimulus& Stimulus)
 {
-	if (Stimulus.WasSuccessfullySensed())
+	if (Stimulus.WasSuccessfullySensed() && !GetCombatTarget())
 	{
 		SetCombatTarget(SensedActor);
 	}
@@ -327,6 +384,8 @@ void ABaseAIController::OnPossessedEnemyDeathStarted(UBaseHealthComponent* Healt
 
 void ABaseAIController::InitializeBlackboardValues(APawn* PossessedPawn)
 {
+	CachedTargetActor.Reset();
+
 	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
 	if (!BlackboardComponent || !PossessedPawn)
 	{
@@ -371,6 +430,12 @@ void ABaseAIController::ApplyBehaviorSet(const UEnemyBehaviorSet* BehaviorSet)
 		}
 
 		BehaviorTreeComponent->SetDynamicSubtree(Entry.InjectionTag, Entry.Subtree);
+		UE_LOG(LogEnemyAI, Log,
+			TEXT("Injected dynamic subtree. Pawn=%s State=%d Tag=%s Subtree=%s"),
+			*GetNameSafe(GetPawn()),
+			static_cast<uint8>(Entry.State),
+			*Entry.InjectionTag.ToString(),
+			*GetNameSafe(Entry.Subtree));
 		InjectedTags.Add(Entry.InjectionTag);
 		ConfiguredStates.Add(Entry.State);
 	}

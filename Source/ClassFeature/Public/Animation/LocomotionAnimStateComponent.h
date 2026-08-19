@@ -21,6 +21,62 @@ enum class ELocomotionState : uint8
 };
 
 UENUM(BlueprintType)
+enum class EStateControllerPresentationState : uint8
+{
+    None = 0 UMETA(DisplayName = "None"),
+    IdleLoop = 1 UMETA(DisplayName = "Idle Loop"),
+    TransitionToStart = 2 UMETA(DisplayName = "Transition To Start"),
+    LocomotionLoop = 3 UMETA(DisplayName = "Locomotion Loop"),
+    TransitionToStop = 4 UMETA(DisplayName = "Transition To Stop"),
+    TransitionToPivot = 5 UMETA(DisplayName = "Transition To Pivot"),
+    TransitionToJump = 6 UMETA(DisplayName = "Transition To Jump"),
+    TransitionToLand = 7 UMETA(DisplayName = "Transition To Land"),
+    TurnInPlace = 8 UMETA(DisplayName = "Turn In Place")
+};
+
+UENUM(BlueprintType)
+enum class EMovementDirection : uint8
+{
+    Forward = 0 UMETA(DisplayName = "Forward (F)"),
+    ForwardLeft = 1 UMETA(DisplayName = "Forward Left (FL)"),
+    Left = 2 UMETA(DisplayName = "Left (L)"),
+    BackwardLeft = 3 UMETA(DisplayName = "Backward Left (BL)"),
+    Backward = 4 UMETA(DisplayName = "Backward (B)"),
+    BackwardRight = 5 UMETA(DisplayName = "Backward Right (BR)"),
+    Right = 6 UMETA(DisplayName = "Right (R)"),
+    ForwardRight = 7 UMETA(DisplayName = "Forward Right (FR)")
+};
+
+UENUM(BlueprintType)
+enum class EGaitIntent : uint8
+{
+    Walk = 0 UMETA(DisplayName = "Walk"),
+    Run = 1 UMETA(DisplayName = "Run"),
+    Sprint = 2 UMETA(DisplayName = "Sprint")
+};
+
+USTRUCT(BlueprintType)
+struct FStateControllerContextSnapshot
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    EStateControllerPresentationState CurrentPresentationState = EStateControllerPresentationState::IdleLoop;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    EStateControllerPresentationState DesiredPresentationState = EStateControllerPresentationState::IdleLoop;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    bool bShouldTurnInPlace = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float DesiredFacingDeltaYaw = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "StateController")
+    float TurnInPlaceRootYawDelta = 0.0f;
+};
+
+UENUM(BlueprintType)
 enum class EReplicatedLocomotionEvent : uint8
 {
     None,
@@ -90,7 +146,9 @@ public:
     // Updates the locomotion state machine
     void UpdateAnimationState(float DeltaTime);
 
-    // AnimNotify callback functions
+    // Legacy AnimNotify callback functions. These are intentionally inert:
+    // State Controller one-shots are completed by native request/clock policy
+    // and fallback timers, never by animation asset notifies.
     UFUNCTION(BlueprintCallable, Category = "Locomotion|Animation")
     void NotifyStartFinished();
 
@@ -99,6 +157,10 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Locomotion|Animation")
     void NotifyLandingFinished();
+
+    /** Consumes a pending input-release Stop after State Controller has
+     * committed the corresponding direct Blend Stack one-shot. */
+    bool ConsumeStopPresentationRequest();
 
     // Setters called from input system
     void SetMoveInput(float Right, float Forward);
@@ -119,6 +181,13 @@ public:
     // Forces immediate state transition
     void ForceStateTransition(ELocomotionState NewState);
 
+    /**
+     * Re-arms the currently active one-shot safety timer to the duration of the
+     * animation selected by the State Controller.  This is only a fallback;
+     * an authored notify can still finish the state earlier.
+     */
+    void RefreshOneShotFallbackTimer(float SelectedAnimationDuration);
+
     // Backward-compatibility stubs for ABasePlayer
     UFUNCTION(BlueprintCallable, Category = "Locomotion|Stubs")
     void MarkGroundStartFinished() { NotifyStartFinished(); }
@@ -135,6 +204,22 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Locomotion|Stubs")
     void FinishFallOffStart();
 
+    /** Event history consumed by the State Controller diagnostic trace. */
+    int32 GetStateControllerDebugEventRevision() const { return StateControllerDebugEventRevision; }
+    const FString& GetStateControllerDebugLastEvent() const { return StateControllerDebugLastEvent; }
+    bool GetStateControllerDebugIsDiagonalLanding() const { return IsDiagonalLanding(); }
+    float GetStateControllerDebugEffectiveMinimumLandingDuration() const { return GetEffectiveMinimumLandingDuration(); }
+    float GetStateControllerDebugLandingFallbackRemaining() const;
+
+    /**
+     * One-shot request consumed by the primary AnimInstance when a Land is
+     * deliberately redirected to Motion Matching.  The MM node must discard
+     * its continuing search pose and build the first query from Pose History;
+     * otherwise a hidden/stale MM branch visibly pops when the graph bool
+     * switches away from the Land Blend Stack.
+     */
+    bool ConsumeMotionMatchingReselectionRequest();
+
 protected:
     void CacheOwner();
     bool PerformGroundProbe() const;
@@ -146,6 +231,9 @@ protected:
     void UpdateAirState(float DeltaTime);
     void UpdateMovementRequestState(float DeltaTime);
     void UpdateCombatMovementState();
+    /** Project_J-style derived stationary Strafe TIP phase. This component is
+     * the sole owner of the request consumed by State Controller/Chooser. */
+    void UpdateTurnInPlacePhase(float DeltaTime);
     void UpdateCharacterRotation(float DeltaTime);
     void UpdateMaxWalkSpeed() const;
     void ClearMovementRequests();
@@ -155,9 +243,13 @@ protected:
     void StartLanding(float ImpactFallSpeed, bool bTriggerRealLandEvent);
     void FinishLanding();
     void FinishLandingRequest();
+    void CompleteLandingFromSelectedAnimation(const TCHAR* CompletionSource);
     void InterruptLandingForMoveInput();
     void InterruptLandingForDirectionChange();
+    /** Sprint Land may hand off directly to moving MM when Sprint intent is released. */
+    void InterruptSprintLandingForSprintRelease();
     void InterruptLandingForStop();
+    void RecordStateControllerDebugEvent(const FString& Event);
     bool ShouldAcceptRemoteAnimEvent(int32 EventSequence);
     bool IsDiagonalLanding() const;
     float GetEffectiveMinimumLandingDuration() const;
@@ -196,6 +288,7 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Input")
     FVector2D MoveInput;
 
+
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Transitions")
     bool bSharpTurnRequested;
 
@@ -204,6 +297,15 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Transitions")
     bool bStopRequested;
+
+    /**
+     * Latches a locally controlled grounded movement episode until its Stop
+     * presentation has been committed.  Input is written by the movement
+     * layer before this component updates, so bPrevHasMoveInput alone can
+     * miss the release edge on a frame where input is cleared early.
+     */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Transitions")
+    bool bGroundMoveEpisodeActive = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Air")
     bool bIsInAir;
@@ -236,6 +338,27 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     bool bIsTurningInPlace = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    bool bShouldTurnInPlace = false;
+
+    /** Project_J-style derived TIP phase. It outlives the raw entry threshold
+     * so an authored turn root track can finish and reselect cleanly. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    bool bTurnInPlacePhaseActive = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float TurnInPlacePhaseElapsed = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float DesiredFacingDeltaYaw = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float TurnInPlaceRootYawDelta = 0.0f;
+
+    /** Increments only when an active TIP receives a deliberate additional turn input. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    int32 TurnInPlaceContinuationSerial = 0;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     bool bIsLocomotionTransitioning = false;
@@ -311,12 +434,40 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
     FVector2D LandMoveDirection;
 
+    /** True when LandMoveDirection came from impact velocity rather than input. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
+    bool bLandDirectionFromVelocity = false;
+
     /** Input direction captured at impact. Kept separate from velocity so camera-relative steering does not invalidate a landing spuriously. */
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
     FVector2D LandingStartMoveInput;
 
+    /**
+     * True only after movement intent has survived touchdown for
+     * LandingExitStopInputHoldTime.  This deliberately excludes input that was
+     * merely held in the air and released on the landing frame.
+     */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
+    bool bLandingReceivedMoveInput = false;
+
+    /** Input that was already held at the precise touchdown frame.  Holding
+     * the same direction must not be treated as a new Land redirect. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
+    bool bLandingInputHeldAtTouchdown = false;
+
+    /** Accumulates real move intent after touchdown for the Land -> Stop contract. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
+    float LandingPostTouchdownMoveInputTime = 0.f;
+
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
     float LandingElapsedTime;
+
+    // Last evaluated redirect gates.  They are diagnostic snapshots only; the
+    // actual landing behaviour continues to use the values evaluated in Tick.
+    float LastLandingInputDirectionDelta = 0.f;
+    float LastLandingControlYawDelta = 0.f;
+    bool bLastLandingInputDirectionChanged = false;
+    bool bLastLandingControlYawChanged = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Landing")
     float LandingStartControlYaw = 0.f;
@@ -345,6 +496,15 @@ public:
     /** Prevents held/released movement input from cancelling the landing pose immediately. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0"))
     float MinimumLandingDuration = 0.45f;
+
+    /**
+     * Project_J-style grace time: only an input held for this long after
+     * touchdown may cancel a moving Land directly into Stop.  A release before
+     * this point leaves the authored Land pose intact and prevents Land -> Stop
+     * blend flashes.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0", ClampMax = "0.25", Units = "s"))
+    float LandingExitStopInputHoldTime = 0.06f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Landing", meta = (ClampMin = "0.0"))
     float RemoteMinimumLandingDuration = 0.65f;
@@ -416,6 +576,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Tuning")
     float SharpTurnMinSpeed;
 
+    /** A direct Pivot is a high-commitment reversal. Smaller turns stay in the
+     *  Motion Matching transition PSD. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Tuning")
+    float PivotAngleThreshold;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Tuning")
+    float PivotMinSpeed;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Locomotion|Tuning")
     float HeavyLandSpeedThreshold;
 
@@ -468,4 +636,7 @@ protected:
     bool bSuppressFallOffStart = false;
     int32 LastRemoteAnimEventSequence = 0;
     float GroundedConfirmTimer = 0.0f;
+    int32 StateControllerDebugEventRevision = 0;
+    FString StateControllerDebugLastEvent;
+    bool bMotionMatchingReselectionRequested = false;
 };

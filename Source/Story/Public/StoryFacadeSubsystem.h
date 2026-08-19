@@ -68,6 +68,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Story")
 	bool IsStoryNodeReached(EStoryNode Node) const;
 
+	/** True when Node is already complete or all of its arrow prerequisites are complete. */
+	UFUNCTION(BlueprintPure, Category = "Story")
+	bool CanCompleteStoryNode(EStoryNode Node) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Story|Persistence")
 	bool SaveCampaign(const FString& SlotName = TEXT(""));
 
