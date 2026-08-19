@@ -17,8 +17,10 @@ ABaseWeapon::ABaseWeapon()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
-	
-	//SetReplicateMovement(true); 아직 필요하지 않음
+	bNetUseOwnerRelevancy = true;
+	SetReplicateMovement(false);
+	SetNetUpdateFrequency(10.0f);
+	SetMinNetUpdateFrequency(1.0f);
 
 	WeaponMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMesh"));
 	SetRootComponent(WeaponMesh);

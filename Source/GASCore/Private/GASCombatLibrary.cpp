@@ -44,6 +44,15 @@ FGameplayEffectSpecHandle UGASCombatLibrary::MakeStrengthDamageEffectSpec(const 
 	{
 		UE_LOG(LogTemp, Warning, TEXT("MakeStrengthDamageEffectSpec: Damage spec is invalid."));
 	}
+	else
+	{
+		// Execution-based damage GEs consume these inputs. Data.Damage remains
+		// populated by MakeDamageEffectSpec for legacy modifier-based GEs.
+		SpecHandle.Data->SetSetByCallerMagnitude(
+			Data_AttackCoefficient, FMath::Max(0.0f, Request.AttackCoefficient));
+		SpecHandle.Data->SetSetByCallerMagnitude(
+			Data_ChargeMultiplier, FMath::Max(0.0f, Request.ChargeMultiplier));
+	}
 
 	return SpecHandle;
 }

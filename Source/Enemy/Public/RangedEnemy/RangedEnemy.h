@@ -66,14 +66,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ranged Enemy|Combat")
 	AEnemyBow* GetEquippedBow() const;
 
-	/** Resolves the equipped bow's Arrow_socket in world space. */
+	/** Resolves the equipped bow's arrow spawn socket in world space. */
 	bool GetRangedAttackOrigin(FTransform& OutSpawnTransform) const;
-
 	FVector GetRangedAimLocation(const AActor* TargetActor) const;
 
 	UAnimMontage* GetRangedAttackMontage() const;
 	float GetRangedAttackMontagePlayRate() const;
 	FGameplayTag GetRangedFireEventTag() const { return FireEventTag; }
+	float GetMinAttackRange() const { return MinAttackRange; }
+	float GetMaxAttackRange() const { return MaxAttackRange; }
 
 protected:
 	virtual void BeginPlay() override;

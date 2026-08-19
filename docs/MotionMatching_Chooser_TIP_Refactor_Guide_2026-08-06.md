@@ -404,7 +404,36 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
    - `ArtisticSW2026Editor Win64 Development` UBT 빌드 성공 확인.
 2. **콘솔 디버그 CVar 탑재**:
    - `p.ProjectJ.MMTransitionDebug 1` 실행 시 프레임별 `StateControllerLandDiag` 및 `TurnInPlace` 상태 추적 출력이 정상 가동하는지 확인.
-3. **최종 3대 핵심 검증 씬**:
+3. **최종 핵심 검증 씬**:
    - **Scene A (TIP 오버슈트)**: 제자리에서 마우스 180도 급회전 시 캐릭터가 오버슈트 없이 카메라 정면에 칼정지하는가?
    - **Scene B (TIP 360도 스핀)**: 회전 후 턴 상태에서 빠르게 빠져나와 연속 회전 현상이 사라졌는가?
    - **Scene C (스프린트 착지)**: 착지 도중 Shift를 뗬을 때 착지 모션을 끝까지 억지로 재생하지 않고, 모션 매칭 러닝/스프린트로 즉시 인터럽트 넘어가는가?
+   - **Scene D (착지 제자리 회전)**: 점프 착지 중 마우스를 30° 이상 돌렸을 때 Land 락을 풀고 즉시 Turn In Place로 자연스럽게 돌아가는가?
+   - **Scene E (공중 손 뗌 ➡️ Stand Land)**: 공중에서 이동 중 착지 직전 키를 뗐을 때 공중 잔여 관성과 무관하게 Stand Land가 출력되는가?
+   - **Scene F (착지 이동 ➡️ 즉시 Stop)**: 착지 후 짧게 WASD를 쳤다가 손을 뗐을 때 착지 잔여 딜레이 없이 즉시 `MM_Stop` 모션이 발동되는가?
+
+---
+
+## 7. 최신 패치 내역: Stop & Land 상태 제자리 회전(TIP) 및 즉시 정지(Stop) 개선
+
+### 7.1 개요 및 변경 배경
+* **기존 문제**:
+  1. `!bIsLanding` 및 `GroundSpeed <= IdleSpeedThreshold` 하드코딩 조건으로 인해, 착지(Land) 중이거나 감속 정지(Stop) 중일 때 마우스를 돌려도 제자리 회전(TIP)이 차단됨.
+  2. 공중 이동 중 착지 직전 손을 뗐을 때 공중 잔여 속도로 인해 `Stand Land` 대신 `Run Land`가 오선택됨.
+  3. 착지 중 이동 후 손을 뗐을 때 `MinimumLandingDuration` 대기 및 Stop 요청 누락으로 `Stop` 대신 `Idle`로 직행하거나 딜레이 발생.
+
+### 7.2 소스 코드 핵심 변경 사항
+1. **`LocomotionAnimStateComponent.cpp`**:
+   - `UpdateTurnInPlacePhase`: `bCanTurnInPlace`에서 `!bIsLanding` 제한을 해제하고, `!bIsInAir` 및 `!bHasMoveInput` 상태에서 시선 각도 30° 이상 시 즉시 TIP 진입 허용.
+   - `StartLanding`: `bLandWasMoving = bHasMoveInput && ...` 로 변경하여 착지 순간 손을 뗐다면 공중 관성이 있어도 무조건 `Stand Land` 선택.
+   - `InterruptLandingForStop`: `bStopRequested = true;` 및 `bGroundMoveEpisodeActive = true;`를 명시적으로 세팅하고, 이동 착지 중 손을 떼는 순간 딜레이 없이 즉시 호출되도록 단축.
+2. **`MotionMatchingAnimInstance.cpp`**:
+   - `UpdateStateControllerTransitions`: `bLanding` 및 `bStopHoldActive` 상태에서 `bCanStartTurnInPlace`가 참이면 Land/Stop 홀드를 즉시 해제하고 `TurnInPlace`로 분기.
+   - `bLocomotionStateStop` (`CurrentState == Stop`) 시 속도와 무관하게 `TransitionToStop`으로 분기하여 Stop Chooser가 100% 실행되도록 보장.
+
+### 7.3 실시간 콘솔 및 화면 HUD 디버깅
+* **콘솔 명령어**: `a.StateControllerDebug 1`
+* **화면 출력**: 좌측 상단 청록색 실시간 HUD 표시
+  ```text
+  [AnimState] Presentation: %s | Requested: %s | State: %s | Asset: %s | LandMoving: %d | StopReq: %d | TIP: %d | Speed: %.1f
+  ```
