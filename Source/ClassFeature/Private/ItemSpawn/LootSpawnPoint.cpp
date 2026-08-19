@@ -2,7 +2,10 @@
 
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
+#include "BaseCharacter.h"
 #include "Item/BaseItem.h"
+#include "ItemSpawn/ChestSpawnData.h"
+#include "Ship.h"
 #include "Storage/StorageChest.h"
 
 ALootSpawnPointBase::ALootSpawnPointBase()
@@ -134,7 +137,7 @@ void ALooseLootSpawnPoint::AlignItemBottomToGround(ABaseItem* Item) const
 
 AStorageChest* AChestSpawnPoint::SpawnChest(const TArray<FChestInitialLootRow>& LootRows, TSubclassOf<AStorageChest> FallbackChestClass, int32 Seed)
 {
-	if (!HasAuthority() || !CanBeActivated())
+	if (!HasAuthority() || !CanBeActivated() || IsDataDrivenChestPoint())
 	{
 		return nullptr;
 	}
@@ -171,6 +174,78 @@ AStorageChest* AChestSpawnPoint::SpawnChest(const TArray<FChestInitialLootRow>& 
 	MarkActivated(SpawnedChest);
 
 	return SpawnedChest;
+}
+
+AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definition, int32 Seed)
+{
+	if (!HasAuthority() || !CanSpawnDataDrivenChest() || !IsValid(Definition) || !Definition->ChestClass)
+	{
+		return nullptr;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	AStorageChest* SpawnedChest = World->SpawnActorDeferred<AStorageChest>(
+		Definition->ChestClass,
+		GetActorTransform(),
+		this,
+		nullptr,
+		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+	if (!IsValid(SpawnedChest))
+	{
+		return nullptr;
+	}
+
+	SpawnedChest->InitializeFromChestDefinition(Definition, Seed);
+	SpawnedChest->SetPhysicsAndBuoyancyEnabled(bEnablePhysicsAndBuoyancy);
+
+	TArray<ABaseCharacter*> Guards;
+	Guards.Reserve(GuardCharacters.Num());
+	for (ABaseCharacter* Guard : GuardCharacters)
+	{
+		Guards.Add(Guard);
+	}
+	SpawnedChest->ConfigureGuarding(SpawnMode == EChestSpawnMode::Guarded, Guards, OwningShip);
+	SpawnedChest->FinishSpawning(GetActorTransform());
+
+	if (SpawnMode == EChestSpawnMode::Guarded && IsValid(OwningShip))
+	{
+		SpawnedChest->AttachToActor(OwningShip, FAttachmentTransformRules::KeepWorldTransform);
+	}
+
+	AlignChestBottomToGround(SpawnedChest);
+	MarkActivated(SpawnedChest);
+	return SpawnedChest;
+}
+
+void AChestSpawnPoint::ConfigureRandomSpawn(URandomChestGroup* InRandomGroup, float InPointWeight)
+{
+	SpawnMode = EChestSpawnMode::Random;
+	RandomGroup = InRandomGroup;
+	ChestDefinition = nullptr;
+	GuardCharacters.Reset();
+	OwningShip = nullptr;
+	PointWeight = FMath::Max(0.f, InPointWeight);
+}
+
+void AChestSpawnPoint::ConfigureGuardedSpawn(
+	UChestDefinition* InChestDefinition,
+	const TArray<ABaseCharacter*>& InGuardCharacters,
+	AShip* InOwningShip)
+{
+	SpawnMode = EChestSpawnMode::Guarded;
+	RandomGroup = nullptr;
+	ChestDefinition = InChestDefinition;
+	GuardCharacters.Reset();
+	for (ABaseCharacter* Guard : InGuardCharacters)
+	{
+		GuardCharacters.Add(Guard);
+	}
+	OwningShip = InOwningShip;
 }
 
 void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
@@ -219,55 +294,5 @@ void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
 
 TArray<FStorageItemEntry> AChestSpawnPoint::BuildInitialItems(const TArray<FChestInitialLootRow>& LootRows, int32 Seed) const
 {
-	TArray<FStorageItemEntry> Items;
-	if (InitialItemRollCount <= 0 || LootRows.Num() <= 0)
-	{
-		return Items;
-	}
-
-	float TotalWeight = 0.f;
-	for (const FChestInitialLootRow& Row : LootRows)
-	{
-		if (Row.ItemTag.IsValid() && Row.Weight > 0.f)
-		{
-			TotalWeight += Row.Weight;
-		}
-	}
-
-	if (TotalWeight <= 0.f)
-	{
-		return Items;
-	}
-
-	FRandomStream RandomStream(Seed);
-	for (int32 RollIndex = 0; RollIndex < InitialItemRollCount; ++RollIndex)
-	{
-		const float Pick = RandomStream.FRandRange(0.f, TotalWeight);
-		float AccumulatedWeight = 0.f;
-
-		for (const FChestInitialLootRow& Row : LootRows)
-		{
-			if (!Row.ItemTag.IsValid() || Row.Weight <= 0.f)
-			{
-				continue;
-			}
-
-			AccumulatedWeight += Row.Weight;
-			if (Pick > AccumulatedWeight)
-			{
-				continue;
-			}
-
-			const int32 MinCount = FMath::Max(1, Row.MinCount);
-			const int32 MaxCount = FMath::Max(MinCount, Row.MaxCount);
-
-			FStorageItemEntry Entry;
-			Entry.ItemTag = Row.ItemTag;
-			Entry.Count = RandomStream.RandRange(MinCount, MaxCount);
-			Items.Add(Entry);
-			break;
-		}
-	}
-
-	return Items;
+	return UChestDefinition::RollItemsFromRows(LootRows, InitialItemRollCount, Seed);
 }

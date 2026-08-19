@@ -17,6 +17,8 @@ class UUserWidget;
 class UGameplayAbility;
 class AWaterBombCannonball;
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnWaterBombModeChanged, bool);
+
 USTRUCT(BlueprintType)
 struct FCannonAimRotation
 {
@@ -27,6 +29,21 @@ struct FCannonAimRotation
 
 	UPROPERTY()
 	float Yaw = 0.0f;
+};
+
+USTRUCT(BlueprintType)
+struct FCannonResolvedFiringStats
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Cannon|Stats")
+	float Damage = 10.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Cannon|Stats")
+	float CooldownSeconds = 1.5f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Cannon|Stats")
+	float ProjectileSpeed = 3000.0f;
 };
 
 UCLASS()
@@ -48,6 +65,15 @@ public:
 	class AShip* GetOwningShip() const;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	/** Returns false for cannons mounted on ships that prohibit player cannon control. */
+	UFUNCTION(BlueprintPure, Category = "Cannon|Control")
+	bool AllowsPlayerControl() const;
+
+	/** Re-evaluates interaction collision after mounting or attachment changes. */
+	void RefreshPlayerInteractionAvailability();
+
+	UInteractableComponent* GetInteractableComponent() const { return InteractableComponent; }
+
 	/* Boarding Interaction - Ship의 Board()와 완전히 동일한 패턴 */
 	void Board(APawn* PlayerPawn);
 
@@ -58,11 +84,36 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Cannon")
 	bool FireCannon();
 
+	/** True when the cannon's own reload/effect state permits a normal AI shot. */
+	UFUNCTION(BlueprintPure, Category = "Cannon|AI")
+	bool CanFireCannon() const;
+
+	/** Remaining per-cannon reload time. Zero means ready; negative timer states are normalized to zero. */
+	UFUNCTION(BlueprintPure, Category = "Cannon|AI")
+	float GetFireCooldownRemaining() const;
+
+	/** Checks authored pitch/yaw limits without changing the replicated aim. */
+	UFUNCTION(BlueprintPure, Category = "Cannon|AI")
+	bool CanAimAtWorldDirection(const FVector& WorldDirection) const;
+
+	/** Server-only deterministic AI shot using the supplied ballistic direction. */
+	UFUNCTION(BlueprintCallable, Category = "Cannon|AI")
+	bool FireAICannonAtDirection(const FVector& WorldDirection);
+
 	/** Normal projectile class used by this cannon; ship skills may reuse its authored mesh/effects. */
 	TSubclassOf<AActor> GetCannonballClass() const { return CannonballClass; }
 
+	/** Resolves fallback values or the owning ship's live DT/upgrade-backed attributes. */
+	UFUNCTION(BlueprintPure, Category = "Cannon|Stats")
+	FCannonResolvedFiringStats GetResolvedFiringStats() const;
+
+	/** Canonical world-space projectile origin authored by this cannon. */
+	UFUNCTION(BlueprintPure, Category = "Cannon|Projectile")
+	FTransform GetProjectileMuzzleTransform() const;
+
 	UFUNCTION(BlueprintPure, Category = "Cannon|Water Bomb")
 	bool IsWaterBombMode() const { return bWaterBombMode; }
+	FOnWaterBombModeChanged OnWaterBombModeChanged;
 	APawn* GetRidingPlayer() const { return RidingPlayer; }
 
 	bool ActivateWaterBombModeFromAbility(

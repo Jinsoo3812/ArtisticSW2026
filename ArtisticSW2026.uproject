@@ -25,6 +25,30 @@
 			]
 		},
 		{
+			"Name": "Story",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine",
+				"GameplayTags"
+			]
+		},
+		{
+			"Name": "NPCDialogue",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine",
+				"Story",
+				"ArtisticSWCore"
+			]
+		},
+		{
+			"Name": "NPCDialogueEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		},
+		{
 			"Name": "GASCore",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"

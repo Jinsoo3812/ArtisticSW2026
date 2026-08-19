@@ -24,7 +24,7 @@ UPlayerSkillComponent::UPlayerSkillComponent()
 
 	AddDefinition(
 		GameplayAbility_Skill_GravityVortex,
-		Item_Id_Skill_CurrentGenerator,
+		Item_Id_Skill_GravityVortex,
 		Item_Id_Material_SkillMaterial_RareSkill);
 	AddDefinition(
 		GameplayAbility_Skill_WaterBomb,
@@ -32,7 +32,7 @@ UPlayerSkillComponent::UPlayerSkillComponent()
 		Item_Id_Material_SkillMaterial_EpicSkill);
 	AddDefinition(
 		GameplayAbility_Skill_Bombardment,
-		Item_Id_Skill_CannonBarrage,
+		Item_Id_Skill_Bombardment,
 		Item_Id_Material_SkillMaterial_LegendarySkill);
 }
 

@@ -6,6 +6,7 @@
 #include "Weapon/WeaponDataAsset.h"
 #include "Weapon/BaseWeaponComponent.h"
 #include "BaseGameplayTags.h"
+#include "BasePlayer.h"
 
 #include "Storage/StorageChest.h"
 
@@ -21,6 +22,7 @@
 #include "Components/BaseHealthComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Perception/AISense_Damage.h"
 #include "UI/HealthBarWidget.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -30,10 +32,12 @@ ABaseEnemy::ABaseEnemy()
 	
 	bReplicates = true;
 	SetReplicateMovement(true);
-	bAlwaysRelevant = true;
+	bAlwaysRelevant = false;
+	bUseControllerRotationYaw = true;
 
 	SetNetUpdateFrequency(30.0f);
-	SetMinNetUpdateFrequency(15.0f);
+	SetMinNetUpdateFrequency(5.0f);
+	SetNetCullDistanceSquared(FMath::Square(15000.0f));
 	
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	
@@ -50,6 +54,8 @@ ABaseEnemy::ABaseEnemy()
 	WeaponComponent = CreateDefaultSubobject<UBaseWeaponComponent>(TEXT("WeaponComponent"));
 	WaypointMoveComponent = CreateDefaultSubobject<UEnemyWaypointMoveComponent>(TEXT("WaypointMoveComponent"));
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
+	// Confirmed damage feedback is a character-enemy policy, not a boss-only policy.
+	HealthComponent->SetDamageGameplayCueTag(GameplayCue_Boss_Hit);
 
 	// ================= Health Bar =================
 	HealthBarWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarWidgetComponent"));
@@ -66,8 +72,19 @@ ABaseEnemy::ABaseEnemy()
 	}
 	// ================= End of Health Bar =================
 
-	if (GetCharacterMovement())
-		GetCharacterMovement()->SetIsReplicated(true);
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->SetIsReplicated(true);
+
+		// Enemies may stand on physics-driven ship decks. CharacterMovement's
+		// default push/touch forces feed back into the ship body and cause jitter.
+		MovementComponent->bOrientRotationToMovement = false;
+		MovementComponent->bEnablePhysicsInteraction = false;
+		MovementComponent->bTouchForceScaledToMass = false;
+		MovementComponent->InitialPushForceFactor = 0.0f;
+		MovementComponent->PushForceFactor = 0.0f;
+		MovementComponent->TouchForceFactor = 0.0f;
+	}
 }
 
 void ABaseEnemy::BeginPlay()
@@ -84,6 +101,7 @@ void ABaseEnemy::BeginPlay()
 		if (HealthComponent)
 		{
 			HealthComponent->OnDeathStarted.AddUniqueDynamic(this, &ABaseEnemy::OnDeathStarted);
+			HealthComponent->OnDeathFinished.AddUniqueDynamic(this, &ABaseEnemy::OnDeathFinished);
 			HealthComponent->OnHealthChanged.AddUniqueDynamic(this, &ABaseEnemy::OnHealthChanged);
 			HealthComponent->OnMaxHealthChanged.AddUniqueDynamic(this, &ABaseEnemy::OnMaxHealthChanged);
 			HealthComponent->InitializeWithAbilitySystem(AbilitySystemComponent);
@@ -102,7 +120,14 @@ void ABaseEnemy::BeginPlay()
 		// 무기 관리
 		if (WeaponComponent && DefaultWeaponTag.IsValid())
 		{
-			WeaponComponent->InitializeLoadout(DefaultWeaponTag);
+			if (bEquipWeaponOnSpawn)
+			{
+				WeaponComponent->InitializeLoadout(DefaultWeaponTag);
+			}
+			else
+			{
+				WeaponComponent->InitializeHolsteredLoadout(DefaultWeaponTag);
+			}
 		}
 	}
 
@@ -114,6 +139,7 @@ void ABaseEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (HealthComponent)
 	{
 		HealthComponent->OnDeathStarted.RemoveDynamic(this, &ABaseEnemy::OnDeathStarted);
+		HealthComponent->OnDeathFinished.RemoveDynamic(this, &ABaseEnemy::OnDeathFinished);
 		HealthComponent->OnHealthChanged.RemoveDynamic(this, &ABaseEnemy::OnHealthChanged);
 		HealthComponent->OnMaxHealthChanged.RemoveDynamic(this, &ABaseEnemy::OnMaxHealthChanged);
 		HealthComponent->UninitializeFromAbilitySystem();
@@ -195,15 +221,61 @@ void ABaseEnemy::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 	}
 }
 
+void ABaseEnemy::OnDeathFinished(UBaseHealthComponent* InHealthComponent)
+{
+	if (!HasAuthority() || !bDestroyAfterDeathFinished || IsActorBeingDestroyed())
+	{
+		return;
+	}
+
+	if (CorpseLifetimeAfterDeathFinished <= 0.0f)
+	{
+		Destroy();
+		return;
+	}
+
+	SetLifeSpan(CorpseLifetimeAfterDeathFinished);
+}
+
 void ABaseEnemy::OnHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
 {
 	RefreshHealthBarWidget();
 	UpdateHealthBarVisibilityAfterHealthChanged(OldValue, NewValue);
+
+	// GAS attribute changes do not automatically create an AI Damage stimulus.
+	// Report only authoritative, real health loss and keep synthetic Player input out of production code.
+	if (HasAuthority() && OldValue > NewValue && IsValid(InstigatorActor) && InstigatorActor != this)
+	{
+		const FVector DamageLocation = GetActorLocation();
+		UAISense_Damage::ReportDamageEvent(
+			this,
+			this,
+			InstigatorActor,
+			OldValue - NewValue,
+			DamageLocation,
+			DamageLocation);
+	}
 }
 
 void ABaseEnemy::OnMaxHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
 {
 	RefreshHealthBarWidget();
+}
+
+bool ABaseEnemy::CanEngageActor_Implementation(AActor* Candidate) const
+{
+	const ABasePlayer* Player = Cast<ABasePlayer>(Candidate);
+	if (!IsValid(Player) || Player->IsActorBeingDestroyed())
+	{
+		return false;
+	}
+
+	if (const UBaseHealthComponent* TargetHealth = Player->FindComponentByClass<UBaseHealthComponent>())
+	{
+		return !TargetHealth->IsDead();
+	}
+
+	return true;
 }
 
 void ABaseEnemy::InitializeHealthBarWidget()

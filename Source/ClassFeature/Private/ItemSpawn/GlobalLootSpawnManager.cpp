@@ -2,7 +2,10 @@
 
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "ItemSpawn/ChestSpawnData.h"
+#include "ItemSpawn/LootSpawnPoint.h"
 #include "ItemSpawn/LootZoneSpawnManager.h"
+#include "Storage/StorageChest.h"
 
 AGlobalLootSpawnManager::AGlobalLootSpawnManager()
 {
@@ -70,13 +73,14 @@ int32 AGlobalLootSpawnManager::InitializeLevelLoot()
 		return 0;
 	}
 
+	int32 ActivatedCount = InitializeDataDrivenChests();
+
 	if (ZoneBudgets.Num() == 0 || bAutoDiscoverZoneManagers)
 	{
 		BuildZoneManagerList();
 	}
 
 	const TMap<ALootZoneSpawnManager*, int32> BudgetsByZone = CalculateZoneBudgets();
-	int32 ActivatedCount = 0;
 	int32 ZoneIndex = 0;
 
 	for (const TPair<ALootZoneSpawnManager*, int32>& Pair : BudgetsByZone)
@@ -92,6 +96,129 @@ int32 AGlobalLootSpawnManager::InitializeLevelLoot()
 	}
 
 	return ActivatedCount;
+}
+
+int32 AGlobalLootSpawnManager::InitializeDataDrivenChests()
+{
+	if (!HasAuthority() || !GetWorld())
+	{
+		return 0;
+	}
+
+	TArray<AChestSpawnPoint*> GuardedPoints;
+	TMap<URandomChestGroup*, TArray<AChestSpawnPoint*>> RandomPointsByGroup;
+
+	for (TActorIterator<AChestSpawnPoint> It(GetWorld()); It; ++It)
+	{
+		AChestSpawnPoint* Point = *It;
+		if (!IsValid(Point) || !Point->CanSpawnDataDrivenChest())
+		{
+			continue;
+		}
+
+		if (Point->GetSpawnMode() == EChestSpawnMode::Guarded)
+		{
+			GuardedPoints.Add(Point);
+		}
+		else if (Point->GetSpawnMode() == EChestSpawnMode::Random)
+		{
+			if (URandomChestGroup* Group = Point->GetRandomGroup())
+			{
+				RandomPointsByGroup.FindOrAdd(Group).Add(Point);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Error, TEXT("Data-driven random chest point has no RandomGroup. Point=%s"), *GetNameSafe(Point));
+			}
+		}
+	}
+
+	int32 SpawnedCount = 0;
+	for (AChestSpawnPoint* Point : GuardedPoints)
+	{
+		UChestDefinition* Definition = Point->GetGuardedChestDefinition();
+		const uint32 PointSeed = HashCombine(GetTypeHash(SpawnSeed), GetTypeHash(Point->GetFName()));
+		if (IsValid(Definition) && IsValid(Point->SpawnConfiguredChest(Definition, static_cast<int32>(PointSeed & 0x7fffffff))))
+		{
+			++SpawnedCount;
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("Failed to spawn guarded chest. Point=%s Definition=%s"),
+				*GetNameSafe(Point), *GetNameSafe(Definition));
+		}
+	}
+
+	for (TPair<URandomChestGroup*, TArray<AChestSpawnPoint*>>& Pair : RandomPointsByGroup)
+	{
+		URandomChestGroup* Group = Pair.Key;
+		if (!IsValid(Group) || !IsValid(Group->ChestDefinition) || Group->SpawnCount <= 0)
+		{
+			UE_LOG(LogTemp, Error, TEXT("Invalid random chest group. Group=%s Definition=%s SpawnCount=%d"),
+				*GetNameSafe(Group), *GetNameSafe(Group ? Group->ChestDefinition : nullptr), Group ? Group->SpawnCount : 0);
+			continue;
+		}
+
+		TArray<AChestSpawnPoint*> Candidates = Pair.Value;
+		const int32 TargetCount = FMath::Min(Group->SpawnCount, Candidates.Num());
+		const uint32 GroupSeed = HashCombine(GetTypeHash(SpawnSeed), GetTypeHash(Group->GetFName()));
+		FRandomStream RandomStream(static_cast<int32>(GroupSeed & 0x7fffffff));
+
+		for (int32 SpawnIndex = 0; SpawnIndex < TargetCount; ++SpawnIndex)
+		{
+			AChestSpawnPoint* SelectedPoint = PickWeightedChestPoint(Candidates, RandomStream);
+			if (!SelectedPoint)
+			{
+				break;
+			}
+
+			Candidates.RemoveSingleSwap(SelectedPoint);
+			const int32 ChestSeed = RandomStream.RandRange(1, MAX_int32);
+			if (IsValid(SelectedPoint->SpawnConfiguredChest(Group->ChestDefinition, ChestSeed)))
+			{
+				++SpawnedCount;
+			}
+		}
+	}
+
+	return SpawnedCount;
+}
+
+AChestSpawnPoint* AGlobalLootSpawnManager::PickWeightedChestPoint(
+	const TArray<AChestSpawnPoint*>& Candidates,
+	FRandomStream& RandomStream)
+{
+	float TotalWeight = 0.f;
+	for (const AChestSpawnPoint* Point : Candidates)
+	{
+		if (IsValid(Point) && Point->CanSpawnDataDrivenChest())
+		{
+			TotalWeight += FMath::Max(0.f, Point->GetPointWeight());
+		}
+	}
+
+	if (TotalWeight <= 0.f)
+	{
+		return nullptr;
+	}
+
+	const float Pick = RandomStream.FRandRange(0.f, TotalWeight);
+	float AccumulatedWeight = 0.f;
+	for (AChestSpawnPoint* Point : Candidates)
+	{
+		if (!IsValid(Point) || !Point->CanSpawnDataDrivenChest())
+		{
+			continue;
+		}
+
+		AccumulatedWeight += FMath::Max(0.f, Point->GetPointWeight());
+		if (Pick <= AccumulatedWeight)
+		{
+			return Point;
+		}
+	}
+
+	return nullptr;
 }
 
 TMap<ALootZoneSpawnManager*, int32> AGlobalLootSpawnManager::CalculateZoneBudgets() const

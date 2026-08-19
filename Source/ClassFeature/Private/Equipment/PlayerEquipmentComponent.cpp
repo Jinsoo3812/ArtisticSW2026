@@ -13,10 +13,12 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "GASStrengthEquipmentGameplayEffect.h"
 
 UPlayerEquipmentComponent::UPlayerEquipmentComponent()
 {
 	SetIsReplicatedByDefault(true);
+	StrengthEquipmentEffectClass = UGASStrengthEquipmentGameplayEffect::StaticClass();
 }
 
 void UPlayerEquipmentComponent::BeginPlay()
@@ -601,6 +603,7 @@ void UPlayerEquipmentComponent::StoreCurrentEquippedItem()
 
 	ABaseItem* PreviousItem = PlayerOwner->EquippedItem;
 	const bool bOwnedByItemSlot = IsItemOwnedByItemSlot(PreviousItem);
+	PreviousItem->RemoveStrengthBonusEffect();
 	RemoveEquippedItemAbility(PreviousItem);
 	PlayerOwner->EquippedItem = nullptr;
 
@@ -697,6 +700,10 @@ void UPlayerEquipmentComponent::FinalizePendingEquip()
 		}
 
 		PlayerOwner->EquippedItem = ItemToEquip;
+		if (!ItemToEquip->ApplyStrengthBonusEffect(PlayerOwner->GetAbilitySystemComponent(), StrengthEquipmentEffectClass))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("UPlayerEquipmentComponent::FinalizePendingEquip: failed to apply Strength GE for %s."), *GetNameSafe(ItemToEquip));
+		}
 		GrantEquippedItemAbility(ItemToEquip);
 		PlayerOwner->EnterCombatModeFromEquipment();
 	}

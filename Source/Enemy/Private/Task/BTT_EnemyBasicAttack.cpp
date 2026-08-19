@@ -20,13 +20,11 @@
 #include "AbilitySystemComponent.h"
 #include "GameplayAbilitySpec.h"
 #include "Abilities/GameplayAbility.h"
-#include "BaseAttributeSet.h"
 
 
 UBTT_EnemyBasicAttack::UBTT_EnemyBasicAttack()
 {
 	NodeName = TEXT("Enemy Basic Attack");
-	bNotifyTick = true;
 	bCreateNodeInstance = true;
 
 	AttackAbilityAssetTag = GameplayAbility_BasicAttack;
@@ -37,9 +35,7 @@ EBTNodeResult::Type UBTT_EnemyBasicAttack::ExecuteTask(UBehaviorTreeComponent& O
 {
 	CleanupTagDelegate();
 	bObservedAttackStart = false;
-	bRecovering = false;
-	RecoveryProgress = 0.0f;
-	BaseAttackCooldown = 0.0f;
+	ActiveAttackAbilityHandle = FGameplayAbilitySpecHandle();
 
 	ABaseAIController* AIController = Cast<ABaseAIController>(OwnerComp.GetOwner());
 	if (!AIController)
@@ -62,19 +58,11 @@ EBTNodeResult::Type UBTT_EnemyBasicAttack::ExecuteTask(UBehaviorTreeComponent& O
 
 	CachedOwnerComp = &OwnerComp;
 	CachedASC = ASC;
-	if (const UBaseWeaponComponent* WeaponComponent = Enemy->GetWeaponComponent())
-	{
-		if (const FWeaponDefinition* WeaponDefinition = WeaponComponent->GetCurrentWeaponDefinition())
-		{
-			BaseAttackCooldown = FMath::Max(0.0f, WeaponDefinition->CombatData.AttackCooldown);
-		}
-	}
-
 	// State_Attack tag를 받으면 
 	AttackTagDelegateHandle = ASC->RegisterGameplayTagEvent(AttackStateTag).AddUObject(this,
 		&UBTT_EnemyBasicAttack::OnAttackTagChanged);
 
-	if (!ActivateCurrentWeaponAbilityByAssetTag(Enemy, AttackAbilityAssetTag))
+	if (!ActivateCurrentWeaponAbilityByAssetTag(Enemy, AttackAbilityAssetTag, ActiveAttackAbilityHandle))
 	{
 		CleanupTagDelegate();
 		return EBTNodeResult::Failed;
@@ -86,35 +74,19 @@ EBTNodeResult::Type UBTT_EnemyBasicAttack::ExecuteTask(UBehaviorTreeComponent& O
 EBTNodeResult::Type UBTT_EnemyBasicAttack::AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
 	CleanupTagDelegate();
+	if (ActiveAttackAbilityHandle.IsValid())
+	{
+		if (UAbilitySystemComponent* AbilitySystem = CachedASC.Get())
+		{
+			AbilitySystem->CancelAbilityHandle(ActiveAttackAbilityHandle);
+		}
+	}
 	bObservedAttackStart = false;
-	bRecovering = false;
-	RecoveryProgress = 0.0f;
-	BaseAttackCooldown = 0.0f;
+	ActiveAttackAbilityHandle = FGameplayAbilitySpecHandle();
 	CachedOwnerComp.Reset();
 	CachedASC.Reset();
 
-	return Super::AbortTask(OwnerComp, NodeMemory);
-}
-
-void UBTT_EnemyBasicAttack::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
-{
-	Super::TickTask(OwnerComp, NodeMemory, DeltaSeconds);
-
-	if (!bRecovering || !CachedASC.IsValid())
-	{
-		return;
-	}
-
-	const float AttackSpeedMultiplier = FMath::Clamp(
-		CachedASC->GetNumericAttribute(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute()),
-		0.1f,
-		3.0f);
-	RecoveryProgress += FMath::Max(0.0f, DeltaSeconds) * AttackSpeedMultiplier;
-
-	if (RecoveryProgress >= BaseAttackCooldown)
-	{
-		FinishAttackTask(EBTNodeResult::Succeeded);
-	}
+	return EBTNodeResult::Aborted;
 }
 
 // Debug용 코드
@@ -125,8 +97,12 @@ void UBTT_EnemyBasicAttack::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* N
         *AttackStateTag.ToString());
 }*/
 
-bool UBTT_EnemyBasicAttack::ActivateCurrentWeaponAbilityByAssetTag(ABaseEnemy* Enemy, const FGameplayTag& AbilityAssetTag) const
+bool UBTT_EnemyBasicAttack::ActivateCurrentWeaponAbilityByAssetTag(
+	ABaseEnemy* Enemy,
+	const FGameplayTag& AbilityAssetTag,
+	FGameplayAbilitySpecHandle& OutAbilityHandle) const
 {
+	OutAbilityHandle = FGameplayAbilitySpecHandle();
     if (!Enemy || !AbilityAssetTag.IsValid())
     {
         return false;
@@ -172,11 +148,12 @@ bool UBTT_EnemyBasicAttack::ActivateCurrentWeaponAbilityByAssetTag(ABaseEnemy* E
             const bool bSameClass = (Spec.Ability->GetClass() == AbilityInfo.AbilityClass);
             const bool bFromCurrentWeapon = (Spec.SourceObject == CurrentWeapon);
 
-            if (bSameClass && bFromCurrentWeapon)
-            {
+			if (bSameClass && bFromCurrentWeapon)
+			{
 				const bool bActivated = ASC->TryActivateAbility(Spec.Handle);
 				if (bActivated)
 				{
+					OutAbilityHandle = Spec.Handle;
 					UE_LOG(LogTemp, Log, TEXT("Activated ability: %s from weapon: %s"), *Spec.Ability->GetName(), *CurrentWeapon->GetName());
 				}
 				return bActivated;
@@ -218,9 +195,7 @@ void UBTT_EnemyBasicAttack::FinishAttackTask(EBTNodeResult::Type Result)
 	UBehaviorTreeComponent* OwnerComp = CachedOwnerComp.Get();
 	CleanupTagDelegate();
 	bObservedAttackStart = false;
-	bRecovering = false;
-	RecoveryProgress = 0.0f;
-	BaseAttackCooldown = 0.0f;
+	ActiveAttackAbilityHandle = FGameplayAbilitySpecHandle();
 	CachedOwnerComp.Reset();
 	CachedASC.Reset();
 
@@ -247,16 +222,6 @@ void UBTT_EnemyBasicAttack::OnAttackTagChanged(const FGameplayTag CallbackTag, i
 
 	if (bObservedAttackStart && NewCount == 0)
 	{
-		CleanupTagDelegate();
-		bObservedAttackStart = false;
-
-		if (BaseAttackCooldown <= KINDA_SMALL_NUMBER)
-		{
-			FinishAttackTask(EBTNodeResult::Succeeded);
-			return;
-		}
-
-		bRecovering = true;
-		RecoveryProgress = 0.0f;
+		FinishAttackTask(EBTNodeResult::Succeeded);
 	}
 }

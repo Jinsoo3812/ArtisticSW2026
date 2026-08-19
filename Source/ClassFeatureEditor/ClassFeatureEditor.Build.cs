@@ -12,7 +12,9 @@ public class ClassFeatureEditor : ModuleRules
 			"UnrealEd",
 			"AnimationBlueprintLibrary",
 			"AnimationModifiers",
-			"ClassFeature"
+			"ClassFeature",
+			"GASCore",
+			"WaterAndShip"
 		});
 
 		PublicIncludePaths.AddRange(new string[]

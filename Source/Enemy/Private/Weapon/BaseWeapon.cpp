@@ -2,6 +2,7 @@
 
 
 #include "Weapon/BaseWeapon.h"
+#include "WeaponFeedback/WeaponFeedbackComponent.h"
 
 // Unreal Engine
 #include "AbilitySystemBlueprintLibrary.h"
@@ -16,8 +17,10 @@ ABaseWeapon::ABaseWeapon()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
-	
-	//SetReplicateMovement(true); 아직 필요하지 않음
+	bNetUseOwnerRelevancy = true;
+	SetReplicateMovement(false);
+	SetNetUpdateFrequency(10.0f);
+	SetMinNetUpdateFrequency(1.0f);
 
 	WeaponMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMesh"));
 	SetRootComponent(WeaponMesh);
@@ -30,6 +33,9 @@ ABaseWeapon::ABaseWeapon()
 
 	TraceEndPoint = CreateDefaultSubobject<USceneComponent>(TEXT("TraceEndPoint"));
 	TraceEndPoint->SetupAttachment(WeaponMesh);
+
+	WeaponFeedbackComponent = CreateDefaultSubobject<UWeaponFeedbackComponent>(TEXT("WeaponFeedbackComponent"));
+	WeaponFeedbackComponent->SetTrailEndpointComponents(TraceStartPoint, TraceEndPoint);
 	
 	TraceObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECC_Pawn));
 }

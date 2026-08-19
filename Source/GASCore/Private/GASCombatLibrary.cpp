@@ -3,8 +3,59 @@
 #include "GASCombatLibrary.h"
 
 #include "AbilitySystemComponent.h"
+#include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "GameplayEffect.h"
+
+float UGASCombatLibrary::CalculateStrengthDamage(float Strength, float AttackCoefficient, float ChargeMultiplier)
+{
+	return FMath::Max(1.0f,
+		FMath::Max(0.0f, Strength)
+		* FMath::Max(0.0f, AttackCoefficient)
+		* FMath::Max(0.0f, ChargeMultiplier));
+}
+
+FGameplayEffectSpecHandle UGASCombatLibrary::MakeStrengthDamageEffectSpec(const FStrengthDamageRequest& Request)
+{
+	if (!Request.SourceASC)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("MakeStrengthDamageEffectSpec: SourceASC is missing."));
+		return FGameplayEffectSpecHandle();
+	}
+
+	if (!Request.DamageEffectClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("MakeStrengthDamageEffectSpec: DamageEffectClass is missing."));
+		return FGameplayEffectSpecHandle();
+	}
+
+	const float Strength = Request.SourceASC->GetNumericAttribute(UBaseAttributeSet::GetStrengthAttribute());
+	FGameplayEffectSpecHandle SpecHandle = MakeDamageEffectSpec(
+		Request.SourceASC,
+		Request.DamageEffectClass,
+		CalculateStrengthDamage(Strength, Request.AttackCoefficient, Request.ChargeMultiplier),
+		Request.InstigatorActor,
+		Request.EffectCauser,
+		Request.EffectLevel,
+		Request.bAddHitResult,
+		Request.HitResult);
+
+	if (!SpecHandle.IsValid() || !SpecHandle.Data.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("MakeStrengthDamageEffectSpec: Damage spec is invalid."));
+	}
+	else
+	{
+		// Execution-based damage GEs consume these inputs. Data.Damage remains
+		// populated by MakeDamageEffectSpec for legacy modifier-based GEs.
+		SpecHandle.Data->SetSetByCallerMagnitude(
+			Data_AttackCoefficient, FMath::Max(0.0f, Request.AttackCoefficient));
+		SpecHandle.Data->SetSetByCallerMagnitude(
+			Data_ChargeMultiplier, FMath::Max(0.0f, Request.ChargeMultiplier));
+	}
+
+	return SpecHandle;
+}
 
 FGameplayEffectSpecHandle UGASCombatLibrary::MakeDamageEffectSpec(
 	UAbilitySystemComponent* SourceASC,

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "GameplayTagContainer.h"
 #include "PlayerHUDWidget.generated.h"
 
 /**
@@ -23,6 +24,12 @@ class UBowCrosshairWidget;
 class UBowComponent;
 class AStorageChest;
 class UStorageWindowWidget;
+class UPlayerSkillComponent;
+class USkillQuickSlotWidget;
+class APlayerController;
+class APawn;
+class ACannon;
+class AShip;
 
 UCLASS()
 class CLASSFEATURE_API UPlayerHUDWidget : public UUserWidget
@@ -81,6 +88,17 @@ protected:
 
 	UPROPERTY()
 	TArray<TObjectPtr<UQuickSlotEntryWidget>> QuickSlotEntries;
+
+	/** Designer-placed USkillQuickSlotWidget children are discovered automatically. */
+	UPROPERTY()
+	TArray<TObjectPtr<USkillQuickSlotWidget>> SkillQuickSlotEntries;
+
+	UPROPERTY()
+	TObjectPtr<UPlayerSkillComponent> BoundSkillComponent;
+
+	TWeakObjectPtr<APlayerController> BoundPossessionController;
+	TWeakObjectPtr<ACannon> BoundSkillStateCannon;
+	TWeakObjectPtr<AShip> BoundSkillStateShip;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCanvasPanel> RootCanvasPanel;
@@ -146,6 +164,12 @@ protected:
 	float GetCrosshairResponsiveScale(const FVector2D& LocalSize) const;
 
 	void RefreshQuickSlots();
+	void RefreshSkillQuickSlots();
+	void BindSkillComponent(UPlayerSkillComponent* SkillComponent);
+	void UnbindSkillComponent();
+	void BindSkillStateSource(APawn* ControlledPawn);
+	void UnbindSkillStateSource();
+	void RefreshEquippedSkillBorders();
 
 	void HandleInventoryChanged();
 	void HandleItemSlotsChanged();
@@ -162,4 +186,12 @@ protected:
 
 	UFUNCTION()
 	void HandleBowDrawAlphaChanged(float DrawAlpha);
+
+	UFUNCTION()
+	void HandleSkillChanged(FGameplayTag SkillTag);
+
+	UFUNCTION()
+	void HandlePossessedPawnChanged(APawn* OldPawn, APawn* NewPawn);
+
+	void HandleSkillActiveStateChanged(bool bIsActive);
 };

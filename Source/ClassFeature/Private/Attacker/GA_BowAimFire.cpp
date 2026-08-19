@@ -13,6 +13,8 @@
 #include "Item/Components/BowComponent.h"
 #include "Item/Projectiles/ArrowProjectile.h"
 #include "Item/Weapons/BowItem.h"
+#include "GASCombatLibrary.h"
+#include "GASAttributeDamageGameplayEffect.h"
 
 UGA_BowAimFire::UGA_BowAimFire()
 {
@@ -473,7 +475,25 @@ void UGA_BowAimFire::FireArrow(const FGameplayEventData& Payload)
 	{
 		const float DrawAlpha = CachedBowComponent->GetDrawAlpha();
 		const float ChargeDamageMultiplier = FMath::Lerp(MinChargeDamageMultiplier, MaxChargeDamageMultiplier, DrawAlpha);
-		Arrow->InitializeDamage(ASC, Player, ChargeDamageMultiplier);
+
+		TSubclassOf<UGameplayEffect> DamageEffectClass = Arrow->GetDirectDamageEffectClass();
+		if (!DamageEffectClass)
+		{
+			DamageEffectClass = UGASAttributeDamageGameplayEffect::StaticClass();
+		}
+
+		FStrengthDamageRequest DamageRequest;
+		DamageRequest.SourceASC = ASC;
+		DamageRequest.DamageEffectClass = DamageEffectClass;
+		DamageRequest.AttackCoefficient = Arrow->GetAttackCoefficient();
+		DamageRequest.ChargeMultiplier = ChargeDamageMultiplier;
+		DamageRequest.InstigatorActor = Player;
+		DamageRequest.EffectCauser = Arrow;
+		DamageRequest.EffectLevel = Arrow->GetDirectDamageEffectLevel();
+		Arrow->InitializeStrengthDamage(
+			ASC,
+			Player,
+			UGASCombatLibrary::MakeStrengthDamageEffectSpec(DamageRequest));
 	}
 
 	Arrow->SetOwner(Player);

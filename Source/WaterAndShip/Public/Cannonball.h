@@ -69,8 +69,14 @@ protected:
 	void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 
 	virtual void HandleShipHit(AShip* HitShip);
+	virtual void HandleWaterOverlap(
+		AActor* WaterActor,
+		UPrimitiveComponent* WaterComponent,
+		bool bFromSweep,
+		const FHitResult& SweepResult);
 	AShip* GetLaunchingShip() const { return LaunchingShip; }
-	void TriggerWaterRipple(const FVector& HitLocation);
+	virtual void TriggerWaterRipple(const FVector& HitLocation);
+	void MarkWaterHitHandledWithoutDeactivation();
 	void DeactivateProjectile();
 
 private:
