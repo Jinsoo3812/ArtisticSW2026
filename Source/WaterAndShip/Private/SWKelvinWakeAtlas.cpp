@@ -14,10 +14,10 @@ namespace
 		* FSWKelvinWakeAtlas::ResolutionV * ChannelsPerTexel * sizeof(uint16);
 
 	const TCHAR* ProfileFileNames[FSWKelvinWakeAtlas::ProfileCount] = {
-		TEXT("New/Water/Realistic_Water/Kelvin/kelvin_wake_golden_fr030_fp16.bin"),
-		TEXT("New/Water/Realistic_Water/Kelvin/kelvin_wake_golden_fr050_fp16.bin"),
-		TEXT("New/Water/Realistic_Water/Kelvin/kelvin_wake_golden_fr070_fp16.bin"),
-		TEXT("New/Water/Realistic_Water/Kelvin/kelvin_wake_golden_fr100_fp16.bin")
+		TEXT("Blueprints/Ship/Data/Kelvin/kelvin_wake_golden_fr030_fp16.bin"),
+		TEXT("Blueprints/Ship/Data/Kelvin/kelvin_wake_golden_fr050_fp16.bin"),
+		TEXT("Blueprints/Ship/Data/Kelvin/kelvin_wake_golden_fr070_fp16.bin"),
+		TEXT("Blueprints/Ship/Data/Kelvin/kelvin_wake_golden_fr100_fp16.bin")
 	};
 }
 
