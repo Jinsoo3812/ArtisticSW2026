@@ -6,6 +6,7 @@
 #include "Physics/NetworkPhysicsComponent.h"
 #include "GerstnerWaterWaves.h"
 #include "Water/SWRippleTypes.h"
+#include "SWShipWakeTypes.h"
 #include "Ship.h"
 
 struct FAsyncInputShip : public Chaos::FSimCallbackInput
@@ -16,6 +17,9 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	bool bHasLocalController = false;
 	/** Server-authored gameplay force (vortex, knockback, etc.) may affect AI ships too. */
 	bool bApplyAuthoritativeExternalAcceleration = false;
+	/** Only authority writes the game-thread buoyancy state into Network Physics history. */
+	bool bApplyAuthoritativeBuoyancyState = false;
+	bool bBuoyancyEnabled = true;
 	bool bQueryDiagnostics = false;
 
 	TArray<FVector> PontoonOffsets;
@@ -23,6 +27,7 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	TArray<float> PontoonForceScales;
 	TArray<FGerstnerWave> GerstnerWaves;
 	TArray<FSWRippleEvent> RippleEvents;
+	TArray<FSWShipWakeEvent> ShipWakeEvents;
 
 	float GravityZ = -980.f;
 	float LateralDrag = 0.5f;
@@ -52,12 +57,15 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 		ExternalAcceleration = FVector::ZeroVector;
 		bHasLocalController = false;
 		bApplyAuthoritativeExternalAcceleration = false;
+		bApplyAuthoritativeBuoyancyState = false;
+		bBuoyancyEnabled = true;
 		bQueryDiagnostics = false;
 		PontoonOffsets.Empty();
 		PontoonRadii.Empty();
 		PontoonForceScales.Empty();
 		GerstnerWaves.Empty();
 		RippleEvents.Empty();
+		ShipWakeEvents.Empty();
 		ServerPhysicsTimeOrigin = -1.0;
 		ServerPhysicsStepSeconds = 0.0f;
 		NetworkPhysicsTickOffset = 0;
@@ -121,6 +129,8 @@ private:
 	float MovementInput_Internal = 0.0f;
 	float SteeringInput_Internal = 0.0f;
 	FVector ExternalAcceleration_Internal = FVector::ZeroVector;
+	bool bBuoyancyEnabled_Internal = true;
+	bool bAuthoritativeBuoyancyWriter_Internal = false;
 	bool bQueryDiagnostics_Internal = false;
 
 	// 물리 스레드에서 고정 보관할 데이터들 (최초 전송 시 캐싱)
@@ -129,6 +139,7 @@ private:
 	TArray<float> CachedPontoonForceScales;
 	TArray<FGerstnerWave> CachedGerstnerWaves;
 	TArray<FSWRippleEvent> CachedRippleEvents;
+	TArray<FSWShipWakeEvent> CachedShipWakeEvents;
 	
 	float CachedGravityZ = -980.f;
 	float CachedLateralDrag = 0.5f;

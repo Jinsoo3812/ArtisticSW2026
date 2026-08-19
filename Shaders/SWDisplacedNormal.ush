@@ -1,0 +1,24 @@
+#pragma once
+
+// Computes geometric surface normal from displaced world position (Total WPO applied)
+// Uses screen-space derivatives (ddx/ddy) for mathematically accurate surface slope.
+
+#define SW_COMPUTE_DISPLACED_NORMAL(DISPLACED_WORLD_POS, NORMAL_STRENGTH, OUT_TANGENT_NORMAL) \
+{ \
+    const float3 SW_Pos = (DISPLACED_WORLD_POS); \
+    const float3 SW_dX = ddx(SW_Pos); \
+    const float3 SW_dY = ddy(SW_Pos); \
+    float3 SW_WorldNormal = cross(SW_dY, SW_dX); \
+    const float SW_LenSq = dot(SW_WorldNormal, SW_WorldNormal); \
+    if (SW_LenSq > 1.0e-8) \
+    { \
+        SW_WorldNormal *= rsqrt(SW_LenSq); \
+        if (SW_WorldNormal.z < 0.0) SW_WorldNormal = -SW_WorldNormal; \
+        /* Convert surface slope to tangent space perturbation with strength control */ \
+        OUT_TANGENT_NORMAL = normalize(float3(SW_WorldNormal.xy * (NORMAL_STRENGTH), SW_WorldNormal.z)); \
+    } \
+    else \
+    { \
+        OUT_TANGENT_NORMAL = float3(0.0, 0.0, 1.0); \
+    } \
+}

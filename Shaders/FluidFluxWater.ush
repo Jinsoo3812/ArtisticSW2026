@@ -1,0 +1,470 @@
+// FluidFluxWater.ush
+// FluidFlux Single Layer Water 수중 산란/굴절 셰이더 함수 라이브러리
+// 원저자: 秋大叔 | 번역/정리: jplee (techartnomad)
+// UE 5.7 프로젝트용 Custom HLSL 라이브러리
+//
+// 사용법: 머티리얼 Custom 노드에서
+//   #include "/Project/FluidFluxWater.ush"
+//   로 호출한 뒤, 아래 함수들을 사용.
+//
+// 주의: 이 파일은 UE 머티리얼 에디터의 Custom 노드에서 include하여 사용하는 것을 전제로 합니다.
+//       UE의 내장 함수(PI, saturate, lerp 등)가 이미 정의된 환경에서 동작합니다.
+
+#pragma once
+
+// ============================================================================
+// 상수
+// ============================================================================
+
+#ifndef FLUIDFLUX_PI
+#define FLUIDFLUX_PI 3.14159265359f
+#endif
+
+// ============================================================================
+// Block 1: 주 광원 GGX 스페큘러 BRDF
+// ============================================================================
+
+// GGX 법선 분포 함수 (Normal Distribution Function)
+float FluidFlux_D_GGX(float a2, float NoH)
+{
+    float d = (NoH * a2 - NoH) * NoH + 1.0f;
+    return a2 / (FLUIDFLUX_PI * d * d);
+}
+
+// Smith Joint 가시성 근사 (Visibility Term)
+float FluidFlux_Vis_SmithJointApprox(float a2, float NoV, float NoL)
+{
+    float a = sqrt(a2);
+    float Vis_SmithV = NoL * (NoV * (1.0f - a) + a);
+    float Vis_SmithL = NoV * (NoL * (1.0f - a) + a);
+    return 0.5f * rcp(Vis_SmithV + Vis_SmithL);
+}
+
+// Schlick 프레넬 (Fresnel)
+float3 FluidFlux_F_Schlick(float3 SpecularColor, float VoH)
+{
+    float OneMinusVoH = 1.0f - VoH;
+    float Fc = OneMinusVoH * OneMinusVoH * OneMinusVoH * OneMinusVoH * OneMinusVoH; // Pow5
+    return saturate(50.0f * SpecularColor.g) * Fc + (1.0f - Fc) * SpecularColor;
+}
+
+// 통합 GGX 스페큘러 BRDF
+// Roughness: 러프니스, SpecularColor: F0, NoH/NoV/VoH/NoL: 각도 dot products
+float3 FluidFlux_SpecularGGX(float Roughness, float3 SpecularColor,
+                              float NoH, float NoV, float VoH, float NoL)
+{
+    float a2 = Roughness * Roughness;
+    a2 = a2 * a2; // Pow4(Roughness) — UE 관례
+
+    float D   = FluidFlux_D_GGX(a2, NoH);
+    float Vis = FluidFlux_Vis_SmithJointApprox(a2, NoV, NoL);
+    float3 F  = FluidFlux_F_Schlick(SpecularColor, VoH);
+
+    return (D * Vis) * F;
+}
+
+// ============================================================================
+// Block 2: 수중 물리 기반 산란/굴절 — 전처리 파라미터
+// ============================================================================
+
+// --- Specular Translucent ---
+// 깊이+시선 방향으로 물속 투과 거리를 피팅
+float FluidFlux_GetSpecularTranslucent(float DepthDiff, float ViewDirY,
+                                        float WaterDepthUpwardBlend,
+                                        float WaterShallowBlend)
+{
+    float ViewFactor = abs(ViewDirY) * WaterDepthUpwardBlend + 1.0f;
+    return ViewFactor * DepthDiff * WaterShallowBlend;
+}
+
+// --- Specular 프레넬 (커스텀) ---
+// WaterSpecular: x=min, y=scale, z=power, w=horizon offset
+float FluidFlux_SpecularFresnel(float NoV, float4 WaterSpecular)
+{
+    float Res = 1.0f - NoV;
+    Res = pow(Res, WaterSpecular.z);
+    Res = Res * WaterSpecular.y + WaterSpecular.x;
+    return saturate(Res);
+}
+
+// --- Specular 수평선+프레넬 결합 ---
+float FluidFlux_SpecularHorizonAndFresnel(float3 CameraPos, float NoV,
+                                           float4 WaterSpecular,
+                                           float HorizonDistance,
+                                           float HorizonOffset)
+{
+    float CameraLength = length(CameraPos);
+    float CameraHorizonDis = HorizonDistance - HorizonOffset * CameraPos.y;
+
+    float HorizonAffect = (CameraHorizonDis - CameraLength) / (CameraHorizonDis * 0.9f);
+    HorizonAffect = saturate(HorizonAffect);
+    HorizonAffect = HorizonAffect * HorizonAffect;
+
+    float SpecFresnel = FluidFlux_SpecularFresnel(NoV, WaterSpecular);
+
+    return saturate(HorizonAffect + WaterSpecular.w) * SpecFresnel;
+}
+
+// --- Shoreline 마스크 ---
+// SDF 거리 + 깊이 기반 해안선 영역 정의
+float FluidFlux_GetShoreline(float SDFDistance, float DepthDiff,
+                              float CoastlineScattringDistance,
+                              float CoastlineScattringHeight)
+{
+    float ShorelineDistance = saturate(SDFDistance / CoastlineScattringDistance);
+    float ShorelineDepth   = saturate(DepthDiff / CoastlineScattringHeight);
+    return max(ShorelineDistance, ShorelineDepth);
+}
+
+// --- 산란 계수 (Scattering Coefficient) ---
+// Shoreline 기반 lerp + -log 트릭
+// SurfaceScattering0: 깊은바다 산란색 (xyz)
+// SurfaceScatteringShoreline: 해안 산란색 (xyz)
+// WaveFoam: 현재 거품 마스크 값 (0~1)
+float3 FluidFlux_ComputeScatteringCoefficient(
+    float3 SurfaceScattering0,
+    float3 SurfaceScatteringShoreline,
+    float  Shoreline,
+    float  ScatteredLuminanceStrength,
+    float  FoamScatteringScale,
+    float  ScatteringScale,
+    float  WaveFoam,
+    float  DepthDiff)
+{
+    float3 ScatteringColor = lerp(
+        SurfaceScattering0 * 0.02f * ScatteredLuminanceStrength,
+        SurfaceScatteringShoreline * 0.01f * ScatteredLuminanceStrength,
+        saturate(Shoreline * Shoreline)
+    );
+
+    float3 FoamScattering = ScatteringColor * FoamScatteringScale;
+    float3 Scattering = ScatteringColor
+        + FoamScattering * WaveFoam * min((Shoreline + 1.0f / max(DepthDiff, 0.001f)) * 5.0f, 1.0f);
+
+    Scattering *= ScatteringScale;
+
+    // -log 트릭: exp 감쇠 후에도 지정 색이 보존되도록 역변환
+    Scattering = max(Scattering, 1e-5f); // log 안전 보장
+    Scattering = -log(Scattering);
+
+    return Scattering;
+}
+
+// --- 흡수 계수 (Absorption Coefficient) ---
+float3 FluidFlux_ComputeAbsorptionCoefficient(
+    float4 SurfaceAbsorption0,         // 깊은바다 (xyz=색, w=강도)
+    float4 SurfaceAbsorptionShoreline, // 해안 (xyz=색, w=강도)
+    float  Shoreline,
+    float  AbsorptionLuminanceStrength)
+{
+    float3 DeepAbsorption = 10.0f * AbsorptionLuminanceStrength
+        / max(SurfaceAbsorption0.xyz * SurfaceAbsorption0.w, 1e-5f);
+    float3 ShoreAbsorption = 10.0f * AbsorptionLuminanceStrength
+        / max(SurfaceAbsorptionShoreline.xyz * SurfaceAbsorptionShoreline.w, 1e-5f);
+
+    return lerp(DeepAbsorption, ShoreAbsorption, Shoreline);
+}
+
+// --- PhaseG ---
+float FluidFlux_ComputePhaseG(float MainLightDirY,
+                               float PhaseGDeepSunLow,
+                               float PhaseGDeepSunHigh)
+{
+    float PhaseG = lerp(PhaseGDeepSunLow, PhaseGDeepSunHigh, saturate(MainLightDirY));
+    return clamp(PhaseG, -1.0f, 1.0f);
+}
+
+// --- Water Behind (수중 색조) ---
+float3 FluidFlux_ComputeWaterBehind(float3 WaterBehindColor, float DepthDistance)
+{
+    return lerp(float3(1, 1, 1), max(float3(0, 0, 0), WaterBehindColor),
+                saturate(DepthDistance * 0.02f));
+}
+
+// ============================================================================
+// Block 2: Schlick Phase 함수
+// ============================================================================
+
+float FluidFlux_SchlickPhaseFromK(float K, float CosTheta)
+{
+    float SchlickPhaseFactor = 1.0f + K * CosTheta;
+    float PhaseValue = (1.0f - K * K)
+        / (4.0f * FLUIDFLUX_PI * SchlickPhaseFactor * SchlickPhaseFactor);
+    return PhaseValue;
+}
+
+float FluidFlux_SchlickPhase(float G, float CosTheta)
+{
+    float K = 1.55f * G - 0.55f * G * G * G;
+    return FluidFlux_SchlickPhaseFromK(K, CosTheta);
+}
+
+// Isotropic Phase (환경광용)
+float FluidFlux_IsotropicPhase()
+{
+    return 1.0f / (4.0f * FLUIDFLUX_PI);
+}
+
+// ============================================================================
+// Block 2: 수중 굴절 UV 왜곡
+// ============================================================================
+
+// 시차 기반 UV 왜곡 계산
+// ViewNormal: TransformWorldToView(normalWS) 결과
+// ViewVertexNormal: TransformWorldToView(vertexNormal) 결과
+// Refraction: 굴절률 (물 = ~1.33)
+float2 FluidFlux_GetViewportUVDistortion(float3 ViewNormal, float3 ViewVertexNormal,
+                                          float Refraction)
+{
+    float2 Distortion = (ViewVertexNormal.xz - ViewNormal.xz) * (Refraction - 1.0f);
+    return Distortion;
+}
+
+// 수면 위 오염 제거 판정
+// SceneDepth4: GATHER_TEXTURE2D로 가져온 주변 4 텍셀의 LinearEyeDepth
+// ViewDepth: 현재 수면 픽셀의 view depth
+// 반환: true이면 왜곡 취소 필요
+bool FluidFlux_ShouldCancelDistortion(float4 SceneDepth4, float ViewDepth)
+{
+    return any(SceneDepth4 < ViewDepth);
+}
+
+// ============================================================================
+// Block 2: 수중 3개 광원 강도 + 산란/흡수 감쇠 통합
+// ============================================================================
+
+// 수중 체적 라이팅 통합 계산
+// 이 함수는 3개 광원(태양광, 환경광, 수중 SceneColor)의 감쇠를 모두 처리하고
+// 최종 수중 색상을 반환한다.
+//
+// 입력:
+//   Scattering         : 산란 계수 (-log 적용 완료)
+//   AbsorptionColor    : 흡수 계수
+//   DepthDistance       : view depth 차이 (수면 ~ 수중 물체)
+//   VolumeDepthStrength : 통합 감쇠 깊이 강도 파라미터
+//   SunScattLuminance   : 태양광 수중 강도 (PhaseG 적용 완료)
+//   AmbScattLuminance   : 환경광 수중 강도 (IsotropicPhase 적용 완료)
+//   BehindWaterSceneLuminance: 수중 SceneColor (MeanTransmittance 적용 완료)
+//   WaterBehind         : 수중 색조 계수
+//   EnvBRDF             : Pre-integrated BRDF 값
+//   WaterVisibility     : 1 - opacity
+float3 FluidFlux_ComputeUnderwaterVolumeLighting(
+    float3 Scattering,
+    float3 AbsorptionColor,
+    float  DepthDistance,
+    float  VolumeDepthStrength,
+    float3 SunScattLuminance,
+    float3 AmbScattLuminance,
+    float3 BehindWaterSceneLuminance,
+    float3 WaterBehind,
+    float3 EnvBRDF,
+    float  WaterVisibility)
+{
+    // 감쇠 계수
+    float3 ExtinctionCoeff = Scattering + AbsorptionColor;
+
+    // Beer-Lambert 감쇠
+    float3 OpticalDepth  = ExtinctionCoeff * DepthDistance / max(VolumeDepthStrength, 0.001f);
+    float3 Transmittance = exp(-OpticalDepth);
+
+    // 태양광 + 환경광 산란 에너지
+    float3 IncomingLuminance = AmbScattLuminance + SunScattLuminance;
+    float3 SafeScatteringAmount = saturate(
+        Scattering * (1.0f - Transmittance) / max(ExtinctionCoeff, 1e-5f)
+    );
+    float3 ScatteredLuminance = IncomingLuminance * SafeScatteringAmount;
+    ScatteredLuminance *= (1.0f - EnvBRDF); // 반사 에너지 분배
+
+    // 수중 SceneColor 감쇠
+    BehindWaterSceneLuminance = Transmittance * BehindWaterSceneLuminance * WaterBehind;
+
+    // 최종 합산
+    return WaterVisibility * (ScatteredLuminance + BehindWaterSceneLuminance);
+}
+
+// ============================================================================
+// Block 2: 수중 SceneColor 광원 — 깊이 감쇠 계산
+// ============================================================================
+
+// 수면에서 수중 바닥까지의 거리 기반 감쇠 (MeanTransmittance)
+float3 FluidFlux_ComputeMeanTransmittanceToLightSources(
+    float  DistanceFromScenePixelToWaterTop,
+    float3 ExtinctionCoeff,
+    float  DistancePixelToWaterTopStrength)
+{
+    return exp(-DistanceFromScenePixelToWaterTop * ExtinctionCoeff
+               / max(DistancePixelToWaterTopStrength, 0.001f));
+}
+
+// ============================================================================
+// Block 3: 환경광 IBL + SSR 반사 블렌딩
+// ============================================================================
+
+// IBL + SSR 반사 합성
+// SkyLight: 환경맵 큐브 샘플링 결과
+// SSRColor: SSR 렌더 타겟 샘플링 결과
+// EnvSSRBlend: IBL ↔ SSR 블렌드 비율
+// EnvBRDF: Pre-integrated BRDF
+// DepthDistance: view depth 차이
+// EnvSSRDepthScale: 깊이 기반 반사 스케일
+float3 FluidFlux_ComputeEnvSSRColor(
+    float3 SkyLight,
+    float3 SSRColor,
+    float  EnvSSRBlend,
+    float3 EnvBRDF,
+    float  DepthDistance,
+    float  EnvSSRDepthScale)
+{
+    return lerp(SkyLight, SSRColor, EnvSSRBlend)
+        * EnvBRDF
+        * saturate(DepthDistance * EnvSSRDepthScale * 0.02f);
+}
+
+// 최종 합성 (밝기 폭발 방지용 가중치 블렌딩)
+float3 FluidFlux_FinalComposite(
+    float3 EnvSSRColor,
+    float3 WaterVolumeColor,
+    float  EnvSSRStrength,
+    float  EnvRefractionStrength)
+{
+    return EnvSSRColor * EnvSSRStrength + WaterVolumeColor * EnvRefractionStrength;
+}
+
+// ============================================================================
+// 디테일: 3-Phase Advection (디테일 노말 / 거품 공용)
+// ============================================================================
+
+// 3회 Advection UV + 가중치 계산
+// 가중치 합이 상수(2/3×3=2)가 되도록 cos로 1/3 주기 오프셋
+struct FluidFlux_AdvectResult
+{
+    float3 Weight;
+    float2 UV1;
+    float2 UV2;
+    float2 UV3;
+};
+
+FluidFlux_AdvectResult FluidFlux_AdvectUV3(
+    float2 WorldUV,
+    float  Time,
+    float  TimeSpeed,
+    float  UVScale,
+    float  OffsetStrength)
+{
+    FluidFlux_AdvectResult Result;
+
+    float3 OutOffset = Time * TimeSpeed + float3(0.0f, 1.0f, 2.0f) / 3.0f;
+    float3 FracTime  = frac(OutOffset);
+    Result.Weight = (cos(2.0f * FLUIDFLUX_PI * FracTime) * 0.5f + 0.5f) * (2.0f / 3.0f);
+
+    float2 BaseUV = WorldUV / max(UVScale, 0.001f);
+    Result.UV1 = BaseUV + OutOffset.x * OffsetStrength * float2(1.0f, 1.0f);
+    Result.UV2 = BaseUV + OutOffset.y * OffsetStrength * float2(0.5f, 1.0f);
+    Result.UV3 = BaseUV + OutOffset.z * OffsetStrength * float2(1.0f, 0.5f);
+
+    return Result;
+}
+
+// RG 2채널 노말 → Derivate 변환
+float2 FluidFlux_CalculateDerivate(float2 NormalXY_Raw,
+                                    float  NormalScale,
+                                    float  DerivateScale)
+{
+    float2 NormalXY = (NormalXY_Raw - 0.5f) * 2.0f * NormalScale;
+    float NormalZ = sqrt(max(0.0f, 1.0f - NormalXY.x * NormalXY.x - NormalXY.y * NormalXY.y));
+    float2 Derivate = NormalXY / max(NormalZ, 0.001f) / max(DerivateScale, 0.001f);
+    return Derivate;
+}
+
+// Derivate → 월드 노말 변환
+// BaseNormal: 기존 파형 노말 (월드)
+// Derivate: 디테일 derivate (2D)
+float3 FluidFlux_DerivateConvertNormal(float3 BaseNormal, float2 Derivate)
+{
+    // Derivate를 월드 탄젠트 프레임에 적용
+    // 수면의 경우 대략 tangent=(1,0,0), bitangent=(0,0,1)
+    float3 T = float3(1.0f, 0.0f, 0.0f);
+    float3 B = float3(0.0f, 0.0f, 1.0f);
+
+    float3 DetailNormal = BaseNormal + T * Derivate.x + B * Derivate.y;
+    return normalize(DetailNormal);
+}
+
+// ============================================================================
+// 디테일: 거품 (Foam) 마스크 계산
+// ============================================================================
+
+// 4채널 거품 텍스처의 B(soft)/A(mask) 채널로 FoamOpacity 계산
+float FluidFlux_ComputeFoamOpacity(
+    float  WaveFoamSoft,
+    float  WaveFoamHeight,
+    float  WaveFoamMask,  // 앞단 foam mask (Gerstner crest 등)
+    float  WaveFoamPow,
+    float  WaveFoamIntensity)
+{
+    float FoamHeightAffect = WaveFoamHeight * saturate(WaveFoamMask) * 1.6f;
+    float FoamSoftAffect   = WaveFoamSoft * saturate(WaveFoamMask);
+
+    float FoamOpacity = saturate(max(saturate(FoamHeightAffect), saturate(FoamSoftAffect)));
+    FoamOpacity = saturate(pow(max(FoamOpacity, 0.0f), WaveFoamPow) * WaveFoamIntensity);
+
+    return FoamOpacity;
+}
+
+// 해안 거품 (얕은 물 영역)
+// DepthDistance: 수면~수중 깊이 차
+float FluidFlux_ComputeShallowFoamMask(
+    float  FoamTextureAlpha,
+    float  DepthDistance,
+    float  ShallowIntensity)
+{
+    // 깊이가 얕을수록 거품이 더 강하게 보임
+    float ShallowFade = saturate(1.0f - DepthDistance * 0.01f);
+    float FoamShallow = FoamTextureAlpha * ShallowFade;
+    return saturate(FoamShallow * ShallowIntensity);
+}
+
+// 거품 색상 합성
+// FoamColor: 거품 기본 색상
+// FoamOpacity: 계산된 거품 불투명도
+// BaseColor: 기존 물 색상
+// BaseOpacity: 기존 물 불투명도
+void FluidFlux_FoamCombineTranslucent(
+    float3 FoamColor, float FoamOpacity,
+    float3 BaseColor, float BaseOpacity,
+    out float3 OutColor, out float OutOpacity)
+{
+    OutColor   = lerp(BaseColor, FoamColor, FoamOpacity);
+    OutOpacity = lerp(BaseOpacity, 1.0f, FoamOpacity);
+}
+
+// ============================================================================
+// Pre-integrated BRDF (EnvBRDF)
+// ============================================================================
+
+// UE의 EnvBRDF 근사 (LUT 없이 해석적 근사)
+// Karis 2013 근사 — LUT 텍스처 없이 사용 가능한 버전
+float3 FluidFlux_EnvBRDFApprox(float3 SpecularColor, float Roughness, float NoV)
+{
+    // Karis 2013의 해석적 근사 계수
+    float4 C0 = float4(-1.0f, -0.0275f, -0.572f, 0.022f);
+    float4 C1 = float4(1.0f, 0.0425f, 1.04f, -0.04f);
+    float4 R = Roughness * C0 + C1;
+    float A004 = min(R.x * R.x, exp2(-9.28f * NoV)) * R.x + R.y;
+    float2 AB = float2(-1.04f, 1.04f) * A004 + R.zw;
+
+    return SpecularColor * AB.x + saturate(50.0f * SpecularColor.g) * AB.y;
+}
+
+// ============================================================================
+// 유틸리티: Snell 법칙 기반 수중 굴절 방향
+// ============================================================================
+
+// 물 굴절 — viewDir에서 수중 방향 계산
+// 반환: 굴절 성공 시 true
+bool FluidFlux_WaterRefract(float3 ViewDir, float3 Normal, float RelativeIOR,
+                             out float3 RefractedDir)
+{
+    RefractedDir = refract(-ViewDir, Normal, RelativeIOR);
+    return dot(RefractedDir, RefractedDir) > 0.001f;
+}
