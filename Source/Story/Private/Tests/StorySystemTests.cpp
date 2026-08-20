@@ -91,6 +91,8 @@ bool FStoryFacadeFlowTest::RunTest(const FString& Parameters)
 		Facade->CompleteStoryNode(EStoryNode::CurrentGeneratorUnlocked));
 	TestTrue(TEXT("Boss 2 defeat succeeds from the same node"),
 		Facade->CompleteStoryNode(EStoryNode::MiddleBoss2Defeated));
+	TestTrue(TEXT("Decipher quest is accepted after Boss 2 defeat"),
+		Facade->CompleteStoryNode(EStoryNode::DecipherQuestAccepted));
 
 	TestFalse(TEXT("Suppression quest also needs the independent cipher book branch"),
 		Facade->CompleteStoryNode(EStoryNode::SuppressJapaneseForcesQuestAccepted));
@@ -98,14 +100,14 @@ bool FStoryFacadeFlowTest::RunTest(const FString& Parameters)
 		Facade->CompleteStoryNode(EStoryNode::CipherBookAcquired));
 	TestTrue(TEXT("Both arrows now allow the suppression quest"),
 		Facade->CompleteStoryNode(EStoryNode::SuppressJapaneseForcesQuestAccepted));
-	TestTrue(TEXT("Storm unlock succeeds"),
-		Facade->CompleteStoryNode(EStoryNode::StormUnlocked));
+	TestTrue(TEXT("Water Bomb unlock succeeds"),
+		Facade->CompleteStoryNode(EStoryNode::WaterBombUnlocked));
 	TestTrue(TEXT("Boss 3 defeat succeeds"),
 		Facade->CompleteStoryNode(EStoryNode::MiddleBoss3Defeated));
 	TestTrue(TEXT("Uldolmok battle quest is accepted"),
 		Facade->CompleteStoryNode(EStoryNode::UldolmokBattleQuestAccepted));
-	TestTrue(TEXT("Flamethrower unlock succeeds"),
-		Facade->CompleteStoryNode(EStoryNode::FlamethrowerUnlocked));
+	TestTrue(TEXT("Bombardment unlock succeeds"),
+		Facade->CompleteStoryNode(EStoryNode::BombardmentUnlocked));
 	TestTrue(TEXT("Final boss defeat succeeds"),
 		Facade->CompleteStoryNode(EStoryNode::FinalBossDefeated));
 	TestTrue(TEXT("Ending dialogue completes the campaign"),

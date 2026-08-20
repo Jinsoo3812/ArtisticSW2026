@@ -270,3 +270,18 @@ UE_DEFINE_GAMEPLAY_TAG(Interaction_Craft, "Interaction.Craft");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_ShipBoard, "Interaction.ShipBoard");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_CannonBoard, "Interaction.CannonBoard");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_Dialogue, "Interaction.Dialogue");
+
+/* Enemy type */
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Human_Test0, "Enemy.Type.Human.Test0");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Human_Test1, "Enemy.Type.Human.Test1");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Ship_Test0, "Enemy.Type.Ship.Test0");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Ship_Test1, "Enemy.Type.Ship.Test1");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Ship_Test2, "Enemy.Type.Ship.Test2");
+
+/* Quest Items */
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest, "Item.Quest");
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest_InvasionMap, "Item.Quest.InvasionMap");
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest_CipherBook, "Item.Quest.CipherBook");
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest_JapaneseCipher, "Item.Quest.JapaneseCipher");
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest_DecipheredCipher, "Item.Quest.DecipheredCipher");
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest_AirRaidInfo, "Item.Quest.AirRaidInfo");

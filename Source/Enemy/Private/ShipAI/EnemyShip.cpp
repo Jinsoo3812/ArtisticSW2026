@@ -1973,6 +1973,7 @@ void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotato
 		SpawnedStorage->SetOwner(nullptr);
 		SpawnedStorage->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 		SpawnedStorage->SetLifeSpan(0.0f);
+		SpawnedStorage->SetPhysicsAndBuoyancyEnabled(true);
 
 		TMap<FGameplayTag, int32> TotalCountByItem;
 		for (const FStorageItemEntry& StorageItem : StorageItems)
