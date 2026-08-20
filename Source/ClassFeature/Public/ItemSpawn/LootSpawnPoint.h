@@ -121,6 +121,12 @@ public:
 	UChestDefinition* GetGuardedChestDefinition() const { return ChestDefinition; }
 
 	UFUNCTION(BlueprintPure, Category = "Chest|Placement")
+	EChestEnvironment GetEnvironment() const { return Environment; }
+
+	UFUNCTION(BlueprintCallable, Category = "Chest|Placement")
+	void SetEnvironment(EChestEnvironment InEnvironment);
+
+	UFUNCTION(BlueprintPure, Category = "Chest|Placement")
 	bool IsPhysicsAndBuoyancyEnabled() const { return bEnablePhysicsAndBuoyancy; }
 
 	UFUNCTION(BlueprintCallable, Category = "Chest|Placement")
@@ -136,6 +142,9 @@ public:
 		AShip* InOwningShip = nullptr);
 
 protected:
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Placement")
+	EChestEnvironment Environment = EChestEnvironment::Land;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Data Driven")
 	EChestSpawnMode SpawnMode = EChestSpawnMode::Legacy;
 

@@ -20,11 +20,15 @@ AStorageChest::AStorageChest()
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.TickGroup = TG_PostPhysics;
 	bReplicates = true;
+	bAlwaysRelevant = true;
+	SetNetCullDistanceSquared(FMath::Square(500000.0f));
 	SetReplicateMovement(true);
 	SetNetUpdateFrequency(30.0f);
 	SetMinNetUpdateFrequency(10.0f);
 
 	ChestMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ChestMesh"));
+	ChestMesh->SetCollisionProfileName(TEXT("StorageChest"));
+	ChestMesh->SetGenerateOverlapEvents(false);
 	SetRootComponent(ChestMesh);
 
 	// Keep the old native component name so derived Blueprints can conform their
@@ -166,7 +170,7 @@ void AStorageChest::InitializeFromChestDefinition(UChestDefinition* InDefinition
 	ConfigureStorage(
 		FMath::Max(1, InDefinition->SlotCount),
 		FMath::Max(1, InDefinition->ColumnCount),
-		InDefinition->RollInitialItems(Seed));
+		InDefinition->RollInitialItems(Seed, this));
 	bDefinitionInitialized = true;
 
 	if (HasActorBegunPlay())
@@ -199,6 +203,12 @@ void AStorageChest::ConfigureGuarding(
 	if (OwningShip)
 	{
 		bEnablePhysicsAndBuoyancy = false;
+		if (ChestMesh)
+		{
+			ChestMesh->IgnoreActorWhenMoving(OwningShip, true);
+			ChestMesh->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+			ChestMesh->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Ignore);
+		}
 	}
 
 	// Configure immediately as well as in BeginPlay. Deferred spawns therefore

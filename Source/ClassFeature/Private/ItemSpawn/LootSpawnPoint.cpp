@@ -117,7 +117,7 @@ void ALooseLootSpawnPoint::AlignItemBottomToGround(ABaseItem* Item) const
 		GroundHit,
 		TraceStart,
 		TraceEnd,
-		ECC_Visibility,
+		ECC_Pawn,
 		QueryParams
 	);
 
@@ -201,7 +201,10 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 	}
 
 	SpawnedChest->InitializeFromChestDefinition(Definition, Seed);
-	SpawnedChest->SetPhysicsAndBuoyancyEnabled(bEnablePhysicsAndBuoyancy);
+	const bool bUseBuoyancy = bEnablePhysicsAndBuoyancy || (Environment == EChestEnvironment::Water);
+	SpawnedChest->SetPhysicsAndBuoyancyEnabled(bUseBuoyancy);
+
+	AShip* EffectiveOwningShip = OwningShip ? OwningShip.Get() : Cast<AShip>(GetAttachParentActor());
 
 	TArray<ABaseCharacter*> Guards;
 	Guards.Reserve(GuardCharacters.Num());
@@ -209,17 +212,36 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 	{
 		Guards.Add(Guard);
 	}
-	SpawnedChest->ConfigureGuarding(SpawnMode == EChestSpawnMode::Guarded, Guards, OwningShip);
+	SpawnedChest->ConfigureGuarding(SpawnMode == EChestSpawnMode::Guarded, Guards, EffectiveOwningShip);
 	SpawnedChest->FinishSpawning(GetActorTransform());
 
-	if (SpawnMode == EChestSpawnMode::Guarded && IsValid(OwningShip))
+	if (SpawnMode == EChestSpawnMode::Guarded && IsValid(EffectiveOwningShip))
 	{
-		SpawnedChest->AttachToActor(OwningShip, FAttachmentTransformRules::KeepWorldTransform);
+		SpawnedChest->AttachToActor(EffectiveOwningShip, FAttachmentTransformRules::KeepWorldTransform);
 	}
 
-	AlignChestBottomToGround(SpawnedChest);
+	if (Environment != EChestEnvironment::Water)
+	{
+		AlignChestBottomToGround(SpawnedChest);
+	}
+
 	MarkActivated(SpawnedChest);
 	return SpawnedChest;
+}
+
+void AChestSpawnPoint::SetEnvironment(EChestEnvironment InEnvironment)
+{
+	Environment = InEnvironment;
+	if (Environment == EChestEnvironment::Water)
+	{
+		bEnablePhysicsAndBuoyancy = true;
+		bAlignChestBottomToGround = false;
+	}
+	else
+	{
+		bEnablePhysicsAndBuoyancy = false;
+		bAlignChestBottomToGround = true;
+	}
 }
 
 void AChestSpawnPoint::ConfigureRandomSpawn(URandomChestGroup* InRandomGroup, float InPointWeight)
@@ -250,7 +272,7 @@ void AChestSpawnPoint::ConfigureGuardedSpawn(
 
 void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
 {
-	if (!bAlignChestBottomToGround || !IsValid(Chest))
+	if (!bAlignChestBottomToGround || !IsValid(Chest) || Environment == EChestEnvironment::Water)
 	{
 		return;
 	}
@@ -270,13 +292,40 @@ void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
 	QueryParams.AddIgnoredActor(Chest);
 
 	FHitResult GroundHit;
-	const bool bFoundGround = GetWorld()->LineTraceSingleByChannel(
-		GroundHit,
-		TraceStart,
-		TraceEnd,
-		ECC_Visibility,
-		QueryParams
-	);
+	bool bFoundGround = false;
+
+	// 1. 배에 배치된 경우: 배의 ShipDeckMesh(CollisionProfile == ShipDeck)를 찾아 직접 Component 라인트레이스 수행
+	AShip* TargetShip = OwningShip ? OwningShip.Get() : Cast<AShip>(GetAttachParentActor());
+	if (TargetShip)
+	{
+		TArray<UStaticMeshComponent*> StaticMeshes;
+		TargetShip->GetComponents<UStaticMeshComponent>(StaticMeshes);
+		for (UStaticMeshComponent* MeshComp : StaticMeshes)
+		{
+			if (MeshComp && MeshComp->GetCollisionProfileName() == TEXT("ShipDeck"))
+			{
+				bFoundGround = MeshComp->LineTraceComponent(
+					GroundHit,
+					TraceStart,
+					TraceEnd,
+					QueryParams
+				);
+				break;
+			}
+		}
+	}
+
+	// 2. 일반 지상/육지인 경우: ECC_Pawn 채널로 지형 검사 (지형과 갑판 모두 Pawn Block 반응)
+	if (!bFoundGround)
+	{
+		bFoundGround = GetWorld()->LineTraceSingleByChannel(
+			GroundHit,
+			TraceStart,
+			TraceEnd,
+			ECC_Pawn,
+			QueryParams
+		);
+	}
 
 	const float GroundZ = bFoundGround ? GroundHit.ImpactPoint.Z : SpawnPointLocation.Z;
 
