@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
@@ -20,6 +20,8 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		: MovementInput(0.f)
 		, SteeringInput(0.f)
 		, ExternalAcceleration(FVector::ZeroVector)
+		, bBuoyancyEnabled(true)
+		, bHasAuthoritativeBuoyancyState(false)
 		{}
 
 	void Reset()
@@ -27,6 +29,8 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		MovementInput = 0.0f;
 		SteeringInput = 0.0f;
 		ExternalAcceleration = FVector::ZeroVector;
+		bBuoyancyEnabled = true;
+		bHasAuthoritativeBuoyancyState = false;
 	}
 
 	UPROPERTY()
@@ -39,6 +43,14 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 	UPROPERTY()
 	FVector ExternalAcceleration;
 
+	/** Authoritative per-frame buoyancy state replayed during rollback. */
+	UPROPERTY()
+	bool bBuoyancyEnabled;
+
+	/** Prevents client-authored input from overwriting the server's buoyancy state. */
+	UPROPERTY()
+	bool bHasAuthoritativeBuoyancyState;
+
 	virtual void InterpolateData(const FNetworkPhysicsPayload& MinData, const FNetworkPhysicsPayload& MaxData, float LerpAlpha) override
 	{
 		const FNetInputShip& MinInput = static_cast<const FNetInputShip&>(MinData);
@@ -46,6 +58,12 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		MovementInput = FMath::Lerp(MinInput.MovementInput, MaxInput.MovementInput, LerpAlpha);
 		SteeringInput = FMath::Lerp(MinInput.SteeringInput, MaxInput.SteeringInput, LerpAlpha);
 		ExternalAcceleration = FMath::Lerp(MinInput.ExternalAcceleration, MaxInput.ExternalAcceleration, LerpAlpha);
+		bBuoyancyEnabled = LerpAlpha < 0.5f
+			? MinInput.bBuoyancyEnabled
+			: MaxInput.bBuoyancyEnabled;
+		bHasAuthoritativeBuoyancyState = LerpAlpha < 0.5f
+			? MinInput.bHasAuthoritativeBuoyancyState
+			: MaxInput.bHasAuthoritativeBuoyancyState;
 	}
 
 	virtual void MergeData(const FNetworkPhysicsPayload& FromData) override
@@ -54,6 +72,8 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		MovementInput = FromInput.MovementInput;
 		SteeringInput = FromInput.SteeringInput;
 		ExternalAcceleration = FromInput.ExternalAcceleration;
+		bBuoyancyEnabled = FromInput.bBuoyancyEnabled;
+		bHasAuthoritativeBuoyancyState = FromInput.bHasAuthoritativeBuoyancyState;
 	}
 
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
@@ -129,6 +149,16 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 			{
 				ExternalAcceleration = FVector::ZeroVector;
 			}
+		}
+
+		uint8 SerializedBuoyancyEnabled = bBuoyancyEnabled ? 1 : 0;
+		uint8 SerializedHasAuthoritativeBuoyancyState = bHasAuthoritativeBuoyancyState ? 1 : 0;
+		Ar.SerializeBits(&SerializedBuoyancyEnabled, 1);
+		Ar.SerializeBits(&SerializedHasAuthoritativeBuoyancyState, 1);
+		if (Ar.IsLoading())
+		{
+			bBuoyancyEnabled = SerializedBuoyancyEnabled != 0;
+			bHasAuthoritativeBuoyancyState = SerializedHasAuthoritativeBuoyancyState != 0;
 		}
 
 		bOutSuccess = !Ar.IsError();
@@ -658,6 +688,21 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera|Zoom", meta = (ClampMin = "0.0", Units = "cm"))
 	float MaxShipZoomArmLength = 1800.0f;
+
+	/**
+	 * Smooth only the presented camera rotation. ControlRotation still receives the
+	 * full mouse delta immediately, so gameplay aim and network input are not delayed.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Camera|Rotation Smoothing")
+	bool bEnableCameraRotationSmoothing = true;
+
+	/** Larger values follow ControlRotation faster. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Camera|Rotation Smoothing", meta = (EditCondition = "bEnableCameraRotationSmoothing", ClampMin = "0.0", UIMin = "0.0"))
+	float CameraRotationSmoothingSpeed = 35.f;
+
+	/** Maximum integration step used by SpringArm rotation-lag substepping. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Camera|Rotation Smoothing", meta = (EditCondition = "bEnableCameraRotationSmoothing", ClampMin = "0.001", UIMin = "0.001", Units = "s"))
+	float CameraRotationSmoothingMaxTimeStep = 0.008333333f;
 
 protected:
 	// ---- Input Handlers ----

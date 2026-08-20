@@ -1,0 +1,54 @@
+// GodotNormal.ush
+#pragma once
+
+float3 CalculateGodotNormal(
+        float3 WorldPosition,
+        float Time,
+        float PixelDepth,
+        float BaseTileCm,
+        float2 SamplerDirection,
+        float MotionSamplerScale,
+        float UVWarpStrength,
+        float NormalASpeedMultiplier,
+        float NormalFadeCm,
+        float MipBiasNear,
+        float MipBiasFar,
+        float NormalAWeight,
+        float NormalBWeight,
+        float NormalStrengthNear,
+        float NormalStrengthFar,
+        Texture2D WaterUVMotionTexture, SamplerState WaterUVMotionTextureSampler,
+        Texture2D NormalATexture, SamplerState NormalATextureSampler,
+        Texture2D NormalBTexture, SamplerState NormalBTextureSampler
+    )
+    {
+        // 1. 기본 UV 및 Panning
+        float2 BaseUV = WorldPosition.xy * BaseTileCm;
+        float2 TimeDir = SamplerDirection * Time;
+        float2 MotionUV = BaseUV + (TimeDir * MotionSamplerScale);
+
+        // 2. Flow Warping (언리얼 내장 텍스처 샘플 함수 사용)
+        float2 FlowSample = Texture2DSample(WaterUVMotionTexture, WaterUVMotionTextureSampler, MotionUV).rg;
+        float2 FlowVector = FlowSample * 2.0 - 1.0;
+        float2 WarpOffset = FlowVector * UVWarpStrength;
+
+        // 3. Normal A/B UV
+        float2 BaseUVPanned = BaseUV + TimeDir;
+        float2 UV_A = BaseUVPanned - WarpOffset;
+        float2 UV_B = UV_A + (TimeDir * NormalASpeedMultiplier);
+
+        // 4. Depth Fade & MipBias
+        float FadeAlpha = saturate(PixelDepth / NormalFadeCm);
+        float MipBias = lerp(MipBiasNear, MipBiasFar, FadeAlpha);
+
+        // 5. Sampling (언리얼 내장 텍스처 샘플 함수 사용 + Normal Map 언팩)
+        float3 NormalA_Sample = Texture2DSampleBias(NormalATexture, NormalATextureSampler, UV_A, MipBias).rgb * 2.0 - 1.0;
+        float3 NormalB_Sample = Texture2DSampleBias(NormalBTexture, NormalBTextureSampler, UV_B, MipBias).rgb * 2.0 - 1.0;
+
+        // 6. Blend & Strength
+        float3 BlendedNormal = (NormalA_Sample * NormalAWeight) + (NormalB_Sample * NormalBWeight);
+        float NormalStrength = lerp(NormalStrengthNear, NormalStrengthFar, FadeAlpha);
+        float2 ScaledRG = BlendedNormal.rg * NormalStrength;
+
+        return normalize(float3(ScaledRG, 1.0));
+    }

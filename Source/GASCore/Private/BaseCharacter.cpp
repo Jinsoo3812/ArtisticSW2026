@@ -25,7 +25,7 @@ ABaseCharacter::ABaseCharacter(const FObjectInitializer& ObjectInitializer)
 	GetCharacterMovement()->AirControl = 0.35f;
 	GetCharacterMovement()->MaxWalkSpeed = 500.f;
 	GetCharacterMovement()->MinAnalogWalkSpeed = 20.f;
-	GetCharacterMovement()->BrakingDecelerationFalling = 1500.f;
+	GetCharacterMovement()->BrakingDecelerationFalling = 0.0f;
 	GetCharacterMovement()->BrakingDecelerationWalking = 2000.f;
 }
 

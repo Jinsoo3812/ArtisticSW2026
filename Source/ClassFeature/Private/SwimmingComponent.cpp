@@ -15,6 +15,12 @@
 #include "Net/UnrealNetwork.h"
 #include "RippleSubsystem.h"
 #include "SWRippleWaterWaves.h"
+#include "Water/SWBuoyancyMath.h"
+
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+#include "WaterBodyCustomComponent.h"
+#endif
 
 static TAutoConsoleVariable<int32> CVarShowSwimBuoyancyDebug(
 	TEXT("p.ShowSwimBuoyancyDebug"),
@@ -34,11 +40,71 @@ static TAutoConsoleVariable<int32> CVarSwimTransitionDebug(
 	ECVF_Default
 );
 
+namespace
+{
+	float ComputeSurfaceVerticalDragForce(
+		float BodyVelocityZ,
+		float WaterSurfaceVelocityZ,
+		const FSWBuoyancyForceSettings& Settings,
+		float WaterVelocityInfluence,
+		float DragScale)
+	{
+		const float RelativeVelocityZ = BodyVelocityZ
+			- WaterSurfaceVelocityZ * FMath::Clamp(WaterVelocityInfluence, 0.0f, 1.0f);
+		const float LinearDrag = Settings.BuoyancyDamp * RelativeVelocityZ;
+		const float QuadraticDrag = FMath::Sign(RelativeVelocityZ)
+			* Settings.BuoyancyDamp2
+			* FMath::Square(RelativeVelocityZ);
+		return -(LinearDrag + QuadraticDrag) * FMath::Max(DragScale, 0.0f);
+	}
+
+	float ComputeSurfacePostureBlend(float HorizontalSpeed, float MovingPoseSpeed)
+	{
+		const float NormalizedSpeed = FMath::Clamp(
+			HorizontalSpeed / FMath::Max(MovingPoseSpeed, 1.0f),
+			0.0f,
+			1.0f);
+		return FMath::SmoothStep(0.0f, 1.0f, NormalizedSpeed);
+	}
+
+	void RemoveTrackedWaterBody(
+		TArray<TObjectPtr<UWaterBodyComponent>>& OverlappingWaterBodies,
+		TWeakObjectPtr<UWaterBodyComponent>& LastActiveWaterBody,
+		UWaterBodyComponent* WaterBody,
+		bool bPreserveActiveWaterBody = false)
+	{
+		OverlappingWaterBodies.Remove(WaterBody);
+
+		if (LastActiveWaterBody.Get() != WaterBody)
+		{
+			return;
+		}
+		if (bPreserveActiveWaterBody)
+		{
+			return;
+		}
+
+		LastActiveWaterBody.Reset();
+		for (int32 Index = OverlappingWaterBodies.Num() - 1; Index >= 0; --Index)
+		{
+			if (UWaterBodyComponent* RemainingWaterBody = OverlappingWaterBodies[Index])
+			{
+				LastActiveWaterBody = RemainingWaterBody;
+				break;
+			}
+		}
+	}
+}
+
 USwimmingComponent::USwimmingComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
 	SetIsReplicatedByDefault(true);
+
+	// Preserve the player tuning that was used before surface swimming changed
+	// to a height spring. The setting type and solver are shared with ships/chests.
+	BuoyancyForceSettings.BuoyancyCoefficient = 0.3f;
 }
 
 void USwimmingComponent::SetVerticalSwimInput(float InVerticalInput)
@@ -72,6 +138,21 @@ bool USwimmingComponent::IsCustomSwimming() const
 	return CharacterMovement
 		&& CharacterMovement->MovementMode == MOVE_Custom
 		&& CharacterMovement->CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming);
+}
+
+float USwimmingComponent::GetSurfacePostureBlend() const
+{
+	return CharacterMovement
+		? ComputeSurfacePostureBlend(CharacterMovement->Velocity.Size2D(), SurfaceMovingPoseSpeed)
+		: 0.0f;
+}
+
+FVector USwimmingComponent::GetSurfacePontoonOffset() const
+{
+	return FMath::Lerp(
+		SurfaceIdlePontoonOffset,
+		SurfaceMovingPontoonOffset,
+		GetSurfacePostureBlend());
 }
 
 FSwimmingAnimationState USwimmingComponent::GetAnimationState() const
@@ -108,8 +189,10 @@ FSwimmingAnimationState USwimmingComponent::GetAnimationState() const
 void USwimmingComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(USwimmingComponent, bDiveInputHeld);
-	DOREPLIFETIME(USwimmingComponent, bAscendInputHeld);
+	// The owning client predicts these through CMC. Replication is only needed by
+	// simulated proxies for their descend/ascend animation states.
+	DOREPLIFETIME_CONDITION(USwimmingComponent, bDiveInputHeld, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(USwimmingComponent, bAscendInputHeld, COND_SkipOwner);
 }
 
 void USwimmingComponent::BeginPlay()
@@ -156,7 +239,7 @@ void USwimmingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 #endif
 	{
 		FVector ActorLocation = OwnerCharacter->GetActorLocation();
-		FVector PontoonLocation = ActorLocation + PontoonOffset;
+		FVector PontoonLocation = ActorLocation + GetSurfacePontoonOffset();
 
 		float WaterHeight = -100000.f;
 		FVector QueryLocation = PontoonLocation - FVector(0.f, 0.f, PontoonRadius + 100.f);
@@ -276,7 +359,13 @@ void USwimmingComponent::OnOverlapEnd(UPrimitiveComponent* OverlappedComp, AActo
 
 				if (!bStillOverlapping)
 				{
-					OverlappingWaterBodies.Remove(WaterBody);
+					const bool bPreserveActiveWaterBody = IsCustomSwimming()
+						&& LastActiveWaterBody.Get() == WaterBody;
+					RemoveTrackedWaterBody(
+						OverlappingWaterBodies,
+						LastActiveWaterBody,
+						WaterBody,
+						bPreserveActiveWaterBody);
 					// UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] Overlap End: WaterBody Actor=%s. Total water bodies=%d"), 
 					// 	*OtherActor->GetName(), OverlappingWaterBodies.Num());
 				}
@@ -285,10 +374,16 @@ void USwimmingComponent::OnOverlapEnd(UPrimitiveComponent* OverlappedComp, AActo
 	}
 }
 
-bool USwimmingComponent::GetWaterHeightAtLocation(const FVector& Location, float& OutWaterHeight) const
+bool USwimmingComponent::GetWaterHeightAtLocation(
+	const FVector& Location,
+	float& OutWaterHeight,
+	bool* bOutHadValidWaterBodyQuery,
+	float WaveTimeOffsetSeconds) const
 {
-	float MaxWaterHeight = -100000.f;
+	float MaxValidWaterHeight = -100000.f;
+	float MaxWetWaterHeight = -100000.f;
 	bool bInWater = false;
+	bool bHadValidWaterBodyQuery = false;
 	
 	// Query 100cm below the location to handle being slightly above the surface (bobbing/jumping)
 	FVector QueryLocation = Location - FVector(0.f, 0.f, 100.f);
@@ -305,6 +400,7 @@ bool USwimmingComponent::GetWaterHeightAtLocation(const FVector& Location, float
 		{
 			CurrentServerTime = GetWorld()->GetTimeSeconds();
 		}
+		CurrentServerTime += WaveTimeOffsetSeconds;
 	}
 
 	auto CheckWaterBody = [&](UWaterBodyComponent* WaterBody)
@@ -325,6 +421,11 @@ bool USwimmingComponent::GetWaterHeightAtLocation(const FVector& Location, float
 		if (QueryResult.HasValue())
 		{
 			const FWaterBodyQueryResult& Query = QueryResult.GetValue();
+			if (Query.IsInExclusionVolume())
+			{
+				return;
+			}
+			bHadValidWaterBodyQuery = true;
 			float FlatWaterZ = Query.GetWaterSurfaceLocation().Z;
 			float WaterZ = FlatWaterZ;
 
@@ -353,14 +454,17 @@ bool USwimmingComponent::GetWaterHeightAtLocation(const FVector& Location, float
 				}
 			}
 
-			// If query location is below the wave-calculated water surface, count as in water
+			if (WaterZ > MaxValidWaterHeight)
+			{
+				MaxValidWaterHeight = WaterZ;
+			}
+
+			// Collision overlap only discovers a candidate body. The wave-aware query
+			// decides whether this location is actually wet.
 			if (QueryLocation.Z <= WaterZ)
 			{
-				if (WaterZ > MaxWaterHeight)
-				{
-					MaxWaterHeight = WaterZ;
-					bInWater = true;
-				}
+				bInWater = true;
+				MaxWetWaterHeight = FMath::Max(MaxWetWaterHeight, WaterZ);
 			}
 		}
 	};
@@ -376,11 +480,15 @@ bool USwimmingComponent::GetWaterHeightAtLocation(const FVector& Location, float
 		CheckWaterBody(LastActiveWaterBody.Get());
 	}
 
-	OutWaterHeight = MaxWaterHeight;
+	OutWaterHeight = bInWater ? MaxWetWaterHeight : MaxValidWaterHeight;
+	if (bOutHadValidWaterBodyQuery)
+	{
+		*bOutHadValidWaterBodyQuery = bHadValidWaterBodyQuery;
+	}
 	return bInWater;
 }
 
-void USwimmingComponent::CheckWaterTransitions()
+void USwimmingComponent::CheckWaterTransitions(float DeltaSeconds)
 {
 	if (!OwnerCharacter || !CharacterMovement || !CapsuleComponent) return;
 
@@ -398,9 +506,15 @@ void USwimmingComponent::CheckWaterTransitions()
 	FVector FeetLocation = ActorLocation - FVector(0.f, 0.f, CapsuleHalfHeight);
 
 	float FeetWaterHeight = -100000.f;
-	bool bFeetInWater = GetWaterHeightAtLocation(FeetLocation, FeetWaterHeight);
+	bool bHadValidWaterBodyQuery = false;
+	bool bFeetInWater = GetWaterHeightAtLocation(
+		FeetLocation,
+		FeetWaterHeight,
+		&bHadValidWaterBodyQuery);
 
-	float FeetSubmersion = bFeetInWater ? (FeetWaterHeight - FeetLocation.Z) : -100000.f;
+	float FeetSubmersion = bHadValidWaterBodyQuery
+		? (FeetWaterHeight - FeetLocation.Z)
+		: -100000.f;
 	const float CapsuleHeight = CapsuleHalfHeight * 2.0f;
 	const float SwimEntryDepth = CapsuleHeight * SwimEntryCapsuleSubmersionRatio;
 	const float SwimExitDepth = CapsuleHeight * SwimExitCapsuleSubmersionRatio;
@@ -410,6 +524,7 @@ void USwimmingComponent::CheckWaterTransitions()
 
 	if (!bIsCustomSwimming)
 	{
+		WaterQueryFailureElapsed = 0.0f;
 		// Entry: 물 표면이 발밑에서부터 SwimEntryDepth 이상 깊어졌을 때 수영 상태 진입
 		if (bFeetInWater && FeetSubmersion >= SwimEntryDepth)
 		{
@@ -425,6 +540,21 @@ void USwimmingComponent::CheckWaterTransitions()
 	}
 	else
 	{
+		if (bHadValidWaterBodyQuery)
+		{
+			WaterQueryFailureElapsed = 0.0f;
+		}
+		else
+		{
+			WaterQueryFailureElapsed += FMath::Max(DeltaSeconds, 0.0f);
+			if (WaterQueryFailureElapsed < WaterQueryFailureGraceTime)
+			{
+				// Query failure is an unknown state, not proof that the character is dry.
+				// Keep the current movement mode while the active WaterBody lease is valid.
+				return;
+			}
+		}
+
 		// Exit: CMC 바닥 감지 시스템을 이용하여 바로 밑에 walkable floor가 있고 물 밖으로 오프셋만큼 나왔을 때
 		FFindFloorResult FloorResult;
 		CharacterMovement->FindFloor(ActorLocation, FloorResult, false);
@@ -435,16 +565,20 @@ void USwimmingComponent::CheckWaterTransitions()
 		if (bExitSubmersion && bOnWalkableFloor)
 		{
 			CharacterMovement->SetMovementMode(MOVE_Walking);
+			LastActiveWaterBody.Reset();
+			WaterQueryFailureElapsed = 0.0f;
 			
 			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
 			FString ContextStr = (GetOwner() && GetOwner()->HasAuthority()) ? TEXT("Server") : TEXT("Client");
 			UE_LOG(LogTemp, Warning, TEXT("[%s] %s <<< Exited Swimming State (Walking) (FeetSubmersion: %.2f, ExitDepth: %.2f) >>>"), *ContextStr, *OwnerName, FeetSubmersion, SwimExitDepth);
 			bIsInShallowWater = bFeetInWater && FeetSubmersion >= 0.0f;
 		}
-		else if (!bFeetInWater || FeetSubmersion < -50.0f)
+		else if (!bFeetInWater || FeetSubmersion < -100.0f)
 		{
-			// 물높이가 전혀 감지되지 않거나 발밑이 수면 위 50cm 이상 완전히 공중으로 점프/이탈한 경우에만 Falling 전환
+			// 물높이가 전혀 감지되지 않거나 발밑이 수면 위 100cm 이상 완전히 공중으로 점프/이탈한 경우에만 Falling 전환
 			CharacterMovement->SetMovementMode(MOVE_Falling);
+			LastActiveWaterBody.Reset();
+			WaterQueryFailureElapsed = 0.0f;
 			
 			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
 			FString ContextStr = (GetOwner() && GetOwner()->HasAuthority()) ? TEXT("Server") : TEXT("Client");
@@ -473,7 +607,7 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 	if (!OwnerCharacter || !CharacterMovement) return;
 
 	FVector ActorLocation = OwnerCharacter->GetActorLocation();
-	FVector PontoonLocation = ActorLocation + PontoonOffset;
+	FVector PontoonLocation = ActorLocation + GetSurfacePontoonOffset();
 
 	// Pontoon 바닥면 부근에서 물 높이 쿼리 수행
 	FVector QueryLocation = PontoonLocation - FVector(0.f, 0.f, PontoonRadius + 100.f);
@@ -485,56 +619,88 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 	const bool bHasVerticalInput = HasVerticalSwimInput();
 	const bool bUseCameraDirectedMovement = ShouldUseCameraDirectedUnderwaterMovement();
 
-	const float TargetActorZ = WaterHeight - SurfaceTargetDepth;
-	const bool bIsAtOrAboveSurface = bPontoonInWater && (ActorLocation.Z >= TargetActorZ - 5.0f);
-
-	// 수직 속도 업데이트
-	if (bHasVerticalInput && VerticalSwimInput < -KINDA_SMALL_NUMBER)
+	if (!bHasVerticalInput && DepthMode == ESwimDepthMode::Surface)
 	{
-		// Descending (Ctrl held) - dive downward
+		FSWBuoyancySolveResult SolveResult;
+		float WaterSurfaceVelocityZ = 0.0f;
+		if (bPontoonInWater)
+		{
+			// A fixed interval keeps the sampled wave velocity independent of the
+			// client/server frame rate used to evaluate the same CMC move.
+			constexpr float SampleDeltaTime = 1.0f / 60.0f;
+			float PreviousWaterHeight = WaterHeight;
+			bool bHadPreviousWaterQuery = false;
+			GetWaterHeightAtLocation(
+				QueryLocation,
+				PreviousWaterHeight,
+				&bHadPreviousWaterQuery,
+				-SampleDeltaTime);
+			if (bHadPreviousWaterQuery)
+			{
+				WaterSurfaceVelocityZ = (WaterHeight - PreviousWaterHeight) / SampleDeltaTime;
+			}
+
+			FSWBuoyancySolveInput SolveInput;
+			SolveInput.WaterHeight = WaterHeight;
+			SolveInput.PontoonCenterZ = PontoonLocation.Z;
+			SolveInput.PontoonRadius = PontoonRadius;
+			SolveInput.RelativeVelocityZ = 0.0f;
+			SolveInput.ForceScale = PontoonForceScale;
+
+			// Keep the shared spherical-volume buoyancy, but apply player surface drag
+			// separately so it can oppose motion in both vertical directions relative
+			// to the moving wave surface.
+			FSWBuoyancyForceSettings HydrostaticSettings = BuoyancyForceSettings;
+			HydrostaticSettings.BuoyancyDamp = 0.0f;
+			HydrostaticSettings.BuoyancyDamp2 = 0.0f;
+			SolveResult = FSWBuoyancyMath::SolvePontoon(SolveInput, HydrostaticSettings);
+		}
+
+		const float Mass = FMath::Max(CharacterMovement->Mass, UE_SMALL_NUMBER);
+		const float GravityAcceleration = GetWorld()
+			? GetWorld()->GetGravityZ() * CharacterMovement->GravityScale
+			: 0.0f;
+		const float VerticalDragForce = SolveResult.bIsInWater
+			? ComputeSurfaceVerticalDragForce(
+				CharacterMovement->Velocity.Z,
+				WaterSurfaceVelocityZ,
+				BuoyancyForceSettings,
+				SurfaceWaterVelocityInfluence,
+				SurfaceVerticalDragScale)
+			: 0.0f;
+		const float MaxWaterForce = FMath::Max(BuoyancyForceSettings.MaxBuoyantForce, 0.0f);
+		const float TotalWaterForceZ = FMath::Clamp(
+			SolveResult.BuoyantForceZ + VerticalDragForce,
+			-MaxWaterForce,
+			MaxWaterForce);
+		const float WaterAcceleration = TotalWaterForceZ / Mass;
+		CharacterMovement->Velocity.Z = FMath::Clamp(
+			CharacterMovement->Velocity.Z + (GravityAcceleration + WaterAcceleration) * DeltaTime,
+			-MaxVerticalSwimSpeed,
+			MaxVerticalSwimSpeed);
+	}
+	else if (bHasVerticalInput)
+	{
+		// Ctrl/Space own the full body. Do not retain a horizontal movement input
+		// while a dedicated descend/ascend animation is playing.
 		float NewVerticalVelocity = FMath::Clamp(
 			CharacterMovement->Velocity.Z + InputVerticalAcceleration * DeltaTime,
 			-MaxVerticalSwimSpeed,
 			MaxVerticalSwimSpeed);
-		CharacterMovement->Velocity.Z = NewVerticalVelocity;
-	}
-	else if (bHasVerticalInput && VerticalSwimInput > KINDA_SMALL_NUMBER)
-	{
-		// Ascending (Space held)
-		if (bIsAtOrAboveSurface || DepthMode == ESwimDepthMode::Surface)
+
+		if (VerticalSwimInput > KINDA_SMALL_NUMBER && bPontoonInWater)
 		{
-			// At the surface: maintain surface height with damped spring so character never drops below wave or flies away
-			const float SurfaceAcceleration = (TargetActorZ - ActorLocation.Z) * SurfaceHeightSpring
-				- CharacterMovement->Velocity.Z * SurfaceHeightDamping;
-			CharacterMovement->Velocity.Z = FMath::Clamp(
-				CharacterMovement->Velocity.Z + SurfaceAcceleration * DeltaTime,
-				-MaxVerticalSwimSpeed,
-				MaxVerticalSwimSpeed);
-			DepthMode = ESwimDepthMode::Surface;
-			bIsUnderwater = false;
-		}
-		else
-		{
-			// Underwater: rise towards surface
-			float NewVerticalVelocity = FMath::Clamp(
-				CharacterMovement->Velocity.Z + InputVerticalAcceleration * DeltaTime,
-				-MaxVerticalSwimSpeed,
-				MaxVerticalSwimSpeed);
-			const float RemainingRise = TargetActorZ - ActorLocation.Z;
-			const float MaxUpwardVelocityToSurface = FMath::Max(0.0f, RemainingRise / FMath::Max(DeltaTime, KINDA_SMALL_NUMBER));
+			// Space may bring the player to the surface, but it must not propel the
+			// capsule through the wave-aware surface target.
+			const float SurfaceTargetActorZ = WaterHeight - SurfaceTargetDepth;
+			const float RemainingRise = SurfaceTargetActorZ - ActorLocation.Z;
+			const float MaxUpwardVelocityToSurface = FMath::Max(
+				0.0f,
+				RemainingRise / FMath::Max(DeltaTime, KINDA_SMALL_NUMBER));
 			NewVerticalVelocity = FMath::Min(NewVerticalVelocity, MaxUpwardVelocityToSurface);
-			CharacterMovement->Velocity.Z = NewVerticalVelocity;
 		}
-	}
-	else if (DepthMode == ESwimDepthMode::Surface && bPontoonInWater)
-	{
-		// Neutral surface swimming: follow wave surface with damped spring
-		const float SurfaceAcceleration = (TargetActorZ - ActorLocation.Z) * SurfaceHeightSpring
-			- CharacterMovement->Velocity.Z * SurfaceHeightDamping;
-		CharacterMovement->Velocity.Z = FMath::Clamp(
-			CharacterMovement->Velocity.Z + SurfaceAcceleration * DeltaTime,
-			-MaxVerticalSwimSpeed,
-			MaxVerticalSwimSpeed);
+
+		CharacterMovement->Velocity.Z = NewVerticalVelocity;
 	}
 	else if (!bUseCameraDirectedMovement)
 	{
@@ -685,5 +851,102 @@ void USwimmingComponent::UpdateDepthMode()
 		DepthMode = ESwimDepthMode::Surface;
 	}
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSwimmingSurfaceVerticalDragTest,
+	"ArtisticSW.Swimming.SurfaceVerticalDrag",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSwimmingSurfaceVerticalDragTest::RunTest(const FString& Parameters)
+{
+	FSWBuoyancyForceSettings Settings;
+	Settings.BuoyancyDamp = 1000.0f;
+	Settings.BuoyancyDamp2 = 1.0f;
+
+	const float UpwardDrag = ComputeSurfaceVerticalDragForce(
+		100.0f, 0.0f, Settings, 1.0f, 1.0f);
+	const float DownwardDrag = ComputeSurfaceVerticalDragForce(
+		-100.0f, 0.0f, Settings, 1.0f, 1.0f);
+	TestEqual(TEXT("Upward motion receives downward drag"), UpwardDrag, -110000.0f);
+	TestEqual(TEXT("Downward motion receives equal upward drag"), DownwardDrag, 110000.0f);
+
+	const float WaveMatchedDrag = ComputeSurfaceVerticalDragForce(
+		60.0f, 100.0f, Settings, 0.6f, 1.0f);
+	TestTrue(TEXT("Matching the inherited wave velocity produces no drag"),
+		FMath::IsNearlyZero(WaveMatchedDrag, 0.01f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSwimmingSurfacePosturePontoonTest,
+	"ArtisticSW.Swimming.SurfacePosturePontoon",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSwimmingSurfacePosturePontoonTest::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("Idle speed selects the upright pontoon"),
+		ComputeSurfacePostureBlend(0.0f, 200.0f), 0.0f);
+	TestEqual(TEXT("Half speed is the midpoint of the smooth blend"),
+		ComputeSurfacePostureBlend(100.0f, 200.0f), 0.5f);
+	TestEqual(TEXT("Moving speed selects the prone pontoon"),
+		ComputeSurfacePostureBlend(200.0f, 200.0f), 1.0f);
+	TestEqual(TEXT("The blend clamps speeds above the moving threshold"),
+		ComputeSurfacePostureBlend(400.0f, 200.0f), 1.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSwimmingWaterBodyTrackingTest,
+	"ArtisticSW.Swimming.WaterBodyTracking",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSwimmingWaterBodyTrackingTest::RunTest(const FString& Parameters)
+{
+	UWaterBodyComponent* FirstWaterBody = NewObject<UWaterBodyCustomComponent>();
+	UWaterBodyComponent* SecondWaterBody = NewObject<UWaterBodyCustomComponent>();
+	UWaterBodyComponent* ThirdWaterBody = NewObject<UWaterBodyCustomComponent>();
+
+	TArray<TObjectPtr<UWaterBodyComponent>> LeasedWaterBodies{ FirstWaterBody };
+	TWeakObjectPtr<UWaterBodyComponent> LeasedActiveWaterBody = FirstWaterBody;
+	RemoveTrackedWaterBody(
+		LeasedWaterBodies,
+		LeasedActiveWaterBody,
+		FirstWaterBody,
+		true);
+	TestEqual(TEXT("A leased water body leaves the overlap candidate list"), LeasedWaterBodies.Num(), 0);
+	TestTrue(TEXT("Swimming preserves the active water body lease after overlap loss"),
+		LeasedActiveWaterBody.Get() == FirstWaterBody);
+	RemoveTrackedWaterBody(LeasedWaterBodies, LeasedActiveWaterBody, FirstWaterBody);
+	TestFalse(TEXT("A confirmed exit clears the active water body lease"),
+		LeasedActiveWaterBody.IsValid());
+
+	TArray<TObjectPtr<UWaterBodyComponent>> OverlappingWaterBodies{
+		FirstWaterBody,
+		SecondWaterBody,
+		ThirdWaterBody
+	};
+	TWeakObjectPtr<UWaterBodyComponent> LastActiveWaterBody = ThirdWaterBody;
+
+	RemoveTrackedWaterBody(OverlappingWaterBodies, LastActiveWaterBody, SecondWaterBody);
+	TestEqual(TEXT("Ending a non-active overlap removes only that water body"), OverlappingWaterBodies.Num(), 2);
+	TestTrue(TEXT("Ending a non-active overlap preserves the active water body"),
+		LastActiveWaterBody.Get() == ThirdWaterBody);
+
+	RemoveTrackedWaterBody(OverlappingWaterBodies, LastActiveWaterBody, ThirdWaterBody);
+	TestEqual(TEXT("Ending the active overlap removes it"), OverlappingWaterBodies.Num(), 1);
+	TestTrue(TEXT("Another overlapping water body becomes active"),
+		LastActiveWaterBody.Get() == FirstWaterBody);
+
+	RemoveTrackedWaterBody(OverlappingWaterBodies, LastActiveWaterBody, FirstWaterBody);
+	TestEqual(TEXT("Ending the final overlap empties the tracked list"), OverlappingWaterBodies.Num(), 0);
+	TestFalse(TEXT("Ending the final overlap clears the fallback water body"),
+		LastActiveWaterBody.IsValid());
+
+	return true;
+}
+
+#endif
 
 
