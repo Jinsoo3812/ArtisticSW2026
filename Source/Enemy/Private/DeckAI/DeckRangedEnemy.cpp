@@ -20,6 +20,11 @@ ADeckRangedEnemy::ADeckRangedEnemy()
 	bAlwaysRelevant = false;
 }
 
+AEnemyShip* ADeckRangedEnemy::GetDeckHostShip() const
+{
+	return Cast<AEnemyShip>(GetHostShip());
+}
+
 void ADeckRangedEnemy::BeginPlay()
 {
 	InitialCapsuleCollision = GetCapsuleComponent()

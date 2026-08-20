@@ -17,8 +17,19 @@ class CLASSFEATURE_API USWCharacterMovementComponent : public UCharacterMovement
 	GENERATED_BODY()
 
 public:
+	USWCharacterMovementComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
 	/** Routes the local command through the movement component so CMC can save and replay it. */
 	void SetSwimmingVerticalInput(float InVerticalInput);
+
+	/** Redirects authored montage root motion away from the hit source without changing its timing. */
+	void BeginHitReactionRootMotion(const FVector& WorldDirection);
+	void EndHitReactionRootMotion();
+	bool IsRedirectingHitReactionRootMotion() const { return bRedirectHitReactionRootMotion; }
+	FVector GetHitReactionRootMotionDirection() const { return HitReactionRootMotionDirection; }
+	static FTransform RedirectRootMotionTranslation(
+		const FTransform& WorldRootMotion,
+		const FVector& WorldDirection);
 
 	/** Returns the command that will be captured in the next CMC saved move. */
 	float GetSwimmingVerticalInput() const;
@@ -65,10 +76,18 @@ protected:
 	TWeakObjectPtr<AShip> LastStandingShip;
 
 private:
+	FTransform RedirectHitReactionRootMotion(
+		const FTransform& WorldRootMotion,
+		UCharacterMovementComponent* MovementComponent,
+		float DeltaSeconds) const;
+
 	bool CanUseShipBasedClientPosition(
 		const FVector& RelativeClientLocation,
 		UPrimitiveComponent* ClientMovementBase,
 		FName ClientBaseBoneName,
 		uint8 ClientMovementMode,
 		float& OutRelativeError) const;
+
+	FVector HitReactionRootMotionDirection = FVector::ZeroVector;
+	bool bRedirectHitReactionRootMotion = false;
 };

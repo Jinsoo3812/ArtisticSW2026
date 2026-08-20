@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "BaseEnemy.h"
@@ -54,8 +54,9 @@ ABaseEnemy::ABaseEnemy()
 	WeaponComponent = CreateDefaultSubobject<UBaseWeaponComponent>(TEXT("WeaponComponent"));
 	WaypointMoveComponent = CreateDefaultSubobject<UEnemyWaypointMoveComponent>(TEXT("WaypointMoveComponent"));
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
-	// Confirmed damage feedback is a character-enemy policy, not a boss-only policy.
-	HealthComponent->SetDamageGameplayCueTag(GameplayCue_Boss_Hit);
+	// All regular enemy archetypes share this confirmed-damage cue. Specialized
+	// enemies must opt into a different cue in their own constructor.
+	HealthComponent->SetDamageGameplayCueTag(GameplayCue_Enemy_Hit);
 
 	// ================= Health Bar =================
 	HealthBarWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarWidgetComponent"));

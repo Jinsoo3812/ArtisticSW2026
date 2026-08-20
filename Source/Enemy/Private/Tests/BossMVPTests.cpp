@@ -37,7 +37,9 @@
 #include "ShipAI/EnemyShip.h"
 #include "Task/BTT_ActivateBossAbility.h"
 #include "Task/BTT_BossStrafe.h"
+#include "Task/BTT_MoveToDeckWaypoint.h"
 #include "Task/BTT_SelectBossDestinationPoint.h"
+#include "Task/BTT_SummonDeckEnemy.h"
 #include "UObject/UnrealType.h"
 #include "Weapon/WeaponDataAsset.h"
 
@@ -113,6 +115,8 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 	const UBTT_SelectBossDestinationPoint* SelectTaskCDO = GetDefault<UBTT_SelectBossDestinationPoint>();
 	const UBTT_ActivateBossAbility* ActivateTaskCDO = GetDefault<UBTT_ActivateBossAbility>();
 	const UBTT_BossStrafe* StrafeTaskCDO = GetDefault<UBTT_BossStrafe>();
+	const UBTT_MoveToDeckWaypoint* MoveTaskCDO = GetDefault<UBTT_MoveToDeckWaypoint>();
+	const UBTT_SummonDeckEnemy* SummonTaskCDO = GetDefault<UBTT_SummonDeckEnemy>();
 	const UBTD_CanActivateAbilityByTag* AbilityDecoratorCDO = GetDefault<UBTD_CanActivateAbilityByTag>();
 	const AShipBossAIController* BossControllerCDO = GetDefault<AShipBossAIController>();
 
@@ -121,7 +125,9 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Boss uses its strict BT-only controller"),
 			BossCDO->AIControllerClass == AShipBossAIController::StaticClass());
 		TestTrue(TEXT("Boss is server-replicated"), BossCDO->GetIsReplicated());
-		TestEqual(TEXT("Boss does not walk point-by-point in the MVP"),
+		TestNotNull(TEXT("Boss implements the shared live-waypoint movement contract"),
+			Cast<IDeckWaypointMovementInterface>(const_cast<AShipBossEnemy*>(BossCDO)));
+		TestEqual(TEXT("Boss remains still until the live waypoint task supplies movement input"),
 			BossCDO->GetCharacterMovement()->MaxWalkSpeed, 0.0f);
 		TestTrue(TEXT("Boss confirmed damage emits the multiplayer hit feedback cue"),
 			BossCDO->GetHealthComponent()->GetDamageGameplayCueTag() == GameplayCue_Boss_Hit);
@@ -157,6 +163,23 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 			ItemBoxCDO->IsPhysicsAndBuoyancyEnabled());
 	}
 	TestNotNull(TEXT("Shared destination BT task exists"), SelectTaskCDO);
+	if (TestNotNull(TEXT("Shared live-deck movement BT task exists"), MoveTaskCDO))
+	{
+		TestEqual(TEXT("Live-deck movement starts with a 100 cm acceptance radius"),
+			MoveTaskCDO->GetAcceptanceRadius(), 100.0f);
+		TestTrue(TEXT("Live-deck movement has a finite overall timeout"),
+			MoveTaskCDO->GetMaximumMoveTime() > 0.0f);
+		TestTrue(TEXT("Live-deck movement detects stalled progress"),
+			MoveTaskCDO->GetProgressTimeout() > 0.0f
+			&& MoveTaskCDO->GetMinimumProgressDistance() > 0.0f);
+	}
+	TestNotNull(TEXT("Boss deck-enemy summon BT task exists"), SummonTaskCDO);
+	TestEqual(TEXT("Vanish keeps its serialized enum value"),
+		static_cast<uint8>(EBossDestinationPurpose::Vanish), static_cast<uint8>(0));
+	TestEqual(TEXT("Dash keeps its serialized enum value"),
+		static_cast<uint8>(EBossDestinationPurpose::Dash), static_cast<uint8>(1));
+	TestEqual(TEXT("Walk is appended after existing purposes"),
+		static_cast<uint8>(EBossDestinationPurpose::Walk), static_cast<uint8>(2));
 	TestNotNull(TEXT("Generic boss ability BT task exists"), ActivateTaskCDO);
 	if (TestNotNull(TEXT("Reusable boss strafe BT task exists"), StrafeTaskCDO))
 	{
@@ -329,6 +352,18 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 			BossMVPTests::CollectNodes(CombatSubtree->RootNode.Get(), DestinationTasks);
 			TestTrue(TEXT("Combat subtree contains BT-owned destination selection"),
 				DestinationTasks.Num() > 0);
+			TestTrue(TEXT("Combat subtree contains a linked-point Walk selector"),
+				DestinationTasks.ContainsByPredicate([](const UBTT_SelectBossDestinationPoint* Task)
+				{
+					return Task && Task->GetSelectionPurpose() == EBossDestinationPurpose::Walk;
+				}));
+
+			TArray<const UBTT_MoveToDeckWaypoint*> MoveTasks;
+			BossMVPTests::CollectNodes(CombatSubtree->RootNode.Get(), MoveTasks);
+			TestTrue(TEXT("Combat subtree moves the boss toward a live deck point"), MoveTasks.Num() > 0);
+			TArray<const UBTT_SummonDeckEnemy*> SummonTasks;
+			BossMVPTests::CollectNodes(CombatSubtree->RootNode.Get(), SummonTasks);
+			TestTrue(TEXT("Combat subtree can request one pooled deck enemy"), SummonTasks.Num() > 0);
 		}
 
 		if (const UEnemyBehaviorSet* BehaviorSet = BossBlueprintCDO->GetBehaviorSet())

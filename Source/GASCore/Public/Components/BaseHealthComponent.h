@@ -90,6 +90,10 @@ public:
 	FBaseHealthDeathEventSignature OnDeathFinished;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FEnemyDamageGameplayCueAuthorityTest;
+#endif
+
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleMaxHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleDamageChanged(const FOnAttributeChangeData& Data);
@@ -98,6 +102,9 @@ private:
 	AActor* ResolveSourceActorFromContext(const FGameplayEffectContextHandle& EffectContextHandle) const;
 	void ClearPendingDamageContext();
 	FGameplayTag ResolveImpactGameplayCueTag(const FGameplayEffectSpec& EffectSpec) const;
+	bool ShouldExecuteConfirmedDamageGameplayCues(
+		float DamageAmount,
+		FGameplayTag ImpactGameplayCueTag) const;
 	void ExecuteConfirmedDamageGameplayCues(
 		float DamageAmount,
 		AActor* SourceActor,

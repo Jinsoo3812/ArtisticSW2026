@@ -125,6 +125,14 @@ public:
 
 	void GetConnectedDeckWaypointIds(int32 WaypointId, TArray<int32>& OutWaypointIds) const;
 	int32 FindNearestDeckWaypoint(const FVector& WorldLocation, bool bRequirePatrolPoint = true) const;
+
+	/** Activates one inactive pooled enemy at a validated live deck point. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Deck AI")
+	bool ActivateDeckEnemyAtPoint(
+		int32 SpawnPointId,
+		AActor* InitialTarget,
+		ADeckRangedEnemy*& OutEnemy);
+
 	UStaticMeshComponent* GetShipDeckMesh() const { return ShipDeckMesh; }
 	bool IsUsingLegacyAICompatibility() const
 	{
@@ -361,5 +369,6 @@ protected:
 	bool bDeckDeploymentTriggered = false;
 	int32 NextDeckEnemyPoolIndex = 0;
 	int32 CurrentDeckSpawnRetryCount = 0;
+	int32 DeckEnemyActivationSerial = 0;
 	TArray<FGameplayAbilitySpecHandle> GrantedEnemyShipAbilityHandles;
 };

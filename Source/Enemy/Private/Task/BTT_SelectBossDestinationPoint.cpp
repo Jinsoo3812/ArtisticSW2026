@@ -57,6 +57,8 @@ FString UBTT_SelectBossDestinationPoint::GetStaticDescription() const
 {
 	return FString::Printf(
 		TEXT("Select moving-deck destination (%s) -> %s"),
-		SelectionPurpose == EBossDestinationPurpose::Dash ? TEXT("Dash") : TEXT("Vanish"),
+		SelectionPurpose == EBossDestinationPurpose::Dash
+			? TEXT("Dash")
+			: (SelectionPurpose == EBossDestinationPurpose::Walk ? TEXT("Walk") : TEXT("Vanish")),
 		*GetSelectedBlackboardKey().ToString());
 }

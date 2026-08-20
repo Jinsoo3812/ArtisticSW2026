@@ -10,7 +10,9 @@ UENUM(BlueprintType)
 enum class EBossDestinationPurpose : uint8
 {
 	Vanish,
-	Dash
+	Dash,
+	/** Appended to preserve the serialized values of existing Vanish and Dash BT nodes. */
+	Walk
 };
 
 /** Small, deliberately conservative rule set shared by boss mobility abilities. */
@@ -31,6 +33,9 @@ struct ENEMY_API FBossDestinationSelectionSettings
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point", meta = (ClampMin = "1.0", Units = "cm"))
 	float MaximumDashDistance = 1200.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point", meta = (ClampMin = "0.0", Units = "cm"))
+	float IdealWalkRange = 500.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point")
 	bool bCheckDestinationOccupancy = true;
@@ -71,6 +76,13 @@ public:
 		float CorridorRadius);
 
 private:
+	static bool SelectWalkDestinationPoint(
+		AEnemyShip& HostShip,
+		AActor& BossActor,
+		AActor& TargetActor,
+		const FBossDestinationSelectionSettings& Settings,
+		int32& OutPointId);
+
 	static bool IsDestinationClear(
 		const AEnemyShip& HostShip,
 		const AActor& BossActor,

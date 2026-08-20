@@ -261,13 +261,11 @@ void UBaseHealthComponent::ExecuteConfirmedDamageGameplayCues(
 	const FGameplayEffectContextHandle& EffectContextHandle,
 	FGameplayTag ImpactGameplayCueTag) const
 {
-	AActor* Owner = GetOwningActor();
-	if (!Owner || !Owner->HasAuthority() || !AbilitySystemComponent
-		|| DamageAmount <= 0.0f
-		|| (!DamageGameplayCueTag.IsValid() && !ImpactGameplayCueTag.IsValid()))
+	if (!ShouldExecuteConfirmedDamageGameplayCues(DamageAmount, ImpactGameplayCueTag))
 	{
 		return;
 	}
+	AActor* Owner = GetOwningActor();
 
 	FGameplayCueParameters Parameters(EffectContextHandle);
 	Parameters.RawMagnitude = DamageAmount;
@@ -304,6 +302,16 @@ void UBaseHealthComponent::ExecuteConfirmedDamageGameplayCues(
 	{
 		AbilitySystemComponent->ExecuteGameplayCue(ImpactGameplayCueTag, Parameters);
 	}
+}
+
+bool UBaseHealthComponent::ShouldExecuteConfirmedDamageGameplayCues(
+	float DamageAmount,
+	FGameplayTag ImpactGameplayCueTag) const
+{
+	const AActor* Owner = GetOwningActor();
+	return Owner && Owner->HasAuthority() && AbilitySystemComponent
+		&& DamageAmount > 0.0f
+		&& (DamageGameplayCueTag.IsValid() || ImpactGameplayCueTag.IsValid());
 }
 
 void UBaseHealthComponent::HandleMaxHealthChanged(const FOnAttributeChangeData& Data)

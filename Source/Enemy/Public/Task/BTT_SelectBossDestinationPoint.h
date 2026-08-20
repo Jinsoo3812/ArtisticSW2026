@@ -15,6 +15,8 @@ public:
 
 	virtual EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
 	virtual FString GetStaticDescription() const override;
+	void SetSelectionPurpose(EBossDestinationPurpose InPurpose) { SelectionPurpose = InPurpose; }
+	EBossDestinationPurpose GetSelectionPurpose() const { return SelectionPurpose; }
 
 protected:
 	/** Output integer key. World positions are intentionally not cached on a moving ship. */
