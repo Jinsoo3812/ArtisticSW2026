@@ -37,55 +37,148 @@ static bool SaveAssetPackage(UObject* Asset)
 
 static UDataTable* CreateOrGetDataTable(const FString& PackagePath, UScriptStruct* RowStruct)
 {
-	UDataTable* DataTable = LoadObject<UDataTable>(nullptr, *PackagePath);
-	if (!DataTable)
+	FString AssetName = FPackageName::GetShortName(PackagePath);
+	FString ObjectPath = PackagePath + TEXT(".") + AssetName;
+	if (UObject* LoadedObj = StaticLoadObject(UObject::StaticClass(), nullptr, *ObjectPath))
 	{
-		UPackage* Package = CreatePackage(*PackagePath);
-		Package->FullyLoad();
-		FString AssetName = FPackageName::GetShortName(PackagePath);
-		DataTable = NewObject<UDataTable>(Package, *AssetName, RF_Public | RF_Standalone);
-		DataTable->RowStruct = RowStruct;
+		if (UObjectRedirector* Redirector = Cast<UObjectRedirector>(LoadedObj))
+		{
+			LoadedObj = Redirector->DestinationObject;
+		}
+		if (UDataTable* LoadedDT = Cast<UDataTable>(LoadedObj))
+		{
+			return LoadedDT;
+		}
 	}
+
+	UPackage* Package = CreatePackage(*PackagePath);
+	Package->FullyLoad();
+	if (UObject* Existing = FindObject<UObject>(Package, *AssetName))
+	{
+		if (UDataTable* ExistingDT = Cast<UDataTable>(Existing))
+		{
+			return ExistingDT;
+		}
+		if (UObjectRedirector* Redirector = Cast<UObjectRedirector>(Existing))
+		{
+			if (UDataTable* DestDT = Cast<UDataTable>(Redirector->DestinationObject))
+			{
+				return DestDT;
+			}
+		}
+	}
+
+	UDataTable* DataTable = NewObject<UDataTable>(Package, *AssetName, RF_Public | RF_Standalone);
+	DataTable->RowStruct = RowStruct;
 	return DataTable;
 }
 
 static UChestDefinition* CreateOrGetChestDef(const FString& PackagePath)
 {
-	UChestDefinition* Def = LoadObject<UChestDefinition>(nullptr, *PackagePath);
-	if (!Def)
+	FString AssetName = FPackageName::GetShortName(PackagePath);
+	FString ObjectPath = PackagePath + TEXT(".") + AssetName;
+	if (UObject* LoadedObj = StaticLoadObject(UObject::StaticClass(), nullptr, *ObjectPath))
 	{
-		UPackage* Package = CreatePackage(*PackagePath);
-		Package->FullyLoad();
-		FString AssetName = FPackageName::GetShortName(PackagePath);
-		Def = NewObject<UChestDefinition>(Package, *AssetName, RF_Public | RF_Standalone);
+		if (UObjectRedirector* Redirector = Cast<UObjectRedirector>(LoadedObj))
+		{
+			LoadedObj = Redirector->DestinationObject;
+		}
+		if (UChestDefinition* Def = Cast<UChestDefinition>(LoadedObj))
+		{
+			return Def;
+		}
 	}
-	return Def;
+
+	UPackage* Package = CreatePackage(*PackagePath);
+	Package->FullyLoad();
+	if (UObject* Existing = FindObject<UObject>(Package, *AssetName))
+	{
+		if (UChestDefinition* ExistingDef = Cast<UChestDefinition>(Existing))
+		{
+			return ExistingDef;
+		}
+		if (UObjectRedirector* Redirector = Cast<UObjectRedirector>(Existing))
+		{
+			if (UChestDefinition* DestDef = Cast<UChestDefinition>(Redirector->DestinationObject))
+			{
+				return DestDef;
+			}
+		}
+	}
+
+	return NewObject<UChestDefinition>(Package, *AssetName, RF_Public | RF_Standalone);
 }
 
 static URandomChestGroup* CreateOrGetRandomGroup(const FString& PackagePath)
 {
-	URandomChestGroup* Group = LoadObject<URandomChestGroup>(nullptr, *PackagePath);
-	if (!Group)
+	FString AssetName = FPackageName::GetShortName(PackagePath);
+	FString ObjectPath = PackagePath + TEXT(".") + AssetName;
+	if (UObject* LoadedObj = StaticLoadObject(UObject::StaticClass(), nullptr, *ObjectPath))
 	{
-		UPackage* Package = CreatePackage(*PackagePath);
-		Package->FullyLoad();
-		FString AssetName = FPackageName::GetShortName(PackagePath);
-		Group = NewObject<URandomChestGroup>(Package, *AssetName, RF_Public | RF_Standalone);
+		if (UObjectRedirector* Redirector = Cast<UObjectRedirector>(LoadedObj))
+		{
+			LoadedObj = Redirector->DestinationObject;
+		}
+		if (URandomChestGroup* Group = Cast<URandomChestGroup>(LoadedObj))
+		{
+			return Group;
+		}
 	}
-	return Group;
+
+	UPackage* Package = CreatePackage(*PackagePath);
+	Package->FullyLoad();
+	if (UObject* Existing = FindObject<UObject>(Package, *AssetName))
+	{
+		if (URandomChestGroup* ExistingGroup = Cast<URandomChestGroup>(Existing))
+		{
+			return ExistingGroup;
+		}
+		if (UObjectRedirector* Redirector = Cast<UObjectRedirector>(Existing))
+		{
+			if (URandomChestGroup* DestGroup = Cast<URandomChestGroup>(Redirector->DestinationObject))
+			{
+				return DestGroup;
+			}
+		}
+	}
+
+	return NewObject<URandomChestGroup>(Package, *AssetName, RF_Public | RF_Standalone);
 }
 
 static UNPCDialogueData* CreateOrGetDialogueData(const FString& PackagePath)
 {
-	UNPCDialogueData* DialogueData = LoadObject<UNPCDialogueData>(nullptr, *PackagePath);
-	if (!DialogueData)
+	FString AssetName = FPackageName::GetShortName(PackagePath);
+	FString ObjectPath = PackagePath + TEXT(".") + AssetName;
+	if (UObject* LoadedObj = StaticLoadObject(UObject::StaticClass(), nullptr, *ObjectPath))
 	{
-		UPackage* Package = CreatePackage(*PackagePath);
-		Package->FullyLoad();
-		FString AssetName = FPackageName::GetShortName(PackagePath);
-		DialogueData = NewObject<UNPCDialogueData>(Package, *AssetName, RF_Public | RF_Standalone);
+		if (UObjectRedirector* Redirector = Cast<UObjectRedirector>(LoadedObj))
+		{
+			LoadedObj = Redirector->DestinationObject;
+		}
+		if (UNPCDialogueData* Data = Cast<UNPCDialogueData>(LoadedObj))
+		{
+			return Data;
+		}
 	}
-	return DialogueData;
+
+	UPackage* Package = CreatePackage(*PackagePath);
+	Package->FullyLoad();
+	if (UObject* Existing = FindObject<UObject>(Package, *AssetName))
+	{
+		if (UNPCDialogueData* ExistingData = Cast<UNPCDialogueData>(Existing))
+		{
+			return ExistingData;
+		}
+		if (UObjectRedirector* Redirector = Cast<UObjectRedirector>(Existing))
+		{
+			if (UNPCDialogueData* DestData = Cast<UNPCDialogueData>(Redirector->DestinationObject))
+			{
+				return DestData;
+			}
+		}
+	}
+
+	return NewObject<UNPCDialogueData>(Package, *AssetName, RF_Public | RF_Standalone);
 }
 
 bool FCampaignAssetsAuthoringAndValidationTest::RunTest(const FString& Parameters)

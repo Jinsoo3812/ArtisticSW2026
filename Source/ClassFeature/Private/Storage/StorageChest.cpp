@@ -115,6 +115,10 @@ void AStorageChest::BeginPlay()
 	if (HasAuthority())
 	{
 		InitializeGuardState();
+		if (StorageComponent)
+		{
+			StorageComponent->OnStorageChanged.AddUObject(this, &AStorageChest::HandleStorageChanged);
+		}
 	}
 
 	ApplyLockPresentation();
@@ -123,6 +127,12 @@ void AStorageChest::BeginPlay()
 void AStorageChest::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ClearGuardBindings();
+
+	if (StorageComponent)
+	{
+		StorageComponent->OnStorageChanged.RemoveAll(this);
+	}
+	GetWorldTimerManager().ClearTimer(EmptyDestroyTimerHandle);
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -265,7 +275,52 @@ void AStorageChest::HandleInteracted(AActor* Interactor)
 		return;
 	}
 
+	bHasBeenOpened = true;
 	PlayerController->OpenStorageFromServer(this);
+}
+
+void AStorageChest::HandleStorageChanged()
+{
+	if (!HasAuthority() || !bDestroyWhenEmpty || !bHasBeenOpened || !StorageComponent)
+	{
+		return;
+	}
+
+	if (StorageComponent->IsEmpty())
+	{
+		if (!GetWorldTimerManager().IsTimerActive(EmptyDestroyTimerHandle))
+		{
+			GetWorldTimerManager().SetTimer(
+				EmptyDestroyTimerHandle,
+				this,
+				&AStorageChest::HandleEmptyDestroyTimeout,
+				FMath::Max(0.05f, EmptyDestroyDelay),
+				false
+			);
+		}
+	}
+	else
+	{
+		GetWorldTimerManager().ClearTimer(EmptyDestroyTimerHandle);
+	}
+}
+
+void AStorageChest::HandleEmptyDestroyTimeout()
+{
+	if (!HasAuthority() || !StorageComponent || !StorageComponent->IsEmpty())
+	{
+		return;
+	}
+
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(It->Get()))
+		{
+			PlayerController->CloseStorageFromServer(this);
+		}
+	}
+
+	Destroy();
 }
 
 void AStorageChest::HandleTrackedHealthDeath(UBaseHealthComponent* HealthComponent)
@@ -412,7 +467,8 @@ void AStorageChest::InitializeGuardState()
 
 	if (ValidConfiguredGuardCount == 0)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Guarded chest %s has no valid guards and will remain locked."), *GetName());
+		// 보호하는 적이 등록되지 않은 경우, 테스트 및 기본 열림을 위해 잠금을 해제한다.
+		SetLocked(false);
 		return;
 	}
 

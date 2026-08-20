@@ -49,6 +49,7 @@ public:
 	int32 TransferSlotToInventory(int32 SlotIndex, UInventoryComponent* TargetInventory);
 
 	const TArray<FInventorySlot>& GetSlots() const { return StorageSlots; }
+	bool IsEmpty() const;
 	int32 GetStorageRows() const;
 	int32 GetStorageColumns() const { return FMath::Max(1, ColumnCount); }
 	int32 GetSlotCount() const { return FMath::Max(1, SlotCount); }

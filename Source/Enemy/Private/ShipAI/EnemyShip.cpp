@@ -7,6 +7,7 @@
 #include "BaseGameplayTags.h"
 #include "Storage/StorageChest.h"
 #include "Storage/StorageComponent.h"
+#include "ItemSpawn/ChestSpawnData.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
 #include "DrawDebugHelpers.h"
@@ -1876,7 +1877,7 @@ void AEnemyShip::InitializeEnemyDropData()
 
 	if (EnemyDropData.DropEntries.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::InitializeEnemyDropData - No matching drop row or empty drop entries. Ship=%s EnemyTypeTag=%s Table=%s"),
+		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::InitializeEnemyDropData - No matching row or empty drop entries. Ship=%s EnemyTypeTag=%s Table=%s"),
 			*GetName(),
 			*EnemyTypeTag.ToString(),
 			*GetNameSafe(EnemyDropDataTable));
@@ -1885,7 +1886,6 @@ void AEnemyShip::InitializeEnemyDropData()
 
 void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotator& DeathRotation)
 {
-	// 죽은 위치에 Storage Spawn하기
 	if (!HasAuthority() || bHasDropped)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - Drop skipped. Ship=%s HasAuthority=%d bHasDropped=%d"),
@@ -1896,6 +1896,52 @@ void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotato
 	}
 	bHasDropped = true;
 
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - World is null. Ship=%s"), *GetName());
+		return;
+	}
+
+	const FVector SpawnLocation = DeathLocation + EnemyCorpseStorageSpawnOffset;
+	const FRotator SpawnRotation(0.0f, DeathRotation.Yaw, 0.0f);
+	const FTransform SpawnTransform(SpawnRotation, SpawnLocation);
+
+	// 1. 레벨에서 지정한 상자 정의 DataAsset이 있는 경우 (데이터 기반 스폰)
+	if (IsValid(SunkChestDefinition))
+	{
+		TSubclassOf<AStorageChest> ChestClassToSpawn = SunkChestDefinition->ChestClass ? SunkChestDefinition->ChestClass : EnemyCorpseStorageClass;
+		if (!ChestClassToSpawn)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("%s: SunkChestDefinition and EnemyCorpseStorageClass are both missing valid ChestClass."), *GetName());
+			return;
+		}
+
+		AStorageChest* SpawnedStorage = World->SpawnActorDeferred<AStorageChest>(
+			ChestClassToSpawn,
+			SpawnTransform,
+			nullptr,
+			nullptr,
+			ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn
+		);
+
+		if (SpawnedStorage)
+		{
+			const int32 DropSeed = FMath::RandRange(1, MAX_int32);
+			SpawnedStorage->InitializeFromChestDefinition(SunkChestDefinition, DropSeed);
+			SpawnedStorage->SetPhysicsAndBuoyancyEnabled(true);
+			SpawnedStorage->FinishSpawning(SpawnTransform);
+			SpawnedStorage->ForceNetUpdate();
+
+			UE_LOG(LogTemp, Log, TEXT("AEnemyShip::DropAtDeathLocation - Spawned buoyant chest from SunkChestDefinition (%s). Ship=%s Location=%s"),
+				*GetNameSafe(SunkChestDefinition),
+				*GetName(),
+				*SpawnedStorage->GetActorLocation().ToString());
+			return;
+		}
+	}
+
+	// 2. 레거시/기존 구조체 기반 드랍 Fallback
 	if (!EnemyCorpseStorageClass)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("%s: EnemyCorpseStorageClass is not configured."), *GetName());
@@ -1945,16 +1991,6 @@ void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotato
 		return;
 	}
 
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - World is null. Ship=%s"), *GetName());
-		return;
-	}
-
-	const FVector SpawnLocation = DeathLocation + EnemyCorpseStorageSpawnOffset;
-	const FRotator SpawnRotation(0.0f, DeathRotation.Yaw, 0.0f);
-	const FTransform SpawnTransform(SpawnRotation, SpawnLocation);
 	FActorSpawnParameters SpawnParameters;
 	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 
@@ -1969,7 +2005,7 @@ void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotato
 		SpawnedStorage->SetReplicates(true);
 		SpawnedStorage->SetReplicateMovement(true);
 		SpawnedStorage->bAlwaysRelevant = true;
-		SpawnedStorage->SetNetCullDistanceSquared(FMath::Square(100000.0f));
+		SpawnedStorage->SetNetCullDistanceSquared(FMath::Square(500000.0f));
 		SpawnedStorage->SetOwner(nullptr);
 		SpawnedStorage->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 		SpawnedStorage->SetLifeSpan(0.0f);

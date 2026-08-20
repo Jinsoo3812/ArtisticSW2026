@@ -53,6 +53,12 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Storage Chest|Lock")
 	void SetLocked(bool bInLocked);
 
+	UFUNCTION()
+	void HandleInteracted(AActor* Interactor);
+
+	UFUNCTION()
+	void HandleEmptyDestroyTimeout();
+
 protected:
 	/**
 	 * Compatibility child for existing Blueprint assets that were authored when
@@ -140,14 +146,23 @@ protected:
 	FVector ClientMovementTargetVelocity = FVector::ZeroVector;
 	float ClientMovementTargetReceiveTime = 0.0f;
 
-	UFUNCTION()
-	void HandleInteracted(AActor* Interactor);
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Chest|Lifecycle")
+	bool bDestroyWhenEmpty = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Chest|Lifecycle", meta = (ClampMin = "0.0", Units = "s"))
+	float EmptyDestroyDelay = 1.0f;
+
+	FTimerHandle EmptyDestroyTimerHandle;
+	bool bHasBeenOpened = false;
 
 	UFUNCTION()
 	void HandleTrackedHealthDeath(UBaseHealthComponent* HealthComponent);
 
 	UFUNCTION()
 	void HandleOwningShipDestroyed(AActor* DestroyedActor);
+
+	UFUNCTION()
+	void HandleStorageChanged();
 
 	UFUNCTION()
 	void OnRep_Locked();

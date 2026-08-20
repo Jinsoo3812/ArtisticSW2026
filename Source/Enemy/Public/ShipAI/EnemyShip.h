@@ -12,6 +12,7 @@
 
 class ACannon;
 class AStorageChest;
+class UChestDefinition;
 class UBaseHealthComponent;
 class UHealthBarWidget;
 class UWidgetComponent;
@@ -273,7 +274,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Ship|Drop")
 	FGameplayTag EnemyTypeTag;
 
-	// 죽었을 때, 드랍할 Storage 클래스
+	/** 침몰 시 스폰할 상자 정의 DataAsset (설정 시 데이터 기반 드랍 테이블/퀘스트 아이템 사용) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Drop|Storage")
+	TObjectPtr<UChestDefinition> SunkChestDefinition;
+
+	// 죽었을 때, 드랍할 Storage 클래스 (SunkChestDefinition 미설정 시 Fallback)
 	UPROPERTY(EditDefaultsOnly, Category = "Ship|Drop|Storage")
 	TSubclassOf<AStorageChest> EnemyCorpseStorageClass;
 
