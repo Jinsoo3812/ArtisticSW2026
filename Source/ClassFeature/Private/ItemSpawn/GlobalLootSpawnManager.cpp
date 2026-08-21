@@ -17,9 +17,17 @@ void AGlobalLootSpawnManager::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (HasAuthority() && bInitializeOnBeginPlay)
+	if (HasAuthority())
 	{
-		InitializeLevelLoot();
+		if (bUseRandomSeed)
+		{
+			SpawnSeed = FMath::Rand();
+		}
+
+		if (bInitializeOnBeginPlay)
+		{
+			InitializeLevelLoot();
+		}
 	}
 }
 
