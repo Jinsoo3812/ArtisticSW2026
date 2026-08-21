@@ -44,6 +44,8 @@ bool FDeckEnemyMVPDefaultsTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Pooled deck enemy class exists"), EnemyCDO);
 	TestFalse(TEXT("Deck enemy does not force global relevancy"), EnemyCDO->bAlwaysRelevant);
 	TestTrue(TEXT("Deck enemy actor remains replicated while active"), EnemyCDO->GetIsReplicated());
+	TestFalse(TEXT("Deck enemy lifetime is owned by its pool after death"),
+		EnemyCDO->ShouldDestroyAfterDeathFinished());
 	TestNotNull(TEXT("Deck enemy implements the shared live-waypoint movement contract"),
 		Cast<IDeckWaypointMovementInterface>(const_cast<ADeckRangedEnemy*>(EnemyCDO)));
 	TestNotNull(TEXT("Live-goal move task exists"), MoveTaskCDO);

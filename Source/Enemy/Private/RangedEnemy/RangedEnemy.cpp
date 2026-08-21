@@ -18,6 +18,7 @@
 
 ARangedEnemy::ARangedEnemy()
 {
+	bApplyDeathRagdollImpulse = true;
 	AIControllerClass = ARangedEnemyAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	bUseControllerRotationYaw = true;

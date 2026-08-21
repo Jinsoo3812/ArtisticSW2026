@@ -79,6 +79,7 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void HandleDeath_Implementation() override;
+	virtual bool ShouldWaitForDeathAbility() const override { return true; }
 
 	UFUNCTION()
 	void OnRep_HostShip();

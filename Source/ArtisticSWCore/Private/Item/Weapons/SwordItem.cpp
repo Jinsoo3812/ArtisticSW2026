@@ -4,6 +4,7 @@
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
 #include "Components/SceneComponent.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 #include "InteractableComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "StatusEffectLibrary.h"
@@ -188,12 +189,10 @@ void ASwordItem::ApplyEffectToTarget(UAbilitySystemComponent* TargetASC, const F
 	}
 
 	FGameplayEffectSpec TargetEffectSpec(*CachedDamageEffectSpecHandle.Data.Get());
-	FGameplayEffectContextHandle EffectContext = TargetEffectSpec.GetContext();
 	AActor* SourceActor = ResolveSourceActor();
-	EffectContext.AddInstigator(SourceActor, this);
-	EffectContext.AddSourceObject(this);
-	EffectContext.AddHitResult(HitResult, true);
-	TargetEffectSpec.SetContext(EffectContext);
+	AActor* TargetActor = TargetASC->GetAvatarActor();
+	USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
+		TargetEffectSpec, SourceActor, this, TargetActor, &HitResult);
 
 	TargetASC->ApplyGameplayEffectSpecToSelf(TargetEffectSpec);
 
@@ -205,11 +204,8 @@ void ASwordItem::ApplyEffectToTarget(UAbilitySystemComponent* TargetASC, const F
 		}
 
 		FGameplayEffectSpec TargetStatusSpec(*StatusSpecHandle.Data.Get());
-		FGameplayEffectContextHandle StatusContext = TargetStatusSpec.GetContext();
-		StatusContext.AddInstigator(SourceActor, this);
-		StatusContext.AddSourceObject(this);
-		StatusContext.AddHitResult(HitResult, true);
-		TargetStatusSpec.SetContext(StatusContext);
+		USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
+			TargetStatusSpec, SourceActor, this, TargetActor, &HitResult);
 		const FGameplayEffectSpecHandle TargetStatusSpecHandle(new FGameplayEffectSpec(TargetStatusSpec));
 		UStatusEffectLibrary::ApplyDurationDamageEffectSpecToTarget(TargetASC, TargetStatusSpecHandle, FGameplayTag());
 	}
@@ -230,9 +226,9 @@ bool ASwordItem::BuildStatusEffectSpecs(UAbilitySystemComponent* SourceASC)
 			continue;
 		}
 
-		FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
-		ContextHandle.AddInstigator(ResolveSourceActor(), this);
-		ContextHandle.AddSourceObject(this);
+		FGameplayEffectContextHandle ContextHandle =
+			USWCombatEffectContextLibrary::MakeCombatEffectContext(
+				SourceASC, ResolveSourceActor(), this);
 		FGameplayEffectSpecHandle StatusSpec = SourceASC->MakeOutgoingSpec(StatusEffectClass, 1.0f, ContextHandle);
 		if (StatusSpec.IsValid() && StatusSpec.Data.IsValid())
 		{

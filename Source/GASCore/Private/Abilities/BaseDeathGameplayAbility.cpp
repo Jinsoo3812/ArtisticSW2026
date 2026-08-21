@@ -13,6 +13,7 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "TimerManager.h"
 
 UBaseDeathGameplayAbility::UBaseDeathGameplayAbility()
 {
@@ -23,6 +24,10 @@ UBaseDeathGameplayAbility::UBaseDeathGameplayAbility()
 	DeathTrigger.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
 	DeathTrigger.TriggerTag = GameplayAbility_Dead;
 	AbilityTriggers.Add(DeathTrigger);
+
+	FGameplayTagContainer DeathAbilityTags;
+	DeathAbilityTags.AddTag(GameplayAbility_Dead);
+	SetAssetTags(DeathAbilityTags);
 }
 
 void UBaseDeathGameplayAbility::ActivateAbility(
@@ -51,6 +56,19 @@ void UBaseDeathGameplayAbility::ActivateAbility(
 
 	if (PlayDeathMontage())
 	{
+		const float PlayRate = FMath::Max(DeathMontagePlayRate, KINDA_SMALL_NUMBER);
+		const float CompletionTimeout = DeathMontage
+			? (DeathMontage->GetPlayLength() / PlayRate) + DeathCompletionGracePeriod
+			: DeathCompletionFallbackTimeout;
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(
+				DeathCompletionTimerHandle,
+				this,
+				&UBaseDeathGameplayAbility::OnDeathCompletionTimeout,
+				FMath::Max(CompletionTimeout, 0.1f),
+				false);
+		}
 		return;
 	}
 
@@ -71,6 +89,11 @@ void UBaseDeathGameplayAbility::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(DeathCompletionTimerHandle);
+	}
+
 	K2_OnDeathFinished(bWasCancelled);
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
@@ -97,6 +120,15 @@ void UBaseDeathGameplayAbility::OnDeathMontageInterrupted()
 void UBaseDeathGameplayAbility::OnDeathMontageCancelled()
 {
 	FinishDeathWithCancel(true);
+}
+
+void UBaseDeathGameplayAbility::OnDeathCompletionTimeout()
+{
+	UE_LOG(LogTemp, Error,
+		TEXT("DeathGA: Completion timeout reached; forcing FinishDeath. Avatar=%s Montage=%s"),
+		*GetNameSafe(GetAvatarActorFromActorInfo()),
+		*GetNameSafe(DeathMontage));
+	FinishDeathWithCancel(false);
 }
 
 UBaseHealthComponent* UBaseDeathGameplayAbility::GetHealthComponentFromAvatar() const
@@ -200,6 +232,10 @@ void UBaseDeathGameplayAbility::FinishDeathWithCancel(bool bWasCancelled)
 	}
 
 	bDeathFinished = true;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(DeathCompletionTimerHandle);
+	}
 
 	if (!CachedHealthComponent)
 	{

@@ -1,6 +1,7 @@
 #include "Task/BTT_MoveToDeckWaypoint.h"
 
 #include "AIController.h"
+#include "BaseEnemy.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BossAI/BossDeckMovementUtils.h"
@@ -71,11 +72,13 @@ EBTNodeResult::Type UBTT_MoveToDeckWaypoint::ExecuteTask(
 {
 	IDeckWaypointMovementInterface* DeckMover = ResolveDeckMover(OwnerComp);
 	ACharacter* Character = ResolveMovingCharacter(OwnerComp);
+	ABaseEnemy* Enemy = Cast<ABaseEnemy>(Character);
 	AEnemyShip* HostShip = DeckMover ? DeckMover->GetDeckHostShip() : nullptr;
 	const UDeckWaypointComponent* Goal = HostShip && DeckMover
 		? HostShip->GetDeckWaypoint(DeckMover->GetGoalDeckPointId())
 		: nullptr;
-	if (!DeckMover || !Character || !DeckMover->CanMoveOnDeck() || !HostShip
+	if (!DeckMover || !Character || !Enemy || !Enemy->HasAuthority()
+		|| !DeckMover->CanMoveOnDeck() || !HostShip
 		|| !HostShip->GetShipDeckMesh() || !Goal)
 	{
 		StopDeckMovement(OwnerComp, Character);
@@ -89,7 +92,7 @@ EBTNodeResult::Type UBTT_MoveToDeckWaypoint::ExecuteTask(
 
 	if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
 	{
-		Movement->MaxWalkSpeed = MoveSpeed;
+		Enemy->SetBaseMovementSpeed(MoveSpeed);
 		Movement->BrakingDecelerationWalking = BrakingDeceleration;
 		Movement->SetMovementMode(MOVE_Walking);
 	}

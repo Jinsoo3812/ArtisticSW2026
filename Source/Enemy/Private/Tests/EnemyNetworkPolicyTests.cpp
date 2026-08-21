@@ -3,8 +3,12 @@
 #include "Misc/AutomationTest.h"
 
 #include "AbilitySystemComponent.h"
+#include "Abilities/BaseDeathGameplayAbility.h"
+#include "Animation/AnimNotify_DeathRagdoll.h"
+#include "Animation/AnimMontage.h"
 #include "BaseEnemy.h"
 #include "BaseGameplayTags.h"
+#include "BasePlayer.h"
 #include "BossAI/ShipBossEnemy.h"
 #include "Camera/CameraShakeBase.h"
 #include "Components/BaseHealthComponent.h"
@@ -18,6 +22,7 @@
 #include "RangedEnemy/RangedEnemyProjectile.h"
 #include "UObject/UnrealType.h"
 #include "Weapon/BaseWeapon.h"
+#include "Weapon/BaseWeaponComponent.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FEnemyNetworkPolicyDefaultsTest,
@@ -42,10 +47,62 @@ bool FEnemyNetworkPolicyDefaultsTest::RunTest(const FString& Parameters)
 			EnemyCDO->ShouldDestroyAfterDeathFinished());
 		TestEqual(TEXT("Finished corpse grace period is five seconds"),
 			EnemyCDO->GetCorpseLifetimeAfterDeathFinished(), 5.0f);
+		TestNull(TEXT("Regular enemies do not own a death GA"),
+			EnemyCDO->GetDeathAbilityClass().Get());
 
 		TestNotNull(TEXT("Enemy ASC exists"), EnemyCDO->GetAbilitySystemComponent());
 		TestEqual(TEXT("Enemy ASC uses Minimal replication"),
 			EnemyCDO->GetASCReplicationMode(), EGameplayEffectReplicationMode::Minimal);
+	}
+
+	const UClass* BossBlueprintClass = LoadObject<UClass>(nullptr,
+		TEXT("/Game/GameplayAbilitySystem/Enemy/BP_Ship_BossEnemy.BP_Ship_BossEnemy_C"));
+	const AShipBossEnemy* BossBlueprintCDO = BossBlueprintClass
+		? Cast<AShipBossEnemy>(BossBlueprintClass->GetDefaultObject())
+		: nullptr;
+	if (TestNotNull(TEXT("Boss Blueprint loads for death policy"), BossBlueprintCDO))
+	{
+		const TSubclassOf<UBaseDeathGameplayAbility> BossDeathAbility = BossBlueprintCDO->GetDeathAbilityClass();
+		TestTrue(TEXT("Boss owns the dedicated BPGA_BossDeath ability"),
+			BossDeathAbility
+			&& BossDeathAbility->IsChildOf(UBaseDeathGameplayAbility::StaticClass())
+			&& BossDeathAbility->GetPathName().Contains(TEXT("BPGA_BossDeath")));
+	}
+
+	const UClass* PlayerBlueprintClass = LoadObject<UClass>(nullptr,
+		TEXT("/Game/Blueprints/Player/BP_Player.BP_Player_C"));
+	const ABasePlayer* PlayerBlueprintCDO = PlayerBlueprintClass
+		? Cast<ABasePlayer>(PlayerBlueprintClass->GetDefaultObject())
+		: nullptr;
+	if (TestNotNull(TEXT("Player Blueprint loads for death policy"), PlayerBlueprintCDO))
+	{
+		int32 PlayerDeathAbilityCount = 0;
+		for (const TSubclassOf<UGameplayAbility>& AbilityClass : PlayerBlueprintCDO->DefaultGrantedAbilities)
+		{
+			if (AbilityClass && AbilityClass->IsChildOf(UBaseDeathGameplayAbility::StaticClass()))
+			{
+				++PlayerDeathAbilityCount;
+				TestTrue(TEXT("Player uses the dedicated BPGA_PlayerDeath ability"),
+					AbilityClass->GetPathName().Contains(TEXT("BPGA_PlayerDeath")));
+			}
+		}
+		TestEqual(TEXT("Player owns exactly one death ability"), PlayerDeathAbilityCount, 1);
+	}
+
+	const UAnimMontage* DeathMontage = LoadObject<UAnimMontage>(nullptr,
+		TEXT("/Game/Characters/Mannequins/Anims/Death/AM_Death.AM_Death"));
+	if (TestNotNull(TEXT("Shared death montage loads"), DeathMontage))
+	{
+		bool bHasRagdollNotify = false;
+		for (const FAnimNotifyEvent& NotifyEvent : DeathMontage->Notifies)
+		{
+			if (NotifyEvent.Notify && NotifyEvent.Notify->IsA<UAnimNotify_DeathRagdoll>())
+			{
+				bHasRagdollNotify = true;
+				break;
+			}
+		}
+		TestTrue(TEXT("AM_Death contains the authored ragdoll transition notify"), bHasRagdollNotify);
 	}
 
 	struct FEnemyCueExpectation
@@ -171,6 +228,16 @@ bool FEnemyNetworkPolicyDefaultsTest::RunTest(const FString& Parameters)
 			WeaponCDO->GetMinNetUpdateFrequency(), 1.0f);
 	}
 
+	const FProperty* WeaponLifecycleProperty = FindFProperty<FProperty>(
+		UBaseWeaponComponent::StaticClass(), TEXT("WeaponLifecycleState"));
+	if (TestNotNull(TEXT("Weapon lifecycle state exists"), WeaponLifecycleProperty))
+	{
+		TestTrue(TEXT("Weapon lifecycle state replicates"),
+			WeaponLifecycleProperty->HasAnyPropertyFlags(CPF_Net));
+		TestEqual(TEXT("Weapon lifecycle state has one RepNotify"),
+			WeaponLifecycleProperty->RepNotifyFunc, FName(TEXT("OnRep_WeaponLifecycleState")));
+	}
+
 	const ARangedEnemyProjectile* ProjectileCDO = GetDefault<ARangedEnemyProjectile>();
 	if (TestNotNull(TEXT("RangedEnemyProjectile CDO exists"), ProjectileCDO))
 	{
@@ -224,6 +291,11 @@ bool FEnemyDamageGameplayCueAuthorityTest::RunTest(const FString& Parameters)
 		HealthComponent->ShouldExecuteConfirmedDamageGameplayCues(10.0f, FGameplayTag()));
 	TestFalse(TEXT("Zero damage never executes confirmed-damage cues"),
 		HealthComponent->ShouldExecuteConfirmedDamageGameplayCues(0.0f, FGameplayTag()));
+
+	// The transient fixture starts with zero Health. Initialization therefore
+	// exercises the no-death-GA path synchronously.
+	TestEqual(TEXT("A zero-health regular enemy without a death GA finishes death immediately"),
+		HealthComponent->GetDeathState(), EBaseDeathState::DeathFinished);
 
 	Enemy->SetRole(ROLE_SimulatedProxy);
 	TestFalse(TEXT("Simulated client cannot execute confirmed-damage cues"),

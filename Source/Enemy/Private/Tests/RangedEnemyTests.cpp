@@ -649,6 +649,42 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
+	TestEqual(TEXT("Equipping grants exactly one weapon ability"),
+		WeaponComponent->GrantedAbilityHandles.Num(), 1);
+	WeaponComponent->DeactivateForOwnerDeath();
+	TestEqual(TEXT("Death deactivation enters the non-gameplay corpse state"),
+		WeaponComponent->GetWeaponLifecycleState(), EEnemyWeaponLifecycleState::DeathInactive);
+	TestFalse(TEXT("Death deactivation keeps the weapon visible with the corpse"),
+		EquippedBow->IsHidden());
+	TestEqual(TEXT("Death deactivation removes weapon-granted abilities"),
+		WeaponComponent->GrantedAbilityHandles.Num(), 0);
+
+	WeaponComponent->RestoreFromOwnerPool();
+	TestEqual(TEXT("Lifecycle restore returns the weapon to active state"),
+		WeaponComponent->GetWeaponLifecycleState(), EEnemyWeaponLifecycleState::Active);
+	TestEqual(TEXT("Lifecycle restore regrants one weapon ability"),
+		WeaponComponent->GrantedAbilityHandles.Num(), 1);
+
+	WeaponComponent->SuspendForOwnerPool();
+	TestFalse(TEXT("Pool suspension disables weapon presentation"),
+		WeaponComponent->IsPoolPresentationActive());
+	TestEqual(TEXT("Pool suspension enters the pooled lifecycle state"),
+		WeaponComponent->GetWeaponLifecycleState(), EEnemyWeaponLifecycleState::Pooled);
+	TestTrue(TEXT("Pool suspension hides the separate weapon actor"),
+		EquippedBow->IsHidden());
+	TestFalse(TEXT("Pool suspension stops weapon hit scanning"),
+		EquippedBow->IsHitScanActive());
+	TestEqual(TEXT("Pool suspension removes weapon-granted abilities"),
+		WeaponComponent->GrantedAbilityHandles.Num(), 0);
+
+	WeaponComponent->RestoreFromOwnerPool();
+	TestTrue(TEXT("Pool restore enables weapon presentation"),
+		WeaponComponent->IsPoolPresentationActive());
+	TestFalse(TEXT("Pool restore unhides the existing weapon actor"),
+		EquippedBow->IsHidden());
+	TestEqual(TEXT("Pool restore regrants the weapon ability once"),
+		WeaponComponent->GrantedAbilityHandles.Num(), 1);
+
 	UStaticMesh* TestBowMesh = NewObject<UStaticMesh>(EquippedBow);
 	UStaticMeshSocket* ArrowSocket = NewObject<UStaticMeshSocket>(TestBowMesh);
 	ArrowSocket->SocketName = TEXT("Arrow_socket");
@@ -702,6 +738,16 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 
 	Enemy->SetHostShip(HostShip);
 	TestEqual(TEXT("An optional explicit host ship assignment is retained"), Enemy->GetHostShip(), HostShip);
+
+	Enemy->Destroy();
+	TestTrue(TEXT("The enemy enters destruction through its normal owner lifetime path"),
+		Enemy->IsActorBeingDestroyed());
+	TestNull(TEXT("Owner destruction clears the replicated weapon reference"),
+		WeaponComponent->GetCurrentWeapon());
+	TestTrue(TEXT("Owner destruction also destroys the separate weapon actor"),
+		EquippedBow->IsActorBeingDestroyed());
+	TestEqual(TEXT("Owner destruction resets the equip state"),
+		WeaponComponent->WeaponState, EEnemyWeaponState::None);
 	return true;
 }
 
@@ -770,11 +816,15 @@ bool FStrengthProjectilePayloadTest::RunTest(const FString& Parameters)
 	Projectile->StatusEffectSpecHandles[0].Data->SetSetByCallerMagnitude(Data_Damage, 2.0f);
 	Projectile->StatusEffectSpecHandles[1].Data->SetSetByCallerMagnitude(Data_Damage, 3.0f);
 	const float HealthBefore = TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
-	Projectile->ApplyDamageToActor(TargetEnemy);
+	FHitResult ProjectileHit;
+	ProjectileHit.ImpactPoint = TargetEnemy->GetActorLocation();
+	ProjectileHit.TraceStart = Projectile->GetActorLocation();
+	ProjectileHit.TraceEnd = TargetEnemy->GetActorLocation();
+	Projectile->ApplyDamageToActor(TargetEnemy, ProjectileHit);
 	TestEqual(TEXT("Direct damage is followed by both status payloads"),
 		TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()), HealthBefore - 15.0f);
 
-	Projectile->ApplyDamageToActor(TargetEnemy);
+	Projectile->ApplyDamageToActor(TargetEnemy, ProjectileHit);
 	TestEqual(TEXT("A piercing projectile applies to the same target only once"),
 		TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()), HealthBefore - 15.0f);
 	return true;

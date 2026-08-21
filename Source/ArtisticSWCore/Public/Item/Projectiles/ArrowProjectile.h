@@ -157,7 +157,7 @@ protected:
 	virtual bool ShouldIgnoreHitActor(const AActor* OtherActor) const;
 	virtual bool CanApplyDamageToActor(const AActor* OtherActor) const;
 	void BuildStatusEffectSpecs();
-	void ApplyDamageToActor(AActor* TargetActor);
+	void ApplyDamageToActor(AActor* TargetActor, const FHitResult& HitResult);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arrow")
 	void K2_OnImpactFX(const FHitResult& Hit);
