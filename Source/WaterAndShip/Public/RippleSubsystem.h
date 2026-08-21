@@ -4,6 +4,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "Tickable.h"
 #include "Engine/Texture2D.h"
+#include "Engine/TextureRenderTarget2D.h"
 #include "RippleSubsystem.generated.h"
 
 /**
@@ -41,6 +42,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Water Ripple")
 	UTexture2D* GetRippleTexture() const { return RippleTexture; }
 
+	/** GPU-baked ripple height/normal field consumed by water materials. */
+	UTextureRenderTarget2D* GetRippleRenderTarget() const { return RippleRenderTarget; }
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water Ripple")
 	float MaxGenerationDistance = 10000.0f;
 
@@ -69,9 +73,18 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture2D> RippleTexture;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UTextureRenderTarget2D> RippleRenderTarget;
+
 	int32 RippleCapacity = 32;
+	int32 RippleRenderTargetResolution = 512;
+	float RippleGridSizeCm = 20000.0f;
+	FVector2D CurrentRippleGridCenter = FVector2D::ZeroVector;
 
 	void UpdateTexture();
+	void CreateRippleRenderTarget();
+	FVector2D ResolveRippleGridCenter() const;
+	void DispatchRippleComputeShader(double ServerTime);
 	void BindRippleDataToWaterMaterials();
 	double GetServerTime() const;
 

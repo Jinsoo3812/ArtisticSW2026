@@ -1,0 +1,39 @@
+#include "/Engine/Public/Platform.ush"
+#include "/Project/Shaders/SWRipple.ush"
+
+Texture2D RippleTexture;
+RWTexture2D<float4> OutRippleTexture;
+
+float2 GridCenter;
+float GridSize;
+float ServerTime;
+float RippleCount;
+float NormalStrength;
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 DTid : SV_DispatchThreadID)
+{
+	uint Width, Height;
+	OutRippleTexture.GetDimensions(Width, Height);
+	if (DTid.x >= Width || DTid.y >= Height)
+	{
+		return;
+	}
+
+	const float2 UV = (float2(DTid.xy) + 0.5) / float2(Width, Height);
+	const float2 WorldXY = GridCenter + (UV - 0.5) * GridSize;
+	float OutHeight = 0.0;
+	float3 OutNormal = float3(0.0, 0.0, 1.0);
+
+	SW_EVALUATE_RIPPLE_COMBINED_ANALYTIC(
+		WorldXY,
+		ServerTime,
+		RippleCount,
+		RippleTexture,
+		NormalStrength,
+		OutHeight,
+		OutNormal);
+
+	// R = height for WPO; G/B/A = world-space normal XYZ.
+	OutRippleTexture[DTid.xy] = float4(OutHeight, OutNormal.x, OutNormal.y, OutNormal.z);
+}
