@@ -66,8 +66,14 @@ bool FStoryFacadeFlowTest::RunTest(const FString& Parameters)
 		Facade->IsStoryNodeReached(EStoryNode::GameStarted));
 	TestFalse(TEXT("Recon cannot complete before first sailing"),
 		Facade->CompleteStoryNode(EStoryNode::ReconQuestAccepted));
+	TestFalse(TEXT("Recon preflight also reports missing prerequisite"),
+		Facade->CanCompleteStoryNode(EStoryNode::ReconQuestAccepted));
+	TestTrue(TEXT("First sailing preflight succeeds"),
+		Facade->CanCompleteStoryNode(EStoryNode::FirstSailingCompleted));
 	TestTrue(TEXT("First sailing completes"),
 		Facade->CompleteStoryNode(EStoryNode::FirstSailingCompleted));
+	TestTrue(TEXT("Recon preflight succeeds after first sailing"),
+		Facade->CanCompleteStoryNode(EStoryNode::ReconQuestAccepted));
 	TestTrue(TEXT("Recon quest is accepted after first sailing"),
 		Facade->CompleteStoryNode(EStoryNode::ReconQuestAccepted));
 	TestTrue(TEXT("A reached node remains true"),

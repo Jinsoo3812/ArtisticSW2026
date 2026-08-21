@@ -2,6 +2,7 @@
 #include "RippleSubsystem.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
+#include "SWShipWakeSubsystem.h"
 #include "Water/SWRippleStateSubsystem.h"
 
 USWRippleWaterWaves::USWRippleWaterWaves()
@@ -19,9 +20,8 @@ float USWRippleWaterWaves::GetMaxWaveHeight() const
 		}
 	}
 	
-	// Add an arbitrary maximum ripple allowance (e.g. 50cm) to let the physics engine
-	// know that waves might peak slightly higher than the base Gerstner waves.
-	return MaxHeight + 50.0f;
+	// Advertise the shared signed allowance used by ripple and ship-wake overlays.
+	return MaxHeight + 100.0f;
 }
 
 float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, float InWaterDepth, float InTime, FVector& OutNormal) const
@@ -65,19 +65,15 @@ float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, fl
 		{
 			Height += Subsystem->GetRippleHeight(InPosition, static_cast<double>(SyncTime));
 		}
-	}
 
-	// 1초에 한 번씩 서버/클라 파고 쿼리값 출력 (대조 디버깅용)
-	if (World)
-	{
-		static float LastLogTime = 0.f;
-		float RealTime = World->GetTimeSeconds();
-		if (RealTime - LastLogTime >= 1.f)
+		if (USWShipWakeSubsystem* WakeSubsystem = World->GetSubsystem<USWShipWakeSubsystem>())
 		{
-			LastLogTime = RealTime;
-			UE_LOG(LogTemp, Warning, TEXT("[%s] WaveQuery - PosX: %.2f | Time: %.4f | WaveHeightZ: %.4f"),
-				World->IsNetMode(NM_DedicatedServer) ? TEXT("SERVER") : TEXT("CLIENT"),
-				InPosition.X, SyncTime, Height);
+			Height += WakeSubsystem->GetWakeHeight(InPosition, static_cast<double>(SyncTime));
+			const FVector2D WakeGradient = WakeSubsystem->GetWakeGradient(InPosition, static_cast<double>(SyncTime));
+			OutNormal = FVector(
+				OutNormal.X - WakeGradient.X,
+				OutNormal.Y - WakeGradient.Y,
+				OutNormal.Z).GetSafeNormal();
 		}
 	}
 
@@ -114,6 +110,10 @@ float USWRippleWaterWaves::GetSimpleWaveHeightAtPosition(const FVector& InPositi
 		if (USWRippleStateSubsystem* Subsystem = World->GetSubsystem<USWRippleStateSubsystem>())
 		{
 			Height += Subsystem->GetRippleHeight(InPosition, static_cast<double>(SyncTime));
+		}
+		if (USWShipWakeSubsystem* WakeSubsystem = World->GetSubsystem<USWShipWakeSubsystem>())
+		{
+			Height += WakeSubsystem->GetWakeHeight(InPosition, static_cast<double>(SyncTime));
 		}
 	}
 

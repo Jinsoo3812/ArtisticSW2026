@@ -12,12 +12,14 @@
 #include "BaseEnemy.generated.h"
 
 class UAbilitySystemComponent;
+class UBaseDeathGameplayAbility;
 class UBaseWeaponComponent;
 class UBaseHealthComponent;
 class UEnemyBehaviorSet;
 class UEnemyWaypointMoveComponent;
 class UHealthBarWidget;
 class UWidgetComponent;
+struct FOnAttributeChangeData;
 
 class UGameplayAbility;
 class UBehaviorTree;
@@ -57,6 +59,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AbilitySystem")
 	TArray<TSubclassOf<UGameplayAbility>> StartingAbilities;
 
+	/**
+	 * Optional death GA used by enemies that need a montage-driven death sequence.
+	 * Regular enemies leave this empty and enter ragdoll immediately. Boss enemies
+	 * opt in with their dedicated death ability.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death")
+	TSubclassOf<UBaseDeathGameplayAbility> DeathAbilityClass;
+
 	// ------------------ Enemy AI
 	
 	// Enemy에게 장착된 AI Controller
@@ -70,6 +80,10 @@ protected:
 	/** State별 Run Behavior Dynamic Subtree를 설정하는 데이터 자산입니다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI | Behavior Tree")
 	TObjectPtr<UEnemyBehaviorSet> BehaviorSet;
+
+	/** If false, the default weapon is spawned on its back and equipped by combat behavior. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	bool bEquipWeaponOnSpawn = true;
 
 	// ------------------- WeaponTag
 
@@ -119,6 +133,26 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Damage")
 	bool bDeathHandled = false;
 
+	/** Base speed selected by the current locomotion mode before runtime modifiers. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Enemy|Movement")
+	float BaseMovementSpeed = 0.0f;
+
+	/** Wave/archetype scaling. Buffs remain additive after this multiplier. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Enemy|Movement")
+	float SpawnMovementSpeedMultiplier = 1.0f;
+
+	/** Safety cap for the resolved CharacterMovement MaxWalkSpeed. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Movement", meta = (ClampMin = "0.0", Units = "cm/s"))
+	float MaximumResolvedMovementSpeed = 2000.0f;
+
+	/** Death presentation이 끝난 뒤 서버가 시체 Actor를 유지하는 시간입니다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death", meta = (ClampMin = "0.0"))
+	float CorpseLifetimeAfterDeathFinished = 5.0f;
+
+	/** false이면 기존처럼 외부 시스템이 시체 Actor의 수명을 관리합니다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death")
+	bool bDestroyAfterDeathFinished = true;
+
 protected:
 	// Ability를 ASC Owner에 부여하는 함수
 	UFUNCTION(BlueprintCallable, Category = "AbilitySystem")
@@ -137,17 +171,28 @@ protected:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "AbilitySystem")
 	void ServerSendGameplayEventToSelf(FGameplayEventData EventData);*/
 	
-	// ASC Owner가 죽었을 때 호출되는 함수
+	// DeathStarted 시점의 즉시 게임플레이 정리 훅입니다. 일반 Enemy는 이후 즉시 Ragdoll,
+	// Death GA를 사용하는 Enemy는 DeathFinished에서 Ragdoll을 적용합니다.
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Damage")
 	void HandleDeath();
 
+	/** Whether this enemy delays ragdoll until its death GA calls FinishDeath. */
+	virtual bool ShouldWaitForDeathAbility() const;
+
+	/** Death GA가 FinishDeath를 호출한 뒤 각 머신에서 사망 표현을 마무리합니다. */
+	virtual void HandleDeathFinishedPresentation();
+
 protected:
 	virtual void BeginPlay() override;
+	virtual void Destroyed() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
 	// HealthComponent가 죽음을 감지했을 때 기존 Enemy 사망 처리를 실행합니다.
 	UFUNCTION()
 	void OnDeathStarted(UBaseHealthComponent* InHealthComponent);
+
+	UFUNCTION()
+	void OnDeathFinished(UBaseHealthComponent* InHealthComponent);
 
 	// ================= Health Bar =================
 	UFUNCTION()
@@ -162,6 +207,11 @@ protected:
 	void HideHealthBarForDamagePolicy();
 	FTimerHandle HealthBarHideTimerHandle;
 	// ================= End of Health Bar =================
+
+	void BindMovementSpeedAttribute();
+	void UnbindMovementSpeedAttribute();
+	void OnMoveSpeedBonusChanged(const FOnAttributeChangeData& ChangeData);
+	FDelegateHandle MoveSpeedBonusChangedDelegateHandle;
 
 	// FVector GetVelocity() const override;
 	
@@ -178,12 +228,37 @@ public:
 	FORCEINLINE TObjectPtr<ABaseAIController> GetAIController() const { check(AIController) return AIController; }
 	FORCEINLINE TObjectPtr<UBehaviorTree> GetBehaviorTree() const { return BehaviorTree; }
 	FORCEINLINE UEnemyBehaviorSet* GetBehaviorSet() const { return BehaviorSet; }
+	FORCEINLINE bool ShouldEquipWeaponOnSpawn() const { return bEquipWeaponOnSpawn; }
 	FORCEINLINE FGameplayTag GetDefaultWeaponTag() const { return DefaultWeaponTag; }
 	FORCEINLINE TObjectPtr<UBaseWeaponComponent> GetWeaponComponent() const { check(WeaponComponent) return WeaponComponent; }
 	//FORCEINLINE TObjectPtr<UPathMovement> GetPathMovementComponent() const { check(PathMovement) return PathMovement;}
 	FORCEINLINE virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { check(AbilitySystemComponent) return AbilitySystemComponent; }
 	FORCEINLINE UEnemyWaypointMoveComponent* GetWaypointMoveComponent() const {return WaypointMoveComponent;}
 	FORCEINLINE UBaseHealthComponent* GetHealthComponent() const { return HealthComponent; }
+	FORCEINLINE EGameplayEffectReplicationMode GetASCReplicationMode() const { return ASCReplicationMode; }
+	FORCEINLINE float GetCorpseLifetimeAfterDeathFinished() const { return CorpseLifetimeAfterDeathFinished; }
+	FORCEINLINE bool ShouldDestroyAfterDeathFinished() const { return bDestroyAfterDeathFinished; }
+	FORCEINLINE TSubclassOf<UBaseDeathGameplayAbility> GetDeathAbilityClass() const { return DeathAbilityClass; }
+
+	/** Sets the locomotion-mode speed. Only authority may drive Enemy movement policy. */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Movement", BlueprintAuthorityOnly)
+	void SetBaseMovementSpeed(float NewBaseSpeed);
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Movement")
+	float GetBaseMovementSpeed() const { return BaseMovementSpeed; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Movement")
+	float GetSpawnMovementSpeedMultiplier() const { return SpawnMovementSpeedMultiplier; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Movement")
+	float GetResolvedMovementSpeed() const;
+
+	/** Pure resolver kept public for deterministic automation tests and balancing tools. */
+	static float ResolveMovementSpeed(
+		float InBaseSpeed,
+		float InSpawnMultiplier,
+		float InMoveSpeedBonus,
+		float InMaximumSpeed);
 
 	// Enemy소환 API
 	UFUNCTION(BlueprintCallable, Category = "Wave")

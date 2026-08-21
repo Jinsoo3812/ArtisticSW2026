@@ -66,8 +66,6 @@ public:
 
 	void ApplyReplicatedEvent(const FSWRippleEvent& Event) const;
 
-	static constexpr int32 MaxReplicatedRipples = 32;
-
 private:
 	UPROPERTY(Replicated)
 	FSWReplicatedRippleArray ReplicatedRipples;

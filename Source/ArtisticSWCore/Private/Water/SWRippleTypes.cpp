@@ -3,6 +3,102 @@
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "Water/SWRippleProfile.h"
 
+void FSWRippleClientRenderClock::ObserveReplicatedEvent(
+	double EventStartServerTime,
+	double EstimatedServerTime,
+	double LocalWorldTime)
+{
+	const double CurrentRenderTime = Resolve(EstimatedServerTime, LocalWorldTime);
+	if (EventStartServerTime > CurrentRenderTime)
+	{
+		bHasAnchor = true;
+		AnchorServerTime = EventStartServerTime;
+		AnchorLocalWorldTime = LocalWorldTime;
+	}
+}
+
+double FSWRippleClientRenderClock::Resolve(double EstimatedServerTime, double LocalWorldTime) const
+{
+	if (!bHasAnchor)
+	{
+		return EstimatedServerTime;
+	}
+
+	const double AnchoredTime = AnchorServerTime
+		+ FMath::Max(0.0, LocalWorldTime - AnchorLocalWorldTime);
+	return FMath::Max(EstimatedServerTime, AnchoredTime);
+}
+
+int32 FSWRipplePredictionPolicy::FindBestPredictedEventIndex(
+	TConstArrayView<FSWRippleEvent> Events,
+	const FSWRippleEvent& AuthoritativeEvent,
+	float MaxDistance,
+	double MaxTimeDelta)
+{
+	int32 BestIndex = INDEX_NONE;
+	float BestDistanceSquared = FMath::Square(FMath::Max(0.0f, MaxDistance));
+	for (int32 Index = 0; Index < Events.Num(); ++Index)
+	{
+		const FSWRippleEvent& Candidate = Events[Index];
+		if (Candidate.EventId >= 0
+			|| FMath::Abs(Candidate.StartServerTime - AuthoritativeEvent.StartServerTime) > MaxTimeDelta)
+		{
+			continue;
+		}
+
+		const float DistanceSquared = FVector2D::DistSquared(Candidate.Origin, AuthoritativeEvent.Origin);
+		if (DistanceSquared <= BestDistanceSquared)
+		{
+			BestDistanceSquared = DistanceSquared;
+			BestIndex = Index;
+		}
+	}
+	return BestIndex;
+}
+
+int32 FSWRippleQueuePolicy::FindOldestEventIndex(TConstArrayView<FSWRippleEvent> Events)
+{
+	if (Events.IsEmpty())
+	{
+		return INDEX_NONE;
+	}
+
+	int32 OldestIndex = 0;
+	for (int32 Index = 1; Index < Events.Num(); ++Index)
+	{
+		if (Events[Index].EventId < Events[OldestIndex].EventId)
+		{
+			OldestIndex = Index;
+		}
+	}
+	return OldestIndex;
+}
+
+void FSWRippleQueuePolicy::AddOrUpdateCapped(
+	TArray<FSWRippleEvent>& Events,
+	const FSWRippleEvent& Event,
+	int32 MaxEventCount)
+{
+	if (FSWRippleEvent* Existing = Events.FindByPredicate(
+		[&Event](const FSWRippleEvent& Candidate) { return Candidate.EventId == Event.EventId; }))
+	{
+		*Existing = Event;
+		return;
+	}
+
+	const int32 SafeMaxEventCount = FMath::Max(1, MaxEventCount);
+	while (Events.Num() >= SafeMaxEventCount)
+	{
+		const int32 OldestIndex = FindOldestEventIndex(Events);
+		if (OldestIndex == INDEX_NONE)
+		{
+			break;
+		}
+		Events.RemoveAtSwap(OldestIndex, 1, EAllowShrinking::No);
+	}
+	Events.Add(Event);
+}
+
 float FSWRippleEvaluator::EvaluateHeight(
 	const FVector2D& QueryPosition,
 	double ServerTime,

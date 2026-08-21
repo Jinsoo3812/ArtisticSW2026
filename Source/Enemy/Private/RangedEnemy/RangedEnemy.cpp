@@ -8,29 +8,34 @@
 #include "Components/BaseHealthComponent.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "GAS/Ability/GA_RangedEnemyAttack.h"
-#include "Item/Projectiles/ArrowProjectile.h"
 #include "Net/UnrealNetwork.h"
 #include "RangedEnemy/RangedEnemyAIController.h"
-#include "RangedEnemy/RangedEnemyProjectile.h"
 #include "Ship.h"
 #include "TimerManager.h"
+#include "Weapon/BaseWeaponComponent.h"
+#include "Weapon/EnemyBow.h"
+#include "Weapon/WeaponDataAsset.h"
 
 ARangedEnemy::ARangedEnemy()
 {
+	bApplyDeathRagdollImpulse = true;
 	AIControllerClass = ARangedEnemyAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	bUseControllerRotationYaw = true;
+	// The ranged Combat subtree already starts with EQS movement. Equipping at
+	// spawn guarantees that the bow-granted GA is ready before the first query
+	// finishes, without adding an asset-only setup dependency to the BT.
+	bEquipWeaponOnSpawn = true;
+	DefaultWeaponTag = Item_EnemyWeapon_Bow;
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
 		MovementComponent->bOrientRotationToMovement = false;
+		MovementComponent->bUseControllerDesiredRotation = false;
 		MovementComponent->MaxWalkSpeed = 0.0f;
 	}
 
-	ProjectileClass = ARangedEnemyProjectile::StaticClass();
 	FireEventTag = Event_Montage_FireArrow;
-	StartingAbilities.AddUnique(UGA_RangedEnemyAttack::StaticClass());
 }
 
 void ARangedEnemy::BeginPlay()
@@ -215,7 +220,17 @@ bool ARangedEnemy::TraceLineOfSight(const AActor* Candidate, FHitResult* OutHit)
 		return false;
 	}
 
-	const FVector Start = GetRangedAttackOrigin();
+	FTransform ArrowSpawnTransform;
+	if (!GetRangedAttackOrigin(ArrowSpawnTransform))
+	{
+		if (OutHit)
+		{
+			*OutHit = FHitResult();
+		}
+		return false;
+	}
+
+	const FVector Start = ArrowSpawnTransform.GetLocation();
 	const FVector End = GetRangedAimLocation(Candidate);
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RangedEnemyAttackLOS), true, this);
 	QueryParams.AddIgnoredActor(this);
@@ -377,17 +392,18 @@ bool ARangedEnemy::EvaluateAttackTarget(const AActor* Candidate, bool bRequireLi
 	return true;
 }
 
-FVector ARangedEnemy::GetRangedAttackOrigin() const
+AEnemyBow* ARangedEnemy::GetEquippedBow() const
 {
-	if (const USkeletalMeshComponent* EnemyMesh = GetMesh())
-	{
-		if (!MuzzleSocketName.IsNone() && EnemyMesh->DoesSocketExist(MuzzleSocketName))
-		{
-			return EnemyMesh->GetSocketLocation(MuzzleSocketName);
-		}
-	}
+	const UBaseWeaponComponent* EquippedWeaponComponent = GetWeaponComponent();
+	return EquippedWeaponComponent && EquippedWeaponComponent->IsWeaponEquipped()
+		? Cast<AEnemyBow>(EquippedWeaponComponent->GetCurrentWeapon())
+		: nullptr;
+}
 
-	return GetActorTransform().TransformPosition(MuzzleOffset);
+bool ARangedEnemy::GetRangedAttackOrigin(FTransform& OutSpawnTransform) const
+{
+	const AEnemyBow* Bow = GetEquippedBow();
+	return Bow && Bow->GetArrowSpawnTransform(OutSpawnTransform);
 }
 
 FVector ARangedEnemy::GetRangedAimLocation(const AActor* TargetActor) const
@@ -395,6 +411,31 @@ FVector ARangedEnemy::GetRangedAimLocation(const AActor* TargetActor) const
 	return TargetActor
 		? TargetActor->GetActorLocation() + FVector(0.0f, 0.0f, TargetAimHeightOffset)
 		: FVector::ZeroVector;
+}
+
+UAnimMontage* ARangedEnemy::GetRangedAttackMontage() const
+{
+	const UBaseWeaponComponent* EquippedWeaponComponent = GetWeaponComponent();
+	const FWeaponDefinition* WeaponDefinition = EquippedWeaponComponent
+		? EquippedWeaponComponent->GetCurrentWeaponDefinition()
+		: nullptr;
+	if (WeaponDefinition && WeaponDefinition->CombatData.AttackMontage)
+	{
+		return WeaponDefinition->CombatData.AttackMontage;
+	}
+
+	return AttackMontage;
+}
+
+float ARangedEnemy::GetRangedAttackMontagePlayRate() const
+{
+	const UBaseWeaponComponent* EquippedWeaponComponent = GetWeaponComponent();
+	const FWeaponDefinition* WeaponDefinition = EquippedWeaponComponent
+		? EquippedWeaponComponent->GetCurrentWeaponDefinition()
+		: nullptr;
+	return WeaponDefinition
+		? FMath::Max(0.001f, WeaponDefinition->CombatData.AttackMontagePlayRate)
+		: 1.0f;
 }
 
 void ARangedEnemy::OnRep_HostShip()

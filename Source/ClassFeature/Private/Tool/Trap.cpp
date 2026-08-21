@@ -3,6 +3,7 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "BaseGameplayTags.h" // Team_Enemy 태그 등
+#include "GAS/SWCombatEffectContextLibrary.h"
 
 ATrap::ATrap()
 {
@@ -70,8 +71,10 @@ void ATrap::OnTrapBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor*
 	UAbilitySystemComponent* InstigatorASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetInstigator());
 	if (!InstigatorASC) return;
 	
-	FGameplayEffectContextHandle ContextHandle = InstigatorASC->MakeEffectContext();
-	ContextHandle.AddInstigator(GetInstigator(), this);
+	FGameplayEffectContextHandle ContextHandle =
+		USWCombatEffectContextLibrary::MakeCombatEffectContext(
+			InstigatorASC, GetInstigator(), this, OtherActor, bFromSweep, SweepResult,
+			OtherActor->GetActorLocation() - GetActorLocation());
 	FGameplayEffectSpecHandle DamageEffectSpecHandle = InstigatorASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
 	
 	if (!DamageEffectSpecHandle.IsValid()) return;

@@ -28,6 +28,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Death")
 	virtual void ApplyLocalDeathRagdoll();
 
+	/** Restores the presentation state required before a pooled character is reused. */
+	UFUNCTION(BlueprintCallable, Category = "Death|Pooling")
+	virtual void ResetLocalDeathRagdoll();
+
+	UFUNCTION(BlueprintPure, Category = "Death|Ragdoll")
+	bool IsDeathRagdollImpulseEnabled() const { return bApplyDeathRagdollImpulse; }
+
+	UFUNCTION(BlueprintPure, Category = "Death|Ragdoll")
+	float GetDeathRagdollHorizontalImpulse() const { return DeathRagdollHorizontalImpulse; }
+
+	UFUNCTION(BlueprintPure, Category = "Death|Ragdoll")
+	float GetDeathRagdollUpwardImpulse() const { return DeathRagdollUpwardImpulse; }
+
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AbilitySystem")
 	EGameplayEffectReplicationMode ASCReplicationMode = EGameplayEffectReplicationMode::Mixed;
@@ -44,12 +57,25 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll")
 	bool bApplyDeathRagdollImpulse = false;
 
+	/** Prevents fast corpse bodies from tunneling through thin deck collision. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll")
+	bool bUseDeathRagdollCCD = true;
+
+	/** Horizontal impulse magnitude applied in the lethal hit's replicated direction. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll", meta = (ClampMin = "0.0"))
-	float DeathRagdollBackwardImpulse = 20000.0f;
+	float DeathRagdollHorizontalImpulse = 20000.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll", meta = (ClampMin = "0.0"))
 	float DeathRagdollUpwardImpulse = 15000.0f;
 
+	/** Physics body used when the reported hit bone has no simulated body. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll")
+	FName DeathRagdollFallbackImpulseBone = TEXT("pelvis");
+
 	UPROPERTY(BlueprintReadOnly, Category = "Death|Ragdoll")
 	bool bLocalDeathRagdollApplied = false;
+
+	FTransform InitialMeshRelativeTransform = FTransform::Identity;
+	FName InitialMeshCollisionProfileName = NAME_None;
+	ECollisionEnabled::Type InitialMeshCollisionEnabled = ECollisionEnabled::NoCollision;
 };

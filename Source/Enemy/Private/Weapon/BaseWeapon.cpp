@@ -8,6 +8,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 #include "GameplayEffect.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Net/UnrealNetwork.h"
@@ -17,8 +18,10 @@ ABaseWeapon::ABaseWeapon()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
-	
-	//SetReplicateMovement(true); 아직 필요하지 않음
+	bNetUseOwnerRelevancy = true;
+	SetReplicateMovement(false);
+	SetNetUpdateFrequency(10.0f);
+	SetMinNetUpdateFrequency(1.0f);
 
 	WeaponMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMesh"));
 	SetRootComponent(WeaponMesh);
@@ -36,6 +39,12 @@ ABaseWeapon::ABaseWeapon()
 	WeaponFeedbackComponent->SetTrailEndpointComponents(TraceStartPoint, TraceEndPoint);
 	
 	TraceObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECC_Pawn));
+}
+
+void ABaseWeapon::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	DeactivateWeaponActivity();
+	Super::EndPlay(EndPlayReason);
 }
 
 // GA로부터 HitScanEffectSpecHandle을 받아 HitScan을 시작하는 함수
@@ -135,6 +144,15 @@ void ABaseWeapon::HitScanEnd()
 	ClearHitScanInternalState();
 }
 
+void ABaseWeapon::DeactivateWeaponActivity()
+{
+	HitScanEnd();
+	if (WeaponFeedbackComponent)
+	{
+		WeaponFeedbackComponent->ForceStopWeaponTrail(true);
+	}
+}
+
 
 void ABaseWeapon::HitScan(const FHitResult& HitResult)
 {
@@ -179,7 +197,6 @@ void ABaseWeapon::ApplyEffectToTarget(AActor* TargetActor, const FHitResult& Hit
 	
 	// UE_LOG(LogTemp, Log, TEXT("Applying effect to target: %s"), *TargetActor->GetName());
 	FGameplayEffectSpec TargetEffectSpec(*CachedEffectSpecHandle.Data.Get());
-	FGameplayEffectContextHandle EffectContext = TargetEffectSpec.GetContext();
 
 	AActor* SourceActor = GetInstigator();
 	if (!SourceActor)
@@ -187,14 +204,12 @@ void ABaseWeapon::ApplyEffectToTarget(AActor* TargetActor, const FHitResult& Hit
 		SourceActor = GetOwner();
 	}
 
-	if (SourceActor)
-	{
-		EffectContext.AddInstigator(SourceActor, const_cast<ABaseWeapon*>(this));
-	}
-
-	EffectContext.AddSourceObject(const_cast<ABaseWeapon*>(this));
-	EffectContext.AddHitResult(HitResult, true);
-	TargetEffectSpec.SetContext(EffectContext);
+	USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
+		TargetEffectSpec,
+		SourceActor,
+		const_cast<ABaseWeapon*>(this),
+		TargetActor,
+		&HitResult);
 
 	TargetASC->ApplyGameplayEffectSpecToSelf(TargetEffectSpec);
 }

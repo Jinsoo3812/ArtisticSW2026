@@ -24,6 +24,22 @@ void UBaseWeaponComponent::BeginPlay()
 	Super::BeginPlay();
 }
 
+void UBaseWeaponComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ABaseEnemy* OwnerEnemy = GetOwningEnemy();
+	if (OwnerEnemy && OwnerEnemy->HasAuthority()
+		&& EndPlayReason == EEndPlayReason::Destroyed)
+	{
+		DestroyCurrentWeapon();
+	}
+	else if (CurrentWeapon)
+	{
+		CurrentWeapon->DeactivateWeaponActivity();
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
 ABaseEnemy* UBaseWeaponComponent::GetOwningEnemy() const
 {
 	// Owner Cast
@@ -46,6 +62,16 @@ const FWeaponDefinition* UBaseWeaponComponent::GetCurrentWeaponDefinition() cons
 }
 
 void UBaseWeaponComponent::InitializeLoadout(FGameplayTag InWeaponTag)
+{
+	InitializeLoadoutInternal(InWeaponTag, true);
+}
+
+void UBaseWeaponComponent::InitializeHolsteredLoadout(FGameplayTag InWeaponTag)
+{
+	InitializeLoadoutInternal(InWeaponTag, false);
+}
+
+void UBaseWeaponComponent::InitializeLoadoutInternal(FGameplayTag InWeaponTag, bool bEquipImmediately)
 {
 	ABaseEnemy* OwnerEnemy = GetOwningEnemy();
 	// Owner가 없거나, 서버가 아니라면 return
@@ -87,14 +113,28 @@ void UBaseWeaponComponent::InitializeLoadout(FGameplayTag InWeaponTag)
 	CurrentWeapon->SetOwner(OwnerEnemy);
 	// 무기의 초기 상태 지정
 	WeaponState = EEnemyWeaponState::Holstered;
-	EquipCurrentWeapon();
+	if (bEquipImmediately)
+	{
+		EquipCurrentWeapon();
+	}
+	else
+	{
+		AttachWeaponToBack();
+	}
+}
+
+float UBaseWeaponComponent::GetCurrentAttackRange() const
+{
+	const FWeaponDefinition* WeaponDefinition = GetCurrentWeaponDefinition();
+	return WeaponDefinition ? FMath::Max(0.0f, WeaponDefinition->CombatData.AttackRange) : 0.0f;
 }
 
 void UBaseWeaponComponent::EquipCurrentWeapon()
 {
 	ABaseEnemy* OwnerEnemy = GetOwningEnemy();
 	// 서버가 아니거나, Owner가 없거나, 무기가 없다면 return
-	if (!OwnerEnemy || !OwnerEnemy->HasAuthority() || !CurrentWeapon)
+	if (!OwnerEnemy || !OwnerEnemy->HasAuthority() || !CurrentWeapon
+		|| WeaponLifecycleState != EEnemyWeaponLifecycleState::Active)
 	{
 		return;
 	}
@@ -131,27 +171,68 @@ void UBaseWeaponComponent::UnequipCurrentWeapon()
 	WeaponState = EEnemyWeaponState::Holstered;
 }
 
-// 사용하지 않는 함수
-/*void UBaseWeaponComponent::DestroyCurrentWeapon()
+void UBaseWeaponComponent::DeactivateForOwnerDeath()
 {
 	ABaseEnemy* OwnerEnemy = GetOwningEnemy();
-	// 서버가 아니거나, Owner가 없다면 return
 	if (!OwnerEnemy || !OwnerEnemy->HasAuthority())
 	{
 		return;
 	}
-	// 확실하게 Weapon에서 부여된 GA제거
-	ClearWeaponAbilities();
 
-	// 현재 Weapon을 소멸
-	if (CurrentWeapon)
+	StopWeaponGameplay();
+	SetWeaponLifecycleState(EEnemyWeaponLifecycleState::DeathInactive);
+}
+
+void UBaseWeaponComponent::SuspendForOwnerPool()
+{
+	ABaseEnemy* OwnerEnemy = GetOwningEnemy();
+	if (!OwnerEnemy || !OwnerEnemy->HasAuthority())
 	{
-		CurrentWeapon->Destroy();
-		CurrentWeapon = nullptr;
+		return;
 	}
-	// 무기 상태 초기화
+
+	StopWeaponGameplay();
+	SetWeaponLifecycleState(EEnemyWeaponLifecycleState::Pooled);
+}
+
+void UBaseWeaponComponent::RestoreFromOwnerPool()
+{
+	ABaseEnemy* OwnerEnemy = GetOwningEnemy();
+	if (!OwnerEnemy || !OwnerEnemy->HasAuthority())
+	{
+		return;
+	}
+
+	SetWeaponLifecycleState(EEnemyWeaponLifecycleState::Active);
+	SyncWeaponAttachment();
+	if (WeaponState == EEnemyWeaponState::Equipped)
+	{
+		GrantWeaponAbilities();
+	}
+}
+
+void UBaseWeaponComponent::DestroyCurrentWeapon()
+{
+	ABaseEnemy* OwnerEnemy = GetOwningEnemy();
+	if (!OwnerEnemy || !OwnerEnemy->HasAuthority())
+	{
+		return;
+	}
+
+	StopWeaponGameplay();
+	ABaseWeapon* WeaponToDestroy = CurrentWeapon;
+	CurrentWeapon = nullptr;
+	CurrentWeaponTag = FGameplayTag();
 	WeaponState = EEnemyWeaponState::None;
-}*/
+	WeaponLifecycleState = EEnemyWeaponLifecycleState::DeathInactive;
+	GrantedAbilityHandles.Reset();
+	OwnerEnemy->ForceNetUpdate();
+
+	if (IsValid(WeaponToDestroy) && !WeaponToDestroy->IsActorBeingDestroyed())
+	{
+		WeaponToDestroy->Destroy();
+	}
+}
 
 void UBaseWeaponComponent::AttachWeaponToSocket(const FName& SocketName)
 {
@@ -216,12 +297,58 @@ void UBaseWeaponComponent::SyncWeaponAttachment()
 	}
 }
 
+void UBaseWeaponComponent::ApplyWeaponLifecyclePresentation()
+{
+	if (!CurrentWeapon)
+	{
+		return;
+	}
+
+	const bool bPresentationVisible =
+		WeaponLifecycleState != EEnemyWeaponLifecycleState::Pooled;
+	const bool bGameplayActive =
+		WeaponLifecycleState == EEnemyWeaponLifecycleState::Active;
+	if (!bGameplayActive)
+	{
+		CurrentWeapon->DeactivateWeaponActivity();
+	}
+	CurrentWeapon->SetActorHiddenInGame(!bPresentationVisible);
+	CurrentWeapon->SetActorEnableCollision(bGameplayActive);
+	CurrentWeapon->SetActorTickEnabled(bGameplayActive);
+}
+
+void UBaseWeaponComponent::StopWeaponGameplay()
+{
+	if (CurrentWeapon)
+	{
+		CurrentWeapon->DeactivateWeaponActivity();
+	}
+	ClearWeaponAbilities();
+}
+
+void UBaseWeaponComponent::SetWeaponLifecycleState(EEnemyWeaponLifecycleState NewState)
+{
+	WeaponLifecycleState = NewState;
+	ApplyWeaponLifecyclePresentation();
+
+	if (ABaseEnemy* OwnerEnemy = GetOwningEnemy())
+	{
+		OwnerEnemy->ForceNetUpdate();
+	}
+	if (CurrentWeapon)
+	{
+		CurrentWeapon->FlushNetDormancy();
+		CurrentWeapon->ForceNetUpdate();
+	}
+}
+
 void UBaseWeaponComponent::GrantWeaponAbilities()
 {
 	ABaseEnemy* OwnerEnemy = GetOwningEnemy();
 	const FWeaponDefinition* WeaponDef = GetCurrentWeaponDefinition();
 	
-	if (!OwnerEnemy || !OwnerEnemy->HasAuthority() || !CurrentWeapon || !WeaponDef)
+	if (!OwnerEnemy || !OwnerEnemy->HasAuthority() || !CurrentWeapon || !WeaponDef
+		|| WeaponLifecycleState != EEnemyWeaponLifecycleState::Active)
 	{
 		return;
 	}
@@ -262,14 +389,10 @@ void UBaseWeaponComponent::ClearWeaponAbilities()
 	}
 
 	UAbilitySystemComponent* ASC = OwnerEnemy->GetAbilitySystemComponent();
-	if (!ASC)
-	{
-		return;
-	}
 	// 앞서 GrantWeaponAbilities함수에서 부여한 Ability를 제거
 	for (const FGameplayAbilitySpecHandle& Handle : GrantedAbilityHandles)
 	{
-		if (Handle.IsValid())
+		if (ASC && Handle.IsValid())
 		{
 			ASC->ClearAbility(Handle);
 		}
@@ -287,12 +410,18 @@ void UBaseWeaponComponent::OnRep_CurrentWeapon()
 {
 	// 무기가 바뀌었을 때, 무기 상태에 맞게 부착 위치를 동기화
 	SyncWeaponAttachment();
+	ApplyWeaponLifecyclePresentation();
 }
 
 void UBaseWeaponComponent::OnRep_WeaponState()
 {
 	// 무기 상태가 바뀌었을 때, 무기 상태에 맞게 부착 위치를 동기화
 	SyncWeaponAttachment();
+}
+
+void UBaseWeaponComponent::OnRep_WeaponLifecycleState()
+{
+	ApplyWeaponLifecyclePresentation();
 }
 
 void UBaseWeaponComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -302,4 +431,5 @@ void UBaseWeaponComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 	DOREPLIFETIME(UBaseWeaponComponent, CurrentWeaponTag);
 	DOREPLIFETIME(UBaseWeaponComponent, CurrentWeapon);
 	DOREPLIFETIME(UBaseWeaponComponent, WeaponState);
+	DOREPLIFETIME(UBaseWeaponComponent, WeaponLifecycleState);
 }

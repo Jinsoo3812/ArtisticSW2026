@@ -3,7 +3,6 @@
 #include "BuoyancyComponent.h"
 #include "BuoyancyTypes.h"
 #include "Components/PrimitiveComponent.h"
-#include "DrawDebugHelpers.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
 #include "Misc/CommandLine.h"
@@ -37,12 +36,6 @@ void USWBuoyancyComponent::BeginPlay()
 	SetComponentTickEnabled(
 		ExecutionMode == ESWBuoyancyExecutionMode::ServerAuthority || bCommandLineDiagnostics);
 
-	UE_LOG(LogTemp, Log, TEXT("[SW-BUOYANCY] %s Mode=%s Pontoons=%d Authority=%s SettingsSource=%s"),
-		*GetNameSafe(GetOwner()),
-		ExecutionMode == ESWBuoyancyExecutionMode::ServerAuthority ? TEXT("ServerAuthority") : TEXT("ExternalNetworkPhysics"),
-		Pontoons.Num(),
-		GetOwner() && GetOwner()->HasAuthority() ? TEXT("true") : TEXT("false"),
-		bUsingLegacyFallback ? TEXT("LegacyFallback") : TEXT("SWComponent"));
 }
 
 void USWBuoyancyComponent::TickComponent(
@@ -51,6 +44,11 @@ void USWBuoyancyComponent::TickComponent(
 	FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	LastRuntimeDiagnostic = FSWBuoyancyRuntimeDiagnostic();
+	LastRuntimeDiagnostic.WaterBodyCount = WaterBodies.Num();
+	LastRuntimeDiagnostic.WorldTimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	LastRuntimeDiagnostic.bForceApplicationAllowed = ShouldApplyForces();
 
 	if (bCommandLineDiagnostics && GetWorld() && GetOwner()
 		&& GetWorld()->GetTimeSeconds() >= NextDiagnosticTime)
@@ -63,13 +61,17 @@ void USWBuoyancyComponent::TickComponent(
 			*GetOwner()->GetVelocity().ToString());
 	}
 
-	if (!ShouldApplyForces())
+	if (!LastRuntimeDiagnostic.bForceApplicationAllowed)
 	{
 		return;
 	}
 
 	UPrimitiveComponent* SimulatingComponent = ResolveSimulatingComponent();
-	if (!SimulatingComponent || !SimulatingComponent->IsSimulatingPhysics())
+	LastRuntimeDiagnostic.bResolvedSimulatingComponent = SimulatingComponent != nullptr;
+	LastRuntimeDiagnostic.SimulatingComponentName = GetNameSafe(SimulatingComponent);
+	LastRuntimeDiagnostic.bPhysicsSimulationActive = SimulatingComponent
+		&& SimulatingComponent->IsSimulatingPhysics();
+	if (!LastRuntimeDiagnostic.bPhysicsSimulationActive)
 	{
 		return;
 	}
@@ -78,12 +80,15 @@ void USWBuoyancyComponent::TickComponent(
 	for (const FSWBuoyancyPontoon& Pontoon : Pontoons)
 	{
 		const FVector WorldPosition = BodyTransform.TransformPosition(Pontoon.RelativeLocation);
+		LastRuntimeDiagnostic.PontoonWorldPosition = WorldPosition;
 		float WaterHeight = 0.0f;
 		FVector WaterVelocity = FVector::ZeroVector;
 		if (!QueryWaterSurface(WorldPosition, WaterHeight, WaterVelocity))
 		{
 			continue;
 		}
+		LastRuntimeDiagnostic.bWaterSurfaceFound = true;
+		LastRuntimeDiagnostic.WaterHeight = WaterHeight;
 
 		const FVector PointVelocity = SimulatingComponent->GetPhysicsLinearVelocityAtPoint(WorldPosition);
 		FSWBuoyancySolveInput Input;
@@ -92,8 +97,12 @@ void USWBuoyancyComponent::TickComponent(
 		Input.PontoonRadius = Pontoon.Radius;
 		Input.RelativeVelocityZ = PointVelocity.Z - WaterVelocity.Z;
 		Input.ForceScale = Pontoon.ForceScale;
+		LastRuntimeDiagnostic.RelativeVelocityZ = Input.RelativeVelocityZ;
 
 		const FSWBuoyancySolveResult Result = FSWBuoyancyMath::SolvePontoon(Input, ForceSettings);
+		LastRuntimeDiagnostic.bPontoonInWater = Result.bIsInWater;
+		LastRuntimeDiagnostic.ImmersionDepth = Result.ImmersionDepth;
+		LastRuntimeDiagnostic.BuoyantForceZ += Result.BuoyantForceZ;
 		if (Result.BuoyantForceZ > 0.0f)
 		{
 			SimulatingComponent->AddForceAtLocation(
@@ -101,15 +110,6 @@ void USWBuoyancyComponent::TickComponent(
 				WorldPosition);
 		}
 
-#if ENABLE_DRAW_DEBUG
-		if (bDrawDebugPontoons)
-		{
-			DrawDebugSphere(
-				GetWorld(), WorldPosition, Pontoon.Radius, 12,
-				Result.bIsInWater ? FColor::Cyan : FColor::Green,
-				false, 0.0f, 0, 1.5f);
-		}
-#endif
 	}
 }
 

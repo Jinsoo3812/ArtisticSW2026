@@ -5,7 +5,7 @@
 #include "GameplayAbilitySpecHandle.h"
 #include "RangedEnemy.generated.h"
 
-class AArrowProjectile;
+class AEnemyBow;
 class AShip;
 class UAnimMontage;
 
@@ -62,13 +62,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ranged Enemy|Combat")
 	float GetRemainingAttackCooldown() const;
 
-	FVector GetRangedAttackOrigin() const;
+	/** Returns the currently equipped bow, or nullptr for an invalid loadout. */
+	UFUNCTION(BlueprintPure, Category = "Ranged Enemy|Combat")
+	AEnemyBow* GetEquippedBow() const;
+
+	/** Resolves the equipped bow's arrow spawn socket in world space. */
+	bool GetRangedAttackOrigin(FTransform& OutSpawnTransform) const;
 	FVector GetRangedAimLocation(const AActor* TargetActor) const;
 
-	TSubclassOf<AArrowProjectile> GetRangedProjectileClass() const { return ProjectileClass; }
-	UAnimMontage* GetRangedAttackMontage() const { return AttackMontage; }
+	UAnimMontage* GetRangedAttackMontage() const;
+	float GetRangedAttackMontagePlayRate() const;
 	FGameplayTag GetRangedFireEventTag() const { return FireEventTag; }
-	float GetRangedProjectileSpeed() const { return ProjectileSpeed; }
+	float GetMinAttackRange() const { return MinAttackRange; }
+	float GetMaxAttackRange() const { return MaxAttackRange; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -116,21 +122,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat", meta = (ClampMin = "0.0"))
 	float AttackCooldown = 2.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat", meta = (ClampMin = "1.0"))
-	float ProjectileSpeed = 2500.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat")
-	FVector MuzzleOffset = FVector(50.0f, 0.0f, 100.0f);
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat")
-	FName MuzzleSocketName = TEXT("ArrowSocket");
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat")
 	float TargetAimHeightOffset = 60.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat")
-	TSubclassOf<AArrowProjectile> ProjectileClass;
-
+	/** Compatibility fallback. Prefer WeaponDefinition.CombatData.AttackMontage. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Animation")
 	TObjectPtr<UAnimMontage> AttackMontage = nullptr;
 

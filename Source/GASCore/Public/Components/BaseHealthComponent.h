@@ -11,6 +11,7 @@
 class UAbilitySystemComponent;
 class UBaseHealthComponent;
 struct FOnAttributeChangeData;
+struct FGameplayEffectSpec;
 
 UENUM(BlueprintType)
 enum class EBaseDeathState : uint8
@@ -18,6 +19,45 @@ enum class EBaseDeathState : uint8
 	NotDead,
 	DeathStarted,
 	DeathFinished
+};
+
+/**
+ * Replicated, one-shot physical presentation data captured from the lethal hit.
+ * The direction is world-space and horizontal so every machine can start its
+ * locally simulated ragdoll with the same coarse motion.
+ */
+USTRUCT(BlueprintType)
+struct GASCORE_API FDeathRagdollImpactData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Death|Ragdoll")
+	FVector_NetQuantizeNormal KnockbackDirection = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Death|Ragdoll")
+	FVector_NetQuantize ImpactPoint = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Death|Ragdoll")
+	FName HitBoneName = NAME_None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Death|Ragdoll")
+	bool bHasDirection = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Death|Ragdoll")
+	bool bHasImpactPoint = false;
+};
+
+/** Death state and its lethal-hit payload are replicated atomically. */
+USTRUCT()
+struct FReplicatedDeathPresentation
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	EBaseDeathState DeathState = EBaseDeathState::NotDead;
+
+	UPROPERTY()
+	FDeathRagdollImpactData ImpactData;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FBaseHealthAttributeChangedSignature, UBaseHealthComponent*, HealthComponent, float, OldValue, float, NewValue, AActor*, InstigatorActor);
@@ -52,10 +92,25 @@ public:
 	float GetHealthNormalized() const;
 
 	UFUNCTION(BlueprintPure, Category = "Health")
-	bool IsDead() const { return DeathState != EBaseDeathState::NotDead; }
+	bool IsDead() const { return DeathPresentation.DeathState != EBaseDeathState::NotDead; }
 
 	UFUNCTION(BlueprintPure, Category = "Health")
-	EBaseDeathState GetDeathState() const { return DeathState; }
+	EBaseDeathState GetDeathState() const { return DeathPresentation.DeathState; }
+
+	UFUNCTION(BlueprintPure, Category = "Health|Death")
+	FDeathRagdollImpactData GetDeathRagdollImpactData() const { return DeathPresentation.ImpactData; }
+
+	/** Deterministic horizontal direction used by melee and non-projectile lethal hits. */
+	static FVector CalculateKnockbackDirectionAwayFromSource(
+		const FVector& VictimLocation,
+		const FVector& SourceLocation);
+
+	/** One-shot cue executed authoritatively for every confirmed health loss, including lethal damage. */
+	UFUNCTION(BlueprintCallable, Category = "Health|Feedback")
+	void SetDamageGameplayCueTag(FGameplayTag InGameplayCueTag) { DamageGameplayCueTag = InGameplayCueTag; }
+
+	UFUNCTION(BlueprintPure, Category = "Health|Feedback")
+	FGameplayTag GetDamageGameplayCueTag() const { return DamageGameplayCueTag; }
 
 	// Starts death on the server. Adds State.Dead and sends the GameplayAbility.Dead event.
 	UFUNCTION(BlueprintCallable, Category = "Health")
@@ -64,6 +119,10 @@ public:
 	// Call when the Death GA or death presentation has completed.
 	UFUNCTION(BlueprintCallable, Category = "Health")
 	void FinishDeath();
+
+	/** Authority-only reset used when a pooled actor is acquired again. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Health|Pooling")
+	bool ResetForReuse();
 
 	UPROPERTY(BlueprintAssignable, Category = "Health")
 	FBaseHealthAttributeChangedSignature OnHealthChanged;
@@ -78,13 +137,35 @@ public:
 	FBaseHealthDeathEventSignature OnDeathFinished;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FEnemyDamageGameplayCueAuthorityTest;
+	friend class FCombatEffectContextDeathDirectionTest;
+#endif
+
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleMaxHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleDamageChanged(const FOnAttributeChangeData& Data);
 	void HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void SetDeathState(EBaseDeathState NewDeathState);
+	void CaptureLethalImpact(
+		const FGameplayEffectContextHandle& EffectContextHandle,
+		AActor* SourceActor);
+	static FDeathRagdollImpactData BuildDeathRagdollImpactData(
+		const AActor* VictimActor,
+		const FGameplayEffectContextHandle& EffectContextHandle,
+		const AActor* SourceActor);
+	void BroadcastDeathStateTransition(EBaseDeathState OldDeathState);
 	AActor* ResolveSourceActorFromContext(const FGameplayEffectContextHandle& EffectContextHandle) const;
 	void ClearPendingDamageContext();
+	FGameplayTag ResolveImpactGameplayCueTag(const FGameplayEffectSpec& EffectSpec) const;
+	bool ShouldExecuteConfirmedDamageGameplayCues(
+		float DamageAmount,
+		FGameplayTag ImpactGameplayCueTag) const;
+	void ExecuteConfirmedDamageGameplayCues(
+		float DamageAmount,
+		AActor* SourceActor,
+		const FGameplayEffectContextHandle& EffectContextHandle,
+		FGameplayTag ImpactGameplayCueTag) const;
 	void SendGameplayEventToOwner(
 		const FGameplayTag& EventTag,
 		float EventMagnitude = 0.0f,
@@ -93,11 +174,15 @@ private:
 	AActor* GetOwningActor() const;
 
 	UFUNCTION()
-	void OnRep_DeathState(EBaseDeathState OldDeathState);
+	void OnRep_DeathPresentation(FReplicatedDeathPresentation OldPresentation);
 
 private:
-	UPROPERTY(ReplicatedUsing = OnRep_DeathState)
-	EBaseDeathState DeathState = EBaseDeathState::NotDead;
+	/** Empty by default. Actor archetypes opt into their own replicated presentation cue. */
+	UPROPERTY(EditDefaultsOnly, Category = "Health|Feedback", meta = (Categories = "GameplayCue"))
+	FGameplayTag DamageGameplayCueTag;
+
+	UPROPERTY(ReplicatedUsing = OnRep_DeathPresentation)
+	FReplicatedDeathPresentation DeathPresentation;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
@@ -108,6 +193,7 @@ private:
 	FDelegateHandle DeadTagDelegateHandle;
 
 	FGameplayEffectContextHandle PendingDamageEffectContextHandle;
+	FGameplayTag PendingImpactGameplayCueTag;
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<AActor> PendingDamageSourceActor;

@@ -7,6 +7,8 @@
 #include "GA_PlayerHitReaction.generated.h"
 
 class ABasePlayer;
+class UAbilityTask_ApplyRootMotionConstantForce;
+class USWCharacterMovementComponent;
 
 /**
  * Player-specific hit reaction.
@@ -34,5 +36,22 @@ protected:
 		bool bWasCancelled) override;
 
 private:
+	FVector ResolveRootMotionDirection(
+		const FGameplayEventData& TriggerEventData,
+		EBaseHitReactionDirection Direction) const;
+	void StartFallbackRootMotion(
+		EBaseHitReactionDirection Direction,
+		const FVector& WorldDirection);
+
+	UPROPERTY(EditDefaultsOnly, Category = "HitReaction|Root Motion", meta = (ClampMin = "0.0", Units = "cm/s"))
+	float FallbackRootMotionStrength = 450.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "HitReaction|Root Motion", meta = (ClampMin = "0.0", Units = "s"))
+	float FallbackRootMotionDuration = 0.22f;
+
 	TWeakObjectPtr<ABasePlayer> HitReactingPlayer;
+	TWeakObjectPtr<USWCharacterMovementComponent> HitReactionMovementComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAbilityTask_ApplyRootMotionConstantForce> FallbackRootMotionTask;
 };

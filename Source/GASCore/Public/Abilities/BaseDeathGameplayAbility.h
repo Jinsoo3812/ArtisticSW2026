@@ -45,6 +45,9 @@ protected:
 	UFUNCTION()
 	void OnDeathMontageCancelled();
 
+	UFUNCTION()
+	void OnDeathCompletionTimeout();
+
 	UFUNCTION(BlueprintPure, Category = "Death")
 	UBaseHealthComponent* GetHealthComponentFromAvatar() const;
 
@@ -93,9 +96,19 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death")
 	bool bDisableCapsuleCollision = false;
 
+	/** Added to the expected montage duration before the safety fallback fires. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death", meta = (ClampMin = "0.0", Units = "s"))
+	float DeathCompletionGracePeriod = 1.0f;
+
+	/** Used when the montage duration cannot be determined. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death", meta = (ClampMin = "0.1", Units = "s"))
+	float DeathCompletionFallbackTimeout = 10.0f;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Death|Montage")
 	TObjectPtr<UAbilityTask_PlayMontageAndWait> DeathMontageTask;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Death")
 	bool bDeathFinished = false;
+
+	FTimerHandle DeathCompletionTimerHandle;
 };

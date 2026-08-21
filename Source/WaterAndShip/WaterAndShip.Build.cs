@@ -13,6 +13,7 @@ public class WaterAndShip: ModuleRules
             "Engine",
             "PhysicsCore",
             "Chaos",
+			"NetCore",
             "RHI",
             "RenderCore"
         });

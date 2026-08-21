@@ -7,6 +7,7 @@
 #include "Engine/OverlapResult.h"
 #include "TimerManager.h"
 #include "Math/UnrealMathUtility.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 
 ASubMunitionProjectile::ASubMunitionProjectile()
 {
@@ -135,7 +136,11 @@ void ASubMunitionProjectile::ExplodeAndDestroy()
 			ProcessedActors.Add(TargetActor);
 			if (UAbilitySystemComponent* TargetASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(TargetActor))
 			{
-				TargetASC->ApplyGameplayEffectSpecToSelf(*DamageEffectSpecHandle.Data.Get());
+				FGameplayEffectSpec TargetSpec(*DamageEffectSpecHandle.Data.Get());
+				USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
+					TargetSpec, GetInstigator(), this, TargetActor, nullptr,
+					TargetActor->GetActorLocation() - GetActorLocation());
+				TargetASC->ApplyGameplayEffectSpecToSelf(TargetSpec);
 			}
 		}
 	}

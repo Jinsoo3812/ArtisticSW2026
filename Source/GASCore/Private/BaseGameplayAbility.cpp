@@ -3,6 +3,8 @@
 
 #include "BaseGameplayAbility.h"
 #include "AbilitySystemComponent.h"
+#include "BaseGameplayTags.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 
 UBaseGameplayAbility::UBaseGameplayAbility()
 {
@@ -13,6 +15,10 @@ UBaseGameplayAbility::UBaseGameplayAbility()
 	// 로컬 클라이언트에서 먼저 예측 실행하고 서버가 검증합니다.
 	// 입력 반응성이 중요한 플레이어 Ability의 기본값으로 적합합니다.
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+
+	// Dialogue owns player input until the session ends. All project abilities
+	// derive from this base, so one shared rule prevents combat/interaction races.
+	ActivationBlockedTags.AddTag(State_Dialogue);
 }
 
 void UBaseGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
@@ -52,9 +58,19 @@ TArray<FActiveGameplayEffectHandle> UBaseGameplayAbility::ApplyEffectToTargetDat
 		return AppliedEffects;
 	}
 
-	// Ability 소유자를 Instigator로 기록한 GE Context를 만듭니다.
-	FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
-	ContextHandle.AddInstigator(GetAvatarActorFromActorInfo(), GetAvatarActorFromActorInfo());
+	AActor* SourceActor = GetAvatarActorFromActorInfo();
+	const FGameplayAbilityTargetData* FirstTargetData = TargetData.Data[0].Get();
+	const FHitResult* HitResult = FirstTargetData ? FirstTargetData->GetHitResult() : nullptr;
+	AActor* TargetActor = HitResult ? HitResult->GetActor() : nullptr;
+	if (!TargetActor && FirstTargetData)
+	{
+		const TArray<TWeakObjectPtr<AActor>> TargetActors = FirstTargetData->GetActors();
+		TargetActor = TargetActors.Num() > 0 ? TargetActors[0].Get() : nullptr;
+	}
+	FGameplayEffectContextHandle ContextHandle =
+		USWCombatEffectContextLibrary::MakeCombatEffectContext(
+			ASC, SourceActor, SourceActor, TargetActor, HitResult != nullptr,
+			HitResult ? *HitResult : FHitResult());
 
 	// 적용할 GameplayEffect Spec을 생성합니다.
 	FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(EffectClass, EffectLevel, ContextHandle);
@@ -82,8 +98,10 @@ FActiveGameplayEffectHandle UBaseGameplayAbility::ApplyEffectToOwner(TSubclassOf
 	}
 
 	// Ability 소유자를 Instigator로 기록한 GE Context를 만듭니다.
-	FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
-	ContextHandle.AddInstigator(GetAvatarActorFromActorInfo(), GetAvatarActorFromActorInfo());
+	AActor* SourceActor = GetAvatarActorFromActorInfo();
+	FGameplayEffectContextHandle ContextHandle =
+		USWCombatEffectContextLibrary::MakeCombatEffectContext(
+			ASC, SourceActor, SourceActor, SourceActor);
 
 	// 적용할 GameplayEffect Spec을 생성합니다.
 	FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(EffectClass, EffectLevel, ContextHandle);
