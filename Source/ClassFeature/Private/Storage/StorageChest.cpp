@@ -180,7 +180,7 @@ void AStorageChest::InitializeFromChestDefinition(UChestDefinition* InDefinition
 	ConfigureStorage(
 		FMath::Max(1, InDefinition->SlotCount),
 		FMath::Max(1, InDefinition->ColumnCount),
-		InDefinition->RollInitialItems(Seed, this));
+		InDefinition->RollInitialItems(Seed));
 	bDefinitionInitialized = true;
 
 	if (HasActorBegunPlay())
@@ -194,7 +194,7 @@ void AStorageChest::ConfigureGuarding(
 	const TArray<ABaseCharacter*>& InGuardCharacters,
 	AShip* InOwningShip)
 {
-	if (!HasAuthority())
+	if (!HasAuthorityOrIsTesting())
 	{
 		return;
 	}
@@ -231,9 +231,39 @@ void AStorageChest::ConfigureGuarding(
 	}
 }
 
+void AStorageChest::AddGuardCharacter(ABaseCharacter* NewGuard)
+{
+	if (!HasAuthorityOrIsTesting() || !IsValid(NewGuard))
+	{
+		return;
+	}
+
+	GuardCharacters.AddUnique(NewGuard);
+	bRequiresGuardClear = true;
+
+	UBaseHealthComponent* GuardHealth = NewGuard->FindComponentByClass<UBaseHealthComponent>();
+	if (!GuardHealth)
+	{
+		for (UActorComponent* Comp : NewGuard->GetInstanceComponents())
+		{
+			if (UBaseHealthComponent* CastHealth = Cast<UBaseHealthComponent>(Comp))
+			{
+				GuardHealth = CastHealth;
+				break;
+			}
+		}
+	}
+	if (GuardHealth && !GuardHealth->IsDead())
+	{
+		AliveGuardHealthComponents.Add(GuardHealth);
+		GuardHealth->OnDeathStarted.AddUniqueDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
+		SetLocked(true);
+	}
+}
+
 void AStorageChest::SetLocked(bool bInLocked)
 {
-	if (!HasAuthority() || bLocked == bInLocked)
+	if (!HasAuthorityOrIsTesting() || bLocked == bInLocked)
 	{
 		return;
 	}
@@ -247,11 +277,14 @@ void AStorageChest::SetLocked(bool bInLocked)
 		return;
 	}
 
-	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	if (UWorld* World = GetWorld())
 	{
-		if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(It->Get()))
+		for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
 		{
-			PlayerController->CloseStorageFromServer(this);
+			if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(It->Get()))
+			{
+				PlayerController->CloseStorageFromServer(this);
+			}
 		}
 	}
 }
@@ -325,7 +358,7 @@ void AStorageChest::HandleEmptyDestroyTimeout()
 
 void AStorageChest::HandleTrackedHealthDeath(UBaseHealthComponent* HealthComponent)
 {
-	if (!HasAuthority() || !HealthComponent)
+	if (!HasAuthorityOrIsTesting() || !HealthComponent)
 	{
 		return;
 	}
@@ -358,10 +391,15 @@ void AStorageChest::HandleTrackedHealthDeath(UBaseHealthComponent* HealthCompone
 
 void AStorageChest::HandleOwningShipDestroyed(AActor* DestroyedActor)
 {
-	if (HasAuthority() && DestroyedActor == OwningShip)
+	if (!HasAuthorityOrIsTesting())
 	{
-		Destroy();
+		return;
 	}
+
+	bGuardFailed = true;
+	SetLocked(true);
+	ClearGuardBindings();
+	ForceNetUpdate();
 }
 
 void AStorageChest::OnRep_Locked()
@@ -371,12 +409,11 @@ void AStorageChest::OnRep_Locked()
 
 void AStorageChest::OnRep_ReplicatedMovement()
 {
-	if (!HasAuthority() && bEnablePhysicsAndBuoyancy)
+	if (bEnablePhysicsAndBuoyancy)
 	{
-		const FRepMovement& Movement = GetReplicatedMovement();
-		ClientMovementTargetLocation = FRepMovement::RebaseOntoLocalOrigin(Movement.Location, this);
-		ClientMovementTargetRotation = Movement.Rotation.Quaternion();
-		ClientMovementTargetVelocity = Movement.LinearVelocity;
+		ClientMovementTargetLocation = GetReplicatedMovement().Location;
+		ClientMovementTargetRotation = GetReplicatedMovement().Rotation.Quaternion();
+		ClientMovementTargetVelocity = GetReplicatedMovement().LinearVelocity;
 		ClientMovementTargetReceiveTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
 		bHasClientMovementTarget = true;
 
@@ -405,7 +442,7 @@ void AStorageChest::OnRep_PhysicsMode()
 
 void AStorageChest::InitializeGuardState()
 {
-	if (!HasAuthority())
+	if (!HasAuthorityOrIsTesting())
 	{
 		return;
 	}
@@ -430,6 +467,17 @@ void AStorageChest::InitializeGuardState()
 		}
 
 		UBaseHealthComponent* GuardHealth = GuardCharacter->FindComponentByClass<UBaseHealthComponent>();
+		if (!GuardHealth)
+		{
+			for (UActorComponent* Comp : GuardCharacter->GetInstanceComponents())
+			{
+				if (UBaseHealthComponent* CastHealth = Cast<UBaseHealthComponent>(Comp))
+				{
+					GuardHealth = CastHealth;
+					break;
+				}
+			}
+		}
 		if (!GuardHealth)
 		{
 			UE_LOG(LogTemp, Error, TEXT("Guarded chest %s: guard %s has no BaseHealthComponent."),

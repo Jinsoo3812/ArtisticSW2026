@@ -35,6 +35,11 @@ void UStoryFacadeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		Story->OnProgressChanged.AddUniqueDynamic(
 			this,
 			&UStoryFacadeSubsystem::HandleStoryProgressChanged);
+
+		if (!IsStoryNodeReached(EStoryNode::GameStarted))
+		{
+			StartNewCampaign();
+		}
 	}
 }
 
@@ -131,9 +136,8 @@ bool UStoryFacadeSubsystem::ArePrerequisitesReached(EStoryNode Node) const
 	case EStoryNode::GameStarted:
 		return true;
 	case EStoryNode::FirstSailingCompleted:
-		return IsStoryNodeReached(EStoryNode::GameStarted);
 	case EStoryNode::ReconQuestAccepted:
-		return IsStoryNodeReached(EStoryNode::FirstSailingCompleted);
+		return IsStoryNodeReached(EStoryNode::GameStarted);
 	case EStoryNode::StoryClue1Acquired:
 	case EStoryNode::CipherBookAcquired:
 	case EStoryNode::MiddleBoss1Defeated:
@@ -146,8 +150,7 @@ bool UStoryFacadeSubsystem::ArePrerequisitesReached(EStoryNode Node) const
 	case EStoryNode::DecipherQuestAccepted:
 		return IsStoryNodeReached(EStoryNode::MiddleBoss2Defeated);
 	case EStoryNode::SuppressJapaneseForcesQuestAccepted:
-		return IsStoryNodeReached(EStoryNode::DecipherQuestAccepted)
-			&& IsStoryNodeReached(EStoryNode::CipherBookAcquired);
+		return IsStoryNodeReached(EStoryNode::MiddleBoss2Defeated);
 	case EStoryNode::WaterBombUnlocked:
 	case EStoryNode::MiddleBoss3Defeated:
 		return IsStoryNodeReached(EStoryNode::SuppressJapaneseForcesQuestAccepted);

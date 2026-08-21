@@ -50,8 +50,16 @@ public:
 	void InitializeFromChestDefinition(UChestDefinition* InDefinition, int32 Seed);
 	void ConfigureGuarding(bool bInRequiresGuardClear, const TArray<ABaseCharacter*>& InGuardCharacters, AShip* InOwningShip);
 
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Storage Chest|Guarding")
+	void AddGuardCharacter(ABaseCharacter* NewGuard);
+
+	UFUNCTION()
+	void HandleTrackedHealthDeath(UBaseHealthComponent* HealthComponent);
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Storage Chest|Lock")
 	void SetLocked(bool bInLocked);
+
+	bool HasAuthorityOrIsTesting() const { return HasAuthority() || (GetWorld() == nullptr); }
 
 	UFUNCTION()
 	void HandleInteracted(AActor* Interactor);
@@ -154,9 +162,6 @@ protected:
 
 	FTimerHandle EmptyDestroyTimerHandle;
 	bool bHasBeenOpened = false;
-
-	UFUNCTION()
-	void HandleTrackedHealthDeath(UBaseHealthComponent* HealthComponent);
 
 	UFUNCTION()
 	void HandleOwningShipDestroyed(AActor* DestroyedActor);

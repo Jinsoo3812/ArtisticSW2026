@@ -277,6 +277,10 @@ UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Human_Test1, "Enemy.Type.Human.Test1");
 UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Ship_Test0, "Enemy.Type.Ship.Test0");
 UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Ship_Test1, "Enemy.Type.Ship.Test1");
 UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Ship_Test2, "Enemy.Type.Ship.Test2");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Boss_Mid1, "Enemy.Type.Boss.Mid1");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Boss_Mid2, "Enemy.Type.Boss.Mid2");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Boss_Mid3, "Enemy.Type.Boss.Mid3");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Boss_Final, "Enemy.Type.Boss.Final");
 
 /* Quest Items */
 UE_DEFINE_GAMEPLAY_TAG(Item_Quest, "Item.Quest");

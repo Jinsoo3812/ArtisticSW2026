@@ -125,6 +125,14 @@ def create_dialogue_data(folder, asset_name, rules):
             rule.set_editor_property("b_complete_story_node", r["b_complete_story_node"])
             rule.set_editor_property("story_node_to_complete", r.get("story_node_to_complete", unreal.EStoryNode.GAME_STARTED))
             rule.set_editor_property("b_hide_after_story_completion", r.get("b_hide_after_story_completion", True))
+        if "required_items" in r:
+            req_items = []
+            for item in r["required_items"]:
+                stack = unreal.CraftingItemStack()
+                stack.set_editor_property("item_tag", unreal.GameplayTag(item["item_tag"]))
+                stack.set_editor_property("quantity", item["quantity"])
+                req_items.append(stack)
+            rule.set_editor_property("required_items", req_items)
         
         lines = []
         for l in r.get("lines", []):
@@ -227,8 +235,9 @@ def main():
     da_ship_deck = create_chest_definition(chest_da_folder, "DA_Chest_ShipDeck", dt_mid, 3, 5, 4, chest_class=chest_actor_class)
     da_ship_sunk = create_chest_definition(chest_da_folder, "DA_Chest_ShipSunk", dt_sunk, 4, 6, 4, chest_class=chest_actor_class)
 
+    # Story Boss Chests
     da_mb1 = create_chest_definition(chest_da_folder, "DA_Chest_MidBoss1", dt_mb1, 2, 6, 4,
-                                    quest_tag="Item.Quest.InvasionMap", quest_count=1,
+                                    quest_tag="Item.Quest.CipherBook", quest_count=1,
                                     req_node=unreal.EStoryNode.RECON_QUEST_ACCEPTED,
                                     stop_node=unreal.EStoryNode.MIDDLE_BOSS1_DEFEATED,
                                     chest_class=chest_actor_class)
@@ -252,7 +261,34 @@ def main():
                                        chest_class=chest_actor_class)
 
     # ----------------------------------------------------
-    # 4. Random Groups
+    # 4. Crafting Recipes
+    # ----------------------------------------------------
+    crafting_folder = "/Game/Blueprints/Item"
+    crafting_rows = {
+        "Recipe_DecipherCipher": {
+            "ResultItemTag": {"TagName": "Item.Quest.DecipheredCipher"},
+            "ResultQuantity": 1,
+            "RequiredRecipeItemTag": {"TagName": "None"},
+            "bConsumeRecipeItem": False,
+            "bEnabled": True,
+            "SortOrder": 100,
+            "Ingredients": [
+                {"ItemTag": {"TagName": "Item.Quest.CipherBook"}, "Quantity": 1},
+                {"ItemTag": {"TagName": "Item.Quest.JapaneseCipher"}, "Quantity": 1}
+            ]
+        }
+    }
+    try:
+        crafting_struct = unreal.load_object(None, "/Script/ArtisticSWCore.CraftingRecipeRow")
+        if crafting_struct:
+            create_data_table(crafting_folder, "DT_CraftingRecipes", crafting_struct, crafting_rows)
+        else:
+            unreal.log_warning("[Crafting] FCraftingRecipeRow struct not found; skipping DT_CraftingRecipes authoring.")
+    except Exception as e:
+        unreal.log_warning(f"[Crafting] Exception creating crafting data table: {e}")
+
+    # ----------------------------------------------------
+    # 5. Random Groups
     # ----------------------------------------------------
     create_random_group(chest_da_folder, "DA_RandomGroup_Land_Early", da_land_early, 2)
     create_random_group(chest_da_folder, "DA_RandomGroup_Ocean_Early", da_ocean_early, 2)
@@ -262,7 +298,7 @@ def main():
     create_random_group(chest_da_folder, "DA_RandomGroup_Ocean_Late", da_ocean_late, 2)
 
     # ----------------------------------------------------
-    # 5. Dialogue DataAssets
+    # 6. Dialogue DataAssets (Single Unified YiSunSin Dialogue)
     # ----------------------------------------------------
     dialogue_folder = "/Game/Campaign/DataAsset/Dialogue"
 
@@ -270,12 +306,12 @@ def main():
         {
             "rule_id": "Rule_ReconQuest",
             "priority": 200,
-            "required_story_nodes": [unreal.EStoryNode.FIRST_SAILING_COMPLETED],
+            "required_story_nodes": [unreal.EStoryNode.GAME_STARTED],
             "blocked_story_nodes": [unreal.EStoryNode.RECON_QUEST_ACCEPTED],
             "b_complete_story_node": True,
             "story_node_to_complete": unreal.EStoryNode.RECON_QUEST_ACCEPTED,
             "lines": [
-                {"line_id": "L1", "text": "왜군의 움직임이 심상치 않소. 전방 해역을 정찰하고 적 선봉장(중간보스 1)을 처치하시오."}
+                {"line_id": "L1", "text": "왜군의 움직임이 심상치 않소. 전방 해역을 정찰하고 적 암호 해독서를 확보하며 적 선봉장(중간보스 1)을 격파하시오."}
             ]
         },
         {
@@ -286,25 +322,28 @@ def main():
             "b_complete_story_node": True,
             "story_node_to_complete": unreal.EStoryNode.SUPPLY_PATROL_QUEST_ACCEPTED,
             "lines": [
-                {"line_id": "L1", "text": "적의 침공 지도를 확보했군! 이제 놈들의 보급로를 차단하고 중간보스 2를 격파해야 하오."}
+                {"line_id": "L1", "text": "적 선봉장을 격파했군! 이제 놈들의 보급로를 차단하고 중간보스 2를 격파하여 일본군 암호를 노획하시오."}
             ]
         },
         {
             "rule_id": "Rule_DecipherQuest",
             "priority": 220,
             "required_story_nodes": [unreal.EStoryNode.MIDDLE_BOSS2_DEFEATED],
-            "blocked_story_nodes": [unreal.EStoryNode.DECIPHER_QUEST_ACCEPTED],
+            "blocked_story_nodes": [unreal.EStoryNode.SUPPRESS_JAPANESE_FORCES_QUEST_ACCEPTED],
             "b_complete_story_node": True,
             "story_node_to_complete": unreal.EStoryNode.DECIPHER_QUEST_ACCEPTED,
             "lines": [
-                {"line_id": "L1", "text": "암호문을 노획했으나 해독서가 필요하오. 서브 해역에서 해독서를 찾아 암호를 해독해 오시오."}
+                {"line_id": "L1", "text": "일본군 암호를 노획했군! 제작대(작업대)에서 암호 해독서와 조합하여 [해독된 암호]를 제작해 오시오."}
             ]
         },
         {
             "rule_id": "Rule_SuppressForces",
             "priority": 230,
-            "required_story_nodes": [unreal.EStoryNode.DECIPHER_QUEST_ACCEPTED, unreal.EStoryNode.CIPHER_BOOK_ACQUIRED],
+            "required_story_nodes": [unreal.EStoryNode.MIDDLE_BOSS2_DEFEATED],
             "blocked_story_nodes": [unreal.EStoryNode.SUPPRESS_JAPANESE_FORCES_QUEST_ACCEPTED],
+            "required_items": [
+                {"item_tag": "Item.Quest.DecipheredCipher", "quantity": 1}
+            ],
             "b_complete_story_node": True,
             "story_node_to_complete": unreal.EStoryNode.SUPPRESS_JAPANESE_FORCES_QUEST_ACCEPTED,
             "lines": [
@@ -341,49 +380,21 @@ def main():
             ]
         }
     ]
-    create_dialogue_data(dialogue_folder, "DA_YiSunSinDialogue", yisunsin_rules)
-
-    helper_rules = [
-        {
-            "rule_id": "Rule_UnlockCurrent",
-            "priority": 100,
-            "required_story_nodes": [unreal.EStoryNode.SUPPLY_PATROL_QUEST_ACCEPTED],
-            "blocked_story_nodes": [unreal.EStoryNode.CURRENT_GENERATOR_UNLOCKED],
-            "b_complete_story_node": True,
-            "story_node_to_complete": unreal.EStoryNode.CURRENT_GENERATOR_UNLOCKED,
-            "lines": [
-                {"line_id": "L1", "text": "보급로 작전을 지원하기 위해 [해류 발생기] 장치를 활성화했습니다!"}
-            ]
-        },
-        {
-            "rule_id": "Rule_UnlockWaterBomb",
-            "priority": 110,
-            "required_story_nodes": [unreal.EStoryNode.SUPPRESS_JAPANESE_FORCES_QUEST_ACCEPTED],
-            "blocked_story_nodes": [unreal.EStoryNode.WATER_BOMB_UNLOCKED],
-            "b_complete_story_node": True,
-            "story_node_to_complete": unreal.EStoryNode.WATER_BOMB_UNLOCKED,
-            "lines": [
-                {"line_id": "L1", "text": "왜군 원군 저지를 위해 강력한 [물폭탄] 기술을 지급합니다."}
-            ]
-        },
-        {
-            "rule_id": "Rule_UnlockBombard",
-            "priority": 120,
-            "required_story_nodes": [unreal.EStoryNode.ULDOLMOK_BATTLE_QUEST_ACCEPTED],
-            "blocked_story_nodes": [unreal.EStoryNode.BOMBARDMENT_UNLOCKED],
-            "b_complete_story_node": True,
-            "story_node_to_complete": unreal.EStoryNode.BOMBARDMENT_UNLOCKED,
-            "lines": [
-                {"line_id": "L1", "text": "울돌목 결전을 위해 함포 화력을 극대화한 [포탄세례] 기술을 해금합니다!"}
-            ]
-        }
-    ]
-    create_dialogue_data(dialogue_folder, "DA_BaseNPCDialogue", helper_rules)
+    try:
+        create_dialogue_data(dialogue_folder, "DA_YiSunSinDialogue", yisunsin_rules)
+    except Exception as e:
+        unreal.log_error(f"[Dialogue] Failed to create DA_YiSunSinDialogue: {e}")
 
     # Test Dialogue asset for existing automation test
     test_npc_folder = "/Game/New/NPC/Data"
-    create_dialogue_data(test_npc_folder, "DA_TestNPCDialogue", yisunsin_rules)
+    try:
+        create_dialogue_data(test_npc_folder, "DA_TestNPCDialogue", yisunsin_rules)
+    except Exception as e:
+        unreal.log_warning(f"[Dialogue] Failed to create DA_TestNPCDialogue: {e}")
 
     unreal.log("=== Campaign Assets Authoring Completed Successfully! ===")
 
-main()
+try:
+    main()
+except Exception as e:
+    unreal.log_error(f"Critical error in author_campaign_assets.py: {e}")

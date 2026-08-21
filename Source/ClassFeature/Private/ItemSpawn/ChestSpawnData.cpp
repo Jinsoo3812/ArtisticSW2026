@@ -3,7 +3,7 @@
 #include "Engine/DataTable.h"
 #include "ItemSpawn/LootSpawnTypes.h"
 
-TArray<FStorageItemEntry> UChestDefinition::RollInitialItems(int32 Seed, const UObject* WorldContextObject) const
+TArray<FStorageItemEntry> UChestDefinition::RollInitialItems(int32 Seed) const
 {
 	TArray<FChestInitialLootRow> Rows;
 	if (LootTable)
@@ -19,37 +19,7 @@ TArray<FStorageItemEntry> UChestDefinition::RollInitialItems(int32 Seed, const U
 		}
 	}
 
-	TArray<FStorageItemEntry> RolledItems = RollItemsFromRows(Rows, RollCount, Seed);
-
-	// 스토리 조건부 퀘스트 확정 아이템 추가 검사
-	if (GuaranteedQuestItemTag.IsValid())
-	{
-		bool bShouldIncludeQuestItem = true;
-		if (WorldContextObject)
-		{
-			if (const UWorld* World = WorldContextObject->GetWorld())
-			{
-				if (const UGameInstance* GameInstance = World->GetGameInstance())
-				{
-					if (const UStoryFacadeSubsystem* Story = GameInstance->GetSubsystem<UStoryFacadeSubsystem>())
-					{
-						const bool bRequiredReached = Story->IsStoryNodeReached(RequiredStoryNodeForQuestItem);
-						const bool bStoppedReached = bStopAfterStoryNode && Story->IsStoryNodeReached(StopAfterStoryNodeForQuestItem);
-						bShouldIncludeQuestItem = bRequiredReached && !bStoppedReached;
-					}
-				}
-			}
-		}
-
-		if (bShouldIncludeQuestItem)
-		{
-			FStorageItemEntry& QuestItem = RolledItems.AddDefaulted_GetRef();
-			QuestItem.ItemTag = GuaranteedQuestItemTag;
-			QuestItem.Count = FMath::Max(1, GuaranteedQuestItemCount);
-		}
-	}
-
-	return RolledItems;
+	return RollItemsFromRows(Rows, RollCount, Seed);
 }
 
 TArray<FStorageItemEntry> UChestDefinition::RollItemsFromRows(

@@ -3,10 +3,12 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "BaseCharacter.h"
+#include "AbilitySystemComponent.h"
 #include "Item/BaseItem.h"
 #include "ItemSpawn/ChestSpawnData.h"
 #include "Ship.h"
 #include "Storage/StorageChest.h"
+#include "StoryConditionalSpawner.h"
 
 ALootSpawnPointBase::ALootSpawnPointBase()
 {
@@ -135,6 +137,96 @@ void ALooseLootSpawnPoint::AlignItemBottomToGround(ABaseItem* Item) const
 	);
 }
 
+void AChestSpawnPoint::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (HasAuthority())
+	{
+		for (AStoryConditionalSpawner* Spawner : GuardSpawners)
+		{
+			if (IsValid(Spawner))
+			{
+				Spawner->OnActorSpawned.AddUniqueDynamic(this, &AChestSpawnPoint::HandleGuardActorSpawned);
+				if (AActor* AlreadySpawned = Spawner->GetSpawnedActor())
+				{
+					HandleGuardActorSpawned(AlreadySpawned);
+				}
+			}
+		}
+
+		if (SpawnMode == EChestSpawnMode::Guarded && ChestDefinition && !bActivated)
+		{
+			SpawnConfiguredChest(ChestDefinition, FMath::Rand());
+		}
+	}
+}
+
+void AChestSpawnPoint::HandleGuardActorSpawned(AActor* InSpawnedActor)
+{
+	if (!HasAuthority() || !IsValid(InSpawnedActor))
+	{
+		return;
+	}
+
+	ABaseCharacter* GuardChar = Cast<ABaseCharacter>(InSpawnedActor);
+	if (!GuardChar)
+	{
+		return;
+	}
+
+	GuardCharacters.AddUnique(GuardChar);
+
+	if (IsValid(ActiveChestInstance))
+	{
+		ActiveChestInstance->AddGuardCharacter(GuardChar);
+
+		if (bIsBossChest && !bBossQuestItemInjected && GuaranteedBossQuestItemTag.IsValid() && HasMatchingBossGuard())
+		{
+			if (UStorageComponent* StorageComp = ActiveChestInstance->GetStorageComponent())
+			{
+				StorageComp->AddItem(GuaranteedBossQuestItemTag, FMath::Max(1, GuaranteedBossQuestItemCount));
+				bBossQuestItemInjected = true;
+				UE_LOG(LogTemp, Log, TEXT("AChestSpawnPoint: Dynamically added quest item [%s] to chest [%s] on boss spawn."),
+					*GuaranteedBossQuestItemTag.ToString(), *ActiveChestInstance->GetName());
+			}
+		}
+	}
+}
+
+bool AChestSpawnPoint::HasMatchingBossGuard() const
+{
+	if (!bIsBossChest || !RequiredBossTag.IsValid())
+	{
+		return false;
+	}
+
+	for (ABaseCharacter* GuardChar : GuardCharacters)
+	{
+		if (!IsValid(GuardChar))
+		{
+			continue;
+		}
+
+		// 1. ASC 태그 검사
+		if (UAbilitySystemComponent* ASC = GuardChar->GetAbilitySystemComponent())
+		{
+			if (ASC->HasMatchingGameplayTag(RequiredBossTag))
+			{
+				return true;
+			}
+		}
+
+		// 2. Actor의 태그 검사
+		if (GuardChar->ActorHasTag(RequiredBossTag.GetTagName()) || GuardChar->ActorHasTag(FName(*RequiredBossTag.ToString())))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 AStorageChest* AChestSpawnPoint::SpawnChest(const TArray<FChestInitialLootRow>& LootRows, TSubclassOf<AStorageChest> FallbackChestClass, int32 Seed)
 {
 	if (!HasAuthority() || !CanBeActivated() || IsDataDrivenChestPoint())
@@ -169,10 +261,20 @@ AStorageChest* AChestSpawnPoint::SpawnChest(const TArray<FChestInitialLootRow>& 
 		return nullptr;
 	}
 
+	ActiveChestInstance = SpawnedChest;
 	AlignChestBottomToGround(SpawnedChest);
 	SpawnedChest->ConfigureStorage(SlotCount, ColumnCount, BuildInitialItems(LootRows, Seed));
-	MarkActivated(SpawnedChest);
 
+	if (bIsBossChest && GuaranteedBossQuestItemTag.IsValid() && HasMatchingBossGuard())
+	{
+		if (UStorageComponent* StorageComp = SpawnedChest->GetStorageComponent())
+		{
+			StorageComp->AddItem(GuaranteedBossQuestItemTag, FMath::Max(1, GuaranteedBossQuestItemCount));
+			bBossQuestItemInjected = true;
+		}
+	}
+
+	MarkActivated(SpawnedChest);
 	return SpawnedChest;
 }
 
@@ -200,6 +302,7 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 		return nullptr;
 	}
 
+	ActiveChestInstance = SpawnedChest;
 	SpawnedChest->InitializeFromChestDefinition(Definition, Seed);
 	const bool bUseBuoyancy = bEnablePhysicsAndBuoyancy || (Environment == EChestEnvironment::Water);
 	SpawnedChest->SetPhysicsAndBuoyancyEnabled(bUseBuoyancy);
@@ -213,6 +316,19 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 		Guards.Add(Guard);
 	}
 	SpawnedChest->ConfigureGuarding(SpawnMode == EChestSpawnMode::Guarded, Guards, EffectiveOwningShip);
+
+	// 보스 상자이고 요구되는 보스 가드가 확인되면 확정 퀘스트 아이템 추가
+	if (bIsBossChest && GuaranteedBossQuestItemTag.IsValid() && HasMatchingBossGuard())
+	{
+		if (UStorageComponent* StorageComp = SpawnedChest->GetStorageComponent())
+		{
+			StorageComp->AddItem(GuaranteedBossQuestItemTag, FMath::Max(1, GuaranteedBossQuestItemCount));
+			bBossQuestItemInjected = true;
+			UE_LOG(LogTemp, Log, TEXT("AChestSpawnPoint::SpawnConfiguredChest - Added guaranteed quest item [%s] to chest [%s] guarded by boss."),
+				*GuaranteedBossQuestItemTag.ToString(), *SpawnedChest->GetName());
+		}
+	}
+
 	SpawnedChest->FinishSpawning(GetActorTransform());
 
 	if (SpawnMode == EChestSpawnMode::Guarded && IsValid(EffectiveOwningShip))
@@ -315,7 +431,27 @@ void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
 		}
 	}
 
-	// 2. 일반 지상/육지인 경우: ECC_Pawn 채널로 지형 검사 (지형과 갑판 모두 Pawn Block 반응)
+	// 2. 일반 지상/육지인 경우: ECC_WorldStatic(Landscape/Mesh) -> ECC_Visibility -> ECC_Pawn 순으로 지형 검사
+	if (!bFoundGround)
+	{
+		bFoundGround = GetWorld()->LineTraceSingleByChannel(
+			GroundHit,
+			TraceStart,
+			TraceEnd,
+			ECC_WorldStatic,
+			QueryParams
+		);
+	}
+	if (!bFoundGround)
+	{
+		bFoundGround = GetWorld()->LineTraceSingleByChannel(
+			GroundHit,
+			TraceStart,
+			TraceEnd,
+			ECC_Visibility,
+			QueryParams
+		);
+	}
 	if (!bFoundGround)
 	{
 		bFoundGround = GetWorld()->LineTraceSingleByChannel(

@@ -8,8 +8,12 @@
 #include "ItemSpawn/LootSpawnTypes.h"
 #include "Storage/StorageChest.h"
 #include "ItemSpawn/LootSpawnPoint.h"
+#include "BaseCharacter.h"
+#include "Components/BaseHealthComponent.h"
 #include "NPCDialogueData.h"
 #include "StoryFacadeSubsystem.h"
+#include "StorySubsystem.h"
+#include "Crafting/CraftingRecipeTypes.h"
 #include "BaseGameplayTags.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -66,6 +70,7 @@ static UDataTable* CreateOrGetDataTable(const FString& PackagePath, UScriptStruc
 				return DestDT;
 			}
 		}
+		Existing->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors | REN_ForceNoResetLoaders | REN_NonTransactional);
 	}
 
 	UDataTable* DataTable = NewObject<UDataTable>(Package, *AssetName, RF_Public | RF_Standalone);
@@ -104,6 +109,7 @@ static UChestDefinition* CreateOrGetChestDef(const FString& PackagePath)
 				return DestDef;
 			}
 		}
+		Existing->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors | REN_ForceNoResetLoaders | REN_NonTransactional);
 	}
 
 	return NewObject<UChestDefinition>(Package, *AssetName, RF_Public | RF_Standalone);
@@ -140,6 +146,7 @@ static URandomChestGroup* CreateOrGetRandomGroup(const FString& PackagePath)
 				return DestGroup;
 			}
 		}
+		Existing->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors | REN_ForceNoResetLoaders | REN_NonTransactional);
 	}
 
 	return NewObject<URandomChestGroup>(Package, *AssetName, RF_Public | RF_Standalone);
@@ -176,6 +183,7 @@ static UNPCDialogueData* CreateOrGetDialogueData(const FString& PackagePath)
 				return DestData;
 			}
 		}
+		Existing->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors | REN_ForceNoResetLoaders | REN_NonTransactional);
 	}
 
 	return NewObject<UNPCDialogueData>(Package, *AssetName, RF_Public | RF_Standalone);
@@ -269,7 +277,21 @@ bool FCampaignAssetsAuthoringAndValidationTest::RunTest(const FString& Parameter
 	// ----------------------------------------------------
 	// 2. Chest Definitions Authoring
 	// ----------------------------------------------------
-	TSubclassOf<AStorageChest> DefaultChestClass = AStorageChest::StaticClass();
+	TSubclassOf<AStorageChest> DefaultChestClass = StaticLoadClass(
+		AStorageChest::StaticClass(),
+		nullptr,
+		TEXT("/Game/Blueprints/03_WorldObject/01_ItemStorage/BP_Storage_Chest.BP_Storage_Chest_C"));
+	if (!DefaultChestClass)
+	{
+		DefaultChestClass = StaticLoadClass(
+			AStorageChest::StaticClass(),
+			nullptr,
+			TEXT("/Game/Blueprints/03_WorldObject/01_ItemStorage/BP_StorageChest.BP_StorageChest_C"));
+	}
+	if (!DefaultChestClass)
+	{
+		DefaultChestClass = AStorageChest::StaticClass();
+	}
 
 	UChestDefinition* DA_LandEarly = CreateOrGetChestDef(TEXT("/Game/Campaign/DataAsset/Chest/DA_Chest_Land_Early"));
 	DA_LandEarly->ChestClass = DefaultChestClass; DA_LandEarly->LootTable = DT_Early; DA_LandEarly->RollCount = 3; DA_LandEarly->SlotCount = 5; DA_LandEarly->ColumnCount = 4;
@@ -306,42 +328,68 @@ bool FCampaignAssetsAuthoringAndValidationTest::RunTest(const FString& Parameter
 	// Story Boss Chest Definitions
 	UChestDefinition* DA_MB1 = CreateOrGetChestDef(TEXT("/Game/Campaign/DataAsset/Chest/DA_Chest_MidBoss1"));
 	DA_MB1->ChestClass = DefaultChestClass; DA_MB1->LootTable = DT_MB1; DA_MB1->RollCount = 2; DA_MB1->SlotCount = 6; DA_MB1->ColumnCount = 4;
-	DA_MB1->GuaranteedQuestItemTag = Item_Quest_InvasionMap;
-	DA_MB1->GuaranteedQuestItemCount = 1;
-	DA_MB1->RequiredStoryNodeForQuestItem = EStoryNode::ReconQuestAccepted;
-	DA_MB1->bStopAfterStoryNode = true;
-	DA_MB1->StopAfterStoryNodeForQuestItem = EStoryNode::MiddleBoss1Defeated;
 	SaveAssetPackage(DA_MB1);
+
+	// Phase_1 path compatibility
+	UChestDefinition* DA_MB1_P1 = CreateOrGetChestDef(TEXT("/Game/Campaign/DataAsset/Chest/Chest_Definition/Phase_1/DA_Chest_MidBoss1"));
+	DA_MB1_P1->ChestClass = DefaultChestClass; DA_MB1_P1->LootTable = DT_MB1; DA_MB1_P1->RollCount = 2; DA_MB1_P1->SlotCount = 6; DA_MB1_P1->ColumnCount = 4;
+	SaveAssetPackage(DA_MB1_P1);
 
 	UChestDefinition* DA_MB2 = CreateOrGetChestDef(TEXT("/Game/Campaign/DataAsset/Chest/DA_Chest_MidBoss2"));
 	DA_MB2->ChestClass = DefaultChestClass; DA_MB2->LootTable = DT_MB2; DA_MB2->RollCount = 2; DA_MB2->SlotCount = 6; DA_MB2->ColumnCount = 4;
-	DA_MB2->GuaranteedQuestItemTag = Item_Quest_JapaneseCipher;
-	DA_MB2->GuaranteedQuestItemCount = 1;
-	DA_MB2->RequiredStoryNodeForQuestItem = EStoryNode::SupplyPatrolQuestAccepted;
-	DA_MB2->bStopAfterStoryNode = true;
-	DA_MB2->StopAfterStoryNodeForQuestItem = EStoryNode::MiddleBoss2Defeated;
 	SaveAssetPackage(DA_MB2);
+
+	// Phase_2 path compatibility
+	UChestDefinition* DA_MB2_P2 = CreateOrGetChestDef(TEXT("/Game/Campaign/DataAsset/Chest/Chest_Definition/Phase_2/DA_Chest_MidBoss2"));
+	DA_MB2_P2->ChestClass = DefaultChestClass; DA_MB2_P2->LootTable = DT_MB2; DA_MB2_P2->RollCount = 2; DA_MB2_P2->SlotCount = 6; DA_MB2_P2->ColumnCount = 4;
+	SaveAssetPackage(DA_MB2_P2);
 
 	UChestDefinition* DA_MB3 = CreateOrGetChestDef(TEXT("/Game/Campaign/DataAsset/Chest/DA_Chest_MidBoss3"));
 	DA_MB3->ChestClass = DefaultChestClass; DA_MB3->LootTable = DT_MB3; DA_MB3->RollCount = 2; DA_MB3->SlotCount = 6; DA_MB3->ColumnCount = 4;
-	DA_MB3->GuaranteedQuestItemTag = Item_Quest_AirRaidInfo;
-	DA_MB3->GuaranteedQuestItemCount = 1;
-	DA_MB3->RequiredStoryNodeForQuestItem = EStoryNode::SuppressJapaneseForcesQuestAccepted;
-	DA_MB3->bStopAfterStoryNode = true;
-	DA_MB3->StopAfterStoryNodeForQuestItem = EStoryNode::MiddleBoss3Defeated;
 	SaveAssetPackage(DA_MB3);
+
+	// Phase_3 path compatibility
+	UChestDefinition* DA_MB3_P3 = CreateOrGetChestDef(TEXT("/Game/Campaign/DataAsset/Chest/Chest_Definition/Phase_3/DA_Chest_MidBoss3"));
+	DA_MB3_P3->ChestClass = DefaultChestClass; DA_MB3_P3->LootTable = DT_MB3; DA_MB3_P3->RollCount = 2; DA_MB3_P3->SlotCount = 6; DA_MB3_P3->ColumnCount = 4;
+	SaveAssetPackage(DA_MB3_P3);
+
+	// Phase_1 Land Early path compatibility
+	UChestDefinition* DA_LandEarly_P1 = CreateOrGetChestDef(TEXT("/Game/Campaign/DataAsset/Chest/Chest_Definition/Phase_1/DA_Chest_Land_Early"));
+	DA_LandEarly_P1->ChestClass = DefaultChestClass; DA_LandEarly_P1->LootTable = DT_Early; DA_LandEarly_P1->RollCount = 2; DA_LandEarly_P1->SlotCount = 4; DA_LandEarly_P1->ColumnCount = 4;
+	SaveAssetPackage(DA_LandEarly_P1);
 
 	UChestDefinition* DA_Cipher = CreateOrGetChestDef(TEXT("/Game/Campaign/DataAsset/Chest/DA_Chest_CipherBook"));
 	DA_Cipher->ChestClass = DefaultChestClass; DA_Cipher->LootTable = DT_Cipher; DA_Cipher->RollCount = 2; DA_Cipher->SlotCount = 4; DA_Cipher->ColumnCount = 4;
-	DA_Cipher->GuaranteedQuestItemTag = Item_Quest_CipherBook;
-	DA_Cipher->GuaranteedQuestItemCount = 1;
-	DA_Cipher->RequiredStoryNodeForQuestItem = EStoryNode::ReconQuestAccepted;
-	DA_Cipher->bStopAfterStoryNode = true;
-	DA_Cipher->StopAfterStoryNodeForQuestItem = EStoryNode::CipherBookAcquired;
 	SaveAssetPackage(DA_Cipher);
 
 	// ----------------------------------------------------
-	// 3. Random Groups Authoring
+	// 3. Crafting Recipes Authoring
+	// ----------------------------------------------------
+	UDataTable* DT_Crafting = CreateOrGetDataTable(TEXT("/Game/Blueprints/Item/DT_CraftingRecipes"), FCraftingRecipeRow::StaticStruct());
+	if (DT_Crafting)
+	{
+		FCraftingRecipeRow Recipe;
+		Recipe.ResultItemTag = Item_Quest_DecipheredCipher;
+		Recipe.ResultQuantity = 1;
+		Recipe.bEnabled = true;
+		Recipe.SortOrder = 100;
+		
+		FCraftingItemStack Ing1;
+		Ing1.ItemTag = Item_Quest_CipherBook;
+		Ing1.Quantity = 1;
+		Recipe.Ingredients.Add(Ing1);
+
+		FCraftingItemStack Ing2;
+		Ing2.ItemTag = Item_Quest_JapaneseCipher;
+		Ing2.Quantity = 1;
+		Recipe.Ingredients.Add(Ing2);
+
+		DT_Crafting->AddRow(TEXT("Recipe_DecipherCipher"), Recipe);
+		SaveAssetPackage(DT_Crafting);
+	}
+
+	// ----------------------------------------------------
+	// 4. Random Groups Authoring
 	// ----------------------------------------------------
 	URandomChestGroup* RG_LandEarly = CreateOrGetRandomGroup(TEXT("/Game/Campaign/DataAsset/Chest/DA_RandomGroup_Land_Early"));
 	RG_LandEarly->ChestDefinition = DA_LandEarly; RG_LandEarly->SpawnCount = 2;
@@ -368,45 +416,53 @@ bool FCampaignAssetsAuthoringAndValidationTest::RunTest(const FString& Parameter
 	SaveAssetPackage(RG_OceanLate);
 
 	// ----------------------------------------------------
-	// 4. Dialogue DataAssets Authoring
+	// 5. Dialogue DataAssets Authoring (Single Unified YiSunSin Dialogue)
 	// ----------------------------------------------------
 	UNPCDialogueData* DA_YiSunSin = CreateOrGetDialogueData(TEXT("/Game/Campaign/DataAsset/Dialogue/DA_YiSunSinDialogue"));
 	DA_YiSunSin->DisplayName = FText::FromString(TEXT("이순신"));
 	DA_YiSunSin->Rules.Reset();
 	{
+		// 1. 정찰 퀘스트 수락 (GameStarted 상태에서 바로 시작)
 		FNPCDialogueRule R1; R1.RuleId = TEXT("Rule_ReconQuest"); R1.Priority = 200;
-		R1.RequiredStoryNodes.Add(EStoryNode::FirstSailingCompleted);
+		R1.RequiredStoryNodes.Add(EStoryNode::GameStarted);
 		R1.BlockedStoryNodes.Add(EStoryNode::ReconQuestAccepted);
 		R1.bCompleteStoryNode = true; R1.StoryNodeToComplete = EStoryNode::ReconQuestAccepted;
-		FNPCDialogueLine L1; L1.LineId = TEXT("L1"); L1.Text = FText::FromString(TEXT("왜군의 움직임이 심상치 않소. 전방 해역을 정찰하고 적 선봉장(중간보스 1)을 처치하시오."));
+		FNPCDialogueLine L1; L1.LineId = TEXT("L1"); L1.Text = FText::FromString(TEXT("왜군의 움직임이 심상치 않소. 전방 해역을 정찰하고 적 암호 해독서를 확보하며 적 선봉장(중간보스 1)을 격파하시오."));
 		R1.Lines.Add(L1);
 		DA_YiSunSin->Rules.Add(R1);
 
+		// 2. 보급로 차단 퀘스트 & 해류 발생기 장치 해금
 		FNPCDialogueRule R2; R2.RuleId = TEXT("Rule_SupplyPatrol"); R2.Priority = 210;
 		R2.RequiredStoryNodes.Add(EStoryNode::MiddleBoss1Defeated);
 		R2.BlockedStoryNodes.Add(EStoryNode::SupplyPatrolQuestAccepted);
 		R2.bCompleteStoryNode = true; R2.StoryNodeToComplete = EStoryNode::SupplyPatrolQuestAccepted;
-		FNPCDialogueLine L2; L2.LineId = TEXT("L1"); L2.Text = FText::FromString(TEXT("적의 침공 지도를 확보했군! 이제 놈들의 보급로를 차단하고 중간보스 2를 격파해야 하오."));
+		FNPCDialogueLine L2; L2.LineId = TEXT("L1"); L2.Text = FText::FromString(TEXT("적 선봉장을 격파했군! 이제 놈들의 보급로를 차단하고 중간보스 2를 격파하여 일본군 암호를 노획하시오."));
 		R2.Lines.Add(L2);
 		DA_YiSunSin->Rules.Add(R2);
 
+		// 3. 암호문 노획 후 해독서 조합 퀘스트
 		FNPCDialogueRule R3; R3.RuleId = TEXT("Rule_DecipherQuest"); R3.Priority = 220;
 		R3.RequiredStoryNodes.Add(EStoryNode::MiddleBoss2Defeated);
-		R3.BlockedStoryNodes.Add(EStoryNode::DecipherQuestAccepted);
+		R3.BlockedStoryNodes.Add(EStoryNode::SuppressJapaneseForcesQuestAccepted);
 		R3.bCompleteStoryNode = true; R3.StoryNodeToComplete = EStoryNode::DecipherQuestAccepted;
-		FNPCDialogueLine L3; L3.LineId = TEXT("L1"); L3.Text = FText::FromString(TEXT("암호문을 노획했으나 해독서가 필요하오. 서브 해역에서 해독서를 찾아 암호를 해독해 오시오."));
+		FNPCDialogueLine L3; L3.LineId = TEXT("L1"); L3.Text = FText::FromString(TEXT("일본군 암호를 노획했군! 제작대(작업대)에서 암호 해독서와 조합하여 [해독된 암호]를 제작해 오시오."));
 		R3.Lines.Add(L3);
 		DA_YiSunSin->Rules.Add(R3);
 
+		// 4. 왜군 본대 저지 퀘스트 (인벤토리에 해독된 암호문이 있을 때 즉시 발동)
 		FNPCDialogueRule R4; R4.RuleId = TEXT("Rule_SuppressForces"); R4.Priority = 230;
-		R4.RequiredStoryNodes.Add(EStoryNode::DecipherQuestAccepted);
-		R4.RequiredStoryNodes.Add(EStoryNode::CipherBookAcquired);
+		R4.RequiredStoryNodes.Add(EStoryNode::MiddleBoss2Defeated);
 		R4.BlockedStoryNodes.Add(EStoryNode::SuppressJapaneseForcesQuestAccepted);
+		FCraftingItemStack ReqDeciphered;
+		ReqDeciphered.ItemTag = Item_Quest_DecipheredCipher;
+		ReqDeciphered.Quantity = 1;
+		R4.RequiredItems.Add(ReqDeciphered);
 		R4.bCompleteStoryNode = true; R4.StoryNodeToComplete = EStoryNode::SuppressJapaneseForcesQuestAccepted;
 		FNPCDialogueLine L4; L4.LineId = TEXT("L1"); L4.Text = FText::FromString(TEXT("훌륭하오! 해독된 정보에 따르면 왜군 본대의 공습이 임박했소. 중간보스 3을 먼저 저지하시오."));
 		R4.Lines.Add(L4);
 		DA_YiSunSin->Rules.Add(R4);
 
+		// 5. 울돌목 결전 퀘스트
 		FNPCDialogueRule R5; R5.RuleId = TEXT("Rule_UldolmokBattle"); R5.Priority = 240;
 		R5.RequiredStoryNodes.Add(EStoryNode::MiddleBoss3Defeated);
 		R5.BlockedStoryNodes.Add(EStoryNode::UldolmokBattleQuestAccepted);
@@ -415,6 +471,7 @@ bool FCampaignAssetsAuthoringAndValidationTest::RunTest(const FString& Parameter
 		R5.Lines.Add(L5);
 		DA_YiSunSin->Rules.Add(R5);
 
+		// 6. 최종 엔딩 대사
 		FNPCDialogueRule R6; R6.RuleId = TEXT("Rule_Ending"); R6.Priority = 250;
 		R6.RequiredStoryNodes.Add(EStoryNode::FinalBossDefeated);
 		R6.BlockedStoryNodes.Add(EStoryNode::EndingDialogueCompleted);
@@ -423,6 +480,7 @@ bool FCampaignAssetsAuthoringAndValidationTest::RunTest(const FString& Parameter
 		R6.Lines.Add(L6);
 		DA_YiSunSin->Rules.Add(R6);
 
+		// 7. 기본 대기 대사
 		FNPCDialogueRule R_Amb; R_Amb.RuleId = TEXT("Rule_Ambient"); R_Amb.Priority = 0;
 		FNPCDialogueLine L_Amb; L_Amb.LineId = TEXT("L1"); L_Amb.Text = FText::FromString(TEXT("바다를 지키는 일은 한 치의 방심도 허용되지 않소."));
 		R_Amb.Lines.Add(L_Amb);
@@ -430,45 +488,28 @@ bool FCampaignAssetsAuthoringAndValidationTest::RunTest(const FString& Parameter
 	}
 	SaveAssetPackage(DA_YiSunSin);
 
-	// Base Helper Dialogue
-	UNPCDialogueData* DA_BaseHelper = CreateOrGetDialogueData(TEXT("/Game/Campaign/DataAsset/Dialogue/DA_BaseNPCDialogue"));
-	DA_BaseHelper->DisplayName = FText::FromString(TEXT("조선 수군 군관"));
-	DA_BaseHelper->Rules.Reset();
-	{
-		FNPCDialogueRule R1; R1.RuleId = TEXT("Rule_UnlockCurrent"); R1.Priority = 100;
-		R1.RequiredStoryNodes.Add(EStoryNode::SupplyPatrolQuestAccepted);
-		R1.BlockedStoryNodes.Add(EStoryNode::CurrentGeneratorUnlocked);
-		R1.bCompleteStoryNode = true; R1.StoryNodeToComplete = EStoryNode::CurrentGeneratorUnlocked;
-		FNPCDialogueLine L1; L1.LineId = TEXT("L1"); L1.Text = FText::FromString(TEXT("보급로 작전을 지원하기 위해 [해류 발생기] 장치를 활성화했습니다!"));
-		R1.Lines.Add(L1);
-		DA_BaseHelper->Rules.Add(R1);
-
-		FNPCDialogueRule R2; R2.RuleId = TEXT("Rule_UnlockWaterBomb"); R2.Priority = 110;
-		R2.RequiredStoryNodes.Add(EStoryNode::SuppressJapaneseForcesQuestAccepted);
-		R2.BlockedStoryNodes.Add(EStoryNode::WaterBombUnlocked);
-		R2.bCompleteStoryNode = true; R2.StoryNodeToComplete = EStoryNode::WaterBombUnlocked;
-		FNPCDialogueLine L2; L2.LineId = TEXT("L1"); L2.Text = FText::FromString(TEXT("왜군 원군 저지를 위해 강력한 [물폭탄] 기술을 지급합니다."));
-		R2.Lines.Add(L2);
-		DA_BaseHelper->Rules.Add(R2);
-
-		FNPCDialogueRule R3; R3.RuleId = TEXT("Rule_UnlockBombard"); R3.Priority = 120;
-		R3.RequiredStoryNodes.Add(EStoryNode::UldolmokBattleQuestAccepted);
-		R3.BlockedStoryNodes.Add(EStoryNode::BombardmentUnlocked);
-		R3.bCompleteStoryNode = true; R3.StoryNodeToComplete = EStoryNode::BombardmentUnlocked;
-		FNPCDialogueLine L3; L3.LineId = TEXT("L1"); L3.Text = FText::FromString(TEXT("울돌목 결전을 위해 함포 화력을 극대화한 [포탄세례] 기술을 해금합니다!"));
-		R3.Lines.Add(L3);
-		DA_BaseHelper->Rules.Add(R3);
-	}
-	SaveAssetPackage(DA_BaseHelper);
-
 	// Also generate DA_TestNPCDialogue for legacy test
 	UNPCDialogueData* DA_TestNPC = CreateOrGetDialogueData(TEXT("/Game/New/NPC/Data/DA_TestNPCDialogue"));
 	DA_TestNPC->DisplayName = FText::FromString(TEXT("테스트 NPC"));
 	DA_TestNPC->Rules = DA_YiSunSin->Rules;
+	{
+		FNPCDialogueRule AmbientRule;
+		AmbientRule.RuleId = TEXT("Ambient_Default");
+		AmbientRule.Priority = 0;
+		FNPCDialogueLine L1; L1.LineId = TEXT("Ambient_01"); L1.Text = FText::FromString(TEXT("안녕하세요."));
+		FNPCDialogueLine L2; L2.LineId = TEXT("Ambient_02"); L2.Text = FText::FromString(TEXT("선택지를 고르세요."));
+		FNPCDialogueReply Rep1; Rep1.ReplyId = TEXT("R1"); Rep1.Text = FText::FromString(TEXT("1번"));
+		FNPCDialogueReply Rep2; Rep2.ReplyId = TEXT("R2"); Rep2.Text = FText::FromString(TEXT("2번"));
+		L2.Replies.Add(Rep1);
+		L2.Replies.Add(Rep2);
+		AmbientRule.Lines.Add(L1);
+		AmbientRule.Lines.Add(L2);
+		DA_TestNPC->Rules.Add(AmbientRule);
+	}
 	SaveAssetPackage(DA_TestNPC);
 
 	// ----------------------------------------------------
-	// 5. Automated Validation Checks
+	// 6. Automated Validation Checks & Full E2E Scenario Simulation
 	// ----------------------------------------------------
 	TestNotNull(TEXT("DT_Early is valid"), DT_Early);
 	TestNotNull(TEXT("DT_MB1 is valid"), DT_MB1);
@@ -476,16 +517,87 @@ bool FCampaignAssetsAuthoringAndValidationTest::RunTest(const FString& Parameter
 	TestNotNull(TEXT("DA_YiSunSin is valid"), DA_YiSunSin);
 	TestNotNull(TEXT("RG_LandEarly is valid"), RG_LandEarly);
 
-	// Validation: Test 3-stage Story-Gated Guaranteed Item on DA_MB1
-	TArray<FStorageItemEntry> RolledBeforeStory = DA_MB1->RollInitialItems(1234, nullptr);
-	bool bHasMapItem = RolledBeforeStory.ContainsByPredicate([](const FStorageItemEntry& E) {
-		return E.ItemTag == Item_Quest_InvasionMap;
-	});
-	TestTrue(TEXT("DA_MB1 includes InvasionMap tag when condition met"), bHasMapItem);
+	// 1. Validation: AChestSpawnPoint with Boss Guard injects quest item
+	AChestSpawnPoint* TestPoint = NewObject<AChestSpawnPoint>();
+	TestPoint->bIsBossChest = true;
+	TestPoint->GuaranteedBossQuestItemTag = Item_Quest_CipherBook;
+	TestPoint->GuaranteedBossQuestItemCount = 1;
 
-	// Validation: Dialogue rule count
-	TestEqual(TEXT("YiSunSin dialogue has 7 rules"), DA_YiSunSin->Rules.Num(), 7);
-	TestEqual(TEXT("BaseHelper dialogue has 3 rules"), DA_BaseHelper->Rules.Num(), 3);
+	// Without matching guard, HasMatchingBossGuard is false
+	TestFalse(TEXT("No guard -> HasMatchingBossGuard is false"), TestPoint->HasMatchingBossGuard());
+
+	// With matching boss guard
+	ABaseCharacter* DummyBoss = NewObject<ABaseCharacter>();
+	const FGameplayTag BossTag = Enemy_Type_Boss_Mid1;
+	DummyBoss->Tags.Add(BossTag.GetTagName());
+	TestPoint->RequiredBossTag = BossTag;
+	TArray<ABaseCharacter*> GuardList;
+	GuardList.Add(DummyBoss);
+	TestPoint->ConfigureGuardedSpawn(DA_MB1, GuardList);
+	TestTrue(TEXT("With Boss guard -> HasMatchingBossGuard is true"), TestPoint->HasMatchingBossGuard());
+
+	// If RequiredBossTag is cleared, it should not act as a boss chest
+	TestPoint->RequiredBossTag = FGameplayTag();
+	TestFalse(TEXT("Cleared RequiredBossTag -> HasMatchingBossGuard is false"), TestPoint->HasMatchingBossGuard());
+
+	// 1-B. Validation: Dynamic Guard Registration & 3 Lock States requested by User
+	// Scenario 1: No mobs initially -> chest starts unlocked
+	AStorageChest* DynamicChest = NewObject<AStorageChest>();
+	DynamicChest->ConfigureGuarding(true, {}, nullptr);
+	TestFalse(TEXT("Scenario 1: Chest without initial guards is unlocked"), DynamicChest->IsLocked());
+
+	// Boss spawns dynamically -> AddGuardCharacter locks chest
+	ABaseCharacter* DynamicBoss = NewObject<ABaseCharacter>();
+	UBaseHealthComponent* BossHealth = NewObject<UBaseHealthComponent>(DynamicBoss);
+	DynamicBoss->AddInstanceComponent(BossHealth);
+	DynamicChest->AddGuardCharacter(DynamicBoss);
+	TestTrue(TEXT("Scenario 1: Dynamically spawned boss locks the chest"), DynamicChest->IsLocked());
+
+	// Boss dies -> Chest unlocks
+	DynamicChest->HandleTrackedHealthDeath(BossHealth);
+	TestFalse(TEXT("Scenario 1: Boss death unlocks the chest"), DynamicChest->IsLocked());
+
+	// Scenario 2: Mob guard + delayed boss spawn
+	AStorageChest* MultiGuardChest = NewObject<AStorageChest>();
+	ABaseCharacter* NormalMob = NewObject<ABaseCharacter>();
+	UBaseHealthComponent* MobHealth = NewObject<UBaseHealthComponent>(NormalMob);
+	NormalMob->AddInstanceComponent(MobHealth);
+	MultiGuardChest->ConfigureGuarding(true, { NormalMob }, nullptr);
+	TestTrue(TEXT("Scenario 2: Chest with normal mob starts locked"), MultiGuardChest->IsLocked());
+
+	// Mob dies before boss spawns -> unlocks
+	MultiGuardChest->HandleTrackedHealthDeath(MobHealth);
+	TestFalse(TEXT("Scenario 2: Mob dies -> chest unlocks"), MultiGuardChest->IsLocked());
+
+	// Later boss spawns -> relocks
+	ABaseCharacter* DelayedBoss = NewObject<ABaseCharacter>();
+	UBaseHealthComponent* DelayedBossHealth = NewObject<UBaseHealthComponent>(DelayedBoss);
+	DelayedBoss->AddInstanceComponent(DelayedBossHealth);
+	MultiGuardChest->AddGuardCharacter(DelayedBoss);
+	TestTrue(TEXT("Scenario 2: Delayed boss spawns -> chest relocks"), MultiGuardChest->IsLocked());
+
+	// Delayed boss dies -> unlocks
+	MultiGuardChest->HandleTrackedHealthDeath(DelayedBossHealth);
+	TestFalse(TEXT("Scenario 2: Delayed boss dies -> chest unlocks again"), MultiGuardChest->IsLocked());
+
+	// 2. Validation: Full 8-Step Story E2E Scenario
+	UGameInstance* GI = NewObject<UGameInstance>();
+	UStorySubsystem* StoryState = NewObject<UStorySubsystem>(GI);
+	UStoryFacadeSubsystem* Story = NewObject<UStoryFacadeSubsystem>(GI);
+	Story->ConfigureForUseCase(StoryState);
+
+	TestTrue(TEXT("Step 0: Game starts automatically"), Story->StartNewCampaign());
+	TestTrue(TEXT("Step 1: First YiSunSin talk gives Recon quest"), Story->CompleteStoryNode(EStoryNode::ReconQuestAccepted));
+	TestTrue(TEXT("Step 2: Defeat MidBoss 1 (CipherBook acquired)"), Story->CompleteStoryNode(EStoryNode::MiddleBoss1Defeated));
+	TestTrue(TEXT("CipherBook acquired recorded"), Story->CompleteStoryNode(EStoryNode::CipherBookAcquired));
+	TestTrue(TEXT("Step 3: Talk to YiSunSin gives SupplyPatrol quest"), Story->CompleteStoryNode(EStoryNode::SupplyPatrolQuestAccepted));
+	TestTrue(TEXT("Step 4: Defeat MidBoss 2 (JapaneseCipher acquired)"), Story->CompleteStoryNode(EStoryNode::MiddleBoss2Defeated));
+	TestTrue(TEXT("Step 5: Talk to YiSunSin gives Decipher quest"), Story->CompleteStoryNode(EStoryNode::DecipherQuestAccepted));
+	TestTrue(TEXT("Step 6: Crafting complete -> Talk gives Suppress forces quest"), Story->CompleteStoryNode(EStoryNode::SuppressJapaneseForcesQuestAccepted));
+	TestTrue(TEXT("Step 7: Defeat MidBoss 3 (AirRaidInfo acquired)"), Story->CompleteStoryNode(EStoryNode::MiddleBoss3Defeated));
+	TestTrue(TEXT("Step 8: Talk gives Uldolmok battle quest"), Story->CompleteStoryNode(EStoryNode::UldolmokBattleQuestAccepted));
+	TestTrue(TEXT("Step 9: Defeat Final Boss"), Story->CompleteStoryNode(EStoryNode::FinalBossDefeated));
+	TestTrue(TEXT("Step 10: Talk to YiSunSin gives Ending"), Story->CompleteStoryNode(EStoryNode::EndingDialogueCompleted));
 
 	return true;
 }

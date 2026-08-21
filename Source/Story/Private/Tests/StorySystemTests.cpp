@@ -64,17 +64,9 @@ bool FStoryFacadeFlowTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("New shared campaign starts"), Facade->StartNewCampaign());
 	TestTrue(TEXT("GameStarted is immediately reached"),
 		Facade->IsStoryNodeReached(EStoryNode::GameStarted));
-	TestFalse(TEXT("Recon cannot complete before first sailing"),
-		Facade->CompleteStoryNode(EStoryNode::ReconQuestAccepted));
-	TestFalse(TEXT("Recon preflight also reports missing prerequisite"),
+	TestTrue(TEXT("Recon preflight succeeds directly from GameStarted"),
 		Facade->CanCompleteStoryNode(EStoryNode::ReconQuestAccepted));
-	TestTrue(TEXT("First sailing preflight succeeds"),
-		Facade->CanCompleteStoryNode(EStoryNode::FirstSailingCompleted));
-	TestTrue(TEXT("First sailing completes"),
-		Facade->CompleteStoryNode(EStoryNode::FirstSailingCompleted));
-	TestTrue(TEXT("Recon preflight succeeds after first sailing"),
-		Facade->CanCompleteStoryNode(EStoryNode::ReconQuestAccepted));
-	TestTrue(TEXT("Recon quest is accepted after first sailing"),
+	TestTrue(TEXT("Recon quest completes directly from GameStarted"),
 		Facade->CompleteStoryNode(EStoryNode::ReconQuestAccepted));
 	TestTrue(TEXT("A reached node remains true"),
 		Facade->IsStoryNodeReached(EStoryNode::ReconQuestAccepted));
@@ -91,14 +83,7 @@ bool FStoryFacadeFlowTest::RunTest(const FString& Parameters)
 		Facade->CompleteStoryNode(EStoryNode::CurrentGeneratorUnlocked));
 	TestTrue(TEXT("Boss 2 defeat succeeds from the same node"),
 		Facade->CompleteStoryNode(EStoryNode::MiddleBoss2Defeated));
-	TestTrue(TEXT("Decipher quest is accepted after Boss 2 defeat"),
-		Facade->CompleteStoryNode(EStoryNode::DecipherQuestAccepted));
-
-	TestFalse(TEXT("Suppression quest also needs the independent cipher book branch"),
-		Facade->CompleteStoryNode(EStoryNode::SuppressJapaneseForcesQuestAccepted));
-	TestTrue(TEXT("Cipher book can be acquired from its independent branch"),
-		Facade->CompleteStoryNode(EStoryNode::CipherBookAcquired));
-	TestTrue(TEXT("Both arrows now allow the suppression quest"),
+	TestTrue(TEXT("Suppression quest can complete directly after Boss 2 defeat"),
 		Facade->CompleteStoryNode(EStoryNode::SuppressJapaneseForcesQuestAccepted));
 	TestTrue(TEXT("Water Bomb unlock succeeds"),
 		Facade->CompleteStoryNode(EStoryNode::WaterBombUnlocked));

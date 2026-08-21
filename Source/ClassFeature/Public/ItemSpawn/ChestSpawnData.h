@@ -49,26 +49,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storage", meta = (ClampMin = "1", UIMin = "1"))
 	int32 ColumnCount = 4;
 
-	/** 스토리 조건부 확정 드랍 퀘스트 아이템 (스토리 조건 충족 시 추가 슬롯에 100% 드랍) */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Quest")
-	FGameplayTag GuaranteedQuestItemTag;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Quest", meta = (ClampMin = "1", UIMin = "1"))
-	int32 GuaranteedQuestItemCount = 1;
-
-	/** 이 스토리 노드에 도달했을 때부터 퀘스트 아이템이 포함됩니다. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Quest")
-	EStoryNode RequiredStoryNodeForQuestItem = EStoryNode::GameStarted;
-
-	/** 처치 노드 도달 후 더 이상 퀘스트 아이템을 드랍하지 않을지 여부 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Quest")
-	bool bStopAfterStoryNode = false;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Quest",
-		meta = (EditCondition = "bStopAfterStoryNode"))
-	EStoryNode StopAfterStoryNodeForQuestItem = EStoryNode::MiddleBoss1Defeated;
-
-	TArray<FStorageItemEntry> RollInitialItems(int32 Seed, const UObject* WorldContextObject = nullptr) const;
+	TArray<FStorageItemEntry> RollInitialItems(int32 Seed) const;
 
 	static TArray<FStorageItemEntry> RollItemsFromRows(
 		const TArray<struct FChestInitialLootRow>& LootRows,
