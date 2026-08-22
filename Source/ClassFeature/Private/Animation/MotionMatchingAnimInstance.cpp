@@ -3287,9 +3287,25 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
         AbsDesiredFacingDeltaYaw >= StateControllerTurnInPlaceEntryAngle;
     const EStateControllerPresentationState HoldStateBeforeEvaluation = StateControllerPlaybackHoldState;
     const int32 SelectionRevisionBeforeEvaluation = StateControllerSelectionRevision;
+    const bool bPlayerHasActionTag = CachedBasePlayer && CachedBasePlayer->GetAbilitySystemComponent() &&
+        (CachedBasePlayer->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Attacking) ||
+         CachedBasePlayer->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Damaged) ||
+         CachedBasePlayer->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Dead));
+    const bool bPlayerActionFlag = CachedBasePlayer &&
+        (CachedBasePlayer->bIsAttacking || CachedBasePlayer->bIsDodging ||
+         CachedBasePlayer->bIsHitReacting || CachedBasePlayer->bIsPlayingCombatIntro);
+    const bool bFullBodyMontagePlaying = Montage_IsPlaying(nullptr);
+    const bool bActionMontageActive = bPlayerHasActionTag || bPlayerActionFlag || bFullBodyMontagePlaying;
+
+    if (bActionMontageActive)
+    {
+        DesiredState = bHasMoveInput
+            ? EStateControllerPresentationState::LocomotionLoop
+            : EStateControllerPresentationState::IdleLoop;
+    }
     // StartLanding deliberately keeps bIsInAir true until the landing pose is
     // released.  Landing must therefore take precedence over the air flag, unless TIP is strongly requested.
-    if (bLanding && !bCanStartTurnInPlace)
+    else if (bLanding && !bCanStartTurnInPlace)
     {
         // Project_J's Strafe path enters its Land chooser on the impact frame.
         // Artistic already records an immutable impact direction, so diagonals
@@ -3676,7 +3692,21 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         }
     }
 
-    if (bStateChanged || bInterruptLandForMotionMatching || bTurnInPlaceReplayDue || bStartInputReselectDue)
+    const bool bPlayerHasActionTag = CachedBasePlayer && CachedBasePlayer->GetAbilitySystemComponent() &&
+        (CachedBasePlayer->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Attacking) ||
+         CachedBasePlayer->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Damaged) ||
+         CachedBasePlayer->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Dead));
+    const bool bPlayerActionFlag = CachedBasePlayer &&
+        (CachedBasePlayer->bIsAttacking || CachedBasePlayer->bIsDodging ||
+         CachedBasePlayer->bIsHitReacting || CachedBasePlayer->bIsPlayingCombatIntro);
+    const bool bFullBodyMontagePlaying = Montage_IsPlaying(nullptr);
+    const bool bActionMontageActive = bPlayerHasActionTag || bPlayerActionFlag || bFullBodyMontagePlaying;
+
+    const bool bActionMontageClearDue = bActionMontageActive &&
+        (StateControllerSelectedAnimation != nullptr ||
+         StateControllerPlaybackHoldState != DesiredState);
+
+    if (bStateChanged || bInterruptLandForMotionMatching || bTurnInPlaceReplayDue || bStartInputReselectDue || bActionMontageClearDue)
     {
         StateControllerPlaybackHoldState = DesiredState;
         StateControllerPlaybackHoldElapsed = 0.0f;

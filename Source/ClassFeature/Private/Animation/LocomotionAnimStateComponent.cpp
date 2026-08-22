@@ -581,6 +581,23 @@ void ULocomotionAnimStateComponent::UpdateMovementRequestState(float DeltaTime)
         bStartWasSprinting = false;
     }
 
+    const bool bActionMontageActive = CachedBasePlayer &&
+        (CachedBasePlayer->bIsAttacking || CachedBasePlayer->bIsDodging ||
+         CachedBasePlayer->bIsHitReacting || CachedBasePlayer->bIsPlayingCombatIntro);
+
+    if (bActionMontageActive)
+    {
+        ResetLocomotionActionState(TEXT("ActionMontageActive"));
+        bStartRequested = false;
+        bStopRequested = false;
+        bGroundMoveEpisodeActive = false;
+        bUseStartDatabase = false;
+        bUseSharpTurnDatabase = false;
+        bUseLoopDatabase = bHasMoveInput;
+        PreviousMoveInputForTurn = bHasMoveInput ? MovementInput : FVector2D::ZeroVector;
+        return;
+    }
+
     // Project_J distinguishes a normal turn redirect from a direct Pivot.
     // Artistic keeps 45/90 degree steering inside PSD_Run_Transition; only a
     // fast 180-ish reversal receives the authored Pivot one-shot.
@@ -1995,6 +2012,35 @@ void ULocomotionAnimStateComponent::InterruptStartForGaitChange()
     // first query must use Pose History and not continue the old hidden pose.
     bMotionMatchingReselectionRequested = true;
     ForceStateTransition(ELocomotionState::Locomotion);
+}
+
+void ULocomotionAnimStateComponent::ResetLocomotionActionState(const TCHAR* Reason)
+{
+    bStartRequested = false;
+    bPendingGroundStartFinish = false;
+    bGroundStartFinished = true;
+    bStopRequested = false;
+    bGroundMoveEpisodeActive = false;
+    bLandingRequested = false;
+    bIsLanding = false;
+    bIsJumping = false;
+    bIsFallOffStart = false;
+    bSharpTurnRequested = false;
+    bMotionMatchingReselectionRequested = false;
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(StartFallbackTimerHandle);
+        World->GetTimerManager().ClearTimer(StopFallbackTimerHandle);
+        World->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
+        World->GetTimerManager().ClearTimer(JumpStartTimerHandle);
+        World->GetTimerManager().ClearTimer(FallOffStartTimerHandle);
+    }
+
+    if (CurrentState == ELocomotionState::Start || CurrentState == ELocomotionState::Stop || CurrentState == ELocomotionState::Landing)
+    {
+        ForceStateTransition(bHasMoveInput ? ELocomotionState::Locomotion : ELocomotionState::Idle);
+    }
 }
 
 void ULocomotionAnimStateComponent::InterruptLandingForStop()

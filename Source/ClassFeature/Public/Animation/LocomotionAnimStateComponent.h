@@ -223,6 +223,9 @@ public:
     /** Start may hand off directly to moving MM when Sprint intent changes (e.g. shift pressed during run_start). */
     void InterruptStartForGaitChange();
 
+    /** Resets transitional one-shot requests and timers when an action montage (attack, dodge, hit, interact) starts. */
+    void ResetLocomotionActionState(const TCHAR* Reason = TEXT("ActionInterrupted"));
+
 protected:
     void CacheOwner();
     bool PerformGroundProbe() const;
