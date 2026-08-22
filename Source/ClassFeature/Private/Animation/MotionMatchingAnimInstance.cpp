@@ -2520,28 +2520,6 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             ThreadSafeData.WeaponUpperBodyData.OverlayState = EWeaponUpperBodyOverlayState::Idle;
         }
 
-        if (const ABowItem* EquippedBow = Cast<ABowItem>(CachedBasePlayer->EquippedItem))
-        {
-            if (const UBowComponent* BowComponent = EquippedBow->GetBowComponent())
-            {
-                ThreadSafeData.BowData.bIsAiming = BowComponent->IsAiming();
-                ThreadSafeData.BowData.DrawAlpha = BowComponent->GetDrawAlpha();
-                ThreadSafeData.BowData.bIsDrawing = ThreadSafeData.BowData.bIsAiming && ThreadSafeData.BowData.DrawAlpha > KINDA_SMALL_NUMBER;
-                ThreadSafeData.BowData.bIsFullyDrawn = ThreadSafeData.BowData.DrawAlpha >= 1.f - KINDA_SMALL_NUMBER;
-
-                FTransform StringIKTargetWorldTransform = FTransform::Identity;
-                if (EquippedBow->GetStringIKTargetTransform(ThreadSafeData.BowData.DrawAlpha, StringIKTargetWorldTransform))
-                {
-                    if (const USkeletalMeshComponent* CharacterMesh = GetSkelMeshComponent())
-                    {
-                        ThreadSafeData.BowData.bHasStringIKTarget = true;
-                        ThreadSafeData.BowData.StringIKTargetTransform =
-                            StringIKTargetWorldTransform.GetRelativeTransform(CharacterMesh->GetComponentTransform());
-                    }
-                }
-            }
-        }
-
         if (const UAbilitySystemComponent* ASC = CachedBasePlayer->GetAbilitySystemComponent())
         {
             ThreadSafeData.BowData.bIsDrawing = ASC->HasMatchingGameplayTag(State_Bow_Drawing);
@@ -2552,6 +2530,37 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                 ThreadSafeData.BowData.bIsFullyDrawn ||
                 ASC->HasMatchingGameplayTag(State_Bow_FullyDrawn);
             ThreadSafeData.BowData.bIsReleasing = ASC->HasMatchingGameplayTag(State_Bow_Releasing);
+        }
+
+        if (const ABowItem* EquippedBow = Cast<ABowItem>(CachedBasePlayer->EquippedItem))
+        {
+            if (const UBowComponent* BowComponent = EquippedBow->GetBowComponent())
+            {
+                ThreadSafeData.BowData.bIsAiming = BowComponent->IsAiming();
+                ThreadSafeData.BowData.DrawAlpha = BowComponent->GetDrawAlpha();
+                ThreadSafeData.BowData.bIsDrawing = ThreadSafeData.BowData.bIsAiming && ThreadSafeData.BowData.DrawAlpha > KINDA_SMALL_NUMBER;
+                ThreadSafeData.BowData.bIsFullyDrawn = ThreadSafeData.BowData.bIsFullyDrawn || (ThreadSafeData.BowData.DrawAlpha >= 1.f - KINDA_SMALL_NUMBER);
+
+                FTransform StringIKTargetWorldTransform = FTransform::Identity;
+                const bool bShouldAttachStringToHand =
+                    !ThreadSafeData.BowData.bIsReleasing &&
+                    ThreadSafeData.BowData.DrawAlpha > KINDA_SMALL_NUMBER;
+
+                if (bShouldAttachStringToHand &&
+                    EquippedBow->GetStringIKTargetTransform(ThreadSafeData.BowData.DrawAlpha, StringIKTargetWorldTransform))
+                {
+                    if (const USkeletalMeshComponent* CharacterMesh = GetSkelMeshComponent())
+                    {
+                        ThreadSafeData.BowData.bHasStringIKTarget = true;
+                        ThreadSafeData.BowData.StringIKTargetTransform =
+                            StringIKTargetWorldTransform.GetRelativeTransform(CharacterMesh->GetComponentTransform());
+                    }
+                }
+                else
+                {
+                    ThreadSafeData.BowData.bHasStringIKTarget = false;
+                }
+            }
         }
 
         // Preload the full-draw pose while the authored draw montage is still
@@ -2871,7 +2880,9 @@ bool UMotionMatchingAnimInstance::GetThreadSafeHasBowEquipped() const
 {
     const FGameplayTag OverlayTag = GetThreadSafeWeaponUpperBodyOverlayTag();
     const FGameplayTag EquippedWeaponTag = GetThreadSafeEquippedWeaponTag();
-    return OverlayTag.MatchesTag(Item_Weapon_Bow) || EquippedWeaponTag.MatchesTag(Item_Weapon_Bow);
+    return OverlayTag.MatchesTag(Item_Weapon_Bow) || EquippedWeaponTag.MatchesTag(Item_Weapon_Bow) ||
+           OverlayTag.MatchesTag(Item_Id_Weapon_Bow) || EquippedWeaponTag.MatchesTag(Item_Id_Weapon_Bow) ||
+           OverlayTag.ToString().Contains(TEXT("Bow")) || EquippedWeaponTag.ToString().Contains(TEXT("Bow"));
 }
 
 bool UMotionMatchingAnimInstance::GetThreadSafeHasWeaponEquipped() const
@@ -2902,7 +2913,13 @@ bool UMotionMatchingAnimInstance::GetThreadSafeShouldOverrideWeaponUpperBody() c
 EWeaponUpperBodyOverlayMode UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyMode() const
 {
     const FAnimWeaponUpperBodyData& WeaponData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData;
-    if (!WeaponData.OverlayTag.MatchesTag(Item_Weapon_Bow))
+    const bool bIsBow = WeaponData.OverlayTag.MatchesTag(Item_Weapon_Bow) ||
+                        WeaponData.OverlayTag.MatchesTag(Item_Id_Weapon_Bow) ||
+                        WeaponData.EquippedWeaponTag.MatchesTag(Item_Weapon_Bow) ||
+                        WeaponData.EquippedWeaponTag.MatchesTag(Item_Id_Weapon_Bow) ||
+                        WeaponData.OverlayTag.ToString().Contains(TEXT("Bow")) ||
+                        WeaponData.EquippedWeaponTag.ToString().Contains(TEXT("Bow"));
+    if (!bIsBow)
     {
         return EWeaponUpperBodyOverlayMode::None;
     }
@@ -4361,6 +4378,17 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
             CachedLocomotionStateComponent->bShouldTurnInPlace ? 1 : 0,
             CachedLocomotionStateComponent->GroundSpeed);
         GEngine->AddOnScreenDebugMessage(9999, 0.0f, FColor::Cyan, ScreenDebug);
+
+        const FAnimWeaponUpperBodyData& WData = ThreadSafeData.WeaponUpperBodyData;
+        const FString WeaponDebug = FString::Printf(
+            TEXT("[WeaponOverlay] EquippedTag: %s | OverlayTag: %s | Index: %d | Alpha: %.1f | Mode: %s | Override: %d"),
+            *WData.EquippedWeaponTag.ToString(),
+            *WData.OverlayTag.ToString(),
+            WData.OverlayIndex,
+            WData.UpperBodyAlpha,
+            *StaticEnum<EWeaponUpperBodyOverlayState>()->GetNameStringByValue(static_cast<int64>(WData.OverlayState)),
+            WData.bShouldOverrideUpperBody ? 1 : 0);
+        GEngine->AddOnScreenDebugMessage(9998, 0.0f, FColor::Emerald, WeaponDebug);
     }
 
     if (bComponentEventChanged)

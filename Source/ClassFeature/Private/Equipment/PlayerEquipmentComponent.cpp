@@ -213,7 +213,25 @@ int32 UPlayerEquipmentComponent::GetEquippedUpperBodyOverlayIndex() const
 	const ABasePlayer* OwnerPlayer = PlayerOwner ? PlayerOwner.Get() : Cast<ABasePlayer>(GetOwner());
 	const ABaseItem* EquippedItem = OwnerPlayer ? OwnerPlayer->EquippedItem : nullptr;
 	const FWeaponAnimationEntry* Entry = ResolveWeaponAnimationEntry(EquippedItem);
-	return Entry && Entry->bUseUpperBodyOverlay ? Entry->UpperBodyOverlayIndex : 0;
+	if (!Entry || !Entry->bUseUpperBodyOverlay)
+	{
+		return 0;
+	}
+
+	if (Entry->UpperBodyOverlayIndex > 0)
+	{
+		return Entry->UpperBodyOverlayIndex;
+	}
+
+	// Fallback heuristic: If the weapon is a Bow and UpperBodyOverlayIndex was not explicitly configured (> 0),
+	// default to Index 1 (BS_Bow in the player animation graph).
+	const FGameplayTag EquippedTag = EquippedItem ? EquippedItem->ItemTag : FGameplayTag();
+	if (EquippedTag.ToString().Contains(TEXT("Bow")))
+	{
+		return 1;
+	}
+
+	return 0;
 }
 
 UAnimMontage* UPlayerEquipmentComponent::GetEquippedCombatIntroMontage() const
@@ -312,9 +330,21 @@ const UWeaponAnimationDataAsset* UPlayerEquipmentComponent::ResolveWeaponAnimati
 
 	for (const FWeaponAnimationDataMapping& Mapping : WeaponAnimationDataByTag)
 	{
-		if (Mapping.AnimationData && Mapping.WeaponTag.IsValid() && Item->ItemTag.MatchesTag(Mapping.WeaponTag))
+		if (Mapping.AnimationData && Mapping.WeaponTag.IsValid())
 		{
-			return Mapping.AnimationData.Get();
+			if (Item->ItemTag.MatchesTag(Mapping.WeaponTag) || Mapping.WeaponTag.MatchesTag(Item->ItemTag))
+			{
+				return Mapping.AnimationData.Get();
+			}
+
+			FString ItemTagStr = Item->ItemTag.ToString();
+			FString ConfigTagStr = Mapping.WeaponTag.ToString();
+			ItemTagStr.ReplaceInline(TEXT("Item.Id.Weapon."), TEXT("Item.Weapon."));
+			ConfigTagStr.ReplaceInline(TEXT("Item.Id.Weapon."), TEXT("Item.Weapon."));
+			if (ItemTagStr.StartsWith(ConfigTagStr) || ConfigTagStr.StartsWith(ItemTagStr))
+			{
+				return Mapping.AnimationData.Get();
+			}
 		}
 	}
 
