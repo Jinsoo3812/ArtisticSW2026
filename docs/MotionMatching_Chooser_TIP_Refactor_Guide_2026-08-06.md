@@ -437,3 +437,31 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
   ```text
   [AnimState] Presentation: %s | Requested: %s | State: %s | Asset: %s | LandMoving: %d | StopReq: %d | TIP: %d | Speed: %.1f
   ```
+
+---
+
+### 7.4 최신 패치 내역: BlendStack 동일 프레임 중복 BlendTo 경고 수정 및 연속 회전(TIP Replay) 보존
+
+* **수정일자**: 2026-08-22
+* **문제 현상**:
+  - `ABP_Player` 애님그래프에서 `Blend Stack` 노드의 `Animation Asset`, `Blend Time` 핀에 C++ Getter 함수가 직접 연결되어 있는 상태에서, 노드의 `업데이트 시(On Update)` 콜백인 `OnUpdate_StateMachineBlendStack`이 `Force Blend On Next Update`를 호출함.
+  - 새 애니메이션 에셋 전환(예: `Idle` ➔ `TIP`, `Start` ➔ `Stop`) 시 핀 자체 평가에 의한 `BlendTo`와 `Force Blend`에 의한 `BlendTo`가 동일 프레임에 2회 발생.
+  - 엔진에서 `LogBlendStack: Warning: FAnimNode_BlendStack_Standalone multiple BlendTo requests during the same frame: only the last request will be put on this BlendStack` 경고가 대량 출력됨.
+* **해결 방안 (`MotionMatchingAnimInstance.cpp`)**:
+  - `EvaluateStateControllerPlaybackHold`에서 직전 선택 에셋 `PreviousSelectedAnimation`을 캐싱.
+  - 에셋이 실제로 변경되는 일반 원샷 전환(`Previous != Current`)은 핀 자체 평가가 단독으로 `BlendTo`를 처리하도록 `ForceBlend`를 끔 (`0 Warnings`).
+  - **동일 에셋을 연속 재생하는 상황(`Previous == Current`, 예: 동일 방향 연속 제자리 회전 TIP Replay)**에서만 `bStateControllerForceBlendStackOnNextUpdate = true`를 펄스로 인가하여, 연속 턴 반응성을 100% 보존하면서 중복 호출 경고를 완전히 제거함.
+
+---
+
+### 7.5 최신 패치 내역: 공중 체공(Air Loop) 시간 역전 ensure 에러 수정 및 안정화
+
+* **수정일자**: 2026-08-22
+* **문제 현상**:
+  - `Player As Client` 환경 또는 공중 스폰 시 체공 시간이 3.33초를 초과할 때, 엔진에서 `Ensure condition failed: (CurrentPosition >= PreviousPosition) in Animation M_Neutral_Jump_Loop_Fall` 에러 발생.
+  - C++의 `StabilizeAirLoopBlendStackBeforeUpdate`가 누적 시간을 1주기 내로 강제 정규화(`RestoreBlendStackTopPlayer`)하면서, 이전 프레임 위치(9.47s)보다 작은 시간(3.33s)을 주입하여 엔진 무결성 검사를 위반함.
+* **해결 방안 (`MotionMatchingAnimInstance.cpp`)**:
+  - `StabilizeAirLoopBlendStackBeforeUpdate`에서 다중 스택 겹침 방지(`CollapseBlendStackToDominantPlayer`)는 그대로 유지.
+  - 루핑 시간 진행은 언리얼 엔진 자체 `FBlendStackAnimPlayer`의 네이티브 Looping Modulo 파이프라인에 일임하여 인위적인 시간 되감기 제거 ➔ `ensure` 에러 100% 제거 및 긴 체공/클라이언트 스폰 안정성 확보.
+
+

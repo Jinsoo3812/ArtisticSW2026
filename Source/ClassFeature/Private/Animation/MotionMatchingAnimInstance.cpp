@@ -230,31 +230,12 @@ namespace
 
         // Only one phase of the sustained Fall loop is meaningful.  Retaining
         // an old lower-weight phase lets it later become the evaluated player
-        // during a relevance/weight change, which is exactly how a stale
-        // accumulated time can reach root-motion extraction.
+        // during a relevance/weight change, which is why we collapse to the dominant player.
+        // Looping time advancement is handled natively by UE's FBlendStackAnimPlayer;
+        // forcibly calling Initialize/Restore with a normalized time rewinds the accumulated
+        // clock and triggers AnimSequence.cpp's ensure(CurrentPosition >= PreviousPosition).
         NodeInfo.bPreUpdateCollapsedLoopStack = CollapseBlendStackToDominantPlayer(MotionMatchingNode);
-
-        FBlendStackAnimPlayer& TopPlayer = MotionMatchingNode.AnimPlayers[0];
-        UAnimationAsset* TopAsset = TopPlayer.GetAnimationAsset();
-        if (!TopAsset || !TopPlayer.IsLooping())
-        {
-            return NodeInfo.bPreUpdateCollapsedLoopStack;
-        }
-
-        const float PlayLength = TopAsset->GetPlayLength();
-        const float TopTime = TopPlayer.GetAccumulatedTime();
-        if (PlayLength <= UE_SMALL_NUMBER || TopTime < PlayLength - KINDA_SMALL_NUMBER)
-        {
-            return NodeInfo.bPreUpdateCollapsedLoopStack;
-        }
-
-        const float NormalizedTime = NormalizeAnimationAssetTime(TopAsset, TopTime, true);
-        NodeInfo.bPreUpdateNormalizedLoopTime = RestoreBlendStackTopPlayer(
-            Context,
-            MotionMatchingNode,
-            TopAsset,
-            NormalizedTime);
-        return NodeInfo.bPreUpdateCollapsedLoopStack || NodeInfo.bPreUpdateNormalizedLoopTime;
+        return NodeInfo.bPreUpdateCollapsedLoopStack;
     }
 
     bool RemoveLowerTransitionPlayersForState(FAnimNode_MotionMatching& MotionMatchingNode, ELocomotionState State)
@@ -3606,6 +3587,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
     const float DeltaTime = GetWorld()->GetDeltaSeconds();
     const bool bStateChanged = (DesiredState != StateControllerPlaybackHoldState);
     const EStateControllerPresentationState PreviousState = StateControllerPlaybackHoldState;
+    const UAnimationAsset* PreviousSelectedAnimation = StateControllerSelectedAnimation;
     // This is intentionally a one-update signal.  It is consumed by an
     // AnimGraph OnUpdate function calling BlendStack::ForceBlendNextUpdate,
     // not by a per-frame Chooser query.
@@ -3959,15 +3941,17 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
                 StateControllerActiveTurnInPlaceIndex = 0;
             }
             ++StateControllerSelectionRevision;
-            // Project_J pulses Force Blend for every direct TIP selection, not
-            // only when the selected asset identity is unchanged.  The Blend
-            // Stack otherwise may retain its previous player/time and expose a
-            // Motion Matching Idle frame between two semantic TIP entries.
-			// Force Blend is a selection pulse, not a TIP-only workaround.  A
-			// Blend Stack does not restart an identical asset by itself, so every
-			// direct Start/Stop/Pivot/Jump/Land/TIP selection must publish it.
-			bStateControllerForceBlendStackOnNextUpdate =
-				bEnteringOneShot && StateControllerSelectedAnimation != nullptr;
+            // When AnimGraph pins (Animation Asset, BlendTime, etc.) are connected,
+            // the Blend Stack node automatically performs a BlendTo when the asset changes.
+            // Firing ForceBlendOnNextUpdate at the same time causes UE5 to log
+            // "multiple BlendTo requests during the same frame".
+            // Force Blend is therefore only needed when the newly selected one-shot asset
+            // is identical to the previously playing asset (e.g. continuous same-direction TIP
+            // replay or reselection), which the pin alone cannot detect as a new transition.
+            const bool bSameAssetReplay = (PreviousSelectedAnimation != nullptr &&
+                PreviousSelectedAnimation == StateControllerSelectedAnimation);
+            bStateControllerForceBlendStackOnNextUpdate =
+                bEnteringOneShot && StateControllerSelectedAnimation != nullptr && bSameAssetReplay;
 
         }
         else
