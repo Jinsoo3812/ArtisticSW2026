@@ -223,12 +223,17 @@ int32 UPlayerEquipmentComponent::GetEquippedUpperBodyOverlayIndex() const
 		return Entry->UpperBodyOverlayIndex;
 	}
 
-	// Fallback heuristic: If the weapon is a Bow and UpperBodyOverlayIndex was not explicitly configured (> 0),
-	// default to Index 1 (BS_Bow in the player animation graph).
+	// Fallback heuristic: If UpperBodyOverlayIndex was not explicitly configured (> 0),
+	// default to standard ABP indices (1: Bow, 2: Sword in the player animation graph).
 	const FGameplayTag EquippedTag = EquippedItem ? EquippedItem->ItemTag : FGameplayTag();
-	if (EquippedTag.ToString().Contains(TEXT("Bow")))
+	const FString TagStr = EquippedTag.ToString();
+	if (TagStr.Contains(TEXT("Bow")))
 	{
 		return 1;
+	}
+	if (TagStr.Contains(TEXT("Sword")) || TagStr.Contains(TEXT("OneHanded")) || TagStr.Contains(TEXT("Melee")))
+	{
+		return 2;
 	}
 
 	return 0;
