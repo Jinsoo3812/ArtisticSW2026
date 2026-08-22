@@ -17,6 +17,7 @@
 #include "Components/BaseHealthComponent.h"
 #include "BaseAttributeSet.h"
 #include "AIController.h"
+#include "AI/BaseAIController.h"
 #include "BrainComponent.h"
 #include "BuoyancyComponent.h"
 #include "Buoyancy/SWBuoyancyComponent.h"
@@ -883,6 +884,82 @@ void AEnemyShip::DeployNextDeckEnemy()
 			FMath::Max(0.05f, DeckEnemyActivationInterval),
 			false);
 	}
+}
+
+bool AEnemyShip::ActivateDeckEnemyAtPoint(
+	int32 SpawnPointId,
+	AActor* InitialTarget,
+	ADeckRangedEnemy*& OutEnemy)
+{
+	OutEnemy = nullptr;
+	if (!HasAuthority() || bDeathHandled)
+	{
+		return false;
+	}
+
+	UDeckWaypointComponent* SpawnWaypoint = GetDeckWaypoint(SpawnPointId);
+	if (!SpawnWaypoint || !SpawnWaypoint->CanSpawnEnemy() || !SpawnWaypoint->CanUseInCombat())
+	{
+		return false;
+	}
+
+	if (DeckEnemyPool.IsEmpty())
+	{
+		InitializeDeckEnemyPool();
+	}
+	ADeckRangedEnemy* Enemy = nullptr;
+	for (ADeckRangedEnemy* PoolEnemy : DeckEnemyPool)
+	{
+		if (IsValid(PoolEnemy) && !PoolEnemy->IsPoolActive())
+		{
+			Enemy = PoolEnemy;
+			break;
+		}
+	}
+	if (!Enemy || (InitialTarget && !Enemy->IsValidCombatTarget(InitialTarget)))
+	{
+		return false;
+	}
+
+	FTransform SpawnTransform;
+	if (!ResolveDeckEnemySpawnTransform(SpawnWaypoint, SpawnTransform) || !GetWorld())
+	{
+		return false;
+	}
+
+	const UCapsuleComponent* Capsule = Enemy->GetCapsuleComponent();
+	const float Radius = Capsule ? Capsule->GetScaledCapsuleRadius() : 42.0f;
+	const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 88.0f;
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DeckEnemySpawnClearance), false, Enemy);
+	QueryParams.AddIgnoredActor(this);
+	if (GetWorld()->OverlapBlockingTestByChannel(
+		SpawnTransform.GetLocation(),
+		SpawnTransform.GetRotation(),
+		ECC_Pawn,
+		FCollisionShape::MakeCapsule(Radius, HalfHeight),
+		QueryParams))
+	{
+		return false;
+	}
+
+	const int32 Seed = static_cast<int32>(HashCombine(
+		static_cast<uint32>(DeckEnemyRandomSeed),
+		HashCombine(GetTypeHash(GetFName()), static_cast<uint32>(DeckEnemyActivationSerial++))));
+	if (!Enemy->ActivateFromPool(this, SpawnTransform, SpawnPointId, Seed))
+	{
+		return false;
+	}
+
+	if (InitialTarget)
+	{
+		Enemy->SetCombatTarget(InitialTarget);
+		if (ABaseAIController* EnemyController = Cast<ABaseAIController>(Enemy->GetController()))
+		{
+			EnemyController->SetCombatTarget(InitialTarget);
+		}
+	}
+	OutEnemy = Enemy;
+	return true;
 }
 
 bool AEnemyShip::ResolveDeckEnemySpawnTransform(

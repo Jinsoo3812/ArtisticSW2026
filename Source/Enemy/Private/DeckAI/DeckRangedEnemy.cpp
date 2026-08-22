@@ -12,12 +12,19 @@
 #include "Net/UnrealNetwork.h"
 #include "ShipAI/EnemyShip.h"
 #include "TimerManager.h"
+#include "Weapon/BaseWeaponComponent.h"
 
 ADeckRangedEnemy::ADeckRangedEnemy()
 {
 	bAutoResolveHostShip = false;
 	bDestroyWithHostShip = false;
+	bDestroyAfterDeathFinished = false;
 	bAlwaysRelevant = false;
+}
+
+AEnemyShip* ADeckRangedEnemy::GetDeckHostShip() const
+{
+	return Cast<AEnemyShip>(GetHostShip());
 }
 
 void ADeckRangedEnemy::BeginPlay()
@@ -74,6 +81,7 @@ bool ADeckRangedEnemy::ActivateFromPool(
 	FlushNetDormancy();
 	GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
 
+	ResetLocalDeathRagdoll();
 	SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
 	SetHostShip(InHostShip);
 	CurrentDeckWaypointId = InitialWaypointId;
@@ -134,6 +142,10 @@ void ADeckRangedEnemy::DeactivateToPool()
 	{
 		ASC->CancelAllAbilities();
 	}
+	if (UBaseWeaponComponent* BaseWeaponComponent = GetWeaponComponent())
+	{
+		BaseWeaponComponent->SuspendForOwnerPool();
+	}
 
 	bPoolActive = false;
 	CurrentDeckWaypointId = INDEX_NONE;
@@ -158,15 +170,20 @@ void ADeckRangedEnemy::MarkGoalDeckWaypointReached()
 
 void ADeckRangedEnemy::HandleDeath_Implementation()
 {
-	if (!HasAuthority())
-	{
-		return;
-	}
-
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->DisableMovement();
 		Movement->StopMovementImmediately();
+	}
+}
+
+void ADeckRangedEnemy::HandleDeathFinishedPresentation()
+{
+	Super::HandleDeathFinishedPresentation();
+
+	if (!HasAuthority())
+	{
+		return;
 	}
 
 	if (ReturnToPoolAfterDeathDelay <= 0.0f)
@@ -186,6 +203,10 @@ void ADeckRangedEnemy::HandleDeath_Implementation()
 
 void ADeckRangedEnemy::OnRep_PoolActive()
 {
+	if (bPoolActive)
+	{
+		ResetLocalDeathRagdoll();
+	}
 	ApplyPoolPresentationState();
 }
 
@@ -228,12 +249,15 @@ void ADeckRangedEnemy::RestoreForPoolActivation()
 	}
 	if (USkeletalMeshComponent* CharacterMesh = GetMesh())
 	{
-		CharacterMesh->SetSimulatePhysics(false);
-		CharacterMesh->SetAllBodiesSimulatePhysics(false);
+		ResetLocalDeathRagdoll();
 	}
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->StopMovementImmediately();
 		Movement->SetMovementMode(MOVE_Walking);
+	}
+	if (UBaseWeaponComponent* BaseWeaponComponent = GetWeaponComponent())
+	{
+		BaseWeaponComponent->RestoreFromOwnerPool();
 	}
 }

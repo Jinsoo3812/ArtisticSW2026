@@ -126,7 +126,15 @@ AShip::AShip()
 
 	ShipDeckMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipDeckMesh"));
 	ShipDeckMesh->SetupAttachment(BuoyancyRoot);
+	// Keep this as a kinematic follower rather than welding its collision shapes
+	// into the network-predicted buoyancy body. Ragdolls may rest on the deck
+	// without changing the ship's authoritative mass/inertia setup.
+	ShipDeckMesh->BodyInstance.bAutoWeld = false;
 	ShipDeckMesh->SetCollisionProfileName(TEXT("ShipDeck"));
+	ShipDeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
+	ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+	ShipDeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
 	ShipDeckMesh->SetGenerateOverlapEvents(false);
 	ShipDeckMesh->SetVisibility(false, false);
 	ShipDeckMesh->SetHiddenInGame(true, false);
@@ -222,6 +230,15 @@ AShip::AShip()
 void AShip::BeginPlay()
 {
 	Super::BeginPlay();
+	// Reassert the critical moving-deck responses at runtime so older Blueprint
+	// component templates cannot silently restore the former query-only profile.
+	if (ShipDeckMesh)
+	{
+		ShipDeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
+		ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+		ShipDeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+	}
 	bBuoyancyQueryDiagnostics = FParse::Param(
 		FCommandLine::Get(), TEXT("BuoyancyQueryDiagnostics"));
 

@@ -24,6 +24,9 @@ public:
 	ABaseWeapon();
 
 protected:
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+protected:
 	// 무기의 Mesh, 이후 활과같은 ABP가 필요한 것들은 SkeletalMesh변수를 따로 생성
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UStaticMeshComponent> WeaponMesh;
@@ -80,6 +83,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Weapon|Trace")
 	virtual void HitScanEnd();
+
+	/** Stops every transient gameplay/cosmetic effect owned by this weapon. */
+	UFUNCTION(BlueprintCallable, Category = "Weapon|Lifecycle")
+	virtual void DeactivateWeaponActivity();
 
 public:
 	// Getter

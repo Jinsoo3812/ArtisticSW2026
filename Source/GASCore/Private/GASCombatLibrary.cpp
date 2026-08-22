@@ -5,6 +5,7 @@
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 #include "GameplayEffect.h"
 
 float UGASCombatLibrary::CalculateStrengthDamage(float Strength, float AttackCoefficient, float ChargeMultiplier)
@@ -73,18 +74,14 @@ FGameplayEffectSpecHandle UGASCombatLibrary::MakeDamageEffectSpec(
 	}
 
 	// 누가 무엇으로 어디에 맞췄는지에 대한 정보 == ContextHandle
-	FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
-	ContextHandle.AddInstigator(InstigatorActor, EffectCauser);
-
-	if (EffectCauser)
-	{
-		ContextHandle.AddSourceObject(EffectCauser);
-	}
-
-	if (bAddHitResult)
-	{
-		ContextHandle.AddHitResult(HitResult, true);
-	}
+	FGameplayEffectContextHandle ContextHandle =
+		USWCombatEffectContextLibrary::MakeCombatEffectContext(
+			SourceASC,
+			InstigatorActor,
+			EffectCauser,
+			nullptr,
+			bAddHitResult,
+			HitResult);
 
 	// 적용할 GameplayEffect 정보
 	FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(
@@ -113,13 +110,9 @@ FGameplayEffectSpecHandle UGASCombatLibrary::MakeHealingEffectSpec(
 		return FGameplayEffectSpecHandle();
 	}
 
-	FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
-	ContextHandle.AddInstigator(InstigatorActor, EffectCauser);
-
-	if (EffectCauser)
-	{
-		ContextHandle.AddSourceObject(EffectCauser);
-	}
+	FGameplayEffectContextHandle ContextHandle =
+		USWCombatEffectContextLibrary::MakeCombatEffectContext(
+			SourceASC, InstigatorActor, EffectCauser);
 
 	FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(
 		HealingEffectClass,

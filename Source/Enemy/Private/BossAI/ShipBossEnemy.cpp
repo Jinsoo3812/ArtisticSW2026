@@ -4,12 +4,14 @@
 #include "AI/BaseAIController.h"
 #include "BaseGameplayTags.h"
 #include "BossAI/ShipBossAIController.h"
+#include "Components/BaseHealthComponent.h"
 #include "GAS/Ability/Boss/GA_BossDashSlash.h"
 #include "GAS/Ability/Boss/GA_BossKnockback.h"
 #include "GAS/Ability/Boss/GA_BossVanish.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/SphereComponent.h"
+#include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -17,6 +19,10 @@
 
 AShipBossEnemy::AShipBossEnemy()
 {
+	// Boss damage feedback is intentionally stronger and must not leak into the
+	// regular enemy defaults inherited by melee and ranged archetypes.
+	GetHealthComponent()->SetDamageGameplayCueTag(GameplayCue_Boss_Hit);
+
 	DashDamageVolume = CreateDefaultSubobject<USphereComponent>(TEXT("DashDamageVolume"));
 	DashDamageVolume->SetupAttachment(GetRootComponent());
 	DashDamageVolume->InitSphereRadius(120.0f);
@@ -36,6 +42,7 @@ AShipBossEnemy::AShipBossEnemy()
 	DefaultWeaponTag = Item_EnemyWeapon_Sword;
 	StartingAbilities.Add(UGA_BossKnockback::StaticClass());
 	StartingAbilities.Add(UGA_BossVanish::StaticClass());
+	StartingAbilities.Add(UGA_BossVanishV2::StaticClass());
 	StartingAbilities.Add(UGA_BossDashSlash::StaticClass());
 
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
@@ -63,6 +70,7 @@ void AShipBossEnemy::BeginPlay()
 
 void AShipBossEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ReleaseSummonedDeckEnemies();
 	UnbindHostShip();
 	Super::EndPlay(EndPlayReason);
 }
@@ -72,6 +80,7 @@ void AShipBossEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AShipBossEnemy, HostShip);
 	DOREPLIFETIME(AShipBossEnemy, CurrentPointId);
+	DOREPLIFETIME(AShipBossEnemy, PreviousPointId);
 	DOREPLIFETIME(AShipBossEnemy, DestinationPointId);
 	DOREPLIFETIME(AShipBossEnemy, bBossHidden);
 }
@@ -86,6 +95,7 @@ bool AShipBossEnemy::InitializeBoss(AEnemyShip* InHostShip, int32 InitialPointId
 	UnbindHostShip();
 	HostShip = InHostShip;
 	CurrentPointId = InitialPointId;
+	PreviousPointId = INDEX_NONE;
 	DestinationPointId = INDEX_NONE;
 	BindHostShip();
 	SetBossCombatTarget(InitialTarget);
@@ -138,9 +148,119 @@ void AShipBossEnemy::MarkDestinationReached()
 	{
 		return;
 	}
+	PreviousPointId = CurrentPointId;
 	CurrentPointId = DestinationPointId;
 	DestinationPointId = INDEX_NONE;
 	ForceNetUpdate();
+}
+
+void AShipBossEnemy::OnDeckMoveFailed()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	DestinationPointId = INDEX_NONE;
+	ForceNetUpdate();
+}
+
+bool AShipBossEnemy::CanMoveOnDeck() const
+{
+	return HasAuthority() && !bDeathHandled && !bBossHidden && IsValid(HostShip);
+}
+
+bool AShipBossEnemy::CanSummonDeckEnemy() const
+{
+	if (!HasAuthority() || bDeathHandled || !IsValid(HostShip) || !CanEngageActor(GetBossCombatTarget()))
+	{
+		return false;
+	}
+	if (const UWorld* World = GetWorld(); !World || World->GetTimeSeconds() < NextSummonAllowedTime)
+	{
+		return false;
+	}
+
+	int32 ActiveCount = 0;
+	for (const TWeakObjectPtr<ADeckRangedEnemy>& EnemyPtr : SummonedDeckEnemies)
+	{
+		const ADeckRangedEnemy* Enemy = EnemyPtr.Get();
+		if (Enemy && Enemy->IsPoolActive()
+			&& Enemy->GetHealthComponent() && !Enemy->GetHealthComponent()->IsDead())
+		{
+			++ActiveCount;
+		}
+	}
+	return ActiveCount < FMath::Max(1, MaxSummonedDeckEnemies);
+}
+
+bool AShipBossEnemy::TrySummonDeckEnemy(ADeckRangedEnemy*& OutEnemy)
+{
+	OutEnemy = nullptr;
+	if (!CanSummonDeckEnemy())
+	{
+		return false;
+	}
+
+	AActor* Target = GetBossCombatTarget();
+	UWorld* World = GetWorld();
+	NextSummonAllowedTime = World->GetTimeSeconds() + FMath::Max(0.0f, SummonCooldown);
+	SummonedDeckEnemies.RemoveAll([](const TWeakObjectPtr<ADeckRangedEnemy>& EnemyPtr)
+	{
+		const ADeckRangedEnemy* Enemy = EnemyPtr.Get();
+		return !Enemy || !Enemy->IsPoolActive()
+			|| (Enemy->GetHealthComponent() && Enemy->GetHealthComponent()->IsDead());
+	});
+
+	TArray<int32> LinkedIds;
+	HostShip->GetConnectedDeckWaypointIds(CurrentPointId, LinkedIds);
+	TArray<int32> CandidateIds;
+	HostShip->GetDeckWaypointIds(CandidateIds);
+	const FVector DeckUp = HostShip->GetShipDeckMesh()
+		? HostShip->GetShipDeckMesh()->GetUpVector().GetSafeNormal()
+		: FVector::UpVector;
+	CandidateIds.RemoveAll([this, Target, DeckUp](const int32 PointId)
+	{
+		const UDeckWaypointComponent* Waypoint = HostShip->GetDeckWaypoint(PointId);
+		if (!Waypoint || !Waypoint->CanSpawnEnemy() || !Waypoint->CanUseInCombat()
+			|| PointId == CurrentPointId)
+		{
+			return true;
+		}
+		const FVector PointLocation = Waypoint->GetComponentLocation();
+		const float TargetDistance = FVector::VectorPlaneProject(
+			PointLocation - Target->GetActorLocation(), DeckUp).Size();
+		const float BossDistance = FVector::VectorPlaneProject(
+			PointLocation - GetActorLocation(), DeckUp).Size();
+		return TargetDistance < FMath::Max(0.0f, MinimumSummonDistanceFromTarget)
+			|| BossDistance < FMath::Max(0.0f, MinimumSummonDistanceFromBoss);
+	});
+	CandidateIds.Sort([this, Target, &LinkedIds](const int32 LeftId, const int32 RightId)
+	{
+		const bool bLeftLinked = LinkedIds.Contains(LeftId);
+		const bool bRightLinked = LinkedIds.Contains(RightId);
+		if (bLeftLinked != bRightLinked)
+		{
+			return bLeftLinked;
+		}
+		const float LeftDistance = FVector::DistSquared(
+			HostShip->GetDeckWaypointWorldLocation(LeftId), Target->GetActorLocation());
+		const float RightDistance = FVector::DistSquared(
+			HostShip->GetDeckWaypointWorldLocation(RightId), Target->GetActorLocation());
+		return !FMath::IsNearlyEqual(LeftDistance, RightDistance)
+			? LeftDistance > RightDistance
+			: LeftId < RightId;
+	});
+
+	for (const int32 CandidateId : CandidateIds)
+	{
+		if (HostShip->ActivateDeckEnemyAtPoint(CandidateId, Target, OutEnemy))
+		{
+			SummonedDeckEnemies.Add(OutEnemy);
+			return true;
+		}
+	}
+	return false;
 }
 
 bool AShipBossEnemy::ResolvePointTransform(int32 PointId, FTransform& OutTransform) const
@@ -185,18 +305,116 @@ void AShipBossEnemy::SetBossHidden(bool bInHidden)
 	ForceNetUpdate();
 }
 
+bool AShipBossEnemy::BeginHiddenRelocation()
+{
+	if (!HasAuthority() || bDeathHandled || bHiddenRelocationActive || !IsValid(HostShip))
+	{
+		return false;
+	}
+
+	// Visibility is removed before any movement state can change. The ability
+	// keeps this state for a separate net-update interval before teleporting.
+	SetBossHidden(true);
+	if (AAIController* BossAIController = Cast<AAIController>(GetController()))
+	{
+		BossAIController->StopMovement();
+	}
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		Movement->DisableMovement();
+	}
+
+	bHiddenRelocationActive = true;
+	ForceNetUpdate();
+	return true;
+}
+
+bool AShipBossEnemy::RelocateWhileHidden(const FTransform& DestinationTransform)
+{
+	if (!HasAuthority() || !bHiddenRelocationActive || !bBossHidden || !IsValid(HostShip))
+	{
+		return false;
+	}
+
+	SetActorLocationAndRotation(
+		DestinationTransform.GetLocation(),
+		DestinationTransform.GetRotation(),
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics);
+	if (UStaticMeshComponent* DeckMesh = HostShip->GetShipDeckMesh())
+	{
+		SetBase(DeckMesh);
+	}
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+	}
+
+	// Movement is sent while bBossHidden is still true. The ability waits for a
+	// second update interval before revealing the destination.
+	ForceNetUpdate();
+	return true;
+}
+
+void AShipBossEnemy::FinishHiddenRelocation()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (UStaticMeshComponent* DeckMesh = HostShip ? HostShip->GetShipDeckMesh() : nullptr)
+	{
+		SetBase(DeckMesh);
+	}
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		Movement->SetMovementMode(MOVE_Walking);
+	}
+
+	bHiddenRelocationActive = false;
+	SetBossHidden(false);
+	ForceNetUpdate();
+}
+
 void AShipBossEnemy::HandleDeath_Implementation()
 {
 	if (HasAuthority())
 	{
+		ReleaseSummonedDeckEnemies();
 		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
 		{
 			ASC->CancelAllAbilities();
 		}
-		SetBossHidden(false);
+		if (bHiddenRelocationActive)
+		{
+			FinishHiddenRelocation();
+		}
+		else
+		{
+			SetBossHidden(false);
+		}
 		TransitionBossAIState(FGameplayTag(), AI_State_Boss_Dead);
 	}
 	Super::HandleDeath_Implementation();
+}
+
+void AShipBossEnemy::ReleaseSummonedDeckEnemies()
+{
+	if (HasAuthority())
+	{
+		for (const TWeakObjectPtr<ADeckRangedEnemy>& EnemyPtr : SummonedDeckEnemies)
+		{
+			if (ADeckRangedEnemy* Enemy = EnemyPtr.Get(); Enemy && Enemy->IsPoolActive())
+			{
+				Enemy->DeactivateToPool();
+			}
+		}
+	}
+	SummonedDeckEnemies.Reset();
 }
 
 void AShipBossEnemy::OnRep_HostShip()
@@ -239,10 +457,21 @@ void AShipBossEnemy::UnbindHostShip()
 
 void AShipBossEnemy::ApplyHiddenPresentation()
 {
-	SetActorHiddenInGame(bBossHidden);
-	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+	UCapsuleComponent* Capsule = GetCapsuleComponent();
+	if (bBossHidden)
 	{
-		Capsule->SetCollisionEnabled(bBossHidden ? ECollisionEnabled::NoCollision : InitialCapsuleCollision);
+		// Hide first so neither collision removal nor later movement correction is visible.
+		SetActorHiddenInGame(true);
+		if (Capsule)
+		{
+			Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+	}
+	else if (Capsule)
+	{
+		// Restore collision before visibility. The server has already restored the
+		// movement base and Walking mode during FinishHiddenRelocation.
+		Capsule->SetCollisionEnabled(InitialCapsuleCollision);
 	}
 
 	TArray<AActor*> AttachedActors;
@@ -253,6 +482,11 @@ void AShipBossEnemy::ApplyHiddenPresentation()
 		{
 			AttachedActor->SetActorHiddenInGame(bBossHidden);
 		}
+	}
+
+	if (!bBossHidden)
+	{
+		SetActorHiddenInGame(false);
 	}
 }
 

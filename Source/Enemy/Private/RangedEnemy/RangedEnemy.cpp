@@ -18,6 +18,7 @@
 
 ARangedEnemy::ARangedEnemy()
 {
+	bApplyDeathRagdollImpulse = true;
 	AIControllerClass = ARangedEnemyAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	bUseControllerRotationYaw = true;
@@ -362,6 +363,18 @@ float ARangedEnemy::GetRemainingAttackCooldown() const
 	return static_cast<float>(FMath::Max(0.0, RemainingTime));
 }
 
+float ARangedEnemy::GetEffectiveAttackRange() const
+{
+	const UBaseWeaponComponent* EquippedWeaponComponent = GetWeaponComponent();
+	const float WeaponAttackRange = EquippedWeaponComponent
+		&& EquippedWeaponComponent->IsWeaponEquipped()
+		? EquippedWeaponComponent->GetCurrentAttackRange()
+		: 0.0f;
+	return WeaponAttackRange > KINDA_SMALL_NUMBER
+		? WeaponAttackRange
+		: FMath::Max(0.0f, MaxAttackRange);
+}
+
 bool ARangedEnemy::EvaluateAttackTarget(const AActor* Candidate, bool bRequireLineOfSight, FString& OutReason) const
 {
 	if (!EvaluateCombatTarget(Candidate, OutReason))
@@ -375,7 +388,7 @@ bool ARangedEnemy::EvaluateAttackTarget(const AActor* Candidate, bool bRequireLi
 		OutReason = TEXT("BelowMinAttackRange");
 		return false;
 	}
-	if (Distance > MaxAttackRange)
+	if (Distance > GetEffectiveAttackRange())
 	{
 		OutReason = TEXT("AboveMaxAttackRange");
 		return false;

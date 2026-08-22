@@ -10,6 +10,7 @@
 #include "AbilitySystemComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "BaseGameplayTags.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 
 void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -155,8 +156,8 @@ void UGA_ThrowGrenade::OnThrowEventReceived(FGameplayEventData Payload)
 		FGameplayEffectSpecHandle DamageSpecHandle;
 		if (DamageEffectClass)
 		{
-			FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
-			ContextHandle.AddInstigator(Player, Player);
+			FGameplayEffectContextHandle ContextHandle =
+				USWCombatEffectContextLibrary::MakeCombatEffectContext(ASC, Player, Player);
 			DamageSpecHandle = ASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
 		}
 
