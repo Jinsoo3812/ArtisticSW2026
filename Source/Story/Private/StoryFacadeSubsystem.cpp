@@ -14,13 +14,14 @@ namespace StoryFacadeTags
 	UE_DEFINE_GAMEPLAY_TAG_STATIC(SupplyPatrolQuestAccepted, "Story.Internal.Quest.SupplyPatrol");
 	UE_DEFINE_GAMEPLAY_TAG_STATIC(CurrentGeneratorUnlocked, "Story.Internal.Feature.CurrentGenerator");
 	UE_DEFINE_GAMEPLAY_TAG_STATIC(MiddleBoss2Defeated, "Story.Internal.Boss.Middle2Defeated");
+	UE_DEFINE_GAMEPLAY_TAG_STATIC(DecipherQuestAccepted, "Story.Internal.Quest.Decipher");
 	UE_DEFINE_GAMEPLAY_TAG_STATIC(
 		SuppressJapaneseForcesQuestAccepted,
 		"Story.Internal.Quest.SuppressJapaneseForces");
-	UE_DEFINE_GAMEPLAY_TAG_STATIC(StormUnlocked, "Story.Internal.Feature.Storm");
+	UE_DEFINE_GAMEPLAY_TAG_STATIC(WaterBombUnlocked, "Story.Internal.Feature.WaterBomb");
 	UE_DEFINE_GAMEPLAY_TAG_STATIC(MiddleBoss3Defeated, "Story.Internal.Boss.Middle3Defeated");
 	UE_DEFINE_GAMEPLAY_TAG_STATIC(UldolmokBattleQuestAccepted, "Story.Internal.Quest.UldolmokBattle");
-	UE_DEFINE_GAMEPLAY_TAG_STATIC(FlamethrowerUnlocked, "Story.Internal.Feature.Flamethrower");
+	UE_DEFINE_GAMEPLAY_TAG_STATIC(BombardmentUnlocked, "Story.Internal.Feature.Bombardment");
 	UE_DEFINE_GAMEPLAY_TAG_STATIC(FinalBossDefeated, "Story.Internal.Boss.FinalDefeated");
 	UE_DEFINE_GAMEPLAY_TAG_STATIC(EndingDialogueCompleted, "Story.Internal.CampaignCompleted");
 }
@@ -34,6 +35,11 @@ void UStoryFacadeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		Story->OnProgressChanged.AddUniqueDynamic(
 			this,
 			&UStoryFacadeSubsystem::HandleStoryProgressChanged);
+
+		if (!IsStoryNodeReached(EStoryNode::GameStarted))
+		{
+			StartNewCampaign();
+		}
 	}
 }
 
@@ -130,9 +136,8 @@ bool UStoryFacadeSubsystem::ArePrerequisitesReached(EStoryNode Node) const
 	case EStoryNode::GameStarted:
 		return true;
 	case EStoryNode::FirstSailingCompleted:
-		return IsStoryNodeReached(EStoryNode::GameStarted);
 	case EStoryNode::ReconQuestAccepted:
-		return IsStoryNodeReached(EStoryNode::FirstSailingCompleted);
+		return IsStoryNodeReached(EStoryNode::GameStarted);
 	case EStoryNode::StoryClue1Acquired:
 	case EStoryNode::CipherBookAcquired:
 	case EStoryNode::MiddleBoss1Defeated:
@@ -142,15 +147,16 @@ bool UStoryFacadeSubsystem::ArePrerequisitesReached(EStoryNode Node) const
 	case EStoryNode::CurrentGeneratorUnlocked:
 	case EStoryNode::MiddleBoss2Defeated:
 		return IsStoryNodeReached(EStoryNode::SupplyPatrolQuestAccepted);
+	case EStoryNode::DecipherQuestAccepted:
+		return IsStoryNodeReached(EStoryNode::MiddleBoss2Defeated);
 	case EStoryNode::SuppressJapaneseForcesQuestAccepted:
-		return IsStoryNodeReached(EStoryNode::MiddleBoss2Defeated)
-			&& IsStoryNodeReached(EStoryNode::CipherBookAcquired);
-	case EStoryNode::StormUnlocked:
+		return IsStoryNodeReached(EStoryNode::MiddleBoss2Defeated);
+	case EStoryNode::WaterBombUnlocked:
 	case EStoryNode::MiddleBoss3Defeated:
 		return IsStoryNodeReached(EStoryNode::SuppressJapaneseForcesQuestAccepted);
 	case EStoryNode::UldolmokBattleQuestAccepted:
 		return IsStoryNodeReached(EStoryNode::MiddleBoss3Defeated);
-	case EStoryNode::FlamethrowerUnlocked:
+	case EStoryNode::BombardmentUnlocked:
 	case EStoryNode::FinalBossDefeated:
 		return IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted);
 	case EStoryNode::EndingDialogueCompleted:
@@ -182,16 +188,18 @@ FGameplayTag UStoryFacadeSubsystem::GetInternalTag(EStoryNode Node) const
 		return StoryFacadeTags::CurrentGeneratorUnlocked;
 	case EStoryNode::MiddleBoss2Defeated:
 		return StoryFacadeTags::MiddleBoss2Defeated;
+	case EStoryNode::DecipherQuestAccepted:
+		return StoryFacadeTags::DecipherQuestAccepted;
 	case EStoryNode::SuppressJapaneseForcesQuestAccepted:
 		return StoryFacadeTags::SuppressJapaneseForcesQuestAccepted;
-	case EStoryNode::StormUnlocked:
-		return StoryFacadeTags::StormUnlocked;
+	case EStoryNode::WaterBombUnlocked:
+		return StoryFacadeTags::WaterBombUnlocked;
 	case EStoryNode::MiddleBoss3Defeated:
 		return StoryFacadeTags::MiddleBoss3Defeated;
 	case EStoryNode::UldolmokBattleQuestAccepted:
 		return StoryFacadeTags::UldolmokBattleQuestAccepted;
-	case EStoryNode::FlamethrowerUnlocked:
-		return StoryFacadeTags::FlamethrowerUnlocked;
+	case EStoryNode::BombardmentUnlocked:
+		return StoryFacadeTags::BombardmentUnlocked;
 	case EStoryNode::FinalBossDefeated:
 		return StoryFacadeTags::FinalBossDefeated;
 	case EStoryNode::EndingDialogueCompleted:

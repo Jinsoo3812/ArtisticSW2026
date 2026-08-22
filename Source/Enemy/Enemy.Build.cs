@@ -22,6 +22,7 @@ public class Enemy: ModuleRules
             "NavigationSystem",
             "ArtisticSWCore",
             "ClassFeature",
+            "Story",
             "GASCore",
             "WaterAndShip",
             "Water",

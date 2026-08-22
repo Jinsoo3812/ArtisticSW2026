@@ -249,4 +249,54 @@ bool FGuardedChestUnlockTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEmptyChestAutoDespawnTest, "ArtisticSW.Chest.EmptyChestAutoDespawn",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEmptyChestAutoDespawnTest::RunTest(const FString& Parameters)
+{
+	ChestSystemTests::FTestWorld TestWorld(TEXT("EmptyChestAutoDespawnWorld"));
+	UWorld* World = TestWorld.World;
+	if (!TestNotNull(TEXT("Transient game world is created"), World))
+	{
+		return false;
+	}
+
+	World->InitializeActorsForPlay(FURL());
+	World->BeginPlay();
+
+	AStorageChest* Chest = World->SpawnActor<AStorageChest>();
+	TestNotNull(TEXT("Storage chest spawned"), Chest);
+	if (!Chest)
+	{
+		return false;
+	}
+
+	UStorageComponent* Storage = Chest->GetStorageComponent();
+	TestNotNull(TEXT("StorageComponent exists"), Storage);
+
+	// 1. Initial item setup
+	TArray<FStorageItemEntry> InitialItems;
+	FStorageItemEntry Entry;
+	Entry.ItemTag = Item_Id_Material_ShipMaterials_WoodenPlank;
+	Entry.Count = 3;
+	InitialItems.Add(Entry);
+
+	Chest->ConfigureStorage(4, 4, InitialItems);
+	TestFalse(TEXT("Chest is not empty initially"), Storage->IsEmpty());
+
+	// 2. Open chest by interaction
+	ABasePlayer* Player = World->SpawnActor<ABasePlayer>();
+	Chest->HandleInteracted(Player);
+
+	// 3. Empty the chest
+	Storage->RemoveItem(Item_Id_Material_ShipMaterials_WoodenPlank, 3);
+	TestTrue(TEXT("Chest is now empty"), Storage->IsEmpty());
+
+	// 4. Trigger empty timeout and verify destruction
+	Chest->HandleEmptyDestroyTimeout();
+	TestTrue(TEXT("Empty chest is marked for destruction on timeout"), Chest->IsActorBeingDestroyed());
+
+	return true;
+}
+
 #endif

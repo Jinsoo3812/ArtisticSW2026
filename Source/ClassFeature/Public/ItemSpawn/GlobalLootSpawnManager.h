@@ -27,7 +27,11 @@ public:
 	int32 InitializeDataDrivenChests();
 
 	void SetInitializeOnBeginPlayForTesting(bool bInInitialize) { bInitializeOnBeginPlay = bInInitialize; }
-	void SetSpawnSeedForTesting(int32 InSeed) { SpawnSeed = InSeed; }
+	void SetSpawnSeedForTesting(int32 InSeed) 
+	{ 
+		SpawnSeed = InSeed; 
+		bUseRandomSeed = false; 
+	}
 
 protected:
 	virtual void BeginPlay() override;
@@ -42,6 +46,9 @@ protected:
 	int32 TotalActivePointBudget = 100;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Seed")
+	bool bUseRandomSeed = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Seed", meta = (EditCondition = "!bUseRandomSeed"))
 	int32 SpawnSeed = 20260708;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Budget")

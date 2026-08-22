@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "Storage/StorageComponent.h"
+#include "StoryFacadeSubsystem.h"
 #include "ChestSpawnData.generated.h"
 
 class AStorageChest;
@@ -14,6 +15,13 @@ enum class EChestSpawnMode : uint8
 	Legacy,
 	Random,
 	Guarded
+};
+
+UENUM(BlueprintType)
+enum class EChestEnvironment : uint8
+{
+	Land UMETA(DisplayName = "지상 (Land)"),
+	Water UMETA(DisplayName = "해상/바다 (Water)")
 };
 
 /**

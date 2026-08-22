@@ -256,6 +256,18 @@ int32 UStorageComponent::TransferSlotToInventory(int32 SlotIndex, UInventoryComp
 	return AddedCount;
 }
 
+bool UStorageComponent::IsEmpty() const
+{
+	for (const FInventorySlot& Slot : StorageSlots)
+	{
+		if (!Slot.IsEmpty())
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
 int32 UStorageComponent::GetStorageRows() const
 {
 	return FMath::DivideAndRoundUp(GetSlotCount(), GetStorageColumns());

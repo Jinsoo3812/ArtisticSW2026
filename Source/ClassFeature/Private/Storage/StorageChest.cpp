@@ -20,11 +20,15 @@ AStorageChest::AStorageChest()
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.TickGroup = TG_PostPhysics;
 	bReplicates = true;
+	bAlwaysRelevant = true;
+	SetNetCullDistanceSquared(FMath::Square(500000.0f));
 	SetReplicateMovement(true);
 	SetNetUpdateFrequency(30.0f);
 	SetMinNetUpdateFrequency(10.0f);
 
 	ChestMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ChestMesh"));
+	ChestMesh->SetCollisionProfileName(TEXT("StorageChest"));
+	ChestMesh->SetGenerateOverlapEvents(false);
 	SetRootComponent(ChestMesh);
 
 	// Keep the old native component name so derived Blueprints can conform their
@@ -111,6 +115,10 @@ void AStorageChest::BeginPlay()
 	if (HasAuthority())
 	{
 		InitializeGuardState();
+		if (StorageComponent)
+		{
+			StorageComponent->OnStorageChanged.AddUObject(this, &AStorageChest::HandleStorageChanged);
+		}
 	}
 
 	ApplyLockPresentation();
@@ -119,6 +127,12 @@ void AStorageChest::BeginPlay()
 void AStorageChest::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ClearGuardBindings();
+
+	if (StorageComponent)
+	{
+		StorageComponent->OnStorageChanged.RemoveAll(this);
+	}
+	GetWorldTimerManager().ClearTimer(EmptyDestroyTimerHandle);
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -180,7 +194,7 @@ void AStorageChest::ConfigureGuarding(
 	const TArray<ABaseCharacter*>& InGuardCharacters,
 	AShip* InOwningShip)
 {
-	if (!HasAuthority())
+	if (!HasAuthorityOrIsTesting())
 	{
 		return;
 	}
@@ -199,6 +213,12 @@ void AStorageChest::ConfigureGuarding(
 	if (OwningShip)
 	{
 		bEnablePhysicsAndBuoyancy = false;
+		if (ChestMesh)
+		{
+			ChestMesh->IgnoreActorWhenMoving(OwningShip, true);
+			ChestMesh->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+			ChestMesh->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Ignore);
+		}
 	}
 
 	// Configure immediately as well as in BeginPlay. Deferred spawns therefore
@@ -211,9 +231,39 @@ void AStorageChest::ConfigureGuarding(
 	}
 }
 
+void AStorageChest::AddGuardCharacter(ABaseCharacter* NewGuard)
+{
+	if (!HasAuthorityOrIsTesting() || !IsValid(NewGuard))
+	{
+		return;
+	}
+
+	GuardCharacters.AddUnique(NewGuard);
+	bRequiresGuardClear = true;
+
+	UBaseHealthComponent* GuardHealth = NewGuard->FindComponentByClass<UBaseHealthComponent>();
+	if (!GuardHealth)
+	{
+		for (UActorComponent* Comp : NewGuard->GetInstanceComponents())
+		{
+			if (UBaseHealthComponent* CastHealth = Cast<UBaseHealthComponent>(Comp))
+			{
+				GuardHealth = CastHealth;
+				break;
+			}
+		}
+	}
+	if (GuardHealth && !GuardHealth->IsDead())
+	{
+		AliveGuardHealthComponents.Add(GuardHealth);
+		GuardHealth->OnDeathStarted.AddUniqueDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
+		SetLocked(true);
+	}
+}
+
 void AStorageChest::SetLocked(bool bInLocked)
 {
-	if (!HasAuthority() || bLocked == bInLocked)
+	if (!HasAuthorityOrIsTesting() || bLocked == bInLocked)
 	{
 		return;
 	}
@@ -227,11 +277,14 @@ void AStorageChest::SetLocked(bool bInLocked)
 		return;
 	}
 
-	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	if (UWorld* World = GetWorld())
 	{
-		if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(It->Get()))
+		for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
 		{
-			PlayerController->CloseStorageFromServer(this);
+			if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(It->Get()))
+			{
+				PlayerController->CloseStorageFromServer(this);
+			}
 		}
 	}
 }
@@ -255,12 +308,57 @@ void AStorageChest::HandleInteracted(AActor* Interactor)
 		return;
 	}
 
+	bHasBeenOpened = true;
 	PlayerController->OpenStorageFromServer(this);
+}
+
+void AStorageChest::HandleStorageChanged()
+{
+	if (!HasAuthority() || !bDestroyWhenEmpty || !bHasBeenOpened || !StorageComponent)
+	{
+		return;
+	}
+
+	if (StorageComponent->IsEmpty())
+	{
+		if (!GetWorldTimerManager().IsTimerActive(EmptyDestroyTimerHandle))
+		{
+			GetWorldTimerManager().SetTimer(
+				EmptyDestroyTimerHandle,
+				this,
+				&AStorageChest::HandleEmptyDestroyTimeout,
+				FMath::Max(0.05f, EmptyDestroyDelay),
+				false
+			);
+		}
+	}
+	else
+	{
+		GetWorldTimerManager().ClearTimer(EmptyDestroyTimerHandle);
+	}
+}
+
+void AStorageChest::HandleEmptyDestroyTimeout()
+{
+	if (!HasAuthority() || !StorageComponent || !StorageComponent->IsEmpty())
+	{
+		return;
+	}
+
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(It->Get()))
+		{
+			PlayerController->CloseStorageFromServer(this);
+		}
+	}
+
+	Destroy();
 }
 
 void AStorageChest::HandleTrackedHealthDeath(UBaseHealthComponent* HealthComponent)
 {
-	if (!HasAuthority() || !HealthComponent)
+	if (!HasAuthorityOrIsTesting() || !HealthComponent)
 	{
 		return;
 	}
@@ -293,10 +391,15 @@ void AStorageChest::HandleTrackedHealthDeath(UBaseHealthComponent* HealthCompone
 
 void AStorageChest::HandleOwningShipDestroyed(AActor* DestroyedActor)
 {
-	if (HasAuthority() && DestroyedActor == OwningShip)
+	if (!HasAuthorityOrIsTesting())
 	{
-		Destroy();
+		return;
 	}
+
+	bGuardFailed = true;
+	SetLocked(true);
+	ClearGuardBindings();
+	ForceNetUpdate();
 }
 
 void AStorageChest::OnRep_Locked()
@@ -306,12 +409,11 @@ void AStorageChest::OnRep_Locked()
 
 void AStorageChest::OnRep_ReplicatedMovement()
 {
-	if (!HasAuthority() && bEnablePhysicsAndBuoyancy)
+	if (bEnablePhysicsAndBuoyancy)
 	{
-		const FRepMovement& Movement = GetReplicatedMovement();
-		ClientMovementTargetLocation = FRepMovement::RebaseOntoLocalOrigin(Movement.Location, this);
-		ClientMovementTargetRotation = Movement.Rotation.Quaternion();
-		ClientMovementTargetVelocity = Movement.LinearVelocity;
+		ClientMovementTargetLocation = GetReplicatedMovement().Location;
+		ClientMovementTargetRotation = GetReplicatedMovement().Rotation.Quaternion();
+		ClientMovementTargetVelocity = GetReplicatedMovement().LinearVelocity;
 		ClientMovementTargetReceiveTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
 		bHasClientMovementTarget = true;
 
@@ -340,7 +442,7 @@ void AStorageChest::OnRep_PhysicsMode()
 
 void AStorageChest::InitializeGuardState()
 {
-	if (!HasAuthority())
+	if (!HasAuthorityOrIsTesting())
 	{
 		return;
 	}
@@ -365,6 +467,17 @@ void AStorageChest::InitializeGuardState()
 		}
 
 		UBaseHealthComponent* GuardHealth = GuardCharacter->FindComponentByClass<UBaseHealthComponent>();
+		if (!GuardHealth)
+		{
+			for (UActorComponent* Comp : GuardCharacter->GetInstanceComponents())
+			{
+				if (UBaseHealthComponent* CastHealth = Cast<UBaseHealthComponent>(Comp))
+				{
+					GuardHealth = CastHealth;
+					break;
+				}
+			}
+		}
 		if (!GuardHealth)
 		{
 			UE_LOG(LogTemp, Error, TEXT("Guarded chest %s: guard %s has no BaseHealthComponent."),
@@ -402,7 +515,8 @@ void AStorageChest::InitializeGuardState()
 
 	if (ValidConfiguredGuardCount == 0)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Guarded chest %s has no valid guards and will remain locked."), *GetName());
+		// 보호하는 적이 등록되지 않은 경우, 테스트 및 기본 열림을 위해 잠금을 해제한다.
+		SetLocked(false);
 		return;
 	}
 

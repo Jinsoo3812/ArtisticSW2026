@@ -90,33 +90,80 @@ void AMultiGameMode::Logout(AController* Exiting)
 
 UClass* AMultiGameMode::GetDefaultPawnClassForController_Implementation(AController* InController)
 {
-    // 배정된 역할에 따라 다른 폰 클래스를 반환합니다.
-    const FName RoleName = GetPlayerRole(InController);
+    // 공통 표준 플레이어 폰 클래스가 지정되어 있으면 우선 반환합니다.
+    if (CommonPlayerPawnClass)
+    {
+        return CommonPlayerPawnClass;
+    }
 
+    // 기본 DefaultPawnClass가 지정되어 있으면 반환합니다.
+    if (DefaultPawnClass)
+    {
+        return DefaultPawnClass;
+    }
+
+    // [LEGACY 호환] 기존 세팅이 남아있는 경우의 폴백
+    const FName RoleName = GetPlayerRole(InController);
     if (RoleName == AttackerRoleName && AttackerPawnClass)
     {
         return AttackerPawnClass;
     }
-
     if (RoleName == CrafterRoleName && CrafterPawnClass)
     {
         return CrafterPawnClass;
     }
 
-	UE_LOG(LogTemp, Warning, TEXT("No role found for controller %s or corresponding pawn class not set."), *InController->GetName());
-    // 예외 상황일 경우 기본 폰 반환
     return Super::GetDefaultPawnClassForController_Implementation(InController);
 }
 
 AActor* AMultiGameMode::ChoosePlayerStart_Implementation(AController* Player)
 {
-    const FName RoleName = GetPlayerRole(Player);
+    // 1. 등록된 컨트롤러 목록에서 플레이어 인덱스를 확인합니다.
+    int32 PlayerIndex = 0;
+    int32 CurrentIdx = 0;
+    for (const TPair<TObjectPtr<AController>, FName>& Pair : PlayerRoles)
+    {
+        if (Pair.Key.Get() == Player)
+        {
+            PlayerIndex = CurrentIdx;
+            break;
+        }
+        ++CurrentIdx;
+    }
 
+    // 2. Player_0, Player_1 등의 인덱스 태그를 가진 PlayerStart 우선 검색
+    const FName IndexTag = *FString::Printf(TEXT("Player_%d"), PlayerIndex);
+    if (APlayerStart* IndexStart = FindPlayerStartByRole(IndexTag))
+    {
+        return IndexStart;
+    }
+
+    // 3. 레거시 역할 태그 검색
+    const FName RoleName = GetPlayerRole(Player);
     if (!RoleName.IsNone())
     {
         if (APlayerStart* RoleStart = FindPlayerStartByRole(RoleName))
         {
             return RoleStart;
+        }
+    }
+
+    // 4. 레벨에 배치된 PlayerStart 목록 중 인덱스 기반 순차 배정
+    if (UWorld* World = GetWorld())
+    {
+        TArray<APlayerStart*> AllStarts;
+        for (TActorIterator<APlayerStart> It(World); It; ++It)
+        {
+            if (IsValid(*It))
+            {
+                AllStarts.Add(*It);
+            }
+        }
+
+        if (!AllStarts.IsEmpty())
+        {
+            const int32 TargetIdx = FMath::Clamp(PlayerIndex, 0, AllStarts.Num() - 1);
+            return AllStarts[TargetIdx];
         }
     }
 

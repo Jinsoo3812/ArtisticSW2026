@@ -50,8 +50,22 @@ public:
 	void InitializeFromChestDefinition(UChestDefinition* InDefinition, int32 Seed);
 	void ConfigureGuarding(bool bInRequiresGuardClear, const TArray<ABaseCharacter*>& InGuardCharacters, AShip* InOwningShip);
 
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Storage Chest|Guarding")
+	void AddGuardCharacter(ABaseCharacter* NewGuard);
+
+	UFUNCTION()
+	void HandleTrackedHealthDeath(UBaseHealthComponent* HealthComponent);
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Storage Chest|Lock")
 	void SetLocked(bool bInLocked);
+
+	bool HasAuthorityOrIsTesting() const { return HasAuthority() || (GetWorld() == nullptr); }
+
+	UFUNCTION()
+	void HandleInteracted(AActor* Interactor);
+
+	UFUNCTION()
+	void HandleEmptyDestroyTimeout();
 
 protected:
 	/**
@@ -140,14 +154,20 @@ protected:
 	FVector ClientMovementTargetVelocity = FVector::ZeroVector;
 	float ClientMovementTargetReceiveTime = 0.0f;
 
-	UFUNCTION()
-	void HandleInteracted(AActor* Interactor);
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Chest|Lifecycle")
+	bool bDestroyWhenEmpty = true;
 
-	UFUNCTION()
-	void HandleTrackedHealthDeath(UBaseHealthComponent* HealthComponent);
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Chest|Lifecycle", meta = (ClampMin = "0.0", Units = "s"))
+	float EmptyDestroyDelay = 1.0f;
+
+	FTimerHandle EmptyDestroyTimerHandle;
+	bool bHasBeenOpened = false;
 
 	UFUNCTION()
 	void HandleOwningShipDestroyed(AActor* DestroyedActor);
+
+	UFUNCTION()
+	void HandleStorageChanged();
 
 	UFUNCTION()
 	void OnRep_Locked();
