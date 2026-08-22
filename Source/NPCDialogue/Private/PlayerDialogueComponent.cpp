@@ -284,13 +284,18 @@ IDialogueInventoryProvider* UPlayerDialogueComponent::FindInventoryProvider() co
 {
 	if (AActor* Owner = GetOwner())
 	{
+		if (IDialogueInventoryProvider* DirectProvider = Cast<IDialogueInventoryProvider>(Owner))
+		{
+			return DirectProvider;
+		}
+
 		TArray<UActorComponent*> Components;
 		Owner->GetComponents(Components);
 		for (UActorComponent* Component : Components)
 		{
-			if (Component && Component->GetClass()->ImplementsInterface(UDialogueInventoryProvider::StaticClass()))
+			if (IDialogueInventoryProvider* CompProvider = Cast<IDialogueInventoryProvider>(Component))
 			{
-				return Cast<IDialogueInventoryProvider>(Component);
+				return CompProvider;
 			}
 		}
 	}

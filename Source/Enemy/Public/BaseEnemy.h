@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -8,6 +8,7 @@
 #include "WaveSystem/Data/WaveSpawnTypes.h"
 #include "EnemyDropData.h"
 #include "UI/EnemyHealthBarTypes.h"
+#include "StoryFacadeSubsystem.h"
 
 #include "BaseEnemy.generated.h"
 
@@ -45,6 +46,13 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Wave")
 	void NotifyRemovedFromWaveOnce(EWaveEnemyRemoveReason Reason);
+
+	/** 적(보스) 사망 시 자동으로 완료할 스토리 노드 설정 (중간보스 1/2/3, 최종보스 등) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Story")
+	bool bCompleteStoryNodeOnDeath = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Story", meta = (EditCondition = "bCompleteStoryNodeOnDeath"))
+	EStoryNode CompletedStoryNodeOnDeath = EStoryNode::MiddleBoss1Defeated;
 
 protected:
 	// ------------------ GAS
@@ -195,6 +203,7 @@ public:
 	FORCEINLINE UEnemyBehaviorSet* GetBehaviorSet() const { return BehaviorSet; }
 	FORCEINLINE bool ShouldEquipWeaponOnSpawn() const { return bEquipWeaponOnSpawn; }
 	FORCEINLINE FGameplayTag GetDefaultWeaponTag() const { return DefaultWeaponTag; }
+	FORCEINLINE FGameplayTag GetEnemyTypeTag() const { return EnemyTypeTag; }
 	FORCEINLINE TObjectPtr<UBaseWeaponComponent> GetWeaponComponent() const { check(WeaponComponent) return WeaponComponent; }
 	//FORCEINLINE TObjectPtr<UPathMovement> GetPathMovementComponent() const { check(PathMovement) return PathMovement;}
 	FORCEINLINE virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { check(AbilitySystemComponent) return AbilitySystemComponent; }
@@ -220,8 +229,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Drop")
 	TObjectPtr<UDataTable> EnemyDropDataTable;
 
-	// 적 종류를 구분하는 태그 -> 해당 태그로 데이터가 있는 Row 검색
-	UPROPERTY(EditDefaultsOnly, Category = "Drop")
+	// 적/보스 종류를 구분하는 태그 (예: Enemy.Type.Boss.Mid1, Enemy.Type.Boss.Mid2 등)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Type")
 	FGameplayTag EnemyTypeTag;
 
 	// 사망한 적의 위치에 생성할 시체 전용 Storage BP

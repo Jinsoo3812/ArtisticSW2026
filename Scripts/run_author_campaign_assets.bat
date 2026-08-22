@@ -1,0 +1,2 @@
+@echo off
+"C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" "c:\Unreal Projects\ArtisticSW2026\ArtisticSW2026.uproject" -ExecCmds="py \"import sys; sys.path.insert(0, 'c:/Unreal Projects/ArtisticSW2026/Scripts'); import author_campaign_assets; author_campaign_assets.main()\"; Quit" -log -nullrhi -nosound -unattended

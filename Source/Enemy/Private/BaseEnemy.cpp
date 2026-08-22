@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "BaseEnemy.h"
@@ -97,6 +97,11 @@ void ABaseEnemy::BeginPlay()
 		if (HasAuthority())
 		{
 			AbilitySystemComponent->AddLooseGameplayTag(Team_Enemy);
+			if (EnemyTypeTag.IsValid())
+			{
+				AbilitySystemComponent->AddLooseGameplayTag(EnemyTypeTag);
+				Tags.AddUnique(EnemyTypeTag.GetTagName());
+			}
 		}
 		if (HealthComponent)
 		{
@@ -213,6 +218,19 @@ void ABaseEnemy::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 
 		if (HasAuthority())
 		{
+			if (bCompleteStoryNodeOnDeath)
+			{
+				if (UGameInstance* GI = GetGameInstance())
+				{
+					if (UStoryFacadeSubsystem* Story = GI->GetSubsystem<UStoryFacadeSubsystem>())
+					{
+						Story->CompleteStoryNode(CompletedStoryNodeOnDeath);
+						UE_LOG(LogTemp, Log, TEXT("ABaseEnemy::OnDeathStarted - Completed story node %d for enemy %s"),
+							static_cast<int32>(CompletedStoryNodeOnDeath), *GetName());
+					}
+				}
+			}
+
 			NotifyRemovedFromWaveOnce(EWaveEnemyRemoveReason::Death);
 			Drop();
 		}

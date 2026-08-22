@@ -64,19 +64,23 @@ public:
     FOnSWAllPlayersReady OnAllPlayersReady;
 	
 public:
-    // 블루프린트에서 Attacker와 Crafter 클래스를 할당할 수 있게
-    UPROPERTY(EditDefaultsOnly, Category = "Classes")
+    /** 두 플레이어 모두에게 공통으로 스폰할 표준 플레이어 폰 클래스 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Classes")
+    TSubclassOf<APawn> CommonPlayerPawnClass;
+
+    // ====================================================================
+    // [LEGACY / DEPRECATED] Attacker / Crafter 역할 분기는 더 이상 사용되지 않습니다.
+    // ====================================================================
+    UPROPERTY(EditDefaultsOnly, Category = "LEGACY|Roles", meta = (DeprecatedProperty, DeprecationMessage = "Use CommonPlayerPawnClass instead"))
     TSubclassOf<APawn> AttackerPawnClass;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Classes")
+    UPROPERTY(EditDefaultsOnly, Category = "LEGACY|Roles", meta = (DeprecatedProperty, DeprecationMessage = "Use CommonPlayerPawnClass instead"))
     TSubclassOf<APawn> CrafterPawnClass;
 
-    /** 첫 번째 플레이어 역할명. PlayerStartTag와도 매칭된다. */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Multiplayer|Roles")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "LEGACY|Roles", meta = (DeprecatedProperty))
     FName AttackerRoleName = TEXT("Attacker");
 
-    /** 두 번째 플레이어 역할명. PlayerStartTag와도 매칭된다. */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Multiplayer|Roles")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "LEGACY|Roles", meta = (DeprecatedProperty))
     FName CrafterRoleName = TEXT("Crafter");
 
     /** 게임 시작에 필요한 플레이어 수 */
