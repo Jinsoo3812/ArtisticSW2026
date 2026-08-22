@@ -15,6 +15,7 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "RippleSubsystem.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 
 ACannonball::ACannonball()
 {
@@ -260,10 +261,24 @@ void ACannonball::HandleShipHit(AShip* HitShip)
 	UAbilitySystemComponent* TargetASC = HitShip->GetAbilitySystemComponent();
 	if (TargetASC && DamageGEClass)
 	{
-		FGameplayEffectContextHandle EffectContext = TargetASC->MakeEffectContext();
-		EffectContext.AddInstigator(GetInstigator(), this);
+		UAbilitySystemComponent* SourceASC = LaunchingShip
+			? LaunchingShip->GetAbilitySystemComponent()
+			: nullptr;
+		if (!SourceASC)
+		{
+			SourceASC = TargetASC;
+		}
+		FGameplayEffectContextHandle EffectContext =
+			USWCombatEffectContextLibrary::MakeCombatEffectContext(
+				SourceASC,
+				GetInstigator(),
+				this,
+				HitShip,
+				false,
+				FHitResult(),
+				GetVelocity());
 
-		FGameplayEffectSpecHandle SpecHandle = TargetASC->MakeOutgoingSpec(DamageGEClass, 1.0f, EffectContext);
+		FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(DamageGEClass, 1.0f, EffectContext);
 		if (SpecHandle.IsValid())
 		{
 			SpecHandle.Data.Get()->SetSetByCallerMagnitude(

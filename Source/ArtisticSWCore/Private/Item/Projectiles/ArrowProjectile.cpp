@@ -7,6 +7,7 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 #include "StatusEffectLibrary.h"
 
 AArrowProjectile::AArrowProjectile()
@@ -215,7 +216,7 @@ void AArrowProjectile::OnArrowHit(UPrimitiveComponent* HitComponent, AActor* Oth
 
 	if (CanApplyDamageToActor(OtherActor))
 	{
-		ApplyDamageToActor(OtherActor);
+		ApplyDamageToActor(OtherActor, Hit);
 	}
 	Multicast_PlayImpactFX(Hit);
 
@@ -314,9 +315,9 @@ void AArrowProjectile::BuildStatusEffectSpecs()
 				continue;
 			}
 
-			FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
-			ContextHandle.AddInstigator(InstigatorActor.Get(), this);
-			ContextHandle.AddSourceObject(this);
+			FGameplayEffectContextHandle ContextHandle =
+				USWCombatEffectContextLibrary::MakeCombatEffectContext(
+					SourceASC, InstigatorActor.Get(), this);
 
 			FGameplayEffectSpecHandle StatusSpecHandle = SourceASC->MakeOutgoingSpec(
 				StatusEffect.StatusEffectClass,
@@ -337,9 +338,9 @@ void AArrowProjectile::BuildStatusEffectSpecs()
 				continue;
 			}
 
-			FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
-			ContextHandle.AddInstigator(InstigatorActor.Get(), this);
-			ContextHandle.AddSourceObject(this);
+			FGameplayEffectContextHandle ContextHandle =
+				USWCombatEffectContextLibrary::MakeCombatEffectContext(
+					SourceASC, InstigatorActor.Get(), this);
 
 			FGameplayEffectSpecHandle StatusSpecHandle = SourceASC->MakeOutgoingSpec(
 				StatusEffectClass,
@@ -355,7 +356,7 @@ void AArrowProjectile::BuildStatusEffectSpecs()
 	}
 }
 
-void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor)
+void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor, const FHitResult& HitResult)
 {
 	if (!TargetActor)
 	{
@@ -391,7 +392,15 @@ void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor)
 	{
 		if (DamageSpecHandle.IsValid() && DamageSpecHandle.Data.IsValid())
 		{
-			TargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpecHandle.Data.Get());
+			FGameplayEffectSpec TargetDamageSpec(*DamageSpecHandle.Data.Get());
+			USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
+				TargetDamageSpec,
+				InstigatorActor.Get(),
+				this,
+				TargetActor,
+				&HitResult,
+				GetVelocity());
+			TargetASC->ApplyGameplayEffectSpecToSelf(TargetDamageSpec);
 		}
 	}
 
@@ -404,7 +413,17 @@ void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor)
 				? StatusEffectRefreshGrantedTags[StatusEffectIndex]
 				: FGameplayTag();
 
-			UStatusEffectLibrary::ApplyDurationDamageEffectSpecToTarget(TargetASC, StatusSpecHandle, RefreshGrantedTag);
+			FGameplayEffectSpec TargetStatusSpec(*StatusSpecHandle.Data.Get());
+			USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
+				TargetStatusSpec,
+				InstigatorActor.Get(),
+				this,
+				TargetActor,
+				&HitResult,
+				GetVelocity());
+			const FGameplayEffectSpecHandle TargetStatusSpecHandle(new FGameplayEffectSpec(TargetStatusSpec));
+			UStatusEffectLibrary::ApplyDurationDamageEffectSpecToTarget(
+				TargetASC, TargetStatusSpecHandle, RefreshGrantedTag);
 		}
 	}
 }

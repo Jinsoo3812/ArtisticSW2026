@@ -5,6 +5,7 @@
 #include "BaseGameplayTags.h"
 #include "Components/StaticMeshComponent.h"
 #include "GASCombatLibrary.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 #include "GASDamageInstantGameplayEffect.h"
 #include "Ship.h"
 #include "ShipAI/Abilities/EnemyShipSkillMath.h"
@@ -166,7 +167,10 @@ void UGA_EnemyShipCharge::HandlePhysicsRootHit(
 			Hit);
 		if (DamageSpec.IsValid() && DamageSpec.Data.IsValid())
 		{
-			TargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpec.Data.Get());
+			FGameplayEffectSpec TargetSpec(*DamageSpec.Data.Get());
+			USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
+				TargetSpec, Ship, Ship, Target, &Hit, SourceVelocity);
+			TargetASC->ApplyGameplayEffectSpecToSelf(TargetSpec);
 			const float CurrentHealth = TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
 			UE_LOG(
 				LogTemp,
