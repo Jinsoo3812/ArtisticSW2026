@@ -42,6 +42,7 @@ AShipBossEnemy::AShipBossEnemy()
 	DefaultWeaponTag = Item_EnemyWeapon_Sword;
 	StartingAbilities.Add(UGA_BossKnockback::StaticClass());
 	StartingAbilities.Add(UGA_BossVanish::StaticClass());
+	StartingAbilities.Add(UGA_BossVanishV2::StaticClass());
 	StartingAbilities.Add(UGA_BossDashSlash::StaticClass());
 
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
@@ -304,6 +305,81 @@ void AShipBossEnemy::SetBossHidden(bool bInHidden)
 	ForceNetUpdate();
 }
 
+bool AShipBossEnemy::BeginHiddenRelocation()
+{
+	if (!HasAuthority() || bDeathHandled || bHiddenRelocationActive || !IsValid(HostShip))
+	{
+		return false;
+	}
+
+	// Visibility is removed before any movement state can change. The ability
+	// keeps this state for a separate net-update interval before teleporting.
+	SetBossHidden(true);
+	if (AAIController* BossAIController = Cast<AAIController>(GetController()))
+	{
+		BossAIController->StopMovement();
+	}
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		Movement->DisableMovement();
+	}
+
+	bHiddenRelocationActive = true;
+	ForceNetUpdate();
+	return true;
+}
+
+bool AShipBossEnemy::RelocateWhileHidden(const FTransform& DestinationTransform)
+{
+	if (!HasAuthority() || !bHiddenRelocationActive || !bBossHidden || !IsValid(HostShip))
+	{
+		return false;
+	}
+
+	SetActorLocationAndRotation(
+		DestinationTransform.GetLocation(),
+		DestinationTransform.GetRotation(),
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics);
+	if (UStaticMeshComponent* DeckMesh = HostShip->GetShipDeckMesh())
+	{
+		SetBase(DeckMesh);
+	}
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+	}
+
+	// Movement is sent while bBossHidden is still true. The ability waits for a
+	// second update interval before revealing the destination.
+	ForceNetUpdate();
+	return true;
+}
+
+void AShipBossEnemy::FinishHiddenRelocation()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (UStaticMeshComponent* DeckMesh = HostShip ? HostShip->GetShipDeckMesh() : nullptr)
+	{
+		SetBase(DeckMesh);
+	}
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		Movement->SetMovementMode(MOVE_Walking);
+	}
+
+	bHiddenRelocationActive = false;
+	SetBossHidden(false);
+	ForceNetUpdate();
+}
+
 void AShipBossEnemy::HandleDeath_Implementation()
 {
 	if (HasAuthority())
@@ -313,7 +389,14 @@ void AShipBossEnemy::HandleDeath_Implementation()
 		{
 			ASC->CancelAllAbilities();
 		}
-		SetBossHidden(false);
+		if (bHiddenRelocationActive)
+		{
+			FinishHiddenRelocation();
+		}
+		else
+		{
+			SetBossHidden(false);
+		}
 		TransitionBossAIState(FGameplayTag(), AI_State_Boss_Dead);
 	}
 	Super::HandleDeath_Implementation();
@@ -374,10 +457,21 @@ void AShipBossEnemy::UnbindHostShip()
 
 void AShipBossEnemy::ApplyHiddenPresentation()
 {
-	SetActorHiddenInGame(bBossHidden);
-	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+	UCapsuleComponent* Capsule = GetCapsuleComponent();
+	if (bBossHidden)
 	{
-		Capsule->SetCollisionEnabled(bBossHidden ? ECollisionEnabled::NoCollision : InitialCapsuleCollision);
+		// Hide first so neither collision removal nor later movement correction is visible.
+		SetActorHiddenInGame(true);
+		if (Capsule)
+		{
+			Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+	}
+	else if (Capsule)
+	{
+		// Restore collision before visibility. The server has already restored the
+		// movement base and Walking mode during FinishHiddenRelocation.
+		Capsule->SetCollisionEnabled(InitialCapsuleCollision);
 	}
 
 	TArray<AActor*> AttachedActors;
@@ -388,6 +482,11 @@ void AShipBossEnemy::ApplyHiddenPresentation()
 		{
 			AttachedActor->SetActorHiddenInGame(bBossHidden);
 		}
+	}
+
+	if (!bBossHidden)
+	{
+		SetActorHiddenInGame(false);
 	}
 }
 

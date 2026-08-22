@@ -180,6 +180,11 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 		static_cast<uint8>(EBossDestinationPurpose::Dash), static_cast<uint8>(1));
 	TestEqual(TEXT("Walk is appended after existing purposes"),
 		static_cast<uint8>(EBossDestinationPurpose::Walk), static_cast<uint8>(2));
+	TestEqual(TEXT("Existing destination tasks default to rear placement"),
+		static_cast<uint8>(SelectTaskCDO->GetDestinationRelation()),
+		static_cast<uint8>(EBossDestinationRelation::BehindTarget));
+	TestEqual(TEXT("Front placement has a stable appended relation value"),
+		static_cast<uint8>(EBossDestinationRelation::InFrontOfTarget), static_cast<uint8>(1));
 	TestNotNull(TEXT("Generic boss ability BT task exists"), ActivateTaskCDO);
 	if (TestNotNull(TEXT("Reusable boss strafe BT task exists"), StrafeTaskCDO))
 	{
@@ -379,6 +384,7 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 
 	const UGA_BossKnockback* Knockback = GetDefault<UGA_BossKnockback>();
 	const UGA_BossVanish* Vanish = GetDefault<UGA_BossVanish>();
+	const UGA_BossVanishV2* VanishV2 = GetDefault<UGA_BossVanishV2>();
 	const UGA_BossDashSlash* Dash = GetDefault<UGA_BossDashSlash>();
 	const UGA_BossBasicAttack* Basic = GetDefault<UGA_BossBasicAttack>();
 	const UBossAbilityCooldownEffect* CooldownEffect = GetDefault<UBossAbilityCooldownEffect>();
@@ -396,6 +402,17 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 			Vanish->GetCooldownTags()->HasTagExact(Cooldown_Boss_Vanish));
 		TestNull(TEXT("Vanish no longer owns destination selection settings"),
 			FindFProperty<FProperty>(Vanish->GetClass(), TEXT("PointSelectionSettings")));
+		TestTrue(TEXT("Vanish hides before relocation for at least one network update"),
+			Vanish->GetHiddenLeadTime() > (1.0f / BossCDO->GetNetUpdateFrequency()));
+		TestTrue(TEXT("Vanish remains hidden after teleport before reveal"),
+			Vanish->GetRelocationSettleTime() > 0.0f);
+	}
+	if (TestNotNull(TEXT("Front Vanish variant exists"), VanishV2))
+	{
+		TestTrue(TEXT("Vanish V2 has a unique exact asset tag"),
+			VanishV2->GetAssetTags().HasTagExact(GameplayAbility_Boss_VanishV2));
+		TestTrue(TEXT("Vanish V2 has an independent cooldown tag"),
+			VanishV2->GetCooldownTags()->HasTagExact(Cooldown_Boss_VanishV2));
 	}
 	if (TestNotNull(TEXT("Boss dash ability exists"), Dash))
 	{
@@ -572,6 +589,12 @@ bool FBossPointMathTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Point in front of player is rejected"),
 		UBossDeckPointSelector::IsPointBehindTarget(
 			TargetLocation, TargetForward, FVector(300.0f, 0.0f, 0.0f), DeckUp, 0.0f));
+	TestTrue(TEXT("Point in front half-plane is accepted by Vanish V2 policy"),
+		UBossDeckPointSelector::IsPointInFrontOfTarget(
+			TargetLocation, TargetForward, FVector(300.0f, 50.0f, 0.0f), DeckUp, 0.0f));
+	TestFalse(TEXT("Rear point is rejected by Vanish V2 policy"),
+		UBossDeckPointSelector::IsPointInFrontOfTarget(
+			TargetLocation, TargetForward, FVector(-300.0f, 0.0f, 0.0f), DeckUp, 0.0f));
 	TestTrue(TEXT("Dash segment crossing the target is accepted"),
 		UBossDeckPointSelector::DoesSegmentPassTarget(
 			FVector(400.0f, 0.0f, 0.0f), FVector(-400.0f, 0.0f, 0.0f), TargetLocation, 120.0f));

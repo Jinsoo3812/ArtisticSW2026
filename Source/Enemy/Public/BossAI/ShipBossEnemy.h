@@ -65,6 +65,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Boss|State")
 	bool IsBossHidden() const { return bBossHidden; }
 
+	/** Hides first, then freezes server-authored CharacterMovement for a safe relocation. */
+	bool BeginHiddenRelocation();
+
+	/** Teleports while hidden and reattaches to the live ship deck without revealing. */
+	bool RelocateWhileHidden(const FTransform& DestinationTransform);
+
+	/** Restores a grounded walking state before the hidden presentation is removed. */
+	void FinishHiddenRelocation();
+
+	bool IsHiddenRelocationActive() const { return bHiddenRelocationActive; }
+
 	UFUNCTION(BlueprintPure, Category = "Boss|Summon")
 	bool CanSummonDeckEnemy() const;
 
@@ -135,4 +146,5 @@ protected:
 	double NextSummonAllowedTime = 0.0;
 
 	ECollisionEnabled::Type InitialCapsuleCollision = ECollisionEnabled::QueryAndPhysics;
+	bool bHiddenRelocationActive = false;
 };

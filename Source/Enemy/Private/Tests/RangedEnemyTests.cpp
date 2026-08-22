@@ -50,6 +50,7 @@
 #include "StatusEffectLibrary.h"
 #include "Task/BTT_ClearFocus.h"
 #include "Task/BTT_RangedAttack.h"
+#include "Task/BTT_RetreatToWeaponRange.h"
 #include "Task/BTT_SetFocus.h"
 #include "Task/BTT_SetMovementSpeed.h"
 #include "Weapon/BaseWeaponComponent.h"
@@ -200,6 +201,7 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 	const AEnemyBow* BowCDO = GetDefault<AEnemyBow>();
 	const ARangedEnemyAIController* ControllerCDO = GetDefault<ARangedEnemyAIController>();
 	const UGA_RangedEnemyAttack* AbilityCDO = GetDefault<UGA_RangedEnemyAttack>();
+	const UBTT_RetreatToWeaponRange* RetreatTaskCDO = GetDefault<UBTT_RetreatToWeaponRange>();
 
 	TestNotNull(TEXT("RangedEnemy CDO exists"), EnemyCDO);
 	TestNotNull(TEXT("EnemyBow CDO exists"), BowCDO);
@@ -227,6 +229,35 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 		AbilityCDO->GetAssetTags().HasTagExact(GameplayAbility_RangedAttack));
 	TestTrue(TEXT("Ranged attack remains part of the common basic-attack ability family"),
 		AbilityCDO->GetAssetTags().HasTagExact(GameplayAbility_BasicAttack));
+	if (TestNotNull(TEXT("Weapon-range retreat task exists"), RetreatTaskCDO))
+	{
+		TestEqual(TEXT("Retreat task reads TargetActor"),
+			RetreatTaskCDO->GetSelectedBlackboardKey(), FName(TEXT("TargetActor")));
+		TestTrue(TEXT("Retreat task keeps an inset inside weapon range"),
+			RetreatTaskCDO->GetRangeInset() > 0.0f);
+		TestTrue(TEXT("Retreat task periodically replans around a moving target"),
+			RetreatTaskCDO->GetRepathInterval() > 0.0f);
+		TestEqual(TEXT("A normal ranged weapon resolves an inside-boundary retreat distance"),
+			UBTT_RetreatToWeaponRange::ResolveDesiredRange(1000.0f, 75.0f, 300.0f),
+			925.0f);
+		TestEqual(TEXT("Minimum retreat distance never exceeds a short weapon range"),
+			UBTT_RetreatToWeaponRange::ResolveDesiredRange(250.0f, 75.0f, 300.0f),
+			250.0f);
+		TestTrue(TEXT("Retreat direction points away from the target"),
+			UBTT_RetreatToWeaponRange::ResolvePlanarAwayDirection(
+				FVector(100.0f, 0.0f, 0.0f),
+				FVector::ZeroVector,
+				FVector::ForwardVector,
+				FVector::ForwardVector).Equals(FVector::ForwardVector));
+		TestTrue(TEXT("Overlapping actors use deterministic target-backward fallback"),
+			UBTT_RetreatToWeaponRange::ResolvePlanarAwayDirection(
+				FVector::ZeroVector,
+				FVector::ZeroVector,
+				FVector::ForwardVector,
+				FVector::RightVector).Equals(FVector::BackwardVector));
+	}
+	TestEqual(TEXT("An unequipped CDO retains the legacy maximum-range fallback"),
+		EnemyCDO->GetEffectiveAttackRange(), EnemyCDO->GetFallbackMaxAttackRange());
 
 	const UClass* RangedEnemyBlueprintClass = LoadObject<UClass>(
 		nullptr,
@@ -251,6 +282,9 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 			WeaponRegistry->FindWeaponDefinitionByTag(Item_EnemyWeapon_Bow);
 		if (TestNotNull(TEXT("Enemy weapon registry contains the bow definition"), BowDefinition))
 		{
+			TestTrue(TEXT("Bow weapon range can contain the default retreat destination"),
+				RetreatTaskCDO
+				&& BowDefinition->CombatData.AttackRange > RetreatTaskCDO->GetMinimumDesiredRange());
 			TestTrue(TEXT("Bow definition spawns an EnemyBow actor"),
 				BowDefinition->WeaponActorClass
 				&& BowDefinition->WeaponActorClass->IsChildOf(AEnemyBow::StaticClass()));
@@ -636,6 +670,7 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 	FWeaponDefinition BowDefinition;
 	BowDefinition.WeaponTag = Item_EnemyWeapon_Bow;
 	BowDefinition.WeaponActorClass = AEnemyBow::StaticClass();
+	BowDefinition.CombatData.AttackRange = 1000.0f;
 	FGrantedWeaponAbility& GrantedAbility = BowDefinition.AbilityData.GrantedAbilities.AddDefaulted_GetRef();
 	GrantedAbility.AbilityClass = UGA_RangedEnemyAttack::StaticClass();
 	TestWeaponRegistry->WeaponDefinitions.Add(BowDefinition);
@@ -648,6 +683,14 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	TestEqual(TEXT("RangedEnemy attack validation resolves the equipped bow range"),
+		Enemy->GetEffectiveAttackRange(), 1000.0f);
+	Player->SetActorLocation(FVector(1100.0f, 0.0f, 0.0f));
+	TestFalse(TEXT("Equipped bow range rejects a target beyond its weapon definition"),
+		Enemy->CanAttackTarget(Player, false));
+	Player->SetActorLocation(FVector(600.0f, 0.0f, 0.0f));
+	TestTrue(TEXT("Equipped bow range accepts a target inside its weapon definition"),
+		Enemy->CanAttackTarget(Player, false));
 
 	TestEqual(TEXT("Equipping grants exactly one weapon ability"),
 		WeaponComponent->GrantedAbilityHandles.Num(), 1);

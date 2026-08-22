@@ -12,6 +12,7 @@ bool UBossDeckPointSelector::SelectDestinationPoint(
 	AActor* BossActor,
 	AActor* TargetActor,
 	EBossDestinationPurpose Purpose,
+	EBossDestinationRelation Relation,
 	const FBossDestinationSelectionSettings& Settings,
 	int32& OutPointId)
 {
@@ -67,12 +68,20 @@ bool UBossDeckPointSelector::SelectDestinationPoint(
 			continue;
 		}
 
-		if (!IsPointBehindTarget(
-			TargetLocation,
-			TargetActor->GetActorForwardVector(),
-			CandidateLocation,
-			DeckUp,
-			Settings.MaximumRearDot))
+		const bool bMatchesTargetRelation = Relation == EBossDestinationRelation::BehindTarget
+			? IsPointBehindTarget(
+				TargetLocation,
+				TargetActor->GetActorForwardVector(),
+				CandidateLocation,
+				DeckUp,
+				Settings.MaximumRearDot)
+			: IsPointInFrontOfTarget(
+				TargetLocation,
+				TargetActor->GetActorForwardVector(),
+				CandidateLocation,
+				DeckUp,
+				Settings.MinimumFrontDot);
+		if (!bMatchesTargetRelation)
 		{
 			continue;
 		}
@@ -190,6 +199,27 @@ bool UBossDeckPointSelector::IsPointBehindTarget(
 
 	return FVector::DotProduct(ForwardOnDeck, TargetToPointOnDeck)
 		<= FMath::Clamp(MaximumRearDot, -1.0f, 0.0f);
+}
+
+bool UBossDeckPointSelector::IsPointInFrontOfTarget(
+	const FVector& TargetLocation,
+	const FVector& TargetForward,
+	const FVector& PointLocation,
+	const FVector& DeckUp,
+	float MinimumFrontDot)
+{
+	const FVector SafeUp = DeckUp.GetSafeNormal(SMALL_NUMBER, FVector::UpVector);
+	const FVector ForwardOnDeck = FVector::VectorPlaneProject(TargetForward, SafeUp).GetSafeNormal();
+	const FVector TargetToPointOnDeck = FVector::VectorPlaneProject(
+		PointLocation - TargetLocation,
+		SafeUp).GetSafeNormal();
+	if (ForwardOnDeck.IsNearlyZero() || TargetToPointOnDeck.IsNearlyZero())
+	{
+		return false;
+	}
+
+	return FVector::DotProduct(ForwardOnDeck, TargetToPointOnDeck)
+		>= FMath::Clamp(MinimumFrontDot, 0.0f, 1.0f);
 }
 
 bool UBossDeckPointSelector::DoesSegmentPassTarget(

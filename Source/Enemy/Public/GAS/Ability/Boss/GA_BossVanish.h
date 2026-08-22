@@ -15,6 +15,8 @@ class ENEMY_API UGA_BossVanish : public UBossGameplayAbility
 
 public:
 	UGA_BossVanish();
+	float GetHiddenLeadTime() const { return HiddenDuration; }
+	float GetRelocationSettleTime() const { return RelocationSettleTime; }
 
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
@@ -34,7 +36,10 @@ protected:
 	void BeginHiddenPhase();
 
 	UFUNCTION()
-	void Reappear();
+	void RelocateHidden();
+
+	UFUNCTION()
+	void RevealAtDestination();
 
 	UFUNCTION()
 	void HandleMontageInterrupted();
@@ -52,6 +57,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Vanish", meta = (ClampMin = "0.01", Units = "s"))
 	float HiddenDuration = 0.35f;
 
+	/** Keeps the Boss hidden while the teleported transform reaches remote clients. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Vanish", meta = (ClampMin = "0.01", Units = "s"))
+	float RelocationSettleTime = 0.1f;
+
 	UPROPERTY()
 	TObjectPtr<UAbilityTask_PlayMontageAndWait> MontageTask = nullptr;
 
@@ -61,5 +70,18 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UAbilityTask_WaitDelay> HiddenTask = nullptr;
 
+	UPROPERTY()
+	TObjectPtr<UAbilityTask_WaitDelay> RelocationSettleTask = nullptr;
+
 	FActiveGameplayEffectHandle HiddenStateHandle;
+};
+
+/** Front-placement Vanish variant. Destination relation remains authored by the BT selector. */
+UCLASS()
+class ENEMY_API UGA_BossVanishV2 : public UGA_BossVanish
+{
+	GENERATED_BODY()
+
+public:
+	UGA_BossVanishV2();
 };
