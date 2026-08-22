@@ -3266,11 +3266,12 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     // raw input edge or the mutable current StateControllerGait.
     // Releasing Sprint during an authored Sprint Start must bypass its remaining
     // one-shot hold and resume the regular locomotion MM database immediately.
-    const bool bInterruptSprintStartForMotionMatching =
+    // Similarly, pressing Sprint during an authored Run Start must also bypass its remaining
+    // one-shot hold and hand off immediately to Sprint Locomotion MM database!
+    const bool bInterruptStartForGaitChange =
         StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart &&
-        bStateControllerSelectedSprintStart &&
-        !CachedLocomotionStateComponent->bIsSprinting &&
-        bHasMoveInput;
+        bHasMoveInput &&
+        (bStateControllerSelectedSprintStart != CachedLocomotionStateComponent->bIsSprinting);
     const bool bInPlaybackHold = (StateControllerPlaybackHoldElapsed < StateControllerPlaybackHoldDuration);
     const float DesiredFacingDeltaYaw = CachedLocomotionStateComponent->DesiredFacingDeltaYaw;
     const float AbsDesiredFacingDeltaYaw = FMath::Abs(DesiredFacingDeltaYaw);
@@ -3321,9 +3322,13 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
         {
             DesiredState = EStateControllerPresentationState::TransitionToPivot;
         }
-        else if (bInterruptSprintStartForMotionMatching)
+        else if (bInterruptStartForGaitChange)
         {
             DesiredState = EStateControllerPresentationState::LocomotionLoop;
+            if (CachedLocomotionStateComponent)
+            {
+                CachedLocomotionStateComponent->InterruptStartForGaitChange();
+            }
         }
         else if (bStartRequested ||
             StateControllerPlaybackHoldState == EStateControllerPresentationState::IdleLoop ||
@@ -3383,10 +3388,14 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     const bool bGameplayLandStillActive =
         CachedLocomotionStateComponent->bIsLanding &&
         CachedLocomotionStateComponent->bLandingRequested;
+    const bool bLandWantsSprint = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsSprinting;
+    const bool bLandWasSprinting = (StateControllerLandGaitLock == EGaitIntent::Sprint);
+    const bool bLandGaitChanged = (bLandWasSprinting != bLandWantsSprint);
     if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToLand &&
         bGameplayLandStillActive &&
         bReturningFromLandToGroundPresentation &&
         !bCanStartTurnInPlace &&
+        !bLandGaitChanged &&
         StateControllerSelectedAnimation &&
         StateControllerPlaybackHoldElapsed < LandCompletionTime)
     {
@@ -3653,7 +3662,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         const bool bLandWasSprinting = (StateControllerLandGaitLock == EGaitIntent::Sprint);
 
         if (!CachedLocomotionStateComponent || !CachedLocomotionStateComponent->bIsLanding ||
-            (bLandWasSprinting && !bWantsSprint))
+            (bLandWasSprinting != bWantsSprint))
         {
             bInterruptLandForMotionMatching = true;
         }
