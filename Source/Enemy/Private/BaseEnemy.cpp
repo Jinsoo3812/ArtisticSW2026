@@ -19,6 +19,7 @@
 #include "AbilitySystemComponent.h"
 #include "Abilities/BaseDeathGameplayAbility.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Components/BaseHealthComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -41,6 +42,16 @@ ABaseEnemy::ABaseEnemy()
 	SetNetCullDistanceSquared(FMath::Square(15000.0f));
 	
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+
+	// Prevent player camera boom from clipping / zooming against enemies
+	if (UCapsuleComponent* CapsuleComp = GetCapsuleComponent())
+	{
+		CapsuleComp->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	}
+	if (USkeletalMeshComponent* MeshComp = GetMesh())
+	{
+		MeshComp->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	}
 	
 	// ASC
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));

@@ -220,6 +220,9 @@ public:
      */
     bool ConsumeMotionMatchingReselectionRequest();
 
+    /** Start may hand off directly to moving MM when Sprint intent changes (e.g. shift pressed during run_start). */
+    void InterruptStartForGaitChange();
+
 protected:
     void CacheOwner();
     bool PerformGroundProbe() const;

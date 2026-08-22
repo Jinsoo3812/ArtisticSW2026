@@ -62,21 +62,21 @@ void UGA_BowAimFire::ActivateAbility(
 		WaitRightReleaseTask->ReadyForActivation();
 	}
 
-	UAbilityTask_WaitGameplayEvent* WaitLeftPressedTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Key_Default_Mouse_LeftClick, nullptr, true, true);
+	UAbilityTask_WaitGameplayEvent* WaitLeftPressedTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Key_Default_Mouse_LeftClick, nullptr, false, true);
 	if (WaitLeftPressedTask)
 	{
 		WaitLeftPressedTask->EventReceived.AddDynamic(this, &UGA_BowAimFire::OnLeftClickPressed);
 		WaitLeftPressedTask->ReadyForActivation();
 	}
 
-	UAbilityTask_WaitGameplayEvent* WaitLeftReleasedTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Key_Default_Mouse_LeftClick_Released, nullptr, true, true);
+	UAbilityTask_WaitGameplayEvent* WaitLeftReleasedTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Key_Default_Mouse_LeftClick_Released, nullptr, false, true);
 	if (WaitLeftReleasedTask)
 	{
 		WaitLeftReleasedTask->EventReceived.AddDynamic(this, &UGA_BowAimFire::OnLeftClickReleased);
 		WaitLeftReleasedTask->ReadyForActivation();
 	}
 
-	UAbilityTask_WaitGameplayEvent* WaitFireArrowTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Event_Montage_FireArrow, nullptr, true, true);
+	UAbilityTask_WaitGameplayEvent* WaitFireArrowTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Event_Montage_FireArrow, nullptr, false, true);
 	if (WaitFireArrowTask)
 	{
 		WaitFireArrowTask->EventReceived.AddDynamic(this, &UGA_BowAimFire::OnReleaseFireEvent);
@@ -105,9 +105,23 @@ void UGA_BowAimFire::EndAbility(
 
 void UGA_BowAimFire::OnLeftClickPressed(FGameplayEventData Payload)
 {
-	if (!IsActive() || !CachedBowComponent || bIsDrawing || bIsFullyDrawn || bIsReleaseInProgress)
+	if (!IsActive() || !CachedBowComponent || bIsDrawing || bIsFullyDrawn)
 	{
 		return;
+	}
+
+	if (bIsReleaseInProgress)
+	{
+		if (bHasFiredCurrentShot)
+		{
+			// The previous arrow already launched; cancel release recoil and immediately start drawing the next arrow
+			FinishShot();
+		}
+		else
+		{
+			// Arrow is still waiting to fire from release notify
+			return;
+		}
 	}
 
 	bIsDrawing = true;
@@ -319,9 +333,14 @@ void UGA_BowAimFire::BeginRelease(const FGameplayEventData& Payload)
 	bIsDrawing = false;
 	bIsFullyDrawn = true;
 	bIsReleaseInProgress = true;
-	CachedBowComponent->SetDrawAlpha(1.0f);
 	ReleasePayload = Payload;
 	SetBowDrawTagState(false, true, true);
+
+	if (!bRequireReleaseNotifyToFire)
+	{
+		CachedBowComponent->SetDrawAlpha(0.0f);
+	}
+
 	if (IsUsingAimCycleMontage())
 	{
 		JumpAimCycleToSection(GetBowAnimationEntry()->AimCycleReleaseSectionName);
@@ -369,6 +388,11 @@ void UGA_BowAimFire::OnReleaseFireEvent(FGameplayEventData Payload)
 	if (!IsActive() || !bIsReleaseInProgress || !bIsFullyDrawn || bHasFiredCurrentShot)
 	{
 		return;
+	}
+
+	if (CachedBowComponent)
+	{
+		CachedBowComponent->SetDrawAlpha(0.0f);
 	}
 
 	FireArrow(ReleasePayload);
@@ -502,6 +526,10 @@ void UGA_BowAimFire::FireArrow(const FGameplayEventData& Payload)
 	Arrow->LaunchArrow(LaunchVelocity);
 	CachedBow->Multicast_PlayReleaseFX();
 	bHasFiredCurrentShot = true;
+	if (CachedBowComponent)
+	{
+		CachedBowComponent->SetDrawAlpha(0.0f);
+	}
 }
 
 bool UGA_BowAimFire::TryGetAimTargetFromPayload(const FGameplayEventData& Payload, FVector& OutAimTarget) const
