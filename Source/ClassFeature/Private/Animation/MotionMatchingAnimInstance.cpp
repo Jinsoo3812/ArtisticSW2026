@@ -3349,26 +3349,34 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     }
     else
     {
-        // Input release is a one-update presentation event. A committed Stop
-        // owns its complete direct-clip hold unless a clear TurnInPlace is requested.
-        const bool bLocomotionStateStop = CachedLocomotionStateComponent &&
-            CachedLocomotionStateComponent->CurrentState == ELocomotionState::Stop;
-        const bool bStopHoldActive = bInPlaybackHold &&
-            StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop;
-        const bool bStopFallbackFromDeceleration = GroundSpeed > 10.0f;
-        if ((bStopRequested || bLocomotionStateStop || bStopHoldActive || bStopFallbackFromDeceleration ||
-            (bInPlaybackHold && StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart))
-            && !bCanStartTurnInPlace)
-        {
-            DesiredState = EStateControllerPresentationState::TransitionToStop;
-        }
-        else if (bKeepActiveTurnInPlaceClip || bCanStartTurnInPlace)
+        // When there is no movement input (!bHasMoveInput):
+        // 1. If TurnInPlace is active or requested, TurnInPlace takes priority over Stop/Idle
+        if (bKeepActiveTurnInPlaceClip || bCanStartTurnInPlace)
         {
             DesiredState = EStateControllerPresentationState::TurnInPlace;
         }
-        else
+        // 2. If we were already in TurnInPlace and finished turning, transition directly to IdleLoop
+        else if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace)
         {
             DesiredState = EStateControllerPresentationState::IdleLoop;
+        }
+        // 3. Otherwise, check if a Stop transition is owed from previous movement/deceleration
+        else
+        {
+            const bool bLocomotionStateStop = CachedLocomotionStateComponent &&
+                CachedLocomotionStateComponent->CurrentState == ELocomotionState::Stop;
+            const bool bStopHoldActive = bInPlaybackHold &&
+                StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop;
+            const bool bStopFallbackFromDeceleration = GroundSpeed > 10.0f;
+            if (bStopRequested || bLocomotionStateStop || bStopHoldActive || bStopFallbackFromDeceleration ||
+                (bInPlaybackHold && StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart))
+            {
+                DesiredState = EStateControllerPresentationState::TransitionToStop;
+            }
+            else
+            {
+                DesiredState = EStateControllerPresentationState::IdleLoop;
+            }
         }
     }
 

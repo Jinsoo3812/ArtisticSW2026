@@ -706,6 +706,15 @@ void ULocomotionAnimStateComponent::UpdateTurnInPlacePhase(float DeltaTime)
         bGroundMoveEpisodeActive = false;
         bLandingRequested = false;
         bIsLanding = false;
+        if (CurrentState == ELocomotionState::Stop || CurrentState == ELocomotionState::Landing)
+        {
+            ForceStateTransition(ELocomotionState::Idle);
+        }
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().ClearTimer(StopFallbackTimerHandle);
+            World->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
+        }
     }
 
 }
@@ -885,6 +894,10 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             {
                 AlignActorYawToControlYawForStartIfNeeded();
                 ForceStateTransition(ELocomotionState::Start);
+            }
+            else if (bTurnInPlacePhaseActive)
+            {
+                ForceStateTransition(ELocomotionState::Idle);
             }
             break;
         }
