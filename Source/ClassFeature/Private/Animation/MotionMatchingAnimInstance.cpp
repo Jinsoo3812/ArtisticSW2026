@@ -3289,8 +3289,8 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     const EStateControllerPresentationState HoldStateBeforeEvaluation = StateControllerPlaybackHoldState;
     const int32 SelectionRevisionBeforeEvaluation = StateControllerSelectionRevision;
     // StartLanding deliberately keeps bIsInAir true until the landing pose is
-    // released.  Landing must therefore take precedence over the air flag.
-    if (bLanding)
+    // released.  Landing must therefore take precedence over the air flag, unless TIP is strongly requested.
+    if (bLanding && !bCanStartTurnInPlace)
     {
         // Project_J's Strafe path enters its Land chooser on the impact frame.
         // Artistic already records an immutable impact direction, so diagonals
@@ -3346,15 +3346,16 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     }
     else
     {
-        // Input release is a one-update presentation event.  A committed Stop
-        // owns its complete direct-clip hold while input remains absent.  This
-        // also prevents a stationary camera offset from preempting Stop with
-        // TIP midway through deceleration.
+        // Input release is a one-update presentation event. A committed Stop
+        // owns its complete direct-clip hold unless a clear TurnInPlace is requested.
+        const bool bLocomotionStateStop = CachedLocomotionStateComponent &&
+            CachedLocomotionStateComponent->CurrentState == ELocomotionState::Stop;
         const bool bStopHoldActive = bInPlaybackHold &&
             StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop;
         const bool bStopFallbackFromDeceleration = GroundSpeed > 10.0f;
-        if (bStopRequested || bStopHoldActive || bStopFallbackFromDeceleration ||
+        if ((bStopRequested || bLocomotionStateStop || bStopHoldActive || bStopFallbackFromDeceleration ||
             (bInPlaybackHold && StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart))
+            && !bCanStartTurnInPlace)
         {
             DesiredState = EStateControllerPresentationState::TransitionToStop;
         }
@@ -3387,6 +3388,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToLand &&
         bGameplayLandStillActive &&
         bReturningFromLandToGroundPresentation &&
+        !bCanStartTurnInPlace &&
         StateControllerSelectedAnimation &&
         StateControllerPlaybackHoldElapsed < LandCompletionTime)
     {
@@ -4361,6 +4363,21 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
         CachedLocomotionStateComponent->LandingExitStopInputHoldTime,
         *StateControllerLastChooserPath,
         *StateControllerLastChooserOutputTrace);
+
+    if (GEngine && CVarAnimStateControllerDebug.GetValueOnGameThread() > 0)
+    {
+        const FString ScreenDebug = FString::Printf(
+            TEXT("[AnimState] Presentation: %s | Requested: %s | State: %s | Asset: %s | LandMoving: %d | StopReq: %d | TIP: %d | Speed: %.1f"),
+            *PresentationName,
+            *RequestedPresentationName,
+            *LocomotionName,
+            *GetNameSafe(StateController.SelectedAnimation),
+            CachedLocomotionStateComponent->bLandWasMoving ? 1 : 0,
+            CachedLocomotionStateComponent->bStopRequested ? 1 : 0,
+            CachedLocomotionStateComponent->bShouldTurnInPlace ? 1 : 0,
+            CachedLocomotionStateComponent->GroundSpeed);
+        GEngine->AddOnScreenDebugMessage(9999, 0.0f, FColor::Cyan, ScreenDebug);
+    }
 
     if (bComponentEventChanged)
     {

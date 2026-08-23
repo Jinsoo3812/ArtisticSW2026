@@ -22,6 +22,50 @@ class UEnemyShipPatternRuntimeComponent;
 class UEnemyShipPatternData;
 class UEnemyShipSkillModuleData;
 class UGameplayAbility;
+class UDeckWaypointComponent;
+class UBossEncounterComponent;
+class ADeckRangedEnemy;
+
+/** Editor-time sampling controls for creating editable deck waypoint components from ShipDeckMesh. */
+USTRUCT(BlueprintType)
+struct ENEMY_API FDeckWaypointGenerationSettings
+{
+	GENERATED_BODY()
+
+	/** Approximate world-space distance between generated samples. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck AI|Generation", meta = (ClampMin = "25.0", Units = "cm"))
+	float GridSpacing = 200.0f;
+
+	/** Requires deck support around each point so a boss capsule is not placed on an edge. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck AI|Generation", meta = (ClampMin = "0.0", Units = "cm"))
+	float EdgeClearance = 65.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck AI|Generation", meta = (ClampMin = "0.0", ClampMax = "89.0", Units = "deg"))
+	float MaximumWalkableSlope = 35.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck AI|Generation", meta = (ClampMin = "0.0", Units = "cm"))
+	float MaximumStepHeight = 45.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck AI|Generation", meta = (ClampMin = "10.0", Units = "cm"))
+	float TraceMargin = 150.0f;
+
+	/** Generated IDs start here, leaving low IDs available for manually authored points. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck AI|Generation", meta = (ClampMin = "0"))
+	int32 GeneratedWaypointIdBase = 10000;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck AI|Generation")
+	bool bLinkDiagonalNeighbors = true;
+
+	/** Defaults for newly created points. Regeneration preserves edits made to existing points. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck AI|Generation|New Point Defaults")
+	bool bNewPointsCanSpawn = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck AI|Generation|New Point Defaults")
+	bool bNewPointsCanPatrol = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck AI|Generation|New Point Defaults")
+	bool bNewPointsCanUseInCombat = true;
+};
 
 UCLASS()
 class ENEMY_API AEnemyShip : public AShip
@@ -48,8 +92,40 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ship|AI")
 	UEnemyShipPatternRuntimeComponent* GetPatternRuntimeComponent() const { return PatternRuntimeComponent; }
 
+	UFUNCTION(BlueprintPure, Category = "Ship|Boss Encounter")
+	UBossEncounterComponent* GetBossEncounterComponent() const { return BossEncounterComponent; }
+
 	UFUNCTION(BlueprintPure, Category = "Ship|Death")
 	bool IsDeathHandled() const { return bDeathHandled; }
+
+	/** Called on the authority after NavalAIController receives a successful Sight stimulus for a Player ship. */
+	void NotifyPlayerShipSighted(AShip* SensedPlayerShip);
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Deck AI")
+	UDeckWaypointComponent* GetDeckWaypoint(int32 WaypointId) const;
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Deck AI")
+	FVector GetDeckWaypointWorldLocation(int32 WaypointId) const;
+	bool ResolveDeckCharacterTransform(int32 WaypointId, float CapsuleHalfHeight, FTransform& OutTransform) const;
+
+	/** Creates persistent, individually editable waypoint components in this Blueprint asset or placed actor. */
+	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Ship|Deck AI|Generation")
+	void GenerateDeckWaypointsFromDeckMesh();
+
+	/** Removes only mesh-generated points. Hand-authored waypoint components are left untouched. */
+	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Ship|Deck AI|Generation")
+	void ClearGeneratedDeckWaypoints();
+
+	/** Checks IDs, links, deck attachment and whether generated points still resolve to the deck. */
+	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Ship|Deck AI|Generation")
+	void ValidateDeckWaypoints();
+
+	/** Returns deterministic, ID-sorted deck points usable by ability and movement selectors. */
+	void GetDeckWaypointIds(TArray<int32>& OutWaypointIds, bool bRequireCombatPoint = false) const;
+
+	void GetConnectedDeckWaypointIds(int32 WaypointId, TArray<int32>& OutWaypointIds) const;
+	int32 FindNearestDeckWaypoint(const FVector& WorldLocation, bool bRequirePatrolPoint = true) const;
+	UStaticMeshComponent* GetShipDeckMesh() const { return ShipDeckMesh; }
 	bool IsUsingLegacyAICompatibility() const
 	{
 		return !EnemyShipArchetype && bLegacyAutomaticCannonFireWithoutArchetype;
@@ -93,6 +169,41 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|AI|Data", meta = (TitleProperty = "ModuleId"))
 	TArray<TObjectPtr<UEnemyShipSkillModuleData>> CoreSkillModules;
 
+	// ================= Deck Enemy MVP =================
+	/** Explicit opt-in so existing EnemyShip Blueprints keep their previous behavior. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI")
+	bool bEnableDeckEnemyMVP = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI", meta = (EditCondition = "bEnableDeckEnemyMVP"))
+	TSubclassOf<ADeckRangedEnemy> DeckEnemyClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI", meta = (EditCondition = "bEnableDeckEnemyMVP", ClampMin = "1", ClampMax = "8"))
+	int32 DeckEnemyPoolSize = 2;
+
+	/** Small settle delay after the first successful Sight stimulus. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI", meta = (EditCondition = "bEnableDeckEnemyMVP", ClampMin = "0.0", Units = "s"))
+	float DeckEnemySightActivationDelay = 0.25f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI", meta = (EditCondition = "bEnableDeckEnemyMVP", ClampMin = "0.05", Units = "s"))
+	float DeckEnemyActivationInterval = 0.35f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI", meta = (EditCondition = "bEnableDeckEnemyMVP", ClampMin = "0", ClampMax = "5"))
+	int32 MaxDeckSpawnRetries = 3;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI", meta = (EditCondition = "bEnableDeckEnemyMVP", ClampMin = "0.05", Units = "s"))
+	float DeckSpawnRetryInterval = 0.5f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI", meta = (EditCondition = "bEnableDeckEnemyMVP"))
+	int32 DeckEnemyRandomSeed = 1337;
+
+	/** Settings used by the editor buttons above. Generated components can be edited after generation. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|Deck AI|Generation")
+	FDeckWaypointGenerationSettings DeckWaypointGenerationSettings;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Ship|Deck AI|Generation")
+	FString LastDeckWaypointValidationSummary;
+	// ================= End Deck Enemy MVP =================
+
 	/** LEGACY bootstrap only: delete after every Enemy Ship Archetype has an AbilitySet. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "LEGACY|Ship AI", meta = (
 		DisplayName = "[LEGACY] Native Ability Bootstrap Without Archetype",
@@ -112,6 +223,17 @@ protected:
 	void UpdateActiveCannons();
 	void MigrateLegacyNavigationAuthoring();
 	void DrawEnemyShipAIDebug() const;
+	void InitializeDeckWaypoints();
+	void InitializeDeckEnemyPool();
+	void DestroyDeckEnemyPool();
+	bool ResolveDeckEnemySpawnTransform(const UDeckWaypointComponent* SpawnWaypoint, FTransform& OutTransform) const;
+	UDeckWaypointComponent* SelectDeckSpawnWaypoint(int32 DeploymentIndex) const;
+
+	UFUNCTION()
+	void BeginDeckEnemyDeployment();
+
+	UFUNCTION()
+	void DeployNextDeckEnemy();
 
 	// Aiming and firing logic
 	void TickAIAimingAndFiring(float DeltaTime);
@@ -221,5 +343,23 @@ protected:
 	ENavalCombatState CurrentCombatState = ENavalCombatState::Idle;
 
 	FTimerHandle ActiveCannonsTimerHandle;
+	FTimerHandle DeckEnemySightDelayTimerHandle;
+	FTimerHandle DeckEnemyDeploymentTimerHandle;
+
+	UPROPERTY(Transient)
+	TMap<int32, TObjectPtr<UDeckWaypointComponent>> DeckWaypointsById;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UDeckWaypointComponent>> DeckSpawnWaypoints;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<ADeckRangedEnemy>> DeckEnemyPool;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Boss Encounter")
+	TObjectPtr<UBossEncounterComponent> BossEncounterComponent;
+
+	bool bDeckDeploymentTriggered = false;
+	int32 NextDeckEnemyPoolIndex = 0;
+	int32 CurrentDeckSpawnRetryCount = 0;
 	TArray<FGameplayAbilitySpecHandle> GrantedEnemyShipAbilityHandles;
 };

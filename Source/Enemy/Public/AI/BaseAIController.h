@@ -50,6 +50,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Enemy|AI")
 	bool StartInvestigation(const FVector& PointOfInterest);
 
+	/** Reapply the possessed enemy's dynamic subtrees after pooled brain logic resumes. */
+	bool RefreshBehaviorRouting();
+
 protected:
 	// 주로 Player 인식한 공격 대상
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Blackboard")

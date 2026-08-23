@@ -113,7 +113,9 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 
 	// 아이템 포인터 초기화
 	EquippedItem = nullptr;
-	CameraBoom->bDoCollisionTest = false;
+	CameraBoom->bDoCollisionTest = true;
+	CameraBoom->ProbeSize = 12.0f;
+	CameraBoom->ProbeChannel = ECC_Camera;
 
 	// 인벤토리 컴포넌트 부착
 	InventoryComponent = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComponent"));

@@ -6,6 +6,7 @@
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "GASCombatLibrary.h"
+#include "GASAttributeDamageGameplayEffect.h"
 #include "GASDamageInstantGameplayEffect.h"
 #include "GASStrengthEquipmentGameplayEffect.h"
 #include "Item/BaseItem.h"
@@ -116,6 +117,68 @@ bool FStrengthDamageSpecSnapshotTest::RunTest(const FString& Parameters)
 			StrengthEffectCDO->Modifiers[0].Attribute == UBaseAttributeSet::GetStrengthAttribute());
 	}
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAttributeDamageExecutionTest,
+	"ArtisticSW.GAS.Strength.AttributeDamageExecution",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAttributeDamageExecutionTest::RunTest(const FString& Parameters)
+{
+	StrengthCombatTests::FScopedTestWorld TestWorld;
+	if (!TestNotNull(TEXT("Transient game world is created"), TestWorld.World))
+	{
+		return false;
+	}
+
+	AActor* SourceActor = TestWorld.World->SpawnActor<AActor>();
+	AActor* TargetActor = TestWorld.World->SpawnActor<AActor>();
+	if (!TestNotNull(TEXT("Source actor is spawned"), SourceActor)
+		|| !TestNotNull(TEXT("Target actor is spawned"), TargetActor))
+	{
+		return false;
+	}
+
+	UAbilitySystemComponent* SourceASC = NewObject<UAbilitySystemComponent>(SourceActor);
+	SourceASC->RegisterComponent();
+	SourceASC->InitAbilityActorInfo(SourceActor, SourceActor);
+	UBaseAttributeSet* SourceAttributes = NewObject<UBaseAttributeSet>(SourceActor);
+	SourceASC->AddAttributeSetSubobject(SourceAttributes);
+	SourceAttributes->InitStrength(12.0f);
+
+	UAbilitySystemComponent* TargetASC = NewObject<UAbilitySystemComponent>(TargetActor);
+	TargetASC->RegisterComponent();
+	TargetASC->InitAbilityActorInfo(TargetActor, TargetActor);
+	UBaseAttributeSet* TargetAttributes = NewObject<UBaseAttributeSet>(TargetActor);
+	TargetASC->AddAttributeSetSubobject(TargetAttributes);
+	TargetAttributes->InitMaxHealth(100.0f);
+	TargetAttributes->InitHealth(100.0f);
+
+	FStrengthDamageRequest Request;
+	Request.SourceASC = SourceASC;
+	Request.DamageEffectClass = UGASAttributeDamageGameplayEffect::StaticClass();
+	Request.AttackCoefficient = 1.5f;
+	Request.ChargeMultiplier = 2.0f;
+	Request.InstigatorActor = SourceActor;
+	Request.EffectCauser = SourceActor;
+	const FGameplayEffectSpecHandle DamageSpec = UGASCombatLibrary::MakeStrengthDamageEffectSpec(Request);
+	if (!TestTrue(TEXT("Attribute damage spec is valid"), DamageSpec.IsValid() && DamageSpec.Data.IsValid()))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("Weapon coefficient is carried by the spec"),
+		DamageSpec.Data->GetSetByCallerMagnitude(Data_AttackCoefficient, false, 0.0f), 1.5f);
+	TestEqual(TEXT("Charge multiplier is carried by the spec"),
+		DamageSpec.Data->GetSetByCallerMagnitude(Data_ChargeMultiplier, false, 0.0f), 2.0f);
+
+	// Source captures are snapshotted at spec creation, so an already-fired
+	// projectile or open melee window cannot change damage retroactively.
+	SourceAttributes->SetStrength(99.0f);
+	TargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpec.Data.Get());
+	TestEqual(TEXT("Execution uses the launch-time Strength snapshot"), TargetAttributes->GetHealth(), 64.0f);
 	return true;
 }
 

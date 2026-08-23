@@ -8,7 +8,7 @@
 #include "BasePlayer.h"
 #include "Equipment/PlayerEquipmentComponent.h"
 #include "GASCombatLibrary.h"
-#include "GASDamageInstantGameplayEffect.h"
+#include "GASAttributeDamageGameplayEffect.h"
 #include "Item/Weapons/SwordItem.h"
 
 UGA_PlayerBasicAttack::UGA_PlayerBasicAttack()
@@ -199,7 +199,7 @@ bool UGA_PlayerBasicAttack::CacheAttackData()
 	TSubclassOf<UGameplayEffect> DamageEffectClass = CachedSword->GetDamageEffectClass();
 	if (!DamageEffectClass)
 	{
-		DamageEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
+		DamageEffectClass = UGASAttributeDamageGameplayEffect::StaticClass();
 	}
 
 	FStrengthDamageRequest DamageRequest;

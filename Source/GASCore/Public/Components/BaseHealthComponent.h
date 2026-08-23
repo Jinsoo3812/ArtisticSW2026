@@ -11,6 +11,7 @@
 class UAbilitySystemComponent;
 class UBaseHealthComponent;
 struct FOnAttributeChangeData;
+struct FGameplayEffectSpec;
 
 UENUM(BlueprintType)
 enum class EBaseDeathState : uint8
@@ -57,6 +58,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Health")
 	EBaseDeathState GetDeathState() const { return DeathState; }
 
+	/** One-shot cue executed authoritatively for every confirmed health loss, including lethal damage. */
+	UFUNCTION(BlueprintCallable, Category = "Health|Feedback")
+	void SetDamageGameplayCueTag(FGameplayTag InGameplayCueTag) { DamageGameplayCueTag = InGameplayCueTag; }
+
+	UFUNCTION(BlueprintPure, Category = "Health|Feedback")
+	FGameplayTag GetDamageGameplayCueTag() const { return DamageGameplayCueTag; }
+
 	// Starts death on the server. Adds State.Dead and sends the GameplayAbility.Dead event.
 	UFUNCTION(BlueprintCallable, Category = "Health")
 	void StartDeath();
@@ -64,6 +72,10 @@ public:
 	// Call when the Death GA or death presentation has completed.
 	UFUNCTION(BlueprintCallable, Category = "Health")
 	void FinishDeath();
+
+	/** Authority-only reset used when a pooled actor is acquired again. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Health|Pooling")
+	bool ResetForReuse();
 
 	UPROPERTY(BlueprintAssignable, Category = "Health")
 	FBaseHealthAttributeChangedSignature OnHealthChanged;
@@ -85,6 +97,12 @@ private:
 	void SetDeathState(EBaseDeathState NewDeathState);
 	AActor* ResolveSourceActorFromContext(const FGameplayEffectContextHandle& EffectContextHandle) const;
 	void ClearPendingDamageContext();
+	FGameplayTag ResolveImpactGameplayCueTag(const FGameplayEffectSpec& EffectSpec) const;
+	void ExecuteConfirmedDamageGameplayCues(
+		float DamageAmount,
+		AActor* SourceActor,
+		const FGameplayEffectContextHandle& EffectContextHandle,
+		FGameplayTag ImpactGameplayCueTag) const;
 	void SendGameplayEventToOwner(
 		const FGameplayTag& EventTag,
 		float EventMagnitude = 0.0f,
@@ -96,6 +114,10 @@ private:
 	void OnRep_DeathState(EBaseDeathState OldDeathState);
 
 private:
+	/** Empty by default. Actor archetypes opt into their own replicated presentation cue. */
+	UPROPERTY(EditDefaultsOnly, Category = "Health|Feedback", meta = (Categories = "GameplayCue"))
+	FGameplayTag DamageGameplayCueTag;
+
 	UPROPERTY(ReplicatedUsing = OnRep_DeathState)
 	EBaseDeathState DeathState = EBaseDeathState::NotDead;
 
@@ -108,6 +130,7 @@ private:
 	FDelegateHandle DeadTagDelegateHandle;
 
 	FGameplayEffectContextHandle PendingDamageEffectContextHandle;
+	FGameplayTag PendingImpactGameplayCueTag;
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<AActor> PendingDamageSourceActor;
