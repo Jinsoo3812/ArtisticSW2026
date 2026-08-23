@@ -1,26 +1,19 @@
 #include "UI/Crafting/CraftingMenuEntryWidget.h"
 
-#include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
-#include "Components/ButtonSlot.h"
-#include "Components/TextBlock.h"
 #include "Components/SizeBox.h"
-#include "Misc/Paths.h"
+#include "Components/TextBlock.h"
+#include "Components/WidgetSwitcher.h"
 #include "Brushes/SlateColorBrush.h"
-
-void UCraftingMenuEntryWidget::NativeOnInitialized()
-{
-	Super::NativeOnInitialized();
-	BuildWidgetTree();
-}
 
 void UCraftingMenuEntryWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
-	BuildWidgetTree();
 	if (Button_Entry)
 	{
 		DefaultButtonStyle = Button_Entry->GetStyle();
+		DefaultButtonStyle.SetPressedPadding(DefaultButtonStyle.NormalPadding);
+		DefaultButtonStyle.SetPressed(DefaultButtonStyle.Hovered);
 		bDefaultButtonStyleCached = true;
 		Button_Entry->OnClicked.AddUniqueDynamic(this, &UCraftingMenuEntryWidget::HandleClicked);
 	}
@@ -34,12 +27,17 @@ void UCraftingMenuEntryWidget::NativeDestruct()
 		Button_Entry->OnClicked.RemoveDynamic(this, &UCraftingMenuEntryWidget::HandleClicked);
 	}
 	OnRecipeActivated.Unbind();
+	OnCategoryActivated.Unbind();
 	Super::NativeDestruct();
 }
 
-void UCraftingMenuEntryWidget::SetupCategory(const FText& InLabel, int32 InDepth)
+void UCraftingMenuEntryWidget::SetupCategory(
+	const FString& InCategoryPath,
+	const FText& InLabel,
+	int32 InDepth)
 {
 	RecipeId = NAME_None;
+	CategoryPath = InCategoryPath;
 	Label = InLabel;
 	Depth = FMath::Max(0, InDepth);
 	bCategory = true;
@@ -54,6 +52,7 @@ void UCraftingMenuEntryWidget::SetupRecipe(
 	bool bInSelected)
 {
 	RecipeId = InRecipeId;
+	CategoryPath.Reset();
 	Label = InLabel;
 	Depth = FMath::Max(0, InDepth);
 	bCategory = false;
@@ -67,77 +66,69 @@ void UCraftingMenuEntryWidget::SetSelected(bool bInSelected)
 	RefreshVisuals();
 }
 
-void UCraftingMenuEntryWidget::BuildWidgetTree()
-{
-	if (!WidgetTree || WidgetTree->RootWidget)
-	{
-		return;
-	}
-
-	USizeBox* Root = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("SizeBox_EntryRoot"));
-	Root->SetMinDesiredHeight(24.0f);
-	WidgetTree->RootWidget = Root;
-
-	Button_Entry = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("Button_Entry"));
-	Root->AddChild(Button_Entry);
-
-	Text_Entry = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_Entry"));
-	Text_Entry->SetFont(FSlateFontInfo(
-		FPaths::EngineContentDir() / TEXT("Slate/Fonts/DroidSansFallback.ttf"),
-		14.0f));
-	if (UButtonSlot* TextSlot = Cast<UButtonSlot>(Button_Entry->AddChild(Text_Entry)))
-	{
-		TextSlot->SetHorizontalAlignment(HAlign_Left);
-		TextSlot->SetVerticalAlignment(VAlign_Center);
-	}
-}
-
 void UCraftingMenuEntryWidget::RefreshVisuals()
 {
-	if (!Button_Entry || !Text_Entry)
+	if (!Button_Entry || !WidgetSwitcher_EntryLayout || !Text_CategoryTop
+		|| !Text_CategoryNested || !Text_Recipe || !SizeBox_SelectionUnderline)
 	{
 		return;
 	}
 
-	const float LeftPadding = 8.0f + static_cast<float>(Depth) * 12.0f;
-	if (UButtonSlot* TextSlot = Cast<UButtonSlot>(Text_Entry->Slot))
+	if (bCategory)
 	{
-		TextSlot->SetPadding(FMargin(LeftPadding, 2.0f, 4.0f, 2.0f));
+		if (Depth == 0)
+		{
+			WidgetSwitcher_EntryLayout->SetActiveWidgetIndex(0);
+			Text_CategoryTop->SetText(FText::Format(
+				NSLOCTEXT("Crafting", "TopCategoryFormat", "<{0}>"), Label));
+		}
+		else
+		{
+			WidgetSwitcher_EntryLayout->SetActiveWidgetIndex(1);
+			Text_CategoryNested->SetText(FText::Format(
+				NSLOCTEXT("Crafting", "NestedCategoryFormat", "● {0}"), Label));
+		}
 	}
-
-	Text_Entry->SetText(Label);
+	else
+	{
+		WidgetSwitcher_EntryLayout->SetActiveWidgetIndex(2);
+		Text_Recipe->SetText(Label);
+	}
 	Button_Entry->SetIsEnabled(true);
-	Button_Entry->SetVisibility(bCategory ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Visible);
+	Button_Entry->SetVisibility(ESlateVisibility::Visible);
 	Button_Entry->SetBackgroundColor(FLinearColor::White);
-	Text_Entry->SetColorAndOpacity(FSlateColor(
-		bSelected ? SelectedTextColor : (bCategory ? CategoryTextColor : ItemTextColor)));
+	Text_CategoryTop->SetColorAndOpacity(FSlateColor(CategoryTextColor));
+	Text_CategoryNested->SetColorAndOpacity(FSlateColor(CategoryTextColor));
+	Text_Recipe->SetColorAndOpacity(FSlateColor(bSelected ? SelectedTextColor : ItemTextColor));
 
 	if (bDefaultButtonStyleCached)
 	{
 		FButtonStyle EntryStyle = DefaultButtonStyle;
+		EntryStyle.SetPressedPadding(EntryStyle.NormalPadding);
 		if (bSelected)
 		{
-			const FLinearColor HoveredHighlight(
-				SelectedHighlightColor.R,
-				SelectedHighlightColor.G,
-				SelectedHighlightColor.B,
-				FMath::Min(SelectedHighlightColor.A + 0.10f, 1.0f));
-			const FLinearColor PressedHighlight(
-				SelectedHighlightColor.R,
-				SelectedHighlightColor.G,
-				SelectedHighlightColor.B,
-				FMath::Min(SelectedHighlightColor.A + 0.20f, 1.0f));
-			EntryStyle.SetNormal(FSlateColorBrush(SelectedHighlightColor));
-			EntryStyle.SetHovered(FSlateColorBrush(HoveredHighlight));
-			EntryStyle.SetPressed(FSlateColorBrush(PressedHighlight));
+			const FSlateColorBrush HighlightBrush(SelectedHighlightColor);
+			EntryStyle.SetNormal(HighlightBrush);
+			EntryStyle.SetHovered(HighlightBrush);
+			EntryStyle.SetPressed(HighlightBrush);
+		}
+		else if (!bCategory)
+		{
+			EntryStyle.SetPressed(FSlateColorBrush(SelectedHighlightColor));
 		}
 		Button_Entry->SetStyle(EntryStyle);
 	}
+	SizeBox_SelectionUnderline->SetVisibility(
+		bSelected ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 }
 
 void UCraftingMenuEntryWidget::HandleClicked()
 {
-	if (!bCategory && !RecipeId.IsNone())
+	if (bCategory && !CategoryPath.IsEmpty())
+	{
+		OnCategoryActivated.ExecuteIfBound(CategoryPath);
+	}
+	else if (!RecipeId.IsNone())
 	{
 		OnRecipeActivated.ExecuteIfBound(RecipeId);
 	}

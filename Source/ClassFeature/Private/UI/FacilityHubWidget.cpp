@@ -17,9 +17,37 @@ namespace FacilityCraftingMenu
 	struct FNode
 	{
 		FString Label;
+		FString Path;
 		TMap<FString, TSharedPtr<FNode>> Children;
 		TArray<FCraftingListEntry> Recipes;
 	};
+
+	FText GetKoreanCategoryLabel(const FString& Segment)
+	{
+		static const TMap<FString, FText> KoreanLabels = {
+			{TEXT("Material"), NSLOCTEXT("CraftingCategory", "Material", "재료")},
+			{TEXT("WeaponMaterial"), NSLOCTEXT("CraftingCategory", "WeaponMaterial", "무기 재료")},
+			{TEXT("ConsumablesMaterial"), NSLOCTEXT("CraftingCategory", "ConsumablesMaterial", "소비 아이템 재료")},
+			{TEXT("ShipMaterials"), NSLOCTEXT("CraftingCategory", "ShipMaterials", "선박 재료")},
+			{TEXT("WeaponSpecialMaterial"), NSLOCTEXT("CraftingCategory", "WeaponSpecialMaterial", "특수 무기 재료")},
+			{TEXT("WeaponSpecialRecipe"), NSLOCTEXT("CraftingCategory", "WeaponSpecialRecipe", "특수 무기 제작법")},
+			{TEXT("SkillMaterial"), NSLOCTEXT("CraftingCategory", "SkillMaterial", "스킬 재료")},
+			{TEXT("Etc"), NSLOCTEXT("CraftingCategory", "Etc", "기타")},
+			{TEXT("Consumables"), NSLOCTEXT("CraftingCategory", "Consumables", "소비")},
+			{TEXT("Heal"), NSLOCTEXT("CraftingCategory", "Heal", "회복")},
+			{TEXT("Buff"), NSLOCTEXT("CraftingCategory", "Buff", "강화")},
+			{TEXT("Weapon"), NSLOCTEXT("CraftingCategory", "Weapon", "무기")},
+			{TEXT("Sword"), NSLOCTEXT("CraftingCategory", "Sword", "검")},
+			{TEXT("Bow"), NSLOCTEXT("CraftingCategory", "Bow", "활")},
+			{TEXT("Skill"), NSLOCTEXT("CraftingCategory", "Skill", "스킬")},
+			{TEXT("Clue"), NSLOCTEXT("CraftingCategory", "Clue", "단서")}
+		};
+		if (const FText* Label = KoreanLabels.Find(Segment))
+		{
+			return *Label;
+		}
+		return FText::FromString(Segment);
+	}
 }
 
 void UFacilityHubWidget::NativeConstruct()
@@ -494,6 +522,9 @@ void UFacilityHubWidget::RefreshCraftingMenu()
 			{
 				Child = MakeShared<FacilityCraftingMenu::FNode>();
 				Child->Label = Segments[Index];
+				Child->Path = Node->Path.IsEmpty()
+					? Segments[Index]
+					: Node->Path + TEXT(".") + Segments[Index];
 			}
 			Node = Child.Get();
 		}
@@ -513,8 +544,15 @@ void UFacilityHubWidget::RefreshCraftingMenu()
 			{
 				continue;
 			}
-			AddCraftingMenuCategory(FText::FromString(Child->Label), Depth);
-			RenderNode(*Child, Depth + 1);
+			const bool bExpanded = ExpandedCraftingCategoryByDepth.FindRef(Depth) == Child->Path;
+			AddCraftingMenuCategory(
+				Child->Path,
+				FacilityCraftingMenu::GetKoreanCategoryLabel(Child->Label),
+				Depth);
+			if (bExpanded)
+			{
+				RenderNode(*Child, Depth + 1);
+			}
 		}
 		for (const FCraftingListEntry& Recipe : Node.Recipes)
 		{
@@ -524,7 +562,10 @@ void UFacilityHubWidget::RefreshCraftingMenu()
 	RenderNode(Root, 0);
 }
 
-void UFacilityHubWidget::AddCraftingMenuCategory(const FText& Label, int32 Depth)
+void UFacilityHubWidget::AddCraftingMenuCategory(
+	const FString& CategoryPath,
+	const FText& Label,
+	int32 Depth)
 {
 	if (!VerticalBox_CraftingMenu)
 	{
@@ -538,9 +579,56 @@ void UFacilityHubWidget::AddCraftingMenuCategory(const FText& Label, int32 Depth
 	UCraftingMenuEntryWidget* Row = CreateWidget<UCraftingMenuEntryWidget>(this, RowClass);
 	if (Row)
 	{
-		Row->SetupCategory(Label, Depth);
+		Row->SetupCategory(CategoryPath, Label, Depth);
+		Row->OnCategoryActivated.BindUObject(this, &UFacilityHubWidget::HandleCraftingCategoryClicked);
 		VerticalBox_CraftingMenu->AddChild(Row);
 		SpawnedCraftingMenuEntries.Add(Row);
+	}
+}
+
+void UFacilityHubWidget::HandleCraftingCategoryClicked(FString CategoryPath)
+{
+	if (CategoryPath.IsEmpty())
+	{
+		return;
+	}
+	const float PreviousMenuHeight = SizeBox_CraftingMenu
+		? SizeBox_CraftingMenu->GetHeightOverride()
+		: 0.0f;
+
+	TArray<FString> PathSegments;
+	CategoryPath.ParseIntoArray(PathSegments, TEXT("."), true);
+	const int32 Depth = PathSegments.Num() - 1;
+	const bool bCollapse = ExpandedCraftingCategoryByDepth.FindRef(Depth) == CategoryPath;
+	if (bCollapse)
+	{
+		ExpandedCraftingCategoryByDepth.Remove(Depth);
+	}
+	else
+	{
+		ExpandedCraftingCategoryByDepth.Add(Depth, CategoryPath);
+	}
+
+	TArray<int32> ExpandedDepths;
+	ExpandedCraftingCategoryByDepth.GetKeys(ExpandedDepths);
+	for (const int32 ExpandedDepth : ExpandedDepths)
+	{
+		if (ExpandedDepth > Depth)
+		{
+			ExpandedCraftingCategoryByDepth.Remove(ExpandedDepth);
+		}
+	}
+
+	RefreshCraftingMenu();
+	RefreshCraftingSubmenuExpandedHeight();
+	if (SizeBox_CraftingMenu && bCraftingSubmenuExpanded)
+	{
+		SizeBox_CraftingMenu->SetIsEnabled(true);
+		bCraftingSubmenuAnimating = true;
+		CraftingSubmenuAnimationElapsed = 0.0f;
+		CraftingSubmenuAnimationStartHeight = PreviousMenuHeight;
+		CraftingSubmenuAnimationTargetHeight = CraftingSubmenuExpandedHeight;
+		SizeBox_CraftingMenu->SetHeightOverride(PreviousMenuHeight);
 	}
 }
 
@@ -572,7 +660,13 @@ void UFacilityHubWidget::HandleCraftingRecipeClicked(FName RecipeId)
 		return;
 	}
 	PendingCraftingRecipeId = RecipeId;
-	RefreshCraftingMenu();
+	for (UCraftingMenuEntryWidget* Row : SpawnedCraftingMenuEntries)
+	{
+		if (IsValid(Row))
+		{
+			Row->SetSelected(Row->GetRecipeId() == RecipeId);
+		}
+	}
 	if (IsCraftingTabActive())
 	{
 		if (CraftingPanelWidget)

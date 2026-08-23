@@ -196,7 +196,7 @@ private:
 	void SetCraftingSubmenuExpanded(bool bExpanded);
 	void RefreshCraftingSubmenuExpandedHeight();
 	void RefreshCraftingMenu();
-	void AddCraftingMenuCategory(const FText& Label, int32 Depth);
+	void AddCraftingMenuCategory(const FString& CategoryPath, const FText& Label, int32 Depth);
 	void AddCraftingMenuRecipe(const FCraftingListEntry& Entry, int32 Depth);
 	void ShowTab(int32 TabIndex);
 	UWidgetSwitcher* GetTabSwitcher() const;
@@ -220,6 +220,7 @@ private:
 	void HandleCraftingDataChanged();
 
 	void HandleCraftingRecipeClicked(FName RecipeId);
+	void HandleCraftingCategoryClicked(FString CategoryPath);
 
 	bool bSkillSubmenuExpanded = false;
 	bool bSkillSubmenuAnimating = false;
@@ -234,6 +235,7 @@ private:
 	float CraftingSubmenuAnimationTargetHeight = 0.0f;
 	float CraftingSubmenuExpandedHeight = 0.0f;
 	FName PendingCraftingRecipeId;
+	TMap<int32, FString> ExpandedCraftingCategoryByDepth;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UCraftingMenuEntryWidget>> SpawnedCraftingMenuEntries;
