@@ -6,11 +6,17 @@ public class ClassFeatureEditor : ModuleRules
 	{
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
+			"AssetTools",
 			"Core",
 			"CoreUObject",
 			"Engine",
 			"GameplayTags",
 			"UnrealEd",
+			"Kismet",
+			"Slate",
+			"SlateCore",
+			"UMG",
+			"UMGEditor",
 			"AnimationBlueprintLibrary",
 			"AnimationModifiers",
 			"ClassFeature",

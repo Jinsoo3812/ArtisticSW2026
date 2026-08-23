@@ -5,10 +5,22 @@
 #include "Components/Button.h"
 #include "Components/PanelWidget.h"
 #include "Components/SizeBox.h"
+#include "Components/TextBlock.h"
 #include "Components/WidgetSwitcher.h"
 #include "Crafting/CraftingComponent.h"
+#include "UI/Crafting/CraftingMenuEntryWidget.h"
 #include "UI/Crafting/CraftingPanelWidget.h"
 #include "UI/SkillUpgradePanel.h"
+
+namespace FacilityCraftingMenu
+{
+	struct FNode
+	{
+		FString Label;
+		TMap<FString, TSharedPtr<FNode>> Children;
+		TArray<FCraftingListEntry> Recipes;
+	};
+}
 
 void UFacilityHubWidget::NativeConstruct()
 {
@@ -20,11 +32,18 @@ void UFacilityHubWidget::NativeConstruct()
 	BindCraftingEvents();
 	BindNavigation();
 	RefreshSkillSubmenuExpandedHeight();
+	RefreshCraftingSubmenuExpandedHeight();
 	if (SizeBox_SkillUpgradeMenu)
 	{
 		SizeBox_SkillUpgradeMenu->SetClipping(EWidgetClipping::ClipToBounds);
 		SizeBox_SkillUpgradeMenu->SetHeightOverride(0.0f);
 		SizeBox_SkillUpgradeMenu->SetIsEnabled(false);
+	}
+	if (SizeBox_CraftingMenu)
+	{
+		SizeBox_CraftingMenu->SetClipping(EWidgetClipping::ClipToBounds);
+		SizeBox_CraftingMenu->SetHeightOverride(0.0f);
+		SizeBox_CraftingMenu->SetIsEnabled(false);
 	}
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[FacilityHubFlow][CLIENT] Hub constructed. Widget=%s Context=%s Switcher=%s Children=%d ShipButton=%s CraftButton=%s"),
@@ -53,26 +72,36 @@ void UFacilityHubWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
-	if (!bSkillSubmenuAnimating || !SizeBox_SkillUpgradeMenu)
+	if (bSkillSubmenuAnimating && SizeBox_SkillUpgradeMenu)
 	{
-		return;
+		SkillSubmenuAnimationElapsed += InDeltaTime;
+		const float Duration = FMath::Max(SkillSubmenuAnimationDuration, UE_SMALL_NUMBER);
+		const float LinearAlpha = FMath::Clamp(SkillSubmenuAnimationElapsed / Duration, 0.0f, 1.0f);
+		const float EasedAlpha = FMath::InterpEaseIn(0.0f, 1.0f, LinearAlpha, 2.0f);
+		SizeBox_SkillUpgradeMenu->SetHeightOverride(FMath::Lerp(
+			SkillSubmenuAnimationStartHeight, SkillSubmenuAnimationTargetHeight, EasedAlpha));
+		if (LinearAlpha >= 1.0f)
+		{
+			bSkillSubmenuAnimating = false;
+			SizeBox_SkillUpgradeMenu->SetHeightOverride(SkillSubmenuAnimationTargetHeight);
+			SizeBox_SkillUpgradeMenu->SetIsEnabled(bSkillSubmenuExpanded);
+		}
 	}
 
-	SkillSubmenuAnimationElapsed += InDeltaTime;
-	const float Duration = FMath::Max(SkillSubmenuAnimationDuration, UE_SMALL_NUMBER);
-	const float LinearAlpha = FMath::Clamp(SkillSubmenuAnimationElapsed / Duration, 0.0f, 1.0f);
-	const float EasedAlpha = FMath::InterpEaseIn(0.0f, 1.0f, LinearAlpha, 2.0f);
-	const float CurrentHeight = FMath::Lerp(
-		SkillSubmenuAnimationStartHeight,
-		SkillSubmenuAnimationTargetHeight,
-		EasedAlpha);
-	SizeBox_SkillUpgradeMenu->SetHeightOverride(CurrentHeight);
-
-	if (LinearAlpha >= 1.0f)
+	if (bCraftingSubmenuAnimating && SizeBox_CraftingMenu)
 	{
-		bSkillSubmenuAnimating = false;
-		SizeBox_SkillUpgradeMenu->SetHeightOverride(SkillSubmenuAnimationTargetHeight);
-		SizeBox_SkillUpgradeMenu->SetIsEnabled(bSkillSubmenuExpanded);
+		CraftingSubmenuAnimationElapsed += InDeltaTime;
+		const float Duration = FMath::Max(SkillSubmenuAnimationDuration, UE_SMALL_NUMBER);
+		const float LinearAlpha = FMath::Clamp(CraftingSubmenuAnimationElapsed / Duration, 0.0f, 1.0f);
+		const float EasedAlpha = FMath::InterpEaseIn(0.0f, 1.0f, LinearAlpha, 2.0f);
+		SizeBox_CraftingMenu->SetHeightOverride(FMath::Lerp(
+			CraftingSubmenuAnimationStartHeight, CraftingSubmenuAnimationTargetHeight, EasedAlpha));
+		if (LinearAlpha >= 1.0f)
+		{
+			bCraftingSubmenuAnimating = false;
+			SizeBox_CraftingMenu->SetHeightOverride(CraftingSubmenuAnimationTargetHeight);
+			SizeBox_CraftingMenu->SetIsEnabled(bCraftingSubmenuExpanded);
+		}
 	}
 }
 
@@ -107,6 +136,7 @@ void UFacilityHubWidget::ShowShipUpgradeTab()
 		TEXT("[FacilityHubFlow][CLIENT] Ship Upgrade tab requested. TargetIndex=%d"),
 		ShipUpgradeTabIndex); */
 	SetSkillSubmenuExpanded(false);
+	SetCraftingSubmenuExpanded(false);
 	CloseCraftingTabIfActive();
 	ShowTab(ShipUpgradeTabIndex);
 }
@@ -117,17 +147,19 @@ void UFacilityHubWidget::ShowItemCraftingTab()
 		TEXT("[FacilityHubFlow][CLIENT] Item Crafting tab requested; waiting for server approval. Context=%s"),
 		*GetNameSafe(ContextActor)); */
 	SetSkillSubmenuExpanded(false);
-	RequestOpenCraftingTab();
+	SetCraftingSubmenuExpanded(!bCraftingSubmenuExpanded);
 }
 
 void UFacilityHubWidget::ShowSkillUpgradeTab()
 {
+	SetCraftingSubmenuExpanded(false);
 	SetSkillSubmenuExpanded(true);
 }
 
 void UFacilityHubWidget::SelectSkillUpgrade(ESkillUpgradeSelection Skill)
 {
 	SetSkillSubmenuExpanded(true);
+	SetCraftingSubmenuExpanded(false);
 	CloseCraftingTabIfActive();
 	ResolveSkillUpgradePanel();
 	if (SkillUpgradePanelWidget)
@@ -246,6 +278,7 @@ void UFacilityHubWidget::BindCraftingEvents()
 	}
 	CraftingComponent->OnCraftingScreenOpened.AddUniqueDynamic(this, &UFacilityHubWidget::HandleCraftingScreenOpened);
 	CraftingComponent->OnCraftingScreenClosed.AddUniqueDynamic(this, &UFacilityHubWidget::HandleCraftingScreenClosed);
+	CraftingComponent->OnCraftingDataChanged.AddUniqueDynamic(this, &UFacilityHubWidget::HandleCraftingDataChanged);
 }
 
 void UFacilityHubWidget::UnbindCraftingEvents()
@@ -256,6 +289,7 @@ void UFacilityHubWidget::UnbindCraftingEvents()
 	}
 	CraftingComponent->OnCraftingScreenOpened.RemoveDynamic(this, &UFacilityHubWidget::HandleCraftingScreenOpened);
 	CraftingComponent->OnCraftingScreenClosed.RemoveDynamic(this, &UFacilityHubWidget::HandleCraftingScreenClosed);
+	CraftingComponent->OnCraftingDataChanged.RemoveDynamic(this, &UFacilityHubWidget::HandleCraftingDataChanged);
 }
 
 void UFacilityHubWidget::BindNavigation()
@@ -388,6 +422,170 @@ void UFacilityHubWidget::RefreshSkillSubmenuExpandedHeight()
 	SizeBox_SkillUpgradeMenu->SetHeightOverride(PreviousOverride);
 }
 
+void UFacilityHubWidget::SetCraftingSubmenuExpanded(bool bExpanded)
+{
+	if (!SizeBox_CraftingMenu || bCraftingSubmenuExpanded == bExpanded)
+	{
+		return;
+	}
+	if (bExpanded)
+	{
+		RefreshCraftingMenu();
+		RefreshCraftingSubmenuExpandedHeight();
+		SizeBox_CraftingMenu->SetIsEnabled(true);
+	}
+	bCraftingSubmenuExpanded = bExpanded;
+	bCraftingSubmenuAnimating = true;
+	CraftingSubmenuAnimationElapsed = 0.0f;
+	CraftingSubmenuAnimationStartHeight = SizeBox_CraftingMenu->GetHeightOverride();
+	CraftingSubmenuAnimationTargetHeight = bExpanded ? CraftingSubmenuExpandedHeight : 0.0f;
+}
+
+void UFacilityHubWidget::RefreshCraftingSubmenuExpandedHeight()
+{
+	if (!SizeBox_CraftingMenu)
+	{
+		return;
+	}
+	const float PreviousOverride = SizeBox_CraftingMenu->GetHeightOverride();
+	SizeBox_CraftingMenu->ClearHeightOverride();
+	SizeBox_CraftingMenu->ForceLayoutPrepass();
+	if (UWidget* Content = SizeBox_CraftingMenu->GetContent())
+	{
+		Content->ForceLayoutPrepass();
+		CraftingSubmenuExpandedHeight = FMath::Min(Content->GetDesiredSize().Y, 360.0f);
+	}
+	else
+	{
+		CraftingSubmenuExpandedHeight = FMath::Min(SizeBox_CraftingMenu->GetDesiredSize().Y, 360.0f);
+	}
+	SizeBox_CraftingMenu->SetHeightOverride(PreviousOverride);
+}
+
+void UFacilityHubWidget::RefreshCraftingMenu()
+{
+	SpawnedCraftingMenuEntries.Reset();
+	if (!VerticalBox_CraftingMenu)
+	{
+		return;
+	}
+	VerticalBox_CraftingMenu->ClearChildren();
+	if (!CraftingComponent)
+	{
+		return;
+	}
+
+	FCraftingListQuery Query;
+	Query.bIncludeLocked = true;
+	Query.bIncludeDisabled = false;
+	const TArray<FCraftingListEntry> Entries = CraftingComponent->GetCraftableList(Query);
+	FacilityCraftingMenu::FNode Root;
+	for (const FCraftingListEntry& Entry : Entries)
+	{
+		TArray<FString> Segments;
+		Entry.ResultItemTag.ToString().ParseIntoArray(Segments, TEXT("."), true);
+		FacilityCraftingMenu::FNode* Node = &Root;
+		const int32 FirstHierarchySegment =
+			Segments.Num() >= 2 && Segments[0] == TEXT("Item") && Segments[1] == TEXT("Id") ? 2 : 0;
+		for (int32 Index = FirstHierarchySegment; Index < Segments.Num() - 1; ++Index)
+		{
+			TSharedPtr<FacilityCraftingMenu::FNode>& Child = Node->Children.FindOrAdd(Segments[Index]);
+			if (!Child.IsValid())
+			{
+				Child = MakeShared<FacilityCraftingMenu::FNode>();
+				Child->Label = Segments[Index];
+			}
+			Node = Child.Get();
+		}
+		Node->Recipes.Add(Entry);
+	}
+
+	TFunction<void(const FacilityCraftingMenu::FNode&, int32)> RenderNode;
+	RenderNode = [this, &RenderNode](const FacilityCraftingMenu::FNode& Node, int32 Depth)
+	{
+		TArray<FString> ChildKeys;
+		Node.Children.GetKeys(ChildKeys);
+		ChildKeys.Sort();
+		for (const FString& Key : ChildKeys)
+		{
+			const TSharedPtr<FacilityCraftingMenu::FNode> Child = Node.Children.FindRef(Key);
+			if (!Child.IsValid())
+			{
+				continue;
+			}
+			AddCraftingMenuCategory(FText::FromString(Child->Label), Depth);
+			RenderNode(*Child, Depth + 1);
+		}
+		for (const FCraftingListEntry& Recipe : Node.Recipes)
+		{
+			AddCraftingMenuRecipe(Recipe, Depth);
+		}
+	};
+	RenderNode(Root, 0);
+}
+
+void UFacilityHubWidget::AddCraftingMenuCategory(const FText& Label, int32 Depth)
+{
+	if (!VerticalBox_CraftingMenu)
+	{
+		return;
+	}
+	TSubclassOf<UCraftingMenuEntryWidget> RowClass = CraftingMenuEntryClass;
+	if (!RowClass)
+	{
+		RowClass = UCraftingMenuEntryWidget::StaticClass();
+	}
+	UCraftingMenuEntryWidget* Row = CreateWidget<UCraftingMenuEntryWidget>(this, RowClass);
+	if (Row)
+	{
+		Row->SetupCategory(Label, Depth);
+		VerticalBox_CraftingMenu->AddChild(Row);
+		SpawnedCraftingMenuEntries.Add(Row);
+	}
+}
+
+void UFacilityHubWidget::AddCraftingMenuRecipe(const FCraftingListEntry& Entry, int32 Depth)
+{
+	if (!VerticalBox_CraftingMenu)
+	{
+		return;
+	}
+	TSubclassOf<UCraftingMenuEntryWidget> RowClass = CraftingMenuEntryClass;
+	if (!RowClass)
+	{
+		RowClass = UCraftingMenuEntryWidget::StaticClass();
+	}
+	UCraftingMenuEntryWidget* Row = CreateWidget<UCraftingMenuEntryWidget>(this, RowClass);
+	if (Row)
+	{
+		Row->SetupRecipe(Entry.RecipeId, Entry.DisplayName, Depth, Entry.RecipeId == PendingCraftingRecipeId);
+		Row->OnRecipeActivated.BindUObject(this, &UFacilityHubWidget::HandleCraftingRecipeClicked);
+		VerticalBox_CraftingMenu->AddChild(Row);
+		SpawnedCraftingMenuEntries.Add(Row);
+	}
+}
+
+void UFacilityHubWidget::HandleCraftingRecipeClicked(FName RecipeId)
+{
+	if (RecipeId.IsNone())
+	{
+		return;
+	}
+	PendingCraftingRecipeId = RecipeId;
+	RefreshCraftingMenu();
+	if (IsCraftingTabActive())
+	{
+		if (CraftingPanelWidget)
+		{
+			CraftingPanelWidget->ActivateCraftingPanel(CraftingComponent);
+			CraftingPanelWidget->SelectRecipe(RecipeId);
+		}
+		ShowTab(ItemCraftingTabIndex);
+		return;
+	}
+	RequestOpenCraftingTab();
+}
+
 void UFacilityHubWidget::HandleGravityVortexClicked()
 {
 	SelectSkillUpgrade(ESkillUpgradeSelection::GravityVortex);
@@ -444,6 +642,10 @@ void UFacilityHubWidget::HandleCraftingScreenOpened(AActor* ApprovedContext)
 	if (CraftingPanelWidget)
 	{
 		CraftingPanelWidget->ActivateCraftingPanel(CraftingComponent);
+		if (!PendingCraftingRecipeId.IsNone())
+		{
+			CraftingPanelWidget->SelectRecipe(PendingCraftingRecipeId);
+		}
 	}
 
 	ShowTab(ItemCraftingTabIndex);
@@ -458,4 +660,13 @@ void UFacilityHubWidget::HandleCraftingScreenClosed()
 	}
 
 	BP_OnCraftingTabClosed();
+}
+
+void UFacilityHubWidget::HandleCraftingDataChanged()
+{
+	if (bCraftingSubmenuExpanded)
+	{
+		RefreshCraftingMenu();
+		RefreshCraftingSubmenuExpandedHeight();
+	}
 }

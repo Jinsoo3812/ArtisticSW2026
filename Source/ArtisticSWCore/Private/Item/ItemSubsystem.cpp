@@ -339,6 +339,14 @@ bool UItemSubsystem::ValidateCraftingRecipes(TArray<FString>& OutErrors) const
 		{
 			OutErrors.Add(FString::Printf(TEXT("%s consumes a recipe item but does not specify one."), *RecipeId.ToString()));
 		}
+		if (Recipe.Ingredients.Num() > ArtisticCrafting::MaxIngredientSlots)
+		{
+			OutErrors.Add(FString::Printf(
+				TEXT("%s has %d ingredients; the crafting UI supports at most %d."),
+				*RecipeId.ToString(),
+				Recipe.Ingredients.Num(),
+				ArtisticCrafting::MaxIngredientSlots));
+		}
 
 		TSet<FGameplayTag> SeenIngredients;
 		for (const FCraftingItemStack& Ingredient : Recipe.Ingredients)

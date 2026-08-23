@@ -131,6 +131,36 @@ bool FCraftingPipelineTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Failed craft leaves ingredients untouched"), Inventory->GetItemCount(Item_Id_Material_WeaponMaterial_Wood), 2);
 	TestEqual(TEXT("Failed craft grants no result"), Inventory->GetItemCount(Item_Id_Consumables_Heal_Medicine), 1);
 
+	FCraftingRecipeRow OversizedRecipe;
+	OversizedRecipe.ResultItemTag = Item_Id_Consumables_Heal_Tangyak;
+	for (const FGameplayTag IngredientTag : {
+		Item_Id_Material_WeaponMaterial_Wood.GetTag(),
+		Item_Id_Material_WeaponMaterial_Iron.GetTag(),
+		Item_Id_Material_WeaponMaterial_GoodWood.GetTag(),
+		Item_Id_Material_WeaponMaterial_GoodIron.GetTag(),
+		Item_Id_Material_WeaponSpecialMaterial_EpicMaterial.GetTag()})
+	{
+		FCraftingItemStack Cost;
+		Cost.ItemTag = IngredientTag;
+		Cost.Quantity = 1;
+		OversizedRecipe.Ingredients.Add(Cost);
+	}
+	ItemSubsystem->AddCraftingRecipeForTesting(TEXT("Test_Oversized"), OversizedRecipe);
+	ValidationErrors.Reset();
+	TestFalse(TEXT("Recipes with more than four ingredients fail validation"), ItemSubsystem->ValidateCraftingRecipes(ValidationErrors));
+	TestTrue(TEXT("Oversized recipe validation reports the directional slot limit"), ValidationErrors.ContainsByPredicate([](const FString& Error)
+	{
+		return Error.Contains(TEXT("at most 4"));
+	}));
+	TestEqual(TEXT("Oversized recipes are omitted from the normal crafting menu"), Crafting->GetCraftableList(Query).Num(), 2);
+
+	FCraftingRequest OversizedRequest;
+	OversizedRequest.RequestId = FGuid::NewGuid();
+	OversizedRequest.RecipeId = TEXT("Test_Oversized");
+	OversizedRequest.CraftCount = 1;
+	Crafting->RequestCraft(OversizedRequest);
+	TestEqual(TEXT("Server rejects oversized recipes"), Crafting->GetLastCraftingResult().Reason, ECraftingFailureReason::InvalidRecipe);
+
 	ItemSubsystem->ClearCraftingRecipesForTesting();
 	World->DestroyWorld(false);
 	GEngine->DestroyWorldContext(World);

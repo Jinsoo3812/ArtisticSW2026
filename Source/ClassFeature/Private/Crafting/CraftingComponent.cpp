@@ -50,7 +50,7 @@ int32 UCraftingComponent::GetOwnedItemCount(FGameplayTag ItemTag) const
 
 ECraftingAvailability UCraftingComponent::EvaluateAvailability(const FCraftingRecipeRow& Recipe, int32 CraftCount) const
 {
-	if (!Recipe.bEnabled)
+	if (!Recipe.bEnabled || Recipe.Ingredients.Num() > ArtisticCrafting::MaxIngredientSlots)
 	{
 		return ECraftingAvailability::Disabled;
 	}
@@ -121,6 +121,10 @@ TArray<FCraftingListEntry> UCraftingComponent::GetCraftableList(const FCraftingL
 	for (const FName RecipeId : RecipeIds)
 	{
 		FCraftingListEntry Entry = BuildListEntry(RecipeId, 1);
+		if (!Query.bIncludeDisabled && Entry.Availability == ECraftingAvailability::Disabled)
+		{
+			continue;
+		}
 		if (!Query.bIncludeLocked && Entry.Availability == ECraftingAvailability::MissingRecipe)
 		{
 			continue;
@@ -145,6 +149,10 @@ bool UCraftingComponent::GetCraftingDetails(FName RecipeId, int32 CraftCount, FC
 	UItemSubsystem* Items = World ? World->GetSubsystem<UItemSubsystem>() : nullptr;
 	const FCraftingRecipeRow* Recipe = Items ? Items->FindCraftingRecipe(RecipeId) : nullptr;
 	if (!Recipe)
+	{
+		return false;
+	}
+	if (Recipe->Ingredients.Num() > ArtisticCrafting::MaxIngredientSlots)
 	{
 		return false;
 	}
@@ -341,6 +349,12 @@ void UCraftingComponent::ProcessCraftRequest(const FCraftingRequest& Request)
 	UItemSubsystem* Items = World ? World->GetSubsystem<UItemSubsystem>() : nullptr;
 	const FCraftingRecipeRow* Recipe = Items ? Items->FindCraftingRecipe(Request.RecipeId) : nullptr;
 	if (!Recipe)
+	{
+		Result.Reason = ECraftingFailureReason::InvalidRecipe;
+		CompleteRequest(Result);
+		return;
+	}
+	if (Recipe->Ingredients.Num() > ArtisticCrafting::MaxIngredientSlots)
 	{
 		Result.Reason = ECraftingFailureReason::InvalidRecipe;
 		CompleteRequest(Result);

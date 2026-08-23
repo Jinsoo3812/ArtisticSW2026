@@ -7,11 +7,14 @@
 
 class AActor;
 class UCraftingComponent;
+class UCraftingMenuEntryWidget;
 class UCraftingPanelWidget;
 class UButton;
+class UPanelWidget;
 class USkillUpgradePanel;
 class USizeBox;
 class UWidgetSwitcher;
+struct FCraftingListEntry;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FOnSkillUpgradeSelected,
@@ -100,6 +103,32 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<USizeBox> SizeBox_SkillUpgradeMenu;
 
+	/** Generated directly below Button_ItemCrafting in WBP_WorkspaceScreen. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<USizeBox> SizeBox_CraftingMenu;
+
+	/** Receives tag hierarchy headings and recipe names from CraftingComponent. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UPanelWidget> VerticalBox_CraftingMenu;
+
+	/** WBP_CraftingMenuEntry. Uses the same designer-authored style as SkillUpgradeMenu. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Facility Hub|Crafting")
+	TSubclassOf<UCraftingMenuEntryWidget> CraftingMenuEntryClass;
+
+#if WITH_EDITOR
+public:
+	void SetCraftingMenuEntryClass(TSubclassOf<UCraftingMenuEntryWidget> InClass)
+	{
+		CraftingMenuEntryClass = InClass;
+	}
+	TSubclassOf<UCraftingMenuEntryWidget> GetCraftingMenuEntryClass() const
+	{
+		return CraftingMenuEntryClass;
+	}
+
+protected:
+#endif
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Button_GravityVortex;
 
@@ -164,6 +193,11 @@ private:
 	void ResolveSkillUpgradePanel();
 	void SetSkillSubmenuExpanded(bool bExpanded);
 	void RefreshSkillSubmenuExpandedHeight();
+	void SetCraftingSubmenuExpanded(bool bExpanded);
+	void RefreshCraftingSubmenuExpandedHeight();
+	void RefreshCraftingMenu();
+	void AddCraftingMenuCategory(const FText& Label, int32 Depth);
+	void AddCraftingMenuRecipe(const FCraftingListEntry& Entry, int32 Depth);
 	void ShowTab(int32 TabIndex);
 	UWidgetSwitcher* GetTabSwitcher() const;
 
@@ -182,10 +216,25 @@ private:
 	UFUNCTION()
 	void HandleCraftingScreenClosed();
 
+	UFUNCTION()
+	void HandleCraftingDataChanged();
+
+	void HandleCraftingRecipeClicked(FName RecipeId);
+
 	bool bSkillSubmenuExpanded = false;
 	bool bSkillSubmenuAnimating = false;
 	float SkillSubmenuAnimationElapsed = 0.0f;
 	float SkillSubmenuAnimationStartHeight = 0.0f;
 	float SkillSubmenuAnimationTargetHeight = 0.0f;
 	float SkillSubmenuExpandedHeight = 0.0f;
+	bool bCraftingSubmenuExpanded = false;
+	bool bCraftingSubmenuAnimating = false;
+	float CraftingSubmenuAnimationElapsed = 0.0f;
+	float CraftingSubmenuAnimationStartHeight = 0.0f;
+	float CraftingSubmenuAnimationTargetHeight = 0.0f;
+	float CraftingSubmenuExpandedHeight = 0.0f;
+	FName PendingCraftingRecipeId;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UCraftingMenuEntryWidget>> SpawnedCraftingMenuEntries;
 };
