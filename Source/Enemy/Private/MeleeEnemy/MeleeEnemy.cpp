@@ -5,6 +5,7 @@
 
 AMeleeEnemy::AMeleeEnemy()
 {
+	bApplyDeathRagdollImpulse = true;
 	AIControllerClass = ABaseAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 

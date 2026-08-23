@@ -104,6 +104,60 @@ namespace
 	};
 }
 
+USWCharacterMovementComponent::USWCharacterMovementComponent(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	ProcessRootMotionPostConvertToWorld.BindUObject(
+		this, &USWCharacterMovementComponent::RedirectHitReactionRootMotion);
+}
+
+void USWCharacterMovementComponent::BeginHitReactionRootMotion(const FVector& WorldDirection)
+{
+	HitReactionRootMotionDirection = FVector(WorldDirection.X, WorldDirection.Y, 0.0f).GetSafeNormal();
+	bRedirectHitReactionRootMotion = !HitReactionRootMotionDirection.IsNearlyZero();
+}
+
+void USWCharacterMovementComponent::EndHitReactionRootMotion()
+{
+	bRedirectHitReactionRootMotion = false;
+	HitReactionRootMotionDirection = FVector::ZeroVector;
+}
+
+FTransform USWCharacterMovementComponent::RedirectRootMotionTranslation(
+	const FTransform& WorldRootMotion,
+	const FVector& WorldDirection)
+{
+	const FVector HorizontalDirection = FVector(WorldDirection.X, WorldDirection.Y, 0.0f).GetSafeNormal();
+	if (HorizontalDirection.IsNearlyZero())
+	{
+		return WorldRootMotion;
+	}
+
+	FTransform RedirectedRootMotion = WorldRootMotion;
+	const FVector AuthoredTranslation = WorldRootMotion.GetTranslation();
+	const float HorizontalDistance = AuthoredTranslation.Size2D();
+	if (HorizontalDistance > KINDA_SMALL_NUMBER)
+	{
+		FVector RedirectedTranslation = HorizontalDirection * HorizontalDistance;
+		RedirectedTranslation.Z = AuthoredTranslation.Z;
+		RedirectedRootMotion.SetTranslation(RedirectedTranslation);
+	}
+	return RedirectedRootMotion;
+}
+
+FTransform USWCharacterMovementComponent::RedirectHitReactionRootMotion(
+	const FTransform& WorldRootMotion,
+	UCharacterMovementComponent* MovementComponent,
+	float DeltaSeconds) const
+{
+	if (!bRedirectHitReactionRootMotion || HitReactionRootMotionDirection.IsNearlyZero())
+	{
+		return WorldRootMotion;
+	}
+
+	return RedirectRootMotionTranslation(WorldRootMotion, HitReactionRootMotionDirection);
+}
+
 void USWCharacterMovementComponent::SetSwimmingVerticalInput(float InVerticalInput)
 {
 	if (ACharacter* CharOwner = CharacterOwner)

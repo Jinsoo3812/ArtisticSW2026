@@ -144,6 +144,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UInteractableComponent> InteractableComponent;
 
+	/** Authored mounting point for the player character positioned behind the cannon. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USceneComponent> PlayerMountPoint;
+
+	/** Authored exit point when the player dismounts from the cannon. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USceneComponent> PlayerExitPoint;
+
 	// ---- Properties ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Projectile")
 	TSubclassOf<AActor> CannonballClass;

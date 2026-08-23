@@ -706,6 +706,15 @@ void ULocomotionAnimStateComponent::UpdateTurnInPlacePhase(float DeltaTime)
         bGroundMoveEpisodeActive = false;
         bLandingRequested = false;
         bIsLanding = false;
+        if (CurrentState == ELocomotionState::Stop || CurrentState == ELocomotionState::Landing)
+        {
+            ForceStateTransition(ELocomotionState::Idle);
+        }
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().ClearTimer(StopFallbackTimerHandle);
+            World->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
+        }
     }
 
 }
@@ -857,6 +866,10 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             {
                 ForceStateTransition(ELocomotionState::Stop);
             }
+            else if (bStartWasSprinting != bIsSprinting)
+            {
+                InterruptStartForGaitChange();
+            }
             break;
         }
         case ELocomotionState::Locomotion:
@@ -881,6 +894,10 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             {
                 AlignActorYawToControlYawForStartIfNeeded();
                 ForceStateTransition(ELocomotionState::Start);
+            }
+            else if (bTurnInPlacePhaseActive)
+            {
+                ForceStateTransition(ELocomotionState::Idle);
             }
             break;
         }
@@ -947,12 +964,12 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
                 ForceStateTransition(ELocomotionState::InAir);
             }
             // Sprint Land is authored for the sprint gait captured at impact.
-            // If Sprint is released while movement input continues, retaining
-            // that root-motion clip is visually wrong. Hand straight to the
+            // If Sprint state changes (pressed or released) while movement input continues,
+            // retaining that root-motion clip is visually wrong. Hand straight to the
             // regular moving Motion Matching query; its Pose History redirect
             // makes the graph transition seamless instead of exposing a stale
             // hidden locomotion loop.
-            else if (bLandWasSprinting && !bIsSprinting && bHasMoveInput)
+            else if ((bLandWasSprinting != bIsSprinting) && bHasMoveInput)
             {
                 InterruptSprintLandingForSprintRelease();
             }
@@ -1935,6 +1952,46 @@ void ULocomotionAnimStateComponent::InterruptSprintLandingForSprintRelease()
     bUseSharpTurnDatabase = false;
 
     // The direct Sprint Land was visible while the MM branch was hidden. Its
+    // first query must use Pose History and not continue the old hidden pose.
+    bMotionMatchingReselectionRequested = true;
+    ForceStateTransition(ELocomotionState::Locomotion);
+}
+
+void ULocomotionAnimStateComponent::InterruptStartForGaitChange()
+{
+    RecordStateControllerDebugEvent(FString::Printf(
+        TEXT("Start gait change -> MotionMatching Sprint=%d Time=%.3f Input=(%.2f,%.2f)"),
+        bIsSprinting ? 1 : 0,
+        MoveInputHeldTime,
+        CachedMoveInput.X,
+        CachedMoveInput.Y));
+
+    if (IsMotionMatchingCaptureEnabled())
+    {
+        const FString DebugLine = FString::Printf(
+            TEXT("[MMCAP_EVENT] InterruptStartForGaitChange Sprint=%d Input=(R=%.2f,F=%.2f) Ground=%.1f"),
+            bIsSprinting ? 1 : 0,
+            CachedMoveInput.X,
+            CachedMoveInput.Y,
+            GroundSpeed);
+        UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+        AppendMotionMatchingCaptureLine(DebugLine);
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(StartFallbackTimerHandle);
+    }
+
+    bGroundStartFinished = true;
+    bPendingGroundStartFinish = false;
+    bStartRequested = false;
+    bUseStartDatabase = false;
+    bUseLoopDatabase = true;
+    bUseSharpTurnDatabase = false;
+    bStartWasSprinting = bIsSprinting;
+
+    // The direct Start was visible while the MM branch was hidden. Its
     // first query must use Pose History and not continue the old hidden pose.
     bMotionMatchingReselectionRequested = true;
     ForceStateTransition(ELocomotionState::Locomotion);

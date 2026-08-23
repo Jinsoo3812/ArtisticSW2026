@@ -14,7 +14,8 @@ Waypoint는 별도 Actor가 아니라 EnemyShip Blueprint 내부의 `DeckWaypoin
 2. 기존 RangedEnemy와 동일하게 Mesh, Anim BP, 공격 Ability/Projectile, Behavior Tree를 지정한다.
 3. `AI Controller Class`는 기존 `ARangedEnemyAIController` 계열을 사용한다.
 4. 기본 이동 속도는 BT의 `Move To Live Deck Waypoint` 노드에서 250 cm/s로 설정한다.
-5. MVP에서는 사망 후 1.5초 동안 시체 상태를 유지한 다음 다시 비활성 풀로 돌아간다. 이 함선에서는 다시 자동 출격하지 않는다.
+5. `Enemy > Death > Death Ability Class`에 사용할 `UBaseDeathGameplayAbility` 파생 GA를 지정한다. 이 GA는 사망 연출 종료 시 `FinishDeath`를 호출해야 한다.
+6. `Deck AI > Pool > Return To Pool After Death Delay`로 Ragdoll 유지 시간을 정한다. 기본값은 1.5초이며, 0이면 사망 표현 종료 직후 비활성 풀로 돌아간다. 이 함선에서는 다시 자동 출격하지 않는다.
 
 일반 `ARangedEnemy`가 아니라 반드시 `ADeckRangedEnemy`의 자식이어야 풀의 활성/비활성, 체력 초기화, Dormancy 제어가 적용된다.
 
@@ -29,7 +30,7 @@ Waypoint는 별도 Actor가 아니라 EnemyShip Blueprint 내부의 `DeckWaypoin
 7. 순찰에 쓸 곳은 `Can Patrol`, 원거리 전투 위치로 허용할 곳은 `Can Use In Combat`을 켠다.
 8. 각 Point의 `Min/Max Wait Time`으로 순찰 멈춤 시간을 조절한다. 기본은 0.5~2.0초다.
 
-Point 아래 갑판이 `ShipDeckMesh`의 충돌 형상에 포함되어 있어야 한다. 초기화 로그에서 중복 ID, 없는 링크 ID, 잘못된 부모가 발견되면 `[DeckEnemyMVP]` 경고가 출력된다.
+Point 아래 갑판이 `ShipDeckMesh`의 Simple Collision 형상에 포함되어 있어야 한다. `ShipDeck` 프로필은 Pawn과 Ragdoll `PhysicsBody`를 Block하며, Ragdoll은 빠른 Impulse에서도 얇은 갑판을 관통하지 않도록 CCD를 사용한다. 초기화 로그에서 중복 ID, 없는 링크 ID, 잘못된 부모가 발견되면 `[DeckEnemyMVP]` 경고가 출력된다.
 
 ## 4. EnemyShip 풀 설정
 
@@ -111,7 +112,7 @@ Combat 선택은 전체 경로 탐색을 하지 않는다. 현재 Point에 직�
 - 0.25초 준비 지연, 0.35초 출격 간격: 동일 프레임 활성화/복제 Burst를 피한다.
 - Spawn Trace 실패 시 0.5초 간격 3회 재시도: 파도/초기 Physics 정착 중 일시 실패만 흡수한다.
 - Seed 1337 + Ship 이름 + Pool Index: 서버에서 재현 가능한 순찰 변화를 만든다.
-- 사망 표시 1.5초: 피격 결과를 볼 수 있게 하되 Ragdoll/장기 시체 복제를 제외한다.
+- Death GA 종료 후 Ragdoll 기본 1.5초: `Return To Pool After Death Delay`에서 Enemy Blueprint별로 조절한다.
 - Spawn Capsule은 World Up 방향: Character Capsule을 파도 기울기에 맞춰 눕히지 않는다.
 - Point 이동은 직접 연결된 이웃 한 칸만: 동적 NavMesh 없이도 갑판 위에서 예측 가능한 최소 이동을 보장한다.
 

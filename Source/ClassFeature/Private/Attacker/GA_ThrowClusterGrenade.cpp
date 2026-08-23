@@ -10,6 +10,7 @@
 #include "UI/ClusterGrenadeSelectionWidget.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "BaseGameplayTags.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 
 void UGA_ThrowClusterGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
 {
@@ -188,8 +189,8 @@ void UGA_ThrowClusterGrenade::OnThrowEventReceived(FGameplayEventData Payload) {
 
     FGameplayEffectSpecHandle DamageSpecHandle;
     if (DamageEffectClass) {
-      FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
-      ContextHandle.AddInstigator(Player, Player);
+      FGameplayEffectContextHandle ContextHandle =
+          USWCombatEffectContextLibrary::MakeCombatEffectContext(ASC, Player, Player);
       DamageSpecHandle =
           ASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
     }

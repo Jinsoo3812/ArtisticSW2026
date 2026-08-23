@@ -9,6 +9,7 @@
 #include "GameplayEffect.h"
 #include "Ship.h"
 #include "WaterBombEffects.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 
 AWaterBombCannonball::AWaterBombCannonball()
 {
@@ -140,9 +141,15 @@ bool AWaterBombCannonball::ApplyTimedEffect(
 		SourceASC = TargetASC;
 	}
 
-	FGameplayEffectContextHandle Context = SourceASC->MakeEffectContext();
-	Context.AddInstigator(GetInstigator(), const_cast<AWaterBombCannonball*>(this));
-	Context.AddSourceObject(const_cast<AWaterBombCannonball*>(this));
+	FGameplayEffectContextHandle Context =
+		USWCombatEffectContextLibrary::MakeCombatEffectContext(
+			SourceASC,
+			GetInstigator(),
+			const_cast<AWaterBombCannonball*>(this),
+			TargetASC->GetAvatarActor(),
+			false,
+			FHitResult(),
+			GetVelocity());
 
 	FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(EffectClass, 1.0f, Context);
 	if (!SpecHandle.IsValid())

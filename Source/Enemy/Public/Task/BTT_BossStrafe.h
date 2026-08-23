@@ -65,7 +65,7 @@ private:
 	TWeakObjectPtr<AShipBossEnemy> CachedBoss;
 	TWeakObjectPtr<AEnemyShip> CachedHostShip;
 	FVector CachedLocalMoveDirection = FVector::ZeroVector;
-	float PreviousMaxWalkSpeed = 0.0f;
+	float PreviousBaseMovementSpeed = 0.0f;
 	float ElapsedMovementTime = 0.0f;
-	bool bHasPreviousMaxWalkSpeed = false;
+	bool bHasPreviousBaseMovementSpeed = false;
 };

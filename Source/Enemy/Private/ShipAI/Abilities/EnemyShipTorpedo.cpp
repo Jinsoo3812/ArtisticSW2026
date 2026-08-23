@@ -7,6 +7,7 @@
 #include "CollisionChannels.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "GASCombatLibrary.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 #include "GASDamageInstantGameplayEffect.h"
 #include "Net/UnrealNetwork.h"
 #include "Ship.h"
@@ -174,7 +175,10 @@ void AEnemyShipTorpedo::HandleShipHit(AShip* HitShip)
 			this);
 		if (DamageSpec.IsValid() && DamageSpec.Data.IsValid())
 		{
-			TargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpec.Data.Get());
+			FGameplayEffectSpec TargetSpec(*DamageSpec.Data.Get());
+			USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
+				TargetSpec, SourceShip, this, HitShip, nullptr, GetVelocity());
+			TargetASC->ApplyGameplayEffectSpecToSelf(TargetSpec);
 			const float CurrentHealth = TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
 			UE_LOG(
 				LogTemp,
