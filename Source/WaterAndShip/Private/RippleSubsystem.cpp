@@ -39,11 +39,16 @@ class FSWRippleCS : public FGlobalShader
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER_TEXTURE(Texture2D, RippleTexture)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutRippleTexture)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, OutRippleFoamTexture)
 		SHADER_PARAMETER(FVector2f, GridCenter)
 		SHADER_PARAMETER(float, GridSize)
 		SHADER_PARAMETER(float, ServerTime)
 		SHADER_PARAMETER(float, RippleCount)
 		SHADER_PARAMETER(float, NormalStrength)
+		SHADER_PARAMETER(float, FoamSteepnessMin)
+		SHADER_PARAMETER(float, FoamSteepnessMax)
+		SHADER_PARAMETER(float, FoamCrestSharpness)
+		SHADER_PARAMETER(float, FoamIntensity)
 	END_SHADER_PARAMETER_STRUCT()
 
 public:
@@ -63,6 +68,18 @@ namespace
 	TAutoConsoleVariable<float> CVarRippleGridSize(
 		TEXT("sw.Ripple.GridSize"), 20000.0f,
 		TEXT("Compute-baked ripple world coverage in cm (default 20000 = 200m)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarRippleFoamSteepnessMin(
+		TEXT("sw.Foam.Ripple.SteepnessMin"), 0.10f,
+		TEXT("Minimum k*A for Ripple Foam emission."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarRippleFoamSteepnessMax(
+		TEXT("sw.Foam.Ripple.SteepnessMax"), 0.45f,
+		TEXT("Full-strength k*A for Ripple Foam emission."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarRippleFoamCrestSharpness(
+		TEXT("sw.Foam.Ripple.CrestSharpness"), 6.0f,
+		TEXT("Positive cosine crest exponent for Ripple Foam emission."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarRippleFoamIntensity(
+		TEXT("sw.Foam.Ripple.Intensity"), 1.0f,
+		TEXT("Ripple Foam emission intensity."), ECVF_Default);
 
 	const TCHAR* GetRippleNetMode(const UWorld* World)
 	{
@@ -96,6 +113,20 @@ void URippleSubsystem::CreateRippleRenderTarget()
 	RippleRenderTarget->bCanCreateUAV = true;
 	RippleRenderTarget->InitAutoFormat(RippleRenderTargetResolution, RippleRenderTargetResolution);
 	RippleRenderTarget->UpdateResourceImmediate(true);
+
+	RippleFoamSourceRenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("SW_Ripple_FoamSource"));
+	if (RippleFoamSourceRenderTarget)
+	{
+		RippleFoamSourceRenderTarget->RenderTargetFormat = RTF_R16f;
+		RippleFoamSourceRenderTarget->ClearColor = FLinearColor::Black;
+		RippleFoamSourceRenderTarget->bAutoGenerateMips = false;
+		RippleFoamSourceRenderTarget->bCanCreateUAV = true;
+		RippleFoamSourceRenderTarget->Filter = TF_Bilinear;
+		RippleFoamSourceRenderTarget->AddressX = TA_Clamp;
+		RippleFoamSourceRenderTarget->AddressY = TA_Clamp;
+		RippleFoamSourceRenderTarget->InitAutoFormat(RippleRenderTargetResolution, RippleRenderTargetResolution);
+		RippleFoamSourceRenderTarget->UpdateResourceImmediate(true);
+	}
 }
 
 FVector2D URippleSubsystem::ResolveRippleGridCenter() const
@@ -118,11 +149,12 @@ FVector2D URippleSubsystem::ResolveRippleGridCenter() const
 
 void URippleSubsystem::DispatchRippleComputeShader(const double ServerTime)
 {
-	if (!RippleRenderTarget || !RippleTexture) return;
+	if (!RippleRenderTarget || !RippleFoamSourceRenderTarget || !RippleTexture) return;
 
 	FTextureResource* RenderTargetResource = RippleRenderTarget->GetResource();
+	FTextureResource* FoamTargetResource = RippleFoamSourceRenderTarget->GetResource();
 	FTexture2DResource* RippleTextureResource = static_cast<FTexture2DResource*>(RippleTexture->GetResource());
-	if (!RenderTargetResource || !RippleTextureResource) return;
+	if (!RenderTargetResource || !FoamTargetResource || !RippleTextureResource) return;
 
 	const FVector2f GridCenter(CurrentRippleGridCenter.X, CurrentRippleGridCenter.Y);
 	const float GridSize = RippleGridSizeCm;
@@ -131,25 +163,32 @@ void URippleSubsystem::DispatchRippleComputeShader(const double ServerTime)
 	const int32 Resolution = RippleRenderTargetResolution;
 
 	ENQUEUE_RENDER_COMMAND(DispatchSWRippleCS)(
-		[RenderTargetResource, RippleTextureResource, GridCenter, GridSize, ShaderTime, RippleCount, Resolution](FRHICommandListImmediate& RHICmdList)
+		[RenderTargetResource, FoamTargetResource, RippleTextureResource, GridCenter, GridSize, ShaderTime, RippleCount, Resolution](FRHICommandListImmediate& RHICmdList)
 		{
 			FRHITexture* OutputTexture = RenderTargetResource->GetTexture2DRHI();
+			FRHITexture* FoamOutputTexture = FoamTargetResource->GetTexture2DRHI();
 			FRHITexture* EventTexture = RippleTextureResource->GetTexture2DRHI();
-			if (!OutputTexture || !EventTexture) return;
+			if (!OutputTexture || !FoamOutputTexture || !EventTexture) return;
 
 			TShaderMapRef<FSWRippleCS> ComputeShader(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 			if (!ComputeShader.IsValid()) return;
 
 			FRDGBuilder GraphBuilder(RHICmdList);
 			FRDGTextureRef OutputRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(OutputTexture, TEXT("SWRippleOutputRT")));
+			FRDGTextureRef FoamOutputRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(FoamOutputTexture, TEXT("SWRippleFoamSourceRT")));
 			FSWRippleCS::FParameters* PassParameters = GraphBuilder.AllocParameters<FSWRippleCS::FParameters>();
 			PassParameters->RippleTexture = EventTexture;
 			PassParameters->OutRippleTexture = GraphBuilder.CreateUAV(OutputRDG);
+			PassParameters->OutRippleFoamTexture = GraphBuilder.CreateUAV(FoamOutputRDG);
 			PassParameters->GridCenter = GridCenter;
 			PassParameters->GridSize = GridSize;
 			PassParameters->ServerTime = ShaderTime;
 			PassParameters->RippleCount = static_cast<float>(RippleCount);
 			PassParameters->NormalStrength = 1.0f;
+			PassParameters->FoamSteepnessMin = CVarRippleFoamSteepnessMin.GetValueOnRenderThread();
+			PassParameters->FoamSteepnessMax = FMath::Max(CVarRippleFoamSteepnessMax.GetValueOnRenderThread(), PassParameters->FoamSteepnessMin + 1.0e-5f);
+			PassParameters->FoamCrestSharpness = FMath::Max(CVarRippleFoamCrestSharpness.GetValueOnRenderThread(), 1.0f);
+			PassParameters->FoamIntensity = FMath::Max(CVarRippleFoamIntensity.GetValueOnRenderThread(), 0.0f);
 
 			FComputeShaderUtils::AddPass(
 				GraphBuilder,
@@ -205,6 +244,7 @@ void URippleSubsystem::Deinitialize()
 
 	RippleTexture = nullptr;
 	RippleRenderTarget = nullptr;
+	RippleFoamSourceRenderTarget = nullptr;
 	Super::Deinitialize();
 }
 
@@ -332,7 +372,7 @@ void URippleSubsystem::Tick(float DeltaTime)
 
 	UpdateTexture();
 	const int32 DesiredResolution = FMath::Clamp(CVarRippleResolution.GetValueOnGameThread(), 256, 1024);
-	if (!RippleRenderTarget || DesiredResolution != RippleRenderTargetResolution)
+	if (!RippleRenderTarget || !RippleFoamSourceRenderTarget || DesiredResolution != RippleRenderTargetResolution)
 	{
 		CreateRippleRenderTarget();
 	}

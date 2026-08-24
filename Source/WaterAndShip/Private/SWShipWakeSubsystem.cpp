@@ -37,11 +37,15 @@ class FSWShipWakeCS : public FGlobalShader
 		SHADER_PARAMETER_TEXTURE(Texture2D, GoldenTexture)
 		SHADER_PARAMETER_SAMPLER(SamplerState, GoldenTextureSampler)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutWakeTexture)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, OutKelvinFoamTexture)
 		SHADER_PARAMETER(FVector2f, GridCenter)
 		SHADER_PARAMETER(float, GridSize)
 		SHADER_PARAMETER(float, ServerTime)
 		SHADER_PARAMETER(float, EventCount)
 		SHADER_PARAMETER(float, NormalStrength)
+		SHADER_PARAMETER(float, FoamSteepnessMin)
+		SHADER_PARAMETER(float, FoamSteepnessMax)
+		SHADER_PARAMETER(float, FoamIntensity)
 	END_SHADER_PARAMETER_STRUCT()
 
 public:
@@ -78,6 +82,15 @@ namespace
 		TEXT("sw.ShipWake.GridSize"), 30000.0f,
 		TEXT("Compute Shader Baked World Coverage Area in Cm (default 30000 = 300m)."),
 		ECVF_Default);
+	TAutoConsoleVariable<float> CVarKelvinFoamSteepnessMin(
+		TEXT("sw.Foam.Kelvin.SteepnessMin"), 0.0015f,
+		TEXT("Minimum amplitude/length for Kelvin Foam emission."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarKelvinFoamSteepnessMax(
+		TEXT("sw.Foam.Kelvin.SteepnessMax"), 0.0060f,
+		TEXT("Full-strength amplitude/length for Kelvin Foam emission."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarKelvinFoamIntensity(
+		TEXT("sw.Foam.Kelvin.Intensity"), 1.0f,
+		TEXT("Kelvin Foam emission intensity."), ECVF_Default);
 
 	constexpr float PredictionDistanceCm = 750.0f;
 	constexpr double PredictionTimeSeconds = 1.0;
@@ -118,6 +131,20 @@ void USWShipWakeSubsystem::CreateWakeRenderTarget()
 		WakeRenderTarget->bCanCreateUAV = true;
 		WakeRenderTarget->InitAutoFormat(RenderTargetResolution, RenderTargetResolution);
 		WakeRenderTarget->UpdateResourceImmediate(true);
+	}
+
+	WakeFoamSourceRenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("SWShipWake_FoamSource"));
+	if (WakeFoamSourceRenderTarget)
+	{
+		WakeFoamSourceRenderTarget->RenderTargetFormat = RTF_R16f;
+		WakeFoamSourceRenderTarget->ClearColor = FLinearColor::Black;
+		WakeFoamSourceRenderTarget->bAutoGenerateMips = false;
+		WakeFoamSourceRenderTarget->bCanCreateUAV = true;
+		WakeFoamSourceRenderTarget->Filter = TF_Bilinear;
+		WakeFoamSourceRenderTarget->AddressX = TA_Clamp;
+		WakeFoamSourceRenderTarget->AddressY = TA_Clamp;
+		WakeFoamSourceRenderTarget->InitAutoFormat(RenderTargetResolution, RenderTargetResolution);
+		WakeFoamSourceRenderTarget->UpdateResourceImmediate(true);
 	}
 }
 
@@ -167,6 +194,7 @@ void USWShipWakeSubsystem::Deinitialize()
 	EventTexture = nullptr;
 	GoldenTextures.Reset();
 	WakeRenderTarget = nullptr;
+	WakeFoamSourceRenderTarget = nullptr;
 	Super::Deinitialize();
 }
 
@@ -208,12 +236,13 @@ FVector2D USWShipWakeSubsystem::ResolveWakeGridCenter() const
 
 void USWShipWakeSubsystem::DispatchWakeComputeShader(const double ServerTime)
 {
-	if (!WakeRenderTarget || !EventTexture) return;
+	if (!WakeRenderTarget || !WakeFoamSourceRenderTarget || !EventTexture) return;
 	UTexture2D* ActiveGolden = GetActiveGoldenTexture();
 	if (!ActiveGolden) return;
 
 	FTextureResource* RTResource = WakeRenderTarget->GetResource();
-	if (!RTResource) return;
+	FTextureResource* FoamRTResource = WakeFoamSourceRenderTarget->GetResource();
+	if (!RTResource || !FoamRTResource) return;
 
 	FTextureResource* EventRes = EventTexture->GetResource();
 	FTextureResource* GoldenRes = ActiveGolden->GetResource();
@@ -226,10 +255,11 @@ void USWShipWakeSubsystem::DispatchWakeComputeShader(const double ServerTime)
 	const int32 Res = RenderTargetResolution;
 
 	ENQUEUE_RENDER_COMMAND(DispatchSWShipWakeCS)(
-		[RTResource, EventRes, GoldenRes, GridCenterFloat, GridSizeFloat, ServerTimeFloat, Count, Res](FRHICommandListImmediate& RHICmdList)
+		[RTResource, FoamRTResource, EventRes, GoldenRes, GridCenterFloat, GridSizeFloat, ServerTimeFloat, Count, Res](FRHICommandListImmediate& RHICmdList)
 		{
 			FRHITexture* OutputTextureRHI = RTResource->GetTexture2DRHI();
-			if (!OutputTextureRHI) return;
+			FRHITexture* FoamOutputTextureRHI = FoamRTResource->GetTexture2DRHI();
+			if (!OutputTextureRHI || !FoamOutputTextureRHI) return;
 
 			FRHITexture* EventTextureRHI = EventRes->GetTexture2DRHI();
 			FRHITexture* GoldenTextureRHI = GoldenRes->GetTexture2DRHI();
@@ -240,6 +270,7 @@ void USWShipWakeSubsystem::DispatchWakeComputeShader(const double ServerTime)
 
 			FRDGBuilder GraphBuilder(RHICmdList);
 			FRDGTextureRef OutputRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(OutputTextureRHI, TEXT("SWShipWakeOutputRT")));
+			FRDGTextureRef FoamOutputRDG = GraphBuilder.RegisterExternalTexture(CreateRenderTarget(FoamOutputTextureRHI, TEXT("SWShipWakeFoamSourceRT")));
 			FRDGTextureUAVRef OutputUAV = GraphBuilder.CreateUAV(OutputRDG);
 
 			FSWShipWakeCS::FParameters* PassParameters = GraphBuilder.AllocParameters<FSWShipWakeCS::FParameters>();
@@ -248,11 +279,17 @@ void USWShipWakeSubsystem::DispatchWakeComputeShader(const double ServerTime)
 			PassParameters->GoldenTexture = GoldenTextureRHI;
 			PassParameters->GoldenTextureSampler = TStaticSamplerState<SF_Bilinear, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
 			PassParameters->OutWakeTexture = OutputUAV;
+			PassParameters->OutKelvinFoamTexture = GraphBuilder.CreateUAV(FoamOutputRDG);
 			PassParameters->GridCenter = GridCenterFloat;
 			PassParameters->GridSize = GridSizeFloat;
 			PassParameters->ServerTime = ServerTimeFloat;
 			PassParameters->EventCount = static_cast<float>(Count);
 			PassParameters->NormalStrength = 1.0f;
+			PassParameters->FoamSteepnessMin = CVarKelvinFoamSteepnessMin.GetValueOnRenderThread();
+			PassParameters->FoamSteepnessMax = FMath::Max(
+				CVarKelvinFoamSteepnessMax.GetValueOnRenderThread(),
+				PassParameters->FoamSteepnessMin + 1.0e-6f);
+			PassParameters->FoamIntensity = FMath::Max(CVarKelvinFoamIntensity.GetValueOnRenderThread(), 0.0f);
 
 			FIntVector GroupCount = FComputeShaderUtils::GetGroupCount(FIntVector(Res, Res, 1), FIntVector(16, 16, 1));
 

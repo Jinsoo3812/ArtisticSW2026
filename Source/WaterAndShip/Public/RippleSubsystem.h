@@ -44,6 +44,9 @@ public:
 
 	/** GPU-baked ripple height/normal field consumed by water materials. */
 	UTextureRenderTarget2D* GetRippleRenderTarget() const { return RippleRenderTarget; }
+	UTextureRenderTarget2D* GetRippleFoamSourceRenderTarget() const { return RippleFoamSourceRenderTarget; }
+	FVector2D GetRippleGridCenter() const { return CurrentRippleGridCenter; }
+	float GetRippleGridSize() const { return RippleGridSizeCm; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water Ripple")
 	float MaxGenerationDistance = 10000.0f;
@@ -75,6 +78,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> RippleRenderTarget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextureRenderTarget2D> RippleFoamSourceRenderTarget;
 
 	int32 RippleCapacity = 32;
 	int32 RippleRenderTargetResolution = 512;

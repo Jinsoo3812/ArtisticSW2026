@@ -40,6 +40,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Ship Wake")
 	UTextureRenderTarget2D* GetWakeRenderTarget() const { return WakeRenderTarget; }
+	UTextureRenderTarget2D* GetWakeFoamSourceRenderTarget() const { return WakeFoamSourceRenderTarget; }
+	FVector2D GetWakeGridCenter() const { return CurrentGridCenter; }
+	float GetWakeGridSize() const { return GridSizeCm; }
 
 	static constexpr int32 MaxWakeCapacity = 256;
 	static constexpr int32 DefaultWakeCapacity = 256;
@@ -82,4 +85,5 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UTexture2D> EventTexture;
 	UPROPERTY(Transient) TArray<TObjectPtr<UTexture2D>> GoldenTextures;
 	UPROPERTY(Transient) TObjectPtr<UTextureRenderTarget2D> WakeRenderTarget;
+	UPROPERTY(Transient) TObjectPtr<UTextureRenderTarget2D> WakeFoamSourceRenderTarget;
 };

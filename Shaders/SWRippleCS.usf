@@ -3,12 +3,17 @@
 
 Texture2D RippleTexture;
 RWTexture2D<float4> OutRippleTexture;
+RWTexture2D<float> OutRippleFoamTexture;
 
 float2 GridCenter;
 float GridSize;
 float ServerTime;
 float RippleCount;
 float NormalStrength;
+float FoamSteepnessMin;
+float FoamSteepnessMax;
+float FoamCrestSharpness;
+float FoamIntensity;
 
 [numthreads(16, 16, 1)]
 void MainCS(uint3 DTid : SV_DispatchThreadID)
@@ -24,6 +29,7 @@ void MainCS(uint3 DTid : SV_DispatchThreadID)
 	const float2 WorldXY = GridCenter + (UV - 0.5) * GridSize;
 	float OutHeight = 0.0;
 	float3 OutNormal = float3(0.0, 0.0, 1.0);
+	float OutFoam = 0.0;
 
 	SW_EVALUATE_RIPPLE_COMBINED_ANALYTIC(
 		WorldXY,
@@ -31,9 +37,15 @@ void MainCS(uint3 DTid : SV_DispatchThreadID)
 		RippleCount,
 		RippleTexture,
 		NormalStrength,
+		FoamSteepnessMin,
+		FoamSteepnessMax,
+		FoamCrestSharpness,
+		FoamIntensity,
 		OutHeight,
-		OutNormal);
+		OutNormal,
+		OutFoam);
 
 	// R = height for WPO; G/B/A = world-space normal XYZ.
 	OutRippleTexture[DTid.xy] = float4(OutHeight, OutNormal.x, OutNormal.y, OutNormal.z);
+	OutRippleFoamTexture[DTid.xy] = OutFoam;
 }

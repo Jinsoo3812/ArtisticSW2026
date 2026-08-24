@@ -82,14 +82,16 @@ bool FSWKelvinWakeAtlas::IsProfileReady(const ESWKelvinFroudeProfile Profile) co
 	return Index >= 0 && Index < ProfileCount && ProfileReady[Index];
 }
 
-float FSWKelvinWakeAtlas::ReadTexel(const int32 ProfileIndex, const int32 UIndex, const int32 VIndex) const
+float FSWKelvinWakeAtlas::ReadTexel(
+	const int32 ProfileIndex, const int32 UIndex, const int32 VIndex, const int32 Channel) const
 {
-	if (ProfileIndex < 0 || ProfileIndex >= ProfileCount || !ProfileReady[ProfileIndex])
+	if (ProfileIndex < 0 || ProfileIndex >= ProfileCount || !ProfileReady[ProfileIndex]
+		|| Channel < 0 || Channel >= ChannelsPerTexel)
 	{
 		return 0.0f;
 	}
-	// Stride across 4 channels (R=Height, G=GradU, B=GradV, A=Mask); Channel 0 (R) is at offset 0
-	const int64 ByteIndex = (static_cast<int64>(UIndex) * ResolutionV + VIndex) * ChannelsPerTexel * sizeof(uint16);
+	const int64 ByteIndex = ((static_cast<int64>(UIndex) * ResolutionV + VIndex) * ChannelsPerTexel + Channel)
+		* sizeof(uint16);
 	if (!Payloads[ProfileIndex].IsValidIndex(ByteIndex + 1))
 	{
 		return 0.0f;
@@ -120,6 +122,28 @@ float FSWKelvinWakeAtlas::SampleFixedNormalized(
 	const float A = FMath::Lerp(ReadTexel(ProfileIndex, U0, V0), ReadTexel(ProfileIndex, U0, V1), V - V0);
 	const float B = FMath::Lerp(ReadTexel(ProfileIndex, U1, V0), ReadTexel(ProfileIndex, U1, V1), V - V0);
 	return FMath::Lerp(A, B, U - U0);
+}
+
+float FSWKelvinWakeAtlas::SampleFoamMaskNormalized(
+	const float Downstream01,
+	const float LateralSigned01,
+	const ESWKelvinFroudeProfile Profile) const
+{
+	const int32 ProfileIndex = ProfileToIndex(Profile);
+	if (!IsProfileReady(Profile) || Downstream01 < 0.0f || Downstream01 > 1.0f
+		|| FMath::Abs(LateralSigned01) > 1.0f)
+	{
+		return 0.0f;
+	}
+	const float U = Downstream01 * (ResolutionU - 1);
+	const float V = (LateralSigned01 * 0.5f + 0.5f) * (ResolutionV - 1);
+	const int32 U0 = FMath::FloorToInt(U);
+	const int32 V0 = FMath::FloorToInt(V);
+	const int32 U1 = FMath::Min(U0 + 1, ResolutionU - 1);
+	const int32 V1 = FMath::Min(V0 + 1, ResolutionV - 1);
+	const float A = FMath::Lerp(ReadTexel(ProfileIndex, U0, V0, 3), ReadTexel(ProfileIndex, U0, V1, 3), V - V0);
+	const float B = FMath::Lerp(ReadTexel(ProfileIndex, U1, V0, 3), ReadTexel(ProfileIndex, U1, V1, 3), V - V0);
+	return FMath::Clamp(FMath::Lerp(A, B, U - U0), 0.0f, 1.0f);
 }
 
 UTexture2D* FSWKelvinWakeAtlas::CreateTransientTexture(const ESWKelvinFroudeProfile Profile, const FName& Name) const

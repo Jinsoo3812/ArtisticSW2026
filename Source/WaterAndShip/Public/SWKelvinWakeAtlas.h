@@ -15,6 +15,8 @@ public:
 	bool IsProfileReady(ESWKelvinFroudeProfile Profile) const;
 	float SampleFixedNormalized(float Downstream01, float LateralSigned01,
 		ESWKelvinFroudeProfile Profile = ESWKelvinFroudeProfile::Fr_0_50) const;
+	float SampleFoamMaskNormalized(float Downstream01, float LateralSigned01,
+		ESWKelvinFroudeProfile Profile = ESWKelvinFroudeProfile::Fr_0_50) const;
 	UTexture2D* CreateTransientTexture(ESWKelvinFroudeProfile Profile, const FName& Name) const;
 
 	static constexpr int32 ResolutionU = 512;
@@ -25,7 +27,7 @@ public:
 
 private:
 	int32 ProfileToIndex(ESWKelvinFroudeProfile Profile) const;
-	float ReadTexel(int32 ProfileIndex, int32 UIndex, int32 VIndex) const;
+	float ReadTexel(int32 ProfileIndex, int32 UIndex, int32 VIndex, int32 Channel = 0) const;
 	TArray<uint8> Payloads[ProfileCount];
 	bool ProfileReady[ProfileCount] = { false, false, false, false };
 	FCriticalSection InitializeLock;
