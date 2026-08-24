@@ -1,0 +1,81 @@
+#ifndef SW_GERSTNER_COMPRESSION_USH
+#define SW_GERSTNER_COMPRESSION_USH
+
+#include "/Plugin/Water/Private/GerstnerWaveFunctions.ush"
+
+float SW_ComputeGerstnerJacobianDeterminant(
+    int InWaterBodyIndex,
+    float InTime,
+    FDFVector2 InWorldPos)
+{
+    const FWaterBodyData WaterBodyData = GetWaterBodyData(InWaterBodyIndex);
+    const int NumWaves = WaterBodyData.NumWaves;
+
+    const FLWCVector2 LWCWorldPos = DFToTileOffset_Hack(InWorldPos);
+    const float2 WorldPos = LWCWorldPos.Offset;
+
+    float Jxx = 1.0;
+    float Jxy = 0.0;
+    float Jyy = 1.0;
+
+    for (int WaveIndex = 0; WaveIndex < NumWaves; ++WaveIndex)
+    {
+        const FWaveParams Wave = GetWaveDataNew(WaveIndex, WaterBodyData);
+        const float Dispersion = 2.0 * PI / Wave.Wavelength;
+        const float2 WaveVector = Wave.Direction * Dispersion;
+        const float WaveTime = sqrt(Dispersion * Gravity) * InTime;
+        const float WavePosition = dot(WorldPos, WaveVector) - WaveTime;
+
+        float WaveSin;
+        float WaveCos;
+        sincos(WavePosition, WaveSin, WaveCos);
+
+        // Match Epic's LWC tile-border phase blending. The exact derivative
+        // of BlendAlpha is intentionally excluded in this first debug pass.
+        const float2 TileBorderDist =
+            (UE_LWC_RENDER_TILE_SIZE * 0.5) - abs(WorldPos);
+        const float BlendZoneWidth = 400.0;
+        if (any(TileBorderDist < BlendZoneWidth))
+        {
+            const float2 BlendWorldPos = TileBorderDist;
+            const float2 BlendAlpha2 = saturate(TileBorderDist / BlendZoneWidth);
+            const float BlendAlpha = BlendAlpha2.x * BlendAlpha2.y;
+            const float BlendWavePosition =
+                dot(BlendWorldPos, WaveVector) - WaveTime;
+            WaveCos = lerp(cos(BlendWavePosition), WaveCos, BlendAlpha);
+        }
+
+        const float Compression = Wave.Steepness * WaveCos;
+        const float2 Direction = Wave.Direction;
+        Jxx -= Compression * Direction.x * Direction.x;
+        Jxy -= Compression * Direction.x * Direction.y;
+        Jyy -= Compression * Direction.y * Direction.y;
+    }
+
+    return Jxx * Jyy - Jxy * Jxy;
+}
+
+float SW_ComputeGerstnerJacobianDeterminant(
+    int InWaterBodyIndex,
+    float InTime,
+    FLWCVector2 InWorldPos)
+{
+    return SW_ComputeGerstnerJacobianDeterminant(
+        InWaterBodyIndex, InTime, DFFromTileOffset(InWorldPos));
+}
+
+float SW_ComputeGerstnerCompressionMask(
+    int InWaterBodyIndex,
+    float InTime,
+    FLWCVector2 InWorldPos,
+    float JacobianStart,
+    float JacobianFull)
+{
+    const float Start = max(JacobianStart, JacobianFull + 1.0e-4);
+    const float Full = min(JacobianFull, Start - 1.0e-4);
+    const float JacobianDet = SW_ComputeGerstnerJacobianDeterminant(
+        InWaterBodyIndex, InTime, InWorldPos);
+    return 1.0 - smoothstep(Full, Start, JacobianDet);
+}
+
+#endif

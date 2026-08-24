@@ -172,6 +172,22 @@ bool URealisticWaterMaterialPipelineLibrary::ConfigureFoamWaterAttributeOverride
 	return bBaseColorConnected && bRoughnessConnected && bSpecularConnected && bEmissiveConnected;
 }
 
+bool URealisticWaterMaterialPipelineLibrary::ConnectEmissiveAttribute(
+	UMaterialExpressionSetMaterialAttributes* SetAttributes,
+	UMaterialExpression* EmissiveExpression)
+{
+	if (!IsValid(SetAttributes) || !IsValid(EmissiveExpression))
+	{
+		return false;
+	}
+
+	SetAttributes->Modify();
+	const bool bConnected = SetAttributes->ConnectInputAttribute(
+		MP_EmissiveColor, EmissiveExpression);
+	SetAttributes->PostEditChange();
+	return bConnected;
+}
+
 int32 URealisticWaterMaterialPipelineLibrary::ConfigureLinearGrayscaleSampler(
 	UMaterial* Material,
 	FName TextureParameterName)

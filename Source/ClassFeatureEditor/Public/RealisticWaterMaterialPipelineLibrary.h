@@ -83,6 +83,12 @@ public:
 		UMaterialExpression* SpecularExpression,
 		UMaterialExpression* EmissiveExpression);
 
+	/** Reconnects only Emissive while preserving every existing SetMaterialAttributes pin. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConnectEmissiveAttribute(
+		UMaterialExpressionSetMaterialAttributes* SetAttributes,
+		UMaterialExpression* EmissiveExpression);
+
 	/** Sets matching texture parameter nodes to the sampler required by a non-sRGB grayscale texture. */
 	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
 	static int32 ConfigureLinearGrayscaleSampler(
