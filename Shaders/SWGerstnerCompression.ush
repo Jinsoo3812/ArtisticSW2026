@@ -78,4 +78,32 @@ float SW_ComputeGerstnerCompressionMask(
     return 1.0 - smoothstep(Full, Start, JacobianDet);
 }
 
+float3 SW_ComposeGerstnerLitFoam(
+    float Compression,
+    float3 FoamTexture,
+    float3 WaterBaseColor,
+    float WaterOpacity,
+    float WaterRoughness,
+    float Enabled,
+    float Intensity,
+    float TexturePower,
+    float3 FoamColor,
+    float FoamOpacityTarget,
+    float FoamRoughnessTarget,
+    out float OutOpacity,
+    out float OutRoughness)
+{
+    const float TextureMask = pow(
+        saturate(max(FoamTexture.r, max(FoamTexture.g, FoamTexture.b))),
+        max(TexturePower, 1.0e-3));
+    const float Coverage = saturate(
+        saturate(Enabled) * saturate(Compression) * TextureMask * max(Intensity, 0.0));
+
+    OutOpacity = 1.0 - (1.0 - saturate(WaterOpacity)) *
+        (1.0 - Coverage * saturate(FoamOpacityTarget));
+    OutRoughness = lerp(
+        saturate(WaterRoughness), saturate(FoamRoughnessTarget), Coverage);
+    return lerp(WaterBaseColor, max(FoamColor, 0.0), Coverage);
+}
+
 #endif

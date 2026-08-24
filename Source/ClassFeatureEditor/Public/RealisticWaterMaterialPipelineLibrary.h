@@ -83,6 +83,13 @@ public:
 		UMaterialExpression* SpecularExpression,
 		UMaterialExpression* EmissiveExpression);
 
+	/** Connects the lit Gerstner foam surface without changing WPO, Normal or Specular. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureGerstnerFoamAttributeOverride(
+		UMaterialExpressionSetMaterialAttributes* SetAttributes,
+		UMaterialExpression* FoamSurfaceExpression,
+		UMaterialExpression* EmissiveExpression);
+
 	/** Reconnects only Emissive while preserving every existing SetMaterialAttributes pin. */
 	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
 	static bool ConnectEmissiveAttribute(
@@ -140,6 +147,15 @@ public:
 	/** Configures the wave-height optics Custom node and its typed extra outputs. */
 	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
 	static bool ConfigureWaveHeightOpticsCustomExpression(
+		UMaterialExpressionCustom* CustomExpression,
+		const TArray<FName>& InputNames,
+		const FString& Code,
+		const FString& Description,
+		const TArray<FString>& IncludeFilePaths);
+
+	/** Configures BaseColor plus typed Opacity/Roughness outputs for lit foam. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureGerstnerFoamSurfaceCustomExpression(
 		UMaterialExpressionCustom* CustomExpression,
 		const TArray<FName>& InputNames,
 		const FString& Code,

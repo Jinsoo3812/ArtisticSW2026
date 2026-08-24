@@ -172,6 +172,31 @@ bool URealisticWaterMaterialPipelineLibrary::ConfigureFoamWaterAttributeOverride
 	return bBaseColorConnected && bRoughnessConnected && bSpecularConnected && bEmissiveConnected;
 }
 
+bool URealisticWaterMaterialPipelineLibrary::ConfigureGerstnerFoamAttributeOverride(
+	UMaterialExpressionSetMaterialAttributes* SetAttributes,
+	UMaterialExpression* FoamSurfaceExpression,
+	UMaterialExpression* EmissiveExpression)
+{
+	if (!IsValid(SetAttributes) || !IsValid(FoamSurfaceExpression) ||
+		!IsValid(EmissiveExpression))
+	{
+		return false;
+	}
+
+	SetAttributes->Modify();
+	const bool bBaseColorConnected = SetAttributes->ConnectInputAttribute(
+		MP_BaseColor, FoamSurfaceExpression, 0);
+	const bool bRoughnessConnected = SetAttributes->ConnectInputAttribute(
+		MP_Roughness, FoamSurfaceExpression, 2);
+	const bool bOpacityConnected = SetAttributes->ConnectInputAttribute(
+		MP_Opacity, FoamSurfaceExpression, 1);
+	const bool bEmissiveConnected = SetAttributes->ConnectInputAttribute(
+		MP_EmissiveColor, EmissiveExpression);
+	SetAttributes->PostEditChange();
+	return bBaseColorConnected && bRoughnessConnected &&
+		bOpacityConnected && bEmissiveConnected;
+}
+
 bool URealisticWaterMaterialPipelineLibrary::ConnectEmissiveAttribute(
 	UMaterialExpressionSetMaterialAttributes* SetAttributes,
 	UMaterialExpression* EmissiveExpression)
@@ -404,6 +429,37 @@ bool URealisticWaterMaterialPipelineLibrary::ConfigureWaveHeightOpticsCustomExpr
 	CustomExpression->RebuildOutputs();
 	CustomExpression->PostEditChange();
 	return CustomExpression->AdditionalOutputs.Num() == 3
+		&& !CustomExpression->IncludeFilePaths.IsEmpty();
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConfigureGerstnerFoamSurfaceCustomExpression(
+	UMaterialExpressionCustom* CustomExpression,
+	const TArray<FName>& InputNames,
+	const FString& Code,
+	const FString& Description,
+	const TArray<FString>& IncludeFilePaths)
+{
+	if (!ConfigureTypedCustomExpression(
+		CustomExpression, InputNames, Code, Description, CMOT_Float3))
+	{
+		return false;
+	}
+
+	CustomExpression->Modify();
+	CustomExpression->IncludeFilePaths = IncludeFilePaths;
+	CustomExpression->AdditionalOutputs.Reset(2);
+
+	FCustomOutput& FoamOpacity = CustomExpression->AdditionalOutputs.AddDefaulted_GetRef();
+	FoamOpacity.OutputName = TEXT("FoamOpacity");
+	FoamOpacity.OutputType = CMOT_Float1;
+
+	FCustomOutput& FoamRoughness = CustomExpression->AdditionalOutputs.AddDefaulted_GetRef();
+	FoamRoughness.OutputName = TEXT("FoamRoughness");
+	FoamRoughness.OutputType = CMOT_Float1;
+
+	CustomExpression->RebuildOutputs();
+	CustomExpression->PostEditChange();
+	return CustomExpression->AdditionalOutputs.Num() == 2
 		&& !CustomExpression->IncludeFilePaths.IsEmpty();
 }
 
