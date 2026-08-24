@@ -356,6 +356,41 @@ bool URealisticWaterMaterialPipelineLibrary::ConfigureFloat3CustomExpressionWith
 	return !CustomExpression->IncludeFilePaths.IsEmpty();
 }
 
+bool URealisticWaterMaterialPipelineLibrary::ConfigureWaveHeightOpticsCustomExpression(
+	UMaterialExpressionCustom* CustomExpression,
+	const TArray<FName>& InputNames,
+	const FString& Code,
+	const FString& Description,
+	const TArray<FString>& IncludeFilePaths)
+{
+	if (!ConfigureTypedCustomExpression(
+		CustomExpression, InputNames, Code, Description, CMOT_Float3))
+	{
+		return false;
+	}
+
+	CustomExpression->Modify();
+	CustomExpression->IncludeFilePaths = IncludeFilePaths;
+	CustomExpression->AdditionalOutputs.Reset(3);
+
+	FCustomOutput& ScatteringA = CustomExpression->AdditionalOutputs.AddDefaulted_GetRef();
+	ScatteringA.OutputName = TEXT("ScatteringA");
+	ScatteringA.OutputType = CMOT_Float1;
+
+	FCustomOutput& AbsorptionRGB = CustomExpression->AdditionalOutputs.AddDefaulted_GetRef();
+	AbsorptionRGB.OutputName = TEXT("AbsorptionRGB");
+	AbsorptionRGB.OutputType = CMOT_Float3;
+
+	FCustomOutput& AbsorptionA = CustomExpression->AdditionalOutputs.AddDefaulted_GetRef();
+	AbsorptionA.OutputName = TEXT("AbsorptionA");
+	AbsorptionA.OutputType = CMOT_Float1;
+
+	CustomExpression->RebuildOutputs();
+	CustomExpression->PostEditChange();
+	return CustomExpression->AdditionalOutputs.Num() == 3
+		&& !CustomExpression->IncludeFilePaths.IsEmpty();
+}
+
 bool URealisticWaterMaterialPipelineLibrary::ConfigureFloat1CustomExpression(
 	UMaterialExpressionCustom* CustomExpression,
 	const TArray<FName>& InputNames,

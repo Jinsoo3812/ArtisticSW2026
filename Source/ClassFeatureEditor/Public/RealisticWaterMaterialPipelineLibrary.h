@@ -131,6 +131,15 @@ public:
 		const FString& Description,
 		const TArray<FString>& IncludeFilePaths);
 
+	/** Configures the wave-height optics Custom node and its typed extra outputs. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureWaveHeightOpticsCustomExpression(
+		UMaterialExpressionCustom* CustomExpression,
+		const TArray<FName>& InputNames,
+		const FString& Code,
+		const FString& Description,
+		const TArray<FString>& IncludeFilePaths);
+
 	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
 	static bool ConfigureFloat1CustomExpression(
 		UMaterialExpressionCustom* CustomExpression,
