@@ -78,6 +78,7 @@ private:
 	FVector2D CurrentGridCenter = FVector2D::ZeroVector;
 	float GridSizeCm = 30000.0f; // 300 meters coverage
 	int32 RenderTargetResolution = 512;
+	bool bKelvinFoamEnabled = false;
 
 	TWeakObjectPtr<ASWShipWakeReplicator> Replicator;
 	TArray<TWeakObjectPtr<UMaterialInstanceDynamic>> WaterMaterials;

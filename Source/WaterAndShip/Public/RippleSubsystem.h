@@ -106,6 +106,7 @@ private:
 	uint32 LastUploadedStateRevision = 0;
 	int32 LastUploadedRippleCount = 0;
 	double NextTextureTransitionServerTime = TNumericLimits<double>::Max();
+	bool bRippleFoamEnabled = false;
 
 	void TickDiagnostics();
 };

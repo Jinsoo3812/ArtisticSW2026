@@ -62,7 +62,7 @@
 // Compute-shader form: evaluates height and the analytic world-space gradient in one event scan.
 // Screen-space ddx/ddy are unavailable in a compute shader, so this differentiates the ripple
 // equation with respect to radial distance instead.
-#define SW_EVALUATE_RIPPLE_COMBINED_ANALYTIC(WORLD_XY, SERVER_TIME, RIPPLE_COUNT, RIPPLE_TEX, NORMAL_STRENGTH, FOAM_STEEPNESS_MIN, FOAM_STEEPNESS_MAX, FOAM_CREST_SHARPNESS, FOAM_INTENSITY, OUT_HEIGHT, OUT_NORMAL, OUT_FOAM) \
+#define SW_EVALUATE_RIPPLE_COMBINED_ANALYTIC(WORLD_XY, SERVER_TIME, RIPPLE_COUNT, RIPPLE_TEX, NORMAL_STRENGTH, FOAM_ENABLED, FOAM_STEEPNESS_MIN, FOAM_STEEPNESS_MAX, FOAM_CREST_SHARPNESS, FOAM_TEXEL_WORLD_SIZE, FOAM_INTENSITY, OUT_HEIGHT, OUT_NORMAL, OUT_FOAM) \
 { \
     const float2 SW_R_WorldPos = (WORLD_XY); \
     const float SW_R_ServerTime = (SERVER_TIME); \
@@ -102,11 +102,24 @@
         const float SW_R_Amplitude = SW_R_InitialAmp * SW_R_Decay; \
         const float SW_R_PhaseDerivative = 6.28318530718 / SW_R_WaveLength; \
         SW_R_TotalHeight += SW_R_Amplitude * SW_R_CosPhase * SW_R_Envelope; \
-        const float SW_R_RuntimeSteepness = SW_R_PhaseDerivative * SW_R_Amplitude; \
-        const float SW_R_FoamStrength = smoothstep((FOAM_STEEPNESS_MIN), (FOAM_STEEPNESS_MAX), SW_R_RuntimeSteepness); \
-        const float SW_R_CrestLocation = pow(saturate(SW_R_CosPhase), max((FOAM_CREST_SHARPNESS), 1.0)); \
-        const float SW_R_EventFoam = saturate(SW_R_CrestLocation * SW_R_Envelope * SW_R_FoamStrength * (FOAM_INTENSITY)); \
-        SW_R_TotalFoam = 1.0 - (1.0 - SW_R_TotalFoam) * (1.0 - SW_R_EventFoam); \
+        if ((FOAM_ENABLED) > 0.5) \
+        { \
+            const float SW_R_RuntimeSteepness = SW_R_PhaseDerivative * SW_R_Amplitude; \
+            const float SW_R_FoamStrength = smoothstep((FOAM_STEEPNESS_MIN), (FOAM_STEEPNESS_MAX), SW_R_RuntimeSteepness); \
+            /* Band-limit the propagated crest to the world-grid footprint. */ \
+            const float SW_R_Sharpness = max((FOAM_CREST_SHARPNESS), 1.0); \
+            const float SW_R_BaseHalfWidth = acos(pow(0.5, 1.0 / SW_R_Sharpness)); \
+            const float SW_R_PhaseFootprint = SW_R_PhaseDerivative * max((FOAM_TEXEL_WORLD_SIZE), 0.0); \
+            const float SW_R_CrestHalfWidth = min(max(SW_R_BaseHalfWidth, SW_R_PhaseFootprint * 0.5), 3.14159265); \
+            const float SW_R_CrestFeather = max(SW_R_PhaseFootprint * 0.25, 0.05); \
+            const float SW_R_PhaseDistance = abs(atan2(SW_R_SinPhase, SW_R_CosPhase)); \
+            const float SW_R_CrestLocation = 1.0 - smoothstep( \
+                max(SW_R_CrestHalfWidth - SW_R_CrestFeather, 0.0), \
+                min(SW_R_CrestHalfWidth + SW_R_CrestFeather, 3.14159265), \
+                SW_R_PhaseDistance); \
+            const float SW_R_EventFoam = saturate(SW_R_CrestLocation * SW_R_Envelope * SW_R_FoamStrength * (FOAM_INTENSITY)); \
+            SW_R_TotalFoam = 1.0 - (1.0 - SW_R_TotalFoam) * (1.0 - SW_R_EventFoam); \
+        } \
         const float SW_R_EnvelopeDerivativeMagnitude = 6.0 * SW_R_t * (1.0 - SW_R_t) / SW_R_W; \
         const float SW_R_EnvelopeDerivative = -SW_R_EnvelopeDerivativeMagnitude * sign(SW_R_SignedFrontDistance); \
         const float SW_R_dHdr = SW_R_Amplitude * (-SW_R_SinPhase * SW_R_PhaseDerivative * SW_R_Envelope + SW_R_CosPhase * SW_R_EnvelopeDerivative); \

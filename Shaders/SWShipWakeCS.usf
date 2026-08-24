@@ -17,6 +17,7 @@ float EventCount;
 float NormalStrength;
 float FoamSteepnessMin;
 float FoamSteepnessMax;
+float FoamEnabled;
 float FoamIntensity;
 
 [numthreads(16, 16, 1)]
@@ -49,6 +50,7 @@ void MainCS(uint3 DTid : SV_DispatchThreadID)
         NormalStrength,
         FoamSteepnessMin,
         FoamSteepnessMax,
+        FoamEnabled,
         FoamIntensity,
         OutHeight,
         OutNormal,
@@ -57,5 +59,8 @@ void MainCS(uint3 DTid : SV_DispatchThreadID)
 
     // Write: R = Height, G = Normal.X, B = Normal.Y, A = Normal.Z
     OutWakeTexture[TexCoord] = float4(OutHeight, OutNormal.x, OutNormal.y, OutNormal.z);
-    OutKelvinFoamTexture[TexCoord] = OutFoam;
+    if (FoamEnabled > 0.5)
+    {
+        OutKelvinFoamTexture[TexCoord] = OutFoam;
+    }
 }

@@ -15,7 +15,7 @@
 // SW_M7_EVALUATE_KELVIN_COMBINED: Evaluates both Height (for WPO) and Normal in a SINGLE pass!
 // Eliminates 50% of duplicate quadratic solver evaluations and EVENT_TEX samples.
 // ----------------------------------------------------------------------------------
-#define SW_M7_EVALUATE_KELVIN_COMBINED(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, NORMAL_STRENGTH, FOAM_STEEPNESS_MIN, FOAM_STEEPNESS_MAX, FOAM_INTENSITY, OUT_HEIGHT, OUT_NORMAL, OUT_FOAM) \
+#define SW_M7_EVALUATE_KELVIN_COMBINED(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, NORMAL_STRENGTH, FOAM_STEEPNESS_MIN, FOAM_STEEPNESS_MAX, FOAM_ENABLED, FOAM_INTENSITY, OUT_HEIGHT, OUT_NORMAL, OUT_FOAM) \
 { \
     const float2 SW_Query = (WORLD_XY); \
     const int SW_Count = clamp((int)round(EVENT_COUNT), 0, SW_M7_WAKE_CAPACITY); \
@@ -128,10 +128,13 @@
                 const float SW_Weight = SW_Amp * SW_FadeIn * SW_Decay; \
                 \
                 SW_TotalHeight += SW_Weight * SW_GSample.r * SW_StampMask; \
-                const float SW_RuntimeSteepness = SW_Amp / SW_Length; \
-                const float SW_FoamStrength = smoothstep((FOAM_STEEPNESS_MIN), (FOAM_STEEPNESS_MAX), SW_RuntimeSteepness); \
-                const float SW_EventFoam = saturate(SW_GSample.a * SW_StampMask * SW_FoamStrength * SW_FadeIn * SW_Decay * (FOAM_INTENSITY)); \
-                SW_TotalFoam = 1.0 - (1.0 - SW_TotalFoam) * (1.0 - SW_EventFoam); \
+                if ((FOAM_ENABLED) > 0.5) \
+                { \
+                    const float SW_RuntimeSteepness = SW_Amp / SW_Length; \
+                    const float SW_FoamStrength = smoothstep((FOAM_STEEPNESS_MIN), (FOAM_STEEPNESS_MAX), SW_RuntimeSteepness); \
+                    const float SW_EventFoam = saturate(SW_GSample.a * SW_StampMask * SW_FoamStrength * SW_FadeIn * SW_Decay * (FOAM_INTENSITY)); \
+                    SW_TotalFoam = 1.0 - (1.0 - SW_TotalFoam) * (1.0 - SW_EventFoam); \
+                } \
                 \
                 const float SW_dH_dDown = (SW_Weight / SW_Length) * (SW_GSample.g * SW_StampMask * SW_M7_DOMAIN_U_RANGE); \
                 const float SW_dH_dLat = (SW_Weight / SW_HalfWidth) * (SW_GSample.b * SW_StampMask * SW_M7_DOMAIN_V_MAX); \
@@ -151,12 +154,12 @@
 { \
     float3 SW_DummyNormal = float3(0, 0, 1); \
     float SW_DummyFoam = 0.0; \
-    SW_M7_EVALUATE_KELVIN_COMBINED(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, 1.0, 0.0015, 0.006, 1.0, OUT_HEIGHT, SW_DummyNormal, SW_DummyFoam); \
+    SW_M7_EVALUATE_KELVIN_COMBINED(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, 1.0, 0.0015, 0.006, 0.0, 1.0, OUT_HEIGHT, SW_DummyNormal, SW_DummyFoam); \
 }
 
 #define SW_M7_EVALUATE_KELVIN_NORMAL(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, NORMAL_STRENGTH, OUT_NORMAL) \
 { \
     float SW_DummyHeight = 0.0; \
     float SW_DummyFoam = 0.0; \
-    SW_M7_EVALUATE_KELVIN_COMBINED(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, NORMAL_STRENGTH, 0.0015, 0.006, 1.0, SW_DummyHeight, OUT_NORMAL, SW_DummyFoam); \
+    SW_M7_EVALUATE_KELVIN_COMBINED(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, NORMAL_STRENGTH, 0.0015, 0.006, 0.0, 1.0, SW_DummyHeight, OUT_NORMAL, SW_DummyFoam); \
 }

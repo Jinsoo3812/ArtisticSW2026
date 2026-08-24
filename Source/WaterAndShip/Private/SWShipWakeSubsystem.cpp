@@ -45,6 +45,7 @@ class FSWShipWakeCS : public FGlobalShader
 		SHADER_PARAMETER(float, NormalStrength)
 		SHADER_PARAMETER(float, FoamSteepnessMin)
 		SHADER_PARAMETER(float, FoamSteepnessMax)
+		SHADER_PARAMETER(float, FoamEnabled)
 		SHADER_PARAMETER(float, FoamIntensity)
 	END_SHADER_PARAMETER_STRUCT()
 
@@ -103,6 +104,8 @@ namespace
 
 	// Baked Compute Shader Render Target Parameters
 	const FName WakeRTParameter(TEXT("ShipWakeRT"));
+	const FName KelvinFoamSourceParameter(TEXT("SW Kelvin Foam Source"));
+	const FName KelvinFoamEnabledParameter(TEXT("SW Kelvin Foam Enabled"));
 	const FName GridCenterParameter(TEXT("ShipWakeGridCenter"));
 	const FName GridSizeParameter(TEXT("ShipWakeGridSize"));
 
@@ -253,9 +256,10 @@ void USWShipWakeSubsystem::DispatchWakeComputeShader(const double ServerTime)
 	const float GridSizeFloat = GridSizeCm;
 	const float ServerTimeFloat = static_cast<float>(ServerTime);
 	const int32 Res = RenderTargetResolution;
+	const bool bFoamEnabled = bKelvinFoamEnabled;
 
 	ENQUEUE_RENDER_COMMAND(DispatchSWShipWakeCS)(
-		[RTResource, FoamRTResource, EventRes, GoldenRes, GridCenterFloat, GridSizeFloat, ServerTimeFloat, Count, Res](FRHICommandListImmediate& RHICmdList)
+		[RTResource, FoamRTResource, EventRes, GoldenRes, GridCenterFloat, GridSizeFloat, ServerTimeFloat, Count, Res, bFoamEnabled](FRHICommandListImmediate& RHICmdList)
 		{
 			FRHITexture* OutputTextureRHI = RTResource->GetTexture2DRHI();
 			FRHITexture* FoamOutputTextureRHI = FoamRTResource->GetTexture2DRHI();
@@ -289,6 +293,7 @@ void USWShipWakeSubsystem::DispatchWakeComputeShader(const double ServerTime)
 			PassParameters->FoamSteepnessMax = FMath::Max(
 				CVarKelvinFoamSteepnessMax.GetValueOnRenderThread(),
 				PassParameters->FoamSteepnessMin + 1.0e-6f);
+			PassParameters->FoamEnabled = bFoamEnabled ? 1.0f : 0.0f;
 			PassParameters->FoamIntensity = FMath::Max(CVarKelvinFoamIntensity.GetValueOnRenderThread(), 0.0f);
 
 			FIntVector GroupCount = FComputeShaderUtils::GetGroupCount(FIntVector(Res, Res, 1), FIntVector(16, 16, 1));
@@ -317,18 +322,27 @@ void USWShipWakeSubsystem::Tick(const float DeltaTime)
 
 	if (bIsRenderingClient)
 	{
-		GridSizeCm = CVarGridSize.GetValueOnGameThread();
-		CurrentGridCenter = ResolveWakeGridCenter();
-
-		UpdateEventTexture();
-		DispatchWakeComputeShader(ServerTime);
-
 		MaterialRefreshAccumulator += DeltaTime;
 		if (MaterialRefreshAccumulator >= 1.0f || WaterMaterials.IsEmpty())
 		{
 			MaterialRefreshAccumulator = 0.0f;
 			RefreshWaterMaterials();
 		}
+		bKelvinFoamEnabled = false;
+		for (const TWeakObjectPtr<UMaterialInstanceDynamic>& WeakMID : WaterMaterials)
+		{
+			if (UMaterialInstanceDynamic* MID = WeakMID.Get())
+			{
+				bKelvinFoamEnabled = MID->K2_GetScalarParameterValue(KelvinFoamEnabledParameter) > 0.5f;
+				break;
+			}
+		}
+		GridSizeCm = CVarGridSize.GetValueOnGameThread();
+		CurrentGridCenter = ResolveWakeGridCenter();
+
+		UpdateEventTexture();
+		DispatchWakeComputeShader(ServerTime);
+
 		BindToWaterMaterials(ServerTime);
 	}
 
@@ -635,6 +649,10 @@ void USWShipWakeSubsystem::BindToWaterMaterials(const double ServerTime)
 		if (WakeRenderTarget)
 		{
 			MID->SetTextureParameterValue(WakeRTParameter, WakeRenderTarget);
+			if (WakeFoamSourceRenderTarget)
+			{
+				MID->SetTextureParameterValue(KelvinFoamSourceParameter, WakeFoamSourceRenderTarget);
+			}
 			MID->SetVectorParameterValue(GridCenterParameter, FLinearColor(CurrentGridCenter.X, CurrentGridCenter.Y, 0.0f, 0.0f));
 			MID->SetScalarParameterValue(GridSizeParameter, GridSizeCm);
 		}

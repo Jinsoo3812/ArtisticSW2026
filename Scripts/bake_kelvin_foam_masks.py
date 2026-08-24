@@ -148,14 +148,6 @@ def main() -> None:
     args.diagnostic_dir.mkdir(parents=True, exist_ok=True)
     report_path = args.diagnostic_dir / "kelvin_foam_bake_report.json"
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(f"[SW-FOAM][GOLDEN] Kelvin masks baked: {report_path}")
-    for record in records:
-        print(
-            "[SW-FOAM][GOLDEN] "
-            f"{record['file']} mean={record['mask_mean']:.6f} "
-            f"coverage={record['coverage_gt_0_05']:.4f} "
-            f"symmetry={record['symmetry_max_abs']:.8f}"
-        )
 
 
 if __name__ == "__main__":

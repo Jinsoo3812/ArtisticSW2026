@@ -88,11 +88,6 @@ def main() -> None:
     }
     report_path = args.diagnostic_dir / "ripple_foam_profile_report.json"
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(
-        "[SW-FOAM][GOLDEN] Ripple profile baked "
-        f"sha256={report['sha256']} coverage={report['coverage_gt_0_05']:.4f} "
-        f"symmetry={symmetry_error:.8f}"
-    )
 
 
 if __name__ == "__main__":

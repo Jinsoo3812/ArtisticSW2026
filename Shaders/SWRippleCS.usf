@@ -10,6 +10,7 @@ float GridSize;
 float ServerTime;
 float RippleCount;
 float NormalStrength;
+float FoamEnabled;
 float FoamSteepnessMin;
 float FoamSteepnessMax;
 float FoamCrestSharpness;
@@ -37,9 +38,11 @@ void MainCS(uint3 DTid : SV_DispatchThreadID)
 		RippleCount,
 		RippleTexture,
 		NormalStrength,
+		FoamEnabled,
 		FoamSteepnessMin,
 		FoamSteepnessMax,
 		FoamCrestSharpness,
+		GridSize / max((float)Width, 1.0),
 		FoamIntensity,
 		OutHeight,
 		OutNormal,
@@ -47,5 +50,8 @@ void MainCS(uint3 DTid : SV_DispatchThreadID)
 
 	// R = height for WPO; G/B/A = world-space normal XYZ.
 	OutRippleTexture[DTid.xy] = float4(OutHeight, OutNormal.x, OutNormal.y, OutNormal.z);
-	OutRippleFoamTexture[DTid.xy] = OutFoam;
+	if (FoamEnabled > 0.5)
+	{
+		OutRippleFoamTexture[DTid.xy] = OutFoam;
+	}
 }
