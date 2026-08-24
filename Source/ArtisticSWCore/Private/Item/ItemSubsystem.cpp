@@ -315,6 +315,7 @@ void UItemSubsystem::GetCraftingRecipeIds(TArray<FName>& OutRecipeIds, bool bInc
 bool UItemSubsystem::ValidateCraftingRecipes(TArray<FString>& OutErrors) const
 {
 	OutErrors.Reset();
+	TMap<FGameplayTag, FName> SkillRecipeByResult;
 	for (const TPair<FName, FCraftingRecipeRow>& Pair : CachedCraftingRecipes)
 	{
 		const FName RecipeId = Pair.Key;
@@ -330,6 +331,25 @@ bool UItemSubsystem::ValidateCraftingRecipes(TArray<FString>& OutErrors) const
 		if (Recipe.ResultQuantity <= 0)
 		{
 			OutErrors.Add(FString::Printf(TEXT("%s has a non-positive ResultQuantity."), *RecipeId.ToString()));
+		}
+		if (Recipe.ResultItemTag.MatchesTag(Item_Id_Skill))
+		{
+			if (Recipe.ResultQuantity != 1)
+			{
+				OutErrors.Add(FString::Printf(TEXT("%s is a skill recipe and must produce exactly one result."), *RecipeId.ToString()));
+			}
+			if (const FName* ExistingRecipeId = SkillRecipeByResult.Find(Recipe.ResultItemTag))
+			{
+				OutErrors.Add(FString::Printf(
+					TEXT("%s and %s both produce skill result %s; skill results require exactly one recipe."),
+					*ExistingRecipeId->ToString(),
+					*RecipeId.ToString(),
+					*Recipe.ResultItemTag.ToString()));
+			}
+			else
+			{
+				SkillRecipeByResult.Add(Recipe.ResultItemTag, RecipeId);
+			}
 		}
 		if (Recipe.RequiredRecipeItemTag.IsValid() && !Recipe.RequiredRecipeItemTag.MatchesTag(Item_Id))
 		{

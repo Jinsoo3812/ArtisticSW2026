@@ -90,6 +90,10 @@ void UFacilityHubWidget::NativeDestruct()
 	{
 		CraftingPanelWidget->DeactivateCraftingPanel();
 	}
+	if (SkillUpgradePanelWidget)
+	{
+		SkillUpgradePanelWidget->DeactivateSkillCraftingPanel();
+	}
 
 	UnbindNavigation();
 	UnbindCraftingEvents();
@@ -165,6 +169,10 @@ void UFacilityHubWidget::ShowShipUpgradeTab()
 		ShipUpgradeTabIndex); */
 	SetSkillSubmenuExpanded(false);
 	SetCraftingSubmenuExpanded(false);
+	if (SkillUpgradePanelWidget)
+	{
+		SkillUpgradePanelWidget->DeactivateSkillCraftingPanel();
+	}
 	CloseCraftingTabIfActive();
 	ShowTab(ShipUpgradeTabIndex);
 }
@@ -188,15 +196,33 @@ void UFacilityHubWidget::SelectSkillUpgrade(ESkillUpgradeSelection Skill)
 {
 	SetSkillSubmenuExpanded(true);
 	SetCraftingSubmenuExpanded(false);
-	CloseCraftingTabIfActive();
 	ResolveSkillUpgradePanel();
 	if (SkillUpgradePanelWidget)
 	{
 		SkillUpgradePanelWidget->SetSelectedSkill(Skill);
 	}
-	ShowTab(SkillUpgradeTabIndex);
 	OnSkillUpgradeSelected.Broadcast(Skill);
 	BP_OnSkillUpgradeSelected(Skill);
+
+	if (IsCraftingTabActive())
+	{
+		if (CraftingPanelWidget)
+		{
+			CraftingPanelWidget->DeactivateCraftingPanel();
+		}
+		if (SkillUpgradePanelWidget)
+		{
+			SkillUpgradePanelWidget->ActivateSkillCraftingPanel(CraftingComponent);
+		}
+		ShowTab(SkillUpgradeTabIndex);
+		return;
+	}
+
+	bPendingSkillCraftingOpen = true;
+	if (!RequestOpenCraftingTab())
+	{
+		bPendingSkillCraftingOpen = false;
+	}
 }
 
 void UFacilityHubWidget::RequestCloseFacilityHub()
@@ -243,7 +269,7 @@ void UFacilityHubWidget::EnsureCraftingPanel()
 	{
 		PanelClass = LoadClass<UCraftingPanelWidget>(
 			nullptr,
-			TEXT("/Game/Blueprints/02_UI/UI_FacilityHub/Crafting/WBP_CraftingPanel.WBP_CraftingPanel_C"));
+			TEXT("/Game/Blueprints/02_UI/UI_WorkTable/UI_Crafting/WBP_CraftingPanel.WBP_CraftingPanel_C"));
 	}
 
 	UWidgetSwitcher* Switcher = GetTabSwitcher();
@@ -660,6 +686,7 @@ void UFacilityHubWidget::HandleCraftingRecipeClicked(FName RecipeId)
 		return;
 	}
 	PendingCraftingRecipeId = RecipeId;
+	bPendingSkillCraftingOpen = false;
 	for (UCraftingMenuEntryWidget* Row : SpawnedCraftingMenuEntries)
 	{
 		if (IsValid(Row))
@@ -669,6 +696,10 @@ void UFacilityHubWidget::HandleCraftingRecipeClicked(FName RecipeId)
 	}
 	if (IsCraftingTabActive())
 	{
+		if (SkillUpgradePanelWidget)
+		{
+			SkillUpgradePanelWidget->DeactivateSkillCraftingPanel();
+		}
 		if (CraftingPanelWidget)
 		{
 			CraftingPanelWidget->ActivateCraftingPanel(CraftingComponent);
@@ -733,6 +764,26 @@ void UFacilityHubWidget::HandleCraftingScreenOpened(AActor* ApprovedContext)
 		return;
 	}
 
+	if (bPendingSkillCraftingOpen)
+	{
+		bPendingSkillCraftingOpen = false;
+		if (CraftingPanelWidget)
+		{
+			CraftingPanelWidget->DeactivateCraftingPanel();
+		}
+		ResolveSkillUpgradePanel();
+		if (SkillUpgradePanelWidget)
+		{
+			SkillUpgradePanelWidget->ActivateSkillCraftingPanel(CraftingComponent);
+		}
+		ShowTab(SkillUpgradeTabIndex);
+		return;
+	}
+
+	if (SkillUpgradePanelWidget)
+	{
+		SkillUpgradePanelWidget->DeactivateSkillCraftingPanel();
+	}
 	if (CraftingPanelWidget)
 	{
 		CraftingPanelWidget->ActivateCraftingPanel(CraftingComponent);
@@ -748,9 +799,14 @@ void UFacilityHubWidget::HandleCraftingScreenOpened(AActor* ApprovedContext)
 
 void UFacilityHubWidget::HandleCraftingScreenClosed()
 {
+	bPendingSkillCraftingOpen = false;
 	if (CraftingPanelWidget)
 	{
 		CraftingPanelWidget->DeactivateCraftingPanel();
+	}
+	if (SkillUpgradePanelWidget)
+	{
+		SkillUpgradePanelWidget->DeactivateSkillCraftingPanel();
 	}
 
 	BP_OnCraftingTabClosed();

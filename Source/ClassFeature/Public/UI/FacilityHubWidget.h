@@ -235,6 +235,7 @@ private:
 	float CraftingSubmenuAnimationTargetHeight = 0.0f;
 	float CraftingSubmenuExpandedHeight = 0.0f;
 	FName PendingCraftingRecipeId;
+	bool bPendingSkillCraftingOpen = false;
 	TMap<int32, FString> ExpandedCraftingCategoryByDepth;
 
 	UPROPERTY(Transient)

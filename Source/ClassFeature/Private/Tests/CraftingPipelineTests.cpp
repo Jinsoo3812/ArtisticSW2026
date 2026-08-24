@@ -98,7 +98,9 @@ bool FCraftingPipelineTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Locked recipe item owned quantity is zero"), LockedDetails.RequiredRecipeItem.OwnedQuantity, 0);
 	TestEqual(TEXT("Locked recipe item required quantity is one"), LockedDetails.RequiredRecipeItem.RequiredQuantity, 1);
 	TestFalse(TEXT("Locked recipe hides ingredients"), LockedDetails.bIngredientsVisible);
-	TestEqual(TEXT("Locked recipe returns no ingredient rows"), LockedDetails.Ingredients.Num(), 0);
+	TestEqual(TEXT("Locked recipe still provides ingredient data"), LockedDetails.Ingredients.Num(), 1);
+	TestEqual(TEXT("Locked recipe ingredient quantity is available to specialized UI"),
+		LockedDetails.Ingredients[0].RequiredQuantity, 2);
 
 	Inventory->AddItem(Item_Id_Material_WeaponSpecialRecipe_EpicRecipe, 1);
 	FCraftingDetailsView UnlockedRecipeDetails;
