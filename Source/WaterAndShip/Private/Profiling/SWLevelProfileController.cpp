@@ -6,12 +6,17 @@
 #include "Engine/NetDriver.h"
 #include "EngineUtils.h"
 #include "Components/PrimitiveComponent.h"
+#include "Camera/CameraActor.h"
+#include "GameFramework/PlayerController.h"
 #include "HAL/PlatformMemory.h"
 #include "HAL/PlatformMisc.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "Misc/Paths.h"
 #include "ProfilingDebugging/CsvProfiler.h"
 #include "ProfilingDebugging/MiscTrace.h"
+#include "RippleSubsystem.h"
+#include "UnrealClient.h"
 
 ASWLevelProfileController::ASWLevelProfileController()
 {
@@ -32,8 +37,20 @@ void ASWLevelProfileController::BeginPlay()
 	bDisableEnemyRootOverlaps = FParse::Param(CommandLine, TEXT("SWProfileDisableEnemyRootOverlaps"));
 	bDisableEnemyShipShadows = FParse::Param(CommandLine, TEXT("SWProfileDisableEnemyShipShadows"));
 	bProfileGPU = FParse::Param(CommandLine, TEXT("SWProfileGPU"));
+	bScreenshot = FParse::Param(CommandLine, TEXT("SWProfileScreenshot"));
+	FParse::Value(CommandLine, TEXT("SWProfileScreenshotName="), ScreenshotName);
+	bFixedWaterCamera = FParse::Param(CommandLine, TEXT("SWProfileFixedWaterCamera"));
+	FParse::Value(CommandLine, TEXT("SWProfileFixedCameraZOffset="), FixedCameraZOffset);
+	FParse::Value(CommandLine, TEXT("SWProfileFixedCameraPitch="), FixedCameraPitch);
+	bInjectRipple = FParse::Param(CommandLine, TEXT("SWProfileInjectRipple"));
+	FParse::Value(CommandLine, TEXT("SWProfileRippleLead="), RippleLeadSeconds);
+	FParse::Value(CommandLine, TEXT("SWProfileRippleDistance="), RippleForwardDistance);
+	FParse::Value(CommandLine, TEXT("SWProfileRippleAmplitude="), RippleAmplitude);
 	WarmupSeconds = FMath::Max(0.0f, WarmupSeconds);
 	CaptureFrames = FMath::Max(1, CaptureFrames);
+	RippleLeadSeconds = FMath::Clamp(RippleLeadSeconds, 0.05f, FMath::Max(0.05f, WarmupSeconds));
+	RippleForwardDistance = FMath::Clamp(RippleForwardDistance, 100.0f, 9000.0f);
+	RippleAmplitude = FMath::Clamp(RippleAmplitude, 1.0f, 150.0f);
 	BeginWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 
 	UE_LOG(LogTemp, Display,
@@ -57,6 +74,11 @@ void ASWLevelProfileController::Tick(float DeltaSeconds)
 		ApplyProfileScenario();
 	}
 	const double WorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	if (bInjectRipple && !bRippleInjected
+		&& WorldTime - BeginWorldTime >= FMath::Max(0.0f, WarmupSeconds - RippleLeadSeconds))
+	{
+		InjectProfileRipple();
+	}
 	FCsvProfiler* CsvProfiler = FCsvProfiler::Get();
 	if (!bCaptureRequested && WorldTime - BeginWorldTime >= WarmupSeconds)
 	{
@@ -75,6 +97,15 @@ void ASWLevelProfileController::Tick(float DeltaSeconds)
 			GEngine->Exec(GetWorld(), TEXT("r.ProfileGPU.Sort 1"));
 			GEngine->Exec(GetWorld(), TEXT("r.ProfileGPU.ThresholdPercent 0.1"));
 			GEngine->Exec(GetWorld(), TEXT("ProfileGPU"));
+		}
+		if (bScreenshot)
+		{
+			if (ScreenshotName.IsEmpty())
+			{
+				ScreenshotName = FPaths::ProjectSavedDir() / TEXT("Screenshots/WindowsEditor/SWLevelProfile.png");
+			}
+			FScreenshotRequest::RequestScreenshot(ScreenshotName, false, false);
+			UE_LOG(LogTemp, Display, TEXT("[SW-LEVEL-PROFILE] ScreenshotRequested File=%s"), *ScreenshotName);
 		}
 		CaptureProcessAndNetworkStart();
 		CsvProfiler->BeginCapture(CaptureFrames);
@@ -104,6 +135,34 @@ void ASWLevelProfileController::Tick(float DeltaSeconds)
 			FPlatformMisc::RequestExit(false);
 		}
 	}
+}
+
+void ASWLevelProfileController::InjectProfileRipple()
+{
+	bRippleInjected = true;
+	UWorld* World = GetWorld();
+	APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
+	URippleSubsystem* RippleSubsystem = World ? World->GetSubsystem<URippleSubsystem>() : nullptr;
+	if (!PlayerController || !RippleSubsystem)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[SW-LEVEL-PROFILE] RippleInjectFailed PlayerController=%s Subsystem=%s"),
+			PlayerController ? TEXT("true") : TEXT("false"),
+			RippleSubsystem ? TEXT("true") : TEXT("false"));
+		return;
+	}
+
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
+	const FVector Target = ViewLocation + ViewRotation.Vector() * RippleForwardDistance;
+	const FVector2D Origin(Target.X, Target.Y);
+	RippleSubsystem->AddRipple(Origin, RippleAmplitude, 300.0f, 0.35f, 140.0f);
+	UE_LOG(LogTemp, Display,
+		TEXT("[SW-LEVEL-PROFILE] RippleInjected Origin=%s Amplitude=%.2f Lead=%.2f Distance=%.2f"),
+		*Origin.ToString(),
+		RippleAmplitude,
+		RippleLeadSeconds,
+		RippleForwardDistance);
 }
 
 void ASWLevelProfileController::CaptureProcessAndNetworkStart()
@@ -149,6 +208,35 @@ void ASWLevelProfileController::ApplyProfileScenario()
 	if (!World)
 	{
 		return;
+	}
+
+	if (bFixedWaterCamera)
+	{
+		if (APlayerController* PlayerController = World->GetFirstPlayerController())
+		{
+			FVector ViewLocation;
+			FRotator ViewRotation;
+			PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
+			ViewLocation.Z += FixedCameraZOffset;
+			ViewRotation.Pitch = FixedCameraPitch;
+			ViewRotation.Roll = 0.0f;
+
+			FActorSpawnParameters CameraSpawnParameters;
+			CameraSpawnParameters.Name = TEXT("SW_Level_Profile_Fixed_Camera");
+			CameraSpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			CameraSpawnParameters.ObjectFlags |= RF_Transient;
+			if (ACameraActor* CameraActor = World->SpawnActor<ACameraActor>(
+				ACameraActor::StaticClass(),
+				FTransform(ViewRotation, ViewLocation),
+				CameraSpawnParameters))
+			{
+				PlayerController->SetViewTarget(CameraActor);
+				UE_LOG(LogTemp, Display,
+					TEXT("[SW-LEVEL-PROFILE] FixedCamera Location=%s Rotation=%s"),
+					*ViewLocation.ToCompactString(),
+					*ViewRotation.ToCompactString());
+			}
+		}
 	}
 
 	TArray<AActor*> EnemyShips;

@@ -15,6 +15,7 @@ public class ArtisticSWCore: ModuleRules
 
         PublicDependencyModuleNames.AddRange(new string[] {
             // 紐⑤뱢 ???대옒?ㅼ쓽 ?ㅻ뜑 ?뚯씪?먯꽌遺???ъ슜??紐⑤뱢 ?섏〈?깆쓣 異붽?
+            "DeveloperSettings",
             "GameplayAbilities",
             "GameplayTags",
             "GameplayTasks",

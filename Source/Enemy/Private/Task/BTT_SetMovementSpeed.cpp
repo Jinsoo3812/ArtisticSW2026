@@ -1,8 +1,7 @@
 #include "Task/BTT_SetMovementSpeed.h"
 
 #include "AIController.h"
-#include "GameFramework/Character.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "BaseEnemy.h"
 
 UBTT_SetMovementSpeed::UBTT_SetMovementSpeed()
 {
@@ -12,14 +11,13 @@ UBTT_SetMovementSpeed::UBTT_SetMovementSpeed()
 EBTNodeResult::Type UBTT_SetMovementSpeed::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
 	const AAIController* AIController = OwnerComp.GetAIOwner();
-	ACharacter* Character = AIController ? Cast<ACharacter>(AIController->GetPawn()) : nullptr;
-	UCharacterMovementComponent* MovementComponent = Character ? Character->GetCharacterMovement() : nullptr;
-	if (!MovementComponent)
+	ABaseEnemy* Enemy = AIController ? Cast<ABaseEnemy>(AIController->GetPawn()) : nullptr;
+	if (!Enemy || !Enemy->HasAuthority())
 	{
 		return EBTNodeResult::Failed;
 	}
 
-	MovementComponent->MaxWalkSpeed = GetSpeedForMode(MovementMode);
+	Enemy->SetBaseMovementSpeed(GetSpeedForMode(MovementMode));
 	return EBTNodeResult::Succeeded;
 }
 

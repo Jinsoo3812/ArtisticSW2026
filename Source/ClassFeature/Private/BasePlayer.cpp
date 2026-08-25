@@ -157,6 +157,9 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 		// velocity, instead of a presentation/query child component.
 		MovementComponent->bBaseOnAttachmentRoot = true;
 
+		// 파도에 의한 수직(Z) 요동 속도가 점프력에 비정상적으로 가산/감산되는 것을 방지 (X, Y 수평 관성은 유지)
+		MovementComponent->bImpartBaseVelocityZ = false;
+
 		// 이동 방향으로 몸 회전 방지
 		MovementComponent->bOrientRotationToMovement = false;
 		// 컨트롤러 지향 방향으로 부드러운 정렬 사용
@@ -1917,7 +1920,11 @@ void ABasePlayer::RefreshSwimmingVerticalInput()
 
 	const float VerticalInput = (bSwimAscendInputHeld ? 1.0f : 0.0f)
 		- (bSwimDiveInputHeld ? 1.0f : 0.0f);
-	SwimmingComponent->SetVerticalSwimInput(VerticalInput);
+	if (USWCharacterMovementComponent* SWMovement =
+		Cast<USWCharacterMovementComponent>(GetCharacterMovement()))
+	{
+		SWMovement->SetSwimmingVerticalInput(VerticalInput);
+	}
 	if (SwimmingComponent->HasVerticalSwimInput())
 	{
 		if (AnimStateComponent)
@@ -1934,18 +1941,6 @@ void ABasePlayer::RefreshSwimmingVerticalInput()
 		}
 	}
 
-	if (!HasAuthority())
-	{
-		Server_SetSwimmingVerticalInput(VerticalInput);
-	}
-}
-
-void ABasePlayer::Server_SetSwimmingVerticalInput_Implementation(float NewVerticalInput)
-{
-	if (SwimmingComponent && SwimmingComponent->IsCustomSwimming())
-	{
-		SwimmingComponent->SetVerticalSwimInput(NewVerticalInput);
-	}
 }
 
 void ABasePlayer::StartSprint()

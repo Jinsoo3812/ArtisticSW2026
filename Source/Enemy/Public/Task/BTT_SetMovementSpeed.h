@@ -14,7 +14,7 @@ enum class EEnemyMovementSpeedMode : uint8
 	Run UMETA(DisplayName = "Run (500)"),
 };
 
-/** Sets MaxWalkSpeed and leaves it active until another task changes it. */
+/** Selects the base locomotion speed; ABaseEnemy resolves wave and GAS modifiers. */
 UCLASS()
 class ENEMY_API UBTT_SetMovementSpeed : public UBTTaskNode
 {

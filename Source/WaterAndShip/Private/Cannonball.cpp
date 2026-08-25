@@ -11,6 +11,11 @@
 #include "WaterBodyActor.h"
 #include "BaseAttributeSet.h"
 #include "CollisionChannels.h"
+#include "GameFramework/GameStateBase.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+#include "RippleSubsystem.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 
 ACannonball::ACannonball()
 {
@@ -256,10 +261,24 @@ void ACannonball::HandleShipHit(AShip* HitShip)
 	UAbilitySystemComponent* TargetASC = HitShip->GetAbilitySystemComponent();
 	if (TargetASC && DamageGEClass)
 	{
-		FGameplayEffectContextHandle EffectContext = TargetASC->MakeEffectContext();
-		EffectContext.AddInstigator(GetInstigator(), this);
+		UAbilitySystemComponent* SourceASC = LaunchingShip
+			? LaunchingShip->GetAbilitySystemComponent()
+			: nullptr;
+		if (!SourceASC)
+		{
+			SourceASC = TargetASC;
+		}
+		FGameplayEffectContextHandle EffectContext =
+			USWCombatEffectContextLibrary::MakeCombatEffectContext(
+				SourceASC,
+				GetInstigator(),
+				this,
+				HitShip,
+				false,
+				FHitResult(),
+				GetVelocity());
 
-		FGameplayEffectSpecHandle SpecHandle = TargetASC->MakeOutgoingSpec(DamageGEClass, 1.0f, EffectContext);
+		FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(DamageGEClass, 1.0f, EffectContext);
 		if (SpecHandle.IsValid())
 		{
 			SpecHandle.Data.Get()->SetSetByCallerMagnitude(
@@ -287,6 +306,29 @@ void ACannonball::TriggerWaterRipple(const FVector& HitLocation)
 {
 	if (bHasHitWater) return;
 	bHasHitWater = true;
+
+	if (FParse::Param(FCommandLine::Get(), TEXT("RippleDiagnostics")))
+	{
+		const AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+		UE_LOG(LogTemp, Warning,
+			TEXT("[RIPPLE-LATENCY][%s] CannonballWaterContact Actor=%s Origin=%s ServerTime=%.6f DownwardSpeed=%.1f"),
+			HasAuthority() ? TEXT("Authority") : TEXT("Client"),
+			*GetName(),
+			*HitLocation.ToString(),
+			GameState ? GameState->GetServerWorldTimeSeconds() : 0.0,
+			-GetVelocity().Z);
+	}
+	if (!HasAuthority())
+	{
+		if (URippleSubsystem* RippleSubsystem = GetWorld()
+			? GetWorld()->GetSubsystem<URippleSubsystem>()
+			: nullptr)
+		{
+			RippleSubsystem->AddPredictedRippleFromImpact(
+				FVector2D(HitLocation.X, HitLocation.Y),
+				-GetVelocity().Z);
+		}
+	}
 
 	// Schedule disabling physics movement, collision and mesh visibility 0.05 seconds later
 	// This ensures the physics engine registers the overlap event with AWaterBody with its original velocity

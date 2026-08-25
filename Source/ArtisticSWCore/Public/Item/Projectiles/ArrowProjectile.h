@@ -8,6 +8,7 @@
 
 class UPrimitiveComponent;
 class UStaticMesh;
+class UStaticMeshComponent;
 class UAbilitySystemComponent;
 class UGameplayEffect;
 
@@ -97,6 +98,7 @@ class ARTISTICSWCORE_API AArrowProjectile : public ABaseProjectile
 public:
 	AArrowProjectile();
 
+	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -106,8 +108,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arrow")
 	void IgnoreActorForMovement(AActor* ActorToIgnore);
 
-	UFUNCTION(BlueprintCallable, Category = "Arrow")
-	void SetArrowMesh(UStaticMesh* InMesh);
+	/** Copies this projectile's authored mesh, materials, and relative transform to a presentation component. */
+	bool ApplyVisualTo(UStaticMeshComponent* TargetMesh) const;
+
+	UFUNCTION(BlueprintPure, Category = "Arrow|Visual")
+	UStaticMesh* GetArrowVisualMesh() const;
+
+	UFUNCTION(BlueprintPure, Category = "Arrow|Visual")
+	FTransform GetArrowVisualRelativeTransform() const;
+
+	UFUNCTION(BlueprintPure, Category = "Arrow|Collision")
+	FVector GetCollisionHalfExtent() const { return CollisionHalfExtent; }
 
 	UFUNCTION(BlueprintCallable, Category = "Arrow")
 	void InitializeStrengthDamage(
@@ -156,13 +167,19 @@ protected:
 
 	virtual bool ShouldIgnoreHitActor(const AActor* OtherActor) const;
 	virtual bool CanApplyDamageToActor(const AActor* OtherActor) const;
+	void ApplyCollisionShape();
 	void BuildStatusEffectSpecs();
-	void ApplyDamageToActor(AActor* TargetActor);
+	void ApplyDamageToActor(AActor* TargetActor, const FHitResult& HitResult);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arrow")
 	void K2_OnImpactFX(const FHitResult& Hit);
 
 protected:
+	/** Edit this instead of scaling BoxComp so the arrow mesh keeps its authored size. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Collision",
+		meta = (ClampMin = "0.1", UIMin = "0.1"))
+	FVector CollisionHalfExtent = FVector(8.0f, 2.0f, 2.0f);
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage")
 	FArrowDamageData DamageData;
 

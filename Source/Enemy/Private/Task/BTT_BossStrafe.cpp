@@ -56,10 +56,10 @@ EBTNodeResult::Type UBTT_BossStrafe::ExecuteTask(
 
 	CachedBoss = Boss;
 	CachedHostShip = HostShip;
-	PreviousMaxWalkSpeed = Movement->MaxWalkSpeed;
-	bHasPreviousMaxWalkSpeed = true;
+	PreviousBaseMovementSpeed = Boss->GetBaseMovementSpeed();
+	bHasPreviousBaseMovementSpeed = true;
 	ElapsedMovementTime = 0.0f;
-	Movement->MaxWalkSpeed = FMath::Max(10.0f, MoveSpeed);
+	Boss->SetBaseMovementSpeed(FMath::Max(10.0f, MoveSpeed));
 	Movement->SetMovementMode(MOVE_Walking);
 	Boss->SetBase(DeckMesh);
 	return EBTNodeResult::InProgress;
@@ -151,9 +151,9 @@ void UBTT_BossStrafe::StopMovement() const
 		if (UCharacterMovementComponent* Movement = Boss->GetCharacterMovement())
 		{
 			Movement->StopMovementImmediately();
-			if (bHasPreviousMaxWalkSpeed)
+			if (bHasPreviousBaseMovementSpeed)
 			{
-				Movement->MaxWalkSpeed = PreviousMaxWalkSpeed;
+				Boss->SetBaseMovementSpeed(PreviousBaseMovementSpeed);
 			}
 		}
 	}
@@ -164,7 +164,7 @@ void UBTT_BossStrafe::ResetRuntimeState()
 	CachedBoss.Reset();
 	CachedHostShip.Reset();
 	CachedLocalMoveDirection = FVector::ZeroVector;
-	PreviousMaxWalkSpeed = 0.0f;
+	PreviousBaseMovementSpeed = 0.0f;
 	ElapsedMovementTime = 0.0f;
-	bHasPreviousMaxWalkSpeed = false;
+	bHasPreviousBaseMovementSpeed = false;
 }

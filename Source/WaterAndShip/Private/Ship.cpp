@@ -25,6 +25,7 @@
 #include "PBDRigidsSolver.h"
 #include "BuoyancyComponent.h"
 #include "Buoyancy/SWBuoyancyComponent.h"
+#include "SWShipWakeSubsystem.h"
 #include "Water/SWRippleStateSubsystem.h"
 #include "WaterBodyActor.h"
 #include "EngineUtils.h"
@@ -100,7 +101,6 @@ AShip::AShip()
 	BuoyancyRoot->SetHiddenInGame(true, false);
 	BuoyancyRoot->SetCastShadow(false);
 	BuoyancyRoot->SetCastHiddenShadow(false);
-	BuoyancyRoot->bDisallowNanite = true;
 	BuoyancyRoot->SetLinearDamping(0.8f);
 	BuoyancyRoot->SetAngularDamping(3.0f);
 
@@ -114,7 +114,6 @@ AShip::AShip()
 	ShipVisualMesh->SetHiddenInGame(false, false);
 	ShipVisualMesh->SetCastShadow(true);
 	ShipVisualMesh->SetCastHiddenShadow(false);
-	ShipVisualMesh->bDisallowNanite = false;
 
 	ShipDamageMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipDamageMesh"));
 	ShipDamageMesh->SetupAttachment(BuoyancyRoot);
@@ -124,17 +123,23 @@ AShip::AShip()
 	ShipDamageMesh->SetHiddenInGame(true, false);
 	ShipDamageMesh->SetCastShadow(false);
 	ShipDamageMesh->SetCastHiddenShadow(false);
-	ShipDamageMesh->bDisallowNanite = true;
 
 	ShipDeckMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipDeckMesh"));
 	ShipDeckMesh->SetupAttachment(BuoyancyRoot);
+	// Keep this as a kinematic follower rather than welding its collision shapes
+	// into the network-predicted buoyancy body. Ragdolls may rest on the deck
+	// without changing the ship's authoritative mass/inertia setup.
+	ShipDeckMesh->BodyInstance.bAutoWeld = false;
 	ShipDeckMesh->SetCollisionProfileName(TEXT("ShipDeck"));
+	ShipDeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
+	ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+	ShipDeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
 	ShipDeckMesh->SetGenerateOverlapEvents(false);
 	ShipDeckMesh->SetVisibility(false, false);
 	ShipDeckMesh->SetHiddenInGame(true, false);
 	ShipDeckMesh->SetCastShadow(false);
 	ShipDeckMesh->SetCastHiddenShadow(false);
-	ShipDeckMesh->bDisallowNanite = true;
 
 	SWBuoyancyComponent = CreateDefaultSubobject<USWBuoyancyComponent>(TEXT("SWBuoyancyComponent"));
 	SWBuoyancyComponent->ExecutionMode = ESWBuoyancyExecutionMode::ExternalNetworkPhysics;
@@ -168,6 +173,10 @@ AShip::AShip()
 	CameraBoom->bInheritPitch = true;
 	CameraBoom->bInheritYaw = true;
 	CameraBoom->bInheritRoll = false;
+	CameraBoom->bEnableCameraRotationLag = bEnableCameraRotationSmoothing;
+	CameraBoom->CameraRotationLagSpeed = CameraRotationSmoothingSpeed;
+	CameraBoom->bUseCameraLagSubstepping = true;
+	CameraBoom->CameraLagMaxTimeStep = CameraRotationSmoothingMaxTimeStep;
 
 	// Follow Camera
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
@@ -221,6 +230,15 @@ AShip::AShip()
 void AShip::BeginPlay()
 {
 	Super::BeginPlay();
+	// Reassert the critical moving-deck responses at runtime so older Blueprint
+	// component templates cannot silently restore the former query-only profile.
+	if (ShipDeckMesh)
+	{
+		ShipDeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
+		ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+		ShipDeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+	}
 	bBuoyancyQueryDiagnostics = FParse::Param(
 		FCommandLine::Get(), TEXT("BuoyancyQueryDiagnostics"));
 
@@ -626,17 +644,26 @@ void AShip::Tick(float DeltaTime)
 				RippleState->GetEventsSnapshot(TempRippleEvents);
 			}
 
+			TArray<FSWShipWakeEvent> TempShipWakeEvents;
+			if (USWShipWakeSubsystem* ShipWakeState = GetWorld()->GetSubsystem<USWShipWakeSubsystem>())
+			{
+				ShipWakeState->GetEventsSnapshot(TempShipWakeEvents);
+			}
+
 			// A. 비동기 인풋 버퍼(GetProducerInputData_External)가 유효하다면 인풋 히스토리에 적재
 			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
 			{
 				AsyncInput->ExternalAcceleration = CurrentExternalAcceleration;
 				AsyncInput->bApplyAuthoritativeExternalAcceleration = HasAuthority();
+				AsyncInput->bApplyAuthoritativeBuoyancyState = HasAuthority();
+				AsyncInput->bBuoyancyEnabled = BuoyancyForceMultiplier > UE_SMALL_NUMBER;
 				AsyncInput->bQueryDiagnostics = bBuoyancyQueryDiagnostics;
 				AsyncInput->PontoonOffsets = TempPontoons;
 				AsyncInput->PontoonRadii = TempPontoonRadii;
 				AsyncInput->PontoonForceScales = TempPontoonForceScales;
 				AsyncInput->GerstnerWaves = TempWaves;
 				AsyncInput->RippleEvents = MoveTemp(TempRippleEvents);
+				AsyncInput->ShipWakeEvents = MoveTemp(TempShipWakeEvents);
 				AsyncInput->GravityZ = Gravity;
 				AsyncInput->LateralDrag = LateralDrag;
 				AsyncInput->ForwardForceValue = ForwardForceValue;

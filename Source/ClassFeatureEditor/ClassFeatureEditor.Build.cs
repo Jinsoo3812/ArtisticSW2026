@@ -17,11 +17,13 @@ public class ClassFeatureEditor : ModuleRules
 			"SlateCore",
 			"UMG",
 			"UMGEditor",
+			"LevelEditor",
 			"AnimationBlueprintLibrary",
 			"AnimationModifiers",
 			"ClassFeature",
 			"GASCore",
-			"WaterAndShip"
+			"WaterAndShip",
+			"Water"
 		});
 
 		PublicIncludePaths.AddRange(new string[]

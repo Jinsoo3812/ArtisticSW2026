@@ -74,7 +74,12 @@ public:
 	float GetRangedAttackMontagePlayRate() const;
 	FGameplayTag GetRangedFireEventTag() const { return FireEventTag; }
 	float GetMinAttackRange() const { return MinAttackRange; }
-	float GetMaxAttackRange() const { return MaxAttackRange; }
+	/** Current equipped-weapon range, with MaxAttackRange retained as a loadout fallback. */
+	UFUNCTION(BlueprintPure, Category = "Ranged Enemy|Combat")
+	float GetEffectiveAttackRange() const;
+
+	float GetMaxAttackRange() const { return GetEffectiveAttackRange(); }
+	float GetFallbackMaxAttackRange() const { return MaxAttackRange; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -82,6 +87,7 @@ protected:
 
 	UFUNCTION()
 	void OnRep_HostShip();
+	virtual void HandleReplicatedHostShipChanged() {}
 
 	UFUNCTION()
 	void OnHostShipDestroyed(AActor* DestroyedActor);
@@ -116,6 +122,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat", meta = (ClampMin = "0.0"))
 	float MinAttackRange = 150.0f;
 
+	/** Compatibility fallback used only while no equipped weapon exposes a positive AttackRange. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat", meta = (ClampMin = "0.0"))
 	float MaxAttackRange = 2500.0f;
 

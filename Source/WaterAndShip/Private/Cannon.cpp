@@ -54,6 +54,20 @@ ACannon::ACannon()
 	InteractableComponent->SetupAttachment(RootComponent);
 	InteractableComponent->SetCollisionProfileName(TEXT("Interactable"));
 
+	// Player Mount Point (Behind BaseMesh so player rotates with cannon yaw)
+	PlayerMountPoint = CreateDefaultSubobject<USceneComponent>(TEXT("PlayerMountPoint"));
+	PlayerMountPoint->SetupAttachment(BaseMesh);
+	PlayerMountPoint->SetRelativeLocation(FVector(-120.0f, 0.0f, 0.0f));
+	PlayerMountPoint->SetRelativeRotation(FRotator::ZeroRotator);
+	PlayerMountPoint->SetMobility(EComponentMobility::Movable);
+
+	// Player Exit Point (Attached to RootComponent so exit location stays fixed on deck)
+	PlayerExitPoint = CreateDefaultSubobject<USceneComponent>(TEXT("PlayerExitPoint"));
+	PlayerExitPoint->SetupAttachment(RootComponent);
+	PlayerExitPoint->SetRelativeLocation(FVector(-140.0f, 0.0f, 0.0f));
+	PlayerExitPoint->SetRelativeRotation(FRotator::ZeroRotator);
+	PlayerExitPoint->SetMobility(EComponentMobility::Movable);
+
 	bReplicates = true;
 	SetReplicateMovement(false); // We replicate rotations manually via AimRotation
 }
@@ -287,10 +301,10 @@ void ACannon::Board(APawn* PlayerPawn)
 	RidingPlayer->SetReplicateMovement(false);
 	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board - Player bReplicateMovement after disable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
 
-	// Attach to BaseMesh directly without welding physics bodies to avoid physics conflicts
-	FAttachmentTransformRules AttachmentRules(EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, false);
-	RidingPlayer->AttachToComponent(BaseMesh, AttachmentRules);
-	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board - Player attached to BaseMesh. Relative location: %s, relative rotation: %s"), 
+	// Snap the player character to the authored mounting point behind the cannon.
+	USceneComponent* MountTarget = PlayerMountPoint ? PlayerMountPoint.Get() : BaseMesh.Get();
+	RidingPlayer->AttachToComponent(MountTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board - Player attached to PlayerMountPoint. Relative location: %s, relative rotation: %s"), 
 		*RidingPlayer->GetRootComponent()->GetRelativeLocation().ToString(), 
 		*RidingPlayer->GetRootComponent()->GetRelativeRotation().ToString());
 
@@ -484,9 +498,26 @@ void ACannon::ExitAimMode()
 
 	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode initiated. Player pawn: %s"), *RidingPlayer->GetName());
 
-	// Detach player preserving their current world position on the cannon
+	// Detach, then move to the authored player exit point while collision is still
+	// disabled. This avoids the cannon/ship hull rejecting the teleport.
 	RidingPlayer->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode - Detached player. World location: %s"), *RidingPlayer->GetActorLocation().ToString());
+	if (PlayerExitPoint)
+	{
+		RidingPlayer->TeleportTo(
+			PlayerExitPoint->GetComponentLocation(),
+			PlayerExitPoint->GetComponentRotation(),
+			false,
+			true);
+	}
+	else if (PlayerMountPoint)
+	{
+		RidingPlayer->TeleportTo(
+			PlayerMountPoint->GetComponentLocation(),
+			PlayerMountPoint->GetComponentRotation(),
+			false,
+			true);
+	}
+	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode - Detached and moved player to exit. World location: %s"), *RidingPlayer->GetActorLocation().ToString());
 
 	RidingPlayer->SetActorEnableCollision(true);
 	RidingPlayer->SetActorHiddenInGame(false);
@@ -780,6 +811,24 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 	if (OldPlayer && OldPlayer != RidingPlayer)
 	{
 		// UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer - Restoring old passenger collision and walking movement."));
+		OldPlayer->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		if (PlayerExitPoint)
+		{
+			OldPlayer->TeleportTo(
+				PlayerExitPoint->GetComponentLocation(),
+				PlayerExitPoint->GetComponentRotation(),
+				false,
+				true);
+		}
+		else if (PlayerMountPoint)
+		{
+			OldPlayer->TeleportTo(
+				PlayerMountPoint->GetComponentLocation(),
+				PlayerMountPoint->GetComponentRotation(),
+				false,
+				true);
+		}
+
 		OldPlayer->SetActorEnableCollision(true);
 		if (ACharacter* Char = Cast<ACharacter>(OldPlayer))
 		{
@@ -796,6 +845,8 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 	{
 		// UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer - Disabling current passenger collision and movement."));
 		RidingPlayer->SetActorEnableCollision(false);
+		USceneComponent* MountTarget = PlayerMountPoint ? PlayerMountPoint.Get() : BaseMesh.Get();
+		RidingPlayer->AttachToComponent(MountTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
 		if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
 		{
 			Char->GetCharacterMovement()->DisableMovement();

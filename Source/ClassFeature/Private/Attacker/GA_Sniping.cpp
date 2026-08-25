@@ -9,6 +9,7 @@
 #include "Camera/CameraComponent.h"
 #include "DrawDebugHelpers.h"
 #include "AbilitySystemBlueprintLibrary.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 
 UGA_Sniping::UGA_Sniping()
 {
@@ -174,9 +175,10 @@ void UGA_Sniping::OnTargetDataReceived(const FGameplayAbilityTargetDataHandle& D
 					UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(HitResult->GetActor());
 					if (TargetASC)
 					{
-						FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
-						ContextHandle.AddInstigator(GetAvatarActorFromActorInfo(), GetAvatarActorFromActorInfo());
-						ContextHandle.AddHitResult(*HitResult);
+						AActor* SourceActor = GetAvatarActorFromActorInfo();
+						FGameplayEffectContextHandle ContextHandle =
+							USWCombatEffectContextLibrary::MakeCombatEffectContext(
+								ASC, SourceActor, SourceActor, HitResult->GetActor(), true, *HitResult);
 						
 						FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
 						if (SpecHandle.IsValid())

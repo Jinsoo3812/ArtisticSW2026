@@ -230,31 +230,12 @@ namespace
 
         // Only one phase of the sustained Fall loop is meaningful.  Retaining
         // an old lower-weight phase lets it later become the evaluated player
-        // during a relevance/weight change, which is exactly how a stale
-        // accumulated time can reach root-motion extraction.
+        // during a relevance/weight change, which is why we collapse to the dominant player.
+        // Looping time advancement is handled natively by UE's FBlendStackAnimPlayer;
+        // forcibly calling Initialize/Restore with a normalized time rewinds the accumulated
+        // clock and triggers AnimSequence.cpp's ensure(CurrentPosition >= PreviousPosition).
         NodeInfo.bPreUpdateCollapsedLoopStack = CollapseBlendStackToDominantPlayer(MotionMatchingNode);
-
-        FBlendStackAnimPlayer& TopPlayer = MotionMatchingNode.AnimPlayers[0];
-        UAnimationAsset* TopAsset = TopPlayer.GetAnimationAsset();
-        if (!TopAsset || !TopPlayer.IsLooping())
-        {
-            return NodeInfo.bPreUpdateCollapsedLoopStack;
-        }
-
-        const float PlayLength = TopAsset->GetPlayLength();
-        const float TopTime = TopPlayer.GetAccumulatedTime();
-        if (PlayLength <= UE_SMALL_NUMBER || TopTime < PlayLength - KINDA_SMALL_NUMBER)
-        {
-            return NodeInfo.bPreUpdateCollapsedLoopStack;
-        }
-
-        const float NormalizedTime = NormalizeAnimationAssetTime(TopAsset, TopTime, true);
-        NodeInfo.bPreUpdateNormalizedLoopTime = RestoreBlendStackTopPlayer(
-            Context,
-            MotionMatchingNode,
-            TopAsset,
-            NormalizedTime);
-        return NodeInfo.bPreUpdateCollapsedLoopStack || NodeInfo.bPreUpdateNormalizedLoopTime;
+        return NodeInfo.bPreUpdateCollapsedLoopStack;
     }
 
     bool RemoveLowerTransitionPlayersForState(FAnimNode_MotionMatching& MotionMatchingNode, ELocomotionState State)
@@ -2539,28 +2520,6 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             ThreadSafeData.WeaponUpperBodyData.OverlayState = EWeaponUpperBodyOverlayState::Idle;
         }
 
-        if (const ABowItem* EquippedBow = Cast<ABowItem>(CachedBasePlayer->EquippedItem))
-        {
-            if (const UBowComponent* BowComponent = EquippedBow->GetBowComponent())
-            {
-                ThreadSafeData.BowData.bIsAiming = BowComponent->IsAiming();
-                ThreadSafeData.BowData.DrawAlpha = BowComponent->GetDrawAlpha();
-                ThreadSafeData.BowData.bIsDrawing = ThreadSafeData.BowData.bIsAiming && ThreadSafeData.BowData.DrawAlpha > KINDA_SMALL_NUMBER;
-                ThreadSafeData.BowData.bIsFullyDrawn = ThreadSafeData.BowData.DrawAlpha >= 1.f - KINDA_SMALL_NUMBER;
-
-                FTransform StringIKTargetWorldTransform = FTransform::Identity;
-                if (EquippedBow->GetStringIKTargetTransform(ThreadSafeData.BowData.DrawAlpha, StringIKTargetWorldTransform))
-                {
-                    if (const USkeletalMeshComponent* CharacterMesh = GetSkelMeshComponent())
-                    {
-                        ThreadSafeData.BowData.bHasStringIKTarget = true;
-                        ThreadSafeData.BowData.StringIKTargetTransform =
-                            StringIKTargetWorldTransform.GetRelativeTransform(CharacterMesh->GetComponentTransform());
-                    }
-                }
-            }
-        }
-
         if (const UAbilitySystemComponent* ASC = CachedBasePlayer->GetAbilitySystemComponent())
         {
             ThreadSafeData.BowData.bIsDrawing = ASC->HasMatchingGameplayTag(State_Bow_Drawing);
@@ -2571,6 +2530,37 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                 ThreadSafeData.BowData.bIsFullyDrawn ||
                 ASC->HasMatchingGameplayTag(State_Bow_FullyDrawn);
             ThreadSafeData.BowData.bIsReleasing = ASC->HasMatchingGameplayTag(State_Bow_Releasing);
+        }
+
+        if (const ABowItem* EquippedBow = Cast<ABowItem>(CachedBasePlayer->EquippedItem))
+        {
+            if (const UBowComponent* BowComponent = EquippedBow->GetBowComponent())
+            {
+                ThreadSafeData.BowData.bIsAiming = BowComponent->IsAiming();
+                ThreadSafeData.BowData.DrawAlpha = BowComponent->GetDrawAlpha();
+                ThreadSafeData.BowData.bIsDrawing = ThreadSafeData.BowData.bIsAiming && ThreadSafeData.BowData.DrawAlpha > KINDA_SMALL_NUMBER;
+                ThreadSafeData.BowData.bIsFullyDrawn = ThreadSafeData.BowData.bIsFullyDrawn || (ThreadSafeData.BowData.DrawAlpha >= 1.f - KINDA_SMALL_NUMBER);
+
+                FTransform StringIKTargetWorldTransform = FTransform::Identity;
+                const bool bShouldAttachStringToHand =
+                    !ThreadSafeData.BowData.bIsReleasing &&
+                    ThreadSafeData.BowData.DrawAlpha > KINDA_SMALL_NUMBER;
+
+                if (bShouldAttachStringToHand &&
+                    EquippedBow->GetStringIKTargetTransform(ThreadSafeData.BowData.DrawAlpha, StringIKTargetWorldTransform))
+                {
+                    if (const USkeletalMeshComponent* CharacterMesh = GetSkelMeshComponent())
+                    {
+                        ThreadSafeData.BowData.bHasStringIKTarget = true;
+                        ThreadSafeData.BowData.StringIKTargetTransform =
+                            StringIKTargetWorldTransform.GetRelativeTransform(CharacterMesh->GetComponentTransform());
+                    }
+                }
+                else
+                {
+                    ThreadSafeData.BowData.bHasStringIKTarget = false;
+                }
+            }
         }
 
         // Preload the full-draw pose while the authored draw montage is still
@@ -2890,7 +2880,9 @@ bool UMotionMatchingAnimInstance::GetThreadSafeHasBowEquipped() const
 {
     const FGameplayTag OverlayTag = GetThreadSafeWeaponUpperBodyOverlayTag();
     const FGameplayTag EquippedWeaponTag = GetThreadSafeEquippedWeaponTag();
-    return OverlayTag.MatchesTag(Item_Weapon_Bow) || EquippedWeaponTag.MatchesTag(Item_Weapon_Bow);
+    return OverlayTag.MatchesTag(Item_Weapon_Bow) || EquippedWeaponTag.MatchesTag(Item_Weapon_Bow) ||
+           OverlayTag.MatchesTag(Item_Id_Weapon_Bow) || EquippedWeaponTag.MatchesTag(Item_Id_Weapon_Bow) ||
+           OverlayTag.ToString().Contains(TEXT("Bow")) || EquippedWeaponTag.ToString().Contains(TEXT("Bow"));
 }
 
 bool UMotionMatchingAnimInstance::GetThreadSafeHasWeaponEquipped() const
@@ -2921,7 +2913,13 @@ bool UMotionMatchingAnimInstance::GetThreadSafeShouldOverrideWeaponUpperBody() c
 EWeaponUpperBodyOverlayMode UMotionMatchingAnimInstance::GetThreadSafeWeaponUpperBodyMode() const
 {
     const FAnimWeaponUpperBodyData& WeaponData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.WeaponUpperBodyData;
-    if (!WeaponData.OverlayTag.MatchesTag(Item_Weapon_Bow))
+    const bool bIsBow = WeaponData.OverlayTag.MatchesTag(Item_Weapon_Bow) ||
+                        WeaponData.OverlayTag.MatchesTag(Item_Id_Weapon_Bow) ||
+                        WeaponData.EquippedWeaponTag.MatchesTag(Item_Weapon_Bow) ||
+                        WeaponData.EquippedWeaponTag.MatchesTag(Item_Id_Weapon_Bow) ||
+                        WeaponData.OverlayTag.ToString().Contains(TEXT("Bow")) ||
+                        WeaponData.EquippedWeaponTag.ToString().Contains(TEXT("Bow"));
+    if (!bIsBow)
     {
         return EWeaponUpperBodyOverlayMode::None;
     }
@@ -3268,11 +3266,12 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     // raw input edge or the mutable current StateControllerGait.
     // Releasing Sprint during an authored Sprint Start must bypass its remaining
     // one-shot hold and resume the regular locomotion MM database immediately.
-    const bool bInterruptSprintStartForMotionMatching =
+    // Similarly, pressing Sprint during an authored Run Start must also bypass its remaining
+    // one-shot hold and hand off immediately to Sprint Locomotion MM database!
+    const bool bInterruptStartForGaitChange =
         StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart &&
-        bStateControllerSelectedSprintStart &&
-        !CachedLocomotionStateComponent->bIsSprinting &&
-        bHasMoveInput;
+        bHasMoveInput &&
+        (bStateControllerSelectedSprintStart != CachedLocomotionStateComponent->bIsSprinting);
     const bool bInPlaybackHold = (StateControllerPlaybackHoldElapsed < StateControllerPlaybackHoldDuration);
     const float DesiredFacingDeltaYaw = CachedLocomotionStateComponent->DesiredFacingDeltaYaw;
     const float AbsDesiredFacingDeltaYaw = FMath::Abs(DesiredFacingDeltaYaw);
@@ -3323,9 +3322,13 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
         {
             DesiredState = EStateControllerPresentationState::TransitionToPivot;
         }
-        else if (bInterruptSprintStartForMotionMatching)
+        else if (bInterruptStartForGaitChange)
         {
             DesiredState = EStateControllerPresentationState::LocomotionLoop;
+            if (CachedLocomotionStateComponent)
+            {
+                CachedLocomotionStateComponent->InterruptStartForGaitChange();
+            }
         }
         else if (bStartRequested ||
             StateControllerPlaybackHoldState == EStateControllerPresentationState::IdleLoop ||
@@ -3346,26 +3349,34 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     }
     else
     {
-        // Input release is a one-update presentation event. A committed Stop
-        // owns its complete direct-clip hold unless a clear TurnInPlace is requested.
-        const bool bLocomotionStateStop = CachedLocomotionStateComponent &&
-            CachedLocomotionStateComponent->CurrentState == ELocomotionState::Stop;
-        const bool bStopHoldActive = bInPlaybackHold &&
-            StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop;
-        const bool bStopFallbackFromDeceleration = GroundSpeed > 10.0f;
-        if ((bStopRequested || bLocomotionStateStop || bStopHoldActive || bStopFallbackFromDeceleration ||
-            (bInPlaybackHold && StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart))
-            && !bCanStartTurnInPlace)
-        {
-            DesiredState = EStateControllerPresentationState::TransitionToStop;
-        }
-        else if (bKeepActiveTurnInPlaceClip || bCanStartTurnInPlace)
+        // When there is no movement input (!bHasMoveInput):
+        // 1. If TurnInPlace is active or requested, TurnInPlace takes priority over Stop/Idle
+        if (bKeepActiveTurnInPlaceClip || bCanStartTurnInPlace)
         {
             DesiredState = EStateControllerPresentationState::TurnInPlace;
         }
-        else
+        // 2. If we were already in TurnInPlace and finished turning, transition directly to IdleLoop
+        else if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace)
         {
             DesiredState = EStateControllerPresentationState::IdleLoop;
+        }
+        // 3. Otherwise, check if a Stop transition is owed from previous movement/deceleration
+        else
+        {
+            const bool bLocomotionStateStop = CachedLocomotionStateComponent &&
+                CachedLocomotionStateComponent->CurrentState == ELocomotionState::Stop;
+            const bool bStopHoldActive = bInPlaybackHold &&
+                StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop;
+            const bool bStopFallbackFromDeceleration = GroundSpeed > 10.0f;
+            if (bStopRequested || bLocomotionStateStop || bStopHoldActive || bStopFallbackFromDeceleration ||
+                (bInPlaybackHold && StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart))
+            {
+                DesiredState = EStateControllerPresentationState::TransitionToStop;
+            }
+            else
+            {
+                DesiredState = EStateControllerPresentationState::IdleLoop;
+            }
         }
     }
 
@@ -3385,10 +3396,14 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
     const bool bGameplayLandStillActive =
         CachedLocomotionStateComponent->bIsLanding &&
         CachedLocomotionStateComponent->bLandingRequested;
+    const bool bLandWantsSprint = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsSprinting;
+    const bool bLandWasSprinting = (StateControllerLandGaitLock == EGaitIntent::Sprint);
+    const bool bLandGaitChanged = (bLandWasSprinting != bLandWantsSprint);
     if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToLand &&
         bGameplayLandStillActive &&
         bReturningFromLandToGroundPresentation &&
         !bCanStartTurnInPlace &&
+        !bLandGaitChanged &&
         StateControllerSelectedAnimation &&
         StateControllerPlaybackHoldElapsed < LandCompletionTime)
     {
@@ -3606,6 +3621,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
     const float DeltaTime = GetWorld()->GetDeltaSeconds();
     const bool bStateChanged = (DesiredState != StateControllerPlaybackHoldState);
     const EStateControllerPresentationState PreviousState = StateControllerPlaybackHoldState;
+    const UAnimationAsset* PreviousSelectedAnimation = StateControllerSelectedAnimation;
     // This is intentionally a one-update signal.  It is consumed by an
     // AnimGraph OnUpdate function calling BlendStack::ForceBlendNextUpdate,
     // not by a per-frame Chooser query.
@@ -3654,7 +3670,7 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         const bool bLandWasSprinting = (StateControllerLandGaitLock == EGaitIntent::Sprint);
 
         if (!CachedLocomotionStateComponent || !CachedLocomotionStateComponent->bIsLanding ||
-            (bLandWasSprinting && !bWantsSprint))
+            (bLandWasSprinting != bWantsSprint))
         {
             bInterruptLandForMotionMatching = true;
         }
@@ -3959,15 +3975,17 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
                 StateControllerActiveTurnInPlaceIndex = 0;
             }
             ++StateControllerSelectionRevision;
-            // Project_J pulses Force Blend for every direct TIP selection, not
-            // only when the selected asset identity is unchanged.  The Blend
-            // Stack otherwise may retain its previous player/time and expose a
-            // Motion Matching Idle frame between two semantic TIP entries.
-			// Force Blend is a selection pulse, not a TIP-only workaround.  A
-			// Blend Stack does not restart an identical asset by itself, so every
-			// direct Start/Stop/Pivot/Jump/Land/TIP selection must publish it.
-			bStateControllerForceBlendStackOnNextUpdate =
-				bEnteringOneShot && StateControllerSelectedAnimation != nullptr;
+            // When AnimGraph pins (Animation Asset, BlendTime, etc.) are connected,
+            // the Blend Stack node automatically performs a BlendTo when the asset changes.
+            // Firing ForceBlendOnNextUpdate at the same time causes UE5 to log
+            // "multiple BlendTo requests during the same frame".
+            // Force Blend is therefore only needed when the newly selected one-shot asset
+            // is identical to the previously playing asset (e.g. continuous same-direction TIP
+            // replay or reselection), which the pin alone cannot detect as a new transition.
+            const bool bSameAssetReplay = (PreviousSelectedAnimation != nullptr &&
+                PreviousSelectedAnimation == StateControllerSelectedAnimation);
+            bStateControllerForceBlendStackOnNextUpdate =
+                bEnteringOneShot && StateControllerSelectedAnimation != nullptr && bSameAssetReplay;
 
         }
         else
@@ -4377,6 +4395,17 @@ void UMotionMatchingAnimInstance::EmitStateControllerDebugTrace(const FAnimThrea
             CachedLocomotionStateComponent->bShouldTurnInPlace ? 1 : 0,
             CachedLocomotionStateComponent->GroundSpeed);
         GEngine->AddOnScreenDebugMessage(9999, 0.0f, FColor::Cyan, ScreenDebug);
+
+        const FAnimWeaponUpperBodyData& WData = ThreadSafeData.WeaponUpperBodyData;
+        const FString WeaponDebug = FString::Printf(
+            TEXT("[WeaponOverlay] EquippedTag: %s | OverlayTag: %s | Index: %d | Alpha: %.1f | Mode: %s | Override: %d"),
+            *WData.EquippedWeaponTag.ToString(),
+            *WData.OverlayTag.ToString(),
+            WData.OverlayIndex,
+            WData.UpperBodyAlpha,
+            *StaticEnum<EWeaponUpperBodyOverlayState>()->GetNameStringByValue(static_cast<int64>(WData.OverlayState)),
+            WData.bShouldOverrideUpperBody ? 1 : 0);
+        GEngine->AddOnScreenDebugMessage(9998, 0.0f, FColor::Emerald, WeaponDebug);
     }
 
     if (bComponentEventChanged)

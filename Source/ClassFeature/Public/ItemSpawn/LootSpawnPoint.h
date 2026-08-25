@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "GameFramework/Actor.h"
 #include "ChestSpawnData.h"
 #include "LootSpawnTypes.h"
@@ -11,6 +12,7 @@ class ABaseItem;
 class ABaseCharacter;
 class AShip;
 class AStorageChest;
+class AStoryConditionalSpawner;
 
 UCLASS(Abstract)
 class CLASSFEATURE_API ALootSpawnPointBase : public AActor
@@ -121,6 +123,12 @@ public:
 	UChestDefinition* GetGuardedChestDefinition() const { return ChestDefinition; }
 
 	UFUNCTION(BlueprintPure, Category = "Chest|Placement")
+	EChestEnvironment GetEnvironment() const { return Environment; }
+
+	UFUNCTION(BlueprintCallable, Category = "Chest|Placement")
+	void SetEnvironment(EChestEnvironment InEnvironment);
+
+	UFUNCTION(BlueprintPure, Category = "Chest|Placement")
 	bool IsPhysicsAndBuoyancyEnabled() const { return bEnablePhysicsAndBuoyancy; }
 
 	UFUNCTION(BlueprintCallable, Category = "Chest|Placement")
@@ -135,7 +143,45 @@ public:
 		const TArray<ABaseCharacter*>& InGuardCharacters,
 		AShip* InOwningShip = nullptr);
 
+	UFUNCTION()
+	void HandleGuardActorSpawned(AActor* InSpawnedActor);
+
+	UFUNCTION(BlueprintPure, Category = "Chest|Boss")
+	bool HasMatchingBossGuard() const;
+
+	/** 보스 상자 여부 (체크 시 특정 보스가 가드로 있을 때 확정 퀘스트 아이템 지급) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss")
+	bool bIsBossChest = false;
+
+	/** 요구되는 보스 적의 태그 (예: Enemy.Type.Boss.Mid1, Enemy.Type.Boss.Mid2, Enemy.Type.Boss.Mid3) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest"))
+	FGameplayTag RequiredBossTag;
+
+	/** 가드 목록에 해당 보스가 존재할 때 반드시 100% 추가 드랍할 퀘스트 아이템 태그 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest"))
+	FGameplayTag GuaranteedBossQuestItemTag;
+
+	/** 확정 퀘스트 아이템 드랍 개수 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", ClampMin = "1", UIMin = "1"))
+	int32 GuaranteedBossQuestItemCount = 1;
+
+	/** 조건부로 런타임에 보스를 소환하는 스토리 스포너 목록 (보스가 소환되면 상자의 가드로 동적 추가되고 잠김) */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Chest|Guard",
+		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Guarded"))
+	TArray<TObjectPtr<AStoryConditionalSpawner>> GuardSpawners;
+
 protected:
+	virtual void BeginPlay() override;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AStorageChest> ActiveChestInstance = nullptr;
+
+	UPROPERTY(Transient)
+	bool bBossQuestItemInjected = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Placement")
+	EChestEnvironment Environment = EChestEnvironment::Land;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Data Driven")
 	EChestSpawnMode SpawnMode = EChestSpawnMode::Legacy;
 

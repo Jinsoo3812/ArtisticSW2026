@@ -16,6 +16,7 @@
 #include "Weapon/BaseWeapon.h"
 #include "Weapon/BaseWeaponComponent.h"
 #include "Weapon/WeaponDataAsset.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogEnemyBasicAttack, Log, All);
 
@@ -173,9 +174,9 @@ const FWeaponDefinition* UGA_BasicAttack::CacheAttackData(ABaseEnemy* EnemyOwner
 		return nullptr;
 	}
 
-	FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
-	ContextHandle.AddInstigator(EnemyOwner, CachedWeapon);
-	ContextHandle.AddSourceObject(CachedWeapon);
+	FGameplayEffectContextHandle ContextHandle =
+		USWCombatEffectContextLibrary::MakeCombatEffectContext(
+			SourceASC, EnemyOwner, CachedWeapon);
 
 	CachedDamageSpecHandle = SourceASC->MakeOutgoingSpec(
 		WeaponDefinition->CombatData.DamageEffectClass,

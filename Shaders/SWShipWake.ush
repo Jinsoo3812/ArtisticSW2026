@@ -1,0 +1,154 @@
+// M7 fixed Golden Image evaluator. Keep macro-only: Unreal inserts Custom
+// include paths inside a generated function, where free functions are illegal.
+#pragma once
+
+#define SW_M7_WAKE_CAPACITY 256
+#define SW_M7_GOLDEN_PEAK 1.3871971383
+#define SW_M7_DOMAIN_U_RANGE 10.0
+#define SW_M7_DOMAIN_V_MAX 3.0
+
+#ifndef Texture2DSampleLevel
+#define Texture2DSampleLevel(Tex, Sampler, UV, Mip) (Tex).SampleLevel((Sampler), (UV), (Mip))
+#endif
+
+// ----------------------------------------------------------------------------------
+// SW_M7_EVALUATE_KELVIN_COMBINED: Evaluates both Height (for WPO) and Normal in a SINGLE pass!
+// Eliminates 50% of duplicate quadratic solver evaluations and EVENT_TEX samples.
+// ----------------------------------------------------------------------------------
+#define SW_M7_EVALUATE_KELVIN_COMBINED(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, NORMAL_STRENGTH, OUT_HEIGHT, OUT_NORMAL) \
+{ \
+    const float2 SW_Query = (WORLD_XY); \
+    const int SW_Count = clamp((int)round(EVENT_COUNT), 0, SW_M7_WAKE_CAPACITY); \
+    float SW_TotalHeight = 0.0; \
+    float2 SW_TotalGradWorld = float2(0.0, 0.0); \
+    \
+    [loop] \
+    for (int SW_Index = 0; SW_Index < SW_M7_WAKE_CAPACITY; ++SW_Index) \
+    { \
+        if (SW_Index >= SW_Count) break; \
+        const float SW_X = (float(SW_Index) + 0.5) * (1.0 / float(SW_M7_WAKE_CAPACITY)); \
+        const float4 SW_R1 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.375), 0.0); \
+        const float SW_T0 = SW_R1.x; \
+        const float SW_Amp = SW_R1.z; \
+        const float SW_STime = (float)(SERVER_TIME); \
+        if (SW_Amp <= 0.0 || SW_STime < SW_T0) continue; \
+        \
+        const float4 SW_R2 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.625), 0.0); \
+        if (SW_STime >= SW_R2.x) continue; \
+        \
+        const float4 SW_R0 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.125), 0.0); \
+        const float2 SW_D = SW_R0.xy - SW_Query; \
+        const float SW_DistSq = dot(SW_D, SW_D); \
+        const float SW_Length = max(SW_R2.y, 1.0); \
+        const float SW_HalfWidth = max(SW_R2.z, 1.0); \
+        const float SW_MaxReach = SW_Length + max(SW_R1.w, 1.0) * (SW_STime - SW_T0); \
+        if (SW_DistSq > (SW_MaxReach * SW_MaxReach * 1.5)) continue; \
+        \
+        const float4 SW_R3 = Texture2DSampleLevel(EVENT_TEX, EVENT_SAMPLER, float2(SW_X, 0.875), 0.0); \
+        const float SW_T1 = max(SW_R1.y, SW_T0); \
+        const float SW_DeltaT = max(SW_T1 - SW_T0, 1.0e-4); \
+        const float2 SW_V = (SW_R0.zw - SW_R0.xy) * (1.0 / SW_DeltaT); \
+        const float SW_C2 = max(SW_R1.w * SW_R1.w, 1.0); \
+        const float SW_Trem = SW_STime - SW_T0; \
+        \
+        const float SW_A = dot(SW_V, SW_V) - SW_C2; \
+        const float SW_B = 2.0 * (dot(SW_D, SW_V) + SW_C2 * SW_Trem); \
+        const float SW_C = SW_DistSq - SW_C2 * SW_Trem * SW_Trem; \
+        \
+        float SW_Tau = -1.0; \
+        if (abs(SW_A) < 1.0e-5) \
+        { \
+            if (abs(SW_B) > 1.0e-5) \
+            { \
+                float SW_LinTau = -SW_C / SW_B; \
+                if (SW_LinTau >= -1.0e-3 && SW_LinTau <= SW_DeltaT + 1.0e-3 && SW_LinTau <= SW_Trem) \
+                { \
+                    SW_Tau = clamp(SW_LinTau, 0.0, SW_DeltaT); \
+                } \
+            } \
+        } \
+        else \
+        { \
+            const float SW_Disc = SW_B * SW_B - 4.0 * SW_A * SW_C; \
+            if (SW_Disc >= 0.0) \
+            { \
+                const float SW_SqrtDisc = sqrt(SW_Disc); \
+                const float SW_Inv2A = 0.5 / SW_A; \
+                const float SW_Tau1 = (-SW_B - SW_SqrtDisc) * SW_Inv2A; \
+                const float SW_Tau2 = (-SW_B + SW_SqrtDisc) * SW_Inv2A; \
+                const bool bV1 = (SW_Tau1 >= -1.0e-3 && SW_Tau1 <= SW_DeltaT + 1.0e-3 && SW_Tau1 <= SW_Trem); \
+                const bool bV2 = (SW_Tau2 >= -1.0e-3 && SW_Tau2 <= SW_DeltaT + 1.0e-3 && SW_Tau2 <= SW_Trem); \
+                if (bV1 && bV2) \
+                { \
+                    SW_Tau = (SW_Tau1 >= 0.0 && SW_Tau1 <= SW_DeltaT) ? SW_Tau1 : SW_Tau2; \
+                } \
+                else if (bV1) \
+                { \
+                    SW_Tau = clamp(SW_Tau1, 0.0, SW_DeltaT); \
+                } \
+                else if (bV2) \
+                { \
+                    SW_Tau = clamp(SW_Tau2, 0.0, SW_DeltaT); \
+                } \
+            } \
+        } \
+        \
+        if (SW_Tau < 0.0) continue; \
+        \
+        const float SW_Age = SW_Trem - SW_Tau; \
+        if (SW_Age < 0.0) continue; \
+        \
+        const float SW_Decay = exp(-max(SW_R2.w, 0.0) * SW_Age); \
+        if (SW_Decay < 0.001) continue; \
+        \
+        const float SW_Alpha = clamp(SW_Tau / SW_DeltaT, 0.0, 1.0); \
+        const float2 SW_Apex = lerp(SW_R0.xy, SW_R0.zw, SW_Alpha); \
+        const float2 SW_Fwd = normalize(lerp(float2(cos(SW_R3.x), sin(SW_R3.x)), float2(cos(SW_R3.y), sin(SW_R3.y)), SW_Alpha) + float2(1.0e-8, 0.0)); \
+        const float2 SW_Right = float2(-SW_Fwd.y, SW_Fwd.x); \
+        \
+        const float2 SW_Delta = SW_Query - SW_Apex; \
+        const float SW_Downstream = -dot(SW_Delta, SW_Fwd); \
+        const float SW_Lateral = dot(SW_Delta, SW_Right); \
+        const float SW_LengthCut = clamp(SW_R3.w > 0.001 ? SW_R3.w : 1.0, 0.01, 1.0); \
+        const float SW_U = SW_Downstream / SW_Length; \
+        const float SW_V_signed = SW_Lateral / SW_HalfWidth; \
+        \
+        if (SW_U >= 0.0 && SW_U <= SW_LengthCut && abs(SW_V_signed) <= 1.0) \
+        { \
+            const float SW_UFadeIn = smoothstep(0.0, 0.03, SW_U); \
+            const float SW_UFadeOut = 1.0 - smoothstep(SW_LengthCut * 0.70, SW_LengthCut, SW_U); \
+            const float SW_VFade = 1.0 - smoothstep(0.60, 1.0, abs(SW_V_signed)); \
+            const float SW_StampMask = SW_UFadeIn * SW_UFadeOut * SW_VFade; \
+            if (SW_StampMask > 0.0001) \
+            { \
+                const float2 SW_GoldenUV = float2(SW_V_signed * 0.5 + 0.5, SW_U); \
+                const float4 SW_GSample = Texture2DSampleLevel(GOLDEN_TEX, GOLDEN_SAMPLER, SW_GoldenUV, 0.0); \
+                const float SW_FadeIn = SW_R3.z > 1.0e-6 ? smoothstep(0.0, SW_R3.z, SW_Age) : 1.0; \
+                const float SW_Weight = SW_Amp * SW_FadeIn * SW_Decay; \
+                \
+                SW_TotalHeight += SW_Weight * SW_GSample.r * SW_StampMask; \
+                \
+                const float SW_dH_dDown = (SW_Weight / SW_Length) * (SW_GSample.g * SW_StampMask * SW_M7_DOMAIN_U_RANGE); \
+                const float SW_dH_dLat = (SW_Weight / SW_HalfWidth) * (SW_GSample.b * SW_StampMask * SW_M7_DOMAIN_V_MAX); \
+                SW_TotalGradWorld += SW_dH_dDown * (-SW_Fwd) + SW_dH_dLat * SW_Right; \
+            } \
+        } \
+    } \
+    OUT_HEIGHT = clamp(SW_TotalHeight, -200.0, 200.0); \
+    OUT_NORMAL = normalize(float3(-SW_TotalGradWorld.x * (NORMAL_STRENGTH), -SW_TotalGradWorld.y * (NORMAL_STRENGTH), 1.0)); \
+}
+
+// ----------------------------------------------------------------------------------
+// Backward-compatible individual Height & Normal Evaluators (with early culling)
+// ----------------------------------------------------------------------------------
+#define SW_M7_EVALUATE_KELVIN(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, OUT_HEIGHT) \
+{ \
+    float3 SW_DummyNormal = float3(0, 0, 1); \
+    SW_M7_EVALUATE_KELVIN_COMBINED(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, 1.0, OUT_HEIGHT, SW_DummyNormal); \
+}
+
+#define SW_M7_EVALUATE_KELVIN_NORMAL(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, NORMAL_STRENGTH, OUT_NORMAL) \
+{ \
+    float SW_DummyHeight = 0.0; \
+    SW_M7_EVALUATE_KELVIN_COMBINED(WORLD_XY, SERVER_TIME, EVENT_COUNT, EVENT_TEX, EVENT_SAMPLER, GOLDEN_TEX, GOLDEN_SAMPLER, NORMAL_STRENGTH, SW_DummyHeight, OUT_NORMAL); \
+}

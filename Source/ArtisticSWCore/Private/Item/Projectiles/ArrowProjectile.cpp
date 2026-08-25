@@ -7,6 +7,7 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 #include "StatusEffectLibrary.h"
 
 AArrowProjectile::AArrowProjectile()
@@ -17,7 +18,7 @@ AArrowProjectile::AArrowProjectile()
 
 	if (CollisionComp)
 	{
-		CollisionComp->SetBoxExtent(FVector(8.0f, 2.0f, 2.0f));
+		ApplyCollisionShape();
 		CollisionComp->SetCollisionProfileName(TEXT("Projectile"));
 		CollisionComp->SetNotifyRigidBodyCollision(true);
 		CollisionComp->OnComponentHit.AddDynamic(this, &AArrowProjectile::OnArrowHit);
@@ -33,6 +34,24 @@ AArrowProjectile::AArrowProjectile()
 		ProjectileMovementComp->bRotationFollowsVelocity = true;
 		ProjectileMovementComp->bShouldBounce = false;
 	}
+}
+
+void AArrowProjectile::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	ApplyCollisionShape();
+}
+
+void AArrowProjectile::ApplyCollisionShape()
+{
+	if (!CollisionComp)
+	{
+		return;
+	}
+
+	// Collision 크기는 Box Extent만 사용하고 자식 Mesh에 전달되는 Root Scale은 제거한다.
+	CollisionComp->SetRelativeScale3D(FVector::OneVector);
+	CollisionComp->SetBoxExtent(CollisionHalfExtent.ComponentMax(FVector(0.1f)), false);
 }
 
 void AArrowProjectile::BeginPlay()
@@ -113,12 +132,31 @@ void AArrowProjectile::IgnoreActorForMovement(AActor* ActorToIgnore)
 	}
 }
 
-void AArrowProjectile::SetArrowMesh(UStaticMesh* InMesh)
+bool AArrowProjectile::ApplyVisualTo(UStaticMeshComponent* TargetMesh) const
 {
-	if (MeshComp && InMesh)
+	if (!TargetMesh || !MeshComp || !MeshComp->GetStaticMesh())
 	{
-		MeshComp->SetStaticMesh(InMesh);
+		return false;
 	}
+
+	TargetMesh->SetStaticMesh(MeshComp->GetStaticMesh());
+	TargetMesh->SetRelativeTransform(MeshComp->GetRelativeTransform());
+	TargetMesh->EmptyOverrideMaterials();
+	for (int32 MaterialIndex = 0; MaterialIndex < MeshComp->GetNumOverrideMaterials(); ++MaterialIndex)
+	{
+		TargetMesh->SetMaterial(MaterialIndex, MeshComp->GetMaterial(MaterialIndex));
+	}
+	return true;
+}
+
+UStaticMesh* AArrowProjectile::GetArrowVisualMesh() const
+{
+	return MeshComp ? MeshComp->GetStaticMesh() : nullptr;
+}
+
+FTransform AArrowProjectile::GetArrowVisualRelativeTransform() const
+{
+	return MeshComp ? MeshComp->GetRelativeTransform() : FTransform::Identity;
 }
 
 void AArrowProjectile::InitializeDamage(UAbilitySystemComponent* InSourceASC, AActor* InInstigatorActor, float InChargeDamageMultiplier)
@@ -215,7 +253,7 @@ void AArrowProjectile::OnArrowHit(UPrimitiveComponent* HitComponent, AActor* Oth
 
 	if (CanApplyDamageToActor(OtherActor))
 	{
-		ApplyDamageToActor(OtherActor);
+		ApplyDamageToActor(OtherActor, Hit);
 	}
 	Multicast_PlayImpactFX(Hit);
 
@@ -314,9 +352,9 @@ void AArrowProjectile::BuildStatusEffectSpecs()
 				continue;
 			}
 
-			FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
-			ContextHandle.AddInstigator(InstigatorActor.Get(), this);
-			ContextHandle.AddSourceObject(this);
+			FGameplayEffectContextHandle ContextHandle =
+				USWCombatEffectContextLibrary::MakeCombatEffectContext(
+					SourceASC, InstigatorActor.Get(), this);
 
 			FGameplayEffectSpecHandle StatusSpecHandle = SourceASC->MakeOutgoingSpec(
 				StatusEffect.StatusEffectClass,
@@ -337,9 +375,9 @@ void AArrowProjectile::BuildStatusEffectSpecs()
 				continue;
 			}
 
-			FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
-			ContextHandle.AddInstigator(InstigatorActor.Get(), this);
-			ContextHandle.AddSourceObject(this);
+			FGameplayEffectContextHandle ContextHandle =
+				USWCombatEffectContextLibrary::MakeCombatEffectContext(
+					SourceASC, InstigatorActor.Get(), this);
 
 			FGameplayEffectSpecHandle StatusSpecHandle = SourceASC->MakeOutgoingSpec(
 				StatusEffectClass,
@@ -355,7 +393,7 @@ void AArrowProjectile::BuildStatusEffectSpecs()
 	}
 }
 
-void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor)
+void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor, const FHitResult& HitResult)
 {
 	if (!TargetActor)
 	{
@@ -391,7 +429,15 @@ void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor)
 	{
 		if (DamageSpecHandle.IsValid() && DamageSpecHandle.Data.IsValid())
 		{
-			TargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpecHandle.Data.Get());
+			FGameplayEffectSpec TargetDamageSpec(*DamageSpecHandle.Data.Get());
+			USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
+				TargetDamageSpec,
+				InstigatorActor.Get(),
+				this,
+				TargetActor,
+				&HitResult,
+				GetVelocity());
+			TargetASC->ApplyGameplayEffectSpecToSelf(TargetDamageSpec);
 		}
 	}
 
@@ -404,7 +450,17 @@ void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor)
 				? StatusEffectRefreshGrantedTags[StatusEffectIndex]
 				: FGameplayTag();
 
-			UStatusEffectLibrary::ApplyDurationDamageEffectSpecToTarget(TargetASC, StatusSpecHandle, RefreshGrantedTag);
+			FGameplayEffectSpec TargetStatusSpec(*StatusSpecHandle.Data.Get());
+			USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
+				TargetStatusSpec,
+				InstigatorActor.Get(),
+				this,
+				TargetActor,
+				&HitResult,
+				GetVelocity());
+			const FGameplayEffectSpecHandle TargetStatusSpecHandle(new FGameplayEffectSpec(TargetStatusSpec));
+			UStatusEffectLibrary::ApplyDurationDamageEffectSpecToTarget(
+				TargetASC, TargetStatusSpecHandle, RefreshGrantedTag);
 		}
 	}
 }

@@ -1,5 +1,6 @@
 #include "BossAI/BossDeckPointSelector.h"
 
+#include "BossAI/ShipBossEnemy.h"
 #include "Components/CapsuleComponent.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "Engine/World.h"
@@ -11,6 +12,7 @@ bool UBossDeckPointSelector::SelectDestinationPoint(
 	AActor* BossActor,
 	AActor* TargetActor,
 	EBossDestinationPurpose Purpose,
+	EBossDestinationRelation Relation,
 	const FBossDestinationSelectionSettings& Settings,
 	int32& OutPointId)
 {
@@ -18,6 +20,11 @@ bool UBossDeckPointSelector::SelectDestinationPoint(
 	if (!IsValid(HostShip) || !IsValid(BossActor) || !IsValid(TargetActor))
 	{
 		return false;
+	}
+	if (Purpose == EBossDestinationPurpose::Walk)
+	{
+		return SelectWalkDestinationPoint(
+			*HostShip, *BossActor, *TargetActor, Settings, OutPointId);
 	}
 
 	const FVector DeckUp = HostShip->GetShipDeckMesh()
@@ -34,7 +41,7 @@ bool UBossDeckPointSelector::SelectDestinationPoint(
 	for (const int32 CandidateId : CandidateIds)
 	{
 		const UDeckWaypointComponent* Waypoint = HostShip->GetDeckWaypoint(CandidateId);
-		if (!IsValid(Waypoint))
+		if (!IsValid(Waypoint) || !HostShip->IsDeckPointAvailable(CandidateId, BossActor))
 		{
 			continue;
 		}
@@ -61,12 +68,20 @@ bool UBossDeckPointSelector::SelectDestinationPoint(
 			continue;
 		}
 
-		if (!IsPointBehindTarget(
-			TargetLocation,
-			TargetActor->GetActorForwardVector(),
-			CandidateLocation,
-			DeckUp,
-			Settings.MaximumRearDot))
+		const bool bMatchesTargetRelation = Relation == EBossDestinationRelation::BehindTarget
+			? IsPointBehindTarget(
+				TargetLocation,
+				TargetActor->GetActorForwardVector(),
+				CandidateLocation,
+				DeckUp,
+				Settings.MaximumRearDot)
+			: IsPointInFrontOfTarget(
+				TargetLocation,
+				TargetActor->GetActorForwardVector(),
+				CandidateLocation,
+				DeckUp,
+				Settings.MinimumFrontDot);
+		if (!bMatchesTargetRelation)
 		{
 			continue;
 		}
@@ -100,6 +115,72 @@ bool UBossDeckPointSelector::SelectDestinationPoint(
 	return OutPointId != INDEX_NONE;
 }
 
+bool UBossDeckPointSelector::SelectWalkDestinationPoint(
+	AEnemyShip& HostShip,
+	AActor& BossActor,
+	AActor& TargetActor,
+	const FBossDestinationSelectionSettings& Settings,
+	int32& OutPointId)
+{
+	const AShipBossEnemy* Boss = Cast<AShipBossEnemy>(&BossActor);
+	if (!Boss || !HostShip.GetDeckWaypoint(Boss->GetCurrentPointId()))
+	{
+		return false;
+	}
+
+	TArray<int32> CandidateIds;
+	HostShip.GetConnectedDeckWaypointIds(Boss->GetCurrentPointId(), CandidateIds);
+	CandidateIds.RemoveAll([&HostShip, &BossActor](const int32 PointId)
+	{
+		const UDeckWaypointComponent* Waypoint = HostShip.GetDeckWaypoint(PointId);
+		return !Waypoint || !Waypoint->CanUseInCombat()
+			|| !HostShip.IsDeckPointAvailable(PointId, &BossActor);
+	});
+	if (CandidateIds.Num() > 1)
+	{
+		CandidateIds.Remove(Boss->GetPreviousPointId());
+	}
+
+	const FVector DeckUp = HostShip.GetShipDeckMesh()
+		? HostShip.GetShipDeckMesh()->GetUpVector().GetSafeNormal()
+		: FVector::UpVector;
+	float BestRangeError = TNumericLimits<float>::Max();
+	for (const int32 CandidateId : CandidateIds)
+	{
+		FVector CandidateLocation = HostShip.GetDeckWaypointWorldLocation(CandidateId);
+		if (const ACharacter* BossCharacter = Cast<ACharacter>(&BossActor))
+		{
+			const UCapsuleComponent* Capsule = BossCharacter->GetCapsuleComponent();
+			FTransform CharacterTransform;
+			if (HostShip.ResolveDeckCharacterTransform(
+				CandidateId,
+				Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0f,
+				CharacterTransform))
+			{
+				CandidateLocation = CharacterTransform.GetLocation();
+			}
+		}
+
+		if (Settings.bCheckDestinationOccupancy
+			&& !IsDestinationClear(HostShip, BossActor, CandidateLocation, &TargetActor))
+		{
+			continue;
+		}
+
+		const float TargetDistance = FVector::VectorPlaneProject(
+			CandidateLocation - TargetActor.GetActorLocation(), DeckUp).Size();
+		const float RangeError = FMath::Abs(TargetDistance - FMath::Max(0.0f, Settings.IdealWalkRange));
+		if (RangeError < BestRangeError - KINDA_SMALL_NUMBER
+			|| (FMath::IsNearlyEqual(RangeError, BestRangeError) && CandidateId < OutPointId))
+		{
+			BestRangeError = RangeError;
+			OutPointId = CandidateId;
+		}
+	}
+
+	return OutPointId != INDEX_NONE;
+}
+
 bool UBossDeckPointSelector::IsPointBehindTarget(
 	const FVector& TargetLocation,
 	const FVector& TargetForward,
@@ -119,6 +200,27 @@ bool UBossDeckPointSelector::IsPointBehindTarget(
 
 	return FVector::DotProduct(ForwardOnDeck, TargetToPointOnDeck)
 		<= FMath::Clamp(MaximumRearDot, -1.0f, 0.0f);
+}
+
+bool UBossDeckPointSelector::IsPointInFrontOfTarget(
+	const FVector& TargetLocation,
+	const FVector& TargetForward,
+	const FVector& PointLocation,
+	const FVector& DeckUp,
+	float MinimumFrontDot)
+{
+	const FVector SafeUp = DeckUp.GetSafeNormal(SMALL_NUMBER, FVector::UpVector);
+	const FVector ForwardOnDeck = FVector::VectorPlaneProject(TargetForward, SafeUp).GetSafeNormal();
+	const FVector TargetToPointOnDeck = FVector::VectorPlaneProject(
+		PointLocation - TargetLocation,
+		SafeUp).GetSafeNormal();
+	if (ForwardOnDeck.IsNearlyZero() || TargetToPointOnDeck.IsNearlyZero())
+	{
+		return false;
+	}
+
+	return FVector::DotProduct(ForwardOnDeck, TargetToPointOnDeck)
+		>= FMath::Clamp(MinimumFrontDot, 0.0f, 1.0f);
 }
 
 bool UBossDeckPointSelector::DoesSegmentPassTarget(

@@ -64,17 +64,9 @@ bool FStoryFacadeFlowTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("New shared campaign starts"), Facade->StartNewCampaign());
 	TestTrue(TEXT("GameStarted is immediately reached"),
 		Facade->IsStoryNodeReached(EStoryNode::GameStarted));
-	TestFalse(TEXT("Recon cannot complete before first sailing"),
-		Facade->CompleteStoryNode(EStoryNode::ReconQuestAccepted));
-	TestFalse(TEXT("Recon preflight also reports missing prerequisite"),
+	TestTrue(TEXT("Recon preflight succeeds directly from GameStarted"),
 		Facade->CanCompleteStoryNode(EStoryNode::ReconQuestAccepted));
-	TestTrue(TEXT("First sailing preflight succeeds"),
-		Facade->CanCompleteStoryNode(EStoryNode::FirstSailingCompleted));
-	TestTrue(TEXT("First sailing completes"),
-		Facade->CompleteStoryNode(EStoryNode::FirstSailingCompleted));
-	TestTrue(TEXT("Recon preflight succeeds after first sailing"),
-		Facade->CanCompleteStoryNode(EStoryNode::ReconQuestAccepted));
-	TestTrue(TEXT("Recon quest is accepted after first sailing"),
+	TestTrue(TEXT("Recon quest completes directly from GameStarted"),
 		Facade->CompleteStoryNode(EStoryNode::ReconQuestAccepted));
 	TestTrue(TEXT("A reached node remains true"),
 		Facade->IsStoryNodeReached(EStoryNode::ReconQuestAccepted));
@@ -91,21 +83,16 @@ bool FStoryFacadeFlowTest::RunTest(const FString& Parameters)
 		Facade->CompleteStoryNode(EStoryNode::CurrentGeneratorUnlocked));
 	TestTrue(TEXT("Boss 2 defeat succeeds from the same node"),
 		Facade->CompleteStoryNode(EStoryNode::MiddleBoss2Defeated));
-
-	TestFalse(TEXT("Suppression quest also needs the independent cipher book branch"),
+	TestTrue(TEXT("Suppression quest can complete directly after Boss 2 defeat"),
 		Facade->CompleteStoryNode(EStoryNode::SuppressJapaneseForcesQuestAccepted));
-	TestTrue(TEXT("Cipher book can be acquired from its independent branch"),
-		Facade->CompleteStoryNode(EStoryNode::CipherBookAcquired));
-	TestTrue(TEXT("Both arrows now allow the suppression quest"),
-		Facade->CompleteStoryNode(EStoryNode::SuppressJapaneseForcesQuestAccepted));
-	TestTrue(TEXT("Storm unlock succeeds"),
-		Facade->CompleteStoryNode(EStoryNode::StormUnlocked));
+	TestTrue(TEXT("Water Bomb unlock succeeds"),
+		Facade->CompleteStoryNode(EStoryNode::WaterBombUnlocked));
 	TestTrue(TEXT("Boss 3 defeat succeeds"),
 		Facade->CompleteStoryNode(EStoryNode::MiddleBoss3Defeated));
 	TestTrue(TEXT("Uldolmok battle quest is accepted"),
 		Facade->CompleteStoryNode(EStoryNode::UldolmokBattleQuestAccepted));
-	TestTrue(TEXT("Flamethrower unlock succeeds"),
-		Facade->CompleteStoryNode(EStoryNode::FlamethrowerUnlocked));
+	TestTrue(TEXT("Bombardment unlock succeeds"),
+		Facade->CompleteStoryNode(EStoryNode::BombardmentUnlocked));
 	TestTrue(TEXT("Final boss defeat succeeds"),
 		Facade->CompleteStoryNode(EStoryNode::FinalBossDefeated));
 	TestTrue(TEXT("Ending dialogue completes the campaign"),

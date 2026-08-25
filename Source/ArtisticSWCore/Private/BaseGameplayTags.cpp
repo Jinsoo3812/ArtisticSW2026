@@ -22,6 +22,7 @@ UE_DEFINE_GAMEPLAY_TAG(State_Boss_Busy, "State.Boss.Busy");
 UE_DEFINE_GAMEPLAY_TAG(State_Boss_Hidden, "State.Boss.Hidden");
 UE_DEFINE_GAMEPLAY_TAG(State_Boss_Dashing, "State.Boss.Dashing");
 UE_DEFINE_GAMEPLAY_TAG(State_CrowdControl_Knockback, "State.CrowdControl.Knockback");
+UE_DEFINE_GAMEPLAY_TAG(State_Buff_MoveSpeed, "State.Buff.MoveSpeed");
 
 // Team
 UE_DEFINE_GAMEPLAY_TAG(Team_Player, "Team.Player");
@@ -47,10 +48,14 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_DeployObstacle, "GameplayAbilit
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_TimeStop, "GameplayAbility.EnemyShip.TimeStop");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_Knockback, "GameplayAbility.Boss.Knockback");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_Vanish, "GameplayAbility.Boss.Vanish");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_VanishV2, "GameplayAbility.Boss.VanishV2");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_DashSlash, "GameplayAbility.Boss.DashSlash");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Enemy_Buff_MoveSpeed, "GameplayAbility.Enemy.Buff.MoveSpeed");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Enemy_BasicAttack, "Cooldown.Enemy.BasicAttack");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_Enemy_Buff_MoveSpeed, "Cooldown.Enemy.Buff.MoveSpeed");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_Knockback, "Cooldown.Boss.Knockback");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_Vanish, "Cooldown.Boss.Vanish");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_VanishV2, "Cooldown.Boss.VanishV2");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_DashSlash, "Cooldown.Boss.DashSlash");
 UE_DEFINE_GAMEPLAY_TAG(State_EnemyShip_Charging, "State.EnemyShip.Charging");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_Charge, "Cooldown.EnemyShip.Charge");
@@ -58,6 +63,7 @@ UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_LaunchTorpedo, "Cooldown.EnemyShip.Lau
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_DeployObstacle, "Cooldown.EnemyShip.DeployObstacle");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_TimeStop, "Cooldown.EnemyShip.TimeStop");
 // GameplayCue
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Enemy_Hit, "GameplayCue.Enemy.Hit");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Boss_Attack, "GameplayCue.Boss.Attack");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Boss_Hit, "GameplayCue.Boss.Hit");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact, "GameplayCue.Impact");
@@ -77,6 +83,7 @@ UE_DEFINE_GAMEPLAY_TAG(Event_Boss_Dash_SlashFinished, "Event.Boss.Dash.SlashFini
 UE_DEFINE_GAMEPLAY_TAG(Event_ActivateAbility_Equip, "Event.ActivateAbility.Equip");
 UE_DEFINE_GAMEPLAY_TAG(Event_Montage_ThrowGrenade, "Event.Montage.ThrowGrenade");
 UE_DEFINE_GAMEPLAY_TAG(Event_Montage_FireArrow, "Event.Montage.FireArrow");
+UE_DEFINE_GAMEPLAY_TAG(Event_Montage_NockArrow, "Event.Montage.NockArrow");
 // Data
 UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");
 UE_DEFINE_GAMEPLAY_TAG(Data_Heal, "Data.Heal");
@@ -84,6 +91,7 @@ UE_DEFINE_GAMEPLAY_TAG(Data_AttackCoefficient, "Data.AttackCoefficient");
 UE_DEFINE_GAMEPLAY_TAG(Data_ChargeMultiplier, "Data.ChargeMultiplier");
 UE_DEFINE_GAMEPLAY_TAG(Data_StrengthBonus, "Data.StrengthBonus");
 UE_DEFINE_GAMEPLAY_TAG(Data_Effect_AttackSpeedMultiplier, "Data.Effect.AttackSpeedMultiplier");
+UE_DEFINE_GAMEPLAY_TAG(Data_Effect_MoveSpeedBonus, "Data.Effect.MoveSpeedBonus");
 
 
 /* Keyboard Input */
@@ -270,3 +278,22 @@ UE_DEFINE_GAMEPLAY_TAG(Interaction_Craft, "Interaction.Craft");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_ShipBoard, "Interaction.ShipBoard");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_CannonBoard, "Interaction.CannonBoard");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_Dialogue, "Interaction.Dialogue");
+
+/* Enemy type */
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Human_Test0, "Enemy.Type.Human.Test0");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Human_Test1, "Enemy.Type.Human.Test1");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Ship_Test0, "Enemy.Type.Ship.Test0");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Ship_Test1, "Enemy.Type.Ship.Test1");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Ship_Test2, "Enemy.Type.Ship.Test2");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Boss_Mid1, "Enemy.Type.Boss.Mid1");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Boss_Mid2, "Enemy.Type.Boss.Mid2");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Boss_Mid3, "Enemy.Type.Boss.Mid3");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Boss_Final, "Enemy.Type.Boss.Final");
+
+/* Quest Items */
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest, "Item.Quest");
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest_InvasionMap, "Item.Quest.InvasionMap");
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest_CipherBook, "Item.Quest.CipherBook");
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest_JapaneseCipher, "Item.Quest.JapaneseCipher");
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest_DecipheredCipher, "Item.Quest.DecipheredCipher");
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest_AirRaidInfo, "Item.Quest.AirRaidInfo");

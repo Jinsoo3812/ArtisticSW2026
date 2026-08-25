@@ -3,6 +3,7 @@
 #include "CollisionChannels.h"
 #include "DrawDebugHelpers.h"
 #include "Item/Weapons/BowItem.h"
+#include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 
@@ -18,6 +19,7 @@ void UBowComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 
 	DOREPLIFETIME(UBowComponent, bIsAiming);
 	DOREPLIFETIME(UBowComponent, DrawAlpha);
+	DOREPLIFETIME(UBowComponent, bArrowNocked);
 }
 
 void UBowComponent::SetAiming(bool bNewAiming)
@@ -29,11 +31,6 @@ void UBowComponent::SetAiming(bool bNewAiming)
 
 	bIsAiming = bNewAiming;
 	OnAimStateChanged.Broadcast(bIsAiming);
-
-	if (GetOwner() && !GetOwner()->HasAuthority())
-	{
-		ServerSetAiming(bNewAiming);
-	}
 }
 
 void UBowComponent::SetDrawAlpha(float NewDrawAlpha)
@@ -46,11 +43,6 @@ void UBowComponent::SetDrawAlpha(float NewDrawAlpha)
 
 	DrawAlpha = ClampedDrawAlpha;
 	OnDrawAlphaChanged.Broadcast(DrawAlpha);
-
-	if (GetOwner() && !GetOwner()->HasAuthority())
-	{
-		ServerSetDrawAlpha(DrawAlpha);
-	}
 }
 
 float UBowComponent::GetCurrentFireSpeed() const
@@ -58,14 +50,53 @@ float UBowComponent::GetCurrentFireSpeed() const
 	return FMath::Lerp(MinFireSpeed, MaxFireSpeed, DrawAlpha);
 }
 
-FTransform UBowComponent::BuildArrowSpawnTransform() const
+bool UBowComponent::TryBuildArrowSpawnTransform(FTransform& OutSpawnTransform) const
 {
-	if (const ABowItem* Bow = GetOwningBow())
+	OutSpawnTransform = FTransform::Identity;
+	const ABowItem* Bow = GetOwningBow();
+	return Bow && Bow->TryGetArrowSpawnTransform(OutSpawnTransform);
+}
+
+void UBowComponent::SetArrowNocked(bool bNewArrowNocked)
+{
+	AActor* BowActor = GetOwner();
+	if (!BowActor)
 	{
-		return Bow->GetArrowSpawnTransform();
+		return;
 	}
 
-	return GetOwner() ? GetOwner()->GetActorTransform() : FTransform::Identity;
+	if (!BowActor->HasAuthority())
+	{
+		if (!IsLocallyControlledOwner())
+		{
+			return;
+		}
+
+		bPredictedArrowNocked = bNewArrowNocked;
+		ApplyArrowNockedPresentation();
+		return;
+	}
+
+	if (bArrowNocked == bNewArrowNocked)
+	{
+		ApplyArrowNockedPresentation();
+		return;
+	}
+
+	bArrowNocked = bNewArrowNocked;
+	ApplyArrowNockedPresentation();
+
+	// The montage notify executes on both the owning client and authority. Do not add an
+	// item-owned RPC: legacy inventory items do not consistently establish a controller chain.
+	BowActor->ForceNetUpdate();
+}
+
+bool UBowComponent::IsArrowNocked() const
+{
+	const AActor* BowActor = GetOwner();
+	return BowActor && !BowActor->HasAuthority() && IsLocallyControlledOwner()
+		? bPredictedArrowNocked
+		: bArrowNocked;
 }
 
 bool UBowComponent::CalculateAim(const FVector& ViewLocation, const FVector& ViewForward, const TArray<AActor*>& ActorsToIgnore, FBowAimResult& OutAimResult) const
@@ -79,7 +110,12 @@ bool UBowComponent::CalculateAim(const FVector& ViewLocation, const FVector& Vie
 	OutAimResult.CameraTraceStart = ViewLocation;
 	OutAimResult.CameraTraceEnd = ViewLocation + AimDirection * AimTraceDistance;
 	OutAimResult.CameraAimTarget = OutAimResult.CameraTraceEnd;
-	OutAimResult.SocketTraceStart = BuildArrowSpawnTransform().GetLocation();
+	FTransform ArrowSpawnTransform;
+	if (!TryBuildArrowSpawnTransform(ArrowSpawnTransform))
+	{
+		return false;
+	}
+	OutAimResult.SocketTraceStart = ArrowSpawnTransform.GetLocation();
 	OutAimResult.SocketTraceEnd = OutAimResult.CameraAimTarget;
 	OutAimResult.TraceStart = OutAimResult.SocketTraceStart;
 	OutAimResult.TraceEnd = OutAimResult.SocketTraceEnd;
@@ -239,16 +275,6 @@ void UBowComponent::DrawServerFireDebug(const FVector& SpawnLocation, const FVec
 	}
 }
 
-void UBowComponent::ServerSetAiming_Implementation(bool bNewAiming)
-{
-	SetAiming(bNewAiming);
-}
-
-void UBowComponent::ServerSetDrawAlpha_Implementation(float NewDrawAlpha)
-{
-	SetDrawAlpha(NewDrawAlpha);
-}
-
 void UBowComponent::OnRep_IsAiming()
 {
 	OnAimStateChanged.Broadcast(bIsAiming);
@@ -257,6 +283,30 @@ void UBowComponent::OnRep_IsAiming()
 void UBowComponent::OnRep_DrawAlpha()
 {
 	OnDrawAlphaChanged.Broadcast(DrawAlpha);
+}
+
+void UBowComponent::OnRep_ArrowNocked()
+{
+	ApplyArrowNockedPresentation();
+}
+
+void UBowComponent::ApplyArrowNockedPresentation()
+{
+	if (ABowItem* Bow = GetOwningBow())
+	{
+		Bow->SetNockedArrowVisible(IsArrowNocked());
+	}
+}
+
+bool UBowComponent::IsLocallyControlledOwner() const
+{
+	const AActor* BowActor = GetOwner();
+	const APawn* OwningPawn = BowActor ? Cast<APawn>(BowActor->GetOwner()) : nullptr;
+	if (!OwningPawn && BowActor)
+	{
+		OwningPawn = Cast<APawn>(BowActor->GetAttachParentActor());
+	}
+	return OwningPawn && OwningPawn->IsLocallyControlled();
 }
 
 ABowItem* UBowComponent::GetOwningBow() const

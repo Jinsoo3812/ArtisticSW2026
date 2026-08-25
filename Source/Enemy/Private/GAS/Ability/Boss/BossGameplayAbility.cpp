@@ -5,6 +5,7 @@
 #include "BaseGameplayTags.h"
 #include "BossAI/ShipBossEnemy.h"
 #include "GASCombatLibrary.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 
 UBossAbilityCooldownEffect::UBossAbilityCooldownEffect()
 {
@@ -135,11 +136,14 @@ bool UBossGameplayAbility::ApplyDamageToTarget(
 	{
 		return false;
 	}
+	FGameplayEffectSpec TargetSpec(*Spec.Data.Get());
+	USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
+		TargetSpec, Boss, Boss, Target, HitResult);
 	if (ImpactGameplayCueTag.IsValid())
 	{
-		Spec.Data->AddDynamicAssetTag(ImpactGameplayCueTag);
+		TargetSpec.AddDynamicAssetTag(ImpactGameplayCueTag);
 	}
-	TargetASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+	TargetASC->ApplyGameplayEffectSpecToSelf(TargetSpec);
 	return true;
 }
 
@@ -155,8 +159,9 @@ FActiveGameplayEffectHandle UBossGameplayAbility::ApplyTimedStateTag(
 		return FActiveGameplayEffectHandle();
 	}
 
-	FGameplayEffectContextHandle Context = SourceASC->MakeEffectContext();
-	Context.AddInstigator(Boss, Boss);
+	FGameplayEffectContextHandle Context =
+		USWCombatEffectContextLibrary::MakeCombatEffectContext(
+			SourceASC, Boss, Boss, TargetASC.GetAvatarActor());
 	Context.AddSourceObject(this);
 	FGameplayEffectSpecHandle Spec = SourceASC->MakeOutgoingSpec(
 		UBossAbilityStateEffect::StaticClass(),
