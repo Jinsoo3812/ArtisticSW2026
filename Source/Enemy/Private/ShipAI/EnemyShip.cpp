@@ -627,6 +627,7 @@ void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		GetWorldTimerManager().ClearTimer(DeckEnemySightDelayTimerHandle);
 		GetWorldTimerManager().ClearTimer(DeckEnemyDeploymentTimerHandle);
 		DestroyDeckEnemyPool();
+		DeckPointRuntimeStates.Reset();
 
 		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
 		{
@@ -660,6 +661,7 @@ void AEnemyShip::InitializeDeckWaypoints()
 {
 	DeckWaypointsById.Reset();
 	DeckSpawnWaypoints.Reset();
+	DeckPointRuntimeStates.Reset();
 
 	TArray<UDeckWaypointComponent*> Components;
 	GetComponents<UDeckWaypointComponent>(Components);
@@ -739,9 +741,19 @@ void AEnemyShip::InitializeDeckEnemyPool()
 	DeckEnemyPool.Reserve(PoolSize);
 	for (int32 PoolIndex = 0; PoolIndex < PoolSize; ++PoolIndex)
 	{
+		UDeckWaypointComponent* InitialWaypoint = DeckSpawnWaypoints[
+			PoolIndex % DeckSpawnWaypoints.Num()];
+		FTransform InitialTransform;
+		if (!ResolveDeckEnemySpawnTransform(InitialWaypoint, InitialTransform))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[DeckEnemyMVP] Pool actor has no valid initial deck transform. Ship=%s PoolIndex=%d"),
+				*GetName(), PoolIndex);
+			continue;
+		}
 		ADeckRangedEnemy* PooledEnemy = World->SpawnActorDeferred<ADeckRangedEnemy>(
 			DeckEnemyClass,
-			GetActorTransform(),
+			InitialTransform,
 			this,
 			nullptr,
 			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
@@ -754,7 +766,7 @@ void AEnemyShip::InitializeDeckEnemyPool()
 		}
 
 		PooledEnemy->PrepareForPool();
-		PooledEnemy->FinishSpawning(GetActorTransform());
+		PooledEnemy->FinishSpawning(InitialTransform);
 		PooledEnemy->SetHostShip(this);
 		PooledEnemy->DeactivateToPool();
 		DeckEnemyPool.Add(PooledEnemy);
@@ -827,11 +839,10 @@ void AEnemyShip::DeployNextDeckEnemy()
 		return;
 	}
 
-	ADeckRangedEnemy* Enemy = DeckEnemyPool[NextDeckEnemyPoolIndex];
 	UDeckWaypointComponent* SpawnWaypoint = SelectDeckSpawnWaypoint(NextDeckEnemyPoolIndex);
-	FTransform SpawnTransform;
-	const bool bCanActivate = IsValid(Enemy) && !Enemy->IsPoolActive()
-		&& ResolveDeckEnemySpawnTransform(SpawnWaypoint, SpawnTransform);
+	const ADeckRangedEnemy* ExpectedEnemy = DeckEnemyPool[NextDeckEnemyPoolIndex];
+	const bool bCanActivate = IsValid(ExpectedEnemy) && !ExpectedEnemy->IsPoolActive()
+		&& IsValid(SpawnWaypoint);
 
 	if (!bCanActivate)
 	{
@@ -865,10 +876,8 @@ void AEnemyShip::DeployNextDeckEnemy()
 		return;
 	}
 
-	const int32 Seed = static_cast<int32>(HashCombine(
-		static_cast<uint32>(DeckEnemyRandomSeed),
-		HashCombine(GetTypeHash(GetFName()), static_cast<uint32>(NextDeckEnemyPoolIndex))));
-	if (!Enemy->ActivateFromPool(this, SpawnTransform, SpawnWaypoint->GetWaypointId(), Seed))
+	ADeckRangedEnemy* ActivatedEnemy = nullptr;
+	if (!ActivateDeckEnemyAtPoint(SpawnWaypoint->GetWaypointId(), nullptr, ActivatedEnemy))
 	{
 		return;
 	}
@@ -892,14 +901,30 @@ bool AEnemyShip::ActivateDeckEnemyAtPoint(
 	ADeckRangedEnemy*& OutEnemy)
 {
 	OutEnemy = nullptr;
-	if (!HasAuthority() || bDeathHandled)
+	FDeckPointReservation Reservation;
+	if (!TryReserveDeckPoint(SpawnPointId, this, Reservation))
 	{
 		return false;
 	}
+	return ActivateDeckEnemyAtReservation(Reservation, InitialTarget, OutEnemy);
+}
 
-	UDeckWaypointComponent* SpawnWaypoint = GetDeckWaypoint(SpawnPointId);
+bool AEnemyShip::ActivateDeckEnemyAtReservation(
+	FDeckPointReservation& Reservation,
+	AActor* InitialTarget,
+	ADeckRangedEnemy*& OutEnemy)
+{
+	OutEnemy = nullptr;
+	if (!HasAuthority() || bDeathHandled || !Reservation.IsValid())
+	{
+		ReleaseDeckPointReservation(Reservation);
+		return false;
+	}
+
+	UDeckWaypointComponent* SpawnWaypoint = GetDeckWaypoint(Reservation.PointId);
 	if (!SpawnWaypoint || !SpawnWaypoint->CanSpawnEnemy() || !SpawnWaypoint->CanUseInCombat())
 	{
+		ReleaseDeckPointReservation(Reservation);
 		return false;
 	}
 
@@ -918,19 +943,42 @@ bool AEnemyShip::ActivateDeckEnemyAtPoint(
 	}
 	if (!Enemy || (InitialTarget && !Enemy->IsValidCombatTarget(InitialTarget)))
 	{
+		ReleaseDeckPointReservation(Reservation);
+		return false;
+	}
+
+	const int32 Seed = static_cast<int32>(HashCombine(
+		static_cast<uint32>(DeckEnemyRandomSeed),
+		HashCombine(GetTypeHash(GetFName()), static_cast<uint32>(DeckEnemyActivationSerial++))));
+	return ActivateReservedDeckEnemy(*Enemy, Reservation, InitialTarget, Seed, OutEnemy);
+}
+
+bool AEnemyShip::ActivateReservedDeckEnemy(
+	ADeckRangedEnemy& Enemy,
+	FDeckPointReservation& Reservation,
+	AActor* InitialTarget,
+	int32 RandomSeed,
+	ADeckRangedEnemy*& OutEnemy)
+{
+	OutEnemy = nullptr;
+	UDeckWaypointComponent* SpawnWaypoint = GetDeckWaypoint(Reservation.PointId);
+	if (!HasAuthority() || !SpawnWaypoint || !Reservation.IsValid())
+	{
+		ReleaseDeckPointReservation(Reservation);
 		return false;
 	}
 
 	FTransform SpawnTransform;
 	if (!ResolveDeckEnemySpawnTransform(SpawnWaypoint, SpawnTransform) || !GetWorld())
 	{
+		ReleaseDeckPointReservation(Reservation);
 		return false;
 	}
 
-	const UCapsuleComponent* Capsule = Enemy->GetCapsuleComponent();
+	const UCapsuleComponent* Capsule = Enemy.GetCapsuleComponent();
 	const float Radius = Capsule ? Capsule->GetScaledCapsuleRadius() : 42.0f;
 	const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 88.0f;
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DeckEnemySpawnClearance), false, Enemy);
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DeckEnemySpawnClearance), false, &Enemy);
 	QueryParams.AddIgnoredActor(this);
 	if (GetWorld()->OverlapBlockingTestByChannel(
 		SpawnTransform.GetLocation(),
@@ -939,26 +987,32 @@ bool AEnemyShip::ActivateDeckEnemyAtPoint(
 		FCollisionShape::MakeCapsule(Radius, HalfHeight),
 		QueryParams))
 	{
+		ReleaseDeckPointReservation(Reservation);
 		return false;
 	}
 
-	const int32 Seed = static_cast<int32>(HashCombine(
-		static_cast<uint32>(DeckEnemyRandomSeed),
-		HashCombine(GetTypeHash(GetFName()), static_cast<uint32>(DeckEnemyActivationSerial++))));
-	if (!Enemy->ActivateFromPool(this, SpawnTransform, SpawnPointId, Seed))
+	if (!Enemy.ActivateFromPool(this, Reservation.PointId, RandomSeed))
 	{
+		ReleaseDeckPointReservation(Reservation);
 		return false;
 	}
+	if (!CommitDeckPointReservation(Reservation, &Enemy))
+	{
+		Enemy.DeactivateToPool();
+		ReleaseDeckPointReservation(Reservation);
+		return false;
+	}
+	Reservation.Reset();
 
 	if (InitialTarget)
 	{
-		Enemy->SetCombatTarget(InitialTarget);
-		if (ABaseAIController* EnemyController = Cast<ABaseAIController>(Enemy->GetController()))
+		Enemy.SetCombatTarget(InitialTarget);
+		if (ABaseAIController* EnemyController = Cast<ABaseAIController>(Enemy.GetController()))
 		{
 			EnemyController->SetCombatTarget(InitialTarget);
 		}
 	}
-	OutEnemy = Enemy;
+	OutEnemy = &Enemy;
 	return true;
 }
 
@@ -974,7 +1028,7 @@ bool AEnemyShip::ResolveDeckEnemySpawnTransform(
 	const ADeckRangedEnemy* EnemyCDO = DeckEnemyClass->GetDefaultObject<ADeckRangedEnemy>();
 	const UCapsuleComponent* Capsule = EnemyCDO ? EnemyCDO->GetCapsuleComponent() : nullptr;
 	const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0f;
-	return ResolveDeckCharacterTransform(SpawnWaypoint->GetWaypointId(), HalfHeight, OutTransform);
+	return ResolveFixedDeckAnchorTransform(SpawnWaypoint->GetWaypointId(), HalfHeight, OutTransform);
 }
 
 void AEnemyShip::GenerateDeckWaypointsFromDeckMesh()
@@ -1352,9 +1406,20 @@ void AEnemyShip::ValidateDeckWaypoints()
 
 UDeckWaypointComponent* AEnemyShip::SelectDeckSpawnWaypoint(int32 DeploymentIndex) const
 {
-	return DeckSpawnWaypoints.IsEmpty()
-		? nullptr
-		: DeckSpawnWaypoints[DeploymentIndex % DeckSpawnWaypoints.Num()];
+	if (DeckSpawnWaypoints.IsEmpty())
+	{
+		return nullptr;
+	}
+	for (int32 Offset = 0; Offset < DeckSpawnWaypoints.Num(); ++Offset)
+	{
+		UDeckWaypointComponent* Candidate = DeckSpawnWaypoints[
+			(DeploymentIndex + Offset) % DeckSpawnWaypoints.Num()];
+		if (Candidate && IsDeckPointAvailable(Candidate->GetWaypointId(), this))
+		{
+			return Candidate;
+		}
+	}
+	return nullptr;
 }
 
 UDeckWaypointComponent* AEnemyShip::GetDeckWaypoint(int32 WaypointId) const
@@ -1367,6 +1432,29 @@ FVector AEnemyShip::GetDeckWaypointWorldLocation(int32 WaypointId) const
 {
 	const UDeckWaypointComponent* Waypoint = GetDeckWaypoint(WaypointId);
 	return Waypoint ? Waypoint->GetComponentLocation() : GetActorLocation();
+}
+
+bool AEnemyShip::ResolveFixedDeckAnchorTransform(
+	int32 WaypointId,
+	float CapsuleHalfHeight,
+	FTransform& OutTransform) const
+{
+	const UDeckWaypointComponent* Waypoint = GetDeckWaypoint(WaypointId);
+	if (!IsValid(Waypoint) || !ShipDeckMesh)
+	{
+		return false;
+	}
+
+	const FVector DeckUp = ShipDeckMesh->GetUpVector().GetSafeNormal();
+	FVector Forward = FVector::VectorPlaneProject(Waypoint->GetForwardVector(), DeckUp).GetSafeNormal();
+	if (Forward.IsNearlyZero())
+	{
+		Forward = ShipDeckMesh->GetForwardVector();
+	}
+	const FVector CharacterLocation = Waypoint->GetComponentLocation()
+		+ DeckUp * (FMath::Max(0.0f, CapsuleHalfHeight) + 2.0f);
+	OutTransform = FTransform(FRotationMatrix::MakeFromXZ(Forward, DeckUp).ToQuat(), CharacterLocation);
+	return !OutTransform.ContainsNaN();
 }
 
 bool AEnemyShip::ResolveDeckCharacterTransform(
@@ -1434,6 +1522,259 @@ void AEnemyShip::GetConnectedDeckWaypointIds(int32 WaypointId, TArray<int32>& Ou
 			{
 				OutWaypointIds.Add(LinkedId);
 			}
+		}
+	}
+}
+
+bool AEnemyShip::IsDeckPointAvailable(int32 WaypointId, const AActor* Requester) const
+{
+	(void)Requester;
+	if (!HasAuthority() || !GetDeckWaypoint(WaypointId))
+	{
+		return false;
+	}
+
+	const FDeckPointRuntimeState* State = DeckPointRuntimeStates.Find(WaypointId);
+	if (!State)
+	{
+		return true;
+	}
+	return !State->Occupant.IsValid() && !State->ReservedBy.IsValid();
+}
+
+void AEnemyShip::PruneDeckPointRuntimeState()
+{
+	for (auto It = DeckPointRuntimeStates.CreateIterator(); It; ++It)
+	{
+		FDeckPointRuntimeState& State = It.Value();
+		if (!State.Occupant.IsValid())
+		{
+			State.Occupant.Reset();
+		}
+		if (!State.ReservedBy.IsValid())
+		{
+			State.ReservedBy.Reset();
+			State.ReservationSerial = 0;
+		}
+		if (!State.Occupant.IsValid() && !State.ReservedBy.IsValid())
+		{
+			It.RemoveCurrent();
+		}
+	}
+}
+
+bool AEnemyShip::TryReserveDeckPoint(
+	int32 WaypointId,
+	AActor* Requester,
+	FDeckPointReservation& OutReservation)
+{
+	OutReservation.Reset();
+	if (!HasAuthority() || !IsValid(Requester) || !GetDeckWaypoint(WaypointId))
+	{
+		return false;
+	}
+
+	PruneDeckPointRuntimeState();
+	FDeckPointRuntimeState& State = DeckPointRuntimeStates.FindOrAdd(WaypointId);
+	if ((State.Occupant.IsValid() && State.Occupant.Get() != Requester)
+		|| (State.ReservedBy.IsValid() && State.ReservedBy.Get() != Requester))
+	{
+		return false;
+	}
+
+	if (State.ReservedBy.Get() == Requester && State.ReservationSerial != 0)
+	{
+		OutReservation.PointId = WaypointId;
+		OutReservation.Serial = State.ReservationSerial;
+		OutReservation.Requester = Requester;
+		return true;
+	}
+
+	uint32 Serial = NextDeckPointReservationSerial++;
+	if (Serial == 0)
+	{
+		Serial = NextDeckPointReservationSerial++;
+	}
+	State.ReservedBy = Requester;
+	State.ReservationSerial = Serial;
+	OutReservation.PointId = WaypointId;
+	OutReservation.Serial = Serial;
+	OutReservation.Requester = Requester;
+	return true;
+}
+
+bool AEnemyShip::TryReserveDeckEnemySpawnPoint(
+	const FDeckEnemySpawnRequest& Request,
+	FDeckPointReservation& OutReservation)
+{
+	OutReservation.Reset();
+	AActor* Requester = Request.Requester.Get();
+	if (!HasAuthority() || !IsValid(Requester) || !ShipDeckMesh)
+	{
+		return false;
+	}
+
+	PruneDeckPointRuntimeState();
+	const FVector DeckUp = ShipDeckMesh->GetUpVector().GetSafeNormal();
+	const AActor* Target = Request.Target.Get();
+	TArray<int32> Candidates;
+	for (const UDeckWaypointComponent* Waypoint : DeckSpawnWaypoints)
+	{
+		if (!Waypoint || !Waypoint->CanUseInCombat())
+		{
+			continue;
+		}
+		const int32 PointId = Waypoint->GetWaypointId();
+		if (PointId == Request.ExcludedPointId || !IsDeckPointAvailable(PointId, Requester))
+		{
+			continue;
+		}
+		const FVector PointLocation = Waypoint->GetComponentLocation();
+		const float RequesterDistance = FVector::VectorPlaneProject(
+			PointLocation - Requester->GetActorLocation(), DeckUp).Size();
+		const float TargetDistance = Target
+			? FVector::VectorPlaneProject(PointLocation - Target->GetActorLocation(), DeckUp).Size()
+			: TNumericLimits<float>::Max();
+		if (RequesterDistance < FMath::Max(0.0f, Request.MinimumDistanceFromRequester)
+			|| TargetDistance < FMath::Max(0.0f, Request.MinimumDistanceFromTarget))
+		{
+			continue;
+		}
+		Candidates.Add(PointId);
+	}
+
+	Candidates.Sort([this, &Request, Target](int32 LeftId, int32 RightId)
+	{
+		const bool bLeftPreferred = Request.PreferredPointIds.Contains(LeftId);
+		const bool bRightPreferred = Request.PreferredPointIds.Contains(RightId);
+		if (bLeftPreferred != bRightPreferred)
+		{
+			return bLeftPreferred;
+		}
+		if (Target)
+		{
+			const float LeftDistance = FVector::DistSquared(
+				GetDeckWaypointWorldLocation(LeftId), Target->GetActorLocation());
+			const float RightDistance = FVector::DistSquared(
+				GetDeckWaypointWorldLocation(RightId), Target->GetActorLocation());
+			if (!FMath::IsNearlyEqual(LeftDistance, RightDistance))
+			{
+				return LeftDistance > RightDistance;
+			}
+		}
+		return LeftId < RightId;
+	});
+
+	for (const int32 PointId : Candidates)
+	{
+		if (TryReserveDeckPoint(PointId, Requester, OutReservation))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool AEnemyShip::CommitDeckPointReservation(
+	const FDeckPointReservation& Reservation,
+	AActor* Occupant)
+{
+	if (!HasAuthority() || !Reservation.IsValid() || !IsValid(Occupant))
+	{
+		return false;
+	}
+	FDeckPointRuntimeState* State = DeckPointRuntimeStates.Find(Reservation.PointId);
+	if (!State || State->ReservedBy != Reservation.Requester
+		|| State->ReservationSerial != Reservation.Serial
+		|| (State->Occupant.IsValid() && State->Occupant.Get() != Occupant))
+	{
+		return false;
+	}
+	State->Occupant = Occupant;
+	State->ReservedBy.Reset();
+	State->ReservationSerial = 0;
+	return true;
+}
+
+void AEnemyShip::ReleaseDeckPointReservation(FDeckPointReservation& Reservation)
+{
+	if (HasAuthority() && Reservation.PointId != INDEX_NONE)
+	{
+		if (FDeckPointRuntimeState* State = DeckPointRuntimeStates.Find(Reservation.PointId);
+			State && State->ReservedBy == Reservation.Requester
+			&& State->ReservationSerial == Reservation.Serial)
+		{
+			State->ReservedBy.Reset();
+			State->ReservationSerial = 0;
+			if (!State->Occupant.IsValid())
+			{
+				DeckPointRuntimeStates.Remove(Reservation.PointId);
+			}
+		}
+	}
+	Reservation.Reset();
+}
+
+bool AEnemyShip::TryOccupyDeckPoint(int32 WaypointId, AActor* Occupant)
+{
+	if (!HasAuthority() || !IsValid(Occupant) || !GetDeckWaypoint(WaypointId))
+	{
+		return false;
+	}
+	PruneDeckPointRuntimeState();
+	FDeckPointRuntimeState& State = DeckPointRuntimeStates.FindOrAdd(WaypointId);
+	if ((State.Occupant.IsValid() && State.Occupant.Get() != Occupant)
+		|| (State.ReservedBy.IsValid() && State.ReservedBy.Get() != Occupant))
+	{
+		return false;
+	}
+	State.Occupant = Occupant;
+	if (State.ReservedBy.Get() == Occupant)
+	{
+		State.ReservedBy.Reset();
+		State.ReservationSerial = 0;
+	}
+	return true;
+}
+
+void AEnemyShip::ReleaseDeckPointOccupancy(int32 WaypointId, AActor* Occupant)
+{
+	if (!HasAuthority() || !IsValid(Occupant))
+	{
+		return;
+	}
+	if (FDeckPointRuntimeState* State = DeckPointRuntimeStates.Find(WaypointId);
+		State && State->Occupant.Get() == Occupant)
+	{
+		State->Occupant.Reset();
+		if (!State->ReservedBy.IsValid())
+		{
+			DeckPointRuntimeStates.Remove(WaypointId);
+		}
+	}
+}
+
+void AEnemyShip::ReleaseAllDeckPointsFor(AActor* Actor)
+{
+	if (!HasAuthority() || !Actor)
+	{
+		return;
+	}
+	for (auto It = DeckPointRuntimeStates.CreateIterator(); It; ++It)
+	{
+		FDeckPointRuntimeState& State = It.Value();
+		if (State.Occupant.Get() == Actor)
+		{
+			State.Occupant.Reset();
+		}
+		if (State.ReservedBy.Get() == Actor)
+		{
+			State.ReservedBy.Reset();
+			State.ReservationSerial = 0;
+		}
+		if (!State.Occupant.IsValid() && !State.ReservedBy.IsValid())
+		{
+			It.RemoveCurrent();
 		}
 	}
 }

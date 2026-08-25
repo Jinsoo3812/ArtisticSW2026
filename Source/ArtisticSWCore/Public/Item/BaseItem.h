@@ -20,6 +20,9 @@ class USceneComponent;
 class UAbilitySystemComponent;
 class UGameplayEffect;
 class UWeaponFeedbackComponent;
+class ABaseItem;
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FBaseItemInitializedSignature, ABaseItem*);
 
 UENUM(BlueprintType)
 enum class EItemState : uint8
@@ -66,7 +69,12 @@ public:
 	const FItemDefinition* GetDefinitionFromSubsystem() const;
 
 	// DA로부터 가져온 본인의 정의 구조체
-	const FItemDefinition* MyDefinition;
+	const FItemDefinition* MyDefinition = nullptr;
+
+	/** Fires after ItemTag-driven local initialization, including OnRep_ItemTag on clients. */
+	FBaseItemInitializedSignature OnItemInitialized;
+
+	bool IsItemInitialized() const { return MyDefinition != nullptr; }
 
 	void SetItemState(EItemState NewState);
 

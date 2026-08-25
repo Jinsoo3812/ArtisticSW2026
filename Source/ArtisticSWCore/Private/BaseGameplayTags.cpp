@@ -83,6 +83,7 @@ UE_DEFINE_GAMEPLAY_TAG(Event_Boss_Dash_SlashFinished, "Event.Boss.Dash.SlashFini
 UE_DEFINE_GAMEPLAY_TAG(Event_ActivateAbility_Equip, "Event.ActivateAbility.Equip");
 UE_DEFINE_GAMEPLAY_TAG(Event_Montage_ThrowGrenade, "Event.Montage.ThrowGrenade");
 UE_DEFINE_GAMEPLAY_TAG(Event_Montage_FireArrow, "Event.Montage.FireArrow");
+UE_DEFINE_GAMEPLAY_TAG(Event_Montage_NockArrow, "Event.Montage.NockArrow");
 // Data
 UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");
 UE_DEFINE_GAMEPLAY_TAG(Data_Heal, "Data.Heal");

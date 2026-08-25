@@ -54,6 +54,7 @@ void UGA_BowAimFire::ActivateAbility(
 	RemoveBowStateTags();
 	CachedBowComponent->SetAiming(true);
 	CachedBowComponent->SetDrawAlpha(0.0f);
+	CachedBowComponent->SetArrowNocked(false);
 
 	UAbilityTask_WaitInputRelease* WaitRightReleaseTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this, true);
 	if (WaitRightReleaseTask)
@@ -81,6 +82,13 @@ void UGA_BowAimFire::ActivateAbility(
 	{
 		WaitFireArrowTask->EventReceived.AddDynamic(this, &UGA_BowAimFire::OnReleaseFireEvent);
 		WaitFireArrowTask->ReadyForActivation();
+	}
+
+	UAbilityTask_WaitGameplayEvent* WaitNockArrowTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, Event_Montage_NockArrow, nullptr, false, true);
+	if (WaitNockArrowTask)
+	{
+		WaitNockArrowTask->EventReceived.AddDynamic(this, &UGA_BowAimFire::OnNockArrowEvent);
+		WaitNockArrowTask->ReadyForActivation();
 	}
 }
 
@@ -124,12 +132,27 @@ void UGA_BowAimFire::OnLeftClickPressed(FGameplayEventData Payload)
 		}
 	}
 
+	const ABasePlayer* AvatarPlayer = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+	FTransform ArrowSpawnTransform;
+	if (AvatarPlayer && AvatarPlayer->HasAuthority()
+		&& !CachedBowComponent->TryBuildArrowSpawnTransform(ArrowSpawnTransform))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UGA_BowAimFire::OnLeftClickPressed: Bow %s is missing required socket %s."),
+			*GetNameSafe(CachedBow),
+			CachedBow ? *CachedBow->GetCharacterArrowSocketName().ToString() : TEXT("Arrow_socket"));
+		return;
+	}
+	AcquireServerPoseRefresh();
+
 	bIsDrawing = true;
 	bIsFullyDrawn = false;
 	bIsReleaseInProgress = false;
 	bHasFiredCurrentShot = false;
+	bHasReceivedNockNotify = false;
 	DrawStartTime = GetWorld()->GetTimeSeconds();
 	CachedBowComponent->SetDrawAlpha(0.0f);
+	CachedBowComponent->SetArrowNocked(false);
 
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
@@ -393,9 +416,22 @@ void UGA_BowAimFire::OnReleaseFireEvent(FGameplayEventData Payload)
 	if (CachedBowComponent)
 	{
 		CachedBowComponent->SetDrawAlpha(0.0f);
+		CachedBowComponent->SetArrowNocked(false);
 	}
 
 	FireArrow(ReleasePayload);
+}
+
+void UGA_BowAimFire::OnNockArrowEvent(FGameplayEventData Payload)
+{
+	if (!IsActive() || !CachedBowComponent || bIsReleaseInProgress
+		|| (!bIsDrawing && !bIsFullyDrawn))
+	{
+		return;
+	}
+
+	bHasReceivedNockNotify = true;
+	CachedBowComponent->SetArrowNocked(true);
 }
 
 void UGA_BowAimFire::OnReleaseMontageCompleted()
@@ -437,7 +473,22 @@ void UGA_BowAimFire::OnAimCycleMontageInterrupted()
 void UGA_BowAimFire::FireArrow(const FGameplayEventData& Payload)
 {
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
-	if (bHasFiredCurrentShot || !bIsFullyDrawn || !Player || !Player->HasAuthority() || !CachedBow || !CachedBowComponent)
+	if (bHasFiredCurrentShot || !bIsFullyDrawn
+		|| !Player || !CachedBow || !CachedBowComponent)
+	{
+		return;
+	}
+	if (!bHasReceivedNockNotify)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UGA_BowAimFire::FireArrow: Event.Montage.NockArrow was not received; shot rejected."));
+		return;
+	}
+
+	// Presentation is predicted on the owning client and repeated authoritatively on the server.
+	// Only the server continues into projectile creation.
+	CachedBowComponent->SetArrowNocked(false);
+	if (!Player->HasAuthority())
 	{
 		return;
 	}
@@ -449,7 +500,15 @@ void UGA_BowAimFire::FireArrow(const FGameplayEventData& Payload)
 		return;
 	}
 
-	FTransform SpawnTransform = CachedBowComponent->BuildArrowSpawnTransform();
+	FTransform SpawnTransform;
+	if (!CachedBowComponent->TryBuildArrowSpawnTransform(SpawnTransform))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UGA_BowAimFire::FireArrow: Bow %s is missing required socket %s. Arrow will not fire."),
+			*GetNameSafe(CachedBow),
+			*CachedBow->GetCharacterArrowSocketName().ToString());
+		return;
+	}
 	const FVector SpawnLocation = SpawnTransform.GetLocation();
 
 	FVector AimTarget;
@@ -529,6 +588,7 @@ void UGA_BowAimFire::FireArrow(const FGameplayEventData& Payload)
 	if (CachedBowComponent)
 	{
 		CachedBowComponent->SetDrawAlpha(0.0f);
+		CachedBowComponent->SetArrowNocked(false);
 	}
 }
 
@@ -563,11 +623,13 @@ void UGA_BowAimFire::FinishShot()
 	bIsFullyDrawn = false;
 	bIsReleaseInProgress = false;
 	bHasFiredCurrentShot = false;
+	bHasReceivedNockNotify = false;
 	ReleasePayload = FGameplayEventData();
 
 	if (CachedBowComponent)
 	{
 		CachedBowComponent->SetDrawAlpha(0.0f);
+		CachedBowComponent->SetArrowNocked(false);
 	}
 
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
@@ -575,6 +637,7 @@ void UGA_BowAimFire::FinishShot()
 		ASC->RemoveLooseGameplayTag(State_Attacking);
 	}
 	RemoveBowStateTags();
+	ReleaseServerPoseRefresh();
 }
 
 void UGA_BowAimFire::ResetBowState()
@@ -589,14 +652,41 @@ void UGA_BowAimFire::ResetBowState()
 	bIsFullyDrawn = false;
 	bIsReleaseInProgress = false;
 	bHasFiredCurrentShot = false;
+	bHasReceivedNockNotify = false;
 	ReleasePayload = FGameplayEventData();
 
 	if (CachedBowComponent)
 	{
 		CachedBowComponent->SetDrawAlpha(0.0f);
 		CachedBowComponent->SetAiming(false);
+		CachedBowComponent->SetArrowNocked(false);
 	}
 	RemoveBowStateTags();
+	ReleaseServerPoseRefresh();
+}
+
+void UGA_BowAimFire::AcquireServerPoseRefresh()
+{
+	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+	if (!bOwnsServerPoseRefresh && Player && Player->HasAuthority())
+	{
+		Player->AcquireServerCombatPoseRefresh();
+		bOwnsServerPoseRefresh = true;
+	}
+}
+
+void UGA_BowAimFire::ReleaseServerPoseRefresh()
+{
+	if (!bOwnsServerPoseRefresh)
+	{
+		return;
+	}
+
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
+	{
+		Player->ReleaseServerCombatPoseRefresh();
+	}
+	bOwnsServerPoseRefresh = false;
 }
 
 bool UGA_BowAimFire::CacheBowFromAvatar()

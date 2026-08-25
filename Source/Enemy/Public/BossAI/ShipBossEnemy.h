@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "BaseEnemy.h"
+#include "DeckAI/DeckPointReservation.h"
 #include "DeckAI/DeckWaypointMovementInterface.h"
 #include "ShipBossEnemy.generated.h"
 
@@ -42,7 +43,9 @@ public:
 	int32 GetDestinationPointId() const { return DestinationPointId; }
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Point")
-	void SetDestinationPointId(int32 NewPointId) { DestinationPointId = NewPointId; }
+	void SetDestinationPointId(int32 NewPointId);
+
+	bool TrySetDestinationPointId(int32 NewPointId);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Point")
 	void MarkDestinationReached();
@@ -144,6 +147,7 @@ protected:
 	TArray<TWeakObjectPtr<ADeckRangedEnemy>> SummonedDeckEnemies;
 
 	double NextSummonAllowedTime = 0.0;
+	FDeckPointReservation DestinationReservation;
 
 	ECollisionEnabled::Type InitialCapsuleCollision = ECollisionEnabled::QueryAndPhysics;
 	bool bHiddenRelocationActive = false;
