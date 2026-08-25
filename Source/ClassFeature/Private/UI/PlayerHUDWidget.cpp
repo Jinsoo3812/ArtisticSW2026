@@ -29,6 +29,10 @@
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "Components/StaticMeshComponent.h"
 
 #include "BaseGameplayTags.h"
 
@@ -119,12 +123,7 @@ void UPlayerHUDWidget::NativeConstruct()
 			this, &UPlayerHUDWidget::HandlePossessedPawnChanged);
 		BoundPossessionController = PlayerController;
 		BindSkillStateSource(PlayerController->GetPawn());
-		RefreshShipHealthSource(PlayerController->GetPawn());
-	}
-
-	if (HealthBarWidget)
-	{
-		HealthBarWidget->SetShipHealthVisible(true);
+		RefreshShipHealthContext(PlayerController->GetPawn());
 	}
 }
 
@@ -168,6 +167,13 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
 	RefreshCursorItemWidget();
+
+	ShipPresenceCheckAccumulator += InDeltaTime;
+	if (ShipPresenceCheckAccumulator >= FMath::Max(0.01f, ShipPresenceCheckInterval))
+	{
+		ShipPresenceCheckAccumulator = 0.0f;
+		RefreshShipHealthContext(GetOwningPlayerPawn());
+	}
 }
 
 void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
@@ -214,7 +220,7 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 		InventoryPanelWidget->InitializeForPlayer(CachedPlayer.Get());
 	}
 	RefreshHealth();
-	RefreshShipHealthSource(GetOwningPlayerPawn());
+	RefreshShipHealthContext(GetOwningPlayerPawn());
 	RefreshShipHealth();
 	RefreshBowCrosshairBinding();
 }
@@ -439,7 +445,7 @@ void UPlayerHUDWidget::RefreshEquippedSkillBorders()
 void UPlayerHUDWidget::HandlePossessedPawnChanged(APawn*, APawn* NewPawn)
 {
 	BindSkillStateSource(NewPawn);
-	RefreshShipHealthSource(NewPawn);
+	RefreshShipHealthContext(NewPawn);
 }
 
 void UPlayerHUDWidget::HandleSkillActiveStateChanged(bool)
@@ -500,26 +506,49 @@ void UPlayerHUDWidget::RefreshHealth()
 	);
 }
 
-void UPlayerHUDWidget::RefreshShipHealthSource(APawn* ControlledPawn)
+void UPlayerHUDWidget::RefreshShipHealthContext(APawn* ControlledPawn)
 {
-	AShip* Ship = Cast<AShip>(ControlledPawn);
-	if (!Ship)
+	if (!HealthBarWidget)
 	{
-		if (ACannon* Cannon = Cast<ACannon>(ControlledPawn))
+		return;
+	}
+
+	if (AShip* ControlledShip = Cast<AShip>(ControlledPawn))
+	{
+		BindShipHealthSource(ControlledShip);
+		HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::ShipPrimaryWithPlayerSecondary);
+		return;
+	}
+
+	if (ACannon* ControlledCannon = Cast<ACannon>(ControlledPawn))
+	{
+		if (AShip* OwningShip = ControlledCannon->GetOwningShip())
 		{
-			Ship = Cannon->GetOwningShip();
+			BindShipHealthSource(OwningShip);
+			HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::PlayerPrimaryWithShipSecondary);
+			return;
 		}
 	}
 
-	// Keep the last controlled ship visible after returning possession to the player.
-	if (Ship)
+	bool bHasWalkableFloor = false;
+	if (AShip* FloorShip = ResolveShipFromFloor(ControlledPawn, bHasWalkableFloor))
 	{
-		BindShipHealthSource(Ship);
+		BindShipHealthSource(FloorShip);
+		HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::PlayerPrimaryWithShipSecondary);
+		return;
 	}
-	else
+
+	AShip* LastShip = CachedShipHealthSource.Get();
+	if (!bHasWalkableFloor && IsValid(LastShip)
+		&& !IsBeyondShipHealthHideDistance(ControlledPawn, LastShip))
 	{
+		HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::PlayerPrimaryWithShipSecondary);
 		RefreshShipHealth();
+		return;
 	}
+
+	UnbindShipHealthSource();
+	HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::PlayerOnly);
 }
 
 void UPlayerHUDWidget::BindShipHealthSource(AShip* Ship)
@@ -579,7 +608,6 @@ void UPlayerHUDWidget::RefreshShipHealth()
 		return;
 	}
 
-	HealthBarWidget->SetShipHealthVisible(true);
 	AShip* Ship = CachedShipHealthSource.Get();
 	UAbilitySystemComponent* ShipAbilitySystem = Ship ? Ship->GetAbilitySystemComponent() : nullptr;
 	if (!ShipAbilitySystem)
@@ -591,6 +619,94 @@ void UPlayerHUDWidget::RefreshShipHealth()
 	HealthBarWidget->SetShipHealthValues(
 		ShipAbilitySystem->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()),
 		ShipAbilitySystem->GetNumericAttribute(UBaseAttributeSet::GetMaxHealthAttribute()));
+}
+
+AShip* UPlayerHUDWidget::ResolveShipFromFloor(APawn* ControlledPawn, bool& bOutHasWalkableFloor) const
+{
+	bOutHasWalkableFloor = false;
+	const ACharacter* Character = Cast<ACharacter>(ControlledPawn);
+	const UCharacterMovementComponent* Movement = Character ? Character->GetCharacterMovement() : nullptr;
+	if (!Movement)
+	{
+		return nullptr;
+	}
+
+	if (Movement->IsMovingOnGround())
+	{
+		if (UPrimitiveComponent* MovementBase = Movement->GetMovementBase())
+		{
+			bOutHasWalkableFloor = true;
+			if (AShip* Ship = ResolveShipFromComponent(MovementBase))
+			{
+				return Ship;
+			}
+		}
+
+		if (Movement->CurrentFloor.IsWalkableFloor())
+		{
+			bOutHasWalkableFloor = true;
+			return ResolveShipFromComponent(Movement->CurrentFloor.HitResult.GetComponent());
+		}
+	}
+
+	return nullptr;
+}
+
+AShip* UPlayerHUDWidget::ResolveShipFromComponent(const UPrimitiveComponent* Component) const
+{
+	AActor* Candidate = Component ? Component->GetOwner() : nullptr;
+	TSet<const AActor*> VisitedActors;
+	while (IsValid(Candidate) && !VisitedActors.Contains(Candidate))
+	{
+		VisitedActors.Add(Candidate);
+		if (AShip* Ship = Cast<AShip>(Candidate))
+		{
+			return Ship;
+		}
+		if (ACannon* Cannon = Cast<ACannon>(Candidate))
+		{
+			if (AShip* Ship = Cannon->GetOwningShip())
+			{
+				return Ship;
+			}
+		}
+
+		AActor* NextCandidate = Candidate->GetAttachParentActor();
+		if (!NextCandidate)
+		{
+			NextCandidate = Candidate->GetParentActor();
+		}
+		if (!NextCandidate)
+		{
+			NextCandidate = Candidate->GetOwner();
+		}
+		Candidate = NextCandidate;
+	}
+
+	return nullptr;
+}
+
+bool UPlayerHUDWidget::IsBeyondShipHealthHideDistance(const APawn* ControlledPawn, const AShip* Ship) const
+{
+	if (!IsValid(ControlledPawn) || !IsValid(Ship))
+	{
+		return true;
+	}
+
+	FBox ShipDeckBounds(ForceInit);
+	if (const UStaticMeshComponent* ShipDeckMesh = Ship->GetShipDeckMesh())
+	{
+		ShipDeckBounds = ShipDeckMesh->Bounds.GetBox();
+	}
+	if (!ShipDeckBounds.IsValid)
+	{
+		ShipDeckBounds = Ship->GetComponentsBoundingBox(true);
+	}
+
+	const float DistanceSquared = ShipDeckBounds.IsValid
+		? ShipDeckBounds.ComputeSquaredDistanceToPoint(ControlledPawn->GetActorLocation())
+		: FVector::DistSquared(ControlledPawn->GetActorLocation(), Ship->GetActorLocation());
+	return DistanceSquared > FMath::Square(FMath::Max(0.0f, ShipHealthWaterHideDistance));
 }
 
 void UPlayerHUDWidget::HandleShipHealthChanged(const FOnAttributeChangeData&)

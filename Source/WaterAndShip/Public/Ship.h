@@ -824,6 +824,9 @@ public:
 	/** Returns FollowCamera subobject */
 	FORCEINLINE UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 
+	/** Returns the query-and-physics deck used by character floor detection. */
+	FORCEINLINE UStaticMeshComponent* GetShipDeckMesh() const { return ShipDeckMesh; }
+
 	/** Resets camera to follow mode (called when disembarking) */
 	void ResetToFollowCamera();
 

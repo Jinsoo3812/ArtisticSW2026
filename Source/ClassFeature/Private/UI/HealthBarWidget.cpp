@@ -4,7 +4,26 @@
 
 #include "Components/ProgressBar.h"
 #include "Components/Image.h"
+#include "Components/Overlay.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
+
+void UHealthBarWidget::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+	ApplyHealthBarDisplayMode();
+
+	if (IsDesignTime())
+	{
+		if (SecondaryHealthContainer)
+		{
+			SecondaryHealthContainer->SetVisibility(ESlateVisibility::HitTestInvisible);
+		}
+
+		SetShipWidgetsVisibility(ESlateVisibility::HitTestInvisible);
+	}
+}
 
 void UHealthBarWidget::SetHealthValues(float CurrentHealth, float MaxHealth)
 {
@@ -24,21 +43,21 @@ void UHealthBarWidget::SetShipHealthValues(float CurrentHealth, float MaxHealth)
 
 void UHealthBarWidget::SetShipHealthVisible(bool bVisible)
 {
-	const ESlateVisibility ShipVisibility = bVisible
-		? ESlateVisibility::HitTestInvisible
-		: ESlateVisibility::Collapsed;
+	SetHealthBarDisplayMode(
+		bVisible
+			? EHealthBarDisplayMode::PlayerPrimaryWithShipSecondary
+			: EHealthBarDisplayMode::PlayerOnly);
+}
 
-	if (ShipHealthProgressBar)
+void UHealthBarWidget::SetHealthBarDisplayMode(EHealthBarDisplayMode NewDisplayMode)
+{
+	if (HealthBarDisplayMode == NewDisplayMode)
 	{
-		ShipHealthProgressBar->SetVisibility(ShipVisibility);
+		return;
 	}
-	if (ShipHealthText)
-	{
-		ShipHealthText->SetVisibility(
-			bVisible && bShowHealthText
-				? ESlateVisibility::HitTestInvisible
-				: ESlateVisibility::Collapsed);
-	}
+
+	HealthBarDisplayMode = NewDisplayMode;
+	ApplyHealthBarDisplayMode();
 }
 
 void UHealthBarWidget::UpdateHealthDisplay(
@@ -87,5 +106,50 @@ void UHealthBarWidget::SetShowHealthText(bool bShow)
 		&& ShipHealthProgressBar->GetVisibility() != ESlateVisibility::Collapsed)
 	{
 		ShipHealthText->SetVisibility(bShowHealthText ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+}
+
+void UHealthBarWidget::ApplyHealthBarDisplayMode()
+{
+	const bool bShowShip = HealthBarDisplayMode != EHealthBarDisplayMode::PlayerOnly;
+	const bool bShipPrimary = HealthBarDisplayMode == EHealthBarDisplayMode::ShipPrimaryWithPlayerSecondary;
+
+	if (PrimaryHealthContainer && SecondaryHealthContainer && PlayerHealthOverlay && ShipHealthOverlay)
+	{
+		USizeBox* PlayerTarget = bShipPrimary
+			? SecondaryHealthContainer.Get()
+			: PrimaryHealthContainer.Get();
+		USizeBox* ShipTarget = bShipPrimary
+			? PrimaryHealthContainer.Get()
+			: SecondaryHealthContainer.Get();
+		if (PlayerHealthOverlay->GetParent() != PlayerTarget || ShipHealthOverlay->GetParent() != ShipTarget)
+		{
+			PlayerHealthOverlay->RemoveFromParent();
+			ShipHealthOverlay->RemoveFromParent();
+			PlayerTarget->AddChild(PlayerHealthOverlay);
+			ShipTarget->AddChild(ShipHealthOverlay);
+		}
+
+		PrimaryHealthContainer->SetVisibility(ESlateVisibility::HitTestInvisible);
+		SecondaryHealthContainer->SetVisibility(
+			bShowShip ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+
+	SetShipWidgetsVisibility(
+		bShowShip ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+}
+
+void UHealthBarWidget::SetShipWidgetsVisibility(ESlateVisibility InVisibility)
+{
+	if (ShipHealthProgressBar)
+	{
+		ShipHealthProgressBar->SetVisibility(InVisibility);
+	}
+	if (ShipHealthText)
+	{
+		ShipHealthText->SetVisibility(
+			InVisibility != ESlateVisibility::Collapsed && bShowHealthText
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
 	}
 }

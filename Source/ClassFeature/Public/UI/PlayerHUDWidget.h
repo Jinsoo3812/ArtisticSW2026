@@ -30,6 +30,7 @@ class APlayerController;
 class APawn;
 class ACannon;
 class AShip;
+class UPrimitiveComponent;
 struct FOnAttributeChangeData;
 
 UCLASS()
@@ -152,10 +153,13 @@ protected:
 	void BindHealthComponent(UBaseHealthComponent* HealthComponent);
 	void UnbindHealthComponent();
 	void RefreshHealth();
-	void RefreshShipHealthSource(APawn* ControlledPawn);
+	void RefreshShipHealthContext(APawn* ControlledPawn);
 	void BindShipHealthSource(AShip* Ship);
 	void UnbindShipHealthSource();
 	void RefreshShipHealth();
+	AShip* ResolveShipFromFloor(APawn* ControlledPawn, bool& bOutHasWalkableFloor) const;
+	AShip* ResolveShipFromComponent(const UPrimitiveComponent* Component) const;
+	bool IsBeyondShipHealthHideDistance(const APawn* ControlledPawn, const AShip* Ship) const;
 	void HandleShipHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleShipMaxHealthChanged(const FOnAttributeChangeData& Data);
 	void CreateBowCrosshairWidget();
@@ -195,4 +199,12 @@ protected:
 	void HandlePossessedPawnChanged(APawn* OldPawn, APawn* NewPawn);
 
 	void HandleSkillActiveStateChanged(bool bIsActive);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Health|Ship", meta = (ClampMin = "0.0", Units = "cm"))
+	float ShipHealthWaterHideDistance = 1500.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Health|Ship", meta = (ClampMin = "0.01", Units = "s"))
+	float ShipPresenceCheckInterval = 0.1f;
+
+	float ShipPresenceCheckAccumulator = 0.0f;
 };
