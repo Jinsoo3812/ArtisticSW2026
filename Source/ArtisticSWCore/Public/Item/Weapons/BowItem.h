@@ -65,6 +65,9 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	void HandleItemInitialized(ABaseItem* InitializedItem);
+	bool RefreshNockedArrowVisual();
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Bow")
 	void K2_OnReleaseFX();
@@ -76,7 +79,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bow|Components")
 	TObjectPtr<UBowComponent> BowComponent;
 
-	/** Collision-free visual arrow shown while drawing. Configure its mesh on BP_Bow. */
+	/** Collision-free preview populated from the configured ArrowProjectile class. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bow|Components")
 	TObjectPtr<UStaticMeshComponent> NockedArrowMesh;
 

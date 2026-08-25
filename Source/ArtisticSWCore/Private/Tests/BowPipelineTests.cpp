@@ -6,12 +6,15 @@
 #include "Animation/Skeleton.h"
 #include "Animation/AnimMontage.h"
 #include "BaseGameplayTags.h"
+#include "Components/BoxComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkeletalMeshSocket.h"
 #include "GameFramework/Character.h"
 #include "Item/Components/BowComponent.h"
+#include "Item/ItemData.h"
+#include "Item/Projectiles/ArrowProjectile.h"
 #include "Item/Weapons/BowItem.h"
 #include "UObject/UnrealType.h"
 
@@ -76,10 +79,54 @@ bool FBowSocketAndPresentationAssetTest::RunTest(const FString& Parameters)
 	}
 	if (TestNotNull(TEXT("BP_Bow has a presentation-only nocked arrow component"), NockedArrowMesh))
 	{
-		TestNotNull(TEXT("Nocked arrow uses an authored static mesh"), NockedArrowMesh->GetStaticMesh().Get());
+		TestNull(TEXT("BP_Bow does not duplicate the BP_Arrow mesh"),
+			NockedArrowMesh->GetStaticMesh().Get());
+		TestTrue(TEXT("BP_Bow does not duplicate the BP_Arrow transform"),
+			NockedArrowMesh->GetRelativeTransform().Equals(FTransform::Identity));
 		TestEqual(TEXT("Nocked arrow collision is disabled"),
 			NockedArrowMesh->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 		TestFalse(TEXT("Nocked arrow starts hidden"), BowBlueprintCDO->IsNockedArrowVisible());
+	}
+
+	const UClass* ArrowBlueprintClass = LoadObject<UClass>(
+		nullptr,
+		TEXT("/Game/GameplayAbilitySystem/Weapon/BP_Arrow.BP_Arrow_C"));
+	const AArrowProjectile* ArrowBlueprintCDO = ArrowBlueprintClass
+		? ArrowBlueprintClass->GetDefaultObject<AArrowProjectile>()
+		: nullptr;
+	if (TestNotNull(TEXT("BP_Arrow loads as AArrowProjectile"), ArrowBlueprintCDO))
+	{
+		TestNotNull(TEXT("BP_Arrow owns the authored arrow mesh"), ArrowBlueprintCDO->GetArrowVisualMesh());
+		TestTrue(TEXT("BP_Arrow collision root scale remains normalized"),
+			ArrowBlueprintCDO->GetCollisionComp()->GetRelativeScale3D().Equals(FVector::OneVector));
+		TestTrue(TEXT("BP_Arrow collision extent is independently authored"),
+			ArrowBlueprintCDO->GetCollisionComp()->GetUnscaledBoxExtent().Equals(
+				ArrowBlueprintCDO->GetCollisionHalfExtent()));
+
+		UStaticMeshComponent* PreviewMesh = NewObject<UStaticMeshComponent>();
+		if (TestTrue(TEXT("BP_Arrow can configure a presentation mesh"),
+			ArrowBlueprintCDO->ApplyVisualTo(PreviewMesh)))
+		{
+			TestTrue(TEXT("Presentation uses BP_Arrow mesh"),
+				PreviewMesh->GetStaticMesh() == ArrowBlueprintCDO->GetArrowVisualMesh());
+			TestTrue(TEXT("Presentation uses BP_Arrow relative transform"),
+				PreviewMesh->GetRelativeTransform().Equals(
+					ArrowBlueprintCDO->GetArrowVisualRelativeTransform()));
+		}
+	}
+
+	const UItemData* ItemData = LoadObject<UItemData>(
+		nullptr,
+		TEXT("/Game/Blueprints/Item/DA_ItemData.DA_ItemData"));
+	if (TestNotNull(TEXT("Item data loads"), ItemData))
+	{
+		const FItemDefinition* ShortBowDefinition =
+			ItemData->FindItemDefinition(Item_Id_Weapon_Bow_ShortBow1);
+		if (TestNotNull(TEXT("ShortBow1 item definition exists"), ShortBowDefinition))
+		{
+			TestTrue(TEXT("ShortBow1 spawns BP_Arrow"),
+				ShortBowDefinition->SpawnClass.LoadSynchronous() == ArrowBlueprintClass);
+		}
 	}
 
 	const FProperty* ReplicatedNockedProperty = FindFProperty<FProperty>(

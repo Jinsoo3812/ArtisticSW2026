@@ -3,6 +3,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Item/Components/BowComponent.h"
+#include "Item/Projectiles/ArrowProjectile.h"
 
 ABowItem::ABowItem()
 {
@@ -27,8 +28,38 @@ ABowItem::ABowItem()
 
 void ABowItem::BeginPlay()
 {
+	OnItemInitialized.AddUObject(this, &ABowItem::HandleItemInitialized);
 	Super::BeginPlay();
+	RefreshNockedArrowVisual();
 	SetNockedArrowVisible(BowComponent && BowComponent->IsArrowNocked());
+}
+
+void ABowItem::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	OnItemInitialized.RemoveAll(this);
+	Super::EndPlay(EndPlayReason);
+}
+
+void ABowItem::HandleItemInitialized(ABaseItem* InitializedItem)
+{
+	if (InitializedItem == this)
+	{
+		RefreshNockedArrowVisual();
+	}
+}
+
+bool ABowItem::RefreshNockedArrowVisual()
+{
+	if (!NockedArrowMesh)
+	{
+		return false;
+	}
+
+	const TSubclassOf<AActor> SpawnClass = GetSpawnClass();
+	const AArrowProjectile* ArrowCDO = SpawnClass
+		? Cast<AArrowProjectile>(SpawnClass->GetDefaultObject())
+		: nullptr;
+	return ArrowCDO && ArrowCDO->ApplyVisualTo(NockedArrowMesh);
 }
 
 void ABowItem::SetAiming(bool bNewAiming)
@@ -91,15 +122,17 @@ bool ABowItem::SetNockedArrowVisible(bool bVisible)
 	}
 
 	USkeletalMeshComponent* CharacterMesh = ArrowAnchorMesh.Get();
-	const bool bCanShow = bVisible && CharacterMesh
+	const bool bHasValidAnchor = CharacterMesh
 		&& !CharacterArrowSocketName.IsNone()
 		&& CharacterMesh->DoesSocketExist(CharacterArrowSocketName);
-	if (bCanShow)
+	bool bCanShow = false;
+	if (bVisible && bHasValidAnchor)
 	{
-		NockedArrowMesh->AttachToComponent(
+		const bool bAttached = NockedArrowMesh->AttachToComponent(
 			CharacterMesh,
 			FAttachmentTransformRules::SnapToTargetNotIncludingScale,
 			CharacterArrowSocketName);
+		bCanShow = bAttached && RefreshNockedArrowVisual();
 	}
 
 	NockedArrowMesh->SetVisibility(bCanShow, true);
