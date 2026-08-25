@@ -2,15 +2,51 @@
 
 #include "Materials/MaterialExpression.h"
 #include "Materials/MaterialExpressionCustom.h"
+#include "Materials/MaterialExpressionCollectionParameter.h"
 #include "Materials/MaterialExpressionSetMaterialAttributes.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialFunction.h"
+#include "Materials/MaterialParameterCollection.h"
 #include "Editor.h"
 #include "Engine/Level.h"
 #include "Engine/World.h"
+#include "Engine/Blueprint.h"
+#include "Engine/SimpleConstructionScript.h"
+#include "Engine/SCS_Node.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "SWCabinWaterCullComponent.h"
 #include "SWPersistentFoamField.h"
+
+bool URealisticWaterMaterialPipelineLibrary::AddCabinWaterCullComponentToBlueprint(UBlueprint* Blueprint)
+{
+	if (!IsValid(Blueprint) || !IsValid(Blueprint->SimpleConstructionScript))
+	{
+		return false;
+	}
+
+	for (USCS_Node* Node : Blueprint->SimpleConstructionScript->GetAllNodes())
+	{
+		if (IsValid(Node) && Node->ComponentClass &&
+			Node->ComponentClass->IsChildOf(USWCabinWaterCullComponent::StaticClass()))
+		{
+			return true;
+		}
+	}
+
+	Blueprint->Modify();
+	USCS_Node* Node = Blueprint->SimpleConstructionScript->CreateNode(
+		USWCabinWaterCullComponent::StaticClass(), TEXT("CabinWaterCull"));
+	if (!IsValid(Node))
+	{
+		return false;
+	}
+	Blueprint->SimpleConstructionScript->AddNode(Node);
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+	Blueprint->MarkPackageDirty();
+	return true;
+}
 
 ASWPersistentFoamField* URealisticWaterMaterialPipelineLibrary::SpawnPersistentFoamFieldDirect(
 	FVector Location,
@@ -211,6 +247,128 @@ bool URealisticWaterMaterialPipelineLibrary::ConnectEmissiveAttribute(
 		MP_EmissiveColor, EmissiveExpression);
 	SetAttributes->PostEditChange();
 	return bConnected;
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConnectOpacityMaskAttribute(
+	UMaterialExpressionSetMaterialAttributes* SetAttributes,
+	UMaterialExpression* OpacityMaskExpression)
+{
+	if (!IsValid(SetAttributes) || !IsValid(OpacityMaskExpression))
+	{
+		return false;
+	}
+	SetAttributes->Modify();
+	const bool bConnected = SetAttributes->ConnectInputAttribute(
+		MP_OpacityMask, OpacityMaskExpression);
+	SetAttributes->PostEditChange();
+	return bConnected;
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConfigureCabinWaterCullCollection(
+	UMaterialParameterCollection* Collection)
+{
+	if (!IsValid(Collection))
+	{
+		return false;
+	}
+	Collection->Modify();
+	auto AddScalar = [Collection](FName Name, float DefaultValue)
+	{
+		const bool bExists = Collection->ScalarParameters.ContainsByPredicate(
+			[Name](const FCollectionScalarParameter& Parameter)
+			{
+				return Parameter.ParameterName == Name;
+			});
+		if (!bExists)
+		{
+			FCollectionScalarParameter Parameter;
+			Parameter.ParameterName = Name;
+			Parameter.DefaultValue = DefaultValue;
+			Collection->ScalarParameters.Add(Parameter);
+		}
+	};
+	auto AddVector = [Collection](FName Name, const FLinearColor& DefaultValue)
+	{
+		const bool bExists = Collection->VectorParameters.ContainsByPredicate(
+			[Name](const FCollectionVectorParameter& Parameter)
+			{
+				return Parameter.ParameterName == Name;
+			});
+		if (!bExists)
+		{
+			FCollectionVectorParameter Parameter;
+			Parameter.ParameterName = Name;
+			Parameter.DefaultValue = DefaultValue;
+			Collection->VectorParameters.Add(Parameter);
+		}
+	};
+	AddScalar(TEXT("SW_CabinCullEnabled"), 0.0f);
+	AddScalar(TEXT("SW_CabinCullThreshold"), 0.35f);
+	AddScalar(TEXT("SW_CabinCullDebugView"), 0.0f);
+	AddVector(TEXT("SW_CabinCullInvRow0"), FLinearColor(1, 0, 0, 0));
+	AddVector(TEXT("SW_CabinCullInvRow1"), FLinearColor(0, 1, 0, 0));
+	AddVector(TEXT("SW_CabinCullInvRow2"), FLinearColor(0, 0, 1, 0));
+	AddVector(TEXT("SW_CabinCullLocalMin"), FLinearColor::Black);
+	AddVector(TEXT("SW_CabinCullLocalMax"), FLinearColor::Black);
+	Collection->PostEditChange();
+	Collection->MarkPackageDirty();
+	return true;
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConfigureCollectionParameterExpression(
+	UMaterialExpressionCollectionParameter* Expression,
+	UMaterialParameterCollection* Collection,
+	FName ParameterName)
+{
+	if (!IsValid(Expression) || !IsValid(Collection) || ParameterName.IsNone())
+	{
+		return false;
+	}
+	const FGuid ParameterId = Collection->GetParameterId(ParameterName);
+	if (!ParameterId.IsValid())
+	{
+		return false;
+	}
+	Expression->Modify();
+	Expression->Collection = Collection;
+	Expression->ParameterName = ParameterName;
+	Expression->ParameterId = ParameterId;
+	Expression->ExpressionGUID = FGuid::NewGuid();
+	Expression->PostEditChange();
+	return true;
+}
+
+bool URealisticWaterMaterialPipelineLibrary::SetCabinWaterCullBoundsDefaults(
+	UMaterialParameterCollection* Collection,
+	FVector LocalMin,
+	FVector LocalMax)
+{
+	if (!IsValid(Collection))
+	{
+		return false;
+	}
+	Collection->Modify();
+	bool bSetMin = false;
+	bool bSetMax = false;
+	for (FCollectionVectorParameter& Parameter : Collection->VectorParameters)
+	{
+		if (Parameter.ParameterName == TEXT("SW_CabinCullLocalMin"))
+		{
+			Parameter.DefaultValue = FLinearColor(LocalMin.X, LocalMin.Y, LocalMin.Z, 0.0f);
+			bSetMin = true;
+		}
+		else if (Parameter.ParameterName == TEXT("SW_CabinCullLocalMax"))
+		{
+			Parameter.DefaultValue = FLinearColor(LocalMax.X, LocalMax.Y, LocalMax.Z, 0.0f);
+			bSetMax = true;
+		}
+	}
+	if (bSetMin && bSetMax)
+	{
+		Collection->PostEditChange();
+		Collection->MarkPackageDirty();
+	}
+	return bSetMin && bSetMax;
 }
 
 int32 URealisticWaterMaterialPipelineLibrary::ConfigureLinearGrayscaleSampler(

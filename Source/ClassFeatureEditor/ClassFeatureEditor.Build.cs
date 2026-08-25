@@ -16,7 +16,11 @@ public class ClassFeatureEditor : ModuleRules
 			"ClassFeature",
 			"GASCore",
 			"WaterAndShip",
-			"Water"
+			"Water",
+			"GeometryCore",
+			"MeshConversion",
+			"AssetRegistry",
+			"ImageCore"
 		});
 
 		PublicIncludePaths.AddRange(new string[]

@@ -9,7 +9,10 @@ class UMaterialExpressionCustom;
 class UMaterialExpressionSetMaterialAttributes;
 class UMaterial;
 class UMaterialFunction;
+class UMaterialParameterCollection;
+class UMaterialExpressionCollectionParameter;
 class ASWPersistentFoamField;
+class UBlueprint;
 
 /** Editor-only helpers used to build the isolated realistic-water test material. */
 UCLASS()
@@ -18,6 +21,10 @@ class CLASSFEATUREEDITOR_API URealisticWaterMaterialPipelineLibrary : public UBl
 	GENERATED_BODY()
 
 public:
+	/** Idempotently adds the explicit cabin-water-cull component to a ship Blueprint. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool AddCabinWaterCullComponentToBlueprint(UBlueprint* Blueprint);
+
 	/**
 	 * Spawns the V5 foam field directly into the current editor level.
 	 *
@@ -95,6 +102,30 @@ public:
 	static bool ConnectEmissiveAttribute(
 		UMaterialExpressionSetMaterialAttributes* SetAttributes,
 		UMaterialExpression* EmissiveExpression);
+
+	/** Adds/reconnects only Opacity Mask while preserving the existing water attributes. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConnectOpacityMaskAttribute(
+		UMaterialExpressionSetMaterialAttributes* SetAttributes,
+		UMaterialExpression* OpacityMaskExpression);
+
+	/** Adds the fixed single-ship cabin-cull parameters to the existing water MPC. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureCabinWaterCullCollection(UMaterialParameterCollection* Collection);
+
+	/** Stores immutable baked local bounds in the MPC defaults (no runtime upload). */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool SetCabinWaterCullBoundsDefaults(
+		UMaterialParameterCollection* Collection,
+		FVector LocalMin,
+		FVector LocalMax);
+
+	/** Reliably binds a collection-expression node to a named MPC member. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureCollectionParameterExpression(
+		UMaterialExpressionCollectionParameter* Expression,
+		UMaterialParameterCollection* Collection,
+		FName ParameterName);
 
 	/** Sets matching texture parameter nodes to the sampler required by a non-sRGB grayscale texture. */
 	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
