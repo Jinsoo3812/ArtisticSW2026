@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DeckAI/DeckPointReservation.h"
 #include "DeckAI/DeckWaypointMovementInterface.h"
 #include "Engine/EngineTypes.h"
 #include "RangedEnemy/RangedEnemy.h"
@@ -22,7 +23,7 @@ public:
 	/** Called before FinishSpawning for actors allocated into an EnemyShip pool. */
 	void PrepareForPool();
 
-	bool ActivateFromPool(AEnemyShip* InHostShip, const FTransform& SpawnTransform, int32 InitialWaypointId, int32 RandomSeed);
+	bool ActivateFromPool(AEnemyShip* InHostShip, int32 InitialWaypointId, int32 RandomSeed);
 	void DeactivateToPool();
 
 	UFUNCTION(BlueprintPure, Category = "Deck AI|Pool")
@@ -40,7 +41,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Deck AI|Waypoint")
 	int32 GetGoalDeckWaypointId() const { return GoalDeckWaypointId; }
 
-	void SetGoalDeckWaypointId(int32 NewGoalWaypointId) { GoalDeckWaypointId = NewGoalWaypointId; }
+	bool TrySetGoalDeckWaypointId(int32 NewGoalWaypointId);
+	void SetGoalDeckWaypointId(int32 NewGoalWaypointId) { TrySetGoalDeckWaypointId(NewGoalWaypointId); }
 	void MarkGoalDeckWaypointReached();
 	FRandomStream& GetDeckRandomStream() { return DeckRandomStream; }
 
@@ -48,8 +50,9 @@ public:
 	virtual int32 GetCurrentDeckPointId() const override { return CurrentDeckWaypointId; }
 	virtual int32 GetGoalDeckPointId() const override { return GoalDeckWaypointId; }
 	virtual void OnDeckPointReached() override { MarkGoalDeckWaypointReached(); }
-	virtual void OnDeckMoveFailed() override { GoalDeckWaypointId = INDEX_NONE; }
-	virtual bool CanMoveOnDeck() const override { return bPoolActive && GetHostShip() != nullptr; }
+	virtual void OnDeckMoveFailed() override;
+	/** Deck ranged enemies are fixed emplacements. Only the boss uses live deck movement. */
+	virtual bool CanMoveOnDeck() const override { return false; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -64,7 +67,10 @@ protected:
 	void ReturnToPoolAfterDeath();
 
 	void ApplyPoolPresentationState();
+	void ApplyFixedMovementState();
 	void RestoreForPoolActivation();
+	bool ApplyAuthoritativeDeckAnchor(const FTransform& AuthoritativeTransform);
+	void ClearAuthoritativeDeckAnchor();
 
 protected:
 	UPROPERTY(ReplicatedUsing = OnRep_PoolActive, VisibleInstanceOnly, BlueprintReadOnly, Category = "Deck AI|Pool")
@@ -74,13 +80,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck AI|Pool", meta = (ClampMin = "0.0", Units = "s"))
 	float ReturnToPoolAfterDeathDelay = 1.5f;
 
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Deck AI|Waypoint")
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Deck AI|Waypoint")
 	int32 CurrentDeckWaypointId = INDEX_NONE;
 
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Deck AI|Waypoint")
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Deck AI|Waypoint")
 	int32 PreviousDeckWaypointId = INDEX_NONE;
 
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Deck AI|Waypoint")
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Deck AI|Waypoint")
 	int32 GoalDeckWaypointId = INDEX_NONE;
 
 private:
@@ -89,4 +95,5 @@ private:
 	ECollisionEnabled::Type InitialCapsuleCollision = ECollisionEnabled::QueryAndPhysics;
 	ECollisionEnabled::Type InitialMeshCollision = ECollisionEnabled::QueryOnly;
 	FTimerHandle ReturnToPoolTimerHandle;
+	FDeckPointReservation GoalPointReservation;
 };

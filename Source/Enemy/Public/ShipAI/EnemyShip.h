@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DeckAI/DeckPointReservation.h"
 #include "Ship.h"
 #include "ShipAI/EnemyShipNavigationTypes.h"
 #include "EnemyDropData.h"
@@ -73,6 +74,11 @@ class ENEMY_API AEnemyShip : public AShip
 {
 	GENERATED_BODY()
 
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FDeckFixedAnchorLifecycleTest;
+	friend class FDeckPointReservationLifecycleTest;
+#endif
+
 public:
 	AEnemyShip();
 	virtual bool IsEnemyShipForEffects() const override { return true; }
@@ -107,6 +113,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Deck AI")
 	FVector GetDeckWaypointWorldLocation(int32 WaypointId) const;
+	/** Deterministic fixed-emplacement transform; does not run a floor query. */
+	bool ResolveFixedDeckAnchorTransform(int32 WaypointId, float CapsuleHalfHeight, FTransform& OutTransform) const;
 	bool ResolveDeckCharacterTransform(int32 WaypointId, float CapsuleHalfHeight, FTransform& OutTransform) const;
 
 	/** Creates persistent, individually editable waypoint components in this Blueprint asset or placed actor. */
@@ -127,10 +135,28 @@ public:
 	void GetConnectedDeckWaypointIds(int32 WaypointId, TArray<int32>& OutWaypointIds) const;
 	int32 FindNearestDeckWaypoint(const FVector& WorldLocation, bool bRequirePatrolPoint = true) const;
 
+	/** Authority-only logical occupancy. Selection and reservation are atomic on the server. */
+	bool IsDeckPointAvailable(int32 WaypointId, const AActor* Requester = nullptr) const;
+	bool TryReserveDeckPoint(int32 WaypointId, AActor* Requester, FDeckPointReservation& OutReservation);
+	bool TryReserveDeckEnemySpawnPoint(
+		const FDeckEnemySpawnRequest& Request,
+		FDeckPointReservation& OutReservation);
+	bool CommitDeckPointReservation(const FDeckPointReservation& Reservation, AActor* Occupant);
+	void ReleaseDeckPointReservation(FDeckPointReservation& Reservation);
+	bool TryOccupyDeckPoint(int32 WaypointId, AActor* Occupant);
+	void ReleaseDeckPointOccupancy(int32 WaypointId, AActor* Occupant);
+	void ReleaseAllDeckPointsFor(AActor* Actor);
+
 	/** Activates one inactive pooled enemy at a validated live deck point. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Deck AI")
 	bool ActivateDeckEnemyAtPoint(
 		int32 SpawnPointId,
+		AActor* InitialTarget,
+		ADeckRangedEnemy*& OutEnemy);
+
+	/** Activates a pooled enemy only while the caller still owns this reservation. */
+	bool ActivateDeckEnemyAtReservation(
+		FDeckPointReservation& Reservation,
 		AActor* InitialTarget,
 		ADeckRangedEnemy*& OutEnemy);
 
@@ -235,6 +261,13 @@ protected:
 	void InitializeDeckWaypoints();
 	void InitializeDeckEnemyPool();
 	void DestroyDeckEnemyPool();
+	void PruneDeckPointRuntimeState();
+	bool ActivateReservedDeckEnemy(
+		ADeckRangedEnemy& Enemy,
+		FDeckPointReservation& Reservation,
+		AActor* InitialTarget,
+		int32 RandomSeed,
+		ADeckRangedEnemy*& OutEnemy);
 	bool ResolveDeckEnemySpawnTransform(const UDeckWaypointComponent* SpawnWaypoint, FTransform& OutTransform) const;
 	UDeckWaypointComponent* SelectDeckSpawnWaypoint(int32 DeploymentIndex) const;
 
@@ -367,6 +400,17 @@ protected:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<ADeckRangedEnemy>> DeckEnemyPool;
+
+	struct FDeckPointRuntimeState
+	{
+		TWeakObjectPtr<AActor> Occupant;
+		TWeakObjectPtr<AActor> ReservedBy;
+		uint32 ReservationSerial = 0;
+	};
+
+	/** Server-only transactional state; replicated actors carry the committed point IDs. */
+	TMap<int32, FDeckPointRuntimeState> DeckPointRuntimeStates;
+	uint32 NextDeckPointReservationSerial = 1;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Boss Encounter")
 	TObjectPtr<UBossEncounterComponent> BossEncounterComponent;

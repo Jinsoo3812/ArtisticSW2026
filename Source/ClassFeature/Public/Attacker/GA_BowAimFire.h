@@ -49,6 +49,9 @@ protected:
 	void OnReleaseFireEvent(FGameplayEventData Payload);
 
 	UFUNCTION()
+	void OnNockArrowEvent(FGameplayEventData Payload);
+
+	UFUNCTION()
 	void OnReleaseMontageCompleted();
 
 	UFUNCTION()
@@ -64,6 +67,8 @@ protected:
 	void FireArrow(const FGameplayEventData& Payload);
 	void FinishShot();
 	void ResetBowState();
+	void AcquireServerPoseRefresh();
+	void ReleaseServerPoseRefresh();
 	bool CacheBowFromAvatar();
 	bool TryGetAimTargetFromPayload(const FGameplayEventData& Payload, FVector& OutAimTarget) const;
 	void AddBowStateTags();
@@ -136,4 +141,6 @@ protected:
 	bool bIsFullyDrawn = false;
 	bool bIsReleaseInProgress = false;
 	bool bHasFiredCurrentShot = false;
+	bool bHasReceivedNockNotify = false;
+	bool bOwnsServerPoseRefresh = false;
 };

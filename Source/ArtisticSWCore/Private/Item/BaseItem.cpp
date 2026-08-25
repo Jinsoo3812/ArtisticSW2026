@@ -280,6 +280,7 @@ void ABaseItem::InitializeItem()
 	}
 	// 최초 상태 적용도 서버/클라 구분 없이.
 	OnRep_ItemState();
+	OnItemInitialized.Broadcast(this);
 }
 
 void ABaseItem::OnThrown(FVector LaunchVelocity, AActor* Thrower)

@@ -90,13 +90,20 @@ EBTNodeResult::Type UBTT_MoveToDeckWaypoint::ExecuteTask(
 		return EBTNodeResult::Failed;
 	}
 
+	Character->SetBase(HostShip->GetShipDeckMesh());
 	if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
 	{
 		Enemy->SetBaseMovementSpeed(MoveSpeed);
 		Movement->BrakingDecelerationWalking = BrakingDeceleration;
-		Movement->SetMovementMode(MOVE_Walking);
+		if (!Movement->IsMovingOnGround())
+		{
+			StopDeckMovement(OwnerComp, Character);
+			DeckMover->OnDeckMoveFailed();
+			ClearDestinationBlackboard(OwnerComp);
+			return EBTNodeResult::Failed;
+		}
+		Movement->bForceNextFloorCheck = true;
 	}
-	Character->SetBase(HostShip->GetShipDeckMesh());
 
 	const FTransform DeckTransform = HostShip->GetShipDeckMesh()->GetComponentTransform();
 	const FVector LocalCharacter = DeckTransform.InverseTransformPosition(Character->GetActorLocation());
