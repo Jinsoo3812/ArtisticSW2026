@@ -453,6 +453,7 @@ float ARangedEnemy::GetRangedAttackMontagePlayRate() const
 void ARangedEnemy::OnRep_HostShip()
 {
 	BindHostShipLifecycle();
+	HandleReplicatedHostShipChanged();
 }
 
 void ARangedEnemy::OnHostShipDestroyed(AActor* DestroyedActor)

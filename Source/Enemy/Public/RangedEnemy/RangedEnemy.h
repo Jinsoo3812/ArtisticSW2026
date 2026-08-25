@@ -87,6 +87,7 @@ protected:
 
 	UFUNCTION()
 	void OnRep_HostShip();
+	virtual void HandleReplicatedHostShipChanged() {}
 
 	UFUNCTION()
 	void OnHostShipDestroyed(AActor* DestroyedActor);
