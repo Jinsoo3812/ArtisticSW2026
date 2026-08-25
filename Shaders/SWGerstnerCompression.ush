@@ -78,6 +78,115 @@ float SW_ComputeGerstnerCompressionMask(
     return 1.0 - smoothstep(Full, Start, JacobianDet);
 }
 
+// Anchor foam to the geometric crests of qualifying Gerstner waves, then use
+// horizontal compression only as an intensity modifier. CrestWidth is the
+// full crest-band width as a fraction of one wavelength (0..1).
+float SW_ComputeGerstnerCrestFoamMask(
+    int InWaterBodyIndex,
+    float InTime,
+    FDFVector2 InWorldPos,
+    float JacobianStart,
+    float JacobianFull,
+    float CrestWidth,
+    float CrestSharpness,
+    float CrestMinWaveAmplitude,
+    float CompressionInfluence)
+{
+    const FWaterBodyData WaterBodyData = GetWaterBodyData(InWaterBodyIndex);
+    const int NumWaves = WaterBodyData.NumWaves;
+
+    const FLWCVector2 LWCWorldPos = DFToTileOffset_Hack(InWorldPos);
+    const float2 WorldPos = LWCWorldPos.Offset;
+
+    float Jxx = 1.0;
+    float Jxy = 0.0;
+    float Jyy = 1.0;
+    float CrestMask = 0.0;
+
+    const float SafeCrestWidth = clamp(CrestWidth, 1.0e-3, 1.0);
+    const float CrestCosThreshold = cos(PI * SafeCrestWidth);
+    const float SafeCrestSharpness = max(CrestSharpness, 1.0e-3);
+    const float SafeMinAmplitude = max(CrestMinWaveAmplitude, 0.0);
+    const float AmplitudeFeather = max(SafeMinAmplitude * 0.25, 1.0);
+
+    for (int WaveIndex = 0; WaveIndex < NumWaves; ++WaveIndex)
+    {
+        const FWaveParams Wave = GetWaveDataNew(WaveIndex, WaterBodyData);
+        const float Dispersion = 2.0 * PI / Wave.Wavelength;
+        const float2 WaveVector = Wave.Direction * Dispersion;
+        const float WaveTime = sqrt(Dispersion * Gravity) * InTime;
+        const float WavePosition = dot(WorldPos, WaveVector) - WaveTime;
+
+        float WaveSin;
+        float WaveCos;
+        sincos(WavePosition, WaveSin, WaveCos);
+
+        // Match the engine's LWC tile-border phase blend. The blend-alpha
+        // derivative is deliberately omitted, as in the Jacobian debug pass.
+        const float2 TileBorderDist =
+            (UE_LWC_RENDER_TILE_SIZE * 0.5) - abs(WorldPos);
+        const float BlendZoneWidth = 400.0;
+        if (any(TileBorderDist < BlendZoneWidth))
+        {
+            const float2 BlendWorldPos = TileBorderDist;
+            const float2 BlendAlpha2 = saturate(TileBorderDist / BlendZoneWidth);
+            const float BlendAlpha = BlendAlpha2.x * BlendAlpha2.y;
+            const float BlendWavePosition =
+                dot(BlendWorldPos, WaveVector) - WaveTime;
+            WaveCos = lerp(cos(BlendWavePosition), WaveCos, BlendAlpha);
+        }
+
+        const float Compression = Wave.Steepness * WaveCos;
+        const float2 Direction = Wave.Direction;
+        Jxx -= Compression * Direction.x * Direction.x;
+        Jxy -= Compression * Direction.x * Direction.y;
+        Jyy -= Compression * Direction.y * Direction.y;
+
+        const float WaveCrest = pow(
+            smoothstep(CrestCosThreshold, 1.0, WaveCos),
+            SafeCrestSharpness);
+        const float AmplitudeMask = smoothstep(
+            SafeMinAmplitude,
+            SafeMinAmplitude + AmplitudeFeather,
+            Wave.Amplitude);
+        CrestMask = max(CrestMask, WaveCrest * AmplitudeMask);
+    }
+
+    const float Start = max(JacobianStart, JacobianFull + 1.0e-4);
+    const float Full = min(JacobianFull, Start - 1.0e-4);
+    const float JacobianDet = Jxx * Jyy - Jxy * Jxy;
+    const float CompressionMask =
+        1.0 - smoothstep(Full, Start, JacobianDet);
+
+    // Compression changes only the intensity of an already selected crest.
+    // It cannot create foam away from the crest band.
+    return saturate(CrestMask * lerp(
+        1.0, CompressionMask, saturate(CompressionInfluence)));
+}
+
+float SW_ComputeGerstnerCrestFoamMask(
+    int InWaterBodyIndex,
+    float InTime,
+    FLWCVector2 InWorldPos,
+    float JacobianStart,
+    float JacobianFull,
+    float CrestWidth,
+    float CrestSharpness,
+    float CrestMinWaveAmplitude,
+    float CompressionInfluence)
+{
+    return SW_ComputeGerstnerCrestFoamMask(
+        InWaterBodyIndex,
+        InTime,
+        DFFromTileOffset(InWorldPos),
+        JacobianStart,
+        JacobianFull,
+        CrestWidth,
+        CrestSharpness,
+        CrestMinWaveAmplitude,
+        CompressionInfluence);
+}
+
 float3 SW_ComposeGerstnerLitFoam(
     float Compression,
     float3 FoamTexture,

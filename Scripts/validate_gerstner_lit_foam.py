@@ -9,6 +9,10 @@ SURFACE_TOKEN = "SW_ComposeGerstnerLitFoam"
 REQUIRED_PARAMETERS = {
     "SW Gerstner Jacobian Start",
     "SW Gerstner Jacobian Full",
+    "SW Gerstner Crest Width",
+    "SW Gerstner Crest Sharpness",
+    "SW Gerstner Crest Min Wave Amplitude",
+    "SW Gerstner Compression Influence",
     "SW Gerstner Foam Enabled",
     "SW Gerstner Foam Intensity",
     "SW Gerstner Foam Texture Power",
@@ -44,6 +48,26 @@ def main():
                     and SURFACE_TOKEN in str(prop(e, "code"))), None)
     if surface is None:
         raise RuntimeError("Lit foam Custom is missing")
+
+    compression = next((e for e in expressions
+                        if isinstance(e, unreal.MaterialExpressionCustom)
+                        and "SW_ComputeGerstnerCrestFoamMask" in str(
+                            prop(e, "code"))), None)
+    if compression is None:
+        raise RuntimeError("Crest/compression mask Custom is missing")
+    if "/Project/SWGerstnerCompression.ush" not in str(
+            prop(compression, "include_file_paths")):
+        raise RuntimeError("Crest mask USH include is missing")
+    for index in range(9):
+        if helper.get_connected_input_expression(compression, index) is None:
+            raise RuntimeError("Crest mask input {} is disconnected".format(index))
+    water_time = helper.get_connected_input_expression(compression, 1)
+    water_time_function = prop(water_time, "material_function", None)
+    water_time_path = (water_time_function.get_path_name()
+                       if water_time_function is not None else "")
+    if water_time_path != (
+            "/Water/Materials/Functions/GetWaterTime.GetWaterTime"):
+        raise RuntimeError("Crest mask is not using GetWaterTime")
     if [str(v) for v in helper.get_material_expression_output_names(surface)] != [
             "return", "FoamOpacity", "FoamRoughness"]:
         raise RuntimeError("Unexpected lit foam outputs")

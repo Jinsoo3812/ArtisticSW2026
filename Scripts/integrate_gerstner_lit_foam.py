@@ -91,7 +91,7 @@ def main():
     expressions = list(helper.get_material_expressions(material))
 
     final_attributes = find_by_name(expressions, "MaterialExpressionSetMaterialAttributes_2")
-    compression = find_by_desc(expressions, "SW Gerstner Jacobian Compression Mask")
+    compression = find_by_desc(expressions, "SW Gerstner Crest Compression Mask")
     foam_texture = find_by_name(expressions, "MaterialExpressionCustom_15")
     water_base_color = find_by_name(expressions, "MaterialExpressionLinearInterpolate_0")
     water_attributes = find_by_name(expressions, "MaterialExpressionBreakMaterialAttributes_1")

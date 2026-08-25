@@ -1,23 +1,26 @@
-"""Add a compile-time white Gerstner Jacobian debug view to the water master."""
+"""Install the synchronized Gerstner crest/compression mask."""
 import traceback
 
 import unreal
 
 
 ASSET_PATH = "/Game/Blueprints/Water/M_Realistic_Water"
-GROUP = "Gerstner Compression Debug"
+GROUP = "Gerstner Crest Foam"
 INDEX_DESC = "SW Gerstner Compression Water Body Index"
 TIME_DESC = "SW Gerstner Compression Time"
-CUSTOM_DESC = "SW Gerstner Jacobian Compression Mask"
+CUSTOM_DESC = "SW Gerstner Crest Compression Mask"
 WORLD_DESC = "SW Gerstner Compression World Position (excluding WPO)"
-SWITCH_NAME = "SW Gerstner Compression Debug"
 
-CUSTOM_CODE = r"""return SW_ComputeGerstnerCompressionMask(
+CUSTOM_CODE = r"""return SW_ComputeGerstnerCrestFoamMask(
     WaterBodyIndex,
-    Time,
+    WaterTime,
     MakeLWCVector2(LWCLWCWorldPosition.Tile.xy, LWCLWCWorldPosition.Offset.xy),
     JacobianStart,
-    JacobianFull);"""
+    JacobianFull,
+    CrestWidth,
+    CrestSharpness,
+    CrestMinWaveAmplitude,
+    CompressionInfluence);"""
 
 
 def short_name(expression):
@@ -48,6 +51,19 @@ def find_parameter(expressions, wanted):
                  if str(prop(e, "parameter_name")) == wanted), None)
 
 
+def find_function(expressions, function_path):
+    for expression in expressions:
+        function = prop(expression, "material_function", None)
+        if function is not None:
+            try:
+                if function.get_path_name() == function_path:
+                    return expression
+            except Exception:
+                if function_path in str(function):
+                    return expression
+    return None
+
+
 def connect(editing, source, output_name, target, input_name):
     if not editing.connect_material_expressions(source, output_name, target, input_name):
         raise RuntimeError("Connection failed: {}.{} -> {}.{}".format(
@@ -75,20 +91,6 @@ def main():
     editing = unreal.MaterialEditingLibrary
     expressions = list(helper.get_material_expressions(material))
 
-    final_attributes = find_by_name(
-        expressions, "MaterialExpressionSetMaterialAttributes_2")
-    if final_attributes is None:
-        raise RuntimeError("Final SetMaterialAttributes node is missing")
-
-    debug_switch = find_parameter(expressions, SWITCH_NAME)
-    if debug_switch is not None:
-        original_emissive = helper.get_connected_input_expression(debug_switch, 1)
-    else:
-        # The final foam attribute node currently stores Emissive at input 6.
-        original_emissive = helper.get_connected_input_expression(final_attributes, 6)
-    if original_emissive is None:
-        raise RuntimeError("Could not preserve the existing Emissive source")
-
     water_index = find_by_desc(expressions, INDEX_DESC)
     if water_index is None:
         water_index = editing.create_material_expression(
@@ -115,60 +117,76 @@ def main():
             pass
         expressions.append(world_position)
 
+    water_time = find_function(
+        expressions, "/Water/Materials/Functions/GetWaterTime.GetWaterTime")
+    if water_time is None:
+        raise RuntimeError("ComputeGerstnerWaves WaterTime source is missing")
+
+    # Remove the former independent material clock after reconnecting. The
+    # actual Gerstner displacement uses the Water subsystem's GetWaterTime.
     time_node = find_by_desc(expressions, TIME_DESC)
-    if time_node is None:
-        time_node = editing.create_material_expression(
-            material, unreal.MaterialExpressionTime, 7800, 4220)
-        time_node.set_editor_property("desc", TIME_DESC)
-        time_node.set_editor_property("period", 0.0)
-        expressions.append(time_node)
 
     jacobian_start = scalar_parameter(
         material, editing, expressions, "SW Gerstner Jacobian Start",
-        0.70, 7800, 4380)
+        0.95, 7800, 4380)
     jacobian_full = scalar_parameter(
         material, editing, expressions, "SW Gerstner Jacobian Full",
-        0.25, 7800, 4500)
+        0.65, 7800, 4500)
+    crest_width = scalar_parameter(
+        material, editing, expressions, "SW Gerstner Crest Width",
+        0.08, 7800, 4620)
+    crest_sharpness = scalar_parameter(
+        material, editing, expressions, "SW Gerstner Crest Sharpness",
+        2.0, 7800, 4740)
+    crest_min_amplitude = scalar_parameter(
+        material, editing, expressions, "SW Gerstner Crest Min Wave Amplitude",
+        50.0, 7800, 4860)
+    compression_influence = scalar_parameter(
+        material, editing, expressions, "SW Gerstner Compression Influence",
+        0.35, 7800, 4980)
 
     compression = find_by_desc(expressions, CUSTOM_DESC)
+    if compression is None:
+        compression = find_by_desc(
+            expressions, "SW Gerstner Jacobian Compression Mask")
     if compression is None:
         compression = editing.create_material_expression(
             material, unreal.MaterialExpressionCustom, 8240, 4060)
         expressions.append(compression)
     inputs = [
-        "WaterBodyIndex", "Time", "LWCWorldPosition",
-        "JacobianStart", "JacobianFull"]
+        "WaterBodyIndex", "WaterTime", "LWCWorldPosition",
+        "JacobianStart", "JacobianFull", "CrestWidth",
+        "CrestSharpness", "CrestMinWaveAmplitude",
+        "CompressionInfluence"]
     if not helper.configure_float1_custom_expression_with_includes(
             compression, inputs, CUSTOM_CODE, CUSTOM_DESC,
             ["/Project/SWGerstnerCompression.ush"]):
         raise RuntimeError("Could not configure compression Custom")
 
     connect(editing, water_index, "", compression, "WaterBodyIndex")
-    connect(editing, time_node, "", compression, "Time")
+    connect(editing, water_time, "WaterTime", compression, "WaterTime")
     connect(editing, world_position, "XYZ", compression, "LWCWorldPosition")
     connect(editing, jacobian_start, "", compression, "JacobianStart")
     connect(editing, jacobian_full, "", compression, "JacobianFull")
+    connect(editing, crest_width, "", compression, "CrestWidth")
+    connect(editing, crest_sharpness, "", compression, "CrestSharpness")
+    connect(editing, crest_min_amplitude, "", compression, "CrestMinWaveAmplitude")
+    connect(editing, compression_influence, "", compression, "CompressionInfluence")
 
-    if debug_switch is None:
-        debug_switch = editing.create_material_expression(
-            material, unreal.MaterialExpressionStaticSwitchParameter, 8660, 4060)
-        debug_switch.set_editor_property("parameter_name", SWITCH_NAME)
-        expressions.append(debug_switch)
-    debug_switch.set_editor_property("default_value", False)
-    debug_switch.set_editor_property("group", GROUP)
-    debug_switch.set_editor_property("desc", "True: pure white Jacobian mask in Emissive")
-    connect(editing, compression, "", debug_switch, "True")
-    connect(editing, original_emissive, "", debug_switch, "False")
+    if time_node is not None:
+        editing.delete_material_expression(material, time_node)
 
-    if not helper.connect_emissive_attribute(final_attributes, debug_switch):
-        raise RuntimeError("Could not reconnect final Emissive attribute")
+    # The old raw-white Emissive preview is intentionally not recreated.
+    debug_switch = find_parameter(expressions, "SW Gerstner Compression Debug")
+    if debug_switch is not None:
+        editing.delete_material_expression(material, debug_switch)
 
     helper.initialize_missing_parameter_guids(material)
     editing.recompile_material(material)
     unreal.EditorAssetLibrary.save_loaded_asset(material, only_if_is_dirty=False)
-    unreal.log("SW_GERSTNER_COMPRESSION_DEBUG_INTEGRATED=1")
-    unreal.log("SW_GERSTNER_COMPRESSION_DEBUG_DEFAULT_OFF=1")
-    unreal.log("SW_GERSTNER_COMPRESSION_EXISTING_EMISSIVE_PRESERVED=" + short_name(original_emissive))
+    unreal.log("SW_GERSTNER_CREST_COMPRESSION_INTEGRATED=1")
+    unreal.log("SW_GERSTNER_CREST_TIME_SOURCE=GetWaterTime")
+    unreal.log("SW_GERSTNER_RAW_EMISSIVE_DEBUG=REMOVED")
 
 
 try:
