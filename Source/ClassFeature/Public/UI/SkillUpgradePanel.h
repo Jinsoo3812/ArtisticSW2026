@@ -58,7 +58,7 @@ protected:
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
-	/** index 0: selected skill recipe, index 1: WBP_CraftingComplete. */
+	/** Index 0: locked/preview, index 1: selected skill recipe, index 2: WBP_CraftingComplete. */
 	UPROPERTY(BlueprintReadOnly, Category = "Skill Upgrade|Crafting", meta = (BindWidgetOptional))
 	TObjectPtr<UWidgetSwitcher> WidgetSwitcher_SkillCraftingState;
 

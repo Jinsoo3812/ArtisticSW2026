@@ -17,8 +17,9 @@
 
 namespace SkillCraftingPanel
 {
-	constexpr int32 RecipePageIndex = 0;
-	constexpr int32 CompletePageIndex = 1;
+	constexpr int32 LockPageIndex = 0;
+	constexpr int32 RecipePageIndex = 1;
+	constexpr int32 CompletePageIndex = 2;
 	constexpr int32 IngredientSlotCount = 3;
 }
 
@@ -97,10 +98,6 @@ void USkillUpgradePanel::SetSelectedSkill(ESkillUpgradeSelection InSelectedSkill
 	bHasSelectedSkill = true;
 	ResolveSkillComponent();
 	BP_OnSkillUpgradeSelectionChanged(SelectedSkill);
-	if (WidgetSwitcher_SkillCraftingState)
-	{
-		WidgetSwitcher_SkillCraftingState->SetActiveWidgetIndex(SkillCraftingPanel::RecipePageIndex);
-	}
 	RefreshCraftingState();
 }
 
@@ -238,6 +235,10 @@ void USkillUpgradePanel::RefreshCraftingState()
 	SelectedRecipeId = NAME_None;
 	SelectedRecipeHeader = FCraftingListEntry();
 	SetCraftButtonAvailable(false);
+	if (WidgetSwitcher_SkillCraftingState)
+	{
+		WidgetSwitcher_SkillCraftingState->SetActiveWidgetIndex(SkillCraftingPanel::LockPageIndex);
+	}
 
 	if (!bHasSelectedSkill || !SkillComponent || !CraftingComponent)
 	{
@@ -256,6 +257,10 @@ void USkillUpgradePanel::RefreshCraftingState()
 		SetCraftingState(ESkillCraftingUIState::Locked);
 		RefreshLockState();
 		return;
+	}
+	if (WidgetSwitcher_SkillCraftingState)
+	{
+		WidgetSwitcher_SkillCraftingState->SetActiveWidgetIndex(SkillCraftingPanel::RecipePageIndex);
 	}
 
 	FCraftingListQuery Query;
@@ -493,9 +498,12 @@ void USkillUpgradePanel::FinishConvergenceAnimation()
 	bConvergenceAnimating = false;
 	ResetIngredientRenderTransforms();
 	SetCraftingState(ESkillCraftingUIState::Complete);
-	if (SkillCraftingCompleteWidget && WidgetSwitcher_SkillCraftingState)
+	if (SkillCraftingCompleteWidget)
 	{
 		SkillCraftingCompleteWidget->ShowCraftedItem(SelectedRecipeHeader);
+	}
+	if (WidgetSwitcher_SkillCraftingState)
+	{
 		WidgetSwitcher_SkillCraftingState->SetActiveWidgetIndex(SkillCraftingPanel::CompletePageIndex);
 	}
 }
@@ -517,7 +525,7 @@ void USkillUpgradePanel::HandleCraftingCompleteDismissed()
 {
 	if (WidgetSwitcher_SkillCraftingState)
 	{
-		WidgetSwitcher_SkillCraftingState->SetActiveWidgetIndex(SkillCraftingPanel::RecipePageIndex);
+		WidgetSwitcher_SkillCraftingState->SetActiveWidgetIndex(SkillCraftingPanel::LockPageIndex);
 	}
 	RefreshCraftingState();
 }
@@ -562,7 +570,10 @@ void USkillUpgradePanel::HandleSkillChanged(FGameplayTag ChangedSkillTag)
 	if (bHasSelectedSkill
 		&& ChangedSkillTag.MatchesTagExact(GetSelectedSkillTag())
 		&& !bCraftRequestPending
-		&& !bConvergenceAnimating)
+		&& !bConvergenceAnimating
+		&& (!WidgetSwitcher_SkillCraftingState
+			|| WidgetSwitcher_SkillCraftingState->GetActiveWidgetIndex()
+				!= SkillCraftingPanel::CompletePageIndex))
 	{
 		RefreshCraftingState();
 	}
@@ -570,7 +581,12 @@ void USkillUpgradePanel::HandleSkillChanged(FGameplayTag ChangedSkillTag)
 
 void USkillUpgradePanel::HandleCraftingDataChanged()
 {
-	if (bPanelActive && !bCraftRequestPending && !bConvergenceAnimating)
+	if (bPanelActive
+		&& !bCraftRequestPending
+		&& !bConvergenceAnimating
+		&& (!WidgetSwitcher_SkillCraftingState
+			|| WidgetSwitcher_SkillCraftingState->GetActiveWidgetIndex()
+				!= SkillCraftingPanel::CompletePageIndex))
 	{
 		RefreshCraftingState();
 	}
