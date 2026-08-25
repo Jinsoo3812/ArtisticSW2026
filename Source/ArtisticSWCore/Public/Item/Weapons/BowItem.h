@@ -6,6 +6,7 @@
 
 class UBowComponent;
 class USkeletalMeshComponent;
+class UStaticMeshComponent;
 
 UCLASS()
 class ARTISTICSWCORE_API ABowItem : public ABaseItem
@@ -24,8 +25,27 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Bow")
 	void SetAiming(bool bNewAiming);
 
-	UFUNCTION(BlueprintCallable, Category = "Bow")
-	FTransform GetArrowSpawnTransform() const;
+	/** Binds the character animation-owned origin used by both presentation and projectile spawning. */
+	bool BindArrowAnchor(USkeletalMeshComponent* CharacterMesh);
+	void UnbindArrowAnchor();
+
+	/** Resolves the character Arrow_socket without a weapon-mesh or actor-root fallback. */
+	bool TryGetArrowSpawnTransform(FTransform& OutSpawnTransform) const;
+
+	UFUNCTION(BlueprintPure, Category = "Bow")
+	FName GetCharacterArrowSocketName() const { return CharacterArrowSocketName; }
+
+	UFUNCTION(BlueprintPure, Category = "Bow")
+	USkeletalMeshComponent* GetArrowAnchorMesh() const { return ArrowAnchorMesh.Get(); }
+
+	/** Presentation only; the firing ability owns projectile creation and movement. */
+	bool SetNockedArrowVisible(bool bVisible);
+
+	UFUNCTION(BlueprintPure, Category = "Bow")
+	bool IsNockedArrowVisible() const;
+
+	UFUNCTION(BlueprintPure, Category = "Bow")
+	UStaticMeshComponent* GetNockedArrowMesh() const { return NockedArrowMesh; }
 
 	virtual USceneComponent* GetAttachmentReferenceComponent() const override;
 
@@ -44,6 +64,8 @@ public:
 	void Multicast_PlayReleaseFX();
 
 protected:
+	virtual void BeginPlay() override;
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Bow")
 	void K2_OnReleaseFX();
 
@@ -54,8 +76,16 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bow|Components")
 	TObjectPtr<UBowComponent> BowComponent;
 
+	/** Collision-free visual arrow shown while drawing. Configure its mesh on BP_Bow. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bow|Components")
+	TObjectPtr<UStaticMeshComponent> NockedArrowMesh;
+
+	/** Socket authored on the equipped character skeleton, not on the bow mesh. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow")
-	FName ArrowSocketName = FName("Arrow");
+	FName CharacterArrowSocketName = FName("Arrow_socket");
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<USkeletalMeshComponent> ArrowAnchorMesh;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|IK")
 	FName StringRestSocketName = FName("String_Rest_Socket");

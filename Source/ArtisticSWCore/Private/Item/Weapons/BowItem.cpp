@@ -1,6 +1,7 @@
 #include "Item/Weapons/BowItem.h"
 
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Item/Components/BowComponent.h"
 
 ABowItem::ABowItem()
@@ -14,7 +15,20 @@ ABowItem::ABowItem()
 	BowMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	BowMesh->SetGenerateOverlapEvents(false);
 
+	NockedArrowMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("NockedArrowMesh"));
+	NockedArrowMesh->SetupAttachment(BowMesh);
+	NockedArrowMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	NockedArrowMesh->SetGenerateOverlapEvents(false);
+	NockedArrowMesh->SetHiddenInGame(true);
+	NockedArrowMesh->SetVisibility(false, true);
+
 	BowComponent = CreateDefaultSubobject<UBowComponent>(TEXT("BowComponent"));
+}
+
+void ABowItem::BeginPlay()
+{
+	Super::BeginPlay();
+	SetNockedArrowVisible(BowComponent && BowComponent->IsArrowNocked());
 }
 
 void ABowItem::SetAiming(bool bNewAiming)
@@ -25,14 +39,77 @@ void ABowItem::SetAiming(bool bNewAiming)
 	}
 }
 
-FTransform ABowItem::GetArrowSpawnTransform() const
+bool ABowItem::BindArrowAnchor(USkeletalMeshComponent* CharacterMesh)
 {
-	if (BowMesh && BowMesh->DoesSocketExist(ArrowSocketName))
+	if (!CharacterMesh || CharacterArrowSocketName.IsNone()
+		|| !CharacterMesh->DoesSocketExist(CharacterArrowSocketName))
 	{
-		return BowMesh->GetSocketTransform(ArrowSocketName, RTS_World);
+		UnbindArrowAnchor();
+		return false;
 	}
 
-	return GetActorTransform();
+	ArrowAnchorMesh = CharacterMesh;
+	if (BowComponent)
+	{
+		SetNockedArrowVisible(BowComponent->IsArrowNocked());
+	}
+	return true;
+}
+
+void ABowItem::UnbindArrowAnchor()
+{
+	SetNockedArrowVisible(false);
+	ArrowAnchorMesh.Reset();
+
+	if (NockedArrowMesh && BowMesh && NockedArrowMesh->GetAttachParent() != BowMesh)
+	{
+		NockedArrowMesh->AttachToComponent(
+			BowMesh,
+			FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	}
+}
+
+bool ABowItem::TryGetArrowSpawnTransform(FTransform& OutSpawnTransform) const
+{
+	OutSpawnTransform = FTransform::Identity;
+	const USkeletalMeshComponent* CharacterMesh = ArrowAnchorMesh.Get();
+	if (!CharacterMesh || CharacterArrowSocketName.IsNone()
+		|| !CharacterMesh->DoesSocketExist(CharacterArrowSocketName))
+	{
+		return false;
+	}
+
+	OutSpawnTransform = CharacterMesh->GetSocketTransform(CharacterArrowSocketName, RTS_World);
+	return true;
+}
+
+bool ABowItem::SetNockedArrowVisible(bool bVisible)
+{
+	if (!NockedArrowMesh)
+	{
+		return false;
+	}
+
+	USkeletalMeshComponent* CharacterMesh = ArrowAnchorMesh.Get();
+	const bool bCanShow = bVisible && CharacterMesh
+		&& !CharacterArrowSocketName.IsNone()
+		&& CharacterMesh->DoesSocketExist(CharacterArrowSocketName);
+	if (bCanShow)
+	{
+		NockedArrowMesh->AttachToComponent(
+			CharacterMesh,
+			FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+			CharacterArrowSocketName);
+	}
+
+	NockedArrowMesh->SetVisibility(bCanShow, true);
+	NockedArrowMesh->SetHiddenInGame(!bCanShow, true);
+	return !bVisible || bCanShow;
+}
+
+bool ABowItem::IsNockedArrowVisible() const
+{
+	return NockedArrowMesh && NockedArrowMesh->IsVisible() && !NockedArrowMesh->bHiddenInGame;
 }
 
 USceneComponent* ABowItem::GetAttachmentReferenceComponent() const

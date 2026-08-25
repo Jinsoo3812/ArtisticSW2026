@@ -76,8 +76,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Bow")
 	float GetCurrentFireSpeed() const;
 
+	/** Returns false when the authored arrow socket is unavailable. */
+	bool TryBuildArrowSpawnTransform(FTransform& OutSpawnTransform) const;
+
+	/** Predicted locally and replicated from the server to all relevant clients. */
+	UFUNCTION(BlueprintCallable, Category = "Bow")
+	void SetArrowNocked(bool bNewArrowNocked);
+
 	UFUNCTION(BlueprintPure, Category = "Bow")
-	FTransform BuildArrowSpawnTransform() const;
+	bool IsArrowNocked() const;
 
 	bool CalculateAim(const FVector& ViewLocation, const FVector& ViewForward, const TArray<AActor*>& ActorsToIgnore, FBowAimResult& OutAimResult) const;
 	bool ResolveAimTargetFromSocket(const FVector& SocketLocation, const FVector& CandidateAimTarget, const TArray<AActor*>& ActorsToIgnore, FVector& OutAimTarget, FHitResult* OutHitResult = nullptr) const;
@@ -91,19 +98,18 @@ public:
 	FBowDrawAlphaChangedSignature OnDrawAlphaChanged;
 
 protected:
-	UFUNCTION(Server, Reliable)
-	void ServerSetAiming(bool bNewAiming);
-
-	UFUNCTION(Server, Reliable)
-	void ServerSetDrawAlpha(float NewDrawAlpha);
-
 	UFUNCTION()
 	void OnRep_IsAiming();
 
 	UFUNCTION()
 	void OnRep_DrawAlpha();
 
+	UFUNCTION()
+	void OnRep_ArrowNocked();
+
 	ABowItem* GetOwningBow() const;
+	void ApplyArrowNockedPresentation();
+	bool IsLocallyControlledOwner() const;
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Fire", meta = (ClampMin = "0.0"))
@@ -129,4 +135,11 @@ protected:
 
 	UPROPERTY(ReplicatedUsing = OnRep_DrawAlpha, BlueprintReadOnly, Category = "Bow", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float DrawAlpha = 0.0f;
+
+	/** Server state for simulated proxies; autonomous clients apply the same state predictively. */
+	UPROPERTY(ReplicatedUsing = OnRep_ArrowNocked, BlueprintReadOnly, Category = "Bow")
+	bool bArrowNocked = false;
+
+	/** Owning-client cosmetic prediction; authoritative state remains in bArrowNocked. */
+	bool bPredictedArrowNocked = false;
 };

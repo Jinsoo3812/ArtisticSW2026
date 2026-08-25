@@ -7,6 +7,7 @@
 #include "Equipment/WeaponAnimationDataAsset.h"
 #include "Inventory/InventoryComponent.h"
 #include "ItemSubSystem.h"
+#include "Item/Weapons/BowItem.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SceneComponent.h"
@@ -25,6 +26,13 @@ void UPlayerEquipmentComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	PlayerOwner = Cast<ABasePlayer>(GetOwner());
+}
+
+void UPlayerEquipmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ObserveReplicatedEquippedItem(nullptr);
+	ClearBowArrowAnchor();
+	Super::EndPlay(EndPlayReason);
 }
 
 void UPlayerEquipmentComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -153,6 +161,7 @@ void UPlayerEquipmentComponent::UseEquippedItem(bool bDestroy)
 
 		PlayerOwner->RemoveItemFromSlot(PlayerOwner->ItemSlots[EquippedIndex].KeyTag);
 		PlayerOwner->RemoveAbilityFromSlot(AssignedKeyTag);
+		ClearBowArrowAnchor(Cast<ABowItem>(PlayerOwner->EquippedItem));
 
 		if (bDestroy)
 		{
@@ -172,9 +181,12 @@ void UPlayerEquipmentComponent::OnRepOwnerEquippedItem()
 		PlayerOwner = Cast<ABasePlayer>(GetOwner());
 	}
 
-	if (PlayerOwner && IsValid(PlayerOwner->EquippedItem) && PlayerOwner->EquippedItem->MyDefinition)
+	ClearBowArrowAnchor();
+	ABaseItem* ReplicatedEquippedItem = PlayerOwner ? PlayerOwner->EquippedItem.Get() : nullptr;
+	ObserveReplicatedEquippedItem(ReplicatedEquippedItem);
+	if (IsValid(ReplicatedEquippedItem) && ReplicatedEquippedItem->IsItemInitialized())
 	{
-		AttachItem(PlayerOwner->EquippedItem, EEquipmentAttachmentTarget::Equipped);
+		AttachItem(ReplicatedEquippedItem, EEquipmentAttachmentTarget::Equipped);
 	}
 }
 
@@ -550,7 +562,7 @@ void UPlayerEquipmentComponent::RemoveEquippedItemAbility(ABaseItem* Item)
 	}
 }
 
-bool UPlayerEquipmentComponent::AttachItem(ABaseItem* Item, EEquipmentAttachmentTarget Target) const
+bool UPlayerEquipmentComponent::AttachItem(ABaseItem* Item, EEquipmentAttachmentTarget Target)
 {
 	if (!PlayerOwner || !Item || !PlayerOwner->GetMesh())
 	{
@@ -578,7 +590,7 @@ bool UPlayerEquipmentComponent::AttachItem(ABaseItem* Item, EEquipmentAttachment
 			PlayerOwner->GetMesh(),
 			FAttachmentTransformRules::SnapToTargetNotIncludingScale,
 			CharacterSocketName);
-		return bAttached;
+		return CompleteItemAttachment(Item, Target, bAttached);
 	}
 
 	USceneComponent* GripComponent = Item->GetAttachmentReferenceComponent();
@@ -586,10 +598,11 @@ bool UPlayerEquipmentComponent::AttachItem(ABaseItem* Item, EEquipmentAttachment
 	if (!GripComponent || !GripComponent->DoesSocketExist(ItemGripSocketName) || !Item->GetRootComponent())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("UPlayerEquipmentComponent::AttachItem : Item %s has no grip socket %s on its attachment reference component. Falling back to root attachment."), *GetNameSafe(Item), *ItemGripSocketName.ToString());
-		return Item->AttachToComponent(
+		const bool bAttached = Item->AttachToComponent(
 			PlayerOwner->GetMesh(),
 			FAttachmentTransformRules::SnapToTargetNotIncludingScale,
 			CharacterSocketName);
+		return CompleteItemAttachment(Item, Target, bAttached);
 	}
 
 	const FTransform RootWorldTransform = Item->GetRootComponent()->GetComponentTransform();
@@ -616,7 +629,107 @@ bool UPlayerEquipmentComponent::AttachItem(ABaseItem* Item, EEquipmentAttachment
 		*CharacterSocketName.ToString(),
 		*ItemGripSocketName.ToString(),
 		AlignmentError);
+	return CompleteItemAttachment(Item, Target, true);
+}
+
+bool UPlayerEquipmentComponent::CompleteItemAttachment(
+	ABaseItem* Item,
+	EEquipmentAttachmentTarget Target,
+	bool bAttached)
+{
+	if (!bAttached)
+	{
+		return false;
+	}
+
+	ABowItem* Bow = Cast<ABowItem>(Item);
+	if (Target != EEquipmentAttachmentTarget::Equipped)
+	{
+		ClearBowArrowAnchor(Bow);
+		return true;
+	}
+
+	if (!Bow)
+	{
+		ClearBowArrowAnchor();
+		return true;
+	}
+
+	if (ABowItem* PreviouslyBoundBow = BoundBowArrowAnchor.Get(); PreviouslyBoundBow != Bow)
+	{
+		ClearBowArrowAnchor();
+	}
+
+	if (!Bow->BindArrowAnchor(PlayerOwner ? PlayerOwner->GetMesh() : nullptr))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("UPlayerEquipmentComponent::CompleteItemAttachment: Character mesh is missing Bow socket %s for %s."),
+			*Bow->GetCharacterArrowSocketName().ToString(),
+			*GetNameSafe(Bow));
+		return false;
+	}
+
+	BoundBowArrowAnchor = Bow;
 	return true;
+}
+
+void UPlayerEquipmentComponent::ClearBowArrowAnchor(ABowItem* ExpectedBow)
+{
+	ABowItem* BoundBow = BoundBowArrowAnchor.Get();
+	if (ExpectedBow)
+	{
+		ExpectedBow->UnbindArrowAnchor();
+		if (BoundBow == ExpectedBow)
+		{
+			BoundBowArrowAnchor.Reset();
+		}
+		return;
+	}
+
+	if (BoundBow)
+	{
+		BoundBow->UnbindArrowAnchor();
+	}
+	BoundBowArrowAnchor.Reset();
+}
+
+void UPlayerEquipmentComponent::ObserveReplicatedEquippedItem(ABaseItem* Item)
+{
+	if (ABaseItem* ObservedItem = ObservedReplicatedEquippedItem.Get())
+	{
+		ObservedItem->OnItemInitialized.RemoveAll(this);
+	}
+	ObservedReplicatedEquippedItem.Reset();
+
+	if (IsValid(Item))
+	{
+		ObservedReplicatedEquippedItem = Item;
+		Item->OnItemInitialized.AddUObject(
+			this,
+			&UPlayerEquipmentComponent::HandleReplicatedEquippedItemInitialized);
+	}
+}
+
+void UPlayerEquipmentComponent::HandleReplicatedEquippedItemInitialized(ABaseItem* Item)
+{
+	if (!PlayerOwner)
+	{
+		PlayerOwner = Cast<ABasePlayer>(GetOwner());
+	}
+
+	if (!PlayerOwner || !IsValid(Item) || Item != PlayerOwner->EquippedItem
+		|| Item != ObservedReplicatedEquippedItem.Get() || !Item->IsItemInitialized())
+	{
+		return;
+	}
+
+	ClearBowArrowAnchor();
+	if (!AttachItem(Item, EEquipmentAttachmentTarget::Equipped))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("UPlayerEquipmentComponent::HandleReplicatedEquippedItemInitialized: Failed to attach replicated item %s after ItemTag initialization."),
+			*GetNameSafe(Item));
+	}
 }
 
 bool UPlayerEquipmentComponent::IsItemOwnedByItemSlot(const ABaseItem* Item) const
@@ -637,6 +750,7 @@ void UPlayerEquipmentComponent::StoreCurrentEquippedItem()
 	}
 
 	ABaseItem* PreviousItem = PlayerOwner->EquippedItem;
+	ClearBowArrowAnchor(Cast<ABowItem>(PreviousItem));
 	const bool bOwnedByItemSlot = IsItemOwnedByItemSlot(PreviousItem);
 	PreviousItem->RemoveStrengthBonusEffect();
 	RemoveEquippedItemAbility(PreviousItem);
@@ -752,9 +866,18 @@ void UPlayerEquipmentComponent::FinalizePendingEquip()
 
 void UPlayerEquipmentComponent::CancelPendingEquip()
 {
+	ABaseItem* ItemToCancel = PendingEquipItem.Get();
+	if (ItemToCancel && (!PlayerOwner || ItemToCancel != PlayerOwner->EquippedItem))
+	{
+		if (ABowItem* BowToCancel = Cast<ABowItem>(ItemToCancel))
+		{
+			ClearBowArrowAnchor(BowToCancel);
+		}
+	}
+
 	if (PlayerOwner && PlayerOwner->HasAuthority())
 	{
-		if (ABaseItem* ItemToCancel = PendingEquipItem.Get())
+		if (ItemToCancel)
 		{
 			if (IsItemOwnedByItemSlot(ItemToCancel))
 			{
@@ -813,6 +936,15 @@ void UPlayerEquipmentComponent::OnEquipmentMontageEnded(UAnimMontage* Montage, b
 	{
 		FinalizePendingEquip();
 		return;
+	}
+
+	if (ABaseItem* PendingItem = PendingEquipItem.Get();
+		PendingItem && (!PlayerOwner || PendingItem != PlayerOwner->EquippedItem))
+	{
+		if (ABowItem* PendingBow = Cast<ABowItem>(PendingItem))
+		{
+			ClearBowArrowAnchor(PendingBow);
+		}
 	}
 
 	ActiveEquipmentMontage = nullptr;
