@@ -619,10 +619,11 @@ void AShip::Tick(float DeltaTime)
 				(AttributeSet ? AttributeSet->GetTurnTorqueMultiplier() : 1.0f)
 				* FMath::Max(0.0f, CurrentAITurnScale);
 			float BuoyancyRadius = 150.f;
-			float BuoyancyForceMultiplier = 1.3f;
-			float WaterDamping = 3.0f;
-			float WaterDamping2 = 0.1f;
-			float MaxBuoyantForce = 5000000.0f;
+			FSWBuoyancyForceSettings BuoyancyForceSettings;
+			BuoyancyForceSettings.BuoyancyCoefficient = 1.3f;
+			BuoyancyForceSettings.BuoyancyDamp = 3.0f;
+			BuoyancyForceSettings.BuoyancyDamp2 = 0.1f;
+			BuoyancyForceSettings.MaxBuoyantForce = 5000000.0f;
 
 			if (SWBuoyancyComponent)
 			{
@@ -632,10 +633,7 @@ void AShip::Tick(float DeltaTime)
 				{
 					BuoyancyRadius = Pontoons[0].Radius;
 				}
-				BuoyancyForceMultiplier = Settings.BuoyancyCoefficient;
-				WaterDamping = Settings.BuoyancyDamp;
-				WaterDamping2 = Settings.BuoyancyDamp2;
-				MaxBuoyantForce = Settings.MaxBuoyantForce;
+				BuoyancyForceSettings = Settings;
 			}
 
 			TArray<FSWRippleEvent> TempRippleEvents;
@@ -656,7 +654,7 @@ void AShip::Tick(float DeltaTime)
 				AsyncInput->ExternalAcceleration = CurrentExternalAcceleration;
 				AsyncInput->bApplyAuthoritativeExternalAcceleration = HasAuthority();
 				AsyncInput->bApplyAuthoritativeBuoyancyState = HasAuthority();
-				AsyncInput->bBuoyancyEnabled = BuoyancyForceMultiplier > UE_SMALL_NUMBER;
+				AsyncInput->bBuoyancyEnabled = BuoyancyForceSettings.BuoyancyCoefficient > UE_SMALL_NUMBER;
 				AsyncInput->bQueryDiagnostics = bBuoyancyQueryDiagnostics;
 				AsyncInput->PontoonOffsets = TempPontoons;
 				AsyncInput->PontoonRadii = TempPontoonRadii;
@@ -671,10 +669,7 @@ void AShip::Tick(float DeltaTime)
 				AsyncInput->ForwardPropulsionMultiplier = ForwardPropulsionMultiplier;
 				AsyncInput->TurnTorqueMultiplier = TurnTorqueMultiplier;
 				AsyncInput->BuoyancyRadius = BuoyancyRadius;
-				AsyncInput->BuoyancyForceMultiplier = BuoyancyForceMultiplier;
-				AsyncInput->WaterDamping = WaterDamping;
-				AsyncInput->WaterDamping2 = WaterDamping2;
-				AsyncInput->MaxBuoyantForce = MaxBuoyantForce;
+				AsyncInput->BuoyancyForceSettings = BuoyancyForceSettings;
 				// Keep the custom payload aligned with the project's 5 cm Network
 				// Physics threshold; 30 cm is visibly separated at pontoon scale.
 				AsyncInput->ResimLocationThreshold = FMath::Clamp(ResimLocationThreshold, 0.1f, 5.0f);

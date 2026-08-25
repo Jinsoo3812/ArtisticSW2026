@@ -6,11 +6,23 @@
 #include "Physics/NetworkPhysicsComponent.h"
 #include "GerstnerWaterWaves.h"
 #include "Water/SWRippleTypes.h"
+#include "Water/SWBuoyancyTypes.h"
 #include "SWShipWakeTypes.h"
 #include "Ship.h"
 
 struct FAsyncInputShip : public Chaos::FSimCallbackInput
 {
+	FAsyncInputShip()
+	{
+		// Preserve the pre-ForceSettings fallback values until the game thread
+		// supplies the authoritative component settings.
+		BuoyancyForceSettings.BuoyancyCoefficient = 1.2f;
+		BuoyancyForceSettings.DeepWaterBuoyancyMultiplier = 1.0f;
+		BuoyancyForceSettings.BuoyancyDamp = 3.0f;
+		BuoyancyForceSettings.BuoyancyDamp2 = 0.1f;
+		BuoyancyForceSettings.MaxBuoyantForce = 5000000.0f;
+	}
+
 	float MovementInput = 0.0f;
 	float SteeringInput = 0.0f;
 	FVector ExternalAcceleration = FVector::ZeroVector;
@@ -37,10 +49,11 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	float TurnTorqueMultiplier = 1.0f;
 
 	float BuoyancyRadius = 100.f;
-	float BuoyancyForceMultiplier = 1.2f;
-	float WaterDamping = 3.0f;
-	float WaterDamping2 = 0.1f;
-	float MaxBuoyantForce = 5000000.0f;
+	/**
+	 * Static force settings are marshalled as one value so every peer caches the
+	 * exact same solve parameters for normal prediction and rewind/resimulation.
+	 */
+	FSWBuoyancyForceSettings BuoyancyForceSettings;
 
 	double ServerPhysicsTimeOrigin = -1.0;
 	float ServerPhysicsStepSeconds = 0.0f;
@@ -148,10 +161,7 @@ private:
 	float CachedForwardPropulsionMultiplier = 1.0f;
 	float CachedTurnTorqueMultiplier = 1.0f;
 	float CachedBuoyancyRadius = 100.f;
-	float CachedBuoyancyForceMultiplier = 1.2f;
-	float CachedWaterDamping = 3.0f;
-	float CachedWaterDamping2 = 0.1f;
-	float CachedMaxBuoyantForce = 5000000.0f;
+	FSWBuoyancyForceSettings CachedBuoyancyForceSettings;
 
 	// Authoritative server-frame clock used in normal simulation and rewind.
 	double CachedServerPhysicsTimeOrigin = -1.0;

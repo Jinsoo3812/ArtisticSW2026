@@ -106,6 +106,13 @@ namespace
 
 FShipPhysicsAsync::FShipPhysicsAsync()
 {
+	// Preserve the previous PT cache defaults until the first non-resim GT input
+	// supplies the component-owned force settings.
+	CachedBuoyancyForceSettings.BuoyancyCoefficient = 1.2f;
+	CachedBuoyancyForceSettings.DeepWaterBuoyancyMultiplier = 1.0f;
+	CachedBuoyancyForceSettings.BuoyancyDamp = 3.0f;
+	CachedBuoyancyForceSettings.BuoyancyDamp2 = 0.1f;
+	CachedBuoyancyForceSettings.MaxBuoyantForce = 5000000.0f;
 }
 
 FShipPhysicsAsync::~FShipPhysicsAsync()
@@ -322,10 +329,7 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 				CachedForwardPropulsionMultiplier = AsyncInput->ForwardPropulsionMultiplier;
 				CachedTurnTorqueMultiplier = AsyncInput->TurnTorqueMultiplier;
 				CachedBuoyancyRadius = AsyncInput->BuoyancyRadius;
-				CachedBuoyancyForceMultiplier = AsyncInput->BuoyancyForceMultiplier;
-				CachedWaterDamping = AsyncInput->WaterDamping;
-				CachedWaterDamping2 = AsyncInput->WaterDamping2;
-				CachedMaxBuoyantForce = AsyncInput->MaxBuoyantForce;
+				CachedBuoyancyForceSettings = AsyncInput->BuoyancyForceSettings;
 				CachedResimLocationThreshold = AsyncInput->ResimLocationThreshold;
 				CachedResimRotationThreshold = AsyncInput->ResimRotationThreshold;
 			}
@@ -405,10 +409,10 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 			CachedGerstnerWaves.Num(),
 			CachedPontoonOffsets.Num(),
 			CachedBuoyancyRadius,
-			CachedBuoyancyForceMultiplier,
-			CachedWaterDamping,
-			CachedWaterDamping2,
-			CachedMaxBuoyantForce);
+			CachedBuoyancyForceSettings.BuoyancyCoefficient,
+			CachedBuoyancyForceSettings.BuoyancyDamp,
+			CachedBuoyancyForceSettings.BuoyancyDamp2,
+			CachedBuoyancyForceSettings.MaxBuoyantForce);
 	}
 	*/
 
@@ -498,13 +502,8 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 			SolveInput.ForceScale = CachedPontoonForceScales.IsValidIndex(PontoonIndex)
 				? CachedPontoonForceScales[PontoonIndex]
 				: 1.0f;
-			FSWBuoyancyForceSettings SolveSettings;
-			SolveSettings.BuoyancyCoefficient = CachedBuoyancyForceMultiplier;
-			SolveSettings.BuoyancyDamp = CachedWaterDamping;
-			SolveSettings.BuoyancyDamp2 = CachedWaterDamping2;
-			SolveSettings.MaxBuoyantForce = CachedMaxBuoyantForce;
 			const FSWBuoyancySolveResult SolveResult =
-				FSWBuoyancyMath::SolvePontoon(SolveInput, SolveSettings);
+				FSWBuoyancyMath::SolvePontoon(SolveInput, CachedBuoyancyForceSettings);
 			const float PontoonForceZ = SolveResult.BuoyantForceZ;
 
 			if (PontoonForceZ > 0.0f)
