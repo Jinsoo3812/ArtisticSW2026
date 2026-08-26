@@ -8,6 +8,7 @@
 #include "Crafting/CraftingRecipeTypes.h"
 #include "Upgrade/ShipUpgradeInventoryProvider.h"
 #include "DialogueInventoryProvider.h"
+#include "PlayerRespawnTypes.h"
 #include "InventoryComponent.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnInventoryChanged);
@@ -193,6 +194,10 @@ public:
 	int32 GetSlotCount() const { return GetSlotCount(ActiveTab); }
 	int32 GetSlotCount(EInventoryTab Tab) const;
 	EInventoryTab GetActiveTab() const { return ActiveTab; }
+
+	/** Exact tab/slot snapshot used by the run-level respawn persistence bridge. */
+	void CaptureProgressSnapshot(TArray<FSWInventorySlotSnapshot>& OutSlots) const;
+	void RestoreProgressSnapshot(const TArray<FSWInventorySlotSnapshot>& InSlots);
 
 	// 인벤토리 내 아이템 MaxStack Getter
 	int32 GetMaxStack(const FGameplayTag& ItemTag) const;

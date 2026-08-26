@@ -6,6 +6,12 @@
 #include "EngineUtils.h"
 #include "GameFramework/PlayerStart.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
+#include "PlayerRespawnPointComponent.h"
+#include "PlayerRespawnPoint.h"
+#include "PlayerProgressSubsystem.h"
+#include "RespawnHostInterface.h"
+#include "TimerManager.h"
 
 AMultiGameMode::AMultiGameMode()
 {
@@ -34,7 +40,7 @@ void AMultiGameMode::PostLogin(APlayerController* NewPlayer)
     Super::PostLogin(NewPlayer);
 
     const FName AssignedRole = GetPlayerRole(NewPlayer);
-    const int32 PlayerIndex = PlayerRoles.Num() - 1;
+    const int32 PlayerIndex = GetPlayerIndex(NewPlayer);
 
     OnPlayerRoleAssigned.Broadcast(NewPlayer, AssignedRole, PlayerIndex);
 
@@ -72,6 +78,10 @@ void AMultiGameMode::Logout(AController* Exiting)
     {
         PlayerRoles.Remove(Exiting);
         ReadyPlayers.Remove(Exiting);
+		PlayerIndices.Remove(Exiting);
+		FinishedDeadPlayers.Remove(Exiting);
+		if (FTimerHandle* Timer = RespawnTimers.Find(Exiting)) GetWorldTimerManager().ClearTimer(*Timer);
+		RespawnTimers.Remove(Exiting);
     }
 
     // 플레이어가 나가면 다시 조건을 만족할 수 있도록 플래그를 갱신한다.
@@ -118,18 +128,20 @@ UClass* AMultiGameMode::GetDefaultPawnClassForController_Implementation(AControl
 
 AActor* AMultiGameMode::ChoosePlayerStart_Implementation(AController* Player)
 {
-    // 1. 등록된 컨트롤러 목록에서 플레이어 인덱스를 확인합니다.
-    int32 PlayerIndex = 0;
-    int32 CurrentIdx = 0;
-    for (const TPair<TObjectPtr<AController>, FName>& Pair : PlayerRoles)
-    {
-        if (Pair.Key.Get() == Player)
-        {
-            PlayerIndex = CurrentIdx;
-            break;
-        }
-        ++CurrentIdx;
-    }
+    const int32 PlayerIndex = FMath::Max(0, GetPlayerIndex(Player));
+	if (const UGameInstance* GI = GetGameInstance())
+	{
+		if (const UPlayerProgressSubsystem* Progress = GI->GetSubsystem<UPlayerProgressSubsystem>(); Progress && Progress->HasSnapshot(PlayerIndex))
+		{
+			APlayerRespawnPoint* Fallback = nullptr;
+			for (TActorIterator<APlayerRespawnPoint> It(GetWorld()); It; ++It)
+			{
+				if (It->PlayerSlot == static_cast<ESWPlayerSlot>(PlayerIndex)) return *It;
+				if (It->PlayerSlot == ESWPlayerSlot::Any) Fallback = *It;
+			}
+			if (Fallback) return Fallback;
+		}
+	}
 
     // 2. Player_0, Player_1 등의 인덱스 태그를 가진 PlayerStart 우선 검색
     const FName IndexTag = *FString::Printf(TEXT("Player_%d"), PlayerIndex);
@@ -275,6 +287,67 @@ bool AMultiGameMode::AreAllPlayersReady() const
 	return true;
 }
 
+int32 AMultiGameMode::GetPlayerIndex(AController* Controller) const
+{
+	if (const int32* Index = PlayerIndices.Find(Controller)) return *Index;
+	return INDEX_NONE;
+}
+
+void AMultiGameMode::NotifyPlayerDeathFinished(APawn* DeadPawn)
+{
+	if (!HasAuthority() || !DeadPawn) return;
+	AController* DeadController = DeadPawn->GetController();
+	if (!DeadController && DeadPawn->GetPlayerState()) DeadController = DeadPawn->GetPlayerState()->GetOwningController();
+	if (!DeadController || !PlayerIndices.Contains(DeadController) || FinishedDeadPlayers.Contains(DeadController)) return;
+
+	FinishedDeadPlayers.Add(DeadController);
+	DeadController->UnPossess();
+	DeadPawn->SetLifeSpan(FMath::Max(IndividualRespawnDelay + 2.0f, 10.0f));
+	if (FinishedDeadPlayers.Num() >= RequiredPlayerCount)
+	{
+		for (TPair<TObjectPtr<AController>, FTimerHandle>& Pair : RespawnTimers) GetWorldTimerManager().ClearTimer(Pair.Value);
+		RespawnTimers.Reset();
+		HandleAllPlayersDeathFinished();
+		return;
+	}
+
+	FTimerDelegate Delegate;
+	Delegate.BindUObject(this, &AMultiGameMode::TryRespawnPlayer, DeadController);
+	GetWorldTimerManager().SetTimer(RespawnTimers.FindOrAdd(DeadController), Delegate, IndividualRespawnDelay, false);
+}
+
+void AMultiGameMode::TryRespawnPlayer(AController* Controller)
+{
+	RespawnTimers.Remove(Controller);
+	if (!Controller || !FinishedDeadPlayers.Contains(Controller)) return;
+	UPlayerRespawnPointComponent* Point = FindShipRespawnPoint(GetPlayerIndex(Controller));
+	if (!Point) return;
+	FinishedDeadPlayers.Remove(Controller);
+	RestartPlayerAtTransform(Controller, Point->GetComponentTransform());
+}
+
+UPlayerRespawnPointComponent* AMultiGameMode::FindShipRespawnPoint(int32 PlayerIndex) const
+{
+	UWorld* World = GetWorld();
+	if (!World) return nullptr;
+	UPlayerRespawnPointComponent* Fallback = nullptr;
+	for (TObjectIterator<UPlayerRespawnPointComponent> It; It; ++It)
+	{
+		UPlayerRespawnPointComponent* Point = *It;
+		if (!Point || Point->GetWorld() != World || !Point->IsRegistered()) continue;
+		AActor* Host = Point->GetOwner();
+		if (!Host || !Host->GetClass()->ImplementsInterface(URespawnHostInterface::StaticClass())
+			|| !IRespawnHostInterface::Execute_IsAvailableForPlayerRespawn(Host)) continue;
+		if (Point->PlayerSlot == static_cast<ESWPlayerSlot>(PlayerIndex)) return Point;
+		if (Point->PlayerSlot == ESWPlayerSlot::Any) Fallback = Point;
+	}
+	return Fallback;
+}
+
+void AMultiGameMode::HandleAllPlayersDeathFinished()
+{
+}
+
 void AMultiGameMode::HandleRequiredPlayersJoined()
 {
 	// 하위 GameMode에서 필요하면 override.
@@ -335,6 +408,7 @@ void AMultiGameMode::AssignRoleToPlayer(AController* Controller)
 	const FName AssignedRole = GetRoleForPlayerIndex(PlayerIndex);
 
 	PlayerRoles.Add(Controller, AssignedRole);
+	PlayerIndices.Add(Controller, PlayerIndex);
 
 	UE_LOG(
 		LogTemp,

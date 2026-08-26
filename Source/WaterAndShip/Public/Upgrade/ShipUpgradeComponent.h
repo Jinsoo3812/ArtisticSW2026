@@ -115,6 +115,7 @@ public:
 	bool SaveProgress() const;
 
 	const TArray<FName>& GetActiveNodeIds() const { return ActiveNodeIds; }
+	void RestoreActiveNodeIds(const TArray<FName>& InActiveNodeIds);
 	void ConfigureForUseCase(UShipUpgradeTreeDataAsset* InTree, const FShipStatSnapshot& InBaseStats, bool bEnablePersistence);
 	EShipUpgradeActivationResult ActivateNodeForUseCase(FName NodeId);
 

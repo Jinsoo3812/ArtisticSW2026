@@ -206,6 +206,43 @@ const TArray<FInventorySlot>& UInventoryComponent::GetSlots(EInventoryTab Tab) c
     return EmptySlots;
 }
 
+void UInventoryComponent::CaptureProgressSnapshot(TArray<FSWInventorySlotSnapshot>& OutSlots) const
+{
+	OutSlots.Reset();
+	for (const FInventoryTabPage& Page : InventoryPages)
+	{
+		for (int32 SlotIndex = 0; SlotIndex < Page.Slots.Num(); ++SlotIndex)
+		{
+			const FInventorySlot& Slot = Page.Slots[SlotIndex];
+			if (Slot.IsEmpty()) continue;
+			FSWInventorySlotSnapshot& Saved = OutSlots.AddDefaulted_GetRef();
+			Saved.Tab = static_cast<uint8>(Page.Tab);
+			Saved.SlotIndex = SlotIndex;
+			Saved.ItemTag = Slot.ItemTag;
+			Saved.Count = Slot.Count;
+		}
+	}
+}
+
+void UInventoryComponent::RestoreProgressSnapshot(const TArray<FSWInventorySlotSnapshot>& InSlots)
+{
+	if (GetOwner() && !GetOwner()->HasAuthority()) return;
+	InitializeInventoryPages();
+	for (FInventoryTabPage& Page : InventoryPages)
+	{
+		for (FInventorySlot& Slot : Page.Slots) Slot.Clear();
+	}
+	CursorItem.Clear();
+	for (const FSWInventorySlotSnapshot& Saved : InSlots)
+	{
+		FInventoryTabPage* Page = FindMutablePage(static_cast<EInventoryTab>(Saved.Tab));
+		if (!Page || !Page->Slots.IsValidIndex(Saved.SlotIndex) || !Saved.ItemTag.IsValid() || Saved.Count <= 0) continue;
+		Page->Slots[Saved.SlotIndex].ItemTag = Saved.ItemTag;
+		Page->Slots[Saved.SlotIndex].Count = Saved.Count;
+	}
+	OnRep_InventoryContents();
+}
+
 int32 UInventoryComponent::GetSlotCount(EInventoryTab Tab) const
 {
     if (const FInventoryTabPage* Page = FindPage(Tab))

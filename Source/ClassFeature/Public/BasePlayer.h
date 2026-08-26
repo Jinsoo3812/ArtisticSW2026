@@ -123,6 +123,8 @@ public:
 
 	UFUNCTION()
 	void HandleDeathFinished(UBaseHealthComponent* InHealthComponent);
+	void CaptureRespawnProgress();
+	void RestoreRespawnProgress(AController* OwningController);
 
 	/* --- GAS 초기화 ---*/
 public:

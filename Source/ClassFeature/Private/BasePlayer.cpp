@@ -31,6 +31,9 @@
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Animation/SWTrajectoryComponent.h"
 #include "Inventory/InventoryComponent.h"
+#include "MultiGameMode.h"
+#include "PlayerProgressSubsystem.h"
+#include "Upgrade/ShipUpgradeComponent.h"
 #include "Crafting/CraftingComponent.h"
 #include "ItemSubSystem.h"
 #include "Equipment/PlayerEquipmentComponent.h"
@@ -364,6 +367,49 @@ void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 {
 	ApplyLocalDeathRagdoll();
+	if (HasAuthority())
+	{
+		CaptureRespawnProgress();
+		if (AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr)
+		{
+			GameMode->NotifyPlayerDeathFinished(this);
+		}
+	}
+}
+
+void ABasePlayer::CaptureRespawnProgress()
+{
+	AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+	AController* OwnerController = GetController();
+	if (!OwnerController && GetPlayerState()) OwnerController = GetPlayerState()->GetOwningController();
+	UPlayerProgressSubsystem* Progress = GetGameInstance() ? GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>() : nullptr;
+	if (!GameMode || !Progress || !OwnerController) return;
+	const int32 PlayerIndex = GameMode->GetPlayerIndex(OwnerController);
+	if (PlayerIndex == INDEX_NONE) return;
+	FSWPlayerProgressSnapshot Snapshot;
+	if (InventoryComponent) InventoryComponent->CaptureProgressSnapshot(Snapshot.InventorySlots);
+	if (const ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
+	{
+		if (const UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent())
+		{
+			Snapshot.ActiveShipUpgradeNodeIds = Upgrade->GetActiveNodeIds();
+		}
+	}
+	Progress->StoreSnapshot(PlayerIndex, Snapshot);
+}
+
+void ABasePlayer::RestoreRespawnProgress(AController* OwningController)
+{
+	AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+	UPlayerProgressSubsystem* Progress = GetGameInstance() ? GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>() : nullptr;
+	if (!GameMode || !Progress || !OwningController) return;
+	FSWPlayerProgressSnapshot Snapshot;
+	if (!Progress->ConsumeSnapshot(GameMode->GetPlayerIndex(OwningController), Snapshot)) return;
+	if (InventoryComponent) InventoryComponent->RestoreProgressSnapshot(Snapshot.InventorySlots);
+	if (ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
+	{
+		if (UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent()) Upgrade->RestoreActiveNodeIds(Snapshot.ActiveShipUpgradeNodeIds);
+	}
 }
 
 void ABasePlayer::Tick(float DeltaTime)
@@ -513,7 +559,9 @@ void ABasePlayer::PossessedBy(AController* NewController)
 		if (HealthComponent)
 		{
 			HealthComponent->InitializeWithAbilitySystem(CachedAbilitySystemComponent.Get());
+			if (HealthComponent->IsDead()) HealthComponent->ResetForReuse();
 		}
+		RestoreRespawnProgress(NewController);
 
 		// Interact GA에 의해 발생한 Gameplay Event를 처리할 콜백 함수 등록
 		// 현재는 Event 별로 따로 바인딩하지만 더 좋은 방법이 있을까?

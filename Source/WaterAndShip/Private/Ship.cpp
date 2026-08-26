@@ -1936,6 +1936,11 @@ UAbilitySystemComponent* AShip::GetAbilitySystemComponent() const
 	return AbilitySystemComponent;
 }
 
+bool AShip::IsAvailableForPlayerRespawn_Implementation() const
+{
+	return !IsActorBeingDestroyed() && AttributeSet && AttributeSet->GetHealth() > 0.0f;
+}
+
 void AShip::InitializeDefaultAttributes()
 {
 	if (!HasAuthority() || !AttributeSet) return;

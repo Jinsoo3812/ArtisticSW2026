@@ -4,6 +4,7 @@
 #include "GameFramework/Pawn.h"
 #include "InputActionValue.h"
 #include "AbilitySystemInterface.h"
+#include "RespawnHostInterface.h"
 #include "Engine/DataTable.h"
 #include "Physics/NetworkPhysicsComponent.h"
 #include "GerstnerWaterWaves.h"
@@ -439,7 +440,7 @@ struct FShipReplicatedState
 };
 
 UCLASS()
-class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface
+class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, public IRespawnHostInterface
 {
 	GENERATED_BODY()
 
@@ -449,6 +450,7 @@ public:
 
 	// IAbilitySystemInterface 구현
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	virtual bool IsAvailableForPlayerRespawn_Implementation() const override;
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Stats")
 	UShipAttributeSet* GetShipAttributeSet() const { return AttributeSet; }

@@ -346,6 +346,18 @@ bool UShipUpgradeComponent::SaveProgress() const
 	return UGameplayStatics::SaveGameToSlot(Save, GetResolvedSaveSlotName(), 0);
 }
 
+void UShipUpgradeComponent::RestoreActiveNodeIds(const TArray<FName>& InActiveNodeIds)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+	const TArray<FName> Previous = ActiveNodeIds;
+	ActiveNodeIds.Reset();
+	for (const FName NodeId : InActiveNodeIds)
+	{
+		if (!UpgradeTree || UpgradeTree->FindNode(NodeId)) ActiveNodeIds.AddUnique(NodeId);
+	}
+	BroadcastStateDiff(Previous);
+}
+
 void UShipUpgradeComponent::ConfigureForUseCase(UShipUpgradeTreeDataAsset* InTree, const FShipStatSnapshot& InBaseStats, bool bEnablePersistence)
 {
 	UpgradeTree = InTree;

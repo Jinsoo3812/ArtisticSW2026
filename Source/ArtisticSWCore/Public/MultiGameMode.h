@@ -11,6 +11,7 @@ class AController;
 class APlayerController;
 class APlayerStart;
 class APawn;
+class UPlayerRespawnPointComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
     FOnSWPlayerRoleAssigned,
@@ -147,6 +148,15 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Multiplayer|State")
     bool AreAllPlayersReady() const;
+
+	UFUNCTION(BlueprintPure, Category="Respawn")
+	int32 GetPlayerIndex(AController* Controller) const;
+
+	UFUNCTION(BlueprintCallable, Category="Respawn")
+	void NotifyPlayerDeathFinished(APawn* DeadPawn);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Respawn", meta=(ClampMin="0.0"))
+	float IndividualRespawnDelay = 5.0f;
     
 protected:
     // ================================
@@ -184,10 +194,17 @@ protected:
 
     /** 각 Controller의 역할 */
     TMap<TObjectPtr<AController>, FName> PlayerRoles;
+	TMap<TObjectPtr<AController>, int32> PlayerIndices;
+	TSet<TObjectPtr<AController>> FinishedDeadPlayers;
+	TMap<TObjectPtr<AController>, FTimerHandle> RespawnTimers;
 
     /** Ready 상태인 Controller 목록 */
     TSet<TObjectPtr<AController>> ReadyPlayers;
 
     bool bRequiredPlayersJoinedNotified = false;
     bool bAllPlayersReadyNotified = false;
+
+	void TryRespawnPlayer(AController* Controller);
+	UPlayerRespawnPointComponent* FindShipRespawnPoint(int32 PlayerIndex) const;
+	virtual void HandleAllPlayersDeathFinished();
 };

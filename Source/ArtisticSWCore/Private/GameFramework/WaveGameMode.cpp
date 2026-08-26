@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "TimerManager.h"
+#include "Kismet/GameplayStatics.h"
 
 AWaveGameMode::AWaveGameMode()
 {
@@ -586,4 +587,13 @@ bool AWaveGameMode::AreAllPlayersDead() const
 	}
 
 	return true;
+}
+
+void AWaveGameMode::HandleAllPlayersDeathFinished()
+{
+	if (!HasAuthority()) return;
+	HandleDefeat(); // Replicated Defeat phase + OnGameDefeat are the future defeat-screen hook.
+	const UWorld* World = GetWorld();
+	if (!World) return;
+	UGameplayStatics::OpenLevel(this, FName(*World->GetMapName().RightChop(World->StreamingLevelsPrefix.Len())));
 }
