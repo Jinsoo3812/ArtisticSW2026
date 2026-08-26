@@ -1090,17 +1090,20 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Weapon UpperBody")
     bool bForceSprintWeaponUpperBodyDirectionForward = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Foot Placement")
     FFootPlacementPlantSettings FootPlacementPlantSettingsDefault;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Foot Placement")
     FFootPlacementPlantSettings FootPlacementPlantSettingsStops;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Foot Placement")
     FFootPlacementInterpolationSettings FootPlacementInterpolationSettingsDefault;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Foot Placement")
     FFootPlacementInterpolationSettings FootPlacementInterpolationSettingsStops;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Foot Placement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float TurnInPlaceFootPlacementAlpha = 0.0f;
 
 
 
