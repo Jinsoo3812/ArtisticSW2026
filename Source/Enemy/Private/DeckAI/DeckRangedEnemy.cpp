@@ -8,11 +8,11 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "Components/WidgetComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "ShipAI/EnemyShip.h"
 #include "TimerManager.h"
+#include "UI/EnemyHealthBarComponent.h"
 #include "Weapon/BaseWeaponComponent.h"
 
 ADeckRangedEnemy::ADeckRangedEnemy()
@@ -323,10 +323,9 @@ void ADeckRangedEnemy::ApplyPoolPresentationState()
 		}
 		CharacterMesh->SetCollisionEnabled(bPresent ? InitialMeshCollision : ECollisionEnabled::NoCollision);
 	}
-	if (HealthBarWidgetComponent)
+	if (EnemyHealthBarComponent)
 	{
-		HealthBarWidgetComponent->SetVisibility(
-			bPresent && HealthBarVisibilityPolicy == EEnemyHealthBarVisibilityPolicy::AlwaysVisible);
+		EnemyHealthBarComponent->SetOwnerPresentationActive(bPresent);
 	}
 }
 
@@ -344,6 +343,10 @@ void ADeckRangedEnemy::RestoreForPoolActivation()
 	bDeathHandled = false;
 	bWaveRemoveNotified = false;
 	bHasDropped = false;
+	if (EnemyHealthBarComponent)
+	{
+		EnemyHealthBarComponent->ResetRevealState();
+	}
 
 	if (UBaseHealthComponent* BaseHealth = GetHealthComponent())
 	{

@@ -12,12 +12,19 @@ void UShipUpgradeGraphWidget::NativeDestruct()
 		if (Pair.Value)
 		{
 			Pair.Value->OnNodeSelected().RemoveAll(this);
+			Pair.Value->OnNodeHoverChanged().RemoveAll(this);
 		}
 	}
 	NodeWidgets.Reset();
 	NodeSelectedDelegate.Clear();
+	NodeHoverChangedDelegate.Clear();
 
 	Super::NativeDestruct();
+}
+
+void UShipUpgradeGraphWidget::SetLayoutViewportWidth(float InViewportWidth)
+{
+	LayoutViewportWidth = FMath::Max(0.0f, InViewportWidth);
 }
 
 void UShipUpgradeGraphWidget::RebuildGraph(const TArray<FShipUpgradeNodeView>& InViews)
@@ -43,6 +50,7 @@ void UShipUpgradeGraphWidget::RebuildGraph(const TArray<FShipUpgradeNodeView>& I
 		if (Pair.Value)
 		{
 			Pair.Value->OnNodeSelected().RemoveAll(this);
+			Pair.Value->OnNodeHoverChanged().RemoveAll(this);
 		}
 	}
 
@@ -127,6 +135,7 @@ void UShipUpgradeGraphWidget::RebuildGraph(const TArray<FShipUpgradeNodeView>& I
 
 			NodeWidget->ApplyNodeView(View);
 			NodeWidget->OnNodeSelected().AddUObject(this, &UShipUpgradeGraphWidget::HandleNodeSelected);
+			NodeWidget->OnNodeHoverChanged().AddUObject(this, &UShipUpgradeGraphWidget::HandleNodeHoverChanged);
 			NodeWidgets.Add(View.NodeId, NodeWidget);
 			++CreatedNodeCount;
 			/* UE_LOG(LogTemp, Log,
@@ -242,6 +251,11 @@ void UShipUpgradeGraphWidget::HandleNodeSelected(FName NodeId)
 	NodeSelectedDelegate.Broadcast(NodeId);
 }
 
+void UShipUpgradeGraphWidget::HandleNodeHoverChanged(FName NodeId, bool bIsHovered)
+{
+	NodeHoverChangedDelegate.Broadcast(NodeId, bIsHovered);
+}
+
 const FShipUpgradeNodeView* UShipUpgradeGraphWidget::FindView(FName NodeId) const
 {
 	return NodeViews.FindByPredicate([NodeId](const FShipUpgradeNodeView& View)
@@ -259,20 +273,42 @@ void UShipUpgradeGraphWidget::BuildDisplayPositions()
 		{
 			NodeDisplayPositions.Add(View.NodeId, View.GraphPosition + GraphOriginOffset);
 		}
+	}
+	else
+	{
+		TMap<FName, int32> DepthCache;
+		TSet<FName> Visiting;
+		for (const FShipUpgradeNodeView& View : NodeViews)
+		{
+			const int32 Depth = CalculateNodeDepth(View.NodeId, DepthCache, Visiting);
+			NodeDisplayPositions.Add(
+				View.NodeId,
+				FVector2D(
+					VerticalTreeCenterX - NodeWidgetSize.X * 0.5f
+						+ View.GraphPosition.Y * HorizontalBranchScale,
+					GraphOriginOffset.Y + static_cast<float>(Depth) * VerticalLayerSpacing));
+		}
+	}
+
+	if (LayoutViewportWidth <= KINDA_SMALL_NUMBER || NodeDisplayPositions.IsEmpty())
+	{
 		return;
 	}
 
-	TMap<FName, int32> DepthCache;
-	TSet<FName> Visiting;
-	for (const FShipUpgradeNodeView& View : NodeViews)
+	float MinNodeX = TNumericLimits<float>::Max();
+	float MaxNodeX = TNumericLimits<float>::Lowest();
+	for (const TPair<FName, FVector2D>& Pair : NodeDisplayPositions)
 	{
-		const int32 Depth = CalculateNodeDepth(View.NodeId, DepthCache, Visiting);
-		NodeDisplayPositions.Add(
-			View.NodeId,
-			FVector2D(
-				VerticalTreeCenterX - NodeWidgetSize.X * 0.5f
-					+ View.GraphPosition.Y * HorizontalBranchScale,
-				GraphOriginOffset.Y + static_cast<float>(Depth) * VerticalLayerSpacing));
+		MinNodeX = FMath::Min(MinNodeX, Pair.Value.X);
+		MaxNodeX = FMath::Max(MaxNodeX, Pair.Value.X + NodeWidgetSize.X);
+	}
+
+	const float GraphCenterX = (MinNodeX + MaxNodeX) * 0.5f;
+	const float ViewportCenterX = LayoutViewportWidth * 0.5f;
+	const float CenteringOffsetX = ViewportCenterX - GraphCenterX;
+	for (TPair<FName, FVector2D>& Pair : NodeDisplayPositions)
+	{
+		Pair.Value.X += CenteringOffsetX;
 	}
 }
 

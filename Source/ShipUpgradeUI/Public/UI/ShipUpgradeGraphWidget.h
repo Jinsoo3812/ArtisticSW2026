@@ -10,6 +10,7 @@ class UShipUpgradeConnectionWidget;
 class UShipUpgradeNodeWidget;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FShipUpgradeGraphNodeSelectedNative, FName);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FShipUpgradeGraphNodeHoverChangedNative, FName, bool);
 
 /**
  * Creates all node and connection widgets from FShipUpgradeNodeView.
@@ -24,12 +25,14 @@ class SHIPUPGRADEUI_API UShipUpgradeGraphWidget : public UUserWidget
 public:
 	virtual void NativeDestruct() override;
 
+	void SetLayoutViewportWidth(float InViewportWidth);
 	void RebuildGraph(const TArray<FShipUpgradeNodeView>& InViews);
 	void SetSelectedNode(FName NodeId);
 	FVector2D GetNodeDisplayPosition(FName NodeId) const;
 	FVector2D GetRequiredExtent() const;
 	UShipUpgradeNodeWidget* GetNodeWidget(FName NodeId) const;
 	FShipUpgradeGraphNodeSelectedNative& OnNodeSelected() { return NodeSelectedDelegate; }
+	FShipUpgradeGraphNodeHoverChangedNative& OnNodeHoverChanged() { return NodeHoverChangedDelegate; }
 
 protected:
 	UPROPERTY(meta = (BindWidget))
@@ -83,6 +86,7 @@ protected:
 
 private:
 	void HandleNodeSelected(FName NodeId);
+	void HandleNodeHoverChanged(FName NodeId, bool bIsHovered);
 	const FShipUpgradeNodeView* FindView(FName NodeId) const;
 	bool AddConnectionSegment(const FVector2D& Start, const FVector2D& End, bool bDashed);
 	void BuildDisplayPositions();
@@ -96,4 +100,6 @@ private:
 
 	TMap<FName, FVector2D> NodeDisplayPositions;
 	FShipUpgradeGraphNodeSelectedNative NodeSelectedDelegate;
+	FShipUpgradeGraphNodeHoverChangedNative NodeHoverChangedDelegate;
+	float LayoutViewportWidth = 0.0f;
 };

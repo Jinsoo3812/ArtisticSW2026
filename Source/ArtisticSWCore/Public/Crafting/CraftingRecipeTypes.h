@@ -5,6 +5,12 @@
 #include "GameplayTagContainer.h"
 #include "CraftingRecipeTypes.generated.h"
 
+namespace ArtisticCrafting
+{
+	/** WBP_CraftingPanel exposes North, East, South, and West material slots. */
+	inline constexpr int32 MaxIngredientSlots = 4;
+}
+
 /** One item stack used by a crafting recipe or inventory transaction. */
 USTRUCT(BlueprintType)
 struct ARTISTICSWCORE_API FCraftingItemStack
