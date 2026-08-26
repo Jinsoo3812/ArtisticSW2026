@@ -740,6 +740,12 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	PlayerInputComponent->BindKey(EKeys::One, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot1);
 	PlayerInputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot2);
+	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ABasePlayer::PressQuickSlot3);
+	PlayerInputComponent->BindKey(EKeys::Three, IE_Released, this, &ABasePlayer::ReleaseQuickSlot3);
+	PlayerInputComponent->BindKey(EKeys::Four, IE_Pressed, this, &ABasePlayer::PressQuickSlot4);
+	PlayerInputComponent->BindKey(EKeys::Four, IE_Released, this, &ABasePlayer::ReleaseQuickSlot4);
+	PlayerInputComponent->BindKey(EKeys::Five, IE_Pressed, this, &ABasePlayer::PressQuickSlot5);
+	PlayerInputComponent->BindKey(EKeys::Five, IE_Released, this, &ABasePlayer::ReleaseQuickSlot5);
 
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Pressed, this, &ABasePlayer::StartSprint);
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Released, this, &ABasePlayer::StopSprint);
@@ -837,6 +843,11 @@ void ABasePlayer::AssignQuickSlotFromInventory(int32 QuickSlotIndex)
 	QuickSlots[QuickSlotIndex].ItemTag = AssignedItemTag;
 	InventoryComponent->ReturnCursorToOriginalSlot();
 	OnQuickSlotsChanged.Broadcast();
+
+	if (QuickSlots[QuickSlotIndex].SlotType == EQuickSlotType::Weapon)
+	{
+		ActivateQuickSlot(QuickSlotIndex);
+	}
 }
 
 void ABasePlayer::ServerAssignQuickSlotFromInventory_Implementation(int32 QuickSlotIndex)
@@ -866,9 +877,43 @@ void ABasePlayer::ServerClearQuickSlot_Implementation(int32 QuickSlotIndex)
 
 void ABasePlayer::ActivateQuickSlot1() { ActivateQuickSlot(0); }
 void ABasePlayer::ActivateQuickSlot2() { ActivateQuickSlot(1); }
-void ABasePlayer::ActivateQuickSlot3() { ActivateQuickSlot(2); }
-void ABasePlayer::ActivateQuickSlot4() { ActivateQuickSlot(3); }
-void ABasePlayer::ActivateQuickSlot5() { ActivateQuickSlot(4); }
+void ABasePlayer::PressQuickSlot3() { BeginConsumableQuickSlotInput(2); }
+void ABasePlayer::ReleaseQuickSlot3() { EndConsumableQuickSlotInput(2); }
+void ABasePlayer::PressQuickSlot4() { BeginConsumableQuickSlotInput(3); }
+void ABasePlayer::ReleaseQuickSlot4() { EndConsumableQuickSlotInput(3); }
+void ABasePlayer::PressQuickSlot5() { BeginConsumableQuickSlotInput(4); }
+void ABasePlayer::ReleaseQuickSlot5() { EndConsumableQuickSlotInput(4); }
+
+int32 ABasePlayer::GetPressedConsumableQuickSlotIndex() const
+{
+	return PressedConsumableQuickSlotIndices.IsEmpty()
+		? INDEX_NONE
+		: PressedConsumableQuickSlotIndices.Last();
+}
+
+void ABasePlayer::BeginConsumableQuickSlotInput(const int32 QuickSlotIndex)
+{
+	if (!QuickSlots.IsValidIndex(QuickSlotIndex)
+		|| QuickSlots[QuickSlotIndex].SlotType != EQuickSlotType::Consumable)
+	{
+		return;
+	}
+
+	PressedConsumableQuickSlotIndices.Remove(QuickSlotIndex);
+	PressedConsumableQuickSlotIndices.Add(QuickSlotIndex);
+	OnConsumableQuickSlotInputChanged.Broadcast();
+}
+
+void ABasePlayer::EndConsumableQuickSlotInput(const int32 QuickSlotIndex)
+{
+	if (PressedConsumableQuickSlotIndices.Remove(QuickSlotIndex) == 0)
+	{
+		return;
+	}
+
+	OnConsumableQuickSlotInputChanged.Broadcast();
+	ActivateQuickSlot(QuickSlotIndex);
+}
 
 void ABasePlayer::ActivateQuickSlot(int32 QuickSlotIndex)
 {

@@ -17,10 +17,10 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Ship.h"
+#include "Framework/Application/SlateApplication.h"
 #include "TimerManager.h"
 #include "UI/ShipUpgradeDetailsWidget.h"
 #include "UI/ShipUpgradeGraphWidget.h"
-#include "UI/ShipUpgradeNodeWidget.h"
 #include "UI/ShipUpgradePreviewStage.h"
 #include "Upgrade/ShipUpgradeBlueprintLibrary.h"
 #include "Upgrade/ShipUpgradeComponent.h"
@@ -46,7 +46,9 @@ void UShipUpgradeScreenWidget::NativeConstruct()
 	if (GraphWidget)
 	{
 		GraphWidget->OnNodeSelected().RemoveAll(this);
+		GraphWidget->OnNodeHoverChanged().RemoveAll(this);
 		GraphWidget->OnNodeSelected().AddUObject(this, &UShipUpgradeScreenWidget::HandleNodeSelected);
+		GraphWidget->OnNodeHoverChanged().AddUObject(this, &UShipUpgradeScreenWidget::HandleNodeHoverChanged);
 	}
 	if (DetailsWidget)
 	{
@@ -70,12 +72,14 @@ void UShipUpgradeScreenWidget::NativeDestruct()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(InitializationRetryTimer);
+		World->GetTimerManager().ClearTimer(DetailsTooltipHideTimer);
 	}
 	UnbindUpgradeComponent();
 
 	if (GraphWidget)
 	{
 		GraphWidget->OnNodeSelected().RemoveAll(this);
+		GraphWidget->OnNodeHoverChanged().RemoveAll(this);
 	}
 	if (DetailsWidget)
 	{
@@ -128,6 +132,10 @@ FReply UShipUpgradeScreenWidget::NativeOnMouseMove(
 		}
 		return FReply::Handled();
 	}
+	if (bTooltipAwaitingExit && DetailsPopupHost && !DetailsPopupHost->IsHovered())
+	{
+		HideDetailsTooltip();
+	}
 	return Super::NativeOnMouseMove(InGeometry, InMouseEvent);
 }
 
@@ -160,6 +168,7 @@ void UShipUpgradeScreenWidget::RefreshAll()
 		CachedNodeViews.Num()); */
 	if (GraphWidget)
 	{
+		UpdateGraphViewportWidth();
 		GraphWidget->RebuildGraph(CachedNodeViews);
 		GraphWidget->SetSelectedNode(SelectedNodeId);
 		UpdateGraphExtent();
@@ -302,28 +311,50 @@ void UShipUpgradeScreenWidget::HandleNodeSelected(FName NodeId)
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[ShipUpgradeUI] Node selected. NodeId=%s"),
 		*NodeId.ToString()); */
-	if (SelectedNodeId == NodeId)
-	{
-		SelectedNodeId = NAME_None;
-		if (GraphWidget)
-		{
-			GraphWidget->SetSelectedNode(NAME_None);
-		}
-		if (DetailsWidget)
-		{
-			DetailsWidget->ClearNode();
-		}
-		SetDetailsPopupVisible(false);
-		return;
-	}
-
 	SelectedNodeId = NodeId;
 	if (GraphWidget)
 	{
 		GraphWidget->SetSelectedNode(NodeId);
 	}
 	RefreshSelectedNode();
-	PositionDetailsNextToNode(NodeId);
+	PositionDetailsNextToCursor();
+}
+
+void UShipUpgradeScreenWidget::HandleNodeHoverChanged(FName NodeId, bool bIsHovered)
+{
+	if (bIsHovered)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(DetailsTooltipHideTimer);
+		}
+		bTooltipAwaitingExit = false;
+		HoveredNodeId = NodeId;
+		SelectedNodeId = NodeId;
+		RefreshSelectedNode();
+		PositionDetailsNextToCursor();
+		return;
+	}
+
+	if (HoveredNodeId != NodeId)
+	{
+		return;
+	}
+	HoveredNodeId = NAME_None;
+	if (UWorld* World = GetWorld())
+	{
+		if (DetailsTooltipHideDelay > KINDA_SMALL_NUMBER)
+		{
+			World->GetTimerManager().SetTimer(
+				DetailsTooltipHideTimer,
+				this,
+				&UShipUpgradeScreenWidget::HandleDetailsTooltipHideTimer,
+				DetailsTooltipHideDelay,
+				false);
+			return;
+		}
+	}
+	HandleDetailsTooltipHideTimer();
 }
 
 void UShipUpgradeScreenWidget::HandleActivationRequested(FName NodeId)
@@ -669,33 +700,26 @@ void UShipUpgradeScreenWidget::ApplyCurrentShipPreview()
 	}
 }
 
-void UShipUpgradeScreenWidget::PositionDetailsNextToNode(FName NodeId)
+void UShipUpgradeScreenWidget::PositionDetailsNextToCursor()
 {
-	if (!DetailsWidget || !DetailsPopupHost || !GraphWidget)
-	{
-		return;
-	}
-	UShipUpgradeNodeWidget* NodeWidget = GraphWidget->GetNodeWidget(NodeId);
-	if (!NodeWidget)
+	if (!DetailsWidget || !DetailsPopupHost)
 	{
 		return;
 	}
 
 	DetailsPopupHost->SetRenderTranslation(FVector2D::ZeroVector);
 	ForceLayoutPrepass();
+	const FVector2D CursorPosition = FSlateApplication::Get().GetCursorPos();
 	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(DetailsPopupHost->Slot))
 	{
 		if (UPanelWidget* PopupParent = DetailsPopupHost->GetParent())
 		{
 			const FGeometry& ParentGeometry = PopupParent->GetCachedGeometry();
-			const FGeometry& NodeGeometry = NodeWidget->GetCachedGeometry();
 			const FVector2D ParentSize = ParentGeometry.GetLocalSize();
-			if (!ParentSize.IsNearlyZero() && !NodeGeometry.GetLocalSize().IsNearlyZero())
+			if (!ParentSize.IsNearlyZero())
 			{
 				FVector2D TargetPosition =
-					ParentGeometry.AbsoluteToLocal(NodeGeometry.GetAbsolutePosition())
-					+ FVector2D(NodeGeometry.GetLocalSize().X, 0.0f)
-					+ DetailsNodeOffset;
+					ParentGeometry.AbsoluteToLocal(CursorPosition) + DetailsNodeOffset;
 				TargetPosition.X = FMath::Clamp(
 					TargetPosition.X,
 					0.0f,
@@ -711,19 +735,15 @@ void UShipUpgradeScreenWidget::PositionDetailsNextToNode(FName NodeId)
 	}
 
 	const FGeometry& ScreenGeometry = GetCachedGeometry();
-	const FGeometry& NodeGeometry = NodeWidget->GetCachedGeometry();
 	const FGeometry& DetailsGeometry = DetailsPopupHost->GetCachedGeometry();
-	if (ScreenGeometry.GetLocalSize().IsNearlyZero() || NodeGeometry.GetLocalSize().IsNearlyZero())
+	if (ScreenGeometry.GetLocalSize().IsNearlyZero())
 	{
 		return;
 	}
 
-	const FVector2D NodeLocalPosition =
-		ScreenGeometry.AbsoluteToLocal(NodeGeometry.GetAbsolutePosition());
 	const FVector2D CurrentDetailsLocalPosition =
 		ScreenGeometry.AbsoluteToLocal(DetailsGeometry.GetAbsolutePosition());
-	FVector2D TargetLocalPosition =
-		NodeLocalPosition + FVector2D(NodeGeometry.GetLocalSize().X, 0.0f) + DetailsNodeOffset;
+	FVector2D TargetLocalPosition = ScreenGeometry.AbsoluteToLocal(CursorPosition) + DetailsNodeOffset;
 
 	const FVector2D DetailsSize = DetailsGeometry.GetLocalSize();
 	const FVector2D ScreenSize = ScreenGeometry.GetLocalSize();
@@ -736,6 +756,62 @@ void UShipUpgradeScreenWidget::PositionDetailsNextToNode(FName NodeId)
 		0.0f,
 		FMath::Max(0.0f, ScreenSize.Y - DetailsSize.Y));
 	DetailsPopupHost->SetRenderTranslation(TargetLocalPosition - CurrentDetailsLocalPosition);
+}
+
+void UShipUpgradeScreenWidget::HandleDetailsTooltipHideTimer()
+{
+	if (!HoveredNodeId.IsNone())
+	{
+		return;
+	}
+	if (DetailsPopupHost && DetailsPopupHost->IsHovered())
+	{
+		bTooltipAwaitingExit = true;
+		return;
+	}
+	HideDetailsTooltip();
+}
+
+void UShipUpgradeScreenWidget::HideDetailsTooltip()
+{
+	bTooltipAwaitingExit = false;
+	HoveredNodeId = NAME_None;
+	SelectedNodeId = NAME_None;
+	if (GraphWidget)
+	{
+		GraphWidget->SetSelectedNode(NAME_None);
+	}
+	if (DetailsWidget)
+	{
+		DetailsWidget->ClearNode();
+	}
+	SetDetailsPopupVisible(false);
+}
+
+void UShipUpgradeScreenWidget::UpdateGraphViewportWidth()
+{
+	if (!GraphWidget || !WidgetTree)
+	{
+		return;
+	}
+
+	UWidget* GraphAreaBorder = WidgetTree->FindWidget(TEXT("GraphAreaBorder"));
+	if (!GraphAreaBorder)
+	{
+		return;
+	}
+
+	ForceLayoutPrepass();
+	float ViewportWidth = GraphAreaBorder->GetCachedGeometry().GetLocalSize().X;
+	if (ViewportWidth <= KINDA_SMALL_NUMBER)
+	{
+		if (const UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(GraphAreaBorder->Slot))
+		{
+			ViewportWidth = CanvasSlot->GetSize().X;
+		}
+	}
+
+	GraphWidget->SetLayoutViewportWidth(ViewportWidth);
 }
 
 void UShipUpgradeScreenWidget::UpdateGraphExtent()

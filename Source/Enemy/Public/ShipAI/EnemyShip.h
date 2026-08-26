@@ -8,15 +8,13 @@
 #include "ShipAI/EnemyShipNavigationTypes.h"
 #include "EnemyDropData.h"
 #include "GameplayAbilitySpecHandle.h"
-#include "UI/EnemyHealthBarTypes.h"
 #include "EnemyShip.generated.h"
 
 class ACannon;
 class AStorageChest;
 class UChestDefinition;
 class UBaseHealthComponent;
-class UHealthBarWidget;
-class UWidgetComponent;
+class UEnemyHealthBarComponent;
 class UEnemyShipArchetypeData;
 class UEnemyShipAbilitySet;
 class UEnemyShipNavigationComponent;
@@ -288,17 +286,6 @@ protected:
 	void InitializeEnemyDropData();
 	void DropAtDeathLocation(const FVector& DeathLocation, const FRotator& DeathRotation);
 
-	UFUNCTION()
-	void OnHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor);
-
-	UFUNCTION()
-	void OnMaxHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor);
-
-	void InitializeHealthBarWidget();
-	void RefreshHealthBarWidget();
-	void UpdateHealthBarVisibilityAfterHealthChanged(float OldValue, float NewValue);
-	void HideHealthBarForDamagePolicy();
-
 	// ---- Death Properties ----
 	/** 사망 후 Destroy까지의 대기 시간 (초) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Death")
@@ -350,10 +337,7 @@ protected:
 
 	// ================= Health Bar =================
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UWidgetComponent> HealthBarWidgetComponent;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
-	TSubclassOf<UHealthBarWidget> HealthBarWidgetClass;
+	TObjectPtr<UEnemyHealthBarComponent> EnemyHealthBarComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
 	FVector HealthBarOffset = FVector(0.0f, 0.0f, 300.0f);
@@ -361,14 +345,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
 	FVector2D HealthBarDrawSize = FVector2D(220.0f, 28.0f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
-	EEnemyHealthBarVisibilityPolicy HealthBarVisibilityPolicy = EEnemyHealthBarVisibilityPolicy::AlwaysVisible;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar", meta = (EditCondition = "HealthBarVisibilityPolicy == EEnemyHealthBarVisibilityPolicy::ShowOnDamage", ClampMin = "0.0"))
-	float HealthBarVisibleDurationAfterDamage = 2.0f;
-
 	FTimerHandle DeathDestroyTimerHandle;
-	FTimerHandle HealthBarHideTimerHandle;
 	// ================= End of Health Bar =================
 	
 	// ---- Cannon & AI State ----

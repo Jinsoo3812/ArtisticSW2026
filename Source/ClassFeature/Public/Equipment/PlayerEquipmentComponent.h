@@ -9,6 +9,7 @@ class ABaseItem;
 class ABasePlayer;
 class UAnimMontage;
 class UAnimInstance;
+class UAnimSequenceBase;
 class UGameplayEffect;
 class UWeaponAnimationDataAsset;
 struct FWeaponAnimationEntry;
@@ -115,6 +116,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
 	float GetEquippedBasicAttackPlayRate() const;
 
+	UFUNCTION(BlueprintPure, Category = "Equipment|Preview")
+	UAnimSequenceBase* GetEquippedPreviewIdleAnimation() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Preview")
+	float GetEquippedPreviewIdlePlayRate() const;
+	UAnimSequenceBase* GetPreviewIdleAnimationForItem(const ABaseItem* Item) const;
+	float GetPreviewIdlePlayRateForItem(const ABaseItem* Item) const;
+
 	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
 	UAnimMontage* GetEquippedAimCycleMontage() const;
 
@@ -125,6 +134,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Equipment|Attachment")
 	FResolvedEquipmentAttachment GetEquippedAttachmentProfile() const;
+	FResolvedEquipmentAttachment GetEquippedAttachmentProfileForItem(const ABaseItem* Item) const;
+	FResolvedEquipmentAttachment GetPreviewAttachmentProfileForItem(const ABaseItem* Item) const;
 
 protected:
 	virtual void BeginPlay() override;
