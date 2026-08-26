@@ -314,7 +314,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipCrewGatedAnchorTest::RunTest(const FString& Parameters)
 {
-	AddExpectedError(TEXT("Recipe_DecipherCipher"), EAutomationExpectedErrorFlags::Contains, 3);
+	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
 
 	EnemyShipInfrastructureTests::FTestWorld TestWorld;
 	AEnemyShip* Ship = TestWorld.World->SpawnActor<AEnemyShip>();
@@ -330,12 +330,14 @@ bool FEnemyShipCrewGatedAnchorTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Initially no living crew"), Ship->HasLivingCrew());
 	TestEqual(TEXT("Living crew count is 0"), Ship->GetLivingCrewCount(), 0);
 	TestTrue(TEXT("Anchor control allowed without crew"), Ship->AllowsPlayerAnchorControl());
+	TestTrue(TEXT("Helm control allowed without crew"), Ship->AllowsPlayerHelmControl());
 
 	// Register crew member
 	Ship->RegisterCrewEnemy(CrewMember);
 	TestTrue(TEXT("Has living crew after registration"), Ship->HasLivingCrew());
 	TestEqual(TEXT("Living crew count is 1"), Ship->GetLivingCrewCount(), 1);
 	TestFalse(TEXT("Anchor control blocked while crew alive"), Ship->AllowsPlayerAnchorControl());
+	TestFalse(TEXT("Helm control blocked while crew alive"), Ship->AllowsPlayerHelmControl());
 
 	// Attempt anchor interaction while crew alive
 	AddExpectedError(TEXT("Anchor control rejected on"), EAutomationExpectedErrorFlags::Contains, 1);
@@ -347,6 +349,7 @@ bool FEnemyShipCrewGatedAnchorTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("No living crew after unregistering"), Ship->HasLivingCrew());
 	TestEqual(TEXT("Living crew count is 0"), Ship->GetLivingCrewCount(), 0);
 	TestTrue(TEXT("Anchor control allowed after crew eliminated"), Ship->AllowsPlayerAnchorControl());
+	TestTrue(TEXT("Helm control allowed after crew eliminated"), Ship->AllowsPlayerHelmControl());
 
 	// Interaction now succeeds
 	Ship->HandleAnchorInteracted(nullptr);

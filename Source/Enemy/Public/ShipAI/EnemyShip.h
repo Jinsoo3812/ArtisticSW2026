@@ -7,6 +7,7 @@
 #include "Ship.h"
 #include "ShipAI/EnemyShipNavigationTypes.h"
 #include "EnemyDropData.h"
+#include "WaveSystem/Data/WaveSpawnTypes.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "EnemyShip.generated.h"
 
@@ -81,10 +82,11 @@ class ENEMY_API AEnemyShip : public AShip
 public:
 	AEnemyShip();
 	virtual bool IsEnemyShipForEffects() const override { return true; }
-	virtual bool AllowsPlayerHelmControl() const override { return false; }
+	virtual bool AllowsPlayerHelmControl() const override { return !bDeathHandled && (bCrewDefeated || !HasLivingCrew()); }
 	virtual bool AllowsPlayerCannonControl() const override { return false; }
 	virtual bool AllowsPlayerBoarding() const override { return false; }
 	virtual bool AllowsPlayerAnchorControl(AActor* Interactor = nullptr) const override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
 	virtual void BeginPlay() override;
@@ -165,6 +167,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Ship|Crew")
 	void UnregisterCrewEnemy(ABaseEnemy* CrewEnemy);
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Crew")
+	bool IsCrewDefeated() const { return bCrewDefeated; }
 	/** Activates a pooled enemy only while the caller still owns this reservation. */
 	bool ActivateDeckEnemyAtReservation(
 		FDeckPointReservation& Reservation,
@@ -267,6 +272,14 @@ public:
 
 protected:
 	void UpdateActiveCannons();
+	void EvaluateCrewControlState();
+	void DisableEnemyShipAIForCapture();
+
+	UFUNCTION()
+	void OnRep_CrewDefeated();
+
+	UFUNCTION()
+	void HandleCrewEnemyRemoved(ABaseEnemy* Enemy, EWaveEnemyRemoveReason Reason);
 	void MigrateLegacyNavigationAuthoring();
 	void DrawEnemyShipAIDebug() const;
 	void InitializeDeckWaypoints();
@@ -407,6 +420,9 @@ protected:
 
 	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Crew")
 	TArray<TObjectPtr<ABaseEnemy>> RegisteredCrewEnemies;
+
+	UPROPERTY(ReplicatedUsing = OnRep_CrewDefeated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Crew")
+	bool bCrewDefeated = false;
 
 	bool bDeckDeploymentTriggered = false;
 	int32 NextDeckEnemyPoolIndex = 0;

@@ -40,6 +40,7 @@
 #include "BossAI/ShipBossEnemy.h"
 #include "BaseEnemy.h"
 #include "Components/CapsuleComponent.h"
+#include "Net/UnrealNetwork.h"
 #include "UObject/UnrealType.h"
 
 #if WITH_EDITOR
@@ -614,6 +615,21 @@ void AEnemyShip::BeginPlay()
 
 void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	for (ABaseEnemy* CrewEnemy : RegisteredCrewEnemies)
+	{
+		if (IsValid(CrewEnemy))
+		{
+			CrewEnemy->OnBaseEnemyDeathNotified.RemoveDynamic(this, &AEnemyShip::HandleCrewEnemyRemoved);
+		}
+	}
+	for (ADeckRangedEnemy* CrewEnemy : DeckEnemyPool)
+	{
+		if (IsValid(CrewEnemy))
+		{
+			CrewEnemy->OnBaseEnemyDeathNotified.RemoveDynamic(this, &AEnemyShip::HandleCrewEnemyRemoved);
+		}
+	}
+
 	if (HasAuthority())
 	{
 		GetWorldTimerManager().ClearTimer(DeckEnemySightDelayTimerHandle);
@@ -757,6 +773,7 @@ void AEnemyShip::InitializeDeckEnemyPool()
 		PooledEnemy->FinishSpawning(InitialTransform);
 		PooledEnemy->SetHostShip(this);
 		PooledEnemy->DeactivateToPool();
+		PooledEnemy->OnBaseEnemyDeathNotified.AddUniqueDynamic(this, &AEnemyShip::HandleCrewEnemyRemoved);
 		DeckEnemyPool.Add(PooledEnemy);
 	}
 }
@@ -1912,13 +1929,14 @@ void AEnemyShip::SetCoreSkillModules(const TArray<UEnemyShipSkillModuleData*>& I
 void AEnemyShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	EvaluateCrewControlState();
 
 	if (CVarShowEnemyShipAIDebug.GetValueOnGameThread() > 0)
 	{
 		DrawEnemyShipAIDebug();
 	}
 
-	if (HasAuthority() && !bDeathHandled && !EnemyShipArchetype
+	if (HasAuthority() && !bCrewDefeated && !bDeathHandled && !EnemyShipArchetype
 		&& bLegacyAutomaticCannonFireWithoutArchetype)
 	{
 		TickAIAimingAndFiring(DeltaTime);
@@ -2521,7 +2539,7 @@ void AEnemyShip::TickAIAimingAndFiring(float DeltaTime)
 
 bool AEnemyShip::AllowsPlayerAnchorControl(AActor* Interactor) const
 {
-	return !HasLivingCrew();
+	return !bDeathHandled && (bCrewDefeated || !HasLivingCrew());
 }
 
 int32 AEnemyShip::GetLivingCrewCount() const
@@ -2600,6 +2618,8 @@ void AEnemyShip::RegisterCrewEnemy(ABaseEnemy* CrewEnemy)
 	if (IsValid(CrewEnemy))
 	{
 		RegisteredCrewEnemies.AddUnique(CrewEnemy);
+		CrewEnemy->OnBaseEnemyDeathNotified.AddUniqueDynamic(this, &AEnemyShip::HandleCrewEnemyRemoved);
+		EvaluateCrewControlState();
 	}
 }
 
@@ -2607,6 +2627,87 @@ void AEnemyShip::UnregisterCrewEnemy(ABaseEnemy* CrewEnemy)
 {
 	if (CrewEnemy)
 	{
+		CrewEnemy->OnBaseEnemyDeathNotified.RemoveDynamic(this, &AEnemyShip::HandleCrewEnemyRemoved);
 		RegisteredCrewEnemies.Remove(CrewEnemy);
+		EvaluateCrewControlState();
 	}
+}
+
+void AEnemyShip::EvaluateCrewControlState()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	if (HasLivingCrew())
+	{
+		if (bCrewDefeated)
+		{
+			bCrewDefeated = false;
+			OnRep_CrewDefeated();
+			ForceNetUpdate();
+		}
+		return;
+	}
+	if (bCrewDefeated)
+	{
+		return;
+	}
+
+	bCrewDefeated = true;
+	DisableEnemyShipAIForCapture();
+	OnRep_CrewDefeated();
+	ForceNetUpdate();
+}
+
+void AEnemyShip::DisableEnemyShipAIForCapture()
+{
+	SetAIControlInput(0.0f, 0.0f);
+	AITargetShip = nullptr;
+	CurrentCombatState = ENavalCombatState::Idle;
+	GetWorldTimerManager().ClearTimer(ActiveCannonsTimerHandle);
+	GetWorldTimerManager().ClearTimer(DeckEnemySightDelayTimerHandle);
+	GetWorldTimerManager().ClearTimer(DeckEnemyDeploymentTimerHandle);
+
+	if (NavigationComponent)
+	{
+		NavigationComponent->ClearAllOverrides();
+		NavigationComponent->SetTargetShip(nullptr);
+		NavigationComponent->SetNavigationEnabled(false);
+	}
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		ASC->CancelAllAbilities();
+	}
+	if (AAIController* AIC = Cast<AAIController>(GetController()))
+	{
+		if (UBrainComponent* BrainComp = AIC->GetBrainComponent())
+		{
+			BrainComp->StopLogic(TEXT("Enemy ship crew defeated"));
+		}
+	}
+	for (ACannon* Cannon : MountedCannons)
+	{
+		if (IsValid(Cannon))
+		{
+			Cannon->SetAIAimRotation(0.0f, 0.0f);
+		}
+	}
+	ActiveAICannons.Reset();
+}
+
+void AEnemyShip::OnRep_CrewDefeated()
+{
+	UpdateHelmInteractionAvailability();
+}
+
+void AEnemyShip::HandleCrewEnemyRemoved(ABaseEnemy* Enemy, EWaveEnemyRemoveReason Reason)
+{
+	EvaluateCrewControlState();
+}
+
+void AEnemyShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(AEnemyShip, bCrewDefeated);
 }
