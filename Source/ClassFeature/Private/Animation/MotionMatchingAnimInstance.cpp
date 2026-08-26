@@ -2049,52 +2049,6 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     if (bIsPrimaryAnimInstance)
     {
         EvaluateStateControllerPresentationState();
-
-        // --- Foot Placement / Root Motion / Height Realtime Debugging ---
-        static float DebugLogTimer = 0.0f;
-        DebugLogTimer += DeltaSeconds;
-        if (DebugLogTimer >= 0.3f && CachedBasePlayer && CachedBasePlayer->IsLocallyControlled())
-        {
-            DebugLogTimer = 0.0f;
-
-            const UCapsuleComponent* Capsule = CachedBasePlayer->GetCapsuleComponent();
-            const USkeletalMeshComponent* SkelMesh = GetSkelMeshComponent();
-            const float CapsuleHalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 0.0f;
-            const FVector MeshRelLoc = SkelMesh ? SkelMesh->GetRelativeLocation() : FVector::ZeroVector;
-            const FVector ActorLoc = CachedBasePlayer->GetActorLocation();
-            const float CapsuleBottomZ = ActorLoc.Z - CapsuleHalfHeight;
-
-            const FVector FootL_World = SkelMesh ? SkelMesh->GetSocketLocation(FName("foot_l")) : FVector::ZeroVector;
-            const FVector FootR_World = SkelMesh ? SkelMesh->GetSocketLocation(FName("foot_r")) : FVector::ZeroVector;
-            const FVector Pelvis_World = SkelMesh ? SkelMesh->GetSocketLocation(FName("pelvis")) : FVector::ZeroVector;
-
-            FHitResult Hit;
-            FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(FootDebugTrace), false, CachedBasePlayer);
-            FVector TraceStart = FootL_World + FVector(0, 0, 50.0f);
-            FVector TraceEnd = FootL_World - FVector(0, 0, 100.0f);
-            bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_FootPlacement, QueryParams);
-
-            const float FootPlacementAlpha = GetThreadSafeFootPlacementAlpha();
-            const FString StateName = UEnum::GetValueAsString(StateControllerPlaybackHoldState);
-
-            FString DebugStr = FString::Printf(TEXT("[FootDebug] State: %s | FP_Alpha: %.2f | MeshRelZ: %.1f | CapBottomZ: %.1f | FootL_Z: %.1f (OffsetToFloor: %.1f) | TraceHit: %s (Dist: %.1f, HitActor: %s)"),
-                *StateName,
-                FootPlacementAlpha,
-                MeshRelLoc.Z,
-                CapsuleBottomZ,
-                FootL_World.Z,
-                FootL_World.Z - CapsuleBottomZ,
-                bHit ? TEXT("TRUE") : TEXT("FALSE"),
-                bHit ? Hit.Distance : -1.0f,
-                bHit ? *GetNameSafe(Hit.GetActor()) : TEXT("None"));
-
-            UE_LOG(LogTemp, Warning, TEXT("%s"), *DebugStr);
-
-            if (GEngine)
-            {
-                GEngine->AddOnScreenDebugMessage(12345, 1.0f, FColor::Cyan, DebugStr);
-            }
-        }
     }
 
     // 최적화 틱 레이트에 맞추어 이번 프레임의 모션 매칭 평가 여부 결정
