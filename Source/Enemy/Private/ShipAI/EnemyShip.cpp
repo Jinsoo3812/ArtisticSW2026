@@ -39,6 +39,8 @@
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "BossAI/BossEncounterComponent.h"
+#include "BossAI/ShipBossEnemy.h"
+#include "BaseEnemy.h"
 #include "Components/CapsuleComponent.h"
 #include "UObject/UnrealType.h"
 
@@ -2262,5 +2264,97 @@ void AEnemyShip::TickAIAimingAndFiring(float DeltaTime)
 				Cannon->FireCannon();
 			}
 		}
+	}
+}
+
+bool AEnemyShip::AllowsPlayerAnchorControl(AActor* Interactor) const
+{
+	return !HasLivingCrew();
+}
+
+int32 AEnemyShip::GetLivingCrewCount() const
+{
+	int32 Count = 0;
+
+	// 1. Registered manual/external crew enemies
+	for (const TObjectPtr<ABaseEnemy>& Crew : RegisteredCrewEnemies)
+	{
+		if (IsValid(Crew))
+		{
+			if (const UBaseHealthComponent* Health = Crew->GetHealthComponent())
+			{
+				if (!Health->IsDead())
+				{
+					++Count;
+				}
+			}
+		}
+	}
+
+	// 2. DeckEnemyPool (deck ranged enemies)
+	if (bEnableDeckEnemyMVP)
+	{
+		for (const ADeckRangedEnemy* Enemy : DeckEnemyPool)
+		{
+			if (IsValid(Enemy))
+			{
+				const UBaseHealthComponent* Health = Enemy->GetHealthComponent();
+				const bool bIsDead = Health ? Health->IsDead() : false;
+				if (Enemy->IsPoolActive() && !bIsDead)
+				{
+					++Count;
+				}
+			}
+		}
+		if (NextDeckEnemyPoolIndex < DeckEnemyPool.Num())
+		{
+			Count += (DeckEnemyPool.Num() - NextDeckEnemyPoolIndex);
+		}
+	}
+
+	// 3. Boss Encounter Component
+	if (BossEncounterComponent && BossEncounterComponent->IsEncounterEnabled())
+	{
+		const EBossEncounterState State = BossEncounterComponent->GetEncounterState();
+		if (State == EBossEncounterState::Active || State == EBossEncounterState::Spawning || State == EBossEncounterState::Waiting)
+		{
+			if (const AShipBossEnemy* Boss = BossEncounterComponent->GetSpawnedBoss())
+			{
+				if (const UBaseHealthComponent* Health = Boss->GetHealthComponent())
+				{
+					if (!Health->IsDead())
+					{
+						++Count;
+					}
+				}
+			}
+			else
+			{
+				++Count;
+			}
+		}
+	}
+
+	return Count;
+}
+
+bool AEnemyShip::HasLivingCrew() const
+{
+	return GetLivingCrewCount() > 0;
+}
+
+void AEnemyShip::RegisterCrewEnemy(ABaseEnemy* CrewEnemy)
+{
+	if (IsValid(CrewEnemy))
+	{
+		RegisteredCrewEnemies.AddUnique(CrewEnemy);
+	}
+}
+
+void AEnemyShip::UnregisterCrewEnemy(ABaseEnemy* CrewEnemy)
+{
+	if (CrewEnemy)
+	{
+		RegisteredCrewEnemies.Remove(CrewEnemy);
 	}
 }

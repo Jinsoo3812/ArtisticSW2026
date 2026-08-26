@@ -26,6 +26,7 @@ class UGameplayAbility;
 class UDeckWaypointComponent;
 class UBossEncounterComponent;
 class ADeckRangedEnemy;
+class ABaseEnemy;
 
 /** Editor-time sampling controls for creating editable deck waypoint components from ShipDeckMesh. */
 USTRUCT(BlueprintType)
@@ -79,6 +80,7 @@ public:
 	virtual bool AllowsPlayerHelmControl() const override { return false; }
 	virtual bool AllowsPlayerCannonControl() const override { return false; }
 	virtual bool AllowsPlayerBoarding() const override { return false; }
+	virtual bool AllowsPlayerAnchorControl(AActor* Interactor = nullptr) const override;
 
 protected:
 	virtual void BeginPlay() override;
@@ -133,6 +135,18 @@ public:
 		int32 SpawnPointId,
 		AActor* InitialTarget,
 		ADeckRangedEnemy*& OutEnemy);
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Crew")
+	bool HasLivingCrew() const;
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Crew")
+	int32 GetLivingCrewCount() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Ship|Crew")
+	void RegisterCrewEnemy(ABaseEnemy* CrewEnemy);
+
+	UFUNCTION(BlueprintCallable, Category = "Ship|Crew")
+	void UnregisterCrewEnemy(ABaseEnemy* CrewEnemy);
 
 	UStaticMeshComponent* GetShipDeckMesh() const { return ShipDeckMesh; }
 	bool IsUsingLegacyAICompatibility() const
@@ -370,6 +384,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Boss Encounter")
 	TObjectPtr<UBossEncounterComponent> BossEncounterComponent;
+
+	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Crew")
+	TArray<TObjectPtr<ABaseEnemy>> RegisteredCrewEnemies;
 
 	bool bDeckDeploymentTriggered = false;
 	int32 NextDeckEnemyPoolIndex = 0;

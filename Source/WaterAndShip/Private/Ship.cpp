@@ -853,7 +853,7 @@ void AShip::SetAIControlInput(
 
 	const float PreviousPropulsionScale = CurrentAIPropulsionScale;
 	const float PreviousTurnScale = CurrentAITurnScale;
-	if (IsPropulsionSuppressed())
+	if (IsPropulsionSuppressed() || bIsAnchorDropped)
 	{
 		CurrentMoveInput = 0.0f;
 		CurrentTurnInput = 0.0f;
@@ -2148,11 +2148,22 @@ void AShip::HandleStarboardSeaBoarding(AActor* Interactor)
 
 void AShip::HandleAnchorInteracted(AActor* Interactor)
 {
+	if (!AllowsPlayerAnchorControl(Interactor))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AShip::HandleAnchorInteracted - Anchor control rejected on %s."), *GetName());
+		return;
+	}
 	ToggleAnchor();
 }
 
 void AShip::ToggleAnchor()
 {
+	if (!AllowsPlayerAnchorControl(nullptr))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AShip::ToggleAnchor - Anchor control rejected on %s."), *GetName());
+		return;
+	}
+
 	if (!HasAuthority())
 	{
 		ServerToggleAnchor();
@@ -2178,6 +2189,11 @@ void AShip::ToggleAnchor()
 
 void AShip::ServerToggleAnchor_Implementation()
 {
+	if (!AllowsPlayerAnchorControl(nullptr))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AShip::ServerToggleAnchor - Anchor control rejected by policy on %s."), *GetName());
+		return;
+	}
 	ToggleAnchor();
 }
 

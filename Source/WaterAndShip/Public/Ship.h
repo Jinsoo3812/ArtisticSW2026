@@ -509,6 +509,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ship|Control")
 	virtual bool AllowsPlayerBoarding() const { return true; }
 
+	/** Class policy used by Anchor interaction. */
+	UFUNCTION(BlueprintPure, Category = "Ship|Control")
+	virtual bool AllowsPlayerAnchorControl(AActor* Interactor = nullptr) const { return true; }
+
 	void SetExternalAccelerationSource(const FGuid& SourceId, const FVector& WorldAcceleration);
 	void RemoveExternalAccelerationSource(const FGuid& SourceId);
 
@@ -517,6 +521,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Effects")
 	FVector GetCurrentExternalAcceleration() const { return CurrentExternalAcceleration; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Input")
+	float GetCurrentMoveInput() const { return CurrentMoveInput; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Input")
+	float GetCurrentTurnInput() const { return CurrentTurnInput; }
 
 	void AddPropulsionSuppression(const FGuid& SourceId);
 	void RemovePropulsionSuppression(const FGuid& SourceId);
@@ -561,6 +571,11 @@ public:
 
 	UFUNCTION(Server, Reliable)
 	void ServerToggleAnchor();
+
+	UFUNCTION()
+	void HandleAnchorInteracted(AActor* Interactor);
+
+	virtual void UpdateAnchorInteractionUI();
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Boarding")
 	USceneComponent* GetBoardingArrivalPoint() const { return BoardingArrivalPoint; }
@@ -792,11 +807,6 @@ protected:
 
 	UFUNCTION()
 	void HandleStarboardSeaBoarding(AActor* Interactor);
-
-	UFUNCTION()
-	void HandleAnchorInteracted(AActor* Interactor);
-
-	void UpdateAnchorInteractionUI();
 
 	// Physics forces apply functions
 	void ApplyForwardForce(float MoveValue);

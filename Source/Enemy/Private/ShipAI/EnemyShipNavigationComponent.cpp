@@ -379,6 +379,12 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 		return;
 	}
 
+	if (Ship->IsAnchorDropped())
+	{
+		Ship->SetAIControlInput(0.0f, 0.0f);
+		return;
+	}
+
 	if (const FRuntimeOverride* Winner = FindWinningOverride())
 	{
 		const FEnemyShipNavigationOverrideRequest& Request = Winner->Request;

@@ -17,6 +17,8 @@
 #include "BaseGameplayTags.h"
 #include "ShipAI/NavalAIController.h"
 #include "ShipAI/Abilities/GA_EnemyShipCharge.h"
+#include "BaseEnemy.h"
+#include "RangedEnemy/RangedEnemy.h"
 
 namespace EnemyShipInfrastructureTests
 {
@@ -231,6 +233,125 @@ bool FEnemyShipControllerTargetRoutingTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("Controller no longer routes the out-of-range authored target"),
 		Ship->GetNavigationComponent()->GetTargetShip() != PlayerShip);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipAnchorIntegrationTest,
+	"ArtisticSW.Enemy.Ship.Anchor.Integration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipAnchorIntegrationTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("Recipe_DecipherCipher"), EAutomationExpectedErrorFlags::Contains, 3);
+
+	EnemyShipInfrastructureTests::FTestWorld TestWorld;
+	AEnemyShip* Ship = TestWorld.World->SpawnActor<AEnemyShip>();
+	if (!TestNotNull(TEXT("Enemy Ship spawned"), Ship))
+	{
+		return false;
+	}
+	Ship->BuoyancyRoot->SetSimulatePhysics(false);
+	Ship->SetActorLocation(FVector(1500.0f, 2500.0f, 0.0f));
+
+	TestNotNull(TEXT("Anchor Mesh exists on Enemy Ship"), Ship->GetAnchorMesh());
+	TestNotNull(TEXT("Anchor Interactable exists on Enemy Ship"), Ship->GetAnchorInteractable());
+	TestFalse(TEXT("Anchor is raised by default"), Ship->IsAnchorDropped());
+
+	// Drop anchor
+	Ship->ToggleAnchor();
+	TestTrue(TEXT("Anchor is dropped after toggle"), Ship->IsAnchorDropped());
+	TestEqual(TEXT("Anchor origin X matches actor location"), Ship->GetAnchorOriginXY().X, 1500.0);
+	TestEqual(TEXT("Anchor origin Y matches actor location"), Ship->GetAnchorOriginXY().Y, 2500.0);
+
+	// Verify that SetAIControlInput and Navigation overrides are suppressed when anchored
+	Ship->SetAIControlInput(1.0f, 0.8f);
+	TestEqual(TEXT("Move input suppressed to 0 while anchored"), Ship->GetCurrentMoveInput(), 0.0f);
+	TestEqual(TEXT("Turn input suppressed to 0 while anchored"), Ship->GetCurrentTurnInput(), 0.0f);
+
+	UEnemyShipNavigationComponent* Navigation = Ship->GetNavigationComponent();
+	if (TestNotNull(TEXT("Navigation Component exists"), Navigation))
+	{
+		Navigation->SetNavigationEnabled(true);
+		FEnemyShipNavigationOverrideRequest Request;
+		Request.MoveInput = 1.0f;
+		Request.TurnInput = 0.5f;
+		const FEnemyShipNavigationOverrideHandle OverrideHandle = Navigation->AcquireOverride(Ship, 50, Request);
+		TestTrue(TEXT("Override acquired"), OverrideHandle.IsValid());
+
+		Navigation->TickComponent(0.1f, LEVELTICK_All, nullptr);
+		TestEqual(TEXT("Move input remains 0 on tick while anchored"), Ship->GetCurrentMoveInput(), 0.0f);
+		TestEqual(TEXT("Turn input remains 0 on tick while anchored"), Ship->GetCurrentTurnInput(), 0.0f);
+
+		// Raise anchor
+		Ship->ToggleAnchor();
+		TestFalse(TEXT("Anchor is raised after second toggle"), Ship->IsAnchorDropped());
+
+		Navigation->TickComponent(0.1f, LEVELTICK_All, nullptr);
+		TestEqual(TEXT("Move input applied after anchor raised"), Ship->GetCurrentMoveInput(), 1.0f);
+		TestEqual(TEXT("Turn input applied after anchor raised"), Ship->GetCurrentTurnInput(), 0.5f);
+
+		Navigation->ReleaseOverride(OverrideHandle);
+	}
+	else
+	{
+		// Raise anchor
+		Ship->ToggleAnchor();
+		TestFalse(TEXT("Anchor is raised after second toggle"), Ship->IsAnchorDropped());
+
+		Ship->SetAIControlInput(1.0f, 0.8f);
+		TestEqual(TEXT("Move input applied when anchor raised"), Ship->GetCurrentMoveInput(), 1.0f);
+		TestEqual(TEXT("Turn input applied when anchor raised"), Ship->GetCurrentTurnInput(), 0.8f);
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipCrewGatedAnchorTest,
+	"ArtisticSW.Enemy.Ship.Anchor.CrewGating",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipCrewGatedAnchorTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("Recipe_DecipherCipher"), EAutomationExpectedErrorFlags::Contains, 3);
+
+	EnemyShipInfrastructureTests::FTestWorld TestWorld;
+	AEnemyShip* Ship = TestWorld.World->SpawnActor<AEnemyShip>();
+	ARangedEnemy* CrewMember = TestWorld.World->SpawnActor<ARangedEnemy>();
+	if (!TestNotNull(TEXT("Enemy Ship spawned"), Ship)
+		|| !TestNotNull(TEXT("Crew Member spawned"), CrewMember))
+	{
+		return false;
+	}
+	Ship->BuoyancyRoot->SetSimulatePhysics(false);
+
+	// Initially without crew
+	TestFalse(TEXT("Initially no living crew"), Ship->HasLivingCrew());
+	TestEqual(TEXT("Living crew count is 0"), Ship->GetLivingCrewCount(), 0);
+	TestTrue(TEXT("Anchor control allowed without crew"), Ship->AllowsPlayerAnchorControl());
+
+	// Register crew member
+	Ship->RegisterCrewEnemy(CrewMember);
+	TestTrue(TEXT("Has living crew after registration"), Ship->HasLivingCrew());
+	TestEqual(TEXT("Living crew count is 1"), Ship->GetLivingCrewCount(), 1);
+	TestFalse(TEXT("Anchor control blocked while crew alive"), Ship->AllowsPlayerAnchorControl());
+
+	// Attempt anchor interaction while crew alive
+	AddExpectedError(TEXT("Anchor control rejected on"), EAutomationExpectedErrorFlags::Contains, 1);
+	Ship->HandleAnchorInteracted(nullptr);
+	TestFalse(TEXT("Anchor remains raised while crew alive"), Ship->IsAnchorDropped());
+
+	// Unregister or eliminate crew
+	Ship->UnregisterCrewEnemy(CrewMember);
+	TestFalse(TEXT("No living crew after unregistering"), Ship->HasLivingCrew());
+	TestEqual(TEXT("Living crew count is 0"), Ship->GetLivingCrewCount(), 0);
+	TestTrue(TEXT("Anchor control allowed after crew eliminated"), Ship->AllowsPlayerAnchorControl());
+
+	// Interaction now succeeds
+	Ship->HandleAnchorInteracted(nullptr);
+	TestTrue(TEXT("Anchor drops after crew eliminated"), Ship->IsAnchorDropped());
+
 	return true;
 }
 
