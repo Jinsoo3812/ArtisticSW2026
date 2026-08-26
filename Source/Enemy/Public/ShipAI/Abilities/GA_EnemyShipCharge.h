@@ -6,6 +6,7 @@
 #include "GA_EnemyShipCharge.generated.h"
 
 class AEnemyShip;
+class AEnemyShipChargeTelegraph;
 class AShip;
 class UGameplayEffect;
 class UPrimitiveComponent;
@@ -38,9 +39,25 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Charge")
 	float GetChargeTurnMultiplier() const { return ChargeTurnMultiplier; }
 
+	/** True after the ship has reached or crossed the fixed charge endpoint. */
+	static bool HasReachedChargeEndpoint(
+		const FVector& Start,
+		const FVector& Direction,
+		float Distance,
+		const FVector& CurrentLocation,
+		float AcceptanceRadius);
+
 protected:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge", meta = (ClampMin = "0.05", Units = "s"))
-	float ChargeDurationSeconds = 3.0f;
+	/** Fixed distance travelled after the aiming phase locks the direction. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge", meta = (ClampMin = "1.0", Units = "cm"))
+	float ChargeDistance = 10000.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge", meta = (ClampMin = "0.0", Units = "cm"))
+	float ChargeEndpointAcceptanceRadius = 150.0f;
+
+	/** Emergency cleanup only; zero disables it. Normal completion is distance or Ship collision. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, AdvancedDisplay, Category = "Enemy Ship|Charge", meta = (ClampMin = "0.0", Units = "s"))
+	float ChargeFailsafeDurationSeconds = 0.0f;
 
 	/** The charge starts only after the horizontal bow-to-target angle is within this tolerance. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Aiming", meta = (ClampMin = "0.0", ClampMax = "180.0", Units = "deg"))
@@ -80,6 +97,16 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Damage")
 	TSubclassOf<UGameplayEffect> DamageGameplayEffectClass;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Telegraph")
+	TSubclassOf<AEnemyShipChargeTelegraph> ChargeTelegraphClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Telegraph", meta = (ClampMin = "1.0", Units = "cm"))
+	float ChargeTelegraphWidth = 1000.0f;
+
+	/** Absolute world Z used by the warning strip. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Telegraph", meta = (Units = "cm"))
+	float ChargeTelegraphWorldZ = 20.0f;
+
 private:
 	UFUNCTION()
 	void HandlePhysicsRootHit(
@@ -93,14 +120,20 @@ private:
 	void BeginCharge();
 	void FinishAimByTimeout();
 	void FinishChargeByTimeout();
+	void SpawnChargeTelegraph();
+	void UpdateChargeTelegraph();
+	void DestroyChargeTelegraph();
 	bool IsValidPlayerTarget(const AShip* Candidate) const;
 
 	TWeakObjectPtr<AEnemyShip> ActiveShip;
 	TWeakObjectPtr<AShip> ActiveTarget;
+	TWeakObjectPtr<AEnemyShipChargeTelegraph> ChargeTelegraphActor;
 	FEnemyShipNavigationOverrideHandle NavigationOverrideHandle;
 	FTimerHandle SteeringTimerHandle;
 	FTimerHandle AimTimeoutTimerHandle;
 	FTimerHandle DurationTimerHandle;
+	FVector ChargeStartLocation = FVector::ZeroVector;
+	FVector ChargeDirection = FVector::ForwardVector;
 	bool bPreviousNotifyRigidBodyCollision = false;
 	bool bBoundPhysicsHit = false;
 	bool bAddedChargingTag = false;

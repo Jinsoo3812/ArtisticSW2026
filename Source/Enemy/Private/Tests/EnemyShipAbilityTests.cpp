@@ -21,6 +21,7 @@
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
 #include "Ship.h"
 #include "ShipAI/Abilities/EnemyShipTimeStopAimLine.h"
+#include "ShipAI/Abilities/EnemyShipChargeTelegraph.h"
 #include "ShipAI/Abilities/EnemyShipTimeStopField.h"
 #include "ShipAI/Abilities/EnemyShipTimeStopProjectile.h"
 #include "ShipAttributeSet.h"
@@ -110,6 +111,64 @@ bool FEnemyShipChargeDamageMathTest::RunTest(const FString& Parameters)
 		TEXT("Damage cap is enforced"),
 		FEnemyShipSkillMath::CalculateChargeDamage(20000.0f, 100.0f, 0.05f, 500.0f),
 		500.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipChargeEndpointAndTelegraphTest,
+	"ArtisticSW.Enemy.Ship.Ability.ChargeEndpointAndTelegraph",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipChargeEndpointAndTelegraphTest::RunTest(const FString& Parameters)
+{
+	// Existing ItemSubsystem fixture validation logs these project-data errors while a test World starts.
+	// They are unrelated to this actor contract and are covered by the item-data validation suite.
+	AddExpectedError(
+		TEXT("QuestItem has an invalid ResultItemTag"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	AddExpectedError(
+		TEXT("QuestItem contains an invalid ingredient"),
+		EAutomationExpectedErrorFlags::Contains,
+		2);
+
+	TestFalse(TEXT("Charge remains active before its endpoint"),
+		UGA_EnemyShipCharge::HasReachedChargeEndpoint(
+			FVector::ZeroVector, FVector::ForwardVector, 10000.0f,
+			FVector(9000.0f, 0.0f, 0.0f), 150.0f));
+	TestTrue(TEXT("Charge completes inside the endpoint acceptance radius"),
+		UGA_EnemyShipCharge::HasReachedChargeEndpoint(
+			FVector::ZeroVector, FVector::ForwardVector, 10000.0f,
+			FVector(9850.0f, 1000.0f, 0.0f), 150.0f));
+	TestTrue(TEXT("Charge completes after crossing its endpoint"),
+		UGA_EnemyShipCharge::HasReachedChargeEndpoint(
+			FVector::ZeroVector, FVector::ForwardVector, 10000.0f,
+			FVector(11000.0f, 0.0f, 0.0f), 150.0f));
+
+	EnemyShipAbilityTests::FTestWorld TestWorld;
+	AEnemyShipChargeTelegraph* Telegraph =
+		TestWorld.World->SpawnActor<AEnemyShipChargeTelegraph>();
+	if (!TestNotNull(TEXT("Charge telegraph actor spawns"), Telegraph))
+	{
+		return false;
+	}
+	Telegraph->InitializeTelegraph(
+		FVector(100.0f, 200.0f, 999.0f), FVector::ForwardVector,
+		10000.0f, 1000.0f, 42.0f);
+	TestTrue(TEXT("Telegraph start uses configured absolute world Z"),
+		Telegraph->GetTelegraphStart().Equals(FVector(100.0f, 200.0f, 42.0f), 0.1f));
+	TestTrue(TEXT("Telegraph represents the complete fixed charge distance"),
+		Telegraph->GetTelegraphEnd().Equals(FVector(10100.0f, 200.0f, 42.0f), 0.1f));
+	if (UStaticMeshComponent* Plane = Telegraph->FindComponentByClass<UStaticMeshComponent>())
+	{
+		TestEqual(TEXT("Telegraph plane never collides"), Plane->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+		TestTrue(TEXT("Telegraph plane length is 10000 cm"), FMath::IsNearlyEqual(Plane->GetComponentScale().X, 100.0f));
+		TestTrue(TEXT("Telegraph plane width is 1000 cm"), FMath::IsNearlyEqual(Plane->GetComponentScale().Y, 10.0f));
+	}
+	else
+	{
+		AddError(TEXT("Charge telegraph has no Static Mesh Component"));
+	}
 	return true;
 }
 
@@ -493,6 +552,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(
+		TEXT("QuestItem has an invalid ResultItemTag"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	AddExpectedError(
+		TEXT("QuestItem contains an invalid ingredient"),
+		EAutomationExpectedErrorFlags::Contains,
+		2);
+
 	EnemyShipAbilityTests::FTestWorld TestWorld;
 	AEnemyShip* EnemyShip = TestWorld.World->SpawnActor<AEnemyShip>(
 		AEnemyShip::StaticClass(), FVector::ZeroVector, FRotator(0.0f, 90.0f, 0.0f));
@@ -578,6 +646,37 @@ bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Charge keeps its transient turn scale while charging"), EnemyShip->GetCurrentAITurnScale(), 2.0f);
 	TestTrue(TEXT("Charge owns its active-state tag"), EnemyASC->HasMatchingGameplayTag(State_EnemyShip_Charging));
 	TestTrue(TEXT("Charge applies an independent GAS cooldown tag"), EnemyASC->HasMatchingGameplayTag(Cooldown_EnemyShip_Charge));
+
+	AEnemyShip* OtherEnemyShip = TestWorld.World->SpawnActor<AEnemyShip>(
+		AEnemyShip::StaticClass(), FVector(500.0f, 500.0f, 0.0f), FRotator::ZeroRotator);
+	if (TestNotNull(TEXT("A second Enemy Ship spawns for charge collision testing"), OtherEnemyShip))
+	{
+		FHitResult EnemyShipHit(
+			OtherEnemyShip,
+			OtherEnemyShip->BuoyancyRoot,
+			OtherEnemyShip->GetActorLocation(),
+			FVector(-1.0f, 0.0f, 0.0f));
+		const float PlayerHealthBeforeEnemyShipCollision =
+			PlayerASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
+		EnemyShip->BuoyancyRoot->OnComponentHit.Broadcast(
+			EnemyShip->BuoyancyRoot,
+			OtherEnemyShip,
+			OtherEnemyShip->BuoyancyRoot,
+			FVector::ZeroVector,
+			EnemyShipHit);
+		TestFalse(TEXT("Charge ends when it collides with another Enemy Ship"),
+			EnemyASC->HasMatchingGameplayTag(State_EnemyShip_Charging));
+		TestEqual(TEXT("Enemy Ship collision does not damage the Player Ship"),
+			PlayerASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()),
+			PlayerHealthBeforeEnemyShipCollision);
+	}
+
+	EnemyASC->RemoveActiveEffectsWithGrantedTags(ChargeCooldownTags);
+	TestTrue(TEXT("Charge reactivates for Player Ship collision verification"),
+		EnemyASC->TryActivateAbilitiesByTag(ChargeTags, false));
+	EnemyShip->GetNavigationComponent()->TickComponent(0.016f, LEVELTICK_All, nullptr);
+	TestTrue(TEXT("Reactivated Charge enters its fixed-direction movement phase"),
+		EnemyASC->HasMatchingGameplayTag(State_EnemyShip_Charging));
 
 	const FVector ChargeVelocity = (PlayerShip->GetActorLocation() - EnemyShip->GetActorLocation())
 		.GetSafeNormal2D() * 1000.0f;
