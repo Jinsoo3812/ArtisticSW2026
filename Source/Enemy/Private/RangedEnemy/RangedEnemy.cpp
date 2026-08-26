@@ -6,6 +6,7 @@
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "Components/BaseHealthComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -414,8 +415,57 @@ AEnemyBow* ARangedEnemy::GetEquippedBow() const
 
 bool ARangedEnemy::GetRangedAttackOrigin(FTransform& OutSpawnTransform) const
 {
-	const AEnemyBow* Bow = GetEquippedBow();
-	return Bow && Bow->GetArrowSpawnTransform(OutSpawnTransform);
+	OutSpawnTransform = FTransform::Identity;
+	const USkeletalMeshComponent* CharacterMesh = GetMesh();
+	if (!CharacterMesh || RangedAttackSocketName.IsNone()
+		|| !CharacterMesh->DoesSocketExist(RangedAttackSocketName))
+	{
+		return false;
+	}
+
+	OutSpawnTransform = CharacterMesh->GetSocketTransform(RangedAttackSocketName, RTS_World);
+	return true;
+}
+
+void ARangedEnemy::AcquireServerRangedAttackPoseRefresh()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* CharacterMesh = GetMesh();
+	if (!CharacterMesh)
+	{
+		return;
+	}
+
+	if (ServerRangedAttackPoseRefreshRefCount == 0)
+	{
+		ServerRangedAttackOriginalAnimTickOption = CharacterMesh->VisibilityBasedAnimTickOption;
+		CharacterMesh->VisibilityBasedAnimTickOption =
+			EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	}
+
+	++ServerRangedAttackPoseRefreshRefCount;
+}
+
+void ARangedEnemy::ReleaseServerRangedAttackPoseRefresh()
+{
+	if (!HasAuthority() || ServerRangedAttackPoseRefreshRefCount <= 0)
+	{
+		return;
+	}
+
+	--ServerRangedAttackPoseRefreshRefCount;
+	if (ServerRangedAttackPoseRefreshRefCount == 0)
+	{
+		if (USkeletalMeshComponent* CharacterMesh = GetMesh())
+		{
+			CharacterMesh->VisibilityBasedAnimTickOption =
+				ServerRangedAttackOriginalAnimTickOption;
+		}
+	}
 }
 
 FVector ARangedEnemy::GetRangedAimLocation(const AActor* TargetActor) const

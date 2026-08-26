@@ -16,12 +16,12 @@
 #include "BehaviorTree/Tasks/BTTask_MoveTo.h"
 #include "BehaviorTree/Tasks/BTTask_RunEQSQuery.h"
 #include "BehaviorTree/Tasks/BTTask_Wait.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Decorator/BTD_CanRangedAttack.h"
 #include "Decorator/BTD_CombatTargetState.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/Engine.h"
-#include "Engine/StaticMesh.h"
-#include "Engine/StaticMeshSocket.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "DataProviders/AIDataProvider_QueryParams.h"
@@ -215,8 +215,8 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("RangedEnemy defaults to the Enemy Bow loadout"),
 		EnemyCDO->GetDefaultWeaponTag() == Item_EnemyWeapon_Bow);
 	TestTrue(TEXT("RangedEnemy equips its GA-granting bow on spawn"), EnemyCDO->ShouldEquipWeaponOnSpawn());
-	TestEqual(TEXT("Enemy Bow uses the required Arrow_socket contract"),
-		BowCDO->GetArrowSocketName(), FName(TEXT("Arrow_socket")));
+	TestEqual(TEXT("RangedEnemy uses the character-owned Arrow_socket contract"),
+		EnemyCDO->GetRangedAttackSocketName(), FName(TEXT("Arrow_socket")));
 	TestTrue(TEXT("Enemy Bow default projectile derives from RangedEnemyProjectile"),
 		BowCDO->GetProjectileClass()
 		&& BowCDO->GetProjectileClass()->IsChildOf(ARangedEnemyProjectile::StaticClass()));
@@ -271,6 +271,10 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 			RangedEnemyBlueprintCDO->GetDefaultWeaponTag() == Item_EnemyWeapon_Bow);
 		TestTrue(TEXT("BP_RangedEnemy equips the bow on spawn"),
 			RangedEnemyBlueprintCDO->ShouldEquipWeaponOnSpawn());
+		TestTrue(TEXT("BP_RangedEnemy character mesh contains Arrow_socket"),
+			RangedEnemyBlueprintCDO->GetMesh()
+			&& RangedEnemyBlueprintCDO->GetMesh()->DoesSocketExist(
+				RangedEnemyBlueprintCDO->GetRangedAttackSocketName()));
 	}
 
 	const UWeaponDataAsset* WeaponRegistry = LoadObject<UWeaponDataAsset>(
@@ -651,6 +655,18 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("An enabled ABasePlayer is a valid combat target before PlayerState ASC initialization"),
 		Enemy->IsValidCombatTarget(Player));
 
+	USkeletalMesh* TestCharacterMesh = LoadObject<USkeletalMesh>(
+		nullptr,
+		TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"));
+	if (!TestNotNull(TEXT("RangedEnemy character mesh asset is available"), TestCharacterMesh)
+		|| !TestNotNull(TEXT("RangedEnemy has a skeletal mesh component"), Enemy->GetMesh()))
+	{
+		return false;
+	}
+	Enemy->GetMesh()->SetSkeletalMesh(TestCharacterMesh);
+	TestTrue(TEXT("RangedEnemy character mesh resolves its authored Arrow_socket"),
+		Enemy->GetMesh()->DoesSocketExist(Enemy->GetRangedAttackSocketName()));
+
 	Enemy->SetCombatTarget(Player);
 	UAbilitySystemComponent* EnemyASC = Enemy->GetAbilitySystemComponent();
 	UBaseWeaponComponent* WeaponComponent = Enemy->GetWeaponComponent();
@@ -728,16 +744,9 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Pool restore regrants the weapon ability once"),
 		WeaponComponent->GrantedAbilityHandles.Num(), 1);
 
-	UStaticMesh* TestBowMesh = NewObject<UStaticMesh>(EquippedBow);
-	UStaticMeshSocket* ArrowSocket = NewObject<UStaticMeshSocket>(TestBowMesh);
-	ArrowSocket->SocketName = TEXT("Arrow_socket");
-	ArrowSocket->RelativeLocation = FVector(75.0f, 10.0f, 25.0f);
-	TestBowMesh->Sockets.Add(ArrowSocket);
-	EquippedBow->GetWeaponMesh()->SetStaticMesh(TestBowMesh);
-
 	FTransform ExpectedArrowSpawnTransform;
-	if (!TestTrue(TEXT("Equipped bow resolves Arrow_socket"),
-		EquippedBow->GetArrowSpawnTransform(ExpectedArrowSpawnTransform)))
+	if (!TestTrue(TEXT("RangedEnemy resolves Arrow_socket from its character mesh"),
+		Enemy->GetRangedAttackOrigin(ExpectedArrowSpawnTransform)))
 	{
 		return false;
 	}
@@ -761,17 +770,21 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 		});
 
 	const int32 ProjectilesBefore = RangedEnemyTests::CountActors<ARangedEnemyProjectile>(TestWorld.World);
+	const EVisibilityBasedAnimTickOption InitialAnimTickOption =
+		Enemy->GetMesh()->VisibilityBasedAnimTickOption;
 	TestTrue(TEXT("Standalone RangedEnemy activates its exact server ranged attack without HostShip"),
 		Enemy->TryStartRangedAttack(ResolvedAttackHandle));
 	EnemyASC->OnAbilityEnded.Remove(AbilityEndedHandle);
 	TestTrue(TEXT("Ranged attack broadcasts ability completion"), bObservedAbilityEnd);
 	TestFalse(TEXT("Immediate ranged attack completion is not a cancellation"), bObservedAbilityCancel);
+	TestEqual(TEXT("Immediate attack restores the server mesh pose-refresh policy"),
+		Enemy->GetMesh()->VisibilityBasedAnimTickOption, InitialAnimTickOption);
 	const int32 ProjectilesAfter = RangedEnemyTests::CountActors<ARangedEnemyProjectile>(TestWorld.World);
 	TestEqual(TEXT("An immediate-fire projectile is spawned when no montage is assigned"),
 		ProjectilesAfter, ProjectilesBefore + 1);
 	for (TActorIterator<ARangedEnemyProjectile> It(TestWorld.World); It; ++It)
 	{
-		TestTrue(TEXT("GA spawns the arrow at the equipped bow's Arrow_socket"),
+		TestTrue(TEXT("GA spawns the arrow at the character mesh's Arrow_socket"),
 			It->GetActorLocation().Equals(ExpectedArrowSpawnTransform.GetLocation(), 0.1f));
 		break;
 	}
