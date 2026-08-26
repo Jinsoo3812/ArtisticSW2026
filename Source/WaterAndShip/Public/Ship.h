@@ -617,8 +617,16 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> ShipDamageMesh;
 
-	/** Query-only walkable mesh. Assigned independently from the Physics Root. */
+	/** Walkable collision proxy that uses authored simple collision. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> DeckMeshSimple;
+
+	/** Walkable collision proxy that uses the assigned mesh's complex collision. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> DeckMeshComplex;
+
+	/** Native compatibility alias. New authoring should use DeckMeshSimple/DeckMeshComplex. */
+	UPROPERTY(Transient, meta = (DeprecatedProperty, DeprecationMessage = "Use DeckMeshSimple or DeckMeshComplex"))
 	TObjectPtr<UStaticMeshComponent> ShipDeckMesh;
 
 	/** Shared pontoon/settings source; FShipPhysicsAsync remains the force executor. */
@@ -917,8 +925,14 @@ public:
 	/** Returns FollowCamera subobject */
 	FORCEINLINE UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 
-	/** Returns the query-and-physics deck used by character floor detection. */
-	FORCEINLINE UStaticMeshComponent* GetShipDeckMesh() const { return ShipDeckMesh; }
+	/** Legacy primary-deck accessor used by deck AI and based movement. */
+	FORCEINLINE UStaticMeshComponent* GetShipDeckMesh() const { return DeckMeshComplex; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Deck")
+	FORCEINLINE UStaticMeshComponent* GetDeckMeshSimple() const { return DeckMeshSimple; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Deck")
+	FORCEINLINE UStaticMeshComponent* GetDeckMeshComplex() const { return DeckMeshComplex; }
 
 	/** Resets camera to follow mode (called when disembarking) */
 	void ResetToFollowCamera();

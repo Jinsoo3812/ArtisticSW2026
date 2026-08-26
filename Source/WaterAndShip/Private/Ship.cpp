@@ -124,22 +124,30 @@ AShip::AShip()
 	ShipDamageMesh->SetCastShadow(false);
 	ShipDamageMesh->SetCastHiddenShadow(false);
 
-	ShipDeckMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipDeckMesh"));
-	ShipDeckMesh->SetupAttachment(BuoyancyRoot);
-	// Keep this as a kinematic follower rather than welding its collision shapes
-	// into the network-predicted buoyancy body. Ragdolls may rest on the deck
-	// without changing the ship's authoritative mass/inertia setup.
-	ShipDeckMesh->BodyInstance.bAutoWeld = false;
-	ShipDeckMesh->SetCollisionProfileName(TEXT("ShipDeck"));
-	ShipDeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
-	ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
-	ShipDeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
-	ShipDeckMesh->SetGenerateOverlapEvents(false);
-	ShipDeckMesh->SetVisibility(false, false);
-	ShipDeckMesh->SetHiddenInGame(true, false);
-	ShipDeckMesh->SetCastShadow(false);
-	ShipDeckMesh->SetCastHiddenShadow(false);
+	auto ConfigureDeckMesh = [this](UStaticMeshComponent* DeckMesh)
+	{
+		DeckMesh->SetupAttachment(BuoyancyRoot);
+		// Keep deck collision as a kinematic follower instead of welding it into
+		// the network-predicted buoyancy body and changing mass/inertia.
+		DeckMesh->BodyInstance.bAutoWeld = false;
+		DeckMesh->SetCollisionProfileName(TEXT("ShipDeck"));
+		DeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		DeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
+		DeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+		DeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+		DeckMesh->SetGenerateOverlapEvents(false);
+		DeckMesh->SetVisibility(false, false);
+		DeckMesh->SetHiddenInGame(true, false);
+		DeckMesh->SetCastShadow(false);
+		DeckMesh->SetCastHiddenShadow(false);
+	};
+
+	DeckMeshSimple = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DeckMesh_Simple"));
+	ConfigureDeckMesh(DeckMeshSimple);
+	DeckMeshComplex = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DeckMesh_Complex"));
+	ConfigureDeckMesh(DeckMeshComplex);
+	// Legacy deck-AI code samples and attaches to the precise walkable surface.
+	ShipDeckMesh = DeckMeshComplex;
 
 	SWBuoyancyComponent = CreateDefaultSubobject<USWBuoyancyComponent>(TEXT("SWBuoyancyComponent"));
 	SWBuoyancyComponent->ExecutionMode = ESWBuoyancyExecutionMode::ExternalNetworkPhysics;
@@ -242,12 +250,17 @@ void AShip::BeginPlay()
 	Super::BeginPlay();
 	// Reassert the critical moving-deck responses at runtime so older Blueprint
 	// component templates cannot silently restore the former query-only profile.
-	if (ShipDeckMesh)
+	for (UStaticMeshComponent* DeckMesh : { DeckMeshSimple.Get(), DeckMeshComplex.Get() })
 	{
-		ShipDeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
-		ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
-		ShipDeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+		if (!DeckMesh)
+		{
+			continue;
+		}
+		DeckMesh->SetCollisionProfileName(TEXT("ShipDeck"));
+		DeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		DeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
+		DeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+		DeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
 	}
 	bBuoyancyQueryDiagnostics = FParse::Param(
 		FCommandLine::Get(), TEXT("BuoyancyQueryDiagnostics"));

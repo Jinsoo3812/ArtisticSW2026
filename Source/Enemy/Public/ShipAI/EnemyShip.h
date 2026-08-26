@@ -176,7 +176,7 @@ public:
 		AActor* InitialTarget,
 		ADeckRangedEnemy*& OutEnemy);
 
-	UStaticMeshComponent* GetShipDeckMesh() const { return ShipDeckMesh; }
+	UStaticMeshComponent* GetShipDeckMesh() const { return GetDeckMeshComplex(); }
 	bool IsUsingLegacyAICompatibility() const
 	{
 		return !EnemyShipArchetype && bLegacyAutomaticCannonFireWithoutArchetype;
