@@ -30,6 +30,8 @@ bool FShipAuthoringComponentsTest::RunTest(const FString& Parameters)
 		const AShip* PlayerShipDefaults = PlayerShipClass->GetDefaultObject<AShip>();
 		TestNotNull(TEXT("BP_PlayerShip inherits HelmInteractable"), PlayerShipDefaults->GetHelmInteractable());
 		TestNotNull(TEXT("BP_PlayerShip inherits BoardingArrivalPoint"), PlayerShipDefaults->GetBoardingArrivalPoint());
+		TestNotNull(TEXT("BP_PlayerShip inherits AnchorMesh"), PlayerShipDefaults->GetAnchorMesh());
+		TestNotNull(TEXT("BP_PlayerShip inherits AnchorInteractable"), PlayerShipDefaults->GetAnchorInteractable());
 	}
 
 	UClass* CannonBlueprintClass = LoadClass<ACannon>(
@@ -42,6 +44,9 @@ bool FShipAuthoringComponentsTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Helm seat point exists"), ShipDefaults->GetHelmSeatPoint());
 	TestNotNull(TEXT("Helm exit point exists"), ShipDefaults->GetHelmExitPoint());
 	TestNotNull(TEXT("Shared boarding arrival point exists"), ShipDefaults->GetBoardingArrivalPoint());
+	TestNotNull(TEXT("Anchor mesh exists"), ShipDefaults->GetAnchorMesh());
+	TestNotNull(TEXT("Anchor interaction component exists"), ShipDefaults->GetAnchorInteractable());
+	TestFalse(TEXT("Anchor is raised by default"), ShipDefaults->IsAnchorDropped());
 	if (ShipDefaults->GetHelmInteractable())
 	{
 		TestEqual(
@@ -53,6 +58,51 @@ bool FShipAuthoringComponentsTest::RunTest(const FString& Parameters)
 	const AShipBoardingPoint* BoardingDefaults = GetDefault<AShipBoardingPoint>();
 	TestNotNull(TEXT("Reusable boarding point owns an interaction component"), BoardingDefaults->GetBoardingInteractable());
 	TestTrue(TEXT("Boarding interaction radius is designer editable and positive"), BoardingDefaults->InteractionSphereRadius > 0.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShipAnchorIntegrationTest,
+	"ArtisticSW.Ship.Authoring.AnchorIntegration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FShipAnchorIntegrationTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("Recipe_DecipherCipher has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("Recipe_DecipherCipher contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("ShipAnchorTestWorld"));
+	if (!TestNotNull(TEXT("Transient game world is created"), World))
+	{
+		return false;
+	}
+	FWorldContext& WorldContext = GEngine->CreateNewWorldContext(EWorldType::Game);
+	WorldContext.SetCurrentWorld(World);
+
+	auto CleanupWorld = [World]()
+	{
+		World->DestroyWorld(false);
+		GEngine->DestroyWorldContext(World);
+	};
+
+	AShip* Ship = World->SpawnActor<AShip>();
+	if (!TestNotNull(TEXT("Ship is spawned"), Ship))
+	{
+		CleanupWorld();
+		return false;
+	}
+
+	Ship->BuoyancyRoot->SetSimulatePhysics(false);
+	TestFalse(TEXT("Initial anchor state is raised"), Ship->IsAnchorDropped());
+	TestNotNull(TEXT("Anchor interactable exists"), Ship->GetAnchorInteractable());
+
+	Ship->ToggleAnchor();
+	TestTrue(TEXT("Anchor is dropped after toggle"), Ship->IsAnchorDropped());
+
+	Ship->ToggleAnchor();
+	TestFalse(TEXT("Anchor is raised after second toggle"), Ship->IsAnchorDropped());
+
+	CleanupWorld();
 	return true;
 }
 

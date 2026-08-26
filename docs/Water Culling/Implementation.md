@@ -76,3 +76,37 @@ CS 사전 마스크는 여러 배를 처리할 때 유리하지만, 한 척에�
 ## 대상 배 변경
 
 대상 배 Blueprint의 Components 패널에서 `SWCabinWaterCullComponent`를 추가한다. 다른 배로 옮길 때는 기존 배에서 제거하고 새 배에 추가한다. 선실 메시와 로컬 원점이 동일하면 Volume Texture는 다시 구울 필요가 없다. 현재 자동 부착 스크립트는 `Scripts/attach_cabin_water_cull_component.py`다.
+
+## 런타임 진단
+
+`SWCabinWaterCullComponent`는 Output Log의 `LogSWCabinWaterCull` 카테고리에 파이프라인 상태를 기록한다.
+
+1. `[1/5 BeginPlay]`: 컴포넌트, Owner, World, NetMode
+2. `[2/5 Asset]`: `MPC_Water_Custom` 로드 성공 여부
+3. `[3/5 MPC]`: 현재 World의 MPC Instance 획득
+4. `[4/5 Upload]`: Owner Transform과 역변환 행 업로드
+5. `[5/5 Heartbeat]`: MPC의 Enabled, DebugView, Threshold readback
+
+`Debug View`는 셰이더 로그를 대신하는 시각 진단 기능이다.
+
+- `0 - Normal Culling`: 실제 Volume Texture 점유 마스크를 이용한 정상 컬링
+- `1 - Cull Entire Local Bounds`: 복셀 샘플 전에 로컬 Bounds 전체를 컬링한다. 컴포넌트, Transform, MPC, 머티리얼 및 Opacity Mask 경로를 한 번에 검증한다.
+- `2 - Show Only Occupied Voxels`: Bounds 밖의 물을 숨기고 점유 복셀과 겹치는 물만 표시한다. Volume Texture 바인딩, UVW 및 Threshold를 검증한다.
+
+## 발견 및 해결한 G8 점유값 오류
+
+최초 베이크는 CPU의 논리 점유 배열을 `0`과 `1`로 만들고 그대로 `TSF_G8` Volume Texture에 복사했다. CPU 디버그 메시는 `0이 아닌가`만 검사하므로 정상적인 선실 부피를 표시했지만, GPU는 G8을 UNorm으로 샘플하여 점유값 `1`을 다음처럼 읽었다.
+
+```text
+1 / 255 = 0.0039215686
+```
+
+기본 `SW_CabinCullThreshold = 0.35`보다 작기 때문에 모든 점유 복셀이 빈 공간으로 판정됐다. 이로 인해 Bounds 전체 컬링은 성공했지만 Normal Culling과 Occupied Voxels 표시는 실패했다.
+
+해결책은 Volume Texture 생성 직전에 모든 점유 셀을 `255`로 변환하는 것이다.
+
+```cpp
+Voxel = Voxel != 0 ? 255 : 0;
+```
+
+이제 GPU 샘플 결과는 점유 영역에서 `1.0`이며 Threshold를 정상 통과한다. 수정 후 동일한 승인 형상으로 다시 베이크했고 실제 PIE에서 선실 내부 물 컬링 성공을 확인했다.

@@ -74,3 +74,35 @@
 - MPC `SW_CabinCullEnabled`
 - MPC `SW_CabinCullThreshold` 기본값 0.35
 - Volume Texture 파라미터 `SW Cabin Cull Mask`
+
+## 최종 런타임 진단 결과
+
+### Debug View 1: Bounds 전체 컬링
+
+`BP_PlayerShip_Kelvin`을 따라 움직이는 로컬 Bounds 전체에서 물이 직육면체 형태로 제거됐다. 다음 경로가 정상임을 확인했다.
+
+- 컴포넌트 BeginPlay 및 Tick
+- Kelvin Owner Transform 사용
+- 역변환 행 계산 및 MPC 업로드
+- 머티리얼의 MPC 입력
+- Absolute World Position의 로컬 좌표 변환
+- 최종 Opacity Mask 연결과 Masked 렌더링
+
+### Debug View 2 최초 실패
+
+점유 복셀만 표시하는 모드에서 아무 물도 나타나지 않았다. Bounds 경로는 이미 통과했으므로 조사 범위를 Volume Texture 값과 Threshold로 좁혔다.
+
+원인은 `TSF_G8`에 논리값 `1`을 기록하여 GPU에서 `0.00392`로 정규화된 것이었다. Threshold `0.35`를 통과하지 못해 모든 복셀이 비어 있다고 판정됐다.
+
+### 수정 및 최종 성공
+
+- 비점유 복셀: `0`
+- 점유 복셀: `255` (GPU UNorm 샘플 `1.0`)
+- 재베이크: 성공
+- Grid: `359 x 141 x 298`
+- Interior voxels: `302,683`
+- Debug instances: `4,713`
+- Exterior leak: `false`
+- PIE 선실 내부 물 컬링: 사용자 육안 검증 성공
+
+최종적으로 컴포넌트, CPU→GPU 전달, Bounds, Volume Texture, 머티리얼 및 Opacity Mask 전 구간이 정상 작동하는 것으로 판정한다.

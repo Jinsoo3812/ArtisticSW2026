@@ -22,6 +22,8 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		, ExternalAcceleration(FVector::ZeroVector)
 		, bBuoyancyEnabled(true)
 		, bHasAuthoritativeBuoyancyState(false)
+		, bIsAnchorDropped(false)
+		, AnchorOriginXY(FVector2D::ZeroVector)
 		{}
 
 	void Reset()
@@ -31,6 +33,8 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		ExternalAcceleration = FVector::ZeroVector;
 		bBuoyancyEnabled = true;
 		bHasAuthoritativeBuoyancyState = false;
+		bIsAnchorDropped = false;
+		AnchorOriginXY = FVector2D::ZeroVector;
 	}
 
 	UPROPERTY()
@@ -51,6 +55,12 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 	UPROPERTY()
 	bool bHasAuthoritativeBuoyancyState;
 
+	UPROPERTY()
+	bool bIsAnchorDropped;
+
+	UPROPERTY()
+	FVector2D AnchorOriginXY;
+
 	virtual void InterpolateData(const FNetworkPhysicsPayload& MinData, const FNetworkPhysicsPayload& MaxData, float LerpAlpha) override
 	{
 		const FNetInputShip& MinInput = static_cast<const FNetInputShip&>(MinData);
@@ -64,6 +74,10 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		bHasAuthoritativeBuoyancyState = LerpAlpha < 0.5f
 			? MinInput.bHasAuthoritativeBuoyancyState
 			: MaxInput.bHasAuthoritativeBuoyancyState;
+		bIsAnchorDropped = LerpAlpha < 0.5f
+			? MinInput.bIsAnchorDropped
+			: MaxInput.bIsAnchorDropped;
+		AnchorOriginXY = MaxInput.AnchorOriginXY;
 	}
 
 	virtual void MergeData(const FNetworkPhysicsPayload& FromData) override
@@ -74,6 +88,8 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		ExternalAcceleration = FromInput.ExternalAcceleration;
 		bBuoyancyEnabled = FromInput.bBuoyancyEnabled;
 		bHasAuthoritativeBuoyancyState = FromInput.bHasAuthoritativeBuoyancyState;
+		bIsAnchorDropped = FromInput.bIsAnchorDropped;
+		AnchorOriginXY = FromInput.AnchorOriginXY;
 	}
 
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
@@ -125,6 +141,16 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 				Ar << QuantizedX;
 				Ar << QuantizedY;
 			}
+
+			uint8 SerializedAnchorDropped = bIsAnchorDropped ? 1 : 0;
+			Ar.SerializeBits(&SerializedAnchorDropped, 1);
+			if (SerializedAnchorDropped != 0)
+			{
+				float AnchorX = static_cast<float>(AnchorOriginXY.X);
+				float AnchorY = static_cast<float>(AnchorOriginXY.Y);
+				Ar << AnchorX;
+				Ar << AnchorY;
+			}
 		}
 		else
 		{
@@ -149,6 +175,22 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 			{
 				ExternalAcceleration = FVector::ZeroVector;
 			}
+
+			uint8 SerializedAnchorDropped = 0;
+			Ar.SerializeBits(&SerializedAnchorDropped, 1);
+			bIsAnchorDropped = SerializedAnchorDropped != 0;
+			if (bIsAnchorDropped)
+			{
+				float AnchorX = 0.0f;
+				float AnchorY = 0.0f;
+				Ar << AnchorX;
+				Ar << AnchorY;
+				AnchorOriginXY = FVector2D(AnchorX, AnchorY);
+			}
+			else
+			{
+				AnchorOriginXY = FVector2D::ZeroVector;
+			}
 		}
 
 		uint8 SerializedBuoyancyEnabled = bBuoyancyEnabled ? 1 : 0;
@@ -162,18 +204,6 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		}
 
 		bOutSuccess = !Ar.IsError();
-		/* Network Physics serializer diagnostic log disabled after validation.
-		if (bOutSuccess && ServerFrame > 0 && (ServerFrame <= 5 || ServerFrame % 60 == 0))
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[NETPHYS-FRAME-INPUT] Direction=%s ServerFrame=%d LocalFrame=%d Move=%.3f Steer=%.3f"),
-				Ar.IsLoading() ? TEXT("Load") : TEXT("Save"),
-				ServerFrame,
-				LocalFrame,
-				MovementInput,
-				SteeringInput);
-		}
-		*/
-
 		return bOutSuccess;
 	}
 };
@@ -514,6 +544,24 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ship|Helm")
 	USceneComponent* GetHelmExitPoint() const { return HelmExitPoint; }
 
+	UFUNCTION(BlueprintPure, Category = "Ship|Anchor")
+	UStaticMeshComponent* GetAnchorMesh() const { return AnchorMesh; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Anchor")
+	UInteractableComponent* GetAnchorInteractable() const { return AnchorInteractable; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Anchor")
+	bool IsAnchorDropped() const { return bIsAnchorDropped; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Anchor")
+	FVector2D GetAnchorOriginXY() const { return AnchorOriginXY; }
+
+	UFUNCTION(BlueprintCallable, Category = "Ship|Anchor")
+	void ToggleAnchor();
+
+	UFUNCTION(Server, Reliable)
+	void ServerToggleAnchor();
+
 	UFUNCTION(BlueprintPure, Category = "Ship|Boarding")
 	USceneComponent* GetBoardingArrivalPoint() const { return BoardingArrivalPoint; }
 
@@ -586,6 +634,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Helm")
 	TObjectPtr<USceneComponent> HelmExitPoint;
 
+	/** Visible anchor mesh. Its transform and mesh can be authored in Blueprint. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Anchor")
+	TObjectPtr<UStaticMeshComponent> AnchorMesh;
+
+	/** Interaction volume used to drop or raise the anchor. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Anchor")
+	TObjectPtr<UInteractableComponent> AnchorInteractable;
+
 	/** Shared destination for every ShipBoardingPoint attached to this ship. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Boarding")
 	TObjectPtr<USceneComponent> BoardingArrivalPoint;
@@ -634,6 +690,19 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Movement", meta = (ClampMin = "0.0", Units = "cm/s^2"))
 	float MaxExternalAcceleration = 5000.f;
+
+	// ---- Anchor Parameters ----
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Anchor", meta = (ClampMin = "0.0", ToolTip = "Planar restoring stiffness holding the ship to its anchor point against external collisions"))
+	float AnchorStiffness = 1000000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Anchor", meta = (ClampMin = "0.0", ToolTip = "Planar damping coefficient bringing horizontal velocity to a stop when anchored"))
+	float AnchorDamping = 80000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Anchor", meta = (ClampMin = "0.0", Units = "cm", ToolTip = "Allowable horizontal slack distance before anchor spring tension applies"))
+	float AnchorSlackRadius = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Anchor", meta = (ClampMin = "0.0", ToolTip = "Maximum allowable horizontal force exerted by the anchor"))
+	float MaxAnchorForce = 10000000.0f;
 
 	// ---- Input Config ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Input")
@@ -724,6 +793,11 @@ protected:
 	UFUNCTION()
 	void HandleStarboardSeaBoarding(AActor* Interactor);
 
+	UFUNCTION()
+	void HandleAnchorInteracted(AActor* Interactor);
+
+	void UpdateAnchorInteractionUI();
+
 	// Physics forces apply functions
 	void ApplyForwardForce(float MoveValue);
 	void ApplyTurnTorque(float TurnValue);
@@ -777,6 +851,15 @@ protected:
 
 	UFUNCTION()
 	void OnRep_RidingPlayer(APawn* OldRidingPlayer);
+
+	UPROPERTY(ReplicatedUsing = OnRep_IsAnchorDropped)
+	bool bIsAnchorDropped = false;
+
+	UPROPERTY(Replicated)
+	FVector2D AnchorOriginXY = FVector2D::ZeroVector;
+
+	UFUNCTION()
+	void OnRep_IsAnchorDropped();
 
 	UPROPERTY(ReplicatedUsing = OnRep_BombardmentTargeting)
 	bool bBombardmentTargeting = false;

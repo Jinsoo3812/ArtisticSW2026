@@ -200,6 +200,16 @@ AShip::AShip()
 	HelmExitPoint = CreateDefaultSubobject<USceneComponent>(TEXT("HelmExitPoint"));
 	HelmExitPoint->SetupAttachment(BuoyancyRoot);
 
+	// Anchor authoring components
+	AnchorMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("AnchorMesh"));
+	AnchorMesh->SetupAttachment(BuoyancyRoot);
+	AnchorMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+
+	AnchorInteractable = CreateDefaultSubobject<UInteractableComponent>(TEXT("AnchorInteractable"));
+	AnchorInteractable->SetupAttachment(AnchorMesh);
+	AnchorInteractable->SetCollisionProfileName(TEXT("Interactable"));
+	AnchorInteractable->InteractionTag = FGameplayTag::RequestGameplayTag(TEXT("Interaction.Ship.Anchor"), false);
+
 	BoardingArrivalPoint = CreateDefaultSubobject<USceneComponent>(TEXT("BoardingArrivalPoint"));
 	BoardingArrivalPoint->SetupAttachment(BuoyancyRoot);
 
@@ -320,6 +330,13 @@ void AShip::BeginPlay()
 		HelmInteractable->InitializeInteractable(ObjectName, ActionText);
 	}
 	UpdateHelmInteractionAvailability();
+
+	if (AnchorInteractable)
+	{
+		UpdateAnchorInteractionUI();
+		AnchorInteractable->OnInteracted.AddUniqueDynamic(this, &AShip::HandleAnchorInteracted);
+	}
+
 	RefreshMountedCannons();
 
 	// 좌현 바다 승선 상호작용 바인딩
@@ -678,6 +695,12 @@ void AShip::Tick(float DeltaTime)
 				AsyncInput->ServerPhysicsStepSeconds = ServerPhysicsStepSeconds;
 				AsyncInput->NetworkPhysicsTickOffset = NetworkPhysicsTickOffset;
 				AsyncInput->bNetworkPhysicsTickOffsetAssigned = bNetworkPhysicsTickOffsetAssigned;
+				AsyncInput->bIsAnchorDropped = bIsAnchorDropped;
+				AsyncInput->AnchorOriginXY = AnchorOriginXY;
+				AsyncInput->AnchorStiffness = AnchorStiffness;
+				AsyncInput->AnchorDamping = AnchorDamping;
+				AsyncInput->AnchorSlackRadius = AnchorSlackRadius;
+				AsyncInput->MaxAnchorForce = MaxAnchorForce;
 			}
 		}
 	}
@@ -694,52 +717,6 @@ void AShip::Tick(float DeltaTime)
 		{
 			NetworkPhysicsComponent->SetCompareStateToTriggerRewind(true, true);
 		}
-
-		/* Network Physics client synchronization diagnostic logs disabled after validation.
-		// 클라이언트 전용 GT 위치 오차 실측 디버그 로그 (1초 주기 호출)
-		if (UWorld* World = GetWorld())
-		{
-			static float LogTimer = 0.0f;
-			LogTimer += DeltaTime;
-			if (LogTimer >= 1.0f)
-			{
-				LogTimer = 0.0f;
-				float Dist = FVector::Dist(GetActorLocation(), ReplicatedState.Location);
-				UE_LOG(LogTemp, Warning, TEXT("[SHIP-SYNC] LocDiff: %.2f cm | ActorLoc: %s | RepLoc: %s"), 
-					Dist, *GetActorLocation().ToString(), *ReplicatedState.Location.ToString());
-
-				if (BuoyancyRoot)
-				{
-					if (FBodyInstance* BI = BuoyancyRoot->GetBodyInstance())
-					{
-						FTransform GS_PhysTransform = BI->GetUnrealWorldTransform();
-						UE_LOG(LogTemp, Warning, TEXT("[GS-BODY-TRANS] BodyZ: %.3f | ActorZ: %.3f | RepZ: %.3f"),
-							GS_PhysTransform.GetLocation().Z, GetActorLocation().Z, ReplicatedState.Location.Z);
-					}
-				}
-
-				// 소유권 및 네트워크 역할 실시간 실측 로그 추가
-				AActor* ShipOwner = GetOwner();
-				ENetRole LocalRole = GetLocalRole();
-				ENetRole MyRemoteRole = GetRemoteRole();
-				FString LocalRoleStr = UEnum::GetValueAsString(LocalRole);
-				FString RemoteRoleStr = UEnum::GetValueAsString(MyRemoteRole);
-
-				UE_LOG(LogTemp, Warning, TEXT("[GS-OWNER-DIAG] Owner: %s | LocalRole: %s | RemoteRole: %s | ReplicateMovement: %s"),
-					ShipOwner ? *ShipOwner->GetName() : TEXT("None"),
-					*LocalRoleStr,
-					*RemoteRoleStr,
-					IsReplicatingMovement() ? TEXT("TRUE") : TEXT("FALSE"));
-
-				// CVar 값 직접 조회 로그 — ini 세팅이 실제로 적용되었는지 검증
-				IConsoleVariable* CVarCompare = IConsoleManager::Get().FindConsoleVariable(TEXT("np2.Resim.CompareStateToTriggerRewind"));
-				IConsoleVariable* CVarSimProxy = IConsoleManager::Get().FindConsoleVariable(TEXT("np2.Resim.CompareStateToTriggerRewind.IncludeSimProxies"));
-				UE_LOG(LogTemp, Warning, TEXT("[GS-CVAR-DIAG] CompareState CVar: %s | IncludeSimProxies CVar: %s"),
-					CVarCompare ? (CVarCompare->GetBool() ? TEXT("TRUE") : TEXT("FALSE")) : TEXT("NOT FOUND"),
-					CVarSimProxy ? (CVarSimProxy->GetBool() ? TEXT("TRUE") : TEXT("FALSE")) : TEXT("NOT FOUND"));
-			}
-		}
-		*/
 	}
 }
 
@@ -955,6 +932,8 @@ void AShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 	DOREPLIFETIME(AShip, ServerPhysicsStepSeconds);
 	DOREPLIFETIME(AShip, CurrentAIPropulsionScale);
 	DOREPLIFETIME(AShip, CurrentAITurnScale);
+	DOREPLIFETIME(AShip, bIsAnchorDropped);
+	DOREPLIFETIME(AShip, AnchorOriginXY);
 }
 
 void AShip::Board(APawn* PlayerPawn)
@@ -1086,7 +1065,7 @@ void AShip::ForceDisembark()
 
 void AShip::ShipMove(const FInputActionValue& Value)
 {
-	const float MoveValue = Value.Get<float>();
+	const float MoveValue = bIsAnchorDropped ? 0.0f : Value.Get<float>();
 	CurrentMoveInput = MoveValue;
 
 	if (!HasAuthority())
@@ -1097,7 +1076,7 @@ void AShip::ShipMove(const FInputActionValue& Value)
 
 void AShip::ServerMove_Implementation(float MoveValue)
 {
-	CurrentMoveInput = MoveValue;
+	CurrentMoveInput = bIsAnchorDropped ? 0.0f : MoveValue;
 }
 
 void AShip::StopShipMove(const FInputActionValue&)
@@ -1122,7 +1101,7 @@ void AShip::ApplyForwardForce(float MoveValue)
 
 void AShip::ShipTurn(const FInputActionValue& Value)
 {
-	const float TurnValue = Value.Get<float>();
+	const float TurnValue = bIsAnchorDropped ? 0.0f : Value.Get<float>();
 	CurrentTurnInput = TurnValue;
 
 	if (!HasAuthority())
@@ -1133,7 +1112,7 @@ void AShip::ShipTurn(const FInputActionValue& Value)
 
 void AShip::ServerTurn_Implementation(float TurnValue)
 {
-	CurrentTurnInput = TurnValue;
+	CurrentTurnInput = bIsAnchorDropped ? 0.0f : TurnValue;
 }
 
 void AShip::StopShipTurn(const FInputActionValue&)
@@ -2167,4 +2146,60 @@ void AShip::HandleStarboardSeaBoarding(AActor* Interactor)
 	}
 }
 
+void AShip::HandleAnchorInteracted(AActor* Interactor)
+{
+	ToggleAnchor();
+}
 
+void AShip::ToggleAnchor()
+{
+	if (!HasAuthority())
+	{
+		ServerToggleAnchor();
+		return;
+	}
+
+	bIsAnchorDropped = !bIsAnchorDropped;
+	if (bIsAnchorDropped)
+	{
+		const FVector CurrentLoc = GetActorLocation();
+		AnchorOriginXY = FVector2D(CurrentLoc.X, CurrentLoc.Y);
+		CurrentMoveInput = 0.0f;
+		CurrentTurnInput = 0.0f;
+	}
+	else
+	{
+		AnchorOriginXY = FVector2D::ZeroVector;
+	}
+
+	OnRep_IsAnchorDropped();
+	ForceNetUpdate();
+}
+
+void AShip::ServerToggleAnchor_Implementation()
+{
+	ToggleAnchor();
+}
+
+void AShip::OnRep_IsAnchorDropped()
+{
+	if (bIsAnchorDropped)
+	{
+		CurrentMoveInput = 0.0f;
+		CurrentTurnInput = 0.0f;
+	}
+	UpdateAnchorInteractionUI();
+}
+
+void AShip::UpdateAnchorInteractionUI()
+{
+	if (AnchorInteractable)
+	{
+		const FText ObjectName = NSLOCTEXT("ShipInteraction", "AnchorObject", "닻 (Anchor)");
+		const FText ActionText = bIsAnchorDropped
+			? NSLOCTEXT("ShipInteraction", "AnchorRaiseAction", "닻 올리기 (Raise Anchor)")
+			: NSLOCTEXT("ShipInteraction", "AnchorDropAction", "닻 내리기 (Drop Anchor)");
+
+		AnchorInteractable->InitializeInteractable(ObjectName, ActionText);
+	}
+}

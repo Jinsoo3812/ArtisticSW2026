@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Chaos/SimCallbackObject.h"
@@ -63,6 +63,13 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	float ResimLocationThreshold = 5.0f;
 	float ResimRotationThreshold = 5.0f;
 
+	bool bIsAnchorDropped = false;
+	FVector2D AnchorOriginXY = FVector2D::ZeroVector;
+	float AnchorStiffness = 1000000.0f;
+	float AnchorDamping = 80000.0f;
+	float AnchorSlackRadius = 0.0f;
+	float MaxAnchorForce = 10000000.0f;
+
 	void Reset()
 	{
 		MovementInput = 0.0f;
@@ -85,6 +92,12 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 		bNetworkPhysicsTickOffsetAssigned = false;
 		ResimLocationThreshold = 5.0f;
 		ResimRotationThreshold = 5.0f;
+		bIsAnchorDropped = false;
+		AnchorOriginXY = FVector2D::ZeroVector;
+		AnchorStiffness = 1000000.0f;
+		AnchorDamping = 80000.0f;
+		AnchorSlackRadius = 0.0f;
+		MaxAnchorForce = 10000000.0f;
 	}
 };
 
@@ -145,6 +158,8 @@ private:
 	bool bBuoyancyEnabled_Internal = true;
 	bool bAuthoritativeBuoyancyWriter_Internal = false;
 	bool bQueryDiagnostics_Internal = false;
+	bool bAnchorDropped_Internal = false;
+	FVector2D CachedAnchorOriginXY = FVector2D::ZeroVector;
 
 	// 물리 스레드에서 고정 보관할 데이터들 (최초 전송 시 캐싱)
 	TArray<FVector> CachedPontoonOffsets;
@@ -163,6 +178,11 @@ private:
 	float CachedBuoyancyRadius = 100.f;
 	FSWBuoyancyForceSettings CachedBuoyancyForceSettings;
 
+	float CachedAnchorStiffness = 1000000.0f;
+	float CachedAnchorDamping = 80000.0f;
+	float CachedAnchorSlackRadius = 0.0f;
+	float CachedMaxAnchorForce = 10000000.0f;
+
 	// Authoritative server-frame clock used in normal simulation and rewind.
 	double CachedServerPhysicsTimeOrigin = -1.0;
 	float CachedServerPhysicsStepSeconds = 0.0f;
@@ -172,5 +192,4 @@ private:
 	// 에디터 연동 롤백 오차 임계값 캐시
 	float CachedResimLocationThreshold = 5.f;
 	float CachedResimRotationThreshold = 5.f;
-
 };
