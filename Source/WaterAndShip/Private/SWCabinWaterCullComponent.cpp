@@ -45,15 +45,7 @@ void USWCabinWaterCullComponent::BeginPlay()
 	bHasUploadedTransform = false;
 	bUploadedDisabled = false;
 	UploadTransformIfChanged();
-	UE_LOG(LogSWCabinWaterCull, Display,
-		TEXT("[1/5 BeginPlay] component=%s owner=%s world=%s netMode=%d enabled=%d debugView=%d"),
-		*GetNameSafe(this), *GetNameSafe(GetOwner()), *GetNameSafe(GetWorld()),
-		GetWorld() ? int32(GetWorld()->GetNetMode()) : -1, bWaterCullEnabled ? 1 : 0, int32(DebugView));
-	if (WaterParameterCollection)
-	{
-		UE_LOG(LogSWCabinWaterCull, Display, TEXT("[2/5 Asset] MPC path=%s load=SUCCESS"), SWCabinWaterCull::CollectionPath);
-	}
-	else
+	if (!WaterParameterCollection)
 	{
 		UE_LOG(LogSWCabinWaterCull, Error, TEXT("[2/5 Asset] MPC path=%s load=FAILED"), SWCabinWaterCull::CollectionPath);
 	}
@@ -81,23 +73,6 @@ void USWCabinWaterCullComponent::TickComponent(
 	else
 	{
 		UploadDisabled();
-	}
-	if (bDiagnosticLogging && DiagnosticLogAccumulator >= FMath::Max(0.25f, DiagnosticLogInterval))
-	{
-		DiagnosticLogAccumulator = 0.0f;
-		UMaterialParameterCollectionInstance* Instance = WaterParameterCollection && GetWorld()
-			? GetWorld()->GetParameterCollectionInstance(WaterParameterCollection) : nullptr;
-		float Enabled = -1.0f, Debug = -1.0f, Threshold = -1.0f;
-		const bool bEnabledRead = Instance && Instance->GetScalarParameterValue(SWCabinWaterCull::EnabledParameter, Enabled);
-		const bool bDebugRead = Instance && Instance->GetScalarParameterValue(SWCabinWaterCull::DebugViewParameter, Debug);
-		const bool bThresholdRead = Instance && Instance->GetScalarParameterValue(TEXT("SW_CabinCullThreshold"), Threshold);
-		UE_LOG(LogSWCabinWaterCull, Display,
-			TEXT("[5/5 Heartbeat] owner=%s transformUploaded=%d MPCInstance=%s enabled=%s%.2f debug=%s%.2f threshold=%s%.3f loc=%s"),
-			*GetNameSafe(GetOwner()), bHasUploadedTransform ? 1 : 0, *GetNameSafe(Instance),
-			bEnabledRead ? TEXT("") : TEXT("READ_FAIL:"), Enabled,
-			bDebugRead ? TEXT("") : TEXT("READ_FAIL:"), Debug,
-			bThresholdRead ? TEXT("") : TEXT("READ_FAIL:"), Threshold,
-			GetOwner() ? *GetOwner()->GetActorLocation().ToCompactString() : TEXT("NO_OWNER"));
 	}
 }
 
@@ -145,14 +120,6 @@ void USWCabinWaterCullComponent::UploadTransformIfChanged()
 	Instance->SetVectorParameterValue(SWCabinWaterCull::InverseRow2Parameter, Row2);
 	Instance->SetScalarParameterValue(SWCabinWaterCull::EnabledParameter, 1.0f);
 	Instance->SetScalarParameterValue(SWCabinWaterCull::DebugViewParameter, float(DebugView));
-	if (bDiagnosticLogging)
-	{
-		UE_LOG(LogSWCabinWaterCull, Display,
-			TEXT("[3/5 MPC] instance=%s [4/5 Upload] owner=%s loc=%s rot=%s scale=%s row0=(%.6f %.6f %.6f %.3f)"),
-			*GetNameSafe(Instance), *GetNameSafe(Owner), *CurrentTransform.GetLocation().ToCompactString(),
-			*CurrentTransform.Rotator().ToCompactString(), *CurrentTransform.GetScale3D().ToCompactString(),
-			Row0.R, Row0.G, Row0.B, Row0.A);
-	}
 	LastUploadedTransform = CurrentTransform;
 	bHasUploadedTransform = true;
 	bUploadedDisabled = false;

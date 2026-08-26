@@ -12,6 +12,7 @@
 #include "PlayerProgressSubsystem.h"
 #include "RespawnHostInterface.h"
 #include "TimerManager.h"
+#include "Kismet/GameplayStatics.h"
 
 AMultiGameMode::AMultiGameMode()
 {
@@ -346,6 +347,12 @@ UPlayerRespawnPointComponent* AMultiGameMode::FindShipRespawnPoint(int32 PlayerI
 
 void AMultiGameMode::HandleAllPlayersDeathFinished()
 {
+	if (!HasAuthority()) return;
+	OnGameOverRequested.Broadcast();
+	const UWorld* World = GetWorld();
+	if (!World) return;
+	const FString MapName = World->GetMapName().RightChop(World->StreamingLevelsPrefix.Len());
+	UGameplayStatics::OpenLevel(this, FName(*MapName));
 }
 
 void AMultiGameMode::HandleRequiredPlayersJoined()

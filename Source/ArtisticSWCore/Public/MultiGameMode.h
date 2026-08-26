@@ -28,6 +28,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSWRequiredPlayersJoined);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSWAllPlayersReady);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSWGameOverRequested);
 /**
  * 2인 멀티 플레이 기본 GameMode.
  *
@@ -63,6 +64,10 @@ public:
 
     UPROPERTY(BlueprintAssignable, Category = "Multiplayer|Events")
     FOnSWAllPlayersReady OnAllPlayersReady;
+
+	/** Future defeat-screen hook. Currently followed immediately by a level reload. */
+	UPROPERTY(BlueprintAssignable, Category = "Game Rules|Events")
+	FOnSWGameOverRequested OnGameOverRequested;
 	
 public:
     /** 두 플레이어 모두에게 공통으로 스폰할 표준 플레이어 폰 클래스 */

@@ -6,6 +6,9 @@
 
 class AShip;
 class USWBuoyancyComponent;
+class UMaterialInterface;
+class UNiagaraComponent;
+class UNiagaraSystem;
 
 /** Dedicated Enemy Ship projectile: direct Player Ship damage, no area damage. */
 UCLASS(Blueprintable)
@@ -17,6 +20,7 @@ public:
 	AEnemyShipTorpedo();
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void OnRep_ReplicatedMovement() override;
@@ -51,6 +55,25 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Buoyancy")
 	TObjectPtr<USWBuoyancyComponent> SWBuoyancyComponent;
+
+	/** Translucent emissive overlay; preserves the authored torpedo surface material underneath. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Visual")
+	TObjectPtr<UMaterialInterface> PulseOverlayMaterial;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Fuse")
+	TObjectPtr<UNiagaraComponent> FuseBurstComponent;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Fuse")
+	TObjectPtr<UNiagaraSystem> FuseBurstSystem;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Fuse")
+	FName FuseSocketName = TEXT("FuseTip");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Fuse", meta = (ClampMin = "0.05", Units = "s"))
+	float FuseBurstIntervalSeconds = 0.3f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Fuse", meta = (ClampMin = "0.01"))
+	float FuseBurstScale = 0.25f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Buoyancy", meta = (ClampMin = "1.0", Units = "cm"))
 	float FloatingPontoonRadius = 50.0f;
@@ -94,6 +117,7 @@ private:
 	void ApplyWaterEntryPhysicsState();
 	void EnableBuoyancyAfterDelay();
 	void DetectDamageMeshContactAfterWater();
+	void RestartFuseBurst();
 
 	TWeakObjectPtr<AShip> DesignatedTarget;
 
@@ -115,4 +139,5 @@ private:
 	float ClientMovementTargetReceiveTime = 0.0f;
 	FVector PreviousWaterPhysicsLocation = FVector::ZeroVector;
 	FTimerHandle BuoyancyActivationTimerHandle;
+	FTimerHandle FuseBurstTimerHandle;
 };

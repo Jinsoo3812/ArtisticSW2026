@@ -10,7 +10,10 @@
 #include "GAS/SWCombatEffectContextLibrary.h"
 #include "GASDamageInstantGameplayEffect.h"
 #include "Net/UnrealNetwork.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 #include "Ship.h"
+#include "TimerManager.h"
 
 AEnemyShipTorpedo::AEnemyShipTorpedo()
 {
@@ -21,17 +24,55 @@ AEnemyShipTorpedo::AEnemyShipTorpedo()
 	SWBuoyancyComponent->ExecutionMode = ESWBuoyancyExecutionMode::ServerAuthority;
 	SWBuoyancyComponent->ConfigureSinglePontoon(FloatingPontoonRadius);
 	SWBuoyancyComponent->ForceSettings.DeepWaterBuoyancyMultiplier = 3.0f;
+	FuseBurstComponent = CreateDefaultSubobject<UNiagaraComponent>(TEXT("FuseBurstComponent"));
+	FuseBurstComponent->SetupAttachment(CannonballMesh, FuseSocketName);
+	FuseBurstComponent->SetAutoActivate(false);
+	FuseBurstComponent->SetAutoDestroy(false);
 	ProjectileMovement->ProjectileGravityScale = 0.0f;
 }
 
 void AEnemyShipTorpedo::BeginPlay()
 {
 	Super::BeginPlay();
+	if (CannonballMesh && PulseOverlayMaterial)
+	{
+		CannonballMesh->SetOverlayMaterial(PulseOverlayMaterial);
+	}
+	if (GetNetMode() != NM_DedicatedServer && FuseBurstComponent && FuseBurstSystem)
+	{
+		FuseBurstComponent->SetAsset(FuseBurstSystem);
+		FuseBurstComponent->SetRelativeScale3D(FVector(FMath::Max(0.01f, FuseBurstScale)));
+		FuseBurstComponent->AttachToComponent(
+			CannonballMesh,
+			FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+			FuseSocketName);
+		RestartFuseBurst();
+		GetWorldTimerManager().SetTimer(
+			FuseBurstTimerHandle,
+			this,
+			&AEnemyShipTorpedo::RestartFuseBurst,
+			FMath::Max(0.05f, FuseBurstIntervalSeconds),
+			true);
+	}
 	if (SWBuoyancyComponent)
 	{
 		SWBuoyancyComponent->ConfigureSinglePontoon(FloatingPontoonRadius);
 		SWBuoyancyComponent->Deactivate();
 		SWBuoyancyComponent->SetComponentTickEnabled(false);
+	}
+}
+
+void AEnemyShipTorpedo::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearTimer(FuseBurstTimerHandle);
+	Super::EndPlay(EndPlayReason);
+}
+
+void AEnemyShipTorpedo::RestartFuseBurst()
+{
+	if (FuseBurstComponent && FuseBurstSystem && !IsActorBeingDestroyed())
+	{
+		FuseBurstComponent->ReinitializeSystem();
 	}
 }
 
