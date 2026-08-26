@@ -12,6 +12,7 @@ class UTextBlock;
 struct FStreamableHandle;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FShipUpgradeNodeSelectedNative, FName);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FShipUpgradeNodeHoverChangedNative, FName, bool);
 
 /**
  * Native behavior for one ship-upgrade graph node.
@@ -32,6 +33,7 @@ public:
 	FName GetNodeId() const { return NodeView.NodeId; }
 	const FShipUpgradeNodeView& GetNodeView() const { return NodeView; }
 	FShipUpgradeNodeSelectedNative& OnNodeSelected() { return NodeSelectedDelegate; }
+	FShipUpgradeNodeHoverChangedNative& OnNodeHoverChanged() { return NodeHoverChangedDelegate; }
 
 protected:
 	UPROPERTY(meta = (BindWidget))
@@ -97,4 +99,5 @@ private:
 	FSoftObjectPath PendingIconPath;
 	TSharedPtr<FStreamableHandle> IconLoadHandle;
 	FShipUpgradeNodeSelectedNative NodeSelectedDelegate;
+	FShipUpgradeNodeHoverChangedNative NodeHoverChangedDelegate;
 };

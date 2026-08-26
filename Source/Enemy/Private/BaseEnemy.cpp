@@ -20,13 +20,11 @@
 #include "Abilities/BaseDeathGameplayAbility.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Components/CapsuleComponent.h"
-#include "Components/WidgetComponent.h"
 #include "Components/BaseHealthComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Perception/AISense_Damage.h"
-#include "UI/HealthBarWidget.h"
-#include "UObject/ConstructorHelpers.h"
+#include "UI/EnemyHealthBarComponent.h"
 
 ABaseEnemy::ABaseEnemy()
 {
@@ -71,18 +69,8 @@ ABaseEnemy::ABaseEnemy()
 	HealthComponent->SetDamageGameplayCueTag(GameplayCue_Enemy_Hit);
 
 	// ================= Health Bar =================
-	HealthBarWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarWidgetComponent"));
-	HealthBarWidgetComponent->SetupAttachment(GetRootComponent());
-	HealthBarWidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
-	HealthBarWidgetComponent->SetDrawAtDesiredSize(false);
-	HealthBarWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-	static ConstructorHelpers::FClassFinder<UHealthBarWidget> HealthBarWidgetFinder(TEXT("/Game/Blueprints/02_UI/UI_HUD/WBP_HealthBarWidget"));
-	if (HealthBarWidgetFinder.Succeeded())
-	{
-		HealthBarWidgetClass = HealthBarWidgetFinder.Class;
-		HealthBarWidgetComponent->SetWidgetClass(HealthBarWidgetClass);
-	}
+	EnemyHealthBarComponent = CreateDefaultSubobject<UEnemyHealthBarComponent>(TEXT("EnemyHealthBarComponent"));
+	EnemyHealthBarComponent->SetupAttachment(GetRootComponent());
 	// ================= End of Health Bar =================
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
@@ -122,12 +110,15 @@ void ABaseEnemy::BeginPlay()
 			HealthComponent->OnDeathStarted.AddUniqueDynamic(this, &ABaseEnemy::OnDeathStarted);
 			HealthComponent->OnDeathFinished.AddUniqueDynamic(this, &ABaseEnemy::OnDeathFinished);
 			HealthComponent->OnHealthChanged.AddUniqueDynamic(this, &ABaseEnemy::OnHealthChanged);
-			HealthComponent->OnMaxHealthChanged.AddUniqueDynamic(this, &ABaseEnemy::OnMaxHealthChanged);
 			HealthComponent->InitializeWithAbilitySystem(AbilitySystemComponent);
 		}
 	}
 
-	InitializeHealthBarWidget();
+	if (EnemyHealthBarComponent)
+	{
+		EnemyHealthBarComponent->ConfigurePresentation(HealthBarOffset, HealthBarDrawSize);
+		EnemyHealthBarComponent->SetVisibilitySourceComponent(GetMesh());
+	}
 	if (HasAuthority())
 	{
 		SetBaseMovementSpeed(BaseMovementSpeed);
@@ -175,11 +166,8 @@ void ABaseEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		HealthComponent->OnDeathStarted.RemoveDynamic(this, &ABaseEnemy::OnDeathStarted);
 		HealthComponent->OnDeathFinished.RemoveDynamic(this, &ABaseEnemy::OnDeathFinished);
 		HealthComponent->OnHealthChanged.RemoveDynamic(this, &ABaseEnemy::OnHealthChanged);
-		HealthComponent->OnMaxHealthChanged.RemoveDynamic(this, &ABaseEnemy::OnMaxHealthChanged);
 		HealthComponent->UninitializeFromAbilitySystem();
 	}
-
-	GetWorldTimerManager().ClearTimer(HealthBarHideTimerHandle);
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -259,11 +247,6 @@ void ABaseEnemy::HandleDeathFinishedPresentation()
 
 void ABaseEnemy::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 {
-	if (HealthBarWidgetComponent)
-	{
-		HealthBarWidgetComponent->SetVisibility(false);
-	}
-
 	if (!bDeathHandled)
 	{
 		bDeathHandled = true;
@@ -310,9 +293,6 @@ void ABaseEnemy::OnDeathFinished(UBaseHealthComponent* InHealthComponent)
 
 void ABaseEnemy::OnHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
 {
-	RefreshHealthBarWidget();
-	UpdateHealthBarVisibilityAfterHealthChanged(OldValue, NewValue);
-
 	// GAS attribute changes do not automatically create an AI Damage stimulus.
 	// Report only authoritative, real health loss and keep synthetic Player input out of production code.
 	if (HasAuthority() && OldValue > NewValue && IsValid(InstigatorActor) && InstigatorActor != this)
@@ -326,11 +306,6 @@ void ABaseEnemy::OnHealthChanged(UBaseHealthComponent* InHealthComponent, float 
 			DamageLocation,
 			DamageLocation);
 	}
-}
-
-void ABaseEnemy::OnMaxHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
-{
-	RefreshHealthBarWidget();
 }
 
 bool ABaseEnemy::CanEngageActor_Implementation(AActor* Candidate) const
@@ -347,65 +322,6 @@ bool ABaseEnemy::CanEngageActor_Implementation(AActor* Candidate) const
 	}
 
 	return true;
-}
-
-void ABaseEnemy::InitializeHealthBarWidget()
-{
-	if (!HealthBarWidgetComponent)
-	{
-		return;
-	}
-
-	HealthBarWidgetComponent->SetRelativeLocation(HealthBarOffset);
-	HealthBarWidgetComponent->SetDrawSize(HealthBarDrawSize);
-
-	if (HealthBarWidgetClass)
-	{
-		HealthBarWidgetComponent->SetWidgetClass(HealthBarWidgetClass);
-	}
-
-	HealthBarWidgetComponent->InitWidget();
-	RefreshHealthBarWidget();
-	HealthBarWidgetComponent->SetVisibility(HealthBarVisibilityPolicy == EEnemyHealthBarVisibilityPolicy::AlwaysVisible);
-}
-
-void ABaseEnemy::RefreshHealthBarWidget()
-{
-	if (!HealthComponent || !HealthBarWidgetComponent)
-	{
-		return;
-	}
-
-	if (UHealthBarWidget* HealthBarWidget = Cast<UHealthBarWidget>(HealthBarWidgetComponent->GetUserWidgetObject()))
-	{
-		HealthBarWidget->SetShowHealthText(false);
-		HealthBarWidget->SetHealthValues(HealthComponent->GetHealth(), HealthComponent->GetMaxHealth());
-	}
-}
-
-void ABaseEnemy::UpdateHealthBarVisibilityAfterHealthChanged(float OldValue, float NewValue)
-{
-	if (!HealthBarWidgetComponent || HealthBarVisibilityPolicy != EEnemyHealthBarVisibilityPolicy::ShowOnDamage)
-	{
-		return;
-	}
-
-	if (OldValue <= NewValue)
-	{
-		return;
-	}
-
-	HealthBarWidgetComponent->SetVisibility(true);
-	GetWorldTimerManager().ClearTimer(HealthBarHideTimerHandle);
-	GetWorldTimerManager().SetTimer(HealthBarHideTimerHandle, this, &ABaseEnemy::HideHealthBarForDamagePolicy, HealthBarVisibleDurationAfterDamage, false);
-}
-
-void ABaseEnemy::HideHealthBarForDamagePolicy()
-{
-	if (HealthBarWidgetComponent && HealthBarVisibilityPolicy == EEnemyHealthBarVisibilityPolicy::ShowOnDamage)
-	{
-		HealthBarWidgetComponent->SetVisibility(false);
-	}
 }
 
 void ABaseEnemy::BindMovementSpeedAttribute()

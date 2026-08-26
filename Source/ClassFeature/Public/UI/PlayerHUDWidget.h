@@ -11,9 +11,9 @@
  * 
  */
 class ABasePlayer;
-class UHorizontalBox;
 class UBorder;
 class UQuickSlotEntryWidget;
+class UWeaponQuickSlotWidget;
 class UInventoryPanelWidget;
 class UInventoryCursorWidget;
 class UCanvasPanel;
@@ -30,6 +30,8 @@ class APlayerController;
 class APawn;
 class ACannon;
 class AShip;
+class UPrimitiveComponent;
+struct FOnAttributeChangeData;
 
 UCLASS()
 class CLASSFEATURE_API UPlayerHUDWidget : public UUserWidget
@@ -61,13 +63,9 @@ protected:
 		const FWidgetStyle& InWidgetStyle,
 		bool bParentEnabled) const override;
 
+	/** Designer-placed HUD-only weapon quick slot container: WeaponQuickSlot. */
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UHorizontalBox> QuickSlotBox;
-
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UQuickSlotEntryWidget> WeaponQuickSlot1;
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UQuickSlotEntryWidget> WeaponQuickSlot2;
+	TObjectPtr<UWeaponQuickSlotWidget> WeaponQuickSlot;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UQuickSlotEntryWidget> ConsumableQuickSlot3;
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -81,13 +79,7 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UInventoryPanelWidget> InventoryPanelWidget;
 
-	UPROPERTY(EditDefaultsOnly, Category = "UI")
-	TSubclassOf<UQuickSlotEntryWidget> QuickSlotEntryClass;
-
 	TWeakObjectPtr<ABasePlayer> CachedPlayer;
-
-	UPROPERTY()
-	TArray<TObjectPtr<UQuickSlotEntryWidget>> QuickSlotEntries;
 
 	/** Designer-placed USkillQuickSlotWidget children are discovered automatically. */
 	UPROPERTY()
@@ -126,6 +118,10 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UBaseHealthComponent> CachedHealthComponent;
 
+	TWeakObjectPtr<AShip> CachedShipHealthSource;
+	FDelegateHandle ShipHealthChangedDelegateHandle;
+	FDelegateHandle ShipMaxHealthChangedDelegateHandle;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crosshair|Dot", meta = (ClampMin = "0.0"))
 	float CenterDotSize = 6.0f;
 
@@ -157,6 +153,15 @@ protected:
 	void BindHealthComponent(UBaseHealthComponent* HealthComponent);
 	void UnbindHealthComponent();
 	void RefreshHealth();
+	void RefreshShipHealthContext(APawn* ControlledPawn);
+	void BindShipHealthSource(AShip* Ship);
+	void UnbindShipHealthSource();
+	void RefreshShipHealth();
+	AShip* ResolveShipFromFloor(APawn* ControlledPawn, bool& bOutHasWalkableFloor) const;
+	AShip* ResolveShipFromComponent(const UPrimitiveComponent* Component) const;
+	bool IsBeyondShipHealthHideDistance(const APawn* ControlledPawn, const AShip* Ship) const;
+	void HandleShipHealthChanged(const FOnAttributeChangeData& Data);
+	void HandleShipMaxHealthChanged(const FOnAttributeChangeData& Data);
 	void CreateBowCrosshairWidget();
 	void RefreshBowCrosshairBinding();
 	void BindBowComponent(UBowComponent* BowComponent);
@@ -194,4 +199,12 @@ protected:
 	void HandlePossessedPawnChanged(APawn* OldPawn, APawn* NewPawn);
 
 	void HandleSkillActiveStateChanged(bool bIsActive);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Health|Ship", meta = (ClampMin = "0.0", Units = "cm"))
+	float ShipHealthWaterHideDistance = 1500.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Health|Ship", meta = (ClampMin = "0.01", Units = "s"))
+	float ShipPresenceCheckInterval = 0.1f;
+
+	float ShipPresenceCheckAccumulator = 0.0f;
 };

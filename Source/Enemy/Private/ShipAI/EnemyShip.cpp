@@ -13,7 +13,6 @@
 #include "DrawDebugHelpers.h"
 #include "HAL/IConsoleManager.h"
 #include "SceneManagement.h"
-#include "Components/WidgetComponent.h"
 #include "Components/BaseHealthComponent.h"
 #include "BaseAttributeSet.h"
 #include "AIController.h"
@@ -23,8 +22,7 @@
 #include "Buoyancy/SWBuoyancyComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
-#include "UI/HealthBarWidget.h"
-#include "UObject/ConstructorHelpers.h"
+#include "UI/EnemyHealthBarComponent.h"
 #include "ShipAI/ShipSwarmSubsystem.h"
 #include "ShipAI/EnemyShipArchetypeData.h"
 #include "ShipAI/EnemyShipAbilitySet.h"
@@ -516,18 +514,8 @@ AEnemyShip::AEnemyShip()
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 	NavigationComponent = CreateDefaultSubobject<UEnemyShipNavigationComponent>(TEXT("EnemyShipNavigationComponent"));
 	PatternRuntimeComponent = CreateDefaultSubobject<UEnemyShipPatternRuntimeComponent>(TEXT("EnemyShipPatternRuntimeComponent"));
-	HealthBarWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarWidgetComponent"));
-	HealthBarWidgetComponent->SetupAttachment(RootComponent);
-	HealthBarWidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
-	HealthBarWidgetComponent->SetDrawAtDesiredSize(false);
-	HealthBarWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-	static ConstructorHelpers::FClassFinder<UHealthBarWidget> HealthBarWidgetFinder(TEXT("/Game/Blueprints/02_UI/UI_HUD/WBP_HealthBarWidget"));
-	if (HealthBarWidgetFinder.Succeeded())
-	{
-		HealthBarWidgetClass = HealthBarWidgetFinder.Class;
-		HealthBarWidgetComponent->SetWidgetClass(HealthBarWidgetClass);
-	}
+	EnemyHealthBarComponent = CreateDefaultSubobject<UEnemyHealthBarComponent>(TEXT("EnemyHealthBarComponent"));
+	EnemyHealthBarComponent->SetupAttachment(RootComponent);
 
 	Tags.Remove(TEXT("Player"));
 	Tags.AddUnique(TEXT("Enemy"));
@@ -560,13 +548,15 @@ void AEnemyShip::BeginPlay()
 		if (HealthComponent)
 		{
 			HealthComponent->OnDeathStarted.AddUniqueDynamic(this, &AEnemyShip::OnDeathStarted);
-			HealthComponent->OnHealthChanged.AddUniqueDynamic(this, &AEnemyShip::OnHealthChanged);
-			HealthComponent->OnMaxHealthChanged.AddUniqueDynamic(this, &AEnemyShip::OnMaxHealthChanged);
 			HealthComponent->InitializeWithAbilitySystem(ASC);
 		}
 	}
 
-	InitializeHealthBarWidget();
+	if (EnemyHealthBarComponent)
+	{
+		EnemyHealthBarComponent->ConfigurePresentation(HealthBarOffset, HealthBarDrawSize);
+		EnemyHealthBarComponent->SetVisibilitySourceComponent(ShipVisualMesh);
+	}
 
 	if (HasAuthority())
 	{
@@ -647,12 +637,8 @@ void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (HealthComponent)
 	{
 		HealthComponent->OnDeathStarted.RemoveDynamic(this, &AEnemyShip::OnDeathStarted);
-		HealthComponent->OnHealthChanged.RemoveDynamic(this, &AEnemyShip::OnHealthChanged);
-		HealthComponent->OnMaxHealthChanged.RemoveDynamic(this, &AEnemyShip::OnMaxHealthChanged);
 		HealthComponent->UninitializeFromAbilitySystem();
 	}
-
-	GetWorldTimerManager().ClearTimer(HealthBarHideTimerHandle);
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -2106,85 +2092,10 @@ void AEnemyShip::DrawEnemyShipAIDebug() const
 
 void AEnemyShip::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 {
-	if (HealthBarWidgetComponent)
-	{
-		HealthBarWidgetComponent->SetVisibility(false);
-	}
-
 	if (!bDeathHandled)
 	{
 		bDeathHandled = true;
 		HandleShipDeath();
-	}
-}
-
-void AEnemyShip::OnHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
-{
-	RefreshHealthBarWidget();
-	UpdateHealthBarVisibilityAfterHealthChanged(OldValue, NewValue);
-}
-
-void AEnemyShip::OnMaxHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
-{
-	RefreshHealthBarWidget();
-}
-
-void AEnemyShip::InitializeHealthBarWidget()
-{
-	if (!HealthBarWidgetComponent)
-	{
-		return;
-	}
-
-	HealthBarWidgetComponent->SetRelativeLocation(HealthBarOffset);
-	HealthBarWidgetComponent->SetDrawSize(HealthBarDrawSize);
-
-	if (HealthBarWidgetClass)
-	{
-		HealthBarWidgetComponent->SetWidgetClass(HealthBarWidgetClass);
-	}
-
-	HealthBarWidgetComponent->InitWidget();
-	RefreshHealthBarWidget();
-	HealthBarWidgetComponent->SetVisibility(HealthBarVisibilityPolicy == EEnemyHealthBarVisibilityPolicy::AlwaysVisible);
-}
-
-void AEnemyShip::RefreshHealthBarWidget()
-{
-	if (!HealthComponent || !HealthBarWidgetComponent)
-	{
-		return;
-	}
-
-	if (UHealthBarWidget* HealthBarWidget = Cast<UHealthBarWidget>(HealthBarWidgetComponent->GetUserWidgetObject()))
-	{
-		HealthBarWidget->SetShowHealthText(false);
-		HealthBarWidget->SetHealthValues(HealthComponent->GetHealth(), HealthComponent->GetMaxHealth());
-	}
-}
-
-void AEnemyShip::UpdateHealthBarVisibilityAfterHealthChanged(float OldValue, float NewValue)
-{
-	if (!HealthBarWidgetComponent || HealthBarVisibilityPolicy != EEnemyHealthBarVisibilityPolicy::ShowOnDamage)
-	{
-		return;
-	}
-
-	if (OldValue <= NewValue)
-	{
-		return;
-	}
-
-	HealthBarWidgetComponent->SetVisibility(true);
-	GetWorldTimerManager().ClearTimer(HealthBarHideTimerHandle);
-	GetWorldTimerManager().SetTimer(HealthBarHideTimerHandle, this, &AEnemyShip::HideHealthBarForDamagePolicy, HealthBarVisibleDurationAfterDamage, false);
-}
-
-void AEnemyShip::HideHealthBarForDamagePolicy()
-{
-	if (HealthBarWidgetComponent && HealthBarVisibilityPolicy == EEnemyHealthBarVisibilityPolicy::ShowOnDamage)
-	{
-		HealthBarWidgetComponent->SetVisibility(false);
 	}
 }
 
