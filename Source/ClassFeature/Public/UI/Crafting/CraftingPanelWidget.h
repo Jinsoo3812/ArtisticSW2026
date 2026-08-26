@@ -5,19 +5,19 @@
 #include "Crafting/CraftingTypes.h"
 #include "CraftingPanelWidget.generated.h"
 
+class UCraftingCompleteWidget;
 class UCraftingComponent;
 class UCraftingIngredientEntryWidget;
-class UCraftingRecipeEntryWidget;
 class UButton;
 class UImage;
 class UPanelWidget;
-class UScrollBox;
 class UTextBlock;
 class UWidget;
+class UWidgetSwitcher;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCraftingRecipeSelected, FName, RecipeId);
 
-/** Owns the recipe list state. All fixed child widgets are authored in WBP_CraftingPanel. */
+/** Displays only the recipe selected from WorkTableScreen's left crafting menu. */
 UCLASS(Blueprintable)
 class CLASSFEATURE_API UCraftingPanelWidget : public UUserWidget
 {
@@ -28,10 +28,24 @@ public:
 	void DeactivateCraftingPanel();
 
 	UFUNCTION(BlueprintCallable, Category = "Crafting|UI")
-	void RefreshRecipeList();
+	bool SelectRecipe(FName RecipeId);
+
+	UFUNCTION(BlueprintCallable, Category = "Crafting|UI")
+	void RefreshSelectedRecipe();
 
 	UFUNCTION(BlueprintPure, Category = "Crafting|UI")
 	FName GetSelectedRecipeId() const { return SelectedRecipeId; }
+
+#if WITH_EDITOR
+	void SetIngredientEntryClass(TSubclassOf<UCraftingIngredientEntryWidget> InClass)
+	{
+		IngredientEntryClass = InClass;
+	}
+	TSubclassOf<UCraftingIngredientEntryWidget> GetIngredientEntryClass() const
+	{
+		return IngredientEntryClass;
+	}
+#endif
 
 	UPROPERTY(BlueprintAssignable, Category = "Crafting|UI")
 	FOnCraftingRecipeSelected OnRecipeSelected;
@@ -40,19 +54,17 @@ protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
+	/** index 0: selected recipe, index 1: WBP_CraftingComplete. */
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UScrollBox> RecipeScrollBox;
+	TObjectPtr<UWidgetSwitcher> WidgetSwitcher_CraftingState;
 
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> EmptyRecipeText;
-
-	/** Right-hand details container. Hidden until the player selects a recipe. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> RecipeDetailPanel;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> EmptyDetailText;
 
+	/** Central result icon. WBP places BackgroundBlur_ResultIcon directly above it. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> ResultIconImage;
 
@@ -62,36 +74,50 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> ResultQuantityText;
 
-	/** Designer-authored VerticalBox or another panel that receives ingredient entries. */
+	/** Fixed directional ingredient hosts. Recipe data is limited to four ingredients. */
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UPanelWidget> IngredientList;
+	TObjectPtr<UPanelWidget> IngredientNorthSlot;
 
-	/** Shown instead of IngredientList while a required recipe item is missing. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UPanelWidget> IngredientEastSlot;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UPanelWidget> IngredientSouthSlot;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UPanelWidget> IngredientWestSlot;
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> MissingRecipeText;
 
-	/** Crafts the selected recipe once and delivers the result to the category-appropriate inventory tab. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> CraftButton;
 
 	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> CraftButtonText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> CraftResultText;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Crafting|UI")
-	TSubclassOf<UCraftingRecipeEntryWidget> RecipeEntryClass;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UCraftingCompleteWidget> CraftingCompleteWidget;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Crafting|UI")
 	TSubclassOf<UCraftingIngredientEntryWidget> IngredientEntryClass;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting|Style")
+	FLinearColor EnabledCraftTextColor = FLinearColor(0.95f, 0.82f, 0.35f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting|Style")
+	FLinearColor DisabledCraftTextColor = FLinearColor(0.35f, 0.36f, 0.38f, 1.0f);
+
 private:
 	void BindCraftingEvents();
 	void UnbindCraftingEvents();
-	void ClearRecipeList();
 	void ClearRecipeDetails();
 	bool RefreshSelectedRecipeDetails();
 	void ApplyRecipeDetails(const FCraftingDetailsView& Details);
-	void UpdateRecipeEntrySelection();
-	void HandleRecipeSelected(FName RecipeId);
+	void SetCraftButtonAvailable(bool bAvailable);
 	static FText GetCraftResultText(ECraftingFailureReason FailureReason);
 
 	UFUNCTION()
@@ -103,15 +129,15 @@ private:
 	UFUNCTION()
 	void HandleCraftingResult(const FCraftingResult& Result);
 
+	void HandleCraftingCompleteDismissed();
+
 	UPROPERTY(Transient)
 	TObjectPtr<UCraftingComponent> CraftingComponent;
 
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<UCraftingRecipeEntryWidget>> SpawnedRecipeEntries;
-
-	UPROPERTY(Transient)
 	TArray<TObjectPtr<UCraftingIngredientEntryWidget>> SpawnedIngredientEntries;
 
+	FCraftingListEntry SelectedRecipeHeader;
 	FName SelectedRecipeId;
 	FGuid PendingRequestId;
 	bool bPanelActive = false;

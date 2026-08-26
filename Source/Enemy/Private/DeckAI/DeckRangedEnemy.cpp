@@ -7,11 +7,12 @@
 #include "Components/BaseHealthComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Components/WidgetComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "ShipAI/EnemyShip.h"
 #include "TimerManager.h"
+#include "UI/EnemyHealthBarComponent.h"
 #include "Weapon/BaseWeaponComponent.h"
 
 ADeckRangedEnemy::ADeckRangedEnemy()
@@ -44,6 +45,7 @@ void ADeckRangedEnemy::BeginPlay()
 	}
 	else
 	{
+		ApplyFixedMovementState();
 		ApplyPoolPresentationState();
 	}
 }
@@ -51,6 +53,14 @@ void ADeckRangedEnemy::BeginPlay()
 void ADeckRangedEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
+	if (HasAuthority())
+	{
+		if (AEnemyShip* Host = GetDeckHostShip())
+		{
+			Host->ReleaseAllDeckPointsFor(this);
+		}
+		GoalPointReservation.Reset();
+	}
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -58,6 +68,9 @@ void ADeckRangedEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ADeckRangedEnemy, bPoolActive);
+	DOREPLIFETIME(ADeckRangedEnemy, CurrentDeckWaypointId);
+	DOREPLIFETIME(ADeckRangedEnemy, PreviousDeckWaypointId);
+	DOREPLIFETIME(ADeckRangedEnemy, GoalDeckWaypointId);
 }
 
 void ADeckRangedEnemy::PrepareForPool()
@@ -68,21 +81,30 @@ void ADeckRangedEnemy::PrepareForPool()
 
 bool ADeckRangedEnemy::ActivateFromPool(
 	AEnemyShip* InHostShip,
-	const FTransform& SpawnTransform,
 	int32 InitialWaypointId,
 	int32 RandomSeed)
 {
-	if (!HasAuthority() || bPoolActive || !IsValid(InHostShip))
+	if (!HasAuthority() || bPoolActive || !IsValid(InHostShip)
+		|| !InHostShip->GetShipDeckMesh()
+		|| !InHostShip->GetDeckWaypoint(InitialWaypointId))
+	{
+		return false;
+	}
+	const UCapsuleComponent* Capsule = GetCapsuleComponent();
+	const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0f;
+	FTransform AuthoritativeAnchorTransform;
+	if (!InHostShip->ResolveFixedDeckAnchorTransform(
+		InitialWaypointId, HalfHeight, AuthoritativeAnchorTransform)
+		|| AuthoritativeAnchorTransform.ContainsNaN())
 	{
 		return false;
 	}
 
-	SetNetDormancy(DORM_Awake);
 	FlushNetDormancy();
+	SetNetDormancy(DORM_Awake);
 	GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
 
 	ResetLocalDeathRagdoll();
-	SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
 	SetHostShip(InHostShip);
 	CurrentDeckWaypointId = InitialWaypointId;
 	PreviousDeckWaypointId = INDEX_NONE;
@@ -90,6 +112,11 @@ bool ADeckRangedEnemy::ActivateFromPool(
 	DeckRandomStream.Initialize(RandomSeed);
 
 	RestoreForPoolActivation();
+	if (!ApplyAuthoritativeDeckAnchor(AuthoritativeAnchorTransform))
+	{
+		DeactivateToPool();
+		return false;
+	}
 	bPoolActive = true;
 	ApplyPoolPresentationState();
 
@@ -108,11 +135,10 @@ bool ADeckRangedEnemy::ActivateFromPool(
 			Brain->RestartLogic();
 		}
 	}
-
-	if (InHostShip->ShipDeckMesh)
-	{
-		SetBase(InHostShip->ShipDeckMesh);
-	}
+	// Possession/Restart can restore CharacterMovement's default mode after the
+	// anchor was applied. Reassert MOVE_None after all controller setup so an AI
+	// startup path can never put this fixed emplacement back into Falling.
+	ApplyFixedMovementState();
 
 	ForceNetUpdate();
 	return true;
@@ -129,6 +155,15 @@ void ADeckRangedEnemy::DeactivateToPool()
 	FlushNetDormancy();
 	GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
 	ClearCombatTarget();
+	if (AEnemyShip* Host = GetDeckHostShip())
+	{
+		Host->ReleaseDeckPointReservation(GoalPointReservation);
+		Host->ReleaseAllDeckPointsFor(this);
+	}
+	else
+	{
+		GoalPointReservation.Reset();
+	}
 
 	if (AAIController* OwningAIController = Cast<AAIController>(GetController()))
 	{
@@ -146,8 +181,10 @@ void ADeckRangedEnemy::DeactivateToPool()
 	{
 		BaseWeaponComponent->SuspendForOwnerPool();
 	}
+	ApplyFixedMovementState();
 
 	bPoolActive = false;
+	ClearAuthoritativeDeckAnchor();
 	CurrentDeckWaypointId = INDEX_NONE;
 	PreviousDeckWaypointId = INDEX_NONE;
 	GoalDeckWaypointId = INDEX_NONE;
@@ -163,18 +200,66 @@ void ADeckRangedEnemy::MarkGoalDeckWaypointReached()
 		return;
 	}
 
+	AEnemyShip* Host = GetDeckHostShip();
+	if (!Host || !Host->CommitDeckPointReservation(GoalPointReservation, this))
+	{
+		OnDeckMoveFailed();
+		return;
+	}
+	GoalPointReservation.Reset();
+	Host->ReleaseDeckPointOccupancy(CurrentDeckWaypointId, this);
 	PreviousDeckWaypointId = CurrentDeckWaypointId;
 	CurrentDeckWaypointId = GoalDeckWaypointId;
 	GoalDeckWaypointId = INDEX_NONE;
+	ForceNetUpdate();
+}
+
+bool ADeckRangedEnemy::TrySetGoalDeckWaypointId(int32 NewGoalWaypointId)
+{
+	AEnemyShip* Host = GetDeckHostShip();
+	if (!HasAuthority() || !Host || !bPoolActive)
+	{
+		return false;
+	}
+	if (NewGoalWaypointId == GoalDeckWaypointId && GoalPointReservation.IsValid())
+	{
+		return true;
+	}
+	Host->ReleaseDeckPointReservation(GoalPointReservation);
+	GoalDeckWaypointId = INDEX_NONE;
+	if (NewGoalWaypointId == INDEX_NONE)
+	{
+		ForceNetUpdate();
+		return true;
+	}
+	if (NewGoalWaypointId == CurrentDeckWaypointId
+		|| !Host->TryReserveDeckPoint(NewGoalWaypointId, this, GoalPointReservation))
+	{
+		ForceNetUpdate();
+		return false;
+	}
+	GoalDeckWaypointId = NewGoalWaypointId;
+	ForceNetUpdate();
+	return true;
+}
+
+void ADeckRangedEnemy::OnDeckMoveFailed()
+{
+	if (AEnemyShip* Host = GetDeckHostShip())
+	{
+		Host->ReleaseDeckPointReservation(GoalPointReservation);
+	}
+	else
+	{
+		GoalPointReservation.Reset();
+	}
+	GoalDeckWaypointId = INDEX_NONE;
+	ForceNetUpdate();
 }
 
 void ADeckRangedEnemy::HandleDeath_Implementation()
 {
-	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
-	{
-		Movement->DisableMovement();
-		Movement->StopMovementImmediately();
-	}
+	ApplyFixedMovementState();
 }
 
 void ADeckRangedEnemy::HandleDeathFinishedPresentation()
@@ -207,6 +292,7 @@ void ADeckRangedEnemy::OnRep_PoolActive()
 	{
 		ResetLocalDeathRagdoll();
 	}
+	ApplyFixedMovementState();
 	ApplyPoolPresentationState();
 }
 
@@ -217,23 +303,38 @@ void ADeckRangedEnemy::ReturnToPoolAfterDeath()
 
 void ADeckRangedEnemy::ApplyPoolPresentationState()
 {
-	SetActorHiddenInGame(!bPoolActive);
-	SetActorEnableCollision(bPoolActive);
-	SetActorTickEnabled(bPoolActive);
+	const bool bPresent = bPoolActive;
+	SetActorHiddenInGame(!bPresent);
+	SetActorEnableCollision(bPresent);
+	SetActorTickEnabled(bPresent);
 
 	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
 	{
-		Capsule->SetCollisionEnabled(bPoolActive ? InitialCapsuleCollision : ECollisionEnabled::NoCollision);
+		Capsule->SetCollisionEnabled(bPresent ? InitialCapsuleCollision : ECollisionEnabled::NoCollision);
 	}
 	if (USkeletalMeshComponent* CharacterMesh = GetMesh())
 	{
-		CharacterMesh->SetVisibility(bPoolActive, true);
-		CharacterMesh->SetCollisionEnabled(bPoolActive ? InitialMeshCollision : ECollisionEnabled::NoCollision);
+		// Pooling hides the actor, not the mesh component. Active presentation
+		// defensively restores visibility because an authored default or a prior
+		// presentation path may have left the component's bVisible flag disabled.
+		if (bPresent)
+		{
+			CharacterMesh->SetVisibility(true, true);
+		}
+		CharacterMesh->SetCollisionEnabled(bPresent ? InitialMeshCollision : ECollisionEnabled::NoCollision);
 	}
-	if (HealthBarWidgetComponent)
+	if (EnemyHealthBarComponent)
 	{
-		HealthBarWidgetComponent->SetVisibility(
-			bPoolActive && HealthBarVisibilityPolicy == EEnemyHealthBarVisibilityPolicy::AlwaysVisible);
+		EnemyHealthBarComponent->SetOwnerPresentationActive(bPresent);
+	}
+}
+
+void ADeckRangedEnemy::ApplyFixedMovementState()
+{
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		Movement->DisableMovement();
 	}
 }
 
@@ -242,6 +343,10 @@ void ADeckRangedEnemy::RestoreForPoolActivation()
 	bDeathHandled = false;
 	bWaveRemoveNotified = false;
 	bHasDropped = false;
+	if (EnemyHealthBarComponent)
+	{
+		EnemyHealthBarComponent->ResetRevealState();
+	}
 
 	if (UBaseHealthComponent* BaseHealth = GetHealthComponent())
 	{
@@ -251,13 +356,46 @@ void ADeckRangedEnemy::RestoreForPoolActivation()
 	{
 		ResetLocalDeathRagdoll();
 	}
-	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
-	{
-		Movement->StopMovementImmediately();
-		Movement->SetMovementMode(MOVE_Walking);
-	}
+	ApplyFixedMovementState();
 	if (UBaseWeaponComponent* BaseWeaponComponent = GetWeaponComponent())
 	{
 		BaseWeaponComponent->RestoreFromOwnerPool();
 	}
+}
+
+bool ADeckRangedEnemy::ApplyAuthoritativeDeckAnchor(const FTransform& AuthoritativeTransform)
+{
+	if (!HasAuthority() || AuthoritativeTransform.ContainsNaN())
+	{
+		return false;
+	}
+
+	AEnemyShip* Host = GetDeckHostShip();
+	UStaticMeshComponent* DeckMesh = Host ? Host->GetShipDeckMesh() : nullptr;
+	if (!IsValid(Host) || !IsValid(DeckMesh)
+		|| CurrentDeckWaypointId == INDEX_NONE
+		|| !Host->GetDeckWaypoint(CurrentDeckWaypointId))
+	{
+		return false;
+	}
+
+	ApplyFixedMovementState();
+	SetBase(nullptr);
+	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	SetActorTransform(AuthoritativeTransform, false, nullptr, ETeleportType::TeleportPhysics);
+	AttachToComponent(DeckMesh, FAttachmentTransformRules::KeepWorldTransform);
+	return GetRootComponent()
+		&& GetRootComponent()->GetAttachParent() == DeckMesh;
+}
+
+void ADeckRangedEnemy::ClearAuthoritativeDeckAnchor()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	ApplyFixedMovementState();
+	SetBase(nullptr);
+	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 }

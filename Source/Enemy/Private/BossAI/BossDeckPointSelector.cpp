@@ -41,7 +41,7 @@ bool UBossDeckPointSelector::SelectDestinationPoint(
 	for (const int32 CandidateId : CandidateIds)
 	{
 		const UDeckWaypointComponent* Waypoint = HostShip->GetDeckWaypoint(CandidateId);
-		if (!IsValid(Waypoint))
+		if (!IsValid(Waypoint) || !HostShip->IsDeckPointAvailable(CandidateId, BossActor))
 		{
 			continue;
 		}
@@ -130,10 +130,11 @@ bool UBossDeckPointSelector::SelectWalkDestinationPoint(
 
 	TArray<int32> CandidateIds;
 	HostShip.GetConnectedDeckWaypointIds(Boss->GetCurrentPointId(), CandidateIds);
-	CandidateIds.RemoveAll([&HostShip](const int32 PointId)
+	CandidateIds.RemoveAll([&HostShip, &BossActor](const int32 PointId)
 	{
 		const UDeckWaypointComponent* Waypoint = HostShip.GetDeckWaypoint(PointId);
-		return !Waypoint || !Waypoint->CanUseInCombat();
+		return !Waypoint || !Waypoint->CanUseInCombat()
+			|| !HostShip.IsDeckPointAvailable(PointId, &BossActor);
 	});
 	if (CandidateIds.Num() > 1)
 	{

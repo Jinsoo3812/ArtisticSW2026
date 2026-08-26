@@ -54,15 +54,39 @@ void UPlayerSkillComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 
 bool UPlayerSkillComponent::IsSkillUnlocked(FGameplayTag SkillTag) const
 {
-	if (const FPlayerSkillState* State = FindSkillState(SkillTag))
+	return IsSkillUnlockedWithInventory(SkillTag, ResolveInventory());
+}
+
+bool UPlayerSkillComponent::IsSkillUnlockConditionMet(FGameplayTag SkillTag) const
+{
+	const FPlayerSkillDefinition* Definition = FindSkillDefinition(SkillTag);
+	if (!Definition)
 	{
-		return State->bUnlocked;
+		return false;
 	}
-	if (const FPlayerSkillDefinition* Definition = FindSkillDefinition(SkillTag))
+
+	const FPlayerSkillState* State = FindSkillState(SkillTag);
+	return State
+		? State->bUnlockConditionMet || State->bUnlocked
+		: Definition->bUnlockedByDefault;
+}
+
+bool UPlayerSkillComponent::IsSkillUnlockedWithInventory(
+	FGameplayTag SkillTag,
+	const UInventoryComponent* Inventory) const
+{
+	(void)Inventory;
+	const FPlayerSkillDefinition* Definition = FindSkillDefinition(SkillTag);
+	if (!Definition)
 	{
-		return Definition->bUnlockedByDefault;
+		return false;
 	}
-	return false;
+
+	const FPlayerSkillState* State = FindSkillState(SkillTag);
+	const bool bProgressionUnlocked = State
+		? State->bUnlocked
+		: Definition->bUnlockedByDefault;
+	return bProgressionUnlocked;
 }
 
 int32 UPlayerSkillComponent::GetSkillUseCount(FGameplayTag SkillTag) const
@@ -91,7 +115,7 @@ bool UPlayerSkillComponent::CanUseSkillWithInventory(
 	const FPlayerSkillDefinition* Definition = FindSkillDefinition(SkillTag);
 	return Definition
 		&& Inventory
-		&& IsSkillUnlocked(SkillTag)
+		&& IsSkillUnlockedWithInventory(SkillTag, Inventory)
 		&& Inventory->GetItemCount(Definition->UsageMaterialTag) > 0;
 }
 
@@ -99,7 +123,9 @@ bool UPlayerSkillComponent::TryConsumeSkillUseWithInventory(
 	FGameplayTag SkillTag,
 	UInventoryComponent* Inventory)
 {
-	if (!GetOwner() || !GetOwner()->HasAuthority() || !IsSkillUnlocked(SkillTag))
+	if (!GetOwner()
+		|| !GetOwner()->HasAuthority()
+		|| !IsSkillUnlockedWithInventory(SkillTag, Inventory))
 	{
 		return false;
 	}
@@ -141,6 +167,7 @@ bool UPlayerSkillComponent::SetSkillUnlocked(FGameplayTag SkillTag, bool bUnlock
 		FPlayerSkillState& NewState = SkillStates.AddDefaulted_GetRef();
 		NewState.SkillTag = SkillTag;
 		NewState.bUnlocked = bUnlocked;
+		NewState.bUnlockConditionMet = bUnlocked;
 	}
 	else if (State->bUnlocked == bUnlocked)
 	{
@@ -149,6 +176,35 @@ bool UPlayerSkillComponent::SetSkillUnlocked(FGameplayTag SkillTag, bool bUnlock
 	else
 	{
 		State->bUnlocked = bUnlocked;
+		State->bUnlockConditionMet |= bUnlocked;
+	}
+
+	OnSkillChanged.Broadcast(SkillTag);
+	GetOwner()->ForceNetUpdate();
+	return true;
+}
+
+bool UPlayerSkillComponent::SetSkillUnlockConditionMet(FGameplayTag SkillTag, bool bConditionMet)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !FindSkillDefinition(SkillTag))
+	{
+		return false;
+	}
+
+	FPlayerSkillState* State = FindMutableSkillState(SkillTag);
+	if (!State)
+	{
+		FPlayerSkillState& NewState = SkillStates.AddDefaulted_GetRef();
+		NewState.SkillTag = SkillTag;
+		NewState.bUnlockConditionMet = bConditionMet;
+	}
+	else if (State->bUnlockConditionMet == bConditionMet)
+	{
+		return true;
+	}
+	else
+	{
+		State->bUnlockConditionMet = bConditionMet;
 	}
 
 	OnSkillChanged.Broadcast(SkillTag);
@@ -218,6 +274,7 @@ void UPlayerSkillComponent::InitializeSkillStates()
 		FPlayerSkillState& State = SkillStates.AddDefaulted_GetRef();
 		State.SkillTag = Definition.SkillTag;
 		State.bUnlocked = Definition.bUnlockedByDefault;
+		State.bUnlockConditionMet = Definition.bUnlockedByDefault;
 	}
 }
 

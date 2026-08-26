@@ -227,7 +227,7 @@ void ABasePlayerController::SetupInputComponent()
 		}
 	}
 
-	InputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &ABasePlayerController::ToggleStatus);
+	InputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &ABasePlayerController::ToggleInventory);
 	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ABasePlayerController::HandleMenuEscape);
 }
 
@@ -241,7 +241,7 @@ void ABasePlayerController::OnUIInputPressed(FGameplayTag InputTag)
 
 	if (InputTag.MatchesTagExact(Key_UI_I))
 	{		
-		ToggleInventory();
+		ToggleStatus();
 	}
 }
 

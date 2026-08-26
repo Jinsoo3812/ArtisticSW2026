@@ -7,8 +7,10 @@
 
 class ABaseItem;
 class ABasePlayer;
+class ABowItem;
 class UAnimMontage;
 class UAnimInstance;
+class UAnimSequenceBase;
 class UGameplayEffect;
 class UWeaponAnimationDataAsset;
 struct FWeaponAnimationEntry;
@@ -115,6 +117,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
 	float GetEquippedBasicAttackPlayRate() const;
 
+	UFUNCTION(BlueprintPure, Category = "Equipment|Preview")
+	UAnimSequenceBase* GetEquippedPreviewIdleAnimation() const;
+
+	UFUNCTION(BlueprintPure, Category = "Equipment|Preview")
+	float GetEquippedPreviewIdlePlayRate() const;
+	UAnimSequenceBase* GetPreviewIdleAnimationForItem(const ABaseItem* Item) const;
+	float GetPreviewIdlePlayRateForItem(const ABaseItem* Item) const;
+
 	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
 	UAnimMontage* GetEquippedAimCycleMontage() const;
 
@@ -125,9 +135,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Equipment|Attachment")
 	FResolvedEquipmentAttachment GetEquippedAttachmentProfile() const;
+	FResolvedEquipmentAttachment GetEquippedAttachmentProfileForItem(const ABaseItem* Item) const;
+	FResolvedEquipmentAttachment GetPreviewAttachmentProfileForItem(const ABaseItem* Item) const;
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_EquipmentState, Category = "Equipment")
 	EEquipmentState EquipmentState = EEquipmentState::None;
@@ -154,6 +167,12 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<ABasePlayer> PlayerOwner;
 
+	/** Locally reconstructed from equipment attachment; never replicated as a component pointer. */
+	TWeakObjectPtr<ABowItem> BoundBowArrowAnchor;
+
+	/** Handles cross-actor replication ordering between EquippedItem and the item's ItemTag. */
+	TWeakObjectPtr<ABaseItem> ObservedReplicatedEquippedItem;
+
 	UFUNCTION()
 	void OnRep_EquipmentState();
 
@@ -173,7 +192,11 @@ protected:
 	void CancelActiveWeaponAbilities() const;
 	void GrantEquippedItemAbility(ABaseItem* Item);
 	void RemoveEquippedItemAbility(ABaseItem* Item);
-	bool AttachItem(ABaseItem* Item, EEquipmentAttachmentTarget Target) const;
+	bool AttachItem(ABaseItem* Item, EEquipmentAttachmentTarget Target);
+	bool CompleteItemAttachment(ABaseItem* Item, EEquipmentAttachmentTarget Target, bool bAttached);
+	void ClearBowArrowAnchor(ABowItem* ExpectedBow = nullptr);
+	void ObserveReplicatedEquippedItem(ABaseItem* Item);
+	void HandleReplicatedEquippedItemInitialized(ABaseItem* Item);
 	bool IsItemOwnedByItemSlot(const ABaseItem* Item) const;
 	void StoreCurrentEquippedItem();
 	void StartEquipItemFromSlot(int32 SlotIndex);

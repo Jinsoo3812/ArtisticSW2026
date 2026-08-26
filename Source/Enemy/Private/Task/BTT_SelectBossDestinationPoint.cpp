@@ -48,8 +48,12 @@ EBTNodeResult::Type UBTT_SelectBossDestinationPoint::ExecuteTask(
 		return EBTNodeResult::Failed;
 	}
 
+	if (!Boss->TrySetDestinationPointId(PointId))
+	{
+		Blackboard->SetValueAsInt(GetSelectedBlackboardKey(), INDEX_NONE);
+		return EBTNodeResult::Failed;
+	}
 	Blackboard->SetValueAsInt(GetSelectedBlackboardKey(), PointId);
-	Boss->SetDestinationPointId(PointId);
 	return EBTNodeResult::Succeeded;
 }
 

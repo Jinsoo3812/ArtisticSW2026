@@ -61,7 +61,8 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(
 		const UDeckWaypointComponent* Waypoint = HostShip->GetDeckWaypoint(LinkedId);
 		const bool bAllowed = Waypoint && (TargetActor
 			? Waypoint->CanUseInCombat()
-			: Waypoint->CanPatrol());
+			: Waypoint->CanPatrol())
+			&& HostShip->IsDeckPointAvailable(LinkedId, Enemy);
 		if (bAllowed)
 		{
 			Candidates.AddUnique(LinkedId);
@@ -115,8 +116,9 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(
 		return EBTNodeResult::Failed;
 	}
 
-	Enemy->SetGoalDeckWaypointId(SelectedId);
-	return EBTNodeResult::Succeeded;
+	return Enemy->TrySetGoalDeckWaypointId(SelectedId)
+		? EBTNodeResult::Succeeded
+		: EBTNodeResult::Failed;
 }
 
 FString UBTT_SelectDeckWaypoint::GetStaticDescription() const

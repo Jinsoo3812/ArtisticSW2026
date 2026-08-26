@@ -37,6 +37,7 @@ void UShipUpgradeNodeWidget::NativeDestruct()
 		IconLoadHandle.Reset();
 	}
 	NodeSelectedDelegate.Clear();
+	NodeHoverChangedDelegate.Clear();
 
 	Super::NativeDestruct();
 }
@@ -76,12 +77,20 @@ void UShipUpgradeNodeWidget::HandleHovered()
 {
 	RefreshScale(true);
 	BP_OnHoverChanged(true);
+	if (!NodeView.NodeId.IsNone())
+	{
+		NodeHoverChangedDelegate.Broadcast(NodeView.NodeId, true);
+	}
 }
 
 void UShipUpgradeNodeWidget::HandleUnhovered()
 {
 	RefreshScale(false);
 	BP_OnHoverChanged(false);
+	if (!NodeView.NodeId.IsNone())
+	{
+		NodeHoverChangedDelegate.Broadcast(NodeView.NodeId, false);
+	}
 }
 
 void UShipUpgradeNodeWidget::RefreshBuiltInVisuals()

@@ -1,206 +1,365 @@
 #include "UI/SkillQuickSlotWidget.h"
 
-#include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
-#include "Cannon.h"
 #include "Components/Border.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
-#include "Components/TextBlock.h"
-#include "Engine/Texture2D.h"
+#include "Components/Widget.h"
+#include "GameFramework/PlayerController.h"
 #include "Inventory/InventoryComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Skills/PlayerSkillComponent.h"
-#include "Ship.h"
-#include "UObject/ConstructorHelpers.h"
 
-USkillQuickSlotWidget::USkillQuickSlotWidget(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
+namespace
 {
-	static ConstructorHelpers::FObjectFinder<UTexture2D> LockTextureFinder(
-		TEXT("/Game/Blueprints/02_UI/UI_HUD/UI_SkillQuickSlot/T_SkillLock.T_SkillLock"));
-	if (LockTextureFinder.Succeeded())
+UCanvasPanelSlot* FindCanvasLayerSlot(UWidget* Widget)
+{
+	for (UWidget* Current = Widget; Current; Current = Current->GetParent())
 	{
-		StoryLockTexture = LockTextureFinder.Object;
+		if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Current->Slot))
+		{
+			return CanvasSlot;
+		}
 	}
+
+	return nullptr;
 }
 
-void USkillQuickSlotWidget::InitializeForPlayer(ABasePlayer* InPlayer)
-{
-	UnbindActiveSkillTag();
-	CachedPlayer = InPlayer;
-	BindActiveSkillTag();
-	RefreshSlot();
-}
-
-void USkillQuickSlotWidget::RefreshSlot()
-{
-	const FKey DisplayKey = ResolveDisplayKey();
-	if (InputKeyText)
-	{
-		InputKeyText->SetText(DisplayKey.IsValid() ? DisplayKey.GetDisplayName(false) : FText::GetEmpty());
-	}
-
-	ABasePlayer* Player = CachedPlayer.Get();
-	UPlayerSkillComponent* SkillComponent = Player ? Player->GetPlayerSkillComponent() : nullptr;
-	UInventoryComponent* Inventory = Player ? Player->GetInventoryComponent() : nullptr;
-	const FPlayerSkillDefinition* Definition =
-		SkillComponent && SkillTag.IsValid() ? SkillComponent->FindSkillDefinition(SkillTag) : nullptr;
-
-	const int32 UseCount = SkillComponent && Definition
-		? SkillComponent->GetSkillUseCount(SkillTag)
-		: 0;
-	const bool bStoryUnlocked = SkillComponent && Definition && SkillComponent->IsSkillUnlocked(SkillTag);
-	const bool bHasUses = UseCount > 0;
-	const bool bShowLock = !bStoryUnlocked && !bHasUses;
-	if (UseCountText)
-	{
-		UseCountText->SetText(FText::AsNumber(UseCount));
-	}
-	if (EmptyOverlayBorder)
-	{
-		EmptyOverlayBorder->SetVisibility(!bHasUses ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
-	}
-	RefreshEquippedState(GetOwningPlayerPawn());
-	if (StoryLockImage)
-	{
-		StoryLockImage->SetVisibility(bShowLock ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
-		StoryLockImage->SetBrushFromTexture(StoryLockTexture, true);
-	}
-
-	UTexture2D* SkillIcon = nullptr;
-	if (Inventory && Definition && Definition->SkillItemTag.IsValid())
-	{
-		SkillIcon = Inventory->GetMaterialIcon(Definition->SkillItemTag);
-	}
-
-	if (SkillIconImage && SkillIcon)
-	{
-		SkillIconImage->SetBrushFromTexture(SkillIcon, true);
-		SkillIconImage->SetColorAndOpacity(bHasUses ? AvailableIconColor : UnavailableIconColor);
-		SkillIconImage->SetIsEnabled(bHasUses);
-	}
-	else if (SkillIconImage)
-	{
-		SkillIconImage->SetBrushFromTexture(nullptr);
-		SkillIconImage->SetColorAndOpacity(FLinearColor::Transparent);
-	}
-}
-
-void USkillQuickSlotWidget::RefreshEquippedState(APawn* ControlledPawn)
-{
-	if (!EquippedBorder)
-	{
-		return;
-	}
-
-	bool bSkillActive = false;
-	if (SkillTag.MatchesTagExact(GameplayAbility_Skill_WaterBomb))
-	{
-		const ACannon* ControlledCannon = Cast<ACannon>(ControlledPawn);
-		bSkillActive = ControlledCannon && ControlledCannon->IsWaterBombMode();
-	}
-	else if (SkillTag.MatchesTagExact(GameplayAbility_Skill_Bombardment))
-	{
-		const AShip* ControlledShip = Cast<AShip>(ControlledPawn);
-		bSkillActive = ControlledShip && ControlledShip->IsBombardmentTargeting();
-	}
-	else
-	{
-		const ABasePlayer* Player = CachedPlayer.Get();
-		const UAbilitySystemComponent* AbilitySystemComponent =
-			Player ? Player->GetAbilitySystemComponent() : nullptr;
-		bSkillActive =
-			AbilitySystemComponent && SkillTag.IsValid()
-			&& AbilitySystemComponent->HasMatchingGameplayTag(SkillTag);
-	}
-
-	const ESlateVisibility DesiredVisibility =
-		bSkillActive ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden;
-	if (EquippedBorder->GetVisibility() != DesiredVisibility)
-	{
-		EquippedBorder->SetVisibility(DesiredVisibility);
-	}
 }
 
 void USkillQuickSlotWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
-	RefreshSlot();
+	InitializeForPlayer(Cast<ABasePlayer>(GetOwningPlayerPawn()));
 }
 
 void USkillQuickSlotWidget::NativeDestruct()
 {
-	UnbindActiveSkillTag();
+	ResetShuffleAnimation();
+	UnbindPlayer();
 	Super::NativeDestruct();
+}
+
+void USkillQuickSlotWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	RefreshInputState();
+	UpdateShuffleAnimation(InDeltaTime);
 }
 
 void USkillQuickSlotWidget::SynchronizeProperties()
 {
 	Super::SynchronizeProperties();
 
-	if (CachedPlayer.IsValid() && BoundActiveSkillTag != SkillTag)
+	if (GravityVortexLockOverlay)
 	{
-		UnbindActiveSkillTag();
-		BindActiveSkillTag();
+		GravityVortexLockOverlay->SetBrushColor(LockedOverlayColor);
 	}
-
-	RefreshSlot();
+	if (WaterBombLockOverlay)
+	{
+		WaterBombLockOverlay->SetBrushColor(LockedOverlayColor);
+	}
+	if (BombardmentLockOverlay)
+	{
+		BombardmentLockOverlay->SetBrushColor(LockedOverlayColor);
+	}
 }
 
-void USkillQuickSlotWidget::BindActiveSkillTag()
+void USkillQuickSlotWidget::InitializeForPlayer(ABasePlayer* InPlayer)
+{
+	if (CachedPlayer.Get() != InPlayer)
+	{
+		UnbindPlayer();
+		CachedPlayer = InPlayer;
+
+		if (InPlayer)
+		{
+			if (UPlayerSkillComponent* SkillComponent = InPlayer->GetPlayerSkillComponent())
+			{
+				SkillComponent->OnSkillChanged.AddDynamic(this, &USkillQuickSlotWidget::HandleSkillChanged);
+			}
+			if (UInventoryComponent* Inventory = InPlayer->GetInventoryComponent())
+			{
+				Inventory->OnInventoryChanged.AddUObject(this, &USkillQuickSlotWidget::RefreshSlots);
+			}
+		}
+	}
+
+	InitializeInputState();
+	RefreshSlots();
+}
+
+void USkillQuickSlotWidget::HandleSkillChanged(const FGameplayTag)
+{
+	RefreshSlots();
+}
+
+void USkillQuickSlotWidget::UnbindPlayer()
+{
+	if (ABasePlayer* Player = CachedPlayer.Get())
+	{
+		if (UPlayerSkillComponent* SkillComponent = Player->GetPlayerSkillComponent())
+		{
+			SkillComponent->OnSkillChanged.RemoveAll(this);
+		}
+		if (UInventoryComponent* Inventory = Player->GetInventoryComponent())
+		{
+			Inventory->OnInventoryChanged.RemoveAll(this);
+		}
+	}
+
+	CachedPlayer.Reset();
+}
+
+void USkillQuickSlotWidget::RefreshSlots()
+{
+	RefreshSkill(GameplayAbility_Skill_GravityVortex, GravityVortexIconImage, GravityVortexLockOverlay);
+	RefreshSkill(GameplayAbility_Skill_WaterBomb, WaterBombIconImage, WaterBombLockOverlay);
+	RefreshSkill(GameplayAbility_Skill_Bombardment, BombardmentIconImage, BombardmentLockOverlay);
+}
+
+void USkillQuickSlotWidget::RefreshSkill(
+	const FGameplayTag SkillTag,
+	UImage* IconImage,
+	UBorder* LockOverlay) const
 {
 	ABasePlayer* Player = CachedPlayer.Get();
-	UAbilitySystemComponent* AbilitySystemComponent = Player ? Player->GetAbilitySystemComponent() : nullptr;
-	if (!AbilitySystemComponent || !SkillTag.IsValid())
+	UPlayerSkillComponent* SkillComponent = Player ? Player->GetPlayerSkillComponent() : nullptr;
+	UInventoryComponent* Inventory = Player ? Player->GetInventoryComponent() : nullptr;
+	const FPlayerSkillDefinition* Definition = SkillComponent
+		? SkillComponent->FindSkillDefinition(SkillTag)
+		: nullptr;
+
+	if (IconImage)
+	{
+		UTexture2D* Icon = Inventory && Definition && Definition->SkillItemTag.IsValid()
+			? Inventory->GetMaterialIcon(Definition->SkillItemTag)
+			: nullptr;
+		IconImage->SetBrushFromTexture(Icon, true);
+		IconImage->SetColorAndOpacity(Icon ? FLinearColor::White : FLinearColor::Transparent);
+	}
+
+	if (LockOverlay)
+	{
+		const bool bUnlocked = SkillComponent && SkillComponent->IsSkillUnlocked(SkillTag);
+		LockOverlay->SetBrushColor(LockedOverlayColor);
+		LockOverlay->SetVisibility(bUnlocked
+			? ESlateVisibility::Hidden
+			: ESlateVisibility::HitTestInvisible);
+	}
+}
+
+void USkillQuickSlotWidget::InitializeInputState()
+{
+	const APlayerController* PlayerController = GetOwningPlayer();
+	bGravityVortexKeyWasDown = PlayerController && PlayerController->IsInputKeyDown(GravityVortexInputKey);
+	bWaterBombKeyWasDown = PlayerController && PlayerController->IsInputKeyDown(WaterBombInputKey);
+	bBombardmentKeyWasDown = PlayerController && PlayerController->IsInputKeyDown(BombardmentInputKey);
+}
+
+void USkillQuickSlotWidget::RefreshInputState()
+{
+	const APlayerController* PlayerController = GetOwningPlayer();
+	if (!PlayerController)
 	{
 		return;
 	}
 
-	BoundAbilitySystemComponent = AbilitySystemComponent;
-	BoundActiveSkillTag = SkillTag;
-	ActiveSkillTagEventHandle =
-		AbilitySystemComponent
-			->RegisterGameplayTagEvent(BoundActiveSkillTag, EGameplayTagEventType::NewOrRemoved)
-			.AddUObject(this, &USkillQuickSlotWidget::HandleActiveSkillTagChanged);
+	auto PromoteOnPress = [this, PlayerController](
+		const FKey& Key,
+		bool& bWasDown,
+		const FGameplayTag SkillTag,
+		UWidget* SlotPanel)
+	{
+		const bool bIsDown = Key.IsValid() && PlayerController->IsInputKeyDown(Key);
+		if (bIsDown && !bWasDown)
+		{
+			PromoteSkill(SkillTag, SlotPanel);
+		}
+		bWasDown = bIsDown;
+	};
+
+	PromoteOnPress(
+		GravityVortexInputKey,
+		bGravityVortexKeyWasDown,
+		GameplayAbility_Skill_GravityVortex,
+		GravityVortexSlotPanel);
+	PromoteOnPress(
+		WaterBombInputKey,
+		bWaterBombKeyWasDown,
+		GameplayAbility_Skill_WaterBomb,
+		WaterBombSlotPanel);
+	PromoteOnPress(
+		BombardmentInputKey,
+		bBombardmentKeyWasDown,
+		GameplayAbility_Skill_Bombardment,
+		BombardmentSlotPanel);
 }
 
-void USkillQuickSlotWidget::UnbindActiveSkillTag()
+void USkillQuickSlotWidget::PromoteSkill(const FGameplayTag SkillTag, UWidget* SlotPanel)
 {
-	if (UAbilitySystemComponent* AbilitySystemComponent = BoundAbilitySystemComponent.Get();
-		AbilitySystemComponent && BoundActiveSkillTag.IsValid() && ActiveSkillTagEventHandle.IsValid())
+	if (!SlotPanel)
 	{
-		AbilitySystemComponent
-			->RegisterGameplayTagEvent(BoundActiveSkillTag, EGameplayTagEventType::NewOrRemoved)
-			.Remove(ActiveSkillTagEventHandle);
+		return;
 	}
 
-	BoundAbilitySystemComponent.Reset();
-	BoundActiveSkillTag = FGameplayTag();
-	ActiveSkillTagEventHandle.Reset();
-}
-
-void USkillQuickSlotWidget::HandleActiveSkillTagChanged(const FGameplayTag, int32)
-{
-	RefreshSlot();
-}
-
-FKey USkillQuickSlotWidget::ResolveDisplayKey() const
-{
-	if (InputKey.IsValid())
+	if (ShufflingSlotPanel)
 	{
-		return InputKey;
+		FinishShuffleAnimation();
 	}
+
+	ShufflingSlotPanel = SlotPanel;
+	PendingFrontSkillTag = SkillTag;
+	ShuffleStartTransform = SlotPanel->GetRenderTransform();
+	ShuffleElapsed = 0.0f;
+	bShuffleZOrderChanged = false;
+
+	if (ShuffleDuration <= KINDA_SMALL_NUMBER)
+	{
+		FinishShuffleAnimation();
+	}
+}
+
+void USkillQuickSlotWidget::UpdateShuffleAnimation(const float InDeltaTime)
+{
+	if (!ShufflingSlotPanel)
+	{
+		return;
+	}
+
+	ShuffleElapsed += FMath::Max(InDeltaTime, 0.0f);
+	const float NormalizedTime = FMath::Clamp(ShuffleElapsed / ShuffleDuration, 0.0f, 1.0f);
+	const bool bMovingOut = NormalizedTime < 0.5f;
+	const float HalfAlpha = bMovingOut
+		? NormalizedTime * 2.0f
+		: (1.0f - NormalizedTime) * 2.0f;
+	const float ExcursionAlpha = FMath::InterpEaseInOut(0.0f, 1.0f, HalfAlpha, 2.0f);
+
+	if (!bMovingOut && !bShuffleZOrderChanged)
+	{
+		ApplyPromotedZOrder();
+	}
+
+	FWidgetTransform AnimatedTransform = ShuffleStartTransform;
+	AnimatedTransform.Translation += ShuffleOffset * ExcursionAlpha;
+	const float ScaleMultiplier = FMath::Lerp(1.0f, ShufflePeakScale, ExcursionAlpha);
+	AnimatedTransform.Scale = ShuffleStartTransform.Scale * ScaleMultiplier;
+	AnimatedTransform.Angle += ShufflePeakAngle * ExcursionAlpha;
+	ShufflingSlotPanel->SetRenderTransform(AnimatedTransform);
+
+	if (NormalizedTime >= 1.0f)
+	{
+		FinishShuffleAnimation();
+	}
+}
+
+void USkillQuickSlotWidget::ApplyPromotedZOrder()
+{
+	if (!ShufflingSlotPanel || bShuffleZOrderChanged)
+	{
+		return;
+	}
+
+	struct FSlotLayer
+	{
+		UCanvasPanelSlot* CanvasSlot = nullptr;
+		int32 ZOrder = 0;
+	};
+
+	TArray<FSlotLayer> OtherLayers;
+	UWidget* SlotPanels[] = { GravityVortexSlotPanel, WaterBombSlotPanel, BombardmentSlotPanel };
+	for (UWidget* SlotPanel : SlotPanels)
+	{
+		if (SlotPanel == ShufflingSlotPanel)
+		{
+			continue;
+		}
+
+		if (UCanvasPanelSlot* CanvasSlot = FindCanvasLayerSlot(SlotPanel))
+		{
+			OtherLayers.Add({ CanvasSlot, CanvasSlot->GetZOrder() });
+		}
+	}
+
+	OtherLayers.StableSort([](const FSlotLayer& Left, const FSlotLayer& Right)
+	{
+		return Left.ZOrder < Right.ZOrder;
+	});
+
+	int32 LayerIndex = 0;
+	for (FSlotLayer& Layer : OtherLayers)
+	{
+		Layer.CanvasSlot->SetZOrder(LayerIndex++);
+	}
+
+	if (UCanvasPanelSlot* PromotedCanvasSlot = FindCanvasLayerSlot(ShufflingSlotPanel))
+	{
+		PromotedCanvasSlot->SetZOrder(LayerIndex);
+		FrontSkillTag = PendingFrontSkillTag;
+	}
+
+	bShuffleZOrderChanged = true;
+}
+
+void USkillQuickSlotWidget::FinishShuffleAnimation()
+{
+	if (!ShufflingSlotPanel)
+	{
+		return;
+	}
+
+	ApplyPromotedZOrder();
+	ShufflingSlotPanel->SetRenderTransform(ShuffleStartTransform);
+	ShufflingSlotPanel = nullptr;
+	PendingFrontSkillTag = FGameplayTag();
+	ShuffleElapsed = 0.0f;
+	bShuffleZOrderChanged = false;
+}
+
+void USkillQuickSlotWidget::ResetShuffleAnimation()
+{
+	if (ShufflingSlotPanel)
+	{
+		ShufflingSlotPanel->SetRenderTransform(ShuffleStartTransform);
+	}
+
+	ShufflingSlotPanel = nullptr;
+	PendingFrontSkillTag = FGameplayTag();
+	ShuffleElapsed = 0.0f;
+	bShuffleZOrderChanged = false;
+}
+
+void USkillQuickSlotWidget::SetSkillCooldown(
+	const FGameplayTag SkillTag,
+	const float RemainingSeconds,
+	const float DurationSeconds)
+{
+	if (UImage* CooldownImage = FindCooldownImage(SkillTag))
+	{
+		const float Percent = DurationSeconds > KINDA_SMALL_NUMBER
+			? FMath::Clamp(RemainingSeconds / DurationSeconds, 0.0f, 1.0f)
+			: 0.0f;
+		if (UMaterialInstanceDynamic* CooldownMaterial = CooldownImage->GetDynamicMaterial())
+		{
+			CooldownMaterial->SetScalarParameterValue(CooldownPercentParameterName, Percent);
+		}
+	}
+}
+
+UImage* USkillQuickSlotWidget::FindCooldownImage(const FGameplayTag SkillTag) const
+{
 	if (SkillTag.MatchesTagExact(GameplayAbility_Skill_GravityVortex))
 	{
-		return EKeys::Three;
+		return GravityVortexCooldownImage;
 	}
 	if (SkillTag.MatchesTagExact(GameplayAbility_Skill_WaterBomb))
 	{
-		return EKeys::Four;
+		return WaterBombCooldownImage;
 	}
 	if (SkillTag.MatchesTagExact(GameplayAbility_Skill_Bombardment))
 	{
-		return EKeys::Five;
+		return BombardmentCooldownImage;
 	}
-	return FKey();
+	return nullptr;
 }

@@ -7,7 +7,6 @@
 #include "BaseCharacter.h"
 #include "WaveSystem/Data/WaveSpawnTypes.h"
 #include "EnemyDropData.h"
-#include "UI/EnemyHealthBarTypes.h"
 #include "StoryFacadeSubsystem.h"
 
 #include "BaseEnemy.generated.h"
@@ -17,9 +16,8 @@ class UBaseDeathGameplayAbility;
 class UBaseWeaponComponent;
 class UBaseHealthComponent;
 class UEnemyBehaviorSet;
+class UEnemyHealthBarComponent;
 class UEnemyWaypointMoveComponent;
-class UHealthBarWidget;
-class UWidgetComponent;
 struct FOnAttributeChangeData;
 
 class UGameplayAbility;
@@ -114,22 +112,13 @@ protected:
 
 	// ================= Health Bar =================
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UWidgetComponent> HealthBarWidgetComponent;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
-	TSubclassOf<UHealthBarWidget> HealthBarWidgetClass;
+	TObjectPtr<UEnemyHealthBarComponent> EnemyHealthBarComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
 	FVector HealthBarOffset = FVector(0.0f, 0.0f, 120.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
 	FVector2D HealthBarDrawSize = FVector2D(180.0f, 24.0f);
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
-	EEnemyHealthBarVisibilityPolicy HealthBarVisibilityPolicy = EEnemyHealthBarVisibilityPolicy::AlwaysVisible;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar", meta = (EditCondition = "HealthBarVisibilityPolicy == EEnemyHealthBarVisibilityPolicy::ShowOnDamage", ClampMin = "0.0"))
-	float HealthBarVisibleDurationAfterDamage = 2.0f;
 
 	// ================= End of Health Bar =================
 
@@ -205,15 +194,6 @@ protected:
 	// ================= Health Bar =================
 	UFUNCTION()
 	void OnHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor);
-
-	UFUNCTION()
-	void OnMaxHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor);
-
-	void InitializeHealthBarWidget();
-	void RefreshHealthBarWidget();
-	void UpdateHealthBarVisibilityAfterHealthChanged(float OldValue, float NewValue);
-	void HideHealthBarForDamagePolicy();
-	FTimerHandle HealthBarHideTimerHandle;
 	// ================= End of Health Bar =================
 
 	void BindMovementSpeedAttribute();

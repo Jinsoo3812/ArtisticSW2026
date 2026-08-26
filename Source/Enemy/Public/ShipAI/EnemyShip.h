@@ -3,19 +3,18 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DeckAI/DeckPointReservation.h"
 #include "Ship.h"
 #include "ShipAI/EnemyShipNavigationTypes.h"
 #include "EnemyDropData.h"
 #include "GameplayAbilitySpecHandle.h"
-#include "UI/EnemyHealthBarTypes.h"
 #include "EnemyShip.generated.h"
 
 class ACannon;
 class AStorageChest;
 class UChestDefinition;
 class UBaseHealthComponent;
-class UHealthBarWidget;
-class UWidgetComponent;
+class UEnemyHealthBarComponent;
 class UEnemyShipArchetypeData;
 class UEnemyShipAbilitySet;
 class UEnemyShipNavigationComponent;
@@ -74,6 +73,11 @@ class ENEMY_API AEnemyShip : public AShip
 {
 	GENERATED_BODY()
 
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FDeckFixedAnchorLifecycleTest;
+	friend class FDeckPointReservationLifecycleTest;
+#endif
+
 public:
 	AEnemyShip();
 	virtual bool IsEnemyShipForEffects() const override { return true; }
@@ -109,6 +113,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Deck AI")
 	FVector GetDeckWaypointWorldLocation(int32 WaypointId) const;
+	/** Deterministic fixed-emplacement transform; does not run a floor query. */
+	bool ResolveFixedDeckAnchorTransform(int32 WaypointId, float CapsuleHalfHeight, FTransform& OutTransform) const;
 	bool ResolveDeckCharacterTransform(int32 WaypointId, float CapsuleHalfHeight, FTransform& OutTransform) const;
 
 	/** Creates persistent, individually editable waypoint components in this Blueprint asset or placed actor. */
@@ -129,6 +135,18 @@ public:
 	void GetConnectedDeckWaypointIds(int32 WaypointId, TArray<int32>& OutWaypointIds) const;
 	int32 FindNearestDeckWaypoint(const FVector& WorldLocation, bool bRequirePatrolPoint = true) const;
 
+	/** Authority-only logical occupancy. Selection and reservation are atomic on the server. */
+	bool IsDeckPointAvailable(int32 WaypointId, const AActor* Requester = nullptr) const;
+	bool TryReserveDeckPoint(int32 WaypointId, AActor* Requester, FDeckPointReservation& OutReservation);
+	bool TryReserveDeckEnemySpawnPoint(
+		const FDeckEnemySpawnRequest& Request,
+		FDeckPointReservation& OutReservation);
+	bool CommitDeckPointReservation(const FDeckPointReservation& Reservation, AActor* Occupant);
+	void ReleaseDeckPointReservation(FDeckPointReservation& Reservation);
+	bool TryOccupyDeckPoint(int32 WaypointId, AActor* Occupant);
+	void ReleaseDeckPointOccupancy(int32 WaypointId, AActor* Occupant);
+	void ReleaseAllDeckPointsFor(AActor* Actor);
+
 	/** Activates one inactive pooled enemy at a validated live deck point. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Deck AI")
 	bool ActivateDeckEnemyAtPoint(
@@ -147,6 +165,11 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Ship|Crew")
 	void UnregisterCrewEnemy(ABaseEnemy* CrewEnemy);
+	/** Activates a pooled enemy only while the caller still owns this reservation. */
+	bool ActivateDeckEnemyAtReservation(
+		FDeckPointReservation& Reservation,
+		AActor* InitialTarget,
+		ADeckRangedEnemy*& OutEnemy);
 
 	UStaticMeshComponent* GetShipDeckMesh() const { return ShipDeckMesh; }
 	bool IsUsingLegacyAICompatibility() const
@@ -249,6 +272,13 @@ protected:
 	void InitializeDeckWaypoints();
 	void InitializeDeckEnemyPool();
 	void DestroyDeckEnemyPool();
+	void PruneDeckPointRuntimeState();
+	bool ActivateReservedDeckEnemy(
+		ADeckRangedEnemy& Enemy,
+		FDeckPointReservation& Reservation,
+		AActor* InitialTarget,
+		int32 RandomSeed,
+		ADeckRangedEnemy*& OutEnemy);
 	bool ResolveDeckEnemySpawnTransform(const UDeckWaypointComponent* SpawnWaypoint, FTransform& OutTransform) const;
 	UDeckWaypointComponent* SelectDeckSpawnWaypoint(int32 DeploymentIndex) const;
 
@@ -268,17 +298,6 @@ protected:
 	void HandleShipDeath();
 	void InitializeEnemyDropData();
 	void DropAtDeathLocation(const FVector& DeathLocation, const FRotator& DeathRotation);
-
-	UFUNCTION()
-	void OnHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor);
-
-	UFUNCTION()
-	void OnMaxHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor);
-
-	void InitializeHealthBarWidget();
-	void RefreshHealthBarWidget();
-	void UpdateHealthBarVisibilityAfterHealthChanged(float OldValue, float NewValue);
-	void HideHealthBarForDamagePolicy();
 
 	// ---- Death Properties ----
 	/** 사망 후 Destroy까지의 대기 시간 (초) */
@@ -331,10 +350,7 @@ protected:
 
 	// ================= Health Bar =================
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UWidgetComponent> HealthBarWidgetComponent;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
-	TSubclassOf<UHealthBarWidget> HealthBarWidgetClass;
+	TObjectPtr<UEnemyHealthBarComponent> EnemyHealthBarComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
 	FVector HealthBarOffset = FVector(0.0f, 0.0f, 300.0f);
@@ -342,14 +358,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
 	FVector2D HealthBarDrawSize = FVector2D(220.0f, 28.0f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
-	EEnemyHealthBarVisibilityPolicy HealthBarVisibilityPolicy = EEnemyHealthBarVisibilityPolicy::AlwaysVisible;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar", meta = (EditCondition = "HealthBarVisibilityPolicy == EEnemyHealthBarVisibilityPolicy::ShowOnDamage", ClampMin = "0.0"))
-	float HealthBarVisibleDurationAfterDamage = 2.0f;
-
 	FTimerHandle DeathDestroyTimerHandle;
-	FTimerHandle HealthBarHideTimerHandle;
 	// ================= End of Health Bar =================
 	
 	// ---- Cannon & AI State ----
@@ -381,6 +390,17 @@ protected:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<ADeckRangedEnemy>> DeckEnemyPool;
+
+	struct FDeckPointRuntimeState
+	{
+		TWeakObjectPtr<AActor> Occupant;
+		TWeakObjectPtr<AActor> ReservedBy;
+		uint32 ReservationSerial = 0;
+	};
+
+	/** Server-only transactional state; replicated actors carry the committed point IDs. */
+	TMap<int32, FDeckPointRuntimeState> DeckPointRuntimeStates;
+	uint32 NextDeckPointReservationSerial = 1;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Boss Encounter")
 	TObjectPtr<UBossEncounterComponent> BossEncounterComponent;
