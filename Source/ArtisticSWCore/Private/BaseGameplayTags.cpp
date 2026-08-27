@@ -50,6 +50,7 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_Knockback, "GameplayAbility.Boss.Kno
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_Vanish, "GameplayAbility.Boss.Vanish");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_VanishV2, "GameplayAbility.Boss.VanishV2");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_DashSlash, "GameplayAbility.Boss.DashSlash");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_BasicAttack_Combo, "Cooldown.Boss.BasicAttack.Combo");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Enemy_Buff_MoveSpeed, "GameplayAbility.Enemy.Buff.MoveSpeed");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Enemy_BasicAttack, "Cooldown.Enemy.BasicAttack");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Enemy_Buff_MoveSpeed, "Cooldown.Enemy.Buff.MoveSpeed");

@@ -29,7 +29,9 @@
    - `Clear Destination When Finished`: 체크
 6. 컴파일하고 저장한다.
 
-Task는 같은 태그의 GA가 여러 개면 `SourceObject == CurrentWeapon`인 Spec을 우선한다. 따라서 Sword가 부여한 `BPGA_MeleeAttack`이 선택된다.
+보스의 `GameplayAbility.BasicAttack`은 `UGA_BossBasicAttack` Spec을 우선한다. Sword가 부여한 일반 `BPGA_MeleeAttack`은 일반 적 호환을 위해 남아 있지만 보스 BT에서는 선택하지 않는다. 전용 GA는 `DA_RogueBossBasicAttacks.Attacks` 가변 배열에서 현재 사용 가능한 공격을 고르며, 배열 개수와 Short/Combo 비율은 에디터에서 자유롭게 조절한다. 모든 공격은 Sword의 동일한 `AttackRange`를 사용한다.
+
+거리 Decorator는 공격 시작 전 조건이다. Montage가 Commit된 뒤 Target이 Sword 사거리 밖으로 이동해 BT 분기가 Abort되어도 `UGA_BossBasicAttack`은 취소되지 않고 끝까지 실행된다. 피격과 사망에 의한 GAS 취소는 기존대로 유지된다.
 
 ## 3. BasicAttack Montage 표시 설정
 

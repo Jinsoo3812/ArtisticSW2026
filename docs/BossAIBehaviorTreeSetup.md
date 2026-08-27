@@ -9,6 +9,7 @@
   inspect ability cooldowns.
 - `BTD_CanActivateAbilityByTag` checks whether the registered Gameplay Ability is currently available. This is an advisory branch condition; the GA remains authoritative.
 - `BTT_ActivateBossAbility` activates the GA by asset tag, waits for the exact ability instance to finish, and clears prepared destination state.
+- A committed `UGA_BossBasicAttack` is not cancelled when an attack-range decorator aborts its BT branch. Range is a start precondition; hit/death GAS cancellation remains authoritative after the montage starts.
 - A boss GA owns only the atomic action: commit/cooldown, montage or movement execution, hit detection, damage, cancellation cleanup, and ending itself.
 - `GA_BossDashSlash` and `GA_BossVanish` require a destination already selected by the BT. They no longer choose one internally.
 
@@ -63,6 +64,8 @@ BT_Subtree_RogueBoss_Combat
 	│  └─ BTT_ActivateBossAbility(BasicAttack)
 	└─ Wait(0.1–0.3 seconds)
 ```
+
+The BasicAttack branch still uses the equipped Sword's single `AttackRange`, damage effect, impact cue, and trace actor. `DA_RogueBossBasicAttacks.Attacks` is a variable-length array: designers may add or remove any number of short or combo variations. Each entry supplies its montage, selection weight, optional timed hit-scan window, and optional individual cooldown. Every variation also receives the shared `Cooldown.Enemy.BasicAttack` cadence cooldown.
 
 The shown Strafe locations are examples, not mandatory placements. Author each
 ability sequence with no Strafe, a pre-ability Strafe, a post-ability Strafe,

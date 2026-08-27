@@ -8,6 +8,7 @@
 
 class AEnemyShip;
 class ADeckRangedEnemy;
+class UBossBasicAttackSet;
 class USphereComponent;
 
 /** Server-authored boss pawn whose tactical positions live on a moving enemy ship. */
@@ -89,6 +90,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Boss|Combat")
 	USphereComponent* GetDashDamageVolume() const { return DashDamageVolume; }
 
+	UFUNCTION(BlueprintPure, Category = "Boss|Combat")
+	UBossBasicAttackSet* GetBasicAttackSet() const { return BasicAttackSet; }
+	bool HasBossBasicAttackStartingAbility() const;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -130,6 +135,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss|Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USphereComponent> DashDamageVolume = nullptr;
+
+	/** Visual/cadence variations for the one currently equipped weapon. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Combat")
+	TObjectPtr<UBossBasicAttackSet> BasicAttackSet = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Summon", meta = (ClampMin = "1", ClampMax = "8"))
 	int32 MaxSummonedDeckEnemies = 2;

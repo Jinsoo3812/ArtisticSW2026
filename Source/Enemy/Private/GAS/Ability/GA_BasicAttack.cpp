@@ -80,12 +80,6 @@ void UGA_BasicAttack::ActivateAbility(
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
-	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
-
 	ABaseEnemy* EnemyOwner = Cast<ABaseEnemy>(GetAvatarActorFromActorInfo());
 	if (!EnemyOwner)
 	{
@@ -93,8 +87,8 @@ void UGA_BasicAttack::ActivateAbility(
 		return;
 	}
 
-	const FWeaponDefinition* WeaponDefinition = CacheAttackData(EnemyOwner);
-	if (!WeaponDefinition)
+	FEnemyBasicAttackExecutionData AttackData;
+	if (!PrepareAttack(EnemyOwner) || !CacheAttackData(EnemyOwner, AttackData))
 	{
 		UE_LOG(LogEnemyBasicAttack, Warning,
 			TEXT("Basic attack has no valid weapon damage data. Enemy=%s SourceObject=%s"),
@@ -102,6 +96,12 @@ void UGA_BasicAttack::ActivateAbility(
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
+	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+	OnAttackCommitted();
 
 	AddAttackStateTag();
 
@@ -129,7 +129,7 @@ void UGA_BasicAttack::ActivateAbility(
 		HitScanEndEventTask->ReadyForActivation();
 	}
 
-	if (PlayAttackMontage(*WeaponDefinition))
+	if (PlayAttackMontage(AttackData))
 	{
 		return;
 	}
@@ -157,11 +157,34 @@ void UGA_BasicAttack::EndAbility(
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
-const FWeaponDefinition* UGA_BasicAttack::CacheAttackData(ABaseEnemy* EnemyOwner)
+bool UGA_BasicAttack::PrepareAttack(ABaseEnemy* EnemyOwner)
+{
+	return EnemyOwner != nullptr;
+}
+
+bool UGA_BasicAttack::ResolveAttackExecutionData(
+	ABaseEnemy* EnemyOwner,
+	const FWeaponDefinition& WeaponDefinition,
+	FEnemyBasicAttackExecutionData& OutData) const
+{
+	OutData.AttackMontage = WeaponDefinition.CombatData.AttackMontage;
+	OutData.AttackMontagePlayRate = WeaponDefinition.CombatData.AttackMontagePlayRate;
+	OutData.DamageEffectClass = WeaponDefinition.CombatData.DamageEffectClass;
+	OutData.ImpactGameplayCueTag = WeaponDefinition.CombatData.ImpactGameplayCueTag;
+	return OutData.AttackMontage && OutData.DamageEffectClass;
+}
+
+void UGA_BasicAttack::OnAttackCommitted()
+{
+}
+
+bool UGA_BasicAttack::CacheAttackData(
+	ABaseEnemy* EnemyOwner,
+	FEnemyBasicAttackExecutionData& OutData)
 {
 	if (!EnemyOwner)
 	{
-		return nullptr;
+		return false;
 	}
 
 	UBaseWeaponComponent* WeaponComponent = EnemyOwner->GetWeaponComponent();
@@ -169,9 +192,11 @@ const FWeaponDefinition* UGA_BasicAttack::CacheAttackData(ABaseEnemy* EnemyOwner
 	const FWeaponDefinition* WeaponDefinition = WeaponComponent ? WeaponComponent->GetCurrentWeaponDefinition() : nullptr;
 
 	UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
-	if (!CachedWeapon || !WeaponDefinition || !SourceASC || !WeaponDefinition->CombatData.DamageEffectClass)
+	if (!CachedWeapon || !WeaponDefinition || !SourceASC
+		|| !ResolveAttackExecutionData(EnemyOwner, *WeaponDefinition, OutData)
+		|| !OutData.DamageEffectClass)
 	{
-		return nullptr;
+		return false;
 	}
 
 	FGameplayEffectContextHandle ContextHandle =
@@ -179,22 +204,22 @@ const FWeaponDefinition* UGA_BasicAttack::CacheAttackData(ABaseEnemy* EnemyOwner
 			SourceASC, EnemyOwner, CachedWeapon);
 
 	CachedDamageSpecHandle = SourceASC->MakeOutgoingSpec(
-		WeaponDefinition->CombatData.DamageEffectClass,
+		OutData.DamageEffectClass,
 		1,
 		ContextHandle);
 	if (CachedDamageSpecHandle.IsValid() && CachedDamageSpecHandle.Data.IsValid()
-		&& WeaponDefinition->CombatData.ImpactGameplayCueTag.IsValid())
+		&& OutData.ImpactGameplayCueTag.IsValid())
 	{
 		CachedDamageSpecHandle.Data->AddDynamicAssetTag(
-			WeaponDefinition->CombatData.ImpactGameplayCueTag);
+			OutData.ImpactGameplayCueTag);
 	}
 
-	return CachedDamageSpecHandle.IsValid() ? WeaponDefinition : nullptr;
+	return CachedDamageSpecHandle.IsValid();
 }
 
-bool UGA_BasicAttack::PlayAttackMontage(const FWeaponDefinition& WeaponDefinition)
+bool UGA_BasicAttack::PlayAttackMontage(const FEnemyBasicAttackExecutionData& AttackData)
 {
-	UAnimMontage* AttackMontage = WeaponDefinition.CombatData.AttackMontage;
+	UAnimMontage* AttackMontage = AttackData.AttackMontage;
 	if (!AttackMontage)
 	{
 		UE_LOG(LogEnemyBasicAttack, Warning,
@@ -216,7 +241,7 @@ bool UGA_BasicAttack::PlayAttackMontage(const FWeaponDefinition& WeaponDefinitio
 	const float AttackSpeedMultiplier = ASC
 		? FMath::Clamp(ASC->GetNumericAttribute(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute()), 0.1f, 3.0f)
 		: 1.0f;
-	const float EffectivePlayRate = WeaponDefinition.CombatData.AttackMontagePlayRate * AttackSpeedMultiplier;
+	const float EffectivePlayRate = AttackData.AttackMontagePlayRate * AttackSpeedMultiplier;
 	UE_LOG(LogEnemyBasicAttack, Verbose,
 		TEXT("Playing basic attack montage. Enemy=%s Ability=%s Source=%s Montage=%s Rate=%.2f"),
 		*GetNameSafe(EnemyOwner), *GetNameSafe(this), *GetNameSafe(GetCurrentSourceObject()),

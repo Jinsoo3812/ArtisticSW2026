@@ -2,10 +2,12 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
+#include "BaseGameplayTags.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Int.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BossAI/ShipBossEnemy.h"
+#include "GAS/Ability/Boss/GA_BossBasicAttack.h"
 #include "Weapon/BaseWeapon.h"
 #include "Weapon/BaseWeaponComponent.h"
 
@@ -44,6 +46,19 @@ const FGameplayAbilitySpec* UBTT_ActivateBossAbility::FindAbilitySpec(
 	}
 
 	const FGameplayAbilitySpec* FirstMatch = nullptr;
+	// Boss basic attacks are actor-owned and data-driven. Prefer that spec over
+	// the legacy generic basic attack still granted by the physical sword.
+	if (AbilityAssetTag == GameplayAbility_BasicAttack)
+	{
+		for (const FGameplayAbilitySpec& Spec : AbilitySystem.GetActivatableAbilities())
+		{
+			if (Spec.Ability && Spec.Ability->IsA<UGA_BossBasicAttack>()
+				&& Spec.Ability->GetAssetTags().HasTagExact(AbilityAssetTag))
+			{
+				return &Spec;
+			}
+		}
+	}
 	for (const FGameplayAbilitySpec& Spec : AbilitySystem.GetActivatableAbilities())
 	{
 		if (!Spec.Ability || !Spec.Ability->GetAssetTags().HasTagExact(AbilityAssetTag))
@@ -69,6 +84,26 @@ bool UBTT_ActivateBossAbility::ValidateActivationContext(
 {
 	const AShipBossEnemy* Boss = Cast<AShipBossEnemy>(&Pawn);
 	return Boss && (!bRequirePreselectedDestination || Boss->GetDestinationPointId() != INDEX_NONE);
+}
+
+bool UBTT_ActivateBossAbility::ShouldCancelAbilityOnAbort(
+	const FGameplayAbilitySpec* ActiveSpec) const
+{
+	// Distance decorators are preconditions only. Once a Boss basic-attack
+	// montage is committed, leaving weapon range must not cancel it. Hit/death
+	// cancellation still reaches the GA directly through GAS tags/abilities.
+	if (ActiveSpec && ActiveSpec->Ability
+		&& PreservesCommittedAbilityOnBTAbort(ActiveSpec->Ability->GetClass()))
+	{
+		return false;
+	}
+	return Super::ShouldCancelAbilityOnAbort(ActiveSpec);
+}
+
+bool UBTT_ActivateBossAbility::PreservesCommittedAbilityOnBTAbort(
+	const TSubclassOf<UGameplayAbility> AbilityClass)
+{
+	return AbilityClass && AbilityClass->IsChildOf(UGA_BossBasicAttack::StaticClass());
 }
 
 void UBTT_ActivateBossAbility::OnAbilityTaskFinished(EBTNodeResult::Type Result)

@@ -47,6 +47,9 @@ protected:
 		APawn& Pawn,
 		const UAbilitySystemComponent& AbilitySystem) const;
 
+	/** Allows an archetype to let committed atomic actions finish after BT preconditions change. */
+	virtual bool ShouldCancelAbilityOnAbort(const FGameplayAbilitySpec* ActiveSpec) const;
+
 	/** Archetype cleanup hook invoked once for success, failure, or abort. */
 	virtual void OnAbilityTaskFinished(EBTNodeResult::Type Result);
 

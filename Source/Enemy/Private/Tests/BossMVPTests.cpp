@@ -2,6 +2,7 @@
 
 #include "Misc/AutomationTest.h"
 
+#include "AbilitySystemComponent.h"
 #include "AI/EnemyBehaviorSet.h"
 #include "AI/EnemyAITypes.h"
 #include "BaseGameplayTags.h"
@@ -16,6 +17,7 @@
 #include "BehaviorTree/Tasks/BTTask_RunBehaviorDynamic.h"
 #include "BossAI/BossDeckPointSelector.h"
 #include "BossAI/BossDeckMovementUtils.h"
+#include "BossAI/BossBasicAttackSet.h"
 #include "BossAI/BossEncounterComponent.h"
 #include "BossAI/EnemyItemBox.h"
 #include "BossAI/ShipBossAIController.h"
@@ -205,7 +207,15 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("BT task prefers the spec granted by the equipped weapon"),
 			ActivateTaskCDO->PrefersCurrentWeaponAbility());
+		TestTrue(TEXT("Committed Boss basic attacks survive BT distance-branch aborts"),
+			UBTT_ActivateBossAbility::PreservesCommittedAbilityOnBTAbort(
+				UGA_BossBasicAttack::StaticClass()));
+		TestFalse(TEXT("Boss mobility abilities retain normal BT abort cancellation"),
+			UBTT_ActivateBossAbility::PreservesCommittedAbilityOnBTAbort(
+				UGA_BossDashSlash::StaticClass()));
 	}
+	TestTrue(TEXT("Boss Combo basic-attack cooldown tag is registered"),
+		Cooldown_Boss_BasicAttack_Combo.GetTag().IsValid());
 	TestTrue(TEXT("Boss attack cue tag is registered"), GameplayCue_Boss_Attack.GetTag().IsValid());
 	TestTrue(TEXT("Boss hit cue tag is registered"), GameplayCue_Boss_Hit.GetTag().IsValid());
 	TestTrue(TEXT("Confirmed impact cue root is registered"), GameplayCue_Impact.GetTag().IsValid());
@@ -277,6 +287,47 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 					== GameplayCue_Impact_Weapon_Sword);
 	}
 
+	const UBossBasicAttackSet* BasicAttackSet = LoadObject<UBossBasicAttackSet>(
+		nullptr,
+		TEXT("/Game/GameplayAbilitySystem/Enemy/DA/DA_RogueBossBasicAttacks.DA_RogueBossBasicAttacks"));
+	if (TestNotNull(TEXT("Boss basic-attack set loads"), BasicAttackSet))
+	{
+		TestTrue(TEXT("Boss basic-attack set contains at least one configurable variation"),
+			!BasicAttackSet->Attacks.IsEmpty());
+		TestTrue(TEXT("Every configured Boss attack has an id, montage, and positive weight"),
+			BasicAttackSet->Attacks.FilterByPredicate(
+				[](const FBossBasicAttackEntry& Entry)
+				{
+					return !Entry.AttackId.IsNone()
+						&& Entry.AttackMontage
+						&& Entry.SelectionWeight > 0.0f;
+				}).Num() == BasicAttackSet->Attacks.Num());
+		TestNull(TEXT("Attack variations do not redefine weapon range"),
+			FindFProperty<FProperty>(FBossBasicAttackEntry::StaticStruct(), TEXT("AttackRange")));
+
+		const FBossBasicAttackEntry* Combo = BasicAttackSet->Attacks.FindByPredicate(
+			[](const FBossBasicAttackEntry& Entry)
+			{
+				return Entry.AttackType == EBossBasicAttackType::Combo;
+			});
+		if (Combo)
+		{
+			TestTrue(TEXT("Configured Combo owns its independent reuse cooldown"),
+				Combo->IndividualCooldownTag == Cooldown_Boss_BasicAttack_Combo
+				&& Combo->IndividualCooldownDuration > 0.0f);
+		}
+
+		UAbilitySystemComponent* SelectionASC = NewObject<UAbilitySystemComponent>();
+		if (Combo && BasicAttackSet->Attacks.Num() > 1)
+		{
+			SelectionASC->AddLooseGameplayTag(Cooldown_Boss_BasicAttack_Combo);
+			const FBossBasicAttackEntry* DuringComboCooldown =
+				BasicAttackSet->SelectAttack(SelectionASC, NAME_None, 0.99f);
+			TestTrue(TEXT("Combo cooldown leaves another configured attack selectable"),
+				DuringComboCooldown && DuringComboCooldown != Combo);
+		}
+	}
+
 	UClass* BossBlueprintClass = LoadClass<AShipBossEnemy>(
 		nullptr, TEXT("/Game/GameplayAbilitySystem/Enemy/BP_Ship_BossEnemy.BP_Ship_BossEnemy_C"));
 	const AShipBossEnemy* BossBlueprintCDO = BossBlueprintClass
@@ -284,6 +335,10 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 		: nullptr;
 	if (TestNotNull(TEXT("Boss Blueprint class loads"), BossBlueprintCDO))
 	{
+		TestTrue(TEXT("Boss Blueprint references its configurable attack set"),
+			BossBlueprintCDO->GetBasicAttackSet() == BasicAttackSet);
+		TestTrue(TEXT("Boss Blueprint grants the specialized data-driven basic attack"),
+			BossBlueprintCDO->HasBossBasicAttackStartingAbility());
 		const UBehaviorTree* RootTree = BossBlueprintCDO->GetBehaviorTree();
 		const UBlackboardData* BossBlackboard = LoadObject<UBlackboardData>(
 			nullptr, TEXT("/Game/GameplayAbilitySystem/Enemy/AI/BB_RogueBoss.BB_RogueBoss"));

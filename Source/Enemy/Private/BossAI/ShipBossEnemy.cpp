@@ -6,6 +6,7 @@
 #include "BossAI/ShipBossAIController.h"
 #include "Components/BaseHealthComponent.h"
 #include "GAS/Ability/Boss/GA_BossDashSlash.h"
+#include "GAS/Ability/Boss/GA_BossBasicAttack.h"
 #include "GAS/Ability/Boss/GA_BossKnockback.h"
 #include "GAS/Ability/Boss/GA_BossVanish.h"
 #include "Components/CapsuleComponent.h"
@@ -40,6 +41,7 @@ AShipBossEnemy::AShipBossEnemy()
 	bDestroyAfterDeathFinished = true;
 	bEquipWeaponOnSpawn = true;
 	DefaultWeaponTag = Item_EnemyWeapon_Sword;
+	StartingAbilities.Add(UGA_BossBasicAttack::StaticClass());
 	StartingAbilities.Add(UGA_BossKnockback::StaticClass());
 	StartingAbilities.Add(UGA_BossVanish::StaticClass());
 	StartingAbilities.Add(UGA_BossVanishV2::StaticClass());
@@ -78,6 +80,11 @@ void AShipBossEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	DestinationReservation.Reset();
 	UnbindHostShip();
 	Super::EndPlay(EndPlayReason);
+}
+
+bool AShipBossEnemy::HasBossBasicAttackStartingAbility() const
+{
+	return StartingAbilities.Contains(UGA_BossBasicAttack::StaticClass());
 }
 
 void AShipBossEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
