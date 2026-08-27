@@ -1895,6 +1895,8 @@ UMotionMatchingAnimInstance::UMotionMatchingAnimInstance()
     FootPlacementInterpolationSettingsStops.UnplantAngularStiffness = 700.0f;
     FootPlacementInterpolationSettingsStops.FloorLinearStiffness = 1200.0f;
     FootPlacementInterpolationSettingsStops.FloorAngularStiffness = 650.0f;
+
+    TurnInPlaceFootPlacementAlpha = 1.0f;
 }
 
 FAnimInstanceProxy* UMotionMatchingAnimInstance::CreateAnimInstanceProxy()
@@ -3832,6 +3834,36 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
                 {
                     DirectionInput = CachedLocomotionStateComponent->LandMoveDirection;
                 }
+                else if (DesiredState == EStateControllerPresentationState::TransitionToStop)
+                {
+                    // Stop은 키를 뗐을 때 발동하므로, 캐릭터의 직전 이동 속도(Velocity)를 로컬 좌표로 변환하여 방향을 캡처합니다.
+                    if (CachedBasePlayer)
+                    {
+                        const FVector WorldVel = CachedBasePlayer->GetVelocity();
+                        const FVector LocalVel = CachedBasePlayer->GetActorTransform().InverseTransformVector(WorldVel);
+                        if (!LocalVel.IsNearlyZero(10.0f))
+                        {
+                            DirectionInput = FVector2D(LocalVel.Y, LocalVel.X); // X=Right, Y=Forward
+                        }
+                    }
+
+                    // 속도가 이미 0에 가깝다면 Chooser가 선택한 MovementDirection으로 완벽하게 대각선 각도 폴백
+                    if (DirectionInput.IsNearlyZero())
+                    {
+                        switch (StateControllerMovementDirection)
+                        {
+                        case EMovementDirection::ForwardLeft:  DirectionInput = FVector2D(-1.0f, 1.0f); break;
+                        case EMovementDirection::ForwardRight: DirectionInput = FVector2D(1.0f, 1.0f); break;
+                        case EMovementDirection::BackwardLeft: DirectionInput = FVector2D(-1.0f, -1.0f); break;
+                        case EMovementDirection::BackwardRight: DirectionInput = FVector2D(1.0f, -1.0f); break;
+                        case EMovementDirection::Left:         DirectionInput = FVector2D(-1.0f, 0.0f); break;
+                        case EMovementDirection::Right:        DirectionInput = FVector2D(1.0f, 0.0f); break;
+                        case EMovementDirection::Backward:     DirectionInput = FVector2D(0.0f, -1.0f); break;
+                        case EMovementDirection::Forward:      DirectionInput = FVector2D(0.0f, 1.0f); break;
+                        default: break;
+                        }
+                    }
+                }
 
                 if (!DirectionInput.IsNearlyZero())
                 {
@@ -4227,7 +4259,19 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         bHasStateControllerLandingDirectionLatch;
     if (!bHoldingLandStopDirection)
     {
-        StateControllerMovementDirection = CurrentMovementDirection;
+        EMovementDirection EffectiveDirection = CurrentMovementDirection;
+        const double CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+
+        // Stop으로 전환되는 순간, 키보드 비동기 릴리즈(손가락 시차)로 인해 직전 대각선 방향이 정면/단일 방향으로 튀는 것을 방지
+        if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop)
+        {
+            if ((CurrentTime - LastDiagonalMovementDirectionTime) <= StateControllerStopDiagonalReleaseWindow)
+            {
+                EffectiveDirection = LastDiagonalMovementDirection;
+            }
+        }
+
+        StateControllerMovementDirection = EffectiveDirection;
         StateControllerPreviousMovementDirection = MovementDirectionLastFrame;
     }
     bStateControllerIsPivoting = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bSharpTurnRequested;
@@ -4655,6 +4699,17 @@ void UMotionMatchingAnimInstance::UpdateMovementDirection()
     else
     {
         CurrentMovementDirection = EMovementDirection::Backward;
+    }
+
+    const bool bIsDiagonal =
+        (CurrentMovementDirection == EMovementDirection::ForwardLeft ||
+         CurrentMovementDirection == EMovementDirection::ForwardRight ||
+         CurrentMovementDirection == EMovementDirection::BackwardLeft ||
+         CurrentMovementDirection == EMovementDirection::BackwardRight);
+    if (bIsDiagonal && ThreadSafeData.InputData.bHasMoveInput)
+    {
+        LastDiagonalMovementDirection = CurrentMovementDirection;
+        LastDiagonalMovementDirectionTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
     }
 }
 
