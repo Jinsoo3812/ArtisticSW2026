@@ -88,5 +88,9 @@ Content/JoseonTongsinsaseon/Meshes
 Content/JoseonTongsinsaseon/Textures/Landscape
 Content/AdvStylizedFramework/Mesh
 
+# Third-party source assets (runtime copies live under the torpedo feature folder)
+Content/Pack_Simple_Particle_Burst/
+Content/Blueprints/Ship/Enemy_Ship/Torpeodo/source/
+
 #
 AGENTS.md
