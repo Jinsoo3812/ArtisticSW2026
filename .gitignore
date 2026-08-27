@@ -95,5 +95,8 @@ Content/Blueprints/Ship/Enemy_Ship/Torpeodo/source/
 # Third-party Wood Box source assets (runtime copy lives under the obstacle feature folder)
 Content/Wood_Box/
 
+# Third-party British Cannon source assets (runtime copy lives under the ship cannon folder)
+Content/British_Cannon/
+
 #
 AGENTS.md
