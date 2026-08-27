@@ -55,6 +55,7 @@ protected:
 
 	UBehaviorTreeComponent* GetCachedOwnerComp() const { return CachedOwnerComp.Get(); }
 	APawn* GetCachedPawn() const { return CachedPawn.Get(); }
+	const FGameplayAbilitySpec* GetActiveAbilitySpec() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability", meta = (Categories = "GameplayAbility"))
 	FGameplayTag AbilityAssetTag;

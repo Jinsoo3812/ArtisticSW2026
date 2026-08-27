@@ -21,7 +21,6 @@ public:
 
 	bool RequiresPreselectedDestination() const { return bRequirePreselectedDestination; }
 	bool PrefersCurrentWeaponAbility() const { return bPreferCurrentWeaponAbility; }
-	static bool PreservesCommittedAbilityOnBTAbort(TSubclassOf<UGameplayAbility> AbilityClass);
 
 	virtual FString GetStaticDescription() const override;
 

@@ -45,6 +45,9 @@ public:
 	FGameplayTag GetStartupGameplayCueTag() const { return StartupGameplayCueTag; }
 	FGameplayTag GetImpactGameplayCueTag() const { return ImpactGameplayCueTag; }
 
+	/** A committed mobility ability can retain the destination selected by the BT. */
+	virtual bool OwnsPreselectedDestinationAfterCommit() const { return false; }
+
 protected:
 	void SetBossAbilityTags(FGameplayTag AbilityTag, FGameplayTag InCooldownTag);
 	void ExecuteStartupGameplayCue() const;

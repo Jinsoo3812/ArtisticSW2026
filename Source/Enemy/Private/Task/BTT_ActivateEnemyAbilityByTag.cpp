@@ -149,6 +149,14 @@ bool UBTT_ActivateEnemyAbilityByTag::ShouldCancelAbilityOnAbort(
 	return bCancelAbilityOnAbort;
 }
 
+const FGameplayAbilitySpec* UBTT_ActivateEnemyAbilityByTag::GetActiveAbilitySpec() const
+{
+	UAbilitySystemComponent* ASC = CachedASC.Get();
+	return ASC && ActiveAbilityHandle.IsValid()
+		? ASC->FindAbilitySpecFromHandle(ActiveAbilityHandle)
+		: nullptr;
+}
+
 void UBTT_ActivateEnemyAbilityByTag::OnAbilityTaskFinished(EBTNodeResult::Type Result)
 {
 }

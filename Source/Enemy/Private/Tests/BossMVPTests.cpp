@@ -3,6 +3,7 @@
 #include "Misc/AutomationTest.h"
 
 #include "AbilitySystemComponent.h"
+#include "Animation/AnimMontage.h"
 #include "AI/EnemyBehaviorSet.h"
 #include "AI/EnemyAITypes.h"
 #include "BaseGameplayTags.h"
@@ -208,11 +209,9 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("BT task prefers the spec granted by the equipped weapon"),
 			ActivateTaskCDO->PrefersCurrentWeaponAbility());
 		TestTrue(TEXT("Committed Boss basic attacks survive BT distance-branch aborts"),
-			UBTT_ActivateBossAbility::PreservesCommittedAbilityOnBTAbort(
-				UGA_BossBasicAttack::StaticClass()));
-		TestFalse(TEXT("Boss mobility abilities retain normal BT abort cancellation"),
-			UBTT_ActivateBossAbility::PreservesCommittedAbilityOnBTAbort(
-				UGA_BossDashSlash::StaticClass()));
+			GetDefault<UGA_BossBasicAttack>()->ShouldSurviveBehaviorTreeAbort());
+		TestTrue(TEXT("Committed DashSlash survives BT distance-branch aborts"),
+			GetDefault<UGA_BossDashSlash>()->ShouldSurviveBehaviorTreeAbort());
 	}
 	TestTrue(TEXT("Boss Combo basic-attack cooldown tag is registered"),
 		Cooldown_Boss_BasicAttack_Combo.GetTag().IsValid());
@@ -481,6 +480,8 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 			Dash->GetImpactGameplayCueTag() == GameplayCue_Impact_Boss_DashSlash);
 		TestEqual(TEXT("Dash montage windup section contract"),
 			Dash->GetWindupSectionName(), FName(TEXT("Windup")));
+		TestEqual(TEXT("Dash montage windup hold section contract"),
+			Dash->GetWindupHoldSectionName(), FName(TEXT("WindupHold")));
 		TestEqual(TEXT("Dash montage slash section contract"),
 			Dash->GetDashSlashSectionName(), FName(TEXT("DashSlash")));
 		TestEqual(TEXT("Dash montage hold section contract"),
@@ -500,6 +501,71 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Boss cooldown effect has duration policy"),
 			CooldownEffect->DurationPolicy, EGameplayEffectDurationType::HasDuration);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FBossDashSlashServerPhasesTest,
+	"ArtisticSW.Enemy.BossMVP.DashSlashServerPhases",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBossDashSlashServerPhasesTest::RunTest(const FString& Parameters)
+{
+	const UGA_BossDashSlash* NativeDash = GetDefault<UGA_BossDashSlash>();
+	if (!TestNotNull(TEXT("Native DashSlash defaults exist"), NativeDash))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("DashSlash gameplay remains server authoritative"),
+		NativeDash->GetNetExecutionPolicy(), EGameplayAbilityNetExecutionPolicy::ServerOnly);
+	TestTrue(TEXT("DashSlash survives BT abort after activation"),
+		NativeDash->ShouldSurviveBehaviorTreeAbort());
+	TestTrue(TEXT("DashSlash owns its preselected destination after commit"),
+		NativeDash->OwnsPreselectedDestinationAfterCommit());
+	TestFalse(TEXT("Ordinary Boss abilities keep the default BT abort policy"),
+		GetDefault<UGA_BossKnockback>()->ShouldSurviveBehaviorTreeAbort());
+	TestFalse(TEXT("Ordinary Boss abilities do not own a preselected destination"),
+		GetDefault<UGA_BossKnockback>()->OwnsPreselectedDestinationAfterCommit());
+	TestNotNull(TEXT("DashSlash phase authoring is grouped in MontageConfig"),
+		FindFProperty<FStructProperty>(NativeDash->GetClass(), TEXT("MontageConfig")));
+	TestNull(TEXT("Movement start no longer depends on a gameplay event task"),
+		FindFProperty<FObjectProperty>(NativeDash->GetClass(), TEXT("DashStartEventTask")));
+	TestNull(TEXT("Slash completion no longer depends on a gameplay event task"),
+		FindFProperty<FObjectProperty>(NativeDash->GetClass(), TEXT("SlashFinishedEventTask")));
+	TestEqual(TEXT("Windup entry has a configurable section contract"),
+		NativeDash->GetWindupSectionName(), FName(TEXT("Windup")));
+	TestEqual(TEXT("Windup hold has a configurable section contract"),
+		NativeDash->GetWindupHoldSectionName(), FName(TEXT("WindupHold")));
+
+	UClass* AuthoredDashClass = LoadObject<UClass>(nullptr,
+		TEXT("/Game/GameplayAbilitySystem/Ability/Enemy/Boss/BPGA_SlashDash.BPGA_SlashDash_C"));
+	if (!TestNotNull(TEXT("Authored DashSlash ability can be loaded"), AuthoredDashClass))
+	{
+		return false;
+	}
+	const UGA_BossDashSlash* AuthoredDash = GetDefault<UGA_BossDashSlash>(AuthoredDashClass);
+	if (!TestNotNull(TEXT("Authored DashSlash defaults can be loaded"), AuthoredDash))
+	{
+		return false;
+	}
+
+	const FDashSlashMontageConfig& Config = AuthoredDash->GetMontageConfig();
+	if (!TestNotNull(TEXT("Legacy BPGA montage migrated into MontageConfig"), Config.Montage.Get()))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Authored montage contains windup entry"),
+		Config.Montage->IsValidSectionName(Config.WindupEnterSectionName));
+	TestTrue(TEXT("Authored montage contains windup hold"),
+		Config.Montage->IsValidSectionName(Config.WindupHoldSectionName));
+	TestTrue(TEXT("Authored montage contains attack"),
+		Config.Montage->IsValidSectionName(Config.AttackSectionName));
+	TestTrue(TEXT("Authored montage contains travel hold"),
+		Config.Montage->IsValidSectionName(Config.TravelHoldSectionName));
+	TestTrue(TEXT("Authored montage contains recovery"),
+		Config.Montage->IsValidSectionName(Config.RecoverySectionName));
+	TestTrue(TEXT("Hold duration is separately tunable"), Config.WindupHoldDuration >= 0.0f);
 	return true;
 }
 

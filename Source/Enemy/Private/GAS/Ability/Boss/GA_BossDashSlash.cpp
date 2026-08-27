@@ -1,15 +1,12 @@
 #include "GAS/Ability/Boss/GA_BossDashSlash.h"
 
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
-#include "Abilities/Tasks/AbilityTask_WaitDelay.h"
-#include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimMontage.h"
 #include "BaseGameplayTags.h"
 #include "BossAI/BossDeckMovementUtils.h"
 #include "BossAI/ShipBossEnemy.h"
 #include "Components/CapsuleComponent.h"
-#include "Components/SkeletalMeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
@@ -27,6 +24,23 @@ UGA_BossDashSlash::UGA_BossDashSlash()
 	ImpactGameplayCueTag = GameplayCue_Impact_Boss_DashSlash;
 }
 
+void UGA_BossDashSlash::PostLoad()
+{
+	Super::PostLoad();
+
+	// Preserve values serialized by the pre-MontageConfig BPGA_SlashDash class.
+	if (!MontageConfig.Montage && DashMontage_DEPRECATED)
+	{
+		MontageConfig.Montage = DashMontage_DEPRECATED;
+		MontageConfig.WindupEnterSectionName = WindupSectionName_DEPRECATED;
+		MontageConfig.AttackSectionName = DashSlashSectionName_DEPRECATED;
+		MontageConfig.TravelHoldSectionName = DashHoldSectionName_DEPRECATED;
+		MontageConfig.RecoverySectionName = RecoverySectionName_DEPRECATED;
+		MontageConfig.WindupHoldDuration = WindupDuration_DEPRECATED;
+		MontageConfig.RecoveryTimeout = RecoveryTimeout_DEPRECATED;
+	}
+}
+
 void UGA_BossDashSlash::ActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -34,72 +48,84 @@ void UGA_BossDashSlash::ActivateAbility(
 	const FGameplayEventData* TriggerEventData)
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+	Phase = EDashSlashPhase::Inactive;
 	bDashStarted = false;
 	bSlashFinished = false;
 	bDestinationReached = false;
-	bRecoveryStarted = false;
 	bFinishing = false;
 	HitActorsThisDash.Reset();
-	if (!ValidatePreselectedDestination() || !CommitAbility(Handle, ActorInfo, ActivationInfo))
+	CapturedDeckMesh.Reset();
+	CapturedDestinationPointId = INDEX_NONE;
+	DashEndLocal = FVector::ZeroVector;
+
+	FString MontageError;
+	if (!CapturePreselectedDestination() || !ValidateMontageConfig(MontageError))
+	{
+		if (!MontageError.IsEmpty())
+		{
+			UE_LOG(LogBossDashSlash, Error, TEXT("Cannot activate DashSlash: %s"), *MontageError);
+		}
+		else
+		{
+			UE_LOG(LogBossDashSlash, Warning,
+				TEXT("Cannot activate DashSlash: preselected destination capture failed. Boss=%s"),
+				*GetNameSafe(GetBossAvatar()));
+		}
+		FinishDash(true);
+		return;
+	}
+	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
 		FinishDash(true);
 		return;
 	}
-	DashStartEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
-		this,
-		Event_Boss_Dash_Start,
-		nullptr,
-		true,
-		true);
-	if (DashStartEventTask)
-	{
-		DashStartEventTask->EventReceived.AddDynamic(this, &UGA_BossDashSlash::HandleDashStartEvent);
-		DashStartEventTask->ReadyForActivation();
-	}
-	SlashFinishedEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
-		this,
-		Event_Boss_Dash_SlashFinished,
-		nullptr,
-		true,
-		true);
-	if (SlashFinishedEventTask)
-	{
-		SlashFinishedEventTask->EventReceived.AddDynamic(
-			this, &UGA_BossDashSlash::HandleSlashFinishedEvent);
-		SlashFinishedEventTask->ReadyForActivation();
-	}
 
-	if (DashMontage)
+	MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+		this,
+		TEXT("BossDashSlashMontage"),
+		MontageConfig.Montage,
+		MontageConfig.PlayRate,
+		MontageConfig.WindupEnterSectionName,
+		true);
+	if (!MontageTask)
 	{
-		const FName StartSection = HasMontageSection(WindupSectionName)
-			? WindupSectionName
-			: NAME_None;
-		MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-			this,
-			TEXT("BossDashSlashMontage"),
-			DashMontage,
-			1.0f,
-			StartSection,
-			true);
-		if (MontageTask)
-		{
-			MontageTask->OnCompleted.AddDynamic(this, &UGA_BossDashSlash::HandleMontageCompleted);
-			MontageTask->OnBlendOut.AddDynamic(this, &UGA_BossDashSlash::HandleMontageBlendOut);
-			MontageTask->OnInterrupted.AddDynamic(this, &UGA_BossDashSlash::HandleMontageInterrupted);
-			MontageTask->OnCancelled.AddDynamic(this, &UGA_BossDashSlash::HandleMontageInterrupted);
-			MontageTask->ReadyForActivation();
-			ConfigureMontageSections();
-		}
-	}
-
-	if (WindupDuration <= 0.0f)
-	{
-		BeginDash();
+		FinishDash(true);
 		return;
 	}
-	WindupTask = UAbilityTask_WaitDelay::WaitDelay(this, WindupDuration);
-	WindupTask->OnFinish.AddDynamic(this, &UGA_BossDashSlash::BeginDash);
-	WindupTask->ReadyForActivation();
+
+	MontageTask->OnCompleted.AddDynamic(this, &UGA_BossDashSlash::HandleMontageCompleted);
+	MontageTask->OnBlendOut.AddDynamic(this, &UGA_BossDashSlash::HandleMontageBlendOut);
+	MontageTask->OnInterrupted.AddDynamic(this, &UGA_BossDashSlash::HandleMontageInterrupted);
+	MontageTask->OnCancelled.AddDynamic(this, &UGA_BossDashSlash::HandleMontageInterrupted);
+	MontageTask->ReadyForActivation();
+	if (!IsActive() || bFinishing)
+	{
+		return;
+	}
+	ConfigureMontageSections();
+
+	AShipBossEnemy* Boss = GetBossAvatar();
+	if (!Boss)
+	{
+		FinishDash(true);
+		return;
+	}
+
+	Phase = EDashSlashPhase::WindupEntering;
+	const float LeadInDuration = GetSectionDurationSeconds(MontageConfig.WindupEnterSectionName);
+	if (LeadInDuration <= KINDA_SMALL_NUMBER)
+	{
+		BeginWindupHold();
+	}
+	else
+	{
+		Boss->GetWorldTimerManager().SetTimer(
+			WindupLeadInTimerHandle,
+			this,
+			&UGA_BossDashSlash::BeginWindupHold,
+			LeadInDuration,
+			false);
+	}
 }
 
 void UGA_BossDashSlash::EndAbility(
@@ -111,7 +137,7 @@ void UGA_BossDashSlash::EndAbility(
 {
 	if (AShipBossEnemy* Boss = GetBossAvatar())
 	{
-		Boss->GetWorldTimerManager().ClearTimer(DashTimerHandle);
+		ClearRuntimeTimers();
 		if (bWasCancelled)
 		{
 			Boss->SetDestinationPointId(INDEX_NONE);
@@ -119,136 +145,149 @@ void UGA_BossDashSlash::EndAbility(
 	}
 	DeactivateDashCollision();
 	ClearDashState();
-	if (DashStartEventTask)
-	{
-		DashStartEventTask->EndTask();
-	}
-	if (SlashFinishedEventTask)
-	{
-		SlashFinishedEventTask->EndTask();
-	}
-	if (WindupTask)
-	{
-		WindupTask->EndTask();
-	}
-	if (RecoveryTimeoutTask)
-	{
-		RecoveryTimeoutTask->EndTask();
-	}
-	DashStartEventTask = nullptr;
-	SlashFinishedEventTask = nullptr;
-	WindupTask = nullptr;
-	RecoveryTimeoutTask = nullptr;
 	MontageTask = nullptr;
-	DashElapsed = 0.0f;
+	DashStartServerTime = 0.0;
 	EffectiveDashAcceptanceRadius = 0.0f;
 	HitActorsThisDash.Reset();
+	CapturedDeckMesh.Reset();
+	CapturedDestinationPointId = INDEX_NONE;
+	DashStartLocal = FVector::ZeroVector;
+	DashEndLocal = FVector::ZeroVector;
+	PreviousWorldLocation = FVector::ZeroVector;
+	Phase = EDashSlashPhase::Inactive;
 	bDashStarted = false;
 	bSlashFinished = false;
 	bDestinationReached = false;
-	bRecoveryStarted = false;
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
-void UGA_BossDashSlash::HandleDashStartEvent(FGameplayEventData Payload)
+void UGA_BossDashSlash::BeginWindupHold()
 {
-	BeginDash();
-}
-
-void UGA_BossDashSlash::HandleSlashFinishedEvent(FGameplayEventData Payload)
-{
-	if (bSlashFinished || bFinishing)
+	if (Phase != EDashSlashPhase::WindupEntering || bFinishing)
 	{
 		return;
 	}
-
-	bSlashFinished = true;
-	if (SlashFinishedEventTask)
-	{
-		SlashFinishedEventTask->EndTask();
-		SlashFinishedEventTask = nullptr;
-	}
-
-	if (bDestinationReached)
-	{
-		StartRecovery();
-	}
-}
-
-void UGA_BossDashSlash::BeginDash()
-{
-	if (bDashStarted || bDestinationReached || bFinishing)
-	{
-		return;
-	}
-	bDashStarted = true;
-	if (WindupTask)
-	{
-		WindupTask->EndTask();
-		WindupTask = nullptr;
-	}
-	if (DashStartEventTask)
-	{
-		DashStartEventTask->EndTask();
-		DashStartEventTask = nullptr;
-	}
+	Phase = EDashSlashPhase::WindupHolding;
 
 	AShipBossEnemy* Boss = GetBossAvatar();
-	AEnemyShip* HostShip = Boss ? Boss->GetHostShip() : nullptr;
-	UStaticMeshComponent* DeckMesh = HostShip ? HostShip->GetShipDeckMesh() : nullptr;
-	FTransform Destination;
-	if (!Boss || !DeckMesh || !Boss->ResolvePointTransform(Boss->GetDestinationPointId(), Destination))
+	if (!Boss)
+	{
+		FinishDash(true);
+		return;
+	}
+	if (MontageConfig.WindupHoldDuration <= KINDA_SMALL_NUMBER)
+	{
+		ReleaseWindupAndBeginDash();
+		return;
+	}
+
+	Boss->GetWorldTimerManager().SetTimer(
+		WindupHoldTimerHandle,
+		this,
+		&UGA_BossDashSlash::ReleaseWindupAndBeginDash,
+		MontageConfig.WindupHoldDuration,
+		false);
+}
+
+void UGA_BossDashSlash::ReleaseWindupAndBeginDash()
+{
+	if (Phase != EDashSlashPhase::WindupHolding || bFinishing)
+	{
+		return;
+	}
+
+	if (!MontageTask || !TransitionMontagePhase(
+		EDashSlashPhase::WindupHolding,
+		EDashSlashPhase::DashAttacking,
+		MontageConfig.AttackSectionName))
 	{
 		FinishDash(true);
 		return;
 	}
 
+	// The same authoritative frame releases the hold pose and starts movement.
+	BeginDash();
+}
+
+void UGA_BossDashSlash::BeginDash()
+{
+	if (Phase != EDashSlashPhase::DashAttacking || bDashStarted || bFinishing)
+	{
+		return;
+	}
+
+	AShipBossEnemy* Boss = GetBossAvatar();
+	UStaticMeshComponent* DeckMesh = CapturedDeckMesh.Get();
+	if (!Boss || !DeckMesh || CapturedDestinationPointId == INDEX_NONE)
+	{
+		FinishDash(true);
+		return;
+	}
+
+	bDashStarted = true;
 	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
 	DashStartLocal = DeckTransform.InverseTransformPosition(Boss->GetActorLocation());
-	DashEndLocal = DeckTransform.InverseTransformPosition(Destination.GetLocation());
 	const float DashTravelDistance = FVector2D::Distance(
 		FVector2D(DashStartLocal.X, DashStartLocal.Y),
 		FVector2D(DashEndLocal.X, DashEndLocal.Y));
 	EffectiveDashAcceptanceRadius = BossDeckMovement::ResolveAcceptanceRadius(
 		DashAcceptanceRadius, DashTravelDistance);
 	PreviousWorldLocation = Boss->GetActorLocation();
-	DashElapsed = 0.0f;
+	DashStartServerTime = Boss->GetWorld()->GetTimeSeconds();
 	HitActorsThisDash.Reset();
 	ActivateDashCollision();
-
-	if (MontageTask && HasMontageSection(DashSlashSectionName))
-	{
-		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
-		{
-			ASC->CurrentMontageJumpToSection(DashSlashSectionName);
-		}
-	}
 
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
 		DashStateHandle = ApplyTimedStateTag(*ASC, State_Boss_Dashing, DashDuration + 0.25f);
 	}
-	Boss->GetWorldTimerManager().SetTimer(
+
+	FTimerManager& TimerManager = Boss->GetWorldTimerManager();
+	TimerManager.SetTimer(
 		DashTimerHandle,
 		this,
 		&UGA_BossDashSlash::TickDash,
 		DashTickInterval,
 		true);
+	TimerManager.SetTimer(
+		SlashCompletionTimerHandle,
+		this,
+		&UGA_BossDashSlash::MarkSlashFinished,
+		GetSectionDurationSeconds(MontageConfig.AttackSectionName),
+		false);
+}
+
+void UGA_BossDashSlash::MarkSlashFinished()
+{
+	if (bSlashFinished || bFinishing || !bDashStarted)
+	{
+		return;
+	}
+
+	bSlashFinished = true;
+	if (!bDestinationReached)
+	{
+		Phase = EDashSlashPhase::WaitingForCompletion;
+	}
+	TryStartRecovery();
 }
 
 void UGA_BossDashSlash::TickDash()
 {
 	AShipBossEnemy* Boss = GetBossAvatar();
-	AEnemyShip* HostShip = Boss ? Boss->GetHostShip() : nullptr;
-	UStaticMeshComponent* DeckMesh = HostShip ? HostShip->GetShipDeckMesh() : nullptr;
-	if (!Boss || !DeckMesh)
+	UStaticMeshComponent* DeckMesh = CapturedDeckMesh.Get();
+	UWorld* World = Boss ? Boss->GetWorld() : nullptr;
+	if (!Boss || !DeckMesh || !World)
 	{
 		FinishDash(true);
 		return;
 	}
 
-	DashElapsed += DashTickInterval;
-	const float Alpha = FMath::Clamp(DashElapsed / FMath::Max(0.05f, DashDuration), 0.0f, 1.0f);
+	const double ElapsedSeconds = World->GetTimeSeconds() - DashStartServerTime;
+	const float Alpha = FMath::Clamp(
+		static_cast<float>(ElapsedSeconds) / FMath::Max(0.05f, DashDuration),
+		0.0f,
+		1.0f);
 	const FVector NewWorldLocation = DeckMesh->GetComponentTransform().TransformPosition(
 		FMath::Lerp(DashStartLocal, DashEndLocal, Alpha));
 	const FVector MoveDirection = (NewWorldLocation - PreviousWorldLocation).GetSafeNormal();
@@ -354,10 +393,14 @@ void UGA_BossDashSlash::HandleDestinationReached()
 	bDestinationReached = true;
 
 	AShipBossEnemy* Boss = GetBossAvatar();
-	AEnemyShip* HostShip = Boss ? Boss->GetHostShip() : nullptr;
-	UStaticMeshComponent* DeckMesh = HostShip ? HostShip->GetShipDeckMesh() : nullptr;
-	if (!Boss || !DeckMesh)
+	UStaticMeshComponent* DeckMesh = CapturedDeckMesh.Get();
+	if (!Boss || !DeckMesh
+		|| Boss->GetDestinationPointId() != CapturedDestinationPointId)
 	{
+		UE_LOG(LogBossDashSlash, Warning,
+			TEXT("DashSlash lost its captured destination before arrival. Boss=%s CapturedPoint=%d CurrentPoint=%d"),
+			*GetNameSafe(Boss), CapturedDestinationPointId,
+			Boss ? Boss->GetDestinationPointId() : INDEX_NONE);
 		FinishDash(true);
 		return;
 	}
@@ -367,86 +410,181 @@ void UGA_BossDashSlash::HandleDestinationReached()
 	Boss->MarkDestinationReached();
 	DeactivateDashCollision();
 	ClearDashState();
-
-	if (MontageTask && HasMontageSection(RecoverySectionName))
+	if (!bSlashFinished)
 	{
-		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
-		{
-			// Arrival stops movement and damage immediately, but never truncates
-			// the one-shot sword swing. A completed swing may recover at once.
-			ASC->CurrentMontageSetNextSectionName(DashSlashSectionName, RecoverySectionName);
-			ASC->CurrentMontageSetNextSectionName(DashHoldSectionName, RecoverySectionName);
-		}
-		if (bSlashFinished)
-		{
-			StartRecovery();
-		}
-		return;
+		Phase = EDashSlashPhase::WaitingForCompletion;
 	}
-	FinishDash(false);
+	TryStartRecovery();
+}
+
+void UGA_BossDashSlash::TryStartRecovery()
+{
+	if (bSlashFinished && bDestinationReached)
+	{
+		StartRecovery();
+	}
 }
 
 void UGA_BossDashSlash::StartRecovery()
 {
-	if (bRecoveryStarted || bFinishing || !bDestinationReached)
+	if (Phase == EDashSlashPhase::Recovering || bFinishing
+		|| !bSlashFinished || !bDestinationReached)
 	{
 		return;
 	}
-	bRecoveryStarted = true;
-
-	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	AShipBossEnemy* Boss = GetBossAvatar();
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (!Boss || !ASC)
 	{
-		ASC->CurrentMontageSetNextSectionName(DashHoldSectionName, RecoverySectionName);
-		ASC->CurrentMontageJumpToSection(RecoverySectionName);
+		FinishDash(true);
+		return;
 	}
 
-	RecoveryTimeoutTask = UAbilityTask_WaitDelay::WaitDelay(
-		this, FMath::Max(0.1f, RecoveryTimeout));
-	if (RecoveryTimeoutTask)
+	ASC->CurrentMontageSetNextSectionName(
+		MontageConfig.AttackSectionName,
+		MontageConfig.RecoverySectionName);
+	ASC->CurrentMontageSetNextSectionName(
+		MontageConfig.TravelHoldSectionName,
+		MontageConfig.RecoverySectionName);
+	if (!TransitionMontagePhase(
+		EDashSlashPhase::WaitingForCompletion,
+		EDashSlashPhase::Recovering,
+		MontageConfig.RecoverySectionName))
 	{
-		RecoveryTimeoutTask->OnFinish.AddDynamic(this, &UGA_BossDashSlash::HandleRecoveryTimeout);
-		RecoveryTimeoutTask->ReadyForActivation();
+		FinishDash(true);
+		return;
 	}
+
+	Boss->GetWorldTimerManager().SetTimer(
+		RecoveryTimeoutTimerHandle,
+		this,
+		&UGA_BossDashSlash::HandleRecoveryTimeout,
+		MontageConfig.RecoveryTimeout,
+		false);
 }
 
 void UGA_BossDashSlash::ConfigureMontageSections()
 {
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	if (!ASC || !DashMontage)
+	if (!ASC)
 	{
 		return;
 	}
 
-	const bool bHasWindup = HasMontageSection(WindupSectionName);
-	const bool bHasSlash = HasMontageSection(DashSlashSectionName);
-	const bool bHasHold = HasMontageSection(DashHoldSectionName);
-	const bool bHasRecovery = HasMontageSection(RecoverySectionName);
-	if (!bHasWindup || !bHasSlash || !bHasHold || !bHasRecovery)
+	ASC->CurrentMontageSetNextSectionName(
+		MontageConfig.WindupEnterSectionName,
+		MontageConfig.WindupHoldSectionName);
+	ASC->CurrentMontageSetNextSectionName(
+		MontageConfig.WindupHoldSectionName,
+		MontageConfig.WindupHoldSectionName);
+	ASC->CurrentMontageSetNextSectionName(
+		MontageConfig.AttackSectionName,
+		MontageConfig.TravelHoldSectionName);
+	ASC->CurrentMontageSetNextSectionName(
+		MontageConfig.TravelHoldSectionName,
+		MontageConfig.TravelHoldSectionName);
+	ASC->CurrentMontageSetNextSectionName(
+		MontageConfig.RecoverySectionName,
+		NAME_None);
+}
+
+bool UGA_BossDashSlash::TransitionMontagePhase(
+	const EDashSlashPhase ExpectedPhase,
+	const EDashSlashPhase NextPhase,
+	const FName DestinationSection)
+{
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (bFinishing || Phase != ExpectedPhase || !ASC
+		|| ASC->GetCurrentMontage() != MontageConfig.Montage
+		|| !HasMontageSection(DestinationSection))
 	{
 		UE_LOG(LogBossDashSlash, Warning,
-			TEXT("Dash montage %s should contain sections '%s', '%s', '%s', and '%s'. Using timing fallbacks for missing sections."),
-			*GetNameSafe(DashMontage), *WindupSectionName.ToString(),
-			*DashSlashSectionName.ToString(), *DashHoldSectionName.ToString(),
-			*RecoverySectionName.ToString());
+			TEXT("DashSlash montage phase transition rejected. Boss=%s Phase=%d Expected=%d Section=%s CurrentMontage=%s"),
+			*GetNameSafe(GetBossAvatar()), static_cast<uint8>(Phase),
+			static_cast<uint8>(ExpectedPhase), *DestinationSection.ToString(),
+			*GetNameSafe(ASC ? ASC->GetCurrentMontage() : nullptr));
+		return false;
 	}
-	if (bHasWindup && bHasSlash)
+
+	ASC->CurrentMontageJumpToSection(DestinationSection);
+	Phase = NextPhase;
+	return true;
+}
+
+bool UGA_BossDashSlash::ValidateMontageConfig(FString& OutError) const
+{
+	OutError.Reset();
+	if (!MontageConfig.Montage)
 	{
-		ASC->CurrentMontageSetNextSectionName(WindupSectionName, DashSlashSectionName);
+		OutError = TEXT("MontageConfig.Montage is not assigned.");
+		return false;
 	}
-	if (bHasSlash && bHasHold)
+	if (MontageConfig.PlayRate <= 0.0f)
 	{
-		ASC->CurrentMontageSetNextSectionName(DashSlashSectionName, DashHoldSectionName);
+		OutError = TEXT("MontageConfig.PlayRate must be greater than zero.");
+		return false;
 	}
-	if (bHasHold)
+	if (MontageConfig.WindupHoldDuration < 0.0f || MontageConfig.RecoveryTimeout <= 0.0f)
 	{
-		ASC->CurrentMontageSetNextSectionName(DashHoldSectionName, DashHoldSectionName);
+		OutError = TEXT("WindupHoldDuration and RecoveryTimeout are invalid.");
+		return false;
 	}
+
+	const TArray<FName> ConfiguredSections = {
+		MontageConfig.WindupEnterSectionName,
+		MontageConfig.WindupHoldSectionName,
+		MontageConfig.AttackSectionName,
+		MontageConfig.TravelHoldSectionName,
+		MontageConfig.RecoverySectionName
+	};
+	TSet<FName> UniqueSections;
+	for (const FName SectionName : ConfiguredSections)
+	{
+		if (SectionName.IsNone() || UniqueSections.Contains(SectionName))
+		{
+			OutError = TEXT("All five Montage section names must be non-empty and unique.");
+			return false;
+		}
+		UniqueSections.Add(SectionName);
+	}
+
+	for (const FName SectionName : ConfiguredSections)
+	{
+		if (!HasMontageSection(SectionName))
+		{
+			OutError = FString::Printf(
+				TEXT("Montage '%s' is missing required section '%s'."),
+				*GetNameSafe(MontageConfig.Montage),
+				*SectionName.ToString());
+			return false;
+		}
+		if (GetSectionDurationSeconds(SectionName) <= KINDA_SMALL_NUMBER)
+		{
+			OutError = FString::Printf(
+				TEXT("Montage section '%s' must have a positive duration."),
+				*SectionName.ToString());
+			return false;
+		}
+	}
+	return true;
 }
 
 bool UGA_BossDashSlash::HasMontageSection(FName SectionName) const
 {
-	return DashMontage && !SectionName.IsNone()
-		&& DashMontage->GetSectionIndex(SectionName) != INDEX_NONE;
+	return MontageConfig.Montage && !SectionName.IsNone()
+		&& MontageConfig.Montage->GetSectionIndex(SectionName) != INDEX_NONE;
+}
+
+float UGA_BossDashSlash::GetSectionDurationSeconds(FName SectionName) const
+{
+	if (!MontageConfig.Montage || MontageConfig.PlayRate <= 0.0f)
+	{
+		return 0.0f;
+	}
+	const int32 SectionIndex = MontageConfig.Montage->GetSectionIndex(SectionName);
+	return SectionIndex == INDEX_NONE
+		? 0.0f
+		: MontageConfig.Montage->GetSectionLength(SectionIndex) / MontageConfig.PlayRate;
 }
 
 void UGA_BossDashSlash::ActivateDashCollision()
@@ -488,7 +626,15 @@ void UGA_BossDashSlash::DeactivateDashCollision()
 
 void UGA_BossDashSlash::HandleMontageCompleted()
 {
-	FinishDash(!bDestinationReached);
+	const bool bCompletedRecovery = Phase == EDashSlashPhase::Recovering
+		&& bSlashFinished && bDestinationReached;
+	if (!bCompletedRecovery)
+	{
+		UE_LOG(LogBossDashSlash, Warning,
+			TEXT("DashSlash montage completed before authoritative gameplay phases. Boss=%s"),
+			*GetNameSafe(GetBossAvatar()));
+	}
+	FinishDash(!bCompletedRecovery);
 }
 
 void UGA_BossDashSlash::HandleMontageBlendOut()
@@ -504,21 +650,29 @@ void UGA_BossDashSlash::HandleRecoveryTimeout()
 {
 	UE_LOG(LogBossDashSlash, Warning,
 		TEXT("Dash recovery montage timed out. Boss=%s Montage=%s"),
-		*GetNameSafe(GetBossAvatar()), *GetNameSafe(DashMontage));
+		*GetNameSafe(GetBossAvatar()), *GetNameSafe(MontageConfig.Montage));
 	FinishDash(false);
 }
 
-bool UGA_BossDashSlash::ValidatePreselectedDestination() const
+bool UGA_BossDashSlash::CapturePreselectedDestination()
 {
-	const AShipBossEnemy* Boss = GetBossAvatar();
+	AShipBossEnemy* Boss = GetBossAvatar();
 	AActor* Target = GetBossTarget();
+	AEnemyShip* HostShip = Boss ? Boss->GetHostShip() : nullptr;
+	UStaticMeshComponent* DeckMesh = HostShip ? HostShip->GetShipDeckMesh() : nullptr;
 	FTransform Destination;
-	if (!Boss || !Boss->CanEngageActor(Target) || !Boss->GetHostShip()
-		|| Boss->GetDestinationPointId() == INDEX_NONE
-		|| !Boss->ResolvePointTransform(Boss->GetDestinationPointId(), Destination))
+	const int32 DestinationPointId = Boss ? Boss->GetDestinationPointId() : INDEX_NONE;
+	if (!Boss || !Boss->HasAuthority() || !Boss->CanEngageActor(Target) || !DeckMesh
+		|| DestinationPointId == INDEX_NONE
+		|| !Boss->ResolvePointTransform(DestinationPointId, Destination))
 	{
 		return false;
 	}
+
+	CapturedDeckMesh = DeckMesh;
+	CapturedDestinationPointId = DestinationPointId;
+	DashEndLocal = DeckMesh->GetComponentTransform().InverseTransformPosition(
+		Destination.GetLocation());
 	return true;
 }
 
@@ -540,5 +694,18 @@ void UGA_BossDashSlash::ClearDashState()
 			ASC->RemoveActiveGameplayEffect(DashStateHandle);
 		}
 		DashStateHandle.Invalidate();
+	}
+}
+
+void UGA_BossDashSlash::ClearRuntimeTimers()
+{
+	if (AShipBossEnemy* Boss = GetBossAvatar())
+	{
+		FTimerManager& TimerManager = Boss->GetWorldTimerManager();
+		TimerManager.ClearTimer(WindupLeadInTimerHandle);
+		TimerManager.ClearTimer(WindupHoldTimerHandle);
+		TimerManager.ClearTimer(SlashCompletionTimerHandle);
+		TimerManager.ClearTimer(DashTimerHandle);
+		TimerManager.ClearTimer(RecoveryTimeoutTimerHandle);
 	}
 }

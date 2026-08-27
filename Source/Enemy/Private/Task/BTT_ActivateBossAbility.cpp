@@ -2,11 +2,13 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
+#include "BaseGameplayAbility.h"
 #include "BaseGameplayTags.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Int.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BossAI/ShipBossEnemy.h"
+#include "GAS/Ability/Boss/BossGameplayAbility.h"
 #include "GAS/Ability/Boss/GA_BossBasicAttack.h"
 #include "Weapon/BaseWeapon.h"
 #include "Weapon/BaseWeaponComponent.h"
@@ -89,25 +91,31 @@ bool UBTT_ActivateBossAbility::ValidateActivationContext(
 bool UBTT_ActivateBossAbility::ShouldCancelAbilityOnAbort(
 	const FGameplayAbilitySpec* ActiveSpec) const
 {
-	// Distance decorators are preconditions only. Once a Boss basic-attack
-	// montage is committed, leaving weapon range must not cancel it. Hit/death
-	// cancellation still reaches the GA directly through GAS tags/abilities.
-	if (ActiveSpec && ActiveSpec->Ability
-		&& PreservesCommittedAbilityOnBTAbort(ActiveSpec->Ability->GetClass()))
+	// Decorators are activation preconditions. Atomic abilities explicitly opt
+	// into surviving a later BT branch abort; hit/death cancellation still
+	// reaches the active instance through GAS.
+	const UBaseGameplayAbility* BossAbility = ActiveSpec
+		? Cast<UBaseGameplayAbility>(ActiveSpec->Ability)
+		: nullptr;
+	if (BossAbility && BossAbility->ShouldSurviveBehaviorTreeAbort())
 	{
 		return false;
 	}
 	return Super::ShouldCancelAbilityOnAbort(ActiveSpec);
 }
 
-bool UBTT_ActivateBossAbility::PreservesCommittedAbilityOnBTAbort(
-	const TSubclassOf<UGameplayAbility> AbilityClass)
-{
-	return AbilityClass && AbilityClass->IsChildOf(UGA_BossBasicAttack::StaticClass());
-}
-
 void UBTT_ActivateBossAbility::OnAbilityTaskFinished(EBTNodeResult::Type Result)
 {
+	const FGameplayAbilitySpec* ActiveSpec = GetActiveAbilitySpec();
+	const UBossGameplayAbility* BossAbility = ActiveSpec
+		? Cast<UBossGameplayAbility>(ActiveSpec->Ability)
+		: nullptr;
+	if (Result == EBTNodeResult::Aborted && BossAbility
+		&& BossAbility->ShouldSurviveBehaviorTreeAbort()
+		&& BossAbility->OwnsPreselectedDestinationAfterCommit())
+	{
+		return;
+	}
 	ResetDestinationState();
 }
 

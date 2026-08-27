@@ -12,6 +12,7 @@ class ENEMY_API UGA_BossBasicAttack : public UGA_BasicAttack
 
 public:
 	UGA_BossBasicAttack();
+	virtual bool ShouldSurviveBehaviorTreeAbort() const override { return true; }
 
 	virtual void ApplyCooldown(
 		const FGameplayAbilitySpecHandle Handle,
