@@ -22,7 +22,8 @@ public:
 		const FVector& InLaunchVelocity,
 		const FVector& InTargetPoint,
 		float InTravelSeconds,
-		TSubclassOf<AEnemyShipObstacle> InObstacleClass);
+		TSubclassOf<AEnemyShipObstacle> InObstacleClass,
+		const FRotator& InObstacleSpawnRotationOffset);
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -38,6 +39,7 @@ private:
 	void ReachTargetAndSpawnObstacle();
 
 	FVector TargetPoint = FVector::ZeroVector;
+	FRotator ObstacleSpawnRotationOffset = FRotator::ZeroRotator;
 	TSubclassOf<AEnemyShipObstacle> ObstacleClass;
 	FTimerHandle ArrivalTimerHandle;
 };

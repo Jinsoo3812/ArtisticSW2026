@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Cannonball.h"
+#include "CannonballImpactReceiver.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
@@ -63,6 +64,7 @@ ACannonball::ACannonball()
 	ProjectileMovement->InterpLocationMaxLagDistance = 2000.0f;
 	ProjectileMovement->InterpLocationSnapToTargetDistance = 10000.0f;
 	ProjectileMovement->SetInterpolatedComponent(CannonballMesh);
+	ProjectileMovement->OnProjectileStop.AddUniqueDynamic(this, &ACannonball::OnProjectileStop);
 
 	bReplicates = true;
 	SetReplicateMovement(true);
@@ -156,10 +158,7 @@ void ACannonball::InitializeProjectile(AShip* InLaunchingShip, float InDamage, f
 		// actor overlap used by URippleSubsystem.
 		SphereCollision->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Overlap);
 		SphereCollision->SetCollisionResponseToChannel(ECC_ShipDamage, ECR_Block);
-		if (!bEnemyProjectile)
-		{
-			SphereCollision->SetCollisionResponseToChannel(ECC_EnemyShipObstacle, ECR_Block);
-		}
+		SphereCollision->SetCollisionResponseToChannel(ECC_EnemyShipObstacle, ECR_Block);
 		SphereCollision->SetGenerateOverlapEvents(true);
 		SphereCollision->SetNotifyRigidBodyCollision(true);
 
@@ -219,8 +218,22 @@ void ACannonball::OnHit(
 	FVector NormalImpulse,
 	const FHitResult& Hit)
 {
+	HandleBlockingImpact(OtherActor, OtherComp, Hit);
+}
+
+void ACannonball::OnProjectileStop(const FHitResult& ImpactResult)
+{
+	HandleBlockingImpact(ImpactResult.GetActor(), ImpactResult.GetComponent(), ImpactResult);
+}
+
+void ACannonball::HandleBlockingImpact(
+	AActor* OtherActor,
+	UPrimitiveComponent* OtherComp,
+	const FHitResult& Hit)
+{
 	if (!OtherActor || OtherActor == this || OtherActor == LaunchingShip
-		|| OtherActor == GetOwner() || OtherActor == GetInstigator())
+		|| OtherActor == GetOwner() || OtherActor == GetInstigator()
+		|| bHasProcessedBlockingImpact)
 	{
 		return;
 	}
@@ -232,13 +245,21 @@ void ACannonball::OnHit(
 			return;
 		}
 
+		bHasProcessedBlockingImpact = true;
 		bHasProcessedShipHit = true;
 		HandleShipHit(HitShip);
 	}
 	else if (OtherComp && OtherComp->GetCollisionObjectType() == ECC_EnemyShipObstacle)
 	{
-		// Enemy obstacles are projectile shields. Only PlayerCannon projectiles can
-		// block against this channel, so consuming the projectile here is team-safe.
+		bHasProcessedBlockingImpact = true;
+		if (OtherActor->GetClass()->ImplementsInterface(UCannonballImpactReceiver::StaticClass()))
+		{
+			ICannonballImpactReceiver::Execute_ReceiveCannonballImpact(OtherActor, this);
+		}
+		UE_LOG(LogTemp, Warning,
+			TEXT("ACannonball: Exploded on obstacle %s at %s."),
+			*GetNameSafe(OtherActor),
+			*Hit.ImpactPoint.ToCompactString());
 		Destroy();
 	}
 }

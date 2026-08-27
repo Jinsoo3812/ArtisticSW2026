@@ -72,6 +72,11 @@ protected:
 	UFUNCTION()
 	void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 
+	UFUNCTION()
+	void OnProjectileStop(const FHitResult& ImpactResult);
+
+	void HandleBlockingImpact(AActor* OtherActor, UPrimitiveComponent* OtherComp, const FHitResult& Hit);
+
 	virtual void HandleShipHit(AShip* HitShip);
 	bool IsOpposingSplashTarget(const AActor* Candidate) const;
 	bool ApplyDamageToTarget(AActor* TargetActor);
@@ -92,6 +97,7 @@ private:
 
 	bool bHasHitWater = false;
 	bool bHasProcessedShipHit = false;
+	bool bHasProcessedBlockingImpact = false;
 	bool bHasDesignatedImpact = false;
 	FVector DesignatedImpactLocation = FVector::ZeroVector;
 	FVector PreviousProjectileLocation = FVector::ZeroVector;

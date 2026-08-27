@@ -40,7 +40,8 @@ void AEnemyShipObstacleProjectile::InitializeObstacleProjectile(
 	const FVector& InLaunchVelocity,
 	const FVector& InTargetPoint,
 	float InTravelSeconds,
-	TSubclassOf<AEnemyShipObstacle> InObstacleClass)
+	TSubclassOf<AEnemyShipObstacle> InObstacleClass,
+	const FRotator& InObstacleSpawnRotationOffset)
 {
 	if (!HasAuthority() || !InObstacleClass || InTravelSeconds <= 0.0f)
 	{
@@ -50,6 +51,7 @@ void AEnemyShipObstacleProjectile::InitializeObstacleProjectile(
 
 	TargetPoint = InTargetPoint;
 	ObstacleClass = InObstacleClass;
+	ObstacleSpawnRotationOffset = InObstacleSpawnRotationOffset;
 	ProjectileMovement->InitialSpeed = InLaunchVelocity.Size();
 	ProjectileMovement->MaxSpeed = FMath::Max(InLaunchVelocity.Size() * 2.0f, 5000.0f);
 	ProjectileMovement->Velocity = InLaunchVelocity;
@@ -79,15 +81,16 @@ void AEnemyShipObstacleProjectile::ReachTargetAndSpawnObstacle()
 	AEnemyShipObstacle* SpawnedObstacle = GetWorld()->SpawnActor<AEnemyShipObstacle>(
 		ObstacleClass,
 		TargetPoint,
-		FRotator::ZeroRotator,
+		ObstacleSpawnRotationOffset,
 		SpawnParameters);
 
 	UE_LOG(
 		LogTemp,
 		Warning,
-		TEXT("[EnemyShipObstacle] Target reached; obstacle spawned. Projectile=%s Target=%s Obstacle=%s"),
+		TEXT("[EnemyShipObstacle] Target reached; obstacle spawned. Projectile=%s Target=%s Rotation=%s Obstacle=%s"),
 		*GetName(),
 		*TargetPoint.ToCompactString(),
+		*ObstacleSpawnRotationOffset.ToCompactString(),
 		*GetNameSafe(SpawnedObstacle));
 	Destroy();
 }

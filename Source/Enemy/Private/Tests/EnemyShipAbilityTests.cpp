@@ -259,6 +259,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipObstacleActorContractTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(
+		TEXT("QuestItem has an invalid ResultItemTag"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	AddExpectedError(
+		TEXT("QuestItem contains an invalid ingredient"),
+		EAutomationExpectedErrorFlags::Contains,
+		2);
+
 	EnemyShipAbilityTests::FTestWorld TestWorld;
 	AEnemyShipObstacle* Obstacle = TestWorld.World->SpawnActor<AEnemyShipObstacle>();
 	AEnemyShipObstacleProjectile* Projectile = TestWorld.World->SpawnActor<AEnemyShipObstacleProjectile>();
@@ -275,11 +284,13 @@ bool FEnemyShipObstacleActorContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Obstacle owns a physics collision root"), ObstacleCollision);
 	TestNotNull(TEXT("Obstacle owns SW buoyancy"), ObstacleBuoyancy);
 	TestNotNull(TEXT("Carrier owns projectile movement"), CarrierMovement);
+	TestEqual(TEXT("Obstacle defaults to five cannonball hits"), Obstacle->GetRemainingCannonballHits(), 5);
 	if (ObstacleCollision)
 	{
 		TestEqual(TEXT("Obstacle uses its dedicated object channel"), ObstacleCollision->GetCollisionObjectType(), ECC_GameTraceChannel6);
 		TestEqual(TEXT("Obstacle blocks Player cannonballs"), ObstacleCollision->GetCollisionResponseToChannel(ECC_GameTraceChannel2), ECR_Block);
-		TestEqual(TEXT("Obstacle ignores Enemy cannonballs"), ObstacleCollision->GetCollisionResponseToChannel(ECC_GameTraceChannel3), ECR_Ignore);
+		TestEqual(TEXT("Obstacle blocks Enemy cannonballs"), ObstacleCollision->GetCollisionResponseToChannel(ECC_GameTraceChannel3), ECR_Block);
+		TestEqual(TEXT("Obstacle ignores other obstacles"), ObstacleCollision->GetCollisionResponseToChannel(ECC_GameTraceChannel6), ECR_Ignore);
 		TestTrue(TEXT("Obstacle locks horizontal translation"), ObstacleCollision->BodyInstance.bLockXTranslation && ObstacleCollision->BodyInstance.bLockYTranslation);
 		TestFalse(TEXT("Obstacle keeps vertical translation free for buoyancy"), ObstacleCollision->BodyInstance.bLockZTranslation);
 	}
@@ -473,6 +484,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipObstacleCannonSweepTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(
+		TEXT("QuestItem has an invalid ResultItemTag"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	AddExpectedError(
+		TEXT("QuestItem contains an invalid ingredient"),
+		EAutomationExpectedErrorFlags::Contains,
+		2);
+
 	EnemyShipAbilityTests::FTestWorld TestWorld;
 	AEnemyShipObstacle* Obstacle = TestWorld.World->SpawnActor<AEnemyShipObstacle>(
 		AEnemyShipObstacle::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator);
@@ -520,6 +540,8 @@ bool FEnemyShipObstacleCannonSweepTest::RunTest(const FString& Parameters)
 			ETeleportType::None);
 		TestTrue(TEXT("Player cannonball sweep blocks on obstacle"), PlayerHit.bBlockingHit);
 		TestEqual(TEXT("Player cannonball sweep hits obstacle actor"), PlayerHit.GetActor(), static_cast<AActor*>(Obstacle));
+		TestTrue(TEXT("Player cannonball explodes on obstacle"), PlayerCannonball->IsActorBeingDestroyed());
+		TestEqual(TEXT("Player impact consumes one obstacle hit"), Obstacle->GetCannonballHitCount(), 1);
 	}
 
 	ACannonball* EnemyCannonball = TestWorld.World->SpawnActor<ACannonball>(
@@ -540,8 +562,19 @@ bool FEnemyShipObstacleCannonSweepTest::RunTest(const FString& Parameters)
 			&EnemyHit,
 			MOVECOMP_NoFlags,
 			ETeleportType::None);
-		TestFalse(TEXT("Enemy cannonball sweep passes through obstacle"), EnemyHit.bBlockingHit);
+		TestTrue(TEXT("Enemy cannonball sweep blocks on obstacle"), EnemyHit.bBlockingHit);
+		TestEqual(TEXT("Enemy cannonball sweep hits obstacle actor"), EnemyHit.GetActor(), static_cast<AActor*>(Obstacle));
+		TestTrue(TEXT("Enemy cannonball explodes on obstacle"), EnemyCannonball->IsActorBeingDestroyed());
+		TestEqual(TEXT("Enemy impact consumes one obstacle hit"), Obstacle->GetCannonballHitCount(), 2);
 	}
+
+	for (int32 HitIndex = 0; HitIndex < 3; ++HitIndex)
+	{
+		AActor* AdditionalProjectile = TestWorld.World->SpawnActor<AActor>();
+		ICannonballImpactReceiver::Execute_ReceiveCannonballImpact(Obstacle, AdditionalProjectile);
+	}
+	TestEqual(TEXT("Five unique cannonballs exhaust obstacle durability"), Obstacle->GetCannonballHitCount(), 5);
+	TestTrue(TEXT("Obstacle is destroyed after its fifth cannonball"), Obstacle->IsActorBeingDestroyed());
 	return true;
 }
 

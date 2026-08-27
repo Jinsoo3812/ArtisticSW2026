@@ -111,7 +111,12 @@ void UGA_EnemyShipDeployObstacle::ActivateAbility(
 		return;
 	}
 
-	Projectile->InitializeObstacleProjectile(LaunchVelocity, TargetPoint, TravelSeconds, ObstacleClass);
+	Projectile->InitializeObstacleProjectile(
+		LaunchVelocity,
+		TargetPoint,
+		TravelSeconds,
+		ObstacleClass,
+		ObstacleSpawnRotationOffset);
 	UE_LOG(
 		LogTemp,
 		Warning,

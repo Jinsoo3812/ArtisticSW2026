@@ -54,12 +54,13 @@ void AEnemyShipObstacle::BeginPlay()
 {
 	Super::BeginPlay();
 
-	ObstacleCollision->SetSphereRadius(FMath::Max(1.0f, BuoyancyPontoonRadius));
-	ObstacleBlocker->SetBoxExtent(CollisionHalfExtent.ComponentMax(FVector(1.0f)));
+	// The Blueprint component templates are authoritative for the runtime collision
+	// shapes. Do not overwrite their authored Sphere Radius or Box Extent here.
 	ObstacleBlocker->SetCollisionProfileName(TEXT("EnemyShipObstacle"));
 	ObstacleBlocker->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	ObstacleCollision->OnComponentBeginOverlap.AddUniqueDynamic(this, &AEnemyShipObstacle::OnObstacleOverlap);
-	SWBuoyancyComponent->ConfigureSinglePontoon(FMath::Max(1.0f, BuoyancyPontoonRadius));
+	SWBuoyancyComponent->ConfigureSinglePontoon(
+		FMath::Max(1.0f, BuoyancyPontoonRadius));
 	SWBuoyancyComponent->Deactivate();
 	SWBuoyancyComponent->SetComponentTickEnabled(false);
 	ApplyPhysicsState();
@@ -69,7 +70,12 @@ void AEnemyShipObstacle::BeginPlay()
 void AEnemyShipObstacle::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (HasAuthority() || !bHasClientMovementTarget)
+	if (HasAuthority())
+	{
+		LogInitialBuoyancyDiagnostic();
+		return;
+	}
+	if (!bHasClientMovementTarget)
 	{
 		return;
 	}
@@ -99,6 +105,34 @@ void AEnemyShipObstacle::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AEnemyShipObstacle, bHasEnteredWater);
 	DOREPLIFETIME(AEnemyShipObstacle, bBuoyancyEnabled);
+	DOREPLIFETIME(AEnemyShipObstacle, CannonballHitCount);
+}
+
+void AEnemyShipObstacle::ReceiveCannonballImpact_Implementation(AActor* CannonballActor)
+{
+	if (!HasAuthority() || !IsValid(CannonballActor) || ProcessedCannonballs.Contains(CannonballActor))
+	{
+		return;
+	}
+
+	ProcessedCannonballs.Add(CannonballActor);
+	++CannonballHitCount;
+	const int32 SafeMaximumHits = FMath::Max(1, MaxCannonballHits);
+	UE_LOG(LogTemp, Warning,
+		TEXT("[EnemyShipObstacle] Cannonball absorbed. Obstacle=%s Cannonball=%s Hits=%d/%d"),
+		*GetName(),
+		*GetNameSafe(CannonballActor),
+		CannonballHitCount,
+		SafeMaximumHits);
+	ForceNetUpdate();
+
+	if (CannonballHitCount >= SafeMaximumHits)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[EnemyShipObstacle] Durability exhausted; destroying obstacle. Obstacle=%s"),
+			*GetName());
+		Destroy();
+	}
 }
 
 void AEnemyShipObstacle::OnRep_ReplicatedMovement()
@@ -150,6 +184,24 @@ void AEnemyShipObstacle::OnObstacleOverlap(
 	bHasEnteredWater = true;
 	ForceNetUpdate();
 	const float Delay = FMath::Max(0.0f, BuoyancyActivationDelaySeconds);
+	if (bLogInitialBuoyancyDiagnostics)
+	{
+		const float PontoonRadius = SWBuoyancyComponent && !SWBuoyancyComponent->GetPontoons().IsEmpty()
+			? SWBuoyancyComponent->GetPontoons()[0].Radius
+			: 0.0f;
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OBSTACLE-BUOYANCY][WATER_ENTRY] Actor=%s Time=%.3f Location=%s Velocity=%s Delay=%.3f MassKg=%.2f RootScale=%s SphereRadiusUnscaled=%.2f SphereRadiusScaled=%.2f PontoonRadius=%.2f"),
+			*GetName(),
+			GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0,
+			*GetActorLocation().ToCompactString(),
+			*ObstacleCollision->GetPhysicsLinearVelocity().ToCompactString(),
+			Delay,
+			ObstacleCollision->GetMass(),
+			*ObstacleCollision->GetComponentScale().ToCompactString(),
+			ObstacleCollision->GetUnscaledSphereRadius(),
+			ObstacleCollision->GetScaledSphereRadius(),
+			PontoonRadius);
+	}
 	if (Delay <= KINDA_SMALL_NUMBER)
 	{
 		EnableBuoyancy();
@@ -218,5 +270,51 @@ void AEnemyShipObstacle::EnableBuoyancy()
 	SWBuoyancyComponent->Activate();
 	SWBuoyancyComponent->SetComponentTickEnabled(true);
 	bBuoyancyEnabled = true;
+	if (bLogInitialBuoyancyDiagnostics && GetWorld())
+	{
+		BuoyancyDiagnosticStartTime = GetWorld()->GetTimeSeconds();
+		BuoyancyDiagnosticEndTime = BuoyancyDiagnosticStartTime
+			+ FMath::Max(0.0f, BuoyancyDiagnosticDurationSeconds);
+		NextBuoyancyDiagnosticTime = BuoyancyDiagnosticStartTime;
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OBSTACLE-BUOYANCY][ACTIVATED] Actor=%s Time=%.3f Location=%s Velocity=%s MassKg=%.2f"),
+			*GetName(),
+			BuoyancyDiagnosticStartTime,
+			*GetActorLocation().ToCompactString(),
+			*ObstacleCollision->GetPhysicsLinearVelocity().ToCompactString(),
+			ObstacleCollision->GetMass());
+	}
 	ForceNetUpdate();
+}
+
+void AEnemyShipObstacle::LogInitialBuoyancyDiagnostic()
+{
+	if (!bLogInitialBuoyancyDiagnostics || !bBuoyancyEnabled || !GetWorld()
+		|| BuoyancyDiagnosticStartTime < 0.0)
+	{
+		return;
+	}
+
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (Now > BuoyancyDiagnosticEndTime || Now < NextBuoyancyDiagnosticTime)
+	{
+		return;
+	}
+	NextBuoyancyDiagnosticTime = Now + FMath::Max(0.02f, BuoyancyDiagnosticIntervalSeconds);
+
+	const FSWBuoyancyRuntimeDiagnostic& Diagnostic = SWBuoyancyComponent->GetLastRuntimeDiagnostic();
+	UE_LOG(LogTemp, Warning,
+		TEXT("[OBSTACLE-BUOYANCY][SAMPLE] Actor=%s Age=%.3f LocationZ=%.2f VelocityZ=%.2f WaterFound=%s InWater=%s WaterZ=%.2f PontoonZ=%.2f Immersion=%.2f RelativeVelocityZ=%.2f ForceZ=%.2f MassKg=%.2f"),
+		*GetName(),
+		Now - BuoyancyDiagnosticStartTime,
+		GetActorLocation().Z,
+		ObstacleCollision->GetPhysicsLinearVelocity().Z,
+		Diagnostic.bWaterSurfaceFound ? TEXT("true") : TEXT("false"),
+		Diagnostic.bPontoonInWater ? TEXT("true") : TEXT("false"),
+		Diagnostic.WaterHeight,
+		Diagnostic.PontoonWorldPosition.Z,
+		Diagnostic.ImmersionDepth,
+		Diagnostic.RelativeVelocityZ,
+		Diagnostic.BuoyantForceZ,
+		ObstacleCollision->GetMass());
 }

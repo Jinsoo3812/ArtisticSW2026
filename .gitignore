@@ -92,5 +92,8 @@ Content/AdvStylizedFramework/Mesh
 Content/Pack_Simple_Particle_Burst/
 Content/Blueprints/Ship/Enemy_Ship/Torpeodo/source/
 
+# Third-party Wood Box source assets (runtime copy lives under the obstacle feature folder)
+Content/Wood_Box/
+
 #
 AGENTS.md

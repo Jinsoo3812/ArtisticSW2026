@@ -50,6 +50,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle")
 	TSubclassOf<AEnemyShipObstacle> ObstacleClass;
 
+	/** Rotation applied when the carrier converts into the obstacle. Roll rotates around world X. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle|Spawn",
+		meta = (DisplayName = "Obstacle Spawn Rotation Offset"))
+	FRotator ObstacleSpawnRotationOffset = FRotator(0.0f, 0.0f, 90.0f);
+
 	/** XY internal division of the Enemy-to-Player segment: 0 = Enemy, 1 = Player. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle|Target", meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
 	float TargetLineAlpha = 0.5f;
