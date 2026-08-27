@@ -4,7 +4,9 @@
 #include "BaseAttributeSet.h"
 #include "Buoyancy/SWBuoyancyComponent.h"
 #include "Components/SphereComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "CollisionChannels.h"
+#include "Engine/StaticMesh.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "GASCombatLibrary.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
@@ -14,6 +16,8 @@
 #include "NiagaraSystem.h"
 #include "Ship.h"
 #include "TimerManager.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogEnemyShipTorpedoVisual, Log, All);
 
 AEnemyShipTorpedo::AEnemyShipTorpedo()
 {
@@ -34,9 +38,12 @@ AEnemyShipTorpedo::AEnemyShipTorpedo()
 void AEnemyShipTorpedo::BeginPlay()
 {
 	Super::BeginPlay();
-	if (CannonballMesh && PulseOverlayMaterial)
+	LogVisualDiagnostics(TEXT("BeginPlay.BeforeRuntimeAssignments"));
+	if (CannonballMesh)
 	{
-		CannonballMesh->SetOverlayMaterial(PulseOverlayMaterial);
+		// Fuse visibility is handled by Niagara. Preserve the authored SM_Bomba
+		// surface exactly and never cover it with the legacy pulse overlay.
+		CannonballMesh->SetOverlayMaterial(nullptr);
 	}
 	if (GetNetMode() != NM_DedicatedServer && FuseBurstComponent && FuseBurstSystem)
 	{
@@ -54,6 +61,10 @@ void AEnemyShipTorpedo::BeginPlay()
 			FMath::Max(0.05f, FuseBurstIntervalSeconds),
 			true);
 	}
+	LogVisualDiagnostics(TEXT("BeginPlay.AfterRuntimeAssignments"));
+	GetWorldTimerManager().SetTimerForNextTick(
+		this,
+		&AEnemyShipTorpedo::LogPostBeginPlayVisualDiagnostics);
 	if (SWBuoyancyComponent)
 	{
 		SWBuoyancyComponent->ConfigureSinglePontoon(FloatingPontoonRadius);
@@ -73,7 +84,89 @@ void AEnemyShipTorpedo::RestartFuseBurst()
 	if (FuseBurstComponent && FuseBurstSystem && !IsActorBeingDestroyed())
 	{
 		FuseBurstComponent->ReinitializeSystem();
+		if (!bHasLoggedFirstFuseActivation)
+		{
+			bHasLoggedFirstFuseActivation = true;
+			LogVisualDiagnostics(TEXT("FirstFuseActivation"));
+		}
 	}
+}
+
+void AEnemyShipTorpedo::LogPostBeginPlayVisualDiagnostics()
+{
+	LogVisualDiagnostics(TEXT("NextTick.AfterBlueprintBeginPlay"));
+}
+
+void AEnemyShipTorpedo::LogVisualDiagnostics(const TCHAR* Phase) const
+{
+	const UStaticMesh* MeshAsset = CannonballMesh ? CannonballMesh->GetStaticMesh() : nullptr;
+	FString ComponentMaterials;
+	if (CannonballMesh)
+	{
+		for (int32 Index = 0; Index < CannonballMesh->GetNumMaterials(); ++Index)
+		{
+			ComponentMaterials += FString::Printf(
+				TEXT("[%d]=%s "),
+				Index,
+				*GetPathNameSafe(CannonballMesh->GetMaterial(Index)));
+		}
+	}
+
+	FString AssetMaterials;
+	if (MeshAsset)
+	{
+		const TArray<FStaticMaterial>& StaticMaterials = MeshAsset->GetStaticMaterials();
+		for (int32 Index = 0; Index < StaticMaterials.Num(); ++Index)
+		{
+			AssetMaterials += FString::Printf(
+				TEXT("[%d]=%s(slot=%s) "),
+				Index,
+				*GetPathNameSafe(StaticMaterials[Index].MaterialInterface),
+				*StaticMaterials[Index].MaterialSlotName.ToString());
+		}
+	}
+
+	const UNiagaraSystem* ComponentNiagaraAsset = FuseBurstComponent
+		? FuseBurstComponent->GetAsset()
+		: nullptr;
+	const USceneComponent* AttachParent = FuseBurstComponent
+		? FuseBurstComponent->GetAttachParent()
+		: nullptr;
+	const TCHAR* NetModeName = GetNetMode() == NM_DedicatedServer ? TEXT("DedicatedServer")
+		: GetNetMode() == NM_ListenServer ? TEXT("ListenServer")
+		: GetNetMode() == NM_Client ? TEXT("Client")
+		: TEXT("Standalone");
+
+	UE_LOG(LogEnemyShipTorpedoVisual, Warning,
+		TEXT("[TorpedoVisual][%s] Actor=%s Class=%s NetMode=%s Authority=%s "
+			"ActorHidden=%s MeshComp=%s Registered=%s Visible=%s HiddenInGame=%s Mesh=%s "
+			"ComponentMaterials={%s} AssetMaterials={%s} OverlayCurrent=%s OverlayConfigured=%s "
+			"FuseComp=%s Registered=%s Active=%s AssetCurrent=%s AssetConfigured=%s "
+			"AttachParent=%s AttachSocket=%s RelativeScale=%s SocketExists=%s"),
+		Phase,
+		*GetNameSafe(this),
+		*GetPathNameSafe(GetClass()),
+		NetModeName,
+		HasAuthority() ? TEXT("true") : TEXT("false"),
+		IsHidden() ? TEXT("true") : TEXT("false"),
+		*GetNameSafe(CannonballMesh),
+		CannonballMesh && CannonballMesh->IsRegistered() ? TEXT("true") : TEXT("false"),
+		CannonballMesh && CannonballMesh->IsVisible() ? TEXT("true") : TEXT("false"),
+		CannonballMesh && CannonballMesh->bHiddenInGame ? TEXT("true") : TEXT("false"),
+		*GetPathNameSafe(MeshAsset),
+		*ComponentMaterials,
+		*AssetMaterials,
+		*GetPathNameSafe(CannonballMesh ? CannonballMesh->GetOverlayMaterial() : nullptr),
+		*GetPathNameSafe(PulseOverlayMaterial),
+		*GetNameSafe(FuseBurstComponent),
+		FuseBurstComponent && FuseBurstComponent->IsRegistered() ? TEXT("true") : TEXT("false"),
+		FuseBurstComponent && FuseBurstComponent->IsActive() ? TEXT("true") : TEXT("false"),
+		*GetPathNameSafe(ComponentNiagaraAsset),
+		*GetPathNameSafe(FuseBurstSystem),
+		*GetNameSafe(AttachParent),
+		FuseBurstComponent ? *FuseBurstComponent->GetAttachSocketName().ToString() : TEXT("None"),
+		FuseBurstComponent ? *FuseBurstComponent->GetRelativeScale3D().ToCompactString() : TEXT("None"),
+		CannonballMesh && CannonballMesh->DoesSocketExist(FuseSocketName) ? TEXT("true") : TEXT("false"));
 }
 
 void AEnemyShipTorpedo::Tick(float DeltaSeconds)
@@ -190,6 +283,7 @@ void AEnemyShipTorpedo::InitializeTorpedo(
 	DesignatedTarget = InDesignatedTarget;
 	InitializeProjectile(InLaunchingShip, FMath::Max(0.0f, InSnapshotDamage), InSpeed);
 	SetLifeSpan(FMath::Max(0.1f, InMaximumFlightSeconds));
+	LogVisualDiagnostics(TEXT("InitializeTorpedo.AfterInitializeProjectile"));
 }
 
 void AEnemyShipTorpedo::HandleShipHit(AShip* HitShip)

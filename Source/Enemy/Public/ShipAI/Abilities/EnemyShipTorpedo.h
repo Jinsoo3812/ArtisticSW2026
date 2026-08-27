@@ -118,6 +118,8 @@ private:
 	void EnableBuoyancyAfterDelay();
 	void DetectDamageMeshContactAfterWater();
 	void RestartFuseBurst();
+	void LogVisualDiagnostics(const TCHAR* Phase) const;
+	void LogPostBeginPlayVisualDiagnostics();
 
 	TWeakObjectPtr<AShip> DesignatedTarget;
 
@@ -126,6 +128,7 @@ private:
 
 	bool bExplosionConsumed = false;
 	bool bWaterEntryObserved = false;
+	bool bHasLoggedFirstFuseActivation = false;
 
 	UPROPERTY(Replicated)
 	bool bBuoyancyEnabled = false;

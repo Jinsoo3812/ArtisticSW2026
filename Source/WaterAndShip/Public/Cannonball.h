@@ -52,6 +52,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannonball|Damage")
 	float DamageAmount = 10.0f;
 
+	/** Full-damage splash radius evaluated when the projectile directly hits a ship. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannonball|Damage", meta = (ClampMin = "0.0", Units = "cm"))
+	float SplashDamageRadius = 500.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannonball|Water")
 	float LifeTimeAfterWaterHit = 2.0f;
 
@@ -69,6 +73,8 @@ protected:
 	void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 
 	virtual void HandleShipHit(AShip* HitShip);
+	bool IsOpposingSplashTarget(const AActor* Candidate) const;
+	bool ApplyDamageToTarget(AActor* TargetActor);
 	virtual void HandleWaterOverlap(
 		AActor* WaterActor,
 		UPrimitiveComponent* WaterComponent,

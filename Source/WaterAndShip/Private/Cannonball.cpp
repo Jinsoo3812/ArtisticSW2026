@@ -4,8 +4,11 @@
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "Engine/OverlapResult.h"
 #include "Ship.h"
 #include "AbilitySystemComponent.h"
+#include "AbilitySystemBlueprintLibrary.h"
+#include "BaseGameplayTags.h"
 #include "GameplayEffect.h"
 #include "DrawDebugHelpers.h"
 #include "WaterBodyActor.h"
@@ -255,51 +258,123 @@ void ACannonball::HandleShipHit(AShip* HitShip)
 		return;
 	}
 
-	// Preserve the existing GAS damage path exactly; only contact detection changed.
-	DrawDebugSphere(GetWorld(), GetActorLocation(), 100.0f, 12, FColor::Red, false, 2.0f);
+	const FVector ExplosionLocation = GetActorLocation();
+	const float EffectiveRadius = FMath::Max(0.0f, SplashDamageRadius);
+	DrawDebugSphere(GetWorld(), ExplosionLocation, EffectiveRadius, 24, FColor::Red, false, 2.0f);
 
-	UAbilitySystemComponent* TargetASC = HitShip->GetAbilitySystemComponent();
-	if (TargetASC && DamageGEClass)
+	// Object queries do not depend on the projectile collision profile's response
+	// table. Pawn capsules and ShipDamage hulls therefore remain compatible without
+	// opening either side up to unintended projectile blocking/overlaps.
+	FCollisionObjectQueryParams ObjectQuery;
+	ObjectQuery.AddObjectTypesToQuery(ECC_Pawn);
+	ObjectQuery.AddObjectTypesToQuery(ECC_ShipDamage);
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(CannonballSplashDamage), false, this);
+	if (LaunchingShip)
 	{
-		UAbilitySystemComponent* SourceASC = LaunchingShip
-			? LaunchingShip->GetAbilitySystemComponent()
-			: nullptr;
-		if (!SourceASC)
-		{
-			SourceASC = TargetASC;
-		}
-		FGameplayEffectContextHandle EffectContext =
-			USWCombatEffectContextLibrary::MakeCombatEffectContext(
-				SourceASC,
-				GetInstigator(),
-				this,
-				HitShip,
-				false,
-				FHitResult(),
-				GetVelocity());
+		QueryParams.AddIgnoredActor(LaunchingShip);
+	}
 
-		FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(DamageGEClass, 1.0f, EffectContext);
-		if (SpecHandle.IsValid())
+	TArray<FOverlapResult> Overlaps;
+	if (EffectiveRadius > 0.0f)
+	{
+		GetWorld()->OverlapMultiByObjectType(
+			Overlaps,
+			ExplosionLocation,
+			FQuat::Identity,
+			ObjectQuery,
+			FCollisionShape::MakeSphere(EffectiveRadius),
+			QueryParams);
+	}
+
+	TSet<AActor*> UniqueTargets;
+	// A malformed collision setup must not make the directly struck opposing ship
+	// escape damage, even if its hull was omitted from the overlap result.
+	UniqueTargets.Add(HitShip);
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		if (AActor* Candidate = Overlap.GetActor())
 		{
-			SpecHandle.Data.Get()->SetSetByCallerMagnitude(
-				FGameplayTag::RequestGameplayTag(FName("Data.Damage")),
-				DamageAmount);
-			TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+			UniqueTargets.Add(Candidate);
 		}
 	}
 
-	float CurrentHealth = 0.0f;
-	if (TargetASC)
+	int32 DamagedTargetCount = 0;
+	for (AActor* Target : UniqueTargets)
 	{
-		CurrentHealth = TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
+		if (IsOpposingSplashTarget(Target) && ApplyDamageToTarget(Target))
+		{
+			++DamagedTargetCount;
+		}
 	}
 
 	UE_LOG(LogTemp, Warning,
-		TEXT("ACannonball: Swept Hit Ship %s! Dealt %f damage. Current Health: %f"),
+		TEXT("ACannonball: Splash exploded on %s. Radius=%.1f Damage=%.1f Targets=%d"),
 		*HitShip->GetName(),
+		EffectiveRadius,
 		DamageAmount,
-		CurrentHealth);
+		DamagedTargetCount);
 	Destroy();
+}
+
+bool ACannonball::IsOpposingSplashTarget(const AActor* Candidate) const
+{
+	if (!Candidate || Candidate == this || Candidate == LaunchingShip
+		|| Candidate == GetOwner() || Candidate == GetInstigator())
+	{
+		return false;
+	}
+
+	const bool bEnemyProjectile = LaunchingShip && LaunchingShip->ActorHasTag(TEXT("Enemy"));
+	if (const AShip* CandidateShip = Cast<AShip>(Candidate))
+	{
+		return CandidateShip->ActorHasTag(TEXT("Enemy")) != bEnemyProjectile;
+	}
+
+	UAbilitySystemComponent* CandidateASC =
+		UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(const_cast<AActor*>(Candidate));
+	return CandidateASC && CandidateASC->HasMatchingGameplayTag(
+		bEnemyProjectile ? Team_Player : Team_Enemy);
+}
+
+bool ACannonball::ApplyDamageToTarget(AActor* TargetActor)
+{
+	UAbilitySystemComponent* TargetASC =
+		UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor);
+	if (!TargetASC || !DamageGEClass)
+	{
+		return false;
+	}
+
+	UAbilitySystemComponent* SourceASC = LaunchingShip
+		? LaunchingShip->GetAbilitySystemComponent()
+		: nullptr;
+	if (!SourceASC)
+	{
+		SourceASC = TargetASC;
+	}
+
+	FGameplayEffectContextHandle EffectContext =
+		USWCombatEffectContextLibrary::MakeCombatEffectContext(
+			SourceASC,
+			GetInstigator(),
+			this,
+			TargetActor,
+			false,
+			FHitResult(),
+			GetVelocity());
+	FGameplayEffectSpecHandle SpecHandle =
+		SourceASC->MakeOutgoingSpec(DamageGEClass, 1.0f, EffectContext);
+	if (!SpecHandle.IsValid())
+	{
+		return false;
+	}
+
+	SpecHandle.Data.Get()->SetSetByCallerMagnitude(
+		FGameplayTag::RequestGameplayTag(FName("Data.Damage")),
+		DamageAmount);
+	TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+	return true;
 }
 
 void ACannonball::TriggerWaterRipple(const FVector& HitLocation)
