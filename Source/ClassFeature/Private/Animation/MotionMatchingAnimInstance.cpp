@@ -2049,20 +2049,52 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     if (bIsPrimaryAnimInstance)
     {
         EvaluateStateControllerPresentationState();
-    }
 
-    // 최적화 틱 레이트에 맞추어 이번 프레임의 모션 매칭 평가 여부 결정
-    if (!ShouldEvaluateMotionMatchingThisFrame(DeltaSeconds))
-    {
-        return;
+        // --- Transition & Stop-to-Idle Diagnostics ---
+        if (CachedBasePlayer && CachedBasePlayer->IsLocallyControlled())
+        {
+            const FMotionMatchingAnimInstanceProxy& Proxy = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>();
+            const FAnimThreadSafeData& ThreadSafeData = Proxy.ThreadSafeData;
+
+            const FString StateName = UEnum::GetValueAsString(ThreadSafeData.StateController.PresentationState);
+            const bool bOverrideMM = ThreadSafeData.StateController.bShouldOverrideMotionMatching;
+            const FString AnimName = ThreadSafeData.StateController.SelectedAnimation ? ThreadSafeData.StateController.SelectedAnimation->GetName() : TEXT("None (MM Active)");
+            const float Speed = ThreadSafeData.MovementData.Velocity.Size2D();
+            const float Accel = ThreadSafeData.MovementData.Acceleration.Size2D();
+            const FString DBName = CurrentActivePoseSearchDatabase ? CurrentActivePoseSearchDatabase->GetName() : TEXT("None");
+
+            // 상태가 바뀔 때마다 상세 로그 출력
+            static EStateControllerPresentationState LastLoggedState = EStateControllerPresentationState::None;
+            static bool LastLoggedOverride = false;
+            if (LastLoggedState != ThreadSafeData.StateController.PresentationState || LastLoggedOverride != bOverrideMM)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[AnimTransition] State: %s -> %s | OverrideMM: %s -> %s | Anim: %s | Speed: %.1f | DB: %s"),
+                    *UEnum::GetValueAsString(LastLoggedState), *StateName,
+                    LastLoggedOverride ? TEXT("TRUE") : TEXT("FALSE"), bOverrideMM ? TEXT("TRUE") : TEXT("FALSE"),
+                    *AnimName, Speed, *DBName);
+
+                LastLoggedState = ThreadSafeData.StateController.PresentationState;
+                LastLoggedOverride = bOverrideMM;
+            }
+
+            // 화면 좌측 상단 실시간 HUD (초록색/노란색)
+            if (GEngine)
+            {
+                FString HUDStr = FString::Printf(TEXT("[Anim HUD] State: %s | OverrideMM: %s | Anim: %s | Speed: %.1f | Accel: %.1f | DB: %s"),
+                    *StateName,
+                    bOverrideMM ? TEXT("TRUE (BlendStack)") : TEXT("FALSE (MotionMatching)"),
+                    *AnimName, Speed, Accel, *DBName);
+
+                FColor HUDColor = bOverrideMM ? FColor::Yellow : FColor::Green;
+                GEngine->AddOnScreenDebugMessage(99991, 0.0f, HUDColor, HUDStr);
+            }
+        }
     }
 
     // 1. C++ 직접 상태 분기 및 알맞은 PSD 할당 (Chooser Table 미사용)
+    // 모션 매칭 최적화 틱 스킵과 무관하게 데이터베이스 포인터는 항상 매 프레임 즉시 최신 상태로 유지합니다.
     CurrentActivePoseSearchDatabase = nullptr;
 
-    // Project_J policy: State Controller is the one animation-presentation
-    // authority.  Keep a suitable PSD warm behind a direct Blend Stack clip,
-    // but never choose that PSD from the legacy CurrentState.
     if (CachedLocomotionStateComponent)
     {
         const bool bSprinting = CachedLocomotionStateComponent->bIsSprinting;
@@ -2085,11 +2117,6 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             }
             else
             {
-                // Project_J's moving-Strafe policy: a brief meaningful
-                // direction redirect searches the dedicated transition PSD;
-                // steady movement stays in the cheap stable loop PSD.  The
-                // transition component already latches this for a short
-                // duration, preventing a database flip every frame.
                 const bool bUseRunTransitionDatabase =
                     !bSprinting &&
                     CachedLocomotionStateComponent->bIsLocomotionTransitioning &&
@@ -2100,17 +2127,23 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             }
             break;
 
+        case EStateControllerPresentationState::TransitionToStop:
         case EStateControllerPresentationState::IdleLoop:
         case EStateControllerPresentationState::TurnInPlace:
             CurrentActivePoseSearchDatabase = IdleDatabase;
             break;
 
         default:
-            // Start, Stop and Pivot are direct assets.  Their MM fallback is a
-            // locomotion cycle and is protected by bShouldOverrideMotionMatching.
+            // Start and Pivot are direct assets.
             CurrentActivePoseSearchDatabase = bSprinting ? SprintLocomotionDatabase : LocomotionDatabase;
             break;
         }
+    }
+
+    // 최적화 틱 레이트에 맞추어 이번 프레임의 모션 매칭 평가 여부 결정
+    if (!ShouldEvaluateMotionMatchingThisFrame(DeltaSeconds))
+    {
+        return;
     }
 
     if (false && CachedLocomotionStateComponent) // Legacy DB routing kept for reference only.
