@@ -98,5 +98,7 @@ Content/Wood_Box/
 # Third-party British Cannon source assets (runtime copy lives under the ship cannon folder)
 Content/British_Cannon/
 
-#
+/Content/Ladder
+
+
 AGENTS.md
