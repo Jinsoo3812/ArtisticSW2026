@@ -23,6 +23,8 @@ UE_DEFINE_GAMEPLAY_TAG(State_Boss_Hidden, "State.Boss.Hidden");
 UE_DEFINE_GAMEPLAY_TAG(State_Boss_Dashing, "State.Boss.Dashing");
 UE_DEFINE_GAMEPLAY_TAG(State_CrowdControl_Knockback, "State.CrowdControl.Knockback");
 UE_DEFINE_GAMEPLAY_TAG(State_Buff_MoveSpeed, "State.Buff.MoveSpeed");
+UE_DEFINE_GAMEPLAY_TAG(State_Rolling, "State.Rolling");
+UE_DEFINE_GAMEPLAY_TAG(State_Invulnerable, "State.Invulnerable");
 
 // Team
 UE_DEFINE_GAMEPLAY_TAG(Team_Player, "Team.Player");
@@ -52,6 +54,7 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_VanishV2, "GameplayAbility.Boss.Vani
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_DashSlash, "GameplayAbility.Boss.DashSlash");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_BasicAttack_Combo, "Cooldown.Boss.BasicAttack.Combo");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Enemy_Buff_MoveSpeed, "GameplayAbility.Enemy.Buff.MoveSpeed");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Player_Roll, "GameplayAbility.Player.Roll");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Enemy_BasicAttack, "Cooldown.Enemy.BasicAttack");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Enemy_Buff_MoveSpeed, "Cooldown.Enemy.Buff.MoveSpeed");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_Knockback, "Cooldown.Boss.Knockback");
@@ -87,6 +90,9 @@ UE_DEFINE_GAMEPLAY_TAG(Event_ActivateAbility_Equip, "Event.ActivateAbility.Equip
 UE_DEFINE_GAMEPLAY_TAG(Event_Montage_ThrowGrenade, "Event.Montage.ThrowGrenade");
 UE_DEFINE_GAMEPLAY_TAG(Event_Montage_FireArrow, "Event.Montage.FireArrow");
 UE_DEFINE_GAMEPLAY_TAG(Event_Montage_NockArrow, "Event.Montage.NockArrow");
+UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Roll_Invulnerability_Begin, "Event.Ability.Roll.Invulnerability.Begin");
+UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Roll_Invulnerability_End, "Event.Ability.Roll.Invulnerability.End");
+UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Roll_Recovery, "Event.Ability.Roll.Recovery");
 // Data
 UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");
 UE_DEFINE_GAMEPLAY_TAG(Data_Heal, "Data.Heal");
@@ -257,6 +263,7 @@ UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_RightClick, "Key.Default.Mouse.RightCli
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_RightClick_Released, "Key.Default.Mouse.RightClick.Released");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_WheelUp, "Key.Default.Mouse.WheelUp");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_WheelDown, "Key.Default.Mouse.WheelDown");
+UE_DEFINE_GAMEPLAY_TAG(Key_Default_C, "Key.Default.C");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_F, "Key.Default.F");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_ESC, "Key.Default.ESC");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Space, "Key.Default.Space");
