@@ -167,6 +167,11 @@ void FShipPhysicsAsync::ValidateInput_Internal(FNetInputShip& Input) const
 {
 	Input.MovementInput = FMath::Clamp(Input.MovementInput, -1.f, 1.f);
 	Input.SteeringInput = FMath::Clamp(Input.SteeringInput, -1.f, 1.f);
+	if (Input.bIsAnchorDropped)
+	{
+		Input.MovementInput = 0.0f;
+		Input.SteeringInput = 0.0f;
+	}
 	if (Input.ExternalAcceleration.ContainsNaN())
 	{
 		Input.ExternalAcceleration = FVector::ZeroVector;
@@ -401,6 +406,9 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 	// 4. 닻(Anchor) 수평 평면 스프링-댐퍼 저항 적용 (Z축 파도/부력에는 무영향)
 	if (bAnchorDropped_Internal)
 	{
+		MovementInput_Internal = 0.0f;
+		SteeringInput_Internal = 0.0f;
+
 		const FVector CurrentVelocity = ParticleHandle->GetV();
 		const FVector PlanarVelocity = FVector(CurrentVelocity.X, CurrentVelocity.Y, 0.0f);
 

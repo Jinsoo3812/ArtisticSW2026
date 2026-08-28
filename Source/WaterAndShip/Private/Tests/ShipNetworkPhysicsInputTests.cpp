@@ -121,4 +121,26 @@ bool FShipNetworkPhysicsDeepWaterBuoyancyTest::RunTest(const FString& Parameters
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShipNetworkPhysicsAnchorInputValidationTest,
+	"ArtisticSW.Ship.NetworkPhysicsAnchorInputValidation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FShipNetworkPhysicsAnchorInputValidationTest::RunTest(const FString& Parameters)
+{
+	FShipPhysicsAsync Async;
+	FNetInputShip Input;
+	Input.MovementInput = 1.0f;
+	Input.SteeringInput = 0.5f;
+	Input.bIsAnchorDropped = true;
+	Input.AnchorOriginXY = FVector2D(100.0, 200.0);
+
+	Async.ValidateInput_Internal(Input);
+
+	TestEqual(TEXT("MovementInput is sanitized to 0.0f when anchor is dropped"), Input.MovementInput, 0.0f);
+	TestEqual(TEXT("SteeringInput is sanitized to 0.0f when anchor is dropped"), Input.SteeringInput, 0.0f);
+	TestTrue(TEXT("Anchor dropped state is preserved"), Input.bIsAnchorDropped);
+	return true;
+}
+
 #endif

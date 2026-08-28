@@ -2591,6 +2591,8 @@ void AShip::ToggleAnchor()
 	else
 	{
 		AnchorOriginXY = FVector2D::ZeroVector;
+		CurrentMoveInput = 0.0f;
+		CurrentTurnInput = 0.0f;
 	}
 
 	OnRep_IsAnchorDropped();
@@ -2609,11 +2611,8 @@ void AShip::ServerToggleAnchor_Implementation()
 
 void AShip::OnRep_IsAnchorDropped()
 {
-	if (bIsAnchorDropped)
-	{
-		CurrentMoveInput = 0.0f;
-		CurrentTurnInput = 0.0f;
-	}
+	CurrentMoveInput = 0.0f;
+	CurrentTurnInput = 0.0f;
 	UpdateAnchorInteractionUI();
 }
 
