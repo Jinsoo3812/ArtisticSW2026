@@ -206,6 +206,7 @@ protected:
 
 	// ---- Actions ----
 	void ExitAimMode();
+	void SetRiderInvulnerable(bool bEnabled);
 
 	// ---- Server RPCs ----
 	UFUNCTION(Server, Reliable)
@@ -257,6 +258,7 @@ private:
 	float ActiveWaterBombAttackSpeedMultiplier = 0.5f;
 
 	bool bCanFire = true;
+	bool bRiderInvulnerabilityApplied = false;
 	/** AI가 매 Tick 발사를 재시도해도 물폭탄 봉쇄 로그는 효과당 한 번만 출력합니다. */
 	bool bLoggedWaterBombFireBlock = false;
 	FTimerHandle CooldownTimerHandle;

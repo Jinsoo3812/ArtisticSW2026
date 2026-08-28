@@ -392,6 +392,7 @@ class UInputAction;
 class APlayerController;
 class UPrimitiveComponent;
 class USceneComponent;
+class USkeletalMeshComponent;
 class UAbilitySystemComponent;
 class UBaseAttributeSet;
 class UShipAttributeSet;
@@ -526,11 +527,14 @@ public:
 
 	/** Class policy used by interaction collision and the authoritative Board guard. */
 	UFUNCTION(BlueprintPure, Category = "Ship|Control")
-	virtual bool AllowsPlayerHelmControl() const { return true; }
+	virtual bool AllowsPlayerHelmControl() const { return !bIsSinking; }
 
 	/** Class policy inherited by every cannon mounted on this ship. */
 	UFUNCTION(BlueprintPure, Category = "Ship|Control")
-	virtual bool AllowsPlayerCannonControl() const { return true; }
+	virtual bool AllowsPlayerCannonControl() const { return !bIsSinking; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Sinking")
+	bool IsSinking() const { return bIsSinking; }
 
 	/** Class policy used by reusable and legacy sea-boarding points. */
 	UFUNCTION(BlueprintPure, Category = "Ship|Control")
@@ -618,6 +622,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Helm")
 	void ForceDisembark();
 
+	/** Shared authoritative sink sequence used by player and enemy ships. */
+	void StartSinking(float DestroyDelaySeconds);
+
 	/** Rebuilds the canonical runtime list from BP child actors and legacy attached cannon actors. */
 	UFUNCTION(BlueprintCallable, Category = "Ship|Cannons")
 	void RefreshMountedCannons();
@@ -668,6 +675,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UCameraComponent* FollowCamera;
 
+	/** Local helm view placed at the controlling character's eye position. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UCameraComponent* HelmFirstPersonCamera;
+
 	/** Optional visible helm mesh. Its collision is independent from the interaction range. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Helm")
 	TObjectPtr<UStaticMeshComponent> HelmMesh;
@@ -713,14 +724,6 @@ public:
 
 	UPROPERTY(Transient, meta = (DeprecatedProperty, DeprecationMessage = "Use BoardingArrivalPoint"))
 	TObjectPtr<USceneComponent> StarboardSeaBoardingDestination;
-
-	/** World location of the fixed observation camera (set XYZ in editor) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Fixed Camera")
-	FVector FixedCameraLocation = FVector(0.0f, 0.0f, 1000.0f);
-
-	/** World rotation of the fixed observation camera (set in editor) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Fixed Camera")
-	FRotator FixedCameraRotation = FRotator(-45.0f, 0.0f, 0.0f);
 
 	// ---- Movement Parameters ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Physics | Replication")
@@ -799,6 +802,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera", meta = (ClampMin = "0.0"))
 	float ShipLookSensitivity = 1.0f;
 
+	/** Local-space offset from the rider's normal pawn eye location. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera|First Person", meta = (Units = "cm"))
+	FVector HelmFirstPersonCameraOffset = FVector(12.0f, 0.0f, 0.0f);
+
+	/** Hidden only on the controlling client's full-body mesh while using the helm first-person camera. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera|First Person")
+	FName HelmFirstPersonHiddenBone = TEXT("head");
+
+	/** Maximum distance searched below an airborne HelmSeatPoint for this ship's walkable deck. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Helm", meta = (ClampMin = "0.0", Units = "cm"))
+	float HelmFloorSearchDistance = 1000.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera|Zoom", meta = (ClampMin = "0.0", Units = "cm"))
 	float ShipZoomStep = 150.0f;
 
@@ -831,7 +846,7 @@ protected:
 	void StopShipTurn(const FInputActionValue& Value);
 	void ShipLook(const FInputActionValue& Value);
 	void ShipZoom(const FInputActionValue& Value);
-	void ToggleFixedCamera();
+	void ToggleHelmCamera();
 	void OnDisembarkAction(const FInputActionValue& Value);
 	void HandleBombardmentToggle();
 	void HandleBombardmentConfirm();
@@ -875,24 +890,41 @@ protected:
 
 	void Disembark();
 	void UpdateHelmInteractionAvailability();
+	bool FindHelmStandingLocation(ACharacter* Character, FVector& OutStandingLocation) const;
+	void SetHelmRiderInvulnerable(bool bEnabled);
+	void HandleShipHealthChanged(const struct FOnAttributeChangeData& Data);
+	void ForceExitAllControlModes();
+	void FinishSinking();
+
+	UFUNCTION()
+	void OnRep_IsSinking();
 
 	// ---- Camera State ----
-	bool bUsingFixedCamera = false;
-	FTransform SavedBoomRelativeTransform;
-	FRotator SavedControlRotation;
-	float SavedTargetArmLength = 800.0f;
-	FVector SavedFollowCameraRelativeLocation = FVector::ZeroVector;
-	FRotator SavedFollowCameraRelativeRotation = FRotator::ZeroRotator;
+	bool bUsingHelmFirstPersonCamera = false;
+	bool bHelmCameraHidRiderBone = false;
+	TWeakObjectPtr<USkeletalMeshComponent> HelmLocallyHiddenMesh;
 	bool bHasRememberedFollowCameraState = false;
 	float RememberedFollowTargetArmLength = 800.0f;
 	FRotator RememberedFollowControlRotation = FRotator::ZeroRotator;
 
+	void SetHelmFirstPersonCameraEnabled(bool bEnabled);
+	void SetLocalHelmRiderHeadHidden(bool bShouldHide);
 	void RememberFollowCameraState(APlayerController* PlayerController);
 	void RestoreRememberedFollowCameraState(APlayerController* PlayerController);
 
 	// ---- Passenger Reference ----
 	UPROPERTY(ReplicatedUsing = OnRep_RidingPlayer)
 	APawn* RidingPlayer = nullptr;
+
+	UPROPERTY(ReplicatedUsing = OnRep_IsSinking)
+	bool bIsSinking = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Sinking", meta = (ClampMin = "0.0", Units = "s"))
+	float PlayerShipDestroyAfterSinkingDelay = 5.0f;
+
+	bool bHelmInvulnerabilityApplied = false;
+	FDelegateHandle ShipHealthChangedDelegateHandle;
+	FTimerHandle SinkingDestroyTimerHandle;
 
 	UFUNCTION()
 	void OnRep_RidingPlayer(APawn* OldRidingPlayer);

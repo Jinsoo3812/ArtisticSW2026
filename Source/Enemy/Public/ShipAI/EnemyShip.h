@@ -82,7 +82,7 @@ class ENEMY_API AEnemyShip : public AShip
 public:
 	AEnemyShip();
 	virtual bool IsEnemyShipForEffects() const override { return true; }
-	virtual bool AllowsPlayerHelmControl() const override { return !bDeathHandled && (bCrewDefeated || !HasLivingCrew()); }
+	virtual bool AllowsPlayerHelmControl() const override { return !IsSinking() && !bDeathHandled && (bCrewDefeated || !HasLivingCrew()); }
 	virtual bool AllowsPlayerCannonControl() const override { return false; }
 	virtual bool AllowsPlayerBoarding() const override { return false; }
 	virtual bool AllowsPlayerAnchorControl(AActor* Interactor = nullptr) const override;

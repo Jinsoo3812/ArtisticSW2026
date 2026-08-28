@@ -5,6 +5,8 @@
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Components/ChildActorComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "InteractableComponent.h"
 #include "EnhancedInputComponent.h"
@@ -51,6 +53,17 @@
 
 namespace
 {
+	void InvokeNoParameterFunction(UObject* Object, const FName FunctionName)
+	{
+		if (Object)
+		{
+			if (UFunction* Function = Object->FindFunction(FunctionName))
+			{
+				Object->ProcessEvent(Function, nullptr);
+			}
+		}
+	}
+
 	TAutoConsoleVariable<int32> CVarShowShipNetworkBuoyancyDebug(
 		TEXT("p.ShowShipNetworkBuoyancyDebug"),
 		0,
@@ -195,6 +208,11 @@ AShip::AShip()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
+	HelmFirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("HelmFirstPersonCamera"));
+	HelmFirstPersonCamera->SetupAttachment(BuoyancyRoot);
+	HelmFirstPersonCamera->bUsePawnControlRotation = true;
+	HelmFirstPersonCamera->SetAutoActivate(false);
+
 	// Helm authoring components. Visuals and interaction collision remain separate
 	// so designers can scale either without affecting the other.
 	HelmMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HelmMesh"));
@@ -289,6 +307,12 @@ void AShip::BeginPlay()
 	if (HasAuthority() && AttributeSet)
 	{
 		InitializeDefaultAttributes();
+	}
+	if (HasAuthority() && AbilitySystemComponent && !IsEnemyShipForEffects())
+	{
+		ShipHealthChangedDelegateHandle = AbilitySystemComponent
+			->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute())
+			.AddUObject(this, &AShip::HandleShipHealthChanged);
 	}
 
 	// The legacy Water plugin component may have enabled root overlap during its
@@ -401,6 +425,19 @@ void AShip::BeginPlay()
 
 void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (HasAuthority())
+	{
+		ForceExitAllControlModes();
+		if (AbilitySystemComponent && ShipHealthChangedDelegateHandle.IsValid())
+		{
+			AbilitySystemComponent
+				->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute())
+				.Remove(ShipHealthChangedDelegateHandle);
+			ShipHealthChangedDelegateHandle.Reset();
+		}
+	}
+	SetLocalHelmRiderHeadHidden(false);
+
 	if (HasAuthority())
 	{
 		CancelBombardmentAbilityAuthoritative();
@@ -784,10 +821,10 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 			EnhancedInput->BindAction(ShipLookAction, ETriggerEvent::Triggered, this, &AShip::ShipLook);
 		}
 
-		// Toggle fixed camera (C key)
+		// Toggle helm first-person / ship follow camera (C key)
 		if (ShipToggleCameraAction)
 		{
-			EnhancedInput->BindAction(ShipToggleCameraAction, ETriggerEvent::Started, this, &AShip::ToggleFixedCamera);
+			EnhancedInput->BindAction(ShipToggleCameraAction, ETriggerEvent::Started, this, &AShip::ToggleHelmCamera);
 		}
 
 		// Disembark (F key)
@@ -819,6 +856,10 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	}
 
 	RestoreRememberedFollowCameraState(CachedPlayerController);
+	if (RidingPlayer)
+	{
+		SetHelmFirstPersonCameraEnabled(true);
+	}
 }
 
 void AShip::PossessedBy(AController* NewController)
@@ -842,6 +883,11 @@ void AShip::PossessedBy(AController* NewController)
 		if (ApplyPlayerUpgrades(InPlayerState, bFirstApplicationForPlayer))
 		{
 			AppliedUpgradePlayerState = InPlayerState;
+		}
+
+		if (PlayerController->IsLocalController() && RidingPlayer)
+		{
+			SetHelmFirstPersonCameraEnabled(true);
 		}
 	}
 }
@@ -954,6 +1000,7 @@ void AShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AShip, RidingPlayer);
+	DOREPLIFETIME(AShip, bIsSinking);
 	DOREPLIFETIME(AShip, bBombardmentTargeting);
 	DOREPLIFETIME(AShip, ActiveBombardmentClass);
 	DOREPLIFETIME(AShip, ReplicatedState);
@@ -1001,7 +1048,27 @@ void AShip::Board(APawn* PlayerPawn)
 	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board initiated by player pawn %s. Ship location: %s, Player location: %s"), *PlayerPawn->GetName(), *GetActorLocation().ToString(), *PlayerPawn->GetActorLocation().ToString());
 
 	RidingPlayer = PlayerPawn;
+	SetHelmRiderInvulnerable(true);
 	UpdateHelmInteractionAvailability();
+
+	// The interaction can transfer possession before Enhanced Input emits its
+	// Completed event. Clear both engine movement input and the player's reflected
+	// locomotion/sprint caches so a held W key cannot leave the rider running in place.
+	RidingPlayer->ConsumeMovementInputVector();
+	InvokeNoParameterFunction(RidingPlayer, TEXT("StopMoveInput"));
+	InvokeNoParameterFunction(RidingPlayer, TEXT("StopSprint"));
+
+	USceneComponent* SeatComponent = HelmSeatPoint ? HelmSeatPoint.Get() : BuoyancyRoot;
+	FVector StandingLocation = SeatComponent
+		? SeatComponent->GetComponentLocation()
+		: RidingPlayer->GetActorLocation();
+	if (ACharacter* Character = Cast<ACharacter>(RidingPlayer))
+	{
+		FindHelmStandingLocation(Character, StandingLocation);
+	}
+	const FRotator StandingRotation = SeatComponent
+		? SeatComponent->GetComponentRotation()
+		: RidingPlayer->GetActorRotation();
 
 	// Disable player collision
 	RidingPlayer->SetActorEnableCollision(false);
@@ -1018,16 +1085,100 @@ void AShip::Board(APawn* PlayerPawn)
 	RidingPlayer->SetReplicateMovement(false);
 	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board - Player bReplicateMovement after disable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
 
-	// Snap the character to the authored helm point. Attaching without welding keeps
-	// the character capsule out of the Chaos ship body while control is transferred.
-	USceneComponent* SeatComponent = HelmSeatPoint ? HelmSeatPoint.Get() : BuoyancyRoot;
-	RidingPlayer->AttachToComponent(SeatComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	// Keep the authored seat's horizontal placement and facing, but place the capsule
+	// on the walkable deck beneath it before locking it to the moving ship.
+	RidingPlayer->SetActorLocationAndRotation(
+		StandingLocation,
+		StandingRotation,
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics);
+	RidingPlayer->AttachToComponent(SeatComponent, FAttachmentTransformRules::KeepWorldTransform);
 	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board - Player attached to HelmSeatPoint. Relative location: %s, relative rotation: %s"),
 		*RidingPlayer->GetRootComponent()->GetRelativeLocation().ToString(), 
 		*RidingPlayer->GetRootComponent()->GetRelativeRotation().ToString());
 
-	// Possess ship pawn
+	PC->SetControlRotation(FRotator(0.0f, StandingRotation.Yaw, 0.0f));
+
+	// Possess ship pawn. The ship keeps receiving the existing WASD and mouse input.
 	PC->Possess(this);
+}
+
+bool AShip::FindHelmStandingLocation(ACharacter* Character, FVector& OutStandingLocation) const
+{
+	if (!Character || !HelmSeatPoint)
+	{
+		return false;
+	}
+
+	UCharacterMovementComponent* Movement = Character->GetCharacterMovement();
+	UCapsuleComponent* Capsule = Character->GetCapsuleComponent();
+	if (!Movement || !Capsule)
+	{
+		return false;
+	}
+
+	const FVector SeatLocation = HelmSeatPoint->GetComponentLocation();
+	const float SearchDistance = FMath::Max(HelmFloorSearchDistance, 0.0f);
+	const float CapsuleRadius = Capsule->GetScaledCapsuleRadius();
+	const float CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+	FHitResult BestHit;
+	bool bFoundFloor = false;
+
+	// First use the same CharacterMovement floor query used while walking on ShipDeck.
+	FFindFloorResult FloorResult;
+	Movement->ComputeFloorDist(
+		SeatLocation,
+		SearchDistance,
+		SearchDistance,
+		FloorResult,
+		CapsuleRadius,
+		nullptr);
+	if (FloorResult.IsWalkableFloor())
+	{
+		UPrimitiveComponent* HitComponent = FloorResult.HitResult.GetComponent();
+		if (HitComponent == DeckMeshSimple || HitComponent == DeckMeshComplex)
+		{
+			BestHit = FloorResult.HitResult;
+			bFoundFloor = true;
+		}
+	}
+
+	// If another helm component blocked the capsule sweep first, query this ship's
+	// two authored deck proxies directly and choose the closest walkable surface.
+	if (!bFoundFloor)
+	{
+		const FVector TraceStart = SeatLocation + FVector::UpVector * CapsuleHalfHeight;
+		const FVector TraceEnd = SeatLocation - FVector::UpVector * SearchDistance;
+		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(HelmFloor), false, Character);
+		for (UStaticMeshComponent* DeckMesh : { DeckMeshSimple.Get(), DeckMeshComplex.Get() })
+		{
+			if (!DeckMesh)
+			{
+				continue;
+			}
+
+			FHitResult DeckHit;
+			if (DeckMesh->LineTraceComponent(DeckHit, TraceStart, TraceEnd, QueryParams)
+				&& Movement->IsWalkable(DeckHit)
+				&& (!bFoundFloor || DeckHit.Distance < BestHit.Distance))
+			{
+				BestHit = DeckHit;
+				bFoundFloor = true;
+			}
+		}
+	}
+
+	if (!bFoundFloor)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("AShip::Board - No walkable ShipDeck found below HelmSeatPoint on %s; using the authored seat location."),
+			*GetName());
+		return false;
+	}
+
+	OutStandingLocation = BestHit.ImpactPoint + FVector::UpVector * CapsuleHalfHeight;
+	return true;
 }
 
 void AShip::OnDisembarkAction(const FInputActionValue& Value)
@@ -1047,41 +1198,48 @@ void AShip::Disembark()
 	CancelBombardmentAbilityAuthoritative();
 
 	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC) return;
+	APawn* PlayerToRestore = RidingPlayer;
 
 	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark initiated. Player pawn: %s"), *RidingPlayer->GetName());
 
 	// Restore camera mode
 	ResetToFollowCamera();
-	RememberFollowCameraState(PC);
+	if (PC)
+	{
+		RememberFollowCameraState(PC);
+	}
 
 	// Detach, then move to the single authored exit point while collision is still
 	// disabled. This avoids the ship hull rejecting the teleport.
-	RidingPlayer->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	PlayerToRestore->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	if (HelmExitPoint)
 	{
-		RidingPlayer->TeleportTo(
+		PlayerToRestore->TeleportTo(
 			HelmExitPoint->GetComponentLocation(),
 			HelmExitPoint->GetComponentRotation(),
 			false,
 			true);
 	}
-	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark - Moved player to exit. World location: %s"), *RidingPlayer->GetActorLocation().ToString());
+	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark - Moved player to exit. World location: %s"), *PlayerToRestore->GetActorLocation().ToString());
 
-	RidingPlayer->SetActorEnableCollision(true);
-	RidingPlayer->SetActorHiddenInGame(false);
+	PlayerToRestore->SetActorEnableCollision(true);
+	PlayerToRestore->SetActorHiddenInGame(false);
 
-	if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
+	if (ACharacter* Char = Cast<ACharacter>(PlayerToRestore))
 	{
 		Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	}
 
 	// Restore movement replication on disembark
-	RidingPlayer->SetReplicateMovement(true);
-	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark - Player bReplicateMovement after enable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
+	PlayerToRestore->SetReplicateMovement(true);
+	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark - Player bReplicateMovement after enable: %s"), PlayerToRestore->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
 
 	// Return possession to player character
-	PC->Possess(RidingPlayer);
+	SetHelmRiderInvulnerable(false);
+	if (PC)
+	{
+		PC->Possess(PlayerToRestore);
+	}
 
 	RidingPlayer = nullptr;
 	UpdateHelmInteractionAvailability();
@@ -1090,6 +1248,102 @@ void AShip::Disembark()
 void AShip::ForceDisembark()
 {
 	Disembark();
+}
+
+void AShip::SetHelmRiderInvulnerable(bool bEnabled)
+{
+	if (!HasAuthority() || bHelmInvulnerabilityApplied == bEnabled)
+	{
+		return;
+	}
+	if (UAbilitySystemComponent* ASC = GetRidingPlayerAbilitySystem())
+	{
+		if (bEnabled)
+		{
+			ASC->AddLooseGameplayTag(State_Invulnerable);
+		}
+		else
+		{
+			ASC->RemoveLooseGameplayTag(State_Invulnerable);
+		}
+		bHelmInvulnerabilityApplied = bEnabled;
+	}
+}
+
+void AShip::HandleShipHealthChanged(const FOnAttributeChangeData& Data)
+{
+	if (HasAuthority() && Data.NewValue <= 0.0f)
+	{
+		StartSinking(PlayerShipDestroyAfterSinkingDelay);
+	}
+}
+
+void AShip::ForceExitAllControlModes()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	ForceDisembark();
+	RefreshMountedCannons();
+	for (ACannon* Cannon : MountedCannons)
+	{
+		if (IsValid(Cannon))
+		{
+			Cannon->ForceExit();
+		}
+	}
+}
+
+void AShip::StartSinking(float DestroyDelaySeconds)
+{
+	if (!HasAuthority() || bIsSinking)
+	{
+		return;
+	}
+
+	bIsSinking = true;
+	ForceNetUpdate();
+	CurrentMoveInput = 0.0f;
+	CurrentTurnInput = 0.0f;
+	CancelBombardmentAbilityAuthoritative();
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->CancelAllAbilities();
+	}
+	ForceExitAllControlModes();
+
+	if (SWBuoyancyComponent)
+	{
+		SWBuoyancyComponent->ForceSettings.BuoyancyCoefficient = 0.0f;
+	}
+	if (UBuoyancyComponent* LegacyBuoyancy = FindComponentByClass<UBuoyancyComponent>())
+	{
+		LegacyBuoyancy->BuoyancyData.BuoyancyCoefficient = 0.0f;
+	}
+	if (BuoyancyRoot)
+	{
+		BuoyancyRoot->WakeAllRigidBodies();
+	}
+
+	OnRep_IsSinking();
+	GetWorldTimerManager().SetTimer(
+		SinkingDestroyTimerHandle,
+		this,
+		&AShip::FinishSinking,
+		FMath::Max(0.01f, DestroyDelaySeconds),
+		false);
+}
+
+void AShip::FinishSinking()
+{
+	Destroy();
+}
+
+void AShip::OnRep_IsSinking()
+{
+	UpdateHelmInteractionAvailability();
+	RefreshMountedCannons();
 }
 
 void AShip::ShipMove(const FInputActionValue& Value)
@@ -1185,7 +1439,7 @@ void AShip::ShipLook(const FInputActionValue& Value)
 
 void AShip::ShipZoom(const FInputActionValue& Value)
 {
-	if (!CameraBoom || bUsingFixedCamera)
+	if (!CameraBoom || bUsingHelmFirstPersonCamera)
 	{
 		return;
 	}
@@ -1743,88 +1997,106 @@ void AShip::SpawnBombardmentAuthoritative(const FVector& TargetLocation)
 	}
 }
 
-void AShip::ToggleFixedCamera()
+void AShip::ToggleHelmCamera()
 {
 	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC) return;
-
-	bUsingFixedCamera = !bUsingFixedCamera;
-
-	if (bUsingFixedCamera)
+	if (!PC || !PC->IsLocalController() || !RidingPlayer)
 	{
-		// Save current camera state before detaching
-		SavedBoomRelativeTransform = CameraBoom->GetRelativeTransform();
-		SavedTargetArmLength = CameraBoom->TargetArmLength;
-		SavedControlRotation = PC->GetControlRotation();
-		if (FollowCamera)
-		{
-			SavedFollowCameraRelativeLocation = FollowCamera->GetRelativeLocation();
-			SavedFollowCameraRelativeRotation = FollowCamera->GetRelativeRotation();
-		}
-
-		// Detach camera boom so it stops following the ship
-		CameraBoom->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-		CameraBoom->bUsePawnControlRotation = false;
-
-		// Move camera to fixed world position
-		CameraBoom->SetWorldLocationAndRotation(FixedCameraLocation, FixedCameraRotation);
-		if (FollowCamera)
-		{
-			FollowCamera->SetRelativeLocation(FVector::ZeroVector);
-			FollowCamera->SetRelativeRotation(FRotator::ZeroRotator);
-		}
-
-		UE_LOG(LogTemp, Log, TEXT("Switched to fixed camera at %s"), *FixedCameraLocation.ToString());
+		return;
 	}
-	else
-	{
-		// Re-attach camera boom to ship and restore saved state
-		CameraBoom->AttachToComponent(BuoyancyRoot, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-		CameraBoom->SetRelativeTransform(SavedBoomRelativeTransform);
-		CameraBoom->bUsePawnControlRotation = true;
-		CameraBoom->TargetArmLength = SavedTargetArmLength;
-		if (FollowCamera)
-		{
-			FollowCamera->SetRelativeLocation(SavedFollowCameraRelativeLocation);
-			FollowCamera->SetRelativeRotation(SavedFollowCameraRelativeRotation);
-		}
-		PC->SetControlRotation(SavedControlRotation);
 
-		UE_LOG(LogTemp, Log, TEXT("Switched back to follow camera."));
-	}
+	SetHelmFirstPersonCameraEnabled(!bUsingHelmFirstPersonCamera);
 }
 
 void AShip::ResetToFollowCamera()
 {
-	if (bUsingFixedCamera)
-	{
-		bUsingFixedCamera = false;
+	SetHelmFirstPersonCameraEnabled(false);
+}
 
-		CameraBoom->AttachToComponent(BuoyancyRoot, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-		CameraBoom->SetRelativeTransform(SavedBoomRelativeTransform);
-		CameraBoom->bUsePawnControlRotation = true;
-		CameraBoom->TargetArmLength = SavedTargetArmLength;
+void AShip::SetHelmFirstPersonCameraEnabled(bool bEnabled)
+{
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (bEnabled && (!PC || !PC->IsLocalController() || !RidingPlayer
+		|| !RidingPlayer->GetRootComponent() || !HelmFirstPersonCamera))
+	{
+		return;
+	}
+
+	if (bEnabled)
+	{
+		RememberFollowCameraState(PC);
+		bUsingHelmFirstPersonCamera = true;
+		const FVector WorldOffset = RidingPlayer->GetActorTransform().TransformVectorNoScale(
+			HelmFirstPersonCameraOffset);
+		HelmFirstPersonCamera->AttachToComponent(
+			RidingPlayer->GetRootComponent(),
+			FAttachmentTransformRules::KeepWorldTransform);
+		HelmFirstPersonCamera->SetWorldLocation(RidingPlayer->GetPawnViewLocation() + WorldOffset);
 		if (FollowCamera)
 		{
-			FollowCamera->SetRelativeLocation(SavedFollowCameraRelativeLocation);
-			FollowCamera->SetRelativeRotation(SavedFollowCameraRelativeRotation);
+			FollowCamera->Deactivate();
 		}
-
-		APlayerController* PC = Cast<APlayerController>(GetController());
-		if (!PC)
+		SetLocalHelmRiderHeadHidden(true);
+		HelmFirstPersonCamera->Activate(true);
+	}
+	else
+	{
+		bUsingHelmFirstPersonCamera = false;
+		SetLocalHelmRiderHeadHidden(false);
+		if (HelmFirstPersonCamera)
 		{
-			PC = CachedPlayerController;
+			HelmFirstPersonCamera->Deactivate();
+			if (BuoyancyRoot)
+			{
+				HelmFirstPersonCamera->AttachToComponent(
+					BuoyancyRoot,
+					FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+			}
 		}
-		if (PC)
+		if (FollowCamera)
 		{
-			PC->SetControlRotation(SavedControlRotation);
+			FollowCamera->Activate(true);
 		}
 	}
 }
 
+void AShip::SetLocalHelmRiderHeadHidden(bool bShouldHide)
+{
+	if (bShouldHide)
+	{
+		if (bHelmCameraHidRiderBone || HelmFirstPersonHiddenBone.IsNone())
+		{
+			return;
+		}
+
+		ACharacter* RidingCharacter = Cast<ACharacter>(RidingPlayer);
+		USkeletalMeshComponent* RiderMesh = RidingCharacter ? RidingCharacter->GetMesh() : nullptr;
+		if (!RiderMesh || RiderMesh->GetBoneIndex(HelmFirstPersonHiddenBone) == INDEX_NONE
+			|| RiderMesh->IsBoneHiddenByName(HelmFirstPersonHiddenBone))
+		{
+			return;
+		}
+
+		RiderMesh->HideBoneByName(HelmFirstPersonHiddenBone, EPhysBodyOp::PBO_None);
+		HelmLocallyHiddenMesh = RiderMesh;
+		bHelmCameraHidRiderBone = true;
+		return;
+	}
+
+	if (bHelmCameraHidRiderBone)
+	{
+		if (USkeletalMeshComponent* RiderMesh = HelmLocallyHiddenMesh.Get())
+		{
+			RiderMesh->UnHideBoneByName(HelmFirstPersonHiddenBone);
+		}
+	}
+	HelmLocallyHiddenMesh.Reset();
+	bHelmCameraHidRiderBone = false;
+}
+
 void AShip::RememberFollowCameraState(APlayerController* PlayerController)
 {
-	if (!CameraBoom || !PlayerController || !PlayerController->IsLocalController() || bUsingFixedCamera)
+	if (!CameraBoom || !PlayerController || !PlayerController->IsLocalController() || bUsingHelmFirstPersonCamera)
 	{
 		return;
 	}
@@ -1837,7 +2109,7 @@ void AShip::RememberFollowCameraState(APlayerController* PlayerController)
 void AShip::RestoreRememberedFollowCameraState(APlayerController* PlayerController)
 {
 	if (!bHasRememberedFollowCameraState || !CameraBoom || !PlayerController
-		|| !PlayerController->IsLocalController() || bUsingFixedCamera)
+		|| !PlayerController->IsLocalController() || bUsingHelmFirstPersonCamera)
 	{
 		return;
 	}
@@ -1858,6 +2130,8 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 
 	if (OldRidingPlayer && OldRidingPlayer != RidingPlayer)
 	{
+		SetLocalHelmRiderHeadHidden(false);
+
 		// UE_LOG(LogTemp, Log, TEXT("AShip: [CLIENT] OnRep_RidingPlayer - Restoring old passenger collision and walking movement."));
 		OldRidingPlayer->SetActorEnableCollision(true);
 		if (ACharacter* Char = Cast<ACharacter>(OldRidingPlayer))
@@ -1883,7 +2157,14 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 
 		if (LocalPC && LocalPC->IsLocalController())
 		{
-			LocalPC->HiddenActors.AddUnique(RidingPlayer);
+			// The helmsman remains visible in first person and to every other client.
+			LocalPC->HiddenActors.Remove(RidingPlayer);
+		}
+
+		if (APlayerController* ShipPC = Cast<APlayerController>(GetController());
+			ShipPC && ShipPC->IsLocalController())
+		{
+			SetHelmFirstPersonCameraEnabled(true);
 		}
 	}
 }
@@ -1930,6 +2211,10 @@ void AShip::OnRep_Controller()
 		if (CachedPlayerController)
 		{
 			RestoreRememberedFollowCameraState(CachedPlayerController);
+			if (RidingPlayer)
+			{
+				SetHelmFirstPersonCameraEnabled(true);
+			}
 			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
 			{
 				if (ShipInputMappingContext)

@@ -2153,24 +2153,6 @@ void AEnemyShip::HandleShipDeath()
 		}
 	}
 
-	// 3. BuoyancyCoefficient를 0으로 설정 → 부력만 완전히 제거, 중력으로 자연 침몰
-	// Disable the current shared buoyancy source so the network-physics ship sinks.
-	if (SWBuoyancyComponent)
-	{
-		SWBuoyancyComponent->ForceSettings.BuoyancyCoefficient = 0.0f;
-	}
-
-	// Keep the legacy component in sync for older derived enemy Blueprints.
-	if (UBuoyancyComponent* BuoyancyComp = FindComponentByClass<UBuoyancyComponent>())
-	{
-		BuoyancyComp->BuoyancyData.BuoyancyCoefficient = 0.0f;
-	}
-
-	if (BuoyancyRoot)
-	{
-		BuoyancyRoot->WakeAllRigidBodies();
-	}
-
 	// 4. 대포 발사/조준 타이머 정지
 	GetWorldTimerManager().ClearTimer(ActiveCannonsTimerHandle);
 	for (ACannon* Cannon : MountedCannons)
@@ -2184,11 +2166,8 @@ void AEnemyShip::HandleShipDeath()
 
 	DropAtDeathLocation(DeathLocation, DeathRotation);
 
-	// 5. N초 후 Destroy
-	GetWorldTimerManager().SetTimer(DeathDestroyTimerHandle, FTimerDelegate::CreateLambda([this]()
-	{
-		Destroy();
-	}), DestroyAfterDeathDelay, false);
+	// 5. Player ships and enemy ships share the exact buoyancy-off/destruction path.
+	StartSinking(DestroyAfterDeathDelay);
 }
 
 void AEnemyShip::InitializeEnemyDropData()

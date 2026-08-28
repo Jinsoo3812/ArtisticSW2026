@@ -284,6 +284,7 @@ void ACannon::Board(APawn* PlayerPawn)
 	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board initiated by player pawn %s. Cannon location: %s, Player location: %s"), *PlayerPawn->GetName(), *GetActorLocation().ToString(), *PlayerPawn->GetActorLocation().ToString());
 
 	RidingPlayer = PlayerPawn;
+	SetRiderInvulnerable(true);
 	RefreshPlayerInteractionAvailability();
 
 	// Disable player collision
@@ -494,16 +495,18 @@ void ACannon::ExitAimMode()
 	if (!RidingPlayer) return;
 
 	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC) return;
+	APawn* PlayerToRestore = RidingPlayer;
+	CancelWaterBombAbilityAuthoritative();
+	SetWaterBombModeAuthoritative(false);
 
 	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode initiated. Player pawn: %s"), *RidingPlayer->GetName());
 
 	// Detach, then move to the authored player exit point while collision is still
 	// disabled. This avoids the cannon/ship hull rejecting the teleport.
-	RidingPlayer->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	PlayerToRestore->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	if (PlayerExitPoint)
 	{
-		RidingPlayer->TeleportTo(
+		PlayerToRestore->TeleportTo(
 			PlayerExitPoint->GetComponentLocation(),
 			PlayerExitPoint->GetComponentRotation(),
 			false,
@@ -511,31 +514,55 @@ void ACannon::ExitAimMode()
 	}
 	else if (PlayerMountPoint)
 	{
-		RidingPlayer->TeleportTo(
+		PlayerToRestore->TeleportTo(
 			PlayerMountPoint->GetComponentLocation(),
 			PlayerMountPoint->GetComponentRotation(),
 			false,
 			true);
 	}
-	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode - Detached and moved player to exit. World location: %s"), *RidingPlayer->GetActorLocation().ToString());
+	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode - Detached and moved player to exit. World location: %s"), *PlayerToRestore->GetActorLocation().ToString());
 
-	RidingPlayer->SetActorEnableCollision(true);
-	RidingPlayer->SetActorHiddenInGame(false);
+	PlayerToRestore->SetActorEnableCollision(true);
+	PlayerToRestore->SetActorHiddenInGame(false);
 
-	if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
+	if (ACharacter* Char = Cast<ACharacter>(PlayerToRestore))
 	{
 		Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	}
 
 	// Restore movement replication on exit
-	RidingPlayer->SetReplicateMovement(true);
-	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode - Player bReplicateMovement after enable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
+	PlayerToRestore->SetReplicateMovement(true);
+	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode - Player bReplicateMovement after enable: %s"), PlayerToRestore->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
 
 	// Return possession to player character (Ship의 Disembark와 동일)
-	PC->Possess(RidingPlayer);
+	SetRiderInvulnerable(false);
+	if (PC)
+	{
+		PC->Possess(PlayerToRestore);
+	}
 
 	RidingPlayer = nullptr;
 	RefreshPlayerInteractionAvailability();
+}
+
+void ACannon::SetRiderInvulnerable(bool bEnabled)
+{
+	if (!HasAuthority() || bRiderInvulnerabilityApplied == bEnabled)
+	{
+		return;
+	}
+	if (UAbilitySystemComponent* ASC = GetRidingPlayerAbilitySystem())
+	{
+		if (bEnabled)
+		{
+			ASC->AddLooseGameplayTag(State_Invulnerable);
+		}
+		else
+		{
+			ASC->RemoveLooseGameplayTag(State_Invulnerable);
+		}
+		bRiderInvulnerabilityApplied = bEnabled;
+	}
 }
 
 void ACannon::ForceExit()

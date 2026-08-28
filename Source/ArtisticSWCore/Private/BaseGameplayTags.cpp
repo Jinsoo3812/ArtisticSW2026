@@ -4,6 +4,7 @@
 UE_DEFINE_GAMEPLAY_TAG(State_Attacking, "State.Attacking");
 UE_DEFINE_GAMEPLAY_TAG(State_Dead, "State.Dead");
 UE_DEFINE_GAMEPLAY_TAG(State_Damaged, "State.Damaged");
+UE_DEFINE_GAMEPLAY_TAG(State_Invulnerable, "State.Invulnerable");
 UE_DEFINE_GAMEPLAY_TAG(State_Aiming, "State.Aiming");
 UE_DEFINE_GAMEPLAY_TAG(State_Sniping, "State.Sniping");
 UE_DEFINE_GAMEPLAY_TAG(State_Crafting, "State.Crafting");

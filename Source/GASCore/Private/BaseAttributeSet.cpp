@@ -61,6 +61,27 @@ void UBaseAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, 
 	}
 }
 
+bool UBaseAttributeSet::PreGameplayEffectExecute(FGameplayEffectModCallbackData& Data)
+{
+	if (!Super::PreGameplayEffectExecute(Data))
+	{
+		return false;
+	}
+
+	const UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
+	if (!ASC || !ASC->HasMatchingGameplayTag(State_Invulnerable))
+	{
+		return true;
+	}
+
+	const FGameplayAttribute& Attribute = Data.EvaluatedData.Attribute;
+	const bool bDamageMeta = Attribute == GetDamageAttribute()
+		&& Data.EvaluatedData.Magnitude > 0.0f;
+	const bool bDirectHealthDamage = Attribute == GetHealthAttribute()
+		&& Data.EvaluatedData.Magnitude < 0.0f;
+	return !bDamageMeta && !bDirectHealthDamage;
+}
+
 void UBaseAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
 {
 	Super::PostGameplayEffectExecute(Data);
