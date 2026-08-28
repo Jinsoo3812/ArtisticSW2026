@@ -85,8 +85,10 @@ or slide against a wall without failing the task. Blocked movement never extends
 the duration and the task succeeds when the timer ends. Only invalid runtime
 ownership (missing boss, target, host ship, deck, or movement component) fails.
 
-DashSlash separately uses a deck-local planar acceptable range to avoid snapping
-to its exact destination.
+DashSlash freezes one HostShip-local path at commit. Its selector ignores target-facing
+front/rear relations, requires a configurable minimum travel distance, and normally
+requires the segment to cross the target corridor. Gameplay and path cues consume the
+same immutable endpoints and the dash reaches the committed endpoint exactly.
 
 Damage feedback is not emitted by the BT task or at ability startup. The attack stamps an impact cue into its outgoing damage spec, and the damaged actor's HealthComponent executes it only after authoritative health loss.
 
@@ -96,6 +98,7 @@ Damage feedback is not emitted by the BT task or at ability startup. The attack 
 - The server executes weapon/ability `GameplayCue.Impact.*` only after the target's Health actually decreases.
 - The server executes `GameplayCue.Boss.Hit` only after confirmed health loss, including lethal damage.
 - GameplayCue replication transports the event. Each receiving client spawns Niagara/audio locally.
+- DashSlash Telegraph and executed-path residue are duration GameplayEffects, so late relevance restores their active GameplayCues with the same reference-frame-local path.
 - Camera shakes call only local player controllers; they do not issue another client RPC.
 - Attack uses scale `0.25` and radius attenuation.
 - Hit uses scale `1.0`; its VFX is visible on receiving clients, while the strong shake is restricted to the local player who instigated the hit.
@@ -109,5 +112,5 @@ Damage feedback is not emitted by the BT task or at ability startup. The attack 
 4. Keep destination selection immediately before activation so another branch cannot consume stale state.
 5. Insert `BTT_BossStrafe` before/after only the abilities whose authored pattern needs it; do not add a global cooldown gate.
 6. Keep `BTT_SetFocus(TargetActor)` active while Strafe should face the player, and use the Strafe movement-speed mode.
-7. Confirm `GCN_Boss_Attack` and `GCN_Boss_Hit` are discovered under `/Game/GameplayCues`.
+7. Confirm boss hit cues and both `GCN_Path_Boss_DashSlash_*` cues are discovered under `/Game/GameplayCues`.
 8. In a two-client PIE session, verify one replicated VFX per hit, weak attack shake in range, and strong hit-confirm shake only for the damaging player.

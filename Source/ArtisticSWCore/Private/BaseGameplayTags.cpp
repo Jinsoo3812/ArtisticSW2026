@@ -73,6 +73,8 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Weapon_Sword, "GameplayCue.Impact.Weap
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Weapon_Bow, "GameplayCue.Impact.Weapon.Bow");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Boss_DashSlash, "GameplayCue.Impact.Boss.DashSlash");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Boss_Knockback, "GameplayCue.Impact.Boss.Knockback");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Path_Boss_DashSlash_Telegraph, "GameplayCue.Path.Boss.DashSlash.Telegraph");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Path_Boss_DashSlash_Execution, "GameplayCue.Path.Boss.DashSlash.Execution");
 // Event
 UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Changed, "Event.Ability.Changed");
 UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_Start, "Event.HandleScan.Start");

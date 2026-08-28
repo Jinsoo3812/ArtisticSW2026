@@ -2,19 +2,37 @@
 
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "AbilitySystemComponent.h"
+#include "AIController.h"
 #include "Animation/AnimMontage.h"
 #include "BaseGameplayTags.h"
-#include "BossAI/BossDeckMovementUtils.h"
 #include "BossAI/ShipBossEnemy.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GASDamageInstantGameplayEffect.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
+#include "GameplayCue/PathCombatPresentationDataAsset.h"
 #include "ShipAI/EnemyShip.h"
 #include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBossDashSlash, Log, All);
+
+UBossDashSlashTelegraphEffect::UBossDashSlashTelegraphEffect()
+{
+	DurationPolicy = EGameplayEffectDurationType::Infinite;
+	GameplayCues.Add(FGameplayEffectCue(
+		GameplayCue_Path_Boss_DashSlash_Telegraph, 0.0f, 1.0f));
+}
+
+UBossDashSlashExecutionPathEffect::UBossDashSlashExecutionPathEffect()
+{
+	DurationPolicy = EGameplayEffectDurationType::HasDuration;
+	DurationMagnitude = FScalableFloat(1.5f);
+	GameplayCues.Add(FGameplayEffectCue(
+		GameplayCue_Path_Boss_DashSlash_Execution, 0.0f, 1.0f));
+}
 
 UGA_BossDashSlash::UGA_BossDashSlash()
 {
@@ -56,12 +74,21 @@ void UGA_BossDashSlash::ActivateAbility(
 	HitActorsThisDash.Reset();
 	CapturedDeckMesh.Reset();
 	CapturedDestinationPointId = INDEX_NONE;
-	DashEndLocal = FVector::ZeroVector;
+	CommittedPath = FSWPathCuePayload();
+	TelegraphEffectHandle.Invalidate();
+	bMovementLocked = false;
 
 	FString MontageError;
-	if (!CapturePreselectedDestination() || !ValidateMontageConfig(MontageError))
+	FString PathError;
+	if (!CapturePreselectedDestination()
+		|| !ValidateCommittedPath(PathError)
+		|| !ValidateMontageConfig(MontageError))
 	{
-		if (!MontageError.IsEmpty())
+		if (!PathError.IsEmpty())
+		{
+			UE_LOG(LogBossDashSlash, Error, TEXT("Cannot activate DashSlash: %s"), *PathError);
+		}
+		else if (!MontageError.IsEmpty())
 		{
 			UE_LOG(LogBossDashSlash, Error, TEXT("Cannot activate DashSlash: %s"), *MontageError);
 		}
@@ -110,6 +137,12 @@ void UGA_BossDashSlash::ActivateAbility(
 		FinishDash(true);
 		return;
 	}
+	if (!LockMovementToCommittedStart())
+	{
+		FinishDash(true);
+		return;
+	}
+	StartPathTelegraph();
 
 	Phase = EDashSlashPhase::WindupEntering;
 	const float LeadInDuration = GetSectionDurationSeconds(MontageConfig.WindupEnterSectionName);
@@ -145,14 +178,14 @@ void UGA_BossDashSlash::EndAbility(
 	}
 	DeactivateDashCollision();
 	ClearDashState();
+	StopPathTelegraph();
+	RestoreMovementAfterAbility();
 	MontageTask = nullptr;
 	DashStartServerTime = 0.0;
-	EffectiveDashAcceptanceRadius = 0.0f;
 	HitActorsThisDash.Reset();
 	CapturedDeckMesh.Reset();
 	CapturedDestinationPointId = INDEX_NONE;
-	DashStartLocal = FVector::ZeroVector;
-	DashEndLocal = FVector::ZeroVector;
+	CommittedPath = FSWPathCuePayload();
 	PreviousWorldLocation = FVector::ZeroVector;
 	Phase = EDashSlashPhase::Inactive;
 	bDashStarted = false;
@@ -206,6 +239,8 @@ void UGA_BossDashSlash::ReleaseWindupAndBeginDash()
 	}
 
 	// The same authoritative frame releases the hold pose and starts movement.
+	StartExecutedPathPresentation();
+	StopPathTelegraph();
 	BeginDash();
 }
 
@@ -218,21 +253,29 @@ void UGA_BossDashSlash::BeginDash()
 
 	AShipBossEnemy* Boss = GetBossAvatar();
 	UStaticMeshComponent* DeckMesh = CapturedDeckMesh.Get();
-	if (!Boss || !DeckMesh || CapturedDestinationPointId == INDEX_NONE)
+	FVector StartWorld;
+	FVector EndWorld;
+	FVector SurfaceNormal;
+	if (!Boss || !DeckMesh || CapturedDestinationPointId == INDEX_NONE
+		|| !ResolveCommittedPathWorld(StartWorld, EndWorld, SurfaceNormal))
 	{
 		FinishDash(true);
 		return;
 	}
 
+	// Movement is locked only during Windup. Restore the pre-ability movement
+	// mode on the same frame as the DashSlash section so the slash animation and
+	// authoritative dash translation advance together, as they did originally.
+	RestoreMovementAfterAbility();
 	bDashStarted = true;
-	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
-	DashStartLocal = DeckTransform.InverseTransformPosition(Boss->GetActorLocation());
-	const float DashTravelDistance = FVector2D::Distance(
-		FVector2D(DashStartLocal.X, DashStartLocal.Y),
-		FVector2D(DashEndLocal.X, DashEndLocal.Y));
-	EffectiveDashAcceptanceRadius = BossDeckMovement::ResolveAcceptanceRadius(
-		DashAcceptanceRadius, DashTravelDistance);
-	PreviousWorldLocation = Boss->GetActorLocation();
+	const FVector PathDirection = (EndWorld - StartWorld).GetSafeNormal();
+	const FQuat StartRotation = PathDirection.IsNearlyZero()
+		? Boss->GetActorQuat()
+		: FRotationMatrix::MakeFromXZ(PathDirection, SurfaceNormal).ToQuat();
+	Boss->SetActorLocationAndRotation(
+		StartWorld, StartRotation, false, nullptr, ETeleportType::TeleportPhysics);
+	Boss->SetBase(DeckMesh);
+	PreviousWorldLocation = StartWorld;
 	DashStartServerTime = Boss->GetWorld()->GetTimeSeconds();
 	HitActorsThisDash.Reset();
 	ActivateDashCollision();
@@ -288,12 +331,19 @@ void UGA_BossDashSlash::TickDash()
 		static_cast<float>(ElapsedSeconds) / FMath::Max(0.05f, DashDuration),
 		0.0f,
 		1.0f);
-	const FVector NewWorldLocation = DeckMesh->GetComponentTransform().TransformPosition(
-		FMath::Lerp(DashStartLocal, DashEndLocal, Alpha));
+	FVector StartWorld;
+	FVector EndWorld;
+	FVector SurfaceNormal;
+	if (!ResolveCommittedPathWorld(StartWorld, EndWorld, SurfaceNormal))
+	{
+		FinishDash(true);
+		return;
+	}
+	const FVector NewWorldLocation = FMath::Lerp(StartWorld, EndWorld, Alpha);
 	const FVector MoveDirection = (NewWorldLocation - PreviousWorldLocation).GetSafeNormal();
 	const FQuat NewRotation = MoveDirection.IsNearlyZero()
 		? Boss->GetActorQuat()
-		: FRotationMatrix::MakeFromXZ(MoveDirection, DeckMesh->GetUpVector()).ToQuat();
+		: FRotationMatrix::MakeFromXZ(MoveDirection, SurfaceNormal).ToQuat();
 
 	Boss->SetActorLocationAndRotation(
 		NewWorldLocation,
@@ -308,11 +358,7 @@ void UGA_BossDashSlash::TickDash()
 	ApplySweptDashHits(PreviousWorldLocation, NewWorldLocation);
 	PreviousWorldLocation = NewWorldLocation;
 
-	const FVector NewLocalLocation = DeckMesh->GetComponentTransform().InverseTransformPosition(
-		NewWorldLocation);
-	if (BossDeckMovement::IsWithinPlanarAcceptance(
-		NewLocalLocation, DashEndLocal, EffectiveDashAcceptanceRadius)
-		|| Alpha >= 1.0f - KINDA_SMALL_NUMBER)
+	if (Alpha >= 1.0f - KINDA_SMALL_NUMBER)
 	{
 		HandleDestinationReached();
 	}
@@ -669,11 +715,170 @@ bool UGA_BossDashSlash::CapturePreselectedDestination()
 		return false;
 	}
 
+	const FTransform ReferenceTransform = HostShip->GetActorTransform();
+	const FVector SurfaceNormalWorld = DeckMesh->GetUpVector().GetSafeNormal();
+	++NextPathInstanceId;
+	if (NextPathInstanceId == 0)
+	{
+		++NextPathInstanceId;
+	}
+
 	CapturedDeckMesh = DeckMesh;
 	CapturedDestinationPointId = DestinationPointId;
-	DashEndLocal = DeckMesh->GetComponentTransform().InverseTransformPosition(
-		Destination.GetLocation());
+	CommittedPath.ReferenceActor = HostShip;
+	CommittedPath.StartLocal = ReferenceTransform.InverseTransformPosition(Boss->GetActorLocation());
+	CommittedPath.EndLocal = ReferenceTransform.InverseTransformPosition(Destination.GetLocation());
+	CommittedPath.SurfaceNormalLocal = ReferenceTransform.InverseTransformVectorNoScale(
+		SurfaceNormalWorld).GetSafeNormal();
+	CommittedPath.CorridorRadius = FMath::Max(1.0f, DashHitRadius);
+	CommittedPath.InstanceId = NextPathInstanceId;
 	return true;
+}
+
+bool UGA_BossDashSlash::ValidateCommittedPath(FString& OutError) const
+{
+	OutError.Reset();
+	if (!CommittedPath.IsValid())
+	{
+		OutError = TEXT("Committed path payload is invalid.");
+		return false;
+	}
+
+	const FVector Delta = FVector(CommittedPath.EndLocal) - FVector(CommittedPath.StartLocal);
+	const FVector SurfaceNormal = FVector(CommittedPath.SurfaceNormalLocal).GetSafeNormal();
+	const float PlanarDistance = FVector::VectorPlaneProject(Delta, SurfaceNormal).Size();
+	if (PlanarDistance < FMath::Max(1.0f, MinimumDashDistance))
+	{
+		OutError = FString::Printf(
+			TEXT("Selected path is too short (%.1f cm, minimum %.1f cm)."),
+			PlanarDistance, MinimumDashDistance);
+		return false;
+	}
+	return true;
+}
+
+FActiveGameplayEffectHandle UGA_BossDashSlash::ApplyPathPresentationEffect(
+	TSubclassOf<UGameplayEffect> EffectClass) const
+{
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	AShipBossEnemy* Boss = GetBossAvatar();
+	if (!ASC || !Boss || !Boss->HasAuthority() || !EffectClass || !CommittedPath.IsValid())
+	{
+		return FActiveGameplayEffectHandle();
+	}
+
+	FGameplayEffectContextHandle Context = USWCombatEffectContextLibrary::MakeCombatEffectContext(
+		ASC, Boss, Boss, nullptr);
+	Context = USWCombatEffectContextLibrary::SetPathCuePayload(Context, CommittedPath);
+	FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(
+		EffectClass, GetAbilityLevel(), Context);
+	return Spec.IsValid() && Spec.Data.IsValid()
+		? ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get())
+		: FActiveGameplayEffectHandle();
+}
+
+void UGA_BossDashSlash::StartPathTelegraph()
+{
+	StopPathTelegraph();
+	TSubclassOf<UGameplayEffect> EffectClass = UBossDashSlashTelegraphEffect::StaticClass();
+	if (PathPresentation && PathPresentation->GetTelegraphEffectClass())
+	{
+		EffectClass = PathPresentation->GetTelegraphEffectClass();
+	}
+	TelegraphEffectHandle = ApplyPathPresentationEffect(EffectClass);
+}
+
+void UGA_BossDashSlash::StopPathTelegraph()
+{
+	if (TelegraphEffectHandle.IsValid())
+	{
+		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+		{
+			ASC->RemoveActiveGameplayEffect(TelegraphEffectHandle);
+		}
+		TelegraphEffectHandle.Invalidate();
+	}
+}
+
+void UGA_BossDashSlash::StartExecutedPathPresentation()
+{
+	TSubclassOf<UGameplayEffect> EffectClass = UBossDashSlashExecutionPathEffect::StaticClass();
+	if (PathPresentation && PathPresentation->GetExecutionEffectClass())
+	{
+		EffectClass = PathPresentation->GetExecutionEffectClass();
+	}
+	ApplyPathPresentationEffect(EffectClass);
+}
+
+bool UGA_BossDashSlash::LockMovementToCommittedStart()
+{
+	AShipBossEnemy* Boss = GetBossAvatar();
+	UCharacterMovementComponent* Movement = Boss ? Boss->GetCharacterMovement() : nullptr;
+	UStaticMeshComponent* DeckMesh = CapturedDeckMesh.Get();
+	FVector StartWorld;
+	FVector EndWorld;
+	FVector SurfaceNormal;
+	if (!Boss || !Movement || !DeckMesh
+		|| !ResolveCommittedPathWorld(StartWorld, EndWorld, SurfaceNormal))
+	{
+		return false;
+	}
+
+	if (AAIController* Controller = Cast<AAIController>(Boss->GetController()))
+	{
+		Controller->StopMovement();
+	}
+	Movement->StopMovementImmediately();
+	CachedMovementMode = Movement->MovementMode;
+	CachedCustomMovementMode = Movement->CustomMovementMode;
+	Movement->DisableMovement();
+	bMovementLocked = true;
+
+	const FVector Direction = (EndWorld - StartWorld).GetSafeNormal();
+	const FQuat Rotation = Direction.IsNearlyZero()
+		? Boss->GetActorQuat()
+		: FRotationMatrix::MakeFromXZ(Direction, SurfaceNormal).ToQuat();
+	Boss->SetActorLocationAndRotation(
+		StartWorld, Rotation, false, nullptr, ETeleportType::TeleportPhysics);
+	Boss->SetBase(DeckMesh);
+	return true;
+}
+
+void UGA_BossDashSlash::RestoreMovementAfterAbility()
+{
+	if (!bMovementLocked)
+	{
+		return;
+	}
+	bMovementLocked = false;
+
+	AShipBossEnemy* Boss = GetBossAvatar();
+	UCharacterMovementComponent* Movement = Boss ? Boss->GetCharacterMovement() : nullptr;
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (!Movement || (ASC && ASC->HasMatchingGameplayTag(State_Dead)))
+	{
+		return;
+	}
+	Movement->StopMovementImmediately();
+	Movement->SetMovementMode(CachedMovementMode, CachedCustomMovementMode);
+}
+
+bool UGA_BossDashSlash::ResolveCommittedPathWorld(
+	FVector& OutStart,
+	FVector& OutEnd,
+	FVector& OutSurfaceNormal) const
+{
+	AActor* ReferenceActor = CommittedPath.ReferenceActor.Get();
+	if (!CommittedPath.IsValid() || !IsValid(ReferenceActor))
+	{
+		return false;
+	}
+	const FTransform& ReferenceTransform = ReferenceActor->GetActorTransform();
+	OutStart = ReferenceTransform.TransformPosition(FVector(CommittedPath.StartLocal));
+	OutEnd = ReferenceTransform.TransformPosition(FVector(CommittedPath.EndLocal));
+	OutSurfaceNormal = ReferenceTransform.TransformVectorNoScale(
+		FVector(CommittedPath.SurfaceNormalLocal)).GetSafeNormal();
+	return !OutSurfaceNormal.IsNearlyZero();
 }
 
 void UGA_BossDashSlash::FinishDash(bool bWasCancelled)

@@ -107,11 +107,13 @@ Section 연결은 Ability가 런타임에도 동일하게 설정하지만, Previ
 | `MontageConfig.WindupHoldDuration` | `Windup` 재생이 끝난 뒤 준비 자세를 유지할 시간 |
 | `MontageConfig.RecoveryTimeout` | Recover 완료 실패 안전장치, 예: `1.5` |
 | `DashDuration` | 목적지까지 실제 이동 시간, 예: `0.45` |
+| `MinimumDashDistance` | Commit을 허용할 최소 돌진 거리, 기본 `500` |
 | `DashHitRadius` | 공격 판정 반경, 예: `120` |
 | `Damage` | 원하는 Dash 피해량 |
 | `DamageEffectClass` | Instant Damage GameplayEffect |
 | `StartupGameplayCueTag` | 비워 둠(피해 확정 전 Cue 금지) |
 | `ImpactGameplayCueTag` | `GameplayCue.Impact.Boss.DashSlash` |
+| `PathPresentation` | `DA_DashSlashPathPresentation` |
 
 `WindupHoldDuration`만 늘리면 준비 동작 이후의 Hold 루프가 길어진다. `Windup` 자체의 길이와 `DashSlash` 완료 시간은 Montage Section에서 자동 계산하므로 같은 시간을 Class Defaults에 중복 입력하지 않는다.
 
@@ -119,9 +121,11 @@ Section 연결은 Ability가 런타임에도 동일하게 설정하지만, Previ
 
 ## 6. DashSlash BT 분기
 
-`GA_BossDashSlash`의 `Dash Acceptance Radius` 기본값은 75cm다. Dash는
-목적지의 갑판 로컬 평면 허용 범위에 들어오면 종료되며, 마지막 프레임에
-Deck Point의 정확한 좌표로 강제 스냅하지 않는다.
+Dash는 Commit 순간 HostShip 로컬 좌표로 출발점과 끝점을 고정한다. Windup
+동안만 CharacterMovement를 잠그고, `DashSlash` Section 진입 프레임에 원래
+MovementMode를 복원하면서 실제 이동과 휘두르기를 함께 시작한다. 이동·Sweep·
+Telegraph·공격 흔적은 모두 같은 경로를 사용하며 마지막 프레임에는 Commit된
+끝점까지 정확히 이동한다.
 
 필요한 연출에 따라 DashSlash Sequence의 `BTT_SelectBossDestinationPoint`
 앞에 `BTT_BossStrafe`를 배치할 수 있다. 이 Task는 쿨다운 fallback이
@@ -135,6 +139,8 @@ Deck Point의 정확한 좌표로 강제 스냅하지 않는다.
    - `GameplayAbility.Boss.DashSlash`
 2. `BTT_SelectBossDestinationPoint`
    - Purpose: `Dash`
+   - Minimum Dash Travel Distance: `MinimumDashDistance` 이상
+   - Require Dash Path Through Target: 체크
    - Blackboard Key: `DestinationPointId`
 3. `BTT_ActivateBossAbility`
    - Ability Asset Tag: `GameplayAbility.Boss.DashSlash`
@@ -161,6 +167,19 @@ Deck Point의 정확한 좌표로 강제 스냅하지 않는다.
 프로젝트의 Player와 Boss가 모두 Pawn 채널을 사용하므로 Dash 중에는 모든 Pawn을 관통한다. Player만 관통하고 다른 NPC와는 충돌해야 할 때만 별도 `PlayerPawn` Object Channel 도입을 고려한다.
 
 ## 8. GameplayCue 설정
+
+### DashSlash 경로 Cue
+
+- `/Game/GameplayCues/Path/Boss/GCN_Path_Boss_DashSlash_Telegraph`
+  - `GameplayCue.Path.Boss.DashSlash.Telegraph`
+  - Infinite GE가 Windup 동안 유지하며 DashSlash 진입 시 제거한다.
+- `/Game/GameplayCues/Path/Boss/GCN_Path_Boss_DashSlash_Execution`
+  - `GameplayCue.Path.Boss.DashSlash.Execution`
+  - Duration GE가 실행된 전체 경로를 기본 1.5초 유지한다.
+
+두 Cue는 `SWPathGameplayCueNotify`를 부모로 사용한다. `PathDecal` Material과
+선택적인 `PathNiagara`를 각 Blueprint에서 지정한다. Niagara를 사용할 경우
+`User.PathStart`, `User.PathEnd`, `User.PathWidth`를 소비하도록 만든다.
 
 ### 선택적 공격 연출 Cue
 

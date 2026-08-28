@@ -2,11 +2,14 @@
 
 #include "CoreMinimal.h"
 #include "GAS/Ability/Boss/BossGameplayAbility.h"
+#include "GAS/SWGameplayEffectContext.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GA_BossDashSlash.generated.h"
 
 class UAbilityTask_PlayMontageAndWait;
 class UAnimMontage;
 class UPrimitiveComponent;
+class UPathCombatPresentationDataAsset;
 class UStaticMeshComponent;
 
 /**
@@ -58,6 +61,26 @@ enum class EDashSlashPhase : uint8
 	Recovering
 };
 
+/** Native fallback. A presentation Data Asset may replace this class. */
+UCLASS(NotBlueprintable)
+class ENEMY_API UBossDashSlashTelegraphEffect : public UGameplayEffect
+{
+	GENERATED_BODY()
+
+public:
+	UBossDashSlashTelegraphEffect();
+};
+
+/** Native 1.5 second residual path fallback. A presentation Data Asset may replace it. */
+UCLASS(NotBlueprintable)
+class ENEMY_API UBossDashSlashExecutionPathEffect : public UGameplayEffect
+{
+	GENERATED_BODY()
+
+public:
+	UBossDashSlashExecutionPathEffect();
+};
+
 UCLASS()
 class ENEMY_API UGA_BossDashSlash : public UBossGameplayAbility
 {
@@ -75,7 +98,8 @@ public:
 	FName GetDashHoldSectionName() const { return MontageConfig.TravelHoldSectionName; }
 	FName GetRecoverySectionName() const { return MontageConfig.RecoverySectionName; }
 	float GetWindupHoldDuration() const { return MontageConfig.WindupHoldDuration; }
-	float GetDashAcceptanceRadius() const { return DashAcceptanceRadius; }
+	float GetMinimumDashDistance() const { return MinimumDashDistance; }
+	UPathCombatPresentationDataAsset* GetPathPresentation() const { return PathPresentation; }
 	const FDashSlashMontageConfig& GetMontageConfig() const { return MontageConfig; }
 
 	virtual void ActivateAbility(
@@ -134,6 +158,18 @@ protected:
 	void ActivateDashCollision();
 	void DeactivateDashCollision();
 	bool CapturePreselectedDestination();
+	bool ValidateCommittedPath(FString& OutError) const;
+	FActiveGameplayEffectHandle ApplyPathPresentationEffect(
+		TSubclassOf<UGameplayEffect> EffectClass) const;
+	void StartPathTelegraph();
+	void StopPathTelegraph();
+	void StartExecutedPathPresentation();
+	bool LockMovementToCommittedStart();
+	void RestoreMovementAfterAbility();
+	bool ResolveCommittedPathWorld(
+		FVector& OutStart,
+		FVector& OutEnd,
+		FVector& OutSurfaceNormal) const;
 	void FinishDash(bool bWasCancelled);
 	void ClearDashState();
 	void ClearRuntimeTimers();
@@ -144,9 +180,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash", meta = (ClampMin = "0.05", Units = "s"))
 	float DashDuration = 0.45f;
 
-	/** Stops inside this deck-local planar range instead of snapping to one exact point. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash", meta = (ClampMin = "0.0", Units = "cm"))
-	float DashAcceptanceRadius = 75.0f;
+	/** Authoritative safety check in addition to the destination selector filter. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash", meta = (ClampMin = "1.0", Units = "cm"))
+	float MinimumDashDistance = 500.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash", meta = (ClampMin = "1.0", Units = "cm"))
 	float DashHitRadius = 120.0f;
@@ -156,6 +192,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash")
 	TSubclassOf<UGameplayEffect> DamageEffectClass;
+
+	/** Reusable path presentation policy. GameplayEffect classes own cue tags and lifetime. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash|Presentation")
+	TObjectPtr<UPathCombatPresentationDataAsset> PathPresentation = nullptr;
 
 	UPROPERTY()
 	TObjectPtr<UAbilityTask_PlayMontageAndWait> MontageTask = nullptr;
@@ -183,19 +223,23 @@ protected:
 	float RecoveryTimeout_DEPRECATED = 1.5f;
 
 	FActiveGameplayEffectHandle DashStateHandle;
+	FActiveGameplayEffectHandle TelegraphEffectHandle;
 	FTimerHandle WindupLeadInTimerHandle;
 	FTimerHandle WindupHoldTimerHandle;
 	FTimerHandle SlashCompletionTimerHandle;
 	FTimerHandle DashTimerHandle;
 	FTimerHandle RecoveryTimeoutTimerHandle;
-	FVector DashStartLocal = FVector::ZeroVector;
-	FVector DashEndLocal = FVector::ZeroVector;
+	UPROPERTY(Transient)
+	FSWPathCuePayload CommittedPath;
+
 	FVector PreviousWorldLocation = FVector::ZeroVector;
 	TWeakObjectPtr<UStaticMeshComponent> CapturedDeckMesh;
 	int32 CapturedDestinationPointId = INDEX_NONE;
 	double DashStartServerTime = 0.0;
-	float EffectiveDashAcceptanceRadius = 0.0f;
 	float DashTickInterval = 1.0f / 60.0f;
+	TEnumAsByte<EMovementMode> CachedMovementMode = MOVE_Walking;
+	uint8 CachedCustomMovementMode = 0;
+	int32 NextPathInstanceId = 0;
 	TSet<TWeakObjectPtr<AActor>> HitActorsThisDash;
 	TEnumAsByte<ECollisionResponse> CachedPawnCollisionResponse = ECR_Block;
 	EDashSlashPhase Phase = EDashSlashPhase::Inactive;
@@ -203,5 +247,6 @@ protected:
 	bool bSlashFinished = false;
 	bool bDestinationReached = false;
 	bool bCollisionOverrideActive = false;
+	bool bMovementLocked = false;
 	bool bFinishing = false;
 };

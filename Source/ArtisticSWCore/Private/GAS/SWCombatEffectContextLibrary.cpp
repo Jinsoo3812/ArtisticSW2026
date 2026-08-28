@@ -74,6 +74,31 @@ bool USWCombatEffectContextLibrary::GetImpactDirection(
 	return !OutImpactDirection.IsNearlyZero();
 }
 
+FGameplayEffectContextHandle USWCombatEffectContextLibrary::SetPathCuePayload(
+	FGameplayEffectContextHandle ContextHandle,
+	const FSWPathCuePayload& PathPayload)
+{
+	if (FSWGameplayEffectContext* Context = GetMutableSWContext(ContextHandle))
+	{
+		Context->SetPathCuePayload(PathPayload);
+	}
+	return ContextHandle;
+}
+
+bool USWCombatEffectContextLibrary::GetPathCuePayload(
+	const FGameplayEffectContextHandle& ContextHandle,
+	FSWPathCuePayload& OutPathPayload)
+{
+	OutPathPayload = FSWPathCuePayload();
+	const FSWGameplayEffectContext* Context = GetSWContext(ContextHandle);
+	if (!Context || !Context->HasPathCuePayload())
+	{
+		return false;
+	}
+	OutPathPayload = Context->GetPathCuePayload();
+	return OutPathPayload.IsValid();
+}
+
 FVector USWCombatEffectContextLibrary::ResolveImpactDirection(
 	const AActor* InstigatorActor,
 	const AActor* EffectCauser,

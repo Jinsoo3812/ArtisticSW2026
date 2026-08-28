@@ -32,6 +32,7 @@
 #include "GAS/Ability/Boss/GA_BossVanish.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayCue/SWGameplayCueNotify_BurstFeedback.h"
+#include "GameplayCue/SWPathGameplayCueNotify.h"
 #include "Components/ChildActorComponent.h"
 #include "Components/SphereComponent.h"
 #include "Engine/Engine.h"
@@ -188,6 +189,11 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 		static_cast<uint8>(EBossDestinationRelation::BehindTarget));
 	TestEqual(TEXT("Front placement has a stable appended relation value"),
 		static_cast<uint8>(EBossDestinationRelation::InFrontOfTarget), static_cast<uint8>(1));
+	TestEqual(TEXT("Unconstrained placement is appended without changing serialized values"),
+		static_cast<uint8>(EBossDestinationRelation::Any), static_cast<uint8>(2));
+	TestTrue(TEXT("Destination policy exposes a meaningful dash-only minimum"),
+		SelectTaskCDO->GetSelectionSettings().MinimumDashTravelDistance
+			>= GetDefault<UGA_BossDashSlash>()->GetMinimumDashDistance());
 	TestNotNull(TEXT("Generic boss ability BT task exists"), ActivateTaskCDO);
 	if (TestNotNull(TEXT("Reusable boss strafe BT task exists"), StrafeTaskCDO))
 	{
@@ -219,6 +225,16 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Boss hit cue tag is registered"), GameplayCue_Boss_Hit.GetTag().IsValid());
 	TestTrue(TEXT("Confirmed impact cue root is registered"), GameplayCue_Impact.GetTag().IsValid());
 	TestTrue(TEXT("Sword impact cue tag is registered"), GameplayCue_Impact_Weapon_Sword.GetTag().IsValid());
+	TestTrue(TEXT("Dash telegraph path cue is registered"),
+		GameplayCue_Path_Boss_DashSlash_Telegraph.GetTag().IsValid());
+	TestTrue(TEXT("Dash execution path cue is registered"),
+		GameplayCue_Path_Boss_DashSlash_Execution.GetTag().IsValid());
+	TestNotNull(TEXT("Dash telegraph path cue Blueprint is discoverable"),
+		LoadClass<ASWPathGameplayCueNotify>(nullptr,
+			TEXT("/Game/GameplayCues/Path/Boss/GCN_Path_Boss_DashSlash_Telegraph.GCN_Path_Boss_DashSlash_Telegraph_C")));
+	TestNotNull(TEXT("Dash execution path cue Blueprint is discoverable"),
+		LoadClass<ASWPathGameplayCueNotify>(nullptr,
+			TEXT("/Game/GameplayCues/Path/Boss/GCN_Path_Boss_DashSlash_Execution.GCN_Path_Boss_DashSlash_Execution_C")));
 	TestTrue(TEXT("Dash montage start event tag is registered"), Event_Boss_Dash_Start.GetTag().IsValid());
 	TestTrue(TEXT("Burst feedback cue is authored through a Blueprint subclass"),
 		USWGameplayCueNotify_BurstFeedback::StaticClass()->HasAnyClassFlags(CLASS_Abstract));
@@ -488,8 +504,16 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 			Dash->GetDashHoldSectionName(), FName(TEXT("DashHold")));
 		TestEqual(TEXT("Dash montage recovery section contract"),
 			Dash->GetRecoverySectionName(), FName(TEXT("Recover")));
-		TestTrue(TEXT("Dash stops within a configurable acceptance radius"),
-			Dash->GetDashAcceptanceRadius() > 0.0f);
+		TestTrue(TEXT("Dash rejects paths below its authoritative minimum distance"),
+			Dash->GetMinimumDashDistance() > 0.0f);
+		TestNull(TEXT("Removed acceptance-radius property is no longer serialized"),
+			FindFProperty<FProperty>(Dash->GetClass(), TEXT("DashAcceptanceRadius")));
+		TestEqual(TEXT("Telegraph fallback is infinite"),
+			GetDefault<UBossDashSlashTelegraphEffect>()->DurationPolicy,
+			EGameplayEffectDurationType::Infinite);
+		TestEqual(TEXT("Executed path fallback has duration"),
+			GetDefault<UBossDashSlashExecutionPathEffect>()->DurationPolicy,
+			EGameplayEffectDurationType::HasDuration);
 	}
 	if (TestNotNull(TEXT("Boss basic attack specialization exists"), Basic))
 	{
@@ -549,6 +573,8 @@ bool FBossDashSlashServerPhasesTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	TestNotNull(TEXT("Authored DashSlash uses reusable path presentation data"),
+		AuthoredDash->GetPathPresentation());
 
 	const FDashSlashMontageConfig& Config = AuthoredDash->GetMontageConfig();
 	if (!TestNotNull(TEXT("Legacy BPGA montage migrated into MontageConfig"), Config.Montage.Get()))

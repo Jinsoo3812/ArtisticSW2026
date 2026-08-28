@@ -7,6 +7,7 @@
 
 class UAbilitySystemComponent;
 struct FGameplayEffectSpec;
+struct FSWPathCuePayload;
 
 /** Shared construction and enrichment API for every combat GameplayEffectContext. */
 UCLASS()
@@ -35,6 +36,16 @@ public:
 	static bool GetImpactDirection(
 		const FGameplayEffectContextHandle& ContextHandle,
 		FVector& OutImpactDirection);
+
+	UFUNCTION(BlueprintCallable, Category = "GAS|Combat|Context")
+	static FGameplayEffectContextHandle SetPathCuePayload(
+		FGameplayEffectContextHandle ContextHandle,
+		const FSWPathCuePayload& PathPayload);
+
+	UFUNCTION(BlueprintPure, Category = "GAS|Combat|Context")
+	static bool GetPathCuePayload(
+		const FGameplayEffectContextHandle& ContextHandle,
+		FSWPathCuePayload& OutPathPayload);
 
 	static FVector ResolveImpactDirection(
 		const AActor* InstigatorActor,

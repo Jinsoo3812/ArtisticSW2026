@@ -86,7 +86,7 @@ Notify를 남겨 두어도 Dash 이동과 피해에는 영향을 주지 않는�
 | 프로퍼티 | 의미 |
 | --- | --- |
 | `Dash Duration` | 목적지까지 이동하는 서버 기준 시간 |
-| `Dash Acceptance Radius` | 목적지 도착 허용 반경 |
+| `Minimum Dash Distance` | Commit 가능한 최소 돌진 거리. 기본 500cm |
 | `Dash Hit Radius` | 이동 중 피해 Sweep 반경 |
 | `Damage` | Dash 피해량 |
 | `Damage Effect Class` | 실제 피해 GameplayEffect |
@@ -111,7 +111,7 @@ Windup Section 재생시간 / Play Rate + Windup Hold Duration
 
 ## 6. Behavior Tree 확인
 
-기존 DashSlash 분기는 변경하지 않는다.
+기존 DashSlash 분기 순서는 유지하되 목적지 선택 설정을 확인한다.
 
 ```text
 BTD_CanActivateAbilityByTag(GameplayAbility.Boss.DashSlash)
@@ -120,6 +120,11 @@ BTD_CanActivateAbilityByTag(GameplayAbility.Boss.DashSlash)
 ```
 
 목적지는 Ability 활성화 전에 선택되어 있어야 한다. Ability가 활성화된 뒤에는 서버가 Windup, Dash, Recovery 전체 생명주기를 소유한다.
+
+`BTT_SelectBossDestinationPoint`의 Dash 설정은 `Minimum Dash Travel Distance`를
+`BPGA_SlashDash.Minimum Dash Distance` 이상으로 두고 `Require Dash Path Through
+Target`을 켠다. Dash 목적지는 플레이어의 바라보는 방향 기준 Behind/Front
+필터를 사용하지 않는다.
 
 1. `BT_Subtree_RogueBoss_Combat`에서 DashSlash용 `BTT_ActivateBossAbility`를 선택한다.
 2. `Ability Asset Tag`가 `GameplayAbility.Boss.DashSlash`인지 확인한다.
@@ -134,7 +139,7 @@ BTD_CanActivateAbilityByTag(GameplayAbility.Boss.DashSlash)
 2. 값을 `1.5~3.0`초로 늘린다.
 3. `Windup`이 한 번 재생된 뒤 `WindupHold` 자세만 반복되는지 확인한다.
 4. Hold 중에는 보스 위치가 변하지 않고 Dash Damage Volume도 활성화되지 않는지 확인한다.
-5. Hold 종료 시 `DashSlash`로 전환되는 프레임과 돌진 시작이 일치하는지 확인한다.
+5. Hold 종료 시 `DashSlash`로 전환되는 프레임에 MovementMode가 복원되고, 검을 휘두르는 동안 돌진 이동도 함께 진행되는지 확인한다.
 6. 목적지에 먼저 도착해도 검 휘두르기가 끝까지 재생되는지 확인한다.
 7. 검 휘두르기가 먼저 끝나면 `DashHold`를 유지하다가 도착 후 `Recover`로 넘어가는지 확인한다.
 8. Hold 또는 Dash 중 보스가 피격/사망하면 Montage, 타이머, 충돌 판정이 모두 정리되는지 확인한다.

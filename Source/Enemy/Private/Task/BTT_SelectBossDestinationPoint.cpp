@@ -59,13 +59,18 @@ EBTNodeResult::Type UBTT_SelectBossDestinationPoint::ExecuteTask(
 
 FString UBTT_SelectBossDestinationPoint::GetStaticDescription() const
 {
+	const TCHAR* RelationDescription = SelectionPurpose == EBossDestinationPurpose::Dash
+		? TEXT("PathThroughTarget")
+		: (DestinationRelation == EBossDestinationRelation::BehindTarget
+			? TEXT("Behind")
+			: (DestinationRelation == EBossDestinationRelation::InFrontOfTarget
+				? TEXT("Front")
+				: TEXT("Any")));
 	return FString::Printf(
 		TEXT("Select moving-deck destination (%s, %s) -> %s"),
 		SelectionPurpose == EBossDestinationPurpose::Dash
 			? TEXT("Dash")
 			: (SelectionPurpose == EBossDestinationPurpose::Walk ? TEXT("Walk") : TEXT("Vanish")),
-		DestinationRelation == EBossDestinationRelation::BehindTarget
-			? TEXT("Behind")
-			: TEXT("Front"),
+		RelationDescription,
 		*GetSelectedBlackboardKey().ToString());
 }
