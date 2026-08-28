@@ -12,6 +12,7 @@
 #include "Ship.generated.h"
 
 class USWBuoyancyComponent;
+class UGameplayEffect;
 USTRUCT()
 struct FNetInputShip : public FNetworkPhysicsPayload
 {
@@ -459,6 +460,15 @@ protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
+	/** Temporary runtime telemetry for tuning player-to-enemy ship ram speed. */
+	UFUNCTION()
+	void HandlePlayerShipCollisionTelemetry(
+		UPrimitiveComponent* HitComponent,
+		AActor* OtherActor,
+		UPrimitiveComponent* OtherComponent,
+		FVector NormalImpulse,
+		const FHitResult& Hit);
+
 public:	
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
@@ -498,6 +508,21 @@ public:
 
 	/** Identifies hostile ships without making WaterAndShip depend on Enemy. */
 	virtual bool IsEnemyShipForEffects() const { return false; }
+
+	/** Minimum horizontal approach speed required for a player ram to deal damage. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0", Units = "cm/s"))
+	float PlayerRamMinimumApproachSpeed = 800.0f;
+
+	/** Fixed damage dealt when the player ram exceeds the approach-speed threshold. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0"))
+	float PlayerRamCollisionDamage = 50.0f;
+
+	/** Prevents persistent physics contact from applying ram damage every frame. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, AdvancedDisplay, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0", Units = "s"))
+	float PlayerRamDamageCooldown = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage")
+	TSubclassOf<UGameplayEffect> PlayerRamDamageGameplayEffectClass;
 
 	/** Class policy used by interaction collision and the authoritative Board guard. */
 	UFUNCTION(BlueprintPure, Category = "Ship|Control")
@@ -1003,6 +1028,8 @@ private:
 	FVector CurrentExternalAcceleration = FVector::ZeroVector;
 	TMap<FGuid, FVector> ExternalAccelerationSources;
 	TSet<FGuid> PropulsionSuppressionSources;
+	TWeakObjectPtr<AShip> LastPlayerRamTarget;
+	double LastPlayerRamDamageTime = -DBL_MAX;
 
 	bool bStaticDataInitialized = false;
 };

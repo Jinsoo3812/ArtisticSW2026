@@ -19,6 +19,9 @@
 #include "BaseAttributeSet.h"
 #include "ShipAttributeSet.h"
 #include "BaseGameplayTags.h"
+#include "GASCombatLibrary.h"
+#include "GASDamageInstantGameplayEffect.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 #include "Skills/SkillUseProvider.h"
 #include "ShipPhysicsAsync.h"
 #include "Physics/Experimental/PhysScene_Chaos.h"
@@ -90,6 +93,7 @@ AShip::AShip()
 {
  	// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
+	PlayerRamDamageGameplayEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
 
 	// Buoyancy Root
 	BuoyancyRoot = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BuoyancyRoot"));
@@ -248,6 +252,18 @@ AShip::AShip()
 void AShip::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// PlayerShip and EnemyShip are PhysicsOnly WorldDynamic bodies that mutually
+	// block, so the physics root is the authoritative place to observe a ram.
+	// Enemy charge temporarily enables the same notification on its own root;
+	// keep it enabled on the player root while we gather threshold telemetry.
+	if (HasAuthority() && !IsEnemyShipForEffects() && BuoyancyRoot)
+	{
+		BuoyancyRoot->SetNotifyRigidBodyCollision(true);
+		BuoyancyRoot->OnComponentHit.AddUniqueDynamic(
+			this, &AShip::HandlePlayerShipCollisionTelemetry);
+	}
+
 	// Reassert the critical moving-deck responses at runtime so older Blueprint
 	// component templates cannot silently restore the former query-only profile.
 	for (UStaticMeshComponent* DeckMesh : { DeckMeshSimple.Get(), DeckMeshComplex.Get() })
@@ -1934,6 +1950,97 @@ void AShip::OnRep_Controller()
 UAbilitySystemComponent* AShip::GetAbilitySystemComponent() const
 {
 	return AbilitySystemComponent;
+}
+
+void AShip::HandlePlayerShipCollisionTelemetry(
+	UPrimitiveComponent* HitComponent,
+	AActor* OtherActor,
+	UPrimitiveComponent* OtherComponent,
+	FVector NormalImpulse,
+	const FHitResult& Hit)
+{
+	AShip* OtherShip = Cast<AShip>(OtherActor);
+	if (!HasAuthority() || IsEnemyShipForEffects() || !OtherShip
+		|| !OtherShip->IsEnemyShipForEffects())
+	{
+		return;
+	}
+
+	FVector PlayerVelocity = BuoyancyRoot
+		? BuoyancyRoot->GetComponentVelocity()
+		: GetVelocity();
+	FVector EnemyVelocity = OtherShip->BuoyancyRoot
+		? OtherShip->BuoyancyRoot->GetComponentVelocity()
+		: OtherShip->GetVelocity();
+	PlayerVelocity.Z = 0.0f;
+	EnemyVelocity.Z = 0.0f;
+
+	const FVector RelativeVelocity = PlayerVelocity - EnemyVelocity;
+	const FVector ToEnemy = (OtherShip->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+	const float ApproachSpeed = FMath::Max(
+		0.0f, FVector::DotProduct(RelativeVelocity, ToEnemy));
+	if (ApproachSpeed < PlayerRamMinimumApproachSpeed
+		|| PlayerRamCollisionDamage <= 0.0f
+		|| !PlayerRamDamageGameplayEffectClass)
+	{
+		return;
+	}
+
+	const double CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	if (LastPlayerRamTarget.Get() == OtherShip
+		&& CurrentTime - LastPlayerRamDamageTime < PlayerRamDamageCooldown)
+	{
+		return;
+	}
+
+	UAbilitySystemComponent* TargetASC = OtherShip->GetAbilitySystemComponent();
+	if (!AbilitySystemComponent || !TargetASC)
+	{
+		return;
+	}
+
+	const FGameplayEffectSpecHandle DamageSpec = UGASCombatLibrary::MakeDamageEffectSpec(
+		AbilitySystemComponent,
+		PlayerRamDamageGameplayEffectClass,
+		PlayerRamCollisionDamage,
+		this,
+		this,
+		1,
+		true,
+		Hit);
+	if (!DamageSpec.IsValid() || !DamageSpec.Data.IsValid())
+	{
+		return;
+	}
+
+	FGameplayEffectSpec TargetSpec(*DamageSpec.Data.Get());
+	USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
+		TargetSpec, this, this, OtherShip, &Hit, PlayerVelocity);
+	TargetASC->ApplyGameplayEffectSpecToSelf(TargetSpec);
+	LastPlayerRamTarget = OtherShip;
+	LastPlayerRamDamageTime = CurrentTime;
+	const float CurrentHealth = OtherShip->GetShipAttributeSet()
+		? OtherShip->GetShipAttributeSet()->GetHealth()
+		: 0.0f;
+
+	UE_LOG(
+		LogTemp,
+		Warning,
+		TEXT("[PLAYER-SHIP-RAM-DAMAGE] Player=%s Enemy=%s Damage=%.2f EnemyHealth=%.2f Threshold=%.2f cm/s PlayerSpeed=%.2f cm/s (%.2f m/s) RelativeSpeed=%.2f cm/s (%.2f m/s) ApproachSpeed=%.2f cm/s (%.2f m/s) PlayerVelocity=%s EnemyVelocity=%s ImpactPoint=%s"),
+		*GetNameSafe(this),
+		*GetNameSafe(OtherShip),
+		PlayerRamCollisionDamage,
+		CurrentHealth,
+		PlayerRamMinimumApproachSpeed,
+		PlayerVelocity.Size(),
+		PlayerVelocity.Size() / 100.0f,
+		RelativeVelocity.Size(),
+		RelativeVelocity.Size() / 100.0f,
+		ApproachSpeed,
+		ApproachSpeed / 100.0f,
+		*PlayerVelocity.ToCompactString(),
+		*EnemyVelocity.ToCompactString(),
+		*Hit.ImpactPoint.ToCompactString());
 }
 
 bool AShip::IsAvailableForPlayerRespawn_Implementation() const
