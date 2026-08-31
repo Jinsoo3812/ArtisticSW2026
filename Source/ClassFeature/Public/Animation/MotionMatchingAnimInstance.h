@@ -983,6 +983,16 @@ protected:
     // Movement Direction & Quadrant Thresholds
     EMovementDirection CurrentMovementDirection = EMovementDirection::Forward;
     EMovementDirection MovementDirectionLastFrame = EMovementDirection::Forward;
+    EMovementDirection LastDiagonalMovementDirection = EMovementDirection::Forward;
+    float LastDiagonalMovementDirectionTime = -100.0f;
+
+    /**
+     * Window allowing asynchronous keyboard release of diagonal inputs (e.g. W+A).
+     * If one key is released slightly earlier before full stop, the diagonal stop
+     * animation and orientation warping are gracefully preserved.
+     */
+    UPROPERTY(EditDefaultsOnly, Category = "StateController|Stop", meta = (ClampMin = "0.0", ClampMax = "0.3", Units = "s"))
+    float StateControllerStopDiagonalReleaseWindow = 0.15f;
 
     // Land Gait Lock
     EGaitIntent StateControllerLandGaitLock = EGaitIntent::Walk;
@@ -1090,17 +1100,20 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Weapon UpperBody")
     bool bForceSprintWeaponUpperBodyDirectionForward = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Foot Placement")
     FFootPlacementPlantSettings FootPlacementPlantSettingsDefault;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Foot Placement")
     FFootPlacementPlantSettings FootPlacementPlantSettingsStops;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Foot Placement")
     FFootPlacementInterpolationSettings FootPlacementInterpolationSettingsDefault;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation|Foot Placement", AdvancedDisplay)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Foot Placement")
     FFootPlacementInterpolationSettings FootPlacementInterpolationSettingsStops;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Foot Placement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float TurnInPlaceFootPlacementAlpha = 0.0f;
 
 
 

@@ -8,6 +8,8 @@
 #include "ChooserFunctionLibrary.h"
 #include "Chooser.h"
 #include "ChooserTypes.h"
+#include "Components/CapsuleComponent.h"
+#include "CollisionChannels.h"
 #include "IObjectChooser.h"
 #include "Equipment/PlayerEquipmentComponent.h"
 #include "Item/Components/BowComponent.h"
@@ -1873,6 +1875,16 @@ UMotionMatchingAnimInstance::UMotionMatchingAnimInstance()
 {
     bUseMultiThreadedAnimationUpdate = true;
 
+    // Ground contact and slope adaptation settings
+    FootPlacementPlantSettingsDefault.DistanceToGround = 0.0f;
+    FootPlacementPlantSettingsDefault.MaxExtensionRatio = 0.95f;
+    FootPlacementPlantSettingsDefault.MinExtensionRatio = 0.1f;
+    FootPlacementPlantSettingsDefault.AnkleTwistReduction = 0.75f;
+
+    FootPlacementPlantSettingsStops.DistanceToGround = 0.0f;
+    FootPlacementPlantSettingsStops.MaxExtensionRatio = 0.95f;
+    FootPlacementPlantSettingsStops.MinExtensionRatio = 0.1f;
+    FootPlacementPlantSettingsStops.AnkleTwistReduction = 0.75f;
     FootPlacementPlantSettingsStops.SpeedThreshold = 80.0f;
     FootPlacementPlantSettingsStops.UnplantRadius = 25.0f;
     FootPlacementPlantSettingsStops.UnplantAngle = 35.0f;
@@ -1883,6 +1895,8 @@ UMotionMatchingAnimInstance::UMotionMatchingAnimInstance()
     FootPlacementInterpolationSettingsStops.UnplantAngularStiffness = 700.0f;
     FootPlacementInterpolationSettingsStops.FloorLinearStiffness = 1200.0f;
     FootPlacementInterpolationSettingsStops.FloorAngularStiffness = 650.0f;
+
+    TurnInPlaceFootPlacementAlpha = 1.0f;
 }
 
 FAnimInstanceProxy* UMotionMatchingAnimInstance::CreateAnimInstanceProxy()
@@ -2037,20 +2051,52 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     if (bIsPrimaryAnimInstance)
     {
         EvaluateStateControllerPresentationState();
-    }
 
-    // 최적화 틱 레이트에 맞추어 이번 프레임의 모션 매칭 평가 여부 결정
-    if (!ShouldEvaluateMotionMatchingThisFrame(DeltaSeconds))
-    {
-        return;
+        // --- Transition & Stop-to-Idle Diagnostics ---
+        if (CachedBasePlayer && CachedBasePlayer->IsLocallyControlled())
+        {
+            const FMotionMatchingAnimInstanceProxy& Proxy = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>();
+            const FAnimThreadSafeData& ThreadSafeData = Proxy.ThreadSafeData;
+
+            const FString StateName = UEnum::GetValueAsString(ThreadSafeData.StateController.PresentationState);
+            const bool bOverrideMM = ThreadSafeData.StateController.bShouldOverrideMotionMatching;
+            const FString AnimName = ThreadSafeData.StateController.SelectedAnimation ? ThreadSafeData.StateController.SelectedAnimation->GetName() : TEXT("None (MM Active)");
+            const float Speed = ThreadSafeData.MovementData.Velocity.Size2D();
+            const float Accel = ThreadSafeData.MovementData.Acceleration.Size2D();
+            const FString DBName = CurrentActivePoseSearchDatabase ? CurrentActivePoseSearchDatabase->GetName() : TEXT("None");
+
+            // 상태가 바뀔 때마다 상세 로그 출력
+            static EStateControllerPresentationState LastLoggedState = EStateControllerPresentationState::None;
+            static bool LastLoggedOverride = false;
+            if (LastLoggedState != ThreadSafeData.StateController.PresentationState || LastLoggedOverride != bOverrideMM)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[AnimTransition] State: %s -> %s | OverrideMM: %s -> %s | Anim: %s | Speed: %.1f | DB: %s"),
+                    *UEnum::GetValueAsString(LastLoggedState), *StateName,
+                    LastLoggedOverride ? TEXT("TRUE") : TEXT("FALSE"), bOverrideMM ? TEXT("TRUE") : TEXT("FALSE"),
+                    *AnimName, Speed, *DBName);
+
+                LastLoggedState = ThreadSafeData.StateController.PresentationState;
+                LastLoggedOverride = bOverrideMM;
+            }
+
+            // 화면 좌측 상단 실시간 HUD (초록색/노란색)
+            if (GEngine)
+            {
+                FString HUDStr = FString::Printf(TEXT("[Anim HUD] State: %s | OverrideMM: %s | Anim: %s | Speed: %.1f | Accel: %.1f | DB: %s"),
+                    *StateName,
+                    bOverrideMM ? TEXT("TRUE (BlendStack)") : TEXT("FALSE (MotionMatching)"),
+                    *AnimName, Speed, Accel, *DBName);
+
+                FColor HUDColor = bOverrideMM ? FColor::Yellow : FColor::Green;
+                GEngine->AddOnScreenDebugMessage(99991, 0.0f, HUDColor, HUDStr);
+            }
+        }
     }
 
     // 1. C++ 직접 상태 분기 및 알맞은 PSD 할당 (Chooser Table 미사용)
+    // 모션 매칭 최적화 틱 스킵과 무관하게 데이터베이스 포인터는 항상 매 프레임 즉시 최신 상태로 유지합니다.
     CurrentActivePoseSearchDatabase = nullptr;
 
-    // Project_J policy: State Controller is the one animation-presentation
-    // authority.  Keep a suitable PSD warm behind a direct Blend Stack clip,
-    // but never choose that PSD from the legacy CurrentState.
     if (CachedLocomotionStateComponent)
     {
         const bool bSprinting = CachedLocomotionStateComponent->bIsSprinting;
@@ -2073,11 +2119,6 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             }
             else
             {
-                // Project_J's moving-Strafe policy: a brief meaningful
-                // direction redirect searches the dedicated transition PSD;
-                // steady movement stays in the cheap stable loop PSD.  The
-                // transition component already latches this for a short
-                // duration, preventing a database flip every frame.
                 const bool bUseRunTransitionDatabase =
                     !bSprinting &&
                     CachedLocomotionStateComponent->bIsLocomotionTransitioning &&
@@ -2088,17 +2129,23 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             }
             break;
 
+        case EStateControllerPresentationState::TransitionToStop:
         case EStateControllerPresentationState::IdleLoop:
         case EStateControllerPresentationState::TurnInPlace:
             CurrentActivePoseSearchDatabase = IdleDatabase;
             break;
 
         default:
-            // Start, Stop and Pivot are direct assets.  Their MM fallback is a
-            // locomotion cycle and is protected by bShouldOverrideMotionMatching.
+            // Start and Pivot are direct assets.
             CurrentActivePoseSearchDatabase = bSprinting ? SprintLocomotionDatabase : LocomotionDatabase;
             break;
         }
+    }
+
+    // 최적화 틱 레이트에 맞추어 이번 프레임의 모션 매칭 평가 여부 결정
+    if (!ShouldEvaluateMotionMatchingThisFrame(DeltaSeconds))
+    {
+        return;
     }
 
     if (false && CachedLocomotionStateComponent) // Legacy DB routing kept for reference only.
@@ -3135,8 +3182,12 @@ FFootPlacementInterpolationSettings UMotionMatchingAnimInstance::Get_FootPlaceme
 float UMotionMatchingAnimInstance::GetThreadSafeFootPlacementAlpha() const
 {
     const FAnimThreadSafeData& Data = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    if (Data.AirData.bIsInAir)
+    {
+        return 0.0f;
+    }
     return Data.StateController.PresentationState == EStateControllerPresentationState::TurnInPlace
-        ? 0.0f
+        ? TurnInPlaceFootPlacementAlpha
         : 1.0f;
 }
 
@@ -3287,9 +3338,25 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPresentationState()
         AbsDesiredFacingDeltaYaw >= StateControllerTurnInPlaceEntryAngle;
     const EStateControllerPresentationState HoldStateBeforeEvaluation = StateControllerPlaybackHoldState;
     const int32 SelectionRevisionBeforeEvaluation = StateControllerSelectionRevision;
+    const bool bPlayerHasActionTag = CachedBasePlayer && CachedBasePlayer->GetAbilitySystemComponent() &&
+        (CachedBasePlayer->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Attacking) ||
+         CachedBasePlayer->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Damaged) ||
+         CachedBasePlayer->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Dead));
+    const bool bPlayerActionFlag = CachedBasePlayer &&
+        (CachedBasePlayer->bIsAttacking || CachedBasePlayer->bIsDodging ||
+         CachedBasePlayer->bIsHitReacting || CachedBasePlayer->bIsPlayingCombatIntro);
+    const bool bFullBodyMontagePlaying = Montage_IsPlaying(nullptr);
+    const bool bActionMontageActive = bPlayerHasActionTag || bPlayerActionFlag || bFullBodyMontagePlaying;
+
+    if (bActionMontageActive)
+    {
+        DesiredState = bHasMoveInput
+            ? EStateControllerPresentationState::LocomotionLoop
+            : EStateControllerPresentationState::IdleLoop;
+    }
     // StartLanding deliberately keeps bIsInAir true until the landing pose is
     // released.  Landing must therefore take precedence over the air flag, unless TIP is strongly requested.
-    if (bLanding && !bCanStartTurnInPlace)
+    else if (bLanding && !bCanStartTurnInPlace)
     {
         // Project_J's Strafe path enters its Land chooser on the impact frame.
         // Artistic already records an immutable impact direction, so diagonals
@@ -3676,7 +3743,21 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         }
     }
 
-    if (bStateChanged || bInterruptLandForMotionMatching || bTurnInPlaceReplayDue || bStartInputReselectDue)
+    const bool bPlayerHasActionTag = CachedBasePlayer && CachedBasePlayer->GetAbilitySystemComponent() &&
+        (CachedBasePlayer->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Attacking) ||
+         CachedBasePlayer->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Damaged) ||
+         CachedBasePlayer->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Dead));
+    const bool bPlayerActionFlag = CachedBasePlayer &&
+        (CachedBasePlayer->bIsAttacking || CachedBasePlayer->bIsDodging ||
+         CachedBasePlayer->bIsHitReacting || CachedBasePlayer->bIsPlayingCombatIntro);
+    const bool bFullBodyMontagePlaying = Montage_IsPlaying(nullptr);
+    const bool bActionMontageActive = bPlayerHasActionTag || bPlayerActionFlag || bFullBodyMontagePlaying;
+
+    const bool bActionMontageClearDue = bActionMontageActive &&
+        (StateControllerSelectedAnimation != nullptr ||
+         StateControllerPlaybackHoldState != DesiredState);
+
+    if (bStateChanged || bInterruptLandForMotionMatching || bTurnInPlaceReplayDue || bStartInputReselectDue || bActionMontageClearDue)
     {
         StateControllerPlaybackHoldState = DesiredState;
         StateControllerPlaybackHoldElapsed = 0.0f;
@@ -3752,6 +3833,36 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
                     !CachedLocomotionStateComponent->LandMoveDirection.IsNearlyZero())
                 {
                     DirectionInput = CachedLocomotionStateComponent->LandMoveDirection;
+                }
+                else if (DesiredState == EStateControllerPresentationState::TransitionToStop)
+                {
+                    // Stop은 키를 뗐을 때 발동하므로, 캐릭터의 직전 이동 속도(Velocity)를 로컬 좌표로 변환하여 방향을 캡처합니다.
+                    if (CachedBasePlayer)
+                    {
+                        const FVector WorldVel = CachedBasePlayer->GetVelocity();
+                        const FVector LocalVel = CachedBasePlayer->GetActorTransform().InverseTransformVector(WorldVel);
+                        if (!LocalVel.IsNearlyZero(10.0f))
+                        {
+                            DirectionInput = FVector2D(LocalVel.Y, LocalVel.X); // X=Right, Y=Forward
+                        }
+                    }
+
+                    // 속도가 이미 0에 가깝다면 Chooser가 선택한 MovementDirection으로 완벽하게 대각선 각도 폴백
+                    if (DirectionInput.IsNearlyZero())
+                    {
+                        switch (StateControllerMovementDirection)
+                        {
+                        case EMovementDirection::ForwardLeft:  DirectionInput = FVector2D(-1.0f, 1.0f); break;
+                        case EMovementDirection::ForwardRight: DirectionInput = FVector2D(1.0f, 1.0f); break;
+                        case EMovementDirection::BackwardLeft: DirectionInput = FVector2D(-1.0f, -1.0f); break;
+                        case EMovementDirection::BackwardRight: DirectionInput = FVector2D(1.0f, -1.0f); break;
+                        case EMovementDirection::Left:         DirectionInput = FVector2D(-1.0f, 0.0f); break;
+                        case EMovementDirection::Right:        DirectionInput = FVector2D(1.0f, 0.0f); break;
+                        case EMovementDirection::Backward:     DirectionInput = FVector2D(0.0f, -1.0f); break;
+                        case EMovementDirection::Forward:      DirectionInput = FVector2D(0.0f, 1.0f); break;
+                        default: break;
+                        }
+                    }
                 }
 
                 if (!DirectionInput.IsNearlyZero())
@@ -4148,7 +4259,19 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         bHasStateControllerLandingDirectionLatch;
     if (!bHoldingLandStopDirection)
     {
-        StateControllerMovementDirection = CurrentMovementDirection;
+        EMovementDirection EffectiveDirection = CurrentMovementDirection;
+        const double CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+
+        // Stop으로 전환되는 순간, 키보드 비동기 릴리즈(손가락 시차)로 인해 직전 대각선 방향이 정면/단일 방향으로 튀는 것을 방지
+        if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop)
+        {
+            if ((CurrentTime - LastDiagonalMovementDirectionTime) <= StateControllerStopDiagonalReleaseWindow)
+            {
+                EffectiveDirection = LastDiagonalMovementDirection;
+            }
+        }
+
+        StateControllerMovementDirection = EffectiveDirection;
         StateControllerPreviousMovementDirection = MovementDirectionLastFrame;
     }
     bStateControllerIsPivoting = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bSharpTurnRequested;
@@ -4576,6 +4699,17 @@ void UMotionMatchingAnimInstance::UpdateMovementDirection()
     else
     {
         CurrentMovementDirection = EMovementDirection::Backward;
+    }
+
+    const bool bIsDiagonal =
+        (CurrentMovementDirection == EMovementDirection::ForwardLeft ||
+         CurrentMovementDirection == EMovementDirection::ForwardRight ||
+         CurrentMovementDirection == EMovementDirection::BackwardLeft ||
+         CurrentMovementDirection == EMovementDirection::BackwardRight);
+    if (bIsDiagonal && ThreadSafeData.InputData.bHasMoveInput)
+    {
+        LastDiagonalMovementDirection = CurrentMovementDirection;
+        LastDiagonalMovementDirectionTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
     }
 }
 

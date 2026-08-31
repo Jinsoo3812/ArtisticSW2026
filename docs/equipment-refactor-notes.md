@@ -302,6 +302,20 @@ These tags are useful for animation conditions, sprint blocking, debugging, and 
    - `OnMouseInputPressed`
    - input tag to GAS input routing
 
+## Action Montage & Interaction Locomotion State Cleanup
+
+To prevent stale `SelectedAnimation` one-shots (such as `Run_Start`, `Jog_Stop`, or `Land`) from lingering in the background State Controller and unexpectedly popping after attack/dodge/hit montages or vehicle/cannon interactions:
+
+1. **`ULocomotionAnimStateComponent::ResetLocomotionActionState(Reason)`**:
+   - Clears `bStartRequested`, `bStopRequested`, `bLandingRequested`, `bGroundMoveEpisodeActive`, and all fallback timers (`StartFallbackTimer`, `StopFallbackTimer`, `LandingFallbackTimer`, etc.).
+   - Forces state transition to clean `Idle` or `Locomotion`.
+2. **`UpdateMovementRequestState`**:
+   - Automatically executes `ResetLocomotionActionState` whenever a high-priority action montage is active (`bIsAttacking`, `bIsDodging`, `bIsHitReacting`, `bIsPlayingCombatIntro`) or movement is disabled (`MOVE_None`).
+3. **`UMotionMatchingAnimInstance::UpdateStateController`**:
+   - Bypasses one-shot transitions and forces `DesiredState` to `LocomotionLoop` (if moving) or `IdleLoop` (if stationary) while an action montage is active, clearing `StateControllerSelectedAnimation = nullptr`.
+4. **`ABasePlayer::PossessedBy` / `ABasePlayer::UnPossessed`**:
+   - Automatically executes `ResetLocomotionActionState` when possessing vehicles, cannons, or returning control to the player character.
+
 ## Verification
 
 Built successfully:
