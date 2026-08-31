@@ -531,6 +531,35 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 	}
 }
 
+void ABasePlayer::PrepareForCannonControl()
+{
+	ConsumeMovementInputVector();
+	AuthoritativeMoveInput = FVector2D::ZeroVector;
+	bHasAuthoritativeMoveInput = true;
+	LastSentMoveInputToServer = FVector2D::ZeroVector;
+	bHasSentMoveInputToServer = true;
+	bSprintInputHeld = false;
+
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->StopMovementImmediately();
+		MovementComponent->Velocity = FVector::ZeroVector;
+	}
+
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->ClearMoveInput();
+		AnimStateComponent->SetSprinting(false);
+		AnimStateComponent->ForceStateTransition(ELocomotionState::Idle);
+	}
+
+	if (HasAuthority())
+	{
+		UpdateLocomotionStateSnapshot();
+		ForceNetUpdate();
+	}
+}
+
 void ABasePlayer::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);

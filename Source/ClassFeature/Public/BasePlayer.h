@@ -10,6 +10,7 @@
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Components/SkinnedMeshComponent.h"
 #include "Skills/SkillUseProvider.h"
+#include "CannonRiderInterface.h"
 #include "BasePlayer.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
@@ -102,12 +103,13 @@ struct FStartingInventoryItemForTest
  * 
  */
 UCLASS(Config = Game)
-class CLASSFEATURE_API ABasePlayer : public ABaseCharacter, public ISkillUseProvider
+class CLASSFEATURE_API ABasePlayer : public ABaseCharacter, public ISkillUseProvider, public ICannonRiderInterface
 {
 	GENERATED_BODY()
 	friend class ULocomotionAnimStateComponent;
 
 public:
+	virtual void PrepareForCannonControl() override;
 	ABasePlayer(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual void BeginPlay() override;

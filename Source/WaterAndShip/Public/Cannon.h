@@ -180,6 +180,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Aiming")
 	float MaxYawOffset = 60.0f;
 
+	/** How quickly remote clients visually converge to newly replicated player/AI aim. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Aiming", meta = (ClampMin = "1.0"))
+	float RemoteAimInterpolationSpeed = 12.0f;
+
 	// ---- Inputs ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
 	TObjectPtr<UInputMappingContext> CannonInputMappingContext;
@@ -211,6 +215,9 @@ protected:
 	// ---- Actions ----
 	void ExitAimMode();
 	void SetRiderInvulnerable(bool bEnabled);
+	/** Hides the rider and separately-attached equipment only from this cannon's local controller. */
+	void RefreshLocalRiderVisibility();
+	void ClearLocalRiderHiddenActors();
 
 	// ---- Server RPCs ----
 	UFUNCTION(Server, Reliable)
@@ -253,6 +260,9 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_AimRotation)
 	FCannonAimRotation AimRotation;
 
+	/** Render-only rotation. Remote proxies smooth this toward AimRotation. */
+	FCannonAimRotation VisualAimRotation;
+
 	UPROPERTY(ReplicatedUsing = OnRep_WaterBombMode)
 	bool bWaterBombMode = false;
 
@@ -276,4 +286,7 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<APlayerController> CachedPlayerController = nullptr;
+
+	/** Actors added to a local PlayerController's HiddenActors while aiming. */
+	TArray<TWeakObjectPtr<AActor>> LocallyHiddenRiderActors;
 };
