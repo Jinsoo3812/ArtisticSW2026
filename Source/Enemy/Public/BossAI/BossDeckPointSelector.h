@@ -20,7 +20,9 @@ UENUM(BlueprintType)
 enum class EBossDestinationRelation : uint8
 {
 	BehindTarget = 0 UMETA(DisplayName = "Behind Target"),
-	InFrontOfTarget = 1 UMETA(DisplayName = "In Front Of Target")
+	InFrontOfTarget = 1 UMETA(DisplayName = "In Front Of Target"),
+	/** No target-facing half-plane filter. Useful for path-based attacks. */
+	Any = 2 UMETA(DisplayName = "Any")
 };
 
 /** Small, deliberately conservative rule set shared by boss mobility abilities. */
@@ -40,11 +42,22 @@ struct ENEMY_API FBossDestinationSelectionSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point", meta = (ClampMin = "0.0", Units = "cm"))
 	float MinimumTravelDistance = 100.0f;
 
+	/** Dash-only lower bound. Appended so existing Vanish authoring is unchanged. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point|Dash", meta = (ClampMin = "0.0", Units = "cm"))
+	float MinimumDashTravelDistance = 500.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point", meta = (ClampMin = "1.0", Units = "cm"))
 	float DashHitCorridorRadius = 120.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point", meta = (ClampMin = "1.0", Units = "cm"))
 	float MaximumDashDistance = 1200.0f;
+
+	/** Optional deterministic scoring target. Zero keeps distance neutral. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point|Dash", meta = (ClampMin = "0.0", Units = "cm"))
+	float PreferredDashTravelDistance = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point|Dash")
+	bool bRequireDashPathThroughTarget = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point", meta = (ClampMin = "0.0", Units = "cm"))
 	float IdealWalkRange = 500.0f;

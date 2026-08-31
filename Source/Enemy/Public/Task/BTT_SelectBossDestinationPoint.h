@@ -19,6 +19,7 @@ public:
 	EBossDestinationPurpose GetSelectionPurpose() const { return SelectionPurpose; }
 	void SetDestinationRelation(EBossDestinationRelation InRelation) { DestinationRelation = InRelation; }
 	EBossDestinationRelation GetDestinationRelation() const { return DestinationRelation; }
+	const FBossDestinationSelectionSettings& GetSelectionSettings() const { return SelectionSettings; }
 
 protected:
 	/** Output integer key. World positions are intentionally not cached on a moving ship. */

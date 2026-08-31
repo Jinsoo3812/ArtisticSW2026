@@ -44,10 +44,7 @@ public class Enemy: ModuleRules
         if (Target.bBuildEditor)
         {
             PrivateDependencyModuleNames.AddRange(new string[] {
-                "UnrealEd",
-                "PropertyEditor",
-                "Slate",
-                "SlateCore"
+                "UnrealEd"
             });
         }
     }

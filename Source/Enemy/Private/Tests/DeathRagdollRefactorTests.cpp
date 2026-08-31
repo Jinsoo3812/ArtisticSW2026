@@ -71,6 +71,27 @@ bool FCombatEffectContextDeathDirectionTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Duplicated direction equals the original"),
 		DuplicatedDirection.Equals(StoredDirection, 0.01));
 
+	FSWPathCuePayload PathPayload;
+	PathPayload.ReferenceActor = GetMutableDefault<ARangedEnemy>();
+	PathPayload.StartLocal = FVector(100.0f, 20.0f, 0.0f);
+	PathPayload.EndLocal = FVector(900.0f, 20.0f, 0.0f);
+	PathPayload.SurfaceNormalLocal = FVector::UpVector;
+	PathPayload.CorridorRadius = 120.0f;
+	PathPayload.InstanceId = 7;
+	ContextHandle = USWCombatEffectContextLibrary::SetPathCuePayload(
+		ContextHandle, PathPayload);
+	FSWPathCuePayload StoredPath;
+	TestTrue(TEXT("Combat context exposes optional path presentation data"),
+		USWCombatEffectContextLibrary::GetPathCuePayload(ContextHandle, StoredPath));
+	TestEqual(TEXT("Path instance identity is preserved"), StoredPath.InstanceId, 7);
+	TestTrue(TEXT("Path endpoints remain reference-frame local"),
+		FVector(StoredPath.StartLocal).Equals(FVector(PathPayload.StartLocal), 0.01f)
+			&& FVector(StoredPath.EndLocal).Equals(FVector(PathPayload.EndLocal), 0.01f));
+	FSWPathCuePayload DuplicatedPath;
+	TestTrue(TEXT("Context duplication preserves optional path data"),
+		USWCombatEffectContextLibrary::GetPathCuePayload(
+			ContextHandle.Duplicate(), DuplicatedPath));
+
 	FSWGameplayEffectContext SenderContext;
 	SenderContext.SetImpactDirection(AuthoredDirection);
 	FNetBitWriter Writer(nullptr, 2048);

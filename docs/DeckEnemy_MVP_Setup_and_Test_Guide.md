@@ -10,42 +10,49 @@ Waypoint는 별도 Actor가 아니라 EnemyShip Blueprint 내부의 `DeckWaypoin
 
 ## 2. Enemy Blueprint 만들기
 
-1. `ADeckRangedEnemy`를 부모로 `BP_DeckRangedEnemy_MVP`를 만든다.
-2. 기존 RangedEnemy와 동일하게 Mesh, Anim BP, 공격 Ability/Projectile, Behavior Tree를 지정한다.
-3. `AI Controller Class`는 기존 `ARangedEnemyAIController` 계열을 사용한다.
+1. `ADeckEnemy`를 부모로 근거리 또는 원거리 DeckEnemy Blueprint를 만든다.
+2. 역할에 맞는 Mesh, Anim BP, 공격 Ability, 무기와 Behavior Set을 지정한다.
+3. `Deck Combat Role`과 역할에 맞는 `AI Controller Class`를 지정한다.
 4. 기본 이동 속도는 BT의 `Move To Live Deck Waypoint` 노드에서 250 cm/s로 설정한다.
 5. `Enemy > Death > Death Ability Class`에 사용할 `UBaseDeathGameplayAbility` 파생 GA를 지정한다. 이 GA는 사망 연출 종료 시 `FinishDeath`를 호출해야 한다.
 6. `Deck AI > Pool > Return To Pool After Death Delay`로 Ragdoll 유지 시간을 정한다. 기본값은 1.5초이며, 0이면 사망 표현 종료 직후 비활성 풀로 돌아간다. 이 함선에서는 다시 자동 출격하지 않는다.
 
-일반 `ARangedEnemy`가 아니라 반드시 `ADeckRangedEnemy`의 자식이어야 풀의 활성/비활성, 체력 초기화, Dormancy 제어가 적용된다.
+일반 Enemy가 아니라 반드시 `ADeckEnemy`의 자식이어야 풀의 활성/비활성, 체력 초기화, Dormancy 제어가 적용된다. 기존 `ADeckRangedEnemy`는 자산 호환용 자식 클래스로만 유지한다.
 
 ## 3. EnemyShip Blueprint에 Waypoint 배치
 
 1. EnemyShip Blueprint의 Components 패널에서 `ShipDeckMesh`를 선택한다.
 2. 그 아래에 `Deck Waypoint Component`를 최소 4개 추가한다.
 3. 갑판 바닥 높이에 Point를 놓는다. 캐릭터 Capsule 높이를 더해 놓지 않는다. Spawn 때 갑판 Trace 결과에 Capsule 반높이와 2 cm 여유를 자동 적용한다.
-4. 각 Point에 겹치지 않는 `Waypoint Id`를 준다. 예: 0, 1, 2, 3.
-5. `Linked Waypoint Ids`는 실제로 걸을 수 있는 바로 이웃만 넣는다. 링크는 양방향으로 작성한다. 예: 0→1,3 / 1→0,2 / 2→1,3 / 3→2,0.
-6. Spawn에 쓸 안전한 Point 두 곳 정도만 `Can Spawn`을 켠다.
-7. 순찰에 쓸 곳은 `Can Patrol`, 원거리 전투 위치로 허용할 곳은 `Can Use In Combat`을 켠다.
+4. 수동 Point에는 서로 중복되지 않는 `Waypoint Id`를 직접 지정하고, 실제 이동 가능한 이웃의 ID를 `Linked Waypoint Ids`에 양방향으로 입력한다.
+5. Mesh 기반 초안이 필요하면 `Generate Deck Waypoints From Deck Mesh` 하나만 실행한다. 이 생성기는 새 Point의 ID와 갑판 지지면 기반 링크를 함께 만든다.
+6. Spawn에 쓸 안전한 Point 두 곳 정도만 `Can Spawn`을 켠다. Spawn Point는 `Can Use In Combat`과 최소 한 개의 링크가 필요하다.
+7. 순찰에 쓸 곳은 `Can Patrol`, 전투 위치로 허용할 곳은 `Can Use In Combat`을 켠다.
 8. 각 Point의 `Min/Max Wait Time`으로 순찰 멈춤 시간을 조절한다. 기본은 0.5~2.0초다.
+9. `Validate Deck Waypoints`를 실행해 중복 ID, 단방향 링크, 고립 Point가 없는지 확인한다.
 
 Point 아래 갑판이 `ShipDeckMesh`의 Simple Collision 형상에 포함되어 있어야 한다. `ShipDeck` 프로필은 Pawn과 Ragdoll `PhysicsBody`를 Block하며, Ragdoll은 빠른 Impulse에서도 얇은 갑판을 관통하지 않도록 CCD를 사용한다. 초기화 로그에서 중복 ID, 없는 링크 ID, 잘못된 부모가 발견되면 `[DeckEnemyMVP]` 경고가 출력된다.
 
-## 4. EnemyShip 풀 설정
+## 4. EnemyShip Spawner 설정
 
-EnemyShip Blueprint Class Defaults의 `Ship > Deck AI`에서 다음만 설정한다.
+EnemyShip Blueprint의 Components 패널에서 네이티브 `DeckEnemySpawnerComponent`를 선택하고 다음을 설정한다.
 
-- `Enable Deck Enemy MVP`: true
-- `Deck Enemy Class`: `BP_DeckRangedEnemy_MVP`
-- `Deck Enemy Pool Size`: 2
-- `Deck Enemy Sight Activation Delay`: 0.25
-- `Deck Enemy Activation Interval`: 0.35
-- `Max Deck Spawn Retries`: 3
-- `Deck Spawn Retry Interval`: 0.5
-- `Deck Enemy Random Seed`: 1337
+- `Enable Spawning`: true
+- `Spawn Composition`: 클래스와 수량 배열
+  - 예: `BP_DeckMeleeEnemy` × 3
+  - 예: `BP_DeckRangedEnemy` × 2
+- `Sight Activation Delay`: 0.25
+- `Activation Interval`: 0.35
+- `Max Spawn Retries`: 3
+- `Spawn Retry Interval`: 0.5
+- `Random Seed`: 1337
 
-기존 EnemyShip Blueprint에 영향을 주지 않도록 기능은 기본 off다. 풀 크기는 코드에서 1~8로 제한한다.
+기능은 기본 off다. 각 Entry 수량은 0~32로 제한한다. 기존 EnemyShip Blueprint에 저장된
+`Enable Deck Enemy MVP`, `Deck Enemy Class`, `Deck Enemy Pool Size` 값은 호환 fallback으로 계속 읽지만,
+새 편성은 Component의 `Spawn Composition`만 단일 소스로 사용한다.
+
+`DeckEnemySpawnerComponent`가 Enemy Pool, 배치 Queue, Waypoint Registry와 모든 Point 예약/점유 상태를
+서버에서 단독 소유한다. `AEnemyShip`의 기존 Deck Point 함수는 Boss와 기존 BT 호환을 위한 위임 API다.
 
 ## 5. 최소 Behavior Tree 구성
 
@@ -97,11 +104,11 @@ Combat 선택은 전체 경로 탐색을 하지 않는다. 현재 Point에 직�
 ## 8. MVP에서 의도적으로 제외한 것
 
 - NavMesh를 함선마다 동적으로 다시 굽기
-- EQS, A*, 긴 경로 탐색, Point 예약
+- EQS, A*, 긴 경로 탐색
 - 갑판 밖 복귀/낙하 복구
 - 사망한 풀 Enemy의 자동 재출격과 웨이브 재등록
 - Waypoint 및 선택 결과 전용 RPC/복제
-- 다수 Enemy의 자리 겹침 회피
+- 복잡한 군중 회피
 
 갑판 이탈 방지는 계획대로 외부 Invisible Blocker와 Enemy 전용 Collision Profile로 처리한다. 위 항목은 실제 플레이 테스트에서 필요성이 확인된 뒤 다음 단계로 추가한다.
 

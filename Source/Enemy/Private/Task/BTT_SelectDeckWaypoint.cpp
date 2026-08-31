@@ -3,6 +3,7 @@
 #include "AIController.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "BehaviorTree/BlackboardComponent.h"
+#include "DeckAI/DeckEnemyNavigationComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "ShipAI/EnemyShip.h"
@@ -22,7 +23,7 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(
 	uint8* NodeMemory)
 {
 	AAIController* Controller = OwnerComp.GetAIOwner();
-	ADeckRangedEnemy* Enemy = Controller ? Cast<ADeckRangedEnemy>(Controller->GetPawn()) : nullptr;
+	ADeckEnemy* Enemy = Controller ? Cast<ADeckEnemy>(Controller->GetPawn()) : nullptr;
 	AEnemyShip* HostShip = Enemy ? Cast<AEnemyShip>(Enemy->GetHostShip()) : nullptr;
 	if (!Enemy || !Enemy->IsPoolActive() || !HostShip)
 	{
@@ -51,8 +52,17 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(
 		}
 		if (!Enemy->IsValidCombatTarget(TargetActor))
 		{
-			TargetActor = nullptr;
+			return EBTNodeResult::Failed;
 		}
+
+		UDeckEnemyNavigationComponent* Navigation = Enemy->GetDeckEnemyNavigationComponent();
+		return Navigation && Navigation->PlanCombatRoute(TargetActor, true)
+			? EBTNodeResult::Succeeded
+			: EBTNodeResult::Failed;
+	}
+	else if (UDeckEnemyNavigationComponent* Navigation = Enemy->GetDeckEnemyNavigationComponent())
+	{
+		Navigation->CancelCombatRoute();
 	}
 
 	TArray<int32> Candidates;
@@ -83,33 +93,6 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(
 		}
 		SelectedId = Candidates[Enemy->GetDeckRandomStream().RandRange(0, Candidates.Num() - 1)];
 	}
-	else
-	{
-		const float PreferredRange = (Enemy->GetMinAttackRange() + Enemy->GetMaxAttackRange()) * 0.5f;
-		float BestScore = -TNumericLimits<float>::Max();
-		for (const int32 CandidateId : Candidates)
-		{
-			const FVector CandidateLocation = HostShip->GetDeckWaypointWorldLocation(CandidateId);
-			const float RangeScore = -FMath::Abs(
-				FVector::Dist(CandidateLocation, TargetActor->GetActorLocation()) - PreferredRange);
-
-			FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DeckWaypointCombatLOS), true, Enemy);
-			FHitResult Hit;
-			const bool bBlocked = HostShip->GetWorld()->LineTraceSingleByChannel(
-				Hit,
-				CandidateLocation + FVector::UpVector * 100.0f,
-				TargetActor->GetActorLocation() + FVector::UpVector * 60.0f,
-				ECC_Visibility,
-				QueryParams)
-				&& Hit.GetActor() != TargetActor;
-			const float Score = RangeScore + (bBlocked ? 0.0f : 5000.0f);
-			if (Score > BestScore)
-			{
-				BestScore = Score;
-				SelectedId = CandidateId;
-			}
-		}
-	}
 
 	if (SelectedId == INDEX_NONE)
 	{
@@ -124,6 +107,8 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(
 FString UBTT_SelectDeckWaypoint::GetStaticDescription() const
 {
 	return FString::Printf(
-		TEXT("Choose one linked moving-deck point (%s)"),
-		SelectionMode == EDeckWaypointSelectionMode::Combat ? TEXT("Combat") : TEXT("Patrol"));
+		TEXT("%s"),
+		SelectionMode == EDeckWaypointSelectionMode::Combat
+			? TEXT("Plan and claim a multi-hop combat route")
+			: TEXT("Choose one linked patrol point"));
 }

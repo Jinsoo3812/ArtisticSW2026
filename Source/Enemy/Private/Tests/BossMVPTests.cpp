@@ -2,6 +2,8 @@
 
 #include "Misc/AutomationTest.h"
 
+#include "AbilitySystemComponent.h"
+#include "Animation/AnimMontage.h"
 #include "AI/EnemyBehaviorSet.h"
 #include "AI/EnemyAITypes.h"
 #include "BaseGameplayTags.h"
@@ -16,10 +18,12 @@
 #include "BehaviorTree/Tasks/BTTask_RunBehaviorDynamic.h"
 #include "BossAI/BossDeckPointSelector.h"
 #include "BossAI/BossDeckMovementUtils.h"
+#include "BossAI/BossBasicAttackSet.h"
 #include "BossAI/BossEncounterComponent.h"
 #include "BossAI/EnemyItemBox.h"
 #include "BossAI/ShipBossAIController.h"
 #include "BossAI/ShipBossEnemy.h"
+#include "BasePlayer.h"
 #include "Components/BaseHealthComponent.h"
 #include "Decorator/BTD_CanActivateAbilityByTag.h"
 #include "GAS/Ability/Boss/BossGameplayAbility.h"
@@ -29,10 +33,15 @@
 #include "GAS/Ability/Boss/GA_BossVanish.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayCue/SWGameplayCueNotify_BurstFeedback.h"
+#include "GameplayCue/SWPathGameplayCueNotify.h"
 #include "Components/ChildActorComponent.h"
 #include "Components/SphereComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "DeckAI/DeckWaypointComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
 #include "Interactable/InteractableComponent.h"
 #include "ShipAI/EnemyShip.h"
 #include "Task/BTT_ActivateBossAbility.h"
@@ -148,6 +157,8 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Encounter state replicates through its component"), EncounterCDO->GetIsReplicated());
 		TestEqual(TEXT("Encounter waits for first box interaction"),
 			EncounterCDO->GetEncounterState(), EBossEncounterState::Waiting);
+		TestEqual(TEXT("Existing encounters keep item-box triggering by default"),
+			EncounterCDO->GetEncounterTrigger(), EBossEncounterTrigger::ItemBoxInteraction);
 	}
 	const AEnemyShip* EnemyShipCDO = GetDefault<AEnemyShip>();
 	if (TestNotNull(TEXT("EnemyShip CDO exists"), EnemyShipCDO))
@@ -185,6 +196,11 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 		static_cast<uint8>(EBossDestinationRelation::BehindTarget));
 	TestEqual(TEXT("Front placement has a stable appended relation value"),
 		static_cast<uint8>(EBossDestinationRelation::InFrontOfTarget), static_cast<uint8>(1));
+	TestEqual(TEXT("Unconstrained placement is appended without changing serialized values"),
+		static_cast<uint8>(EBossDestinationRelation::Any), static_cast<uint8>(2));
+	TestTrue(TEXT("Destination policy exposes a meaningful dash-only minimum"),
+		SelectTaskCDO->GetSelectionSettings().MinimumDashTravelDistance
+			>= GetDefault<UGA_BossDashSlash>()->GetMinimumDashDistance());
 	TestNotNull(TEXT("Generic boss ability BT task exists"), ActivateTaskCDO);
 	if (TestNotNull(TEXT("Reusable boss strafe BT task exists"), StrafeTaskCDO))
 	{
@@ -205,11 +221,27 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("BT task prefers the spec granted by the equipped weapon"),
 			ActivateTaskCDO->PrefersCurrentWeaponAbility());
+		TestTrue(TEXT("Committed Boss basic attacks survive BT distance-branch aborts"),
+			GetDefault<UGA_BossBasicAttack>()->ShouldSurviveBehaviorTreeAbort());
+		TestTrue(TEXT("Committed DashSlash survives BT distance-branch aborts"),
+			GetDefault<UGA_BossDashSlash>()->ShouldSurviveBehaviorTreeAbort());
 	}
+	TestTrue(TEXT("Boss Combo basic-attack cooldown tag is registered"),
+		Cooldown_Boss_BasicAttack_Combo.GetTag().IsValid());
 	TestTrue(TEXT("Boss attack cue tag is registered"), GameplayCue_Boss_Attack.GetTag().IsValid());
 	TestTrue(TEXT("Boss hit cue tag is registered"), GameplayCue_Boss_Hit.GetTag().IsValid());
 	TestTrue(TEXT("Confirmed impact cue root is registered"), GameplayCue_Impact.GetTag().IsValid());
 	TestTrue(TEXT("Sword impact cue tag is registered"), GameplayCue_Impact_Weapon_Sword.GetTag().IsValid());
+	TestTrue(TEXT("Dash telegraph path cue is registered"),
+		GameplayCue_Path_Boss_DashSlash_Telegraph.GetTag().IsValid());
+	TestTrue(TEXT("Dash execution path cue is registered"),
+		GameplayCue_Path_Boss_DashSlash_Execution.GetTag().IsValid());
+	TestNotNull(TEXT("Dash telegraph path cue Blueprint is discoverable"),
+		LoadClass<ASWPathGameplayCueNotify>(nullptr,
+			TEXT("/Game/GameplayCues/Path/Boss/GCN_Path_Boss_DashSlash_Telegraph.GCN_Path_Boss_DashSlash_Telegraph_C")));
+	TestNotNull(TEXT("Dash execution path cue Blueprint is discoverable"),
+		LoadClass<ASWPathGameplayCueNotify>(nullptr,
+			TEXT("/Game/GameplayCues/Path/Boss/GCN_Path_Boss_DashSlash_Execution.GCN_Path_Boss_DashSlash_Execution_C")));
 	TestTrue(TEXT("Dash montage start event tag is registered"), Event_Boss_Dash_Start.GetTag().IsValid());
 	TestTrue(TEXT("Burst feedback cue is authored through a Blueprint subclass"),
 		USWGameplayCueNotify_BurstFeedback::StaticClass()->HasAnyClassFlags(CLASS_Abstract));
@@ -277,6 +309,47 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 					== GameplayCue_Impact_Weapon_Sword);
 	}
 
+	const UBossBasicAttackSet* BasicAttackSet = LoadObject<UBossBasicAttackSet>(
+		nullptr,
+		TEXT("/Game/GameplayAbilitySystem/Enemy/DA/DA_RogueBossBasicAttacks.DA_RogueBossBasicAttacks"));
+	if (TestNotNull(TEXT("Boss basic-attack set loads"), BasicAttackSet))
+	{
+		TestTrue(TEXT("Boss basic-attack set contains at least one configurable variation"),
+			!BasicAttackSet->Attacks.IsEmpty());
+		TestTrue(TEXT("Every configured Boss attack has an id, montage, and positive weight"),
+			BasicAttackSet->Attacks.FilterByPredicate(
+				[](const FBossBasicAttackEntry& Entry)
+				{
+					return !Entry.AttackId.IsNone()
+						&& Entry.AttackMontage
+						&& Entry.SelectionWeight > 0.0f;
+				}).Num() == BasicAttackSet->Attacks.Num());
+		TestNull(TEXT("Attack variations do not redefine weapon range"),
+			FindFProperty<FProperty>(FBossBasicAttackEntry::StaticStruct(), TEXT("AttackRange")));
+
+		const FBossBasicAttackEntry* Combo = BasicAttackSet->Attacks.FindByPredicate(
+			[](const FBossBasicAttackEntry& Entry)
+			{
+				return Entry.AttackType == EBossBasicAttackType::Combo;
+			});
+		if (Combo)
+		{
+			TestTrue(TEXT("Configured Combo owns its independent reuse cooldown"),
+				Combo->IndividualCooldownTag == Cooldown_Boss_BasicAttack_Combo
+				&& Combo->IndividualCooldownDuration > 0.0f);
+		}
+
+		UAbilitySystemComponent* SelectionASC = NewObject<UAbilitySystemComponent>();
+		if (Combo && BasicAttackSet->Attacks.Num() > 1)
+		{
+			SelectionASC->AddLooseGameplayTag(Cooldown_Boss_BasicAttack_Combo);
+			const FBossBasicAttackEntry* DuringComboCooldown =
+				BasicAttackSet->SelectAttack(SelectionASC, NAME_None, 0.99f);
+			TestTrue(TEXT("Combo cooldown leaves another configured attack selectable"),
+				DuringComboCooldown && DuringComboCooldown != Combo);
+		}
+	}
+
 	UClass* BossBlueprintClass = LoadClass<AShipBossEnemy>(
 		nullptr, TEXT("/Game/GameplayAbilitySystem/Enemy/BP_Ship_BossEnemy.BP_Ship_BossEnemy_C"));
 	const AShipBossEnemy* BossBlueprintCDO = BossBlueprintClass
@@ -284,6 +357,10 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 		: nullptr;
 	if (TestNotNull(TEXT("Boss Blueprint class loads"), BossBlueprintCDO))
 	{
+		TestTrue(TEXT("Boss Blueprint references its configurable attack set"),
+			BossBlueprintCDO->GetBasicAttackSet() == BasicAttackSet);
+		TestTrue(TEXT("Boss Blueprint grants the specialized data-driven basic attack"),
+			BossBlueprintCDO->HasBossBasicAttackStartingAbility());
 		const UBehaviorTree* RootTree = BossBlueprintCDO->GetBehaviorTree();
 		const UBlackboardData* BossBlackboard = LoadObject<UBlackboardData>(
 			nullptr, TEXT("/Game/GameplayAbilitySystem/Enemy/AI/BB_RogueBoss.BB_RogueBoss"));
@@ -426,14 +503,24 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 			Dash->GetImpactGameplayCueTag() == GameplayCue_Impact_Boss_DashSlash);
 		TestEqual(TEXT("Dash montage windup section contract"),
 			Dash->GetWindupSectionName(), FName(TEXT("Windup")));
+		TestEqual(TEXT("Dash montage windup hold section contract"),
+			Dash->GetWindupHoldSectionName(), FName(TEXT("WindupHold")));
 		TestEqual(TEXT("Dash montage slash section contract"),
 			Dash->GetDashSlashSectionName(), FName(TEXT("DashSlash")));
 		TestEqual(TEXT("Dash montage hold section contract"),
 			Dash->GetDashHoldSectionName(), FName(TEXT("DashHold")));
 		TestEqual(TEXT("Dash montage recovery section contract"),
 			Dash->GetRecoverySectionName(), FName(TEXT("Recover")));
-		TestTrue(TEXT("Dash stops within a configurable acceptance radius"),
-			Dash->GetDashAcceptanceRadius() > 0.0f);
+		TestTrue(TEXT("Dash rejects paths below its authoritative minimum distance"),
+			Dash->GetMinimumDashDistance() > 0.0f);
+		TestNull(TEXT("Removed acceptance-radius property is no longer serialized"),
+			FindFProperty<FProperty>(Dash->GetClass(), TEXT("DashAcceptanceRadius")));
+		TestEqual(TEXT("Telegraph fallback is infinite"),
+			GetDefault<UBossDashSlashTelegraphEffect>()->DurationPolicy,
+			EGameplayEffectDurationType::Infinite);
+		TestEqual(TEXT("Executed path fallback has duration"),
+			GetDefault<UBossDashSlashExecutionPathEffect>()->DurationPolicy,
+			EGameplayEffectDurationType::HasDuration);
 	}
 	if (TestNotNull(TEXT("Boss basic attack specialization exists"), Basic))
 	{
@@ -445,6 +532,77 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Boss cooldown effect has duration policy"),
 			CooldownEffect->DurationPolicy, EGameplayEffectDurationType::HasDuration);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FBossDashSlashServerPhasesTest,
+	"ArtisticSW.Enemy.BossMVP.DashSlashServerPhases",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBossDashSlashServerPhasesTest::RunTest(const FString& Parameters)
+{
+	const UGA_BossDashSlash* NativeDash = GetDefault<UGA_BossDashSlash>();
+	if (!TestNotNull(TEXT("Native DashSlash defaults exist"), NativeDash))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("DashSlash gameplay remains server authoritative"),
+		NativeDash->GetNetExecutionPolicy(), EGameplayAbilityNetExecutionPolicy::ServerOnly);
+	TestTrue(TEXT("DashSlash survives BT abort after activation"),
+		NativeDash->ShouldSurviveBehaviorTreeAbort());
+	TestTrue(TEXT("DashSlash owns its preselected destination after commit"),
+		NativeDash->OwnsPreselectedDestinationAfterCommit());
+	const AShipBossEnemy* NativeBoss = GetDefault<AShipBossEnemy>();
+	TestTrue(TEXT("Boss resolves deck movement through the ship physics attachment root"),
+		NativeBoss && NativeBoss->GetCharacterMovement()
+		&& NativeBoss->GetCharacterMovement()->bBaseOnAttachmentRoot);
+	TestFalse(TEXT("Ordinary Boss abilities keep the default BT abort policy"),
+		GetDefault<UGA_BossKnockback>()->ShouldSurviveBehaviorTreeAbort());
+	TestFalse(TEXT("Ordinary Boss abilities do not own a preselected destination"),
+		GetDefault<UGA_BossKnockback>()->OwnsPreselectedDestinationAfterCommit());
+	TestNotNull(TEXT("DashSlash phase authoring is grouped in MontageConfig"),
+		FindFProperty<FStructProperty>(NativeDash->GetClass(), TEXT("MontageConfig")));
+	TestNull(TEXT("Movement start no longer depends on a gameplay event task"),
+		FindFProperty<FObjectProperty>(NativeDash->GetClass(), TEXT("DashStartEventTask")));
+	TestNull(TEXT("Slash completion no longer depends on a gameplay event task"),
+		FindFProperty<FObjectProperty>(NativeDash->GetClass(), TEXT("SlashFinishedEventTask")));
+	TestEqual(TEXT("Windup entry has a configurable section contract"),
+		NativeDash->GetWindupSectionName(), FName(TEXT("Windup")));
+	TestEqual(TEXT("Windup hold has a configurable section contract"),
+		NativeDash->GetWindupHoldSectionName(), FName(TEXT("WindupHold")));
+
+	UClass* AuthoredDashClass = LoadObject<UClass>(nullptr,
+		TEXT("/Game/GameplayAbilitySystem/Ability/Enemy/Boss/BPGA_SlashDash.BPGA_SlashDash_C"));
+	if (!TestNotNull(TEXT("Authored DashSlash ability can be loaded"), AuthoredDashClass))
+	{
+		return false;
+	}
+	const UGA_BossDashSlash* AuthoredDash = GetDefault<UGA_BossDashSlash>(AuthoredDashClass);
+	if (!TestNotNull(TEXT("Authored DashSlash defaults can be loaded"), AuthoredDash))
+	{
+		return false;
+	}
+	TestNotNull(TEXT("Authored DashSlash uses reusable path presentation data"),
+		AuthoredDash->GetPathPresentation());
+
+	const FDashSlashMontageConfig& Config = AuthoredDash->GetMontageConfig();
+	if (!TestNotNull(TEXT("Legacy BPGA montage migrated into MontageConfig"), Config.Montage.Get()))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Authored montage contains windup entry"),
+		Config.Montage->IsValidSectionName(Config.WindupEnterSectionName));
+	TestTrue(TEXT("Authored montage contains windup hold"),
+		Config.Montage->IsValidSectionName(Config.WindupHoldSectionName));
+	TestTrue(TEXT("Authored montage contains attack"),
+		Config.Montage->IsValidSectionName(Config.AttackSectionName));
+	TestTrue(TEXT("Authored montage contains travel hold"),
+		Config.Montage->IsValidSectionName(Config.TravelHoldSectionName));
+	TestTrue(TEXT("Authored montage contains recovery"),
+		Config.Montage->IsValidSectionName(Config.RecoverySectionName));
+	TestTrue(TEXT("Hold duration is separately tunable"), Config.WindupHoldDuration >= 0.0f);
 	return true;
 }
 
@@ -564,6 +722,8 @@ bool FBossEncounterConfiguredChildActorBoxTest::RunTest(const FString& Parameter
 	{
 		return false;
 	}
+	TestNotNull(TEXT("Encounter exposes an exact deck waypoint component selector"),
+		FindFProperty<FStructProperty>(Encounter->GetClass(), TEXT("BossSpawnPointComponent")));
 	FComponentReference* BoxReference = BoxReferenceProperty->ContainerPtrToValuePtr<FComponentReference>(Encounter);
 	BoxReference->OverrideComponent = BoxComponent;
 	Encounter->ConfigureEncounter(nullptr, AShipBossEnemy::StaticClass());
@@ -644,6 +804,128 @@ bool FBossEncounterSingleTriggerTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A second interaction cannot restart a terminal encounter"),
 		Encounter->GetEncounterState(), EBossEncounterState::Failed);
 	TestTrue(TEXT("Failed encounter keeps the collectible locked"), ItemBox->IsLocked());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FBossEncounterSightTriggerRetryTest,
+	"ArtisticSW.Enemy.BossMVP.SightTriggerWaitsForRidingPlayer",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBossEncounterSightTriggerRetryTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(
+		TEXT("QuestItem has an invalid ResultItemTag"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	AddExpectedError(
+		TEXT("QuestItem contains an invalid ingredient"),
+		EAutomationExpectedErrorFlags::Contains,
+		2);
+	BossMVPTests::FScopedTestWorld TestWorld;
+	AEnemyShip* EnemyShip = TestWorld.World->SpawnActor<AEnemyShip>();
+	AShip* PlayerShip = TestWorld.World->SpawnActor<AShip>();
+	if (!TestNotNull(TEXT("Enemy ship is spawned"), EnemyShip)
+		|| !TestNotNull(TEXT("Player ship is spawned"), PlayerShip))
+	{
+		return false;
+	}
+
+	PlayerShip->Tags.Add(TEXT("Player"));
+	UBossEncounterComponent* Encounter = EnemyShip->GetBossEncounterComponent();
+	FEnumProperty* TriggerProperty = FindFProperty<FEnumProperty>(
+		Encounter->GetClass(), TEXT("EncounterTrigger"));
+	if (!TestNotNull(TEXT("Encounter exposes a configurable trigger policy"), TriggerProperty))
+	{
+		return false;
+	}
+	TriggerProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+		TriggerProperty->ContainerPtrToValuePtr<void>(Encounter),
+		static_cast<int64>(EBossEncounterTrigger::PlayerShipSight));
+	Encounter->ConfigureEncounter(nullptr, AShipBossEnemy::StaticClass());
+
+	TestFalse(TEXT("Sight waits when the sensed ship has no riding player yet"),
+		Encounter->NotifyPlayerShipSighted(PlayerShip));
+	TestEqual(TEXT("A transient missing riding player remains retryable"),
+		Encounter->GetEncounterState(), EBossEncounterState::Waiting);
+	TestNull(TEXT("Retryable sight does not leave a partial boss"), Encounter->GetSpawnedBoss());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FBossEncounterSightSpawnTest,
+	"ArtisticSW.Enemy.BossMVP.SightTriggerSpawnsAtSelectedPoint",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBossEncounterSightSpawnTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+	AddExpectedError(TEXT("PlayerState is null"), EAutomationExpectedErrorFlags::Contains, 1);
+	BossMVPTests::FScopedTestWorld TestWorld;
+	AEnemyShip* EnemyShip = TestWorld.World->SpawnActor<AEnemyShip>();
+	AShip* PlayerShip = TestWorld.World->SpawnActor<AShip>();
+	ABasePlayer* Player = TestWorld.World->SpawnActor<ABasePlayer>();
+	APlayerController* PlayerController = TestWorld.World->SpawnActor<APlayerController>();
+	UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!TestNotNull(TEXT("Enemy ship is spawned"), EnemyShip)
+		|| !TestNotNull(TEXT("Player ship is spawned"), PlayerShip)
+		|| !TestNotNull(TEXT("Player pawn is spawned"), Player)
+		|| !TestNotNull(TEXT("Player controller is spawned"), PlayerController)
+		|| !TestNotNull(TEXT("Deck mesh asset is available"), CubeMesh))
+	{
+		return false;
+	}
+
+	EnemyShip->BuoyancyRoot->SetSimulatePhysics(false);
+	UStaticMeshComponent* DeckMesh = EnemyShip->GetShipDeckMesh();
+	DeckMesh->SetStaticMesh(CubeMesh);
+	DeckMesh->SetRelativeScale3D(FVector(10.0f, 10.0f, 0.1f));
+	DeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	DeckMesh->SetCollisionResponseToAllChannels(ECR_Block);
+	DeckMesh->UpdateComponentToWorld();
+	DeckMesh->RecreatePhysicsState();
+
+	UDeckWaypointComponent* SpawnPoint = NewObject<UDeckWaypointComponent>(EnemyShip);
+	EnemyShip->AddInstanceComponent(SpawnPoint);
+	SpawnPoint->OnComponentCreated();
+	SpawnPoint->SetupAttachment(DeckMesh);
+	SpawnPoint->InitializeGeneratedWaypoint(701, 0, 0, true, true, true);
+	SpawnPoint->RegisterComponent();
+	SpawnPoint->SetRelativeLocation(FVector(150.0f, 0.0f, 10.0f));
+	EnemyShip->InitializeDeckWaypoints();
+
+	PlayerShip->Tags.Add(TEXT("Player"));
+	PlayerController->Possess(Player);
+	PlayerShip->Board(Player);
+	if (!TestEqual(TEXT("Player ship retains its riding pawn for encounter targeting"),
+		PlayerShip->GetRidingPlayer(), static_cast<APawn*>(Player)))
+	{
+		return false;
+	}
+
+	UBossEncounterComponent* Encounter = EnemyShip->GetBossEncounterComponent();
+	FEnumProperty* TriggerProperty = FindFProperty<FEnumProperty>(
+		Encounter->GetClass(), TEXT("EncounterTrigger"));
+	TriggerProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+		TriggerProperty->ContainerPtrToValuePtr<void>(Encounter),
+		static_cast<int64>(EBossEncounterTrigger::PlayerShipSight));
+	Encounter->ConfigureEncounter(nullptr, AShipBossEnemy::StaticClass(), 701);
+
+	EnemyShip->NotifyPlayerShipSighted(PlayerShip);
+	AShipBossEnemy* FirstBoss = Encounter->GetSpawnedBoss();
+	TestEqual(TEXT("Sight activates the encounter"),
+		Encounter->GetEncounterState(), EBossEncounterState::Active);
+	TestNotNull(TEXT("Sight spawns one boss"), FirstBoss);
+	if (FirstBoss)
+	{
+		TestEqual(TEXT("Boss occupies the explicitly selected deck point"),
+			FirstBoss->GetCurrentPointId(), 701);
+	}
+
+	EnemyShip->NotifyPlayerShipSighted(PlayerShip);
+	TestEqual(TEXT("Repeated Sight cannot replace or duplicate the boss"),
+		Encounter->GetSpawnedBoss(), FirstBoss);
 	return true;
 }
 

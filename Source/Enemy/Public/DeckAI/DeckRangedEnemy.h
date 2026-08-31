@@ -8,21 +8,26 @@
 #include "DeckRangedEnemy.generated.h"
 
 class AEnemyShip;
+class UDeckEnemyNavigationComponent;
 
-/** Minimal moving-deck RangedEnemy with a server-owned pooled lifetime. */
+UENUM(BlueprintType)
+enum class EDeckEnemyCombatRole : uint8
+{
+	Melee,
+	Ranged
+};
+
+/** Common moving-deck enemy used by melee and ranged Blueprint variants. */
 UCLASS(Blueprintable)
-class ENEMY_API ADeckRangedEnemy : public ARangedEnemy, public IDeckWaypointMovementInterface
+class ENEMY_API ADeckEnemy : public ARangedEnemy, public IDeckWaypointMovementInterface
 {
 	GENERATED_BODY()
 
 public:
-	ADeckRangedEnemy();
+	ADeckEnemy();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-
-	/** Called before FinishSpawning for actors allocated into an EnemyShip pool. */
 	void PrepareForPool();
-
 	bool ActivateFromPool(AEnemyShip* InHostShip, int32 InitialWaypointId, int32 RandomSeed);
 	void DeactivateToPool();
 
@@ -31,6 +36,17 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Deck AI|Pool")
 	float GetReturnToPoolAfterDeathDelay() const { return ReturnToPoolAfterDeathDelay; }
+
+	UFUNCTION(BlueprintPure, Category = "Deck AI|Combat")
+	EDeckEnemyCombatRole GetDeckCombatRole() const { return DeckCombatRole; }
+
+	float GetPreferredDeckCombatRange() const;
+
+	UFUNCTION(BlueprintPure, Category = "Deck AI|Combat Navigation")
+	UDeckEnemyNavigationComponent* GetDeckEnemyNavigationComponent() const
+	{
+		return DeckEnemyNavigationComponent;
+	}
 
 	UFUNCTION(BlueprintPure, Category = "Deck AI|Waypoint")
 	int32 GetCurrentDeckWaypointId() const { return CurrentDeckWaypointId; }
@@ -51,8 +67,7 @@ public:
 	virtual int32 GetGoalDeckPointId() const override { return GoalDeckWaypointId; }
 	virtual void OnDeckPointReached() override { MarkGoalDeckWaypointReached(); }
 	virtual void OnDeckMoveFailed() override;
-	/** Deck ranged enemies are fixed emplacements. Only the boss uses live deck movement. */
-	virtual bool CanMoveOnDeck() const override { return false; }
+	virtual bool CanMoveOnDeck() const override;
 
 protected:
 	virtual void BeginPlay() override;
@@ -67,16 +82,18 @@ protected:
 	void ReturnToPoolAfterDeath();
 
 	void ApplyPoolPresentationState();
-	void ApplyFixedMovementState();
+	void StopDeckMovement();
+	void RestoreDeckMovementState();
 	void RestoreForPoolActivation();
-	bool ApplyAuthoritativeDeckAnchor(const FTransform& AuthoritativeTransform);
-	void ClearAuthoritativeDeckAnchor();
+	bool ApplyAuthoritativeDeckStart(const FTransform& AuthoritativeTransform);
+	void ClearAuthoritativeDeckBase();
 
-protected:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck AI|Combat")
+	EDeckEnemyCombatRole DeckCombatRole = EDeckEnemyCombatRole::Ranged;
+
 	UPROPERTY(ReplicatedUsing = OnRep_PoolActive, VisibleInstanceOnly, BlueprintReadOnly, Category = "Deck AI|Pool")
 	bool bPoolActive = true;
 
-	/** Seconds a corpse remains visible after ragdoll before the server returns it to this pool. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck AI|Pool", meta = (ClampMin = "0.0", Units = "s"))
 	float ReturnToPoolAfterDeathDelay = 1.5f;
 
@@ -89,6 +106,10 @@ protected:
 	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Deck AI|Waypoint")
 	int32 GoalDeckWaypointId = INDEX_NONE;
 
+	/** Server-only route and final combat-point claim; route details are intentionally not replicated. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck AI|Combat Navigation")
+	TObjectPtr<UDeckEnemyNavigationComponent> DeckEnemyNavigationComponent;
+
 private:
 	bool bStartPooled = false;
 	FRandomStream DeckRandomStream;
@@ -96,4 +117,11 @@ private:
 	ECollisionEnabled::Type InitialMeshCollision = ECollisionEnabled::QueryOnly;
 	FTimerHandle ReturnToPoolTimerHandle;
 	FDeckPointReservation GoalPointReservation;
+};
+
+/** Asset-compatible wrapper for existing BP_DeckRangedEnemy assets. */
+UCLASS(Blueprintable)
+class ENEMY_API ADeckRangedEnemy : public ADeckEnemy
+{
+	GENERATED_BODY()
 };

@@ -31,6 +31,7 @@ protected:
 	virtual bool ValidateActivationContext(
 		APawn& Pawn,
 		const UAbilitySystemComponent& AbilitySystem) const override;
+	virtual bool ShouldCancelAbilityOnAbort(const FGameplayAbilitySpec* ActiveSpec) const override;
 	virtual void OnAbilityTaskFinished(EBTNodeResult::Type Result) override;
 
 	/** Prefer an ability spec granted by the currently equipped weapon. */

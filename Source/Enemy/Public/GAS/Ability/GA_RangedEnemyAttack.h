@@ -66,4 +66,5 @@ protected:
 
 	bool bProjectileFired = false;
 	bool bFinishingAttack = false;
+	bool bOwnsServerPoseRefresh = false;
 };

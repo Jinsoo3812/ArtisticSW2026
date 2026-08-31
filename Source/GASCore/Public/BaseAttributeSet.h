@@ -29,7 +29,7 @@ public:
 	// Attribute 값이 바뀌기 직전에 호출됩니다. 주로 최대/최소값 보정에 사용합니다.
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
 
-	/** Rejects every GAS damage path while the target owns State.Invulnerable. */
+	/** Applies shared state-based blocking, including every GAS damage path while State.Invulnerable is owned. */
 	virtual bool PreGameplayEffectExecute(struct FGameplayEffectModCallbackData& Data) override;
 
 	// GameplayEffect 실행이 끝난 뒤 호출됩니다. 피해/회복 같은 최종 보정을 처리합니다.

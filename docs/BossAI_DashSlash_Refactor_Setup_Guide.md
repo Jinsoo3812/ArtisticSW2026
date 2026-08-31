@@ -29,7 +29,9 @@
    - `Clear Destination When Finished`: 체크
 6. 컴파일하고 저장한다.
 
-Task는 같은 태그의 GA가 여러 개면 `SourceObject == CurrentWeapon`인 Spec을 우선한다. 따라서 Sword가 부여한 `BPGA_MeleeAttack`이 선택된다.
+보스의 `GameplayAbility.BasicAttack`은 `UGA_BossBasicAttack` Spec을 우선한다. Sword가 부여한 일반 `BPGA_MeleeAttack`은 일반 적 호환을 위해 남아 있지만 보스 BT에서는 선택하지 않는다. 전용 GA는 `DA_RogueBossBasicAttacks.Attacks` 가변 배열에서 현재 사용 가능한 공격을 고르며, 배열 개수와 Short/Combo 비율은 에디터에서 자유롭게 조절한다. 모든 공격은 Sword의 동일한 `AttackRange`를 사용한다.
+
+거리 Decorator는 공격 시작 전 조건이다. Montage가 Commit된 뒤 Target이 Sword 사거리 밖으로 이동해 BT 분기가 Abort되어도 `UGA_BossBasicAttack`은 취소되지 않고 끝까지 실행된다. 피격과 사망에 의한 GAS 취소는 기존대로 유지된다.
 
 ## 3. BasicAttack Montage 표시 설정
 
@@ -56,22 +58,27 @@ Dash Montage는 Root Motion이 아닌 in-place FullBody Montage로 만든다. �
 
 1. 사용할 Animation Sequence에서 `EnableRootMotion`을 끄거나 Root Motion이 제거된 Sequence를 준비한다.
 2. Montage를 열고 Slot을 BasicAttack과 동일한 FullBody Slot으로 맞춘다.
-3. Montage Section을 정확히 다음 이름으로 만든다.
-   - `Windup`: Montage 첫 프레임
-   - `DashSlash`: 준비가 끝난 뒤 시작하는 전체 검 휘두르기(1회 재생)
-   - `DashHold`: 검을 모두 휘두른 마지막 자세를 유지하는 짧은 루프
+3. 준비 동작이 끝나고 자세를 유지하기 시작할 프레임을 정한다.
+4. Montage Section을 다음 순서로 만든다. 이름은 `BPGA_SlashDash > Montage Config`와 일치하면 변경해도 된다.
+   - `Windup`: 준비 동작의 첫 프레임
+   - `WindupHold`: 준비 자세를 유지할 짧은 구간의 첫 프레임
+   - `DashSlash`: 실제 검 공격과 돌진을 시작할 프레임
+   - `DashHold`: 검을 모두 휘두른 마지막 자세를 유지할 구간
    - `Recover`: 도착 후 마무리 자세의 첫 프레임
-4. `DashSlash`에는 검을 드는 과정부터 휘두르기를 끝내는 과정까지 한 번만 넣고 루프시키지 않는다.
-5. `DashHold`는 마지막 자세 주변의 매우 짧은 구간으로 만들고, 반복 경계에서 튀지 않는지 확인한다.
-6. `DashSlash` 시작 프레임에 `AN_SendGameplayEvent` Notify를 추가하고 `EventTag`를 `Event.Boss.Dash.Start`로 설정한다.
-7. `DashSlash` 마지막 프레임(완전히 휘두른 경계)에 두 번째 Gameplay Event Notify를 추가하고 `EventTag`를 `Event.Boss.Dash.SlashFinished`로 설정한다.
+5. `WindupHold`는 시작과 끝 Pose가 자연스럽게 이어지는 짧은 구간으로 만든다. 정지한 것처럼 보이게 하려면 동일한 준비 자세 주변의 1~몇 프레임만 사용한다.
+6. `DashSlash`에는 실제 휘두르기 전체를 한 번만 넣고 루프시키지 않는다.
+7. `DashHold` 역시 반복 경계에서 자세가 튀지 않는 짧은 구간으로 만든다.
 8. Blend In/Out은 먼저 `0.05~0.15초` 범위로 설정한다.
-9. 저장한다.
+9. 기존 `Event.Boss.Dash.Start`와 `Event.Boss.Dash.SlashFinished` Notify는 제거해도 된다. 남겨 두어도 게임 진행에는 사용되지 않으며, Notify를 VFX/SFX에 재사용하려면 권위 판정과 분리한다.
+10. Section Association도 `Windup -> WindupHold`, `WindupHold -> WindupHold`, `DashSlash -> DashHold`, `DashHold -> DashHold`, `Recover -> None`으로 지정한다.
+11. 저장한다.
 
 GA는 런타임에 다음 Section 연결을 강제한다.
 
 ```text
-Windup -> DashSlash (1회)
+Windup -> WindupHold
+WindupHold -> WindupHold
+Hold 시간 종료 -> DashSlash로 서버 Jump + 이동/피해 시작
 DashSlash -> DashHold
 DashHold -> DashHold
 Slash 완료 후 아직 이동 중이면 DashHold 유지
@@ -80,7 +87,9 @@ Slash 완료와 목적지 도착이 모두 충족되면 Recover
 Recover 완료 -> GA 종료 -> BTTask 성공
 ```
 
-Notify가 누락되어도 `WindupDuration` 후 Dash가 시작되지만, 애니메이션과 정확하게 맞추려면 Notify를 사용한다.
+Section 연결은 Ability가 런타임에도 동일하게 설정하지만, Preview와 실제 실행을 일치시키기 위해 Montage의 기본 Association도 맞춘다. `WindupHold`를 포함한 다섯 Section은 모두 필수이며, 누락되거나 길이가 0이면 Ability는 활성화를 실패하고 설정 오류를 로그에 남긴다.
+
+게임 진행은 AnimNotify가 아니라 ServerOnly Ability의 타이머가 결정한다. `Windup` 및 `DashSlash` Section 길이는 Montage에서 자동 계산되며, 서버가 Hold 종료 시 Montage 전환과 Dash 판정을 같은 프레임에 시작한다.
 
 ## 5. BPGA_SlashDash Class Defaults
 
@@ -88,27 +97,37 @@ Notify가 누락되어도 `WindupDuration` 후 Dash가 시작되지만, 애니�
 
 | 속성 | 권장 시작값 |
 | --- | --- |
-| `DashMontage` | 위에서 만든 in-place Montage |
-| `WindupSectionName` | `Windup` |
-| `DashSlashSectionName` | `DashSlash` |
-| `DashHoldSectionName` | `DashHold` |
-| `RecoverySectionName` | `Recover` |
-| `WindupDuration` | Notify 실패 대비 시간, 예: `0.5` |
+| `MontageConfig.Montage` | 위에서 만든 in-place Montage |
+| `MontageConfig.WindupEnterSectionName` | `Windup` |
+| `MontageConfig.WindupHoldSectionName` | `WindupHold` |
+| `MontageConfig.AttackSectionName` | `DashSlash` |
+| `MontageConfig.TravelHoldSectionName` | `DashHold` |
+| `MontageConfig.RecoverySectionName` | `Recover` |
+| `MontageConfig.PlayRate` | 전체 Section 시간 계산과 재생에 함께 쓰는 속도, 보통 `1.0` |
+| `MontageConfig.WindupHoldDuration` | `Windup` 재생이 끝난 뒤 준비 자세를 유지할 시간 |
+| `MontageConfig.RecoveryTimeout` | Recover 완료 실패 안전장치, 예: `1.5` |
 | `DashDuration` | 목적지까지 실제 이동 시간, 예: `0.45` |
-| `RecoveryTimeout` | Recover 실패 안전장치, 예: `1.5` |
+| `MinimumDashDistance` | Commit을 허용할 최소 돌진 거리, 기본 `500` |
 | `DashHitRadius` | 공격 판정 반경, 예: `120` |
 | `Damage` | 원하는 Dash 피해량 |
 | `DamageEffectClass` | Instant Damage GameplayEffect |
 | `StartupGameplayCueTag` | 비워 둠(피해 확정 전 Cue 금지) |
 | `ImpactGameplayCueTag` | `GameplayCue.Impact.Boss.DashSlash` |
+| `PathPresentation` | `DA_DashSlashPathPresentation` |
 
-`DashDuration`과 Montage 길이는 독립적이다. 목적지 도착이 이동 종료의 권위 있는 기준이다.
+`WindupHoldDuration`만 늘리면 준비 동작 이후의 Hold 루프가 길어진다. `Windup` 자체의 길이와 `DashSlash` 완료 시간은 Montage Section에서 자동 계산하므로 같은 시간을 Class Defaults에 중복 입력하지 않는다.
+
+`DashDuration`과 Montage 길이는 독립적이다. 목적지 도착이 이동 종료의 권위 있는 기준이다. 서버 프레임이 밀려도 Dash 진행률은 고정 Tick 누적값이 아니라 서버 실제 경과 시간으로 계산된다.
 
 ## 6. DashSlash BT 분기
 
-`GA_BossDashSlash`의 `Dash Acceptance Radius` 기본값은 75cm다. Dash는
-목적지의 갑판 로컬 평면 허용 범위에 들어오면 종료되며, 마지막 프레임에
-Deck Point의 정확한 좌표로 강제 스냅하지 않는다.
+Dash는 Commit 순간 HostShip 로컬 좌표로 출발점과 끝점을 고정한다. Windup
+동안에는 `MOVE_Walking`과 선박 Movement Base를 유지한 채 보스 자신의 보행
+속도와 AI 이동만 잠근다. 따라서 파도로 배가 이동하거나 기울어도 보스의 갑판
+로컬 위치는 유지된다. `DashSlash` Section 진입 프레임에는 원래 속도와
+MovementMode를 복원하면서 실제 이동과 휘두르기를 함께 시작한다. 이동·Sweep·
+Telegraph·공격 흔적은 모두 같은 경로를 사용하며 마지막 프레임에는 Commit된
+끝점까지 정확히 이동한다.
 
 필요한 연출에 따라 DashSlash Sequence의 `BTT_SelectBossDestinationPoint`
 앞에 `BTT_BossStrafe`를 배치할 수 있다. 이 Task는 쿨다운 fallback이
@@ -122,13 +141,19 @@ Deck Point의 정확한 좌표로 강제 스냅하지 않는다.
    - `GameplayAbility.Boss.DashSlash`
 2. `BTT_SelectBossDestinationPoint`
    - Purpose: `Dash`
+   - Minimum Dash Travel Distance: `MinimumDashDistance` 이상
+   - Require Dash Path Through Target: 체크
    - Blackboard Key: `DestinationPointId`
 3. `BTT_ActivateBossAbility`
    - Ability Asset Tag: `GameplayAbility.Boss.DashSlash`
    - Require Preselected Destination: 체크
    - Destination Point Key: `DestinationPointId`
+   - Cancel Ability On Abort: 체크 상태여도 Commit된 DashSlash는 자체 정책으로 계속 실행
+   - Clear Destination When Finished: 체크 상태여도 실행 중인 DashSlash가 목적지를 소유하며 완료/취소 시 정리
 
 `DestinationPointId`의 초기/무효 값은 `-1`이다. Int Key에 `ClearValue`를 사용하면 `0`이 되어 유효한 Point로 오인될 수 있으므로 사용하지 않는다.
+
+거리 Decorator와 상위 우선순위 분기는 활성화 전 조건이다. DashSlash가 Commit된 후 BT 분기가 Abort되어도 `WindupHold -> DashSlash -> Recover`는 계속 실행되며, 피격/사망과 같은 GAS 강제 취소만 이를 중단한다.
 
 ## 7. Dash 충돌과 피해
 
@@ -144,6 +169,19 @@ Deck Point의 정확한 좌표로 강제 스냅하지 않는다.
 프로젝트의 Player와 Boss가 모두 Pawn 채널을 사용하므로 Dash 중에는 모든 Pawn을 관통한다. Player만 관통하고 다른 NPC와는 충돌해야 할 때만 별도 `PlayerPawn` Object Channel 도입을 고려한다.
 
 ## 8. GameplayCue 설정
+
+### DashSlash 경로 Cue
+
+- `/Game/GameplayCues/Path/Boss/GCN_Path_Boss_DashSlash_Telegraph`
+  - `GameplayCue.Path.Boss.DashSlash.Telegraph`
+  - Infinite GE가 Windup 동안 유지하며 DashSlash 진입 시 제거한다.
+- `/Game/GameplayCues/Path/Boss/GCN_Path_Boss_DashSlash_Execution`
+  - `GameplayCue.Path.Boss.DashSlash.Execution`
+  - Duration GE가 실행된 전체 경로를 기본 1.5초 유지한다.
+
+두 Cue는 `SWPathGameplayCueNotify`를 부모로 사용한다. `PathDecal` Material과
+선택적인 `PathNiagara`를 각 Blueprint에서 지정한다. Niagara를 사용할 경우
+`User.PathStart`, `User.PathEnd`, `User.PathWidth`를 소비하도록 만든다.
 
 ### 선택적 공격 연출 Cue
 

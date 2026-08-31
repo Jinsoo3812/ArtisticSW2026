@@ -47,11 +47,15 @@ protected:
 		APawn& Pawn,
 		const UAbilitySystemComponent& AbilitySystem) const;
 
+	/** Allows an archetype to let committed atomic actions finish after BT preconditions change. */
+	virtual bool ShouldCancelAbilityOnAbort(const FGameplayAbilitySpec* ActiveSpec) const;
+
 	/** Archetype cleanup hook invoked once for success, failure, or abort. */
 	virtual void OnAbilityTaskFinished(EBTNodeResult::Type Result);
 
 	UBehaviorTreeComponent* GetCachedOwnerComp() const { return CachedOwnerComp.Get(); }
 	APawn* GetCachedPawn() const { return CachedPawn.Get(); }
+	const FGameplayAbilitySpec* GetActiveAbilitySpec() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability", meta = (Categories = "GameplayAbility"))
 	FGameplayTag AbilityAssetTag;

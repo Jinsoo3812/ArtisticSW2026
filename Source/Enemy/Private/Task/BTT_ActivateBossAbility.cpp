@@ -2,10 +2,14 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
+#include "BaseGameplayAbility.h"
+#include "BaseGameplayTags.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Int.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BossAI/ShipBossEnemy.h"
+#include "GAS/Ability/Boss/BossGameplayAbility.h"
+#include "GAS/Ability/Boss/GA_BossBasicAttack.h"
 #include "Weapon/BaseWeapon.h"
 #include "Weapon/BaseWeaponComponent.h"
 
@@ -44,6 +48,19 @@ const FGameplayAbilitySpec* UBTT_ActivateBossAbility::FindAbilitySpec(
 	}
 
 	const FGameplayAbilitySpec* FirstMatch = nullptr;
+	// Boss basic attacks are actor-owned and data-driven. Prefer that spec over
+	// the legacy generic basic attack still granted by the physical sword.
+	if (AbilityAssetTag == GameplayAbility_BasicAttack)
+	{
+		for (const FGameplayAbilitySpec& Spec : AbilitySystem.GetActivatableAbilities())
+		{
+			if (Spec.Ability && Spec.Ability->IsA<UGA_BossBasicAttack>()
+				&& Spec.Ability->GetAssetTags().HasTagExact(AbilityAssetTag))
+			{
+				return &Spec;
+			}
+		}
+	}
 	for (const FGameplayAbilitySpec& Spec : AbilitySystem.GetActivatableAbilities())
 	{
 		if (!Spec.Ability || !Spec.Ability->GetAssetTags().HasTagExact(AbilityAssetTag))
@@ -71,8 +88,34 @@ bool UBTT_ActivateBossAbility::ValidateActivationContext(
 	return Boss && (!bRequirePreselectedDestination || Boss->GetDestinationPointId() != INDEX_NONE);
 }
 
+bool UBTT_ActivateBossAbility::ShouldCancelAbilityOnAbort(
+	const FGameplayAbilitySpec* ActiveSpec) const
+{
+	// Decorators are activation preconditions. Atomic abilities explicitly opt
+	// into surviving a later BT branch abort; hit/death cancellation still
+	// reaches the active instance through GAS.
+	const UBaseGameplayAbility* BossAbility = ActiveSpec
+		? Cast<UBaseGameplayAbility>(ActiveSpec->Ability)
+		: nullptr;
+	if (BossAbility && BossAbility->ShouldSurviveBehaviorTreeAbort())
+	{
+		return false;
+	}
+	return Super::ShouldCancelAbilityOnAbort(ActiveSpec);
+}
+
 void UBTT_ActivateBossAbility::OnAbilityTaskFinished(EBTNodeResult::Type Result)
 {
+	const FGameplayAbilitySpec* ActiveSpec = GetActiveAbilitySpec();
+	const UBossGameplayAbility* BossAbility = ActiveSpec
+		? Cast<UBossGameplayAbility>(ActiveSpec->Ability)
+		: nullptr;
+	if (Result == EBTNodeResult::Aborted && BossAbility
+		&& BossAbility->ShouldSurviveBehaviorTreeAbort()
+		&& BossAbility->OwnsPreselectedDestinationAfterCommit())
+	{
+		return;
+	}
 	ResetDestinationState();
 }
 

@@ -7,7 +7,8 @@
 #include "ShipBossEnemy.generated.h"
 
 class AEnemyShip;
-class ADeckRangedEnemy;
+class ADeckEnemy;
+class UBossBasicAttackSet;
 class USphereComponent;
 
 /** Server-authored boss pawn whose tactical positions live on a moving enemy ship. */
@@ -83,11 +84,15 @@ public:
 	bool CanSummonDeckEnemy() const;
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Summon")
-	bool TrySummonDeckEnemy(ADeckRangedEnemy*& OutEnemy);
+	bool TrySummonDeckEnemy(ADeckEnemy*& OutEnemy);
 
 	/** Query-only sensor enabled by DashSlash; the character capsule remains the movement body. */
 	UFUNCTION(BlueprintPure, Category = "Boss|Combat")
 	USphereComponent* GetDashDamageVolume() const { return DashDamageVolume; }
+
+	UFUNCTION(BlueprintPure, Category = "Boss|Combat")
+	UBossBasicAttackSet* GetBasicAttackSet() const { return BasicAttackSet; }
+	bool HasBossBasicAttackStartingAbility() const;
 
 protected:
 	virtual void BeginPlay() override;
@@ -131,6 +136,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss|Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USphereComponent> DashDamageVolume = nullptr;
 
+	/** Visual/cadence variations for the one currently equipped weapon. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Combat")
+	TObjectPtr<UBossBasicAttackSet> BasicAttackSet = nullptr;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Summon", meta = (ClampMin = "1", ClampMax = "8"))
 	int32 MaxSummonedDeckEnemies = 2;
 
@@ -144,7 +153,7 @@ protected:
 	float MinimumSummonDistanceFromBoss = 200.0f;
 
 	UPROPERTY(Transient)
-	TArray<TWeakObjectPtr<ADeckRangedEnemy>> SummonedDeckEnemies;
+	TArray<TWeakObjectPtr<ADeckEnemy>> SummonedDeckEnemies;
 
 	double NextSummonAllowedTime = 0.0;
 	FDeckPointReservation DestinationReservation;
