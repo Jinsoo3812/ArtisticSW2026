@@ -17,6 +17,11 @@ EDataValidationResult UEnemyShipSkillModuleData::IsDataValid(FDataValidationCont
 		Context.AddError(FText::FromString(TEXT("Enemy Ship Skill Module requires an Ability Set.")));
 		Result = EDataValidationResult::Invalid;
 	}
+	if (MaximumCannonballSpeed < 1.0f)
+	{
+		Context.AddError(FText::FromString(TEXT("MaximumCannonballSpeed must be at least 1 cm/s.")));
+		Result = EDataValidationResult::Invalid;
+	}
 
 	FGameplayTagContainer GrantedTags;
 	if (AbilitySet)

@@ -134,6 +134,7 @@ bool FEnemyShipCannonOnlyAuthoringTest::RunTest(const FString& Parameters)
 		Pattern->SkillModules.Num() == 1 && Pattern->SkillModules[0] == Module);
 
 	TestEqual(TEXT("CannonVolley Module ID is stable"), Module->ModuleId, FName(TEXT("Skill.CannonVolley")));
+	TestTrue(TEXT("CannonVolley Module has a finite projectile-speed ceiling"), Module->MaximumCannonballSpeed >= 1.0f);
 	TestTrue(TEXT("CannonVolley Module points to its Ability Set"), Module->AbilitySet == AbilitySet);
 	TestEqual(TEXT("CannonVolley Module has one Skill Rule"), Module->SkillRules.Num(), 1);
 	if (Module->SkillRules.Num() == 1)

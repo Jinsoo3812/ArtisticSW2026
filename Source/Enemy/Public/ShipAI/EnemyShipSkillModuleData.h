@@ -23,5 +23,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rules", meta = (TitleProperty = "RuleId"))
 	TArray<FEnemyShipSkillRule> SkillRules;
 
+	/**
+	 * Absolute launch-speed ceiling used by CannonVolley rules in this module.
+	 * If no aimable ballistic solution exists at or below this speed, the skill cannot fire.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cannon", meta = (ClampMin = "1.0", DisplayName = "Maximum Cannonball Speed (cm/s)"))
+	float MaximumCannonballSpeed = 5000.0f;
+
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 };

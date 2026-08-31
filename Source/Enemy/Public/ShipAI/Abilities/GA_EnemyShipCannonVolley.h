@@ -43,14 +43,17 @@ private:
 		const ACannon* Cannon,
 		const AShip* Target,
 		float PredictionStrength,
+		float MaximumProjectileSpeed,
 		FVector& OutDirection,
 		float& OutProjectileSpeed) const;
 	bool SolveShotToPoint(
 		const ACannon* Cannon,
 		const FVector& TargetPoint,
+		float MaximumProjectileSpeed,
 		FVector& OutDirection,
 		float& OutProjectileSpeed,
 		float& OutFlightTime) const;
 	float ResolvePredictionStrength(const AEnemyShip* Ship) const;
+	float ResolveMaximumProjectileSpeed(const AEnemyShip* Ship) const;
 	bool IsValidPlayerTarget(const AShip* Candidate) const;
 };

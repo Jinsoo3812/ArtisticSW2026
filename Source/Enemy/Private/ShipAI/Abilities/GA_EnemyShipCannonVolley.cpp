@@ -35,13 +35,14 @@ bool UGA_EnemyShipCannonVolley::CanActivateAbility(
 		return false;
 	}
 	const float PredictionStrength = ResolvePredictionStrength(Ship);
+	const float MaximumProjectileSpeed = ResolveMaximumProjectileSpeed(Ship);
 
 	for (const ACannon* Cannon : Ship->GetMountedCannons())
 	{
 		FVector ShotDirection;
 		float ShotSpeed = 0.0f;
 		if (IsValid(Cannon) && Cannon->CanFireCannon()
-			&& BuildShotSolution(Cannon, Target, PredictionStrength, ShotDirection, ShotSpeed))
+			&& BuildShotSolution(Cannon, Target, PredictionStrength, MaximumProjectileSpeed, ShotDirection, ShotSpeed))
 		{
 			return true;
 		}
@@ -85,6 +86,7 @@ void UGA_EnemyShipCannonVolley::ActivateAbility(
 			< FVector::DistSquared2D(B.GetActorLocation(), TargetLocation);
 	});
 	const float PredictionStrength = ResolvePredictionStrength(Ship);
+	const float MaximumProjectileSpeed = ResolveMaximumProjectileSpeed(Ship);
 
 	int32 FiredCount = 0;
 	for (ACannon* Cannon : Cannons)
@@ -97,7 +99,7 @@ void UGA_EnemyShipCannonVolley::ActivateAbility(
 		FVector ShotDirection;
 		float ShotSpeed = 0.0f;
 		if (Cannon->CanFireCannon()
-			&& BuildShotSolution(Cannon, Target, PredictionStrength, ShotDirection, ShotSpeed)
+			&& BuildShotSolution(Cannon, Target, PredictionStrength, MaximumProjectileSpeed, ShotDirection, ShotSpeed)
 			&& Cannon->FireAICannonAtDirectionWithSpeed(ShotDirection, ShotSpeed))
 		{
 			++FiredCount;
@@ -111,6 +113,7 @@ bool UGA_EnemyShipCannonVolley::BuildShotSolution(
 	const ACannon* Cannon,
 	const AShip* Target,
 	float PredictionStrength,
+	float MaximumProjectileSpeed,
 	FVector& OutDirection,
 	float& OutProjectileSpeed) const
 {
@@ -129,7 +132,7 @@ bool UGA_EnemyShipCannonVolley::BuildShotSolution(
 	{
 		float FlightTime = 0.0f;
 		return SolveShotToPoint(
-			Cannon, CurrentTargetPoint, OutDirection, OutProjectileSpeed, FlightTime);
+			Cannon, CurrentTargetPoint, MaximumProjectileSpeed, OutDirection, OutProjectileSpeed, FlightTime);
 	}
 
 	// AShip already exposes the authoritative physics velocity through AActor::GetVelocity.
@@ -143,7 +146,7 @@ bool UGA_EnemyShipCannonVolley::BuildShotSolution(
 		float IterationSpeed = 0.0f;
 		float IterationFlightTime = 0.0f;
 		if (!SolveShotToPoint(
-			Cannon, PredictedTargetPoint,
+			Cannon, PredictedTargetPoint, MaximumProjectileSpeed,
 			IterationDirection, IterationSpeed, IterationFlightTime))
 		{
 			return false;
@@ -162,12 +165,13 @@ bool UGA_EnemyShipCannonVolley::BuildShotSolution(
 
 	float FinalFlightTime = 0.0f;
 	return SolveShotToPoint(
-		Cannon, PredictedTargetPoint, OutDirection, OutProjectileSpeed, FinalFlightTime);
+		Cannon, PredictedTargetPoint, MaximumProjectileSpeed, OutDirection, OutProjectileSpeed, FinalFlightTime);
 }
 
 bool UGA_EnemyShipCannonVolley::SolveShotToPoint(
 	const ACannon* Cannon,
 	const FVector& TargetPoint,
+	float MaximumProjectileSpeed,
 	FVector& OutDirection,
 	float& OutProjectileSpeed,
 	float& OutFlightTime) const
@@ -175,7 +179,7 @@ bool UGA_EnemyShipCannonVolley::SolveShotToPoint(
 	OutDirection = FVector::ZeroVector;
 	OutProjectileSpeed = 0.0f;
 	OutFlightTime = 0.0f;
-	if (!Cannon)
+	if (!Cannon || MaximumProjectileSpeed < 1.0f)
 	{
 		return false;
 	}
@@ -202,6 +206,11 @@ bool UGA_EnemyShipCannonVolley::SolveShotToPoint(
 			HorizontalDistance * HorizontalDistance + Delta.Z * Delta.Z)));
 	const float AuthoredSpeed = FMath::Max(1.0f, Cannon->GetResolvedFiringStats().ProjectileSpeed);
 	const float LowerBound = FMath::Max(AuthoredSpeed, PhysicalMinimumSpeed * 1.001f);
+	const float SpeedCeiling = FMath::Max(1.0f, MaximumProjectileSpeed);
+	if (LowerBound > SpeedCeiling)
+	{
+		return false;
+	}
 
 	auto TrySpeed = [this, Cannon, &Start, &TargetPoint, Gravity](
 		float CandidateSpeed,
@@ -234,9 +243,9 @@ bool UGA_EnemyShipCannonVolley::SolveShotToPoint(
 	float FailingSpeed = LowerBound;
 	float PassingSpeed = LowerBound;
 	bool bFoundPassingSpeed = false;
-	for (int32 Attempt = 0; Attempt < 12; ++Attempt)
+	for (int32 Attempt = 0; Attempt < 12 && PassingSpeed < SpeedCeiling; ++Attempt)
 	{
-		PassingSpeed *= 1.25f;
+		PassingSpeed = FMath::Min(PassingSpeed * 1.25f, SpeedCeiling);
 		if (TrySpeed(PassingSpeed, CandidateDirection, CandidateFlightTime))
 		{
 			bFoundPassingSpeed = true;
@@ -278,6 +287,14 @@ float UGA_EnemyShipCannonVolley::ResolvePredictionStrength(const AEnemyShip* Shi
 	const UEnemyShipPatternRuntimeComponent* Runtime = Ship ? Ship->GetPatternRuntimeComponent() : nullptr;
 	return Runtime
 		? Runtime->GetPendingTargetPredictionStrength(GameplayAbility_EnemyShip_CannonVolley)
+		: 0.0f;
+}
+
+float UGA_EnemyShipCannonVolley::ResolveMaximumProjectileSpeed(const AEnemyShip* Ship) const
+{
+	const UEnemyShipPatternRuntimeComponent* Runtime = Ship ? Ship->GetPatternRuntimeComponent() : nullptr;
+	return Runtime
+		? Runtime->GetMaximumCannonballSpeed(GameplayAbility_EnemyShip_CannonVolley)
 		: 0.0f;
 }
 

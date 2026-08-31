@@ -143,6 +143,35 @@ float UEnemyShipPatternRuntimeComponent::GetPendingTargetPredictionStrength(
 	return Rule ? FMath::Clamp(Rule->TargetPredictionStrength, 0.0f, 1.0f) : 0.0f;
 }
 
+float UEnemyShipPatternRuntimeComponent::GetMaximumCannonballSpeed(
+	const FGameplayTag& AbilityTag) const
+{
+	auto FindInModules = [&AbilityTag](const auto& Modules) -> float
+	{
+		for (const UEnemyShipSkillModuleData* Module : Modules)
+		{
+			if (!IsValid(Module))
+			{
+				continue;
+			}
+			for (const FEnemyShipSkillRule& Rule : Module->SkillRules)
+			{
+				if (Rule.AbilityTag == AbilityTag)
+				{
+					return FMath::Max(1.0f, Module->MaximumCannonballSpeed);
+				}
+			}
+		}
+		return 0.0f;
+	};
+
+	if (const float CoreValue = FindInModules(CoreSkillModules); CoreValue > 0.0f)
+	{
+		return CoreValue;
+	}
+	return Pattern ? FindInModules(Pattern->SkillModules) : 0.0f;
+}
+
 bool UEnemyShipPatternRuntimeComponent::IsRuleEligible(
 	int32 RuleIndex,
 	AActor* TargetActor,

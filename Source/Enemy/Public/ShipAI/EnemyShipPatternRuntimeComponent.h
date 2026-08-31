@@ -62,6 +62,7 @@ public:
 	double GetLastCommittedTime(FName RuleId) const;
 	int32 GetResolvedRuleCount() const { return ResolvedRules.Num(); }
 	float GetPendingTargetPredictionStrength(const FGameplayTag& AbilityTag) const;
+	float GetMaximumCannonballSpeed(const FGameplayTag& AbilityTag) const;
 
 private:
 	bool IsRuleEligible(
