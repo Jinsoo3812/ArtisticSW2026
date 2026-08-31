@@ -4,6 +4,7 @@
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/LocomotionAnimStateComponent.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "Equipment/PlayerEquipmentComponent.h"
@@ -61,11 +62,16 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 
 	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
 	{
+		Player->bIsAttacking = true;
 		Player->StopSprint();
 		if (Player->HasAuthority())
 		{
 			Player->AcquireServerCombatPoseRefresh();
 			bServerCombatPoseRefreshAcquired = true;
+		}
+		if (ULocomotionAnimStateComponent* AnimState = Player->FindComponentByClass<ULocomotionAnimStateComponent>())
+		{
+			AnimState->ResetLocomotionActionState(TEXT("PlayerBasicAttack"));
 		}
 	}
 
@@ -154,6 +160,11 @@ void UGA_PlayerBasicAttack::EndAbility(
 	}
 
 	RemoveAttackStateTag();
+
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
+	{
+		Player->bIsAttacking = false;
+	}
 
 	CachedSword = nullptr;
 	CachedAttackMontage = nullptr;
