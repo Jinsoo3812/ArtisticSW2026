@@ -11,7 +11,7 @@ enum class EDeckWaypointSelectionMode : uint8
 	Combat
 };
 
-/** Selects only a directly linked point; no NavMesh or full path search is used in the MVP. */
+/** Patrol selects one neighbor; Combat plans a deterministic multi-hop ship-local route. */
 UCLASS()
 class ENEMY_API UBTT_SelectDeckWaypoint : public UBTTask_BlackboardBase
 {
@@ -22,6 +22,7 @@ public:
 
 	virtual EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
 	virtual FString GetStaticDescription() const override;
+	EDeckWaypointSelectionMode GetSelectionMode() const { return SelectionMode; }
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI")

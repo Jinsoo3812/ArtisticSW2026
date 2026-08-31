@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "BaseEnemy.h"
+#include "Components/SkinnedMeshComponent.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "RangedEnemy.generated.h"
 
@@ -66,9 +67,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ranged Enemy|Combat")
 	AEnemyBow* GetEquippedBow() const;
 
-	/** Resolves the equipped bow's arrow spawn socket in world space. */
+	/** Resolves the character mesh's authored arrow socket in world space. */
 	bool GetRangedAttackOrigin(FTransform& OutSpawnTransform) const;
+	FName GetRangedAttackSocketName() const { return RangedAttackSocketName; }
 	FVector GetRangedAimLocation(const AActor* TargetActor) const;
+	void AcquireServerRangedAttackPoseRefresh();
+	void ReleaseServerRangedAttackPoseRefresh();
 
 	UAnimMontage* GetRangedAttackMontage() const;
 	float GetRangedAttackMontagePlayRate() const;
@@ -132,6 +136,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat")
 	float TargetAimHeightOffset = 60.0f;
 
+	/** Socket authored on the ranged enemy's character skeleton, not on the bow mesh. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat")
+	FName RangedAttackSocketName = TEXT("Arrow_socket");
+
 	/** Compatibility fallback. Prefer WeaponDefinition.CombatData.AttackMontage. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Animation")
 	TObjectPtr<UAnimMontage> AttackMontage = nullptr;
@@ -145,4 +153,7 @@ protected:
 	FTimerHandle HostShipResolveTimerHandle;
 	int32 HostShipResolveAttemptCount = 0;
 	double NextAttackTime = 0.0;
+	EVisibilityBasedAnimTickOption ServerRangedAttackOriginalAnimTickOption =
+		EVisibilityBasedAnimTickOption::AlwaysTickPose;
+	int32 ServerRangedAttackPoseRefreshRefCount = 0;
 };

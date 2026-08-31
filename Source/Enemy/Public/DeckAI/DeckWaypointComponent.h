@@ -41,6 +41,8 @@ public:
 
 	int32 GetGeneratedGridX() const { return GeneratedGridX; }
 	int32 GetGeneratedGridY() const { return GeneratedGridY; }
+	bool AllowsAutomaticLinks() const { return bAllowAutomaticLinks; }
+	float GetAutomaticLinkDistanceOverride() const { return AutomaticLinkDistanceOverride; }
 
 	/** Used by the ship's editor generator. Existing usage flags are intentionally not changed on regeneration. */
 	void InitializeGeneratedWaypoint(
@@ -51,7 +53,9 @@ public:
 		bool bInCanPatrol,
 		bool bInCanUseInCombat);
 
-	void SetGeneratedLinks(const TArray<int32>& InLinkedWaypointIds);
+	/** Editor authoring helpers. Runtime code treats IDs and links as immutable. */
+	void SetWaypointIdForAuthoring(int32 InWaypointId);
+	void SetLinkedWaypointIdsForAuthoring(const TArray<int32>& InLinkedWaypointIds);
 	void RefreshEditorVisualization();
 
 	float GetRandomWaitTime(FRandomStream& RandomStream) const;
@@ -66,6 +70,15 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI|Waypoint")
 	TArray<int32> LinkedWaypointIds;
+
+	/** Disable only when this point's Linked Waypoint Ids are intentionally authored by hand. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI|Authoring")
+	bool bAllowAutomaticLinks = true;
+
+	/** Zero uses the owning ship's automatic link distance. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI|Authoring",
+		meta = (ClampMin = "0.0", Units = "cm"))
+	float AutomaticLinkDistanceOverride = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI|Usage")
 	bool bCanSpawn = false;

@@ -22,7 +22,7 @@ EBTNodeResult::Type UBTT_WaitAtDeckWaypoint::ExecuteTask(
 	uint8* NodeMemory)
 {
 	AAIController* Controller = OwnerComp.GetAIOwner();
-	ADeckRangedEnemy* Enemy = Controller ? Cast<ADeckRangedEnemy>(Controller->GetPawn()) : nullptr;
+	ADeckEnemy* Enemy = Controller ? Cast<ADeckEnemy>(Controller->GetPawn()) : nullptr;
 	AEnemyShip* HostShip = Enemy ? Cast<AEnemyShip>(Enemy->GetHostShip()) : nullptr;
 	const UDeckWaypointComponent* Waypoint = HostShip && Enemy
 		? HostShip->GetDeckWaypoint(Enemy->GetCurrentDeckWaypointId())

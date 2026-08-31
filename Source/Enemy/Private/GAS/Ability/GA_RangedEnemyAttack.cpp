@@ -36,6 +36,7 @@ void UGA_RangedEnemyAttack::ActivateAbility(
 	CachedTarget = CachedEnemy ? CachedEnemy->GetCombatTarget() : nullptr;
 	bProjectileFired = false;
 	bFinishingAttack = false;
+	bOwnsServerPoseRefresh = false;
 
 	if (!CachedEnemy)
 	{
@@ -59,6 +60,8 @@ void UGA_RangedEnemyAttack::ActivateAbility(
 		return;
 	}
 
+	CachedEnemy->AcquireServerRangedAttackPoseRefresh();
+	bOwnsServerPoseRefresh = true;
 	AddAttackStateTag();
 
 	const FGameplayTag FireEventTag = CachedEnemy->GetRangedFireEventTag();
@@ -94,12 +97,17 @@ void UGA_RangedEnemyAttack::EndAbility(
 	bool bWasCancelled)
 {
 	RemoveAttackStateTag();
+	if (bOwnsServerPoseRefresh && CachedEnemy)
+	{
+		CachedEnemy->ReleaseServerRangedAttackPoseRefresh();
+	}
 	CachedEnemy = nullptr;
 	CachedTarget = nullptr;
 	AttackMontageTask = nullptr;
 	FireProjectileEventTask = nullptr;
 	bProjectileFired = false;
 	bFinishingAttack = false;
+	bOwnsServerPoseRefresh = false;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -163,7 +171,7 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 
 	AEnemyBow* Bow = CachedEnemy->GetEquippedBow();
 	FTransform ArrowSpawnTransform;
-	if (!Bow || !Bow->GetArrowSpawnTransform(ArrowSpawnTransform))
+	if (!Bow || !CachedEnemy->GetRangedAttackOrigin(ArrowSpawnTransform))
 	{
 		return false;
 	}

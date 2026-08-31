@@ -7,7 +7,7 @@ RangedEnemy가 전투 타깃을 인식한 뒤 Behavior Tree에서 다음 루프�
 1. 현재 위치에서 사격 가능하면 `BTT_RangedAttack`이 `GA_RangedEnemyAttack`을 실행한다.
 2. 사거리 또는 시야 조건이 맞지 않으면 `EQS_RangedEnemy_CombatPosition`을 실행한다.
 3. EQS 결과를 Blackboard의 `PointOfInterest`에 기록하고 그 위치로 이동한다.
-4. 활의 `Arrow_socket`에서 화살을 생성해 타깃을 향해 발사한다.
+4. 원거리 적 캐릭터 메시의 `Arrow_socket`에서 화살을 생성해 타깃을 향해 발사한다.
 
 이번 MVP에서는 공격 GA만 사용한다. 이동, 조준, 사거리 선택은 BT/EQS가 담당하며 이동용 GA는 만들지 않는다.
 
@@ -37,7 +37,7 @@ GA_RangedEnemyAttack
   -> 서버에서 타깃, 사거리, LOS 재검증
   -> 공격 몽타주 재생
   -> Event.Montage.FireArrow 수신
-  -> 장착된 AEnemyBow의 Arrow_socket Transform 조회
+  -> ARangedEnemy 캐릭터 메시의 Arrow_socket Transform 조회
   -> 화살 Spawn + Strength Damage Spec 초기화 + Launch
   -> Ability 종료
 ```
@@ -52,14 +52,15 @@ GA_RangedEnemyAttack
 - 자동화 테스트: `Source/Enemy/Private/Tests/RangedEnemyTests.cpp`
 - 에셋 재생성 도구: `Tools/CreateRangedEnemyBowAssets.py`
 
-## 활과 Arrow_socket 계약
+## 캐릭터 메시와 Arrow_socket 계약
 
-`AEnemyBow::GetArrowSpawnTransform`은 다음 우선순위를 사용한다.
+`ARangedEnemy::GetRangedAttackOrigin`은 `GetMesh()`의 `Arrow_socket` 월드 Transform만 사용한다.
+활 메시나 Actor 위치로 fallback하지 않으며, 소켓이 없으면 공격 조건 및 발사가 실패한다.
+LOS 검사와 실제 투사체 Spawn은 같은 캐릭터 소켓 Transform을 사용한다.
 
-1. `WeaponMesh`에 실제로 존재하는 `Arrow_socket`
-2. 메시 소켓이 아직 없는 MVP 에셋을 위한, 같은 이름의 `ArrowSocketPoint` SceneComponent
-
-실제 활 메시가 확정되면 Static Mesh Editor에서 정확히 `Arrow_socket`이라는 이름의 소켓을 만들고 화살의 노크 위치와 전방 방향을 맞춘다. 코드나 GA에 캐릭터 기준 Muzzle Offset을 별도로 두지 않는다. LOS 검사와 실제 투사체 Spawn 모두 같은 활 소켓 Transform을 사용한다.
+`AEnemyBow`는 `ProjectileClass`와 `ProjectileSpeed`만 소유한다. 서버나 화면 밖에서도
+Montage release 프레임의 캐릭터 소켓이 최신 상태이도록 공격 Ability가 활성화된 동안에만
+서버 메시를 `AlwaysTickPoseAndRefreshBones`로 전환하고 종료 시 원래 설정을 복구한다.
 
 ## 에디터 확인 항목
 
@@ -67,9 +68,13 @@ GA_RangedEnemyAttack
 
 - Parent Class: `AEnemyBow`
 - `WeaponMesh`: 활 메시
-- 메시 Socket: `Arrow_socket`
 - `ProjectileClass`: `ARangedEnemyProjectile` 파생 클래스
 - `ProjectileSpeed`: MVP 권장값 `2500 cm/s`
+
+### BP_RangedEnemy
+
+- 캐릭터 Skeletal Mesh/Skeleton에 정확히 `Arrow_socket`이 존재해야 한다.
+- 공격 Montage의 release 프레임에서 화살 노크 위치와 소켓 위치가 일치하는지 확인한다.
 
 ### DA_Weapon의 Bow Definition
 
@@ -108,7 +113,7 @@ GA_RangedEnemyAttack
 - 사격 불가능한 위치에서는 EQS 결과가 `PointOfInterest`에 기록되고 적이 해당 위치로 이동한다.
 - 이동 중 적이 CombatTarget을 향해 회전한다.
 - 사격 가능 시 BT가 GA를 한 번 실행하고 Ability 종료까지 기다린다.
-- 생성된 화살 위치가 활의 `Arrow_socket` 월드 위치와 일치한다.
+- 생성된 화살 위치가 원거리 적 캐릭터 메시의 `Arrow_socket` 월드 위치와 일치한다.
 - 화살이 타깃 방향으로 발사되고 자기 자신, 장착 활, HostShip을 충돌 대상에서 제외한다.
 - Notify가 중복되거나 몽타주 완료 callback이 이어져도 공격 한 번당 화살은 최대 한 발만 생성된다.
 
@@ -120,4 +125,4 @@ GA_RangedEnemyAttack
 Automation RunTests ArtisticSW.Enemy.RangedEnemy
 ```
 
-`AttackIntegration` 테스트는 임시 RangedEnemy와 활 메시를 만들고 실제 `Arrow_socket`을 추가한다. 그 뒤 GA를 활성화하여 화살 개수가 한 개 증가하고 Spawn 위치가 소켓 위치와 일치하는지 검사한다. `CombatTreeContract`와 `EQSAssetContract`는 BT의 Selector 순서, Blackboard Key, EQS 이동/경로/LOS 계약을 검사한다.
+`AttackIntegration` 테스트는 임시 RangedEnemy에 실제 Manny 캐릭터 메시를 설정한다. 그 뒤 GA를 활성화하여 화살 개수가 한 개 증가하고 Spawn 위치가 캐릭터 `Arrow_socket`과 일치하는지, 공격 종료 후 서버 Pose Refresh 정책이 복구되는지 검사한다. `CombatTreeContract`와 `EQSAssetContract`는 BT의 Selector 순서, Blackboard Key, EQS 이동/경로/LOS 계약을 검사한다.

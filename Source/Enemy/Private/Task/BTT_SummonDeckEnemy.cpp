@@ -15,7 +15,7 @@ EBTNodeResult::Type UBTT_SummonDeckEnemy::ExecuteTask(
 {
 	const AAIController* Controller = OwnerComp.GetAIOwner();
 	AShipBossEnemy* Boss = Controller ? Cast<AShipBossEnemy>(Controller->GetPawn()) : nullptr;
-	ADeckRangedEnemy* SummonedEnemy = nullptr;
+	ADeckEnemy* SummonedEnemy = nullptr;
 	return Boss && Boss->TrySummonDeckEnemy(SummonedEnemy)
 		? EBTNodeResult::Succeeded
 		: EBTNodeResult::Failed;

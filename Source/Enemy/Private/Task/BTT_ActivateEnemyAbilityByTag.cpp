@@ -91,7 +91,10 @@ EBTNodeResult::Type UBTT_ActivateEnemyAbilityByTag::AbortTask(
 	bAborting = true;
 	UAbilitySystemComponent* ASC = CachedASC.Get();
 	const FGameplayAbilitySpecHandle HandleToCancel = ActiveAbilityHandle;
-	if (bCancelAbilityOnAbort && ASC && HandleToCancel.IsValid())
+	const FGameplayAbilitySpec* ActiveSpec = ASC && HandleToCancel.IsValid()
+		? ASC->FindAbilitySpecFromHandle(HandleToCancel)
+		: nullptr;
+	if (ASC && HandleToCancel.IsValid() && ShouldCancelAbilityOnAbort(ActiveSpec))
 	{
 		ASC->CancelAbilityHandle(HandleToCancel);
 	}
@@ -138,6 +141,20 @@ bool UBTT_ActivateEnemyAbilityByTag::ValidateActivationContext(
 	const UAbilitySystemComponent& AbilitySystem) const
 {
 	return true;
+}
+
+bool UBTT_ActivateEnemyAbilityByTag::ShouldCancelAbilityOnAbort(
+	const FGameplayAbilitySpec* ActiveSpec) const
+{
+	return bCancelAbilityOnAbort;
+}
+
+const FGameplayAbilitySpec* UBTT_ActivateEnemyAbilityByTag::GetActiveAbilitySpec() const
+{
+	UAbilitySystemComponent* ASC = CachedASC.Get();
+	return ASC && ActiveAbilityHandle.IsValid()
+		? ASC->FindAbilitySpecFromHandle(ActiveAbilityHandle)
+		: nullptr;
 }
 
 void UBTT_ActivateEnemyAbilityByTag::OnAbilityTaskFinished(EBTNodeResult::Type Result)

@@ -14,6 +14,9 @@ class GASCORE_API UBaseGameplayAbility : public UGameplayAbility
 public:
 	UBaseGameplayAbility();
 
+	/** Whether an already active atomic action may outlive the Behavior Tree branch that started it. */
+	virtual bool ShouldSurviveBehaviorTreeAbort() const { return false; }
+
 	// Ability가 활성화될 때 호출되는 진입점입니다. 공통 시작 로직을 넣는 위치입니다.
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,

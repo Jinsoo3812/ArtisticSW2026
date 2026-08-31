@@ -15,6 +15,15 @@ class UAbilityTask_WaitGameplayEvent;
 class UAnimMontage;
 struct FWeaponDefinition;
 
+/** Snapshot consumed by one attack activation, independent of its authoring source. */
+struct FEnemyBasicAttackExecutionData
+{
+	TObjectPtr<UAnimMontage> AttackMontage = nullptr;
+	float AttackMontagePlayRate = 1.0f;
+	TSubclassOf<UGameplayEffect> DamageEffectClass = nullptr;
+	FGameplayTag ImpactGameplayCueTag;
+};
+
 /** Internal duration GE carrying Cooldown.Enemy.BasicAttack. */
 UCLASS(NotBlueprintable)
 class ENEMY_API UEnemyBasicAttackCooldownEffect : public UGameplayEffect
@@ -75,8 +84,16 @@ protected:
 	void OnHitScanEndEvent(FGameplayEventData Payload);
 
 	void FinishAttack(bool bWasCancelled);
-	const FWeaponDefinition* CacheAttackData(ABaseEnemy* EnemyOwner);
-	bool PlayAttackMontage(const FWeaponDefinition& WeaponDefinition);
+	virtual bool PrepareAttack(ABaseEnemy* EnemyOwner);
+	virtual bool ResolveAttackExecutionData(
+		ABaseEnemy* EnemyOwner,
+		const FWeaponDefinition& WeaponDefinition,
+		FEnemyBasicAttackExecutionData& OutData) const;
+	virtual void OnAttackCommitted();
+	bool CacheAttackData(
+		ABaseEnemy* EnemyOwner,
+		FEnemyBasicAttackExecutionData& OutData);
+	virtual bool PlayAttackMontage(const FEnemyBasicAttackExecutionData& AttackData);
 	void StartHitScan();
 	void EndHitScan();
 	void AddAttackStateTag();
