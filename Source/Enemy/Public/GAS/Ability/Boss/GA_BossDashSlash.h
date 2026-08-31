@@ -239,6 +239,7 @@ protected:
 	float DashTickInterval = 1.0f / 60.0f;
 	TEnumAsByte<EMovementMode> CachedMovementMode = MOVE_Walking;
 	uint8 CachedCustomMovementMode = 0;
+	float CachedMaxWalkSpeed = 0.0f;
 	int32 NextPathInstanceId = 0;
 	TSet<TWeakObjectPtr<AActor>> HitActorsThisDash;
 	TEnumAsByte<ECollisionResponse> CachedPawnCollisionResponse = ECR_Block;

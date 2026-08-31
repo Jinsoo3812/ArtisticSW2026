@@ -122,7 +122,9 @@ Section 연결은 Ability가 런타임에도 동일하게 설정하지만, Previ
 ## 6. DashSlash BT 분기
 
 Dash는 Commit 순간 HostShip 로컬 좌표로 출발점과 끝점을 고정한다. Windup
-동안만 CharacterMovement를 잠그고, `DashSlash` Section 진입 프레임에 원래
+동안에는 `MOVE_Walking`과 선박 Movement Base를 유지한 채 보스 자신의 보행
+속도와 AI 이동만 잠근다. 따라서 파도로 배가 이동하거나 기울어도 보스의 갑판
+로컬 위치는 유지된다. `DashSlash` Section 진입 프레임에는 원래 속도와
 MovementMode를 복원하면서 실제 이동과 휘두르기를 함께 시작한다. 이동·Sweep·
 Telegraph·공격 흔적은 모두 같은 경로를 사용하며 마지막 프레임에는 Commit된
 끝점까지 정확히 이동한다.

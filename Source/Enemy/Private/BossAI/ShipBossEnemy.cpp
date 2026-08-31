@@ -52,6 +52,10 @@ AShipBossEnemy::AShipBossEnemy()
 		Movement->MaxWalkSpeed = 0.0f;
 		Movement->bOrientRotationToMovement = false;
 		Movement->bUseControllerDesiredRotation = true;
+		// ShipDeckMesh is a collision/query child of the physics-driven ship root.
+		// Resolve based movement through that attachment root so the boss inherits
+		// the ship's full wave-driven transform without changing the ship itself.
+		Movement->bBaseOnAttachmentRoot = true;
 	}
 }
 
@@ -118,7 +122,10 @@ bool AShipBossEnemy::InitializeBoss(AEnemyShip* InHostShip, int32 InitialPointId
 
 	if (UStaticMeshComponent* DeckMesh = HostShip->GetShipDeckMesh())
 	{
-		SetBase(DeckMesh);
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			Movement->SetBase(DeckMesh);
+		}
 	}
 	TransitionBossAIState(AI_State_Boss_Intro, AI_State_Boss_Combat);
 	ForceNetUpdate();
@@ -246,9 +253,9 @@ bool AShipBossEnemy::CanSummonDeckEnemy() const
 	}
 
 	int32 ActiveCount = 0;
-	for (const TWeakObjectPtr<ADeckRangedEnemy>& EnemyPtr : SummonedDeckEnemies)
+	for (const TWeakObjectPtr<ADeckEnemy>& EnemyPtr : SummonedDeckEnemies)
 	{
-		const ADeckRangedEnemy* Enemy = EnemyPtr.Get();
+		const ADeckEnemy* Enemy = EnemyPtr.Get();
 		if (Enemy && Enemy->IsPoolActive()
 			&& Enemy->GetHealthComponent() && !Enemy->GetHealthComponent()->IsDead())
 		{
@@ -258,7 +265,7 @@ bool AShipBossEnemy::CanSummonDeckEnemy() const
 	return ActiveCount < FMath::Max(1, MaxSummonedDeckEnemies);
 }
 
-bool AShipBossEnemy::TrySummonDeckEnemy(ADeckRangedEnemy*& OutEnemy)
+bool AShipBossEnemy::TrySummonDeckEnemy(ADeckEnemy*& OutEnemy)
 {
 	OutEnemy = nullptr;
 	if (!CanSummonDeckEnemy())
@@ -269,9 +276,9 @@ bool AShipBossEnemy::TrySummonDeckEnemy(ADeckRangedEnemy*& OutEnemy)
 	AActor* Target = GetBossCombatTarget();
 	UWorld* World = GetWorld();
 	NextSummonAllowedTime = World->GetTimeSeconds() + FMath::Max(0.0f, SummonCooldown);
-	SummonedDeckEnemies.RemoveAll([](const TWeakObjectPtr<ADeckRangedEnemy>& EnemyPtr)
+	SummonedDeckEnemies.RemoveAll([](const TWeakObjectPtr<ADeckEnemy>& EnemyPtr)
 	{
-		const ADeckRangedEnemy* Enemy = EnemyPtr.Get();
+		const ADeckEnemy* Enemy = EnemyPtr.Get();
 		return !Enemy || !Enemy->IsPoolActive()
 			|| (Enemy->GetHealthComponent() && Enemy->GetHealthComponent()->IsDead());
 	});
@@ -375,12 +382,12 @@ bool AShipBossEnemy::RelocateWhileHidden(const FTransform& DestinationTransform)
 		false,
 		nullptr,
 		ETeleportType::TeleportPhysics);
-	if (UStaticMeshComponent* DeckMesh = HostShip->GetShipDeckMesh())
-	{
-		SetBase(DeckMesh);
-	}
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
+		if (UStaticMeshComponent* DeckMesh = HostShip->GetShipDeckMesh())
+		{
+			Movement->SetBase(DeckMesh);
+		}
 		Movement->StopMovementImmediately();
 	}
 
@@ -397,14 +404,14 @@ void AShipBossEnemy::FinishHiddenRelocation()
 		return;
 	}
 
-	if (UStaticMeshComponent* DeckMesh = HostShip ? HostShip->GetShipDeckMesh() : nullptr)
-	{
-		SetBase(DeckMesh);
-	}
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->StopMovementImmediately();
 		Movement->SetMovementMode(MOVE_Walking);
+		if (UStaticMeshComponent* DeckMesh = HostShip ? HostShip->GetShipDeckMesh() : nullptr)
+		{
+			Movement->SetBase(DeckMesh);
+		}
 	}
 
 	bHiddenRelocationActive = false;
@@ -443,9 +450,9 @@ void AShipBossEnemy::ReleaseSummonedDeckEnemies()
 {
 	if (HasAuthority())
 	{
-		for (const TWeakObjectPtr<ADeckRangedEnemy>& EnemyPtr : SummonedDeckEnemies)
+		for (const TWeakObjectPtr<ADeckEnemy>& EnemyPtr : SummonedDeckEnemies)
 		{
-			if (ADeckRangedEnemy* Enemy = EnemyPtr.Get(); Enemy && Enemy->IsPoolActive())
+			if (ADeckEnemy* Enemy = EnemyPtr.Get(); Enemy && Enemy->IsPoolActive())
 			{
 				Enemy->DeactivateToPool();
 			}
@@ -457,9 +464,10 @@ void AShipBossEnemy::ReleaseSummonedDeckEnemies()
 void AShipBossEnemy::OnRep_HostShip()
 {
 	BindHostShip();
-	if (HostShip && HostShip->GetShipDeckMesh())
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement();
+		Movement && HostShip && HostShip->GetShipDeckMesh())
 	{
-		SetBase(HostShip->GetShipDeckMesh());
+		Movement->SetBase(HostShip->GetShipDeckMesh());
 	}
 }
 

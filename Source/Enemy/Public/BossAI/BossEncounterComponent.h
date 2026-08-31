@@ -6,6 +6,7 @@
 #include "BossEncounterComponent.generated.h"
 
 class AEnemyShip;
+class AShip;
 class AShipBossEnemy;
 class AStorageChest;
 class UBaseHealthComponent;
@@ -20,12 +21,19 @@ enum class EBossEncounterState : uint8
 	Failed
 };
 
+UENUM(BlueprintType)
+enum class EBossEncounterTrigger : uint8
+{
+	ItemBoxInteraction,
+	PlayerShipSight
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FOnBossEncounterStateChangedSignature,
 	EBossEncounterState, OldState,
 	EBossEncounterState, NewState);
 
-/** Server-authoritative bridge from a locked EnemyItemBox interaction to one boss spawn. */
+/** Server-authoritative, idempotent bridge from an authored trigger to one boss spawn. */
 UCLASS(ClassGroup = (Enemy), meta = (BlueprintSpawnableComponent))
 class ENEMY_API UBossEncounterComponent : public UActorComponent
 {
@@ -46,6 +54,9 @@ public:
 	bool IsEncounterEnabled() const { return bEncounterEnabled; }
 
 	UFUNCTION(BlueprintPure, Category = "Boss|Encounter")
+	EBossEncounterTrigger GetEncounterTrigger() const { return EncounterTrigger; }
+
+	UFUNCTION(BlueprintPure, Category = "Boss|Encounter")
 	AStorageChest* GetEnemyItemBox() const { return EnemyItemBox; }
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Encounter")
@@ -53,6 +64,14 @@ public:
 		AStorageChest* InEnemyItemBox,
 		TSubclassOf<AShipBossEnemy> InBossClass,
 		int32 InBossSpawnPointId = -1);
+
+	/** Idempotent authority-only entry point used by ship perception. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Encounter")
+	bool NotifyPlayerShipSighted(AShip* SensedPlayerShip);
+
+	/** Shared entry point for interaction, perception and future scripted triggers. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Encounter")
+	bool TryStartEncounter(AActor* TriggerActor);
 
 	UPROPERTY(BlueprintAssignable, Category = "Boss|Encounter")
 	FOnBossEncounterStateChangedSignature OnEncounterStateChanged;
@@ -74,6 +93,7 @@ protected:
 	void OnRep_EncounterState(EBossEncounterState OldState);
 
 	bool SpawnBossFor(AActor* Interactor);
+	AActor* ResolveEncounterTarget(AActor* TriggerActor) const;
 	bool ResolveSpawnPoint(AEnemyShip& HostShip, int32& OutPointId, FTransform& OutTransform) const;
 	AStorageChest* ResolveConfiguredEnemyItemBox() const;
 	void BindItemBox();
@@ -91,10 +111,19 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
 	bool bEncounterEnabled = false;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
+	EBossEncounterTrigger EncounterTrigger = EBossEncounterTrigger::ItemBoxInteraction;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Encounter")
 	TSubclassOf<AShipBossEnemy> BossClass;
 
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Boss|Encounter")
+	/** Exact DeckWaypointComponent selected in the owning EnemyShip Blueprint. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter",
+		meta = (UseComponentPicker, AllowedClasses = "/Script/Enemy.DeckWaypointComponent"))
+	FComponentReference BossSpawnPointComponent;
+
+	/** Legacy/fallback numeric authoring. The component reference takes priority. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
 	int32 BossSpawnPointId = INDEX_NONE;
 
 	UPROPERTY(ReplicatedUsing = OnRep_EncounterState, VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Encounter")

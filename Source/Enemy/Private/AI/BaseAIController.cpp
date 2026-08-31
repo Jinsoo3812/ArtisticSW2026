@@ -3,6 +3,7 @@
 #include "AI/EnemyBehaviorSet.h"
 #include "AISystem.h"
 #include "BaseEnemy.h"
+#include "RangedEnemy/RangedEnemy.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
@@ -181,6 +182,10 @@ bool ABaseAIController::SetCombatTarget(AActor* TargetActor)
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
 	CachedTargetActor = TargetActor;
 	BlackboardComponent->SetValueAsObject(TargetActorKeyName, TargetActor);
+	if (ARangedEnemy* RangedEnemy = Cast<ARangedEnemy>(GetPawn()))
+	{
+		RangedEnemy->SetCombatTarget(TargetActor);
+	}
 	BindPerceivedTargetDeath(TargetActor);
 	SetEnemyState(EEnemyAIState::Combat);
 	return true;
@@ -201,6 +206,10 @@ void ABaseAIController::ClearCombatTarget(bool bReturnToPassive)
 {
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
 	CachedTargetActor.Reset();
+	if (ARangedEnemy* RangedEnemy = Cast<ARangedEnemy>(GetPawn()))
+	{
+		RangedEnemy->ClearCombatTarget();
+	}
 
 	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
 	if (BlackboardComponent)

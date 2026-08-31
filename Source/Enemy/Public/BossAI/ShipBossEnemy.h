@@ -7,7 +7,7 @@
 #include "ShipBossEnemy.generated.h"
 
 class AEnemyShip;
-class ADeckRangedEnemy;
+class ADeckEnemy;
 class UBossBasicAttackSet;
 class USphereComponent;
 
@@ -84,7 +84,7 @@ public:
 	bool CanSummonDeckEnemy() const;
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Summon")
-	bool TrySummonDeckEnemy(ADeckRangedEnemy*& OutEnemy);
+	bool TrySummonDeckEnemy(ADeckEnemy*& OutEnemy);
 
 	/** Query-only sensor enabled by DashSlash; the character capsule remains the movement body. */
 	UFUNCTION(BlueprintPure, Category = "Boss|Combat")
@@ -153,7 +153,7 @@ protected:
 	float MinimumSummonDistanceFromBoss = 200.0f;
 
 	UPROPERTY(Transient)
-	TArray<TWeakObjectPtr<ADeckRangedEnemy>> SummonedDeckEnemies;
+	TArray<TWeakObjectPtr<ADeckEnemy>> SummonedDeckEnemies;
 
 	double NextSummonAllowedTime = 0.0;
 	FDeckPointReservation DestinationReservation;

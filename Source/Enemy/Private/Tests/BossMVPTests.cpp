@@ -23,6 +23,7 @@
 #include "BossAI/EnemyItemBox.h"
 #include "BossAI/ShipBossAIController.h"
 #include "BossAI/ShipBossEnemy.h"
+#include "BasePlayer.h"
 #include "Components/BaseHealthComponent.h"
 #include "Decorator/BTD_CanActivateAbilityByTag.h"
 #include "GAS/Ability/Boss/BossGameplayAbility.h"
@@ -35,8 +36,12 @@
 #include "GameplayCue/SWPathGameplayCueNotify.h"
 #include "Components/ChildActorComponent.h"
 #include "Components/SphereComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "DeckAI/DeckWaypointComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
 #include "Interactable/InteractableComponent.h"
 #include "ShipAI/EnemyShip.h"
 #include "Task/BTT_ActivateBossAbility.h"
@@ -152,6 +157,8 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Encounter state replicates through its component"), EncounterCDO->GetIsReplicated());
 		TestEqual(TEXT("Encounter waits for first box interaction"),
 			EncounterCDO->GetEncounterState(), EBossEncounterState::Waiting);
+		TestEqual(TEXT("Existing encounters keep item-box triggering by default"),
+			EncounterCDO->GetEncounterTrigger(), EBossEncounterTrigger::ItemBoxInteraction);
 	}
 	const AEnemyShip* EnemyShipCDO = GetDefault<AEnemyShip>();
 	if (TestNotNull(TEXT("EnemyShip CDO exists"), EnemyShipCDO))
@@ -547,6 +554,10 @@ bool FBossDashSlashServerPhasesTest::RunTest(const FString& Parameters)
 		NativeDash->ShouldSurviveBehaviorTreeAbort());
 	TestTrue(TEXT("DashSlash owns its preselected destination after commit"),
 		NativeDash->OwnsPreselectedDestinationAfterCommit());
+	const AShipBossEnemy* NativeBoss = GetDefault<AShipBossEnemy>();
+	TestTrue(TEXT("Boss resolves deck movement through the ship physics attachment root"),
+		NativeBoss && NativeBoss->GetCharacterMovement()
+		&& NativeBoss->GetCharacterMovement()->bBaseOnAttachmentRoot);
 	TestFalse(TEXT("Ordinary Boss abilities keep the default BT abort policy"),
 		GetDefault<UGA_BossKnockback>()->ShouldSurviveBehaviorTreeAbort());
 	TestFalse(TEXT("Ordinary Boss abilities do not own a preselected destination"),
@@ -711,6 +722,8 @@ bool FBossEncounterConfiguredChildActorBoxTest::RunTest(const FString& Parameter
 	{
 		return false;
 	}
+	TestNotNull(TEXT("Encounter exposes an exact deck waypoint component selector"),
+		FindFProperty<FStructProperty>(Encounter->GetClass(), TEXT("BossSpawnPointComponent")));
 	FComponentReference* BoxReference = BoxReferenceProperty->ContainerPtrToValuePtr<FComponentReference>(Encounter);
 	BoxReference->OverrideComponent = BoxComponent;
 	Encounter->ConfigureEncounter(nullptr, AShipBossEnemy::StaticClass());
@@ -791,6 +804,128 @@ bool FBossEncounterSingleTriggerTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A second interaction cannot restart a terminal encounter"),
 		Encounter->GetEncounterState(), EBossEncounterState::Failed);
 	TestTrue(TEXT("Failed encounter keeps the collectible locked"), ItemBox->IsLocked());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FBossEncounterSightTriggerRetryTest,
+	"ArtisticSW.Enemy.BossMVP.SightTriggerWaitsForRidingPlayer",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBossEncounterSightTriggerRetryTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(
+		TEXT("QuestItem has an invalid ResultItemTag"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	AddExpectedError(
+		TEXT("QuestItem contains an invalid ingredient"),
+		EAutomationExpectedErrorFlags::Contains,
+		2);
+	BossMVPTests::FScopedTestWorld TestWorld;
+	AEnemyShip* EnemyShip = TestWorld.World->SpawnActor<AEnemyShip>();
+	AShip* PlayerShip = TestWorld.World->SpawnActor<AShip>();
+	if (!TestNotNull(TEXT("Enemy ship is spawned"), EnemyShip)
+		|| !TestNotNull(TEXT("Player ship is spawned"), PlayerShip))
+	{
+		return false;
+	}
+
+	PlayerShip->Tags.Add(TEXT("Player"));
+	UBossEncounterComponent* Encounter = EnemyShip->GetBossEncounterComponent();
+	FEnumProperty* TriggerProperty = FindFProperty<FEnumProperty>(
+		Encounter->GetClass(), TEXT("EncounterTrigger"));
+	if (!TestNotNull(TEXT("Encounter exposes a configurable trigger policy"), TriggerProperty))
+	{
+		return false;
+	}
+	TriggerProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+		TriggerProperty->ContainerPtrToValuePtr<void>(Encounter),
+		static_cast<int64>(EBossEncounterTrigger::PlayerShipSight));
+	Encounter->ConfigureEncounter(nullptr, AShipBossEnemy::StaticClass());
+
+	TestFalse(TEXT("Sight waits when the sensed ship has no riding player yet"),
+		Encounter->NotifyPlayerShipSighted(PlayerShip));
+	TestEqual(TEXT("A transient missing riding player remains retryable"),
+		Encounter->GetEncounterState(), EBossEncounterState::Waiting);
+	TestNull(TEXT("Retryable sight does not leave a partial boss"), Encounter->GetSpawnedBoss());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FBossEncounterSightSpawnTest,
+	"ArtisticSW.Enemy.BossMVP.SightTriggerSpawnsAtSelectedPoint",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBossEncounterSightSpawnTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+	AddExpectedError(TEXT("PlayerState is null"), EAutomationExpectedErrorFlags::Contains, 1);
+	BossMVPTests::FScopedTestWorld TestWorld;
+	AEnemyShip* EnemyShip = TestWorld.World->SpawnActor<AEnemyShip>();
+	AShip* PlayerShip = TestWorld.World->SpawnActor<AShip>();
+	ABasePlayer* Player = TestWorld.World->SpawnActor<ABasePlayer>();
+	APlayerController* PlayerController = TestWorld.World->SpawnActor<APlayerController>();
+	UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!TestNotNull(TEXT("Enemy ship is spawned"), EnemyShip)
+		|| !TestNotNull(TEXT("Player ship is spawned"), PlayerShip)
+		|| !TestNotNull(TEXT("Player pawn is spawned"), Player)
+		|| !TestNotNull(TEXT("Player controller is spawned"), PlayerController)
+		|| !TestNotNull(TEXT("Deck mesh asset is available"), CubeMesh))
+	{
+		return false;
+	}
+
+	EnemyShip->BuoyancyRoot->SetSimulatePhysics(false);
+	UStaticMeshComponent* DeckMesh = EnemyShip->GetShipDeckMesh();
+	DeckMesh->SetStaticMesh(CubeMesh);
+	DeckMesh->SetRelativeScale3D(FVector(10.0f, 10.0f, 0.1f));
+	DeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	DeckMesh->SetCollisionResponseToAllChannels(ECR_Block);
+	DeckMesh->UpdateComponentToWorld();
+	DeckMesh->RecreatePhysicsState();
+
+	UDeckWaypointComponent* SpawnPoint = NewObject<UDeckWaypointComponent>(EnemyShip);
+	EnemyShip->AddInstanceComponent(SpawnPoint);
+	SpawnPoint->OnComponentCreated();
+	SpawnPoint->SetupAttachment(DeckMesh);
+	SpawnPoint->InitializeGeneratedWaypoint(701, 0, 0, true, true, true);
+	SpawnPoint->RegisterComponent();
+	SpawnPoint->SetRelativeLocation(FVector(150.0f, 0.0f, 10.0f));
+	EnemyShip->InitializeDeckWaypoints();
+
+	PlayerShip->Tags.Add(TEXT("Player"));
+	PlayerController->Possess(Player);
+	PlayerShip->Board(Player);
+	if (!TestEqual(TEXT("Player ship retains its riding pawn for encounter targeting"),
+		PlayerShip->GetRidingPlayer(), static_cast<APawn*>(Player)))
+	{
+		return false;
+	}
+
+	UBossEncounterComponent* Encounter = EnemyShip->GetBossEncounterComponent();
+	FEnumProperty* TriggerProperty = FindFProperty<FEnumProperty>(
+		Encounter->GetClass(), TEXT("EncounterTrigger"));
+	TriggerProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+		TriggerProperty->ContainerPtrToValuePtr<void>(Encounter),
+		static_cast<int64>(EBossEncounterTrigger::PlayerShipSight));
+	Encounter->ConfigureEncounter(nullptr, AShipBossEnemy::StaticClass(), 701);
+
+	EnemyShip->NotifyPlayerShipSighted(PlayerShip);
+	AShipBossEnemy* FirstBoss = Encounter->GetSpawnedBoss();
+	TestEqual(TEXT("Sight activates the encounter"),
+		Encounter->GetEncounterState(), EBossEncounterState::Active);
+	TestNotNull(TEXT("Sight spawns one boss"), FirstBoss);
+	if (FirstBoss)
+	{
+		TestEqual(TEXT("Boss occupies the explicitly selected deck point"),
+			FirstBoss->GetCurrentPointId(), 701);
+	}
+
+	EnemyShip->NotifyPlayerShipSighted(PlayerShip);
+	TestEqual(TEXT("Repeated Sight cannot replace or duplicate the boss"),
+		Encounter->GetSpawnedBoss(), FirstBoss);
 	return true;
 }
 

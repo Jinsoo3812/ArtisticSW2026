@@ -252,11 +252,12 @@ void UGA_BossDashSlash::BeginDash()
 	}
 
 	AShipBossEnemy* Boss = GetBossAvatar();
+	UCharacterMovementComponent* Movement = Boss ? Boss->GetCharacterMovement() : nullptr;
 	UStaticMeshComponent* DeckMesh = CapturedDeckMesh.Get();
 	FVector StartWorld;
 	FVector EndWorld;
 	FVector SurfaceNormal;
-	if (!Boss || !DeckMesh || CapturedDestinationPointId == INDEX_NONE
+	if (!Boss || !Movement || !DeckMesh || CapturedDestinationPointId == INDEX_NONE
 		|| !ResolveCommittedPathWorld(StartWorld, EndWorld, SurfaceNormal))
 	{
 		FinishDash(true);
@@ -274,7 +275,7 @@ void UGA_BossDashSlash::BeginDash()
 		: FRotationMatrix::MakeFromXZ(PathDirection, SurfaceNormal).ToQuat();
 	Boss->SetActorLocationAndRotation(
 		StartWorld, StartRotation, false, nullptr, ETeleportType::TeleportPhysics);
-	Boss->SetBase(DeckMesh);
+	Movement->SetBase(DeckMesh);
 	PreviousWorldLocation = StartWorld;
 	DashStartServerTime = Boss->GetWorld()->GetTimeSeconds();
 	HitActorsThisDash.Reset();
@@ -452,7 +453,10 @@ void UGA_BossDashSlash::HandleDestinationReached()
 	}
 
 	Boss->GetWorldTimerManager().ClearTimer(DashTimerHandle);
-	Boss->SetBase(DeckMesh);
+	if (UCharacterMovementComponent* Movement = Boss->GetCharacterMovement())
+	{
+		Movement->SetBase(DeckMesh);
+	}
 	Boss->MarkDestinationReached();
 	DeactivateDashCollision();
 	ClearDashState();
@@ -823,24 +827,34 @@ bool UGA_BossDashSlash::LockMovementToCommittedStart()
 	{
 		return false;
 	}
+	if (!Movement->IsMovingOnGround())
+	{
+		UE_LOG(LogBossDashSlash, Warning,
+			TEXT("Cannot lock DashSlash windup to a moving deck while the boss is not grounded. Boss=%s Mode=%d"),
+			*GetNameSafe(Boss), static_cast<int32>(Movement->MovementMode));
+		return false;
+	}
 
 	if (AAIController* Controller = Cast<AAIController>(Boss->GetController()))
 	{
 		Controller->StopMovement();
 	}
-	Movement->StopMovementImmediately();
 	CachedMovementMode = Movement->MovementMode;
 	CachedCustomMovementMode = Movement->CustomMovementMode;
-	Movement->DisableMovement();
+	CachedMaxWalkSpeed = Movement->MaxWalkSpeed;
+	Movement->StopMovementImmediately();
+	Movement->SetMovementMode(MOVE_Walking);
+	Movement->MaxWalkSpeed = 0.0f;
+	Movement->bForceNextFloorCheck = true;
 	bMovementLocked = true;
 
 	const FVector Direction = (EndWorld - StartWorld).GetSafeNormal();
 	const FQuat Rotation = Direction.IsNearlyZero()
 		? Boss->GetActorQuat()
 		: FRotationMatrix::MakeFromXZ(Direction, SurfaceNormal).ToQuat();
-	Boss->SetActorLocationAndRotation(
-		StartWorld, Rotation, false, nullptr, ETeleportType::TeleportPhysics);
-	Boss->SetBase(DeckMesh);
+	Boss->SetActorRotation(Rotation, ETeleportType::TeleportPhysics);
+	Movement->SetBase(DeckMesh);
+	Boss->ForceNetUpdate();
 	return true;
 }
 
@@ -855,12 +869,22 @@ void UGA_BossDashSlash::RestoreMovementAfterAbility()
 	AShipBossEnemy* Boss = GetBossAvatar();
 	UCharacterMovementComponent* Movement = Boss ? Boss->GetCharacterMovement() : nullptr;
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	if (!Movement || (ASC && ASC->HasMatchingGameplayTag(State_Dead)))
+	if (!Movement)
 	{
 		return;
 	}
 	Movement->StopMovementImmediately();
+	Movement->MaxWalkSpeed = CachedMaxWalkSpeed;
+	if (ASC && ASC->HasMatchingGameplayTag(State_Dead))
+	{
+		return;
+	}
 	Movement->SetMovementMode(CachedMovementMode, CachedCustomMovementMode);
+	Movement->bForceNextFloorCheck = true;
+	if (Boss)
+	{
+		Boss->ForceNetUpdate();
+	}
 }
 
 bool UGA_BossDashSlash::ResolveCommittedPathWorld(
