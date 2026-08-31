@@ -220,6 +220,7 @@ FCannonResolvedFiringStats ACannon::GetResolvedFiringStats() const
 			Stats.CooldownSeconds = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonFireCooldownAttribute());
 			Stats.ProjectileSpeed = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute());
 		}
+		Stats.CooldownSeconds *= FMath::Max(1.0f, Ship->GetCannonCooldownMultiplier());
 	}
 
 	return Stats;
@@ -445,6 +446,26 @@ bool ACannon::CanAimAtWorldDirection(const FVector& WorldDirection) const
 
 bool ACannon::FireAICannonAtDirection(const FVector& WorldDirection)
 {
+	return FireAICannonAtDirectionWithSpeed(
+		WorldDirection,
+		GetResolvedFiringStats().ProjectileSpeed);
+}
+
+void ACannon::ResetAIFiringState()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	GetWorldTimerManager().ClearTimer(CooldownTimerHandle);
+	bCanFire = true;
+	SetAIAimRotation(0.0f, 0.0f);
+}
+
+bool ACannon::FireAICannonAtDirectionWithSpeed(
+	const FVector& WorldDirection,
+	float ProjectileSpeed)
+{
 	if (!HasAuthority() || !CanFireCannon() || !CanAimAtWorldDirection(WorldDirection))
 	{
 		return false;
@@ -470,7 +491,7 @@ bool ACannon::FireAICannonAtDirection(const FVector& WorldDirection)
 		MuzzleTransform.GetLocation(),
 		NormalizedDirection.Rotation(),
 		FiringStats.Damage,
-		FiringStats.ProjectileSpeed);
+		FMath::Max(FiringStats.ProjectileSpeed, ProjectileSpeed));
 	return true;
 }
 

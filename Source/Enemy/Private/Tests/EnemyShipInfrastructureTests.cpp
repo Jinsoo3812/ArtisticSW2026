@@ -122,7 +122,6 @@ bool FEnemyShipPatternRuntimeIntervalTest::RunTest(const FString& Parameters)
 	RepeatRule.AbilityTag = GameplayAbility_EnemyShip_Charge;
 	RepeatRule.AbilityClass = UGA_EnemyShipCharge::StaticClass();
 	RepeatRule.MinimumInterval = 5.0f;
-	RepeatRule.MaximumDistance = 2000.0f;
 	RepeatRule.Priority = 10;
 	Pattern->SkillModules.Add(Module);
 
@@ -329,8 +328,8 @@ bool FEnemyShipCrewGatedAnchorTest::RunTest(const FString& Parameters)
 	// Initially without crew
 	TestFalse(TEXT("Initially no living crew"), Ship->HasLivingCrew());
 	TestEqual(TEXT("Living crew count is 0"), Ship->GetLivingCrewCount(), 0);
-	TestTrue(TEXT("Anchor control allowed without crew"), Ship->AllowsPlayerAnchorControl());
-	TestTrue(TEXT("Helm control allowed without crew"), Ship->AllowsPlayerHelmControl());
+	TestFalse(TEXT("Anchor control remains locked before a crew encounter"), Ship->AllowsPlayerAnchorControl());
+	TestFalse(TEXT("Helm control remains locked before a crew encounter"), Ship->AllowsPlayerHelmControl());
 
 	// Register crew member
 	Ship->RegisterCrewEnemy(CrewMember);

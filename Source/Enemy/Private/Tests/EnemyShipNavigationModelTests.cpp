@@ -17,6 +17,7 @@ bool FEnemyShipNavigationStateModelTest::RunTest(const FString& Parameters)
 	Profile.OrbitTolerance = 500.0f;
 	Profile.DangerCloseDistance = 1000.0f;
 	Profile.ReturnArrivalDistance = 800.0f;
+	Profile.ReturnTriggerDistance = 1500.0f;
 
 	FEnemyShipNavigationContext Context;
 	Context.ShipForward = FVector::ForwardVector;
@@ -46,6 +47,22 @@ bool FEnemyShipNavigationStateModelTest::RunTest(const FString& Parameters)
 	Context.HomeLocation = FVector(3000.0f, 0.0f, 0.0f);
 	Output = FEnemyShipNavigationModel::Evaluate(ENavalCombatState::Approach, Profile, Context);
 	TestEqual(TEXT("Lost target returns home"), Output.State, ENavalCombatState::Return);
+
+	Context.bHasTarget = true;
+	Context.TargetLocation = FVector(100.0f, 0.0f, 0.0f);
+	Output = FEnemyShipNavigationModel::Evaluate(ENavalCombatState::Orbit, Profile, Context);
+	TestEqual(TEXT("Home leash overrides a detected combat target"), Output.State, ENavalCombatState::Return);
+	Output = FEnemyShipNavigationModel::Evaluate(ENavalCombatState::Return, Profile, Context);
+	TestEqual(TEXT("Return remains latched while a target is detected"), Output.State, ENavalCombatState::Return);
+	Context.bHasTarget = false;
+
+	Context.ShipLocation = FVector(2000.0f, 0.0f, 0.0f);
+	Output = FEnemyShipNavigationModel::Evaluate(ENavalCombatState::Approach, Profile, Context);
+	TestEqual(TEXT("Lost target inside return trigger radius remains Idle"), Output.State, ENavalCombatState::Idle);
+	Context.bReturnRequested = true;
+	Output = FEnemyShipNavigationModel::Evaluate(ENavalCombatState::Idle, Profile, Context);
+	TestEqual(TEXT("Lost-target timeout requests Return inside leash radius"), Output.State, ENavalCombatState::Return);
+	Context.bReturnRequested = false;
 
 	Context.ShipLocation = FVector(2500.0f, 0.0f, 0.0f);
 	Output = FEnemyShipNavigationModel::Evaluate(ENavalCombatState::Return, Profile, Context);

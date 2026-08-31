@@ -19,6 +19,9 @@ void UEnemyShipNavigationComponent::GetLifetimeReplicatedProps(
 	DOREPLIFETIME(UEnemyShipNavigationComponent, NavigationProfile);
 	DOREPLIFETIME(UEnemyShipNavigationComponent, TargetShip);
 	DOREPLIFETIME(UEnemyShipNavigationComponent, HomeActor);
+	DOREPLIFETIME(UEnemyShipNavigationComponent, SpawnHomeLocation);
+	DOREPLIFETIME(UEnemyShipNavigationComponent, SpawnHomeRotation);
+	DOREPLIFETIME(UEnemyShipNavigationComponent, bHasSpawnHomeLocation);
 	DOREPLIFETIME(UEnemyShipNavigationComponent, CurrentState);
 	DOREPLIFETIME(UEnemyShipNavigationComponent, bNavigationEnabled);
 }
@@ -27,6 +30,12 @@ void UEnemyShipNavigationComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	OwnerShip = Cast<AEnemyShip>(GetOwner());
+	if (OwnerShip.IsValid() && OwnerShip->HasAuthority())
+	{
+		SpawnHomeLocation = OwnerShip->GetActorLocation();
+		SpawnHomeRotation = OwnerShip->GetActorRotation();
+		bHasSpawnHomeLocation = true;
+	}
 	if (!OwnerShip.IsValid())
 	{
 		SetComponentTickEnabled(false);
@@ -68,12 +77,29 @@ void UEnemyShipNavigationComponent::TickComponent(
 	}
 
 	const ENavalCombatState PreviousState = CurrentState;
-	LastNavigationOutput = FEnemyShipNavigationModel::Evaluate(CurrentState, NavigationProfile, BuildContext());
+	FEnemyShipNavigationContext Context = BuildContext();
+	if (Context.bHasTarget || CurrentState == ENavalCombatState::Return)
+	{
+		LostTargetElapsed = 0.0f;
+	}
+	else
+	{
+		LostTargetElapsed = FMath::Min(
+			LostTargetElapsed + DeltaTime,
+			NavigationProfile.LostTargetReturnDelay);
+	}
+	Context.bReturnRequested = !Context.bHasTarget
+		&& LostTargetElapsed >= NavigationProfile.LostTargetReturnDelay;
+	LastNavigationOutput = FEnemyShipNavigationModel::Evaluate(CurrentState, NavigationProfile, Context);
 	ApplySquadAvoidance(LastNavigationOutput);
 	CurrentState = LastNavigationOutput.State;
 	if (PreviousState != CurrentState)
 	{
 		OnNavigationStateChanged.Broadcast(PreviousState, CurrentState);
+	}
+	if (PreviousState == ENavalCombatState::Return && CurrentState == ENavalCombatState::Idle)
+	{
+		Ship->ResetAfterReturnToSpawn();
 	}
 
 	if (Ship->IsUsingLegacyAICompatibility())
@@ -105,6 +131,15 @@ void UEnemyShipNavigationComponent::SetNavigationProfile(const FEnemyShipNavigat
 		0.0f,
 		NavigationProfile.IdealDistance);
 	NavigationProfile.ReturnArrivalDistance = FMath::Max(0.0f, NavigationProfile.ReturnArrivalDistance);
+	NavigationProfile.ReturnTriggerDistance = FMath::Max(
+		NavigationProfile.ReturnArrivalDistance,
+		NavigationProfile.ReturnTriggerDistance);
+	NavigationProfile.ReturnPropulsionMultiplier = FMath::Max(
+		0.0f,
+		NavigationProfile.ReturnPropulsionMultiplier);
+	NavigationProfile.LostTargetReturnDelay = FMath::Max(0.0f, NavigationProfile.LostTargetReturnDelay);
+	NavigationProfile.ZeroHealthCannonCooldownMultiplier = FMath::Max(
+		1.0f, NavigationProfile.ZeroHealthCannonCooldownMultiplier);
 	NavigationProfile.ForwardInputScale = FMath::Max(0.0f, NavigationProfile.ForwardInputScale);
 	NavigationProfile.TurnInputScale = FMath::Max(0.0f, NavigationProfile.TurnInputScale);
 	NavigationProfile.MaxActiveCannons = FMath::Max(1, NavigationProfile.MaxActiveCannons);
@@ -125,6 +160,31 @@ void UEnemyShipNavigationComponent::SetTargetShip(AShip* InTargetShip)
 void UEnemyShipNavigationComponent::SetHomeActor(AActor* InHomeActor)
 {
 	HomeActor = InHomeActor;
+}
+
+bool UEnemyShipNavigationComponent::GetResolvedHomeLocation(FVector& OutHomeLocation) const
+{
+	if (const AActor* Home = HomeActor)
+	{
+		OutHomeLocation = Home->GetActorLocation();
+		return true;
+	}
+	if (bHasSpawnHomeLocation)
+	{
+		OutHomeLocation = SpawnHomeLocation;
+		return true;
+	}
+	return false;
+}
+
+bool UEnemyShipNavigationComponent::GetSpawnHomeTransform(FTransform& OutTransform) const
+{
+	if (!bHasSpawnHomeLocation)
+	{
+		return false;
+	}
+	OutTransform = FTransform(SpawnHomeRotation, SpawnHomeLocation);
+	return true;
 }
 
 FEnemyShipNavigationOverrideHandle UEnemyShipNavigationComponent::AcquireOverride(
@@ -208,10 +268,11 @@ FEnemyShipNavigationContext UEnemyShipNavigationComponent::BuildContext() const
 		Context.bHasTarget = true;
 		Context.TargetLocation = Target->GetActorLocation();
 	}
-	if (const AActor* Home = HomeActor)
+	FVector ResolvedHomeLocation;
+	if (GetResolvedHomeLocation(ResolvedHomeLocation))
 	{
 		Context.bHasHome = true;
-		Context.HomeLocation = Home->GetActorLocation();
+		Context.HomeLocation = ResolvedHomeLocation;
 	}
 	return Context;
 }
@@ -401,7 +462,10 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 		return;
 	}
 
-	Ship->SetAIControlInput(BaseOutput.MoveInput, BaseOutput.TurnInput);
+	const float PropulsionMultiplier = BaseOutput.State == ENavalCombatState::Return
+		? NavigationProfile.ReturnPropulsionMultiplier
+		: 1.0f;
+	Ship->SetAIControlInput(BaseOutput.MoveInput, BaseOutput.TurnInput, PropulsionMultiplier);
 }
 
 void UEnemyShipNavigationComponent::StopOwnerShip()

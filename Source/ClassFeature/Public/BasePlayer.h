@@ -123,7 +123,10 @@ public:
 
 	UFUNCTION()
 	void HandleDeathFinished(UBaseHealthComponent* InHealthComponent);
+	public:
+	UFUNCTION(BlueprintCallable, Category = "Respawn")
 	void CaptureRespawnProgress();
+	protected:
 	void RestoreRespawnProgress(AController* OwningController);
 
 	/* --- GAS 초기화 ---*/

@@ -57,6 +57,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation")
 	AActor* GetHomeActor() const { return HomeActor; }
 
+	/** Resolves an authored Home Actor first, then the ship's server-captured spawn location. */
+	bool GetResolvedHomeLocation(FVector& OutHomeLocation) const;
+	bool GetSpawnHomeTransform(FTransform& OutTransform) const;
+
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation")
 	ENavalCombatState GetCurrentState() const { return CurrentState; }
 
@@ -106,6 +110,12 @@ private:
 
 	UPROPERTY(Replicated)
 	TObjectPtr<AActor> HomeActor;
+	UPROPERTY(Replicated)
+	FVector SpawnHomeLocation = FVector::ZeroVector;
+	UPROPERTY(Replicated)
+	FRotator SpawnHomeRotation = FRotator::ZeroRotator;
+	UPROPERTY(Replicated)
+	bool bHasSpawnHomeLocation = false;
 	TMap<FGuid, FRuntimeOverride> Overrides;
 	uint64 NextOverrideSequence = 1;
 	UPROPERTY(Replicated)
@@ -113,6 +123,7 @@ private:
 	FEnemyShipNavigationOutput LastNavigationOutput;
 	FVector CachedAvoidanceHeading = FVector::ZeroVector;
 	double LastAvoidanceDecisionTime = -1.0;
+	float LostTargetElapsed = 0.0f;
 	UPROPERTY(Replicated)
 	bool bNavigationEnabled = true;
 };

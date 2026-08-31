@@ -36,23 +36,19 @@ struct ENEMY_API FEnemyShipSkillRule
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger", meta = (ClampMin = "0.0", Units = "s"))
 	float MinimumInterval = 5.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger", meta = (ClampMin = "0.0", Units = "cm"))
-	float MinimumDistance = 0.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger", meta = (ClampMin = "0.0", Units = "cm"))
-	float MaximumDistance = 5000.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float MinimumHealthRatio = 0.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float MaximumHealthRatio = 1.0f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger")
 	FGameplayTagContainer RequiredOwnerTags;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger")
 	FGameplayTagContainer BlockedOwnerTags;
+
+	/** Empty means every navigation state is allowed. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger")
+	TArray<ENavalCombatState> AllowedNavigationStates;
+
+	/** 0 aims at the current target location; 1 leads a constant-velocity target to the solved impact time. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float TargetPredictionStrength = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Selection")
 	int32 Priority = 0;

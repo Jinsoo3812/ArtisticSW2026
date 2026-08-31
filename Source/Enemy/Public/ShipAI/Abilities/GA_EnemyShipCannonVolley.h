@@ -39,6 +39,18 @@ protected:
 	float PreferredLaunchAngleDegrees = 20.0f;
 
 private:
-	bool BuildShotDirection(const ACannon* Cannon, const AShip* Target, FVector& OutDirection) const;
+	bool BuildShotSolution(
+		const ACannon* Cannon,
+		const AShip* Target,
+		float PredictionStrength,
+		FVector& OutDirection,
+		float& OutProjectileSpeed) const;
+	bool SolveShotToPoint(
+		const ACannon* Cannon,
+		const FVector& TargetPoint,
+		FVector& OutDirection,
+		float& OutProjectileSpeed,
+		float& OutFlightTime) const;
+	float ResolvePredictionStrength(const AEnemyShip* Ship) const;
 	bool IsValidPlayerTarget(const AShip* Candidate) const;
 };

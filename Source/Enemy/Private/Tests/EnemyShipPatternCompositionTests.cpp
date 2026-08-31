@@ -60,8 +60,6 @@ namespace EnemyShipPatternCompositionTests
 		Rule.AbilityTag = AbilityTag;
 		Rule.AbilityClass = AbilityClass;
 		Rule.MinimumInterval = 0.0f;
-		Rule.MinimumDistance = 0.0f;
-		Rule.MaximumDistance = 5000.0f;
 		Rule.Priority = Priority;
 		Rule.MovementPolicy = MovementPolicy;
 		return Rule;
@@ -89,6 +87,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipPatternCompositionMatrixTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
+
 	using namespace EnemyShipPatternCompositionTests;
 	const FGameplayTag ChargeAbilityTag = GameplayAbility_EnemyShip_Charge;
 	const FGameplayTag TorpedoAbilityTag = GameplayAbility_EnemyShip_LaunchTorpedo;

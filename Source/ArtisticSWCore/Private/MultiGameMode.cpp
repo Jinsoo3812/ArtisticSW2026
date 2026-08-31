@@ -348,11 +348,35 @@ UPlayerRespawnPointComponent* AMultiGameMode::FindShipRespawnPoint(int32 PlayerI
 void AMultiGameMode::HandleAllPlayersDeathFinished()
 {
 	if (!HasAuthority()) return;
+	RequestGameOverAndLevelRestart();
+}
+
+void AMultiGameMode::RequestGameOverAndLevelRestart()
+{
+	if (!HasAuthority() || bLevelRestartRequested) return;
+	bLevelRestartRequested = true;
+	for (TPair<TObjectPtr<AController>, FTimerHandle>& Pair : RespawnTimers)
+	{
+		GetWorldTimerManager().ClearTimer(Pair.Value);
+	}
+	RespawnTimers.Reset();
+	CapturePlayerProgressForLevelRestart();
 	OnGameOverRequested.Broadcast();
-	const UWorld* World = GetWorld();
-	if (!World) return;
-	const FString MapName = World->GetMapName().RightChop(World->StreamingLevelsPrefix.Len());
-	UGameplayStatics::OpenLevel(this, FName(*MapName));
+	if (UWorld* World = GetWorld())
+	{
+		World->ServerTravel(TEXT("?Restart"), false);
+	}
+}
+
+void AMultiGameMode::CapturePlayerProgressForLevelRestart()
+{
+	for (TActorIterator<APawn> It(GetWorld()); It; ++It)
+	{
+		if (UFunction* CaptureFunction = It->FindFunction(TEXT("CaptureRespawnProgress")))
+		{
+			It->ProcessEvent(CaptureFunction, nullptr);
+		}
+	}
 }
 
 void AMultiGameMode::HandleRequiredPlayersJoined()

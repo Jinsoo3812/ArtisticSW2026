@@ -160,6 +160,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Respawn")
 	void NotifyPlayerDeathFinished(APawn* DeadPawn);
 
+	UFUNCTION(BlueprintCallable, Category="Game Rules")
+	void RequestGameOverAndLevelRestart();
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Respawn", meta=(ClampMin="0.0"))
 	float IndividualRespawnDelay = 5.0f;
     
@@ -208,8 +211,10 @@ protected:
 
     bool bRequiredPlayersJoinedNotified = false;
     bool bAllPlayersReadyNotified = false;
+	bool bLevelRestartRequested = false;
 
 	void TryRespawnPlayer(AController* Controller);
 	UPlayerRespawnPointComponent* FindShipRespawnPoint(int32 PlayerIndex) const;
 	virtual void HandleAllPlayersDeathFinished();
+	virtual void CapturePlayerProgressForLevelRestart();
 };

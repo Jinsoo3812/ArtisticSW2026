@@ -85,7 +85,7 @@ struct ENEMY_API FDeckWaypointGenerationSettings
 	bool bNewPointsCanUseInCombat = true;
 };
 
-UCLASS()
+UCLASS(HideCategories = ("Ship|Stats"))
 class ENEMY_API AEnemyShip : public AShip
 {
 	GENERATED_BODY()
@@ -100,15 +100,18 @@ class ENEMY_API AEnemyShip : public AShip
 public:
 	AEnemyShip();
 	virtual bool IsEnemyShipForEffects() const override { return true; }
-	virtual bool AllowsPlayerHelmControl() const override { return !IsSinking() && !bDeathHandled && (bCrewDefeated || !HasLivingCrew()); }
+	virtual bool AllowsPlayerHelmControl() const override { return !IsSinking() && !bDeathHandled && bCrewDefeated; }
 	virtual bool AllowsPlayerCannonControl() const override { return false; }
 	virtual bool AllowsPlayerBoarding() const override { return false; }
 	virtual bool AllowsPlayerAnchorControl(AActor* Interactor = nullptr) const override;
+	virtual float GetCannonCooldownMultiplier() const override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	/** Enemy ships receive their authored stats exclusively from EnemyShipArchetype.SpecRow. */
+	virtual void InitializeDefaultAttributes() override;
 
 public:
 	virtual void Tick(float DeltaTime) override;
@@ -229,6 +232,7 @@ public:
 	bool GrantEnemyShipAbilities(const UEnemyShipAbilitySet* AbilitySet);
 	bool GrantEnemyShipAbilityClasses(const TArray<TSubclassOf<UGameplayAbility>>& AbilityClasses);
 	bool ConfigureEnemyShipPattern(UEnemyShipPatternData* Pattern);
+	void ResetAfterReturnToSpawn();
 	void SetCoreSkillModules(const TArray<UEnemyShipSkillModuleData*>& InCoreModules);
 
 	// AI Control APIs
@@ -251,13 +255,8 @@ public:
 		AdvancedDisplay))
 	float IdealDistance = 2000.f;
 
-	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Ship|AI|Navigation")
-	TObjectPtr<AActor> NavigationHomeActor;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI|Navigation", meta = (ClampMin = "0.0", Units = "cm"))
-	float NavigationHomeArrivalDistance = 800.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|AI|Data")
+	/** May be overridden per placed instance so one BP_EnemyShip class can represent many archetypes. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|AI|Data")
 	TObjectPtr<UEnemyShipArchetypeData> EnemyShipArchetype;
 
 	/** Always-on modules, normally just CannonVolley. Pattern modules are composed on top. */
@@ -324,7 +323,9 @@ protected:
 
 	UFUNCTION()
 	void HandleCrewEnemyRemoved(ABaseEnemy* Enemy, EWaveEnemyRemoveReason Reason);
-	void MigrateLegacyNavigationAuthoring();
+
+	UFUNCTION()
+	void HandleNavigationStateChanged(ENavalCombatState PreviousState, ENavalCombatState NewState);
 	void DrawEnemyShipAIDebug() const;
 	void InitializeDeckWaypoints();
 	void InitializeDeckEnemyPool();
@@ -438,5 +439,8 @@ protected:
 
 	UPROPERTY(ReplicatedUsing = OnRep_CrewDefeated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Crew")
 	bool bCrewDefeated = false;
+
+	/** Prevents an unconfigured or not-yet-deployed empty crew roster from being treated as defeated. */
+	bool bHasEverHadLivingCrew = false;
 	TArray<FGameplayAbilitySpecHandle> GrantedEnemyShipAbilityHandles;
 };

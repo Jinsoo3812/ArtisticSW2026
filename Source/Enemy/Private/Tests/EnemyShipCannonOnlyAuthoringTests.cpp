@@ -56,26 +56,32 @@ bool FEnemyShipCannonOnlyAuthoringTest::RunTest(const FString& Parameters)
 
 	UClass* ShipClass = LoadObject<UClass>(
 		nullptr,
-		TEXT("/Game/New/Enemy_Ship/Blueprints/BP_EnemyShip.BP_EnemyShip_C"));
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_EnemyShip.BP_EnemyShip_C"));
 	AEnemyShip* ShipCDO = ShipClass ? Cast<AEnemyShip>(ShipClass->GetDefaultObject()) : nullptr;
 	if (!TestNotNull(TEXT("BP_EnemyShip generated class loads"), ShipClass)
 		|| !TestNotNull(TEXT("BP_EnemyShip derives from AEnemyShip"), ShipCDO))
 	{
 		return false;
 	}
+	const FProperty* ArchetypeProperty = FindFProperty<FProperty>(
+		AEnemyShip::StaticClass(), GET_MEMBER_NAME_CHECKED(AEnemyShip, EnemyShipArchetype));
+	TestNotNull(TEXT("EnemyShipArchetype property exists"), ArchetypeProperty);
+	TestTrue(
+		TEXT("EnemyShipArchetype can be overridden on placed instances"),
+		ArchetypeProperty && !ArchetypeProperty->HasAnyPropertyFlags(CPF_DisableEditOnInstance));
 
 	UEnemyShipArchetypeData* Archetype = LoadObject<UEnemyShipArchetypeData>(
 		nullptr,
-		TEXT("/Game/New/Enemy_Ship/Data/Archetype/DA_ES_Archetype_Cannon.DA_ES_Archetype_Cannon"));
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/DA_ES_Archetype_Cannon.DA_ES_Archetype_Cannon"));
 	UEnemyShipPatternData* Pattern = LoadObject<UEnemyShipPatternData>(
 		nullptr,
-		TEXT("/Game/New/Enemy_Ship/Data/Pattern/DA_ES_Pattern_CannonVolley.DA_ES_Pattern_CannonVolley"));
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Pattern/DA_ES_Pattern_Cannon.DA_ES_Pattern_Cannon"));
 	UEnemyShipSkillModuleData* Module = LoadObject<UEnemyShipSkillModuleData>(
 		nullptr,
-		TEXT("/Game/New/Enemy_Ship/Data/SkillModule/DA_ES_SkillModule_CannonVolley.DA_ES_SkillModule_CannonVolley"));
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/SkillModule/DA_ES_SkillModule_Cannon.DA_ES_SkillModule_Cannon"));
 	UEnemyShipAbilitySet* AbilitySet = LoadObject<UEnemyShipAbilitySet>(
 		nullptr,
-		TEXT("/Game/New/Enemy_Ship/Data/AbilitySet/DA_ES_AbilitySet_CannonVolley.DA_ES_AbilitySet_CannonVolley"));
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/AbilitySet/DA_ES_AbilitySet_Cannon.DA_ES_AbilitySet_Cannon"));
 
 	if (!TestNotNull(TEXT("Cannon Archetype loads"), Archetype)
 		|| !TestNotNull(TEXT("CannonVolley Pattern loads"), Pattern)
@@ -100,7 +106,7 @@ bool FEnemyShipCannonOnlyAuthoringTest::RunTest(const FString& Parameters)
 
 	UBlueprint* ShipBlueprint = LoadObject<UBlueprint>(
 		nullptr,
-		TEXT("/Game/New/Enemy_Ship/Blueprints/BP_EnemyShip.BP_EnemyShip"));
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_EnemyShip.BP_EnemyShip"));
 	TestNotNull(TEXT("BP_EnemyShip Blueprint asset loads"), ShipBlueprint);
 	int32 CannonChildActorCount = 0;
 	const TArray<USCS_Node*> ConstructionNodes = ShipBlueprint && ShipBlueprint->SimpleConstructionScript
@@ -133,7 +139,7 @@ bool FEnemyShipCannonOnlyAuthoringTest::RunTest(const FString& Parameters)
 	if (Module->SkillRules.Num() == 1)
 	{
 		const FEnemyShipSkillRule& Rule = Module->SkillRules[0];
-		TestEqual(TEXT("CannonVolley Rule ID is stable"), Rule.RuleId, FName(TEXT("Skill.CannonVolley.Use")));
+		TestEqual(TEXT("Cannon Rule ID is stable"), Rule.RuleId, FName(TEXT("Skill.Cannon.Use")));
 		TestTrue(
 			TEXT("CannonVolley Rule uses the correct Ability Tag"),
 			Rule.AbilityTag == FGameplayTag(GameplayAbility_EnemyShip_CannonVolley));
@@ -144,8 +150,8 @@ bool FEnemyShipCannonOnlyAuthoringTest::RunTest(const FString& Parameters)
 			TEXT("CannonVolley keeps normal navigation active"),
 			Rule.MovementPolicy,
 			EEnemyShipSkillMovementPolicy::ContinueNavigation);
-		TestTrue(TEXT("CannonVolley Rule distance interval is valid"), Rule.MinimumDistance <= Rule.MaximumDistance);
-		TestTrue(TEXT("CannonVolley Rule health interval is valid"), Rule.MinimumHealthRatio <= Rule.MaximumHealthRatio);
+		TestTrue(TEXT("CannonVolley Rule allows Orbit"), Rule.AllowedNavigationStates.Contains(ENavalCombatState::Orbit));
+		TestTrue(TEXT("CannonVolley Rule allows danger-close Retreat"), Rule.AllowedNavigationStates.Contains(ENavalCombatState::Retreat));
 	}
 
 	TestEqual(TEXT("CannonVolley Ability Set grants one Ability"), AbilitySet->Abilities.Num(), 1);
@@ -167,7 +173,7 @@ bool FEnemyShipCannonOnlyAuthoringTest::RunTest(const FString& Parameters)
 
 	UBlackboardData* Blackboard = LoadObject<UBlackboardData>(
 		nullptr,
-		TEXT("/Game/New/Enemy_Ship/AI/BB_NavalAI.BB_NavalAI"));
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/AI/BB_NavalAI.BB_NavalAI"));
 	if (!TestNotNull(TEXT("BB_NavalAI loads"), Blackboard))
 	{
 		return false;
@@ -193,7 +199,7 @@ bool FEnemyShipCannonOnlyAuthoringTest::RunTest(const FString& Parameters)
 
 	UBehaviorTree* BehaviorTree = LoadObject<UBehaviorTree>(
 		nullptr,
-		TEXT("/Game/New/Enemy_Ship/AI/BT_NavalAI.BT_NavalAI"));
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/AI/BT_NavalAI.BT_NavalAI"));
 	if (!TestNotNull(TEXT("BT_NavalAI loads"), BehaviorTree))
 	{
 		return false;

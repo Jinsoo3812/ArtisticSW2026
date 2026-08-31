@@ -323,6 +323,13 @@ void ACannonball::HandleShipHit(AShip* HitShip)
 	int32 DamagedTargetCount = 0;
 	for (AActor* Target : UniqueTargets)
 	{
+		// A ship impact damages the hull, but never its owned/attached crew through
+		// splash. This remains module-independent and also covers authored crew.
+		if (Target != HitShip
+			&& (Target->GetOwner() == HitShip || Target->IsAttachedTo(HitShip)))
+		{
+			continue;
+		}
 		if (IsOpposingSplashTarget(Target) && ApplyDamageToTarget(Target))
 		{
 			++DamagedTargetCount;

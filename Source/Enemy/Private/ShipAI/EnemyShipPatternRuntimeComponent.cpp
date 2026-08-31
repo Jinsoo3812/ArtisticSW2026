@@ -2,8 +2,8 @@
 
 #include "Abilities/GameplayAbility.h"
 #include "AbilitySystemComponent.h"
-#include "BaseAttributeSet.h"
 #include "ShipAI/EnemyShip.h"
+#include "ShipAI/EnemyShipNavigationComponent.h"
 #include "ShipAI/EnemyShipPatternData.h"
 #include "ShipAI/EnemyShipSkillModuleData.h"
 
@@ -58,20 +58,16 @@ bool UEnemyShipPatternRuntimeComponent::SelectAbilityAtTime(
 		return false;
 	}
 
-	float HealthRatio = 1.0f;
 	FGameplayTagContainer OwnerTags;
 	if (const UAbilitySystemComponent* ASC = Ship->GetAbilitySystemComponent())
 	{
-		const float Health = ASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
-		const float MaxHealth = ASC->GetNumericAttribute(UBaseAttributeSet::GetMaxHealthAttribute());
-		HealthRatio = MaxHealth > KINDA_SMALL_NUMBER ? FMath::Clamp(Health / MaxHealth, 0.0f, 1.0f) : 0.0f;
 		ASC->GetOwnedGameplayTags(OwnerTags);
 	}
 
 	TArray<int32> EligibleIndices;
 	for (int32 RuleIndex = 0; RuleIndex < ResolvedRules.Num(); ++RuleIndex)
 	{
-		if (IsRuleEligible(RuleIndex, TargetActor, CurrentTimeSeconds, HealthRatio, OwnerTags))
+		if (IsRuleEligible(RuleIndex, TargetActor, CurrentTimeSeconds, OwnerTags))
 		{
 			EligibleIndices.Add(RuleIndex);
 		}
@@ -136,11 +132,21 @@ double UEnemyShipPatternRuntimeComponent::GetLastCommittedTime(FName RuleId) con
 	return -1.0;
 }
 
+float UEnemyShipPatternRuntimeComponent::GetPendingTargetPredictionStrength(
+	const FGameplayTag& AbilityTag) const
+{
+	const FEnemyShipSkillRule* Rule = ResolvedRules.FindByPredicate(
+		[this, &AbilityTag](const FEnemyShipSkillRule& Candidate)
+		{
+			return Candidate.RuleId == PendingRuleId && Candidate.AbilityTag == AbilityTag;
+		});
+	return Rule ? FMath::Clamp(Rule->TargetPredictionStrength, 0.0f, 1.0f) : 0.0f;
+}
+
 bool UEnemyShipPatternRuntimeComponent::IsRuleEligible(
 	int32 RuleIndex,
 	AActor* TargetActor,
 	double CurrentTimeSeconds,
-	float OwnerHealthRatio,
 	const FGameplayTagContainer& OwnerTags) const
 {
 	if (!Pattern || !ResolvedRules.IsValidIndex(RuleIndex)
@@ -158,20 +164,25 @@ bool UEnemyShipPatternRuntimeComponent::IsRuleEligible(
 	{
 		return false;
 	}
-	if (OwnerHealthRatio < Rule.MinimumHealthRatio || OwnerHealthRatio > Rule.MaximumHealthRatio)
-	{
-		return false;
-	}
 	if (!OwnerTags.HasAll(Rule.RequiredOwnerTags) || OwnerTags.HasAny(Rule.BlockedOwnerTags))
 	{
 		return false;
 	}
-
-	const float Distance = FVector::Dist2D(GetOwner()->GetActorLocation(), TargetActor->GetActorLocation());
-	if (Distance < Rule.MinimumDistance || Distance > Rule.MaximumDistance)
+	const AEnemyShip* Ship = Cast<AEnemyShip>(GetOwner());
+	const UEnemyShipNavigationComponent* Navigation = Ship ? Ship->GetNavigationComponent() : nullptr;
+	if (!Navigation || Navigation->GetCurrentState() == ENavalCombatState::Return
+		|| Ship->IsCrewDefeated())
 	{
 		return false;
 	}
+	if (!Rule.AllowedNavigationStates.IsEmpty())
+	{
+		if (!Navigation || !Rule.AllowedNavigationStates.Contains(Navigation->GetCurrentState()))
+		{
+			return false;
+		}
+	}
+
 	if (const double* LastTime = LastCommittedTimes.Find(Rule.RuleId))
 	{
 		if (CurrentTimeSeconds - *LastTime < Rule.MinimumInterval)

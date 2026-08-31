@@ -2,6 +2,7 @@
 
 
 #include "Ship.h"
+#include "MultiGameMode.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Components/ChildActorComponent.h"
@@ -1303,6 +1304,13 @@ void AShip::StartSinking(float DestroyDelaySeconds)
 	}
 
 	bIsSinking = true;
+	if (ActorHasTag(TEXT("Player")) && !ActorHasTag(TEXT("Enemy")))
+	{
+		if (AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr)
+		{
+			GameMode->RequestGameOverAndLevelRestart();
+		}
+	}
 	ForceNetUpdate();
 	CurrentMoveInput = 0.0f;
 	CurrentTurnInput = 0.0f;

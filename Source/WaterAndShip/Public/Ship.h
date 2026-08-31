@@ -532,6 +532,7 @@ public:
 	/** Class policy inherited by every cannon mounted on this ship. */
 	UFUNCTION(BlueprintPure, Category = "Ship|Control")
 	virtual bool AllowsPlayerCannonControl() const { return !bIsSinking; }
+	virtual float GetCannonCooldownMultiplier() const { return 1.0f; }
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Sinking")
 	bool IsSinking() const { return bIsSinking; }
@@ -1004,7 +1005,7 @@ public:
 	FName ShipStatRowName;
 
 protected:
-	void InitializeDefaultAttributes();
+	virtual void InitializeDefaultAttributes();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;

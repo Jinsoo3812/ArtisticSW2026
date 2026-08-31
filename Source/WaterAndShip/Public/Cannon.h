@@ -91,6 +91,7 @@ public:
 	/** Remaining per-cannon reload time. Zero means ready; negative timer states are normalized to zero. */
 	UFUNCTION(BlueprintPure, Category = "Cannon|AI")
 	float GetFireCooldownRemaining() const;
+	void ResetAIFiringState();
 
 	/** Checks authored pitch/yaw limits without changing the replicated aim. */
 	UFUNCTION(BlueprintPure, Category = "Cannon|AI")
@@ -99,6 +100,9 @@ public:
 	/** Server-only deterministic AI shot using the supplied ballistic direction. */
 	UFUNCTION(BlueprintCallable, Category = "Cannon|AI")
 	bool FireAICannonAtDirection(const FVector& WorldDirection);
+
+	/** Server-only AI shot with a per-shot projectile speed, used when the authored speed cannot reach the target. */
+	bool FireAICannonAtDirectionWithSpeed(const FVector& WorldDirection, float ProjectileSpeed);
 
 	/** Normal projectile class used by this cannon; ship skills may reuse its authored mesh/effects. */
 	TSubclassOf<AActor> GetCannonballClass() const { return CannonballClass; }

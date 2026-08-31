@@ -473,6 +473,26 @@ int32 UDeckEnemySpawnerComponent::GetAliveDeployedEnemyCount() const
 	return AliveCount;
 }
 
+void UDeckEnemySpawnerComponent::ResetForNewEncounter()
+{
+	CancelDeployment();
+	for (ADeckEnemy* Enemy : EnemyPool)
+	{
+		if (IsValid(Enemy))
+		{
+			Enemy->ResetToFreshPoolState();
+		}
+	}
+	AliveDeployedEnemies.Reset();
+	DeploymentQueue.Reset();
+	DeploymentState = EDeckEnemyDeploymentState::Idle;
+	bHasDeployedEnemy = false;
+	bAllDeployedEnemiesDefeated = false;
+	DeploymentQueueIndex = 0;
+	CurrentRetryCount = 0;
+	DeploymentFailureCount = 0;
+}
+
 int32 UDeckEnemySpawnerComponent::GetLivingPooledEnemyCount() const
 {
 	int32 LivingCount = 0;

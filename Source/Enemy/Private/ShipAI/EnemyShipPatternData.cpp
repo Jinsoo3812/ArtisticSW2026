@@ -50,5 +50,15 @@ EDataValidationResult UEnemyShipPatternData::IsDataValid(FDataValidationContext&
 		Context.AddError(FText::FromString(TEXT("DangerCloseDistance must not exceed IdealDistance.")));
 		Result = EDataValidationResult::Invalid;
 	}
+	if (NavigationProfile.ReturnTriggerDistance < NavigationProfile.ReturnArrivalDistance)
+	{
+		Context.AddError(FText::FromString(TEXT("ReturnTriggerDistance must be greater than or equal to ReturnArrivalDistance.")));
+		Result = EDataValidationResult::Invalid;
+	}
+	if (NavigationProfile.ZeroHealthCannonCooldownMultiplier < 1.0f)
+	{
+		Context.AddError(FText::FromString(TEXT("ZeroHealthCannonCooldownMultiplier must be at least 1.")));
+		Result = EDataValidationResult::Invalid;
+	}
 	return Result;
 }

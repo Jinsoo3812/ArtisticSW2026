@@ -40,32 +40,34 @@ FEnemyShipNavigationOutput FEnemyShipNavigationModel::Evaluate(
 	const bool bTargetInDetectionRange = Context.bHasTarget && TargetDistance <= FMath::Max(0.0f, Profile.DetectionDistance);
 	const float IdealDistance = FMath::Max(1.0f, Profile.IdealDistance);
 	const float DangerDistance = FMath::Clamp(Profile.DangerCloseDistance, 0.0f, IdealDistance);
+	const float ReturnTriggerDistance = FMath::Max(Profile.ReturnArrivalDistance, Profile.ReturnTriggerDistance);
 
-	if (Output.State == ENavalCombatState::Idle)
+	if (Output.State == ENavalCombatState::Return)
 	{
-		if (bTargetInDetectionRange)
-		{
-			Output.State = ENavalCombatState::Approach;
-		}
-		else if (Context.bHasHome && HomeDistance > Profile.ReturnArrivalDistance)
-		{
-			Output.State = ENavalCombatState::Return;
-		}
-	}
-	else if (Output.State == ENavalCombatState::Return)
-	{
-		if (bTargetInDetectionRange)
-		{
-			Output.State = ENavalCombatState::Approach;
-		}
-		else if (!Context.bHasHome || HomeDistance <= Profile.ReturnArrivalDistance)
+		// Return is latched. Detection and combat-range rules remain suspended until
+		// the ship reaches its Return Point (or the Return Point becomes invalid).
+		if (!Context.bHasHome || HomeDistance <= Profile.ReturnArrivalDistance)
 		{
 			Output.State = ENavalCombatState::Idle;
 		}
 	}
+	else if (Context.bHasHome
+		&& (HomeDistance > ReturnTriggerDistance
+			|| (Context.bReturnRequested && HomeDistance > Profile.ReturnArrivalDistance)))
+	{
+		// Home leash has priority over every combat/detection range rule.
+		Output.State = ENavalCombatState::Return;
+	}
+	else if (Output.State == ENavalCombatState::Idle)
+	{
+		if (bTargetInDetectionRange)
+		{
+			Output.State = ENavalCombatState::Approach;
+		}
+	}
 	else if (!bTargetInDetectionRange)
 	{
-		Output.State = Context.bHasHome ? ENavalCombatState::Return : ENavalCombatState::Idle;
+		Output.State = ENavalCombatState::Idle;
 	}
 	else if (Output.State == ENavalCombatState::Approach)
 	{

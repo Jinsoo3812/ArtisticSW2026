@@ -49,6 +49,22 @@ struct ENEMY_API FEnemyShipNavigationProfile
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0", Units = "cm"))
 	float ReturnArrivalDistance = 800.0f;
 
+	/** Starts returning only after the ship is farther than this planar distance from its Return Point. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0", Units = "cm"))
+	float ReturnTriggerDistance = 800.0f;
+
+	/** Multiplies forward propulsion while the navigation state is Return. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0"))
+	float ReturnPropulsionMultiplier = 1.0f;
+
+	/** Time without a detected player ship before returning home. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0", Units = "s"))
+	float LostTargetReturnDelay = 10.0f;
+
+	/** Cannon cooldown multiplier at zero ship health; interpolates linearly to 1 at full health. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat", meta = (ClampMin = "1.0"))
+	float ZeroHealthCannonCooldownMultiplier = 3.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation")
 	bool bOrbitClockwise = true;
 
@@ -93,6 +109,9 @@ struct ENEMY_API FEnemyShipNavigationContext
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation")
 	FVector HomeLocation = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation")
+	bool bReturnRequested = false;
 };
 
 USTRUCT(BlueprintType)

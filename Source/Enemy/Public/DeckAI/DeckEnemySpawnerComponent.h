@@ -68,6 +68,7 @@ public:
 	void InitializeWaypoints();
 	void InitializePool();
 	void CancelDeployment();
+	void ResetForNewEncounter();
 	void Shutdown();
 
 	bool RequestDeployment(AShip* TriggeringPlayerShip, AActor* InitialCombatTarget = nullptr);

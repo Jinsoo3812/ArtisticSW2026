@@ -56,16 +56,6 @@ EDataValidationResult UEnemyShipSkillModuleData::IsDataValid(FDataValidationCont
 				FText::FromString(Rule.AbilityTag.ToString())));
 			Result = EDataValidationResult::Invalid;
 		}
-		if (Rule.MinimumDistance > Rule.MaximumDistance)
-		{
-			Context.AddError(FText::FromString(TEXT("Skill rule MinimumDistance exceeds MaximumDistance.")));
-			Result = EDataValidationResult::Invalid;
-		}
-		if (Rule.MinimumHealthRatio > Rule.MaximumHealthRatio)
-		{
-			Context.AddError(FText::FromString(TEXT("Skill rule MinimumHealthRatio exceeds MaximumHealthRatio.")));
-			Result = EDataValidationResult::Invalid;
-		}
 	}
 	return Result;
 }

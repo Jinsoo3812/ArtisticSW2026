@@ -61,13 +61,13 @@ public:
 
 	double GetLastCommittedTime(FName RuleId) const;
 	int32 GetResolvedRuleCount() const { return ResolvedRules.Num(); }
+	float GetPendingTargetPredictionStrength(const FGameplayTag& AbilityTag) const;
 
 private:
 	bool IsRuleEligible(
 		int32 RuleIndex,
 		AActor* TargetActor,
 		double CurrentTimeSeconds,
-		float OwnerHealthRatio,
 		const FGameplayTagContainer& OwnerTags) const;
 	bool IsGrantedAbilityAvailable(const FGameplayTag& AbilityTag) const;
 	int32 SelectEligibleIndex(const TArray<int32>& EligibleIndices);
