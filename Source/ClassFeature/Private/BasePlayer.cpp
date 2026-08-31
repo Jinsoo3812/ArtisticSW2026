@@ -439,6 +439,8 @@ void ABasePlayer::Tick(float DeltaTime)
 		bIsSniping = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Sniping);
 		bIsAiming = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
 		bIsThrowingOrAttacking = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
+		bIsAttacking = bIsThrowingOrAttacking;
+		bIsHitReacting = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Damaged);
 	}
 
 	float TargetArmLength = DefaultTargetArmLength;
@@ -533,6 +535,11 @@ void ABasePlayer::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->ResetLocomotionActionState(TEXT("PlayerPossessedBy"));
+	}
+
 	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
 	{
 		CachedPlayerSkillComponent = SkillComponent;
@@ -622,6 +629,16 @@ void ABasePlayer::PossessedBy(AController* NewController)
 
 	// ASC 초기화 완료 알림 방송
 	OnAbilitySystemInitialized.Broadcast();
+}
+
+void ABasePlayer::UnPossessed()
+{
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->ResetLocomotionActionState(TEXT("PlayerUnPossessed"));
+	}
+
+	Super::UnPossessed();
 }
 
 void ABasePlayer::OnRep_PlayerState()

@@ -153,6 +153,9 @@ public:
 	// 서버에서 빙의될 때 ASC 초기화
 	virtual void PossessedBy(AController* NewController) override;
 
+	// 빙의 해제 시 (대포/배 탑승 등) 상태 정제
+	virtual void UnPossessed() override;
+
 	// 클라이언트에서 PlayerState가 복제 완료되었을 때 ASC 초기화
 	virtual void OnRep_PlayerState() override;
 
