@@ -38,21 +38,25 @@ Point 아래 갑판이 `ShipDeckMesh`의 Simple Collision 형상에 포함되어
 EnemyShip Blueprint의 Components 패널에서 네이티브 `DeckEnemySpawnerComponent`를 선택하고 다음을 설정한다.
 
 - `Enable Spawning`: true
-- `Spawn Composition`: 클래스와 수량 배열
-  - 예: `BP_DeckMeleeEnemy` × 3
-  - 예: `BP_DeckRangedEnemy` × 2
+- `Spawn Plan`: `Enemy Class + Spawn Point Id` 배열
+  - 배열 요소 하나가 Enemy 한 명을 뜻한다.
+  - 예: `[0] BP_DeckMeleeEnemy + 101`
+  - 예: `[1] BP_DeckRangedEnemy + 103`
+  - 예: `[2] BP_DeckMeleeEnemy + 102`
 - `Sight Activation Delay`: 0.25
 - `Activation Interval`: 0.35
 - `Max Spawn Retries`: 3
 - `Spawn Retry Interval`: 0.5
 - `Random Seed`: 1337
 
-기능은 기본 off다. 각 Entry 수량은 0~32로 제한한다. 기존 EnemyShip Blueprint에 저장된
-`Enable Deck Enemy MVP`, `Deck Enemy Class`, `Deck Enemy Pool Size` 값은 호환 fallback으로 계속 읽지만,
-새 편성은 Component의 `Spawn Composition`만 단일 소스로 사용한다.
+기능은 기본 off이며 Spawn Plan은 최대 32개다. 배열 순서가 활성화 순서이며, 지정 Point가 점유된 경우
+같은 Point만 재시도하고 다른 Point로 자동 대체하지 않는다. Component의 `Spawn Plan`만 초기 Deck Enemy
+편성의 소스로 사용하므로, 기존 EnemyShip 자산도 반드시 이 배열로 설정을 이전해야 한다.
 
 `DeckEnemySpawnerComponent`가 Enemy Pool, 배치 Queue, Waypoint Registry와 모든 Point 예약/점유 상태를
-서버에서 단독 소유한다. `AEnemyShip`의 기존 Deck Point 함수는 Boss와 기존 BT 호환을 위한 위임 API다.
+서버에서 단독 소유한다. 에디터용 `Enemy Class + Spawn Point Id`는 초기화 시 Waypoint Registry로 검증된 런타임 계획으로
+변환되고, 배치 실행부는 런타임 계획만 소비한다. `AEnemyShip`의 기존 Deck Point 함수는 Boss와 기존 BT
+호환을 위한 위임 API다.
 
 ## 5. 최소 Behavior Tree 구성
 

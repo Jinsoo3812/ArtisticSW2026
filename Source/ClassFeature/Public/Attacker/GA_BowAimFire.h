@@ -63,8 +63,8 @@ protected:
 	void JumpAimCycleToSection(FName SectionName);
 	void PlayDrawMontage();
 	void StopDrawMontage(float BlendOutTime);
-	void BeginRelease(const FGameplayEventData& Payload);
-	void FireArrow(const FGameplayEventData& Payload);
+	void BeginRelease(const FGameplayEventData& ReleaseInputPayload);
+	void FireArrowFromPendingRelease();
 	void FinishShot();
 	void ResetBowState();
 	void AcquireServerPoseRefresh();
@@ -135,7 +135,9 @@ protected:
 	TObjectPtr<UBowComponent> CachedBowComponent;
 
 	FTimerHandle ChargeTimerHandle;
-	FGameplayEventData ReleasePayload;
+	/** Aim data captured from input release. Animation notifies only authorize fire timing. */
+	FVector PendingReleaseAimTarget = FVector::ZeroVector;
+	bool bHasPendingReleaseAimTarget = false;
 	float DrawStartTime = 0.0f;
 	bool bIsDrawing = false;
 	bool bIsFullyDrawn = false;

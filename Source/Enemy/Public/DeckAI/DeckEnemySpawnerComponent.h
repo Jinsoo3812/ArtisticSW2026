@@ -10,16 +10,19 @@ class AEnemyShip;
 class AShip;
 class UDeckWaypointComponent;
 
+/** One designer-authored deployment unit: one exact enemy class at one exact deck point. */
 USTRUCT(BlueprintType)
-struct ENEMY_API FDeckEnemySpawnEntry
+struct ENEMY_API FDeckEnemySpawnSlot
 {
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck Enemy Spawn")
 	TSubclassOf<ADeckEnemy> EnemyClass;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck Enemy Spawn", meta = (ClampMin = "0", ClampMax = "32"))
-	int32 Count = 0;
+	/** Exact WaypointId registered on the owning EnemyShip. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck Enemy Spawn",
+		meta = (ClampMin = "0"))
+	int32 SpawnPointId = INDEX_NONE;
 };
 
 UENUM(BlueprintType)
@@ -53,17 +56,6 @@ public:
 	UDeckEnemySpawnerComponent();
 
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-
-	/** Compatibility bridge for EnemyShip Blueprint defaults authored before this component existed. */
-	void ConfigureLegacyFallback(
-		bool bInEnabled,
-		TSubclassOf<ADeckEnemy> InEnemyClass,
-		int32 InPoolSize,
-		float InSightDelay,
-		float InActivationInterval,
-		int32 InMaxRetries,
-		float InRetryInterval,
-		int32 InRandomSeed);
 
 	void InitializeWaypoints();
 	void InitializePool();
@@ -128,12 +120,17 @@ public:
 		ADeckEnemy*& OutEnemy);
 
 protected:
-	/** New source of truth. Entries are deployed in array order. */
+	/** Enables the authored SpawnPlan. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck Enemy Spawner")
 	bool bEnableSpawning = false;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck Enemy Spawner", meta = (TitleProperty = "EnemyClass"))
-	TArray<FDeckEnemySpawnEntry> SpawnComposition;
+	/**
+	 * Preferred source of truth. Each entry represents exactly one enemy and one exact spawn point.
+	 * Entries are resolved and deployed in array order; an unavailable point is never substituted.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck Enemy Spawner",
+		meta = (TitleProperty = "EnemyClass"))
+	TArray<FDeckEnemySpawnSlot> SpawnPlan;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck Enemy Spawner|Timing", meta = (ClampMin = "0.0", Units = "s"))
 	float SightActivationDelay = 0.25f;
@@ -151,6 +148,12 @@ protected:
 	int32 RandomSeed = 1337;
 
 private:
+	struct FDeckEnemyDeploymentSlot
+	{
+		TSubclassOf<ADeckEnemy> EnemyClass;
+		int32 SpawnPointId = INDEX_NONE;
+	};
+
 	struct FDeckPointRuntimeState
 	{
 		TWeakObjectPtr<AActor> Occupant;
@@ -161,7 +164,14 @@ private:
 
 	AEnemyShip* GetHostShip() const;
 	bool IsEnabled() const;
-	void BuildEffectiveComposition(TArray<FDeckEnemySpawnEntry>& OutComposition) const;
+	bool BuildDeploymentPlan(
+		TArray<FDeckEnemyDeploymentSlot>& OutPlan,
+		bool bLogErrors) const;
+	bool ValidateAuthoredSpawnSlot(
+		const FDeckEnemySpawnSlot& AuthoredSlot,
+		int32 SlotIndex,
+		FDeckEnemyDeploymentSlot& OutSlot,
+		bool bLogErrors) const;
 	ADeckEnemy* FindInactiveEnemy(TSubclassOf<ADeckEnemy> RequiredClass) const;
 	bool ActivateSpecificEnemyAtReservation(
 		ADeckEnemy& Enemy,
@@ -189,7 +199,7 @@ private:
 	TArray<TObjectPtr<ADeckEnemy>> EnemyPool;
 
 	TMap<int32, FDeckPointRuntimeState> PointRuntimeStates;
-	TArray<TSubclassOf<ADeckEnemy>> DeploymentQueue;
+	TArray<FDeckEnemyDeploymentSlot> DeploymentQueue;
 	TSet<TWeakObjectPtr<ADeckEnemy>> AliveDeployedEnemies;
 	TWeakObjectPtr<AShip> DeploymentTriggerShip;
 	TWeakObjectPtr<AActor> DeploymentInitialTarget;
@@ -206,19 +216,6 @@ private:
 	bool bAllDeployedEnemiesDefeated = false;
 
 	bool bHasDeployedEnemy = false;
-
-	UPROPERTY(Transient)
-	bool bLegacyEnabled = false;
-
-	UPROPERTY(Transient)
-	TSubclassOf<ADeckEnemy> LegacyEnemyClass;
-
-	int32 LegacyPoolSize = 0;
-	float LegacySightDelay = 0.25f;
-	float LegacyActivationInterval = 0.35f;
-	int32 LegacyMaxRetries = 3;
-	float LegacyRetryInterval = 0.5f;
-	int32 LegacyRandomSeed = 1337;
 
 	FTimerHandle SightDelayTimerHandle;
 	FTimerHandle DeploymentTimerHandle;

@@ -246,41 +246,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|AI|Data", meta = (TitleProperty = "ModuleId"))
 	TArray<TObjectPtr<UEnemyShipSkillModuleData>> CoreSkillModules;
 
-	// ================= Legacy Deck Enemy authoring bridge =================
-	/** Compatibility fallback. New authoring belongs on DeckEnemySpawnerComponent. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI")
-	bool bEnableDeckEnemyMVP = false;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI", meta = (EditCondition = "bEnableDeckEnemyMVP"))
-	TSubclassOf<ADeckEnemy> DeckEnemyClass;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI", meta = (EditCondition = "bEnableDeckEnemyMVP", ClampMin = "1", ClampMax = "8"))
-	int32 DeckEnemyPoolSize = 2;
-
-	/** Small settle delay after the first successful Sight stimulus. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI", meta = (EditCondition = "bEnableDeckEnemyMVP", ClampMin = "0.0", Units = "s"))
-	float DeckEnemySightActivationDelay = 0.25f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI", meta = (EditCondition = "bEnableDeckEnemyMVP", ClampMin = "0.05", Units = "s"))
-	float DeckEnemyActivationInterval = 0.35f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI", meta = (EditCondition = "bEnableDeckEnemyMVP", ClampMin = "0", ClampMax = "5"))
-	int32 MaxDeckSpawnRetries = 3;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI", meta = (EditCondition = "bEnableDeckEnemyMVP", ClampMin = "0.05", Units = "s"))
-	float DeckSpawnRetryInterval = 0.5f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI", meta = (EditCondition = "bEnableDeckEnemyMVP"))
-	int32 DeckEnemyRandomSeed = 1337;
-
 	/** Settings used by the editor buttons above. Generated components can be edited after generation. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|Deck AI|Generation")
 	FDeckWaypointGenerationSettings DeckWaypointGenerationSettings;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Ship|Deck AI|Generation")
 	FString LastDeckWaypointValidationSummary;
-	// ================= End legacy bridge =================
-
 	/** LEGACY bootstrap only: delete after every Enemy Ship Archetype has an AbilitySet. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "LEGACY|Ship AI", meta = (
 		DisplayName = "[LEGACY] Native Ability Bootstrap Without Archetype",

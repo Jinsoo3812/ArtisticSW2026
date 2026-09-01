@@ -12,3 +12,4 @@ static constexpr ECollisionChannel ECC_ShipDamage = ECC_GameTraceChannel5;
 static constexpr ECollisionChannel ECC_EnemyShipObstacle = ECC_GameTraceChannel6;
 static constexpr ECollisionChannel ECC_FootPlacement = ECC_GameTraceChannel7;
 static constexpr ECollisionChannel ECC_EnemyHealthBarLOS = ECC_GameTraceChannel8;
+static constexpr ECollisionChannel ECC_Arrow = ECC_GameTraceChannel9;

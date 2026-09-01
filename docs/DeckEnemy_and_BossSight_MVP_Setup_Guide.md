@@ -34,9 +34,11 @@
 
 현재 MVP는 기존 자산 호환을 위해 `ADeckEnemy`가 `ARangedEnemy`의 전투 기반 기능을 계승한다. Melee 역할에서는 원거리 전용 속성 및 Ability를 사용하지 않는다.
 
-EnemyShip의 네이티브 `DeckEnemySpawnerComponent`에서 `Enable Spawning`을 켜고 `Spawn Composition`에
-`Enemy Class + Count`를 추가한다. 근거리 3명, 원거리 2명이 필요하면 두 Entry로 각각 수량을 지정한다.
-Spawner는 요청한 정확한 클래스의 Pool Actor만 활성화한다.
+EnemyShip의 네이티브 `DeckEnemySpawnerComponent`에서 `Enable Spawning`을 켜고 `Spawn Plan`에
+`Enemy Class + Spawn Point Id`를 Enemy 한 명당 하나씩 추가한다. ID는 해당 EnemyShip 안에서 고유해야 하며
+배열 순서가 활성화 순서다.
+Spawner는 요청한 정확한 클래스의 Pool Actor를 지정한 Point에서만 활성화하며, Point가 막혀도 다른
+Point로 대체하지 않는다. `Spawn Plan`이 비어 있으면 초기 Deck Enemy Pool과 배치를 시작하지 않는다.
 
 ## 공용 Deck Point 수동 저작
 

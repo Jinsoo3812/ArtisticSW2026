@@ -7,10 +7,34 @@
 #include "ArrowProjectile.generated.h"
 
 class UPrimitiveComponent;
+class USceneComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
 class UAbilitySystemComponent;
 class UGameplayEffect;
+
+/** Minimal transient data required to render an arrow impact on remote clients. */
+USTRUCT(BlueprintType)
+struct FArrowImpactPresentationData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arrow|Impact")
+	FVector_NetQuantize10 ImpactLocation = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arrow|Impact")
+	FVector_NetQuantizeNormal ImpactNormal = FVector::UpVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arrow|Impact")
+	FVector_NetQuantizeNormal IncomingDirection = FVector::ForwardVector;
+
+	/** Set only for a stable replicated moving component, such as a ship query hull. */
+	UPROPERTY(BlueprintReadOnly, Category = "Arrow|Impact")
+	TObjectPtr<USceneComponent> AttachComponent;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arrow|Impact")
+	FName BoneName = NAME_None;
+};
 
 USTRUCT(BlueprintType)
 struct FArrowDamageEffect
@@ -140,7 +164,7 @@ public:
 
 	/**
 	 * Returns whether this arrow may apply its embedded DamageData to TargetActor.
-	 * Team filtering is disabled by default so normal gameplay does not distinguish factions.
+	 * Team filtering is enabled by default so actors on the same team cannot damage each other.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Arrow|Damage")
 	bool IsValidDamageTarget(const AActor* TargetActor) const;
@@ -158,8 +182,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arrow", meta = (DeprecatedFunction, DeprecationMessage = "Strength MVP uses one direct damage spec."))
 	void SetAdditionalDamageEffectSpecHandles(const TArray<FGameplayEffectSpecHandle>& InAdditionalDamageEffectSpecHandles);
 
-	UFUNCTION(NetMulticast, Unreliable, BlueprintCallable, Category = "Arrow")
+	UFUNCTION(NetMulticast, Unreliable, BlueprintCallable, Category = "Arrow",
+		meta = (DeprecatedFunction, DeprecationMessage = "Use the compact impact presentation pipeline."))
 	void Multicast_PlayImpactFX(const FHitResult& Hit);
+
+	UFUNCTION(NetMulticast, Unreliable, Category = "Arrow")
+	void Multicast_PlayImpactPresentation(const FArrowImpactPresentationData& ImpactData);
 
 protected:
 	UFUNCTION()
@@ -168,6 +196,10 @@ protected:
 	virtual bool ShouldIgnoreHitActor(const AActor* OtherActor) const;
 	virtual bool CanApplyDamageToActor(const AActor* OtherActor) const;
 	void ApplyCollisionShape();
+	void ApplyArrowCollisionProfile();
+	FArrowImpactPresentationData BuildImpactPresentationData(
+		UPrimitiveComponent* OtherComp,
+		const FHitResult& Hit) const;
 	void BuildStatusEffectSpecs();
 	void ApplyDamageToActor(AActor* TargetActor, const FHitResult& HitResult);
 
@@ -210,10 +242,20 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow")
 	bool bDestroyOnImpact = true;
 
+	/** Client-only stuck-arrow lifetime. The presentation actor never replicates. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Impact", meta = (ClampMin = "0.1", Units = "s"))
+	float StuckArrowLifeSpan = 8.0f;
+
+	/** Visual penetration measured forward from the collision box's leading face. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Impact", meta = (ClampMin = "0.0", Units = "cm"))
+	float ImpactEmbedDepth = 2.0f;
+
+	bool bImpactHandled = false;
+
 	/**
-	 * Debug option. When enabled, arrows reject targets that share Team.Player
-	 * or Team.Enemy with their source. Disabled by default for faction-agnostic gameplay.
+	 * When enabled, arrows reject targets that share Team.Player or Team.Enemy
+	 * with their source. Enabled by default to prevent friendly fire.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Debug")
-	bool bEnableTeamDamageFiltering = false;
+	bool bEnableTeamDamageFiltering = true;
 };

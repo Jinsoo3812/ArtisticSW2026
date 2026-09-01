@@ -22,26 +22,6 @@ void UDeckEnemySpawnerComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 	Super::EndPlay(EndPlayReason);
 }
 
-void UDeckEnemySpawnerComponent::ConfigureLegacyFallback(
-	bool bInEnabled,
-	TSubclassOf<ADeckEnemy> InEnemyClass,
-	int32 InPoolSize,
-	float InSightDelay,
-	float InActivationInterval,
-	int32 InMaxRetries,
-	float InRetryInterval,
-	int32 InRandomSeed)
-{
-	bLegacyEnabled = bInEnabled;
-	LegacyEnemyClass = InEnemyClass;
-	LegacyPoolSize = FMath::Clamp(InPoolSize, 1, 32);
-	LegacySightDelay = FMath::Max(0.0f, InSightDelay);
-	LegacyActivationInterval = FMath::Max(0.05f, InActivationInterval);
-	LegacyMaxRetries = FMath::Clamp(InMaxRetries, 0, 5);
-	LegacyRetryInterval = FMath::Max(0.05f, InRetryInterval);
-	LegacyRandomSeed = InRandomSeed;
-}
-
 AEnemyShip* UDeckEnemySpawnerComponent::GetHostShip() const
 {
 	return Cast<AEnemyShip>(GetOwner());
@@ -49,31 +29,121 @@ AEnemyShip* UDeckEnemySpawnerComponent::GetHostShip() const
 
 bool UDeckEnemySpawnerComponent::IsEnabled() const
 {
-	return bEnableSpawning || bLegacyEnabled;
+	return bEnableSpawning;
 }
 
-void UDeckEnemySpawnerComponent::BuildEffectiveComposition(
-	TArray<FDeckEnemySpawnEntry>& OutComposition) const
+bool UDeckEnemySpawnerComponent::ValidateAuthoredSpawnSlot(
+	const FDeckEnemySpawnSlot& AuthoredSlot,
+	int32 SlotIndex,
+	FDeckEnemyDeploymentSlot& OutSlot,
+	bool bLogErrors) const
 {
-	OutComposition.Reset();
-	if (bEnableSpawning && !SpawnComposition.IsEmpty())
+	OutSlot = FDeckEnemyDeploymentSlot();
+	AEnemyShip* Host = GetHostShip();
+	if (!Host || !AuthoredSlot.EnemyClass)
 	{
-		for (const FDeckEnemySpawnEntry& Entry : SpawnComposition)
+		if (bLogErrors)
 		{
-			if (Entry.EnemyClass && Entry.Count > 0)
-			{
-				OutComposition.Add(Entry);
-			}
+			UE_LOG(LogTemp, Error,
+				TEXT("[DeckEnemySpawner] Invalid explicit spawn slot. Ship=%s Slot=%d Reason=%s"),
+				*GetNameSafe(Host), SlotIndex,
+				AuthoredSlot.EnemyClass ? TEXT("MissingHost") : TEXT("MissingEnemyClass"));
 		}
-		return;
+		return false;
 	}
 
-	if (bLegacyEnabled && LegacyEnemyClass && LegacyPoolSize > 0)
+	const int32 PointId = AuthoredSlot.SpawnPointId;
+	UDeckWaypointComponent* Waypoint = GetWaypoint(PointId);
+	if (!IsValid(Waypoint))
 	{
-		FDeckEnemySpawnEntry& Entry = OutComposition.AddDefaulted_GetRef();
-		Entry.EnemyClass = LegacyEnemyClass;
-		Entry.Count = LegacyPoolSize;
+		if (bLogErrors)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[DeckEnemySpawner] Invalid explicit spawn slot. Ship=%s Slot=%d Class=%s SpawnPointId=%d Reason=UnknownSpawnPointId"),
+				*GetNameSafe(Host), SlotIndex, *GetNameSafe(AuthoredSlot.EnemyClass.Get()), PointId);
+		}
+		return false;
 	}
+
+	const bool bHasNavigationLink = !Waypoint->GetLinkedWaypointIds().IsEmpty();
+	if (!Waypoint->CanSpawnEnemy() || !Waypoint->CanUseInCombat() || !bHasNavigationLink)
+	{
+		if (bLogErrors)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[DeckEnemySpawner] Invalid explicit spawn point. Ship=%s Slot=%d Class=%s Point=%s PointId=%d CanSpawn=%s CanCombat=%s HasLink=%s"),
+				*GetNameSafe(Host), SlotIndex, *GetNameSafe(AuthoredSlot.EnemyClass.Get()),
+				*GetNameSafe(Waypoint), PointId,
+				Waypoint->CanSpawnEnemy() ? TEXT("true") : TEXT("false"),
+				Waypoint->CanUseInCombat() ? TEXT("true") : TEXT("false"),
+				bHasNavigationLink ? TEXT("true") : TEXT("false"));
+		}
+		return false;
+	}
+
+	OutSlot.EnemyClass = AuthoredSlot.EnemyClass;
+	OutSlot.SpawnPointId = PointId;
+	return true;
+}
+
+bool UDeckEnemySpawnerComponent::BuildDeploymentPlan(
+	TArray<FDeckEnemyDeploymentSlot>& OutPlan,
+	bool bLogErrors) const
+{
+	OutPlan.Reset();
+	if (!bEnableSpawning || SpawnPlan.IsEmpty())
+	{
+		if (bLogErrors)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[DeckEnemySpawner] SpawnPlan is disabled or empty. Ship=%s"), *GetNameSafe(GetHostShip()));
+		}
+		return false;
+	}
+
+	if (SpawnPlan.Num() > 32)
+	{
+		if (bLogErrors)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[DeckEnemySpawner] SpawnPlan exceeds the 32-enemy limit. Ship=%s Count=%d"),
+				*GetNameSafe(GetHostShip()), SpawnPlan.Num());
+		}
+		return false;
+	}
+
+	bool bPlanIsValid = true;
+	TSet<int32> AssignedPointIds;
+	for (int32 SlotIndex = 0; SlotIndex < SpawnPlan.Num(); ++SlotIndex)
+	{
+		FDeckEnemyDeploymentSlot DeploymentSlot;
+		if (!ValidateAuthoredSpawnSlot(
+			SpawnPlan[SlotIndex], SlotIndex, DeploymentSlot, bLogErrors))
+		{
+			bPlanIsValid = false;
+			continue;
+		}
+		if (AssignedPointIds.Contains(DeploymentSlot.SpawnPointId))
+		{
+			bPlanIsValid = false;
+			if (bLogErrors)
+			{
+				UE_LOG(LogTemp, Error,
+					TEXT("[DeckEnemySpawner] Duplicate SpawnPointId in SpawnPlan. Ship=%s Slot=%d PointId=%d"),
+					*GetNameSafe(GetHostShip()), SlotIndex, DeploymentSlot.SpawnPointId);
+			}
+			continue;
+		}
+		AssignedPointIds.Add(DeploymentSlot.SpawnPointId);
+		OutPlan.Add(MoveTemp(DeploymentSlot));
+	}
+
+	if (!bPlanIsValid || OutPlan.IsEmpty())
+	{
+		OutPlan.Reset();
+		return false;
+	}
+	return true;
 }
 
 void UDeckEnemySpawnerComponent::InitializeWaypoints()
@@ -153,12 +223,11 @@ void UDeckEnemySpawnerComponent::InitializePool()
 		return;
 	}
 
-	TArray<FDeckEnemySpawnEntry> Composition;
-	BuildEffectiveComposition(Composition);
-	if (Composition.IsEmpty())
+	TArray<FDeckEnemyDeploymentSlot> ResolvedPlan;
+	if (!BuildDeploymentPlan(ResolvedPlan, true))
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[DeckEnemySpawner] Spawn composition is empty. Ship=%s"), *GetNameSafe(Host));
+			TEXT("[DeckEnemySpawner] Spawn plan could not be resolved. Ship=%s"), *GetNameSafe(Host));
 		return;
 	}
 
@@ -168,46 +237,42 @@ void UDeckEnemySpawnerComponent::InitializePool()
 		return;
 	}
 
-	int32 PoolOrdinal = 0;
-	for (const FDeckEnemySpawnEntry& Entry : Composition)
+	for (int32 SlotIndex = 0; SlotIndex < ResolvedPlan.Num(); ++SlotIndex)
 	{
-		const int32 Count = FMath::Clamp(Entry.Count, 0, 32);
-		for (int32 EntryIndex = 0; EntryIndex < Count; ++EntryIndex, ++PoolOrdinal)
+		const FDeckEnemyDeploymentSlot& Slot = ResolvedPlan[SlotIndex];
+		UDeckWaypointComponent* InitialWaypoint = GetWaypoint(Slot.SpawnPointId);
+		const ADeckEnemy* EnemyCDO = Slot.EnemyClass
+			? Slot.EnemyClass->GetDefaultObject<ADeckEnemy>()
+			: nullptr;
+		FTransform InitialTransform;
+		if (!InitialWaypoint || !EnemyCDO
+			|| !ResolveEnemySpawnTransform(InitialWaypoint, *EnemyCDO, InitialTransform))
 		{
-			UDeckWaypointComponent* InitialWaypoint = SpawnWaypoints[
-				PoolOrdinal % SpawnWaypoints.Num()];
-			const ADeckEnemy* EnemyCDO = Entry.EnemyClass
-				? Entry.EnemyClass->GetDefaultObject<ADeckEnemy>()
-				: nullptr;
-			FTransform InitialTransform;
-			if (!EnemyCDO || !ResolveEnemySpawnTransform(InitialWaypoint, *EnemyCDO, InitialTransform))
-			{
-				UE_LOG(LogTemp, Warning,
-					TEXT("[DeckEnemySpawner] No valid initial transform. Ship=%s Class=%s Index=%d"),
-					*GetNameSafe(Host), *GetNameSafe(Entry.EnemyClass.Get()), EntryIndex);
-				continue;
-			}
-
-			ADeckEnemy* PooledEnemy = World->SpawnActorDeferred<ADeckEnemy>(
-				Entry.EnemyClass,
-				InitialTransform,
-				Host,
-				nullptr,
-				ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
-			if (!PooledEnemy)
-			{
-				UE_LOG(LogTemp, Error,
-					TEXT("[DeckEnemySpawner] Failed to allocate pool actor. Ship=%s Class=%s Index=%d"),
-					*GetNameSafe(Host), *GetNameSafe(Entry.EnemyClass.Get()), EntryIndex);
-				continue;
-			}
-
-			PooledEnemy->PrepareForPool();
-			PooledEnemy->FinishSpawning(InitialTransform);
-			PooledEnemy->SetHostShip(Host);
-			PooledEnemy->DeactivateToPool();
-			EnemyPool.Add(PooledEnemy);
+			UE_LOG(LogTemp, Warning,
+				TEXT("[DeckEnemySpawner] No valid initial transform. Ship=%s Class=%s Slot=%d PointId=%d"),
+				*GetNameSafe(Host), *GetNameSafe(Slot.EnemyClass.Get()), SlotIndex, Slot.SpawnPointId);
+			continue;
 		}
+
+		ADeckEnemy* PooledEnemy = World->SpawnActorDeferred<ADeckEnemy>(
+			Slot.EnemyClass,
+			InitialTransform,
+			Host,
+			nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!PooledEnemy)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[DeckEnemySpawner] Failed to allocate pool actor. Ship=%s Class=%s Slot=%d"),
+				*GetNameSafe(Host), *GetNameSafe(Slot.EnemyClass.Get()), SlotIndex);
+			continue;
+		}
+
+		PooledEnemy->PrepareForPool();
+		PooledEnemy->FinishSpawning(InitialTransform);
+		PooledEnemy->SetHostShip(Host);
+		PooledEnemy->DeactivateToPool();
+		EnemyPool.Add(PooledEnemy);
 	}
 }
 
@@ -276,17 +341,8 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(
 		return false;
 	}
 
-	TArray<FDeckEnemySpawnEntry> Composition;
-	BuildEffectiveComposition(Composition);
 	DeploymentQueue.Reset();
-	for (const FDeckEnemySpawnEntry& Entry : Composition)
-	{
-		for (int32 Index = 0; Index < FMath::Max(0, Entry.Count); ++Index)
-		{
-			DeploymentQueue.Add(Entry.EnemyClass);
-		}
-	}
-	if (DeploymentQueue.IsEmpty())
+	if (!BuildDeploymentPlan(DeploymentQueue, true))
 	{
 		DeploymentState = EDeckEnemyDeploymentState::Failed;
 		return false;
@@ -302,8 +358,7 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(
 	DeploymentFailureCount = 0;
 	DeploymentState = EDeckEnemyDeploymentState::Preparing;
 
-	const float EffectiveDelay = bEnableSpawning ? SightActivationDelay : LegacySightDelay;
-	if (EffectiveDelay <= 0.0f)
+	if (SightActivationDelay <= 0.0f)
 	{
 		BeginDeployment();
 	}
@@ -313,7 +368,7 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(
 			SightDelayTimerHandle,
 			this,
 			&UDeckEnemySpawnerComponent::BeginDeployment,
-			EffectiveDelay,
+			SightActivationDelay,
 			false);
 	}
 	return true;
@@ -357,22 +412,16 @@ void UDeckEnemySpawnerComponent::DeployNextEnemy()
 		return;
 	}
 
-	ADeckEnemy* Enemy = FindInactiveEnemy(DeploymentQueue[DeploymentQueueIndex]);
+	const FDeckEnemyDeploymentSlot& Slot = DeploymentQueue[DeploymentQueueIndex];
+	ADeckEnemy* Enemy = FindInactiveEnemy(Slot.EnemyClass);
 	if (!Enemy)
 	{
 		HandleDeploymentFailure();
 		return;
 	}
 
-	FDeckEnemySpawnRequest Request;
-	Request.Requester = Enemy;
-	if (!SpawnWaypoints.IsEmpty())
-	{
-		Request.PreferredPointIds.Add(
-			SpawnWaypoints[DeploymentQueueIndex % SpawnWaypoints.Num()]->GetWaypointId());
-	}
 	FDeckPointReservation Reservation;
-	if (!TryReserveEnemySpawnPoint(Request, Reservation))
+	if (!TryReservePoint(Slot.SpawnPointId, Enemy, Reservation))
 	{
 		HandleDeploymentFailure();
 		return;
@@ -395,37 +444,37 @@ void UDeckEnemySpawnerComponent::DeployNextEnemy()
 		return;
 	}
 
-	const float Interval = bEnableSpawning ? ActivationInterval : LegacyActivationInterval;
 	GetWorld()->GetTimerManager().SetTimer(
 		DeploymentTimerHandle,
 		this,
 		&UDeckEnemySpawnerComponent::DeployNextEnemy,
-		FMath::Max(0.05f, Interval),
+		FMath::Max(0.05f, ActivationInterval),
 		false);
 }
 
 void UDeckEnemySpawnerComponent::HandleDeploymentFailure()
 {
 	++CurrentRetryCount;
-	const int32 RetryLimit = bEnableSpawning ? MaxSpawnRetries : LegacyMaxRetries;
-	if (CurrentRetryCount <= FMath::Max(0, RetryLimit))
+	if (CurrentRetryCount <= FMath::Max(0, MaxSpawnRetries))
 	{
-		const float Interval = bEnableSpawning ? SpawnRetryInterval : LegacyRetryInterval;
 		GetWorld()->GetTimerManager().SetTimer(
 			DeploymentTimerHandle,
 			this,
 			&UDeckEnemySpawnerComponent::DeployNextEnemy,
-			FMath::Max(0.05f, Interval),
+			FMath::Max(0.05f, SpawnRetryInterval),
 			false);
 		return;
 	}
 
 	UE_LOG(LogTemp, Warning,
-		TEXT("[DeckEnemySpawner] Deployment entry abandoned. Ship=%s QueueIndex=%d Class=%s"),
+		TEXT("[DeckEnemySpawner] Deployment entry abandoned. Ship=%s QueueIndex=%d Class=%s PointId=%d"),
 		*GetNameSafe(GetHostShip()), DeploymentQueueIndex,
 		DeploymentQueue.IsValidIndex(DeploymentQueueIndex)
-			? *GetNameSafe(DeploymentQueue[DeploymentQueueIndex].Get())
-			: TEXT("None"));
+			? *GetNameSafe(DeploymentQueue[DeploymentQueueIndex].EnemyClass.Get())
+			: TEXT("None"),
+		DeploymentQueue.IsValidIndex(DeploymentQueueIndex)
+			? DeploymentQueue[DeploymentQueueIndex].SpawnPointId
+			: INDEX_NONE);
 	++DeploymentFailureCount;
 	++DeploymentQueueIndex;
 	CurrentRetryCount = 0;
@@ -435,12 +484,11 @@ void UDeckEnemySpawnerComponent::HandleDeploymentFailure()
 		return;
 	}
 
-	const float Interval = bEnableSpawning ? ActivationInterval : LegacyActivationInterval;
 	GetWorld()->GetTimerManager().SetTimer(
 		DeploymentTimerHandle,
 		this,
 		&UDeckEnemySpawnerComponent::DeployNextEnemy,
-		FMath::Max(0.05f, Interval),
+		FMath::Max(0.05f, ActivationInterval),
 		false);
 }
 
@@ -1081,9 +1129,8 @@ bool UDeckEnemySpawnerComponent::ActivateSpecificEnemyAtReservation(
 		return false;
 	}
 
-	const int32 EffectiveSeed = bEnableSpawning ? RandomSeed : LegacyRandomSeed;
 	const int32 Seed = static_cast<int32>(HashCombine(
-		static_cast<uint32>(EffectiveSeed),
+		static_cast<uint32>(RandomSeed),
 		HashCombine(GetTypeHash(Host->GetFName()), static_cast<uint32>(ActivationSerial++))));
 	if (!Enemy.ActivateFromPool(Host, Reservation.PointId, Seed))
 	{
