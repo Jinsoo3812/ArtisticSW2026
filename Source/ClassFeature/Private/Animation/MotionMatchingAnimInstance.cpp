@@ -1159,20 +1159,26 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     ThreadSafeData.StateController.bForceMotionMatchingReselection;
                 if (bForceLandRedirectReselection)
                 {
-                    // Land -> MM is a graph hand-off, not a normal database
-                    // change.  Force a fresh query from Pose History so the
-                    // visible Land pose is the query source, rather than the
-                    // MM node's old continuing pose behind the bool blend.
+                    // Start -> LocomotionLoop 핸드오프 시에는 포즈 히스토리의 발 위치(Foot Phase)를 보존하여
+                    // 루프 애니메이션의 동일한 발 위상 타임코드에 자연스럽게 도킹되도록 ForceInterrupt를 사용합니다.
+                    // 반면 Land(착지) 등 비지상 핸드오프에서는 이전 포즈를 무효화(InvalidateContinuingPose)합니다.
+                    const bool bPreserveFootPhase =
+                        (ThreadSafeData.StateController.PresentationState == EStateControllerPresentationState::LocomotionLoop);
+
+                    const EPoseSearchInterruptMode ReselectInterruptMode = bPreserveFootPhase
+                        ? EPoseSearchInterruptMode::ForceInterrupt
+                        : EPoseSearchInterruptMode::ForceInterruptAndInvalidateContinuingPose;
+
                     if (CurrentActivePoseSearchDatabase)
                     {
                         MMNode->SetDatabaseToSearch(
                             CurrentActivePoseSearchDatabase,
-                            EPoseSearchInterruptMode::ForceInterruptAndInvalidateContinuingPose);
+                            ReselectInterruptMode);
                     }
                     else
                     {
                         MMNode->ResetDatabasesToSearch(
-                            EPoseSearchInterruptMode::ForceInterruptAndInvalidateContinuingPose);
+                            ReselectInterruptMode);
                     }
                     Info.AppliedDatabase = CurrentActivePoseSearchDatabase;
                 }
