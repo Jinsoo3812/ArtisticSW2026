@@ -177,7 +177,7 @@ protected:
 	void RefreshEquippedSkillBorders();
 
 	void HandleInventoryChanged();
-	void HandleItemSlotsChanged();
+	void HandleQuickSlotsChanged();
 	void HandleAbilitySystemInitialized();
 
 	UFUNCTION()

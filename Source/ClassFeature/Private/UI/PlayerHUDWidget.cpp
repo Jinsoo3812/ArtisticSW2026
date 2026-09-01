@@ -139,7 +139,6 @@ void UPlayerHUDWidget::NativeDestruct()
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
-		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
 		CachedPlayer->OnQuickSlotsChanged.RemoveAll(this);
 		if (UInventoryComponent* Inventory = CachedPlayer->GetInventoryComponent())
 		{
@@ -181,7 +180,6 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
-		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
 		CachedPlayer->OnQuickSlotsChanged.RemoveAll(this);
 
 		if (UInventoryComponent* OldInventory = CachedPlayer->GetInventoryComponent())
@@ -202,8 +200,7 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.AddUObject(this, &UPlayerHUDWidget::HandleAbilitySystemInitialized);
-		CachedPlayer->OnItemSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleItemSlotsChanged);
-		CachedPlayer->OnQuickSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleItemSlotsChanged);
+		CachedPlayer->OnQuickSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleQuickSlotsChanged);
 
 		BindHealthComponent(CachedPlayer->GetHealthComponent());
 		BindSkillComponent(CachedPlayer->GetPlayerSkillComponent());
@@ -332,7 +329,7 @@ void UPlayerHUDWidget::HandleInventoryChanged()
 	RefreshCursorItemWidget();
 }
 
-void UPlayerHUDWidget::HandleItemSlotsChanged()
+void UPlayerHUDWidget::HandleQuickSlotsChanged()
 {
 	RefreshQuickSlots();
 	RefreshBowCrosshairBinding();

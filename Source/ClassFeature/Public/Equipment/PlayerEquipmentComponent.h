@@ -73,8 +73,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	bool IsEquipmentTransitioning() const;
 
-	void EquipItemFromSlot(FGameplayTag KeyTag);
-	bool EquipInventoryWeapon(FGameplayTag ItemTag);
+	bool EquipInventoryItem(FGameplayTag ItemTag);
 	void UnequipCurrentItem();
 	void UseEquippedItem(bool bDestroy = true);
 	void HandleEquipmentAttachNotify();
@@ -168,9 +167,6 @@ protected:
 	UFUNCTION()
 	void OnRep_EquipmentState();
 
-	UFUNCTION(Server, Reliable)
-	void Server_EquipItemFromSlot(FGameplayTag KeyTag);
-
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_PlayEquipmentMontage(ABaseItem* Item, UAnimMontage* Montage, float PlayRate);
 
@@ -185,9 +181,7 @@ protected:
 	void GrantEquippedItemAbility(ABaseItem* Item);
 	void RemoveEquippedItemAbility(ABaseItem* Item);
 	bool AttachItem(ABaseItem* Item, EEquipmentAttachmentTarget Target) const;
-	bool IsItemOwnedByItemSlot(const ABaseItem* Item) const;
 	void StoreCurrentEquippedItem();
-	void StartEquipItemFromSlot(int32 SlotIndex);
 	void StartEquipItem(ABaseItem* Item, FGameplayTag SourceSlotTag);
 	void FinalizePendingEquip();
 	void CancelPendingEquip();

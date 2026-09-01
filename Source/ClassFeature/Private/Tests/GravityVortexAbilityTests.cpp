@@ -27,14 +27,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FGravityVortexHoldInputTest::RunTest(const FString& Parameters)
 {
-	TestTrue(
-		TEXT("Skill-bearing DefaultIMC priority is raised above the legacy ItemIMC"),
-		ABasePlayer::ResolveDefaultMappingPriority(1, 1, true) > 1);
-	TestEqual(
-		TEXT("DefaultIMC priority is unchanged when no skill input is assigned"),
-		ABasePlayer::ResolveDefaultMappingPriority(1, 1, false),
-		1);
-
 	const UGA_GravityVortexThrow* AbilityDefaults = GetDefault<UGA_GravityVortexThrow>();
 	TestEqual(
 		TEXT("Gravity Vortex uses one persistent ability instance per player"),

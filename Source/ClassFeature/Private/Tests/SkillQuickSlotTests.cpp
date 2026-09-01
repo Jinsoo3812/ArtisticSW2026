@@ -47,17 +47,20 @@ bool FSkillQuickSlotWidgetContractTest::RunTest(const FString& Parameters)
 		TEXT("Blueprint front-skill query exists"),
 		WidgetClass->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(USkillQuickSlotWidget, GetFrontSkillTag)));
 
-	const FName AnimationProperties[] =
+	const FName RemovedLegacyInputProperties[] =
 	{
+		TEXT("GravityVortexInputKey"),
+		TEXT("WaterBombInputKey"),
+		TEXT("BombardmentInputKey"),
 		TEXT("ShuffleDuration"),
 		TEXT("ShuffleOffset"),
 		TEXT("ShufflePeakScale"),
 		TEXT("ShufflePeakAngle")
 	};
-	for (const FName PropertyName : AnimationProperties)
+	for (const FName PropertyName : RemovedLegacyInputProperties)
 	{
-		TestNotNull(
-			*FString::Printf(TEXT("Shuffle animation setting exists: %s"), *PropertyName.ToString()),
+		TestNull(
+			*FString::Printf(TEXT("Legacy key polling/shuffle property is removed: %s"), *PropertyName.ToString()),
 			WidgetClass->FindPropertyByName(PropertyName));
 	}
 

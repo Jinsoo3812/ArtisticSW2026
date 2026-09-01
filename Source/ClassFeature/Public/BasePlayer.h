@@ -14,7 +14,6 @@
 #include "BasePlayer.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
-DECLARE_MULTICAST_DELEGATE(FOnItemSlotsChangedDelegate);
 DECLARE_MULTICAST_DELEGATE(FOnQuickSlotsChangedDelegate);
 DECLARE_MULTICAST_DELEGATE(FOnConsumableQuickSlotInputChangedDelegate);
 
@@ -35,29 +34,6 @@ class USwimmingComponent;
 class UPlayerSkillComponent;
 class UAnimSequence;
 class UPlayerDialogueComponent;
-
-// Item Slot 관리 구조체
-USTRUCT(BlueprintType)
-struct FItemSlot
-{
-	GENERATED_BODY()
-
-	// 슬롯에 할당된 GameplayTag (예: key.Item.1)
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ItemSlot")
-	FGameplayTag KeyTag;
-
-	// 해당 슬롯에 장착된 아이템 객체 포인터
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ItemSlot")
-	TObjectPtr<ABaseItem> Item;
-
-	FItemSlot(const FGameplayTag& InTag = FGameplayTag::EmptyTag, ABaseItem* InItem = nullptr);
-
-	// Tag로 배열에서 바로 찾기 위한 연산자 오버로딩
-	bool operator==(const FGameplayTag& OtherTag) const;
-
-	// Item 포인터로 배열에서 바로 찾기 위한 연산자 오버로딩
-	bool operator==(const ABaseItem* OtherItem) const;
-};
 
 UENUM(BlueprintType)
 enum class EQuickSlotType : uint8
@@ -314,13 +290,6 @@ protected:
 	// 태그를 넣으면 고유 Hash 기반 ID를 반환하는 헬퍼
 	int32 GetInputIDFromTag(const FGameplayTag& Tag) const;
 
-public:
-	/** Keeps the on-foot skill mapping above the legacy item-slot context. */
-	static int32 ResolveDefaultMappingPriority(
-		int32 ConfiguredDefaultPriority,
-		int32 ConfiguredItemPriority,
-		bool bHasSkillInput);
-
 protected:
 	// 서버에 의해 로컬에서 Controller가 조종하는 Pawn이 지정될 때 호출되는 함수.
 	virtual void PawnClientRestart() override;
@@ -354,7 +323,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> SprintAction;
 
-	/** Assign the Gravity Vortex IA mapped to key 3 in the on-foot IMC. */
+	/** Assign the Gravity Vortex IA mapped to E in the on-foot IMC. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Skills")
 	TObjectPtr<UInputAction> GravityVortexSkillAction;
 
@@ -458,9 +427,6 @@ public:
 	void HandleEquipmentAttachNotify();
 
 	// ItemSlot 援ъ“泥?諛곗뿴 (蹂듭젣)
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_ItemSlots, Category = "Item")
-	TArray<FItemSlot> ItemSlots;
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_QuickSlots, Category = "QuickSlot")
 	TArray<FQuickSlotReference> QuickSlots;
 
@@ -497,54 +463,36 @@ public:
 	// 특정 슬롯의 Item을 제거하고 부여된 GA를 회수
 	// ?뱀젙 ?щ’??Item???쒓굅?섍퀬 遺?щ맂 GA瑜??뚯닔
 	UFUNCTION()
-	void RemoveItemFromSlot(FGameplayTag SlotTag);
-
-	UFUNCTION()
 	void UseEquippedItem(bool bDestroy = true);
 
 	// 鍮??꾩씠???щ’???섎굹?쇰룄 ?덈뒗吏 ?뺤씤
-	UFUNCTION()
-	bool HasEmptyItemSlot() const;
-
 	// ?꾩씠???щ’???꾩씠?쒖쓣 ??ν븯怨??μ갑 ?곹깭瑜?愿由?
-	bool TryPutItemInSlot(ABaseItem* Item);
-
 protected:
 	// IA와 Slot Tag의 Mapping 정보가 담긴 DataAsset (BP 주입)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputTagConfig> ItemInputConfig;
+	TArray<TObjectPtr<UInputAction>> QuickSlotActions;
 
 	// Item IMC
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<class UInputMappingContext> ItemIMC;
+	TObjectPtr<class UInputMappingContext> QuickSlotIMC;
 
 	// Item IMC의 우선순위
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	int32 ItemIMCPriority = 1;
+	int32 QuickSlotIMCPriority = 1;
 
 	// 슬롯 키를 눌렀을 때 아이템을 장착하는 함수
-	void EquipItemFromSlot(FGameplayTag SlotTag);
-	void ActivateQuickSlot1();
-	void ActivateQuickSlot2();
-	void PressQuickSlot3();
-	void ReleaseQuickSlot3();
-	void PressQuickSlot4();
-	void ReleaseQuickSlot4();
-	void PressQuickSlot5();
-	void ReleaseQuickSlot5();
+	void OnQuickSlotInputPressed(FGameplayTag SlotTag);
+	void OnQuickSlotInputReleased(FGameplayTag SlotTag);
+	int32 FindQuickSlotIndex(FGameplayTag SlotTag) const;
 	void InitializeQuickSlots();
 	void UnequipCurrentItem();
-	bool EquipInventoryWeapon(FGameplayTag ItemTag);
+	bool EquipInventoryItem(FGameplayTag ItemTag);
 	bool ConsumeInventoryItem(FGameplayTag ItemTag);
 	void HandleInventoryContentsChanged();
-	bool IsEquippedItemOwnedByLegacySlot() const;
 
 	TArray<int32> PressedConsumableQuickSlotIndices;
 
 	// 서버에서 먼저 ItemSlot 처리를 해준 후 클라이언트가 수행하기 위해
-	UFUNCTION(Server, Reliable)
-	void Server_EquipItemFromSlot(FGameplayTag KeyTag);
-
 	// 공용 Interact GA가 보내준 PickUp 이벤트를 처리하는 함수
 	void HandlePickUpEvent(const FGameplayEventData* Payload);
 
@@ -713,12 +661,7 @@ protected:
 
 public:
 	UFUNCTION()
-	void OnRep_ItemSlots();
-
-	UFUNCTION()
 	void OnRep_QuickSlots();
-
-	FOnItemSlotsChangedDelegate OnItemSlotsChanged;
 
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	UInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }

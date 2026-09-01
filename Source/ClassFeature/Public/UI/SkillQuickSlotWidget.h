@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "GameplayTagContainer.h"
-#include "InputCoreTypes.h"
 #include "SkillQuickSlotWidget.generated.h"
 
 class ABasePlayer;
@@ -15,8 +14,8 @@ class UWidget;
  * Designer-placeable container for every player skill quick slot.
  *
  * WBP_SkillQuickSlot owns the layout. Place the three *SlotPanel widgets as direct
- * children of a Canvas Panel and offset them so covered slots remain partially
- * visible. This class updates their ZOrder when the matching key is pressed.
+ * children of a Canvas Panel. Input ownership belongs to the active pawn mode;
+ * this widget only presents skill availability and cooldown state.
  */
 UCLASS(Blueprintable)
 class CLASSFEATURE_API USkillQuickSlotWidget : public UUserWidget
@@ -42,17 +41,7 @@ public:
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
-	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual void SynchronizeProperties() override;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Input")
-	FKey GravityVortexInputKey = EKeys::Three;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Input")
-	FKey WaterBombInputKey = EKeys::Four;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Input")
-	FKey BombardmentInputKey = EKeys::Five;
 
 	/** Semi-transparent cover placed above a locked skill's contents. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Style")
@@ -62,21 +51,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Cooldown")
 	FName CooldownPercentParameterName = TEXT("Percent");
 
-	/** Total time for a selected card to move out, change layers, and settle back. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Animation", meta = (ClampMin = "0.0"))
-	float ShuffleDuration = 0.3f;
-
-	/** Render-space offset reached immediately before the selected card changes layers. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Animation")
-	FVector2D ShuffleOffset = FVector2D(35.0f, -12.0f);
-
-	/** Scale multiplier reached at the middle of the shuffle. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Animation", meta = (ClampMin = "0.01"))
-	float ShufflePeakScale = 1.08f;
-
-	/** Additional clockwise rotation reached at the middle of the shuffle. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Animation")
-	float ShufflePeakAngle = 4.0f;
 
 	/** Panel component: GravityVortexSlotPanel (direct SkillSlotCanvas child). */
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -132,26 +106,8 @@ private:
 
 	void UnbindPlayer();
 	void RefreshSkill(FGameplayTag SkillTag, UImage* IconImage, UBorder* LockOverlay) const;
-	void RefreshInputState();
-	void InitializeInputState();
-	void PromoteSkill(FGameplayTag SkillTag, UWidget* SlotPanel);
-	void UpdateShuffleAnimation(float InDeltaTime);
-	void ApplyPromotedZOrder();
-	void FinishShuffleAnimation();
-	void ResetShuffleAnimation();
 	UImage* FindCooldownImage(FGameplayTag SkillTag) const;
 
 	TWeakObjectPtr<ABasePlayer> CachedPlayer;
 	FGameplayTag FrontSkillTag;
-	FGameplayTag PendingFrontSkillTag;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UWidget> ShufflingSlotPanel;
-
-	FWidgetTransform ShuffleStartTransform;
-	float ShuffleElapsed = 0.0f;
-	bool bShuffleZOrderChanged = false;
-	bool bGravityVortexKeyWasDown = false;
-	bool bWaterBombKeyWasDown = false;
-	bool bBombardmentKeyWasDown = false;
 };

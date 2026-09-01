@@ -197,7 +197,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
 	TObjectPtr<UInputAction> CannonExitAction;
 
-	/** Assign the Water Bomb IA mapped to key 4 in the cannon IMC. */
+	/** Assign the Water Bomb IA mapped to E in the cannon IMC. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
 	TObjectPtr<UInputAction> CannonWaterBombToggleAction;
 

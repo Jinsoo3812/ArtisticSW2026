@@ -362,7 +362,8 @@ void UCrafterComponent::Server_AttemptCrafting_Implementation(AWorkTable* Target
 			//제작할 아이템이 도구이면 생성 로직 시작
 			else if (CraftedTag.MatchesTag(Item_Tool))
 			{
-				bool bHasEmptySlot = Player->HasEmptyItemSlot();
+				UInventoryComponent* InventoryComponent = Player->GetInventoryComponent();
+				bool bHasEmptySlot = InventoryComponent && InventoryComponent->CanAddItem(CraftedTag, 1);
 				UWorld* World = GetWorld();
 				UItemSubsystem* ItemSubsystem = World ? World->GetSubsystem<UItemSubsystem>() : nullptr;
 
@@ -378,7 +379,8 @@ void UCrafterComponent::Server_AttemptCrafting_Implementation(AWorkTable* Target
 					{
 						if (bHasEmptySlot)
 						{
-							Player->TryPutItemInSlot(SpawnedItem);
+							InventoryComponent->AddItem(CraftedTag, 1);
+							SpawnedItem->Destroy();
 							UE_LOG(LogTemp, Log, TEXT("CrafterComponent: Successfully crafted and equipped: %s"), *CraftedTag.ToString());
 						}
 						else

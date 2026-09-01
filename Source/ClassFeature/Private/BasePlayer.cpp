@@ -77,15 +77,6 @@ namespace
 	}
 }
 
-/* --- FItemSlot ---*/
-
-FItemSlot::FItemSlot(const FGameplayTag& InTag, ABaseItem* InItem)
-	: KeyTag(InTag), Item(InItem) {}
-
-bool FItemSlot::operator==(const FGameplayTag& OtherTag) const { return KeyTag == OtherTag; }
-
-bool FItemSlot::operator==(const ABaseItem* OtherItem) const { return Item.Get() == OtherItem; }
-
 // 커스텀 어태치 규칙 생성: 위치(Snap), 회전(Snap), 스케일(KeepWorld)
 FAttachmentTransformRules CustomAttachRules(
 	EAttachmentRule::SnapToTarget,   // Location: 소켓 위치에 맞춤
@@ -175,7 +166,6 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	// 배열과 장착 아이템 포인터를 클라이언트로 복제
-	DOREPLIFETIME(ABasePlayer, ItemSlots);
 	DOREPLIFETIME(ABasePlayer, QuickSlots);
 	DOREPLIFETIME(ABasePlayer, EquippedItem);
 	DOREPLIFETIME(ABasePlayer, LocomotionStateSnapshot);
@@ -251,20 +241,6 @@ void ABasePlayer::BeginPlay()
 		}
 	}
 
-	// ItemSlot 배열 초기화: TMap 등록 없이 구조체 배열에 순서대로 Add
-	if (ItemInputConfig)
-	{
-		ItemSlots.Empty();
-
-		for (const FKeyInputAction& Action : ItemInputConfig->KeyInputActions)
-		{
-			if (Action.KeyTag.IsValid() && Action.KeyTag.MatchesTag(Key_Item))
-			{
-				ItemSlots.Add(FItemSlot(Action.KeyTag));
-			}
-		}
-	}
-
 	InitializeQuickSlots();
 	if (InventoryComponent)
 	{
@@ -275,7 +251,6 @@ void ABasePlayer::BeginPlay()
 	GiveStartingItemsForTest();
 #endif
 
-	OnItemSlotsChanged.Broadcast();
 	OnQuickSlotsChanged.Broadcast();
 }
 
@@ -721,20 +696,13 @@ void ABasePlayer::PawnClientRestart()
 			// DefaultIMC 등록
 			if(DefaultIMC)
 			{
-				// ItemIMC contains the legacy IA_Item_3 mapping. Keep the
-				// skill-bearing DefaultIMC above it so IA_Item_3 cannot consume
-				// Keyboard 3 before IA_GravityVortex receives it.
-				const int32 EffectiveDefaultPriority = ResolveDefaultMappingPriority(
-					DefaultIMCPriority,
-					ItemIMCPriority,
-					bEnableGravityVortexSkillInput && GravityVortexSkillAction);
-				Subsystem->AddMappingContext(DefaultIMC, EffectiveDefaultPriority);
+				Subsystem->AddMappingContext(DefaultIMC, DefaultIMCPriority);
 			}
 
-			// ItemIMC 등록
-			if (ItemIMC)
+			// On-foot quick slots are active only while this pawn is possessed.
+			if (QuickSlotIMC)
 			{
-				Subsystem->AddMappingContext(ItemIMC, ItemIMCPriority);
+				Subsystem->AddMappingContext(QuickSlotIMC, QuickSlotIMCPriority);
 			}
 		}
 
@@ -813,16 +781,21 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 			}
 		}
 
-	}
+		const FGameplayTag QuickSlotTags[] = { Key_Item_1, Key_Item_2, Key_Item_3, Key_Item_4, Key_Item_5 };
+		for (int32 Index = 0; Index < QuickSlotActions.Num() && Index < UE_ARRAY_COUNT(QuickSlotTags); ++Index)
+		{
+			if (QuickSlotActions[Index])
+			{
+				EnhancedInputComponent->BindAction(QuickSlotActions[Index], ETriggerEvent::Started,
+					this, &ABasePlayer::OnQuickSlotInputPressed, QuickSlotTags[Index]);
+				EnhancedInputComponent->BindAction(QuickSlotActions[Index], ETriggerEvent::Completed,
+					this, &ABasePlayer::OnQuickSlotInputReleased, QuickSlotTags[Index]);
+				EnhancedInputComponent->BindAction(QuickSlotActions[Index], ETriggerEvent::Canceled,
+					this, &ABasePlayer::OnQuickSlotInputReleased, QuickSlotTags[Index]);
+			}
+		}
 
-	PlayerInputComponent->BindKey(EKeys::One, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot1);
-	PlayerInputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot2);
-	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ABasePlayer::PressQuickSlot3);
-	PlayerInputComponent->BindKey(EKeys::Three, IE_Released, this, &ABasePlayer::ReleaseQuickSlot3);
-	PlayerInputComponent->BindKey(EKeys::Four, IE_Pressed, this, &ABasePlayer::PressQuickSlot4);
-	PlayerInputComponent->BindKey(EKeys::Four, IE_Released, this, &ABasePlayer::ReleaseQuickSlot4);
-	PlayerInputComponent->BindKey(EKeys::Five, IE_Pressed, this, &ABasePlayer::PressQuickSlot5);
-	PlayerInputComponent->BindKey(EKeys::Five, IE_Released, this, &ABasePlayer::ReleaseQuickSlot5);
+	}
 
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Pressed, this, &ABasePlayer::StartSprint);
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Released, this, &ABasePlayer::StopSprint);
@@ -838,16 +811,6 @@ int32 ABasePlayer::GetInputIDFromTag(const FGameplayTag& Tag) const
 {
 	if (!Tag.IsValid()) return INDEX_NONE;
 	return static_cast<int32>(FCrc::StrCrc32(*Tag.ToString()));
-}
-
-int32 ABasePlayer::ResolveDefaultMappingPriority(
-	int32 ConfiguredDefaultPriority,
-	int32 ConfiguredItemPriority,
-	bool bHasSkillInput)
-{
-	return bHasSkillInput
-		? FMath::Max(ConfiguredDefaultPriority, ConfiguredItemPriority + 1)
-		: ConfiguredDefaultPriority;
 }
 
 void ABasePlayer::InitializeQuickSlots()
@@ -886,7 +849,7 @@ bool ABasePlayer::CanQuickSlotAcceptItem(int32 QuickSlotIndex, FGameplayTag Item
 		|| ItemTag.MatchesTag(Item_Id_Weapon);
 	return QuickSlots[QuickSlotIndex].SlotType == EQuickSlotType::Weapon
 		? bIsWeapon
-		: CategoryTag.MatchesTag(Item_Category_Consumable);
+		: CategoryTag.MatchesTag(Item_Category_Consumable) || ItemTag.MatchesTag(Item_Tool);
 }
 
 void ABasePlayer::AssignQuickSlotFromInventory(int32 QuickSlotIndex)
@@ -952,14 +915,41 @@ void ABasePlayer::ServerClearQuickSlot_Implementation(int32 QuickSlotIndex)
 	ClearQuickSlot(QuickSlotIndex);
 }
 
-void ABasePlayer::ActivateQuickSlot1() { ActivateQuickSlot(0); }
-void ABasePlayer::ActivateQuickSlot2() { ActivateQuickSlot(1); }
-void ABasePlayer::PressQuickSlot3() { BeginConsumableQuickSlotInput(2); }
-void ABasePlayer::ReleaseQuickSlot3() { EndConsumableQuickSlotInput(2); }
-void ABasePlayer::PressQuickSlot4() { BeginConsumableQuickSlotInput(3); }
-void ABasePlayer::ReleaseQuickSlot4() { EndConsumableQuickSlotInput(3); }
-void ABasePlayer::PressQuickSlot5() { BeginConsumableQuickSlotInput(4); }
-void ABasePlayer::ReleaseQuickSlot5() { EndConsumableQuickSlotInput(4); }
+int32 ABasePlayer::FindQuickSlotIndex(const FGameplayTag SlotTag) const
+{
+	return QuickSlots.IndexOfByPredicate([SlotTag](const FQuickSlotReference& Slot)
+	{
+		return Slot.KeyTag.MatchesTagExact(SlotTag);
+	});
+}
+
+void ABasePlayer::OnQuickSlotInputPressed(const FGameplayTag SlotTag)
+{
+	const int32 QuickSlotIndex = FindQuickSlotIndex(SlotTag);
+	if (!QuickSlots.IsValidIndex(QuickSlotIndex))
+	{
+		return;
+	}
+
+	if (QuickSlots[QuickSlotIndex].SlotType == EQuickSlotType::Weapon)
+	{
+		ActivateQuickSlot(QuickSlotIndex);
+	}
+	else
+	{
+		BeginConsumableQuickSlotInput(QuickSlotIndex);
+	}
+}
+
+void ABasePlayer::OnQuickSlotInputReleased(const FGameplayTag SlotTag)
+{
+	const int32 QuickSlotIndex = FindQuickSlotIndex(SlotTag);
+	if (QuickSlots.IsValidIndex(QuickSlotIndex)
+		&& QuickSlots[QuickSlotIndex].SlotType == EQuickSlotType::Consumable)
+	{
+		EndConsumableQuickSlotInput(QuickSlotIndex);
+	}
+}
 
 int32 ABasePlayer::GetPressedConsumableQuickSlotIndex() const
 {
@@ -1021,7 +1011,11 @@ void ABasePlayer::ActivateQuickSlot(int32 QuickSlotIndex)
 
 	if (Slot.SlotType == EQuickSlotType::Weapon)
 	{
-		EquipInventoryWeapon(Slot.ItemTag);
+		EquipInventoryItem(Slot.ItemTag);
+	}
+	else if (Slot.ItemTag.MatchesTag(Item_Tool))
+	{
+		EquipInventoryItem(Slot.ItemTag);
 	}
 	else
 	{
@@ -1034,14 +1028,6 @@ void ABasePlayer::ServerActivateQuickSlot_Implementation(int32 QuickSlotIndex)
 	ActivateQuickSlot(QuickSlotIndex);
 }
 
-bool ABasePlayer::IsEquippedItemOwnedByLegacySlot() const
-{
-	return IsValid(EquippedItem) && ItemSlots.ContainsByPredicate([this](const FItemSlot& Slot)
-	{
-		return Slot.Item == EquippedItem;
-	});
-}
-
 void ABasePlayer::UnequipCurrentItem()
 {
 	if (EquipmentComponent)
@@ -1050,9 +1036,9 @@ void ABasePlayer::UnequipCurrentItem()
 	}
 }
 
-bool ABasePlayer::EquipInventoryWeapon(FGameplayTag ItemTag)
+bool ABasePlayer::EquipInventoryItem(FGameplayTag ItemTag)
 {
-	return EquipmentComponent && EquipmentComponent->EquipInventoryWeapon(ItemTag);
+	return EquipmentComponent && EquipmentComponent->EquipInventoryItem(ItemTag);
 }
 
 bool ABasePlayer::ConsumeInventoryItem(FGameplayTag ItemTag)
@@ -1108,7 +1094,7 @@ void ABasePlayer::HandleInventoryContentsChanged()
 		}
 	}
 
-	if (IsValid(EquippedItem) && !IsEquippedItemOwnedByLegacySlot())
+	if (IsValid(EquippedItem))
 	{
 		const bool bHeldByCursor = CursorItem.IsValid() && CursorItem.ItemTag == EquippedItem->ItemTag;
 		if (!bHeldByCursor && InventoryComponent->GetMaterialCount(EquippedItem->ItemTag) <= 0)
@@ -1120,42 +1106,6 @@ void ABasePlayer::HandleInventoryContentsChanged()
 	if (bChanged)
 	{
 		OnQuickSlotsChanged.Broadcast();
-	}
-}
-
-bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
-{
-	if (!IsValid(Item)) return false;
-
-	// 빈 ItemSlot Index 찾기
-	int32 EmptySlotIndex = ItemSlots.IndexOfByPredicate([](const FItemSlot& Slot)
-		{
-			return !IsValid(Slot.Item);
-		});
-
-	if (EmptySlotIndex != INDEX_NONE)
-	{
-		// 빈 슬롯에 저장
-		ItemSlots[EmptySlotIndex].Item = Item;
-
-		OnItemSlotsChanged.Broadcast();
-		
-		if (IsValid(EquippedItem))
-		{
-			// 이미 손에 무언가 들려있으면 새로 주운 아이템은 보이지 않게
-			Item->SetItemState(EItemState::InItemSlot);
-		}
-		else
-		{
-			// 손이 비어있으면 새로 주운 아이템 바로 장착
-			EquipItemFromSlot(ItemSlots[EmptySlotIndex].KeyTag);
-		}
-		return true; // 성공적으로 슬롯에 넣음
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::TryPutItemInSlot : ItemSlot is Full."));
-		return false; // 아이템 슬롯 꽉 참
 	}
 }
 
@@ -1473,77 +1423,15 @@ void ABasePlayer::HandleCannonBoardEvent(const FGameplayEventData* Payload)
 
 void ABasePlayer::HandlePickUpEvent(const FGameplayEventData* Payload)
 {
-	if (Payload && Payload->Target)
+	if (!HasAuthority() || !Payload || !Payload->Target || !InventoryComponent)
 	{
-		if (ABaseItem* ItemToPickUp = const_cast<ABaseItem*>(Cast<ABaseItem>(Payload->Target)))
-		{
-			// 아이템 태그가 material 로 시작하면 인벤토리로
-			bool bShouldStoreInInventory = ItemToPickUp->ItemTag.MatchesTag(Item_Material);
-			if (UWorld* World = GetWorld())
-			{
-				if (UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>())
-				{
-					const FGameplayTag CategoryTag = ItemSubsystem->GetCategoryTag(ItemToPickUp->ItemTag);
-					bShouldStoreInInventory =
-						bShouldStoreInInventory ||
-						CategoryTag.MatchesTag(Item_Category_Clue) ||
-						CategoryTag.MatchesTag(Item_Category_Consumable) ||
-						CategoryTag.MatchesTag(Item_Category_Material) ||
-						CategoryTag.MatchesTag(Item_Category_Weapon);
-				}
-			}
+		return;
+	}
 
-			if (bShouldStoreInInventory)
-			{
-				if (InventoryComponent && InventoryComponent ->AddMaterial(ItemToPickUp->ItemTag, 1))
-				{
-					ItemToPickUp->Destroy();
-				}
-				return;
-			}
-
-			// 장착형 아이템 처리 로직 (서버에서만 생성/파괴 수행)
-			if (HasAuthority())
-			{
-				// 슬롯 여유 공간 확인 (불필요한 힙 메모리 할당 및 스폰 연산 방지)
-				if (HasEmptyItemSlot())
-				{
-					UWorld* World = GetWorld();
-					if (IsValid(World))
-					{
-						if (UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>())
-						{
-							// 기존 아이템의 데이터 캐싱 (상수화로 불변성 보장)
-							const FGameplayTag TargetItemTag = ItemToPickUp->ItemTag;
-							const FTransform SpawnTransform = ItemToPickUp->GetActorTransform();
-
-							// 서브시스템을 통해 새로운 아이템 스폰 (초기 상태를 InItemSlot으로 지정)
-							ABaseItem* NewSpawnedItem = ItemSubsystem->SpawnItem(TargetItemTag, SpawnTransform, EItemState::InItemSlot, this);
-
-							if (IsValid(NewSpawnedItem))
-							{
-								// 성공적으로 스폰되었다면 슬롯에 할당 시도
-								if (TryPutItemInSlot(NewSpawnedItem))
-								{
-									// 슬롯 등록까지 완료되었을 때만 기존 바닥의 아이템을 맵에서 제거
-									ItemToPickUp->Destroy();
-								}
-								else
-								{
-									// 동시성 문제 등으로 슬롯 등록이 실패했다면 고아(Orphan) 액터가 되지 않도록 롤백
-									NewSpawnedItem->Destroy();
-									UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::HandlePickUpEvent : Failed to put new item in slot. Spawn rolled back."));
-								}
-							}
-						}
-					}
-				}
-				else
-				{
-					UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::HandlePickUpEvent : Inventory is full. Cannot pick up %s"), *ItemToPickUp->GetName());
-				}
-			}
-		}
+	ABaseItem* ItemToPickUp = const_cast<ABaseItem*>(Cast<ABaseItem>(Payload->Target));
+	if (IsValid(ItemToPickUp) && InventoryComponent->AddItem(ItemToPickUp->ItemTag, 1) > 0)
+	{
+		ItemToPickUp->Destroy();
 	}
 }
 
@@ -1553,25 +1441,6 @@ void ABasePlayer::UseEquippedItem(bool bDestroy)
 	{
 		EquipmentComponent->UseEquippedItem(bDestroy);
 	}
-}
-
-void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
-{
-	if (bEnableGravityVortexSkillInput && KeyTag.MatchesTagExact(Key_Item_3))
-	{
-		return;
-	}
-
-	if (EquipmentComponent)
-	{
-		EquipmentComponent->EquipItemFromSlot(KeyTag);
-	}
-}
-
-void ABasePlayer::Server_EquipItemFromSlot_Implementation(FGameplayTag KeyTag)
-{
-	// 서버가 다시 본래의 함수를 호출하여 권한(HasAuthority)을 통과시키고 실제 로직을 실행
-	EquipItemFromSlot(KeyTag);
 }
 
 EEquipmentState ABasePlayer::GetEquipmentState() const
@@ -1592,28 +1461,6 @@ void ABasePlayer::HandleEquipmentAttachNotify()
 	}
 }
 
-void ABasePlayer::RemoveItemFromSlot(FGameplayTag KeyTag)
-{
-	// [서버]
-	if (!HasAuthority()) return;
-	int32 SlotIndex = ItemSlots.IndexOfByKey(KeyTag);
-	if (ItemSlots.IsValidIndex(SlotIndex) && IsValid(ItemSlots[SlotIndex].Item))
-	{
-		ItemSlots[SlotIndex].Item = nullptr;
-		RemoveAbilityFromSlot(KeyTag);
-		OnItemSlotsChanged.Broadcast();
-	}
-}
-
-bool ABasePlayer::HasEmptyItemSlot() const
-{
-	// 람다를 사용해 비어있는(Invalid한) 아이템 포인터가 하나라도 있는지 검사
-	return ItemSlots.ContainsByPredicate([](const FItemSlot& Slot)
-		{
-			return !IsValid(Slot.Item);
-		});
-}
-
 void ABasePlayer::ServerRPC_SendGameplayEvent_Implementation(FGameplayTag EventTag, FGameplayEventData Payload)
 {
 	// 서버의 ASC에서 이벤트를 발생시켜 WaitGameplayEvent 태스크를 깨웁니다.
@@ -1627,7 +1474,7 @@ void ABasePlayer::OnRep_EquippedItem()
 		EquipmentComponent->OnRepOwnerEquippedItem();
 	}
 
-	OnItemSlotsChanged.Broadcast();
+	OnQuickSlotsChanged.Broadcast();
 }
 
 void ABasePlayer::StartInteractionScan()
@@ -2219,11 +2066,6 @@ void ABasePlayer::BroadcastFallOffStartedForRemoteClients()
 		LocomotionStateSnapshot.EventSequence = NextLocomotionAnimEventSequence();
 		LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::FallOff;
 	}
-}
-
-void ABasePlayer::OnRep_ItemSlots()
-{
-	OnItemSlotsChanged.Broadcast();
 }
 
 void ABasePlayer::OnRep_QuickSlots()
