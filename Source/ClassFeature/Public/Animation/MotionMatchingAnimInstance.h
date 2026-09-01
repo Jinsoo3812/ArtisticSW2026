@@ -1013,6 +1013,22 @@ protected:
     /** True while the current direct Start/Stop/Pivot/Jump/Land owns that angle. */
     bool bHasStateControllerOneShotOrientationWarpingAngle = false;
 
+    /** 원샷(Start/Stop/Land 등) 종료 후 Blend Stack이 블렌드아웃되는 동안 Warping 각도와 Alpha를 보존하기 위한 타이머 및 각도 */
+    float StateControllerPostOneShotWarpingRemainingTime = 0.0f;
+    float StateControllerPostOneShotWarpingAngle = 0.0f;
+
+    /** Start/Stop 등 원샷 종료 후 모션매칭으로 핸드오프 시 강제 재검색 플래그 */
+    bool bStateControllerForceMotionMatchingReselect = false;
+
+    // Diagnostic tracking for Stop transition popping investigation
+    bool bDebugStopDiagnosticActive = false;
+    int32 DebugStopDiagnosticFrame = 0;
+    float DebugStopDiagnosticStartTime = 0.0f;
+
+    // Diagnostic tracking for Start transition investigation
+    bool bDebugStartDiagnosticActive = false;
+    int32 DebugStartDiagnosticFrame = 0;
+
     void EvaluateStateControllerPresentationState();
     void EvaluateStateControllerPlaybackHold(EStateControllerPresentationState DesiredState);
     /** Emits event-driven diagnostics for direct Chooser one-shots and TIP rotation. */
