@@ -2142,10 +2142,10 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
             const float Accel = ThreadSafeData.MovementData.Acceleration.Size2D();
             const FString DBName = CurrentActivePoseSearchDatabase ? CurrentActivePoseSearchDatabase->GetName() : TEXT("None");
 
-            // 상태가 바뀔 때마다 상세 로그 출력
+            // 상태가 바뀔 때마다 상세 로그 출력 (디버그 모드에서만)
             static EStateControllerPresentationState LastLoggedState = EStateControllerPresentationState::None;
             static bool LastLoggedOverride = false;
-            if (LastLoggedState != ThreadSafeData.StateController.PresentationState || LastLoggedOverride != bOverrideMM)
+            if (CVarAnimStateControllerDebug.GetValueOnGameThread() > 0 && (LastLoggedState != ThreadSafeData.StateController.PresentationState || LastLoggedOverride != bOverrideMM))
             {
                 UE_LOG(LogTemp, Warning, TEXT("[AnimTransition] State: %s -> %s | OverrideMM: %s -> %s | Anim: %s | Speed: %.1f | DB: %s"),
                     *UEnum::GetValueAsString(LastLoggedState), *StateName,
@@ -2156,8 +2156,8 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                 LastLoggedOverride = bOverrideMM;
             }
 
-            // 화면 좌측 상단 실시간 HUD (초록색/노란색)
-            if (GEngine)
+            // 화면 좌측 상단 실시간 HUD (디버그 CVar 'a.StateControllerDebug 1' 활성화 시에만 출력)
+            if (GEngine && CVarAnimStateControllerDebug.GetValueOnGameThread() > 0)
             {
                 FString HUDStr = FString::Printf(TEXT("[Anim HUD] State: %s | OverrideMM: %s | Anim: %s | Speed: %.1f | Accel: %.1f | DB: %s"),
                     *StateName,
