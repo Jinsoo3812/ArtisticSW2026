@@ -1972,6 +1972,7 @@ UMotionMatchingAnimInstance::UMotionMatchingAnimInstance()
     FootPlacementInterpolationSettingsStops.FloorAngularStiffness = 650.0f;
 
     TurnInPlaceFootPlacementAlpha = 1.0f;
+    LegIKInterpSpeed = 25.0f;
 }
 
 FAnimInstanceProxy* UMotionMatchingAnimInstance::CreateAnimInstanceProxy()
@@ -2598,6 +2599,41 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     ThreadSafeData.WeaponUpperBodyData = FAnimWeaponUpperBodyData();
     ThreadSafeData.BowData = FAnimBowData();
     ThreadSafeData.SwimData = CurrentSwimData;
+    ThreadSafeData.bIsDodging = CachedBasePlayer ? CachedBasePlayer->bIsDodging : false;
+
+    // Leg spread alpha calculation (only when player actively provides move input AND moving)
+    const float CurrentGroundSpeed = CachedLocomotionStateComponent ? CachedLocomotionStateComponent->GroundSpeed : 0.0f;
+    const bool bHasMoveInput = CachedLocomotionStateComponent ? CachedLocomotionStateComponent->bHasMoveInput : false;
+    const bool bIsInAir = CachedLocomotionStateComponent ? CachedLocomotionStateComponent->bIsInAir : false;
+    const bool bIsDodging = ThreadSafeData.bIsDodging;
+
+    const bool bShouldApplyLegSpread = bHasMoveInput && (CurrentGroundSpeed > LegSpreadSpeedThreshold) && !bIsInAir && !bIsDodging;
+    const float TargetLegSpreadAlpha = bShouldApplyLegSpread ? LegSpreadMovingAlpha : LegSpreadStandingAlpha;
+    CurrentLegSpreadAlpha = FMath::FInterpTo(CurrentLegSpreadAlpha, TargetLegSpreadAlpha, DeltaSeconds, LegSpreadInterpSpeed);
+    ThreadSafeData.LegSpreadAlpha = CurrentLegSpreadAlpha;
+
+    // Smooth Foot Placement Alpha (smoothly eases in/out so feet never snap violently)
+    const bool bSuppressFootPlacement = bIsInAir || bIsDodging;
+    const float TargetFootPlacementAlpha = bSuppressFootPlacement
+        ? 0.0f
+        : (ThreadSafeData.StateController.PresentationState == EStateControllerPresentationState::TurnInPlace
+            ? TurnInPlaceFootPlacementAlpha
+            : 1.0f);
+    CurrentFootPlacementAlpha = FMath::FInterpTo(CurrentFootPlacementAlpha, TargetFootPlacementAlpha, DeltaSeconds, FootPlacementInterpSpeed);
+    ThreadSafeData.FootPlacementAlpha = CurrentFootPlacementAlpha;
+
+    // Leg IK Alpha (0.0 during air/dodge, 1.0 normally; snaps instantly if LegIKInterpSpeed <= 0)
+    const bool bSuppressLegIK = bIsInAir || bIsDodging;
+    const float TargetLegIKAlpha = bSuppressLegIK ? 0.0f : 1.0f;
+    if (LegIKInterpSpeed <= 0.0f)
+    {
+        CurrentLegIKAlpha = TargetLegIKAlpha;
+    }
+    else
+    {
+        CurrentLegIKAlpha = FMath::FInterpTo(CurrentLegIKAlpha, TargetLegIKAlpha, DeltaSeconds, LegIKInterpSpeed);
+    }
+    ThreadSafeData.LegIKAlpha = CurrentLegIKAlpha;
 
     if (const UPlayerEquipmentComponent* EquipmentComponent = CachedBasePlayer->GetEquipmentComponent())
     {
@@ -3258,14 +3294,17 @@ FFootPlacementInterpolationSettings UMotionMatchingAnimInstance::Get_FootPlaceme
 
 float UMotionMatchingAnimInstance::GetThreadSafeFootPlacementAlpha() const
 {
-    const FAnimThreadSafeData& Data = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
-    if (Data.AirData.bIsInAir)
-    {
-        return 0.0f;
-    }
-    return Data.StateController.PresentationState == EStateControllerPresentationState::TurnInPlace
-        ? TurnInPlaceFootPlacementAlpha
-        : 1.0f;
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.FootPlacementAlpha;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeLegIKAlpha() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.LegIKAlpha;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeLegSpreadAlpha() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.LegSpreadAlpha;
 }
 
 bool UMotionMatchingAnimInstance::ShouldEvaluateMotionMatchingThisFrame(float DeltaSeconds)

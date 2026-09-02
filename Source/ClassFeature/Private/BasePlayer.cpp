@@ -395,6 +395,24 @@ void ABasePlayer::Tick(float DeltaTime)
 		bIsThrowingOrAttacking = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
 		bIsAttacking = bIsThrowingOrAttacking;
 		bIsHitReacting = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Damaged);
+
+		const bool bHasRollingTag = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Rolling);
+		const bool bHasMoveInput = GetPendingMovementInputVector().SizeSquared() > 0.001f;
+		if (bHasRollingTag)
+		{
+			bIsDodging = true;
+		}
+		else if (bIsDodging)
+		{
+			// Maintain dodge state during recovery blend out until montage finishes,
+			// unless the player provides explicit move input to take over control.
+			const UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+			bIsDodging = (AnimInst && AnimInst->IsAnyMontagePlaying()) && !bHasMoveInput;
+		}
+		else
+		{
+			bIsDodging = false;
+		}
 	}
 
 	float TargetArmLength = DefaultTargetArmLength;
@@ -2160,6 +2178,18 @@ void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
 	// movement is present the controller owns capsule yaw; while stationary the
 	// selected Turn-In-Place root track owns it.  Do not leave a second CMC
 	// ControllerDesiredRotation path alive, as it races the root-yaw delta.
+	// When rolling/dodging, release controller yaw so character can face the roll direction.
+	if (bIsDodging)
+	{
+		bUseControllerRotationYaw = false;
+		if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+		{
+			MovementComponent->bOrientRotationToMovement = false;
+			MovementComponent->bUseControllerDesiredRotation = false;
+		}
+		return;
+	}
+
 	const bool bIsMovingInStrafe =
 		(GetPendingMovementInputVector().SizeSquared() > 0.001f || GetVelocity().SizeSquared2D() > 100.0f);
 	bUseControllerRotationYaw = bEnableCombatRotation && bIsMovingInStrafe;
