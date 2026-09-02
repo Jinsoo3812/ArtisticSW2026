@@ -10,6 +10,20 @@
 class AEnemyShip;
 class UEnemyShipSkillModuleData;
 
+USTRUCT(BlueprintType)
+struct ENEMY_API FEnemyShipCannonAimProfile
+{
+	GENERATED_BODY()
+
+	/** Target speed the cannon can fully lead. Faster movement is deliberately under-predicted. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon Aim", meta = (ClampMin = "0.0", Units = "cm/s"))
+	float TrackableTargetSpeed = 1000.0f;
+
+	/** Time assigned to every AI cannonball flight; launch velocity is solved from this value. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon Aim", meta = (ClampMin = "0.05", Units = "s"))
+	float ProjectileFlightTime = 3.0f;
+};
+
 UCLASS(BlueprintType)
 class ENEMY_API UEnemyShipArchetypeData : public UPrimaryDataAsset
 {
@@ -29,6 +43,9 @@ public:
 	/** Cannon cooldown multiplier at zero health; interpolates linearly to 1 at full health. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "1.0"))
 	float ZeroHealthCannonCooldownMultiplier = 3.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
+	FEnemyShipCannonAimProfile CannonAimProfile;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skills")
 	EEnemyShipSkillSelectionPolicy SelectionPolicy = EEnemyShipSkillSelectionPolicy::HighestPriority;

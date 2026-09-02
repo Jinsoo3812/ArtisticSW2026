@@ -94,7 +94,6 @@ private:
 	FEnemyShipNavigationContext BuildContext() const;
 	void RemoveInvalidOverrides();
 	const FRuntimeOverride* FindWinningOverride() const;
-	void ApplySquadAvoidance(FEnemyShipNavigationOutput& InOutOutput);
 	void ApplyControl(const FEnemyShipNavigationOutput& BaseOutput);
 	void StopOwnerShip();
 
@@ -113,8 +112,6 @@ private:
 	UPROPERTY(Replicated)
 	ENavalCombatState CurrentState = ENavalCombatState::Idle;
 	FEnemyShipNavigationOutput LastNavigationOutput;
-	FVector CachedAvoidanceHeading = FVector::ZeroVector;
-	double LastAvoidanceDecisionTime = -1.0;
 	float LostTargetElapsed = 0.0f;
 	UPROPERTY(Replicated)
 	bool bNavigationEnabled = true;

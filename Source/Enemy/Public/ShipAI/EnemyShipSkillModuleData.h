@@ -36,10 +36,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger")
 	TArray<ENavalCombatState> AllowedNavigationStates;
 
-	/** 0 aims at the current target; 1 fully leads a constant-velocity target. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float TargetPredictionStrength = 0.0f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Selection")
 	int32 Priority = 0;
 

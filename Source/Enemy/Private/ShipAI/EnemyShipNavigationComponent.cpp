@@ -2,7 +2,6 @@
 
 #include "Ship.h"
 #include "ShipAI/EnemyShip.h"
-#include "ShipAI/ShipSwarmSubsystem.h"
 #include "Net/UnrealNetwork.h"
 
 UEnemyShipNavigationComponent::UEnemyShipNavigationComponent()
@@ -89,7 +88,6 @@ void UEnemyShipNavigationComponent::TickComponent(
 	Context.bReturnRequested = !Context.bHasTarget
 		&& LostTargetElapsed >= NavigationProfile.LostTargetReturnDelay;
 	LastNavigationOutput = FEnemyShipNavigationModel::Evaluate(CurrentState, NavigationProfile, Context);
-	ApplySquadAvoidance(LastNavigationOutput);
 	CurrentState = LastNavigationOutput.State;
 	if (PreviousState != CurrentState)
 	{
@@ -130,8 +128,6 @@ void UEnemyShipNavigationComponent::SetNavigationProfile(const FEnemyShipNavigat
 		0.0f,
 		NavigationProfile.ReturnPropulsionMultiplier);
 	NavigationProfile.LostTargetReturnDelay = FMath::Max(0.0f, NavigationProfile.LostTargetReturnDelay);
-	NavigationProfile.AvoidanceDecisionInterval = FMath::Max(0.02f, NavigationProfile.AvoidanceDecisionInterval);
-	NavigationProfile.AvoidanceSafetyBuffer = FMath::Max(0.0f, NavigationProfile.AvoidanceSafetyBuffer);
 }
 
 void UEnemyShipNavigationComponent::SetTargetShip(AShip* InTargetShip)
@@ -283,128 +279,6 @@ const UEnemyShipNavigationComponent::FRuntimeOverride* UEnemyShipNavigationCompo
 		}
 	}
 	return Winner;
-}
-
-void UEnemyShipNavigationComponent::ApplySquadAvoidance(FEnemyShipNavigationOutput& InOutOutput)
-{
-	AEnemyShip* Ship = OwnerShip.Get();
-	UWorld* World = Ship ? Ship->GetWorld() : nullptr;
-	if (!World || InOutOutput.State == ENavalCombatState::Idle)
-	{
-		CachedAvoidanceHeading = InOutOutput.DesiredHeading;
-		return;
-	}
-
-	const double CurrentTime = World->GetTimeSeconds();
-	if (CurrentTime - LastAvoidanceDecisionTime >= NavigationProfile.AvoidanceDecisionInterval
-		|| CachedAvoidanceHeading.IsNearlyZero())
-	{
-		LastAvoidanceDecisionTime = CurrentTime;
-		constexpr int32 NumRays = 12;
-		static const FVector Rays[NumRays] = {
-			FVector(1.000000f, 0.000000f, 0.0f), FVector(0.866025f, 0.500000f, 0.0f),
-			FVector(0.500000f, 0.866025f, 0.0f), FVector(0.000000f, 1.000000f, 0.0f),
-			FVector(-0.500000f, 0.866025f, 0.0f), FVector(-0.866025f, 0.500000f, 0.0f),
-			FVector(-1.000000f, 0.000000f, 0.0f), FVector(-0.866025f, -0.500000f, 0.0f),
-			FVector(-0.500000f, -0.866025f, 0.0f), FVector(0.000000f, -1.000000f, 0.0f),
-			FVector(0.500000f, -0.866025f, 0.0f), FVector(0.866025f, -0.500000f, 0.0f)
-		};
-
-		float Interest[NumRays];
-		float Danger[NumRays];
-		FMemory::Memzero(Danger, sizeof(Danger));
-		for (int32 Index = 0; Index < NumRays; ++Index)
-		{
-			Interest[Index] = FMath::Max(0.0f, FVector::DotProduct(Rays[Index], InOutOutput.DesiredHeading));
-		}
-
-		if (UShipSwarmSubsystem* Swarm = World->GetSubsystem<UShipSwarmSubsystem>())
-		{
-			const float ShipSize = Ship->BuoyancyRoot
-				? Ship->BuoyancyRoot->Bounds.BoxExtent.GetMax()
-				: 500.0f;
-			for (AEnemyShip* Member : Swarm->GetSquadMembers(Ship->SquadID))
-			{
-				if (!IsValid(Member) || Member == Ship)
-				{
-					continue;
-				}
-				FVector ToMember = Member->GetActorLocation() - Ship->GetActorLocation();
-				ToMember.Z = 0.0f;
-				const float Distance = ToMember.Size();
-				const float MemberSize = Member->BuoyancyRoot
-					? Member->BuoyancyRoot->Bounds.BoxExtent.GetMax()
-					: 500.0f;
-				const float AvoidanceRadius = ShipSize + MemberSize + NavigationProfile.AvoidanceSafetyBuffer;
-				if (Distance <= 1.0f || Distance >= AvoidanceRadius)
-				{
-					continue;
-				}
-
-				const FVector Direction = ToMember / Distance;
-				const float DangerWeight = FMath::Square(1.0f - Distance / AvoidanceRadius);
-				for (int32 Index = 0; Index < NumRays; ++Index)
-				{
-					Danger[Index] = FMath::Max(
-						Danger[Index],
-						FMath::Max(0.0f, FVector::DotProduct(Rays[Index], Direction)) * DangerWeight);
-				}
-
-				// Preserve the previous head-on tie breaker: when two squad ships
-				// approach bow-to-bow, make the port-side rays less attractive so
-				// both ships consistently turn to starboard instead of oscillating.
-				FVector ShipForward = Ship->GetActorForwardVector();
-				ShipForward.Z = 0.0f;
-				ShipForward.Normalize();
-				if (FVector::DotProduct(ShipForward, Direction) > 0.866f)
-				{
-					FVector MemberForward = Member->GetActorForwardVector();
-					MemberForward.Z = 0.0f;
-					MemberForward.Normalize();
-					if (FVector::DotProduct(MemberForward, -Direction) > 0.707f)
-					{
-						FVector ShipRight = Ship->GetActorRightVector();
-						ShipRight.Z = 0.0f;
-						ShipRight.Normalize();
-						for (int32 Index = 0; Index < NumRays; ++Index)
-						{
-							if (FVector::DotProduct(Rays[Index], ShipRight) < -0.2f)
-							{
-								Danger[Index] = FMath::Max(Danger[Index], 0.35f * DangerWeight);
-							}
-						}
-					}
-				}
-			}
-		}
-
-		int32 BestIndex = 0;
-		float BestScore = Interest[0] - Danger[0];
-		for (int32 Index = 1; Index < NumRays; ++Index)
-		{
-			const float Score = Interest[Index] - Danger[Index];
-			if (Score > BestScore)
-			{
-				BestScore = Score;
-				BestIndex = Index;
-			}
-		}
-		CachedAvoidanceHeading = Rays[BestIndex];
-	}
-
-	InOutOutput.DesiredHeading = CachedAvoidanceHeading;
-	FVector ShipForward = Ship->GetActorForwardVector();
-	FVector ShipRight = Ship->GetActorRightVector();
-	ShipForward.Z = 0.0f;
-	ShipRight.Z = 0.0f;
-	ShipForward.Normalize();
-	ShipRight.Normalize();
-	const float HeadingDot = FVector::DotProduct(ShipForward, InOutOutput.DesiredHeading);
-	const float RightDot = FVector::DotProduct(ShipRight, InOutOutput.DesiredHeading);
-	InOutOutput.TurnInput = HeadingDot < 0.99f ? (RightDot > 0.0f ? 1.0f : -1.0f) : 0.0f;
-	InOutOutput.MoveInput = HeadingDot > 0.0f ? HeadingDot : 0.0f;
-	InOutOutput.MoveInput = FMath::Clamp(InOutOutput.MoveInput, -1.0f, 1.0f);
-	InOutOutput.TurnInput = FMath::Clamp(InOutOutput.TurnInput, -1.0f, 1.0f);
 }
 
 void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutput& BaseOutput)

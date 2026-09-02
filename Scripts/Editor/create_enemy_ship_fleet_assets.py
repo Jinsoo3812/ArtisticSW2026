@@ -51,6 +51,9 @@ def configure_archetype(asset, stat_table, row_name, modules, template):
         "orbit_distance_spacing", template.get_editor_property("orbit_distance_spacing")
     )
     asset.set_editor_property(
+        "cannon_aim_profile", template.get_editor_property("cannon_aim_profile")
+    )
+    asset.set_editor_property(
         "zero_health_cannon_cooldown_multiplier",
         template.get_editor_property("zero_health_cannon_cooldown_multiplier"),
     )
@@ -128,6 +131,11 @@ for tier, row_name in enumerate(generated_row_names, start=1):
     configure_archetype(
         archetype, stat_table, row_name, [modules["Cannon"]], base_archetype
     )
+    aim_profile = archetype.get_editor_property("cannon_aim_profile")
+    aim_profile.trackable_target_speed = (1000.0, 1500.0, 2250.0, 3375.0)[tier - 1]
+    aim_profile.projectile_flight_time = (3.0, 2.5, 2.0, 1.5)[tier - 1]
+    archetype.set_editor_property("cannon_aim_profile", aim_profile)
+    save(archetype)
 
 for skill_name in ("Charge", "Obstacle", "TimeStop", "Torpedo"):
     source_path = f"{SKILL_ROOT}/DA_ES_{skill_name}"
@@ -142,6 +150,11 @@ for skill_name in ("Charge", "Obstacle", "TimeStop", "Torpedo"):
         [modules["Cannon"], modules[skill_name]],
         source_archetype,
     )
+    aim_profile = archetype.get_editor_property("cannon_aim_profile")
+    aim_profile.trackable_target_speed = 1000.0
+    aim_profile.projectile_flight_time = 3.0
+    archetype.set_editor_property("cannon_aim_profile", aim_profile)
+    save(archetype)
 
 unreal.log(
     f"[ES-FLEET] Created/updated fleet assets in {FLEET_ROOT}; "

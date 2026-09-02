@@ -30,6 +30,8 @@
 #include "ShipAI/Abilities/EnemyShipObstacle.h"
 #include "ShipAI/Abilities/EnemyShipObstacleProjectile.h"
 #include "ShipAI/Abilities/GA_EnemyShipCharge.h"
+#include "ShipAI/Abilities/GA_EnemyShipCannonVolley.h"
+#include "ShipAI/EnemyShipArchetypeData.h"
 #include "ShipAI/Abilities/GA_EnemyShipDeployObstacle.h"
 #include "ShipAI/Abilities/GA_EnemyShipLaunchTorpedo.h"
 #include "ShipAI/Abilities/GA_EnemyShipTimeStop.h"
@@ -818,6 +820,33 @@ bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 
 	AddExpectedError(TEXT("projectile class is null"), EAutomationExpectedErrorFlags::Contains, 1);
 	TestTrue(TEXT("Torpedo launch does not consume normal cannon cooldown"), Cannon->FireCannon());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipCannonAimModelTest,
+	"ArtisticSW.Enemy.Ship.Ability.CannonAimModel",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipCannonAimModelTest::RunTest(const FString& Parameters)
+{
+	FEnemyShipCannonAimProfile Profile;
+	Profile.TrackableTargetSpeed = 1000.0f;
+	Profile.ProjectileFlightTime = 3.0f;
+	FVector LaunchVelocity;
+	TestTrue(
+		TEXT("A distant shot always receives a fixed-time solution"),
+		UGA_EnemyShipCannonVolley::CalculateLaunchVelocity(
+			FVector::ZeroVector,
+			FVector(30000.0f, 0.0f, 0.0f),
+			FVector(0.0f, 2000.0f, 0.0f),
+			-980.0f,
+			Profile,
+			LaunchVelocity));
+	TestTrue(TEXT("Distance may require speed above the removed legacy ceiling"), LaunchVelocity.Size() > 3000.0f);
+	TestEqual(TEXT("Horizontal speed reaches the distant target in three seconds"), LaunchVelocity.X, 10000.0);
+	TestEqual(TEXT("Target lead is capped at the trackable target speed"), LaunchVelocity.Y, 1000.0);
+	TestEqual(TEXT("Vertical speed compensates gravity for the chosen flight time"), LaunchVelocity.Z, 1470.0);
 	return true;
 }
 

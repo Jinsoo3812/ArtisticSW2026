@@ -63,12 +63,6 @@ struct ENEMY_API FEnemyShipNavigationProfile
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation")
 	bool bOrbitClockwise = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Avoidance", meta = (ClampMin = "0.02", Units = "s"))
-	float AvoidanceDecisionInterval = 0.1f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Avoidance", meta = (ClampMin = "0.0", Units = "cm"))
-	float AvoidanceSafetyBuffer = 800.0f;
 };
 
 USTRUCT(BlueprintType)

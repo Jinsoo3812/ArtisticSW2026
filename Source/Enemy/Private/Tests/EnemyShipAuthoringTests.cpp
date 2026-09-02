@@ -36,7 +36,7 @@ bool FEnemyShipThreeStageAuthoringTest::RunTest(const FString& Parameters)
 
 	UEnemyShipArchetypeData* Archetype = LoadObject<UEnemyShipArchetypeData>(
 		nullptr,
-		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/DA_ES_Archetype_Cannon.DA_ES_Archetype_Cannon"));
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"));
 	UEnemyShipSkillModuleData* CannonModule = LoadObject<UEnemyShipSkillModuleData>(
 		nullptr,
 		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/SkillModule/DA_ES_SkillModule_Cannon.DA_ES_SkillModule_Cannon"));
@@ -46,7 +46,6 @@ bool FEnemyShipThreeStageAuthoringTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	TestTrue(TEXT("BP_EnemyShip uses Cannon Archetype"), ShipCDO->EnemyShipArchetype == Archetype);
 	TestNotNull(TEXT("Archetype has a DT row"), Archetype->SpecRow.DataTable.Get());
 	TestEqual(TEXT("Archetype contains one Cannon skill"), Archetype->SkillModules.Num(), 1);
 	TestTrue(
@@ -84,14 +83,14 @@ bool FEnemyShipThreeStageAuthoringTest::RunTest(const FString& Parameters)
 	}
 
 	const TCHAR* ArchetypePaths[] = {
-		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/DA_ES_Archetype_Cannon.DA_ES_Archetype_Cannon"),
-		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/DA_ES_Archetype_Charge.DA_ES_Archetype_Charge"),
-		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/DA_ES_Archetype_Obstacle.DA_ES_Archetype_Obstacle"),
-		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/DA_ES_Archetype_TimeStop.DA_ES_Archetype_TimeStop"),
-		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/DA_ES_Archetype_Torpedo.DA_ES_Archetype_Torpedo"),
-		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Archetype_Easy_Close.DA_ES_Archetype_Easy_Close"),
-		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Archetype_Easy_Far.DA_ES_Archetype_Easy_Far"),
-		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Archetype_Easy_Mid.DA_ES_Archetype_Easy_Mid"),
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_1.DA_ES_Normal_1"),
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_2.DA_ES_Normal_2"),
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_3.DA_ES_Normal_3"),
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/DA_ES_Normal_4.DA_ES_Normal_4"),
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Elite/DA_ES_Charge.DA_ES_Charge"),
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Elite/DA_ES_Obstacle.DA_ES_Obstacle"),
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Elite/DA_ES_TimeStop.DA_ES_TimeStop"),
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Elite/DA_ES_Torpedo.DA_ES_Torpedo"),
 	};
 	for (const TCHAR* ArchetypePath : ArchetypePaths)
 	{
@@ -150,6 +149,8 @@ bool FEnemyShipFleetAuthoringTest::RunTest(const FString& Parameters)
 	const int32 ExpectedForward[] = {2, 3, 5, 7};
 	const int32 ExpectedTurn[] = {1, 2, 2, 3};
 	const float ExpectedCooldown[] = {4.0f, 4.0f / 1.5f, 4.0f / 2.25f, 4.0f / 3.375f};
+	const float ExpectedTrackableSpeed[] = {1000.0f, 1500.0f, 2250.0f, 3375.0f};
+	const float ExpectedFlightTime[] = {3.0f, 2.5f, 2.0f, 1.5f};
 	UEnemyShipSkillModuleData* CannonModule = LoadObject<UEnemyShipSkillModuleData>(
 		nullptr,
 		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/SkillModule/DA_ES_SkillModule_Cannon.DA_ES_SkillModule_Cannon"));
@@ -173,7 +174,7 @@ bool FEnemyShipFleetAuthoringTest::RunTest(const FString& Parameters)
 
 		const FString AssetName = FString::Printf(TEXT("DA_ES_Normal_%d"), Tier);
 		const FString AssetPath = FString::Printf(
-			TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/EnemyFleet/Normal/%s.%s"),
+			TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Normal/%s.%s"),
 			*AssetName,
 			*AssetName);
 		UEnemyShipArchetypeData* NormalArchetype = LoadObject<UEnemyShipArchetypeData>(nullptr, *AssetPath);
@@ -183,6 +184,8 @@ bool FEnemyShipFleetAuthoringTest::RunTest(const FString& Parameters)
 			TestTrue(
 				*FString::Printf(TEXT("Normal %d is cannon-only"), Tier),
 				NormalArchetype->SkillModules.Num() == 1 && NormalArchetype->SkillModules[0] == CannonModule);
+			TestEqual(*FString::Printf(TEXT("Normal %d trackable speed"), Tier), NormalArchetype->CannonAimProfile.TrackableTargetSpeed, ExpectedTrackableSpeed[Index]);
+			TestEqual(*FString::Printf(TEXT("Normal %d projectile flight time"), Tier), NormalArchetype->CannonAimProfile.ProjectileFlightTime, ExpectedFlightTime[Index]);
 		}
 	}
 
@@ -190,7 +193,7 @@ bool FEnemyShipFleetAuthoringTest::RunTest(const FString& Parameters)
 	for (const TCHAR* SkillName : SkillNames)
 	{
 		const FString AssetPath = FString::Printf(
-			TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/EnemyFleet/Skill/DA_ES_%s.DA_ES_%s"),
+			TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Elite/DA_ES_%s.DA_ES_%s"),
 			SkillName,
 			SkillName);
 		UEnemyShipArchetypeData* SkillArchetype = LoadObject<UEnemyShipArchetypeData>(nullptr, *AssetPath);
@@ -200,6 +203,8 @@ bool FEnemyShipFleetAuthoringTest::RunTest(const FString& Parameters)
 			TestTrue(
 				*FString::Printf(TEXT("%s includes cannon and its skill"), SkillName),
 				SkillArchetype->SkillModules.Num() == 2 && SkillArchetype->SkillModules.Contains(CannonModule));
+			TestEqual(*FString::Printf(TEXT("%s uses baseline trackable speed"), SkillName), SkillArchetype->CannonAimProfile.TrackableTargetSpeed, 1000.0f);
+			TestEqual(*FString::Printf(TEXT("%s uses baseline flight time"), SkillName), SkillArchetype->CannonAimProfile.ProjectileFlightTime, 3.0f);
 			FDataValidationContext Context;
 			TestFalse(
 				*FString::Printf(TEXT("%s DA validates"), SkillName),

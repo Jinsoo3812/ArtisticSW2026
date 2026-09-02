@@ -54,7 +54,6 @@ public:
 	void ResetRuntimeState(int32 RandomSeed = 0);
 
 	int32 GetResolvedRuleCount() const { return SkillModules.Num(); }
-	float GetPendingTargetPredictionStrength(const FGameplayTag& AbilityTag) const;
 
 private:
 	bool IsModuleEligible(

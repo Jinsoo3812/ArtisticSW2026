@@ -22,27 +22,27 @@ def save(asset):
 module_specs = {
     "Cannon": {
         "ability": "/Game/Blueprints/Ship/Enemy_Ship/GA/BP_GA_ES_CannonVolley.BP_GA_ES_CannonVolley_C",
-        "states": [unreal.NavalCombatState.ORBIT], "prediction": 0.5, "priority": 10,
+        "states": [unreal.NavalCombatState.ORBIT], "priority": 10,
         "movement": unreal.EnemyShipSkillMovementPolicy.CONTINUE_NAVIGATION,
     },
     "Charge": {
         "ability": "/Game/Blueprints/Ship/Enemy_Ship/GA/BP_GA_ES_Charge.BP_GA_ES_Charge_C",
-        "states": [], "prediction": 0.0, "priority": 10,
+        "states": [], "priority": 10,
         "movement": unreal.EnemyShipSkillMovementPolicy.OVERRIDE_NAVIGATION,
     },
     "Obstacle": {
         "ability": "/Game/Blueprints/Ship/Enemy_Ship/GA/BP_GA_ES_DeployObstacle.BP_GA_ES_DeployObstacle_C",
-        "states": [], "prediction": 0.0, "priority": 100,
+        "states": [], "priority": 100,
         "movement": unreal.EnemyShipSkillMovementPolicy.CONTINUE_NAVIGATION,
     },
     "TimeStop": {
         "ability": "/Game/Blueprints/Ship/Enemy_Ship/GA/BP_GA_ES_TimeStop.BP_GA_ES_TimeStop_C",
-        "states": [], "prediction": 0.0, "priority": 100,
+        "states": [], "priority": 100,
         "movement": unreal.EnemyShipSkillMovementPolicy.CONTINUE_NAVIGATION,
     },
     "Torpedo": {
         "ability": "/Game/Blueprints/Ship/Enemy_Ship/GA/BP_GA_ESLaunchTorpedo.BP_GA_ESLaunchTorpedo_C",
-        "states": [], "prediction": 0.0, "priority": 100,
+        "states": [], "priority": 100,
         "movement": unreal.EnemyShipSkillMovementPolicy.CONTINUE_NAVIGATION,
     },
 }
@@ -54,7 +54,6 @@ for name, spec in module_specs.items():
     module.set_editor_property("required_owner_tags", unreal.GameplayTagContainer())
     module.set_editor_property("blocked_owner_tags", unreal.GameplayTagContainer())
     module.set_editor_property("allowed_navigation_states", spec["states"])
-    module.set_editor_property("target_prediction_strength", spec["prediction"])
     module.set_editor_property("priority", spec["priority"])
     module.set_editor_property("weight", 1.0)
     module.set_editor_property("use_only_once", False)
@@ -72,8 +71,7 @@ far_nav = {
     "orbit_tolerance": 5000.0, "danger_close_distance": 5000.0,
     "return_arrival_distance": 800.0, "return_trigger_distance": 30000.0,
     "return_propulsion_multiplier": 3.0, "lost_target_return_delay": 10.0,
-    "orbit_clockwise": True, "avoidance_decision_interval": 0.1,
-    "avoidance_safety_buffer": 800.0,
+    "orbit_clockwise": True,
 }
 
 standard_nav = {
@@ -81,8 +79,7 @@ standard_nav = {
     "orbit_tolerance": 1500.0, "danger_close_distance": 5000.0,
     "return_arrival_distance": 800.0, "return_trigger_distance": 800.0,
     "return_propulsion_multiplier": 1.0, "lost_target_return_delay": 10.0,
-    "orbit_clockwise": True, "avoidance_decision_interval": 0.1,
-    "avoidance_safety_buffer": 800.0,
+    "orbit_clockwise": True,
 }
 
 archetype_specs = {

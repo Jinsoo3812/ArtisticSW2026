@@ -103,14 +103,6 @@ void UEnemyShipPatternRuntimeComponent::ResetRuntimeState(int32 RandomSeed)
 	PendingModule.Reset();
 }
 
-float UEnemyShipPatternRuntimeComponent::GetPendingTargetPredictionStrength(const FGameplayTag& AbilityTag) const
-{
-	const UEnemyShipSkillModuleData* Module = PendingModule.Get();
-	return Module && Module->GetAbilityTag() == AbilityTag
-		? FMath::Clamp(Module->TargetPredictionStrength, 0.0f, 1.0f)
-		: 0.0f;
-}
-
 bool UEnemyShipPatternRuntimeComponent::IsModuleEligible(
 	int32 ModuleIndex,
 	AActor* TargetActor,

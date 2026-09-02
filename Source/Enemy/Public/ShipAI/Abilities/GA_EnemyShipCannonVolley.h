@@ -30,31 +30,20 @@ public:
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		const FGameplayEventData* TriggerEventData) override;
 
-protected:
-	/** Highest launch speed the ballistic solver may use when the authored ship speed cannot reach. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Cannon Volley", meta = (ClampMin = "1.0", Units = "cm/s"))
-	float MaximumCannonballSpeed = 3000.0f;
-
-	/** Chooses the exact fixed-speed ballistic solution closest to this angle. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Cannon Volley", meta = (ClampMin = "-89.0", ClampMax = "89.0", Units = "deg"))
-	float PreferredLaunchAngleDegrees = 20.0f;
+	static bool CalculateLaunchVelocity(
+		const FVector& Start,
+		const FVector& CurrentTargetPoint,
+		const FVector& TargetVelocity,
+		float GravityZ,
+		const struct FEnemyShipCannonAimProfile& AimProfile,
+		FVector& OutLaunchVelocity);
 
 private:
 	bool BuildShotSolution(
 		const ACannon* Cannon,
 		const AShip* Target,
-		float PredictionStrength,
-		float MaximumProjectileSpeed,
+		const AEnemyShip* Ship,
 		FVector& OutDirection,
 		float& OutProjectileSpeed) const;
-	bool SolveShotToPoint(
-		const ACannon* Cannon,
-		const FVector& TargetPoint,
-		float MaximumProjectileSpeed,
-		FVector& OutDirection,
-		float& OutProjectileSpeed,
-		float& OutFlightTime) const;
-	float ResolvePredictionStrength(const AEnemyShip* Ship) const;
-	float ResolveMaximumProjectileSpeed(const AEnemyShip* Ship) const;
 	bool IsValidPlayerTarget(const AShip* Candidate) const;
 };

@@ -521,7 +521,7 @@ bool ACannon::FireAICannonAtDirectionWithSpeed(
 		MuzzleTransform.GetLocation(),
 		NormalizedDirection.Rotation(),
 		FiringStats.Damage,
-		FMath::Max(FiringStats.ProjectileSpeed, ProjectileSpeed));
+		FMath::Max(1.0f, ProjectileSpeed));
 	return true;
 }
 
