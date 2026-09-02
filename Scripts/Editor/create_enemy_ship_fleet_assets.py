@@ -6,11 +6,11 @@ import unreal
 
 
 DATA_ROOT = "/Game/Blueprints/Ship/Enemy_Ship/Data"
-FLEET_ROOT = DATA_ROOT + "/Archetype/EnemyFleet"
+FLEET_ROOT = DATA_ROOT + "/Archetype"
 NORMAL_ROOT = FLEET_ROOT + "/Normal"
-SKILL_ROOT = FLEET_ROOT + "/Skill"
+SKILL_ROOT = FLEET_ROOT + "/Elite"
 STAT_TABLE_PATH = "/Game/Blueprints/Ship/Data/DT_ShipStat"
-BASE_ARCHETYPE_PATH = DATA_ROOT + "/Archetype/DA_ES_Archetype_Cannon"
+BASE_ARCHETYPE_PATH = NORMAL_ROOT + "/DA_ES_Normal_1"
 MODULE_ROOT = DATA_ROOT + "/SkillModule"
 
 
@@ -46,6 +46,9 @@ def configure_archetype(asset, stat_table, row_name, modules, template):
     asset.set_editor_property("spec_row", spec_row)
     asset.set_editor_property(
         "navigation_profile", template.get_editor_property("navigation_profile")
+    )
+    asset.set_editor_property(
+        "orbit_distance_spacing", template.get_editor_property("orbit_distance_spacing")
     )
     asset.set_editor_property(
         "zero_health_cannon_cooldown_multiplier",
@@ -127,7 +130,7 @@ for tier, row_name in enumerate(generated_row_names, start=1):
     )
 
 for skill_name in ("Charge", "Obstacle", "TimeStop", "Torpedo"):
-    source_path = f"{DATA_ROOT}/Archetype/DA_ES_Archetype_{skill_name}"
+    source_path = f"{SKILL_ROOT}/DA_ES_{skill_name}"
     source_archetype = load(source_path)
     archetype = get_or_duplicate_archetype(
         f"DA_ES_{skill_name}", SKILL_ROOT, source_path

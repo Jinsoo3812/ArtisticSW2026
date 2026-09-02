@@ -22,6 +22,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Navigation")
 	FEnemyShipNavigationProfile NavigationProfile;
 
+	/** Preferred radial separation between ships in the same squad. The squad uses the members' average value. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Navigation", meta = (ClampMin = "0.0", Units = "cm"))
+	float OrbitDistanceSpacing = 3000.0f;
+
 	/** Cannon cooldown multiplier at zero health; interpolates linearly to 1 at full health. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "1.0"))
 	float ZeroHealthCannonCooldownMultiplier = 3.0f;

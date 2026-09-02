@@ -1551,10 +1551,6 @@ bool AEnemyShip::ConfigureEnemyShipArchetype(UEnemyShipArchetypeData* Archetype)
 	default:
 		break;
 	}
-	if (bOverrideIdealDistance)
-	{
-		EffectiveNavigationProfile.IdealDistance = FMath::Max(1.0f, IdealDistanceOverride);
-	}
 	NavigationComponent->SetNavigationProfile(EffectiveNavigationProfile);
 
 	TArray<TSubclassOf<UGameplayAbility>> AbilityClasses;
@@ -1570,7 +1566,38 @@ bool AEnemyShip::ConfigureEnemyShipArchetype(UEnemyShipArchetypeData* Archetype)
 		return false;
 	}
 	EnemyShipArchetype = Archetype;
+	if (UWorld* World = GetWorld())
+	{
+		if (UShipSwarmSubsystem* SwarmSubsystem = World->GetSubsystem<UShipSwarmSubsystem>())
+		{
+			SwarmSubsystem->RecalculateSquadOrbitDistances(SquadID);
+		}
+	}
 	return true;
+}
+
+void AEnemyShip::SetSquadAssignedIdealDistance(float IdealDistance)
+{
+	if (!HasAuthority() || !NavigationComponent)
+	{
+		return;
+	}
+	FEnemyShipNavigationProfile Profile = EnemyShipArchetype
+		? EnemyShipArchetype->NavigationProfile
+		: NavigationComponent->GetNavigationProfile();
+	switch (OrbitDirectionOverride)
+	{
+	case EEnemyShipOrbitDirectionOverride::Clockwise:
+		Profile.bOrbitClockwise = true;
+		break;
+	case EEnemyShipOrbitDirectionOverride::Counterclockwise:
+		Profile.bOrbitClockwise = false;
+		break;
+	default:
+		break;
+	}
+	Profile.IdealDistance = FMath::Max(1.0f, IdealDistance);
+	NavigationComponent->SetNavigationProfile(Profile);
 }
 
 void AEnemyShip::ResetAfterReturnToSpawn()
@@ -1711,9 +1738,7 @@ void AEnemyShip::DrawEnemyShipAIDebug() const
 		static_cast<int64>(NavigationComponent->GetCurrentState()));
 	const bool bReturning = NavigationComponent->GetCurrentState() == ENavalCombatState::Return;
 	const float HomeDistance = bHasHome ? FVector::Dist2D(GetActorLocation(), HomeLocation) : -1.0f;
-	const TCHAR* HomeSource = NavigationComponent->GetHomeActor()
-		? TEXT("Actor")
-		: bHasHome ? TEXT("Spawn") : TEXT("None");
+	const TCHAR* HomeSource = bHasHome ? TEXT("Spawn") : TEXT("None");
 	FString CastingSummary = TEXT("None");
 	FString AbilityDebugText;
 	if (const UAbilitySystemComponent* ASC = GetAbilitySystemComponent())

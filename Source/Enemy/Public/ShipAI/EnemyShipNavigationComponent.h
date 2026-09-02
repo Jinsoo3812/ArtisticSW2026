@@ -51,13 +51,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation")
 	AShip* GetTargetShip() const { return TargetShip; }
 
-	UFUNCTION(BlueprintCallable, Category = "Enemy Ship|Navigation")
-	void SetHomeActor(AActor* InHomeActor);
-
-	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation")
-	AActor* GetHomeActor() const { return HomeActor; }
-
-	/** Resolves an authored Home Actor first, then the ship's server-captured spawn location. */
+	/** Resolves the ship's server-captured spawn location. */
 	bool GetResolvedHomeLocation(FVector& OutHomeLocation) const;
 	bool GetSpawnHomeTransform(FTransform& OutTransform) const;
 
@@ -108,8 +102,6 @@ private:
 	UPROPERTY(Replicated)
 	TObjectPtr<AShip> TargetShip;
 
-	UPROPERTY(Replicated)
-	TObjectPtr<AActor> HomeActor;
 	UPROPERTY(Replicated)
 	FVector SpawnHomeLocation = FVector::ZeroVector;
 	UPROPERTY(Replicated)

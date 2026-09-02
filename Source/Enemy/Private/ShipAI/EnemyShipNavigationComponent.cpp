@@ -18,7 +18,6 @@ void UEnemyShipNavigationComponent::GetLifetimeReplicatedProps(
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(UEnemyShipNavigationComponent, NavigationProfile);
 	DOREPLIFETIME(UEnemyShipNavigationComponent, TargetShip);
-	DOREPLIFETIME(UEnemyShipNavigationComponent, HomeActor);
 	DOREPLIFETIME(UEnemyShipNavigationComponent, SpawnHomeLocation);
 	DOREPLIFETIME(UEnemyShipNavigationComponent, SpawnHomeRotation);
 	DOREPLIFETIME(UEnemyShipNavigationComponent, bHasSpawnHomeLocation);
@@ -48,7 +47,6 @@ void UEnemyShipNavigationComponent::EndPlay(const EEndPlayReason::Type EndPlayRe
 	StopOwnerShip();
 	OwnerShip.Reset();
 	TargetShip = nullptr;
-	HomeActor = nullptr;
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -146,18 +144,8 @@ void UEnemyShipNavigationComponent::SetTargetShip(AShip* InTargetShip)
 	TargetShip = InTargetShip;
 }
 
-void UEnemyShipNavigationComponent::SetHomeActor(AActor* InHomeActor)
-{
-	HomeActor = InHomeActor;
-}
-
 bool UEnemyShipNavigationComponent::GetResolvedHomeLocation(FVector& OutHomeLocation) const
 {
-	if (const AActor* Home = HomeActor)
-	{
-		OutHomeLocation = Home->GetActorLocation();
-		return true;
-	}
 	if (bHasSpawnHomeLocation)
 	{
 		OutHomeLocation = SpawnHomeLocation;

@@ -29,6 +29,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ship|Swarm")
 	TArray<AEnemyShip*> GetSquadMembers(FName SquadID);
 
+	/** Rebuilds symmetric orbit lanes from the squad members' Archetype-authored distances and spacing. */
+	void RecalculateSquadOrbitDistances(FName SquadID);
+
 private:
 	// 군집 ID별로 배들의 약참조 목록을 보관 (댕글링 포인터 방지)
 	TMap<FName, TArray<TWeakObjectPtr<AEnemyShip>>> SquadMap;

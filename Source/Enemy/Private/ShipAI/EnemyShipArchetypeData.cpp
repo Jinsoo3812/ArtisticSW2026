@@ -5,6 +5,7 @@
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipSkillModuleData.h"
 
+
 bool UEnemyShipArchetypeData::ApplyToShip(AEnemyShip* Ship)
 {
 	if (!IsValid(Ship) || !Ship->HasAuthority())
@@ -51,6 +52,11 @@ EDataValidationResult UEnemyShipArchetypeData::IsDataValid(FDataValidationContex
 	if (ZeroHealthCannonCooldownMultiplier < 1.0f)
 	{
 		Context.AddError(FText::FromString(TEXT("ZeroHealthCannonCooldownMultiplier must be at least 1.")));
+		Result = EDataValidationResult::Invalid;
+	}
+	if (OrbitDistanceSpacing < 0.0f)
+	{
+		Context.AddError(FText::FromString(TEXT("OrbitDistanceSpacing must not be negative.")));
 		Result = EDataValidationResult::Invalid;
 	}
 	if (NavigationProfile.DangerCloseDistance > NavigationProfile.IdealDistance)

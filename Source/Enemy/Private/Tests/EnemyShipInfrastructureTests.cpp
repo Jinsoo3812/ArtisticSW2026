@@ -12,6 +12,7 @@
 #include "ShipAI/EnemyShipNavigationComponent.h"
 #include "ShipAI/EnemyShipPatternRuntimeComponent.h"
 #include "ShipAI/EnemyShipSkillModuleData.h"
+#include "ShipAI/ShipSwarmSubsystem.h"
 #include "BaseGameplayTags.h"
 #include "ShipAI/NavalAIController.h"
 #include "ShipAI/Abilities/GA_EnemyShipCharge.h"
@@ -167,8 +168,6 @@ bool FEnemyShipArchetypeAssemblyTest::RunTest(const FString& Parameters)
 	Archetype->NavigationProfile.IdealDistance = 3300.0f;
 	Archetype->NavigationProfile.bOrbitClockwise = true;
 	Archetype->SkillModules.Add(Module);
-	Ship->bOverrideIdealDistance = true;
-	Ship->IdealDistanceOverride = 6300.0f;
 	Ship->OrbitDirectionOverride = EEnemyShipOrbitDirectionOverride::Counterclockwise;
 
 	TestTrue(TEXT("Archetype applies"), Archetype->ApplyToShip(Ship));
@@ -176,7 +175,7 @@ bool FEnemyShipArchetypeAssemblyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Spec health applies"), ASC->GetNumericAttribute(UShipAttributeSet::GetMaxHealthAttribute()), 450.0f);
 	TestEqual(TEXT("Spec cannon damage applies"), ASC->GetNumericAttribute(UShipAttributeSet::GetCannonDamageAttribute()), 65.0f);
 	TestEqual(TEXT("Spec projectile speed applies"), ASC->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute()), 4200.0f);
-	TestEqual(TEXT("Placed-instance ideal distance overrides Archetype"), Ship->GetNavigationComponent()->GetNavigationProfile().IdealDistance, 6300.0f);
+	TestEqual(TEXT("Archetype supplies ideal distance"), Ship->GetNavigationComponent()->GetNavigationProfile().IdealDistance, 3300.0f);
 	TestFalse(TEXT("Placed-instance orbit direction overrides Archetype"), Ship->GetNavigationComponent()->GetNavigationProfile().bOrbitClockwise);
 	TestEqual(TEXT("Archetype source ideal distance remains immutable"), Archetype->NavigationProfile.IdealDistance, 3300.0f);
 	TestTrue(TEXT("Archetype source orbit direction remains immutable"), Archetype->NavigationProfile.bOrbitClockwise);
@@ -186,6 +185,59 @@ bool FEnemyShipArchetypeAssemblyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Half-health cannon cooldown multiplier interpolates"), Ship->GetCannonCooldownMultiplier(), 2.0f);
 	Ship->GetShipAttributeSet()->InitHealth(45.0f);
 	TestEqual(TEXT("Low-health cannon cooldown multiplier interpolates toward three"), Ship->GetCannonCooldownMultiplier(), 2.8f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipSquadOrbitDistanceTest,
+	"ArtisticSW.Enemy.Ship.Navigation.SquadOrbitDistance",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipSquadOrbitDistanceTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+	EnemyShipInfrastructureTests::FTestWorld TestWorld;
+	UShipSwarmSubsystem* Swarm = TestWorld.World->GetSubsystem<UShipSwarmSubsystem>();
+	if (!TestNotNull(TEXT("Swarm subsystem exists"), Swarm))
+	{
+		return false;
+	}
+
+	TArray<AEnemyShip*> Ships;
+	TArray<UEnemyShipArchetypeData*> Archetypes;
+	for (int32 Index = 0; Index < 5; ++Index)
+	{
+		AEnemyShip* Ship = TestWorld.World->SpawnActor<AEnemyShip>();
+		if (!TestNotNull(TEXT("Enemy ship spawned"), Ship))
+		{
+			return false;
+		}
+		Ship->BuoyancyRoot->SetSimulatePhysics(false);
+		Swarm->UnregisterShip(Ship);
+		Ship->SquadID = TEXT("OrbitDistanceTest");
+		UEnemyShipArchetypeData* Archetype = NewObject<UEnemyShipArchetypeData>();
+		Archetype->NavigationProfile.IdealDistance = 28000.0f + Index * 1000.0f;
+		Archetype->OrbitDistanceSpacing = 2000.0f + Index * 500.0f;
+		TestTrue(TEXT("Archetype configures"), Ship->ConfigureEnemyShipArchetype(Archetype));
+		Swarm->RegisterShip(Ship);
+		Ships.Add(Ship);
+		Archetypes.Add(Archetype);
+	}
+
+	Swarm->RecalculateSquadOrbitDistances(TEXT("OrbitDistanceTest"));
+	Ships.Sort([](const AEnemyShip& Left, const AEnemyShip& Right)
+	{
+		return Left.GetFName().LexicalLess(Right.GetFName());
+	});
+	const float ExpectedDistances[] = {24000.0f, 27000.0f, 30000.0f, 33000.0f, 36000.0f};
+	for (int32 Index = 0; Index < Ships.Num(); ++Index)
+	{
+		TestEqual(
+			*FString::Printf(TEXT("Ship %d receives its symmetric orbit lane"), Index),
+			Ships[Index]->GetNavigationComponent()->GetNavigationProfile().IdealDistance,
+			ExpectedDistances[Index]);
+	}
 	return true;
 }
 

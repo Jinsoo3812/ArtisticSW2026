@@ -106,6 +106,7 @@ for relative_name, (nav_values, module_names) in archetype_specs.items():
     for key, value in nav_values.items():
         setattr(nav, key, value)
     archetype.set_editor_property("navigation_profile", nav)
+    archetype.set_editor_property("orbit_distance_spacing", 3000.0)
     archetype.set_editor_property("zero_health_cannon_cooldown_multiplier", 3.0)
     archetype.set_editor_property("selection_policy", unreal.EnemyShipSkillSelectionPolicy.HIGHEST_PRIORITY)
     archetype.set_editor_property("skill_modules", [modules[name] for name in module_names])

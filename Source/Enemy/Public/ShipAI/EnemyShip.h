@@ -232,6 +232,7 @@ public:
 	UStaticMeshComponent* GetShipDeckMesh() const { return GetDeckMeshComplex(); }
 	bool GrantEnemyShipAbilityClasses(const TArray<TSubclassOf<UGameplayAbility>>& AbilityClasses);
 	bool ConfigureEnemyShipArchetype(UEnemyShipArchetypeData* Archetype);
+	void SetSquadAssignedIdealDistance(float IdealDistance);
 	void ResetAfterReturnToSpawn();
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI")
@@ -244,12 +245,6 @@ public:
 	/** Per-level-instance override applied after the Archetype navigation profile is copied. */
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Ship|AI|Navigation Overrides")
 	EEnemyShipOrbitDirectionOverride OrbitDirectionOverride = EEnemyShipOrbitDirectionOverride::UseArchetypeDefault;
-
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Ship|AI|Navigation Overrides")
-	bool bOverrideIdealDistance = false;
-
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Ship|AI|Navigation Overrides", meta = (EditCondition = "bOverrideIdealDistance", ClampMin = "1.0", Units = "cm"))
-	float IdealDistanceOverride = 9000.0f;
 
 	// ================= Legacy Deck Enemy authoring bridge =================
 	/** Compatibility fallback. New authoring belongs on DeckEnemySpawnerComponent. */
