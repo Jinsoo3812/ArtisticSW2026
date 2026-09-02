@@ -9,6 +9,8 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "BasePlayer.h"
+#include "Animation/LocomotionAnimStateComponent.h"
 
 UGA_PlayerRoll::UGA_PlayerRoll()
 {
@@ -119,17 +121,71 @@ FRollIntent UGA_PlayerRoll::BuildRollIntent() const
 		return Intent;
 	}
 
-	FVector MovementInput = Character->GetLastMovementInputVector();
-	MovementInput.Z = 0.0f;
-	Intent.InputMagnitude = FMath::Clamp(MovementInput.Size(), 0.0f, 1.0f);
-	Intent.bHasMovementInput = !MovementInput.IsNearlyZero();
+	FVector WorldDirection = FVector::ZeroVector;
+	bool bHasInput = false;
 
-	FVector Forward = Character->GetActorForwardVector();
-	Forward.Z = 0.0f;
-	Forward = Forward.GetSafeNormal(UE_SMALL_NUMBER, FVector::ForwardVector);
-	Intent.WorldDirection = Intent.bHasMovementInput
-		? MovementInput.GetSafeNormal()
-		: Forward;
+	// 1. Direct input from BasePlayer's LocomotionAnimStateComponent (WASD Enhanced Input)
+	if (const ABasePlayer* BasePlayer = Cast<ABasePlayer>(Character))
+	{
+		if (const ULocomotionAnimStateComponent* AnimState = BasePlayer->GetAnimStateComponent())
+		{
+			const FVector2D MoveInput = AnimState->CachedMoveInput;
+			if (MoveInput.SizeSquared() > 0.01f)
+			{
+				const AController* Controller = Character->GetController();
+				const FRotator ControlRot = Controller ? Controller->GetControlRotation() : Character->GetActorRotation();
+				const FRotator YawRot(0.0f, ControlRot.Yaw, 0.0f);
+				const FVector CamForward = FRotationMatrix(YawRot).GetUnitAxis(EAxis::X);
+				const FVector CamRight = FRotationMatrix(YawRot).GetUnitAxis(EAxis::Y);
+
+				WorldDirection = (CamForward * MoveInput.Y + CamRight * MoveInput.X).GetSafeNormal();
+				bHasInput = true;
+				Intent.InputMagnitude = FMath::Clamp(MoveInput.Size(), 0.0f, 1.0f);
+			}
+		}
+	}
+
+	// 2. Pending or last movement input vector
+	if (!bHasInput)
+	{
+		FVector MovementInput = Character->GetPendingMovementInputVector();
+		if (MovementInput.IsNearlyZero())
+		{
+			MovementInput = Character->GetLastMovementInputVector();
+		}
+		MovementInput.Z = 0.0f;
+		if (!MovementInput.IsNearlyZero())
+		{
+			WorldDirection = MovementInput.GetSafeNormal();
+			bHasInput = true;
+			Intent.InputMagnitude = FMath::Clamp(MovementInput.Size(), 0.0f, 1.0f);
+		}
+	}
+
+	// 3. Fallback: Velocity if actively moving
+	if (!bHasInput)
+	{
+		FVector Velocity = Character->GetVelocity();
+		Velocity.Z = 0.0f;
+		if (Velocity.SizeSquared() > 100.0f)
+		{
+			WorldDirection = Velocity.GetSafeNormal();
+			bHasInput = true;
+			Intent.InputMagnitude = 1.0f;
+		}
+	}
+
+	// 4. Default to character forward if completely stationary with no input
+	if (!bHasInput)
+	{
+		FVector Forward = Character->GetActorForwardVector();
+		Forward.Z = 0.0f;
+		WorldDirection = Forward.GetSafeNormal(UE_SMALL_NUMBER, FVector::ForwardVector);
+		Intent.InputMagnitude = 0.0f;
+	}
+
+	Intent.bHasMovementInput = bHasInput;
+	Intent.WorldDirection = WorldDirection;
 	Intent.LocalDirection = Character->GetActorTransform()
 		.InverseTransformVectorNoScale(Intent.WorldDirection)
 		.GetSafeNormal(UE_SMALL_NUMBER, FVector::ForwardVector);
@@ -163,6 +219,16 @@ bool UGA_PlayerRoll::StartRollExecution(const FRollIntent& RollIntent)
 
 	if (bRotateToIntent)
 	{
+		if (ABasePlayer* BasePlayer = Cast<ABasePlayer>(Character))
+		{
+			BasePlayer->bUseControllerRotationYaw = false;
+			BasePlayer->bIsDodging = true;
+		}
+		if (UCharacterMovementComponent* CMC = Character->GetCharacterMovement())
+		{
+			CMC->bUseControllerDesiredRotation = false;
+			CMC->bOrientRotationToMovement = false;
+		}
 		Character->SetActorRotation(RollIntent.RequestedFacingRotation);
 	}
 

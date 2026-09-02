@@ -373,17 +373,7 @@ void ABasePlayer::Tick(float DeltaTime)
 	// 후방 이동 시 질주(Sprint) 차단 (1안)
 	RefreshSprintFromInput();
 
-	if (AnimStateComponent)
-	{
-		AnimStateComponent->UpdateAnimationState(DeltaTime);
-		ApplyCombatRotationMode(true);
-		ApplyCombatTurnInPlaceRotation(DeltaTime);
-	}
-	if (HasAuthority())
-	{
-		UpdateLocomotionStateSnapshot();
-	}
-
+	// Update ASC state tags FIRST so rotation and animation systems know current combat state
 	bool bIsSniping = false;
 	bool bIsAiming = false;
 	bool bIsThrowingOrAttacking = false;
@@ -413,6 +403,17 @@ void ABasePlayer::Tick(float DeltaTime)
 		{
 			bIsDodging = false;
 		}
+	}
+
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->UpdateAnimationState(DeltaTime);
+		ApplyCombatRotationMode(true);
+		ApplyCombatTurnInPlaceRotation(DeltaTime);
+	}
+	if (HasAuthority())
+	{
+		UpdateLocomotionStateSnapshot();
 	}
 
 	float TargetArmLength = DefaultTargetArmLength;
@@ -2192,7 +2193,38 @@ void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
 
 	const bool bIsMovingInStrafe =
 		(GetPendingMovementInputVector().SizeSquared() > 0.001f || GetVelocity().SizeSquared2D() > 100.0f);
-	bUseControllerRotationYaw = bEnableCombatRotation && bIsMovingInStrafe;
+
+	if (bEnableCombatRotation && bIsMovingInStrafe)
+	{
+		const float TargetYaw = GetController() ? GetController()->GetControlRotation().Yaw : GetActorRotation().Yaw;
+		const float CurrentYaw = GetActorRotation().Yaw;
+		const float YawDelta = FMath::Abs(FRotator::NormalizeAxis(TargetYaw - CurrentYaw));
+
+		// If there is a noticeable angle difference (e.g. recovering from S/A/D roll into movement),
+		// smoothly rotate towards controller yaw rather than hard-snapping in a single frame.
+		if (YawDelta > 5.0f)
+		{
+			bUseControllerRotationYaw = false;
+			const FRotator CurrentRot = GetActorRotation();
+			const FRotator TargetRot(0.0f, TargetYaw, 0.0f);
+			const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
+
+			// S 키(후방 이동) 입력 중이거나 큰 회전(180도)일 때는 전용 회전 속도(BackwardStrafeRotationCatchUpSpeed) 사용
+			const bool bIsBackwardInput = (AnimStateComponent && AnimStateComponent->CachedMoveInput.Y < -0.1f) || (YawDelta > 110.0f);
+			const float ActiveCatchUpSpeed = bIsBackwardInput ? BackwardStrafeRotationCatchUpSpeed : StrafeRotationCatchUpSpeed;
+
+			const FRotator NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaSeconds, ActiveCatchUpSpeed);
+			SetActorRotation(NewRot);
+		}
+		else
+		{
+			bUseControllerRotationYaw = true;
+		}
+	}
+	else
+	{
+		bUseControllerRotationYaw = false;
+	}
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
@@ -2521,7 +2553,7 @@ bool ABasePlayer::UpdateGaspStyleTurnInPlaceRequest(float& OutDesiredYaw)
 
 void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
 {
-	if (!AnimStateComponent)
+	if (bIsDodging || !AnimStateComponent)
 	{
 		return;
 	}

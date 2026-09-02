@@ -300,6 +300,12 @@ protected:
 	bool CanSprintFromInput() const;
 	void RefreshSprintFromInput();
 	bool CanSprintFromServerState() const;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Rotation", meta = (ClampMin = "1.0"))
+	float StrafeRotationCatchUpSpeed = 16.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Rotation", meta = (ClampMin = "1.0"))
+	float BackwardStrafeRotationCatchUpSpeed = 8.0f;
+
 	void ApplyCombatRotationMode(bool bEnableCombatRotation);
 	void OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
