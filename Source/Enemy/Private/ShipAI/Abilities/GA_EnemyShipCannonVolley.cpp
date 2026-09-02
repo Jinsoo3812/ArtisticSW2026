@@ -91,11 +91,6 @@ void UGA_EnemyShipCannonVolley::ActivateAbility(
 	int32 FiredCount = 0;
 	for (ACannon* Cannon : Cannons)
 	{
-		if (FiredCount >= FMath::Max(1, MaxCannonsPerVolley))
-		{
-			break;
-		}
-
 		FVector ShotDirection;
 		float ShotSpeed = 0.0f;
 		if (Cannon->CanFireCannon()
@@ -292,10 +287,7 @@ float UGA_EnemyShipCannonVolley::ResolvePredictionStrength(const AEnemyShip* Shi
 
 float UGA_EnemyShipCannonVolley::ResolveMaximumProjectileSpeed(const AEnemyShip* Ship) const
 {
-	const UEnemyShipPatternRuntimeComponent* Runtime = Ship ? Ship->GetPatternRuntimeComponent() : nullptr;
-	return Runtime
-		? Runtime->GetMaximumCannonballSpeed(GameplayAbility_EnemyShip_CannonVolley)
-		: 0.0f;
+	return FMath::Max(1.0f, MaximumCannonballSpeed);
 }
 
 bool UGA_EnemyShipCannonVolley::IsValidPlayerTarget(const AShip* Candidate) const

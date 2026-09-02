@@ -8,10 +8,8 @@
 #include "ShipAttributeSet.h"
 #include "Ship.h"
 #include "ShipAI/EnemyShip.h"
-#include "ShipAI/EnemyShipAbilitySet.h"
 #include "ShipAI/EnemyShipArchetypeData.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
-#include "ShipAI/EnemyShipPatternData.h"
 #include "ShipAI/EnemyShipPatternRuntimeComponent.h"
 #include "ShipAI/EnemyShipSkillModuleData.h"
 #include "BaseGameplayTags.h"
@@ -90,12 +88,14 @@ bool FEnemyShipNavigationOverrideTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEnemyShipPatternRuntimeIntervalTest,
-	"ArtisticSW.Enemy.Ship.Pattern.IntervalAndOneShot",
+	FEnemyShipSkillRuntimeOneShotTest,
+	"ArtisticSW.Enemy.Ship.SkillRuntime.OneShot",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FEnemyShipPatternRuntimeIntervalTest::RunTest(const FString& Parameters)
+bool FEnemyShipSkillRuntimeOneShotTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
 	EnemyShipInfrastructureTests::FTestWorld TestWorld;
 	AEnemyShip* Ship = TestWorld.World->SpawnActor<AEnemyShip>();
 	AShip* Target = TestWorld.World->SpawnActor<AShip>();
@@ -111,33 +111,23 @@ bool FEnemyShipPatternRuntimeIntervalTest::RunTest(const FString& Parameters)
 		TEXT("Pattern test ability is granted"),
 		Ship->GrantEnemyShipAbilityClasses({UGA_EnemyShipCharge::StaticClass()}));
 
-	UEnemyShipPatternData* Pattern = NewObject<UEnemyShipPatternData>();
-	UEnemyShipAbilitySet* AbilitySet = NewObject<UEnemyShipAbilitySet>();
-	AbilitySet->Abilities.Add(UGA_EnemyShipCharge::StaticClass());
+	UEnemyShipArchetypeData* Archetype = NewObject<UEnemyShipArchetypeData>();
 	UEnemyShipSkillModuleData* Module = NewObject<UEnemyShipSkillModuleData>();
-	Module->ModuleId = TEXT("IntervalTest");
-	Module->AbilitySet = AbilitySet;
-	FEnemyShipSkillRule& RepeatRule = Module->SkillRules.AddDefaulted_GetRef();
-	RepeatRule.RuleId = TEXT("IntervalCharge");
-	RepeatRule.AbilityTag = GameplayAbility_EnemyShip_Charge;
-	RepeatRule.AbilityClass = UGA_EnemyShipCharge::StaticClass();
-	RepeatRule.MinimumInterval = 5.0f;
-	RepeatRule.Priority = 10;
-	Pattern->SkillModules.Add(Module);
+	Module->AbilityClass = UGA_EnemyShipCharge::StaticClass();
+	Module->Priority = 10;
+	Archetype->SkillModules.Add(Module);
 
 	UEnemyShipPatternRuntimeComponent* Runtime = Ship->GetPatternRuntimeComponent();
-	Runtime->SetPattern(Pattern);
+	Runtime->Configure(Archetype);
 	FEnemyShipAbilitySelection Selection;
-	TestTrue(TEXT("Rule is initially eligible"), Runtime->SelectAbilityAtTime(Target, 0.0, Selection));
+	TestTrue(TEXT("Skill is initially eligible"), Runtime->SelectAbilityAtTime(Target, 0.0, Selection));
 	TestTrue(TEXT("Initial selection commits"), Runtime->CommitSelection(Selection));
-	TestFalse(TEXT("Rule is blocked before interval"), Runtime->SelectAbilityAtTime(Target, 4.99, Selection));
-	TestTrue(TEXT("Rule is eligible at interval boundary"), Runtime->SelectAbilityAtTime(Target, 5.0, Selection));
 
-	Module->SkillRules[0].bUseOnlyOnce = true;
-	Runtime->SetPattern(Pattern);
-	TestTrue(TEXT("One-shot rule selects once"), Runtime->SelectAbilityAtTime(Target, 10.0, Selection));
+	Module->bUseOnlyOnce = true;
+	Runtime->Configure(Archetype);
+	TestTrue(TEXT("One-shot skill selects once"), Runtime->SelectAbilityAtTime(Target, 10.0, Selection));
 	TestTrue(TEXT("One-shot selection commits"), Runtime->CommitSelection(Selection));
-	TestFalse(TEXT("One-shot rule cannot select again"), Runtime->SelectAbilityAtTime(Target, 100.0, Selection));
+	TestFalse(TEXT("One-shot skill cannot select again"), Runtime->SelectAbilityAtTime(Target, 100.0, Selection));
 	return true;
 }
 
@@ -148,6 +138,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipArchetypeAssemblyTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
 	EnemyShipInfrastructureTests::FTestWorld TestWorld;
 	AEnemyShip* Ship = TestWorld.World->SpawnActor<AEnemyShip>();
 	if (!TestNotNull(TEXT("Enemy Ship spawned"), Ship))
@@ -167,31 +159,33 @@ bool FEnemyShipArchetypeAssemblyTest::RunTest(const FString& Parameters)
 	Spec.CannonballSpeed = 4200.0f;
 	SpecTable->AddRow(TEXT("SpecC"), Spec);
 
-	UEnemyShipPatternData* Pattern = NewObject<UEnemyShipPatternData>();
-	Pattern->NavigationProfile.IdealDistance = 3300.0f;
-	Pattern->NavigationProfile.MaxActiveCannons = 4;
-	UEnemyShipAbilitySet* AbilitySet = NewObject<UEnemyShipAbilitySet>();
-	AbilitySet->Abilities.Add(UGA_EnemyShipCharge::StaticClass());
 	UEnemyShipSkillModuleData* Module = NewObject<UEnemyShipSkillModuleData>();
-	Module->ModuleId = TEXT("AssemblyCharge");
-	Module->AbilitySet = AbilitySet;
-	FEnemyShipSkillRule& Rule = Module->SkillRules.AddDefaulted_GetRef();
-	Rule.RuleId = TEXT("AssemblyChargeRule");
-	Rule.AbilityTag = GameplayAbility_EnemyShip_Charge;
-	Rule.AbilityClass = UGA_EnemyShipCharge::StaticClass();
-	Pattern->SkillModules.Add(Module);
+	Module->AbilityClass = UGA_EnemyShipCharge::StaticClass();
 	UEnemyShipArchetypeData* Archetype = NewObject<UEnemyShipArchetypeData>();
 	Archetype->SpecRow.DataTable = SpecTable;
 	Archetype->SpecRow.RowName = TEXT("SpecC");
-	Archetype->Pattern = Pattern;
+	Archetype->NavigationProfile.IdealDistance = 3300.0f;
+	Archetype->NavigationProfile.bOrbitClockwise = true;
+	Archetype->SkillModules.Add(Module);
+	Ship->bOverrideIdealDistance = true;
+	Ship->IdealDistanceOverride = 6300.0f;
+	Ship->OrbitDirectionOverride = EEnemyShipOrbitDirectionOverride::Counterclockwise;
 
 	TestTrue(TEXT("Archetype applies"), Archetype->ApplyToShip(Ship));
 	const UAbilitySystemComponent* ASC = Ship->GetAbilitySystemComponent();
 	TestEqual(TEXT("Spec health applies"), ASC->GetNumericAttribute(UShipAttributeSet::GetMaxHealthAttribute()), 450.0f);
 	TestEqual(TEXT("Spec cannon damage applies"), ASC->GetNumericAttribute(UShipAttributeSet::GetCannonDamageAttribute()), 65.0f);
 	TestEqual(TEXT("Spec projectile speed applies"), ASC->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute()), 4200.0f);
-	TestEqual(TEXT("Pattern navigation applies"), Ship->GetNavigationComponent()->GetNavigationProfile().IdealDistance, 3300.0f);
-	TestTrue(TEXT("Pattern runtime uses the same immutable Pattern asset"), Ship->GetPatternRuntimeComponent()->GetPattern() == Pattern);
+	TestEqual(TEXT("Placed-instance ideal distance overrides Archetype"), Ship->GetNavigationComponent()->GetNavigationProfile().IdealDistance, 6300.0f);
+	TestFalse(TEXT("Placed-instance orbit direction overrides Archetype"), Ship->GetNavigationComponent()->GetNavigationProfile().bOrbitClockwise);
+	TestEqual(TEXT("Archetype source ideal distance remains immutable"), Archetype->NavigationProfile.IdealDistance, 3300.0f);
+	TestTrue(TEXT("Archetype source orbit direction remains immutable"), Archetype->NavigationProfile.bOrbitClockwise);
+	TestEqual(TEXT("Archetype runtime resolves its skill"), Ship->GetPatternRuntimeComponent()->GetResolvedRuleCount(), 1);
+	TestEqual(TEXT("Full-health cannon cooldown multiplier is one"), Ship->GetCannonCooldownMultiplier(), 1.0f);
+	Ship->GetShipAttributeSet()->InitHealth(225.0f);
+	TestEqual(TEXT("Half-health cannon cooldown multiplier interpolates"), Ship->GetCannonCooldownMultiplier(), 2.0f);
+	Ship->GetShipAttributeSet()->InitHealth(45.0f);
+	TestEqual(TEXT("Low-health cannon cooldown multiplier interpolates toward three"), Ship->GetCannonCooldownMultiplier(), 2.8f);
 	return true;
 }
 

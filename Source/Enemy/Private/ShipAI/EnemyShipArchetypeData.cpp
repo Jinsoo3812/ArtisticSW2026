@@ -3,11 +3,11 @@
 #include "Misc/DataValidation.h"
 #include "Ship.h"
 #include "ShipAI/EnemyShip.h"
-#include "ShipAI/EnemyShipPatternData.h"
+#include "ShipAI/EnemyShipSkillModuleData.h"
 
-bool UEnemyShipArchetypeData::ApplyToShip(AEnemyShip* Ship) const
+bool UEnemyShipArchetypeData::ApplyToShip(AEnemyShip* Ship)
 {
-	if (!IsValid(Ship) || !Ship->HasAuthority() || !Pattern)
+	if (!IsValid(Ship) || !Ship->HasAuthority())
 	{
 		return false;
 	}
@@ -28,27 +28,15 @@ bool UEnemyShipArchetypeData::ApplyToShip(AEnemyShip* Ship) const
 		Snapshot.CannonballSpeed = Row->CannonballSpeed;
 		Snapshot.ForwardPropulsionMultiplier = Row->ForwardPropulsionMultiplier;
 		Snapshot.TurnTorqueMultiplier = Row->TurnTorqueMultiplier;
-		if (FMath::IsNearlyEqual(Row->ForwardPropulsionMultiplier, 1.0f)
-			&& FMath::IsNearlyEqual(Row->TurnTorqueMultiplier, 1.0f)
-			&& !FMath::IsNearlyEqual(Row->ShipSpeedMultiplier, 1.0f))
-		{
-			Snapshot.ForwardPropulsionMultiplier = Row->ShipSpeedMultiplier;
-			Snapshot.TurnTorqueMultiplier = Row->ShipSpeedMultiplier;
-		}
 		Ship->ApplyStatSnapshot(Snapshot, true);
 	}
 
-	return Ship->ConfigureEnemyShipPattern(Pattern);
+	return Ship->ConfigureEnemyShipArchetype(this);
 }
 
 EDataValidationResult UEnemyShipArchetypeData::IsDataValid(FDataValidationContext& Context) const
 {
 	EDataValidationResult Result = Super::IsDataValid(Context);
-	if (!Pattern)
-	{
-		Context.AddError(FText::FromString(TEXT("Enemy Ship Archetype requires a Pattern.")));
-		Result = EDataValidationResult::Invalid;
-	}
 	if ((SpecRow.DataTable == nullptr) != SpecRow.RowName.IsNone())
 	{
 		Context.AddError(FText::FromString(TEXT("SpecRow must provide both DataTable and RowName, or neither.")));
@@ -58,6 +46,47 @@ EDataValidationResult UEnemyShipArchetypeData::IsDataValid(FDataValidationContex
 	{
 		Context.AddError(FText::FromString(TEXT("SpecRow does not resolve to FShipStatRow.")));
 		Result = EDataValidationResult::Invalid;
+	}
+
+	if (ZeroHealthCannonCooldownMultiplier < 1.0f)
+	{
+		Context.AddError(FText::FromString(TEXT("ZeroHealthCannonCooldownMultiplier must be at least 1.")));
+		Result = EDataValidationResult::Invalid;
+	}
+	if (NavigationProfile.DangerCloseDistance > NavigationProfile.IdealDistance)
+	{
+		Context.AddError(FText::FromString(TEXT("DangerCloseDistance must not exceed IdealDistance.")));
+		Result = EDataValidationResult::Invalid;
+	}
+	if (NavigationProfile.ReturnTriggerDistance < NavigationProfile.ReturnArrivalDistance)
+	{
+		Context.AddError(FText::FromString(TEXT("ReturnTriggerDistance must be at least ReturnArrivalDistance.")));
+		Result = EDataValidationResult::Invalid;
+	}
+
+	TSet<const UEnemyShipSkillModuleData*> SeenModules;
+	TSet<FGameplayTag> SeenAbilityTags;
+	for (const UEnemyShipSkillModuleData* Module : SkillModules)
+	{
+		if (!Module || SeenModules.Contains(Module))
+		{
+			Context.AddError(FText::FromString(TEXT("SkillModules must contain unique non-null modules.")));
+			Result = EDataValidationResult::Invalid;
+			continue;
+		}
+		SeenModules.Add(Module);
+		const FGameplayTag AbilityTag = Module->GetAbilityTag();
+		if (!AbilityTag.IsValid() || SeenAbilityTags.Contains(AbilityTag))
+		{
+			Context.AddError(FText::FromString(TEXT("SkillModules must resolve to unique valid EnemyShip ability tags.")));
+			Result = EDataValidationResult::Invalid;
+		}
+		SeenAbilityTags.Add(AbilityTag);
+		if (SelectionPolicy == EEnemyShipSkillSelectionPolicy::WeightedRandom && Module->Weight <= 0.0f)
+		{
+			Context.AddError(FText::FromString(TEXT("WeightedRandom modules require Weight > 0.")));
+			Result = EDataValidationResult::Invalid;
+		}
 	}
 
 	return Result;

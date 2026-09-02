@@ -17,12 +17,18 @@ class UChestDefinition;
 class UBaseHealthComponent;
 class UEnemyHealthBarComponent;
 class UEnemyShipArchetypeData;
-class UEnemyShipAbilitySet;
 class UEnemyShipNavigationComponent;
 class UEnemyShipPatternRuntimeComponent;
-class UEnemyShipPatternData;
 class UEnemyShipSkillModuleData;
 class UGameplayAbility;
+
+UENUM(BlueprintType)
+enum class EEnemyShipOrbitDirectionOverride : uint8
+{
+	UseArchetypeDefault,
+	Clockwise,
+	Counterclockwise
+};
 class UDeckWaypointComponent;
 class UDeckEnemySpawnerComponent;
 class UDeckNavigationComponent;
@@ -224,44 +230,26 @@ public:
 		ADeckEnemy*& OutEnemy);
 
 	UStaticMeshComponent* GetShipDeckMesh() const { return GetDeckMeshComplex(); }
-	bool IsUsingLegacyAICompatibility() const
-	{
-		return !EnemyShipArchetype && bLegacyAutomaticCannonFireWithoutArchetype;
-	}
-
-	bool GrantEnemyShipAbilities(const UEnemyShipAbilitySet* AbilitySet);
 	bool GrantEnemyShipAbilityClasses(const TArray<TSubclassOf<UGameplayAbility>>& AbilityClasses);
-	bool ConfigureEnemyShipPattern(UEnemyShipPatternData* Pattern);
+	bool ConfigureEnemyShipArchetype(UEnemyShipArchetypeData* Archetype);
 	void ResetAfterReturnToSpawn();
-	void SetCoreSkillModules(const TArray<UEnemyShipSkillModuleData*>& InCoreModules);
-
-	// AI Control APIs
-	UFUNCTION(BlueprintCallable, Category = "Ship|AI")
-	void SetAITarget(AActor* Target) { AITargetShip = Target; }
-
-	UFUNCTION(BlueprintCallable, Category = "Ship|AI")
-	void SetNavalCombatState(ENavalCombatState State) { CurrentCombatState = State; }
-
-	UFUNCTION(BlueprintCallable, Category = "Ship|AI")
-	void SetMaxActiveCannons(int32 Count) { MaxActiveCannons = Count; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI")
 	FName SquadID = TEXT("Squad_Alpha");
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LEGACY|Ship AI", meta = (
-		DisplayName = "[LEGACY] Ideal Distance",
-		DeprecatedProperty,
-		DeprecationMessage = "Use EnemyShipArchetype.Pattern.NavigationProfile.IdealDistance",
-		AdvancedDisplay))
-	float IdealDistance = 2000.f;
 
 	/** May be overridden per placed instance so one BP_EnemyShip class can represent many archetypes. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|AI|Data")
 	TObjectPtr<UEnemyShipArchetypeData> EnemyShipArchetype;
 
-	/** Always-on modules, normally just CannonVolley. Pattern modules are composed on top. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|AI|Data", meta = (TitleProperty = "ModuleId"))
-	TArray<TObjectPtr<UEnemyShipSkillModuleData>> CoreSkillModules;
+	/** Per-level-instance override applied after the Archetype navigation profile is copied. */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Ship|AI|Navigation Overrides")
+	EEnemyShipOrbitDirectionOverride OrbitDirectionOverride = EEnemyShipOrbitDirectionOverride::UseArchetypeDefault;
+
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Ship|AI|Navigation Overrides")
+	bool bOverrideIdealDistance = false;
+
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Ship|AI|Navigation Overrides", meta = (EditCondition = "bOverrideIdealDistance", ClampMin = "1.0", Units = "cm"))
+	float IdealDistanceOverride = 9000.0f;
 
 	// ================= Legacy Deck Enemy authoring bridge =================
 	/** Compatibility fallback. New authoring belongs on DeckEnemySpawnerComponent. */
@@ -298,23 +286,7 @@ public:
 	FString LastDeckWaypointValidationSummary;
 	// ================= End legacy bridge =================
 
-	/** LEGACY bootstrap only: delete after every Enemy Ship Archetype has an AbilitySet. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "LEGACY|Ship AI", meta = (
-		DisplayName = "[LEGACY] Native Ability Bootstrap Without Archetype",
-		DeprecatedProperty,
-		DeprecationMessage = "Assign abilities through EnemyShip Pattern Skill Modules",
-		AdvancedDisplay))
-	TArray<TSubclassOf<UGameplayAbility>> LegacyAbilityBootstrapClasses;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "LEGACY|Ship AI", meta = (
-		DisplayName = "[LEGACY] Automatic Cannon Fire Without Archetype",
-		DeprecatedProperty,
-		DeprecationMessage = "Assign an Archetype and use the CannonVolley Core Skill Module",
-		AdvancedDisplay))
-	bool bLegacyAutomaticCannonFireWithoutArchetype = true;
-
 protected:
-	void UpdateActiveCannons();
 	void EvaluateCrewControlState();
 	void DisableEnemyShipAIForCapture();
 
@@ -332,7 +304,6 @@ protected:
 	void DestroyDeckEnemyPool();
 
 	// Aiming and firing logic
-	void TickAIAimingAndFiring(float DeltaTime);
 
 	// ---- Death Handling ----
 	UFUNCTION()
@@ -405,24 +376,6 @@ protected:
 	// ================= End of Health Bar =================
 	
 	// ---- Cannon & AI State ----
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|AI Cannon")
-	TArray<TObjectPtr<ACannon>> ActiveAICannons;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LEGACY|Ship AI", meta = (
-		DisplayName = "[LEGACY] Max Active Cannons",
-		DeprecatedProperty,
-		DeprecationMessage = "Use EnemyShipArchetype.Pattern.NavigationProfile.MaxActiveCannons",
-		AdvancedDisplay))
-	int32 MaxActiveCannons = 2;
-
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|AI Cannon")
-	TObjectPtr<AActor> AITargetShip = nullptr;
-
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|AI Combat")
-	ENavalCombatState CurrentCombatState = ENavalCombatState::Idle;
-
-	FTimerHandle ActiveCannonsTimerHandle;
-
 	/** Owns the server-only pool, deployment queue, waypoint registry, and all point claims. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UDeckEnemySpawnerComponent> DeckEnemySpawnerComponent;

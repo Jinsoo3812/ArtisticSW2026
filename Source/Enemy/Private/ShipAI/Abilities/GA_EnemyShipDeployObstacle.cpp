@@ -16,7 +16,7 @@ UGA_EnemyShipDeployObstacle::UGA_EnemyShipDeployObstacle()
 	SetNativeAbilityAndCooldownTags(
 		GameplayAbility_EnemyShip_DeployObstacle,
 		Cooldown_EnemyShip_DeployObstacle);
-	CooldownDurationSeconds = 8.0f;
+	CooldownDurationSeconds = 10.0f;
 	ObstacleProjectileClass = AEnemyShipObstacleProjectile::StaticClass();
 	ObstacleClass = AEnemyShipObstacle::StaticClass();
 }

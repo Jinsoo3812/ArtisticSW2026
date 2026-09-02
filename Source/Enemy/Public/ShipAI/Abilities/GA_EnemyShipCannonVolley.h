@@ -31,8 +31,9 @@ public:
 		const FGameplayEventData* TriggerEventData) override;
 
 protected:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Cannon Volley", meta = (ClampMin = "1"))
-	int32 MaxCannonsPerVolley = 2;
+	/** Highest launch speed the ballistic solver may use when the authored ship speed cannot reach. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Cannon Volley", meta = (ClampMin = "1.0", Units = "cm/s"))
+	float MaximumCannonballSpeed = 3000.0f;
 
 	/** Chooses the exact fixed-speed ballistic solution closest to this angle. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Cannon Volley", meta = (ClampMin = "-89.0", ClampMax = "89.0", Units = "deg"))

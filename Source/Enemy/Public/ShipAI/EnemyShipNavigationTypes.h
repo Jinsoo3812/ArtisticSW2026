@@ -61,21 +61,8 @@ struct ENEMY_API FEnemyShipNavigationProfile
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0", Units = "s"))
 	float LostTargetReturnDelay = 10.0f;
 
-	/** Cannon cooldown multiplier at zero ship health; interpolates linearly to 1 at full health. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat", meta = (ClampMin = "1.0"))
-	float ZeroHealthCannonCooldownMultiplier = 3.0f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation")
 	bool bOrbitClockwise = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0"))
-	float ForwardInputScale = 1.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0"))
-	float TurnInputScale = 1.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "1"))
-	int32 MaxActiveCannons = 2;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Avoidance", meta = (ClampMin = "0.02", Units = "s"))
 	float AvoidanceDecisionInterval = 0.1f;

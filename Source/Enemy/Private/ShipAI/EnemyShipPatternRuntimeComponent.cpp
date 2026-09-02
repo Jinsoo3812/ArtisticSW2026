@@ -3,9 +3,8 @@
 #include "Abilities/GameplayAbility.h"
 #include "AbilitySystemComponent.h"
 #include "ShipAI/EnemyShip.h"
+#include "ShipAI/EnemyShipArchetypeData.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
-#include "ShipAI/EnemyShipPatternData.h"
-#include "ShipAI/EnemyShipSkillModuleData.h"
 
 UEnemyShipPatternRuntimeComponent::UEnemyShipPatternRuntimeComponent()
 {
@@ -13,31 +12,24 @@ UEnemyShipPatternRuntimeComponent::UEnemyShipPatternRuntimeComponent()
 	RandomStream.Initialize(0);
 }
 
-void UEnemyShipPatternRuntimeComponent::SetPattern(UEnemyShipPatternData* InPattern)
+void UEnemyShipPatternRuntimeComponent::Configure(UEnemyShipArchetypeData* InArchetype)
 {
-	Pattern = InPattern;
-	RebuildResolvedRules();
-	ResetRuntimeState(0);
-}
-
-void UEnemyShipPatternRuntimeComponent::SetCoreSkillModules(
-	const TArray<UEnemyShipSkillModuleData*>& InCoreModules)
-{
-	CoreSkillModules.Reset();
-	for (UEnemyShipSkillModuleData* Module : InCoreModules)
+	Archetype = InArchetype;
+	SkillModules.Reset();
+	if (Archetype)
 	{
-		if (IsValid(Module))
+		for (UEnemyShipSkillModuleData* Module : Archetype->SkillModules)
 		{
-			CoreSkillModules.AddUnique(Module);
+			if (IsValid(Module))
+			{
+				SkillModules.AddUnique(Module);
+			}
 		}
 	}
-	RebuildResolvedRules();
 	ResetRuntimeState(0);
 }
 
-bool UEnemyShipPatternRuntimeComponent::SelectAbility(
-	AActor* TargetActor,
-	FEnemyShipAbilitySelection& OutSelection)
+bool UEnemyShipPatternRuntimeComponent::SelectAbility(AActor* TargetActor, FEnemyShipAbilitySelection& OutSelection)
 {
 	const UWorld* World = GetWorld();
 	return SelectAbilityAtTime(TargetActor, World ? World->GetTimeSeconds() : 0.0, OutSelection);
@@ -49,11 +41,9 @@ bool UEnemyShipPatternRuntimeComponent::SelectAbilityAtTime(
 	FEnemyShipAbilitySelection& OutSelection)
 {
 	OutSelection = FEnemyShipAbilitySelection();
-	PendingRuleId = NAME_None;
-	PendingSelectionTime = CurrentTimeSeconds;
-
+	PendingModule.Reset();
 	const AEnemyShip* Ship = Cast<AEnemyShip>(GetOwner());
-	if (!Pattern || !Ship || !Ship->HasAuthority() || !IsValid(TargetActor))
+	if (!Archetype || !Ship || !Ship->HasAuthority() || !IsValid(TargetActor))
 	{
 		return false;
 	}
@@ -65,161 +55,90 @@ bool UEnemyShipPatternRuntimeComponent::SelectAbilityAtTime(
 	}
 
 	TArray<int32> EligibleIndices;
-	for (int32 RuleIndex = 0; RuleIndex < ResolvedRules.Num(); ++RuleIndex)
+	for (int32 Index = 0; Index < SkillModules.Num(); ++Index)
 	{
-		if (IsRuleEligible(RuleIndex, TargetActor, CurrentTimeSeconds, OwnerTags))
+		if (IsModuleEligible(Index, TargetActor, OwnerTags))
 		{
-			EligibleIndices.Add(RuleIndex);
+			EligibleIndices.Add(Index);
 		}
 	}
-
 	const int32 SelectedIndex = SelectEligibleIndex(EligibleIndices);
-	if (!ResolvedRules.IsValidIndex(SelectedIndex))
+	if (!SkillModules.IsValidIndex(SelectedIndex))
 	{
 		return false;
 	}
 
-	const FEnemyShipSkillRule& Rule = ResolvedRules[SelectedIndex];
-	OutSelection.AbilityTag = Rule.AbilityTag;
-	OutSelection.MovementPolicy = Rule.MovementPolicy;
-	OutSelection.RuleId = Rule.RuleId;
-	PendingRuleId = Rule.RuleId;
-	return true;
+	const UEnemyShipSkillModuleData* Module = SkillModules[SelectedIndex];
+	OutSelection.AbilityTag = Module->GetAbilityTag();
+	OutSelection.MovementPolicy = Module->MovementPolicy;
+	OutSelection.RuleId = Module->GetFName();
+	PendingModule = Module;
+	return OutSelection.IsValid();
 }
 
 bool UEnemyShipPatternRuntimeComponent::CommitSelection(const FEnemyShipAbilitySelection& Selection)
 {
-	const int32 RuleIndex = ResolvedRules.IndexOfByPredicate([&Selection](const FEnemyShipSkillRule& Rule)
-	{
-		return Rule.RuleId == Selection.RuleId;
-	});
-	if (!Pattern || Selection.RuleId != PendingRuleId
-		|| !ResolvedRules.IsValidIndex(RuleIndex)
-		|| ResolvedRules[RuleIndex].AbilityTag != Selection.AbilityTag)
+	const UEnemyShipSkillModuleData* Module = PendingModule.Get();
+	if (!Module || Selection.RuleId != Module->GetFName() || Selection.AbilityTag != Module->GetAbilityTag())
 	{
 		return false;
 	}
-
-	LastCommittedTimes.FindOrAdd(Selection.RuleId) = PendingSelectionTime;
-	if (ResolvedRules[RuleIndex].bUseOnlyOnce)
+	if (Module->bUseOnlyOnce)
 	{
-		ConsumedOneShotRules.Add(Selection.RuleId);
+		ConsumedOneShotModules.Add(Module);
 	}
-	if (Pattern->SelectionPolicy == EEnemyShipPatternSelectionPolicy::Sequence && !ResolvedRules.IsEmpty())
+	if (Archetype && Archetype->SelectionPolicy == EEnemyShipSkillSelectionPolicy::Sequence && !SkillModules.IsEmpty())
 	{
-		SequenceCursor = (RuleIndex + 1) % ResolvedRules.Num();
+		SequenceCursor = (SkillModules.IndexOfByKey(Module) + 1) % SkillModules.Num();
 	}
-	PendingRuleId = NAME_None;
+	PendingModule.Reset();
 	return true;
 }
 
 void UEnemyShipPatternRuntimeComponent::ResetRuntimeState(int32 RandomSeed)
 {
-	LastCommittedTimes.Reset();
-	ConsumedOneShotRules.Reset();
+	ConsumedOneShotModules.Reset();
 	RandomStream.Initialize(RandomSeed);
 	SequenceCursor = 0;
-	PendingSelectionTime = 0.0;
-	PendingRuleId = NAME_None;
+	PendingModule.Reset();
 }
 
-double UEnemyShipPatternRuntimeComponent::GetLastCommittedTime(FName RuleId) const
+float UEnemyShipPatternRuntimeComponent::GetPendingTargetPredictionStrength(const FGameplayTag& AbilityTag) const
 {
-	if (const double* Time = LastCommittedTimes.Find(RuleId))
-	{
-		return *Time;
-	}
-	return -1.0;
+	const UEnemyShipSkillModuleData* Module = PendingModule.Get();
+	return Module && Module->GetAbilityTag() == AbilityTag
+		? FMath::Clamp(Module->TargetPredictionStrength, 0.0f, 1.0f)
+		: 0.0f;
 }
 
-float UEnemyShipPatternRuntimeComponent::GetPendingTargetPredictionStrength(
-	const FGameplayTag& AbilityTag) const
-{
-	const FEnemyShipSkillRule* Rule = ResolvedRules.FindByPredicate(
-		[this, &AbilityTag](const FEnemyShipSkillRule& Candidate)
-		{
-			return Candidate.RuleId == PendingRuleId && Candidate.AbilityTag == AbilityTag;
-		});
-	return Rule ? FMath::Clamp(Rule->TargetPredictionStrength, 0.0f, 1.0f) : 0.0f;
-}
-
-float UEnemyShipPatternRuntimeComponent::GetMaximumCannonballSpeed(
-	const FGameplayTag& AbilityTag) const
-{
-	auto FindInModules = [&AbilityTag](const auto& Modules) -> float
-	{
-		for (const UEnemyShipSkillModuleData* Module : Modules)
-		{
-			if (!IsValid(Module))
-			{
-				continue;
-			}
-			for (const FEnemyShipSkillRule& Rule : Module->SkillRules)
-			{
-				if (Rule.AbilityTag == AbilityTag)
-				{
-					return FMath::Max(1.0f, Module->MaximumCannonballSpeed);
-				}
-			}
-		}
-		return 0.0f;
-	};
-
-	if (const float CoreValue = FindInModules(CoreSkillModules); CoreValue > 0.0f)
-	{
-		return CoreValue;
-	}
-	return Pattern ? FindInModules(Pattern->SkillModules) : 0.0f;
-}
-
-bool UEnemyShipPatternRuntimeComponent::IsRuleEligible(
-	int32 RuleIndex,
+bool UEnemyShipPatternRuntimeComponent::IsModuleEligible(
+	int32 ModuleIndex,
 	AActor* TargetActor,
-	double CurrentTimeSeconds,
 	const FGameplayTagContainer& OwnerTags) const
 {
-	if (!Pattern || !ResolvedRules.IsValidIndex(RuleIndex)
-		|| ConsumedOneShotRules.Contains(ResolvedRules[RuleIndex].RuleId))
+	if (!SkillModules.IsValidIndex(ModuleIndex) || !IsValid(TargetActor))
 	{
 		return false;
 	}
-
-	const FEnemyShipSkillRule& Rule = ResolvedRules[RuleIndex];
-	if (!Rule.AbilityTag.IsValid() || !IsValid(TargetActor))
+	const UEnemyShipSkillModuleData* Module = SkillModules[ModuleIndex];
+	if (!Module || ConsumedOneShotModules.Contains(Module)
+		|| !OwnerTags.HasAll(Module->RequiredOwnerTags) || OwnerTags.HasAny(Module->BlockedOwnerTags))
 	{
 		return false;
 	}
-	if (!IsGrantedAbilityAvailable(Rule.AbilityTag))
-	{
-		return false;
-	}
-	if (!OwnerTags.HasAll(Rule.RequiredOwnerTags) || OwnerTags.HasAny(Rule.BlockedOwnerTags))
+	const FGameplayTag AbilityTag = Module->GetAbilityTag();
+	if (!AbilityTag.IsValid() || !IsGrantedAbilityAvailable(AbilityTag))
 	{
 		return false;
 	}
 	const AEnemyShip* Ship = Cast<AEnemyShip>(GetOwner());
 	const UEnemyShipNavigationComponent* Navigation = Ship ? Ship->GetNavigationComponent() : nullptr;
-	if (!Navigation || Navigation->GetCurrentState() == ENavalCombatState::Return
-		|| Ship->IsCrewDefeated())
+	if (!Navigation || Navigation->GetCurrentState() == ENavalCombatState::Return || Ship->IsCrewDefeated())
 	{
 		return false;
 	}
-	if (!Rule.AllowedNavigationStates.IsEmpty())
-	{
-		if (!Navigation || !Rule.AllowedNavigationStates.Contains(Navigation->GetCurrentState()))
-		{
-			return false;
-		}
-	}
-
-	if (const double* LastTime = LastCommittedTimes.Find(Rule.RuleId))
-	{
-		if (CurrentTimeSeconds - *LastTime < Rule.MinimumInterval)
-		{
-			return false;
-		}
-	}
-	return true;
+	return Module->AllowedNavigationStates.IsEmpty()
+		|| Module->AllowedNavigationStates.Contains(Navigation->GetCurrentState());
 }
 
 bool UEnemyShipPatternRuntimeComponent::IsGrantedAbilityAvailable(const FGameplayTag& AbilityTag) const
@@ -227,15 +146,13 @@ bool UEnemyShipPatternRuntimeComponent::IsGrantedAbilityAvailable(const FGamepla
 	const AEnemyShip* Ship = Cast<AEnemyShip>(GetOwner());
 	const UAbilitySystemComponent* ASC = Ship ? Ship->GetAbilitySystemComponent() : nullptr;
 	const FGameplayAbilityActorInfo* ActorInfo = ASC ? ASC->AbilityActorInfo.Get() : nullptr;
-	if (!ASC || !ActorInfo || !AbilityTag.IsValid())
+	if (!ASC || !ActorInfo)
 	{
 		return false;
 	}
-
 	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
 	{
-		if (Spec.Ability
-			&& Spec.Ability->GetAssetTags().HasTagExact(AbilityTag)
+		if (Spec.Ability && Spec.Ability->GetAssetTags().HasTagExact(AbilityTag)
 			&& Spec.Ability->CanActivateAbility(Spec.Handle, ActorInfo))
 		{
 			return true;
@@ -246,16 +163,15 @@ bool UEnemyShipPatternRuntimeComponent::IsGrantedAbilityAvailable(const FGamepla
 
 int32 UEnemyShipPatternRuntimeComponent::SelectEligibleIndex(const TArray<int32>& EligibleIndices)
 {
-	if (!Pattern || EligibleIndices.IsEmpty())
+	if (!Archetype || EligibleIndices.IsEmpty())
 	{
 		return INDEX_NONE;
 	}
-
-	if (Pattern->SelectionPolicy == EEnemyShipPatternSelectionPolicy::Sequence)
+	if (Archetype->SelectionPolicy == EEnemyShipSkillSelectionPolicy::Sequence)
 	{
-		for (int32 Offset = 0; Offset < ResolvedRules.Num(); ++Offset)
+		for (int32 Offset = 0; Offset < SkillModules.Num(); ++Offset)
 		{
-			const int32 Candidate = (SequenceCursor + Offset) % ResolvedRules.Num();
+			const int32 Candidate = (SequenceCursor + Offset) % SkillModules.Num();
 			if (EligibleIndices.Contains(Candidate))
 			{
 				return Candidate;
@@ -263,23 +179,21 @@ int32 UEnemyShipPatternRuntimeComponent::SelectEligibleIndex(const TArray<int32>
 		}
 		return INDEX_NONE;
 	}
-
-	if (Pattern->SelectionPolicy == EEnemyShipPatternSelectionPolicy::WeightedRandom)
+	if (Archetype->SelectionPolicy == EEnemyShipSkillSelectionPolicy::WeightedRandom)
 	{
 		float TotalWeight = 0.0f;
-		for (const int32 Index : EligibleIndices)
+		for (int32 Index : EligibleIndices)
 		{
-			TotalWeight += FMath::Max(0.0f, ResolvedRules[Index].Weight);
+			TotalWeight += FMath::Max(0.0f, SkillModules[Index]->Weight);
 		}
 		if (TotalWeight <= KINDA_SMALL_NUMBER)
 		{
 			return INDEX_NONE;
 		}
-
 		float Roll = RandomStream.FRandRange(0.0f, TotalWeight);
-		for (const int32 Index : EligibleIndices)
+		for (int32 Index : EligibleIndices)
 		{
-			Roll -= FMath::Max(0.0f, ResolvedRules[Index].Weight);
+			Roll -= FMath::Max(0.0f, SkillModules[Index]->Weight);
 			if (Roll <= 0.0f)
 			{
 				return Index;
@@ -289,53 +203,12 @@ int32 UEnemyShipPatternRuntimeComponent::SelectEligibleIndex(const TArray<int32>
 	}
 
 	int32 BestIndex = EligibleIndices[0];
-	for (const int32 Index : EligibleIndices)
+	for (int32 Index : EligibleIndices)
 	{
-		if (ResolvedRules[Index].Priority > ResolvedRules[BestIndex].Priority)
+		if (SkillModules[Index]->Priority > SkillModules[BestIndex]->Priority)
 		{
 			BestIndex = Index;
 		}
 	}
 	return BestIndex;
-}
-
-void UEnemyShipPatternRuntimeComponent::RebuildResolvedRules()
-{
-	ResolvedRules.Reset();
-	TSet<FName> SeenModuleIds;
-	TSet<FName> SeenRuleIds;
-	TSet<FGameplayTag> SeenAbilityTags;
-
-	auto AppendModule = [this, &SeenModuleIds, &SeenRuleIds, &SeenAbilityTags](
-		const UEnemyShipSkillModuleData* Module)
-	{
-		if (!IsValid(Module) || Module->ModuleId.IsNone() || SeenModuleIds.Contains(Module->ModuleId))
-		{
-			return;
-		}
-		SeenModuleIds.Add(Module->ModuleId);
-		for (const FEnemyShipSkillRule& Rule : Module->SkillRules)
-		{
-			if (Rule.RuleId.IsNone() || !Rule.AbilityTag.IsValid()
-				|| SeenRuleIds.Contains(Rule.RuleId) || SeenAbilityTags.Contains(Rule.AbilityTag))
-			{
-				continue;
-			}
-			SeenRuleIds.Add(Rule.RuleId);
-			SeenAbilityTags.Add(Rule.AbilityTag);
-			ResolvedRules.Add(Rule);
-		}
-	};
-
-	for (const UEnemyShipSkillModuleData* Module : CoreSkillModules)
-	{
-		AppendModule(Module);
-	}
-	if (Pattern)
-	{
-		for (const UEnemyShipSkillModuleData* Module : Pattern->SkillModules)
-		{
-			AppendModule(Module);
-		}
-	}
 }

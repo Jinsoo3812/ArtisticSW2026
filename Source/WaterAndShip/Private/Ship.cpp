@@ -2506,11 +2506,8 @@ void AShip::InitializeDefaultAttributes()
 			AttributeSet->InitHealth(StatRow->MaxHealth);
 			AttributeSet->InitMaxHealth(StatRow->MaxHealth);
 			AttributeSet->InitMoveSpeed(1.0f); // 캐릭터 기본 MoveSpeed는 1.0f로 고정 유지
-			const bool bUseLegacyMovement = FMath::IsNearlyEqual(StatRow->ForwardPropulsionMultiplier, 1.0f)
-				&& FMath::IsNearlyEqual(StatRow->TurnTorqueMultiplier, 1.0f)
-				&& !FMath::IsNearlyEqual(StatRow->ShipSpeedMultiplier, 1.0f);
-			AttributeSet->InitForwardPropulsionMultiplier(bUseLegacyMovement ? StatRow->ShipSpeedMultiplier : StatRow->ForwardPropulsionMultiplier);
-			AttributeSet->InitTurnTorqueMultiplier(bUseLegacyMovement ? StatRow->ShipSpeedMultiplier : StatRow->TurnTorqueMultiplier);
+			AttributeSet->InitForwardPropulsionMultiplier(StatRow->ForwardPropulsionMultiplier);
+			AttributeSet->InitTurnTorqueMultiplier(StatRow->TurnTorqueMultiplier);
 			AttributeSet->InitCannonDamage(StatRow->CannonDamage);
 			AttributeSet->InitCannonFireCooldown(StatRow->CannonFireCooldown);
 			AttributeSet->InitCannonballSpeed(StatRow->CannonballSpeed);
@@ -2553,13 +2550,6 @@ FShipStatSnapshot AShip::GetBaseStatSnapshot() const
 	Snapshot.CannonballSpeed = StatRow->CannonballSpeed;
 	Snapshot.ForwardPropulsionMultiplier = StatRow->ForwardPropulsionMultiplier;
 	Snapshot.TurnTorqueMultiplier = StatRow->TurnTorqueMultiplier;
-	if (FMath::IsNearlyEqual(StatRow->ForwardPropulsionMultiplier, 1.0f)
-		&& FMath::IsNearlyEqual(StatRow->TurnTorqueMultiplier, 1.0f)
-		&& !FMath::IsNearlyEqual(StatRow->ShipSpeedMultiplier, 1.0f))
-	{
-		Snapshot.ForwardPropulsionMultiplier = StatRow->ShipSpeedMultiplier;
-		Snapshot.TurnTorqueMultiplier = StatRow->ShipSpeedMultiplier;
-	}
 	return Snapshot;
 }
 

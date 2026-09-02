@@ -3,10 +3,12 @@
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
 #include "Engine/DataAsset.h"
+#include "ShipAI/EnemyShipNavigationTypes.h"
+#include "ShipAI/EnemyShipSkillModuleData.h"
 #include "EnemyShipArchetypeData.generated.h"
 
 class AEnemyShip;
-class UEnemyShipPatternData;
+class UEnemyShipSkillModuleData;
 
 UCLASS(BlueprintType)
 class ENEMY_API UEnemyShipArchetypeData : public UPrimaryDataAsset
@@ -17,9 +19,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spec", meta = (RowType = "/Script/WaterAndShip.ShipStatRow"))
 	FDataTableRowHandle SpecRow;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI")
-	TObjectPtr<UEnemyShipPatternData> Pattern;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Navigation")
+	FEnemyShipNavigationProfile NavigationProfile;
 
-	bool ApplyToShip(AEnemyShip* Ship) const;
+	/** Cannon cooldown multiplier at zero health; interpolates linearly to 1 at full health. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "1.0"))
+	float ZeroHealthCannonCooldownMultiplier = 3.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skills")
+	EEnemyShipSkillSelectionPolicy SelectionPolicy = EEnemyShipSkillSelectionPolicy::HighestPriority;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skills")
+	TArray<TObjectPtr<UEnemyShipSkillModuleData>> SkillModules;
+
+	bool ApplyToShip(AEnemyShip* Ship);
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 };

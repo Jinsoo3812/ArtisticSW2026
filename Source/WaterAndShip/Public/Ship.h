@@ -411,10 +411,6 @@ struct FShipStatRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	float MaxHealth = 100.f;
 
-	/** Legacy migration source. New runtime code does not consume this field directly. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats", meta = (DeprecatedProperty, DeprecationMessage = "Use ForwardPropulsionMultiplier and TurnTorqueMultiplier"))
-	float ShipSpeedMultiplier = 1.f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	float ForwardPropulsionMultiplier = 1.f;
 

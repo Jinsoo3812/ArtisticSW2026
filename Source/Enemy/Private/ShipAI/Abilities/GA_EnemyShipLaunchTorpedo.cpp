@@ -14,7 +14,7 @@ UGA_EnemyShipLaunchTorpedo::UGA_EnemyShipLaunchTorpedo()
 	SetNativeAbilityAndCooldownTags(
 		GameplayAbility_EnemyShip_LaunchTorpedo,
 		Cooldown_EnemyShip_LaunchTorpedo);
-	CooldownDurationSeconds = 6.0f;
+	CooldownDurationSeconds = 10.0f;
 	TorpedoClass = AEnemyShipTorpedo::StaticClass();
 }
 

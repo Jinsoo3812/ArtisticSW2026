@@ -17,7 +17,7 @@
 UGA_EnemyShipCharge::UGA_EnemyShipCharge()
 {
 	SetNativeAbilityAndCooldownTags(GameplayAbility_EnemyShip_Charge, Cooldown_EnemyShip_Charge);
-	CooldownDurationSeconds = 8.0f;
+	CooldownDurationSeconds = 10.0f;
 	DamageGameplayEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
 	ChargeTelegraphClass = AEnemyShipChargeTelegraph::StaticClass();
 }

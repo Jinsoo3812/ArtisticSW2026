@@ -102,12 +102,6 @@ void UEnemyShipNavigationComponent::TickComponent(
 		Ship->ResetAfterReturnToSpawn();
 	}
 
-	if (Ship->IsUsingLegacyAICompatibility())
-	{
-		Ship->SetAITarget(TargetShip);
-		Ship->SetNavalCombatState(CurrentState);
-		Ship->SetMaxActiveCannons(NavigationProfile.MaxActiveCannons);
-	}
 	ApplyControl(LastNavigationOutput);
 }
 
@@ -138,11 +132,6 @@ void UEnemyShipNavigationComponent::SetNavigationProfile(const FEnemyShipNavigat
 		0.0f,
 		NavigationProfile.ReturnPropulsionMultiplier);
 	NavigationProfile.LostTargetReturnDelay = FMath::Max(0.0f, NavigationProfile.LostTargetReturnDelay);
-	NavigationProfile.ZeroHealthCannonCooldownMultiplier = FMath::Max(
-		1.0f, NavigationProfile.ZeroHealthCannonCooldownMultiplier);
-	NavigationProfile.ForwardInputScale = FMath::Max(0.0f, NavigationProfile.ForwardInputScale);
-	NavigationProfile.TurnInputScale = FMath::Max(0.0f, NavigationProfile.TurnInputScale);
-	NavigationProfile.MaxActiveCannons = FMath::Max(1, NavigationProfile.MaxActiveCannons);
 	NavigationProfile.AvoidanceDecisionInterval = FMath::Max(0.02f, NavigationProfile.AvoidanceDecisionInterval);
 	NavigationProfile.AvoidanceSafetyBuffer = FMath::Max(0.0f, NavigationProfile.AvoidanceSafetyBuffer);
 }
@@ -426,10 +415,8 @@ void UEnemyShipNavigationComponent::ApplySquadAvoidance(FEnemyShipNavigationOutp
 	const float RightDot = FVector::DotProduct(ShipRight, InOutOutput.DesiredHeading);
 	InOutOutput.TurnInput = HeadingDot < 0.99f ? (RightDot > 0.0f ? 1.0f : -1.0f) : 0.0f;
 	InOutOutput.MoveInput = HeadingDot > 0.0f ? HeadingDot : 0.0f;
-	InOutOutput.MoveInput = FMath::Clamp(
-		InOutOutput.MoveInput * NavigationProfile.ForwardInputScale, -1.0f, 1.0f);
-	InOutOutput.TurnInput = FMath::Clamp(
-		InOutOutput.TurnInput * NavigationProfile.TurnInputScale, -1.0f, 1.0f);
+	InOutOutput.MoveInput = FMath::Clamp(InOutOutput.MoveInput, -1.0f, 1.0f);
+	InOutOutput.TurnInput = FMath::Clamp(InOutOutput.TurnInput, -1.0f, 1.0f);
 }
 
 void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutput& BaseOutput)

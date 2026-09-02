@@ -137,7 +137,7 @@ FEnemyShipNavigationOutput FEnemyShipNavigationModel::Evaluate(
 		Output.MoveInput = HeadingDot * SpeedFactor;
 	}
 
-	Output.MoveInput = FMath::Clamp(Output.MoveInput * FMath::Max(0.0f, Profile.ForwardInputScale), -1.0f, 1.0f);
-	Output.TurnInput = FMath::Clamp(Output.TurnInput * FMath::Max(0.0f, Profile.TurnInputScale), -1.0f, 1.0f);
+	Output.MoveInput = FMath::Clamp(Output.MoveInput, -1.0f, 1.0f);
+	Output.TurnInput = FMath::Clamp(Output.TurnInput, -1.0f, 1.0f);
 	return Output;
 }

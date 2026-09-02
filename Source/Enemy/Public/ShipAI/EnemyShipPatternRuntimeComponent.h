@@ -4,10 +4,10 @@
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
 #include "ShipAI/EnemyShipNavigationTypes.h"
-#include "ShipAI/EnemyShipPatternData.h"
+#include "ShipAI/EnemyShipSkillModuleData.h"
 #include "EnemyShipPatternRuntimeComponent.generated.h"
 
-class UEnemyShipPatternData;
+class UEnemyShipArchetypeData;
 class UEnemyShipSkillModuleData;
 
 USTRUCT(BlueprintType)
@@ -27,7 +27,7 @@ struct ENEMY_API FEnemyShipAbilitySelection
 	bool IsValid() const { return AbilityTag.IsValid() && !RuleId.IsNone(); }
 };
 
-/** Per-ship mutable scheduler state for an immutable Pattern Data Asset. */
+/** Per-ship mutable scheduler state for an immutable Archetype Data Asset. */
 UCLASS(ClassGroup = (EnemyShip), meta = (BlueprintSpawnableComponent))
 class ENEMY_API UEnemyShipPatternRuntimeComponent : public UActorComponent
 {
@@ -36,14 +36,8 @@ class ENEMY_API UEnemyShipPatternRuntimeComponent : public UActorComponent
 public:
 	UEnemyShipPatternRuntimeComponent();
 
-	UFUNCTION(BlueprintCallable, Category = "Enemy Ship|Pattern")
-	void SetPattern(UEnemyShipPatternData* InPattern);
-
-	UFUNCTION(BlueprintCallable, Category = "Enemy Ship|Pattern")
-	void SetCoreSkillModules(const TArray<UEnemyShipSkillModuleData*>& InCoreModules);
-
-	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Pattern")
-	UEnemyShipPatternData* GetPattern() const { return Pattern; }
+	UFUNCTION(BlueprintCallable, Category = "Enemy Ship|Skills")
+	void Configure(UEnemyShipArchetypeData* InArchetype);
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy Ship|Pattern")
 	bool SelectAbility(AActor* TargetActor, FEnemyShipAbilitySelection& OutSelection);
@@ -59,33 +53,24 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Enemy Ship|Pattern")
 	void ResetRuntimeState(int32 RandomSeed = 0);
 
-	double GetLastCommittedTime(FName RuleId) const;
-	int32 GetResolvedRuleCount() const { return ResolvedRules.Num(); }
+	int32 GetResolvedRuleCount() const { return SkillModules.Num(); }
 	float GetPendingTargetPredictionStrength(const FGameplayTag& AbilityTag) const;
-	float GetMaximumCannonballSpeed(const FGameplayTag& AbilityTag) const;
 
 private:
-	bool IsRuleEligible(
-		int32 RuleIndex,
+	bool IsModuleEligible(
+		int32 ModuleIndex,
 		AActor* TargetActor,
-		double CurrentTimeSeconds,
 		const FGameplayTagContainer& OwnerTags) const;
 	bool IsGrantedAbilityAvailable(const FGameplayTag& AbilityTag) const;
 	int32 SelectEligibleIndex(const TArray<int32>& EligibleIndices);
-	void RebuildResolvedRules();
+	UPROPERTY(Transient)
+	TObjectPtr<UEnemyShipArchetypeData> Archetype;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UEnemyShipPatternData> Pattern;
+	TArray<TObjectPtr<UEnemyShipSkillModuleData>> SkillModules;
 
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UEnemyShipSkillModuleData>> CoreSkillModules;
-
-	TArray<FEnemyShipSkillRule> ResolvedRules;
-
-	TMap<FName, double> LastCommittedTimes;
-	TSet<FName> ConsumedOneShotRules;
+	TSet<TObjectPtr<const UEnemyShipSkillModuleData>> ConsumedOneShotModules;
 	FRandomStream RandomStream;
 	int32 SequenceCursor = 0;
-	double PendingSelectionTime = 0.0;
-	FName PendingRuleId;
+	TWeakObjectPtr<const UEnemyShipSkillModuleData> PendingModule;
 };
