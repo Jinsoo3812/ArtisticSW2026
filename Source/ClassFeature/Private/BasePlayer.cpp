@@ -387,7 +387,7 @@ void ABasePlayer::Tick(float DeltaTime)
 		bIsHitReacting = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Damaged);
 
 		const bool bHasRollingTag = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Rolling);
-		const bool bHasMoveInput = GetPendingMovementInputVector().SizeSquared() > 0.001f;
+		const bool bHasMoveInput = (AnimStateComponent && AnimStateComponent->bHasMoveInput) || (GetPendingMovementInputVector().SizeSquared() > 0.001f);
 		if (bHasRollingTag)
 		{
 			bIsDodging = true;
@@ -395,9 +395,9 @@ void ABasePlayer::Tick(float DeltaTime)
 		else if (bIsDodging)
 		{
 			// Maintain dodge state during recovery blend out until montage finishes,
-			// unless the player provides explicit move input to take over control.
+			// unless the player provides explicit move input or gets hit to take over control.
 			const UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
-			bIsDodging = (AnimInst && AnimInst->IsAnyMontagePlaying()) && !bHasMoveInput;
+			bIsDodging = (AnimInst && AnimInst->IsAnyMontagePlaying()) && !bHasMoveInput && !bIsHitReacting;
 		}
 		else
 		{
@@ -1830,7 +1830,6 @@ void ABasePlayer::InitializeSwimmingAnimLayers()
 
 void ABasePlayer::StopMoveInput()
 {
-	if(AnimStateComponent) AnimStateComponent->ClearMoveInput();
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->ClearMoveInput();

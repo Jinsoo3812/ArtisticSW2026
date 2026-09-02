@@ -14,6 +14,7 @@
 class UPoseSearchDatabase;
 class UChooserTable;
 class UCharacterTrajectoryComponent;
+class USWTrajectoryComponent;
 class UAnimationAsset;
 class FStructProperty;
 class FObjectProperty;
@@ -855,6 +856,9 @@ protected:
 
     UPROPERTY(Transient, BlueprintReadOnly, Category = "Animation")
     TObjectPtr<ULocomotionAnimStateComponent> CachedLocomotionStateComponent;
+
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Animation")
+    TObjectPtr<USWTrajectoryComponent> CachedTrajectoryComponent;
 
     // Master Chooser Table for State Controller
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")

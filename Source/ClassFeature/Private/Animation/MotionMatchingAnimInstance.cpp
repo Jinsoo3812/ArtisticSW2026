@@ -1999,7 +1999,8 @@ void UMotionMatchingAnimInstance::NativeInitializeAnimation()
                 TEXT("/Game/Anim_Logic/PSD/PSD_Run_Tnasition.PSD_Run_Tnasition"));
         }
 
-        UCharacterTrajectoryComponent* TrajectoryComp = CachedBasePlayer->FindComponentByClass<UCharacterTrajectoryComponent>();
+        CachedTrajectoryComponent = CachedBasePlayer->FindComponentByClass<USWTrajectoryComponent>();
+        UCharacterTrajectoryComponent* TrajectoryComp = CachedTrajectoryComponent ? CachedTrajectoryComponent.Get() : CachedBasePlayer->FindComponentByClass<UCharacterTrajectoryComponent>();
         if (TrajectoryComp)
         {
             TArray<FName> TrajPropNames = { FName("TransformTrajectory"), FName("Trajectory"), FName("QueryTrajectory") };
@@ -2095,9 +2096,9 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     }
 
     // 트랙젝토리 틱을 수동으로 구동 (매 프레임 위치/회전 보간 등 물리 계산 진행)
-    if (USWTrajectoryComponent* TrajectoryComp = CachedBasePlayer->FindComponentByClass<USWTrajectoryComponent>())
+    if (CachedTrajectoryComponent)
     {
-        TrajectoryComp->UpdateTrajectoryState(DeltaSeconds);
+        CachedTrajectoryComponent->UpdateTrajectoryState(DeltaSeconds);
     }
 
     // Swimming visual state must remain current even when distant characters
@@ -2478,7 +2479,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     bWasFallOffForDebug = bIsFallOffForDebug;
     ThreadSafeData.MovementData.FallOffElapsedTime = FallOffDebugElapsedTime;
     
-    UCharacterTrajectoryComponent* TrajectoryComp = CachedBasePlayer->FindComponentByClass<UCharacterTrajectoryComponent>();
+    UCharacterTrajectoryComponent* TrajectoryComp = CachedTrajectoryComponent ? CachedTrajectoryComponent.Get() : (CachedBasePlayer ? CachedBasePlayer->FindComponentByClass<UCharacterTrajectoryComponent>() : nullptr);
     if (TrajectoryComp)
     {
         // Cache the trajectory property on demand if it wasn't cached during initialization
