@@ -51,6 +51,8 @@
 #include "LandscapeProxy.h"
 #include "WaterSurfaceQueryLibrary.h"
 #include "Upgrade/ShipUpgradeComponent.h"
+#include "Repair/ShipRepairPointComponent.h"
+#include "Repair/ShipLeakDamageGameplayEffect.h"
 
 namespace
 {
@@ -108,6 +110,7 @@ AShip::AShip()
  	// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 	PlayerRamDamageGameplayEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
+	LeakDamageGameplayEffectClass = UShipLeakDamageGameplayEffect::StaticClass();
 
 	// Buoyancy Root
 	BuoyancyRoot = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BuoyancyRoot"));
@@ -243,6 +246,27 @@ AShip::AShip()
 
 	BoardingArrivalPoint = CreateDefaultSubobject<USceneComponent>(TEXT("BoardingArrivalPoint"));
 	BoardingArrivalPoint->SetupAttachment(BuoyancyRoot);
+
+	RepairPoint1 = CreateDefaultSubobject<UShipRepairPointComponent>(TEXT("RepairPoint1"));
+	RepairPoint1->SetupAttachment(BuoyancyRoot);
+	RepairPoint1->SetRelativeLocation(FVector(0.0f, 250.0f, 150.0f));
+	RepairPoint2 = CreateDefaultSubobject<UShipRepairPointComponent>(TEXT("RepairPoint2"));
+	RepairPoint2->SetupAttachment(BuoyancyRoot);
+	RepairPoint2->SetRelativeLocation(FVector(300.0f, -250.0f, 150.0f));
+	RepairPoint3 = CreateDefaultSubobject<UShipRepairPointComponent>(TEXT("RepairPoint3"));
+	RepairPoint3->SetupAttachment(BuoyancyRoot);
+	RepairPoint3->SetRelativeLocation(FVector(-300.0f, -250.0f, 150.0f));
+
+	auto AddRepairRule = [this](const FGameplayTag ItemTag, const float HealthRestored)
+	{
+		FShipRepairMaterialRule& Rule = RepairMaterialRules.AddDefaulted_GetRef();
+		Rule.ItemTag = ItemTag;
+		Rule.HealthRestored = HealthRestored;
+	};
+	AddRepairRule(Item_Id_Material_ShipMaterials_WoodenPlank, 20.0f);
+	AddRepairRule(Item_Id_Material_ShipMaterials_GoodWoodenPlank, 30.0f);
+	AddRepairRule(Item_Id_Material_ShipMaterials_IronPlate, 40.0f);
+	AddRepairRule(Item_Id_Material_ShipMaterials_GoodIronPlate, 50.0f);
 
 	// Ability System Component
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
@@ -1273,10 +1297,130 @@ void AShip::SetHelmRiderInvulnerable(bool bEnabled)
 
 void AShip::HandleShipHealthChanged(const FOnAttributeChangeData& Data)
 {
+	if (HasAuthority() && !bApplyingLeakDamage && Data.NewValue < Data.OldValue && Data.NewValue > 0.0f)
+	{
+		TryActivateRepairPointAfterHit(Data.NewValue);
+	}
 	if (HasAuthority() && Data.NewValue <= 0.0f)
 	{
 		StartSinking(PlayerShipDestroyAfterSinkingDelay);
 	}
+}
+
+int32 AShip::GetActiveRepairPointCount() const
+{
+	int32 Count = 0;
+	for (const UShipRepairPointComponent* Point : { RepairPoint1.Get(), RepairPoint2.Get(), RepairPoint3.Get() })
+	{
+		Count += Point && Point->IsLeakActive() ? 1 : 0;
+	}
+	return Count;
+}
+
+bool AShip::ResolveRepairMaterial(const FGameplayTag ItemTag, float& OutHealthRestored) const
+{
+	OutHealthRestored = 0.0f;
+	const FShipRepairMaterialRule* Rule = RepairMaterialRules.FindByPredicate([ItemTag](const FShipRepairMaterialRule& Candidate)
+	{
+		return Candidate.ItemTag.MatchesTagExact(ItemTag);
+	});
+	if (!Rule || Rule->HealthRestored <= 0.0f)
+	{
+		return false;
+	}
+	OutHealthRestored = Rule->HealthRestored;
+	return true;
+}
+
+void AShip::TryActivateRepairPointAfterHit(const float NewHealth)
+{
+	if (!HasAuthority() || IsEnemyShipForEffects() || bIsSinking || !AttributeSet)
+	{
+		return;
+	}
+
+	TArray<UShipRepairPointComponent*> InactivePoints;
+	for (UShipRepairPointComponent* Point : { RepairPoint1.Get(), RepairPoint2.Get(), RepairPoint3.Get() })
+	{
+		if (Point && !Point->IsLeakActive())
+		{
+			InactivePoints.Add(Point);
+		}
+	}
+	if (InactivePoints.IsEmpty())
+	{
+		return;
+	}
+
+	const float MaxHealth = FMath::Max(AttributeSet->GetMaxHealth(), 1.0f);
+	const float HealthRatio = NewHealth / MaxHealth;
+	const int32 RequiredLeakCount = FShipRepairSpawnRules::GetRequiredLeakCount(
+		HealthRatio, ForcedLeakHealthRatios, 3);
+	if (!FShipRepairSpawnRules::ShouldCreateLeak(
+		GetActiveRepairPointCount(), InactivePoints.Num(), RequiredLeakCount,
+		LeakChancePerHit, FMath::FRand()))
+	{
+		return;
+	}
+
+	UShipRepairPointComponent* SelectedPoint = InactivePoints[FMath::RandRange(0, InactivePoints.Num() - 1)];
+	SelectedPoint->ActivateLeak();
+	RefreshLeakDamageTimer();
+}
+
+void AShip::ApplyLeakDamageTick()
+{
+	if (!HasAuthority() || bIsSinking || !AbilitySystemComponent || !LeakDamageGameplayEffectClass)
+	{
+		return;
+	}
+	const int32 ActiveCount = GetActiveRepairPointCount();
+	if (ActiveCount <= 0)
+	{
+		RefreshLeakDamageTimer();
+		return;
+	}
+
+	FGameplayEffectContextHandle Context = AbilitySystemComponent->MakeEffectContext();
+	Context.AddSourceObject(this);
+	FGameplayEffectSpecHandle Spec = AbilitySystemComponent->MakeOutgoingSpec(LeakDamageGameplayEffectClass, 1.0f, Context);
+	if (!Spec.IsValid() || !Spec.Data.IsValid())
+	{
+		return;
+	}
+	Spec.Data->SetSetByCallerMagnitude(Data_Damage, FMath::Max(0.0f, LeakDamagePerPoint) * ActiveCount);
+	bApplyingLeakDamage = true;
+	AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+	bApplyingLeakDamage = false;
+}
+
+void AShip::RefreshLeakDamageTimer()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	if (GetActiveRepairPointCount() > 0 && !bIsSinking)
+	{
+		GetWorldTimerManager().SetTimer(
+			LeakDamageTimerHandle, this, &AShip::ApplyLeakDamageTick,
+			FMath::Max(0.1f, LeakDamageInterval), true);
+	}
+	else
+	{
+		GetWorldTimerManager().ClearTimer(LeakDamageTimerHandle);
+	}
+}
+
+void AShip::CompleteRepairPoint(UShipRepairPointComponent* RepairPoint, const float HealthRestored)
+{
+	if (!HasAuthority() || !RepairPoint || !RepairPoint->IsLeakActive() || !AttributeSet)
+	{
+		return;
+	}
+	RepairPoint->DeactivateLeak();
+	AttributeSet->SetHealth(FMath::Min(AttributeSet->GetMaxHealth(), AttributeSet->GetHealth() + FMath::Max(0.0f, HealthRestored)));
+	RefreshLeakDamageTimer();
 }
 
 void AShip::ForceExitAllControlModes()
@@ -1304,6 +1448,14 @@ void AShip::StartSinking(float DestroyDelaySeconds)
 	}
 
 	bIsSinking = true;
+	GetWorldTimerManager().ClearTimer(LeakDamageTimerHandle);
+	for (UShipRepairPointComponent* Point : { RepairPoint1.Get(), RepairPoint2.Get(), RepairPoint3.Get() })
+	{
+		if (Point)
+		{
+			Point->DeactivateLeak();
+		}
+	}
 	if (ActorHasTag(TEXT("Player")) && !ActorHasTag(TEXT("Enemy")))
 	{
 		if (AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr)

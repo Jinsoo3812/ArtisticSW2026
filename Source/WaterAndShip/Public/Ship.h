@@ -9,6 +9,7 @@
 #include "Physics/NetworkPhysicsComponent.h"
 #include "GerstnerWaterWaves.h"
 #include "Upgrade/ShipUpgradeTypes.h"
+#include "Repair/ShipRepairTypes.h"
 #include "Ship.generated.h"
 
 class USWBuoyancyComponent;
@@ -400,6 +401,7 @@ class UGameplayAbility;
 class ABombardment;
 class ABombardmentPreview;
 class ACannon;
+class UShipRepairPointComponent;
 
 USTRUCT(BlueprintType)
 struct FShipStatRow : public FTableRowBase
@@ -492,6 +494,12 @@ public:
 	/** Applies the assigned player's active upgrade nodes over this ship's base DT row. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Stats")
 	bool ApplyPlayerUpgrades(APlayerState* InPlayerState, bool bRefillHealth = true);
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Repair")
+	int32 GetActiveRepairPointCount() const;
+
+	bool ResolveRepairMaterial(FGameplayTag ItemTag, float& OutHealthRestored) const;
+	void CompleteRepairPoint(UShipRepairPointComponent* RepairPoint, float HealthRestored);
 
 	/**
 	 * Sets normalized server-authored control input for AI-controlled ships.
@@ -708,6 +716,35 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Boarding")
 	TObjectPtr<USceneComponent> BoardingArrivalPoint;
 
+	/** Three authorable leak locations. Move these inherited components in the ship Blueprint. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Repair")
+	TObjectPtr<UShipRepairPointComponent> RepairPoint1;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Repair")
+	TObjectPtr<UShipRepairPointComponent> RepairPoint2;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Repair")
+	TObjectPtr<UShipRepairPointComponent> RepairPoint3;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Repair")
+	TArray<struct FShipRepairMaterialRule> RepairMaterialRules;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Repair", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float LeakChancePerHit = 0.10f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Repair", meta = (ClampMin = "0.0"))
+	float LeakDamagePerPoint = 5.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Repair", meta = (ClampMin = "0.1", Units = "s"))
+	float LeakDamageInterval = 1.0f;
+
+	/** Crossing each ratio requires one active leak after the next external hit. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Repair")
+	TArray<float> ForcedLeakHealthRatios = { 0.75f, 0.50f, 0.25f };
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Repair")
+	TSubclassOf<UGameplayEffect> LeakDamageGameplayEffectClass;
+
 	/** Canonical runtime references for both BP child actors and legacy attached actors. */
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Ship|Cannons")
 	TArray<TObjectPtr<ACannon>> MountedCannons;
@@ -894,6 +931,9 @@ protected:
 	bool FindHelmStandingLocation(ACharacter* Character, FVector& OutStandingLocation) const;
 	void SetHelmRiderInvulnerable(bool bEnabled);
 	void HandleShipHealthChanged(const struct FOnAttributeChangeData& Data);
+	void TryActivateRepairPointAfterHit(float NewHealth);
+	void ApplyLeakDamageTick();
+	void RefreshLeakDamageTimer();
 	void ForceExitAllControlModes();
 	void FinishSinking();
 
@@ -926,6 +966,8 @@ protected:
 	bool bHelmInvulnerabilityApplied = false;
 	FDelegateHandle ShipHealthChangedDelegateHandle;
 	FTimerHandle SinkingDestroyTimerHandle;
+	FTimerHandle LeakDamageTimerHandle;
+	bool bApplyingLeakDamage = false;
 
 	UFUNCTION()
 	void OnRep_RidingPlayer(APawn* OldRidingPlayer);

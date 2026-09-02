@@ -27,6 +27,8 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Components/WidgetComponent.h"
 #include "InteractableComponent.h"
+#include "Repair/ShipRepairPointComponent.h"
+#include "UI/ShipRepairProgressWidget.h"
 #include "InteractUserWidget.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Animation/SWTrajectoryComponent.h"
@@ -417,6 +419,15 @@ void ABasePlayer::Tick(float DeltaTime)
 		bIsAttacking = bIsThrowingOrAttacking;
 		bIsHitReacting = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Damaged);
 	}
+	if (HasAuthority() && bIsHitReacting && ActiveShipRepairPoint)
+	{
+		ActiveShipRepairPoint->CancelRepair(this);
+	}
+	if (IsLocallyControlled() && ActiveShipRepairPoint && ShipRepairProgressWidget && LocalShipRepairDuration > 0.0f)
+	{
+		const float Elapsed = GetWorld()->GetTimeSeconds() - LocalShipRepairStartTime;
+		ShipRepairProgressWidget->SetRepairProgress(Elapsed / LocalShipRepairDuration);
+	}
 
 	float TargetArmLength = DefaultTargetArmLength;
 	FVector TargetSocketOffset = DefaultSocketOffset;
@@ -773,8 +784,20 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 					else
 					{
 						// 일반 키보드 입력
+						if (Action.KeyTag.MatchesTagExact(Key_Default_F))
+						{
+							EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started,
+								this, &ABasePlayer::OnShipRepairInteractionPressed);
+						}
 						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::OnAbilityInputPressed, Action.KeyTag);
 						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, this, &ABasePlayer::OnAbilityInputReleased, Action.KeyTag);
+						if (Action.KeyTag.MatchesTagExact(Key_Default_F))
+						{
+							EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed,
+								this, &ABasePlayer::OnShipRepairInteractionReleased);
+							EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Canceled,
+								this, &ABasePlayer::OnShipRepairInteractionReleased);
+						}
 					}
 				}
 
@@ -849,7 +872,9 @@ bool ABasePlayer::CanQuickSlotAcceptItem(int32 QuickSlotIndex, FGameplayTag Item
 		|| ItemTag.MatchesTag(Item_Id_Weapon);
 	return QuickSlots[QuickSlotIndex].SlotType == EQuickSlotType::Weapon
 		? bIsWeapon
-		: CategoryTag.MatchesTag(Item_Category_Consumable) || ItemTag.MatchesTag(Item_Tool);
+		: CategoryTag.MatchesTag(Item_Category_Consumable)
+			|| ItemTag.MatchesTag(Item_Tool)
+			|| ItemTag.MatchesTag(Item_Id_Material_ShipMaterials);
 }
 
 void ABasePlayer::AssignQuickSlotFromInventory(int32 QuickSlotIndex)
@@ -951,6 +976,126 @@ void ABasePlayer::OnQuickSlotInputReleased(const FGameplayTag SlotTag)
 	}
 }
 
+bool ABasePlayer::GetEquippedShipRepairMaterial(FGameplayTag& OutItemTag) const
+{
+	OutItemTag = FGameplayTag();
+	if (!IsValid(EquippedItem)
+		|| !EquippedItem->ItemTag.MatchesTag(Item_Id_Material_ShipMaterials)
+		|| !InventoryComponent
+		|| InventoryComponent->GetMaterialCount(EquippedItem->ItemTag) <= 0)
+	{
+		return false;
+	}
+	OutItemTag = EquippedItem->ItemTag;
+	return true;
+}
+
+bool ABasePlayer::ConsumeShipRepairMaterial(const FGameplayTag ItemTag)
+{
+	if (!HasAuthority() || !InventoryComponent || !ItemTag.IsValid()
+		|| !IsValid(EquippedItem) || !EquippedItem->ItemTag.MatchesTagExact(ItemTag))
+	{
+		return false;
+	}
+	return InventoryComponent->RemoveItem(ItemTag, 1);
+}
+
+void ABasePlayer::BeginShipRepair(UShipRepairPointComponent* RepairPoint, const float Duration)
+{
+	if (!HasAuthority() || !RepairPoint)
+	{
+		return;
+	}
+	if (ActiveShipRepairPoint && ActiveShipRepairPoint != RepairPoint)
+	{
+		ActiveShipRepairPoint->CancelRepair(this);
+	}
+	ActiveShipRepairPoint = RepairPoint;
+	ClientBeginShipRepair(RepairPoint, Duration);
+}
+
+void ABasePlayer::EndShipRepair(UShipRepairPointComponent* RepairPoint, const bool bCompleted)
+{
+	if (!HasAuthority() || ActiveShipRepairPoint != RepairPoint)
+	{
+		return;
+	}
+	ActiveShipRepairPoint = nullptr;
+	ClientEndShipRepair(RepairPoint, bCompleted);
+}
+
+void ABasePlayer::OnShipRepairInteractionReleased()
+{
+	if (IsLocallyControlled())
+	{
+		bShipRepairInputHeld = false;
+		if (ShipRepairProgressWidget)
+		{
+			ShipRepairProgressWidget->RemoveFromParent();
+		}
+		ServerCancelShipRepair();
+		ServerSetShipRepairInputHeld(false);
+	}
+}
+
+void ABasePlayer::OnShipRepairInteractionPressed()
+{
+	if (IsLocallyControlled())
+	{
+		bShipRepairInputHeld = true;
+		ServerSetShipRepairInputHeld(true);
+	}
+}
+
+void ABasePlayer::ServerSetShipRepairInputHeld_Implementation(const bool bHeld)
+{
+	bShipRepairInputHeld = bHeld;
+	if (!bHeld && ActiveShipRepairPoint)
+	{
+		ActiveShipRepairPoint->CancelRepair(this);
+	}
+}
+
+void ABasePlayer::ServerCancelShipRepair_Implementation()
+{
+	if (ActiveShipRepairPoint)
+	{
+		ActiveShipRepairPoint->CancelRepair(this);
+	}
+}
+
+void ABasePlayer::ClientBeginShipRepair_Implementation(UShipRepairPointComponent* RepairPoint, const float Duration)
+{
+	ActiveShipRepairPoint = RepairPoint;
+	LocalShipRepairStartTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+	LocalShipRepairDuration = FMath::Max(Duration, KINDA_SMALL_NUMBER);
+	if (!ShipRepairProgressWidget)
+	{
+		ShipRepairProgressWidget = CreateWidget<UShipRepairProgressWidget>(GetController<APlayerController>());
+	}
+	if (ShipRepairProgressWidget && !ShipRepairProgressWidget->IsInViewport())
+	{
+		ShipRepairProgressWidget->SetAnchorsInViewport(FAnchors(0.5f, 0.72f));
+		ShipRepairProgressWidget->SetAlignmentInViewport(FVector2D(0.5f, 0.5f));
+		ShipRepairProgressWidget->AddToViewport(500);
+		ShipRepairProgressWidget->SetRepairProgress(0.0f);
+	}
+}
+
+void ABasePlayer::ClientEndShipRepair_Implementation(UShipRepairPointComponent* RepairPoint, const bool bCompleted)
+{
+	if (!ActiveShipRepairPoint || ActiveShipRepairPoint == RepairPoint)
+	{
+		ActiveShipRepairPoint = nullptr;
+		LocalShipRepairDuration = 0.0f;
+		if (ShipRepairProgressWidget)
+		{
+			ShipRepairProgressWidget->SetRepairProgress(bCompleted ? 1.0f : 0.0f);
+			ShipRepairProgressWidget->RemoveFromParent();
+		}
+	}
+}
+
 int32 ABasePlayer::GetPressedConsumableQuickSlotIndex() const
 {
 	return PressedConsumableQuickSlotIndices.IsEmpty()
@@ -1013,7 +1158,7 @@ void ABasePlayer::ActivateQuickSlot(int32 QuickSlotIndex)
 	{
 		EquipInventoryItem(Slot.ItemTag);
 	}
-	else if (Slot.ItemTag.MatchesTag(Item_Tool))
+	else if (Slot.ItemTag.MatchesTag(Item_Tool) || Slot.ItemTag.MatchesTag(Item_Id_Material_ShipMaterials))
 	{
 		EquipInventoryItem(Slot.ItemTag);
 	}

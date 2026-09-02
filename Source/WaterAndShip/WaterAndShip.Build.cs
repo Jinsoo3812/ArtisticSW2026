@@ -29,7 +29,8 @@ public class WaterAndShip: ModuleRules
 			"InputCore",
             "UMG",
             "Water",
-            "Landscape"
+            "Landscape",
+			"Niagara"
         });
 
         PublicIncludePaths.AddRange(new string[] {

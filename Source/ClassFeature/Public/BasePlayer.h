@@ -11,6 +11,7 @@
 #include "Components/SkinnedMeshComponent.h"
 #include "Skills/SkillUseProvider.h"
 #include "CannonRiderInterface.h"
+#include "ShipRepairUserInterface.h"
 #include "BasePlayer.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
@@ -34,6 +35,8 @@ class USwimmingComponent;
 class UPlayerSkillComponent;
 class UAnimSequence;
 class UPlayerDialogueComponent;
+class UShipRepairPointComponent;
+class UShipRepairProgressWidget;
 
 UENUM(BlueprintType)
 enum class EQuickSlotType : uint8
@@ -79,13 +82,18 @@ struct FStartingInventoryItemForTest
  * 
  */
 UCLASS(Config = Game)
-class CLASSFEATURE_API ABasePlayer : public ABaseCharacter, public ISkillUseProvider, public ICannonRiderInterface
+class CLASSFEATURE_API ABasePlayer : public ABaseCharacter, public ISkillUseProvider, public ICannonRiderInterface, public IShipRepairUserInterface
 {
 	GENERATED_BODY()
 	friend class ULocomotionAnimStateComponent;
 
 public:
 	virtual void PrepareForCannonControl() override;
+	virtual bool GetEquippedShipRepairMaterial(FGameplayTag& OutItemTag) const override;
+	virtual bool IsShipRepairInputHeld() const override { return bShipRepairInputHeld; }
+	virtual bool ConsumeShipRepairMaterial(FGameplayTag ItemTag) override;
+	virtual void BeginShipRepair(UShipRepairPointComponent* RepairPoint, float Duration) override;
+	virtual void EndShipRepair(UShipRepairPointComponent* RepairPoint, bool bCompleted) override;
 	ABasePlayer(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual void BeginPlay() override;
@@ -393,6 +401,20 @@ public:
 	// 즉발형 GA에 대해 SlotTag에 매핑된 GA를 실행하는 함수
 	void OnAbilityInputPressed(FGameplayTag InputTag);
 	void OnAbilityInputReleased(FGameplayTag InputTag);
+	void OnShipRepairInteractionReleased();
+	void OnShipRepairInteractionPressed();
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetShipRepairInputHeld(bool bHeld);
+
+	UFUNCTION(Server, Reliable)
+	void ServerCancelShipRepair();
+
+	UFUNCTION(Client, Reliable)
+	void ClientBeginShipRepair(UShipRepairPointComponent* RepairPoint, float Duration);
+
+	UFUNCTION(Client, Reliable)
+	void ClientEndShipRepair(UShipRepairPointComponent* RepairPoint, bool bCompleted);
 	void OnGravityVortexSkillPressed();
 	void OnGravityVortexSkillReleased();
 
@@ -491,6 +513,16 @@ protected:
 	void HandleInventoryContentsChanged();
 
 	TArray<int32> PressedConsumableQuickSlotIndices;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UShipRepairPointComponent> ActiveShipRepairPoint;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UShipRepairProgressWidget> ShipRepairProgressWidget;
+
+	float LocalShipRepairStartTime = 0.0f;
+	float LocalShipRepairDuration = 0.0f;
+	bool bShipRepairInputHeld = false;
 
 	// 서버에서 먼저 ItemSlot 처리를 해준 후 클라이언트가 수행하기 위해
 	// 공용 Interact GA가 보내준 PickUp 이벤트를 처리하는 함수
@@ -607,13 +639,17 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC|Dialogue")
 	TObjectPtr<UPlayerDialogueComponent> DialogueComponent;
-	/** 에디터 테스트 시작 시 특정 아이템을 인벤토리에 지급한다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory")
+	/** TEST ONLY: 에디터 테스트 시작 시 특정 아이템을 인벤토리에 지급한다. 출시 전 끌 것. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory",
+		meta = (DisplayName = "[TEST ONLY] Give Starting Items",
+			ToolTip = "에디터 테스트 전용 자동 지급 옵션입니다. 패키징 빌드에는 적용되지 않으며 출시 전 꺼야 합니다."))
 	bool bGiveStartingItemForTest = false;
 
-	/** Items to ensure are present when this player starts in an editor test. */
+	/** TEST ONLY: 에디터 시작 시 보장할 아이템별 목표 보유량. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory",
-		meta = (EditCondition = "bGiveStartingItemForTest", TitleProperty = "ItemTag"))
+		meta = (DisplayName = "[TEST ONLY] Starting Items",
+			ToolTip = "에디터 테스트 시작 시 인벤토리에 보장할 아이템과 목표 수량입니다.",
+			EditCondition = "bGiveStartingItemForTest", EditConditionHides, TitleProperty = "ItemTag"))
 	TArray<FStartingInventoryItemForTest> StartingItemsForTest;
 
 	void GiveStartingItemsForTest();
