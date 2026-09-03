@@ -33,6 +33,8 @@ public:
 
 protected:
 	virtual void HandleShipHit(AShip* HitShip) override;
+	virtual UNiagaraSystem* GetProjectileEffect() const override;
+	virtual float GetProjectileEffectScale() const override;
 
 	/** 대포 봉쇄와 승선 적 감속에 공통으로 사용되는 GE 지속시간입니다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Water Bomb|Effect", meta = (ClampMin = "0.1", Units = "s"))
@@ -55,6 +57,14 @@ protected:
 	/** Uniform world scale applied to WaterBombExplosionEffect. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Water Bomb|Effects", meta = (ClampMin = "0.01"))
 	float WaterBombExplosionEffectScale = 1.0f;
+
+	/** Niagara effect that follows only the water-bomb projectile while in flight. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Water Bomb|Effects")
+	TObjectPtr<UNiagaraSystem> WaterBombProjectileEffect = nullptr;
+
+	/** Uniform component scale applied to WaterBombProjectileEffect. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Water Bomb|Effects", meta = (ClampMin = "0.01"))
+	float WaterBombProjectileEffectScale = 1.0f;
 
 private:
 #if WITH_DEV_AUTOMATION_TESTS

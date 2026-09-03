@@ -21,6 +21,7 @@ class UEnemyShipNavigationComponent;
 class UEnemyShipPatternRuntimeComponent;
 class UEnemyShipSkillModuleData;
 class UGameplayAbility;
+class USWCabinWaterCullComponent;
 
 UENUM(BlueprintType)
 enum class EEnemyShipOrbitDirectionOverride : uint8
@@ -112,6 +113,10 @@ public:
 	virtual bool AllowsPlayerAnchorControl(AActor* Interactor = nullptr) const override;
 	virtual float GetCannonCooldownMultiplier() const override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	/** Client-local, distance-selected cabin water culling shared with the player ship. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Water")
+	TObjectPtr<USWCabinWaterCullComponent> CabinWaterCullComponent;
 
 protected:
 	virtual void BeginPlay() override;

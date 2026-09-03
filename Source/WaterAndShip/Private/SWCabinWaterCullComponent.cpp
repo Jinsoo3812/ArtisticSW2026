@@ -2,17 +2,86 @@
 
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogSWCabinWaterCull, Log, All);
 
 namespace SWCabinWaterCull
 {
+	struct FWorldSelectionState
+	{
+		TArray<TWeakObjectPtr<USWCabinWaterCullComponent>> Components;
+		TWeakObjectPtr<USWCabinWaterCullComponent> SelectedComponent;
+		uint64 SelectionFrame = MAX_uint64;
+		bool bGlobalCullWasEnabled = false;
+	};
+
+	TMap<TWeakObjectPtr<UWorld>, FWorldSelectionState> WorldStates;
+
 	const FName EnabledParameter(TEXT("SW_CabinCullEnabled"));
 	const FName InverseRow0Parameter(TEXT("SW_CabinCullInvRow0"));
 	const FName InverseRow1Parameter(TEXT("SW_CabinCullInvRow1"));
 	const FName InverseRow2Parameter(TEXT("SW_CabinCullInvRow2"));
 	const FName DebugViewParameter(TEXT("SW_CabinCullDebugView"));
 	const TCHAR* CollectionPath = TEXT("/Game/Blueprints/Water/MPC_Water_Custom.MPC_Water_Custom");
+
+	FVector GetLocalViewerLocation(UWorld* World, bool& bOutFoundViewer)
+	{
+		bOutFoundViewer = false;
+		if (!World)
+		{
+			return FVector::ZeroVector;
+		}
+		for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+		{
+			const APlayerController* PlayerController = It->Get();
+			if (PlayerController && PlayerController->IsLocalController())
+			{
+				if (const APawn* Pawn = PlayerController->GetPawn())
+				{
+					bOutFoundViewer = true;
+					return Pawn->GetActorLocation();
+				}
+			}
+		}
+		return FVector::ZeroVector;
+	}
+
+	USWCabinWaterCullComponent* SelectNearestComponent(UWorld* World, FWorldSelectionState& State)
+	{
+		State.Components.RemoveAllSwap([](const TWeakObjectPtr<USWCabinWaterCullComponent>& Entry)
+		{
+			return !Entry.IsValid();
+		});
+
+		bool bFoundViewer = false;
+		const FVector ViewerLocation = GetLocalViewerLocation(World, bFoundViewer);
+		USWCabinWaterCullComponent* Best = nullptr;
+		float BestDistanceSquared = TNumericLimits<float>::Max();
+		if (bFoundViewer)
+		{
+			for (const TWeakObjectPtr<USWCabinWaterCullComponent>& Entry : State.Components)
+			{
+				USWCabinWaterCullComponent* Component = Entry.Get();
+				const AActor* Owner = Component ? Component->GetOwner() : nullptr;
+				if (!Component || !Owner || !Component->bWaterCullEnabled)
+				{
+					continue;
+				}
+				const float DistanceSquared = FVector::DistSquared(ViewerLocation, Owner->GetActorLocation());
+				const float MaximumDistance = FMath::Max(0.0f, Component->ActivationDistance);
+				if (DistanceSquared <= FMath::Square(MaximumDistance)
+					&& DistanceSquared < BestDistanceSquared)
+				{
+					Best = Component;
+					BestDistanceSquared = DistanceSquared;
+				}
+			}
+		}
+		State.SelectedComponent = Best;
+		return Best;
+	}
 
 	void BuildInverseRows(
 		const FTransform& Transform,
@@ -44,7 +113,10 @@ void USWCabinWaterCullComponent::BeginPlay()
 		nullptr, SWCabinWaterCull::CollectionPath);
 	bHasUploadedTransform = false;
 	bUploadedDisabled = false;
-	UploadTransformIfChanged();
+	if (UWorld* World = GetWorld())
+	{
+		SWCabinWaterCull::WorldStates.FindOrAdd(World).Components.AddUnique(this);
+	}
 	if (!WaterParameterCollection)
 	{
 		UE_LOG(LogSWCabinWaterCull, Error, TEXT("[2/5 Asset] MPC path=%s load=FAILED"), SWCabinWaterCull::CollectionPath);
@@ -53,8 +125,25 @@ void USWCabinWaterCullComponent::BeginPlay()
 
 void USWCabinWaterCullComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	bWaterCullEnabled = false;
-	UploadDisabled();
+	if (UWorld* World = GetWorld())
+	{
+		if (SWCabinWaterCull::FWorldSelectionState* State = SWCabinWaterCull::WorldStates.Find(World))
+		{
+			const bool bWasSelected = State->SelectedComponent.Get() == this;
+			State->Components.Remove(this);
+			State->SelectedComponent.Reset();
+			State->SelectionFrame = MAX_uint64;
+			if (bWasSelected && State->bGlobalCullWasEnabled)
+			{
+				UploadDisabled(true);
+				State->bGlobalCullWasEnabled = false;
+			}
+			if (State->Components.IsEmpty())
+			{
+				SWCabinWaterCull::WorldStates.Remove(World);
+			}
+		}
+	}
 	WaterParameterCollection = nullptr;
 	Super::EndPlay(EndPlayReason);
 }
@@ -66,19 +155,43 @@ void USWCabinWaterCullComponent::TickComponent(
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	DiagnosticLogAccumulator += DeltaTime;
-	if (bWaterCullEnabled)
+	UWorld* World = GetWorld();
+	if (!World || World->IsNetMode(NM_DedicatedServer))
+	{
+		return;
+	}
+
+	SWCabinWaterCull::FWorldSelectionState& State =
+		SWCabinWaterCull::WorldStates.FindOrAdd(World);
+	if (State.SelectionFrame != GFrameCounter)
+	{
+		State.SelectionFrame = GFrameCounter;
+		SWCabinWaterCull::SelectNearestComponent(World, State);
+	}
+
+	if (State.SelectedComponent.Get() == this)
 	{
 		UploadTransformIfChanged();
+		State.bGlobalCullWasEnabled = true;
 	}
 	else
 	{
-		UploadDisabled();
+		bHasUploadedTransform = false;
+		bUploadedDisabled = false;
+		if (!State.SelectedComponent.IsValid()
+			&& State.bGlobalCullWasEnabled
+			&& State.Components.Num() > 0
+			&& State.Components[0].Get() == this)
+		{
+			UploadDisabled(true);
+			State.bGlobalCullWasEnabled = false;
+		}
 	}
 }
 
-void USWCabinWaterCullComponent::UploadDisabled()
+void USWCabinWaterCullComponent::UploadDisabled(bool bForceUpload)
 {
-	if (bUploadedDisabled || !WaterParameterCollection || !GetWorld())
+	if ((!bForceUpload && bUploadedDisabled) || !WaterParameterCollection || !GetWorld())
 	{
 		return;
 	}

@@ -140,6 +140,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> BarrelMesh;
 
+	/** Exact projectile origin. Move this inherited component to the visible barrel mouth in BP_Cannon. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USceneComponent> MuzzlePoint;
+
 	/** Aiming Camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UCameraComponent> AimCamera;
@@ -184,6 +188,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Aiming", meta = (ClampMin = "1.0"))
 	float RemoteAimInterpolationSpeed = 12.0f;
 
+	/** Maximum client/server muzzle separation accepted for a player shot on a predicted moving ship. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Networking", meta = (ClampMin = "0.0", Units = "cm"))
+	float MaxClientMuzzleCorrectionDistance = 2000.0f;
+
+	/** Maximum client/server barrel direction difference accepted for a player shot. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Networking", meta = (ClampMin = "0.0", ClampMax = "90.0", Units = "deg"))
+	float MaxClientMuzzleCorrectionAngle = 20.0f;
+
 	// ---- Inputs ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
 	TObjectPtr<UInputMappingContext> CannonInputMappingContext;
@@ -221,12 +233,17 @@ protected:
 
 	// ---- Server RPCs ----
 	UFUNCTION(Server, Reliable)
-	void ServerFire();
+	void ServerFire(FVector_NetQuantize100 ClientMuzzleLocation, FRotator ClientLaunchRotation);
 
 	UFUNCTION(Server, Reliable)
 	void ServerToggleWaterBombAbility();
 
-	void SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed);
+	void SpawnCannonball(
+		FVector MuzzleLocation,
+		FRotator LaunchRotation,
+		float Damage,
+		float Speed,
+		const FVector& InheritedVelocity = FVector::ZeroVector);
 
 	UFUNCTION(Server, Reliable)
 	void ServerUpdateAim(float NewPitch, float NewYaw);

@@ -9,6 +9,7 @@
 class USphereComponent;
 class UStaticMeshComponent;
 class UProjectileMovementComponent;
+class UNiagaraComponent;
 class AShip;
 class UGameplayEffect;
 class UNiagaraSystem;
@@ -30,7 +31,11 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	/** Initialize Projectile values on spawn */
-	void InitializeProjectile(AShip* InLaunchingShip, float InDamage, float InSpeed);
+	void InitializeProjectile(
+		AShip* InLaunchingShip,
+		float InDamage,
+		float InSpeed,
+		const FVector& InInheritedVelocity = FVector::ZeroVector);
 
 	/** Optional exact endpoint used by skills so terrain impacts do not continue below the Landscape. */
 	void SetDesignatedImpactLocation(const FVector& InImpactLocation, float InArrivalTolerance = 75.0f);
@@ -45,6 +50,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UProjectileMovementComponent> ProjectileMovement;
+
+	/** Runtime Niagara component attached to the interpolated projectile mesh. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UNiagaraComponent> ProjectileEffectComponent;
 
 	// ---- Properties ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannonball|Damage")
@@ -67,6 +76,14 @@ protected:
 	/** Niagara effect used whenever a normal cannonball impacts an opposing ship. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects")
 	TObjectPtr<UNiagaraSystem> ShipImpactEffect = nullptr;
+
+	/** Niagara effect that follows the cannonball while it is in flight. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects")
+	TObjectPtr<UNiagaraSystem> ProjectileEffect = nullptr;
+
+	/** Uniform component scale applied to ProjectileEffect. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects", meta = (ClampMin = "0.01"))
+	float ProjectileEffectScale = 1.0f;
 
 	/** Uniform world scale applied to ShipImpactEffect. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects", meta = (ClampMin = "0.01"))
@@ -106,6 +123,8 @@ protected:
 	virtual void TriggerWaterRipple(const FVector& HitLocation);
 	void MarkWaterHitHandledWithoutDeactivation();
 	void DeactivateProjectile();
+	virtual UNiagaraSystem* GetProjectileEffect() const;
+	virtual float GetProjectileEffectScale() const;
 	void SpawnNiagaraEffectForAll(UNiagaraSystem* Effect, const FVector& Location, float UniformScale = 1.0f);
 
 	UFUNCTION(NetMulticast, Reliable)

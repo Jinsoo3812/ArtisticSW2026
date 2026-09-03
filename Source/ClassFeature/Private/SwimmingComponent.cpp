@@ -1,4 +1,5 @@
 #include "SwimmingComponent.h"
+#include "Ship.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -492,6 +493,13 @@ void USwimmingComponent::CheckWaterTransitions(float DeltaSeconds)
 {
 	if (!OwnerCharacter || !CharacterMovement || !CapsuleComponent) return;
 
+	UpdateShipSwimProtection();
+	if (ProtectedShip.IsValid())
+	{
+		ResetSwimmingStateWhileShipProtected();
+		return;
+	}
+
 	bool bIsCustomSwimming = IsCustomSwimming();
 
 	// If we are not swimming and have no overlapping water bodies AND no cached active water body, do not check transitions.
@@ -599,6 +607,142 @@ void USwimmingComponent::CheckWaterTransitions(float DeltaSeconds)
 		}
 		VerticalSwimInput = 0.0f;
 		DepthMode = ESwimDepthMode::Surface;
+	}
+}
+
+AShip* USwimmingComponent::ResolveShipFromComponent(const UPrimitiveComponent* Component) const
+{
+	AActor* Candidate = Component ? Component->GetOwner() : nullptr;
+	TSet<const AActor*> VisitedActors;
+	while (IsValid(Candidate) && !VisitedActors.Contains(Candidate))
+	{
+		VisitedActors.Add(Candidate);
+		if (AShip* Ship = Cast<AShip>(Candidate))
+		{
+			return Ship;
+		}
+
+		AActor* NextCandidate = Candidate->GetAttachParentActor();
+		if (!NextCandidate)
+		{
+			NextCandidate = Candidate->GetParentActor();
+		}
+		if (!NextCandidate)
+		{
+			NextCandidate = Candidate->GetOwner();
+		}
+		Candidate = NextCandidate;
+	}
+	return nullptr;
+}
+
+void USwimmingComponent::UpdateShipSwimProtection()
+{
+	if (!OwnerCharacter || !CharacterMovement || !CapsuleComponent)
+	{
+		ProtectedShip.Reset();
+		return;
+	}
+
+	AShip* FloorShip = nullptr;
+	if (CharacterMovement->IsMovingOnGround())
+	{
+		FloorShip = ResolveShipFromComponent(CharacterMovement->GetMovementBase());
+		if (!FloorShip && CharacterMovement->CurrentFloor.IsWalkableFloor())
+		{
+			FloorShip = ResolveShipFromComponent(
+				CharacterMovement->CurrentFloor.HitResult.GetComponent());
+		}
+
+		if (!FloorShip)
+		{
+			ProtectedShip.Reset();
+			return;
+		}
+	}
+
+	const FVector FeetWorldLocation = OwnerCharacter->GetActorLocation()
+		- FVector::UpVector * CapsuleComponent->GetScaledCapsuleHalfHeight();
+	if (FloorShip)
+	{
+		ProtectedShip = FloorShip;
+		ProtectedDeckLocalZ = FloorShip->GetActorTransform()
+			.InverseTransformPosition(FeetWorldLocation).Z;
+		return;
+	}
+
+	AShip* PreviousShip = ProtectedShip.Get();
+	if (!PreviousShip
+		|| !CharacterMovement->IsFalling()
+		|| !IsInsideProtectedShipZone(PreviousShip, FeetWorldLocation))
+	{
+		ProtectedShip.Reset();
+	}
+}
+
+bool USwimmingComponent::IsInsideProtectedShipZone(
+	const AShip* Ship,
+	const FVector& FeetWorldLocation) const
+{
+	if (!Ship)
+	{
+		return false;
+	}
+
+	FBox LocalBounds(ForceInit);
+	auto AddComponentBounds = [Ship, &LocalBounds](const UPrimitiveComponent* Primitive)
+	{
+		if (!Primitive)
+		{
+			return;
+		}
+		const FBox WorldBounds = Primitive->Bounds.GetBox();
+		for (int32 Corner = 0; Corner < 8; ++Corner)
+		{
+			const FVector WorldCorner(
+				(Corner & 1) ? WorldBounds.Max.X : WorldBounds.Min.X,
+				(Corner & 2) ? WorldBounds.Max.Y : WorldBounds.Min.Y,
+				(Corner & 4) ? WorldBounds.Max.Z : WorldBounds.Min.Z);
+			LocalBounds += Ship->GetActorTransform().InverseTransformPosition(WorldCorner);
+		}
+	};
+
+	AddComponentBounds(Ship->DeckMeshSimple);
+	AddComponentBounds(Ship->DeckMeshComplex);
+	if (!LocalBounds.IsValid)
+	{
+		AddComponentBounds(Ship->ShipVisualMesh);
+	}
+	if (!LocalBounds.IsValid)
+	{
+		AddComponentBounds(Ship->BuoyancyRoot);
+	}
+	if (!LocalBounds.IsValid)
+	{
+		return false;
+	}
+
+	const FVector LocalFeet = Ship->GetActorTransform().InverseTransformPosition(FeetWorldLocation);
+	const float Padding = FMath::Max(0.0f, ShipProtectionHorizontalPadding);
+	return LocalFeet.X >= LocalBounds.Min.X - Padding
+		&& LocalFeet.X <= LocalBounds.Max.X + Padding
+		&& LocalFeet.Y >= LocalBounds.Min.Y - Padding
+		&& LocalFeet.Y <= LocalBounds.Max.Y + Padding
+		&& LocalFeet.Z >= ProtectedDeckLocalZ - FMath::Max(0.0f, ShipProtectionDeckDropTolerance);
+}
+
+void USwimmingComponent::ResetSwimmingStateWhileShipProtected()
+{
+	bIsInShallowWater = false;
+	bIsUnderwater = false;
+	WaterQueryFailureElapsed = 0.0f;
+	VerticalSwimInput = 0.0f;
+	DepthMode = ESwimDepthMode::Surface;
+
+	if (IsCustomSwimming() && CharacterMovement)
+	{
+		CharacterMovement->SetMovementMode(
+			CharacterMovement->CurrentFloor.IsWalkableFloor() ? MOVE_Walking : MOVE_Falling);
 	}
 }
 

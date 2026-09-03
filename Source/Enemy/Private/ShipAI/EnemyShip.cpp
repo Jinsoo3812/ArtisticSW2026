@@ -39,6 +39,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "UObject/UnrealType.h"
+#include "SWCabinWaterCullComponent.h"
 
 #if WITH_EDITOR
 #include "Editor.h"
@@ -694,6 +695,7 @@ AEnemyShip::AEnemyShip()
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 	NavigationComponent = CreateDefaultSubobject<UEnemyShipNavigationComponent>(TEXT("EnemyShipNavigationComponent"));
 	PatternRuntimeComponent = CreateDefaultSubobject<UEnemyShipPatternRuntimeComponent>(TEXT("EnemyShipPatternRuntimeComponent"));
+	CabinWaterCullComponent = CreateDefaultSubobject<USWCabinWaterCullComponent>(TEXT("CabinWaterCullComponent"));
 	EnemyHealthBarComponent = CreateDefaultSubobject<UEnemyHealthBarComponent>(TEXT("EnemyHealthBarComponent"));
 	EnemyHealthBarComponent->SetupAttachment(RootComponent);
 

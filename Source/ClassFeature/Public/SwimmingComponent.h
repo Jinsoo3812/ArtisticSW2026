@@ -9,6 +9,8 @@ class ACharacter;
 class UCharacterMovementComponent;
 class UCapsuleComponent;
 class UWaterBodyComponent;
+class UPrimitiveComponent;
+class AShip;
 
 UENUM(BlueprintType)
 enum class ECustomMovementMode : uint8
@@ -139,6 +141,10 @@ private:
 
 	// Initialize overlapping water bodies on startup
 	void InitializeOverlaps();
+	AShip* ResolveShipFromComponent(const UPrimitiveComponent* Component) const;
+	void UpdateShipSwimProtection();
+	bool IsInsideProtectedShipZone(const AShip* Ship, const FVector& FeetWorldLocation) const;
+	void ResetSwimmingStateWhileShipProtected();
 
 protected:
 	/** Deprecated absolute entry depth retained for existing assets; use SwimEntryCapsuleSubmersionRatio. */
@@ -157,6 +163,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection",
 		meta = (ClampMin = "0.0", Units = "s"))
 	float WaterQueryFailureGraceTime = 0.2f;
+
+	/** Horizontal expansion of the ship render/deck bounds used while preserving protection during a jump. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Ship Protection", meta = (ClampMin = "0.0", Units = "cm"))
+	float ShipProtectionHorizontalPadding = 150.0f;
+
+	/** How far the feet may drop below the last contacted deck height before ship protection ends. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Ship Protection", meta = (ClampMin = "0.0", Units = "cm"))
+	float ShipProtectionDeckDropTolerance = 100.0f;
 
 	/** Fraction of capsule height required to enter swimming. 0.5 means the capsule is half submerged. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Water Detection", meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -264,6 +278,13 @@ private:
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<UWaterBodyComponent> LastActiveWaterBody;
+
+	/** Set only after a walkable floor owned by a ship has actually been detected. */
+	UPROPERTY(Transient)
+	TWeakObjectPtr<AShip> ProtectedShip;
+
+	UPROPERTY(Transient)
+	float ProtectedDeckLocalZ = 0.0f;
 
 	UPROPERTY(Transient)
 	float LastLoggedTime = -1.0f;

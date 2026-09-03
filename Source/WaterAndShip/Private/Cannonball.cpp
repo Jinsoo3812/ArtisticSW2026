@@ -19,6 +19,7 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "NiagaraFunctionLibrary.h"
+#include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
 #include "RippleSubsystem.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
@@ -68,6 +69,10 @@ ACannonball::ACannonball()
 	ProjectileMovement->SetInterpolatedComponent(CannonballMesh);
 	ProjectileMovement->OnProjectileStop.AddUniqueDynamic(this, &ACannonball::OnProjectileStop);
 
+	ProjectileEffectComponent = CreateDefaultSubobject<UNiagaraComponent>(TEXT("ProjectileEffect"));
+	ProjectileEffectComponent->SetupAttachment(CannonballMesh);
+	ProjectileEffectComponent->SetAutoActivate(false);
+
 	bReplicates = true;
 	SetReplicateMovement(true);
 	bAlwaysRelevant = true;
@@ -80,6 +85,17 @@ void ACannonball::BeginPlay()
 {
 	Super::BeginPlay();
 	PreviousProjectileLocation = GetActorLocation();
+
+	if (ProjectileEffectComponent && GetNetMode() != NM_DedicatedServer)
+	{
+		if (UNiagaraSystem* Effect = GetProjectileEffect())
+		{
+			ProjectileEffectComponent->SetAsset(Effect);
+			ProjectileEffectComponent->SetRelativeScale3D(
+				FVector(FMath::Max(0.01f, GetProjectileEffectScale())));
+			ProjectileEffectComponent->Activate(true);
+		}
+	}
 }
 
 void ACannonball::PostNetReceiveLocationAndRotation()
@@ -141,7 +157,11 @@ void ACannonball::SetDesignatedImpactLocation(const FVector& InImpactLocation, f
 	bHasDesignatedImpact = !InImpactLocation.ContainsNaN();
 }
 
-void ACannonball::InitializeProjectile(AShip* InLaunchingShip, float InDamage, float InSpeed)
+void ACannonball::InitializeProjectile(
+	AShip* InLaunchingShip,
+	float InDamage,
+	float InSpeed,
+	const FVector& InInheritedVelocity)
 {
 	LaunchingShip = InLaunchingShip;
 	DamageAmount = InDamage;
@@ -180,9 +200,13 @@ void ACannonball::InitializeProjectile(AShip* InLaunchingShip, float InDamage, f
 	if (ProjectileMovement)
 	{
 		ProjectileMovement->InitialSpeed = InSpeed;
-		ProjectileMovement->MaxSpeed = FMath::Max(InSpeed * 2.0f, 5000.0f);
-		ProjectileMovement->Velocity = GetActorForwardVector() * InSpeed;
+		ProjectileMovement->Velocity = GetActorForwardVector() * InSpeed + InInheritedVelocity;
+		ProjectileMovement->MaxSpeed = FMath::Max(
+			ProjectileMovement->Velocity.Size() * 2.0f,
+			5000.0f);
 		ProjectileMovement->UpdateComponentVelocity();
+		// Never carry interpolation offset into the projectile's first visible frame.
+		ProjectileMovement->ResetInterpolation();
 	}
 }
 
@@ -467,6 +491,16 @@ void ACannonball::SpawnNiagaraEffectForAll(
 	MulticastSpawnNiagaraEffect(Effect, Location, EffectRotation, FMath::Max(0.01f, UniformScale));
 }
 
+UNiagaraSystem* ACannonball::GetProjectileEffect() const
+{
+	return ProjectileEffect;
+}
+
+float ACannonball::GetProjectileEffectScale() const
+{
+	return ProjectileEffectScale;
+}
+
 void ACannonball::MulticastSpawnNiagaraEffect_Implementation(
 	UNiagaraSystem* Effect,
 	FVector_NetQuantize Location,
@@ -519,5 +553,10 @@ void ACannonball::DeactivateProjectile()
 	if (CannonballMesh)
 	{
 		CannonballMesh->SetVisibility(false);
+	}
+
+	if (ProjectileEffectComponent)
+	{
+		ProjectileEffectComponent->Deactivate();
 	}
 }

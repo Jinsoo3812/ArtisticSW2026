@@ -44,6 +44,11 @@ ACannon::ACannon()
 	BarrelMesh->SetMobility(EComponentMobility::Movable);
 	BarrelMesh->SetCollisionProfileName(TEXT("NoCollision"));
 
+	MuzzlePoint = CreateDefaultSubobject<USceneComponent>(TEXT("MuzzlePoint"));
+	MuzzlePoint->SetupAttachment(BarrelMesh);
+	MuzzlePoint->SetRelativeLocation(FVector(200.0f, 0.0f, 0.0f));
+	MuzzlePoint->SetMobility(EComponentMobility::Movable);
+
 	// Aim Camera
 	AimCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("AimCamera"));
 	AimCamera->SetupAttachment(BarrelMesh);
@@ -246,6 +251,11 @@ FCannonResolvedFiringStats ACannon::GetResolvedFiringStats() const
 
 FTransform ACannon::GetProjectileMuzzleTransform() const
 {
+	if (MuzzlePoint)
+	{
+		return MuzzlePoint->GetComponentTransform();
+	}
+
 	if (!BarrelMesh)
 	{
 		return GetActorTransform();
@@ -435,16 +445,28 @@ bool ACannon::FireCannon()
 		FMath::Max(0.05f, FiringStats.CooldownSeconds),
 		false);
 
-	FVector MuzzleLocation = BarrelMesh ? BarrelMesh->GetComponentLocation() + BarrelMesh->GetForwardVector() * 200.0f : GetActorLocation();
-	FRotator LaunchRotation = BarrelMesh ? BarrelMesh->GetComponentRotation() : GetActorRotation();
+	const FTransform MuzzleTransform = GetProjectileMuzzleTransform();
+	const FVector MuzzleLocation = MuzzleTransform.GetLocation();
+	const FRotator LaunchRotation = MuzzleTransform.Rotator();
 
 	if (HasAuthority())
 	{
-		SpawnCannonball(MuzzleLocation, LaunchRotation, FiringStats.Damage, FiringStats.ProjectileSpeed);
+		const AShip* OwningShip = GetOwningShip();
+		const FVector InheritedVelocity = IsPlayerControlled() && OwningShip
+			? (OwningShip->BuoyancyRoot
+				? OwningShip->BuoyancyRoot->GetPhysicsLinearVelocityAtPoint(MuzzleLocation)
+				: OwningShip->GetVelocity())
+			: FVector::ZeroVector;
+		SpawnCannonball(
+			MuzzleLocation,
+			LaunchRotation,
+			FiringStats.Damage,
+			FiringStats.ProjectileSpeed,
+			InheritedVelocity);
 	}
 	else
 	{
-		ServerFire();
+		ServerFire(MuzzleLocation, LaunchRotation);
 	}
 
 	return true;
@@ -672,7 +694,9 @@ void ACannon::ForceExit()
 	}
 }
 
-void ACannon::ServerFire_Implementation()
+void ACannon::ServerFire_Implementation(
+	FVector_NetQuantize100 ClientMuzzleLocation,
+	FRotator ClientLaunchRotation)
 {
 	if (!bCanFire) return;
 	if (bWaterBombMode)
@@ -702,14 +726,41 @@ void ACannon::ServerFire_Implementation()
 	bCanFire = false;
 	const FCannonResolvedFiringStats FiringStats = GetResolvedFiringStats();
 	GetWorldTimerManager().SetTimer(CooldownTimerHandle, this, &ACannon::ResetCooldown, FMath::Max(0.05f, FiringStats.CooldownSeconds), false);
-	const FVector MuzzleLocation = BarrelMesh
-		? BarrelMesh->GetComponentLocation() + BarrelMesh->GetForwardVector() * 200.0f
-		: GetActorLocation();
-	const FRotator LaunchRotation = BarrelMesh ? BarrelMesh->GetComponentRotation() : GetActorRotation();
-	SpawnCannonball(MuzzleLocation, LaunchRotation, FiringStats.Damage, FiringStats.ProjectileSpeed);
+	const FTransform ServerMuzzleTransform = GetProjectileMuzzleTransform();
+	const FVector ServerMuzzleLocation = ServerMuzzleTransform.GetLocation();
+	const FVector ClientOffset = FVector(ClientMuzzleLocation) - ServerMuzzleLocation;
+	const float MaxCorrectionDistance = FMath::Max(0.0f, MaxClientMuzzleCorrectionDistance);
+	const FVector MuzzleLocation = ServerMuzzleLocation
+		+ ClientOffset.GetClampedToMaxSize(MaxCorrectionDistance);
+
+	const FVector ServerDirection = ServerMuzzleTransform.GetUnitAxis(EAxis::X);
+	const FVector ClientDirection = ClientLaunchRotation.Vector();
+	const float DirectionDifference = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(
+		FVector::DotProduct(ServerDirection, ClientDirection), -1.0f, 1.0f)));
+	const FRotator LaunchRotation = DirectionDifference <= MaxClientMuzzleCorrectionAngle
+		? ClientLaunchRotation
+		: ServerMuzzleTransform.Rotator();
+
+	const AShip* OwningShip = GetOwningShip();
+	const FVector InheritedVelocity = OwningShip
+		? (OwningShip->BuoyancyRoot
+			? OwningShip->BuoyancyRoot->GetPhysicsLinearVelocityAtPoint(MuzzleLocation)
+			: OwningShip->GetVelocity())
+		: FVector::ZeroVector;
+	SpawnCannonball(
+		MuzzleLocation,
+		LaunchRotation,
+		FiringStats.Damage,
+		FiringStats.ProjectileSpeed,
+		InheritedVelocity);
 }
 
-void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed)
+void ACannon::SpawnCannonball(
+	FVector MuzzleLocation,
+	FRotator LaunchRotation,
+	float Damage,
+	float Speed,
+	const FVector& InheritedVelocity)
 {
 	if (!HasAuthority()) return;
 
@@ -755,7 +806,7 @@ void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, f
 					ActiveWaterBombEffectDurationSeconds,
 					ActiveWaterBombAttackSpeedMultiplier);
 			}
-			Projectile->InitializeProjectile(OwningShip, Damage, Speed);
+			Projectile->InitializeProjectile(OwningShip, Damage, Speed, InheritedVelocity);
 		}
 
 		if (bWaterBombMode)

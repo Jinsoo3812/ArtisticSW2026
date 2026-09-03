@@ -100,6 +100,20 @@ void AWaterBombCannonball::HandleShipHit(AShip* HitShip)
 	Destroy();
 }
 
+UNiagaraSystem* AWaterBombCannonball::GetProjectileEffect() const
+{
+	return WaterBombProjectileEffect
+		? WaterBombProjectileEffect.Get()
+		: Super::GetProjectileEffect();
+}
+
+float AWaterBombCannonball::GetProjectileEffectScale() const
+{
+	return WaterBombProjectileEffect
+		? WaterBombProjectileEffectScale
+		: Super::GetProjectileEffectScale();
+}
+
 bool AWaterBombCannonball::IsCharacterOnShip(const ABaseCharacter* Character, const AShip* Ship) const
 {
 	if (!Character || !Ship)

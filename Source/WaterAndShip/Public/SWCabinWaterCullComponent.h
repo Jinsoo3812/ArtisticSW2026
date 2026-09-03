@@ -36,6 +36,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cabin Water Cull")
 	bool bWaterCullEnabled = true;
 
+	/** This ship competes for the single shared water-cull slot only while a local player is this close. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cabin Water Cull", meta = (ClampMin = "0.0", Units = "cm"))
+	float ActivationDistance = 5000.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cabin Water Cull|Diagnostics")
 	bool bDiagnosticLogging = true;
 
@@ -46,7 +50,7 @@ public:
 	ESWCabinCullDebugView DebugView = ESWCabinCullDebugView::Normal;
 
 private:
-	void UploadDisabled();
+	void UploadDisabled(bool bForceUpload = false);
 	void UploadTransformIfChanged();
 
 	UPROPERTY(Transient)
