@@ -439,7 +439,16 @@ void ACannonball::TriggerWaterRipple(const FVector& HitLocation)
 	bHasHitWater = true;
 	if (HasAuthority())
 	{
-		SpawnNiagaraEffectForAll(WaterImpactEffect, HitLocation, WaterImpactEffectScale);
+		if (WaterImpactEffect)
+		{
+			// This Niagara is authored to burst along its local +Z axis. Keep it
+			// aligned with world +Z, independent of the incoming trajectory.
+			MulticastSpawnNiagaraEffect(
+				WaterImpactEffect,
+				HitLocation,
+				FRotator::ZeroRotator,
+				FMath::Max(0.01f, WaterImpactEffectScale));
+		}
 	}
 
 	if (FParse::Param(FCommandLine::Get(), TEXT("RippleDiagnostics")))
