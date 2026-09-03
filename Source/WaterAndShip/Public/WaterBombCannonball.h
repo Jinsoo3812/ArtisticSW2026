@@ -9,6 +9,7 @@ class ABaseCharacter;
 class AShip;
 class UAbilitySystemComponent;
 class UGameplayEffect;
+class UNiagaraSystem;
 
 /**
  * 적함에 명중하면 대포를 봉쇄하고, 실제로 그 배를 Movement Base/부착 부모로
@@ -46,6 +47,14 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Water Bomb|Effect")
 	TSubclassOf<UGameplayEffect> CannonDisableEffectClass;
+
+	/** Niagara used only when the water-bomb projectile bursts on an enemy ship. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Water Bomb|Effects")
+	TObjectPtr<UNiagaraSystem> WaterBombExplosionEffect = nullptr;
+
+	/** Uniform world scale applied to WaterBombExplosionEffect. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Water Bomb|Effects", meta = (ClampMin = "0.01"))
+	float WaterBombExplosionEffectScale = 1.0f;
 
 private:
 #if WITH_DEV_AUTOMATION_TESTS

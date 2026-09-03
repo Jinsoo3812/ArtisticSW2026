@@ -43,6 +43,7 @@
 #include "Interfaces/IPhysicsComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "DrawDebugHelpers.h"
+#include "Engine/Engine.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Bombardment.h"
@@ -491,6 +492,19 @@ void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (GEngine && IsLocallyControlled() && !IsEnemyShipForEffects())
+	{
+		const float SpeedCmPerSecond = GetVelocity().Size2D();
+		GEngine->AddOnScreenDebugMessage(
+			0x53484950,
+			0.0f,
+			FColor::Cyan,
+			FString::Printf(
+				TEXT("Player Ship Speed: %.0f cm/s (%.1f m/s)"),
+				SpeedCmPerSecond,
+				SpeedCmPerSecond / 100.0f));
+	}
 
 	if (IsLocallyControlled() && bBombardmentTargeting)
 	{

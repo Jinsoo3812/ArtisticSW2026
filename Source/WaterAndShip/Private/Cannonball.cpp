@@ -18,6 +18,8 @@
 #include "GameFramework/GameStateBase.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "RippleSubsystem.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
 
@@ -279,6 +281,8 @@ void ACannonball::HandleShipHit(AShip* HitShip)
 		return;
 	}
 
+	SpawnNiagaraEffectForAll(ShipImpactEffect, GetActorLocation(), ShipImpactEffectScale);
+
 	const FVector ExplosionLocation = GetActorLocation();
 	const float EffectiveRadius = FMath::Max(0.0f, SplashDamageRadius);
 	DrawDebugSphere(GetWorld(), ExplosionLocation, EffectiveRadius, 24, FColor::Red, false, 2.0f);
@@ -409,6 +413,10 @@ void ACannonball::TriggerWaterRipple(const FVector& HitLocation)
 {
 	if (bHasHitWater) return;
 	bHasHitWater = true;
+	if (HasAuthority())
+	{
+		SpawnNiagaraEffectForAll(WaterImpactEffect, HitLocation, WaterImpactEffectScale);
+	}
 
 	if (FParse::Param(FCommandLine::Get(), TEXT("RippleDiagnostics")))
 	{
@@ -440,6 +448,42 @@ void ACannonball::TriggerWaterRipple(const FVector& HitLocation)
 
 	// Schedule destruction after N seconds
 	SetLifeSpan(LifeTimeAfterWaterHit);
+}
+
+void ACannonball::SpawnNiagaraEffectForAll(
+	UNiagaraSystem* Effect,
+	const FVector& Location,
+	float UniformScale)
+{
+	if (!HasAuthority() || !Effect)
+	{
+		return;
+	}
+
+	const FVector TravelDirection = GetVelocity().GetSafeNormal();
+	const FRotator EffectRotation = TravelDirection.IsNearlyZero()
+		? GetActorRotation()
+		: (-TravelDirection).Rotation();
+	MulticastSpawnNiagaraEffect(Effect, Location, EffectRotation, FMath::Max(0.01f, UniformScale));
+}
+
+void ACannonball::MulticastSpawnNiagaraEffect_Implementation(
+	UNiagaraSystem* Effect,
+	FVector_NetQuantize Location,
+	FRotator Rotation,
+	float UniformScale)
+{
+	if (Effect && GetWorld())
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			GetWorld(),
+			Effect,
+			Location,
+			Rotation,
+			FVector(FMath::Max(0.01f, UniformScale)),
+			true,
+			true);
+	}
 }
 
 void ACannonball::HandleWaterOverlap(

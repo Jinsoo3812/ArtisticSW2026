@@ -43,6 +43,11 @@ void AWaterBombCannonball::HandleShipHit(AShip* HitShip)
 		return;
 	}
 
+	SpawnNiagaraEffectForAll(
+		WaterBombExplosionEffect,
+		GetActorLocation(),
+		WaterBombExplosionEffectScale);
+
 	int32 SlowedEnemyCount = 0;
 	bool bCannonDisabled = false;
 	if (UAbilitySystemComponent* ShipASC = HitShip->GetAbilitySystemComponent())

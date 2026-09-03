@@ -11,6 +11,7 @@ class UStaticMeshComponent;
 class UProjectileMovementComponent;
 class AShip;
 class UGameplayEffect;
+class UNiagaraSystem;
 
 UCLASS()
 class WATERANDSHIP_API ACannonball : public AActor
@@ -63,6 +64,22 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannonball|Water")
 	float RippleAmplitude = 50.0f;
 
+	/** Niagara effect used whenever a normal cannonball impacts an opposing ship. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects")
+	TObjectPtr<UNiagaraSystem> ShipImpactEffect = nullptr;
+
+	/** Uniform world scale applied to ShipImpactEffect. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects", meta = (ClampMin = "0.01"))
+	float ShipImpactEffectScale = 1.0f;
+
+	/** Additional Niagara effect spawned where this projectile enters water. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects")
+	TObjectPtr<UNiagaraSystem> WaterImpactEffect = nullptr;
+
+	/** Uniform world scale applied to WaterImpactEffect. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects", meta = (ClampMin = "0.01"))
+	float WaterImpactEffectScale = 1.0f;
+
 protected:
 	// Water remains overlap-driven so the authoritative WaterBody delegate can
 	// create and replicate the ripple. Ship damage is handled by swept blocking hits.
@@ -89,6 +106,10 @@ protected:
 	virtual void TriggerWaterRipple(const FVector& HitLocation);
 	void MarkWaterHitHandledWithoutDeactivation();
 	void DeactivateProjectile();
+	void SpawnNiagaraEffectForAll(UNiagaraSystem* Effect, const FVector& Location, float UniformScale = 1.0f);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastSpawnNiagaraEffect(UNiagaraSystem* Effect, FVector_NetQuantize Location, FRotator Rotation, float UniformScale);
 
 private:
 	// ---- State ----
