@@ -4,6 +4,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "AI/EnemyAITypes.h"
+#include "AI/EnemyPerceptionSettings.h"
 #include "BaseEnemy.h"
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
@@ -54,6 +55,7 @@
 #include "Task/BTT_RetreatToWeaponRange.h"
 #include "Task/BTT_SetFocus.h"
 #include "Task/BTT_SetMovementSpeed.h"
+#include "UObject/UnrealType.h"
 #include "Weapon/BaseWeaponComponent.h"
 #include "Weapon/EnemyBow.h"
 #include "Weapon/WeaponDataAsset.h"
@@ -358,6 +360,39 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 				ShipProfile.ResponseToChannels.GetResponse(ECC_Arrow), ECR_Block);
 		}
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPerEnemyPerceptionSettingsTest,
+	"ArtisticSW.Enemy.Perception.PerEnemyBlueprintSettings",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPerEnemyPerceptionSettingsTest::RunTest(const FString& Parameters)
+{
+	const FStructProperty* SettingsProperty = FindFProperty<FStructProperty>(
+		ABaseEnemy::StaticClass(), TEXT("PerceptionSettings"));
+	if (TestNotNull(TEXT("Perception settings are owned by BaseEnemy"), SettingsProperty))
+	{
+		TestTrue(TEXT("Perception settings are editable in Enemy Blueprint defaults"),
+			SettingsProperty->HasAnyPropertyFlags(CPF_Edit | CPF_BlueprintVisible));
+		TestTrue(TEXT("Perception settings use the dedicated reflected struct"),
+			SettingsProperty->Struct == FEnemyPerceptionSettings::StaticStruct());
+	}
+	TestNull(TEXT("Sight radius no longer has a second editor-facing owner on the controller"),
+		FindFProperty<FFloatProperty>(ABaseAIController::StaticClass(), TEXT("SightRadius")));
+
+	const ARangedEnemy* EnemyCDO = GetDefault<ARangedEnemy>();
+	if (!TestNotNull(TEXT("Ranged Enemy defaults exist"), EnemyCDO))
+	{
+		return false;
+	}
+	const FEnemyPerceptionSettings& AuthoredSettings = EnemyCDO->GetPerceptionSettings();
+	TestEqual(TEXT("Former ranged sight default moved to the Enemy"), AuthoredSettings.SightRadius, 3000.0f);
+	TestEqual(TEXT("Former ranged lose-sight default moved to the Enemy"), AuthoredSettings.LoseSightRadius, 3500.0f);
+	TestEqual(TEXT("Former ranged vision angle moved to the Enemy"), AuthoredSettings.PeripheralVisionDegrees, 80.0f);
+	TestEqual(TEXT("Former ranged sight memory moved to the Enemy"), AuthoredSettings.SightMaxAge, 2.0f);
+
 	return true;
 }
 

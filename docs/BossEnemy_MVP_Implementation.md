@@ -75,7 +75,7 @@ Viewport colors:
 
 1. Create `BP_EnemyItemBox` from `AEnemyItemBox` and add it to `BP_EnemyShip` as a Child Actor Component below the deck/visual hierarchy.
 2. In `BP_EnemyShip`, enable `BossEncounterComponent.bEncounterEnabled`.
-3. Assign `BossClass = BP_ShipBossEnemy` and a valid `BossSpawnPointId`.
+3. Assign `BossClass = BP_ShipBossEnemy` and the exact `Waypoint Id` as `BossSpawnPointId`. The encounter does not use a component reference or substitute another point when the ID is invalid.
 4. On `BossEncounterComponent`, set `Enemy Item Box Component` to that specific Child Actor Component. Runtime code resolves only this editor-selected component; it does not guess by scanning every attached actor. The instance-only `EnemyItemBox` reference still takes priority for placed-actor special cases.
 5. Mark at least one deck waypoint as `bCanSpawn` and `bCanUseInCombat`. Mobility needs several combat points behind possible player facing directions.
 

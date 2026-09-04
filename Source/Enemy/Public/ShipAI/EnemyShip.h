@@ -93,6 +93,7 @@ class ENEMY_API AEnemyShip : public AShip
 	friend class FDeckPointReservationLifecycleTest;
 	friend class FDeckEnemySpawnerCompositionTest;
 	friend class FBossEncounterSightSpawnTest;
+	friend class FBossEncounterSightSpawnWithoutRidingPlayerTest;
 #endif
 
 public:

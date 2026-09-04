@@ -20,6 +20,12 @@
 ARangedEnemy::ARangedEnemy()
 {
 	bApplyDeathRagdollImpulse = true;
+	// Preserve the former RangedEnemyAIController defaults while moving the
+	// editor-facing source of truth onto each Enemy Blueprint.
+	PerceptionSettings.SightRadius = 3000.0f;
+	PerceptionSettings.LoseSightRadius = 3500.0f;
+	PerceptionSettings.PeripheralVisionDegrees = 80.0f;
+	PerceptionSettings.SightMaxAge = 2.0f;
 	AIControllerClass = ARangedEnemyAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	bUseControllerRotationYaw = true;

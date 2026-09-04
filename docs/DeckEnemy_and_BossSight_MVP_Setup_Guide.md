@@ -91,13 +91,13 @@ Melee 역할은 목표에 가장 가까운 전투 Point를 선호한다. Ranged 
 - Encounter Enabled: true
 - Encounter Trigger: `Player Ship Sight`
 - Boss Class: 사용할 `BP_Ship_BossEnemy`
-- Boss Spawn Point Component: Components 패널에 배치한 정확한 `DeckWaypointComponent` 선택
+- Boss Spawn Point Id: Components 패널에 배치한 `DeckWaypointComponent`의 정확한 `Waypoint Id`
 
-`Boss Spawn Point Component`가 설정되지 않은 레거시 자산만 `Boss Spawn Point Id`를 fallback으로 사용한다. 선택한 Point는 `Can Use In Combat`이어야 하고, 다른 Actor가 점유하지 않은 상태여야 한다.
+보스 스폰 지점은 `Boss Spawn Point Id`만 사용한다. 해당 ID가 없거나 `Can Use In Combat`이 꺼져 있으면 다른 Point로 대체하지 않고 Encounter가 실패한다. 선택한 Point는 다른 Actor가 점유하지 않은 상태여야 한다.
 
 Sight 트리거에서는 Enemy Item Box가 없어도 된다. `NavalAIController`가 `Player` 태그의 플레이어 함선을 실제 Sight로 감지하면 서버가 Encounter 시작을 한 번만 요청한다.
 
-보스의 초기 전투 대상은 감지된 Player Ship의 `RidingPlayer`다. 함선 조종 전환이 아직 끝나지 않아 `RidingPlayer`가 없으면 Encounter는 `Waiting`을 유지하고 다음 Sight 이벤트에서 재시도한다.
+보스의 초기 전투 대상은 감지된 Player Ship의 `RidingPlayer`다. Player Ship을 직접 Possess하는 게임 모드처럼 `RidingPlayer`가 없는 경우에도 Encounter와 보스 Spawn은 진행하며, 보스 AI는 이후 Perception으로 Player 캐릭터를 획득할 때 전투 대상을 설정한다.
 
 기존 박스 방식이 필요한 함선은 다음 설정을 유지한다.
 
