@@ -159,12 +159,15 @@ bool FEnemyShipChargeEndpointAndTelegraphTest::RunTest(const FString& Parameters
 		10000.0f, 1000.0f, 42.0f);
 	TestTrue(TEXT("Telegraph start uses configured absolute world Z"),
 		Telegraph->GetTelegraphStart().Equals(FVector(100.0f, 200.0f, 42.0f), 0.1f));
-	TestTrue(TEXT("Telegraph represents the complete fixed charge distance"),
+	TestTrue(TEXT("Telegraph represents the supplied target distance"),
 		Telegraph->GetTelegraphEnd().Equals(FVector(10100.0f, 200.0f, 42.0f), 0.1f));
+	Telegraph->UpdateTelegraph(FVector(200.0f, 300.0f, 999.0f), FVector::RightVector, 2500.0f);
+	TestTrue(TEXT("Telegraph follows a moving target's updated XY distance"),
+		Telegraph->GetTelegraphEnd().Equals(FVector(200.0f, 2800.0f, 42.0f), 0.1f));
 	if (UStaticMeshComponent* Plane = Telegraph->FindComponentByClass<UStaticMeshComponent>())
 	{
 		TestEqual(TEXT("Telegraph plane never collides"), Plane->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
-		TestTrue(TEXT("Telegraph plane length is 10000 cm"), FMath::IsNearlyEqual(Plane->GetComponentScale().X, 100.0f));
+		TestTrue(TEXT("Telegraph plane follows the updated 2500 cm length"), FMath::IsNearlyEqual(Plane->GetComponentScale().X, 25.0f));
 		TestTrue(TEXT("Telegraph plane width is 1000 cm"), FMath::IsNearlyEqual(Plane->GetComponentScale().Y, 10.0f));
 	}
 	else
@@ -680,7 +683,7 @@ bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Charge applies 2x transient propulsion scale"), EnemyShip->GetCurrentAIPropulsionScale(), 2.0f);
 	TestEqual(TEXT("Charge keeps its transient turn scale while charging"), EnemyShip->GetCurrentAITurnScale(), 2.0f);
 	TestTrue(TEXT("Charge owns its active-state tag"), EnemyASC->HasMatchingGameplayTag(State_EnemyShip_Charging));
-	TestTrue(TEXT("Charge applies an independent GAS cooldown tag"), EnemyASC->HasMatchingGameplayTag(Cooldown_EnemyShip_Charge));
+	TestFalse(TEXT("Charge cooldown does not start while the charge is active"), EnemyASC->HasMatchingGameplayTag(Cooldown_EnemyShip_Charge));
 
 	AEnemyShip* OtherEnemyShip = TestWorld.World->SpawnActor<AEnemyShip>(
 		AEnemyShip::StaticClass(), FVector(500.0f, 500.0f, 0.0f), FRotator::ZeroRotator);
@@ -730,6 +733,7 @@ bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 	const float HealthAfterCharge = PlayerASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
 	TestTrue(TEXT("Charge damages only the designated Player Ship body"), HealthAfterCharge < HealthBeforeCharge);
 	TestFalse(TEXT("Charge ends on valid Player Physics Root collision"), EnemyASC->HasMatchingGameplayTag(State_EnemyShip_Charging));
+	TestTrue(TEXT("Charge cooldown starts after Player Ship collision"), EnemyASC->HasMatchingGameplayTag(Cooldown_EnemyShip_Charge));
 	EnemyShip->GetNavigationComponent()->TickComponent(0.016f, LEVELTICK_All, nullptr);
 	TestEqual(TEXT("Charge releases Navigation Override on end"), EnemyShip->GetCurrentAIPropulsionScale(), 1.0f);
 	TestEqual(TEXT("Charge releases transient turn scale on end"), EnemyShip->GetCurrentAITurnScale(), 1.0f);

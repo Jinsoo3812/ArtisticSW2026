@@ -50,8 +50,6 @@ check(telegraph_cdo.get_editor_property("warning_plane").get_editor_property(
 ability_class = unreal.EditorAssetLibrary.load_blueprint_class(ABILITY)
 check(ability_class is not None, "charge ability Blueprint generated class loads")
 ability_cdo = unreal.get_default_object(ability_class)
-check(abs(ability_cdo.get_editor_property("charge_distance") - 10000.0) < 0.01,
-      "charge distance is 10000 cm")
 check(abs(ability_cdo.get_editor_property("charge_propulsion_multiplier") - 2.0) < 0.01,
       "charge propulsion scale is 2x")
 check(abs(ability_cdo.get_editor_property("charge_failsafe_duration_seconds")) < 0.01,

@@ -64,14 +64,14 @@ void AEnemyShipChargeTelegraph::InitializeTelegraph(
 
 void AEnemyShipChargeTelegraph::UpdateTelegraph(
 	const FVector& InStart,
-	const FVector& InDirection)
+	const FVector& InDirection,
+	float InDistance)
 {
 	if (!HasAuthority())
 	{
 		return;
 	}
 
-	const float Distance = FVector::Dist2D(TelegraphStart, TelegraphEnd);
 	FVector Start = InStart;
 	Start.Z = TelegraphStart.Z;
 	const FVector Direction = InDirection.GetSafeNormal2D();
@@ -81,7 +81,7 @@ void AEnemyShipChargeTelegraph::UpdateTelegraph(
 	}
 
 	TelegraphStart = Start;
-	TelegraphEnd = Start + Direction * FMath::Max(1.0f, Distance);
+	TelegraphEnd = Start + Direction * FMath::Max(1.0f, InDistance);
 	RefreshVisual();
 	ForceNetUpdate();
 }

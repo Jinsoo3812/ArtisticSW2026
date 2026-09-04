@@ -7,6 +7,7 @@
 #include "GASCombatLibrary.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
 #include "GASDamageInstantGameplayEffect.h"
+#include "NiagaraSystem.h"
 #include "Ship.h"
 #include "ShipAI/Abilities/EnemyShipSkillMath.h"
 #include "ShipAI/Abilities/EnemyShipChargeTelegraph.h"
@@ -51,6 +52,9 @@ void UGA_EnemyShipCharge::ActivateAbility(
 	ActiveTarget = Target;
 	bCollisionConsumed = false;
 	bChargeStarted = false;
+	bApplyCooldownOnEnd = false;
+	ResolvedChargeDistance = FMath::Max(1.0f, FVector::Dist2D(
+		Ship->GetActorLocation(), Target->GetActorLocation()));
 
 	FEnemyShipNavigationOverrideRequest Request;
 	Request.MoveInput = 0.0f;
@@ -87,6 +91,10 @@ void UGA_EnemyShipCharge::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
+	if (bApplyCooldownOnEnd && ActorInfo)
+	{
+		UEnemyShipGameplayAbility::ApplyCooldown(Handle, ActorInfo, ActivationInfo);
+	}
 	if (AEnemyShip* Ship = ActiveShip.Get())
 	{
 		Ship->GetWorldTimerManager().ClearTimer(SteeringTimerHandle);
@@ -122,10 +130,21 @@ void UGA_EnemyShipCharge::EndAbility(
 	bAddedChargingTag = false;
 	bCollisionConsumed = false;
 	bChargeStarted = false;
+	bApplyCooldownOnEnd = false;
+	ResolvedChargeDistance = 1.0f;
 	ChargeStartLocation = FVector::ZeroVector;
 	ChargeDirection = FVector::ForwardVector;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
+}
+
+void UGA_EnemyShipCharge::ApplyCooldown(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo) const
+{
+	// CommitAbility still validates and pays costs at activation time. Charge cooldown
+	// is deliberately applied from EndAbility only after a successful terminal event.
 }
 
 void UGA_EnemyShipCharge::HandlePhysicsRootHit(
@@ -176,6 +195,22 @@ void UGA_EnemyShipCharge::HandlePhysicsRootHit(
 			USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
 				TargetSpec, Ship, Ship, HitShip, &Hit, SourceVelocity);
 			TargetASC->ApplyGameplayEffectSpecToSelf(TargetSpec);
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("[ENEMY-CHARGE-NIAGARA][REQUEST] Ship=%s Target=%s Effect=%s Location=%s Scale=%.3f PlaybackSpeed=%.3f Damage=%.2f"),
+				*GetNameSafe(Ship),
+				*GetNameSafe(HitShip),
+				*GetPathNameSafe(PlayerShipImpactEffect),
+				*Hit.ImpactPoint.ToCompactString(),
+				PlayerShipImpactEffectScale,
+				PlayerShipImpactEffectPlaybackSpeed,
+				Damage);
+			Ship->SpawnRamImpactNiagaraForAll(
+				PlayerShipImpactEffect,
+				Hit.ImpactPoint,
+				PlayerShipImpactEffectScale,
+				PlayerShipImpactEffectPlaybackSpeed);
 			const float CurrentHealth = TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
 			UE_LOG(
 				LogTemp,
@@ -187,6 +222,7 @@ void UGA_EnemyShipCharge::HandlePhysicsRootHit(
 		}
 	}
 
+	bApplyCooldownOnEnd = IsValidPlayerTarget(HitShip);
 	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
 }
 
@@ -205,10 +241,11 @@ void UGA_EnemyShipCharge::UpdateChargeSteering()
 	if (bChargeStarted && HasReachedChargeEndpoint(
 		ChargeStartLocation,
 		ChargeDirection,
-		ChargeDistance,
+		ResolvedChargeDistance,
 		Ship->GetActorLocation(),
 		ChargeEndpointAcceptanceRadius))
 	{
+		bApplyCooldownOnEnd = true;
 		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
 		return;
 	}
@@ -244,6 +281,8 @@ void UGA_EnemyShipCharge::UpdateChargeSteering()
 	}
 	if (!bChargeStarted)
 	{
+		ResolvedChargeDistance = FMath::Max(1.0f, FVector::Dist2D(
+			Ship->GetActorLocation(), Target->GetActorLocation()));
 		UpdateChargeTelegraph();
 	}
 
@@ -347,7 +386,7 @@ void UGA_EnemyShipCharge::SpawnChargeTelegraph()
 		Telegraph->InitializeTelegraph(
 			Ship->GetActorLocation(),
 			Ship->GetActorForwardVector(),
-			ChargeDistance,
+			ResolvedChargeDistance,
 			ChargeTelegraphWidth,
 			ChargeTelegraphWorldZ);
 	}
@@ -360,7 +399,8 @@ void UGA_EnemyShipCharge::UpdateChargeTelegraph()
 	{
 		if (AEnemyShipChargeTelegraph* Telegraph = ChargeTelegraphActor.Get())
 		{
-			Telegraph->UpdateTelegraph(Ship->GetActorLocation(), Ship->GetActorForwardVector());
+			Telegraph->UpdateTelegraph(
+				Ship->GetActorLocation(), Ship->GetActorForwardVector(), ResolvedChargeDistance);
 		}
 	}
 }

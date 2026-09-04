@@ -25,7 +25,7 @@ public:
 		float InWidth,
 		float InWorldZ);
 
-	void UpdateTelegraph(const FVector& InStart, const FVector& InDirection);
+	void UpdateTelegraph(const FVector& InStart, const FVector& InDirection, float InDistance);
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 

@@ -9,9 +9,10 @@ class AEnemyShip;
 class AEnemyShipChargeTelegraph;
 class AShip;
 class UGameplayEffect;
+class UNiagaraSystem;
 class UPrimitiveComponent;
 
-/** Turns toward the selected Player Ship, then charges and damages it on one Physics Root collision. */
+/** Tracks the Player while aiming, then charges a locked direction for the last resolved XY target distance. */
 UCLASS(Blueprintable)
 class ENEMY_API UGA_EnemyShipCharge : public UEnemyShipGameplayAbility
 {
@@ -32,6 +33,10 @@ public:
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		bool bReplicateEndAbility,
 		bool bWasCancelled) override;
+	virtual void ApplyCooldown(
+		const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayAbilityActivationInfo ActivationInfo) const override;
 
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Charge")
 	float GetChargePropulsionMultiplier() const { return ChargePropulsionMultiplier; }
@@ -48,10 +53,6 @@ public:
 		float AcceptanceRadius);
 
 protected:
-	/** Fixed distance travelled after the aiming phase locks the direction. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge", meta = (ClampMin = "1.0", Units = "cm"))
-	float ChargeDistance = 10000.0f;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge", meta = (ClampMin = "0.0", Units = "cm"))
 	float ChargeEndpointAcceptanceRadius = 150.0f;
 
@@ -61,7 +62,7 @@ protected:
 
 	/** The charge starts only after the horizontal bow-to-target angle is within this tolerance. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Aiming", meta = (ClampMin = "0.0", ClampMax = "180.0", Units = "deg"))
-	float AimAlignmentToleranceDegrees = 5.0f;
+	float AimAlignmentToleranceDegrees = 0.25f;
 
 	/** Starts the charge from the final facing if the ship cannot align in time. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Aiming", meta = (ClampMin = "0.1", Units = "s"))
@@ -96,6 +97,18 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Damage")
 	TSubclassOf<UGameplayEffect> DamageGameplayEffectClass;
+
+	/** Niagara spawned at the impact point after this charge damages the Player Ship. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Impact")
+	TObjectPtr<UNiagaraSystem> PlayerShipImpactEffect;
+
+	/** Uniform world-space scale applied to PlayerShipImpactEffect. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Impact", meta = (ClampMin = "0.01"))
+	float PlayerShipImpactEffectScale = 1.0f;
+
+	/** Niagara simulation speed. 0.5 plays at half speed and lasts roughly twice as long. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Impact", meta = (ClampMin = "0.01"))
+	float PlayerShipImpactEffectPlaybackSpeed = 1.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Telegraph")
 	TSubclassOf<AEnemyShipChargeTelegraph> ChargeTelegraphClass;
@@ -134,6 +147,8 @@ private:
 	FTimerHandle DurationTimerHandle;
 	FVector ChargeStartLocation = FVector::ZeroVector;
 	FVector ChargeDirection = FVector::ForwardVector;
+	float ResolvedChargeDistance = 1.0f;
+	bool bApplyCooldownOnEnd = false;
 	bool bPreviousNotifyRigidBodyCollision = false;
 	bool bBoundPhysicsHit = false;
 	bool bAddedChargingTag = false;

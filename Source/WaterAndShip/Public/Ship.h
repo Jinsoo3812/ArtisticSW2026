@@ -14,6 +14,7 @@
 
 class USWBuoyancyComponent;
 class UGameplayEffect;
+class UNiagaraSystem;
 USTRUCT()
 struct FNetInputShip : public FNetworkPhysicsPayload
 {
@@ -528,6 +529,25 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage")
 	TSubclassOf<UGameplayEffect> PlayerRamDamageGameplayEffectClass;
+
+	/** Niagara spawned at the collision point when this Player Ship deals ram damage. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage|Impact")
+	TObjectPtr<UNiagaraSystem> PlayerRamImpactEffect;
+
+	/** Uniform world-space scale applied to PlayerRamImpactEffect. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage|Impact", meta = (ClampMin = "0.01"))
+	float PlayerRamImpactEffectScale = 1.0f;
+
+	/** Niagara simulation speed. 0.5 plays at half speed and lasts roughly twice as long. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage|Impact", meta = (ClampMin = "0.01"))
+	float PlayerRamImpactEffectPlaybackSpeed = 1.0f;
+
+	/** Server-authoritative replicated ram impact used by both Player and Enemy charge damage. */
+	void SpawnRamImpactNiagaraForAll(
+		UNiagaraSystem* Effect,
+		const FVector& Location,
+		float UniformScale = 1.0f,
+		float PlaybackSpeed = 1.0f);
 
 	/** Class policy used by interaction collision and the authoritative Board guard. */
 	UFUNCTION(BlueprintPure, Category = "Ship|Control")
@@ -1101,6 +1121,14 @@ private:
 	TSet<FGuid> PropulsionSuppressionSources;
 	TWeakObjectPtr<AShip> LastPlayerRamTarget;
 	double LastPlayerRamDamageTime = -DBL_MAX;
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastSpawnRamImpactNiagara(
+		UNiagaraSystem* Effect,
+		FVector_NetQuantize Location,
+		FRotator Rotation,
+		float UniformScale,
+		float PlaybackSpeed);
 
 	bool bStaticDataInitialized = false;
 };

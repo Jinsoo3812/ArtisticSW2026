@@ -172,7 +172,6 @@ def assign_to_charge_ability(telegraph_class):
         raise RuntimeError("BP_GA_ES_Charge was not found")
     generated_class = unreal.EditorAssetLibrary.load_blueprint_class(ABILITY_BP_PATH)
     cdo = unreal.get_default_object(generated_class)
-    cdo.set_editor_property("charge_distance", 10000.0)
     cdo.set_editor_property("charge_propulsion_multiplier", 2.0)
     cdo.set_editor_property("charge_failsafe_duration_seconds", 0.0)
     cdo.set_editor_property("charge_telegraph_width", 1000.0)

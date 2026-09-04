@@ -24,6 +24,12 @@
 #include "BaseGameplayTags.h"
 #include "GASCombatLibrary.h"
 #include "GASDamageInstantGameplayEffect.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
+#include "NiagaraEmitter.h"
+#include "NiagaraEmitterHandle.h"
+#include "NiagaraRendererProperties.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
 #include "Skills/SkillUseProvider.h"
 #include "ShipPhysicsAsync.h"
@@ -2436,12 +2442,25 @@ void AShip::HandlePlayerShipCollisionTelemetry(
 
 	const FVector RelativeVelocity = PlayerVelocity - EnemyVelocity;
 	const FVector ToEnemy = (OtherShip->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
-	const float ApproachSpeed = FMath::Max(
+	const float PlayerApproachSpeed = FMath::Max(
+		0.0f, FVector::DotProduct(PlayerVelocity, ToEnemy));
+	const float RelativeApproachSpeed = FMath::Max(
 		0.0f, FVector::DotProduct(RelativeVelocity, ToEnemy));
-	if (ApproachSpeed < PlayerRamMinimumApproachSpeed
+	if (PlayerApproachSpeed < PlayerRamMinimumApproachSpeed
 		|| PlayerRamCollisionDamage <= 0.0f
 		|| !PlayerRamDamageGameplayEffectClass)
 	{
+		UE_LOG(
+			LogTemp,
+			Verbose,
+			TEXT("[PLAYER-SHIP-RAM-REJECTED] Player=%s Enemy=%s PlayerApproachSpeed=%.2f RelativeApproachSpeed=%.2f Threshold=%.2f PlayerVelocity=%s EnemyVelocity=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(OtherShip),
+			PlayerApproachSpeed,
+			RelativeApproachSpeed,
+			PlayerRamMinimumApproachSpeed,
+			*PlayerVelocity.ToCompactString(),
+			*EnemyVelocity.ToCompactString());
 		return;
 	}
 
@@ -2475,7 +2494,12 @@ void AShip::HandlePlayerShipCollisionTelemetry(
 	FGameplayEffectSpec TargetSpec(*DamageSpec.Data.Get());
 	USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
 		TargetSpec, this, this, OtherShip, &Hit, PlayerVelocity);
-	TargetASC->ApplyGameplayEffectSpecToSelf(TargetSpec);
+		TargetASC->ApplyGameplayEffectSpecToSelf(TargetSpec);
+		SpawnRamImpactNiagaraForAll(
+			PlayerRamImpactEffect,
+			Hit.ImpactPoint,
+			PlayerRamImpactEffectScale,
+			PlayerRamImpactEffectPlaybackSpeed);
 	LastPlayerRamTarget = OtherShip;
 	LastPlayerRamDamageTime = CurrentTime;
 	const float CurrentHealth = OtherShip->GetShipAttributeSet()
@@ -2485,7 +2509,7 @@ void AShip::HandlePlayerShipCollisionTelemetry(
 	UE_LOG(
 		LogTemp,
 		Warning,
-		TEXT("[PLAYER-SHIP-RAM-DAMAGE] Player=%s Enemy=%s Damage=%.2f EnemyHealth=%.2f Threshold=%.2f cm/s PlayerSpeed=%.2f cm/s (%.2f m/s) RelativeSpeed=%.2f cm/s (%.2f m/s) ApproachSpeed=%.2f cm/s (%.2f m/s) PlayerVelocity=%s EnemyVelocity=%s ImpactPoint=%s"),
+		TEXT("[PLAYER-SHIP-RAM-DAMAGE] Player=%s Enemy=%s Damage=%.2f EnemyHealth=%.2f Threshold=%.2f cm/s PlayerSpeed=%.2f cm/s (%.2f m/s) RelativeSpeed=%.2f cm/s (%.2f m/s) PlayerApproachSpeed=%.2f cm/s (%.2f m/s) RelativeApproachSpeed=%.2f cm/s (%.2f m/s) PlayerVelocity=%s EnemyVelocity=%s ImpactPoint=%s"),
 		*GetNameSafe(this),
 		*GetNameSafe(OtherShip),
 		PlayerRamCollisionDamage,
@@ -2495,8 +2519,10 @@ void AShip::HandlePlayerShipCollisionTelemetry(
 		PlayerVelocity.Size() / 100.0f,
 		RelativeVelocity.Size(),
 		RelativeVelocity.Size() / 100.0f,
-		ApproachSpeed,
-		ApproachSpeed / 100.0f,
+		PlayerApproachSpeed,
+		PlayerApproachSpeed / 100.0f,
+		RelativeApproachSpeed,
+		RelativeApproachSpeed / 100.0f,
 		*PlayerVelocity.ToCompactString(),
 		*EnemyVelocity.ToCompactString(),
 		*Hit.ImpactPoint.ToCompactString());
@@ -2565,6 +2591,164 @@ FShipStatSnapshot AShip::GetBaseStatSnapshot() const
 	Snapshot.ForwardPropulsionMultiplier = StatRow->ForwardPropulsionMultiplier;
 	Snapshot.TurnTorqueMultiplier = StatRow->TurnTorqueMultiplier;
 	return Snapshot;
+}
+
+void AShip::SpawnRamImpactNiagaraForAll(
+	UNiagaraSystem* Effect,
+	const FVector& Location,
+	float UniformScale,
+	float PlaybackSpeed)
+{
+	UE_LOG(
+		LogTemp,
+		Warning,
+		TEXT("[RAM-NIAGARA][DISPATCH] Ship=%s Authority=%s Effect=%s Location=%s Scale=%.3f PlaybackSpeed=%.3f"),
+		*GetNameSafe(this),
+		HasAuthority() ? TEXT("true") : TEXT("false"),
+		*GetPathNameSafe(Effect),
+		*Location.ToCompactString(),
+		UniformScale,
+		PlaybackSpeed);
+	if (!HasAuthority())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[RAM-NIAGARA][SKIP] Ship=%s Reason=NoAuthority"), *GetNameSafe(this));
+		return;
+	}
+	if (!Effect)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[RAM-NIAGARA][SKIP] Ship=%s Reason=EffectIsNull"), *GetNameSafe(this));
+		return;
+	}
+	if (Effect)
+	{
+		const FVector TravelDirection = GetVelocity().GetSafeNormal();
+		const FRotator EffectRotation = TravelDirection.IsNearlyZero()
+			? GetActorRotation()
+			: (-TravelDirection).Rotation();
+		MulticastSpawnRamImpactNiagara(
+			Effect,
+			Location,
+			EffectRotation,
+			FMath::Max(0.01f, UniformScale),
+			FMath::Max(0.01f, PlaybackSpeed));
+	}
+}
+
+void AShip::MulticastSpawnRamImpactNiagara_Implementation(
+	UNiagaraSystem* Effect,
+	FVector_NetQuantize Location,
+	FRotator Rotation,
+	float UniformScale,
+	float PlaybackSpeed)
+{
+	UE_LOG(
+		LogTemp,
+		Warning,
+		TEXT("[RAM-NIAGARA][MULTICAST] Ship=%s NetMode=%d Effect=%s World=%s Location=%s Scale=%.3f PlaybackSpeed=%.3f"),
+		*GetNameSafe(this),
+		static_cast<int32>(GetNetMode()),
+		*GetPathNameSafe(Effect),
+		*GetNameSafe(GetWorld()),
+		*FVector(Location).ToCompactString(),
+		UniformScale,
+		PlaybackSpeed);
+	if (Effect && GetWorld())
+	{
+		TArray<FNiagaraVariable> ExposedParameters;
+		Effect->GetExposedParameters().GetParameters(ExposedParameters);
+		FString ExposedParameterList;
+		bool bUsesHitScaleParameter = false;
+		for (const FNiagaraVariable& Parameter : ExposedParameters)
+		{
+			if (!ExposedParameterList.IsEmpty())
+			{
+				ExposedParameterList += TEXT(", ");
+			}
+			ExposedParameterList += FString::Printf(
+				TEXT("%s:%s"),
+				*Parameter.GetName().ToString(),
+				*Parameter.GetType().GetName());
+			bUsesHitScaleParameter |= Parameter.GetName() == TEXT("User.HitScale")
+				&& Parameter.GetType() == FNiagaraTypeDefinition::GetFloatDef();
+		}
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("[RAM-NIAGARA][ASSET] Effect=%s Emitters=%d ExposedParameters=[%s] FixedBounds=%s"),
+			*GetPathNameSafe(Effect),
+			Effect->GetEmitterHandles().Num(),
+			*ExposedParameterList,
+			*Effect->GetFixedBounds().ToString());
+		for (const FNiagaraEmitterHandle& EmitterHandle : Effect->GetEmitterHandles())
+		{
+			const FVersionedNiagaraEmitterData* EmitterData = EmitterHandle.GetEmitterData();
+			FString RendererList;
+			if (EmitterData)
+			{
+				for (const UNiagaraRendererProperties* Renderer : EmitterData->GetRenderers())
+				{
+					if (!RendererList.IsEmpty())
+					{
+						RendererList += TEXT(", ");
+					}
+					RendererList += GetNameSafe(Renderer ? Renderer->GetClass() : nullptr);
+				}
+			}
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("[RAM-NIAGARA][EMITTER] Name=%s Enabled=%s LocalSpace=%s SimTarget=%d Renderers=[%s]"),
+				*EmitterHandle.GetName().ToString(),
+				EmitterHandle.GetIsEnabled() ? TEXT("true") : TEXT("false"),
+				EmitterData && EmitterData->bLocalSpace ? TEXT("true") : TEXT("false"),
+				EmitterData ? static_cast<int32>(EmitterData->SimTarget) : -1,
+				*RendererList);
+		}
+		UNiagaraComponent* SpawnedComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			GetWorld(),
+			Effect,
+			Location,
+			Rotation,
+			bUsesHitScaleParameter
+				? FVector::OneVector
+				: FVector(FMath::Max(0.01f, UniformScale)),
+			true,
+			false);
+		if (SpawnedComponent)
+		{
+			SpawnedComponent->SetCustomTimeDilation(FMath::Max(0.01f, PlaybackSpeed));
+			if (bUsesHitScaleParameter)
+			{
+				SpawnedComponent->SetVariableFloat(
+					TEXT("User.HitScale"),
+					FMath::Max(0.01f, UniformScale));
+			}
+			SpawnedComponent->Activate(true);
+		}
+		const FVector RelativeScale = SpawnedComponent
+			? SpawnedComponent->GetRelativeScale3D()
+			: FVector::ZeroVector;
+		const FVector ComponentScale = SpawnedComponent
+			? SpawnedComponent->GetComponentScale()
+			: FVector::ZeroVector;
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("[RAM-NIAGARA][SPAWN-RESULT] Ship=%s Component=%s Active=%s RequestedScale=%.3f ScaleMode=%s PlaybackSpeed=%.3f AppliedTimeDilation=%.3f RelativeScale=%s ComponentScale=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(SpawnedComponent),
+			SpawnedComponent && SpawnedComponent->IsActive() ? TEXT("true") : TEXT("false"),
+			UniformScale,
+			bUsesHitScaleParameter ? TEXT("User.HitScale") : TEXT("ComponentTransform"),
+			PlaybackSpeed,
+			SpawnedComponent ? SpawnedComponent->GetCustomTimeDilation() : 0.0f,
+			*RelativeScale.ToCompactString(),
+			*ComponentScale.ToCompactString());
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[RAM-NIAGARA][SKIP] Ship=%s Reason=MissingEffectOrWorld"), *GetNameSafe(this));
+	}
 }
 
 void AShip::ApplyStatSnapshot(const FShipStatSnapshot& Snapshot, bool bRefillHealth)
