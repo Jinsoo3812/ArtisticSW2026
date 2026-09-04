@@ -410,6 +410,18 @@ void ABasePlayer::Tick(float DeltaTime)
 		AnimStateComponent->UpdateAnimationState(DeltaTime);
 		ApplyCombatRotationMode(true);
 		ApplyCombatTurnInPlaceRotation(DeltaTime);
+
+		if (!HasAuthority() && IsLocallyControlled())
+		{
+			const bool bIsTIPActive = AnimStateComponent->bShouldTurnInPlace;
+			if (bLastSentTurnInPlaceActive && !bIsTIPActive)
+			{
+				Server_SetTurnInPlace(false, 0.0f, GetActorRotation().Yaw);
+				bLastSentTurnInPlaceActive = false;
+				LastSentTurnInPlaceFacingDelta = 0.0f;
+				LastSentTurnInPlaceActorYaw = GetActorRotation().Yaw;
+			}
+		}
 	}
 	if (HasAuthority())
 	{
@@ -419,15 +431,23 @@ void ABasePlayer::Tick(float DeltaTime)
 	float TargetArmLength = DefaultTargetArmLength;
 	FVector TargetSocketOffset = DefaultSocketOffset;
 
-	if (bIsSniping)
+	if (CanPerformCombatAction())
 	{
-		TargetArmLength = SnipingTargetArmLength;
-		TargetSocketOffset = SnipingSocketOffset;
+		if (bIsSniping)
+		{
+			TargetArmLength = SnipingTargetArmLength;
+			TargetSocketOffset = SnipingSocketOffset;
+		}
+		else if (bIsAiming)
+		{
+			TargetArmLength = AimingTargetArmLength;
+			TargetSocketOffset = AimingSocketOffset;
+		}
 	}
-	else if (bIsAiming)
+	else
 	{
-		TargetArmLength = AimingTargetArmLength;
-		TargetSocketOffset = AimingSocketOffset;
+		bIsAiming = false;
+		bIsSniping = false;
 	}
 
 	// Rotation ownership is selected by ApplyCombatRotationMode() above:
@@ -477,6 +497,8 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 	NewSnapshot.LastFallSpeed = AnimStateComponent->LastFallSpeed;
 	NewSnapshot.EventSequence = LocomotionAnimEventSequence;
 	NewSnapshot.LastLocomotionEvent = LocomotionStateSnapshot.LastLocomotionEvent;
+	NewSnapshot.bShouldTurnInPlace = AnimStateComponent->bShouldTurnInPlace;
+	NewSnapshot.DesiredFacingDeltaYaw = AnimStateComponent->DesiredFacingDeltaYaw;
 
 	if (LocomotionStateSnapshot != NewSnapshot)
 	{
@@ -912,6 +934,11 @@ int32 ABasePlayer::GetPressedConsumableQuickSlotIndex() const
 
 void ABasePlayer::BeginConsumableQuickSlotInput(const int32 QuickSlotIndex)
 {
+	if (!CanPerformCombatAction())
+	{
+		return;
+	}
+
 	if (!QuickSlots.IsValidIndex(QuickSlotIndex)
 		|| QuickSlots[QuickSlotIndex].SlotType != EQuickSlotType::Consumable)
 	{
@@ -932,6 +959,15 @@ void ABasePlayer::EndConsumableQuickSlotInput(const int32 QuickSlotIndex)
 
 	OnConsumableQuickSlotInputChanged.Broadcast();
 	ActivateQuickSlot(QuickSlotIndex);
+}
+
+void ABasePlayer::ResetConsumableQuickSlotInputs()
+{
+	if (!PressedConsumableQuickSlotIndices.IsEmpty())
+	{
+		PressedConsumableQuickSlotIndices.Empty();
+		OnConsumableQuickSlotInputChanged.Broadcast();
+	}
 }
 
 void ABasePlayer::ActivateQuickSlot(int32 QuickSlotIndex)
@@ -1197,6 +1233,12 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 		return;
 	}
 
+	const bool bIsNonCombatInteraction = InputTag.MatchesTag(Key_Default_F);
+	if (!bIsNonCombatInteraction && !CanPerformCombatAction())
+	{
+		return;
+	}
+
 	int32 InputID = GetInputIDFromTag(InputTag);
 	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
 	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
@@ -1245,6 +1287,10 @@ void ABasePlayer::OnGravityVortexSkillPressed()
 	{
 		return;
 	}
+	if (!CanPerformCombatAction())
+	{
+		return;
+	}
 	OnAbilityInputPressed(Key_Skill_GravityVortex);
 }
 
@@ -1257,6 +1303,7 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 {
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 	if (IsEquipmentTransitioning()) return;
+	if (!CanPerformCombatAction()) return;
 
 	// Capture the state before AbilityLocalInputPressed can activate the bound
 	// ability. EventMagnitude 0 means activation click, 1 means active re-input.
@@ -1524,6 +1571,43 @@ EEquipmentState ABasePlayer::GetEquipmentState() const
 bool ABasePlayer::IsEquipmentTransitioning() const
 {
 	return EquipmentComponent && EquipmentComponent->IsEquipmentTransitioning();
+}
+
+bool ABasePlayer::CanPerformCombatAction() const
+{
+	if (SwimmingComponent && SwimmingComponent->IsCustomSwimming())
+	{
+		return false;
+	}
+
+	if (bIsDodging)
+	{
+		return false;
+	}
+
+	if (bIsHitReacting)
+	{
+		return false;
+	}
+
+	if (IsEquipmentTransitioning())
+	{
+		return false;
+	}
+
+	if (CachedAbilitySystemComponent.IsValid())
+	{
+		if (CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Swimming)
+			|| CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Rolling)
+			|| CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Damaged)
+			|| CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Dead)
+			|| CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Dialogue))
+		{
+			return false;
+		}
+	}
+
+	return true;
 }
 
 void ABasePlayer::HandleEquipmentAttachNotify()
@@ -2153,6 +2237,26 @@ void ABasePlayer::Server_NotifyJumpStarted_Implementation()
 	LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::Jump;
 }
 
+void ABasePlayer::Server_SetTurnInPlace_Implementation(bool bInTurnInPlace, float InFacingDeltaYaw, float InTargetActorYaw)
+{
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->bShouldTurnInPlace = bInTurnInPlace;
+		AnimStateComponent->DesiredFacingDeltaYaw = InFacingDeltaYaw;
+		AnimStateComponent->bTurnInPlacePhaseActive = bInTurnInPlace;
+		AnimStateComponent->bIsTurningInPlace = bInTurnInPlace;
+	}
+
+	// Apply the client's TIP rotation to the server's actor rotation so standard transform
+	// replication automatically broadcasts the updated facing rotation to all simulated proxies.
+	if (bInTurnInPlace || FMath::Abs(FRotator::NormalizeAxis(InTargetActorYaw - GetActorRotation().Yaw)) > 0.5f)
+	{
+		SetActorRotation(FRotator(0.0f, InTargetActorYaw, 0.0f));
+	}
+
+	UpdateLocomotionStateSnapshot();
+}
+
 void ABasePlayer::BroadcastFallOffStartedForRemoteClients()
 {
 	if (HasAuthority())
@@ -2618,11 +2722,30 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
 
 	AnimStateComponent->TurnInPlaceRootYawDelta = ClampedDeltaYaw;
 	const float ActorYawBeforeApply = GetActorRotation().Yaw;
-	if (!FMath::IsNearlyZero(ClampedDeltaYaw))
+	const bool bCanApplyActorRotation = IsLocallyControlled() || HasAuthority();
+	if (bCanApplyActorRotation && !FMath::IsNearlyZero(ClampedDeltaYaw))
 	{
 		AddActorWorldRotation(FRotator(0.0f, ClampedDeltaYaw, 0.0f));
 	}
 	const float ActorYawAfterApply = GetActorRotation().Yaw;
+
+	if (!HasAuthority() && IsLocallyControlled())
+	{
+		const UWorld* World = GetWorld();
+		const double Now = World ? World->GetTimeSeconds() : 0.0;
+		const float CurrentActorYaw = GetActorRotation().Yaw;
+		const bool bYawChangedSignificantly = FMath::Abs(FRotator::NormalizeAxis(CurrentActorYaw - LastSentTurnInPlaceActorYaw)) >= 3.0f;
+		const bool bTimeElapsed = (Now - LastTurnInPlaceSendTime) >= 0.06;
+
+		if (!bLastSentTurnInPlaceActive || (bYawChangedSignificantly && bTimeElapsed))
+		{
+			Server_SetTurnInPlace(true, FacingDeltaYaw, CurrentActorYaw);
+			bLastSentTurnInPlaceActive = true;
+			LastSentTurnInPlaceFacingDelta = FacingDeltaYaw;
+			LastSentTurnInPlaceActorYaw = CurrentActorYaw;
+			LastTurnInPlaceSendTime = Now;
+		}
+	}
 
 	const float RemainingFacingDeltaYaw = GetDesiredFacingDeltaYaw();
 	// UpdateCombatTurnInPlaceRequest is the single authority for ending TIP,

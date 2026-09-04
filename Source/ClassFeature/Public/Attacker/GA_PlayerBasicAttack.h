@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "BaseGameplayAbility.h"
+#include "GAS/Ability/PlayerCombatGameplayAbility.h"
 #include "GameplayEffectTypes.h"
 #include "GA_PlayerBasicAttack.generated.h"
 
@@ -12,7 +12,7 @@ class UAnimMontage;
 
 /** Player basic melee attack driven by montage gameplay-event notifies. */
 UCLASS()
-class CLASSFEATURE_API UGA_PlayerBasicAttack : public UBaseGameplayAbility
+class CLASSFEATURE_API UGA_PlayerBasicAttack : public UPlayerCombatGameplayAbility
 {
 	GENERATED_BODY()
 

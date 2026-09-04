@@ -677,6 +677,29 @@ void ULocomotionAnimStateComponent::UpdateTurnInPlacePhase(float DeltaTime)
     // while the State Controller restarts the selected clip when needed.
     const bool bLocallyOwnedRotation = CachedBasePlayer &&
         (CachedBasePlayer->IsLocallyControlled() || CachedBasePlayer->HasAuthority());
+
+    if (!bLocallyOwnedRotation)
+    {
+        // Simulated proxies consume the replicated TIP state from the authoritative snapshot
+        // and do not recalculate entry/continuation from a local Controller.
+        if (bTurnInPlacePhaseActive)
+        {
+            if (bStopRequested)
+            {
+                EmitStopDebug(TEXT("[SC_STOP_COMPONENT] Event=CancelledByTIP"));
+            }
+            bStopRequested = false;
+            bGroundMoveEpisodeActive = false;
+            bLandingRequested = false;
+            bIsLanding = false;
+            if (CurrentState == ELocomotionState::Stop || CurrentState == ELocomotionState::Landing)
+            {
+                ForceStateTransition(ELocomotionState::Idle);
+            }
+        }
+        return;
+    }
+
     const bool bHighPriorityAction = CachedBasePlayer &&
         (CachedBasePlayer->bIsAttacking || CachedBasePlayer->bIsDodging || CachedBasePlayer->bIsHitReacting);
     // Allow TIP when there is no move input (even if slowing down from Stop or recovering from Land)
@@ -1435,6 +1458,10 @@ void ULocomotionAnimStateComponent::ApplyAuthoritativeSnapshot(const FReplicated
     MoveInput = CachedMoveInput;
     MoveInputSize = CachedMoveInput.Size();
     LandMoveDirection = Snapshot.LandMoveDirection;
+    bShouldTurnInPlace = Snapshot.bShouldTurnInPlace;
+    DesiredFacingDeltaYaw = Snapshot.DesiredFacingDeltaYaw;
+    bTurnInPlacePhaseActive = Snapshot.bShouldTurnInPlace;
+    bIsTurningInPlace = Snapshot.bShouldTurnInPlace;
 }
 
 void ULocomotionAnimStateComponent::HandleLanded(const FHitResult& Hit, float ImpactFallSpeed)

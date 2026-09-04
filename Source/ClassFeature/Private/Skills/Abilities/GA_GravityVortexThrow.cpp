@@ -54,10 +54,10 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	}
 
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
-	if (!Player || !ProjectileClass)
+	if (!Player || !Player->CanPerformCombatAction() || !ProjectileClass)
 	{
 		UE_LOG(LogTemp, Error,
-			TEXT("[VortexPipeline][Activate] Invalid Player=%s or ProjectileClass=%s."),
+			TEXT("[VortexPipeline][Activate] Invalid Player=%s or ProjectileClass=%s or cannot perform combat action."),
 			*GetPathNameSafe(Player), *GetPathNameSafe(ProjectileClass.Get()));
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;

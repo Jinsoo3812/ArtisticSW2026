@@ -2658,7 +2658,8 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         ThreadSafeData.WeaponUpperBodyData.EquippedWeaponTag = EquippedWeaponTag;
         ThreadSafeData.WeaponUpperBodyData.OverlayTag = OverlayTag;
         ThreadSafeData.WeaponUpperBodyData.OverlayIndex = EquipmentComponent->GetEquippedUpperBodyOverlayIndex();
-        ThreadSafeData.WeaponUpperBodyData.bShouldOverrideUpperBody = bEnableWeaponUpperBodyOverlay && bUseWeaponOverlay && bGroundedForOverlay;
+        const bool bIsSwimming = ThreadSafeData.SwimData.bIsSwimming;
+        ThreadSafeData.WeaponUpperBodyData.bShouldOverrideUpperBody = bEnableWeaponUpperBodyOverlay && bUseWeaponOverlay && bGroundedForOverlay && !bIsSwimming;
         ThreadSafeData.WeaponUpperBodyData.UpperBodyAlpha = ThreadSafeData.WeaponUpperBodyData.bShouldOverrideUpperBody ? 1.f : 0.f;
         ThreadSafeData.WeaponUpperBodyData.GroundSpeed = GroundSpeed;
         ThreadSafeData.WeaponUpperBodyData.Direction = Direction;

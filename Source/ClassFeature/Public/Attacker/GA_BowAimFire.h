@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "BaseGameplayAbility.h"
+#include "GAS/Ability/PlayerCombatGameplayAbility.h"
 #include "GA_BowAimFire.generated.h"
 
 class ABowItem;
@@ -15,7 +15,7 @@ struct FWeaponAnimationEntry;
  * Bow ability driven by right-click aim, left-click draw, and left-click release fire.
  */
 UCLASS()
-class CLASSFEATURE_API UGA_BowAimFire : public UBaseGameplayAbility
+class CLASSFEATURE_API UGA_BowAimFire : public UPlayerCombatGameplayAbility
 {
 	GENERATED_BODY()
 

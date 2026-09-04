@@ -206,6 +206,9 @@ public:
 	UFUNCTION(Server, Reliable)
 	void Server_NotifyJumpStarted();
 
+	UFUNCTION(Server, Reliable)
+	void Server_SetTurnInPlace(bool bInTurnInPlace, float InFacingDeltaYaw, float InTargetActorYaw);
+
 	// Multicast RPCs 제거됨 (데이터 기반 이벤트 처리로 변경)
 
 	void BroadcastFallOffStartedForRemoteClients();
@@ -214,6 +217,10 @@ public:
 public:
 	FVector2D LastSentMoveInputToServer = FVector2D::ZeroVector;
 	bool bHasSentMoveInputToServer = false;
+	bool bLastSentTurnInPlaceActive = false;
+	float LastSentTurnInPlaceFacingDelta = 0.0f;
+	float LastSentTurnInPlaceActorYaw = 0.0f;
+	double LastTurnInPlaceSendTime = 0.0;
 	FVector2D AuthoritativeMoveInput = FVector2D::ZeroVector;
 	bool bHasAuthoritativeMoveInput = false;
 
@@ -452,6 +459,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	bool IsEquipmentTransitioning() const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat")
+	bool CanPerformCombatAction() const;
+
+	UFUNCTION(BlueprintCallable, Category = "QuickSlot")
+	void ResetConsumableQuickSlotInputs();
 
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
 	void HandleEquipmentAttachNotify();

@@ -26,10 +26,16 @@ UGA_PlayerRoll::UGA_PlayerRoll()
 	ActivationBlockedTags.AddTag(State_Dead);
 	ActivationBlockedTags.AddTag(State_Damaged);
 	ActivationBlockedTags.AddTag(State_Rolling);
+	ActivationBlockedTags.AddTag(State_Swimming);
 
 	// Existing offensive abilities use this tag, so the MVP cannot attack while
 	// rolling. Hit reaction itself remains able to activate outside the i-frame.
 	BlockAbilitiesWithTag.AddTag(GameplayAbility_InterruptibleByHit);
+	BlockAbilitiesWithTag.AddTag(GameplayAbility_BasicAttack);
+	BlockAbilitiesWithTag.AddTag(GameplayAbility_Weapon_AimCycle);
+	BlockAbilitiesWithTag.AddTag(GameplayAbility_Skill_GravityVortex);
+	BlockAbilitiesWithTag.AddTag(GameplayAbility_Skill_WaterBomb);
+	BlockAbilitiesWithTag.AddTag(GameplayAbility_Skill_Bombardment);
 }
 
 bool UGA_PlayerRoll::CanActivateAbility(
@@ -65,6 +71,11 @@ void UGA_PlayerRoll::ActivateAbility(
 	bRollFinished = false;
 	bInvulnerabilityActive = false;
 	bRecoveryRequested = false;
+
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
+	{
+		Player->ResetConsumableQuickSlotInputs();
+	}
 
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
