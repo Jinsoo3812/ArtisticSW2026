@@ -23,6 +23,7 @@
 #include "NiagaraSystem.h"
 #include "RippleSubsystem.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
+#include "Effects/SWNiagaraScaleLibrary.h"
 
 ACannonball::ACannonball()
 {
@@ -91,8 +92,11 @@ void ACannonball::BeginPlay()
 		if (UNiagaraSystem* Effect = GetProjectileEffect())
 		{
 			ProjectileEffectComponent->SetAsset(Effect);
-			ProjectileEffectComponent->SetRelativeScale3D(
-				FVector(FMath::Max(0.01f, GetProjectileEffectScale())));
+			USWNiagaraScaleLibrary::ApplyEffectTuning(
+				ProjectileEffectComponent,
+				GetProjectileEffectScale(),
+				GetProjectileEffectLifetimeScale(),
+				GetProjectileEffectPlaybackSpeed());
 			ProjectileEffectComponent->Activate(true);
 		}
 	}
@@ -310,7 +314,8 @@ void ACannonball::HandleShipHit(AShip* HitShip)
 		return;
 	}
 
-	SpawnNiagaraEffectForAll(ShipImpactEffect, GetActorLocation(), ShipImpactEffectScale);
+	SpawnNiagaraEffectForAll(ShipImpactEffect, GetActorLocation(), ShipImpactEffectScale,
+		ShipImpactEffectLifetimeScale, ShipImpactEffectPlaybackSpeed);
 
 	const FVector ExplosionLocation = GetActorLocation();
 	const float EffectiveRadius = FMath::Max(0.0f, SplashDamageRadius);
@@ -444,15 +449,17 @@ void ACannonball::TriggerWaterRipple(const FVector& HitLocation)
 	bHasHitWater = true;
 	if (HasAuthority())
 	{
-		if (WaterImpactEffect)
+		if (UNiagaraSystem* Effect = GetWaterImpactEffect())
 		{
 			// This Niagara is authored to burst along its local +Z axis. Keep it
 			// aligned with world +Z, independent of the incoming trajectory.
 			MulticastSpawnNiagaraEffect(
-				WaterImpactEffect,
+				Effect,
 				HitLocation,
 				FRotator::ZeroRotator,
-				FMath::Max(0.01f, WaterImpactEffectScale));
+				FMath::Max(0.01f, GetWaterImpactEffectScale()),
+				FMath::Max(0.01f, GetWaterImpactEffectLifetimeScale()),
+				FMath::Max(0.01f, GetWaterImpactEffectPlaybackSpeed()));
 		}
 	}
 
@@ -491,7 +498,9 @@ void ACannonball::TriggerWaterRipple(const FVector& HitLocation)
 void ACannonball::SpawnNiagaraEffectForAll(
 	UNiagaraSystem* Effect,
 	const FVector& Location,
-	float UniformScale)
+	float SizeScale,
+	float LifetimeScale,
+	float PlaybackSpeed)
 {
 	if (!HasAuthority() || !Effect)
 	{
@@ -502,7 +511,9 @@ void ACannonball::SpawnNiagaraEffectForAll(
 	const FRotator EffectRotation = TravelDirection.IsNearlyZero()
 		? GetActorRotation()
 		: (-TravelDirection).Rotation();
-	MulticastSpawnNiagaraEffect(Effect, Location, EffectRotation, FMath::Max(0.01f, UniformScale));
+	MulticastSpawnNiagaraEffect(Effect, Location, EffectRotation,
+		FMath::Max(0.01f, SizeScale), FMath::Max(0.01f, LifetimeScale),
+		FMath::Max(0.01f, PlaybackSpeed));
 }
 
 UNiagaraSystem* ACannonball::GetProjectileEffect() const
@@ -515,22 +526,25 @@ float ACannonball::GetProjectileEffectScale() const
 	return ProjectileEffectScale;
 }
 
+float ACannonball::GetProjectileEffectLifetimeScale() const { return ProjectileEffectLifetimeScale; }
+float ACannonball::GetProjectileEffectPlaybackSpeed() const { return ProjectileEffectPlaybackSpeed; }
+UNiagaraSystem* ACannonball::GetWaterImpactEffect() const { return WaterImpactEffect; }
+float ACannonball::GetWaterImpactEffectScale() const { return WaterImpactEffectScale; }
+float ACannonball::GetWaterImpactEffectLifetimeScale() const { return WaterImpactEffectLifetimeScale; }
+float ACannonball::GetWaterImpactEffectPlaybackSpeed() const { return WaterImpactEffectPlaybackSpeed; }
+
 void ACannonball::MulticastSpawnNiagaraEffect_Implementation(
 	UNiagaraSystem* Effect,
 	FVector_NetQuantize Location,
 	FRotator Rotation,
-	float UniformScale)
+	float SizeScale,
+	float LifetimeScale,
+	float PlaybackSpeed)
 {
 	if (Effect && GetWorld())
 	{
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-			GetWorld(),
-			Effect,
-			Location,
-			Rotation,
-			FVector(FMath::Max(0.01f, UniformScale)),
-			true,
-			true);
+		USWNiagaraScaleLibrary::SpawnTunedSystemAtLocation(
+			GetWorld(), Effect, Location, Rotation, SizeScale, LifetimeScale, PlaybackSpeed, true);
 	}
 }
 

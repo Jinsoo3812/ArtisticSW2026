@@ -205,6 +205,14 @@ void AEnemyShipTimeStopField::ApplyPlayerTarget(const FEnemyShipTimeStopTarget& 
 	{
 		Runtime.bCapturedBaseline = !ASC
 			|| !ASC->HasMatchingGameplayTag(State_Debuff_TimeStopped);
+
+		// Input suppression can prevent Enhanced Input's Completed event from
+		// reaching the character. Clear the locomotion caches explicitly so a
+		// held movement or sprint input cannot leave the frozen player in a
+		// moving animation pose while their CharacterMovement is disabled.
+		Player->ConsumeMovementInputVector();
+		Player->StopMoveInput();
+		Player->StopSprint();
 	}
 	if (!Runtime.bMovementSuppressed)
 	{

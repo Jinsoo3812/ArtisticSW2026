@@ -7,8 +7,10 @@
 #include "Ship.h"
 #include "ShipAI/Abilities/EnemyShipObstacle.h"
 #include "ShipAI/Abilities/EnemyShipObstacleProjectile.h"
+#include "ShipAI/Abilities/GA_EnemyShipCannonVolley.h"
 #include "ShipAI/Abilities/GA_EnemyShipLaunchTorpedo.h"
 #include "ShipAI/EnemyShip.h"
+#include "ShipAI/EnemyShipArchetypeData.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
 
 UGA_EnemyShipDeployObstacle::UGA_EnemyShipDeployObstacle()
@@ -24,6 +26,60 @@ UGA_EnemyShipDeployObstacle::UGA_EnemyShipDeployObstacle()
 FGameplayTag UGA_EnemyShipDeployObstacle::GetDeployObstacleAbilityTag()
 {
 	return GameplayAbility_EnemyShip_DeployObstacle;
+}
+
+bool UGA_EnemyShipDeployObstacle::CanActivateAbility(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayTagContainer* SourceTags,
+	const FGameplayTagContainer* TargetTags,
+	FGameplayTagContainer* OptionalRelevantTags) const
+{
+	if (!Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags))
+	{
+		return false;
+	}
+
+	AEnemyShip* Ship = ActorInfo ? Cast<AEnemyShip>(ActorInfo->AvatarActor.Get()) : nullptr;
+	UEnemyShipNavigationComponent* Navigation = Ship ? Ship->GetNavigationComponent() : nullptr;
+	AShip* Target = Navigation ? Navigation->GetTargetShip() : nullptr;
+	const bool bValidTarget = IsValid(Target)
+		&& !Target->IsEnemyShipForEffects()
+		&& Target->ActorHasTag(TEXT("Player"))
+		&& !Target->ActorHasTag(TEXT("Enemy"));
+	if (!Ship || !Ship->HasAuthority() || Ship->IsDeathHandled() || !bValidTarget
+		|| !Ship->EnemyShipArchetype
+		|| !ObstacleProjectileClass || !ObstacleClass || !Ship->GetWorld())
+	{
+		return false;
+	}
+
+	Ship->RefreshMountedCannons();
+	const FVector TargetShipLocation = Target->BuoyancyRoot
+		? Target->BuoyancyRoot->GetComponentLocation()
+		: Target->GetActorLocation();
+	const FVector EnemyShipLocation = Ship->BuoyancyRoot
+		? Ship->BuoyancyRoot->GetComponentLocation()
+		: Ship->GetActorLocation();
+	const ACannon* Cannon = UGA_EnemyShipLaunchTorpedo::SelectClosestCannon(Ship, TargetShipLocation);
+	if (!Cannon)
+	{
+		return false;
+	}
+
+	const FVector TargetPoint = CalculateTargetPoint(
+		EnemyShipLocation, TargetShipLocation, TargetLineAlpha, TargetWorldZ);
+	FEnemyShipCannonAimProfile AimProfile = Ship->EnemyShipArchetype->CannonAimProfile;
+	AimProfile.ProjectileFlightTime = FMath::Max(
+		0.05f, AimProfile.ProjectileFlightTime / FMath::Max(0.01f, ProjectileSpeedMultiplier));
+	FVector LaunchVelocity = FVector::ZeroVector;
+	return UGA_EnemyShipCannonVolley::CalculateLaunchVelocity(
+		Cannon->GetProjectileMuzzleTransform().GetLocation(),
+		TargetPoint,
+		FVector::ZeroVector,
+		Ship->GetWorld()->GetGravityZ(),
+		AimProfile,
+		LaunchVelocity);
 }
 
 void UGA_EnemyShipDeployObstacle::ActivateAbility(
@@ -42,6 +98,7 @@ void UGA_EnemyShipDeployObstacle::ActivateAbility(
 		&& Target->ActorHasTag(TEXT("Player"))
 		&& !Target->ActorHasTag(TEXT("Enemy"));
 	if (!Ship || !Ship->HasAuthority() || Ship->IsDeathHandled() || !bValidTarget
+		|| !Ship->EnemyShipArchetype
 		|| !ObstacleProjectileClass || !ObstacleClass || !Ship->GetWorld())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -62,28 +119,28 @@ void UGA_EnemyShipDeployObstacle::ActivateAbility(
 		return;
 	}
 
-	const FCannonResolvedFiringStats FiringStats = Cannon->GetResolvedFiringStats();
 	const FTransform MuzzleTransform = Cannon->GetProjectileMuzzleTransform();
 	const FVector TargetPoint = CalculateTargetPoint(
 		EnemyShipLocation,
 		TargetShipLocation,
 		TargetLineAlpha,
 		TargetWorldZ);
-	const float GravityZ = Ship->GetWorld()->GetGravityZ();
+	FEnemyShipCannonAimProfile AimProfile = Ship->EnemyShipArchetype->CannonAimProfile;
+	AimProfile.ProjectileFlightTime = FMath::Max(
+		0.05f, AimProfile.ProjectileFlightTime / FMath::Max(0.01f, ProjectileSpeedMultiplier));
 	FVector LaunchVelocity = FVector::ZeroVector;
-	float TravelSeconds = 0.0f;
-	if (!CalculateBallisticLaunchVelocity(
+	if (!UGA_EnemyShipCannonVolley::CalculateLaunchVelocity(
 		MuzzleTransform.GetLocation(),
 		TargetPoint,
-		FiringStats.ProjectileSpeed * FMath::Max(0.01f, ProjectileSpeedMultiplier),
-		GravityZ,
-		bUseHighArc,
-		LaunchVelocity,
-		TravelSeconds))
+		FVector::ZeroVector,
+		Ship->GetWorld()->GetGravityZ(),
+		AimProfile,
+		LaunchVelocity))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
+	const float TravelSeconds = AimProfile.ProjectileFlightTime;
 
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
@@ -117,14 +174,6 @@ void UGA_EnemyShipDeployObstacle::ActivateAbility(
 		TravelSeconds,
 		ObstacleClass,
 		ObstacleSpawnRotationOffset);
-	UE_LOG(
-		LogTemp,
-		Warning,
-		TEXT("[EnemyShipObstacle] Skill activated. Ship=%s Target=%s ConversionPoint=%s Travel=%.2fs"),
-		*GetNameSafe(Ship),
-		*GetNameSafe(Target),
-		*TargetPoint.ToCompactString(),
-		TravelSeconds);
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }
 

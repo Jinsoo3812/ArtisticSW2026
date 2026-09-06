@@ -72,7 +72,6 @@ void AEnemyShipObstacle::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	if (HasAuthority())
 	{
-		LogInitialBuoyancyDiagnostic();
 		return;
 	}
 	if (!bHasClientMovementTarget)
@@ -118,19 +117,10 @@ void AEnemyShipObstacle::ReceiveCannonballImpact_Implementation(AActor* Cannonba
 	ProcessedCannonballs.Add(CannonballActor);
 	++CannonballHitCount;
 	const int32 SafeMaximumHits = FMath::Max(1, MaxCannonballHits);
-	UE_LOG(LogTemp, Warning,
-		TEXT("[EnemyShipObstacle] Cannonball absorbed. Obstacle=%s Cannonball=%s Hits=%d/%d"),
-		*GetName(),
-		*GetNameSafe(CannonballActor),
-		CannonballHitCount,
-		SafeMaximumHits);
 	ForceNetUpdate();
 
 	if (CannonballHitCount >= SafeMaximumHits)
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[EnemyShipObstacle] Durability exhausted; destroying obstacle. Obstacle=%s"),
-			*GetName());
 		Destroy();
 	}
 }
@@ -272,49 +262,13 @@ void AEnemyShipObstacle::EnableBuoyancy()
 	bBuoyancyEnabled = true;
 	if (bLogInitialBuoyancyDiagnostics && GetWorld())
 	{
-		BuoyancyDiagnosticStartTime = GetWorld()->GetTimeSeconds();
-		BuoyancyDiagnosticEndTime = BuoyancyDiagnosticStartTime
-			+ FMath::Max(0.0f, BuoyancyDiagnosticDurationSeconds);
-		NextBuoyancyDiagnosticTime = BuoyancyDiagnosticStartTime;
 		UE_LOG(LogTemp, Warning,
 			TEXT("[OBSTACLE-BUOYANCY][ACTIVATED] Actor=%s Time=%.3f Location=%s Velocity=%s MassKg=%.2f"),
 			*GetName(),
-			BuoyancyDiagnosticStartTime,
+			GetWorld()->GetTimeSeconds(),
 			*GetActorLocation().ToCompactString(),
 			*ObstacleCollision->GetPhysicsLinearVelocity().ToCompactString(),
 			ObstacleCollision->GetMass());
 	}
 	ForceNetUpdate();
-}
-
-void AEnemyShipObstacle::LogInitialBuoyancyDiagnostic()
-{
-	if (!bLogInitialBuoyancyDiagnostics || !bBuoyancyEnabled || !GetWorld()
-		|| BuoyancyDiagnosticStartTime < 0.0)
-	{
-		return;
-	}
-
-	const double Now = GetWorld()->GetTimeSeconds();
-	if (Now > BuoyancyDiagnosticEndTime || Now < NextBuoyancyDiagnosticTime)
-	{
-		return;
-	}
-	NextBuoyancyDiagnosticTime = Now + FMath::Max(0.02f, BuoyancyDiagnosticIntervalSeconds);
-
-	const FSWBuoyancyRuntimeDiagnostic& Diagnostic = SWBuoyancyComponent->GetLastRuntimeDiagnostic();
-	UE_LOG(LogTemp, Warning,
-		TEXT("[OBSTACLE-BUOYANCY][SAMPLE] Actor=%s Age=%.3f LocationZ=%.2f VelocityZ=%.2f WaterFound=%s InWater=%s WaterZ=%.2f PontoonZ=%.2f Immersion=%.2f RelativeVelocityZ=%.2f ForceZ=%.2f MassKg=%.2f"),
-		*GetName(),
-		Now - BuoyancyDiagnosticStartTime,
-		GetActorLocation().Z,
-		ObstacleCollision->GetPhysicsLinearVelocity().Z,
-		Diagnostic.bWaterSurfaceFound ? TEXT("true") : TEXT("false"),
-		Diagnostic.bPontoonInWater ? TEXT("true") : TEXT("false"),
-		Diagnostic.WaterHeight,
-		Diagnostic.PontoonWorldPosition.Z,
-		Diagnostic.ImmersionDepth,
-		Diagnostic.RelativeVelocityZ,
-		Diagnostic.BuoyantForceZ,
-		ObstacleCollision->GetMass());
 }

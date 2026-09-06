@@ -8,6 +8,7 @@
 #include "NiagaraSystem.h"
 #include "ShipAI/Abilities/EnemyShipObstacle.h"
 #include "TimerManager.h"
+#include "Effects/SWNiagaraScaleLibrary.h"
 
 AEnemyShipObstacleProjectile::AEnemyShipObstacleProjectile()
 {
@@ -36,7 +37,37 @@ AEnemyShipObstacleProjectile::AEnemyShipObstacleProjectile()
 	ProjectileMovement->bSweepCollision = false;
 	ProjectileMovement->bInterpMovement = true;
 	ProjectileMovement->bInterpRotation = true;
+	ProjectileMovement->InterpLocationTime = 0.05f;
+	ProjectileMovement->InterpRotationTime = 0.05f;
+	ProjectileMovement->InterpLocationMaxLagDistance = 2000.0f;
+	ProjectileMovement->InterpLocationSnapToTargetDistance = 10000.0f;
 	ProjectileMovement->SetInterpolatedComponent(ProjectileMesh);
+}
+
+void AEnemyShipObstacleProjectile::PostNetReceiveLocationAndRotation()
+{
+	if (ProjectileMovement
+		&& ProjectileMovement->IsActive()
+		&& ProjectileMovement->bInterpMovement
+		&& ProjectileMovement->GetInterpolatedComponent())
+	{
+		const FRepMovement& Movement = GetReplicatedMovement();
+		const FVector NewLocation = FRepMovement::RebaseOntoLocalOrigin(Movement.Location, this);
+		ProjectileMovement->MoveInterpolationTarget(NewLocation, Movement.Rotation);
+		return;
+	}
+
+	Super::PostNetReceiveLocationAndRotation();
+}
+
+void AEnemyShipObstacleProjectile::PostNetReceiveVelocity(const FVector& NewVelocity)
+{
+	Super::PostNetReceiveVelocity(NewVelocity);
+	if (ProjectileMovement && ProjectileMovement->IsActive())
+	{
+		ProjectileMovement->Velocity = NewVelocity;
+		ProjectileMovement->UpdateComponentVelocity();
+	}
 }
 
 void AEnemyShipObstacleProjectile::InitializeObstacleProjectile(
@@ -59,6 +90,7 @@ void AEnemyShipObstacleProjectile::InitializeObstacleProjectile(
 	ProjectileMovement->MaxSpeed = FMath::Max(InLaunchVelocity.Size() * 2.0f, 5000.0f);
 	ProjectileMovement->Velocity = InLaunchVelocity;
 	ProjectileMovement->UpdateComponentVelocity();
+	ProjectileMovement->ResetInterpolation();
 	GetWorldTimerManager().SetTimer(
 		ArrivalTimerHandle,
 		this,
@@ -81,7 +113,7 @@ void AEnemyShipObstacleProjectile::ReachTargetAndSpawnObstacle()
 	SpawnParameters.Owner = GetOwner();
 	SpawnParameters.Instigator = GetInstigator();
 	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AEnemyShipObstacle* SpawnedObstacle = GetWorld()->SpawnActor<AEnemyShipObstacle>(
+	GetWorld()->SpawnActor<AEnemyShipObstacle>(
 		ObstacleClass,
 		TargetPoint,
 		ObstacleSpawnRotationOffset,
@@ -93,17 +125,9 @@ void AEnemyShipObstacleProjectile::ReachTargetAndSpawnObstacle()
 			TargetPoint,
 			ObstacleSpawnRotationOffset,
 			FMath::Max(0.01f, ObstacleSpawnEffectScale),
+			FMath::Max(0.01f, ObstacleSpawnEffectLifetimeScale),
 			FMath::Max(0.01f, ObstacleSpawnEffectPlaybackSpeed));
 	}
-
-	UE_LOG(
-		LogTemp,
-		Warning,
-		TEXT("[EnemyShipObstacle] Target reached; obstacle spawned. Projectile=%s Target=%s Rotation=%s Obstacle=%s"),
-		*GetName(),
-		*TargetPoint.ToCompactString(),
-		*ObstacleSpawnRotationOffset.ToCompactString(),
-		*GetNameSafe(SpawnedObstacle));
 	Destroy();
 }
 
@@ -112,35 +136,12 @@ void AEnemyShipObstacleProjectile::MulticastSpawnObstacleEffect_Implementation(
 	FVector_NetQuantize Location,
 	FRotator Rotation,
 	float UniformScale,
+	float LifetimeScale,
 	float PlaybackSpeed)
 {
 	if (Effect && GetWorld() && GetNetMode() != NM_DedicatedServer)
 	{
-		TArray<FNiagaraVariable> ExposedParameters;
-		Effect->GetExposedParameters().GetParameters(ExposedParameters);
-		const bool bUsesHitScaleParameter = ExposedParameters.ContainsByPredicate(
-			[](const FNiagaraVariable& Parameter)
-			{
-				return Parameter.GetName() == TEXT("User.HitScale")
-					&& Parameter.GetType() == FNiagaraTypeDefinition::GetFloatDef();
-			});
-		const float SafeScale = FMath::Max(0.01f, UniformScale);
-		UNiagaraComponent* SpawnedComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-			GetWorld(),
-			Effect,
-			Location,
-			Rotation,
-			bUsesHitScaleParameter ? FVector::OneVector : FVector(SafeScale),
-			true,
-			false);
-		if (SpawnedComponent)
-		{
-			SpawnedComponent->SetCustomTimeDilation(FMath::Max(0.01f, PlaybackSpeed));
-			if (bUsesHitScaleParameter)
-			{
-				SpawnedComponent->SetVariableFloat(TEXT("User.HitScale"), SafeScale);
-			}
-			SpawnedComponent->Activate(true);
-		}
+		USWNiagaraScaleLibrary::SpawnTunedSystemAtLocation(
+			GetWorld(), Effect, Location, Rotation, UniformScale, LifetimeScale, PlaybackSpeed, true);
 	}
 }

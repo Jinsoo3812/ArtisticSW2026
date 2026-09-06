@@ -94,14 +94,18 @@ void AEnemyShipTimeStopAimLine::LockAimTargetPoint(const FVector& InWorldTargetP
 
 void AEnemyShipTimeStopAimLine::BeginLockedCharge(
 	UNiagaraSystem* InChargeEffect,
-	float InUniformScale)
+	float InSizeScale,
+	float InLifetimeScale,
+	float InPlaybackSpeed)
 {
 	if (!HasAuthority())
 	{
 		return;
 	}
 	ChargeEffect = InChargeEffect;
-	ChargeEffectScale = FMath::Max(0.01f, InUniformScale);
+	ChargeEffectScale = FMath::Max(0.01f, InSizeScale);
+	ChargeEffectLifetimeScale = FMath::Max(0.01f, InLifetimeScale);
+	ChargeEffectPlaybackSpeed = FMath::Max(0.01f, InPlaybackSpeed);
 	bChargeEffectActive = ChargeEffect != nullptr;
 	RefreshChargeEffect();
 	ForceNetUpdate();
@@ -115,7 +119,10 @@ void AEnemyShipTimeStopAimLine::PlayInstantHitEffects(
 	bool bHitPlayer,
 	float InTrailScale,
 	float InTrailLifetimeSeconds,
+	float InTrailPlaybackSpeed,
 	float InExplosionScale,
+	float InExplosionLifetimeScale,
+	float InExplosionPlaybackSpeed,
 	float InPresentationLifetime)
 {
 	if (!HasAuthority())
@@ -135,7 +142,10 @@ void AEnemyShipTimeStopAimLine::PlayInstantHitEffects(
 		bHitPlayer,
 		InTrailScale,
 		InTrailLifetimeSeconds,
-		InExplosionScale);
+		InTrailPlaybackSpeed,
+		InExplosionScale,
+		InExplosionLifetimeScale,
+		InExplosionPlaybackSpeed);
 	ForceNetUpdate();
 	SetLifeSpan(FMath::Max(0.1f, InPresentationLifetime));
 }
@@ -209,6 +219,8 @@ void AEnemyShipTimeStopAimLine::GetLifetimeReplicatedProps(
 	DOREPLIFETIME(AEnemyShipTimeStopAimLine, bWarningLineVisible);
 	DOREPLIFETIME(AEnemyShipTimeStopAimLine, ChargeEffect);
 	DOREPLIFETIME(AEnemyShipTimeStopAimLine, ChargeEffectScale);
+	DOREPLIFETIME(AEnemyShipTimeStopAimLine, ChargeEffectLifetimeScale);
+	DOREPLIFETIME(AEnemyShipTimeStopAimLine, ChargeEffectPlaybackSpeed);
 	DOREPLIFETIME(AEnemyShipTimeStopAimLine, bChargeEffectActive);
 }
 
@@ -321,8 +333,8 @@ void AEnemyShipTimeStopAimLine::RefreshChargeEffect()
 	ChargeEffectComponent->SetWorldLocationAndRotation(
 		FVector(LineStart),
 		FixedDirection.Rotation());
-	ChargeEffectComponent->SetRelativeScale3D(FVector(FMath::Max(0.01f, ChargeEffectScale)));
-	ChargeEffectComponent->SetVariableFloat(TEXT("User.Scale"), FMath::Max(0.01f, ChargeEffectScale));
+	USWNiagaraScaleLibrary::ApplyEffectTuning(
+		ChargeEffectComponent, ChargeEffectScale, ChargeEffectLifetimeScale, ChargeEffectPlaybackSpeed);
 	if (!ChargeEffectComponent->IsActive())
 	{
 		ChargeEffectComponent->Activate(true);
@@ -337,7 +349,10 @@ void AEnemyShipTimeStopAimLine::MulticastPlayInstantHitEffects_Implementation(
 	bool bHitPlayer,
 	float InTrailScale,
 	float InTrailLifetimeSeconds,
-	float InExplosionScale)
+	float InTrailPlaybackSpeed,
+	float InExplosionScale,
+	float InExplosionLifetimeScale,
+	float InExplosionPlaybackSpeed)
 {
 	bChargeEffectActive = false;
 	RefreshChargeEffect();
@@ -360,13 +375,10 @@ void AEnemyShipTimeStopAimLine::MulticastPlayInstantHitEffects_Implementation(
 			GetWorld(), InTrailEffect, Start, Direction.Rotation(), FVector::OneVector, true, false);
 		if (Trail)
 		{
-			const float TrailScale = FMath::Max(0.01f, InTrailScale);
 			const float TrailLifetime = FMath::Max(0.01f, InTrailLifetimeSeconds);
 			Trail->SetVariableVec3(TEXT("User.Hit"), End);
-			Trail->SetVariableFloat(TEXT("User.Elec_Scale"), TrailScale);
-			Trail->SetVariableFloat(TEXT("User.Elec_Thickness"), TrailScale);
-			Trail->SetVariableFloat(TEXT("User.Elec02_Thickness"), TrailScale);
-			Trail->SetVariableFloat(TEXT("User.RibbonWidth"), TrailScale);
+			USWNiagaraScaleLibrary::ApplyEffectTuning(
+				Trail, InTrailScale, 1.0f, InTrailPlaybackSpeed);
 			Trail->SetVariableFloat(TEXT("User.Elec_LifeTime"), TrailLifetime);
 			Trail->SetVariableFloat(TEXT("User.Elec02_Duration"), TrailLifetime);
 			Trail->SetVariableFloat(TEXT("User.RibbonLifeTime"), TrailLifetime);
@@ -375,7 +387,8 @@ void AEnemyShipTimeStopAimLine::MulticastPlayInstantHitEffects_Implementation(
 	}
 	if (bHitPlayer && InExplosionEffect)
 	{
-		USWNiagaraScaleLibrary::SpawnUniformlyScaledSystemAtLocation(
-			GetWorld(), InExplosionEffect, End, (-Direction).Rotation(), InExplosionScale, true);
+		USWNiagaraScaleLibrary::SpawnTunedSystemAtLocation(
+			GetWorld(), InExplosionEffect, End, (-Direction).Rotation(), InExplosionScale,
+			InExplosionLifetimeScale, InExplosionPlaybackSpeed, true);
 	}
 }

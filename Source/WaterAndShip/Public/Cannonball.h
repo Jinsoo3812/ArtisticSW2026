@@ -81,21 +81,33 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects")
 	TObjectPtr<UNiagaraSystem> ProjectileEffect = nullptr;
 
-	/** Uniform component scale applied to ProjectileEffect. */
+	/** Size multiplier applied through the shared Niagara tuning system. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects", meta = (ClampMin = "0.01"))
 	float ProjectileEffectScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects", meta = (ClampMin = "0.01"))
+	float ProjectileEffectLifetimeScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects", meta = (ClampMin = "0.01"))
+	float ProjectileEffectPlaybackSpeed = 1.0f;
 
-	/** Uniform world scale applied to ShipImpactEffect. */
+	/** Size multiplier applied through the shared Niagara tuning system. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects", meta = (ClampMin = "0.01"))
 	float ShipImpactEffectScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects", meta = (ClampMin = "0.01"))
+	float ShipImpactEffectLifetimeScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects", meta = (ClampMin = "0.01"))
+	float ShipImpactEffectPlaybackSpeed = 1.0f;
 
 	/** Additional Niagara effect spawned where this projectile enters water. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects")
 	TObjectPtr<UNiagaraSystem> WaterImpactEffect = nullptr;
 
-	/** Uniform world scale applied to WaterImpactEffect. */
+	/** Size multiplier applied through the shared Niagara tuning system. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects", meta = (ClampMin = "0.01"))
 	float WaterImpactEffectScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects", meta = (ClampMin = "0.01"))
+	float WaterImpactEffectLifetimeScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cannonball|Effects", meta = (ClampMin = "0.01"))
+	float WaterImpactEffectPlaybackSpeed = 1.0f;
 
 protected:
 	// Water remains overlap-driven so the authoritative WaterBody delegate can
@@ -127,10 +139,18 @@ protected:
 	void DeactivateProjectile();
 	virtual UNiagaraSystem* GetProjectileEffect() const;
 	virtual float GetProjectileEffectScale() const;
-	void SpawnNiagaraEffectForAll(UNiagaraSystem* Effect, const FVector& Location, float UniformScale = 1.0f);
+	virtual float GetProjectileEffectLifetimeScale() const;
+	virtual float GetProjectileEffectPlaybackSpeed() const;
+	virtual UNiagaraSystem* GetWaterImpactEffect() const;
+	virtual float GetWaterImpactEffectScale() const;
+	virtual float GetWaterImpactEffectLifetimeScale() const;
+	virtual float GetWaterImpactEffectPlaybackSpeed() const;
+	void SpawnNiagaraEffectForAll(UNiagaraSystem* Effect, const FVector& Location,
+		float SizeScale = 1.0f, float LifetimeScale = 1.0f, float PlaybackSpeed = 1.0f);
 
 	UFUNCTION(NetMulticast, Reliable)
-	void MulticastSpawnNiagaraEffect(UNiagaraSystem* Effect, FVector_NetQuantize Location, FRotator Rotation, float UniformScale);
+	void MulticastSpawnNiagaraEffect(UNiagaraSystem* Effect, FVector_NetQuantize Location,
+		FRotator Rotation, float SizeScale, float LifetimeScale, float PlaybackSpeed);
 
 private:
 	// ---- State ----

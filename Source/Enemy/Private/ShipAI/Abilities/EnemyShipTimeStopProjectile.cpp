@@ -58,9 +58,9 @@ void AEnemyShipTimeStopProjectile::BeginPlay()
 	if (ProjectileEffectComponent && ProjectileEffect && GetNetMode() != NM_DedicatedServer)
 	{
 		ProjectileEffectComponent->SetAsset(ProjectileEffect);
-		USWNiagaraScaleLibrary::ApplyUniformEffectScale(
-			ProjectileEffectComponent,
-			ProjectileEffectScale);
+		USWNiagaraScaleLibrary::ApplyEffectTuning(
+			ProjectileEffectComponent, ProjectileEffectScale,
+			ProjectileEffectLifetimeScale, ProjectileEffectPlaybackSpeed);
 		ProjectileEffectComponent->Activate(true);
 	}
 }
@@ -132,7 +132,9 @@ void AEnemyShipTimeStopProjectile::OnProjectileHit(
 			ExplosionEffect,
 			ImpactLocation,
 			EffectRotation,
-			FMath::Max(0.01f, ExplosionEffectScale));
+			FMath::Max(0.01f, ExplosionEffectScale),
+			FMath::Max(0.01f, ExplosionEffectLifetimeScale),
+			FMath::Max(0.01f, ExplosionEffectPlaybackSpeed));
 	}
 
 	if (FieldClass && GetWorld())
@@ -154,16 +156,14 @@ void AEnemyShipTimeStopProjectile::MulticastSpawnExplosionEffect_Implementation(
 	UNiagaraSystem* Effect,
 	FVector_NetQuantize Location,
 	FRotator Rotation,
-	float UniformScale)
+	float UniformScale,
+	float LifetimeScale,
+	float PlaybackSpeed)
 {
 	if (Effect && GetWorld() && GetNetMode() != NM_DedicatedServer)
 	{
-		USWNiagaraScaleLibrary::SpawnUniformlyScaledSystemAtLocation(
-			GetWorld(),
-			Effect,
-			Location,
-			Rotation,
-			UniformScale,
-			true);
+		USWNiagaraScaleLibrary::SpawnTunedSystemAtLocation(
+			GetWorld(), Effect, Location, Rotation, UniformScale,
+			LifetimeScale, PlaybackSpeed, true);
 	}
 }

@@ -46,7 +46,9 @@ void AWaterBombCannonball::HandleShipHit(AShip* HitShip)
 	SpawnNiagaraEffectForAll(
 		WaterBombExplosionEffect,
 		GetActorLocation(),
-		WaterBombExplosionEffectScale);
+		WaterBombExplosionEffectScale,
+		WaterBombExplosionEffectLifetimeScale,
+		WaterBombExplosionEffectPlaybackSpeed);
 
 	int32 SlowedEnemyCount = 0;
 	bool bCannonDisabled = false;
@@ -112,6 +114,40 @@ float AWaterBombCannonball::GetProjectileEffectScale() const
 	return WaterBombProjectileEffect
 		? WaterBombProjectileEffectScale
 		: Super::GetProjectileEffectScale();
+}
+
+float AWaterBombCannonball::GetProjectileEffectLifetimeScale() const
+{
+	return WaterBombProjectileEffect
+		? WaterBombProjectileEffectLifetimeScale
+		: Super::GetProjectileEffectLifetimeScale();
+}
+
+float AWaterBombCannonball::GetProjectileEffectPlaybackSpeed() const
+{
+	return WaterBombProjectileEffect
+		? WaterBombProjectileEffectPlaybackSpeed
+		: Super::GetProjectileEffectPlaybackSpeed();
+}
+
+UNiagaraSystem* AWaterBombCannonball::GetWaterImpactEffect() const
+{
+	return WaterBombWaterImpactEffect;
+}
+
+float AWaterBombCannonball::GetWaterImpactEffectScale() const
+{
+	return WaterBombWaterImpactEffectScale;
+}
+
+float AWaterBombCannonball::GetWaterImpactEffectLifetimeScale() const
+{
+	return WaterBombWaterImpactEffectLifetimeScale;
+}
+
+float AWaterBombCannonball::GetWaterImpactEffectPlaybackSpeed() const
+{
+	return WaterBombWaterImpactEffectPlaybackSpeed;
 }
 
 bool AWaterBombCannonball::IsCharacterOnShip(const ABaseCharacter* Character, const AShip* Ship) const

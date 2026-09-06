@@ -52,6 +52,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Effects", meta = (ClampMin = "0.01"))
 	float ProjectileEffectScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Effects", meta = (ClampMin = "0.01"))
+	float ProjectileEffectLifetimeScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Effects", meta = (ClampMin = "0.01"))
+	float ProjectileEffectPlaybackSpeed = 1.0f;
 
 	/** Niagara effect spawned when the projectile hits the Player Ship. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Effects")
@@ -59,6 +63,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Effects", meta = (ClampMin = "0.01"))
 	float ExplosionEffectScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Effects", meta = (ClampMin = "0.01"))
+	float ExplosionEffectLifetimeScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Effects", meta = (ClampMin = "0.01"))
+	float ExplosionEffectPlaybackSpeed = 1.0f;
 
 private:
 	UFUNCTION()
@@ -74,7 +82,9 @@ private:
 		UNiagaraSystem* Effect,
 		FVector_NetQuantize Location,
 		FRotator Rotation,
-		float UniformScale);
+		float UniformScale,
+		float LifetimeScale,
+		float PlaybackSpeed);
 
 	UPROPERTY()
 	TObjectPtr<AEnemyShip> SourceShip;

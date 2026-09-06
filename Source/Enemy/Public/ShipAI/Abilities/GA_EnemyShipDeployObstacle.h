@@ -22,6 +22,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Obstacle")
 	static FGameplayTag GetDeployObstacleAbilityTag();
 
+	virtual bool CanActivateAbility(
+		const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayTagContainer* SourceTags = nullptr,
+		const FGameplayTagContainer* TargetTags = nullptr,
+		FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
@@ -63,10 +70,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle|Target", meta = (DisplayName = "Target World Z", Units = "cm"))
 	float TargetWorldZ = 600.0f;
 
+	/** Multiplies launch speed by shortening the archetype cannon flight time by the same ratio. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle|Trajectory", meta = (ClampMin = "0.01"))
 	float ProjectileSpeedMultiplier = 1.0f;
 
-	/** Low arc is the practical default; enable this for a tall lob. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle|Trajectory")
-	bool bUseHighArc = false;
 };

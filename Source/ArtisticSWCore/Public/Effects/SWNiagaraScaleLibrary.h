@@ -7,7 +7,7 @@
 class UNiagaraComponent;
 class UNiagaraSystem;
 
-/** Shared runtime contract for Niagara systems authored with User.EffectScale. */
+/** Shared Niagara spawning/tuning entry point. Vendor-specific parameter mapping stays behind this API. */
 UCLASS()
 class ARTISTICSWCORE_API USWNiagaraScaleLibrary : public UBlueprintFunctionLibrary
 {
@@ -28,6 +28,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Effects|Niagara")
 	static bool ApplyUniformEffectScale(UNiagaraComponent* Component, float UniformScale);
 
+	/** Applies size, authored lifetime, and playback-speed multipliers before activation. */
+	UFUNCTION(BlueprintCallable, Category = "Effects|Niagara")
+	static void ApplyEffectTuning(
+		UNiagaraComponent* Component,
+		float SizeScale = 1.0f,
+		float LifetimeScale = 1.0f,
+		float PlaybackSpeed = 1.0f);
+
 	/** Spawns inactive, applies the scale contract, then activates the effect. */
 	UFUNCTION(BlueprintCallable, Category = "Effects|Niagara", meta = (WorldContext = "WorldContextObject"))
 	static UNiagaraComponent* SpawnUniformlyScaledSystemAtLocation(
@@ -36,5 +44,17 @@ public:
 		FVector Location,
 		FRotator Rotation,
 		float UniformScale = 1.0f,
+		bool bAutoDestroy = true);
+
+	/** Spawns inactive, applies all effect tuning, then activates. */
+	UFUNCTION(BlueprintCallable, Category = "Effects|Niagara", meta = (WorldContext = "WorldContextObject"))
+	static UNiagaraComponent* SpawnTunedSystemAtLocation(
+		const UObject* WorldContextObject,
+		UNiagaraSystem* System,
+		FVector Location,
+		FRotator Rotation,
+		float SizeScale = 1.0f,
+		float LifetimeScale = 1.0f,
+		float PlaybackSpeed = 1.0f,
 		bool bAutoDestroy = true);
 };

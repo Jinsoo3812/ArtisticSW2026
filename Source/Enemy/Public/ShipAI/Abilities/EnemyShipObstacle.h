@@ -90,12 +90,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle|Diagnostics")
 	bool bLogInitialBuoyancyDiagnostics = true;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle|Diagnostics", meta = (ClampMin = "0.0", Units = "s"))
-	float BuoyancyDiagnosticDurationSeconds = 2.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle|Diagnostics", meta = (ClampMin = "0.02", Units = "s"))
-	float BuoyancyDiagnosticIntervalSeconds = 0.1f;
-
 private:
 	UFUNCTION()
 	void OnObstacleOverlap(
@@ -111,7 +105,6 @@ private:
 
 	void ApplyPhysicsState();
 	void EnableBuoyancy();
-	void LogInitialBuoyancyDiagnostic();
 
 	UPROPERTY(ReplicatedUsing = OnRep_HasEnteredWater)
 	bool bHasEnteredWater = false;
@@ -130,7 +123,4 @@ private:
 	FVector ClientMovementTargetVelocity = FVector::ZeroVector;
 	float ClientMovementTargetReceiveTime = 0.0f;
 	FTimerHandle BuoyancyActivationTimerHandle;
-	double BuoyancyDiagnosticStartTime = -1.0;
-	double BuoyancyDiagnosticEndTime = -1.0;
-	double NextBuoyancyDiagnosticTime = -1.0;
 };

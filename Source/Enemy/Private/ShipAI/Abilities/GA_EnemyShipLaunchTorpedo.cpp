@@ -47,31 +47,6 @@ void UGA_EnemyShipLaunchTorpedo::ActivateAbility(
 	ActiveTarget = Target;
 	LaunchedTorpedoCount = 0;
 	Ship->RefreshMountedCannons();
-	const FVector InitialTargetLocation = Target->BuoyancyRoot
-		? Target->BuoyancyRoot->GetComponentLocation()
-		: Target->GetActorLocation();
-	ActiveCannon = SelectClosestCannon(Ship, InitialTargetLocation);
-	if (!ActiveCannon.IsValid())
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
-
-	FEnemyShipNavigationOverrideRequest AimRequest;
-	AimRequest.MoveInput = 0.0f;
-	AimRequest.TurnInput = 0.0f;
-	AimRequest.PropulsionMultiplier = 1.0f;
-	AimRequest.TurnMultiplier = FMath::Max(0.0f, ShipTurnMultiplier);
-	NavigationOverrideHandle = Navigation->AcquireOverride(this, 100, AimRequest);
-	if (!NavigationOverrideHandle.IsValid())
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
-	Ship->GetWorldTimerManager().SetTimer(
-		AimTimerHandle, this, &UGA_EnemyShipLaunchTorpedo::UpdateVolleyAiming,
-		FMath::Max(0.01f, AimUpdateIntervalSeconds), true);
-	UpdateVolleyAiming();
 
 	const int32 RequestedCount = FMath::Max(1, TorpedoCount);
 	UE_LOG(
@@ -132,19 +107,10 @@ void UGA_EnemyShipLaunchTorpedo::EndAbility(
 	if (AEnemyShip* Ship = ActiveShip.Get())
 	{
 		Ship->GetWorldTimerManager().ClearTimer(VolleyTimerHandle);
-		Ship->GetWorldTimerManager().ClearTimer(AimTimerHandle);
-		if (UEnemyShipNavigationComponent* Navigation = Ship->GetNavigationComponent())
-		{
-			Navigation->ReleaseOverride(NavigationOverrideHandle);
-			Navigation->ReleaseOverridesFor(this);
-		}
 	}
 	VolleyTimerHandle.Invalidate();
-	AimTimerHandle.Invalidate();
 	ActiveShip.Reset();
 	ActiveTarget.Reset();
-	ActiveCannon.Reset();
-	NavigationOverrideHandle.Reset();
 	LaunchedTorpedoCount = 0;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
@@ -169,17 +135,21 @@ bool UGA_EnemyShipLaunchTorpedo::FireSingleTorpedo()
 {
 	AEnemyShip* Ship = ActiveShip.Get();
 	AShip* Target = ActiveTarget.Get();
-	ACannon* Cannon = ActiveCannon.Get();
 	if (!Ship || !Ship->HasAuthority() || Ship->IsDeathHandled() || !IsValidPlayerTarget(Target)
-		|| !Cannon || !TorpedoClass || !Ship->GetWorld())
+		|| !TorpedoClass || !Ship->GetWorld())
 	{
 		return false;
 	}
 
-	// The selected cannon remains stable for the volley; muzzle and target refresh per shot.
+	// Resolve both target position and best muzzle at the instant of every launch.
 	const FVector TargetShipLocation = Target->BuoyancyRoot
 		? Target->BuoyancyRoot->GetComponentLocation()
 		: Target->GetActorLocation();
+	ACannon* Cannon = SelectClosestCannon(Ship, TargetShipLocation);
+	if (!Cannon)
+	{
+		return false;
+	}
 	const FVector EnemyShipLocation = Ship->BuoyancyRoot
 		? Ship->BuoyancyRoot->GetComponentLocation()
 		: Ship->GetActorLocation();
@@ -224,49 +194,6 @@ bool UGA_EnemyShipLaunchTorpedo::FireSingleTorpedo()
 		FMath::Max(0.1f, MaximumFlightSeconds));
 
 	return true;
-}
-
-void UGA_EnemyShipLaunchTorpedo::UpdateVolleyAiming()
-{
-	AEnemyShip* Ship = ActiveShip.Get();
-	AShip* Target = ActiveTarget.Get();
-	ACannon* Cannon = ActiveCannon.Get();
-	UEnemyShipNavigationComponent* Navigation = Ship ? Ship->GetNavigationComponent() : nullptr;
-	if (!Ship || Ship->IsDeathHandled() || !IsValidPlayerTarget(Target) || !Cannon || !Navigation)
-	{
-		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
-		return;
-	}
-
-	const FVector TargetLocation = Target->BuoyancyRoot
-		? Target->BuoyancyRoot->GetComponentLocation()
-		: Target->GetActorLocation();
-	const FVector EnemyLocation = Ship->BuoyancyRoot
-		? Ship->BuoyancyRoot->GetComponentLocation()
-		: Ship->GetActorLocation();
-	const FVector AimPoint = CalculateLineTargetPoint(EnemyLocation, TargetLocation, TargetLineAlpha);
-	const FVector AimDirection = (AimPoint - Cannon->GetProjectileMuzzleTransform().GetLocation()).GetSafeNormal();
-	if (AimDirection.IsNearlyZero())
-	{
-		return;
-	}
-
-	const FVector LocalDirection = Cannon->GetActorTransform()
-		.InverseTransformVectorNoScale(AimDirection);
-	const FRotator LocalRotation = LocalDirection.Rotation();
-	const float LocalYawRadians = FMath::DegreesToRadians(FMath::UnwindDegrees(LocalRotation.Yaw));
-	Cannon->SetAIAimRotation(LocalRotation.Pitch, FMath::UnwindDegrees(LocalRotation.Yaw));
-
-	FEnemyShipNavigationOverrideRequest Request;
-	Request.MoveInput = 0.0f;
-	Request.TurnInput = FMath::Clamp(
-		LocalYawRadians * FMath::Max(0.0f, ShipTurnResponsiveness), -1.0f, 1.0f);
-	Request.PropulsionMultiplier = 1.0f;
-	Request.TurnMultiplier = FMath::Max(0.0f, ShipTurnMultiplier);
-	if (!Navigation->UpdateOverride(NavigationOverrideHandle, Request))
-	{
-		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
-	}
 }
 
 ACannon* UGA_EnemyShipLaunchTorpedo::SelectClosestCannon(

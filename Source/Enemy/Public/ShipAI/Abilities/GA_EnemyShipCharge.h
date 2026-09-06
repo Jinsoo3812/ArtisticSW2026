@@ -106,6 +106,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Impact", meta = (ClampMin = "0.01"))
 	float PlayerShipImpactEffectScale = 1.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Impact", meta = (ClampMin = "0.01"))
+	float PlayerShipImpactEffectLifetimeScale = 1.0f;
+
 	/** Niagara simulation speed. 0.5 plays at half speed and lasts roughly twice as long. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Impact", meta = (ClampMin = "0.01"))
 	float PlayerShipImpactEffectPlaybackSpeed = 1.0f;

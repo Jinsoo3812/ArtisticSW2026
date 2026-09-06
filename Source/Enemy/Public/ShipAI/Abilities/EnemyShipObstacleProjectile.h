@@ -18,6 +18,8 @@ class ENEMY_API AEnemyShipObstacleProjectile : public AActor
 
 public:
 	AEnemyShipObstacleProjectile();
+	virtual void PostNetReceiveLocationAndRotation() override;
+	virtual void PostNetReceiveVelocity(const FVector& NewVelocity) override;
 
 	void InitializeObstacleProjectile(
 		const FVector& InLaunchVelocity,
@@ -44,6 +46,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle Projectile|Effects", meta = (ClampMin = "0.01"))
 	float ObstacleSpawnEffectScale = 1.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle Projectile|Effects", meta = (ClampMin = "0.01"))
+	float ObstacleSpawnEffectLifetimeScale = 1.0f;
+
 	/** Niagara simulation speed. 0.5 plays at half speed and lasts roughly twice as long. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle Projectile|Effects", meta = (ClampMin = "0.01"))
 	float ObstacleSpawnEffectPlaybackSpeed = 1.0f;
@@ -55,6 +60,7 @@ private:
 		FVector_NetQuantize Location,
 		FRotator Rotation,
 		float UniformScale,
+		float LifetimeScale,
 		float PlaybackSpeed);
 
 	void ReachTargetAndSpawnObstacle();

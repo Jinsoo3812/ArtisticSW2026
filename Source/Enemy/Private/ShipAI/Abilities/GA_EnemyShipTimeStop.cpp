@@ -195,7 +195,8 @@ void UGA_EnemyShipTimeStop::ConfirmAimAndBeginCharge()
 	if (AEnemyShipTimeStopAimLine* Line = AimLineActor.Get())
 	{
 		Line->LockAimTargetPoint(FixedTargetPoint);
-		Line->BeginLockedCharge(ChargingEffect, ChargingEffectScale);
+		Line->BeginLockedCharge(ChargingEffect, ChargingEffectScale,
+			ChargingEffectLifetimeScale, ChargingEffectPlaybackSpeed);
 	}
 	UpdateChargeAiming();
 
@@ -272,7 +273,10 @@ void UGA_EnemyShipTimeStop::FireInstantHit()
 		bHitPlayer,
 		InstantHitTrailEffectScale,
 		InstantHitTrailLifetimeSeconds,
+		InstantHitTrailPlaybackSpeed,
 		ExplosionEffectScale,
+		ExplosionEffectLifetimeScale,
+		ExplosionEffectPlaybackSpeed,
 		FMath::Max(InstantHitPresentationLifetime, InstantHitTrailLifetimeSeconds));
 	AimLineActor.Reset();
 

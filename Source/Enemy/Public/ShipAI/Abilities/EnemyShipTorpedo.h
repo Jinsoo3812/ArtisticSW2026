@@ -49,6 +49,8 @@ protected:
 	virtual void HandleShipHit(AShip* HitShip) override;
 	virtual UNiagaraSystem* GetProjectileEffect() const override;
 	virtual float GetProjectileEffectScale() const override;
+	virtual float GetProjectileEffectLifetimeScale() const override;
+	virtual float GetProjectileEffectPlaybackSpeed() const override;
 	virtual void HandleWaterOverlap(
 		AActor* WaterActor,
 		UPrimitiveComponent* WaterComponent,
@@ -77,22 +79,34 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Fuse", meta = (ClampMin = "0.01"))
 	float FuseBurstScale = 0.25f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Fuse", meta = (ClampMin = "0.01"))
+	float FuseBurstLifetimeScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Fuse", meta = (ClampMin = "0.01"))
+	float FuseBurstPlaybackSpeed = 1.0f;
 
 	/** Niagara effect that follows this torpedo while it is in flight. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Effects")
 	TObjectPtr<UNiagaraSystem> TorpedoProjectileEffect;
 
-	/** Uniform component scale applied to TorpedoProjectileEffect. */
+	/** Size multiplier applied through the shared Niagara tuning system. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Effects", meta = (ClampMin = "0.01"))
 	float TorpedoProjectileEffectScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Effects", meta = (ClampMin = "0.01"))
+	float TorpedoProjectileEffectLifetimeScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Effects", meta = (ClampMin = "0.01"))
+	float TorpedoProjectileEffectPlaybackSpeed = 1.0f;
 
 	/** Niagara spawned when this torpedo explodes on the Player Ship. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Effects")
 	TObjectPtr<UNiagaraSystem> ExplosionEffect;
 
-	/** Uniform world scale applied to ExplosionEffect. */
+	/** Size multiplier applied through the shared Niagara tuning system. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Effects", meta = (ClampMin = "0.01"))
 	float ExplosionEffectScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Effects", meta = (ClampMin = "0.01"))
+	float ExplosionEffectLifetimeScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Effects", meta = (ClampMin = "0.01"))
+	float ExplosionEffectPlaybackSpeed = 1.0f;
 
 	/** Mass-independent acceleration applied to the Player Ship by a direct torpedo blast. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Blast", meta = (ClampMin = "0.0", ClampMax = "20000.0", Units = "cm/s^2"))

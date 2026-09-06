@@ -600,6 +600,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage|Impact", meta = (ClampMin = "0.01"))
 	float PlayerRamImpactEffectScale = 1.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage|Impact", meta = (ClampMin = "0.01"))
+	float PlayerRamImpactEffectLifetimeScale = 1.0f;
+
 	/** Niagara simulation speed. 0.5 plays at half speed and lasts roughly twice as long. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage|Impact", meta = (ClampMin = "0.01"))
 	float PlayerRamImpactEffectPlaybackSpeed = 1.0f;
@@ -609,6 +612,7 @@ public:
 		UNiagaraSystem* Effect,
 		const FVector& Location,
 		float UniformScale = 1.0f,
+		float LifetimeScale = 1.0f,
 		float PlaybackSpeed = 1.0f);
 
 	/** Class policy used by interaction collision and the authoritative Board guard. */
@@ -1205,6 +1209,7 @@ private:
 		FVector_NetQuantize Location,
 		FRotator Rotation,
 		float UniformScale,
+		float LifetimeScale,
 		float PlaybackSpeed);
 
 	bool bStaticDataInitialized = false;

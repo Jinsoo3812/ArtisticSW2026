@@ -210,6 +210,7 @@ void UGA_EnemyShipCharge::HandlePhysicsRootHit(
 				PlayerShipImpactEffect,
 				Hit.ImpactPoint,
 				PlayerShipImpactEffectScale,
+				PlayerShipImpactEffectLifetimeScale,
 				PlayerShipImpactEffectPlaybackSpeed);
 			const float CurrentHealth = TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
 			UE_LOG(

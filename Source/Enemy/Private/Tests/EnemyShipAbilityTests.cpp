@@ -457,6 +457,24 @@ bool FEnemyShipTimeStopActorContractTest::RunTest(const FString& Parameters)
 			USWNiagaraScaleLibrary::ApplyUniformEffectScale(ProjectileEffectComponent, 7.0f));
 		TestTrue(TEXT("Legacy Niagara systems retain transform-scale fallback"),
 			ProjectileEffectComponent->GetRelativeScale3D().Equals(FVector(7.0f)));
+
+		UNiagaraSystem* ShooterSystem = NewObject<UNiagaraSystem>();
+		const FNiagaraVariable RibbonWidth(
+			FNiagaraTypeDefinition::GetFloatDef(), TEXT("User.RibbonWidth"));
+		const FNiagaraVariable RibbonLifetime(
+			FNiagaraTypeDefinition::GetFloatDef(), TEXT("User.RibbonLifeTime"));
+		ShooterSystem->GetExposedParameters().SetParameterValue(4.0f, RibbonWidth, true);
+		ShooterSystem->GetExposedParameters().SetParameterValue(2.0f, RibbonLifetime, true);
+		ProjectileEffectComponent->SetAsset(ShooterSystem);
+		USWNiagaraScaleLibrary::ApplyEffectTuning(ProjectileEffectComponent, 3.0f, 2.0f, 1.0f);
+		bool bWidthValid = false;
+		bool bLifetimeValid = false;
+		TestEqual(TEXT("Shooter adapter multiplies the authored ribbon width"),
+			ProjectileEffectComponent->GetVariableFloat(TEXT("User.RibbonWidth"), bWidthValid), 12.0f);
+		TestTrue(TEXT("Shooter ribbon width override is valid"), bWidthValid);
+		TestEqual(TEXT("Shooter adapter multiplies the authored ribbon lifetime"),
+			ProjectileEffectComponent->GetVariableFloat(TEXT("User.RibbonLifeTime"), bLifetimeValid), 4.0f);
+		TestTrue(TEXT("Shooter ribbon lifetime override is valid"), bLifetimeValid);
 	}
 
 	const FVector FixedStart(10.0f, 20.0f, 30.0f);
@@ -561,6 +579,9 @@ bool FEnemyShipTimeStopActorContractTest::RunTest(const FString& Parameters)
 			AimLine->GetLineStart(),
 			AimLine->GetLineEnd(),
 			false,
+			1.0f,
+			1.0f,
+			1.0f,
 			1.0f,
 			1.0f,
 			1.0f,

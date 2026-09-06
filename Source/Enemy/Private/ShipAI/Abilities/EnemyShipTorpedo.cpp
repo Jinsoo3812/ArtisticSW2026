@@ -16,6 +16,7 @@
 #include "NiagaraSystem.h"
 #include "Ship.h"
 #include "TimerManager.h"
+#include "Effects/SWNiagaraScaleLibrary.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogEnemyShipTorpedoVisual, Log, All);
 
@@ -78,7 +79,8 @@ void AEnemyShipTorpedo::BeginPlay()
 	if (GetNetMode() != NM_DedicatedServer && FuseBurstComponent && FuseBurstSystem)
 	{
 		FuseBurstComponent->SetAsset(FuseBurstSystem);
-		FuseBurstComponent->SetRelativeScale3D(FVector(FMath::Max(0.01f, FuseBurstScale)));
+		USWNiagaraScaleLibrary::ApplyEffectTuning(
+			FuseBurstComponent, FuseBurstScale, FuseBurstLifetimeScale, FuseBurstPlaybackSpeed);
 		FuseBurstComponent->AttachToComponent(
 			CannonballMesh,
 			FAttachmentTransformRules::SnapToTargetNotIncludingScale,
@@ -398,16 +400,20 @@ void AEnemyShipTorpedo::ProcessShipHit(AShip* HitShip, const FVector& ImpactPoin
 	UE_LOG(
 		LogEnemyShipTorpedoVisual,
 		Warning,
-		TEXT("[TORPEDO-NIAGARA][REQUEST] Torpedo=%s Target=%s Effect=%s Location=%s Scale=%.3f"),
+		TEXT("[TORPEDO-NIAGARA][REQUEST] Torpedo=%s Target=%s Effect=%s Location=%s Scale=%.3f LifetimeScale=%.3f PlaybackSpeed=%.3f"),
 		*GetNameSafe(this),
 		*GetNameSafe(HitShip),
 		*GetPathNameSafe(ExplosionEffect),
 		*ExplosionLocation.ToCompactString(),
-		ExplosionEffectScale);
+		ExplosionEffectScale,
+		ExplosionEffectLifetimeScale,
+		ExplosionEffectPlaybackSpeed);
 	SpawnNiagaraEffectForAll(
 		ExplosionEffect,
 		ExplosionLocation,
-		ExplosionEffectScale);
+		ExplosionEffectScale,
+		ExplosionEffectLifetimeScale,
+		ExplosionEffectPlaybackSpeed);
 	MulticastTorpedoExploded(ExplosionLocation);
 	Destroy();
 }
@@ -420,6 +426,16 @@ UNiagaraSystem* AEnemyShipTorpedo::GetProjectileEffect() const
 float AEnemyShipTorpedo::GetProjectileEffectScale() const
 {
 	return TorpedoProjectileEffectScale;
+}
+
+float AEnemyShipTorpedo::GetProjectileEffectLifetimeScale() const
+{
+	return TorpedoProjectileEffectLifetimeScale;
+}
+
+float AEnemyShipTorpedo::GetProjectileEffectPlaybackSpeed() const
+{
+	return TorpedoProjectileEffectPlaybackSpeed;
 }
 
 void AEnemyShipTorpedo::HandleWaterOverlap(

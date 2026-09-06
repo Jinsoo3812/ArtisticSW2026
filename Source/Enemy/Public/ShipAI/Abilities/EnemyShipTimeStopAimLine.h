@@ -35,7 +35,8 @@ public:
 
 	/** Stops target tracking at a world point while keeping the ray attached to the moving muzzle. */
 	void LockAimTargetPoint(const FVector& InWorldTargetPoint);
-	void BeginLockedCharge(UNiagaraSystem* InChargeEffect, float InUniformScale);
+	void BeginLockedCharge(UNiagaraSystem* InChargeEffect, float InSizeScale,
+		float InLifetimeScale, float InPlaybackSpeed);
 	void PlayInstantHitEffects(
 		UNiagaraSystem* InTrailEffect,
 		UNiagaraSystem* InExplosionEffect,
@@ -44,7 +45,10 @@ public:
 		bool bHitPlayer,
 		float InTrailScale,
 		float InTrailLifetimeSeconds,
+		float InTrailPlaybackSpeed,
 		float InExplosionScale,
+		float InExplosionLifetimeScale,
+		float InExplosionPlaybackSpeed,
 		float InPresentationLifetime);
 
 	virtual void Tick(float DeltaSeconds) override;
@@ -104,7 +108,10 @@ private:
 		bool bHitPlayer,
 		float InTrailScale,
 		float InTrailLifetimeSeconds,
-		float InExplosionScale);
+		float InTrailPlaybackSpeed,
+		float InExplosionScale,
+		float InExplosionLifetimeScale,
+		float InExplosionPlaybackSpeed);
 
 	UPROPERTY(ReplicatedUsing = OnRep_LineEndpoints)
 	FVector_NetQuantize LineStart = FVector::ZeroVector;
@@ -120,6 +127,10 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_ChargeState)
 	float ChargeEffectScale = 1.0f;
+	UPROPERTY(ReplicatedUsing = OnRep_ChargeState)
+	float ChargeEffectLifetimeScale = 1.0f;
+	UPROPERTY(ReplicatedUsing = OnRep_ChargeState)
+	float ChargeEffectPlaybackSpeed = 1.0f;
 
 	UPROPERTY(ReplicatedUsing = OnRep_ChargeState)
 	bool bChargeEffectActive = false;

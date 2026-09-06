@@ -27,6 +27,7 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
+#include "Effects/SWNiagaraScaleLibrary.h"
 #include "NiagaraEmitter.h"
 #include "NiagaraEmitterHandle.h"
 #include "NiagaraRendererProperties.h"
@@ -2553,6 +2554,7 @@ void AShip::HandlePlayerShipCollisionTelemetry(
 			PlayerRamImpactEffect,
 			Hit.ImpactPoint,
 			PlayerRamImpactEffectScale,
+			PlayerRamImpactEffectLifetimeScale,
 			PlayerRamImpactEffectPlaybackSpeed);
 	LastPlayerRamTarget = OtherShip;
 	LastPlayerRamDamageTime = CurrentTime;
@@ -2651,6 +2653,7 @@ void AShip::SpawnRamImpactNiagaraForAll(
 	UNiagaraSystem* Effect,
 	const FVector& Location,
 	float UniformScale,
+	float LifetimeScale,
 	float PlaybackSpeed)
 {
 	UE_LOG(
@@ -2684,6 +2687,7 @@ void AShip::SpawnRamImpactNiagaraForAll(
 			Location,
 			EffectRotation,
 			FMath::Max(0.01f, UniformScale),
+			FMath::Max(0.01f, LifetimeScale),
 			FMath::Max(0.01f, PlaybackSpeed));
 	}
 }
@@ -2693,6 +2697,7 @@ void AShip::MulticastSpawnRamImpactNiagara_Implementation(
 	FVector_NetQuantize Location,
 	FRotator Rotation,
 	float UniformScale,
+	float LifetimeScale,
 	float PlaybackSpeed)
 {
 	UE_LOG(
@@ -2758,27 +2763,8 @@ void AShip::MulticastSpawnRamImpactNiagara_Implementation(
 				EmitterData ? static_cast<int32>(EmitterData->SimTarget) : -1,
 				*RendererList);
 		}
-		UNiagaraComponent* SpawnedComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-			GetWorld(),
-			Effect,
-			Location,
-			Rotation,
-			bUsesHitScaleParameter
-				? FVector::OneVector
-				: FVector(FMath::Max(0.01f, UniformScale)),
-			true,
-			false);
-		if (SpawnedComponent)
-		{
-			SpawnedComponent->SetCustomTimeDilation(FMath::Max(0.01f, PlaybackSpeed));
-			if (bUsesHitScaleParameter)
-			{
-				SpawnedComponent->SetVariableFloat(
-					TEXT("User.HitScale"),
-					FMath::Max(0.01f, UniformScale));
-			}
-			SpawnedComponent->Activate(true);
-		}
+		UNiagaraComponent* SpawnedComponent = USWNiagaraScaleLibrary::SpawnTunedSystemAtLocation(
+			GetWorld(), Effect, Location, Rotation, UniformScale, LifetimeScale, PlaybackSpeed, true);
 		const FVector RelativeScale = SpawnedComponent
 			? SpawnedComponent->GetRelativeScale3D()
 			: FVector::ZeroVector;

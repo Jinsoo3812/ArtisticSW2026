@@ -60,6 +60,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Charge", meta = (ClampMin = "0.01"))
 	float ChargingEffectScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Charge", meta = (ClampMin = "0.01"))
+	float ChargingEffectLifetimeScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Charge", meta = (ClampMin = "0.01"))
+	float ChargingEffectPlaybackSpeed = 1.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Warning", meta = (ClampMin = "1.0", Units = "cm"))
 	float AimLineMaximumDistance = 200000.0f;
@@ -80,6 +84,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Instant Hit",
 		meta = (DisplayName = "Trail Lifetime Seconds", ClampMin = "0.01"))
 	float InstantHitTrailLifetimeSeconds = 3.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Instant Hit", meta = (ClampMin = "0.01"))
+	float InstantHitTrailPlaybackSpeed = 1.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Instant Hit", meta = (ClampMin = "1.0"))
 	float MissDistanceMultiplier = 2.0f;
@@ -93,6 +99,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Effect", meta = (ClampMin = "0.01"))
 	float ExplosionEffectScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Effect", meta = (ClampMin = "0.01"))
+	float ExplosionEffectLifetimeScale = 1.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Effect", meta = (ClampMin = "0.01"))
+	float ExplosionEffectPlaybackSpeed = 1.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Effect", meta = (ClampMin = "1.0", Units = "cm"))
 	float EffectRadius = 1500.0f;
