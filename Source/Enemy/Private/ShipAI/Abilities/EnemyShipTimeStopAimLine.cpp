@@ -5,7 +5,11 @@
 #include "Components/StaticMeshComponent.h"
 #include "Materials/MaterialInterface.h"
 #include "Net/UnrealNetwork.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "Ship.h"
+#include "Effects/SWNiagaraScaleLibrary.h"
 #include "UObject/ConstructorHelpers.h"
 
 AEnemyShipTimeStopAimLine::AEnemyShipTimeStopAimLine()
@@ -36,6 +40,10 @@ AEnemyShipTimeStopAimLine::AEnemyShipTimeStopAimLine()
 	}
 	// Engine Cylinder is Z-aligned. Rotate it so its length follows this actor's X axis.
 	LineMesh->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+
+	ChargeEffectComponent = CreateDefaultSubobject<UNiagaraComponent>(TEXT("ChargeEffectComponent"));
+	ChargeEffectComponent->SetupAttachment(SceneRoot);
+	ChargeEffectComponent->SetAutoActivate(false);
 }
 
 void AEnemyShipTimeStopAimLine::BeginPlay()
@@ -60,7 +68,6 @@ void AEnemyShipTimeStopAimLine::InitializeAimLine(
 	}
 	LineStart = InStart;
 	SourceCannon.Reset();
-	FixedTargetPoint = FVector::ZeroVector;
 	FixedDirection = InDirection.GetSafeNormal();
 	TargetShip = InTargetShip;
 	MaximumDistance = FMath::Max(1.0f, InMaximumDistance);
@@ -69,9 +76,72 @@ void AEnemyShipTimeStopAimLine::InitializeAimLine(
 	UpdateClippedEndpoint();
 }
 
+void AEnemyShipTimeStopAimLine::LockAimTargetPoint(const FVector& InWorldTargetPoint)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	const FVector Direction = (InWorldTargetPoint - FVector(LineStart)).GetSafeNormal();
+	if (!Direction.IsNearlyZero())
+	{
+		LockedTargetPoint = InWorldTargetPoint;
+		FixedDirection = Direction;
+		bAimTargetLocked = true;
+		UpdateClippedEndpoint();
+	}
+}
+
+void AEnemyShipTimeStopAimLine::BeginLockedCharge(
+	UNiagaraSystem* InChargeEffect,
+	float InUniformScale)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	ChargeEffect = InChargeEffect;
+	ChargeEffectScale = FMath::Max(0.01f, InUniformScale);
+	bChargeEffectActive = ChargeEffect != nullptr;
+	RefreshChargeEffect();
+	ForceNetUpdate();
+}
+
+void AEnemyShipTimeStopAimLine::PlayInstantHitEffects(
+	UNiagaraSystem* InTrailEffect,
+	UNiagaraSystem* InExplosionEffect,
+	const FVector& InStart,
+	const FVector& InEnd,
+	bool bHitPlayer,
+	float InTrailScale,
+	float InTrailLifetimeSeconds,
+	float InExplosionScale,
+	float InPresentationLifetime)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	bChargeEffectActive = false;
+	RefreshChargeEffect();
+	bWarningLineVisible = false;
+	OnRep_LineVisibility();
+	SetActorTickEnabled(false);
+	MulticastPlayInstantHitEffects(
+		InTrailEffect,
+		InExplosionEffect,
+		InStart,
+		InEnd,
+		bHitPlayer,
+		InTrailScale,
+		InTrailLifetimeSeconds,
+		InExplosionScale);
+	ForceNetUpdate();
+	SetLifeSpan(FMath::Max(0.1f, InPresentationLifetime));
+}
+
 void AEnemyShipTimeStopAimLine::InitializeAimLineFromCannon(
 	ACannon* InSourceCannon,
-	const FVector& InFixedTargetPoint,
 	AShip* InTargetShip,
 	float InMaximumDistance,
 	float InTraceIntervalSeconds)
@@ -81,10 +151,12 @@ void AEnemyShipTimeStopAimLine::InitializeAimLineFromCannon(
 		return;
 	}
 	SourceCannon = InSourceCannon;
-	FixedTargetPoint = InFixedTargetPoint;
 	LineStart = InSourceCannon->GetProjectileMuzzleTransform().GetLocation();
-	FixedDirection = (FixedTargetPoint - FVector(LineStart)).GetSafeNormal();
 	TargetShip = InTargetShip;
+	const FVector TargetCenter = InTargetShip && InTargetShip->BuoyancyRoot
+		? InTargetShip->BuoyancyRoot->GetComponentLocation()
+		: (InTargetShip ? InTargetShip->GetActorLocation() : FVector(LineStart));
+	FixedDirection = (TargetCenter - FVector(LineStart)).GetSafeNormal();
 	MaximumDistance = FMath::Max(1.0f, InMaximumDistance);
 	TraceIntervalSeconds = FMath::Max(0.01f, InTraceIntervalSeconds);
 	TraceTimeAccumulator = 0.0f;
@@ -134,11 +206,28 @@ void AEnemyShipTimeStopAimLine::GetLifetimeReplicatedProps(
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AEnemyShipTimeStopAimLine, LineStart);
 	DOREPLIFETIME(AEnemyShipTimeStopAimLine, LineEnd);
+	DOREPLIFETIME(AEnemyShipTimeStopAimLine, bWarningLineVisible);
+	DOREPLIFETIME(AEnemyShipTimeStopAimLine, ChargeEffect);
+	DOREPLIFETIME(AEnemyShipTimeStopAimLine, ChargeEffectScale);
+	DOREPLIFETIME(AEnemyShipTimeStopAimLine, bChargeEffectActive);
 }
 
 void AEnemyShipTimeStopAimLine::OnRep_LineEndpoints()
 {
 	RefreshLineVisual();
+}
+
+void AEnemyShipTimeStopAimLine::OnRep_LineVisibility()
+{
+	if (LineMesh)
+	{
+		LineMesh->SetVisibility(bWarningLineVisible);
+	}
+}
+
+void AEnemyShipTimeStopAimLine::OnRep_ChargeState()
+{
+	RefreshChargeEffect();
 }
 
 void AEnemyShipTimeStopAimLine::UpdateClippedEndpoint()
@@ -147,7 +236,13 @@ void AEnemyShipTimeStopAimLine::UpdateClippedEndpoint()
 	if (ACannon* Cannon = SourceCannon.Get())
 	{
 		const FVector NewStart = Cannon->GetProjectileMuzzleTransform().GetLocation();
-		const FVector NewDirection = (FixedTargetPoint - NewStart).GetSafeNormal();
+		AShip* CurrentTarget = TargetShip.Get();
+		const FVector TargetCenter = CurrentTarget && CurrentTarget->BuoyancyRoot
+			? CurrentTarget->BuoyancyRoot->GetComponentLocation()
+			: (CurrentTarget ? CurrentTarget->GetActorLocation() : NewStart);
+		const FVector NewDirection = bAimTargetLocked
+			? (LockedTargetPoint - NewStart).GetSafeNormal()
+			: (TargetCenter - NewStart).GetSafeNormal();
 		if (!FVector(LineStart).Equals(NewStart, 0.5f))
 		{
 			LineStart = NewStart;
@@ -168,6 +263,7 @@ void AEnemyShipTimeStopAimLine::UpdateClippedEndpoint()
 	if (bEndpointsChanged)
 	{
 		RefreshLineVisual();
+		RefreshChargeEffect();
 		ForceNetUpdate();
 	}
 }
@@ -178,6 +274,11 @@ void AEnemyShipTimeStopAimLine::RefreshLineVisual()
 	{
 		return;
 	}
+	if (!bWarningLineVisible)
+	{
+		LineMesh->SetVisibility(false);
+		return;
+	}
 	const FVector Delta = FVector(LineEnd) - FVector(LineStart);
 	const float Length = Delta.Size();
 	if (Length <= KINDA_SMALL_NUMBER)
@@ -185,6 +286,7 @@ void AEnemyShipTimeStopAimLine::RefreshLineVisual()
 		LineMesh->SetVisibility(false);
 		return;
 	}
+	FixedDirection = Delta.GetSafeNormal();
 
 	LineMesh->SetVisibility(true);
 	if (LaserMaterial && LineMesh->GetMaterial(0) != LaserMaterial)
@@ -198,4 +300,82 @@ void AEnemyShipTimeStopAimLine::RefreshLineVisual()
 		FMath::Max(1.0f, LineThickness) / 100.0f,
 		FMath::Max(1.0f, LineThickness) / 100.0f,
 		Length / 100.0f));
+	RefreshChargeEffect();
+}
+
+void AEnemyShipTimeStopAimLine::RefreshChargeEffect()
+{
+	if (!ChargeEffectComponent)
+	{
+		return;
+	}
+	if (!bChargeEffectActive || !ChargeEffect)
+	{
+		ChargeEffectComponent->Deactivate();
+		return;
+	}
+	if (ChargeEffectComponent->GetAsset() != ChargeEffect)
+	{
+		ChargeEffectComponent->SetAsset(ChargeEffect);
+	}
+	ChargeEffectComponent->SetWorldLocationAndRotation(
+		FVector(LineStart),
+		FixedDirection.Rotation());
+	ChargeEffectComponent->SetRelativeScale3D(FVector(FMath::Max(0.01f, ChargeEffectScale)));
+	ChargeEffectComponent->SetVariableFloat(TEXT("User.Scale"), FMath::Max(0.01f, ChargeEffectScale));
+	if (!ChargeEffectComponent->IsActive())
+	{
+		ChargeEffectComponent->Activate(true);
+	}
+}
+
+void AEnemyShipTimeStopAimLine::MulticastPlayInstantHitEffects_Implementation(
+	UNiagaraSystem* InTrailEffect,
+	UNiagaraSystem* InExplosionEffect,
+	FVector_NetQuantize InStart,
+	FVector_NetQuantize InEnd,
+	bool bHitPlayer,
+	float InTrailScale,
+	float InTrailLifetimeSeconds,
+	float InExplosionScale)
+{
+	bChargeEffectActive = false;
+	RefreshChargeEffect();
+	bWarningLineVisible = false;
+	if (LineMesh)
+	{
+		LineMesh->SetVisibility(false);
+	}
+	if (GetNetMode() == NM_DedicatedServer || !GetWorld())
+	{
+		return;
+	}
+
+	const FVector Start = InStart;
+	const FVector End = InEnd;
+	const FVector Direction = (End - Start).GetSafeNormal();
+	if (InTrailEffect && !Direction.IsNearlyZero())
+	{
+		UNiagaraComponent* Trail = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			GetWorld(), InTrailEffect, Start, Direction.Rotation(), FVector::OneVector, true, false);
+		if (Trail)
+		{
+			const float TrailScale = FMath::Max(0.01f, InTrailScale);
+			const float TrailLifetime = FMath::Max(0.01f, InTrailLifetimeSeconds);
+			Trail->SetVariableVec3(TEXT("User.Hit"), End);
+			Trail->SetVariableFloat(TEXT("User.Elec_Scale"), TrailScale);
+			Trail->SetVariableFloat(TEXT("User.Elec_Thickness"), TrailScale);
+			Trail->SetVariableFloat(TEXT("User.Elec02_Thickness"), TrailScale);
+			Trail->SetVariableFloat(TEXT("User.RibbonWidth"), TrailScale);
+			Trail->SetVariableFloat(TEXT("User.Elec_LifeTime"), TrailLifetime);
+			Trail->SetVariableFloat(TEXT("User.Elec02_Duration"), TrailLifetime);
+			Trail->SetVariableFloat(TEXT("User.RibbonLifeTime"), TrailLifetime);
+			Trail->Activate(true);
+		}
+	}
+	if (bHitPlayer && InExplosionEffect)
+	{
+		USWNiagaraScaleLibrary::SpawnUniformlyScaledSystemAtLocation(
+			GetWorld(), InExplosionEffect, End, (-Direction).Rotation(), InExplosionScale, true);
+	}
 }

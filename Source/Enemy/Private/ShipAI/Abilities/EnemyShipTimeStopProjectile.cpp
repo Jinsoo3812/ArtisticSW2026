@@ -3,7 +3,10 @@
 #include "CollisionChannels.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Effects/SWNiagaraScaleLibrary.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Ship.h"
 #include "ShipAI/Abilities/EnemyShipTimeStopField.h"
@@ -43,6 +46,23 @@ AEnemyShipTimeStopProjectile::AEnemyShipTimeStopProjectile()
 	ProjectileMovement->ProjectileGravityScale = 0.0f;
 	ProjectileMovement->InitialSpeed = 5000.0f;
 	ProjectileMovement->MaxSpeed = 5000.0f;
+
+	ProjectileEffectComponent = CreateDefaultSubobject<UNiagaraComponent>(TEXT("ProjectileEffectComponent"));
+	ProjectileEffectComponent->SetupAttachment(Collision);
+	ProjectileEffectComponent->SetAutoActivate(false);
+}
+
+void AEnemyShipTimeStopProjectile::BeginPlay()
+{
+	Super::BeginPlay();
+	if (ProjectileEffectComponent && ProjectileEffect && GetNetMode() != NM_DedicatedServer)
+	{
+		ProjectileEffectComponent->SetAsset(ProjectileEffect);
+		USWNiagaraScaleLibrary::ApplyUniformEffectScale(
+			ProjectileEffectComponent,
+			ProjectileEffectScale);
+		ProjectileEffectComponent->Activate(true);
+	}
 }
 
 void AEnemyShipTimeStopProjectile::InitializeTimeStopProjectile(
@@ -99,6 +119,21 @@ void AEnemyShipTimeStopProjectile::OnProjectileHit(
 		return;
 	}
 	bImpactHandled = true;
+	const FVector ImpactLocation = Hit.ImpactPoint.IsNearlyZero()
+		? GetActorLocation()
+		: FVector(Hit.ImpactPoint);
+	if (ExplosionEffect)
+	{
+		const FVector TravelDirection = GetVelocity().GetSafeNormal();
+		const FRotator EffectRotation = TravelDirection.IsNearlyZero()
+			? GetActorRotation()
+			: (-TravelDirection).Rotation();
+		MulticastSpawnExplosionEffect(
+			ExplosionEffect,
+			ImpactLocation,
+			EffectRotation,
+			FMath::Max(0.01f, ExplosionEffectScale));
+	}
 
 	if (FieldClass && GetWorld())
 	{
@@ -106,12 +141,29 @@ void AEnemyShipTimeStopProjectile::OnProjectileHit(
 		Params.Owner = SourceShip;
 		Params.Instigator = SourceShip;
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		const FVector Center = Hit.ImpactPoint.IsNearlyZero() ? GetActorLocation() : FVector(Hit.ImpactPoint);
 		if (AEnemyShipTimeStopField* Field = GetWorld()->SpawnActor<AEnemyShipTimeStopField>(
-			FieldClass, Center, FRotator::ZeroRotator, Params))
+			FieldClass, ImpactLocation, FRotator::ZeroRotator, Params))
 		{
 			Field->InitializeTimeStop(EffectRadius, EffectDurationSeconds);
 		}
 	}
 	Destroy();
+}
+
+void AEnemyShipTimeStopProjectile::MulticastSpawnExplosionEffect_Implementation(
+	UNiagaraSystem* Effect,
+	FVector_NetQuantize Location,
+	FRotator Rotation,
+	float UniformScale)
+{
+	if (Effect && GetWorld() && GetNetMode() != NM_DedicatedServer)
+	{
+		USWNiagaraScaleLibrary::SpawnUniformlyScaledSystemAtLocation(
+			GetWorld(),
+			Effect,
+			Location,
+			Rotation,
+			UniformScale,
+			true);
+	}
 }

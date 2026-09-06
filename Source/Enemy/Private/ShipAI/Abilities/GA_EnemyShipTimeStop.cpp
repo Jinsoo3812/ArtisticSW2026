@@ -6,7 +6,6 @@
 #include "Ship.h"
 #include "ShipAI/Abilities/EnemyShipTimeStopAimLine.h"
 #include "ShipAI/Abilities/EnemyShipTimeStopField.h"
-#include "ShipAI/Abilities/EnemyShipTimeStopProjectile.h"
 #include "ShipAI/Abilities/GA_EnemyShipLaunchTorpedo.h"
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
@@ -18,7 +17,6 @@ UGA_EnemyShipTimeStop::UGA_EnemyShipTimeStop()
 		GameplayAbility_EnemyShip_TimeStop,
 		Cooldown_EnemyShip_TimeStop);
 	CooldownDurationSeconds = 10.0f;
-	ProjectileClass = AEnemyShipTimeStopProjectile::StaticClass();
 	FieldClass = AEnemyShipTimeStopField::StaticClass();
 	AimLineClass = AEnemyShipTimeStopAimLine::StaticClass();
 }
@@ -40,7 +38,7 @@ void UGA_EnemyShipTimeStop::ActivateAbility(
 	UEnemyShipNavigationComponent* Navigation = Ship ? Ship->GetNavigationComponent() : nullptr;
 	AShip* Target = Navigation ? Navigation->GetTargetShip() : nullptr;
 	if (!Ship || !Ship->HasAuthority() || Ship->IsDeathHandled() || !Navigation
-		|| !IsValidPlayerTarget(Target) || !ProjectileClass || !FieldClass || !AimLineClass
+		|| !IsValidPlayerTarget(Target) || !FieldClass || !AimLineClass
 		|| !Ship->GetWorld())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -71,18 +69,6 @@ void UGA_EnemyShipTimeStop::ActivateAbility(
 	}
 	FixedLineEnd = ResolveFixedLineEnd(FixedLineStart, Target, AimLineMaximumDistance);
 
-	FEnemyShipNavigationOverrideRequest Request;
-	Request.MoveInput = 0.0f;
-	Request.TurnInput = 0.0f;
-	Request.PropulsionMultiplier = 1.0f;
-	Request.TurnMultiplier = FMath::Max(0.0f, ShipTurnMultiplier);
-	NavigationOverrideHandle = Navigation->AcquireOverride(this, 100, Request);
-	if (!NavigationOverrideHandle.IsValid())
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
-
 	FActorSpawnParameters LineParams;
 	LineParams.Owner = Ship;
 	LineParams.Instigator = Ship;
@@ -96,7 +82,6 @@ void UGA_EnemyShipTimeStop::ActivateAbility(
 	}
 	AimLineActor->InitializeAimLineFromCannon(
 		Cannon,
-		FixedTargetPoint,
 		Target,
 		AimLineMaximumDistance,
 		AimLineTraceIntervalSeconds);
@@ -117,11 +102,11 @@ void UGA_EnemyShipTimeStop::ActivateAbility(
 
 	if (ChargeDurationSeconds <= KINDA_SMALL_NUMBER)
 	{
-		FireTimeStopProjectile();
+		ConfirmAimAndBeginCharge();
 		return;
 	}
 	Ship->GetWorldTimerManager().SetTimer(
-		ChargeTimerHandle, this, &UGA_EnemyShipTimeStop::FireTimeStopProjectile,
+		ChargeTimerHandle, this, &UGA_EnemyShipTimeStop::ConfirmAimAndBeginCharge,
 		FMath::Max(0.01f, ChargeDurationSeconds), false);
 }
 
@@ -136,11 +121,6 @@ void UGA_EnemyShipTimeStop::EndAbility(
 	{
 		Ship->GetWorldTimerManager().ClearTimer(ChargeTimerHandle);
 		Ship->GetWorldTimerManager().ClearTimer(AimUpdateTimerHandle);
-		if (UEnemyShipNavigationComponent* Navigation = Ship->GetNavigationComponent())
-		{
-			Navigation->ReleaseOverride(NavigationOverrideHandle);
-			Navigation->ReleaseOverridesFor(this);
-		}
 	}
 	if (AEnemyShipTimeStopAimLine* Line = AimLineActor.Get())
 	{
@@ -151,13 +131,14 @@ void UGA_EnemyShipTimeStop::EndAbility(
 	ActiveTarget.Reset();
 	SelectedCannon.Reset();
 	AimLineActor.Reset();
-	NavigationOverrideHandle.Reset();
 	ChargeTimerHandle.Invalidate();
 	AimUpdateTimerHandle.Invalidate();
 	FixedLineStart = FVector::ZeroVector;
 	FixedLineEnd = FVector::ZeroVector;
 	FixedTargetPoint = FVector::ZeroVector;
 	FixedLaunchDirection = FVector::ForwardVector;
+	ConfirmedShotDistance = 0.0f;
+	bAimLocked = false;
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
@@ -180,43 +161,125 @@ FVector UGA_EnemyShipTimeStop::ResolveFixedLineEnd(
 		MaximumDistance);
 }
 
-void UGA_EnemyShipTimeStop::FireTimeStopProjectile()
+void UGA_EnemyShipTimeStop::ConfirmAimAndBeginCharge()
 {
 	AEnemyShip* Ship = ActiveShip.Get();
 	ACannon* Cannon = SelectedCannon.Get();
+	AShip* Target = ActiveTarget.Get();
 	if (!Ship || !Ship->HasAuthority() || Ship->IsDeathHandled() || !Cannon
-		|| !ProjectileClass)
+		|| !IsValidPlayerTarget(Target))
 	{
 		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
 		return;
 	}
 	FixedLineStart = Cannon->GetProjectileMuzzleTransform().GetLocation();
+	FixedTargetPoint = Target->BuoyancyRoot
+		? Target->BuoyancyRoot->GetComponentLocation()
+		: Target->GetActorLocation();
 	FixedLaunchDirection = (FixedTargetPoint - FixedLineStart).GetSafeNormal();
 	if (FixedLaunchDirection.IsNearlyZero())
 	{
 		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
 		return;
 	}
+	const FVector ConfirmedLineEnd = AEnemyShipTimeStopAimLine::ResolveClippedLineEnd(
+		FixedLineStart,
+		FixedLaunchDirection,
+		Target,
+		AimLineMaximumDistance);
+	const float ClippedDistance = FVector::Distance(FixedLineStart, ConfirmedLineEnd);
+	ConfirmedShotDistance = ClippedDistance < AimLineMaximumDistance - 1.0f
+		? FMath::Max(1.0f, ClippedDistance)
+		: FMath::Max(1.0f, FVector::Distance(FixedLineStart, FixedTargetPoint));
+	bAimLocked = true;
+	if (AEnemyShipTimeStopAimLine* Line = AimLineActor.Get())
+	{
+		Line->LockAimTargetPoint(FixedTargetPoint);
+		Line->BeginLockedCharge(ChargingEffect, ChargingEffectScale);
+	}
+	UpdateChargeAiming();
 
-	FActorSpawnParameters Params;
-	Params.Owner = Ship;
-	Params.Instigator = Ship;
-	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AEnemyShipTimeStopProjectile* Projectile = Ship->GetWorld()->SpawnActor<AEnemyShipTimeStopProjectile>(
-		ProjectileClass, FixedLineStart, FixedLaunchDirection.Rotation(), Params);
-	if (!Projectile)
+	UE_LOG(LogTemp, Warning,
+		TEXT("[EnemyShipTimeStop] Aim locked. Ship=%s TargetPoint=%s Distance=%.1f Charge=%.2fs"),
+		*GetNameSafe(Ship), *FixedTargetPoint.ToCompactString(), ConfirmedShotDistance,
+		FMath::Max(0.0f, LockedChargeDurationSeconds));
+	if (LockedChargeDurationSeconds <= KINDA_SMALL_NUMBER)
+	{
+		FireInstantHit();
+		return;
+	}
+	Ship->GetWorldTimerManager().SetTimer(
+		ChargeTimerHandle,
+		this,
+		&UGA_EnemyShipTimeStop::FireInstantHit,
+		FMath::Max(0.01f, LockedChargeDurationSeconds),
+		false);
+}
+
+void UGA_EnemyShipTimeStop::FireInstantHit()
+{
+	AEnemyShip* Ship = ActiveShip.Get();
+	ACannon* Cannon = SelectedCannon.Get();
+	AShip* Target = ActiveTarget.Get();
+	AEnemyShipTimeStopAimLine* Line = AimLineActor.Get();
+	if (!Ship || !Ship->HasAuthority() || Ship->IsDeathHandled() || !Cannon
+		|| !IsValidPlayerTarget(Target) || !Line || !bAimLocked)
 	{
 		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
 		return;
 	}
-	Projectile->InitializeTimeStopProjectile(
-		Ship, FixedLaunchDirection, ProjectileSpeed, ProjectileLifetimeSeconds,
-		EffectRadius, TimeStopDurationSeconds, FieldClass);
+
+	const FVector ShotStart = Cannon->GetProjectileMuzzleTransform().GetLocation();
+	const float ShotDistance = FMath::Max(
+		1.0f,
+		ConfirmedShotDistance * FMath::Max(1.0f, MissDistanceMultiplier));
+	const FVector ShotDirection = (FixedTargetPoint - ShotStart).GetSafeNormal();
+	if (ShotDirection.IsNearlyZero())
+	{
+		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
+		return;
+	}
+	const FVector MissEnd = ShotStart + ShotDirection * ShotDistance;
+	FHitResult Hit;
+	const bool bHitPlayer = Target->ShipDamageMesh
+		&& Target->ShipDamageMesh->LineTraceComponent(
+			Hit,
+			ShotStart,
+			MissEnd,
+			FCollisionQueryParams());
+	const FVector ShotEnd = bHitPlayer ? Hit.ImpactPoint : MissEnd;
+
+	if (bHitPlayer && FieldClass && Ship->GetWorld())
+	{
+		FActorSpawnParameters Params;
+		Params.Owner = Ship;
+		Params.Instigator = Ship;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if (AEnemyShipTimeStopField* Field = Ship->GetWorld()->SpawnActor<AEnemyShipTimeStopField>(
+			FieldClass,
+			ShotEnd,
+			FRotator::ZeroRotator,
+			Params))
+		{
+			Field->InitializeTimeStop(EffectRadius, TimeStopDurationSeconds);
+		}
+	}
+	Line->PlayInstantHitEffects(
+		InstantHitTrailEffect,
+		ExplosionEffect,
+		ShotStart,
+		ShotEnd,
+		bHitPlayer,
+		InstantHitTrailEffectScale,
+		InstantHitTrailLifetimeSeconds,
+		ExplosionEffectScale,
+		FMath::Max(InstantHitPresentationLifetime, InstantHitTrailLifetimeSeconds));
+	AimLineActor.Reset();
 
 	UE_LOG(LogTemp, Warning,
-		TEXT("[EnemyShipTimeStop] Fired. Ship=%s Cannon=%s Projectile=%s Direction=%s"),
-		*GetNameSafe(Ship), *GetNameSafe(Cannon), *GetNameSafe(Projectile),
-		*FixedLaunchDirection.ToCompactString());
+		TEXT("[EnemyShipTimeStop] Instant hit fired. Ship=%s Cannon=%s HitPlayer=%s Start=%s End=%s"),
+		*GetNameSafe(Ship), *GetNameSafe(Cannon), bHitPlayer ? TEXT("true") : TEXT("false"),
+		*ShotStart.ToCompactString(), *ShotEnd.ToCompactString());
 	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
 }
 
@@ -224,14 +287,20 @@ void UGA_EnemyShipTimeStop::UpdateChargeAiming()
 {
 	AEnemyShip* Ship = ActiveShip.Get();
 	ACannon* Cannon = SelectedCannon.Get();
-	UEnemyShipNavigationComponent* Navigation = Ship ? Ship->GetNavigationComponent() : nullptr;
-	if (!Ship || Ship->IsDeathHandled() || !Cannon || !Navigation)
+	AShip* Target = ActiveTarget.Get();
+	if (!Ship || Ship->IsDeathHandled() || !Cannon || !IsValidPlayerTarget(Target))
 	{
 		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
 		return;
 	}
 
 	const FVector MuzzleLocation = Cannon->GetProjectileMuzzleTransform().GetLocation();
+	if (!bAimLocked)
+	{
+		FixedTargetPoint = Target->BuoyancyRoot
+			? Target->BuoyancyRoot->GetComponentLocation()
+			: Target->GetActorLocation();
+	}
 	const FVector AimDirection = (FixedTargetPoint - MuzzleLocation).GetSafeNormal();
 	if (AimDirection.IsNearlyZero())
 	{
@@ -242,19 +311,6 @@ void UGA_EnemyShipTimeStop::UpdateChargeAiming()
 	const FRotator LocalRotation = LocalDirection.Rotation();
 	const float LocalYaw = FMath::UnwindDegrees(LocalRotation.Yaw);
 	Cannon->SetAIAimRotation(LocalRotation.Pitch, LocalYaw);
-
-	FEnemyShipNavigationOverrideRequest Request;
-	Request.MoveInput = 0.0f;
-	Request.TurnInput = FMath::Clamp(
-		FMath::DegreesToRadians(LocalYaw) * FMath::Max(0.0f, ShipTurnResponsiveness),
-		-1.0f,
-		1.0f);
-	Request.PropulsionMultiplier = 1.0f;
-	Request.TurnMultiplier = FMath::Max(0.0f, ShipTurnMultiplier);
-	if (!Navigation->UpdateOverride(NavigationOverrideHandle, Request))
-	{
-		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
-	}
 }
 
 bool UGA_EnemyShipTimeStop::IsValidPlayerTarget(const AShip* Candidate) const

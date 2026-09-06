@@ -164,7 +164,7 @@ void AEnemyShipTimeStopField::ApplyShipTarget(const FEnemyShipTimeStopTarget& Ta
 		return;
 	}
 
-	if (HasAuthority() && FreezeSourceId.IsValid())
+	if (FreezeSourceId.IsValid())
 	{
 		Ship->AddPropulsionSuppression(FreezeSourceId);
 	}
@@ -248,9 +248,17 @@ void AEnemyShipTimeStopField::ApplyPlayerTarget(const FEnemyShipTimeStopTarget& 
 		}
 	}
 
-	Player->SetActorLocationAndRotation(
-		Target.Anchor.GetLocation(), Target.Anchor.Rotator(), false, nullptr,
-		ETeleportType::TeleportPhysics);
+	const AShip* ControlledShip = Runtime.Controller.IsValid()
+		? Cast<AShip>(Runtime.Controller->GetPawn())
+		: nullptr;
+	const bool bIsAttachedHelmRider = ControlledShip
+		&& ControlledShip->GetRidingPlayer() == Player;
+	if (!bIsAttachedHelmRider)
+	{
+		Player->SetActorLocationAndRotation(
+			Target.Anchor.GetLocation(), Target.Anchor.Rotator(), false, nullptr,
+			ETeleportType::TeleportPhysics);
+	}
 }
 
 void AEnemyShipTimeStopField::FinishTimeStop()
@@ -296,7 +304,7 @@ void AEnemyShipTimeStopField::ReleaseAllTargets()
 	{
 		if (AShip* Ship = Cast<AShip>(Target.Actor))
 		{
-			if (HasAuthority() && FreezeSourceId.IsValid())
+			if (FreezeSourceId.IsValid())
 			{
 				Ship->RemovePropulsionSuppression(FreezeSourceId);
 			}
@@ -362,9 +370,9 @@ void AEnemyShipTimeStopField::ReleaseAllTargets()
 					{
 						ControlledPawn->EnableInput(PC);
 					}
+					PC->SetIgnoreMoveInput(false);
+					PC->SetIgnoreLookInput(false);
 				}
-				PC->SetIgnoreMoveInput(false);
-				PC->SetIgnoreLookInput(false);
 			}
 		}
 	}

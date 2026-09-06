@@ -2,15 +2,14 @@
 
 #include "CoreMinimal.h"
 #include "ShipAI/Abilities/EnemyShipGameplayAbility.h"
-#include "ShipAI/EnemyShipNavigationTypes.h"
 #include "GA_EnemyShipTimeStop.generated.h"
 
 class ACannon;
 class AEnemyShip;
 class AEnemyShipTimeStopAimLine;
 class AEnemyShipTimeStopField;
-class AEnemyShipTimeStopProjectile;
 class AShip;
+class UNiagaraSystem;
 
 /** Captures one dodgeable straight warning line, then fires an independent time-stop projectile along it. */
 UCLASS(Blueprintable)
@@ -44,9 +43,6 @@ public:
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop")
-	TSubclassOf<AEnemyShipTimeStopProjectile> ProjectileClass;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop")
 	TSubclassOf<AEnemyShipTimeStopField> FieldClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Warning")
@@ -54,6 +50,16 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Warning", meta = (ClampMin = "0.0", Units = "s"))
 	float ChargeDurationSeconds = 3.0f;
+
+	/** Time spent charging after the target point has been locked. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Charge", meta = (ClampMin = "0.0", Units = "s"))
+	float LockedChargeDurationSeconds = 2.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Charge")
+	TObjectPtr<UNiagaraSystem> ChargingEffect;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Charge", meta = (ClampMin = "0.01"))
+	float ChargingEffectScale = 1.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Warning", meta = (ClampMin = "1.0", Units = "cm"))
 	float AimLineMaximumDistance = 200000.0f;
@@ -64,17 +70,29 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Aiming", meta = (ClampMin = "0.01", Units = "s"))
 	float AimUpdateIntervalSeconds = 0.05f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Aiming", meta = (ClampMin = "0.0"))
-	float ShipTurnResponsiveness = 1.5f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Instant Hit")
+	TObjectPtr<UNiagaraSystem> InstantHitTrailEffect;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Aiming", meta = (ClampMin = "0.0"))
-	float ShipTurnMultiplier = 2.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Instant Hit", meta = (ClampMin = "0.01"))
+	float InstantHitTrailEffectScale = 1.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Projectile", meta = (ClampMin = "1.0", Units = "cm/s"))
-	float ProjectileSpeed = 5000.0f;
+	/** Lifetime passed directly to the instant-hit Niagara's ribbon and electricity particles, in seconds. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Instant Hit",
+		meta = (DisplayName = "Trail Lifetime Seconds", ClampMin = "0.01"))
+	float InstantHitTrailLifetimeSeconds = 3.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Projectile", meta = (ClampMin = "0.1", Units = "s"))
-	float ProjectileLifetimeSeconds = 5.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Instant Hit", meta = (ClampMin = "1.0"))
+	float MissDistanceMultiplier = 2.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Instant Hit",
+		meta = (DisplayName = "Presentation Cleanup Delay Seconds", ClampMin = "0.1"))
+	float InstantHitPresentationLifetime = 3.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Effect")
+	TObjectPtr<UNiagaraSystem> ExplosionEffect;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Effect", meta = (ClampMin = "0.01"))
+	float ExplosionEffectScale = 1.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Effect", meta = (ClampMin = "1.0", Units = "cm"))
 	float EffectRadius = 1500.0f;
@@ -83,7 +101,8 @@ protected:
 	float TimeStopDurationSeconds = 3.0f;
 
 private:
-	void FireTimeStopProjectile();
+	void ConfirmAimAndBeginCharge();
+	void FireInstantHit();
 	void UpdateChargeAiming();
 	bool IsValidPlayerTarget(const AShip* Candidate) const;
 
@@ -91,11 +110,12 @@ private:
 	TWeakObjectPtr<AShip> ActiveTarget;
 	TWeakObjectPtr<ACannon> SelectedCannon;
 	TWeakObjectPtr<AEnemyShipTimeStopAimLine> AimLineActor;
-	FEnemyShipNavigationOverrideHandle NavigationOverrideHandle;
 	FTimerHandle ChargeTimerHandle;
 	FTimerHandle AimUpdateTimerHandle;
 	FVector FixedLineStart = FVector::ZeroVector;
 	FVector FixedLineEnd = FVector::ZeroVector;
 	FVector FixedTargetPoint = FVector::ZeroVector;
 	FVector FixedLaunchDirection = FVector::ForwardVector;
+	float ConfirmedShotDistance = 0.0f;
+	bool bAimLocked = false;
 };

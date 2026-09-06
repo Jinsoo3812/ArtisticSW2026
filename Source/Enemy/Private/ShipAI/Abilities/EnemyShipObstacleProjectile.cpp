@@ -3,6 +3,9 @@
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "ShipAI/Abilities/EnemyShipObstacle.h"
 #include "TimerManager.h"
 
@@ -83,6 +86,15 @@ void AEnemyShipObstacleProjectile::ReachTargetAndSpawnObstacle()
 		TargetPoint,
 		ObstacleSpawnRotationOffset,
 		SpawnParameters);
+	if (ObstacleSpawnEffect)
+	{
+		MulticastSpawnObstacleEffect(
+			ObstacleSpawnEffect,
+			TargetPoint,
+			ObstacleSpawnRotationOffset,
+			FMath::Max(0.01f, ObstacleSpawnEffectScale),
+			FMath::Max(0.01f, ObstacleSpawnEffectPlaybackSpeed));
+	}
 
 	UE_LOG(
 		LogTemp,
@@ -93,4 +105,42 @@ void AEnemyShipObstacleProjectile::ReachTargetAndSpawnObstacle()
 		*ObstacleSpawnRotationOffset.ToCompactString(),
 		*GetNameSafe(SpawnedObstacle));
 	Destroy();
+}
+
+void AEnemyShipObstacleProjectile::MulticastSpawnObstacleEffect_Implementation(
+	UNiagaraSystem* Effect,
+	FVector_NetQuantize Location,
+	FRotator Rotation,
+	float UniformScale,
+	float PlaybackSpeed)
+{
+	if (Effect && GetWorld() && GetNetMode() != NM_DedicatedServer)
+	{
+		TArray<FNiagaraVariable> ExposedParameters;
+		Effect->GetExposedParameters().GetParameters(ExposedParameters);
+		const bool bUsesHitScaleParameter = ExposedParameters.ContainsByPredicate(
+			[](const FNiagaraVariable& Parameter)
+			{
+				return Parameter.GetName() == TEXT("User.HitScale")
+					&& Parameter.GetType() == FNiagaraTypeDefinition::GetFloatDef();
+			});
+		const float SafeScale = FMath::Max(0.01f, UniformScale);
+		UNiagaraComponent* SpawnedComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			GetWorld(),
+			Effect,
+			Location,
+			Rotation,
+			bUsesHitScaleParameter ? FVector::OneVector : FVector(SafeScale),
+			true,
+			false);
+		if (SpawnedComponent)
+		{
+			SpawnedComponent->SetCustomTimeDilation(FMath::Max(0.01f, PlaybackSpeed));
+			if (bUsesHitScaleParameter)
+			{
+				SpawnedComponent->SetVariableFloat(TEXT("User.HitScale"), SafeScale);
+			}
+			SpawnedComponent->Activate(true);
+		}
+	}
 }

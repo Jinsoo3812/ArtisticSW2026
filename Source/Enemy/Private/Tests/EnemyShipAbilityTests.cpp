@@ -17,7 +17,10 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Effects/SWNiagaraScaleLibrary.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
 #include "Ship.h"
 #include "ShipAI/Abilities/EnemyShipTimeStopAimLine.h"
@@ -281,6 +284,42 @@ bool FEnemyShipObstacleActorContractTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	TestNotNull(
+		TEXT("Obstacle carrier exposes a reliable multicast transformation effect"),
+		Projectile->FindFunction(TEXT("MulticastSpawnObstacleEffect")));
+	TestNotNull(
+		TEXT("Obstacle carrier exposes a Niagara asset slot"),
+		FindFProperty<FObjectProperty>(Projectile->GetClass(), TEXT("ObstacleSpawnEffect")));
+	TestNotNull(
+		TEXT("Obstacle carrier exposes an effect scale setting"),
+		FindFProperty<FFloatProperty>(Projectile->GetClass(), TEXT("ObstacleSpawnEffectScale")));
+	TestNotNull(
+		TEXT("Obstacle carrier exposes an effect playback-speed setting"),
+		FindFProperty<FFloatProperty>(Projectile->GetClass(), TEXT("ObstacleSpawnEffectPlaybackSpeed")));
+	UClass* AuthoredProjectileClass = LoadClass<AEnemyShipObstacleProjectile>(
+		nullptr,
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_ES_ObstacleProjectile.BP_ES_ObstacleProjectile_C"));
+	if (TestNotNull(TEXT("Authored obstacle carrier loads"), AuthoredProjectileClass))
+	{
+		const AEnemyShipObstacleProjectile* AuthoredDefaults =
+			AuthoredProjectileClass->GetDefaultObject<AEnemyShipObstacleProjectile>();
+		const FObjectProperty* EffectProperty = FindFProperty<FObjectProperty>(
+			AuthoredProjectileClass, TEXT("ObstacleSpawnEffect"));
+		const UNiagaraSystem* AuthoredEffect = EffectProperty
+			? Cast<UNiagaraSystem>(EffectProperty->GetObjectPropertyValue_InContainer(AuthoredDefaults))
+			: nullptr;
+		if (TestNotNull(TEXT("Authored obstacle transformation effect is assigned"), AuthoredEffect))
+		{
+			TArray<FNiagaraVariable> ExposedParameters;
+			AuthoredEffect->GetExposedParameters().GetParameters(ExposedParameters);
+			TestTrue(TEXT("Authored transformation effect exposes float User.HitScale"),
+				ExposedParameters.ContainsByPredicate([](const FNiagaraVariable& Parameter)
+				{
+					return Parameter.GetName() == TEXT("User.HitScale")
+						&& Parameter.GetType() == FNiagaraTypeDefinition::GetFloatDef();
+				}));
+		}
+	}
 
 	USphereComponent* ObstacleCollision = Obstacle->FindComponentByClass<USphereComponent>();
 	UBoxComponent* ObstacleBlocker = Obstacle->FindComponentByClass<UBoxComponent>();
@@ -345,6 +384,16 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipTimeStopActorContractTest::RunTest(const FString& Parameters)
 {
+	// The shared test world loads known-invalid quest fixture data during subsystem startup.
+	AddExpectedError(
+		TEXT("QuestItem has an invalid ResultItemTag"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	AddExpectedError(
+		TEXT("QuestItem contains an invalid ingredient"),
+		EAutomationExpectedErrorFlags::Contains,
+		2);
+
 	EnemyShipAbilityTests::FTestWorld TestWorld;
 	AEnemyShipTimeStopProjectile* Projectile =
 		TestWorld.World->SpawnActor<AEnemyShipTimeStopProjectile>();
@@ -365,6 +414,8 @@ bool FEnemyShipTimeStopActorContractTest::RunTest(const FString& Parameters)
 	USphereComponent* ProjectileCollision = Projectile->FindComponentByClass<USphereComponent>();
 	UProjectileMovementComponent* ProjectileMovement =
 		Projectile->FindComponentByClass<UProjectileMovementComponent>();
+	UNiagaraComponent* ProjectileEffectComponent =
+		Projectile->FindComponentByClass<UNiagaraComponent>();
 	if (TestNotNull(TEXT("Time Stop projectile owns sweep collision"), ProjectileCollision))
 	{
 		TestEqual(TEXT("Time Stop projectile uses EnemyCannon object channel"),
@@ -379,6 +430,34 @@ bool FEnemyShipTimeStopActorContractTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Time Stop projectile uses configured speed"), ProjectileMovement->MaxSpeed, 4321.0f);
 	}
 	TestTrue(TEXT("Time Stop projectile has miss lifetime"), Projectile->GetLifeSpan() > 0.0f);
+	TestNotNull(TEXT("Time Stop projectile owns a Niagara trail component"), ProjectileEffectComponent);
+	TestNotNull(TEXT("Time Stop projectile exposes ProjectileEffect"),
+		FindFProperty<FObjectProperty>(AEnemyShipTimeStopProjectile::StaticClass(), TEXT("ProjectileEffect")));
+	TestNotNull(TEXT("Time Stop projectile exposes ProjectileEffectScale"),
+		FindFProperty<FFloatProperty>(AEnemyShipTimeStopProjectile::StaticClass(), TEXT("ProjectileEffectScale")));
+	TestNotNull(TEXT("Time Stop projectile exposes ExplosionEffect"),
+		FindFProperty<FObjectProperty>(AEnemyShipTimeStopProjectile::StaticClass(), TEXT("ExplosionEffect")));
+	TestNotNull(TEXT("Time Stop projectile exposes ExplosionEffectScale"),
+		FindFProperty<FFloatProperty>(AEnemyShipTimeStopProjectile::StaticClass(), TEXT("ExplosionEffectScale")));
+	if (ProjectileEffectComponent)
+	{
+		UNiagaraSystem* ContractSystem = NewObject<UNiagaraSystem>();
+		ContractSystem->GetExposedParameters().AddParameter(FNiagaraVariable(
+			FNiagaraTypeDefinition::GetFloatDef(),
+			USWNiagaraScaleLibrary::UniformScaleParameterName));
+		ProjectileEffectComponent->SetAsset(ContractSystem);
+		TestTrue(TEXT("Shared Niagara scaler recognizes User.EffectScale"),
+			USWNiagaraScaleLibrary::ApplyUniformEffectScale(ProjectileEffectComponent, 7.0f));
+		TestTrue(TEXT("Contract effects avoid double component scaling"),
+			ProjectileEffectComponent->GetRelativeScale3D().Equals(FVector::OneVector));
+
+		UNiagaraSystem* LegacySystem = NewObject<UNiagaraSystem>();
+		ProjectileEffectComponent->SetAsset(LegacySystem);
+		TestFalse(TEXT("Shared Niagara scaler identifies legacy systems"),
+			USWNiagaraScaleLibrary::ApplyUniformEffectScale(ProjectileEffectComponent, 7.0f));
+		TestTrue(TEXT("Legacy Niagara systems retain transform-scale fallback"),
+			ProjectileEffectComponent->GetRelativeScale3D().Equals(FVector(7.0f)));
+	}
 
 	const FVector FixedStart(10.0f, 20.0f, 30.0f);
 	const FVector FixedDirection = FVector::ForwardVector;
@@ -430,21 +509,68 @@ bool FEnemyShipTimeStopActorContractTest::RunTest(const FString& Parameters)
 		ACannon::StaticClass(), FVector(100.0f, -500.0f, 100.0f), FRotator::ZeroRotator);
 	if (TestNotNull(TEXT("Moving source Cannon spawns"), MovingCannon))
 	{
+		PlayerShip->SetActorLocation(FVector(1500.0f, 0.0f, 100.0f));
+		PlayerShip->ShipDamageMesh->SetWorldLocation(PlayerShip->GetActorLocation());
+		PlayerShip->ShipDamageMesh->UpdateBounds();
 		const FVector InitialMuzzle = MovingCannon->GetProjectileMuzzleTransform().GetLocation();
-		const FVector CapturedTargetPoint = InitialMuzzle + FVector(5000.0f, 0.0f, 0.0f);
 		AimLine->InitializeAimLineFromCannon(
-			MovingCannon, CapturedTargetPoint, nullptr, TestMaximumDistance, 0.05f);
+			MovingCannon, PlayerShip, TestMaximumDistance, 0.05f);
 		TestTrue(TEXT("Laser starts at the current Cannon muzzle"),
 			AimLine->GetLineStart().Equals(InitialMuzzle, 0.5f));
 		MovingCannon->SetActorLocation(MovingCannon->GetActorLocation() + FVector(0.0f, 300.0f, 0.0f));
+		PlayerShip->SetActorLocation(PlayerShip->GetActorLocation() + FVector(0.0f, 600.0f, 0.0f));
+		PlayerShip->ShipDamageMesh->SetWorldLocation(PlayerShip->GetActorLocation());
+		PlayerShip->ShipDamageMesh->UpdateBounds();
 		AimLine->Tick(0.06f);
 		const FVector MovedMuzzle = MovingCannon->GetProjectileMuzzleTransform().GetLocation();
 		TestTrue(TEXT("Laser origin follows a moving Cannon instead of staying in world space"),
 			AimLine->GetLineStart().Equals(MovedMuzzle, 0.5f));
-		TestTrue(TEXT("Laser re-aims from the moved muzzle toward the captured target point"),
+		const FVector CurrentTarget = PlayerShip->BuoyancyRoot
+			? PlayerShip->BuoyancyRoot->GetComponentLocation()
+			: PlayerShip->GetActorLocation();
+		const FVector ExpectedTrackedEnd = AEnemyShipTimeStopAimLine::ResolveClippedLineEnd(
+			MovedMuzzle,
+			(CurrentTarget - MovedMuzzle).GetSafeNormal(),
+			PlayerShip,
+			TestMaximumDistance);
+		TestTrue(TEXT("Laser re-aims toward the Player Ship's current position"),
+			AimLine->GetLineEnd().Equals(ExpectedTrackedEnd, 1.0f));
+
+		const FVector LockedTargetPoint = CurrentTarget;
+		AimLine->LockAimTargetPoint(LockedTargetPoint);
+		MovingCannon->SetActorLocation(
+			MovingCannon->GetActorLocation() + FVector(150.0f, 0.0f, 0.0f));
+		PlayerShip->SetActorLocation(
+			PlayerShip->GetActorLocation() + FVector(0.0f, 3000.0f, 0.0f));
+		PlayerShip->ShipDamageMesh->SetWorldLocation(PlayerShip->GetActorLocation());
+		PlayerShip->ShipDamageMesh->UpdateBounds();
+		AimLine->Tick(0.06f);
+		const FVector LockedMovedMuzzle = MovingCannon->GetProjectileMuzzleTransform().GetLocation();
+		TestTrue(TEXT("Locked laser origin continues following the moving Cannon"),
+			AimLine->GetLineStart().Equals(LockedMovedMuzzle, 0.5f));
+		const FVector DirectionFromMovedMuzzle =
+			(LockedTargetPoint - LockedMovedMuzzle).GetSafeNormal();
+		TestTrue(TEXT("Locked laser keeps aiming at the confirmed world point after the source moves"),
 			AimLine->GetLineEnd().Equals(
-				MovedMuzzle + (CapturedTargetPoint - MovedMuzzle).GetSafeNormal() * TestMaximumDistance,
+				LockedMovedMuzzle + DirectionFromMovedMuzzle * TestMaximumDistance,
 				1.0f));
+
+		AimLine->PlayInstantHitEffects(
+			nullptr,
+			nullptr,
+			AimLine->GetLineStart(),
+			AimLine->GetLineEnd(),
+			false,
+			1.0f,
+			1.0f,
+			1.0f,
+			1.0f);
+		AimLine->Tick(0.06f);
+		if (UStaticMeshComponent* FiredLaserMesh = AimLine->FindComponentByClass<UStaticMeshComponent>())
+		{
+			TestFalse(TEXT("Warning laser stays hidden after firing even if endpoints refresh"),
+				FiredLaserMesh->IsVisible());
+		}
 	}
 
 	PlayerShip->Tags.AddUnique(TEXT("Player"));
@@ -479,6 +605,16 @@ bool FEnemyShipTimeStopActorContractTest::RunTest(const FString& Parameters)
 		UGA_EnemyShipTimeStop::StaticClass()->GetDefaultObject<UGameplayAbility>();
 	TestTrue(TEXT("Time Stop exposes the BT/SkillModule ability tag"),
 		AbilityCDO && AbilityCDO->GetAssetTags().HasTagExact(GameplayAbility_EnemyShip_TimeStop));
+	TestNotNull(TEXT("Time Stop exposes a locked charge duration"),
+		FindFProperty<FFloatProperty>(UGA_EnemyShipTimeStop::StaticClass(), TEXT("LockedChargeDurationSeconds")));
+	TestNotNull(TEXT("Time Stop exposes a charging Niagara"),
+		FindFProperty<FObjectProperty>(UGA_EnemyShipTimeStop::StaticClass(), TEXT("ChargingEffect")));
+	TestNotNull(TEXT("Time Stop exposes an instant-hit trail Niagara"),
+		FindFProperty<FObjectProperty>(UGA_EnemyShipTimeStop::StaticClass(), TEXT("InstantHitTrailEffect")));
+	TestNotNull(TEXT("Time Stop exposes the instant-hit trail lifetime in seconds"),
+		FindFProperty<FFloatProperty>(UGA_EnemyShipTimeStop::StaticClass(), TEXT("InstantHitTrailLifetimeSeconds")));
+	TestNotNull(TEXT("Time Stop exposes an explosion Niagara"),
+		FindFProperty<FObjectProperty>(UGA_EnemyShipTimeStop::StaticClass(), TEXT("ExplosionEffect")));
 	return true;
 }
 

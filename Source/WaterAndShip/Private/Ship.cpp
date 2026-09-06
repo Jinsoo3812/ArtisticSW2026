@@ -661,8 +661,9 @@ void AShip::Tick(float DeltaTime)
 		{
 			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
 			{
-				AsyncInput->MovementInput = CurrentMoveInput;
-				AsyncInput->SteeringInput = CurrentTurnInput;
+				const bool bSuppressPropulsion = IsPropulsionSuppressed();
+				AsyncInput->MovementInput = bSuppressPropulsion ? 0.0f : CurrentMoveInput;
+				AsyncInput->SteeringInput = bSuppressPropulsion ? 0.0f : CurrentTurnInput;
 				AsyncInput->bHasLocalController = true; // 로컬 컨트롤러 조종 여부 릴레이
 			}
 		}
@@ -1073,7 +1074,7 @@ void AShip::ApplyNetworkPhysicsBlast(
 
 void AShip::AddPropulsionSuppression(const FGuid& SourceId)
 {
-	if (!HasAuthority() || !SourceId.IsValid())
+	if (!SourceId.IsValid())
 	{
 		return;
 	}
@@ -1085,10 +1086,7 @@ void AShip::AddPropulsionSuppression(const FGuid& SourceId)
 
 void AShip::RemovePropulsionSuppression(const FGuid& SourceId)
 {
-	if (HasAuthority())
-	{
-		PropulsionSuppressionSources.Remove(SourceId);
-	}
+	PropulsionSuppressionSources.Remove(SourceId);
 }
 
 
@@ -1580,7 +1578,9 @@ void AShip::OnRep_IsSinking()
 
 void AShip::ShipMove(const FInputActionValue& Value)
 {
-	const float MoveValue = bIsAnchorDropped ? 0.0f : Value.Get<float>();
+	const float MoveValue = (bIsAnchorDropped || IsPropulsionSuppressed())
+		? 0.0f
+		: Value.Get<float>();
 	CurrentMoveInput = MoveValue;
 
 	if (!HasAuthority())
@@ -1591,7 +1591,7 @@ void AShip::ShipMove(const FInputActionValue& Value)
 
 void AShip::ServerMove_Implementation(float MoveValue)
 {
-	CurrentMoveInput = bIsAnchorDropped ? 0.0f : MoveValue;
+	CurrentMoveInput = (bIsAnchorDropped || IsPropulsionSuppressed()) ? 0.0f : MoveValue;
 }
 
 void AShip::StopShipMove(const FInputActionValue&)
@@ -1616,7 +1616,9 @@ void AShip::ApplyForwardForce(float MoveValue)
 
 void AShip::ShipTurn(const FInputActionValue& Value)
 {
-	const float TurnValue = bIsAnchorDropped ? 0.0f : Value.Get<float>();
+	const float TurnValue = (bIsAnchorDropped || IsPropulsionSuppressed())
+		? 0.0f
+		: Value.Get<float>();
 	CurrentTurnInput = TurnValue;
 
 	if (!HasAuthority())
@@ -1627,7 +1629,7 @@ void AShip::ShipTurn(const FInputActionValue& Value)
 
 void AShip::ServerTurn_Implementation(float TurnValue)
 {
-	CurrentTurnInput = bIsAnchorDropped ? 0.0f : TurnValue;
+	CurrentTurnInput = (bIsAnchorDropped || IsPropulsionSuppressed()) ? 0.0f : TurnValue;
 }
 
 void AShip::StopShipTurn(const FInputActionValue&)
