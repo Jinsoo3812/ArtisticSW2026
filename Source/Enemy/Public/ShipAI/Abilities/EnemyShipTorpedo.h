@@ -112,8 +112,21 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Buoyancy", meta = (ClampMin = "1.0", Units = "kg"))
 	float FloatingMassKg = 25.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Buoyancy", meta = (ClampMin = "0.0"))
+	/** Vertical-only linear damping applied after water entry. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Water Drag", meta = (ClampMin = "0.0"))
 	float FloatingLinearDamping = 8.0f;
+
+	/** Horizontal force coefficient for F = -C1 * V. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Water Drag", meta = (ClampMin = "0.0"))
+	float WaterHorizontalLinearDrag = 1.5f;
+
+	/** Horizontal force coefficient for F = -C2 * |V| * V. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Water Drag", meta = (ClampMin = "0.0"))
+	float WaterHorizontalQuadraticDrag = 0.002f;
+
+	/** Safety cap for total horizontal drag force. Zero disables this cap. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Water Drag", meta = (ClampMin = "0.0"))
+	float MaximumHorizontalDragForce = 250000.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Buoyancy", meta = (ClampMin = "0.0"))
 	float FloatingAngularDamping = 3.0f;
@@ -146,6 +159,7 @@ private:
 	void OnRep_IsFloating();
 
 	void ApplyWaterEntryPhysicsState();
+	void ApplyWaterDrag(float DeltaSeconds);
 	void EnableBuoyancyAfterDelay();
 	void DetectDamageMeshContactAfterWater();
 	void RestartFuseBurst();

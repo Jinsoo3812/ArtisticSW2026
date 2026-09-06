@@ -19,6 +19,36 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogEnemyShipTorpedoVisual, Log, All);
 
+namespace EnemyShipTorpedoWaterDrag
+{
+	FVector ComputeForce(
+		const FVector& Velocity,
+		float MassKg,
+		float LinearCoefficient,
+		float QuadraticCoefficient,
+		float MaximumForce,
+		float DeltaSeconds)
+	{
+		const FVector HorizontalVelocity(Velocity.X, Velocity.Y, 0.0f);
+		const float Speed = HorizontalVelocity.Size();
+		if (!FMath::IsFinite(Speed) || Speed <= KINDA_SMALL_NUMBER
+			|| MassKg <= 0.0f || DeltaSeconds <= SMALL_NUMBER)
+		{
+			return FVector::ZeroVector;
+		}
+
+		float ForceMagnitude = FMath::Max(0.0f, LinearCoefficient) * Speed
+			+ FMath::Max(0.0f, QuadraticCoefficient) * Speed * Speed;
+		if (MaximumForce > 0.0f)
+		{
+			ForceMagnitude = FMath::Min(ForceMagnitude, MaximumForce);
+		}
+		// Never remove more horizontal momentum than exists during this frame.
+		ForceMagnitude = FMath::Min(ForceMagnitude, MassKg * Speed / DeltaSeconds);
+		return -HorizontalVelocity.GetSafeNormal() * ForceMagnitude;
+	}
+}
+
 AEnemyShipTorpedo::AEnemyShipTorpedo()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -179,6 +209,7 @@ void AEnemyShipTorpedo::Tick(float DeltaSeconds)
 
 	if (HasAuthority() && bIsFloating)
 	{
+		ApplyWaterDrag(DeltaSeconds);
 		DetectDamageMeshContactAfterWater();
 		if (bExplosionConsumed || IsActorBeingDestroyed())
 		{
@@ -475,7 +506,8 @@ void AEnemyShipTorpedo::ApplyWaterEntryPhysicsState()
 	if (SphereCollision)
 	{
 		PreviousWaterPhysicsLocation = SphereCollision->GetComponentLocation();
-		SphereCollision->SetLinearDamping(FloatingLinearDamping);
+		// Axis-specific water drag is applied explicitly by the authoritative actor.
+		SphereCollision->SetLinearDamping(0.0f);
 		SphereCollision->SetAngularDamping(FloatingAngularDamping);
 		if (HasAuthority())
 		{
@@ -497,6 +529,31 @@ void AEnemyShipTorpedo::ApplyWaterEntryPhysicsState()
 		SWBuoyancyComponent->Deactivate();
 		SWBuoyancyComponent->SetComponentTickEnabled(false);
 	}
+}
+
+void AEnemyShipTorpedo::ApplyWaterDrag(float DeltaSeconds)
+{
+	if (!HasAuthority() || !bIsFloating || !SphereCollision
+		|| !SphereCollision->IsSimulatingPhysics() || DeltaSeconds <= SMALL_NUMBER)
+	{
+		return;
+	}
+
+	const FVector Velocity = SphereCollision->GetPhysicsLinearVelocity();
+	const float MassKg = SphereCollision->GetMass();
+	const FVector HorizontalForce = EnemyShipTorpedoWaterDrag::ComputeForce(
+		Velocity,
+		MassKg,
+		WaterHorizontalLinearDrag,
+		WaterHorizontalQuadraticDrag,
+		MaximumHorizontalDragForce,
+		DeltaSeconds);
+	const FVector VerticalForce(
+		0.0f,
+		0.0f,
+		-MassKg * FMath::Max(0.0f, FloatingLinearDamping) * Velocity.Z);
+
+	SphereCollision->AddForce(HorizontalForce + VerticalForce);
 }
 
 void AEnemyShipTorpedo::DetectDamageMeshContactAfterWater()
@@ -560,3 +617,40 @@ void AEnemyShipTorpedo::MulticastTorpedoExploded_Implementation(const FVector& E
 {
 	K2_OnTorpedoExploded(ExplosionLocation);
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipTorpedoHorizontalWaterDragTest,
+	"ArtisticSW.Enemy.Ship.Ability.TorpedoHorizontalWaterDrag",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipTorpedoHorizontalWaterDragTest::RunTest(const FString& Parameters)
+{
+	const FVector LinearForce = EnemyShipTorpedoWaterDrag::ComputeForce(
+		FVector(300.0f, 400.0f, -900.0f), 25.0f, 2.0f, 0.0f, 0.0f, 1.0f / 60.0f);
+	TestTrue(TEXT("Linear drag opposes horizontal velocity"),
+		LinearForce.Equals(FVector(-600.0f, -800.0f, 0.0f), 0.01f));
+	TestTrue(TEXT("Horizontal drag never changes Z"), FMath::IsNearlyZero(LinearForce.Z));
+
+	const FVector QuadraticAt100 = EnemyShipTorpedoWaterDrag::ComputeForce(
+		FVector(100.0f, 0.0f, 700.0f), 25.0f, 0.0f, 0.01f, 0.0f, 0.1f);
+	const FVector QuadraticAt200 = EnemyShipTorpedoWaterDrag::ComputeForce(
+		FVector(200.0f, 0.0f, 700.0f), 25.0f, 0.0f, 0.01f, 0.0f, 0.1f);
+	TestTrue(TEXT("Quadratic force at 100 cm/s"), FMath::IsNearlyEqual(QuadraticAt100.X, -100.0));
+	TestTrue(TEXT("Doubling speed quadruples quadratic force"), FMath::IsNearlyEqual(QuadraticAt200.X, -400.0));
+
+	const FVector CappedForce = EnemyShipTorpedoWaterDrag::ComputeForce(
+		FVector(1000.0f, 0.0f, 0.0f), 25.0f, 1000.0f, 1000.0f, 5000.0f, 0.1f);
+	TestTrue(TEXT("Configured force cap is respected"), FMath::IsNearlyEqual(CappedForce.X, -5000.0));
+
+	const FVector NoReverseForce = EnemyShipTorpedoWaterDrag::ComputeForce(
+		FVector(10.0f, 0.0f, 0.0f), 25.0f, 1000.0f, 1000.0f, 0.0f, 0.5f);
+	TestTrue(TEXT("One frame cannot remove more than current momentum"), FMath::IsNearlyEqual(NoReverseForce.X, -500.0));
+	TestTrue(TEXT("Invalid time produces no force"),
+		EnemyShipTorpedoWaterDrag::ComputeForce(
+			FVector(100.0f, 0.0f, 0.0f), 25.0f, 1.0f, 1.0f, 0.0f, 0.0f).IsZero());
+	return true;
+}
+#endif
