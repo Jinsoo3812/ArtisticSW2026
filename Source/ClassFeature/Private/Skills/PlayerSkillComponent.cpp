@@ -34,6 +34,10 @@ UPlayerSkillComponent::UPlayerSkillComponent()
 		GameplayAbility_Skill_Bombardment,
 		Item_Id_Skill_Bombardment,
 		Item_Id_Material_SkillMaterial_LegendarySkill);
+	AddDefinition(
+		GameplayAbility_Skill_AreaSlow,
+		Item_Id_Skill_AreaSlow,
+		Item_Id_Material_SkillMaterial_RareSkill);
 }
 
 void UPlayerSkillComponent::BeginPlay()

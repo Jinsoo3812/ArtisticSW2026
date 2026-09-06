@@ -20,6 +20,9 @@ UGA_GravityVortexThrow::UGA_GravityVortexThrow()
 	FGameplayTagContainer AssetTags;
 	AssetTags.AddTag(GameplayAbility_Skill_GravityVortex);
 	SetAssetTags(AssetTags);
+	// Keep the two hold-to-aim skills mutually exclusive regardless of which
+	// one was activated first. Area Slow already owns the reciprocal block.
+	ActivationBlockedTags.AddTag(State_Aiming);
 }
 
 void UGA_GravityVortexThrow::ActivateAbility(

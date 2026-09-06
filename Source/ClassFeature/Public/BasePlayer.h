@@ -351,6 +351,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Skills")
 	TObjectPtr<UInputAction> GravityVortexSkillAction;
 
+	/** Assign the hold-to-preview Area Slow IA to any desired key in the on-foot IMC. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Skills")
+	TObjectPtr<UInputAction> AreaSlowSkillAction;
+
 	void Move(const FInputActionValue& Value);
 	void MoveStopped(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
@@ -374,7 +378,7 @@ public:
 
 	/**
 	 * Development-only convenience switch for skill testing.
-	 * When enabled, all three player skills ignore story locks and inventory
+	 * When enabled, player skills ignore story locks and inventory
 	 * materials, and completed uses do not consume an item.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Skill Test")
@@ -386,6 +390,14 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex")
 	TSubclassOf<UGameplayAbility> GravityVortexAbilityClass;
+
+	/** Enables the hold-to-preview Area Slow input while on foot. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Area Slow")
+	bool bEnableAreaSlowSkillInput = true;
+
+	/** Assign a Blueprint child of UGA_PlayerAreaSlow that references the skill Data Asset. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Area Slow")
+	TSubclassOf<UGameplayAbility> AreaSlowAbilityClass;
 
 	/** Granted without a player input slot; a ridden cannon activates/cancels it through its ability tag. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Water Bomb")
@@ -419,6 +431,8 @@ public:
 	void OnAbilityInputReleased(FGameplayTag InputTag);
 	void OnGravityVortexSkillPressed();
 	void OnGravityVortexSkillReleased();
+	void OnAreaSlowSkillPressed();
+	void OnAreaSlowSkillReleased();
 
 	// 마우스 입력에 대한 활용을 위해 따로 OnAbilityInput과 분리
 	void OnMouseInputPressed(FGameplayTag InputTag);

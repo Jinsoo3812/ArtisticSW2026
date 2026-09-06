@@ -67,6 +67,13 @@ protected:
 	TArray<TSubclassOf<UGameplayAbility>> StartingAbilities;
 
 	/**
+	 * Server-owned classification tags copied to the ASC at startup. Designers
+	 * can opt individual Enemy Blueprints into DataAsset-driven effects here.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem|Targeting")
+	FGameplayTagContainer EffectTargetTags;
+
+	/**
 	 * Optional death GA used by enemies that need a montage-driven death sequence.
 	 * Regular enemies leave this empty and enter ragdoll immediately. Boss enemies
 	 * opt in with their dedicated death ability.
@@ -203,8 +210,9 @@ protected:
 
 	void BindMovementSpeedAttribute();
 	void UnbindMovementSpeedAttribute();
-	void OnMoveSpeedBonusChanged(const FOnAttributeChangeData& ChangeData);
+	void OnMovementSpeedModifierChanged(const FOnAttributeChangeData& ChangeData);
 	FDelegateHandle MoveSpeedBonusChangedDelegateHandle;
+	FDelegateHandle MoveSpeedMultiplierChangedDelegateHandle;
 
 	// FVector GetVelocity() const override;
 	
@@ -253,7 +261,8 @@ public:
 		float InBaseSpeed,
 		float InSpawnMultiplier,
 		float InMoveSpeedBonus,
-		float InMaximumSpeed);
+		float InMaximumSpeed,
+		float InMoveSpeedMultiplier = 1.0f);
 
 	// Enemy소환 API
 	UFUNCTION(BlueprintCallable, Category = "Wave")

@@ -3,6 +3,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
+#include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "Components/BaseHealthComponent.h"
@@ -501,9 +502,27 @@ float ARangedEnemy::GetRangedAttackMontagePlayRate() const
 	const FWeaponDefinition* WeaponDefinition = EquippedWeaponComponent
 		? EquippedWeaponComponent->GetCurrentWeaponDefinition()
 		: nullptr;
-	return WeaponDefinition
+	const float AuthoredPlayRate = WeaponDefinition
 		? FMath::Max(0.001f, WeaponDefinition->CombatData.AttackMontagePlayRate)
 		: 1.0f;
+	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	const float AttackSpeedMultiplier = ASC
+		? FMath::Clamp(
+			ASC->GetNumericAttribute(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute()),
+			0.1f,
+			3.0f)
+		: 1.0f;
+	return ResolveAttackMontagePlayRate(AuthoredPlayRate, AttackSpeedMultiplier);
+}
+
+float ARangedEnemy::ResolveAttackMontagePlayRate(
+	const float AuthoredPlayRate,
+	const float AttackSpeedMultiplier)
+{
+	return FMath::Max(
+		0.001f,
+		FMath::Max(0.001f, AuthoredPlayRate)
+			* FMath::Clamp(AttackSpeedMultiplier, 0.1f, 3.0f));
 }
 
 void ARangedEnemy::OnRep_HostShip()

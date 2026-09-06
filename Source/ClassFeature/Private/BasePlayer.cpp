@@ -49,6 +49,7 @@
 #include "Skills/Abilities/GA_GravityVortexThrow.h"
 #include "Skills/Abilities/GA_WaterBombCannonMode.h"
 #include "Skills/Abilities/GA_Bombardment.h"
+#include "Skills/Abilities/GA_PlayerAreaSlow.h"
 #include "HAL/FileManager.h"
 #include "Misc/DateTime.h"
 #include "Misc/FileHelper.h"
@@ -129,6 +130,7 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	GravityVortexAbilityClass = UGA_GravityVortexThrow::StaticClass();
 	WaterBombAbilityClass = UGA_WaterBombCannonMode::StaticClass();
 	BombardmentAbilityClass = UGA_Bombardment::StaticClass();
+	AreaSlowAbilityClass = UGA_PlayerAreaSlow::StaticClass();
 
 	// 항상 등만 보이도록 설정 (Orient to Controller - 부드러운 회전으로 제자리 회전 유도)
 	bUseControllerRotationYaw = false;
@@ -560,6 +562,10 @@ void ABasePlayer::PossessedBy(AController* NewController)
 						GetInputIDFromTag(Key_Skill_GravityVortex));
 					GrantAbilityToSlot(Key_Skill_GravityVortex, GravityVortexAbilityClass);
 				}
+				if (bEnableAreaSlowSkillInput && AreaSlowAbilityClass)
+				{
+					GrantAbilityToSlot(Key_Skill_AreaSlow, AreaSlowAbilityClass);
+				}
 				if (bGrantWaterBombAbility && WaterBombAbilityClass)
 				{
 					GrantDefaultAbility(WaterBombAbilityClass);
@@ -650,7 +656,8 @@ void ABasePlayer::PawnClientRestart()
 				const int32 EffectiveDefaultPriority = ResolveDefaultMappingPriority(
 					DefaultIMCPriority,
 					ItemIMCPriority,
-					bEnableGravityVortexSkillInput && GravityVortexSkillAction);
+					(bEnableGravityVortexSkillInput && GravityVortexSkillAction)
+					|| (bEnableAreaSlowSkillInput && AreaSlowSkillAction));
 				Subsystem->AddMappingContext(DefaultIMC, EffectiveDefaultPriority);
 			}
 
@@ -710,6 +717,12 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Started, this, &ABasePlayer::OnGravityVortexSkillPressed);
 			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Completed, this, &ABasePlayer::OnGravityVortexSkillReleased);
 			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Canceled, this, &ABasePlayer::OnGravityVortexSkillReleased);
+		}
+		if (bEnableAreaSlowSkillInput && AreaSlowSkillAction)
+		{
+			EnhancedInputComponent->BindAction(AreaSlowSkillAction, ETriggerEvent::Started, this, &ABasePlayer::OnAreaSlowSkillPressed);
+			EnhancedInputComponent->BindAction(AreaSlowSkillAction, ETriggerEvent::Completed, this, &ABasePlayer::OnAreaSlowSkillReleased);
+			EnhancedInputComponent->BindAction(AreaSlowSkillAction, ETriggerEvent::Canceled, this, &ABasePlayer::OnAreaSlowSkillReleased);
 		}
 
 		// Default 입력 바인딩
@@ -1234,10 +1247,41 @@ void ABasePlayer::OnGravityVortexSkillReleased()
 	OnAbilityInputReleased(Key_Skill_GravityVortex);
 }
 
+void ABasePlayer::OnAreaSlowSkillPressed()
+{
+	if (!bEnableAreaSlowSkillInput)
+	{
+		return;
+	}
+	OnAbilityInputPressed(Key_Skill_AreaSlow);
+}
+
+void ABasePlayer::OnAreaSlowSkillReleased()
+{
+	OnAbilityInputReleased(Key_Skill_AreaSlow);
+}
+
 void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 {
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 	if (IsEquipmentTransitioning()) return;
+
+	// Area Slow uses GAS generic confirm/cancel events. These events carry the
+	// active ability spec handle and prediction key, so the server cannot miss a
+	// fast click that arrives while its predicted ability activation is being set up.
+	if (CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_AreaSlow))
+	{
+		if (InputTag.MatchesTagExact(Key_Default_Mouse_LeftClick))
+		{
+			CachedAbilitySystemComponent->LocalInputConfirm();
+			return;
+		}
+		if (InputTag.MatchesTagExact(Key_Default_Mouse_RightClick))
+		{
+			CachedAbilitySystemComponent->LocalInputCancel();
+			return;
+		}
+	}
 
 	// Capture the state before AbilityLocalInputPressed can activate the bound
 	// ability. EventMagnitude 0 means activation click, 1 means active re-input.
@@ -1256,11 +1300,11 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 	}
 
 	// 공통 GAS 입력 해제 처리
-	const bool bGravityVortexOwnsMouseClick =
+	const bool bAimingSkillOwnsMouseClick =
 		(InputTag.MatchesTagExact(Key_Default_Mouse_LeftClick)
 			|| InputTag.MatchesTagExact(Key_Default_Mouse_RightClick))
 		&& CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex);
-	if (!bGravityVortexOwnsMouseClick)
+	if (!bAimingSkillOwnsMouseClick)
 	{
 		OnAbilityInputPressed(InputTag);
 	}

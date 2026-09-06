@@ -15,6 +15,7 @@ UE_DEFINE_GAMEPLAY_TAG(State_Bow_Releasing, "State.Bow.Releasing");
 UE_DEFINE_GAMEPLAY_TAG(State_Ship_CannonDisabled, "State.Ship.CannonDisabled");
 UE_DEFINE_GAMEPLAY_TAG(State_Debuff_WaterBomb, "State.Debuff.WaterBomb");
 UE_DEFINE_GAMEPLAY_TAG(State_Debuff_TimeStopped, "State.Debuff.TimeStopped");
+UE_DEFINE_GAMEPLAY_TAG(State_Debuff_Slow, "State.Debuff.Slow");
 UE_DEFINE_GAMEPLAY_TAG(AI_State_Boss_Intro, "AI.State.Boss.Intro");
 UE_DEFINE_GAMEPLAY_TAG(AI_State_Boss_Combat, "AI.State.Boss.Combat");
 UE_DEFINE_GAMEPLAY_TAG(AI_State_Boss_Dead, "AI.State.Boss.Dead");
@@ -43,6 +44,7 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Weapon_AimCycle, "GameplayAbility.Weapon.
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_GravityVortex, "GameplayAbility.Skill.GravityVortex");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_WaterBomb, "GameplayAbility.Skill.WaterBomb");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_Bombardment, "GameplayAbility.Skill.Bombardment");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_AreaSlow, "GameplayAbility.Skill.AreaSlow");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_Charge, "GameplayAbility.EnemyShip.Charge");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_LaunchTorpedo, "GameplayAbility.EnemyShip.LaunchTorpedo");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_CannonVolley, "GameplayAbility.EnemyShip.CannonVolley");
@@ -78,6 +80,8 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Boss_DashSlash, "GameplayCue.Impact.Bo
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Boss_Knockback, "GameplayCue.Impact.Boss.Knockback");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Path_Boss_DashSlash_Telegraph, "GameplayCue.Path.Boss.DashSlash.Telegraph");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Path_Boss_DashSlash_Execution, "GameplayCue.Path.Boss.DashSlash.Execution");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Skill_AreaSlow_Activate, "GameplayCue.Skill.AreaSlow.Activate");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_State_Debuff_Slow, "GameplayCue.State.Debuff.Slow");
 // Event
 UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Changed, "Event.Ability.Changed");
 UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_Start, "Event.HandleScan.Start");
@@ -101,6 +105,7 @@ UE_DEFINE_GAMEPLAY_TAG(Data_ChargeMultiplier, "Data.ChargeMultiplier");
 UE_DEFINE_GAMEPLAY_TAG(Data_StrengthBonus, "Data.StrengthBonus");
 UE_DEFINE_GAMEPLAY_TAG(Data_Effect_AttackSpeedMultiplier, "Data.Effect.AttackSpeedMultiplier");
 UE_DEFINE_GAMEPLAY_TAG(Data_Effect_MoveSpeedBonus, "Data.Effect.MoveSpeedBonus");
+UE_DEFINE_GAMEPLAY_TAG(Data_Effect_MoveSpeedMultiplier, "Data.Effect.MoveSpeedMultiplier");
 
 
 /* Keyboard Input */
@@ -111,6 +116,7 @@ UE_DEFINE_GAMEPLAY_TAG(Key_Item_1, "Key.Item.1");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_2, "Key.Item.2");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_3, "Key.Item.3");
 UE_DEFINE_GAMEPLAY_TAG(Key_Skill_GravityVortex, "Key.Skill.GravityVortex");
+UE_DEFINE_GAMEPLAY_TAG(Key_Skill_AreaSlow, "Key.Skill.AreaSlow");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_4, "Key.Item.4");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_5, "Key.Item.5");
 
@@ -218,6 +224,12 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill, "Item.Id.Skill");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_GravityVortex, "Item.Id.Skill.GravityVortex");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_WaterBomb, "Item.Id.Skill.WaterBomb");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_Bombardment, "Item.Id.Skill.Bombardment");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_AreaSlow, "Item.Id.Skill.AreaSlow");
+
+UE_DEFINE_GAMEPLAY_TAG(Targetable_Skill_AreaSlow, "Targetable.Skill.AreaSlow");
+UE_DEFINE_GAMEPLAY_TAG(Capability_Effect_MoveSpeedMultiplier, "Capability.Effect.MoveSpeedMultiplier");
+UE_DEFINE_GAMEPLAY_TAG(Capability_Effect_AttackSpeedMultiplier, "Capability.Effect.AttackSpeedMultiplier");
+UE_DEFINE_GAMEPLAY_TAG(Immunity_Debuff_Slow, "Immunity.Debuff.Slow");
 
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Clue, "Item.Id.Clue");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Clue_Clue1, "Item.Id.Clue.Clue1");
@@ -264,6 +276,7 @@ UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_RightClick_Released, "Key.Default.Mouse
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_WheelUp, "Key.Default.Mouse.WheelUp");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_WheelDown, "Key.Default.Mouse.WheelDown");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_C, "Key.Default.C");
+UE_DEFINE_GAMEPLAY_TAG(Key_Default_V, "Key.Default.V");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_F, "Key.Default.F");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_ESC, "Key.Default.ESC");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Space, "Key.Default.Space");
