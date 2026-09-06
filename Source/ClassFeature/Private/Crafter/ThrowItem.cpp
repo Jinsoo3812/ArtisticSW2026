@@ -4,12 +4,17 @@
 #include "ThrowItem.h"
 #include "BasePlayer.h"
 #include "BaseItem.h"
+#include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Kismet/GameplayStatics.h"
 #include "DrawDebugHelpers.h"
 #include "Components/PrimitiveComponent.h"
 #include "BaseGameplayTags.h"
+
+UThrowItem::UThrowItem()
+{
+}
 
 void UThrowItem::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,

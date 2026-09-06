@@ -14,6 +14,7 @@
 class UPoseSearchDatabase;
 class UChooserTable;
 class UCharacterTrajectoryComponent;
+class USWTrajectoryComponent;
 class UAnimationAsset;
 class FStructProperty;
 class FObjectProperty;
@@ -425,6 +426,18 @@ struct FAnimThreadSafeData
 
     UPROPERTY(BlueprintReadOnly, Category = "StateController")
     FAnimStateControllerThreadSafeData StateController;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    bool bIsDodging = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float LegSpreadAlpha = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float FootPlacementAlpha = 1.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    float LegIKAlpha = 1.0f;
 };
 
 struct FCachedMotionMatchingNodeInfo
@@ -654,6 +667,12 @@ public:
     UFUNCTION(BlueprintPure, Category = "Animation|Foot Placement", meta = (BlueprintThreadSafe))
     float GetThreadSafeFootPlacementAlpha() const;
 
+    UFUNCTION(BlueprintPure, Category = "Animation|Leg IK", meta = (BlueprintThreadSafe))
+    float GetThreadSafeLegIKAlpha() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Leg Spread", meta = (BlueprintThreadSafe))
+    float GetThreadSafeLegSpreadAlpha() const;
+
     // State Controller ThreadSafe Getters for AnimGraph
     UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
     EStateControllerPresentationState GetThreadSafeStateControllerPresentationState() const;
@@ -838,6 +857,9 @@ protected:
     UPROPERTY(Transient, BlueprintReadOnly, Category = "Animation")
     TObjectPtr<ULocomotionAnimStateComponent> CachedLocomotionStateComponent;
 
+    UPROPERTY(Transient, BlueprintReadOnly, Category = "Animation")
+    TObjectPtr<USWTrajectoryComponent> CachedTrajectoryComponent;
+
     // Master Chooser Table for State Controller
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
     TObjectPtr<UChooserTable> MainChooserTable;
@@ -1013,6 +1035,22 @@ protected:
     /** True while the current direct Start/Stop/Pivot/Jump/Land owns that angle. */
     bool bHasStateControllerOneShotOrientationWarpingAngle = false;
 
+    /** 원샷(Start/Stop/Land 등) 종료 후 Blend Stack이 블렌드아웃되는 동안 Warping 각도와 Alpha를 보존하기 위한 타이머 및 각도 */
+    float StateControllerPostOneShotWarpingRemainingTime = 0.0f;
+    float StateControllerPostOneShotWarpingAngle = 0.0f;
+
+    /** Start/Stop 등 원샷 종료 후 모션매칭으로 핸드오프 시 강제 재검색 플래그 */
+    bool bStateControllerForceMotionMatchingReselect = false;
+
+    // Diagnostic tracking for Stop transition popping investigation
+    bool bDebugStopDiagnosticActive = false;
+    int32 DebugStopDiagnosticFrame = 0;
+    float DebugStopDiagnosticStartTime = 0.0f;
+
+    // Diagnostic tracking for Start transition investigation
+    bool bDebugStartDiagnosticActive = false;
+    int32 DebugStartDiagnosticFrame = 0;
+
     void EvaluateStateControllerPresentationState();
     void EvaluateStateControllerPlaybackHold(EStateControllerPresentationState DesiredState);
     /** Emits event-driven diagnostics for direct Chooser one-shots and TIP rotation. */
@@ -1115,6 +1153,24 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Foot Placement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float TurnInPlaceFootPlacementAlpha = 0.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Foot Placement", meta = (ClampMin = "0.1"))
+    float FootPlacementInterpSpeed = 8.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Leg IK", meta = (ClampMin = "0.0"))
+    float LegIKInterpSpeed = 25.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Leg Spread", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float LegSpreadStandingAlpha = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Leg Spread", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float LegSpreadMovingAlpha = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Leg Spread", meta = (ClampMin = "0.0"))
+    float LegSpreadSpeedThreshold = 15.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Leg Spread", meta = (ClampMin = "0.1"))
+    float LegSpreadInterpSpeed = 10.0f;
+
 
 
 protected:
@@ -1145,6 +1201,9 @@ protected:
     bool ShouldEvaluateMotionMatchingThisFrame(float DeltaSeconds);
 
 private:
+    float CurrentFootPlacementAlpha = 1.0f;
+    float CurrentLegIKAlpha = 1.0f;
+    float CurrentLegSpreadAlpha = 0.0f;
     float MotionMatchingUpdateAccumulator = 0.0f;
 
     ELocomotionState LastState = ELocomotionState::Idle;

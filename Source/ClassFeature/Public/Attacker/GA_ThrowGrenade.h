@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "BaseGameplayAbility.h"
+#include "GAS/Ability/PlayerCombatGameplayAbility.h"
 #include "GA_ThrowGrenade.generated.h"
 
 class AGrenadeProjectile;
@@ -13,11 +13,13 @@ class UGameplayEffect;
  * 수류탄 투척용 Gameplay Ability
  */
 UCLASS()
-class CLASSFEATURE_API UGA_ThrowGrenade : public UBaseGameplayAbility
+class CLASSFEATURE_API UGA_ThrowGrenade : public UPlayerCombatGameplayAbility
 {
 	GENERATED_BODY()
 
 public:
+	UGA_ThrowGrenade();
+
 	/* --- GA 가상함수 --- */
 public:
 	// GA의 시작 지점 함수

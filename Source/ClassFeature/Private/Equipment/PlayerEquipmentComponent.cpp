@@ -10,6 +10,7 @@
 #include "Inventory/InventoryComponent.h"
 #include "ItemSubSystem.h"
 #include "Item/Weapons/BowItem.h"
+#include "SwimmingComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SceneComponent.h"
@@ -820,7 +821,9 @@ void UPlayerEquipmentComponent::StartEquipItem(ABaseItem* Item, FGameplayTag Sou
 	UAnimMontage* EquipMontage = Entry ? Entry->EquipMontage.Get() : nullptr;
 	const float PlayRate = Entry ? Entry->EquipPlayRate : 1.f;
 
-	if (EquipMontage)
+	const bool bIsSwimming = PlayerOwner->GetSwimmingComponent() && PlayerOwner->GetSwimmingComponent()->IsCustomSwimming();
+
+	if (EquipMontage && !bIsSwimming)
 	{
 		Multicast_PlayEquipmentMontage(Item, EquipMontage, PlayRate);
 	}

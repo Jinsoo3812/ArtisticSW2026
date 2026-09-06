@@ -26,6 +26,7 @@ UE_DEFINE_GAMEPLAY_TAG(State_CrowdControl_Knockback, "State.CrowdControl.Knockba
 UE_DEFINE_GAMEPLAY_TAG(State_Buff_MoveSpeed, "State.Buff.MoveSpeed");
 UE_DEFINE_GAMEPLAY_TAG(State_Rolling, "State.Rolling");
 UE_DEFINE_GAMEPLAY_TAG(State_Invulnerable, "State.Invulnerable");
+UE_DEFINE_GAMEPLAY_TAG(State_Swimming, "State.Swimming");
 
 // Team
 UE_DEFINE_GAMEPLAY_TAG(Team_Player, "Team.Player");
