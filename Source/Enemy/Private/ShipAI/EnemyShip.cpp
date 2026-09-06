@@ -777,18 +777,6 @@ void AEnemyShip::BeginPlay()
 	// 군집 서브시스템에 등록
 	if (HasAuthority())
 	{
-		if (DeckEnemySpawnerComponent)
-		{
-			DeckEnemySpawnerComponent->ConfigureLegacyFallback(
-				bEnableDeckEnemyMVP,
-				DeckEnemyClass,
-				DeckEnemyPoolSize,
-				DeckEnemySightActivationDelay,
-				DeckEnemyActivationInterval,
-				MaxDeckSpawnRetries,
-				DeckSpawnRetryInterval,
-				DeckEnemyRandomSeed);
-		}
 		InitializeDeckWaypoints();
 		InitializeDeckEnemyPool();
 

@@ -22,6 +22,7 @@ public:
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	/** InitialTarget may be null when a game mode possesses the sensed Player Ship directly. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Encounter")
 	bool InitializeBoss(AEnemyShip* InHostShip, int32 InitialPointId, AActor* InitialTarget);
 

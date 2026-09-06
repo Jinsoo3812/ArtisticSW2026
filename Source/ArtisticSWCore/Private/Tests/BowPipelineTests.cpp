@@ -9,14 +9,89 @@
 #include "Components/BoxComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/CollisionProfile.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkeletalMeshSocket.h"
 #include "GameFramework/Character.h"
 #include "Item/Components/BowComponent.h"
 #include "Item/ItemData.h"
+#include "Item/Projectiles/ArrowImpactVisual.h"
 #include "Item/Projectiles/ArrowProjectile.h"
 #include "Item/Weapons/BowItem.h"
+#include "CollisionChannels.h"
 #include "UObject/UnrealType.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FArrowCollisionProfileTest,
+	"ArtisticSW.Item.Arrow.CollisionProfile",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FArrowCollisionProfileTest::RunTest(const FString& Parameters)
+{
+	FCollisionResponseTemplate ArrowProfile;
+	if (!TestTrue(TEXT("ArrowProjectile profile is registered"),
+		UCollisionProfile::Get()->GetProfileTemplate(TEXT("ArrowProjectile"), ArrowProfile)))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("ArrowProjectile is query-only"),
+		ArrowProfile.CollisionEnabled, ECollisionEnabled::QueryOnly);
+	TestEqual(TEXT("ArrowProjectile uses its dedicated object channel"),
+		ArrowProfile.ObjectType, ECC_Arrow);
+	TestEqual(TEXT("ArrowProjectile blocks ordinary static meshes"),
+		ArrowProfile.ResponseToChannels.GetResponse(ECC_WorldStatic), ECR_Block);
+	TestEqual(TEXT("ArrowProjectile blocks moving meshes"),
+		ArrowProfile.ResponseToChannels.GetResponse(ECC_WorldDynamic), ECR_Block);
+	TestEqual(TEXT("ArrowProjectile blocks ship query hulls"),
+		ArrowProfile.ResponseToChannels.GetResponse(ECC_ShipDamage), ECR_Block);
+
+	for (const FName ShipProfileName : {FName(TEXT("PlayerShipDamage")), FName(TEXT("EnemyShipDamage"))})
+	{
+		FCollisionResponseTemplate ShipProfile;
+		if (TestTrue(*FString::Printf(TEXT("%s profile is registered"), *ShipProfileName.ToString()),
+			UCollisionProfile::Get()->GetProfileTemplate(ShipProfileName, ShipProfile)))
+		{
+			TestEqual(*FString::Printf(TEXT("%s blocks character arrows"), *ShipProfileName.ToString()),
+				ShipProfile.ResponseToChannels.GetResponse(ECC_Arrow), ECR_Block);
+		}
+	}
+
+	const AArrowProjectile* ArrowCDO = GetDefault<AArrowProjectile>();
+	if (TestNotNull(TEXT("Native arrow CDO exists"), ArrowCDO)
+		&& TestNotNull(TEXT("Native arrow owns collision"), ArrowCDO->GetCollisionComp()))
+	{
+		TestEqual(TEXT("Native arrow reasserts the immutable profile"),
+			ArrowCDO->GetCollisionComp()->GetCollisionProfileName(), FName(TEXT("ArrowProjectile")));
+		TestEqual(TEXT("Native arrow collision object is Arrow"),
+			ArrowCDO->GetCollisionComp()->GetCollisionObjectType(), ECC_Arrow);
+	}
+
+	const AArrowImpactVisual* VisualCDO = GetDefault<AArrowImpactVisual>();
+	if (TestNotNull(TEXT("Impact visual CDO exists"), VisualCDO))
+	{
+		TestFalse(TEXT("Impact visuals never replicate"), VisualCDO->GetIsReplicated());
+		TestFalse(TEXT("Impact visuals never tick"), VisualCDO->PrimaryActorTick.bCanEverTick);
+	}
+
+	UClass* PlayerArrowClass = LoadObject<UClass>(
+		nullptr,
+		TEXT("/Game/GameplayAbilitySystem/Weapon/BP_Arrow.BP_Arrow_C"));
+	AArrowProjectile* BlueprintArrowCDO = PlayerArrowClass
+		? PlayerArrowClass->GetDefaultObject<AArrowProjectile>()
+		: nullptr;
+	if (TestNotNull(TEXT("BP_Arrow CDO is loaded"), BlueprintArrowCDO)
+		&& TestNotNull(TEXT("BP_Arrow CDO owns collision"), BlueprintArrowCDO->GetCollisionComp()))
+	{
+		BlueprintArrowCDO->OnConstruction(FTransform::Identity);
+		TestEqual(TEXT("BP_Arrow construction overrides legacy Blueprint collision settings"),
+			BlueprintArrowCDO->GetCollisionComp()->GetCollisionProfileName(), FName(TEXT("ArrowProjectile")));
+		TestEqual(TEXT("Constructed BP_Arrow blocks ship query hulls"),
+			BlueprintArrowCDO->GetCollisionComp()->GetCollisionResponseToChannel(ECC_ShipDamage), ECR_Block);
+	}
+
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FBowSocketAndPresentationAssetTest,
@@ -113,6 +188,20 @@ bool FBowSocketAndPresentationAssetTest::RunTest(const FString& Parameters)
 				PreviewMesh->GetRelativeTransform().Equals(
 					ArrowBlueprintCDO->GetArrowVisualRelativeTransform()));
 		}
+	}
+
+	FCollisionResponseTemplate ArrowProfile;
+	if (TestTrue(TEXT("ArrowProjectile profile is registered"),
+		UCollisionProfile::Get()->GetProfileTemplate(TEXT("ArrowProjectile"), ArrowProfile)))
+	{
+		TestEqual(TEXT("ArrowProjectile uses the dedicated Arrow channel"),
+			ArrowProfile.ObjectType, ECC_Arrow);
+		TestEqual(TEXT("ArrowProjectile blocks ordinary static meshes"),
+			ArrowProfile.ResponseToChannels.GetResponse(ECC_WorldStatic), ECR_Block);
+		TestEqual(TEXT("ArrowProjectile blocks moving meshes"),
+			ArrowProfile.ResponseToChannels.GetResponse(ECC_WorldDynamic), ECR_Block);
+		TestEqual(TEXT("ArrowProjectile blocks ship damage query hulls"),
+			ArrowProfile.ResponseToChannels.GetResponse(ECC_ShipDamage), ECR_Block);
 	}
 
 	const UItemData* ItemData = LoadObject<UItemData>(

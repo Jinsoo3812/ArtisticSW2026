@@ -3,6 +3,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
+#include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "Components/BaseHealthComponent.h"
@@ -20,6 +21,12 @@
 ARangedEnemy::ARangedEnemy()
 {
 	bApplyDeathRagdollImpulse = true;
+	// Preserve the former RangedEnemyAIController defaults while moving the
+	// editor-facing source of truth onto each Enemy Blueprint.
+	PerceptionSettings.SightRadius = 3000.0f;
+	PerceptionSettings.LoseSightRadius = 3500.0f;
+	PerceptionSettings.PeripheralVisionDegrees = 80.0f;
+	PerceptionSettings.SightMaxAge = 2.0f;
 	AIControllerClass = ARangedEnemyAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	bUseControllerRotationYaw = true;
@@ -495,9 +502,27 @@ float ARangedEnemy::GetRangedAttackMontagePlayRate() const
 	const FWeaponDefinition* WeaponDefinition = EquippedWeaponComponent
 		? EquippedWeaponComponent->GetCurrentWeaponDefinition()
 		: nullptr;
-	return WeaponDefinition
+	const float AuthoredPlayRate = WeaponDefinition
 		? FMath::Max(0.001f, WeaponDefinition->CombatData.AttackMontagePlayRate)
 		: 1.0f;
+	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	const float AttackSpeedMultiplier = ASC
+		? FMath::Clamp(
+			ASC->GetNumericAttribute(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute()),
+			0.1f,
+			3.0f)
+		: 1.0f;
+	return ResolveAttackMontagePlayRate(AuthoredPlayRate, AttackSpeedMultiplier);
+}
+
+float ARangedEnemy::ResolveAttackMontagePlayRate(
+	const float AuthoredPlayRate,
+	const float AttackSpeedMultiplier)
+{
+	return FMath::Max(
+		0.001f,
+		FMath::Max(0.001f, AuthoredPlayRate)
+			* FMath::Clamp(AttackSpeedMultiplier, 0.1f, 3.0f));
 }
 
 void ARangedEnemy::OnRep_HostShip()

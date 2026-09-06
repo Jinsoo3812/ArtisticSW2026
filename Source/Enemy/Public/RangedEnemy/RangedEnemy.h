@@ -76,6 +76,7 @@ public:
 
 	UAnimMontage* GetRangedAttackMontage() const;
 	float GetRangedAttackMontagePlayRate() const;
+	static float ResolveAttackMontagePlayRate(float AuthoredPlayRate, float AttackSpeedMultiplier);
 	FGameplayTag GetRangedFireEventTag() const { return FireEventTag; }
 	float GetMinAttackRange() const { return MinAttackRange; }
 	/** Current equipped-weapon range, with MaxAttackRange retained as a loadout fallback. */

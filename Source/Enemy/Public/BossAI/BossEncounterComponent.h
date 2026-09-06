@@ -117,13 +117,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Encounter")
 	TSubclassOf<AShipBossEnemy> BossClass;
 
-	/** Exact DeckWaypointComponent selected in the owning EnemyShip Blueprint. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter",
-		meta = (UseComponentPicker, AllowedClasses = "/Script/Enemy.DeckWaypointComponent"))
-	FComponentReference BossSpawnPointComponent;
-
-	/** Legacy/fallback numeric authoring. The component reference takes priority. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
+	/** Exact WaypointId registered on the owning EnemyShip. No alternate point is selected on failure. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter", meta = (ClampMin = "0"))
 	int32 BossSpawnPointId = INDEX_NONE;
 
 	UPROPERTY(ReplicatedUsing = OnRep_EncounterState, VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Encounter")

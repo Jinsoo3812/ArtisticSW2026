@@ -27,6 +27,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FGravityVortexHoldInputTest::RunTest(const FString& Parameters)
 {
+	// Creating a project game world initializes the existing ItemSubsystem,
+	// whose current QuestItem authoring emits these unrelated known errors.
+	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
+
 	TestTrue(
 		TEXT("Skill-bearing DefaultIMC priority is raised above the legacy ItemIMC"),
 		ABasePlayer::ResolveDefaultMappingPriority(1, 1, true) > 1);

@@ -6,6 +6,7 @@
 #include "BaseGameplayTags.h"
 #include "GAS/Ability/GA_EnemyMoveSpeedBoost.h"
 #include "GAS/EnemyAttributeSet.h"
+#include "RangedEnemy/RangedEnemy.h"
 #include "Task/BTT_ActivateBossAbility.h"
 #include "Task/BTT_ActivateEnemyAbilityByTag.h"
 #include "UObject/UnrealType.h"
@@ -29,6 +30,18 @@ bool FEnemyMovementSpeedResolutionTest::RunTest(const FString& Parameters)
 		TEXT("Resolved speed respects the safety cap"),
 		ABaseEnemy::ResolveMovementSpeed(1800.0f, 2.0f, 500.0f, 2000.0f),
 		2000.0f);
+	TestEqual(
+		TEXT("Duration slow multiplies the complete enemy movement result"),
+		ABaseEnemy::ResolveMovementSpeed(500.0f, 1.2f, 150.0f, 2000.0f, 0.5f),
+		375.0f);
+	TestEqual(
+		TEXT("A stopped locomotion mode remains stopped while slowed"),
+		ABaseEnemy::ResolveMovementSpeed(0.0f, 1.2f, 150.0f, 2000.0f, 0.5f),
+		0.0f);
+	TestEqual(
+		TEXT("Attack-speed slow multiplies a ranged attack's authored montage rate"),
+		ARangedEnemy::ResolveAttackMontagePlayRate(1.2f, 0.5f),
+		0.6f);
 	return true;
 }
 

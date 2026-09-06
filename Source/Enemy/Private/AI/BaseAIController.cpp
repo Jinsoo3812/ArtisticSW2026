@@ -36,9 +36,8 @@ void ABaseAIController::SetupPerceptionSystem()
 {
 	UAIPerceptionComponent* PerceptionComp =
 		CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("PerceptionComponent"));
-	// AI|Perception controller defaults are the single editor-facing source of truth.
-	// The component remains visible for inspection, but inherited Blueprints must not
-	// edit its generated sense configurations independently.
+	// The possessed Enemy Blueprint is the editor-facing source of truth. Keep the
+	// generated component read-only so settings cannot diverge in two places.
 	PerceptionComp->bEditableWhenInherited = false;
 	SetPerceptionComponent(*PerceptionComp);
 
@@ -46,7 +45,7 @@ void ABaseAIController::SetupPerceptionSystem()
 	HearingConfig = CreateDefaultSubobject<UAISenseConfig_Hearing>(TEXT("HearingConfig"));
 	DamageConfig = CreateDefaultSubobject<UAISenseConfig_Damage>(TEXT("DamageConfig"));
 
-	RefreshPerceptionConfiguration();
+	RefreshPerceptionConfiguration(FEnemyPerceptionSettings());
 
 	PerceptionComp->SetDominantSense(*SightConfig->GetSenseImplementation());
 	PerceptionComp->OnTargetPerceptionUpdated.AddDynamic(
@@ -54,7 +53,7 @@ void ABaseAIController::SetupPerceptionSystem()
 		&ABaseAIController::OnTargetPerceptionUpdated);
 }
 
-void ABaseAIController::RefreshPerceptionConfiguration()
+void ABaseAIController::RefreshPerceptionConfiguration(const FEnemyPerceptionSettings& Settings)
 {
 	UAIPerceptionComponent* PerceptionComp = GetPerceptionComponent();
 	if (!PerceptionComp || !SightConfig || !HearingConfig || !DamageConfig)
@@ -62,22 +61,22 @@ void ABaseAIController::RefreshPerceptionConfiguration()
 		return;
 	}
 
-	SightConfig->SightRadius = FMath::Max(0.0f, SightRadius);
-	SightConfig->LoseSightRadius = FMath::Max(SightConfig->SightRadius, LoseSightRadius);
-	SightConfig->SetMaxAge(FMath::Max(0.0f, SightMaxAge));
-	SightConfig->PeripheralVisionAngleDegrees = FMath::Clamp(PeripheralVisionDegrees, 0.0f, 180.0f);
-	SightConfig->AutoSuccessRangeFromLastSeenLocation = FMath::Max(0.0f, AutoSuccessRangeFromLastSeenLocation);
+	SightConfig->SightRadius = FMath::Max(0.0f, Settings.SightRadius);
+	SightConfig->LoseSightRadius = FMath::Max(SightConfig->SightRadius, Settings.LoseSightRadius);
+	SightConfig->SetMaxAge(FMath::Max(0.0f, Settings.SightMaxAge));
+	SightConfig->PeripheralVisionAngleDegrees = FMath::Clamp(Settings.PeripheralVisionDegrees, 0.0f, 180.0f);
+	SightConfig->AutoSuccessRangeFromLastSeenLocation = FMath::Max(0.0f, Settings.AutoSuccessRangeFromLastSeenLocation);
 	SightConfig->DetectionByAffiliation.bDetectEnemies = true;
 	SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
 	SightConfig->DetectionByAffiliation.bDetectFriendlies = true;
 
-	HearingConfig->HearingRange = FMath::Max(0.0f, HearingRange);
-	HearingConfig->SetMaxAge(FMath::Max(0.0f, HearingMaxAge));
+	HearingConfig->HearingRange = FMath::Max(0.0f, Settings.HearingRange);
+	HearingConfig->SetMaxAge(FMath::Max(0.0f, Settings.HearingMaxAge));
 	HearingConfig->DetectionByAffiliation.bDetectEnemies = true;
 	HearingConfig->DetectionByAffiliation.bDetectNeutrals = true;
 	HearingConfig->DetectionByAffiliation.bDetectFriendlies = true;
 
-	DamageConfig->SetMaxAge(FMath::Max(0.0f, DamageMaxAge));
+	DamageConfig->SetMaxAge(FMath::Max(0.0f, Settings.DamageMaxAge));
 
 	PerceptionComp->ConfigureSense(*SightConfig);
 	PerceptionComp->ConfigureSense(*HearingConfig);
@@ -88,13 +87,13 @@ void ABaseAIController::RefreshPerceptionConfiguration()
 void ABaseAIController::OnPossess(APawn* PossessedPawn)
 {
 	Super::OnPossess(PossessedPawn);
-	RefreshPerceptionConfiguration();
 
 	ABaseEnemy* PossessedEnemy = Cast<ABaseEnemy>(PossessedPawn);
 	if (!PossessedEnemy)
 	{
 		return;
 	}
+	RefreshPerceptionConfiguration(PossessedEnemy->GetPerceptionSettings());
 
 	BindPossessedEnemyDeath(PossessedEnemy);
 

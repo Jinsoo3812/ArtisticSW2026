@@ -1,11 +1,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Abilities/GameplayAbility.h"
+#include "GAS/Ability/PlayerCombatGameplayAbility.h"
 #include "GA_Sniping.generated.h"
 
 UCLASS()
-class CLASSFEATURE_API UGA_Sniping : public UGameplayAbility
+class CLASSFEATURE_API UGA_Sniping : public UPlayerCombatGameplayAbility
 {
 	GENERATED_BODY()
 

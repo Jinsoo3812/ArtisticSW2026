@@ -20,6 +20,9 @@ UGA_GravityVortexThrow::UGA_GravityVortexThrow()
 	FGameplayTagContainer AssetTags;
 	AssetTags.AddTag(GameplayAbility_Skill_GravityVortex);
 	SetAssetTags(AssetTags);
+	// Keep the two hold-to-aim skills mutually exclusive regardless of which
+	// one was activated first. Area Slow already owns the reciprocal block.
+	ActivationBlockedTags.AddTag(State_Aiming);
 }
 
 void UGA_GravityVortexThrow::ActivateAbility(
@@ -54,10 +57,10 @@ void UGA_GravityVortexThrow::ActivateAbility(
 	}
 
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
-	if (!Player || !ProjectileClass)
+	if (!Player || !Player->CanPerformCombatAction() || !ProjectileClass)
 	{
 		UE_LOG(LogTemp, Error,
-			TEXT("[VortexPipeline][Activate] Invalid Player=%s or ProjectileClass=%s."),
+			TEXT("[VortexPipeline][Activate] Invalid Player=%s or ProjectileClass=%s or cannot perform combat action."),
 			*GetPathNameSafe(Player), *GetPathNameSafe(ProjectileClass.Get()));
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
