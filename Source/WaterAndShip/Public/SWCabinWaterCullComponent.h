@@ -5,6 +5,7 @@
 #include "SWCabinWaterCullComponent.generated.h"
 
 class UMaterialParameterCollection;
+class USWCabinWaterCullData;
 
 UENUM(BlueprintType)
 enum class ESWCabinCullDebugView : uint8
@@ -25,6 +26,10 @@ class WATERANDSHIP_API USWCabinWaterCullComponent : public UActorComponent
 
 public:
 	USWCabinWaterCullComponent();
+
+	/** Gameplay query over registered cabins; independent of the local rendering slot. */
+	static bool IsWorldPositionInsideAnyCabin(UWorld* World, const FVector& WorldPosition);
+	bool ContainsWorldPosition(const FVector& WorldPosition) const;
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -50,6 +55,10 @@ public:
 	ESWCabinCullDebugView DebugView = ESWCabinCullDebugView::Normal;
 
 private:
+	/** The same shared baked data referenced by the water material. Hard reference for cooking. */
+	UPROPERTY()
+	TObjectPtr<USWCabinWaterCullData> CabinData;
+
 	void UploadDisabled(bool bForceUpload = false);
 	void UploadTransformIfChanged();
 

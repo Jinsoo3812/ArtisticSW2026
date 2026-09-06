@@ -26,9 +26,13 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	float MovementInput = 0.0f;
 	float SteeringInput = 0.0f;
 	FVector ExternalAcceleration = FVector::ZeroVector;
+	FVector BlastAcceleration = FVector::ZeroVector;
+	FVector BlastApplicationPointLocal = FVector::ZeroVector;
 	bool bHasLocalController = false;
 	/** Server-authored gameplay force (vortex, knockback, etc.) may affect AI ships too. */
 	bool bApplyAuthoritativeExternalAcceleration = false;
+	/** Only authority injects new blast state; replay uses FNetInputShip history. */
+	bool bApplyAuthoritativeBlast = false;
 	/** Only authority writes the game-thread buoyancy state into Network Physics history. */
 	bool bApplyAuthoritativeBuoyancyState = false;
 	bool bBuoyancyEnabled = true;
@@ -75,8 +79,11 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 		MovementInput = 0.0f;
 		SteeringInput = 0.0f;
 		ExternalAcceleration = FVector::ZeroVector;
+		BlastAcceleration = FVector::ZeroVector;
+		BlastApplicationPointLocal = FVector::ZeroVector;
 		bHasLocalController = false;
 		bApplyAuthoritativeExternalAcceleration = false;
+		bApplyAuthoritativeBlast = false;
 		bApplyAuthoritativeBuoyancyState = false;
 		bBuoyancyEnabled = true;
 		bQueryDiagnostics = false;
@@ -155,6 +162,8 @@ private:
 	float MovementInput_Internal = 0.0f;
 	float SteeringInput_Internal = 0.0f;
 	FVector ExternalAcceleration_Internal = FVector::ZeroVector;
+	FVector BlastAcceleration_Internal = FVector::ZeroVector;
+	FVector BlastApplicationPointLocal_Internal = FVector::ZeroVector;
 	bool bBuoyancyEnabled_Internal = true;
 	bool bAuthoritativeBuoyancyWriter_Internal = false;
 	bool bQueryDiagnostics_Internal = false;

@@ -634,6 +634,18 @@ void AShip::Tick(float DeltaTime)
 	if (ShipPhysicsAsync)
 	{
 		// 1. 조작 입력 데이터 마샬링 (Autonomous Proxy 및 Local Controller 전용)
+		if (HasAuthority() && !CurrentBlastAcceleration.IsNearlyZero())
+		{
+			const double ServerTime = GetWorld() && GetWorld()->GetGameState()
+				? GetWorld()->GetGameState()->GetServerWorldTimeSeconds()
+				: (GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0);
+			if (ServerTime >= CurrentBlastEndTimeSeconds)
+			{
+				CurrentBlastAcceleration = FVector::ZeroVector;
+				CurrentBlastApplicationPointLocal = FVector::ZeroVector;
+			}
+		}
+
 		CurrentExternalAcceleration = FVector::ZeroVector;
 		for (const TPair<FGuid, FVector>& SourcePair : ExternalAccelerationSources)
 		{
@@ -781,6 +793,9 @@ void AShip::Tick(float DeltaTime)
 			{
 				AsyncInput->ExternalAcceleration = CurrentExternalAcceleration;
 				AsyncInput->bApplyAuthoritativeExternalAcceleration = HasAuthority();
+				AsyncInput->BlastAcceleration = CurrentBlastAcceleration;
+				AsyncInput->BlastApplicationPointLocal = CurrentBlastApplicationPointLocal;
+				AsyncInput->bApplyAuthoritativeBlast = HasAuthority();
 				AsyncInput->bApplyAuthoritativeBuoyancyState = HasAuthority();
 				AsyncInput->bBuoyancyEnabled = BuoyancyForceSettings.BuoyancyCoefficient > UE_SMALL_NUMBER;
 				AsyncInput->bQueryDiagnostics = bBuoyancyQueryDiagnostics;
@@ -1017,6 +1032,43 @@ void AShip::RemoveExternalAccelerationSource(const FGuid& SourceId)
 	{
 		ExternalAccelerationSources.Remove(SourceId);
 	}
+}
+
+void AShip::ApplyNetworkPhysicsBlast(
+	const FVector& WorldImpactPoint,
+	const FVector& WorldAcceleration,
+	float DurationSeconds)
+{
+	if (!HasAuthority() || !BuoyancyRoot || WorldImpactPoint.ContainsNaN()
+		|| WorldAcceleration.ContainsNaN() || DurationSeconds <= UE_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	const FVector SafeAcceleration = WorldAcceleration.GetClampedToMaxSize(20000.0f);
+	if (SafeAcceleration.IsNearlyZero())
+	{
+		return;
+	}
+
+	CurrentBlastAcceleration = SafeAcceleration;
+	const FVector CenterOfMass = BuoyancyRoot->GetCenterOfMass();
+	CurrentBlastApplicationPointLocal = BuoyancyRoot->GetComponentQuat()
+		.UnrotateVector(WorldImpactPoint - CenterOfMass)
+		.GetClampedToMaxSize(16000.0f);
+	const double ServerTime = GetWorld() && GetWorld()->GetGameState()
+		? GetWorld()->GetGameState()->GetServerWorldTimeSeconds()
+		: (GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0);
+	CurrentBlastEndTimeSeconds = ServerTime + FMath::Max(0.0f, DurationSeconds);
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[SHIP-NETPHYS-BLAST][START] Ship=%s Impact=%s LocalPoint=%s Acceleration=%s Duration=%.3f AnchorDropped=%s"),
+		*GetNameSafe(this),
+		*WorldImpactPoint.ToCompactString(),
+		*CurrentBlastApplicationPointLocal.ToCompactString(),
+		*CurrentBlastAcceleration.ToCompactString(),
+		DurationSeconds,
+		bIsAnchorDropped ? TEXT("true") : TEXT("false"));
 }
 
 void AShip::AddPropulsionSuppression(const FGuid& SourceId)

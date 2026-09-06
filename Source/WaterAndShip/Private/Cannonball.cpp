@@ -273,7 +273,7 @@ void ACannonball::HandleBlockingImpact(
 
 		bHasProcessedBlockingImpact = true;
 		bHasProcessedShipHit = true;
-		HandleShipHit(HitShip);
+		HandleShipImpact(HitShip, Hit);
 	}
 	else if (OtherComp && OtherComp->GetCollisionObjectType() == ECC_EnemyShipObstacle)
 	{
@@ -288,6 +288,11 @@ void ACannonball::HandleBlockingImpact(
 			*Hit.ImpactPoint.ToCompactString());
 		Destroy();
 	}
+}
+
+void ACannonball::HandleShipImpact(AShip* HitShip, const FHitResult& Hit)
+{
+	HandleShipHit(HitShip);
 }
 
 void ACannonball::HandleShipHit(AShip* HitShip)

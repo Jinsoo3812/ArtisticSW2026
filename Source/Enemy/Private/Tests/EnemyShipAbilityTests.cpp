@@ -818,6 +818,12 @@ bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 			TEXT("Floating Torpedo sweeps the query-only ShipDamageMesh and applies its snapshot"),
 			PlayerASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()),
 			HealthBeforeTorpedo - 60.0f);
+		TestFalse(
+			TEXT("Torpedo hit starts a Network Physics blast pulse"),
+			PlayerShip->GetCurrentBlastAccelerationForDiagnostics().IsNearlyZero());
+		TestTrue(
+			TEXT("Torpedo blast preserves a full 3D upward component"),
+			PlayerShip->GetCurrentBlastAccelerationForDiagnostics().Z > 0.0f);
 		TestTrue(TEXT("Torpedo destroys itself after one Player Ship hit"), SpawnedTorpedo->IsActorBeingDestroyed());
 	}
 	TestTrue(TEXT("Torpedo applies its own GAS cooldown"), EnemyASC->HasMatchingGameplayTag(Cooldown_EnemyShip_LaunchTorpedo));

@@ -20,6 +20,8 @@ bool FShipNetworkPhysicsBuoyancyInputTest::RunTest(const FString& Parameters)
 	Source.MovementInput = 0.5f;
 	Source.SteeringInput = -0.25f;
 	Source.ExternalAcceleration = FVector(120.0f, -80.0f, 0.0f);
+	Source.BlastAcceleration = FVector(1234.0f, -456.0f, 789.0f);
+	Source.BlastApplicationPointLocal = FVector(700.0f, -200.0f, 150.0f);
 	Source.bBuoyancyEnabled = false;
 	Source.bHasAuthoritativeBuoyancyState = true;
 
@@ -38,14 +40,24 @@ bool FShipNetworkPhysicsBuoyancyInputTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Buoyancy-off state survives serialization"), Loaded.bBuoyancyEnabled);
 	TestTrue(TEXT("Server-authoritative buoyancy marker survives serialization"),
 		Loaded.bHasAuthoritativeBuoyancyState);
+	TestTrue(TEXT("3D blast acceleration survives serialization"),
+		Loaded.BlastAcceleration.Equals(Source.BlastAcceleration, 1.0f));
+	TestTrue(TEXT("Blast contact offset survives serialization"),
+		Loaded.BlastApplicationPointLocal.Equals(Source.BlastApplicationPointLocal, 1.0f));
 
 	FNetInputShip BeforeDeath;
 	BeforeDeath.bBuoyancyEnabled = true;
 	FNetInputShip AfterDeath;
 	AfterDeath.bBuoyancyEnabled = false;
+	AfterDeath.BlastAcceleration = FVector(100.0f, 200.0f, 300.0f);
+	AfterDeath.BlastApplicationPointLocal = FVector(400.0f, 500.0f, 600.0f);
 	FNetInputShip Interpolated;
 	Interpolated.InterpolateData(BeforeDeath, AfterDeath, 1.0f);
 	TestFalse(TEXT("Discrete interpolation selects the later death state"), Interpolated.bBuoyancyEnabled);
+	TestEqual(TEXT("Discrete interpolation does not smear blast acceleration"),
+		Interpolated.BlastAcceleration, AfterDeath.BlastAcceleration);
+	TestEqual(TEXT("Discrete interpolation preserves the matching contact offset"),
+		Interpolated.BlastApplicationPointLocal, AfterDeath.BlastApplicationPointLocal);
 	return true;
 }
 
@@ -134,12 +146,20 @@ bool FShipNetworkPhysicsAnchorInputValidationTest::RunTest(const FString& Parame
 	Input.SteeringInput = 0.5f;
 	Input.bIsAnchorDropped = true;
 	Input.AnchorOriginXY = FVector2D(100.0, 200.0);
+	Input.BlastAcceleration = FVector(100.0f, 200.0f, 300.0f);
+	Input.BlastApplicationPointLocal = FVector(400.0f, -500.0f, 600.0f);
 
 	Async.ValidateInput_Internal(Input);
 
 	TestEqual(TEXT("MovementInput is sanitized to 0.0f when anchor is dropped"), Input.MovementInput, 0.0f);
 	TestEqual(TEXT("SteeringInput is sanitized to 0.0f when anchor is dropped"), Input.SteeringInput, 0.0f);
 	TestTrue(TEXT("Anchor dropped state is preserved"), Input.bIsAnchorDropped);
+	TestEqual(TEXT("Anchor does not suppress a 3D blast"), Input.BlastAcceleration, FVector(100.0f, 200.0f, 300.0f));
+	const FVector Force(1000.0f, 0.0f, 0.0f);
+	TestEqual(TEXT("Centred blast produces no torque"),
+		FVector::CrossProduct(FVector::ZeroVector, Force), FVector::ZeroVector);
+	TestEqual(TEXT("Off-centre blast produces the expected torque"),
+		FVector::CrossProduct(FVector(0.0f, 100.0f, 0.0f), Force), FVector(0.0f, 0.0f, -100000.0f));
 	return true;
 }
 

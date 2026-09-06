@@ -286,7 +286,20 @@ void AEnemyShipTorpedo::InitializeTorpedo(
 	LogVisualDiagnostics(TEXT("InitializeTorpedo.AfterInitializeProjectile"));
 }
 
+void AEnemyShipTorpedo::HandleShipImpact(AShip* HitShip, const FHitResult& Hit)
+{
+	const FVector ImpactPoint = Hit.bBlockingHit
+		? FVector(Hit.ImpactPoint)
+		: GetActorLocation();
+	ProcessShipHit(HitShip, ImpactPoint);
+}
+
 void AEnemyShipTorpedo::HandleShipHit(AShip* HitShip)
+{
+	ProcessShipHit(HitShip, GetActorLocation());
+}
+
+void AEnemyShipTorpedo::ProcessShipHit(AShip* HitShip, const FVector& ImpactPoint)
 {
 	AShip* SourceShip = GetLaunchingShip();
 	if (bExplosionConsumed || !HasAuthority() || !SourceShip || !HitShip
@@ -297,6 +310,31 @@ void AEnemyShipTorpedo::HandleShipHit(AShip* HitShip)
 		return;
 	}
 	bExplosionConsumed = true;
+
+	const FVector SafeImpactPoint = ImpactPoint.ContainsNaN() ? GetActorLocation() : ImpactPoint;
+	const FVector ShipCenterOfMass = HitShip->BuoyancyRoot
+		? HitShip->BuoyancyRoot->GetCenterOfMass()
+		: HitShip->GetActorLocation();
+	FVector BlastDirection = (ShipCenterOfMass - SafeImpactPoint).GetSafeNormal();
+	if (BlastDirection.IsNearlyZero())
+	{
+		BlastDirection = GetVelocity().GetSafeNormal();
+	}
+	BlastDirection = (BlastDirection + FVector::UpVector * FMath::Max(0.0f, BlastUpwardBias)).GetSafeNormal();
+	const FVector AppliedBlastAcceleration = BlastDirection * FMath::Max(0.0f, BlastAcceleration);
+	HitShip->ApplyNetworkPhysicsBlast(
+		SafeImpactPoint,
+		AppliedBlastAcceleration,
+		FMath::Max(0.01f, BlastDurationSeconds));
+	UE_LOG(LogTemp, Warning,
+		TEXT("[EnemyShipTorpedo][BLAST] Target=%s Impact=%s CenterOfMass=%s Direction=%s Acceleration=%.2f Duration=%.3f UpwardBias=%.3f"),
+		*GetNameSafe(HitShip),
+		*SafeImpactPoint.ToCompactString(),
+		*ShipCenterOfMass.ToCompactString(),
+		*BlastDirection.ToCompactString(),
+		BlastAcceleration,
+		BlastDurationSeconds,
+		BlastUpwardBias);
 
 	UAbilitySystemComponent* SourceASC = SourceShip->GetAbilitySystemComponent();
 	UAbilitySystemComponent* TargetASC = HitShip->GetAbilitySystemComponent();
@@ -325,8 +363,32 @@ void AEnemyShipTorpedo::HandleShipHit(AShip* HitShip)
 		}
 	}
 
-	MulticastTorpedoExploded(GetActorLocation());
+	const FVector ExplosionLocation = SafeImpactPoint;
+	UE_LOG(
+		LogEnemyShipTorpedoVisual,
+		Warning,
+		TEXT("[TORPEDO-NIAGARA][REQUEST] Torpedo=%s Target=%s Effect=%s Location=%s Scale=%.3f"),
+		*GetNameSafe(this),
+		*GetNameSafe(HitShip),
+		*GetPathNameSafe(ExplosionEffect),
+		*ExplosionLocation.ToCompactString(),
+		ExplosionEffectScale);
+	SpawnNiagaraEffectForAll(
+		ExplosionEffect,
+		ExplosionLocation,
+		ExplosionEffectScale);
+	MulticastTorpedoExploded(ExplosionLocation);
 	Destroy();
+}
+
+UNiagaraSystem* AEnemyShipTorpedo::GetProjectileEffect() const
+{
+	return TorpedoProjectileEffect;
+}
+
+float AEnemyShipTorpedo::GetProjectileEffectScale() const
+{
+	return TorpedoProjectileEffectScale;
 }
 
 void AEnemyShipTorpedo::HandleWaterOverlap(
@@ -475,7 +537,7 @@ void AEnemyShipTorpedo::DetectDamageMeshContactAfterWater()
 			continue;
 		}
 
-		HandleShipHit(Target);
+		HandleShipImpact(Target, Hit);
 		return;
 	}
 }

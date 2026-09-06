@@ -144,6 +144,8 @@ void FShipPhysicsAsync::BuildInput_Internal(FNetInputShip& Input) const
 	Input.MovementInput = MovementInput_Internal;
 	Input.SteeringInput = SteeringInput_Internal;
 	Input.ExternalAcceleration = ExternalAcceleration_Internal;
+	Input.BlastAcceleration = BlastAcceleration_Internal;
+	Input.BlastApplicationPointLocal = BlastApplicationPointLocal_Internal;
 	Input.bBuoyancyEnabled = bBuoyancyEnabled_Internal;
 	Input.bHasAuthoritativeBuoyancyState = bAuthoritativeBuoyancyWriter_Internal;
 	Input.bIsAnchorDropped = bAnchorDropped_Internal;
@@ -155,6 +157,8 @@ void FShipPhysicsAsync::ApplyInput_Internal(const FNetInputShip& Input)
 	MovementInput_Internal = Input.MovementInput;
 	SteeringInput_Internal = Input.SteeringInput;
 	ExternalAcceleration_Internal = Input.ExternalAcceleration;
+	BlastAcceleration_Internal = Input.BlastAcceleration;
+	BlastApplicationPointLocal_Internal = Input.BlastApplicationPointLocal;
 	if (Input.bHasAuthoritativeBuoyancyState)
 	{
 		bBuoyancyEnabled_Internal = Input.bBuoyancyEnabled;
@@ -178,6 +182,13 @@ void FShipPhysicsAsync::ValidateInput_Internal(FNetInputShip& Input) const
 	}
 	Input.ExternalAcceleration.Z = 0.0f;
 	Input.ExternalAcceleration = Input.ExternalAcceleration.GetClampedToMaxSize(5000.f);
+	if (Input.BlastAcceleration.ContainsNaN() || Input.BlastApplicationPointLocal.ContainsNaN())
+	{
+		Input.BlastAcceleration = FVector::ZeroVector;
+		Input.BlastApplicationPointLocal = FVector::ZeroVector;
+	}
+	Input.BlastAcceleration = Input.BlastAcceleration.GetClampedToMaxSize(20000.0f);
+	Input.BlastApplicationPointLocal = Input.BlastApplicationPointLocal.GetClampedToMaxSize(16000.0f);
 }
 
 void FShipPhysicsAsync::BuildState_Internal(FNetStatePhysicsShip& State) const
@@ -240,6 +251,11 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 				if (AsyncInput->bApplyAuthoritativeExternalAcceleration)
 				{
 					ExternalAcceleration_Internal = AsyncInput->ExternalAcceleration;
+				}
+				if (AsyncInput->bApplyAuthoritativeBlast)
+				{
+					BlastAcceleration_Internal = AsyncInput->BlastAcceleration;
+					BlastApplicationPointLocal_Internal = AsyncInput->BlastApplicationPointLocal;
 				}
 				if (AsyncInput->bApplyAuthoritativeBuoyancyState)
 				{
@@ -466,6 +482,22 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 		if (ParticleMass > UE_SMALL_NUMBER)
 		{
 			ParticleHandle->AddForce(ExternalAcceleration_Internal * ParticleMass);
+		}
+	}
+
+	// A force applied away from the centre of mass produces the physically
+	// corresponding translation and torque. Keeping the COM-relative offset in ship
+	// local space makes the same input deterministic when a frame is resimulated.
+	if (!BlastAcceleration_Internal.IsNearlyZero())
+	{
+		const float ParticleMass = ParticleHandle->M();
+		if (ParticleMass > UE_SMALL_NUMBER)
+		{
+			const FVector BlastForce = BlastAcceleration_Internal * ParticleMass;
+			const FVector WorldContactOffset = ActorRotation.RotateVector(BlastApplicationPointLocal_Internal);
+			const FVector BlastTorque = FVector::CrossProduct(WorldContactOffset, BlastForce);
+			ParticleHandle->AddForce(BlastForce);
+			ParticleHandle->AddTorque(BlastTorque);
 		}
 	}
 }

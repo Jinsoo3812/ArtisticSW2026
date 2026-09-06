@@ -24,6 +24,8 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		: MovementInput(0.f)
 		, SteeringInput(0.f)
 		, ExternalAcceleration(FVector::ZeroVector)
+		, BlastAcceleration(FVector::ZeroVector)
+		, BlastApplicationPointLocal(FVector::ZeroVector)
 		, bBuoyancyEnabled(true)
 		, bHasAuthoritativeBuoyancyState(false)
 		, bIsAnchorDropped(false)
@@ -35,6 +37,8 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		MovementInput = 0.0f;
 		SteeringInput = 0.0f;
 		ExternalAcceleration = FVector::ZeroVector;
+		BlastAcceleration = FVector::ZeroVector;
+		BlastApplicationPointLocal = FVector::ZeroVector;
 		bBuoyancyEnabled = true;
 		bHasAuthoritativeBuoyancyState = false;
 		bIsAnchorDropped = false;
@@ -50,6 +54,14 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 	/** Server-authored world-space acceleration replayed by Network Physics. */
 	UPROPERTY()
 	FVector ExternalAcceleration;
+
+	/** Server-authored 3D blast acceleration replayed for this physics frame. */
+	UPROPERTY()
+	FVector BlastAcceleration;
+
+	/** Blast contact offset from the centre of mass, in ship body space. */
+	UPROPERTY()
+	FVector BlastApplicationPointLocal;
 
 	/** Authoritative per-frame buoyancy state replayed during rollback. */
 	UPROPERTY()
@@ -72,6 +84,11 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		MovementInput = FMath::Lerp(MinInput.MovementInput, MaxInput.MovementInput, LerpAlpha);
 		SteeringInput = FMath::Lerp(MinInput.SteeringInput, MaxInput.SteeringInput, LerpAlpha);
 		ExternalAcceleration = FMath::Lerp(MinInput.ExternalAcceleration, MaxInput.ExternalAcceleration, LerpAlpha);
+		// A blast is a discrete frame state. Interpolating it would smear the
+		// pulse into frames in which the authoritative simulation never applied it.
+		const FNetInputShip& NearestInput = LerpAlpha < 0.5f ? MinInput : MaxInput;
+		BlastAcceleration = NearestInput.BlastAcceleration;
+		BlastApplicationPointLocal = NearestInput.BlastApplicationPointLocal;
 		bBuoyancyEnabled = LerpAlpha < 0.5f
 			? MinInput.bBuoyancyEnabled
 			: MaxInput.bBuoyancyEnabled;
@@ -90,6 +107,8 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		MovementInput = FromInput.MovementInput;
 		SteeringInput = FromInput.SteeringInput;
 		ExternalAcceleration = FromInput.ExternalAcceleration;
+		BlastAcceleration = FromInput.BlastAcceleration;
+		BlastApplicationPointLocal = FromInput.BlastApplicationPointLocal;
 		bBuoyancyEnabled = FromInput.bBuoyancyEnabled;
 		bHasAuthoritativeBuoyancyState = FromInput.bHasAuthoritativeBuoyancyState;
 		bIsAnchorDropped = FromInput.bIsAnchorDropped;
@@ -146,6 +165,24 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 				Ar << QuantizedY;
 			}
 
+			uint8 bHasBlastAcceleration = BlastAcceleration.IsNearlyZero(0.5f) ? 0 : 1;
+			Ar.SerializeBits(&bHasBlastAcceleration, 1);
+			if (bHasBlastAcceleration != 0)
+			{
+				int16 QuantizedAccelerationX = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(BlastAcceleration.X), -32767, 32767));
+				int16 QuantizedAccelerationY = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(BlastAcceleration.Y), -32767, 32767));
+				int16 QuantizedAccelerationZ = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(BlastAcceleration.Z), -32767, 32767));
+				int16 QuantizedPointX = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(BlastApplicationPointLocal.X), -32767, 32767));
+				int16 QuantizedPointY = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(BlastApplicationPointLocal.Y), -32767, 32767));
+				int16 QuantizedPointZ = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(BlastApplicationPointLocal.Z), -32767, 32767));
+				Ar << QuantizedAccelerationX;
+				Ar << QuantizedAccelerationY;
+				Ar << QuantizedAccelerationZ;
+				Ar << QuantizedPointX;
+				Ar << QuantizedPointY;
+				Ar << QuantizedPointZ;
+			}
+
 			uint8 SerializedAnchorDropped = bIsAnchorDropped ? 1 : 0;
 			Ar.SerializeBits(&SerializedAnchorDropped, 1);
 			if (SerializedAnchorDropped != 0)
@@ -178,6 +215,31 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 			else
 			{
 				ExternalAcceleration = FVector::ZeroVector;
+			}
+
+			uint8 bHasBlastAcceleration = 0;
+			Ar.SerializeBits(&bHasBlastAcceleration, 1);
+			if (bHasBlastAcceleration != 0)
+			{
+				int16 QuantizedAccelerationX = 0;
+				int16 QuantizedAccelerationY = 0;
+				int16 QuantizedAccelerationZ = 0;
+				int16 QuantizedPointX = 0;
+				int16 QuantizedPointY = 0;
+				int16 QuantizedPointZ = 0;
+				Ar << QuantizedAccelerationX;
+				Ar << QuantizedAccelerationY;
+				Ar << QuantizedAccelerationZ;
+				Ar << QuantizedPointX;
+				Ar << QuantizedPointY;
+				Ar << QuantizedPointZ;
+				BlastAcceleration = FVector(QuantizedAccelerationX, QuantizedAccelerationY, QuantizedAccelerationZ);
+				BlastApplicationPointLocal = FVector(QuantizedPointX, QuantizedPointY, QuantizedPointZ);
+			}
+			else
+			{
+				BlastAcceleration = FVector::ZeroVector;
+				BlastApplicationPointLocal = FVector::ZeroVector;
 			}
 
 			uint8 SerializedAnchorDropped = 0;
@@ -571,6 +633,18 @@ public:
 
 	void SetExternalAccelerationSource(const FGuid& SourceId, const FVector& WorldAcceleration);
 	void RemoveExternalAccelerationSource(const FGuid& SourceId);
+
+	/**
+	 * Starts a short server-authored 3D blast pulse at a hull contact point.
+	 * The pulse is recorded in Network Physics input history so rollback and
+	 * resimulation reproduce both its linear force and off-centre torque.
+	 */
+	void ApplyNetworkPhysicsBlast(
+		const FVector& WorldImpactPoint,
+		const FVector& WorldAcceleration,
+		float DurationSeconds);
+	FVector GetCurrentBlastAccelerationForDiagnostics() const { return CurrentBlastAcceleration; }
+	FVector GetCurrentBlastContactOffsetForDiagnostics() const { return CurrentBlastApplicationPointLocal; }
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Effects")
 	int32 GetExternalAccelerationSourceCount() const { return ExternalAccelerationSources.Num(); }
@@ -1118,6 +1192,9 @@ private:
 	float CurrentAITurnScale = 1.0f;
 	FVector CurrentExternalAcceleration = FVector::ZeroVector;
 	TMap<FGuid, FVector> ExternalAccelerationSources;
+	FVector CurrentBlastAcceleration = FVector::ZeroVector;
+	FVector CurrentBlastApplicationPointLocal = FVector::ZeroVector;
+	double CurrentBlastEndTimeSeconds = -DBL_MAX;
 	TSet<FGuid> PropulsionSuppressionSources;
 	TWeakObjectPtr<AShip> LastPlayerRamTarget;
 	double LastPlayerRamDamageTime = -DBL_MAX;

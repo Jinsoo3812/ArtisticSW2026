@@ -111,6 +111,8 @@ protected:
 
 	void HandleBlockingImpact(AActor* OtherActor, UPrimitiveComponent* OtherComp, const FHitResult& Hit);
 
+	/** Preserves swept impact data for projectile subclasses that need the exact contact point. */
+	virtual void HandleShipImpact(AShip* HitShip, const FHitResult& Hit);
 	virtual void HandleShipHit(AShip* HitShip);
 	bool IsOpposingSplashTarget(const AActor* Candidate) const;
 	bool ApplyDamageToTarget(AActor* TargetActor);

@@ -11,7 +11,7 @@ class UNiagaraComponent;
 class UNiagaraSystem;
 
 /** Dedicated Enemy Ship projectile: direct Player Ship damage, no area damage. */
-UCLASS(Blueprintable)
+UCLASS(Blueprintable, HideCategories=("Cannonball|Effects"))
 class ENEMY_API AEnemyShipTorpedo : public ACannonball
 {
 	GENERATED_BODY()
@@ -45,7 +45,10 @@ public:
 	float GetMaximumPostBuoyancyZForDiagnostics() const { return MaximumPostBuoyancyZ; }
 
 protected:
+	virtual void HandleShipImpact(AShip* HitShip, const FHitResult& Hit) override;
 	virtual void HandleShipHit(AShip* HitShip) override;
+	virtual UNiagaraSystem* GetProjectileEffect() const override;
+	virtual float GetProjectileEffectScale() const override;
 	virtual void HandleWaterOverlap(
 		AActor* WaterActor,
 		UPrimitiveComponent* WaterComponent,
@@ -75,6 +78,34 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Fuse", meta = (ClampMin = "0.01"))
 	float FuseBurstScale = 0.25f;
 
+	/** Niagara effect that follows this torpedo while it is in flight. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Effects")
+	TObjectPtr<UNiagaraSystem> TorpedoProjectileEffect;
+
+	/** Uniform component scale applied to TorpedoProjectileEffect. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Effects", meta = (ClampMin = "0.01"))
+	float TorpedoProjectileEffectScale = 1.0f;
+
+	/** Niagara spawned when this torpedo explodes on the Player Ship. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Effects")
+	TObjectPtr<UNiagaraSystem> ExplosionEffect;
+
+	/** Uniform world scale applied to ExplosionEffect. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Effects", meta = (ClampMin = "0.01"))
+	float ExplosionEffectScale = 1.0f;
+
+	/** Mass-independent acceleration applied to the Player Ship by a direct torpedo blast. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Blast", meta = (ClampMin = "0.0", ClampMax = "20000.0", Units = "cm/s^2"))
+	float BlastAcceleration = 1200.0f;
+
+	/** Duration of the Network Physics blast pulse. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Blast", meta = (ClampMin = "0.01", ClampMax = "1.0", Units = "s"))
+	float BlastDurationSeconds = 0.15f;
+
+	/** Adds an upward component to the explosion-to-centre direction. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Blast", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float BlastUpwardBias = 0.2f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Buoyancy", meta = (ClampMin = "1.0", Units = "cm"))
 	float FloatingPontoonRadius = 50.0f;
 
@@ -82,7 +113,7 @@ protected:
 	float FloatingMassKg = 25.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Buoyancy", meta = (ClampMin = "0.0"))
-	float FloatingLinearDamping = 1.5f;
+	float FloatingLinearDamping = 8.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Torpedo|Buoyancy", meta = (ClampMin = "0.0"))
 	float FloatingAngularDamping = 3.0f;
@@ -120,6 +151,7 @@ private:
 	void RestartFuseBurst();
 	void LogVisualDiagnostics(const TCHAR* Phase) const;
 	void LogPostBeginPlayVisualDiagnostics();
+	void ProcessShipHit(AShip* HitShip, const FVector& ImpactPoint);
 
 	TWeakObjectPtr<AShip> DesignatedTarget;
 

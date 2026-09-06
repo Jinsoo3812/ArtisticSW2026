@@ -1,4 +1,6 @@
 #include "SWCabinWaterCullComponent.h"
+#include "SWCabinWaterCullData.h"
+#include "UObject/ConstructorHelpers.h"
 
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
@@ -101,9 +103,49 @@ namespace SWCabinWaterCull
 
 USWCabinWaterCullComponent::USWCabinWaterCullComponent()
 {
+	static ConstructorHelpers::FObjectFinder<USWCabinWaterCullData> SharedCabinData(
+		TEXT("/Game/Blueprints/Water/Culling/DA_SW_ShipCabinWaterCull.DA_SW_ShipCabinWaterCull"));
+	CabinData = SharedCabinData.Object;
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickGroup = TG_PostPhysics;
 	PrimaryComponentTick.bStartWithTickEnabled = true;
+}
+
+bool USWCabinWaterCullComponent::ContainsWorldPosition(const FVector& WorldPosition) const
+{
+	const AActor* Owner = GetOwner();
+	if (!bWaterCullEnabled || !IsValid(Owner) || !CabinData)
+	{
+		return false;
+	}
+	float Threshold = 0.35f;
+	if (WaterParameterCollection && GetWorld())
+	{
+		if (const UMaterialParameterCollectionInstance* Instance =
+			GetWorld()->GetParameterCollectionInstance(WaterParameterCollection))
+		{
+			Instance->GetScalarParameterValue(TEXT("SW_CabinCullThreshold"), Threshold);
+		}
+	}
+	return CabinData->ContainsLocalPosition(
+		Owner->GetActorTransform().InverseTransformPosition(WorldPosition), Threshold);
+}
+
+bool USWCabinWaterCullComponent::IsWorldPositionInsideAnyCabin(UWorld* World, const FVector& WorldPosition)
+{
+	const SWCabinWaterCull::FWorldSelectionState* State = SWCabinWaterCull::WorldStates.Find(World);
+	if (State)
+	{
+		for (const TWeakObjectPtr<USWCabinWaterCullComponent>& Entry : State->Components)
+		{
+			const USWCabinWaterCullComponent* Component = Entry.Get();
+			if (Component && Component->ContainsWorldPosition(WorldPosition))
+			{
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 void USWCabinWaterCullComponent::BeginPlay()

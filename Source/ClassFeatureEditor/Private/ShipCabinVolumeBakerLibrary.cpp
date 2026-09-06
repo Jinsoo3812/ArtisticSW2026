@@ -399,6 +399,10 @@ FSWCabinBakeResult UShipCabinVolumeBakerLibrary::BakeTaggedCabinDebug(
 		ExpandedFilled, NX, NY, NZ);
 	USWCabinWaterCullData* CullData = CreateOrUpdateCullData(
 		MaskTexture, GridMin, GridMax, NX, NY, NZ, VoxelSize);
+	if (CullData)
+	{
+		CullData->OccupancyVoxels = ExpandedFilled;
+	}
 	if (!MaskTexture || !CullData)
 	{
 		Result.Message = TEXT("Fill succeeded, but the runtime Volume Texture/Data Asset could not be created.");
