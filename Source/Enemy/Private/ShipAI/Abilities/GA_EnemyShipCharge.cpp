@@ -138,6 +138,19 @@ void UGA_EnemyShipCharge::EndAbility(
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
+void UGA_EnemyShipCharge::PostLoad()
+{
+	Super::PostLoad();
+	if (MinimumDamageApproachSpeed > 50.0f)
+	{
+		MinimumDamageApproachSpeed /= 100.0f;
+	}
+	if (DamagePerApproachSpeedUnit > 0.0f && DamagePerApproachSpeedUnit < 1.0f)
+	{
+		DamagePerApproachSpeedUnit *= 100.0f;
+	}
+}
+
 void UGA_EnemyShipCharge::ApplyCooldown(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -165,14 +178,12 @@ void UGA_EnemyShipCharge::HandlePhysicsRootHit(
 	const FVector SourceVelocity = Ship->BuoyancyRoot
 		? Ship->BuoyancyRoot->GetComponentVelocity()
 		: Ship->GetVelocity();
-	const FVector TargetVelocity = HitShip->BuoyancyRoot
-		? HitShip->BuoyancyRoot->GetComponentVelocity()
-		: HitShip->GetVelocity();
-	const float ApproachSpeed = FEnemyShipSkillMath::CalculateApproachSpeed(
-		Ship->GetActorLocation(), SourceVelocity, HitShip->GetActorLocation(), TargetVelocity);
+	const float ApproachSpeed = FEnemyShipSkillMath::CalculateSourceApproachSpeed(
+		Ship->GetActorLocation(), SourceVelocity, HitShip->GetActorLocation());
 	const float Damage = FEnemyShipSkillMath::CalculateChargeDamage(
 		ApproachSpeed,
 		MinimumDamageApproachSpeed,
+		MinimumCollisionDamage,
 		DamagePerApproachSpeedUnit,
 		MaximumCollisionDamage);
 

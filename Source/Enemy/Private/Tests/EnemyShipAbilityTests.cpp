@@ -109,12 +109,23 @@ bool FEnemyShipChargeDamageMathTest::RunTest(const FString& Parameters)
 			FVector::ZeroVector),
 		0.0f);
 	TestEqual(
-		TEXT("Damage subtracts the threshold before applying its coefficient"),
-		FEnemyShipSkillMath::CalculateChargeDamage(800.0f, 100.0f, 0.05f, 500.0f),
-		35.0f);
+		TEXT("Charge source approach ignores target velocity"),
+		FEnemyShipSkillMath::CalculateSourceApproachSpeed(
+			FVector::ZeroVector,
+			FVector(1000.0f, 0.0f, 0.0f),
+			FVector(5000.0f, 0.0f, 0.0f)),
+		1000.0f);
+	TestEqual(
+		TEXT("Minimum speed applies minimum damage plus per-m/s excess damage"),
+		FEnemyShipSkillMath::CalculateChargeDamage(1500.0f, 10.0f, 10.0f, 2.0f, 500.0f),
+		20.0f);
+	TestEqual(
+		TEXT("Legacy charge defaults preserve five damage at the one m/s threshold"),
+		FEnemyShipSkillMath::CalculateChargeDamage(100.0f, 1.0f, 5.0f, 5.0f, 500.0f),
+		5.0f);
 	TestEqual(
 		TEXT("Damage cap is enforced"),
-		FEnemyShipSkillMath::CalculateChargeDamage(20000.0f, 100.0f, 0.05f, 500.0f),
+		FEnemyShipSkillMath::CalculateChargeDamage(20000.0f, 1.0f, 0.0f, 5.0f, 500.0f),
 		500.0f);
 	return true;
 }

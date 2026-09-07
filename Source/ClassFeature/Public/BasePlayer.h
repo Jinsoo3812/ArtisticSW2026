@@ -645,6 +645,12 @@ protected:
 			ToolTip = "에디터 테스트 전용 자동 지급 옵션입니다. 패키징 빌드에는 적용되지 않으며 출시 전 꺼야 합니다."))
 	bool bGiveStartingItemForTest = false;
 
+	/** TEST ONLY: allows ship upgrade nodes to activate without inventory materials. Prerequisites still apply. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Ship Upgrade",
+		meta = (DisplayName = "[TEST ONLY] Ignore Ship Upgrade Material Costs",
+			ToolTip = "에디터 테스트에서 배 강화 재료 검사와 소비를 생략합니다. 선행 노드 조건은 유지됩니다."))
+	bool bIgnoreShipUpgradeMaterialCostsForTest = false;
+
 	/** TEST ONLY: 에디터 시작 시 보장할 아이템별 목표 보유량. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Testing|Inventory",
 		meta = (DisplayName = "[TEST ONLY] Starting Items",
@@ -653,6 +659,7 @@ protected:
 	TArray<FStartingInventoryItemForTest> StartingItemsForTest;
 
 	void GiveStartingItemsForTest();
+	void ApplyShipUpgradeTestFlags();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<ULocomotionAnimStateComponent> AnimStateComponent;

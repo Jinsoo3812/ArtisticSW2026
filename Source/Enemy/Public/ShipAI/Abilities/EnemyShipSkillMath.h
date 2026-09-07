@@ -12,10 +12,17 @@ struct ENEMY_API FEnemyShipSkillMath
 		const FVector& TargetLocation,
 		const FVector& TargetVelocity);
 
+	/** Source-only horizontal closing speed; target velocity is intentionally ignored. */
+	static float CalculateSourceApproachSpeed(
+		const FVector& SourceLocation,
+		const FVector& SourceVelocity,
+		const FVector& TargetLocation);
+
 	static float CalculateChargeDamage(
-		float ApproachSpeed,
-		float MinimumDamageSpeed,
-		float DamagePerSpeedUnit,
+		float ApproachSpeedCmPerSecond,
+		float MinimumDamageSpeedMetersPerSecond,
+		float MinimumDamage,
+		float DamagePerAdditionalMeterPerSecond,
 		float MaximumDamage);
 
 	/**

@@ -14,6 +14,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "NiagaraSystem.h"
 #include "Projectiles/GravityVortexProjectile.h"
 #include "Ship.h"
 #include "Skills/GravityVortexField.h"
@@ -109,8 +110,12 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 {
+	// A transient gameplay world initializes the existing crafting fixture as a side effect.
+	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+
 	UClass* PlayerClass = LoadClass<ABasePlayer>(
-		nullptr, TEXT("/Game/Blueprints/Player/BP_Player.BP_Player_C"));
+		nullptr, TEXT("/Game/Blueprints/Player/BP_Player_Man.BP_Player_Man_C"));
 	if (!TestNotNull(TEXT("BP_Player class loads"), PlayerClass))
 	{
 		return false;
@@ -142,7 +147,7 @@ bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 		PlayerMesh->DoesSocketExist(TEXT("hand_r")));
 
 	UClass* AbilityClass = LoadClass<UGA_GravityVortexThrow>(
-		nullptr, TEXT("/Game/New/Skill/Vortex/GA_VortexField.GA_VortexField_C"));
+		nullptr, TEXT("/Game/Blueprints/Ship/Skill/Vortex/GA_VortexField.GA_VortexField_C"));
 	if (!TestNotNull(TEXT("GA_VortexField class loads"), AbilityClass))
 	{
 		return false;
@@ -176,6 +181,14 @@ bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("GA_VortexField prediction sampling is capped for visual stability"),
 		AbilityDefaults->TrajectorySimulationFrequency <= 10.0f);
+	TestEqual(
+		TEXT("GA_VortexField has the increased default throw speed"),
+		AbilityDefaults->ThrowSpeed,
+		4000.0f);
+	TestEqual(
+		TEXT("GA_VortexField previews the longer throw arc"),
+		AbilityDefaults->TrajectoryMaxSimulationTime,
+		5.0f);
 	TestNotNull(TEXT("GA_VortexField has a projectile class"), AbilityDefaults->ProjectileClass.Get());
 	if (TestNotNull(TEXT("GA_VortexField has an aim-line class"), AbilityDefaults->AimLineClass.Get()))
 	{
@@ -208,10 +221,16 @@ bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	AddInfo(FString::Printf(
-		TEXT("Projectile=%s field=%s"),
+		TEXT("Projectile=%s field=%s mesh=%s effect=%s"),
 		*GetPathNameSafe(ProjectileDefaults->GetClass()),
-		*GetPathNameSafe(ProjectileDefaults->FieldClass.Get())));
+		*GetPathNameSafe(ProjectileDefaults->FieldClass.Get()),
+		*GetPathNameSafe(ProjectileDefaults->ProjectileMesh.Get()),
+		*GetPathNameSafe(ProjectileDefaults->ProjectileEffect.Get())));
 	TestNotNull(TEXT("Projectile has a vortex field class"), ProjectileDefaults->FieldClass.Get());
+	TestNotNull(TEXT("Projectile exposes its authored static mesh"), ProjectileDefaults->ProjectileMesh.Get());
+	TestNotNull(
+		TEXT("Projectile owns the presentation Niagara component"),
+		ProjectileDefaults->ProjectileEffectComponent.Get());
 
 	const AGravityVortexField* FieldDefaults = ProjectileDefaults->FieldClass
 		? ProjectileDefaults->FieldClass->GetDefaultObject<AGravityVortexField>()
@@ -237,7 +256,7 @@ bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Field duration is positive"), FieldDefaults->Duration > 0.0f);
 
 	UStaticMesh* AimLineMesh = LoadObject<UStaticMesh>(
-		nullptr, TEXT("/Game/New/Skill/Vortex/SM_VortexAimLine.SM_VortexAimLine"));
+		nullptr, TEXT("/Game/Blueprints/Ship/Skill/Vortex/SM_VortexAimLine.SM_VortexAimLine"));
 	if (TestNotNull(TEXT("SM_VortexAimLine loads"), AimLineMesh))
 	{
 		const FBoxSphereBounds MeshBounds = AimLineMesh->GetBounds();
@@ -258,7 +277,7 @@ bool FGravityVortexAssetWiringTest::RunTest(const FString& Parameters)
 	}
 
 	UClass* EnemyShipClass = LoadClass<AShip>(
-		nullptr, TEXT("/Game/New/Enemy_Ship/BP_EnemyShip.BP_EnemyShip_C"));
+		nullptr, TEXT("/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_EnemyShip.BP_EnemyShip_C"));
 	if (!TestNotNull(TEXT("BP_EnemyShip class loads"), EnemyShipClass))
 	{
 		return false;

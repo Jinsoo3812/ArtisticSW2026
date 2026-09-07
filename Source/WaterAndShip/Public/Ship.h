@@ -510,6 +510,7 @@ class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, pub
 public:
 	// Sets default values for this pawn's properties
 	AShip();
+	virtual void PostLoad() override;
 
 	// IAbilitySystemInterface 구현
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
@@ -577,13 +578,17 @@ public:
 	/** Identifies hostile ships without making WaterAndShip depend on Enemy. */
 	virtual bool IsEnemyShipForEffects() const { return false; }
 
-	/** Minimum horizontal approach speed required for a player ram to deal damage. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0", Units = "cm/s"))
-	float PlayerRamMinimumApproachSpeed = 800.0f;
+	/** Minimum horizontal player approach speed required for a ram to deal damage. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0", Units = "m/s"))
+	float PlayerRamMinimumApproachSpeed = 8.0f;
 
-	/** Fixed damage dealt when the player ram exceeds the approach-speed threshold. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0"))
+	/** Damage dealt exactly at PlayerRamMinimumApproachSpeed. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0", DisplayName = "Player Ram Minimum Damage"))
 	float PlayerRamCollisionDamage = 50.0f;
+
+	/** Damage added for every 1 m/s above PlayerRamMinimumApproachSpeed. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0"))
+	float PlayerRamDamagePerAdditionalMeterPerSecond = 2.0f;
 
 	/** Prevents persistent physics contact from applying ram damage every frame. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, AdvancedDisplay, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0", Units = "s"))
@@ -661,7 +666,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Input")
 	float GetCurrentTurnInput() const { return CurrentTurnInput; }
-	FName GetShipStatRowName() const { return ShipStatRowName; }
+	FName GetShipStatRowName() const;
 
 	void AddPropulsionSuppression(const FGuid& SourceId);
 	void RemovePropulsionSuppression(const FGuid& SourceId);
@@ -1135,14 +1140,20 @@ public:
 	void ResetToFollowCamera();
 
 public:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Stats")
+	/** Data table and row selected together; the row is presented as a dropdown. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Stats", meta = (RowType = "/Script/WaterAndShip.ShipStatRow", DisplayName = "Ship Stat Row"))
+	FDataTableRowHandle ShipStatRow;
+
+	/** Legacy serialized fields retained as a runtime fallback while existing Blueprints migrate. */
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Use ShipStatRow"))
 	TObjectPtr<UDataTable> ShipStatTable;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Stats")
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Use ShipStatRow"))
 	FName ShipStatRowName;
 
 protected:
 	virtual void InitializeDefaultAttributes();
+	const FShipStatRow* ResolveShipStatRow(const FString& ContextString) const;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;

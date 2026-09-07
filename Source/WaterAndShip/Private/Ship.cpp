@@ -526,7 +526,7 @@ void AShip::Tick(float DeltaTime)
 			: TEXT("OTHER");
 		UE_LOG(LogTemp, Display,
 			TEXT("[SHIP-BALANCE] Row=%s Input=%s Move=%.2f Turn=%.2f Speed2D=%.1f ForwardSpeed=%.1f AngularSpeedDeg=%.2f TurnRadius=%.1f Stable=%s Samples=%d"),
-			*ShipStatRowName.ToString(), InputLabel, CurrentMoveInput, CurrentTurnInput,
+			*GetShipStatRowName().ToString(), InputLabel, CurrentMoveInput, CurrentTurnInput,
 			Speed2D, ForwardSpeed, AngularSpeedDeg, TurnRadius,
 			ShipBalanceStableSampleCount >= 4 ? TEXT("true") : TEXT("false"),
 			ShipBalanceStableSampleCount);
@@ -1065,6 +1065,17 @@ void AShip::RemoveExternalAccelerationSource(const FGuid& SourceId)
 	if (HasAuthority())
 	{
 		ExternalAccelerationSources.Remove(SourceId);
+	}
+}
+
+void AShip::PostLoad()
+{
+	Super::PostLoad();
+	// Existing Blueprint defaults stored this field as cm/s. Values above any
+	// practical authored threshold are legacy data and are converted once when loaded.
+	if (PlayerRamMinimumApproachSpeed > 50.0f)
+	{
+		PlayerRamMinimumApproachSpeed /= 100.0f;
 	}
 }
 
@@ -2244,6 +2255,7 @@ void AShip::SpawnBombardmentAuthoritative(const FVector& TargetLocation)
 		Damage = AbilitySystemComponent->GetNumericAttribute(UShipAttributeSet::GetCannonDamageAttribute());
 		Speed = AbilitySystemComponent->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute());
 	}
+	Damage *= BombardmentDefaults ? FMath::Max(0.0f, BombardmentDefaults->CannonDamageMultiplier) : 0.3f;
 
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.Owner = this;
@@ -2533,8 +2545,10 @@ void AShip::HandlePlayerShipCollisionTelemetry(
 		0.0f, FVector::DotProduct(PlayerVelocity, ToEnemy));
 	const float RelativeApproachSpeed = FMath::Max(
 		0.0f, FVector::DotProduct(RelativeVelocity, ToEnemy));
-	if (PlayerApproachSpeed < PlayerRamMinimumApproachSpeed
-		|| PlayerRamCollisionDamage <= 0.0f
+	const float PlayerApproachSpeedMetersPerSecond = PlayerApproachSpeed / 100.0f;
+	if (PlayerApproachSpeedMetersPerSecond < PlayerRamMinimumApproachSpeed
+		|| (PlayerRamCollisionDamage <= 0.0f
+			&& PlayerRamDamagePerAdditionalMeterPerSecond <= 0.0f)
 		|| !PlayerRamDamageGameplayEffectClass)
 	{
 		UE_LOG(
@@ -2545,7 +2559,7 @@ void AShip::HandlePlayerShipCollisionTelemetry(
 			*GetNameSafe(OtherShip),
 			PlayerApproachSpeed,
 			RelativeApproachSpeed,
-			PlayerRamMinimumApproachSpeed,
+			PlayerRamMinimumApproachSpeed * 100.0f,
 			*PlayerVelocity.ToCompactString(),
 			*EnemyVelocity.ToCompactString());
 		return;
@@ -2564,10 +2578,13 @@ void AShip::HandlePlayerShipCollisionTelemetry(
 		return;
 	}
 
+	const float RamDamage = PlayerRamCollisionDamage
+		+ FMath::Max(0.0f, PlayerApproachSpeedMetersPerSecond - PlayerRamMinimumApproachSpeed)
+			* FMath::Max(0.0f, PlayerRamDamagePerAdditionalMeterPerSecond);
 	const FGameplayEffectSpecHandle DamageSpec = UGASCombatLibrary::MakeDamageEffectSpec(
 		AbilitySystemComponent,
 		PlayerRamDamageGameplayEffectClass,
-		PlayerRamCollisionDamage,
+		RamDamage,
 		this,
 		this,
 		1,
@@ -2600,9 +2617,9 @@ void AShip::HandlePlayerShipCollisionTelemetry(
 		TEXT("[PLAYER-SHIP-RAM-DAMAGE] Player=%s Enemy=%s Damage=%.2f EnemyHealth=%.2f Threshold=%.2f cm/s PlayerSpeed=%.2f cm/s (%.2f m/s) RelativeSpeed=%.2f cm/s (%.2f m/s) PlayerApproachSpeed=%.2f cm/s (%.2f m/s) RelativeApproachSpeed=%.2f cm/s (%.2f m/s) PlayerVelocity=%s EnemyVelocity=%s ImpactPoint=%s"),
 		*GetNameSafe(this),
 		*GetNameSafe(OtherShip),
-		PlayerRamCollisionDamage,
+		RamDamage,
 		CurrentHealth,
-		PlayerRamMinimumApproachSpeed,
+		PlayerRamMinimumApproachSpeed * 100.0f,
 		PlayerVelocity.Size(),
 		PlayerVelocity.Size() / 100.0f,
 		RelativeVelocity.Size(),
@@ -2625,32 +2642,28 @@ void AShip::InitializeDefaultAttributes()
 {
 	if (!HasAuthority() || !AttributeSet) return;
 
-	if (ShipStatTable && !ShipStatRowName.IsNone())
+	static const FString ContextString(TEXT("Ship Stat Table Context"));
+	if (const FShipStatRow* StatRow = ResolveShipStatRow(ContextString))
 	{
-		static const FString ContextString(TEXT("Ship Stat Table Context"));
-		FShipStatRow* StatRow = ShipStatTable->FindRow<FShipStatRow>(ShipStatRowName, ContextString);
-		if (StatRow)
-		{
-			AttributeSet->InitHealth(StatRow->MaxHealth);
-			AttributeSet->InitMaxHealth(StatRow->MaxHealth);
-			AttributeSet->InitMoveSpeed(1.0f); // 캐릭터 기본 MoveSpeed는 1.0f로 고정 유지
-			AttributeSet->InitForwardPropulsionMultiplier(StatRow->ForwardPropulsionMultiplier);
-			AttributeSet->InitTurnTorqueMultiplier(StatRow->TurnTorqueMultiplier);
-			AttributeSet->InitCannonDamage(StatRow->CannonDamage);
-			AttributeSet->InitCannonFireCooldown(StatRow->CannonFireCooldown);
-			AttributeSet->InitCannonballSpeed(StatRow->CannonballSpeed);
+		AttributeSet->InitHealth(StatRow->MaxHealth);
+		AttributeSet->InitMaxHealth(StatRow->MaxHealth);
+		AttributeSet->InitMoveSpeed(1.0f); // 캐릭터 기본 MoveSpeed는 1.0f로 고정 유지
+		AttributeSet->InitForwardPropulsionMultiplier(StatRow->ForwardPropulsionMultiplier);
+		AttributeSet->InitTurnTorqueMultiplier(StatRow->TurnTorqueMultiplier);
+		AttributeSet->InitCannonDamage(StatRow->CannonDamage);
+		AttributeSet->InitCannonFireCooldown(StatRow->CannonFireCooldown);
+		AttributeSet->InitCannonballSpeed(StatRow->CannonballSpeed);
 
-			UE_LOG(LogTemp, Log, TEXT("AShip: Successfully initialized attributes from DataTable Row [%s]."), *ShipStatRowName.ToString());
-			return;
-		}
-		else
-		{
-			UE_LOG(LogTemp, Warning, TEXT("AShip: Failed to find DataTable Row [%s] in ShipStatTable."), *ShipStatRowName.ToString());
-		}
+		UE_LOG(LogTemp, Log, TEXT("AShip: Successfully initialized attributes from DataTable Row [%s]."), *GetShipStatRowName().ToString());
+		return;
+	}
+	if (!GetShipStatRowName().IsNone())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AShip: Failed to resolve Ship Stat Row [%s]."), *GetShipStatRowName().ToString());
 	}
 	else
 	{
-		UE_LOG(LogTemp, Log, TEXT("AShip: ShipStatTable or ShipStatRowName is not set. Initializing with default fallback stats."));
+		UE_LOG(LogTemp, Log, TEXT("AShip: Ship Stat Row is not set. Initializing with default fallback stats."));
 	}
 
 	// Fallback 기본값 설정
@@ -2667,9 +2680,8 @@ void AShip::InitializeDefaultAttributes()
 FShipStatSnapshot AShip::GetBaseStatSnapshot() const
 {
 	FShipStatSnapshot Snapshot;
-	if (!ShipStatTable || ShipStatRowName.IsNone()) return Snapshot;
 	static const FString ContextString(TEXT("Ship Stat Snapshot Context"));
-	const FShipStatRow* StatRow = ShipStatTable->FindRow<FShipStatRow>(ShipStatRowName, ContextString);
+	const FShipStatRow* StatRow = ResolveShipStatRow(ContextString);
 	if (!StatRow) return Snapshot;
 
 	Snapshot.MaxHealth = StatRow->MaxHealth;
@@ -2679,6 +2691,24 @@ FShipStatSnapshot AShip::GetBaseStatSnapshot() const
 	Snapshot.ForwardPropulsionMultiplier = StatRow->ForwardPropulsionMultiplier;
 	Snapshot.TurnTorqueMultiplier = StatRow->TurnTorqueMultiplier;
 	return Snapshot;
+}
+
+const FShipStatRow* AShip::ResolveShipStatRow(const FString& ContextString) const
+{
+	if (ShipStatRow.DataTable && !ShipStatRow.RowName.IsNone())
+	{
+		return ShipStatRow.GetRow<FShipStatRow>(ContextString);
+	}
+	return ShipStatTable && !ShipStatRowName.IsNone()
+		? ShipStatTable->FindRow<FShipStatRow>(ShipStatRowName, ContextString)
+		: nullptr;
+}
+
+FName AShip::GetShipStatRowName() const
+{
+	return ShipStatRow.DataTable && !ShipStatRow.RowName.IsNone()
+		? ShipStatRow.RowName
+		: ShipStatRowName;
 }
 
 void AShip::SpawnRamImpactNiagaraForAll(

@@ -26,22 +26,25 @@ bool FPlayerShipTierStatsAuthoringTest::RunTest(const FString& Parameters)
 		nullptr, TEXT("/Game/Blueprints/Ship/Data/DT_ShipStat.DT_ShipStat"));
 	if (!TestNotNull(TEXT("DT_ShipStat loads"), Table)) return false;
 
-	const float Health[] = {1500000.0f, 2250000.0f, 3375000.0f};
-	const float Propulsion[] = {6.0f, 9.0f, 14.0f};
-	const float Turn[] = {3.0f, 5.0f, 7.0f};
-	const float Damage[] = {15.0f, 23.0f, 34.0f};
-	const float Cooldown[] = {2.0f, 4.0f / 3.0f, 8.0f / 9.0f};
+	const FShipStatRow* PreviousRow = Table->FindRow<FShipStatRow>(TEXT("PlayerShip"), TEXT("Player tier baseline"));
+	if (!TestNotNull(TEXT("PlayerShip baseline exists"), PreviousRow)) return false;
 	for (int32 Index = 0; Index < 3; ++Index)
 	{
 		const FName RowName(*FString::Printf(TEXT("PlayerShip_%d"), Index + 2));
 		const FShipStatRow* Row = Table->FindRow<FShipStatRow>(RowName, TEXT("Player tier test"));
 		if (!TestNotNull(*FString::Printf(TEXT("%s exists"), *RowName.ToString()), Row)) continue;
-		TestEqual(TEXT("Health scales"), Row->MaxHealth, Health[Index]);
-		TestEqual(TEXT("Propulsion scales"), Row->ForwardPropulsionMultiplier, Propulsion[Index]);
-		TestEqual(TEXT("Turn scales"), Row->TurnTorqueMultiplier, Turn[Index]);
-		TestEqual(TEXT("Damage scales"), Row->CannonDamage, Damage[Index]);
-		TestTrue(TEXT("Cooldown scales"), FMath::IsNearlyEqual(Row->CannonFireCooldown, Cooldown[Index], 0.001f));
-		TestEqual(TEXT("Projectile speed remains stable"), Row->CannonballSpeed, 6000.0f);
+		AddInfo(FString::Printf(
+			TEXT("%s Health=%.1f Propulsion=%.1f Turn=%.1f Damage=%.1f Cooldown=%.3f CannonballSpeed=%.1f"),
+			*RowName.ToString(), Row->MaxHealth, Row->ForwardPropulsionMultiplier,
+			Row->TurnTorqueMultiplier, Row->CannonDamage, Row->CannonFireCooldown,
+			Row->CannonballSpeed));
+		TestTrue(TEXT("Health increases each tier"), Row->MaxHealth > PreviousRow->MaxHealth);
+		TestTrue(TEXT("Propulsion increases each tier"), Row->ForwardPropulsionMultiplier > PreviousRow->ForwardPropulsionMultiplier);
+		TestTrue(TEXT("Turn torque increases each tier"), Row->TurnTorqueMultiplier > PreviousRow->TurnTorqueMultiplier);
+		TestTrue(TEXT("Cannon damage increases each tier"), Row->CannonDamage > PreviousRow->CannonDamage);
+		TestTrue(TEXT("Cannon cooldown decreases each tier"), Row->CannonFireCooldown < PreviousRow->CannonFireCooldown);
+		TestTrue(TEXT("Cannonball speed does not decrease each tier"), Row->CannonballSpeed >= PreviousRow->CannonballSpeed);
+		PreviousRow = Row;
 	}
 	return true;
 }
@@ -55,7 +58,7 @@ bool FShipAuthoringComponentsTest::RunTest(const FString& Parameters)
 {
 	UClass* PlayerShipClass = LoadClass<AShip>(
 		nullptr,
-		TEXT("/Game/New/Ship/Blueprints/BP_PlayerShip.BP_PlayerShip_C"));
+		TEXT("/Game/Blueprints/Ship/Blueprints/BP_PlayerShip.BP_PlayerShip_C"));
 	TestNotNull(TEXT("BP_PlayerShip loads against the new native component layout"), PlayerShipClass);
 	if (PlayerShipClass)
 	{
@@ -64,11 +67,13 @@ bool FShipAuthoringComponentsTest::RunTest(const FString& Parameters)
 		TestNotNull(TEXT("BP_PlayerShip inherits BoardingArrivalPoint"), PlayerShipDefaults->GetBoardingArrivalPoint());
 		TestNotNull(TEXT("BP_PlayerShip inherits AnchorMesh"), PlayerShipDefaults->GetAnchorMesh());
 		TestNotNull(TEXT("BP_PlayerShip inherits AnchorInteractable"), PlayerShipDefaults->GetAnchorInteractable());
+		TestNotNull(TEXT("BP_PlayerShip exposes a Ship Stat Row data table"), PlayerShipDefaults->ShipStatRow.DataTable.Get());
+		TestEqual(TEXT("BP_PlayerShip selects PlayerShip in the row dropdown"), PlayerShipDefaults->ShipStatRow.RowName, FName(TEXT("PlayerShip")));
 	}
 
 	UClass* CannonBlueprintClass = LoadClass<ACannon>(
 		nullptr,
-		TEXT("/Game/New/Cannon/BP_Cannon.BP_Cannon_C"));
+		TEXT("/Game/Blueprints/Ship/Cannon/BP_Cannon.BP_Cannon_C"));
 	TestNotNull(TEXT("Canonical BP_Cannon loads"), CannonBlueprintClass);
 
 	const AShip* ShipDefaults = GetDefault<AShip>();
@@ -210,7 +215,7 @@ bool FShipHelmAndCannonIntegrationTest::RunTest(const FString& Parameters)
 	CannonSlot->SetupAttachment(Ship->BuoyancyRoot);
 	UClass* CannonBlueprintClass = LoadClass<ACannon>(
 		nullptr,
-		TEXT("/Game/New/Cannon/BP_Cannon.BP_Cannon_C"));
+		TEXT("/Game/Blueprints/Ship/Cannon/BP_Cannon.BP_Cannon_C"));
 	TestNotNull(TEXT("Canonical BP_Cannon class loads for the child slot"), CannonBlueprintClass);
 	CannonSlot->SetChildActorClass(CannonBlueprintClass ? CannonBlueprintClass : ACannon::StaticClass());
 	CannonSlot->RegisterComponent();

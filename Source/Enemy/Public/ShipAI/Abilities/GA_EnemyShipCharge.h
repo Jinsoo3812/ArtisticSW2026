@@ -20,6 +20,7 @@ class ENEMY_API UGA_EnemyShipCharge : public UEnemyShipGameplayAbility
 
 public:
 	UGA_EnemyShipCharge();
+	virtual void PostLoad() override;
 
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
@@ -85,11 +86,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float MaximumTurnInput = 1.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Damage", meta = (ClampMin = "0.0", Units = "cm/s"))
-	float MinimumDamageApproachSpeed = 100.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Damage", meta = (ClampMin = "0.0", Units = "m/s"))
+	float MinimumDamageApproachSpeed = 1.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Damage", meta = (ClampMin = "0.0"))
-	float DamagePerApproachSpeedUnit = 0.05f;
+	float MinimumCollisionDamage = 5.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Damage", meta = (ClampMin = "0.0", DisplayName = "Damage Per Additional Meter Per Second"))
+	float DamagePerApproachSpeedUnit = 5.0f;
 
 	/** Zero means uncapped. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Damage", meta = (ClampMin = "0.0"))

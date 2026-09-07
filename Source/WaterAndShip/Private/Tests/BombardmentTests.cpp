@@ -21,6 +21,9 @@ bool FBombardmentConfigurationTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Launch height is positive"), Defaults->LaunchHeightZ > 0.0f);
 	TestTrue(TEXT("At least one projectile is fired per volley"), Defaults->ProjectilesPerVolley > 0);
 	TestTrue(TEXT("At least one volley is fired"), Defaults->VolleyCount > 0);
+	TestTrue(
+		TEXT("Bombardment projectiles use thirty percent of the current ship cannon damage by default"),
+		FMath::IsNearlyEqual(Defaults->CannonDamageMultiplier, 0.3f));
 	TestNotNull(TEXT("A preview class is available"), Defaults->PreviewClass.Get());
 	const ABombardmentPreview* PreviewDefaults = GetDefault<ABombardmentPreview>();
 	TestNotNull(TEXT("A single preview mesh component is available"), PreviewDefaults->PreviewMesh.Get());
@@ -29,9 +32,9 @@ bool FBombardmentConfigurationTest::RunTest(const FString& Parameters)
 		GetDefault<AShip>()->ShipInputPriority >= 20);
 
 	UMaterialInterface* BombardPreviewMaterial = LoadObject<UMaterialInterface>(
-		nullptr, TEXT("/Game/New/Skill/Bombardment/M_BombardPreview.M_BombardPreview"));
+		nullptr, TEXT("/Game/Blueprints/Ship/Skill/Bombardment/M_BombardPreview.M_BombardPreview"));
 	UMaterialInterface* GhostMaterial = LoadObject<UMaterialInterface>(
-		nullptr, TEXT("/Game/New/Skill/Bombardment/M_Ghost.M_Ghost"));
+		nullptr, TEXT("/Game/Blueprints/Ship/Skill/Bombardment/M_Ghost.M_Ghost"));
 	TestNotNull(TEXT("M_BombardPreview loads"), BombardPreviewMaterial);
 	TestNotNull(TEXT("M_Ghost loads"), GhostMaterial);
 	for (const TPair<const TCHAR*, UMaterialInterface*> MaterialInfo : {

@@ -140,6 +140,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Projectile")
 	TSubclassOf<AActor> ProjectileClassOverride;
 
+	/** Multiplies the source Player Ship's current CannonDamage for every bombardment projectile. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Projectile", meta = (ClampMin = "0.0"))
+	float CannonDamageMultiplier = 0.3f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Volley", meta = (ClampMin = "1"))
 	int32 ProjectilesPerVolley = 6;
 

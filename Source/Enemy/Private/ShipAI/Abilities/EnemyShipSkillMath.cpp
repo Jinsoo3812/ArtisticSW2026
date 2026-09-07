@@ -18,14 +18,38 @@ float FEnemyShipSkillMath::CalculateApproachSpeed(
 	return FMath::Max(0.0f, FVector::DotProduct(RelativeVelocity, ToTarget));
 }
 
+float FEnemyShipSkillMath::CalculateSourceApproachSpeed(
+	const FVector& SourceLocation,
+	const FVector& SourceVelocity,
+	const FVector& TargetLocation)
+{
+	FVector ToTarget = TargetLocation - SourceLocation;
+	ToTarget.Z = 0.0f;
+	if (!ToTarget.Normalize())
+	{
+		return 0.0f;
+	}
+	FVector HorizontalSourceVelocity = SourceVelocity;
+	HorizontalSourceVelocity.Z = 0.0f;
+	return FMath::Max(0.0f, FVector::DotProduct(HorizontalSourceVelocity, ToTarget));
+}
+
 float FEnemyShipSkillMath::CalculateChargeDamage(
-	float ApproachSpeed,
-	float MinimumDamageSpeed,
-	float DamagePerSpeedUnit,
+	float ApproachSpeedCmPerSecond,
+	float MinimumDamageSpeedMetersPerSecond,
+	float MinimumDamage,
+	float DamagePerAdditionalMeterPerSecond,
 	float MaximumDamage)
 {
-	const float Damage = FMath::Max(0.0f, ApproachSpeed - FMath::Max(0.0f, MinimumDamageSpeed))
-		* FMath::Max(0.0f, DamagePerSpeedUnit);
+	const float ApproachSpeedMetersPerSecond = FMath::Max(0.0f, ApproachSpeedCmPerSecond) / 100.0f;
+	const float Threshold = FMath::Max(0.0f, MinimumDamageSpeedMetersPerSecond);
+	if (ApproachSpeedMetersPerSecond < Threshold)
+	{
+		return 0.0f;
+	}
+	const float Damage = FMath::Max(0.0f, MinimumDamage)
+		+ (ApproachSpeedMetersPerSecond - Threshold)
+			* FMath::Max(0.0f, DamagePerAdditionalMeterPerSecond);
 	return MaximumDamage > 0.0f ? FMath::Min(Damage, MaximumDamage) : Damage;
 }
 

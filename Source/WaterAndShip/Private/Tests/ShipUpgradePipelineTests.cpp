@@ -151,8 +151,8 @@ bool FShipUpgradeFullPipelineTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Player ship is spawned"), Ship);
 	if (Ship)
 	{
-		Ship->ShipStatTable = ShipTable;
-		Ship->ShipStatRowName = TEXT("PlayerShip");
+		Ship->ShipStatRow.DataTable = ShipTable;
+		Ship->ShipStatRow.RowName = TEXT("PlayerShip");
 		// The transient test world does not run the full map actor initialization path,
 		// so mirror component registration and AShip::BeginPlay's GAS initialization.
 		Ship->GetAbilitySystemComponent()->AddSpawnedAttribute(Ship->GetShipAttributeSet());

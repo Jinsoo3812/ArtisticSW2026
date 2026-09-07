@@ -251,6 +251,7 @@ void ABasePlayer::BeginPlay()
 
 #if WITH_EDITOR
 	GiveStartingItemsForTest();
+	ApplyShipUpgradeTestFlags();
 #endif
 
 	OnQuickSlotsChanged.Broadcast();
@@ -517,6 +518,22 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 	}
 }
 
+void ABasePlayer::ApplyShipUpgradeTestFlags()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	if (ABasePlayerState* BasePlayerState = GetPlayerState<ABasePlayerState>())
+	{
+		if (UShipUpgradeComponent* UpgradeComponent = BasePlayerState->GetShipUpgradeComponent())
+		{
+			UpgradeComponent->SetIgnoreMaterialCostsForTesting(
+				bIgnoreShipUpgradeMaterialCostsForTest);
+		}
+	}
+}
+
 void ABasePlayer::PrepareForCannonControl()
 {
 	ConsumeMovementInputVector();
@@ -568,6 +585,9 @@ void ABasePlayer::PossessedBy(AController* NewController)
 	if (PS)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] PlayerState found: %s"), *PS->GetName());
+#if WITH_EDITOR
+		ApplyShipUpgradeTestFlags();
+#endif
 		// Owner는 PlayerState, Avatar는 이 Character 객체로 설정
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
 

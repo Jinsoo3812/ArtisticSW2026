@@ -7,6 +7,8 @@
 class AShip;
 class UCurveFloat;
 class USceneComponent;
+class UNiagaraComponent;
+class UNiagaraSystem;
 
 /** Server-authoritative radial field. Clients only use the replicated actor for visuals/debug. */
 UCLASS(Blueprintable)
@@ -22,6 +24,25 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity Vortex|Components")
 	TObjectPtr<USceneComponent> SceneRoot;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Gravity Vortex|Components")
+	TObjectPtr<UNiagaraComponent> FieldEffectComponent;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Effects")
+	TObjectPtr<UNiagaraSystem> FieldEffect;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Effects", meta = (ClampMin = "0.01"))
+	float FieldEffectScale = 1.0f;
+
+	/** Particle lifetime multiplier; field gameplay duration is controlled by Duration. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Effects", meta = (ClampMin = "0.01"))
+	float FieldEffectLifetimeScale = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Effects", meta = (ClampMin = "0.01"))
+	float FieldEffectPlaybackSpeed = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Effects", meta = (Units = "cm"))
+	float FieldEffectHeightOffset = 0.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Pull", meta = (ClampMin = "1.0", Units = "cm"))
 	float PullRadius = 5000.0f;

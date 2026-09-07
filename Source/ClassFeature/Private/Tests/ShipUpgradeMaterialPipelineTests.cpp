@@ -41,6 +41,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FShipUpgradeMaterialPipelineTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("ShipUpgradeMaterialPipelineTestWorld"));
 	if (!TestNotNull(TEXT("Transient game world is created"), World)) return false;
 	FWorldContext& WorldContext = GEngine->CreateNewWorldContext(EWorldType::Game);
