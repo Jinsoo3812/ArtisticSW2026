@@ -90,6 +90,13 @@ public:
 		UMaterialExpression* SpecularExpression,
 		UMaterialExpression* EmissiveExpression);
 
+	/** Adds a local-only vortex tint after the complete water surface chain. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureVortexPreviewAttributeOverride(
+		UMaterialExpressionSetMaterialAttributes* SetAttributes,
+		UMaterialExpression* BaseColorExpression,
+		UMaterialExpression* EmissiveExpression);
+
 	/** Connects the lit Gerstner foam surface without changing WPO, Normal or Specular. */
 	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
 	static bool ConfigureGerstnerFoamAttributeOverride(
@@ -112,6 +119,10 @@ public:
 	/** Adds the fixed single-ship cabin-cull parameters to the existing water MPC. */
 	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
 	static bool ConfigureCabinWaterCullCollection(UMaterialParameterCollection* Collection);
+
+	/** Adds the runtime center/radius and enabled values for the local vortex preview. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureVortexPreviewCollection(UMaterialParameterCollection* Collection);
 
 	/** Stores immutable baked local bounds in the MPC defaults (no runtime upload). */
 	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")

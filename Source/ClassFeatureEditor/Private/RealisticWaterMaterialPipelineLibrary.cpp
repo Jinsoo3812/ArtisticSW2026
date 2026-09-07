@@ -208,6 +208,24 @@ bool URealisticWaterMaterialPipelineLibrary::ConfigureFoamWaterAttributeOverride
 	return bBaseColorConnected && bRoughnessConnected && bSpecularConnected && bEmissiveConnected;
 }
 
+bool URealisticWaterMaterialPipelineLibrary::ConfigureVortexPreviewAttributeOverride(
+	UMaterialExpressionSetMaterialAttributes* SetAttributes,
+	UMaterialExpression* BaseColorExpression,
+	UMaterialExpression* EmissiveExpression)
+{
+	if (!IsValid(SetAttributes) || !IsValid(BaseColorExpression) || !IsValid(EmissiveExpression))
+	{
+		return false;
+	}
+	SetAttributes->Modify();
+	const bool bBaseColorConnected = SetAttributes->ConnectInputAttribute(
+		MP_BaseColor, BaseColorExpression);
+	const bool bEmissiveConnected = SetAttributes->ConnectInputAttribute(
+		MP_EmissiveColor, EmissiveExpression);
+	SetAttributes->PostEditChange();
+	return bBaseColorConnected && bEmissiveConnected;
+}
+
 bool URealisticWaterMaterialPipelineLibrary::ConfigureGerstnerFoamAttributeOverride(
 	UMaterialExpressionSetMaterialAttributes* SetAttributes,
 	UMaterialExpression* FoamSurfaceExpression,
@@ -312,6 +330,40 @@ bool URealisticWaterMaterialPipelineLibrary::ConfigureCabinWaterCullCollection(
 	AddVector(TEXT("SW_CabinCullLocalMax"), FLinearColor::Black);
 	Collection->PostEditChange();
 	Collection->MarkPackageDirty();
+	return true;
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConfigureVortexPreviewCollection(
+	UMaterialParameterCollection* Collection)
+{
+	if (!IsValid(Collection))
+	{
+		return false;
+	}
+	Collection->Modify();
+	auto AddScalar = [Collection](FName Name, float DefaultValue)
+	{
+		if (!Collection->ScalarParameters.ContainsByPredicate(
+			[Name](const FCollectionScalarParameter& Parameter) { return Parameter.ParameterName == Name; }))
+		{
+			FCollectionScalarParameter& Parameter = Collection->ScalarParameters.AddDefaulted_GetRef();
+			Parameter.ParameterName = Name;
+			Parameter.DefaultValue = DefaultValue;
+		}
+	};
+	auto AddVector = [Collection](FName Name, const FLinearColor& DefaultValue)
+	{
+		if (!Collection->VectorParameters.ContainsByPredicate(
+			[Name](const FCollectionVectorParameter& Parameter) { return Parameter.ParameterName == Name; }))
+		{
+			FCollectionVectorParameter& Parameter = Collection->VectorParameters.AddDefaulted_GetRef();
+			Parameter.ParameterName = Name;
+			Parameter.DefaultValue = DefaultValue;
+		}
+	};
+	AddScalar(TEXT("SW_VortexPreviewEnabled"), 0.0f);
+	AddVector(TEXT("SW_VortexPreviewCenterRadius"), FLinearColor::Transparent);
+	Collection->PostEditChange();
 	return true;
 }
 

@@ -13,6 +13,8 @@
 #include "Skills/GravityVortexField.h"
 #include "Bombardment.h"
 #include "WaterSurfaceQueryLibrary.h"
+#include "Materials/MaterialParameterCollection.h"
+#include "Materials/MaterialParameterCollectionInstance.h"
 
 UGA_GravityVortexThrow::UGA_GravityVortexThrow()
 {
@@ -129,6 +131,7 @@ void UGA_GravityVortexThrow::EndAbility(
 		AimLineActor->Destroy();
 		AimLineActor = nullptr;
 	}
+	ClearWaterPreview();
 	if (RangePreviewActor)
 	{
 		RangePreviewActor->Destroy();
@@ -297,8 +300,20 @@ void UGA_GravityVortexThrow::DrawAimTrajectory()
 		}
 		K2_OnAimTrajectoryUpdated(WorldPoints);
 
-		if (bFoundWaterImpact && RangePreviewClass)
+		if (bFoundWaterImpact)
 		{
+			float PullRadius = 5000.0f;
+			if (const AGravityVortexProjectile* ProjectileCDO =
+				ProjectileClass->GetDefaultObject<AGravityVortexProjectile>())
+			{
+				if (ProjectileCDO->FieldClass)
+				{
+					PullRadius = ProjectileCDO->FieldClass->GetDefaultObject<AGravityVortexField>()->PullRadius;
+				}
+			}
+			UpdateWaterPreview(ImpactLocation, PullRadius);
+			if (RangePreviewClass)
+			{
 			if (!IsValid(RangePreviewActor))
 			{
 				FActorSpawnParameters PreviewSpawnParams;
@@ -308,31 +323,66 @@ void UGA_GravityVortexThrow::DrawAimTrajectory()
 					RangePreviewClass, ImpactLocation, FRotator::ZeroRotator, PreviewSpawnParams);
 				if (RangePreviewActor)
 				{
-					float PullRadius = 5000.0f;
-					if (const AGravityVortexProjectile* ProjectileCDO = ProjectileClass->GetDefaultObject<AGravityVortexProjectile>())
-					{
-						if (ProjectileCDO->FieldClass)
-						{
-							PullRadius = ProjectileCDO->FieldClass->GetDefaultObject<AGravityVortexField>()->PullRadius;
-						}
-					}
 					RangePreviewActor->ConfigurePreview(PullRadius);
+					RangePreviewActor->SetPreviewMeshVisible(false);
 				}
 			}
 			if (RangePreviewActor)
 			{
 				RangePreviewActor->SetActorHiddenInGame(false);
 				RangePreviewActor->SetActorLocation(ImpactLocation + FVector::UpVector * RangePreviewHeightOffset);
-				// The vortex only needs the disk. Bombardment's optional enemy overlay
-				// would add noise and is intentionally kept disabled here.
-				RangePreviewActor->SetPreviewValid(false);
+				RangePreviewActor->SetPreviewValid(true);
+			}
 			}
 		}
-		else if (RangePreviewActor)
+		else
 		{
-			RangePreviewActor->SetActorHiddenInGame(true);
+			if (RangePreviewActor)
+			{
+				RangePreviewActor->SetActorHiddenInGame(true);
+				RangePreviewActor->SetPreviewValid(false);
+			}
+			ClearWaterPreview();
 		}
 	}
+}
+
+void UGA_GravityVortexThrow::UpdateWaterPreview(const FVector& Center, float Radius)
+{
+	if (!GetWorld() || GetWorld()->IsNetMode(NM_DedicatedServer)) return;
+	if (!WaterParameterCollection)
+	{
+		WaterParameterCollection = LoadObject<UMaterialParameterCollection>(nullptr,
+			TEXT("/Game/Blueprints/Water/MPC_Water_Custom.MPC_Water_Custom"));
+	}
+	UMaterialParameterCollectionInstance* Instance = WaterParameterCollection
+		? GetWorld()->GetParameterCollectionInstance(WaterParameterCollection) : nullptr;
+	if (!Instance) return;
+	const float SafeRadius = FMath::Max(1.0f, Radius);
+	if (!bWaterPreviewEnabled || FVector::DistSquared2D(Center, LastWaterPreviewCenter) > 25.0f
+		|| !FMath::IsNearlyEqual(SafeRadius, LastWaterPreviewRadius, 0.1f))
+	{
+		Instance->SetVectorParameterValue(TEXT("SW_VortexPreviewCenterRadius"),
+			FLinearColor(Center.X, Center.Y, Center.Z, SafeRadius));
+		LastWaterPreviewCenter = Center;
+		LastWaterPreviewRadius = SafeRadius;
+	}
+	if (!bWaterPreviewEnabled)
+	{
+		Instance->SetScalarParameterValue(TEXT("SW_VortexPreviewEnabled"), 1.0f);
+		bWaterPreviewEnabled = true;
+	}
+}
+
+void UGA_GravityVortexThrow::ClearWaterPreview()
+{
+	if (!bWaterPreviewEnabled || !GetWorld() || !WaterParameterCollection) return;
+	if (UMaterialParameterCollectionInstance* Instance =
+		GetWorld()->GetParameterCollectionInstance(WaterParameterCollection))
+	{
+		Instance->SetScalarParameterValue(TEXT("SW_VortexPreviewEnabled"), 0.0f);
+	}
+	bWaterPreviewEnabled = false;
 }
 
 bool UGA_GravityVortexThrow::GetLaunchData(FVector& OutSpawnLocation, FVector& OutLaunchVelocity) const

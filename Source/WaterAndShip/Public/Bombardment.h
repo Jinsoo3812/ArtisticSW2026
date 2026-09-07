@@ -40,6 +40,7 @@ public:
 
 	void ConfigurePreview(float InSkillRadius);
 	void SetPreviewValid(bool bInValid);
+	void SetPreviewMeshVisible(bool bVisible);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bombardment|Preview")
 	TObjectPtr<USceneComponent> PreviewRoot;

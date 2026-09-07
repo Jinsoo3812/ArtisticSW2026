@@ -9,6 +9,7 @@ class ABasePlayer;
 class AVortexAimLine;
 class ABombardmentPreview;
 class USkeletalMeshComponent;
+class UMaterialParameterCollection;
 
 /** Hold the skill key to aim, press left mouse to throw, or right mouse/release the skill key to cancel. */
 UCLASS(Blueprintable)
@@ -135,6 +136,8 @@ protected:
 	void DrawAimTrajectory();
 
 private:
+	void UpdateWaterPreview(const FVector& Center, float Radius);
+	void ClearWaterPreview();
 	bool GetLaunchData(FVector& OutSpawnLocation, FVector& OutLaunchVelocity) const;
 	void SpawnProjectileOnServer();
 
@@ -148,4 +151,11 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<ABombardmentPreview> RangePreviewActor;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialParameterCollection> WaterParameterCollection;
+
+	FVector LastWaterPreviewCenter = FVector::ZeroVector;
+	float LastWaterPreviewRadius = 0.0f;
+	bool bWaterPreviewEnabled = false;
 };

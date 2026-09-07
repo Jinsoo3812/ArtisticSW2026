@@ -84,6 +84,15 @@ void ABombardmentPreview::SetPreviewValid(bool bInValid)
 	bPreviewValid = bInValid;
 }
 
+void ABombardmentPreview::SetPreviewMeshVisible(bool bVisible)
+{
+	if (PreviewMesh)
+	{
+		PreviewMesh->SetVisibility(bVisible);
+		PreviewMesh->SetHiddenInGame(!bVisible);
+	}
+}
+
 void ABombardmentPreview::RefreshHighlightedTargets()
 {
 	if (!bPreviewValid || SkillRadius <= 0.0f || !TargetHighlightMaterial)
