@@ -2,6 +2,7 @@
 
 
 #include "Ship.h"
+#include "HAL/IConsoleManager.h"
 #include "MultiGameMode.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -28,9 +29,6 @@
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
 #include "Effects/SWNiagaraScaleLibrary.h"
-#include "NiagaraEmitter.h"
-#include "NiagaraEmitterHandle.h"
-#include "NiagaraRendererProperties.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
 #include "Skills/SkillUseProvider.h"
 #include "ShipPhysicsAsync.h"
@@ -499,6 +497,40 @@ void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	static const auto CVarShipBalanceDiagnostics = IConsoleManager::Get().RegisterConsoleVariable(
+		TEXT("sw.ShipBalanceDiagnostics"),
+		0,
+		TEXT("Logs steady-state player ship and enemy cannon balance measurements."),
+		ECVF_Default);
+	if (CVarShipBalanceDiagnostics->GetInt() != 0
+		&& IsLocallyControlled() && !IsEnemyShipForEffects() && GetWorld()
+		&& GetWorld()->GetTimeSeconds() >= NextShipBalanceDiagnosticTime)
+	{
+		NextShipBalanceDiagnosticTime = GetWorld()->GetTimeSeconds() + 0.5;
+		const FVector Velocity = GetVelocity();
+		const float Speed2D = Velocity.Size2D();
+		const float ForwardSpeed = FVector::DotProduct(Velocity, GetActorForwardVector());
+		const float AngularSpeedDeg = BuoyancyRoot
+			? FMath::Abs(BuoyancyRoot->GetPhysicsAngularVelocityInDegrees().Z)
+			: 0.0f;
+		const bool bStableSample = FMath::Abs(Speed2D - PreviousShipBalanceSpeed) <= 10.0f
+			&& FMath::Abs(AngularSpeedDeg - PreviousShipBalanceAngularSpeed) <= 0.25f;
+		ShipBalanceStableSampleCount = bStableSample ? ShipBalanceStableSampleCount + 1 : 0;
+		PreviousShipBalanceSpeed = Speed2D;
+		PreviousShipBalanceAngularSpeed = AngularSpeedDeg;
+		const float AngularSpeedRad = FMath::DegreesToRadians(AngularSpeedDeg);
+		const float TurnRadius = AngularSpeedRad > KINDA_SMALL_NUMBER ? Speed2D / AngularSpeedRad : 0.0f;
+		const TCHAR* InputLabel = CurrentMoveInput > 0.9f
+			? (CurrentTurnInput > 0.9f ? TEXT("WD") : CurrentTurnInput < -0.9f ? TEXT("WA") : TEXT("W"))
+			: TEXT("OTHER");
+		UE_LOG(LogTemp, Display,
+			TEXT("[SHIP-BALANCE] Row=%s Input=%s Move=%.2f Turn=%.2f Speed2D=%.1f ForwardSpeed=%.1f AngularSpeedDeg=%.2f TurnRadius=%.1f Stable=%s Samples=%d"),
+			*ShipStatRowName.ToString(), InputLabel, CurrentMoveInput, CurrentTurnInput,
+			Speed2D, ForwardSpeed, AngularSpeedDeg, TurnRadius,
+			ShipBalanceStableSampleCount >= 4 ? TEXT("true") : TEXT("false"),
+			ShipBalanceStableSampleCount);
+	}
 
 	if (GEngine && IsLocallyControlled() && !IsEnemyShipForEffects())
 	{
@@ -2656,24 +2688,12 @@ void AShip::SpawnRamImpactNiagaraForAll(
 	float LifetimeScale,
 	float PlaybackSpeed)
 {
-	UE_LOG(
-		LogTemp,
-		Warning,
-		TEXT("[RAM-NIAGARA][DISPATCH] Ship=%s Authority=%s Effect=%s Location=%s Scale=%.3f PlaybackSpeed=%.3f"),
-		*GetNameSafe(this),
-		HasAuthority() ? TEXT("true") : TEXT("false"),
-		*GetPathNameSafe(Effect),
-		*Location.ToCompactString(),
-		UniformScale,
-		PlaybackSpeed);
 	if (!HasAuthority())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[RAM-NIAGARA][SKIP] Ship=%s Reason=NoAuthority"), *GetNameSafe(this));
 		return;
 	}
 	if (!Effect)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[RAM-NIAGARA][SKIP] Ship=%s Reason=EffectIsNull"), *GetNameSafe(this));
 		return;
 	}
 	if (Effect)
@@ -2700,94 +2720,10 @@ void AShip::MulticastSpawnRamImpactNiagara_Implementation(
 	float LifetimeScale,
 	float PlaybackSpeed)
 {
-	UE_LOG(
-		LogTemp,
-		Warning,
-		TEXT("[RAM-NIAGARA][MULTICAST] Ship=%s NetMode=%d Effect=%s World=%s Location=%s Scale=%.3f PlaybackSpeed=%.3f"),
-		*GetNameSafe(this),
-		static_cast<int32>(GetNetMode()),
-		*GetPathNameSafe(Effect),
-		*GetNameSafe(GetWorld()),
-		*FVector(Location).ToCompactString(),
-		UniformScale,
-		PlaybackSpeed);
 	if (Effect && GetWorld())
 	{
-		TArray<FNiagaraVariable> ExposedParameters;
-		Effect->GetExposedParameters().GetParameters(ExposedParameters);
-		FString ExposedParameterList;
-		bool bUsesHitScaleParameter = false;
-		for (const FNiagaraVariable& Parameter : ExposedParameters)
-		{
-			if (!ExposedParameterList.IsEmpty())
-			{
-				ExposedParameterList += TEXT(", ");
-			}
-			ExposedParameterList += FString::Printf(
-				TEXT("%s:%s"),
-				*Parameter.GetName().ToString(),
-				*Parameter.GetType().GetName());
-			bUsesHitScaleParameter |= Parameter.GetName() == TEXT("User.HitScale")
-				&& Parameter.GetType() == FNiagaraTypeDefinition::GetFloatDef();
-		}
-		UE_LOG(
-			LogTemp,
-			Warning,
-			TEXT("[RAM-NIAGARA][ASSET] Effect=%s Emitters=%d ExposedParameters=[%s] FixedBounds=%s"),
-			*GetPathNameSafe(Effect),
-			Effect->GetEmitterHandles().Num(),
-			*ExposedParameterList,
-			*Effect->GetFixedBounds().ToString());
-		for (const FNiagaraEmitterHandle& EmitterHandle : Effect->GetEmitterHandles())
-		{
-			const FVersionedNiagaraEmitterData* EmitterData = EmitterHandle.GetEmitterData();
-			FString RendererList;
-			if (EmitterData)
-			{
-				for (const UNiagaraRendererProperties* Renderer : EmitterData->GetRenderers())
-				{
-					if (!RendererList.IsEmpty())
-					{
-						RendererList += TEXT(", ");
-					}
-					RendererList += GetNameSafe(Renderer ? Renderer->GetClass() : nullptr);
-				}
-			}
-			UE_LOG(
-				LogTemp,
-				Warning,
-				TEXT("[RAM-NIAGARA][EMITTER] Name=%s Enabled=%s LocalSpace=%s SimTarget=%d Renderers=[%s]"),
-				*EmitterHandle.GetName().ToString(),
-				EmitterHandle.GetIsEnabled() ? TEXT("true") : TEXT("false"),
-				EmitterData && EmitterData->bLocalSpace ? TEXT("true") : TEXT("false"),
-				EmitterData ? static_cast<int32>(EmitterData->SimTarget) : -1,
-				*RendererList);
-		}
-		UNiagaraComponent* SpawnedComponent = USWNiagaraScaleLibrary::SpawnTunedSystemAtLocation(
+		USWNiagaraScaleLibrary::SpawnTunedSystemAtLocation(
 			GetWorld(), Effect, Location, Rotation, UniformScale, LifetimeScale, PlaybackSpeed, true);
-		const FVector RelativeScale = SpawnedComponent
-			? SpawnedComponent->GetRelativeScale3D()
-			: FVector::ZeroVector;
-		const FVector ComponentScale = SpawnedComponent
-			? SpawnedComponent->GetComponentScale()
-			: FVector::ZeroVector;
-		UE_LOG(
-			LogTemp,
-			Warning,
-			TEXT("[RAM-NIAGARA][SPAWN-RESULT] Ship=%s Component=%s Active=%s RequestedScale=%.3f ScaleMode=%s PlaybackSpeed=%.3f AppliedTimeDilation=%.3f RelativeScale=%s ComponentScale=%s"),
-			*GetNameSafe(this),
-			*GetNameSafe(SpawnedComponent),
-			SpawnedComponent && SpawnedComponent->IsActive() ? TEXT("true") : TEXT("false"),
-			UniformScale,
-			bUsesHitScaleParameter ? TEXT("User.HitScale") : TEXT("ComponentTransform"),
-			PlaybackSpeed,
-			SpawnedComponent ? SpawnedComponent->GetCustomTimeDilation() : 0.0f,
-			*RelativeScale.ToCompactString(),
-			*ComponentScale.ToCompactString());
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[RAM-NIAGARA][SKIP] Ship=%s Reason=MissingEffectOrWorld"), *GetNameSafe(this));
 	}
 }
 

@@ -7,6 +7,7 @@
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipArchetypeData.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
+#include "HAL/IConsoleManager.h"
 
 UGA_EnemyShipCannonVolley::UGA_EnemyShipCannonVolley()
 {
@@ -135,7 +136,35 @@ bool UGA_EnemyShipCannonVolley::BuildShotSolution(
 
 	OutProjectileSpeed = LaunchVelocity.Size();
 	OutDirection = LaunchVelocity.GetSafeNormal();
-	return Cannon->CanAimAtWorldDirection(OutDirection);
+	if (const IConsoleVariable* Diagnostics =
+		IConsoleManager::Get().FindConsoleVariable(TEXT("sw.ShipBalanceDiagnostics"));
+		Diagnostics && Diagnostics->GetInt() != 0)
+	{
+		FVector TrackedVelocity(TargetVelocity.X, TargetVelocity.Y, 0.0f);
+		TrackedVelocity = TrackedVelocity.GetClampedToMaxSize(
+			FMath::Max(0.0f, AimProfile.TrackableTargetSpeed));
+		const float StraightResidual =
+			FVector::Dist2D(FVector::ZeroVector, TargetVelocity - TrackedVelocity) * FlightTime;
+		const UPrimitiveComponent* TargetRoot = Target->BuoyancyRoot;
+		const float AngularSpeedDeg = TargetRoot
+			? FMath::Abs(TargetRoot->GetPhysicsAngularVelocityInDegrees().Z)
+			: 0.0f;
+		const TCHAR* InputLabel = Target->GetCurrentMoveInput() > 0.9f
+			? (Target->GetCurrentTurnInput() > 0.9f ? TEXT("WD")
+				: Target->GetCurrentTurnInput() < -0.9f ? TEXT("WA") : TEXT("W"))
+			: TEXT("OTHER");
+		const FRotator LocalAim = Cannon->GetActorTransform()
+			.InverseTransformVectorNoScale(OutDirection).Rotation();
+		UE_LOG(LogTemp, Display,
+			TEXT("[CANNON-BALANCE] Enemy=%s PlayerRow=%s Input=%s Distance=%.1f FlightTime=%.2f TrackableSpeed=%.1f PlayerSpeed=%.1f AngularSpeedDeg=%.2f StraightResidual=%.1f LaunchSpeed=%.1f AimPitch=%.1f AimYaw=%.1f AimAllowed=%s"),
+			*GetNameSafe(Ship), *Target->GetShipStatRowName().ToString(), InputLabel,
+			FVector::Dist2D(Start, CurrentTargetPoint), FlightTime,
+			AimProfile.TrackableTargetSpeed, TargetVelocity.Size2D(), AngularSpeedDeg,
+			StraightResidual, OutProjectileSpeed, LocalAim.Pitch,
+			FMath::UnwindDegrees(LocalAim.Yaw),
+			Cannon->CanAIAimAtWorldDirection(OutDirection) ? TEXT("true") : TEXT("false"));
+	}
+	return Cannon->CanAIAimAtWorldDirection(OutDirection);
 }
 
 bool UGA_EnemyShipCannonVolley::CalculateLaunchVelocity(

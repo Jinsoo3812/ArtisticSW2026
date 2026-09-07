@@ -503,6 +503,18 @@ bool ACannon::FireAICannonAtDirection(const FVector& WorldDirection)
 		GetResolvedFiringStats().ProjectileSpeed);
 }
 
+bool ACannon::CanAIAimAtWorldDirection(const FVector& WorldDirection) const
+{
+	if (WorldDirection.IsNearlyZero())
+	{
+		return false;
+	}
+	const FRotator LocalRotation = GetActorTransform()
+		.InverseTransformVectorNoScale(WorldDirection.GetSafeNormal()).Rotation();
+	return LocalRotation.Pitch >= MinPitch && LocalRotation.Pitch <= MaxAIPitch
+		&& FMath::Abs(FMath::UnwindDegrees(LocalRotation.Yaw)) <= MaxYawOffset;
+}
+
 void ACannon::ResetAIFiringState()
 {
 	if (!HasAuthority())
@@ -518,7 +530,7 @@ bool ACannon::FireAICannonAtDirectionWithSpeed(
 	const FVector& WorldDirection,
 	float ProjectileSpeed)
 {
-	if (!HasAuthority() || !CanFireCannon() || !CanAimAtWorldDirection(WorldDirection))
+	if (!HasAuthority() || !CanFireCannon() || !CanAIAimAtWorldDirection(WorldDirection))
 	{
 		return false;
 	}
@@ -551,7 +563,7 @@ void ACannon::SetAIAimRotation(float NewPitch, float NewYaw)
 {
 	if (HasAuthority())
 	{
-		AimRotation.Pitch = FMath::Clamp(NewPitch, MinPitch, MaxPitch);
+		AimRotation.Pitch = FMath::Clamp(NewPitch, MinPitch, MaxAIPitch);
 		AimRotation.Yaw = FMath::Clamp(NewYaw, -MaxYawOffset, MaxYawOffset);
 	}
 }

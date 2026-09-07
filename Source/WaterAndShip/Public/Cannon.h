@@ -96,6 +96,7 @@ public:
 	/** Checks authored pitch/yaw limits without changing the replicated aim. */
 	UFUNCTION(BlueprintPure, Category = "Cannon|AI")
 	bool CanAimAtWorldDirection(const FVector& WorldDirection) const;
+	bool CanAIAimAtWorldDirection(const FVector& WorldDirection) const;
 
 	/** Server-only deterministic AI shot using the supplied ballistic direction. */
 	UFUNCTION(BlueprintCallable, Category = "Cannon|AI")
@@ -180,6 +181,10 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Aiming")
 	float MaxPitch = 45.0f;
+
+	/** AI-only elevation limit for long-flight ballistic solutions. Player aiming keeps MaxPitch. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Aiming", meta = (ClampMin = "0.0", ClampMax = "89.0", Units = "deg"))
+	float MaxAIPitch = 85.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Aiming")
 	float MaxYawOffset = 60.0f;

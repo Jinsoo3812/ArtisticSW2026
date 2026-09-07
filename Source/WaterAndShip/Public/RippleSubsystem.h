@@ -11,7 +11,7 @@
  * Server-side ripple detector and client-side ripple renderer.
  * Authoritative ripple state/query math lives in USWRippleStateSubsystem.
  */
-UCLASS(BlueprintType, Blueprintable)
+UCLASS(BlueprintType, Blueprintable, Config=Game, DefaultConfig)
 class WATERANDSHIP_API URippleSubsystem : public UWorldSubsystem, public FTickableGameObject
 {
 	GENERATED_BODY()
@@ -32,6 +32,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Water Ripple")
 	void AddRipple(FVector2D Origin, float InitialAmplitude, float WaveSpeed = 300.0f, float DecayRate = 1.0f, float WaveLength = 100.0f);
 
+	/** Converts a water impact velocity into an authoritative ripple. Calls on clients are rejected. */
+	void AddRippleFromImpact(FVector2D Origin, float DownwardSpeed);
+
 	/** Creates a client-only visual prediction that is reconciled by the replicated server event. */
 	void AddPredictedRippleFromImpact(FVector2D Origin, float DownwardSpeed);
 
@@ -48,7 +51,7 @@ public:
 	FVector2D GetRippleGridCenter() const { return CurrentRippleGridCenter; }
 	float GetRippleGridSize() const { return RippleGridSizeCm; }
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water Ripple")
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Water Ripple", meta = (ClampMin = "0.0", Units = "cm"))
 	float MaxGenerationDistance = 10000.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water Ripple")
@@ -84,6 +87,7 @@ private:
 
 	int32 RippleCapacity = 32;
 	int32 RippleRenderTargetResolution = 512;
+	UPROPERTY(Config, EditAnywhere, Category = "Water Ripple", meta = (ClampMin = "1.0", Units = "cm"))
 	float RippleGridSizeCm = 20000.0f;
 	FVector2D CurrentRippleGridCenter = FVector2D::ZeroVector;
 

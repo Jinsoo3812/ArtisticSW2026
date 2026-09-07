@@ -6,6 +6,7 @@
 #include "Cannon.h"
 #include "Components/ChildActorComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
@@ -13,6 +14,37 @@
 #include "Ship.h"
 #include "ShipAttributeSet.h"
 #include "ShipBoardingPoint.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPlayerShipTierStatsAuthoringTest,
+	"ArtisticSW.Ship.Authoring.PlayerShipTierStats",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPlayerShipTierStatsAuthoringTest::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = LoadObject<UDataTable>(
+		nullptr, TEXT("/Game/Blueprints/Ship/Data/DT_ShipStat.DT_ShipStat"));
+	if (!TestNotNull(TEXT("DT_ShipStat loads"), Table)) return false;
+
+	const float Health[] = {1500000.0f, 2250000.0f, 3375000.0f};
+	const float Propulsion[] = {6.0f, 9.0f, 14.0f};
+	const float Turn[] = {3.0f, 5.0f, 7.0f};
+	const float Damage[] = {15.0f, 23.0f, 34.0f};
+	const float Cooldown[] = {2.0f, 4.0f / 3.0f, 8.0f / 9.0f};
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		const FName RowName(*FString::Printf(TEXT("PlayerShip_%d"), Index + 2));
+		const FShipStatRow* Row = Table->FindRow<FShipStatRow>(RowName, TEXT("Player tier test"));
+		if (!TestNotNull(*FString::Printf(TEXT("%s exists"), *RowName.ToString()), Row)) continue;
+		TestEqual(TEXT("Health scales"), Row->MaxHealth, Health[Index]);
+		TestEqual(TEXT("Propulsion scales"), Row->ForwardPropulsionMultiplier, Propulsion[Index]);
+		TestEqual(TEXT("Turn scales"), Row->TurnTorqueMultiplier, Turn[Index]);
+		TestEqual(TEXT("Damage scales"), Row->CannonDamage, Damage[Index]);
+		TestTrue(TEXT("Cooldown scales"), FMath::IsNearlyEqual(Row->CannonFireCooldown, Cooldown[Index], 0.001f));
+		TestEqual(TEXT("Projectile speed remains stable"), Row->CannonballSpeed, 6000.0f);
+	}
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FShipAuthoringComponentsTest,

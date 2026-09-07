@@ -60,8 +60,9 @@ void USWNiagaraScaleLibrary::ApplyEffectTuning(
 	bool bUsesAuthoredLifetime = false;
 	const bool bUsesShooterAdapter = FSWShooterVFXNiagaraAdapter::Apply(
 		Component, SafeSizeScale, SafeLifetimeScale, bUsesAuthoredLifetime);
-	bUsesAuthoredLifetime |= FSWSplashEffectsNiagaraAdapter::ApplyLifetime(Component, SafeLifetimeScale);
-	if (bUsesShooterAdapter)
+	const bool bUsesSplashAdapter = FSWSplashEffectsNiagaraAdapter::Apply(
+		Component, SafeSizeScale, SafeLifetimeScale, bUsesAuthoredLifetime);
+	if (bUsesShooterAdapter || bUsesSplashAdapter)
 	{
 		Component->SetRelativeScale3D(FVector::OneVector);
 	}

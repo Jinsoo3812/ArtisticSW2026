@@ -1,4 +1,5 @@
 #include "RippleSubsystem.h"
+#include "Cannonball.h"
 
 #include "Components/PrimitiveComponent.h"
 #include "Engine/Engine.h"
@@ -67,8 +68,8 @@ namespace
 		TEXT("sw.Ripple.Resolution"), 512,
 		TEXT("Compute-baked ripple render target resolution (256, 512, 1024)."), ECVF_Default);
 	TAutoConsoleVariable<float> CVarRippleGridSize(
-		TEXT("sw.Ripple.GridSize"), 20000.0f,
-		TEXT("Compute-baked ripple world coverage in cm (default 20000 = 200m)."), ECVF_Default);
+		TEXT("sw.Ripple.GridSize"), -1.0f,
+		TEXT("Runtime override for ripple world coverage in cm. <= 0 uses DefaultGame.ini."), ECVF_Default);
 	TAutoConsoleVariable<float> CVarRippleFoamSteepnessMin(
 		TEXT("sw.Foam.Ripple.SteepnessMin"), 0.10f,
 		TEXT("Minimum k*A for Ripple Foam emission."), ECVF_Default);
@@ -340,19 +341,15 @@ void URippleSubsystem::OnWaterBodyActorOverlap(AActor* OverlappedActor, AActor* 
 	{
 		return;
 	}
-
-	const float DownwardSpeed = -OtherActor->GetVelocity().Z;
-	if (DownwardSpeed < MinVelocityThreshold)
+	if (const ACannonball* Cannonball = Cast<ACannonball>(OtherActor);
+		Cannonball && Cannonball->bHasHitWater)
 	{
 		return;
 	}
 
+	const float DownwardSpeed = -OtherActor->GetVelocity().Z;
 	const FVector ContactLocation = OtherActor->GetActorLocation();
-	const float InitialAmplitude = FMath::Clamp(
-		DownwardSpeed * AmplitudeMultiplier,
-		10.0f,
-		MaxInitialAmplitude);
-	AddRipple(FVector2D(ContactLocation.X, ContactLocation.Y), InitialAmplitude, DefaultWaveSpeed, DefaultDecayRate, DefaultWaveLength);
+	AddRippleFromImpact(FVector2D(ContactLocation.X, ContactLocation.Y), DownwardSpeed);
 }
 
 TStatId URippleSubsystem::GetStatId() const
@@ -379,7 +376,12 @@ void URippleSubsystem::Tick(float DeltaTime)
 	{
 		CreateRippleRenderTarget();
 	}
-	RippleGridSizeCm = FMath::Max(CVarRippleGridSize.GetValueOnGameThread(), 1.0f);
+	const float RuntimeGridSizeOverride = CVarRippleGridSize.GetValueOnGameThread();
+	if (RuntimeGridSizeOverride > 0.0f)
+	{
+		RippleGridSizeCm = RuntimeGridSizeOverride;
+	}
+	RippleGridSizeCm = FMath::Max(RippleGridSizeCm, 1.0f);
 	CurrentRippleGridCenter = ResolveRippleGridCenter();
 	bRippleFoamEnabled = false;
 	static const FName RippleFoamEnabledParameterName(TEXT("SW Ripple Foam Enabled"));
@@ -445,6 +447,21 @@ void URippleSubsystem::AddRipple(
 			*Origin.ToString(),
 			InitialAmplitude);
 	}
+}
+
+void URippleSubsystem::AddRippleFromImpact(FVector2D Origin, float DownwardSpeed)
+{
+	UWorld* World = GetWorld();
+	if (!World || World->GetNetMode() == NM_Client || DownwardSpeed < MinVelocityThreshold)
+	{
+		return;
+	}
+
+	const float InitialAmplitude = FMath::Clamp(
+		DownwardSpeed * AmplitudeMultiplier,
+		10.0f,
+		MaxInitialAmplitude);
+	AddRipple(Origin, InitialAmplitude, DefaultWaveSpeed, DefaultDecayRate, DefaultWaveLength);
 }
 
 void URippleSubsystem::AddPredictedRippleFromImpact(FVector2D Origin, float DownwardSpeed)

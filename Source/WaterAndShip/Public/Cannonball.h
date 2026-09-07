@@ -18,6 +18,7 @@ UCLASS()
 class WATERANDSHIP_API ACannonball : public AActor
 {
 	GENERATED_BODY()
+	friend class URippleSubsystem;
 	
 public:	
 	ACannonball();
@@ -150,7 +151,8 @@ protected:
 
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastSpawnNiagaraEffect(UNiagaraSystem* Effect, FVector_NetQuantize Location,
-		FRotator Rotation, float SizeScale, float LifetimeScale, float PlaybackSpeed);
+		FRotator Rotation, float SizeScale, float LifetimeScale, float PlaybackSpeed,
+		bool bIsWaterImpact);
 
 private:
 	// ---- State ----
@@ -165,4 +167,7 @@ private:
 	FVector PreviousProjectileLocation = FVector::ZeroVector;
 	float DesignatedImpactTolerance = 75.0f;
 	FTimerHandle WaterHitTimerHandle;
+	FVector PreviousWaterProbeLocation = FVector::ZeroVector;
+	float PreviousWaterProbeSurfaceZ = 0.0f;
+	bool bHasPreviousWaterProbe = false;
 };

@@ -3,5 +3,9 @@ class UNiagaraComponent;
 class FSWSplashEffectsNiagaraAdapter
 {
 public:
-	static bool ApplyLifetime(UNiagaraComponent* Component, float LifetimeScale);
+	static bool Apply(
+		UNiagaraComponent* Component,
+		float SizeScale,
+		float LifetimeScale,
+		bool& bOutUsesAuthoredLifetime);
 };

@@ -661,6 +661,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Input")
 	float GetCurrentTurnInput() const { return CurrentTurnInput; }
+	FName GetShipStatRowName() const { return ShipStatRowName; }
 
 	void AddPropulsionSuppression(const FGuid& SourceId);
 	void RemovePropulsionSuppression(const FGuid& SourceId);
@@ -1184,6 +1185,10 @@ private:
 	FShipPhysicsAsync* ShipPhysicsAsync = nullptr;
 	bool bBuoyancyQueryDiagnostics = false;
 	double NextBuoyancyQueryDiagnosticTime = 0.0;
+	double NextShipBalanceDiagnosticTime = 0.0;
+	float PreviousShipBalanceSpeed = 0.0f;
+	float PreviousShipBalanceAngularSpeed = 0.0f;
+	int32 ShipBalanceStableSampleCount = 0;
 
 	float CurrentMoveInput = 0.0f;
 	float CurrentTurnInput = 0.0f;

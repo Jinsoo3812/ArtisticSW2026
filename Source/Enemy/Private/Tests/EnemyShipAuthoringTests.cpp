@@ -150,7 +150,7 @@ bool FEnemyShipFleetAuthoringTest::RunTest(const FString& Parameters)
 	const int32 ExpectedTurn[] = {1, 2, 2, 3};
 	const float ExpectedCooldown[] = {4.0f, 4.0f / 1.5f, 4.0f / 2.25f, 4.0f / 3.375f};
 	const float ExpectedTrackableSpeed[] = {1000.0f, 1500.0f, 2250.0f, 3375.0f};
-	const float ExpectedFlightTime[] = {3.0f, 2.5f, 2.0f, 1.5f};
+	const float ExpectedFlightTime[] = {6.0f, 5.0f, 4.0f, 3.0f};
 	UEnemyShipSkillModuleData* CannonModule = LoadObject<UEnemyShipSkillModuleData>(
 		nullptr,
 		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/SkillModule/DA_ES_SkillModule_Cannon.DA_ES_SkillModule_Cannon"));

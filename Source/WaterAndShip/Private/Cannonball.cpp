@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Cannonball.h"
+#include "WaterSurfaceQueryLibrary.h"
 #include "CannonballImpactReceiver.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -12,6 +13,7 @@
 #include "BaseGameplayTags.h"
 #include "GameplayEffect.h"
 #include "DrawDebugHelpers.h"
+#include "HAL/IConsoleManager.h"
 #include "WaterBodyActor.h"
 #include "BaseAttributeSet.h"
 #include "CollisionChannels.h"
@@ -24,6 +26,28 @@
 #include "RippleSubsystem.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
 #include "Effects/SWNiagaraScaleLibrary.h"
+
+namespace
+{
+	TAutoConsoleVariable<int32> CVarCannonWaterImpactDiagnostics(
+		TEXT("sw.CannonWaterImpactDiagnostics"),
+		1,
+		TEXT("Logs cannonball water-overlap and water-impact Niagara spawning. 0=off, 1=on."),
+		ECVF_Default);
+
+	const TCHAR* GetCannonWaterNetMode(const UWorld* World)
+	{
+		if (!World) return TEXT("NoWorld");
+		switch (World->GetNetMode())
+		{
+		case NM_Standalone: return TEXT("Standalone");
+		case NM_DedicatedServer: return TEXT("DedicatedServer");
+		case NM_ListenServer: return TEXT("ListenServer");
+		case NM_Client: return TEXT("Client");
+		default: return TEXT("Unknown");
+		}
+	}
+}
 
 ACannonball::ACannonball()
 {
@@ -86,6 +110,7 @@ void ACannonball::BeginPlay()
 {
 	Super::BeginPlay();
 	PreviousProjectileLocation = GetActorLocation();
+	PreviousWaterProbeLocation = GetActorLocation();
 
 	if (ProjectileEffectComponent && GetNetMode() != NM_DedicatedServer)
 	{
@@ -135,6 +160,42 @@ void ACannonball::PostNetReceiveVelocity(const FVector& NewVelocity)
 void ACannonball::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (!bHasHitWater)
+	{
+		const FVector CurrentLocation = GetActorLocation();
+		float CurrentSurfaceZ = 0.0f;
+		if (FWaterSurfaceQueryLibrary::QueryWaterSurface(
+			GetWorld(), CurrentLocation, CurrentSurfaceZ, true))
+		{
+			if (bHasPreviousWaterProbe
+				&& PreviousWaterProbeLocation.Z > PreviousWaterProbeSurfaceZ
+				&& CurrentLocation.Z <= CurrentSurfaceZ)
+			{
+				if (CVarCannonWaterImpactDiagnostics.GetValueOnGameThread() != 0)
+				{
+					UE_LOG(LogTemp, Warning,
+						TEXT("[CANNON-WATER-VFX][SURFACE-FALLBACK] NetMode=%s Authority=%s Actor=%s Previous=%s PreviousSurfaceZ=%.2f Current=%s CurrentSurfaceZ=%.2f Velocity=%s CollisionProfile=%s CollisionEnabled=%d GenerateOverlap=%s WorldStaticResponse=%d"),
+						GetCannonWaterNetMode(GetWorld()), HasAuthority() ? TEXT("true") : TEXT("false"),
+						*GetName(), *PreviousWaterProbeLocation.ToCompactString(), PreviousWaterProbeSurfaceZ,
+						*CurrentLocation.ToCompactString(), CurrentSurfaceZ, *GetVelocity().ToCompactString(),
+						SphereCollision ? *SphereCollision->GetCollisionProfileName().ToString() : TEXT("None"),
+						SphereCollision ? static_cast<int32>(SphereCollision->GetCollisionEnabled()) : -1,
+						SphereCollision && SphereCollision->GetGenerateOverlapEvents() ? TEXT("true") : TEXT("false"),
+						SphereCollision ? static_cast<int32>(SphereCollision->GetCollisionResponseToChannel(ECC_WorldStatic)) : -1);
+				}
+
+				FVector SurfaceLocation = CurrentLocation;
+				SurfaceLocation.Z = CurrentSurfaceZ;
+				TriggerWaterRipple(SurfaceLocation);
+			}
+
+			PreviousWaterProbeLocation = CurrentLocation;
+			PreviousWaterProbeSurfaceZ = CurrentSurfaceZ;
+			bHasPreviousWaterProbe = true;
+		}
+
+	}
 
 	if (bHasDesignatedImpact && !bHasHitWater && !bHasProcessedShipHit)
 	{
@@ -445,11 +506,31 @@ bool ACannonball::ApplyDamageToTarget(AActor* TargetActor)
 
 void ACannonball::TriggerWaterRipple(const FVector& HitLocation)
 {
-	if (bHasHitWater) return;
+	if (bHasHitWater)
+	{
+		if (CVarCannonWaterImpactDiagnostics.GetValueOnGameThread() != 0)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[CANNON-WATER-VFX][SKIP-DUPLICATE] NetMode=%s Actor=%s Location=%s"),
+				GetCannonWaterNetMode(GetWorld()), *GetName(), *HitLocation.ToCompactString());
+		}
+		return;
+	}
 	bHasHitWater = true;
+	UNiagaraSystem* Effect = GetWaterImpactEffect();
+	if (CVarCannonWaterImpactDiagnostics.GetValueOnGameThread() != 0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CANNON-WATER-VFX][TRIGGER] NetMode=%s Authority=%s Actor=%s Class=%s Effect=%s Location=%s Velocity=%s Scale=%.3f LifetimeScale=%.3f PlaybackSpeed=%.3f"),
+			GetCannonWaterNetMode(GetWorld()), HasAuthority() ? TEXT("true") : TEXT("false"),
+			*GetName(), *GetNameSafe(GetClass()), *GetNameSafe(Effect),
+			*HitLocation.ToCompactString(), *GetVelocity().ToCompactString(),
+			GetWaterImpactEffectScale(), GetWaterImpactEffectLifetimeScale(),
+			GetWaterImpactEffectPlaybackSpeed());
+	}
 	if (HasAuthority())
 	{
-		if (UNiagaraSystem* Effect = GetWaterImpactEffect())
+		if (Effect)
 		{
 			// This Niagara is authored to burst along its local +Z axis. Keep it
 			// aligned with world +Z, independent of the incoming trajectory.
@@ -459,10 +540,16 @@ void ACannonball::TriggerWaterRipple(const FVector& HitLocation)
 				FRotator::ZeroRotator,
 				FMath::Max(0.01f, GetWaterImpactEffectScale()),
 				FMath::Max(0.01f, GetWaterImpactEffectLifetimeScale()),
-				FMath::Max(0.01f, GetWaterImpactEffectPlaybackSpeed()));
+				FMath::Max(0.01f, GetWaterImpactEffectPlaybackSpeed()),
+				true);
+		}
+		else if (CVarCannonWaterImpactDiagnostics.GetValueOnGameThread() != 0)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[CANNON-WATER-VFX][NO-ASSET] Actor=%s Class=%s has no resolved water-impact Niagara."),
+				*GetName(), *GetNameSafe(GetClass()));
 		}
 	}
-
 	if (FParse::Param(FCommandLine::Get(), TEXT("RippleDiagnostics")))
 	{
 		const AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState() : nullptr;
@@ -474,15 +561,20 @@ void ACannonball::TriggerWaterRipple(const FVector& HitLocation)
 			GameState ? GameState->GetServerWorldTimeSeconds() : 0.0,
 			-GetVelocity().Z);
 	}
-	if (!HasAuthority())
+	if (URippleSubsystem* RippleSubsystem = GetWorld()
+		? GetWorld()->GetSubsystem<URippleSubsystem>()
+		: nullptr)
 	{
-		if (URippleSubsystem* RippleSubsystem = GetWorld()
-			? GetWorld()->GetSubsystem<URippleSubsystem>()
-			: nullptr)
+		const float DownwardSpeed = -GetVelocity().Z;
+		if (HasAuthority())
+		{
+			RippleSubsystem->AddRippleFromImpact(
+				FVector2D(HitLocation.X, HitLocation.Y), DownwardSpeed);
+		}
+		else
 		{
 			RippleSubsystem->AddPredictedRippleFromImpact(
-				FVector2D(HitLocation.X, HitLocation.Y),
-				-GetVelocity().Z);
+				FVector2D(HitLocation.X, HitLocation.Y), DownwardSpeed);
 		}
 	}
 
@@ -513,7 +605,7 @@ void ACannonball::SpawnNiagaraEffectForAll(
 		: (-TravelDirection).Rotation();
 	MulticastSpawnNiagaraEffect(Effect, Location, EffectRotation,
 		FMath::Max(0.01f, SizeScale), FMath::Max(0.01f, LifetimeScale),
-		FMath::Max(0.01f, PlaybackSpeed));
+		FMath::Max(0.01f, PlaybackSpeed), false);
 }
 
 UNiagaraSystem* ACannonball::GetProjectileEffect() const
@@ -539,12 +631,25 @@ void ACannonball::MulticastSpawnNiagaraEffect_Implementation(
 	FRotator Rotation,
 	float SizeScale,
 	float LifetimeScale,
-	float PlaybackSpeed)
+	float PlaybackSpeed,
+	bool bIsWaterImpact)
 {
+	UNiagaraComponent* SpawnedComponent = nullptr;
 	if (Effect && GetWorld())
 	{
-		USWNiagaraScaleLibrary::SpawnTunedSystemAtLocation(
+		SpawnedComponent = USWNiagaraScaleLibrary::SpawnTunedSystemAtLocation(
 			GetWorld(), Effect, Location, Rotation, SizeScale, LifetimeScale, PlaybackSpeed, true);
+	}
+	if (bIsWaterImpact && CVarCannonWaterImpactDiagnostics.GetValueOnGameThread() != 0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CANNON-WATER-VFX][MULTICAST-SPAWN] NetMode=%s Actor=%s Effect=%s Location=%s Created=%s Component=%s Active=%s ComponentScale=%s CustomTimeDilation=%.3f"),
+			GetCannonWaterNetMode(GetWorld()), *GetName(), *GetNameSafe(Effect),
+			*Location.ToString(), SpawnedComponent ? TEXT("true") : TEXT("false"),
+			*GetNameSafe(SpawnedComponent),
+			SpawnedComponent && SpawnedComponent->IsActive() ? TEXT("true") : TEXT("false"),
+			SpawnedComponent ? *SpawnedComponent->GetRelativeScale3D().ToCompactString() : TEXT("N/A"),
+			SpawnedComponent ? SpawnedComponent->GetCustomTimeDilation() : 0.0f);
 	}
 }
 
@@ -554,7 +659,36 @@ void ACannonball::HandleWaterOverlap(
 	bool bFromSweep,
 	const FHitResult& SweepResult)
 {
-	TriggerWaterRipple(GetActorLocation());
+	FVector SurfaceLocation = GetActorLocation();
+	const FVector ProjectileLocation = SurfaceLocation;
+	float SurfaceZ = 0.0f;
+	const AWaterBody* WaterBody = Cast<AWaterBody>(WaterActor);
+	const bool bSurfaceQuerySucceeded = WaterBody && FWaterSurfaceQueryLibrary::QueryWaterBodySurface(
+		WaterBody, SurfaceLocation,
+		GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0,
+		SurfaceZ, true);
+	if (bSurfaceQuerySucceeded)
+	{
+		SurfaceLocation.Z = SurfaceZ;
+	}
+	else if (bFromSweep && !SweepResult.ImpactPoint.IsNearlyZero())
+	{
+		SurfaceLocation = SweepResult.ImpactPoint;
+	}
+	if (CVarCannonWaterImpactDiagnostics.GetValueOnGameThread() != 0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CANNON-WATER-VFX][OVERLAP] NetMode=%s Authority=%s Actor=%s WaterActor=%s WaterComponent=%s FromSweep=%s BlockingHit=%s AlreadyHandled=%s ProjectileLocation=%s SweepImpact=%s SurfaceQuery=%s SpawnLocation=%s"),
+			GetCannonWaterNetMode(GetWorld()), HasAuthority() ? TEXT("true") : TEXT("false"),
+			*GetName(), *GetNameSafe(WaterActor), *GetNameSafe(WaterComponent),
+			bFromSweep ? TEXT("true") : TEXT("false"),
+			SweepResult.bBlockingHit ? TEXT("true") : TEXT("false"),
+			bHasHitWater ? TEXT("true") : TEXT("false"),
+			*ProjectileLocation.ToCompactString(), *SweepResult.ImpactPoint.ToCompactString(),
+			bSurfaceQuerySucceeded ? TEXT("true") : TEXT("false"),
+			*SurfaceLocation.ToCompactString());
+	}
+	TriggerWaterRipple(SurfaceLocation);
 }
 
 void ACannonball::MarkWaterHitHandledWithoutDeactivation()
