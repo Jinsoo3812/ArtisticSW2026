@@ -59,6 +59,8 @@
 #include "Upgrade/ShipUpgradeComponent.h"
 #include "Repair/ShipRepairPointComponent.h"
 #include "Repair/ShipLeakDamageGameplayEffect.h"
+#include "Materials/MaterialParameterCollection.h"
+#include "Materials/MaterialParameterCollectionInstance.h"
 
 namespace
 {
@@ -1980,6 +1982,7 @@ void AShip::BeginLocalBombardmentTargeting()
 		if (BombardmentPreviewActor)
 		{
 			BombardmentPreviewActor->ConfigurePreview(BombardmentDefaults->SkillRadius);
+			BombardmentPreviewActor->SetPreviewMeshVisible(false);
 		}
 	}
 }
@@ -1991,6 +1994,7 @@ void AShip::EndLocalBombardmentTargeting()
 		BombardmentPreviewActor->Destroy();
 		BombardmentPreviewActor = nullptr;
 	}
+	ClearLocalWaterSkillPreview();
 
 	if (bLocalBombardmentInputModeApplied)
 	{
@@ -2043,6 +2047,72 @@ void AShip::UpdateLocalBombardmentPreview()
 		}
 		BombardmentPreviewActor->SetPreviewValid(bLocalBombardmentTargetValid);
 	}
+
+	if (bLocalBombardmentTargetValid && BombardmentDefaults && !TargetLocation.ContainsNaN())
+	{
+		UpdateLocalWaterSkillPreview(TargetLocation, BombardmentDefaults->SkillRadius);
+	}
+	else
+	{
+		ClearLocalWaterSkillPreview();
+	}
+}
+
+void AShip::UpdateLocalWaterSkillPreview(const FVector& Center, float Radius)
+{
+	UWorld* World = GetWorld();
+	if (!World || World->IsNetMode(NM_DedicatedServer))
+	{
+		return;
+	}
+
+	if (!WaterSkillPreviewParameterCollection)
+	{
+		WaterSkillPreviewParameterCollection = LoadObject<UMaterialParameterCollection>(
+			nullptr,
+			TEXT("/Game/Blueprints/Water/MPC_Water_Custom.MPC_Water_Custom"));
+	}
+
+	UMaterialParameterCollectionInstance* Instance = WaterSkillPreviewParameterCollection
+		? World->GetParameterCollectionInstance(WaterSkillPreviewParameterCollection)
+		: nullptr;
+	if (!Instance)
+	{
+		return;
+	}
+
+	const float SafeRadius = FMath::Max(1.0f, Radius);
+	if (!bWaterSkillPreviewEnabled
+		|| FVector::DistSquared2D(Center, LastWaterSkillPreviewCenter) > 25.0f
+		|| !FMath::IsNearlyEqual(SafeRadius, LastWaterSkillPreviewRadius, 0.1f))
+	{
+		Instance->SetVectorParameterValue(
+			TEXT("SW_VortexPreviewCenterRadius"),
+			FLinearColor(Center.X, Center.Y, Center.Z, SafeRadius));
+		LastWaterSkillPreviewCenter = Center;
+		LastWaterSkillPreviewRadius = SafeRadius;
+	}
+
+	if (!bWaterSkillPreviewEnabled)
+	{
+		Instance->SetScalarParameterValue(TEXT("SW_VortexPreviewEnabled"), 1.0f);
+		bWaterSkillPreviewEnabled = true;
+	}
+}
+
+void AShip::ClearLocalWaterSkillPreview()
+{
+	if (!bWaterSkillPreviewEnabled || !GetWorld() || !WaterSkillPreviewParameterCollection)
+	{
+		return;
+	}
+
+	if (UMaterialParameterCollectionInstance* Instance =
+		GetWorld()->GetParameterCollectionInstance(WaterSkillPreviewParameterCollection))
+	{
+		Instance->SetScalarParameterValue(TEXT("SW_VortexPreviewEnabled"), 0.0f);
+	}
+	bWaterSkillPreviewEnabled = false;
 }
 
 bool AShip::ResolveBombardmentTargetFromCursor(FVector& OutLocation) const

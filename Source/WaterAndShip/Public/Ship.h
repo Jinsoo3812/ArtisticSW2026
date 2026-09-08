@@ -15,6 +15,7 @@
 class USWBuoyancyComponent;
 class UGameplayEffect;
 class UNiagaraSystem;
+class UMaterialParameterCollection;
 USTRUCT()
 struct FNetInputShip : public FNetworkPhysicsPayload
 {
@@ -1180,6 +1181,8 @@ private:
 	void BeginLocalBombardmentTargeting();
 	void EndLocalBombardmentTargeting();
 	void UpdateLocalBombardmentPreview();
+	void UpdateLocalWaterSkillPreview(const FVector& Center, float Radius);
+	void ClearLocalWaterSkillPreview();
 	void SpawnBombardmentAuthoritative(const FVector& TargetLocation);
 
 	TWeakObjectPtr<UGameplayAbility> ActiveBombardmentAbility;
@@ -1187,9 +1190,15 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<ABombardmentPreview> BombardmentPreviewActor;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialParameterCollection> WaterSkillPreviewParameterCollection;
+
 	FVector LocalBombardmentTarget = FVector::ZeroVector;
+	FVector LastWaterSkillPreviewCenter = FVector::ZeroVector;
+	float LastWaterSkillPreviewRadius = 0.0f;
 	bool bLocalBombardmentTargetValid = false;
 	bool bLocalBombardmentInputModeApplied = false;
+	bool bWaterSkillPreviewEnabled = false;
 	bool bSavedShowMouseCursor = false;
 
 	friend class FShipPhysicsAsync;
