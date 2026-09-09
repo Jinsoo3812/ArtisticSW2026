@@ -595,7 +595,7 @@ public:
 	float PlayerRamDamagePerAdditionalMeterPerSecond = 2.0f;
 
 	/** Prevents persistent physics contact from applying ram damage every frame. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, AdvancedDisplay, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0", Units = "s"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0", Units = "s", DisplayName = "Same Target Ram Damage Cooldown"))
 	float PlayerRamDamageCooldown = 1.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage")
