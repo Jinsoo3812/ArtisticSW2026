@@ -206,6 +206,9 @@ public:
 	UFUNCTION(Server, Reliable)
 	void Server_NotifyJumpStarted();
 
+	UFUNCTION(Server, Reliable)
+	void Server_SetTurnInPlace(bool bInTurnInPlace, float InFacingDeltaYaw, float InTargetActorYaw);
+
 	// Multicast RPCs 제거됨 (데이터 기반 이벤트 처리로 변경)
 
 	void BroadcastFallOffStartedForRemoteClients();
@@ -214,6 +217,10 @@ public:
 public:
 	FVector2D LastSentMoveInputToServer = FVector2D::ZeroVector;
 	bool bHasSentMoveInputToServer = false;
+	bool bLastSentTurnInPlaceActive = false;
+	float LastSentTurnInPlaceFacingDelta = 0.0f;
+	float LastSentTurnInPlaceActorYaw = 0.0f;
+	double LastTurnInPlaceSendTime = 0.0;
 	FVector2D AuthoritativeMoveInput = FVector2D::ZeroVector;
 	bool bHasAuthoritativeMoveInput = false;
 
@@ -300,6 +307,12 @@ protected:
 	bool CanSprintFromInput() const;
 	void RefreshSprintFromInput();
 	bool CanSprintFromServerState() const;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Rotation", meta = (ClampMin = "1.0"))
+	float StrafeRotationCatchUpSpeed = 16.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Rotation", meta = (ClampMin = "1.0"))
+	float BackwardStrafeRotationCatchUpSpeed = 8.0f;
+
 	void ApplyCombatRotationMode(bool bEnableCombatRotation);
 	void OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
@@ -351,6 +364,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Skills")
 	TObjectPtr<UInputAction> GravityVortexSkillAction;
 
+	/** Assign the hold-to-preview Area Slow IA to any desired key in the on-foot IMC. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input|Skills")
+	TObjectPtr<UInputAction> AreaSlowSkillAction;
+
 	void Move(const FInputActionValue& Value);
 	void MoveStopped(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
@@ -374,7 +391,7 @@ public:
 
 	/**
 	 * Development-only convenience switch for skill testing.
-	 * When enabled, all three player skills ignore story locks and inventory
+	 * When enabled, player skills ignore story locks and inventory
 	 * materials, and completed uses do not consume an item.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Skill Test")
@@ -386,6 +403,14 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Gravity Vortex")
 	TSubclassOf<UGameplayAbility> GravityVortexAbilityClass;
+
+	/** Enables the hold-to-preview Area Slow input while on foot. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Area Slow")
+	bool bEnableAreaSlowSkillInput = true;
+
+	/** Assign a Blueprint child of UGA_PlayerAreaSlow that references the skill Data Asset. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Area Slow")
+	TSubclassOf<UGameplayAbility> AreaSlowAbilityClass;
 
 	/** Granted without a player input slot; a ridden cannon activates/cancels it through its ability tag. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities|Water Bomb")
@@ -419,6 +444,8 @@ public:
 	void OnAbilityInputReleased(FGameplayTag InputTag);
 	void OnGravityVortexSkillPressed();
 	void OnGravityVortexSkillReleased();
+	void OnAreaSlowSkillPressed();
+	void OnAreaSlowSkillReleased();
 
 	// 마우스 입력에 대한 활용을 위해 따로 OnAbilityInput과 분리
 	void OnMouseInputPressed(FGameplayTag InputTag);
@@ -446,6 +473,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	bool IsEquipmentTransitioning() const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat")
+	bool CanPerformCombatAction() const;
+
+	UFUNCTION(BlueprintCallable, Category = "QuickSlot")
+	void ResetConsumableQuickSlotInputs();
 
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
 	void HandleEquipmentAttachNotify();

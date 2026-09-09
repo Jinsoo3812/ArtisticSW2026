@@ -722,7 +722,9 @@ bool FBossEncounterConfiguredChildActorBoxTest::RunTest(const FString& Parameter
 	{
 		return false;
 	}
-	TestNotNull(TEXT("Encounter exposes an exact deck waypoint component selector"),
+	TestNotNull(TEXT("Encounter exposes an exact deck waypoint ID"),
+		FindFProperty<FIntProperty>(Encounter->GetClass(), TEXT("BossSpawnPointId")));
+	TestNull(TEXT("Encounter no longer requires a deck waypoint component reference"),
 		FindFProperty<FStructProperty>(Encounter->GetClass(), TEXT("BossSpawnPointComponent")));
 	FComponentReference* BoxReference = BoxReferenceProperty->ContainerPtrToValuePtr<FComponentReference>(Encounter);
 	BoxReference->OverrideComponent = BoxComponent;
@@ -808,11 +810,11 @@ bool FBossEncounterSingleTriggerTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FBossEncounterSightTriggerRetryTest,
-	"ArtisticSW.Enemy.BossMVP.SightTriggerWaitsForRidingPlayer",
+	FBossEncounterSightSpawnWithoutRidingPlayerTest,
+	"ArtisticSW.Enemy.BossMVP.SightTriggerSpawnsWithoutRidingPlayer",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FBossEncounterSightTriggerRetryTest::RunTest(const FString& Parameters)
+bool FBossEncounterSightSpawnWithoutRidingPlayerTest::RunTest(const FString& Parameters)
 {
 	AddExpectedError(
 		TEXT("QuestItem has an invalid ResultItemTag"),
@@ -825,11 +827,31 @@ bool FBossEncounterSightTriggerRetryTest::RunTest(const FString& Parameters)
 	BossMVPTests::FScopedTestWorld TestWorld;
 	AEnemyShip* EnemyShip = TestWorld.World->SpawnActor<AEnemyShip>();
 	AShip* PlayerShip = TestWorld.World->SpawnActor<AShip>();
+	UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
 	if (!TestNotNull(TEXT("Enemy ship is spawned"), EnemyShip)
-		|| !TestNotNull(TEXT("Player ship is spawned"), PlayerShip))
+		|| !TestNotNull(TEXT("Player ship is spawned"), PlayerShip)
+		|| !TestNotNull(TEXT("Deck mesh asset is available"), CubeMesh))
 	{
 		return false;
 	}
+
+	EnemyShip->BuoyancyRoot->SetSimulatePhysics(false);
+	UStaticMeshComponent* DeckMesh = EnemyShip->GetShipDeckMesh();
+	DeckMesh->SetStaticMesh(CubeMesh);
+	DeckMesh->SetRelativeScale3D(FVector(10.0f, 10.0f, 0.1f));
+	DeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	DeckMesh->SetCollisionResponseToAllChannels(ECR_Block);
+	DeckMesh->UpdateComponentToWorld();
+	DeckMesh->RecreatePhysicsState();
+
+	UDeckWaypointComponent* SpawnPoint = NewObject<UDeckWaypointComponent>(EnemyShip);
+	EnemyShip->AddInstanceComponent(SpawnPoint);
+	SpawnPoint->OnComponentCreated();
+	SpawnPoint->SetupAttachment(DeckMesh);
+	SpawnPoint->InitializeGeneratedWaypoint(702, 0, 0, true, true, true);
+	SpawnPoint->RegisterComponent();
+	SpawnPoint->SetRelativeLocation(FVector(150.0f, 0.0f, 10.0f));
+	EnemyShip->InitializeDeckWaypoints();
 
 	PlayerShip->Tags.Add(TEXT("Player"));
 	UBossEncounterComponent* Encounter = EnemyShip->GetBossEncounterComponent();
@@ -842,13 +864,19 @@ bool FBossEncounterSightTriggerRetryTest::RunTest(const FString& Parameters)
 	TriggerProperty->GetUnderlyingProperty()->SetIntPropertyValue(
 		TriggerProperty->ContainerPtrToValuePtr<void>(Encounter),
 		static_cast<int64>(EBossEncounterTrigger::PlayerShipSight));
-	Encounter->ConfigureEncounter(nullptr, AShipBossEnemy::StaticClass());
+	Encounter->ConfigureEncounter(nullptr, AShipBossEnemy::StaticClass(), 702);
 
-	TestFalse(TEXT("Sight waits when the sensed ship has no riding player yet"),
+	TestTrue(TEXT("Sight starts even when the sensed ship has no riding player"),
 		Encounter->NotifyPlayerShipSighted(PlayerShip));
-	TestEqual(TEXT("A transient missing riding player remains retryable"),
-		Encounter->GetEncounterState(), EBossEncounterState::Waiting);
-	TestNull(TEXT("Retryable sight does not leave a partial boss"), Encounter->GetSpawnedBoss());
+	TestEqual(TEXT("A missing riding player does not block the encounter"),
+		Encounter->GetEncounterState(), EBossEncounterState::Active);
+	AShipBossEnemy* Boss = Encounter->GetSpawnedBoss();
+	TestNotNull(TEXT("Sight spawns the boss without an initial target"), Boss);
+	if (Boss)
+	{
+		TestEqual(TEXT("Boss still uses the exact configured point"), Boss->GetCurrentPointId(), 702);
+		TestNull(TEXT("Boss waits for perception to acquire a character target"), Boss->GetBossCombatTarget());
+	}
 	return true;
 }
 

@@ -17,6 +17,7 @@ UBaseAttributeSet::UBaseAttributeSet()
 	MaxHealth = 100.0f;
 	Health = 100.0f;
 	Strength = 10.0f;
+	MoveSpeedMultiplier = 1.0f;
 	AttackSpeedMultiplier = 1.0f;
 }
 
@@ -30,6 +31,7 @@ void UBaseAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, AttackPower, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, Strength, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, MoveSpeed, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, MoveSpeedMultiplier, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, AttackSpeedMultiplier, COND_None, REPNOTIFY_Always);
 
 	// Damage와 Healing은 GE 실행 중에만 쓰는 메타 Attribute라 복제하지 않습니다.
@@ -56,6 +58,11 @@ void UBaseAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, 
 	}
 
 	if (Attribute == GetAttackSpeedMultiplierAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, 0.1f, 3.0f);
+	}
+
+	if (Attribute == GetMoveSpeedMultiplierAttribute())
 	{
 		NewValue = FMath::Clamp(NewValue, 0.1f, 3.0f);
 	}
@@ -129,7 +136,7 @@ void UBaseAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribute,
 		SetHealth(NewValue);
 	}
 
-	// 실행 중인 기본 공격에도 GE 적용/해제 시점의 새 배율을 즉시 반영합니다.
+	// 실행 중인 기본 공격에도 어떤 GE든 적용/해제 시점의 새 배율을 즉시 반영합니다.
 	if (Attribute == GetAttackSpeedMultiplierAttribute()
 		&& !FMath::IsNearlyEqual(OldValue, NewValue)
 		&& OldValue > KINDA_SMALL_NUMBER)
@@ -137,7 +144,7 @@ void UBaseAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribute,
 		UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
 		if (ASC && ASC->IsOwnerActorAuthoritative())
 		{
-			UE_LOG(LogTemp, Log, TEXT("[WaterBomb] AttackSpeedMultiplier changed: owner=%s %.2f -> %.2f"),
+			UE_LOG(LogTemp, Log, TEXT("[AttackSpeed] Multiplier changed: owner=%s %.2f -> %.2f"),
 				*GetNameSafe(ASC->GetAvatarActor()), OldValue, NewValue);
 			const UGameplayAbility* AnimatingAbility = ASC->GetAnimatingAbility();
 			const FGameplayAbilityActorInfo* ActorInfo = AnimatingAbility
@@ -179,6 +186,11 @@ void UBaseAttributeSet::OnRep_Strength(const FGameplayAttributeData& OldStrength
 void UBaseAttributeSet::OnRep_MoveSpeed(const FGameplayAttributeData& OldMoveSpeed)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UBaseAttributeSet, MoveSpeed, OldMoveSpeed);
+}
+
+void UBaseAttributeSet::OnRep_MoveSpeedMultiplier(const FGameplayAttributeData& OldMoveSpeedMultiplier)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UBaseAttributeSet, MoveSpeedMultiplier, OldMoveSpeedMultiplier);
 }
 
 void UBaseAttributeSet::OnRep_AttackSpeedMultiplier(const FGameplayAttributeData& OldAttackSpeedMultiplier)

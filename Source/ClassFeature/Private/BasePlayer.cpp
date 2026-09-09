@@ -49,6 +49,7 @@
 #include "Skills/Abilities/GA_GravityVortexThrow.h"
 #include "Skills/Abilities/GA_WaterBombCannonMode.h"
 #include "Skills/Abilities/GA_Bombardment.h"
+#include "Skills/Abilities/GA_PlayerAreaSlow.h"
 #include "HAL/FileManager.h"
 #include "Misc/DateTime.h"
 #include "Misc/FileHelper.h"
@@ -129,6 +130,7 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	GravityVortexAbilityClass = UGA_GravityVortexThrow::StaticClass();
 	WaterBombAbilityClass = UGA_WaterBombCannonMode::StaticClass();
 	BombardmentAbilityClass = UGA_Bombardment::StaticClass();
+	AreaSlowAbilityClass = UGA_PlayerAreaSlow::StaticClass();
 
 	// 항상 등만 보이도록 설정 (Orient to Controller - 부드러운 회전으로 제자리 회전 유도)
 	bUseControllerRotationYaw = false;
@@ -373,17 +375,7 @@ void ABasePlayer::Tick(float DeltaTime)
 	// 후방 이동 시 질주(Sprint) 차단 (1안)
 	RefreshSprintFromInput();
 
-	if (AnimStateComponent)
-	{
-		AnimStateComponent->UpdateAnimationState(DeltaTime);
-		ApplyCombatRotationMode(true);
-		ApplyCombatTurnInPlaceRotation(DeltaTime);
-	}
-	if (HasAuthority())
-	{
-		UpdateLocomotionStateSnapshot();
-	}
-
+	// Update ASC state tags FIRST so rotation and animation systems know current combat state
 	bool bIsSniping = false;
 	bool bIsAiming = false;
 	bool bIsThrowingOrAttacking = false;
@@ -395,20 +387,69 @@ void ABasePlayer::Tick(float DeltaTime)
 		bIsThrowingOrAttacking = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
 		bIsAttacking = bIsThrowingOrAttacking;
 		bIsHitReacting = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Damaged);
+
+		const bool bHasRollingTag = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Rolling);
+		const bool bHasMoveInput = (AnimStateComponent && AnimStateComponent->bHasMoveInput) || (GetPendingMovementInputVector().SizeSquared() > 0.001f);
+		if (bHasRollingTag)
+		{
+			bIsDodging = true;
+		}
+		else if (bIsDodging)
+		{
+			// Maintain dodge state during recovery blend out until montage finishes,
+			// unless the player provides explicit move input or gets hit to take over control.
+			const UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+			bIsDodging = (AnimInst && AnimInst->IsAnyMontagePlaying()) && !bHasMoveInput && !bIsHitReacting;
+		}
+		else
+		{
+			bIsDodging = false;
+		}
+	}
+
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->UpdateAnimationState(DeltaTime);
+		ApplyCombatRotationMode(true);
+		ApplyCombatTurnInPlaceRotation(DeltaTime);
+
+		if (!HasAuthority() && IsLocallyControlled())
+		{
+			const bool bIsTIPActive = AnimStateComponent->bShouldTurnInPlace;
+			if (bLastSentTurnInPlaceActive && !bIsTIPActive)
+			{
+				Server_SetTurnInPlace(false, 0.0f, GetActorRotation().Yaw);
+				bLastSentTurnInPlaceActive = false;
+				LastSentTurnInPlaceFacingDelta = 0.0f;
+				LastSentTurnInPlaceActorYaw = GetActorRotation().Yaw;
+			}
+		}
+	}
+	if (HasAuthority())
+	{
+		UpdateLocomotionStateSnapshot();
 	}
 
 	float TargetArmLength = DefaultTargetArmLength;
 	FVector TargetSocketOffset = DefaultSocketOffset;
 
-	if (bIsSniping)
+	if (CanPerformCombatAction())
 	{
-		TargetArmLength = SnipingTargetArmLength;
-		TargetSocketOffset = SnipingSocketOffset;
+		if (bIsSniping)
+		{
+			TargetArmLength = SnipingTargetArmLength;
+			TargetSocketOffset = SnipingSocketOffset;
+		}
+		else if (bIsAiming)
+		{
+			TargetArmLength = AimingTargetArmLength;
+			TargetSocketOffset = AimingSocketOffset;
+		}
 	}
-	else if (bIsAiming)
+	else
 	{
-		TargetArmLength = AimingTargetArmLength;
-		TargetSocketOffset = AimingSocketOffset;
+		bIsAiming = false;
+		bIsSniping = false;
 	}
 
 	// Rotation ownership is selected by ApplyCombatRotationMode() above:
@@ -458,6 +499,8 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 	NewSnapshot.LastFallSpeed = AnimStateComponent->LastFallSpeed;
 	NewSnapshot.EventSequence = LocomotionAnimEventSequence;
 	NewSnapshot.LastLocomotionEvent = LocomotionStateSnapshot.LastLocomotionEvent;
+	NewSnapshot.bShouldTurnInPlace = AnimStateComponent->bShouldTurnInPlace;
+	NewSnapshot.DesiredFacingDeltaYaw = AnimStateComponent->DesiredFacingDeltaYaw;
 
 	if (LocomotionStateSnapshot != NewSnapshot)
 	{
@@ -560,6 +603,10 @@ void ABasePlayer::PossessedBy(AController* NewController)
 						GetInputIDFromTag(Key_Skill_GravityVortex));
 					GrantAbilityToSlot(Key_Skill_GravityVortex, GravityVortexAbilityClass);
 				}
+				if (bEnableAreaSlowSkillInput && AreaSlowAbilityClass)
+				{
+					GrantAbilityToSlot(Key_Skill_AreaSlow, AreaSlowAbilityClass);
+				}
 				if (bGrantWaterBombAbility && WaterBombAbilityClass)
 				{
 					GrantDefaultAbility(WaterBombAbilityClass);
@@ -650,7 +697,8 @@ void ABasePlayer::PawnClientRestart()
 				const int32 EffectiveDefaultPriority = ResolveDefaultMappingPriority(
 					DefaultIMCPriority,
 					ItemIMCPriority,
-					bEnableGravityVortexSkillInput && GravityVortexSkillAction);
+					(bEnableGravityVortexSkillInput && GravityVortexSkillAction)
+					|| (bEnableAreaSlowSkillInput && AreaSlowSkillAction));
 				Subsystem->AddMappingContext(DefaultIMC, EffectiveDefaultPriority);
 			}
 
@@ -710,6 +758,12 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Started, this, &ABasePlayer::OnGravityVortexSkillPressed);
 			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Completed, this, &ABasePlayer::OnGravityVortexSkillReleased);
 			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Canceled, this, &ABasePlayer::OnGravityVortexSkillReleased);
+		}
+		if (bEnableAreaSlowSkillInput && AreaSlowSkillAction)
+		{
+			EnhancedInputComponent->BindAction(AreaSlowSkillAction, ETriggerEvent::Started, this, &ABasePlayer::OnAreaSlowSkillPressed);
+			EnhancedInputComponent->BindAction(AreaSlowSkillAction, ETriggerEvent::Completed, this, &ABasePlayer::OnAreaSlowSkillReleased);
+			EnhancedInputComponent->BindAction(AreaSlowSkillAction, ETriggerEvent::Canceled, this, &ABasePlayer::OnAreaSlowSkillReleased);
 		}
 
 		// Default 입력 바인딩
@@ -893,6 +947,11 @@ int32 ABasePlayer::GetPressedConsumableQuickSlotIndex() const
 
 void ABasePlayer::BeginConsumableQuickSlotInput(const int32 QuickSlotIndex)
 {
+	if (!CanPerformCombatAction())
+	{
+		return;
+	}
+
 	if (!QuickSlots.IsValidIndex(QuickSlotIndex)
 		|| QuickSlots[QuickSlotIndex].SlotType != EQuickSlotType::Consumable)
 	{
@@ -913,6 +972,15 @@ void ABasePlayer::EndConsumableQuickSlotInput(const int32 QuickSlotIndex)
 
 	OnConsumableQuickSlotInputChanged.Broadcast();
 	ActivateQuickSlot(QuickSlotIndex);
+}
+
+void ABasePlayer::ResetConsumableQuickSlotInputs()
+{
+	if (!PressedConsumableQuickSlotIndices.IsEmpty())
+	{
+		PressedConsumableQuickSlotIndices.Empty();
+		OnConsumableQuickSlotInputChanged.Broadcast();
+	}
 }
 
 void ABasePlayer::ActivateQuickSlot(int32 QuickSlotIndex)
@@ -1178,6 +1246,12 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 		return;
 	}
 
+	const bool bIsNonCombatInteraction = InputTag.MatchesTag(Key_Default_F);
+	if (!bIsNonCombatInteraction && !CanPerformCombatAction())
+	{
+		return;
+	}
+
 	int32 InputID = GetInputIDFromTag(InputTag);
 	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
 	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
@@ -1226,6 +1300,10 @@ void ABasePlayer::OnGravityVortexSkillPressed()
 	{
 		return;
 	}
+	if (!CanPerformCombatAction())
+	{
+		return;
+	}
 	OnAbilityInputPressed(Key_Skill_GravityVortex);
 }
 
@@ -1234,10 +1312,42 @@ void ABasePlayer::OnGravityVortexSkillReleased()
 	OnAbilityInputReleased(Key_Skill_GravityVortex);
 }
 
+void ABasePlayer::OnAreaSlowSkillPressed()
+{
+	if (!bEnableAreaSlowSkillInput)
+	{
+		return;
+	}
+	OnAbilityInputPressed(Key_Skill_AreaSlow);
+}
+
+void ABasePlayer::OnAreaSlowSkillReleased()
+{
+	OnAbilityInputReleased(Key_Skill_AreaSlow);
+}
+
 void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 {
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 	if (IsEquipmentTransitioning()) return;
+	if (!CanPerformCombatAction()) return;
+
+	// Area Slow uses GAS generic confirm/cancel events. These events carry the
+	// active ability spec handle and prediction key, so the server cannot miss a
+	// fast click that arrives while its predicted ability activation is being set up.
+	if (CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_AreaSlow))
+	{
+		if (InputTag.MatchesTagExact(Key_Default_Mouse_LeftClick))
+		{
+			CachedAbilitySystemComponent->LocalInputConfirm();
+			return;
+		}
+		if (InputTag.MatchesTagExact(Key_Default_Mouse_RightClick))
+		{
+			CachedAbilitySystemComponent->LocalInputCancel();
+			return;
+		}
+	}
 
 	// Capture the state before AbilityLocalInputPressed can activate the bound
 	// ability. EventMagnitude 0 means activation click, 1 means active re-input.
@@ -1256,11 +1366,11 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 	}
 
 	// 공통 GAS 입력 해제 처리
-	const bool bGravityVortexOwnsMouseClick =
+	const bool bAimingSkillOwnsMouseClick =
 		(InputTag.MatchesTagExact(Key_Default_Mouse_LeftClick)
 			|| InputTag.MatchesTagExact(Key_Default_Mouse_RightClick))
 		&& CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex);
-	if (!bGravityVortexOwnsMouseClick)
+	if (!bAimingSkillOwnsMouseClick)
 	{
 		OnAbilityInputPressed(InputTag);
 	}
@@ -1505,6 +1615,43 @@ EEquipmentState ABasePlayer::GetEquipmentState() const
 bool ABasePlayer::IsEquipmentTransitioning() const
 {
 	return EquipmentComponent && EquipmentComponent->IsEquipmentTransitioning();
+}
+
+bool ABasePlayer::CanPerformCombatAction() const
+{
+	if (SwimmingComponent && SwimmingComponent->IsCustomSwimming())
+	{
+		return false;
+	}
+
+	if (bIsDodging)
+	{
+		return false;
+	}
+
+	if (bIsHitReacting)
+	{
+		return false;
+	}
+
+	if (IsEquipmentTransitioning())
+	{
+		return false;
+	}
+
+	if (CachedAbilitySystemComponent.IsValid())
+	{
+		if (CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Swimming)
+			|| CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Rolling)
+			|| CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Damaged)
+			|| CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Dead)
+			|| CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Dialogue))
+		{
+			return false;
+		}
+	}
+
+	return true;
 }
 
 void ABasePlayer::HandleEquipmentAttachNotify()
@@ -1811,7 +1958,6 @@ void ABasePlayer::InitializeSwimmingAnimLayers()
 
 void ABasePlayer::StopMoveInput()
 {
-	if(AnimStateComponent) AnimStateComponent->ClearMoveInput();
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->ClearMoveInput();
@@ -2135,6 +2281,26 @@ void ABasePlayer::Server_NotifyJumpStarted_Implementation()
 	LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::Jump;
 }
 
+void ABasePlayer::Server_SetTurnInPlace_Implementation(bool bInTurnInPlace, float InFacingDeltaYaw, float InTargetActorYaw)
+{
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->bShouldTurnInPlace = bInTurnInPlace;
+		AnimStateComponent->DesiredFacingDeltaYaw = InFacingDeltaYaw;
+		AnimStateComponent->bTurnInPlacePhaseActive = bInTurnInPlace;
+		AnimStateComponent->bIsTurningInPlace = bInTurnInPlace;
+	}
+
+	// Apply the client's TIP rotation to the server's actor rotation so standard transform
+	// replication automatically broadcasts the updated facing rotation to all simulated proxies.
+	if (bInTurnInPlace || FMath::Abs(FRotator::NormalizeAxis(InTargetActorYaw - GetActorRotation().Yaw)) > 0.5f)
+	{
+		SetActorRotation(FRotator(0.0f, InTargetActorYaw, 0.0f));
+	}
+
+	UpdateLocomotionStateSnapshot();
+}
+
 void ABasePlayer::BroadcastFallOffStartedForRemoteClients()
 {
 	if (HasAuthority())
@@ -2160,9 +2326,52 @@ void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
 	// movement is present the controller owns capsule yaw; while stationary the
 	// selected Turn-In-Place root track owns it.  Do not leave a second CMC
 	// ControllerDesiredRotation path alive, as it races the root-yaw delta.
+	// When rolling/dodging, release controller yaw so character can face the roll direction.
+	if (bIsDodging)
+	{
+		bUseControllerRotationYaw = false;
+		if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+		{
+			MovementComponent->bOrientRotationToMovement = false;
+			MovementComponent->bUseControllerDesiredRotation = false;
+		}
+		return;
+	}
+
 	const bool bIsMovingInStrafe =
 		(GetPendingMovementInputVector().SizeSquared() > 0.001f || GetVelocity().SizeSquared2D() > 100.0f);
-	bUseControllerRotationYaw = bEnableCombatRotation && bIsMovingInStrafe;
+
+	if (bEnableCombatRotation && bIsMovingInStrafe)
+	{
+		const float TargetYaw = GetController() ? GetController()->GetControlRotation().Yaw : GetActorRotation().Yaw;
+		const float CurrentYaw = GetActorRotation().Yaw;
+		const float YawDelta = FMath::Abs(FRotator::NormalizeAxis(TargetYaw - CurrentYaw));
+
+		// If there is a noticeable angle difference (e.g. recovering from S/A/D roll into movement),
+		// smoothly rotate towards controller yaw rather than hard-snapping in a single frame.
+		if (YawDelta > 5.0f)
+		{
+			bUseControllerRotationYaw = false;
+			const FRotator CurrentRot = GetActorRotation();
+			const FRotator TargetRot(0.0f, TargetYaw, 0.0f);
+			const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
+
+			// S 키(후방 이동) 입력 중이거나 큰 회전(180도)일 때는 전용 회전 속도(BackwardStrafeRotationCatchUpSpeed) 사용
+			const bool bIsBackwardInput = (AnimStateComponent && AnimStateComponent->CachedMoveInput.Y < -0.1f) || (YawDelta > 110.0f);
+			const float ActiveCatchUpSpeed = bIsBackwardInput ? BackwardStrafeRotationCatchUpSpeed : StrafeRotationCatchUpSpeed;
+
+			const FRotator NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaSeconds, ActiveCatchUpSpeed);
+			SetActorRotation(NewRot);
+		}
+		else
+		{
+			bUseControllerRotationYaw = true;
+		}
+	}
+	else
+	{
+		bUseControllerRotationYaw = false;
+	}
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
@@ -2491,7 +2700,7 @@ bool ABasePlayer::UpdateGaspStyleTurnInPlaceRequest(float& OutDesiredYaw)
 
 void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
 {
-	if (!AnimStateComponent)
+	if (bIsDodging || !AnimStateComponent)
 	{
 		return;
 	}
@@ -2557,11 +2766,30 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
 
 	AnimStateComponent->TurnInPlaceRootYawDelta = ClampedDeltaYaw;
 	const float ActorYawBeforeApply = GetActorRotation().Yaw;
-	if (!FMath::IsNearlyZero(ClampedDeltaYaw))
+	const bool bCanApplyActorRotation = IsLocallyControlled() || HasAuthority();
+	if (bCanApplyActorRotation && !FMath::IsNearlyZero(ClampedDeltaYaw))
 	{
 		AddActorWorldRotation(FRotator(0.0f, ClampedDeltaYaw, 0.0f));
 	}
 	const float ActorYawAfterApply = GetActorRotation().Yaw;
+
+	if (!HasAuthority() && IsLocallyControlled())
+	{
+		const UWorld* World = GetWorld();
+		const double Now = World ? World->GetTimeSeconds() : 0.0;
+		const float CurrentActorYaw = GetActorRotation().Yaw;
+		const bool bYawChangedSignificantly = FMath::Abs(FRotator::NormalizeAxis(CurrentActorYaw - LastSentTurnInPlaceActorYaw)) >= 3.0f;
+		const bool bTimeElapsed = (Now - LastTurnInPlaceSendTime) >= 0.06;
+
+		if (!bLastSentTurnInPlaceActive || (bYawChangedSignificantly && bTimeElapsed))
+		{
+			Server_SetTurnInPlace(true, FacingDeltaYaw, CurrentActorYaw);
+			bLastSentTurnInPlaceActive = true;
+			LastSentTurnInPlaceFacingDelta = FacingDeltaYaw;
+			LastSentTurnInPlaceActorYaw = CurrentActorYaw;
+			LastTurnInPlaceSendTime = Now;
+		}
+	}
 
 	const float RemainingFacingDeltaYaw = GetDesiredFacingDeltaYaw();
 	// UpdateCombatTurnInPlaceRequest is the single authority for ending TIP,

@@ -9,6 +9,8 @@
 #include "Equipment/WeaponAnimationDataAsset.h"
 #include "Inventory/InventoryComponent.h"
 #include "ItemSubSystem.h"
+#include "Item/Weapons/BowItem.h"
+#include "SwimmingComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SceneComponent.h"
@@ -150,6 +152,7 @@ void UPlayerEquipmentComponent::UseEquippedItem(bool bDestroy)
 	if (EquippedIndex != INDEX_NONE)
 	{
 		UE_LOG(LogTemp, Log, TEXT("UPlayerEquipmentComponent::UseEquippedItem : Item used! Slot index: %d"), EquippedIndex);
+		ClearBowArrowAnchor(Cast<ABowItem>(PlayerOwner->EquippedItem));
 
 		FGameplayTag AssignedKeyTag = ResolveUseKeyTag(PlayerOwner->EquippedItem);
 
@@ -176,8 +179,13 @@ void UPlayerEquipmentComponent::OnRepOwnerEquippedItem()
 
 	if (PlayerOwner && IsValid(PlayerOwner->EquippedItem) && PlayerOwner->EquippedItem->MyDefinition)
 	{
-		AttachItem(PlayerOwner->EquippedItem, EEquipmentAttachmentTarget::Equipped);
+		if (AttachItem(PlayerOwner->EquippedItem, EEquipmentAttachmentTarget::Equipped))
+		{
+			return;
+		}
 	}
+
+	ClearBowArrowAnchor();
 }
 
 FGameplayTag UPlayerEquipmentComponent::GetEquippedItemTag() const
@@ -606,7 +614,7 @@ void UPlayerEquipmentComponent::RemoveEquippedItemAbility(ABaseItem* Item)
 	}
 }
 
-bool UPlayerEquipmentComponent::AttachItem(ABaseItem* Item, EEquipmentAttachmentTarget Target) const
+bool UPlayerEquipmentComponent::AttachItem(ABaseItem* Item, EEquipmentAttachmentTarget Target)
 {
 	if (!PlayerOwner || !Item || !PlayerOwner->GetMesh())
 	{
@@ -634,7 +642,7 @@ bool UPlayerEquipmentComponent::AttachItem(ABaseItem* Item, EEquipmentAttachment
 			PlayerOwner->GetMesh(),
 			FAttachmentTransformRules::SnapToTargetNotIncludingScale,
 			CharacterSocketName);
-		return bAttached;
+		return CompleteItemAttachment(Item, Target, bAttached);
 	}
 
 	USceneComponent* GripComponent = Item->GetAttachmentReferenceComponent();
@@ -642,10 +650,11 @@ bool UPlayerEquipmentComponent::AttachItem(ABaseItem* Item, EEquipmentAttachment
 	if (!GripComponent || !GripComponent->DoesSocketExist(ItemGripSocketName) || !Item->GetRootComponent())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("UPlayerEquipmentComponent::AttachItem : Item %s has no grip socket %s on its attachment reference component. Falling back to root attachment."), *GetNameSafe(Item), *ItemGripSocketName.ToString());
-		return Item->AttachToComponent(
+		const bool bAttached = Item->AttachToComponent(
 			PlayerOwner->GetMesh(),
 			FAttachmentTransformRules::SnapToTargetNotIncludingScale,
 			CharacterSocketName);
+		return CompleteItemAttachment(Item, Target, bAttached);
 	}
 
 	const FTransform RootWorldTransform = Item->GetRootComponent()->GetComponentTransform();
@@ -672,7 +681,64 @@ bool UPlayerEquipmentComponent::AttachItem(ABaseItem* Item, EEquipmentAttachment
 		*CharacterSocketName.ToString(),
 		*ItemGripSocketName.ToString(),
 		AlignmentError);
+	return CompleteItemAttachment(Item, Target, true);
+}
+
+bool UPlayerEquipmentComponent::CompleteItemAttachment(
+	ABaseItem* Item,
+	EEquipmentAttachmentTarget Target,
+	bool bAttached)
+{
+	if (!bAttached)
+	{
+		return false;
+	}
+
+	ABowItem* Bow = Target == EEquipmentAttachmentTarget::Equipped
+		? Cast<ABowItem>(Item)
+		: nullptr;
+	if (ABowItem* PreviouslyBoundBow = BoundBowArrowAnchor.Get(); PreviouslyBoundBow != Bow)
+	{
+		ClearBowArrowAnchor();
+	}
+
+	if (!Bow)
+	{
+		return true;
+	}
+
+	if (!Bow->BindArrowAnchor(PlayerOwner ? PlayerOwner->GetMesh() : nullptr))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("UPlayerEquipmentComponent::CompleteItemAttachment: Character mesh cannot resolve Bow socket %s for %s."),
+			*Bow->GetCharacterArrowSocketName().ToString(),
+			*GetNameSafe(Bow));
+		ClearBowArrowAnchor(Bow);
+		return false;
+	}
+
+	BoundBowArrowAnchor = Bow;
 	return true;
+}
+
+void UPlayerEquipmentComponent::ClearBowArrowAnchor(ABowItem* ExpectedBow)
+{
+	ABowItem* BoundBow = BoundBowArrowAnchor.Get();
+	if (ExpectedBow)
+	{
+		ExpectedBow->UnbindArrowAnchor();
+		if (BoundBow == ExpectedBow)
+		{
+			BoundBowArrowAnchor.Reset();
+		}
+		return;
+	}
+
+	if (BoundBow)
+	{
+		BoundBow->UnbindArrowAnchor();
+	}
+	BoundBowArrowAnchor.Reset();
 }
 
 bool UPlayerEquipmentComponent::IsItemOwnedByItemSlot(const ABaseItem* Item) const
@@ -694,6 +760,7 @@ void UPlayerEquipmentComponent::StoreCurrentEquippedItem()
 
 	ABaseItem* PreviousItem = PlayerOwner->EquippedItem;
 	const bool bOwnedByItemSlot = IsItemOwnedByItemSlot(PreviousItem);
+	ClearBowArrowAnchor(Cast<ABowItem>(PreviousItem));
 	PreviousItem->RemoveStrengthBonusEffect();
 	RemoveEquippedItemAbility(PreviousItem);
 	PlayerOwner->EquippedItem = nullptr;
@@ -754,7 +821,9 @@ void UPlayerEquipmentComponent::StartEquipItem(ABaseItem* Item, FGameplayTag Sou
 	UAnimMontage* EquipMontage = Entry ? Entry->EquipMontage.Get() : nullptr;
 	const float PlayRate = Entry ? Entry->EquipPlayRate : 1.f;
 
-	if (EquipMontage)
+	const bool bIsSwimming = PlayerOwner->GetSwimmingComponent() && PlayerOwner->GetSwimmingComponent()->IsCustomSwimming();
+
+	if (EquipMontage && !bIsSwimming)
 	{
 		Multicast_PlayEquipmentMontage(Item, EquipMontage, PlayRate);
 	}
@@ -808,9 +877,15 @@ void UPlayerEquipmentComponent::FinalizePendingEquip()
 
 void UPlayerEquipmentComponent::CancelPendingEquip()
 {
+	ABaseItem* ItemToCancel = PendingEquipItem.Get();
+	if (ItemToCancel)
+	{
+		ClearBowArrowAnchor(Cast<ABowItem>(ItemToCancel));
+	}
+
 	if (PlayerOwner && PlayerOwner->HasAuthority())
 	{
-		if (ABaseItem* ItemToCancel = PendingEquipItem.Get())
+		if (ItemToCancel)
 		{
 			if (IsItemOwnedByItemSlot(ItemToCancel))
 			{

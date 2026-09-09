@@ -12,6 +12,10 @@
 #include "BaseGameplayTags.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
 
+UGA_ThrowGrenade::UGA_ThrowGrenade()
+{
+}
+
 void UGA_ThrowGrenade::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo,

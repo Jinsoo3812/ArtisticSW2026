@@ -114,6 +114,12 @@ struct FReplicatedLocomotionState
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
     EReplicatedLocomotionEvent LastLocomotionEvent = EReplicatedLocomotionEvent::None;
 
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    bool bShouldTurnInPlace = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    float DesiredFacingDeltaYaw = 0.f;
+
     bool operator==(const FReplicatedLocomotionState& Other) const
     {
         return bIsSprinting == Other.bIsSprinting &&
@@ -123,7 +129,9 @@ struct FReplicatedLocomotionState
                FMath::IsNearlyEqual(LandStartGroundSpeed, Other.LandStartGroundSpeed) &&
                FMath::IsNearlyEqual(LastFallSpeed, Other.LastFallSpeed) &&
                EventSequence == Other.EventSequence &&
-               LastLocomotionEvent == Other.LastLocomotionEvent;
+               LastLocomotionEvent == Other.LastLocomotionEvent &&
+               bShouldTurnInPlace == Other.bShouldTurnInPlace &&
+               FMath::IsNearlyEqual(DesiredFacingDeltaYaw, Other.DesiredFacingDeltaYaw, 1.0f);
     }
 
     bool operator!=(const FReplicatedLocomotionState& Other) const

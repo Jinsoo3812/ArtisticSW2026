@@ -16,6 +16,10 @@
 #include "RippleSubsystem.h"
 #include "SWRippleWaterWaves.h"
 #include "Water/SWBuoyancyMath.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemGlobals.h"
+#include "BaseGameplayTags.h"
+#include "BasePlayer.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
@@ -223,6 +227,68 @@ void USwimmingComponent::BeginPlay()
 			
 			// UE_LOG(LogTemp, Warning, TEXT("[SwimDebug] BeginPlay: Capsule setup complete. GenerateOverlapEvents=%s"), 
 			// 	CapsuleComponent->GetGenerateOverlapEvents() ? TEXT("True") : TEXT("False"));
+		}
+	}
+}
+
+void USwimmingComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ApplySwimmingGameplayState(false);
+	Super::EndPlay(EndPlayReason);
+}
+
+void USwimmingComponent::ApplySwimmingGameplayState(bool bEntering)
+{
+	if (!OwnerCharacter)
+	{
+		OwnerCharacter = Cast<ACharacter>(GetOwner());
+	}
+	if (!OwnerCharacter)
+	{
+		return;
+	}
+
+	UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(OwnerCharacter);
+	if (!ASC)
+	{
+		return;
+	}
+
+	if (bEntering)
+	{
+		if (!ASC->HasMatchingGameplayTag(State_Swimming))
+		{
+			ASC->AddLooseGameplayTag(State_Swimming);
+		}
+
+		// Cancel ongoing offensive, skill, and roll abilities upon entering swimming
+		FGameplayTagContainer CancelTags;
+		CancelTags.AddTag(GameplayAbility_BasicAttack);
+		CancelTags.AddTag(GameplayAbility_Weapon_AimCycle);
+		CancelTags.AddTag(GameplayAbility_InterruptibleByHit);
+		CancelTags.AddTag(GameplayAbility_Skill_GravityVortex);
+		CancelTags.AddTag(GameplayAbility_Skill_WaterBomb);
+		CancelTags.AddTag(GameplayAbility_Skill_Bombardment);
+		CancelTags.AddTag(GameplayAbility_Player_Roll);
+		ASC->CancelAbilities(&CancelTags);
+
+		// Clean up aim-related loose tags if present
+		ASC->RemoveLooseGameplayTag(State_Aiming);
+		ASC->RemoveLooseGameplayTag(State_Sniping);
+		ASC->RemoveLooseGameplayTag(State_Bow_Drawing);
+		ASC->RemoveLooseGameplayTag(State_Bow_FullyDrawn);
+		ASC->RemoveLooseGameplayTag(State_Bow_Releasing);
+
+		if (ABasePlayer* Player = Cast<ABasePlayer>(OwnerCharacter))
+		{
+			Player->ResetConsumableQuickSlotInputs();
+		}
+	}
+	else
+	{
+		if (ASC->HasMatchingGameplayTag(State_Swimming))
+		{
+			ASC->RemoveLooseGameplayTag(State_Swimming);
 		}
 	}
 }
@@ -532,6 +598,7 @@ void USwimmingComponent::CheckWaterTransitions(float DeltaSeconds)
 			DepthMode = ESwimDepthMode::Surface;
 			bIsInShallowWater = false;
 			CharacterMovement->Buoyancy = 0.f; // CMC의 기본 부력 사용 정지
+			ApplySwimmingGameplayState(true);
 			
 			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
 			FString ContextStr = (GetOwner() && GetOwner()->HasAuthority()) ? TEXT("Server") : TEXT("Client");
@@ -567,6 +634,7 @@ void USwimmingComponent::CheckWaterTransitions(float DeltaSeconds)
 			CharacterMovement->SetMovementMode(MOVE_Walking);
 			LastActiveWaterBody.Reset();
 			WaterQueryFailureElapsed = 0.0f;
+			ApplySwimmingGameplayState(false);
 			
 			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
 			FString ContextStr = (GetOwner() && GetOwner()->HasAuthority()) ? TEXT("Server") : TEXT("Client");
@@ -579,6 +647,7 @@ void USwimmingComponent::CheckWaterTransitions(float DeltaSeconds)
 			CharacterMovement->SetMovementMode(MOVE_Falling);
 			LastActiveWaterBody.Reset();
 			WaterQueryFailureElapsed = 0.0f;
+			ApplySwimmingGameplayState(false);
 			
 			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
 			FString ContextStr = (GetOwner() && GetOwner()->HasAuthority()) ? TEXT("Server") : TEXT("Client");

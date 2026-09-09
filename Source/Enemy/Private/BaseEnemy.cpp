@@ -104,6 +104,13 @@ void ABaseEnemy::BeginPlay()
 		if (HasAuthority())
 		{
 			AbilitySystemComponent->AddLooseGameplayTag(Team_Enemy);
+			AbilitySystemComponent->AddLooseGameplayTag(Capability_Effect_MoveSpeedMultiplier);
+			AbilitySystemComponent->AddLooseGameplayTag(Capability_Effect_AttackSpeedMultiplier);
+			AbilitySystemComponent->AddLooseGameplayTags(EffectTargetTags);
+			if (EnemyTypeTag.IsValid())
+			{
+				AbilitySystemComponent->AddLooseGameplayTag(EnemyTypeTag);
+			}
 		}
 		if (HealthComponent)
 		{
@@ -326,30 +333,49 @@ bool ABaseEnemy::CanEngageActor_Implementation(AActor* Candidate) const
 
 void ABaseEnemy::BindMovementSpeedAttribute()
 {
-	if (!AbilitySystemComponent || MoveSpeedBonusChangedDelegateHandle.IsValid())
+	if (!AbilitySystemComponent)
 	{
 		return;
 	}
 
-	MoveSpeedBonusChangedDelegateHandle = AbilitySystemComponent
-		->GetGameplayAttributeValueChangeDelegate(UEnemyAttributeSet::GetMoveSpeedBonusAttribute())
-		.AddUObject(this, &ABaseEnemy::OnMoveSpeedBonusChanged);
+	if (!MoveSpeedBonusChangedDelegateHandle.IsValid())
+	{
+		MoveSpeedBonusChangedDelegateHandle = AbilitySystemComponent
+			->GetGameplayAttributeValueChangeDelegate(UEnemyAttributeSet::GetMoveSpeedBonusAttribute())
+			.AddUObject(this, &ABaseEnemy::OnMovementSpeedModifierChanged);
+	}
+	if (!MoveSpeedMultiplierChangedDelegateHandle.IsValid())
+	{
+		MoveSpeedMultiplierChangedDelegateHandle = AbilitySystemComponent
+			->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetMoveSpeedMultiplierAttribute())
+			.AddUObject(this, &ABaseEnemy::OnMovementSpeedModifierChanged);
+	}
 }
 
 void ABaseEnemy::UnbindMovementSpeedAttribute()
 {
-	if (!AbilitySystemComponent || !MoveSpeedBonusChangedDelegateHandle.IsValid())
+	if (!AbilitySystemComponent)
 	{
 		return;
 	}
 
-	AbilitySystemComponent
-		->GetGameplayAttributeValueChangeDelegate(UEnemyAttributeSet::GetMoveSpeedBonusAttribute())
-		.Remove(MoveSpeedBonusChangedDelegateHandle);
-	MoveSpeedBonusChangedDelegateHandle.Reset();
+	if (MoveSpeedBonusChangedDelegateHandle.IsValid())
+	{
+		AbilitySystemComponent
+			->GetGameplayAttributeValueChangeDelegate(UEnemyAttributeSet::GetMoveSpeedBonusAttribute())
+			.Remove(MoveSpeedBonusChangedDelegateHandle);
+		MoveSpeedBonusChangedDelegateHandle.Reset();
+	}
+	if (MoveSpeedMultiplierChangedDelegateHandle.IsValid())
+	{
+		AbilitySystemComponent
+			->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetMoveSpeedMultiplierAttribute())
+			.Remove(MoveSpeedMultiplierChangedDelegateHandle);
+		MoveSpeedMultiplierChangedDelegateHandle.Reset();
+	}
 }
 
-void ABaseEnemy::OnMoveSpeedBonusChanged(const FOnAttributeChangeData& ChangeData)
+void ABaseEnemy::OnMovementSpeedModifierChanged(const FOnAttributeChangeData& ChangeData)
 {
 	// Enemy movement is server-authored. Replicated attributes still reach clients
 	// for UI/cues, but simulated proxies follow CharacterMovement replication.
@@ -378,18 +404,23 @@ float ABaseEnemy::GetResolvedMovementSpeed() const
 	const float MoveSpeedBonus = AbilitySystemComponent
 		? AbilitySystemComponent->GetNumericAttribute(UEnemyAttributeSet::GetMoveSpeedBonusAttribute())
 		: 0.0f;
+	const float MoveSpeedMultiplier = AbilitySystemComponent
+		? AbilitySystemComponent->GetNumericAttribute(UBaseAttributeSet::GetMoveSpeedMultiplierAttribute())
+		: 1.0f;
 	return ResolveMovementSpeed(
 		BaseMovementSpeed,
 		SpawnMovementSpeedMultiplier,
 		MoveSpeedBonus,
-		MaximumResolvedMovementSpeed);
+		MaximumResolvedMovementSpeed,
+		MoveSpeedMultiplier);
 }
 
 float ABaseEnemy::ResolveMovementSpeed(
 	float InBaseSpeed,
 	float InSpawnMultiplier,
 	float InMoveSpeedBonus,
-	float InMaximumSpeed)
+	float InMaximumSpeed,
+	float InMoveSpeedMultiplier)
 {
 	const float SafeBaseSpeed = FMath::Max(0.0f, InBaseSpeed);
 	if (SafeBaseSpeed <= KINDA_SMALL_NUMBER)
@@ -397,8 +428,9 @@ float ABaseEnemy::ResolveMovementSpeed(
 		return 0.0f;
 	}
 
-	const float ResolvedSpeed = SafeBaseSpeed * FMath::Max(0.01f, InSpawnMultiplier)
+	const float BuffedSpeed = SafeBaseSpeed * FMath::Max(0.01f, InSpawnMultiplier)
 		+ FMath::Max(0.0f, InMoveSpeedBonus);
+	const float ResolvedSpeed = BuffedSpeed * FMath::Clamp(InMoveSpeedMultiplier, 0.1f, 3.0f);
 	return FMath::Clamp(ResolvedSpeed, 0.0f, FMath::Max(0.0f, InMaximumSpeed));
 }
 

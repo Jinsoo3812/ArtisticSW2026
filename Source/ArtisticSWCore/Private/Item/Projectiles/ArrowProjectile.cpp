@@ -5,10 +5,34 @@
 #include "BaseGameplayTags.h"
 #include "Components/BoxComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/SceneComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/World.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
+#include "Item/Projectiles/ArrowImpactVisual.h"
 #include "StatusEffectLibrary.h"
+
+namespace
+{
+	FString GetHitMeshPath(const UPrimitiveComponent* HitComponent)
+	{
+		if (const UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(HitComponent))
+		{
+			return GetPathNameSafe(StaticMeshComponent->GetStaticMesh());
+		}
+
+		if (const USkeletalMeshComponent* SkeletalMeshComponent = Cast<USkeletalMeshComponent>(HitComponent))
+		{
+			return GetPathNameSafe(SkeletalMeshComponent->GetSkeletalMeshAsset());
+		}
+
+		return TEXT("None");
+	}
+}
 
 AArrowProjectile::AArrowProjectile()
 {
@@ -19,7 +43,7 @@ AArrowProjectile::AArrowProjectile()
 	if (CollisionComp)
 	{
 		ApplyCollisionShape();
-		CollisionComp->SetCollisionProfileName(TEXT("Projectile"));
+		ApplyArrowCollisionProfile();
 		CollisionComp->SetNotifyRigidBodyCollision(true);
 		CollisionComp->OnComponentHit.AddDynamic(this, &AArrowProjectile::OnArrowHit);
 	}
@@ -40,6 +64,7 @@ void AArrowProjectile::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 	ApplyCollisionShape();
+	ApplyArrowCollisionProfile();
 }
 
 void AArrowProjectile::ApplyCollisionShape()
@@ -54,9 +79,22 @@ void AArrowProjectile::ApplyCollisionShape()
 	CollisionComp->SetBoxExtent(CollisionHalfExtent.ComponentMax(FVector(0.1f)), false);
 }
 
+void AArrowProjectile::ApplyArrowCollisionProfile()
+{
+	if (!CollisionComp)
+	{
+		return;
+	}
+
+	// Reassert at construction/runtime so legacy Blueprint BodyInstance overrides
+	// cannot silently restore WorldStatic=Ignore or NoCollision.
+	CollisionComp->SetCollisionProfileName(TEXT("ArrowProjectile"), true);
+}
+
 void AArrowProjectile::BeginPlay()
 {
 	Super::BeginPlay();
+	ApplyArrowCollisionProfile();
 
 	if (APawn* InstigatorPawn = GetInstigator())
 	{
@@ -78,16 +116,6 @@ void AArrowProjectile::EndPlay(const EEndPlayReason::Type EndPlayReason)
 			if (AActor* IgnoredActor = IgnoredActorPtr.Get())
 			{
 				CollisionComp->IgnoreActorWhenMoving(IgnoredActor, false);
-
-				TArray<UPrimitiveComponent*> PrimitiveComponents;
-				IgnoredActor->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
-				for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
-				{
-					if (PrimitiveComponent)
-					{
-						PrimitiveComponent->IgnoreActorWhenMoving(this, false);
-					}
-				}
 			}
 		}
 	}
@@ -120,16 +148,6 @@ void AArrowProjectile::IgnoreActorForMovement(AActor* ActorToIgnore)
 	}
 
 	MovementIgnoredActors.AddUnique(ActorToIgnore);
-
-	TArray<UPrimitiveComponent*> PrimitiveComponents;
-	ActorToIgnore->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
-	for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
-	{
-		if (PrimitiveComponent)
-		{
-			PrimitiveComponent->IgnoreActorWhenMoving(this, true);
-		}
-	}
 }
 
 bool AArrowProjectile::ApplyVisualTo(UStaticMeshComponent* TargetMesh) const
@@ -244,23 +262,111 @@ void AArrowProjectile::Multicast_PlayImpactFX_Implementation(const FHitResult& H
 	K2_OnImpactFX(Hit);
 }
 
-void AArrowProjectile::OnArrowHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+void AArrowProjectile::Multicast_PlayImpactPresentation_Implementation(
+	const FArrowImpactPresentationData& ImpactData)
 {
-	if (!HasAuthority() || ShouldIgnoreHitActor(OtherActor))
+	FHitResult CosmeticHit;
+	CosmeticHit.ImpactPoint = ImpactData.ImpactLocation;
+	CosmeticHit.Location = ImpactData.ImpactLocation;
+	CosmeticHit.ImpactNormal = ImpactData.ImpactNormal;
+	CosmeticHit.Normal = ImpactData.ImpactNormal;
+	CosmeticHit.Component = Cast<UPrimitiveComponent>(ImpactData.AttachComponent.Get());
+	CosmeticHit.BoneName = ImpactData.BoneName;
+	K2_OnImpactFX(CosmeticHit);
+
+	if (GetNetMode() == NM_DedicatedServer || !GetWorld())
 	{
 		return;
+	}
+
+	AArrowImpactVisual* ImpactVisual = GetWorld()->SpawnActor<AArrowImpactVisual>(
+		AArrowImpactVisual::StaticClass(),
+		FTransform::Identity);
+	if (ImpactVisual)
+	{
+		ImpactVisual->InitializeFromProjectile(
+			*this,
+			ImpactData,
+			ImpactEmbedDepth,
+			StuckArrowLifeSpan);
+	}
+}
+
+void AArrowProjectile::OnArrowHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+{
+	if (!HasAuthority() || (bDestroyOnImpact && bImpactHandled))
+	{
+		return;
+	}
+
+	const bool bIgnoredHit = ShouldIgnoreHitActor(OtherActor);
+	UE_LOG(LogTemp, Display,
+		TEXT("[ArrowHit] Actor=%s Component=%s Mesh=%s Profile=%s ObjectType=%d Bone=%s Point=%s Ignored=%s"),
+		*GetNameSafe(OtherActor),
+		*GetNameSafe(OtherComp),
+		*GetHitMeshPath(OtherComp),
+		OtherComp ? *OtherComp->GetCollisionProfileName().ToString() : TEXT("None"),
+		OtherComp ? static_cast<int32>(OtherComp->GetCollisionObjectType()) : INDEX_NONE,
+		*Hit.BoneName.ToString(),
+		*Hit.ImpactPoint.ToCompactString(),
+		bIgnoredHit ? TEXT("true") : TEXT("false"));
+
+	if (bIgnoredHit)
+	{
+		return;
+	}
+	if (bDestroyOnImpact)
+	{
+		bImpactHandled = true;
 	}
 
 	if (CanApplyDamageToActor(OtherActor))
 	{
 		ApplyDamageToActor(OtherActor, Hit);
 	}
-	Multicast_PlayImpactFX(Hit);
+	Multicast_PlayImpactPresentation(BuildImpactPresentationData(OtherComp, Hit));
 
 	if (bDestroyOnImpact)
 	{
+		if (ProjectileMovementComp)
+		{
+			ProjectileMovementComp->StopSimulating(Hit);
+		}
+		if (CollisionComp)
+		{
+			CollisionComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+		SetReplicateMovement(false);
 		Destroy();
 	}
+}
+
+FArrowImpactPresentationData AArrowProjectile::BuildImpactPresentationData(
+	UPrimitiveComponent* OtherComp,
+	const FHitResult& Hit) const
+{
+	FArrowImpactPresentationData Result;
+	Result.ImpactLocation = Hit.ImpactPoint;
+	Result.ImpactNormal = Hit.ImpactNormal.GetSafeNormal();
+	Result.IncomingDirection = GetVelocity().GetSafeNormal();
+	if (FVector(Result.IncomingDirection).IsNearlyZero())
+	{
+		Result.IncomingDirection = GetActorForwardVector().GetSafeNormal();
+	}
+	Result.BoneName = Hit.BoneName;
+
+	// Only stable components owned by replicated actors are safe RPC references.
+	// Static geometry needs no attachment; its world-space impact is sufficient.
+	if (OtherComp
+		&& OtherComp->Mobility != EComponentMobility::Static
+		&& OtherComp->IsNameStableForNetworking()
+		&& OtherComp->GetOwner()
+		&& OtherComp->GetOwner()->GetIsReplicated())
+	{
+		Result.AttachComponent = OtherComp;
+	}
+
+	return Result;
 }
 
 bool AArrowProjectile::ShouldIgnoreHitActor(const AActor* OtherActor) const

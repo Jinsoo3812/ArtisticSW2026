@@ -19,6 +19,7 @@
 #include "BaseAttributeSet.h"
 #include "ShipAttributeSet.h"
 #include "BaseGameplayTags.h"
+#include "CollisionChannels.h"
 #include "Skills/SkillUseProvider.h"
 #include "ShipPhysicsAsync.h"
 #include "Physics/Experimental/PhysScene_Chaos.h"
@@ -118,6 +119,7 @@ AShip::AShip()
 	ShipDamageMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipDamageMesh"));
 	ShipDamageMesh->SetupAttachment(BuoyancyRoot);
 	ShipDamageMesh->SetCollisionProfileName(TEXT("PlayerShipDamage"));
+	ShipDamageMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
 	ShipDamageMesh->SetGenerateOverlapEvents(false);
 	ShipDamageMesh->SetVisibility(false, false);
 	ShipDamageMesh->SetHiddenInGame(true, false);
@@ -135,6 +137,7 @@ AShip::AShip()
 	ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
 	ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
 	ShipDeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+	ShipDeckMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
 	ShipDeckMesh->SetGenerateOverlapEvents(false);
 	ShipDeckMesh->SetVisibility(false, false);
 	ShipDeckMesh->SetHiddenInGame(true, false);
@@ -238,6 +241,14 @@ void AShip::BeginPlay()
 		ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
 		ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
 		ShipDeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+		ShipDeckMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
+	}
+	if (ShipDamageMesh)
+	{
+		// The visible ship mesh intentionally has no collision. Character arrows
+		// must hit this query-only hull instead, including legacy Blueprint CDOs.
+		ShipDamageMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		ShipDamageMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
 	}
 	bBuoyancyQueryDiagnostics = FParse::Param(
 		FCommandLine::Get(), TEXT("BuoyancyQueryDiagnostics"));

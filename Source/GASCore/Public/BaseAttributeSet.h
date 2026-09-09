@@ -65,6 +65,11 @@ public:
 	FGameplayAttributeData MoveSpeed;
 	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, MoveSpeed)
 
+	/** Runtime status-effect multiplier applied after the movement owner's base-speed calculation. */
+	UPROPERTY(BlueprintReadOnly, Category = "Attributes|Movement", ReplicatedUsing = OnRep_MoveSpeedMultiplier)
+	FGameplayAttributeData MoveSpeedMultiplier;
+	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, MoveSpeedMultiplier)
+
 	// 공격 애니메이션과 다음 공격까지의 회복 속도에 함께 곱해지는 배율입니다.
 	// 1.0은 정상 속도, 0.5는 공격 모션과 공격 주기가 모두 절반 속도입니다.
 	UPROPERTY(BlueprintReadOnly, Category = "Attributes", ReplicatedUsing = OnRep_AttackSpeedMultiplier)
@@ -106,6 +111,9 @@ protected:
 	// 서버에서 복제된 MoveSpeed 변경을 클라이언트 ASC에 알립니다.
 	UFUNCTION()
 	virtual void OnRep_MoveSpeed(const FGameplayAttributeData& OldMoveSpeed);
+
+	UFUNCTION()
+	virtual void OnRep_MoveSpeedMultiplier(const FGameplayAttributeData& OldMoveSpeedMultiplier);
 
 	UFUNCTION()
 	virtual void OnRep_AttackSpeedMultiplier(const FGameplayAttributeData& OldAttackSpeedMultiplier);

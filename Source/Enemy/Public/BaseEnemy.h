@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "AI/EnemyPerceptionSettings.h"
 #include "BaseCharacter.h"
 #include "WaveSystem/Data/WaveSpawnTypes.h"
 #include "EnemyDropData.h"
@@ -66,6 +67,13 @@ protected:
 	TArray<TSubclassOf<UGameplayAbility>> StartingAbilities;
 
 	/**
+	 * Server-owned classification tags copied to the ASC at startup. Designers
+	 * can opt individual Enemy Blueprints into DataAsset-driven effects here.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem|Targeting")
+	FGameplayTagContainer EffectTargetTags;
+
+	/**
 	 * Optional death GA used by enemies that need a montage-driven death sequence.
 	 * Regular enemies leave this empty and enter ragdoll immediately. Boss enemies
 	 * opt in with their dedicated death ability.
@@ -86,6 +94,10 @@ protected:
 	/** State별 Run Behavior Dynamic Subtree를 설정하는 데이터 자산입니다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI | Behavior Tree")
 	TObjectPtr<UEnemyBehaviorSet> BehaviorSet;
+
+	/** Applied by BaseAIController when this Enemy is possessed. Author per Enemy Blueprint. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|AI|Perception", meta = (ShowOnlyInnerProperties))
+	FEnemyPerceptionSettings PerceptionSettings;
 
 	/** If false, the default weapon is spawned on its back and equipped by combat behavior. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
@@ -198,8 +210,9 @@ protected:
 
 	void BindMovementSpeedAttribute();
 	void UnbindMovementSpeedAttribute();
-	void OnMoveSpeedBonusChanged(const FOnAttributeChangeData& ChangeData);
+	void OnMovementSpeedModifierChanged(const FOnAttributeChangeData& ChangeData);
 	FDelegateHandle MoveSpeedBonusChangedDelegateHandle;
+	FDelegateHandle MoveSpeedMultiplierChangedDelegateHandle;
 
 	// FVector GetVelocity() const override;
 	
@@ -216,6 +229,7 @@ public:
 	FORCEINLINE TObjectPtr<ABaseAIController> GetAIController() const { check(AIController) return AIController; }
 	FORCEINLINE TObjectPtr<UBehaviorTree> GetBehaviorTree() const { return BehaviorTree; }
 	FORCEINLINE UEnemyBehaviorSet* GetBehaviorSet() const { return BehaviorSet; }
+	FORCEINLINE const FEnemyPerceptionSettings& GetPerceptionSettings() const { return PerceptionSettings; }
 	FORCEINLINE bool ShouldEquipWeaponOnSpawn() const { return bEquipWeaponOnSpawn; }
 	FORCEINLINE FGameplayTag GetDefaultWeaponTag() const { return DefaultWeaponTag; }
 	FORCEINLINE FGameplayTag GetEnemyTypeTag() const { return EnemyTypeTag; }
@@ -247,7 +261,8 @@ public:
 		float InBaseSpeed,
 		float InSpawnMultiplier,
 		float InMoveSpeedBonus,
-		float InMaximumSpeed);
+		float InMaximumSpeed,
+		float InMoveSpeedMultiplier = 1.0f);
 
 	// Enemy소환 API
 	UFUNCTION(BlueprintCallable, Category = "Wave")
