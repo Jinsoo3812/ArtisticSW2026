@@ -2,6 +2,20 @@
 
 #include "Misc/DataValidation.h"
 
+bool UNPCDialogueData::ResolveReply(AActor* Player, UStoryFacadeSubsystem* Story,
+	const FNPCDialogueRule& Rule, const FNPCDialogueLine& Line,
+	const FNPCDialogueReply& Reply, FName& OutNextLineId) const
+{
+	OutNextLineId = Reply.NextLineId;
+	return true;
+}
+
+FName UNPCDialogueData::ResolveAdvanceTarget(
+	const FNPCDialogueRule& Rule, const FNPCDialogueLine& Line) const
+{
+	return NAME_None;
+}
+
 const FNPCDialogueRule* UNPCDialogueData::FindRule(FName RuleId) const
 {
 	return Rules.FindByPredicate([RuleId](const FNPCDialogueRule& Rule)

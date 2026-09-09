@@ -975,10 +975,21 @@ void AShip::PossessedBy(AController* NewController)
 	if (const APlayerController* PlayerController = Cast<APlayerController>(NewController))
 	{
 		APlayerState* InPlayerState = PlayerController->PlayerState;
+		if (AppliedUpgradePlayerState && AppliedUpgradePlayerState != InPlayerState)
+		{
+			if (UShipUpgradeComponent* PreviousUpgrade = AppliedUpgradePlayerState->FindComponentByClass<UShipUpgradeComponent>())
+			{
+				PreviousUpgrade->OnShipStatsChanged.RemoveDynamic(this, &AShip::HandlePlayerUpgradeStatsChanged);
+			}
+		}
 		const bool bFirstApplicationForPlayer = AppliedUpgradePlayerState != InPlayerState;
 		if (ApplyPlayerUpgrades(InPlayerState, bFirstApplicationForPlayer))
 		{
 			AppliedUpgradePlayerState = InPlayerState;
+			if (UShipUpgradeComponent* Upgrade = InPlayerState->FindComponentByClass<UShipUpgradeComponent>())
+			{
+				Upgrade->OnShipStatsChanged.AddUniqueDynamic(this, &AShip::HandlePlayerUpgradeStatsChanged);
+			}
 		}
 
 		if (PlayerController->IsLocalController() && RidingPlayer)
@@ -990,6 +1001,13 @@ void AShip::PossessedBy(AController* NewController)
 
 void AShip::UnPossessed()
 {
+	if (AppliedUpgradePlayerState)
+	{
+		if (UShipUpgradeComponent* Upgrade = AppliedUpgradePlayerState->FindComponentByClass<UShipUpgradeComponent>())
+		{
+			Upgrade->OnShipStatsChanged.RemoveDynamic(this, &AShip::HandlePlayerUpgradeStatsChanged);
+		}
+	}
 	ResetToFollowCamera();
 	RememberFollowCameraState(Cast<APlayerController>(GetController()));
 
@@ -2852,9 +2870,17 @@ bool AShip::ApplyPlayerUpgrades(APlayerState* InPlayerState, bool bRefillHealth)
 	if (!HasAuthority() || !InPlayerState) return false;
 	UShipUpgradeComponent* UpgradeComponent = InPlayerState->FindComponentByClass<UShipUpgradeComponent>();
 	if (!UpgradeComponent || !UpgradeComponent->UpgradeTree) return false;
-	UpgradeComponent->SetPreviewBaseStats(GetBaseStatSnapshot());
+	if (!bUseUpgradeDrivenPlayerStats)
+	{
+		UpgradeComponent->SetPreviewBaseStats(GetBaseStatSnapshot());
+	}
 	ApplyStatSnapshot(UpgradeComponent->GetCurrentShipStats(), bRefillHealth);
 	return true;
+}
+
+void AShip::HandlePlayerUpgradeStatsChanged(FShipStatSnapshot NewStats)
+{
+	ApplyStatSnapshot(NewStats, false);
 }
 
 void AShip::UpdateHelmInteractionAvailability()

@@ -1,4 +1,5 @@
 #include "Upgrade/ShipUpgradeComponent.h"
+#include "Ship.h"
 
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/Pawn.h"
@@ -26,6 +27,18 @@ void UShipUpgradeComponent::BeginPlay()
 	if (UpgradeTree)
 	{
 		PreviewBaseStats = UpgradeTree->PreviewBaseStats;
+		if (UpgradeTree->ShipStatTable)
+		{
+			if (const FShipStatRow* Row = UpgradeTree->ShipStatTable->FindRow<FShipStatRow>(UpgradeTree->PlayerBaseRowName, TEXT("Ship Upgrade Base Row"), false))
+			{
+				PreviewBaseStats.MaxHealth = Row->MaxHealth;
+				PreviewBaseStats.CannonDamage = Row->CannonDamage;
+				PreviewBaseStats.CannonFireCooldownSeconds = Row->CannonFireCooldown;
+				PreviewBaseStats.CannonballSpeed = Row->CannonballSpeed;
+				PreviewBaseStats.ForwardPropulsionMultiplier = Row->ForwardPropulsionMultiplier;
+				PreviewBaseStats.TurnTorqueMultiplier = Row->TurnTorqueMultiplier;
+			}
+		}
 	}
 	else
 	{
@@ -152,7 +165,7 @@ bool UShipUpgradeComponent::CanActivateNode(FName NodeId, FText& OutReason) cons
 
 FShipStatSnapshot UShipUpgradeComponent::GetCurrentShipStats() const
 {
-	return UpgradeTree ? FShipUpgradeCalculator::Calculate(PreviewBaseStats, UpgradeTree->Nodes, ActiveNodeIds) : PreviewBaseStats;
+	return UpgradeTree ? FShipUpgradeCalculator::Calculate(PreviewBaseStats, UpgradeTree->Nodes, ActiveNodeIds, UpgradeTree->ShipStatTable) : PreviewBaseStats;
 }
 
 bool UShipUpgradeComponent::GetStatsAfterActivating(FName NodeId, FShipStatSnapshot& OutPreviewStats) const
@@ -161,7 +174,7 @@ bool UShipUpgradeComponent::GetStatsAfterActivating(FName NodeId, FShipStatSnaps
 	if (!UpgradeTree || (!CanActivateNode(NodeId, Reason) && !IsNodeActive(NodeId))) return false;
 	TArray<FName> PreviewIds = ActiveNodeIds;
 	PreviewIds.AddUnique(NodeId);
-	OutPreviewStats = FShipUpgradeCalculator::Calculate(PreviewBaseStats, UpgradeTree->Nodes, PreviewIds);
+	OutPreviewStats = FShipUpgradeCalculator::Calculate(PreviewBaseStats, UpgradeTree->Nodes, PreviewIds, UpgradeTree->ShipStatTable);
 	return true;
 }
 
@@ -173,8 +186,8 @@ TArray<FShipStatChangeView> UShipUpgradeComponent::GetNodeStatChanges(FName Node
 	BeforeIds.Remove(NodeId);
 	TArray<FName> AfterIds = BeforeIds;
 	AfterIds.Add(NodeId);
-	const FShipStatSnapshot Before = FShipUpgradeCalculator::Calculate(PreviewBaseStats, UpgradeTree->Nodes, BeforeIds);
-	const FShipStatSnapshot After = FShipUpgradeCalculator::Calculate(PreviewBaseStats, UpgradeTree->Nodes, AfterIds);
+	const FShipStatSnapshot Before = FShipUpgradeCalculator::Calculate(PreviewBaseStats, UpgradeTree->Nodes, BeforeIds, UpgradeTree->ShipStatTable);
+	const FShipStatSnapshot After = FShipUpgradeCalculator::Calculate(PreviewBaseStats, UpgradeTree->Nodes, AfterIds, UpgradeTree->ShipStatTable);
 	for (uint8 Index = 0; Index <= static_cast<uint8>(EShipStatType::TurnSpeed); ++Index)
 	{
 		const EShipStatType StatType = static_cast<EShipStatType>(Index);

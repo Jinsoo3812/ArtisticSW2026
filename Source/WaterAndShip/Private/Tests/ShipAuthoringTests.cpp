@@ -67,8 +67,9 @@ bool FShipAuthoringComponentsTest::RunTest(const FString& Parameters)
 		TestNotNull(TEXT("BP_PlayerShip inherits BoardingArrivalPoint"), PlayerShipDefaults->GetBoardingArrivalPoint());
 		TestNotNull(TEXT("BP_PlayerShip inherits AnchorMesh"), PlayerShipDefaults->GetAnchorMesh());
 		TestNotNull(TEXT("BP_PlayerShip inherits AnchorInteractable"), PlayerShipDefaults->GetAnchorInteractable());
-		TestNotNull(TEXT("BP_PlayerShip exposes a Ship Stat Row data table"), PlayerShipDefaults->ShipStatRow.DataTable.Get());
-		TestEqual(TEXT("BP_PlayerShip selects PlayerShip in the row dropdown"), PlayerShipDefaults->ShipStatRow.RowName, FName(TEXT("PlayerShip")));
+		TestTrue(TEXT("BP_PlayerShip uses upgrade-driven DT stats"), PlayerShipDefaults->bUseUpgradeDrivenPlayerStats);
+		TestNull(TEXT("BP_PlayerShip does not select a complete Ship Stat Row"), PlayerShipDefaults->ShipStatRow.DataTable.Get());
+		TestTrue(TEXT("BP_PlayerShip row name is empty"), PlayerShipDefaults->ShipStatRow.RowName.IsNone());
 	}
 
 	UClass* CannonBlueprintClass = LoadClass<ACannon>(

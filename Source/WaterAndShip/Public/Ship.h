@@ -556,6 +556,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Stats")
 	bool ApplyPlayerUpgrades(APlayerState* InPlayerState, bool bRefillHealth = true);
 
+	UFUNCTION()
+	void HandlePlayerUpgradeStatsChanged(FShipStatSnapshot NewStats);
+
 	UFUNCTION(BlueprintPure, Category = "Ship|Repair")
 	int32 GetActiveRepairPointCount() const;
 
@@ -1141,8 +1144,12 @@ public:
 	void ResetToFollowCamera();
 
 public:
-	/** Data table and row selected together; the row is presented as a dropdown. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Stats", meta = (RowType = "/Script/WaterAndShip.ShipStatRow", DisplayName = "Ship Stat Row"))
+	/** Player ships receive their base and upgraded values from the upgrade tree's DT. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Stats")
+	bool bUseUpgradeDrivenPlayerStats = false;
+
+	/** Enemy/non-player ships select a complete stat row. Hidden for upgrade-driven player ships. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Stats", meta = (RowType = "/Script/WaterAndShip.ShipStatRow", DisplayName = "Ship Stat Row", EditCondition = "!bUseUpgradeDrivenPlayerStats", EditConditionHides))
 	FDataTableRowHandle ShipStatRow;
 
 	/** Legacy serialized fields retained as a runtime fallback while existing Blueprints migrate. */

@@ -62,6 +62,31 @@ bool FShipUpgradeCalculationTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Percent propulsion increase is applied independently"), Full.ForwardPropulsionMultiplier, 1.2f);
 	TestEqual(TEXT("Turn multiplier remains independent"), Full.TurnTorqueMultiplier, 1.0f);
 
+	UDataTable* TierTable = NewObject<UDataTable>();
+	TierTable->RowStruct = FShipStatRow::StaticStruct();
+	FShipStatRow Tier2;
+	Tier2.CannonDamage = 15.0f;
+	Tier2.CannonballSpeed = 6000.0f;
+	Tier2.ForwardPropulsionMultiplier = 5.0f;
+	Tier2.TurnTorqueMultiplier = 3.0f;
+	TierTable->AddRow(TEXT("PlayerShip_2"), Tier2);
+	FShipUpgradeNodeDefinition CannonTier;
+	CannonTier.NodeId = TEXT("CannonDamage_I");
+	CannonTier.StatTrack = EShipUpgradeStatTrack::CannonPower;
+	CannonTier.TrackLevel = 1;
+	CannonTier.TargetStatRowName = TEXT("PlayerShip_2");
+	FShipUpgradeNodeDefinition MobilityTier;
+	MobilityTier.NodeId = TEXT("Propulsion_I");
+	MobilityTier.StatTrack = EShipUpgradeStatTrack::Mobility;
+	MobilityTier.TrackLevel = 1;
+	MobilityTier.TargetStatRowName = TEXT("PlayerShip_2");
+	const FShipStatSnapshot DTBacked = FShipUpgradeCalculator::Calculate(
+		BaseStats, { CannonTier, MobilityTier }, { CannonTier.NodeId, MobilityTier.NodeId }, TierTable);
+	TestEqual(TEXT("Cannon track copies DT damage"), DTBacked.CannonDamage, 15.0f);
+	TestEqual(TEXT("Cannon track copies DT projectile speed"), DTBacked.CannonballSpeed, 6000.0f);
+	TestEqual(TEXT("Mobility track copies DT propulsion"), DTBacked.ForwardPropulsionMultiplier, 5.0f);
+	TestEqual(TEXT("Mobility track copies DT turn speed"), DTBacked.TurnTorqueMultiplier, 3.0f);
+
 	UShipUpgradeTreeDataAsset* Tree = NewObject<UShipUpgradeTreeDataAsset>();
 	Tree->Nodes = Nodes;
 	TArray<FText> Errors;

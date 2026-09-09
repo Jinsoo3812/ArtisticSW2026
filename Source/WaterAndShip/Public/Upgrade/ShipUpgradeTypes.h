@@ -5,6 +5,7 @@
 #include "ShipUpgradeTypes.generated.h"
 
 class AActor;
+class UDataTable;
 
 UENUM(BlueprintType)
 enum class EShipStatType : uint8
@@ -22,6 +23,17 @@ enum class EShipStatModifierOperation : uint8
 {
 	AddFlat,
 	AddPercent
+};
+
+/** A DT-backed player upgrade line. LegacyModifiers is retained for old/test-authored nodes. */
+UENUM(BlueprintType)
+enum class EShipUpgradeStatTrack : uint8
+{
+	LegacyModifiers,
+	Hull,
+	CannonPower,
+	Mobility,
+	CannonCooldown
 };
 
 UENUM(BlueprintType)
@@ -147,6 +159,17 @@ struct WATERANDSHIP_API FShipUpgradeNodeDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stats")
 	TArray<FShipStatModifier> StatModifiers;
 
+	/** DT-backed tracks copy only their owned fields from TargetStatRowName. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stats|Data Table")
+	EShipUpgradeStatTrack StatTrack = EShipUpgradeStatTrack::LegacyModifiers;
+
+	/** Monotonic level inside a track. The highest active level wins. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stats|Data Table", meta = (ClampMin = "1", EditCondition = "StatTrack != EShipUpgradeStatTrack::LegacyModifiers", EditConditionHides))
+	int32 TrackLevel = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stats|Data Table", meta = (EditCondition = "StatTrack != EShipUpgradeStatTrack::LegacyModifiers", EditConditionHides))
+	FName TargetStatRowName;
+
 	/** All listed item stacks are required and consumed together on activation. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Activation Cost")
 	TArray<FCraftingItemStack> ActivationCosts;
@@ -268,7 +291,8 @@ struct WATERANDSHIP_API FShipUpgradeCalculator
 	static FShipStatSnapshot Calculate(
 		const FShipStatSnapshot& BaseStats,
 		const TArray<FShipUpgradeNodeDefinition>& Nodes,
-		const TArray<FName>& ActiveNodeIds);
+		const TArray<FName>& ActiveNodeIds,
+		const UDataTable* ShipStatTable = nullptr);
 
 	static float GetStatValue(const FShipStatSnapshot& Stats, EShipStatType StatType);
 	static void SetStatValue(FShipStatSnapshot& Stats, EShipStatType StatType, float Value);

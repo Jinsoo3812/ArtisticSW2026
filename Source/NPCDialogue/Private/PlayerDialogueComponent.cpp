@@ -346,6 +346,26 @@ void UPlayerDialogueComponent::ServerAdvanceDialogue_Implementation(int32 Expect
 		return;
 	}
 
+	const FNPCDialogueLine& CurrentLine = Rule->Lines[ServerLineIndex];
+	const UNPCDialogueData* Data = ServerDialogueSource->GetDialogueData();
+	const FName AdvanceTarget = Data ? Data->ResolveAdvanceTarget(*Rule, CurrentLine) : NAME_None;
+	if (!AdvanceTarget.IsNone())
+	{
+		const int32 NextLineIndex = Rule->Lines.IndexOfByPredicate([AdvanceTarget](const FNPCDialogueLine& Line)
+		{
+			return Line.LineId == AdvanceTarget;
+		});
+		if (NextLineIndex == INDEX_NONE)
+		{
+			ClientDialogueFailed(ENPCDialogueFailureReason::RequirementsChanged);
+			ClientCloseDialogue(ServerSessionId);
+			EndServerDialogue();
+			return;
+		}
+		ServerLineIndex = NextLineIndex;
+		ClientUpdateDialogue(ServerSessionId, MakeView(ServerDialogueSource->GetOwner(), *Rule, ServerLineIndex));
+		return;
+	}
 	if (Rule->Lines.IsValidIndex(ServerLineIndex + 1))
 	{
 		++ServerLineIndex;
@@ -398,12 +418,23 @@ void UPlayerDialogueComponent::ServerSelectReply_Implementation(
 		return;
 	}
 
-	if (!Reply->NextLineId.IsNone())
+	FName SelectedNextLineId = Reply->NextLineId;
+	UStoryFacadeSubsystem* Story = GetWorld() && GetWorld()->GetGameInstance()
+		? GetWorld()->GetGameInstance()->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
+	const UNPCDialogueData* Data = ServerDialogueSource->GetDialogueData();
+	if (!Data || !Data->ResolveReply(GetOwner(), Story, *Rule,
+		Rule->Lines[ServerLineIndex], *Reply, SelectedNextLineId))
+	{
+		ClientDialogueFailed(ENPCDialogueFailureReason::StoryCommitFailed);
+		return;
+	}
+
+	if (!SelectedNextLineId.IsNone())
 	{
 		const int32 NextLineIndex = Rule->Lines.IndexOfByPredicate(
-			[Reply](const FNPCDialogueLine& Line)
+			[SelectedNextLineId](const FNPCDialogueLine& Line)
 			{
-				return Line.LineId == Reply->NextLineId;
+				return Line.LineId == SelectedNextLineId;
 			});
 		if (NextLineIndex == INDEX_NONE)
 		{

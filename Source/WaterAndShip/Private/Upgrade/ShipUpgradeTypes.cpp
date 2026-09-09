@@ -1,4 +1,6 @@
 #include "Upgrade/ShipUpgradeTypes.h"
+#include "Engine/DataTable.h"
+#include "Ship.h"
 
 bool FShipStatSnapshot::Equals(const FShipStatSnapshot& Other, float Tolerance) const
 {
@@ -13,12 +15,14 @@ bool FShipStatSnapshot::Equals(const FShipStatSnapshot& Other, float Tolerance) 
 FShipStatSnapshot FShipUpgradeCalculator::Calculate(
 	const FShipStatSnapshot& BaseStats,
 	const TArray<FShipUpgradeNodeDefinition>& Nodes,
-	const TArray<FName>& ActiveNodeIds)
+	const TArray<FName>& ActiveNodeIds,
+	const UDataTable* ShipStatTable)
 {
 	FShipStatSnapshot Result = BaseStats;
 	TMap<EShipStatType, float> FlatSums;
 	TMap<EShipStatType, float> PercentSums;
 	TSet<FName> UniqueActiveIds(ActiveNodeIds);
+	TMap<EShipUpgradeStatTrack, const FShipUpgradeNodeDefinition*> HighestTrackNodes;
 
 	TArray<const FShipUpgradeNodeDefinition*> ActiveNodes;
 	for (const FShipUpgradeNodeDefinition& Node : Nodes)
@@ -26,6 +30,14 @@ FShipStatSnapshot FShipUpgradeCalculator::Calculate(
 		if (UniqueActiveIds.Contains(Node.NodeId))
 		{
 			ActiveNodes.Add(&Node);
+			if (Node.StatTrack != EShipUpgradeStatTrack::LegacyModifiers)
+			{
+				const FShipUpgradeNodeDefinition* const* Existing = HighestTrackNodes.Find(Node.StatTrack);
+				if (!Existing || (*Existing)->TrackLevel < Node.TrackLevel)
+				{
+					HighestTrackNodes.Add(Node.StatTrack, &Node);
+				}
+			}
 		}
 	}
 	ActiveNodes.Sort([](const FShipUpgradeNodeDefinition& A, const FShipUpgradeNodeDefinition& B)
@@ -35,6 +47,7 @@ FShipStatSnapshot FShipUpgradeCalculator::Calculate(
 
 	for (const FShipUpgradeNodeDefinition* Node : ActiveNodes)
 	{
+		if (Node->StatTrack != EShipUpgradeStatTrack::LegacyModifiers) continue;
 		for (const FShipStatModifier& Modifier : Node->StatModifiers)
 		{
 			TMap<EShipStatType, float>& Target = Modifier.Operation == EShipStatModifierOperation::AddFlat
@@ -50,6 +63,35 @@ FShipStatSnapshot FShipUpgradeCalculator::Calculate(
 		const float BaseValue = GetStatValue(BaseStats, StatType);
 		const float FinalValue = (BaseValue + FlatSums.FindRef(StatType)) * (1.0f + PercentSums.FindRef(StatType));
 		SetStatValue(Result, StatType, FinalValue);
+	}
+
+	if (ShipStatTable)
+	{
+		for (const TPair<EShipUpgradeStatTrack, const FShipUpgradeNodeDefinition*>& Pair : HighestTrackNodes)
+		{
+			const FShipUpgradeNodeDefinition* Node = Pair.Value;
+			const FShipStatRow* Row = ShipStatTable->FindRow<FShipStatRow>(Node->TargetStatRowName, TEXT("Ship Upgrade DT Target"), false);
+			if (!Row) continue;
+			switch (Pair.Key)
+			{
+			case EShipUpgradeStatTrack::Hull:
+				Result.MaxHealth = Row->MaxHealth;
+				break;
+			case EShipUpgradeStatTrack::CannonPower:
+				Result.CannonDamage = Row->CannonDamage;
+				Result.CannonballSpeed = Row->CannonballSpeed;
+				break;
+			case EShipUpgradeStatTrack::Mobility:
+				Result.ForwardPropulsionMultiplier = Row->ForwardPropulsionMultiplier;
+				Result.TurnTorqueMultiplier = Row->TurnTorqueMultiplier;
+				break;
+			case EShipUpgradeStatTrack::CannonCooldown:
+				Result.CannonFireCooldownSeconds = Row->CannonFireCooldown;
+				break;
+			default:
+				break;
+			}
+		}
 	}
 
 	Result.CannonDamage = FMath::Max(0.0f, Result.CannonDamage);

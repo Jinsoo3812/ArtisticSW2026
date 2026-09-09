@@ -1,4 +1,5 @@
 #include "Upgrade/ShipUpgradeTreeDataAsset.h"
+#include "Engine/DataTable.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -28,9 +29,24 @@ bool UShipUpgradeTreeDataAsset::ValidateTree(TArray<FText>& OutErrors) const
 			OutErrors.Add(FText::Format(NSLOCTEXT("ShipUpgrade", "DuplicateNodeId", "중복 NodeId: {0}"), FText::FromName(Node.NodeId)));
 		}
 		NodeIds.Add(Node.NodeId);
-		if (Node.StatModifiers.IsEmpty())
+		if (Node.StatTrack == EShipUpgradeStatTrack::LegacyModifiers && Node.StatModifiers.IsEmpty())
 		{
 			OutErrors.Add(FText::Format(NSLOCTEXT("ShipUpgrade", "EmptyModifiers", "스탯 변경이 없는 노드: {0}"), FText::FromName(Node.NodeId)));
+		}
+		if (Node.StatTrack != EShipUpgradeStatTrack::LegacyModifiers)
+		{
+			if (!ShipStatTable)
+			{
+				OutErrors.Add(NSLOCTEXT("ShipUpgrade", "MissingShipStatTable", "DT 기반 강화에 사용할 ShipStatTable이 없습니다."));
+			}
+			else if (Node.TargetStatRowName.IsNone() || !ShipStatTable->GetRowMap().Contains(Node.TargetStatRowName))
+			{
+				OutErrors.Add(FText::Format(NSLOCTEXT("ShipUpgrade", "MissingTargetStatRow", "노드 {0}의 목표 DT 행이 존재하지 않습니다."), FText::FromName(Node.NodeId)));
+			}
+			if (!Node.StatModifiers.IsEmpty())
+			{
+				OutErrors.Add(FText::Format(NSLOCTEXT("ShipUpgrade", "MixedStatSources", "DT 기반 노드 {0}에는 StatModifiers를 함께 사용할 수 없습니다."), FText::FromName(Node.NodeId)));
+			}
 		}
 	}
 

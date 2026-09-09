@@ -12,6 +12,14 @@ class NPCDIALOGUE_API UNPCDialogueData : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
+	/** Specialized dialogue assets may resolve a reply server-side. Default preserves NextLineId behavior. */
+	virtual bool ResolveReply(AActor* Player, class UStoryFacadeSubsystem* Story,
+		const FNPCDialogueRule& Rule, const FNPCDialogueLine& Line,
+		const FNPCDialogueReply& Reply, FName& OutNextLineId) const;
+
+	/** Optional non-linear advance target for specialized dialogue assets. */
+	virtual FName ResolveAdvanceTarget(const FNPCDialogueRule& Rule, const FNPCDialogueLine& Line) const;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "NPC")
 	FText DisplayName;
 
