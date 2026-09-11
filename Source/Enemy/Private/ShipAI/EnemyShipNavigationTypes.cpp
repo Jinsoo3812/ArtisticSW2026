@@ -111,9 +111,10 @@ FEnemyShipNavigationOutput FEnemyShipNavigationModel::Evaluate(
 		break;
 	case ENavalCombatState::Orbit:
 		{
-			const FVector Tangent = Profile.bOrbitClockwise
-				? FVector(-ToTarget.Y, ToTarget.X, 0.0f)
-				: FVector(ToTarget.Y, -ToTarget.X, 0.0f);
+			// One fleet direction removes reciprocal head-on decisions and makes
+			// squad avoidance deterministic. ToTarget points inward, so this is
+			// the counterclockwise tangent around the target.
+			const FVector Tangent(ToTarget.Y, -ToTarget.X, 0.0f);
 			const float SteeringBias = FMath::Clamp((TargetDistance - IdealDistance) / IdealDistance, -0.4f, 0.4f);
 			Output.DesiredHeading = (Tangent + ToTarget * SteeringBias).GetSafeNormal();
 		}

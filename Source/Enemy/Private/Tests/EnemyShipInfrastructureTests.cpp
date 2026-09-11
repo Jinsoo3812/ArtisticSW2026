@@ -166,9 +166,7 @@ bool FEnemyShipArchetypeAssemblyTest::RunTest(const FString& Parameters)
 	Archetype->SpecRow.DataTable = SpecTable;
 	Archetype->SpecRow.RowName = TEXT("SpecC");
 	Archetype->NavigationProfile.IdealDistance = 3300.0f;
-	Archetype->NavigationProfile.bOrbitClockwise = true;
 	Archetype->SkillModules.Add(Module);
-	Ship->OrbitDirectionOverride = EEnemyShipOrbitDirectionOverride::Counterclockwise;
 
 	TestTrue(TEXT("Archetype applies"), Archetype->ApplyToShip(Ship));
 	const UAbilitySystemComponent* ASC = Ship->GetAbilitySystemComponent();
@@ -176,9 +174,8 @@ bool FEnemyShipArchetypeAssemblyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Spec cannon damage applies"), ASC->GetNumericAttribute(UShipAttributeSet::GetCannonDamageAttribute()), 65.0f);
 	TestEqual(TEXT("Spec projectile speed applies"), ASC->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute()), 4200.0f);
 	TestEqual(TEXT("Archetype supplies ideal distance"), Ship->GetNavigationComponent()->GetNavigationProfile().IdealDistance, 3300.0f);
-	TestFalse(TEXT("Placed-instance orbit direction overrides Archetype"), Ship->GetNavigationComponent()->GetNavigationProfile().bOrbitClockwise);
+	TestFalse(TEXT("Runtime orbit is counterclockwise"), Ship->GetNavigationComponent()->GetNavigationProfile().bOrbitClockwise);
 	TestEqual(TEXT("Archetype source ideal distance remains immutable"), Archetype->NavigationProfile.IdealDistance, 3300.0f);
-	TestTrue(TEXT("Archetype source orbit direction remains immutable"), Archetype->NavigationProfile.bOrbitClockwise);
 	TestEqual(TEXT("Archetype runtime resolves its skill"), Ship->GetPatternRuntimeComponent()->GetResolvedRuleCount(), 1);
 	TestEqual(TEXT("Full-health cannon cooldown multiplier is one"), Ship->GetCannonCooldownMultiplier(), 1.0f);
 	Ship->GetShipAttributeSet()->InitHealth(225.0f);
@@ -278,6 +275,62 @@ bool FEnemyShipControllerTargetRoutingTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("Controller no longer routes the out-of-range authored target"),
 		Ship->GetNavigationComponent()->GetTargetShip() != PlayerShip);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipDeterministicAvoidanceTest,
+	"ArtisticSW.Enemy.Ship.Navigation.DeterministicAvoidance",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipDeterministicAvoidanceTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+	EnemyShipInfrastructureTests::FTestWorld TestWorld;
+	UShipSwarmSubsystem* Swarm = TestWorld.World->GetSubsystem<UShipSwarmSubsystem>();
+	AEnemyShip* First = TestWorld.World->SpawnActor<AEnemyShip>();
+	AEnemyShip* Second = TestWorld.World->SpawnActor<AEnemyShip>();
+	AShip* Target = TestWorld.World->SpawnActor<AShip>();
+	if (!TestNotNull(TEXT("Swarm exists"), Swarm)
+		|| !TestNotNull(TEXT("First ship spawned"), First)
+		|| !TestNotNull(TEXT("Second ship spawned"), Second)
+		|| !TestNotNull(TEXT("Target spawned"), Target))
+	{
+		return false;
+	}
+
+	First->BuoyancyRoot->SetSimulatePhysics(false);
+	Second->BuoyancyRoot->SetSimulatePhysics(false);
+	Target->BuoyancyRoot->SetSimulatePhysics(false);
+	First->SetActorLocation(FVector::ZeroVector);
+	Second->SetActorLocation(FVector(1000.0f, 0.0f, 0.0f));
+	Target->SetActorLocation(FVector(10000.0f, 0.0f, 0.0f));
+	Swarm->UnregisterShip(First);
+	Swarm->UnregisterShip(Second);
+	First->SquadID = TEXT("AvoidanceTest");
+	Second->SquadID = TEXT("AvoidanceTest");
+	First->GetNavigationComponent()->SetTargetShip(Target);
+	Second->GetNavigationComponent()->SetTargetShip(Target);
+	First->GetNavigationComponent()->SetNavigationEnabled(true);
+	Second->GetNavigationComponent()->SetNavigationEnabled(true);
+	Swarm->RegisterShip(First);
+	Swarm->RegisterShip(Second);
+
+	AEnemyShip* YieldingShip = First->GetFName().LexicalLess(Second->GetFName()) ? Second : First;
+	AEnemyShip* PriorityShip = YieldingShip == First ? Second : First;
+	TestTrue(TEXT("Exactly the lower-priority ship predicts a yield"), Swarm->EvaluateAvoidance(YieldingShip).bShouldYield);
+	TestFalse(TEXT("Priority ship does not reciprocally yield"), Swarm->EvaluateAvoidance(PriorityShip).bShouldYield);
+	FEnemyShipNavigationOverrideRequest ChargeLikeRequest;
+	ChargeLikeRequest.MoveInput = 1.0f;
+	const FEnemyShipNavigationOverrideHandle ChargeLikeHandle =
+		YieldingShip->GetNavigationComponent()->AcquireOverride(YieldingShip, 100, ChargeLikeRequest);
+	TestTrue(TEXT("Movement override receives absolute right of way"), Swarm->EvaluateAvoidance(PriorityShip).bShouldYield);
+	YieldingShip->GetNavigationComponent()->ReleaseOverride(ChargeLikeHandle);
+
+	YieldingShip->GetNavigationComponent()->TickComponent(0.2f, LEVELTICK_All, nullptr);
+	TestTrue(TEXT("Avoidance maneuver latches"), YieldingShip->GetNavigationComponent()->IsAvoidanceManeuverActive());
+	TestTrue(TEXT("Yielding ship applies reverse thrust"), YieldingShip->GetCurrentMoveInput() < 0.0f);
 	return true;
 }
 

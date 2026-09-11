@@ -8,6 +8,16 @@
 
 class AEnemyShip;
 
+USTRUCT()
+struct ENEMY_API FEnemyShipAvoidanceDecision
+{
+	GENERATED_BODY()
+
+	bool bShouldYield = false;
+	float EarliestCollisionTime = TNumericLimits<float>::Max();
+	TWeakObjectPtr<AEnemyShip> ThreatShip;
+};
+
 /**
  * 적 배들의 군집(Squad) 관리 및 빠른 접근을 담당하는 월드 서브시스템
  */
@@ -31,6 +41,9 @@ public:
 
 	/** Rebuilds symmetric orbit lanes from the squad members' Archetype-authored distances and spacing. */
 	void RecalculateSquadOrbitDistances(FName SquadID);
+
+	/** Predicts only same-squad ships pursuing the exact same target. */
+	FEnemyShipAvoidanceDecision EvaluateAvoidance(AEnemyShip* Ship);
 
 private:
 	// 군집 ID별로 배들의 약참조 목록을 보관 (댕글링 포인터 방지)

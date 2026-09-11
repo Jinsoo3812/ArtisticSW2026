@@ -248,7 +248,8 @@ public:
 	TObjectPtr<UEnemyShipArchetypeData> EnemyShipArchetype;
 
 	/** Per-level-instance override applied after the Archetype navigation profile is copied. */
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Ship|AI|Navigation Overrides")
+	/** Legacy serialized field. Runtime navigation always uses counterclockwise orbiting. */
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Enemy ships always orbit counterclockwise."))
 	EEnemyShipOrbitDirectionOverride OrbitDirectionOverride = EEnemyShipOrbitDirectionOverride::UseArchetypeDefault;
 
 	// ================= Legacy Deck Enemy authoring bridge =================

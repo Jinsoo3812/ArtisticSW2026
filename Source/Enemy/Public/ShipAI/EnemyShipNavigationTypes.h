@@ -61,8 +61,9 @@ struct ENEMY_API FEnemyShipNavigationProfile
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0", Units = "s"))
 	float LostTargetReturnDelay = 10.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation")
-	bool bOrbitClockwise = true;
+	/** Legacy serialized field. Enemy ships now always orbit counterclockwise. */
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Enemy ships always orbit counterclockwise."))
+	bool bOrbitClockwise = false;
 };
 
 USTRUCT(BlueprintType)

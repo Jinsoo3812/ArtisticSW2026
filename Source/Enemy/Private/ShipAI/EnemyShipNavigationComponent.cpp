@@ -2,6 +2,8 @@
 
 #include "Ship.h"
 #include "ShipAI/EnemyShip.h"
+#include "ShipAI/EnemyShipAvoidanceSettings.h"
+#include "ShipAI/ShipSwarmSubsystem.h"
 #include "Net/UnrealNetwork.h"
 
 UEnemyShipNavigationComponent::UEnemyShipNavigationComponent()
@@ -98,6 +100,7 @@ void UEnemyShipNavigationComponent::TickComponent(
 		Ship->ResetAfterReturnToSpawn();
 	}
 
+	UpdateAvoidance(DeltaTime);
 	ApplyControl(LastNavigationOutput);
 }
 
@@ -106,6 +109,7 @@ void UEnemyShipNavigationComponent::SetNavigationEnabled(bool bEnabled)
 	bNavigationEnabled = bEnabled;
 	if (!bNavigationEnabled)
 	{
+		ResetAvoidance();
 		StopOwnerShip();
 	}
 }
@@ -311,10 +315,79 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 		return;
 	}
 
+	if (bAvoidanceManeuverActive)
+	{
+		const UEnemyShipAvoidanceSettings* Settings = GetDefault<UEnemyShipAvoidanceSettings>();
+		// Keep the normal navigation turn so the ship does not oscillate between
+		// competing left/right avoidance choices. Reverse thrust supplies braking.
+		Ship->SetAIControlInput(Settings->ReverseMoveInput, BaseOutput.TurnInput);
+		return;
+	}
+
 	const float PropulsionMultiplier = BaseOutput.State == ENavalCombatState::Return
 		? NavigationProfile.ReturnPropulsionMultiplier
 		: 1.0f;
 	Ship->SetAIControlInput(BaseOutput.MoveInput, BaseOutput.TurnInput, PropulsionMultiplier);
+}
+
+void UEnemyShipNavigationComponent::UpdateAvoidance(float DeltaTime)
+{
+	AEnemyShip* Ship = OwnerShip.Get();
+	if (!Ship || HasActiveOverride() || !TargetShip)
+	{
+		ResetAvoidance();
+		return;
+	}
+
+	const UEnemyShipAvoidanceSettings* Settings = GetDefault<UEnemyShipAvoidanceSettings>();
+	AvoidanceMinimumTimeRemaining = FMath::Max(0.0f, AvoidanceMinimumTimeRemaining - DeltaTime);
+	AvoidanceEvaluationAccumulator += DeltaTime;
+	const float Interval = FMath::Max(0.05f, Settings->EvaluationInterval);
+	if (AvoidanceEvaluationAccumulator < Interval)
+	{
+		return;
+	}
+	const float EvaluationElapsed = AvoidanceEvaluationAccumulator;
+	AvoidanceEvaluationAccumulator = 0.0f;
+
+	FEnemyShipAvoidanceDecision Decision;
+	if (UWorld* World = GetWorld())
+	{
+		if (UShipSwarmSubsystem* Swarm = World->GetSubsystem<UShipSwarmSubsystem>())
+		{
+			Decision = Swarm->EvaluateAvoidance(Ship);
+		}
+	}
+
+	if (Decision.bShouldYield)
+	{
+		AvoidanceThreatShip = Decision.ThreatShip;
+		AvoidanceSafeElapsed = 0.0f;
+		if (!bAvoidanceManeuverActive)
+		{
+			bAvoidanceManeuverActive = true;
+			AvoidanceMinimumTimeRemaining = FMath::Max(0.0f, Settings->MinimumManeuverTime);
+		}
+		return;
+	}
+
+	if (bAvoidanceManeuverActive)
+	{
+		AvoidanceSafeElapsed += EvaluationElapsed;
+		if (AvoidanceMinimumTimeRemaining <= 0.0f
+			&& AvoidanceSafeElapsed >= FMath::Max(0.0f, Settings->ClearConfirmationTime))
+		{
+			ResetAvoidance();
+		}
+	}
+}
+
+void UEnemyShipNavigationComponent::ResetAvoidance()
+{
+	bAvoidanceManeuverActive = false;
+	AvoidanceMinimumTimeRemaining = 0.0f;
+	AvoidanceSafeElapsed = 0.0f;
+	AvoidanceThreatShip.Reset();
 }
 
 void UEnemyShipNavigationComponent::StopOwnerShip()

@@ -61,6 +61,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation")
 	FEnemyShipNavigationOutput GetLastNavigationOutput() const { return LastNavigationOutput; }
 
+	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation|Avoidance")
+	bool IsAvoidanceManeuverActive() const { return bAvoidanceManeuverActive; }
+
 	FEnemyShipNavigationOverrideHandle AcquireOverride(
 		UObject* Requester,
 		int32 Priority,
@@ -95,6 +98,8 @@ private:
 	void RemoveInvalidOverrides();
 	const FRuntimeOverride* FindWinningOverride() const;
 	void ApplyControl(const FEnemyShipNavigationOutput& BaseOutput);
+	void UpdateAvoidance(float DeltaTime);
+	void ResetAvoidance();
 	void StopOwnerShip();
 
 	TWeakObjectPtr<AEnemyShip> OwnerShip;
@@ -113,6 +118,11 @@ private:
 	ENavalCombatState CurrentState = ENavalCombatState::Idle;
 	FEnemyShipNavigationOutput LastNavigationOutput;
 	float LostTargetElapsed = 0.0f;
+	float AvoidanceEvaluationAccumulator = 0.0f;
+	float AvoidanceMinimumTimeRemaining = 0.0f;
+	float AvoidanceSafeElapsed = 0.0f;
+	bool bAvoidanceManeuverActive = false;
+	TWeakObjectPtr<AEnemyShip> AvoidanceThreatShip;
 	UPROPERTY(Replicated)
 	bool bNavigationEnabled = true;
 };

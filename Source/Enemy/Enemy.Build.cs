@@ -9,6 +9,7 @@ public class Enemy: ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
+            "DeveloperSettings",
             "UMG",
             "Niagara"
         });

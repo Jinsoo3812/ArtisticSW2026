@@ -72,7 +72,7 @@ bool FEnemyShipNavigationStateModelTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FEnemyShipNavigationOrbitDirectionTest,
-	"ArtisticSW.Enemy.Ship.Navigation.OrbitDirection",
+	"ArtisticSW.Enemy.Ship.Navigation.CounterClockwiseOrbit",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FEnemyShipNavigationOrbitDirectionTest::RunTest(const FString& Parameters)
@@ -85,15 +85,14 @@ bool FEnemyShipNavigationOrbitDirectionTest::RunTest(const FString& Parameters)
 	Context.bHasTarget = true;
 	Context.TargetLocation = FVector(2000.0f, 0.0f, 0.0f);
 
-	Profile.bOrbitClockwise = true;
-	const FEnemyShipNavigationOutput Clockwise = FEnemyShipNavigationModel::Evaluate(
+	const FEnemyShipNavigationOutput First = FEnemyShipNavigationModel::Evaluate(
 		ENavalCombatState::Orbit, Profile, Context);
-	Profile.bOrbitClockwise = false;
-	const FEnemyShipNavigationOutput CounterClockwise = FEnemyShipNavigationModel::Evaluate(
+	const FEnemyShipNavigationOutput Second = FEnemyShipNavigationModel::Evaluate(
 		ENavalCombatState::Orbit, Profile, Context);
 
-	TestTrue(TEXT("Orbit directions produce opposite lateral headings"), Clockwise.DesiredHeading.Y * CounterClockwise.DesiredHeading.Y < 0.0f);
-	TestTrue(TEXT("Orbit directions produce opposite steering"), Clockwise.TurnInput * CounterClockwise.TurnInput < 0.0f);
+	TestTrue(TEXT("Orbit heading is counterclockwise around the target"), First.DesiredHeading.Y < 0.0f);
+	TestEqual(TEXT("Orbit direction is deterministic"), First.DesiredHeading, Second.DesiredHeading);
+	TestEqual(TEXT("Orbit steering is deterministic"), First.TurnInput, Second.TurnInput);
 	return true;
 }
 

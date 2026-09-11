@@ -578,6 +578,8 @@ public:
 
 	float GetCurrentAIPropulsionScale() const { return CurrentAIPropulsionScale; }
 	float GetCurrentAITurnScale() const { return CurrentAITurnScale; }
+	float GetForwardForceMagnitude() const { return ForwardForce; }
+	float GetTurnTorqueMagnitude() const { return TurnTorque; }
 
 	/** Identifies hostile ships without making WaterAndShip depend on Enemy. */
 	virtual bool IsEnemyShipForEffects() const { return false; }

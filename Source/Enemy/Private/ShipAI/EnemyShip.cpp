@@ -1542,17 +1542,7 @@ bool AEnemyShip::ConfigureEnemyShipArchetype(UEnemyShipArchetypeData* Archetype)
 
 	PatternRuntimeComponent->Configure(Archetype);
 	FEnemyShipNavigationProfile EffectiveNavigationProfile = Archetype->NavigationProfile;
-	switch (OrbitDirectionOverride)
-	{
-	case EEnemyShipOrbitDirectionOverride::Clockwise:
-		EffectiveNavigationProfile.bOrbitClockwise = true;
-		break;
-	case EEnemyShipOrbitDirectionOverride::Counterclockwise:
-		EffectiveNavigationProfile.bOrbitClockwise = false;
-		break;
-	default:
-		break;
-	}
+	EffectiveNavigationProfile.bOrbitClockwise = false;
 	NavigationComponent->SetNavigationProfile(EffectiveNavigationProfile);
 
 	TArray<TSubclassOf<UGameplayAbility>> AbilityClasses;
@@ -1587,17 +1577,7 @@ void AEnemyShip::SetSquadAssignedIdealDistance(float IdealDistance)
 	FEnemyShipNavigationProfile Profile = EnemyShipArchetype
 		? EnemyShipArchetype->NavigationProfile
 		: NavigationComponent->GetNavigationProfile();
-	switch (OrbitDirectionOverride)
-	{
-	case EEnemyShipOrbitDirectionOverride::Clockwise:
-		Profile.bOrbitClockwise = true;
-		break;
-	case EEnemyShipOrbitDirectionOverride::Counterclockwise:
-		Profile.bOrbitClockwise = false;
-		break;
-	default:
-		break;
-	}
+	Profile.bOrbitClockwise = false;
 	Profile.IdealDistance = FMath::Max(1.0f, IdealDistance);
 	NavigationComponent->SetNavigationProfile(Profile);
 }
