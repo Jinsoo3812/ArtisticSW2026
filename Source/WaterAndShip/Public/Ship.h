@@ -581,6 +581,14 @@ public:
 	float GetForwardForceMagnitude() const { return ForwardForce; }
 	float GetTurnTorqueMagnitude() const { return TurnTorque; }
 
+	/**
+	 * Suspends or restores the Chaos body used by ship Network Physics.
+	 * Re-enabling also binds the newly-created physics object back to the existing
+	 * async callback, which SetSimulatePhysics alone does not do for this ship.
+	 */
+	void SetShipRuntimePhysicsEnabled(bool bEnabled);
+	bool IsShipRuntimePhysicsEnabled() const { return bShipRuntimePhysicsEnabled; }
+
 	/** Identifies hostile ships without making WaterAndShip depend on Enemy. */
 	virtual bool IsEnemyShipForEffects() const { return false; }
 
@@ -1212,6 +1220,7 @@ private:
 
 	friend class FShipPhysicsAsync;
 	FShipPhysicsAsync* ShipPhysicsAsync = nullptr;
+	bool bShipRuntimePhysicsEnabled = true;
 	bool bBuoyancyQueryDiagnostics = false;
 	double NextBuoyancyQueryDiagnosticTime = 0.0;
 	double NextShipBalanceDiagnosticTime = 0.0;

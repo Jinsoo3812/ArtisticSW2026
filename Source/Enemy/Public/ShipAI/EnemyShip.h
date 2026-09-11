@@ -240,8 +240,22 @@ public:
 	void SetSquadAssignedIdealDistance(float IdealDistance);
 	void ResetAfterReturnToSpawn();
 
+	/** Server-authored far-distance lifecycle. The visual hull remains visible while dormant. */
+	void SetDistanceOptimizationDormant(bool bDormant);
+	bool CanEnterDistanceOptimizationDormancy() const;
+	bool IsDistanceOptimizationDormant() const { return bDistanceOptimizationDormant; }
+	bool IsDistanceOptimizationEnabled() const { return bEnableDistanceOptimization; }
+	float GetDistanceOptimizationRange() const { return DistanceOptimizationRange; }
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI")
 	FName SquadID = TEXT("Squad_Alpha");
+
+	/** Enables cheap at-home dormancy when every player ship is farther than DistanceOptimizationRange. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|Optimization")
+	bool bEnableDistanceOptimization = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|Optimization", meta = (ClampMin = "0.0", Units = "cm"))
+	float DistanceOptimizationRange = 100000.0f;
 
 	/** May be overridden per placed instance so one BP_EnemyShip class can represent many archetypes. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|AI|Data")
@@ -290,6 +304,10 @@ public:
 protected:
 	void EvaluateCrewControlState();
 	void DisableEnemyShipAIForCapture();
+	void ApplyDistanceOptimizationState();
+
+	UFUNCTION()
+	void OnRep_DistanceOptimizationDormant();
 
 	UFUNCTION()
 	void OnRep_CrewDefeated();
@@ -393,6 +411,12 @@ protected:
 
 	UPROPERTY(ReplicatedUsing = OnRep_CrewDefeated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Crew")
 	bool bCrewDefeated = false;
+
+	UPROPERTY(ReplicatedUsing = OnRep_DistanceOptimizationDormant, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Optimization")
+	bool bDistanceOptimizationDormant = false;
+
+	TArray<TWeakObjectPtr<UActorComponent>> DistanceDormancySuspendedTickComponents;
+	TArray<TWeakObjectPtr<ACannon>> DistanceDormancySuspendedCannons;
 
 	/** Prevents an unconfigured or not-yet-deployed empty crew roster from being treated as defeated. */
 	bool bHasEverHadLivingCrew = false;

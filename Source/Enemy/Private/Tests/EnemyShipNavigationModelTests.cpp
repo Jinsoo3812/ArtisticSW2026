@@ -15,7 +15,6 @@ bool FEnemyShipNavigationStateModelTest::RunTest(const FString& Parameters)
 	Profile.DetectionDistance = 10000.0f;
 	Profile.IdealDistance = 2000.0f;
 	Profile.OrbitTolerance = 500.0f;
-	Profile.DangerCloseDistance = 1000.0f;
 	Profile.ReturnArrivalDistance = 800.0f;
 	Profile.ReturnTriggerDistance = 1500.0f;
 
@@ -40,7 +39,8 @@ bool FEnemyShipNavigationStateModelTest::RunTest(const FString& Parameters)
 
 	Context.TargetLocation = FVector(900.0f, 0.0f, 0.0f);
 	Output = FEnemyShipNavigationModel::Evaluate(ENavalCombatState::Orbit, Profile, Context);
-	TestEqual(TEXT("Danger-close range enters Retreat"), Output.State, ENavalCombatState::Retreat);
+	TestEqual(TEXT("Close range remains in Orbit"), Output.State, ENavalCombatState::Orbit);
+	TestTrue(TEXT("Close-range Orbit steers outward while circling"), Output.DesiredHeading.X < 0.0f);
 
 	Context.bHasTarget = false;
 	Context.bHasHome = true;

@@ -6,6 +6,8 @@
 #include "ShipAI/EnemyShipAvoidanceSettings.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "EngineUtils.h"
+#include "Ship.h"
 #include "ShipAttributeSet.h"
 
 namespace EnemyShipAvoidance
@@ -156,6 +158,90 @@ namespace EnemyShipAvoidance
 
 		// A total ordering means exactly one ordinary ship yields and prevents reciprocal deadlock.
 		return Other.GetFName().LexicalLess(Ship.GetFName());
+	}
+}
+
+void UShipSwarmSubsystem::OnWorldBeginPlay(UWorld& InWorld)
+{
+	Super::OnWorldBeginPlay(InWorld);
+	if (InWorld.GetNetMode() != NM_Client)
+	{
+		InWorld.GetTimerManager().SetTimer(
+			DistanceOptimizationTimerHandle,
+			this,
+			&UShipSwarmSubsystem::EvaluateDistanceOptimization,
+			0.5f,
+			true,
+			0.5f);
+	}
+}
+
+void UShipSwarmSubsystem::Deinitialize()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(DistanceOptimizationTimerHandle);
+	}
+	SquadMap.Reset();
+	Super::Deinitialize();
+}
+
+void UShipSwarmSubsystem::EvaluateDistanceOptimization()
+{
+	UWorld* World = GetWorld();
+	if (!World || World->GetNetMode() == NM_Client)
+	{
+		return;
+	}
+
+	TArray<FVector> PlayerShipLocations;
+	for (TActorIterator<AShip> It(World); It; ++It)
+	{
+		const AShip* Ship = *It;
+		if (IsValid(Ship) && !Ship->IsEnemyShipForEffects()
+			&& Ship->ActorHasTag(TEXT("Player")) && !Ship->ActorHasTag(TEXT("Enemy")))
+		{
+			PlayerShipLocations.Add(Ship->GetActorLocation());
+		}
+	}
+
+	TSet<AEnemyShip*> EvaluatedShips;
+	for (TPair<FName, TArray<TWeakObjectPtr<AEnemyShip>>>& SquadPair : SquadMap)
+	{
+		for (int32 Index = SquadPair.Value.Num() - 1; Index >= 0; --Index)
+		{
+			AEnemyShip* EnemyShip = SquadPair.Value[Index].Get();
+			if (!IsValid(EnemyShip))
+			{
+				SquadPair.Value.RemoveAtSwap(Index);
+				continue;
+			}
+			if (!EnemyShip->IsDistanceOptimizationEnabled() || EvaluatedShips.Contains(EnemyShip))
+			{
+				continue;
+			}
+			EvaluatedShips.Add(EnemyShip);
+
+			const float RangeSquared = FMath::Square(FMath::Max(0.0f, EnemyShip->GetDistanceOptimizationRange()));
+			const bool bPlayerInRange = PlayerShipLocations.ContainsByPredicate(
+				[EnemyShip, RangeSquared](const FVector& PlayerLocation)
+				{
+					return FVector::DistSquared2D(EnemyShip->GetActorLocation(), PlayerLocation)
+						<= RangeSquared;
+				});
+
+			if (EnemyShip->IsDistanceOptimizationDormant())
+			{
+				if (bPlayerInRange)
+				{
+					EnemyShip->SetDistanceOptimizationDormant(false);
+				}
+			}
+			else if (!bPlayerInRange && EnemyShip->CanEnterDistanceOptimizationDormancy())
+			{
+				EnemyShip->SetDistanceOptimizationDormant(true);
+			}
+		}
 	}
 }
 

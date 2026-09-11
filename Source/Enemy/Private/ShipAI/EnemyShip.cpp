@@ -19,6 +19,8 @@
 #include "AIController.h"
 #include "AI/BaseAIController.h"
 #include "BrainComponent.h"
+#include "Perception/AIPerceptionComponent.h"
+#include "Perception/AISense_Sight.h"
 #include "BuoyancyComponent.h"
 #include "Buoyancy/SWBuoyancyComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -928,8 +930,7 @@ void AEnemyShip::HandleNavigationStateChanged(
 		return;
 	}
 	if (NewState == ENavalCombatState::Approach
-		|| NewState == ENavalCombatState::Orbit
-		|| NewState == ENavalCombatState::Retreat)
+		|| NewState == ENavalCombatState::Orbit)
 	{
 		DeckEnemySpawnerComponent->RequestDeployment(
 			NavigationComponent ? NavigationComponent->GetTargetShip() : nullptr);
@@ -1634,6 +1635,183 @@ void AEnemyShip::ResetAfterReturnToSpawn()
 	ForceNetUpdate();
 }
 
+bool AEnemyShip::CanEnterDistanceOptimizationDormancy() const
+{
+	if (!bEnableDistanceOptimization || bDistanceOptimizationDormant
+		|| bDeathHandled || IsSinking() || bCrewDefeated || !NavigationComponent
+		|| NavigationComponent->GetCurrentState() != ENavalCombatState::Idle
+		|| NavigationComponent->GetTargetShip() != nullptr
+		|| NavigationComponent->HasActiveOverride())
+	{
+		return false;
+	}
+
+	FVector HomeLocation;
+	if (!NavigationComponent->GetResolvedHomeLocation(HomeLocation))
+	{
+		return false;
+	}
+
+	const float ArrivalDistance = FMath::Max(
+		0.0f,
+		NavigationComponent->GetNavigationProfile().ReturnArrivalDistance);
+	return FVector::DistSquared2D(GetActorLocation(), HomeLocation)
+		<= FMath::Square(ArrivalDistance);
+}
+
+void AEnemyShip::SetDistanceOptimizationDormant(bool bDormant)
+{
+	if (!HasAuthority() || bDistanceOptimizationDormant == bDormant)
+	{
+		return;
+	}
+	if (bDormant && !CanEnterDistanceOptimizationDormancy())
+	{
+		return;
+	}
+	if (!bDormant && (bDeathHandled || IsSinking()))
+	{
+		return;
+	}
+
+	if (!bDormant)
+	{
+		FlushNetDormancy();
+		SetNetDormancy(DORM_Awake);
+	}
+	else
+	{
+		// This also snaps a ship that stopped anywhere inside its arrival radius to
+		// the exact authored home transform before its physics body is removed.
+		ResetAfterReturnToSpawn();
+	}
+
+	bDistanceOptimizationDormant = bDormant;
+	ApplyDistanceOptimizationState();
+	ForceNetUpdate();
+	if (bDormant)
+	{
+		SetNetDormancy(DORM_DormantAll);
+	}
+}
+
+void AEnemyShip::OnRep_DistanceOptimizationDormant()
+{
+	ApplyDistanceOptimizationState();
+}
+
+void AEnemyShip::ApplyDistanceOptimizationState()
+{
+	if (bDistanceOptimizationDormant)
+	{
+		SetAIControlInput(0.0f, 0.0f);
+		if (HasAuthority())
+		{
+			if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+			{
+				ASC->CancelAllAbilities();
+			}
+			if (NavigationComponent)
+			{
+				NavigationComponent->ClearAllOverrides();
+				NavigationComponent->SetTargetShip(nullptr);
+				NavigationComponent->SetNavigationEnabled(false);
+			}
+			if (AAIController* AIController = Cast<AAIController>(GetController()))
+			{
+				AIController->StopMovement();
+				if (UBrainComponent* Brain = AIController->GetBrainComponent())
+				{
+					Brain->StopLogic(TEXT("Enemy ship distance optimization dormancy"));
+				}
+				if (UAIPerceptionComponent* Perception = AIController->GetPerceptionComponent())
+				{
+					Perception->SetSenseEnabled(UAISense_Sight::StaticClass(), false);
+					Perception->Deactivate();
+				}
+				AIController->SetActorTickEnabled(false);
+			}
+		}
+
+		DistanceDormancySuspendedTickComponents.Reset();
+		TInlineComponentArray<UActorComponent*> Components(this);
+		for (UActorComponent* Component : Components)
+		{
+			if (IsValid(Component) && Component->IsComponentTickEnabled())
+			{
+				DistanceDormancySuspendedTickComponents.Add(Component);
+				Component->SetComponentTickEnabled(false);
+			}
+		}
+
+		DistanceDormancySuspendedCannons.Reset();
+		for (ACannon* Cannon : MountedCannons)
+		{
+			if (!IsValid(Cannon))
+			{
+				continue;
+			}
+			Cannon->ResetAIFiringState();
+			if (Cannon->IsActorTickEnabled())
+			{
+				DistanceDormancySuspendedCannons.Add(Cannon);
+			}
+			Cannon->SetActorTickEnabled(false);
+			Cannon->SetActorEnableCollision(false);
+		}
+
+		SetActorEnableCollision(false);
+		SetShipRuntimePhysicsEnabled(false);
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	SetActorTickEnabled(true);
+	SetActorEnableCollision(true);
+	SetShipRuntimePhysicsEnabled(true);
+	for (const TWeakObjectPtr<UActorComponent>& Component : DistanceDormancySuspendedTickComponents)
+	{
+		if (Component.IsValid())
+		{
+			Component->SetComponentTickEnabled(true);
+		}
+	}
+	DistanceDormancySuspendedTickComponents.Reset();
+
+	for (const TWeakObjectPtr<ACannon>& Cannon : DistanceDormancySuspendedCannons)
+	{
+		if (Cannon.IsValid())
+		{
+			Cannon->SetActorTickEnabled(true);
+			Cannon->SetActorEnableCollision(true);
+			Cannon->RefreshPlayerInteractionAvailability();
+		}
+	}
+	DistanceDormancySuspendedCannons.Reset();
+
+	if (HasAuthority())
+	{
+		if (NavigationComponent)
+		{
+			NavigationComponent->SetNavigationEnabled(true);
+		}
+		if (AAIController* AIController = Cast<AAIController>(GetController()))
+		{
+			AIController->SetActorTickEnabled(true);
+			if (UAIPerceptionComponent* Perception = AIController->GetPerceptionComponent())
+			{
+				Perception->Activate(true);
+				Perception->SetSenseEnabled(UAISense_Sight::StaticClass(), true);
+				Perception->RequestStimuliListenerUpdate();
+			}
+			if (UBrainComponent* Brain = AIController->GetBrainComponent())
+			{
+				Brain->RestartLogic();
+			}
+		}
+	}
+}
+
 void AEnemyShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -1687,7 +1865,6 @@ void AEnemyShip::DrawEnemyShipAIDebug() const
 			0.8f);
 	};
 
-	DrawRange(Center, Profile.DangerCloseDistance, FColor::Red, TEXT("DangerClose"));
 	DrawRange(Center, Profile.IdealDistance, FColor::Green, TEXT("Ideal"));
 	DrawRange(
 		Center,
@@ -2265,4 +2442,5 @@ void AEnemyShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifeti
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AEnemyShip, bCrewDefeated);
+	DOREPLIFETIME(AEnemyShip, bDistanceOptimizationDormant);
 }

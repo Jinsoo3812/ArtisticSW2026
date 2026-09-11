@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "TimerManager.h"
 #include "ShipSwarmSubsystem.generated.h"
 
 class AEnemyShip;
@@ -27,6 +28,9 @@ class ENEMY_API UShipSwarmSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
+	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
+	virtual void Deinitialize() override;
+
 	// 배가 월드에 스폰될 때 호출하여 등록
 	UFUNCTION(BlueprintCallable, Category = "Ship|Swarm")
 	void RegisterShip(AEnemyShip* Ship);
@@ -49,6 +53,9 @@ public:
 	bool IsReturnDestinationClear(AEnemyShip* Ship);
 
 private:
+	void EvaluateDistanceOptimization();
+
 	// 군집 ID별로 배들의 약참조 목록을 보관 (댕글링 포인터 방지)
 	TMap<FName, TArray<TWeakObjectPtr<AEnemyShip>>> SquadMap;
+	FTimerHandle DistanceOptimizationTimerHandle;
 };

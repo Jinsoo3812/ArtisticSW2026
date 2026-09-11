@@ -140,10 +140,6 @@ void UEnemyShipNavigationComponent::SetNavigationProfile(const FEnemyShipNavigat
 	NavigationProfile.DetectionDistance = FMath::Max(0.0f, NavigationProfile.DetectionDistance);
 	NavigationProfile.IdealDistance = FMath::Max(1.0f, NavigationProfile.IdealDistance);
 	NavigationProfile.OrbitTolerance = FMath::Max(0.0f, NavigationProfile.OrbitTolerance);
-	NavigationProfile.DangerCloseDistance = FMath::Clamp(
-		NavigationProfile.DangerCloseDistance,
-		0.0f,
-		NavigationProfile.IdealDistance);
 	NavigationProfile.ReturnArrivalDistance = FMath::Max(0.0f, NavigationProfile.ReturnArrivalDistance);
 	NavigationProfile.ReturnTriggerDistance = FMath::Max(
 		NavigationProfile.ReturnArrivalDistance,

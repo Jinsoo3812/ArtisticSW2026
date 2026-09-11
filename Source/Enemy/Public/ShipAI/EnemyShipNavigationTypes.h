@@ -9,7 +9,8 @@ enum class ENavalCombatState : uint8
 	Idle,
 	Approach,
 	Orbit,
-	Retreat,
+	/** Legacy serialized value. Runtime navigation immediately normalizes this to Orbit. */
+	Retreat UMETA(Hidden),
 	Return
 };
 
@@ -43,7 +44,8 @@ struct ENEMY_API FEnemyShipNavigationProfile
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0", Units = "cm"))
 	float OrbitTolerance = 1500.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0", Units = "cm"))
+	/** Legacy serialized field. Close-range correction is now handled by Orbit steering. */
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Close-range correction is handled by Orbit steering."))
 	float DangerCloseDistance = 1000.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0", Units = "cm"))

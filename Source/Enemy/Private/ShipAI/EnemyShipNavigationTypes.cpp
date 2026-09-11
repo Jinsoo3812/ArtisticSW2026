@@ -39,7 +39,6 @@ FEnemyShipNavigationOutput FEnemyShipNavigationModel::Evaluate(
 
 	const bool bTargetInDetectionRange = Context.bHasTarget && TargetDistance <= FMath::Max(0.0f, Profile.DetectionDistance);
 	const float IdealDistance = FMath::Max(1.0f, Profile.IdealDistance);
-	const float DangerDistance = FMath::Clamp(Profile.DangerCloseDistance, 0.0f, IdealDistance);
 	const float ReturnTriggerDistance = FMath::Max(Profile.ReturnArrivalDistance, Profile.ReturnTriggerDistance);
 
 	if (Output.State == ENavalCombatState::Return)
@@ -71,17 +70,15 @@ FEnemyShipNavigationOutput FEnemyShipNavigationModel::Evaluate(
 	}
 	else if (Output.State == ENavalCombatState::Approach)
 	{
-		if (TargetDistance <= DangerDistance)
-		{
-			Output.State = ENavalCombatState::Retreat;
-		}
-		else if (TargetDistance <= IdealDistance)
+		if (TargetDistance <= IdealDistance)
 		{
 			Output.State = ENavalCombatState::Orbit;
 		}
 	}
-	else if (Output.State == ENavalCombatState::Retreat && TargetDistance >= IdealDistance)
+	else if (Output.State == ENavalCombatState::Retreat)
 	{
+		// Normalize legacy serialized/runtime state. Orbit's radial steering bias
+		// handles close-range separation without a dedicated straight retreat.
 		Output.State = ENavalCombatState::Orbit;
 	}
 	else if (Output.State == ENavalCombatState::Orbit)
@@ -89,10 +86,6 @@ FEnemyShipNavigationOutput FEnemyShipNavigationModel::Evaluate(
 		if (TargetDistance > IdealDistance + FMath::Max(0.0f, Profile.OrbitTolerance))
 		{
 			Output.State = ENavalCombatState::Approach;
-		}
-		else if (TargetDistance <= DangerDistance)
-		{
-			Output.State = ENavalCombatState::Retreat;
 		}
 	}
 
@@ -120,7 +113,7 @@ FEnemyShipNavigationOutput FEnemyShipNavigationModel::Evaluate(
 		}
 		break;
 	case ENavalCombatState::Retreat:
-		Output.DesiredHeading = -ToTarget;
+		// Output.State is normalized above; retained only for exhaustive enum handling.
 		break;
 	}
 

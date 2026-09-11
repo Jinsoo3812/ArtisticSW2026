@@ -59,11 +59,6 @@ EDataValidationResult UEnemyShipArchetypeData::IsDataValid(FDataValidationContex
 		Context.AddError(FText::FromString(TEXT("OrbitDistanceSpacing must not be negative.")));
 		Result = EDataValidationResult::Invalid;
 	}
-	if (NavigationProfile.DangerCloseDistance > NavigationProfile.IdealDistance)
-	{
-		Context.AddError(FText::FromString(TEXT("DangerCloseDistance must not exceed IdealDistance.")));
-		Result = EDataValidationResult::Invalid;
-	}
 	if (NavigationProfile.ReturnTriggerDistance < NavigationProfile.ReturnArrivalDistance)
 	{
 		Context.AddError(FText::FromString(TEXT("ReturnTriggerDistance must be at least ReturnArrivalDistance.")));

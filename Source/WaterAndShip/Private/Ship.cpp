@@ -882,6 +882,39 @@ void AShip::Tick(float DeltaTime)
 	}
 }
 
+void AShip::SetShipRuntimePhysicsEnabled(bool bEnabled)
+{
+	if (!BuoyancyRoot || bShipRuntimePhysicsEnabled == bEnabled)
+	{
+		return;
+	}
+
+	bShipRuntimePhysicsEnabled = bEnabled;
+	CurrentMoveInput = 0.0f;
+	CurrentTurnInput = 0.0f;
+	CurrentAIPropulsionScale = 1.0f;
+	CurrentAITurnScale = 1.0f;
+
+	if (!bEnabled)
+	{
+		BuoyancyRoot->SetPhysicsLinearVelocity(FVector::ZeroVector);
+		BuoyancyRoot->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+		if (ShipPhysicsAsync)
+		{
+			ShipPhysicsAsync->SetPhysicsObject(nullptr);
+		}
+		BuoyancyRoot->SetSimulatePhysics(false);
+		return;
+	}
+
+	BuoyancyRoot->SetSimulatePhysics(true);
+	if (ShipPhysicsAsync)
+	{
+		ShipPhysicsAsync->SetPhysicsObject(BuoyancyRoot->GetPhysicsObjectByName(NAME_None));
+	}
+	BuoyancyRoot->WakeAllRigidBodies();
+}
+
 // Called to bind functionality to input
 void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
