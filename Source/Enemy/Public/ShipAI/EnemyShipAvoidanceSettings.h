@@ -42,4 +42,7 @@ public:
 
 	UPROPERTY(Config, EditAnywhere, Category = "Squad", meta = (ClampMin = "1", ClampMax = "5"))
 	int32 MaximumEvaluatedShips = 5;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Obstacle", meta = (ClampMin = "0", ClampMax = "32"))
+	int32 MaximumEvaluatedObstacles = 8;
 };

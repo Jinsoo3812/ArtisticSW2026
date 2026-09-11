@@ -15,8 +15,10 @@ struct ENEMY_API FEnemyShipAvoidanceDecision
 	GENERATED_BODY()
 
 	bool bShouldYield = false;
+	bool bOverrideTurnInput = false;
+	float TurnInput = 0.0f;
 	float EarliestCollisionTime = TNumericLimits<float>::Max();
-	TWeakObjectPtr<AEnemyShip> ThreatShip;
+	TWeakObjectPtr<AActor> ThreatActor;
 };
 
 /**
@@ -46,11 +48,8 @@ public:
 	/** Rebuilds symmetric orbit lanes from the squad members' Archetype-authored distances and spacing. */
 	void RecalculateSquadOrbitDistances(FName SquadID);
 
-	/** Predicts same-target combat traffic, or all same-squad traffic while returning home. */
+	/** Predicts active same-target ship traffic and deployed skill obstacles. */
 	FEnemyShipAvoidanceDecision EvaluateAvoidance(AEnemyShip* Ship);
-
-	/** True when this ship's authored return transform is not currently occupied by a squadmate hull. */
-	bool IsReturnDestinationClear(AEnemyShip* Ship);
 
 private:
 	void EvaluateDistanceOptimization();

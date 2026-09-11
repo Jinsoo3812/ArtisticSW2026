@@ -24,6 +24,9 @@
 #include "BuoyancyComponent.h"
 #include "Buoyancy/SWBuoyancyComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "CollisionChannels.h"
+#include "PhysicsEngine/BodyInstance.h"
 #include "Engine/StaticMesh.h"
 #include "UI/EnemyHealthBarComponent.h"
 #include "ShipAI/ShipSwarmSubsystem.h"
@@ -707,6 +710,7 @@ AEnemyShip::AEnemyShip()
 	{
 		BuoyancyRoot->SetCollisionProfileName(TEXT("EnemyShip"));
 	}
+	bEnableRollStabilization = true;
 	if (ShipDamageMesh)
 	{
 		ShipDamageMesh->SetCollisionProfileName(TEXT("EnemyShipDamage"));
@@ -718,6 +722,18 @@ void AEnemyShip::BeginPlay()
 	Super::BeginPlay();
 	Tags.Remove(TEXT("Player"));
 	Tags.AddUnique(TEXT("Enemy"));
+	if (BuoyancyRoot)
+	{
+		FBodyInstance& BodyInstance = BuoyancyRoot->BodyInstance;
+		BodyInstance.bLockXRotation = false;
+		BodyInstance.SetDOFLock(BodyInstance.DOFMode);
+	}
+	if (NavigationComponent)
+	{
+		NavigationComponent->OnNavigationStateChanged.AddUniqueDynamic(
+			this, &AEnemyShip::HandleNavigationStateChanged);
+		ApplyNavigationCollisionPolicy(NavigationComponent->GetCurrentState());
+	}
 
 	// HealthComponent를 Ship의 ASC에 바인딩 (BaseEnemy의 패턴과 동일)
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
@@ -767,8 +783,6 @@ void AEnemyShip::BeginPlay()
 
 		if (NavigationComponent)
 		{
-			NavigationComponent->OnNavigationStateChanged.AddUniqueDynamic(
-				this, &AEnemyShip::HandleNavigationStateChanged);
 			NavigationComponent->ClearAllOverrides();
 			NavigationComponent->SetNavigationEnabled(false);
 		}
@@ -925,6 +939,7 @@ void AEnemyShip::HandleNavigationStateChanged(
 	ENavalCombatState PreviousState,
 	ENavalCombatState NewState)
 {
+	ApplyNavigationCollisionPolicy(NewState);
 	if (!HasAuthority() || bDeathHandled || bCrewDefeated || !DeckEnemySpawnerComponent)
 	{
 		return;
@@ -1633,6 +1648,30 @@ void AEnemyShip::ResetAfterReturnToSpawn()
 	bHasEverHadLivingCrew = HasLivingCrew();
 	OnRep_CrewDefeated();
 	ForceNetUpdate();
+}
+
+void AEnemyShip::ApplyNavigationCollisionPolicy(ENavalCombatState State)
+{
+	const bool bActiveCombat = State == ENavalCombatState::Approach
+		|| State == ENavalCombatState::Orbit;
+	const bool bBlockSkillObstacles = State != ENavalCombatState::Return;
+
+	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(this);
+	for (UPrimitiveComponent* Component : PrimitiveComponents)
+	{
+		if (!IsValid(Component)
+			|| (Component->GetCollisionObjectType() != ECC_ShipHull
+				&& Component->GetCollisionProfileName() != TEXT("ShipHullPhysics")))
+		{
+			continue;
+		}
+		Component->SetCollisionResponseToChannel(
+			ECC_ShipHull,
+			bActiveCombat ? ECR_Block : ECR_Ignore);
+		Component->SetCollisionResponseToChannel(
+			ECC_EnemyShipObstacle,
+			bBlockSkillObstacles ? ECR_Block : ECR_Ignore);
+	}
 }
 
 bool AEnemyShip::CanEnterDistanceOptimizationDormancy() const

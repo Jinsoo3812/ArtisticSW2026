@@ -346,6 +346,7 @@ bool FEnemyShipObstacleActorContractTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Obstacle blocks Player cannonballs"), ObstacleCollision->GetCollisionResponseToChannel(ECC_GameTraceChannel2), ECR_Block);
 		TestEqual(TEXT("Obstacle blocks Enemy cannonballs"), ObstacleCollision->GetCollisionResponseToChannel(ECC_GameTraceChannel3), ECR_Block);
 		TestEqual(TEXT("Obstacle ignores other obstacles"), ObstacleCollision->GetCollisionResponseToChannel(ECC_GameTraceChannel6), ECR_Ignore);
+		TestEqual(TEXT("Obstacle blocks active ship hulls"), ObstacleCollision->GetCollisionResponseToChannel(ECC_GameTraceChannel9), ECR_Block);
 		TestTrue(TEXT("Obstacle locks horizontal translation"), ObstacleCollision->BodyInstance.bLockXTranslation && ObstacleCollision->BodyInstance.bLockYTranslation);
 		TestFalse(TEXT("Obstacle keeps vertical translation free for buoyancy"), ObstacleCollision->BodyInstance.bLockZTranslation);
 	}
@@ -379,6 +380,17 @@ bool FEnemyShipObstacleActorContractTest::RunTest(const FString& Parameters)
 			TEXT("WaterBody reciprocates the obstacle overlap so buoyancy can activate"),
 			WaterBodyProfile.ResponseToChannels.GetResponse(ECC_EnemyShipObstacle),
 			ECR_Overlap);
+	}
+
+	FCollisionResponseTemplate ShipHullProfile;
+	if (TestTrue(
+		TEXT("ShipHullPhysics profile exists"),
+		UCollisionProfile::Get()->GetProfileTemplate(TEXT("ShipHullPhysics"), ShipHullProfile)))
+	{
+		TestEqual(
+			TEXT("Active ship hulls reciprocate skill-obstacle blocking"),
+			ShipHullProfile.ResponseToChannels.GetResponse(ECC_EnemyShipObstacle),
+			ECR_Block);
 	}
 
 	const UGameplayAbility* AbilityCDO = UGA_EnemyShipDeployObstacle::StaticClass()->GetDefaultObject<UGameplayAbility>();

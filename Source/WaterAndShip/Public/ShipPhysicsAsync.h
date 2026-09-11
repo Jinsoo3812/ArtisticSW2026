@@ -58,6 +58,12 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	 * exact same solve parameters for normal prediction and rewind/resimulation.
 	 */
 	FSWBuoyancyForceSettings BuoyancyForceSettings;
+	bool bEnableRollStabilization = false;
+	float RollStabilizationSoftLimitDegrees = 20.0f;
+	float RollStabilizationMaximumAngleDegrees = 30.0f;
+	float RollStabilizationNaturalFrequencyHz = 0.5f;
+	float RollStabilizationDampingRatio = 1.0f;
+	float RollStabilizationMaximumAngularAccelerationDegrees = 720.0f;
 
 	double ServerPhysicsTimeOrigin = -1.0;
 	float ServerPhysicsStepSeconds = 0.0f;
@@ -105,6 +111,12 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 		AnchorDamping = 80000.0f;
 		AnchorSlackRadius = 0.0f;
 		MaxAnchorForce = 10000000.0f;
+		bEnableRollStabilization = false;
+		RollStabilizationSoftLimitDegrees = 20.0f;
+		RollStabilizationMaximumAngleDegrees = 30.0f;
+		RollStabilizationNaturalFrequencyHz = 0.5f;
+		RollStabilizationDampingRatio = 1.0f;
+		RollStabilizationMaximumAngularAccelerationDegrees = 720.0f;
 	}
 };
 
@@ -186,6 +198,12 @@ private:
 	float CachedTurnTorqueMultiplier = 1.0f;
 	float CachedBuoyancyRadius = 100.f;
 	FSWBuoyancyForceSettings CachedBuoyancyForceSettings;
+	bool bCachedRollStabilizationEnabled = false;
+	float CachedRollStabilizationSoftLimitDegrees = 20.0f;
+	float CachedRollStabilizationMaximumAngleDegrees = 30.0f;
+	float CachedRollStabilizationNaturalFrequencyHz = 0.5f;
+	float CachedRollStabilizationDampingRatio = 1.0f;
+	float CachedRollStabilizationMaximumAngularAccelerationDegrees = 720.0f;
 
 	float CachedAnchorStiffness = 1000000.0f;
 	float CachedAnchorDamping = 80000.0f;

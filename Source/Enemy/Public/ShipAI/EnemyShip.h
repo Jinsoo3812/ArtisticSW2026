@@ -305,6 +305,7 @@ protected:
 	void EvaluateCrewControlState();
 	void DisableEnemyShipAIForCapture();
 	void ApplyDistanceOptimizationState();
+	void ApplyNavigationCollisionPolicy(ENavalCombatState State);
 
 	UFUNCTION()
 	void OnRep_DistanceOptimizationDormant();

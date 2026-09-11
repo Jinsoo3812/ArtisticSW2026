@@ -5,7 +5,69 @@
 #include "Serialization/MemoryWriter.h"
 #include "Ship.h"
 #include "ShipPhysicsAsync.h"
+#include "ShipRollStabilization.h"
 #include "Water/SWBuoyancyMath.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShipRollStabilizationMathTest,
+	"ArtisticSW.Ship.RollStabilization.Math",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FShipRollStabilizationMathTest::RunTest(const FString& Parameters)
+{
+	const float PositiveRoll = FShipRollStabilizationMath::ComputeSignedRollRadians(
+		FQuat(FVector::ForwardVector, FMath::DegreesToRadians(25.0f)));
+	const float NegativeRoll = FShipRollStabilizationMath::ComputeSignedRollRadians(
+		FQuat(FVector::ForwardVector, FMath::DegreesToRadians(-25.0f)));
+	TestTrue(TEXT("Signed roll extraction preserves positive roll"),
+		FMath::IsNearlyEqual(FMath::RadiansToDegrees(PositiveRoll), 25.0f, 0.01f));
+	TestTrue(TEXT("Signed roll extraction preserves negative roll"),
+		FMath::IsNearlyEqual(FMath::RadiansToDegrees(NegativeRoll), -25.0f, 0.01f));
+
+	const auto AccelerationAt = [](float AngleDegrees, float AngularVelocityDegrees)
+	{
+		return FShipRollStabilizationMath::ComputeAngularAccelerationRadians(
+			FMath::DegreesToRadians(AngleDegrees),
+			FMath::DegreesToRadians(AngularVelocityDegrees),
+			20.0f,
+			30.0f,
+			0.5f,
+			1.0f,
+			720.0f);
+	};
+	TestTrue(TEXT("Positive roll always receives inward acceleration"), AccelerationAt(10.0f, 0.0f) < 0.0f);
+	TestTrue(TEXT("Negative roll always receives inward acceleration"), AccelerationAt(-10.0f, 0.0f) > 0.0f);
+	TestTrue(TEXT("Roll-rate damping opposes motion at level"), AccelerationAt(0.0f, 20.0f) < 0.0f);
+	TestTrue(TEXT("Soft-wall increases correction beyond 20 degrees"),
+		FMath::Abs(AccelerationAt(25.0f, 0.0f)) > FMath::Abs(AccelerationAt(20.0f, 0.0f)));
+	TestTrue(TEXT("Controller acceleration remains bounded"),
+		FMath::Abs(FMath::RadiansToDegrees(AccelerationAt(45.0f, 100.0f))) <= 720.01f);
+
+	float SimulatedAngle = FMath::DegreesToRadians(29.0f);
+	float SimulatedVelocity = 0.0f;
+	float PeakAngle = FMath::Abs(SimulatedAngle);
+	constexpr float PhysicsStep = 1.0f / 60.0f;
+	for (int32 Step = 0; Step < 600; ++Step)
+	{
+		const float Acceleration = FShipRollStabilizationMath::ComputeAngularAccelerationRadians(
+			SimulatedAngle,
+			SimulatedVelocity,
+			20.0f,
+			30.0f,
+			0.5f,
+			1.0f,
+			720.0f);
+		SimulatedVelocity += Acceleration * PhysicsStep;
+		SimulatedAngle += SimulatedVelocity * PhysicsStep;
+		PeakAngle = FMath::Max(PeakAngle, FMath::Abs(SimulatedAngle));
+	}
+	TestTrue(TEXT("60 Hz integration does not push a 29-degree roll farther outward"),
+		FMath::RadiansToDegrees(PeakAngle) <= 29.01f);
+	TestTrue(TEXT("60 Hz integration converges back near level without sustained oscillation"),
+		FMath::Abs(FMath::RadiansToDegrees(SimulatedAngle)) < 0.01f
+			&& FMath::Abs(FMath::RadiansToDegrees(SimulatedVelocity)) < 0.01f);
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FShipNetworkPhysicsBuoyancyInputTest,

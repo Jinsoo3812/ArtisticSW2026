@@ -1,4 +1,5 @@
 #include "ShipPhysicsAsync.h"
+#include "ShipRollStabilization.h"
 #include "Chaos/PhysicsObjectInternalInterface.h"
 #include "PBDRigidsSolver.h"
 #include "Chaos/ParticleHandle.h"
@@ -301,6 +302,13 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 				CachedTurnTorqueMultiplier = AsyncInput->TurnTorqueMultiplier;
 				CachedBuoyancyRadius = AsyncInput->BuoyancyRadius;
 				CachedBuoyancyForceSettings = AsyncInput->BuoyancyForceSettings;
+				bCachedRollStabilizationEnabled = AsyncInput->bEnableRollStabilization;
+				CachedRollStabilizationSoftLimitDegrees = AsyncInput->RollStabilizationSoftLimitDegrees;
+				CachedRollStabilizationMaximumAngleDegrees = AsyncInput->RollStabilizationMaximumAngleDegrees;
+				CachedRollStabilizationNaturalFrequencyHz = AsyncInput->RollStabilizationNaturalFrequencyHz;
+				CachedRollStabilizationDampingRatio = AsyncInput->RollStabilizationDampingRatio;
+				CachedRollStabilizationMaximumAngularAccelerationDegrees =
+					AsyncInput->RollStabilizationMaximumAngularAccelerationDegrees;
 				CachedResimLocationThreshold = AsyncInput->ResimLocationThreshold;
 				CachedResimRotationThreshold = AsyncInput->ResimRotationThreshold;
 			}
@@ -417,6 +425,24 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 
 		ParticleHandle->AddForce(TotalBuoyancyForce);
 		ParticleHandle->AddTorque(TotalBuoyancyTorque);
+	}
+
+	if (bCachedRollStabilizationEnabled)
+	{
+		const FVector RollAxis = ActorRotation.GetForwardVector().GetSafeNormal();
+		const float RollRadians = FShipRollStabilizationMath::ComputeSignedRollRadians(ActorRotation);
+		const float RollAngularVelocity = FVector::DotProduct(ParticleHandle->GetW(), RollAxis);
+		const float AngularAcceleration =
+			FShipRollStabilizationMath::ComputeAngularAccelerationRadians(
+				RollRadians,
+				RollAngularVelocity,
+				CachedRollStabilizationSoftLimitDegrees,
+				CachedRollStabilizationMaximumAngleDegrees,
+				CachedRollStabilizationNaturalFrequencyHz,
+				CachedRollStabilizationDampingRatio,
+				CachedRollStabilizationMaximumAngularAccelerationDegrees);
+		const float RollInertia = FMath::Max(1.0f, ParticleHandle->I().X);
+		ParticleHandle->AddTorque(RollAxis * AngularAcceleration * RollInertia);
 	}
 
 	// 4. 닻(Anchor) 수평 평면 스프링-댐퍼 저항 적용 (Z축 파도/부력에는 무영향)

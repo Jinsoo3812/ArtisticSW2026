@@ -107,6 +107,13 @@ void AEnemyShipObstacle::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME(AEnemyShipObstacle, CannonballHitCount);
 }
 
+FVector AEnemyShipObstacle::GetAvoidanceHalfExtent() const
+{
+	return ObstacleBlocker
+		? ObstacleBlocker->GetScaledBoxExtent()
+		: CollisionHalfExtent * GetActorScale3D().GetAbs();
+}
+
 void AEnemyShipObstacle::ReceiveCannonballImpact_Implementation(AActor* CannonballActor)
 {
 	if (!HasAuthority() || !IsValid(CannonballActor) || ProcessedCannonballs.Contains(CannonballActor))

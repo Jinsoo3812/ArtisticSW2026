@@ -4,6 +4,8 @@
 
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "Components/BoxComponent.h"
+#include "CollisionChannels.h"
 #include "AbilitySystemComponent.h"
 #include "ShipAttributeSet.h"
 #include "Ship.h"
@@ -16,6 +18,7 @@
 #include "BaseGameplayTags.h"
 #include "ShipAI/NavalAIController.h"
 #include "ShipAI/Abilities/GA_EnemyShipCharge.h"
+#include "ShipAI/Abilities/EnemyShipObstacle.h"
 #include "BaseEnemy.h"
 #include "RangedEnemy/RangedEnemy.h"
 
@@ -315,8 +318,37 @@ bool FEnemyShipDeterministicAvoidanceTest::RunTest(const FString& Parameters)
 	Second->SquadID = TEXT("AvoidanceTest");
 	First->GetNavigationComponent()->SetTargetShip(Target);
 	Second->GetNavigationComponent()->SetTargetShip(Target);
+	FEnemyShipNavigationProfile CombatProfile = First->GetNavigationComponent()->GetNavigationProfile();
+	CombatProfile.ReturnTriggerDistance = 50000.0f;
+	First->GetNavigationComponent()->SetNavigationProfile(CombatProfile);
+	Second->GetNavigationComponent()->SetNavigationProfile(CombatProfile);
 	First->GetNavigationComponent()->SetNavigationEnabled(true);
 	Second->GetNavigationComponent()->SetNavigationEnabled(true);
+	First->GetNavigationComponent()->TickComponent(0.016f, LEVELTICK_All, nullptr);
+	Second->GetNavigationComponent()->TickComponent(0.016f, LEVELTICK_All, nullptr);
+	UBoxComponent* TestHull = NewObject<UBoxComponent>(First, TEXT("TestShipHull"));
+	TestHull->SetCollisionProfileName(TEXT("ShipHullPhysics"));
+	TestHull->RegisterComponent();
+	First->GetNavigationComponent()->OnNavigationStateChanged.Broadcast(
+		ENavalCombatState::Approach, ENavalCombatState::Idle);
+	TestEqual(TEXT("Idle ship ignores other ship hulls"),
+		TestHull->GetCollisionResponseToChannel(ECC_ShipHull), ECR_Ignore);
+	TestEqual(TEXT("Idle ship still blocks skill obstacles"),
+		TestHull->GetCollisionResponseToChannel(ECC_EnemyShipObstacle), ECR_Block);
+	First->GetNavigationComponent()->OnNavigationStateChanged.Broadcast(
+		ENavalCombatState::Idle, ENavalCombatState::Approach);
+	TestEqual(TEXT("Approach ship blocks other ship hulls"),
+		TestHull->GetCollisionResponseToChannel(ECC_ShipHull), ECR_Block);
+	TestEqual(TEXT("Approach ship blocks skill obstacles"),
+		TestHull->GetCollisionResponseToChannel(ECC_EnemyShipObstacle), ECR_Block);
+	First->GetNavigationComponent()->OnNavigationStateChanged.Broadcast(
+		ENavalCombatState::Approach, ENavalCombatState::Return);
+	TestEqual(TEXT("Returning ship ignores other ship hulls"),
+		TestHull->GetCollisionResponseToChannel(ECC_ShipHull), ECR_Ignore);
+	TestEqual(TEXT("Returning ship ignores skill obstacles"),
+		TestHull->GetCollisionResponseToChannel(ECC_EnemyShipObstacle), ECR_Ignore);
+	First->GetNavigationComponent()->OnNavigationStateChanged.Broadcast(
+		ENavalCombatState::Return, ENavalCombatState::Approach);
 	Swarm->RegisterShip(First);
 	Swarm->RegisterShip(Second);
 
@@ -330,6 +362,17 @@ bool FEnemyShipDeterministicAvoidanceTest::RunTest(const FString& Parameters)
 		YieldingShip->GetNavigationComponent()->AcquireOverride(YieldingShip, 100, ChargeLikeRequest);
 	TestTrue(TEXT("Movement override receives absolute right of way"), Swarm->EvaluateAvoidance(PriorityShip).bShouldYield);
 	YieldingShip->GetNavigationComponent()->ReleaseOverride(ChargeLikeHandle);
+
+	AEnemyShipObstacle* Obstacle = TestWorld.World->SpawnActor<AEnemyShipObstacle>();
+	if (TestNotNull(TEXT("Skill obstacle spawned"), Obstacle))
+	{
+		Obstacle->SetActorLocation(PriorityShip->GetActorLocation()
+			+ PriorityShip->GetActorForwardVector() * 2000.0f);
+		const FEnemyShipAvoidanceDecision ObstacleDecision = Swarm->EvaluateAvoidance(PriorityShip);
+		TestTrue(TEXT("Active navigation predicts a skill obstacle"), ObstacleDecision.bShouldYield);
+		TestTrue(TEXT("Skill obstacle supplies a steering override"), ObstacleDecision.bOverrideTurnInput);
+		Obstacle->SetActorLocation(FVector(1000000.0f, 1000000.0f, 0.0f));
+	}
 
 	YieldingShip->GetNavigationComponent()->TickComponent(0.2f, LEVELTICK_All, nullptr);
 	TestTrue(TEXT("Avoidance maneuver latches"), YieldingShip->GetNavigationComponent()->IsAvoidanceManeuverActive());
@@ -374,17 +417,13 @@ bool FEnemyShipDeterministicAvoidanceTest::RunTest(const FString& Parameters)
 		TEXT("Targetless ship enters Return"),
 		First->GetNavigationComponent()->GetCurrentState(),
 		ENavalCombatState::Return);
-	TestTrue(
-		TEXT("Return prediction includes a stopped targetless squadmate"),
+	TestFalse(
+		TEXT("Return prediction excludes all avoidance traffic"),
 		Swarm->EvaluateAvoidance(First).bShouldYield);
-	TestTrue(
-		TEXT("Returning ship avoids a stopped targetless squadmate"),
+	TestFalse(
+		TEXT("Returning ship disables avoidance maneuvers"),
 		First->GetNavigationComponent()->IsAvoidanceManeuverActive());
 
-	Second->SetActorLocation(FirstHome);
-	TestFalse(TEXT("Occupied return transform blocks completion"), Swarm->IsReturnDestinationClear(First));
-	Second->SetActorLocation(FirstHome + FVector(10000.0f, 0.0f, 0.0f));
-	TestTrue(TEXT("Separated return transform permits completion"), Swarm->IsReturnDestinationClear(First));
 	return true;
 }
 

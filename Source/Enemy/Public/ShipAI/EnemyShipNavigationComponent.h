@@ -86,6 +86,9 @@ protected:
 	FEnemyShipNavigationProfile NavigationProfile;
 
 private:
+	UFUNCTION()
+	void OnRep_CurrentState(ENavalCombatState PreviousState);
+
 	struct FRuntimeOverride
 	{
 		TWeakObjectPtr<UObject> Requester;
@@ -114,7 +117,7 @@ private:
 	bool bHasSpawnHomeLocation = false;
 	TMap<FGuid, FRuntimeOverride> Overrides;
 	uint64 NextOverrideSequence = 1;
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_CurrentState)
 	ENavalCombatState CurrentState = ENavalCombatState::Idle;
 	FEnemyShipNavigationOutput LastNavigationOutput;
 	float LostTargetElapsed = 0.0f;
@@ -122,7 +125,9 @@ private:
 	float AvoidanceMinimumTimeRemaining = 0.0f;
 	float AvoidanceSafeElapsed = 0.0f;
 	bool bAvoidanceManeuverActive = false;
-	TWeakObjectPtr<AEnemyShip> AvoidanceThreatShip;
+	bool bAvoidanceOverridesTurn = false;
+	float AvoidanceTurnInput = 0.0f;
+	TWeakObjectPtr<AActor> AvoidanceThreatActor;
 	UPROPERTY(Replicated)
 	bool bNavigationEnabled = true;
 };

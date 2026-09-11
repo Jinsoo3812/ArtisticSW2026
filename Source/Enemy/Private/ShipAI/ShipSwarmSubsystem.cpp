@@ -5,6 +5,7 @@
 #include "ShipAI/EnemyShipArchetypeData.h"
 #include "ShipAI/EnemyShipAvoidanceSettings.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
+#include "ShipAI/Abilities/EnemyShipObstacle.h"
 #include "Components/StaticMeshComponent.h"
 #include "EngineUtils.h"
 #include "Ship.h"
@@ -76,6 +77,20 @@ namespace EnemyShipAvoidance
 		return Result;
 	}
 
+	FPlanarForecast MakeForecast(const AEnemyShipObstacle& Obstacle)
+	{
+		FPlanarForecast Result;
+		const FVector Location = Obstacle.GetActorLocation();
+		const FVector Velocity = Obstacle.GetVelocity();
+		const FVector Extent = Obstacle.GetAvoidanceHalfExtent();
+		Result.Position = FVector2D(Location.X, Location.Y);
+		Result.Velocity = FVector2D(Velocity.X, Velocity.Y);
+		Result.YawRadians = FMath::DegreesToRadians(Obstacle.GetActorRotation().Yaw);
+		Result.HalfLength = FMath::Max(1.0f, Extent.X);
+		Result.HalfWidth = FMath::Max(1.0f, Extent.Y);
+		return Result;
+	}
+
 	void Advance(FPlanarForecast& State, float DeltaTime)
 	{
 		const FVector2D Forward(FMath::Cos(State.YawRadians), FMath::Sin(State.YawRadians));
@@ -114,21 +129,20 @@ namespace EnemyShipAvoidance
 	{
 		const UEnemyShipNavigationComponent* Navigation = Ship.GetNavigationComponent();
 		const UEnemyShipNavigationComponent* OtherNavigation = Other.GetNavigationComponent();
+		const bool bShipInCombatNavigation = Navigation
+			&& (Navigation->GetCurrentState() == ENavalCombatState::Approach
+				|| Navigation->GetCurrentState() == ENavalCombatState::Orbit);
+		const bool bOtherInCombatNavigation = OtherNavigation
+			&& (OtherNavigation->GetCurrentState() == ENavalCombatState::Approach
+				|| OtherNavigation->GetCurrentState() == ENavalCombatState::Orbit);
 		if (&Ship == &Other
 			|| Ship.SquadID != Other.SquadID
 			|| !Navigation || !OtherNavigation
+			|| !bShipInCombatNavigation || !bOtherInCombatNavigation
 			|| !Navigation->IsNavigationEnabled()
 			|| Ship.IsDeathHandled() || Other.IsDeathHandled())
 		{
 			return false;
-		}
-
-		// A returning ship must remain collision-aware after its combat target is cleared.
-		// It treats every living squadmate as traffic, including a disabled or Idle ship
-		// that has already stopped at its own return point.
-		if (Navigation->GetCurrentState() == ENavalCombatState::Return)
-		{
-			return true;
 		}
 
 		return OtherNavigation->IsNavigationEnabled()
@@ -139,21 +153,10 @@ namespace EnemyShipAvoidance
 
 	bool MustYield(const AEnemyShip& Ship, const AEnemyShip& Other)
 	{
-		const UEnemyShipNavigationComponent* Navigation = Ship.GetNavigationComponent();
 		const UEnemyShipNavigationComponent* OtherNavigation = Other.GetNavigationComponent();
 		if (OtherNavigation && OtherNavigation->HasActiveOverride())
 		{
 			return true;
-		}
-
-		const bool bShipReturning = Navigation
-			&& Navigation->GetCurrentState() == ENavalCombatState::Return;
-		const bool bOtherReturning = OtherNavigation
-			&& OtherNavigation->GetCurrentState() == ENavalCombatState::Return;
-		if (bShipReturning != bOtherReturning)
-		{
-			// Return traffic yields to combat traffic and ships already stopped at home.
-			return bShipReturning;
 		}
 
 		// A total ordering means exactly one ordinary ship yields and prevents reciprocal deadlock.
@@ -352,7 +355,12 @@ void UShipSwarmSubsystem::RecalculateSquadOrbitDistances(FName SquadID)
 FEnemyShipAvoidanceDecision UShipSwarmSubsystem::EvaluateAvoidance(AEnemyShip* Ship)
 {
 	FEnemyShipAvoidanceDecision Decision;
-	if (!IsValid(Ship) || !Ship->GetNavigationComponent())
+	const UEnemyShipNavigationComponent* Navigation = IsValid(Ship)
+		? Ship->GetNavigationComponent()
+		: nullptr;
+	if (!Navigation
+		|| (Navigation->GetCurrentState() != ENavalCombatState::Approach
+			&& Navigation->GetCurrentState() != ENavalCombatState::Orbit))
 	{
 		return Decision;
 	}
@@ -391,7 +399,7 @@ FEnemyShipAvoidanceDecision UShipSwarmSubsystem::EvaluateAvoidance(AEnemyShip* S
 				{
 					Decision.bShouldYield = true;
 					Decision.EarliestCollisionTime = Time;
-					Decision.ThreatShip = Other;
+					Decision.ThreatActor = Other;
 				}
 				break;
 			}
@@ -399,42 +407,56 @@ FEnemyShipAvoidanceDecision UShipSwarmSubsystem::EvaluateAvoidance(AEnemyShip* S
 			EnemyShipAvoidance::Advance(OtherForecast, Step);
 		}
 	}
+
+	TArray<AEnemyShipObstacle*> Obstacles;
+	if (UWorld* World = GetWorld())
+	{
+		for (TActorIterator<AEnemyShipObstacle> It(World); It; ++It)
+		{
+			if (IsValid(*It))
+			{
+				Obstacles.Add(*It);
+			}
+		}
+	}
+	Obstacles.Sort([Ship](const AEnemyShipObstacle& Left, const AEnemyShipObstacle& Right)
+	{
+		return FVector::DistSquared2D(Ship->GetActorLocation(), Left.GetActorLocation())
+			< FVector::DistSquared2D(Ship->GetActorLocation(), Right.GetActorLocation());
+	});
+	Obstacles.SetNum(FMath::Min(
+		Obstacles.Num(),
+		FMath::Max(0, Settings->MaximumEvaluatedObstacles)));
+
+	for (AEnemyShipObstacle* Obstacle : Obstacles)
+	{
+		EnemyShipAvoidance::FPlanarForecast SelfForecast = EnemyShipAvoidance::MakeForecast(*Ship);
+		EnemyShipAvoidance::FPlanarForecast ObstacleForecast = EnemyShipAvoidance::MakeForecast(*Obstacle);
+		const float Step = FMath::Max(0.05f, Settings->PredictionStep);
+		const float Horizon = FMath::Max(Step, Settings->PredictionHorizon);
+		for (float Time = 0.0f; Time <= Horizon + UE_SMALL_NUMBER; Time += Step)
+		{
+			const float Margin = FMath::Max(0.0f, Settings->HullSafetyMargin)
+				+ FMath::Max(0.0f, Settings->UncertaintyGrowthPerSecond) * Time;
+			if (EnemyShipAvoidance::Overlaps(SelfForecast, ObstacleForecast, Margin))
+			{
+				if (Time < Decision.EarliestCollisionTime)
+				{
+					Decision.bShouldYield = true;
+					Decision.EarliestCollisionTime = Time;
+					Decision.ThreatActor = Obstacle;
+					Decision.bOverrideTurnInput = true;
+					const FVector ToObstacle = Obstacle->GetActorLocation() - Ship->GetActorLocation();
+					const float ObstacleRight = FVector::DotProduct(Ship->GetActorRightVector(), ToObstacle);
+					Decision.TurnInput = FMath::IsNearlyZero(ObstacleRight)
+						? 1.0f
+						: (ObstacleRight > 0.0f ? -1.0f : 1.0f);
+				}
+				break;
+			}
+			EnemyShipAvoidance::Advance(SelfForecast, Step);
+			EnemyShipAvoidance::Advance(ObstacleForecast, Step);
+		}
+	}
 	return Decision;
-}
-
-bool UShipSwarmSubsystem::IsReturnDestinationClear(AEnemyShip* Ship)
-{
-	if (!IsValid(Ship) || Ship->IsDeathHandled())
-	{
-		return false;
-	}
-
-	const UEnemyShipNavigationComponent* Navigation = Ship->GetNavigationComponent();
-	FTransform HomeTransform;
-	if (!Navigation || !Navigation->GetSpawnHomeTransform(HomeTransform))
-	{
-		return false;
-	}
-
-	EnemyShipAvoidance::FPlanarForecast Destination = EnemyShipAvoidance::MakeForecast(*Ship);
-	const FVector HomeLocation = HomeTransform.GetLocation();
-	Destination.Position = FVector2D(HomeLocation.X, HomeLocation.Y);
-	Destination.YawRadians = FMath::DegreesToRadians(HomeTransform.Rotator().Yaw);
-	Destination.Velocity = FVector2D::ZeroVector;
-	Destination.YawRateRadians = 0.0f;
-
-	for (AEnemyShip* Other : GetSquadMembers(Ship->SquadID))
-	{
-		if (!IsValid(Other) || Other == Ship || Other->IsDeathHandled())
-		{
-			continue;
-		}
-
-		const EnemyShipAvoidance::FPlanarForecast OtherState = EnemyShipAvoidance::MakeForecast(*Other);
-		if (EnemyShipAvoidance::Overlaps(Destination, OtherState, 0.0f))
-		{
-			return false;
-		}
-	}
-	return true;
 }

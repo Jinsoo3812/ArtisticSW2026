@@ -849,6 +849,13 @@ void AShip::Tick(float DeltaTime)
 				AsyncInput->TurnTorqueMultiplier = TurnTorqueMultiplier;
 				AsyncInput->BuoyancyRadius = BuoyancyRadius;
 				AsyncInput->BuoyancyForceSettings = BuoyancyForceSettings;
+				AsyncInput->bEnableRollStabilization = bEnableRollStabilization;
+				AsyncInput->RollStabilizationSoftLimitDegrees = RollStabilizationSoftLimitDegrees;
+				AsyncInput->RollStabilizationMaximumAngleDegrees = RollStabilizationMaximumAngleDegrees;
+				AsyncInput->RollStabilizationNaturalFrequencyHz = RollStabilizationNaturalFrequencyHz;
+				AsyncInput->RollStabilizationDampingRatio = RollStabilizationDampingRatio;
+				AsyncInput->RollStabilizationMaximumAngularAccelerationDegrees =
+					RollStabilizationMaximumAngularAccelerationDegrees;
 				// Keep the custom payload aligned with the project's 5 cm Network
 				// Physics threshold; 30 cm is visibly separated at pontoon scale.
 				AsyncInput->ResimLocationThreshold = FMath::Clamp(ResimLocationThreshold, 0.1f, 5.0f);

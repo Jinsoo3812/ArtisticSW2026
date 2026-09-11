@@ -29,6 +29,7 @@ public:
 	bool IsBuoyancyEnabledForDiagnostics() const { return bBuoyancyEnabled; }
 	int32 GetCannonballHitCount() const { return CannonballHitCount; }
 	int32 GetRemainingCannonballHits() const { return FMath::Max(0, MaxCannonballHits - CannonballHitCount); }
+	FVector GetAvoidanceHalfExtent() const;
 
 	virtual void ReceiveCannonballImpact_Implementation(AActor* CannonballActor) override;
 

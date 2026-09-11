@@ -896,6 +896,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Movement", meta = (ClampMin = "0.0", Units = "cm/s^2"))
 	float MaxExternalAcceleration = 5000.f;
 
+	/** PT-only soft roll limiter. Disabled for player ships; AEnemyShip enables it by default. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Physics|Roll Stabilization")
+	bool bEnableRollStabilization = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Physics|Roll Stabilization", meta = (EditCondition = "bEnableRollStabilization", ClampMin = "0.0", ClampMax = "89.0", Units = "deg"))
+	float RollStabilizationSoftLimitDegrees = 20.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Physics|Roll Stabilization", meta = (EditCondition = "bEnableRollStabilization", ClampMin = "0.1", ClampMax = "89.0", Units = "deg"))
+	float RollStabilizationMaximumAngleDegrees = 30.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Physics|Roll Stabilization", meta = (EditCondition = "bEnableRollStabilization", ClampMin = "0.0", Units = "Hz"))
+	float RollStabilizationNaturalFrequencyHz = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Physics|Roll Stabilization", meta = (EditCondition = "bEnableRollStabilization", ClampMin = "0.0"))
+	float RollStabilizationDampingRatio = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Physics|Roll Stabilization", meta = (EditCondition = "bEnableRollStabilization", ClampMin = "0.0"))
+	float RollStabilizationMaximumAngularAccelerationDegrees = 720.0f;
+
 	// ---- Anchor Parameters ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Anchor", meta = (ClampMin = "0.0", ToolTip = "Planar restoring stiffness holding the ship to its anchor point against external collisions"))
 	float AnchorStiffness = 1000000.0f;
