@@ -15,6 +15,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FShipRollStabilizationMathTest::RunTest(const FString& Parameters)
 {
+	const AShip* ShipCDO = GetDefault<AShip>();
+	TestTrue(TEXT("Player/base ships enable PT roll stabilization by default"),
+		ShipCDO->bEnableRollStabilization);
+
 	const float PositiveRoll = FShipRollStabilizationMath::ComputeSignedRollRadians(
 		FQuat(FVector::ForwardVector, FMath::DegreesToRadians(25.0f)));
 	const float NegativeRoll = FShipRollStabilizationMath::ComputeSignedRollRadians(

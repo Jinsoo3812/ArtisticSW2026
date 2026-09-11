@@ -896,9 +896,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Movement", meta = (ClampMin = "0.0", Units = "cm/s^2"))
 	float MaxExternalAcceleration = 5000.f;
 
-	/** PT-only soft roll limiter. Disabled for player ships; AEnemyShip enables it by default. */
+	/** PT-only soft roll limiter shared by player and enemy ships. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Physics|Roll Stabilization")
-	bool bEnableRollStabilization = false;
+	bool bEnableRollStabilization = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Physics|Roll Stabilization", meta = (EditCondition = "bEnableRollStabilization", ClampMin = "0.0", ClampMax = "89.0", Units = "deg"))
 	float RollStabilizationSoftLimitDegrees = 20.0f;

@@ -85,12 +85,19 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Aim Line")
 	TObjectPtr<UMaterialInterface> LaserMaterial;
 
+	/** Client render smoothing for the replicated ray end; the muzzle start follows every local frame. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Time Stop|Aim Line|Networking", meta = (ClampMin = "0.0"))
+	float ClientEndpointInterpolationSpeed = 20.0f;
+
 private:
 	UFUNCTION()
 	void OnRep_LineEndpoints();
 
 	UFUNCTION()
 	void OnRep_LineVisibility();
+
+	UFUNCTION()
+	void OnRep_SourceCannon();
 
 	void UpdateClippedEndpoint();
 	void RefreshLineVisual();
@@ -119,6 +126,10 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_LineEndpoints)
 	FVector_NetQuantize LineEnd = FVector::ZeroVector;
 
+	/** Lets each client bind presentation to its own smoothly rendered cannon muzzle. */
+	UPROPERTY(ReplicatedUsing = OnRep_SourceCannon)
+	TObjectPtr<ACannon> SourceCannon;
+
 	UPROPERTY(ReplicatedUsing = OnRep_LineVisibility)
 	bool bWarningLineVisible = true;
 
@@ -136,8 +147,10 @@ private:
 	bool bChargeEffectActive = false;
 
 	TWeakObjectPtr<AShip> TargetShip;
-	TWeakObjectPtr<ACannon> SourceCannon;
 	FVector FixedDirection = FVector::ForwardVector;
+	FVector PresentationLineStart = FVector::ZeroVector;
+	FVector PresentationLineEnd = FVector::ZeroVector;
+	bool bPresentationInitialized = false;
 	FVector LockedTargetPoint = FVector::ZeroVector;
 	bool bAimTargetLocked = false;
 	float MaximumDistance = 200000.0f;

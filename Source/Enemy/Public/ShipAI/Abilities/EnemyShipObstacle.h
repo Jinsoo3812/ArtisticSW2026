@@ -123,5 +123,9 @@ private:
 	FQuat ClientMovementTargetRotation = FQuat::Identity;
 	FVector ClientMovementTargetVelocity = FVector::ZeroVector;
 	float ClientMovementTargetReceiveTime = 0.0f;
+	FTransform InitialObstacleMeshRelativeTransform = FTransform::Identity;
+	FVector ClientVisualLocation = FVector::ZeroVector;
+	FQuat ClientVisualRotation = FQuat::Identity;
+	bool bClientVisualInitialized = false;
 	FTimerHandle BuoyancyActivationTimerHandle;
 };

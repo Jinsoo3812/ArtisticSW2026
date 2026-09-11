@@ -72,6 +72,10 @@ void AEnemyShipTorpedo::BeginPlay()
 	LogVisualDiagnostics(TEXT("BeginPlay.BeforeRuntimeAssignments"));
 	if (CannonballMesh)
 	{
+		InitialCannonballMeshRelativeTransform = CannonballMesh->GetRelativeTransform();
+		ClientVisualLocation = CannonballMesh->GetComponentLocation();
+		ClientVisualRotation = CannonballMesh->GetComponentQuat();
+		bClientVisualInitialized = true;
 		// Fuse visibility is handled by Niagara. Preserve the authored SM_Bomba
 		// surface exactly and never cover it with the legacy pulse overlay.
 		CannonballMesh->SetOverlayMaterial(nullptr);
@@ -228,36 +232,36 @@ void AEnemyShipTorpedo::Tick(float DeltaSeconds)
 		const FVector DesiredLocation =
 			ClientMovementTargetLocation + ClientMovementTargetVelocity * ExtrapolationTime;
 
-		// During the 0.5 s plunge, preserve the incoming projectile velocity exactly.
-		// VInterpTo starts slowly when its initial error is small, which looked like a
-		// one-frame pause at the ProjectileMovement -> replicated-water transition.
-		if (!bBuoyancyEnabled)
+		const bool bLargeCorrection = FVector::DistSquared(GetActorLocation(), DesiredLocation)
+			> FMath::Square(ClientNetworkSnapDistance);
+		// The collision root follows the authoritative water-physics pose. Smooth only
+		// the visible mesh and its attached fuse so buoyancy packets never render as
+		// 30 Hz root corrections.
+		SetActorLocationAndRotation(
+			DesiredLocation,
+			ClientMovementTargetRotation,
+			false,
+			nullptr,
+			ETeleportType::TeleportPhysics);
+
+		if (CannonballMesh)
 		{
-			SetActorLocationAndRotation(
-				DesiredLocation,
-				ClientMovementTargetRotation,
-				false,
-				nullptr,
-				ETeleportType::TeleportPhysics);
-		}
-		else if (FVector::DistSquared(GetActorLocation(), DesiredLocation)
-			> FMath::Square(ClientNetworkSnapDistance))
-		{
-			SetActorLocationAndRotation(
-				DesiredLocation,
-				ClientMovementTargetRotation,
-				false,
-				nullptr,
-				ETeleportType::TeleportPhysics);
-		}
-		else
-		{
-			SetActorLocationAndRotation(
-				FMath::VInterpTo(GetActorLocation(), DesiredLocation, DeltaSeconds, ClientLocationInterpSpeed),
-				FMath::QInterpTo(GetActorQuat(), ClientMovementTargetRotation, DeltaSeconds, ClientRotationInterpSpeed),
-				false,
-				nullptr,
-				ETeleportType::TeleportPhysics);
+			const FTransform DesiredVisualTransform =
+				InitialCannonballMeshRelativeTransform * GetActorTransform();
+			if (!bClientVisualInitialized || bLargeCorrection)
+			{
+				ClientVisualLocation = DesiredVisualTransform.GetLocation();
+				ClientVisualRotation = DesiredVisualTransform.GetRotation();
+				bClientVisualInitialized = true;
+			}
+			else
+			{
+				ClientVisualLocation = FMath::VInterpTo(
+					ClientVisualLocation, DesiredVisualTransform.GetLocation(), DeltaSeconds, ClientLocationInterpSpeed);
+				ClientVisualRotation = FMath::QInterpTo(
+					ClientVisualRotation, DesiredVisualTransform.GetRotation(), DeltaSeconds, ClientRotationInterpSpeed);
+			}
+			CannonballMesh->SetWorldLocationAndRotation(ClientVisualLocation, ClientVisualRotation);
 		}
 	}
 
@@ -503,6 +507,12 @@ void AEnemyShipTorpedo::OnRep_IsFloating()
 				: GetReplicatedMovement().LinearVelocity;
 			ClientMovementTargetReceiveTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
 			bHasClientMovementTarget = true;
+			if (CannonballMesh)
+			{
+				ClientVisualLocation = CannonballMesh->GetComponentLocation();
+				ClientVisualRotation = CannonballMesh->GetComponentQuat();
+				bClientVisualInitialized = true;
+			}
 		}
 		MarkWaterHitHandledWithoutDeactivation();
 		ApplyWaterEntryPhysicsState();

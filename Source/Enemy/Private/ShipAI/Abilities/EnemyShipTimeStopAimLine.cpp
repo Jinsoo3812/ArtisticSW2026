@@ -49,10 +49,6 @@ AEnemyShipTimeStopAimLine::AEnemyShipTimeStopAimLine()
 void AEnemyShipTimeStopAimLine::BeginPlay()
 {
 	Super::BeginPlay();
-	if (!HasAuthority())
-	{
-		SetActorTickEnabled(false);
-	}
 }
 
 void AEnemyShipTimeStopAimLine::InitializeAimLine(
@@ -67,7 +63,8 @@ void AEnemyShipTimeStopAimLine::InitializeAimLine(
 		return;
 	}
 	LineStart = InStart;
-	SourceCannon.Reset();
+	SourceCannon = nullptr;
+	PresentationLineStart = InStart;
 	FixedDirection = InDirection.GetSafeNormal();
 	TargetShip = InTargetShip;
 	MaximumDistance = FMath::Max(1.0f, InMaximumDistance);
@@ -162,6 +159,7 @@ void AEnemyShipTimeStopAimLine::InitializeAimLineFromCannon(
 	}
 	SourceCannon = InSourceCannon;
 	LineStart = InSourceCannon->GetProjectileMuzzleTransform().GetLocation();
+	PresentationLineStart = LineStart;
 	TargetShip = InTargetShip;
 	const FVector TargetCenter = InTargetShip && InTargetShip->BuoyancyRoot
 		? InTargetShip->BuoyancyRoot->GetComponentLocation()
@@ -176,16 +174,39 @@ void AEnemyShipTimeStopAimLine::InitializeAimLineFromCannon(
 void AEnemyShipTimeStopAimLine::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (!HasAuthority())
+	if (HasAuthority())
 	{
+		TraceTimeAccumulator += DeltaSeconds;
+		if (TraceTimeAccumulator >= TraceIntervalSeconds)
+		{
+			TraceTimeAccumulator = FMath::Fmod(TraceTimeAccumulator, TraceIntervalSeconds);
+			UpdateClippedEndpoint();
+		}
 		return;
 	}
-	TraceTimeAccumulator += DeltaSeconds;
-	if (TraceTimeAccumulator >= TraceIntervalSeconds)
+
+	const FVector DesiredStart = SourceCannon
+		? SourceCannon->GetProjectileMuzzleTransform().GetLocation()
+		: FVector(LineStart);
+	if (!bPresentationInitialized)
 	{
-		TraceTimeAccumulator = FMath::Fmod(TraceTimeAccumulator, TraceIntervalSeconds);
-		UpdateClippedEndpoint();
+		PresentationLineStart = DesiredStart;
+		PresentationLineEnd = FVector(LineEnd);
+		bPresentationInitialized = true;
 	}
+	else
+	{
+		// Start is exact to the locally smoothed cannon. Only the server-provided end
+		// needs interpolation, keeping charge VFX visually welded to the muzzle.
+		PresentationLineStart = DesiredStart;
+		PresentationLineEnd = FMath::VInterpTo(
+			PresentationLineEnd,
+			FVector(LineEnd),
+			DeltaSeconds,
+			ClientEndpointInterpolationSpeed);
+	}
+	RefreshLineVisual();
+	RefreshChargeEffect();
 }
 
 FVector AEnemyShipTimeStopAimLine::ResolveClippedLineEnd(
@@ -216,6 +237,7 @@ void AEnemyShipTimeStopAimLine::GetLifetimeReplicatedProps(
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AEnemyShipTimeStopAimLine, LineStart);
 	DOREPLIFETIME(AEnemyShipTimeStopAimLine, LineEnd);
+	DOREPLIFETIME(AEnemyShipTimeStopAimLine, SourceCannon);
 	DOREPLIFETIME(AEnemyShipTimeStopAimLine, bWarningLineVisible);
 	DOREPLIFETIME(AEnemyShipTimeStopAimLine, ChargeEffect);
 	DOREPLIFETIME(AEnemyShipTimeStopAimLine, ChargeEffectScale);
@@ -226,7 +248,23 @@ void AEnemyShipTimeStopAimLine::GetLifetimeReplicatedProps(
 
 void AEnemyShipTimeStopAimLine::OnRep_LineEndpoints()
 {
+	if (!bPresentationInitialized)
+	{
+		PresentationLineStart = SourceCannon
+			? SourceCannon->GetProjectileMuzzleTransform().GetLocation()
+			: FVector(LineStart);
+		PresentationLineEnd = FVector(LineEnd);
+		bPresentationInitialized = true;
+	}
 	RefreshLineVisual();
+}
+
+void AEnemyShipTimeStopAimLine::OnRep_SourceCannon()
+{
+	if (SourceCannon)
+	{
+		PresentationLineStart = SourceCannon->GetProjectileMuzzleTransform().GetLocation();
+	}
 }
 
 void AEnemyShipTimeStopAimLine::OnRep_LineVisibility()
@@ -245,7 +283,7 @@ void AEnemyShipTimeStopAimLine::OnRep_ChargeState()
 void AEnemyShipTimeStopAimLine::UpdateClippedEndpoint()
 {
 	bool bEndpointsChanged = false;
-	if (ACannon* Cannon = SourceCannon.Get())
+	if (ACannon* Cannon = SourceCannon)
 	{
 		const FVector NewStart = Cannon->GetProjectileMuzzleTransform().GetLocation();
 		AShip* CurrentTarget = TargetShip.Get();
@@ -274,6 +312,9 @@ void AEnemyShipTimeStopAimLine::UpdateClippedEndpoint()
 	}
 	if (bEndpointsChanged)
 	{
+		PresentationLineStart = FVector(LineStart);
+		PresentationLineEnd = FVector(LineEnd);
+		bPresentationInitialized = true;
 		RefreshLineVisual();
 		RefreshChargeEffect();
 		ForceNetUpdate();
@@ -291,22 +332,26 @@ void AEnemyShipTimeStopAimLine::RefreshLineVisual()
 		LineMesh->SetVisibility(false);
 		return;
 	}
-	const FVector Delta = FVector(LineEnd) - FVector(LineStart);
+	const FVector VisualStart = bPresentationInitialized
+		? PresentationLineStart
+		: FVector(LineStart);
+	const FVector VisualEnd = bPresentationInitialized
+		? PresentationLineEnd
+		: FVector(LineEnd);
+	const FVector Delta = VisualEnd - VisualStart;
 	const float Length = Delta.Size();
 	if (Length <= KINDA_SMALL_NUMBER)
 	{
 		LineMesh->SetVisibility(false);
 		return;
 	}
-	FixedDirection = Delta.GetSafeNormal();
-
 	LineMesh->SetVisibility(true);
 	if (LaserMaterial && LineMesh->GetMaterial(0) != LaserMaterial)
 	{
 		LineMesh->SetMaterial(0, LaserMaterial);
 	}
 	SetActorLocationAndRotation(
-		(FVector(LineStart) + FVector(LineEnd)) * 0.5f,
+		(VisualStart + VisualEnd) * 0.5f,
 		Delta.Rotation());
 	LineMesh->SetRelativeScale3D(FVector(
 		FMath::Max(1.0f, LineThickness) / 100.0f,
@@ -330,9 +375,16 @@ void AEnemyShipTimeStopAimLine::RefreshChargeEffect()
 	{
 		ChargeEffectComponent->SetAsset(ChargeEffect);
 	}
+	const FVector VisualStart = bPresentationInitialized
+		? PresentationLineStart
+		: FVector(LineStart);
+	const FVector VisualEnd = bPresentationInitialized
+		? PresentationLineEnd
+		: FVector(LineEnd);
+	const FVector VisualDirection = (VisualEnd - VisualStart).GetSafeNormal();
 	ChargeEffectComponent->SetWorldLocationAndRotation(
-		FVector(LineStart),
-		FixedDirection.Rotation());
+		VisualStart,
+		(VisualDirection.IsNearlyZero() ? FixedDirection : VisualDirection).Rotation());
 	USWNiagaraScaleLibrary::ApplyEffectTuning(
 		ChargeEffectComponent, ChargeEffectScale, ChargeEffectLifetimeScale, ChargeEffectPlaybackSpeed);
 	if (!ChargeEffectComponent->IsActive())
@@ -357,6 +409,7 @@ void AEnemyShipTimeStopAimLine::MulticastPlayInstantHitEffects_Implementation(
 	bChargeEffectActive = false;
 	RefreshChargeEffect();
 	bWarningLineVisible = false;
+	SetActorTickEnabled(false);
 	if (LineMesh)
 	{
 		LineMesh->SetVisibility(false);

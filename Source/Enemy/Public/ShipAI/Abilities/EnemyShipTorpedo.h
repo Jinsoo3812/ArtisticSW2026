@@ -200,6 +200,10 @@ private:
 	FQuat ClientMovementTargetRotation = FQuat::Identity;
 	FVector ClientMovementTargetVelocity = FVector::ZeroVector;
 	float ClientMovementTargetReceiveTime = 0.0f;
+	FTransform InitialCannonballMeshRelativeTransform = FTransform::Identity;
+	FVector ClientVisualLocation = FVector::ZeroVector;
+	FQuat ClientVisualRotation = FQuat::Identity;
+	bool bClientVisualInitialized = false;
 	FVector PreviousWaterPhysicsLocation = FVector::ZeroVector;
 	FTimerHandle BuoyancyActivationTimerHandle;
 	FTimerHandle FuseBurstTimerHandle;

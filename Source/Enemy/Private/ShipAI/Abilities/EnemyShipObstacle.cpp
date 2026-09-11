@@ -65,6 +65,13 @@ void AEnemyShipObstacle::BeginPlay()
 	SWBuoyancyComponent->SetComponentTickEnabled(false);
 	ApplyPhysicsState();
 	SetLifeSpan(FMath::Max(0.0f, MaximumLifetimeSeconds));
+	if (ObstacleMesh)
+	{
+		InitialObstacleMeshRelativeTransform = ObstacleMesh->GetRelativeTransform();
+		ClientVisualLocation = ObstacleMesh->GetComponentLocation();
+		ClientVisualRotation = ObstacleMesh->GetComponentQuat();
+		bClientVisualInitialized = true;
+	}
 }
 
 void AEnemyShipObstacle::Tick(float DeltaSeconds)
@@ -85,18 +92,37 @@ void AEnemyShipObstacle::Tick(float DeltaSeconds)
 	const FVector DesiredLocation = ClientMovementTargetLocation
 		+ ClientMovementTargetVelocity * FMath::Min(TimeSinceUpdate, ClientMaxExtrapolationTime);
 
-	if (FVector::DistSquared(GetActorLocation(), DesiredLocation) > FMath::Square(ClientNetworkSnapDistance))
-	{
-		SetActorLocationAndRotation(DesiredLocation, ClientMovementTargetRotation, false, nullptr, ETeleportType::TeleportPhysics);
-		return;
-	}
-
+	const bool bLargeCorrection = FVector::DistSquared(GetActorLocation(), DesiredLocation)
+		> FMath::Square(ClientNetworkSnapDistance);
+	// Keep the kinematic collision proxy on the authoritative/extrapolated pose.
+	// Only the non-colliding mesh is smoothed, so presentation latency cannot make
+	// the locally predicted ship collide with an obsolete obstacle position.
 	SetActorLocationAndRotation(
-		FMath::VInterpTo(GetActorLocation(), DesiredLocation, DeltaSeconds, ClientLocationInterpSpeed),
-		FMath::QInterpTo(GetActorQuat(), ClientMovementTargetRotation, DeltaSeconds, ClientRotationInterpSpeed),
+		DesiredLocation,
+		ClientMovementTargetRotation,
 		false,
 		nullptr,
 		ETeleportType::TeleportPhysics);
+
+	if (!ObstacleMesh)
+	{
+		return;
+	}
+	const FTransform DesiredVisualTransform = InitialObstacleMeshRelativeTransform * GetActorTransform();
+	if (!bClientVisualInitialized || bLargeCorrection)
+	{
+		ClientVisualLocation = DesiredVisualTransform.GetLocation();
+		ClientVisualRotation = DesiredVisualTransform.GetRotation();
+		bClientVisualInitialized = true;
+	}
+	else
+	{
+		ClientVisualLocation = FMath::VInterpTo(
+			ClientVisualLocation, DesiredVisualTransform.GetLocation(), DeltaSeconds, ClientLocationInterpSpeed);
+		ClientVisualRotation = FMath::QInterpTo(
+			ClientVisualRotation, DesiredVisualTransform.GetRotation(), DeltaSeconds, ClientRotationInterpSpeed);
+	}
+	ObstacleMesh->SetWorldLocationAndRotation(ClientVisualLocation, ClientVisualRotation);
 }
 
 void AEnemyShipObstacle::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
