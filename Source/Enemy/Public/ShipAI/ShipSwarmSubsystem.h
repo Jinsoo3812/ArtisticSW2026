@@ -42,8 +42,11 @@ public:
 	/** Rebuilds symmetric orbit lanes from the squad members' Archetype-authored distances and spacing. */
 	void RecalculateSquadOrbitDistances(FName SquadID);
 
-	/** Predicts only same-squad ships pursuing the exact same target. */
+	/** Predicts same-target combat traffic, or all same-squad traffic while returning home. */
 	FEnemyShipAvoidanceDecision EvaluateAvoidance(AEnemyShip* Ship);
+
+	/** True when this ship's authored return transform is not currently occupied by a squadmate hull. */
+	bool IsReturnDestinationClear(AEnemyShip* Ship);
 
 private:
 	// 군집 ID별로 배들의 약참조 목록을 보관 (댕글링 포인터 방지)

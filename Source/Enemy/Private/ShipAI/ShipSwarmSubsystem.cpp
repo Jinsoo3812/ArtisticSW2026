@@ -112,22 +112,48 @@ namespace EnemyShipAvoidance
 	{
 		const UEnemyShipNavigationComponent* Navigation = Ship.GetNavigationComponent();
 		const UEnemyShipNavigationComponent* OtherNavigation = Other.GetNavigationComponent();
-		return &Ship != &Other
+		if (&Ship == &Other
+			|| Ship.SquadID != Other.SquadID
+			|| !Navigation || !OtherNavigation
+			|| !Navigation->IsNavigationEnabled()
+			|| Ship.IsDeathHandled() || Other.IsDeathHandled())
+		{
+			return false;
+		}
+
+		// A returning ship must remain collision-aware after its combat target is cleared.
+		// It treats every living squadmate as traffic, including a disabled or Idle ship
+		// that has already stopped at its own return point.
+		if (Navigation->GetCurrentState() == ENavalCombatState::Return)
+		{
+			return true;
+		}
+
+		return OtherNavigation->IsNavigationEnabled()
 			&& Ship.SquadID == Other.SquadID
-			&& Navigation && OtherNavigation
-			&& Navigation->IsNavigationEnabled() && OtherNavigation->IsNavigationEnabled()
 			&& Navigation->GetTargetShip()
-			&& Navigation->GetTargetShip() == OtherNavigation->GetTargetShip()
-			&& !Ship.IsDeathHandled() && !Other.IsDeathHandled();
+			&& Navigation->GetTargetShip() == OtherNavigation->GetTargetShip();
 	}
 
 	bool MustYield(const AEnemyShip& Ship, const AEnemyShip& Other)
 	{
+		const UEnemyShipNavigationComponent* Navigation = Ship.GetNavigationComponent();
 		const UEnemyShipNavigationComponent* OtherNavigation = Other.GetNavigationComponent();
 		if (OtherNavigation && OtherNavigation->HasActiveOverride())
 		{
 			return true;
 		}
+
+		const bool bShipReturning = Navigation
+			&& Navigation->GetCurrentState() == ENavalCombatState::Return;
+		const bool bOtherReturning = OtherNavigation
+			&& OtherNavigation->GetCurrentState() == ENavalCombatState::Return;
+		if (bShipReturning != bOtherReturning)
+		{
+			// Return traffic yields to combat traffic and ships already stopped at home.
+			return bShipReturning;
+		}
+
 		// A total ordering means exactly one ordinary ship yields and prevents reciprocal deadlock.
 		return Other.GetFName().LexicalLess(Ship.GetFName());
 	}
@@ -288,4 +314,41 @@ FEnemyShipAvoidanceDecision UShipSwarmSubsystem::EvaluateAvoidance(AEnemyShip* S
 		}
 	}
 	return Decision;
+}
+
+bool UShipSwarmSubsystem::IsReturnDestinationClear(AEnemyShip* Ship)
+{
+	if (!IsValid(Ship) || Ship->IsDeathHandled())
+	{
+		return false;
+	}
+
+	const UEnemyShipNavigationComponent* Navigation = Ship->GetNavigationComponent();
+	FTransform HomeTransform;
+	if (!Navigation || !Navigation->GetSpawnHomeTransform(HomeTransform))
+	{
+		return false;
+	}
+
+	EnemyShipAvoidance::FPlanarForecast Destination = EnemyShipAvoidance::MakeForecast(*Ship);
+	const FVector HomeLocation = HomeTransform.GetLocation();
+	Destination.Position = FVector2D(HomeLocation.X, HomeLocation.Y);
+	Destination.YawRadians = FMath::DegreesToRadians(HomeTransform.Rotator().Yaw);
+	Destination.Velocity = FVector2D::ZeroVector;
+	Destination.YawRateRadians = 0.0f;
+
+	for (AEnemyShip* Other : GetSquadMembers(Ship->SquadID))
+	{
+		if (!IsValid(Other) || Other == Ship || Other->IsDeathHandled())
+		{
+			continue;
+		}
+
+		const EnemyShipAvoidance::FPlanarForecast OtherState = EnemyShipAvoidance::MakeForecast(*Other);
+		if (EnemyShipAvoidance::Overlaps(Destination, OtherState, 0.0f))
+		{
+			return false;
+		}
+	}
+	return true;
 }

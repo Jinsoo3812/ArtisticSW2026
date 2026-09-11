@@ -300,6 +300,9 @@ bool FEnemyShipDeterministicAvoidanceTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
+	First->DispatchBeginPlay();
+	Second->DispatchBeginPlay();
+	Target->DispatchBeginPlay();
 	First->BuoyancyRoot->SetSimulatePhysics(false);
 	Second->BuoyancyRoot->SetSimulatePhysics(false);
 	Target->BuoyancyRoot->SetSimulatePhysics(false);
@@ -331,6 +334,57 @@ bool FEnemyShipDeterministicAvoidanceTest::RunTest(const FString& Parameters)
 	YieldingShip->GetNavigationComponent()->TickComponent(0.2f, LEVELTICK_All, nullptr);
 	TestTrue(TEXT("Avoidance maneuver latches"), YieldingShip->GetNavigationComponent()->IsAvoidanceManeuverActive());
 	TestTrue(TEXT("Yielding ship applies reverse thrust"), YieldingShip->GetCurrentMoveInput() < 0.0f);
+
+	FEnemyShipNavigationProfile ReturnProfile = First->GetNavigationComponent()->GetNavigationProfile();
+	ReturnProfile.ReturnArrivalDistance = 100.0f;
+	ReturnProfile.ReturnTriggerDistance = 1000.0f;
+	ReturnProfile.LostTargetReturnDelay = 0.0f;
+	First->GetNavigationComponent()->SetNavigationProfile(ReturnProfile);
+	Second->GetNavigationComponent()->SetNavigationProfile(ReturnProfile);
+	First->GetNavigationComponent()->SetTargetShip(nullptr);
+	Second->GetNavigationComponent()->SetTargetShip(nullptr);
+	First->GetNavigationComponent()->SetNavigationEnabled(false);
+	First->GetNavigationComponent()->SetNavigationEnabled(true);
+	FVector FirstHome = FVector::ZeroVector;
+	TestTrue(
+		TEXT("Returning ship captured its spawn home"),
+		First->GetNavigationComponent()->GetResolvedHomeLocation(FirstHome));
+	FVector SecondHome = FVector::ZeroVector;
+	TestTrue(
+		TEXT("Stopped ship captured its spawn home"),
+		Second->GetNavigationComponent()->GetResolvedHomeLocation(SecondHome));
+	First->SetActorLocation(FirstHome + FVector(10000.0f, 0.0f, 0.0f));
+	Second->GetNavigationComponent()->SetNavigationEnabled(true);
+	Second->SetActorLocation(SecondHome);
+	Second->GetNavigationComponent()->TickComponent(0.25f, LEVELTICK_All, nullptr);
+	TestEqual(
+		TEXT("Squadmate is Idle at its completed return point"),
+		Second->GetNavigationComponent()->GetCurrentState(),
+		ENavalCombatState::Idle);
+	Second->GetNavigationComponent()->SetNavigationEnabled(false);
+	First->SetActorLocation(FirstHome + FVector(5000.0f, 0.0f, 0.0f));
+	Second->SetActorLocation(FirstHome + FVector(5000.0f, 0.0f, 0.0f));
+	TestEqual(TEXT("Return test keeps both squad members registered"), Swarm->GetSquadMembers(First->SquadID).Num(), 2);
+	TestTrue(
+		TEXT("Return test ships are within hull avoidance range"),
+		FVector::Dist2D(First->GetActorLocation(), Second->GetActorLocation()) < 1.0f);
+	TestFalse(TEXT("Stopped return obstacle remains alive"), Second->IsDeathHandled());
+	First->GetNavigationComponent()->TickComponent(0.25f, LEVELTICK_All, nullptr);
+	TestEqual(
+		TEXT("Targetless ship enters Return"),
+		First->GetNavigationComponent()->GetCurrentState(),
+		ENavalCombatState::Return);
+	TestTrue(
+		TEXT("Return prediction includes a stopped targetless squadmate"),
+		Swarm->EvaluateAvoidance(First).bShouldYield);
+	TestTrue(
+		TEXT("Returning ship avoids a stopped targetless squadmate"),
+		First->GetNavigationComponent()->IsAvoidanceManeuverActive());
+
+	Second->SetActorLocation(FirstHome);
+	TestFalse(TEXT("Occupied return transform blocks completion"), Swarm->IsReturnDestinationClear(First));
+	Second->SetActorLocation(FirstHome + FVector(10000.0f, 0.0f, 0.0f));
+	TestTrue(TEXT("Separated return transform permits completion"), Swarm->IsReturnDestinationClear(First));
 	return true;
 }
 

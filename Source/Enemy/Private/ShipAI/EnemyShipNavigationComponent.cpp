@@ -91,6 +91,26 @@ void UEnemyShipNavigationComponent::TickComponent(
 		&& LostTargetElapsed >= NavigationProfile.LostTargetReturnDelay;
 	LastNavigationOutput = FEnemyShipNavigationModel::Evaluate(CurrentState, NavigationProfile, Context);
 	CurrentState = LastNavigationOutput.State;
+	if (PreviousState == ENavalCombatState::Return && CurrentState == ENavalCombatState::Idle)
+	{
+		bool bDestinationClear = true;
+		if (UWorld* World = GetWorld())
+		{
+			if (UShipSwarmSubsystem* Swarm = World->GetSubsystem<UShipSwarmSubsystem>())
+			{
+				bDestinationClear = Swarm->IsReturnDestinationClear(Ship);
+			}
+		}
+		if (!bDestinationClear)
+		{
+			// Stay in Return and retry next tick. Zero input avoids repeatedly pushing
+			// into a hull occupying the teleport destination.
+			CurrentState = ENavalCombatState::Return;
+			LastNavigationOutput.State = ENavalCombatState::Return;
+			LastNavigationOutput.MoveInput = 0.0f;
+			LastNavigationOutput.TurnInput = 0.0f;
+		}
+	}
 	if (PreviousState != CurrentState)
 	{
 		OnNavigationStateChanged.Broadcast(PreviousState, CurrentState);
@@ -333,7 +353,8 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 void UEnemyShipNavigationComponent::UpdateAvoidance(float DeltaTime)
 {
 	AEnemyShip* Ship = OwnerShip.Get();
-	if (!Ship || HasActiveOverride() || !TargetShip)
+	const bool bCanAvoidWithoutTarget = CurrentState == ENavalCombatState::Return;
+	if (!Ship || HasActiveOverride() || (!TargetShip && !bCanAvoidWithoutTarget))
 	{
 		ResetAvoidance();
 		return;
