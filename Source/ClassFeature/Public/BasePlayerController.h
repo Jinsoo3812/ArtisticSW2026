@@ -7,6 +7,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
 #include "TimerManager.h"
+#include "Upgrade/ShipUpgradeTypes.h"
 #include "ArtisticSW2026PlayerController.h"
 #include "BasePlayerController.generated.h"
 
@@ -22,6 +23,8 @@ class AStorageChest;
 class UStorageWindowWidget;
 class UFacilityHubWidget;
 class UStatusWindowWidget;
+class AFacilityHubActor;
+class ASharedShipUpgradeState;
 
 struct FStorageRevealState
 {
@@ -46,9 +49,23 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Facility Hub")
 	bool IsFacilityHubOpen() const;
 
+	UFUNCTION(Server, Reliable)
+	void ServerReleaseFacilityHub(AFacilityHubActor* FacilityHub);
+
+	UFUNCTION(Server, Reliable)
+	void ServerRequestActivateSharedShipUpgrade(ASharedShipUpgradeState* SharedState, FName NodeId);
+
+	UFUNCTION(Client, Reliable)
+	void ClientReceiveSharedShipUpgradeResult(
+		ASharedShipUpgradeState* SharedState,
+		FName NodeId,
+		EShipUpgradeActivationResult Result,
+		const FText& Message);
+
 	/*--- 초기화 ---*/
 	virtual void SetupInputComponent() override;
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaTime) override;
 
 	/*--- 네트워크 초기화 ---*/
@@ -114,6 +131,9 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UFacilityHubWidget> FacilityHubWidget;
+
+	UPROPERTY()
+	TObjectPtr<AFacilityHubActor> ActiveFacilityHub;
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UPlayerHUDWidget> PlayerHUDWidgetClass;

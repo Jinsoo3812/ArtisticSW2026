@@ -57,6 +57,7 @@
 #include "LandscapeProxy.h"
 #include "WaterSurfaceQueryLibrary.h"
 #include "Upgrade/ShipUpgradeComponent.h"
+#include "Upgrade/SharedShipUpgradeState.h"
 #include "Repair/ShipRepairPointComponent.h"
 #include "Repair/ShipLeakDamageGameplayEffect.h"
 #include "Materials/MaterialParameterCollection.h"
@@ -341,6 +342,30 @@ void AShip::BeginPlay()
 	{
 		InitializeDefaultAttributes();
 	}
+	// The UI preview stage owns a local, non-replicated copy of the ship. A real
+	// player ship can also have an Owner (normally a replicated controller), so
+	// checking only for a null Owner incorrectly excludes the real ship.
+	const AActor* ShipOwner = GetOwner();
+	const bool bIsLocalPreviewShip = ShipOwner && !ShipOwner->GetIsReplicated();
+	if (HasAuthority() && !IsEnemyShipForEffects() && !bIsLocalPreviewShip)
+	{
+		SharedUpgradeState = ASharedShipUpgradeState::Find(this);
+		if (!SharedUpgradeState)
+		{
+			SharedUpgradeState = GetWorld()->SpawnActor<ASharedShipUpgradeState>();
+		}
+		if (SharedUpgradeState)
+		{
+			SharedUpgradeState->RegisterPlayerShip(this);
+		}
+	}
+	else if (HasAuthority() && !IsEnemyShipForEffects())
+	{
+		UE_LOG(LogTemp, Verbose,
+			TEXT("[SharedShipState] Skipped local preview Ship=%s Owner=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(ShipOwner));
+	}
 	if (HasAuthority() && AbilitySystemComponent && !IsEnemyShipForEffects())
 	{
 		ShipHealthChangedDelegateHandle = AbilitySystemComponent
@@ -458,6 +483,10 @@ void AShip::BeginPlay()
 
 void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (HasAuthority() && SharedUpgradeState)
+	{
+		SharedUpgradeState->UnregisterPlayerShip(this);
+	}
 	if (HasAuthority())
 	{
 		ForceExitAllControlModes();
@@ -1015,22 +1044,16 @@ void AShip::PossessedBy(AController* NewController)
 	if (const APlayerController* PlayerController = Cast<APlayerController>(NewController))
 	{
 		APlayerState* InPlayerState = PlayerController->PlayerState;
-		if (AppliedUpgradePlayerState && AppliedUpgradePlayerState != InPlayerState)
-		{
-			if (UShipUpgradeComponent* PreviousUpgrade = AppliedUpgradePlayerState->FindComponentByClass<UShipUpgradeComponent>())
-			{
-				PreviousUpgrade->OnShipStatsChanged.RemoveDynamic(this, &AShip::HandlePlayerUpgradeStatsChanged);
-			}
-		}
-		const bool bFirstApplicationForPlayer = AppliedUpgradePlayerState != InPlayerState;
-		if (ApplyPlayerUpgrades(InPlayerState, bFirstApplicationForPlayer))
-		{
-			AppliedUpgradePlayerState = InPlayerState;
-			if (UShipUpgradeComponent* Upgrade = InPlayerState->FindComponentByClass<UShipUpgradeComponent>())
-			{
-				Upgrade->OnShipStatsChanged.AddUniqueDynamic(this, &AShip::HandlePlayerUpgradeStatsChanged);
-			}
-		}
+		UShipUpgradeComponent* DriverUpgrade = SharedUpgradeState
+			? SharedUpgradeState->GetUpgradeComponent()
+			: nullptr;
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradeTrace][ShipPossessed] Ship=%s Controller=%s PlayerState=%s SharedUpgrade=%s ActiveNodes=%d"),
+			*GetNameSafe(this),
+			*GetNameSafe(NewController),
+			*GetNameSafe(InPlayerState),
+			*GetNameSafe(DriverUpgrade),
+			DriverUpgrade ? DriverUpgrade->GetActiveNodeIds().Num() : -1);
 
 		if (PlayerController->IsLocalController() && RidingPlayer)
 		{
@@ -1041,13 +1064,6 @@ void AShip::PossessedBy(AController* NewController)
 
 void AShip::UnPossessed()
 {
-	if (AppliedUpgradePlayerState)
-	{
-		if (UShipUpgradeComponent* Upgrade = AppliedUpgradePlayerState->FindComponentByClass<UShipUpgradeComponent>())
-		{
-			Upgrade->OnShipStatsChanged.RemoveDynamic(this, &AShip::HandlePlayerUpgradeStatsChanged);
-		}
-	}
 	ResetToFollowCamera();
 	RememberFollowCameraState(Cast<APlayerController>(GetController()));
 
@@ -2907,8 +2923,10 @@ void AShip::ApplyStatSnapshot(const FShipStatSnapshot& Snapshot, bool bRefillHea
 
 bool AShip::ApplyPlayerUpgrades(APlayerState* InPlayerState, bool bRefillHealth)
 {
-	if (!HasAuthority() || !InPlayerState) return false;
-	UShipUpgradeComponent* UpgradeComponent = InPlayerState->FindComponentByClass<UShipUpgradeComponent>();
+	if (!HasAuthority()) return false;
+	UShipUpgradeComponent* UpgradeComponent = SharedUpgradeState
+		? SharedUpgradeState->GetUpgradeComponent()
+		: (InPlayerState ? InPlayerState->FindComponentByClass<UShipUpgradeComponent>() : nullptr);
 	if (!UpgradeComponent || !UpgradeComponent->UpgradeTree) return false;
 	if (!bUseUpgradeDrivenPlayerStats)
 	{

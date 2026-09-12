@@ -31,11 +31,18 @@ void UShipUpgradeGraphWidget::RebuildGraph(const TArray<FShipUpgradeNodeView>& I
 {
 	if (!CanvasPanel_Graph)
 	{
-		/* UE_LOG(LogTemp, Error,
-			TEXT("[ShipUpgradeUI] FAILED: CanvasPanel_Graph is not bound. Graph=%s"),
-			*GetNameSafe(this)); */
+		UE_LOG(LogTemp, Error,
+			TEXT("[ShipUpgradePipeline][GraphFailed] Graph=%s Reason=CanvasNotBound Views=%d"),
+			*GetNameSafe(this), InViews.Num());
 		return;
 	}
+	UE_LOG(LogTemp, Warning,
+		TEXT("[ShipUpgradePipeline][GraphRebuildStart] Graph=%s Views=%d NodeClass=%s ConnectionClass=%s Canvas=%s"),
+		*GetNameSafe(this),
+		InViews.Num(),
+		*GetNameSafe(NodeWidgetClass.Get()),
+		*GetNameSafe(ConnectionWidgetClass.Get()),
+		*GetNameSafe(CanvasPanel_Graph));
 
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[ShipUpgradeUI] RebuildGraph started. Graph=%s Views=%d NodeClass=%s ConnectionClass=%s CanvasSize=%s"),
@@ -149,16 +156,17 @@ void UShipUpgradeGraphWidget::RebuildGraph(const TArray<FShipUpgradeNodeView>& I
 	}
 	else
 	{
-		/* UE_LOG(LogTemp, Error,
-			TEXT("[ShipUpgradeUI] FAILED: NodeWidgetClass is None; no node widgets can be created.")); */
+		UE_LOG(LogTemp, Error,
+			TEXT("[ShipUpgradePipeline][GraphFailed] Graph=%s Reason=NodeWidgetClassNone Views=%d"),
+			*GetNameSafe(this), InViews.Num());
 	}
 
-	/* UE_LOG(LogTemp, Log,
-		TEXT("[ShipUpgradeUI] RebuildGraph finished. RequestedNodes=%d CreatedNodes=%d CreatedConnections=%d CanvasChildren=%d"),
+	UE_LOG(LogTemp, Warning,
+		TEXT("[ShipUpgradePipeline][GraphRebuildDone] RequestedNodes=%d CreatedNodes=%d CreatedConnections=%d CanvasChildren=%d"),
 		InViews.Num(),
 		CreatedNodeCount,
 		CreatedConnectionCount,
-		CanvasPanel_Graph->GetChildrenCount()); */
+		CanvasPanel_Graph->GetChildrenCount());
 }
 
 FVector2D UShipUpgradeGraphWidget::GetNodeDisplayPosition(FName NodeId) const

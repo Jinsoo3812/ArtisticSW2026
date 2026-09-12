@@ -3,10 +3,12 @@
 
 #include "BasePlayerController.h"
 #include "BasePlayer.h"
+#include "BasePlayerState.h"
 #include "UI/PlayerHUDWidget.h"
 #include "EnhancedInputSubsystems.h"
 #include "EnhancedInputComponent.h"
 #include "Engine/LocalPlayer.h"
+#include "EngineUtils.h"
 #include "InputMappingContext.h"
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
@@ -23,11 +25,16 @@
 #include "UI/StatusWindowWidget.h"
 #include "WaterSubsystem.h"
 #include "GameFramework/GameStateBase.h"
+#include "Upgrade/SharedShipUpgradeState.h"
+#include "Upgrade/ShipUpgradeComponent.h"
+#include "Upgrade/ShipUpgradeTreeDataAsset.h"
+#include "Ship.h"
 
 
 void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 {
-	if (!HasAuthority() || !IsValid(Cast<AFacilityHubActor>(ContextActor)))
+	AFacilityHubActor* FacilityHub = Cast<AFacilityHubActor>(ContextActor);
+	if (!HasAuthority() || !IsValid(FacilityHub) || !FacilityHub->TryAcquire(this))
 	{
 		/* UE_LOG(LogTemp, Warning,
 			TEXT("[FacilityHubFlow][SERVER] Open rejected. Controller=%s Authority=%s Context=%s ContextClass=%s"),
@@ -36,6 +43,81 @@ void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 			*GetNameSafe(ContextActor),
 			*GetNameSafe(ContextActor ? ContextActor->GetClass() : nullptr)); */
 		return;
+	}
+	ActiveFacilityHub = FacilityHub;
+
+	// The shared upgrade state is session infrastructure, so opening the server-
+	// authoritative facility must guarantee it exists. Ship BeginPlay remains an
+	// early registration path, but is no longer the single point of failure.
+	ASharedShipUpgradeState* SharedState = ASharedShipUpgradeState::Find(this);
+	if (!SharedState)
+	{
+		SharedState = GetWorld()->SpawnActor<ASharedShipUpgradeState>();
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Spawn State=%s"),
+			*GetNameSafe(this), *GetNameSafe(SharedState));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Reuse State=%s Ship=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(SharedState),
+			*GetNameSafe(SharedState->GetCurrentPlayerShip()));
+	}
+
+	// Preserve the designer-authored tree configured on BP_BasePlayerState. The
+	// shared component replicates that asset reference to both clients; its own
+	// hard-coded load is only a last-resort fallback for unconfigured test worlds.
+	if (SharedState)
+	{
+		UShipUpgradeComponent* SharedUpgrade = SharedState->GetUpgradeComponent();
+		const ABasePlayer* RequestingPlayer = Cast<ABasePlayer>(GetPawn());
+		const ABasePlayerState* RequestingState = GetPlayerState<ABasePlayerState>();
+		const UShipUpgradeComponent* ConfiguredUpgrade = RequestingState
+			? RequestingState->GetShipUpgradeComponent()
+			: nullptr;
+		if (SharedUpgrade && ConfiguredUpgrade && ConfiguredUpgrade->UpgradeTree)
+		{
+			SharedUpgrade->ConfigureForUseCase(
+				ConfiguredUpgrade->UpgradeTree,
+				SharedUpgrade->PreviewBaseStats,
+				false);
+			SharedState->ForceNetUpdate();
+			UE_LOG(LogTemp, Warning,
+				TEXT("[ShipUpgradePipeline][FacilityConfigureTree] State=%s Source=%s Tree=%s Nodes=%d"),
+				*GetNameSafe(SharedState),
+				*GetNameSafe(ConfiguredUpgrade),
+				*GetNameSafe(ConfiguredUpgrade->UpgradeTree.Get()),
+				ConfiguredUpgrade->UpgradeTree->Nodes.Num());
+		}
+		if (SharedUpgrade)
+		{
+			SharedUpgrade->SetIgnoreMaterialCostsForTesting(
+				RequestingPlayer && RequestingPlayer->IsIgnoringShipUpgradeMaterialCostsForTest());
+			SharedState->ForceNetUpdate();
+		}
+	}
+
+	if (SharedState && !IsValid(SharedState->GetCurrentPlayerShip()))
+	{
+		AShip* FoundPlayerShip = nullptr;
+		for (TActorIterator<AShip> It(GetWorld()); It; ++It)
+		{
+			AShip* Candidate = *It;
+			if (IsValid(Candidate) && Candidate->GetIsReplicated() && !Candidate->IsEnemyShipForEffects())
+			{
+				FoundPlayerShip = Candidate;
+				break;
+			}
+		}
+		if (FoundPlayerShip)
+		{
+			SharedState->RegisterPlayerShip(FoundPlayerShip);
+		}
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradePipeline][FacilityEnsureShip] State=%s FoundShip=%s"),
+			*GetNameSafe(SharedState), *GetNameSafe(FoundPlayerShip));
 	}
 
 	/* UE_LOG(LogTemp, Log,
@@ -58,6 +140,7 @@ void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* Context
 			TEXT("[FacilityHubFlow][CLIENT] FAILED: Invalid local controller or context.")); */
 		return;
 	}
+	ActiveFacilityHub = Cast<AFacilityHubActor>(ContextActor);
 
 	// Interacting with a facility while its hub is already open is a toggle:
 	// close the current hub and do not immediately construct a replacement.
@@ -110,6 +193,11 @@ void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* Context
 			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeFacilityHub);
 		}
 		ApplyInventoryInputMode(false);
+		if (ActiveFacilityHub)
+		{
+			ServerReleaseFacilityHub(ActiveFacilityHub);
+			ActiveFacilityHub = nullptr;
+		}
 		return;
 	}
 
@@ -128,6 +216,11 @@ void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* Context
 			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeFacilityHub);
 		}
 		ApplyInventoryInputMode(false);
+		if (ActiveFacilityHub)
+		{
+			ServerReleaseFacilityHub(ActiveFacilityHub);
+			ActiveFacilityHub = nullptr;
+		}
 		return;
 	}
 
@@ -154,6 +247,11 @@ void ABasePlayerController::CloseFacilityHub()
 		*GetNameSafe(FacilityHubWidget)); */
 	FacilityHubWidget->RemoveFromParent();
 	FacilityHubWidget = nullptr;
+	if (ActiveFacilityHub)
+	{
+		ServerReleaseFacilityHub(ActiveFacilityHub);
+		ActiveFacilityHub = nullptr;
+	}
 	if (PlayerHUDWidget)
 	{
 		PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeFacilityHub);
@@ -164,6 +262,67 @@ void ABasePlayerController::CloseFacilityHub()
 bool ABasePlayerController::IsFacilityHubOpen() const
 {
 	return FacilityHubWidget && FacilityHubWidget->IsInViewport();
+}
+
+void ABasePlayerController::ServerReleaseFacilityHub_Implementation(AFacilityHubActor* FacilityHub)
+{
+	if (IsValid(FacilityHub))
+	{
+		FacilityHub->Release(this);
+	}
+	if (ActiveFacilityHub == FacilityHub)
+	{
+		ActiveFacilityHub = nullptr;
+	}
+}
+
+void ABasePlayerController::ServerRequestActivateSharedShipUpgrade_Implementation(
+	ASharedShipUpgradeState* SharedState,
+	FName NodeId)
+{
+	UShipUpgradeComponent* SharedUpgrade = IsValid(SharedState)
+		&& SharedState == ASharedShipUpgradeState::Find(this)
+		&& IsValid(ActiveFacilityHub)
+		&& ActiveFacilityHub->IsOccupiedBy(this)
+		? SharedState->GetUpgradeComponent()
+		: nullptr;
+	ABasePlayer* RequestingPlayer = Cast<ABasePlayer>(GetPawn());
+	UInventoryComponent* Inventory = RequestingPlayer
+		? RequestingPlayer->GetInventoryComponent()
+		: nullptr;
+
+	EShipUpgradeActivationResult Result = EShipUpgradeActivationResult::NotAuthority;
+	if (SharedUpgrade && Inventory)
+	{
+		const bool bIgnoreCosts = RequestingPlayer->IsIgnoringShipUpgradeMaterialCostsForTest();
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradeTrace][SharedRequestOptions] Player=%s IgnoreMaterialCosts=%s"),
+			*GetNameSafe(RequestingPlayer),
+			bIgnoreCosts ? TEXT("true") : TEXT("false"));
+		Result = SharedUpgrade->ActivateNodeWithInventoryProvider(NodeId, Inventory, bIgnoreCosts);
+		SharedState->ForceNetUpdate();
+		if (AShip* Ship = SharedState->GetCurrentPlayerShip())
+		{
+			Ship->ForceNetUpdate();
+		}
+	}
+
+	const FText Message = SharedUpgrade
+		? SharedUpgrade->GetActivationMessage(NodeId, Result)
+		: NSLOCTEXT("ShipUpgrade", "SharedRequestRejected", "작업대 사용 권한 또는 공용 배 상태를 확인할 수 없습니다.");
+	ClientReceiveSharedShipUpgradeResult(SharedState, NodeId, Result, Message);
+}
+
+void ABasePlayerController::ClientReceiveSharedShipUpgradeResult_Implementation(
+	ASharedShipUpgradeState* SharedState,
+	FName NodeId,
+	EShipUpgradeActivationResult Result,
+	const FText& Message)
+{
+	if (IsValid(SharedState) && SharedState->GetUpgradeComponent())
+	{
+		SharedState->GetUpgradeComponent()->NotifyActivationResult(NodeId, Result, Message);
+	}
 }
 
 
@@ -209,6 +368,16 @@ void ABasePlayerController::BeginPlay()
 	}
 }
 
+void ABasePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (HasAuthority() && ActiveFacilityHub)
+	{
+		ActiveFacilityHub->Release(this);
+		ActiveFacilityHub = nullptr;
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
 void ABasePlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
@@ -248,12 +417,25 @@ void ABasePlayerController::OnUIInputPressed(FGameplayTag InputTag)
 void ABasePlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
+	if (HasAuthority() && ActiveFacilityHub)
+	{
+		ActiveFacilityHub->Release(this);
+		ActiveFacilityHub = nullptr;
+	}
+	if (IsLocalController() && IsFacilityHubOpen())
+	{
+		CloseFacilityHub();
+	}
 	BindHUDToCurrentPlayer();
 }
 
 void ABasePlayerController::OnRep_Pawn()
 {
 	Super::OnRep_Pawn();
+	if (IsFacilityHubOpen())
+	{
+		CloseFacilityHub();
+	}
 	BindHUDToCurrentPlayer();
 }
 

@@ -534,6 +534,15 @@ void ABasePlayer::ApplyShipUpgradeTestFlags()
 	}
 }
 
+bool ABasePlayer::IsIgnoringShipUpgradeMaterialCostsForTest() const
+{
+#if UE_BUILD_SHIPPING
+	return false;
+#else
+	return bIgnoreShipUpgradeMaterialCostsForTest;
+#endif
+}
+
 void ABasePlayer::PrepareForCannonControl()
 {
 	ConsumeMovementInputVector();

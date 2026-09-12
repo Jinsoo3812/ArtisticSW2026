@@ -26,7 +26,7 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship Upgrade")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_UpgradeTree, Category = "Ship Upgrade")
 	TObjectPtr<UShipUpgradeTreeDataAsset> UpgradeTree;
 
 	/** Used by UI before a combat ship exists. Keep it synchronized with PlayerShip's base DT row. */
@@ -43,7 +43,7 @@ public:
 	 * Development-only material bypass for testing this component.
 	 * It is forcibly ignored in Shipping builds and does not affect crafting or any other inventory consumer.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship Upgrade|Testing", meta = (DevelopmentOnly))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_TestMaterialBypass, Category = "Ship Upgrade|Testing", meta = (DevelopmentOnly))
 	bool bIgnoreMaterialCostsForTesting = false;
 
 	UPROPERTY(BlueprintAssignable, Category = "Ship Upgrade|Events")
@@ -118,8 +118,22 @@ public:
 	void RestoreActiveNodeIds(const TArray<FName>& InActiveNodeIds);
 	void ConfigureForUseCase(UShipUpgradeTreeDataAsset* InTree, const FShipStatSnapshot& InBaseStats, bool bEnablePersistence);
 	EShipUpgradeActivationResult ActivateNodeForUseCase(FName NodeId);
+	/** Server-only activation using the requesting player's inventory for shared progression. */
+	EShipUpgradeActivationResult ActivateNodeWithInventoryProvider(
+		FName NodeId,
+		IShipUpgradeInventoryProvider* InventoryProvider,
+		bool bIgnoreMaterialCosts = false);
+	/** Delivers a PlayerController RPC result to UI bound to this component. */
+	void NotifyActivationResult(FName NodeId, EShipUpgradeActivationResult Result, const FText& Message);
+	FText GetActivationMessage(FName NodeId, EShipUpgradeActivationResult Result) const;
 
 protected:
+	UFUNCTION()
+	void OnRep_UpgradeTree();
+
+	UFUNCTION()
+	void OnRep_TestMaterialBypass();
+
 	UPROPERTY(ReplicatedUsing = OnRep_ActiveNodeIds)
 	TArray<FName> ActiveNodeIds;
 
@@ -133,8 +147,11 @@ protected:
 	void ClientReceiveActivationResult(FName NodeId, EShipUpgradeActivationResult Result, const FText& Message);
 
 private:
-	EShipUpgradeActivationResult ActivateNodeInternal(FName NodeId, bool bPersist);
-	FText GetActivationMessage(FName NodeId, EShipUpgradeActivationResult Result) const;
+	EShipUpgradeActivationResult ActivateNodeInternal(
+		FName NodeId,
+		bool bPersist,
+		IShipUpgradeInventoryProvider* InventoryProviderOverride = nullptr,
+		bool bIgnoreMaterialCostsOverride = false);
 	FString GetResolvedSaveSlotName() const;
 	void BroadcastStateDiff(const TArray<FName>& PreviousNodeIds);
 	IShipUpgradeInventoryProvider* ResolveInventoryProvider() const;

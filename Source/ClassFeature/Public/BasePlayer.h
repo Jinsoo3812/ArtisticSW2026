@@ -126,6 +126,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Skill")
 	UPlayerSkillComponent* GetPlayerSkillComponent() const;
 
+	/** Server-side source of truth for the per-character ship-upgrade test bypass. */
+	bool IsIgnoringShipUpgradeMaterialCostsForTest() const;
+
 protected:
 	UPROPERTY()
 	TWeakObjectPtr<class UAbilitySystemComponent> CachedAbilitySystemComponent;

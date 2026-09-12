@@ -466,6 +466,7 @@ class ABombardment;
 class ABombardmentPreview;
 class ACannon;
 class UShipRepairPointComponent;
+class ASharedShipUpgradeState;
 
 USTRUCT(BlueprintType)
 struct FShipStatRow : public FTableRowBase
@@ -1126,10 +1127,6 @@ protected:
 	UPROPERTY()
 	APlayerController* CachedPlayerController = nullptr;
 
-	/** Prevents repeated boarding by the same player from refilling upgraded health. */
-	UPROPERTY(Transient)
-	TObjectPtr<APlayerState> AppliedUpgradePlayerState;
-
 	// ---- Custom Replication State & Interp Configuration ----
 	UPROPERTY(Replicated)
 	FShipReplicatedState ReplicatedState;
@@ -1197,6 +1194,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UShipAttributeSet> AttributeSet;
+
+	/** Session shared progression. Live health, repair, anchor and physics remain on this ship. */
+	UPROPERTY(Transient)
+	TObjectPtr<ASharedShipUpgradeState> SharedUpgradeState;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UNetworkPhysicsComponent> NetworkPhysicsComponent;
