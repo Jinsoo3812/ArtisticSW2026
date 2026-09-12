@@ -6,9 +6,9 @@
 #include "DeckAI/DeckPointReservation.h"
 #include "Ship.h"
 #include "ShipAI/EnemyShipNavigationTypes.h"
-#include "EnemyDropData.h"
 #include "WaveSystem/Data/WaveSpawnTypes.h"
 #include "GameplayAbilitySpecHandle.h"
+#include "ItemSpawn/LootSpawnPoint.h"
 #include "EnemyShip.generated.h"
 
 class ACannon;
@@ -120,6 +120,8 @@ public:
 	TObjectPtr<USWCabinWaterCullComponent> CabinWaterCullComponent;
 
 protected:
+	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void PostInitializeComponents() override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	/** Enemy ships receive their authored stats exclusively from EnemyShipArchetype.SpecRow. */
@@ -262,6 +264,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|AI|Data")
 	TObjectPtr<UEnemyShipArchetypeData> EnemyShipArchetype;
 
+	/** Per-instance Chest settings forwarded to every ChestSpawnPoint Child Actor owned by this ship. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest", meta = (ShowOnlyInnerProperties))
+	FChestSpawnPointChestSettings ChestSpawnPointChestSettings;
+
+	/** Per-instance Loot settings forwarded to every ChestSpawnPoint Child Actor owned by this ship. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Loot", meta = (ShowOnlyInnerProperties))
+	FChestSpawnPointLootSettings ChestSpawnPointLootSettings;
+
 	/** Per-level-instance override applied after the Archetype navigation profile is copied. */
 	/** Legacy serialized field. Runtime navigation always uses counterclockwise orbiting. */
 	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Enemy ships always orbit counterclockwise."))
@@ -290,6 +300,7 @@ public:
 	bool bLegacyAutomaticCannonFireWithoutArchetype = true;
 
 protected:
+	void ApplyChestSpawnPointSettings();
 	void EvaluateCrewControlState();
 	void DisableEnemyShipAIForCapture();
 	void ApplyDistanceOptimizationState();
@@ -318,7 +329,6 @@ protected:
 	void OnDeathStarted(UBaseHealthComponent* InHealthComponent);
 
 	void HandleShipDeath();
-	void InitializeEnemyDropData();
 	void DropAtDeathLocation(const FVector& DeathLocation, const FRotator& DeathRotation);
 
 	// ---- Death Properties ----
@@ -329,34 +339,12 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Death")
 	bool bDeathHandled = false;
 	
-	// 사망 시 Drop 아이템 정보 담은 Data Table
-	UPROPERTY(EditDefaultsOnly, Category = "Ship|Drop")
-	TObjectPtr<UDataTable> EnemyDropDataTable;
-
-	// 적이 가지는 고유 식별 Tag (For Drop)
-	UPROPERTY(EditDefaultsOnly, Category = "Ship|Drop")
-	FGameplayTag EnemyTypeTag;
-
-	/** 침몰 시 스폰할 상자 정의 DataAsset (설정 시 데이터 기반 드랍 테이블/퀘스트 아이템 사용) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Drop|Storage")
+	/** 침몰 시 생성할 상자 정의. 갑판 상자와 같은 Ship 정의를 지정할 수 있다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Chest Reward")
 	TObjectPtr<UChestDefinition> SunkChestDefinition;
 
-	// 죽었을 때, 드랍할 Storage 클래스 (SunkChestDefinition 미설정 시 Fallback)
-	UPROPERTY(EditDefaultsOnly, Category = "Ship|Drop|Storage")
-	TSubclassOf<AStorageChest> EnemyCorpseStorageClass;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Ship|Drop|Storage", meta = (ClampMin = "1", UIMin = "1"))
-	int32 EnemyCorpseStorageSlotCount = 5;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Ship|Drop|Storage", meta = (ClampMin = "1", UIMin = "1"))
-	int32 EnemyCorpseStorageColumnCount = 4;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Ship|Drop|Storage")
+	UPROPERTY(EditDefaultsOnly, Category = "Ship|Chest Reward")
 	FVector EnemyCorpseStorageSpawnOffset = FVector(0.0f, 0.0f, 250.0f);
-
-	// 한 Ship이 드랍할 정보를 저장하는 구조체
-	UPROPERTY()
-	FEnemyDropData EnemyDropData;
 
 	UPROPERTY()
 	bool bHasDropped = false;

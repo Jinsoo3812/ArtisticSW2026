@@ -42,9 +42,12 @@
 #include "BossAI/ShipBossEnemy.h"
 #include "BaseEnemy.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/ChildActorComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "UObject/UnrealType.h"
 #include "SWCabinWaterCullComponent.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogEnemyShipChestSpawnPoint, Log, All);
 
 #if WITH_EDITOR
 #include "Editor.h"
@@ -717,6 +720,53 @@ AEnemyShip::AEnemyShip()
 	}
 }
 
+void AEnemyShip::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	ApplyChestSpawnPointSettings();
+}
+
+void AEnemyShip::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+	ApplyChestSpawnPointSettings();
+}
+
+void AEnemyShip::ApplyChestSpawnPointSettings()
+{
+	ChestSpawnPointLootSettings.SpawnMode = ChestSpawnPointChestSettings.SpawnMode;
+	FChestSpawnPointChestSettings DeckChestSettings = ChestSpawnPointChestSettings;
+	DeckChestSettings.Environment = EChestEnvironment::ShipDeck;
+	DeckChestSettings.OwningShip = this;
+
+	TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
+	for (UChildActorComponent* ChildActorComponent : ChildActorComponents)
+	{
+		if (!ChildActorComponent || !ChildActorComponent->GetName().StartsWith(TEXT("ChestSpawnPoint")))
+		{
+			continue;
+		}
+
+		UClass* ChildActorClass = ChildActorComponent->GetChildActorClass();
+		if (!ChildActorClass || !ChildActorClass->IsChildOf(AChestSpawnPoint::StaticClass()))
+		{
+			UE_LOG(LogEnemyShipChestSpawnPoint, Error,
+				TEXT("%s.%s must use AChestSpawnPoint (or a subclass), but its Child Actor Class is %s."),
+				*GetNameSafe(this),
+				*ChildActorComponent->GetName(),
+				*GetNameSafe(ChildActorClass));
+			continue;
+		}
+
+		if (AChestSpawnPoint* ChestSpawnPoint = Cast<AChestSpawnPoint>(ChildActorComponent->GetChildActor()))
+		{
+			ChestSpawnPoint->ApplyAuthoringSettings(
+				DeckChestSettings,
+				ChestSpawnPointLootSettings);
+		}
+	}
+}
+
 void AEnemyShip::BeginPlay()
 {
 	Super::BeginPlay();
@@ -758,10 +808,6 @@ void AEnemyShip::BeginPlay()
 			EnemyShipArchetype->ApplyToShip(this);
 		}
 	}
-
-	// 캐싱된 대포 목록 탐색
-	// Drop에 관한 정보 초기화
-	InitializeEnemyDropData();
 
 	// 군집 서브시스템에 등록
 	if (HasAuthority())
@@ -2083,48 +2129,6 @@ void AEnemyShip::HandleShipDeath()
 	StartSinking(DestroyAfterDeathDelay);
 }
 
-void AEnemyShip::InitializeEnemyDropData()
-{
-	// Drop 할 아이템을 Data Table에서 가져오기
-	EnemyDropData = FEnemyDropData();
-	if (!EnemyDropDataTable || !EnemyTypeTag.IsValid())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::InitializeEnemyDropData - Missing drop setup. Ship=%s DropTable=%s EnemyTypeTag=%s"),
-			*GetName(),
-			*GetNameSafe(EnemyDropDataTable),
-			*EnemyTypeTag.ToString());
-		return;
-	}
-
-	static const FString ContextString(TEXT("EnemyShipDropData"));
-	TArray<FEnemyDropDataRow*> Rows;
-	EnemyDropDataTable->GetAllRows(ContextString, Rows);
-
-	for (const FEnemyDropDataRow* Row : Rows)
-	{
-		if (!Row || Row->EnemyTag != EnemyTypeTag)
-		{
-			continue;
-		}
-
-		EnemyDropData.EnemyTag = Row->EnemyTag;
-		EnemyDropData.DropEntries = Row->DropEntries;
-		UE_LOG(LogTemp, Log, TEXT("AEnemyShip::InitializeEnemyDropData - Loaded %d drop entries. Ship=%s EnemyTypeTag=%s"),
-			EnemyDropData.DropEntries.Num(),
-			*GetName(),
-			*EnemyTypeTag.ToString());
-		break;
-	}
-
-	if (EnemyDropData.DropEntries.IsEmpty())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::InitializeEnemyDropData - No matching row or empty drop entries. Ship=%s EnemyTypeTag=%s Table=%s"),
-			*GetName(),
-			*EnemyTypeTag.ToString(),
-			*GetNameSafe(EnemyDropDataTable));
-	}
-}
-
 void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotator& DeathRotation)
 {
 	if (!HasAuthority() || bHasDropped)
@@ -2148,147 +2152,38 @@ void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotato
 	const FRotator SpawnRotation(0.0f, DeathRotation.Yaw, 0.0f);
 	const FTransform SpawnTransform(SpawnRotation, SpawnLocation);
 
-	// 1. 레벨에서 지정한 상자 정의 DataAsset이 있는 경우 (데이터 기반 스폰)
-	if (IsValid(SunkChestDefinition))
+	if (!IsValid(SunkChestDefinition) || !SunkChestDefinition->ChestClass)
 	{
-		TSubclassOf<AStorageChest> ChestClassToSpawn = SunkChestDefinition->ChestClass ? SunkChestDefinition->ChestClass : EnemyCorpseStorageClass;
-		if (!ChestClassToSpawn)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("%s: SunkChestDefinition and EnemyCorpseStorageClass are both missing valid ChestClass."), *GetName());
-			return;
-		}
-
-		AStorageChest* SpawnedStorage = World->SpawnActorDeferred<AStorageChest>(
-			ChestClassToSpawn,
-			SpawnTransform,
-			nullptr,
-			nullptr,
-			ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn
-		);
-
-		if (SpawnedStorage)
-		{
-			const int32 DropSeed = FMath::RandRange(1, MAX_int32);
-			SpawnedStorage->InitializeFromChestDefinition(SunkChestDefinition, DropSeed);
-			SpawnedStorage->SetPhysicsAndBuoyancyEnabled(true);
-			SpawnedStorage->FinishSpawning(SpawnTransform);
-			SpawnedStorage->ForceNetUpdate();
-
-			UE_LOG(LogTemp, Log, TEXT("AEnemyShip::DropAtDeathLocation - Spawned buoyant chest from SunkChestDefinition (%s). Ship=%s Location=%s"),
-				*GetNameSafe(SunkChestDefinition),
-				*GetName(),
-				*SpawnedStorage->GetActorLocation().ToString());
-			return;
-		}
-	}
-
-	// 2. 레거시/기존 구조체 기반 드랍 Fallback
-	if (!EnemyCorpseStorageClass)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("%s: EnemyCorpseStorageClass is not configured."), *GetName());
+		UE_LOG(LogTemp, Warning,
+			TEXT("AEnemyShip::DropAtDeathLocation - SunkChestDefinition or its ChestClass is missing. Ship=%s Definition=%s"),
+			*GetName(), *GetNameSafe(SunkChestDefinition));
 		return;
 	}
 
-	// Storage에 들어갈 아이템들의 배열 생성
-	TArray<FStorageItemEntry> StorageItems;
-	StorageItems.Reserve(EnemyDropData.DropEntries.Num());
-
-	int32 InvalidEntryCount = 0;
-	int32 FailedChanceCount = 0;
-
-	// 한 row에 있는 아이템 마다 반복
-	for (const FEnemyDropEntry& Entry : EnemyDropData.DropEntries)
-	{
-		if (!Entry.ItemTag.IsValid())
-		{
-			++InvalidEntryCount;
-			continue;
-		}
-
-		const float ClampedChance = FMath::Clamp(Entry.DropChance, 0.f, 1.f);
-		// 랜덤으로 뽑은 값이 확률보다 크면 Spawn 하지 않음, Guaranteed면 무조건 Spawn
-		if (!Entry.bGuaranteed && FMath::FRand() > ClampedChance)
-		{
-			++FailedChanceCount;
-			continue;
-		}
-
-		const int32 MinCount = FMath::Max(1, Entry.MinCount);
-		const int32 MaxCount = FMath::Max(MinCount, Entry.MaxCount);
-
-		FStorageItemEntry& StorageItem = StorageItems.AddDefaulted_GetRef();
-		StorageItem.ItemTag = Entry.ItemTag;
-		StorageItem.Count = FMath::RandRange(MinCount, MaxCount);
-	}
-
-	if (StorageItems.IsEmpty())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - No storage items selected, so chest will not spawn. Ship=%s EnemyTypeTag=%s Entries=%d Invalid=%d FailedChance=%d"),
-			*GetName(),
-			*EnemyTypeTag.ToString(),
-			EnemyDropData.DropEntries.Num(),
-			InvalidEntryCount,
-			FailedChanceCount);
-		return;
-	}
-
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-	AStorageChest* SpawnedStorage = World->SpawnActor<AStorageChest>(
-		EnemyCorpseStorageClass,
+	AStorageChest* SpawnedStorage = World->SpawnActorDeferred<AStorageChest>(
+		SunkChestDefinition->ChestClass,
 		SpawnTransform,
-		SpawnParameters
-	);
+		nullptr,
+		nullptr,
+		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
 
 	if (SpawnedStorage)
 	{
-		SpawnedStorage->SetReplicates(true);
-		SpawnedStorage->SetReplicateMovement(true);
-		SpawnedStorage->bAlwaysRelevant = true;
-		SpawnedStorage->SetNetCullDistanceSquared(FMath::Square(500000.0f));
-		SpawnedStorage->SetOwner(nullptr);
-		SpawnedStorage->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-		SpawnedStorage->SetLifeSpan(0.0f);
+		const int32 DropSeed = FMath::RandRange(1, MAX_int32);
+		SpawnedStorage->InitializeFromChestDefinition(SunkChestDefinition, DropSeed);
 		SpawnedStorage->SetPhysicsAndBuoyancyEnabled(true);
-
-		TMap<FGameplayTag, int32> TotalCountByItem;
-		for (const FStorageItemEntry& StorageItem : StorageItems)
-		{
-			// map에 아이템 태그랑 개수 추가 
-			TotalCountByItem.FindOrAdd(StorageItem.ItemTag) += StorageItem.Count;
-		}
-
-		// 앞서 구했던 아이템 개수만큼 슬롯 추가
-		int32 RequiredSlotCount = StorageItems.Num();
-		if (const UStorageComponent* StorageComponent = SpawnedStorage->GetStorageComponent())
-		{
-			RequiredSlotCount = 0;
-			for (const TPair<FGameplayTag, int32>& ItemTotal : TotalCountByItem)
-			{
-				// map에 저장된 정보에서, 최대 스택보다 많은 수가 있으면 slot 분할
-				const int32 MaxStack = FMath::Max(1, StorageComponent->GetMaxStack(ItemTotal.Key));
-				RequiredSlotCount += FMath::DivideAndRoundUp(ItemTotal.Value, MaxStack);
-			}
-		}
-
-		const int32 SlotCount = FMath::Max(EnemyCorpseStorageSlotCount, RequiredSlotCount);
-		SpawnedStorage->ConfigureStorage(SlotCount, EnemyCorpseStorageColumnCount, StorageItems);
-		// Replicate the fully configured storage contents in the same server update as the spawn.
+		SpawnedStorage->FinishSpawning(SpawnTransform);
 		SpawnedStorage->ForceNetUpdate();
-		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - Spawned storage chest. Ship=%s Chest=%s Location=%s Items=%d Slots=%d"),
-			*GetName(),
-			*GetNameSafe(SpawnedStorage),
-			*SpawnedStorage->GetActorLocation().ToString(),
-			StorageItems.Num(),
-			SlotCount);
+
+		UE_LOG(LogTemp, Log,
+			TEXT("AEnemyShip::DropAtDeathLocation - Spawned buoyant chest from definition %s. Ship=%s Location=%s"),
+			*GetNameSafe(SunkChestDefinition), *GetName(), *SpawnedStorage->GetActorLocation().ToString());
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - SpawnActor failed. Ship=%s StorageClass=%s Location=%s"),
-			*GetName(),
-			*GetNameSafe(EnemyCorpseStorageClass),
-			*SpawnLocation.ToString());
+		UE_LOG(LogTemp, Warning,
+			TEXT("AEnemyShip::DropAtDeathLocation - Failed to spawn SunkChestDefinition. Ship=%s Definition=%s Location=%s"),
+			*GetName(), *GetNameSafe(SunkChestDefinition), *SpawnLocation.ToString());
 	}
 }
 

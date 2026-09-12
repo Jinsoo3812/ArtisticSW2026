@@ -2915,14 +2915,20 @@ void AShip::MulticastSpawnRamImpactNiagara_Implementation(
 void AShip::ApplyStatSnapshot(const FShipStatSnapshot& Snapshot, bool bRefillHealth)
 {
 	if (!HasAuthority() || !AttributeSet) return;
-	AttributeSet->InitMaxHealth(FMath::Max(1.0f, Snapshot.MaxHealth));
+	const float PreviousMaxHealth = AttributeSet->GetMaxHealth();
+	const float PreviousHealth = AttributeSet->GetHealth();
+	const float NewMaxHealth = FMath::Max(1.0f, Snapshot.MaxHealth);
+	AttributeSet->InitMaxHealth(NewMaxHealth);
 	if (bRefillHealth)
 	{
-		AttributeSet->InitHealth(AttributeSet->GetMaxHealth());
+		AttributeSet->InitHealth(NewMaxHealth);
 	}
 	else
 	{
-		AttributeSet->SetHealth(FMath::Min(AttributeSet->GetHealth(), AttributeSet->GetMaxHealth()));
+		// A hull upgrade grants the newly added capacity as health without otherwise
+		// healing existing damage. Max-health reductions still clamp safely.
+		const float MaxHealthIncrease = FMath::Max(0.0f, NewMaxHealth - PreviousMaxHealth);
+		AttributeSet->SetHealth(FMath::Clamp(PreviousHealth + MaxHealthIncrease, 0.0f, NewMaxHealth));
 	}
 	AttributeSet->InitMoveSpeed(1.0f);
 	AttributeSet->InitForwardPropulsionMultiplier(Snapshot.ForwardPropulsionMultiplier);

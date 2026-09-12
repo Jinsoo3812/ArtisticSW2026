@@ -97,16 +97,16 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction")
 	FText LockedActionText = FText::FromString(TEXT("Locked"));
 
-	/** Optional reusable contents/physics definition. Spawn points set this before BeginPlay. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storage Chest|Definition")
+	/** Runtime definition supplied by a chest spawn point or a sinking enemy ship. */
+	UPROPERTY(Transient)
 	TObjectPtr<UChestDefinition> ChestDefinition;
 
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Storage Chest|Definition")
+	UPROPERTY(Transient)
 	int32 LootSeed = 0;
 
-	/** Legacy placed chests float by default. Data-driven ship chests disable this. */
-	UPROPERTY(EditAnywhere, ReplicatedUsing = OnRep_PhysicsMode, BlueprintReadOnly, Category = "Storage Chest|Physics")
-	bool bEnablePhysicsAndBuoyancy = true;
+	/** Set from the spawn context: enabled for ocean/sunk chests and disabled on land/decks. */
+	UPROPERTY(ReplicatedUsing = OnRep_PhysicsMode, VisibleInstanceOnly, BlueprintReadOnly, Category = "Storage Chest|Physics")
+	bool bEnablePhysicsAndBuoyancy = false;
 
 	/** Server-authoritative rigid-body mass. Buoyancy and physics are simulated only by the server. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Storage Chest|Physics", meta = (ClampMin = "1.0", Units = "kg"))
@@ -125,14 +125,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Storage Chest|Networking", meta = (ClampMin = "0.0", Units = "cm"))
 	float ClientNetworkSnapDistance = 500.0f;
 
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Storage Chest|Guarding")
+	UPROPERTY(Transient)
 	bool bRequiresGuardClear = false;
 
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Storage Chest|Guarding", meta = (EditCondition = "bRequiresGuardClear"))
+	UPROPERTY(Transient)
 	TArray<TObjectPtr<ABaseCharacter>> GuardCharacters;
 
-	/** Leave empty for an island chest. Assign for a chest mounted on an enemy ship. */
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Storage Chest|Guarding", meta = (EditCondition = "bRequiresGuardClear"))
+	/** Runtime owner for a guarded deck chest; null for island and ocean chests. */
+	UPROPERTY(Transient)
 	TObjectPtr<AShip> OwningShip;
 
 	UPROPERTY(ReplicatedUsing = OnRep_Locked, VisibleInstanceOnly, BlueprintReadOnly, Category = "Storage Chest|Lock")

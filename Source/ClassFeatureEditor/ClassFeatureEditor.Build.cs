@@ -20,6 +20,7 @@ public class ClassFeatureEditor : ModuleRules
 			"LevelEditor",
 			"AnimationBlueprintLibrary",
 			"AnimationModifiers",
+			"ArtisticSWCore",
 			"ClassFeature",
 			"GASCore",
 			"WaterAndShip",

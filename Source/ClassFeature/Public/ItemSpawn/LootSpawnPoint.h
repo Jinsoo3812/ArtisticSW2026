@@ -14,6 +14,80 @@ class AShip;
 class AStorageChest;
 class AStoryConditionalSpawner;
 
+/** Authoring values shown under the Chest section when a chest spawn point is embedded in another actor. */
+USTRUCT(BlueprintType)
+struct CLASSFEATURE_API FChestSpawnPointChestSettings
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss")
+	bool bIsBossChest = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest"))
+	FGameplayTag RequiredBossTag;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest"))
+	FGameplayTag GuaranteedBossQuestItemTag;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", ClampMin = "1", UIMin = "1"))
+	int32 GuaranteedBossQuestItemCount = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Placement")
+	EChestEnvironment Environment = EChestEnvironment::Land;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Data Driven")
+	EChestSpawnMode SpawnMode = EChestSpawnMode::Guarded;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Data Driven",
+		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Random"))
+	TObjectPtr<URandomChestGroup> RandomGroup = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Data Driven",
+		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Guarded"))
+	TObjectPtr<UChestDefinition> ChestDefinition = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Guard",
+		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Guarded"))
+	TArray<TObjectPtr<ABaseCharacter>> GuardCharacters;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Guard",
+		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Guarded"))
+	TArray<TObjectPtr<AStoryConditionalSpawner>> GuardSpawners;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Guard",
+		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Guarded"))
+	TObjectPtr<AShip> OwningShip = nullptr;
+};
+
+/** Authoring values shown under the Loot section when a chest spawn point is embedded in another actor. */
+USTRUCT(BlueprintType)
+struct CLASSFEATURE_API FChestSpawnPointLootSettings
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Loot|Spawn")
+	bool bEnabled = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Loot|Spawn", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float PointWeight = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Loot|Placement")
+	bool bAlignChestBottomToGround = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Loot|Placement", meta = (EditCondition = "bAlignChestBottomToGround", ClampMin = "0.0", UIMin = "0.0"))
+	float GroundClearance = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Loot|Placement", meta = (EditCondition = "bAlignChestBottomToGround", ClampMin = "0.0", UIMin = "0.0"))
+	float GroundTraceUpDistance = 200.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Loot|Placement", meta = (EditCondition = "bAlignChestBottomToGround", ClampMin = "0.0", UIMin = "0.0"))
+	float GroundTraceDownDistance = 1000.f;
+
+	/** Used only to conditionally display the random-point weight in embedded authoring panels. */
+	UPROPERTY(Transient)
+	EChestSpawnMode SpawnMode = EChestSpawnMode::Guarded;
+};
+
 UCLASS(Abstract)
 class CLASSFEATURE_API ALootSpawnPointBase : public AActor
 {
@@ -35,9 +109,6 @@ public:
 	float GetPointWeight() const { return PointWeight; }
 
 	UFUNCTION(BlueprintPure, Category = "Loot|Spawn")
-	FName GetZoneId() const { return ZoneId; }
-
-	UFUNCTION(BlueprintPure, Category = "Loot|Spawn")
 	AActor* GetSpawnedActor() const { return SpawnedActor; }
 
 protected:
@@ -52,9 +123,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Spawn", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float PointWeight = 1.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Spawn")
-	FName ZoneId = NAME_None;
-
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Loot|Spawn")
 	bool bActivated = false;
 
@@ -68,10 +136,16 @@ class CLASSFEATURE_API ALooseLootSpawnPoint : public ALootSpawnPointBase
 	GENERATED_BODY()
 
 public:
+	UFUNCTION(BlueprintPure, Category = "Loot|Spawn")
+	FName GetZoneId() const { return ZoneId; }
+
 	UFUNCTION(BlueprintCallable, Category = "Loot|Spawn")
 	ABaseItem* SpawnLooseLoot(const FZoneLootItemRow& LootRow, TSubclassOf<ABaseItem> FallbackItemClass);
 
 protected:
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Spawn")
+	FName ZoneId = NAME_None;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Spawn")
 	TSubclassOf<ABaseItem> ItemClassOverride = nullptr;
 
@@ -97,19 +171,19 @@ class CLASSFEATURE_API AChestSpawnPoint : public ALootSpawnPointBase
 	GENERATED_BODY()
 
 public:
-	UFUNCTION(BlueprintCallable, Category = "Loot|Spawn")
-	AStorageChest* SpawnChest(const TArray<FChestInitialLootRow>& LootRows, TSubclassOf<AStorageChest> FallbackChestClass, int32 Seed);
+	/** Copies the selected Chest and Loot authoring values from an owning actor. */
+	UFUNCTION(BlueprintCallable, Category = "Chest|Authoring")
+	void ApplyAuthoringSettings(
+		const FChestSpawnPointChestSettings& ChestSettings,
+		const FChestSpawnPointLootSettings& LootSettings);
 
 	UFUNCTION(BlueprintCallable, Category = "Chest|Spawn")
 	AStorageChest* SpawnConfiguredChest(UChestDefinition* Definition, int32 Seed);
 
 	UFUNCTION(BlueprintPure, Category = "Chest|Spawn")
-	bool IsDataDrivenChestPoint() const { return SpawnMode != EChestSpawnMode::Legacy; }
-
-	UFUNCTION(BlueprintPure, Category = "Chest|Spawn")
 	bool CanSpawnDataDrivenChest() const
 	{
-		return IsDataDrivenChestPoint() && bEnabled && !bActivated
+		return bEnabled && !bActivated
 			&& (SpawnMode == EChestSpawnMode::Guarded || PointWeight > 0.f);
 	}
 
@@ -127,12 +201,6 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Chest|Placement")
 	void SetEnvironment(EChestEnvironment InEnvironment);
-
-	UFUNCTION(BlueprintPure, Category = "Chest|Placement")
-	bool IsPhysicsAndBuoyancyEnabled() const { return bEnablePhysicsAndBuoyancy; }
-
-	UFUNCTION(BlueprintCallable, Category = "Chest|Placement")
-	void SetPhysicsAndBuoyancyEnabled(bool bInPhysicsEnabled) { bEnablePhysicsAndBuoyancy = bInPhysicsEnabled; }
 
 	UFUNCTION(BlueprintCallable, Category = "Chest|Spawn")
 	void ConfigureRandomSpawn(URandomChestGroup* InRandomGroup, float InPointWeight = 1.f);
@@ -183,7 +251,7 @@ protected:
 	EChestEnvironment Environment = EChestEnvironment::Land;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Data Driven")
-	EChestSpawnMode SpawnMode = EChestSpawnMode::Legacy;
+	EChestSpawnMode SpawnMode = EChestSpawnMode::Guarded;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Data Driven",
 		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Random"))
@@ -201,27 +269,6 @@ protected:
 		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Guarded"))
 	TObjectPtr<AShip> OwningShip = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Placement",
-		meta = (EditCondition = "SpawnMode != EChestSpawnMode::Legacy"))
-	bool bEnablePhysicsAndBuoyancy = false;
-
-	/** Legacy Zone-manager chest class. Used only while SpawnMode is Legacy. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Spawn",
-		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Legacy", EditConditionHides))
-	TSubclassOf<AStorageChest> ChestClassOverride = nullptr;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Storage",
-		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Legacy", EditConditionHides, ClampMin = "1", UIMin = "1"))
-	int32 SlotCount = 5;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Storage",
-		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Legacy", EditConditionHides, ClampMin = "1", UIMin = "1"))
-	int32 ColumnCount = 4;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Storage",
-		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Legacy", EditConditionHides, ClampMin = "0", UIMin = "0"))
-	int32 InitialItemRollCount = 3;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Placement")
 	bool bAlignChestBottomToGround = true;
 
@@ -236,5 +283,4 @@ protected:
 
 private:
 	void AlignChestBottomToGround(AStorageChest* Chest) const;
-	TArray<FStorageItemEntry> BuildInitialItems(const TArray<FChestInitialLootRow>& LootRows, int32 Seed) const;
 };

@@ -11,12 +11,70 @@
 #include "Engine/DataTable.h"
 #include "Engine/SCS_Node.h"
 #include "Engine/SimpleConstructionScript.h"
+#include "ItemSpawn/LootSpawnPoint.h"
 #include "Misc/DataValidation.h"
 #include "ShipAI/Abilities/GA_EnemyShipCannonVolley.h"
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipArchetypeData.h"
 #include "ShipAI/EnemyShipSkillModuleData.h"
 #include "Ship.h"
+#include "UObject/UnrealType.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipChestSpawnPointAuthoringTest,
+	"ArtisticSW.Enemy.Ship.Authoring.ChestSpawnPointSettings",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipChestSpawnPointAuthoringTest::RunTest(const FString& Parameters)
+{
+	const FStructProperty* ChestProperty = FindFProperty<FStructProperty>(
+		AEnemyShip::StaticClass(),
+		GET_MEMBER_NAME_CHECKED(AEnemyShip, ChestSpawnPointChestSettings));
+	const FStructProperty* LootProperty = FindFProperty<FStructProperty>(
+		AEnemyShip::StaticClass(),
+		GET_MEMBER_NAME_CHECKED(AEnemyShip, ChestSpawnPointLootSettings));
+
+	if (TestNotNull(TEXT("Enemy Ship exposes Chest settings"), ChestProperty))
+	{
+		TestTrue(TEXT("Chest settings are instance editable"), ChestProperty->HasAnyPropertyFlags(CPF_Edit));
+		TestEqual(TEXT("Chest settings use the Chest category"), ChestProperty->GetMetaData(TEXT("Category")), FString(TEXT("Chest")));
+		TestTrue(TEXT("Chest settings are flattened into the category"), ChestProperty->HasMetaData(TEXT("ShowOnlyInnerProperties")));
+	}
+	if (TestNotNull(TEXT("Enemy Ship exposes Loot settings"), LootProperty))
+	{
+		TestTrue(TEXT("Loot settings are instance editable"), LootProperty->HasAnyPropertyFlags(CPF_Edit));
+		TestEqual(TEXT("Loot settings use the Loot category"), LootProperty->GetMetaData(TEXT("Category")), FString(TEXT("Loot")));
+		TestTrue(TEXT("Loot settings are flattened into the category"), LootProperty->HasMetaData(TEXT("ShowOnlyInnerProperties")));
+	}
+
+	const FProperty* BossField = FindFProperty<FProperty>(
+		FChestSpawnPointChestSettings::StaticStruct(),
+		GET_MEMBER_NAME_CHECKED(FChestSpawnPointChestSettings, bIsBossChest));
+	const FProperty* LootSpawnField = FindFProperty<FProperty>(
+		FChestSpawnPointLootSettings::StaticStruct(),
+		GET_MEMBER_NAME_CHECKED(FChestSpawnPointLootSettings, bEnabled));
+	if (TestNotNull(TEXT("Chest struct exposes its Boss section"), BossField))
+	{
+		TestEqual(TEXT("Boss field stays nested below Chest"), BossField->GetMetaData(TEXT("Category")), FString(TEXT("Chest|Boss")));
+	}
+	if (TestNotNull(TEXT("Loot struct exposes its Spawn section"), LootSpawnField))
+	{
+		TestEqual(TEXT("Spawn field stays nested below Loot"), LootSpawnField->GetMetaData(TEXT("Category")), FString(TEXT("Loot|Spawn")));
+	}
+
+	AChestSpawnPoint* SpawnPoint = NewObject<AChestSpawnPoint>();
+	FChestSpawnPointChestSettings ChestSettings;
+	ChestSettings.SpawnMode = EChestSpawnMode::Random;
+	ChestSettings.Environment = EChestEnvironment::Water;
+	FChestSpawnPointLootSettings LootSettings;
+	LootSettings.PointWeight = 2.5f;
+	SpawnPoint->ApplyAuthoringSettings(ChestSettings, LootSettings);
+
+	TestEqual(TEXT("Chest spawn mode is forwarded"), SpawnPoint->GetSpawnMode(), EChestSpawnMode::Random);
+	TestEqual(TEXT("Chest environment is forwarded"), SpawnPoint->GetEnvironment(), EChestEnvironment::Water);
+	TestEqual(TEXT("Loot point weight is forwarded"), SpawnPoint->GetPointWeight(), 2.5f);
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FEnemyShipThreeStageAuthoringTest,
@@ -113,6 +171,7 @@ bool FEnemyShipThreeStageAuthoringTest::RunTest(const FString& Parameters)
 		nullptr,
 		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_EnemyShip.BP_EnemyShip"));
 	int32 CannonCount = 0;
+	int32 ChestSpawnPointCount = 0;
 	const TArray<USCS_Node*> Nodes = ShipBlueprint && ShipBlueprint->SimpleConstructionScript
 		? ShipBlueprint->SimpleConstructionScript->GetAllNodes()
 		: TArray<USCS_Node*>();
@@ -124,8 +183,14 @@ bool FEnemyShipThreeStageAuthoringTest::RunTest(const FString& Parameters)
 		{
 			++CannonCount;
 		}
+		if (ChildActor && ChildActor->GetChildActorClass()
+			&& ChildActor->GetChildActorClass()->IsChildOf(AChestSpawnPoint::StaticClass()))
+		{
+			++ChestSpawnPointCount;
+		}
 	}
 	TestEqual(TEXT("Enemy ship Blueprint authors exactly two cannons"), CannonCount, 2);
+	TestEqual(TEXT("Enemy ship Blueprint authors exactly one chest spawn point"), ChestSpawnPointCount, 1);
 	return true;
 }
 

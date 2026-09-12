@@ -400,6 +400,7 @@ void AStorageChest::HandleOwningShipDestroyed(AActor* DestroyedActor)
 	SetLocked(true);
 	ClearGuardBindings();
 	ForceNetUpdate();
+	Destroy();
 }
 
 void AStorageChest::OnRep_Locked()

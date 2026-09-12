@@ -3,6 +3,7 @@
 #include "Misc/AutomationTest.h"
 
 #include "BaseCharacter.h"
+#include "BasePlayer.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayerController.h"
 #include "Components/BaseHealthComponent.h"
@@ -105,7 +106,7 @@ bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 	{
 		AChestSpawnPoint* Point = World->SpawnActor<AChestSpawnPoint>();
 		Point->ConfigureRandomSpawn(FinalBossGroup);
-		Point->SetPhysicsAndBuoyancyEnabled(true);
+		Point->SetEnvironment(EChestEnvironment::Water);
 		FinalBossPoints.Add(Point);
 	}
 

@@ -203,6 +203,18 @@ bool FShipUpgradeFullPipelineTest::RunTest(const FString& Parameters)
 			TestEqual(TEXT("Ship receives upgraded max health"), ShipASC->GetNumericAttribute(UShipAttributeSet::GetMaxHealthAttribute()), 150.0f);
 			TestEqual(TEXT("Ship receives upgraded cannon damage"), ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonDamageAttribute()), 30.0f);
 			TestEqual(TEXT("Ship receives upgraded cooldown"), ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonFireCooldownAttribute()), 1.75f);
+
+			Ship->GetShipAttributeSet()->SetHealth(40.0f);
+			FShipStatSnapshot IncreasedHullStats = SharedState
+				? SharedState->GetUpgradeComponent()->GetCurrentShipStats()
+				: FinalStats;
+			IncreasedHullStats.MaxHealth = 200.0f;
+			Ship->ApplyStatSnapshot(IncreasedHullStats, false);
+			TestEqual(TEXT("Max-health increase grants the same amount of current health"), Ship->GetShipAttributeSet()->GetHealth(), 90.0f);
+
+			IncreasedHullStats.MaxHealth = 60.0f;
+			Ship->ApplyStatSnapshot(IncreasedHullStats, false);
+			TestEqual(TEXT("Max-health reduction clamps current health"), Ship->GetShipAttributeSet()->GetHealth(), 60.0f);
 		}
 
 		AShip* ReplacementShip = World->SpawnActor<AShip>();

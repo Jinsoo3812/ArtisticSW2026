@@ -12,7 +12,6 @@ class UDataTable;
 UENUM(BlueprintType)
 enum class EChestSpawnMode : uint8
 {
-	Legacy,
 	Random,
 	Guarded
 };
@@ -21,7 +20,8 @@ UENUM(BlueprintType)
 enum class EChestEnvironment : uint8
 {
 	Land UMETA(DisplayName = "지상 (Land)"),
-	Water UMETA(DisplayName = "해상/바다 (Water)")
+	Water UMETA(DisplayName = "바다 위 (Ocean)"),
+	ShipDeck UMETA(DisplayName = "배 위 (Ship Deck)")
 };
 
 /**

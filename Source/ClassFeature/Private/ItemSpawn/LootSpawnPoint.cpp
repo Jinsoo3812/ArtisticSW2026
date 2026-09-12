@@ -136,7 +136,6 @@ void ALooseLootSpawnPoint::AlignItemBottomToGround(ABaseItem* Item) const
 		ETeleportType::TeleportPhysics
 	);
 }
-
 void AChestSpawnPoint::BeginPlay()
 {
 	Super::BeginPlay();
@@ -160,6 +159,30 @@ void AChestSpawnPoint::BeginPlay()
 			SpawnConfiguredChest(ChestDefinition, FMath::Rand());
 		}
 	}
+}
+
+void AChestSpawnPoint::ApplyAuthoringSettings(
+	const FChestSpawnPointChestSettings& ChestSettings,
+	const FChestSpawnPointLootSettings& LootSettings)
+{
+	bIsBossChest = ChestSettings.bIsBossChest;
+	RequiredBossTag = ChestSettings.RequiredBossTag;
+	GuaranteedBossQuestItemTag = ChestSettings.GuaranteedBossQuestItemTag;
+	GuaranteedBossQuestItemCount = FMath::Max(1, ChestSettings.GuaranteedBossQuestItemCount);
+	Environment = ChestSettings.Environment;
+	SpawnMode = ChestSettings.SpawnMode;
+	RandomGroup = ChestSettings.RandomGroup;
+	ChestDefinition = ChestSettings.ChestDefinition;
+	GuardCharacters = ChestSettings.GuardCharacters;
+	GuardSpawners = ChestSettings.GuardSpawners;
+	OwningShip = ChestSettings.OwningShip;
+
+	bEnabled = LootSettings.bEnabled;
+	PointWeight = FMath::Max(0.f, LootSettings.PointWeight);
+	bAlignChestBottomToGround = LootSettings.bAlignChestBottomToGround;
+	GroundClearance = FMath::Max(0.f, LootSettings.GroundClearance);
+	GroundTraceUpDistance = FMath::Max(0.f, LootSettings.GroundTraceUpDistance);
+	GroundTraceDownDistance = FMath::Max(0.f, LootSettings.GroundTraceDownDistance);
 }
 
 void AChestSpawnPoint::HandleGuardActorSpawned(AActor* InSpawnedActor)
@@ -227,57 +250,6 @@ bool AChestSpawnPoint::HasMatchingBossGuard() const
 	return false;
 }
 
-AStorageChest* AChestSpawnPoint::SpawnChest(const TArray<FChestInitialLootRow>& LootRows, TSubclassOf<AStorageChest> FallbackChestClass, int32 Seed)
-{
-	if (!HasAuthority() || !CanBeActivated() || IsDataDrivenChestPoint())
-	{
-		return nullptr;
-	}
-
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return nullptr;
-	}
-
-	TSubclassOf<AStorageChest> ChestClass = ChestClassOverride ? ChestClassOverride : FallbackChestClass;
-	if (!ChestClass)
-	{
-		return nullptr;
-	}
-
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = this;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-	AStorageChest* SpawnedChest = World->SpawnActor<AStorageChest>(
-		ChestClass,
-		GetActorTransform(),
-		SpawnParameters
-	);
-
-	if (!IsValid(SpawnedChest))
-	{
-		return nullptr;
-	}
-
-	ActiveChestInstance = SpawnedChest;
-	AlignChestBottomToGround(SpawnedChest);
-	SpawnedChest->ConfigureStorage(SlotCount, ColumnCount, BuildInitialItems(LootRows, Seed));
-
-	if (bIsBossChest && GuaranteedBossQuestItemTag.IsValid() && HasMatchingBossGuard())
-	{
-		if (UStorageComponent* StorageComp = SpawnedChest->GetStorageComponent())
-		{
-			StorageComp->AddItem(GuaranteedBossQuestItemTag, FMath::Max(1, GuaranteedBossQuestItemCount));
-			bBossQuestItemInjected = true;
-		}
-	}
-
-	MarkActivated(SpawnedChest);
-	return SpawnedChest;
-}
-
 AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definition, int32 Seed)
 {
 	if (!HasAuthority() || !CanSpawnDataDrivenChest() || !IsValid(Definition) || !Definition->ChestClass)
@@ -304,8 +276,7 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 
 	ActiveChestInstance = SpawnedChest;
 	SpawnedChest->InitializeFromChestDefinition(Definition, Seed);
-	const bool bUseBuoyancy = bEnablePhysicsAndBuoyancy || (Environment == EChestEnvironment::Water);
-	SpawnedChest->SetPhysicsAndBuoyancyEnabled(bUseBuoyancy);
+	SpawnedChest->SetPhysicsAndBuoyancyEnabled(Environment == EChestEnvironment::Water);
 
 	AShip* EffectiveOwningShip = OwningShip ? OwningShip.Get() : Cast<AShip>(GetAttachParentActor());
 
@@ -350,12 +321,10 @@ void AChestSpawnPoint::SetEnvironment(EChestEnvironment InEnvironment)
 	Environment = InEnvironment;
 	if (Environment == EChestEnvironment::Water)
 	{
-		bEnablePhysicsAndBuoyancy = true;
 		bAlignChestBottomToGround = false;
 	}
 	else
 	{
-		bEnablePhysicsAndBuoyancy = false;
 		bAlignChestBottomToGround = true;
 	}
 }
@@ -384,6 +353,10 @@ void AChestSpawnPoint::ConfigureGuardedSpawn(
 		GuardCharacters.Add(Guard);
 	}
 	OwningShip = InOwningShip;
+	if (OwningShip)
+	{
+		SetEnvironment(EChestEnvironment::ShipDeck);
+	}
 }
 
 void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
@@ -475,9 +448,4 @@ void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
 		nullptr,
 		ETeleportType::TeleportPhysics
 	);
-}
-
-TArray<FStorageItemEntry> AChestSpawnPoint::BuildInitialItems(const TArray<FChestInitialLootRow>& LootRows, int32 Seed) const
-{
-	return UChestDefinition::RollItemsFromRows(LootRows, InitialItemRollCount, Seed);
 }
