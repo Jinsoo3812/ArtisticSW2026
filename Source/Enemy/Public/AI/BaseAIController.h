@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "AIController.h"
 #include "AI/EnemyAITypes.h"
+#include "AI/EnemyPerceptionSettings.h"
 #include "BaseAIController.generated.h"
 
 struct FAIStimulus;
@@ -82,8 +83,7 @@ protected:
 	UPROPERTY(Transient)
 	TWeakObjectPtr<AActor> CachedTargetActor;
 
-	// Internal runtime sense configurations. Blueprint defaults must be authored
-	// through the normalized AI|Perception properties below, not the component.
+	// Runtime-only sense configurations. Tuning is owned by the possessed Enemy BP.
 	UPROPERTY()
 	TObjectPtr<UAISenseConfig_Sight> SightConfig;
 
@@ -92,30 +92,6 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UAISenseConfig_Damage> DamageConfig;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception|Sight", meta = (ClampMin = "0.0"))
-	float SightRadius = 2500.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception|Sight", meta = (ClampMin = "0.0"))
-	float LoseSightRadius = 3000.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception|Sight", meta = (ClampMin = "0.0", ClampMax = "180.0"))
-	float PeripheralVisionDegrees = 70.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception|Sight", meta = (ClampMin = "0.0"))
-	float SightMaxAge = 3.5f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception|Sight", meta = (ClampMin = "0.0"))
-	float AutoSuccessRangeFromLastSeenLocation = 500.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception|Hearing", meta = (ClampMin = "0.0"))
-	float HearingRange = 1500.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception|Hearing", meta = (ClampMin = "0.0"))
-	float HearingMaxAge = 3.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception|Damage", meta = (ClampMin = "0.0"))
-	float DamageMaxAge = 5.0f;
 
 	// One dispatcher receives Sight, Hearing, and Damage stimuli.
 	UFUNCTION()
@@ -138,10 +114,9 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-	// Initializes the read-only runtime component. Per-archetype values are authored
-	// exclusively through the Controller's AI|Perception defaults.
+	// Initializes read-only runtime components. Per-enemy values live on the Pawn BP.
 	void SetupPerceptionSystem();
-	void RefreshPerceptionConfiguration();
+	void RefreshPerceptionConfiguration(const FEnemyPerceptionSettings& Settings);
 
 	void InitializeBlackboardValues(APawn* PossessedPawn);
 	void ApplyBehaviorSet(const UEnemyBehaviorSet* BehaviorSet);

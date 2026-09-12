@@ -7,6 +7,8 @@
 #include "Engine/Texture2D.h"
 
 #include "BasePlayer.h"
+#include "Storage/StorageChest.h"
+#include "Storage/StorageComponent.h"
 #include "BasePlayerController.h"
 #include "Inventory/InventoryComponent.h"
 
@@ -14,6 +16,7 @@ void UInventoryEntryWidget::SetupFromData(const FText& InItemName, int32 InCount
 {
 	SlotIndex = InSlotIndex;
 	ItemTag = InItemTag;
+	DisplayedCount = InCount;
 	SetToolTipText(InRarityName);
 
 	if (ItemNameText)
@@ -39,6 +42,7 @@ void UInventoryEntryWidget::SetupAsEmpty(int32 InSlotIndex)
 {
 	SlotIndex = InSlotIndex;
 	ItemTag = FGameplayTag();
+	DisplayedCount = 0;
 	SetToolTipText(FText::GetEmpty());
 
 	if (ItemNameText)
@@ -99,13 +103,24 @@ FReply UInventoryEntryWidget::NativeOnMouseButtonDown(const FGeometry& InGeometr
 	}
 
 	ABasePlayerController* PlayerController = Cast<ABasePlayerController>(GetOwningPlayer());
+	if (StorageChest.IsValid())
+	{
+		const FKey Key = InMouseEvent.GetEffectingButton();
+		if (PlayerController && (Key == EKeys::LeftMouseButton || Key == EKeys::RightMouseButton))
+		{
+			PlayerController->ServerSharedStorageSlotAction(StorageChest.Get(), SlotIndex, ItemTag, DisplayedCount,
+				DisplayedCapacity, Key == EKeys::RightMouseButton || InMouseEvent.IsShiftDown());
+			return FReply::Handled();
+		}
+		return FReply::Unhandled();
+	}
 	const bool bHasOpenStorage = PlayerController && PlayerController->HasOpenStorage();
 
 	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
 		if (bHasOpenStorage && InMouseEvent.IsShiftDown())
 		{
-			PlayerController->ServerQuickMoveInventorySlotToStorage(SlotIndex);
+			PlayerController->ServerQuickMoveInventorySlotInTab(InventoryComp->GetActiveTab(), SlotIndex, ItemTag, DisplayedCount);
 			return FReply::Handled();
 		}
 
@@ -123,7 +138,7 @@ FReply UInventoryEntryWidget::NativeOnMouseButtonDown(const FGeometry& InGeometr
 
 		if (bHasOpenStorage)
 		{
-			PlayerController->ServerQuickMoveInventorySlotToStorage(SlotIndex);
+			PlayerController->ServerQuickMoveInventorySlotInTab(InventoryComp->GetActiveTab(), SlotIndex, ItemTag, DisplayedCount);
 			return FReply::Handled();
 		}
 
@@ -132,4 +147,10 @@ FReply UInventoryEntryWidget::NativeOnMouseButtonDown(const FGeometry& InGeometr
 	}
 
 	return FReply::Unhandled();
+}
+
+void UInventoryEntryWidget::SetStorageContext(AStorageChest* Chest)
+{
+	StorageChest = Chest;
+	DisplayedCapacity = Chest ? Chest->GetStorageComponent()->GetSlotsPerTab() : 0;
 }

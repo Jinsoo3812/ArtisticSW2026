@@ -4,10 +4,12 @@
 
 #include "AbilitySystemComponent.h"
 #include "AI/EnemyAITypes.h"
+#include "AI/EnemyPerceptionSettings.h"
 #include "BaseEnemy.h"
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
+#include "CollisionChannels.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Vector.h"
 #include "BehaviorTree/BlackboardComponent.h"
@@ -53,6 +55,7 @@
 #include "Task/BTT_RetreatToWeaponRange.h"
 #include "Task/BTT_SetFocus.h"
 #include "Task/BTT_SetMovementSpeed.h"
+#include "UObject/UnrealType.h"
 #include "Weapon/BaseWeaponComponent.h"
 #include "Weapon/EnemyBow.h"
 #include "Weapon/WeaponDataAsset.h"
@@ -331,15 +334,65 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 			&& BlueprintAbilityCDO->GetAssetTags().HasTagExact(GameplayAbility_RangedAttack));
 	}
 
-	FCollisionResponseTemplate ProjectileProfile;
-	if (TestTrue(TEXT("Projectile collision profile is registered"),
-		UCollisionProfile::Get()->GetProfileTemplate(TEXT("Projectile"), ProjectileProfile)))
+	FCollisionResponseTemplate ArrowProfile;
+	if (TestTrue(TEXT("ArrowProjectile collision profile is registered"),
+		UCollisionProfile::Get()->GetProfileTemplate(TEXT("ArrowProjectile"), ArrowProfile)))
 	{
-		TestEqual(TEXT("Projectile collision is query-only"),
-			ProjectileProfile.CollisionEnabled, ECollisionEnabled::QueryOnly);
-		TestEqual(TEXT("Projectile blocks Pawn for hit events"),
-			ProjectileProfile.ResponseToChannels.GetResponse(ECC_Pawn), ECR_Block);
+		TestEqual(TEXT("Arrow collision is query-only"),
+			ArrowProfile.CollisionEnabled, ECollisionEnabled::QueryOnly);
+		TestEqual(TEXT("Arrow uses its dedicated object channel"),
+			ArrowProfile.ObjectType, ECC_Arrow);
+		TestEqual(TEXT("Arrow blocks Pawn for hit events"),
+			ArrowProfile.ResponseToChannels.GetResponse(ECC_Pawn), ECR_Block);
+		TestEqual(TEXT("Arrow blocks static world meshes"),
+			ArrowProfile.ResponseToChannels.GetResponse(ECC_WorldStatic), ECR_Block);
+		TestEqual(TEXT("Arrow blocks ship query hulls"),
+			ArrowProfile.ResponseToChannels.GetResponse(ECC_ShipDamage), ECR_Block);
 	}
+
+	for (const FName ShipProfileName : {FName(TEXT("PlayerShipDamage")), FName(TEXT("EnemyShipDamage"))})
+	{
+		FCollisionResponseTemplate ShipProfile;
+		if (TestTrue(*FString::Printf(TEXT("%s collision profile is registered"), *ShipProfileName.ToString()),
+			UCollisionProfile::Get()->GetProfileTemplate(ShipProfileName, ShipProfile)))
+		{
+			TestEqual(*FString::Printf(TEXT("%s blocks character arrows"), *ShipProfileName.ToString()),
+				ShipProfile.ResponseToChannels.GetResponse(ECC_Arrow), ECR_Block);
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPerEnemyPerceptionSettingsTest,
+	"ArtisticSW.Enemy.Perception.PerEnemyBlueprintSettings",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPerEnemyPerceptionSettingsTest::RunTest(const FString& Parameters)
+{
+	const FStructProperty* SettingsProperty = FindFProperty<FStructProperty>(
+		ABaseEnemy::StaticClass(), TEXT("PerceptionSettings"));
+	if (TestNotNull(TEXT("Perception settings are owned by BaseEnemy"), SettingsProperty))
+	{
+		TestTrue(TEXT("Perception settings are editable in Enemy Blueprint defaults"),
+			SettingsProperty->HasAnyPropertyFlags(CPF_Edit | CPF_BlueprintVisible));
+		TestTrue(TEXT("Perception settings use the dedicated reflected struct"),
+			SettingsProperty->Struct == FEnemyPerceptionSettings::StaticStruct());
+	}
+	TestNull(TEXT("Sight radius no longer has a second editor-facing owner on the controller"),
+		FindFProperty<FFloatProperty>(ABaseAIController::StaticClass(), TEXT("SightRadius")));
+
+	const ARangedEnemy* EnemyCDO = GetDefault<ARangedEnemy>();
+	if (!TestNotNull(TEXT("Ranged Enemy defaults exist"), EnemyCDO))
+	{
+		return false;
+	}
+	const FEnemyPerceptionSettings& AuthoredSettings = EnemyCDO->GetPerceptionSettings();
+	TestEqual(TEXT("Former ranged sight default moved to the Enemy"), AuthoredSettings.SightRadius, 3000.0f);
+	TestEqual(TEXT("Former ranged lose-sight default moved to the Enemy"), AuthoredSettings.LoseSightRadius, 3500.0f);
+	TestEqual(TEXT("Former ranged vision angle moved to the Enemy"), AuthoredSettings.PeripheralVisionDegrees, 80.0f);
+	TestEqual(TEXT("Former ranged sight memory moved to the Enemy"), AuthoredSettings.SightMaxAge, 2.0f);
+
 	return true;
 }
 
@@ -615,15 +668,15 @@ bool FRangedEnemyProjectileTeamFilterTest::RunTest(const FString& Parameters)
 	Projectile->InitializeDamage(SourceASC, SourceEnemy, 1.0f);
 
 	TestFalse(TEXT("Projectile always rejects its source actor"), Projectile->IsValidDamageTarget(SourceEnemy));
-	TestTrue(TEXT("Default faction-agnostic mode accepts another enemy-team actor"),
+	TestFalse(TEXT("Default team filter rejects another enemy-team actor"),
 		Projectile->IsValidDamageTarget(FriendlyEnemy));
-	TestTrue(TEXT("Default faction-agnostic mode accepts a player-team actor"),
+	TestTrue(TEXT("Default team filter accepts an opposing player-team actor"),
 		Projectile->IsValidDamageTarget(PlayerTeamTarget));
 
-	Projectile->SetTeamDamageFilteringEnabled(true);
-	TestFalse(TEXT("Debug team filter rejects another enemy-team actor"),
+	Projectile->SetTeamDamageFilteringEnabled(false);
+	TestTrue(TEXT("Explicit faction-agnostic override accepts another enemy-team actor"),
 		Projectile->IsValidDamageTarget(FriendlyEnemy));
-	TestTrue(TEXT("Debug team filter still accepts an opposing player-team actor"),
+	TestTrue(TEXT("Explicit faction-agnostic override accepts a player-team actor"),
 		Projectile->IsValidDamageTarget(PlayerTeamTarget));
 	return true;
 }

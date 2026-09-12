@@ -8,7 +8,6 @@
 #include "GASCombatLibrary.h"
 #include "GASDamageInstantGameplayEffect.h"
 #include "RangedEnemy/RangedEnemy.h"
-#include "Ship.h"
 #include "Weapon/EnemyBow.h"
 
 UGA_RangedEnemyAttack::UGA_RangedEnemyAttack()
@@ -213,10 +212,6 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 	}
 
 	Projectile->IgnoreActorForMovement(CachedEnemy);
-	if (AShip* HostShip = CachedEnemy->GetHostShip())
-	{
-		Projectile->IgnoreActorForMovement(HostShip);
-	}
 	Projectile->IgnoreActorForMovement(Bow);
 
 	TSubclassOf<UGameplayEffect> DamageEffectClass = Projectile->GetDirectDamageEffectClass();

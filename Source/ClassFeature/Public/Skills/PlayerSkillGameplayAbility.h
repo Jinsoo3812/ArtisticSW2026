@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "BaseGameplayAbility.h"
+#include "GAS/Ability/PlayerCombatGameplayAbility.h"
 #include "PlayerSkillGameplayAbility.generated.h"
 
 /**
@@ -10,7 +10,7 @@
  * consumed only by the derived skill at its actual execution point.
  */
 UCLASS(Abstract)
-class CLASSFEATURE_API UPlayerSkillGameplayAbility : public UBaseGameplayAbility
+class CLASSFEATURE_API UPlayerSkillGameplayAbility : public UPlayerCombatGameplayAbility
 {
 	GENERATED_BODY()
 

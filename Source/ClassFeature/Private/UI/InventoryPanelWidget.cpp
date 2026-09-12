@@ -3,6 +3,8 @@
 #include "UI/InventoryPanelWidget.h"
 
 #include "BasePlayer.h"
+#include "Storage/StorageChest.h"
+#include "Storage/StorageComponent.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
@@ -38,6 +40,7 @@ void UInventoryPanelWidget::NativeConstruct()
 void UInventoryPanelWidget::NativeDestruct()
 {
 	UnbindInventoryComponent();
+	if (BoundStorage.IsValid()) BoundStorage->OnStorageChanged.RemoveAll(this);
 
 	if (ClueTabButton)
 	{
@@ -66,6 +69,16 @@ void UInventoryPanelWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	RefreshInventory();
 	ClearItemInfo();
 	RefreshTabButtonStyles();
+}
+
+void UInventoryPanelWidget::InitializeForStorage(ABasePlayer* InPlayer, AStorageChest* InChest)
+{
+	if (BoundStorage.IsValid()) BoundStorage->OnStorageChanged.RemoveAll(this);
+	StorageChest = InChest;
+	BoundStorage = InChest ? InChest->GetStorageComponent() : nullptr;
+	InitializeForPlayer(InPlayer);
+	if (BoundStorage.IsValid()) BoundStorage->OnStorageChanged.AddUObject(this, &UInventoryPanelWidget::HandleInventoryChanged);
+	RefreshInventory();
 }
 
 void UInventoryPanelWidget::BindInventoryComponent(UInventoryComponent* InventoryComponent)
@@ -114,12 +127,13 @@ void UInventoryPanelWidget::RefreshInventory()
 		return;
 	}
 
-	const EInventoryTab ActiveTab = BoundInventoryComponent->GetActiveTab();
+	const EInventoryTab ActiveTab = BoundStorage.IsValid() ? StorageTab : BoundInventoryComponent->GetActiveTab();
 	RefreshTabButtonStyles();
 
-	const TArray<FInventorySlot>& Slots = BoundInventoryComponent->GetSlots(ActiveTab);
-	const int32 Columns = BoundInventoryComponent->GetInventoryColumns();
-	const int32 SlotCount = BoundInventoryComponent->GetSlotCount(ActiveTab);
+	const TArray<FInventorySlot>& Slots = BoundStorage.IsValid() ? BoundStorage->GetSlots() : BoundInventoryComponent->GetSlots(ActiveTab);
+	const int32 Columns = BoundStorage.IsValid() ? BoundStorage->GetStorageColumns() : BoundInventoryComponent->GetInventoryColumns();
+	const int32 SlotCount = BoundStorage.IsValid() ? BoundStorage->GetSlotsPerTab() : BoundInventoryComponent->GetSlotCount(ActiveTab);
+	const int32 Start = BoundStorage.IsValid() ? BoundStorage->GetTabStart(ActiveTab) : 0;
 
 	for (int32 Index = 0; Index < SlotCount; ++Index)
 	{
@@ -129,22 +143,24 @@ void UInventoryPanelWidget::RefreshInventory()
 			continue;
 		}
 
-		if (Slots.IsValidIndex(Index) && !Slots[Index].IsEmpty())
+		const int32 DataIndex = Start + Index;
+		EntryWidget->SetStorageContext(StorageChest.Get());
+		if (Slots.IsValidIndex(DataIndex) && !Slots[DataIndex].IsEmpty())
 		{
-			const FInventorySlot& InventorySlot = Slots[Index];
+			const FInventorySlot& InventorySlot = Slots[DataIndex];
 
 			EntryWidget->SetupFromData(
 				BoundInventoryComponent->GetMaterialName(InventorySlot.ItemTag),
 				InventorySlot.Count,
 				BoundInventoryComponent->GetMaterialIcon(InventorySlot.ItemTag),
-				Index,
+				DataIndex,
 				InventorySlot.ItemTag,
 				BoundInventoryComponent->GetItemRarityName(InventorySlot.ItemTag)
 			);
 		}
 		else
 		{
-			EntryWidget->SetupAsEmpty(Index);
+			EntryWidget->SetupAsEmpty(DataIndex);
 		}
 
 		EntryWidget->OnEntryHovered.BindUObject(this, &UInventoryPanelWidget::HandleInventoryEntryHovered);
@@ -233,7 +249,7 @@ void UInventoryPanelWidget::HandleInventoryEntryHovered(int32 SlotIndex, FGamepl
 		return;
 	}
 
-	const TArray<FInventorySlot>& Slots = BoundInventoryComponent->GetSlots(BoundInventoryComponent->GetActiveTab());
+	const TArray<FInventorySlot>& Slots = BoundStorage.IsValid() ? BoundStorage->GetSlots() : BoundInventoryComponent->GetSlots(BoundInventoryComponent->GetActiveTab());
 	const int32 Count = Slots.IsValidIndex(SlotIndex) ? Slots[SlotIndex].Count : 0;
 	RefreshItemInfo(ItemTag, Count);
 }
@@ -250,7 +266,8 @@ void UInventoryPanelWidget::SetInventoryTab(EInventoryTab NewTab)
 		return;
 	}
 
-	BoundInventoryComponent->SetActiveTab(NewTab);
+	if (BoundStorage.IsValid()) StorageTab = NewTab;
+	else BoundInventoryComponent->SetActiveTab(NewTab);
 	ClearItemInfo();
 	RefreshInventory();
 	RefreshTabButtonStyles();
@@ -258,7 +275,7 @@ void UInventoryPanelWidget::SetInventoryTab(EInventoryTab NewTab)
 
 void UInventoryPanelWidget::RefreshTabButtonStyles()
 {
-	const EInventoryTab ActiveTab = BoundInventoryComponent ? BoundInventoryComponent->GetActiveTab() : EInventoryTab::Material;
+	const EInventoryTab ActiveTab = BoundStorage.IsValid() ? StorageTab : (BoundInventoryComponent ? BoundInventoryComponent->GetActiveTab() : EInventoryTab::Material);
 
 	ApplyTabButtonColor(ClueTabButton, ActiveTab == EInventoryTab::Clue);
 	ApplyTabButtonColor(ConsumableTabButton, ActiveTab == EInventoryTab::Consumable);

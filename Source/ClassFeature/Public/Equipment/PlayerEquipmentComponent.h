@@ -7,6 +7,7 @@
 
 class ABaseItem;
 class ABasePlayer;
+class ABowItem;
 class UAnimMontage;
 class UAnimInstance;
 class UAnimSequenceBase;
@@ -164,6 +165,10 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<ABasePlayer> PlayerOwner;
 
+	/** Locally resolved presentation/spawn anchor; the actor relationship itself already replicates. */
+	UPROPERTY(Transient)
+	TWeakObjectPtr<ABowItem> BoundBowArrowAnchor;
+
 	UFUNCTION()
 	void OnRep_EquipmentState();
 
@@ -180,7 +185,9 @@ protected:
 	void CancelActiveWeaponAbilities() const;
 	void GrantEquippedItemAbility(ABaseItem* Item);
 	void RemoveEquippedItemAbility(ABaseItem* Item);
-	bool AttachItem(ABaseItem* Item, EEquipmentAttachmentTarget Target) const;
+	bool AttachItem(ABaseItem* Item, EEquipmentAttachmentTarget Target);
+	bool CompleteItemAttachment(ABaseItem* Item, EEquipmentAttachmentTarget Target, bool bAttached);
+	void ClearBowArrowAnchor(ABowItem* ExpectedBow = nullptr);
 	void StoreCurrentEquippedItem();
 	void StartEquipItem(ABaseItem* Item, FGameplayTag SourceSlotTag);
 	void FinalizePendingEquip();

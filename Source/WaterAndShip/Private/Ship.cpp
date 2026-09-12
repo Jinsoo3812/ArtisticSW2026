@@ -30,6 +30,7 @@
 #include "NiagaraSystem.h"
 #include "Effects/SWNiagaraScaleLibrary.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
+#include "CollisionChannels.h"
 #include "Skills/SkillUseProvider.h"
 #include "ShipPhysicsAsync.h"
 #include "Physics/Experimental/PhysScene_Chaos.h"
@@ -148,6 +149,7 @@ AShip::AShip()
 	ShipDamageMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipDamageMesh"));
 	ShipDamageMesh->SetupAttachment(BuoyancyRoot);
 	ShipDamageMesh->SetCollisionProfileName(TEXT("PlayerShipDamage"));
+	ShipDamageMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
 	ShipDamageMesh->SetGenerateOverlapEvents(false);
 	ShipDamageMesh->SetVisibility(false, false);
 	ShipDamageMesh->SetHiddenInGame(true, false);
@@ -165,6 +167,7 @@ AShip::AShip()
 		DeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
 		DeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
 		DeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+		DeckMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
 		DeckMesh->SetGenerateOverlapEvents(false);
 		DeckMesh->SetVisibility(false, false);
 		DeckMesh->SetHiddenInGame(true, false);
@@ -329,6 +332,14 @@ void AShip::BeginPlay()
 		DeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
 		DeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
 		DeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+		DeckMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
+	}
+	if (ShipDamageMesh)
+	{
+		// The visible ship mesh intentionally has no collision. Character arrows
+		// must hit this query-only hull instead, including legacy Blueprint CDOs.
+		ShipDamageMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		ShipDamageMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
 	}
 	bBuoyancyQueryDiagnostics = FParse::Param(
 		FCommandLine::Get(), TEXT("BuoyancyQueryDiagnostics"));

@@ -18,6 +18,7 @@
 #include "Attacker/AttackerComponent.h"
 #include "Inventory/InventoryComponent.h"
 #include "Storage/StorageChest.h"
+#include "Storage/SharedStorageChest.h"
 #include "Storage/StorageComponent.h"
 #include "UI/StorageWindowWidget.h"
 #include "UI/FacilityHubWidget.h"
@@ -549,7 +550,7 @@ void ABasePlayerController::HandleMenuEscape()
 
 void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
 {
-	if (!HasAuthority() || !StorageChest || StorageChest->IsLocked())
+	if (!HasAuthority() || !CanAccessStorage(StorageChest))
 	{
 		return;
 	}
@@ -561,6 +562,8 @@ void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
 		return;
 	}
 
+	if (ABasePlayer* StoragePlayer = Cast<ABasePlayer>(GetPawn()))
+		if (UInventoryComponent* Inventory = StoragePlayer->GetInventoryComponent()) Inventory->ReturnCursorToOriginalSlot();
 	ActiveStorageChest = StorageChest;
 	StartStorageSearch(StorageChest);
 	ClientOpenStorage(StorageChest);
@@ -573,6 +576,8 @@ void ABasePlayerController::CloseStorageFromServer(AStorageChest* StorageChest)
 		return;
 	}
 
+	if (ABasePlayer* StoragePlayer = Cast<ABasePlayer>(GetPawn()))
+		if (UInventoryComponent* Inventory = StoragePlayer->GetInventoryComponent()) Inventory->ReturnCursorToOriginalSlot();
 	ClientCloseStorage(StorageChest);
 	ActiveStorageChest = nullptr;
 	GetWorldTimerManager().ClearTimer(StorageSearchTimerHandle);
@@ -621,7 +626,7 @@ void ABasePlayerController::ServerHandleStorageLeftClick_Implementation(AStorage
 	// 좌클릭 했을 때 상호작용
 	// 커서에 아이템이 붙어 있으면 인벤토리 -> storage
 	// 커서에 아이템이 없으면 storage -> 인벤토리
-	if (!StorageChest || StorageChest->IsLocked() || ActiveStorageChest != StorageChest)
+	if (!CanAccessStorage(StorageChest) || ActiveStorageChest != StorageChest)
 	{
 		return;
 	}
@@ -657,14 +662,14 @@ void ABasePlayerController::ServerHandleStorageLeftClick_Implementation(AStorage
 		return;
 	}
 
-	StorageComponent->TransferSlotToInventory(SlotIndex, InventoryComponent);
+	StorageComponent->PickUpSlotToCursor(SlotIndex, InventoryComponent);
 	StartStorageSearch(StorageChest);
 }
 
 void ABasePlayerController::ServerQuickMoveInventorySlotToStorage_Implementation(int32 SlotIndex)
 {
 	// 인벤토리 -> storage
-	if (!ActiveStorageChest || ActiveStorageChest->IsLocked())
+	if (!CanAccessStorage(ActiveStorageChest))
 	{
 		return;
 	}
@@ -695,7 +700,7 @@ void ABasePlayerController::ServerQuickMoveInventorySlotToStorage_Implementation
 void ABasePlayerController::ServerQuickMoveStorageSlotToInventory_Implementation(AStorageChest* StorageChest, int32 SlotIndex)
 {
 	//storage -> Inventory (우클릭)
-	if (!StorageChest || StorageChest->IsLocked() || ActiveStorageChest != StorageChest)
+	if (!CanAccessStorage(StorageChest) || ActiveStorageChest != StorageChest)
 	{
 		return;
 	}
@@ -718,7 +723,7 @@ void ABasePlayerController::ServerQuickMoveStorageSlotToInventory_Implementation
 		return;
 	}
 
-	InventoryComponent->ReturnCursorToOriginalSlot();
+	if (InventoryComponent->GetCursorItem().IsValid()) { InventoryComponent->ReturnCursorToOriginalSlot(); return; }
 	StorageComponent->TransferSlotToInventory(SlotIndex, InventoryComponent);
 	StartStorageSearch(StorageChest);
 }
@@ -739,6 +744,7 @@ bool ABasePlayerController::IsStorageSlotRevealed(AStorageChest* StorageChest, i
 		return false;
 	}
 
+	if (StorageChest->IsA<ASharedStorageChest>()) return StorageChest->GetStorageComponent()->GetSlots().IsValidIndex(SlotIndex);
 	const FStorageRevealState* RevealState = StorageRevealStates.Find(StorageChest);
 	return RevealState && SlotIndex < RevealState->RevealedSlotCount;
 }
@@ -757,7 +763,7 @@ bool ABasePlayerController::IsStorageSlotSearching(AStorageChest* StorageChest, 
 void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 {
 	// chest에 대한 storage UI열기
-	if (!IsLocalController() || !StorageChest || StorageChest->IsLocked() || !PlayerHUDWidget)
+	if (!IsLocalController() || !CanAccessStorage(StorageChest) || !PlayerHUDWidget)
 	{
 		return;
 	}
@@ -798,6 +804,8 @@ void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 void ABasePlayerController::CloseStorage(bool bNotifyServer)
 {
 	AStorageChest* ClosingStorageChest = ActiveStorageChest;
+	if (ABasePlayer* StoragePlayer = Cast<ABasePlayer>(GetPawn()))
+		if (UInventoryComponent* Inventory = StoragePlayer->GetInventoryComponent()) Inventory->ServerHandleRightClickInventory();
 
 	if (StorageWindowWidget)
 	{
@@ -839,7 +847,8 @@ bool ABasePlayerController::IsStorageOpen() const
 
 void ABasePlayerController::StartStorageSearch(AStorageChest* StorageChest)
 {
-	if (!HasAuthority() || !StorageChest || StorageChest->IsLocked())
+	if (StorageChest && StorageChest->IsA<ASharedStorageChest>()) return;
+	if (!HasAuthority() || !CanAccessStorage(StorageChest))
 	{
 		return;
 	}
@@ -884,7 +893,7 @@ void ABasePlayerController::StartStorageSearch(AStorageChest* StorageChest)
 
 void ABasePlayerController::RevealCurrentStorageSlot()
 {
-	if (!HasAuthority() || !ActiveStorageChest || ActiveStorageChest->IsLocked())
+	if (!HasAuthority() || !CanAccessStorage(ActiveStorageChest))
 	{
 		return;
 	}
@@ -1064,6 +1073,7 @@ void ABasePlayerController::SetStatusCharacterInputLocked(bool bLocked)
 void ABasePlayerController::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	if (HasAuthority() && ActiveStorageChest && !CanAccessStorage(ActiveStorageChest)) CloseStorageFromServer(ActiveStorageChest);
 
 	if (GetWorld())
 	{
@@ -1078,4 +1088,49 @@ void ABasePlayerController::Tick(float DeltaTime)
 			}
 		}
 	}
+}
+
+bool ABasePlayerController::CanAccessStorage(AStorageChest* Chest) const
+{
+	if (!IsValid(Chest) || Chest->IsLocked()) return false;
+	const ASharedStorageChest* Shared = Cast<ASharedStorageChest>(Chest);
+	return !Shared || Shared->CanPlayerAccess(GetPawn());
+}
+
+void ABasePlayerController::ServerSharedStorageSlotAction_Implementation(AStorageChest* Chest, int32 Index,
+	FGameplayTag ExpectedTag, int32 ExpectedCount, int32 ExpectedCapacity, bool bQuickMove)
+{
+	if (!CanAccessStorage(Chest) || ActiveStorageChest != Chest || !Chest->IsA<ASharedStorageChest>()) return;
+	ABasePlayer* StoragePlayer = Cast<ABasePlayer>(GetPawn());
+	UInventoryComponent* Inventory = StoragePlayer ? StoragePlayer->GetInventoryComponent() : nullptr;
+	UStorageComponent* Storage = Chest->GetStorageComponent();
+	if (bQuickMove && Inventory && Inventory->GetCursorItem().IsValid())
+	{
+		Inventory->ReturnCursorToOriginalSlot();
+		return;
+	}
+	if (!Inventory || !Storage || ExpectedCapacity != Storage->GetSlotsPerTab() || !Storage->GetSlots().IsValidIndex(Index)) return;
+	const FInventorySlot& Slot = Storage->GetSlots()[Index];
+	// Reject stale views after another player modifies the same slot or capacity changes.
+	if (Slot.ItemTag != ExpectedTag || Slot.Count != ExpectedCount) return;
+	if (bQuickMove)
+	{
+		Storage->TransferSlotToInventory(Index, Inventory);
+	}
+	else if (Inventory->GetCursorItem().IsValid()) Inventory->TransferCursorToStorageSlot(Storage, Index);
+	else Storage->PickUpSlotToCursor(Index, Inventory);
+}
+
+void ABasePlayerController::ServerQuickMoveInventorySlotInTab_Implementation(EInventoryTab Tab, int32 Index,
+	FGameplayTag ExpectedTag, int32 ExpectedCount)
+{
+	if (!CanAccessStorage(ActiveStorageChest)) return;
+	ABasePlayer* StoragePlayer = Cast<ABasePlayer>(GetPawn());
+	UInventoryComponent* Inventory = StoragePlayer ? StoragePlayer->GetInventoryComponent() : nullptr;
+	if (!Inventory || static_cast<uint8>(Tab) > static_cast<uint8>(EInventoryTab::Weapon)) return;
+	const TArray<FInventorySlot>& Slots = Inventory->GetSlots(Tab);
+	if (!Slots.IsValidIndex(Index) || Slots[Index].ItemTag != ExpectedTag || Slots[Index].Count != ExpectedCount) return;
+	if (Inventory->GetCursorItem().IsValid()) { Inventory->ReturnCursorToOriginalSlot(); return; }
+	Inventory->TransferSlotToStorageInTab(Tab, Index, ActiveStorageChest->GetStorageComponent());
+	StartStorageSearch(ActiveStorageChest);
 }

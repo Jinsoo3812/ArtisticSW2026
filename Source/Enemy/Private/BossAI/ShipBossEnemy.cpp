@@ -103,7 +103,8 @@ void AShipBossEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 
 bool AShipBossEnemy::InitializeBoss(AEnemyShip* InHostShip, int32 InitialPointId, AActor* InitialTarget)
 {
-	if (!HasAuthority() || !IsValid(InHostShip) || !CanEngageActor(InitialTarget))
+	if (!HasAuthority() || !IsValid(InHostShip)
+		|| (InitialTarget && !CanEngageActor(InitialTarget)))
 	{
 		return false;
 	}

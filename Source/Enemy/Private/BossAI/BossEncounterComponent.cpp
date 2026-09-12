@@ -136,9 +136,12 @@ bool UBossEncounterComponent::TryStartEncounter(AActor* TriggerActor)
 	}
 	if (!ResolveEncounterTarget(TriggerActor))
 	{
-		// Sight can arrive while the helm possession transition is still settling.
-		// Remain Waiting so a later successful stimulus can retry safely.
-		return false;
+		// Some game modes possess the Player Ship directly and never populate
+		// RidingPlayer. Spawning the encounter must not depend on an initial
+		// character target; the boss perception controller can acquire one later.
+		UE_LOG(LogTemp, Log,
+			TEXT("[BossEncounter] Starting without an initial combat target. Trigger=%s"),
+			*GetNameSafe(TriggerActor));
 	}
 
 	// Change state before spawning so simultaneous interactions cannot create two bosses.
@@ -190,7 +193,7 @@ bool UBossEncounterComponent::SpawnBossFor(AActor* Interactor)
 	AEnemyShip* HostShip = Cast<AEnemyShip>(GetOwner());
 	UWorld* World = GetWorld();
 	AActor* CombatTarget = ResolveEncounterTarget(Interactor);
-	if (!HostShip || !World || !BossClass || !CombatTarget)
+	if (!HostShip || !World || !BossClass)
 	{
 		UE_LOG(LogTemp, Warning,
 			TEXT("[BossEncounter] Spawn rejected. Host=%s BossClass=%s Target=%s"),
@@ -232,6 +235,9 @@ bool UBossEncounterComponent::SpawnBossFor(AActor* Interactor)
 	}
 
 	SpawnedBoss = Boss;
+	UE_LOG(LogTemp, Log,
+		TEXT("[BossEncounter] Boss spawned. Ship=%s Boss=%s PointId=%d InitialTarget=%s"),
+		*GetNameSafe(HostShip), *GetNameSafe(Boss), SpawnPointId, *GetNameSafe(CombatTarget));
 	if (UBaseHealthComponent* Health = Boss->GetHealthComponent())
 	{
 		Health->OnDeathStarted.AddUniqueDynamic(this, &UBossEncounterComponent::HandleBossDeathStarted);
@@ -261,39 +267,9 @@ bool UBossEncounterComponent::ResolveSpawnPoint(
 	int32& OutPointId,
 	FTransform& OutTransform) const
 {
-	UDeckWaypointComponent* Point = Cast<UDeckWaypointComponent>(
-		BossSpawnPointComponent.GetComponent(&HostShip));
-	OutPointId = Point ? Point->GetWaypointId() : BossSpawnPointId;
-	if (Point && (HostShip.GetDeckWaypoint(OutPointId) != Point || !Point->CanUseInCombat()))
-	{
-		return false;
-	}
-	if (!Point)
-	{
-		Point = HostShip.GetDeckWaypoint(OutPointId);
-	}
-	if (!Point)
-	{
-		TArray<int32> PointIds;
-		HostShip.GetDeckWaypointIds(PointIds, true);
-		for (const int32 PointId : PointIds)
-		{
-			UDeckWaypointComponent* Candidate = HostShip.GetDeckWaypoint(PointId);
-			if (Candidate && Candidate->CanSpawnEnemy())
-			{
-				OutPointId = PointId;
-				Point = Candidate;
-				break;
-			}
-		}
-		if (!Point && !PointIds.IsEmpty())
-		{
-			OutPointId = PointIds[0];
-			Point = HostShip.GetDeckWaypoint(OutPointId);
-		}
-	}
-
-	if (!Point)
+	OutPointId = BossSpawnPointId;
+	UDeckWaypointComponent* Point = HostShip.GetDeckWaypoint(OutPointId);
+	if (!Point || !Point->CanUseInCombat())
 	{
 		return false;
 	}

@@ -123,6 +123,12 @@ void UInventoryComponent::BeginPlay()
     }
 }
 
+void UInventoryComponent::EndPlay(const EEndPlayReason::Type Reason)
+{
+	if (GetOwner() && GetOwner()->HasAuthority()) ReturnCursorToOriginalSlot();
+	Super::EndPlay(Reason);
+}
+
 void UInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -698,7 +704,12 @@ FText UInventoryComponent::GetItemRarityName(const FGameplayTag& ItemTag) const
 
 EInventoryTab UInventoryComponent::GetInventoryTabForItem(const FGameplayTag& ItemTag) const
 {
-    if (UWorld* World = GetWorld())
+    return ResolveItemTab(GetWorld(), ItemTag);
+}
+
+EInventoryTab UInventoryComponent::ResolveItemTab(UWorld* World, const FGameplayTag& ItemTag)
+{
+    if (World)
     {
         if (UItemSubsystem* Subsystem = World->GetSubsystem<UItemSubsystem>())
         {
@@ -752,6 +763,7 @@ void UInventoryComponent::HandleLeftClickSlotInTab(EInventoryTab Tab, int32 Slot
         CursorItem.Count = TargetSlot.Count;
         CursorItem.OriginalSlotIndex = SlotIndex;
         CursorItem.OriginalTab = Tab;
+        CursorItem.OriginalStorage = nullptr;
 
         TargetSlot.Clear();
 
@@ -837,6 +849,7 @@ void UInventoryComponent::HandleLeftClickSlotInTab(EInventoryTab Tab, int32 Slot
     CursorItem.Count = TempSlot.Count;
     CursorItem.OriginalSlotIndex = SlotIndex;
     CursorItem.OriginalTab = Tab;
+    CursorItem.OriginalStorage = nullptr;
 
     if (Tab == ActiveTab)
     {
@@ -857,8 +870,14 @@ void UInventoryComponent::HandleRightClickInventory()
 }
 void UInventoryComponent::ReturnCursorToOriginalSlot()
 {
-    if (!CursorItem.IsValid())
+    if (!GetOwner() || !GetOwner()->HasAuthority() || !CursorItem.IsValid())
     {
+        return;
+    }
+
+    if (CursorItem.OriginalStorage)
+    {
+        CursorItem.OriginalStorage->ReturnReservedCursor(this);
         return;
     }
 
@@ -937,6 +956,11 @@ void UInventoryComponent::ReturnCursorToOriginalSlot()
 
 int32 UInventoryComponent::TransferSlotToStorage(int32 SlotIndex, UStorageComponent* TargetStorage)
 {
+	return TransferSlotToStorageInTab(ActiveTab, SlotIndex, TargetStorage);
+}
+
+int32 UInventoryComponent::TransferSlotToStorageInTab(EInventoryTab Tab, int32 SlotIndex, UStorageComponent* TargetStorage)
+{
     // 인벤토리의 슬롯을, storage로 이동
     if (!GetOwner() || !GetOwner()->HasAuthority() || !TargetStorage)
     {
@@ -948,7 +972,7 @@ int32 UInventoryComponent::TransferSlotToStorage(int32 SlotIndex, UStorageCompon
         ReturnCursorToOriginalSlot();
     }
 
-    FInventoryTabPage* Page = FindMutablePage(ActiveTab);
+    FInventoryTabPage* Page = FindMutablePage(Tab);
     if (!Page || !Page->Slots.IsValidIndex(SlotIndex) || Page->Slots[SlotIndex].IsEmpty())
     {
         return 0;
@@ -968,7 +992,7 @@ int32 UInventoryComponent::TransferSlotToStorage(int32 SlotIndex, UStorageCompon
         SourceSlot.Clear();
     }
 
-    InventorySlots = Page->Slots;
+    if (ActiveTab == Tab) InventorySlots = Page->Slots;
     OnInventoryChanged.Broadcast();
     PrintInventoryToScreen();
 
@@ -983,6 +1007,11 @@ int32 UInventoryComponent::TransferCursorToStorageSlot(UStorageComponent* Target
         return 0;
     }
 
+    if (CursorItem.OriginalStorage == TargetStorage && CursorItem.OriginalSlotIndex == StorageSlotIndex)
+    {
+        const int32 ReturningCount = CursorItem.Count;
+        return TargetStorage->ReturnReservedCursor(this) ? ReturningCount : 0;
+    }
     const int32 AddedCount = TargetStorage->AddItemToSlot(StorageSlotIndex, CursorItem.ItemTag, CursorItem.Count);
 
     if (AddedCount <= 0)

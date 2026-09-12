@@ -21,7 +21,6 @@ UGA_PlayerBasicAttack::UGA_PlayerBasicAttack()
 	AssetTags.AddTag(GameplayAbility_BasicAttack);
 	AssetTags.AddTag(GameplayAbility_InterruptibleByHit);
 	SetAssetTags(AssetTags);
-	ActivationBlockedTags.AddTag(State_Damaged);
 }
 
 void UGA_PlayerBasicAttack::ActivateAbility(

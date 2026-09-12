@@ -491,13 +491,13 @@ bool FDeckEnemySpawnerCompositionTest::RunTest(const FString& Parameters)
 	Spawner->bEnableSpawning = true;
 	Spawner->SightActivationDelay = 0.0f;
 	Spawner->ActivationInterval = 0.05f;
-	Spawner->SpawnComposition.Reset();
-	FDeckEnemySpawnEntry& BaseEntry = Spawner->SpawnComposition.AddDefaulted_GetRef();
-	BaseEntry.EnemyClass = ADeckEnemy::StaticClass();
-	BaseEntry.Count = 1;
-	FDeckEnemySpawnEntry& RangedEntry = Spawner->SpawnComposition.AddDefaulted_GetRef();
-	RangedEntry.EnemyClass = ADeckRangedEnemy::StaticClass();
-	RangedEntry.Count = 1;
+	Spawner->SpawnPlan.Reset();
+	FDeckEnemySpawnSlot& BaseSlot = Spawner->SpawnPlan.AddDefaulted_GetRef();
+	BaseSlot.EnemyClass = ADeckEnemy::StaticClass();
+	BaseSlot.SpawnPointId = 101;
+	FDeckEnemySpawnSlot& RangedSlot = Spawner->SpawnPlan.AddDefaulted_GetRef();
+	RangedSlot.EnemyClass = ADeckRangedEnemy::StaticClass();
+	RangedSlot.SpawnPointId = 102;
 	Spawner->InitializePool();
 
 	TestEqual(TEXT("Composition creates exactly two pooled actors"), Spawner->EnemyPool.Num(), 2);
