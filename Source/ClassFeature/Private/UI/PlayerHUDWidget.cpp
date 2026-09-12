@@ -13,6 +13,7 @@
 #include "UI/SkillQuickSlotWidget.h"
 #include "UI/WeaponQuickSlotWidget.h"
 #include "UI/StorageWindowWidget.h"
+#include "Storage/SharedStorageChest.h"
 #include "Storage/StorageChest.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -99,6 +100,10 @@ void UPlayerHUDWidget::NativeConstruct()
 	if (StorageWindowWidget)
 	{
 		StorageWindowWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (SharedStorageWindowWidget)
+	{
+		SharedStorageWindowWidget->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
 	if (InventoryCursorWidgetClass && !InventoryCursorWidget)
@@ -267,6 +272,28 @@ UStorageWindowWidget* UPlayerHUDWidget::ShowStorageWindow(
 		return nullptr;
 	}
 
+	const bool bShared = StorageChest->IsA<ASharedStorageChest>();
+	if (bShared && SharedStorageWindowWidget)
+	{
+		HideStorageWindow();
+		SharedStorageWindowWidget->InitializeStorage(StorageChest, Player);
+		if (InventoryPanelWidget)
+		{
+			SharedStorageWindowWidget->UseInventoryPanel(InventoryPanelWidget->GetClass());
+		}
+		SharedStorageWindowWidget->SetVisibility(ESlateVisibility::Visible);
+		return SharedStorageWindowWidget;
+	}
+	if (bShared)
+	{
+		if (StorageWindowWidget)
+		{
+			SuspendedStorageWindow = StorageWindowWidget;
+			StorageWindowWidget->SetVisibility(ESlateVisibility::Collapsed);
+			StorageWindowWidget = nullptr;
+		}
+		StorageWindowClass = UStorageWindowWidget::StaticClass();
+	}
 	if (!StorageWindowWidget)
 	{
 		if (!RootCanvasPanel)
@@ -299,12 +326,18 @@ UStorageWindowWidget* UPlayerHUDWidget::ShowStorageWindow(
 	}
 
 	StorageWindowWidget->InitializeStorage(StorageChest, Player);
+	if (bShared && InventoryPanelWidget) StorageWindowWidget->UseInventoryPanel(InventoryPanelWidget->GetClass());
 	StorageWindowWidget->SetVisibility(ESlateVisibility::Visible);
 	return StorageWindowWidget;
 }
 
 void UPlayerHUDWidget::HideStorageWindow()
 {
+	if (SharedStorageWindowWidget)
+	{
+		SharedStorageWindowWidget->SetVisibility(ESlateVisibility::Collapsed);
+		SharedStorageWindowWidget->InitializeStorage(nullptr, nullptr);
+	}
 	if (!StorageWindowWidget)
 	{
 		return;
@@ -313,7 +346,8 @@ void UPlayerHUDWidget::HideStorageWindow()
 	if (bRuntimeStorageWindow)
 	{
 		StorageWindowWidget->RemoveFromParent();
-		StorageWindowWidget = nullptr;
+		StorageWindowWidget = SuspendedStorageWindow;
+		SuspendedStorageWindow = nullptr;
 		bRuntimeStorageWindow = false;
 		return;
 	}

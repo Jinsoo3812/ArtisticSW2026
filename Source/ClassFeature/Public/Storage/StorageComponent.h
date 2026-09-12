@@ -34,6 +34,7 @@ public:
 	UStorageComponent();
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	UFUNCTION(BlueprintCallable, Category = "Storage")
@@ -47,6 +48,10 @@ public:
 
 	int32 AddItemToSlot(int32 SlotIndex, const FGameplayTag& ItemTag, int32 Amount = 1);
 	int32 TransferSlotToInventory(int32 SlotIndex, UInventoryComponent* TargetInventory);
+	bool PickUpSlotToCursor(int32 SlotIndex, UInventoryComponent* Inventory);
+	bool ReturnReservedCursor(UInventoryComponent* Inventory);
+	void ReturnAllReservedCursors();
+	TArray<FInventorySlot> GetPersistentSlots() const;
 
 	const TArray<FInventorySlot>& GetSlots() const { return StorageSlots; }
 	bool IsEmpty() const;
@@ -60,9 +65,19 @@ public:
 	UTexture2D* GetItemIcon(const FGameplayTag& ItemTag) const;
 	FText GetItemName(const FGameplayTag& ItemTag) const;
 
+
+	/** Opt-in categorized storage. Existing loot chests keep their flat layout. */
+	bool ConfigureTabbedStorage(int32 InSlotsPerTab, const TArray<FInventorySlot>& SavedSlots = {}, int32 SavedSlotsPerTab = 0);
+	bool UsesInventoryTabs() const { return SlotsPerTab > 0; }
+	int32 GetSlotsPerTab() const { return SlotsPerTab; }
+	int32 GetTabStart(EInventoryTab Tab) const { return static_cast<int32>(Tab) * SlotsPerTab; }
+	bool CanStoreInSlot(int32 Index, const FGameplayTag& ItemTag) const;
 	FOnStorageChanged OnStorageChanged;
 
 protected:
+	UPROPERTY(ReplicatedUsing = OnRep_StorageContents)
+	int32 SlotsPerTab = 0;
+
 	// 전체 칸의 수
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_StorageContents, Category = "Storage", meta = (ClampMin = "1", UIMin = "1"))
 	int32 SlotCount = 5;
@@ -90,4 +105,14 @@ protected:
 	void EnsureSlotArray();
 	void CompactSlots();
 	void BroadcastStorageChanged();
+
+private:
+	struct FCursorReservation
+	{
+		int32 SlotIndex = INDEX_NONE;
+		FInventorySlot Item;
+	};
+	TMap<TWeakObjectPtr<UInventoryComponent>, FCursorReservation> CursorReservations;
+	bool IsSlotReserved(int32 Index) const;
+	void HandleCursorChanged();
 };
