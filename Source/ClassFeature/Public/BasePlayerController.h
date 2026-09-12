@@ -6,6 +6,7 @@
 #include "Components/SlateWrapperTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
+#include "Inventory/InventoryComponent.h"
 #include "TimerManager.h"
 #include "ArtisticSW2026PlayerController.h"
 #include "BasePlayerController.generated.h"
@@ -103,6 +104,11 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerCloseStorage(AStorageChest* StorageChest);
 
+	UFUNCTION(Server, Reliable)
+	void ServerSharedStorageSlotAction(AStorageChest* Chest, int32 Index, FGameplayTag ExpectedTag, int32 ExpectedCount, int32 ExpectedCapacity, bool bQuickMove);
+	UFUNCTION(Server, Reliable)
+	void ServerQuickMoveInventorySlotInTab(EInventoryTab Tab, int32 Index, FGameplayTag ExpectedTag, int32 ExpectedCount);
+	bool CanAccessStorage(AStorageChest* Chest) const;
 	bool HasOpenStorage() const { return ActiveStorageChest != nullptr; }
 	bool IsStorageSlotRevealed(AStorageChest* StorageChest, int32 SlotIndex) const;
 	bool IsStorageSlotSearching(AStorageChest* StorageChest, int32 SlotIndex) const;

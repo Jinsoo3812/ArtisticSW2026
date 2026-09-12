@@ -340,7 +340,7 @@ void AStorageChest::HandleStorageChanged()
 
 void AStorageChest::HandleEmptyDestroyTimeout()
 {
-	if (!HasAuthority() || !StorageComponent || !StorageComponent->IsEmpty())
+	if (!HasAuthority() || !bDestroyWhenEmpty || !StorageComponent || !StorageComponent->IsEmpty())
 	{
 		return;
 	}
