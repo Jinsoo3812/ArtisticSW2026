@@ -10,6 +10,7 @@
 #include "Upgrade/ShipUpgradeInventoryProvider.h"
 #include "Upgrade/ShipUpgradeSaveGame.h"
 #include "Upgrade/ShipUpgradeTreeDataAsset.h"
+#include "Balance/ProgressionBalanceData.h"
 
 UShipUpgradeComponent::UShipUpgradeComponent()
 {
@@ -23,7 +24,7 @@ void UShipUpgradeComponent::BeginPlay()
 	{
 		UpgradeTree = LoadObject<UShipUpgradeTreeDataAsset>(
 			nullptr,
-			TEXT("/Game/Blueprints/Ship/Data/DA_ShipUpgradeTree.DA_ShipUpgradeTree"));
+			TEXT("/Game/Blueprints/Item/Data/ShipUpgrade/DA_ShipUpgradeTree.DA_ShipUpgradeTree"));
 	}
 	if (UpgradeTree)
 	{

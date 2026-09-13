@@ -228,6 +228,7 @@ void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* Context
 	FacilityHubWidget->InitializeForContext(ContextActor);
 	FacilityHubWidget->AddToViewport(100);
 	ApplyInventoryInputMode(true);
+	SetIgnoreMoveInput(true);
 	FacilityHubWidget->SetUserFocus(this);
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[FacilityHubFlow][CLIENT] SUCCESS: Common FacilityHub added to viewport. Widget=%s Context=%s"),
@@ -799,6 +800,7 @@ void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 	{
 		return;
 	}
+	SetIgnoreMoveInput(true);
 }
 
 void ABasePlayerController::CloseStorage(bool bNotifyServer)
@@ -843,6 +845,22 @@ void ABasePlayerController::CloseStorage(bool bNotifyServer)
 bool ABasePlayerController::IsStorageOpen() const
 {
 	return StorageWindowWidget != nullptr && ActiveStorageChest != nullptr;
+}
+
+bool ABasePlayerController::CloseActiveInteractionWindow()
+{
+	if (!IsLocalController()) return false;
+	if (IsFacilityHubOpen())
+	{
+		CloseFacilityHub();
+		return true;
+	}
+	if (IsStorageOpen())
+	{
+		CloseStorage();
+		return true;
+	}
+	return false;
 }
 
 void ABasePlayerController::StartStorageSearch(AStorageChest* StorageChest)
@@ -995,6 +1013,8 @@ float ABasePlayerController::GetStorageSlotSearchTime(AStorageChest* StorageChes
 void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 {
 	bShowMouseCursor = bOpen;
+	// A chest and the facility hub are modal; keep F/game input available for closing.
+	SetIgnoreMoveInput(IsStorageOpen() || IsFacilityHubOpen());
 
 	if (bOpen)
 	{

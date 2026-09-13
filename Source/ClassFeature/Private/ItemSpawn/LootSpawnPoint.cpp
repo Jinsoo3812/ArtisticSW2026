@@ -154,10 +154,8 @@ void AChestSpawnPoint::BeginPlay()
 			}
 		}
 
-		if (SpawnMode == EChestSpawnMode::Guarded && ChestDefinition && !bActivated)
-		{
-			SpawnConfiguredChest(ChestDefinition, FMath::Rand());
-		}
+		// The global manager owns initial spawning and progression reward allocation.
+		// Child actors can BeginPlay before their owning ship applies authoring settings.
 	}
 }
 
@@ -171,8 +169,11 @@ void AChestSpawnPoint::ApplyAuthoringSettings(
 	GuaranteedBossQuestItemCount = FMath::Max(1, ChestSettings.GuaranteedBossQuestItemCount);
 	Environment = ChestSettings.Environment;
 	SpawnMode = ChestSettings.SpawnMode;
+	ProgressionZone = ChestSettings.ProgressionZone;
+	ProgressionKind = ChestSettings.ProgressionKind;
+	ChestClassOverride = ChestSettings.ChestClassOverride;
 	RandomGroup = ChestSettings.RandomGroup;
-	ChestDefinition = ChestSettings.ChestDefinition;
+	ChestDefinition = nullptr; // Retired authoring input; the manager supplies progression loot.
 	GuardCharacters = ChestSettings.GuardCharacters;
 	GuardSpawners = ChestSettings.GuardSpawners;
 	OwningShip = ChestSettings.OwningShip;
@@ -198,11 +199,10 @@ void AChestSpawnPoint::HandleGuardActorSpawned(AActor* InSpawnedActor)
 		return;
 	}
 
-	GuardCharacters.AddUnique(GuardChar);
+	RegisterGuardCharacter(GuardChar);
 
 	if (IsValid(ActiveChestInstance))
 	{
-		ActiveChestInstance->AddGuardCharacter(GuardChar);
 
 		if (bIsBossChest && !bBossQuestItemInjected && GuaranteedBossQuestItemTag.IsValid() && HasMatchingBossGuard())
 		{
@@ -252,7 +252,7 @@ bool AChestSpawnPoint::HasMatchingBossGuard() const
 
 AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definition, int32 Seed)
 {
-	if (!HasAuthority() || !CanSpawnDataDrivenChest() || !IsValid(Definition) || !Definition->ChestClass)
+	if (!HasAuthority() || !CanSpawnDataDrivenChest())
 	{
 		return nullptr;
 	}
@@ -263,8 +263,11 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 		return nullptr;
 	}
 
+	TSubclassOf<AStorageChest> SpawnClass = ChestClassOverride;
+	if (!SpawnClass && IsValid(Definition)) SpawnClass = Definition->ChestClass;
+	if (!SpawnClass) SpawnClass = AStorageChest::StaticClass();
 	AStorageChest* SpawnedChest = World->SpawnActorDeferred<AStorageChest>(
-		Definition->ChestClass,
+		SpawnClass,
 		GetActorTransform(),
 		this,
 		nullptr,
@@ -275,7 +278,8 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 	}
 
 	ActiveChestInstance = SpawnedChest;
-	SpawnedChest->InitializeFromChestDefinition(Definition, Seed);
+	if (Definition) SpawnedChest->InitializeFromChestDefinition(Definition, Seed);
+	else SpawnedChest->ClearLegacyChestDefinition();
 	SpawnedChest->SetPhysicsAndBuoyancyEnabled(Environment == EChestEnvironment::Water);
 
 	AShip* EffectiveOwningShip = OwningShip ? OwningShip.Get() : Cast<AShip>(GetAttachParentActor());
@@ -448,4 +452,14 @@ void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
 		nullptr,
 		ETeleportType::TeleportPhysics
 	);
+}
+
+void AChestSpawnPoint::RegisterGuardCharacter(ABaseCharacter* GuardCharacter)
+{
+	if (!HasAuthority() || !IsValid(GuardCharacter)) return;
+	if (!GuardCharacters.Contains(GuardCharacter))
+	{
+		GuardCharacters.Add(GuardCharacter);
+		if (IsValid(ActiveChestInstance)) ActiveChestInstance->AddGuardCharacter(GuardCharacter);
+	}
 }

@@ -225,6 +225,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Ship|Crew")
 	void RegisterCrewEnemy(ABaseEnemy* CrewEnemy);
+	/** Pooled deck enemies guard the deck chest without being double-counted as manual crew. */
+	void RegisterDeckEnemyChestGuard(ABaseEnemy* CrewEnemy);
 
 	UFUNCTION(BlueprintCallable, Category = "Ship|Crew")
 	void UnregisterCrewEnemy(ABaseEnemy* CrewEnemy);
@@ -339,8 +341,8 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Death")
 	bool bDeathHandled = false;
 	
-	/** 침몰 시 생성할 상자 정의. 갑판 상자와 같은 Ship 정의를 지정할 수 있다. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Chest Reward")
+	/** Retired serialized reference. Sunk loot now uses the deck zone's cached progression rolls. */
+	UPROPERTY()
 	TObjectPtr<UChestDefinition> SunkChestDefinition;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Ship|Chest Reward")

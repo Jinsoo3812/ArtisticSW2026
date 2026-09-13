@@ -11,6 +11,14 @@ namespace ArtisticCrafting
 	inline constexpr int32 MaxIngredientSlots = 4;
 }
 
+UENUM(BlueprintType)
+enum class EProgressionRecipeTrack : uint8
+{
+	None,
+	Weapon,
+	Consumable
+};
+
 /** One item stack used by a crafting recipe or inventory transaction. */
 USTRUCT(BlueprintType)
 struct ARTISTICSWCORE_API FCraftingItemStack
@@ -36,7 +44,11 @@ struct ARTISTICSWCORE_API FCraftingRecipeRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (ClampMin = "1"))
 	int32 ResultQuantity = 1;
 
-	/** Empty means the recipe is available without owning a recipe item. */
+	/** Empty means the recipe is available without owning a recipe item.
+	 * Progression weapon recipes currently leave this empty: Epic/Legendary recipe-item gates
+	 * are intentionally disabled while their acquisition pipeline is not balanced. The generic
+	 * recipe-item mechanic remains for non-progression recipes and future special recipes.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (Categories = "Item.Id"))
 	FGameplayTag RequiredRecipeItemTag;
 
@@ -52,5 +64,12 @@ struct ARTISTICSWCORE_API FCraftingRecipeRow : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting")
 	int32 SortOrder = 0;
+
+	/** 0 excludes this recipe from automatic chest demand; 1..4 are upgrades from base tier 0. */
+	UPROPERTY()
+	int32 ProgressionTier = 0;
+
+	UPROPERTY()
+	EProgressionRecipeTrack ProgressionTrack = EProgressionRecipeTrack::None;
 };
 

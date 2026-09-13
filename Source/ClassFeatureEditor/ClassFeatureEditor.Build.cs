@@ -28,6 +28,7 @@ public class ClassFeatureEditor : ModuleRules
 			"GeometryCore",
 			"MeshConversion",
 			"AssetRegistry",
+			"PropertyEditor",
 			"ImageCore"
 		});
 

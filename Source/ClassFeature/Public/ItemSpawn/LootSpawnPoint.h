@@ -38,12 +38,21 @@ struct CLASSFEATURE_API FChestSpawnPointChestSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Data Driven")
 	EChestSpawnMode SpawnMode = EChestSpawnMode::Guarded;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Progression")
+	EProgressionZone ProgressionZone = EProgressionZone::Mid1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Progression")
+	EProgressionChestKind ProgressionKind = EProgressionChestKind::ShipGuarded;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Spawn")
+	TSubclassOf<AStorageChest> ChestClassOverride;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Data Driven",
 		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Random"))
 	TObjectPtr<URandomChestGroup> RandomGroup = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Data Driven",
-		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Guarded"))
+	/** Legacy serialized value; progression chest spawning does not read it. */
+	UPROPERTY()
 	TObjectPtr<UChestDefinition> ChestDefinition = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Guard",
@@ -180,6 +189,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Chest|Spawn")
 	AStorageChest* SpawnConfiguredChest(UChestDefinition* Definition, int32 Seed);
 
+	/** Registers a ship crew member even when the crew spawned after the chest. */
+	void RegisterGuardCharacter(ABaseCharacter* GuardCharacter);
+
 	UFUNCTION(BlueprintPure, Category = "Chest|Spawn")
 	bool CanSpawnDataDrivenChest() const
 	{
@@ -189,6 +201,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Chest|Spawn")
 	EChestSpawnMode GetSpawnMode() const { return SpawnMode; }
+
+	UFUNCTION(BlueprintPure, Category = "Chest|Progression")
+	EProgressionZone GetProgressionZone() const { return ProgressionZone; }
+
+	UFUNCTION(BlueprintPure, Category = "Chest|Progression")
+	EProgressionChestKind GetProgressionKind() const { return ProgressionKind; }
 
 	UFUNCTION(BlueprintPure, Category = "Chest|Spawn")
 	URandomChestGroup* GetRandomGroup() const { return RandomGroup; }
@@ -253,12 +271,21 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Data Driven")
 	EChestSpawnMode SpawnMode = EChestSpawnMode::Guarded;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Progression")
+	EProgressionZone ProgressionZone = EProgressionZone::Mid1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Progression")
+	EProgressionChestKind ProgressionKind = EProgressionChestKind::ShipGuarded;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Spawn")
+	TSubclassOf<AStorageChest> ChestClassOverride;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Data Driven",
 		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Random"))
 	TObjectPtr<URandomChestGroup> RandomGroup = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Data Driven",
-		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Guarded"))
+	/** Legacy serialized value; new manager-owned chests do not read it. */
+	UPROPERTY()
 	TObjectPtr<UChestDefinition> ChestDefinition = nullptr;
 
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Chest|Guard",

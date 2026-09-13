@@ -127,6 +127,8 @@ public:
 	void ServerQuickMoveInventorySlotInTab(EInventoryTab Tab, int32 Index, FGameplayTag ExpectedTag, int32 ExpectedCount);
 	bool CanAccessStorage(AStorageChest* Chest) const;
 	bool HasOpenStorage() const { return ActiveStorageChest != nullptr; }
+	/** Consume F while a chest or facility window is open, regardless of overlap. */
+	bool CloseActiveInteractionWindow();
 	bool IsStorageSlotRevealed(AStorageChest* StorageChest, int32 SlotIndex) const;
 	bool IsStorageSlotSearching(AStorageChest* StorageChest, int32 SlotIndex) const;
 

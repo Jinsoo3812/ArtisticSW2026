@@ -8,8 +8,12 @@
 #include "Storage/StorageChest.h"
 #include "Storage/StorageComponent.h"
 #include "ItemSpawn/ChestSpawnData.h"
+#include "ItemSpawn/GlobalLootSpawnManager.h"
+#include "Item/ItemData.h"
+#include "Settings_Item.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "DrawDebugHelpers.h"
 #include "HAL/IConsoleManager.h"
 #include "SceneManagement.h"
@@ -738,6 +742,22 @@ void AEnemyShip::ApplyChestSpawnPointSettings()
 	FChestSpawnPointChestSettings DeckChestSettings = ChestSpawnPointChestSettings;
 	DeckChestSettings.Environment = EChestEnvironment::ShipDeck;
 	DeckChestSettings.OwningShip = this;
+	if (DeckChestSettings.SpawnMode == EChestSpawnMode::Guarded)
+	{
+		for (ABaseEnemy* Crew : RegisteredCrewEnemies)
+		{
+			if (IsValid(Crew)) DeckChestSettings.GuardCharacters.AddUnique(Crew);
+		}
+		if (DeckEnemySpawnerComponent)
+		{
+			TArray<ADeckEnemy*> PooledEnemies;
+			DeckEnemySpawnerComponent->GetPooledEnemies(PooledEnemies);
+			for (ADeckEnemy* Crew : PooledEnemies)
+			{
+				DeckChestSettings.GuardCharacters.AddUnique(Crew);
+			}
+		}
+	}
 
 	TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
 	for (UChildActorComponent* ChildActorComponent : ChildActorComponents)
@@ -2152,16 +2172,10 @@ void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotato
 	const FRotator SpawnRotation(0.0f, DeathRotation.Yaw, 0.0f);
 	const FTransform SpawnTransform(SpawnRotation, SpawnLocation);
 
-	if (!IsValid(SunkChestDefinition) || !SunkChestDefinition->ChestClass)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("AEnemyShip::DropAtDeathLocation - SunkChestDefinition or its ChestClass is missing. Ship=%s Definition=%s"),
-			*GetName(), *GetNameSafe(SunkChestDefinition));
-		return;
-	}
-
+	TSubclassOf<AStorageChest> ChestClass = ChestSpawnPointChestSettings.ChestClassOverride;
+	if (!ChestClass) ChestClass = AStorageChest::StaticClass();
 	AStorageChest* SpawnedStorage = World->SpawnActorDeferred<AStorageChest>(
-		SunkChestDefinition->ChestClass,
+		ChestClass,
 		SpawnTransform,
 		nullptr,
 		nullptr,
@@ -2170,20 +2184,38 @@ void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotato
 	if (SpawnedStorage)
 	{
 		const int32 DropSeed = FMath::RandRange(1, MAX_int32);
-		SpawnedStorage->InitializeFromChestDefinition(SunkChestDefinition, DropSeed);
+		SpawnedStorage->ClearLegacyChestDefinition();
 		SpawnedStorage->SetPhysicsAndBuoyancyEnabled(true);
 		SpawnedStorage->FinishSpawning(SpawnTransform);
+		TArray<FProgressionComputedDrop> SunkDrops;
+		bool bHasProgressionDrops = false;
+		for (TActorIterator<AGlobalLootSpawnManager> It(World); It; ++It)
+		{
+			bHasProgressionDrops = It->GetSunkChestDrops(ChestSpawnPointChestSettings.ProgressionZone, SunkDrops);
+			break;
+		}
+		const USettings_Item* ItemSettings = GetDefault<USettings_Item>();
+		const UItemData* Items = ItemSettings ? ItemSettings->ItemAssetRegistry.LoadSynchronous() : nullptr;
+		if (bHasProgressionDrops && Items)
+		{
+			SpawnedStorage->ReplaceProgressionLoot(SunkDrops, Items, DropSeed);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("Sunk chest spawned empty: no finalized progression drops or item definitions. Ship=%s Zone=%d"),
+				*GetName(), static_cast<int32>(ChestSpawnPointChestSettings.ProgressionZone));
+		}
 		SpawnedStorage->ForceNetUpdate();
 
 		UE_LOG(LogTemp, Log,
-			TEXT("AEnemyShip::DropAtDeathLocation - Spawned buoyant chest from definition %s. Ship=%s Location=%s"),
-			*GetNameSafe(SunkChestDefinition), *GetName(), *SpawnedStorage->GetActorLocation().ToString());
+			TEXT("AEnemyShip::DropAtDeathLocation - Spawned buoyant progression chest. Ship=%s Zone=%d Location=%s"),
+			*GetName(), static_cast<int32>(ChestSpawnPointChestSettings.ProgressionZone), *SpawnedStorage->GetActorLocation().ToString());
 	}
 	else
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("AEnemyShip::DropAtDeathLocation - Failed to spawn SunkChestDefinition. Ship=%s Definition=%s Location=%s"),
-			*GetName(), *GetNameSafe(SunkChestDefinition), *SpawnLocation.ToString());
+			TEXT("AEnemyShip::DropAtDeathLocation - Failed to spawn sunk progression chest. Ship=%s Location=%s"),
+			*GetName(), *SpawnLocation.ToString());
 	}
 }
 
@@ -2270,7 +2302,24 @@ void AEnemyShip::RegisterCrewEnemy(ABaseEnemy* CrewEnemy)
 	{
 		RegisteredCrewEnemies.AddUnique(CrewEnemy);
 		CrewEnemy->OnBaseEnemyDeathNotified.AddUniqueDynamic(this, &AEnemyShip::HandleCrewEnemyRemoved);
+		RegisterDeckEnemyChestGuard(CrewEnemy);
 		EvaluateCrewControlState();
+	}
+}
+
+void AEnemyShip::RegisterDeckEnemyChestGuard(ABaseEnemy* CrewEnemy)
+{
+	if (!HasAuthority() || !IsValid(CrewEnemy)) return;
+	TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
+	for (UChildActorComponent* Component : ChildActorComponents)
+	{
+		if (Component && Component->GetName().StartsWith(TEXT("ChestSpawnPoint")))
+		{
+			if (AChestSpawnPoint* Point = Cast<AChestSpawnPoint>(Component->GetChildActor()))
+			{
+				if (Point->GetSpawnMode() == EChestSpawnMode::Guarded) Point->RegisterGuardCharacter(CrewEnemy);
+			}
+		}
 	}
 }
 

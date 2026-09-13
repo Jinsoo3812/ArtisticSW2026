@@ -192,10 +192,12 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal, "Item.Id.Consumables.Heal");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal_Medicine, "Item.Id.Consumables.Heal.Medicine");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal_Tangyak, "Item.Id.Consumables.Heal.Tangyak");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal_Elixir, "Item.Id.Consumables.Heal.Elixir");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal_Panacea, "Item.Id.Consumables.Heal.Panacea");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff, "Item.Id.Consumables.Buff");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff_Doraji, "Item.Id.Consumables.Buff.Doraji");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff_Chungshimhwan, "Item.Id.Consumables.Buff.Chungshimhwan");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff_Gongjindan, "Item.Id.Consumables.Buff.Gongjindan");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff_RoyalGongjindan, "Item.Id.Consumables.Buff.RoyalGongjindan");
 
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon, "Item.Id.Weapon");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Sword, "Item.Id.Weapon.Sword");

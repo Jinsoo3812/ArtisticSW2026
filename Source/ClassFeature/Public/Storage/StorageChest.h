@@ -15,6 +15,8 @@ class UBaseHealthComponent;
 class UChestDefinition;
 class ABaseCharacter;
 class AShip;
+class UItemData;
+struct FProgressionComputedDrop;
 
 UCLASS()
 class CLASSFEATURE_API AStorageChest : public AActor
@@ -47,7 +49,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Storage Chest|Physics")
 	void SetPhysicsAndBuoyancyEnabled(bool bEnabled);
 
-	void InitializeFromChestDefinition(UChestDefinition* InDefinition, int32 Seed);
+	void InitializeFromChestDefinition(UChestDefinition* InDefinition, int32 Seed, float ExpectedValueRatio = 1.f);
+	/** Prevents a chest BP's legacy default definition from injecting snapshot loot. */
+	void ClearLegacyChestDefinition();
+	void ReplaceProgressionLoot(const TArray<FProgressionComputedDrop>& Drops, const UItemData* Definitions, int32 Seed);
 	void ConfigureGuarding(bool bInRequiresGuardClear, const TArray<ABaseCharacter*>& InGuardCharacters, AShip* InOwningShip);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Storage Chest|Guarding")

@@ -5,6 +5,8 @@
 #include "Upgrade/ShipUpgradeTypes.h"
 #include "ShipUpgradeTreeDataAsset.generated.h"
 
+class UProgressionBalanceData;
+
 UCLASS(BlueprintType)
 class WATERANDSHIP_API UShipUpgradeTreeDataAsset : public UDataAsset
 {
@@ -23,6 +25,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship Upgrade")
 	TArray<FShipUpgradeNodeDefinition> Nodes;
+
+	/** Shared material costs for production nodes. If unset, per-node activation costs remain in use. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship Upgrade|Balance")
+	TObjectPtr<UProgressionBalanceData> BalanceProfile;
 
 	const FShipUpgradeNodeDefinition* FindNode(FName NodeId) const;
 	bool ValidateTree(TArray<FText>& OutErrors) const;

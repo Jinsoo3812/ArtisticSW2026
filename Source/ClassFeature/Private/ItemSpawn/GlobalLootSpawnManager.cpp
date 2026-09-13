@@ -5,7 +5,113 @@
 #include "ItemSpawn/ChestSpawnData.h"
 #include "ItemSpawn/LootSpawnPoint.h"
 #include "ItemSpawn/LootZoneSpawnManager.h"
+#include "Settings_Item.h"
+#include "Item/ItemData.h"
+#include "Upgrade/ShipUpgradeTreeDataAsset.h"
+#include "Engine/DataTable.h"
 #include "Storage/StorageChest.h"
+
+namespace
+{
+	using FMaterialDemand = TMap<FGameplayTag, double>;
+
+	bool AddAverageCosts(FMaterialDemand& Demand, const TArray<FCraftingItemStack>& Ingredients,
+		const UItemData* Items, EItemProgressionKind ExpectedKind, int32 Tier, double Multiplier)
+	{
+		bool bValid = true;
+		for (const FCraftingItemStack& Ingredient : Ingredients)
+		{
+			const FItemDefinition* Material = Items->FindItemDefinition(Ingredient.ItemTag);
+			const EItemProgressionKind SpecialKind = ExpectedKind == EItemProgressionKind::WeaponMaterial
+				? EItemProgressionKind::WeaponSpecialMaterial : ExpectedKind == EItemProgressionKind::ConsumableMaterial
+				? EItemProgressionKind::ConsumableSpecialMaterial : EItemProgressionKind::ShipSpecialMaterial;
+			const bool bSpecial = Material && (Material->ProgressionKind == SpecialKind
+				|| Material->ProgressionKind == EItemProgressionKind::UniversalSpecialMaterial);
+			if (!Material || Ingredient.Quantity <= 0
+				|| (Material->ProgressionKind != ExpectedKind && !bSpecial)
+				|| (!bSpecial
+					&& (Material->ProgressionTier > Tier || Material->ProgressionTier < Tier - 1)))
+			{
+				UE_LOG(LogTemp, Error, TEXT("Invalid progression ingredient %s for tier %d"), *Ingredient.ItemTag.ToString(), Tier);
+				bValid = false;
+				continue;
+			}
+			Demand.FindOrAdd(Ingredient.ItemTag) += Ingredient.Quantity * Multiplier;
+		}
+		return bValid;
+	}
+
+	bool BuildDemand(EProgressionZone Zone, const FProgressionZoneTarget& Target,
+		const UItemData* Items, const UDataTable* Recipes, const UShipUpgradeTreeDataAsset* Tree,
+		FMaterialDemand& Demand)
+	{
+		bool bValid = true;
+		const int32 Tier = static_cast<int32>(Zone) + 1;
+		for (const EItemProgressionKind Kind : {EItemProgressionKind::Weapon, EItemProgressionKind::Consumable})
+		{
+			TArray<const FCraftingRecipeRow*> Matches;
+			TSet<FGameplayTag> SeenResults;
+			for (const FName RowName : Recipes->GetRowNames())
+			{
+				const FCraftingRecipeRow* Recipe = Recipes->FindRow<FCraftingRecipeRow>(RowName, TEXT("Chest progression"), false);
+				const FItemDefinition* Result = Recipe ? Items->FindItemDefinition(Recipe->ResultItemTag) : nullptr;
+				if (Recipe && Recipe->bEnabled && Result && Result->ProgressionTier == Tier && Result->ProgressionKind == Kind)
+				{
+					if (SeenResults.Contains(Recipe->ResultItemTag))
+					{
+						UE_LOG(LogTemp, Error, TEXT("Duplicate enabled progression recipe for %s"), *Recipe->ResultItemTag.ToString());
+						bValid = false;
+						continue;
+					}
+					SeenResults.Add(Recipe->ResultItemTag);
+					Matches.Add(Recipe);
+				}
+			}
+			const int32 Crafts = Kind == EItemProgressionKind::Weapon ? Target.WeaponCrafts : Target.ConsumableCrafts;
+			if (Crafts == 0) continue;
+			if (Crafts > 0 && Matches.IsEmpty())
+			{
+				UE_LOG(LogTemp, Error, TEXT("No tier %d recipes for progression kind %d"), Tier, static_cast<int32>(Kind));
+				bValid = false;
+			}
+			for (const FCraftingRecipeRow* Recipe : Matches)
+			{
+				const double Multiplier = static_cast<double>(Crafts) /
+					(Matches.Num() * FMath::Max(1, Recipe->ResultQuantity));
+				bValid &= AddAverageCosts(Demand, Recipe->Ingredients, Items,
+					Kind == EItemProgressionKind::Weapon ? EItemProgressionKind::WeaponMaterial : EItemProgressionKind::ConsumableMaterial,
+					Tier, Multiplier);
+			}
+		}
+		if (Target.ShipUpgrades > 0 && Tree)
+		{
+			TArray<const FShipUpgradeNodeDefinition*> Nodes;
+			for (const FShipUpgradeNodeDefinition& Node : Tree->Nodes)
+			{
+				if (Node.StatTrack != EShipUpgradeStatTrack::LegacyModifiers && Node.TrackLevel == Tier)
+				{
+					Nodes.Add(&Node);
+				}
+			}
+			if (Nodes.IsEmpty())
+			{
+				UE_LOG(LogTemp, Error, TEXT("No tier %d ship upgrade nodes"), Tier);
+				bValid = false;
+			}
+			for (const FShipUpgradeNodeDefinition* Node : Nodes)
+			{
+				bValid &= AddAverageCosts(Demand, Node->ActivationCosts, Items, EItemProgressionKind::ShipMaterial,
+					Tier, static_cast<double>(Target.ShipUpgrades) / Nodes.Num());
+			}
+		}
+		else if (Target.ShipUpgrades > 0)
+		{
+			UE_LOG(LogTemp, Error, TEXT("Ship upgrade tree is missing for tier %d progression"), Tier);
+			bValid = false;
+		}
+		return bValid;
+	}
+}
 
 AGlobalLootSpawnManager::AGlobalLootSpawnManager()
 {
@@ -24,10 +130,17 @@ void AGlobalLootSpawnManager::BeginPlay()
 			SpawnSeed = FMath::Rand();
 		}
 
-		if (bInitializeOnBeginPlay)
-		{
-			InitializeLevelLoot();
-		}
+	if (bInitializeOnBeginPlay)
+	{
+		GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this,
+			[this]()
+			{
+				// Ship child actors receive their settings during ship BeginPlay.
+				InitializeLevelLoot();
+				GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this,
+					[this]() { RebalanceSpawnedChests(); }));
+			}));
+	}
 	}
 }
 
@@ -144,31 +257,35 @@ int32 AGlobalLootSpawnManager::InitializeDataDrivenChests()
 	int32 SpawnedCount = 0;
 	for (AChestSpawnPoint* Point : GuardedPoints)
 	{
-		UChestDefinition* Definition = Point->GetGuardedChestDefinition();
 		const uint32 PointSeed = HashCombine(GetTypeHash(SpawnSeed), GetTypeHash(Point->GetFName()));
-		if (IsValid(Definition) && IsValid(Point->SpawnConfiguredChest(Definition, static_cast<int32>(PointSeed & 0x7fffffff))))
+		if (IsValid(Point->SpawnConfiguredChest(nullptr, static_cast<int32>(PointSeed & 0x7fffffff))))
 		{
 			++SpawnedCount;
 		}
 		else
 		{
-			UE_LOG(LogTemp, Error, TEXT("Failed to spawn guarded chest. Point=%s Definition=%s"),
-				*GetNameSafe(Point), *GetNameSafe(Definition));
+			UE_LOG(LogTemp, Error, TEXT("Failed to spawn guarded chest. Point=%s"), *GetNameSafe(Point));
 		}
 	}
 
 	for (TPair<URandomChestGroup*, TArray<AChestSpawnPoint*>>& Pair : RandomPointsByGroup)
 	{
 		URandomChestGroup* Group = Pair.Key;
-		if (!IsValid(Group) || !IsValid(Group->ChestDefinition) || Group->SpawnCount <= 0)
+		if (!IsValid(Group) || Group->GetEffectiveSpawnCount() <= 0)
 		{
-			UE_LOG(LogTemp, Error, TEXT("Invalid random chest group. Group=%s Definition=%s SpawnCount=%d"),
-				*GetNameSafe(Group), *GetNameSafe(Group ? Group->ChestDefinition : nullptr), Group ? Group->SpawnCount : 0);
+			UE_LOG(LogTemp, Error, TEXT("Invalid random chest group. Group=%s SpawnCount=%d"),
+				*GetNameSafe(Group), Group ? Group->GetEffectiveSpawnCount() : 0);
 			continue;
 		}
 
 		TArray<AChestSpawnPoint*> Candidates = Pair.Value;
-		const int32 TargetCount = FMath::Min(Group->SpawnCount, Candidates.Num());
+		if (Candidates.Num() < Group->GetEffectiveSpawnCount())
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("Random chest group %s has %d candidate points but balance requests %d active chests."),
+				*GetNameSafe(Group), Candidates.Num(), Group->GetEffectiveSpawnCount());
+		}
+		const int32 TargetCount = FMath::Min(Group->GetEffectiveSpawnCount(), Candidates.Num());
 		const uint32 GroupSeed = HashCombine(GetTypeHash(SpawnSeed), GetTypeHash(Group->GetFName()));
 		FRandomStream RandomStream(static_cast<int32>(GroupSeed & 0x7fffffff));
 
@@ -182,7 +299,7 @@ int32 AGlobalLootSpawnManager::InitializeDataDrivenChests()
 
 			Candidates.RemoveSingleSwap(SelectedPoint);
 			const int32 ChestSeed = RandomStream.RandRange(1, MAX_int32);
-			if (IsValid(SelectedPoint->SpawnConfiguredChest(Group->ChestDefinition, ChestSeed)))
+			if (IsValid(SelectedPoint->SpawnConfiguredChest(nullptr, ChestSeed)))
 			{
 				++SpawnedCount;
 			}
@@ -190,6 +307,135 @@ int32 AGlobalLootSpawnManager::InitializeDataDrivenChests()
 	}
 
 	return SpawnedCount;
+}
+
+bool AGlobalLootSpawnManager::RebalanceSpawnedChests()
+{
+	const UProgressionBalanceData* Balance = UProgressionBalanceData::LoadConfigured();
+	const USettings_Item* Settings = GetDefault<USettings_Item>();
+	const UItemData* Items = Settings ? Settings->ItemAssetRegistry.LoadSynchronous() : nullptr;
+	const UDataTable* Recipes = Settings ? Settings->CraftingRecipeDataTable.LoadSynchronous() : nullptr;
+	const UShipUpgradeTreeDataAsset* Tree = ShipUpgradeTree.LoadSynchronous();
+	if (!Tree)
+	{
+		Tree = LoadObject<UShipUpgradeTreeDataAsset>(nullptr,
+			TEXT("/Game/Blueprints/Item/Data/ShipUpgrade/DA_ShipUpgradeTree.DA_ShipUpgradeTree"));
+	}
+	return RebalanceSpawnedChestsWithData(Balance, Items, Recipes, Tree);
+}
+
+int32 AGlobalLootSpawnManager::GetLastActiveChestCount(EProgressionZone Zone) const
+{
+	const int32 Index = static_cast<int32>(Zone);
+	return Index >= 0 && Index < 4 ? LastActiveChestCounts[Index] : 0;
+}
+
+bool AGlobalLootSpawnManager::GetSunkChestDrops(EProgressionZone Zone, TArray<FProgressionComputedDrop>& OutDrops) const
+{
+	OutDrops.Reset();
+	const int32 Index = static_cast<int32>(Zone);
+	if (!bProgressionFinalized || Index < 0 || Index >= 4 || LastActiveChestCounts[Index] <= 0) return false;
+	const UProgressionBalanceData* Balance = UProgressionBalanceData::LoadConfigured();
+	if (!Balance) return false;
+	const float Ratio = FMath::Clamp(Balance->SunkChestExpectedValueRatio, 0.f, 1.f);
+	OutDrops = LastZoneDrops[Index];
+	for (FProgressionComputedDrop& Drop : OutDrops) Drop.Chance *= Ratio;
+	return true;
+}
+
+bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionBalanceData* Balance,
+	const UItemData* Items, const UDataTable* Recipes, const UShipUpgradeTreeDataAsset* Tree)
+{
+	if (!HasAuthority() || !GetWorld() || bProgressionFinalized) return false;
+	if (!Balance || !Items || !Recipes)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Chest progression requires Balance, ItemAssetRegistry and CraftingRecipeDataTable."));
+		return false;
+	}
+	TArray<AChestSpawnPoint*> SpawnedPoints;
+	int32 Counts[4] = {0, 0, 0, 0};
+	int32 CountsByKind[4][4] = {};
+	for (TActorIterator<AChestSpawnPoint> It(GetWorld()); It; ++It)
+	{
+		AChestSpawnPoint* Point = *It;
+		if (!IsValid(Point) || !IsValid(Cast<AStorageChest>(Point->GetSpawnedActor()))) continue;
+		const int32 ZoneIndex = static_cast<int32>(Point->GetProgressionZone());
+		if (ZoneIndex < 0 || ZoneIndex >= 4) continue;
+		const EProgressionChestKind Kind = Point->GetProgressionKind();
+		const bool bRandomKind = Kind == EProgressionChestKind::OceanRandom || Kind == EProgressionChestKind::IslandRandom;
+		if (bRandomKind != (Point->GetSpawnMode() == EChestSpawnMode::Random))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Chest point %s has mismatched SpawnMode and ProgressionKind"), *GetNameSafe(Point));
+			return false;
+		}
+		SpawnedPoints.Add(Point);
+		++Counts[ZoneIndex];
+		const int32 KindIndex = static_cast<int32>(Point->GetProgressionKind());
+		if (KindIndex >= 0 && KindIndex < 4) ++CountsByKind[ZoneIndex][KindIndex];
+	}
+	TArray<FProgressionComputedDrop> DropsByZone[4];
+	for (int32 ZoneIndex = 0; ZoneIndex < 4; ++ZoneIndex)
+	{
+		const EProgressionZone Zone = static_cast<EProgressionZone>(ZoneIndex);
+		const FProgressionZoneTarget* Target = Balance->FindTarget(Zone);
+		if (Counts[ZoneIndex] == 0) continue;
+		UE_LOG(LogTemp, Log, TEXT("Chest census zone %d: ship=%d islandGuard=%d ocean=%d land=%d"),
+			ZoneIndex, CountsByKind[ZoneIndex][0], CountsByKind[ZoneIndex][1],
+			CountsByKind[ZoneIndex][2], CountsByKind[ZoneIndex][3]);
+		if (!Target || Target->FullClears < 1)
+		{
+			UE_LOG(LogTemp, Error, TEXT("Missing progression target for zone %d"), ZoneIndex);
+			return false;
+		}
+		if (!CalculateZoneDrops(Zone, *Target, Counts[ZoneIndex], Items, Recipes, Tree, DropsByZone[ZoneIndex]))
+		{
+			return false;
+		}
+	}
+	for (AChestSpawnPoint* Point : SpawnedPoints)
+	{
+		AStorageChest* Chest = Cast<AStorageChest>(Point->GetSpawnedActor());
+		const int32 ZoneIndex = static_cast<int32>(Point->GetProgressionZone());
+		const uint32 Seed = HashCombine(GetTypeHash(SpawnSeed), GetTypeHash(Point->GetFName()));
+		Chest->ReplaceProgressionLoot(DropsByZone[ZoneIndex], Items, static_cast<int32>(Seed & 0x7fffffff));
+	}
+	for (int32 ZoneIndex = 0; ZoneIndex < 4; ++ZoneIndex)
+	{
+		LastActiveChestCounts[ZoneIndex] = Counts[ZoneIndex];
+		LastZoneDrops[ZoneIndex] = MoveTemp(DropsByZone[ZoneIndex]);
+	}
+	bProgressionFinalized = true;
+	return true;
+}
+
+bool AGlobalLootSpawnManager::CalculateZoneDrops(EProgressionZone Zone, const FProgressionZoneTarget& Target,
+	int32 ActiveChestCount, const UItemData* Items, const UDataTable* Recipes,
+	const UShipUpgradeTreeDataAsset* Tree, TArray<FProgressionComputedDrop>& OutDrops)
+{
+	OutDrops.Reset();
+	if (ActiveChestCount <= 0 || Target.FullClears <= 0 || !Items || !Recipes
+		|| (Target.ShipUpgrades > 0 && !Tree)) return false;
+	FMaterialDemand Demand;
+	if (!BuildDemand(Zone, Target, Items, Recipes, Tree, Demand)) return false;
+	if (Demand.IsEmpty() && (Target.WeaponCrafts > 0 || Target.ConsumableCrafts > 0 || Target.ShipUpgrades > 0))
+	{
+		return false;
+	}
+	for (const TPair<FGameplayTag, double>& Pair : Demand)
+	{
+		const double ExpectedPerChest = Pair.Value / (Target.FullClears * ActiveChestCount);
+		if (ExpectedPerChest <= 0.0) continue;
+		FProgressionComputedDrop& Drop = OutDrops.AddDefaulted_GetRef();
+		Drop.ItemTag = Pair.Key;
+		Drop.MinCount = FMath::Max(1, FMath::CeilToInt(ExpectedPerChest / .85));
+		Drop.MaxCount = Drop.MinCount;
+		Drop.Chance = static_cast<float>(ExpectedPerChest / Drop.MinCount);
+	}
+	OutDrops.Sort([](const FProgressionComputedDrop& A, const FProgressionComputedDrop& B)
+	{
+		return A.ItemTag.ToString() < B.ItemTag.ToString();
+	});
+	return true;
 }
 
 AChestSpawnPoint* AGlobalLootSpawnManager::PickWeightedChestPoint(

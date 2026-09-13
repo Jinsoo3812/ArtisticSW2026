@@ -2,6 +2,8 @@
 
 
 #include "Storage/StorageChest.h"
+#include "Balance/ProgressionBalanceData.h"
+#include "Item/ItemData.h"
 #include "BaseCharacter.h"
 #include "BasePlayer.h"
 #include "BasePlayerController.h"
@@ -168,7 +170,7 @@ void AStorageChest::SetPhysicsAndBuoyancyEnabled(bool bEnabled)
 	}
 }
 
-void AStorageChest::InitializeFromChestDefinition(UChestDefinition* InDefinition, int32 Seed)
+void AStorageChest::InitializeFromChestDefinition(UChestDefinition* InDefinition, int32 Seed, float ExpectedValueRatio)
 {
 	if (!HasAuthority() || !InDefinition)
 	{
@@ -178,9 +180,9 @@ void AStorageChest::InitializeFromChestDefinition(UChestDefinition* InDefinition
 	ChestDefinition = InDefinition;
 	LootSeed = Seed;
 	ConfigureStorage(
-		FMath::Max(1, InDefinition->SlotCount),
-		FMath::Max(1, InDefinition->ColumnCount),
-		InDefinition->RollInitialItems(Seed));
+		FMath::Max(1, InDefinition->GetEffectiveSlotCount()),
+		FMath::Max(1, InDefinition->GetEffectiveColumnCount()),
+		InDefinition->RollInitialItems(Seed, ExpectedValueRatio));
 	bDefinitionInitialized = true;
 
 	if (HasActorBegunPlay())
@@ -401,6 +403,68 @@ void AStorageChest::HandleOwningShipDestroyed(AActor* DestroyedActor)
 	ClearGuardBindings();
 	ForceNetUpdate();
 	Destroy();
+}
+
+void AStorageChest::ClearLegacyChestDefinition()
+{
+	ChestDefinition = nullptr;
+	bDefinitionInitialized = false;
+}
+
+void AStorageChest::ReplaceProgressionLoot(const TArray<FProgressionComputedDrop>& Drops,
+	const UItemData* Definitions, int32 Seed)
+{
+	if (!HasAuthority() || !StorageComponent || !Definitions) return;
+	TArray<FStorageItemEntry> Items;
+	for (const FInventorySlot& Slot : StorageComponent->GetSlots())
+	{
+		if (Slot.IsEmpty()) continue;
+		const FItemDefinition* Definition = Definitions->FindItemDefinition(Slot.ItemTag);
+		const EItemProgressionKind Kind = Definition ? Definition->ProgressionKind : EItemProgressionKind::None;
+		if (Kind == EItemProgressionKind::WeaponMaterial || Kind == EItemProgressionKind::ConsumableMaterial
+			|| Kind == EItemProgressionKind::ShipMaterial || Kind == EItemProgressionKind::WeaponSpecialMaterial
+			|| Kind == EItemProgressionKind::ConsumableSpecialMaterial || Kind == EItemProgressionKind::ShipSpecialMaterial
+			|| Kind == EItemProgressionKind::UniversalSpecialMaterial)
+		{
+			continue;
+		}
+		FStorageItemEntry& Preserved = Items.AddDefaulted_GetRef();
+		Preserved.ItemTag = Slot.ItemTag;
+		Preserved.Count = Slot.Count;
+	}
+	FRandomStream Stream(Seed);
+	for (const FProgressionComputedDrop& Drop : Drops)
+	{
+		if (!Drop.ItemTag.IsValid() || Stream.FRand() >= Drop.Chance) continue;
+		FStorageItemEntry& Rolled = Items.AddDefaulted_GetRef();
+		Rolled.ItemTag = Drop.ItemTag;
+		Rolled.Count = Stream.RandRange(Drop.MinCount, Drop.MaxCount);
+	}
+	// A sparse level can have only one active chest. Independent probability
+	// rolls must never leave its progression reward completely empty.
+	if (Items.IsEmpty())
+	{
+		const FProgressionComputedDrop* BestDrop = nullptr;
+		for (const FProgressionComputedDrop& Drop : Drops)
+		{
+			if (Drop.ItemTag.IsValid() && Drop.Chance > 0.f
+				&& (!BestDrop || Drop.Chance > BestDrop->Chance)) BestDrop = &Drop;
+		}
+		if (BestDrop)
+		{
+			FStorageItemEntry& Guaranteed = Items.AddDefaulted_GetRef();
+			Guaranteed.ItemTag = BestDrop->ItemTag;
+			Guaranteed.Count = FMath::Max(1, BestDrop->MinCount);
+		}
+	}
+	int32 NeededSlots = Items.Num();
+	for (const FStorageItemEntry& Item : Items)
+	{
+		NeededSlots += FMath::Max(0, FMath::DivideAndRoundUp(Item.Count,
+			FMath::Max(1, StorageComponent->GetMaxStack(Item.ItemTag))) - 1);
+	}
+	StorageComponent->ConfigureStorage(FMath::Max(StorageComponent->GetSlotCount(), NeededSlots),
+		StorageComponent->GetStorageColumns(), Items);
 }
 
 void AStorageChest::OnRep_Locked()

@@ -9,6 +9,7 @@
 
 class UDataTable;
 class UItemData;
+class UProgressionBalanceData;
 
 /**
  * 
@@ -33,4 +34,8 @@ public:
 	// 신규 제작 UI/API가 사용하는 제작법 Data Table. Legacy 조합식 테이블과 분리한다.
 	UPROPERTY(Config, EditAnywhere, Category = "Crafting", meta = (AllowedClasses = "/Script/Engine.DataTable"))
 	TSoftObjectPtr<UDataTable> CraftingRecipeDataTable;
+
+	/** Single source for zone rewards, crafting costs, ship upgrade costs and spawn targets. */
+	UPROPERTY(Config, EditAnywhere, Category = "Balance")
+	TSoftObjectPtr<UProgressionBalanceData> ProgressionBalanceData;
 };

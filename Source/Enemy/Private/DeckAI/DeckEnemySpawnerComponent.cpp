@@ -274,6 +274,16 @@ void UDeckEnemySpawnerComponent::InitializePool()
 		PooledEnemy->SetHostShip(Host);
 		PooledEnemy->DeactivateToPool();
 		EnemyPool.Add(PooledEnemy);
+		Host->RegisterDeckEnemyChestGuard(PooledEnemy);
+	}
+}
+
+void UDeckEnemySpawnerComponent::GetPooledEnemies(TArray<ADeckEnemy*>& OutEnemies) const
+{
+	OutEnemies.Reset(EnemyPool.Num());
+	for (ADeckEnemy* Enemy : EnemyPool)
+	{
+		if (IsValid(Enemy)) OutEnemies.Add(Enemy);
 	}
 }
 

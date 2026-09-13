@@ -4,6 +4,7 @@
 #include "BasePlayer.h"
 #include "PlayerDialogueComponent.h"
 #include "BasePlayerState.h"
+#include "BasePlayerController.h"
 #include "Misc/Crc.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbilityTargetTypes.h"
@@ -1450,6 +1451,13 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 
 void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
+	if (InputTag.MatchesTagExact(Key_Default_F))
+	{
+		if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(GetController()))
+		{
+			if (PlayerController->CloseActiveInteractionWindow()) return;
+		}
+	}
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid())
 	{
 		// UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] Fails: CachedAbilitySystemComponent valid? %s, InputTag: %s"),
