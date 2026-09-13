@@ -1042,15 +1042,6 @@ protected:
     /** Start/Stop 등 원샷 종료 후 모션매칭으로 핸드오프 시 강제 재검색 플래그 */
     bool bStateControllerForceMotionMatchingReselect = false;
 
-    // Diagnostic tracking for Stop transition popping investigation
-    bool bDebugStopDiagnosticActive = false;
-    int32 DebugStopDiagnosticFrame = 0;
-    float DebugStopDiagnosticStartTime = 0.0f;
-
-    // Diagnostic tracking for Start transition investigation
-    bool bDebugStartDiagnosticActive = false;
-    int32 DebugStartDiagnosticFrame = 0;
-
     void EvaluateStateControllerPresentationState();
     void EvaluateStateControllerPlaybackHold(EStateControllerPresentationState DesiredState);
     /** Emits event-driven diagnostics for direct Chooser one-shots and TIP rotation. */
