@@ -21,6 +21,7 @@ class ARTISTICSWCORE_API UInteractableComponent : public USphereComponent, publi
 
 public:
 	UInteractableComponent();
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	// IInteractable 구현
 	virtual FGameplayTag GetInteractionTag() const override;
@@ -33,6 +34,10 @@ public:
 	// 컴포넌트마다 인스턴스별로 태그를 설정할 수 있도록 노출
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
 	FGameplayTag InteractionTag;
+
+	/** Draw this component's scaled collision sphere while playing. Disabled by default. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Debug")
+	bool bDrawDebugInteractionRange = false;
 
 	// Interact 발생 시 Owner Actor(또는 필요로 하는 외부)로 방송할 델리게이트
 	UPROPERTY(BlueprintAssignable, Category = "Interaction")

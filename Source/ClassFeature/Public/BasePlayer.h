@@ -592,6 +592,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Interaction")
 	float InteractTraceRadius = 30.0f;
 
+	/** Draw the actual interaction sweep in red, or green when it hits an interactable component. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Debug")
+	bool bDrawInteractionTrace = false;
+
 	// 스캔 타이머 핸들
 	FTimerHandle InteractionScanTimerHandle;
 

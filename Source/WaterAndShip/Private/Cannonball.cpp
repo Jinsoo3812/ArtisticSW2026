@@ -497,9 +497,22 @@ bool ACannonball::ApplyDamageToTarget(AActor* TargetActor)
 		return false;
 	}
 
+	float TargetDamage = DamageAmount;
+	if (!Cast<AShip>(TargetActor))
+	{
+		if (TargetASC->HasMatchingGameplayTag(Team_Enemy))
+		{
+			TargetDamage *= FMath::Max(0.0f, EnemyDamageMultiplier);
+		}
+		else if (TargetASC->HasMatchingGameplayTag(Team_Player))
+		{
+			TargetDamage *= FMath::Max(0.0f, PlayerDamageMultiplier);
+		}
+	}
+
 	SpecHandle.Data.Get()->SetSetByCallerMagnitude(
 		FGameplayTag::RequestGameplayTag(FName("Data.Damage")),
-		DamageAmount);
+		TargetDamage);
 	TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 	return true;
 }

@@ -31,6 +31,8 @@
 #include "Repair/ShipRepairPointComponent.h"
 #include "UI/ShipRepairProgressWidget.h"
 #include "InteractUserWidget.h"
+#include "Storage/StorageInteractionDiagnostics.h"
+#include "DrawDebugHelpers.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Animation/SWTrajectoryComponent.h"
 #include "Inventory/InventoryComponent.h"
@@ -1451,15 +1453,29 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 
 void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
-	if (InputTag.MatchesTagExact(Key_Default_F))
+	const bool bInteractionInput = InputTag.MatchesTagExact(Key_Default_F);
+	const bool bLogInteraction = bInteractionInput && IsStorageInteractionLoggingEnabled();
+	if (bLogInteraction)
+	{
+		UE_LOG(LogStorageInteraction, Warning,
+			TEXT("[Input] F pressed. Player=%s Local=%d Authority=%d Controller=%s ASC=%s TagValid=%d Transitioning=%d"),
+			*GetNameSafe(this), IsLocallyControlled(), HasAuthority(), *GetNameSafe(GetController()),
+			*GetNameSafe(CachedAbilitySystemComponent.Get()), InputTag.IsValid(), IsEquipmentTransitioning());
+	}
+	if (bInteractionInput)
 	{
 		if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(GetController()))
 		{
-			if (PlayerController->CloseActiveInteractionWindow()) return;
+			if (PlayerController->CloseActiveInteractionWindow())
+			{
+				if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Input] Consumed by closing an existing interaction window."));
+				return;
+			}
 		}
 	}
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid())
 	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Input] Rejected: missing ASC or invalid input tag."));
 		// UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] Fails: CachedAbilitySystemComponent valid? %s, InputTag: %s"),
 		// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
 		// 	CachedAbilitySystemComponent.IsValid() ? TEXT("YES") : TEXT("NO"),
@@ -1469,6 +1485,7 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 
 	if (IsEquipmentTransitioning())
 	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Input] Rejected: equipment transition active."));
 		return;
 	}
 
@@ -1479,6 +1496,21 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 	}
 
 	int32 InputID = GetInputIDFromTag(InputTag);
+	if (bLogInteraction)
+	{
+		int32 MatchingAbilityCount = 0;
+		for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
+		{
+			if (Spec.InputID == InputID)
+			{
+				++MatchingAbilityCount;
+				UE_LOG(LogStorageInteraction, Warning, TEXT("[Input] Bound ability=%s Active=%d"),
+					*GetNameSafe(Spec.Ability), Spec.IsActive());
+			}
+		}
+		UE_LOG(LogStorageInteraction, Warning, TEXT("[Input] Dispatch. InputID=%d MatchingAbilities=%d"),
+			InputID, MatchingAbilityCount);
+	}
 	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
 	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
 	// 	*InputTag.ToString(),
@@ -1500,6 +1532,10 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 	if (InputID != INDEX_NONE)
 	{
 		CachedAbilitySystemComponent->AbilityLocalInputPressed(InputID);
+	}
+	else if (bLogInteraction)
+	{
+		UE_LOG(LogStorageInteraction, Warning, TEXT("[Input] No ability dispatch: input tag has no InputID."));
 	}
 }
 
@@ -1851,8 +1887,6 @@ bool ABasePlayer::PerformInteractTrace(TArray<FHitResult>& OutHitResults) const
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this); // 자기 자신 스캔 제외
 
-	TArray<FHitResult> HitResults;
-
 	bool bHit = GetWorld()->SweepMultiByChannel(
 		OutHitResults,
 		StartLoc,
@@ -1864,18 +1898,27 @@ bool ABasePlayer::PerformInteractTrace(TArray<FHitResult>& OutHitResults) const
 	);
 
 #if ENABLE_DRAW_DEBUG
-#if WITH_EDITOR
-	if (GIsEditor)
+	if (bDrawInteractionTrace && IsLocallyControlled())
 	{
-		FColor DrawColor = bHit ? FColor::Green : FColor::Red;
-		FVector TraceCenter = StartLoc + (EndLoc - StartLoc) * 0.5f;
-		float TraceHalfHeight = (EndLoc - StartLoc).Size() * 0.5f;
-		FQuat TraceRotation = FRotationMatrix::MakeFromZ(EndLoc - StartLoc).ToQuat();
-
-		// 타이머 주기에 맞춰 그려지도록 LifeTime을 짧게 설정 (예: 0.1초)
-		// DrawDebugCapsule(GetWorld(), TraceCenter, TraceHalfHeight, InteractTraceRadius, TraceRotation, DrawColor, false, 0.1f);
+		const bool bHitInteractable = OutHitResults.ContainsByPredicate([](const FHitResult& Hit)
+		{
+			return Cast<IInteractable>(Hit.GetComponent()) != nullptr;
+		});
+		const FColor DrawColor = bHitInteractable ? FColor::Green : FColor::Red;
+		const FVector TraceCenter = (StartLoc + EndLoc) * 0.5f;
+		const FVector TraceDelta = EndLoc - StartLoc;
+		const float DrawRadius = FMath::Max(0.0f, InteractTraceRadius);
+		const float DrawLifetime = FMath::Max(0.1f, InteractionScanInterval) + 0.02f;
+		if (TraceDelta.IsNearlyZero())
+		{
+			DrawDebugSphere(GetWorld(), StartLoc, DrawRadius, 16, DrawColor, false, DrawLifetime);
+		}
+		else
+		{
+			DrawDebugCapsule(GetWorld(), TraceCenter, TraceDelta.Size() * 0.5f + DrawRadius,
+				DrawRadius, FRotationMatrix::MakeFromZ(TraceDelta).ToQuat(), DrawColor, false, DrawLifetime);
+		}
 	}
-#endif
 #endif
 
 	return bHit;

@@ -18,6 +18,7 @@
 #include "Attacker/AttackerComponent.h"
 #include "Inventory/InventoryComponent.h"
 #include "Storage/StorageChest.h"
+#include "Storage/StorageInteractionDiagnostics.h"
 #include "Storage/SharedStorageChest.h"
 #include "Storage/StorageComponent.h"
 #include "UI/StorageWindowWidget.h"
@@ -551,14 +552,24 @@ void ABasePlayerController::HandleMenuEscape()
 
 void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
 {
+	const bool bLogInteraction = IsStorageInteractionLoggingEnabled();
+	if (bLogInteraction)
+	{
+		UE_LOG(LogStorageInteraction, Warning,
+			TEXT("[StorageServer] Open request. Controller=%s Authority=%d Chest=%s Valid=%d Locked=%d Access=%d Active=%s"),
+			*GetNameSafe(this), HasAuthority(), *GetNameSafe(StorageChest), IsValid(StorageChest),
+			IsValid(StorageChest) && StorageChest->IsLocked(), CanAccessStorage(StorageChest), *GetNameSafe(ActiveStorageChest));
+	}
 	if (!HasAuthority() || !CanAccessStorage(StorageChest))
 	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageServer] Rejected: authority or access check failed."));
 		return;
 	}
 
 	// 이미 열려 있는 동일한 상자에는 중복 열기 요청을 보내지 않는다.
 	if (ActiveStorageChest == StorageChest)
 	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageServer] Same chest already active; toggling closed."));
 		CloseStorageFromServer(StorageChest);
 		return;
 	}
@@ -567,11 +578,18 @@ void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
 		if (UInventoryComponent* Inventory = StoragePlayer->GetInventoryComponent()) Inventory->ReturnCursorToOriginalSlot();
 	ActiveStorageChest = StorageChest;
 	StartStorageSearch(StorageChest);
+	if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageServer] Sending ClientOpenStorage. Chest=%s"), *GetNameSafe(StorageChest));
 	ClientOpenStorage(StorageChest);
 }
 
 void ABasePlayerController::CloseStorageFromServer(AStorageChest* StorageChest)
 {
+	if (IsStorageInteractionLoggingEnabled())
+	{
+		UE_LOG(LogStorageInteraction, Warning,
+			TEXT("[StorageServer] Close request. Controller=%s Chest=%s Active=%s Authority=%d"),
+			*GetNameSafe(this), *GetNameSafe(StorageChest), *GetNameSafe(ActiveStorageChest), HasAuthority());
+	}
 	if (!HasAuthority() || !StorageChest || ActiveStorageChest != StorageChest)
 	{
 		return;
@@ -586,6 +604,12 @@ void ABasePlayerController::CloseStorageFromServer(AStorageChest* StorageChest)
 
 void ABasePlayerController::ClientOpenStorage_Implementation(AStorageChest* StorageChest)
 {
+	if (IsStorageInteractionLoggingEnabled())
+	{
+		UE_LOG(LogStorageInteraction, Warning,
+			TEXT("[StorageClient] Open RPC received. Chest=%s Valid=%d Locked=%d"),
+			*GetNameSafe(StorageChest), IsValid(StorageChest), IsValid(StorageChest) && StorageChest->IsLocked());
+	}
 	if (StorageChest && !StorageChest->IsLocked())
 	{
 		OpenStorage(StorageChest);
@@ -594,6 +618,11 @@ void ABasePlayerController::ClientOpenStorage_Implementation(AStorageChest* Stor
 
 void ABasePlayerController::ClientCloseStorage_Implementation(AStorageChest* StorageChest)
 {
+	if (IsStorageInteractionLoggingEnabled())
+	{
+		UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageClient] Close RPC received. Chest=%s Active=%s"),
+			*GetNameSafe(StorageChest), *GetNameSafe(ActiveStorageChest));
+	}
 	if (ActiveStorageChest == StorageChest)
 	{
 		CloseStorage(false);
@@ -763,9 +792,19 @@ bool ABasePlayerController::IsStorageSlotSearching(AStorageChest* StorageChest, 
 
 void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 {
+	const bool bLogInteraction = IsStorageInteractionLoggingEnabled();
+	if (bLogInteraction)
+	{
+		UE_LOG(LogStorageInteraction, Warning,
+			TEXT("[StorageClient] OpenStorage. Local=%d Chest=%s Access=%d HUD=%s WidgetClass=%s Active=%s ExistingWidget=%s"),
+			IsLocalController(), *GetNameSafe(StorageChest), CanAccessStorage(StorageChest),
+			*GetNameSafe(PlayerHUDWidget), *GetNameSafe(StorageWindowWidgetClass.Get()),
+			*GetNameSafe(ActiveStorageChest), *GetNameSafe(StorageWindowWidget));
+	}
 	// chest에 대한 storage UI열기
 	if (!IsLocalController() || !CanAccessStorage(StorageChest) || !PlayerHUDWidget)
 	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageClient] Rejected: local controller, access, or HUD check failed."));
 		return;
 	}
 
@@ -777,6 +816,7 @@ void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 	// 동일한 상자 UI가 이미 열려 있으면 위젯과 입력 모드를 다시 생성하지 않는다.
 	if (ActiveStorageChest == StorageChest && StorageWindowWidget)
 	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageClient] Existing widget for same chest; skipped."));
 		return;
 	}
 
@@ -798,8 +838,11 @@ void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 		StorageWindowWidgetClass);
 	if (!StorageWindowWidget)
 	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageClient] ShowStorageWindow returned null. HUD=%s"), *GetNameSafe(PlayerHUDWidget));
 		return;
 	}
+	if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageClient] Storage widget opened. Widget=%s Visibility=%d"),
+		*GetNameSafe(StorageWindowWidget), static_cast<int32>(StorageWindowWidget->GetVisibility()));
 	SetIgnoreMoveInput(true);
 }
 

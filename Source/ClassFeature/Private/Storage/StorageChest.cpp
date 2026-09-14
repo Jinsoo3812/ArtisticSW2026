@@ -13,6 +13,8 @@
 #include "Buoyancy/SWBuoyancyComponent.h"
 #include "ItemSpawn/ChestSpawnData.h"
 #include "InteractableComponent.h"
+#include "CollisionChannels.h"
+#include "Storage/StorageInteractionDiagnostics.h"
 #include "Net/UnrealNetwork.h"
 #include "Ship.h"
 #include "EngineUtils.h"
@@ -101,6 +103,12 @@ void AStorageChest::Tick(float DeltaSeconds)
 void AStorageChest::BeginPlay()
 {
 	Super::BeginPlay();
+	// The mesh is physical cover, not an interaction target. Blueprint-saved
+	// collision overrides must not block the sweep before it reaches the sphere.
+	if (ChestMesh)
+	{
+		ChestMesh->SetCollisionResponseToChannel(ECC_Interactable, ECR_Ignore);
+	}
 
 	if (HasAuthority() && ChestDefinition && !bDefinitionInitialized)
 	{
@@ -293,24 +301,36 @@ void AStorageChest::SetLocked(bool bInLocked)
 
 void AStorageChest::HandleInteracted(AActor* Interactor)
 {
+	const bool bLogInteraction = IsStorageInteractionLoggingEnabled();
+	if (bLogInteraction)
+	{
+		UE_LOG(LogStorageInteraction, Warning,
+			TEXT("[Chest] Interacted. Chest=%s Interactor=%s Authority=%d Locked=%d Component=%s"),
+			*GetNameSafe(this), *GetNameSafe(Interactor), HasAuthority(), bLocked,
+			*GetNameSafe(InteractableComponent));
+	}
 	if (!HasAuthority() || !Interactor || bLocked)
 	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Chest] Rejected: no authority, no interactor, or locked."));
 		return;
 	}
 
 	ABasePlayer* Player = Cast<ABasePlayer>(Interactor);
 	if (!Player)
 	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Chest] Rejected: interactor is not ABasePlayer."));
 		return;
 	}
 
 	ABasePlayerController* PlayerController = Cast<ABasePlayerController>(Player->GetController());
 	if (!PlayerController)
 	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Chest] Rejected: player has no ABasePlayerController. Controller=%s"), *GetNameSafe(Player->GetController()));
 		return;
 	}
 
 	bHasBeenOpened = true;
+	if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Chest] Requesting server storage open. Controller=%s"), *GetNameSafe(PlayerController));
 	PlayerController->OpenStorageFromServer(this);
 }
 

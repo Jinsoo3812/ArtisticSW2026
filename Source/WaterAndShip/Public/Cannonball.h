@@ -63,6 +63,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannonball|Damage")
 	float DamageAmount = 10.0f;
 
+	/** Multiplies the cannon's resolved damage when the splash damages an enemy character. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannonball|Damage", meta = (ClampMin = "0.0"))
+	float EnemyDamageMultiplier = 1.0f;
+
+	/** Multiplies the cannon's resolved damage when the splash damages a player character. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannonball|Damage", meta = (ClampMin = "0.0"))
+	float PlayerDamageMultiplier = 1.0f;
+
 	/** Full-damage splash radius evaluated when the projectile directly hits a ship. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannonball|Damage", meta = (ClampMin = "0.0", Units = "cm"))
 	float SplashDamageRadius = 500.0f;

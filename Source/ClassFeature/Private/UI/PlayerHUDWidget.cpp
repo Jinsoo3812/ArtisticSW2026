@@ -15,6 +15,7 @@
 #include "UI/StorageWindowWidget.h"
 #include "Storage/SharedStorageChest.h"
 #include "Storage/StorageChest.h"
+#include "Storage/StorageInteractionDiagnostics.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
@@ -266,6 +267,7 @@ UStorageWindowWidget* UPlayerHUDWidget::ShowStorageWindow(
 {
 	if (!StorageChest)
 	{
+		if (IsStorageInteractionLoggingEnabled()) UE_LOG(LogStorageInteraction, Warning, TEXT("[HUD] Rejected: chest is null."));
 		return nullptr;
 	}
 
@@ -295,6 +297,7 @@ UStorageWindowWidget* UPlayerHUDWidget::ShowStorageWindow(
 	{
 		if (!RootCanvasPanel)
 		{
+			if (IsStorageInteractionLoggingEnabled()) UE_LOG(LogStorageInteraction, Warning, TEXT("[HUD] Rejected: RootCanvasPanel is null. HUD=%s"), *GetNameSafe(this));
 			return nullptr;
 		}
 
@@ -306,6 +309,7 @@ UStorageWindowWidget* UPlayerHUDWidget::ShowStorageWindow(
 		StorageWindowWidget = CreateWidget<UStorageWindowWidget>(GetOwningPlayer(), StorageWindowClass);
 		if (!StorageWindowWidget)
 		{
+			if (IsStorageInteractionLoggingEnabled()) UE_LOG(LogStorageInteraction, Warning, TEXT("[HUD] CreateWidget failed. Class=%s"), *GetNameSafe(StorageWindowClass.Get()));
 			return nullptr;
 		}
 
