@@ -1906,12 +1906,22 @@ UMotionMatchingAnimInstance::UMotionMatchingAnimInstance()
     bUseMultiThreadedAnimationUpdate = true;
 
     // Ground contact and slope adaptation settings
-    FootPlacementPlantSettingsDefault.DistanceToGround = 0.0f;
+    FootPlacementPlantSettingsDefault.DistanceToGround = 10.0f;
     FootPlacementPlantSettingsDefault.MaxExtensionRatio = 0.95f;
     FootPlacementPlantSettingsDefault.MinExtensionRatio = 0.1f;
-    FootPlacementPlantSettingsDefault.AnkleTwistReduction = 0.75f;
+    FootPlacementPlantSettingsDefault.AnkleTwistReduction = 0.9f;
+    FootPlacementPlantSettingsDefault.SpeedThreshold = 25.0f;
+    FootPlacementPlantSettingsDefault.UnplantRadius = 15.0f;
+    FootPlacementPlantSettingsDefault.UnplantAngle = 18.0f;
+    FootPlacementPlantSettingsDefault.ReplantRadiusRatio = 0.3f;
+    FootPlacementPlantSettingsDefault.ReplantAngleRatio = 0.4f;
 
-    FootPlacementPlantSettingsStops.DistanceToGround = 0.0f;
+    FootPlacementInterpolationSettingsDefault.FloorLinearStiffness = 600.0f;
+    FootPlacementInterpolationSettingsDefault.FloorAngularStiffness = 350.0f;
+    FootPlacementInterpolationSettingsDefault.UnplantLinearStiffness = 350.0f;
+    FootPlacementInterpolationSettingsDefault.UnplantAngularStiffness = 500.0f;
+
+    FootPlacementPlantSettingsStops.DistanceToGround = 10.0f;
     FootPlacementPlantSettingsStops.MaxExtensionRatio = 0.95f;
     FootPlacementPlantSettingsStops.MinExtensionRatio = 0.1f;
     FootPlacementPlantSettingsStops.AnkleTwistReduction = 0.75f;
@@ -1926,8 +1936,15 @@ UMotionMatchingAnimInstance::UMotionMatchingAnimInstance()
     FootPlacementInterpolationSettingsStops.FloorLinearStiffness = 1200.0f;
     FootPlacementInterpolationSettingsStops.FloorAngularStiffness = 650.0f;
 
-    TurnInPlaceFootPlacementAlpha = 1.0f;
+    TurnInPlaceFootPlacementAlpha = 0.0f;
+    LocomotionFootPlacementAlpha = 0.75f;
     LegIKInterpSpeed = 25.0f;
+
+    bEnableLean = true;
+    RunLeanMultiplier = 0.1f;
+    SprintLeanMultiplier = 1.0f;
+    LeanAxisClamp = 1.0f;
+    LeanInterpSpeed = 6.0f;
 }
 
 FAnimInstanceProxy* UMotionMatchingAnimInstance::CreateAnimInstanceProxy()
@@ -1938,6 +1955,11 @@ FAnimInstanceProxy* UMotionMatchingAnimInstance::CreateAnimInstanceProxy()
 void UMotionMatchingAnimInstance::NativeInitializeAnimation()
 {
     Super::NativeInitializeAnimation();
+
+    bHasPreviousHorizontalVelocity = false;
+    PreviousHorizontalVelocity = FVector::ZeroVector;
+    LeanAmount = FVector2D::ZeroVector;
+    RelativeAccelerationAmount = FVector::ZeroVector;
 
     CachedBasePlayer = Cast<ABasePlayer>(TryGetPawnOwner());
     if (CachedBasePlayer)
@@ -2419,6 +2441,79 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         ThreadSafeData.MovementData.LastNonZeroVelocity = ThreadSafeData.MovementData.Velocity;
     }
     ThreadSafeData.MovementData.Acceleration = CachedLocomotionStateComponent->Acceleration;
+
+    // Relative Acceleration and Additive Lean calculation
+    const FVector CurrentHorizontalVelocity = FVector(ThreadSafeData.MovementData.Velocity.X, ThreadSafeData.MovementData.Velocity.Y, 0.0f);
+    const float LeanGroundSpeed = CurrentHorizontalVelocity.Size();
+
+    if (bHasPreviousHorizontalVelocity && DeltaSeconds > UE_KINDA_SMALL_NUMBER)
+    {
+        const FVector VelocityAcceleration = (CurrentHorizontalVelocity - PreviousHorizontalVelocity) / DeltaSeconds;
+        const float VelocityAccelerationSq = VelocityAcceleration.SizeSquared();
+
+        const bool bIsDecelerating = (LeanGroundSpeed > 10.0f && VelocityAccelerationSq > UE_KINDA_SMALL_NUMBER)
+            ? (FVector::DotProduct(CurrentHorizontalVelocity.GetSafeNormal(), VelocityAcceleration.GetSafeNormal()) < -0.05f)
+            : false;
+
+        const UCharacterMovementComponent* MoveComp = CachedBasePlayer ? CachedBasePlayer->GetCharacterMovement() : nullptr;
+        const float MaxAccel = MoveComp ? FMath::Max(MoveComp->GetMaxAcceleration(), 1.0f) : 2048.0f;
+        const float BrakingDecel = MoveComp ? FMath::Max(MoveComp->BrakingDecelerationWalking, 1.0f) : 2048.0f;
+        const float Normalization = bIsDecelerating ? BrakingDecel : MaxAccel;
+
+        const FVector LocalVelocityAcceleration = CachedBasePlayer->GetActorTransform().InverseTransformVectorNoScale(VelocityAcceleration);
+
+        ThreadSafeData.MovementData.RelativeAccelerationAmount = FVector(
+            FMath::Clamp(LocalVelocityAcceleration.X / Normalization, -1.0f, 1.0f),
+            FMath::Clamp(LocalVelocityAcceleration.Y / Normalization, -1.0f, 1.0f),
+            0.0f);
+    }
+    else
+    {
+        ThreadSafeData.MovementData.RelativeAccelerationAmount = FVector::ZeroVector;
+    }
+
+    PreviousHorizontalVelocity = CurrentHorizontalVelocity;
+    bHasPreviousHorizontalVelocity = true;
+
+    const bool bInAir = CachedLocomotionStateComponent
+        ? (CachedLocomotionStateComponent->bIsInAir || CachedLocomotionStateComponent->CurrentState == ELocomotionState::InAir)
+        : false;
+
+    const bool bIsSprintingForLean = CachedLocomotionStateComponent
+        ? CachedLocomotionStateComponent->bIsSprinting
+        : false;
+
+    if (!bEnableLean || bInAir || LeanGroundSpeed <= 10.0f)
+    {
+        if (LeanInterpSpeed > 0.0f && DeltaSeconds > UE_KINDA_SMALL_NUMBER)
+        {
+            LeanAmount = FMath::Vector2DInterpTo(LeanAmount, FVector2D::ZeroVector, DeltaSeconds, LeanInterpSpeed);
+        }
+        else
+        {
+            LeanAmount = FVector2D::ZeroVector;
+        }
+    }
+    else
+    {
+        const float CurrentMultiplier = bIsSprintingForLean ? SprintLeanMultiplier : RunLeanMultiplier;
+        const float ClampVal = FMath::Max(0.0f, LeanAxisClamp);
+        const FVector2D TargetLean(
+            FMath::Clamp(ThreadSafeData.MovementData.RelativeAccelerationAmount.Y * CurrentMultiplier, -ClampVal, ClampVal),
+            FMath::Clamp(ThreadSafeData.MovementData.RelativeAccelerationAmount.X * CurrentMultiplier, -ClampVal, ClampVal));
+
+        if (LeanInterpSpeed > 0.0f && DeltaSeconds > UE_KINDA_SMALL_NUMBER)
+        {
+            LeanAmount = FMath::Vector2DInterpTo(LeanAmount, TargetLean, DeltaSeconds, LeanInterpSpeed);
+        }
+        else
+        {
+            LeanAmount = TargetLean;
+        }
+    }
+
+    ThreadSafeData.MovementData.LeanAmount = LeanAmount;
+    RelativeAccelerationAmount = ThreadSafeData.MovementData.RelativeAccelerationAmount;
     const bool bIsFallOffForDebug =
         CachedLocomotionStateComponent->CurrentState == ELocomotionState::InAir &&
         CachedLocomotionStateComponent->bIsFallOffStart &&
@@ -2574,7 +2669,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         ? 0.0f
         : (ThreadSafeData.StateController.PresentationState == EStateControllerPresentationState::TurnInPlace
             ? TurnInPlaceFootPlacementAlpha
-            : 1.0f);
+            : LocomotionFootPlacementAlpha);
     CurrentFootPlacementAlpha = FMath::FInterpTo(CurrentFootPlacementAlpha, TargetFootPlacementAlpha, DeltaSeconds, FootPlacementInterpSpeed);
     ThreadSafeData.FootPlacementAlpha = CurrentFootPlacementAlpha;
 
@@ -5109,4 +5204,19 @@ bool UMotionMatchingAnimInstance::GetThreadSafeIsPivoting() const
 bool UMotionMatchingAnimInstance::GetThreadSafeShouldTurnInPlace() const
 {
     return false;
+}
+
+FVector2D UMotionMatchingAnimInstance::GetThreadSafeLeanAmount() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.MovementData.LeanAmount;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeLeanLR() const
+{
+    return GetThreadSafeLeanAmount().X;
+}
+
+FVector UMotionMatchingAnimInstance::GetThreadSafeRelativeAccelerationAmount() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.MovementData.RelativeAccelerationAmount;
 }

@@ -64,6 +64,14 @@ struct FAnimMovementData
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     FVector Acceleration = FVector::ZeroVector;
 
+    /** Signed actor-local acceleration normalized by movement limits. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    FVector RelativeAccelerationAmount = FVector::ZeroVector;
+
+    /** X is lateral lean, Y is forward/back lean; calculated from RelativeAccelerationAmount. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
+    FVector2D LeanAmount = FVector2D::ZeroVector;
+
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     FTransformTrajectory Trajectory;
 
@@ -673,6 +681,15 @@ public:
     UFUNCTION(BlueprintPure, Category = "Animation|Leg Spread", meta = (BlueprintThreadSafe))
     float GetThreadSafeLegSpreadAlpha() const;
 
+    UFUNCTION(BlueprintPure, Category = "Animation|Locomotion", meta = (BlueprintThreadSafe))
+    FVector2D GetThreadSafeLeanAmount() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Locomotion", meta = (BlueprintThreadSafe))
+    float GetThreadSafeLeanLR() const;
+
+    UFUNCTION(BlueprintPure, Category = "Animation|Locomotion", meta = (BlueprintThreadSafe))
+    FVector GetThreadSafeRelativeAccelerationAmount() const;
+
     // State Controller ThreadSafe Getters for AnimGraph
     UFUNCTION(BlueprintPure, Category = "StateController", meta = (BlueprintThreadSafe))
     EStateControllerPresentationState GetThreadSafeStateControllerPresentationState() const;
@@ -803,6 +820,34 @@ public:
     /** Latched when entering a one-shot state; expose this property as a Chooser enum column. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StateController|Chooser")
     EStateControllerOneShotFoot StateControllerOneShotFoot = EStateControllerOneShotFoot::Left;
+
+    /** Signed actor-local acceleration normalized by movement limits. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation|ThreadSafe")
+    FVector RelativeAccelerationAmount = FVector::ZeroVector;
+
+    /** X is lateral lean, Y is forward/back lean; calculated from RelativeAccelerationAmount. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation|ThreadSafe")
+    FVector2D LeanAmount = FVector2D::ZeroVector;
+
+    /** Master enable switch for additive lean. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Lean")
+    bool bEnableLean = true;
+
+    /** Multiplier applied during normal Run locomotion (subtle lean). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Lean", meta = (ClampMin = "0.0", ClampMax = "3.0"))
+    float RunLeanMultiplier = 0.1f;
+
+    /** Multiplier applied during Sprint locomotion (more pronounced lean). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Lean", meta = (ClampMin = "0.0", ClampMax = "3.0"))
+    float SprintLeanMultiplier = 1.0f;
+
+    /** Maximum lean amount clamp (-LeanAxisClamp to +LeanAxisClamp). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Lean", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+    float LeanAxisClamp = 1.0f;
+
+    /** Interpolation speed for smoothing lean changes. 0 = instant snap. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Lean", meta = (ClampMin = "0.0"))
+    float LeanInterpSpeed = 6.0f;
 
     UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
     EGaitIntent GetThreadSafeGait() const;
@@ -1144,6 +1189,10 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Foot Placement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float TurnInPlaceFootPlacementAlpha = 0.0f;
 
+    /** Overall foot placement weight while moving in normal locomotion. Lower values (e.g. 0.6~0.8) soften foot locking during direction changes. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Foot Placement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float LocomotionFootPlacementAlpha = 0.75f;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Foot Placement", meta = (ClampMin = "0.1"))
     float FootPlacementInterpSpeed = 8.0f;
 
@@ -1229,4 +1278,7 @@ private:
     TObjectPtr<UPoseSearchDatabase> LockedTransitionDatabase = nullptr;
     bool bTransitionLocked = false;
     ELocomotionState LockedTransitionState = ELocomotionState::Idle;
+
+    FVector PreviousHorizontalVelocity = FVector::ZeroVector;
+    bool bHasPreviousHorizontalVelocity = false;
 };

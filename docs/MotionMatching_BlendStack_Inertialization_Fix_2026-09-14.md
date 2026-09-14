@@ -81,6 +81,31 @@
 
 ---
 
+### [이슈 6] 이동/방향 전환 시 Foot Placement 과도 접지 완화 및 Run/Sprint Additive Lean 구현 (C++)
+- **배경 및 현상**:
+  1. **Foot Placement 과도 접지**: 방향 전환 및 이동 시 발이 지면에 과하게 붙어있어(Lock), 회전 시 발목이 뒤틀리거나 뻣뻣하게 끌리는 어색함 발생.
+  2. **Additive Lean 차등 적용**: 달리기(Run)와 전력 질주(Sprint) 시 일반 달리기에서는 살짝만 기울어지고 전력 질주에서는 역동적으로 기울어지도록 개선 요구.
+- **원인 분석**:
+  1. 엔진 기본 `FFootPlacementPlantSettings`의 `UnplantAngle`(45도)과 `UnplantRadius`(35cm)가 너무 커서 캐릭터가 45도 이상 회전하기 전까지 발을 지면에 강제로 고정시킴.
+  2. C++ `NativeUpdateAnimation`에서 이동 중 `FootPlacementAlpha`가 무조건 `1.0f`(100% 강제 고정)로 하드코딩되어 있었음.
+  3. 로컬 가속도 기반 Lean 기능 부재.
+- **해결 및 구현 내역**:
+  1. **Foot Placement 파라미터 최적화**:
+     - `UnplantAngle = 18.0f` (회전 시 즉각 발 잠금 해제)
+     - `UnplantRadius = 15.0f` (15cm 이탈 시 즉각 해제)
+     - `SpeedThreshold = 25.0f` (달리는 도중 지면 강제 락 방지)
+     - `AnkleTwistReduction = 0.9f` (발목 과도 비틀림 방지)
+     - `FloorLinearStiffness = 600.0f`, `FloorAngularStiffness = 350.0f` (지면 스냅 완충)
+     - 신규 `LocomotionFootPlacementAlpha = 0.75f` 프로퍼티 도입: 이동 시 원본 달리기 모션 25% + IK 75%의 유연한 블렌딩 지원.
+  2. **가속도 기반 Additive Lean 구현**:
+     - 수평 속도 변화량과 무브먼트 컴포넌트의 가속/제동력을 이용해 정규화된 로컬 가속도 `RelativeAccelerationAmount` 계산.
+     - **Run**: `RunLeanMultiplier = 0.1f` (은은하고 자연스러운 최소 기울기)
+     - **Sprint**: `SprintLeanMultiplier = 1.0f` (역동적인 질주 기울기)
+     - `LeanInterpSpeed = 6.0f`로 부드럽게 감쇠 보간 및 정지/체공 시 중립 복귀.
+     - Thread-Safe Getter 노드 제공: `Get ThreadSafe Lean Amount`, `Get ThreadSafe Lean LR`, `Get ThreadSafe Relative Acceleration Amount`.
+
+---
+
 ## 2. 권장 AnimGraph 구조 다이어그램
 
 ```text
@@ -113,4 +138,6 @@
 - [x] `ABP_Player_Man` 동기화 확인
 - [x] 수영 중 질주(Sprint) 차단 및 입수 시 즉시 질주 해제 구현
 - [x] 질주 시 다이내믹 FOV(90->96), 카메라 거리(400->450), 외곽 비네팅(0->0.25) 부드러운 보간 구현
+- [x] 이동/방향 전환 시 Foot Placement 과도 접지 완충 (`UnplantAngle = 18도`, `LocomotionFootPlacementAlpha = 0.75f`)
+- [x] Additive Lean 구현 및 Run(`0.1`) / Sprint(`1.0`) 가속도 기반 기울기 분리
 - [ ] (선택 사항) 제자리 착지 후 WASD 이동 시 `TransitionToStart` 원샷을 경유하도록 `EvaluateStateControllerPresentationState()` 전이 흐름 보완 고려
