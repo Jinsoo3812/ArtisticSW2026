@@ -58,6 +58,27 @@
   2. `Blend Poses by bool`의 **`Transition Type`을 `Standard Blend` → `Inertialization`**으로 변경 (False Blend Time: 0.2s).
   3. 관성화 블렌드가 직전 Blend Stack 포즈의 본 속도/가속도 벡터를 캡처하여 Motion Matching 새 루프 포즈로 부드럽게 감쇠/흡수시킴으로써 발 꼬임과 1프레임 팝핑(Popping) 완벽 제거.
 
+### [이슈 5 / 신규 기능] 질주(Sprint) 카메라/화면 연출 및 물(수영/얕은 물) 이벤트 기반 질주 차단 (C++)
+- **배경 및 요구사항**:
+  - 스태미나 게이지가 없는 상시 질주 환경에 맞추어, 어지럽지 않고 눈이 편안한 은은한 속도감 연출(카메라 거리 후퇴 + 다이내믹 FOV + 외곽 비네팅) 적용.
+  - 수영 상태 및 다리만 잠기는 얕은 물(`bIsInShallowWater`)에서는 빠른 수영/질주가 불가능하므로 질주를 철저히 차단하고, 카메라와 실제 이동 속도(300 감속)가 일치하도록 연결.
+  - `Tick()`에서 매 프레임 질주 상태를 폴링(Polling)하던 비효율적인 구조를 탈피하여, 언리얼 엔진 이벤트 및 상태 전이 콜백 기반의 고성능 아키텍처로 개편.
+- **해결 및 구현 내역**:
+  1. **물(완전 입수 & 얕은 물)에서의 질주 차단**:
+     - `CanSprintFromInput()` 및 `CanSprintFromServerState()`에 `IsCustomSwimming()`(수영)뿐만 아니라 `IsInShallowWater()`(얕은 물) 검사를 추가하여 물속에서의 질주 시도를 완전 차단.
+     - 얕은 물 진입 시 `LocomotionAnimStateComponent`에서 `MaxWalkSpeed = 300.0f` 감속 적용과 동시에 `CachedBasePlayer->StopSprint()`를 호출하여 질주 상태를 즉시 해제.
+  2. **이벤트 기반 단발성 질주 해제 (`OnMovementModeChanged` & `ApplySwimmingGameplayState`)**:
+     - `ABasePlayer::OnMovementModeChanged()`를 오버라이드하여 무브먼트 모드가 수영으로 전환되는 순간 단 1회 즉각 `StopSprint()` 호출.
+     - `SwimmingComponent::ApplySwimmingGameplayState(true)`에서도 입수 시 `Player->StopSprint()`를 1회 호출하여 어빌리티 캔슬과 함께 즉각 연동.
+     - `BasePlayer::Tick()`에서 매 프레임 불필요하게 돌던 `RefreshSprintFromInput()` 호출을 완전 제거하여 CPU 낭비 방지 (입력 이벤트 `DoMove`, `StopMoveInput`, `StartSprint`, `StopSprint`에서만 호출).
+  3. **질주 카메라 및 화면 연출 (`BasePlayer.h/cpp`)**:
+     - `SprintTargetArmLength = 450.f` (기본 400에서 +50 은은하게 후퇴)
+     - `SprintFOV = 96.f` (기본 90에서 +6 부드러운 시야 확장)
+     - `SprintCameraInterpSpeed = 4.5f` (0.3~0.4초에 걸쳐 부드럽게 보간되어 덜컹거림 방지)
+     - `SprintVignetteIntensity = 0.25f` (질주 시 화면 외곽에 은은한 비네팅을 주어 중앙 몰입감 형성)
+     - 조준(Aiming) 및 스나이핑(Sniping) 상태가 질주 카메라보다 항상 높은 우선순위를 갖도록 처리.
+     - 질주 종료 시 줌아웃에서 기본 상태로 돌아올 때도 `SprintCameraInterpSpeed`로 부드럽게 감쇠 복귀.
+
 ---
 
 ## 2. 권장 AnimGraph 구조 다이어그램
@@ -90,4 +111,6 @@
 - [x] `ABP_Player_Woman` `Blend Poses by bool` Child Update Mode = Default 확인
 - [x] `ABP_Player_Woman` `Inertialization` 노드 배치 및 Transition Type = Inertialization 확인
 - [x] `ABP_Player_Man` 동기화 확인
+- [x] 수영 중 질주(Sprint) 차단 및 입수 시 즉시 질주 해제 구현
+- [x] 질주 시 다이내믹 FOV(90->96), 카메라 거리(400->450), 외곽 비네팅(0->0.25) 부드러운 보간 구현
 - [ ] (선택 사항) 제자리 착지 후 WASD 이동 시 `TransitionToStart` 원샷을 경유하도록 `EvaluateStateControllerPresentationState()` 전이 흐름 보완 고려

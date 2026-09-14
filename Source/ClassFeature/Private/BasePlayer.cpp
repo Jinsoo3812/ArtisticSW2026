@@ -233,6 +233,12 @@ void ABasePlayer::BeginPlay()
 		CameraBoom->CameraLagMaxTimeStep = CameraRotationSmoothingMaxTimeStep;
 	}
 
+	if (FollowCamera && bEnableSprintVignette)
+	{
+		FollowCamera->PostProcessSettings.bOverride_VignetteIntensity = true;
+		FollowCamera->PostProcessSettings.VignetteIntensity = 0.0f;
+	}
+
 	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
 	{
 		CachedPlayerSkillComponent = SkillComponent;
@@ -366,12 +372,22 @@ void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 	ApplyLocalDeathRagdoll();
 }
 
+void ABasePlayer::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
+{
+	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
+
+	const bool bIsSwimming = (SwimmingComponent && SwimmingComponent->IsCustomSwimming()) ||
+		(GetCharacterMovement() && GetCharacterMovement()->IsSwimming());
+
+	if (bIsSwimming)
+	{
+		StopSprint();
+	}
+}
+
 void ABasePlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-	// 후방 이동 시 질주(Sprint) 차단 (1안)
-	RefreshSprintFromInput();
 
 	// Update ASC state tags FIRST so rotation and animation systems know current combat state
 	bool bIsSniping = false;
@@ -430,6 +446,11 @@ void ABasePlayer::Tick(float DeltaTime)
 
 	float TargetArmLength = DefaultTargetArmLength;
 	FVector TargetSocketOffset = DefaultSocketOffset;
+	float TargetFOV = DefaultFOV;
+	float CurrentInterpSpeed = CameraInterpSpeed;
+	float TargetVignette = 0.0f;
+
+	const bool bIsSprinting = AnimStateComponent && AnimStateComponent->bIsSprinting;
 
 	if (CanPerformCombatAction())
 	{
@@ -437,17 +458,51 @@ void ABasePlayer::Tick(float DeltaTime)
 		{
 			TargetArmLength = SnipingTargetArmLength;
 			TargetSocketOffset = SnipingSocketOffset;
+			TargetFOV = SnipingFOV;
+			CurrentInterpSpeed = CameraInterpSpeed;
 		}
 		else if (bIsAiming)
 		{
 			TargetArmLength = AimingTargetArmLength;
 			TargetSocketOffset = AimingSocketOffset;
+			TargetFOV = DefaultFOV;
+			CurrentInterpSpeed = CameraInterpSpeed;
+		}
+		else if (bIsSprinting)
+		{
+			TargetArmLength = SprintTargetArmLength;
+			TargetFOV = SprintFOV;
+			TargetVignette = bEnableSprintVignette ? SprintVignetteIntensity : 0.0f;
+			CurrentInterpSpeed = SprintCameraInterpSpeed;
 		}
 	}
 	else
 	{
 		bIsAiming = false;
 		bIsSniping = false;
+
+		if (bIsSprinting)
+		{
+			TargetArmLength = SprintTargetArmLength;
+			TargetFOV = SprintFOV;
+			TargetVignette = bEnableSprintVignette ? SprintVignetteIntensity : 0.0f;
+			CurrentInterpSpeed = SprintCameraInterpSpeed;
+		}
+	}
+
+	// 조준/스나이핑 중이 아니고 질주도 아닐 때의 복귀 보간 속도 설정
+	if (!bIsSniping && !bIsAiming && !bIsSprinting)
+	{
+		// 질주 후 복귀(줌아웃 상태에서 복귀) 시에는 부드러운 SprintCameraInterpSpeed 사용,
+		// 조준 후 복귀(줌인 상태에서 복귀) 시에는 빠른 CameraInterpSpeed 사용
+		if (CameraBoom && CameraBoom->TargetArmLength > DefaultTargetArmLength)
+		{
+			CurrentInterpSpeed = SprintCameraInterpSpeed;
+		}
+		else
+		{
+			CurrentInterpSpeed = CameraInterpSpeed;
+		}
 	}
 
 	// Rotation ownership is selected by ApplyCombatRotationMode() above:
@@ -457,14 +512,20 @@ void ABasePlayer::Tick(float DeltaTime)
 
 	if (CameraBoom)
 	{
-		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
-		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CameraInterpSpeed);
+		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CurrentInterpSpeed);
+		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CurrentInterpSpeed);
 	}
 
 	if (FollowCamera)
 	{
-		const float TargetFOV = bIsSniping ? SnipingFOV : DefaultFOV;
-		FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, TargetFOV, DeltaTime, CameraInterpSpeed));
+		FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, TargetFOV, DeltaTime, CurrentInterpSpeed));
+
+		if (bEnableSprintVignette)
+		{
+			FollowCamera->PostProcessSettings.bOverride_VignetteIntensity = true;
+			FollowCamera->PostProcessSettings.VignetteIntensity = FMath::FInterpTo(
+				FollowCamera->PostProcessSettings.VignetteIntensity, TargetVignette, DeltaTime, SprintCameraInterpSpeed);
+		}
 	}
 }
 
@@ -2094,6 +2155,14 @@ bool ABasePlayer::CanSprintFromInput() const
 		CachedAbilitySystemComponent.IsValid() &&
 		CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
 
+	const bool bInWater = (SwimmingComponent && (SwimmingComponent->IsCustomSwimming() || SwimmingComponent->IsInShallowWater())) ||
+		(GetCharacterMovement() && GetCharacterMovement()->IsSwimming());
+
+	if (bInWater)
+	{
+		return false;
+	}
+
 	return AnimStateComponent && !bBlockedByAbilityState
 		? AnimStateComponent->CachedMoveInput.Y > 0.15f
 		: false;
@@ -2106,7 +2175,11 @@ void ABasePlayer::RefreshSprintFromInput()
 		return;
 	}
 
+	const bool bInWater = (SwimmingComponent && (SwimmingComponent->IsCustomSwimming() || SwimmingComponent->IsInShallowWater())) ||
+		(GetCharacterMovement() && GetCharacterMovement()->IsSwimming());
+
 	const bool bShouldSprint =
+		!bInWater &&
 		bSprintInputHeld &&
 		CanSprintFromInput() &&
 		!bIsAttacking &&
@@ -2551,6 +2624,14 @@ bool ABasePlayer::CanSprintFromServerState() const
 	const bool bBlockedByAbilityState =
 		CachedAbilitySystemComponent.IsValid() &&
 		CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
+
+	const bool bInWater = (SwimmingComponent && (SwimmingComponent->IsCustomSwimming() || SwimmingComponent->IsInShallowWater())) ||
+		(GetCharacterMovement() && GetCharacterMovement()->IsSwimming());
+
+	if (bInWater)
+	{
+		return false;
+	}
 
 	return !bBlockedByAbilityState && !bIsAttacking && !bIsDodging && !bIsHitReacting;
 }

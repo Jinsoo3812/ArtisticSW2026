@@ -114,6 +114,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PostInitializeComponents() override;
+	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Locomotion|TurnInPlace")
 	void ApplyCombatTurnInPlaceRotation(float DeltaTime);
@@ -610,6 +611,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float DefaultTargetArmLength = 400.f;
 
+	// 질주 시 카메라 거리
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sprint")
+	float SprintTargetArmLength = 450.f;
+
 	// 조준 시 카메라 거리
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float AimingTargetArmLength = 150.f;
@@ -638,6 +643,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float DefaultFOV = 90.f;
 
+	// 질주 시 FOV
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sprint")
+	float SprintFOV = 96.f;
+
 	// 스나이핑 시 FOV (줄일수록 더 확대)
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float SnipingFOV = 30.f;
@@ -645,6 +654,18 @@ protected:
 	// 카메라 전환 보간 속도
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float CameraInterpSpeed = 10.f;
+
+	// 질주 시 카메라 보간 속도 (부드러운 전환)
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sprint")
+	float SprintCameraInterpSpeed = 4.5f;
+
+	// 질주 시 비네팅 효과 사용 여부
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sprint")
+	bool bEnableSprintVignette = true;
+
+	// 질주 시 비네팅 강도 (화면 외곽 집중감)
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sprint")
+	float SprintVignetteIntensity = 0.25f;
 
 	/**
 	 * Smooth only the presented camera rotation. ControlRotation still receives the
