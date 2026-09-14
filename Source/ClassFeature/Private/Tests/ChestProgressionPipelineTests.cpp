@@ -7,6 +7,7 @@
 #include "Engine/DataTable.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "UObject/UnrealType.h"
 #include "Item/ItemData.h"
 #include "ItemSpawn/GlobalLootSpawnManager.h"
 #include "ItemSpawn/LootSpawnPoint.h"
@@ -29,9 +30,37 @@ bool FChestProgressionAuthoredAssetsTest::RunTest(const FString& Parameters)
 		|| !TestNotNull(TEXT("Configured recipes"), Recipes)
 		|| !TestNotNull(TEXT("Configured progression"), Balance)
 		|| !TestNotNull(TEXT("Ship tree"), Tree)) return false;
+	const FArrayProperty* ZonePlansProperty = FindFProperty<FArrayProperty>(UProgressionBalanceData::StaticClass(), GET_MEMBER_NAME_CHECKED(UProgressionBalanceData, ZonePlans));
+	if (!TestNotNull(TEXT("Zone Plans property exists"), ZonePlansProperty)) return false;
+	TestTrue(TEXT("Zone Plans is editable on the actual Progression DA"), ZonePlansProperty->HasAnyPropertyFlags(CPF_Edit));
+	const auto CheckPlanField = [this](FName FieldName, bool bShouldBeEditable)
+	{
+		const FProperty* Field = FProgressionZonePlan::StaticStruct()->FindPropertyByName(FieldName);
+		if (TestNotNull(*FString::Printf(TEXT("Zone Plan field %s"), *FieldName.ToString()), Field))
+		{
+			TestEqual(*FString::Printf(TEXT("Zone Plan field %s editor visibility"), *FieldName.ToString()),
+				Field->HasAnyPropertyFlags(CPF_Edit), bShouldBeEditable);
+		}
+	};
+	CheckPlanField(GET_MEMBER_NAME_CHECKED(FProgressionZonePlan, Zone), true);
+	CheckPlanField(GET_MEMBER_NAME_CHECKED(FProgressionZonePlan, OceanActiveChests), true);
+	CheckPlanField(GET_MEMBER_NAME_CHECKED(FProgressionZonePlan, IslandActiveChests), true);
+	CheckPlanField(GET_MEMBER_NAME_CHECKED(FProgressionZonePlan, ShipSquads), false);
+	CheckPlanField(GET_MEMBER_NAME_CHECKED(FProgressionZonePlan, ShipsPerSquad), false);
+	CheckPlanField(GET_MEMBER_NAME_CHECKED(FProgressionZonePlan, IslandGuardSquads), false);
+	CheckPlanField(GET_MEMBER_NAME_CHECKED(FProgressionZonePlan, WeaponCraftCount), false);
+	CheckPlanField(GET_MEMBER_NAME_CHECKED(FProgressionZonePlan, ConsumableCraftCount), false);
+	CheckPlanField(GET_MEMBER_NAME_CHECKED(FProgressionZonePlan, ShipUpgradeNodeCount), false);
 	for (int32 Index = 0; Index < 4; ++Index)
 	{
 		const EProgressionZone Zone = static_cast<EProgressionZone>(Index);
+		const FProgressionZonePlan* Plan = Balance->FindZone(Zone);
+		if (TestNotNull(*FString::Printf(TEXT("Actual DA Zone %d plan"), Index), Plan))
+		{
+			TestEqual(TEXT("Ocean activation reads actual DA plan"), Balance->GetActiveCount(Zone, EProgressionChestKind::OceanRandom), Plan->OceanActiveChests);
+			TestEqual(TEXT("Island activation reads actual DA plan"), Balance->GetActiveCount(Zone, EProgressionChestKind::IslandRandom), Plan->IslandActiveChests);
+			UE_LOG(LogTemp, Display, TEXT("Actual Progression DA zone=%d ocean=%d island=%d"), Index, Plan->OceanActiveChests, Plan->IslandActiveChests);
+		}
 		const FProgressionZoneTarget* Target = Balance->FindTarget(Zone);
 		if (!TestNotNull(*FString::Printf(TEXT("Zone %d target"), Index), Target)) continue;
 		TestEqual(*FString::Printf(TEXT("Zone %d clear target"), Index), Target->FullClears, 1);

@@ -29,6 +29,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Chest|Spawn")
 	int32 InitializeDataDrivenChests();
+	int32 InitializeDataDrivenChestsWithBalance(const UProgressionBalanceData* Balance);
 
 	/** Call again after dynamically spawning a level's ships/chest points. Sunk chests are never counted. */
 	UFUNCTION(BlueprintCallable, Category = "Chest|Progression")

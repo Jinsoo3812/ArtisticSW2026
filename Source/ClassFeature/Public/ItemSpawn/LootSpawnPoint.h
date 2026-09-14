@@ -48,8 +48,8 @@ struct CLASSFEATURE_API FChestSpawnPointChestSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Spawn")
 	TSubclassOf<AStorageChest> ChestClassOverride;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Data Driven",
-		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Random"))
+	/** Legacy serialized field; random activation now comes from Progression Zone Plans. */
+	UPROPERTY()
 	TObjectPtr<URandomChestGroup> RandomGroup = nullptr;
 
 	/** Legacy serialized value; progression chest spawning does not read it. */
@@ -213,9 +213,6 @@ public:
 	EProgressionChestKind GetProgressionKind() const { return ProgressionKind; }
 
 	UFUNCTION(BlueprintPure, Category = "Chest|Spawn")
-	URandomChestGroup* GetRandomGroup() const { return RandomGroup; }
-
-	UFUNCTION(BlueprintPure, Category = "Chest|Spawn")
 	UChestDefinition* GetGuardedChestDefinition() const { return ChestDefinition; }
 
 	UFUNCTION(BlueprintPure, Category = "Chest|Placement")
@@ -225,7 +222,7 @@ public:
 	void SetEnvironment(EChestEnvironment InEnvironment);
 
 	UFUNCTION(BlueprintCallable, Category = "Chest|Spawn")
-	void ConfigureRandomSpawn(URandomChestGroup* InRandomGroup, float InPointWeight = 1.f);
+	void ConfigureRandomSpawn(EProgressionZone InZone, EProgressionChestKind InKind, float InPointWeight = 1.f);
 
 	UFUNCTION(BlueprintCallable, Category = "Chest|Spawn")
 	void ConfigureGuardedSpawn(
@@ -284,8 +281,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Spawn")
 	TSubclassOf<AStorageChest> ChestClassOverride;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Data Driven",
-		meta = (EditCondition = "SpawnMode == EChestSpawnMode::Random"))
+	/** Legacy serialized field; no longer shown or read. */
+	UPROPERTY()
 	TObjectPtr<URandomChestGroup> RandomGroup = nullptr;
 
 	/** Legacy serialized value; new manager-owned chests do not read it. */

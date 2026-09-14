@@ -87,19 +87,18 @@ bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 	Definition->SlotCount = 4;
 	Definition->ColumnCount = 2;
 
-	URandomChestGroup* MidBossGroup = NewObject<URandomChestGroup>(GetTransientPackage());
-	MidBossGroup->ChestDefinition = Definition;
-	MidBossGroup->SpawnCount = 2;
-
-	URandomChestGroup* FinalBossGroup = NewObject<URandomChestGroup>(GetTransientPackage());
-	FinalBossGroup->ChestDefinition = Definition;
-	FinalBossGroup->SpawnCount = 1;
+	UProgressionBalanceData* Balance = NewObject<UProgressionBalanceData>(GetTransientPackage());
+	for (FProgressionZonePlan& Plan : Balance->ZonePlans)
+	{
+		Plan.OceanActiveChests = Plan.Zone == EProgressionZone::Final ? 3 : 0;
+		Plan.IslandActiveChests = Plan.Zone == EProgressionZone::Mid1 ? 2 : 0;
+	}
 
 	TArray<AChestSpawnPoint*> MidBossPoints;
 	for (int32 Index = 0; Index < 3; ++Index)
 	{
 		AChestSpawnPoint* Point = World->SpawnActor<AChestSpawnPoint>();
-		Point->ConfigureRandomSpawn(MidBossGroup, static_cast<float>(Index + 1));
+		Point->ConfigureRandomSpawn(EProgressionZone::Mid1, EProgressionChestKind::IslandRandom, static_cast<float>(Index + 1));
 		MidBossPoints.Add(Point);
 	}
 
@@ -107,7 +106,7 @@ bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 	for (int32 Index = 0; Index < 2; ++Index)
 	{
 		AChestSpawnPoint* Point = World->SpawnActor<AChestSpawnPoint>();
-		Point->ConfigureRandomSpawn(FinalBossGroup);
+		Point->ConfigureRandomSpawn(EProgressionZone::Final, EProgressionChestKind::OceanRandom);
 		Point->SetEnvironment(EChestEnvironment::Water);
 		FinalBossPoints.Add(Point);
 	}
@@ -118,7 +117,7 @@ bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 
 	// Match runtime: data-driven chests are deferred-spawned after the world has begun play.
 	World->BeginPlay();
-	TestEqual(TEXT("Each random group spawns its configured count"), Manager->InitializeDataDrivenChests(), 3);
+	TestEqual(TEXT("Each zone spawns min(Progression target, placed points)"), Manager->InitializeDataDrivenChestsWithBalance(Balance), 4);
 
 	auto CountActivated = [](const TArray<AChestSpawnPoint*>& Points)
 	{
@@ -134,7 +133,7 @@ bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 	};
 
 	TestEqual(TEXT("Mid-boss group activates two of three points"), CountActivated(MidBossPoints), 2);
-	TestEqual(TEXT("Final-boss group activates one of two points"), CountActivated(FinalBossPoints), 1);
+	TestEqual(TEXT("Final ocean activates two available points despite a target of three"), CountActivated(FinalBossPoints), 2);
 
 	for (AChestSpawnPoint* Point : FinalBossPoints)
 	{

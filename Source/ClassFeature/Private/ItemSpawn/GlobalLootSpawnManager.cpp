@@ -227,13 +227,19 @@ int32 AGlobalLootSpawnManager::InitializeLevelLoot()
 
 int32 AGlobalLootSpawnManager::InitializeDataDrivenChests()
 {
+	return InitializeDataDrivenChestsWithBalance(UProgressionBalanceData::LoadConfigured());
+}
+
+int32 AGlobalLootSpawnManager::InitializeDataDrivenChestsWithBalance(const UProgressionBalanceData* Balance)
+{
 	if (!HasAuthority() || !GetWorld())
 	{
 		return 0;
 	}
 
 	TArray<AChestSpawnPoint*> GuardedPoints;
-	TMap<URandomChestGroup*, TArray<AChestSpawnPoint*>> RandomPointsByGroup;
+	TMap<EProgressionZone, TArray<AChestSpawnPoint*>> OceanPointsByZone;
+	TMap<EProgressionZone, TArray<AChestSpawnPoint*>> IslandPointsByZone;
 
 	for (TActorIterator<AChestSpawnPoint> It(GetWorld()); It; ++It)
 	{
@@ -249,13 +255,17 @@ int32 AGlobalLootSpawnManager::InitializeDataDrivenChests()
 		}
 		else if (Point->GetSpawnMode() == EChestSpawnMode::Random)
 		{
-			if (URandomChestGroup* Group = Point->GetRandomGroup())
+			if (Point->GetProgressionKind() == EProgressionChestKind::OceanRandom)
 			{
-				RandomPointsByGroup.FindOrAdd(Group).Add(Point);
+				OceanPointsByZone.FindOrAdd(Point->GetProgressionZone()).Add(Point);
+			}
+			else if (Point->GetProgressionKind() == EProgressionChestKind::IslandRandom)
+			{
+				IslandPointsByZone.FindOrAdd(Point->GetProgressionZone()).Add(Point);
 			}
 			else
 			{
-				UE_LOG(LogTemp, Error, TEXT("Data-driven random chest point has no RandomGroup. Point=%s"), *GetNameSafe(Point));
+				UE_LOG(LogTemp, Error, TEXT("Random chest point must use OceanRandom or IslandRandom. Point=%s"), *GetNameSafe(Point));
 			}
 		}
 	}
@@ -274,41 +284,42 @@ int32 AGlobalLootSpawnManager::InitializeDataDrivenChests()
 		}
 	}
 
-	for (TPair<URandomChestGroup*, TArray<AChestSpawnPoint*>>& Pair : RandomPointsByGroup)
+	if (!Balance && (OceanPointsByZone.Num() > 0 || IslandPointsByZone.Num() > 0))
 	{
-		URandomChestGroup* Group = Pair.Key;
-		if (!IsValid(Group) || Group->GetEffectiveSpawnCount() <= 0)
+		UE_LOG(LogTemp, Error, TEXT("Random chest activation requires ProgressionBalanceData."));
+	}
+	for (int32 ZoneIndex = 0; Balance && ZoneIndex < 4; ++ZoneIndex)
+	{
+		const EProgressionZone Zone = static_cast<EProgressionZone>(ZoneIndex);
+		for (int32 KindIndex = 0; KindIndex < 2; ++KindIndex)
 		{
-			UE_LOG(LogTemp, Error, TEXT("Invalid random chest group. Group=%s SpawnCount=%d"),
-				*GetNameSafe(Group), Group ? Group->GetEffectiveSpawnCount() : 0);
-			continue;
-		}
-
-		TArray<AChestSpawnPoint*> Candidates = Pair.Value;
-		if (Candidates.Num() < Group->GetEffectiveSpawnCount())
-		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("Random chest group %s has %d candidate points but balance requests %d active chests."),
-				*GetNameSafe(Group), Candidates.Num(), Group->GetEffectiveSpawnCount());
-		}
-		const int32 TargetCount = FMath::Min(Group->GetEffectiveSpawnCount(), Candidates.Num());
-		const uint32 GroupSeed = HashCombine(GetTypeHash(SpawnSeed), GetTypeHash(Group->GetFName()));
-		FRandomStream RandomStream(static_cast<int32>(GroupSeed & 0x7fffffff));
-
-		for (int32 SpawnIndex = 0; SpawnIndex < TargetCount; ++SpawnIndex)
-		{
-			AChestSpawnPoint* SelectedPoint = PickWeightedChestPoint(Candidates, RandomStream);
-			if (!SelectedPoint)
+			const EProgressionChestKind Kind = KindIndex == 0 ? EProgressionChestKind::OceanRandom : EProgressionChestKind::IslandRandom;
+			const TMap<EProgressionZone, TArray<AChestSpawnPoint*>>& PointsByZone = KindIndex == 0 ? OceanPointsByZone : IslandPointsByZone;
+			const TArray<AChestSpawnPoint*>* PlacedPoints = PointsByZone.Find(Zone);
+			TArray<AChestSpawnPoint*> Candidates = PlacedPoints ? *PlacedPoints : TArray<AChestSpawnPoint*>();
+			const int32 RequestedCount = FMath::Max(0, Balance->GetActiveCount(Zone, Kind));
+			if (Candidates.Num() < RequestedCount)
 			{
-				break;
+				UE_LOG(LogTemp, Warning, TEXT("Random chest shortage: Zone=%d Kind=%d Placed=%d Requested=%d"),
+					ZoneIndex, static_cast<int32>(Kind), Candidates.Num(), RequestedCount);
 			}
-
-			Candidates.RemoveSingleSwap(SelectedPoint);
-			const int32 ChestSeed = RandomStream.RandRange(1, MAX_int32);
-			if (IsValid(SelectedPoint->SpawnConfiguredChest(nullptr, ChestSeed)))
+			const int32 TargetCount = FMath::Min(RequestedCount, Candidates.Num());
+			const uint32 GroupSeed = HashCombine(GetTypeHash(SpawnSeed), HashCombine(GetTypeHash(ZoneIndex), GetTypeHash(KindIndex)));
+			FRandomStream RandomStream(static_cast<int32>(GroupSeed & 0x7fffffff));
+			int32 GroupSpawned = 0;
+			for (int32 SpawnIndex = 0; SpawnIndex < TargetCount; ++SpawnIndex)
 			{
-				++SpawnedCount;
+				AChestSpawnPoint* SelectedPoint = PickWeightedChestPoint(Candidates, RandomStream);
+				if (!SelectedPoint) break;
+				Candidates.RemoveSingleSwap(SelectedPoint);
+				if (IsValid(SelectedPoint->SpawnConfiguredChest(nullptr, RandomStream.RandRange(1, MAX_int32))))
+				{
+					++GroupSpawned;
+					++SpawnedCount;
+				}
 			}
+			UE_LOG(LogTemp, Log, TEXT("Random chests: Zone=%d Kind=%d Requested=%d Placed=%d Spawned=%d"),
+				ZoneIndex, static_cast<int32>(Kind), RequestedCount, PlacedPoints ? PlacedPoints->Num() : 0, GroupSpawned);
 		}
 	}
 

@@ -87,34 +87,38 @@ struct ARTISTICSWCORE_API FProgressionZonePlan
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Zone")
 	EProgressionZone Zone = EProgressionZone::Mid1;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "0"))
+	/** Legacy audit input; guarded chests are counted from spawned points at runtime. */
+	UPROPERTY()
 	int32 ShipSquads = 3;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "0"))
+	UPROPERTY()
 	int32 ShipsPerSquad = 3;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "0"))
+	UPROPERTY()
 	int32 IslandGuardSquads = 3;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Random", meta = (ClampMin = "0"))
+	/** Legacy estimate; candidate points are discovered from the level at runtime. */
+	UPROPERTY()
 	int32 IslandCandidatePoints = 10;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Random", meta = (ClampMin = "0"))
 	int32 IslandActiveChests = 5;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Random", meta = (ClampMin = "0"))
+	/** Legacy estimate; candidate points are discovered from the level at runtime. */
+	UPROPERTY()
 	int32 OceanCandidatePoints = 12;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Random", meta = (ClampMin = "0"))
 	int32 OceanActiveChests = 6;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target", meta = (ClampMin = "0"))
+	/** Legacy demand inputs; runtime uses ZoneTargets instead. */
+	UPROPERTY()
 	int32 WeaponCraftCount = 1;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target", meta = (ClampMin = "0"))
+	UPROPERTY()
 	int32 ConsumableCraftCount = 3;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target", meta = (ClampMin = "0"))
+	UPROPERTY()
 	int32 ShipUpgradeNodeCount = 3;
 };
 
@@ -231,7 +235,8 @@ public:
 	UPROPERTY()
 	int32 ShipUpgradeNodesPerTier = 3;
 
-	UPROPERTY()
+	/** Per-zone random chest activation targets; placed candidates are counted at runtime. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Progression")
 	TArray<FProgressionZonePlan> ZonePlans;
 
 	/** New runtime-count balance input. Fill exactly one row for each of the four zones. */

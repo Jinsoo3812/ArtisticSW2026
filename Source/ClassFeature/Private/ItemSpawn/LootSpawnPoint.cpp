@@ -173,7 +173,7 @@ void AChestSpawnPoint::ApplyAuthoringSettings(
 	ProgressionZone = ChestSettings.ProgressionZone;
 	ProgressionKind = ChestSettings.ProgressionKind;
 	ChestClassOverride = ChestSettings.ChestClassOverride;
-	RandomGroup = ChestSettings.RandomGroup;
+	RandomGroup = nullptr;
 	ChestDefinition = nullptr; // Retired authoring input; the manager supplies progression loot.
 	GuardCharacters = ChestSettings.GuardCharacters;
 	GuardSpawners = ChestSettings.GuardSpawners;
@@ -334,10 +334,12 @@ void AChestSpawnPoint::SetEnvironment(EChestEnvironment InEnvironment)
 	}
 }
 
-void AChestSpawnPoint::ConfigureRandomSpawn(URandomChestGroup* InRandomGroup, float InPointWeight)
+void AChestSpawnPoint::ConfigureRandomSpawn(EProgressionZone InZone, EProgressionChestKind InKind, float InPointWeight)
 {
 	SpawnMode = EChestSpawnMode::Random;
-	RandomGroup = InRandomGroup;
+	ProgressionZone = InZone;
+	ProgressionKind = InKind;
+	RandomGroup = nullptr;
 	ChestDefinition = nullptr;
 	GuardCharacters.Reset();
 	OwningShip = nullptr;
