@@ -748,6 +748,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	UInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
+	float GetInteractionReach() const { return FMath::Max(0.0f, InteractTraceDistance) + FMath::Max(0.0f, InteractTraceRadius); }
 
 	UFUNCTION(BlueprintPure, Category = "Crafting")
 	UCraftingComponent* GetCraftingComponent() const { return CraftingComponent; }

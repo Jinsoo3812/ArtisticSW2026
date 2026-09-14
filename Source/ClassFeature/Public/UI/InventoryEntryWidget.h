@@ -7,6 +7,7 @@
 #include "GameplayTagContainer.h"
 #include "InventoryEntryWidget.generated.h"
 
+class AStorageChest;
 class UImage;
 class UTextBlock;
 class UTexture2D;
@@ -25,6 +26,7 @@ class CLASSFEATURE_API UInventoryEntryWidget : public UUserWidget
 public:
 	void SetupFromData(const FText& InItemName, int32 InCount, UTexture2D* InIcon, int32 InSlotIndex, FGameplayTag InItemTag, const FText& InRarityName);
 	void SetupAsEmpty(int32 InSlotIndex);
+	void SetStorageContext(AStorageChest* Chest);
 
 	FInventoryEntryHoverDelegate OnEntryHovered;
 	FInventoryEntryUnhoverDelegate OnEntryUnhovered;
@@ -44,6 +46,9 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> CountText;;
 	
+	TWeakObjectPtr<AStorageChest> StorageChest;
+	int32 DisplayedCount = 0;
+	int32 DisplayedCapacity = 0;
 	int32 SlotIndex = INDEX_NONE;
 	FGameplayTag ItemTag;
 };

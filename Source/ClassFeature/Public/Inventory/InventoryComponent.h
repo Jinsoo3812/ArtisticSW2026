@@ -65,6 +65,9 @@ struct FInventoryCursorItem
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
 	EInventoryTab OriginalTab = EInventoryTab::Material;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
+	TObjectPtr<UStorageComponent> OriginalStorage = nullptr;
+
 	bool IsValid() const
 	{
 		return ItemTag.IsValid() && Count > 0 && OriginalSlotIndex != INDEX_NONE;
@@ -76,6 +79,7 @@ struct FInventoryCursorItem
 		Count = 0;
 		OriginalSlotIndex = INDEX_NONE;
 		OriginalTab = EInventoryTab::Material;
+		OriginalStorage = nullptr;
 	}
 };
 
@@ -112,12 +116,14 @@ class CLASSFEATURE_API UInventoryComponent : public UActorComponent,
 	public IDialogueInventoryProvider
 {
 	GENERATED_BODY()
+	friend class UStorageComponent;
 
 public:	
 	// Sets default values for this component's properties
 	UInventoryComponent();
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
 	// 리플리케이션을 위함
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -205,6 +211,7 @@ public:
 	FText GetItemRarityName(const FGameplayTag& ItemTag) const;
 	EInventoryTab GetInventoryTabForItem(const FGameplayTag& ItemTag) const;
 
+	static EInventoryTab ResolveItemTab(UWorld* World, const FGameplayTag& ItemTag);
 	void SetActiveTab(EInventoryTab NewTab);
 	// 인벤토리 좌클릭 
 	void HandleLeftClickSlot(int32 SlotIndex);
@@ -214,6 +221,7 @@ public:
 	// 커서 아이템 원래 위치로 복귀
 	void ReturnCursorToOriginalSlot();
 	int32 TransferSlotToStorage(int32 SlotIndex, UStorageComponent* TargetStorage);
+	int32 TransferSlotToStorageInTab(EInventoryTab Tab, int32 SlotIndex, UStorageComponent* TargetStorage);
 	int32 TransferCursorToStorageSlot(UStorageComponent* TargetStorage, int32 StorageSlotIndex);
 
 	UFUNCTION(Server, Reliable)

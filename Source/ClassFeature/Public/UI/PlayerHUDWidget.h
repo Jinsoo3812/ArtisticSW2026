@@ -100,10 +100,15 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UStorageWindowWidget> StorageWindowWidget;
 
+	/** Designer-placed shared chest window. Its HUD slot owns position and size. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UStorageWindowWidget> SharedStorageWindowWidget;
+
 	// Fallback placement used only when the HUD blueprint has no designer-placed storage window.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Storage")
 	FVector2D RuntimeStorageWindowTopRightMargin = FVector2D(60.0f, 140.0f);
 
+	UPROPERTY() TObjectPtr<UStorageWindowWidget> SuspendedStorageWindow;
 	bool bRuntimeStorageWindow = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")

@@ -25,10 +25,17 @@ void UStorageComponent::BeginPlay()
 	}
 }
 
+void UStorageComponent::EndPlay(const EEndPlayReason::Type Reason)
+{
+	ReturnAllReservedCursors();
+	Super::EndPlay(Reason);
+}
+
 void UStorageComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
+	DOREPLIFETIME(UStorageComponent, SlotsPerTab);
 	DOREPLIFETIME(UStorageComponent, SlotCount);
 	DOREPLIFETIME(UStorageComponent, ColumnCount);
 	DOREPLIFETIME(UStorageComponent, StorageSlots);
@@ -36,6 +43,7 @@ void UStorageComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 
 void UStorageComponent::ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems)
 {
+	if (!CursorReservations.IsEmpty()) return;
 	bConfiguredAtRuntime = true;
 
 	// storage 구성, slot의 개수, 열의 수, 아이템들 array를 전달하면 storage가 구성됨
@@ -83,7 +91,7 @@ int32 UStorageComponent::AddItem(const FGameplayTag& ItemTag, int32 Amount)
 			break;
 		}
 
-		if (Slot.ItemTag != ItemTag || Slot.Count >= MaxStack)
+		if (!CanStoreInSlot(static_cast<int32>(&Slot - StorageSlots.GetData()), ItemTag) || Slot.ItemTag != ItemTag || Slot.Count >= MaxStack)
 		{
 			continue;
 		}
@@ -103,7 +111,7 @@ int32 UStorageComponent::AddItem(const FGameplayTag& ItemTag, int32 Amount)
 			break;
 		}
 
-		if (!Slot.IsEmpty())
+		if (!CanStoreInSlot(static_cast<int32>(&Slot - StorageSlots.GetData()), ItemTag) || !Slot.IsEmpty())
 		{
 			continue;
 		}
@@ -188,7 +196,7 @@ int32 UStorageComponent::AddItemToSlot(int32 SlotIndex, const FGameplayTag& Item
 
 	EnsureSlotArray();
 
-	if (!StorageSlots.IsValidIndex(SlotIndex))
+	if (!StorageSlots.IsValidIndex(SlotIndex) || !CanStoreInSlot(SlotIndex, ItemTag))
 	{
 		return 0;
 	}
@@ -258,6 +266,7 @@ int32 UStorageComponent::TransferSlotToInventory(int32 SlotIndex, UInventoryComp
 
 bool UStorageComponent::IsEmpty() const
 {
+	if (!CursorReservations.IsEmpty()) return false;
 	for (const FInventorySlot& Slot : StorageSlots)
 	{
 		if (!Slot.IsEmpty())
@@ -377,6 +386,7 @@ void UStorageComponent::EnsureSlotArray()
 
 void UStorageComponent::CompactSlots()
 {
+	if (UsesInventoryTabs() || !CursorReservations.IsEmpty()) return;
 	// 슬롯 압축
 	// 아이템 array에 빈 공간이 있으면 앞으로 압축
 	TArray<FInventorySlot> CompactedSlots;
@@ -415,4 +425,144 @@ void UStorageComponent::CompactSlots()
 void UStorageComponent::BroadcastStorageChanged()
 {
 	OnStorageChanged.Broadcast();
+}
+
+bool UStorageComponent::CanStoreInSlot(int32 Index, const FGameplayTag& ItemTag) const
+{
+	if (IsSlotReserved(Index)) return false;
+	return !UsesInventoryTabs() || (Index >= 0 && Index / SlotsPerTab == static_cast<int32>(UInventoryComponent::ResolveItemTab(GetWorld(), ItemTag)));
+}
+
+bool UStorageComponent::ConfigureTabbedStorage(int32 InSlotsPerTab, const TArray<FInventorySlot>& SavedSlots, int32 SavedSlotsPerTab)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || InSlotsPerTab < 1 || InSlotsPerTab > 10000) return false;
+	if (SavedSlotsPerTab > 0 && !CursorReservations.IsEmpty()) return false;
+	const int32 OldCapacity = SavedSlotsPerTab > 0 ? SavedSlotsPerTab : SlotsPerTab;
+	const TArray<FInventorySlot> Previous = SavedSlotsPerTab > 0 ? SavedSlots : StorageSlots;
+	// Expansion never deletes previously saved slots, even after an editor default is reduced.
+	const int32 NewCapacity = FMath::Max(InSlotsPerTab, OldCapacity);
+	if (NewCapacity > 10000 || (SavedSlotsPerTab > 0 && SavedSlots.Num() != SavedSlotsPerTab * 4)) return false;
+	TArray<FInventorySlot> NewSlots;
+	NewSlots.SetNum(NewCapacity * 4);
+	if (OldCapacity > 0)
+	{
+		for (int32 Tab = 0; Tab < 4; ++Tab)
+			for (int32 Index = 0; Index < OldCapacity; ++Index)
+				if (Previous.IsValidIndex(Tab * OldCapacity + Index))
+					NewSlots[Tab * NewCapacity + Index] = Previous[Tab * OldCapacity + Index];
+	}
+	SlotsPerTab = NewCapacity;
+	SlotCount = NewCapacity * 4;
+	ColumnCount = 5;
+	StorageSlots = MoveTemp(NewSlots);
+	for (auto& Pair : CursorReservations)
+	{
+		if (OldCapacity > 0)
+			Pair.Value.SlotIndex = (Pair.Value.SlotIndex / OldCapacity) * NewCapacity + Pair.Value.SlotIndex % OldCapacity;
+		if (UInventoryComponent* Inventory = Pair.Key.Get())
+		{
+			Inventory->CursorItem.OriginalSlotIndex = Pair.Value.SlotIndex;
+		}
+	}
+	TArray<TWeakObjectPtr<UInventoryComponent>> CursorOwners;
+	CursorReservations.GetKeys(CursorOwners);
+	for (const auto& Owner : CursorOwners)
+		if (Owner.IsValid()) Owner->OnInventoryChanged.Broadcast();
+	bConfiguredAtRuntime = true;
+	BroadcastStorageChanged();
+	return true;
+}
+
+bool UStorageComponent::IsSlotReserved(int32 Index) const
+{
+	for (const auto& Pair : CursorReservations)
+		if (Pair.Value.SlotIndex == Index) return true;
+	return false;
+}
+
+bool UStorageComponent::PickUpSlotToCursor(int32 SlotIndex, UInventoryComponent* Inventory)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !Inventory || !Inventory->GetOwner()
+		|| !Inventory->GetOwner()->HasAuthority() || Inventory->CursorItem.IsValid()) return false;
+	if (!StorageSlots.IsValidIndex(SlotIndex) || StorageSlots[SlotIndex].IsEmpty() || IsSlotReserved(SlotIndex)) return false;
+	FCursorReservation Reservation;
+	Reservation.SlotIndex = SlotIndex;
+	Reservation.Item = StorageSlots[SlotIndex];
+	CursorReservations.Add(Inventory, Reservation);
+	Inventory->CursorItem.ItemTag = Reservation.Item.ItemTag;
+	Inventory->CursorItem.Count = Reservation.Item.Count;
+	Inventory->CursorItem.OriginalSlotIndex = SlotIndex;
+	Inventory->CursorItem.OriginalTab = UInventoryComponent::ResolveItemTab(GetWorld(), Reservation.Item.ItemTag);
+	Inventory->CursorItem.OriginalStorage = this;
+	StorageSlots[SlotIndex].Clear();
+	Inventory->OnInventoryChanged.AddUObject(this, &UStorageComponent::HandleCursorChanged);
+	Inventory->OnInventoryChanged.Broadcast();
+	BroadcastStorageChanged();
+	return true;
+}
+
+void UStorageComponent::HandleCursorChanged()
+{
+	bool bChanged = false;
+	for (auto It = CursorReservations.CreateIterator(); It; ++It)
+	{
+		UInventoryComponent* Inventory = It.Key().Get();
+		if (!Inventory)
+		{
+			// EndPlay normally returns the item. Preserve it if an owner disappears unexpectedly.
+			if (StorageSlots.IsValidIndex(It.Value().SlotIndex)) StorageSlots[It.Value().SlotIndex] = It.Value().Item;
+			It.RemoveCurrent();
+			bChanged = true;
+		}
+		else if (!Inventory->CursorItem.IsValid() || Inventory->CursorItem.OriginalStorage != this)
+		{
+			Inventory->OnInventoryChanged.RemoveAll(this);
+			It.RemoveCurrent();
+			bChanged = true;
+		}
+		else if (It.Value().Item.Count != Inventory->CursorItem.Count || It.Value().Item.ItemTag != Inventory->CursorItem.ItemTag)
+		{
+			It.Value().Item.ItemTag = Inventory->CursorItem.ItemTag;
+			It.Value().Item.Count = Inventory->CursorItem.Count;
+			bChanged = true;
+		}
+	}
+	if (bChanged) BroadcastStorageChanged();
+}
+
+bool UStorageComponent::ReturnReservedCursor(UInventoryComponent* Inventory)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !Inventory) return false;
+	const FCursorReservation* Reservation = CursorReservations.Find(Inventory);
+	if (!Reservation || Inventory->CursorItem.OriginalStorage != this || !Inventory->CursorItem.IsValid()
+		|| !StorageSlots.IsValidIndex(Reservation->SlotIndex) || !StorageSlots[Reservation->SlotIndex].IsEmpty()) return false;
+	FInventorySlot& Slot = StorageSlots[Reservation->SlotIndex];
+	Slot.ItemTag = Inventory->CursorItem.ItemTag;
+	Slot.Count = Inventory->CursorItem.Count;
+	CursorReservations.Remove(Inventory);
+	Inventory->OnInventoryChanged.RemoveAll(this);
+	Inventory->CursorItem.Clear();
+	Inventory->OnInventoryChanged.Broadcast();
+	BroadcastStorageChanged();
+	return true;
+}
+
+void UStorageComponent::ReturnAllReservedCursors()
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+	HandleCursorChanged();
+	TArray<TWeakObjectPtr<UInventoryComponent>> Inventories;
+	CursorReservations.GetKeys(Inventories);
+	for (const auto& Inventory : Inventories)
+		if (Inventory.IsValid()) ReturnReservedCursor(Inventory.Get());
+}
+
+TArray<FInventorySlot> UStorageComponent::GetPersistentSlots() const
+{
+	TArray<FInventorySlot> Snapshot = StorageSlots;
+	// A held stack remains owned by its source until the user commits a placement.
+	// Preserve it in server saves while keeping the live slot empty and reserved.
+	for (const auto& Pair : CursorReservations)
+		if (Snapshot.IsValidIndex(Pair.Value.SlotIndex)) Snapshot[Pair.Value.SlotIndex] = Pair.Value.Item;
+	return Snapshot;
 }
