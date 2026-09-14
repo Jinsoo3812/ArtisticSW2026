@@ -1,4 +1,7 @@
 #include "BossAI/ShipBossEnemy.h"
+#include "Components/StatusComponent.h"
+#include "Components/CombatHurtboxComponent.h"
+#include "GAS/Ability/Boss/BossStunEffects.h"
 
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
@@ -23,6 +26,9 @@
 
 AShipBossEnemy::AShipBossEnemy()
 {
+	CombatHurtboxComponent->Mode = ECombatHurtboxMode::AnimatedPhysicsAsset;
+	HeadHitStunEffect = UBossHeadHitStunEffect::StaticClass();
+	HealthThresholdStunEffect = UBossHealthThresholdStunEffect::StaticClass();
 	// Boss damage feedback is intentionally stronger and must not leak into the
 	// regular enemy defaults inherited by melee and ranged archetypes.
 	GetHealthComponent()->SetDamageGameplayCueTag(GameplayCue_Boss_Hit);
@@ -70,6 +76,8 @@ void AShipBossEnemy::BeginPlay()
 	Super::BeginPlay();
 
 	BindHostShip();
+	GetHealthComponent()->OnConfirmedDamage.AddUObject(this, &AShipBossEnemy::HandleConfirmedDamage);
+	GetHealthComponent()->OnHealthChanged.AddUniqueDynamic(this, &AShipBossEnemy::HandleStunHealthChanged);
 	ApplyHiddenPresentation();
 	if (HasAuthority())
 	{
@@ -79,6 +87,8 @@ void AShipBossEnemy::BeginPlay()
 
 void AShipBossEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetHealthComponent()->OnConfirmedDamage.RemoveAll(this);
+	GetHealthComponent()->OnHealthChanged.RemoveDynamic(this, &AShipBossEnemy::HandleStunHealthChanged);
 	ReleaseSummonedDeckEnemies();
 	if (HasAuthority() && HostShip)
 	{
@@ -92,6 +102,25 @@ void AShipBossEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 bool AShipBossEnemy::HasBossBasicAttackStartingAbility() const
 {
 	return StartingAbilities.Contains(UGA_BossBasicAttack::StaticClass());
+}
+
+void AShipBossEnemy::HandleConfirmedDamage(float Damage, const FGameplayEffectContextHandle& Context, bool bPeriodic)
+{
+	const FHitResult* Hit = Context.GetHitResult();
+	if (HasAuthority() && Damage > 0.f && !bPeriodic && Hit && StunHeadBones.Contains(Hit->BoneName)
+		&& GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Attacking))
+		StatusComponent->ApplyStatus(HeadHitStunEffect, GetAbilitySystemComponent(), Context);
+}
+
+void AShipBossEnemy::HandleStunHealthChanged(UBaseHealthComponent* Health, float OldHealth, float NewHealth, AActor* InstigatorActor)
+{
+	if (!HasAuthority() || bStunHealthThresholdConsumed || StunHealthThreshold <= 0.f) return;
+	const float Threshold = Health->GetMaxHealth() * StunHealthThreshold;
+	if (OldHealth > Threshold && NewHealth <= Threshold)
+	{
+		bStunHealthThresholdConsumed = true;
+		if (NewHealth > 0.f) StatusComponent->ApplyStatus(HealthThresholdStunEffect, GetAbilitySystemComponent(), {});
+	}
 }
 
 void AShipBossEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

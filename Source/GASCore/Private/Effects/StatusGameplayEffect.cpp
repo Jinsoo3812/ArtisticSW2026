@@ -62,6 +62,7 @@ namespace
 
 UPoisonStatusGameplayEffect::UPoisonStatusGameplayEffect()
 {
+	PeriodicDamageCueTag = GameplayCue_Status_Poison_Tick;
 	AddStatusTag(State_Status_Poison);
 	AddStatusTag(State_Poisoned);
 	ConfigureDamageOverTime(*this);
@@ -69,6 +70,7 @@ UPoisonStatusGameplayEffect::UPoisonStatusGameplayEffect()
 
 UBurnStatusGameplayEffect::UBurnStatusGameplayEffect()
 {
+	PeriodicDamageCueTag = GameplayCue_Status_Burn_Tick;
 	AddStatusTag(State_Status_Burn);
 	ConfigureDamageOverTime(*this);
 }

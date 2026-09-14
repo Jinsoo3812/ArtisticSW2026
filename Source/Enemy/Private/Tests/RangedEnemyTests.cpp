@@ -19,6 +19,7 @@
 #include "BehaviorTree/Tasks/BTTask_RunEQSQuery.h"
 #include "BehaviorTree/Tasks/BTTask_Wait.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StatusComponent.h"
 #include "Decorator/BTD_CanRangedAttack.h"
 #include "Decorator/BTD_CombatTargetState.h"
 #include "Engine/CollisionProfile.h"
@@ -942,12 +943,13 @@ bool FStrengthProjectilePayloadTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FStatusEffectRefreshTest,
-	"ArtisticSW.Enemy.RangedEnemy.StatusEffectRefresh",
+	FStatusEffectIgnoreReapplicationTest,
+	"ArtisticSW.Enemy.RangedEnemy.StatusEffectIgnoreReapplication",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FStatusEffectRefreshTest::RunTest(const FString& Parameters)
+bool FStatusEffectIgnoreReapplicationTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"), EAutomationExpectedErrorFlags::Contains, 0);
 	RangedEnemyTests::FScopedTestWorld TestWorld;
 	if (!TestNotNull(TEXT("Transient game world is created"), TestWorld.World))
 	{
@@ -972,6 +974,7 @@ bool FStatusEffectRefreshTest::RunTest(const FString& Parameters)
 	TargetAttributes->InitMaxHealth(100.0f);
 	TargetAttributes->InitHealth(100.0f);
 	TargetASC->AddAttributeSetSubobject(TargetAttributes);
+	TargetEnemy->StatusComponent->InitializeWithAbilitySystem(TargetASC);
 
 	UClass* PoisonEffectClass = LoadObject<UClass>(
 		nullptr,
@@ -1022,13 +1025,13 @@ bool FStatusEffectRefreshTest::RunTest(const FString& Parameters)
 
 	const FActiveGameplayEffectHandle RefreshedHandle =
 		UStatusEffectLibrary::ApplyDurationDamageEffectSpecToTarget(TargetASC, PoisonSpec, FGameplayTag());
-	TestTrue(TEXT("Repeated poison hit returns a refreshed active handle"), RefreshedHandle.IsValid());
+	TestFalse(TEXT("Repeated poison hit is rejected"), RefreshedHandle.IsValid());
 	TestEqual(TEXT("Repeated poison hit does not add another stack"), TargetASC->GetActiveEffects(PoisonQuery).Num(), 1);
 
 	const TArray<float> RefreshedRemainingTimes = TargetASC->GetActiveEffectsTimeRemaining(PoisonQuery);
-	TestTrue(TEXT("Repeated poison hit resets the status timer"),
+	TestTrue(TEXT("Repeated poison hit preserves the status timer"),
 		RefreshedRemainingTimes.Num() == 1
-		&& RefreshedRemainingTimes[0] > AgedRemainingTimes[0] + Durations[0] * 0.25f);
+		&& FMath::IsNearlyEqual(RefreshedRemainingTimes[0], AgedRemainingTimes[0]));
 	return true;
 }
 

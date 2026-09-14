@@ -2,6 +2,7 @@
 
 
 #include "Components/BaseHealthComponent.h"
+#include "Components/StatusComponent.h"
 #include "Components/CombatPresentationComponent.h"
 #include "Components/EquipmentStatComponent.h"
 
@@ -14,6 +15,7 @@
 #include "GameplayEffect.h"
 #include "GameplayEffectExtension.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
+#include "Effects/StatusGameplayEffect.h"
 #include "Net/UnrealNetwork.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBaseHealthFeedback, Log, All);
@@ -54,6 +56,8 @@ void UBaseHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent* 
 	UninitializeFromAbilitySystem();
 
 	AbilitySystemComponent = InAbilitySystemComponent;
+	if (GetOwner())
+		if (auto* Status = GetOwner()->FindComponentByClass<UStatusComponent>()) Status->InitializeWithAbilitySystem(InAbilitySystemComponent);
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
 		if (auto* Stats = GetOwner()->FindComponentByClass<UEquipmentStatComponent>())
@@ -94,6 +98,8 @@ void UBaseHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent* 
 
 void UBaseHealthComponent::UninitializeFromAbilitySystem()
 {
+	if (GetOwner())
+		if (auto* Status = GetOwner()->FindComponentByClass<UStatusComponent>()) Status->Uninitialize();
 	if (GetOwner())
 		if (auto* Presenter = GetOwner()->FindComponentByClass<UCombatPresentationComponent>()) Presenter->Uninitialize();
 	if (!AbilitySystemComponent)
@@ -248,11 +254,13 @@ void UBaseHealthComponent::HandleHealthChanged(const FOnAttributeChangeData& Dat
 	AActor* SourceActor = nullptr;
 	FGameplayEffectContextHandle EffectContextHandle;
 	FGameplayTag ImpactGameplayCueTag;
+	FGameplayTag StatusDamageCueTag;
 	if (Data.GEModData)
 	{
 		EffectContextHandle = Data.GEModData->EffectSpec.GetContext();
 		SourceActor = ResolveSourceActorFromContext(EffectContextHandle);
 		ImpactGameplayCueTag = ResolveImpactGameplayCueTag(Data.GEModData->EffectSpec);
+		StatusDamageCueTag = ResolveStatusDamageCueTag(Data.GEModData->EffectSpec);
 	}
 
 	if (!EffectContextHandle.IsValid() && bHasPendingDamageContext)
@@ -267,6 +275,13 @@ void UBaseHealthComponent::HandleHealthChanged(const FOnAttributeChangeData& Dat
 	if (!Data.GEModData && !ImpactGameplayCueTag.IsValid())
 	{
 		ImpactGameplayCueTag = PendingImpactGameplayCueTag;
+		StatusDamageCueTag = PendingStatusDamageCueTag;
+	}
+	ESWDamageDeliveryType DeliveryType = USWCombatEffectContextLibrary::GetDamageDeliveryType(EffectContextHandle);
+	// An authored impact cue is an explicit legacy declaration of a direct hit.
+	if (DeliveryType == ESWDamageDeliveryType::Unspecified && ImpactGameplayCueTag.IsValid())
+	{
+		DeliveryType = ESWDamageDeliveryType::DirectHit;
 	}
 
 	OnHealthChanged.Broadcast(this, Data.OldValue, Data.NewValue, SourceActor);
@@ -283,13 +298,21 @@ void UBaseHealthComponent::HandleHealthChanged(const FOnAttributeChangeData& Dat
 			Data.OldValue - Data.NewValue,
 			SourceActor,
 			EffectContextHandle,
-			ImpactGameplayCueTag);
+			DeliveryType,
+			ImpactGameplayCueTag,
+			StatusDamageCueTag);
 	}
 
 	if (Data.OldValue > Data.NewValue && Data.NewValue > 0.0f
 		&& DeathPresentation.DeathState == EBaseDeathState::NotDead)
 	{
-		SendGameplayEventToOwner(GameplayAbility_HitReaction, Data.OldValue - Data.NewValue, SourceActor, EffectContextHandle);
+		const bool bPeriodic = DeliveryType == ESWDamageDeliveryType::StatusTick
+			|| (Data.GEModData && Data.GEModData->EffectSpec.GetPeriod() > 0.f);
+		OnConfirmedDamage.Broadcast(Data.OldValue - Data.NewValue, EffectContextHandle, bPeriodic);
+		if (DeliveryType == ESWDamageDeliveryType::DirectHit)
+		{
+			SendGameplayEventToOwner(GameplayAbility_HitReaction, Data.OldValue - Data.NewValue, SourceActor, EffectContextHandle);
+		}
 		ClearPendingDamageContext();
 	}
 
@@ -326,13 +349,22 @@ FGameplayTag UBaseHealthComponent::ResolveImpactGameplayCueTag(
 	return ResolvedTag;
 }
 
+FGameplayTag UBaseHealthComponent::ResolveStatusDamageCueTag(const FGameplayEffectSpec& EffectSpec) const
+{
+	const UStatusGameplayEffect* StatusEffect = Cast<UStatusGameplayEffect>(EffectSpec.Def);
+	return StatusEffect ? StatusEffect->GetPeriodicDamageCueTag() : FGameplayTag();
+}
+
 void UBaseHealthComponent::ExecuteConfirmedDamageGameplayCues(
 	float DamageAmount,
 	AActor* SourceActor,
 	const FGameplayEffectContextHandle& EffectContextHandle,
-	FGameplayTag ImpactGameplayCueTag) const
+	ESWDamageDeliveryType DeliveryType,
+	FGameplayTag ImpactGameplayCueTag,
+	FGameplayTag StatusDamageCueTag) const
 {
-	if (!ShouldExecuteConfirmedDamageGameplayCues(DamageAmount, ImpactGameplayCueTag))
+	if (!ShouldExecuteConfirmedDamageGameplayCues(
+		DamageAmount, DeliveryType, ImpactGameplayCueTag, StatusDamageCueTag))
 	{
 		return;
 	}
@@ -365,6 +397,11 @@ void UBaseHealthComponent::ExecuteConfirmedDamageGameplayCues(
 	}
 	Parameters.TargetAttachComponent = Owner->GetRootComponent();
 	Parameters.bReplicateLocationWhenUsingMinimalRepProxy = true;
+	if (DeliveryType == ESWDamageDeliveryType::StatusTick)
+	{
+		AbilitySystemComponent->ExecuteGameplayCue(StatusDamageCueTag, Parameters);
+		return;
+	}
 	if (DamageGameplayCueTag.IsValid())
 	{
 		AbilitySystemComponent->ExecuteGameplayCue(DamageGameplayCueTag, Parameters);
@@ -377,12 +414,16 @@ void UBaseHealthComponent::ExecuteConfirmedDamageGameplayCues(
 
 bool UBaseHealthComponent::ShouldExecuteConfirmedDamageGameplayCues(
 	float DamageAmount,
-	FGameplayTag ImpactGameplayCueTag) const
+	ESWDamageDeliveryType DeliveryType,
+	FGameplayTag ImpactGameplayCueTag,
+	FGameplayTag StatusDamageCueTag) const
 {
 	const AActor* Owner = GetOwningActor();
 	return Owner && Owner->HasAuthority() && AbilitySystemComponent
 		&& DamageAmount > 0.0f
-		&& (DamageGameplayCueTag.IsValid() || ImpactGameplayCueTag.IsValid());
+		&& ((DeliveryType == ESWDamageDeliveryType::DirectHit
+				&& (DamageGameplayCueTag.IsValid() || ImpactGameplayCueTag.IsValid()))
+			|| (DeliveryType == ESWDamageDeliveryType::StatusTick && StatusDamageCueTag.IsValid()));
 }
 
 void UBaseHealthComponent::HandleMaxHealthChanged(const FOnAttributeChangeData& Data)
@@ -408,6 +449,7 @@ void UBaseHealthComponent::HandleDamageChanged(const FOnAttributeChangeData& Dat
 	PendingDamageEffectContextHandle = Data.GEModData->EffectSpec.GetContext();
 	PendingDamageSourceActor = ResolveSourceActorFromContext(PendingDamageEffectContextHandle);
 	PendingImpactGameplayCueTag = ResolveImpactGameplayCueTag(Data.GEModData->EffectSpec);
+	PendingStatusDamageCueTag = ResolveStatusDamageCueTag(Data.GEModData->EffectSpec);
 	bHasPendingDamageContext = PendingDamageEffectContextHandle.IsValid();
 }
 
@@ -443,6 +485,7 @@ void UBaseHealthComponent::ClearPendingDamageContext()
 {
 	PendingDamageEffectContextHandle = FGameplayEffectContextHandle();
 	PendingImpactGameplayCueTag = FGameplayTag();
+	PendingStatusDamageCueTag = FGameplayTag();
 	PendingDamageSourceActor.Reset();
 	bHasPendingDamageContext = false;
 }

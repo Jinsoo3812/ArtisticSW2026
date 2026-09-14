@@ -17,6 +17,7 @@
 
 UBaseDeathGameplayAbility::UBaseDeathGameplayAbility()
 {
+	bAllowDuringControlBlock = true;
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
 

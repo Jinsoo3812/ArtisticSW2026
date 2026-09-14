@@ -1,5 +1,13 @@
 # 공통 상태이상
 
+## 2026-09-14 빌드 복구 검증
+
+- 상태이상 신규 파일이 참조하는 기존 파일의 연동 코드가 누락되어 컴파일이 실패했다. GASCore의 AIModule 의존성, 네이티브 태그, 공통 적용 정책, 캐릭터/체력 초기화 및 보스 발동 규칙을 연결했다.
+- UE 5.7 Win64 Development Editor 컴파일·링크 성공, `git diff --check` 통과.
+- `ArtisticSW.GAS.Status` 2개와 `ArtisticSW.Enemy.Boss.StatusTriggers` 통과. 로그: `Saved/BuildFixStatusTests.log`.
+- 독 재적용 거절 및 슬로우 대상 정책 테스트 통과. 물폭탄 2개는 기능 assertion 실패는 없었으나 월드 초기화의 QuestItem ResultItemTag/ingredient 오류로 실패 판정됐다. 로그: `Saved/BuildFixRegressionTests.log`.
+- 아래 이전 작업의 검증 기록과 구별해야 한다. 이번에는 PIE·멀티플레이·패키징을 검증하지 않았다.
+
 ## 책임
 
 | 구성 | 책임 |

@@ -58,7 +58,11 @@ bool FSWGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Map, bool
 	{
 		RepBits |= 1 << 1;
 	}
-	Ar.SerializeBits(&RepBits, 2);
+	if (Ar.IsSaving() && DamageDeliveryType != ESWDamageDeliveryType::Unspecified)
+	{
+		RepBits |= 1 << 2;
+	}
+	Ar.SerializeBits(&RepBits, 3);
 
 	bool bDirectionSuccess = true;
 	if (RepBits & (1 << 0))
@@ -80,6 +84,20 @@ bool FSWGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Map, bool
 	else if (Ar.IsLoading())
 	{
 		ClearPathCuePayload();
+	}
+
+	if (RepBits & (1 << 2))
+	{
+		uint8 DeliveryValue = static_cast<uint8>(DamageDeliveryType);
+		Ar.SerializeBits(&DeliveryValue, 2);
+		if (Ar.IsLoading())
+		{
+			DamageDeliveryType = static_cast<ESWDamageDeliveryType>(DeliveryValue);
+		}
+	}
+	else if (Ar.IsLoading())
+	{
+		DamageDeliveryType = ESWDamageDeliveryType::Unspecified;
 	}
 
 	bOutSuccess = bParentSuccess && bDirectionSuccess && bPathSuccess;

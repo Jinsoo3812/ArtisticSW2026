@@ -7,7 +7,8 @@ public class GASCore: ModuleRules
         PrivateDependencyModuleNames.AddRange(new string[] {
             // GASCore의 .cpp 파일에서만 필요한 모듈 의존성입니다.
             "Core",
-            "CoreUObject"
+            "CoreUObject",
+            "AIModule"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {

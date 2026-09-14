@@ -74,6 +74,24 @@ bool USWCombatEffectContextLibrary::GetImpactDirection(
 	return !OutImpactDirection.IsNearlyZero();
 }
 
+FGameplayEffectContextHandle USWCombatEffectContextLibrary::SetDamageDeliveryType(
+	FGameplayEffectContextHandle ContextHandle,
+	ESWDamageDeliveryType DeliveryType)
+{
+	if (FSWGameplayEffectContext* Context = GetMutableSWContext(ContextHandle))
+	{
+		Context->SetDamageDeliveryType(DeliveryType);
+	}
+	return ContextHandle;
+}
+
+ESWDamageDeliveryType USWCombatEffectContextLibrary::GetDamageDeliveryType(
+	const FGameplayEffectContextHandle& ContextHandle)
+{
+	const FSWGameplayEffectContext* Context = GetSWContext(ContextHandle);
+	return Context ? Context->GetDamageDeliveryType() : ESWDamageDeliveryType::Unspecified;
+}
+
 FGameplayEffectContextHandle USWCombatEffectContextLibrary::SetPathCuePayload(
 	FGameplayEffectContextHandle ContextHandle,
 	const FSWPathCuePayload& PathPayload)
@@ -171,7 +189,8 @@ bool USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
 	AActor* EffectCauser,
 	AActor* TargetActor,
 	const FHitResult* HitResult,
-	const FVector& ExplicitImpactDirection)
+	const FVector& ExplicitImpactDirection,
+	ESWDamageDeliveryType DeliveryType)
 {
 	// Duplicate only the context. SetContext would recapture source attributes and
 	// replace the attack/launch-time Strength snapshot with the current value.
@@ -189,5 +208,9 @@ bool USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
 		TargetActor,
 		HitResult,
 		ExplicitImpactDirection);
+	if (FSWGameplayEffectContext* Context = GetMutableSWContext(ContextHandle))
+	{
+		Context->SetDamageDeliveryType(DeliveryType);
+	}
 	return bHasDirection;
 }

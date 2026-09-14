@@ -16,5 +16,6 @@ public:
 	virtual bool OpenWindow(const FGameplayEffectSpecHandle& Spec) PURE_VIRTUAL(UCombatHitResolver::OpenWindow, return false;);
 	virtual void CloseWindow() PURE_VIRTUAL(UCombatHitResolver::CloseWindow, );
 	virtual bool ResolveHit(UAbilitySystemComponent* TargetASC, const FHitResult& Hit,
-		bool bIgnoreSameTeam = true) PURE_VIRTUAL(UCombatHitResolver::ResolveHit, return false;);
+		bool bIgnoreSameTeam = true, bool bRequireAnimatedHurtbox = false)
+		PURE_VIRTUAL(UCombatHitResolver::ResolveHit, return false;);
 };

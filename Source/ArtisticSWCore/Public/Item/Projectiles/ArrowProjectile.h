@@ -144,7 +144,7 @@ protected:
 		UPrimitiveComponent* OtherComp,
 		const FHitResult& Hit) const;
 	void BuildStatusEffectSpecs();
-	void ApplyDamageToActor(AActor* TargetActor, const FHitResult& HitResult);
+	bool ApplyDamageToActor(AActor* TargetActor, const FHitResult& HitResult);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arrow")
 	void K2_OnImpactFX(const FHitResult& Hit);

@@ -9,6 +9,7 @@
 #include "InteractableComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "StatusEffectLibrary.h"
+#include "CollisionChannels.h"
 #include "WeaponFeedback/WeaponFeedbackComponent.h"
 
 ASwordItem::ASwordItem()
@@ -117,6 +118,11 @@ void ASwordItem::SampleHitScan()
 
 void ASwordItem::TraceSegment(const FVector& Start, const FVector& End)
 {
+	TArray<TEnumAsByte<EObjectTypeQuery>> ActiveTraceObjectTypes = TraceObjectTypes;
+	if (bIncludeAnimatedCombatHurtboxes)
+	{
+		ActiveTraceObjectTypes.AddUnique(UEngineTypes::ConvertToObjectType(ECC_CombatHurtbox));
+	}
 	TArray<AActor*> ActorsToIgnore;
 	ActorsToIgnore.Add(this);
 	if (AActor* OwnerActor = GetOwner())
@@ -134,7 +140,7 @@ void ASwordItem::TraceSegment(const FVector& Start, const FVector& End)
 		Start,
 		End,
 		TraceRadius,
-		TraceObjectTypes,
+		ActiveTraceObjectTypes,
 		bTraceComplex,
 		ActorsToIgnore,
 		bDrawDebugTrace ? EDrawDebugTrace::ForOneFrame : EDrawDebugTrace::None,
@@ -179,7 +185,8 @@ void ASwordItem::ApplyEffectToTarget(UAbilitySystemComponent* TargetASC, const F
 
 	if (!HasAuthority()) return;
 	auto* Resolver = FindComponentByClass<UCombatHitResolver>();
-	if (!Resolver || !Resolver->ResolveHit(TargetASC, HitResult, bIgnoreSameTeam)) return;
+	if (!Resolver || !Resolver->ResolveHit(
+		TargetASC, HitResult, bIgnoreSameTeam, bIncludeAnimatedCombatHurtboxes)) return;
 	AActor* SourceActor = ResolveSourceActor();
 	AActor* TargetActor = TargetASC->GetAvatarActor();
 

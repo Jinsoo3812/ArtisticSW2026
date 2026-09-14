@@ -10,8 +10,10 @@
 
 class UAbilitySystemComponent;
 class UBaseHealthComponent;
+DECLARE_MULTICAST_DELEGATE_ThreeParams(FConfirmedDamageSignature, float, const FGameplayEffectContextHandle&, bool);
 struct FOnAttributeChangeData;
 struct FGameplayEffectSpec;
+enum class ESWDamageDeliveryType : uint8;
 
 UENUM(BlueprintType)
 enum class EBaseDeathState : uint8
@@ -69,6 +71,7 @@ class GASCORE_API UBaseHealthComponent : public UActorComponent
 	GENERATED_BODY()
 
 public:
+	FConfirmedDamageSignature OnConfirmedDamage;
 	UBaseHealthComponent();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -105,7 +108,7 @@ public:
 		const FVector& VictimLocation,
 		const FVector& SourceLocation);
 
-	/** One-shot cue executed authoritatively for every confirmed health loss, including lethal damage. */
+	/** Target-owned one-shot cue executed only for confirmed direct hits, including lethal hits. */
 	UFUNCTION(BlueprintCallable, Category = "Health|Feedback")
 	void SetDamageGameplayCueTag(FGameplayTag InGameplayCueTag) { DamageGameplayCueTag = InGameplayCueTag; }
 
@@ -158,14 +161,19 @@ private:
 	AActor* ResolveSourceActorFromContext(const FGameplayEffectContextHandle& EffectContextHandle) const;
 	void ClearPendingDamageContext();
 	FGameplayTag ResolveImpactGameplayCueTag(const FGameplayEffectSpec& EffectSpec) const;
+	FGameplayTag ResolveStatusDamageCueTag(const FGameplayEffectSpec& EffectSpec) const;
 	bool ShouldExecuteConfirmedDamageGameplayCues(
 		float DamageAmount,
-		FGameplayTag ImpactGameplayCueTag) const;
+		ESWDamageDeliveryType DeliveryType,
+		FGameplayTag ImpactGameplayCueTag,
+		FGameplayTag StatusDamageCueTag) const;
 	void ExecuteConfirmedDamageGameplayCues(
 		float DamageAmount,
 		AActor* SourceActor,
 		const FGameplayEffectContextHandle& EffectContextHandle,
-		FGameplayTag ImpactGameplayCueTag) const;
+		ESWDamageDeliveryType DeliveryType,
+		FGameplayTag ImpactGameplayCueTag,
+		FGameplayTag StatusDamageCueTag) const;
 	void SendGameplayEventToOwner(
 		const FGameplayTag& EventTag,
 		float EventMagnitude = 0.0f,
@@ -194,6 +202,7 @@ private:
 
 	FGameplayEffectContextHandle PendingDamageEffectContextHandle;
 	FGameplayTag PendingImpactGameplayCueTag;
+	FGameplayTag PendingStatusDamageCueTag;
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<AActor> PendingDamageSourceActor;

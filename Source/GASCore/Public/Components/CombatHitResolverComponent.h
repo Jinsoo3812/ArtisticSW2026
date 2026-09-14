@@ -12,7 +12,8 @@ public:
 	static UCombatHitResolverComponent* GetOrCreate(AActor* Causer);
 	virtual bool OpenWindow(const FGameplayEffectSpecHandle& Spec) override;
 	virtual void CloseWindow() override;
-	virtual bool ResolveHit(UAbilitySystemComponent* TargetASC, const FHitResult& Hit, bool bIgnoreSameTeam = true) override;
+	virtual bool ResolveHit(UAbilitySystemComponent* TargetASC, const FHitResult& Hit,
+		bool bIgnoreSameTeam = true, bool bRequireAnimatedHurtbox = false) override;
 private:
 	FGameplayEffectSpecHandle ActiveSpec;
 	TWeakPtr<FGameplayEffectSpec> LastSpec;

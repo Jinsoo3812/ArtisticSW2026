@@ -5,6 +5,9 @@
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
 #include "Components/EquipmentStatComponent.h"
+#include "Components/CombatHurtboxComponent.h"
+#include "CollisionChannels.h"
+#include "Components/PrimitiveComponent.h"
 
 static TAutoConsoleVariable<int32> CVarStrengthCombatDebug(TEXT("sw.Combat.Strength.Debug"), 0, TEXT("Log authoritative Strength hit decisions."), ECVF_Cheat);
 #include "GAS/SWCombatEffectContextLibrary.h"
@@ -37,7 +40,8 @@ void UCombatHitResolverComponent::CloseWindow()
 	HitTargets.Reset();
 }
 
-bool UCombatHitResolverComponent::ResolveHit(UAbilitySystemComponent* TargetASC, const FHitResult& Hit, bool bIgnoreSameTeam)
+bool UCombatHitResolverComponent::ResolveHit(UAbilitySystemComponent* TargetASC, const FHitResult& Hit,
+	bool bIgnoreSameTeam, bool bRequireAnimatedHurtbox)
 {
 	if (!GetOwner()->HasAuthority() || !ActiveSpec.IsValid() || !TargetASC
 		|| (Hit.GetActor() && Hit.GetActor() != TargetASC->GetAvatarActor())
@@ -56,6 +60,7 @@ bool UCombatHitResolverComponent::ResolveHit(UAbilitySystemComponent* TargetASC,
 		 (SourceTags->HasTag(Team_Enemy) && TargetASC->HasMatchingGameplayTag(Team_Enemy)))) return false;
 	AActor* TargetActor = TargetASC->GetAvatarActor();
 	if (!IsValid(TargetActor) || Hit.ImpactPoint.ContainsNaN() || Hit.TraceStart.ContainsNaN()) return false;
+	if (bRequireAnimatedHurtbox && !UCombatHurtboxComponent::IsValidHitSurface(TargetActor, Hit)) return false;
 	FCollisionQueryParams Query(SCENE_QUERY_STAT(CombatDamageOcclusion), false, GetOwner());
 	Query.AddIgnoredActor(TargetActor);
 	if (IsValid(SourceActor)) Query.AddIgnoredActor(SourceActor);

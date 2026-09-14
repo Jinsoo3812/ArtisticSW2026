@@ -37,6 +37,8 @@ FGameplayEffectSpecHandle UGASCombatLibrary::MakeStrengthDamageEffectSpec(const 
 	if (!FMath::IsFinite(Strength)) return FGameplayEffectSpecHandle();
 	FGameplayEffectContextHandle Context = USWCombatEffectContextLibrary::MakeCombatEffectContext(
 		ASC, Request.InstigatorActor, Request.EffectCauser, nullptr, Request.bAddHitResult, Request.HitResult);
+	Context = USWCombatEffectContextLibrary::SetDamageDeliveryType(
+		Context, ESWDamageDeliveryType::DirectHit);
 	FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(EffectClass, FMath::Max(1, Request.EffectLevel), Context);
 	if (SpecHandle.IsValid())
 	{
@@ -72,6 +74,8 @@ FGameplayEffectSpecHandle UGASCombatLibrary::MakeDamageEffectSpec(
 			nullptr,
 			bAddHitResult,
 			HitResult);
+	ContextHandle = USWCombatEffectContextLibrary::SetDamageDeliveryType(
+		ContextHandle, ESWDamageDeliveryType::DirectHit);
 
 	// 적용할 GameplayEffect 정보
 	FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(

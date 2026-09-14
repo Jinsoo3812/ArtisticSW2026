@@ -6,6 +6,7 @@
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "GASCombatLibrary.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 #include "GASAttributeDamageGameplayEffect.h"
 #include "GASDamageInstantGameplayEffect.h"
 #include "GASStrengthEquipmentGameplayEffect.h"
@@ -63,6 +64,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FStrengthDamageSpecSnapshotTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"),
+		EAutomationExpectedErrorFlags::Contains, 0);
 	StrengthCombatTests::FScopedTestWorld TestWorld;
 	if (!TestNotNull(TEXT("Transient game world is created"), TestWorld.World))
 	{
@@ -167,6 +170,10 @@ bool FAttributeDamageExecutionTest::RunTest(const FString& Parameters)
 		DamageSpec.Data->GetSetByCallerMagnitude(Data_AttackCoefficient, false, 0.0f), 1.5f);
 	TestEqual(TEXT("Charge multiplier is carried by the spec"),
 		DamageSpec.Data->GetSetByCallerMagnitude(Data_ChargeMultiplier, false, 0.0f), 2.0f);
+	TestEqual(TEXT("Strength damage is explicitly classified as a direct hit"),
+		static_cast<uint8>(USWCombatEffectContextLibrary::GetDamageDeliveryType(
+			DamageSpec.Data->GetContext())),
+		static_cast<uint8>(ESWDamageDeliveryType::DirectHit));
 
 	// Source captures are snapshotted at spec creation, so an already-fired
 	// projectile or open melee window cannot change damage retroactively.

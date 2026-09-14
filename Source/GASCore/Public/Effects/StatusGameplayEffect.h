@@ -20,8 +20,13 @@ class GASCORE_API UStatusGameplayEffect : public UGameplayEffect
 	GENERATED_BODY()
 public:
 	UStatusGameplayEffect();
+	FGameplayTag GetPeriodicDamageCueTag() const { return PeriodicDamageCueTag; }
 protected:
 	void AddStatusTag(FGameplayTag Tag);
+
+	/** Optional one-shot feedback emitted for each confirmed periodic damage execution. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Status|Feedback", meta = (Categories = "GameplayCue.Status"))
+	FGameplayTag PeriodicDamageCueTag;
 };
 
 UCLASS(Blueprintable)

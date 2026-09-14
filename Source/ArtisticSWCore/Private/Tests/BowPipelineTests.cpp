@@ -45,6 +45,22 @@ bool FArrowCollisionProfileTest::RunTest(const FString& Parameters)
 		ArrowProfile.ResponseToChannels.GetResponse(ECC_WorldDynamic), ECR_Block);
 	TestEqual(TEXT("ArrowProjectile blocks ship query hulls"),
 		ArrowProfile.ResponseToChannels.GetResponse(ECC_ShipDamage), ECR_Block);
+	TestEqual(TEXT("ArrowProjectile blocks animated character hurtboxes"),
+		ArrowProfile.ResponseToChannels.GetResponse(ECC_CombatHurtbox), ECR_Block);
+
+	FCollisionResponseTemplate HurtboxProfile;
+	if (TestTrue(TEXT("CharacterHurtbox profile is registered"),
+		UCollisionProfile::Get()->GetProfileTemplate(TEXT("CharacterHurtbox"), HurtboxProfile)))
+	{
+		TestEqual(TEXT("CharacterHurtbox is query-only"),
+			HurtboxProfile.CollisionEnabled, ECollisionEnabled::QueryOnly);
+		TestEqual(TEXT("CharacterHurtbox uses its dedicated object channel"),
+			HurtboxProfile.ObjectType, ECC_CombatHurtbox);
+		TestEqual(TEXT("CharacterHurtbox blocks character arrows"),
+			HurtboxProfile.ResponseToChannels.GetResponse(ECC_Arrow), ECR_Block);
+		TestEqual(TEXT("CharacterHurtbox does not participate in Pawn movement collision"),
+			HurtboxProfile.ResponseToChannels.GetResponse(ECC_Pawn), ECR_Ignore);
+	}
 
 	for (const FName ShipProfileName : {FName(TEXT("PlayerShipDamage")), FName(TEXT("EnemyShipDamage"))})
 	{

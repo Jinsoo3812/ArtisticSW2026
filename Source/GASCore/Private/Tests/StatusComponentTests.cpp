@@ -13,6 +13,7 @@
 #include "Engine/World.h"
 #include "StatusEffectLibrary.h"
 #include "Abilities/BaseDeathGameplayAbility.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 
 namespace StatusTests
 {
@@ -81,7 +82,23 @@ bool FStatusReceptionTest::RunTest(const FString& Parameters)
 	OtherASC->AddAttributeSetSubobject(NewObject<UBaseAttributeSet>(ShipLikeActor));
 	auto Poison = ASC->MakeOutgoingSpec(UPoisonStatusGameplayEffect::StaticClass(), 1.f, ASC->MakeEffectContext());
 	TestFalse(TEXT("Direct GE rejects ASC-only object"), OtherASC->ApplyGameplayEffectSpecToSelf(*Poison.Data).IsValid());
-	TestTrue(TEXT("Poison accepted"), Target->StatusComponent->ApplyStatus(UPoisonStatusGameplayEffect::StaticClass(), ASC, {}).IsValid());
+	const FActiveGameplayEffectHandle PoisonHandle = Target->StatusComponent->ApplyStatus(
+		UPoisonStatusGameplayEffect::StaticClass(), ASC, {});
+	TestTrue(TEXT("Poison accepted"), PoisonHandle.IsValid());
+	if (const FActiveGameplayEffect* ActivePoison = ASC->GetActiveGameplayEffect(PoisonHandle))
+	{
+		TestEqual(TEXT("Poison damage is explicitly classified as a status tick"),
+			static_cast<uint8>(USWCombatEffectContextLibrary::GetDamageDeliveryType(
+				ActivePoison->Spec.GetContext())),
+			static_cast<uint8>(ESWDamageDeliveryType::StatusTick));
+	}
+	else
+	{
+		AddError(TEXT("Applied poison effect cannot be inspected."));
+	}
+	TestEqual(TEXT("Poison owns a separate periodic feedback cue"),
+		GetDefault<UPoisonStatusGameplayEffect>()->GetPeriodicDamageCueTag(),
+		GameplayCue_Status_Poison_Tick.GetTag());
 	TestTrue(TEXT("Burn coexists with poison"), Target->StatusComponent->ApplyStatus(UBurnStatusGameplayEffect::StaticClass(), ASC, {}).IsValid());
 	TestFalse(TEXT("Direct ASC reapplication also rejected"), ASC->ApplyGameplayEffectSpecToSelf(*Poison.Data).IsValid());
 	for (int i = 0; i < 12; ++i) { ++GFrameCounter; Test.World->Tick(LEVELTICK_All, 0.1f); }

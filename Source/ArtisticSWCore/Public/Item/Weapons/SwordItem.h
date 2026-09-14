@@ -59,6 +59,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Trace")
 	TArray<TEnumAsByte<EObjectTypeQuery>> TraceObjectTypes;
 
+	/** Adds animation-driven PhysicsAsset hurtboxes to this weapon's authored object query. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Trace")
+	bool bIncludeAnimatedCombatHurtboxes = true;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Trace", meta = (ClampMin = "0.1"))
 	float TraceRadius = 12.0f;
 

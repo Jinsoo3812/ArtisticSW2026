@@ -1,4 +1,5 @@
 #include "Item/Projectiles/ArrowProjectile.h"
+#include "Components/CombatHurtboxComponent.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
@@ -275,7 +276,7 @@ void AArrowProjectile::OnArrowHit(UPrimitiveComponent* HitComponent, AActor* Oth
 		*Hit.ImpactPoint.ToCompactString(),
 		bIgnoredHit ? TEXT("true") : TEXT("false"));
 
-	if (bIgnoredHit)
+	if (bIgnoredHit || !UCombatHurtboxComponent::IsValidHitSurface(OtherActor, Hit))
 	{
 		return;
 	}
@@ -284,11 +285,12 @@ void AArrowProjectile::OnArrowHit(UPrimitiveComponent* HitComponent, AActor* Oth
 		bImpactHandled = true;
 	}
 
-	if (CanApplyDamageToActor(OtherActor))
+	const bool bDamageTarget = CanApplyDamageToActor(OtherActor);
+	const bool bConfirmed = bDamageTarget && ApplyDamageToActor(OtherActor, Hit);
+	if (!bDamageTarget || bConfirmed)
 	{
-		ApplyDamageToActor(OtherActor, Hit);
+		Multicast_PlayImpactPresentation(BuildImpactPresentationData(OtherComp, Hit));
 	}
-	Multicast_PlayImpactPresentation(BuildImpactPresentationData(OtherComp, Hit));
 
 	if (bDestroyOnImpact)
 	{
@@ -442,25 +444,25 @@ void AArrowProjectile::BuildStatusEffectSpecs()
 	}
 }
 
-void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor, const FHitResult& HitResult)
+bool AArrowProjectile::ApplyDamageToActor(AActor* TargetActor, const FHitResult& HitResult)
 {
 	if (!HasAuthority() || !TargetActor)
 	{
-		return;
+		return false;
 	}
 
 	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor);
 	if (!TargetASC)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("AArrowProjectile::ApplyDamageToActor: TargetASC is missing for %s."), *GetNameSafe(TargetActor));
-		return;
+		return false;
 	}
 
-	if (!DirectDamageSpec.IsValid()) return;
+	if (!DirectDamageSpec.IsValid()) return false;
 
-	if (!HasAuthority()) return;
+	if (!HasAuthority()) return false;
 	auto* Resolver = FindComponentByClass<UCombatHitResolver>();
-	if (!Resolver || !Resolver->ResolveHit(TargetASC, HitResult, bEnableTeamDamageFiltering)) return;
+	if (!Resolver || !Resolver->ResolveHit(TargetASC, HitResult, bEnableTeamDamageFiltering, true)) return false;
 
 	for (int32 StatusEffectIndex = 0; StatusEffectIndex < StatusEffectSpecHandles.Num(); ++StatusEffectIndex)
 	{
@@ -484,4 +486,5 @@ void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor, const FHitResult&
 				TargetASC, TargetStatusSpecHandle, RefreshGrantedTag);
 		}
 	}
+	return true;
 }

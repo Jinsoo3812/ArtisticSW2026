@@ -16,6 +16,13 @@
 #include "Item/Projectiles/ArrowProjectile.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Components/BoxComponent.h"
+#include "BaseCharacter.h"
+#include "CollisionChannels.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "PhysicsEngine/PhysicsAsset.h"
+#include "Engine/SkeletalMesh.h"
+#include "Components/CombatHurtboxComponent.h"
 
 namespace CombatArchitectureTests
 {
@@ -35,6 +42,33 @@ namespace CombatArchitectureTests
 			return ASC;
 		}
 	};
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAnimatedCombatHurtboxPolicyTest,
+	"ArtisticSW.GAS.Combat.AnimatedHurtboxPolicy",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FAnimatedCombatHurtboxPolicyTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"),
+		EAutomationExpectedErrorFlags::Contains, 0);
+	CombatArchitectureTests::FWorldScope Scope;
+	ABaseCharacter* Target = Scope.World->SpawnActor<ABaseCharacter>();
+	if (!TestNotNull(TEXT("Target character is created"), Target)) return false;
+	Target->CombatHurtboxComponent->Mode = ECombatHurtboxMode::AnimatedPhysicsAsset;
+	Target->GetMesh()->SetSkeletalMesh(LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Fab/Samurai/UE_Samurai/SKM_UE_Samurai.SKM_UE_Samurai")));
+	Target->GetMesh()->SetPhysicsAsset(LoadObject<UPhysicsAsset>(nullptr, TEXT("/Game/Fab/Samurai/SKM_Samurai_PhysicsAsset.SKM_Samurai_PhysicsAsset")), true);
+	Target->InitializeAnimatedCombatHurtbox();
+	TestTrue(TEXT("PhysicsAsset-backed animated hurtbox activates"), Target->UsesAnimatedCombatHurtbox());
+	TestEqual(TEXT("Skeletal mesh owns the combat hurtbox object channel"),
+		Target->GetMesh()->GetCollisionObjectType(), ECC_CombatHurtbox);
+	TestEqual(TEXT("Animated hurtbox remains query-only"),
+		Target->GetMesh()->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
+	TestEqual(TEXT("Arrow collision bypasses the movement capsule"),
+		Target->GetCapsuleComponent()->GetCollisionResponseToChannel(ECC_Arrow), ECR_Ignore);
+	TestEqual(TEXT("Authority refreshes bones for pose-accurate queries"),
+		Target->GetMesh()->VisibilityBasedAnimTickOption,
+		EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones);
+	return !HasAnyErrors();
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSharedEquipmentModelTest, "ArtisticSW.GAS.Strength.SharedEquipmentModel",

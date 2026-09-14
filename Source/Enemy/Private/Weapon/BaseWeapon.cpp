@@ -10,6 +10,7 @@
 #include "GAS/CombatHitResolver.h"
 #include "Components/StaticMeshComponent.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
+#include "CollisionChannels.h"
 #include "GameplayEffect.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Net/UnrealNetwork.h"
@@ -98,6 +99,11 @@ void ABaseWeapon::ProcessTrace()
 	// HitScanInterval마다 이 함수가 호출되면서 지속적으로 Trace가 이루어진다.
 	const FVector TraceStart = TraceStartPoint->GetComponentLocation();
 	const FVector TraceEnd = TraceEndPoint->GetComponentLocation();
+	TArray<TEnumAsByte<EObjectTypeQuery>> ActiveTraceObjectTypes = TraceObjectTypes;
+	if (bIncludeAnimatedCombatHurtboxes)
+	{
+		ActiveTraceObjectTypes.AddUnique(UEngineTypes::ConvertToObjectType(ECC_CombatHurtbox));
+	}
 
 	// 무시할 Actor들을 추가
 	TArray<AActor*> ActorsToIgnore;
@@ -116,7 +122,7 @@ void ABaseWeapon::ProcessTrace()
 	const auto TraceSegment = [&](const FVector& Start, const FVector& End)
 	{
 		TArray<FHitResult> HitResults;
-		UKismetSystemLibrary::SphereTraceMultiForObjects(this, Start, End, TraceRadius, TraceObjectTypes,
+		UKismetSystemLibrary::SphereTraceMultiForObjects(this, Start, End, TraceRadius, ActiveTraceObjectTypes,
 			bTraceComplex, ActorsToIgnore, bDrawDebugTrace ? EDrawDebugTrace::ForDuration : EDrawDebugTrace::None,
 			HitResults, true);
 		for (const FHitResult& HitResult : HitResults)
@@ -193,7 +199,8 @@ void ABaseWeapon::ApplyEffectToTarget(AActor* TargetActor, const FHitResult& Hit
 	}
 	
 	if (!HasAuthority()) return;
-	if (auto* Resolver = FindComponentByClass<UCombatHitResolver>()) Resolver->ResolveHit(TargetASC, HitResult);
+	if (auto* Resolver = FindComponentByClass<UCombatHitResolver>())
+		Resolver->ResolveHit(TargetASC, HitResult, true, bIncludeAnimatedCombatHurtboxes);
 
 }
 

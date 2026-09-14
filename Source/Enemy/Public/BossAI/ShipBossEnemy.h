@@ -98,6 +98,19 @@ public:
 	bool HasBossBasicAttackStartingAbility() const;
 
 protected:
+	friend class FBossStatusTriggersTest;
+	void HandleConfirmedDamage(float Damage, const FGameplayEffectContextHandle& Context, bool bPeriodic);
+	UFUNCTION()
+	void HandleStunHealthChanged(UBaseHealthComponent* Health, float OldHealth, float NewHealth, AActor* InstigatorActor);
+	UPROPERTY(EditDefaultsOnly, Category = "Boss|Status")
+	TSubclassOf<UGameplayEffect> HeadHitStunEffect;
+	UPROPERTY(EditDefaultsOnly, Category = "Boss|Status")
+	TSubclassOf<UGameplayEffect> HealthThresholdStunEffect;
+	UPROPERTY(EditDefaultsOnly, Category = "Boss|Status", meta = (ClampMin = "0", ClampMax = "1"))
+	float StunHealthThreshold = 0.5f;
+	UPROPERTY(EditDefaultsOnly, Category = "Boss|Status")
+	TArray<FName> StunHeadBones = { TEXT("head") };
+	bool bStunHealthThresholdConsumed = false;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void HandleDeath_Implementation() override;
