@@ -1,34 +1,67 @@
 # ABP_Player 현재 구조
 
-> 기준: 2026-07-22. 이 문서는 현재 `ABP_Player` AnimGraph 스크린샷과 `UMotionMatchingAnimInstance` C++ 구현을 함께 읽어 정리한 것이다.
+> 기준: 2026-09-14. 이 문서는 현재 `ABP_Player_Woman` / `ABP_Player_Man` AnimGraph와 `UMotionMatchingAnimInstance` C++ 구현을 함께 읽어 정리한 것이다.
 
 ## 한 줄 요약
 
-`ABP_Player`는 **하체/전신 이동을 C++ 선택형 모션 매칭으로 만들고**, 그 결과에 **장비별 상체 오버레이, 몽타주, 조준 오프셋, 활 줄 IK, 발 보정**을 순서대로 덧씌우는 파이프라인이다.
+`ABP_Player`는 **하체/전신 이동을 C++ State Controller 기반의 하이브리드 파이프라인(Blend Stack 단발성 에셋 + 연속 Motion Matching 루프)으로 생성**하고, `Inertialization(관성화)`으로 매끄럽게 결합한 뒤, 그 결과에 **장비별 상체 오버레이, 몽타주, 조준 오프셋, 활 줄 IK, 발 보정**을 순서대로 덧씌우는 파이프라인이다.
 
 ```text
-Pose Search Database
-  -> Motion Matching
-  -> Locomotion cached pose
-  -> weapon upper-body overlay + weapon montage
-  -> upper-body action montage + aim offset
-  -> general aim offset
-  -> DefaultSlot montage
-  -> Bow string FABRIK -> Foot Placement -> Leg IK
-  -> Pose History -> Final pose
+[C++ State Controller & Chooser]
+  ├─> Blend Stack (One-Shot: Land, TIP, Start, Stop)
+  └─> Motion Matching (Continuous Loop: Walk/Run/Sprint/InAir)
+        ↓
+  Blend Poses by bool (Active: ShouldOverrideMotionMatching, Child Update Mode: Default)
+        ↓
+  Inertialization (Transition Type: Inertialization, 0.2~0.3s)
+        ↓
+  Locomotion cached pose
+        ↓
+  weapon upper-body overlay + weapon montage
+        ↓
+  upper-body action montage + aim offset
+        ↓
+  general aim offset
+        ↓
+  DefaultSlot montage
+        ↓
+  Bow string FABRIK -> Foot Placement -> Leg IK
+        ↓
+  Pose Search History Collector -> Final pose
 ```
 
-## 1. 이동 기반 포즈: Locomotion
+## 1. 이동 기반 포즈: Locomotion (하이브리드 Blend Stack + Motion Matching)
 
-스크린샷 첫 부분은 `Get Current Active Pose Search Database Thread Safe`의 반환값을 `Motion Matching` 노드 Database 핀에 넣고, 결과를 `Locomotion` 캐시 포즈로 저장한다.
+과거의 단순 단일 Motion Matching 노드 방식에서 발전하여, **단발성 원샷 모션(착지, 제자리 회전, 출발/정지)은 `Blend Stack`**, **지속 이동 루프(보행/질주/체공)는 `Motion Matching`** 노드가 분담하는 GASP / Project_J 스타일 하이브리드 구조를 사용한다.
 
-- AnimGraph는 직접 이동 상태 머신으로 보행 애니메이션을 고르지 않는다.
-- `UMotionMatchingAnimInstance`가 C++에서 현재 `ELocomotionState`에 맞는 `UPoseSearchDatabase`를 매 업데이트 선택한다.
-- 대표 상태: `Idle`, `Start`, `Locomotion`, `Stop`, `InAir`, `Landing`, `Combat`.
-- 로컬/원격 캐릭터 및 달리기 여부에 따라 Start/Locomotion 데이터베이스가 별도로 선택될 수 있다.
-- 결정된 Database는 애님 프록시에 복사되며, AnimGraph의 Thread Safe Getter가 그것을 읽는다.
+### 1.1 노드 구성 및 연결
+1. **Blend Stack (Standalone)**:
+   - `Get Thread Safe State Controller Selected Animation`
+   - `Get Thread Safe State Controller Selected Animation Start Time`
+   - `Get Thread Safe State Controller Selected Animation Should Loop`
+   - `Get Thread Safe State Controller Selected Animation Blend Time`
+   - 위 C++ State Controller의 선정 결과를 입력받아 단발성 에셋(Land, TIP, Start, Stop 등)을 즉시 블렌딩 재생한다.
+2. **Motion Matching**:
+   - `Get Current Active Pose Search Database Thread Safe`로부터 `LocomotionDatabase`, `SprintLocomotionDatabase`, `InAirDatabase`, `IdleDatabase` 등을 공급받아 연속 궤적 기반 포즈를 검색한다.
+3. **Blend Poses by bool**:
+   - **Active Value**: `Get Thread Safe Should Override Motion Matching` (C++에서 원샷 재생 중이고 Loop 상태가 아닐 때 True).
+   - **True Pose**: `Blend Stack` 출력 포즈.
+   - **False Pose**: `Motion Matching` 출력 포즈.
+   - **Child Update Mode**: 반드시 **`Default`**로 설정해야 한다.  
+     *(주의: `Always Tick Children`으로 설정하면 가중치가 0인 브랜치에서 `Evaluate_AnyThread`가 실행되지 않아 Blend Stack 내부 플레이어가 pop되지 않고 누수되어 `multiple BlendTo requests during the same frame` 경고가 무한 반복됨)*
+   - **Transition Type**: **`Inertialization`** (블렌드 시간: 0.2s ~ 0.3s).
+4. **Inertialization (관성화 노드)**:
+   - `Blend Poses by bool` 출력과 `Locomotion` 포즈 캐시 노드 사이에 위치한다.
+   - Blend Stack에서 Motion Matching으로 전환될 때(예: 착지/회전 중 WASD 이동 입력), 단순 크로스페이드로 인해 발생하는 **발 위상(Foot Phase) 불일치, 발 꼬임 및 1프레임 팝핑(Popping)**을 직전 모션의 본 속도/가속도 관성 감쇠를 통해 완전히 제거한다.
 
-따라서 **지상 이동 포즈의 주 소유자는 C++ 모션매칭 로직**이다. ABP에서는 `Motion Matching` 노드의 파라미터와 후처리 레이어를 다룬다.
+### 1.2 Pose Search History Collector의 위치
+- `Pose Search History Collector` 노드는 메인 파이프라인의 후단(IK 직전 / 최종 포즈 출력 직전)에 배치된다.
+- 이를 통해 캐릭터가 `Blend Stack`으로 착지나 제자리 회전을 하고 있을 때도 실제 화면에 렌더링된 본 트랜스폼이 히스토리에 정상 누적된다.
+- 따라서 WASD 입력으로 모션 매칭이 활성화되는 첫 프레임에 현재 착지 발 위치와 완벽히 일치하는 루프 프레임을 찾아내 도킹(Docking)할 수 있다.
+
+### 1.3 루프 애니메이션 루트 모션 규칙
+- 체공/낙하 루프 애니메이션(`M_Neutral_Jump_Loop_Fall`) 등 제자리에서 반복 루핑되는 시퀀스는 **`EnableRootMotion = false`**로 설정해야 한다.
+- 루프 애니메이션에 루트 모션이 켜져 있을 경우 루프 지점에서 타임코드 역전이 감지되어 `AnimSequence.cpp Handled ensure: CurrentPosition >= PreviousPosition` 크래시성 에러가 발생한다.
 
 ## 2. 장비 상체 오버레이: WeaponPose
 
@@ -72,7 +105,7 @@ Pose Search Database
 
 | 캐시 포즈 | 의미 | 변경 시 주의점 |
 |---|---|---|
-| `Locomotion` | 모션 매칭이 선택한 이동 전신 포즈 | 지상 이동의 기준 포즈다. 직접 수정 대신 후단에서 블렌드한다. |
+| `Locomotion` | Blend Stack과 Motion Matching이 결합되어 관성화(Inertialization)된 전신 이동 포즈 | 지상 이동의 기준 포즈다. 직접 수정 대신 후단에서 블렌드한다. |
 | `WeaponPose` | 장비 상체 오버레이와 `UpperBody` 몽타주가 반영된 포즈 | 무기/전투 자세의 기준이다. |
 | `UpperBodyActionPose` | 상체 액션 단계에 넘기는 포즈 | 액션 몽타주와 AO의 기준 순서를 유지한다. |
 | `GeneralAimPose` | 일반 조준과 활 홀드 AO까지 적용된 포즈 | 최종 전신 몽타주·IK·발 보정 직전 포즈다. |
