@@ -18,6 +18,8 @@
 #include "Net/UnrealNetwork.h"
 #include "Ship.h"
 #include "EngineUtils.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
 
 AStorageChest::AStorageChest()
 {
@@ -116,6 +118,7 @@ void AStorageChest::BeginPlay()
 	}
 
 	ApplyPhysicsMode();
+	RefreshDistanceOptimizationTimer();
 
 	if (InteractableComponent)
 	{
@@ -143,6 +146,7 @@ void AStorageChest::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		StorageComponent->OnStorageChanged.RemoveAll(this);
 	}
 	GetWorldTimerManager().ClearTimer(EmptyDestroyTimerHandle);
+	GetWorldTimerManager().ClearTimer(DistanceOptimizationTimerHandle);
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -154,6 +158,7 @@ void AStorageChest::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 	DOREPLIFETIME(AStorageChest, bLocked);
 	DOREPLIFETIME(AStorageChest, bGuardFailed);
 	DOREPLIFETIME(AStorageChest, bEnablePhysicsAndBuoyancy);
+	DOREPLIFETIME(AStorageChest, bDistanceOptimizationDormant);
 }
 
 void AStorageChest::ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems)
@@ -174,7 +179,29 @@ void AStorageChest::SetPhysicsAndBuoyancyEnabled(bool bEnabled)
 	bEnablePhysicsAndBuoyancy = bEnabled;
 	if (HasActorBegunPlay())
 	{
+		if (!bEnabled && bDistanceOptimizationDormant)
+		{
+			SetDistanceOptimizationDormant(false);
+		}
 		ApplyPhysicsMode();
+		RefreshDistanceOptimizationTimer();
+	}
+}
+
+void AStorageChest::SetDistanceOptimizationEnabled(bool bEnabled)
+{
+	if (!HasAuthority() || bEnableDistanceOptimization == bEnabled)
+	{
+		return;
+	}
+	if (!bEnabled && bDistanceOptimizationDormant)
+	{
+		SetDistanceOptimizationDormant(false);
+	}
+	bEnableDistanceOptimization = bEnabled;
+	if (HasActorBegunPlay())
+	{
+		RefreshDistanceOptimizationTimer();
 	}
 }
 
@@ -196,6 +223,7 @@ void AStorageChest::InitializeFromChestDefinition(UChestDefinition* InDefinition
 	if (HasActorBegunPlay())
 	{
 		ApplyPhysicsMode();
+		RefreshDistanceOptimizationTimer();
 	}
 }
 
@@ -238,6 +266,7 @@ void AStorageChest::ConfigureGuarding(
 	if (HasActorBegunPlay())
 	{
 		ApplyPhysicsMode();
+		RefreshDistanceOptimizationTimer();
 	}
 }
 
@@ -535,7 +564,12 @@ void AStorageChest::OnRep_ReplicatedMovement()
 		{
 			ChestMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 		}
-		SetActorTickEnabled(true);
+		if (bDistanceOptimizationDormant)
+		{
+			SetActorLocationAndRotation(ClientMovementTargetLocation, ClientMovementTargetRotation,
+				false, nullptr, ETeleportType::TeleportPhysics);
+		}
+		SetActorTickEnabled(!bDistanceOptimizationDormant);
 		return;
 	}
 
@@ -545,6 +579,121 @@ void AStorageChest::OnRep_ReplicatedMovement()
 void AStorageChest::OnRep_PhysicsMode()
 {
 	ApplyPhysicsMode();
+}
+
+void AStorageChest::OnRep_DistanceOptimizationDormant()
+{
+	// Clients only smooth the authoritative transform; they never simulate buoyancy.
+	ClientMovementTargetVelocity = FVector::ZeroVector;
+	bHasClientMovementTarget = false;
+	SetActorTickEnabled(false);
+}
+
+void AStorageChest::RefreshDistanceOptimizationTimer()
+{
+	if (!HasAuthority() || !HasActorBegunPlay() || !GetWorld())
+	{
+		return;
+	}
+
+	const bool bEligible = bEnableDistanceOptimization && bEnablePhysicsAndBuoyancy
+		&& !IsValid(OwningShip) && !GetAttachParentActor();
+	if (!bEligible)
+	{
+		GetWorldTimerManager().ClearTimer(DistanceOptimizationTimerHandle);
+		DistanceOptimizationStableTime = 0.0f;
+		if (bDistanceOptimizationDormant)
+		{
+			SetDistanceOptimizationDormant(false);
+		}
+		return;
+	}
+
+	if (!GetWorldTimerManager().IsTimerActive(DistanceOptimizationTimerHandle))
+	{
+		GetWorldTimerManager().SetTimer(DistanceOptimizationTimerHandle, this,
+			&AStorageChest::EvaluateDistanceOptimization, 0.5f, true, 0.5f);
+	}
+}
+
+void AStorageChest::EvaluateDistanceOptimization()
+{
+	if (!HasAuthority() || !GetWorld() || !ChestMesh || !bEnableDistanceOptimization
+		|| !bEnablePhysicsAndBuoyancy || IsValid(OwningShip) || GetAttachParentActor())
+	{
+		RefreshDistanceOptimizationTimer();
+		return;
+	}
+
+	const float RangeSquared = FMath::Square(FMath::Max(0.0f, DistanceOptimizationRange));
+	const FVector ChestLocation = GetActorLocation();
+	bool bPlayerInRange = false;
+	for (TActorIterator<AShip> It(GetWorld()); It; ++It)
+	{
+		const AShip* Ship = *It;
+		if (IsValid(Ship) && !Ship->IsEnemyShipForEffects()
+			&& Ship->ActorHasTag(TEXT("Player")) && !Ship->ActorHasTag(TEXT("Enemy"))
+			&& FVector::DistSquared2D(ChestLocation, Ship->GetActorLocation()) <= RangeSquared)
+		{
+			bPlayerInRange = true;
+			break;
+		}
+	}
+	// A player can swim away from a distant ship and interact with a chest.
+	if (!bPlayerInRange)
+	{
+		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		{
+			const APlayerController* Controller = It->Get();
+			const APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
+			if (IsValid(Pawn)
+				&& FVector::DistSquared2D(ChestLocation, Pawn->GetActorLocation()) <= RangeSquared)
+			{
+				bPlayerInRange = true;
+				break;
+			}
+		}
+	}
+
+	if (bPlayerInRange)
+	{
+		DistanceOptimizationStableTime = 0.0f;
+		SetDistanceOptimizationDormant(false);
+		return;
+	}
+	if (bDistanceOptimizationDormant)
+	{
+		return;
+	}
+
+	// Do not pin a freshly dropped chest in midair or while it is still settling.
+	const FSWBuoyancyRuntimeDiagnostic& Diagnostic = SWBuoyancyComponent->GetLastRuntimeDiagnostic();
+	const bool bSettledInWater = Diagnostic.bPontoonInWater
+		&& ChestMesh->IsSimulatingPhysics()
+		&& ChestMesh->GetPhysicsLinearVelocity().SizeSquared() <= FMath::Square(100.0f)
+		&& ChestMesh->GetPhysicsAngularVelocityInDegrees().SizeSquared() <= FMath::Square(30.0f);
+	DistanceOptimizationStableTime = bSettledInWater
+		? DistanceOptimizationStableTime + 0.5f : 0.0f;
+	if (DistanceOptimizationStableTime >= 2.0f)
+	{
+		SetDistanceOptimizationDormant(true);
+	}
+}
+
+void AStorageChest::SetDistanceOptimizationDormant(bool bDormant)
+{
+	if (!HasAuthority() || bDistanceOptimizationDormant == bDormant || !ChestMesh)
+	{
+		return;
+	}
+	if (bDormant)
+	{
+		ChestMesh->SetPhysicsLinearVelocity(FVector::ZeroVector);
+		ChestMesh->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+	}
+	bDistanceOptimizationDormant = bDormant;
+	ApplyPhysicsMode();
+	ForceNetUpdate();
 }
 
 void AStorageChest::InitializeGuardState()
@@ -663,7 +812,7 @@ void AStorageChest::ApplyPhysicsMode()
 		return;
 	}
 
-	SetActorTickEnabled(!HasAuthority() && bEnablePhysicsAndBuoyancy);
+	SetActorTickEnabled(!HasAuthority() && bEnablePhysicsAndBuoyancy && !bDistanceOptimizationDormant);
 
 	if (bEnablePhysicsAndBuoyancy)
 	{
@@ -671,21 +820,29 @@ void AStorageChest::ApplyPhysicsMode()
 		{
 			ChestMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			ChestMesh->SetMassOverrideInKg(NAME_None, PhysicsMassKg, true);
-			ChestMesh->SetSimulatePhysics(true);
-			ChestMesh->WakeAllRigidBodies();
+			if (ChestMesh->IsSimulatingPhysics() == bDistanceOptimizationDormant)
+			{
+				ChestMesh->SetSimulatePhysics(!bDistanceOptimizationDormant);
+				if (!bDistanceOptimizationDormant)
+				{
+					ChestMesh->WakeAllRigidBodies();
+				}
+			}
 		}
 		else
 		{
 			ChestMesh->SetSimulatePhysics(false);
 			ChestMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 		}
-		if (SWBuoyancyComponent && HasAuthority())
+		if (SWBuoyancyComponent && HasAuthority() && !bDistanceOptimizationDormant)
 		{
 			SWBuoyancyComponent->Activate();
+			SWBuoyancyComponent->SetComponentTickEnabled(true);
 		}
 		else if (SWBuoyancyComponent)
 		{
 			SWBuoyancyComponent->Deactivate();
+			SWBuoyancyComponent->SetComponentTickEnabled(false);
 		}
 		return;
 	}

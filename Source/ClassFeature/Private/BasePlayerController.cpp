@@ -229,7 +229,6 @@ void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* Context
 	FacilityHubWidget->InitializeForContext(ContextActor);
 	FacilityHubWidget->AddToViewport(100);
 	ApplyInventoryInputMode(true);
-	SetIgnoreMoveInput(true);
 	FacilityHubWidget->SetUserFocus(this);
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[FacilityHubFlow][CLIENT] SUCCESS: Common FacilityHub added to viewport. Widget=%s Context=%s"),
@@ -843,7 +842,7 @@ void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 	}
 	if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageClient] Storage widget opened. Widget=%s Visibility=%d"),
 		*GetNameSafe(StorageWindowWidget), static_cast<int32>(StorageWindowWidget->GetVisibility()));
-	SetIgnoreMoveInput(true);
+	UpdateInteractionMovementLock();
 }
 
 void ABasePlayerController::CloseStorage(bool bNotifyServer)
@@ -1057,7 +1056,7 @@ void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 {
 	bShowMouseCursor = bOpen;
 	// A chest and the facility hub are modal; keep F/game input available for closing.
-	SetIgnoreMoveInput(IsStorageOpen() || IsFacilityHubOpen());
+	UpdateInteractionMovementLock();
 
 	if (bOpen)
 	{
@@ -1093,6 +1092,17 @@ void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 			SetIgnoreLookInput(false);
 			bInventoryInputModeApplied = false;
 		}
+	}
+}
+
+void ABasePlayerController::UpdateInteractionMovementLock()
+{
+	const bool bShouldLock = IsStorageOpen() || IsFacilityHubOpen();
+	if (bInteractionMovementLocked != bShouldLock)
+	{
+		// SetIgnoreMoveInput is counted, so only change the count when this UI's lock changes.
+		SetIgnoreMoveInput(bShouldLock);
+		bInteractionMovementLocked = bShouldLock;
 	}
 }
 

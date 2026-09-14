@@ -161,6 +161,7 @@ protected:
 	bool bWasStatusPawnInputEnabled = true;
 	bool bStatusCharacterInputLocked = false;
 	bool bInventoryInputModeApplied = false;
+	bool bInteractionMovementLocked = false;
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UStorageWindowWidget> StorageWindowWidgetClass;
@@ -192,6 +193,7 @@ protected:
 	void BindHUDToCurrentPlayer();
 	void HandleMenuEscape();
 	void ApplyInventoryInputMode(bool bOpen);
+	void UpdateInteractionMovementLock();
 	void SetStatusCharacterInputLocked(bool bLocked);
 	void OpenStorage(AStorageChest* StorageChest);
 	void CloseStorage(bool bNotifyServer = true);

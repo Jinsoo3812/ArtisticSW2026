@@ -36,6 +36,11 @@ struct CLASSFEATURE_API FChestSpawnPointChestSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Placement")
 	EChestEnvironment Environment = EChestEnvironment::Land;
 
+	/** Opt in only selected ocean spawn points; deck chests remain ineligible. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Optimization",
+		meta = (EditCondition = "Environment == EChestEnvironment::Water"))
+	bool bEnableDistanceOptimization = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Data Driven")
 	EChestSpawnMode SpawnMode = EChestSpawnMode::Guarded;
 
@@ -268,6 +273,10 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Placement")
 	EChestEnvironment Environment = EChestEnvironment::Land;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Optimization",
+		meta = (EditCondition = "Environment == EChestEnvironment::Water"))
+	bool bEnableDistanceOptimization = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Data Driven")
 	EChestSpawnMode SpawnMode = EChestSpawnMode::Guarded;

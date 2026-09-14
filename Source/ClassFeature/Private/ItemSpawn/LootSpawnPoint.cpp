@@ -169,6 +169,7 @@ void AChestSpawnPoint::ApplyAuthoringSettings(
 	GuaranteedBossQuestItemTag = ChestSettings.GuaranteedBossQuestItemTag;
 	GuaranteedBossQuestItemCount = FMath::Max(1, ChestSettings.GuaranteedBossQuestItemCount);
 	Environment = ChestSettings.Environment;
+	bEnableDistanceOptimization = ChestSettings.bEnableDistanceOptimization;
 	SpawnMode = ChestSettings.SpawnMode;
 	ProgressionZone = ChestSettings.ProgressionZone;
 	ProgressionKind = ChestSettings.ProgressionKind;
@@ -282,6 +283,8 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 	if (Definition) SpawnedChest->InitializeFromChestDefinition(Definition, Seed);
 	else SpawnedChest->ClearLegacyChestDefinition();
 	SpawnedChest->SetPhysicsAndBuoyancyEnabled(Environment == EChestEnvironment::Water);
+	SpawnedChest->SetDistanceOptimizationEnabled(
+		Environment == EChestEnvironment::Water && bEnableDistanceOptimization);
 
 	AShip* EffectiveOwningShip = OwningShip ? OwningShip.Get() : Cast<AShip>(GetAttachParentActor());
 

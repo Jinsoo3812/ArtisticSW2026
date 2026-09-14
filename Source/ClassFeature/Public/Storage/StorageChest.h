@@ -42,12 +42,18 @@ public:
 	bool HasGuardFailed() const { return bGuardFailed; }
 	int32 GetAliveGuardCount() const { return AliveGuardHealthComponents.Num(); }
 	bool IsPhysicsAndBuoyancyEnabled() const { return bEnablePhysicsAndBuoyancy; }
+	bool IsDistanceOptimizationEnabled() const { return bEnableDistanceOptimization; }
+	bool IsDistanceOptimizationDormant() const { return bDistanceOptimizationDormant; }
 
 	UFUNCTION(BlueprintCallable, Category = "Storage")
 	void ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Storage Chest|Physics")
 	void SetPhysicsAndBuoyancyEnabled(bool bEnabled);
+
+	/** Opt in individual floating chests, including deferred-spawned chests. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Storage Chest|Optimization")
+	void SetDistanceOptimizationEnabled(bool bEnabled);
 
 	void InitializeFromChestDefinition(UChestDefinition* InDefinition, int32 Seed, float ExpectedValueRatio = 1.f);
 	/** Prevents a chest BP's legacy default definition from injecting snapshot loot. */
@@ -120,6 +126,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Storage Chest|Physics", meta = (ClampMin = "1.0", Units = "kg"))
 	float PhysicsMassKg = 25.0f;
 
+	/** Only independent floating chests can sleep. Deck/attached chests are always excluded. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Chest|Optimization")
+	bool bEnableDistanceOptimization = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Chest|Optimization",
+		meta = (EditCondition = "bEnableDistanceOptimization", ClampMin = "0.0", Units = "cm"))
+	float DistanceOptimizationRange = 100000.0f;
+
+	UPROPERTY(ReplicatedUsing = OnRep_DistanceOptimizationDormant, VisibleInstanceOnly, BlueprintReadOnly,
+		Category = "Storage Chest|Optimization")
+	bool bDistanceOptimizationDormant = false;
+
 	/** Client-only smoothing of server-authoritative floating chest movement. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Storage Chest|Networking", meta = (ClampMin = "0.0"))
 	float ClientLocationInterpSpeed = 14.0f;
@@ -169,6 +187,8 @@ protected:
 	float EmptyDestroyDelay = 1.0f;
 
 	FTimerHandle EmptyDestroyTimerHandle;
+	FTimerHandle DistanceOptimizationTimerHandle;
+	float DistanceOptimizationStableTime = 0.0f;
 	bool bHasBeenOpened = false;
 
 	UFUNCTION()
@@ -183,8 +203,14 @@ protected:
 	UFUNCTION()
 	void OnRep_PhysicsMode();
 
+	UFUNCTION()
+	void OnRep_DistanceOptimizationDormant();
+
 	void InitializeGuardState();
 	void ClearGuardBindings();
 	void ApplyPhysicsMode();
+	void RefreshDistanceOptimizationTimer();
+	void EvaluateDistanceOptimization();
+	void SetDistanceOptimizationDormant(bool bDormant);
 	void ApplyLockPresentation();
 };
