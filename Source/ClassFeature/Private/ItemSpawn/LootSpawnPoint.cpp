@@ -6,6 +6,7 @@
 #include "AbilitySystemComponent.h"
 #include "Item/BaseItem.h"
 #include "ItemSpawn/ChestSpawnData.h"
+#include "Balance/FixedChestDropData.h"
 #include "Ship.h"
 #include "Storage/StorageChest.h"
 #include "StoryConditionalSpawner.h"
@@ -462,4 +463,28 @@ void AChestSpawnPoint::RegisterGuardCharacter(ABaseCharacter* GuardCharacter)
 		GuardCharacters.Add(GuardCharacter);
 		if (IsValid(ActiveChestInstance)) ActiveChestInstance->AddGuardCharacter(GuardCharacter);
 	}
+}
+
+void AChestSpawnPoint::ApplyFixedChanceDrops(const UFixedChestDropData* DropData, int32 Seed)
+{
+	AStorageChest* Chest = Cast<AStorageChest>(GetSpawnedActor());
+	if (!HasAuthority() || !IsValid(Chest) || !DropData) return;
+	FRandomStream Stream(Seed);
+	TArray<FStorageItemEntry> AddedItems;
+	for (const FFixedChestDropEntry& Entry : DropData->Drops)
+	{
+		const float Chance = Entry.GetChance(ProgressionZone);
+		if (!Entry.ItemTag.IsValid() || Entry.Quantity < 1 || Chance <= 0.f) continue;
+		const float Roll = Stream.FRand();
+		const bool bDropped = Roll < Chance;
+		UE_LOG(LogTemp, Log, TEXT("Fixed chest roll: point=%s zone=%d item=%s chance=%.4f roll=%.4f dropped=%d"),
+			*GetNameSafe(this), static_cast<int32>(ProgressionZone), *Entry.ItemTag.ToString(), Chance, Roll, bDropped ? 1 : 0);
+		if (bDropped)
+		{
+			FStorageItemEntry& Item = AddedItems.AddDefaulted_GetRef();
+			Item.ItemTag = Entry.ItemTag;
+			Item.Count = Entry.Quantity;
+		}
+	}
+	Chest->AppendFixedLoot(AddedItems);
 }

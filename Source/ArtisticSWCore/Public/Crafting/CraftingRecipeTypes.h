@@ -45,9 +45,8 @@ struct ARTISTICSWCORE_API FCraftingRecipeRow : public FTableRowBase
 	int32 ResultQuantity = 1;
 
 	/** Empty means the recipe is available without owning a recipe item.
-	 * Progression weapon recipes currently leave this empty: Epic/Legendary recipe-item gates
-	 * are intentionally disabled while their acquisition pipeline is not balanced. The generic
-	 * recipe-item mechanic remains for non-progression recipes and future special recipes.
+	 * Tier-four weapons each require their own reusable recipe item. Acquisition
+	 * is configured independently from automated progression material drops.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (Categories = "Item.Id"))
 	FGameplayTag RequiredRecipeItemTag;

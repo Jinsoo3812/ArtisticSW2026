@@ -10,6 +10,7 @@
 class UDataTable;
 class UItemData;
 class UProgressionBalanceData;
+class UFixedChestDropData;
 
 /**
  * 
@@ -38,4 +39,8 @@ public:
 	/** Single source for zone rewards, crafting costs, ship upgrade costs and spawn targets. */
 	UPROPERTY(Config, EditAnywhere, Category = "Balance")
 	TSoftObjectPtr<UProgressionBalanceData> ProgressionBalanceData;
+
+	/** Independent per-chest rare-item chances; never included in progression material budgets. */
+	UPROPERTY(Config, EditAnywhere, Category = "Balance")
+	TSoftObjectPtr<UFixedChestDropData> FixedChestDropData;
 };

@@ -53,6 +53,9 @@ public:
 	/** Prevents a chest BP's legacy default definition from injecting snapshot loot. */
 	void ClearLegacyChestDefinition();
 	void ReplaceProgressionLoot(const TArray<FProgressionComputedDrop>& Drops, const UItemData* Definitions, int32 Seed);
+
+	/** Appends independent rare drops after progression replacement without changing its rolls. */
+	void AppendFixedLoot(const TArray<FStorageItemEntry>& ExtraItems);
 	void ConfigureGuarding(bool bInRequiresGuardClear, const TArray<ABaseCharacter*>& InGuardCharacters, AShip* InOwningShip);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Storage Chest|Guarding")

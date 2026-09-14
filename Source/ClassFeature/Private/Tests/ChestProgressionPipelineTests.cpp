@@ -174,6 +174,19 @@ bool FChestProgressionPipelineTest::RunTest(const FString& Parameters)
 					Manager->RebalanceSpawnedChestsWithData(Balance, Items, Recipes, Tree));
 				TestEqual(TEXT("Manager census counts only the active point"),
 					Manager->GetLastActiveChestCount(EProgressionZone::Mid1), 1);
+				FStorageItemEntry Extra;
+				Extra.ItemTag = Item_Id_Material_WeaponSpecialMaterial_LegendaryMaterial;
+				Extra.Count = 1;
+				Chest->AppendFixedLoot({Extra});
+				bool bHasBaseMaterial = false;
+				bool bHasSpecialMaterial = false;
+				for (const FInventorySlot& Slot : Chest->GetStorageComponent()->GetSlots())
+				{
+					bHasBaseMaterial |= Slot.ItemTag == Item_Id_Material_WeaponMaterial_Wood;
+					bHasSpecialMaterial |= Slot.ItemTag == Item_Id_Material_WeaponSpecialMaterial_LegendaryMaterial;
+				}
+				TestTrue(TEXT("Fixed drop append preserves automated material"), bHasBaseMaterial);
+				TestTrue(TEXT("Fixed drop append stores special material"), bHasSpecialMaterial);
 				TArray<FProgressionComputedDrop> SunkDrops;
 				TestTrue(TEXT("Sunk chest reuses finalized deck-zone drops"),
 					Manager->GetSunkChestDrops(EProgressionZone::Mid1, SunkDrops));

@@ -11,10 +11,10 @@ SwordA4,Item.Id.Weapon.Sword.SwordA4,1,Item.Id.Material.WeaponMaterial.GoodWood:
 SwordB4,Item.Id.Weapon.Sword.SwordB4,1,Item.Id.Material.WeaponMaterial.GoodWood:5;Item.Id.Material.WeaponMaterial.Iron:6,
 ShortBow4,Item.Id.Weapon.Bow.ShortBow4,1,Item.Id.Material.WeaponMaterial.GoodWood:6;Item.Id.Material.WeaponMaterial.Iron:4,
 LongBow4,Item.Id.Weapon.Bow.LongBow4,1,Item.Id.Material.WeaponMaterial.GoodWood:6;Item.Id.Material.WeaponMaterial.Iron:6,
-SwordA5,Item.Id.Weapon.Sword.SwordA5,1,Item.Id.Material.WeaponMaterial.Iron:5;Item.Id.Material.WeaponMaterial.GoodIron:7,
-SwordB5,Item.Id.Weapon.Sword.SwordB5,1,Item.Id.Material.WeaponMaterial.Iron:6;Item.Id.Material.WeaponMaterial.GoodIron:8,
-ShortBow5,Item.Id.Weapon.Bow.ShortBow5,1,Item.Id.Material.WeaponMaterial.Iron:7;Item.Id.Material.WeaponMaterial.GoodIron:6,
-LongBow5,Item.Id.Weapon.Bow.LongBow5,1,Item.Id.Material.WeaponMaterial.Iron:7;Item.Id.Material.WeaponMaterial.GoodIron:8,
+SwordA5,Item.Id.Weapon.Sword.SwordA5,1,Item.Id.Material.WeaponMaterial.Iron:5;Item.Id.Material.WeaponMaterial.GoodIron:7;Item.Id.Material.WeaponSpecialMaterial.LegendaryMaterial:1,requires Item.Id.Material.WeaponSpecialRecipe.SwordA5Recipe not consumed
+SwordB5,Item.Id.Weapon.Sword.SwordB5,1,Item.Id.Material.WeaponMaterial.Iron:6;Item.Id.Material.WeaponMaterial.GoodIron:8;Item.Id.Material.WeaponSpecialMaterial.LegendaryMaterial:1,requires Item.Id.Material.WeaponSpecialRecipe.SwordB5Recipe not consumed
+ShortBow5,Item.Id.Weapon.Bow.ShortBow5,1,Item.Id.Material.WeaponMaterial.Iron:7;Item.Id.Material.WeaponMaterial.GoodIron:6;Item.Id.Material.WeaponSpecialMaterial.LegendaryMaterial:1,requires Item.Id.Material.WeaponSpecialRecipe.ShortBow5Recipe not consumed
+LongBow5,Item.Id.Weapon.Bow.LongBow5,1,Item.Id.Material.WeaponMaterial.Iron:7;Item.Id.Material.WeaponMaterial.GoodIron:8;Item.Id.Material.WeaponSpecialMaterial.LegendaryMaterial:1,requires Item.Id.Material.WeaponSpecialRecipe.LongBow5Recipe not consumed
 Medicine,Item.Id.Consumables.Heal.Medicine,1,Item.Id.Material.ConsumablesMaterial.Pear:2,
 Doraji,Item.Id.Consumables.Buff.Doraji,1,Item.Id.Material.ConsumablesMaterial.Pear:3,
 Tangyak,Item.Id.Consumables.Heal.Tangyak,1,Item.Id.Material.ConsumablesMaterial.Pear:2;Item.Id.Material.ConsumablesMaterial.GoodPear:3,

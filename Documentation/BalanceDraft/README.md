@@ -1,6 +1,12 @@
 # Applied progression balance baseline
 
-The user approved these CSV values and they were applied to the existing item definitions, crafting recipe table, progression balance asset, and ship upgrade tree. The CSVs remain human-readable balance references, not directly importable Unreal DataTable CSVs; `Ingredients` uses `Tag:Quantity;Tag:Quantity` notation. The existing icons, abilities, spawn classes, ship node links, UI placement, and ship stat table were preserved. Progression weapon recipe-item gates (Epic/Legendary) were cleared for this baseline; the generic recipe-item feature remains in code for later special recipes.
+The user approved these CSV values and they were applied to the existing item definitions, crafting recipe table, progression balance asset, and ship upgrade tree. The CSVs remain human-readable balance references, not directly importable Unreal DataTable CSVs; `Ingredients` uses `Tag:Quantity;Tag:Quantity` notation. The existing icons, abilities, spawn classes, ship node links, UI placement, and ship stat table were preserved. Tier-four weapons now require four distinct reusable recipe items and one shared LegendaryMaterial each. Both recipe items and the shared special material are excluded from the automated progression chest probability pool; their independently configured acquisition is described below.
+
+## Independent fixed-chance chest drops
+
+`Content/Blueprints/Item/Data/DA_FixedChestDrops` is referenced by `USettings_Item::FixedChestDropData` in `Config/DefaultGame.ini`. Each `Drops` entry names an item, quantity, and one or more zone-specific percentage chances. A zone omitted from an entry means 0%. The global chest manager applies its unchanged progression material rolls first; each ordinary `ChestSpawnPoint` then independently rolls every eligible fixed-drop entry and appends successful items without removing progression loot. Sunk chests are spawned directly by enemy ships and do not use this extra-drop path.
+
+The temporary starting values are 50% per Mid_1 chest and 0% in Mid_2, Mid_3, and Final for `SwordA5Recipe`, `SwordB5Recipe`, `ShortBow5Recipe`, `LongBow5Recipe`, and `LegendaryMaterial`. All five have quantity 1. These percentages are per chest, not adjusted by the number of chests or full clears.
 
 ## 1. Definition data
 

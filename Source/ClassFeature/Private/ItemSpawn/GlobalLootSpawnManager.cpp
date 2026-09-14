@@ -3,6 +3,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "ItemSpawn/ChestSpawnData.h"
+#include "Balance/FixedChestDropData.h"
 #include "ItemSpawn/LootSpawnPoint.h"
 #include "ItemSpawn/LootZoneSpawnManager.h"
 #include "Settings_Item.h"
@@ -36,7 +37,12 @@ namespace
 				bValid = false;
 				continue;
 			}
-			Demand.FindOrAdd(Ingredient.ItemTag) += Ingredient.Quantity * Multiplier;
+			// Special ingredients use independent fixed-chance drops, never the
+			// progression expected-value pool derived from chest census.
+			if (!bSpecial)
+			{
+				Demand.FindOrAdd(Ingredient.ItemTag) += Ingredient.Quantity * Multiplier;
+			}
 		}
 		return bValid;
 	}
@@ -352,6 +358,13 @@ bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionB
 		UE_LOG(LogTemp, Error, TEXT("Chest progression requires Balance, ItemAssetRegistry and CraftingRecipeDataTable."));
 		return false;
 	}
+	const USettings_Item* ItemSettings = GetDefault<USettings_Item>();
+	const UFixedChestDropData* FixedDrops = ItemSettings
+		? ItemSettings->FixedChestDropData.LoadSynchronous() : nullptr;
+	if (!FixedDrops)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Fixed chest drop data is not configured; progression loot remains active."));
+	}
 	TArray<AChestSpawnPoint*> SpawnedPoints;
 	int32 Counts[4] = {0, 0, 0, 0};
 	int32 CountsByKind[4][4] = {};
@@ -391,6 +404,11 @@ bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionB
 		{
 			return false;
 		}
+		for (const FProgressionComputedDrop& Drop : DropsByZone[ZoneIndex])
+		{
+			UE_LOG(LogTemp, Log, TEXT("Progression chest drop: zone=%d item=%s chance=%.4f count=%d"),
+				ZoneIndex, *Drop.ItemTag.ToString(), Drop.Chance, Drop.MinCount);
+		}
 	}
 	for (AChestSpawnPoint* Point : SpawnedPoints)
 	{
@@ -398,6 +416,11 @@ bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionB
 		const int32 ZoneIndex = static_cast<int32>(Point->GetProgressionZone());
 		const uint32 Seed = HashCombine(GetTypeHash(SpawnSeed), GetTypeHash(Point->GetFName()));
 		Chest->ReplaceProgressionLoot(DropsByZone[ZoneIndex], Items, static_cast<int32>(Seed & 0x7fffffff));
+		if (FixedDrops)
+		{
+			Point->ApplyFixedChanceDrops(FixedDrops,
+				static_cast<int32>(HashCombine(Seed, 0xC32D91A7u) & 0x7fffffffu));
+		}
 	}
 	for (int32 ZoneIndex = 0; ZoneIndex < 4; ++ZoneIndex)
 	{

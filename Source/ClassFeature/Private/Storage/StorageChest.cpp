@@ -467,6 +467,28 @@ void AStorageChest::ReplaceProgressionLoot(const TArray<FProgressionComputedDrop
 		StorageComponent->GetStorageColumns(), Items);
 }
 
+void AStorageChest::AppendFixedLoot(const TArray<FStorageItemEntry>& ExtraItems)
+{
+	if (!HasAuthority() || !StorageComponent || ExtraItems.IsEmpty()) return;
+	TArray<FStorageItemEntry> AllItems;
+	for (const FInventorySlot& Slot : StorageComponent->GetSlots())
+	{
+		if (Slot.IsEmpty()) continue;
+		FStorageItemEntry& Existing = AllItems.AddDefaulted_GetRef();
+		Existing.ItemTag = Slot.ItemTag;
+		Existing.Count = Slot.Count;
+	}
+	AllItems.Append(ExtraItems);
+	int32 NeededSlots = 0;
+	for (const FStorageItemEntry& Item : AllItems)
+	{
+		NeededSlots += FMath::DivideAndRoundUp(Item.Count,
+			FMath::Max(1, StorageComponent->GetMaxStack(Item.ItemTag)));
+	}
+	StorageComponent->ConfigureStorage(FMath::Max(StorageComponent->GetSlotCount(), NeededSlots),
+		StorageComponent->GetStorageColumns(), AllItems);
+}
+
 void AStorageChest::OnRep_Locked()
 {
 	ApplyLockPresentation();

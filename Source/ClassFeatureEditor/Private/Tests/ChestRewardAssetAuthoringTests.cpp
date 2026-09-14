@@ -7,6 +7,7 @@
 #include "BaseGameplayTags.h"
 #include "IAssetTools.h"
 #include "Balance/ProgressionBalanceData.h"
+#include "Balance/FixedChestDropData.h"
 #include "Crafting/CraftingRecipeTypes.h"
 #include "Engine/DataTable.h"
 #include "Item/ItemData.h"
@@ -421,6 +422,82 @@ bool FConsolidateItemAssetsTest::RunTest(const FString& Parameters)
 	{
 		IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
 		TestTrue(TEXT("Item assets moved without breaking references"), AssetTools.RenameAssets(Renames));
+	}
+	return !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTierFourRecipeItemValidationTest,
+	"ArtisticSW.Chest.Recipe.TierFourRecipeItems",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FTierFourRecipeItemValidationTest::RunTest(const FString& Parameters)
+{
+	const USettings_Item* Settings = GetDefault<USettings_Item>();
+	const UItemData* Items = Settings ? Settings->ItemAssetRegistry.LoadSynchronous() : nullptr;
+	const UDataTable* Recipes = Settings ? Settings->CraftingRecipeDataTable.LoadSynchronous() : nullptr;
+	const UDataTable* Features = Settings ? Settings->ItemFeatureDataTable.LoadSynchronous() : nullptr;
+	if (!TestNotNull(TEXT("Item definitions"), Items) || !TestNotNull(TEXT("Recipes"), Recipes)
+		|| !TestNotNull(TEXT("Item features"), Features)) return false;
+	struct FEntry { const TCHAR* Row; FGameplayTag Tag; };
+	const FEntry Entries[] = {
+		{TEXT("SwordA5"), Item_Id_Material_WeaponSpecialRecipe_SwordA5Recipe},
+		{TEXT("SwordB5"), Item_Id_Material_WeaponSpecialRecipe_SwordB5Recipe},
+		{TEXT("ShortBow5"), Item_Id_Material_WeaponSpecialRecipe_ShortBow5Recipe},
+		{TEXT("LongBow5"), Item_Id_Material_WeaponSpecialRecipe_LongBow5Recipe}
+	};
+	TSet<FGameplayTag> SeenRecipeItems;
+	for (const FEntry& Entry : Entries)
+	{
+		TestTrue(*FString::Printf(TEXT("Recipe item definition %s"), Entry.Row), Items->ItemDefinitions.Contains(Entry.Tag));
+		TestNotNull(*FString::Printf(TEXT("Recipe item display name %s"), Entry.Row),
+			Features->FindRow<FItemFeatureData>(Entry.Tag.GetTagName(), TEXT("Tier-four recipe"), false));
+		TestFalse(*FString::Printf(TEXT("Distinct recipe item %s"), Entry.Row), SeenRecipeItems.Contains(Entry.Tag));
+		SeenRecipeItems.Add(Entry.Tag);
+		const FCraftingRecipeRow* Existing = Recipes->FindRow<FCraftingRecipeRow>(FName(Entry.Row), TEXT("Tier-four recipe"), false);
+		if (!TestNotNull(Entry.Row, Existing)) continue;
+		TestEqual(*FString::Printf(TEXT("Required recipe item %s"), Entry.Row), Existing->RequiredRecipeItemTag, Entry.Tag);
+		TestFalse(*FString::Printf(TEXT("Recipe item is reusable %s"), Entry.Row), Existing->bConsumeRecipeItem);
+		int32 SpecialIngredientCount = 0;
+		for (const FCraftingItemStack& Ingredient : Existing->Ingredients)
+		{
+			if (Ingredient.ItemTag == Item_Id_Material_WeaponSpecialMaterial_LegendaryMaterial)
+			{
+				++SpecialIngredientCount;
+				TestEqual(*FString::Printf(TEXT("One special material %s"), Entry.Row), Ingredient.Quantity, 1);
+			}
+		}
+		TestEqual(*FString::Printf(TEXT("One shared special ingredient %s"), Entry.Row), SpecialIngredientCount, 1);
+	}
+	return !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFixedChestDropAssetValidationTest,
+	"ArtisticSW.Chest.FixedDrops.AuthoredChances",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFixedChestDropAssetValidationTest::RunTest(const FString& Parameters)
+{
+	const USettings_Item* Settings = GetDefault<USettings_Item>();
+	const UFixedChestDropData* Asset = Settings ? Settings->FixedChestDropData.LoadSynchronous() : nullptr;
+	if (!TestNotNull(TEXT("Fixed chest drop data"), Asset)) return false;
+	const FGameplayTag ItemTags[] = {
+		Item_Id_Material_WeaponSpecialRecipe_SwordA5Recipe,
+		Item_Id_Material_WeaponSpecialRecipe_SwordB5Recipe,
+		Item_Id_Material_WeaponSpecialRecipe_ShortBow5Recipe,
+		Item_Id_Material_WeaponSpecialRecipe_LongBow5Recipe,
+		Item_Id_Material_WeaponSpecialMaterial_LegendaryMaterial
+	};
+	TestEqual(TEXT("Five rare item entries"), Asset->Drops.Num(), 5);
+	for (const FGameplayTag ItemTag : ItemTags)
+	{
+		const FFixedChestDropEntry* Drop = Asset->Drops.FindByPredicate([ItemTag](const FFixedChestDropEntry& Entry)
+		{ return Entry.ItemTag == ItemTag; });
+		if (!TestNotNull(*ItemTag.ToString(), Drop)) continue;
+		TestEqual(TEXT("One item per successful roll"), Drop->Quantity, 1);
+		TestTrue(TEXT("Mid1 chance is 50 percent"), FMath::IsNearlyEqual(Drop->GetChance(EProgressionZone::Mid1), 0.5f));
+		TestEqual(TEXT("Mid2 is disabled"), Drop->GetChance(EProgressionZone::Mid2), 0.f);
+		TestEqual(TEXT("Mid3 is disabled"), Drop->GetChance(EProgressionZone::Mid3), 0.f);
+		TestEqual(TEXT("Final is disabled"), Drop->GetChance(EProgressionZone::Final), 0.f);
 	}
 	return !HasAnyErrors();
 }

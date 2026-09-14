@@ -13,6 +13,7 @@ class ABaseCharacter;
 class AShip;
 class AStorageChest;
 class AStoryConditionalSpawner;
+class UFixedChestDropData;
 
 /** Authoring values shown under the Chest section when a chest spawn point is embedded in another actor. */
 USTRUCT(BlueprintType)
@@ -188,6 +189,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Chest|Spawn")
 	AStorageChest* SpawnConfiguredChest(UChestDefinition* Definition, int32 Seed);
+
+	/** Rolls independent rare items after the manager has applied progression loot. */
+	void ApplyFixedChanceDrops(const UFixedChestDropData* DropData, int32 Seed);
 
 	/** Registers a ship crew member even when the crew spawned after the chest. */
 	void RegisterGuardCharacter(ABaseCharacter* GuardCharacter);

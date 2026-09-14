@@ -179,6 +179,10 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialMaterial_LegendaryMaterial,
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe, "Item.Id.Material.WeaponSpecialRecipe");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_EpicRecipe, "Item.Id.Material.WeaponSpecialRecipe.EpicRecipe");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_LegendaryRecipe, "Item.Id.Material.WeaponSpecialRecipe.LegendaryRecipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_SwordA5Recipe, "Item.Id.Material.WeaponSpecialRecipe.SwordA5Recipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_SwordB5Recipe, "Item.Id.Material.WeaponSpecialRecipe.SwordB5Recipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_ShortBow5Recipe, "Item.Id.Material.WeaponSpecialRecipe.ShortBow5Recipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_LongBow5Recipe, "Item.Id.Material.WeaponSpecialRecipe.LongBow5Recipe");
 
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_SkillMaterial, "Item.Id.Material.SkillMaterial");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_SkillMaterial_RareSkill, "Item.Id.Material.SkillMaterial.RareSkill");
