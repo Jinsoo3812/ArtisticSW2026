@@ -7,6 +7,9 @@
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Engine/OverlapResult.h"
+#include "EngineUtils.h"
+#include "Engine/StaticMesh.h"
+#include "PhysicsEngine/BodySetup.h"
 #include "Ship.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
@@ -29,6 +32,9 @@
 
 namespace
 {
+	TAutoConsoleVariable<int32> CVarCannonCollisionDiagnostics(
+		TEXT("sw.CannonCollisionDiagnostics"), 1,
+		TEXT("Cannonball collision logs: 0=off, 1=initialization/events and one nearby-hull snapshot per ship on authority."), ECVF_Default);
 	TAutoConsoleVariable<int32> CVarCannonWaterImpactDiagnostics(
 		TEXT("sw.CannonWaterImpactDiagnostics"),
 		1,
@@ -109,6 +115,8 @@ ACannonball::ACannonball()
 void ACannonball::BeginPlay()
 {
 	Super::BeginPlay();
+	PreviousDiagnosticLocation = GetActorLocation();
+	LogCollisionDiagnostics(TEXT("BEGIN"));
 	PreviousProjectileLocation = GetActorLocation();
 	PreviousWaterProbeLocation = GetActorLocation();
 
@@ -160,6 +168,24 @@ void ACannonball::PostNetReceiveVelocity(const FVector& NewVelocity)
 void ACannonball::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	if (HasAuthority() && CVarCannonCollisionDiagnostics.GetValueOnGameThread() != 0)
+	{
+		const FVector Current = GetActorLocation();
+		for (TActorIterator<AShip> It(GetWorld()); It; ++It)
+		{
+			AShip* Ship = *It;
+			if (Ship == LaunchingShip || DiagnosticNearbyShips.Contains(TWeakObjectPtr<AShip>(Ship))) continue;
+			UStaticMeshComponent* Hull = Ship->ShipDamageMesh;
+			if (!Hull) continue;
+			const FBox Box = Hull->Bounds.GetBox().ExpandBy(100.0f);
+			if (Box.IsInsideOrOn(Current) || FMath::LineBoxIntersection(Box, PreviousDiagnosticLocation, Current, Current - PreviousDiagnosticLocation))
+			{
+				DiagnosticNearbyShips.Add(TWeakObjectPtr<AShip>(Ship));
+				LogCollisionDiagnostics(TEXT("NEAR-HULL"), Ship, Hull);
+			}
+		}
+		PreviousDiagnosticLocation = Current;
+	}
 
 	if (!bHasHitWater)
 	{
@@ -273,11 +299,43 @@ void ACannonball::InitializeProjectile(
 		// Never carry interpolation offset into the projectile's first visible frame.
 		ProjectileMovement->ResetInterpolation();
 	}
+	LogCollisionDiagnostics(TEXT("INITIALIZED"));
+}
+
+void ACannonball::LogCollisionDiagnostics(const TCHAR* Event, AActor* OtherActor, UPrimitiveComponent* OtherComp) const
+{
+	if (CVarCannonCollisionDiagnostics.GetValueOnGameThread() == 0) return;
+	UE_LOG(LogTemp, Warning,
+		TEXT("[CANNON-COLLISION][%s] Net=%s Authority=%d Ball=%s Class=%s LaunchShip=%s LaunchEnemy=%d Owner=%s Instigator=%s ActorCollision=%d Root=%s Updated=%s Profile=%s Enabled=%d Object=%d ShipDamageResponse=%d Active=%d Sweep=%d Position=%s Velocity=%s Water=%d ShipHit=%d BlockingHit=%d"),
+		Event, GetCannonWaterNetMode(GetWorld()), HasAuthority(), *GetName(), *GetClass()->GetName(),
+		*GetNameSafe(LaunchingShip), LaunchingShip && LaunchingShip->ActorHasTag(TEXT("Enemy")),
+		*GetNameSafe(GetOwner()), *GetNameSafe(GetInstigator()), GetActorEnableCollision(),
+		*GetNameSafe(GetRootComponent()), *GetNameSafe(ProjectileMovement ? ProjectileMovement->UpdatedComponent.Get() : nullptr),
+		SphereCollision ? *SphereCollision->GetCollisionProfileName().ToString() : TEXT("None"),
+		SphereCollision ? (int32)SphereCollision->GetCollisionEnabled() : -1,
+		SphereCollision ? (int32)SphereCollision->GetCollisionObjectType() : -1,
+		SphereCollision ? (int32)SphereCollision->GetCollisionResponseToChannel(ECC_ShipDamage) : -1,
+		ProjectileMovement && ProjectileMovement->IsActive(), ProjectileMovement && ProjectileMovement->bSweepCollision,
+		*GetActorLocation().ToCompactString(), *GetVelocity().ToCompactString(), bHasHitWater, bHasProcessedShipHit, bHasProcessedBlockingImpact);
+	if (!OtherComp) return;
+	const UStaticMeshComponent* MeshComp = Cast<UStaticMeshComponent>(OtherComp);
+	const UStaticMesh* Mesh = MeshComp ? MeshComp->GetStaticMesh() : nullptr;
+	const UBodySetup* Body = Mesh ? Mesh->GetBodySetup() : nullptr;
+	UE_LOG(LogTemp, Warning,
+		TEXT("[CANNON-COLLISION][%s-TARGET] Ball=%s Actor=%s Enemy=%d ActorCollision=%d Component=%s Registered=%d Profile=%s Enabled=%d Object=%d TargetToBall=%d BallToTarget=%d Overlaps=%d Mesh=%s SimpleShapes=%d Complexity=%d Bounds=%s Extent=%s"),
+		Event, *GetName(), *GetNameSafe(OtherActor), OtherActor && OtherActor->ActorHasTag(TEXT("Enemy")),
+		OtherActor && OtherActor->GetActorEnableCollision(), *OtherComp->GetName(), OtherComp->IsRegistered(),
+		*OtherComp->GetCollisionProfileName().ToString(), (int32)OtherComp->GetCollisionEnabled(), (int32)OtherComp->GetCollisionObjectType(),
+		SphereCollision ? (int32)OtherComp->GetCollisionResponseToChannel(SphereCollision->GetCollisionObjectType()) : -1,
+		SphereCollision ? (int32)SphereCollision->GetCollisionResponseToChannel(OtherComp->GetCollisionObjectType()) : -1,
+		OtherComp->GetGenerateOverlapEvents(), *GetNameSafe(Mesh), Body ? Body->AggGeom.GetElementCount() : -1,
+		Body ? (int32)Body->CollisionTraceFlag : -1, *OtherComp->Bounds.Origin.ToCompactString(), *OtherComp->Bounds.BoxExtent.ToCompactString());
 }
 
 void ACannonball::OnOverlapBegin(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
 	if (!OtherActor || OtherActor == this) return;
+	LogCollisionDiagnostics(TEXT("OVERLAP"), OtherActor, OtherComp);
 
 	// Hit Water (Check AWaterBody class or Water profile name)
 	bool bIsWater = false;
@@ -309,11 +367,13 @@ void ACannonball::OnHit(
 	FVector NormalImpulse,
 	const FHitResult& Hit)
 {
+	LogCollisionDiagnostics(TEXT("HIT"), OtherActor, OtherComp);
 	HandleBlockingImpact(OtherActor, OtherComp, Hit);
 }
 
 void ACannonball::OnProjectileStop(const FHitResult& ImpactResult)
 {
+	LogCollisionDiagnostics(TEXT("STOP"), ImpactResult.GetActor(), ImpactResult.GetComponent());
 	HandleBlockingImpact(ImpactResult.GetActor(), ImpactResult.GetComponent(), ImpactResult);
 }
 
@@ -326,6 +386,7 @@ void ACannonball::HandleBlockingImpact(
 		|| OtherActor == GetOwner() || OtherActor == GetInstigator()
 		|| bHasProcessedBlockingImpact)
 	{
+		LogCollisionDiagnostics(TEXT("IMPACT-REJECTED"), OtherActor, OtherComp);
 		return;
 	}
 
@@ -364,6 +425,7 @@ void ACannonball::HandleShipHit(AShip* HitShip)
 {
 	if (!HasAuthority() || !HitShip || HitShip == LaunchingShip)
 	{
+		LogCollisionDiagnostics(TEXT("DAMAGE-REJECTED"), HitShip);
 		return;
 	}
 
@@ -372,6 +434,7 @@ void ACannonball::HandleShipHit(AShip* HitShip)
 	if (LaunchingShip
 		&& LaunchingShip->ActorHasTag(TEXT("Enemy")) == HitShip->ActorHasTag(TEXT("Enemy")))
 	{
+		LogCollisionDiagnostics(TEXT("SAME-TEAM-REJECTED"), HitShip, HitShip->ShipDamageMesh);
 		return;
 	}
 

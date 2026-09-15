@@ -163,6 +163,10 @@ protected:
 		bool bIsWaterImpact);
 
 private:
+	void LogCollisionDiagnostics(const TCHAR* Event, AActor* OtherActor = nullptr, UPrimitiveComponent* OtherComp = nullptr) const;
+	FVector PreviousDiagnosticLocation = FVector::ZeroVector;
+	TSet<TWeakObjectPtr<AShip>> DiagnosticNearbyShips;
+
 	// ---- State ----
 	UPROPERTY()
 	TObjectPtr<AShip> LaunchingShip = nullptr;
