@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Cannonball.h"
+#include "Net/UnrealNetwork.h"
 #include "WaterSurfaceQueryLibrary.h"
 #include "CannonballImpactReceiver.h"
 #include "Components/SphereComponent.h"
@@ -112,9 +113,65 @@ ACannonball::ACannonball()
 	SetMinNetUpdateFrequency(30.0f);
 }
 
+void ACannonball::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ACannonball, LaunchingShip);
+}
+
+void ACannonball::PreInitializeComponents()
+{
+	Super::PreInitializeComponents();
+	// Blueprint defaults can re-enable collision before the launching ship arrives.
+	SphereCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+}
+
+void ACannonball::OnRep_LaunchingShip()
+{
+	ConfigureProjectileCollision();
+	LogCollisionDiagnostics(TEXT("LAUNCH-SHIP-REPLICATED"));
+}
+
+void ACannonball::ConfigureProjectileCollision()
+{
+	if (SphereCollision && LaunchingShip)
+	{
+		const bool bEnemyProjectile = LaunchingShip->ActorHasTag(TEXT("Enemy"));
+		SphereCollision->SetCollisionProfileName(
+			bEnemyProjectile ? TEXT("EnemyCannonball") : TEXT("PlayerCannonball"),
+			false);
+		SphereCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		SphereCollision->SetCollisionObjectType(
+			bEnemyProjectile ? ECC_GameTraceChannel3 : ECC_GameTraceChannel2);
+		SphereCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
+		// WaterBody is WorldStatic and must keep generating the server-authoritative
+		// actor overlap used by URippleSubsystem.
+		SphereCollision->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Overlap);
+		SphereCollision->SetCollisionResponseToChannel(ECC_ShipDamage, ECR_Block);
+		SphereCollision->SetCollisionResponseToChannel(ECC_EnemyShipObstacle, ECR_Block);
+		SphereCollision->SetGenerateOverlapEvents(true);
+		SphereCollision->SetNotifyRigidBodyCollision(true);
+
+		SphereCollision->IgnoreActorWhenMoving(LaunchingShip, true);
+		if (AActor* OwnerActor = GetOwner())
+		{
+			SphereCollision->IgnoreActorWhenMoving(OwnerActor, true);
+		}
+		if (APawn* InstigatorPawn = GetInstigator())
+		{
+			SphereCollision->IgnoreActorWhenMoving(InstigatorPawn, true);
+		}
+
+		SphereCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	}
+}
+
 void ACannonball::BeginPlay()
 {
 	Super::BeginPlay();
+	// Reapply after Blueprint BeginPlay, without resetting replicated flight velocity.
+	SphereCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ConfigureProjectileCollision();
 	PreviousDiagnosticLocation = GetActorLocation();
 	LogCollisionDiagnostics(TEXT("BEGIN"));
 	PreviousProjectileLocation = GetActorLocation();
@@ -257,36 +314,7 @@ void ACannonball::InitializeProjectile(
 	LaunchingShip = InLaunchingShip;
 	DamageAmount = InDamage;
 
-	if (SphereCollision && InLaunchingShip)
-	{
-		const bool bEnemyProjectile = InLaunchingShip->ActorHasTag(TEXT("Enemy"));
-		SphereCollision->SetCollisionProfileName(
-			bEnemyProjectile ? TEXT("EnemyCannonball") : TEXT("PlayerCannonball"),
-			false);
-		SphereCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		SphereCollision->SetCollisionObjectType(
-			bEnemyProjectile ? ECC_GameTraceChannel3 : ECC_GameTraceChannel2);
-		SphereCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
-		// WaterBody is WorldStatic and must keep generating the server-authoritative
-		// actor overlap used by URippleSubsystem.
-		SphereCollision->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Overlap);
-		SphereCollision->SetCollisionResponseToChannel(ECC_ShipDamage, ECR_Block);
-		SphereCollision->SetCollisionResponseToChannel(ECC_EnemyShipObstacle, ECR_Block);
-		SphereCollision->SetGenerateOverlapEvents(true);
-		SphereCollision->SetNotifyRigidBodyCollision(true);
-
-		SphereCollision->IgnoreActorWhenMoving(InLaunchingShip, true);
-		if (AActor* OwnerActor = GetOwner())
-		{
-			SphereCollision->IgnoreActorWhenMoving(OwnerActor, true);
-		}
-		if (APawn* InstigatorPawn = GetInstigator())
-		{
-			SphereCollision->IgnoreActorWhenMoving(InstigatorPawn, true);
-		}
-
-		SphereCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	}
+	ConfigureProjectileCollision();
 
 	if (ProjectileMovement)
 	{

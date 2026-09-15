@@ -22,8 +22,10 @@ class WATERANDSHIP_API ACannonball : public AActor
 	
 public:	
 	ACannonball();
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
+	virtual void PreInitializeComponents() override;
 	virtual void BeginPlay() override;
 	virtual void PostNetReceiveLocationAndRotation() override;
 	virtual void PostNetReceiveVelocity(const FVector& NewVelocity) override;
@@ -163,12 +165,15 @@ protected:
 		bool bIsWaterImpact);
 
 private:
+	UFUNCTION()
+	void OnRep_LaunchingShip();
+	void ConfigureProjectileCollision();
 	void LogCollisionDiagnostics(const TCHAR* Event, AActor* OtherActor = nullptr, UPrimitiveComponent* OtherComp = nullptr) const;
 	FVector PreviousDiagnosticLocation = FVector::ZeroVector;
 	TSet<TWeakObjectPtr<AShip>> DiagnosticNearbyShips;
 
 	// ---- State ----
-	UPROPERTY()
+	UPROPERTY(ReplicatedUsing = OnRep_LaunchingShip)
 	TObjectPtr<AShip> LaunchingShip = nullptr;
 
 	bool bHasHitWater = false;
