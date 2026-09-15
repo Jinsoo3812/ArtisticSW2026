@@ -9,6 +9,8 @@
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "AbilitySystemComponent.h"
+#include "BaseGameplayTags.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSwimmingCabinMaskSamplingTest,
 	"ArtisticSW.Swimming.CabinMaskSampling",
@@ -83,12 +85,43 @@ bool FSwimmingCabinFeetIntegrationTest::RunTest(const FString& Parameters)
 	Character->SetActorLocation(WorldFeet + FVector(0, 0, 200));
 	USwimmingComponent* Swim = NewObject<USwimmingComponent>(Character);
 	Swim->RegisterComponent();
+	UAbilitySystemComponent* ASC = NewObject<UAbilitySystemComponent>(Character);
+	ASC->RegisterComponent();
 	Character->DispatchBeginPlay();
 	UCharacterMovementComponent* Movement = Character->GetCharacterMovement();
 	Movement->SetMovementMode(MOVE_Custom, uint8(ECustomMovementMode::CMOVE_Swimming));
+	Movement->Velocity.Z = 200.0f;
+	Swim->SetVerticalSwimInput(-1.0f);
+	ASC->AddLooseGameplayTag(State_Swimming);
 	Swim->CheckWaterTransitions(0);
 	TestFalse(TEXT("Feet entering cabin stops existing swimming without floor contact"), Swim->IsCustomSwimming());
 	TestFalse(TEXT("Cabin does not impose shallow water slowdown"), Swim->IsInShallowWater());
+	TestFalse(TEXT("Cabin clears swimming gameplay tag"), ASC->HasMatchingGameplayTag(State_Swimming));
+	TestFalse(TEXT("Cabin clears vertical swimming input"), Swim->HasVerticalSwimInput());
+	TestTrue(TEXT("Cabin clears upward buoyancy velocity"), Movement->Velocity.Z <= 0.0f);
+
+	const int32 BottomIndex = Data->OccupancyVoxels.Find(255);
+	if (!TestTrue(TEXT("Mask contains a lower occupied voxel"), BottomIndex != INDEX_NONE))
+	{
+		return false;
+	}
+	const FVector BottomCell(BottomIndex % R.X + 0.5,
+		(BottomIndex / R.X) % R.Y + 0.5, BottomIndex / (R.X * R.Y) + 0.5);
+	const FVector LocalCenter = Data->LocalBoundsMin + BottomCell / FVector(R)
+		* (Data->LocalBoundsMax - Data->LocalBoundsMin);
+	const FVector WorldCenter = Transform.TransformPosition(LocalCenter);
+	const float HalfHeightBelowBounds = WorldCenter.Z - Transform.TransformPosition(
+		FVector(LocalCenter.X, LocalCenter.Y, Data->LocalBoundsMin.Z)).Z + 10.0f;
+	Character->GetCapsuleComponent()->SetCapsuleSize(34, FMath::Max(200.0f, HalfHeightBelowBounds));
+	Character->SetActorLocation(WorldCenter);
+	const FVector WorldFeetBelowMask = WorldCenter - FVector(0, 0,
+		Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+	TestTrue(TEXT("Capsule center is inside the cabin mask"), Cabin->ContainsWorldPosition(WorldCenter));
+	TestFalse(TEXT("Capsule feet are outside the cabin mask"), Cabin->ContainsWorldPosition(WorldFeetBelowMask));
+	Movement->SetMovementMode(MOVE_Custom, uint8(ECustomMovementMode::CMOVE_Swimming));
+	Swim->CheckWaterTransitions(0);
+	TestFalse(TEXT("Center inside cabin blocks swimming even when feet are outside"), Swim->IsCustomSwimming());
+
 	Cabin->bWaterCullEnabled = false;
 	TestFalse(TEXT("Disabled cabin does not protect feet"),
 		USWCabinWaterCullComponent::IsWorldPositionInsideAnyCabin(World, WorldFeet));

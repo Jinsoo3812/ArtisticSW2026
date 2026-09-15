@@ -143,7 +143,9 @@ private:
 
 	// Initialize overlapping water bodies on startup
 	void InitializeOverlaps();
-	bool IsFeetInsideCabinWaterCull() const;
+	bool IsInsideCabinWaterCull(bool* bOutFeetInside = nullptr, bool* bOutCenterInside = nullptr) const;
+	void DrawCabinWaterCullDebug(bool bInsideCabin, bool bFeetInside, bool bCenterInside) const;
+	void TraceCabinWaterCull(bool bInsideCabin, bool bFeetInside, bool bCenterInside);
 	void ResetSwimmingStateInsideCabin();
 
 protected:
@@ -275,6 +277,8 @@ private:
 
 	UPROPERTY(Transient)
 	float LastLoggedTime = -1.0f;
+
+	float LastCabinSwimTraceTime = -1.0f;
 
 	UPROPERTY(Transient)
 	float WaterQueryFailureElapsed = 0.0f;
