@@ -52,7 +52,9 @@ void UGA_BasicAttack::ApplyCooldown(
 	const FGameplayAbilityActivationInfo ActivationInfo) const
 {
 	UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-	if (!ASC || NativeCooldownTags.IsEmpty() || AttackCooldownDuration <= 0.0f)
+	const ABaseEnemy* Enemy = ActorInfo ? Cast<ABaseEnemy>(ActorInfo->AvatarActor.Get()) : nullptr;
+	const float Duration = Enemy ? Enemy->GetBalancedAttackInterval(AttackCooldownDuration) : AttackCooldownDuration;
+	if (!ASC || NativeCooldownTags.IsEmpty() || Duration <= 0.0f)
 	{
 		return;
 	}
@@ -68,7 +70,7 @@ void UGA_BasicAttack::ApplyCooldown(
 		return;
 	}
 
-	SpecHandle.Data->SetDuration(AttackCooldownDuration, true);
+	SpecHandle.Data->SetDuration(Duration, true);
 	SpecHandle.Data->DynamicGrantedTags.AppendTags(NativeCooldownTags);
 	ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 }
@@ -82,7 +84,7 @@ void UGA_BasicAttack::ActivateAbility(
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
 	ABaseEnemy* EnemyOwner = Cast<ABaseEnemy>(GetAvatarActorFromActorInfo());
-	if (!EnemyOwner)
+	if (!EnemyOwner || !EnemyOwner->IsBalanceAttackReady() || !EnemyOwner->HasBalancedMeleeAttackSlot())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;

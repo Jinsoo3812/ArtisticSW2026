@@ -13,6 +13,7 @@
 // Enemy Folder
 #include "AI/BaseAIController.h"
 #include "GAS/EnemyAttributeSet.h"
+#include "EngineUtils.h"
 #include "WaveSystem/Route/EnemyWaypointMoveComponent.h"
 
 // Unreal
@@ -100,6 +101,12 @@ void ABaseEnemy::BeginPlay()
 	if (AbilitySystemComponent)
 	{
 		AbilitySystemComponent->InitAbilityActorInfo(this, this);
+		if (HasAuthority() && !ApplyBaseStatsForSpawn())
+		{
+			SetActorEnableCollision(false);
+			Destroy();
+			return;
+		}
 		BindMovementSpeedAttribute();
 		if (HasAuthority())
 		{
@@ -441,11 +448,122 @@ void ABaseEnemy::InitializeFromWaveSpawn(float HealthMultiplier, float SpeedMult
 		return;
 	}
 
-	SpawnMovementSpeedMultiplier = FMath::Max(0.01f, SpeedMultiplier);
-	SetBaseMovementSpeed(BaseMovementSpeed);
+	// Legacy BP callers may configure before BeginPlay. The wave manager now does so
+	// through ConfigureSpawnBalance before FinishSpawning. Never heal a live enemy here.
+	if (!bBalanceApplied)
+	{
+		ConfigureSpawnBalance(SpawnStatsRow, HealthMultiplier, SpeedMultiplier);
+	}
+}
 
-	// 이후 AttributeSet 또는 GameplayEffect를 사용하여
-	// HealthMultiplier와 EnemyLevel을 실제 스탯에 반영
+bool ABaseEnemy::ConfigureSpawnBalance(const FDataTableRowHandle& Row, float HealthMultiplier, float SpeedMultiplier)
+{
+	if (!HasAuthority() || bBalanceApplied || !FMath::IsFinite(HealthMultiplier) || HealthMultiplier <= 0.f
+		|| !FMath::IsFinite(SpeedMultiplier) || SpeedMultiplier <= 0.f)
+	{
+		return false;
+	}
+	SpawnStatsRow = Row;
+	SpawnHealthMultiplier = HealthMultiplier;
+	SpawnMovementSpeedMultiplier = SpeedMultiplier;
+	return true;
+}
+
+void ABaseEnemy::ResetBalanceForReuse()
+{
+	if (!HasAuthority()) return;
+	bBalanceApplied = false;
+	bBalanceReady = false;
+	SpawnStatsRow = FDataTableRowHandle();
+	SpawnHealthMultiplier = 1.f;
+	SpawnMovementSpeedMultiplier = 1.f;
+	BalancedAttackInterval = 0.f;
+	BalancedMeleeAttackerLimit = 0;
+	BalanceAttackReadyTime = 0.;
+}
+
+bool ABaseEnemy::ApplyBaseStatsForSpawn()
+{
+	if (!HasAuthority() || !AbilitySystemComponent || !BasicAttributes) return false;
+	if (bBalanceApplied) return bBalanceReady;
+	const FDataTableRowHandle& Selection = SpawnStatsRow.IsNull() ? DefaultStatsRow : SpawnStatsRow;
+	FEnemyBaseStatsRow Values;
+	FEnemyCombatBalanceRow Combat;
+	if (!Selection.IsNull())
+	{
+		const auto* Row = Selection.GetRow<FEnemyBaseStatsRow>(TEXT("Enemy spawn balance"));
+		if (!Row || !Row->IsValid())
+		{
+			UE_LOG(LogTemp, Error, TEXT("[EnemyBalance] Invalid stats: Enemy=%s Row=%s"), *GetName(), *Selection.RowName.ToString());
+			return false;
+		}
+		Values = *Row;
+		if (!Values.CombatSettings.IsNull())
+		{
+			const auto* CombatRow = Values.CombatSettings.GetRow<FEnemyCombatBalanceRow>(TEXT("Enemy combat balance"));
+			if (!CombatRow || !CombatRow->IsValid())
+			{
+				UE_LOG(LogTemp, Error, TEXT("[EnemyBalance] Invalid combat row for %s"), *GetName());
+				return false;
+			}
+			Combat = *CombatRow;
+		}
+	}
+	else
+	{
+		// Existing unconfigured enemies retain their authored defaults.
+		Values.MaxHealth = BasicAttributes->GetMaxHealth();
+		Values.Strength = AbilitySystemComponent->GetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute());
+		Values.MoveSpeedMultiplier = BasicAttributes->GetMoveSpeedMultiplier();
+		Values.AttackSpeedMultiplier = BasicAttributes->GetAttackSpeedMultiplier();
+	}
+	const float MaxHealth = Values.MaxHealth * SpawnHealthMultiplier;
+	if (!FMath::IsFinite(MaxHealth) || MaxHealth <= 0.f) return false;
+	AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute(), MaxHealth);
+	AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute(), Values.Strength);
+	AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMoveSpeedMultiplierAttribute(), Values.MoveSpeedMultiplier);
+	AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute(), Values.AttackSpeedMultiplier);
+	AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), MaxHealth);
+	BalancedAttackInterval = Combat.AttackInterval;
+	BalancedMeleeAttackerLimit = Combat.MaxSimultaneousMeleeAttackers;
+	BalanceAttackReadyTime = GetWorld()->GetTimeSeconds() + Combat.InitialAttackDelay;
+	bBalanceReady = bBalanceApplied = true;
+	SetBaseMovementSpeed(BaseMovementSpeed);
+	UE_LOG(LogTemp, Log, TEXT("[EnemyBalance] Enemy=%s Row=%s MaxHealth=%.2f StrengthBase=%.2f Interval=%.2f"),
+		*GetName(), *Selection.RowName.ToString(), MaxHealth, Values.Strength, BalancedAttackInterval);
+	return true;
+}
+
+float ABaseEnemy::GetBalancedAttackInterval(float Fallback) const
+{
+	return BalancedAttackInterval > 0.f ? BalancedAttackInterval : Fallback;
+}
+
+bool ABaseEnemy::IsBalanceAttackReady() const
+{
+	const bool bLegacyUnconfigured = DefaultStatsRow.IsNull() && SpawnStatsRow.IsNull();
+	return (bBalanceReady || bLegacyUnconfigured) && GetWorld() && GetWorld()->GetTimeSeconds() >= BalanceAttackReadyTime;
+}
+
+bool ABaseEnemy::HasBalancedMeleeAttackSlot() const
+{
+	if (BalancedMeleeAttackerLimit <= 0) return true;
+	const ABaseAIController* OwningController = Cast<ABaseAIController>(GetController());
+	const AActor* Target = OwningController ? OwningController->GetCombatTarget() : nullptr;
+	if (!Target) return false;
+	int32 Attackers = 0;
+	// Evaluated only at attack start on the server, never per tick. Each committed
+	// attack owns State.Attacking until its normal end or cancellation.
+	for (TActorIterator<ABaseEnemy> It(GetWorld()); It; ++It)
+	{
+		const ABaseEnemy* Other = *It;
+		const ABaseAIController* OtherController = Cast<ABaseAIController>(Other->GetController());
+		if (Other != this && Other->BalancedMeleeAttackerLimit > 0 && OtherController
+			&& OtherController->GetCombatTarget() == Target && Other->GetAbilitySystemComponent()
+			&& Other->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Attacking)
+			&& ++Attackers >= BalancedMeleeAttackerLimit) return false;
+	}
+	return true;
 }
 
 void ABaseEnemy::InitializeEnemyDropData()

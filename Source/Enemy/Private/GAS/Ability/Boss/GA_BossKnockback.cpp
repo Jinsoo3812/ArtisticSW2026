@@ -34,7 +34,7 @@ void UGA_BossKnockback::ActivateAbility(
 		return;
 	}
 
-	if (!PrepareStrengthAttack(AttackCoefficient)) { FinishKnockback(true); return; }
+	if (!PrepareStrengthAttack(Boss->GetBalancedBossAttackCoefficient(AttackCoefficient, false))) { FinishKnockback(true); return; }
 	if (AttackMontage)
 	{
 		MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(

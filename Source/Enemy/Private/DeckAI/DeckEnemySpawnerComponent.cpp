@@ -82,6 +82,7 @@ bool UDeckEnemySpawnerComponent::ValidateAuthoredSpawnSlot(
 	}
 
 	OutSlot.EnemyClass = AuthoredSlot.EnemyClass;
+	OutSlot.StatsRow = AuthoredSlot.StatsRow;
 	OutSlot.SpawnPointId = PointId;
 	return true;
 }
@@ -269,7 +270,9 @@ void UDeckEnemySpawnerComponent::InitializePool()
 		}
 
 		PooledEnemy->PrepareForPool();
+		PooledEnemy->ConfigureSpawnBalance(Slot.StatsRow);
 		PooledEnemy->FinishSpawning(InitialTransform);
+		if (!IsValid(PooledEnemy)) continue;
 		PooledEnemy->SetHostShip(Host);
 		PooledEnemy->DeactivateToPool();
 		EnemyPool.Add(PooledEnemy);
@@ -428,6 +431,12 @@ void UDeckEnemySpawnerComponent::DeployNextEnemy()
 	}
 
 	ADeckEnemy* ActivatedEnemy = nullptr;
+	if (!Enemy->ConfigureSpawnBalance(Slot.StatsRow))
+	{
+		ReleasePointReservation(Reservation);
+		HandleDeploymentFailure();
+		return;
+	}
 	if (!ActivateSpecificEnemyAtReservation(
 		*Enemy, Reservation, DeploymentInitialTarget.Get(), ActivatedEnemy))
 	{
@@ -1067,15 +1076,22 @@ bool UDeckEnemySpawnerComponent::ActivateEnemyAtPoint(
 bool UDeckEnemySpawnerComponent::ActivateEnemyAtReservation(
 	FDeckPointReservation& Reservation,
 	AActor* InitialTarget,
-	ADeckEnemy*& OutEnemy)
+	ADeckEnemy*& OutEnemy,
+	TSubclassOf<ADeckEnemy> RequiredClass,
+	const FDataTableRowHandle& StatsRow)
 {
 	OutEnemy = nullptr;
 	if (EnemyPool.IsEmpty())
 	{
 		InitializePool();
 	}
-	ADeckEnemy* Enemy = FindInactiveEnemy(nullptr);
+	ADeckEnemy* Enemy = FindInactiveEnemy(RequiredClass);
 	if (!Enemy)
+	{
+		ReleasePointReservation(Reservation);
+		return false;
+	}
+	if (!Enemy->ConfigureSpawnBalance(StatsRow))
 	{
 		ReleasePointReservation(Reservation);
 		return false;

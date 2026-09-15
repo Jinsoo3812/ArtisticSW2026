@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Engine/DataTable.h"
 #include "DeckAI/DeckPointReservation.h"
 #include "DeckEnemySpawnerComponent.generated.h"
 
@@ -18,6 +19,8 @@ struct ENEMY_API FDeckEnemySpawnSlot
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck Enemy Spawn")
 	TSubclassOf<ADeckEnemy> EnemyClass;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck Enemy Spawn", meta = (RowType = "/Script/Enemy.EnemyBaseStatsRow"))
+	FDataTableRowHandle StatsRow;
 
 	/** Exact WaypointId registered on the owning EnemyShip. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck Enemy Spawn",
@@ -117,7 +120,9 @@ public:
 	bool ActivateEnemyAtReservation(
 		FDeckPointReservation& Reservation,
 		AActor* InitialTarget,
-		ADeckEnemy*& OutEnemy);
+		ADeckEnemy*& OutEnemy,
+		TSubclassOf<ADeckEnemy> RequiredClass = nullptr,
+		const FDataTableRowHandle& StatsRow = FDataTableRowHandle());
 
 protected:
 	/** Enables the authored SpawnPlan. */
@@ -151,6 +156,7 @@ private:
 	struct FDeckEnemyDeploymentSlot
 	{
 		TSubclassOf<ADeckEnemy> EnemyClass;
+		FDataTableRowHandle StatsRow;
 		int32 SpawnPointId = INDEX_NONE;
 	};
 

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Engine/EngineTypes.h"
+#include "Engine/DataTable.h"
 #include "BossEncounterComponent.generated.h"
 
 class AEnemyShip;
@@ -116,6 +117,8 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Encounter")
 	TSubclassOf<AShipBossEnemy> BossClass;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter", meta = (RowType = "/Script/Enemy.EnemyBaseStatsRow"))
+	FDataTableRowHandle BossStatsRow;
 
 	/** Exact WaypointId registered on the owning EnemyShip. No alternate point is selected on failure. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter", meta = (ClampMin = "0"))

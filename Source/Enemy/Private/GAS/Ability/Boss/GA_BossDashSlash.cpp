@@ -105,7 +105,9 @@ void UGA_BossDashSlash::ActivateAbility(
 		return;
 	}
 
-	if (!PrepareStrengthAttack(AttackCoefficient)) { FinishDash(true); return; }
+	const AShipBossEnemy* BalanceBoss = GetBossAvatar();
+	const float BalancedCoefficient = BalanceBoss ? BalanceBoss->GetBalancedBossAttackCoefficient(AttackCoefficient, true) : AttackCoefficient;
+	if (!PrepareStrengthAttack(BalancedCoefficient)) { FinishDash(true); return; }
 	MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
 		this,
 		TEXT("BossDashSlashMontage"),
@@ -206,7 +208,10 @@ void UGA_BossDashSlash::BeginWindupHold()
 		FinishDash(true);
 		return;
 	}
-	if (MontageConfig.WindupHoldDuration <= KINDA_SMALL_NUMBER)
+	const float LeadIn = GetSectionDurationSeconds(MontageConfig.WindupEnterSectionName);
+	const float HoldDuration = FMath::Max(0.f,
+		Boss->GetBalancedTelegraphDuration(LeadIn + MontageConfig.WindupHoldDuration) - LeadIn);
+	if (HoldDuration <= KINDA_SMALL_NUMBER)
 	{
 		ReleaseWindupAndBeginDash();
 		return;
@@ -216,7 +221,7 @@ void UGA_BossDashSlash::BeginWindupHold()
 		WindupHoldTimerHandle,
 		this,
 		&UGA_BossDashSlash::ReleaseWindupAndBeginDash,
-		MontageConfig.WindupHoldDuration,
+		HoldDuration,
 		false);
 }
 

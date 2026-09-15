@@ -36,7 +36,7 @@ void UGA_RangedEnemyAttack::ActivateAbility(
 	bFinishingAttack = false;
 	bOwnsServerPoseRefresh = false;
 
-	if (!CachedEnemy)
+	if (!CachedEnemy || !CachedEnemy->IsBalanceAttackReady())
 	{
 		FinishAttack(true);
 		return;

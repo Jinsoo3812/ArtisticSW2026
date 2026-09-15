@@ -8,6 +8,7 @@
 #include "BaseCharacter.h"
 #include "WaveSystem/Data/WaveSpawnTypes.h"
 #include "EnemyDropData.h"
+#include "EnemyBalanceData.h"
 #include "StoryFacadeSubsystem.h"
 
 #include "BaseEnemy.generated.h"
@@ -36,6 +37,34 @@ class ENEMY_API ABaseEnemy : public ABaseCharacter
 
 public:
 	ABaseEnemy();
+
+	/** Empty selection preserves legacy defaults; an explicitly invalid selection fails initialization. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Balance",
+		meta = (RowType = "/Script/Enemy.EnemyBaseStatsRow"))
+	FDataTableRowHandle DefaultStatsRow;
+
+	/** Call before FinishSpawning, or while a deck enemy is inactive. Empty means use the BP default. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy|Balance")
+	bool ConfigureSpawnBalance(const FDataTableRowHandle& Row, float HealthMultiplier = 1.f, float SpeedMultiplier = 1.f);
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Balance")
+	bool IsBalanceReady() const { return bBalanceReady; }
+	float GetBalancedAttackInterval(float Fallback) const;
+	bool IsBalanceAttackReady() const;
+	bool HasBalancedMeleeAttackSlot() const;
+	void ResetBalanceForReuse();
+	bool ApplyBaseStatsForSpawn();
+
+protected:
+	UPROPERTY(Transient) FDataTableRowHandle SpawnStatsRow;
+	bool bBalanceReady = false;
+	bool bBalanceApplied = false;
+	float SpawnHealthMultiplier = 1.f;
+	float BalancedAttackInterval = 0.f;
+	int32 BalancedMeleeAttackerLimit = 0;
+	double BalanceAttackReadyTime = 0.;
+
+public:
 	virtual bool IsEnemyCharacterForEffects() const override { return true; }
 	
 	/**

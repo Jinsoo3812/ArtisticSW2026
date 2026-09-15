@@ -18,6 +18,8 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
+#include "DeckAI/DeckEnemySpawnerComponent.h"
+#include "BaseAttributeSet.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -74,6 +76,34 @@ void AShipBossEnemy::BeginPlay()
 		? GetCapsuleComponent()->GetCollisionEnabled()
 		: ECollisionEnabled::QueryAndPhysics;
 	Super::BeginPlay();
+	if (HasAuthority() && !EncounterBalanceRow.IsNull())
+	{
+		const auto* Row = EncounterBalanceRow.GetRow<FEnemyEncounterBalanceRow>(TEXT("Boss encounter balance"));
+		bool bValid = Row && Row->SummonCount > 0 && Row->SummonAliveLimit > 0
+			&& FMath::IsFinite(Row->StrongAttackDamage) && Row->StrongAttackDamage > 0.f
+			&& FMath::IsFinite(Row->MajorAttackDamage) && Row->MajorAttackDamage > 0.f
+			&& FMath::IsFinite(Row->MajorAttackTelegraphSeconds) && Row->MajorAttackTelegraphSeconds >= 0.f
+			&& SummonedEnemyClass && !Row->SummonStats.IsNull();
+		if (Row)
+		{
+			float Previous = 1.f;
+			for (float Fraction : Row->SummonHealthFractions)
+			{
+				bValid &= FMath::IsFinite(Fraction) && Fraction > 0.f && Fraction < Previous;
+				Previous = Fraction;
+			}
+		}
+		if (!bValid)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[EnemyBalance] Invalid boss encounter row or missing summon class: %s"), *GetName());
+			Destroy();
+			return;
+		}
+		EncounterBalance = *Row;
+		bUseEncounterBalance = true;
+		MaxSummonedDeckEnemies = Row->SummonAliveLimit;
+		GetHealthComponent()->OnHealthChanged.AddUniqueDynamic(this, &AShipBossEnemy::HandleBalanceHealthChanged);
+	}
 
 	BindHostShip();
 	GetHealthComponent()->OnConfirmedDamage.AddUObject(this, &AShipBossEnemy::HandleConfirmedDamage);
@@ -276,6 +306,7 @@ bool AShipBossEnemy::CanMoveOnDeck() const
 
 bool AShipBossEnemy::CanSummonDeckEnemy() const
 {
+	if (bUseEncounterBalance && PendingBalanceSummons <= 0) return false;
 	if (!HasAuthority() || bDeathHandled || !IsValid(HostShip) || !CanEngageActor(GetBossCombatTarget()))
 	{
 		return false;
@@ -298,7 +329,7 @@ bool AShipBossEnemy::CanSummonDeckEnemy() const
 	return ActiveCount < FMath::Max(1, MaxSummonedDeckEnemies);
 }
 
-bool AShipBossEnemy::TrySummonDeckEnemy(ADeckEnemy*& OutEnemy)
+bool AShipBossEnemy::SummonOneDeckEnemy(ADeckEnemy*& OutEnemy)
 {
 	OutEnemy = nullptr;
 	if (!CanSummonDeckEnemy())
@@ -308,7 +339,8 @@ bool AShipBossEnemy::TrySummonDeckEnemy(ADeckEnemy*& OutEnemy)
 
 	AActor* Target = GetBossCombatTarget();
 	UWorld* World = GetWorld();
-	NextSummonAllowedTime = World->GetTimeSeconds() + FMath::Max(0.0f, SummonCooldown);
+	if (!bUseEncounterBalance)
+		NextSummonAllowedTime = World->GetTimeSeconds() + FMath::Max(0.0f, SummonCooldown);
 	SummonedDeckEnemies.RemoveAll([](const TWeakObjectPtr<ADeckEnemy>& EnemyPtr)
 	{
 		const ADeckEnemy* Enemy = EnemyPtr.Get();
@@ -326,13 +358,61 @@ bool AShipBossEnemy::TrySummonDeckEnemy(ADeckEnemy*& OutEnemy)
 
 	FDeckPointReservation Reservation;
 	if (!HostShip->TryReserveDeckEnemySpawnPoint(Request, Reservation)
-		|| !HostShip->ActivateDeckEnemyAtReservation(Reservation, Target, OutEnemy))
+		|| !HostShip->GetDeckEnemySpawnerComponent()->ActivateEnemyAtReservation(Reservation, Target, OutEnemy,
+			SummonedEnemyClass, bUseEncounterBalance ? EncounterBalance.SummonStats : FDataTableRowHandle()))
 	{
 		HostShip->ReleaseDeckPointReservation(Reservation);
 		return false;
 	}
 	SummonedDeckEnemies.Add(OutEnemy);
 	return true;
+}
+
+void AShipBossEnemy::HandleBalanceHealthChanged(UBaseHealthComponent* Health, float OldHealth, float NewHealth, AActor*)
+{
+	if (!HasAuthority() || !bUseEncounterBalance || NewHealth <= 0.f) return;
+	for (int32 Index = 0; Index < EncounterBalance.SummonHealthFractions.Num(); ++Index)
+	{
+		const float Threshold = Health->GetMaxHealth() * EncounterBalance.SummonHealthFractions[Index];
+		if (!ConsumedSummonThresholds.Contains(Index) && OldHealth > Threshold && NewHealth <= Threshold)
+		{
+			ConsumedSummonThresholds.Add(Index);
+			int32 Alive = 0;
+			for (const auto& Ptr : SummonedDeckEnemies)
+			{
+				const ADeckEnemy* Enemy = Ptr.Get();
+				if (Enemy && Enemy->IsPoolActive() && Enemy->GetHealthComponent() && !Enemy->GetHealthComponent()->IsDead()) ++Alive;
+			}
+			PendingBalanceSummons = FMath::Clamp(PendingBalanceSummons + EncounterBalance.SummonCount,
+				0, FMath::Max(0, MaxSummonedDeckEnemies - Alive));
+			UE_LOG(LogTemp, Log, TEXT("[EnemyBalance] Boss=%s Threshold=%.2f PendingSummons=%d"),
+				*GetName(), EncounterBalance.SummonHealthFractions[Index], PendingBalanceSummons);
+		}
+	}
+}
+
+bool AShipBossEnemy::TrySummonDeckEnemy(ADeckEnemy*& OutEnemy)
+{
+	if (!bUseEncounterBalance) return SummonOneDeckEnemy(OutEnemy);
+	OutEnemy = nullptr;
+	if (!CanSummonDeckEnemy()) return false;
+	const int32 Requested = PendingBalanceSummons;
+	for (int32 Index = 0; Index < Requested; ++Index)
+	{
+		ADeckEnemy* Enemy = nullptr;
+		if (SummonOneDeckEnemy(Enemy)) OutEnemy = Enemy;
+	}
+	// An event is attempted once; unavailable pool slots/points do not refill later.
+	PendingBalanceSummons = 0;
+	return OutEnemy != nullptr;
+}
+
+float AShipBossEnemy::GetBalancedBossAttackCoefficient(float Fallback, bool bMajorAttack) const
+{
+	if (!bUseEncounterBalance || !GetAbilitySystemComponent()) return Fallback;
+	const float BaseStrength = GetAbilitySystemComponent()->GetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute());
+	const float TargetDamage = bMajorAttack ? EncounterBalance.MajorAttackDamage : EncounterBalance.StrongAttackDamage;
+	return BaseStrength > 0.f ? TargetDamage / BaseStrength : Fallback;
 }
 
 bool AShipBossEnemy::ResolvePointTransform(int32 PointId, FTransform& OutTransform) const

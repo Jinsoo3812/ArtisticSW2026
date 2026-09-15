@@ -19,6 +19,16 @@ class ENEMY_API AShipBossEnemy : public ABaseEnemy, public IDeckWaypointMovement
 
 public:
 	AShipBossEnemy();
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Balance", meta = (RowType = "/Script/Enemy.EnemyEncounterBalanceRow"))
+	FDataTableRowHandle EncounterBalanceRow;
+	/** Exact ranged BP class already allocated by the host's SpawnPlan. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Balance")
+	TSubclassOf<ADeckEnemy> SummonedEnemyClass;
+	float GetBalancedBossAttackCoefficient(float Fallback, bool bMajorAttack) const;
+	float GetBalancedTelegraphDuration(float Fallback) const
+	{
+		return bUseEncounterBalance ? EncounterBalance.MajorAttackTelegraphSeconds : Fallback;
+	}
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	/** Boss corpses remain animated; even legacy Blueprint ragdoll calls must not enable physics. */
@@ -98,6 +108,14 @@ public:
 	bool HasBossBasicAttackStartingAbility() const;
 
 protected:
+	friend class FEnemyBalanceSummonThresholdTest;
+	UFUNCTION()
+	void HandleBalanceHealthChanged(UBaseHealthComponent* Health, float OldHealth, float NewHealth, AActor* InstigatorActor);
+	bool SummonOneDeckEnemy(ADeckEnemy*& OutEnemy);
+	UPROPERTY(Transient) FEnemyEncounterBalanceRow EncounterBalance;
+	bool bUseEncounterBalance = false;
+	int32 PendingBalanceSummons = 0;
+	TSet<int32> ConsumedSummonThresholds;
 	friend class FBossStatusTriggersTest;
 	void HandleConfirmedDamage(float Damage, const FGameplayEffectContextHandle& Context, bool bPeriodic);
 	UFUNCTION()
