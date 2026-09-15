@@ -1945,6 +1945,8 @@ UMotionMatchingAnimInstance::UMotionMatchingAnimInstance()
     SprintLeanMultiplier = 1.0f;
     LeanAxisClamp = 1.0f;
     LeanInterpSpeed = 6.0f;
+
+    StateControllerTurnInPlaceDefaultBlendTime = 0.2f;
 }
 
 FAnimInstanceProxy* UMotionMatchingAnimInstance::CreateAnimInstanceProxy()
@@ -3871,11 +3873,18 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         PreviousState == EStateControllerPresentationState::TransitionToPivot;
     if (bStateChanged && bPreviousWasOneShot)
     {
-        if (bHasStateControllerOneShotOrientationWarpingAngle)
+        // TurnInPlace는 자체 Steering 회전을 수행하므로 이전 Stop 등의 Warping 각도를 일절 상속받지 않고 즉시 소멸
+        if (bHasStateControllerOneShotOrientationWarpingAngle &&
+            DesiredState != EStateControllerPresentationState::TurnInPlace)
         {
             // 애님 그래프의 Blend Poses by bool 블렌드 시간(0.2s) 동안 각도/알파 유지
             StateControllerPostOneShotWarpingRemainingTime = 0.25f;
             StateControllerPostOneShotWarpingAngle = StateControllerOneShotOrientationWarpingAngle;
+        }
+        else
+        {
+            StateControllerPostOneShotWarpingRemainingTime = 0.0f;
+            StateControllerPostOneShotWarpingAngle = 0.0f;
         }
 
         if (DesiredState == EStateControllerPresentationState::LocomotionLoop)
@@ -3885,6 +3894,11 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
             // 현재 대각선 이동 궤적에 맞춰 첫 프레임에 강제 재검색!
             bStateControllerForceMotionMatchingReselect = true;
         }
+    }
+    if (DesiredState == EStateControllerPresentationState::TurnInPlace)
+    {
+        StateControllerPostOneShotWarpingRemainingTime = 0.0f;
+        StateControllerPostOneShotWarpingAngle = 0.0f;
     }
 
     // Project_J policy: a change to another semantic turn bucket preempts the
@@ -4287,9 +4301,13 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
             const float DefaultBlendTime = DesiredState == EStateControllerPresentationState::TurnInPlace
                 ? StateControllerTurnInPlaceDefaultBlendTime
                 : 0.2f;
-            StateControllerSelectedAnimationBlendTime = StateControllerSelectedAnimationOutput.BlendTime > 0.0f
-                ? StateControllerSelectedAnimationOutput.BlendTime
-                : DefaultBlendTime;
+            StateControllerSelectedAnimationBlendTime = (DesiredState == EStateControllerPresentationState::TurnInPlace)
+                ? (StateControllerSelectedAnimationOutput.BlendTime > 0.0f
+                    ? FMath::Max(StateControllerSelectedAnimationOutput.BlendTime, StateControllerTurnInPlaceDefaultBlendTime)
+                    : StateControllerTurnInPlaceDefaultBlendTime)
+                : (StateControllerSelectedAnimationOutput.BlendTime > 0.0f
+                    ? StateControllerSelectedAnimationOutput.BlendTime
+                    : DefaultBlendTime);
             StateControllerSelectedAnimationStartTime = StateControllerSelectedAnimation
                 ? FMath::Clamp(StateControllerSelectedAnimationOutput.StartTime, 0.0f, StateControllerSelectedAnimation->GetPlayLength())
                 : 0.0f;
@@ -4442,14 +4460,17 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
          StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToLand ||
          StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToPivot);
 
-    const bool bInPostOneShotBlendOut = !bDirectStrafeOneShot && (StateControllerPostOneShotWarpingRemainingTime > 0.0f);
+    const bool bInPostOneShotBlendOut = !bDirectStrafeOneShot &&
+        (StateControllerPlaybackHoldState != EStateControllerPresentationState::TurnInPlace) &&
+        (StateControllerPostOneShotWarpingRemainingTime > 0.0f);
 
     float OrientationWarpingAngle = 0.0f;
     bool bHasOrientationWarpingDirection = false;
-    if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart)
+    if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart ||
+        StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace)
     {
-        // Start는 Chooser가 8방향 에셋(Forward, Backward, Left, Right, 대각 4방향)을 직접 관리하므로
-        // Orientation Warping을 사용하지 않고 순수 애니메이션으로 출발합니다.
+        // Start와 TurnInPlace는 전용 에셋 및 Root Yaw Steering을 사용하므로
+        // 직전 이동/정지의 Orientation Warping을 일절 적용하지 않습니다.
         OrientationWarpingAngle = 0.0f;
         bHasOrientationWarpingDirection = false;
     }
@@ -5220,3 +5241,5 @@ FVector UMotionMatchingAnimInstance::GetThreadSafeRelativeAccelerationAmount() c
 {
     return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.MovementData.RelativeAccelerationAmount;
 }
+
+

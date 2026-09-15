@@ -81,6 +81,17 @@
 - **적용 위치**:
   - `Locomotion` 캐시 포즈를 만들기 직전(Inertialization 후단) 또는 `Locomotion` 캐시 포즈 출력 후단에 `BS_Lean`을 **`Apply Additive`** 노드로 결합한다.
 
+### 1.5 제자리 회전 (Turn In Place) 및 Orientation Warping 격리 규칙
+
+제자리 회전(`Turn In Place`, TIP)은 자체 시퀀스 모션과 Root Yaw Steering 커브(`enable_turninplacesteering`)로 액터 회전을 제어하는 원샷 상태이다.
+
+- **Orientation Warping 격리 필수**:
+  - 이동/정지(`Start`, `Stop`, `Land`, `Pivot`)에서 사용하는 방향 보정용 `Orientation Warping` 및 원샷 종료 후 블렌드아웃용 `PostOneShotWarpingRemainingTime`(0.25s)이 TIP 상태로 누수되어서는 안 된다.
+  - 정지 직후 TIP 진입(`Stop -> TIP`) 시 잔류 워핑 타이머와 각도가 남아있으면, 첫 0.25초 동안 회전 모션이 반대로 비틀려 하체 지연/슬라이딩이 발생하고, 타이머 만료 순간 1프레임 만에 워핑 알파가 1.0에서 0.0으로 떨어지며 **골반과 루트 본이 50도 가량 뒤로 급격히 튕겨 돌아가는 스냅백(Snap-back)** 현상이 발생한다.
+  - 따라서 C++ `EvaluateStateControllerPlaybackHold`에서 `DesiredState == TurnInPlace` 진입 시 `PostOneShotWarpingRemainingTime`과 `Angle`을 즉시 `0.0f`로 소멸시키고, TIP 재생 중에는 `OrientationWarpingAlpha`가 항상 `0.0f`로 완전 차단된다.
+- **기본 블렌드 시간**:
+  - `StateControllerTurnInPlaceDefaultBlendTime = 0.2f`: Chooser row에서 BlendTime을 명시하지 않았을 때도 정지/아이들 포즈에서 회전 모션으로 넘어갈 때 덜컹거림 없이 부드러운 스켈레탈 크로스페이드를 제공한다.
+
 ---
 
 ## 2. 장비 상체 오버레이: WeaponPose

@@ -974,11 +974,10 @@ protected:
 
     /**
      * Fallback used when the TIP Chooser row intentionally leaves BlendTime
-     * unset.  Direct root-yaw application owns gameplay rotation, so this
-     * stays short enough that repeated 90/180 turns remain visually legible.
+     * unset. Provides a smooth crossfade from Idle into the TIP animation.
      */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "0.0", ClampMax = "0.25", Units = "s"))
-    float StateControllerTurnInPlaceDefaultBlendTime = 0.06f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "0.0", ClampMax = "0.5", Units = "s"))
+    float StateControllerTurnInPlaceDefaultBlendTime = 0.2f;
 
     /** Amount reserved at the end of a land one-shot before Motion Matching resumes. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Landing", meta = (ClampMin = "0.0", Units = "s"))
@@ -1282,3 +1281,4 @@ private:
     FVector PreviousHorizontalVelocity = FVector::ZeroVector;
     bool bHasPreviousHorizontalVelocity = false;
 };
+
