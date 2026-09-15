@@ -1000,9 +1000,6 @@ void FMotionMatchingAnimInstanceProxy::CacheNodes(UAnimInstance* InAnimInstance)
         }
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[CACHE_NODES] Found %d MotionMatching nodes, %d HistoryCollector nodes in %s"),
-        CachedMMNodes.Num(), CachedHistoryNodes.Num(), *GetNameSafe(InAnimInstance));
-
     bNodesCached = true;
 }
 
@@ -1388,34 +1385,6 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
         }
     }
 
-    for (FCachedMotionMatchingNodeInfo& Info : CachedMMNodes)
-    {
-        if (Info.NodeProperty)
-        {
-            const FAnimNode_MotionMatching* MMNode =
-                Info.NodeProperty->ContainerPtrToValuePtr<FAnimNode_MotionMatching>(AnimInstanceObj);
-            if (MMNode)
-            {
-                const FMotionMatchingState& MotionMatchingState = MMNode->GetMotionMatchingState();
-                const FPoseSearchBlueprintResult& Result = MotionMatchingState.SearchResult;
-                if (Result.SelectedAnim.Get() != Info.LastStrafeDebugSelectedAnim.Get())
-                {
-                    const FString StateStr = StaticEnum<EStateControllerPresentationState>()->GetNameStringByValue(
-                        static_cast<int64>(ThreadSafeData.StateController.PresentationState));
-                    UE_LOG(LogTemp, Warning,
-                        TEXT("[MM_CHOICE] MM selected asset -> %s (Prev: %s, Cost=%.2f, Time=%.2f) | State=%s | DB=%s"),
-                        *GetNameSafe(Result.SelectedAnim.Get()),
-                        *GetNameSafe(Info.LastStrafeDebugSelectedAnim.Get()),
-                        Result.SearchCost,
-                        Result.SelectedTime,
-                        *StateStr,
-                        *GetNameSafe(Result.SelectedDatabase.Get()));
-                    Info.LastStrafeDebugSelectedAnim = Result.SelectedAnim.Get();
-                }
-            }
-        }
-    }
-
     const int32 DebugLevel = CVarMotionMatchingDebugLogging.GetValueOnAnyThread();
     if (DebugLevel > 0 && AnimInstanceObj && AnimInstanceObj->GetWorld() && AnimInstanceObj->GetWorld()->IsGameWorld())
     {
@@ -1492,20 +1461,6 @@ void FMotionMatchingAnimInstanceProxy::UpdateAnimationNode_WithRoot(const FAnima
                     const bool bStrafeSelectionChanged =
                         Info.LastStrafeDebugSelectedAnim.Get() != Result.SelectedAnim.Get() ||
                         FMath::Abs(Info.LastStrafeDebugSelectedTime - Result.SelectedTime) > 0.35f;
-
-                    if (Result.SelectedAnim.Get() != Info.LastStrafeDebugSelectedAnim.Get())
-                    {
-                        const FString StateStr = StaticEnum<EStateControllerPresentationState>()->GetNameStringByValue(
-                            static_cast<int64>(ThreadSafeData.StateController.PresentationState));
-                        UE_LOG(LogTemp, Warning,
-                            TEXT("[MM_CHOICE] MM selected asset changed -> %s (Prev: %s, Cost=%.2f, Time=%.2f) | State=%s | DB=%s"),
-                            *GetNameSafe(Result.SelectedAnim.Get()),
-                            *GetNameSafe(Info.LastStrafeDebugSelectedAnim.Get()),
-                            Result.SearchCost,
-                            Result.SelectedTime,
-                            *StateStr,
-                            *GetNameSafe(Result.SelectedDatabase.Get()));
-                    }
 
                     if (StrafeMotionMatchingDebugLevel > 0 && bMovingStrafePhase &&
                         (bStrafeSelectionChanged || bStrafeMotionMatchingSampleDue))
@@ -1951,12 +1906,22 @@ UMotionMatchingAnimInstance::UMotionMatchingAnimInstance()
     bUseMultiThreadedAnimationUpdate = true;
 
     // Ground contact and slope adaptation settings
-    FootPlacementPlantSettingsDefault.DistanceToGround = 0.0f;
+    FootPlacementPlantSettingsDefault.DistanceToGround = 10.0f;
     FootPlacementPlantSettingsDefault.MaxExtensionRatio = 0.95f;
     FootPlacementPlantSettingsDefault.MinExtensionRatio = 0.1f;
-    FootPlacementPlantSettingsDefault.AnkleTwistReduction = 0.75f;
+    FootPlacementPlantSettingsDefault.AnkleTwistReduction = 0.9f;
+    FootPlacementPlantSettingsDefault.SpeedThreshold = 25.0f;
+    FootPlacementPlantSettingsDefault.UnplantRadius = 15.0f;
+    FootPlacementPlantSettingsDefault.UnplantAngle = 18.0f;
+    FootPlacementPlantSettingsDefault.ReplantRadiusRatio = 0.3f;
+    FootPlacementPlantSettingsDefault.ReplantAngleRatio = 0.4f;
 
-    FootPlacementPlantSettingsStops.DistanceToGround = 0.0f;
+    FootPlacementInterpolationSettingsDefault.FloorLinearStiffness = 600.0f;
+    FootPlacementInterpolationSettingsDefault.FloorAngularStiffness = 350.0f;
+    FootPlacementInterpolationSettingsDefault.UnplantLinearStiffness = 350.0f;
+    FootPlacementInterpolationSettingsDefault.UnplantAngularStiffness = 500.0f;
+
+    FootPlacementPlantSettingsStops.DistanceToGround = 10.0f;
     FootPlacementPlantSettingsStops.MaxExtensionRatio = 0.95f;
     FootPlacementPlantSettingsStops.MinExtensionRatio = 0.1f;
     FootPlacementPlantSettingsStops.AnkleTwistReduction = 0.75f;
@@ -1971,8 +1936,17 @@ UMotionMatchingAnimInstance::UMotionMatchingAnimInstance()
     FootPlacementInterpolationSettingsStops.FloorLinearStiffness = 1200.0f;
     FootPlacementInterpolationSettingsStops.FloorAngularStiffness = 650.0f;
 
-    TurnInPlaceFootPlacementAlpha = 1.0f;
+    TurnInPlaceFootPlacementAlpha = 0.0f;
+    LocomotionFootPlacementAlpha = 0.75f;
     LegIKInterpSpeed = 25.0f;
+
+    bEnableLean = true;
+    RunLeanMultiplier = 0.1f;
+    SprintLeanMultiplier = 1.0f;
+    LeanAxisClamp = 1.0f;
+    LeanInterpSpeed = 6.0f;
+
+    StateControllerTurnInPlaceDefaultBlendTime = 0.2f;
 }
 
 FAnimInstanceProxy* UMotionMatchingAnimInstance::CreateAnimInstanceProxy()
@@ -1983,6 +1957,11 @@ FAnimInstanceProxy* UMotionMatchingAnimInstance::CreateAnimInstanceProxy()
 void UMotionMatchingAnimInstance::NativeInitializeAnimation()
 {
     Super::NativeInitializeAnimation();
+
+    bHasPreviousHorizontalVelocity = false;
+    PreviousHorizontalVelocity = FVector::ZeroVector;
+    LeanAmount = FVector2D::ZeroVector;
+    RelativeAccelerationAmount = FVector::ZeroVector;
 
     CachedBasePlayer = Cast<ABasePlayer>(TryGetPawnOwner());
     if (CachedBasePlayer)
@@ -2464,6 +2443,79 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         ThreadSafeData.MovementData.LastNonZeroVelocity = ThreadSafeData.MovementData.Velocity;
     }
     ThreadSafeData.MovementData.Acceleration = CachedLocomotionStateComponent->Acceleration;
+
+    // Relative Acceleration and Additive Lean calculation
+    const FVector CurrentHorizontalVelocity = FVector(ThreadSafeData.MovementData.Velocity.X, ThreadSafeData.MovementData.Velocity.Y, 0.0f);
+    const float LeanGroundSpeed = CurrentHorizontalVelocity.Size();
+
+    if (bHasPreviousHorizontalVelocity && DeltaSeconds > UE_KINDA_SMALL_NUMBER)
+    {
+        const FVector VelocityAcceleration = (CurrentHorizontalVelocity - PreviousHorizontalVelocity) / DeltaSeconds;
+        const float VelocityAccelerationSq = VelocityAcceleration.SizeSquared();
+
+        const bool bIsDecelerating = (LeanGroundSpeed > 10.0f && VelocityAccelerationSq > UE_KINDA_SMALL_NUMBER)
+            ? (FVector::DotProduct(CurrentHorizontalVelocity.GetSafeNormal(), VelocityAcceleration.GetSafeNormal()) < -0.05f)
+            : false;
+
+        const UCharacterMovementComponent* MoveComp = CachedBasePlayer ? CachedBasePlayer->GetCharacterMovement() : nullptr;
+        const float MaxAccel = MoveComp ? FMath::Max(MoveComp->GetMaxAcceleration(), 1.0f) : 2048.0f;
+        const float BrakingDecel = MoveComp ? FMath::Max(MoveComp->BrakingDecelerationWalking, 1.0f) : 2048.0f;
+        const float Normalization = bIsDecelerating ? BrakingDecel : MaxAccel;
+
+        const FVector LocalVelocityAcceleration = CachedBasePlayer->GetActorTransform().InverseTransformVectorNoScale(VelocityAcceleration);
+
+        ThreadSafeData.MovementData.RelativeAccelerationAmount = FVector(
+            FMath::Clamp(LocalVelocityAcceleration.X / Normalization, -1.0f, 1.0f),
+            FMath::Clamp(LocalVelocityAcceleration.Y / Normalization, -1.0f, 1.0f),
+            0.0f);
+    }
+    else
+    {
+        ThreadSafeData.MovementData.RelativeAccelerationAmount = FVector::ZeroVector;
+    }
+
+    PreviousHorizontalVelocity = CurrentHorizontalVelocity;
+    bHasPreviousHorizontalVelocity = true;
+
+    const bool bInAir = CachedLocomotionStateComponent
+        ? (CachedLocomotionStateComponent->bIsInAir || CachedLocomotionStateComponent->CurrentState == ELocomotionState::InAir)
+        : false;
+
+    const bool bIsSprintingForLean = CachedLocomotionStateComponent
+        ? CachedLocomotionStateComponent->bIsSprinting
+        : false;
+
+    if (!bEnableLean || bInAir || LeanGroundSpeed <= 10.0f)
+    {
+        if (LeanInterpSpeed > 0.0f && DeltaSeconds > UE_KINDA_SMALL_NUMBER)
+        {
+            LeanAmount = FMath::Vector2DInterpTo(LeanAmount, FVector2D::ZeroVector, DeltaSeconds, LeanInterpSpeed);
+        }
+        else
+        {
+            LeanAmount = FVector2D::ZeroVector;
+        }
+    }
+    else
+    {
+        const float CurrentMultiplier = bIsSprintingForLean ? SprintLeanMultiplier : RunLeanMultiplier;
+        const float ClampVal = FMath::Max(0.0f, LeanAxisClamp);
+        const FVector2D TargetLean(
+            FMath::Clamp(ThreadSafeData.MovementData.RelativeAccelerationAmount.Y * CurrentMultiplier, -ClampVal, ClampVal),
+            FMath::Clamp(ThreadSafeData.MovementData.RelativeAccelerationAmount.X * CurrentMultiplier, -ClampVal, ClampVal));
+
+        if (LeanInterpSpeed > 0.0f && DeltaSeconds > UE_KINDA_SMALL_NUMBER)
+        {
+            LeanAmount = FMath::Vector2DInterpTo(LeanAmount, TargetLean, DeltaSeconds, LeanInterpSpeed);
+        }
+        else
+        {
+            LeanAmount = TargetLean;
+        }
+    }
+
+    ThreadSafeData.MovementData.LeanAmount = LeanAmount;
+    RelativeAccelerationAmount = ThreadSafeData.MovementData.RelativeAccelerationAmount;
     const bool bIsFallOffForDebug =
         CachedLocomotionStateComponent->CurrentState == ELocomotionState::InAir &&
         CachedLocomotionStateComponent->bIsFallOffStart &&
@@ -2619,7 +2671,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         ? 0.0f
         : (ThreadSafeData.StateController.PresentationState == EStateControllerPresentationState::TurnInPlace
             ? TurnInPlaceFootPlacementAlpha
-            : 1.0f);
+            : LocomotionFootPlacementAlpha);
     CurrentFootPlacementAlpha = FMath::FInterpTo(CurrentFootPlacementAlpha, TargetFootPlacementAlpha, DeltaSeconds, FootPlacementInterpSpeed);
     ThreadSafeData.FootPlacementAlpha = CurrentFootPlacementAlpha;
 
@@ -3821,11 +3873,18 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         PreviousState == EStateControllerPresentationState::TransitionToPivot;
     if (bStateChanged && bPreviousWasOneShot)
     {
-        if (bHasStateControllerOneShotOrientationWarpingAngle)
+        // TurnInPlace는 자체 Steering 회전을 수행하므로 이전 Stop 등의 Warping 각도를 일절 상속받지 않고 즉시 소멸
+        if (bHasStateControllerOneShotOrientationWarpingAngle &&
+            DesiredState != EStateControllerPresentationState::TurnInPlace)
         {
             // 애님 그래프의 Blend Poses by bool 블렌드 시간(0.2s) 동안 각도/알파 유지
             StateControllerPostOneShotWarpingRemainingTime = 0.25f;
             StateControllerPostOneShotWarpingAngle = StateControllerOneShotOrientationWarpingAngle;
+        }
+        else
+        {
+            StateControllerPostOneShotWarpingRemainingTime = 0.0f;
+            StateControllerPostOneShotWarpingAngle = 0.0f;
         }
 
         if (DesiredState == EStateControllerPresentationState::LocomotionLoop)
@@ -3835,6 +3894,11 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
             // 현재 대각선 이동 궤적에 맞춰 첫 프레임에 강제 재검색!
             bStateControllerForceMotionMatchingReselect = true;
         }
+    }
+    if (DesiredState == EStateControllerPresentationState::TurnInPlace)
+    {
+        StateControllerPostOneShotWarpingRemainingTime = 0.0f;
+        StateControllerPostOneShotWarpingAngle = 0.0f;
     }
 
     // Project_J policy: a change to another semantic turn bucket preempts the
@@ -3899,17 +3963,6 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
     const bool bActionMontageClearDue = bActionMontageActive &&
         (StateControllerSelectedAnimation != nullptr ||
          StateControllerPlaybackHoldState != DesiredState);
-
-    const FString ReselectReason = (bStateChanged || bInterruptLandForMotionMatching || bTurnInPlaceReplayDue || bStartInputReselectDue || bActionMontageClearDue)
-        ? FString::Printf(TEXT("StateChange=%d(%s->%s), LandInterrupt=%d, TIPReplay=%d, StartReselect=%d, MontageClear=%d"),
-            bStateChanged ? 1 : 0,
-            *StaticEnum<EStateControllerPresentationState>()->GetNameStringByValue(static_cast<int64>(PreviousState)),
-            *StaticEnum<EStateControllerPresentationState>()->GetNameStringByValue(static_cast<int64>(DesiredState)),
-            bInterruptLandForMotionMatching ? 1 : 0,
-            bTurnInPlaceReplayDue ? 1 : 0,
-            bStartInputReselectDue ? 1 : 0,
-            bActionMontageClearDue ? 1 : 0)
-        : FString();
 
     if (bStateChanged || bInterruptLandForMotionMatching || bTurnInPlaceReplayDue || bStartInputReselectDue || bActionMontageClearDue)
     {
@@ -4248,9 +4301,13 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
             const float DefaultBlendTime = DesiredState == EStateControllerPresentationState::TurnInPlace
                 ? StateControllerTurnInPlaceDefaultBlendTime
                 : 0.2f;
-            StateControllerSelectedAnimationBlendTime = StateControllerSelectedAnimationOutput.BlendTime > 0.0f
-                ? StateControllerSelectedAnimationOutput.BlendTime
-                : DefaultBlendTime;
+            StateControllerSelectedAnimationBlendTime = (DesiredState == EStateControllerPresentationState::TurnInPlace)
+                ? (StateControllerSelectedAnimationOutput.BlendTime > 0.0f
+                    ? FMath::Max(StateControllerSelectedAnimationOutput.BlendTime, StateControllerTurnInPlaceDefaultBlendTime)
+                    : StateControllerTurnInPlaceDefaultBlendTime)
+                : (StateControllerSelectedAnimationOutput.BlendTime > 0.0f
+                    ? StateControllerSelectedAnimationOutput.BlendTime
+                    : DefaultBlendTime);
             StateControllerSelectedAnimationStartTime = StateControllerSelectedAnimation
                 ? FMath::Clamp(StateControllerSelectedAnimationOutput.StartTime, 0.0f, StateControllerSelectedAnimation->GetPlayLength())
                 : 0.0f;
@@ -4286,91 +4343,6 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
                 PreviousSelectedAnimation == StateControllerSelectedAnimation);
             bStateControllerForceBlendStackOnNextUpdate =
                 bEnteringOneShot && StateControllerSelectedAnimation != nullptr && bSameAssetReplay;
-
-            if (DesiredState == EStateControllerPresentationState::TransitionToStop)
-            {
-                bDebugStopDiagnosticActive = true;
-                DebugStopDiagnosticFrame = 0;
-                DebugStopDiagnosticStartTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
-
-                const FVector WorldVel = CachedBasePlayer ? CachedBasePlayer->GetVelocity() : FVector::ZeroVector;
-                const FVector LocalVel = CachedBasePlayer ? CachedBasePlayer->GetActorTransform().InverseTransformVector(WorldVel) : FVector::ZeroVector;
-                const FVector2D MoveInput = CachedLocomotionStateComponent ? CachedLocomotionStateComponent->CachedMoveInput : FVector2D::ZeroVector;
-                const double CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
-                const double DiagTimeDelta = CurrentTime - LastDiagonalMovementDirectionTime;
-
-                float CurveStrafeWarpVal = 0.0f;
-                float CurveWarpVal = 0.0f;
-                GetCurveValue(FName(TEXT("Enable_StrafeWarping")), CurveStrafeWarpVal);
-                GetCurveValue(FName(TEXT("Enable_Warping")), CurveWarpVal);
-
-                const float ActorYaw = CachedBasePlayer ? CachedBasePlayer->GetActorRotation().Yaw : 0.0f;
-                const float ControlYaw = CachedBasePlayer ? CachedBasePlayer->GetControlRotation().Yaw : 0.0f;
-                const USkeletalMeshComponent* MeshComp = GetSkelMeshComponent();
-                const float MeshYaw = MeshComp ? MeshComp->GetComponentRotation().Yaw : 0.0f;
-                const float RootBoneYaw = MeshComp ? MeshComp->GetSocketRotation(FName(TEXT("root"))).Yaw : 0.0f;
-                const float PelvisBoneYaw = MeshComp ? MeshComp->GetSocketRotation(FName(TEXT("pelvis"))).Yaw : 0.0f;
-                const float DesiredFacingDelta = CachedLocomotionStateComponent ? CachedLocomotionStateComponent->DesiredFacingDeltaYaw : 0.0f;
-
-                UE_LOG(LogTemp, Warning, TEXT("==================== [STOP_DIAG][ENTRY] ===================="));
-                UE_LOG(LogTemp, Warning, TEXT("  [1. Input & Spd] GroundSpd=%.1f | WorldVel=(X=%.1f,Y=%.1f,Z=%.1f) Yaw=%.1f | LocalVel=(X=%.1f,Y=%.1f) | MoveInput=(X=%.2f,Y=%.2f) HasInput=%d"),
-                    CachedLocomotionStateComponent ? CachedLocomotionStateComponent->GroundSpeed : 0.0f,
-                    WorldVel.X, WorldVel.Y, WorldVel.Z, WorldVel.Rotation().Yaw,
-                    LocalVel.X, LocalVel.Y,
-                    MoveInput.X, MoveInput.Y,
-                    CachedLocomotionStateComponent && CachedLocomotionStateComponent->bHasMoveInput ? 1 : 0);
-                UE_LOG(LogTemp, Warning, TEXT("  [2. Orientations] ActorYaw=%.1f | CamYaw=%.1f | MeshYaw=%.1f | RootBoneYaw=%.1f | PelvisYaw=%.1f | VelYaw=%.1f | DesiredFacingDelta=%.1f"),
-                    ActorYaw, ControlYaw, MeshYaw, RootBoneYaw, PelvisBoneYaw, WorldVel.Rotation().Yaw, DesiredFacingDelta);
-                UE_LOG(LogTemp, Warning, TEXT("  [3. Direction] RawDir=%s | LastDiag=%s (TimeDelta=%.3fs, Window=%.3fs, LatchHit=%d) -> FinalDir=%s"),
-                    *StaticEnum<EMovementDirection>()->GetNameStringByValue(static_cast<int64>(CurrentMovementDirection)),
-                    *StaticEnum<EMovementDirection>()->GetNameStringByValue(static_cast<int64>(LastDiagonalMovementDirection)),
-                    DiagTimeDelta,
-                    StateControllerStopDiagonalReleaseWindow,
-                    DiagTimeDelta <= StateControllerStopDiagonalReleaseWindow ? 1 : 0,
-                    *StaticEnum<EMovementDirection>()->GetNameStringByValue(static_cast<int64>(StateControllerMovementDirection)));
-                UE_LOG(LogTemp, Warning, TEXT("  [4. Foot Phase] LeftContact=%.3f RightContact=%.3f Delta=%.3f -> ChosenFoot=%s (HasCurves=%d)"),
-                    CachedStateControllerLeftFootContact,
-                    CachedStateControllerRightFootContact,
-                    CachedStateControllerLeftFootContact - CachedStateControllerRightFootContact,
-                    StateControllerOneShotFoot == EStateControllerOneShotFoot::Left ? TEXT("Left") : TEXT("Right"),
-                    bHasStateControllerFootContactCurves ? 1 : 0);
-                UE_LOG(LogTemp, Warning, TEXT("  [5. Chooser Output] Asset=%s | StartTime=%.3fs | BlendTime=%.3fs | ClipLength=%.3fs | HoldDuration=%.3fs | Chooser=%s"),
-                    *GetNameSafe(StateControllerSelectedAnimation),
-                    StateControllerSelectedAnimationStartTime,
-                    StateControllerSelectedAnimationBlendTime,
-                    StateControllerSelectedAnimation ? StateControllerSelectedAnimation->GetPlayLength() : 0.0f,
-                    StateControllerPlaybackHoldDuration,
-                    *StateControllerLastChooserPath);
-                UE_LOG(LogTemp, Warning, TEXT("  [6. Warping Setup] OneShotWarpAngle=%.2f deg (HasAngle=%d) | Curve(StrafeWarp=%.2f, Warping=%.2f)"),
-                    StateControllerOneShotOrientationWarpingAngle,
-                    bHasStateControllerOneShotOrientationWarpingAngle ? 1 : 0,
-                    CurveStrafeWarpVal,
-                    CurveWarpVal);
-                UE_LOG(LogTemp, Warning, TEXT("============================================================"));
-            }
-            else if (DesiredState == EStateControllerPresentationState::TransitionToStart)
-            {
-                bDebugStartDiagnosticActive = true;
-                DebugStartDiagnosticFrame = 0;
-
-                const float ActorYaw = CachedBasePlayer ? CachedBasePlayer->GetActorRotation().Yaw : 0.0f;
-                const float ControlYaw = CachedBasePlayer ? CachedBasePlayer->GetControlRotation().Yaw : 0.0f;
-                const USkeletalMeshComponent* MeshComp = GetSkelMeshComponent();
-                const float MeshYaw = MeshComp ? MeshComp->GetComponentRotation().Yaw : 0.0f;
-                const float RootBoneYaw = MeshComp ? MeshComp->GetSocketRotation(FName(TEXT("root"))).Yaw : 0.0f;
-                const float PelvisBoneYaw = MeshComp ? MeshComp->GetSocketRotation(FName(TEXT("pelvis"))).Yaw : 0.0f;
-
-                UE_LOG(LogTemp, Warning, TEXT("==================== [START_DIAG][ENTRY] ===================="));
-                UE_LOG(LogTemp, Warning, TEXT("  Asset: %s | WarpAngle: %.2f | Dir: %s | Spd: %.1f"),
-                    *GetNameSafe(StateControllerSelectedAnimation),
-                    StateControllerOneShotOrientationWarpingAngle,
-                    *StaticEnum<EMovementDirection>()->GetNameStringByValue(static_cast<int64>(StateControllerMovementDirection)),
-                    CachedLocomotionStateComponent ? CachedLocomotionStateComponent->GroundSpeed : 0.0f);
-                UE_LOG(LogTemp, Warning, TEXT("  Orientations: ActorYaw=%.1f | CamYaw=%.1f | MeshYaw=%.1f | RootBoneYaw=%.1f | PelvisYaw=%.1f"),
-                    ActorYaw, ControlYaw, MeshYaw, RootBoneYaw, PelvisBoneYaw);
-                UE_LOG(LogTemp, Warning, TEXT("============================================================="));
-            }
-
         }
         else
         {
@@ -4384,19 +4356,6 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
             StateControllerActiveTurnInPlaceIndex = 0;
             ++StateControllerSelectionRevision;
         }
-
-        UE_LOG(LogTemp, Warning,
-            TEXT("[RESELECT_EVENT] Frame=%d | %s -> %s | Selected: %s (Prev: %s) | Reason: [%s] | Rev=%d | ForceBlendStack=%d | Start=%.3f | Blend=%.3f"),
-            DebugStopDiagnosticFrame,
-            *StaticEnum<EStateControllerPresentationState>()->GetNameStringByValue(static_cast<int64>(PreviousState)),
-            *StaticEnum<EStateControllerPresentationState>()->GetNameStringByValue(static_cast<int64>(DesiredState)),
-            *GetNameSafe(StateControllerSelectedAnimation),
-            *GetNameSafe(PreviousSelectedAnimation),
-            *ReselectReason,
-            StateControllerSelectionRevision,
-            bStateControllerForceBlendStackOnNextUpdate ? 1 : 0,
-            StateControllerSelectedAnimationStartTime,
-            StateControllerSelectedAnimationBlendTime);
     }
     else
     {
@@ -4501,14 +4460,17 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
          StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToLand ||
          StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToPivot);
 
-    const bool bInPostOneShotBlendOut = !bDirectStrafeOneShot && (StateControllerPostOneShotWarpingRemainingTime > 0.0f);
+    const bool bInPostOneShotBlendOut = !bDirectStrafeOneShot &&
+        (StateControllerPlaybackHoldState != EStateControllerPresentationState::TurnInPlace) &&
+        (StateControllerPostOneShotWarpingRemainingTime > 0.0f);
 
     float OrientationWarpingAngle = 0.0f;
     bool bHasOrientationWarpingDirection = false;
-    if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart)
+    if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart ||
+        StateControllerPlaybackHoldState == EStateControllerPresentationState::TurnInPlace)
     {
-        // Start는 Chooser가 8방향 에셋(Forward, Backward, Left, Right, 대각 4방향)을 직접 관리하므로
-        // Orientation Warping을 사용하지 않고 순수 애니메이션으로 출발합니다.
+        // Start와 TurnInPlace는 전용 에셋 및 Root Yaw Steering을 사용하므로
+        // 직전 이동/정지의 Orientation Warping을 일절 적용하지 않습니다.
         OrientationWarpingAngle = 0.0f;
         bHasOrientationWarpingDirection = false;
     }
@@ -4586,112 +4548,6 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
     bStateControllerIsJumping = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsJumping;
     bStateControllerIsFallOff = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsFallOffStart;
     bStateControllerShouldTurnInPlace = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bShouldTurnInPlace;
-
-    if (bDebugStopDiagnosticActive)
-    {
-        DebugStopDiagnosticFrame++;
-        const bool bIsStillInStop = (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStop);
-
-        if (bIsStillInStop)
-        {
-            // 정지 시작 후 첫 20프레임은 매 프레임 연속 출력, 그 이후는 5프레임 간격으로 출력 (최대 60프레임)
-            if (DebugStopDiagnosticFrame <= 20 || (DebugStopDiagnosticFrame % 5 == 0 && DebugStopDiagnosticFrame <= 60))
-            {
-                const float ActorYaw = CachedBasePlayer ? CachedBasePlayer->GetActorRotation().Yaw : 0.0f;
-                const float ControlYaw = CachedBasePlayer ? CachedBasePlayer->GetControlRotation().Yaw : 0.0f;
-                const USkeletalMeshComponent* MeshComp = GetSkelMeshComponent();
-                const float MeshYaw = MeshComp ? MeshComp->GetComponentRotation().Yaw : 0.0f;
-                const float RootBoneYaw = MeshComp ? MeshComp->GetSocketRotation(FName(TEXT("root"))).Yaw : 0.0f;
-                const float PelvisBoneYaw = MeshComp ? MeshComp->GetSocketRotation(FName(TEXT("pelvis"))).Yaw : 0.0f;
-                const FVector Vel = ThreadSafeData.MovementData.Velocity;
-                const float VelYaw = Vel.IsNearlyZero(5.0f) ? 0.0f : Vel.Rotation().Yaw;
-                const FVector LastVel = ThreadSafeData.MovementData.LastNonZeroVelocity;
-                const float LastVelYaw = LastVel.IsNearlyZero(5.0f) ? 0.0f : LastVel.Rotation().Yaw;
-                const FVector LocalVel = ThreadSafeData.MovementData.VelocityLocal;
-                const float DesiredFacingDelta = CachedLocomotionStateComponent ? CachedLocomotionStateComponent->DesiredFacingDeltaYaw : 0.0f;
-                const float SteeringTargetYaw = ThreadSafeData.StateController.BlendStackSteeringTargetOrientation.Yaw;
-
-                float CurveStrafeWarpVal = 0.0f;
-                float CurveWarpVal = 0.0f;
-                GetCurveValue(FName(TEXT("Enable_StrafeWarping")), CurveStrafeWarpVal);
-                GetCurveValue(FName(TEXT("Enable_Warping")), CurveWarpVal);
-
-                UE_LOG(LogTemp, Warning,
-                    TEXT("[STOP_DIAG][TICK #%02d] Elapsed=%.3f/%.3f | Spd=%.1f LocVel=(%.1f,%.1f)"),
-                    DebugStopDiagnosticFrame,
-                    StateControllerPlaybackHoldElapsed,
-                    StateControllerPlaybackHoldDuration,
-                    Vel.Size2D(),
-                    LocalVel.X, LocalVel.Y);
-                UE_LOG(LogTemp, Warning,
-                    TEXT("  -> Orientations: ActorYaw=%.1f | CamYaw=%.1f | MeshYaw=%.1f | RootBoneYaw=%.1f | PelvisYaw=%.1f | VelYaw=%.1f | LastVelYaw=%.1f | DesFacingDelta=%.1f"),
-                    ActorYaw, ControlYaw, MeshYaw, RootBoneYaw, PelvisBoneYaw, VelYaw, LastVelYaw, DesiredFacingDelta);
-                UE_LOG(LogTemp, Warning,
-                    TEXT("  -> Warping & State: WarpAngle=%.1f WarpAlpha=%.2f | SteeringYaw=%.1f | Anim=%s | Rev=%d | Dir=%s | Curves(StrafeWarp=%.2f, Warping=%.2f)"),
-                    ThreadSafeData.StateController.CombatStateOrientationWarpingAngle,
-                    ThreadSafeData.StateController.CombatStateOrientationWarpingAlpha,
-                    SteeringTargetYaw,
-                    *GetNameSafe(ThreadSafeData.StateController.SelectedAnimation),
-                    ThreadSafeData.StateController.SelectionRevision,
-                    *StaticEnum<EMovementDirection>()->GetNameStringByValue(static_cast<int64>(StateControllerMovementDirection)),
-                    CurveStrafeWarpVal,
-                    CurveWarpVal);
-            }
-        }
-        else
-        {
-            UE_LOG(LogTemp, Warning, TEXT("==================== [STOP_DIAG][EXIT] ===================="));
-            UE_LOG(LogTemp, Warning, TEXT("  Stop ended at Frame #%d | TotalElapsed=%.3fs / TargetHold=%.3fs | NextState=%s | RemainingSpeed=%.1f"),
-                DebugStopDiagnosticFrame,
-                StateControllerPlaybackHoldElapsed,
-                StateControllerPlaybackHoldDuration,
-                *StaticEnum<EStateControllerPresentationState>()->GetNameStringByValue(static_cast<int64>(StateControllerPlaybackHoldState)),
-                ThreadSafeData.MovementData.Velocity.Size2D());
-            UE_LOG(LogTemp, Warning, TEXT("============================================================"));
-
-            bDebugStopDiagnosticActive = false;
-        }
-    }
-
-    if (bDebugStartDiagnosticActive)
-    {
-        DebugStartDiagnosticFrame++;
-        const bool bIsStillInStart = (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart);
-
-        if (bIsStillInStart)
-        {
-            if (DebugStartDiagnosticFrame <= 15 || DebugStartDiagnosticFrame % 5 == 0)
-            {
-                const USkeletalMeshComponent* MeshComp = GetSkelMeshComponent();
-                const float RootBoneYaw = MeshComp ? MeshComp->GetSocketRotation(FName(TEXT("root"))).Yaw : 0.0f;
-                const float PelvisBoneYaw = MeshComp ? MeshComp->GetSocketRotation(FName(TEXT("pelvis"))).Yaw : 0.0f;
-                float CurveWarpVal = 0.0f;
-                GetCurveValue(FName(TEXT("Enable_Warping")), CurveWarpVal);
-
-                UE_LOG(LogTemp, Warning,
-                    TEXT("[START_DIAG][TICK #%02d] Elapsed=%.3f/%.3f | RootYaw=%.1f | PelvisYaw=%.1f | WarpAngle=%.1f (Alpha=%.2f, Curve=%.2f)"),
-                    DebugStartDiagnosticFrame,
-                    StateControllerPlaybackHoldElapsed,
-                    StateControllerPlaybackHoldDuration,
-                    RootBoneYaw, PelvisBoneYaw,
-                    ThreadSafeData.StateController.CombatStateOrientationWarpingAngle,
-                    ThreadSafeData.StateController.CombatStateOrientationWarpingAlpha,
-                    CurveWarpVal);
-            }
-        }
-        else
-        {
-            UE_LOG(LogTemp, Warning, TEXT("==================== [START_DIAG][EXIT] ===================="));
-            UE_LOG(LogTemp, Warning, TEXT("  Start finished -> NextState=%s | Elapsed=%.3fs | HoldRemainingWarpAngle=%.1f (Time=%.2fs)"),
-                *StaticEnum<EStateControllerPresentationState>()->GetNameStringByValue(static_cast<int64>(StateControllerPlaybackHoldState)),
-                StateControllerPlaybackHoldElapsed,
-                StateControllerPostOneShotWarpingAngle,
-                StateControllerPostOneShotWarpingRemainingTime);
-            UE_LOG(LogTemp, Warning, TEXT("============================================================"));
-
-            bDebugStartDiagnosticActive = false;
-        }
-    }
 
     EmitStateControllerDebugTrace(ThreadSafeData);
 }
@@ -5370,3 +5226,20 @@ bool UMotionMatchingAnimInstance::GetThreadSafeShouldTurnInPlace() const
 {
     return false;
 }
+
+FVector2D UMotionMatchingAnimInstance::GetThreadSafeLeanAmount() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.MovementData.LeanAmount;
+}
+
+float UMotionMatchingAnimInstance::GetThreadSafeLeanLR() const
+{
+    return GetThreadSafeLeanAmount().X;
+}
+
+FVector UMotionMatchingAnimInstance::GetThreadSafeRelativeAccelerationAmount() const
+{
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.MovementData.RelativeAccelerationAmount;
+}
+
+
