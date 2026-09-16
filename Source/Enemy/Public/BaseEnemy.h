@@ -18,6 +18,7 @@ class UBaseDeathGameplayAbility;
 class UBaseWeaponComponent;
 class UBaseHealthComponent;
 class UEnemyBehaviorSet;
+class UEnemyTerritoryComponent;
 class UEnemyHealthBarComponent;
 class UEnemyWaypointMoveComponent;
 struct FOnAttributeChangeData;
@@ -46,6 +47,10 @@ public:
 	/** Call before FinishSpawning, or while a deck enemy is inactive. Empty means use the BP default. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy|Balance")
 	bool ConfigureSpawnBalance(const FDataTableRowHandle& Row, float HealthMultiplier = 1.f, float SpeedMultiplier = 1.f);
+
+	/** Assign before FinishSpawning so ASC and drop initialization see the catalog tag. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy|Type")
+	bool ConfigureSpawnTypeTag(FGameplayTag InEnemyTypeTag);
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|Balance")
 	bool IsBalanceReady() const { return bBalanceReady; }
@@ -150,6 +155,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBaseHealthComponent> HealthComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Territory")
+	TObjectPtr<UEnemyTerritoryComponent> TerritoryComponent;
 
 	// ================= Health Bar =================
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -262,6 +270,7 @@ public:
 	FORCEINLINE bool ShouldEquipWeaponOnSpawn() const { return bEquipWeaponOnSpawn; }
 	FORCEINLINE FGameplayTag GetDefaultWeaponTag() const { return DefaultWeaponTag; }
 	FORCEINLINE FGameplayTag GetEnemyTypeTag() const { return EnemyTypeTag; }
+	FORCEINLINE UEnemyTerritoryComponent* GetTerritoryComponent() const { return TerritoryComponent; }
 	FORCEINLINE TObjectPtr<UBaseWeaponComponent> GetWeaponComponent() const { check(WeaponComponent) return WeaponComponent; }
 	//FORCEINLINE TObjectPtr<UPathMovement> GetPathMovementComponent() const { check(PathMovement) return PathMovement;}
 	FORCEINLINE virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { check(AbilitySystemComponent) return AbilitySystemComponent; }

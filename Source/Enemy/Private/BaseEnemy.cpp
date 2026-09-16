@@ -12,6 +12,7 @@
 
 // Enemy Folder
 #include "AI/BaseAIController.h"
+#include "AI/EnemyTerritoryComponent.h"
 #include "GAS/EnemyAttributeSet.h"
 #include "EngineUtils.h"
 #include "WaveSystem/Route/EnemyWaypointMoveComponent.h"
@@ -65,6 +66,7 @@ ABaseEnemy::ABaseEnemy()
 	WeaponComponent = CreateDefaultSubobject<UBaseWeaponComponent>(TEXT("WeaponComponent"));
 	WaypointMoveComponent = CreateDefaultSubobject<UEnemyWaypointMoveComponent>(TEXT("WaypointMoveComponent"));
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
+	TerritoryComponent = CreateDefaultSubobject<UEnemyTerritoryComponent>(TEXT("TerritoryComponent"));
 	// All regular enemy archetypes share this confirmed-damage cue. Specialized
 	// enemies must opt into a different cue in their own constructor.
 	HealthComponent->SetDamageGameplayCueTag(GameplayCue_Enemy_Hit);
@@ -466,6 +468,17 @@ bool ABaseEnemy::ConfigureSpawnBalance(const FDataTableRowHandle& Row, float Hea
 	SpawnStatsRow = Row;
 	SpawnHealthMultiplier = HealthMultiplier;
 	SpawnMovementSpeedMultiplier = SpeedMultiplier;
+	return true;
+}
+
+bool ABaseEnemy::ConfigureSpawnTypeTag(FGameplayTag InEnemyTypeTag)
+{
+	if (!HasAuthority() || HasActorBegunPlay() || !InEnemyTypeTag.IsValid())
+	{
+		return false;
+	}
+
+	EnemyTypeTag = InEnemyTypeTag;
 	return true;
 }
 

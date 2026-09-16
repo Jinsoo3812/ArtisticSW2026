@@ -1,6 +1,7 @@
 #include "AI/BaseAIController.h"
 
 #include "AI/EnemyBehaviorSet.h"
+#include "AI/EnemyTerritoryComponent.h"
 #include "AISystem.h"
 #include "BaseEnemy.h"
 #include "RangedEnemy/RangedEnemy.h"
@@ -30,6 +31,35 @@ ABaseAIController::ABaseAIController()
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = true;
 	SetupPerceptionSystem();
+}
+
+void ABaseAIController::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	TerritoryCheckRemaining -= DeltaSeconds;
+	if (TerritoryCheckRemaining > 0.0f)
+	{
+		return;
+	}
+	TerritoryCheckRemaining = FMath::Max(0.05f, TerritoryCheckInterval);
+
+	const ABaseEnemy* Enemy = Cast<ABaseEnemy>(GetPawn());
+	const UEnemyTerritoryComponent* Territory = Enemy
+		? Enemy->GetTerritoryComponent()
+		: nullptr;
+	AActor* Target = GetCombatTarget();
+	if (Target && Territory && Territory->HasAssignedTerritory()
+		&& !Territory->IsInsideCombatArea(Target->GetActorLocation()))
+	{
+		ClearCombatTarget(true);
+		StopMovement();
+	}
 }
 
 void ABaseAIController::SetupPerceptionSystem()
@@ -300,7 +330,12 @@ void ABaseAIController::OnTargetPerceptionUpdated(AActor* SensedActor, FAIStimul
 bool ABaseAIController::IsValidPerceptionTarget(const AActor* Candidate) const
 {
 	const ABaseEnemy* PossessedEnemy = Cast<ABaseEnemy>(GetPawn());
-	return PossessedEnemy && PossessedEnemy->CanEngageActor(const_cast<AActor*>(Candidate));
+	const UEnemyTerritoryComponent* Territory = PossessedEnemy
+		? PossessedEnemy->GetTerritoryComponent()
+		: nullptr;
+	return PossessedEnemy
+		&& PossessedEnemy->CanEngageActor(const_cast<AActor*>(Candidate))
+		&& (!Territory || Territory->IsInsideCombatArea(Candidate->GetActorLocation()));
 }
 
 void ABaseAIController::HandleSightStimulus(AActor* SensedActor, const FAIStimulus& Stimulus)
@@ -337,6 +372,15 @@ void ABaseAIController::HandleHearingStimulus(AActor* SensedActor, const FAIStim
 {
 	if (Stimulus.WasSuccessfullySensed())
 	{
+		const ABaseEnemy* Enemy = Cast<ABaseEnemy>(GetPawn());
+		const UEnemyTerritoryComponent* Territory = Enemy
+			? Enemy->GetTerritoryComponent()
+			: nullptr;
+		if (Territory && Territory->HasAssignedTerritory()
+			&& !Territory->IsInsideCombatArea(Stimulus.StimulusLocation))
+		{
+			return;
+		}
 		StartInvestigation(Stimulus.StimulusLocation);
 	}
 }
@@ -402,8 +446,17 @@ void ABaseAIController::InitializeBlackboardValues(APawn* PossessedPawn)
 
 	BlackboardComponent->ClearValue(TargetActorKeyName);
 	BlackboardComponent->ClearValue(PointOfInterestKeyName);
-	BlackboardComponent->SetValueAsVector(HomeLocationKeyName, PossessedPawn->GetActorLocation());
-	BlackboardComponent->SetValueAsFloat(PatrolRadiusKeyName, DefaultPatrolRadius);
+	const ABaseEnemy* PossessedEnemy = Cast<ABaseEnemy>(PossessedPawn);
+	const UEnemyTerritoryComponent* Territory = PossessedEnemy
+		? PossessedEnemy->GetTerritoryComponent()
+		: nullptr;
+	const bool bHasTerritory = Territory && Territory->HasAssignedTerritory();
+	BlackboardComponent->SetValueAsVector(
+		HomeLocationKeyName,
+		bHasTerritory ? Territory->GetHomeLocation() : PossessedPawn->GetActorLocation());
+	BlackboardComponent->SetValueAsFloat(
+		PatrolRadiusKeyName,
+		bHasTerritory ? Territory->GetPatrolRadius() : DefaultPatrolRadius);
 	SetEnemyState(EEnemyAIState::Passive);
 }
 
