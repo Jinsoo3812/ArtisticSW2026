@@ -4,7 +4,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "SWCharacterMovementComponent.generated.h"
 
-enum class ESwimDepthMode : uint8;
+enum class ESwimMovementState : uint8;
+struct FSwimPredictionState;
 class AShip;
 
 /**
@@ -21,6 +22,7 @@ public:
 
 	/** Routes the local command through the movement component so CMC can save and replay it. */
 	void SetSwimmingVerticalInput(float InVerticalInput);
+	void SetSwimmingVerticalInput(bool bDiveHeld, bool bAscendHeld);
 
 	/** Redirects authored montage root motion away from the hit source without changing its timing. */
 	void BeginHitReactionRootMotion(const FVector& WorldDirection);
@@ -35,10 +37,11 @@ public:
 	float GetSwimmingVerticalInput() const;
 
 	/** Returns the swimming sub-state that will be restored during CMC replay. */
-	ESwimDepthMode GetSwimmingDepthMode() const;
+	ESwimMovementState GetSwimmingMovementState() const;
+	FSwimPredictionState GetSwimmingPredictionState() const;
 
 	/** Restores input and sub-state before replaying a CMC saved move. */
-	void RestoreSavedSwimmingState(float InVerticalInput, ESwimDepthMode InDepthMode);
+	void RestoreSavedSwimmingState(const FSwimPredictionState& InState);
 
 protected:
 	virtual void PhysCustom(float DeltaTime, int32 Iterations) override;

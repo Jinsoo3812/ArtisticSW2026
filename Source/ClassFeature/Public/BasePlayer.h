@@ -227,7 +227,9 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Sprint")
 	bool bSprintInputHeld = false;
 
+	/** Raw physical Ctrl state; effective swim commands are owned by USwimmingComponent. */
 	bool bSwimDiveInputHeld = false;
+	/** Raw physical Space state; effective swim commands are owned by USwimmingComponent. */
 	bool bSwimAscendInputHeld = false;
 
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_LocomotionStateSnapshot, Category = "Animation|Movement|Network")
@@ -674,6 +676,21 @@ protected:
 	/** Maximum integration step used by SpringArm rotation-lag substepping. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Rotation Smoothing", meta = (EditCondition = "bEnableCameraRotationSmoothing", ClampMin = "0.001", UIMin = "0.001", Units = "s"))
 	float CameraRotationSmoothingMaxTimeStep = 0.008333333f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Swimming")
+	bool bEnableSwimmingCameraLocationSmoothing = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Swimming", meta = (ClampMin = "0.0"))
+	float SwimmingCameraLagSpeed = 5.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Swimming", meta = (ClampMin = "0.0", Units = "cm"))
+	float SwimmingCameraLagMaxDistance = 75.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Swimming", meta = (ClampMin = "0.001", Units = "s"))
+	float SwimmingCameraLagMaxTimeStep = 0.008333333f;
+
+	float SwimmingCameraLagExitElapsed = 0.0f;
+	bool bWasUsingSwimmingCameraLag = false;
 
 	/* --- 인벤토리 ---*/
 protected:

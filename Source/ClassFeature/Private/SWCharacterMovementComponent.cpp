@@ -12,7 +12,7 @@ namespace
 
 		uint8 bSavedSwimDive : 1;
 		uint8 bSavedSwimAscend : 1;
-		ESwimDepthMode SavedSwimDepthMode = ESwimDepthMode::Surface;
+		FSwimPredictionState SavedSwimState;
 
 		FSavedMove_SWCharacter()
 			: bSavedSwimDive(false)
@@ -25,7 +25,7 @@ namespace
 			Super::Clear();
 			bSavedSwimDive = false;
 			bSavedSwimAscend = false;
-			SavedSwimDepthMode = ESwimDepthMode::Surface;
+			SavedSwimState = FSwimPredictionState();
 		}
 
 		virtual uint8 GetCompressedFlags() const override
@@ -51,7 +51,16 @@ namespace
 				static_cast<const FSavedMove_SWCharacter*>(NewMove.Get());
 			if (bSavedSwimDive != NewSWMove->bSavedSwimDive
 				|| bSavedSwimAscend != NewSWMove->bSavedSwimAscend
-				|| SavedSwimDepthMode != NewSWMove->SavedSwimDepthMode)
+				|| SavedSwimState.MovementState != NewSWMove->SavedSwimState.MovementState
+				|| SavedSwimState.bRawDiveInputHeld != NewSWMove->SavedSwimState.bRawDiveInputHeld
+				|| SavedSwimState.bRawAscendInputHeld != NewSWMove->SavedSwimState.bRawAscendInputHeld
+				|| SavedSwimState.bDiveInputSuppressedUntilRelease != NewSWMove->SavedSwimState.bDiveInputSuppressedUntilRelease
+				|| SavedSwimState.bAscendInputSuppressedUntilRelease != NewSWMove->SavedSwimState.bAscendInputSuppressedUntilRelease
+				|| FMath::Abs(SavedSwimState.DiveTransitionElapsed - NewSWMove->SavedSwimState.DiveTransitionElapsed) > MaxDelta
+				|| FMath::Abs(SavedSwimState.SurfaceTransitionElapsed - NewSWMove->SavedSwimState.SurfaceTransitionElapsed) > MaxDelta
+				|| FMath::Abs(SavedSwimState.SurfaceTransitionStallElapsed - NewSWMove->SavedSwimState.SurfaceTransitionStallElapsed) > MaxDelta
+				|| FMath::Abs(SavedSwimState.SurfaceTransitionEntryHoldElapsed - NewSWMove->SavedSwimState.SurfaceTransitionEntryHoldElapsed) > MaxDelta
+				|| !FMath::IsNearlyEqual(SavedSwimState.LastSurfaceTransitionProgressDepth, NewSWMove->SavedSwimState.LastSurfaceTransitionProgressDepth, 5.0f))
 			{
 				return false;
 			}
@@ -71,7 +80,7 @@ namespace
 				const float VerticalInput = Movement->GetSwimmingVerticalInput();
 				bSavedSwimDive = VerticalInput < -KINDA_SMALL_NUMBER;
 				bSavedSwimAscend = VerticalInput > KINDA_SMALL_NUMBER;
-				SavedSwimDepthMode = Movement->GetSwimmingDepthMode();
+				SavedSwimState = Movement->GetSwimmingPredictionState();
 			}
 		}
 
@@ -81,8 +90,7 @@ namespace
 			if (USWCharacterMovementComponent* Movement =
 				Cast<USWCharacterMovementComponent>(Character->GetCharacterMovement()))
 			{
-				const float VerticalInput = bSavedSwimDive ? -1.0f : (bSavedSwimAscend ? 1.0f : 0.0f);
-				Movement->RestoreSavedSwimmingState(VerticalInput, SavedSwimDepthMode);
+				Movement->RestoreSavedSwimmingState(SavedSwimState);
 			}
 		}
 	};
@@ -182,29 +190,50 @@ float USWCharacterMovementComponent::GetSwimmingVerticalInput() const
 	return 0.0f;
 }
 
-ESwimDepthMode USWCharacterMovementComponent::GetSwimmingDepthMode() const
+ESwimMovementState USWCharacterMovementComponent::GetSwimmingMovementState() const
 {
 	if (const ACharacter* CharOwner = CharacterOwner)
 	{
 		if (const USwimmingComponent* SwimComp =
 			CharOwner->FindComponentByClass<USwimmingComponent>())
 		{
-			return SwimComp->GetDepthMode();
+			return SwimComp->GetMovementState();
 		}
 	}
-	return ESwimDepthMode::Surface;
+	return ESwimMovementState::Surface;
 }
 
-void USWCharacterMovementComponent::RestoreSavedSwimmingState(
-	float InVerticalInput,
-	ESwimDepthMode InDepthMode)
+void USWCharacterMovementComponent::SetSwimmingVerticalInput(bool bDiveHeld, bool bAscendHeld)
 {
 	if (ACharacter* CharOwner = CharacterOwner)
 	{
 		if (USwimmingComponent* SwimComp = CharOwner->FindComponentByClass<USwimmingComponent>())
 		{
-			SwimComp->RestorePredictedDepthMode(InDepthMode);
-			SwimComp->SetVerticalSwimInput(InVerticalInput);
+			SwimComp->SetRawVerticalSwimInput(bDiveHeld, bAscendHeld);
+		}
+	}
+}
+
+FSwimPredictionState USWCharacterMovementComponent::GetSwimmingPredictionState() const
+{
+	if (const ACharacter* CharOwner = CharacterOwner)
+	{
+		if (const USwimmingComponent* SwimComp = CharOwner->FindComponentByClass<USwimmingComponent>())
+		{
+			return SwimComp->GetPredictionState();
+		}
+	}
+	return FSwimPredictionState();
+}
+
+void USWCharacterMovementComponent::RestoreSavedSwimmingState(
+	const FSwimPredictionState& InState)
+{
+	if (ACharacter* CharOwner = CharacterOwner)
+	{
+		if (USwimmingComponent* SwimComp = CharOwner->FindComponentByClass<USwimmingComponent>())
+		{
+			SwimComp->RestorePredictedSwimState(InState);
 		}
 	}
 }
@@ -232,7 +261,25 @@ void USWCharacterMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 	const bool bDive = (Flags & FSavedMove_Character::FLAG_Custom_0) != 0;
 	const bool bAscend = (Flags & FSavedMove_Character::FLAG_Custom_1) != 0;
 	const float VerticalInput = bDive ? -1.0f : (bAscend ? 1.0f : 0.0f);
+	bool bRequestDiveTransition = false;
+	if (ACharacter* CharOwner = CharacterOwner)
+	{
+		if (USwimmingComponent* SwimComp = CharOwner->FindComponentByClass<USwimmingComponent>())
+		{
+			bRequestDiveTransition = bDive && SwimComp->GetVerticalSwimInput() >= -KINDA_SMALL_NUMBER;
+		}
+	}
 	SetSwimmingVerticalInput(VerticalInput);
+	if (bRequestDiveTransition)
+	{
+		if (ACharacter* CharOwner = CharacterOwner)
+		{
+			if (USwimmingComponent* SwimComp = CharOwner->FindComponentByClass<USwimmingComponent>())
+			{
+				SwimComp->RequestDiveTransition();
+			}
+		}
+	}
 }
 
 FNetworkPredictionData_Client* USWCharacterMovementComponent::GetPredictionData_Client() const

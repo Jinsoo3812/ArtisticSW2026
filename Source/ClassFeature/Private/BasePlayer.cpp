@@ -506,6 +506,31 @@ void ABasePlayer::Tick(float DeltaTime)
 	{
 		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
 		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CameraInterpSpeed);
+		if (IsLocallyControlled() && bEnableSwimmingCameraLocationSmoothing)
+		{
+			const bool bSwimming = SwimmingComponent && SwimmingComponent->IsCustomSwimming();
+			if (bSwimming)
+			{
+				bWasUsingSwimmingCameraLag = true;
+				SwimmingCameraLagExitElapsed = 0.0f;
+				CameraBoom->bEnableCameraLag = true;
+				CameraBoom->CameraLagSpeed = SwimmingCameraLagSpeed;
+				CameraBoom->CameraLagMaxDistance = SwimmingCameraLagMaxDistance;
+				CameraBoom->bUseCameraLagSubstepping = true;
+				CameraBoom->CameraLagMaxTimeStep = SwimmingCameraLagMaxTimeStep;
+			}
+			else if (bWasUsingSwimmingCameraLag)
+			{
+				SwimmingCameraLagExitElapsed += DeltaTime;
+				const float Alpha = FMath::Clamp(SwimmingCameraLagExitElapsed / 0.25f, 0.0f, 1.0f);
+				CameraBoom->CameraLagSpeed = FMath::Lerp(SwimmingCameraLagSpeed, 30.0f, Alpha);
+				if (Alpha >= 1.0f)
+				{
+					CameraBoom->bEnableCameraLag = false;
+					bWasUsingSwimmingCameraLag = false;
+				}
+			}
+		}
 	}
 
 	if (FollowCamera)
@@ -2044,7 +2069,7 @@ void ABasePlayer::DoMove(float Right, float Forward)
 {
 	const bool bVerticalSwimOverride = SwimmingComponent
 		&& SwimmingComponent->IsCustomSwimming()
-		&& SwimmingComponent->HasVerticalSwimInput();
+		&& (SwimmingComponent->HasVerticalSwimInput() || SwimmingComponent->IsTransitionState());
 	const FVector2D ClampedMoveInput = bVerticalSwimOverride
 		? FVector2D::ZeroVector
 		: FVector2D(Right, Forward).GetClampedToMaxSize(1.f);
@@ -2235,6 +2260,7 @@ void ABasePlayer::StartSwimDive()
 	bSwimDiveInputHeld = true;
 	bSwimAscendInputHeld = false;
 	RefreshSwimmingVerticalInput();
+	SwimmingComponent->RequestDiveTransition();
 }
 
 void ABasePlayer::StopSwimDive()
@@ -2255,15 +2281,14 @@ void ABasePlayer::RefreshSwimmingVerticalInput()
 		return;
 	}
 
-	const float VerticalInput = (bSwimAscendInputHeld ? 1.0f : 0.0f)
-		- (bSwimDiveInputHeld ? 1.0f : 0.0f);
 	if (USWCharacterMovementComponent* SWMovement =
 		Cast<USWCharacterMovementComponent>(GetCharacterMovement()))
 	{
-		SWMovement->SetSwimmingVerticalInput(VerticalInput);
+		SWMovement->SetSwimmingVerticalInput(bSwimDiveInputHeld, bSwimAscendInputHeld);
 	}
-	if (SwimmingComponent->HasVerticalSwimInput())
+	if (SwimmingComponent->HasVerticalSwimInput() || SwimmingComponent->IsTransitionState())
 	{
+		GetCharacterMovement()->ConsumeInputVector();
 		if (AnimStateComponent)
 		{
 			AnimStateComponent->ClearMoveInput();
