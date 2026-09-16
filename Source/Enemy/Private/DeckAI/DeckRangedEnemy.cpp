@@ -222,6 +222,18 @@ void ADeckEnemy::DeactivateToPool()
 	SetNetDormancy(DORM_DormantAll);
 }
 
+void ADeckEnemy::ResetToFreshPoolState()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	DeactivateToPool();
+	RestoreForPoolActivation();
+	ApplyPoolPresentationState();
+	ForceNetUpdate();
+}
+
 void ADeckEnemy::MarkGoalDeckWaypointReached()
 {
 	if (GoalDeckWaypointId == INDEX_NONE)

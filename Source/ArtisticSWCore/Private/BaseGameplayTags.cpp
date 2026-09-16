@@ -4,6 +4,7 @@
 UE_DEFINE_GAMEPLAY_TAG(State_Attacking, "State.Attacking");
 UE_DEFINE_GAMEPLAY_TAG(State_Dead, "State.Dead");
 UE_DEFINE_GAMEPLAY_TAG(State_Damaged, "State.Damaged");
+UE_DEFINE_GAMEPLAY_TAG(State_Invulnerable, "State.Invulnerable");
 UE_DEFINE_GAMEPLAY_TAG(State_Aiming, "State.Aiming");
 UE_DEFINE_GAMEPLAY_TAG(State_Sniping, "State.Sniping");
 UE_DEFINE_GAMEPLAY_TAG(State_Crafting, "State.Crafting");
@@ -25,7 +26,6 @@ UE_DEFINE_GAMEPLAY_TAG(State_Boss_Dashing, "State.Boss.Dashing");
 UE_DEFINE_GAMEPLAY_TAG(State_CrowdControl_Knockback, "State.CrowdControl.Knockback");
 UE_DEFINE_GAMEPLAY_TAG(State_Buff_MoveSpeed, "State.Buff.MoveSpeed");
 UE_DEFINE_GAMEPLAY_TAG(State_Rolling, "State.Rolling");
-UE_DEFINE_GAMEPLAY_TAG(State_Invulnerable, "State.Invulnerable");
 UE_DEFINE_GAMEPLAY_TAG(State_Swimming, "State.Swimming");
 
 // Team
@@ -179,6 +179,10 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialMaterial_LegendaryMaterial,
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe, "Item.Id.Material.WeaponSpecialRecipe");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_EpicRecipe, "Item.Id.Material.WeaponSpecialRecipe.EpicRecipe");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_LegendaryRecipe, "Item.Id.Material.WeaponSpecialRecipe.LegendaryRecipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_SwordA5Recipe, "Item.Id.Material.WeaponSpecialRecipe.SwordA5Recipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_SwordB5Recipe, "Item.Id.Material.WeaponSpecialRecipe.SwordB5Recipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_ShortBow5Recipe, "Item.Id.Material.WeaponSpecialRecipe.ShortBow5Recipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_LongBow5Recipe, "Item.Id.Material.WeaponSpecialRecipe.LongBow5Recipe");
 
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_SkillMaterial, "Item.Id.Material.SkillMaterial");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_SkillMaterial_RareSkill, "Item.Id.Material.SkillMaterial.RareSkill");
@@ -192,10 +196,12 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal, "Item.Id.Consumables.Heal");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal_Medicine, "Item.Id.Consumables.Heal.Medicine");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal_Tangyak, "Item.Id.Consumables.Heal.Tangyak");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal_Elixir, "Item.Id.Consumables.Heal.Elixir");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal_Panacea, "Item.Id.Consumables.Heal.Panacea");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff, "Item.Id.Consumables.Buff");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff_Doraji, "Item.Id.Consumables.Buff.Doraji");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff_Chungshimhwan, "Item.Id.Consumables.Buff.Chungshimhwan");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff_Gongjindan, "Item.Id.Consumables.Buff.Gongjindan");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff_RoyalGongjindan, "Item.Id.Consumables.Buff.RoyalGongjindan");
 
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon, "Item.Id.Weapon");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Sword, "Item.Id.Weapon.Sword");

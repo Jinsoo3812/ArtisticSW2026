@@ -43,38 +43,7 @@ bool UPlayerEquipmentComponent::IsEquipmentTransitioning() const
 	return EquipmentState == EEquipmentState::Equipping || EquipmentState == EEquipmentState::Unequipping;
 }
 
-void UPlayerEquipmentComponent::EquipItemFromSlot(FGameplayTag KeyTag)
-{
-	if (!PlayerOwner)
-	{
-		PlayerOwner = Cast<ABasePlayer>(GetOwner());
-	}
-
-	if (!PlayerOwner)
-	{
-		return;
-	}
-
-	if (!PlayerOwner->HasAuthority())
-	{
-		Server_EquipItemFromSlot(KeyTag);
-		return;
-	}
-
-	if (IsEquipmentTransitioning())
-	{
-		return;
-	}
-
-	const int32 RequestedSlotIndex = PlayerOwner->ItemSlots.IndexOfByKey(KeyTag);
-	if (PlayerOwner->ItemSlots.IsValidIndex(RequestedSlotIndex))
-	{
-		StartEquipItemFromSlot(RequestedSlotIndex);
-		PlayerOwner->OnItemSlotsChanged.Broadcast();
-	}
-}
-
-bool UPlayerEquipmentComponent::EquipInventoryWeapon(FGameplayTag ItemTag)
+bool UPlayerEquipmentComponent::EquipInventoryItem(FGameplayTag ItemTag)
 {
 	if (!PlayerOwner)
 	{
@@ -89,8 +58,7 @@ bool UPlayerEquipmentComponent::EquipInventoryWeapon(FGameplayTag ItemTag)
 	}
 
 	if (IsValid(PlayerOwner->EquippedItem) &&
-		PlayerOwner->EquippedItem->ItemTag == ItemTag &&
-		!IsItemOwnedByItemSlot(PlayerOwner->EquippedItem))
+		PlayerOwner->EquippedItem->ItemTag == ItemTag)
 	{
 		return true;
 	}
@@ -132,7 +100,6 @@ void UPlayerEquipmentComponent::UnequipCurrentItem()
 
 	StoreCurrentEquippedItem();
 	EquipmentState = EEquipmentState::None;
-	PlayerOwner->OnItemSlotsChanged.Broadcast();
 	PlayerOwner->OnQuickSlotsChanged.Broadcast();
 }
 
@@ -148,26 +115,14 @@ void UPlayerEquipmentComponent::UseEquippedItem(bool bDestroy)
 		return;
 	}
 
-	int32 EquippedIndex = PlayerOwner->ItemSlots.IndexOfByKey(PlayerOwner->EquippedItem.Get());
-	if (EquippedIndex != INDEX_NONE)
+	const FGameplayTag ItemTag = PlayerOwner->EquippedItem->ItemTag;
+	if (bDestroy && PlayerOwner->GetInventoryComponent())
 	{
-		UE_LOG(LogTemp, Log, TEXT("UPlayerEquipmentComponent::UseEquippedItem : Item used! Slot index: %d"), EquippedIndex);
-		ClearBowArrowAnchor(Cast<ABowItem>(PlayerOwner->EquippedItem));
-
-		FGameplayTag AssignedKeyTag = ResolveUseKeyTag(PlayerOwner->EquippedItem);
-
-		PlayerOwner->RemoveItemFromSlot(PlayerOwner->ItemSlots[EquippedIndex].KeyTag);
-		PlayerOwner->RemoveAbilityFromSlot(AssignedKeyTag);
-
-		if (bDestroy)
-		{
-			PlayerOwner->EquippedItem->Destroy();
-		}
-
-		PlayerOwner->EquippedItem = nullptr;
-		EquipmentState = EEquipmentState::None;
-		PlayerOwner->OnItemSlotsChanged.Broadcast();
+		PlayerOwner->GetInventoryComponent()->RemoveItem(ItemTag, 1);
 	}
+	StoreCurrentEquippedItem();
+	EquipmentState = EEquipmentState::None;
+	PlayerOwner->OnQuickSlotsChanged.Broadcast();
 }
 
 void UPlayerEquipmentComponent::OnRepOwnerEquippedItem()
@@ -343,11 +298,6 @@ const FWeaponAnimationEntry* UPlayerEquipmentComponent::GetEquippedWeaponAnimati
 
 void UPlayerEquipmentComponent::OnRep_EquipmentState()
 {
-}
-
-void UPlayerEquipmentComponent::Server_EquipItemFromSlot_Implementation(FGameplayTag KeyTag)
-{
-	EquipItemFromSlot(KeyTag);
 }
 
 const FWeaponAnimationEntry* UPlayerEquipmentComponent::ResolveWeaponAnimationEntry(const ABaseItem* Item) const
@@ -741,14 +691,6 @@ void UPlayerEquipmentComponent::ClearBowArrowAnchor(ABowItem* ExpectedBow)
 	BoundBowArrowAnchor.Reset();
 }
 
-bool UPlayerEquipmentComponent::IsItemOwnedByItemSlot(const ABaseItem* Item) const
-{
-	return PlayerOwner && IsValid(Item) && PlayerOwner->ItemSlots.ContainsByPredicate([Item](const FItemSlot& Slot)
-	{
-		return Slot.Item == Item;
-	});
-}
-
 void UPlayerEquipmentComponent::StoreCurrentEquippedItem()
 {
 	CancelActiveWeaponAbilities();
@@ -759,51 +701,15 @@ void UPlayerEquipmentComponent::StoreCurrentEquippedItem()
 	}
 
 	ABaseItem* PreviousItem = PlayerOwner->EquippedItem;
-	const bool bOwnedByItemSlot = IsItemOwnedByItemSlot(PreviousItem);
 	ClearBowArrowAnchor(Cast<ABowItem>(PreviousItem));
 	PreviousItem->RemoveStrengthBonusEffect();
 	RemoveEquippedItemAbility(PreviousItem);
 	PlayerOwner->EquippedItem = nullptr;
 
-	if (bOwnedByItemSlot)
-	{
-		PreviousItem->SetItemState(EItemState::InItemSlot);
-	}
-	else
-	{
-		// Inventory-backed weapons are transient equipped representations. The
-		// inventory keeps the item count, so the actor must not survive unequip.
-		PreviousItem->Destroy();
-	}
+	// Equipped actors are transient inventory representations.
+	PreviousItem->Destroy();
 
 	PlayerOwner->SetCombatMode(false);
-}
-
-void UPlayerEquipmentComponent::StartEquipItemFromSlot(int32 SlotIndex)
-{
-	if (!PlayerOwner || !PlayerOwner->HasAuthority() || !PlayerOwner->ItemSlots.IsValidIndex(SlotIndex))
-	{
-		return;
-	}
-
-	ABaseItem* SlotItem = PlayerOwner->ItemSlots[SlotIndex].Item;
-
-	if (PlayerOwner->EquippedItem == SlotItem)
-	{
-		StoreCurrentEquippedItem();
-		EquipmentState = EEquipmentState::None;
-		return;
-	}
-
-	StoreCurrentEquippedItem();
-
-	if (!IsValid(SlotItem))
-	{
-		EquipmentState = EEquipmentState::None;
-		return;
-	}
-
-	StartEquipItem(SlotItem, PlayerOwner->ItemSlots[SlotIndex].KeyTag);
 }
 
 void UPlayerEquipmentComponent::StartEquipItem(ABaseItem* Item, FGameplayTag SourceSlotTag)
@@ -872,7 +778,7 @@ void UPlayerEquipmentComponent::FinalizePendingEquip()
 	PendingEquipItem = nullptr;
 	PendingEquipSlotTag = FGameplayTag();
 	ActiveEquipmentMontage = nullptr;
-	PlayerOwner->OnItemSlotsChanged.Broadcast();
+	PlayerOwner->OnQuickSlotsChanged.Broadcast();
 }
 
 void UPlayerEquipmentComponent::CancelPendingEquip()
@@ -887,11 +793,7 @@ void UPlayerEquipmentComponent::CancelPendingEquip()
 	{
 		if (ItemToCancel)
 		{
-			if (IsItemOwnedByItemSlot(ItemToCancel))
-			{
-				ItemToCancel->SetItemState(EItemState::InItemSlot);
-			}
-			else if (ItemToCancel != PlayerOwner->EquippedItem)
+			if (ItemToCancel != PlayerOwner->EquippedItem)
 			{
 				ItemToCancel->Destroy();
 			}

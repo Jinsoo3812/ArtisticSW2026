@@ -1,0 +1,25 @@
+RowName,ResultItemTag,ResultQuantity,Ingredients,Note
+SwordA2,Item.Id.Weapon.Sword.SwordA2,1,Item.Id.Material.WeaponMaterial.Wood:4,
+SwordB2,Item.Id.Weapon.Sword.SwordB2,1,Item.Id.Material.WeaponMaterial.Wood:5,
+ShortBow2,Item.Id.Weapon.Bow.ShortBow2,1,Item.Id.Material.WeaponMaterial.Wood:4,
+LongBow2,Item.Id.Weapon.Bow.LongBow2,1,Item.Id.Material.WeaponMaterial.Wood:6,
+SwordA3,Item.Id.Weapon.Sword.SwordA3,1,Item.Id.Material.WeaponMaterial.Wood:3;Item.Id.Material.WeaponMaterial.GoodWood:5,
+SwordB3,Item.Id.Weapon.Sword.SwordB3,1,Item.Id.Material.WeaponMaterial.Wood:4;Item.Id.Material.WeaponMaterial.GoodWood:6,
+ShortBow3,Item.Id.Weapon.Bow.ShortBow3,1,Item.Id.Material.WeaponMaterial.Wood:5;Item.Id.Material.WeaponMaterial.GoodWood:4,
+LongBow3,Item.Id.Weapon.Bow.LongBow3,1,Item.Id.Material.WeaponMaterial.Wood:5;Item.Id.Material.WeaponMaterial.GoodWood:6,
+SwordA4,Item.Id.Weapon.Sword.SwordA4,1,Item.Id.Material.WeaponMaterial.GoodWood:4;Item.Id.Material.WeaponMaterial.Iron:5,
+SwordB4,Item.Id.Weapon.Sword.SwordB4,1,Item.Id.Material.WeaponMaterial.GoodWood:5;Item.Id.Material.WeaponMaterial.Iron:6,
+ShortBow4,Item.Id.Weapon.Bow.ShortBow4,1,Item.Id.Material.WeaponMaterial.GoodWood:6;Item.Id.Material.WeaponMaterial.Iron:4,
+LongBow4,Item.Id.Weapon.Bow.LongBow4,1,Item.Id.Material.WeaponMaterial.GoodWood:6;Item.Id.Material.WeaponMaterial.Iron:6,
+SwordA5,Item.Id.Weapon.Sword.SwordA5,1,Item.Id.Material.WeaponMaterial.Iron:5;Item.Id.Material.WeaponMaterial.GoodIron:7;Item.Id.Material.WeaponSpecialMaterial.LegendaryMaterial:1,requires Item.Id.Material.WeaponSpecialRecipe.SwordA5Recipe not consumed
+SwordB5,Item.Id.Weapon.Sword.SwordB5,1,Item.Id.Material.WeaponMaterial.Iron:6;Item.Id.Material.WeaponMaterial.GoodIron:8;Item.Id.Material.WeaponSpecialMaterial.LegendaryMaterial:1,requires Item.Id.Material.WeaponSpecialRecipe.SwordB5Recipe not consumed
+ShortBow5,Item.Id.Weapon.Bow.ShortBow5,1,Item.Id.Material.WeaponMaterial.Iron:7;Item.Id.Material.WeaponMaterial.GoodIron:6;Item.Id.Material.WeaponSpecialMaterial.LegendaryMaterial:1,requires Item.Id.Material.WeaponSpecialRecipe.ShortBow5Recipe not consumed
+LongBow5,Item.Id.Weapon.Bow.LongBow5,1,Item.Id.Material.WeaponMaterial.Iron:7;Item.Id.Material.WeaponMaterial.GoodIron:8;Item.Id.Material.WeaponSpecialMaterial.LegendaryMaterial:1,requires Item.Id.Material.WeaponSpecialRecipe.LongBow5Recipe not consumed
+Medicine,Item.Id.Consumables.Heal.Medicine,1,Item.Id.Material.ConsumablesMaterial.Pear:2,
+Doraji,Item.Id.Consumables.Buff.Doraji,1,Item.Id.Material.ConsumablesMaterial.Pear:3,
+Tangyak,Item.Id.Consumables.Heal.Tangyak,1,Item.Id.Material.ConsumablesMaterial.Pear:2;Item.Id.Material.ConsumablesMaterial.GoodPear:3,
+Chungshimhwan,Item.Id.Consumables.Buff.Chungshimhwan,1,Item.Id.Material.ConsumablesMaterial.Pear:3;Item.Id.Material.ConsumablesMaterial.GoodPear:3,
+Elixir,Item.Id.Consumables.Heal.Elixir,1,Item.Id.Material.ConsumablesMaterial.GoodPear:3;Item.Id.Material.ConsumablesMaterial.Herbs:4,
+Gongjindan,Item.Id.Consumables.Buff.Gongjindan,1,Item.Id.Material.ConsumablesMaterial.GoodPear:4;Item.Id.Material.ConsumablesMaterial.Herbs:4,
+Panacea,Item.Id.Consumables.Heal.Panacea,1,Item.Id.Material.ConsumablesMaterial.Herbs:4;Item.Id.Material.ConsumablesMaterial.GoodHerbs:5,effect placeholder
+RoyalGongjindan,Item.Id.Consumables.Buff.RoyalGongjindan,1,Item.Id.Material.ConsumablesMaterial.Herbs:5;Item.Id.Material.ConsumablesMaterial.GoodHerbs:5,effect placeholder

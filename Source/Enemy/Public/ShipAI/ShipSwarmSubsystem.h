@@ -4,9 +4,22 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "TimerManager.h"
 #include "ShipSwarmSubsystem.generated.h"
 
 class AEnemyShip;
+
+USTRUCT()
+struct ENEMY_API FEnemyShipAvoidanceDecision
+{
+	GENERATED_BODY()
+
+	bool bShouldYield = false;
+	bool bOverrideTurnInput = false;
+	float TurnInput = 0.0f;
+	float EarliestCollisionTime = TNumericLimits<float>::Max();
+	TWeakObjectPtr<AActor> ThreatActor;
+};
 
 /**
  * 적 배들의 군집(Squad) 관리 및 빠른 접근을 담당하는 월드 서브시스템
@@ -17,6 +30,9 @@ class ENEMY_API UShipSwarmSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
+	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
+	virtual void Deinitialize() override;
+
 	// 배가 월드에 스폰될 때 호출하여 등록
 	UFUNCTION(BlueprintCallable, Category = "Ship|Swarm")
 	void RegisterShip(AEnemyShip* Ship);
@@ -29,7 +45,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ship|Swarm")
 	TArray<AEnemyShip*> GetSquadMembers(FName SquadID);
 
+	/** Rebuilds symmetric orbit lanes from the squad members' Archetype-authored distances and spacing. */
+	void RecalculateSquadOrbitDistances(FName SquadID);
+
+	/** Predicts active same-target ship traffic and deployed skill obstacles. */
+	FEnemyShipAvoidanceDecision EvaluateAvoidance(AEnemyShip* Ship);
+
 private:
+	void EvaluateDistanceOptimization();
+
 	// 군집 ID별로 배들의 약참조 목록을 보관 (댕글링 포인터 방지)
 	TMap<FName, TArray<TWeakObjectPtr<AEnemyShip>>> SquadMap;
+	FTimerHandle DistanceOptimizationTimerHandle;
 };

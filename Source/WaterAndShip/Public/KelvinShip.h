@@ -5,6 +5,7 @@
 #include "KelvinShip.generated.h"
 
 class USWShipWakeEmitterComponent;
+class UPlayerRespawnPointComponent;
 
 /** Player ship variant with a native Kelvin wake emitter inherited by the test Blueprint. */
 UCLASS(BlueprintType, Blueprintable)
@@ -17,5 +18,11 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship Wake")
 	TObjectPtr<USWShipWakeEmitterComponent> ShipWakeEmitter;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Respawn")
+	TObjectPtr<UPlayerRespawnPointComponent> Player0RespawnPoint;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Respawn")
+	TObjectPtr<UPlayerRespawnPointComponent> Player1RespawnPoint;
 };
 

@@ -6,9 +6,20 @@
 
 class AShip;
 class UInteractableComponent;
+class UBoxInteractableComponent;
+class UCapsuleInteractableComponent;
+class UShapeComponent;
 class USceneComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
+
+UENUM(BlueprintType)
+enum class EBoardingInteractionShape : uint8
+{
+	Sphere,
+	Box,
+	Capsule
+};
 
 /**
  * A reusable sea-boarding point authored as a Child Actor Component inside a
@@ -29,6 +40,15 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Boarding")
 	UInteractableComponent* GetBoardingInteractable() const { return BoardingInteractable; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Boarding")
+	UShapeComponent* GetActiveBoardingInteractable() const;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|Boarding|Interaction")
+	EBoardingInteractionShape InteractionShape = EBoardingInteractionShape::Sphere;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|Boarding|Interaction|Legacy")
+	bool bUseLegacySphereAuthoring = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Boarding|Visual")
 	TObjectPtr<UStaticMesh> PointMeshAsset;
@@ -56,4 +76,15 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Boarding")
 	TObjectPtr<UInteractableComponent> BoardingInteractable;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Boarding")
+	TObjectPtr<UBoxInteractableComponent> BoardingBoxInteractable;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Boarding")
+	TObjectPtr<UCapsuleInteractableComponent> BoardingCapsuleInteractable;
+
+private:
+	void InitializeInteractionShapeComponents();
+	void RefreshInteractionShapeState();
 };
+

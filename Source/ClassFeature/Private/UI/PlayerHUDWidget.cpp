@@ -15,6 +15,7 @@
 #include "UI/StorageWindowWidget.h"
 #include "Storage/SharedStorageChest.h"
 #include "Storage/StorageChest.h"
+#include "Storage/StorageInteractionDiagnostics.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
@@ -144,7 +145,6 @@ void UPlayerHUDWidget::NativeDestruct()
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
-		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
 		CachedPlayer->OnQuickSlotsChanged.RemoveAll(this);
 		if (UInventoryComponent* Inventory = CachedPlayer->GetInventoryComponent())
 		{
@@ -186,7 +186,6 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
-		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
 		CachedPlayer->OnQuickSlotsChanged.RemoveAll(this);
 
 		if (UInventoryComponent* OldInventory = CachedPlayer->GetInventoryComponent())
@@ -207,8 +206,7 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.AddUObject(this, &UPlayerHUDWidget::HandleAbilitySystemInitialized);
-		CachedPlayer->OnItemSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleItemSlotsChanged);
-		CachedPlayer->OnQuickSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleItemSlotsChanged);
+		CachedPlayer->OnQuickSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleQuickSlotsChanged);
 
 		BindHealthComponent(CachedPlayer->GetHealthComponent());
 		BindSkillComponent(CachedPlayer->GetPlayerSkillComponent());
@@ -269,6 +267,7 @@ UStorageWindowWidget* UPlayerHUDWidget::ShowStorageWindow(
 {
 	if (!StorageChest)
 	{
+		if (IsStorageInteractionLoggingEnabled()) UE_LOG(LogStorageInteraction, Warning, TEXT("[HUD] Rejected: chest is null."));
 		return nullptr;
 	}
 
@@ -298,6 +297,7 @@ UStorageWindowWidget* UPlayerHUDWidget::ShowStorageWindow(
 	{
 		if (!RootCanvasPanel)
 		{
+			if (IsStorageInteractionLoggingEnabled()) UE_LOG(LogStorageInteraction, Warning, TEXT("[HUD] Rejected: RootCanvasPanel is null. HUD=%s"), *GetNameSafe(this));
 			return nullptr;
 		}
 
@@ -309,6 +309,7 @@ UStorageWindowWidget* UPlayerHUDWidget::ShowStorageWindow(
 		StorageWindowWidget = CreateWidget<UStorageWindowWidget>(GetOwningPlayer(), StorageWindowClass);
 		if (!StorageWindowWidget)
 		{
+			if (IsStorageInteractionLoggingEnabled()) UE_LOG(LogStorageInteraction, Warning, TEXT("[HUD] CreateWidget failed. Class=%s"), *GetNameSafe(StorageWindowClass.Get()));
 			return nullptr;
 		}
 
@@ -366,7 +367,7 @@ void UPlayerHUDWidget::HandleInventoryChanged()
 	RefreshCursorItemWidget();
 }
 
-void UPlayerHUDWidget::HandleItemSlotsChanged()
+void UPlayerHUDWidget::HandleQuickSlotsChanged()
 {
 	RefreshQuickSlots();
 	RefreshBowCrosshairBinding();

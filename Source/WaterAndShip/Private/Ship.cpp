@@ -2,9 +2,13 @@
 
 
 #include "Ship.h"
+#include "HAL/IConsoleManager.h"
+#include "MultiGameMode.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Components/ChildActorComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "InteractableComponent.h"
 #include "EnhancedInputComponent.h"
@@ -19,6 +23,13 @@
 #include "BaseAttributeSet.h"
 #include "ShipAttributeSet.h"
 #include "BaseGameplayTags.h"
+#include "GASCombatLibrary.h"
+#include "GASDamageInstantGameplayEffect.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
+#include "Effects/SWNiagaraScaleLibrary.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 #include "CollisionChannels.h"
 #include "Skills/SkillUseProvider.h"
 #include "ShipPhysicsAsync.h"
@@ -38,6 +49,7 @@
 #include "Interfaces/IPhysicsComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "DrawDebugHelpers.h"
+#include "Engine/Engine.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Bombardment.h"
@@ -46,9 +58,25 @@
 #include "LandscapeProxy.h"
 #include "WaterSurfaceQueryLibrary.h"
 #include "Upgrade/ShipUpgradeComponent.h"
+#include "Upgrade/SharedShipUpgradeState.h"
+#include "Repair/ShipRepairPointComponent.h"
+#include "Repair/ShipLeakDamageGameplayEffect.h"
+#include "Materials/MaterialParameterCollection.h"
+#include "Materials/MaterialParameterCollectionInstance.h"
 
 namespace
 {
+	void InvokeNoParameterFunction(UObject* Object, const FName FunctionName)
+	{
+		if (Object)
+		{
+			if (UFunction* Function = Object->FindFunction(FunctionName))
+			{
+				Object->ProcessEvent(Function, nullptr);
+			}
+		}
+	}
+
 	TAutoConsoleVariable<int32> CVarShowShipNetworkBuoyancyDebug(
 		TEXT("p.ShowShipNetworkBuoyancyDebug"),
 		0,
@@ -91,6 +119,8 @@ AShip::AShip()
 {
  	// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
+	PlayerRamDamageGameplayEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
+	LeakDamageGameplayEffectClass = UShipLeakDamageGameplayEffect::StaticClass();
 
 	// Buoyancy Root
 	BuoyancyRoot = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BuoyancyRoot"));
@@ -126,23 +156,31 @@ AShip::AShip()
 	ShipDamageMesh->SetCastShadow(false);
 	ShipDamageMesh->SetCastHiddenShadow(false);
 
-	ShipDeckMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipDeckMesh"));
-	ShipDeckMesh->SetupAttachment(BuoyancyRoot);
-	// Keep this as a kinematic follower rather than welding its collision shapes
-	// into the network-predicted buoyancy body. Ragdolls may rest on the deck
-	// without changing the ship's authoritative mass/inertia setup.
-	ShipDeckMesh->BodyInstance.bAutoWeld = false;
-	ShipDeckMesh->SetCollisionProfileName(TEXT("ShipDeck"));
-	ShipDeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
-	ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
-	ShipDeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
-	ShipDeckMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
-	ShipDeckMesh->SetGenerateOverlapEvents(false);
-	ShipDeckMesh->SetVisibility(false, false);
-	ShipDeckMesh->SetHiddenInGame(true, false);
-	ShipDeckMesh->SetCastShadow(false);
-	ShipDeckMesh->SetCastHiddenShadow(false);
+	auto ConfigureDeckMesh = [this](UStaticMeshComponent* DeckMesh)
+	{
+		DeckMesh->SetupAttachment(BuoyancyRoot);
+		// Keep deck collision as a kinematic follower instead of welding it into
+		// the network-predicted buoyancy body and changing mass/inertia.
+		DeckMesh->BodyInstance.bAutoWeld = false;
+		DeckMesh->SetCollisionProfileName(TEXT("ShipDeck"));
+		DeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		DeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
+		DeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+		DeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+		DeckMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
+		DeckMesh->SetGenerateOverlapEvents(false);
+		DeckMesh->SetVisibility(false, false);
+		DeckMesh->SetHiddenInGame(true, false);
+		DeckMesh->SetCastShadow(false);
+		DeckMesh->SetCastHiddenShadow(false);
+	};
+
+	DeckMeshSimple = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DeckMesh_Simple"));
+	ConfigureDeckMesh(DeckMeshSimple);
+	DeckMeshComplex = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DeckMesh_Complex"));
+	ConfigureDeckMesh(DeckMeshComplex);
+	// Legacy deck-AI code samples and attaches to the precise walkable surface.
+	ShipDeckMesh = DeckMeshComplex;
 
 	SWBuoyancyComponent = CreateDefaultSubobject<USWBuoyancyComponent>(TEXT("SWBuoyancyComponent"));
 	SWBuoyancyComponent->ExecutionMode = ESWBuoyancyExecutionMode::ExternalNetworkPhysics;
@@ -186,6 +224,11 @@ AShip::AShip()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
+	HelmFirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("HelmFirstPersonCamera"));
+	HelmFirstPersonCamera->SetupAttachment(BuoyancyRoot);
+	HelmFirstPersonCamera->bUsePawnControlRotation = true;
+	HelmFirstPersonCamera->SetAutoActivate(false);
+
 	// Helm authoring components. Visuals and interaction collision remain separate
 	// so designers can scale either without affecting the other.
 	HelmMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HelmMesh"));
@@ -203,8 +246,39 @@ AShip::AShip()
 	HelmExitPoint = CreateDefaultSubobject<USceneComponent>(TEXT("HelmExitPoint"));
 	HelmExitPoint->SetupAttachment(BuoyancyRoot);
 
+	// Anchor authoring components
+	AnchorMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("AnchorMesh"));
+	AnchorMesh->SetupAttachment(BuoyancyRoot);
+	AnchorMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+
+	AnchorInteractable = CreateDefaultSubobject<UInteractableComponent>(TEXT("AnchorInteractable"));
+	AnchorInteractable->SetupAttachment(AnchorMesh);
+	AnchorInteractable->SetCollisionProfileName(TEXT("Interactable"));
+	AnchorInteractable->InteractionTag = FGameplayTag::RequestGameplayTag(TEXT("Interaction.Ship.Anchor"), false);
+
 	BoardingArrivalPoint = CreateDefaultSubobject<USceneComponent>(TEXT("BoardingArrivalPoint"));
 	BoardingArrivalPoint->SetupAttachment(BuoyancyRoot);
+
+	RepairPoint1 = CreateDefaultSubobject<UShipRepairPointComponent>(TEXT("RepairPoint1"));
+	RepairPoint1->SetupAttachment(BuoyancyRoot);
+	RepairPoint1->SetRelativeLocation(FVector(0.0f, 250.0f, 150.0f));
+	RepairPoint2 = CreateDefaultSubobject<UShipRepairPointComponent>(TEXT("RepairPoint2"));
+	RepairPoint2->SetupAttachment(BuoyancyRoot);
+	RepairPoint2->SetRelativeLocation(FVector(300.0f, -250.0f, 150.0f));
+	RepairPoint3 = CreateDefaultSubobject<UShipRepairPointComponent>(TEXT("RepairPoint3"));
+	RepairPoint3->SetupAttachment(BuoyancyRoot);
+	RepairPoint3->SetRelativeLocation(FVector(-300.0f, -250.0f, 150.0f));
+
+	auto AddRepairRule = [this](const FGameplayTag ItemTag, const float HealthRestored)
+	{
+		FShipRepairMaterialRule& Rule = RepairMaterialRules.AddDefaulted_GetRef();
+		Rule.ItemTag = ItemTag;
+		Rule.HealthRestored = HealthRestored;
+	};
+	AddRepairRule(Item_Id_Material_ShipMaterials_WoodenPlank, 20.0f);
+	AddRepairRule(Item_Id_Material_ShipMaterials_GoodWoodenPlank, 30.0f);
+	AddRepairRule(Item_Id_Material_ShipMaterials_IronPlate, 40.0f);
+	AddRepairRule(Item_Id_Material_ShipMaterials_GoodIronPlate, 50.0f);
 
 	// Ability System Component
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
@@ -233,15 +307,32 @@ AShip::AShip()
 void AShip::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// PlayerShip and EnemyShip are PhysicsOnly WorldDynamic bodies that mutually
+	// block, so the physics root is the authoritative place to observe a ram.
+	// Enemy charge temporarily enables the same notification on its own root;
+	// keep it enabled on the player root while we gather threshold telemetry.
+	if (HasAuthority() && !IsEnemyShipForEffects() && BuoyancyRoot)
+	{
+		BuoyancyRoot->SetNotifyRigidBodyCollision(true);
+		BuoyancyRoot->OnComponentHit.AddUniqueDynamic(
+			this, &AShip::HandlePlayerShipCollisionTelemetry);
+	}
+
 	// Reassert the critical moving-deck responses at runtime so older Blueprint
 	// component templates cannot silently restore the former query-only profile.
-	if (ShipDeckMesh)
+	for (UStaticMeshComponent* DeckMesh : { DeckMeshSimple.Get(), DeckMeshComplex.Get() })
 	{
-		ShipDeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		ShipDeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
-		ShipDeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
-		ShipDeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
-		ShipDeckMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
+		if (!DeckMesh)
+		{
+			continue;
+		}
+		DeckMesh->SetCollisionProfileName(TEXT("ShipDeck"));
+		DeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		DeckMesh->SetCollisionObjectType(ECC_WorldDynamic);
+		DeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+		DeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+		DeckMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
 	}
 	if (ShipDamageMesh)
 	{
@@ -261,6 +352,36 @@ void AShip::BeginPlay()
 	if (HasAuthority() && AttributeSet)
 	{
 		InitializeDefaultAttributes();
+	}
+	// The UI preview stage owns a local, non-replicated copy of the ship. A real
+	// player ship can also have an Owner (normally a replicated controller), so
+	// checking only for a null Owner incorrectly excludes the real ship.
+	const AActor* ShipOwner = GetOwner();
+	const bool bIsLocalPreviewShip = ShipOwner && !ShipOwner->GetIsReplicated();
+	if (HasAuthority() && !IsEnemyShipForEffects() && !bIsLocalPreviewShip)
+	{
+		SharedUpgradeState = ASharedShipUpgradeState::Find(this);
+		if (!SharedUpgradeState)
+		{
+			SharedUpgradeState = GetWorld()->SpawnActor<ASharedShipUpgradeState>();
+		}
+		if (SharedUpgradeState)
+		{
+			SharedUpgradeState->RegisterPlayerShip(this);
+		}
+	}
+	else if (HasAuthority() && !IsEnemyShipForEffects())
+	{
+		UE_LOG(LogTemp, Verbose,
+			TEXT("[SharedShipState] Skipped local preview Ship=%s Owner=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(ShipOwner));
+	}
+	if (HasAuthority() && AbilitySystemComponent && !IsEnemyShipForEffects())
+	{
+		ShipHealthChangedDelegateHandle = AbilitySystemComponent
+			->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute())
+			.AddUObject(this, &AShip::HandleShipHealthChanged);
 	}
 
 	// The legacy Water plugin component may have enabled root overlap during its
@@ -331,6 +452,13 @@ void AShip::BeginPlay()
 		HelmInteractable->InitializeInteractable(ObjectName, ActionText);
 	}
 	UpdateHelmInteractionAvailability();
+
+	if (AnchorInteractable)
+	{
+		UpdateAnchorInteractionUI();
+		AnchorInteractable->OnInteracted.AddUniqueDynamic(this, &AShip::HandleAnchorInteracted);
+	}
+
 	RefreshMountedCannons();
 
 	// 좌현 바다 승선 상호작용 바인딩
@@ -366,6 +494,23 @@ void AShip::BeginPlay()
 
 void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (HasAuthority() && SharedUpgradeState)
+	{
+		SharedUpgradeState->UnregisterPlayerShip(this);
+	}
+	if (HasAuthority())
+	{
+		ForceExitAllControlModes();
+		if (AbilitySystemComponent && ShipHealthChangedDelegateHandle.IsValid())
+		{
+			AbilitySystemComponent
+				->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute())
+				.Remove(ShipHealthChangedDelegateHandle);
+			ShipHealthChangedDelegateHandle.Reset();
+		}
+	}
+	SetLocalHelmRiderHeadHidden(false);
+
 	if (HasAuthority())
 	{
 		CancelBombardmentAbilityAuthoritative();
@@ -394,6 +539,53 @@ void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	static const auto CVarShipBalanceDiagnostics = IConsoleManager::Get().RegisterConsoleVariable(
+		TEXT("sw.ShipBalanceDiagnostics"),
+		0,
+		TEXT("Logs steady-state player ship and enemy cannon balance measurements."),
+		ECVF_Default);
+	if (CVarShipBalanceDiagnostics->GetInt() != 0
+		&& IsLocallyControlled() && !IsEnemyShipForEffects() && GetWorld()
+		&& GetWorld()->GetTimeSeconds() >= NextShipBalanceDiagnosticTime)
+	{
+		NextShipBalanceDiagnosticTime = GetWorld()->GetTimeSeconds() + 0.5;
+		const FVector Velocity = GetVelocity();
+		const float Speed2D = Velocity.Size2D();
+		const float ForwardSpeed = FVector::DotProduct(Velocity, GetActorForwardVector());
+		const float AngularSpeedDeg = BuoyancyRoot
+			? FMath::Abs(BuoyancyRoot->GetPhysicsAngularVelocityInDegrees().Z)
+			: 0.0f;
+		const bool bStableSample = FMath::Abs(Speed2D - PreviousShipBalanceSpeed) <= 10.0f
+			&& FMath::Abs(AngularSpeedDeg - PreviousShipBalanceAngularSpeed) <= 0.25f;
+		ShipBalanceStableSampleCount = bStableSample ? ShipBalanceStableSampleCount + 1 : 0;
+		PreviousShipBalanceSpeed = Speed2D;
+		PreviousShipBalanceAngularSpeed = AngularSpeedDeg;
+		const float AngularSpeedRad = FMath::DegreesToRadians(AngularSpeedDeg);
+		const float TurnRadius = AngularSpeedRad > KINDA_SMALL_NUMBER ? Speed2D / AngularSpeedRad : 0.0f;
+		const TCHAR* InputLabel = CurrentMoveInput > 0.9f
+			? (CurrentTurnInput > 0.9f ? TEXT("WD") : CurrentTurnInput < -0.9f ? TEXT("WA") : TEXT("W"))
+			: TEXT("OTHER");
+		UE_LOG(LogTemp, Display,
+			TEXT("[SHIP-BALANCE] Row=%s Input=%s Move=%.2f Turn=%.2f Speed2D=%.1f ForwardSpeed=%.1f AngularSpeedDeg=%.2f TurnRadius=%.1f Stable=%s Samples=%d"),
+			*GetShipStatRowName().ToString(), InputLabel, CurrentMoveInput, CurrentTurnInput,
+			Speed2D, ForwardSpeed, AngularSpeedDeg, TurnRadius,
+			ShipBalanceStableSampleCount >= 4 ? TEXT("true") : TEXT("false"),
+			ShipBalanceStableSampleCount);
+	}
+
+	if (GEngine && IsLocallyControlled() && !IsEnemyShipForEffects())
+	{
+		const float SpeedCmPerSecond = GetVelocity().Size2D();
+		GEngine->AddOnScreenDebugMessage(
+			0x53484950,
+			0.0f,
+			FColor::Cyan,
+			FString::Printf(
+				TEXT("Player Ship Speed: %.0f cm/s (%.1f m/s)"),
+				SpeedCmPerSecond,
+				SpeedCmPerSecond / 100.0f));
+	}
 
 	if (IsLocallyControlled() && bBombardmentTargeting)
 	{
@@ -517,6 +709,18 @@ void AShip::Tick(float DeltaTime)
 	if (ShipPhysicsAsync)
 	{
 		// 1. 조작 입력 데이터 마샬링 (Autonomous Proxy 및 Local Controller 전용)
+		if (HasAuthority() && !CurrentBlastAcceleration.IsNearlyZero())
+		{
+			const double ServerTime = GetWorld() && GetWorld()->GetGameState()
+				? GetWorld()->GetGameState()->GetServerWorldTimeSeconds()
+				: (GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0);
+			if (ServerTime >= CurrentBlastEndTimeSeconds)
+			{
+				CurrentBlastAcceleration = FVector::ZeroVector;
+				CurrentBlastApplicationPointLocal = FVector::ZeroVector;
+			}
+		}
+
 		CurrentExternalAcceleration = FVector::ZeroVector;
 		for (const TPair<FGuid, FVector>& SourcePair : ExternalAccelerationSources)
 		{
@@ -532,8 +736,9 @@ void AShip::Tick(float DeltaTime)
 		{
 			if (FAsyncInputShip* AsyncInput = ShipPhysicsAsync->GetProducerInputData_External())
 			{
-				AsyncInput->MovementInput = CurrentMoveInput;
-				AsyncInput->SteeringInput = CurrentTurnInput;
+				const bool bSuppressPropulsion = IsPropulsionSuppressed();
+				AsyncInput->MovementInput = bSuppressPropulsion ? 0.0f : CurrentMoveInput;
+				AsyncInput->SteeringInput = bSuppressPropulsion ? 0.0f : CurrentTurnInput;
 				AsyncInput->bHasLocalController = true; // 로컬 컨트롤러 조종 여부 릴레이
 			}
 		}
@@ -630,10 +835,11 @@ void AShip::Tick(float DeltaTime)
 				(AttributeSet ? AttributeSet->GetTurnTorqueMultiplier() : 1.0f)
 				* FMath::Max(0.0f, CurrentAITurnScale);
 			float BuoyancyRadius = 150.f;
-			float BuoyancyForceMultiplier = 1.3f;
-			float WaterDamping = 3.0f;
-			float WaterDamping2 = 0.1f;
-			float MaxBuoyantForce = 5000000.0f;
+			FSWBuoyancyForceSettings BuoyancyForceSettings;
+			BuoyancyForceSettings.BuoyancyCoefficient = 1.3f;
+			BuoyancyForceSettings.BuoyancyDamp = 3.0f;
+			BuoyancyForceSettings.BuoyancyDamp2 = 0.1f;
+			BuoyancyForceSettings.MaxBuoyantForce = 5000000.0f;
 
 			if (SWBuoyancyComponent)
 			{
@@ -643,10 +849,7 @@ void AShip::Tick(float DeltaTime)
 				{
 					BuoyancyRadius = Pontoons[0].Radius;
 				}
-				BuoyancyForceMultiplier = Settings.BuoyancyCoefficient;
-				WaterDamping = Settings.BuoyancyDamp;
-				WaterDamping2 = Settings.BuoyancyDamp2;
-				MaxBuoyantForce = Settings.MaxBuoyantForce;
+				BuoyancyForceSettings = Settings;
 			}
 
 			TArray<FSWRippleEvent> TempRippleEvents;
@@ -666,8 +869,11 @@ void AShip::Tick(float DeltaTime)
 			{
 				AsyncInput->ExternalAcceleration = CurrentExternalAcceleration;
 				AsyncInput->bApplyAuthoritativeExternalAcceleration = HasAuthority();
+				AsyncInput->BlastAcceleration = CurrentBlastAcceleration;
+				AsyncInput->BlastApplicationPointLocal = CurrentBlastApplicationPointLocal;
+				AsyncInput->bApplyAuthoritativeBlast = HasAuthority();
 				AsyncInput->bApplyAuthoritativeBuoyancyState = HasAuthority();
-				AsyncInput->bBuoyancyEnabled = BuoyancyForceMultiplier > UE_SMALL_NUMBER;
+				AsyncInput->bBuoyancyEnabled = BuoyancyForceSettings.BuoyancyCoefficient > UE_SMALL_NUMBER;
 				AsyncInput->bQueryDiagnostics = bBuoyancyQueryDiagnostics;
 				AsyncInput->PontoonOffsets = TempPontoons;
 				AsyncInput->PontoonRadii = TempPontoonRadii;
@@ -682,10 +888,14 @@ void AShip::Tick(float DeltaTime)
 				AsyncInput->ForwardPropulsionMultiplier = ForwardPropulsionMultiplier;
 				AsyncInput->TurnTorqueMultiplier = TurnTorqueMultiplier;
 				AsyncInput->BuoyancyRadius = BuoyancyRadius;
-				AsyncInput->BuoyancyForceMultiplier = BuoyancyForceMultiplier;
-				AsyncInput->WaterDamping = WaterDamping;
-				AsyncInput->WaterDamping2 = WaterDamping2;
-				AsyncInput->MaxBuoyantForce = MaxBuoyantForce;
+				AsyncInput->BuoyancyForceSettings = BuoyancyForceSettings;
+				AsyncInput->bEnableRollStabilization = bEnableRollStabilization;
+				AsyncInput->RollStabilizationSoftLimitDegrees = RollStabilizationSoftLimitDegrees;
+				AsyncInput->RollStabilizationMaximumAngleDegrees = RollStabilizationMaximumAngleDegrees;
+				AsyncInput->RollStabilizationNaturalFrequencyHz = RollStabilizationNaturalFrequencyHz;
+				AsyncInput->RollStabilizationDampingRatio = RollStabilizationDampingRatio;
+				AsyncInput->RollStabilizationMaximumAngularAccelerationDegrees =
+					RollStabilizationMaximumAngularAccelerationDegrees;
 				// Keep the custom payload aligned with the project's 5 cm Network
 				// Physics threshold; 30 cm is visibly separated at pontoon scale.
 				AsyncInput->ResimLocationThreshold = FMath::Clamp(ResimLocationThreshold, 0.1f, 5.0f);
@@ -694,6 +904,12 @@ void AShip::Tick(float DeltaTime)
 				AsyncInput->ServerPhysicsStepSeconds = ServerPhysicsStepSeconds;
 				AsyncInput->NetworkPhysicsTickOffset = NetworkPhysicsTickOffset;
 				AsyncInput->bNetworkPhysicsTickOffsetAssigned = bNetworkPhysicsTickOffsetAssigned;
+				AsyncInput->bIsAnchorDropped = bIsAnchorDropped;
+				AsyncInput->AnchorOriginXY = AnchorOriginXY;
+				AsyncInput->AnchorStiffness = AnchorStiffness;
+				AsyncInput->AnchorDamping = AnchorDamping;
+				AsyncInput->AnchorSlackRadius = AnchorSlackRadius;
+				AsyncInput->MaxAnchorForce = MaxAnchorForce;
 			}
 		}
 	}
@@ -710,53 +926,40 @@ void AShip::Tick(float DeltaTime)
 		{
 			NetworkPhysicsComponent->SetCompareStateToTriggerRewind(true, true);
 		}
-
-		/* Network Physics client synchronization diagnostic logs disabled after validation.
-		// 클라이언트 전용 GT 위치 오차 실측 디버그 로그 (1초 주기 호출)
-		if (UWorld* World = GetWorld())
-		{
-			static float LogTimer = 0.0f;
-			LogTimer += DeltaTime;
-			if (LogTimer >= 1.0f)
-			{
-				LogTimer = 0.0f;
-				float Dist = FVector::Dist(GetActorLocation(), ReplicatedState.Location);
-				UE_LOG(LogTemp, Warning, TEXT("[SHIP-SYNC] LocDiff: %.2f cm | ActorLoc: %s | RepLoc: %s"), 
-					Dist, *GetActorLocation().ToString(), *ReplicatedState.Location.ToString());
-
-				if (BuoyancyRoot)
-				{
-					if (FBodyInstance* BI = BuoyancyRoot->GetBodyInstance())
-					{
-						FTransform GS_PhysTransform = BI->GetUnrealWorldTransform();
-						UE_LOG(LogTemp, Warning, TEXT("[GS-BODY-TRANS] BodyZ: %.3f | ActorZ: %.3f | RepZ: %.3f"),
-							GS_PhysTransform.GetLocation().Z, GetActorLocation().Z, ReplicatedState.Location.Z);
-					}
-				}
-
-				// 소유권 및 네트워크 역할 실시간 실측 로그 추가
-				AActor* ShipOwner = GetOwner();
-				ENetRole LocalRole = GetLocalRole();
-				ENetRole MyRemoteRole = GetRemoteRole();
-				FString LocalRoleStr = UEnum::GetValueAsString(LocalRole);
-				FString RemoteRoleStr = UEnum::GetValueAsString(MyRemoteRole);
-
-				UE_LOG(LogTemp, Warning, TEXT("[GS-OWNER-DIAG] Owner: %s | LocalRole: %s | RemoteRole: %s | ReplicateMovement: %s"),
-					ShipOwner ? *ShipOwner->GetName() : TEXT("None"),
-					*LocalRoleStr,
-					*RemoteRoleStr,
-					IsReplicatingMovement() ? TEXT("TRUE") : TEXT("FALSE"));
-
-				// CVar 값 직접 조회 로그 — ini 세팅이 실제로 적용되었는지 검증
-				IConsoleVariable* CVarCompare = IConsoleManager::Get().FindConsoleVariable(TEXT("np2.Resim.CompareStateToTriggerRewind"));
-				IConsoleVariable* CVarSimProxy = IConsoleManager::Get().FindConsoleVariable(TEXT("np2.Resim.CompareStateToTriggerRewind.IncludeSimProxies"));
-				UE_LOG(LogTemp, Warning, TEXT("[GS-CVAR-DIAG] CompareState CVar: %s | IncludeSimProxies CVar: %s"),
-					CVarCompare ? (CVarCompare->GetBool() ? TEXT("TRUE") : TEXT("FALSE")) : TEXT("NOT FOUND"),
-					CVarSimProxy ? (CVarSimProxy->GetBool() ? TEXT("TRUE") : TEXT("FALSE")) : TEXT("NOT FOUND"));
-			}
-		}
-		*/
 	}
+}
+
+void AShip::SetShipRuntimePhysicsEnabled(bool bEnabled)
+{
+	if (!BuoyancyRoot || bShipRuntimePhysicsEnabled == bEnabled)
+	{
+		return;
+	}
+
+	bShipRuntimePhysicsEnabled = bEnabled;
+	CurrentMoveInput = 0.0f;
+	CurrentTurnInput = 0.0f;
+	CurrentAIPropulsionScale = 1.0f;
+	CurrentAITurnScale = 1.0f;
+
+	if (!bEnabled)
+	{
+		BuoyancyRoot->SetPhysicsLinearVelocity(FVector::ZeroVector);
+		BuoyancyRoot->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+		if (ShipPhysicsAsync)
+		{
+			ShipPhysicsAsync->SetPhysicsObject(nullptr);
+		}
+		BuoyancyRoot->SetSimulatePhysics(false);
+		return;
+	}
+
+	BuoyancyRoot->SetSimulatePhysics(true);
+	if (ShipPhysicsAsync)
+	{
+		ShipPhysicsAsync->SetPhysicsObject(BuoyancyRoot->GetPhysicsObjectByName(NAME_None));
+	}
+	BuoyancyRoot->WakeAllRigidBodies();
 }
 
 // Called to bind functionality to input
@@ -794,10 +997,10 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 			EnhancedInput->BindAction(ShipLookAction, ETriggerEvent::Triggered, this, &AShip::ShipLook);
 		}
 
-		// Toggle fixed camera (C key)
+		// Toggle helm first-person / ship follow camera (C key)
 		if (ShipToggleCameraAction)
 		{
-			EnhancedInput->BindAction(ShipToggleCameraAction, ETriggerEvent::Started, this, &AShip::ToggleFixedCamera);
+			EnhancedInput->BindAction(ShipToggleCameraAction, ETriggerEvent::Started, this, &AShip::ToggleHelmCamera);
 		}
 
 		// Disembark (F key)
@@ -829,6 +1032,10 @@ void AShip::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	}
 
 	RestoreRememberedFollowCameraState(CachedPlayerController);
+	if (RidingPlayer)
+	{
+		SetHelmFirstPersonCameraEnabled(true);
+	}
 }
 
 void AShip::PossessedBy(AController* NewController)
@@ -848,10 +1055,20 @@ void AShip::PossessedBy(AController* NewController)
 	if (const APlayerController* PlayerController = Cast<APlayerController>(NewController))
 	{
 		APlayerState* InPlayerState = PlayerController->PlayerState;
-		const bool bFirstApplicationForPlayer = AppliedUpgradePlayerState != InPlayerState;
-		if (ApplyPlayerUpgrades(InPlayerState, bFirstApplicationForPlayer))
+		UShipUpgradeComponent* DriverUpgrade = SharedUpgradeState
+			? SharedUpgradeState->GetUpgradeComponent()
+			: nullptr;
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradeTrace][ShipPossessed] Ship=%s Controller=%s PlayerState=%s SharedUpgrade=%s ActiveNodes=%d"),
+			*GetNameSafe(this),
+			*GetNameSafe(NewController),
+			*GetNameSafe(InPlayerState),
+			*GetNameSafe(DriverUpgrade),
+			DriverUpgrade ? DriverUpgrade->GetActiveNodeIds().Num() : -1);
+
+		if (PlayerController->IsLocalController() && RidingPlayer)
 		{
-			AppliedUpgradePlayerState = InPlayerState;
+			SetHelmFirstPersonCameraEnabled(true);
 		}
 	}
 }
@@ -892,7 +1109,7 @@ void AShip::SetAIControlInput(
 
 	const float PreviousPropulsionScale = CurrentAIPropulsionScale;
 	const float PreviousTurnScale = CurrentAITurnScale;
-	if (IsPropulsionSuppressed())
+	if (IsPropulsionSuppressed() || bIsAnchorDropped)
 	{
 		CurrentMoveInput = 0.0f;
 		CurrentTurnInput = 0.0f;
@@ -938,9 +1155,57 @@ void AShip::RemoveExternalAccelerationSource(const FGuid& SourceId)
 	}
 }
 
+void AShip::PostLoad()
+{
+	Super::PostLoad();
+	// Existing Blueprint defaults stored this field as cm/s. Values above any
+	// practical authored threshold are legacy data and are converted once when loaded.
+	if (PlayerRamMinimumApproachSpeed > 50.0f)
+	{
+		PlayerRamMinimumApproachSpeed /= 100.0f;
+	}
+}
+
+void AShip::ApplyNetworkPhysicsBlast(
+	const FVector& WorldImpactPoint,
+	const FVector& WorldAcceleration,
+	float DurationSeconds)
+{
+	if (!HasAuthority() || !BuoyancyRoot || WorldImpactPoint.ContainsNaN()
+		|| WorldAcceleration.ContainsNaN() || DurationSeconds <= UE_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	const FVector SafeAcceleration = WorldAcceleration.GetClampedToMaxSize(20000.0f);
+	if (SafeAcceleration.IsNearlyZero())
+	{
+		return;
+	}
+
+	CurrentBlastAcceleration = SafeAcceleration;
+	const FVector CenterOfMass = BuoyancyRoot->GetCenterOfMass();
+	CurrentBlastApplicationPointLocal = BuoyancyRoot->GetComponentQuat()
+		.UnrotateVector(WorldImpactPoint - CenterOfMass)
+		.GetClampedToMaxSize(16000.0f);
+	const double ServerTime = GetWorld() && GetWorld()->GetGameState()
+		? GetWorld()->GetGameState()->GetServerWorldTimeSeconds()
+		: (GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0);
+	CurrentBlastEndTimeSeconds = ServerTime + FMath::Max(0.0f, DurationSeconds);
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[SHIP-NETPHYS-BLAST][START] Ship=%s Impact=%s LocalPoint=%s Acceleration=%s Duration=%.3f AnchorDropped=%s"),
+		*GetNameSafe(this),
+		*WorldImpactPoint.ToCompactString(),
+		*CurrentBlastApplicationPointLocal.ToCompactString(),
+		*CurrentBlastAcceleration.ToCompactString(),
+		DurationSeconds,
+		bIsAnchorDropped ? TEXT("true") : TEXT("false"));
+}
+
 void AShip::AddPropulsionSuppression(const FGuid& SourceId)
 {
-	if (!HasAuthority() || !SourceId.IsValid())
+	if (!SourceId.IsValid())
 	{
 		return;
 	}
@@ -952,10 +1217,7 @@ void AShip::AddPropulsionSuppression(const FGuid& SourceId)
 
 void AShip::RemovePropulsionSuppression(const FGuid& SourceId)
 {
-	if (HasAuthority())
-	{
-		PropulsionSuppressionSources.Remove(SourceId);
-	}
+	PropulsionSuppressionSources.Remove(SourceId);
 }
 
 
@@ -964,6 +1226,7 @@ void AShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AShip, RidingPlayer);
+	DOREPLIFETIME(AShip, bIsSinking);
 	DOREPLIFETIME(AShip, bBombardmentTargeting);
 	DOREPLIFETIME(AShip, ActiveBombardmentClass);
 	DOREPLIFETIME(AShip, ReplicatedState);
@@ -971,6 +1234,8 @@ void AShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 	DOREPLIFETIME(AShip, ServerPhysicsStepSeconds);
 	DOREPLIFETIME(AShip, CurrentAIPropulsionScale);
 	DOREPLIFETIME(AShip, CurrentAITurnScale);
+	DOREPLIFETIME(AShip, bIsAnchorDropped);
+	DOREPLIFETIME(AShip, AnchorOriginXY);
 }
 
 void AShip::Board(APawn* PlayerPawn)
@@ -1009,7 +1274,27 @@ void AShip::Board(APawn* PlayerPawn)
 	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board initiated by player pawn %s. Ship location: %s, Player location: %s"), *PlayerPawn->GetName(), *GetActorLocation().ToString(), *PlayerPawn->GetActorLocation().ToString());
 
 	RidingPlayer = PlayerPawn;
+	SetHelmRiderInvulnerable(true);
 	UpdateHelmInteractionAvailability();
+
+	// The interaction can transfer possession before Enhanced Input emits its
+	// Completed event. Clear both engine movement input and the player's reflected
+	// locomotion/sprint caches so a held W key cannot leave the rider running in place.
+	RidingPlayer->ConsumeMovementInputVector();
+	InvokeNoParameterFunction(RidingPlayer, TEXT("StopMoveInput"));
+	InvokeNoParameterFunction(RidingPlayer, TEXT("StopSprint"));
+
+	USceneComponent* SeatComponent = HelmSeatPoint ? HelmSeatPoint.Get() : BuoyancyRoot;
+	FVector StandingLocation = SeatComponent
+		? SeatComponent->GetComponentLocation()
+		: RidingPlayer->GetActorLocation();
+	if (ACharacter* Character = Cast<ACharacter>(RidingPlayer))
+	{
+		FindHelmStandingLocation(Character, StandingLocation);
+	}
+	const FRotator StandingRotation = SeatComponent
+		? SeatComponent->GetComponentRotation()
+		: RidingPlayer->GetActorRotation();
 
 	// Disable player collision
 	RidingPlayer->SetActorEnableCollision(false);
@@ -1026,16 +1311,100 @@ void AShip::Board(APawn* PlayerPawn)
 	RidingPlayer->SetReplicateMovement(false);
 	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board - Player bReplicateMovement after disable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
 
-	// Snap the character to the authored helm point. Attaching without welding keeps
-	// the character capsule out of the Chaos ship body while control is transferred.
-	USceneComponent* SeatComponent = HelmSeatPoint ? HelmSeatPoint.Get() : BuoyancyRoot;
-	RidingPlayer->AttachToComponent(SeatComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	// Keep the authored seat's horizontal placement and facing, but place the capsule
+	// on the walkable deck beneath it before locking it to the moving ship.
+	RidingPlayer->SetActorLocationAndRotation(
+		StandingLocation,
+		StandingRotation,
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics);
+	RidingPlayer->AttachToComponent(SeatComponent, FAttachmentTransformRules::KeepWorldTransform);
 	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board - Player attached to HelmSeatPoint. Relative location: %s, relative rotation: %s"),
 		*RidingPlayer->GetRootComponent()->GetRelativeLocation().ToString(), 
 		*RidingPlayer->GetRootComponent()->GetRelativeRotation().ToString());
 
-	// Possess ship pawn
+	PC->SetControlRotation(FRotator(0.0f, StandingRotation.Yaw, 0.0f));
+
+	// Possess ship pawn. The ship keeps receiving the existing WASD and mouse input.
 	PC->Possess(this);
+}
+
+bool AShip::FindHelmStandingLocation(ACharacter* Character, FVector& OutStandingLocation) const
+{
+	if (!Character || !HelmSeatPoint)
+	{
+		return false;
+	}
+
+	UCharacterMovementComponent* Movement = Character->GetCharacterMovement();
+	UCapsuleComponent* Capsule = Character->GetCapsuleComponent();
+	if (!Movement || !Capsule)
+	{
+		return false;
+	}
+
+	const FVector SeatLocation = HelmSeatPoint->GetComponentLocation();
+	const float SearchDistance = FMath::Max(HelmFloorSearchDistance, 0.0f);
+	const float CapsuleRadius = Capsule->GetScaledCapsuleRadius();
+	const float CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+	FHitResult BestHit;
+	bool bFoundFloor = false;
+
+	// First use the same CharacterMovement floor query used while walking on ShipDeck.
+	FFindFloorResult FloorResult;
+	Movement->ComputeFloorDist(
+		SeatLocation,
+		SearchDistance,
+		SearchDistance,
+		FloorResult,
+		CapsuleRadius,
+		nullptr);
+	if (FloorResult.IsWalkableFloor())
+	{
+		UPrimitiveComponent* HitComponent = FloorResult.HitResult.GetComponent();
+		if (HitComponent == DeckMeshSimple || HitComponent == DeckMeshComplex)
+		{
+			BestHit = FloorResult.HitResult;
+			bFoundFloor = true;
+		}
+	}
+
+	// If another helm component blocked the capsule sweep first, query this ship's
+	// two authored deck proxies directly and choose the closest walkable surface.
+	if (!bFoundFloor)
+	{
+		const FVector TraceStart = SeatLocation + FVector::UpVector * CapsuleHalfHeight;
+		const FVector TraceEnd = SeatLocation - FVector::UpVector * SearchDistance;
+		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(HelmFloor), false, Character);
+		for (UStaticMeshComponent* DeckMesh : { DeckMeshSimple.Get(), DeckMeshComplex.Get() })
+		{
+			if (!DeckMesh)
+			{
+				continue;
+			}
+
+			FHitResult DeckHit;
+			if (DeckMesh->LineTraceComponent(DeckHit, TraceStart, TraceEnd, QueryParams)
+				&& Movement->IsWalkable(DeckHit)
+				&& (!bFoundFloor || DeckHit.Distance < BestHit.Distance))
+			{
+				BestHit = DeckHit;
+				bFoundFloor = true;
+			}
+		}
+	}
+
+	if (!bFoundFloor)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("AShip::Board - No walkable ShipDeck found below HelmSeatPoint on %s; using the authored seat location."),
+			*GetName());
+		return false;
+	}
+
+	OutStandingLocation = BestHit.ImpactPoint + FVector::UpVector * CapsuleHalfHeight;
+	return true;
 }
 
 void AShip::OnDisembarkAction(const FInputActionValue& Value)
@@ -1055,41 +1424,48 @@ void AShip::Disembark()
 	CancelBombardmentAbilityAuthoritative();
 
 	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC) return;
+	APawn* PlayerToRestore = RidingPlayer;
 
 	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark initiated. Player pawn: %s"), *RidingPlayer->GetName());
 
 	// Restore camera mode
 	ResetToFollowCamera();
-	RememberFollowCameraState(PC);
+	if (PC)
+	{
+		RememberFollowCameraState(PC);
+	}
 
 	// Detach, then move to the single authored exit point while collision is still
 	// disabled. This avoids the ship hull rejecting the teleport.
-	RidingPlayer->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	PlayerToRestore->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	if (HelmExitPoint)
 	{
-		RidingPlayer->TeleportTo(
+		PlayerToRestore->TeleportTo(
 			HelmExitPoint->GetComponentLocation(),
 			HelmExitPoint->GetComponentRotation(),
 			false,
 			true);
 	}
-	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark - Moved player to exit. World location: %s"), *RidingPlayer->GetActorLocation().ToString());
+	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark - Moved player to exit. World location: %s"), *PlayerToRestore->GetActorLocation().ToString());
 
-	RidingPlayer->SetActorEnableCollision(true);
-	RidingPlayer->SetActorHiddenInGame(false);
+	PlayerToRestore->SetActorEnableCollision(true);
+	PlayerToRestore->SetActorHiddenInGame(false);
 
-	if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
+	if (ACharacter* Char = Cast<ACharacter>(PlayerToRestore))
 	{
 		Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	}
 
 	// Restore movement replication on disembark
-	RidingPlayer->SetReplicateMovement(true);
-	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark - Player bReplicateMovement after enable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
+	PlayerToRestore->SetReplicateMovement(true);
+	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark - Player bReplicateMovement after enable: %s"), PlayerToRestore->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
 
 	// Return possession to player character
-	PC->Possess(RidingPlayer);
+	SetHelmRiderInvulnerable(false);
+	if (PC)
+	{
+		PC->Possess(PlayerToRestore);
+	}
 
 	RidingPlayer = nullptr;
 	UpdateHelmInteractionAvailability();
@@ -1100,9 +1476,242 @@ void AShip::ForceDisembark()
 	Disembark();
 }
 
+void AShip::SetHelmRiderInvulnerable(bool bEnabled)
+{
+	if (!HasAuthority() || bHelmInvulnerabilityApplied == bEnabled)
+	{
+		return;
+	}
+	if (UAbilitySystemComponent* ASC = GetRidingPlayerAbilitySystem())
+	{
+		if (bEnabled)
+		{
+			ASC->AddLooseGameplayTag(State_Invulnerable);
+		}
+		else
+		{
+			ASC->RemoveLooseGameplayTag(State_Invulnerable);
+		}
+		bHelmInvulnerabilityApplied = bEnabled;
+	}
+}
+
+void AShip::HandleShipHealthChanged(const FOnAttributeChangeData& Data)
+{
+	if (HasAuthority() && !bApplyingLeakDamage && Data.NewValue < Data.OldValue && Data.NewValue > 0.0f)
+	{
+		TryActivateRepairPointAfterHit(Data.NewValue);
+	}
+	if (HasAuthority() && Data.NewValue <= 0.0f)
+	{
+		StartSinking(PlayerShipDestroyAfterSinkingDelay);
+	}
+}
+
+int32 AShip::GetActiveRepairPointCount() const
+{
+	int32 Count = 0;
+	for (const UShipRepairPointComponent* Point : { RepairPoint1.Get(), RepairPoint2.Get(), RepairPoint3.Get() })
+	{
+		Count += Point && Point->IsLeakActive() ? 1 : 0;
+	}
+	return Count;
+}
+
+bool AShip::ResolveRepairMaterial(const FGameplayTag ItemTag, float& OutHealthRestored) const
+{
+	OutHealthRestored = 0.0f;
+	const FShipRepairMaterialRule* Rule = RepairMaterialRules.FindByPredicate([ItemTag](const FShipRepairMaterialRule& Candidate)
+	{
+		return Candidate.ItemTag.MatchesTagExact(ItemTag);
+	});
+	if (!Rule || Rule->HealthRestored <= 0.0f)
+	{
+		return false;
+	}
+	OutHealthRestored = Rule->HealthRestored;
+	return true;
+}
+
+void AShip::TryActivateRepairPointAfterHit(const float NewHealth)
+{
+	if (!HasAuthority() || IsEnemyShipForEffects() || bIsSinking || !AttributeSet)
+	{
+		return;
+	}
+
+	TArray<UShipRepairPointComponent*> InactivePoints;
+	for (UShipRepairPointComponent* Point : { RepairPoint1.Get(), RepairPoint2.Get(), RepairPoint3.Get() })
+	{
+		if (Point && !Point->IsLeakActive())
+		{
+			InactivePoints.Add(Point);
+		}
+	}
+	if (InactivePoints.IsEmpty())
+	{
+		return;
+	}
+
+	const float MaxHealth = FMath::Max(AttributeSet->GetMaxHealth(), 1.0f);
+	const float HealthRatio = NewHealth / MaxHealth;
+	const int32 RequiredLeakCount = FShipRepairSpawnRules::GetRequiredLeakCount(
+		HealthRatio, ForcedLeakHealthRatios, 3);
+	if (!FShipRepairSpawnRules::ShouldCreateLeak(
+		GetActiveRepairPointCount(), InactivePoints.Num(), RequiredLeakCount,
+		LeakChancePerHit, FMath::FRand()))
+	{
+		return;
+	}
+
+	UShipRepairPointComponent* SelectedPoint = InactivePoints[FMath::RandRange(0, InactivePoints.Num() - 1)];
+	SelectedPoint->ActivateLeak();
+	RefreshLeakDamageTimer();
+}
+
+void AShip::ApplyLeakDamageTick()
+{
+	if (!HasAuthority() || bIsSinking || !AbilitySystemComponent || !LeakDamageGameplayEffectClass)
+	{
+		return;
+	}
+	const int32 ActiveCount = GetActiveRepairPointCount();
+	if (ActiveCount <= 0)
+	{
+		RefreshLeakDamageTimer();
+		return;
+	}
+
+	FGameplayEffectContextHandle Context = AbilitySystemComponent->MakeEffectContext();
+	Context.AddSourceObject(this);
+	FGameplayEffectSpecHandle Spec = AbilitySystemComponent->MakeOutgoingSpec(LeakDamageGameplayEffectClass, 1.0f, Context);
+	if (!Spec.IsValid() || !Spec.Data.IsValid())
+	{
+		return;
+	}
+	Spec.Data->SetSetByCallerMagnitude(Data_Damage, FMath::Max(0.0f, LeakDamagePerPoint) * ActiveCount);
+	bApplyingLeakDamage = true;
+	AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+	bApplyingLeakDamage = false;
+}
+
+void AShip::RefreshLeakDamageTimer()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	if (GetActiveRepairPointCount() > 0 && !bIsSinking)
+	{
+		GetWorldTimerManager().SetTimer(
+			LeakDamageTimerHandle, this, &AShip::ApplyLeakDamageTick,
+			FMath::Max(0.1f, LeakDamageInterval), true);
+	}
+	else
+	{
+		GetWorldTimerManager().ClearTimer(LeakDamageTimerHandle);
+	}
+}
+
+void AShip::CompleteRepairPoint(UShipRepairPointComponent* RepairPoint, const float HealthRestored)
+{
+	if (!HasAuthority() || !RepairPoint || !RepairPoint->IsLeakActive() || !AttributeSet)
+	{
+		return;
+	}
+	RepairPoint->DeactivateLeak();
+	AttributeSet->SetHealth(FMath::Min(AttributeSet->GetMaxHealth(), AttributeSet->GetHealth() + FMath::Max(0.0f, HealthRestored)));
+	RefreshLeakDamageTimer();
+}
+
+void AShip::ForceExitAllControlModes()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	ForceDisembark();
+	RefreshMountedCannons();
+	for (ACannon* Cannon : MountedCannons)
+	{
+		if (IsValid(Cannon))
+		{
+			Cannon->ForceExit();
+		}
+	}
+}
+
+void AShip::StartSinking(float DestroyDelaySeconds)
+{
+	if (!HasAuthority() || bIsSinking)
+	{
+		return;
+	}
+
+	bIsSinking = true;
+	GetWorldTimerManager().ClearTimer(LeakDamageTimerHandle);
+	for (UShipRepairPointComponent* Point : { RepairPoint1.Get(), RepairPoint2.Get(), RepairPoint3.Get() })
+	{
+		if (Point)
+		{
+			Point->DeactivateLeak();
+		}
+	}
+	if (ActorHasTag(TEXT("Player")) && !ActorHasTag(TEXT("Enemy")))
+	{
+		if (AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr)
+		{
+			GameMode->RequestGameOverAndLevelRestart();
+		}
+	}
+	ForceNetUpdate();
+	CurrentMoveInput = 0.0f;
+	CurrentTurnInput = 0.0f;
+	CancelBombardmentAbilityAuthoritative();
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->CancelAllAbilities();
+	}
+	ForceExitAllControlModes();
+
+	if (SWBuoyancyComponent)
+	{
+		SWBuoyancyComponent->ForceSettings.BuoyancyCoefficient = 0.0f;
+	}
+	if (UBuoyancyComponent* LegacyBuoyancy = FindComponentByClass<UBuoyancyComponent>())
+	{
+		LegacyBuoyancy->BuoyancyData.BuoyancyCoefficient = 0.0f;
+	}
+	if (BuoyancyRoot)
+	{
+		BuoyancyRoot->WakeAllRigidBodies();
+	}
+
+	OnRep_IsSinking();
+	GetWorldTimerManager().SetTimer(
+		SinkingDestroyTimerHandle,
+		this,
+		&AShip::FinishSinking,
+		FMath::Max(0.01f, DestroyDelaySeconds),
+		false);
+}
+
+void AShip::FinishSinking()
+{
+	Destroy();
+}
+
+void AShip::OnRep_IsSinking()
+{
+	UpdateHelmInteractionAvailability();
+	RefreshMountedCannons();
+}
+
 void AShip::ShipMove(const FInputActionValue& Value)
 {
-	const float MoveValue = Value.Get<float>();
+	const float MoveValue = (bIsAnchorDropped || IsPropulsionSuppressed())
+		? 0.0f
+		: Value.Get<float>();
 	CurrentMoveInput = MoveValue;
 
 	if (!HasAuthority())
@@ -1113,7 +1722,7 @@ void AShip::ShipMove(const FInputActionValue& Value)
 
 void AShip::ServerMove_Implementation(float MoveValue)
 {
-	CurrentMoveInput = MoveValue;
+	CurrentMoveInput = (bIsAnchorDropped || IsPropulsionSuppressed()) ? 0.0f : MoveValue;
 }
 
 void AShip::StopShipMove(const FInputActionValue&)
@@ -1138,7 +1747,9 @@ void AShip::ApplyForwardForce(float MoveValue)
 
 void AShip::ShipTurn(const FInputActionValue& Value)
 {
-	const float TurnValue = Value.Get<float>();
+	const float TurnValue = (bIsAnchorDropped || IsPropulsionSuppressed())
+		? 0.0f
+		: Value.Get<float>();
 	CurrentTurnInput = TurnValue;
 
 	if (!HasAuthority())
@@ -1149,7 +1760,7 @@ void AShip::ShipTurn(const FInputActionValue& Value)
 
 void AShip::ServerTurn_Implementation(float TurnValue)
 {
-	CurrentTurnInput = TurnValue;
+	CurrentTurnInput = (bIsAnchorDropped || IsPropulsionSuppressed()) ? 0.0f : TurnValue;
 }
 
 void AShip::StopShipTurn(const FInputActionValue&)
@@ -1193,7 +1804,7 @@ void AShip::ShipLook(const FInputActionValue& Value)
 
 void AShip::ShipZoom(const FInputActionValue& Value)
 {
-	if (!CameraBoom || bUsingFixedCamera)
+	if (!CameraBoom || bUsingHelmFirstPersonCamera)
 	{
 		return;
 	}
@@ -1456,6 +2067,7 @@ void AShip::BeginLocalBombardmentTargeting()
 		if (BombardmentPreviewActor)
 		{
 			BombardmentPreviewActor->ConfigurePreview(BombardmentDefaults->SkillRadius);
+			BombardmentPreviewActor->SetPreviewMeshVisible(false);
 		}
 	}
 }
@@ -1467,6 +2079,7 @@ void AShip::EndLocalBombardmentTargeting()
 		BombardmentPreviewActor->Destroy();
 		BombardmentPreviewActor = nullptr;
 	}
+	ClearLocalWaterSkillPreview();
 
 	if (bLocalBombardmentInputModeApplied)
 	{
@@ -1519,6 +2132,72 @@ void AShip::UpdateLocalBombardmentPreview()
 		}
 		BombardmentPreviewActor->SetPreviewValid(bLocalBombardmentTargetValid);
 	}
+
+	if (bLocalBombardmentTargetValid && BombardmentDefaults && !TargetLocation.ContainsNaN())
+	{
+		UpdateLocalWaterSkillPreview(TargetLocation, BombardmentDefaults->SkillRadius);
+	}
+	else
+	{
+		ClearLocalWaterSkillPreview();
+	}
+}
+
+void AShip::UpdateLocalWaterSkillPreview(const FVector& Center, float Radius)
+{
+	UWorld* World = GetWorld();
+	if (!World || World->IsNetMode(NM_DedicatedServer))
+	{
+		return;
+	}
+
+	if (!WaterSkillPreviewParameterCollection)
+	{
+		WaterSkillPreviewParameterCollection = LoadObject<UMaterialParameterCollection>(
+			nullptr,
+			TEXT("/Game/Blueprints/Water/MPC_Water_Custom.MPC_Water_Custom"));
+	}
+
+	UMaterialParameterCollectionInstance* Instance = WaterSkillPreviewParameterCollection
+		? World->GetParameterCollectionInstance(WaterSkillPreviewParameterCollection)
+		: nullptr;
+	if (!Instance)
+	{
+		return;
+	}
+
+	const float SafeRadius = FMath::Max(1.0f, Radius);
+	if (!bWaterSkillPreviewEnabled
+		|| FVector::DistSquared2D(Center, LastWaterSkillPreviewCenter) > 25.0f
+		|| !FMath::IsNearlyEqual(SafeRadius, LastWaterSkillPreviewRadius, 0.1f))
+	{
+		Instance->SetVectorParameterValue(
+			TEXT("SW_VortexPreviewCenterRadius"),
+			FLinearColor(Center.X, Center.Y, Center.Z, SafeRadius));
+		LastWaterSkillPreviewCenter = Center;
+		LastWaterSkillPreviewRadius = SafeRadius;
+	}
+
+	if (!bWaterSkillPreviewEnabled)
+	{
+		Instance->SetScalarParameterValue(TEXT("SW_VortexPreviewEnabled"), 1.0f);
+		bWaterSkillPreviewEnabled = true;
+	}
+}
+
+void AShip::ClearLocalWaterSkillPreview()
+{
+	if (!bWaterSkillPreviewEnabled || !GetWorld() || !WaterSkillPreviewParameterCollection)
+	{
+		return;
+	}
+
+	if (UMaterialParameterCollectionInstance* Instance =
+		GetWorld()->GetParameterCollectionInstance(WaterSkillPreviewParameterCollection))
+	{
+		Instance->SetScalarParameterValue(TEXT("SW_VortexPreviewEnabled"), 0.0f);
+	}
+	bWaterSkillPreviewEnabled = false;
 }
 
 bool AShip::ResolveBombardmentTargetFromCursor(FVector& OutLocation) const
@@ -1731,6 +2410,7 @@ void AShip::SpawnBombardmentAuthoritative(const FVector& TargetLocation)
 		Damage = AbilitySystemComponent->GetNumericAttribute(UShipAttributeSet::GetCannonDamageAttribute());
 		Speed = AbilitySystemComponent->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute());
 	}
+	Damage *= BombardmentDefaults ? FMath::Max(0.0f, BombardmentDefaults->CannonDamageMultiplier) : 0.3f;
 
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.Owner = this;
@@ -1751,88 +2431,106 @@ void AShip::SpawnBombardmentAuthoritative(const FVector& TargetLocation)
 	}
 }
 
-void AShip::ToggleFixedCamera()
+void AShip::ToggleHelmCamera()
 {
 	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC) return;
-
-	bUsingFixedCamera = !bUsingFixedCamera;
-
-	if (bUsingFixedCamera)
+	if (!PC || !PC->IsLocalController() || !RidingPlayer)
 	{
-		// Save current camera state before detaching
-		SavedBoomRelativeTransform = CameraBoom->GetRelativeTransform();
-		SavedTargetArmLength = CameraBoom->TargetArmLength;
-		SavedControlRotation = PC->GetControlRotation();
-		if (FollowCamera)
-		{
-			SavedFollowCameraRelativeLocation = FollowCamera->GetRelativeLocation();
-			SavedFollowCameraRelativeRotation = FollowCamera->GetRelativeRotation();
-		}
-
-		// Detach camera boom so it stops following the ship
-		CameraBoom->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-		CameraBoom->bUsePawnControlRotation = false;
-
-		// Move camera to fixed world position
-		CameraBoom->SetWorldLocationAndRotation(FixedCameraLocation, FixedCameraRotation);
-		if (FollowCamera)
-		{
-			FollowCamera->SetRelativeLocation(FVector::ZeroVector);
-			FollowCamera->SetRelativeRotation(FRotator::ZeroRotator);
-		}
-
-		UE_LOG(LogTemp, Log, TEXT("Switched to fixed camera at %s"), *FixedCameraLocation.ToString());
+		return;
 	}
-	else
-	{
-		// Re-attach camera boom to ship and restore saved state
-		CameraBoom->AttachToComponent(BuoyancyRoot, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-		CameraBoom->SetRelativeTransform(SavedBoomRelativeTransform);
-		CameraBoom->bUsePawnControlRotation = true;
-		CameraBoom->TargetArmLength = SavedTargetArmLength;
-		if (FollowCamera)
-		{
-			FollowCamera->SetRelativeLocation(SavedFollowCameraRelativeLocation);
-			FollowCamera->SetRelativeRotation(SavedFollowCameraRelativeRotation);
-		}
-		PC->SetControlRotation(SavedControlRotation);
 
-		UE_LOG(LogTemp, Log, TEXT("Switched back to follow camera."));
-	}
+	SetHelmFirstPersonCameraEnabled(!bUsingHelmFirstPersonCamera);
 }
 
 void AShip::ResetToFollowCamera()
 {
-	if (bUsingFixedCamera)
-	{
-		bUsingFixedCamera = false;
+	SetHelmFirstPersonCameraEnabled(false);
+}
 
-		CameraBoom->AttachToComponent(BuoyancyRoot, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-		CameraBoom->SetRelativeTransform(SavedBoomRelativeTransform);
-		CameraBoom->bUsePawnControlRotation = true;
-		CameraBoom->TargetArmLength = SavedTargetArmLength;
+void AShip::SetHelmFirstPersonCameraEnabled(bool bEnabled)
+{
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (bEnabled && (!PC || !PC->IsLocalController() || !RidingPlayer
+		|| !RidingPlayer->GetRootComponent() || !HelmFirstPersonCamera))
+	{
+		return;
+	}
+
+	if (bEnabled)
+	{
+		RememberFollowCameraState(PC);
+		bUsingHelmFirstPersonCamera = true;
+		const FVector WorldOffset = RidingPlayer->GetActorTransform().TransformVectorNoScale(
+			HelmFirstPersonCameraOffset);
+		HelmFirstPersonCamera->AttachToComponent(
+			RidingPlayer->GetRootComponent(),
+			FAttachmentTransformRules::KeepWorldTransform);
+		HelmFirstPersonCamera->SetWorldLocation(RidingPlayer->GetPawnViewLocation() + WorldOffset);
 		if (FollowCamera)
 		{
-			FollowCamera->SetRelativeLocation(SavedFollowCameraRelativeLocation);
-			FollowCamera->SetRelativeRotation(SavedFollowCameraRelativeRotation);
+			FollowCamera->Deactivate();
 		}
-
-		APlayerController* PC = Cast<APlayerController>(GetController());
-		if (!PC)
+		SetLocalHelmRiderHeadHidden(true);
+		HelmFirstPersonCamera->Activate(true);
+	}
+	else
+	{
+		bUsingHelmFirstPersonCamera = false;
+		SetLocalHelmRiderHeadHidden(false);
+		if (HelmFirstPersonCamera)
 		{
-			PC = CachedPlayerController;
+			HelmFirstPersonCamera->Deactivate();
+			if (BuoyancyRoot)
+			{
+				HelmFirstPersonCamera->AttachToComponent(
+					BuoyancyRoot,
+					FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+			}
 		}
-		if (PC)
+		if (FollowCamera)
 		{
-			PC->SetControlRotation(SavedControlRotation);
+			FollowCamera->Activate(true);
 		}
 	}
 }
 
+void AShip::SetLocalHelmRiderHeadHidden(bool bShouldHide)
+{
+	if (bShouldHide)
+	{
+		if (bHelmCameraHidRiderBone || HelmFirstPersonHiddenBone.IsNone())
+		{
+			return;
+		}
+
+		ACharacter* RidingCharacter = Cast<ACharacter>(RidingPlayer);
+		USkeletalMeshComponent* RiderMesh = RidingCharacter ? RidingCharacter->GetMesh() : nullptr;
+		if (!RiderMesh || RiderMesh->GetBoneIndex(HelmFirstPersonHiddenBone) == INDEX_NONE
+			|| RiderMesh->IsBoneHiddenByName(HelmFirstPersonHiddenBone))
+		{
+			return;
+		}
+
+		RiderMesh->HideBoneByName(HelmFirstPersonHiddenBone, EPhysBodyOp::PBO_None);
+		HelmLocallyHiddenMesh = RiderMesh;
+		bHelmCameraHidRiderBone = true;
+		return;
+	}
+
+	if (bHelmCameraHidRiderBone)
+	{
+		if (USkeletalMeshComponent* RiderMesh = HelmLocallyHiddenMesh.Get())
+		{
+			RiderMesh->UnHideBoneByName(HelmFirstPersonHiddenBone);
+		}
+	}
+	HelmLocallyHiddenMesh.Reset();
+	bHelmCameraHidRiderBone = false;
+}
+
 void AShip::RememberFollowCameraState(APlayerController* PlayerController)
 {
-	if (!CameraBoom || !PlayerController || !PlayerController->IsLocalController() || bUsingFixedCamera)
+	if (!CameraBoom || !PlayerController || !PlayerController->IsLocalController() || bUsingHelmFirstPersonCamera)
 	{
 		return;
 	}
@@ -1845,7 +2543,7 @@ void AShip::RememberFollowCameraState(APlayerController* PlayerController)
 void AShip::RestoreRememberedFollowCameraState(APlayerController* PlayerController)
 {
 	if (!bHasRememberedFollowCameraState || !CameraBoom || !PlayerController
-		|| !PlayerController->IsLocalController() || bUsingFixedCamera)
+		|| !PlayerController->IsLocalController() || bUsingHelmFirstPersonCamera)
 	{
 		return;
 	}
@@ -1866,6 +2564,8 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 
 	if (OldRidingPlayer && OldRidingPlayer != RidingPlayer)
 	{
+		SetLocalHelmRiderHeadHidden(false);
+
 		// UE_LOG(LogTemp, Log, TEXT("AShip: [CLIENT] OnRep_RidingPlayer - Restoring old passenger collision and walking movement."));
 		OldRidingPlayer->SetActorEnableCollision(true);
 		if (ACharacter* Char = Cast<ACharacter>(OldRidingPlayer))
@@ -1891,7 +2591,14 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 
 		if (LocalPC && LocalPC->IsLocalController())
 		{
-			LocalPC->HiddenActors.AddUnique(RidingPlayer);
+			// The helmsman remains visible in first person and to every other client.
+			LocalPC->HiddenActors.Remove(RidingPlayer);
+		}
+
+		if (APlayerController* ShipPC = Cast<APlayerController>(GetController());
+			ShipPC && ShipPC->IsLocalController())
+		{
+			SetHelmFirstPersonCameraEnabled(true);
 		}
 	}
 }
@@ -1938,6 +2645,10 @@ void AShip::OnRep_Controller()
 		if (CachedPlayerController)
 		{
 			RestoreRememberedFollowCameraState(CachedPlayerController);
+			if (RidingPlayer)
+			{
+				SetHelmFirstPersonCameraEnabled(true);
+			}
 			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))
 			{
 				if (ShipInputMappingContext)
@@ -1960,39 +2671,154 @@ UAbilitySystemComponent* AShip::GetAbilitySystemComponent() const
 	return AbilitySystemComponent;
 }
 
+void AShip::HandlePlayerShipCollisionTelemetry(
+	UPrimitiveComponent* HitComponent,
+	AActor* OtherActor,
+	UPrimitiveComponent* OtherComponent,
+	FVector NormalImpulse,
+	const FHitResult& Hit)
+{
+	AShip* OtherShip = Cast<AShip>(OtherActor);
+	if (!HasAuthority() || IsEnemyShipForEffects() || !OtherShip
+		|| !OtherShip->IsEnemyShipForEffects())
+	{
+		return;
+	}
+
+	FVector PlayerVelocity = BuoyancyRoot
+		? BuoyancyRoot->GetComponentVelocity()
+		: GetVelocity();
+	FVector EnemyVelocity = OtherShip->BuoyancyRoot
+		? OtherShip->BuoyancyRoot->GetComponentVelocity()
+		: OtherShip->GetVelocity();
+	PlayerVelocity.Z = 0.0f;
+	EnemyVelocity.Z = 0.0f;
+
+	const FVector RelativeVelocity = PlayerVelocity - EnemyVelocity;
+	const FVector ToEnemy = (OtherShip->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+	const float PlayerApproachSpeed = FMath::Max(
+		0.0f, FVector::DotProduct(PlayerVelocity, ToEnemy));
+	const float RelativeApproachSpeed = FMath::Max(
+		0.0f, FVector::DotProduct(RelativeVelocity, ToEnemy));
+	const float PlayerApproachSpeedMetersPerSecond = PlayerApproachSpeed / 100.0f;
+	if (PlayerApproachSpeedMetersPerSecond < PlayerRamMinimumApproachSpeed
+		|| (PlayerRamCollisionDamage <= 0.0f
+			&& PlayerRamDamagePerAdditionalMeterPerSecond <= 0.0f)
+		|| !PlayerRamDamageGameplayEffectClass)
+	{
+		UE_LOG(
+			LogTemp,
+			Verbose,
+			TEXT("[PLAYER-SHIP-RAM-REJECTED] Player=%s Enemy=%s PlayerApproachSpeed=%.2f RelativeApproachSpeed=%.2f Threshold=%.2f PlayerVelocity=%s EnemyVelocity=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(OtherShip),
+			PlayerApproachSpeed,
+			RelativeApproachSpeed,
+			PlayerRamMinimumApproachSpeed * 100.0f,
+			*PlayerVelocity.ToCompactString(),
+			*EnemyVelocity.ToCompactString());
+		return;
+	}
+
+	const double CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	if (LastPlayerRamTarget.Get() == OtherShip
+		&& CurrentTime - LastPlayerRamDamageTime < PlayerRamDamageCooldown)
+	{
+		return;
+	}
+
+	UAbilitySystemComponent* TargetASC = OtherShip->GetAbilitySystemComponent();
+	if (!AbilitySystemComponent || !TargetASC)
+	{
+		return;
+	}
+
+	const float RamDamage = PlayerRamCollisionDamage
+		+ FMath::Max(0.0f, PlayerApproachSpeedMetersPerSecond - PlayerRamMinimumApproachSpeed)
+			* FMath::Max(0.0f, PlayerRamDamagePerAdditionalMeterPerSecond);
+	const FGameplayEffectSpecHandle DamageSpec = UGASCombatLibrary::MakeDamageEffectSpec(
+		AbilitySystemComponent,
+		PlayerRamDamageGameplayEffectClass,
+		RamDamage,
+		this,
+		this,
+		1,
+		true,
+		Hit);
+	if (!DamageSpec.IsValid() || !DamageSpec.Data.IsValid())
+	{
+		return;
+	}
+
+	FGameplayEffectSpec TargetSpec(*DamageSpec.Data.Get());
+	USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
+		TargetSpec, this, this, OtherShip, &Hit, PlayerVelocity);
+		TargetASC->ApplyGameplayEffectSpecToSelf(TargetSpec);
+		SpawnRamImpactNiagaraForAll(
+			PlayerRamImpactEffect,
+			Hit.ImpactPoint,
+			PlayerRamImpactEffectScale,
+			PlayerRamImpactEffectLifetimeScale,
+			PlayerRamImpactEffectPlaybackSpeed);
+	LastPlayerRamTarget = OtherShip;
+	LastPlayerRamDamageTime = CurrentTime;
+	const float CurrentHealth = OtherShip->GetShipAttributeSet()
+		? OtherShip->GetShipAttributeSet()->GetHealth()
+		: 0.0f;
+
+	UE_LOG(
+		LogTemp,
+		Warning,
+		TEXT("[PLAYER-SHIP-RAM-DAMAGE] Player=%s Enemy=%s Damage=%.2f EnemyHealth=%.2f Threshold=%.2f cm/s PlayerSpeed=%.2f cm/s (%.2f m/s) RelativeSpeed=%.2f cm/s (%.2f m/s) PlayerApproachSpeed=%.2f cm/s (%.2f m/s) RelativeApproachSpeed=%.2f cm/s (%.2f m/s) PlayerVelocity=%s EnemyVelocity=%s ImpactPoint=%s"),
+		*GetNameSafe(this),
+		*GetNameSafe(OtherShip),
+		RamDamage,
+		CurrentHealth,
+		PlayerRamMinimumApproachSpeed * 100.0f,
+		PlayerVelocity.Size(),
+		PlayerVelocity.Size() / 100.0f,
+		RelativeVelocity.Size(),
+		RelativeVelocity.Size() / 100.0f,
+		PlayerApproachSpeed,
+		PlayerApproachSpeed / 100.0f,
+		RelativeApproachSpeed,
+		RelativeApproachSpeed / 100.0f,
+		*PlayerVelocity.ToCompactString(),
+		*EnemyVelocity.ToCompactString(),
+		*Hit.ImpactPoint.ToCompactString());
+}
+
+bool AShip::IsAvailableForPlayerRespawn_Implementation() const
+{
+	return !IsActorBeingDestroyed() && AttributeSet && AttributeSet->GetHealth() > 0.0f;
+}
+
 void AShip::InitializeDefaultAttributes()
 {
 	if (!HasAuthority() || !AttributeSet) return;
 
-	if (ShipStatTable && !ShipStatRowName.IsNone())
+	static const FString ContextString(TEXT("Ship Stat Table Context"));
+	if (const FShipStatRow* StatRow = ResolveShipStatRow(ContextString))
 	{
-		static const FString ContextString(TEXT("Ship Stat Table Context"));
-		FShipStatRow* StatRow = ShipStatTable->FindRow<FShipStatRow>(ShipStatRowName, ContextString);
-		if (StatRow)
-		{
-			AttributeSet->InitHealth(StatRow->MaxHealth);
-			AttributeSet->InitMaxHealth(StatRow->MaxHealth);
-			AttributeSet->InitMoveSpeed(1.0f); // 캐릭터 기본 MoveSpeed는 1.0f로 고정 유지
-			const bool bUseLegacyMovement = FMath::IsNearlyEqual(StatRow->ForwardPropulsionMultiplier, 1.0f)
-				&& FMath::IsNearlyEqual(StatRow->TurnTorqueMultiplier, 1.0f)
-				&& !FMath::IsNearlyEqual(StatRow->ShipSpeedMultiplier, 1.0f);
-			AttributeSet->InitForwardPropulsionMultiplier(bUseLegacyMovement ? StatRow->ShipSpeedMultiplier : StatRow->ForwardPropulsionMultiplier);
-			AttributeSet->InitTurnTorqueMultiplier(bUseLegacyMovement ? StatRow->ShipSpeedMultiplier : StatRow->TurnTorqueMultiplier);
-			AttributeSet->InitCannonDamage(StatRow->CannonDamage);
-			AttributeSet->InitCannonFireCooldown(StatRow->CannonFireCooldown);
-			AttributeSet->InitCannonballSpeed(StatRow->CannonballSpeed);
+		AttributeSet->InitHealth(StatRow->MaxHealth);
+		AttributeSet->InitMaxHealth(StatRow->MaxHealth);
+		AttributeSet->InitMoveSpeed(1.0f); // 캐릭터 기본 MoveSpeed는 1.0f로 고정 유지
+		AttributeSet->InitForwardPropulsionMultiplier(StatRow->ForwardPropulsionMultiplier);
+		AttributeSet->InitTurnTorqueMultiplier(StatRow->TurnTorqueMultiplier);
+		AttributeSet->InitCannonDamage(StatRow->CannonDamage);
+		AttributeSet->InitCannonFireCooldown(StatRow->CannonFireCooldown);
+		AttributeSet->InitCannonballSpeed(StatRow->CannonballSpeed);
 
-			UE_LOG(LogTemp, Log, TEXT("AShip: Successfully initialized attributes from DataTable Row [%s]."), *ShipStatRowName.ToString());
-			return;
-		}
-		else
-		{
-			UE_LOG(LogTemp, Warning, TEXT("AShip: Failed to find DataTable Row [%s] in ShipStatTable."), *ShipStatRowName.ToString());
-		}
+		UE_LOG(LogTemp, Log, TEXT("AShip: Successfully initialized attributes from DataTable Row [%s]."), *GetShipStatRowName().ToString());
+		return;
+	}
+	if (!GetShipStatRowName().IsNone())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AShip: Failed to resolve Ship Stat Row [%s]."), *GetShipStatRowName().ToString());
 	}
 	else
 	{
-		UE_LOG(LogTemp, Log, TEXT("AShip: ShipStatTable or ShipStatRowName is not set. Initializing with default fallback stats."));
+		UE_LOG(LogTemp, Log, TEXT("AShip: Ship Stat Row is not set. Initializing with default fallback stats."));
 	}
 
 	// Fallback 기본값 설정
@@ -2009,9 +2835,8 @@ void AShip::InitializeDefaultAttributes()
 FShipStatSnapshot AShip::GetBaseStatSnapshot() const
 {
 	FShipStatSnapshot Snapshot;
-	if (!ShipStatTable || ShipStatRowName.IsNone()) return Snapshot;
 	static const FString ContextString(TEXT("Ship Stat Snapshot Context"));
-	const FShipStatRow* StatRow = ShipStatTable->FindRow<FShipStatRow>(ShipStatRowName, ContextString);
+	const FShipStatRow* StatRow = ResolveShipStatRow(ContextString);
 	if (!StatRow) return Snapshot;
 
 	Snapshot.MaxHealth = StatRow->MaxHealth;
@@ -2020,27 +2845,90 @@ FShipStatSnapshot AShip::GetBaseStatSnapshot() const
 	Snapshot.CannonballSpeed = StatRow->CannonballSpeed;
 	Snapshot.ForwardPropulsionMultiplier = StatRow->ForwardPropulsionMultiplier;
 	Snapshot.TurnTorqueMultiplier = StatRow->TurnTorqueMultiplier;
-	if (FMath::IsNearlyEqual(StatRow->ForwardPropulsionMultiplier, 1.0f)
-		&& FMath::IsNearlyEqual(StatRow->TurnTorqueMultiplier, 1.0f)
-		&& !FMath::IsNearlyEqual(StatRow->ShipSpeedMultiplier, 1.0f))
-	{
-		Snapshot.ForwardPropulsionMultiplier = StatRow->ShipSpeedMultiplier;
-		Snapshot.TurnTorqueMultiplier = StatRow->ShipSpeedMultiplier;
-	}
 	return Snapshot;
+}
+
+const FShipStatRow* AShip::ResolveShipStatRow(const FString& ContextString) const
+{
+	if (ShipStatRow.DataTable && !ShipStatRow.RowName.IsNone())
+	{
+		return ShipStatRow.GetRow<FShipStatRow>(ContextString);
+	}
+	return ShipStatTable && !ShipStatRowName.IsNone()
+		? ShipStatTable->FindRow<FShipStatRow>(ShipStatRowName, ContextString)
+		: nullptr;
+}
+
+FName AShip::GetShipStatRowName() const
+{
+	return ShipStatRow.DataTable && !ShipStatRow.RowName.IsNone()
+		? ShipStatRow.RowName
+		: ShipStatRowName;
+}
+
+void AShip::SpawnRamImpactNiagaraForAll(
+	UNiagaraSystem* Effect,
+	const FVector& Location,
+	float UniformScale,
+	float LifetimeScale,
+	float PlaybackSpeed)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	if (!Effect)
+	{
+		return;
+	}
+	if (Effect)
+	{
+		const FVector TravelDirection = GetVelocity().GetSafeNormal();
+		const FRotator EffectRotation = TravelDirection.IsNearlyZero()
+			? GetActorRotation()
+			: (-TravelDirection).Rotation();
+		MulticastSpawnRamImpactNiagara(
+			Effect,
+			Location,
+			EffectRotation,
+			FMath::Max(0.01f, UniformScale),
+			FMath::Max(0.01f, LifetimeScale),
+			FMath::Max(0.01f, PlaybackSpeed));
+	}
+}
+
+void AShip::MulticastSpawnRamImpactNiagara_Implementation(
+	UNiagaraSystem* Effect,
+	FVector_NetQuantize Location,
+	FRotator Rotation,
+	float UniformScale,
+	float LifetimeScale,
+	float PlaybackSpeed)
+{
+	if (Effect && GetWorld())
+	{
+		USWNiagaraScaleLibrary::SpawnTunedSystemAtLocation(
+			GetWorld(), Effect, Location, Rotation, UniformScale, LifetimeScale, PlaybackSpeed, true);
+	}
 }
 
 void AShip::ApplyStatSnapshot(const FShipStatSnapshot& Snapshot, bool bRefillHealth)
 {
 	if (!HasAuthority() || !AttributeSet) return;
-	AttributeSet->InitMaxHealth(FMath::Max(1.0f, Snapshot.MaxHealth));
+	const float PreviousMaxHealth = AttributeSet->GetMaxHealth();
+	const float PreviousHealth = AttributeSet->GetHealth();
+	const float NewMaxHealth = FMath::Max(1.0f, Snapshot.MaxHealth);
+	AttributeSet->InitMaxHealth(NewMaxHealth);
 	if (bRefillHealth)
 	{
-		AttributeSet->InitHealth(AttributeSet->GetMaxHealth());
+		AttributeSet->InitHealth(NewMaxHealth);
 	}
 	else
 	{
-		AttributeSet->SetHealth(FMath::Min(AttributeSet->GetHealth(), AttributeSet->GetMaxHealth()));
+		// A hull upgrade grants the newly added capacity as health without otherwise
+		// healing existing damage. Max-health reductions still clamp safely.
+		const float MaxHealthIncrease = FMath::Max(0.0f, NewMaxHealth - PreviousMaxHealth);
+		AttributeSet->SetHealth(FMath::Clamp(PreviousHealth + MaxHealthIncrease, 0.0f, NewMaxHealth));
 	}
 	AttributeSet->InitMoveSpeed(1.0f);
 	AttributeSet->InitForwardPropulsionMultiplier(Snapshot.ForwardPropulsionMultiplier);
@@ -2052,12 +2940,22 @@ void AShip::ApplyStatSnapshot(const FShipStatSnapshot& Snapshot, bool bRefillHea
 
 bool AShip::ApplyPlayerUpgrades(APlayerState* InPlayerState, bool bRefillHealth)
 {
-	if (!HasAuthority() || !InPlayerState) return false;
-	UShipUpgradeComponent* UpgradeComponent = InPlayerState->FindComponentByClass<UShipUpgradeComponent>();
+	if (!HasAuthority()) return false;
+	UShipUpgradeComponent* UpgradeComponent = SharedUpgradeState
+		? SharedUpgradeState->GetUpgradeComponent()
+		: (InPlayerState ? InPlayerState->FindComponentByClass<UShipUpgradeComponent>() : nullptr);
 	if (!UpgradeComponent || !UpgradeComponent->UpgradeTree) return false;
-	UpgradeComponent->SetPreviewBaseStats(GetBaseStatSnapshot());
+	if (!bUseUpgradeDrivenPlayerStats)
+	{
+		UpgradeComponent->SetPreviewBaseStats(GetBaseStatSnapshot());
+	}
 	ApplyStatSnapshot(UpgradeComponent->GetCurrentShipStats(), bRefillHealth);
 	return true;
+}
+
+void AShip::HandlePlayerUpgradeStatsChanged(FShipStatSnapshot NewStats)
+{
+	ApplyStatSnapshot(NewStats, false);
 }
 
 void AShip::UpdateHelmInteractionAvailability()
@@ -2183,4 +3081,75 @@ void AShip::HandleStarboardSeaBoarding(AActor* Interactor)
 	}
 }
 
+void AShip::HandleAnchorInteracted(AActor* Interactor)
+{
+	if (!AllowsPlayerAnchorControl(Interactor))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AShip::HandleAnchorInteracted - Anchor control rejected on %s."), *GetName());
+		return;
+	}
+	ToggleAnchor();
+}
 
+void AShip::ToggleAnchor()
+{
+	if (!AllowsPlayerAnchorControl(nullptr))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AShip::ToggleAnchor - Anchor control rejected on %s."), *GetName());
+		return;
+	}
+
+	if (!HasAuthority())
+	{
+		ServerToggleAnchor();
+		return;
+	}
+
+	bIsAnchorDropped = !bIsAnchorDropped;
+	if (bIsAnchorDropped)
+	{
+		const FVector CurrentLoc = GetActorLocation();
+		AnchorOriginXY = FVector2D(CurrentLoc.X, CurrentLoc.Y);
+		CurrentMoveInput = 0.0f;
+		CurrentTurnInput = 0.0f;
+	}
+	else
+	{
+		AnchorOriginXY = FVector2D::ZeroVector;
+		CurrentMoveInput = 0.0f;
+		CurrentTurnInput = 0.0f;
+	}
+
+	OnRep_IsAnchorDropped();
+	ForceNetUpdate();
+}
+
+void AShip::ServerToggleAnchor_Implementation()
+{
+	if (!AllowsPlayerAnchorControl(nullptr))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AShip::ServerToggleAnchor - Anchor control rejected by policy on %s."), *GetName());
+		return;
+	}
+	ToggleAnchor();
+}
+
+void AShip::OnRep_IsAnchorDropped()
+{
+	CurrentMoveInput = 0.0f;
+	CurrentTurnInput = 0.0f;
+	UpdateAnchorInteractionUI();
+}
+
+void AShip::UpdateAnchorInteractionUI()
+{
+	if (AnchorInteractable)
+	{
+		const FText ObjectName = NSLOCTEXT("ShipInteraction", "AnchorObject", "닻 (Anchor)");
+		const FText ActionText = bIsAnchorDropped
+			? NSLOCTEXT("ShipInteraction", "AnchorRaiseAction", "닻 올리기 (Raise Anchor)")
+			: NSLOCTEXT("ShipInteraction", "AnchorDropAction", "닻 내리기 (Drop Anchor)");
+
+		AnchorInteractable->InitializeInteractable(ObjectName, ActionText);
+	}
+}

@@ -12,6 +12,7 @@
 #include "Components/TextBlock.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "EngineUtils.h"
+#include "GameFramework/PlayerState.h"
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -25,10 +26,21 @@
 #include "Upgrade/ShipUpgradeBlueprintLibrary.h"
 #include "Upgrade/ShipUpgradeComponent.h"
 #include "Upgrade/ShipUpgradeTreeDataAsset.h"
+#include "Upgrade/SharedShipUpgradeState.h"
+#include "BasePlayerController.h"
 
 void UShipUpgradeScreenWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	UE_LOG(LogTemp, Warning,
+		TEXT("[ShipUpgradePipeline][UIConstruct] Screen=%s Player=%s World=%s NetMode=%d Graph=%s Details=%s GraphExtent=%s"),
+		*GetNameSafe(this),
+		*GetNameSafe(GetOwningPlayer()),
+		*GetNameSafe(GetWorld()),
+		GetWorld() ? static_cast<int32>(GetWorld()->GetNetMode()) : -1,
+		*GetNameSafe(GraphWidget),
+		*GetNameSafe(DetailsWidget),
+		*GetNameSafe(SizeBox_GraphExtent));
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[ShipUpgradeUI] Screen constructed. Screen=%s OwningPlayer=%s Graph=%s Details=%s GraphExtent=%s"),
 		*GetNameSafe(this),
@@ -153,13 +165,23 @@ void UShipUpgradeScreenWidget::RefreshAll()
 {
 	if (!UpgradeComponent)
 	{
-		/* UE_LOG(LogTemp, Warning,
-			TEXT("[ShipUpgradeUI] RefreshAll skipped: UpgradeComponent is null. Screen=%s"),
-			*GetNameSafe(this)); */
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradePipeline][RefreshSkipped] Screen=%s Reason=NoComponent Graph=%s"),
+			*GetNameSafe(this), *GetNameSafe(GraphWidget));
 		return;
 	}
 
 	CachedNodeViews = UpgradeComponent->GetAllNodeViews();
+	UE_LOG(LogTemp, Warning,
+		TEXT("[ShipUpgradePipeline][RefreshAll] Screen=%s Component=%s Owner=%s Tree=%s TreeNodes=%d Views=%d ActiveNodes=%d Graph=%s"),
+		*GetNameSafe(this),
+		*GetNameSafe(UpgradeComponent),
+		*GetNameSafe(UpgradeComponent->GetOwner()),
+		*GetNameSafe(UpgradeComponent->UpgradeTree.Get()),
+		UpgradeComponent->UpgradeTree ? UpgradeComponent->UpgradeTree->Nodes.Num() : -1,
+		CachedNodeViews.Num(),
+		UpgradeComponent->GetActiveNodeIds().Num(),
+		*GetNameSafe(GraphWidget));
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[ShipUpgradeUI] Runtime data received. Component=%s Owner=%s UpgradeTree=%s NodeViews=%d"),
 		*GetNameSafe(UpgradeComponent),
@@ -202,6 +224,14 @@ void UShipUpgradeScreenWidget::HandleActivationResult(
 	EShipUpgradeActivationResult Result,
 	FText Message)
 {
+	UE_LOG(LogTemp, Warning,
+		TEXT("[ShipUpgradeTrace][UIResult] Player=%s Node=%s Result=%d Message=%s Component=%s Owner=%s"),
+		*GetNameSafe(GetOwningPlayer()),
+		*NodeId.ToString(),
+		static_cast<int32>(Result),
+		*Message.ToString(),
+		*GetNameSafe(UpgradeComponent),
+		*GetNameSafe(UpgradeComponent ? UpgradeComponent->GetOwner() : nullptr));
 	PendingNodeIds.Remove(NodeId);
 	if (Text_ResultMessage)
 	{
@@ -222,15 +252,18 @@ void UShipUpgradeScreenWidget::HandleShipStatsChanged(FShipStatSnapshot NewStats
 
 void UShipUpgradeScreenWidget::TryInitialize()
 {
+	const int32 Attempt = InitializationRetryCount + 1;
 	if (UShipUpgradeComponent* FoundComponent =
 		UShipUpgradeBlueprintLibrary::GetLocalShipUpgradeComponent(this))
 	{
-		/* UE_LOG(LogTemp, Log,
-			TEXT("[ShipUpgradeUI] SUCCESS: Local ShipUpgradeComponent found. Attempt=%d Component=%s Owner=%s Tree=%s"),
-			InitializationRetryCount + 1,
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradePipeline][UIInitializeFound] Attempt=%d Component=%s Owner=%s Tree=%s Nodes=%d ActiveNodes=%d"),
+			Attempt,
 			*GetNameSafe(FoundComponent),
 			*GetNameSafe(FoundComponent->GetOwner()),
-			*GetNameSafe(FoundComponent->UpgradeTree.Get())); */
+			*GetNameSafe(FoundComponent->UpgradeTree.Get()),
+			FoundComponent->UpgradeTree ? FoundComponent->UpgradeTree->Nodes.Num() : -1,
+			FoundComponent->GetActiveNodeIds().Num());
 		BindUpgradeComponent(FoundComponent);
 		FoundComponent->RefreshUpgradeData();
 		RefreshAll();
@@ -238,11 +271,25 @@ void UShipUpgradeScreenWidget::TryInitialize()
 	}
 
 	++InitializationRetryCount;
+	if (InitializationRetryCount == 1 || InitializationRetryCount == 5
+		|| InitializationRetryCount == 10 || InitializationRetryCount == MaxInitializationRetries)
+	{
+		ASharedShipUpgradeState* SharedState = ASharedShipUpgradeState::Find(this);
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradePipeline][UIInitializeMissing] Attempt=%d/%d Player=%s PlayerState=%s SharedState=%s SharedComponent=%s SharedShip=%s"),
+			InitializationRetryCount,
+			MaxInitializationRetries,
+			*GetNameSafe(GetOwningPlayer()),
+			*GetNameSafe(GetOwningPlayer() ? GetOwningPlayer()->PlayerState.Get() : nullptr),
+			*GetNameSafe(SharedState),
+			*GetNameSafe(SharedState ? SharedState->GetUpgradeComponent() : nullptr),
+			*GetNameSafe(SharedState ? SharedState->GetCurrentPlayerShip() : nullptr));
+	}
 	if (InitializationRetryCount >= MaxInitializationRetries)
 	{
-		/* UE_LOG(LogTemp, Error,
-			TEXT("[ShipUpgradeUI] FAILED: Local ShipUpgradeComponent not found after %d attempts. Check GameMode PlayerStateClass."),
-			InitializationRetryCount); */
+		UE_LOG(LogTemp, Error,
+			TEXT("[ShipUpgradePipeline][UIInitializeFailed] Screen=%s Attempts=%d"),
+			*GetNameSafe(this), InitializationRetryCount);
 		BP_OnInitializationFailed();
 		return;
 	}
@@ -282,6 +329,14 @@ void UShipUpgradeScreenWidget::BindUpgradeComponent(UShipUpgradeComponent* InCom
 	UpgradeComponent->OnUpgradeDataChanged.AddDynamic(this, &UShipUpgradeScreenWidget::HandleUpgradeDataChanged);
 	UpgradeComponent->OnNodeActivationResult.AddDynamic(this, &UShipUpgradeScreenWidget::HandleActivationResult);
 	UpgradeComponent->OnShipStatsChanged.AddDynamic(this, &UShipUpgradeScreenWidget::HandleShipStatsChanged);
+	UE_LOG(LogTemp, Warning,
+		TEXT("[ShipUpgradePipeline][UIBound] Screen=%s Component=%s Owner=%s Tree=%s Graph=%s Details=%s"),
+		*GetNameSafe(this),
+		*GetNameSafe(UpgradeComponent),
+		*GetNameSafe(UpgradeComponent->GetOwner()),
+		*GetNameSafe(UpgradeComponent->UpgradeTree.Get()),
+		*GetNameSafe(GraphWidget),
+		*GetNameSafe(DetailsWidget));
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[ShipUpgradeUI] Component events bound. Component=%s Graph=%s Details=%s"),
 		*GetNameSafe(UpgradeComponent),
@@ -361,12 +416,34 @@ void UShipUpgradeScreenWidget::HandleActivationRequested(FName NodeId)
 {
 	if (!UpgradeComponent || PendingNodeIds.Contains(NodeId))
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradeTrace][UIClickIgnored] Player=%s Node=%s Component=%s AlreadyPending=%s"),
+			*GetNameSafe(GetOwningPlayer()),
+			*NodeId.ToString(),
+			*GetNameSafe(UpgradeComponent),
+			PendingNodeIds.Contains(NodeId) ? TEXT("true") : TEXT("false"));
 		return;
 	}
+	UE_LOG(LogTemp, Warning,
+		TEXT("[ShipUpgradeTrace][UIClick] Player=%s Node=%s Component=%s Owner=%s OwnerAuthority=%s ActiveNodes=%d"),
+		*GetNameSafe(GetOwningPlayer()),
+		*NodeId.ToString(),
+		*GetNameSafe(UpgradeComponent),
+		*GetNameSafe(UpgradeComponent->GetOwner()),
+		UpgradeComponent->GetOwner() && UpgradeComponent->GetOwner()->HasAuthority() ? TEXT("true") : TEXT("false"),
+		UpgradeComponent->GetActiveNodeIds().Num());
 	PendingNodeIds.Add(NodeId);
 	if (DetailsWidget && SelectedNodeId == NodeId)
 	{
 		DetailsWidget->SetRequestPending(true);
+	}
+	if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(GetOwningPlayer()))
+	{
+		if (ASharedShipUpgradeState* SharedState = Cast<ASharedShipUpgradeState>(UpgradeComponent->GetOwner()))
+		{
+			PlayerController->ServerRequestActivateSharedShipUpgrade(SharedState, NodeId);
+			return;
+		}
 	}
 	UpgradeComponent->RequestActivateNode(NodeId);
 }

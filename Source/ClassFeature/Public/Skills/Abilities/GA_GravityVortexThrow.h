@@ -7,7 +7,9 @@
 class AGravityVortexProjectile;
 class ABasePlayer;
 class AVortexAimLine;
+class ABombardmentPreview;
 class USkeletalMeshComponent;
+class UMaterialParameterCollection;
 
 /** Hold the skill key to aim, press left mouse to throw, or right mouse/release the skill key to cancel. */
 UCLASS(Blueprintable)
@@ -44,7 +46,7 @@ public:
 	TSubclassOf<AGravityVortexProjectile> ProjectileClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Throw", meta = (ClampMin = "1.0", Units = "cm/s"))
-	float ThrowSpeed = 2200.0f;
+	float ThrowSpeed = 4000.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Throw")
 	float UpwardAimBias = 0.2f;
@@ -80,6 +82,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Visual")
 	TSubclassOf<AVortexAimLine> AimLineClass;
 
+	/** Local-only disk placed at the predicted water impact, scaled to the field pull radius. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Visual")
+	TSubclassOf<ABombardmentPreview> RangePreviewClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Gravity Vortex|Visual", meta = (Units = "cm"))
+	float RangePreviewHeightOffset = 20.0f;
+
 	/** Visual refresh rate. 0.0167 is approximately 60 Hz. */
 	UPROPERTY(
 		EditDefaultsOnly,
@@ -94,7 +103,7 @@ public:
 		BlueprintReadOnly,
 		Category = "Gravity Vortex|Aim Line Stability",
 		meta = (ClampMin = "0.1", ClampMax = "10.0", Units = "s"))
-	float TrajectoryMaxSimulationTime = 3.0f;
+	float TrajectoryMaxSimulationTime = 5.0f;
 
 	/**
 	 * Physics samples per second. The visual actor resamples these points to its
@@ -127,6 +136,8 @@ protected:
 	void DrawAimTrajectory();
 
 private:
+	void UpdateWaterPreview(const FVector& Center, float Radius);
+	void ClearWaterPreview();
 	bool GetLaunchData(FVector& OutSpawnLocation, FVector& OutLaunchVelocity) const;
 	void SpawnProjectileOnServer();
 
@@ -137,4 +148,14 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AVortexAimLine> AimLineActor;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ABombardmentPreview> RangePreviewActor;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialParameterCollection> WaterParameterCollection;
+
+	FVector LastWaterPreviewCenter = FVector::ZeroVector;
+	float LastWaterPreviewRadius = 0.0f;
+	bool bWaterPreviewEnabled = false;
 };

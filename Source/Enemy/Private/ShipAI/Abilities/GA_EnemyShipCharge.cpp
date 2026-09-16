@@ -7,8 +7,10 @@
 #include "GASCombatLibrary.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
 #include "GASDamageInstantGameplayEffect.h"
+#include "NiagaraSystem.h"
 #include "Ship.h"
 #include "ShipAI/Abilities/EnemyShipSkillMath.h"
+#include "ShipAI/Abilities/EnemyShipChargeTelegraph.h"
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
 #include "TimerManager.h"
@@ -16,8 +18,9 @@
 UGA_EnemyShipCharge::UGA_EnemyShipCharge()
 {
 	SetNativeAbilityAndCooldownTags(GameplayAbility_EnemyShip_Charge, Cooldown_EnemyShip_Charge);
-	CooldownDurationSeconds = 8.0f;
+	CooldownDurationSeconds = 10.0f;
 	DamageGameplayEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
+	ChargeTelegraphClass = AEnemyShipChargeTelegraph::StaticClass();
 }
 
 void UGA_EnemyShipCharge::ActivateAbility(
@@ -49,6 +52,9 @@ void UGA_EnemyShipCharge::ActivateAbility(
 	ActiveTarget = Target;
 	bCollisionConsumed = false;
 	bChargeStarted = false;
+	bApplyCooldownOnEnd = false;
+	ResolvedChargeDistance = FMath::Max(1.0f, FVector::Dist2D(
+		Ship->GetActorLocation(), Target->GetActorLocation()));
 
 	FEnemyShipNavigationOverrideRequest Request;
 	Request.MoveInput = 0.0f;
@@ -60,6 +66,7 @@ void UGA_EnemyShipCharge::ActivateAbility(
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
+	SpawnChargeTelegraph();
 	UE_LOG(LogTemp, Log, TEXT("차지 선회 시작"));
 
 	Ship->GetWorldTimerManager().SetTimer(
@@ -84,6 +91,10 @@ void UGA_EnemyShipCharge::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
+	if (bApplyCooldownOnEnd && ActorInfo)
+	{
+		UEnemyShipGameplayAbility::ApplyCooldown(Handle, ActorInfo, ActivationInfo);
+	}
 	if (AEnemyShip* Ship = ActiveShip.Get())
 	{
 		Ship->GetWorldTimerManager().ClearTimer(SteeringTimerHandle);
@@ -107,6 +118,7 @@ void UGA_EnemyShipCharge::EndAbility(
 			}
 		}
 	}
+	DestroyChargeTelegraph();
 
 	ActiveShip.Reset();
 	ActiveTarget.Reset();
@@ -118,8 +130,34 @@ void UGA_EnemyShipCharge::EndAbility(
 	bAddedChargingTag = false;
 	bCollisionConsumed = false;
 	bChargeStarted = false;
+	bApplyCooldownOnEnd = false;
+	ResolvedChargeDistance = 1.0f;
+	ChargeStartLocation = FVector::ZeroVector;
+	ChargeDirection = FVector::ForwardVector;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
+}
+
+void UGA_EnemyShipCharge::PostLoad()
+{
+	Super::PostLoad();
+	if (MinimumDamageApproachSpeed > 50.0f)
+	{
+		MinimumDamageApproachSpeed /= 100.0f;
+	}
+	if (DamagePerApproachSpeedUnit > 0.0f && DamagePerApproachSpeedUnit < 1.0f)
+	{
+		DamagePerApproachSpeedUnit *= 100.0f;
+	}
+}
+
+void UGA_EnemyShipCharge::ApplyCooldown(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo) const
+{
+	// CommitAbility still validates and pays costs at activation time. Charge cooldown
+	// is deliberately applied from EndAbility only after a successful terminal event.
 }
 
 void UGA_EnemyShipCharge::HandlePhysicsRootHit(
@@ -130,9 +168,8 @@ void UGA_EnemyShipCharge::HandlePhysicsRootHit(
 	const FHitResult& Hit)
 {
 	AEnemyShip* Ship = ActiveShip.Get();
-	AShip* Target = ActiveTarget.Get();
-	if (bCollisionConsumed || !Ship || !Target || OtherActor != Target
-		|| OtherComponent != Target->BuoyancyRoot || !IsValidPlayerTarget(Target))
+	AShip* HitShip = Cast<AShip>(OtherActor);
+	if (bCollisionConsumed || !bChargeStarted || !Ship || !HitShip || HitShip == Ship)
 	{
 		return;
 	}
@@ -141,20 +178,18 @@ void UGA_EnemyShipCharge::HandlePhysicsRootHit(
 	const FVector SourceVelocity = Ship->BuoyancyRoot
 		? Ship->BuoyancyRoot->GetComponentVelocity()
 		: Ship->GetVelocity();
-	const FVector TargetVelocity = Target->BuoyancyRoot
-		? Target->BuoyancyRoot->GetComponentVelocity()
-		: Target->GetVelocity();
-	const float ApproachSpeed = FEnemyShipSkillMath::CalculateApproachSpeed(
-		Ship->GetActorLocation(), SourceVelocity, Target->GetActorLocation(), TargetVelocity);
+	const float ApproachSpeed = FEnemyShipSkillMath::CalculateSourceApproachSpeed(
+		Ship->GetActorLocation(), SourceVelocity, HitShip->GetActorLocation());
 	const float Damage = FEnemyShipSkillMath::CalculateChargeDamage(
 		ApproachSpeed,
 		MinimumDamageApproachSpeed,
+		MinimumCollisionDamage,
 		DamagePerApproachSpeedUnit,
 		MaximumCollisionDamage);
 
 	UAbilitySystemComponent* SourceASC = Ship->GetAbilitySystemComponent();
-	UAbilitySystemComponent* TargetASC = Target->GetAbilitySystemComponent();
-	if (Damage > 0.0f && SourceASC && TargetASC)
+	UAbilitySystemComponent* TargetASC = HitShip->GetAbilitySystemComponent();
+	if (IsValidPlayerTarget(HitShip) && Damage > 0.0f && SourceASC && TargetASC)
 	{
 		const FGameplayEffectSpecHandle DamageSpec = UGASCombatLibrary::MakeDamageEffectSpec(
 			SourceASC,
@@ -169,19 +204,37 @@ void UGA_EnemyShipCharge::HandlePhysicsRootHit(
 		{
 			FGameplayEffectSpec TargetSpec(*DamageSpec.Data.Get());
 			USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
-				TargetSpec, Ship, Ship, Target, &Hit, SourceVelocity);
+				TargetSpec, Ship, Ship, HitShip, &Hit, SourceVelocity);
 			TargetASC->ApplyGameplayEffectSpecToSelf(TargetSpec);
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("[ENEMY-CHARGE-NIAGARA][REQUEST] Ship=%s Target=%s Effect=%s Location=%s Scale=%.3f PlaybackSpeed=%.3f Damage=%.2f"),
+				*GetNameSafe(Ship),
+				*GetNameSafe(HitShip),
+				*GetPathNameSafe(PlayerShipImpactEffect),
+				*Hit.ImpactPoint.ToCompactString(),
+				PlayerShipImpactEffectScale,
+				PlayerShipImpactEffectPlaybackSpeed,
+				Damage);
+			Ship->SpawnRamImpactNiagaraForAll(
+				PlayerShipImpactEffect,
+				Hit.ImpactPoint,
+				PlayerShipImpactEffectScale,
+				PlayerShipImpactEffectLifetimeScale,
+				PlayerShipImpactEffectPlaybackSpeed);
 			const float CurrentHealth = TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
 			UE_LOG(
 				LogTemp,
 				Warning,
 				TEXT("EnemyShip Charge: Hit Ship %s! Dealt %f damage. Current Health: %f"),
-				*Target->GetName(),
+				*HitShip->GetName(),
 				Damage,
 				CurrentHealth);
 		}
 	}
 
+	bApplyCooldownOnEnd = IsValidPlayerTarget(HitShip);
 	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
 }
 
@@ -190,23 +243,38 @@ void UGA_EnemyShipCharge::UpdateChargeSteering()
 	AEnemyShip* Ship = ActiveShip.Get();
 	AShip* Target = ActiveTarget.Get();
 	UEnemyShipNavigationComponent* Navigation = Ship ? Ship->GetNavigationComponent() : nullptr;
-	if (!Ship || Ship->IsDeathHandled() || !Navigation || !IsValidPlayerTarget(Target))
+	if (!Ship || Ship->IsDeathHandled() || !Navigation
+		|| (!bChargeStarted && !IsValidPlayerTarget(Target)))
 	{
 		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
 		return;
 	}
 
-	FVector ToTarget = Target->GetActorLocation() - Ship->GetActorLocation();
-	ToTarget.Z = 0.0f;
-	if (!ToTarget.Normalize())
+	if (bChargeStarted && HasReachedChargeEndpoint(
+		ChargeStartLocation,
+		ChargeDirection,
+		ResolvedChargeDistance,
+		Ship->GetActorLocation(),
+		ChargeEndpointAcceptanceRadius))
 	{
-		ToTarget = Ship->GetActorForwardVector();
+		bApplyCooldownOnEnd = true;
+		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
+		return;
+	}
+
+	FVector DesiredDirection = bChargeStarted
+		? ChargeDirection
+		: Target->GetActorLocation() - Ship->GetActorLocation();
+	DesiredDirection.Z = 0.0f;
+	if (!DesiredDirection.Normalize())
+	{
+		DesiredDirection = Ship->GetActorForwardVector().GetSafeNormal2D();
 	}
 	FVector Forward = Ship->GetActorForwardVector().GetSafeNormal2D();
 	FVector Right = Ship->GetActorRightVector().GetSafeNormal2D();
 	const float SignedAngle = FMath::Atan2(
-		FVector::DotProduct(Right, ToTarget),
-		FVector::DotProduct(Forward, ToTarget));
+		FVector::DotProduct(Right, DesiredDirection),
+		FVector::DotProduct(Forward, DesiredDirection));
 
 	FEnemyShipNavigationOverrideRequest Request;
 	Request.MoveInput = bChargeStarted ? 1.0f : 0.0f;
@@ -222,6 +290,12 @@ void UGA_EnemyShipCharge::UpdateChargeSteering()
 	{
 		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
 		return;
+	}
+	if (!bChargeStarted)
+	{
+		ResolvedChargeDistance = FMath::Max(1.0f, FVector::Dist2D(
+			Ship->GetActorLocation(), Target->GetActorLocation()));
+		UpdateChargeTelegraph();
 	}
 
 	if (!bChargeStarted
@@ -240,7 +314,14 @@ void UGA_EnemyShipCharge::BeginCharge()
 	}
 
 	bChargeStarted = true;
+	ChargeStartLocation = Ship->GetActorLocation();
+	ChargeDirection = Ship->GetActorForwardVector().GetSafeNormal2D();
+	if (ChargeDirection.IsNearlyZero())
+	{
+		ChargeDirection = FVector::ForwardVector;
+	}
 	Ship->GetWorldTimerManager().ClearTimer(AimTimeoutTimerHandle);
+	DestroyChargeTelegraph();
 	UE_LOG(LogTemp, Log, TEXT("차지 돌진"));
 
 	if (FBodyInstance* BodyInstance = Ship->BuoyancyRoot->GetBodyInstance())
@@ -257,12 +338,15 @@ void UGA_EnemyShipCharge::BeginCharge()
 		bAddedChargingTag = true;
 	}
 
-	Ship->GetWorldTimerManager().SetTimer(
-		DurationTimerHandle,
-		this,
-		&UGA_EnemyShipCharge::FinishChargeByTimeout,
-		FMath::Max(0.05f, ChargeDurationSeconds),
-		false);
+	if (ChargeFailsafeDurationSeconds > KINDA_SMALL_NUMBER)
+	{
+		Ship->GetWorldTimerManager().SetTimer(
+			DurationTimerHandle,
+			this,
+			&UGA_EnemyShipCharge::FinishChargeByTimeout,
+			ChargeFailsafeDurationSeconds,
+			false);
+	}
 	UpdateChargeSteering();
 }
 
@@ -273,7 +357,73 @@ void UGA_EnemyShipCharge::FinishAimByTimeout()
 
 void UGA_EnemyShipCharge::FinishChargeByTimeout()
 {
+	UE_LOG(LogTemp, Warning, TEXT("EnemyShip Charge: failsafe timeout before reaching endpoint"));
 	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
+}
+
+bool UGA_EnemyShipCharge::HasReachedChargeEndpoint(
+	const FVector& Start,
+	const FVector& Direction,
+	float Distance,
+	const FVector& CurrentLocation,
+	float AcceptanceRadius)
+{
+	const FVector Direction2D = Direction.GetSafeNormal2D();
+	if (Direction2D.IsNearlyZero())
+	{
+		return true;
+	}
+	const float RequiredProgress = FMath::Max(0.0f, Distance - FMath::Max(0.0f, AcceptanceRadius));
+	FVector Travel = CurrentLocation - Start;
+	Travel.Z = 0.0f;
+	const float Progress = FVector::DotProduct(Travel, Direction2D);
+	return Progress >= RequiredProgress;
+}
+
+void UGA_EnemyShipCharge::SpawnChargeTelegraph()
+{
+	AEnemyShip* Ship = ActiveShip.Get();
+	if (!Ship || !Ship->HasAuthority() || !ChargeTelegraphClass || !Ship->GetWorld())
+	{
+		return;
+	}
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = Ship;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AEnemyShipChargeTelegraph* Telegraph = Ship->GetWorld()->SpawnActor<AEnemyShipChargeTelegraph>(
+		ChargeTelegraphClass, Ship->GetActorTransform(), SpawnParameters);
+	if (Telegraph)
+	{
+		ChargeTelegraphActor = Telegraph;
+		Telegraph->InitializeTelegraph(
+			Ship->GetActorLocation(),
+			Ship->GetActorForwardVector(),
+			ResolvedChargeDistance,
+			ChargeTelegraphWidth,
+			ChargeTelegraphWorldZ);
+	}
+}
+
+void UGA_EnemyShipCharge::UpdateChargeTelegraph()
+{
+	AEnemyShip* Ship = ActiveShip.Get();
+	if (Ship)
+	{
+		if (AEnemyShipChargeTelegraph* Telegraph = ChargeTelegraphActor.Get())
+		{
+			Telegraph->UpdateTelegraph(
+				Ship->GetActorLocation(), Ship->GetActorForwardVector(), ResolvedChargeDistance);
+		}
+	}
+}
+
+void UGA_EnemyShipCharge::DestroyChargeTelegraph()
+{
+	if (AEnemyShipChargeTelegraph* Telegraph = ChargeTelegraphActor.Get())
+	{
+		Telegraph->Destroy();
+	}
+	ChargeTelegraphActor.Reset();
 }
 
 bool UGA_EnemyShipCharge::IsValidPlayerTarget(const AShip* Candidate) const

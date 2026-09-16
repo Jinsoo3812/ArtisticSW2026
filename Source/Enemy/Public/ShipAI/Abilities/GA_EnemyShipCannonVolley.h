@@ -30,15 +30,20 @@ public:
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		const FGameplayEventData* TriggerEventData) override;
 
-protected:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Cannon Volley", meta = (ClampMin = "1"))
-	int32 MaxCannonsPerVolley = 2;
-
-	/** Chooses the exact fixed-speed ballistic solution closest to this angle. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Cannon Volley", meta = (ClampMin = "-89.0", ClampMax = "89.0", Units = "deg"))
-	float PreferredLaunchAngleDegrees = 20.0f;
+	static bool CalculateLaunchVelocity(
+		const FVector& Start,
+		const FVector& CurrentTargetPoint,
+		const FVector& TargetVelocity,
+		float GravityZ,
+		const struct FEnemyShipCannonAimProfile& AimProfile,
+		FVector& OutLaunchVelocity);
 
 private:
-	bool BuildShotDirection(const ACannon* Cannon, const AShip* Target, FVector& OutDirection) const;
+	bool BuildShotSolution(
+		const ACannon* Cannon,
+		const AShip* Target,
+		const AEnemyShip* Ship,
+		FVector& OutDirection,
+		float& OutProjectileSpeed) const;
 	bool IsValidPlayerTarget(const AShip* Candidate) const;
 };

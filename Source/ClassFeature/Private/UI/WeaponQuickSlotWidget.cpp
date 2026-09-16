@@ -20,7 +20,6 @@ void UWeaponQuickSlotWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	if (InPlayer)
 	{
 		InPlayer->OnQuickSlotsChanged.AddUObject(this, &UWeaponQuickSlotWidget::RefreshSlots);
-		InPlayer->OnItemSlotsChanged.AddUObject(this, &UWeaponQuickSlotWidget::RefreshSlots);
 	}
 
 	RefreshSlots();
@@ -43,7 +42,6 @@ void UWeaponQuickSlotWidget::UnbindPlayer()
 	if (ABasePlayer* Player = CachedPlayer.Get())
 	{
 		Player->OnQuickSlotsChanged.RemoveAll(this);
-		Player->OnItemSlotsChanged.RemoveAll(this);
 	}
 
 	CachedPlayer.Reset();

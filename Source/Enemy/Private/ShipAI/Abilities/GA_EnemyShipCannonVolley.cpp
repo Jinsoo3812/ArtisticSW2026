@@ -4,9 +4,10 @@
 #include "Cannon.h"
 #include "Components/StaticMeshComponent.h"
 #include "Ship.h"
-#include "ShipAI/Abilities/EnemyShipSkillMath.h"
 #include "ShipAI/EnemyShip.h"
+#include "ShipAI/EnemyShipArchetypeData.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
+#include "HAL/IConsoleManager.h"
 
 UGA_EnemyShipCannonVolley::UGA_EnemyShipCannonVolley()
 {
@@ -33,13 +34,9 @@ bool UGA_EnemyShipCannonVolley::CanActivateAbility(
 	{
 		return false;
 	}
-
 	for (const ACannon* Cannon : Ship->GetMountedCannons())
 	{
-		FVector ShotDirection;
-		if (IsValid(Cannon) && Cannon->CanFireCannon()
-			&& BuildShotDirection(Cannon, Target, ShotDirection)
-			&& Cannon->CanAimAtWorldDirection(ShotDirection))
+		if (IsValid(Cannon) && Cannon->CanFireCannon())
 		{
 			return true;
 		}
@@ -82,19 +79,14 @@ void UGA_EnemyShipCannonVolley::ActivateAbility(
 		return FVector::DistSquared2D(A.GetActorLocation(), TargetLocation)
 			< FVector::DistSquared2D(B.GetActorLocation(), TargetLocation);
 	});
-
 	int32 FiredCount = 0;
 	for (ACannon* Cannon : Cannons)
 	{
-		if (FiredCount >= FMath::Max(1, MaxCannonsPerVolley))
-		{
-			break;
-		}
-
 		FVector ShotDirection;
+		float ShotSpeed = 0.0f;
 		if (Cannon->CanFireCannon()
-			&& BuildShotDirection(Cannon, Target, ShotDirection)
-			&& Cannon->FireAICannonAtDirection(ShotDirection))
+			&& BuildShotSolution(Cannon, Target, Ship, ShotDirection, ShotSpeed)
+			&& Cannon->FireAICannonAtDirectionWithSpeed(ShotDirection, ShotSpeed))
 		{
 			++FiredCount;
 		}
@@ -103,41 +95,96 @@ void UGA_EnemyShipCannonVolley::ActivateAbility(
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, FiredCount == 0);
 }
 
-bool UGA_EnemyShipCannonVolley::BuildShotDirection(
+bool UGA_EnemyShipCannonVolley::BuildShotSolution(
 	const ACannon* Cannon,
 	const AShip* Target,
-	FVector& OutDirection) const
+	const AEnemyShip* Ship,
+	FVector& OutDirection,
+	float& OutProjectileSpeed) const
 {
-	if (!Cannon || !Target)
+	OutDirection = FVector::ZeroVector;
+	OutProjectileSpeed = 0.0f;
+	if (!Cannon || !Target || !Ship || !Ship->EnemyShipArchetype)
 	{
 		return false;
 	}
 
-	const float Speed = Cannon->GetResolvedFiringStats().ProjectileSpeed;
+	const FEnemyShipCannonAimProfile& AimProfile = Ship->EnemyShipArchetype->CannonAimProfile;
+	const float FlightTime = FMath::Max(0.05f, AimProfile.ProjectileFlightTime);
 	const UWorld* World = Cannon->GetWorld();
-	const float Gravity = World ? FMath::Abs(World->GetGravityZ()) : 0.0f;
+	if (!World)
+	{
+		return false;
+	}
+
 	const FVector Start = Cannon->GetProjectileMuzzleTransform().GetLocation();
-	const FVector End = Target->BuoyancyRoot
+	const FVector CurrentTargetPoint = Target->BuoyancyRoot
 		? Target->BuoyancyRoot->GetComponentLocation()
 		: Target->GetActorLocation();
-	FVector Velocity;
-	float FlightTime = 0.0f;
-	float SolvedAngle = 0.0f;
-	if (!FEnemyShipSkillMath::SuggestBallisticVelocity(
+	const FVector TargetVelocity = Target->GetVelocity();
+	FVector LaunchVelocity;
+	if (!CalculateLaunchVelocity(
 		Start,
-		End,
-		Speed,
-		Gravity,
-		PreferredLaunchAngleDegrees,
-		Velocity,
-		FlightTime,
-		SolvedAngle))
+		CurrentTargetPoint,
+		TargetVelocity,
+		World->GetGravityZ(),
+		AimProfile,
+		LaunchVelocity))
 	{
 		return false;
 	}
 
-	OutDirection = Velocity.GetSafeNormal();
-	return !OutDirection.IsNearlyZero();
+	OutProjectileSpeed = LaunchVelocity.Size();
+	OutDirection = LaunchVelocity.GetSafeNormal();
+	if (const IConsoleVariable* Diagnostics =
+		IConsoleManager::Get().FindConsoleVariable(TEXT("sw.ShipBalanceDiagnostics"));
+		Diagnostics && Diagnostics->GetInt() != 0)
+	{
+		FVector TrackedVelocity(TargetVelocity.X, TargetVelocity.Y, 0.0f);
+		TrackedVelocity = TrackedVelocity.GetClampedToMaxSize(
+			FMath::Max(0.0f, AimProfile.TrackableTargetSpeed));
+		const float StraightResidual =
+			FVector::Dist2D(FVector::ZeroVector, TargetVelocity - TrackedVelocity) * FlightTime;
+		const UPrimitiveComponent* TargetRoot = Target->BuoyancyRoot;
+		const float AngularSpeedDeg = TargetRoot
+			? FMath::Abs(TargetRoot->GetPhysicsAngularVelocityInDegrees().Z)
+			: 0.0f;
+		const TCHAR* InputLabel = Target->GetCurrentMoveInput() > 0.9f
+			? (Target->GetCurrentTurnInput() > 0.9f ? TEXT("WD")
+				: Target->GetCurrentTurnInput() < -0.9f ? TEXT("WA") : TEXT("W"))
+			: TEXT("OTHER");
+		const FRotator LocalAim = Cannon->GetActorTransform()
+			.InverseTransformVectorNoScale(OutDirection).Rotation();
+		UE_LOG(LogTemp, Display,
+			TEXT("[CANNON-BALANCE] Enemy=%s PlayerRow=%s Input=%s Distance=%.1f FlightTime=%.2f TrackableSpeed=%.1f PlayerSpeed=%.1f AngularSpeedDeg=%.2f StraightResidual=%.1f LaunchSpeed=%.1f AimPitch=%.1f AimYaw=%.1f AimAllowed=%s"),
+			*GetNameSafe(Ship), *Target->GetShipStatRowName().ToString(), InputLabel,
+			FVector::Dist2D(Start, CurrentTargetPoint), FlightTime,
+			AimProfile.TrackableTargetSpeed, TargetVelocity.Size2D(), AngularSpeedDeg,
+			StraightResidual, OutProjectileSpeed, LocalAim.Pitch,
+			FMath::UnwindDegrees(LocalAim.Yaw),
+			Cannon->CanAIAimAtWorldDirection(OutDirection) ? TEXT("true") : TEXT("false"));
+	}
+	return Cannon->CanAIAimAtWorldDirection(OutDirection);
+}
+
+bool UGA_EnemyShipCannonVolley::CalculateLaunchVelocity(
+	const FVector& Start,
+	const FVector& CurrentTargetPoint,
+	const FVector& TargetVelocity,
+	float GravityZ,
+	const FEnemyShipCannonAimProfile& AimProfile,
+	FVector& OutLaunchVelocity)
+{
+	OutLaunchVelocity = FVector::ZeroVector;
+	const float FlightTime = FMath::Max(0.05f, AimProfile.ProjectileFlightTime);
+	FVector TrackedVelocity(TargetVelocity.X, TargetVelocity.Y, 0.0f);
+	TrackedVelocity = TrackedVelocity.GetClampedToMaxSize(
+		FMath::Max(0.0f, AimProfile.TrackableTargetSpeed));
+	const FVector PredictedTargetPoint = CurrentTargetPoint + TrackedVelocity * FlightTime;
+	const FVector Gravity(0.0f, 0.0f, GravityZ);
+	OutLaunchVelocity =
+		(PredictedTargetPoint - Start - 0.5f * Gravity * FlightTime * FlightTime) / FlightTime;
+	return OutLaunchVelocity.SizeSquared() >= 1.0f;
 }
 
 bool UGA_EnemyShipCannonVolley::IsValidPlayerTarget(const AShip* Candidate) const

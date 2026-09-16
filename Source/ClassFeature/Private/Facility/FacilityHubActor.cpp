@@ -2,7 +2,55 @@
 
 #include "BasePlayer.h"
 #include "BasePlayerController.h"
+#include "GameFramework/PlayerState.h"
 #include "InteractableComponent.h"
+#include "Net/UnrealNetwork.h"
+
+AFacilityHubActor::AFacilityHubActor()
+{
+	bReplicates = true;
+	bAlwaysRelevant = true;
+}
+
+void AFacilityHubActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(AFacilityHubActor, CurrentUser);
+}
+
+bool AFacilityHubActor::TryAcquire(ABasePlayerController* PlayerController)
+{
+	if (!HasAuthority() || !IsValid(PlayerController) || !IsValid(PlayerController->PlayerState))
+	{
+		return false;
+	}
+	if (IsValid(CurrentUser.Get()) && CurrentUser != PlayerController->PlayerState)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[FacilityHubLock] Rejected Facility=%s RequestedBy=%s OccupiedBy=%s"),
+			*GetNameSafe(this), *GetNameSafe(PlayerController->PlayerState), *GetNameSafe(CurrentUser));
+		return false;
+	}
+	CurrentUser = PlayerController->PlayerState;
+	ForceNetUpdate();
+	return true;
+}
+
+void AFacilityHubActor::Release(ABasePlayerController* PlayerController)
+{
+	if (!HasAuthority() || !IsValid(PlayerController) || CurrentUser != PlayerController->PlayerState)
+	{
+		return;
+	}
+	CurrentUser = nullptr;
+	ForceNetUpdate();
+}
+
+bool AFacilityHubActor::IsOccupiedBy(const ABasePlayerController* PlayerController) const
+{
+	return IsValid(PlayerController) && IsValid(CurrentUser.Get())
+		&& CurrentUser == PlayerController->PlayerState;
+}
 
 void AFacilityHubActor::BeginPlay()
 {

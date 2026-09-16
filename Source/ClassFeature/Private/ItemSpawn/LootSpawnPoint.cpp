@@ -6,6 +6,7 @@
 #include "AbilitySystemComponent.h"
 #include "Item/BaseItem.h"
 #include "ItemSpawn/ChestSpawnData.h"
+#include "Balance/FixedChestDropData.h"
 #include "Ship.h"
 #include "Storage/StorageChest.h"
 #include "StoryConditionalSpawner.h"
@@ -136,7 +137,6 @@ void ALooseLootSpawnPoint::AlignItemBottomToGround(ABaseItem* Item) const
 		ETeleportType::TeleportPhysics
 	);
 }
-
 void AChestSpawnPoint::BeginPlay()
 {
 	Super::BeginPlay();
@@ -155,11 +155,37 @@ void AChestSpawnPoint::BeginPlay()
 			}
 		}
 
-		if (SpawnMode == EChestSpawnMode::Guarded && ChestDefinition && !bActivated)
-		{
-			SpawnConfiguredChest(ChestDefinition, FMath::Rand());
-		}
+		// The global manager owns initial spawning and progression reward allocation.
+		// Child actors can BeginPlay before their owning ship applies authoring settings.
 	}
+}
+
+void AChestSpawnPoint::ApplyAuthoringSettings(
+	const FChestSpawnPointChestSettings& ChestSettings,
+	const FChestSpawnPointLootSettings& LootSettings)
+{
+	bIsBossChest = ChestSettings.bIsBossChest;
+	RequiredBossTag = ChestSettings.RequiredBossTag;
+	GuaranteedBossQuestItemTag = ChestSettings.GuaranteedBossQuestItemTag;
+	GuaranteedBossQuestItemCount = FMath::Max(1, ChestSettings.GuaranteedBossQuestItemCount);
+	Environment = ChestSettings.Environment;
+	bEnableDistanceOptimization = ChestSettings.bEnableDistanceOptimization;
+	SpawnMode = ChestSettings.SpawnMode;
+	ProgressionZone = ChestSettings.ProgressionZone;
+	ProgressionKind = ChestSettings.ProgressionKind;
+	ChestClassOverride = ChestSettings.ChestClassOverride;
+	RandomGroup = nullptr;
+	ChestDefinition = nullptr; // Retired authoring input; the manager supplies progression loot.
+	GuardCharacters = ChestSettings.GuardCharacters;
+	GuardSpawners = ChestSettings.GuardSpawners;
+	OwningShip = ChestSettings.OwningShip;
+
+	bEnabled = LootSettings.bEnabled;
+	PointWeight = FMath::Max(0.f, LootSettings.PointWeight);
+	bAlignChestBottomToGround = LootSettings.bAlignChestBottomToGround;
+	GroundClearance = FMath::Max(0.f, LootSettings.GroundClearance);
+	GroundTraceUpDistance = FMath::Max(0.f, LootSettings.GroundTraceUpDistance);
+	GroundTraceDownDistance = FMath::Max(0.f, LootSettings.GroundTraceDownDistance);
 }
 
 void AChestSpawnPoint::HandleGuardActorSpawned(AActor* InSpawnedActor)
@@ -175,11 +201,10 @@ void AChestSpawnPoint::HandleGuardActorSpawned(AActor* InSpawnedActor)
 		return;
 	}
 
-	GuardCharacters.AddUnique(GuardChar);
+	RegisterGuardCharacter(GuardChar);
 
 	if (IsValid(ActiveChestInstance))
 	{
-		ActiveChestInstance->AddGuardCharacter(GuardChar);
 
 		if (bIsBossChest && !bBossQuestItemInjected && GuaranteedBossQuestItemTag.IsValid() && HasMatchingBossGuard())
 		{
@@ -227,60 +252,9 @@ bool AChestSpawnPoint::HasMatchingBossGuard() const
 	return false;
 }
 
-AStorageChest* AChestSpawnPoint::SpawnChest(const TArray<FChestInitialLootRow>& LootRows, TSubclassOf<AStorageChest> FallbackChestClass, int32 Seed)
-{
-	if (!HasAuthority() || !CanBeActivated() || IsDataDrivenChestPoint())
-	{
-		return nullptr;
-	}
-
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return nullptr;
-	}
-
-	TSubclassOf<AStorageChest> ChestClass = ChestClassOverride ? ChestClassOverride : FallbackChestClass;
-	if (!ChestClass)
-	{
-		return nullptr;
-	}
-
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = this;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-	AStorageChest* SpawnedChest = World->SpawnActor<AStorageChest>(
-		ChestClass,
-		GetActorTransform(),
-		SpawnParameters
-	);
-
-	if (!IsValid(SpawnedChest))
-	{
-		return nullptr;
-	}
-
-	ActiveChestInstance = SpawnedChest;
-	AlignChestBottomToGround(SpawnedChest);
-	SpawnedChest->ConfigureStorage(SlotCount, ColumnCount, BuildInitialItems(LootRows, Seed));
-
-	if (bIsBossChest && GuaranteedBossQuestItemTag.IsValid() && HasMatchingBossGuard())
-	{
-		if (UStorageComponent* StorageComp = SpawnedChest->GetStorageComponent())
-		{
-			StorageComp->AddItem(GuaranteedBossQuestItemTag, FMath::Max(1, GuaranteedBossQuestItemCount));
-			bBossQuestItemInjected = true;
-		}
-	}
-
-	MarkActivated(SpawnedChest);
-	return SpawnedChest;
-}
-
 AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definition, int32 Seed)
 {
-	if (!HasAuthority() || !CanSpawnDataDrivenChest() || !IsValid(Definition) || !Definition->ChestClass)
+	if (!HasAuthority() || !CanSpawnDataDrivenChest())
 	{
 		return nullptr;
 	}
@@ -291,8 +265,11 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 		return nullptr;
 	}
 
+	TSubclassOf<AStorageChest> SpawnClass = ChestClassOverride;
+	if (!SpawnClass && IsValid(Definition)) SpawnClass = Definition->ChestClass;
+	if (!SpawnClass) SpawnClass = AStorageChest::StaticClass();
 	AStorageChest* SpawnedChest = World->SpawnActorDeferred<AStorageChest>(
-		Definition->ChestClass,
+		SpawnClass,
 		GetActorTransform(),
 		this,
 		nullptr,
@@ -303,9 +280,11 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 	}
 
 	ActiveChestInstance = SpawnedChest;
-	SpawnedChest->InitializeFromChestDefinition(Definition, Seed);
-	const bool bUseBuoyancy = bEnablePhysicsAndBuoyancy || (Environment == EChestEnvironment::Water);
-	SpawnedChest->SetPhysicsAndBuoyancyEnabled(bUseBuoyancy);
+	if (Definition) SpawnedChest->InitializeFromChestDefinition(Definition, Seed);
+	else SpawnedChest->ClearLegacyChestDefinition();
+	SpawnedChest->SetPhysicsAndBuoyancyEnabled(Environment == EChestEnvironment::Water);
+	SpawnedChest->SetDistanceOptimizationEnabled(
+		Environment == EChestEnvironment::Water && bEnableDistanceOptimization);
 
 	AShip* EffectiveOwningShip = OwningShip ? OwningShip.Get() : Cast<AShip>(GetAttachParentActor());
 
@@ -350,20 +329,20 @@ void AChestSpawnPoint::SetEnvironment(EChestEnvironment InEnvironment)
 	Environment = InEnvironment;
 	if (Environment == EChestEnvironment::Water)
 	{
-		bEnablePhysicsAndBuoyancy = true;
 		bAlignChestBottomToGround = false;
 	}
 	else
 	{
-		bEnablePhysicsAndBuoyancy = false;
 		bAlignChestBottomToGround = true;
 	}
 }
 
-void AChestSpawnPoint::ConfigureRandomSpawn(URandomChestGroup* InRandomGroup, float InPointWeight)
+void AChestSpawnPoint::ConfigureRandomSpawn(EProgressionZone InZone, EProgressionChestKind InKind, float InPointWeight)
 {
 	SpawnMode = EChestSpawnMode::Random;
-	RandomGroup = InRandomGroup;
+	ProgressionZone = InZone;
+	ProgressionKind = InKind;
+	RandomGroup = nullptr;
 	ChestDefinition = nullptr;
 	GuardCharacters.Reset();
 	OwningShip = nullptr;
@@ -384,6 +363,10 @@ void AChestSpawnPoint::ConfigureGuardedSpawn(
 		GuardCharacters.Add(Guard);
 	}
 	OwningShip = InOwningShip;
+	if (OwningShip)
+	{
+		SetEnvironment(EChestEnvironment::ShipDeck);
+	}
 }
 
 void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
@@ -477,7 +460,36 @@ void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
 	);
 }
 
-TArray<FStorageItemEntry> AChestSpawnPoint::BuildInitialItems(const TArray<FChestInitialLootRow>& LootRows, int32 Seed) const
+void AChestSpawnPoint::RegisterGuardCharacter(ABaseCharacter* GuardCharacter)
 {
-	return UChestDefinition::RollItemsFromRows(LootRows, InitialItemRollCount, Seed);
+	if (!HasAuthority() || !IsValid(GuardCharacter)) return;
+	if (!GuardCharacters.Contains(GuardCharacter))
+	{
+		GuardCharacters.Add(GuardCharacter);
+		if (IsValid(ActiveChestInstance)) ActiveChestInstance->AddGuardCharacter(GuardCharacter);
+	}
+}
+
+void AChestSpawnPoint::ApplyFixedChanceDrops(const UFixedChestDropData* DropData, int32 Seed)
+{
+	AStorageChest* Chest = Cast<AStorageChest>(GetSpawnedActor());
+	if (!HasAuthority() || !IsValid(Chest) || !DropData) return;
+	FRandomStream Stream(Seed);
+	TArray<FStorageItemEntry> AddedItems;
+	for (const FFixedChestDropEntry& Entry : DropData->Drops)
+	{
+		const float Chance = Entry.GetChance(ProgressionZone);
+		if (!Entry.ItemTag.IsValid() || Entry.Quantity < 1 || Chance <= 0.f) continue;
+		const float Roll = Stream.FRand();
+		const bool bDropped = Roll < Chance;
+		UE_LOG(LogTemp, Log, TEXT("Fixed chest roll: point=%s zone=%d item=%s chance=%.4f roll=%.4f dropped=%d"),
+			*GetNameSafe(this), static_cast<int32>(ProgressionZone), *Entry.ItemTag.ToString(), Chance, Roll, bDropped ? 1 : 0);
+		if (bDropped)
+		{
+			FStorageItemEntry& Item = AddedItems.AddDefaulted_GetRef();
+			Item.ItemTag = Entry.ItemTag;
+			Item.Count = Entry.Quantity;
+		}
+	}
+	Chest->AppendFixedLoot(AddedItems);
 }

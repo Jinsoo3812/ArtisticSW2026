@@ -2,6 +2,7 @@
 
 #include "AI/BaseAIController.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/BaseHealthComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckWaypointComponent.h"
@@ -273,6 +274,16 @@ void UDeckEnemySpawnerComponent::InitializePool()
 		PooledEnemy->SetHostShip(Host);
 		PooledEnemy->DeactivateToPool();
 		EnemyPool.Add(PooledEnemy);
+		Host->RegisterDeckEnemyChestGuard(PooledEnemy);
+	}
+}
+
+void UDeckEnemySpawnerComponent::GetPooledEnemies(TArray<ADeckEnemy*>& OutEnemies) const
+{
+	OutEnemies.Reset(EnemyPool.Num());
+	for (ADeckEnemy* Enemy : EnemyPool)
+	{
+		if (IsValid(Enemy)) OutEnemies.Add(Enemy);
 	}
 }
 
@@ -518,6 +529,40 @@ int32 UDeckEnemySpawnerComponent::GetAliveDeployedEnemyCount() const
 		AliveCount += Enemy.IsValid() ? 1 : 0;
 	}
 	return AliveCount;
+}
+
+void UDeckEnemySpawnerComponent::ResetForNewEncounter()
+{
+	CancelDeployment();
+	for (ADeckEnemy* Enemy : EnemyPool)
+	{
+		if (IsValid(Enemy))
+		{
+			Enemy->ResetToFreshPoolState();
+		}
+	}
+	AliveDeployedEnemies.Reset();
+	DeploymentQueue.Reset();
+	DeploymentState = EDeckEnemyDeploymentState::Idle;
+	bHasDeployedEnemy = false;
+	bAllDeployedEnemiesDefeated = false;
+	DeploymentQueueIndex = 0;
+	CurrentRetryCount = 0;
+	DeploymentFailureCount = 0;
+}
+
+int32 UDeckEnemySpawnerComponent::GetLivingPooledEnemyCount() const
+{
+	int32 LivingCount = 0;
+	for (const TObjectPtr<ADeckEnemy>& Enemy : EnemyPool)
+	{
+		if (IsValid(Enemy))
+		{
+			const UBaseHealthComponent* Health = Enemy->GetHealthComponent();
+			LivingCount += (!Health || !Health->IsDead()) ? 1 : 0;
+		}
+	}
+	return LivingCount;
 }
 
 void UDeckEnemySpawnerComponent::NotifyEnemyDefeated(ADeckEnemy* Enemy)

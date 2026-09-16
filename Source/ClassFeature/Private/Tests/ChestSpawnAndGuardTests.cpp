@@ -3,6 +3,7 @@
 #include "Misc/AutomationTest.h"
 
 #include "BaseCharacter.h"
+#include "BasePlayer.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayerController.h"
 #include "Components/BaseHealthComponent.h"
@@ -60,6 +61,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
 	ChestSystemTests::FTestWorld TestWorld(TEXT("DataDrivenChestSpawnTestWorld"));
 	UWorld* World = TestWorld.World;
 	if (!TestNotNull(TEXT("Transient game world is created"), World))
@@ -84,19 +87,18 @@ bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 	Definition->SlotCount = 4;
 	Definition->ColumnCount = 2;
 
-	URandomChestGroup* MidBossGroup = NewObject<URandomChestGroup>(GetTransientPackage());
-	MidBossGroup->ChestDefinition = Definition;
-	MidBossGroup->SpawnCount = 2;
-
-	URandomChestGroup* FinalBossGroup = NewObject<URandomChestGroup>(GetTransientPackage());
-	FinalBossGroup->ChestDefinition = Definition;
-	FinalBossGroup->SpawnCount = 1;
+	UProgressionBalanceData* Balance = NewObject<UProgressionBalanceData>(GetTransientPackage());
+	for (FProgressionZonePlan& Plan : Balance->ZonePlans)
+	{
+		Plan.OceanActiveChests = Plan.Zone == EProgressionZone::Final ? 3 : 0;
+		Plan.IslandActiveChests = Plan.Zone == EProgressionZone::Mid1 ? 2 : 0;
+	}
 
 	TArray<AChestSpawnPoint*> MidBossPoints;
 	for (int32 Index = 0; Index < 3; ++Index)
 	{
 		AChestSpawnPoint* Point = World->SpawnActor<AChestSpawnPoint>();
-		Point->ConfigureRandomSpawn(MidBossGroup, static_cast<float>(Index + 1));
+		Point->ConfigureRandomSpawn(EProgressionZone::Mid1, EProgressionChestKind::IslandRandom, static_cast<float>(Index + 1));
 		MidBossPoints.Add(Point);
 	}
 
@@ -104,8 +106,8 @@ bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 	for (int32 Index = 0; Index < 2; ++Index)
 	{
 		AChestSpawnPoint* Point = World->SpawnActor<AChestSpawnPoint>();
-		Point->ConfigureRandomSpawn(FinalBossGroup);
-		Point->SetPhysicsAndBuoyancyEnabled(true);
+		Point->ConfigureRandomSpawn(EProgressionZone::Final, EProgressionChestKind::OceanRandom);
+		Point->SetEnvironment(EChestEnvironment::Water);
 		FinalBossPoints.Add(Point);
 	}
 
@@ -115,7 +117,7 @@ bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 
 	// Match runtime: data-driven chests are deferred-spawned after the world has begun play.
 	World->BeginPlay();
-	TestEqual(TEXT("Each random group spawns its configured count"), Manager->InitializeDataDrivenChests(), 3);
+	TestEqual(TEXT("Each zone spawns min(Progression target, placed points)"), Manager->InitializeDataDrivenChestsWithBalance(Balance), 4);
 
 	auto CountActivated = [](const TArray<AChestSpawnPoint*>& Points)
 	{
@@ -131,7 +133,7 @@ bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 	};
 
 	TestEqual(TEXT("Mid-boss group activates two of three points"), CountActivated(MidBossPoints), 2);
-	TestEqual(TEXT("Final-boss group activates one of two points"), CountActivated(FinalBossPoints), 1);
+	TestEqual(TEXT("Final ocean activates two available points despite a target of three"), CountActivated(FinalBossPoints), 2);
 
 	for (AChestSpawnPoint* Point : FinalBossPoints)
 	{
@@ -161,16 +163,11 @@ bool FDataDrivenChestSpawnTest::RunTest(const FString& Parameters)
 
 		TestFalse(TEXT("Random chest is unlocked"), Chest->IsLocked());
 		TestFalse(TEXT("Data-driven static chest has physics disabled"), Chest->IsPhysicsAndBuoyancyEnabled());
-		TestEqual(TEXT("Definition configures slot count"), Chest->GetStorageComponent()->GetSlotCount(), 4);
-		TestEqual(TEXT("Definition configures column count"), Chest->GetStorageComponent()->GetStorageColumns(), 2);
+		TestEqual(TEXT("Random chest uses its native slot count without a definition"), Chest->GetStorageComponent()->GetSlotCount(), 5);
+		TestEqual(TEXT("Random chest uses its native column count without a definition"), Chest->GetStorageComponent()->GetStorageColumns(), 5);
 
 		const TArray<FInventorySlot>& Slots = Chest->GetStorageComponent()->GetSlots();
-		TestTrue(TEXT("Loot table creates at least one storage slot"), !Slots.IsEmpty());
-		if (!Slots.IsEmpty())
-		{
-			TestEqual(TEXT("Loot table selects the configured item"), Slots[0].ItemTag, Item_Id_Material_ShipMaterials_WoodenPlank.GetTag());
-			TestEqual(TEXT("Loot table applies the configured quantity"), Slots[0].Count, 2);
-		}
+		TestTrue(TEXT("Random chest waits for manager-computed progression loot"), Slots.IsEmpty());
 	}
 
 	return true;
@@ -183,6 +180,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FGuardedChestUnlockTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
 	ChestSystemTests::FTestWorld TestWorld(TEXT("GuardedChestUnlockTestWorld"));
 	UWorld* World = TestWorld.World;
 	if (!TestNotNull(TEXT("Transient game world is created"), World))

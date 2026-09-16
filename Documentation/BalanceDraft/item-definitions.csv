@@ -1,0 +1,46 @@
+ItemTag,ProgressionKind,ProgressionTier,Note
+Item.Id.Weapon.Sword.SwordA1,Weapon,0,base
+Item.Id.Weapon.Sword.SwordB1,Weapon,0,base
+Item.Id.Weapon.Bow.ShortBow1,Weapon,0,base
+Item.Id.Weapon.Bow.LongBow1,Weapon,0,base
+Item.Id.Weapon.Sword.SwordA2,Weapon,1,
+Item.Id.Weapon.Sword.SwordB2,Weapon,1,
+Item.Id.Weapon.Bow.ShortBow2,Weapon,1,
+Item.Id.Weapon.Bow.LongBow2,Weapon,1,
+Item.Id.Weapon.Sword.SwordA3,Weapon,2,
+Item.Id.Weapon.Sword.SwordB3,Weapon,2,
+Item.Id.Weapon.Bow.ShortBow3,Weapon,2,
+Item.Id.Weapon.Bow.LongBow3,Weapon,2,
+Item.Id.Weapon.Sword.SwordA4,Weapon,3,
+Item.Id.Weapon.Sword.SwordB4,Weapon,3,
+Item.Id.Weapon.Bow.ShortBow4,Weapon,3,
+Item.Id.Weapon.Bow.LongBow4,Weapon,3,
+Item.Id.Weapon.Sword.SwordA5,Weapon,4,final
+Item.Id.Weapon.Sword.SwordB5,Weapon,4,final
+Item.Id.Weapon.Bow.ShortBow5,Weapon,4,final
+Item.Id.Weapon.Bow.LongBow5,Weapon,4,final
+Item.Id.Consumables.Heal.Medicine,Consumable,1,
+Item.Id.Consumables.Buff.Doraji,Consumable,1,
+Item.Id.Consumables.Heal.Tangyak,Consumable,2,
+Item.Id.Consumables.Buff.Chungshimhwan,Consumable,2,
+Item.Id.Consumables.Heal.Elixir,Consumable,3,
+Item.Id.Consumables.Buff.Gongjindan,Consumable,3,
+Item.Id.Consumables.Heal.Panacea,Consumable,4,effect placeholder
+Item.Id.Consumables.Buff.RoyalGongjindan,Consumable,4,effect placeholder
+Item.Id.Material.WeaponMaterial.Wood,WeaponMaterial,1,
+Item.Id.Material.WeaponMaterial.GoodWood,WeaponMaterial,2,
+Item.Id.Material.WeaponMaterial.Iron,WeaponMaterial,3,
+Item.Id.Material.WeaponMaterial.GoodIron,WeaponMaterial,4,
+Item.Id.Material.ConsumablesMaterial.Pear,ConsumableMaterial,1,
+Item.Id.Material.ConsumablesMaterial.GoodPear,ConsumableMaterial,2,
+Item.Id.Material.ConsumablesMaterial.Herbs,ConsumableMaterial,3,
+Item.Id.Material.ConsumablesMaterial.GoodHerbs,ConsumableMaterial,4,
+Item.Id.Material.ConsumablesMaterial.OxGallStone,ConsumableSpecialMaterial,0,future special
+Item.Id.Material.ShipMaterials.WoodenPlank,ShipMaterial,1,
+Item.Id.Material.ShipMaterials.GoodWoodenPlank,ShipMaterial,2,
+Item.Id.Material.ShipMaterials.IronPlate,ShipMaterial,3,
+Item.Id.Material.ShipMaterials.GoodIronPlate,ShipMaterial,4,
+Item.Id.Material.ShipMaterials.GrapplingHook,ShipSpecialMaterial,0,future special
+Item.Id.Material.ShipMaterials.LuminousPearl,ShipSpecialMaterial,0,future special
+Item.Id.Material.WeaponSpecialMaterial.EpicMaterial,WeaponSpecialMaterial,0,future special
+Item.Id.Material.WeaponSpecialMaterial.LegendaryMaterial,WeaponSpecialMaterial,0,future special

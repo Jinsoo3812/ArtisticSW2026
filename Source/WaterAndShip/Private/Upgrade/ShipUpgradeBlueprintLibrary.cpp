@@ -3,14 +3,18 @@
 #include "Engine/Engine.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
+#include "Upgrade/SharedShipUpgradeState.h"
 #include "Upgrade/ShipUpgradeComponent.h"
 
 UShipUpgradeComponent* UShipUpgradeBlueprintLibrary::GetLocalShipUpgradeComponent(const UObject* WorldContextObject)
 {
 	if (!GEngine || !WorldContextObject) return nullptr;
 	const UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull);
-	const APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
-	return PlayerController ? GetShipUpgradeComponent(PlayerController->PlayerState) : nullptr;
+	if (ASharedShipUpgradeState* SharedState = ASharedShipUpgradeState::Find(WorldContextObject))
+	{
+		return SharedState->GetUpgradeComponent();
+	}
+	return nullptr;
 }
 
 UShipUpgradeComponent* UShipUpgradeBlueprintLibrary::GetShipUpgradeComponent(APlayerState* PlayerState)

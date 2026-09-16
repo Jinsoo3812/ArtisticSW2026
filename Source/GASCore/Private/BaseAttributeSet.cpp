@@ -75,19 +75,18 @@ bool UBaseAttributeSet::PreGameplayEffectExecute(FGameplayEffectModCallbackData&
 		return false;
 	}
 
-	// Project damage effects converge on the Damage meta attribute. Rejecting the
-	// modifier here prevents health changes, hit reactions, and damage cues from
-	// being produced while an ability owns the invulnerability state.
-	if (Data.EvaluatedData.Attribute == GetDamageAttribute())
+	const UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
+	if (!ASC || !ASC->HasMatchingGameplayTag(State_Invulnerable))
 	{
-		const UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
-		if (ASC && ASC->HasMatchingGameplayTag(State_Invulnerable))
-		{
-			return false;
-		}
+		return true;
 	}
 
-	return true;
+	const FGameplayAttribute& Attribute = Data.EvaluatedData.Attribute;
+	const bool bDamageMeta = Attribute == GetDamageAttribute()
+		&& Data.EvaluatedData.Magnitude > 0.0f;
+	const bool bDirectHealthDamage = Attribute == GetHealthAttribute()
+		&& Data.EvaluatedData.Magnitude < 0.0f;
+	return !bDamageMeta && !bDirectHealthDamage;
 }
 
 void UBaseAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)

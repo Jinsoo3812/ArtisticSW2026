@@ -6,6 +6,7 @@
 #include "Cannon.h"
 #include "Components/ChildActorComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
@@ -13,6 +14,40 @@
 #include "Ship.h"
 #include "ShipAttributeSet.h"
 #include "ShipBoardingPoint.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPlayerShipTierStatsAuthoringTest,
+	"ArtisticSW.Ship.Authoring.PlayerShipTierStats",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPlayerShipTierStatsAuthoringTest::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = LoadObject<UDataTable>(
+		nullptr, TEXT("/Game/Blueprints/Ship/Data/DT_ShipStat.DT_ShipStat"));
+	if (!TestNotNull(TEXT("DT_ShipStat loads"), Table)) return false;
+
+	const FShipStatRow* PreviousRow = Table->FindRow<FShipStatRow>(TEXT("PlayerShip"), TEXT("Player tier baseline"));
+	if (!TestNotNull(TEXT("PlayerShip baseline exists"), PreviousRow)) return false;
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		const FName RowName(*FString::Printf(TEXT("PlayerShip_%d"), Index + 2));
+		const FShipStatRow* Row = Table->FindRow<FShipStatRow>(RowName, TEXT("Player tier test"));
+		if (!TestNotNull(*FString::Printf(TEXT("%s exists"), *RowName.ToString()), Row)) continue;
+		AddInfo(FString::Printf(
+			TEXT("%s Health=%.1f Propulsion=%.1f Turn=%.1f Damage=%.1f Cooldown=%.3f CannonballSpeed=%.1f"),
+			*RowName.ToString(), Row->MaxHealth, Row->ForwardPropulsionMultiplier,
+			Row->TurnTorqueMultiplier, Row->CannonDamage, Row->CannonFireCooldown,
+			Row->CannonballSpeed));
+		TestTrue(TEXT("Health increases each tier"), Row->MaxHealth > PreviousRow->MaxHealth);
+		TestTrue(TEXT("Propulsion increases each tier"), Row->ForwardPropulsionMultiplier > PreviousRow->ForwardPropulsionMultiplier);
+		TestTrue(TEXT("Turn torque increases each tier"), Row->TurnTorqueMultiplier > PreviousRow->TurnTorqueMultiplier);
+		TestTrue(TEXT("Cannon damage increases each tier"), Row->CannonDamage > PreviousRow->CannonDamage);
+		TestTrue(TEXT("Cannon cooldown decreases each tier"), Row->CannonFireCooldown < PreviousRow->CannonFireCooldown);
+		TestTrue(TEXT("Cannonball speed does not decrease each tier"), Row->CannonballSpeed >= PreviousRow->CannonballSpeed);
+		PreviousRow = Row;
+	}
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FShipAuthoringComponentsTest,
@@ -23,18 +58,23 @@ bool FShipAuthoringComponentsTest::RunTest(const FString& Parameters)
 {
 	UClass* PlayerShipClass = LoadClass<AShip>(
 		nullptr,
-		TEXT("/Game/New/Ship/Blueprints/BP_PlayerShip.BP_PlayerShip_C"));
+		TEXT("/Game/Blueprints/Ship/Blueprints/BP_PlayerShip.BP_PlayerShip_C"));
 	TestNotNull(TEXT("BP_PlayerShip loads against the new native component layout"), PlayerShipClass);
 	if (PlayerShipClass)
 	{
 		const AShip* PlayerShipDefaults = PlayerShipClass->GetDefaultObject<AShip>();
 		TestNotNull(TEXT("BP_PlayerShip inherits HelmInteractable"), PlayerShipDefaults->GetHelmInteractable());
 		TestNotNull(TEXT("BP_PlayerShip inherits BoardingArrivalPoint"), PlayerShipDefaults->GetBoardingArrivalPoint());
+		TestNotNull(TEXT("BP_PlayerShip inherits AnchorMesh"), PlayerShipDefaults->GetAnchorMesh());
+		TestNotNull(TEXT("BP_PlayerShip inherits AnchorInteractable"), PlayerShipDefaults->GetAnchorInteractable());
+		TestTrue(TEXT("BP_PlayerShip uses upgrade-driven DT stats"), PlayerShipDefaults->bUseUpgradeDrivenPlayerStats);
+		TestNull(TEXT("BP_PlayerShip does not select a complete Ship Stat Row"), PlayerShipDefaults->ShipStatRow.DataTable.Get());
+		TestTrue(TEXT("BP_PlayerShip row name is empty"), PlayerShipDefaults->ShipStatRow.RowName.IsNone());
 	}
 
 	UClass* CannonBlueprintClass = LoadClass<ACannon>(
 		nullptr,
-		TEXT("/Game/New/Cannon/BP_Cannon.BP_Cannon_C"));
+		TEXT("/Game/Blueprints/Ship/Cannon/BP_Cannon.BP_Cannon_C"));
 	TestNotNull(TEXT("Canonical BP_Cannon loads"), CannonBlueprintClass);
 
 	const AShip* ShipDefaults = GetDefault<AShip>();
@@ -42,6 +82,9 @@ bool FShipAuthoringComponentsTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Helm seat point exists"), ShipDefaults->GetHelmSeatPoint());
 	TestNotNull(TEXT("Helm exit point exists"), ShipDefaults->GetHelmExitPoint());
 	TestNotNull(TEXT("Shared boarding arrival point exists"), ShipDefaults->GetBoardingArrivalPoint());
+	TestNotNull(TEXT("Anchor mesh exists"), ShipDefaults->GetAnchorMesh());
+	TestNotNull(TEXT("Anchor interaction component exists"), ShipDefaults->GetAnchorInteractable());
+	TestFalse(TEXT("Anchor is raised by default"), ShipDefaults->IsAnchorDropped());
 	if (ShipDefaults->GetHelmInteractable())
 	{
 		TestEqual(
@@ -53,6 +96,51 @@ bool FShipAuthoringComponentsTest::RunTest(const FString& Parameters)
 	const AShipBoardingPoint* BoardingDefaults = GetDefault<AShipBoardingPoint>();
 	TestNotNull(TEXT("Reusable boarding point owns an interaction component"), BoardingDefaults->GetBoardingInteractable());
 	TestTrue(TEXT("Boarding interaction radius is designer editable and positive"), BoardingDefaults->InteractionSphereRadius > 0.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShipAnchorIntegrationTest,
+	"ArtisticSW.Ship.Authoring.AnchorIntegration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FShipAnchorIntegrationTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("Recipe_DecipherCipher has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("Recipe_DecipherCipher contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
+
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("ShipAnchorTestWorld"));
+	if (!TestNotNull(TEXT("Transient game world is created"), World))
+	{
+		return false;
+	}
+	FWorldContext& WorldContext = GEngine->CreateNewWorldContext(EWorldType::Game);
+	WorldContext.SetCurrentWorld(World);
+
+	auto CleanupWorld = [World]()
+	{
+		World->DestroyWorld(false);
+		GEngine->DestroyWorldContext(World);
+	};
+
+	AShip* Ship = World->SpawnActor<AShip>();
+	if (!TestNotNull(TEXT("Ship is spawned"), Ship))
+	{
+		CleanupWorld();
+		return false;
+	}
+
+	Ship->BuoyancyRoot->SetSimulatePhysics(false);
+	TestFalse(TEXT("Initial anchor state is raised"), Ship->IsAnchorDropped());
+	TestNotNull(TEXT("Anchor interactable exists"), Ship->GetAnchorInteractable());
+
+	Ship->ToggleAnchor();
+	TestTrue(TEXT("Anchor is dropped after toggle"), Ship->IsAnchorDropped());
+
+	Ship->ToggleAnchor();
+	TestFalse(TEXT("Anchor is raised after second toggle"), Ship->IsAnchorDropped());
+
+	CleanupWorld();
 	return true;
 }
 
@@ -128,7 +216,7 @@ bool FShipHelmAndCannonIntegrationTest::RunTest(const FString& Parameters)
 	CannonSlot->SetupAttachment(Ship->BuoyancyRoot);
 	UClass* CannonBlueprintClass = LoadClass<ACannon>(
 		nullptr,
-		TEXT("/Game/New/Cannon/BP_Cannon.BP_Cannon_C"));
+		TEXT("/Game/Blueprints/Ship/Cannon/BP_Cannon.BP_Cannon_C"));
 	TestNotNull(TEXT("Canonical BP_Cannon class loads for the child slot"), CannonBlueprintClass);
 	CannonSlot->SetChildActorClass(CannonBlueprintClass ? CannonBlueprintClass : ACannon::StaticClass());
 	CannonSlot->RegisterComponent();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "CannonballImpactReceiver.h"
 #include "GameFramework/Actor.h"
 #include "EnemyShipObstacle.generated.h"
 
@@ -11,7 +12,7 @@ class USWBuoyancyComponent;
 
 /** Server-authoritative floating shield that blocks Player ships and cannonballs only. */
 UCLASS(Blueprintable)
-class ENEMY_API AEnemyShipObstacle : public AActor
+class ENEMY_API AEnemyShipObstacle : public AActor, public ICannonballImpactReceiver
 {
 	GENERATED_BODY()
 
@@ -26,6 +27,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Obstacle")
 	bool HasEnteredWater() const { return bHasEnteredWater; }
 	bool IsBuoyancyEnabledForDiagnostics() const { return bBuoyancyEnabled; }
+	int32 GetCannonballHitCount() const { return CannonballHitCount; }
+	int32 GetRemainingCannonballHits() const { return FMath::Max(0, MaxCannonballHits - CannonballHitCount); }
+	FVector GetAvoidanceHalfExtent() const;
+
+	virtual void ReceiveCannonballImpact_Implementation(AActor* CannonballActor) override;
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -65,6 +71,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle", meta = (ClampMin = "0.0", Units = "s"))
 	float MaximumLifetimeSeconds = 20.0f;
 
+	/** Number of unique cannonballs the obstacle can absorb before it is destroyed. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle|Durability", meta = (ClampMin = "1"))
+	int32 MaxCannonballHits = 5;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle|Networking", meta = (ClampMin = "0.0"))
 	float ClientLocationInterpSpeed = 14.0f;
 
@@ -76,6 +86,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle|Networking", meta = (ClampMin = "0.0", Units = "cm"))
 	float ClientNetworkSnapDistance = 500.0f;
+
+	/** Logs the first water-entry buoyancy impulse so scale/mass tuning can be measured. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Obstacle|Diagnostics")
+	bool bLogInitialBuoyancyDiagnostics = true;
 
 private:
 	UFUNCTION()
@@ -99,10 +113,19 @@ private:
 	UPROPERTY(Replicated)
 	bool bBuoyancyEnabled = false;
 
+	UPROPERTY(Replicated)
+	int32 CannonballHitCount = 0;
+
+	TSet<TWeakObjectPtr<AActor>> ProcessedCannonballs;
+
 	bool bHasClientMovementTarget = false;
 	FVector ClientMovementTargetLocation = FVector::ZeroVector;
 	FQuat ClientMovementTargetRotation = FQuat::Identity;
 	FVector ClientMovementTargetVelocity = FVector::ZeroVector;
 	float ClientMovementTargetReceiveTime = 0.0f;
+	FTransform InitialObstacleMeshRelativeTransform = FTransform::Identity;
+	FVector ClientVisualLocation = FVector::ZeroVector;
+	FQuat ClientVisualRotation = FQuat::Identity;
+	bool bClientVisualInitialized = false;
 	FTimerHandle BuoyancyActivationTimerHandle;
 };

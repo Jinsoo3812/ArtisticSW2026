@@ -10,6 +10,11 @@
 #include "Kismet/GameplayStatics.h"
 #include "Projectiles/GravityVortexProjectile.h"
 #include "Skills/VortexAimLine.h"
+#include "Skills/GravityVortexField.h"
+#include "Bombardment.h"
+#include "WaterSurfaceQueryLibrary.h"
+#include "Materials/MaterialParameterCollection.h"
+#include "Materials/MaterialParameterCollectionInstance.h"
 
 UGA_GravityVortexThrow::UGA_GravityVortexThrow()
 {
@@ -129,6 +134,12 @@ void UGA_GravityVortexThrow::EndAbility(
 		AimLineActor->Destroy();
 		AimLineActor = nullptr;
 	}
+	ClearWaterPreview();
+	if (RangePreviewActor)
+	{
+		RangePreviewActor->Destroy();
+		RangePreviewActor = nullptr;
+	}
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
 		ASC->RemoveLooseGameplayTag(State_Aiming);
@@ -212,10 +223,41 @@ void UGA_GravityVortexThrow::DrawAimTrajectory()
 	if (bUpdateAimTrajectoryVisual)
 	{
 		TArray<FVector> WorldPoints;
+		TArray<FVector> WorldVelocities;
+		TArray<float> SampleTimes;
 		WorldPoints.Reserve(Result.PathData.Num());
+		WorldVelocities.Reserve(Result.PathData.Num());
+		SampleTimes.Reserve(Result.PathData.Num());
+		FVector ImpactLocation = FVector::ZeroVector;
+		bool bFoundWaterImpact = false;
+		float PreviousWaterZ = 0.0f;
+		bool bHadPreviousWater = false;
+		float PreviousSignedHeight = 0.0f;
 		for (const FPredictProjectilePathPointData& Point : Result.PathData)
 		{
 			WorldPoints.Add(Point.Location);
+			WorldVelocities.Add(Point.Velocity);
+			SampleTimes.Add(Point.Time);
+			float WaterZ = 0.0f;
+			const bool bHasWater = FWaterSurfaceQueryLibrary::QueryWaterSurface(
+				GetWorld(), Point.Location, WaterZ, true);
+			const float SignedHeight = Point.Location.Z - WaterZ;
+			if (bHasWater && bHadPreviousWater && PreviousSignedHeight > 0.0f && SignedHeight <= 0.0f)
+			{
+				const float Alpha = FMath::Clamp(
+					PreviousSignedHeight / FMath::Max(PreviousSignedHeight - SignedHeight, UE_SMALL_NUMBER),
+					0.0f, 1.0f);
+				ImpactLocation = FMath::Lerp(WorldPoints[WorldPoints.Num() - 2], Point.Location, Alpha);
+				ImpactLocation.Z = FMath::Lerp(PreviousWaterZ, WaterZ, Alpha);
+				WorldPoints.Last() = ImpactLocation;
+				WorldVelocities.Last() = FMath::Lerp(WorldVelocities[WorldVelocities.Num() - 2], Point.Velocity, Alpha);
+				SampleTimes.Last() = FMath::Lerp(SampleTimes[SampleTimes.Num() - 2], Point.Time, Alpha);
+				bFoundWaterImpact = true;
+				break;
+			}
+			bHadPreviousWater = bHasWater;
+			PreviousWaterZ = WaterZ;
+			PreviousSignedHeight = SignedHeight;
 		}
 		if (!AimLineClass)
 		{
@@ -250,7 +292,7 @@ void UGA_GravityVortexThrow::DrawAimTrajectory()
 		}
 		if (AimLineActor)
 		{
-			AimLineActor->SetTrajectory(WorldPoints);
+			AimLineActor->SetBallisticTrajectory(WorldPoints, WorldVelocities, SampleTimes);
 		}
 		else if (!bLoggedAimLineResolution)
 		{
@@ -260,7 +302,90 @@ void UGA_GravityVortexThrow::DrawAimTrajectory()
 			bLoggedAimLineResolution = true;
 		}
 		K2_OnAimTrajectoryUpdated(WorldPoints);
+
+		if (bFoundWaterImpact)
+		{
+			float PullRadius = 5000.0f;
+			if (const AGravityVortexProjectile* ProjectileCDO =
+				ProjectileClass->GetDefaultObject<AGravityVortexProjectile>())
+			{
+				if (ProjectileCDO->FieldClass)
+				{
+					PullRadius = ProjectileCDO->FieldClass->GetDefaultObject<AGravityVortexField>()->PullRadius;
+				}
+			}
+			UpdateWaterPreview(ImpactLocation, PullRadius);
+			if (RangePreviewClass)
+			{
+			if (!IsValid(RangePreviewActor))
+			{
+				FActorSpawnParameters PreviewSpawnParams;
+				PreviewSpawnParams.Owner = Player;
+				PreviewSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+				RangePreviewActor = GetWorld()->SpawnActor<ABombardmentPreview>(
+					RangePreviewClass, ImpactLocation, FRotator::ZeroRotator, PreviewSpawnParams);
+				if (RangePreviewActor)
+				{
+					RangePreviewActor->ConfigurePreview(PullRadius);
+					RangePreviewActor->SetPreviewMeshVisible(false);
+				}
+			}
+			if (RangePreviewActor)
+			{
+				RangePreviewActor->SetActorHiddenInGame(false);
+				RangePreviewActor->SetActorLocation(ImpactLocation + FVector::UpVector * RangePreviewHeightOffset);
+				RangePreviewActor->SetPreviewValid(true);
+			}
+			}
+		}
+		else
+		{
+			if (RangePreviewActor)
+			{
+				RangePreviewActor->SetActorHiddenInGame(true);
+				RangePreviewActor->SetPreviewValid(false);
+			}
+			ClearWaterPreview();
+		}
 	}
+}
+
+void UGA_GravityVortexThrow::UpdateWaterPreview(const FVector& Center, float Radius)
+{
+	if (!GetWorld() || GetWorld()->IsNetMode(NM_DedicatedServer)) return;
+	if (!WaterParameterCollection)
+	{
+		WaterParameterCollection = LoadObject<UMaterialParameterCollection>(nullptr,
+			TEXT("/Game/Blueprints/Water/MPC_Water_Custom.MPC_Water_Custom"));
+	}
+	UMaterialParameterCollectionInstance* Instance = WaterParameterCollection
+		? GetWorld()->GetParameterCollectionInstance(WaterParameterCollection) : nullptr;
+	if (!Instance) return;
+	const float SafeRadius = FMath::Max(1.0f, Radius);
+	if (!bWaterPreviewEnabled || FVector::DistSquared2D(Center, LastWaterPreviewCenter) > 25.0f
+		|| !FMath::IsNearlyEqual(SafeRadius, LastWaterPreviewRadius, 0.1f))
+	{
+		Instance->SetVectorParameterValue(TEXT("SW_VortexPreviewCenterRadius"),
+			FLinearColor(Center.X, Center.Y, Center.Z, SafeRadius));
+		LastWaterPreviewCenter = Center;
+		LastWaterPreviewRadius = SafeRadius;
+	}
+	if (!bWaterPreviewEnabled)
+	{
+		Instance->SetScalarParameterValue(TEXT("SW_VortexPreviewEnabled"), 1.0f);
+		bWaterPreviewEnabled = true;
+	}
+}
+
+void UGA_GravityVortexThrow::ClearWaterPreview()
+{
+	if (!bWaterPreviewEnabled || !GetWorld() || !WaterParameterCollection) return;
+	if (UMaterialParameterCollectionInstance* Instance =
+		GetWorld()->GetParameterCollectionInstance(WaterParameterCollection))
+	{
+		Instance->SetScalarParameterValue(TEXT("SW_VortexPreviewEnabled"), 0.0f);
+	}
+	bWaterPreviewEnabled = false;
 }
 
 bool UGA_GravityVortexThrow::GetLaunchData(FVector& OutSpawnLocation, FVector& OutLaunchVelocity) const

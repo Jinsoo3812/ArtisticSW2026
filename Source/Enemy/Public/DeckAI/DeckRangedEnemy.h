@@ -30,6 +30,7 @@ public:
 	void PrepareForPool();
 	bool ActivateFromPool(AEnemyShip* InHostShip, int32 InitialWaypointId, int32 RandomSeed);
 	void DeactivateToPool();
+	void ResetToFreshPoolState();
 
 	UFUNCTION(BlueprintPure, Category = "Deck AI|Pool")
 	bool IsPoolActive() const { return bPoolActive; }
