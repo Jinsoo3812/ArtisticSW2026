@@ -1,12 +1,15 @@
 #include "SwimmingComponent.h"
+#include "SWCabinWaterCullComponent.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "WaterBodyComponent.h"
 #include "WaterBodyActor.h"
 #include "WaterBodyTypes.h"
 #include "Engine/World.h"
+#include "Engine/Engine.h"
 #include "GameFramework/GameStateBase.h"
 #include "WaterWaves.h"
 #include "WaterSubsystem.h"
@@ -41,6 +44,24 @@ static TAutoConsoleVariable<int32> CVarSwimTransitionDebug(
 	TEXT("Log authoritative custom-swim surface and vertical-input state.\n")
 	TEXT("0: Disabled\n")
 	TEXT("1: Log while Ctrl/Space vertical swim input is active"),
+	ECVF_Default
+);
+
+static TAutoConsoleVariable<int32> CVarShowCabinSwimCullDebug(
+	TEXT("p.ShowCabinSwimCullDebug"),
+	1,
+	TEXT("Show the local player's cabin swim-cull state in the top-left corner.\n")
+	TEXT("0: Disabled\n")
+	TEXT("1: Enabled"),
+	ECVF_Default
+);
+
+static TAutoConsoleVariable<int32> CVarCabinSwimTrace(
+	TEXT("p.CabinSwimTrace"),
+	0,
+	TEXT("Write detailed cabin-mask, water, floor, movement-mode, and vertical-velocity samples to the log.\n")
+	TEXT("0: Disabled\n")
+	TEXT("1: Enabled"),
 	ECVF_Default
 );
 
@@ -426,8 +447,8 @@ void USwimmingComponent::OnOverlapEnd(UPrimitiveComponent* OverlappedComp, AActo
 
 				if (!bStillOverlapping)
 				{
-					const bool bPreserveActiveWaterBody = IsCustomSwimming()
-						&& LastActiveWaterBody.Get() == WaterBody;
+					const bool bPreserveActiveWaterBody = LastActiveWaterBody.Get() == WaterBody
+						&& (IsCustomSwimming() || bWasInsideCabinWaterCull);
 					RemoveTrackedWaterBody(
 						OverlappingWaterBodies,
 						LastActiveWaterBody,
@@ -559,6 +580,22 @@ void USwimmingComponent::CheckWaterTransitions(float DeltaSeconds)
 {
 	if (!OwnerCharacter || !CharacterMovement || !CapsuleComponent) return;
 
+	bool bFeetInsideCabin = false;
+	bool bCenterInsideCabin = false;
+	const bool bInsideCabin = IsInsideCabinWaterCull(&bFeetInsideCabin, &bCenterInsideCabin);
+	DrawCabinWaterCullDebug(bInsideCabin, bFeetInsideCabin, bCenterInsideCabin);
+	TraceCabinWaterCull(bInsideCabin, bFeetInsideCabin, bCenterInsideCabin);
+	const bool bLeftCabin = bWasInsideCabinWaterCull && !bInsideCabin;
+	bWasInsideCabinWaterCull = bInsideCabin;
+	if (bInsideCabin)
+	{
+		ResetSwimmingStateInsideCabin();
+		return;
+	}
+	if (bLeftCabin)
+	{
+		InitializeOverlaps();
+	}
 	bool bIsCustomSwimming = IsCustomSwimming();
 
 	// If we are not swimming and have no overlapping water bodies AND no cached active water body, do not check transitions.
@@ -670,6 +707,221 @@ void USwimmingComponent::CheckWaterTransitions(float DeltaSeconds)
 		VerticalSwimInput = 0.0f;
 		DepthMode = ESwimDepthMode::Surface;
 	}
+}
+
+bool USwimmingComponent::IsInsideCabinWaterCull(
+	bool* bOutFeetInside,
+	bool* bOutCenterInside) const
+{
+	if (bOutFeetInside)
+	{
+		*bOutFeetInside = false;
+	}
+	if (bOutCenterInside)
+	{
+		*bOutCenterInside = false;
+	}
+	if (!CapsuleComponent)
+	{
+		return false;
+	}
+
+	const FVector Center = CapsuleComponent->GetComponentLocation();
+	const FVector Feet = Center - CapsuleComponent->GetUpVector()
+		* CapsuleComponent->GetScaledCapsuleHalfHeight();
+	UWorld* World = GetWorld();
+	const bool bFeetInside = USWCabinWaterCullComponent::IsWorldPositionInsideAnyCabin(World, Feet);
+	const bool bCenterInside = USWCabinWaterCullComponent::IsWorldPositionInsideAnyCabin(World, Center);
+	if (bOutFeetInside)
+	{
+		*bOutFeetInside = bFeetInside;
+	}
+	if (bOutCenterInside)
+	{
+		*bOutCenterInside = bCenterInside;
+	}
+	return bFeetInside || bCenterInside;
+}
+
+void USwimmingComponent::DrawCabinWaterCullDebug(
+	bool bInsideCabin,
+	bool bFeetInside,
+	bool bCenterInside) const
+{
+	if (CVarShowCabinSwimCullDebug.GetValueOnGameThread() <= 0
+		|| !GEngine
+		|| !OwnerCharacter
+		|| !OwnerCharacter->IsLocallyControlled()
+		|| !CapsuleComponent)
+	{
+		return;
+	}
+
+	const float CapsuleHalfHeight = CapsuleComponent->GetScaledCapsuleHalfHeight();
+	const FVector FeetLocation = CapsuleComponent->GetComponentLocation()
+		- CapsuleComponent->GetUpVector() * CapsuleHalfHeight;
+	float WaterHeight = -100000.0f;
+	bool bHadValidWaterQuery = false;
+	const bool bFeetInWater = GetWaterHeightAtLocation(
+		FeetLocation, WaterHeight, &bHadValidWaterQuery);
+	const float FeetSubmersion = bHadValidWaterQuery
+		? WaterHeight - FeetLocation.Z
+		: -100000.0f;
+	const float SwimEntryDepth = CapsuleHalfHeight * 2.0f
+		* SwimEntryCapsuleSubmersionRatio;
+	const bool bWouldEnterSwimming = bFeetInWater && FeetSubmersion >= SwimEntryDepth;
+	const bool bBlockingSwimming = bInsideCabin && bWouldEnterSwimming;
+
+	const TCHAR* WaterState = !bHadValidWaterQuery
+		? TEXT("NO QUERY")
+		: (bFeetInWater ? TEXT("IN WATER") : TEXT("DRY"));
+	const FString DebugText = FString::Printf(
+		TEXT("[Cabin Swim Cull] Cabin=%s (Feet:%s Center:%s) | Water=%s Depth=%.1f/%.1f | Blocking=%s | Swim=%s Mode=%d:%d VelZ=%.1f"),
+		bInsideCabin ? TEXT("INSIDE") : TEXT("OUTSIDE"),
+		bFeetInside ? TEXT("IN") : TEXT("OUT"),
+		bCenterInside ? TEXT("IN") : TEXT("OUT"),
+		WaterState,
+		bHadValidWaterQuery ? FeetSubmersion : 0.0f,
+		SwimEntryDepth,
+		bBlockingSwimming ? TEXT("YES") : TEXT("NO"),
+		IsCustomSwimming() ? TEXT("ON") : TEXT("OFF"),
+		int32(CharacterMovement->MovementMode),
+		int32(CharacterMovement->CustomMovementMode),
+		CharacterMovement->Velocity.Z);
+	const FColor DebugColor = bBlockingSwimming
+		? FColor::Red
+		: (bInsideCabin ? FColor::Yellow : FColor::Green);
+	const uint64 MessageKey = 0xCAB10000ull + uint64(GetUniqueID());
+	GEngine->AddOnScreenDebugMessage(MessageKey, 0.15f, DebugColor, DebugText);
+}
+
+void USwimmingComponent::TraceCabinWaterCull(
+	bool bInsideCabin,
+	bool bFeetInside,
+	bool bCenterInside)
+{
+	if (CVarCabinSwimTrace.GetValueOnGameThread() <= 0
+		|| !OwnerCharacter
+		|| !OwnerCharacter->IsLocallyControlled()
+		|| !CharacterMovement
+		|| !CapsuleComponent
+		|| !GetWorld())
+	{
+		return;
+	}
+
+	const float WorldTime = GetWorld()->GetTimeSeconds();
+	if (LastCabinSwimTraceTime >= 0.0f && WorldTime - LastCabinSwimTraceTime < 0.05f)
+	{
+		return;
+	}
+	LastCabinSwimTraceTime = WorldTime;
+
+	const FVector Up = CapsuleComponent->GetUpVector();
+	const float CapsuleHalfHeight = CapsuleComponent->GetScaledCapsuleHalfHeight();
+	const FVector Center = CapsuleComponent->GetComponentLocation();
+	const FVector Feet = Center - Up * CapsuleHalfHeight;
+	auto SampleCabin = [this](const FVector& Position)
+	{
+		return USWCabinWaterCullComponent::IsWorldPositionInsideAnyCabin(GetWorld(), Position);
+	};
+
+	float WaterHeight = -100000.0f;
+	bool bHadValidWaterQuery = false;
+	const bool bFeetInWater = GetWaterHeightAtLocation(Feet, WaterHeight, &bHadValidWaterQuery);
+	const float FeetSubmersion = bHadValidWaterQuery ? WaterHeight - Feet.Z : -100000.0f;
+	const float SwimEntryDepth = CapsuleHalfHeight * 2.0f * SwimEntryCapsuleSubmersionRatio;
+	const bool bWouldEnterSwimming = bFeetInWater && FeetSubmersion >= SwimEntryDepth;
+	UPrimitiveComponent* MovementBase = CharacterMovement->GetMovementBase();
+	const FTransform BaseTransform = MovementBase
+		? MovementBase->GetComponentTransform()
+		: FTransform::Identity;
+	const FVector BaseLocalCenter = MovementBase
+		? BaseTransform.InverseTransformPosition(Center)
+		: Center;
+	const FRotator BaseRotation = BaseTransform.Rotator();
+	const USkeletalMeshComponent* CharacterMesh = OwnerCharacter->GetMesh();
+	const FVector LeftFoot = CharacterMesh
+		? CharacterMesh->GetSocketLocation(TEXT("foot_l"))
+		: Center;
+	const FVector RightFoot = CharacterMesh
+		? CharacterMesh->GetSocketLocation(TEXT("foot_r"))
+		: Center;
+	const FVector LeftFootBaseLocal = MovementBase
+		? BaseTransform.InverseTransformPosition(LeftFoot)
+		: LeftFoot;
+	const FVector RightFootBaseLocal = MovementBase
+		? BaseTransform.InverseTransformPosition(RightFoot)
+		: RightFoot;
+
+	FCollisionQueryParams FootTraceParams(SCENE_QUERY_STAT(CabinSwimFootTrace), true);
+	FootTraceParams.AddIgnoredActor(OwnerCharacter);
+	FHitResult LeftFootHit;
+	const bool bLeftFootHit = GetWorld()->SweepSingleByChannel(
+		LeftFootHit,
+		LeftFoot + FVector::UpVector * 75.0f,
+		LeftFoot - FVector::UpVector * 100.0f,
+		FQuat::Identity,
+		ECC_Visibility,
+		FCollisionShape::MakeSphere(5.0f),
+		FootTraceParams);
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[CabinSwimTrace] T=%.3f ActorZ=%.2f FeetZ=%.2f Cabin=%d Samples[-20,0,+20,+50,C]=%d%d%d%d%d Water[Valid,Wet,Z,Depth,Entry]=%d,%d,%.2f,%.2f,%.2f WouldEnter=%d Block=%d Mode=%d:%d VelZ=%.2f Floor=%d Base=%s BaseZ=%.2f BaseRot[P,R]=%.2f,%.2f BaseLocal[X,Y,Z]=%.2f,%.2f,%.2f BoneLocalZ[L,R]=%.2f,%.2f FootHit=%d,%s,%s,%.2f"),
+		WorldTime,
+		Center.Z,
+		Feet.Z,
+		bInsideCabin,
+		SampleCabin(Feet - Up * 20.0f),
+		bFeetInside,
+		SampleCabin(Feet + Up * 20.0f),
+		SampleCabin(Feet + Up * 50.0f),
+		bCenterInside,
+		bHadValidWaterQuery,
+		bFeetInWater,
+		WaterHeight,
+		bHadValidWaterQuery ? FeetSubmersion : 0.0f,
+		SwimEntryDepth,
+		bWouldEnterSwimming,
+		bInsideCabin && bWouldEnterSwimming,
+		int32(CharacterMovement->MovementMode),
+		int32(CharacterMovement->CustomMovementMode),
+		CharacterMovement->Velocity.Z,
+		CharacterMovement->CurrentFloor.IsWalkableFloor(),
+		*GetNameSafe(MovementBase),
+		MovementBase ? MovementBase->GetComponentLocation().Z : 0.0f,
+		BaseRotation.Pitch,
+		BaseRotation.Roll,
+		BaseLocalCenter.X,
+		BaseLocalCenter.Y,
+		BaseLocalCenter.Z,
+		LeftFootBaseLocal.Z,
+		RightFootBaseLocal.Z,
+		bLeftFootHit,
+		*GetNameSafe(LeftFootHit.GetComponent()),
+		LeftFootHit.GetComponent() ? *LeftFootHit.GetComponent()->GetCollisionProfileName().ToString() : TEXT("None"),
+		bLeftFootHit && MovementBase
+			? BaseTransform.InverseTransformPosition(LeftFootHit.ImpactPoint).Z
+			: 0.0f);
+}
+
+void USwimmingComponent::ResetSwimmingStateInsideCabin()
+{
+	bIsInShallowWater = false;
+	bIsUnderwater = false;
+	WaterQueryFailureElapsed = 0.0f;
+	SetVerticalSwimInput(0.0f);
+	DepthMode = ESwimDepthMode::Surface;
+
+	if (IsCustomSwimming() && CharacterMovement)
+	{
+		CharacterMovement->SetMovementMode(
+			CharacterMovement->CurrentFloor.IsWalkableFloor() ? MOVE_Walking : MOVE_Falling);
+		// Custom swimming writes buoyant acceleration directly into Velocity.Z.
+		// Do not carry that upward impulse into dry cabin movement.
+		CharacterMovement->Velocity.Z = FMath::Min(CharacterMovement->Velocity.Z, 0.0f);
+	}
+	ApplySwimmingGameplayState(false);
 }
 
 void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)

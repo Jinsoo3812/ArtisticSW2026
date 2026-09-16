@@ -4,13 +4,18 @@
 #include "GameFramework/Pawn.h"
 #include "InputActionValue.h"
 #include "AbilitySystemInterface.h"
+#include "RespawnHostInterface.h"
 #include "Engine/DataTable.h"
 #include "Physics/NetworkPhysicsComponent.h"
 #include "GerstnerWaterWaves.h"
 #include "Upgrade/ShipUpgradeTypes.h"
+#include "Repair/ShipRepairTypes.h"
 #include "Ship.generated.h"
 
 class USWBuoyancyComponent;
+class UGameplayEffect;
+class UNiagaraSystem;
+class UMaterialParameterCollection;
 USTRUCT()
 struct FNetInputShip : public FNetworkPhysicsPayload
 {
@@ -20,8 +25,12 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		: MovementInput(0.f)
 		, SteeringInput(0.f)
 		, ExternalAcceleration(FVector::ZeroVector)
+		, BlastAcceleration(FVector::ZeroVector)
+		, BlastApplicationPointLocal(FVector::ZeroVector)
 		, bBuoyancyEnabled(true)
 		, bHasAuthoritativeBuoyancyState(false)
+		, bIsAnchorDropped(false)
+		, AnchorOriginXY(FVector2D::ZeroVector)
 		{}
 
 	void Reset()
@@ -29,8 +38,12 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		MovementInput = 0.0f;
 		SteeringInput = 0.0f;
 		ExternalAcceleration = FVector::ZeroVector;
+		BlastAcceleration = FVector::ZeroVector;
+		BlastApplicationPointLocal = FVector::ZeroVector;
 		bBuoyancyEnabled = true;
 		bHasAuthoritativeBuoyancyState = false;
+		bIsAnchorDropped = false;
+		AnchorOriginXY = FVector2D::ZeroVector;
 	}
 
 	UPROPERTY()
@@ -43,6 +56,14 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 	UPROPERTY()
 	FVector ExternalAcceleration;
 
+	/** Server-authored 3D blast acceleration replayed for this physics frame. */
+	UPROPERTY()
+	FVector BlastAcceleration;
+
+	/** Blast contact offset from the centre of mass, in ship body space. */
+	UPROPERTY()
+	FVector BlastApplicationPointLocal;
+
 	/** Authoritative per-frame buoyancy state replayed during rollback. */
 	UPROPERTY()
 	bool bBuoyancyEnabled;
@@ -51,6 +72,12 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 	UPROPERTY()
 	bool bHasAuthoritativeBuoyancyState;
 
+	UPROPERTY()
+	bool bIsAnchorDropped;
+
+	UPROPERTY()
+	FVector2D AnchorOriginXY;
+
 	virtual void InterpolateData(const FNetworkPhysicsPayload& MinData, const FNetworkPhysicsPayload& MaxData, float LerpAlpha) override
 	{
 		const FNetInputShip& MinInput = static_cast<const FNetInputShip&>(MinData);
@@ -58,12 +85,21 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		MovementInput = FMath::Lerp(MinInput.MovementInput, MaxInput.MovementInput, LerpAlpha);
 		SteeringInput = FMath::Lerp(MinInput.SteeringInput, MaxInput.SteeringInput, LerpAlpha);
 		ExternalAcceleration = FMath::Lerp(MinInput.ExternalAcceleration, MaxInput.ExternalAcceleration, LerpAlpha);
+		// A blast is a discrete frame state. Interpolating it would smear the
+		// pulse into frames in which the authoritative simulation never applied it.
+		const FNetInputShip& NearestInput = LerpAlpha < 0.5f ? MinInput : MaxInput;
+		BlastAcceleration = NearestInput.BlastAcceleration;
+		BlastApplicationPointLocal = NearestInput.BlastApplicationPointLocal;
 		bBuoyancyEnabled = LerpAlpha < 0.5f
 			? MinInput.bBuoyancyEnabled
 			: MaxInput.bBuoyancyEnabled;
 		bHasAuthoritativeBuoyancyState = LerpAlpha < 0.5f
 			? MinInput.bHasAuthoritativeBuoyancyState
 			: MaxInput.bHasAuthoritativeBuoyancyState;
+		bIsAnchorDropped = LerpAlpha < 0.5f
+			? MinInput.bIsAnchorDropped
+			: MaxInput.bIsAnchorDropped;
+		AnchorOriginXY = MaxInput.AnchorOriginXY;
 	}
 
 	virtual void MergeData(const FNetworkPhysicsPayload& FromData) override
@@ -72,8 +108,12 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		MovementInput = FromInput.MovementInput;
 		SteeringInput = FromInput.SteeringInput;
 		ExternalAcceleration = FromInput.ExternalAcceleration;
+		BlastAcceleration = FromInput.BlastAcceleration;
+		BlastApplicationPointLocal = FromInput.BlastApplicationPointLocal;
 		bBuoyancyEnabled = FromInput.bBuoyancyEnabled;
 		bHasAuthoritativeBuoyancyState = FromInput.bHasAuthoritativeBuoyancyState;
+		bIsAnchorDropped = FromInput.bIsAnchorDropped;
+		AnchorOriginXY = FromInput.AnchorOriginXY;
 	}
 
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
@@ -125,6 +165,34 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 				Ar << QuantizedX;
 				Ar << QuantizedY;
 			}
+
+			uint8 bHasBlastAcceleration = BlastAcceleration.IsNearlyZero(0.5f) ? 0 : 1;
+			Ar.SerializeBits(&bHasBlastAcceleration, 1);
+			if (bHasBlastAcceleration != 0)
+			{
+				int16 QuantizedAccelerationX = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(BlastAcceleration.X), -32767, 32767));
+				int16 QuantizedAccelerationY = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(BlastAcceleration.Y), -32767, 32767));
+				int16 QuantizedAccelerationZ = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(BlastAcceleration.Z), -32767, 32767));
+				int16 QuantizedPointX = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(BlastApplicationPointLocal.X), -32767, 32767));
+				int16 QuantizedPointY = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(BlastApplicationPointLocal.Y), -32767, 32767));
+				int16 QuantizedPointZ = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(BlastApplicationPointLocal.Z), -32767, 32767));
+				Ar << QuantizedAccelerationX;
+				Ar << QuantizedAccelerationY;
+				Ar << QuantizedAccelerationZ;
+				Ar << QuantizedPointX;
+				Ar << QuantizedPointY;
+				Ar << QuantizedPointZ;
+			}
+
+			uint8 SerializedAnchorDropped = bIsAnchorDropped ? 1 : 0;
+			Ar.SerializeBits(&SerializedAnchorDropped, 1);
+			if (SerializedAnchorDropped != 0)
+			{
+				float AnchorX = static_cast<float>(AnchorOriginXY.X);
+				float AnchorY = static_cast<float>(AnchorOriginXY.Y);
+				Ar << AnchorX;
+				Ar << AnchorY;
+			}
 		}
 		else
 		{
@@ -149,6 +217,47 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 			{
 				ExternalAcceleration = FVector::ZeroVector;
 			}
+
+			uint8 bHasBlastAcceleration = 0;
+			Ar.SerializeBits(&bHasBlastAcceleration, 1);
+			if (bHasBlastAcceleration != 0)
+			{
+				int16 QuantizedAccelerationX = 0;
+				int16 QuantizedAccelerationY = 0;
+				int16 QuantizedAccelerationZ = 0;
+				int16 QuantizedPointX = 0;
+				int16 QuantizedPointY = 0;
+				int16 QuantizedPointZ = 0;
+				Ar << QuantizedAccelerationX;
+				Ar << QuantizedAccelerationY;
+				Ar << QuantizedAccelerationZ;
+				Ar << QuantizedPointX;
+				Ar << QuantizedPointY;
+				Ar << QuantizedPointZ;
+				BlastAcceleration = FVector(QuantizedAccelerationX, QuantizedAccelerationY, QuantizedAccelerationZ);
+				BlastApplicationPointLocal = FVector(QuantizedPointX, QuantizedPointY, QuantizedPointZ);
+			}
+			else
+			{
+				BlastAcceleration = FVector::ZeroVector;
+				BlastApplicationPointLocal = FVector::ZeroVector;
+			}
+
+			uint8 SerializedAnchorDropped = 0;
+			Ar.SerializeBits(&SerializedAnchorDropped, 1);
+			bIsAnchorDropped = SerializedAnchorDropped != 0;
+			if (bIsAnchorDropped)
+			{
+				float AnchorX = 0.0f;
+				float AnchorY = 0.0f;
+				Ar << AnchorX;
+				Ar << AnchorY;
+				AnchorOriginXY = FVector2D(AnchorX, AnchorY);
+			}
+			else
+			{
+				AnchorOriginXY = FVector2D::ZeroVector;
+			}
 		}
 
 		uint8 SerializedBuoyancyEnabled = bBuoyancyEnabled ? 1 : 0;
@@ -162,18 +271,6 @@ struct FNetInputShip : public FNetworkPhysicsPayload
 		}
 
 		bOutSuccess = !Ar.IsError();
-		/* Network Physics serializer diagnostic log disabled after validation.
-		if (bOutSuccess && ServerFrame > 0 && (ServerFrame <= 5 || ServerFrame % 60 == 0))
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[NETPHYS-FRAME-INPUT] Direction=%s ServerFrame=%d LocalFrame=%d Move=%.3f Steer=%.3f"),
-				Ar.IsLoading() ? TEXT("Load") : TEXT("Save"),
-				ServerFrame,
-				LocalFrame,
-				MovementInput,
-				SteeringInput);
-		}
-		*/
-
 		return bOutSuccess;
 	}
 };
@@ -360,6 +457,7 @@ class UInputAction;
 class APlayerController;
 class UPrimitiveComponent;
 class USceneComponent;
+class USkeletalMeshComponent;
 class UAbilitySystemComponent;
 class UBaseAttributeSet;
 class UShipAttributeSet;
@@ -367,6 +465,8 @@ class UGameplayAbility;
 class ABombardment;
 class ABombardmentPreview;
 class ACannon;
+class UShipRepairPointComponent;
+class ASharedShipUpgradeState;
 
 USTRUCT(BlueprintType)
 struct FShipStatRow : public FTableRowBase
@@ -375,10 +475,6 @@ struct FShipStatRow : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	float MaxHealth = 100.f;
-
-	/** Legacy migration source. New runtime code does not consume this field directly. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats", meta = (DeprecatedProperty, DeprecationMessage = "Use ForwardPropulsionMultiplier and TurnTorqueMultiplier"))
-	float ShipSpeedMultiplier = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	float ForwardPropulsionMultiplier = 1.f;
@@ -409,16 +505,18 @@ struct FShipReplicatedState
 };
 
 UCLASS()
-class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface
+class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, public IRespawnHostInterface
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this pawn's properties
 	AShip();
+	virtual void PostLoad() override;
 
 	// IAbilitySystemInterface 구현
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	virtual bool IsAvailableForPlayerRespawn_Implementation() const override;
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Stats")
 	UShipAttributeSet* GetShipAttributeSet() const { return AttributeSet; }
@@ -426,6 +524,15 @@ public:
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
+
+	/** Temporary runtime telemetry for tuning player-to-enemy ship ram speed. */
+	UFUNCTION()
+	void HandlePlayerShipCollisionTelemetry(
+		UPrimitiveComponent* HitComponent,
+		AActor* OtherActor,
+		UPrimitiveComponent* OtherComponent,
+		FVector NormalImpulse,
+		const FHitResult& Hit);
 
 public:	
 	// Called every frame
@@ -450,6 +557,15 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Stats")
 	bool ApplyPlayerUpgrades(APlayerState* InPlayerState, bool bRefillHealth = true);
 
+	UFUNCTION()
+	void HandlePlayerUpgradeStatsChanged(FShipStatSnapshot NewStats);
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Repair")
+	int32 GetActiveRepairPointCount() const;
+
+	bool ResolveRepairMaterial(FGameplayTag ItemTag, float& OutHealthRestored) const;
+	void CompleteRepairPoint(UShipRepairPointComponent* RepairPoint, float HealthRestored);
+
 	/**
 	 * Sets normalized server-authored control input for AI-controlled ships.
 	 * The optional scales multiply the DT/ASC-backed physical force after input
@@ -463,30 +579,109 @@ public:
 
 	float GetCurrentAIPropulsionScale() const { return CurrentAIPropulsionScale; }
 	float GetCurrentAITurnScale() const { return CurrentAITurnScale; }
+	float GetForwardForceMagnitude() const { return ForwardForce; }
+	float GetTurnTorqueMagnitude() const { return TurnTorque; }
+
+	/**
+	 * Suspends or restores the Chaos body used by ship Network Physics.
+	 * Re-enabling also binds the newly-created physics object back to the existing
+	 * async callback, which SetSimulatePhysics alone does not do for this ship.
+	 */
+	void SetShipRuntimePhysicsEnabled(bool bEnabled);
+	bool IsShipRuntimePhysicsEnabled() const { return bShipRuntimePhysicsEnabled; }
 
 	/** Identifies hostile ships without making WaterAndShip depend on Enemy. */
 	virtual bool IsEnemyShipForEffects() const { return false; }
 
+	/** Minimum horizontal player approach speed required for a ram to deal damage. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0", Units = "m/s"))
+	float PlayerRamMinimumApproachSpeed = 8.0f;
+
+	/** Damage dealt exactly at PlayerRamMinimumApproachSpeed. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0", DisplayName = "Player Ram Minimum Damage"))
+	float PlayerRamCollisionDamage = 50.0f;
+
+	/** Damage added for every 1 m/s above PlayerRamMinimumApproachSpeed. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0"))
+	float PlayerRamDamagePerAdditionalMeterPerSecond = 2.0f;
+
+	/** Prevents persistent physics contact from applying ram damage every frame. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage", meta = (ClampMin = "0.0", Units = "s", DisplayName = "Same Target Ram Damage Cooldown"))
+	float PlayerRamDamageCooldown = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage")
+	TSubclassOf<UGameplayEffect> PlayerRamDamageGameplayEffectClass;
+
+	/** Niagara spawned at the collision point when this Player Ship deals ram damage. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage|Impact")
+	TObjectPtr<UNiagaraSystem> PlayerRamImpactEffect;
+
+	/** Uniform world-space scale applied to PlayerRamImpactEffect. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage|Impact", meta = (ClampMin = "0.01"))
+	float PlayerRamImpactEffectScale = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage|Impact", meta = (ClampMin = "0.01"))
+	float PlayerRamImpactEffectLifetimeScale = 1.0f;
+
+	/** Niagara simulation speed. 0.5 plays at half speed and lasts roughly twice as long. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Ram Damage|Impact", meta = (ClampMin = "0.01"))
+	float PlayerRamImpactEffectPlaybackSpeed = 1.0f;
+
+	/** Server-authoritative replicated ram impact used by both Player and Enemy charge damage. */
+	void SpawnRamImpactNiagaraForAll(
+		UNiagaraSystem* Effect,
+		const FVector& Location,
+		float UniformScale = 1.0f,
+		float LifetimeScale = 1.0f,
+		float PlaybackSpeed = 1.0f);
+
 	/** Class policy used by interaction collision and the authoritative Board guard. */
 	UFUNCTION(BlueprintPure, Category = "Ship|Control")
-	virtual bool AllowsPlayerHelmControl() const { return true; }
+	virtual bool AllowsPlayerHelmControl() const { return !bIsSinking; }
 
 	/** Class policy inherited by every cannon mounted on this ship. */
 	UFUNCTION(BlueprintPure, Category = "Ship|Control")
-	virtual bool AllowsPlayerCannonControl() const { return true; }
+	virtual bool AllowsPlayerCannonControl() const { return !bIsSinking; }
+	virtual float GetCannonCooldownMultiplier() const { return 1.0f; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Sinking")
+	bool IsSinking() const { return bIsSinking; }
 
 	/** Class policy used by reusable and legacy sea-boarding points. */
 	UFUNCTION(BlueprintPure, Category = "Ship|Control")
 	virtual bool AllowsPlayerBoarding() const { return true; }
 
+	/** Class policy used by Anchor interaction. */
+	UFUNCTION(BlueprintPure, Category = "Ship|Control")
+	virtual bool AllowsPlayerAnchorControl(AActor* Interactor = nullptr) const { return true; }
+
 	void SetExternalAccelerationSource(const FGuid& SourceId, const FVector& WorldAcceleration);
 	void RemoveExternalAccelerationSource(const FGuid& SourceId);
+
+	/**
+	 * Starts a short server-authored 3D blast pulse at a hull contact point.
+	 * The pulse is recorded in Network Physics input history so rollback and
+	 * resimulation reproduce both its linear force and off-centre torque.
+	 */
+	void ApplyNetworkPhysicsBlast(
+		const FVector& WorldImpactPoint,
+		const FVector& WorldAcceleration,
+		float DurationSeconds);
+	FVector GetCurrentBlastAccelerationForDiagnostics() const { return CurrentBlastAcceleration; }
+	FVector GetCurrentBlastContactOffsetForDiagnostics() const { return CurrentBlastApplicationPointLocal; }
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Effects")
 	int32 GetExternalAccelerationSourceCount() const { return ExternalAccelerationSources.Num(); }
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Effects")
 	FVector GetCurrentExternalAcceleration() const { return CurrentExternalAcceleration; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Input")
+	float GetCurrentMoveInput() const { return CurrentMoveInput; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Input")
+	float GetCurrentTurnInput() const { return CurrentTurnInput; }
+	FName GetShipStatRowName() const;
 
 	void AddPropulsionSuppression(const FGuid& SourceId);
 	void RemovePropulsionSuppression(const FGuid& SourceId);
@@ -514,6 +709,29 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ship|Helm")
 	USceneComponent* GetHelmExitPoint() const { return HelmExitPoint; }
 
+	UFUNCTION(BlueprintPure, Category = "Ship|Anchor")
+	UStaticMeshComponent* GetAnchorMesh() const { return AnchorMesh; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Anchor")
+	UInteractableComponent* GetAnchorInteractable() const { return AnchorInteractable; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Anchor")
+	bool IsAnchorDropped() const { return bIsAnchorDropped; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Anchor")
+	FVector2D GetAnchorOriginXY() const { return AnchorOriginXY; }
+
+	UFUNCTION(BlueprintCallable, Category = "Ship|Anchor")
+	void ToggleAnchor();
+
+	UFUNCTION(Server, Reliable)
+	void ServerToggleAnchor();
+
+	UFUNCTION()
+	void HandleAnchorInteracted(AActor* Interactor);
+
+	virtual void UpdateAnchorInteractionUI();
+
 	UFUNCTION(BlueprintPure, Category = "Ship|Boarding")
 	USceneComponent* GetBoardingArrivalPoint() const { return BoardingArrivalPoint; }
 
@@ -527,6 +745,9 @@ public:
 	/** Safely returns the current helmsman to the authored exit point. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ship|Helm")
 	void ForceDisembark();
+
+	/** Shared authoritative sink sequence used by player and enemy ships. */
+	void StartSinking(float DestroyDelaySeconds);
 
 	/** Rebuilds the canonical runtime list from BP child actors and legacy attached cannon actors. */
 	UFUNCTION(BlueprintCallable, Category = "Ship|Cannons")
@@ -554,8 +775,16 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> ShipDamageMesh;
 
-	/** Query-only walkable mesh. Assigned independently from the Physics Root. */
+	/** Walkable collision proxy that uses authored simple collision. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> DeckMeshSimple;
+
+	/** Walkable collision proxy that uses the assigned mesh's complex collision. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> DeckMeshComplex;
+
+	/** Native compatibility alias. New authoring should use DeckMeshSimple/DeckMeshComplex. */
+	UPROPERTY(Transient, meta = (DeprecatedProperty, DeprecationMessage = "Use DeckMeshSimple or DeckMeshComplex"))
 	TObjectPtr<UStaticMeshComponent> ShipDeckMesh;
 
 	/** Shared pontoon/settings source; FShipPhysicsAsync remains the force executor. */
@@ -569,6 +798,10 @@ public:
 	/** Follow camera attached to the boom */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UCameraComponent* FollowCamera;
+
+	/** Local helm view placed at the controlling character's eye position. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UCameraComponent* HelmFirstPersonCamera;
 
 	/** Optional visible helm mesh. Its collision is independent from the interaction range. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Helm")
@@ -586,9 +819,46 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Helm")
 	TObjectPtr<USceneComponent> HelmExitPoint;
 
+	/** Visible anchor mesh. Its transform and mesh can be authored in Blueprint. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Anchor")
+	TObjectPtr<UStaticMeshComponent> AnchorMesh;
+
+	/** Interaction volume used to drop or raise the anchor. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Anchor")
+	TObjectPtr<UInteractableComponent> AnchorInteractable;
+
 	/** Shared destination for every ShipBoardingPoint attached to this ship. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Boarding")
 	TObjectPtr<USceneComponent> BoardingArrivalPoint;
+
+	/** Three authorable leak locations. Move these inherited components in the ship Blueprint. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Repair")
+	TObjectPtr<UShipRepairPointComponent> RepairPoint1;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Repair")
+	TObjectPtr<UShipRepairPointComponent> RepairPoint2;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Repair")
+	TObjectPtr<UShipRepairPointComponent> RepairPoint3;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Repair")
+	TArray<struct FShipRepairMaterialRule> RepairMaterialRules;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Repair", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float LeakChancePerHit = 0.10f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Repair", meta = (ClampMin = "0.0"))
+	float LeakDamagePerPoint = 5.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Repair", meta = (ClampMin = "0.1", Units = "s"))
+	float LeakDamageInterval = 1.0f;
+
+	/** Crossing each ratio requires one active leak after the next external hit. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Repair")
+	TArray<float> ForcedLeakHealthRatios = { 0.75f, 0.50f, 0.25f };
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Repair")
+	TSubclassOf<UGameplayEffect> LeakDamageGameplayEffectClass;
 
 	/** Canonical runtime references for both BP child actors and legacy attached actors. */
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Ship|Cannons")
@@ -608,14 +878,6 @@ public:
 	UPROPERTY(Transient, meta = (DeprecatedProperty, DeprecationMessage = "Use BoardingArrivalPoint"))
 	TObjectPtr<USceneComponent> StarboardSeaBoardingDestination;
 
-	/** World location of the fixed observation camera (set XYZ in editor) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Fixed Camera")
-	FVector FixedCameraLocation = FVector(0.0f, 0.0f, 1000.0f);
-
-	/** World rotation of the fixed observation camera (set in editor) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Fixed Camera")
-	FRotator FixedCameraRotation = FRotator(-45.0f, 0.0f, 0.0f);
-
 	// ---- Movement Parameters ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship Physics | Replication")
 	float ResimLocationThreshold = 5.0f; // 오차 허용 거리 임계값 (cm 단위)
@@ -634,6 +896,38 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Movement", meta = (ClampMin = "0.0", Units = "cm/s^2"))
 	float MaxExternalAcceleration = 5000.f;
+
+	/** PT-only soft roll limiter shared by player and enemy ships. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Physics|Roll Stabilization")
+	bool bEnableRollStabilization = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Physics|Roll Stabilization", meta = (EditCondition = "bEnableRollStabilization", ClampMin = "0.0", ClampMax = "89.0", Units = "deg"))
+	float RollStabilizationSoftLimitDegrees = 20.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Physics|Roll Stabilization", meta = (EditCondition = "bEnableRollStabilization", ClampMin = "0.1", ClampMax = "89.0", Units = "deg"))
+	float RollStabilizationMaximumAngleDegrees = 30.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Physics|Roll Stabilization", meta = (EditCondition = "bEnableRollStabilization", ClampMin = "0.0", Units = "Hz"))
+	float RollStabilizationNaturalFrequencyHz = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Physics|Roll Stabilization", meta = (EditCondition = "bEnableRollStabilization", ClampMin = "0.0"))
+	float RollStabilizationDampingRatio = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Physics|Roll Stabilization", meta = (EditCondition = "bEnableRollStabilization", ClampMin = "0.0"))
+	float RollStabilizationMaximumAngularAccelerationDegrees = 720.0f;
+
+	// ---- Anchor Parameters ----
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Anchor", meta = (ClampMin = "0.0", ToolTip = "Planar restoring stiffness holding the ship to its anchor point against external collisions"))
+	float AnchorStiffness = 1000000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Anchor", meta = (ClampMin = "0.0", ToolTip = "Planar damping coefficient bringing horizontal velocity to a stop when anchored"))
+	float AnchorDamping = 80000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Anchor", meta = (ClampMin = "0.0", Units = "cm", ToolTip = "Allowable horizontal slack distance before anchor spring tension applies"))
+	float AnchorSlackRadius = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Anchor", meta = (ClampMin = "0.0", ToolTip = "Maximum allowable horizontal force exerted by the anchor"))
+	float MaxAnchorForce = 10000000.0f;
 
 	// ---- Input Config ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Input")
@@ -680,6 +974,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera", meta = (ClampMin = "0.0"))
 	float ShipLookSensitivity = 1.0f;
 
+	/** Local-space offset from the rider's normal pawn eye location. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera|First Person", meta = (Units = "cm"))
+	FVector HelmFirstPersonCameraOffset = FVector(12.0f, 0.0f, 0.0f);
+
+	/** Hidden only on the controlling client's full-body mesh while using the helm first-person camera. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera|First Person")
+	FName HelmFirstPersonHiddenBone = TEXT("head");
+
+	/** Maximum distance searched below an airborne HelmSeatPoint for this ship's walkable deck. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Helm", meta = (ClampMin = "0.0", Units = "cm"))
+	float HelmFloorSearchDistance = 1000.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Camera|Zoom", meta = (ClampMin = "0.0", Units = "cm"))
 	float ShipZoomStep = 150.0f;
 
@@ -712,7 +1018,7 @@ protected:
 	void StopShipTurn(const FInputActionValue& Value);
 	void ShipLook(const FInputActionValue& Value);
 	void ShipZoom(const FInputActionValue& Value);
-	void ToggleFixedCamera();
+	void ToggleHelmCamera();
 	void OnDisembarkAction(const FInputActionValue& Value);
 	void HandleBombardmentToggle();
 	void HandleBombardmentConfirm();
@@ -756,18 +1062,28 @@ protected:
 
 	void Disembark();
 	void UpdateHelmInteractionAvailability();
+	bool FindHelmStandingLocation(ACharacter* Character, FVector& OutStandingLocation) const;
+	void SetHelmRiderInvulnerable(bool bEnabled);
+	void HandleShipHealthChanged(const struct FOnAttributeChangeData& Data);
+	void TryActivateRepairPointAfterHit(float NewHealth);
+	void ApplyLeakDamageTick();
+	void RefreshLeakDamageTimer();
+	void ForceExitAllControlModes();
+	void FinishSinking();
+
+	UFUNCTION()
+	void OnRep_IsSinking();
 
 	// ---- Camera State ----
-	bool bUsingFixedCamera = false;
-	FTransform SavedBoomRelativeTransform;
-	FRotator SavedControlRotation;
-	float SavedTargetArmLength = 800.0f;
-	FVector SavedFollowCameraRelativeLocation = FVector::ZeroVector;
-	FRotator SavedFollowCameraRelativeRotation = FRotator::ZeroRotator;
+	bool bUsingHelmFirstPersonCamera = false;
+	bool bHelmCameraHidRiderBone = false;
+	TWeakObjectPtr<USkeletalMeshComponent> HelmLocallyHiddenMesh;
 	bool bHasRememberedFollowCameraState = false;
 	float RememberedFollowTargetArmLength = 800.0f;
 	FRotator RememberedFollowControlRotation = FRotator::ZeroRotator;
 
+	void SetHelmFirstPersonCameraEnabled(bool bEnabled);
+	void SetLocalHelmRiderHeadHidden(bool bShouldHide);
 	void RememberFollowCameraState(APlayerController* PlayerController);
 	void RestoreRememberedFollowCameraState(APlayerController* PlayerController);
 
@@ -775,8 +1091,29 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_RidingPlayer)
 	APawn* RidingPlayer = nullptr;
 
+	UPROPERTY(ReplicatedUsing = OnRep_IsSinking)
+	bool bIsSinking = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Sinking", meta = (ClampMin = "0.0", Units = "s"))
+	float PlayerShipDestroyAfterSinkingDelay = 5.0f;
+
+	bool bHelmInvulnerabilityApplied = false;
+	FDelegateHandle ShipHealthChangedDelegateHandle;
+	FTimerHandle SinkingDestroyTimerHandle;
+	FTimerHandle LeakDamageTimerHandle;
+	bool bApplyingLeakDamage = false;
+
 	UFUNCTION()
 	void OnRep_RidingPlayer(APawn* OldRidingPlayer);
+
+	UPROPERTY(ReplicatedUsing = OnRep_IsAnchorDropped)
+	bool bIsAnchorDropped = false;
+
+	UPROPERTY(Replicated)
+	FVector2D AnchorOriginXY = FVector2D::ZeroVector;
+
+	UFUNCTION()
+	void OnRep_IsAnchorDropped();
 
 	UPROPERTY(ReplicatedUsing = OnRep_BombardmentTargeting)
 	bool bBombardmentTargeting = false;
@@ -789,10 +1126,6 @@ protected:
 
 	UPROPERTY()
 	APlayerController* CachedPlayerController = nullptr;
-
-	/** Prevents repeated boarding by the same player from refilling upgraded health. */
-	UPROPERTY(Transient)
-	TObjectPtr<APlayerState> AppliedUpgradePlayerState;
 
 	// ---- Custom Replication State & Interp Configuration ----
 	UPROPERTY(Replicated)
@@ -824,27 +1157,47 @@ public:
 	/** Returns FollowCamera subobject */
 	FORCEINLINE UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 
-	/** Returns the query-and-physics deck used by character floor detection. */
-	FORCEINLINE UStaticMeshComponent* GetShipDeckMesh() const { return ShipDeckMesh; }
+	/** Legacy primary-deck accessor used by deck AI and based movement. */
+	FORCEINLINE UStaticMeshComponent* GetShipDeckMesh() const { return DeckMeshComplex; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Deck")
+	FORCEINLINE UStaticMeshComponent* GetDeckMeshSimple() const { return DeckMeshSimple; }
+
+	UFUNCTION(BlueprintPure, Category = "Ship|Deck")
+	FORCEINLINE UStaticMeshComponent* GetDeckMeshComplex() const { return DeckMeshComplex; }
 
 	/** Resets camera to follow mode (called when disembarking) */
 	void ResetToFollowCamera();
 
 public:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Stats")
+	/** Player ships receive their base and upgraded values from the upgrade tree's DT. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Stats")
+	bool bUseUpgradeDrivenPlayerStats = false;
+
+	/** Enemy/non-player ships select a complete stat row. Hidden for upgrade-driven player ships. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Stats", meta = (RowType = "/Script/WaterAndShip.ShipStatRow", DisplayName = "Ship Stat Row", EditCondition = "!bUseUpgradeDrivenPlayerStats", EditConditionHides))
+	FDataTableRowHandle ShipStatRow;
+
+	/** Legacy serialized fields retained as a runtime fallback while existing Blueprints migrate. */
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Use ShipStatRow"))
 	TObjectPtr<UDataTable> ShipStatTable;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Stats")
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Use ShipStatRow"))
 	FName ShipStatRowName;
 
 protected:
-	void InitializeDefaultAttributes();
+	virtual void InitializeDefaultAttributes();
+	const FShipStatRow* ResolveShipStatRow(const FString& ContextString) const;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UShipAttributeSet> AttributeSet;
+
+	/** Session shared progression. Live health, repair, anchor and physics remain on this ship. */
+	UPROPERTY(Transient)
+	TObjectPtr<ASharedShipUpgradeState> SharedUpgradeState;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UNetworkPhysicsComponent> NetworkPhysicsComponent;
@@ -865,6 +1218,8 @@ private:
 	void BeginLocalBombardmentTargeting();
 	void EndLocalBombardmentTargeting();
 	void UpdateLocalBombardmentPreview();
+	void UpdateLocalWaterSkillPreview(const FVector& Center, float Radius);
+	void ClearLocalWaterSkillPreview();
 	void SpawnBombardmentAuthoritative(const FVector& TargetLocation);
 
 	TWeakObjectPtr<UGameplayAbility> ActiveBombardmentAbility;
@@ -872,15 +1227,26 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<ABombardmentPreview> BombardmentPreviewActor;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialParameterCollection> WaterSkillPreviewParameterCollection;
+
 	FVector LocalBombardmentTarget = FVector::ZeroVector;
+	FVector LastWaterSkillPreviewCenter = FVector::ZeroVector;
+	float LastWaterSkillPreviewRadius = 0.0f;
 	bool bLocalBombardmentTargetValid = false;
 	bool bLocalBombardmentInputModeApplied = false;
+	bool bWaterSkillPreviewEnabled = false;
 	bool bSavedShowMouseCursor = false;
 
 	friend class FShipPhysicsAsync;
 	FShipPhysicsAsync* ShipPhysicsAsync = nullptr;
+	bool bShipRuntimePhysicsEnabled = true;
 	bool bBuoyancyQueryDiagnostics = false;
 	double NextBuoyancyQueryDiagnosticTime = 0.0;
+	double NextShipBalanceDiagnosticTime = 0.0;
+	float PreviousShipBalanceSpeed = 0.0f;
+	float PreviousShipBalanceAngularSpeed = 0.0f;
+	int32 ShipBalanceStableSampleCount = 0;
 
 	float CurrentMoveInput = 0.0f;
 	float CurrentTurnInput = 0.0f;
@@ -893,7 +1259,21 @@ private:
 	float CurrentAITurnScale = 1.0f;
 	FVector CurrentExternalAcceleration = FVector::ZeroVector;
 	TMap<FGuid, FVector> ExternalAccelerationSources;
+	FVector CurrentBlastAcceleration = FVector::ZeroVector;
+	FVector CurrentBlastApplicationPointLocal = FVector::ZeroVector;
+	double CurrentBlastEndTimeSeconds = -DBL_MAX;
 	TSet<FGuid> PropulsionSuppressionSources;
+	TWeakObjectPtr<AShip> LastPlayerRamTarget;
+	double LastPlayerRamDamageTime = -DBL_MAX;
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastSpawnRamImpactNiagara(
+		UNiagaraSystem* Effect,
+		FVector_NetQuantize Location,
+		FRotator Rotation,
+		float UniformScale,
+		float LifetimeScale,
+		float PlaybackSpeed);
 
 	bool bStaticDataInitialized = false;
 };

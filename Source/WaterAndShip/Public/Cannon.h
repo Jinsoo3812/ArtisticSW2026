@@ -91,14 +91,19 @@ public:
 	/** Remaining per-cannon reload time. Zero means ready; negative timer states are normalized to zero. */
 	UFUNCTION(BlueprintPure, Category = "Cannon|AI")
 	float GetFireCooldownRemaining() const;
+	void ResetAIFiringState();
 
 	/** Checks authored pitch/yaw limits without changing the replicated aim. */
 	UFUNCTION(BlueprintPure, Category = "Cannon|AI")
 	bool CanAimAtWorldDirection(const FVector& WorldDirection) const;
+	bool CanAIAimAtWorldDirection(const FVector& WorldDirection) const;
 
 	/** Server-only deterministic AI shot using the supplied ballistic direction. */
 	UFUNCTION(BlueprintCallable, Category = "Cannon|AI")
 	bool FireAICannonAtDirection(const FVector& WorldDirection);
+
+	/** Server-only AI shot with a per-shot projectile speed, used when the authored speed cannot reach the target. */
+	bool FireAICannonAtDirectionWithSpeed(const FVector& WorldDirection, float ProjectileSpeed);
 
 	/** Normal projectile class used by this cannon; ship skills may reuse its authored mesh/effects. */
 	TSubclassOf<AActor> GetCannonballClass() const { return CannonballClass; }
@@ -135,6 +140,10 @@ protected:
 	/** Barrel mesh that rotates up/down (Pitch) */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> BarrelMesh;
+
+	/** Exact projectile origin. Move this inherited component to the visible barrel mouth in BP_Cannon. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USceneComponent> MuzzlePoint;
 
 	/** Aiming Camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -173,8 +182,24 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Aiming")
 	float MaxPitch = 45.0f;
 
+	/** AI-only elevation limit for long-flight ballistic solutions. Player aiming keeps MaxPitch. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Aiming", meta = (ClampMin = "0.0", ClampMax = "89.0", Units = "deg"))
+	float MaxAIPitch = 85.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Aiming")
 	float MaxYawOffset = 60.0f;
+
+	/** How quickly remote clients visually converge to newly replicated player/AI aim. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Aiming", meta = (ClampMin = "1.0"))
+	float RemoteAimInterpolationSpeed = 12.0f;
+
+	/** Maximum client/server muzzle separation accepted for a player shot on a predicted moving ship. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Networking", meta = (ClampMin = "0.0", Units = "cm"))
+	float MaxClientMuzzleCorrectionDistance = 2000.0f;
+
+	/** Maximum client/server barrel direction difference accepted for a player shot. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Networking", meta = (ClampMin = "0.0", ClampMax = "90.0", Units = "deg"))
+	float MaxClientMuzzleCorrectionAngle = 20.0f;
 
 	// ---- Inputs ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
@@ -189,7 +214,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
 	TObjectPtr<UInputAction> CannonExitAction;
 
-	/** Assign the Water Bomb IA mapped to key 4 in the cannon IMC. */
+	/** Assign the Water Bomb IA mapped to E in the cannon IMC. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cannon|Input")
 	TObjectPtr<UInputAction> CannonWaterBombToggleAction;
 
@@ -206,15 +231,24 @@ protected:
 
 	// ---- Actions ----
 	void ExitAimMode();
+	void SetRiderInvulnerable(bool bEnabled);
+	/** Hides the rider and separately-attached equipment only from this cannon's local controller. */
+	void RefreshLocalRiderVisibility();
+	void ClearLocalRiderHiddenActors();
 
 	// ---- Server RPCs ----
 	UFUNCTION(Server, Reliable)
-	void ServerFire();
+	void ServerFire(FVector_NetQuantize100 ClientMuzzleLocation, FRotator ClientLaunchRotation);
 
 	UFUNCTION(Server, Reliable)
 	void ServerToggleWaterBombAbility();
 
-	void SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed);
+	void SpawnCannonball(
+		FVector MuzzleLocation,
+		FRotator LaunchRotation,
+		float Damage,
+		float Speed,
+		const FVector& InheritedVelocity = FVector::ZeroVector);
 
 	UFUNCTION(Server, Reliable)
 	void ServerUpdateAim(float NewPitch, float NewYaw);
@@ -248,6 +282,9 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_AimRotation)
 	FCannonAimRotation AimRotation;
 
+	/** Render-only rotation. Remote proxies smooth this toward AimRotation. */
+	FCannonAimRotation VisualAimRotation;
+
 	UPROPERTY(ReplicatedUsing = OnRep_WaterBombMode)
 	bool bWaterBombMode = false;
 
@@ -257,6 +294,7 @@ private:
 	float ActiveWaterBombAttackSpeedMultiplier = 0.5f;
 
 	bool bCanFire = true;
+	bool bRiderInvulnerabilityApplied = false;
 	/** AI가 매 Tick 발사를 재시도해도 물폭탄 봉쇄 로그는 효과당 한 번만 출력합니다. */
 	bool bLoggedWaterBombFireBlock = false;
 	FTimerHandle CooldownTimerHandle;
@@ -270,4 +308,7 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<APlayerController> CachedPlayerController = nullptr;
+
+	/** Actors added to a local PlayerController's HiddenActors while aiming. */
+	TArray<TWeakObjectPtr<AActor>> LocallyHiddenRiderActors;
 };

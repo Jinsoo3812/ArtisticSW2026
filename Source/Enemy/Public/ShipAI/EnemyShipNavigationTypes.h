@@ -9,7 +9,8 @@ enum class ENavalCombatState : uint8
 	Idle,
 	Approach,
 	Orbit,
-	Retreat,
+	/** Legacy serialized value. Runtime navigation immediately normalizes this to Orbit. */
+	Retreat UMETA(Hidden),
 	Return
 };
 
@@ -43,29 +44,28 @@ struct ENEMY_API FEnemyShipNavigationProfile
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0", Units = "cm"))
 	float OrbitTolerance = 1500.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0", Units = "cm"))
+	/** Legacy serialized field. Close-range correction is now handled by Orbit steering. */
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Close-range correction is handled by Orbit steering."))
 	float DangerCloseDistance = 1000.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0", Units = "cm"))
 	float ReturnArrivalDistance = 800.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation")
-	bool bOrbitClockwise = true;
+	/** Starts returning only after the ship is farther than this planar distance from its Return Point. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0", Units = "cm"))
+	float ReturnTriggerDistance = 800.0f;
 
+	/** Multiplies forward propulsion while the navigation state is Return. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0"))
-	float ForwardInputScale = 1.0f;
+	float ReturnPropulsionMultiplier = 1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0"))
-	float TurnInputScale = 1.0f;
+	/** Time without a detected player ship before returning home. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "0.0", Units = "s"))
+	float LostTargetReturnDelay = 10.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation", meta = (ClampMin = "1"))
-	int32 MaxActiveCannons = 2;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Avoidance", meta = (ClampMin = "0.02", Units = "s"))
-	float AvoidanceDecisionInterval = 0.1f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Avoidance", meta = (ClampMin = "0.0", Units = "cm"))
-	float AvoidanceSafetyBuffer = 800.0f;
+	/** Legacy serialized field. Enemy ships now always orbit counterclockwise. */
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Enemy ships always orbit counterclockwise."))
+	bool bOrbitClockwise = false;
 };
 
 USTRUCT(BlueprintType)
@@ -93,6 +93,9 @@ struct ENEMY_API FEnemyShipNavigationContext
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation")
 	FVector HomeLocation = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation")
+	bool bReturnRequested = false;
 };
 
 USTRUCT(BlueprintType)

@@ -587,3 +587,10 @@ bool AWaveGameMode::AreAllPlayersDead() const
 
 	return true;
 }
+
+void AWaveGameMode::HandleAllPlayersDeathFinished()
+{
+	if (!HasAuthority()) return;
+	HandleDefeat();
+	Super::HandleAllPlayersDeathFinished();
+}

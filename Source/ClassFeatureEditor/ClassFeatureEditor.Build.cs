@@ -20,10 +20,16 @@ public class ClassFeatureEditor : ModuleRules
 			"LevelEditor",
 			"AnimationBlueprintLibrary",
 			"AnimationModifiers",
+			"ArtisticSWCore",
 			"ClassFeature",
 			"GASCore",
 			"WaterAndShip",
-			"Water"
+			"Water",
+			"GeometryCore",
+			"MeshConversion",
+			"AssetRegistry",
+			"PropertyEditor",
+			"ImageCore"
 		});
 
 		PublicIncludePaths.AddRange(new string[]

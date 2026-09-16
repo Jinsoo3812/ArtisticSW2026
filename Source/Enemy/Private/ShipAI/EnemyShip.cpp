@@ -8,39 +8,50 @@
 #include "Storage/StorageChest.h"
 #include "Storage/StorageComponent.h"
 #include "ItemSpawn/ChestSpawnData.h"
+#include "ItemSpawn/GlobalLootSpawnManager.h"
+#include "Item/ItemData.h"
+#include "Settings_Item.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "DrawDebugHelpers.h"
 #include "HAL/IConsoleManager.h"
 #include "SceneManagement.h"
 #include "Components/BaseHealthComponent.h"
 #include "BaseAttributeSet.h"
+#include "ShipAttributeSet.h"
 #include "AIController.h"
 #include "AI/BaseAIController.h"
 #include "BrainComponent.h"
+#include "Perception/AIPerceptionComponent.h"
+#include "Perception/AISense_Sight.h"
 #include "BuoyancyComponent.h"
 #include "Buoyancy/SWBuoyancyComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "CollisionChannels.h"
+#include "PhysicsEngine/BodyInstance.h"
 #include "Engine/StaticMesh.h"
 #include "UI/EnemyHealthBarComponent.h"
 #include "ShipAI/ShipSwarmSubsystem.h"
 #include "ShipAI/EnemyShipArchetypeData.h"
-#include "ShipAI/EnemyShipAbilitySet.h"
 #include "ShipAI/EnemyShipNavigationComponent.h"
 #include "ShipAI/EnemyShipPatternRuntimeComponent.h"
-#include "ShipAI/EnemyShipPatternData.h"
 #include "ShipAI/EnemyShipSkillModuleData.h"
-#include "ShipAI/Abilities/GA_EnemyShipCharge.h"
-#include "ShipAI/Abilities/GA_EnemyShipLaunchTorpedo.h"
-#include "ShipAI/Abilities/GA_EnemyShipDeployObstacle.h"
-#include "ShipAI/Abilities/GA_EnemyShipTimeStop.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckEnemySpawnerComponent.h"
 #include "DeckAI/DeckNavigationComponent.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "BossAI/BossEncounterComponent.h"
+#include "BossAI/ShipBossEnemy.h"
+#include "BaseEnemy.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/ChildActorComponent.h"
+#include "Net/UnrealNetwork.h"
 #include "UObject/UnrealType.h"
+#include "SWCabinWaterCullComponent.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogEnemyShipChestSpawnPoint, Log, All);
 
 #if WITH_EDITOR
 #include "Editor.h"
@@ -696,25 +707,83 @@ AEnemyShip::AEnemyShip()
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 	NavigationComponent = CreateDefaultSubobject<UEnemyShipNavigationComponent>(TEXT("EnemyShipNavigationComponent"));
 	PatternRuntimeComponent = CreateDefaultSubobject<UEnemyShipPatternRuntimeComponent>(TEXT("EnemyShipPatternRuntimeComponent"));
+	CabinWaterCullComponent = CreateDefaultSubobject<USWCabinWaterCullComponent>(TEXT("CabinWaterCullComponent"));
 	EnemyHealthBarComponent = CreateDefaultSubobject<UEnemyHealthBarComponent>(TEXT("EnemyHealthBarComponent"));
 	EnemyHealthBarComponent->SetupAttachment(RootComponent);
 
 	Tags.Remove(TEXT("Player"));
 	Tags.AddUnique(TEXT("Enemy"));
-	LegacyAbilityBootstrapClasses = {
-		UGA_EnemyShipCharge::StaticClass(),
-		UGA_EnemyShipLaunchTorpedo::StaticClass(),
-		UGA_EnemyShipDeployObstacle::StaticClass(),
-		UGA_EnemyShipTimeStop::StaticClass()
-	};
-
 	if (BuoyancyRoot)
 	{
 		BuoyancyRoot->SetCollisionProfileName(TEXT("EnemyShip"));
 	}
+	bEnableRollStabilization = true;
 	if (ShipDamageMesh)
 	{
 		ShipDamageMesh->SetCollisionProfileName(TEXT("EnemyShipDamage"));
+	}
+}
+
+void AEnemyShip::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	ApplyChestSpawnPointSettings();
+}
+
+void AEnemyShip::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+	ApplyChestSpawnPointSettings();
+}
+
+void AEnemyShip::ApplyChestSpawnPointSettings()
+{
+	ChestSpawnPointLootSettings.SpawnMode = ChestSpawnPointChestSettings.SpawnMode;
+	FChestSpawnPointChestSettings DeckChestSettings = ChestSpawnPointChestSettings;
+	DeckChestSettings.Environment = EChestEnvironment::ShipDeck;
+	DeckChestSettings.OwningShip = this;
+	if (DeckChestSettings.SpawnMode == EChestSpawnMode::Guarded)
+	{
+		for (ABaseEnemy* Crew : RegisteredCrewEnemies)
+		{
+			if (IsValid(Crew)) DeckChestSettings.GuardCharacters.AddUnique(Crew);
+		}
+		if (DeckEnemySpawnerComponent)
+		{
+			TArray<ADeckEnemy*> PooledEnemies;
+			DeckEnemySpawnerComponent->GetPooledEnemies(PooledEnemies);
+			for (ADeckEnemy* Crew : PooledEnemies)
+			{
+				DeckChestSettings.GuardCharacters.AddUnique(Crew);
+			}
+		}
+	}
+
+	TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
+	for (UChildActorComponent* ChildActorComponent : ChildActorComponents)
+	{
+		if (!ChildActorComponent || !ChildActorComponent->GetName().StartsWith(TEXT("ChestSpawnPoint")))
+		{
+			continue;
+		}
+
+		UClass* ChildActorClass = ChildActorComponent->GetChildActorClass();
+		if (!ChildActorClass || !ChildActorClass->IsChildOf(AChestSpawnPoint::StaticClass()))
+		{
+			UE_LOG(LogEnemyShipChestSpawnPoint, Error,
+				TEXT("%s.%s must use AChestSpawnPoint (or a subclass), but its Child Actor Class is %s."),
+				*GetNameSafe(this),
+				*ChildActorComponent->GetName(),
+				*GetNameSafe(ChildActorClass));
+			continue;
+		}
+
+		if (AChestSpawnPoint* ChestSpawnPoint = Cast<AChestSpawnPoint>(ChildActorComponent->GetChildActor()))
+		{
+			ChestSpawnPoint->ApplyAuthoringSettings(
+				DeckChestSettings,
+				ChestSpawnPointLootSettings);
+		}
 	}
 }
 
@@ -723,6 +792,18 @@ void AEnemyShip::BeginPlay()
 	Super::BeginPlay();
 	Tags.Remove(TEXT("Player"));
 	Tags.AddUnique(TEXT("Enemy"));
+	if (BuoyancyRoot)
+	{
+		FBodyInstance& BodyInstance = BuoyancyRoot->BodyInstance;
+		BodyInstance.bLockXRotation = false;
+		BodyInstance.SetDOFLock(BodyInstance.DOFMode);
+	}
+	if (NavigationComponent)
+	{
+		NavigationComponent->OnNavigationStateChanged.AddUniqueDynamic(
+			this, &AEnemyShip::HandleNavigationStateChanged);
+		ApplyNavigationCollisionPolicy(NavigationComponent->GetCurrentState());
+	}
 
 	// HealthComponent를 Ship의 ASC에 바인딩 (BaseEnemy의 패턴과 동일)
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
@@ -742,36 +823,10 @@ void AEnemyShip::BeginPlay()
 
 	if (HasAuthority())
 	{
-		MigrateLegacyNavigationAuthoring();
 		if (EnemyShipArchetype)
 		{
 			EnemyShipArchetype->ApplyToShip(this);
 		}
-		else if (NavigationComponent)
-		{
-			// LEGACY: Remove this fallback after every Enemy Ship BP has an Archetype.
-			FEnemyShipNavigationProfile LegacyProfile = NavigationComponent->GetNavigationProfile();
-			LegacyProfile.IdealDistance = FMath::Max(1.0f, IdealDistance);
-			LegacyProfile.ReturnArrivalDistance = FMath::Max(0.0f, NavigationHomeArrivalDistance);
-			LegacyProfile.MaxActiveCannons = FMath::Max(1, MaxActiveCannons);
-			NavigationComponent->SetNavigationProfile(LegacyProfile);
-			GrantEnemyShipAbilityClasses(LegacyAbilityBootstrapClasses);
-		}
-
-		if (NavigationComponent)
-		{
-			NavigationComponent->SetHomeActor(NavigationHomeActor);
-		}
-	}
-
-	// 캐싱된 대포 목록 탐색
-	// Drop에 관한 정보 초기화
-	InitializeEnemyDropData();
-
-	// 0.5초마다 타겟과 가장 가까운 N개의 대포를 선정해 목록을 갱신하는 타이머 작동
-	if (HasAuthority() && !EnemyShipArchetype && bLegacyAutomaticCannonFireWithoutArchetype)
-	{
-		GetWorldTimerManager().SetTimer(ActiveCannonsTimerHandle, this, &AEnemyShip::UpdateActiveCannons, 0.5f, true);
 	}
 
 	// 군집 서브시스템에 등록
@@ -794,6 +849,13 @@ void AEnemyShip::BeginPlay()
 
 void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	for (ABaseEnemy* CrewEnemy : RegisteredCrewEnemies)
+	{
+		if (IsValid(CrewEnemy))
+		{
+			CrewEnemy->OnBaseEnemyDeathNotified.RemoveDynamic(this, &AEnemyShip::HandleCrewEnemyRemoved);
+		}
+	}
 	if (HasAuthority())
 	{
 		DestroyDeckEnemyPool();
@@ -904,6 +966,44 @@ void AEnemyShip::NotifyAllOwnedDeckEnemiesDefeated()
 
 	UE_LOG(LogTemp, Log, TEXT("EnemyDied"));
 	OnOwnedDeckEnemiesDefeated.Broadcast(this);
+	EvaluateCrewControlState();
+}
+
+void AEnemyShip::InitializeDefaultAttributes()
+{
+	if (!HasAuthority() || !AttributeSet)
+	{
+		return;
+	}
+
+	// AShip exposes a DataTable/Row pair for player and generic ships. Enemy ships
+	// deliberately ignore those inherited fields; the selected Archetype applies
+	// its SpecRow immediately after Super::BeginPlay returns.
+	AttributeSet->InitHealth(100.0f);
+	AttributeSet->InitMaxHealth(100.0f);
+	AttributeSet->InitMoveSpeed(1.0f);
+	AttributeSet->InitForwardPropulsionMultiplier(1.0f);
+	AttributeSet->InitTurnTorqueMultiplier(1.0f);
+	AttributeSet->InitCannonDamage(20.0f);
+	AttributeSet->InitCannonFireCooldown(2.0f);
+	AttributeSet->InitCannonballSpeed(3000.0f);
+}
+
+void AEnemyShip::HandleNavigationStateChanged(
+	ENavalCombatState PreviousState,
+	ENavalCombatState NewState)
+{
+	ApplyNavigationCollisionPolicy(NewState);
+	if (!HasAuthority() || bDeathHandled || bCrewDefeated || !DeckEnemySpawnerComponent)
+	{
+		return;
+	}
+	if (NewState == ENavalCombatState::Approach
+		|| NewState == ENavalCombatState::Orbit)
+	{
+		DeckEnemySpawnerComponent->RequestDeployment(
+			NavigationComponent ? NavigationComponent->GetTargetShip() : nullptr);
+	}
 }
 
 bool AEnemyShip::ActivateDeckEnemyAtPoint(
@@ -1471,38 +1571,6 @@ int32 AEnemyShip::FindNearestDeckWaypoint(
 		: INDEX_NONE;
 }
 
-void AEnemyShip::MigrateLegacyNavigationAuthoring()
-{
-	// LEGACY: One-time bridge for old BP-authored ReturnPointActor and
-	// ReturnArrivalOffset variables. Delete after content migration M11.
-	if (!NavigationHomeActor)
-	{
-		if (const FObjectPropertyBase* ReturnPointProperty = FindFProperty<FObjectPropertyBase>(GetClass(), TEXT("ReturnPointActor")))
-		{
-			NavigationHomeActor = Cast<AActor>(ReturnPointProperty->GetObjectPropertyValue_InContainer(this));
-		}
-	}
-
-	if (const FNumericProperty* ArrivalOffsetProperty = FindFProperty<FNumericProperty>(GetClass(), TEXT("ReturnArrivalOffset")))
-	{
-		const void* ValueAddress = ArrivalOffsetProperty->ContainerPtrToValuePtr<void>(this);
-		const float LegacyDistance = static_cast<float>(ArrivalOffsetProperty->GetFloatingPointPropertyValue(ValueAddress));
-		if (LegacyDistance > 0.0f)
-		{
-			NavigationHomeArrivalDistance = LegacyDistance;
-		}
-	}
-}
-
-bool AEnemyShip::GrantEnemyShipAbilities(const UEnemyShipAbilitySet* AbilitySet)
-{
-	if (!HasAuthority() || !AbilitySet)
-	{
-		return false;
-	}
-	return GrantEnemyShipAbilityClasses(AbilitySet->Abilities);
-}
-
 bool AEnemyShip::GrantEnemyShipAbilityClasses(
 	const TArray<TSubclassOf<UGameplayAbility>>& AbilityClasses)
 {
@@ -1535,58 +1603,304 @@ bool AEnemyShip::GrantEnemyShipAbilityClasses(
 	return GrantedEnemyShipAbilityHandles.Num() == SeenClasses.Num();
 }
 
-bool AEnemyShip::ConfigureEnemyShipPattern(UEnemyShipPatternData* Pattern)
+bool AEnemyShip::ConfigureEnemyShipArchetype(UEnemyShipArchetypeData* Archetype)
 {
-	if (!HasAuthority() || !Pattern || !NavigationComponent || !PatternRuntimeComponent)
+	if (!HasAuthority() || !Archetype || !NavigationComponent || !PatternRuntimeComponent)
 	{
 		return false;
 	}
 
-	TArray<UEnemyShipSkillModuleData*> RawCoreModules;
-	for (UEnemyShipSkillModuleData* Module : CoreSkillModules)
-	{
-		if (IsValid(Module))
-		{
-			RawCoreModules.AddUnique(Module);
-		}
-	}
-	PatternRuntimeComponent->SetCoreSkillModules(RawCoreModules);
-	PatternRuntimeComponent->SetPattern(Pattern);
-	NavigationComponent->SetNavigationProfile(Pattern->NavigationProfile);
+	PatternRuntimeComponent->Configure(Archetype);
+	FEnemyShipNavigationProfile EffectiveNavigationProfile = Archetype->NavigationProfile;
+	EffectiveNavigationProfile.bOrbitClockwise = false;
+	NavigationComponent->SetNavigationProfile(EffectiveNavigationProfile);
 
 	TArray<TSubclassOf<UGameplayAbility>> AbilityClasses;
-	TSet<const UEnemyShipSkillModuleData*> SeenModules;
-	auto AppendModuleAbilities = [&AbilityClasses, &SeenModules](const UEnemyShipSkillModuleData* Module)
+	for (const UEnemyShipSkillModuleData* Module : Archetype->SkillModules)
 	{
-		if (!IsValid(Module) || SeenModules.Contains(Module) || !Module->AbilitySet)
+		if (IsValid(Module) && Module->AbilityClass)
 		{
-			return;
+			AbilityClasses.AddUnique(Module->AbilityClass);
 		}
-		SeenModules.Add(Module);
-		for (const TSubclassOf<UGameplayAbility>& AbilityClass : Module->AbilitySet->Abilities)
+	}
+	if (!GrantEnemyShipAbilityClasses(AbilityClasses))
+	{
+		return false;
+	}
+	EnemyShipArchetype = Archetype;
+	if (UWorld* World = GetWorld())
+	{
+		if (UShipSwarmSubsystem* SwarmSubsystem = World->GetSubsystem<UShipSwarmSubsystem>())
 		{
-			AbilityClasses.AddUnique(AbilityClass);
+			SwarmSubsystem->RecalculateSquadOrbitDistances(SquadID);
 		}
-	};
-	for (const UEnemyShipSkillModuleData* Module : CoreSkillModules)
-	{
-		AppendModuleAbilities(Module);
 	}
-	for (const UEnemyShipSkillModuleData* Module : Pattern->SkillModules)
-	{
-		AppendModuleAbilities(Module);
-	}
-	return GrantEnemyShipAbilityClasses(AbilityClasses);
+	return true;
 }
 
-void AEnemyShip::SetCoreSkillModules(const TArray<UEnemyShipSkillModuleData*>& InCoreModules)
+void AEnemyShip::SetSquadAssignedIdealDistance(float IdealDistance)
 {
-	CoreSkillModules.Reset();
-	for (UEnemyShipSkillModuleData* Module : InCoreModules)
+	if (!HasAuthority() || !NavigationComponent)
 	{
-		if (IsValid(Module))
+		return;
+	}
+	FEnemyShipNavigationProfile Profile = EnemyShipArchetype
+		? EnemyShipArchetype->NavigationProfile
+		: NavigationComponent->GetNavigationProfile();
+	Profile.bOrbitClockwise = false;
+	Profile.IdealDistance = FMath::Max(1.0f, IdealDistance);
+	NavigationComponent->SetNavigationProfile(Profile);
+}
+
+void AEnemyShip::ResetAfterReturnToSpawn()
+{
+	if (!HasAuthority() || bDeathHandled || IsSinking())
+	{
+		return;
+	}
+
+	SetAIControlInput(0.0f, 0.0f);
+	FTransform SpawnTransform;
+	if (NavigationComponent && NavigationComponent->GetSpawnHomeTransform(SpawnTransform))
+	{
+		SetActorLocationAndRotation(
+			SpawnTransform.GetLocation(),
+			SpawnTransform.GetRotation(),
+			false,
+			nullptr,
+			ETeleportType::TeleportPhysics);
+	}
+	if (BuoyancyRoot)
+	{
+		BuoyancyRoot->SetPhysicsLinearVelocity(FVector::ZeroVector);
+		BuoyancyRoot->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+	}
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		ASC->CancelAllAbilities();
+	}
+	if (HealthComponent)
+	{
+		HealthComponent->ResetForReuse();
+	}
+	if (PatternRuntimeComponent)
+	{
+		PatternRuntimeComponent->ResetRuntimeState();
+	}
+	if (DeckEnemySpawnerComponent)
+	{
+		DeckEnemySpawnerComponent->ResetForNewEncounter();
+	}
+	for (ACannon* Cannon : MountedCannons)
+	{
+		if (IsValid(Cannon))
 		{
-			CoreSkillModules.AddUnique(Module);
+			Cannon->ResetAIFiringState();
+		}
+	}
+	bCrewDefeated = false;
+	bHasEverHadLivingCrew = HasLivingCrew();
+	OnRep_CrewDefeated();
+	ForceNetUpdate();
+}
+
+void AEnemyShip::ApplyNavigationCollisionPolicy(ENavalCombatState State)
+{
+	const bool bActiveCombat = State == ENavalCombatState::Approach
+		|| State == ENavalCombatState::Orbit;
+	const bool bBlockSkillObstacles = State != ENavalCombatState::Return;
+
+	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(this);
+	for (UPrimitiveComponent* Component : PrimitiveComponents)
+	{
+		if (!IsValid(Component)
+			|| (Component->GetCollisionObjectType() != ECC_ShipHull
+				&& Component->GetCollisionProfileName() != TEXT("ShipHullPhysics")))
+		{
+			continue;
+		}
+		Component->SetCollisionResponseToChannel(
+			ECC_ShipHull,
+			bActiveCombat ? ECR_Block : ECR_Ignore);
+		Component->SetCollisionResponseToChannel(
+			ECC_EnemyShipObstacle,
+			bBlockSkillObstacles ? ECR_Block : ECR_Ignore);
+	}
+}
+
+bool AEnemyShip::CanEnterDistanceOptimizationDormancy() const
+{
+	if (!bEnableDistanceOptimization || bDistanceOptimizationDormant
+		|| bDeathHandled || IsSinking() || bCrewDefeated || !NavigationComponent
+		|| NavigationComponent->GetCurrentState() != ENavalCombatState::Idle
+		|| NavigationComponent->GetTargetShip() != nullptr
+		|| NavigationComponent->HasActiveOverride())
+	{
+		return false;
+	}
+
+	FVector HomeLocation;
+	if (!NavigationComponent->GetResolvedHomeLocation(HomeLocation))
+	{
+		return false;
+	}
+
+	const float ArrivalDistance = FMath::Max(
+		0.0f,
+		NavigationComponent->GetNavigationProfile().ReturnArrivalDistance);
+	return FVector::DistSquared2D(GetActorLocation(), HomeLocation)
+		<= FMath::Square(ArrivalDistance);
+}
+
+void AEnemyShip::SetDistanceOptimizationDormant(bool bDormant)
+{
+	if (!HasAuthority() || bDistanceOptimizationDormant == bDormant)
+	{
+		return;
+	}
+	if (bDormant && !CanEnterDistanceOptimizationDormancy())
+	{
+		return;
+	}
+	if (!bDormant && (bDeathHandled || IsSinking()))
+	{
+		return;
+	}
+
+	if (!bDormant)
+	{
+		FlushNetDormancy();
+		SetNetDormancy(DORM_Awake);
+	}
+	else
+	{
+		// This also snaps a ship that stopped anywhere inside its arrival radius to
+		// the exact authored home transform before its physics body is removed.
+		ResetAfterReturnToSpawn();
+	}
+
+	bDistanceOptimizationDormant = bDormant;
+	ApplyDistanceOptimizationState();
+	ForceNetUpdate();
+	if (bDormant)
+	{
+		SetNetDormancy(DORM_DormantAll);
+	}
+}
+
+void AEnemyShip::OnRep_DistanceOptimizationDormant()
+{
+	ApplyDistanceOptimizationState();
+}
+
+void AEnemyShip::ApplyDistanceOptimizationState()
+{
+	if (bDistanceOptimizationDormant)
+	{
+		SetAIControlInput(0.0f, 0.0f);
+		if (HasAuthority())
+		{
+			if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+			{
+				ASC->CancelAllAbilities();
+			}
+			if (NavigationComponent)
+			{
+				NavigationComponent->ClearAllOverrides();
+				NavigationComponent->SetTargetShip(nullptr);
+				NavigationComponent->SetNavigationEnabled(false);
+			}
+			if (AAIController* AIController = Cast<AAIController>(GetController()))
+			{
+				AIController->StopMovement();
+				if (UBrainComponent* Brain = AIController->GetBrainComponent())
+				{
+					Brain->StopLogic(TEXT("Enemy ship distance optimization dormancy"));
+				}
+				if (UAIPerceptionComponent* Perception = AIController->GetPerceptionComponent())
+				{
+					Perception->SetSenseEnabled(UAISense_Sight::StaticClass(), false);
+					Perception->Deactivate();
+				}
+				AIController->SetActorTickEnabled(false);
+			}
+		}
+
+		DistanceDormancySuspendedTickComponents.Reset();
+		TInlineComponentArray<UActorComponent*> Components(this);
+		for (UActorComponent* Component : Components)
+		{
+			if (IsValid(Component) && Component->IsComponentTickEnabled())
+			{
+				DistanceDormancySuspendedTickComponents.Add(Component);
+				Component->SetComponentTickEnabled(false);
+			}
+		}
+
+		DistanceDormancySuspendedCannons.Reset();
+		for (ACannon* Cannon : MountedCannons)
+		{
+			if (!IsValid(Cannon))
+			{
+				continue;
+			}
+			Cannon->ResetAIFiringState();
+			if (Cannon->IsActorTickEnabled())
+			{
+				DistanceDormancySuspendedCannons.Add(Cannon);
+			}
+			Cannon->SetActorTickEnabled(false);
+			Cannon->SetActorEnableCollision(false);
+		}
+
+		SetActorEnableCollision(false);
+		SetShipRuntimePhysicsEnabled(false);
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	SetActorTickEnabled(true);
+	SetActorEnableCollision(true);
+	SetShipRuntimePhysicsEnabled(true);
+	for (const TWeakObjectPtr<UActorComponent>& Component : DistanceDormancySuspendedTickComponents)
+	{
+		if (Component.IsValid())
+		{
+			Component->SetComponentTickEnabled(true);
+		}
+	}
+	DistanceDormancySuspendedTickComponents.Reset();
+
+	for (const TWeakObjectPtr<ACannon>& Cannon : DistanceDormancySuspendedCannons)
+	{
+		if (Cannon.IsValid())
+		{
+			Cannon->SetActorTickEnabled(true);
+			Cannon->SetActorEnableCollision(true);
+			Cannon->RefreshPlayerInteractionAvailability();
+		}
+	}
+	DistanceDormancySuspendedCannons.Reset();
+
+	if (HasAuthority())
+	{
+		if (NavigationComponent)
+		{
+			NavigationComponent->SetNavigationEnabled(true);
+		}
+		if (AAIController* AIController = Cast<AAIController>(GetController()))
+		{
+			AIController->SetActorTickEnabled(true);
+			if (UAIPerceptionComponent* Perception = AIController->GetPerceptionComponent())
+			{
+				Perception->Activate(true);
+				Perception->SetSenseEnabled(UAISense_Sight::StaticClass(), true);
+				Perception->RequestStimuliListenerUpdate();
+			}
+			if (UBrainComponent* Brain = AIController->GetBrainComponent())
+			{
+				Brain->RestartLogic();
+			}
 		}
 	}
 }
@@ -1594,17 +1908,13 @@ void AEnemyShip::SetCoreSkillModules(const TArray<UEnemyShipSkillModuleData*>& I
 void AEnemyShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	EvaluateCrewControlState();
 
 	if (CVarShowEnemyShipAIDebug.GetValueOnGameThread() > 0)
 	{
 		DrawEnemyShipAIDebug();
 	}
 
-	if (HasAuthority() && !bDeathHandled && !EnemyShipArchetype
-		&& bLegacyAutomaticCannonFireWithoutArchetype)
-	{
-		TickAIAimingAndFiring(DeltaTime);
-	}
 }
 
 void AEnemyShip::DrawEnemyShipAIDebug() const
@@ -1648,7 +1958,6 @@ void AEnemyShip::DrawEnemyShipAIDebug() const
 			0.8f);
 	};
 
-	DrawRange(Center, Profile.DangerCloseDistance, FColor::Red, TEXT("DangerClose"));
 	DrawRange(Center, Profile.IdealDistance, FColor::Green, TEXT("Ideal"));
 	DrawRange(
 		Center,
@@ -1657,10 +1966,13 @@ void AEnemyShip::DrawEnemyShipAIDebug() const
 		TEXT("OrbitMax"));
 	DrawRange(Center, Profile.DetectionDistance, FColor::Cyan, TEXT("Detection"));
 
-	if (const AActor* HomeActor = NavigationComponent->GetHomeActor())
+	FVector HomeLocation;
+	const bool bHasHome = NavigationComponent->GetResolvedHomeLocation(HomeLocation);
+	if (bHasHome)
 	{
-		const FVector HomeCenter = HomeActor->GetActorLocation() + FVector(0.0f, 0.0f, HeightOffset);
+		const FVector HomeCenter = HomeLocation + FVector(0.0f, 0.0f, HeightOffset);
 		DrawRange(HomeCenter, Profile.ReturnArrivalDistance, FColor::Magenta, TEXT("ReturnArrival"));
+		DrawRange(HomeCenter, Profile.ReturnTriggerDistance, FColor::Orange, TEXT("ReturnTrigger"));
 		DrawDebugLine(World, Center, HomeCenter, FColor::Magenta, false, 0.0f, DepthPriority, 1.5f);
 	}
 
@@ -1676,13 +1988,9 @@ void AEnemyShip::DrawEnemyShipAIDebug() const
 
 	const FString StateName = StaticEnum<ENavalCombatState>()->GetNameStringByValue(
 		static_cast<int64>(NavigationComponent->GetCurrentState()));
-	const UEnemyShipPatternData* Pattern = PatternRuntimeComponent
-		? PatternRuntimeComponent->GetPattern()
-		: nullptr;
-	if (!Pattern && EnemyShipArchetype)
-	{
-		Pattern = EnemyShipArchetype->Pattern;
-	}
+	const bool bReturning = NavigationComponent->GetCurrentState() == ENavalCombatState::Return;
+	const float HomeDistance = bHasHome ? FVector::Dist2D(GetActorLocation(), HomeLocation) : -1.0f;
+	const TCHAR* HomeSource = bHasHome ? TEXT("Spawn") : TEXT("None");
 	FString CastingSummary = TEXT("None");
 	FString AbilityDebugText;
 	if (const UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
@@ -1727,7 +2035,7 @@ void AEnemyShip::DrawEnemyShipAIDebug() const
 	}
 
 	FString DebugText = FString::Printf(
-		TEXT("%s [%s]\nCASTING: %s\nNav=%s State=%s Override=%s\nTarget=%s Dist=%s\nPattern=%s Rules=%d"),
+		TEXT("%s [%s]\nCASTING: %s\nNav=%s State=%s Override=%s\nTarget=%s Dist=%s\nReturn=%s Home=%s HomeDist=%s Trigger=%.0f Arrival=%.0f Propulsion=x%.2f\nArchetype=%s Skills=%d"),
 		*GetName(),
 		HasAuthority() ? TEXT("AUTH") : TEXT("CLIENT"),
 		*CastingSummary,
@@ -1736,7 +2044,13 @@ void AEnemyShip::DrawEnemyShipAIDebug() const
 		NavigationComponent->HasActiveOverride() ? TEXT("YES") : TEXT("NO"),
 		TargetShip ? *TargetShip->GetName() : TEXT("None"),
 		TargetDistance >= 0.0f ? *FString::Printf(TEXT("%.0fcm"), TargetDistance) : TEXT("-"),
-		Pattern ? *Pattern->GetName() : TEXT("None"),
+		bReturning ? TEXT("YES") : TEXT("NO"),
+		HomeSource,
+		HomeDistance >= 0.0f ? *FString::Printf(TEXT("%.0fcm"), HomeDistance) : TEXT("-"),
+		Profile.ReturnTriggerDistance,
+		Profile.ReturnArrivalDistance,
+		Profile.ReturnPropulsionMultiplier,
+		EnemyShipArchetype ? *EnemyShipArchetype->GetName() : TEXT("None"),
 		PatternRuntimeComponent ? PatternRuntimeComponent->GetResolvedRuleCount() : 0);
 
 	if (!AbilityDebugText.IsEmpty())
@@ -1821,26 +2135,7 @@ void AEnemyShip::HandleShipDeath()
 		}
 	}
 
-	// 3. BuoyancyCoefficient를 0으로 설정 → 부력만 완전히 제거, 중력으로 자연 침몰
-	// Disable the current shared buoyancy source so the network-physics ship sinks.
-	if (SWBuoyancyComponent)
-	{
-		SWBuoyancyComponent->ForceSettings.BuoyancyCoefficient = 0.0f;
-	}
-
-	// Keep the legacy component in sync for older derived enemy Blueprints.
-	if (UBuoyancyComponent* BuoyancyComp = FindComponentByClass<UBuoyancyComponent>())
-	{
-		BuoyancyComp->BuoyancyData.BuoyancyCoefficient = 0.0f;
-	}
-
-	if (BuoyancyRoot)
-	{
-		BuoyancyRoot->WakeAllRigidBodies();
-	}
-
 	// 4. 대포 발사/조준 타이머 정지
-	GetWorldTimerManager().ClearTimer(ActiveCannonsTimerHandle);
 	for (ACannon* Cannon : MountedCannons)
 	{
 		if (IsValid(Cannon))
@@ -1848,57 +2143,10 @@ void AEnemyShip::HandleShipDeath()
 			Cannon->SetAIAimRotation(0.0f, 0.0f);
 		}
 	}
-	ActiveAICannons.Empty();
-
 	DropAtDeathLocation(DeathLocation, DeathRotation);
 
-	// 5. N초 후 Destroy
-	GetWorldTimerManager().SetTimer(DeathDestroyTimerHandle, FTimerDelegate::CreateLambda([this]()
-	{
-		Destroy();
-	}), DestroyAfterDeathDelay, false);
-}
-
-void AEnemyShip::InitializeEnemyDropData()
-{
-	// Drop 할 아이템을 Data Table에서 가져오기
-	EnemyDropData = FEnemyDropData();
-	if (!EnemyDropDataTable || !EnemyTypeTag.IsValid())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::InitializeEnemyDropData - Missing drop setup. Ship=%s DropTable=%s EnemyTypeTag=%s"),
-			*GetName(),
-			*GetNameSafe(EnemyDropDataTable),
-			*EnemyTypeTag.ToString());
-		return;
-	}
-
-	static const FString ContextString(TEXT("EnemyShipDropData"));
-	TArray<FEnemyDropDataRow*> Rows;
-	EnemyDropDataTable->GetAllRows(ContextString, Rows);
-
-	for (const FEnemyDropDataRow* Row : Rows)
-	{
-		if (!Row || Row->EnemyTag != EnemyTypeTag)
-		{
-			continue;
-		}
-
-		EnemyDropData.EnemyTag = Row->EnemyTag;
-		EnemyDropData.DropEntries = Row->DropEntries;
-		UE_LOG(LogTemp, Log, TEXT("AEnemyShip::InitializeEnemyDropData - Loaded %d drop entries. Ship=%s EnemyTypeTag=%s"),
-			EnemyDropData.DropEntries.Num(),
-			*GetName(),
-			*EnemyTypeTag.ToString());
-		break;
-	}
-
-	if (EnemyDropData.DropEntries.IsEmpty())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::InitializeEnemyDropData - No matching row or empty drop entries. Ship=%s EnemyTypeTag=%s Table=%s"),
-			*GetName(),
-			*EnemyTypeTag.ToString(),
-			*GetNameSafe(EnemyDropDataTable));
-	}
+	// 5. Player ships and enemy ships share the exact buoyancy-off/destruction path.
+	StartSinking(DestroyAfterDeathDelay);
 }
 
 void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotator& DeathRotation)
@@ -1924,283 +2172,246 @@ void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotato
 	const FRotator SpawnRotation(0.0f, DeathRotation.Yaw, 0.0f);
 	const FTransform SpawnTransform(SpawnRotation, SpawnLocation);
 
-	// 1. 레벨에서 지정한 상자 정의 DataAsset이 있는 경우 (데이터 기반 스폰)
-	if (IsValid(SunkChestDefinition))
-	{
-		TSubclassOf<AStorageChest> ChestClassToSpawn = SunkChestDefinition->ChestClass ? SunkChestDefinition->ChestClass : EnemyCorpseStorageClass;
-		if (!ChestClassToSpawn)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("%s: SunkChestDefinition and EnemyCorpseStorageClass are both missing valid ChestClass."), *GetName());
-			return;
-		}
-
-		AStorageChest* SpawnedStorage = World->SpawnActorDeferred<AStorageChest>(
-			ChestClassToSpawn,
-			SpawnTransform,
-			nullptr,
-			nullptr,
-			ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn
-		);
-
-		if (SpawnedStorage)
-		{
-			const int32 DropSeed = FMath::RandRange(1, MAX_int32);
-			SpawnedStorage->InitializeFromChestDefinition(SunkChestDefinition, DropSeed);
-			SpawnedStorage->SetPhysicsAndBuoyancyEnabled(true);
-			SpawnedStorage->FinishSpawning(SpawnTransform);
-			SpawnedStorage->ForceNetUpdate();
-
-			UE_LOG(LogTemp, Log, TEXT("AEnemyShip::DropAtDeathLocation - Spawned buoyant chest from SunkChestDefinition (%s). Ship=%s Location=%s"),
-				*GetNameSafe(SunkChestDefinition),
-				*GetName(),
-				*SpawnedStorage->GetActorLocation().ToString());
-			return;
-		}
-	}
-
-	// 2. 레거시/기존 구조체 기반 드랍 Fallback
-	if (!EnemyCorpseStorageClass)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("%s: EnemyCorpseStorageClass is not configured."), *GetName());
-		return;
-	}
-
-	// Storage에 들어갈 아이템들의 배열 생성
-	TArray<FStorageItemEntry> StorageItems;
-	StorageItems.Reserve(EnemyDropData.DropEntries.Num());
-
-	int32 InvalidEntryCount = 0;
-	int32 FailedChanceCount = 0;
-
-	// 한 row에 있는 아이템 마다 반복
-	for (const FEnemyDropEntry& Entry : EnemyDropData.DropEntries)
-	{
-		if (!Entry.ItemTag.IsValid())
-		{
-			++InvalidEntryCount;
-			continue;
-		}
-
-		const float ClampedChance = FMath::Clamp(Entry.DropChance, 0.f, 1.f);
-		// 랜덤으로 뽑은 값이 확률보다 크면 Spawn 하지 않음, Guaranteed면 무조건 Spawn
-		if (!Entry.bGuaranteed && FMath::FRand() > ClampedChance)
-		{
-			++FailedChanceCount;
-			continue;
-		}
-
-		const int32 MinCount = FMath::Max(1, Entry.MinCount);
-		const int32 MaxCount = FMath::Max(MinCount, Entry.MaxCount);
-
-		FStorageItemEntry& StorageItem = StorageItems.AddDefaulted_GetRef();
-		StorageItem.ItemTag = Entry.ItemTag;
-		StorageItem.Count = FMath::RandRange(MinCount, MaxCount);
-	}
-
-	if (StorageItems.IsEmpty())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - No storage items selected, so chest will not spawn. Ship=%s EnemyTypeTag=%s Entries=%d Invalid=%d FailedChance=%d"),
-			*GetName(),
-			*EnemyTypeTag.ToString(),
-			EnemyDropData.DropEntries.Num(),
-			InvalidEntryCount,
-			FailedChanceCount);
-		return;
-	}
-
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-	AStorageChest* SpawnedStorage = World->SpawnActor<AStorageChest>(
-		EnemyCorpseStorageClass,
+	TSubclassOf<AStorageChest> ChestClass = ChestSpawnPointChestSettings.ChestClassOverride;
+	if (!ChestClass) ChestClass = AStorageChest::StaticClass();
+	AStorageChest* SpawnedStorage = World->SpawnActorDeferred<AStorageChest>(
+		ChestClass,
 		SpawnTransform,
-		SpawnParameters
-	);
+		nullptr,
+		nullptr,
+		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
 
 	if (SpawnedStorage)
 	{
-		SpawnedStorage->SetReplicates(true);
-		SpawnedStorage->SetReplicateMovement(true);
-		SpawnedStorage->bAlwaysRelevant = true;
-		SpawnedStorage->SetNetCullDistanceSquared(FMath::Square(500000.0f));
-		SpawnedStorage->SetOwner(nullptr);
-		SpawnedStorage->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-		SpawnedStorage->SetLifeSpan(0.0f);
+		const int32 DropSeed = FMath::RandRange(1, MAX_int32);
+		SpawnedStorage->ClearLegacyChestDefinition();
 		SpawnedStorage->SetPhysicsAndBuoyancyEnabled(true);
-
-		TMap<FGameplayTag, int32> TotalCountByItem;
-		for (const FStorageItemEntry& StorageItem : StorageItems)
+		SpawnedStorage->FinishSpawning(SpawnTransform);
+		TArray<FProgressionComputedDrop> SunkDrops;
+		bool bHasProgressionDrops = false;
+		for (TActorIterator<AGlobalLootSpawnManager> It(World); It; ++It)
 		{
-			// map에 아이템 태그랑 개수 추가 
-			TotalCountByItem.FindOrAdd(StorageItem.ItemTag) += StorageItem.Count;
+			bHasProgressionDrops = It->GetSunkChestDrops(ChestSpawnPointChestSettings.ProgressionZone, SunkDrops);
+			break;
 		}
-
-		// 앞서 구했던 아이템 개수만큼 슬롯 추가
-		int32 RequiredSlotCount = StorageItems.Num();
-		if (const UStorageComponent* StorageComponent = SpawnedStorage->GetStorageComponent())
+		const USettings_Item* ItemSettings = GetDefault<USettings_Item>();
+		const UItemData* Items = ItemSettings ? ItemSettings->ItemAssetRegistry.LoadSynchronous() : nullptr;
+		if (bHasProgressionDrops && Items)
 		{
-			RequiredSlotCount = 0;
-			for (const TPair<FGameplayTag, int32>& ItemTotal : TotalCountByItem)
-			{
-				// map에 저장된 정보에서, 최대 스택보다 많은 수가 있으면 slot 분할
-				const int32 MaxStack = FMath::Max(1, StorageComponent->GetMaxStack(ItemTotal.Key));
-				RequiredSlotCount += FMath::DivideAndRoundUp(ItemTotal.Value, MaxStack);
-			}
+			SpawnedStorage->ReplaceProgressionLoot(SunkDrops, Items, DropSeed);
 		}
-
-		const int32 SlotCount = FMath::Max(EnemyCorpseStorageSlotCount, RequiredSlotCount);
-		SpawnedStorage->ConfigureStorage(SlotCount, EnemyCorpseStorageColumnCount, StorageItems);
-		// Replicate the fully configured storage contents in the same server update as the spawn.
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("Sunk chest spawned empty: no finalized progression drops or item definitions. Ship=%s Zone=%d"),
+				*GetName(), static_cast<int32>(ChestSpawnPointChestSettings.ProgressionZone));
+		}
 		SpawnedStorage->ForceNetUpdate();
-		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - Spawned storage chest. Ship=%s Chest=%s Location=%s Items=%d Slots=%d"),
-			*GetName(),
-			*GetNameSafe(SpawnedStorage),
-			*SpawnedStorage->GetActorLocation().ToString(),
-			StorageItems.Num(),
-			SlotCount);
+
+		UE_LOG(LogTemp, Log,
+			TEXT("AEnemyShip::DropAtDeathLocation - Spawned buoyant progression chest. Ship=%s Zone=%d Location=%s"),
+			*GetName(), static_cast<int32>(ChestSpawnPointChestSettings.ProgressionZone), *SpawnedStorage->GetActorLocation().ToString());
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - SpawnActor failed. Ship=%s StorageClass=%s Location=%s"),
-			*GetName(),
-			*GetNameSafe(EnemyCorpseStorageClass),
-			*SpawnLocation.ToString());
+		UE_LOG(LogTemp, Warning,
+			TEXT("AEnemyShip::DropAtDeathLocation - Failed to spawn sunk progression chest. Ship=%s Location=%s"),
+			*GetName(), *SpawnLocation.ToString());
 	}
 }
 
-void AEnemyShip::UpdateActiveCannons()
+bool AEnemyShip::AllowsPlayerAnchorControl(AActor* Interactor) const
 {
-	if (!HasAuthority()) return;
+	return !bDeathHandled && bCrewDefeated;
+}
 
-	TArray<ACannon*> AvailableCannons;
-	AvailableCannons.Reserve(MountedCannons.Num());
+float AEnemyShip::GetCannonCooldownMultiplier() const
+{
+	if (!EnemyShipArchetype)
+	{
+		return 1.0f;
+	}
+	const UShipAttributeSet* ShipAttributes = GetShipAttributeSet();
+	const float HealthRatio = ShipAttributes && ShipAttributes->GetMaxHealth() > KINDA_SMALL_NUMBER
+		? FMath::Clamp(ShipAttributes->GetHealth() / ShipAttributes->GetMaxHealth(), 0.0f, 1.0f)
+		: 0.0f;
+	const float ZeroHealthMultiplier = FMath::Max(
+		1.0f,
+		EnemyShipArchetype->ZeroHealthCannonCooldownMultiplier);
+	return FMath::Lerp(ZeroHealthMultiplier, 1.0f, HealthRatio);
+}
+
+int32 AEnemyShip::GetLivingCrewCount() const
+{
+	int32 Count = 0;
+
+	// 1. Registered manual/external crew enemies
+	for (const TObjectPtr<ABaseEnemy>& Crew : RegisteredCrewEnemies)
+	{
+		if (IsValid(Crew))
+		{
+			if (const UBaseHealthComponent* Health = Crew->GetHealthComponent())
+			{
+				if (!Health->IsDead())
+				{
+					++Count;
+				}
+			}
+		}
+	}
+
+	// 2. DeckEnemySpawnerComponent-owned crew (active and not-yet-deployed pool members)
+	if (DeckEnemySpawnerComponent)
+	{
+		Count += DeckEnemySpawnerComponent->GetLivingPooledEnemyCount();
+	}
+
+	// 3. Boss Encounter Component
+	if (BossEncounterComponent && BossEncounterComponent->IsEncounterEnabled())
+	{
+		const EBossEncounterState State = BossEncounterComponent->GetEncounterState();
+		if (State == EBossEncounterState::Active || State == EBossEncounterState::Spawning || State == EBossEncounterState::Waiting)
+		{
+			if (const AShipBossEnemy* Boss = BossEncounterComponent->GetSpawnedBoss())
+			{
+				if (const UBaseHealthComponent* Health = Boss->GetHealthComponent())
+				{
+					if (!Health->IsDead())
+					{
+						++Count;
+					}
+				}
+			}
+			else
+			{
+				++Count;
+			}
+		}
+	}
+
+	return Count;
+}
+
+bool AEnemyShip::HasLivingCrew() const
+{
+	return GetLivingCrewCount() > 0;
+}
+
+void AEnemyShip::RegisterCrewEnemy(ABaseEnemy* CrewEnemy)
+{
+	if (IsValid(CrewEnemy))
+	{
+		RegisteredCrewEnemies.AddUnique(CrewEnemy);
+		CrewEnemy->OnBaseEnemyDeathNotified.AddUniqueDynamic(this, &AEnemyShip::HandleCrewEnemyRemoved);
+		RegisterDeckEnemyChestGuard(CrewEnemy);
+		EvaluateCrewControlState();
+	}
+}
+
+void AEnemyShip::RegisterDeckEnemyChestGuard(ABaseEnemy* CrewEnemy)
+{
+	if (!HasAuthority() || !IsValid(CrewEnemy)) return;
+	TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
+	for (UChildActorComponent* Component : ChildActorComponents)
+	{
+		if (Component && Component->GetName().StartsWith(TEXT("ChestSpawnPoint")))
+		{
+			if (AChestSpawnPoint* Point = Cast<AChestSpawnPoint>(Component->GetChildActor()))
+			{
+				if (Point->GetSpawnMode() == EChestSpawnMode::Guarded) Point->RegisterGuardCharacter(CrewEnemy);
+			}
+		}
+	}
+}
+
+void AEnemyShip::UnregisterCrewEnemy(ABaseEnemy* CrewEnemy)
+{
+	if (CrewEnemy)
+	{
+		CrewEnemy->OnBaseEnemyDeathNotified.RemoveDynamic(this, &AEnemyShip::HandleCrewEnemyRemoved);
+		RegisteredCrewEnemies.Remove(CrewEnemy);
+		EvaluateCrewControlState();
+	}
+}
+
+void AEnemyShip::EvaluateCrewControlState()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	if (HasLivingCrew())
+	{
+		bHasEverHadLivingCrew = true;
+		if (bCrewDefeated)
+		{
+			bCrewDefeated = false;
+			OnRep_CrewDefeated();
+			ForceNetUpdate();
+		}
+		return;
+	}
+	if (!bHasEverHadLivingCrew)
+	{
+		return;
+	}
+	if (bCrewDefeated)
+	{
+		return;
+	}
+
+	bCrewDefeated = true;
+	DisableEnemyShipAIForCapture();
+	OnRep_CrewDefeated();
+	ForceNetUpdate();
+}
+
+void AEnemyShip::DisableEnemyShipAIForCapture()
+{
+	SetAIControlInput(0.0f, 0.0f);
+	if (DeckEnemySpawnerComponent)
+	{
+		DeckEnemySpawnerComponent->CancelDeployment();
+	}
+
+	if (NavigationComponent)
+	{
+		NavigationComponent->ClearAllOverrides();
+		NavigationComponent->SetTargetShip(nullptr);
+		NavigationComponent->SetNavigationEnabled(false);
+	}
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		ASC->CancelAllAbilities();
+	}
+	if (AAIController* AIC = Cast<AAIController>(GetController()))
+	{
+		if (UBrainComponent* BrainComp = AIC->GetBrainComponent())
+		{
+			BrainComp->StopLogic(TEXT("Enemy ship crew defeated"));
+		}
+	}
 	for (ACannon* Cannon : MountedCannons)
 	{
 		if (IsValid(Cannon))
 		{
-			AvailableCannons.AddUnique(Cannon);
-		}
-	}
-
-	if (!IsValid(AITargetShip) || AvailableCannons.IsEmpty())
-	{
-		// 타겟이 없거나 대포가 없으면 활성 대포 정렬을 비우고 기존 대포는 정렬 리셋
-		ActiveAICannons.Empty();
-		for (ACannon* Cannon : AvailableCannons)
-		{
-			if (Cannon)
-			{
-				Cannon->SetAIAimRotation(0.f, 0.f);
-			}
-		}
-		return;
-	}
-
-	FVector TargetLoc = AITargetShip->GetActorLocation();
-
-	// 타겟 선박과의 거리 기준 정렬 (제곱 거리로 연산 최소화)
-	TArray<ACannon*> SortedCannons = MoveTemp(AvailableCannons);
-	SortedCannons.Sort([TargetLoc](const ACannon& A, const ACannon& B) {
-		float DistA = FVector::DistSquared(A.GetActorLocation(), TargetLoc);
-		float DistB = FVector::DistSquared(B.GetActorLocation(), TargetLoc);
-		return DistA < DistB;
-	});
-
-	ActiveAICannons.Empty();
-	const int32 CountToSelect = FMath::Clamp(MaxActiveCannons, 0, SortedCannons.Num());
-	for (int32 i = 0; i < CountToSelect; ++i)
-	{
-		ActiveAICannons.Add(SortedCannons[i]);
-	}
-
-	// 활성화되지 못한 나머지 대포들은 조준 초기화(정면 복귀)
-	for (ACannon* Cannon : MountedCannons)
-	{
-		if (Cannon && !ActiveAICannons.Contains(Cannon))
-		{
-			Cannon->SetAIAimRotation(0.f, 0.f);
+			Cannon->SetAIAimRotation(0.0f, 0.0f);
 		}
 	}
 }
 
-void AEnemyShip::TickAIAimingAndFiring(float DeltaTime)
+void AEnemyShip::OnRep_CrewDefeated()
 {
-	if (!AITargetShip || ActiveAICannons.Num() == 0)
-	{
-		return;
-	}
+	UpdateHelmInteractionAvailability();
+}
 
-	UWorld* World = GetWorld();
-	if (!World) return;
+void AEnemyShip::HandleCrewEnemyRemoved(ABaseEnemy* Enemy, EWaveEnemyRemoveReason Reason)
+{
+	EvaluateCrewControlState();
+}
 
-	const float Gravity = FMath::Abs(World->GetGravityZ());
-	if (Gravity <= 0.01f)
-	{
-		return; // 비정상 물리 상태 예외 처리
-	}
-
-	FVector TargetLoc = AITargetShip->GetActorLocation();
-
-	// 2. 활성 대포별로 각각 조준각 연산 및 발사 진행
-	for (ACannon* Cannon : ActiveAICannons)
-	{
-		if (!IsValid(Cannon)) continue;
-
-		const float ProjectileSpeed = Cannon->GetResolvedFiringStats().ProjectileSpeed;
-		if (ProjectileSpeed <= 10.0f)
-		{
-			Cannon->SetAIAimRotation(0.0f, 0.0f);
-			continue;
-		}
-
-		FVector StartLoc = Cannon->GetActorLocation();
-		FVector ToTarget = TargetLoc - StartLoc;
-
-		float HorizDist = FVector::Dist2D(StartLoc, TargetLoc);
-		float VertDist = ToTarget.Z;
-
-		// 3. 탄도학 투사 궤적 공식 대입 (해석학적 공식)
-		// Disc = v^4 - g * (g * x^2 + 2 * y * v^2)
-		float SpeedSq = ProjectileSpeed * ProjectileSpeed;
-		float Speed4 = SpeedSq * SpeedSq;
-		float Disc = Speed4 - Gravity * (Gravity * HorizDist * HorizDist + 2.f * VertDist * SpeedSq);
-
-		if (Disc < 0.f)
-		{
-			// 최대 사거리를 벗어난 경우 조준을 풀고 대기
-			Cannon->SetAIAimRotation(0.f, 0.f);
-			continue;
-		}
-
-		// 저각 탄도 계산
-		float PitchRad = FMath::Atan2(SpeedSq - FMath::Sqrt(Disc), Gravity * HorizDist);
-		// 월드 공간 발사 방향 벡터 생성
-		FVector HorizDir = FVector(ToTarget.X, ToTarget.Y, 0.f).GetSafeNormal();
-		FVector LaunchDir = HorizDir * FMath::Cos(PitchRad) + FVector(0.f, 0.f, FMath::Sin(PitchRad));
-
-		// 대포의 로컬 공간으로 변환하여 Yaw / Pitch 도출
-		FVector LocalLaunchDir = Cannon->GetActorTransform().InverseTransformVector(LaunchDir);
-		FRotator TargetRot = LocalLaunchDir.Rotation();
-
-		float TargetPitch = TargetRot.Pitch;
-		float TargetYaw = TargetRot.Yaw;
-
-		// 4. 180도 고개 돌림 방지 체크 (로컬 Yaw가 좌우 90도를 초과하면 조준 불가 상태 처리)
-		if (FMath::Abs(TargetYaw) > 90.f)
-		{
-			// 조준하지 않고 정면 정렬 대기
-			Cannon->SetAIAimRotation(0.f, 0.f);
-		}
-		else
-		{
-			// 조준 제어 적용
-			Cannon->SetAIAimRotation(TargetPitch, TargetYaw);
-
-			// 선회(Orbit) 또는 도망(Retreat) 상태 시 지속 발사
-			if (CurrentCombatState == ENavalCombatState::Orbit || CurrentCombatState == ENavalCombatState::Retreat)
-			{
-				Cannon->FireCannon();
-			}
-		}
-	}
+void AEnemyShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(AEnemyShip, bCrewDefeated);
+	DOREPLIFETIME(AEnemyShip, bDistanceOptimizationDormant);
 }

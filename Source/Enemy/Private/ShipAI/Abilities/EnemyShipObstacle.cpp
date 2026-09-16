@@ -54,22 +54,34 @@ void AEnemyShipObstacle::BeginPlay()
 {
 	Super::BeginPlay();
 
-	ObstacleCollision->SetSphereRadius(FMath::Max(1.0f, BuoyancyPontoonRadius));
-	ObstacleBlocker->SetBoxExtent(CollisionHalfExtent.ComponentMax(FVector(1.0f)));
+	// The Blueprint component templates are authoritative for the runtime collision
+	// shapes. Do not overwrite their authored Sphere Radius or Box Extent here.
 	ObstacleBlocker->SetCollisionProfileName(TEXT("EnemyShipObstacle"));
 	ObstacleBlocker->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	ObstacleCollision->OnComponentBeginOverlap.AddUniqueDynamic(this, &AEnemyShipObstacle::OnObstacleOverlap);
-	SWBuoyancyComponent->ConfigureSinglePontoon(FMath::Max(1.0f, BuoyancyPontoonRadius));
+	SWBuoyancyComponent->ConfigureSinglePontoon(
+		FMath::Max(1.0f, BuoyancyPontoonRadius));
 	SWBuoyancyComponent->Deactivate();
 	SWBuoyancyComponent->SetComponentTickEnabled(false);
 	ApplyPhysicsState();
 	SetLifeSpan(FMath::Max(0.0f, MaximumLifetimeSeconds));
+	if (ObstacleMesh)
+	{
+		InitialObstacleMeshRelativeTransform = ObstacleMesh->GetRelativeTransform();
+		ClientVisualLocation = ObstacleMesh->GetComponentLocation();
+		ClientVisualRotation = ObstacleMesh->GetComponentQuat();
+		bClientVisualInitialized = true;
+	}
 }
 
 void AEnemyShipObstacle::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (HasAuthority() || !bHasClientMovementTarget)
+	if (HasAuthority())
+	{
+		return;
+	}
+	if (!bHasClientMovementTarget)
 	{
 		return;
 	}
@@ -80,18 +92,37 @@ void AEnemyShipObstacle::Tick(float DeltaSeconds)
 	const FVector DesiredLocation = ClientMovementTargetLocation
 		+ ClientMovementTargetVelocity * FMath::Min(TimeSinceUpdate, ClientMaxExtrapolationTime);
 
-	if (FVector::DistSquared(GetActorLocation(), DesiredLocation) > FMath::Square(ClientNetworkSnapDistance))
-	{
-		SetActorLocationAndRotation(DesiredLocation, ClientMovementTargetRotation, false, nullptr, ETeleportType::TeleportPhysics);
-		return;
-	}
-
+	const bool bLargeCorrection = FVector::DistSquared(GetActorLocation(), DesiredLocation)
+		> FMath::Square(ClientNetworkSnapDistance);
+	// Keep the kinematic collision proxy on the authoritative/extrapolated pose.
+	// Only the non-colliding mesh is smoothed, so presentation latency cannot make
+	// the locally predicted ship collide with an obsolete obstacle position.
 	SetActorLocationAndRotation(
-		FMath::VInterpTo(GetActorLocation(), DesiredLocation, DeltaSeconds, ClientLocationInterpSpeed),
-		FMath::QInterpTo(GetActorQuat(), ClientMovementTargetRotation, DeltaSeconds, ClientRotationInterpSpeed),
+		DesiredLocation,
+		ClientMovementTargetRotation,
 		false,
 		nullptr,
 		ETeleportType::TeleportPhysics);
+
+	if (!ObstacleMesh)
+	{
+		return;
+	}
+	const FTransform DesiredVisualTransform = InitialObstacleMeshRelativeTransform * GetActorTransform();
+	if (!bClientVisualInitialized || bLargeCorrection)
+	{
+		ClientVisualLocation = DesiredVisualTransform.GetLocation();
+		ClientVisualRotation = DesiredVisualTransform.GetRotation();
+		bClientVisualInitialized = true;
+	}
+	else
+	{
+		ClientVisualLocation = FMath::VInterpTo(
+			ClientVisualLocation, DesiredVisualTransform.GetLocation(), DeltaSeconds, ClientLocationInterpSpeed);
+		ClientVisualRotation = FMath::QInterpTo(
+			ClientVisualRotation, DesiredVisualTransform.GetRotation(), DeltaSeconds, ClientRotationInterpSpeed);
+	}
+	ObstacleMesh->SetWorldLocationAndRotation(ClientVisualLocation, ClientVisualRotation);
 }
 
 void AEnemyShipObstacle::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -99,6 +130,32 @@ void AEnemyShipObstacle::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AEnemyShipObstacle, bHasEnteredWater);
 	DOREPLIFETIME(AEnemyShipObstacle, bBuoyancyEnabled);
+	DOREPLIFETIME(AEnemyShipObstacle, CannonballHitCount);
+}
+
+FVector AEnemyShipObstacle::GetAvoidanceHalfExtent() const
+{
+	return ObstacleBlocker
+		? ObstacleBlocker->GetScaledBoxExtent()
+		: CollisionHalfExtent * GetActorScale3D().GetAbs();
+}
+
+void AEnemyShipObstacle::ReceiveCannonballImpact_Implementation(AActor* CannonballActor)
+{
+	if (!HasAuthority() || !IsValid(CannonballActor) || ProcessedCannonballs.Contains(CannonballActor))
+	{
+		return;
+	}
+
+	ProcessedCannonballs.Add(CannonballActor);
+	++CannonballHitCount;
+	const int32 SafeMaximumHits = FMath::Max(1, MaxCannonballHits);
+	ForceNetUpdate();
+
+	if (CannonballHitCount >= SafeMaximumHits)
+	{
+		Destroy();
+	}
 }
 
 void AEnemyShipObstacle::OnRep_ReplicatedMovement()
@@ -150,6 +207,24 @@ void AEnemyShipObstacle::OnObstacleOverlap(
 	bHasEnteredWater = true;
 	ForceNetUpdate();
 	const float Delay = FMath::Max(0.0f, BuoyancyActivationDelaySeconds);
+	if (bLogInitialBuoyancyDiagnostics)
+	{
+		const float PontoonRadius = SWBuoyancyComponent && !SWBuoyancyComponent->GetPontoons().IsEmpty()
+			? SWBuoyancyComponent->GetPontoons()[0].Radius
+			: 0.0f;
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OBSTACLE-BUOYANCY][WATER_ENTRY] Actor=%s Time=%.3f Location=%s Velocity=%s Delay=%.3f MassKg=%.2f RootScale=%s SphereRadiusUnscaled=%.2f SphereRadiusScaled=%.2f PontoonRadius=%.2f"),
+			*GetName(),
+			GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0,
+			*GetActorLocation().ToCompactString(),
+			*ObstacleCollision->GetPhysicsLinearVelocity().ToCompactString(),
+			Delay,
+			ObstacleCollision->GetMass(),
+			*ObstacleCollision->GetComponentScale().ToCompactString(),
+			ObstacleCollision->GetUnscaledSphereRadius(),
+			ObstacleCollision->GetScaledSphereRadius(),
+			PontoonRadius);
+	}
 	if (Delay <= KINDA_SMALL_NUMBER)
 	{
 		EnableBuoyancy();
@@ -218,5 +293,15 @@ void AEnemyShipObstacle::EnableBuoyancy()
 	SWBuoyancyComponent->Activate();
 	SWBuoyancyComponent->SetComponentTickEnabled(true);
 	bBuoyancyEnabled = true;
+	if (bLogInitialBuoyancyDiagnostics && GetWorld())
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[OBSTACLE-BUOYANCY][ACTIVATED] Actor=%s Time=%.3f Location=%s Velocity=%s MassKg=%.2f"),
+			*GetName(),
+			GetWorld()->GetTimeSeconds(),
+			*GetActorLocation().ToCompactString(),
+			*ObstacleCollision->GetPhysicsLinearVelocity().ToCompactString(),
+			ObstacleCollision->GetMass());
+	}
 	ForceNetUpdate();
 }

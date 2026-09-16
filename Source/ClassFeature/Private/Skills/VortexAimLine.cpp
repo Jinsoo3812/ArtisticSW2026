@@ -23,6 +23,22 @@ AVortexAimLine::AVortexAimLine()
 
 void AVortexAimLine::SetTrajectory(const TArray<FVector>& WorldPoints)
 {
+	SetTrajectoryInternal(WorldPoints, nullptr, nullptr);
+}
+
+void AVortexAimLine::SetBallisticTrajectory(
+	const TArray<FVector>& WorldPoints,
+	const TArray<FVector>& WorldVelocities,
+	const TArray<float>& SampleTimes)
+{
+	SetTrajectoryInternal(WorldPoints, &WorldVelocities, &SampleTimes);
+}
+
+void AVortexAimLine::SetTrajectoryInternal(
+	const TArray<FVector>& WorldPoints,
+	const TArray<FVector>* WorldVelocities,
+	const TArray<float>* SampleTimes)
+{
 	if (!TrajectorySpline || !AimLineMesh || WorldPoints.Num() < 2)
 	{
 		if (!bLoggedConfiguration)
@@ -45,7 +61,9 @@ void AVortexAimLine::SetTrajectory(const TArray<FVector>& WorldPoints)
 	const int32 PointCount =
 		FMath::Min(SourcePointCount, FMath::Max(2, MaxSegments + 1));
 	TArray<FVector> LocalPoints;
+	TArray<FVector> LocalTangents;
 	LocalPoints.Reserve(PointCount);
+	LocalTangents.Reserve(PointCount);
 	const FTransform ActorTransform = GetActorTransform();
 	for (int32 PointIndex = 0; PointIndex < PointCount; ++PointIndex)
 	{
@@ -63,15 +81,49 @@ void AVortexAimLine::SetTrajectory(const TArray<FVector>& WorldPoints)
 		const FVector ResampledWorldPoint =
 			FMath::Lerp(WorldPoints[LowerIndex], WorldPoints[UpperIndex], Alpha);
 		LocalPoints.Add(ActorTransform.InverseTransformPosition(ResampledWorldPoint));
+		if (WorldVelocities && SampleTimes && WorldVelocities->Num() == SourcePointCount
+			&& SampleTimes->Num() == SourcePointCount)
+		{
+			const FVector ResampledVelocity = FMath::Lerp(
+				(*WorldVelocities)[LowerIndex], (*WorldVelocities)[UpperIndex], Alpha);
+			// Spline tangents are derivatives per input key. Convert cm/s using the
+			// source prediction's uniform time step represented by this resampled key.
+			const float LowerTime = (*SampleTimes)[LowerIndex];
+			const float UpperTime = (*SampleTimes)[UpperIndex];
+			const float SourceTime = FMath::Lerp(LowerTime, UpperTime, Alpha);
+			const float NextSourcePosition = FMath::Min(SourcePosition
+				+ static_cast<float>(SourcePointCount - 1) / static_cast<float>(PointCount - 1),
+				static_cast<float>(SourcePointCount - 1));
+			const int32 NextLower = FMath::FloorToInt(NextSourcePosition);
+			const int32 NextUpper = FMath::Min(NextLower + 1, SourcePointCount - 1);
+			const float NextAlpha = NextSourcePosition - static_cast<float>(NextLower);
+			const float NextTime = FMath::Lerp((*SampleTimes)[NextLower], (*SampleTimes)[NextUpper], NextAlpha);
+			const float KeyTimeStep = PointIndex + 1 < PointCount
+				? NextTime - SourceTime
+				: (LocalTangents.Num() > 0 ? 0.0f : 1.0f);
+			LocalTangents.Add(ActorTransform.InverseTransformVector(ResampledVelocity * KeyTimeStep));
+		}
+	}
+	if (LocalTangents.Num() == PointCount && PointCount > 1)
+	{
+		// Reuse the preceding key interval for the final derivative.
+		LocalTangents.Last() = ActorTransform.InverseTransformVector(
+			WorldVelocities->Last() * ((*SampleTimes).Last() - (*SampleTimes)[SourcePointCount - 2])
+			* static_cast<float>(SourcePointCount - 1) / static_cast<float>(PointCount - 1));
 	}
 
 	TrajectorySpline->SetSplinePoints(LocalPoints, ESplineCoordinateSpace::Local, false);
 	for (int32 PointIndex = 0; PointIndex < PointCount; ++PointIndex)
 	{
-		TrajectorySpline->SetSplinePointType(
-			PointIndex,
-			bSmoothTrajectory ? ESplinePointType::CurveClamped : ESplinePointType::Linear,
-			false);
+		const bool bHasBallisticTangents = LocalTangents.Num() == PointCount;
+		TrajectorySpline->SetSplinePointType(PointIndex,
+			bHasBallisticTangents ? ESplinePointType::CurveCustomTangent
+				: (bSmoothTrajectory ? ESplinePointType::CurveClamped : ESplinePointType::Linear), false);
+		if (bHasBallisticTangents)
+		{
+			TrajectorySpline->SetTangentAtSplinePoint(
+				PointIndex, LocalTangents[PointIndex], ESplineCoordinateSpace::Local, false);
+		}
 	}
 	TrajectorySpline->UpdateSpline();
 
@@ -95,7 +147,7 @@ void AVortexAimLine::SetTrajectory(const TArray<FVector>& WorldPoints)
 			SegmentIndex + 1, ESplineCoordinateSpace::Local);
 		FVector StartTangent;
 		FVector EndTangent;
-		if (bSmoothTrajectory)
+		if (LocalTangents.Num() == PointCount || bSmoothTrajectory)
 		{
 			StartTangent = TrajectorySpline->GetTangentAtSplinePoint(
 				SegmentIndex, ESplineCoordinateSpace::Local);

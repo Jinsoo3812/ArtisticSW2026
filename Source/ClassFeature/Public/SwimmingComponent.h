@@ -9,6 +9,7 @@ class ACharacter;
 class UCharacterMovementComponent;
 class UCapsuleComponent;
 class UWaterBodyComponent;
+class UPrimitiveComponent;
 
 UENUM(BlueprintType)
 enum class ECustomMovementMode : uint8
@@ -142,6 +143,10 @@ private:
 
 	// Initialize overlapping water bodies on startup
 	void InitializeOverlaps();
+	bool IsInsideCabinWaterCull(bool* bOutFeetInside = nullptr, bool* bOutCenterInside = nullptr) const;
+	void DrawCabinWaterCullDebug(bool bInsideCabin, bool bFeetInside, bool bCenterInside) const;
+	void TraceCabinWaterCull(bool bInsideCabin, bool bFeetInside, bool bCenterInside);
+	void ResetSwimmingStateInsideCabin();
 
 protected:
 	/** Deprecated absolute entry depth retained for existing assets; use SwimEntryCapsuleSubmersionRatio. */
@@ -268,8 +273,12 @@ private:
 	UPROPERTY(Transient)
 	TWeakObjectPtr<UWaterBodyComponent> LastActiveWaterBody;
 
+	bool bWasInsideCabinWaterCull = false;
+
 	UPROPERTY(Transient)
 	float LastLoggedTime = -1.0f;
+
+	float LastCabinSwimTraceTime = -1.0f;
 
 	UPROPERTY(Transient)
 	float WaterQueryFailureElapsed = 0.0f;

@@ -8,6 +8,7 @@
 #include "AbilitySystemComponent.h"
 #include "DrawDebugHelpers.h"
 #include "BasePlayer.h"
+#include "Storage/StorageInteractionDiagnostics.h"
 
 void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -19,6 +20,13 @@ void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get();
 	bool bIsLocallyControlled = ActorInfo->IsLocallyControlled();
 	bool bHasAuthority = HasAuthority(&ActivationInfo);
+	const bool bLogInteraction = IsStorageInteractionLoggingEnabled();
+	if (bLogInteraction)
+	{
+		UE_LOG(LogStorageInteraction, Warning,
+			TEXT("[Ability] Activated. Avatar=%s Local=%d Authority=%d ASC=%s"),
+			*GetNameSafe(ActorInfo->AvatarActor.Get()), bIsLocallyControlled, bHasAuthority, *GetNameSafe(ASC));
+	}
 
 	// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [%s] Started. LocallyControlled: %s"),
 	// 	bHasAuthority ? TEXT("SERVER") : TEXT("CLIENT"),
@@ -35,27 +43,49 @@ void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [CLIENT] Performing interact trace on player character: %s"),
 		// 	PlayerAvatar ? *PlayerAvatar->GetName() : TEXT("None"));
 
-		if (PlayerAvatar && PlayerAvatar->PerformInteractTrace(HitResults) && HitResults.Num() > 0)
+		const bool bTraceHit = PlayerAvatar && PlayerAvatar->PerformInteractTrace(HitResults);
+		if (bLogInteraction)
+		{
+			UE_LOG(LogStorageInteraction, Warning,
+				TEXT("[Trace] Player=%s SweepHit=%d HitCount=%d"),
+				*GetNameSafe(PlayerAvatar), bTraceHit, HitResults.Num());
+		}
+		if (bTraceHit && HitResults.Num() > 0)
 		{
 			FVector StartLoc = PlayerAvatar->GetActorLocation();
 			float ClosestDistanceSq = MAX_flt;
 			FHitResult BestHit;
 			bool bFoundValidHit = false;
 
-			// 반환된 모든 히트 결과를 순회하며 최단 거리 객체 판별
+			// Only real interaction components may receive target data. For initial
+			// overlaps, ImpactPoint is a penetration contact, not a useful measure
+			// of which nearby actor the player intended to interact with.
 			for (int32 Index = 0; Index < HitResults.Num(); ++Index)
 			{
 				const FHitResult& Hit = HitResults[Index];
+				const bool bInteractable = Cast<IInteractable>(Hit.GetComponent()) != nullptr;
+				const float SelectionDistanceSq = bInteractable && Hit.GetActor()
+					? FVector::DistSquared(StartLoc,
+						Hit.bStartPenetrating ? Hit.GetActor()->GetActorLocation() : FVector(Hit.ImpactPoint))
+					: MAX_flt;
+				if (bLogInteraction)
+				{
+					UE_LOG(LogStorageInteraction, Warning,
+						TEXT("[Trace] Hit[%d] Actor=%s Component=%s Interactable=%d Blocking=%d InitialOverlap=%d Distance=%.1f Impact=%s Location=%s SelectionDistanceSq=%.1f"),
+						Index, *GetNameSafe(Hit.GetActor()), *GetNameSafe(Hit.GetComponent()),
+						bInteractable, Hit.bBlockingHit,
+						Hit.bStartPenetrating, Hit.Distance,
+						*Hit.ImpactPoint.ToCompactString(), *Hit.Location.ToCompactString(), SelectionDistanceSq);
+				}
 				// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [CLIENT] Trace Hit [%d]: Actor: %s, Component: %s, ImpactPoint: %s"),
 				// 	Index,
 				// 	Hit.GetActor() ? *Hit.GetActor()->GetName() : TEXT("None"),
 				// 	Hit.GetComponent() ? *Hit.GetComponent()->GetName() : TEXT("None"),
 				// 	*Hit.ImpactPoint.ToString());
 				
-				float DistSq = FVector::DistSquared(StartLoc, Hit.ImpactPoint);
-				if (DistSq < ClosestDistanceSq)
+				if (SelectionDistanceSq < ClosestDistanceSq)
 				{
-					ClosestDistanceSq = DistSq;
+					ClosestDistanceSq = SelectionDistanceSq;
 					BestHit = Hit;
 					bFoundValidHit = true;
 				}
@@ -64,6 +94,13 @@ void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 			// 가장 가까운 객체 하나만 TargetData로 패키징
 			if (bFoundValidHit)
 			{
+				if (bLogInteraction)
+				{
+					UE_LOG(LogStorageInteraction, Warning,
+						TEXT("[Trace] Selected Actor=%s Component=%s Interactable=%d SelectionDistanceSq=%.1f"),
+						*GetNameSafe(BestHit.GetActor()), *GetNameSafe(BestHit.GetComponent()),
+						Cast<IInteractable>(BestHit.GetComponent()) != nullptr, ClosestDistanceSq);
+				}
 				// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [CLIENT] Best Hit chosen: Actor: %s, Component: %s, DistanceSq: %f"),
 				// 	BestHit.GetActor() ? *BestHit.GetActor()->GetName() : TEXT("None"),
 				// 	BestHit.GetComponent() ? *BestHit.GetComponent()->GetName() : TEXT("None"),
@@ -73,9 +110,14 @@ void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 				TargetData->HitResult = BestHit;
 				TargetDataHandle.Add(TargetData);
 			}
+			else if (bLogInteraction)
+			{
+				UE_LOG(LogStorageInteraction, Warning, TEXT("[Trace] No interactable component among sweep hits."));
+			}
 		}
 		else
 		{
+			if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Trace] No target data: player missing or sweep returned no hits."));
 			// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [CLIENT] PerformInteractTrace returned false or no hits. Avatar valid: %s, HitCount: %d"),
 			// 	PlayerAvatar ? TEXT("YES") : TEXT("NO"),
 			// 	HitResults.Num());
@@ -85,6 +127,7 @@ void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [CLIENT] Calling CallServerSetReplicatedTargetData. NumTargetData: %d"),
 		// 	TargetDataHandle.Num());
 
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Network] Sending target data. Count=%d"), TargetDataHandle.Num());
 		ASC->CallServerSetReplicatedTargetData(
 			Handle,
 			ActivationInfo.GetActivationPredictionKey(),
@@ -100,11 +143,13 @@ void UInteract::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		// Test 환경 (Statd alone)에서는 통신없이 즉시 처리
 		if (bIsLocallyControlled)
 		{
+			if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Network] Standalone/listen authority: process local target data."));
 			// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [SERVER] Standalone mode: directly processing interaction."));
 			ProcessInteract(TargetDataHandle);
 		}
 		else
 		{
+			if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Network] Authority waiting for client target data."));
 			// 실제 환경 (Dedicated) 에서는 클라이언트가 보낸 데이터를 기다려야 하므로 델리게이트 바인딩
 			// UE_LOG(LogTemp, Log, TEXT("UInteract::ActivateAbility - [SERVER] Dedicated mode: binding AbilityTargetDataSetDelegate. PredictionKey: %d"),
 			// 	ActivationInfo.GetActivationPredictionKey().Current);
@@ -168,6 +213,10 @@ void UInteract::PerformLocalTrace(FHitResult& OutHitResult)
 
 void UInteract::OnTargetDataReadyCallback(const FGameplayAbilityTargetDataHandle& InData, FGameplayTag ApplicationTag)
 {
+	if (IsStorageInteractionLoggingEnabled())
+	{
+		UE_LOG(LogStorageInteraction, Warning, TEXT("[Network] Server received client target data. Count=%d"), InData.Num());
+	}
 	UAbilitySystemComponent* ASC = CurrentActorInfo->AbilitySystemComponent.Get();
 
 	UE_LOG(LogTemp, Log, TEXT("UInteract::OnTargetDataReadyCallback - [SERVER] Received replicated target data from client. NumData: %d"),
@@ -182,6 +231,11 @@ void UInteract::OnTargetDataReadyCallback(const FGameplayAbilityTargetDataHandle
 void UInteract::ProcessInteract(const FGameplayAbilityTargetDataHandle& InData)
 {
 	bool bHasAuth = HasAuthority(&CurrentActivationInfo);
+	const bool bLogInteraction = IsStorageInteractionLoggingEnabled();
+	if (bLogInteraction)
+	{
+		UE_LOG(LogStorageInteraction, Warning, TEXT("[Server] Process target data. Authority=%d Count=%d"), bHasAuth, InData.Num());
+	}
 	UE_LOG(LogTemp, Log, TEXT("UInteract::ProcessInteract - [%s] Processing. NumData: %d"),
 		bHasAuth ? TEXT("SERVER") : TEXT("CLIENT"),
 		InData.Num());
@@ -200,14 +254,23 @@ void UInteract::ProcessInteract(const FGameplayAbilityTargetDataHandle& InData)
 
 			if (HitResult && HitResult->GetComponent() && Caster)
 			{
+				if (bLogInteraction)
+				{
+					UE_LOG(LogStorageInteraction, Warning,
+						TEXT("[Server] Target Actor=%s Component=%s Caster=%s Interactable=%d"),
+						*GetNameSafe(HitResult->GetActor()), *GetNameSafe(HitResult->GetComponent()),
+						*GetNameSafe(Caster), Cast<IInteractable>(HitResult->GetComponent()) != nullptr);
+				}
 				UE_LOG(LogTemp, Log, TEXT("UInteract::ProcessInteract - [SERVER] Hit Actor: %s, Hit Component: %s"),
 					HitResult->GetActor() ? *HitResult->GetActor()->GetName() : TEXT("None"),
 					*HitResult->GetComponent()->GetName());
 
 				if (IInteractable* InteractableComp = Cast<IInteractable>(HitResult->GetComponent())) {
+					if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Server] Calling Interact on %s."), *GetNameSafe(HitResult->GetComponent()));
 					// 상호작용 대상의 자체 로직 수행
 					UE_LOG(LogTemp, Log, TEXT("UInteract::ProcessInteract - [SERVER] Invoking Interact on component."));
 					InteractableComp->Interact(Caster);
+					if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Server] Interact returned. Tag=%s"), *InteractableComp->GetInteractionTag().ToString());
 
 					// 상호작용 종류 식별 Tag
 					FGameplayTag TargetTag = InteractableComp->GetInteractionTag();
@@ -241,19 +304,26 @@ void UInteract::ProcessInteract(const FGameplayAbilityTargetDataHandle& InData)
 				}
 				else
 				{
+					if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Server] Rejected: selected component does not implement IInteractable."));
 					UE_LOG(LogTemp, Warning, TEXT("UInteract::ProcessInteract - [SERVER] Hit Component does not implement IInteractable! Component: %s"),
 						*HitResult->GetComponent()->GetName());
 				}
 			}
 			else if (HitResult)
 			{
+				if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Server] Rejected: missing hit component or caster."));
 				UE_LOG(LogTemp, Warning, TEXT("UInteract::ProcessInteract - [SERVER] Component or Caster is null. Component: %s, Caster: %s"),
 					HitResult->GetComponent() ? TEXT("Valid") : TEXT("Null"),
 					Caster ? TEXT("Valid") : TEXT("Null"));
 			}
+			else if (bLogInteraction)
+			{
+				UE_LOG(LogStorageInteraction, Warning, TEXT("[Server] Rejected: target data contains no hit result."));
+			}
 		}
 		else
 		{
+			if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Server] Rejected: target data is empty."));
 			UE_LOG(LogTemp, Warning, TEXT("UInteract::ProcessInteract - [SERVER] InData.Data does not have valid index 0."));
 		}
 	}

@@ -63,6 +63,7 @@ public:
 	void InitializeWaypoints();
 	void InitializePool();
 	void CancelDeployment();
+	void ResetForNewEncounter();
 	void Shutdown();
 
 	bool RequestDeployment(AShip* TriggeringPlayerShip, AActor* InitialCombatTarget = nullptr);
@@ -72,6 +73,11 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Deck Enemy Spawner")
 	int32 GetPooledEnemyCount() const { return EnemyPool.Num(); }
+
+	/** Number of pooled enemies that have not died, including enemies awaiting deployment. */
+	UFUNCTION(BlueprintPure, Category = "Deck Enemy Spawner")
+	int32 GetLivingPooledEnemyCount() const;
+	void GetPooledEnemies(TArray<ADeckEnemy*>& OutEnemies) const;
 
 	/** Number of deployed enemies that have not reported death yet. Authority-owned state. */
 	UFUNCTION(BlueprintPure, Category = "Deck Enemy Spawner")

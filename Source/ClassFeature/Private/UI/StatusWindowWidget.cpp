@@ -251,7 +251,6 @@ void UStatusWindowWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
-		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
 		CachedPlayer->OnQuickSlotsChanged.RemoveAll(this);
 		if (UInventoryComponent* OldInventory = CachedPlayer->GetInventoryComponent())
 		{
@@ -264,7 +263,6 @@ void UStatusWindowWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.AddUObject(this, &UStatusWindowWidget::BindPlayerAttributes);
-		CachedPlayer->OnItemSlotsChanged.AddUObject(this, &UStatusWindowWidget::RefreshQuickSlots);
 		CachedPlayer->OnQuickSlotsChanged.AddUObject(this, &UStatusWindowWidget::RefreshQuickSlots);
 		if (UInventoryComponent* Inventory = CachedPlayer->GetInventoryComponent())
 		{
@@ -499,7 +497,6 @@ void UStatusWindowWidget::NativeDestruct()
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
-		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
 		CachedPlayer->OnQuickSlotsChanged.RemoveAll(this);
 		if (UInventoryComponent* Inventory = CachedPlayer->GetInventoryComponent())
 		{

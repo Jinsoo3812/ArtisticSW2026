@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Chaos/SimCallbackObject.h"
@@ -6,17 +6,33 @@
 #include "Physics/NetworkPhysicsComponent.h"
 #include "GerstnerWaterWaves.h"
 #include "Water/SWRippleTypes.h"
+#include "Water/SWBuoyancyTypes.h"
 #include "SWShipWakeTypes.h"
 #include "Ship.h"
 
 struct FAsyncInputShip : public Chaos::FSimCallbackInput
 {
+	FAsyncInputShip()
+	{
+		// Preserve the pre-ForceSettings fallback values until the game thread
+		// supplies the authoritative component settings.
+		BuoyancyForceSettings.BuoyancyCoefficient = 1.2f;
+		BuoyancyForceSettings.DeepWaterBuoyancyMultiplier = 1.0f;
+		BuoyancyForceSettings.BuoyancyDamp = 3.0f;
+		BuoyancyForceSettings.BuoyancyDamp2 = 0.1f;
+		BuoyancyForceSettings.MaxBuoyantForce = 5000000.0f;
+	}
+
 	float MovementInput = 0.0f;
 	float SteeringInput = 0.0f;
 	FVector ExternalAcceleration = FVector::ZeroVector;
+	FVector BlastAcceleration = FVector::ZeroVector;
+	FVector BlastApplicationPointLocal = FVector::ZeroVector;
 	bool bHasLocalController = false;
 	/** Server-authored gameplay force (vortex, knockback, etc.) may affect AI ships too. */
 	bool bApplyAuthoritativeExternalAcceleration = false;
+	/** Only authority injects new blast state; replay uses FNetInputShip history. */
+	bool bApplyAuthoritativeBlast = false;
 	/** Only authority writes the game-thread buoyancy state into Network Physics history. */
 	bool bApplyAuthoritativeBuoyancyState = false;
 	bool bBuoyancyEnabled = true;
@@ -37,10 +53,17 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	float TurnTorqueMultiplier = 1.0f;
 
 	float BuoyancyRadius = 100.f;
-	float BuoyancyForceMultiplier = 1.2f;
-	float WaterDamping = 3.0f;
-	float WaterDamping2 = 0.1f;
-	float MaxBuoyantForce = 5000000.0f;
+	/**
+	 * Static force settings are marshalled as one value so every peer caches the
+	 * exact same solve parameters for normal prediction and rewind/resimulation.
+	 */
+	FSWBuoyancyForceSettings BuoyancyForceSettings;
+	bool bEnableRollStabilization = false;
+	float RollStabilizationSoftLimitDegrees = 20.0f;
+	float RollStabilizationMaximumAngleDegrees = 30.0f;
+	float RollStabilizationNaturalFrequencyHz = 0.5f;
+	float RollStabilizationDampingRatio = 1.0f;
+	float RollStabilizationMaximumAngularAccelerationDegrees = 720.0f;
 
 	double ServerPhysicsTimeOrigin = -1.0;
 	float ServerPhysicsStepSeconds = 0.0f;
@@ -50,13 +73,23 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 	float ResimLocationThreshold = 5.0f;
 	float ResimRotationThreshold = 5.0f;
 
+	bool bIsAnchorDropped = false;
+	FVector2D AnchorOriginXY = FVector2D::ZeroVector;
+	float AnchorStiffness = 1000000.0f;
+	float AnchorDamping = 80000.0f;
+	float AnchorSlackRadius = 0.0f;
+	float MaxAnchorForce = 10000000.0f;
+
 	void Reset()
 	{
 		MovementInput = 0.0f;
 		SteeringInput = 0.0f;
 		ExternalAcceleration = FVector::ZeroVector;
+		BlastAcceleration = FVector::ZeroVector;
+		BlastApplicationPointLocal = FVector::ZeroVector;
 		bHasLocalController = false;
 		bApplyAuthoritativeExternalAcceleration = false;
+		bApplyAuthoritativeBlast = false;
 		bApplyAuthoritativeBuoyancyState = false;
 		bBuoyancyEnabled = true;
 		bQueryDiagnostics = false;
@@ -72,6 +105,18 @@ struct FAsyncInputShip : public Chaos::FSimCallbackInput
 		bNetworkPhysicsTickOffsetAssigned = false;
 		ResimLocationThreshold = 5.0f;
 		ResimRotationThreshold = 5.0f;
+		bIsAnchorDropped = false;
+		AnchorOriginXY = FVector2D::ZeroVector;
+		AnchorStiffness = 1000000.0f;
+		AnchorDamping = 80000.0f;
+		AnchorSlackRadius = 0.0f;
+		MaxAnchorForce = 10000000.0f;
+		bEnableRollStabilization = false;
+		RollStabilizationSoftLimitDegrees = 20.0f;
+		RollStabilizationMaximumAngleDegrees = 30.0f;
+		RollStabilizationNaturalFrequencyHz = 0.5f;
+		RollStabilizationDampingRatio = 1.0f;
+		RollStabilizationMaximumAngularAccelerationDegrees = 720.0f;
 	}
 };
 
@@ -129,9 +174,13 @@ private:
 	float MovementInput_Internal = 0.0f;
 	float SteeringInput_Internal = 0.0f;
 	FVector ExternalAcceleration_Internal = FVector::ZeroVector;
+	FVector BlastAcceleration_Internal = FVector::ZeroVector;
+	FVector BlastApplicationPointLocal_Internal = FVector::ZeroVector;
 	bool bBuoyancyEnabled_Internal = true;
 	bool bAuthoritativeBuoyancyWriter_Internal = false;
 	bool bQueryDiagnostics_Internal = false;
+	bool bAnchorDropped_Internal = false;
+	FVector2D CachedAnchorOriginXY = FVector2D::ZeroVector;
 
 	// 물리 스레드에서 고정 보관할 데이터들 (최초 전송 시 캐싱)
 	TArray<FVector> CachedPontoonOffsets;
@@ -148,10 +197,18 @@ private:
 	float CachedForwardPropulsionMultiplier = 1.0f;
 	float CachedTurnTorqueMultiplier = 1.0f;
 	float CachedBuoyancyRadius = 100.f;
-	float CachedBuoyancyForceMultiplier = 1.2f;
-	float CachedWaterDamping = 3.0f;
-	float CachedWaterDamping2 = 0.1f;
-	float CachedMaxBuoyantForce = 5000000.0f;
+	FSWBuoyancyForceSettings CachedBuoyancyForceSettings;
+	bool bCachedRollStabilizationEnabled = false;
+	float CachedRollStabilizationSoftLimitDegrees = 20.0f;
+	float CachedRollStabilizationMaximumAngleDegrees = 30.0f;
+	float CachedRollStabilizationNaturalFrequencyHz = 0.5f;
+	float CachedRollStabilizationDampingRatio = 1.0f;
+	float CachedRollStabilizationMaximumAngularAccelerationDegrees = 720.0f;
+
+	float CachedAnchorStiffness = 1000000.0f;
+	float CachedAnchorDamping = 80000.0f;
+	float CachedAnchorSlackRadius = 0.0f;
+	float CachedMaxAnchorForce = 10000000.0f;
 
 	// Authoritative server-frame clock used in normal simulation and rewind.
 	double CachedServerPhysicsTimeOrigin = -1.0;
@@ -162,5 +219,4 @@ private:
 	// 에디터 연동 롤백 오차 임계값 캐시
 	float CachedResimLocationThreshold = 5.f;
 	float CachedResimRotationThreshold = 5.f;
-
 };

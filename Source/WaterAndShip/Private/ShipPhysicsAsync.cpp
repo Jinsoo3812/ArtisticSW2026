@@ -1,4 +1,5 @@
 #include "ShipPhysicsAsync.h"
+#include "ShipRollStabilization.h"
 #include "Chaos/PhysicsObjectInternalInterface.h"
 #include "PBDRigidsSolver.h"
 #include "Chaos/ParticleHandle.h"
@@ -106,6 +107,13 @@ namespace
 
 FShipPhysicsAsync::FShipPhysicsAsync()
 {
+	// Preserve the previous PT cache defaults until the first non-resim GT input
+	// supplies the component-owned force settings.
+	CachedBuoyancyForceSettings.BuoyancyCoefficient = 1.2f;
+	CachedBuoyancyForceSettings.DeepWaterBuoyancyMultiplier = 1.0f;
+	CachedBuoyancyForceSettings.BuoyancyDamp = 3.0f;
+	CachedBuoyancyForceSettings.BuoyancyDamp2 = 0.1f;
+	CachedBuoyancyForceSettings.MaxBuoyantForce = 5000000.0f;
 }
 
 FShipPhysicsAsync::~FShipPhysicsAsync()
@@ -114,18 +122,12 @@ FShipPhysicsAsync::~FShipPhysicsAsync()
 
 void FShipPhysicsAsync::OnPostInitialize_Internal()
 {
-	/* Network Physics PT initialization diagnostic log disabled after validation.
-	UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] OnPostInitialize_Internal - Started. PhysicsObject: %s"), PhysicsObject ? TEXT("Valid") : TEXT("Null"));
-	*/
 	if (PhysicsObject)
 	{
 		Chaos::FWritePhysicsObjectInterface_Internal Interface = Chaos::FPhysicsObjectInternalInterface::GetWrite();
 		if (Chaos::FPBDRigidParticleHandle* ParticleHandle = Interface.GetRigidParticle(PhysicsObject))
 		{
 			ParticleHandle->SetSleepType(Chaos::ESleepType::NeverSleep);
-			/* Network Physics PT initialization diagnostic log disabled after validation.
-			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] OnPostInitialize_Internal - Set SleepType to NeverSleep. ParticleHandle: %s"), ParticleHandle ? TEXT("Valid") : TEXT("Null"));
-			*/
 		}
 	}
 }
@@ -143,16 +145,12 @@ void FShipPhysicsAsync::BuildInput_Internal(FNetInputShip& Input) const
 	Input.MovementInput = MovementInput_Internal;
 	Input.SteeringInput = SteeringInput_Internal;
 	Input.ExternalAcceleration = ExternalAcceleration_Internal;
+	Input.BlastAcceleration = BlastAcceleration_Internal;
+	Input.BlastApplicationPointLocal = BlastApplicationPointLocal_Internal;
 	Input.bBuoyancyEnabled = bBuoyancyEnabled_Internal;
 	Input.bHasAuthoritativeBuoyancyState = bAuthoritativeBuoyancyWriter_Internal;
-
-	/* Network Physics input build diagnostic log disabled after validation.
-	if (CurrentPhysicsStep % 60 == 0)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] BuildInput_Internal - Step: %d | Move: %.2f | Steer: %.2f"), 
-			CurrentPhysicsStep, Input.MovementInput, Input.SteeringInput);
-	}
-	*/
+	Input.bIsAnchorDropped = bAnchorDropped_Internal;
+	Input.AnchorOriginXY = CachedAnchorOriginXY;
 }
 
 void FShipPhysicsAsync::ApplyInput_Internal(const FNetInputShip& Input)
@@ -160,32 +158,38 @@ void FShipPhysicsAsync::ApplyInput_Internal(const FNetInputShip& Input)
 	MovementInput_Internal = Input.MovementInput;
 	SteeringInput_Internal = Input.SteeringInput;
 	ExternalAcceleration_Internal = Input.ExternalAcceleration;
+	BlastAcceleration_Internal = Input.BlastAcceleration;
+	BlastApplicationPointLocal_Internal = Input.BlastApplicationPointLocal;
 	if (Input.bHasAuthoritativeBuoyancyState)
 	{
 		bBuoyancyEnabled_Internal = Input.bBuoyancyEnabled;
 	}
-
-	/* Network Physics input apply diagnostic logs disabled after validation.
-	if (CurrentPhysicsStep % 60 == 0)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] ApplyInput_Internal - Step: %d | ServerFrame: %d | LocalFrame: %d | Move: %.2f | Steer: %.2f"),
-			CurrentPhysicsStep, Input.ServerFrame, Input.LocalFrame, Input.MovementInput, Input.SteeringInput);
-		UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT-APPLY] Control-only rewind input | CachedWaves: %d | CachedPontoons: %d | CachedRadius: %.1f"),
-			CachedGerstnerWaves.Num(), CachedPontoonOffsets.Num(), CachedBuoyancyRadius);
-	}
-	*/
+	bAnchorDropped_Internal = Input.bIsAnchorDropped;
+	CachedAnchorOriginXY = Input.AnchorOriginXY;
 }
 
 void FShipPhysicsAsync::ValidateInput_Internal(FNetInputShip& Input) const
 {
 	Input.MovementInput = FMath::Clamp(Input.MovementInput, -1.f, 1.f);
 	Input.SteeringInput = FMath::Clamp(Input.SteeringInput, -1.f, 1.f);
+	if (Input.bIsAnchorDropped)
+	{
+		Input.MovementInput = 0.0f;
+		Input.SteeringInput = 0.0f;
+	}
 	if (Input.ExternalAcceleration.ContainsNaN())
 	{
 		Input.ExternalAcceleration = FVector::ZeroVector;
 	}
 	Input.ExternalAcceleration.Z = 0.0f;
 	Input.ExternalAcceleration = Input.ExternalAcceleration.GetClampedToMaxSize(5000.f);
+	if (Input.BlastAcceleration.ContainsNaN() || Input.BlastApplicationPointLocal.ContainsNaN())
+	{
+		Input.BlastAcceleration = FVector::ZeroVector;
+		Input.BlastApplicationPointLocal = FVector::ZeroVector;
+	}
+	Input.BlastAcceleration = Input.BlastAcceleration.GetClampedToMaxSize(20000.0f);
+	Input.BlastApplicationPointLocal = Input.BlastApplicationPointLocal.GetClampedToMaxSize(16000.0f);
 }
 
 void FShipPhysicsAsync::BuildState_Internal(FNetStatePhysicsShip& State) const
@@ -201,15 +205,6 @@ void FShipPhysicsAsync::BuildState_Internal(FNetStatePhysicsShip& State) const
 			State.AngularVelocity = ParticleHandle->GetW();
 			State.LocationThresholdSq = FMath::Square(CachedResimLocationThreshold);
 			State.RotationThresholdRad = FMath::DegreesToRadians(CachedResimRotationThreshold);
-
-			/* Network Physics state build diagnostic log disabled after validation.
-			// 60틱마다 서버 측 물리 상태 복제 전송 데이터 진단 출력
-			if (CurrentPhysicsStep % 60 == 0)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT-STATE-BUILD] Step: %d | ServerFrame: %d | LocalFrame: %d | Pos: %s | Vel: %s"),
-					CurrentPhysicsStep, State.ServerFrame, State.LocalFrame, *State.Position.ToString(), *State.LinearVelocity.ToString());
-			}
-			*/
 		}
 	}
 }
@@ -221,17 +216,6 @@ void FShipPhysicsAsync::ApplyState_Internal(const FNetStatePhysicsShip& State)
 		Chaos::FWritePhysicsObjectInterface_Internal Interface = Chaos::FPhysicsObjectInternalInterface::GetWrite();
 		if (Chaos::FPBDRigidParticleHandle* ParticleHandle = Interface.GetRigidParticle(PhysicsObject))
 		{
-			/* Network Physics state apply diagnostic log disabled after validation.
-			// 물리 롤백 수신 및 강제 롤백 적용 시 실시간 데이터 출력 (필터 해제하여 모든 롤백 실측)
-			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT-CL-APPLY] ApplyState - Step: %d | ServerFrame: %d | LocalFrame: %d | RecvPos: %s | RecvVel: %s | CurPos: %s"),
-				CurrentPhysicsStep,
-				State.ServerFrame,
-				State.LocalFrame,
-				*State.Position.ToString(),
-				*State.LinearVelocity.ToString(),
-				*ParticleHandle->GetX().ToString());
-			*/
-
 			ParticleHandle->SetX(State.Position);
 			ParticleHandle->SetR(State.Rotation);
 			ParticleHandle->SetP(State.Position);
@@ -253,33 +237,39 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 		if (!bIsResimming)
 		{
 			const FAsyncInputShip* AsyncInput = GetConsumerInput_Internal();
-			/*if (CurrentPhysicsStep % 60 == 0)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] ProcessInputs_Internal - Step: %d | AsyncInput: %s"), 
-					CurrentPhysicsStep, AsyncInput ? TEXT("Valid") : TEXT("Null"));
-			}*/
-
 			if (AsyncInput)
 			{
 				bQueryDiagnostics_Internal = AsyncInput->bQueryDiagnostics;
 				// 로컬 컨트롤러가 있는 피어(로컬 조종사)만 WASD 조종력을 직접 덮어씀.
 				// 서버 및 다른 관망 클라이언트는 네트워크 입력 패킷(ApplyInput_Internal)으로 수신된 조종력을 그대로 보존.
-					if (AsyncInput->bHasLocalController)
-					{
-						MovementInput_Internal = AsyncInput->MovementInput;
-						SteeringInput_Internal = AsyncInput->SteeringInput;
-					}
-					// Gameplay-authored forces are authoritative and must also
-					// reach server-controlled AI ships, which have no local controller.
-					if (AsyncInput->bApplyAuthoritativeExternalAcceleration)
-					{
-						ExternalAcceleration_Internal = AsyncInput->ExternalAcceleration;
-					}
-					if (AsyncInput->bApplyAuthoritativeBuoyancyState)
-					{
-						bBuoyancyEnabled_Internal = AsyncInput->bBuoyancyEnabled;
-						bAuthoritativeBuoyancyWriter_Internal = true;
-					}
+				if (AsyncInput->bHasLocalController)
+				{
+					MovementInput_Internal = AsyncInput->MovementInput;
+					SteeringInput_Internal = AsyncInput->SteeringInput;
+				}
+				// Gameplay-authored forces are authoritative and must also
+				// reach server-controlled AI ships, which have no local controller.
+				if (AsyncInput->bApplyAuthoritativeExternalAcceleration)
+				{
+					ExternalAcceleration_Internal = AsyncInput->ExternalAcceleration;
+				}
+				if (AsyncInput->bApplyAuthoritativeBlast)
+				{
+					BlastAcceleration_Internal = AsyncInput->BlastAcceleration;
+					BlastApplicationPointLocal_Internal = AsyncInput->BlastApplicationPointLocal;
+				}
+				if (AsyncInput->bApplyAuthoritativeBuoyancyState)
+				{
+					bBuoyancyEnabled_Internal = AsyncInput->bBuoyancyEnabled;
+					bAuthoritativeBuoyancyWriter_Internal = true;
+				}
+
+				bAnchorDropped_Internal = AsyncInput->bIsAnchorDropped;
+				CachedAnchorOriginXY = AsyncInput->AnchorOriginXY;
+				CachedAnchorStiffness = AsyncInput->AnchorStiffness;
+				CachedAnchorDamping = AsyncInput->AnchorDamping;
+				CachedAnchorSlackRadius = AsyncInput->AnchorSlackRadius;
+				CachedMaxAnchorForce = AsyncInput->MaxAnchorForce;
 
 				// 최초 마샬링 시에만 필요한 폰툰 및 파도 설정 캐싱
 				if (AsyncInput->PontoonOffsets.Num() > 0)
@@ -301,19 +291,8 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 				}
 				if (AsyncInput->bNetworkPhysicsTickOffsetAssigned)
 				{
-					/* Network Physics tick-offset diagnostic log disabled after validation.
-					const bool bWasAssigned = bHasNetworkPhysicsTickOffset;
-					*/
 					CachedNetworkPhysicsTickOffset = AsyncInput->NetworkPhysicsTickOffset;
 					bHasNetworkPhysicsTickOffset = true;
-					/* Network Physics tick-offset diagnostic log disabled after validation.
-					if (!bWasAssigned)
-					{
-						UE_LOG(LogTemp, Warning, TEXT("[NETPHYS-OFFSET] PT accepted synchronized tick offset at LocalStep=%d Offset=%d"),
-							CurrentPhysicsStep,
-							CachedNetworkPhysicsTickOffset);
-					}
-					*/
 				}
 				CachedGravityZ = AsyncInput->GravityZ;
 				CachedLateralDrag = AsyncInput->LateralDrag;
@@ -322,10 +301,14 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 				CachedForwardPropulsionMultiplier = AsyncInput->ForwardPropulsionMultiplier;
 				CachedTurnTorqueMultiplier = AsyncInput->TurnTorqueMultiplier;
 				CachedBuoyancyRadius = AsyncInput->BuoyancyRadius;
-				CachedBuoyancyForceMultiplier = AsyncInput->BuoyancyForceMultiplier;
-				CachedWaterDamping = AsyncInput->WaterDamping;
-				CachedWaterDamping2 = AsyncInput->WaterDamping2;
-				CachedMaxBuoyantForce = AsyncInput->MaxBuoyantForce;
+				CachedBuoyancyForceSettings = AsyncInput->BuoyancyForceSettings;
+				bCachedRollStabilizationEnabled = AsyncInput->bEnableRollStabilization;
+				CachedRollStabilizationSoftLimitDegrees = AsyncInput->RollStabilizationSoftLimitDegrees;
+				CachedRollStabilizationMaximumAngleDegrees = AsyncInput->RollStabilizationMaximumAngleDegrees;
+				CachedRollStabilizationNaturalFrequencyHz = AsyncInput->RollStabilizationNaturalFrequencyHz;
+				CachedRollStabilizationDampingRatio = AsyncInput->RollStabilizationDampingRatio;
+				CachedRollStabilizationMaximumAngularAccelerationDegrees =
+					AsyncInput->RollStabilizationMaximumAngularAccelerationDegrees;
 				CachedResimLocationThreshold = AsyncInput->ResimLocationThreshold;
 				CachedResimRotationThreshold = AsyncInput->ResimRotationThreshold;
 			}
@@ -335,10 +318,6 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 	// 안전장치: PhysicsObject 유효성 검사 최우선 배치로 레이스 컨디션 차단
 	if (!PhysicsObject)
 	{
-		/*if (CurrentPhysicsStep % 60 == 0)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] ProcessInputs_Internal - Step: %d | PhysicsObject: Null (Skip Simulation)"), CurrentPhysicsStep);
-		}*/
 		return;
 	}
 
@@ -346,27 +325,12 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 	Chaos::FPBDRigidParticleHandle* ParticleHandle = Interface.GetRigidParticle(PhysicsObject);
 	if (!ParticleHandle)
 	{
-		/*if (CurrentPhysicsStep % 60 == 0)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] ProcessInputs_Internal - Step: %d | ParticleHandle is NULL!"), CurrentPhysicsStep);
-		}*/
 		return;
 	}
 	if (ParticleHandle->Disabled())
 	{
-		/*if (CurrentPhysicsStep % 60 == 0)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] ProcessInputs_Internal - Step: %d | ParticleHandle is DISABLED!"), CurrentPhysicsStep);
-		}*/
 		return;
 	}
-
-	// 60틱 주기 정밀 상태 모니터링 로그
-	/*if (CurrentPhysicsStep % 60 == 0)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] ProcessInputs_Internal - Step: %d | PhysicsObject: Valid | IsSleeping: %s | IsResimming: %s"), 
-			CurrentPhysicsStep, ParticleHandle->Sleeping() ? TEXT("True") : TEXT("False"), bIsResimming ? TEXT("True") : TEXT("False"));
-	}*/
 
 	// 잠자기 방지 설정
 	ParticleHandle->SetSleepType(Chaos::ESleepType::NeverSleep);
@@ -380,37 +344,8 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 
 	if (!bStaticDataReady)
 	{
-		/* Network Physics static-data readiness diagnostic log disabled after validation.
-		if (CurrentPhysicsStep % 60 == 0)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT-WAITING] Step=%d Pontoons=%d Waves=%d Clock=%s Dt=%.6f FrameOffset=%s"),
-				CurrentPhysicsStep,
-				CachedPontoonOffsets.Num(),
-				CachedGerstnerWaves.Num(),
-				CachedServerPhysicsTimeOrigin >= 0.0 ? TEXT("Ready") : TEXT("Missing"),
-				CachedServerPhysicsStepSeconds,
-				bHasNetworkPhysicsTickOffset ? TEXT("Ready") : TEXT("Missing"));
-		}
-		*/
 		return;
 	}
-
-	/* Network Physics parameter diagnostic log disabled after validation.
-	// 서버-클라이언트 간의 실시간 물리/파도 파라미터 Desync 정밀 진단 로그
-	if (CurrentPhysicsStep % 60 == 0)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT-PARAMS] Step: %d | IsResim: %s | Waves: %d | Pontoons: %d | Radius: %.2f | Multiplier: %.2f | Damp: %.2f | Damp2: %.2f | MaxForce: %.2f"),
-			CurrentPhysicsStep,
-			bIsResimming ? TEXT("True") : TEXT("False"),
-			CachedGerstnerWaves.Num(),
-			CachedPontoonOffsets.Num(),
-			CachedBuoyancyRadius,
-			CachedBuoyancyForceMultiplier,
-			CachedWaterDamping,
-			CachedWaterDamping2,
-			CachedMaxBuoyantForce);
-	}
-	*/
 
 	// One authoritative mapping drives both normal simulation and rewind.
 	const int32 CurrentServerPhysicsFrame = CurrentPhysicsStep + CachedNetworkPhysicsTickOffset;
@@ -425,18 +360,6 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 	FVector TotalBuoyancyTorque = FVector::ZeroVector;
 	FVector AppliedControlForce = FVector::ZeroVector;
 	FVector AppliedControlTorque = FVector::ZeroVector;
-	/* Network Physics detailed pontoon diagnostic values disabled after validation.
-	FVector FirstPontoonWorldPosition = FVector::ZeroVector;
-	float FirstPontoonWaveHeight = 0.0f;
-	float FirstPontoonDepth = 0.0f;
-	float FirstPontoonForceZ = 0.0f;
-	*/
-
-	/*if (bIsResimming)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] RESIMULATE TICK - Step: %d | SimTime: %.4f | Loc: %s"), 
-			CurrentPhysicsStep, SimTime, *ActorLocation.ToString());
-	}*/
 
 	// 2. 가로축 수력 드래그 (Lateral Hydrodynamic Drag) 계산 및 적용
 	if (CachedLateralDrag > 0.0f)
@@ -477,17 +400,6 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 				Output.PTWaveHeight = WaveHeightZ;
 			}
 
-			// 물에 잠긴 깊이 계산
-			float Depth = WaveHeightZ - PontoonWorldPos.Z;
-
-			/* Network Physics pontoon diagnostic log disabled after validation.
-			if (CurrentPhysicsStep % 60 == 0)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT-PONTOON] Step: %d | WorldZ: %.2f | WaveZ: %.2f | Depth: %.2f"),
-					CurrentPhysicsStep, PontoonWorldPos.Z, WaveHeightZ, Depth);
-			}
-			*/
-
 			const FVector PontoonVelocity = ParticleHandle->GetV()
 				+ FVector::CrossProduct(ParticleHandle->GetW(), PontoonWorldPos - ActorLocation);
 			FSWBuoyancySolveInput SolveInput;
@@ -498,64 +410,76 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 			SolveInput.ForceScale = CachedPontoonForceScales.IsValidIndex(PontoonIndex)
 				? CachedPontoonForceScales[PontoonIndex]
 				: 1.0f;
-			FSWBuoyancyForceSettings SolveSettings;
-			SolveSettings.BuoyancyCoefficient = CachedBuoyancyForceMultiplier;
-			SolveSettings.BuoyancyDamp = CachedWaterDamping;
-			SolveSettings.BuoyancyDamp2 = CachedWaterDamping2;
-			SolveSettings.MaxBuoyantForce = CachedMaxBuoyantForce;
 			const FSWBuoyancySolveResult SolveResult =
-				FSWBuoyancyMath::SolvePontoon(SolveInput, SolveSettings);
+				FSWBuoyancyMath::SolvePontoon(SolveInput, CachedBuoyancyForceSettings);
 			const float PontoonForceZ = SolveResult.BuoyantForceZ;
 
 			if (PontoonForceZ > 0.0f)
 			{
-				// 구체 폰툰 체적 적분 계산 (Spherical Cap Volume)
-
-				// 폰툰 로컬 속도 추출
-
-				// 1차 및 2차 감쇄력 연산 (엔진 순정 공식 복원)
-
 				FVector PontoonTotalForce = FVector::UpVector * PontoonForceZ;
 
 				TotalBuoyancyForce += PontoonTotalForce;
 				TotalBuoyancyTorque += FVector::CrossProduct(PontoonWorldPos - ActorLocation, PontoonTotalForce);
 			}
-
-			/* Network Physics detailed pontoon diagnostic capture disabled after validation.
-			if (PontoonIndex == 0)
-			{
-				FirstPontoonWorldPosition = PontoonWorldPos;
-				FirstPontoonWaveHeight = WaveHeightZ;
-				FirstPontoonDepth = Depth;
-				FirstPontoonForceZ = PontoonForceZ;
-			}
-			*/
-
 		}
 
 		ParticleHandle->AddForce(TotalBuoyancyForce);
 		ParticleHandle->AddTorque(TotalBuoyancyTorque);
-
-		/*if (CurrentPhysicsStep % 60 == 0)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] Buoyancy Applied - Step: %d | ForceZ: %.2f | Torq: %s | Pontoons: %d | Waves: %d"),
-				CurrentPhysicsStep, TotalBuoyancyForce.Z, *TotalBuoyancyTorque.ToString(), CachedPontoonOffsets.Num(), CachedGerstnerWaves.Num());
-		}*/
 	}
-	else
+
+	if (bCachedRollStabilizationEnabled)
 	{
-		/*if (CurrentPhysicsStep % 60 == 0)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[PHYSICS-PT] Buoyancy Skipped - Step: %d | Pontoons: %d | Waves: %d"),
-				CurrentPhysicsStep, CachedPontoonOffsets.Num(), CachedGerstnerWaves.Num());
-		}*/
+		const FVector RollAxis = ActorRotation.GetForwardVector().GetSafeNormal();
+		const float RollRadians = FShipRollStabilizationMath::ComputeSignedRollRadians(ActorRotation);
+		const float RollAngularVelocity = FVector::DotProduct(ParticleHandle->GetW(), RollAxis);
+		const float AngularAcceleration =
+			FShipRollStabilizationMath::ComputeAngularAccelerationRadians(
+				RollRadians,
+				RollAngularVelocity,
+				CachedRollStabilizationSoftLimitDegrees,
+				CachedRollStabilizationMaximumAngleDegrees,
+				CachedRollStabilizationNaturalFrequencyHz,
+				CachedRollStabilizationDampingRatio,
+				CachedRollStabilizationMaximumAngularAccelerationDegrees);
+		const float RollInertia = FMath::Max(1.0f, ParticleHandle->I().X);
+		ParticleHandle->AddTorque(RollAxis * AngularAcceleration * RollInertia);
 	}
 
-	// BuoyancyRoot has Chaos gravity enabled. Do not add Mass * Gravity here;
-	// doing so applies gravity twice and destabilizes the buoyancy solution.
+	// 4. 닻(Anchor) 수평 평면 스프링-댐퍼 저항 적용 (Z축 파도/부력에는 무영향)
+	if (bAnchorDropped_Internal)
+	{
+		MovementInput_Internal = 0.0f;
+		SteeringInput_Internal = 0.0f;
 
-	// 4. WASD 조작 물리 추진력 적용
-	if (FMath::Abs(MovementInput_Internal) > KINDA_SMALL_NUMBER || FMath::Abs(SteeringInput_Internal) > KINDA_SMALL_NUMBER)
+		const FVector CurrentVelocity = ParticleHandle->GetV();
+		const FVector PlanarVelocity = FVector(CurrentVelocity.X, CurrentVelocity.Y, 0.0f);
+
+		FVector TotalAnchorForce = -PlanarVelocity * CachedAnchorDamping;
+
+		// 닻 고정점 위치가 유효한 경우 복원 스프링 힘 추가 (외부 충격 방어)
+		if (!CachedAnchorOriginXY.IsNearlyZero(0.1f))
+		{
+			const FVector PlanarDisplacement = FVector(ActorLocation.X - CachedAnchorOriginXY.X, ActorLocation.Y - CachedAnchorOriginXY.Y, 0.0f);
+			const float DistFromAnchor = PlanarDisplacement.Size();
+			if (DistFromAnchor > CachedAnchorSlackRadius)
+			{
+				const FVector RestoringDir = PlanarDisplacement.GetSafeNormal();
+				const float EffectiveDist = DistFromAnchor - CachedAnchorSlackRadius;
+				const FVector SpringForce = -RestoringDir * EffectiveDist * CachedAnchorStiffness;
+				TotalAnchorForce += SpringForce;
+			}
+		}
+
+		if (CachedMaxAnchorForce > 0.0f)
+		{
+			TotalAnchorForce = TotalAnchorForce.GetClampedToMaxSize(CachedMaxAnchorForce);
+		}
+
+		ParticleHandle->AddForce(TotalAnchorForce);
+	}
+
+	// 5. WASD 조작 물리 추진력 적용 (닻이 내려져 있지 않을 때만 적용)
+	if (!bAnchorDropped_Internal && (FMath::Abs(MovementInput_Internal) > KINDA_SMALL_NUMBER || FMath::Abs(SteeringInput_Internal) > KINDA_SMALL_NUMBER))
 	{
 		// 전진 힘
 		if (FMath::Abs(MovementInput_Internal) > KINDA_SMALL_NUMBER)
@@ -587,46 +511,21 @@ void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 		}
 	}
 
-	/* Network Physics deterministic state/force diagnostic log disabled after validation.
-	if (CurrentServerPhysicsFrame >= 0 && CurrentServerPhysicsFrame % 30 == 0)
+	// A force applied away from the centre of mass produces the physically
+	// corresponding translation and torque. Keeping the COM-relative offset in ship
+	// local space makes the same input deterministic when a frame is resimulated.
+	if (!BlastAcceleration_Internal.IsNearlyZero())
 	{
-		const FVector LinearVelocity = ParticleHandle->GetV();
-		const FVector AngularVelocity = ParticleHandle->GetW();
-		UE_LOG(LogTemp, Warning, TEXT("[NETPHYS-DET] SF=%d LF=%d RS=%d T=%.9f PX=%.6f PY=%.6f PZ=%.6f QX=%.9f QY=%.9f QZ=%.9f QW=%.9f VX=%.6f VY=%.6f VZ=%.6f WX=%.6f WY=%.6f WZ=%.6f P0X=%.6f P0Y=%.6f P0Z=%.6f WAVE0=%.6f DEPTH0=%.6f PF0=%.6f BFX=%.6f BFY=%.6f BFZ=%.6f BTX=%.6f BTY=%.6f BTZ=%.6f LFX=%.6f LFY=%.6f LFZ=%.6f CFX=%.6f CFY=%.6f CFZ=%.6f CTX=%.6f CTY=%.6f CTZ=%.6f"),
-			CurrentServerPhysicsFrame,
-			CurrentPhysicsStep,
-			bIsResimming ? 1 : 0,
-			SimTimeSeconds,
-			ActorLocation.X, ActorLocation.Y, ActorLocation.Z,
-			ActorRotation.X, ActorRotation.Y, ActorRotation.Z, ActorRotation.W,
-			LinearVelocity.X, LinearVelocity.Y, LinearVelocity.Z,
-			AngularVelocity.X, AngularVelocity.Y, AngularVelocity.Z,
-			FirstPontoonWorldPosition.X, FirstPontoonWorldPosition.Y, FirstPontoonWorldPosition.Z,
-			FirstPontoonWaveHeight, FirstPontoonDepth, FirstPontoonForceZ,
-			TotalBuoyancyForce.X, TotalBuoyancyForce.Y, TotalBuoyancyForce.Z,
-			TotalBuoyancyTorque.X, TotalBuoyancyTorque.Y, TotalBuoyancyTorque.Z,
-			AppliedLateralDragForce.X, AppliedLateralDragForce.Y, AppliedLateralDragForce.Z,
-			AppliedControlForce.X, AppliedControlForce.Y, AppliedControlForce.Z,
-			AppliedControlTorque.X, AppliedControlTorque.Y, AppliedControlTorque.Z);
+		const float ParticleMass = ParticleHandle->M();
+		if (ParticleMass > UE_SMALL_NUMBER)
+		{
+			const FVector BlastForce = BlastAcceleration_Internal * ParticleMass;
+			const FVector WorldContactOffset = ActorRotation.RotateVector(BlastApplicationPointLocal_Internal);
+			const FVector BlastTorque = FVector::CrossProduct(WorldContactOffset, BlastForce);
+			ParticleHandle->AddForce(BlastForce);
+			ParticleHandle->AddTorque(BlastTorque);
+		}
 	}
-	*/
-
-	/* Network Physics resimulation diagnostic log disabled after validation.
-	// [PT-RESIM] 서버-클라이언트 롤백 리심 상태 정밀 진단용 60틱 로그
-	// [PT-RESIM] 서버-클라이언트 롤백 리심 상태 및 SimTime 시간 위상 대조용 60틱 로그
-	if (CurrentPhysicsStep % 60 == 0)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[PT-RESIM] Step: %d | ServerFrame: %d | FrameOffset: %d | IsResimming: %s | SimTime: %.6f | Pos: %s | Vel: %s"),
-			CurrentPhysicsStep,
-			CurrentServerPhysicsFrame,
-			CachedNetworkPhysicsTickOffset,
-			bIsResimming ? TEXT("TRUE") : TEXT("FALSE"),
-			SimTime,
-			*ParticleHandle->GetX().ToString(),
-			*ParticleHandle->GetV().ToString());
-	}
-	*/
-
 }
 
 void FShipPhysicsAsync::OnPreSimulate_Internal()

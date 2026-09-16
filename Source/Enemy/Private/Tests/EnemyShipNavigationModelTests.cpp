@@ -15,8 +15,8 @@ bool FEnemyShipNavigationStateModelTest::RunTest(const FString& Parameters)
 	Profile.DetectionDistance = 10000.0f;
 	Profile.IdealDistance = 2000.0f;
 	Profile.OrbitTolerance = 500.0f;
-	Profile.DangerCloseDistance = 1000.0f;
 	Profile.ReturnArrivalDistance = 800.0f;
+	Profile.ReturnTriggerDistance = 1500.0f;
 
 	FEnemyShipNavigationContext Context;
 	Context.ShipForward = FVector::ForwardVector;
@@ -39,13 +39,30 @@ bool FEnemyShipNavigationStateModelTest::RunTest(const FString& Parameters)
 
 	Context.TargetLocation = FVector(900.0f, 0.0f, 0.0f);
 	Output = FEnemyShipNavigationModel::Evaluate(ENavalCombatState::Orbit, Profile, Context);
-	TestEqual(TEXT("Danger-close range enters Retreat"), Output.State, ENavalCombatState::Retreat);
+	TestEqual(TEXT("Close range remains in Orbit"), Output.State, ENavalCombatState::Orbit);
+	TestTrue(TEXT("Close-range Orbit steers outward while circling"), Output.DesiredHeading.X < 0.0f);
 
 	Context.bHasTarget = false;
 	Context.bHasHome = true;
 	Context.HomeLocation = FVector(3000.0f, 0.0f, 0.0f);
 	Output = FEnemyShipNavigationModel::Evaluate(ENavalCombatState::Approach, Profile, Context);
 	TestEqual(TEXT("Lost target returns home"), Output.State, ENavalCombatState::Return);
+
+	Context.bHasTarget = true;
+	Context.TargetLocation = FVector(100.0f, 0.0f, 0.0f);
+	Output = FEnemyShipNavigationModel::Evaluate(ENavalCombatState::Orbit, Profile, Context);
+	TestEqual(TEXT("Home leash overrides a detected combat target"), Output.State, ENavalCombatState::Return);
+	Output = FEnemyShipNavigationModel::Evaluate(ENavalCombatState::Return, Profile, Context);
+	TestEqual(TEXT("Return remains latched while a target is detected"), Output.State, ENavalCombatState::Return);
+	Context.bHasTarget = false;
+
+	Context.ShipLocation = FVector(2000.0f, 0.0f, 0.0f);
+	Output = FEnemyShipNavigationModel::Evaluate(ENavalCombatState::Approach, Profile, Context);
+	TestEqual(TEXT("Lost target inside return trigger radius remains Idle"), Output.State, ENavalCombatState::Idle);
+	Context.bReturnRequested = true;
+	Output = FEnemyShipNavigationModel::Evaluate(ENavalCombatState::Idle, Profile, Context);
+	TestEqual(TEXT("Lost-target timeout requests Return inside leash radius"), Output.State, ENavalCombatState::Return);
+	Context.bReturnRequested = false;
 
 	Context.ShipLocation = FVector(2500.0f, 0.0f, 0.0f);
 	Output = FEnemyShipNavigationModel::Evaluate(ENavalCombatState::Return, Profile, Context);
@@ -55,7 +72,7 @@ bool FEnemyShipNavigationStateModelTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FEnemyShipNavigationOrbitDirectionTest,
-	"ArtisticSW.Enemy.Ship.Navigation.OrbitDirection",
+	"ArtisticSW.Enemy.Ship.Navigation.CounterClockwiseOrbit",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FEnemyShipNavigationOrbitDirectionTest::RunTest(const FString& Parameters)
@@ -68,15 +85,14 @@ bool FEnemyShipNavigationOrbitDirectionTest::RunTest(const FString& Parameters)
 	Context.bHasTarget = true;
 	Context.TargetLocation = FVector(2000.0f, 0.0f, 0.0f);
 
-	Profile.bOrbitClockwise = true;
-	const FEnemyShipNavigationOutput Clockwise = FEnemyShipNavigationModel::Evaluate(
+	const FEnemyShipNavigationOutput First = FEnemyShipNavigationModel::Evaluate(
 		ENavalCombatState::Orbit, Profile, Context);
-	Profile.bOrbitClockwise = false;
-	const FEnemyShipNavigationOutput CounterClockwise = FEnemyShipNavigationModel::Evaluate(
+	const FEnemyShipNavigationOutput Second = FEnemyShipNavigationModel::Evaluate(
 		ENavalCombatState::Orbit, Profile, Context);
 
-	TestTrue(TEXT("Orbit directions produce opposite lateral headings"), Clockwise.DesiredHeading.Y * CounterClockwise.DesiredHeading.Y < 0.0f);
-	TestTrue(TEXT("Orbit directions produce opposite steering"), Clockwise.TurnInput * CounterClockwise.TurnInput < 0.0f);
+	TestTrue(TEXT("Orbit heading is counterclockwise around the target"), First.DesiredHeading.Y < 0.0f);
+	TestEqual(TEXT("Orbit direction is deterministic"), First.DesiredHeading, Second.DesiredHeading);
+	TestEqual(TEXT("Orbit steering is deterministic"), First.TurnInput, Second.TurnInput);
 	return true;
 }
 

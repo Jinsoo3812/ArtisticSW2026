@@ -7,6 +7,14 @@
 #include "GameplayTagContainer.h"
 #include "Interactable.generated.h"
 
+struct FInteractionUIInfo;
+
+// 컴포넌트를 소유한 액터(Item, 작업대 등)에게 상호작용 이벤트가 발생했음을 알리기 위한 델리게이트
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FOnInteractedSignature,
+	AActor*,
+	Interactor);
+
 // This class does not need to be modified.
 UINTERFACE(MinimalAPI)
 class UInteractable : public UInterface
@@ -28,8 +36,14 @@ public:
 	virtual FGameplayTag GetInteractionTag() const = 0;
 
 	/**
+	 * 상호작용 UI에 표시할 정보를 반환합니다.
+	 */
+	virtual const FInteractionUIInfo& GetInteractionUIInfo() const = 0;
+
+	/**
 	 * 상호작용을 실행합니다.
 	 * @param Instigator 상호작용을 시도한 주체 (주로 Player)
 	 */
 	virtual void Interact(AActor* Interactor) = 0;
 };
+

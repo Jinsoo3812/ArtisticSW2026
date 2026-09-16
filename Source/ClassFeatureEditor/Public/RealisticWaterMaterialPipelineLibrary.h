@@ -9,7 +9,10 @@ class UMaterialExpressionCustom;
 class UMaterialExpressionSetMaterialAttributes;
 class UMaterial;
 class UMaterialFunction;
+class UMaterialParameterCollection;
+class UMaterialExpressionCollectionParameter;
 class ASWPersistentFoamField;
+class UBlueprint;
 
 /** Editor-only helpers used to build the isolated realistic-water test material. */
 UCLASS()
@@ -18,6 +21,10 @@ class CLASSFEATUREEDITOR_API URealisticWaterMaterialPipelineLibrary : public UBl
 	GENERATED_BODY()
 
 public:
+	/** Idempotently adds the explicit cabin-water-cull component to a ship Blueprint. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool AddCabinWaterCullComponentToBlueprint(UBlueprint* Blueprint);
+
 	/**
 	 * Spawns the V5 foam field directly into the current editor level.
 	 *
@@ -83,6 +90,54 @@ public:
 		UMaterialExpression* SpecularExpression,
 		UMaterialExpression* EmissiveExpression);
 
+	/** Adds a local-only vortex tint after the complete water surface chain. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureVortexPreviewAttributeOverride(
+		UMaterialExpressionSetMaterialAttributes* SetAttributes,
+		UMaterialExpression* BaseColorExpression,
+		UMaterialExpression* EmissiveExpression);
+
+	/** Connects the lit Gerstner foam surface without changing WPO, Normal or Specular. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureGerstnerFoamAttributeOverride(
+		UMaterialExpressionSetMaterialAttributes* SetAttributes,
+		UMaterialExpression* FoamSurfaceExpression,
+		UMaterialExpression* EmissiveExpression);
+
+	/** Reconnects only Emissive while preserving every existing SetMaterialAttributes pin. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConnectEmissiveAttribute(
+		UMaterialExpressionSetMaterialAttributes* SetAttributes,
+		UMaterialExpression* EmissiveExpression);
+
+	/** Adds/reconnects only Opacity Mask while preserving the existing water attributes. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConnectOpacityMaskAttribute(
+		UMaterialExpressionSetMaterialAttributes* SetAttributes,
+		UMaterialExpression* OpacityMaskExpression);
+
+	/** Adds the fixed single-ship cabin-cull parameters to the existing water MPC. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureCabinWaterCullCollection(UMaterialParameterCollection* Collection);
+
+	/** Adds the runtime center/radius and enabled values for the local vortex preview. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureVortexPreviewCollection(UMaterialParameterCollection* Collection);
+
+	/** Stores immutable baked local bounds in the MPC defaults (no runtime upload). */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool SetCabinWaterCullBoundsDefaults(
+		UMaterialParameterCollection* Collection,
+		FVector LocalMin,
+		FVector LocalMax);
+
+	/** Reliably binds a collection-expression node to a named MPC member. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureCollectionParameterExpression(
+		UMaterialExpressionCollectionParameter* Expression,
+		UMaterialParameterCollection* Collection,
+		FName ParameterName);
+
 	/** Sets matching texture parameter nodes to the sampler required by a non-sRGB grayscale texture. */
 	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
 	static int32 ConfigureLinearGrayscaleSampler(
@@ -125,6 +180,24 @@ public:
 	/** Configures a float3 Custom node plus explicit engine/plugin shader includes. */
 	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
 	static bool ConfigureFloat3CustomExpressionWithIncludes(
+		UMaterialExpressionCustom* CustomExpression,
+		const TArray<FName>& InputNames,
+		const FString& Code,
+		const FString& Description,
+		const TArray<FString>& IncludeFilePaths);
+
+	/** Configures the wave-height optics Custom node and its typed extra outputs. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureWaveHeightOpticsCustomExpression(
+		UMaterialExpressionCustom* CustomExpression,
+		const TArray<FName>& InputNames,
+		const FString& Code,
+		const FString& Description,
+		const TArray<FString>& IncludeFilePaths);
+
+	/** Configures BaseColor plus typed Opacity/Roughness outputs for lit foam. */
+	UFUNCTION(BlueprintCallable, Category = "ArtisticSW|Editor|Water")
+	static bool ConfigureGerstnerFoamSurfaceCustomExpression(
 		UMaterialExpressionCustom* CustomExpression,
 		const TArray<FName>& InputNames,
 		const FString& Code,

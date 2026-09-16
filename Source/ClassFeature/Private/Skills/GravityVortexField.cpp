@@ -8,6 +8,10 @@
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
 #include "Ship.h"
+#include "Effects/SWNiagaraScaleLibrary.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
+#include "UObject/ConstructorHelpers.h"
 
 AGravityVortexField::AGravityVortexField()
 {
@@ -18,11 +22,30 @@ AGravityVortexField::AGravityVortexField()
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
+
+	FieldEffectComponent = CreateDefaultSubobject<UNiagaraComponent>(TEXT("FieldEffect"));
+	FieldEffectComponent->SetupAttachment(SceneRoot);
+	FieldEffectComponent->SetAutoActivate(false);
+
+	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> DefaultFieldEffect(
+		TEXT("/Game/Resources_Assets/Splash_Effects/Effects/NS_Stream_Splash_01.NS_Stream_Splash_01"));
+	FieldEffect = DefaultFieldEffect.Object;
 }
 
 void AGravityVortexField::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Each replicated field owns its local visual, including on the listen server.
+	// The component is destroyed with the field so looping effects cannot linger.
+	if (GetNetMode() != NM_DedicatedServer && FieldEffectComponent && FieldEffect)
+	{
+		FieldEffectComponent->SetRelativeLocation(FVector(0.0f, 0.0f, FieldEffectHeightOffset));
+		FieldEffectComponent->SetAsset(FieldEffect);
+		USWNiagaraScaleLibrary::ApplyEffectTuning(
+			FieldEffectComponent, FieldEffectScale, FieldEffectLifetimeScale, FieldEffectPlaybackSpeed);
+		FieldEffectComponent->Activate(true);
+	}
 
 	if (HasAuthority())
 	{

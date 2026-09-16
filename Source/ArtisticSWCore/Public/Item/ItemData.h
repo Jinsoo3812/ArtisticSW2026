@@ -10,7 +10,22 @@
 class UStaticMesh;
 class ABaseProjectile;
 class UTexture2D;
-class ABaseItem;	
+class ABaseItem;
+
+UENUM(BlueprintType)
+enum class EItemProgressionKind : uint8
+{
+	None,
+	Weapon,
+	Consumable,
+	WeaponMaterial,
+	ConsumableMaterial,
+	ShipMaterial,
+	WeaponSpecialMaterial,
+	ConsumableSpecialMaterial,
+	ShipSpecialMaterial,
+	UniversalSpecialMaterial
+};
 
 
 // Data Table에 정의될 UObject가 아닌 ItemData
@@ -38,6 +53,13 @@ USTRUCT(BlueprintType)
 struct FItemDefinition
 {
 	GENERATED_BODY()
+
+	/** Item tier is intrinsic to the item, not inferred from its tag or a recipe row. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Progression", meta = (ClampMin = "0", ClampMax = "4"))
+	int32 ProgressionTier = 0;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Progression")
+	EItemProgressionKind ProgressionKind = EItemProgressionKind::None;
 
 	/*
 	* TSubclassOf : A 클래스가 B 클래스를 TSubclassOf로 들고 있다면, A 클래스 객체가 로드될 때 B도 같이 로드된다.
@@ -97,6 +119,10 @@ public:
 	{
 		return ItemDefinitions.Find(ItemTag);
 	}
+
+	/** Candidate tags for recipe-editor pickers; returns only materials valid for the output kind. */
+	UFUNCTION(BlueprintCallable, Category = "Item|Progression")
+	TArray<FGameplayTag> GetCraftingMaterialOptions(FGameplayTag ResultItemTag) const;
 
 	UFUNCTION(BlueprintPure, Category = "Item|Classification")
 	static int32 GetRarityRank(FGameplayTag RarityTag);

@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Cannon.h"
+#include "CannonRiderInterface.h"
 #include "Components/StaticMeshComponent.h"
 #include "Camera/CameraComponent.h"
 #include "InteractableComponent.h"
@@ -43,6 +44,11 @@ ACannon::ACannon()
 	BarrelMesh->SetMobility(EComponentMobility::Movable);
 	BarrelMesh->SetCollisionProfileName(TEXT("NoCollision"));
 
+	MuzzlePoint = CreateDefaultSubobject<USceneComponent>(TEXT("MuzzlePoint"));
+	MuzzlePoint->SetupAttachment(BarrelMesh);
+	MuzzlePoint->SetRelativeLocation(FVector(200.0f, 0.0f, 0.0f));
+	MuzzlePoint->SetMobility(EComponentMobility::Movable);
+
 	// Aim Camera
 	AimCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("AimCamera"));
 	AimCamera->SetupAttachment(BarrelMesh);
@@ -54,9 +60,9 @@ ACannon::ACannon()
 	InteractableComponent->SetupAttachment(RootComponent);
 	InteractableComponent->SetCollisionProfileName(TEXT("Interactable"));
 
-	// Player Mount Point (Behind BaseMesh so player rotates with cannon yaw)
+	// Keep the player fixed to the cannon root. Only the cannon meshes rotate while aiming.
 	PlayerMountPoint = CreateDefaultSubobject<USceneComponent>(TEXT("PlayerMountPoint"));
-	PlayerMountPoint->SetupAttachment(BaseMesh);
+	PlayerMountPoint->SetupAttachment(RootComponent);
 	PlayerMountPoint->SetRelativeLocation(FVector(-120.0f, 0.0f, 0.0f));
 	PlayerMountPoint->SetRelativeRotation(FRotator::ZeroRotator);
 	PlayerMountPoint->SetMobility(EComponentMobility::Movable);
@@ -70,6 +76,8 @@ ACannon::ACannon()
 
 	bReplicates = true;
 	SetReplicateMovement(false); // We replicate rotations manually via AimRotation
+	SetNetUpdateFrequency(30.0f);
+	SetMinNetUpdateFrequency(15.0f);
 }
 
 void ACannon::BeginPlay()
@@ -85,6 +93,7 @@ void ACannon::BeginPlay()
 	{
 		InitialBarrelRotation = BarrelMesh->GetRelativeRotation();
 	}
+	VisualAimRotation = AimRotation;
 
 	RefreshPlayerInteractionAvailability();
 }
@@ -104,18 +113,32 @@ void ACannon::Tick(float DeltaTime)
 		}
 	}
 
-	// Apply rotation to meshes
+	// Owners predict their own input and authority renders the canonical value directly.
+	// Other clients interpolate between replicated samples instead of snapping at net frequency.
+	if (HasAuthority() || IsLocallyControlled())
+	{
+		VisualAimRotation = AimRotation;
+	}
+	else
+	{
+		VisualAimRotation.Pitch = FMath::FInterpTo(
+			VisualAimRotation.Pitch, AimRotation.Pitch, DeltaTime, RemoteAimInterpolationSpeed);
+		VisualAimRotation.Yaw = FMath::FInterpTo(
+			VisualAimRotation.Yaw, AimRotation.Yaw, DeltaTime, RemoteAimInterpolationSpeed);
+	}
+
+	// Apply the smoothed render rotation to meshes.
 	if (BaseMesh)
 	{
 		FRotator TargetBaseRot = InitialBaseRotation;
-		TargetBaseRot.Yaw += AimRotation.Yaw;
+		TargetBaseRot.Yaw += VisualAimRotation.Yaw;
 		BaseMesh->SetRelativeRotation(TargetBaseRot);
 	}
 
 	if (BarrelMesh)
 	{
 		FRotator TargetBarrelRot = InitialBarrelRotation;
-		TargetBarrelRot.Pitch += AimRotation.Pitch;
+		TargetBarrelRot.Pitch += VisualAimRotation.Pitch;
 		BarrelMesh->SetRelativeRotation(TargetBarrelRot);
 	}
 }
@@ -220,6 +243,7 @@ FCannonResolvedFiringStats ACannon::GetResolvedFiringStats() const
 			Stats.CooldownSeconds = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonFireCooldownAttribute());
 			Stats.ProjectileSpeed = ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonballSpeedAttribute());
 		}
+		Stats.CooldownSeconds *= FMath::Max(1.0f, Ship->GetCannonCooldownMultiplier());
 	}
 
 	return Stats;
@@ -227,6 +251,11 @@ FCannonResolvedFiringStats ACannon::GetResolvedFiringStats() const
 
 FTransform ACannon::GetProjectileMuzzleTransform() const
 {
+	if (MuzzlePoint)
+	{
+		return MuzzlePoint->GetComponentTransform();
+	}
+
 	if (!BarrelMesh)
 	{
 		return GetActorTransform();
@@ -284,7 +313,12 @@ void ACannon::Board(APawn* PlayerPawn)
 	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board initiated by player pawn %s. Cannon location: %s, Player location: %s"), *PlayerPawn->GetName(), *GetActorLocation().ToString(), *PlayerPawn->GetActorLocation().ToString());
 
 	RidingPlayer = PlayerPawn;
+	SetRiderInvulnerable(true);
 	RefreshPlayerInteractionAvailability();
+	if (ICannonRiderInterface* CannonRider = Cast<ICannonRiderInterface>(RidingPlayer))
+	{
+		CannonRider->PrepareForCannonControl();
+	}
 
 	// Disable player collision
 	RidingPlayer->SetActorEnableCollision(false);
@@ -301,10 +335,18 @@ void ACannon::Board(APawn* PlayerPawn)
 	RidingPlayer->SetReplicateMovement(false);
 	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board - Player bReplicateMovement after disable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
 
-	// Snap the player character to the authored mounting point behind the cannon.
-	USceneComponent* MountTarget = PlayerMountPoint ? PlayerMountPoint.Get() : BaseMesh.Get();
-	RidingPlayer->AttachToComponent(MountTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board - Player attached to PlayerMountPoint. Relative location: %s, relative rotation: %s"), 
+	// First use the authored mount pose, then freeze that world-space pose against
+	// the non-aiming root. The player follows the ship but never orbits with BaseMesh.
+	if (PlayerMountPoint)
+	{
+		RidingPlayer->TeleportTo(
+			PlayerMountPoint->GetComponentLocation(),
+			PlayerMountPoint->GetComponentRotation(),
+			false,
+			true);
+	}
+	RidingPlayer->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepWorldTransform);
+	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] Board - Player snapped to mount pose and fixed to cannon root. Relative location: %s, relative rotation: %s"),
 		*RidingPlayer->GetRootComponent()->GetRelativeLocation().ToString(), 
 		*RidingPlayer->GetRootComponent()->GetRelativeRotation().ToString());
 
@@ -403,16 +445,28 @@ bool ACannon::FireCannon()
 		FMath::Max(0.05f, FiringStats.CooldownSeconds),
 		false);
 
-	FVector MuzzleLocation = BarrelMesh ? BarrelMesh->GetComponentLocation() + BarrelMesh->GetForwardVector() * 200.0f : GetActorLocation();
-	FRotator LaunchRotation = BarrelMesh ? BarrelMesh->GetComponentRotation() : GetActorRotation();
+	const FTransform MuzzleTransform = GetProjectileMuzzleTransform();
+	const FVector MuzzleLocation = MuzzleTransform.GetLocation();
+	const FRotator LaunchRotation = MuzzleTransform.Rotator();
 
 	if (HasAuthority())
 	{
-		SpawnCannonball(MuzzleLocation, LaunchRotation, FiringStats.Damage, FiringStats.ProjectileSpeed);
+		const AShip* OwningShip = GetOwningShip();
+		const FVector InheritedVelocity = IsPlayerControlled() && OwningShip
+			? (OwningShip->BuoyancyRoot
+				? OwningShip->BuoyancyRoot->GetPhysicsLinearVelocityAtPoint(MuzzleLocation)
+				: OwningShip->GetVelocity())
+			: FVector::ZeroVector;
+		SpawnCannonball(
+			MuzzleLocation,
+			LaunchRotation,
+			FiringStats.Damage,
+			FiringStats.ProjectileSpeed,
+			InheritedVelocity);
 	}
 	else
 	{
-		ServerFire();
+		ServerFire(MuzzleLocation, LaunchRotation);
 	}
 
 	return true;
@@ -444,7 +498,39 @@ bool ACannon::CanAimAtWorldDirection(const FVector& WorldDirection) const
 
 bool ACannon::FireAICannonAtDirection(const FVector& WorldDirection)
 {
-	if (!HasAuthority() || !CanFireCannon() || !CanAimAtWorldDirection(WorldDirection))
+	return FireAICannonAtDirectionWithSpeed(
+		WorldDirection,
+		GetResolvedFiringStats().ProjectileSpeed);
+}
+
+bool ACannon::CanAIAimAtWorldDirection(const FVector& WorldDirection) const
+{
+	if (WorldDirection.IsNearlyZero())
+	{
+		return false;
+	}
+	const FRotator LocalRotation = GetActorTransform()
+		.InverseTransformVectorNoScale(WorldDirection.GetSafeNormal()).Rotation();
+	return LocalRotation.Pitch >= MinPitch && LocalRotation.Pitch <= MaxAIPitch
+		&& FMath::Abs(FMath::UnwindDegrees(LocalRotation.Yaw)) <= MaxYawOffset;
+}
+
+void ACannon::ResetAIFiringState()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	GetWorldTimerManager().ClearTimer(CooldownTimerHandle);
+	bCanFire = true;
+	SetAIAimRotation(0.0f, 0.0f);
+}
+
+bool ACannon::FireAICannonAtDirectionWithSpeed(
+	const FVector& WorldDirection,
+	float ProjectileSpeed)
+{
+	if (!HasAuthority() || !CanFireCannon() || !CanAIAimAtWorldDirection(WorldDirection))
 	{
 		return false;
 	}
@@ -469,7 +555,7 @@ bool ACannon::FireAICannonAtDirection(const FVector& WorldDirection)
 		MuzzleTransform.GetLocation(),
 		NormalizedDirection.Rotation(),
 		FiringStats.Damage,
-		FiringStats.ProjectileSpeed);
+		FMath::Max(1.0f, ProjectileSpeed));
 	return true;
 }
 
@@ -477,7 +563,7 @@ void ACannon::SetAIAimRotation(float NewPitch, float NewYaw)
 {
 	if (HasAuthority())
 	{
-		AimRotation.Pitch = FMath::Clamp(NewPitch, MinPitch, MaxPitch);
+		AimRotation.Pitch = FMath::Clamp(NewPitch, MinPitch, MaxAIPitch);
 		AimRotation.Yaw = FMath::Clamp(NewYaw, -MaxYawOffset, MaxYawOffset);
 	}
 }
@@ -494,16 +580,18 @@ void ACannon::ExitAimMode()
 	if (!RidingPlayer) return;
 
 	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC) return;
+	APawn* PlayerToRestore = RidingPlayer;
+	CancelWaterBombAbilityAuthoritative();
+	SetWaterBombModeAuthoritative(false);
 
 	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode initiated. Player pawn: %s"), *RidingPlayer->GetName());
 
 	// Detach, then move to the authored player exit point while collision is still
 	// disabled. This avoids the cannon/ship hull rejecting the teleport.
-	RidingPlayer->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	PlayerToRestore->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	if (PlayerExitPoint)
 	{
-		RidingPlayer->TeleportTo(
+		PlayerToRestore->TeleportTo(
 			PlayerExitPoint->GetComponentLocation(),
 			PlayerExitPoint->GetComponentRotation(),
 			false,
@@ -511,31 +599,103 @@ void ACannon::ExitAimMode()
 	}
 	else if (PlayerMountPoint)
 	{
-		RidingPlayer->TeleportTo(
+		PlayerToRestore->TeleportTo(
 			PlayerMountPoint->GetComponentLocation(),
 			PlayerMountPoint->GetComponentRotation(),
 			false,
 			true);
 	}
-	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode - Detached and moved player to exit. World location: %s"), *RidingPlayer->GetActorLocation().ToString());
+	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode - Detached and moved player to exit. World location: %s"), *PlayerToRestore->GetActorLocation().ToString());
 
-	RidingPlayer->SetActorEnableCollision(true);
-	RidingPlayer->SetActorHiddenInGame(false);
+	PlayerToRestore->SetActorEnableCollision(true);
+	PlayerToRestore->SetActorHiddenInGame(false);
 
-	if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
+	if (ACharacter* Char = Cast<ACharacter>(PlayerToRestore))
 	{
 		Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	}
 
 	// Restore movement replication on exit
-	RidingPlayer->SetReplicateMovement(true);
-	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode - Player bReplicateMovement after enable: %s"), RidingPlayer->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
+	PlayerToRestore->SetReplicateMovement(true);
+	UE_LOG(LogTemp, Log, TEXT("ACannon: [SERVER] ExitAimMode - Player bReplicateMovement after enable: %s"), PlayerToRestore->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
 
 	// Return possession to player character (Ship의 Disembark와 동일)
-	PC->Possess(RidingPlayer);
+	SetRiderInvulnerable(false);
+	if (PC)
+	{
+		PC->Possess(PlayerToRestore);
+	}
 
 	RidingPlayer = nullptr;
 	RefreshPlayerInteractionAvailability();
+}
+
+void ACannon::SetRiderInvulnerable(bool bEnabled)
+{
+	if (!HasAuthority() || bRiderInvulnerabilityApplied == bEnabled)
+	{
+		return;
+	}
+	if (UAbilitySystemComponent* ASC = GetRidingPlayerAbilitySystem())
+	{
+		if (bEnabled)
+		{
+			ASC->AddLooseGameplayTag(State_Invulnerable);
+		}
+		else
+		{
+			ASC->RemoveLooseGameplayTag(State_Invulnerable);
+		}
+		bRiderInvulnerabilityApplied = bEnabled;
+	}
+}
+
+void ACannon::ClearLocalRiderHiddenActors()
+{
+	if (UWorld* World = GetWorld())
+	{
+		for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+		{
+			APlayerController* LocalPC = Cast<APlayerController>(It->Get());
+			if (!LocalPC || !LocalPC->IsLocalController())
+			{
+				continue;
+			}
+
+			for (const TWeakObjectPtr<AActor>& HiddenActor : LocallyHiddenRiderActors)
+			{
+				if (HiddenActor.IsValid())
+				{
+					LocalPC->HiddenActors.Remove(HiddenActor.Get());
+				}
+			}
+		}
+	}
+
+	LocallyHiddenRiderActors.Reset();
+}
+
+void ACannon::RefreshLocalRiderVisibility()
+{
+	ClearLocalRiderHiddenActors();
+
+	APlayerController* LocalPC = Cast<APlayerController>(GetController());
+	if (!RidingPlayer || !LocalPC || !LocalPC->IsLocalController())
+	{
+		return;
+	}
+
+	TArray<AActor*> ActorsToHide;
+	ActorsToHide.Add(RidingPlayer);
+	RidingPlayer->GetAttachedActors(ActorsToHide, false, true);
+	for (AActor* ActorToHide : ActorsToHide)
+	{
+		if (IsValid(ActorToHide))
+		{
+			LocalPC->HiddenActors.AddUnique(ActorToHide);
+			LocallyHiddenRiderActors.AddUnique(ActorToHide);
+		}
+	}
 }
 
 void ACannon::ForceExit()
@@ -546,7 +706,9 @@ void ACannon::ForceExit()
 	}
 }
 
-void ACannon::ServerFire_Implementation()
+void ACannon::ServerFire_Implementation(
+	FVector_NetQuantize100 ClientMuzzleLocation,
+	FRotator ClientLaunchRotation)
 {
 	if (!bCanFire) return;
 	if (bWaterBombMode)
@@ -576,14 +738,41 @@ void ACannon::ServerFire_Implementation()
 	bCanFire = false;
 	const FCannonResolvedFiringStats FiringStats = GetResolvedFiringStats();
 	GetWorldTimerManager().SetTimer(CooldownTimerHandle, this, &ACannon::ResetCooldown, FMath::Max(0.05f, FiringStats.CooldownSeconds), false);
-	const FVector MuzzleLocation = BarrelMesh
-		? BarrelMesh->GetComponentLocation() + BarrelMesh->GetForwardVector() * 200.0f
-		: GetActorLocation();
-	const FRotator LaunchRotation = BarrelMesh ? BarrelMesh->GetComponentRotation() : GetActorRotation();
-	SpawnCannonball(MuzzleLocation, LaunchRotation, FiringStats.Damage, FiringStats.ProjectileSpeed);
+	const FTransform ServerMuzzleTransform = GetProjectileMuzzleTransform();
+	const FVector ServerMuzzleLocation = ServerMuzzleTransform.GetLocation();
+	const FVector ClientOffset = FVector(ClientMuzzleLocation) - ServerMuzzleLocation;
+	const float MaxCorrectionDistance = FMath::Max(0.0f, MaxClientMuzzleCorrectionDistance);
+	const FVector MuzzleLocation = ServerMuzzleLocation
+		+ ClientOffset.GetClampedToMaxSize(MaxCorrectionDistance);
+
+	const FVector ServerDirection = ServerMuzzleTransform.GetUnitAxis(EAxis::X);
+	const FVector ClientDirection = ClientLaunchRotation.Vector();
+	const float DirectionDifference = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(
+		FVector::DotProduct(ServerDirection, ClientDirection), -1.0f, 1.0f)));
+	const FRotator LaunchRotation = DirectionDifference <= MaxClientMuzzleCorrectionAngle
+		? ClientLaunchRotation
+		: ServerMuzzleTransform.Rotator();
+
+	const AShip* OwningShip = GetOwningShip();
+	const FVector InheritedVelocity = OwningShip
+		? (OwningShip->BuoyancyRoot
+			? OwningShip->BuoyancyRoot->GetPhysicsLinearVelocityAtPoint(MuzzleLocation)
+			: OwningShip->GetVelocity())
+		: FVector::ZeroVector;
+	SpawnCannonball(
+		MuzzleLocation,
+		LaunchRotation,
+		FiringStats.Damage,
+		FiringStats.ProjectileSpeed,
+		InheritedVelocity);
 }
 
-void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, float Damage, float Speed)
+void ACannon::SpawnCannonball(
+	FVector MuzzleLocation,
+	FRotator LaunchRotation,
+	float Damage,
+	float Speed,
+	const FVector& InheritedVelocity)
 {
 	if (!HasAuthority()) return;
 
@@ -629,7 +818,7 @@ void ACannon::SpawnCannonball(FVector MuzzleLocation, FRotator LaunchRotation, f
 					ActiveWaterBombEffectDurationSeconds,
 					ActiveWaterBombAttackSpeedMultiplier);
 			}
-			Projectile->InitializeProjectile(OwningShip, Damage, Speed);
+			Projectile->InitializeProjectile(OwningShip, Damage, Speed, InheritedVelocity);
 		}
 
 		if (bWaterBombMode)
@@ -806,8 +995,6 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 	// 	OldPlayer ? *OldPlayer->GetName() : TEXT("Null"), 
 	// 	RidingPlayer ? *RidingPlayer->GetName() : TEXT("Null"));
 
-	APlayerController* LocalPC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
-
 	if (OldPlayer && OldPlayer != RidingPlayer)
 	{
 		// UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer - Restoring old passenger collision and walking movement."));
@@ -835,29 +1022,35 @@ void ACannon::OnRep_RidingPlayer(APawn* OldPlayer)
 			Char->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 		}
 
-		if (LocalPC && LocalPC->IsLocalController())
-		{
-			LocalPC->HiddenActors.Remove(OldPlayer);
-		}
 	}
 
 	if (RidingPlayer)
 	{
 		// UE_LOG(LogTemp, Log, TEXT("ACannon: [CLIENT] OnRep_RidingPlayer - Disabling current passenger collision and movement."));
 		RidingPlayer->SetActorEnableCollision(false);
-		USceneComponent* MountTarget = PlayerMountPoint ? PlayerMountPoint.Get() : BaseMesh.Get();
-		RidingPlayer->AttachToComponent(MountTarget, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+		if (ICannonRiderInterface* CannonRider = Cast<ICannonRiderInterface>(RidingPlayer))
+		{
+			CannonRider->PrepareForCannonControl();
+		}
+		// Match the authored mount pose once, then preserve it under the non-aiming root.
+		if (PlayerMountPoint)
+		{
+			RidingPlayer->TeleportTo(
+				PlayerMountPoint->GetComponentLocation(),
+				PlayerMountPoint->GetComponentRotation(),
+				false,
+				true);
+		}
+		RidingPlayer->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepWorldTransform);
 		if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
 		{
 			Char->GetCharacterMovement()->DisableMovement();
 			Char->GetCharacterMovement()->StopMovementImmediately();
 		}
 
-		if (LocalPC && LocalPC->IsLocalController())
-		{
-			LocalPC->HiddenActors.AddUnique(RidingPlayer);
-		}
 	}
+
+	RefreshLocalRiderVisibility();
 }
 
 // Ship의 OnRep_Controller()와 완전히 동일한 패턴
@@ -867,11 +1060,7 @@ void ACannon::OnRep_Controller()
 
 	if (Controller == nullptr)
 	{
-		APlayerController* LocalPC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
-		if (LocalPC && LocalPC->IsLocalController() && RidingPlayer)
-		{
-			LocalPC->HiddenActors.Remove(RidingPlayer);
-		}
+		ClearLocalRiderHiddenActors();
 
 		if (CachedPlayerController)
 		{
@@ -897,6 +1086,7 @@ void ACannon::OnRep_Controller()
 	else
 	{
 		CachedPlayerController = Cast<APlayerController>(Controller);
+		RefreshLocalRiderVisibility();
 		if (CachedPlayerController)
 		{
 			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(CachedPlayerController->GetLocalPlayer()))

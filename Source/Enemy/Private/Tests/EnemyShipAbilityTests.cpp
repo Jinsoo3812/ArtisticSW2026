@@ -17,10 +17,14 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Effects/SWNiagaraScaleLibrary.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
 #include "Ship.h"
 #include "ShipAI/Abilities/EnemyShipTimeStopAimLine.h"
+#include "ShipAI/Abilities/EnemyShipChargeTelegraph.h"
 #include "ShipAI/Abilities/EnemyShipTimeStopField.h"
 #include "ShipAI/Abilities/EnemyShipTimeStopProjectile.h"
 #include "ShipAttributeSet.h"
@@ -29,6 +33,8 @@
 #include "ShipAI/Abilities/EnemyShipObstacle.h"
 #include "ShipAI/Abilities/EnemyShipObstacleProjectile.h"
 #include "ShipAI/Abilities/GA_EnemyShipCharge.h"
+#include "ShipAI/Abilities/GA_EnemyShipCannonVolley.h"
+#include "ShipAI/EnemyShipArchetypeData.h"
 #include "ShipAI/Abilities/GA_EnemyShipDeployObstacle.h"
 #include "ShipAI/Abilities/GA_EnemyShipLaunchTorpedo.h"
 #include "ShipAI/Abilities/GA_EnemyShipTimeStop.h"
@@ -103,13 +109,85 @@ bool FEnemyShipChargeDamageMathTest::RunTest(const FString& Parameters)
 			FVector::ZeroVector),
 		0.0f);
 	TestEqual(
-		TEXT("Damage subtracts the threshold before applying its coefficient"),
-		FEnemyShipSkillMath::CalculateChargeDamage(800.0f, 100.0f, 0.05f, 500.0f),
-		35.0f);
+		TEXT("Charge source approach ignores target velocity"),
+		FEnemyShipSkillMath::CalculateSourceApproachSpeed(
+			FVector::ZeroVector,
+			FVector(1000.0f, 0.0f, 0.0f),
+			FVector(5000.0f, 0.0f, 0.0f)),
+		1000.0f);
+	TestEqual(
+		TEXT("Minimum speed applies minimum damage plus per-m/s excess damage"),
+		FEnemyShipSkillMath::CalculateChargeDamage(1500.0f, 10.0f, 10.0f, 2.0f, 500.0f),
+		20.0f);
+	TestEqual(
+		TEXT("Legacy charge defaults preserve five damage at the one m/s threshold"),
+		FEnemyShipSkillMath::CalculateChargeDamage(100.0f, 1.0f, 5.0f, 5.0f, 500.0f),
+		5.0f);
 	TestEqual(
 		TEXT("Damage cap is enforced"),
-		FEnemyShipSkillMath::CalculateChargeDamage(20000.0f, 100.0f, 0.05f, 500.0f),
+		FEnemyShipSkillMath::CalculateChargeDamage(20000.0f, 1.0f, 0.0f, 5.0f, 500.0f),
 		500.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipChargeEndpointAndTelegraphTest,
+	"ArtisticSW.Enemy.Ship.Ability.ChargeEndpointAndTelegraph",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipChargeEndpointAndTelegraphTest::RunTest(const FString& Parameters)
+{
+	// Existing ItemSubsystem fixture validation logs these project-data errors while a test World starts.
+	// They are unrelated to this actor contract and are covered by the item-data validation suite.
+	AddExpectedError(
+		TEXT("QuestItem has an invalid ResultItemTag"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	AddExpectedError(
+		TEXT("QuestItem contains an invalid ingredient"),
+		EAutomationExpectedErrorFlags::Contains,
+		2);
+
+	TestFalse(TEXT("Charge remains active before its endpoint"),
+		UGA_EnemyShipCharge::HasReachedChargeEndpoint(
+			FVector::ZeroVector, FVector::ForwardVector, 10000.0f,
+			FVector(9000.0f, 0.0f, 0.0f), 150.0f));
+	TestTrue(TEXT("Charge completes inside the endpoint acceptance radius"),
+		UGA_EnemyShipCharge::HasReachedChargeEndpoint(
+			FVector::ZeroVector, FVector::ForwardVector, 10000.0f,
+			FVector(9850.0f, 1000.0f, 0.0f), 150.0f));
+	TestTrue(TEXT("Charge completes after crossing its endpoint"),
+		UGA_EnemyShipCharge::HasReachedChargeEndpoint(
+			FVector::ZeroVector, FVector::ForwardVector, 10000.0f,
+			FVector(11000.0f, 0.0f, 0.0f), 150.0f));
+
+	EnemyShipAbilityTests::FTestWorld TestWorld;
+	AEnemyShipChargeTelegraph* Telegraph =
+		TestWorld.World->SpawnActor<AEnemyShipChargeTelegraph>();
+	if (!TestNotNull(TEXT("Charge telegraph actor spawns"), Telegraph))
+	{
+		return false;
+	}
+	Telegraph->InitializeTelegraph(
+		FVector(100.0f, 200.0f, 999.0f), FVector::ForwardVector,
+		10000.0f, 1000.0f, 42.0f);
+	TestTrue(TEXT("Telegraph start uses configured absolute world Z"),
+		Telegraph->GetTelegraphStart().Equals(FVector(100.0f, 200.0f, 42.0f), 0.1f));
+	TestTrue(TEXT("Telegraph represents the supplied target distance"),
+		Telegraph->GetTelegraphEnd().Equals(FVector(10100.0f, 200.0f, 42.0f), 0.1f));
+	Telegraph->UpdateTelegraph(FVector(200.0f, 300.0f, 999.0f), FVector::RightVector, 2500.0f);
+	TestTrue(TEXT("Telegraph follows a moving target's updated XY distance"),
+		Telegraph->GetTelegraphEnd().Equals(FVector(200.0f, 2800.0f, 42.0f), 0.1f));
+	if (UStaticMeshComponent* Plane = Telegraph->FindComponentByClass<UStaticMeshComponent>())
+	{
+		TestEqual(TEXT("Telegraph plane never collides"), Plane->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+		TestTrue(TEXT("Telegraph plane follows the updated 2500 cm length"), FMath::IsNearlyEqual(Plane->GetComponentScale().X, 25.0f));
+		TestTrue(TEXT("Telegraph plane width is 1000 cm"), FMath::IsNearlyEqual(Plane->GetComponentScale().Y, 10.0f));
+	}
+	else
+	{
+		AddError(TEXT("Charge telegraph has no Static Mesh Component"));
+	}
 	return true;
 }
 
@@ -200,6 +278,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipObstacleActorContractTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(
+		TEXT("QuestItem has an invalid ResultItemTag"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	AddExpectedError(
+		TEXT("QuestItem contains an invalid ingredient"),
+		EAutomationExpectedErrorFlags::Contains,
+		2);
+
 	EnemyShipAbilityTests::FTestWorld TestWorld;
 	AEnemyShipObstacle* Obstacle = TestWorld.World->SpawnActor<AEnemyShipObstacle>();
 	AEnemyShipObstacleProjectile* Projectile = TestWorld.World->SpawnActor<AEnemyShipObstacleProjectile>();
@@ -207,6 +294,42 @@ bool FEnemyShipObstacleActorContractTest::RunTest(const FString& Parameters)
 		|| !TestNotNull(TEXT("Obstacle carrier spawns"), Projectile))
 	{
 		return false;
+	}
+	TestNotNull(
+		TEXT("Obstacle carrier exposes a reliable multicast transformation effect"),
+		Projectile->FindFunction(TEXT("MulticastSpawnObstacleEffect")));
+	TestNotNull(
+		TEXT("Obstacle carrier exposes a Niagara asset slot"),
+		FindFProperty<FObjectProperty>(Projectile->GetClass(), TEXT("ObstacleSpawnEffect")));
+	TestNotNull(
+		TEXT("Obstacle carrier exposes an effect scale setting"),
+		FindFProperty<FFloatProperty>(Projectile->GetClass(), TEXT("ObstacleSpawnEffectScale")));
+	TestNotNull(
+		TEXT("Obstacle carrier exposes an effect playback-speed setting"),
+		FindFProperty<FFloatProperty>(Projectile->GetClass(), TEXT("ObstacleSpawnEffectPlaybackSpeed")));
+	UClass* AuthoredProjectileClass = LoadClass<AEnemyShipObstacleProjectile>(
+		nullptr,
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_ES_ObstacleProjectile.BP_ES_ObstacleProjectile_C"));
+	if (TestNotNull(TEXT("Authored obstacle carrier loads"), AuthoredProjectileClass))
+	{
+		const AEnemyShipObstacleProjectile* AuthoredDefaults =
+			AuthoredProjectileClass->GetDefaultObject<AEnemyShipObstacleProjectile>();
+		const FObjectProperty* EffectProperty = FindFProperty<FObjectProperty>(
+			AuthoredProjectileClass, TEXT("ObstacleSpawnEffect"));
+		const UNiagaraSystem* AuthoredEffect = EffectProperty
+			? Cast<UNiagaraSystem>(EffectProperty->GetObjectPropertyValue_InContainer(AuthoredDefaults))
+			: nullptr;
+		if (TestNotNull(TEXT("Authored obstacle transformation effect is assigned"), AuthoredEffect))
+		{
+			TArray<FNiagaraVariable> ExposedParameters;
+			AuthoredEffect->GetExposedParameters().GetParameters(ExposedParameters);
+			TestTrue(TEXT("Authored transformation effect exposes float User.HitScale"),
+				ExposedParameters.ContainsByPredicate([](const FNiagaraVariable& Parameter)
+				{
+					return Parameter.GetName() == TEXT("User.HitScale")
+						&& Parameter.GetType() == FNiagaraTypeDefinition::GetFloatDef();
+				}));
+		}
 	}
 
 	USphereComponent* ObstacleCollision = Obstacle->FindComponentByClass<USphereComponent>();
@@ -216,11 +339,14 @@ bool FEnemyShipObstacleActorContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Obstacle owns a physics collision root"), ObstacleCollision);
 	TestNotNull(TEXT("Obstacle owns SW buoyancy"), ObstacleBuoyancy);
 	TestNotNull(TEXT("Carrier owns projectile movement"), CarrierMovement);
+	TestEqual(TEXT("Obstacle defaults to five cannonball hits"), Obstacle->GetRemainingCannonballHits(), 5);
 	if (ObstacleCollision)
 	{
 		TestEqual(TEXT("Obstacle uses its dedicated object channel"), ObstacleCollision->GetCollisionObjectType(), ECC_GameTraceChannel6);
 		TestEqual(TEXT("Obstacle blocks Player cannonballs"), ObstacleCollision->GetCollisionResponseToChannel(ECC_GameTraceChannel2), ECR_Block);
-		TestEqual(TEXT("Obstacle ignores Enemy cannonballs"), ObstacleCollision->GetCollisionResponseToChannel(ECC_GameTraceChannel3), ECR_Ignore);
+		TestEqual(TEXT("Obstacle blocks Enemy cannonballs"), ObstacleCollision->GetCollisionResponseToChannel(ECC_GameTraceChannel3), ECR_Block);
+		TestEqual(TEXT("Obstacle ignores other obstacles"), ObstacleCollision->GetCollisionResponseToChannel(ECC_GameTraceChannel6), ECR_Ignore);
+		TestEqual(TEXT("Obstacle blocks active ship hulls"), ObstacleCollision->GetCollisionResponseToChannel(ECC_GameTraceChannel9), ECR_Block);
 		TestTrue(TEXT("Obstacle locks horizontal translation"), ObstacleCollision->BodyInstance.bLockXTranslation && ObstacleCollision->BodyInstance.bLockYTranslation);
 		TestFalse(TEXT("Obstacle keeps vertical translation free for buoyancy"), ObstacleCollision->BodyInstance.bLockZTranslation);
 	}
@@ -256,6 +382,17 @@ bool FEnemyShipObstacleActorContractTest::RunTest(const FString& Parameters)
 			ECR_Overlap);
 	}
 
+	FCollisionResponseTemplate ShipHullProfile;
+	if (TestTrue(
+		TEXT("ShipHullPhysics profile exists"),
+		UCollisionProfile::Get()->GetProfileTemplate(TEXT("ShipHullPhysics"), ShipHullProfile)))
+	{
+		TestEqual(
+			TEXT("Active ship hulls reciprocate skill-obstacle blocking"),
+			ShipHullProfile.ResponseToChannels.GetResponse(ECC_EnemyShipObstacle),
+			ECR_Block);
+	}
+
 	const UGameplayAbility* AbilityCDO = UGA_EnemyShipDeployObstacle::StaticClass()->GetDefaultObject<UGameplayAbility>();
 	TestTrue(
 		TEXT("Obstacle ability exposes the tag consumed by SkillModule/Pattern/BT selection"),
@@ -270,6 +407,16 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipTimeStopActorContractTest::RunTest(const FString& Parameters)
 {
+	// The shared test world loads known-invalid quest fixture data during subsystem startup.
+	AddExpectedError(
+		TEXT("QuestItem has an invalid ResultItemTag"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	AddExpectedError(
+		TEXT("QuestItem contains an invalid ingredient"),
+		EAutomationExpectedErrorFlags::Contains,
+		2);
+
 	EnemyShipAbilityTests::FTestWorld TestWorld;
 	AEnemyShipTimeStopProjectile* Projectile =
 		TestWorld.World->SpawnActor<AEnemyShipTimeStopProjectile>();
@@ -290,6 +437,8 @@ bool FEnemyShipTimeStopActorContractTest::RunTest(const FString& Parameters)
 	USphereComponent* ProjectileCollision = Projectile->FindComponentByClass<USphereComponent>();
 	UProjectileMovementComponent* ProjectileMovement =
 		Projectile->FindComponentByClass<UProjectileMovementComponent>();
+	UNiagaraComponent* ProjectileEffectComponent =
+		Projectile->FindComponentByClass<UNiagaraComponent>();
 	if (TestNotNull(TEXT("Time Stop projectile owns sweep collision"), ProjectileCollision))
 	{
 		TestEqual(TEXT("Time Stop projectile uses EnemyCannon object channel"),
@@ -304,6 +453,52 @@ bool FEnemyShipTimeStopActorContractTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Time Stop projectile uses configured speed"), ProjectileMovement->MaxSpeed, 4321.0f);
 	}
 	TestTrue(TEXT("Time Stop projectile has miss lifetime"), Projectile->GetLifeSpan() > 0.0f);
+	TestNotNull(TEXT("Time Stop projectile owns a Niagara trail component"), ProjectileEffectComponent);
+	TestNotNull(TEXT("Time Stop projectile exposes ProjectileEffect"),
+		FindFProperty<FObjectProperty>(AEnemyShipTimeStopProjectile::StaticClass(), TEXT("ProjectileEffect")));
+	TestNotNull(TEXT("Time Stop projectile exposes ProjectileEffectScale"),
+		FindFProperty<FFloatProperty>(AEnemyShipTimeStopProjectile::StaticClass(), TEXT("ProjectileEffectScale")));
+	TestNotNull(TEXT("Time Stop projectile exposes ExplosionEffect"),
+		FindFProperty<FObjectProperty>(AEnemyShipTimeStopProjectile::StaticClass(), TEXT("ExplosionEffect")));
+	TestNotNull(TEXT("Time Stop projectile exposes ExplosionEffectScale"),
+		FindFProperty<FFloatProperty>(AEnemyShipTimeStopProjectile::StaticClass(), TEXT("ExplosionEffectScale")));
+	if (ProjectileEffectComponent)
+	{
+		UNiagaraSystem* ContractSystem = NewObject<UNiagaraSystem>();
+		ContractSystem->GetExposedParameters().AddParameter(FNiagaraVariable(
+			FNiagaraTypeDefinition::GetFloatDef(),
+			USWNiagaraScaleLibrary::UniformScaleParameterName));
+		ProjectileEffectComponent->SetAsset(ContractSystem);
+		TestTrue(TEXT("Shared Niagara scaler recognizes User.EffectScale"),
+			USWNiagaraScaleLibrary::ApplyUniformEffectScale(ProjectileEffectComponent, 7.0f));
+		TestTrue(TEXT("Contract effects avoid double component scaling"),
+			ProjectileEffectComponent->GetRelativeScale3D().Equals(FVector::OneVector));
+
+		UNiagaraSystem* LegacySystem = NewObject<UNiagaraSystem>();
+		ProjectileEffectComponent->SetAsset(LegacySystem);
+		TestFalse(TEXT("Shared Niagara scaler identifies legacy systems"),
+			USWNiagaraScaleLibrary::ApplyUniformEffectScale(ProjectileEffectComponent, 7.0f));
+		TestTrue(TEXT("Legacy Niagara systems retain transform-scale fallback"),
+			ProjectileEffectComponent->GetRelativeScale3D().Equals(FVector(7.0f)));
+
+		UNiagaraSystem* ShooterSystem = NewObject<UNiagaraSystem>();
+		const FNiagaraVariable RibbonWidth(
+			FNiagaraTypeDefinition::GetFloatDef(), TEXT("User.RibbonWidth"));
+		const FNiagaraVariable RibbonLifetime(
+			FNiagaraTypeDefinition::GetFloatDef(), TEXT("User.RibbonLifeTime"));
+		ShooterSystem->GetExposedParameters().SetParameterValue(4.0f, RibbonWidth, true);
+		ShooterSystem->GetExposedParameters().SetParameterValue(2.0f, RibbonLifetime, true);
+		ProjectileEffectComponent->SetAsset(ShooterSystem);
+		USWNiagaraScaleLibrary::ApplyEffectTuning(ProjectileEffectComponent, 3.0f, 2.0f, 1.0f);
+		bool bWidthValid = false;
+		bool bLifetimeValid = false;
+		TestEqual(TEXT("Shooter adapter multiplies the authored ribbon width"),
+			ProjectileEffectComponent->GetVariableFloat(TEXT("User.RibbonWidth"), bWidthValid), 12.0f);
+		TestTrue(TEXT("Shooter ribbon width override is valid"), bWidthValid);
+		TestEqual(TEXT("Shooter adapter multiplies the authored ribbon lifetime"),
+			ProjectileEffectComponent->GetVariableFloat(TEXT("User.RibbonLifeTime"), bLifetimeValid), 4.0f);
+		TestTrue(TEXT("Shooter ribbon lifetime override is valid"), bLifetimeValid);
+	}
 
 	const FVector FixedStart(10.0f, 20.0f, 30.0f);
 	const FVector FixedDirection = FVector::ForwardVector;
@@ -355,21 +550,71 @@ bool FEnemyShipTimeStopActorContractTest::RunTest(const FString& Parameters)
 		ACannon::StaticClass(), FVector(100.0f, -500.0f, 100.0f), FRotator::ZeroRotator);
 	if (TestNotNull(TEXT("Moving source Cannon spawns"), MovingCannon))
 	{
+		PlayerShip->SetActorLocation(FVector(1500.0f, 0.0f, 100.0f));
+		PlayerShip->ShipDamageMesh->SetWorldLocation(PlayerShip->GetActorLocation());
+		PlayerShip->ShipDamageMesh->UpdateBounds();
 		const FVector InitialMuzzle = MovingCannon->GetProjectileMuzzleTransform().GetLocation();
-		const FVector CapturedTargetPoint = InitialMuzzle + FVector(5000.0f, 0.0f, 0.0f);
 		AimLine->InitializeAimLineFromCannon(
-			MovingCannon, CapturedTargetPoint, nullptr, TestMaximumDistance, 0.05f);
+			MovingCannon, PlayerShip, TestMaximumDistance, 0.05f);
 		TestTrue(TEXT("Laser starts at the current Cannon muzzle"),
 			AimLine->GetLineStart().Equals(InitialMuzzle, 0.5f));
 		MovingCannon->SetActorLocation(MovingCannon->GetActorLocation() + FVector(0.0f, 300.0f, 0.0f));
+		PlayerShip->SetActorLocation(PlayerShip->GetActorLocation() + FVector(0.0f, 600.0f, 0.0f));
+		PlayerShip->ShipDamageMesh->SetWorldLocation(PlayerShip->GetActorLocation());
+		PlayerShip->ShipDamageMesh->UpdateBounds();
 		AimLine->Tick(0.06f);
 		const FVector MovedMuzzle = MovingCannon->GetProjectileMuzzleTransform().GetLocation();
 		TestTrue(TEXT("Laser origin follows a moving Cannon instead of staying in world space"),
 			AimLine->GetLineStart().Equals(MovedMuzzle, 0.5f));
-		TestTrue(TEXT("Laser re-aims from the moved muzzle toward the captured target point"),
+		const FVector CurrentTarget = PlayerShip->BuoyancyRoot
+			? PlayerShip->BuoyancyRoot->GetComponentLocation()
+			: PlayerShip->GetActorLocation();
+		const FVector ExpectedTrackedEnd = AEnemyShipTimeStopAimLine::ResolveClippedLineEnd(
+			MovedMuzzle,
+			(CurrentTarget - MovedMuzzle).GetSafeNormal(),
+			PlayerShip,
+			TestMaximumDistance);
+		TestTrue(TEXT("Laser re-aims toward the Player Ship's current position"),
+			AimLine->GetLineEnd().Equals(ExpectedTrackedEnd, 1.0f));
+
+		const FVector LockedTargetPoint = CurrentTarget;
+		AimLine->LockAimTargetPoint(LockedTargetPoint);
+		MovingCannon->SetActorLocation(
+			MovingCannon->GetActorLocation() + FVector(150.0f, 0.0f, 0.0f));
+		PlayerShip->SetActorLocation(
+			PlayerShip->GetActorLocation() + FVector(0.0f, 3000.0f, 0.0f));
+		PlayerShip->ShipDamageMesh->SetWorldLocation(PlayerShip->GetActorLocation());
+		PlayerShip->ShipDamageMesh->UpdateBounds();
+		AimLine->Tick(0.06f);
+		const FVector LockedMovedMuzzle = MovingCannon->GetProjectileMuzzleTransform().GetLocation();
+		TestTrue(TEXT("Locked laser origin continues following the moving Cannon"),
+			AimLine->GetLineStart().Equals(LockedMovedMuzzle, 0.5f));
+		const FVector DirectionFromMovedMuzzle =
+			(LockedTargetPoint - LockedMovedMuzzle).GetSafeNormal();
+		TestTrue(TEXT("Locked laser keeps aiming at the confirmed world point after the source moves"),
 			AimLine->GetLineEnd().Equals(
-				MovedMuzzle + (CapturedTargetPoint - MovedMuzzle).GetSafeNormal() * TestMaximumDistance,
+				LockedMovedMuzzle + DirectionFromMovedMuzzle * TestMaximumDistance,
 				1.0f));
+
+		AimLine->PlayInstantHitEffects(
+			nullptr,
+			nullptr,
+			AimLine->GetLineStart(),
+			AimLine->GetLineEnd(),
+			false,
+			1.0f,
+			1.0f,
+			1.0f,
+			1.0f,
+			1.0f,
+			1.0f,
+			1.0f);
+		AimLine->Tick(0.06f);
+		if (UStaticMeshComponent* FiredLaserMesh = AimLine->FindComponentByClass<UStaticMeshComponent>())
+		{
+			TestFalse(TEXT("Warning laser stays hidden after firing even if endpoints refresh"),
+				FiredLaserMesh->IsVisible());
+		}
 	}
 
 	PlayerShip->Tags.AddUnique(TEXT("Player"));
@@ -404,6 +649,16 @@ bool FEnemyShipTimeStopActorContractTest::RunTest(const FString& Parameters)
 		UGA_EnemyShipTimeStop::StaticClass()->GetDefaultObject<UGameplayAbility>();
 	TestTrue(TEXT("Time Stop exposes the BT/SkillModule ability tag"),
 		AbilityCDO && AbilityCDO->GetAssetTags().HasTagExact(GameplayAbility_EnemyShip_TimeStop));
+	TestNotNull(TEXT("Time Stop exposes a locked charge duration"),
+		FindFProperty<FFloatProperty>(UGA_EnemyShipTimeStop::StaticClass(), TEXT("LockedChargeDurationSeconds")));
+	TestNotNull(TEXT("Time Stop exposes a charging Niagara"),
+		FindFProperty<FObjectProperty>(UGA_EnemyShipTimeStop::StaticClass(), TEXT("ChargingEffect")));
+	TestNotNull(TEXT("Time Stop exposes an instant-hit trail Niagara"),
+		FindFProperty<FObjectProperty>(UGA_EnemyShipTimeStop::StaticClass(), TEXT("InstantHitTrailEffect")));
+	TestNotNull(TEXT("Time Stop exposes the instant-hit trail lifetime in seconds"),
+		FindFProperty<FFloatProperty>(UGA_EnemyShipTimeStop::StaticClass(), TEXT("InstantHitTrailLifetimeSeconds")));
+	TestNotNull(TEXT("Time Stop exposes an explosion Niagara"),
+		FindFProperty<FObjectProperty>(UGA_EnemyShipTimeStop::StaticClass(), TEXT("ExplosionEffect")));
 	return true;
 }
 
@@ -414,6 +669,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipObstacleCannonSweepTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(
+		TEXT("QuestItem has an invalid ResultItemTag"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	AddExpectedError(
+		TEXT("QuestItem contains an invalid ingredient"),
+		EAutomationExpectedErrorFlags::Contains,
+		2);
+
 	EnemyShipAbilityTests::FTestWorld TestWorld;
 	AEnemyShipObstacle* Obstacle = TestWorld.World->SpawnActor<AEnemyShipObstacle>(
 		AEnemyShipObstacle::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator);
@@ -461,6 +725,8 @@ bool FEnemyShipObstacleCannonSweepTest::RunTest(const FString& Parameters)
 			ETeleportType::None);
 		TestTrue(TEXT("Player cannonball sweep blocks on obstacle"), PlayerHit.bBlockingHit);
 		TestEqual(TEXT("Player cannonball sweep hits obstacle actor"), PlayerHit.GetActor(), static_cast<AActor*>(Obstacle));
+		TestTrue(TEXT("Player cannonball explodes on obstacle"), PlayerCannonball->IsActorBeingDestroyed());
+		TestEqual(TEXT("Player impact consumes one obstacle hit"), Obstacle->GetCannonballHitCount(), 1);
 	}
 
 	ACannonball* EnemyCannonball = TestWorld.World->SpawnActor<ACannonball>(
@@ -481,8 +747,19 @@ bool FEnemyShipObstacleCannonSweepTest::RunTest(const FString& Parameters)
 			&EnemyHit,
 			MOVECOMP_NoFlags,
 			ETeleportType::None);
-		TestFalse(TEXT("Enemy cannonball sweep passes through obstacle"), EnemyHit.bBlockingHit);
+		TestTrue(TEXT("Enemy cannonball sweep blocks on obstacle"), EnemyHit.bBlockingHit);
+		TestEqual(TEXT("Enemy cannonball sweep hits obstacle actor"), EnemyHit.GetActor(), static_cast<AActor*>(Obstacle));
+		TestTrue(TEXT("Enemy cannonball explodes on obstacle"), EnemyCannonball->IsActorBeingDestroyed());
+		TestEqual(TEXT("Enemy impact consumes one obstacle hit"), Obstacle->GetCannonballHitCount(), 2);
 	}
+
+	for (int32 HitIndex = 0; HitIndex < 3; ++HitIndex)
+	{
+		AActor* AdditionalProjectile = TestWorld.World->SpawnActor<AActor>();
+		ICannonballImpactReceiver::Execute_ReceiveCannonballImpact(Obstacle, AdditionalProjectile);
+	}
+	TestEqual(TEXT("Five unique cannonballs exhaust obstacle durability"), Obstacle->GetCannonballHitCount(), 5);
+	TestTrue(TEXT("Obstacle is destroyed after its fifth cannonball"), Obstacle->IsActorBeingDestroyed());
 	return true;
 }
 
@@ -493,6 +770,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(
+		TEXT("QuestItem has an invalid ResultItemTag"),
+		EAutomationExpectedErrorFlags::Contains,
+		1);
+	AddExpectedError(
+		TEXT("QuestItem contains an invalid ingredient"),
+		EAutomationExpectedErrorFlags::Contains,
+		2);
+
 	EnemyShipAbilityTests::FTestWorld TestWorld;
 	AEnemyShip* EnemyShip = TestWorld.World->SpawnActor<AEnemyShip>(
 		AEnemyShip::StaticClass(), FVector::ZeroVector, FRotator(0.0f, 90.0f, 0.0f));
@@ -577,7 +863,38 @@ bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Charge applies 2x transient propulsion scale"), EnemyShip->GetCurrentAIPropulsionScale(), 2.0f);
 	TestEqual(TEXT("Charge keeps its transient turn scale while charging"), EnemyShip->GetCurrentAITurnScale(), 2.0f);
 	TestTrue(TEXT("Charge owns its active-state tag"), EnemyASC->HasMatchingGameplayTag(State_EnemyShip_Charging));
-	TestTrue(TEXT("Charge applies an independent GAS cooldown tag"), EnemyASC->HasMatchingGameplayTag(Cooldown_EnemyShip_Charge));
+	TestFalse(TEXT("Charge cooldown does not start while the charge is active"), EnemyASC->HasMatchingGameplayTag(Cooldown_EnemyShip_Charge));
+
+	AEnemyShip* OtherEnemyShip = TestWorld.World->SpawnActor<AEnemyShip>(
+		AEnemyShip::StaticClass(), FVector(500.0f, 500.0f, 0.0f), FRotator::ZeroRotator);
+	if (TestNotNull(TEXT("A second Enemy Ship spawns for charge collision testing"), OtherEnemyShip))
+	{
+		FHitResult EnemyShipHit(
+			OtherEnemyShip,
+			OtherEnemyShip->BuoyancyRoot,
+			OtherEnemyShip->GetActorLocation(),
+			FVector(-1.0f, 0.0f, 0.0f));
+		const float PlayerHealthBeforeEnemyShipCollision =
+			PlayerASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
+		EnemyShip->BuoyancyRoot->OnComponentHit.Broadcast(
+			EnemyShip->BuoyancyRoot,
+			OtherEnemyShip,
+			OtherEnemyShip->BuoyancyRoot,
+			FVector::ZeroVector,
+			EnemyShipHit);
+		TestFalse(TEXT("Charge ends when it collides with another Enemy Ship"),
+			EnemyASC->HasMatchingGameplayTag(State_EnemyShip_Charging));
+		TestEqual(TEXT("Enemy Ship collision does not damage the Player Ship"),
+			PlayerASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()),
+			PlayerHealthBeforeEnemyShipCollision);
+	}
+
+	EnemyASC->RemoveActiveEffectsWithGrantedTags(ChargeCooldownTags);
+	TestTrue(TEXT("Charge reactivates for Player Ship collision verification"),
+		EnemyASC->TryActivateAbilitiesByTag(ChargeTags, false));
+	EnemyShip->GetNavigationComponent()->TickComponent(0.016f, LEVELTICK_All, nullptr);
+	TestTrue(TEXT("Reactivated Charge enters its fixed-direction movement phase"),
+		EnemyASC->HasMatchingGameplayTag(State_EnemyShip_Charging));
 
 	const FVector ChargeVelocity = (PlayerShip->GetActorLocation() - EnemyShip->GetActorLocation())
 		.GetSafeNormal2D() * 1000.0f;
@@ -596,6 +913,7 @@ bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 	const float HealthAfterCharge = PlayerASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
 	TestTrue(TEXT("Charge damages only the designated Player Ship body"), HealthAfterCharge < HealthBeforeCharge);
 	TestFalse(TEXT("Charge ends on valid Player Physics Root collision"), EnemyASC->HasMatchingGameplayTag(State_EnemyShip_Charging));
+	TestTrue(TEXT("Charge cooldown starts after Player Ship collision"), EnemyASC->HasMatchingGameplayTag(Cooldown_EnemyShip_Charge));
 	EnemyShip->GetNavigationComponent()->TickComponent(0.016f, LEVELTICK_All, nullptr);
 	TestEqual(TEXT("Charge releases Navigation Override on end"), EnemyShip->GetCurrentAIPropulsionScale(), 1.0f);
 	TestEqual(TEXT("Charge releases transient turn scale on end"), EnemyShip->GetCurrentAITurnScale(), 1.0f);
@@ -680,12 +998,45 @@ bool FEnemyShipAbilityIntegrationTest::RunTest(const FString& Parameters)
 			TEXT("Floating Torpedo sweeps the query-only ShipDamageMesh and applies its snapshot"),
 			PlayerASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()),
 			HealthBeforeTorpedo - 60.0f);
+		TestFalse(
+			TEXT("Torpedo hit starts a Network Physics blast pulse"),
+			PlayerShip->GetCurrentBlastAccelerationForDiagnostics().IsNearlyZero());
+		TestTrue(
+			TEXT("Torpedo blast preserves a full 3D upward component"),
+			PlayerShip->GetCurrentBlastAccelerationForDiagnostics().Z > 0.0f);
 		TestTrue(TEXT("Torpedo destroys itself after one Player Ship hit"), SpawnedTorpedo->IsActorBeingDestroyed());
 	}
 	TestTrue(TEXT("Torpedo applies its own GAS cooldown"), EnemyASC->HasMatchingGameplayTag(Cooldown_EnemyShip_LaunchTorpedo));
 
 	AddExpectedError(TEXT("projectile class is null"), EAutomationExpectedErrorFlags::Contains, 1);
 	TestTrue(TEXT("Torpedo launch does not consume normal cannon cooldown"), Cannon->FireCannon());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipCannonAimModelTest,
+	"ArtisticSW.Enemy.Ship.Ability.CannonAimModel",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipCannonAimModelTest::RunTest(const FString& Parameters)
+{
+	FEnemyShipCannonAimProfile Profile;
+	Profile.TrackableTargetSpeed = 1000.0f;
+	Profile.ProjectileFlightTime = 3.0f;
+	FVector LaunchVelocity;
+	TestTrue(
+		TEXT("A distant shot always receives a fixed-time solution"),
+		UGA_EnemyShipCannonVolley::CalculateLaunchVelocity(
+			FVector::ZeroVector,
+			FVector(30000.0f, 0.0f, 0.0f),
+			FVector(0.0f, 2000.0f, 0.0f),
+			-980.0f,
+			Profile,
+			LaunchVelocity));
+	TestTrue(TEXT("Distance may require speed above the removed legacy ceiling"), LaunchVelocity.Size() > 3000.0f);
+	TestEqual(TEXT("Horizontal speed reaches the distant target in three seconds"), LaunchVelocity.X, 10000.0);
+	TestEqual(TEXT("Target lead is capped at the trackable target speed"), LaunchVelocity.Y, 1000.0);
+	TestEqual(TEXT("Vertical speed compensates gravity for the chosen flight time"), LaunchVelocity.Z, 1470.0);
 	return true;
 }
 

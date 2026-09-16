@@ -9,7 +9,9 @@ public class Enemy: ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
-            "UMG"
+            "DeveloperSettings",
+            "UMG",
+            "Niagara"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
