@@ -11,9 +11,6 @@
 
 class UUserWidget;
 
-// 컴포넌트를 소유한 액터(Item, 작업대 등)에게 상호작용 이벤트가 발생했음을 알리기 위한 델리게이트
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInteractedSignature, AActor*, Interactor);
-
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class ARTISTICSWCORE_API UInteractableComponent : public USphereComponent, public IInteractable
 {
@@ -25,6 +22,7 @@ public:
 
 	// IInteractable 구현
 	virtual FGameplayTag GetInteractionTag() const override;
+	virtual const FInteractionUIInfo& GetInteractionUIInfo() const override;
 	virtual void Interact(AActor* Interactor) override;
 
 public:

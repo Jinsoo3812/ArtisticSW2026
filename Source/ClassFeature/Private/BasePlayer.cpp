@@ -27,7 +27,6 @@
 #include "CollisionChannels.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Components/WidgetComponent.h"
-#include "InteractableComponent.h"
 #include "Repair/ShipRepairPointComponent.h"
 #include "UI/ShipRepairProgressWidget.h"
 #include "InteractUserWidget.h"
@@ -1930,29 +1929,44 @@ void ABasePlayer::PerformInteractionScan()
 	PerformInteractTrace(HitResults);
 
 	TArray<UWidgetComponent*> CurrentHoveredWidgets;
+	TMap<UWidgetComponent*, FInteractionUIInfo> CurrentWidgetUIInfo;
 
 	// 현재 트레이스에 걸린 모든 위젯 수집
 	for (const FHitResult& Hit : HitResults)
 	{
-		if (AActor* HitActor = Hit.GetActor())
+		UPrimitiveComponent* HitComponent = Hit.GetComponent();
+		if (!HitComponent)
 		{
-			if (!HitActor->FindComponentByClass<UInteractableComponent>())
+			continue;
+		}
+
+		IInteractable* Interactable = Cast<IInteractable>(HitComponent);
+		if (!Interactable)
+		{
+			continue;
+		}
+
+		AActor* HitActor = Hit.GetActor();
+		if (!HitActor)
+		{
+			continue;
+		}
+
+		TArray<UWidgetComponent*> WidgetComponents;
+		HitActor->GetComponents<UWidgetComponent>(WidgetComponents);
+		for (UWidgetComponent* WidgetComp : WidgetComponents)
+		{
+			if (!WidgetComp)
 			{
 				continue;
 			}
 
-			TArray<UWidgetComponent*> WidgetComponents;
-			HitActor->GetComponents<UWidgetComponent>(WidgetComponents);
-			for (UWidgetComponent* WidgetComp : WidgetComponents)
+			if (Cast<UInteractUserWidget>(WidgetComp->GetUserWidgetObject()))
 			{
-				if (!WidgetComp)
+				CurrentHoveredWidgets.AddUnique(WidgetComp);
+				if (!CurrentWidgetUIInfo.Contains(WidgetComp))
 				{
-					continue;
-				}
-
-				if (Cast<UInteractUserWidget>(WidgetComp->GetUserWidgetObject()))
-				{
-					CurrentHoveredWidgets.AddUnique(WidgetComp);
+					CurrentWidgetUIInfo.Add(WidgetComp, Interactable->GetInteractionUIInfo());
 				}
 			}
 		}
@@ -1997,17 +2011,11 @@ void ABasePlayer::PerformInteractionScan()
 				Widget->SetHiddenInGame(false);
 				CachedHoveredWidgets.Add(Widget);
 
-				if (AActor* OwnerActor = Widget->GetOwner())
+				if (const FInteractionUIInfo* UIInfo = CurrentWidgetUIInfo.Find(Widget))
 				{
-					// InteractableComponent
-					if (UInteractableComponent* InteractComp = OwnerActor->FindComponentByClass<UInteractableComponent>())
+					if (UInteractUserWidget* InteractWidget = Cast<UInteractUserWidget>(Widget->GetUserWidgetObject()))
 					{
-						// InteractUserWidget으로 캐스팅
-						if (UInteractUserWidget* InteractWidget = Cast<UInteractUserWidget>(Widget->GetUserWidgetObject()))
-						{
-							// BP에서 구현된 UI 업데이트 함수 호출
-							InteractWidget->OnUpdateInteractUI(InteractComp->InteractUIInfo);
-						}
+						InteractWidget->OnUpdateInteractUI(*UIInfo);
 					}
 				}
 			}
