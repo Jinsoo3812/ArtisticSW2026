@@ -56,7 +56,6 @@ namespace
 				|| SavedSwimState.bRawAscendInputHeld != NewSWMove->SavedSwimState.bRawAscendInputHeld
 				|| SavedSwimState.bDiveInputSuppressedUntilRelease != NewSWMove->SavedSwimState.bDiveInputSuppressedUntilRelease
 				|| SavedSwimState.bAscendInputSuppressedUntilRelease != NewSWMove->SavedSwimState.bAscendInputSuppressedUntilRelease
-				|| FMath::Abs(SavedSwimState.DiveTransitionElapsed - NewSWMove->SavedSwimState.DiveTransitionElapsed) > MaxDelta
 				|| FMath::Abs(SavedSwimState.SurfaceTransitionElapsed - NewSWMove->SavedSwimState.SurfaceTransitionElapsed) > MaxDelta
 				|| FMath::Abs(SavedSwimState.SurfaceTransitionStallElapsed - NewSWMove->SavedSwimState.SurfaceTransitionStallElapsed) > MaxDelta
 				|| FMath::Abs(SavedSwimState.SurfaceTransitionEntryHoldElapsed - NewSWMove->SavedSwimState.SurfaceTransitionEntryHoldElapsed) > MaxDelta
@@ -260,26 +259,7 @@ void USWCharacterMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 
 	const bool bDive = (Flags & FSavedMove_Character::FLAG_Custom_0) != 0;
 	const bool bAscend = (Flags & FSavedMove_Character::FLAG_Custom_1) != 0;
-	const float VerticalInput = bDive ? -1.0f : (bAscend ? 1.0f : 0.0f);
-	bool bRequestDiveTransition = false;
-	if (ACharacter* CharOwner = CharacterOwner)
-	{
-		if (USwimmingComponent* SwimComp = CharOwner->FindComponentByClass<USwimmingComponent>())
-		{
-			bRequestDiveTransition = bDive && SwimComp->GetVerticalSwimInput() >= -KINDA_SMALL_NUMBER;
-		}
-	}
-	SetSwimmingVerticalInput(VerticalInput);
-	if (bRequestDiveTransition)
-	{
-		if (ACharacter* CharOwner = CharacterOwner)
-		{
-			if (USwimmingComponent* SwimComp = CharOwner->FindComponentByClass<USwimmingComponent>())
-			{
-				SwimComp->RequestDiveTransition();
-			}
-		}
-	}
+	SetSwimmingVerticalInput(bDive, bAscend);
 }
 
 FNetworkPredictionData_Client* USWCharacterMovementComponent::GetPredictionData_Client() const

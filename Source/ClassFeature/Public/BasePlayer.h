@@ -229,6 +229,15 @@ public:
 
 	/** Raw physical Ctrl state; effective swim commands are owned by USwimmingComponent. */
 	bool bSwimDiveInputHeld = false;
+	/** Local synthetic Ctrl latch used to turn a surface tap into one continuous dive input. */
+	bool bAutomaticSwimDiveHeld = false;
+	/** Remaining local synthetic Ctrl hold time. This is never replicated or saved by CMC prediction. */
+	float AutomaticSwimDiveRemaining = 0.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Swimming|Input",
+		meta = (ClampMin = "0.0", Units = "s"))
+	float AutomaticSwimDiveHoldDuration = 1.5f;
+
 	/** Raw physical Space state; effective swim commands are owned by USwimmingComponent. */
 	bool bSwimAscendInputHeld = false;
 
@@ -367,6 +376,7 @@ protected:
 	void MoveStopped(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void RefreshSwimmingVerticalInput();
+	void ResetAutomaticSwimDiveInput();
 
 	// 기본 착지 이벤트 오버라이드
 	virtual void Landed(const FHitResult& Hit) override;

@@ -48,7 +48,6 @@ struct FSwimWaterSurfaceSample
 struct FSwimPredictionState
 {
 	ESwimMovementState MovementState = ESwimMovementState::Surface;
-	float DiveTransitionElapsed = 0.0f;
 	float SurfaceTransitionElapsed = 0.0f;
 	float SurfaceTransitionStallElapsed = 0.0f;
 	float SurfaceTransitionEntryHoldElapsed = 0.0f;
@@ -113,7 +112,6 @@ public:
 	/** Restores the movement sub-state associated with a replayed CMC saved move. */
 	FSwimPredictionState GetPredictionState() const;
 	void RestorePredictedSwimState(const FSwimPredictionState& InState);
-	bool RequestDiveTransition();
 
 	/** True while Ctrl or Space owns movement and horizontal swim input must be ignored. */
 	bool HasVerticalSwimInput() const;
@@ -171,7 +169,10 @@ public:
 private:
 	// Helper to calculate the water height at a given location (queries overlapping water bodies)
 	FSwimWaterSurfaceSample QueryWaterSurfaceSample(const FVector& Location) const;
-	void EnterSwimMovementState(ESwimMovementState NewState, float InitialDepth = 0.0f);
+	void EnterSwimMovementState(
+		ESwimMovementState NewState,
+		float InitialDepth = 0.0f,
+		const TCHAR* TransitionReason = TEXT("Unspecified"));
 	void UpdateSwimState(float DeltaTime, const FSwimWaterSurfaceSample& Sample, bool bBlockingHit);
 	void ResetSwimMovementState();
 	void UpdateUnderwaterState(const FSwimWaterSurfaceSample& Sample);
@@ -254,9 +255,6 @@ protected:
 	/** Surface ceiling used by Space ascent before pontoon buoyancy resumes. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface", meta = (ClampMin = "0.0", Units = "cm"))
 	float SurfaceTargetDepth = 50.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|State", meta = (ClampMin = "0.0", Units = "s"))
-	float DiveTransitionDuration = 1.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|State", meta = (ClampMin = "0.0", Units = "cm"))
 	float SubmergedDepthThreshold = 150.0f;
@@ -360,7 +358,6 @@ private:
 	UPROPERTY(Replicated)
 	ESwimMovementState MovementState = ESwimMovementState::Surface;
 
-	float DiveTransitionElapsed = 0.0f;
 	float SurfaceTransitionElapsed = 0.0f;
 	float SurfaceTransitionStallElapsed = 0.0f;
 	float SurfaceTransitionEntryHoldElapsed = 0.0f;

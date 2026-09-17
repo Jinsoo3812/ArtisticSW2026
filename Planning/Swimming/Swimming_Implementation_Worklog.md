@@ -80,3 +80,11 @@ Use `p.SwimTransitionDebug 1` to inspect the four-state movement state, raw/effe
 - Two-client PIE: verify the remote character receives the same movement and surface/submerged transition.
 - During each transition, press and hold the opposite vertical key; verify it remains inactive after the transition until released and pressed again.
 - Test at a wave crest and trough: hover near the face-level waterline and verify `IsUnderwater()` changes only after crossing the entry/exit clearance, without flickering.
+## 2026-09-17 — 2차 수정: 로컬 합성 Ctrl 홀드
+
+- Surface에서 시작한 Ctrl 입력은 로컬 `ABasePlayer`의 1.5초 자동 홀드와 실제 Ctrl 상태를 OR한 단일 effective dive bit로 변환한다.
+- 서버와 CMC는 자동 홀드와 실제 Ctrl을 구분하지 않으며, SavedMove/compressed flag에 기록된 동일한 dive bit만 처리한다.
+- `USwimmingComponent`의 `DiveTransitionElapsed`/`DiveTransitionDuration` 완료 판정과 서버 compressed flag의 별도 전이 요청을 제거했다.
+- Surface의 effective dive false→true edge만 `DiveTransition`을 시작하고, true→false 뒤 같은 이동 프레임의 수면 깊이로 `Submerged` 또는 `SurfaceTransition`을 결정한다.
+- Animation 소스와 자산은 변경하지 않았고, 기존 animation-facing dive bool은 동일한 effective dive 입력에서 파생된다.
+- `ArtisticSW2026Editor Win64 Development` C++ 컴파일에 성공했다. 짧은 탭, 장기 홀드, client/listen-server 및 SavedMove replay의 PIE 수용 검증은 남아 있다.

@@ -40,9 +40,9 @@ static TAutoConsoleVariable<int32> CVarShowSwimBuoyancyDebug(
 static TAutoConsoleVariable<int32> CVarSwimTransitionDebug(
 	TEXT("p.SwimTransitionDebug"),
 	0,
-	TEXT("Log authoritative custom-swim surface and vertical-input state.\n")
+	TEXT("Log custom-swim state transitions and animation-facing command edges.\n")
 	TEXT("0: Disabled\n")
-	TEXT("1: Log while Ctrl/Space vertical swim input is active"),
+	TEXT("1: Log periodic state plus every movement/underwater transition"),
 	ECVF_Default
 );
 
@@ -66,6 +66,23 @@ static TAutoConsoleVariable<int32> CVarCabinSwimTrace(
 
 namespace
 {
+	const TCHAR* GetSwimMovementStateName(ESwimMovementState State)
+	{
+		switch (State)
+		{
+		case ESwimMovementState::Surface: return TEXT("Surface");
+		case ESwimMovementState::DiveTransition: return TEXT("DiveTransition");
+		case ESwimMovementState::Submerged: return TEXT("Submerged");
+		case ESwimMovementState::SurfaceTransition: return TEXT("SurfaceTransition");
+		default: return TEXT("Unknown");
+		}
+	}
+
+	const TCHAR* GetSwimDepthModeName(ESwimDepthMode Mode)
+	{
+		return Mode == ESwimDepthMode::Surface ? TEXT("Surface") : TEXT("Submerged");
+	}
+
 	float ComputeSurfaceFollowAcceleration(
 		float PositionError,
 		float VelocityError,
@@ -130,6 +147,7 @@ void USwimmingComponent::SetVerticalSwimInput(float InVerticalInput)
 
 void USwimmingComponent::SetRawVerticalSwimInput(bool bDiveHeld, bool bAscendHeld)
 {
+	const bool bWasDiveHeld = bRawDiveInputHeld;
 	if (!bDiveHeld)
 	{
 		bDiveInputSuppressedUntilRelease = false;
@@ -158,7 +176,21 @@ void USwimmingComponent::SetRawVerticalSwimInput(bool bDiveHeld, bool bAscendHel
 		bAscendInputSuppressedUntilRelease |= bAscendHeld;
 	}
 
-	RefreshEffectiveVerticalInput();
+	const bool bAllowedDivePress = bDiveHeld
+		&& !bWasDiveHeld
+		&& !bDiveInputSuppressedUntilRelease;
+	if (MovementState == ESwimMovementState::Surface && bAllowedDivePress)
+	{
+		EnterSwimMovementState(ESwimMovementState::DiveTransition, 0.0f, TEXT("EffectiveDivePressed"));
+		if (CharacterMovement)
+		{
+			CharacterMovement->ConsumeInputVector();
+		}
+	}
+	else
+	{
+		RefreshEffectiveVerticalInput();
+	}
 }
 
 void USwimmingComponent::RefreshEffectiveVerticalInput()
@@ -166,11 +198,10 @@ void USwimmingComponent::RefreshEffectiveVerticalInput()
 	const bool bAllowDive = bRawDiveInputHeld && !bDiveInputSuppressedUntilRelease;
 	const bool bAllowAscend = bRawAscendInputHeld && !bAscendInputSuppressedUntilRelease;
 	RawVerticalSwimInput = bAllowDive ? -1.0f : (bAllowAscend ? 1.0f : 0.0f);
-	if (MovementState == ESwimMovementState::Surface || IsTransitionState())
+	if (MovementState == ESwimMovementState::Surface
+		|| MovementState == ESwimMovementState::SurfaceTransition)
 	{
-		RawVerticalSwimInput = MovementState == ESwimMovementState::DiveTransition && bAllowDive
-			? -1.0f
-			: 0.0f;
+		RawVerticalSwimInput = 0.0f;
 	}
 	const float EffectiveInput = GetEffectiveVerticalSwimInput();
 	bDiveInputHeld = EffectiveInput < -KINDA_SMALL_NUMBER;
@@ -181,7 +212,7 @@ float USwimmingComponent::GetEffectiveVerticalSwimInput() const
 {
 	switch (MovementState)
 	{
-	case ESwimMovementState::DiveTransition: return -1.0f;
+	case ESwimMovementState::DiveTransition: return RawVerticalSwimInput;
 	case ESwimMovementState::SurfaceTransition: return 1.0f;
 	case ESwimMovementState::Submerged: return RawVerticalSwimInput;
 	default: return 0.0f;
@@ -218,7 +249,6 @@ FSwimPredictionState USwimmingComponent::GetPredictionState() const
 {
 	FSwimPredictionState State;
 	State.MovementState = MovementState;
-	State.DiveTransitionElapsed = DiveTransitionElapsed;
 	State.SurfaceTransitionElapsed = SurfaceTransitionElapsed;
 	State.SurfaceTransitionStallElapsed = SurfaceTransitionStallElapsed;
 	State.SurfaceTransitionEntryHoldElapsed = SurfaceTransitionEntryHoldElapsed;
@@ -233,7 +263,6 @@ FSwimPredictionState USwimmingComponent::GetPredictionState() const
 void USwimmingComponent::RestorePredictedSwimState(const FSwimPredictionState& InState)
 {
 	MovementState = InState.MovementState;
-	DiveTransitionElapsed = InState.DiveTransitionElapsed;
 	SurfaceTransitionElapsed = InState.SurfaceTransitionElapsed;
 	SurfaceTransitionStallElapsed = InState.SurfaceTransitionStallElapsed;
 	SurfaceTransitionEntryHoldElapsed = InState.SurfaceTransitionEntryHoldElapsed;
@@ -697,7 +726,10 @@ void USwimmingComponent::CheckWaterTransitions(float DeltaSeconds)
 				Sample.bIsValid && SignedDepth >= SubmergedDepthThreshold
 					? ESwimMovementState::Submerged
 					: ESwimMovementState::Surface,
-				SignedDepth);
+				SignedDepth,
+				Sample.bIsValid && SignedDepth >= SubmergedDepthThreshold
+					? TEXT("InitialWaterEntryDeep")
+					: TEXT("InitialWaterEntrySurface"));
 			bIsInShallowWater = false;
 			CharacterMovement->Buoyancy = 0.f; // CMC의 기본 부력 사용 정지
 			ApplySwimmingGameplayState(true);
@@ -995,8 +1027,8 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 
 	const FVector ActorLocation = OwnerCharacter->GetActorLocation();
 	const FSwimWaterSurfaceSample Sample = QueryWaterSurfaceSample(ActorLocation);
-	const float EffectiveVerticalInput = GetEffectiveVerticalSwimInput();
-	const float InputVerticalAcceleration = EffectiveVerticalInput * VerticalSwimAcceleration;
+	const float MovementVerticalInput = GetEffectiveVerticalSwimInput();
+	const float InputVerticalAcceleration = MovementVerticalInput * VerticalSwimAcceleration;
 	const bool bHasVerticalInput = HasVerticalSwimInput();
 	const bool bUseCameraDirectedMovement = ShouldUseCameraDirectedUnderwaterMovement();
 
@@ -1086,13 +1118,25 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 		&& GetWorld()->GetTimeSeconds() - LastLoggedTime >= 0.25f)
 	{
 		LastLoggedTime = GetWorld()->GetTimeSeconds();
+		const float CurrentEffectiveInput = GetEffectiveVerticalSwimInput();
+		const ESwimDepthMode AnimationDepthMode = ToAnimationDepthMode(MovementState);
 		UE_LOG(LogTemp, Warning,
-			TEXT("[SwimTransition] Pawn=%s Role=%d State=%d Raw=%.1f Effective=%.1f Valid=%d SurfaceZ=%.1f ActorZ=%.1f Depth=%.1f TargetDepth=%.1f VelZ=%.1f SurfaceVelZ=%.1f DiveT=%.2f SurfaceT=%.2f StallT=%.2f Blocking=%d"),
+			TEXT("[SwimTransition] Pawn=%s Role=%d State=%s AnimDepth=%s Raw=%.1f Effective=%.1f PhysicalDive=%d PhysicalAscend=%d SuppressDive=%d SuppressAscend=%d AnimDive=%d AnimAscend=%d Underwater=%d DiveUnderwaterOverlap=%d CommandConflict=%d Valid=%d SurfaceZ=%.1f ActorZ=%.1f Depth=%.1f TargetDepth=%.1f VelZ=%.1f SurfaceVelZ=%.1f SurfaceT=%.2f HoldT=%.2f StallT=%.2f Blocking=%d"),
 			*GetNameSafe(OwnerCharacter),
 			static_cast<int32>(OwnerCharacter->GetLocalRole()),
-			static_cast<int32>(MovementState),
+			GetSwimMovementStateName(MovementState),
+			GetSwimDepthModeName(AnimationDepthMode),
 			RawVerticalSwimInput,
-			EffectiveVerticalInput,
+			CurrentEffectiveInput,
+			bRawDiveInputHeld ? 1 : 0,
+			bRawAscendInputHeld ? 1 : 0,
+			bDiveInputSuppressedUntilRelease ? 1 : 0,
+			bAscendInputSuppressedUntilRelease ? 1 : 0,
+			bDiveInputHeld ? 1 : 0,
+			bAscendInputHeld ? 1 : 0,
+			bIsUnderwater ? 1 : 0,
+			bDiveInputHeld && bIsUnderwater ? 1 : 0,
+			bDiveInputHeld && bAscendInputHeld ? 1 : 0,
 			Sample.bIsValid ? 1 : 0,
 			Sample.SurfaceZ,
 			OwnerCharacter->GetActorLocation().Z,
@@ -1100,30 +1144,23 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 			SurfaceTargetDepth,
 			CharacterMovement->Velocity.Z,
 			Sample.SurfaceVelocityZ,
-			DiveTransitionElapsed,
 			SurfaceTransitionElapsed,
+			SurfaceTransitionEntryHoldElapsed,
 			SurfaceTransitionStallElapsed,
 			SweepHit.IsValidBlockingHit() ? 1 : 0);
 	}
 }
 
-bool USwimmingComponent::RequestDiveTransition()
-{
-	if (!IsCustomSwimming() || MovementState != ESwimMovementState::Surface)
-	{
-		return false;
-	}
-	EnterSwimMovementState(ESwimMovementState::DiveTransition);
-	if (CharacterMovement)
-	{
-		CharacterMovement->ConsumeInputVector();
-	}
-	return true;
-}
-
-void USwimmingComponent::EnterSwimMovementState(ESwimMovementState NewState, float InitialDepth)
+void USwimmingComponent::EnterSwimMovementState(
+	ESwimMovementState NewState,
+	float InitialDepth,
+	const TCHAR* TransitionReason)
 
 {
+	const ESwimMovementState PreviousState = MovementState;
+	const float PreviousSurfaceElapsed = SurfaceTransitionElapsed;
+	const float PreviousEntryHoldElapsed = SurfaceTransitionEntryHoldElapsed;
+	const float PreviousStallElapsed = SurfaceTransitionStallElapsed;
 	if (NewState == ESwimMovementState::SurfaceTransition)
 	{
 		RawVerticalSwimInput = 0.0f;
@@ -1131,12 +1168,38 @@ void USwimmingComponent::EnterSwimMovementState(ESwimMovementState NewState, flo
 		bAscendInputSuppressedUntilRelease |= bRawAscendInputHeld;
 	}
 	MovementState = NewState;
-	DiveTransitionElapsed = 0.0f;
 	SurfaceTransitionElapsed = 0.0f;
 	SurfaceTransitionStallElapsed = 0.0f;
 	SurfaceTransitionEntryHoldElapsed = 0.0f;
 	LastSurfaceTransitionProgressDepth = InitialDepth;
 	RefreshEffectiveVerticalInput();
+
+	if (PreviousState != NewState && CVarSwimTransitionDebug.GetValueOnGameThread() != 0)
+	{
+		const ESwimDepthMode AnimationDepthMode = ToAnimationDepthMode(NewState);
+		UE_LOG(LogTemp, Warning,
+			TEXT("[SwimStateEdge] Pawn=%s Role=%d From=%s To=%s Reason=%s Depth=%.1f VelZ=%.1f PrevSurfaceT=%.3f PrevHoldT=%.3f PrevStallT=%.3f PhysicalDive=%d PhysicalAscend=%d SuppressDive=%d SuppressAscend=%d AnimDepth=%s AnimDive=%d AnimAscend=%d Underwater=%d DiveUnderwaterOverlap=%d CommandConflict=%d"),
+			*GetNameSafe(OwnerCharacter),
+			OwnerCharacter ? static_cast<int32>(OwnerCharacter->GetLocalRole()) : INDEX_NONE,
+			GetSwimMovementStateName(PreviousState),
+			GetSwimMovementStateName(NewState),
+			TransitionReason ? TransitionReason : TEXT("None"),
+			InitialDepth,
+			CharacterMovement ? CharacterMovement->Velocity.Z : 0.0f,
+			PreviousSurfaceElapsed,
+			PreviousEntryHoldElapsed,
+			PreviousStallElapsed,
+			bRawDiveInputHeld ? 1 : 0,
+			bRawAscendInputHeld ? 1 : 0,
+			bDiveInputSuppressedUntilRelease ? 1 : 0,
+			bAscendInputSuppressedUntilRelease ? 1 : 0,
+			GetSwimDepthModeName(AnimationDepthMode),
+			bDiveInputHeld ? 1 : 0,
+			bAscendInputHeld ? 1 : 0,
+			bIsUnderwater ? 1 : 0,
+			bDiveInputHeld && bIsUnderwater ? 1 : 0,
+			bDiveInputHeld && bAscendInputHeld ? 1 : 0);
+	}
 }
 
 void USwimmingComponent::ResetSwimMovementState()
@@ -1147,7 +1210,7 @@ void USwimmingComponent::ResetSwimMovementState()
 	bRawAscendInputHeld = false;
 	bDiveInputSuppressedUntilRelease = false;
 	bAscendInputSuppressedUntilRelease = false;
-	EnterSwimMovementState(ESwimMovementState::Surface);
+	EnterSwimMovementState(ESwimMovementState::Surface, 0.0f, TEXT("Reset"));
 }
 
 void USwimmingComponent::UpdateSwimState(
@@ -1163,7 +1226,6 @@ void USwimmingComponent::UpdateSwimState(
 	const float SafeTargetDepth = FMath::Max(SurfaceTargetDepth, 0.0f);
 	const float SafeTolerance = FMath::Max(SurfaceTransitionCompletionTolerance, 0.0f);
 	const float SafeThreshold = FMath::Max(SubmergedDepthThreshold, SafeTargetDepth + SafeTolerance + UE_SMALL_NUMBER);
-	const float SafeDiveDuration = FMath::Max(DiveTransitionDuration, 0.0f);
 	const float SafeEntryHold = FMath::Max(SurfaceTransitionEntryHoldTime, UE_SMALL_NUMBER);
 	const float SafeMaxDuration = FMath::Max(SurfaceTransitionMaxDuration, UE_SMALL_NUMBER);
 	const float SafeStallTimeout = FMath::Max(SurfaceTransitionStallTimeout, UE_SMALL_NUMBER);
@@ -1171,7 +1233,6 @@ void USwimmingComponent::UpdateSwimState(
 
 	if (!bLoggedInvalidStateTuning
 		&& (SubmergedDepthThreshold <= SurfaceTargetDepth + SurfaceTransitionCompletionTolerance
-			|| DiveTransitionDuration < 0.0f
 			|| SurfaceTransitionEntryHoldTime <= 0.0f
 			|| SurfaceTransitionMaxDuration <= 0.0f
 			|| SurfaceTransitionStallTimeout <= 0.0f
@@ -1185,12 +1246,13 @@ void USwimmingComponent::UpdateSwimState(
 	switch (MovementState)
 	{
 	case ESwimMovementState::DiveTransition:
-		DiveTransitionElapsed += DeltaTime;
-		if (DiveTransitionElapsed >= SafeDiveDuration)
+		if (!bDiveInputHeld)
 		{
+			const bool bReachedSubmergedDepth = SignedDepth >= SafeThreshold;
 			EnterSwimMovementState(
-				SignedDepth >= SafeThreshold ? ESwimMovementState::Submerged : ESwimMovementState::SurfaceTransition,
-				SignedDepth);
+				bReachedSubmergedDepth ? ESwimMovementState::Submerged : ESwimMovementState::SurfaceTransition,
+				SignedDepth,
+				bReachedSubmergedDepth ? TEXT("EffectiveDiveReleasedAtDepth") : TEXT("EffectiveDiveReleasedTooShallow"));
 		}
 		break;
 	case ESwimMovementState::Submerged:
@@ -1199,7 +1261,10 @@ void USwimmingComponent::UpdateSwimState(
 			SurfaceTransitionEntryHoldElapsed += DeltaTime;
 			if (SurfaceTransitionEntryHoldElapsed >= SafeEntryHold)
 			{
-				EnterSwimMovementState(ESwimMovementState::SurfaceTransition, SignedDepth);
+				EnterSwimMovementState(
+					ESwimMovementState::SurfaceTransition,
+					SignedDepth,
+					TEXT("SubmergedBelowThresholdHeld"));
 			}
 		}
 		else
@@ -1213,7 +1278,10 @@ void USwimmingComponent::UpdateSwimState(
 		{
 			CharacterMovement->Velocity.Z = FMath::Clamp(
 				Sample.SurfaceVelocityZ, -MaxSurfaceFollowSpeed, MaxSurfaceFollowSpeed);
-			EnterSwimMovementState(ESwimMovementState::Surface, SignedDepth);
+			EnterSwimMovementState(
+				ESwimMovementState::Surface,
+				SignedDepth,
+				TEXT("SurfaceTargetReached"));
 			break;
 		}
 		if (LastSurfaceTransitionProgressDepth - SignedDepth >= 5.0f)
@@ -1227,7 +1295,12 @@ void USwimmingComponent::UpdateSwimState(
 		}
 		if (SurfaceTransitionElapsed >= SafeMaxDuration || SurfaceTransitionStallElapsed >= SafeStallTimeout)
 		{
-			EnterSwimMovementState(ESwimMovementState::Submerged, SignedDepth);
+			EnterSwimMovementState(
+				ESwimMovementState::Submerged,
+				SignedDepth,
+				SurfaceTransitionElapsed >= SafeMaxDuration
+					? TEXT("SurfaceTransitionMaxDuration")
+					: TEXT("SurfaceTransitionBlockedStall"));
 		}
 		break;
 	default:
@@ -1241,26 +1314,46 @@ void USwimmingComponent::UpdateSwimState(
 void USwimmingComponent::UpdateUnderwaterState(const FSwimWaterSurfaceSample& Sample)
 
 {
+	const bool bWasUnderwater = bIsUnderwater;
 	if (!OwnerCharacter || !CapsuleComponent || !IsCustomSwimming() || !Sample.bIsValid)
 	{
 		bIsUnderwater = false;
-		return;
-	}
-
-	const float HeadZ = OwnerCharacter->GetActorLocation().Z
-		+ CapsuleComponent->GetUnscaledCapsuleHalfHeight() - 15.0f;
-	const float WaterHeightRelativeToHead = Sample.SurfaceZ - HeadZ;
-
-	if (bIsUnderwater)
-	{
-		// Waves may cross the exact head height every frame. Keep the state until
-		// the head is clearly above the current wave surface.
-		bIsUnderwater = WaterHeightRelativeToHead > -UnderwaterExitHeadClearance;
 	}
 	else
 	{
-		// Require meaningful submersion before entering the underwater state.
-		bIsUnderwater = WaterHeightRelativeToHead > UnderwaterEntryHeadSubmersion;
+		const float HeadZ = OwnerCharacter->GetActorLocation().Z
+			+ CapsuleComponent->GetUnscaledCapsuleHalfHeight() - 15.0f;
+		const float WaterHeightRelativeToHead = Sample.SurfaceZ - HeadZ;
+
+		if (bIsUnderwater)
+		{
+			// Waves may cross the exact head height every frame. Keep the state until
+			// the head is clearly above the current wave surface.
+			bIsUnderwater = WaterHeightRelativeToHead > -UnderwaterExitHeadClearance;
+		}
+		else
+		{
+			// Require meaningful submersion before entering the underwater state.
+			bIsUnderwater = WaterHeightRelativeToHead > UnderwaterEntryHeadSubmersion;
+		}
+	}
+
+	if (bWasUnderwater != bIsUnderwater && CVarSwimTransitionDebug.GetValueOnGameThread() != 0)
+	{
+		const ESwimDepthMode AnimationDepthMode = ToAnimationDepthMode(MovementState);
+		UE_LOG(LogTemp, Warning,
+			TEXT("[SwimAnimEdge] Pawn=%s Role=%d Cause=UnderwaterHysteresis Underwater=%d State=%s AnimDepth=%s AnimDive=%d AnimAscend=%d DiveUnderwaterOverlap=%d CommandConflict=%d Depth=%.1f VelZ=%.1f"),
+			*GetNameSafe(OwnerCharacter),
+			OwnerCharacter ? static_cast<int32>(OwnerCharacter->GetLocalRole()) : INDEX_NONE,
+			bIsUnderwater ? 1 : 0,
+			GetSwimMovementStateName(MovementState),
+			GetSwimDepthModeName(AnimationDepthMode),
+			bDiveInputHeld ? 1 : 0,
+			bAscendInputHeld ? 1 : 0,
+			bDiveInputHeld && bIsUnderwater ? 1 : 0,
+			bDiveInputHeld && bAscendInputHeld ? 1 : 0,
+			Sample.bIsValid ? Sample.SurfaceZ - OwnerCharacter->GetActorLocation().Z : 0.0f,
+			CharacterMovement ? CharacterMovement->Velocity.Z : 0.0f);
 	}
 }
 

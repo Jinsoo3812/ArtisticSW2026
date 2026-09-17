@@ -342,6 +342,8 @@ void ABasePlayer::GiveStartingItemsForTest()
 
 void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ResetAutomaticSwimDiveInput();
+
 	if (InventoryComponent)
 	{
 		InventoryComponent->OnInventoryChanged.RemoveAll(this);
@@ -407,6 +409,23 @@ void ABasePlayer::RestoreRespawnProgress(AController* OwningController)
 void ABasePlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (bAutomaticSwimDiveHeld)
+	{
+		if (!SwimmingComponent || !SwimmingComponent->IsCustomSwimming())
+		{
+			ResetAutomaticSwimDiveInput();
+		}
+		else if (IsLocallyControlled())
+		{
+			AutomaticSwimDiveRemaining -= DeltaTime;
+			if (AutomaticSwimDiveRemaining <= 0.0f)
+			{
+				ResetAutomaticSwimDiveInput();
+				RefreshSwimmingVerticalInput();
+			}
+		}
+	}
 
 	// 후방 이동 시 질주(Sprint) 차단 (1안)
 	RefreshSprintFromInput();
@@ -655,6 +674,7 @@ void ABasePlayer::PrepareForCannonControl()
 void ABasePlayer::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+	ResetAutomaticSwimDiveInput();
 
 	if (AnimStateComponent)
 	{
@@ -761,6 +781,8 @@ void ABasePlayer::PossessedBy(AController* NewController)
 
 void ABasePlayer::UnPossessed()
 {
+	ResetAutomaticSwimDiveInput();
+
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->ResetLocomotionActionState(TEXT("PlayerUnPossessed"));
@@ -2258,9 +2280,13 @@ void ABasePlayer::StartSwimDive()
 	}
 
 	bSwimDiveInputHeld = true;
+	if (SwimmingComponent->GetMovementState() == ESwimMovementState::Surface)
+	{
+		bAutomaticSwimDiveHeld = true;
+		AutomaticSwimDiveRemaining = FMath::Max(AutomaticSwimDiveHoldDuration, 0.0f);
+	}
 	bSwimAscendInputHeld = false;
 	RefreshSwimmingVerticalInput();
-	SwimmingComponent->RequestDiveTransition();
 }
 
 void ABasePlayer::StopSwimDive()
@@ -2284,7 +2310,8 @@ void ABasePlayer::RefreshSwimmingVerticalInput()
 	if (USWCharacterMovementComponent* SWMovement =
 		Cast<USWCharacterMovementComponent>(GetCharacterMovement()))
 	{
-		SWMovement->SetSwimmingVerticalInput(bSwimDiveInputHeld, bSwimAscendInputHeld);
+		const bool bEffectiveDiveHeld = bSwimDiveInputHeld || bAutomaticSwimDiveHeld;
+		SWMovement->SetSwimmingVerticalInput(bEffectiveDiveHeld, bSwimAscendInputHeld);
 	}
 	if (SwimmingComponent->HasVerticalSwimInput() || SwimmingComponent->IsTransitionState())
 	{
@@ -2303,6 +2330,12 @@ void ABasePlayer::RefreshSwimmingVerticalInput()
 		}
 	}
 
+}
+
+void ABasePlayer::ResetAutomaticSwimDiveInput()
+{
+	bAutomaticSwimDiveHeld = false;
+	AutomaticSwimDiveRemaining = 0.0f;
 }
 
 void ABasePlayer::StartSprint()
