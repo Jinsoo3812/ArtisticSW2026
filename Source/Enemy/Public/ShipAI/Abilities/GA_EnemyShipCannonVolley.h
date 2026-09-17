@@ -54,12 +54,37 @@ public:
 		bool& bOutWasClamped);
 
 private:
+	struct FCannonTargetingDebugData
+	{
+		FVector Start = FVector::ZeroVector;
+		FVector CurrentTargetPoint = FVector::ZeroVector;
+		FVector TargetVelocity = FVector::ZeroVector;
+		FVector TargetForward = FVector::ForwardVector;
+		FVector TargetRight = FVector::RightVector;
+		FVector EllipseCenter = FVector::ZeroVector;
+		FVector RequestedImpactPoint = FVector::ZeroVector;
+		FVector ClampedImpactPoint = FVector::ZeroVector;
+		FEnemyShipCannonVolleySettings Settings;
+		float CurrentDistance = 0.0f;
+		float MaximumRange = 0.0f;
+		float EstimatedFlightTime = 0.0f;
+		float CalculatedElevation = 0.0f;
+		float FinalElevation = 0.0f;
+		bool bInsideRange = false;
+		bool bFacingHalf = false;
+		bool bRangeClamped = false;
+	};
+
 	static FEnemyShipCannonVolleySettings ResolveCannonVolleySettings(const AEnemyShip& Ship);
+	static void DrawCannonTargetingDebug(
+		const ACannon& Cannon, const AShip& Target, const AEnemyShip& Ship,
+		const FVector& Direction, float ProjectileSpeed, const FCannonTargetingDebugData& DebugData);
 	bool BuildShotSolution(
 		const ACannon* Cannon,
 		const AShip* Target,
 		const AEnemyShip* Ship,
 		FVector& OutDirection,
-		float& OutProjectileSpeed) const;
+		float& OutProjectileSpeed,
+		FCannonTargetingDebugData* OutDebugData) const;
 	bool IsValidPlayerTarget(const AShip* Candidate) const;
 };
