@@ -122,6 +122,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Swimming")
 	bool IsCustomSwimming() const;
+	bool NeedsDeterministicWaveTime() const;
 
 	/** True while water has reached the feet, but the capsule is not submerged enough to swim. */
 	UFUNCTION(BlueprintPure, Category = "Swimming")
@@ -168,7 +169,11 @@ public:
 
 private:
 	// Helper to calculate the water height at a given location (queries overlapping water bodies)
-	FSwimWaterSurfaceSample QueryWaterSurfaceSample(const FVector& Location) const;
+	FSwimWaterSurfaceSample QueryWaterSurfaceSample(
+		const FVector& Location,
+		TOptional<double> ExplicitServerTime = NullOpt) const;
+	double GetCurrentSynchronizedServerTime() const;
+	TOptional<double> ResolveMovementWaveServerTime() const;
 	void EnterSwimMovementState(
 		ESwimMovementState NewState,
 		float InitialDepth = 0.0f,

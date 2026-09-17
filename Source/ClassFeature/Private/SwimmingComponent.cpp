@@ -1,4 +1,5 @@
 #include "SwimmingComponent.h"
+#include "SWCharacterMovementComponent.h"
 #include "SWCabinWaterCullComponent.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Character.h"
@@ -243,6 +244,11 @@ bool USwimmingComponent::IsCustomSwimming() const
 	return CharacterMovement
 		&& CharacterMovement->MovementMode == MOVE_Custom
 		&& CharacterMovement->CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Swimming);
+}
+
+bool USwimmingComponent::NeedsDeterministicWaveTime() const
+{
+	return IsCustomSwimming() || !OverlappingWaterBodies.IsEmpty() || LastActiveWaterBody.IsValid();
 }
 
 FSwimPredictionState USwimmingComponent::GetPredictionState() const
@@ -570,21 +576,50 @@ void USwimmingComponent::OnOverlapEnd(UPrimitiveComponent* OverlappedComp, AActo
 	}
 }
 
-FSwimWaterSurfaceSample USwimmingComponent::QueryWaterSurfaceSample(const FVector& Location) const
+double USwimmingComponent::GetCurrentSynchronizedServerTime() const
 {
-	FSwimWaterSurfaceSample BestSample;
-	float CurrentServerTime = 0.0f;
-	if (GetWorld())
+	const UWorld* World = GetWorld();
+	if (!World)
 	{
-		if (AGameStateBase* GameState = GetWorld()->GetGameState())
+		return 0.0;
+	}
+	if (const AGameStateBase* GameState = World->GetGameState())
+	{
+		return static_cast<double>(GameState->GetServerWorldTimeSeconds());
+	}
+	return static_cast<double>(World->GetTimeSeconds());
+}
+
+TOptional<double> USwimmingComponent::ResolveMovementWaveServerTime() const
+{
+	if (const USWCharacterMovementComponent* SWMovement =
+		Cast<USWCharacterMovementComponent>(CharacterMovement))
+	{
+		double ActiveTime = 0.0;
+		if (SWMovement->TryGetActiveSurfaceWaveServerTime(ActiveTime))
 		{
-			CurrentServerTime = GameState->GetServerWorldTimeSeconds();
-		}
-		else
-		{
-			CurrentServerTime = GetWorld()->GetTimeSeconds();
+			return ActiveTime;
 		}
 	}
+	if (OwnerCharacter && OwnerCharacter->HasAuthority())
+	{
+		const UWorld* World = GetWorld();
+		if (const AGameStateBase* GameState = World ? World->GetGameState() : nullptr)
+		{
+			return static_cast<double>(GameState->GetServerWorldTimeSeconds());
+		}
+	}
+	return NullOpt;
+}
+
+FSwimWaterSurfaceSample USwimmingComponent::QueryWaterSurfaceSample(
+	const FVector& Location,
+	TOptional<double> ExplicitServerTime) const
+{
+	FSwimWaterSurfaceSample BestSample;
+	const double QueryServerTime = ExplicitServerTime.IsSet()
+		? ExplicitServerTime.GetValue()
+		: GetCurrentSynchronizedServerTime();
 
 	auto EvaluateWaterBody = [&](UWaterBodyComponent* WaterBody, float SampleTime, float& OutZ, FVector& OutNormal)
 	{
@@ -637,7 +672,7 @@ FSwimWaterSurfaceSample USwimmingComponent::QueryWaterSurfaceSample(const FVecto
 	{
 		float CurrentZ = -BIG_NUMBER;
 		FVector CurrentNormal = FVector::UpVector;
-		if (!EvaluateWaterBody(WaterBody, CurrentServerTime, CurrentZ, CurrentNormal))
+		if (!EvaluateWaterBody(WaterBody, static_cast<float>(QueryServerTime), CurrentZ, CurrentNormal))
 		{
 			return;
 		}
@@ -651,7 +686,7 @@ FSwimWaterSurfaceSample USwimmingComponent::QueryWaterSurfaceSample(const FVecto
 			FVector PreviousNormal = FVector::UpVector;
 			constexpr float SampleDeltaTime = 1.0f / 60.0f;
 			BestSample.SurfaceVelocityZ = EvaluateWaterBody(
-				WaterBody, CurrentServerTime - SampleDeltaTime, PreviousZ, PreviousNormal)
+				WaterBody, static_cast<float>(QueryServerTime - SampleDeltaTime), PreviousZ, PreviousNormal)
 				? (CurrentZ - PreviousZ) / SampleDeltaTime
 				: 0.0f;
 		}
@@ -671,6 +706,7 @@ FSwimWaterSurfaceSample USwimmingComponent::QueryWaterSurfaceSample(const FVecto
 void USwimmingComponent::CheckWaterTransitions(float DeltaSeconds)
 {
 	if (!OwnerCharacter || !CharacterMovement || !CapsuleComponent) return;
+	const TOptional<double> MovementWaveTime = ResolveMovementWaveServerTime();
 
 	bool bFeetInsideCabin = false;
 	bool bCenterInsideCabin = false;
@@ -701,7 +737,7 @@ void USwimmingComponent::CheckWaterTransitions(float DeltaSeconds)
 	FVector ActorLocation = OwnerCharacter->GetActorLocation();
 	FVector FeetLocation = ActorLocation - FVector(0.f, 0.f, CapsuleHalfHeight);
 
-	const FSwimWaterSurfaceSample Sample = QueryWaterSurfaceSample(ActorLocation);
+	const FSwimWaterSurfaceSample Sample = QueryWaterSurfaceSample(ActorLocation, MovementWaveTime);
 	const bool bHadValidWaterBodyQuery = Sample.bIsValid;
 	const bool bFeetInWater = Sample.bIsValid && FeetLocation.Z <= Sample.SurfaceZ;
 	const float FeetSubmersion = Sample.bIsValid
@@ -1025,26 +1061,33 @@ void USwimmingComponent::UpdateSwimmingMovement(float DeltaTime)
 		return;
 	}
 
+	const TOptional<double> MovementWaveTime = ResolveMovementWaveServerTime();
 	const FVector ActorLocation = OwnerCharacter->GetActorLocation();
-	const FSwimWaterSurfaceSample Sample = QueryWaterSurfaceSample(ActorLocation);
+	const FSwimWaterSurfaceSample Sample = QueryWaterSurfaceSample(ActorLocation, MovementWaveTime);
 	const float MovementVerticalInput = GetEffectiveVerticalSwimInput();
 	const float InputVerticalAcceleration = MovementVerticalInput * VerticalSwimAcceleration;
 	const bool bHasVerticalInput = HasVerticalSwimInput();
 	const bool bUseCameraDirectedMovement = ShouldUseCameraDirectedUnderwaterMovement();
+	float SurfaceTargetActorZ = 0.0f;
+	float SurfacePositionError = 0.0f;
+	float SurfaceVelocityError = 0.0f;
+	float SurfaceFollowAcceleration = 0.0f;
 
 	if (MovementState == ESwimMovementState::Surface)
 	{
 		if (Sample.bIsValid)
 		{
-			const float TargetActorZ = Sample.SurfaceZ - SurfaceTargetDepth;
-			const float FollowAcceleration = ComputeSurfaceFollowAcceleration(
-				TargetActorZ - ActorLocation.Z,
-				Sample.SurfaceVelocityZ - CharacterMovement->Velocity.Z,
+			SurfaceTargetActorZ = Sample.SurfaceZ - SurfaceTargetDepth;
+			SurfacePositionError = SurfaceTargetActorZ - ActorLocation.Z;
+			SurfaceVelocityError = Sample.SurfaceVelocityZ - CharacterMovement->Velocity.Z;
+			SurfaceFollowAcceleration = ComputeSurfaceFollowAcceleration(
+				SurfacePositionError,
+				SurfaceVelocityError,
 				SurfaceFollowFrequencyHz,
 				SurfaceFollowDampingRatio,
 				MaxSurfaceFollowAcceleration);
 			CharacterMovement->Velocity.Z = FMath::Clamp(
-				CharacterMovement->Velocity.Z + FollowAcceleration * DeltaTime,
+				CharacterMovement->Velocity.Z + SurfaceFollowAcceleration * DeltaTime,
 				-MaxSurfaceFollowSpeed,
 				MaxSurfaceFollowSpeed);
 		}

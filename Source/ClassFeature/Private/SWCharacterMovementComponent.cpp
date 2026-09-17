@@ -1,10 +1,18 @@
 #include "SWCharacterMovementComponent.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/GameStateBase.h"
+#include "Engine/World.h"
+#include "Misc/ScopeExit.h"
 #include "Ship.h"
 #include "SwimmingComponent.h"
 
 namespace
 {
+	constexpr double MaxSurfaceWaveTimeAgeSeconds = 2.0;
+	constexpr double MaxSurfaceWaveTimeLeadSeconds = 0.25;
+	constexpr double SurfaceWaveTimeDeltaToleranceSeconds = 0.25;
+	constexpr double SurfaceWaveTimeBackwardToleranceSeconds = 0.05;
+
 	class FSavedMove_SWCharacter final : public FSavedMove_Character
 	{
 	public:
@@ -13,6 +21,8 @@ namespace
 		uint8 bSavedSwimDive : 1;
 		uint8 bSavedSwimAscend : 1;
 		FSwimPredictionState SavedSwimState;
+		bool bHasSurfaceWaveServerTime = false;
+		double SurfaceWaveServerTimeSeconds = 0.0;
 
 		FSavedMove_SWCharacter()
 			: bSavedSwimDive(false)
@@ -26,6 +36,8 @@ namespace
 			bSavedSwimDive = false;
 			bSavedSwimAscend = false;
 			SavedSwimState = FSwimPredictionState();
+			bHasSurfaceWaveServerTime = false;
+			SurfaceWaveServerTimeSeconds = 0.0;
 		}
 
 		virtual uint8 GetCompressedFlags() const override
@@ -63,6 +75,12 @@ namespace
 			{
 				return false;
 			}
+			if (bHasSurfaceWaveServerTime != NewSWMove->bHasSurfaceWaveServerTime
+				|| (bHasSurfaceWaveServerTime
+					&& SurfaceWaveServerTimeSeconds != NewSWMove->SurfaceWaveServerTimeSeconds))
+			{
+				return false;
+			}
 			return Super::CanCombineWith(NewMove, InCharacter, MaxDelta);
 		}
 
@@ -73,13 +91,25 @@ namespace
 			FNetworkPredictionData_Client_Character& ClientData) override
 		{
 			Super::SetMoveFor(Character, InDeltaTime, NewAcceleration, ClientData);
-			if (const USWCharacterMovementComponent* Movement =
+			if (USWCharacterMovementComponent* Movement =
 				Cast<USWCharacterMovementComponent>(Character->GetCharacterMovement()))
 			{
 				const float VerticalInput = Movement->GetSwimmingVerticalInput();
 				bSavedSwimDive = VerticalInput < -KINDA_SMALL_NUMBER;
 				bSavedSwimAscend = VerticalInput > KINDA_SMALL_NUMBER;
 				SavedSwimState = Movement->GetSwimmingPredictionState();
+				double CapturedTime = 0.0;
+				bHasSurfaceWaveServerTime = Movement->ShouldCaptureSurfaceWaveTime()
+					&& Movement->CaptureCurrentSurfaceWaveServerTime(CapturedTime);
+				SurfaceWaveServerTimeSeconds = bHasSurfaceWaveServerTime ? CapturedTime : 0.0;
+				if (bHasSurfaceWaveServerTime)
+				{
+					Movement->SetActiveSurfaceWaveServerTime(SurfaceWaveServerTimeSeconds);
+				}
+				else
+				{
+					Movement->ClearActiveSurfaceWaveServerTime();
+				}
 			}
 		}
 
@@ -90,6 +120,24 @@ namespace
 				Cast<USWCharacterMovementComponent>(Character->GetCharacterMovement()))
 			{
 				Movement->RestoreSavedSwimmingState(SavedSwimState);
+				if (bHasSurfaceWaveServerTime)
+				{
+					Movement->SetActiveSurfaceWaveServerTime(SurfaceWaveServerTimeSeconds);
+				}
+				else
+				{
+					Movement->ClearActiveSurfaceWaveServerTime();
+				}
+			}
+		}
+
+		virtual void PostUpdate(ACharacter* Character, EPostUpdateMode PostUpdateMode) override
+		{
+			Super::PostUpdate(Character, PostUpdateMode);
+			if (USWCharacterMovementComponent* Movement =
+				Cast<USWCharacterMovementComponent>(Character->GetCharacterMovement()))
+			{
+				Movement->ClearActiveSurfaceWaveServerTime();
 			}
 		}
 	};
@@ -111,9 +159,55 @@ namespace
 	};
 }
 
+void FCharacterNetworkMoveData_SWCharacter::ClientFillNetworkMoveData(
+	const FSavedMove_Character& ClientMove,
+	ENetworkMoveType MoveType)
+{
+	FCharacterNetworkMoveData::ClientFillNetworkMoveData(ClientMove, MoveType);
+	const FSavedMove_SWCharacter& SWMove = static_cast<const FSavedMove_SWCharacter&>(ClientMove);
+	bHasSurfaceWaveServerTime = SWMove.bHasSurfaceWaveServerTime;
+	SurfaceWaveServerTimeSeconds = bHasSurfaceWaveServerTime ? SWMove.SurfaceWaveServerTimeSeconds : 0.0;
+}
+
+bool FCharacterNetworkMoveData_SWCharacter::Serialize(
+	UCharacterMovementComponent& CharacterMovement,
+	FArchive& Ar,
+	UPackageMap* PackageMap,
+	ENetworkMoveType MoveType)
+{
+	if (!FCharacterNetworkMoveData::Serialize(CharacterMovement, Ar, PackageMap, MoveType))
+	{
+		return false;
+	}
+	Ar.SerializeBits(&bHasSurfaceWaveServerTime, 1);
+	if (bHasSurfaceWaveServerTime)
+	{
+		Ar << SurfaceWaveServerTimeSeconds;
+		if (Ar.IsLoading()
+			&& (!FMath::IsFinite(SurfaceWaveServerTimeSeconds) || SurfaceWaveServerTimeSeconds < 0.0))
+		{
+			SurfaceWaveServerTimeSeconds = 0.0;
+			Ar.SetError();
+		}
+	}
+	else
+	{
+		SurfaceWaveServerTimeSeconds = 0.0;
+	}
+	return !Ar.IsError();
+}
+
+FCharacterNetworkMoveDataContainer_SWCharacter::FCharacterNetworkMoveDataContainer_SWCharacter()
+{
+	NewMoveData = &MoveData[0];
+	PendingMoveData = &MoveData[1];
+	OldMoveData = &MoveData[2];
+}
+
 USWCharacterMovementComponent::USWCharacterMovementComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
+	SetNetworkMoveDataContainer(SWMoveDataContainer);
 	ProcessRootMotionPostConvertToWorld.BindUObject(
 		this, &USWCharacterMovementComponent::RedirectHitReactionRootMotion);
 }
@@ -237,6 +331,59 @@ void USWCharacterMovementComponent::RestoreSavedSwimmingState(
 	}
 }
 
+bool USWCharacterMovementComponent::ShouldCaptureSurfaceWaveTime() const
+{
+	if (const ACharacter* CharOwner = CharacterOwner)
+	{
+		if (const USwimmingComponent* SwimComp = CharOwner->FindComponentByClass<USwimmingComponent>())
+		{
+			return SwimComp->NeedsDeterministicWaveTime();
+		}
+	}
+	return false;
+}
+
+bool USWCharacterMovementComponent::CaptureCurrentSurfaceWaveServerTime(double& OutServerTime) const
+{
+	OutServerTime = 0.0;
+	const UWorld* World = GetWorld();
+	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+	if (!GameState)
+	{
+		return false;
+	}
+	const double ServerTime = static_cast<double>(GameState->GetServerWorldTimeSeconds());
+	if (!FMath::IsFinite(ServerTime) || ServerTime < 0.0)
+	{
+		return false;
+	}
+	OutServerTime = ServerTime;
+	return true;
+}
+
+void USWCharacterMovementComponent::SetActiveSurfaceWaveServerTime(double ServerTimeSeconds)
+{
+	if (!FMath::IsFinite(ServerTimeSeconds) || ServerTimeSeconds < 0.0)
+	{
+		ClearActiveSurfaceWaveServerTime();
+		return;
+	}
+	bHasActiveSurfaceWaveServerTime = true;
+	ActiveSurfaceWaveServerTimeSeconds = ServerTimeSeconds;
+}
+
+void USWCharacterMovementComponent::ClearActiveSurfaceWaveServerTime()
+{
+	bHasActiveSurfaceWaveServerTime = false;
+	ActiveSurfaceWaveServerTimeSeconds = 0.0;
+}
+
+bool USWCharacterMovementComponent::TryGetActiveSurfaceWaveServerTime(double& OutServerTime) const
+{
+	OutServerTime = bHasActiveSurfaceWaveServerTime ? ActiveSurfaceWaveServerTimeSeconds : 0.0;
+	return bHasActiveSurfaceWaveServerTime;
+}
+
 void USWCharacterMovementComponent::PhysCustom(float DeltaTime, int32 Iterations)
 {
 	Super::PhysCustom(DeltaTime, Iterations);
@@ -274,6 +421,88 @@ FNetworkPredictionData_Client* USWCharacterMovementComponent::GetPredictionData_
 	return ClientPredictionData;
 }
 
+bool USWCharacterMovementComponent::ValidateSurfaceWaveServerTime(
+	double TransmittedTime,
+	float ClientTimeStamp,
+	bool bIsOldMove,
+	double ServerNow) const
+{
+	if (!FMath::IsFinite(TransmittedTime) || TransmittedTime < 0.0
+		|| TransmittedTime < ServerNow - MaxSurfaceWaveTimeAgeSeconds
+		|| TransmittedTime > ServerNow + MaxSurfaceWaveTimeLeadSeconds)
+	{
+		return false;
+	}
+	if (bIsOldMove || !bHasAcceptedSurfaceWaveTimeAnchor)
+	{
+		return true;
+	}
+	const double WaveDelta = TransmittedTime - LastAcceptedSurfaceWaveServerTimeSeconds;
+	const double MoveDelta = static_cast<double>(ClientTimeStamp - LastAcceptedSurfaceWaveClientTimeStamp);
+	return TransmittedTime >= LastAcceptedSurfaceWaveServerTimeSeconds - SurfaceWaveTimeBackwardToleranceSeconds
+		&& FMath::Abs(WaveDelta - MoveDelta) <= SurfaceWaveTimeDeltaToleranceSeconds;
+}
+
+void USWCharacterMovementComponent::MoveAutonomous(
+	float ClientTimeStamp,
+	float DeltaTime,
+	uint8 CompressedFlags,
+	const FVector& NewAccel)
+{
+	bForceSurfaceWaveCorrectionForCurrentMove = false;
+	ClearActiveSurfaceWaveServerTime();
+	ON_SCOPE_EXIT
+	{
+		ClearActiveSurfaceWaveServerTime();
+	};
+
+	const FCharacterNetworkMoveData* CurrentData = GetCurrentNetworkMoveData();
+	const FCharacterNetworkMoveData_SWCharacter* SWData =
+		static_cast<const FCharacterNetworkMoveData_SWCharacter*>(CurrentData);
+	if (SWData && SWData->bHasSurfaceWaveServerTime)
+	{
+		const bool bAuthority = CharacterOwner && CharacterOwner->HasAuthority();
+		if (!bAuthority)
+		{
+			SetActiveSurfaceWaveServerTime(SWData->SurfaceWaveServerTimeSeconds);
+		}
+		else if (const UWorld* World = GetWorld())
+		{
+			if (const AGameStateBase* GameState = World->GetGameState())
+			{
+				const bool bIsOldMove = SWMoveDataContainer.IsOldMoveData(CurrentData);
+				const double ServerNow = static_cast<double>(GameState->GetServerWorldTimeSeconds());
+				if (ValidateSurfaceWaveServerTime(
+					SWData->SurfaceWaveServerTimeSeconds, ClientTimeStamp, bIsOldMove, ServerNow))
+				{
+					SetActiveSurfaceWaveServerTime(SWData->SurfaceWaveServerTimeSeconds);
+					if (!bIsOldMove)
+					{
+						bHasAcceptedSurfaceWaveTimeAnchor = true;
+						LastAcceptedSurfaceWaveServerTimeSeconds = SWData->SurfaceWaveServerTimeSeconds;
+						LastAcceptedSurfaceWaveClientTimeStamp = ClientTimeStamp;
+					}
+				}
+				else if (SWMoveDataContainer.IsNewMoveData(CurrentData))
+				{
+					bForceSurfaceWaveCorrectionForCurrentMove = true;
+				}
+			}
+		}
+	}
+
+	Super::MoveAutonomous(ClientTimeStamp, DeltaTime, CompressedFlags, NewAccel);
+}
+
+void USWCharacterMovementComponent::OnClientTimeStampResetDetected()
+{
+	Super::OnClientTimeStampResetDetected();
+	if (bHasAcceptedSurfaceWaveTimeAnchor)
+	{
+		LastAcceptedSurfaceWaveClientTimeStamp -= MinTimeBetweenTimeStampResets;
+	}
+}
+
 void USWCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
 {
 	Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
@@ -308,6 +537,10 @@ bool USWCharacterMovementComponent::ServerExceedsAllowablePositionError(
 	FName ClientBaseBoneName,
 	uint8 ClientMovementMode)
 {
+	if (bForceSurfaceWaveCorrectionForCurrentMove)
+	{
+		return true;
+	}
 	const bool bExceedsDefaultTolerance = Super::ServerExceedsAllowablePositionError(
 		ClientTimeStamp,
 		DeltaTime,

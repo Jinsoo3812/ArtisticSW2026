@@ -8,6 +8,30 @@ enum class ESwimMovementState : uint8;
 struct FSwimPredictionState;
 class AShip;
 
+struct FCharacterNetworkMoveData_SWCharacter final : public FCharacterNetworkMoveData
+{
+	bool bHasSurfaceWaveServerTime = false;
+	double SurfaceWaveServerTimeSeconds = 0.0;
+
+	virtual void ClientFillNetworkMoveData(
+		const FSavedMove_Character& ClientMove,
+		ENetworkMoveType MoveType) override;
+	virtual bool Serialize(
+		UCharacterMovementComponent& CharacterMovement,
+		FArchive& Ar,
+		UPackageMap* PackageMap,
+		ENetworkMoveType MoveType) override;
+};
+
+struct FCharacterNetworkMoveDataContainer_SWCharacter final : public FCharacterNetworkMoveDataContainer
+{
+	FCharacterNetworkMoveData_SWCharacter MoveData[3];
+
+	FCharacterNetworkMoveDataContainer_SWCharacter();
+	bool IsNewMoveData(const FCharacterNetworkMoveData* Data) const { return Data == &MoveData[0]; }
+	bool IsOldMoveData(const FCharacterNetworkMoveData* Data) const { return Data == &MoveData[2]; }
+};
+
 /**
  * Custom character movement component that handles custom movement modes,
  * specifically custom swimming movement to support smooth client prediction.
@@ -42,12 +66,23 @@ public:
 
 	/** Restores input and sub-state before replaying a CMC saved move. */
 	void RestoreSavedSwimmingState(const FSwimPredictionState& InState);
+	bool ShouldCaptureSurfaceWaveTime() const;
+	bool CaptureCurrentSurfaceWaveServerTime(double& OutServerTime) const;
+	void SetActiveSurfaceWaveServerTime(double ServerTimeSeconds);
+	void ClearActiveSurfaceWaveServerTime();
+	bool TryGetActiveSurfaceWaveServerTime(double& OutServerTime) const;
 
 protected:
 	virtual void PhysCustom(float DeltaTime, int32 Iterations) override;
 	virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
 	virtual void UpdateFromCompressedFlags(uint8 Flags) override;
 	virtual FNetworkPredictionData_Client* GetPredictionData_Client() const override;
+	virtual void MoveAutonomous(
+		float ClientTimeStamp,
+		float DeltaTime,
+		uint8 CompressedFlags,
+		const FVector& NewAccel) override;
+	virtual void OnClientTimeStampResetDetected() override;
 	virtual bool ServerExceedsAllowablePositionError(
 		float ClientTimeStamp,
 		float DeltaTime,
@@ -90,7 +125,19 @@ private:
 		FName ClientBaseBoneName,
 		uint8 ClientMovementMode,
 		float& OutRelativeError) const;
+	bool ValidateSurfaceWaveServerTime(
+		double TransmittedTime,
+		float ClientTimeStamp,
+		bool bIsOldMove,
+		double ServerNow) const;
 
 	FVector HitReactionRootMotionDirection = FVector::ZeroVector;
 	bool bRedirectHitReactionRootMotion = false;
+	FCharacterNetworkMoveDataContainer_SWCharacter SWMoveDataContainer;
+	bool bHasActiveSurfaceWaveServerTime = false;
+	double ActiveSurfaceWaveServerTimeSeconds = 0.0;
+	bool bHasAcceptedSurfaceWaveTimeAnchor = false;
+	double LastAcceptedSurfaceWaveServerTimeSeconds = 0.0;
+	float LastAcceptedSurfaceWaveClientTimeStamp = 0.0f;
+	bool bForceSurfaceWaveCorrectionForCurrentMove = false;
 };
