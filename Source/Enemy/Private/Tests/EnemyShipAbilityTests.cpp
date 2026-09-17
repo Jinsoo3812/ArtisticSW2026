@@ -1040,4 +1040,74 @@ bool FEnemyShipCannonAimModelTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipCannonBallisticEllipseTest,
+	"ArtisticSW.Enemy.Ship.Ability.CannonBallisticEllipse",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipCannonBallisticEllipseTest::RunTest(const FString& Parameters)
+{
+	constexpr float Speed = 3000.0f;
+	constexpr float Gravity = 980.0f;
+	float MaximumRange = 0.0f;
+	float FlightTime = 0.0f;
+	TestTrue(TEXT("45 degree range resolves"), UGA_EnemyShipCannonVolley::CalculateRangeAtElevation(
+		Speed, Gravity, 0.0f, FMath::DegreesToRadians(45.0f), MaximumRange, FlightTime));
+	TestTrue(TEXT("Same-height maximum range equals V squared over G"),
+		FMath::IsNearlyEqual(MaximumRange, FMath::Square(Speed) / Gravity, 1.0f));
+
+	float LowElevation = 0.0f;
+	TestTrue(TEXT("A point inside maximum range has a low-arc solution"),
+		UGA_EnemyShipCannonVolley::CalculateLowArc(
+			Speed, Gravity, MaximumRange * 0.5f, 0.0f, LowElevation, FlightTime));
+	const FVector LowArcVelocity = FVector(FMath::Cos(LowElevation), 0.0f, FMath::Sin(LowElevation)) * Speed;
+	TestTrue(TEXT("Low-arc velocity preserves input speed"), FMath::IsNearlyEqual(LowArcVelocity.Size(), Speed, 0.1f));
+
+	float NearElevation = 0.0f;
+	TestTrue(TEXT("Near point has a low-arc solution"), UGA_EnemyShipCannonVolley::CalculateLowArc(
+		Speed, Gravity, 100.0f, 0.0f, NearElevation, FlightTime));
+	const float FinalNearElevation = FMath::Clamp(FMath::RadiansToDegrees(NearElevation), 5.0f, 45.0f);
+	TestTrue(TEXT("Near physical elevation is below five degrees"), FMath::RadiansToDegrees(NearElevation) < 5.0f);
+	TestEqual(TEXT("Near final direction elevation clamps to five degrees"), FinalNearElevation, 5.0f);
+	TestEqual(TEXT("Elevation clamp does not alter speed"), Speed, 3000.0f);
+
+	bool bWasClamped = false;
+	const FVector ClampedPoint = UGA_EnemyShipCannonVolley::ClampImpactPointToRange(
+		FVector::ZeroVector, FVector(MaximumRange * 2.0f, 0.0f, 123.0f), MaximumRange, bWasClamped);
+	TestTrue(TEXT("Outside point is range clamped"), bWasClamped);
+	TestTrue(TEXT("Range clamp produces exact radial range"), FMath::IsNearlyEqual(ClampedPoint.Size2D(), MaximumRange, 0.1f));
+	TestEqual(TEXT("Range clamp preserves target Z"), ClampedPoint.Z, 123.0);
+
+	const FEnemyShipCannonVolleySettings Defaults;
+	TestEqual(TEXT("Default minimum elevation is five degrees"), Defaults.MinimumElevationDegrees, 5.0f);
+	TestEqual(TEXT("Default semi-major axis is 2000 cm"), Defaults.ImpactEllipseSemiMajorAxisCm, 2000.0f);
+	TestEqual(TEXT("Default semi-minor axis is 1000 cm"), Defaults.ImpactEllipseSemiMinorAxisCm, 1000.0f);
+	TestEqual(TEXT("Default facing weight is one"), Defaults.AttackerFacingHalfWeight, 1.0f);
+	TestEqual(TEXT("Default opposite weight is one"), Defaults.AttackerOppositeHalfWeight, 1.0f);
+
+	const FVector Forward = FVector::ForwardVector;
+	const FVector Right = FVector::RightVector;
+	const FVector AttackerDirection = Right;
+	for (int32 WeightMode = 0; WeightMode < 2; ++WeightMode)
+	{
+		FEnemyShipCannonVolleySettings Settings = Defaults;
+		Settings.AttackerFacingHalfWeight = WeightMode == 0 ? 1.0f : 0.0f;
+		Settings.AttackerOppositeHalfWeight = WeightMode == 0 ? 0.0f : 1.0f;
+		FRandomStream Stream(1847 + WeightMode);
+		for (int32 SampleIndex = 0; SampleIndex < 128; ++SampleIndex)
+		{
+			bool bFacingHalf = false;
+			const FVector Offset = UGA_EnemyShipCannonVolley::SampleImpactEllipseOffset(
+				Stream, Forward, Right, AttackerDirection, Settings, bFacingHalf);
+			const float EllipseEquation = FMath::Square(Offset.X / Settings.ImpactEllipseSemiMajorAxisCm)
+				+ FMath::Square(Offset.Y / Settings.ImpactEllipseSemiMinorAxisCm);
+			TestTrue(TEXT("Sample lies inside ellipse area"), EllipseEquation <= 1.0001f);
+			TestTrue(TEXT("Single enabled half is always selected"), bFacingHalf == (WeightMode == 0));
+			TestTrue(TEXT("Lateral sign follows selected attacker half"),
+				WeightMode == 0 ? Offset.Y >= 0.0f : Offset.Y <= 0.0f);
+		}
+	}
+	return true;
+}
+
 #endif

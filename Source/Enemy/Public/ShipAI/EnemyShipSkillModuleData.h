@@ -8,6 +8,27 @@
 
 class UGameplayAbility;
 
+USTRUCT(BlueprintType)
+struct ENEMY_API FEnemyShipCannonVolleySettings
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cannon Volley", meta = (ClampMin = "0.0", ClampMax = "45.0", Units = "deg"))
+	float MinimumElevationDegrees = 5.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cannon Volley", meta = (ClampMin = "1.0", Units = "cm"))
+	float ImpactEllipseSemiMajorAxisCm = 2000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cannon Volley", meta = (ClampMin = "1.0", Units = "cm"))
+	float ImpactEllipseSemiMinorAxisCm = 1000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cannon Volley", meta = (ClampMin = "0.0"))
+	float AttackerFacingHalfWeight = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cannon Volley", meta = (ClampMin = "0.0"))
+	float AttackerOppositeHalfWeight = 1.0f;
+};
+
 UENUM(BlueprintType)
 enum class EEnemyShipSkillSelectionPolicy : uint8
 {
@@ -47,6 +68,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement")
 	EEnemyShipSkillMovementPolicy MovementPolicy = EEnemyShipSkillMovementPolicy::ContinueNavigation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill|Cannon Volley", meta = (ShowOnlyInnerProperties))
+	FEnemyShipCannonVolleySettings CannonVolleySettings;
 
 	FGameplayTag GetAbilityTag() const;
 

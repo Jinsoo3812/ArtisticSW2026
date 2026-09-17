@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "ShipAI/Abilities/EnemyShipGameplayAbility.h"
+#include "ShipAI/EnemyShipSkillModuleData.h"
 #include "GA_EnemyShipCannonVolley.generated.h"
 
 class ACannon;
@@ -38,7 +39,22 @@ public:
 		const struct FEnemyShipCannonAimProfile& AimProfile,
 		FVector& OutLaunchVelocity);
 
+	static bool CalculateRangeAtElevation(
+		float ProjectileSpeed, float GravityMagnitude, float DeltaZ, float ElevationRadians,
+		float& OutRangeCm, float& OutFlightTime);
+	static bool CalculateLowArc(
+		float ProjectileSpeed, float GravityMagnitude, float HorizontalRangeCm, float DeltaZ,
+		float& OutElevationRadians, float& OutFlightTime);
+	static FVector SampleImpactEllipseOffset(
+		FRandomStream& RandomStream, const FVector& TargetForward2D, const FVector& TargetRight2D,
+		const FVector& DirectionFromTargetToAttacker2D,
+		const FEnemyShipCannonVolleySettings& Settings, bool& bOutFacingHalf);
+	static FVector ClampImpactPointToRange(
+		const FVector& ShotStart, const FVector& RequestedImpactPoint, float MaximumRangeCm,
+		bool& bOutWasClamped);
+
 private:
+	static FEnemyShipCannonVolleySettings ResolveCannonVolleySettings(const AEnemyShip& Ship);
 	bool BuildShotSolution(
 		const ACannon* Cannon,
 		const AShip* Target,

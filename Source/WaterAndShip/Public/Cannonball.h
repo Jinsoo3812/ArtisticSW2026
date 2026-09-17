@@ -168,9 +168,6 @@ private:
 	UFUNCTION()
 	void OnRep_LaunchingShip();
 	void ConfigureProjectileCollision();
-	void LogCollisionDiagnostics(const TCHAR* Event, AActor* OtherActor = nullptr, UPrimitiveComponent* OtherComp = nullptr) const;
-	FVector PreviousDiagnosticLocation = FVector::ZeroVector;
-	TSet<TWeakObjectPtr<AShip>> DiagnosticNearbyShips;
 
 	// ---- State ----
 	UPROPERTY(ReplicatedUsing = OnRep_LaunchingShip)
