@@ -433,7 +433,9 @@ void USwimmingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 
 	// Pontoon Debug Visualizer - Active only in editor (PIE)
 #if WITH_EDITOR
-	if (GIsEditor && OwnerCharacter)
+	if (GIsEditor
+		&& OwnerCharacter
+		&& CVarShowSwimBuoyancyDebug.GetValueOnGameThread() != 0)
 #else
 	if (false)
 #endif
@@ -770,9 +772,9 @@ void USwimmingComponent::CheckWaterTransitions(float DeltaSeconds)
 			CharacterMovement->Buoyancy = 0.f; // CMC의 기본 부력 사용 정지
 			ApplySwimmingGameplayState(true);
 			
-			FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
-			FString ContextStr = (GetOwner() && GetOwner()->HasAuthority()) ? TEXT("Server") : TEXT("Client");
-			UE_LOG(LogTemp, Warning, TEXT("[%s] %s >>> Entered Swimming State! (FeetSubmersion: %.2f)"), *ContextStr, *OwnerName, FeetSubmersion);
+			// FString OwnerName = OwnerCharacter ? OwnerCharacter->GetName() : (GetOwner() ? GetOwner()->GetName() : TEXT("None"));
+			// FString ContextStr = (GetOwner() && GetOwner()->HasAuthority()) ? TEXT("Server") : TEXT("Client");
+			// UE_LOG(LogTemp, Warning, TEXT("[%s] %s >>> Entered Swimming State! (FeetSubmersion: %.2f)"), *ContextStr, *OwnerName, FeetSubmersion);
 		}
 	}
 	else
