@@ -2382,14 +2382,18 @@ void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
 		if (bIsInAir)
 		{
 			// 공중 체공 중에는 마우스 회전 시 캡슐이 굳지 않고 AirRotationCatchUpSpeed 속도로 카메라 방향을 부드럽게 추종
-			bUseControllerRotationYaw = false;
-			if (YawDelta > 0.1f)
+			if (YawDelta > 0.5f)
 			{
+				bUseControllerRotationYaw = false;
 				const FRotator CurrentRot = GetActorRotation();
 				const FRotator TargetRot(0.0f, TargetYaw, 0.0f);
 				const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
 				const FRotator NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaSeconds, AirRotationCatchUpSpeed);
 				SetActorRotation(NewRot);
+			}
+			else
+			{
+				bUseControllerRotationYaw = true;
 			}
 		}
 		else if (YawDelta > 5.0f)

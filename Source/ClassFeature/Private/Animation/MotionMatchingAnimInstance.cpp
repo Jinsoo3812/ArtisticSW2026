@@ -68,12 +68,6 @@ static TAutoConsoleVariable<int32> CVarStrafeMotionMatchingDebug(
     ECVF_Cheat
 );
 
-static TAutoConsoleVariable<int32> CVarJumpDebug(
-    TEXT("a.JumpDebug"),
-    1,
-    TEXT("Jump and Airborne rotation/lean diagnostics. 0: Disabled, 1: On-screen HUD and transition/lean logs."),
-    ECVF_Cheat
-);
 
 DEFINE_LOG_CATEGORY_STATIC(LogMotionMatchingCapture, Log, All);
 
@@ -2154,60 +2148,7 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                 GEngine->AddOnScreenDebugMessage(99991, 0.0f, HUDColor, HUDStr);
             }
 
-            // 공중 및 점프 실시간 디버그 HUD 및 로그
-            const bool bIsInAirNow = CachedLocomotionStateComponent &&
-                (CachedLocomotionStateComponent->bIsInAir || CachedLocomotionStateComponent->CurrentState == ELocomotionState::InAir);
-            if (CVarJumpDebug.GetValueOnGameThread() > 0 && bIsInAirNow)
-            {
-                const float CamYaw = CachedBasePlayer && CachedBasePlayer->GetController()
-                    ? CachedBasePlayer->GetController()->GetControlRotation().Yaw : (CachedBasePlayer ? CachedBasePlayer->GetActorRotation().Yaw : 0.f);
-                const float ActorYaw = CachedBasePlayer ? CachedBasePlayer->GetActorRotation().Yaw : 0.f;
-                const float YawDelta = FMath::Abs(FRotator::NormalizeAxis(CamYaw - ActorYaw));
-                const float LeanLRVal = LeanAmount.X;
 
-                if (GEngine)
-                {
-                    FString AirHUDStr = FString::Printf(
-                        TEXT("[Air HUD] Phase: %s | Mode: %s | Anim: %s | CamYaw: %.1f | ActorYaw: %.1f | Delta: %.1f | AirLeanLR: %+.2f"),
-                        *StateName,
-                        bOverrideMM ? TEXT("BlendStack(JumpStart)") : TEXT("MotionMatching(FallLoop)"),
-                        *AnimName, CamYaw, ActorYaw, YawDelta, LeanLRVal);
-                    GEngine->AddOnScreenDebugMessage(99992, 0.0f, FColor::Cyan, AirHUDStr);
-                }
-
-                // 공중 회전 시 로그 (0.25초 간격 샘플링)
-                static float LastAirLogTime = 0.f;
-                const float CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
-                if (CurrentTime - LastAirLogTime >= 0.25f && YawDelta > 1.0f)
-                {
-                    UE_LOG(LogTemp, Log, TEXT("[AirRotation] Phase: %s | CamYaw: %.1f | ActorYaw: %.1f | Delta: %.1f | AirLeanLR: %+.2f | Anim: %s"),
-                        *StateName, CamYaw, ActorYaw, YawDelta, LeanLRVal, *AnimName);
-                    LastAirLogTime = CurrentTime;
-                }
-            }
-
-            // 점프 / 체공 / 착지 주요 전환 이벤트 로그
-            static EStateControllerPresentationState LastAirState = EStateControllerPresentationState::None;
-            if (CVarJumpDebug.GetValueOnGameThread() > 0 && LastAirState != ThreadSafeData.StateController.PresentationState)
-            {
-                if (ThreadSafeData.StateController.PresentationState == EStateControllerPresentationState::TransitionToJump)
-                {
-                    UE_LOG(LogTemp, Warning, TEXT("[JumpLog] >>> JUMP STARTED >>> Chosen Clip: %s | Dir: %s | Speed: %.1f"),
-                        *AnimName,
-                        *StaticEnum<EMovementDirection>()->GetNameStringByValue(static_cast<int64>(StateControllerMovementDirection)),
-                        Speed);
-                }
-                else if (ThreadSafeData.StateController.PresentationState == EStateControllerPresentationState::LocomotionLoop && bIsInAirNow)
-                {
-                    UE_LOG(LogTemp, Warning, TEXT("[JumpLog] >>> FALL LOOP ENTERED >>> Motion Matching DB: %s"), *DBName);
-                }
-                else if (ThreadSafeData.StateController.PresentationState == EStateControllerPresentationState::TransitionToLand)
-                {
-                    UE_LOG(LogTemp, Warning, TEXT("[JumpLog] >>> LANDED >>> Impact Speed: %.1f | Landing Clip: %s"),
-                        CachedLocomotionStateComponent ? CachedLocomotionStateComponent->LandStartFallSpeed : 0.f, *AnimName);
-                }
-                LastAirState = ThreadSafeData.StateController.PresentationState;
-            }
         }
     }
 
@@ -4553,11 +4494,6 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
                         ? StateControllerSelectedAnimationOutput.BlendTime
                         : 0.15f;
 
-                    UE_LOG(LogTemp, Warning, TEXT("[JumpLog] >>> AIR JUMP RESELECTED >>> Dir: %s | Asset: %s | StartTime: %.2f | Elapsed: %.2f"),
-                        *StaticEnum<EMovementDirection>()->GetNameStringByValue(static_cast<int64>(StateControllerMovementDirection)),
-                        *GetNameSafe(StateControllerSelectedAnimation),
-                        PreservedStartTime,
-                        SavedJumpAirElapsed);
                 }
                 else
                 {
