@@ -68,6 +68,13 @@ static TAutoConsoleVariable<int32> CVarStrafeMotionMatchingDebug(
     ECVF_Cheat
 );
 
+static TAutoConsoleVariable<int32> CVarJumpDebug(
+    TEXT("a.JumpDebug"),
+    1,
+    TEXT("Jump and Airborne rotation/lean diagnostics. 0: Disabled, 1: On-screen HUD and transition/lean logs."),
+    ECVF_Cheat
+);
+
 DEFINE_LOG_CATEGORY_STATIC(LogMotionMatchingCapture, Log, All);
 
 namespace
@@ -2146,6 +2153,61 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                 FColor HUDColor = bOverrideMM ? FColor::Yellow : FColor::Green;
                 GEngine->AddOnScreenDebugMessage(99991, 0.0f, HUDColor, HUDStr);
             }
+
+            // 공중 및 점프 실시간 디버그 HUD 및 로그
+            const bool bIsInAirNow = CachedLocomotionStateComponent &&
+                (CachedLocomotionStateComponent->bIsInAir || CachedLocomotionStateComponent->CurrentState == ELocomotionState::InAir);
+            if (CVarJumpDebug.GetValueOnGameThread() > 0 && bIsInAirNow)
+            {
+                const float CamYaw = CachedBasePlayer && CachedBasePlayer->GetController()
+                    ? CachedBasePlayer->GetController()->GetControlRotation().Yaw : (CachedBasePlayer ? CachedBasePlayer->GetActorRotation().Yaw : 0.f);
+                const float ActorYaw = CachedBasePlayer ? CachedBasePlayer->GetActorRotation().Yaw : 0.f;
+                const float YawDelta = FMath::Abs(FRotator::NormalizeAxis(CamYaw - ActorYaw));
+                const float LeanLRVal = LeanAmount.X;
+
+                if (GEngine)
+                {
+                    FString AirHUDStr = FString::Printf(
+                        TEXT("[Air HUD] Phase: %s | Mode: %s | Anim: %s | CamYaw: %.1f | ActorYaw: %.1f | Delta: %.1f | AirLeanLR: %+.2f"),
+                        *StateName,
+                        bOverrideMM ? TEXT("BlendStack(JumpStart)") : TEXT("MotionMatching(FallLoop)"),
+                        *AnimName, CamYaw, ActorYaw, YawDelta, LeanLRVal);
+                    GEngine->AddOnScreenDebugMessage(99992, 0.0f, FColor::Cyan, AirHUDStr);
+                }
+
+                // 공중 회전 시 로그 (0.25초 간격 샘플링)
+                static float LastAirLogTime = 0.f;
+                const float CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+                if (CurrentTime - LastAirLogTime >= 0.25f && YawDelta > 1.0f)
+                {
+                    UE_LOG(LogTemp, Log, TEXT("[AirRotation] Phase: %s | CamYaw: %.1f | ActorYaw: %.1f | Delta: %.1f | AirLeanLR: %+.2f | Anim: %s"),
+                        *StateName, CamYaw, ActorYaw, YawDelta, LeanLRVal, *AnimName);
+                    LastAirLogTime = CurrentTime;
+                }
+            }
+
+            // 점프 / 체공 / 착지 주요 전환 이벤트 로그
+            static EStateControllerPresentationState LastAirState = EStateControllerPresentationState::None;
+            if (CVarJumpDebug.GetValueOnGameThread() > 0 && LastAirState != ThreadSafeData.StateController.PresentationState)
+            {
+                if (ThreadSafeData.StateController.PresentationState == EStateControllerPresentationState::TransitionToJump)
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("[JumpLog] >>> JUMP STARTED >>> Chosen Clip: %s | Dir: %s | Speed: %.1f"),
+                        *AnimName,
+                        *StaticEnum<EMovementDirection>()->GetNameStringByValue(static_cast<int64>(StateControllerMovementDirection)),
+                        Speed);
+                }
+                else if (ThreadSafeData.StateController.PresentationState == EStateControllerPresentationState::LocomotionLoop && bIsInAirNow)
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("[JumpLog] >>> FALL LOOP ENTERED >>> Motion Matching DB: %s"), *DBName);
+                }
+                else if (ThreadSafeData.StateController.PresentationState == EStateControllerPresentationState::TransitionToLand)
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("[JumpLog] >>> LANDED >>> Impact Speed: %.1f | Landing Clip: %s"),
+                        CachedLocomotionStateComponent ? CachedLocomotionStateComponent->LandStartFallSpeed : 0.f, *AnimName);
+                }
+                LastAirState = ThreadSafeData.StateController.PresentationState;
+            }
         }
     }
 
@@ -2485,32 +2547,85 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         ? CachedLocomotionStateComponent->bIsSprinting
         : false;
 
-    if (!bEnableLean || bInAir || LeanGroundSpeed <= 10.0f)
+    // 현재 컨트롤러(카메라) Yaw 추적 (공중 회전 감지용)
+    const float CurrentAirYaw = CachedBasePlayer
+        ? (CachedBasePlayer->GetController() ? CachedBasePlayer->GetController()->GetControlRotation().Yaw : CachedBasePlayer->GetActorRotation().Yaw)
+        : 0.0f;
+
+    if (!bEnableLean)
     {
-        if (LeanInterpSpeed > 0.0f && DeltaSeconds > UE_KINDA_SMALL_NUMBER)
+        LeanAmount = FVector2D::ZeroVector;
+        bHasPreviousAirControllerYaw = false;
+    }
+    else if (bInAir)
+    {
+        // 공중(InAir): 마우스 컨트롤러 회전 각속도에 따라 몸을 좌우로 기울이는 Air Lean 적용
+        if (bEnableAirLean && bHasPreviousAirControllerYaw && DeltaSeconds > UE_KINDA_SMALL_NUMBER)
         {
-            LeanAmount = FMath::Vector2DInterpTo(LeanAmount, FVector2D::ZeroVector, DeltaSeconds, LeanInterpSpeed);
+            const float DeltaYaw = FMath::FindDeltaAngleDegrees(PreviousAirControllerYaw, CurrentAirYaw);
+            const float YawRate = DeltaYaw / DeltaSeconds;
+            // 초당 180도 회전을 기준으로 1.0 정규화
+            const float NormalizedYawRate = FMath::Clamp(YawRate / 180.0f, -1.0f, 1.0f);
+            const float ClampVal = FMath::Max(0.0f, LeanAxisClamp);
+            const float TargetAirLeanLR = FMath::Clamp(NormalizedYawRate * AirLeanMultiplier, -ClampVal, ClampVal);
+
+            const FVector2D TargetAirLean(TargetAirLeanLR, 0.0f);
+            if (AirLeanInterpSpeed > 0.0f)
+            {
+                LeanAmount = FMath::Vector2DInterpTo(LeanAmount, TargetAirLean, DeltaSeconds, AirLeanInterpSpeed);
+            }
+            else
+            {
+                LeanAmount = TargetAirLean;
+            }
         }
         else
         {
-            LeanAmount = FVector2D::ZeroVector;
+            if (AirLeanInterpSpeed > 0.0f && DeltaSeconds > UE_KINDA_SMALL_NUMBER)
+            {
+                LeanAmount = FMath::Vector2DInterpTo(LeanAmount, FVector2D::ZeroVector, DeltaSeconds, AirLeanInterpSpeed);
+            }
+            else
+            {
+                LeanAmount = FVector2D::ZeroVector;
+            }
         }
+
+        PreviousAirControllerYaw = CurrentAirYaw;
+        bHasPreviousAirControllerYaw = true;
     }
     else
     {
-        const float CurrentMultiplier = bIsSprintingForLean ? SprintLeanMultiplier : RunLeanMultiplier;
-        const float ClampVal = FMath::Max(0.0f, LeanAxisClamp);
-        const FVector2D TargetLean(
-            FMath::Clamp(ThreadSafeData.MovementData.RelativeAccelerationAmount.Y * CurrentMultiplier, -ClampVal, ClampVal),
-            FMath::Clamp(ThreadSafeData.MovementData.RelativeAccelerationAmount.X * CurrentMultiplier, -ClampVal, ClampVal));
+        // 지상(Ground): 기존 가속도 기반 Lean 로직 유지
+        bHasPreviousAirControllerYaw = false;
 
-        if (LeanInterpSpeed > 0.0f && DeltaSeconds > UE_KINDA_SMALL_NUMBER)
+        if (LeanGroundSpeed <= 10.0f)
         {
-            LeanAmount = FMath::Vector2DInterpTo(LeanAmount, TargetLean, DeltaSeconds, LeanInterpSpeed);
+            if (LeanInterpSpeed > 0.0f && DeltaSeconds > UE_KINDA_SMALL_NUMBER)
+            {
+                LeanAmount = FMath::Vector2DInterpTo(LeanAmount, FVector2D::ZeroVector, DeltaSeconds, LeanInterpSpeed);
+            }
+            else
+            {
+                LeanAmount = FVector2D::ZeroVector;
+            }
         }
         else
         {
-            LeanAmount = TargetLean;
+            const float CurrentMultiplier = bIsSprintingForLean ? SprintLeanMultiplier : RunLeanMultiplier;
+            const float ClampVal = FMath::Max(0.0f, LeanAxisClamp);
+            const FVector2D TargetLean(
+                FMath::Clamp(ThreadSafeData.MovementData.RelativeAccelerationAmount.Y * CurrentMultiplier, -ClampVal, ClampVal),
+                FMath::Clamp(ThreadSafeData.MovementData.RelativeAccelerationAmount.X * CurrentMultiplier, -ClampVal, ClampVal));
+
+            if (LeanInterpSpeed > 0.0f && DeltaSeconds > UE_KINDA_SMALL_NUMBER)
+            {
+                LeanAmount = FMath::Vector2DInterpTo(LeanAmount, TargetLean, DeltaSeconds, LeanInterpSpeed);
+            }
+            else
+            {
+                LeanAmount = TargetLean;
+            }
         }
     }
 
@@ -2567,7 +2682,11 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
                 {
                     ELocomotionState State = CachedLocomotionStateComponent->CurrentState;
 
-                    if (State == ELocomotionState::InAir && CachedLocomotionStateComponent->bIsJumping)
+                    const bool bIsActiveJumpStartOneShot =
+                        CachedLocomotionStateComponent->bIsJumping &&
+                        StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToJump;
+
+                    if (State == ELocomotionState::InAir && bIsActiveJumpStartOneShot)
                     {
                         ApplyJumpStartPredictionToTrajectory(ThreadSafeData.MovementData.Trajectory, *CachedBasePlayer, *CachedLocomotionStateComponent);
                     }
@@ -3936,6 +4055,68 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToStart &&
         DesiredState == EStateControllerPresentationState::TransitionToStart;
 
+    // TransitionToJump 상태 중 마우스 회전 또는 이동 입력으로 인한 점프 방향 재평가 감지
+    bool bJumpAirInputReselectDue = false;
+    EMovementDirection PendingJumpAirDirection = StateControllerMovementDirection;
+
+    if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToJump &&
+        DesiredState == EStateControllerPresentationState::TransitionToJump &&
+        StateControllerPlaybackHoldDuration > 0.05f)
+    {
+        // 1. 진행률 가드: 모션의 85% 이전까지만 재선택 허용 (후반부 착지/체공 자연스러운 핸드오프 보장)
+        const bool bWithinReselectProgressWindow =
+            StateControllerPlaybackHoldElapsed < (StateControllerPlaybackHoldDuration * 0.85f);
+
+        // 2. 쿨다운 가드: 마지막 재선택 후 최소 0.08초 경과
+        const bool bCooldownPassed =
+            (StateControllerPlaybackHoldElapsed - LastJumpAirReselectElapsed) >= 0.08f;
+
+        if (bWithinReselectProgressWindow && bCooldownPassed && CachedBasePlayer)
+        {
+            FVector2D LiveAirDirectionInput = FVector2D::ZeroVector;
+            if (const UCharacterMovementComponent* MoveComp = CachedBasePlayer->GetCharacterMovement())
+            {
+                FVector HorizontalVelocity = MoveComp->Velocity;
+                HorizontalVelocity.Z = 0.f;
+                const float IdleSpeed = CachedLocomotionStateComponent ? CachedLocomotionStateComponent->IdleSpeedThreshold : 10.f;
+                if (HorizontalVelocity.SizeSquared() > FMath::Square(IdleSpeed))
+                {
+                    const FVector LocalDir = CachedBasePlayer->GetActorTransform().InverseTransformVectorNoScale(HorizontalVelocity.GetSafeNormal());
+                    LiveAirDirectionInput = FVector2D(LocalDir.Y, LocalDir.X).GetSafeNormal();
+                }
+                else if (CachedLocomotionStateComponent && !CachedLocomotionStateComponent->CachedMoveInput.IsNearlyZero())
+                {
+                    LiveAirDirectionInput = CachedLocomotionStateComponent->CachedMoveInput.GetSafeNormal();
+                }
+            }
+
+            if (!LiveAirDirectionInput.IsNearlyZero())
+            {
+                PendingJumpAirDirection = ResolveStateControllerDirectionFromInput(LiveAirDirectionInput);
+
+                // [Gait-Aware Jump Reselection Filtering]
+                // Sprint 점프는 기획 및 Chooser Table 매핑상 정면(Forward, ForwardLeft, ForwardRight)만 지원합니다.
+                // 마우스가 측면/후면(Left, Right, Backward 계열)으로 회전할 경우 Chooser에 해당 행이 없으므로,
+                // 불필요한 Chooser 평가를 원천 차단하고 기존 Sprint 점프 스타트 모션을 끝까지 완주하도록 보존합니다.
+                const bool bIsSprintJump = (StateControllerGait == EGaitIntent::Sprint) ||
+                    (CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsSprinting);
+                const bool bIsDirectionSupportedBySprint =
+                    (PendingJumpAirDirection == EMovementDirection::Forward ||
+                     PendingJumpAirDirection == EMovementDirection::ForwardLeft ||
+                     PendingJumpAirDirection == EMovementDirection::ForwardRight);
+
+                if (bIsSprintJump && !bIsDirectionSupportedBySprint)
+                {
+                    bJumpAirInputReselectDue = false;
+                }
+                else if (PendingJumpAirDirection != StateControllerMovementDirection)
+                {
+                    bJumpAirInputReselectDue = true;
+                }
+            }
+        }
+    }
+
     bool bInterruptLandForMotionMatching = false;
     if (StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToLand &&
         DesiredState == EStateControllerPresentationState::LocomotionLoop)
@@ -3964,10 +4145,31 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         (StateControllerSelectedAnimation != nullptr ||
          StateControllerPlaybackHoldState != DesiredState);
 
-    if (bStateChanged || bInterruptLandForMotionMatching || bTurnInPlaceReplayDue || bStartInputReselectDue || bActionMontageClearDue)
+    float SavedJumpAirElapsed = 0.0f;
+    const FS_ChooserOutputs PreviousSelectedAnimationOutput = StateControllerSelectedAnimationOutput;
+    const float PreviousPlaybackHoldDuration = StateControllerPlaybackHoldDuration;
+    const float PreviousStartTime = StateControllerSelectedAnimationStartTime;
+    const float PreviousBlendTime = StateControllerSelectedAnimationBlendTime;
+    const EMovementDirection PreviousMovementDirectionBackup = StateControllerMovementDirection;
+
+    if (bStateChanged || bInterruptLandForMotionMatching || bTurnInPlaceReplayDue || bStartInputReselectDue || bActionMontageClearDue || bJumpAirInputReselectDue)
     {
+        SavedJumpAirElapsed = (bJumpAirInputReselectDue && StateControllerPlaybackHoldState == EStateControllerPresentationState::TransitionToJump)
+            ? StateControllerPlaybackHoldElapsed
+            : 0.0f;
+        bIsJumpAirReselecting = bJumpAirInputReselectDue;
+
         StateControllerPlaybackHoldState = DesiredState;
-        StateControllerPlaybackHoldElapsed = 0.0f;
+        StateControllerPlaybackHoldElapsed = SavedJumpAirElapsed;
+
+        if (bJumpAirInputReselectDue)
+        {
+            LastJumpAirReselectElapsed = SavedJumpAirElapsed;
+        }
+        else if (bStateChanged && DesiredState == EStateControllerPresentationState::TransitionToJump)
+        {
+            LastJumpAirReselectElapsed = 0.0f;
+        }
 
         if (DesiredState == EStateControllerPresentationState::TransitionToLand)
         {
@@ -4166,16 +4368,21 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
             CurrentMovementDirection = ResolveStateControllerDirectionFromInput(CachedLocomotionStateComponent->CachedMoveInput);
             StateControllerMovementDirection = CurrentMovementDirection;
         }
-        else if (DesiredState == EStateControllerPresentationState::TransitionToJump && CachedLocomotionStateComponent &&
-            CachedLocomotionStateComponent->bJumpStartWasMoving &&
-            !CachedLocomotionStateComponent->JumpStartMoveDirection.IsNearlyZero())
+        else if (DesiredState == EStateControllerPresentationState::TransitionToJump && CachedLocomotionStateComponent)
         {
-            // CMC may not have accelerated yet on the first jump frame. Use the
-            // accepted ground launch snapshot rather than stale/current velocity
-            // so the direct Jump chooser receives the intended diagonal sector.
             StateControllerPreviousMovementDirection = CurrentMovementDirection;
-            CurrentMovementDirection = ResolveStateControllerDirectionFromInput(
-                CachedLocomotionStateComponent->JumpStartMoveDirection);
+            if (bIsJumpAirReselecting)
+            {
+                // 공중 마우스 회전/입력으로 인한 재선택 시 실시간 방향 적용
+                CurrentMovementDirection = PendingJumpAirDirection;
+            }
+            else if (CachedLocomotionStateComponent->bJumpStartWasMoving &&
+                !CachedLocomotionStateComponent->JumpStartMoveDirection.IsNearlyZero())
+            {
+                // 점프 최초 진입 시에는 launch 스냅샷 방향 적용
+                CurrentMovementDirection = ResolveStateControllerDirectionFromInput(
+                    CachedLocomotionStateComponent->JumpStartMoveDirection);
+            }
             StateControllerMovementDirection = CurrentMovementDirection;
         }
         else if (DesiredState == EStateControllerPresentationState::TransitionToLand && CachedLocomotionStateComponent &&
@@ -4274,55 +4481,105 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
                     ChooserOutputs.BlendTime);
             }
 
-            StateControllerSelectedAnimation = Cast<UAnimationAsset>(EvaluatedObject);
-            if (CVarAnimStateControllerDebug.GetValueOnGameThread() > 0 && bLandChooserEvaluation)
+            UAnimationAsset* EvaluatedAnimAsset = Cast<UAnimationAsset>(EvaluatedObject);
+            if (bIsJumpAirReselecting && !EvaluatedAnimAsset)
             {
-                UE_LOG(LogMotionMatchingCapture, Display,
-                    TEXT("[SC_LAND_CHOOSER] Impact=%.1f Threshold=%.1f ComponentHeavy=%d ReflectedHeavy=%d ProxyHeavy=%d GetterHeavy=%d Moving=%d Direction=%s Result=%s Path=%s"),
-                    CachedLocomotionStateComponent ? CachedLocomotionStateComponent->LandStartFallSpeed : 0.0f,
-                    CachedLocomotionStateComponent ? CachedLocomotionStateComponent->HeavyLandSpeedThreshold : 0.0f,
-                    bComponentHeavyBeforeChooser ? 1 : 0,
-                    bStateControllerIsHeavyLand ? 1 : 0,
-                    bProxyHeavyBeforeChooser ? 1 : 0,
-                    bGetterHeavyBeforeChooser ? 1 : 0,
-                    CachedLocomotionStateComponent && CachedLocomotionStateComponent->bLandWasMoving ? 1 : 0,
-                    *StaticEnum<EMovementDirection>()->GetNameStringByValue(static_cast<int64>(StateControllerMovementDirection)),
-                    *GetNameSafe(StateControllerSelectedAnimation),
-                    *StateControllerLastChooserPath);
+                // 공중 재선택 도중 Chooser Table에서 에셋을 찾지 못한 경우(예: 스프린트 점프 중 측면/후면 각도 결측 등),
+                // 기존에 정상 재생 중이던 점프 스타트 에셋과 진행 시간을 그대로 유지하여 조기 Fall Loop 이탈을 원천 방지합니다.
+                StateControllerSelectedAnimation = const_cast<UAnimationAsset*>(PreviousSelectedAnimation);
+                StateControllerSelectedAnimationOutput = PreviousSelectedAnimationOutput;
+                StateControllerPlaybackHoldDuration = PreviousPlaybackHoldDuration;
+                StateControllerPlaybackHoldElapsed = SavedJumpAirElapsed;
+                StateControllerSelectedAnimationStartTime = PreviousStartTime;
+                StateControllerSelectedAnimationBlendTime = PreviousBlendTime;
+                StateControllerMovementDirection = PreviousMovementDirectionBackup;
+                bIsJumpAirReselecting = false;
+
+                StateControllerLastChooserPath += TEXT(" -> <Reselect Null: Preserved Previous Jump Asset>");
             }
-            if (!StateControllerSelectedAnimation)
+            else
             {
-                StateControllerLastChooserPath += TEXT(" -> <No Animation Row>");
+                StateControllerSelectedAnimation = EvaluatedAnimAsset;
+                if (CVarAnimStateControllerDebug.GetValueOnGameThread() > 0 && bLandChooserEvaluation)
+                {
+                    UE_LOG(LogMotionMatchingCapture, Display,
+                        TEXT("[SC_LAND_CHOOSER] Impact=%.1f Threshold=%.1f ComponentHeavy=%d ReflectedHeavy=%d ProxyHeavy=%d GetterHeavy=%d Moving=%d Direction=%s Result=%s Path=%s"),
+                        CachedLocomotionStateComponent ? CachedLocomotionStateComponent->LandStartFallSpeed : 0.0f,
+                        CachedLocomotionStateComponent ? CachedLocomotionStateComponent->HeavyLandSpeedThreshold : 0.0f,
+                        bComponentHeavyBeforeChooser ? 1 : 0,
+                        bStateControllerIsHeavyLand ? 1 : 0,
+                        bProxyHeavyBeforeChooser ? 1 : 0,
+                        bGetterHeavyBeforeChooser ? 1 : 0,
+                        CachedLocomotionStateComponent && CachedLocomotionStateComponent->bLandWasMoving ? 1 : 0,
+                        *StaticEnum<EMovementDirection>()->GetNameStringByValue(static_cast<int64>(StateControllerMovementDirection)),
+                        *GetNameSafe(StateControllerSelectedAnimation),
+                        *StateControllerLastChooserPath);
+                }
+                if (!StateControllerSelectedAnimation)
+                {
+                    StateControllerLastChooserPath += TEXT(" -> <No Animation Row>");
+                }
+                // Keep the entire output structure, exactly as Project_J does.
+                // StartTime/BlendTime remain one atomic authored contract with the
+                // chosen asset rather than unrelated transient float values.
+                StateControllerSelectedAnimationOutput = ChooserOutputs;
+                const float DefaultBlendTime = DesiredState == EStateControllerPresentationState::TurnInPlace
+                    ? StateControllerTurnInPlaceDefaultBlendTime
+                    : 0.2f;
+                StateControllerSelectedAnimationBlendTime = (DesiredState == EStateControllerPresentationState::TurnInPlace)
+                    ? (StateControllerSelectedAnimationOutput.BlendTime > 0.0f
+                        ? FMath::Max(StateControllerSelectedAnimationOutput.BlendTime, StateControllerTurnInPlaceDefaultBlendTime)
+                        : StateControllerTurnInPlaceDefaultBlendTime)
+                    : (StateControllerSelectedAnimationOutput.BlendTime > 0.0f
+                        ? StateControllerSelectedAnimationOutput.BlendTime
+                        : DefaultBlendTime);
+                if (bIsJumpAirReselecting && StateControllerSelectedAnimation)
+                {
+                    // 공중에서 마우스 회전으로 방향 에셋이 재선택되었을 때:
+                    // 발구르기(0초)부터 다시 시작하지 않고, 이전 에셋의 공중 진행 시간(SavedJumpAirElapsed)을 시작 시간으로 계승!
+                    const float MaxSafeStartTime = FMath::Max(0.0f, StateControllerSelectedAnimation->GetPlayLength() - 0.05f);
+                    const float PreservedStartTime = FMath::Clamp(
+                        FMath::Max(StateControllerSelectedAnimationOutput.StartTime, SavedJumpAirElapsed),
+                        0.0f,
+                        MaxSafeStartTime);
+                    StateControllerSelectedAnimationStartTime = PreservedStartTime;
+
+                    // 홀드 시간 및 남은 시간 갱신
+                    StateControllerPlaybackHoldDuration = StateControllerSelectedAnimation->GetPlayLength();
+                    StateControllerPlaybackHoldElapsed = PreservedStartTime;
+
+                    // 재선택 시 블렌드 시간은 0.15초 내외로 부드럽게 크로스페이드
+                    StateControllerSelectedAnimationBlendTime = StateControllerSelectedAnimationOutput.BlendTime > 0.0f
+                        ? StateControllerSelectedAnimationOutput.BlendTime
+                        : 0.15f;
+
+                    UE_LOG(LogTemp, Warning, TEXT("[JumpLog] >>> AIR JUMP RESELECTED >>> Dir: %s | Asset: %s | StartTime: %.2f | Elapsed: %.2f"),
+                        *StaticEnum<EMovementDirection>()->GetNameStringByValue(static_cast<int64>(StateControllerMovementDirection)),
+                        *GetNameSafe(StateControllerSelectedAnimation),
+                        PreservedStartTime,
+                        SavedJumpAirElapsed);
+                }
+                else
+                {
+                    StateControllerSelectedAnimationStartTime = StateControllerSelectedAnimation
+                        ? FMath::Clamp(StateControllerSelectedAnimationOutput.StartTime, 0.0f, StateControllerSelectedAnimation->GetPlayLength())
+                        : 0.0f;
+                    bStateControllerSelectedAnimationShouldLoop = false;
+                    StateControllerPlaybackHoldDuration = StateControllerSelectedAnimation
+                        ? FMath::Max(StateControllerSelectedAnimation->GetPlayLength() - StateControllerSelectedAnimationStartTime, 0.0f)
+                        : 0.0f;
+                }
             }
-            // Keep the entire output structure, exactly as Project_J does.
-            // StartTime/BlendTime remain one atomic authored contract with the
-            // chosen asset rather than unrelated transient float values.
-            StateControllerSelectedAnimationOutput = ChooserOutputs;
-            const float DefaultBlendTime = DesiredState == EStateControllerPresentationState::TurnInPlace
-                ? StateControllerTurnInPlaceDefaultBlendTime
-                : 0.2f;
-            StateControllerSelectedAnimationBlendTime = (DesiredState == EStateControllerPresentationState::TurnInPlace)
-                ? (StateControllerSelectedAnimationOutput.BlendTime > 0.0f
-                    ? FMath::Max(StateControllerSelectedAnimationOutput.BlendTime, StateControllerTurnInPlaceDefaultBlendTime)
-                    : StateControllerTurnInPlaceDefaultBlendTime)
-                : (StateControllerSelectedAnimationOutput.BlendTime > 0.0f
-                    ? StateControllerSelectedAnimationOutput.BlendTime
-                    : DefaultBlendTime);
-            StateControllerSelectedAnimationStartTime = StateControllerSelectedAnimation
-                ? FMath::Clamp(StateControllerSelectedAnimationOutput.StartTime, 0.0f, StateControllerSelectedAnimation->GetPlayLength())
-                : 0.0f;
-            bStateControllerSelectedAnimationShouldLoop = false;
-            StateControllerPlaybackHoldDuration = StateControllerSelectedAnimation
-                ? FMath::Max(StateControllerSelectedAnimation->GetPlayLength() - StateControllerSelectedAnimationStartTime, 0.0f)
-                : 0.0f;
 
             // The state component initially installs a conservative safety
             // timer (0.8s). Replace it with the actual Chooser clip duration
             // so Start/Stop/Jump/Land are not force-completed mid-animation.
             if (StateControllerSelectedAnimation && CachedLocomotionStateComponent)
             {
-                CachedLocomotionStateComponent->RefreshOneShotFallbackTimer(StateControllerPlaybackHoldDuration);
+                const float RemainingHoldTime = FMath::Max(0.05f, StateControllerPlaybackHoldDuration - StateControllerPlaybackHoldElapsed);
+                CachedLocomotionStateComponent->RefreshOneShotFallbackTimer(RemainingHoldTime);
             }
+            bIsJumpAirReselecting = false;
             if (DesiredState == EStateControllerPresentationState::TurnInPlace)
             {
                 StateControllerActiveTurnInPlaceIndex = FMath::RoundToInt(StateControllerTurnInPlaceIndexForChooser);
