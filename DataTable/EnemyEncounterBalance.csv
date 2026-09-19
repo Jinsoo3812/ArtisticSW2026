@@ -1,5 +1,5 @@
 Name,GroundMeleeCount,GroundRangedCount,DeckMeleeCount,DeckRangedCount,SummonCount,SummonAliveLimit,SummonHealthFractions,SummonStats,StrongAttackDamage,MajorAttackDamage,MajorAttackTelegraphSeconds
-T1,2,1,2,1,1,1,(0.5),"(DataTable=/Game/GameplayAbilitySystem/Enemy/Data/DT_EnemyBaseStats.DT_EnemyBaseStats,RowName=T1_BossSummon_Ranged)",18,24,1.2
-T2,3,1,2,2,1,1,"(0.6,0.3)","(DataTable=/Game/GameplayAbilitySystem/Enemy/Data/DT_EnemyBaseStats.DT_EnemyBaseStats,RowName=T2_BossSummon_Ranged)",26,34,1.0
-T3,3,2,3,2,2,2,"(0.65,0.3)","(DataTable=/Game/GameplayAbilitySystem/Enemy/Data/DT_EnemyBaseStats.DT_EnemyBaseStats,RowName=T3_BossSummon_Ranged)",35,46,0.9
-T4,4,2,3,3,2,2,"(0.7,0.4)","(DataTable=/Game/GameplayAbilitySystem/Enemy/Data/DT_EnemyBaseStats.DT_EnemyBaseStats,RowName=T4_BossSummon_Ranged)",45,60,0.8
+T1,2,1,1,2,1,1,-0.5,"(DataTable=/Game/GameplayAbilitySystem/Enemy/Data/DT_EnemyBaseStats.DT_EnemyBaseStats,RowName=T1_BossSummon_Ranged)",18,24,1.2
+T2,3,1,2,2,1,1,"(0.6,0.3)","(DataTable=/Game/GameplayAbilitySystem/Enemy/Data/DT_EnemyBaseStats.DT_EnemyBaseStats,RowName=T2_BossSummon_Ranged)",26,34,1
+T3,2,2,3,2,2,2,"(0.65,0.3)","(DataTable=/Game/GameplayAbilitySystem/Enemy/Data/DT_EnemyBaseStats.DT_EnemyBaseStats,RowName=T3_BossSummon_Ranged)",35,46,0.9
+T4,3,2,2,3,2,2,"(0.7,0.4)","(DataTable=/Game/GameplayAbilitySystem/Enemy/Data/DT_EnemyBaseStats.DT_EnemyBaseStats,RowName=T4_BossSummon_Ranged)",45,60,0.8
