@@ -849,6 +849,18 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Lean", meta = (ClampMin = "0.0"))
     float LeanInterpSpeed = 6.0f;
 
+    /** Enable additive lean while airborne (banks body into camera turns). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Lean")
+    bool bEnableAirLean = true;
+
+    /** Multiplier applied to camera yaw speed while airborne to produce lateral lean. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Lean", meta = (ClampMin = "0.0", ClampMax = "3.0"))
+    float AirLeanMultiplier = 0.5f;
+
+    /** Interpolation speed for airborne lean changes. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation|Lean", meta = (ClampMin = "0.0"))
+    float AirLeanInterpSpeed = 6.0f;
+
     UFUNCTION(BlueprintPure, Category = "StateController|Chooser", meta = (BlueprintThreadSafe))
     EGaitIntent GetThreadSafeGait() const;
 
@@ -1280,5 +1292,11 @@ private:
 
     FVector PreviousHorizontalVelocity = FVector::ZeroVector;
     bool bHasPreviousHorizontalVelocity = false;
+
+    float PreviousAirControllerYaw = 0.f;
+    bool bHasPreviousAirControllerYaw = false;
+
+    float LastJumpAirReselectElapsed = 0.0f;
+    bool bIsJumpAirReselecting = false;
 };
 

@@ -2472,18 +2472,36 @@ void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
 		return;
 	}
 
+	const bool bIsInAir = AnimStateComponent &&
+		(AnimStateComponent->bIsInAir || AnimStateComponent->CurrentState == ELocomotionState::InAir);
+
 	const bool bIsMovingInStrafe =
 		(GetPendingMovementInputVector().SizeSquared() > 0.001f || GetVelocity().SizeSquared2D() > 100.0f);
 
-	if (bEnableCombatRotation && bIsMovingInStrafe)
+	if (bEnableCombatRotation && (bIsMovingInStrafe || bIsInAir))
 	{
 		const float TargetYaw = GetController() ? GetController()->GetControlRotation().Yaw : GetActorRotation().Yaw;
 		const float CurrentYaw = GetActorRotation().Yaw;
 		const float YawDelta = FMath::Abs(FRotator::NormalizeAxis(TargetYaw - CurrentYaw));
 
-		// If there is a noticeable angle difference (e.g. recovering from S/A/D roll into movement),
-		// smoothly rotate towards controller yaw rather than hard-snapping in a single frame.
-		if (YawDelta > 5.0f)
+		if (bIsInAir)
+		{
+			// 공중 체공 중에는 마우스 회전 시 캡슐이 굳지 않고 AirRotationCatchUpSpeed 속도로 카메라 방향을 부드럽게 추종
+			if (YawDelta > 0.5f)
+			{
+				bUseControllerRotationYaw = false;
+				const FRotator CurrentRot = GetActorRotation();
+				const FRotator TargetRot(0.0f, TargetYaw, 0.0f);
+				const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
+				const FRotator NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaSeconds, AirRotationCatchUpSpeed);
+				SetActorRotation(NewRot);
+			}
+			else
+			{
+				bUseControllerRotationYaw = true;
+			}
+		}
+		else if (YawDelta > 5.0f)
 		{
 			bUseControllerRotationYaw = false;
 			const FRotator CurrentRot = GetActorRotation();

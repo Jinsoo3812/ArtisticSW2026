@@ -316,6 +316,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Rotation", meta = (ClampMin = "1.0"))
 	float BackwardStrafeRotationCatchUpSpeed = 8.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Rotation", meta = (ClampMin = "1.0"))
+	float AirRotationCatchUpSpeed = 10.0f;
+
 	void ApplyCombatRotationMode(bool bEnableCombatRotation);
 	void OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
