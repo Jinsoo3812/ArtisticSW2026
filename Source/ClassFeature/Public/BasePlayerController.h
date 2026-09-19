@@ -26,6 +26,7 @@ class UFacilityHubWidget;
 class UStatusWindowWidget;
 class AFacilityHubActor;
 class ASharedShipUpgradeState;
+struct FInteractionUIInfo;
 
 struct FStorageRevealState
 {
@@ -90,6 +91,8 @@ protected:
 
 	/*---- 인벤토리 ----*/
 public:
+	void ShowInteractionPrompt(const FInteractionUIInfo& UIInfo);
+	void HideInteractionPrompt();
 
 	void ToggleInventory();
 	void ToggleStatus();

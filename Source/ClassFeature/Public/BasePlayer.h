@@ -599,9 +599,6 @@ protected:
 	// 스캔 타이머 핸들
 	FTimerHandle InteractionScanTimerHandle;
 
-	// 현재 화면에 띄운 Interactable Obj의 WidgetComp들을 캐시 (WeakPtr)
-	TArray<TWeakObjectPtr<class UWidgetComponent>> CachedHoveredWidgets;
-
 	// 스캔 시작 함수
 	void StartInteractionScan();
 

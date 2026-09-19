@@ -462,6 +462,22 @@ void ABasePlayerController::BindHUDToCurrentPlayer()
 	}
 }
 
+void ABasePlayerController::ShowInteractionPrompt(const FInteractionUIInfo& UIInfo)
+{
+	if (IsLocalController() && PlayerHUDWidget)
+	{
+		PlayerHUDWidget->ShowInteractionPrompt(UIInfo);
+	}
+}
+
+void ABasePlayerController::HideInteractionPrompt()
+{
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->HideInteractionPrompt();
+	}
+}
+
 void ABasePlayerController::ToggleInventory()
 {
 	if (!IsLocalController() || !PlayerHUDWidget)

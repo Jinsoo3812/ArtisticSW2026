@@ -309,6 +309,17 @@ UE_DEFINE_GAMEPLAY_TAG(Interaction_ShipBoard, "Interaction.ShipBoard");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_CannonBoard, "Interaction.CannonBoard");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_Dialogue, "Interaction.Dialogue");
 
+/* Interactable identity */
+UE_DEFINE_GAMEPLAY_TAG(Interactable_Id, "Interactable.Id");
+UE_DEFINE_GAMEPLAY_TAG(Interactable_Id_WorkTable, "Interactable.Id.WorkTable");
+UE_DEFINE_GAMEPLAY_TAG(Interactable_Id_StorageChest, "Interactable.Id.StorageChest");
+UE_DEFINE_GAMEPLAY_TAG(Interactable_Id_NPC, "Interactable.Id.NPC");
+UE_DEFINE_GAMEPLAY_TAG(Interactable_Id_Ship_Helm, "Interactable.Id.Ship.Helm");
+UE_DEFINE_GAMEPLAY_TAG(Interactable_Id_Ship_Cannon, "Interactable.Id.Ship.Cannon");
+UE_DEFINE_GAMEPLAY_TAG(Interactable_Id_Ship_BoardingPoint, "Interactable.Id.Ship.BoardingPoint");
+UE_DEFINE_GAMEPLAY_TAG(Interactable_Id_Ship_Anchor, "Interactable.Id.Ship.Anchor");
+UE_DEFINE_GAMEPLAY_TAG(Interactable_Id_Ship_RepairPoint, "Interactable.Id.Ship.RepairPoint");
+
 /* Enemy type */
 UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Human_Test0, "Enemy.Type.Human.Test0");
 UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Human_Test1, "Enemy.Type.Human.Test1");

@@ -3,6 +3,7 @@
 #include "CapsuleInteractableComponent.h"
 #include "CollisionChannels.h"
 #include "DrawDebugHelpers.h"
+#include "Interactable/InteractionSubsystem.h"
 
 UCapsuleInteractableComponent::UCapsuleInteractableComponent()
 {
@@ -16,6 +17,12 @@ UCapsuleInteractableComponent::UCapsuleInteractableComponent()
 	SetCollisionProfileName(TEXT("Interactable"));
 
 	ShapeColor = FColor::Cyan;
+}
+
+void UCapsuleInteractableComponent::BeginPlay()
+{
+	Super::BeginPlay();
+	RefreshInteractionUIFromData();
 }
 
 void UCapsuleInteractableComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -34,6 +41,30 @@ void UCapsuleInteractableComponent::InitializeInteractable(const FText& InObject
 {
 	InteractUIInfo.ObjectName = InObjectName;
 	InteractUIInfo.ActionText = InActionText;
+}
+
+bool UCapsuleInteractableComponent::RefreshInteractionUIFromData()
+{
+	if (!InteractableIdTag.IsValid() || !GetWorld())
+	{
+		return false;
+	}
+
+	const UInteractionSubsystem* InteractionSubsystem = GetWorld()->GetSubsystem<UInteractionSubsystem>();
+	const FInteractionFeatureData* Feature = InteractionSubsystem
+		? InteractionSubsystem->GetInteractionFeature(InteractableIdTag)
+		: nullptr;
+	if (!Feature)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[%s] No interaction feature row found for %s."),
+			*GetNameSafe(this),
+			*InteractableIdTag.ToString());
+		return false;
+	}
+
+	InitializeInteractable(Feature->ObjectName, Feature->ActionText);
+	return true;
 }
 
 FGameplayTag UCapsuleInteractableComponent::GetInteractionTag() const

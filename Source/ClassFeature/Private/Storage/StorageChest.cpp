@@ -2,6 +2,7 @@
 
 
 #include "Storage/StorageChest.h"
+#include "BaseGameplayTags.h"
 #include "Balance/ProgressionBalanceData.h"
 #include "Item/ItemData.h"
 #include "BaseCharacter.h"
@@ -51,6 +52,7 @@ AStorageChest::AStorageChest()
 
 	InteractableComponent = CreateDefaultSubobject<UInteractableComponent>(TEXT("InteractableComponent"));
 	InteractableComponent->SetupAttachment(ChestMesh);
+	InteractableComponent->InteractableIdTag = Interactable_Id_StorageChest;
 
 	StorageComponent = CreateDefaultSubobject<UStorageComponent>(TEXT("StorageComponent"));
 }

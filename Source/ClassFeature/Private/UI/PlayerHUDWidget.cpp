@@ -35,10 +35,23 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "InteractUserWidget.h"
+#include "UObject/ConstructorHelpers.h"
 
 #include "BaseGameplayTags.h"
 
 #include "BaseItem.h"
+
+UPlayerHUDWidget::UPlayerHUDWidget(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	static ConstructorHelpers::FClassFinder<UInteractUserWidget> InteractionPromptClass(
+		TEXT("/Game/Blueprints/02_UI/UI_Interact/WBP_InteractPrompt"));
+	if (InteractionPromptClass.Succeeded())
+	{
+		InteractionPromptWidgetClass = InteractionPromptClass.Class;
+	}
+}
 
 int32 UPlayerHUDWidget::NativePaint(
 	const FPaintArgs& Args,
@@ -92,6 +105,22 @@ int32 UPlayerHUDWidget::NativePaint(
 void UPlayerHUDWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+
+	if (!InteractionPromptWidget && InteractionPromptWidgetClass && RootCanvasPanel)
+	{
+		InteractionPromptWidget = CreateWidget<UInteractUserWidget>(
+			GetOwningPlayer(), InteractionPromptWidgetClass);
+		if (InteractionPromptWidget)
+		{
+			UCanvasPanelSlot* PromptSlot = RootCanvasPanel->AddChildToCanvas(InteractionPromptWidget);
+			PromptSlot->SetAnchors(FAnchors(0.5f, 0.5f));
+			PromptSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+			PromptSlot->SetPosition(RuntimeInteractionPromptPosition);
+			PromptSlot->SetAutoSize(true);
+			PromptSlot->SetZOrder(30);
+		}
+	}
+	HideInteractionPrompt();
 
 	if (InventoryPanel)
 	{
@@ -183,6 +212,8 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 
 void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 {
+	HideInteractionPrompt();
+
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
@@ -226,6 +257,25 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	RefreshShipHealthContext(GetOwningPlayerPawn());
 	RefreshShipHealth();
 	RefreshBowCrosshairBinding();
+}
+
+void UPlayerHUDWidget::ShowInteractionPrompt(const FInteractionUIInfo& UIInfo)
+{
+	if (!InteractionPromptWidget)
+	{
+		return;
+	}
+
+	InteractionPromptWidget->OnUpdateInteractUI(UIInfo);
+	InteractionPromptWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+}
+
+void UPlayerHUDWidget::HideInteractionPrompt()
+{
+	if (InteractionPromptWidget)
+	{
+		InteractionPromptWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
 }
 
 void UPlayerHUDWidget::SetInventoryVisible(bool bVisible)

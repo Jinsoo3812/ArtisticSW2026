@@ -18,6 +18,7 @@ class ARTISTICSWCORE_API UInteractableComponent : public USphereComponent, publi
 
 public:
 	UInteractableComponent();
+	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	// IInteractable 구현
@@ -29,9 +30,18 @@ public:
 	// Interactable Component 초기화. 단순 Text 등을 ItemFeatureData로 부터 주입받는 용도
 	void InitializeInteractable(const FText& InObjectName, const FText& InActionText);
 
+	/** Reloads presentation from the cached interaction table using InteractableIdTag. */
+	UFUNCTION(BlueprintCallable, Category = "Interaction|Data")
+	bool RefreshInteractionUIFromData();
+
 	// 컴포넌트마다 인스턴스별로 태그를 설정할 수 있도록 노출
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
 	FGameplayTag InteractionTag;
+
+	/** Stable type identity used as the Interaction Feature Data Table row name. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Data",
+		meta = (Categories = "Interactable.Id"))
+	FGameplayTag InteractableIdTag;
 
 	/** Draw this component's scaled collision sphere while playing. Disabled by default. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Debug")

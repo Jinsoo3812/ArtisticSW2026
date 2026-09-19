@@ -239,6 +239,7 @@ AShip::AShip()
 	HelmInteractable->SetupAttachment(BuoyancyRoot);
 	HelmInteractable->SetCollisionProfileName(TEXT("Interactable"));
 	HelmInteractable->InteractionTag = Interaction_ShipBoard;
+	HelmInteractable->InteractableIdTag = Interactable_Id_Ship_Helm;
 
 	HelmSeatPoint = CreateDefaultSubobject<USceneComponent>(TEXT("HelmSeatPoint"));
 	HelmSeatPoint->SetupAttachment(BuoyancyRoot);
@@ -255,6 +256,7 @@ AShip::AShip()
 	AnchorInteractable->SetupAttachment(AnchorMesh);
 	AnchorInteractable->SetCollisionProfileName(TEXT("Interactable"));
 	AnchorInteractable->InteractionTag = FGameplayTag::RequestGameplayTag(TEXT("Interaction.Ship.Anchor"), false);
+	AnchorInteractable->InteractableIdTag = Interactable_Id_Ship_Anchor;
 
 	BoardingArrivalPoint = CreateDefaultSubobject<USceneComponent>(TEXT("BoardingArrivalPoint"));
 	BoardingArrivalPoint->SetupAttachment(BuoyancyRoot);

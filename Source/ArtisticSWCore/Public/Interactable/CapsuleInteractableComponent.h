@@ -18,6 +18,7 @@ class ARTISTICSWCORE_API UCapsuleInteractableComponent : public UCapsuleComponen
 
 public:
 	UCapsuleInteractableComponent();
+	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	// IInteractable 구현
@@ -29,9 +30,16 @@ public:
 	// Interactable Component 초기화. 단순 Text 등을 ItemFeatureData로 부터 주입받는 용도
 	void InitializeInteractable(const FText& InObjectName, const FText& InActionText);
 
+	UFUNCTION(BlueprintCallable, Category = "Interaction|Data")
+	bool RefreshInteractionUIFromData();
+
 	// 컴포넌트마다 인스턴스별로 태그를 설정할 수 있도록 노출
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
 	FGameplayTag InteractionTag;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Data",
+		meta = (Categories = "Interactable.Id"))
+	FGameplayTag InteractableIdTag;
 
 	/** Draw this component's scaled collision capsule while playing. Disabled by default. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Debug")

@@ -59,6 +59,7 @@ ACannon::ACannon()
 	InteractableComponent = CreateDefaultSubobject<UInteractableComponent>(TEXT("InteractableComponent"));
 	InteractableComponent->SetupAttachment(RootComponent);
 	InteractableComponent->SetCollisionProfileName(TEXT("Interactable"));
+	InteractableComponent->InteractableIdTag = Interactable_Id_Ship_Cannon;
 
 	// Keep the player fixed to the cannon root. Only the cannon meshes rotate while aiming.
 	PlayerMountPoint = CreateDefaultSubobject<USceneComponent>(TEXT("PlayerMountPoint"));

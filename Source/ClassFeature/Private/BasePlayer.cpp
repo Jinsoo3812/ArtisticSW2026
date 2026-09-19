@@ -26,7 +26,6 @@
 #include "Interactable.h"
 #include "CollisionChannels.h"
 #include "AbilitySystemBlueprintLibrary.h"
-#include "Components/WidgetComponent.h"
 #include "Repair/ShipRepairPointComponent.h"
 #include "UI/ShipRepairProgressWidget.h"
 #include "InteractUserWidget.h"
@@ -1928,97 +1927,37 @@ void ABasePlayer::PerformInteractionScan()
 	TArray<FHitResult> HitResults;
 	PerformInteractTrace(HitResults);
 
-	TArray<UWidgetComponent*> CurrentHoveredWidgets;
-	TMap<UWidgetComponent*, FInteractionUIInfo> CurrentWidgetUIInfo;
-
-	// 현재 트레이스에 걸린 모든 위젯 수집
+	IInteractable* BestInteractable = nullptr;
+	float ClosestDistanceSq = MAX_flt;
+	const FVector StartLocation = GetActorLocation();
 	for (const FHitResult& Hit : HitResults)
 	{
 		UPrimitiveComponent* HitComponent = Hit.GetComponent();
-		if (!HitComponent)
-		{
-			continue;
-		}
-
-		IInteractable* Interactable = Cast<IInteractable>(HitComponent);
-		if (!Interactable)
-		{
-			continue;
-		}
-
+		IInteractable* Interactable = HitComponent ? Cast<IInteractable>(HitComponent) : nullptr;
 		AActor* HitActor = Hit.GetActor();
-		if (!HitActor)
+		if (Interactable && HitActor)
 		{
-			continue;
-		}
-
-		TArray<UWidgetComponent*> WidgetComponents;
-		HitActor->GetComponents<UWidgetComponent>(WidgetComponents);
-		for (UWidgetComponent* WidgetComp : WidgetComponents)
-		{
-			if (!WidgetComp)
+			const FVector SelectionPoint = Hit.bStartPenetrating
+				? HitActor->GetActorLocation()
+				: FVector(Hit.ImpactPoint);
+			const float SelectionDistanceSq = FVector::DistSquared(StartLocation, SelectionPoint);
+			if (SelectionDistanceSq < ClosestDistanceSq)
 			{
-				continue;
-			}
-
-			if (Cast<UInteractUserWidget>(WidgetComp->GetUserWidgetObject()))
-			{
-				CurrentHoveredWidgets.AddUnique(WidgetComp);
-				if (!CurrentWidgetUIInfo.Contains(WidgetComp))
-				{
-					CurrentWidgetUIInfo.Add(WidgetComp, Interactable->GetInteractionUIInfo());
-				}
+				ClosestDistanceSq = SelectionDistanceSq;
+				BestInteractable = Interactable;
 			}
 		}
 	}
 
-	// 기존 캐시에는 있지만 현재 스캔되지 않은 위젯은 숨김 처리 후 캐시에서 제거
-	for (int32 i = CachedHoveredWidgets.Num() - 1; i >= 0; --i)
+	if (ABasePlayerController* PlayerController = GetController<ABasePlayerController>())
 	{
-		if (CachedHoveredWidgets[i].IsValid())
+		if (BestInteractable)
 		{
-			UWidgetComponent* CachedWidget = CachedHoveredWidgets[i].Get();
-			if (!CurrentHoveredWidgets.Contains(CachedWidget))
-			{
-				CachedWidget->SetHiddenInGame(true);
-				CachedHoveredWidgets.RemoveAt(i);
-			}
+			PlayerController->ShowInteractionPrompt(BestInteractable->GetInteractionUIInfo());
 		}
 		else
 		{
-			// 유효하지 않은 포인터 정리
-			CachedHoveredWidgets.RemoveAt(i);
-		}
-	}
-
-	// 새로 스캔된 위젯 표시 및 캐시에 등록
-	for (UWidgetComponent* Widget : CurrentHoveredWidgets)
-	{
-		if (Widget)
-		{
-			bool bAlreadyCached = false;
-			for (const auto& Cached : CachedHoveredWidgets)
-			{
-				if (Cached.Get() == Widget)
-				{
-					bAlreadyCached = true;
-					break;
-				}
-			}
-
-			if (!bAlreadyCached)
-			{
-				Widget->SetHiddenInGame(false);
-				CachedHoveredWidgets.Add(Widget);
-
-				if (const FInteractionUIInfo* UIInfo = CurrentWidgetUIInfo.Find(Widget))
-				{
-					if (UInteractUserWidget* InteractWidget = Cast<UInteractUserWidget>(Widget->GetUserWidgetObject()))
-					{
-						InteractWidget->OnUpdateInteractUI(*UIInfo);
-					}
-				}
-			}
+			PlayerController->HideInteractionPrompt();
 		}
 	}
 }

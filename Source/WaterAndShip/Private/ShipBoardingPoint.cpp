@@ -1,5 +1,6 @@
 #include "ShipBoardingPoint.h"
 
+#include "BaseGameplayTags.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "InteractableComponent.h"
@@ -21,16 +22,19 @@ AShipBoardingPoint::AShipBoardingPoint()
 	BoardingInteractable = CreateDefaultSubobject<UInteractableComponent>(TEXT("BoardingInteractable"));
 	BoardingInteractable->SetupAttachment(SceneRoot);
 	BoardingInteractable->SetCollisionProfileName(TEXT("Interactable"));
+	BoardingInteractable->InteractableIdTag = Interactable_Id_Ship_BoardingPoint;
 
 	BoardingBoxInteractable = CreateDefaultSubobject<UBoxInteractableComponent>(TEXT("BoardingBoxInteractable"));
 	BoardingBoxInteractable->SetupAttachment(SceneRoot);
 	BoardingBoxInteractable->SetCollisionProfileName(TEXT("Interactable"));
+	BoardingBoxInteractable->InteractableIdTag = Interactable_Id_Ship_BoardingPoint;
 	BoardingBoxInteractable->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	BoardingBoxInteractable->SetVisibility(false);
 
 	BoardingCapsuleInteractable = CreateDefaultSubobject<UCapsuleInteractableComponent>(TEXT("BoardingCapsuleInteractable"));
 	BoardingCapsuleInteractable->SetupAttachment(SceneRoot);
 	BoardingCapsuleInteractable->SetCollisionProfileName(TEXT("Interactable"));
+	BoardingCapsuleInteractable->InteractableIdTag = Interactable_Id_Ship_BoardingPoint;
 	BoardingCapsuleInteractable->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	BoardingCapsuleInteractable->SetVisibility(false);
 

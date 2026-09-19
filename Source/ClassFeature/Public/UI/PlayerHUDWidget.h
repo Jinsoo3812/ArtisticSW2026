@@ -31,6 +31,8 @@ class APawn;
 class ACannon;
 class AShip;
 class UPrimitiveComponent;
+class UInteractUserWidget;
+struct FInteractionUIInfo;
 struct FOnAttributeChangeData;
 
 UCLASS()
@@ -39,6 +41,7 @@ class CLASSFEATURE_API UPlayerHUDWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	UPlayerHUDWidget(const FObjectInitializer& ObjectInitializer);
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
@@ -52,6 +55,8 @@ public:
 		ABasePlayer* Player,
 		TSubclassOf<UStorageWindowWidget> StorageWindowClass);
 	void HideStorageWindow();
+	void ShowInteractionPrompt(const FInteractionUIInfo& UIInfo);
+	void HideInteractionPrompt();
 
 protected:
 	virtual int32 NativePaint(
@@ -94,6 +99,16 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCanvasPanel> RootCanvasPanel;
+
+	/** Optional designer instance. A runtime instance is added to RootCanvasPanel when omitted. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UInteractUserWidget> InteractionPromptWidget;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Interaction")
+	TSubclassOf<UInteractUserWidget> InteractionPromptWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Interaction")
+	FVector2D RuntimeInteractionPromptPosition = FVector2D(0.0f, 100.0f);
 
 	// When this widget is placed in the HUD designer with this exact name,
 	// its Canvas Slot controls the chest window position.
