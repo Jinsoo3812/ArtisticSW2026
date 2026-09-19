@@ -1,5 +1,6 @@
 ---,ObjectName,ActionText
 Interactable.Id.WorkTable,"NSLOCTEXT(""InteractionFeatureDataTable"", ""WorkTable_ObjectName"", ""WorkTable"")","NSLOCTEXT(""InteractionFeatureDataTable"", ""WorkTable_ActionText"", ""Use"")"
+Interactable.Id.FacilityHub,"NSLOCTEXT(""InteractionFeatureDataTable"", ""FacilityHub_ObjectName"", ""Facility Hub"")","NSLOCTEXT(""InteractionFeatureDataTable"", ""FacilityHub_ActionText"", ""Use"")"
 Interactable.Id.StorageChest,"NSLOCTEXT(""InteractionFeatureDataTable"", ""StorageChest_ObjectName"", ""Storage Chest"")","NSLOCTEXT(""InteractionFeatureDataTable"", ""StorageChest_ActionText"", ""Open"")"
 Interactable.Id.NPC,"NSLOCTEXT(""InteractionFeatureDataTable"", ""NPC_ObjectName"", ""NPC"")","NSLOCTEXT(""InteractionFeatureDataTable"", ""NPC_ActionText"", ""Talk"")"
 Interactable.Id.Ship.Helm,"NSLOCTEXT(""InteractionFeatureDataTable"", ""ShipHelm_ObjectName"", ""Ship Helm"")","NSLOCTEXT(""InteractionFeatureDataTable"", ""ShipHelm_ActionText"", ""Take Control"")"

@@ -55,7 +55,7 @@ public:
 		ABasePlayer* Player,
 		TSubclassOf<UStorageWindowWidget> StorageWindowClass);
 	void HideStorageWindow();
-	void ShowInteractionPrompt(const FInteractionUIInfo& UIInfo);
+	void ShowInteractionPrompt(const FInteractionUIInfo& UIInfo, UPrimitiveComponent* TargetComponent);
 	void HideInteractionPrompt();
 
 protected:
@@ -108,7 +108,9 @@ protected:
 	TSubclassOf<UInteractUserWidget> InteractionPromptWidgetClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Interaction")
-	FVector2D RuntimeInteractionPromptPosition = FVector2D(0.0f, 100.0f);
+	FVector2D InteractionPromptScreenOffset = FVector2D::ZeroVector;
+
+	TWeakObjectPtr<UPrimitiveComponent> InteractionPromptTarget;
 
 	// When this widget is placed in the HUD designer with this exact name,
 	// its Canvas Slot controls the chest window position.
@@ -170,6 +172,7 @@ protected:
 
 	void RefreshCursorItemWidget();
 	void UpdateCursorItemWidgetPosition();
+	void UpdateInteractionPromptPosition(const FVector2D& ViewportLocalSize);
 	void BindHealthComponent(UBaseHealthComponent* HealthComponent);
 	void UnbindHealthComponent();
 	void RefreshHealth();

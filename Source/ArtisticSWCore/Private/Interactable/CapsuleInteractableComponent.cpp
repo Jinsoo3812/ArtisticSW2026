@@ -77,6 +77,11 @@ const FInteractionUIInfo& UCapsuleInteractableComponent::GetInteractionUIInfo() 
 	return InteractUIInfo;
 }
 
+FVector UCapsuleInteractableComponent::GetInteractionPromptWorldLocation() const
+{
+	return GetComponentLocation() + GetComponentTransform().TransformVectorNoScale(InteractionPromptOffset);
+}
+
 void UCapsuleInteractableComponent::Interact(AActor* Interactor)
 {
 	if (Interactor)

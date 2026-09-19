@@ -1928,6 +1928,7 @@ void ABasePlayer::PerformInteractionScan()
 	PerformInteractTrace(HitResults);
 
 	IInteractable* BestInteractable = nullptr;
+	UPrimitiveComponent* BestInteractableComponent = nullptr;
 	float ClosestDistanceSq = MAX_flt;
 	const FVector StartLocation = GetActorLocation();
 	for (const FHitResult& Hit : HitResults)
@@ -1945,15 +1946,18 @@ void ABasePlayer::PerformInteractionScan()
 			{
 				ClosestDistanceSq = SelectionDistanceSq;
 				BestInteractable = Interactable;
+				BestInteractableComponent = HitComponent;
 			}
 		}
 	}
 
 	if (ABasePlayerController* PlayerController = GetController<ABasePlayerController>())
 	{
-		if (BestInteractable)
+		if (BestInteractable && BestInteractableComponent)
 		{
-			PlayerController->ShowInteractionPrompt(BestInteractable->GetInteractionUIInfo());
+			PlayerController->ShowInteractionPrompt(
+				BestInteractable->GetInteractionUIInfo(),
+				BestInteractableComponent);
 		}
 		else
 		{

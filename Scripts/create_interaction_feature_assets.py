@@ -7,6 +7,7 @@ WORK_TABLE_PATHS = [
     "/Game/Blueprints/02_UI/UI_WorkTable/BP_WorkTable",
     "/Game/Blueprints/Interactable_Object/BP_WorkTable",
 ]
+FACILITY_HUB_PATH = "/Game/Blueprints/03_WorldObject/03_FacilityHub/BP_FacilityHub"
 
 
 def make_text(namespace, key, source):
@@ -32,6 +33,7 @@ def create_or_update_data_table():
 
     rows = {
         "Interactable.Id.WorkTable": ("WorkTable", "Use"),
+        "Interactable.Id.FacilityHub": ("Facility Hub", "Use"),
         "Interactable.Id.StorageChest": ("Storage Chest", "Open"),
         "Interactable.Id.NPC": ("NPC", "Talk"),
         "Interactable.Id.Ship.Helm": ("Ship Helm", "Take Control"),
@@ -69,10 +71,10 @@ def create_or_update_data_table():
     unreal.log(f"[InteractionAuthoring] Wrote {len(payload)} rows to {DATA_TABLE_PATH}")
 
 
-def connect_work_table(work_table_path):
-    blueprint = unreal.EditorAssetLibrary.load_asset(work_table_path)
+def connect_interactable(asset_path, tag_name):
+    blueprint = unreal.EditorAssetLibrary.load_asset(asset_path)
     if blueprint is None:
-        raise RuntimeError(f"Failed to load {work_table_path}")
+        raise RuntimeError(f"Failed to load {asset_path}")
 
     subsystem = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
     handles = subsystem.k2_gather_subobject_data_for_blueprint(blueprint)
@@ -89,28 +91,30 @@ def connect_work_table(work_table_path):
             for component in components
         )
         raise RuntimeError(
-            "Expected exactly one InteractableComponent on BP_WorkTable; "
+            f"Expected exactly one InteractableComponent on {asset_path}; "
             f"found {len(components)}. Candidates: {details}"
         )
     component = components[0]
 
     interactable_id = unreal.GameplayTag()
-    interactable_id.import_text('(TagName="Interactable.Id.WorkTable")')
+    interactable_id.import_text(f'(TagName="{tag_name}")')
     component.set_editor_property("interactable_id_tag", interactable_id)
     unreal.EditorAssetLibrary.save_loaded_asset(blueprint, only_if_is_dirty=False)
 
     saved_tag = component.get_editor_property("interactable_id_tag")
     saved_text = saved_tag.export_text()
-    if "Interactable.Id.WorkTable" not in saved_text:
+    if tag_name not in saved_text:
         raise RuntimeError(
-            f"Failed to save Interactable.Id.WorkTable on {work_table_path}: {saved_text}"
+            f"Failed to save {tag_name} on {asset_path}: {saved_text}"
         )
     unreal.log(
-        f"[InteractionAuthoring] Connected {work_table_path}.{component.get_name()} "
-        "to Interactable.Id.WorkTable"
+        f"[InteractionAuthoring] Connected {asset_path}.{component.get_name()} "
+        f"to {tag_name}"
     )
 
 
-create_or_update_data_table()
-for path in WORK_TABLE_PATHS:
-    connect_work_table(path)
+if __name__ == "__main__":
+    create_or_update_data_table()
+    for path in WORK_TABLE_PATHS:
+        connect_interactable(path, "Interactable.Id.WorkTable")
+    connect_interactable(FACILITY_HUB_PATH, "Interactable.Id.FacilityHub")

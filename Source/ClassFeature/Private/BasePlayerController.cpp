@@ -462,11 +462,13 @@ void ABasePlayerController::BindHUDToCurrentPlayer()
 	}
 }
 
-void ABasePlayerController::ShowInteractionPrompt(const FInteractionUIInfo& UIInfo)
+void ABasePlayerController::ShowInteractionPrompt(
+	const FInteractionUIInfo& UIInfo,
+	UPrimitiveComponent* TargetComponent)
 {
 	if (IsLocalController() && PlayerHUDWidget)
 	{
-		PlayerHUDWidget->ShowInteractionPrompt(UIInfo);
+		PlayerHUDWidget->ShowInteractionPrompt(UIInfo, TargetComponent);
 	}
 }
 

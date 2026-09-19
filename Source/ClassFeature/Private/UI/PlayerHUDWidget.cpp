@@ -35,6 +35,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Interactable.h"
 #include "InteractUserWidget.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -113,11 +114,16 @@ void UPlayerHUDWidget::NativeConstruct()
 		if (InteractionPromptWidget)
 		{
 			UCanvasPanelSlot* PromptSlot = RootCanvasPanel->AddChildToCanvas(InteractionPromptWidget);
-			PromptSlot->SetAnchors(FAnchors(0.5f, 0.5f));
-			PromptSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-			PromptSlot->SetPosition(RuntimeInteractionPromptPosition);
 			PromptSlot->SetAutoSize(true);
 			PromptSlot->SetZOrder(30);
+		}
+	}
+	if (InteractionPromptWidget)
+	{
+		if (UCanvasPanelSlot* PromptSlot = Cast<UCanvasPanelSlot>(InteractionPromptWidget->Slot))
+		{
+			PromptSlot->SetAnchors(FAnchors(0.0f, 0.0f));
+			PromptSlot->SetAlignment(FVector2D(0.5f, 1.0f));
 		}
 	}
 	HideInteractionPrompt();
@@ -201,6 +207,7 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
 	RefreshCursorItemWidget();
+	UpdateInteractionPromptPosition(MyGeometry.GetLocalSize());
 
 	ShipPresenceCheckAccumulator += InDeltaTime;
 	if (ShipPresenceCheckAccumulator >= FMath::Max(0.01f, ShipPresenceCheckInterval))
@@ -259,23 +266,65 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	RefreshBowCrosshairBinding();
 }
 
-void UPlayerHUDWidget::ShowInteractionPrompt(const FInteractionUIInfo& UIInfo)
+void UPlayerHUDWidget::ShowInteractionPrompt(
+	const FInteractionUIInfo& UIInfo,
+	UPrimitiveComponent* TargetComponent)
 {
-	if (!InteractionPromptWidget)
+	if (!InteractionPromptWidget || !TargetComponent)
 	{
 		return;
 	}
 
+	InteractionPromptTarget = TargetComponent;
 	InteractionPromptWidget->OnUpdateInteractUI(UIInfo);
 	InteractionPromptWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
 }
 
 void UPlayerHUDWidget::HideInteractionPrompt()
 {
+	InteractionPromptTarget.Reset();
 	if (InteractionPromptWidget)
 	{
 		InteractionPromptWidget->SetVisibility(ESlateVisibility::Collapsed);
 	}
+}
+
+void UPlayerHUDWidget::UpdateInteractionPromptPosition(const FVector2D& ViewportLocalSize)
+{
+	UPrimitiveComponent* TargetComponent = InteractionPromptTarget.Get();
+	if (!InteractionPromptWidget || !TargetComponent)
+	{
+		return;
+	}
+
+	IInteractable* Interactable = Cast<IInteractable>(TargetComponent);
+	APlayerController* PlayerController = GetOwningPlayer();
+	UCanvasPanelSlot* PromptSlot = Cast<UCanvasPanelSlot>(InteractionPromptWidget->Slot);
+	if (!Interactable || !PlayerController || !PromptSlot)
+	{
+		InteractionPromptWidget->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	FVector2D ScreenPosition;
+	const bool bProjected = UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(
+		PlayerController,
+		Interactable->GetInteractionPromptWorldLocation(),
+		ScreenPosition,
+		true);
+	const bool bInsideViewport = bProjected
+		&& ScreenPosition.X >= 0.0f
+		&& ScreenPosition.Y >= 0.0f
+		&& ScreenPosition.X <= ViewportLocalSize.X
+		&& ScreenPosition.Y <= ViewportLocalSize.Y;
+	if (!bInsideViewport)
+	{
+		InteractionPromptWidget->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	PromptSlot->SetPosition(ScreenPosition + InteractionPromptScreenOffset);
+	InteractionPromptWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
 }
 
 void UPlayerHUDWidget::SetInventoryVisible(bool bVisible)

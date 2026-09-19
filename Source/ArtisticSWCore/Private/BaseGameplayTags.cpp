@@ -312,6 +312,7 @@ UE_DEFINE_GAMEPLAY_TAG(Interaction_Dialogue, "Interaction.Dialogue");
 /* Interactable identity */
 UE_DEFINE_GAMEPLAY_TAG(Interactable_Id, "Interactable.Id");
 UE_DEFINE_GAMEPLAY_TAG(Interactable_Id_WorkTable, "Interactable.Id.WorkTable");
+UE_DEFINE_GAMEPLAY_TAG(Interactable_Id_FacilityHub, "Interactable.Id.FacilityHub");
 UE_DEFINE_GAMEPLAY_TAG(Interactable_Id_StorageChest, "Interactable.Id.StorageChest");
 UE_DEFINE_GAMEPLAY_TAG(Interactable_Id_NPC, "Interactable.Id.NPC");
 UE_DEFINE_GAMEPLAY_TAG(Interactable_Id_Ship_Helm, "Interactable.Id.Ship.Helm");

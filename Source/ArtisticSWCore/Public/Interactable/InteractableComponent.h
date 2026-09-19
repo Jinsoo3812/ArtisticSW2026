@@ -24,6 +24,7 @@ public:
 	// IInteractable 구현
 	virtual FGameplayTag GetInteractionTag() const override;
 	virtual const FInteractionUIInfo& GetInteractionUIInfo() const override;
+	virtual FVector GetInteractionPromptWorldLocation() const override;
 	virtual void Interact(AActor* Interactor) override;
 
 public:
@@ -42,6 +43,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Data",
 		meta = (Categories = "Interactable.Id"))
 	FGameplayTag InteractableIdTag;
+
+	/** Local-space offset used when projecting the shared prompt into the HUD. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|UI")
+	FVector InteractionPromptOffset = FVector::ZeroVector;
 
 	/** Draw this component's scaled collision sphere while playing. Disabled by default. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Debug")
