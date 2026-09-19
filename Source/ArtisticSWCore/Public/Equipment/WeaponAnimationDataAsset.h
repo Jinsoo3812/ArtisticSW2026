@@ -1,7 +1,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Abilities/GameplayAbility.h"
 #include "Engine/DataAsset.h"
 #include "GameplayTagContainer.h"
 #include "WeaponAnimationDataAsset.generated.h"
@@ -116,12 +115,10 @@ struct FWeaponAnimationEntry
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Upper Body Overlay", meta = (ClampMin = "0"))
 	int32 UpperBodyOverlayIndex = 0;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
-	TMap<FGameplayTag, TSubclassOf<UGameplayAbility>> GrantedAbilitiesByInputTag;
 };
 
 UCLASS(BlueprintType)
-class CLASSFEATURE_API UWeaponAnimationDataAsset : public UDataAsset
+class ARTISTICSWCORE_API UWeaponAnimationDataAsset : public UDataAsset
 {
 	GENERATED_BODY()
 

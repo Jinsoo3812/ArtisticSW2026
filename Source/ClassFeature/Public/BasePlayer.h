@@ -35,6 +35,7 @@ class USwimmingComponent;
 class UPlayerSkillComponent;
 class UAnimSequence;
 class UPlayerDialogueComponent;
+class UPlayerAimComponent;
 class UShipRepairPointComponent;
 class UShipRepairProgressWidget;
 
@@ -139,6 +140,7 @@ public:
 protected:
 	UPROPERTY()
 	TWeakObjectPtr<class UAbilitySystemComponent> CachedAbilitySystemComponent;
+	friend class FWeaponEquipmentLifecycleTest;
 
 	/** Retained while the controller temporarily possesses a ship or cannon. */
 	UPROPERTY()
@@ -318,8 +320,6 @@ protected:
 	void OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 
-	// 태그를 넣으면 고유 Hash 기반 ID를 반환하는 헬퍼
-	int32 GetInputIDFromTag(const FGameplayTag& Tag) const;
 
 protected:
 	// 서버에 의해 로컬에서 Controller가 조종하는 Pawn이 지정될 때 호출되는 함수.
@@ -458,7 +458,6 @@ public:
 	// 마우스 입력에 대한 활용을 위해 따로 OnAbilityInput과 분리
 	void OnMouseInputPressed(FGameplayTag InputTag);
 	void OnMouseInputReleased(FGameplayTag InputTag);
-	void AddMouseAimTargetData(FGameplayEventData& EventData) const;
 
 	// 서버의 GA에게 GameplayEvent를 보내는 함수 (예: 마우스 입력에 반응하는 GA에게 신호 보내기)
 	UFUNCTION(Server, Reliable)
@@ -769,6 +768,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UPlayerEquipmentComponent> EquipmentComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UPlayerAimComponent> AimComponent;
+
 public:
 	UFUNCTION()
 	void OnRep_QuickSlots();
@@ -794,4 +796,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	UPlayerEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Aim")
+	UPlayerAimComponent* GetAimComponent() const { return AimComponent; }
 };

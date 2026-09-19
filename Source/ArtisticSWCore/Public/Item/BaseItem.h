@@ -119,7 +119,10 @@ public:
 	UWeaponFeedbackComponent* GetWeaponFeedbackComponent() const { return WeaponFeedbackComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Item|Strength")
-	float GetStrengthBonus() const { return StrengthBonus; }
+	float GetStrengthBonus() const;
+
+	UFUNCTION(BlueprintPure, Category = "Item|Weapon")
+	class UEquippableWeaponDefinition* GetWeaponDefinition() const;
 
 	/** Configures generated/runtime items before equip. Active bonuses cannot be mutated in place. */
 	UFUNCTION(BlueprintCallable, Category = "Item|Strength")

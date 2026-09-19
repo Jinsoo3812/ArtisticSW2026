@@ -3,13 +3,19 @@
 #include "Animation/AnimSequenceBase.h"
 
 #include "AbilitySystemComponent.h"
+#include "Equipment/WeaponDefinition.h"
+#include "GAS/Ability/WeaponGameplayAbility.h"
 #include "BaseGameplayTags.h"
 #include "BaseItem.h"
+#include "ItemData.h"
 #include "BasePlayer.h"
 #include "Equipment/WeaponAnimationDataAsset.h"
 #include "Inventory/InventoryComponent.h"
 #include "ItemSubSystem.h"
 #include "Item/Weapons/BowItem.h"
+#include "Item/Weapons/SwordItem.h"
+#include "Item/Projectiles/ArrowProjectile.h"
+#include "BaseAttributeSet.h"
 #include "SwimmingComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -30,6 +36,11 @@ void UPlayerEquipmentComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	PlayerOwner = Cast<ABasePlayer>(GetOwner());
+	if (PlayerOwner && PlayerOwner->HasAuthority())
+	{
+		PlayerOwner->OnAbilitySystemInitialized.AddUObject(this, &ThisClass::BindOwnerAbilitySystem);
+		BindOwnerAbilitySystem();
+	}
 }
 
 void UPlayerEquipmentComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -132,11 +143,18 @@ void UPlayerEquipmentComponent::UseEquippedItem(bool bDestroy)
 
 void UPlayerEquipmentComponent::OnRepOwnerEquippedItem()
 {
+	if (PendingPresentationItem.IsValid()) PendingPresentationItem->OnItemInitialized.RemoveAll(this);
+	PendingPresentationItem.Reset();
 	if (!PlayerOwner)
 	{
 		PlayerOwner = Cast<ABasePlayer>(GetOwner());
 	}
 
+	if (PlayerOwner && IsValid(PlayerOwner->EquippedItem) && !PlayerOwner->EquippedItem->IsItemInitialized())
+	{
+		PendingPresentationItem = PlayerOwner->EquippedItem;
+		PendingPresentationItem->OnItemInitialized.AddUObject(this, &ThisClass::OnEquippedItemInitialized);
+	}
 	if (PlayerOwner && IsValid(PlayerOwner->EquippedItem) && PlayerOwner->EquippedItem->MyDefinition)
 	{
 		if (AttachItem(PlayerOwner->EquippedItem, EEquipmentAttachmentTarget::Equipped))
@@ -152,6 +170,11 @@ FGameplayTag UPlayerEquipmentComponent::GetEquippedItemTag() const
 {
 	const ABasePlayer* OwnerPlayer = PlayerOwner ? PlayerOwner.Get() : Cast<ABasePlayer>(GetOwner());
 	return OwnerPlayer && IsValid(OwnerPlayer->EquippedItem) ? OwnerPlayer->EquippedItem->ItemTag : FGameplayTag();
+}
+
+void UPlayerEquipmentComponent::OnEquippedItemInitialized(ABaseItem* Item)
+{
+	if (PlayerOwner && PlayerOwner->EquippedItem == Item) OnRepOwnerEquippedItem();
 }
 
 bool UPlayerEquipmentComponent::IsEquippedItemTag(FGameplayTag ItemTag) const
@@ -322,27 +345,8 @@ const UWeaponAnimationDataAsset* UPlayerEquipmentComponent::ResolveWeaponAnimati
 		return nullptr;
 	}
 
-	for (const FWeaponAnimationDataMapping& Mapping : WeaponAnimationDataByTag)
-	{
-		if (Mapping.AnimationData && Mapping.WeaponTag.IsValid())
-		{
-			if (Item->ItemTag.MatchesTag(Mapping.WeaponTag) || Mapping.WeaponTag.MatchesTag(Item->ItemTag))
-			{
-				return Mapping.AnimationData.Get();
-			}
-
-			FString ItemTagStr = Item->ItemTag.ToString();
-			FString ConfigTagStr = Mapping.WeaponTag.ToString();
-			ItemTagStr.ReplaceInline(TEXT("Item.Id.Weapon."), TEXT("Item.Weapon."));
-			ConfigTagStr.ReplaceInline(TEXT("Item.Id.Weapon."), TEXT("Item.Weapon."));
-			if (ItemTagStr.StartsWith(ConfigTagStr) || ConfigTagStr.StartsWith(ItemTagStr))
-			{
-				return Mapping.AnimationData.Get();
-			}
-		}
-	}
-
-	return WeaponAnimationData.Get();
+	const UEquippableWeaponDefinition* Definition = Item->GetWeaponDefinition();
+	return Definition ? Definition->AnimationData.Get() : nullptr;
 }
 
 FResolvedEquipmentAttachment UPlayerEquipmentComponent::GetEquippedAttachmentProfile() const
@@ -509,64 +513,180 @@ bool UPlayerEquipmentComponent::CanUseEquippedItemAbility(const ABaseItem* Item)
 
 void UPlayerEquipmentComponent::CancelActiveWeaponAbilities() const
 {
-	if (!PlayerOwner)
-	{
-		return;
-	}
-
-	if (UAbilitySystemComponent* ASC = PlayerOwner->GetAbilitySystemComponent())
-	{
-		FGameplayTagContainer WeaponActionTags;
-		WeaponActionTags.AddTag(GameplayAbility_Weapon_AimCycle);
-		WeaponActionTags.AddTag(GameplayAbility_BasicAttack);
-		ASC->CancelAbilities(&WeaponActionTags, nullptr, nullptr);
-	}
+	if (!PlayerOwner) return;
+	const FEquipmentGrant* Grant = ItemGrants.Find(PlayerOwner->EquippedItem);
+	if (Grant && Grant->ASC.IsValid())
+		for (const FGameplayAbilitySpecHandle Handle : Grant->Abilities)
+			Grant->ASC->CancelAbilityHandle(Handle);
 }
 
-void UPlayerEquipmentComponent::GrantEquippedItemAbility(ABaseItem* Item)
+bool UPlayerEquipmentComponent::ValidateWeapon(ABaseItem* Item) const
 {
-	if (!PlayerOwner || !Item || !CanUseEquippedItemAbility(Item))
+	if (!Item || !PlayerOwner) return false;
+	const UEquippableWeaponDefinition* Definition = Item->GetWeaponDefinition();
+	if (!Definition)
+		return Item->MyDefinition && Item->MyDefinition->ProgressionKind != EItemProgressionKind::Weapon;
+	UAbilitySystemComponent* ASC = PlayerOwner->GetAbilitySystemComponent();
+	if (!ASC || !Definition->AbilitySet || Definition->AbilitySet->Abilities.IsEmpty()
+		|| !Definition->AnimationData || !Definition->CombatData
+		|| !FMath::IsFinite(Definition->CombatData->StrengthBonus) || Definition->CombatData->StrengthBonus < 0.f
+		|| !FMath::IsFinite(Definition->CombatData->AttackCoefficient) || Definition->CombatData->AttackCoefficient < 0.f
+		|| (!Definition->AllowedRoleTags.IsEmpty() && !ASC->HasAnyMatchingGameplayTags(Definition->AllowedRoleTags)))
+		return false;
+	const FWeaponAnimationEntry* Animation = Definition->AnimationData->FindEntryForTag(Item->ItemTag);
+	if (Cast<ASwordItem>(Item) && (!Animation || !Animation->BasicAttackMontage)) return false;
+	if (Cast<ABowItem>(Item))
 	{
-		return;
+		UClass* Projectile = Definition->CombatData->ProjectileClass.LoadSynchronous();
+		if (!Animation || !Animation->AimCycleMontage || !Projectile || !Projectile->IsChildOf(AArrowProjectile::StaticClass())) return false;
 	}
-
-	if (const FWeaponAnimationEntry* Entry = ResolveWeaponAnimationEntry(Item))
+	TSet<FGameplayTag> Inputs;
+	for (const FWeaponAbilityEntry& Entry : Definition->AbilitySet->Abilities)
 	{
-		for (const TPair<FGameplayTag, TSubclassOf<UGameplayAbility>>& AbilityPair : Entry->GrantedAbilitiesByInputTag)
+		if (!Entry.InputTag.IsValid() || !Entry.AbilityClass || Entry.Level < 1
+			|| Entry.AbilityClass->HasAnyClassFlags(CLASS_Abstract)
+			|| !Entry.AbilityClass->IsChildOf(UWeaponGameplayAbility::StaticClass())
+			|| Entry.AbilityClass->GetDefaultObject<UGameplayAbility>()->GetInstancingPolicy() != EGameplayAbilityInstancingPolicy::InstancedPerActor
+			|| Inputs.Contains(Entry.InputTag)) return false;
+		Inputs.Add(Entry.InputTag);
+	}
+	for (const TSubclassOf<UGameplayEffect>& Effect : Definition->EquipEffects)
+	{
+		if (!Effect || Effect->IsChildOf(UGASStrengthEquipmentGameplayEffect::StaticClass())
+			|| Effect->GetDefaultObject<UGameplayEffect>()->DurationPolicy != EGameplayEffectDurationType::Infinite
+			|| Effect->GetDefaultObject<UGameplayEffect>()->StackingType != EGameplayEffectStackingType::None)
+			return false;
+		for (const FGameplayModifierInfo& Modifier : Effect->GetDefaultObject<UGameplayEffect>()->Modifiers)
+			if (Modifier.Attribute == UBaseAttributeSet::GetStrengthAttribute()) return false;
+	}
+	return true;
+}
+
+bool UPlayerEquipmentComponent::GrantEquippedItemAbility(ABaseItem* Item)
+{
+	if (!PlayerOwner || !PlayerOwner->HasAuthority() || !ValidateWeapon(Item)) return false;
+	if (ItemGrants.Contains(Item)) return true;
+	UAbilitySystemComponent* ASC = PlayerOwner->GetAbilitySystemComponent();
+	if (!ASC) return false;
+	ItemGrants.Add(Item).ASC = ASC;
+	BindOwnerAbilitySystem();
+	Item->OnDestroyed.AddUniqueDynamic(this, &ThisClass::OnGrantedItemDestroyed);
+	Item->OnEndPlay.AddUniqueDynamic(this, &ThisClass::OnGrantedItemEndPlay);
+	if (const UEquippableWeaponDefinition* Definition = Item->GetWeaponDefinition())
+	{
+		for (const FWeaponAbilityEntry& Entry : Definition->AbilitySet->Abilities)
 		{
-			if (AbilityPair.Key.IsValid() && AbilityPair.Value)
-			{
-				PlayerOwner->GrantAbilityToSlot(AbilityPair.Key, AbilityPair.Value);
-				UE_LOG(LogTemp, Log, TEXT("UPlayerEquipmentComponent::GrantEquippedItemAbility : Granted weapon DA ability %s for item %s to key %s"), *AbilityPair.Value->GetName(), *Item->GetName(), *AbilityPair.Key.ToString());
-			}
+			FGameplayAbilitySpec Spec(Entry.AbilityClass, Entry.Level, INDEX_NONE, Item);
+			Spec.GetDynamicSpecSourceTags().AddTag(Entry.InputTag);
+			const FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(Spec);
+			if (!Handle.IsValid()) { RemoveEquippedItemAbility(Item); return false; }
+			FEquipmentGrant* Grant = ItemGrants.Find(Item);
+			if (!Grant) { ASC->CancelAbilityHandle(Handle); ASC->ClearAbility(Handle); return false; }
+			Grant->Abilities.Add(Handle);
+		}
+		for (const TSubclassOf<UGameplayEffect>& Effect : Definition->EquipEffects)
+		{
+			FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
+			Context.AddSourceObject(Item);
+			FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(Effect, 1.f, Context);
+			if (!Spec.IsValid()) { RemoveEquippedItemAbility(Item); return false; }
+			const FActiveGameplayEffectHandle Handle = ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+			if (!Handle.IsValid()) { RemoveEquippedItemAbility(Item); return false; }
+			FEquipmentGrant* Grant = ItemGrants.Find(Item);
+			if (!Grant) { ASC->RemoveActiveGameplayEffect(Handle); return false; }
+			Grant->Effects.Add(Handle);
 		}
 	}
-
-	if (const TSubclassOf<UGameplayAbility> GrantedAbilityClass = Item->GetGrantedAbilityClass())
+	else if (CanUseEquippedItemAbility(Item))
 	{
-		const FGameplayTag AssignKeyTag = ResolveUseKeyTag(Item);
-		PlayerOwner->GrantAbilityToSlot(AssignKeyTag, GrantedAbilityClass);
-		UE_LOG(LogTemp, Log, TEXT("UPlayerEquipmentComponent::GrantEquippedItemAbility : Granted ability %s for item %s to key %s"), *GrantedAbilityClass->GetName(), *Item->GetName(), *AssignKeyTag.ToString());
+		if (const TSubclassOf<UGameplayAbility> Ability = Item->GetGrantedAbilityClass())
+		{
+			if (Ability->IsChildOf(UWeaponGameplayAbility::StaticClass()))
+			{ RemoveEquippedItemAbility(Item); return false; }
+			FGameplayAbilitySpec Spec(Ability, 1, INDEX_NONE, Item);
+			Spec.GetDynamicSpecSourceTags().AddTag(ResolveUseKeyTag(Item));
+			const FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(Spec);
+			FEquipmentGrant* Grant = ItemGrants.Find(Item);
+			if (!Handle.IsValid() || !Grant)
+			{
+				ASC->CancelAbilityHandle(Handle);
+				ASC->ClearAbility(Handle);
+				RemoveEquippedItemAbility(Item);
+				return false;
+			}
+			Grant->Abilities.Add(Handle);
+		}
 	}
+	return true;
 }
 
 void UPlayerEquipmentComponent::RemoveEquippedItemAbility(ABaseItem* Item)
 {
-	if (PlayerOwner && Item)
+	FEquipmentGrant Grant;
+	if (!ItemGrants.RemoveAndCopyValue(Item, Grant)) return;
+	if (Item)
 	{
-		if (const FWeaponAnimationEntry* Entry = ResolveWeaponAnimationEntry(Item))
-		{
-			for (const TPair<FGameplayTag, TSubclassOf<UGameplayAbility>>& AbilityPair : Entry->GrantedAbilitiesByInputTag)
-			{
-				if (AbilityPair.Key.IsValid())
-				{
-					PlayerOwner->RemoveAbilityFromSlot(AbilityPair.Key);
-				}
-			}
-		}
-
-		PlayerOwner->RemoveAbilityFromSlot(ResolveUseKeyTag(Item));
+		Item->OnDestroyed.RemoveDynamic(this, &ThisClass::OnGrantedItemDestroyed);
+		Item->OnEndPlay.RemoveDynamic(this, &ThisClass::OnGrantedItemEndPlay);
 	}
+	if (UAbilitySystemComponent* ASC = Grant.ASC.Get())
+	{
+		for (const FGameplayAbilitySpecHandle Handle : Grant.Abilities)
+		{
+			ASC->CancelAbilityHandle(Handle);
+			ASC->ClearAbility(Handle);
+		}
+		for (const FActiveGameplayEffectHandle Handle : Grant.Effects) ASC->RemoveActiveGameplayEffect(Handle);
+	}
+}
+
+void UPlayerEquipmentComponent::OnGrantedItemDestroyed(AActor* Item)
+{
+	RemoveEquippedItemAbility(Cast<ABaseItem>(Item));
+	if (PlayerOwner && PlayerOwner->EquippedItem == Item)
+	{
+		PlayerOwner->EquippedItem = nullptr;
+		EquipmentState = EEquipmentState::None;
+		PlayerOwner->SetCombatMode(false);
+	}
+}
+
+void UPlayerEquipmentComponent::OnGrantedItemEndPlay(AActor* Item, EEndPlayReason::Type Reason)
+{
+	OnGrantedItemDestroyed(Item);
+}
+
+void UPlayerEquipmentComponent::BindOwnerAbilitySystem()
+{
+	UAbilitySystemComponent* ASC = PlayerOwner ? PlayerOwner->GetAbilitySystemComponent() : nullptr;
+	if (!ASC || !PlayerOwner->HasAuthority()) return;
+	if (DeathASC.Get() != ASC || !DeathDelegate.IsValid())
+	{
+		if (DeathASC.IsValid()) DeathASC->RegisterGameplayTagEvent(State_Dead, EGameplayTagEventType::NewOrRemoved).Remove(DeathDelegate);
+		DeathASC = ASC;
+		DeathDelegate = ASC->RegisterGameplayTagEvent(State_Dead, EGameplayTagEventType::NewOrRemoved)
+			.AddUObject(this, &ThisClass::OnOwnerDead);
+	}
+}
+
+void UPlayerEquipmentComponent::OnOwnerDead(FGameplayTag Tag, int32 Count)
+{
+	if (Count <= 0) return;
+	CancelPendingEquip();
+	StoreCurrentEquippedItem();
+	EquipmentState = EEquipmentState::None;
+}
+
+void UPlayerEquipmentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (PlayerOwner) PlayerOwner->OnAbilitySystemInitialized.RemoveAll(this);
+	if (PendingPresentationItem.IsValid()) PendingPresentationItem->OnItemInitialized.RemoveAll(this);
+	if (UAbilitySystemComponent* ASC = DeathASC.Get())
+		ASC->RegisterGameplayTagEvent(State_Dead, EGameplayTagEventType::NewOrRemoved).Remove(DeathDelegate);
+	TArray<TWeakObjectPtr<ABaseItem>> Items;
+	ItemGrants.GetKeys(Items);
+	for (const TWeakObjectPtr<ABaseItem>& Item : Items) RemoveEquippedItemAbility(Item.Get());
+	Super::EndPlay(EndPlayReason);
 }
 
 bool UPlayerEquipmentComponent::AttachItem(ABaseItem* Item, EEquipmentAttachmentTarget Target)
@@ -766,6 +886,12 @@ void UPlayerEquipmentComponent::FinalizePendingEquip()
 
 	if (PlayerOwner->EquippedItem != ItemToEquip)
 	{
+		if (!ValidateWeapon(ItemToEquip))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Equipment rejected %s: invalid weapon definition, role, ability set or presentation."), *ItemToEquip->ItemTag.ToString());
+			CancelPendingEquip();
+			return;
+		}
 		ItemToEquip->SetItemState(EItemState::Equipped);
 		if (!AttachItem(ItemToEquip, EEquipmentAttachmentTarget::Equipped))
 		{
@@ -776,6 +902,7 @@ void UPlayerEquipmentComponent::FinalizePendingEquip()
 			return;
 		}
 
+		if (!GrantEquippedItemAbility(ItemToEquip)) { CancelPendingEquip(); return; }
 		auto* Stats = UEquipmentStatComponent::GetOrCreate(PlayerOwner);
 		if (!Stats || !Stats->Equip(PlayerOwner->GetAbilitySystemComponent(), ItemToEquip,
 			ItemToEquip->GetStrengthBonus(), StrengthEquipmentEffectClass))
@@ -785,7 +912,6 @@ void UPlayerEquipmentComponent::FinalizePendingEquip()
 		}
 		StoreCurrentEquippedItem(false);
 		PlayerOwner->EquippedItem = ItemToEquip;
-		GrantEquippedItemAbility(ItemToEquip);
 		PlayerOwner->EnterCombatModeFromEquipment();
 	}
 
@@ -799,6 +925,7 @@ void UPlayerEquipmentComponent::FinalizePendingEquip()
 void UPlayerEquipmentComponent::CancelPendingEquip()
 {
 	ABaseItem* ItemToCancel = PendingEquipItem.Get();
+	RemoveEquippedItemAbility(ItemToCancel);
 	if (ItemToCancel)
 	{
 		ClearBowArrowAnchor(Cast<ABowItem>(ItemToCancel));
@@ -820,6 +947,8 @@ void UPlayerEquipmentComponent::CancelPendingEquip()
 	PendingEquipItem = nullptr;
 	PendingEquipSlotTag = FGameplayTag();
 	ActiveEquipmentMontage = nullptr;
+	if (ItemToCancel && PlayerOwner && IsValid(PlayerOwner->EquippedItem))
+		AttachItem(PlayerOwner->EquippedItem, EEquipmentAttachmentTarget::Equipped);
 }
 
 void UPlayerEquipmentComponent::PlayEquipmentMontage(ABaseItem* Item, UAnimMontage* Montage, float PlayRate)

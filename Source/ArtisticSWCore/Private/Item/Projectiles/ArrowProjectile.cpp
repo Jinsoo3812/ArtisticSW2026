@@ -160,6 +160,19 @@ void AArrowProjectile::IgnoreActorForMovement(AActor* ActorToIgnore)
 	MovementIgnoredActors.AddUnique(ActorToIgnore);
 }
 
+bool AArrowProjectile::IsLaunchLocationBlocked() const
+{
+	if (!GetWorld() || !CollisionComp) return true;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(ArrowLaunchOverlap), false, this);
+	for (const TWeakObjectPtr<AActor>& Actor : MovementIgnoredActors)
+	{
+		if (Actor.IsValid()) Params.AddIgnoredActor(Actor.Get());
+	}
+	return GetWorld()->OverlapBlockingTestByProfile(CollisionComp->GetComponentLocation(),
+		CollisionComp->GetComponentQuat(), CollisionComp->GetCollisionProfileName(),
+		FCollisionShape::MakeBox(CollisionComp->GetScaledBoxExtent()), Params);
+}
+
 bool AArrowProjectile::ApplyVisualTo(UStaticMeshComponent* TargetMesh) const
 {
 	if (!TargetMesh || !MeshComp || !MeshComp->GetStaticMesh())

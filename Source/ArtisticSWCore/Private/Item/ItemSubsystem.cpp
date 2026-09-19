@@ -3,6 +3,7 @@
 
 #include "ItemSubsystem.h"
 #include "ItemData.h"
+#include "Equipment/WeaponDefinition.h"
 #include "Settings_Item.h"
 #include "BaseGameplayTags.h"
 #include "Engine/World.h"
@@ -118,7 +119,14 @@ ABaseItem* UItemSubsystem::SpawnItem(const FGameplayTag& ItemTag, const FTransfo
 		return nullptr;
 	}
 
-	UClass* SpawnClass = Def->SpawnClassByCrafting.LoadSynchronous();
+	const bool bWeapon = Def->ProgressionKind == EItemProgressionKind::Weapon || !Def->WeaponDefinition.IsNull();
+	const UEquippableWeaponDefinition* Weapon = Def->WeaponDefinition.LoadSynchronous();
+	UClass* SpawnClass = bWeapon ? (Weapon ? Weapon->ActorClass.LoadSynchronous() : nullptr) : Def->SpawnClassByCrafting.LoadSynchronous();
+	if (bWeapon && !SpawnClass)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Weapon %s has no valid WeaponDefinition/ActorClass"), *ItemTag.ToString());
+		return nullptr;
+	}
 	if (!SpawnClass)
 	{
 		SpawnClass = ABaseItem::StaticClass(); // Fallback
@@ -184,19 +192,29 @@ TSoftObjectPtr<UStaticMesh> UItemSubsystem::GetItemMesh(const FGameplayTag& Item
 
 TSoftClassPtr<UGameplayAbility> UItemSubsystem::GetGrantedAbilityClass(const FGameplayTag& ItemTag) const
 {
-	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->GrantedAbilityClass;
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag))
+		if (Def->WeaponDefinition.IsNull() && Def->ProgressionKind != EItemProgressionKind::Weapon) return Def->GrantedAbilityClass;
 	return nullptr;
 }
 
 TSoftClassPtr<ABaseItem> UItemSubsystem::GetSpawnClassByCrafting(const FGameplayTag& ItemTag) const
 {
-	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->SpawnClassByCrafting;
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag))
+	{
+		if (const UEquippableWeaponDefinition* Weapon = Def->WeaponDefinition.LoadSynchronous()) return Weapon->ActorClass;
+		if (Def->ProgressionKind != EItemProgressionKind::Weapon) return Def->SpawnClassByCrafting;
+	}
 	return nullptr;
 }
 
 TSoftClassPtr<AActor> UItemSubsystem::GetSpawnClass(const FGameplayTag& ItemTag) const
 {
-	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->SpawnClass;
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag))
+	{
+		if (const UEquippableWeaponDefinition* Weapon = Def->WeaponDefinition.LoadSynchronous())
+			return Weapon->CombatData ? Weapon->CombatData->ProjectileClass : TSoftClassPtr<AActor>();
+		if (Def->ProgressionKind != EItemProgressionKind::Weapon) return Def->SpawnClass;
+	}
 	return nullptr;
 }
 
@@ -397,4 +415,3 @@ void UItemSubsystem::ClearCraftingRecipesForTesting()
 	CachedCraftingRecipes.Reset();
 }
 #endif
-

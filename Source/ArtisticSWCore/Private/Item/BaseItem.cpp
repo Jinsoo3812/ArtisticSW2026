@@ -1,4 +1,5 @@
 #include "Item/BaseItem.h"
+#include "Equipment/WeaponDefinition.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "ItemData.h"
@@ -33,7 +34,7 @@ ABaseItem::ABaseItem()
 
 TSubclassOf<UGameplayAbility> ABaseItem::GetGrantedAbilityClass() const
 {
-	if (MyDefinition && !MyDefinition->GrantedAbilityClass.IsNull())
+	if (MyDefinition && MyDefinition->WeaponDefinition.IsNull() && MyDefinition->ProgressionKind != EItemProgressionKind::Weapon && !MyDefinition->GrantedAbilityClass.IsNull())
 	{
 		// SoftClassPtr에서 동기 로드하여 반환 (이미 로드된 경우 O(1) 캐시 반환)
 		return MyDefinition->GrantedAbilityClass.LoadSynchronous();
@@ -42,6 +43,8 @@ TSubclassOf<UGameplayAbility> ABaseItem::GetGrantedAbilityClass() const
 }
 TSubclassOf<AActor> ABaseItem::GetSpawnClass() const
 {
+	if (const UEquippableWeaponDefinition* Weapon = GetWeaponDefinition())
+		return Weapon->CombatData ? Weapon->CombatData->ProjectileClass.LoadSynchronous() : nullptr;
 	if (MyDefinition && !MyDefinition->SpawnClass.IsNull())
 	{
 		// SpawnClass 출력
@@ -319,4 +322,16 @@ FText ABaseItem::GetItemNameText() const
 		}
 	}
 	return FText::FromString(ItemTag.ToString());
+}
+
+UEquippableWeaponDefinition* ABaseItem::GetWeaponDefinition() const
+{
+	return MyDefinition ? MyDefinition->WeaponDefinition.LoadSynchronous() : nullptr;
+}
+
+float ABaseItem::GetStrengthBonus() const
+{
+	if (const UEquippableWeaponDefinition* Weapon = GetWeaponDefinition())
+		return Weapon->CombatData ? Weapon->CombatData->StrengthBonus : 0.f;
+	return StrengthBonus;
 }

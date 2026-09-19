@@ -2,12 +2,14 @@
 
 
 #include "BasePlayer.h"
+#include "Combat/PlayerAimComponent.h"
+#include "WeaponInputAbilitySystemComponent.h"
+#include "GAS/Ability/WeaponGameplayAbility.h"
 #include "PlayerDialogueComponent.h"
 #include "BasePlayerState.h"
 #include "BasePlayerController.h"
 #include "Misc/Crc.h"
 #include "AbilitySystemComponent.h"
-#include "Abilities/GameplayAbilityTargetTypes.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "EnhancedInputComponent.h"
@@ -41,8 +43,6 @@
 #include "Crafting/CraftingComponent.h"
 #include "ItemSubSystem.h"
 #include "Equipment/PlayerEquipmentComponent.h"
-#include "Item/Components/BowComponent.h"
-#include "Item/Weapons/BowItem.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
@@ -135,6 +135,7 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 	SwimmingComponent = CreateDefaultSubobject<USwimmingComponent>(TEXT("SwimmingComponent"));
 	EquipmentComponent = CreateDefaultSubobject<UPlayerEquipmentComponent>(TEXT("EquipmentComponent"));
+	AimComponent = CreateDefaultSubobject<UPlayerAimComponent>(TEXT("AimComponent"));
 	GravityVortexAbilityClass = UGA_GravityVortexThrow::StaticClass();
 	WaterBombAbilityClass = UGA_WaterBombCannonMode::StaticClass();
 	BombardmentAbilityClass = UGA_Bombardment::StaticClass();
@@ -751,21 +752,19 @@ void ABasePlayer::PossessedBy(AController* NewController)
 				{
 				if (AbilityPair.Value)
 				{
-					UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Granting Ability: %s to Slot Tag: %s (InputID: %d)"),
+					UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Granting Ability: %s to Slot Tag: %s"),
 						*AbilityPair.Value->GetName(),
-						*AbilityPair.Key.ToString(),
-						GetInputIDFromTag(AbilityPair.Key));
+						*AbilityPair.Key.ToString());
 						GrantAbilityToSlot(AbilityPair.Key, AbilityPair.Value);
 					}
 				}
 				if (bEnableGravityVortexSkillInput && GravityVortexAbilityClass)
 				{
 					UE_LOG(LogTemp, Warning,
-						TEXT("[VortexPipeline][Grant] PlayerClass=%s AbilityClass=%s Slot=%s InputID=%d"),
+						TEXT("[VortexPipeline][Grant] PlayerClass=%s AbilityClass=%s Slot=%s"),
 						*GetPathNameSafe(GetClass()),
 						*GetPathNameSafe(GravityVortexAbilityClass.Get()),
-						*Key_Skill_GravityVortex.GetTag().ToString(),
-						GetInputIDFromTag(Key_Skill_GravityVortex));
+						*Key_Skill_GravityVortex.GetTag().ToString());
 					GrantAbilityToSlot(Key_Skill_GravityVortex, GravityVortexAbilityClass);
 				}
 				if (bEnableAreaSlowSkillInput && AreaSlowAbilityClass)
@@ -943,6 +942,7 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 					{
 						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::OnMouseInputPressed, Action.KeyTag);
 						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, this, &ABasePlayer::OnMouseInputReleased, Action.KeyTag);
+						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Canceled, this, &ABasePlayer::OnMouseInputReleased, Action.KeyTag);
 					}
 					else
 					{
@@ -991,12 +991,6 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::LeftControl, IE_Released, this, &ABasePlayer::StopSwimDive);
 	PlayerInputComponent->BindKey(EKeys::RightControl, IE_Pressed, this, &ABasePlayer::StartSwimDive);
 	PlayerInputComponent->BindKey(EKeys::RightControl, IE_Released, this, &ABasePlayer::StopSwimDive);
-}
-
-int32 ABasePlayer::GetInputIDFromTag(const FGameplayTag& Tag) const
-{
-	if (!Tag.IsValid()) return INDEX_NONE;
-	return static_cast<int32>(FCrc::StrCrc32(*Tag.ToString()));
 }
 
 void ABasePlayer::InitializeQuickSlots()
@@ -1434,39 +1428,27 @@ void ABasePlayer::HandleInventoryContentsChanged()
 void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayAbility> AbilityClass)
 {
 	// 서버에서만 실행되며, 유효성 검사 수행
-	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass || !KeyTag.IsValid())
+	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass || !KeyTag.IsValid()
+		|| AbilityClass->IsChildOf(UWeaponGameplayAbility::StaticClass()))
 	{
 		return;
 	}
 
-	int32 TargetInputID = GetInputIDFromTag(KeyTag);
-	if (TargetInputID != INDEX_NONE)
+	for (const FGameplayAbilitySpec& Existing : CachedAbilitySystemComponent->GetActivatableAbilities())
 	{
-		// 이미 해당 InputID에 동일한 클래스의 어빌리티가 부여되어 있는지 확인
-		for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
-		{
-			if (Spec.InputID == TargetInputID && Spec.Ability && Spec.Ability->GetClass() == AbilityClass)
-			{
-				// 이미 동일한 어빌리티가 동일 슬롯에 존재하므로 중복 부여하지 않고 리턴
-				return;
-			}
-		}
+		if (Existing.SourceObject == this && Existing.GetDynamicSpecSourceTags().HasTagExact(KeyTag)
+			&& Existing.Ability && Existing.Ability->GetClass() == AbilityClass) return;
 	}
-
-	// 해당 슬롯에 다른 어빌리티가 있거나 없을 때만 제거 후 부여
 	RemoveAbilityFromSlot(KeyTag);
-
-	// 통합 맵에서 이 태그에 할당된 ID를 가져옴
-	int32 AssignedID = TargetInputID;
-
-	// GA Spec 생성 시 해당 ID 주입
-	FGameplayAbilitySpec Spec(AbilityClass, 1, AssignedID, this);
+	FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, this);
+	Spec.GetDynamicSpecSourceTags().AddTag(KeyTag);
 	CachedAbilitySystemComponent->GiveAbility(Spec);
 }
 
 void ABasePlayer::GrantDefaultAbility(TSubclassOf<UGameplayAbility> AbilityClass)
 {
-	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass)
+	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass
+		|| AbilityClass->IsChildOf(UWeaponGameplayAbility::StaticClass()))
 	{
 		return;
 	}
@@ -1490,15 +1472,12 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 		return;
 	}
 
-	int32 TargetInputID = GetInputIDFromTag(KeyTag);
-	if (TargetInputID == INDEX_NONE) return;
 
-	// GAS 내부의 부여된 어빌리티 목록을 순회하며 매핑된 InputID를 가진 어빌리티 수집 및 제거
+	// Character-owned slot grants only; equipment owns and removes its own handles.
 	TArray<FGameplayAbilitySpecHandle> HandlesToRemove;
 	for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent.Get()->GetActivatableAbilities())
 	{
-		// Spec.InputID가 우리가 제거하려는 ID와 일치한다면
-		if (Spec.InputID == TargetInputID)
+		if (Spec.SourceObject == this && Spec.GetDynamicSpecSourceTags().HasTagExact(KeyTag))
 		{
 			HandlesToRemove.Add(Spec.Handle);
 		}
@@ -1555,65 +1534,14 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 		return;
 	}
 
-	int32 InputID = GetInputIDFromTag(InputTag);
-	if (bLogInteraction)
-	{
-		int32 MatchingAbilityCount = 0;
-		for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
-		{
-			if (Spec.InputID == InputID)
-			{
-				++MatchingAbilityCount;
-				UE_LOG(LogStorageInteraction, Warning, TEXT("[Input] Bound ability=%s Active=%d"),
-					*GetNameSafe(Spec.Ability), Spec.IsActive());
-			}
-		}
-		UE_LOG(LogStorageInteraction, Warning, TEXT("[Input] Dispatch. InputID=%d MatchingAbilities=%d"),
-			InputID, MatchingAbilityCount);
-	}
-	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
-	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
-	// 	*InputTag.ToString(),
-	// 	InputID,
-	// 	IsLocallyControlled() ? TEXT("YES") : TEXT("NO"));
-
-	// 현재 부여된 모든 어빌리티 및 그 InputID 출력
-	const TArray<FGameplayAbilitySpec>& Specs = CachedAbilitySystemComponent->GetActivatableAbilities();
-	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] Activatable Abilities Count: %d"), 
-	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"), Specs.Num());
-	for (const FGameplayAbilitySpec& Spec : Specs)
-	{
-		// UE_LOG(LogTemp, Log, TEXT("  - Ability: %s, InputID: %d, Active: %s"), 
-		// 	Spec.Ability ? *Spec.Ability->GetName() : TEXT("None"),
-		// 	Spec.InputID,
-		// 	Spec.IsActive() ? TEXT("YES") : TEXT("NO"));
-	}
-
-	if (InputID != INDEX_NONE)
-	{
-		CachedAbilitySystemComponent->AbilityLocalInputPressed(InputID);
-	}
-	else if (bLogInteraction)
-	{
-		UE_LOG(LogStorageInteraction, Warning, TEXT("[Input] No ability dispatch: input tag has no InputID."));
-	}
+	if (auto* InputASC = Cast<UWeaponInputAbilitySystemComponent>(CachedAbilitySystemComponent.Get()))
+		InputASC->InputTagPressed(InputTag);
 }
 
 void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 {
-	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
-
-	int32 InputID = GetInputIDFromTag(InputTag);
-	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputReleased - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
-	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
-	// 	*InputTag.ToString(),
-	// 	InputID,
-	// 	IsLocallyControlled() ? TEXT("YES") : TEXT("NO"));
-
-	if (InputID != INDEX_NONE)
-	{
-		CachedAbilitySystemComponent->AbilityLocalInputReleased(InputID);
-	}
+	if (auto* InputASC = Cast<UWeaponInputAbilitySystemComponent>(CachedAbilitySystemComponent.Get()))
+		InputASC->InputTagReleased(InputTag);
 }
 
 void ABasePlayer::OnGravityVortexSkillPressed()
@@ -1674,12 +1602,11 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 	// Capture the state before AbilityLocalInputPressed can activate the bound
 	// ability. EventMagnitude 0 means activation click, 1 means active re-input.
 	bool bWasBoundAbilityActive = false;
-	const int32 InputID = GetInputIDFromTag(InputTag);
-	if (InputID != INDEX_NONE)
+	if (InputTag.IsValid())
 	{
 		for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
 		{
-			if (Spec.InputID == InputID && Spec.IsActive())
+			if (Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag) && Spec.IsActive())
 			{
 				bWasBoundAbilityActive = true;
 				break;
@@ -1733,53 +1660,18 @@ void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
 	FGameplayEventData EventData;
 	EventData.Instigator = this;
 	EventData.Target = nullptr;
-	if (ReleasedEventTag.MatchesTagExact(Key_Default_Mouse_LeftClick_Released))
-	{
-		AddMouseAimTargetData(EventData);
-	}
 
+	// The view snapshot and input use the same reliable event, so no separate aim RPC can race release.
+	if (ReleasedEventTag == Key_Default_Mouse_LeftClick_Released && AimComponent)
+	{
+		AimComponent->CaptureReleaseView(EventData);
+	}
 	CachedAbilitySystemComponent->HandleGameplayEvent(ReleasedEventTag, &EventData);
 
 	if (!HasAuthority())
 	{
 		ServerRPC_SendGameplayEvent(ReleasedEventTag, EventData);
 	}
-}
-
-void ABasePlayer::AddMouseAimTargetData(FGameplayEventData& EventData) const
-{
-	const ABowItem* Bow = Cast<ABowItem>(EquippedItem);
-	const UBowComponent* BowComponent = Bow ? Bow->GetBowComponent() : nullptr;
-	if (!BowComponent)
-	{
-		return;
-	}
-
-	const FVector ViewLocation = FollowCamera ? FollowCamera->GetComponentLocation() : GetActorLocation();
-	const FVector ViewForward = FollowCamera ? FollowCamera->GetForwardVector() : GetBaseAimRotation().Vector();
-
-	TArray<AActor*> ActorsToIgnore;
-	ActorsToIgnore.Add(const_cast<ABasePlayer*>(this));
-	if (EquippedItem)
-	{
-		ActorsToIgnore.Add(EquippedItem);
-	}
-
-	FBowAimResult AimResult;
-	if (!BowComponent->CalculateAim(ViewLocation, ViewForward, ActorsToIgnore, AimResult))
-	{
-		return;
-	}
-
-	FHitResult AimHit;
-	AimHit.TraceStart = AimResult.TraceStart;
-	AimHit.TraceEnd = AimResult.TraceEnd;
-	AimHit.Location = AimResult.AimTarget;
-	AimHit.ImpactPoint = AimResult.AimTarget;
-	AimHit.bBlockingHit = AimResult.bBlockingHit;
-
-	FGameplayAbilityTargetData_SingleTargetHit* TargetData = new FGameplayAbilityTargetData_SingleTargetHit(AimHit);
-	EventData.TargetData.Add(TargetData);
 }
 
 void ABasePlayer::HandleShipBoardEvent(const FGameplayEventData* Payload)

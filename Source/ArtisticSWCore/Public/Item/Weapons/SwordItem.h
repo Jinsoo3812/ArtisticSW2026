@@ -47,7 +47,7 @@ public:
 	USceneComponent* GetTraceEndPoint() const { return TraceEndPoint; }
 
 	UFUNCTION(BlueprintPure, Category = "Sword|Damage")
-	float GetAttackCoefficient() const { return AttackCoefficient; }
+	float GetAttackCoefficient() const;
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sword|Trace")

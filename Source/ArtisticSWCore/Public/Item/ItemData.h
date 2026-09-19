@@ -11,6 +11,7 @@ class UStaticMesh;
 class ABaseProjectile;
 class UTexture2D;
 class ABaseItem;
+class UEquippableWeaponDefinition;
 
 UENUM(BlueprintType)
 enum class EItemProgressionKind : uint8
@@ -53,6 +54,10 @@ USTRUCT(BlueprintType)
 struct FItemDefinition
 {
 	GENERATED_BODY()
+
+	/** Required for weapon items. Legacy ability/spawn fields below are for non-weapons only. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Weapon")
+	TSoftObjectPtr<UEquippableWeaponDefinition> WeaponDefinition;
 
 	/** Item tier is intrinsic to the item, not inferred from its tag or a recipe row. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Progression", meta = (ClampMin = "0", ClampMax = "4"))

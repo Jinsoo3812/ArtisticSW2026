@@ -1,4 +1,5 @@
 #include "Item/Weapons/SwordItem.h"
+#include "Equipment/WeaponDefinition.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
@@ -293,4 +294,12 @@ void ASwordItem::ClearHitScanState()
 	CachedStatusEffectSpecHandles.Reset();
 	PreviousTraceStart = FVector::ZeroVector;
 	PreviousTraceEnd = FVector::ZeroVector;
+}
+
+float ASwordItem::GetAttackCoefficient() const
+{
+	if (const UEquippableWeaponDefinition* Definition = GetWeaponDefinition())
+		return Definition->CombatData ? Definition->CombatData->AttackCoefficient : 0.f;
+	// Standalone trace fixtures and non-equipped callers retain their authored default.
+	return AttackCoefficient;
 }

@@ -87,6 +87,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arrow")
 	void IgnoreActorForMovement(AActor* ActorToIgnore);
 
+	/** Tests the actual collision box/profile, honoring owner and weapon movement ignores. */
+	bool IsLaunchLocationBlocked() const;
+
 	/** Copies this projectile's authored mesh, materials, and relative transform to a presentation component. */
 	bool ApplyVisualTo(UStaticMeshComponent* TargetMesh) const;
 

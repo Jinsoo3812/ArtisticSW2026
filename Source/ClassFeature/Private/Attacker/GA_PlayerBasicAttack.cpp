@@ -1,4 +1,5 @@
 #include "Attacker/GA_PlayerBasicAttack.h"
+#include "Equipment/WeaponDefinition.h"
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
@@ -192,7 +193,7 @@ bool UGA_PlayerBasicAttack::CacheAttackData()
 		return false;
 	}
 
-	CachedSword = Cast<ASwordItem>(Player->EquippedItem);
+	CachedSword = Cast<ASwordItem>(GetSourceWeapon());
 	UPlayerEquipmentComponent* EquipmentComponent = Player->GetEquipmentComponent();
 	UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
 	if (!CachedSword || !EquipmentComponent || !SourceASC)
@@ -421,7 +422,7 @@ void UGA_PlayerBasicAttack::StartHitScan()
 	FStrengthDamageRequest DamageRequest;
 	DamageRequest.SourceASC = SourceASC;
 
-	DamageRequest.AttackCoefficient = CachedSword->GetAttackCoefficient();
+	DamageRequest.AttackCoefficient = CachedSword->GetWeaponDefinition()->CombatData->AttackCoefficient;
 	DamageRequest.ChargeMultiplier = 1.0f;
 	DamageRequest.InstigatorActor = Player;
 	DamageRequest.EffectCauser = CachedSword;
