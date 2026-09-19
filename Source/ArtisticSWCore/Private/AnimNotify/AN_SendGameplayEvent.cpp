@@ -1,4 +1,4 @@
-﻿#include "AN_SendGameplayEvent.h"
+#include "AN_SendGameplayEvent.h"
 #include "AbilitySystemBlueprintLibrary.h"
 
 UAN_SendGameplayEvent::UAN_SendGameplayEvent()
@@ -12,7 +12,7 @@ UAN_SendGameplayEvent::UAN_SendGameplayEvent()
 bool UAN_SendGameplayEvent::SendGameplayEventToMeshOwner(
 	USkeletalMeshComponent* MeshComp,
 	FGameplayTag GameplayEventTag,
-	float EventMagnitude)
+	float EventMagnitude, const UObject* EventSource)
 {
 	if (!MeshComp || !GameplayEventTag.IsValid())
 	{
@@ -30,6 +30,7 @@ bool UAN_SendGameplayEvent::SendGameplayEventToMeshOwner(
 	Payload.Target = OwnerActor;
 	Payload.EventTag = GameplayEventTag;
 	Payload.EventMagnitude = EventMagnitude;
+	Payload.OptionalObject = EventSource;
 
 	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(OwnerActor, GameplayEventTag, Payload);
 	return true;

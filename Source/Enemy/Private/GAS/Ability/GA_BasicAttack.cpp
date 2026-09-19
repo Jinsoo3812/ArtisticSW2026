@@ -4,6 +4,7 @@
 #include "GAS/Ability/GA_BasicAttack.h"
 
 #include "AbilitySystemComponent.h"
+#include "GASCombatLibrary.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Animation/AnimInstance.h"
@@ -51,7 +52,9 @@ void UGA_BasicAttack::ApplyCooldown(
 	const FGameplayAbilityActivationInfo ActivationInfo) const
 {
 	UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-	if (!ASC || NativeCooldownTags.IsEmpty() || AttackCooldownDuration <= 0.0f)
+	const ABaseEnemy* Enemy = ActorInfo ? Cast<ABaseEnemy>(ActorInfo->AvatarActor.Get()) : nullptr;
+	const float Duration = Enemy ? Enemy->GetBalancedAttackInterval(AttackCooldownDuration) : AttackCooldownDuration;
+	if (!ASC || NativeCooldownTags.IsEmpty() || Duration <= 0.0f)
 	{
 		return;
 	}
@@ -67,7 +70,7 @@ void UGA_BasicAttack::ApplyCooldown(
 		return;
 	}
 
-	SpecHandle.Data->SetDuration(AttackCooldownDuration, true);
+	SpecHandle.Data->SetDuration(Duration, true);
 	SpecHandle.Data->DynamicGrantedTags.AppendTags(NativeCooldownTags);
 	ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 }
@@ -81,7 +84,7 @@ void UGA_BasicAttack::ActivateAbility(
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
 	ABaseEnemy* EnemyOwner = Cast<ABaseEnemy>(GetAvatarActorFromActorInfo());
-	if (!EnemyOwner)
+	if (!EnemyOwner || !EnemyOwner->IsBalanceAttackReady() || !EnemyOwner->HasBalancedMeleeAttackSlot())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
@@ -100,6 +103,15 @@ void UGA_BasicAttack::ActivateAbility(
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
+	}
+	bOpenedAttackWindow = false;
+	OpenedWindowSources.Reset();
+	ActiveWindowSource.Reset();
+	if (EnemyOwner->GetMesh())
+	{
+		PreviousAnimTickOption = static_cast<uint8>(EnemyOwner->GetMesh()->VisibilityBasedAnimTickOption);
+		EnemyOwner->GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+		bPoseRefreshAcquired = true;
 	}
 	OnAttackCommitted();
 
@@ -145,6 +157,12 @@ void UGA_BasicAttack::EndAbility(
 	bool bWasCancelled)
 {
 	EndHitScan();
+	if (bPoseRefreshAcquired)
+	{
+		if (ABaseEnemy* Enemy = Cast<ABaseEnemy>(GetAvatarActorFromActorInfo()); Enemy && Enemy->GetMesh())
+			Enemy->GetMesh()->VisibilityBasedAnimTickOption = static_cast<EVisibilityBasedAnimTickOption>(PreviousAnimTickOption);
+		bPoseRefreshAcquired = false;
+	}
 	RemoveAttackStateTag();
 
 	CachedWeapon = nullptr;
@@ -169,9 +187,9 @@ bool UGA_BasicAttack::ResolveAttackExecutionData(
 {
 	OutData.AttackMontage = WeaponDefinition.CombatData.AttackMontage;
 	OutData.AttackMontagePlayRate = WeaponDefinition.CombatData.AttackMontagePlayRate;
-	OutData.DamageEffectClass = WeaponDefinition.CombatData.DamageEffectClass;
+	OutData.AttackCoefficient = WeaponDefinition.CombatData.AttackCoefficient;
 	OutData.ImpactGameplayCueTag = WeaponDefinition.CombatData.ImpactGameplayCueTag;
-	return OutData.AttackMontage && OutData.DamageEffectClass;
+	return OutData.AttackMontage != nullptr;
 }
 
 void UGA_BasicAttack::OnAttackCommitted()
@@ -193,28 +211,13 @@ bool UGA_BasicAttack::CacheAttackData(
 
 	UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
 	if (!CachedWeapon || !WeaponDefinition || !SourceASC
-		|| !ResolveAttackExecutionData(EnemyOwner, *WeaponDefinition, OutData)
-		|| !OutData.DamageEffectClass)
+		|| !ResolveAttackExecutionData(EnemyOwner, *WeaponDefinition, OutData))
 	{
 		return false;
 	}
 
-	FGameplayEffectContextHandle ContextHandle =
-		USWCombatEffectContextLibrary::MakeCombatEffectContext(
-			SourceASC, EnemyOwner, CachedWeapon);
-
-	CachedDamageSpecHandle = SourceASC->MakeOutgoingSpec(
-		OutData.DamageEffectClass,
-		1,
-		ContextHandle);
-	if (CachedDamageSpecHandle.IsValid() && CachedDamageSpecHandle.Data.IsValid()
-		&& OutData.ImpactGameplayCueTag.IsValid())
-	{
-		CachedDamageSpecHandle.Data->AddDynamicAssetTag(
-			OutData.ImpactGameplayCueTag);
-	}
-
-	return CachedDamageSpecHandle.IsValid();
+	CachedExecutionData = OutData;
+	return WeaponComponent->IsWeaponEquipped();
 }
 
 bool UGA_BasicAttack::PlayAttackMontage(const FEnemyBasicAttackExecutionData& AttackData)
@@ -253,7 +256,7 @@ bool UGA_BasicAttack::PlayAttackMontage(const FEnemyBasicAttackExecutionData& At
 		AttackMontage,
 		FMath::Max(EffectivePlayRate, KINDA_SMALL_NUMBER),
 		NAME_None,
-		true);
+		true, 1.f, 0.f, true);
 
 	if (!AttackMontageTask)
 	{
@@ -276,7 +279,8 @@ void UGA_BasicAttack::OnAttackMontageCompleted()
 
 void UGA_BasicAttack::OnAttackMontageBlendOut()
 {
-	FinishAttack(false);
+	// End collision at blendout, but finish the ability only at OnCompleted.
+	EndHitScan();
 }
 
 void UGA_BasicAttack::OnAttackMontageInterrupted()
@@ -291,21 +295,37 @@ void UGA_BasicAttack::OnAttackMontageCancelled()
 
 void UGA_BasicAttack::OnHitScanStartEvent(FGameplayEventData Payload)
 {
+	if (CachedExecutionData.bUseTimedHitWindow) return;
+	if (Payload.OptionalObject)
+	{
+		if (bHitScanActive || OpenedWindowSources.Contains(Payload.OptionalObject.Get())) return;
+		OpenedWindowSources.Add(Payload.OptionalObject.Get());
+		ActiveWindowSource = Payload.OptionalObject.Get();
+		bOpenedAttackWindow = false;
+	}
 	StartHitScan();
 }
 
 void UGA_BasicAttack::OnHitScanEndEvent(FGameplayEventData Payload)
 {
+	if (CachedExecutionData.bUseTimedHitWindow) return;
+	if (Payload.OptionalObject && ActiveWindowSource.Get() != Payload.OptionalObject.Get()) return;
 	EndHitScan();
 }
 
 void UGA_BasicAttack::StartHitScan()
 {
-	if (bHitScanActive || !CachedWeapon || !CachedDamageSpecHandle.IsValid())
-	{
-		return;
-	}
+	if (!IsActive() || bAttackFinished || bHitScanActive || bOpenedAttackWindow || !IsValid(CachedWeapon)) return;
+	FStrengthDamageRequest Request;
+	Request.SourceASC = GetAbilitySystemComponentFromActorInfo();
+	Request.InstigatorActor = GetAvatarActorFromActorInfo();
+	Request.EffectCauser = CachedWeapon;
 
+	Request.AttackCoefficient = CachedExecutionData.AttackCoefficient;
+	CachedDamageSpecHandle = UGASCombatLibrary::MakeStrengthDamageEffectSpec(Request);
+	if (!CachedDamageSpecHandle.IsValid()) { FinishAttack(true); return; }
+	if (CachedExecutionData.ImpactGameplayCueTag.IsValid()) CachedDamageSpecHandle.Data->AddDynamicAssetTag(CachedExecutionData.ImpactGameplayCueTag);
+	bOpenedAttackWindow = true;
 	bHitScanActive = true;
 	CachedWeapon->HitScanStart(CachedDamageSpecHandle);
 }

@@ -5,6 +5,7 @@
 #include "BaseGameplayTags.h"
 #include "BossAI/ShipBossEnemy.h"
 #include "GASCombatLibrary.h"
+#include "Components/CombatHitResolverComponent.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
 
 UBossAbilityCooldownEffect::UBossAbilityCooldownEffect()
@@ -109,42 +110,28 @@ AActor* UBossGameplayAbility::GetBossTarget() const
 	return Boss ? Boss->GetBossCombatTarget() : nullptr;
 }
 
-bool UBossGameplayAbility::ApplyDamageToTarget(
-	AActor* Target,
-	TSubclassOf<UGameplayEffect> DamageEffectClass,
-	float Damage,
-	const FHitResult* HitResult) const
+bool UBossGameplayAbility::PrepareStrengthAttack(float AttackCoefficient)
 {
-	UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
-	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Target);
-	AShipBossEnemy* Boss = GetBossAvatar();
-	if (!SourceASC || !TargetASC || !Boss || !DamageEffectClass)
-	{
-		return false;
-	}
+	FStrengthDamageRequest Request;
+	Request.SourceASC = GetAbilitySystemComponentFromActorInfo();
+	Request.InstigatorActor = GetAvatarActorFromActorInfo();
+	Request.EffectCauser = GetAvatarActorFromActorInfo();
 
-	const FGameplayEffectSpecHandle Spec = UGASCombatLibrary::MakeDamageEffectSpec(
-		SourceASC,
-		DamageEffectClass,
-		Damage,
-		Boss,
-		Boss,
-		1,
-		HitResult != nullptr,
+	Request.AttackCoefficient = AttackCoefficient;
+	CommittedDamageSpec = UGASCombatLibrary::MakeStrengthDamageEffectSpec(Request);
+	if (!CommittedDamageSpec.IsValid()) return false;
+	if (ImpactGameplayCueTag.IsValid()) CommittedDamageSpec.Data->AddDynamicAssetTag(ImpactGameplayCueTag);
+	auto* Resolver = UCombatHitResolverComponent::GetOrCreate(Request.EffectCauser);
+	return Resolver && Resolver->OpenWindow(CommittedDamageSpec);
+}
+
+bool UBossGameplayAbility::ApplyDamageToTarget(AActor* Target, const FHitResult* HitResult) const
+{
+	AShipBossEnemy* Boss = GetBossAvatar();
+	if (!Boss || !Boss->HasAuthority() || !IsActive() || !CommittedDamageSpec.IsValid()) return false;
+	auto* Resolver = Boss->FindComponentByClass<UCombatHitResolverComponent>();
+	return Resolver && Resolver->ResolveHit(UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Target),
 		HitResult ? *HitResult : FHitResult());
-	if (!Spec.IsValid() || !Spec.Data.IsValid())
-	{
-		return false;
-	}
-	FGameplayEffectSpec TargetSpec(*Spec.Data.Get());
-	USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
-		TargetSpec, Boss, Boss, Target, HitResult);
-	if (ImpactGameplayCueTag.IsValid())
-	{
-		TargetSpec.AddDynamicAssetTag(ImpactGameplayCueTag);
-	}
-	TargetASC->ApplyGameplayEffectSpecToSelf(TargetSpec);
-	return true;
 }
 
 FActiveGameplayEffectHandle UBossGameplayAbility::ApplyTimedStateTag(
@@ -174,4 +161,13 @@ FActiveGameplayEffectHandle UBossGameplayAbility::ApplyTimedStateTag(
 	Spec.Data->SetDuration(Duration, true);
 	Spec.Data->DynamicGrantedTags.AddTag(StateTag);
 	return TargetASC.ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+}
+
+void UBossGameplayAbility::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
+{
+	if (AActor* Avatar = GetAvatarActorFromActorInfo())
+		if (auto* Resolver = Avatar->FindComponentByClass<UCombatHitResolverComponent>()) Resolver->CloseWindow();
+	CommittedDamageSpec = FGameplayEffectSpecHandle();
+	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }

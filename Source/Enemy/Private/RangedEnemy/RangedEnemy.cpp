@@ -338,7 +338,7 @@ bool ARangedEnemy::TryStartRangedAttack(FGameplayAbilitySpecHandle AbilityHandle
 	}
 
 	const double CurrentTime = World->GetTimeSeconds();
-	if (CurrentTime < NextAttackTime)
+	if (CurrentTime < NextAttackTime || !IsBalanceAttackReady())
 	{
 		return false;
 	}
@@ -346,7 +346,7 @@ bool ARangedEnemy::TryStartRangedAttack(FGameplayAbilitySpecHandle AbilityHandle
 	const bool bActivated = ASC->TryActivateAbility(AbilityHandle, false);
 	if (bActivated)
 	{
-		NextAttackTime = CurrentTime + FMath::Max(0.0f, AttackCooldown);
+		NextAttackTime = CurrentTime + FMath::Max(0.0f, GetBalancedAttackInterval(AttackCooldown));
 	}
 	return bActivated;
 }

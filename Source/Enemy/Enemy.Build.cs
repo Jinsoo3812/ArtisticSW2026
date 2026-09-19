@@ -29,6 +29,8 @@ public class Enemy: ModuleRules
             "WaterAndShip",
             "Water",
             "AnimGraphRuntime",
+            "SmartObjectsModule",
+            "GameplayBehaviorSmartObjectsModule",
         });
 
         PublicIncludePaths.AddRange(new string[] {

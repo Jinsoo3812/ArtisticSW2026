@@ -179,6 +179,8 @@ void UGA_Sniping::OnTargetDataReceived(const FGameplayAbilityTargetDataHandle& D
 						FGameplayEffectContextHandle ContextHandle =
 							USWCombatEffectContextLibrary::MakeCombatEffectContext(
 								ASC, SourceActor, SourceActor, HitResult->GetActor(), true, *HitResult);
+						USWCombatEffectContextLibrary::SetDamageDeliveryType(
+							ContextHandle, ESWDamageDeliveryType::DirectHit);
 						
 						FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
 						if (SpecHandle.IsValid())

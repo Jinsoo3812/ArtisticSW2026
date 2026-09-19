@@ -224,7 +224,13 @@ bool UBossEncounterComponent::SpawnBossFor(AActor* Interactor)
 		return false;
 	}
 
+	if (!Boss->ConfigureSpawnBalance(BossStatsRow))
+	{
+		Boss->Destroy();
+		return false;
+	}
 	Boss->FinishSpawning(SpawnTransform);
+	if (!IsValid(Boss) || !Boss->IsBalanceReady()) return false;
 	if (!Boss->InitializeBoss(HostShip, SpawnPointId, CombatTarget))
 	{
 		UE_LOG(LogTemp, Warning,

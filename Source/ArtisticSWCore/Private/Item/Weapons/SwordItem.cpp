@@ -1,13 +1,16 @@
 #include "Item/Weapons/SwordItem.h"
+#include "Equipment/WeaponDefinition.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "GAS/CombatHitResolver.h"
 #include "BaseGameplayTags.h"
 #include "Components/SceneComponent.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
 #include "InteractableComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "StatusEffectLibrary.h"
+#include "CollisionChannels.h"
 #include "WeaponFeedback/WeaponFeedbackComponent.h"
 
 ASwordItem::ASwordItem()
@@ -39,11 +42,6 @@ void ASwordItem::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-float ASwordItem::CalculateDamage(float AttackPower) const
-{
-	return FMath::Max(0.0f, BaseDamage + FMath::Max(0.0f, AttackPower) * AttackPowerMultiplier);
-}
-
 bool ASwordItem::HitScanStart(const FGameplayEffectSpecHandle& DamageEffectSpecHandle)
 {
 	if (!HasAuthority() || !GetWorld() || !TraceStartPoint || !TraceEndPoint)
@@ -64,11 +62,12 @@ bool ASwordItem::HitScanStart(const FGameplayEffectSpecHandle& DamageEffectSpecH
 		return false;
 	}
 
-	HitScanEnd();
+	if (bHitScanActive) return false;
+	auto* Resolver = FindComponentByClass<UCombatHitResolver>();
+	if (!Resolver || !Resolver->OpenWindow(DamageEffectSpecHandle)) return false;
 
 	CachedDamageEffectSpecHandle = DamageEffectSpecHandle;
 	BuildStatusEffectSpecs(SourceASC);
-	HitActors.Reset();
 	bHitScanActive = true;
 	bHasPreviousTracePoints = true;
 	PreviousTraceStart = TraceStartPoint->GetComponentLocation();
@@ -81,6 +80,7 @@ bool ASwordItem::HitScanStart(const FGameplayEffectSpecHandle& DamageEffectSpecH
 
 void ASwordItem::HitScanEnd()
 {
+	if (auto* Resolver = FindComponentByClass<UCombatHitResolver>()) Resolver->CloseWindow();
 	ClearHitScanState();
 }
 
@@ -119,6 +119,11 @@ void ASwordItem::SampleHitScan()
 
 void ASwordItem::TraceSegment(const FVector& Start, const FVector& End)
 {
+	TArray<TEnumAsByte<EObjectTypeQuery>> ActiveTraceObjectTypes = TraceObjectTypes;
+	if (bIncludeAnimatedCombatHurtboxes)
+	{
+		ActiveTraceObjectTypes.AddUnique(UEngineTypes::ConvertToObjectType(ECC_CombatHurtbox));
+	}
 	TArray<AActor*> ActorsToIgnore;
 	ActorsToIgnore.Add(this);
 	if (AActor* OwnerActor = GetOwner())
@@ -136,7 +141,7 @@ void ASwordItem::TraceSegment(const FVector& Start, const FVector& End)
 		Start,
 		End,
 		TraceRadius,
-		TraceObjectTypes,
+		ActiveTraceObjectTypes,
 		bTraceComplex,
 		ActorsToIgnore,
 		bDrawDebugTrace ? EDrawDebugTrace::ForOneFrame : EDrawDebugTrace::None,
@@ -157,12 +162,6 @@ void ASwordItem::HandleHit(const FHitResult& HitResult)
 		return;
 	}
 
-	const TWeakObjectPtr<AActor> HitActorPtr(HitActor);
-	if (HitActors.Contains(HitActorPtr))
-	{
-		return;
-	}
-
 	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(HitActor);
 	if (!TargetASC)
 	{
@@ -175,9 +174,6 @@ void ASwordItem::HandleHit(const FHitResult& HitResult)
 		return;
 	}
 
-	// Add before applying the effect so callbacks caused by damage cannot hit
-	// the same actor re-entrantly during this attack window.
-	HitActors.Add(HitActorPtr);
 	ApplyEffectToTarget(TargetASC, HitResult);
 }
 
@@ -188,13 +184,12 @@ void ASwordItem::ApplyEffectToTarget(UAbilitySystemComponent* TargetASC, const F
 		return;
 	}
 
-	FGameplayEffectSpec TargetEffectSpec(*CachedDamageEffectSpecHandle.Data.Get());
+	if (!HasAuthority()) return;
+	auto* Resolver = FindComponentByClass<UCombatHitResolver>();
+	if (!Resolver || !Resolver->ResolveHit(
+		TargetASC, HitResult, bIgnoreSameTeam, bIncludeAnimatedCombatHurtboxes)) return;
 	AActor* SourceActor = ResolveSourceActor();
 	AActor* TargetActor = TargetASC->GetAvatarActor();
-	USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
-		TargetEffectSpec, SourceActor, this, TargetActor, &HitResult);
-
-	TargetASC->ApplyGameplayEffectSpecToSelf(TargetEffectSpec);
 
 	for (const FGameplayEffectSpecHandle& StatusSpecHandle : CachedStatusEffectSpecHandles)
 	{
@@ -297,7 +292,14 @@ void ASwordItem::ClearHitScanState()
 	bHasPreviousTracePoints = false;
 	CachedDamageEffectSpecHandle = FGameplayEffectSpecHandle();
 	CachedStatusEffectSpecHandles.Reset();
-	HitActors.Reset();
 	PreviousTraceStart = FVector::ZeroVector;
 	PreviousTraceEnd = FVector::ZeroVector;
+}
+
+float ASwordItem::GetAttackCoefficient() const
+{
+	if (const UEquippableWeaponDefinition* Definition = GetWeaponDefinition())
+		return Definition->CombatData ? Definition->CombatData->AttackCoefficient : 0.f;
+	// Standalone trace fixtures and non-equipped callers retain their authored default.
+	return AttackCoefficient;
 }

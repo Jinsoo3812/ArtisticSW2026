@@ -33,6 +33,8 @@ class ENEMY_API UBossGameplayAbility : public UBaseGameplayAbility
 
 public:
 	UBossGameplayAbility();
+	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
 
 	virtual const FGameplayTagContainer* GetCooldownTags() const override;
 	virtual void ApplyCooldown(
@@ -53,10 +55,10 @@ protected:
 	void ExecuteStartupGameplayCue() const;
 	AShipBossEnemy* GetBossAvatar() const;
 	AActor* GetBossTarget() const;
+	bool PrepareStrengthAttack(float AttackCoefficient);
+	FGameplayEffectSpecHandle CommittedDamageSpec;
 	bool ApplyDamageToTarget(
 		AActor* Target,
-		TSubclassOf<UGameplayEffect> DamageEffectClass,
-		float Damage,
 		const FHitResult* HitResult = nullptr) const;
 	FActiveGameplayEffectHandle ApplyTimedStateTag(
 		UAbilitySystemComponent& TargetASC,

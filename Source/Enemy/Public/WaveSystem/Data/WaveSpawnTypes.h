@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/TimerHandle.h"
+#include "Engine/DataTable.h"
 #include "WaveSpawnTypes.generated.h"
 
 class ABaseEnemy;
@@ -59,6 +60,9 @@ public:
      */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wave|SpawnGroup")
     TSubclassOf<ABaseEnemy> EnemyClass = nullptr;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wave|SpawnGroup", meta = (RowType = "/Script/Enemy.EnemyBaseStatsRow"))
+    FDataTableRowHandle StatsRow;
 
     
     // Group에서 총 생성할 수.

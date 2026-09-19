@@ -6,7 +6,6 @@
 #include "BaseGameplayTags.h"
 #include "Item/Projectiles/ArrowProjectile.h"
 #include "GASCombatLibrary.h"
-#include "GASDamageInstantGameplayEffect.h"
 #include "RangedEnemy/RangedEnemy.h"
 #include "Weapon/EnemyBow.h"
 
@@ -37,7 +36,7 @@ void UGA_RangedEnemyAttack::ActivateAbility(
 	bFinishingAttack = false;
 	bOwnsServerPoseRefresh = false;
 
-	if (!CachedEnemy)
+	if (!CachedEnemy || !CachedEnemy->IsBalanceAttackReady())
 	{
 		FinishAttack(true);
 		return;
@@ -129,10 +128,7 @@ void UGA_RangedEnemyAttack::OnAttackMontageCompleted()
 
 void UGA_RangedEnemyAttack::OnAttackMontageBlendOut()
 {
-	if (!bFinishingAttack)
-	{
-		OnAttackMontageCompleted();
-	}
+	// BlendOut is the start of the tail. Keep the GA and BT task alive until OnCompleted.
 }
 
 void UGA_RangedEnemyAttack::OnAttackMontageInterrupted()
@@ -147,7 +143,7 @@ void UGA_RangedEnemyAttack::OnAttackMontageCancelled()
 
 bool UGA_RangedEnemyAttack::FireProjectile()
 {
-	if (!CachedEnemy)
+	if (!CachedEnemy || !CachedEnemy->HasAuthority() || !IsActive() || bFinishingAttack)
 	{
 		return false;
 	}
@@ -211,31 +207,24 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 		return false;
 	}
 
+	Projectile->FinishSpawning(SpawnTransform);
 	Projectile->IgnoreActorForMovement(CachedEnemy);
 	Projectile->IgnoreActorForMovement(Bow);
 
-	TSubclassOf<UGameplayEffect> DamageEffectClass = Projectile->GetDirectDamageEffectClass();
-	if (!DamageEffectClass)
-	{
-		DamageEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
-	}
-
 	FStrengthDamageRequest DamageRequest;
 	DamageRequest.SourceASC = SourceASC;
-	DamageRequest.DamageEffectClass = DamageEffectClass;
+
 	DamageRequest.AttackCoefficient = Projectile->GetAttackCoefficient();
 	DamageRequest.ChargeMultiplier = 1.0f;
 	DamageRequest.InstigatorActor = CachedEnemy;
 	DamageRequest.EffectCauser = Projectile;
 	DamageRequest.EffectLevel = Projectile->GetDirectDamageEffectLevel();
-	Projectile->InitializeStrengthDamage(
-		SourceASC,
-		CachedEnemy,
-		UGASCombatLibrary::MakeStrengthDamageEffectSpec(DamageRequest));
+	const FGameplayEffectSpecHandle DamageSpec = UGASCombatLibrary::MakeStrengthDamageEffectSpec(DamageRequest);
+	if (!DamageSpec.IsValid()) { Projectile->Destroy(); return false; }
+	if (!Projectile->InitializeStrengthDamage(SourceASC, CachedEnemy, DamageSpec)) { Projectile->Destroy(); return false; }
 
 	Projectile->SetOwner(CachedEnemy);
 	Projectile->SetInstigator(CachedEnemy);
-	Projectile->FinishSpawning(SpawnTransform);
 	Projectile->LaunchArrow(LaunchDirection * Bow->GetProjectileSpeed());
 	bProjectileFired = true;
 	return true;
@@ -255,7 +244,7 @@ bool UGA_RangedEnemyAttack::PlayAttackMontage()
 		Montage,
 		CachedEnemy->GetRangedAttackMontagePlayRate(),
 		NAME_None,
-		true);
+		true, 1.f, 0.f, true);
 	if (!AttackMontageTask)
 	{
 		return false;

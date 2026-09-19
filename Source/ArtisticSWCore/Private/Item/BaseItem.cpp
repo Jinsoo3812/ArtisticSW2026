@@ -1,4 +1,5 @@
 #include "Item/BaseItem.h"
+#include "Equipment/WeaponDefinition.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "ItemData.h"
@@ -7,7 +8,7 @@
 #include "InteractableComponent.h"
 #include "CollisionChannels.h"
 #include "ItemSubsystem.h"
-#include "AbilitySystemComponent.h"
+#include "GAS/EquipmentStatModel.h"
 #include "GameplayEffect.h"
 #include "WeaponFeedback/WeaponFeedbackComponent.h"
 
@@ -33,7 +34,7 @@ ABaseItem::ABaseItem()
 
 TSubclassOf<UGameplayAbility> ABaseItem::GetGrantedAbilityClass() const
 {
-	if (MyDefinition && !MyDefinition->GrantedAbilityClass.IsNull())
+	if (MyDefinition && MyDefinition->WeaponDefinition.IsNull() && MyDefinition->ProgressionKind != EItemProgressionKind::Weapon && !MyDefinition->GrantedAbilityClass.IsNull())
 	{
 		// SoftClassPtr에서 동기 로드하여 반환 (이미 로드된 경우 O(1) 캐시 반환)
 		return MyDefinition->GrantedAbilityClass.LoadSynchronous();
@@ -42,6 +43,8 @@ TSubclassOf<UGameplayAbility> ABaseItem::GetGrantedAbilityClass() const
 }
 TSubclassOf<AActor> ABaseItem::GetSpawnClass() const
 {
+	if (const UEquippableWeaponDefinition* Weapon = GetWeaponDefinition())
+		return Weapon->CombatData ? Weapon->CombatData->ProjectileClass.LoadSynchronous() : nullptr;
 	if (MyDefinition && !MyDefinition->SpawnClass.IsNull())
 	{
 		// SpawnClass 출력
@@ -102,92 +105,20 @@ void ABaseItem::BeginPlay()
 
 void ABaseItem::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (HasAuthority())
-	{
-		RemoveStrengthBonusEffect();
-	}
-
 	Super::EndPlay(EndPlayReason);
 }
 
-bool ABaseItem::ApplyStrengthBonusEffect(
-	UAbilitySystemComponent* SourceASC,
-	TSubclassOf<UGameplayEffect> StrengthEffectClass)
+bool ABaseItem::HasActiveStrengthBonusEffect() const
 {
-	if (!HasAuthority() || !SourceASC)
-	{
-		return false;
-	}
-
-	if (EquippedStrengthEffectHandle.IsValid())
-	{
-		if (StrengthEffectASC == SourceASC && SourceASC->GetActiveGameplayEffect(EquippedStrengthEffectHandle))
-		{
-			return true;
-		}
-
-		EquippedStrengthEffectHandle = FActiveGameplayEffectHandle();
-		StrengthEffectASC = nullptr;
-	}
-
-	if (StrengthBonus <= KINDA_SMALL_NUMBER)
-	{
-		return true;
-	}
-
-	if (!StrengthEffectClass)
-	{
-		return false;
-	}
-
-	FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
-	ContextHandle.AddSourceObject(this);
-	FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(StrengthEffectClass, 1.0f, ContextHandle);
-	if (!SpecHandle.IsValid() || !SpecHandle.Data.IsValid())
-	{
-		return false;
-	}
-
-	SpecHandle.Data->SetSetByCallerMagnitude(Data_StrengthBonus, StrengthBonus);
-	const FActiveGameplayEffectHandle AppliedHandle = SourceASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
-	if (!AppliedHandle.IsValid())
-	{
-		return false;
-	}
-
-	EquippedStrengthEffectHandle = AppliedHandle;
-	StrengthEffectASC = SourceASC;
-	return true;
+	const auto* Model = GetOwner() ? GetOwner()->FindComponentByClass<UEquipmentStatModel>() : nullptr;
+	return Model && Model->IsEquipped(this);
 }
 
 bool ABaseItem::SetStrengthBonus(float InStrengthBonus)
 {
-	if (EquippedStrengthEffectHandle.IsValid())
-	{
-		return false;
-	}
-
-	StrengthBonus = FMath::Max(0.0f, InStrengthBonus);
-	return true;
-}
-
-bool ABaseItem::RemoveStrengthBonusEffect()
-{
-	if (!EquippedStrengthEffectHandle.IsValid())
-	{
-		StrengthEffectASC = nullptr;
-		return true;
-	}
-
-	UAbilitySystemComponent* AppliedASC = StrengthEffectASC.Get();
-	if (!IsValid(AppliedASC) || !AppliedASC->RemoveActiveGameplayEffect(EquippedStrengthEffectHandle))
-	{
-		UE_LOG(LogTemp, Warning, TEXT("ABaseItem::RemoveStrengthBonusEffect: failed to remove equipped GE handle for %s."), *GetNameSafe(this));
-		return false;
-	}
-
-	EquippedStrengthEffectHandle = FActiveGameplayEffectHandle();
-	StrengthEffectASC = nullptr;
+	if (!HasAuthority() || ItemState == EItemState::Equipped || HasActiveStrengthBonusEffect()
+		|| !FMath::IsFinite(InStrengthBonus) || InStrengthBonus < 0.f) return false;
+	StrengthBonus = InStrengthBonus;
 	return true;
 }
 
@@ -391,4 +322,16 @@ FText ABaseItem::GetItemNameText() const
 		}
 	}
 	return FText::FromString(ItemTag.ToString());
+}
+
+UEquippableWeaponDefinition* ABaseItem::GetWeaponDefinition() const
+{
+	return MyDefinition ? MyDefinition->WeaponDefinition.LoadSynchronous() : nullptr;
+}
+
+float ABaseItem::GetStrengthBonus() const
+{
+	if (const UEquippableWeaponDefinition* Weapon = GetWeaponDefinition())
+		return Weapon->CombatData ? Weapon->CombatData->StrengthBonus : 0.f;
+	return StrengthBonus;
 }

@@ -16,6 +16,7 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "GameplayCue/SWGameplayCueNotify_BurstFeedback.h"
+#include "GAS/SWGameplayEffectContext.h"
 #include "HAL/IConsoleManager.h"
 #include "MeleeEnemy/MeleeEnemy.h"
 #include "RangedEnemy/RangedEnemy.h"
@@ -269,6 +270,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FEnemyDamageGameplayCueAuthorityTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"),
+		EAutomationExpectedErrorFlags::Contains, 0);
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("EnemyDamageGameplayCueAuthorityWorld"));
 	if (!TestNotNull(TEXT("Transient game world is created"), World))
 	{
@@ -288,9 +291,17 @@ bool FEnemyDamageGameplayCueAuthorityTest::RunTest(const FString& Parameters)
 	UBaseHealthComponent* HealthComponent = Enemy->GetHealthComponent();
 	HealthComponent->InitializeWithAbilitySystem(Enemy->GetAbilitySystemComponent());
 	TestTrue(TEXT("Server authority is eligible to execute confirmed-damage cues"),
-		HealthComponent->ShouldExecuteConfirmedDamageGameplayCues(10.0f, FGameplayTag()));
+		HealthComponent->ShouldExecuteConfirmedDamageGameplayCues(
+			10.0f, ESWDamageDeliveryType::DirectHit, FGameplayTag(), FGameplayTag()));
 	TestFalse(TEXT("Zero damage never executes confirmed-damage cues"),
-		HealthComponent->ShouldExecuteConfirmedDamageGameplayCues(0.0f, FGameplayTag()));
+		HealthComponent->ShouldExecuteConfirmedDamageGameplayCues(
+			0.0f, ESWDamageDeliveryType::DirectHit, FGameplayTag(), FGameplayTag()));
+	TestFalse(TEXT("Status damage never reuses direct-hit feedback"),
+		HealthComponent->ShouldExecuteConfirmedDamageGameplayCues(
+			10.0f, ESWDamageDeliveryType::StatusTick, FGameplayTag(), FGameplayTag()));
+	TestTrue(TEXT("Status damage may execute its explicitly authored tick cue"),
+		HealthComponent->ShouldExecuteConfirmedDamageGameplayCues(
+			10.0f, ESWDamageDeliveryType::StatusTick, FGameplayTag(), GameplayCue_Status_Poison_Tick));
 
 	// The transient fixture starts with zero Health. Initialization therefore
 	// exercises the no-death-GA path synchronously.
@@ -299,7 +310,8 @@ bool FEnemyDamageGameplayCueAuthorityTest::RunTest(const FString& Parameters)
 
 	Enemy->SetRole(ROLE_SimulatedProxy);
 	TestFalse(TEXT("Simulated client cannot execute confirmed-damage cues"),
-		HealthComponent->ShouldExecuteConfirmedDamageGameplayCues(10.0f, FGameplayTag()));
+		HealthComponent->ShouldExecuteConfirmedDamageGameplayCues(
+			10.0f, ESWDamageDeliveryType::DirectHit, FGameplayTag(), FGameplayTag()));
 
 	Enemy->SetRole(ROLE_Authority);
 	World->DestroyWorld(false);

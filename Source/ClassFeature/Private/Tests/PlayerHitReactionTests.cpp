@@ -3,7 +3,9 @@
 #include "Misc/AutomationTest.h"
 
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimInstance.h"
 #include "BasePlayer.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GAS/Ability/GA_PlayerHitReaction.h"
 #include "SWCharacterMovementComponent.h"
 #include "UObject/UnrealType.h"
@@ -82,28 +84,36 @@ bool FPlayerHitReactionConfigurationTest::RunTest(const FString& Parameters)
 		&& FallbackStrengthProperty->GetPropertyValue_InContainer(HitReactionCDO) > 0.0f
 		&& FallbackDurationProperty->GetPropertyValue_InContainer(HitReactionCDO) > 0.0f);
 
-	const UClass* PlayerClass = LoadObject<UClass>(
-		nullptr,
-		TEXT("/Game/Blueprints/Player/BP_Player.BP_Player_C"));
-	if (!TestNotNull(TEXT("Player Blueprint class loads"), PlayerClass))
+	for (const TCHAR* PlayerPath : {
+		TEXT("/Game/Blueprints/Player/BP_Player_Man.BP_Player_Man_C"),
+		TEXT("/Game/Blueprints/Player/BP_Player_Woman.BP_Player_Woman_C") })
 	{
-		return false;
-	}
-
-	const ABasePlayer* PlayerCDO = PlayerClass->GetDefaultObject<ABasePlayer>();
-	if (!TestNotNull(TEXT("Player Blueprint CDO exists"), PlayerCDO))
-	{
-		return false;
-	}
-
-	const bool bGrantsHitReaction = PlayerCDO->DefaultGrantedAbilities.ContainsByPredicate(
-		[HitReactionClass](const TSubclassOf<UGameplayAbility>& GrantedAbility)
+		const UClass* PlayerClass = LoadObject<UClass>(nullptr, PlayerPath);
+		if (!TestNotNull(PlayerPath, PlayerClass))
 		{
-			return GrantedAbility.Get() == HitReactionClass;
-		});
-	TestTrue(
-		TEXT("Player grants its HitReaction ability when possessed"),
-		bGrantsHitReaction);
+			continue;
+		}
+
+		const ABasePlayer* PlayerCDO = PlayerClass->GetDefaultObject<ABasePlayer>();
+		if (!TestNotNull(TEXT("Player Blueprint CDO exists"), PlayerCDO))
+		{
+			continue;
+		}
+
+		const bool bGrantsHitReaction = PlayerCDO->DefaultGrantedAbilities.ContainsByPredicate(
+			[HitReactionClass](const TSubclassOf<UGameplayAbility>& GrantedAbility)
+			{
+				return GrantedAbility.Get() == HitReactionClass;
+			});
+		TestTrue(TEXT("Player grants its HitReaction ability when possessed"), bGrantsHitReaction);
+		const UClass* AnimClass = PlayerCDO->GetMesh()->GetAnimClass();
+		if (TestNotNull(TEXT("Player configures an AnimBP"), AnimClass))
+		{
+			TestEqual(TEXT("Player AnimBP uses networked montage root motion"),
+				AnimClass->GetDefaultObject<UAnimInstance>()->RootMotionMode.GetValue(),
+				ERootMotionMode::RootMotionFromMontagesOnly);
+		}
+	}
 
 	return !HasAnyErrors();
 }

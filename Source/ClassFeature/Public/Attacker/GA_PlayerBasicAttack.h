@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GAS/Ability/PlayerCombatGameplayAbility.h"
+#include "GAS/Ability/WeaponGameplayAbility.h"
 #include "GameplayEffectTypes.h"
 #include "GA_PlayerBasicAttack.generated.h"
 
@@ -12,7 +12,7 @@ class UAnimMontage;
 
 /** Player basic melee attack driven by montage gameplay-event notifies. */
 UCLASS()
-class CLASSFEATURE_API UGA_PlayerBasicAttack : public UPlayerCombatGameplayAbility
+class CLASSFEATURE_API UGA_PlayerBasicAttack : public UWeaponGameplayAbility
 {
 	GENERATED_BODY()
 
@@ -101,6 +101,7 @@ private:
 	TArray<FName> CachedComboSections;
 	float CachedAttackMontagePlayRate = 1.0f;
 	int32 CurrentComboIndex = INDEX_NONE;
+	int32 LastOpenedComboIndex = MIN_int32;
 	bool bComboInputBuffered = false;
 	bool bHitScanActive = false;
 	bool bAttackFinished = false;

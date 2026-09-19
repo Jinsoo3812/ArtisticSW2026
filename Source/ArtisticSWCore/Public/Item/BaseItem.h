@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -119,20 +119,18 @@ public:
 	UWeaponFeedbackComponent* GetWeaponFeedbackComponent() const { return WeaponFeedbackComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Item|Strength")
-	float GetStrengthBonus() const { return StrengthBonus; }
+	float GetStrengthBonus() const;
+
+	UFUNCTION(BlueprintPure, Category = "Item|Weapon")
+	class UEquippableWeaponDefinition* GetWeaponDefinition() const;
 
 	/** Configures generated/runtime items before equip. Active bonuses cannot be mutated in place. */
 	UFUNCTION(BlueprintCallable, Category = "Item|Strength")
 	bool SetStrengthBonus(float InStrengthBonus);
 
-	/** Server-only. Applies at most one infinite Strength effect for this item. */
-	bool ApplyStrengthBonusEffect(UAbilitySystemComponent* SourceASC, TSubclassOf<UGameplayEffect> StrengthEffectClass);
-
-	/** Server-only. Removes the exact active effect created by ApplyStrengthBonusEffect. */
-	bool RemoveStrengthBonusEffect();
-
+	/** Queries the owner model; this item never owns a GameplayEffect handle. */
 	UFUNCTION(BlueprintPure, Category = "Item|Strength")
-	bool HasActiveStrengthBonusEffect() const { return EquippedStrengthEffectHandle.IsValid(); }
+	bool HasActiveStrengthBonusEffect() const;
 
 	/* Hovering */
 protected:
@@ -162,8 +160,4 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Strength", meta = (ClampMin = "0.0"))
 	float StrengthBonus = 0.0f;
 
-	FActiveGameplayEffectHandle EquippedStrengthEffectHandle;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UAbilitySystemComponent> StrengthEffectASC;
 };

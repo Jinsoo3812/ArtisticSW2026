@@ -303,6 +303,7 @@ void USwimmingComponent::ApplySwimmingGameplayState(bool bEntering)
 		if (ABasePlayer* Player = Cast<ABasePlayer>(OwnerCharacter))
 		{
 			Player->ResetConsumableQuickSlotInputs();
+			Player->StopSprint();
 		}
 	}
 	else

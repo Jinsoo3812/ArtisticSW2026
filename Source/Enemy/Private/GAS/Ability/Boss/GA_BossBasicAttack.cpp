@@ -1,6 +1,7 @@
 #include "GAS/Ability/Boss/GA_BossBasicAttack.h"
 
 #include "AbilitySystemComponent.h"
+#include "GASAttributeDamageGameplayEffect.h"
 #include "BaseGameplayTags.h"
 #include "BossAI/BossBasicAttackSet.h"
 #include "BossAI/ShipBossEnemy.h"
@@ -53,9 +54,10 @@ bool UGA_BossBasicAttack::ResolveAttackExecutionData(
 	// Reach and damage stay authoritative in the one equipped weapon definition.
 	OutData.AttackMontage = Attack->AttackMontage;
 	OutData.AttackMontagePlayRate = Attack->AttackMontagePlayRate;
-	OutData.DamageEffectClass = WeaponDefinition.CombatData.DamageEffectClass;
+	OutData.bUseTimedHitWindow = Attack->bUseTimedHitScanWindow;
+	OutData.AttackCoefficient = WeaponDefinition.CombatData.AttackCoefficient * Attack->AttackCoefficient;
 	OutData.ImpactGameplayCueTag = WeaponDefinition.CombatData.ImpactGameplayCueTag;
-	return OutData.DamageEffectClass != nullptr;
+	return true;
 }
 
 void UGA_BossBasicAttack::OnAttackCommitted()

@@ -581,6 +581,8 @@ bool ACannonball::ApplyDamageToTarget(AActor* TargetActor)
 			false,
 			FHitResult(),
 			GetVelocity());
+	USWCombatEffectContextLibrary::SetDamageDeliveryType(
+		EffectContext, ESWDamageDeliveryType::DirectHit);
 	FGameplayEffectSpecHandle SpecHandle =
 		SourceASC->MakeOutgoingSpec(DamageGEClass, 1.0f, EffectContext);
 	if (!SpecHandle.IsValid())

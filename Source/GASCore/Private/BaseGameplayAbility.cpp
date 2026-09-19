@@ -6,6 +6,15 @@
 #include "BaseGameplayTags.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
 
+bool UBaseGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags,
+	const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
+{
+	if (!bAllowDuringControlBlock && ActorInfo && ActorInfo->AbilitySystemComponent.IsValid()
+		&& ActorInfo->AbilitySystemComponent->HasMatchingGameplayTag(State_Control_ActionsBlocked)) return false;
+	return Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
+}
+
 UBaseGameplayAbility::UBaseGameplayAbility()
 {
 	// 액터마다 하나의 Ability 인스턴스를 유지합니다.
@@ -71,6 +80,11 @@ TArray<FActiveGameplayEffectHandle> UBaseGameplayAbility::ApplyEffectToTargetDat
 		USWCombatEffectContextLibrary::MakeCombatEffectContext(
 			ASC, SourceActor, SourceActor, TargetActor, HitResult != nullptr,
 			HitResult ? *HitResult : FHitResult());
+	if (HitResult)
+	{
+		USWCombatEffectContextLibrary::SetDamageDeliveryType(
+			ContextHandle, ESWDamageDeliveryType::DirectHit);
+	}
 
 	// 적용할 GameplayEffect Spec을 생성합니다.
 	FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(EffectClass, EffectLevel, ContextHandle);

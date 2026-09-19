@@ -808,6 +808,12 @@ void AEnemyShip::BeginPlay()
 	// HealthComponent를 Ship의 ASC에 바인딩 (BaseEnemy의 패턴과 동일)
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
 	{
+		// Join the crew's GAS team before spawning them so existing friendly-fire filters apply.
+		if (HasAuthority() && !ASC->HasMatchingGameplayTag(Team_Enemy))
+		{
+			ASC->AddLooseGameplayTag(Team_Enemy);
+		}
+
 		if (HealthComponent)
 		{
 			HealthComponent->OnDeathStarted.AddUniqueDynamic(this, &AEnemyShip::OnDeathStarted);

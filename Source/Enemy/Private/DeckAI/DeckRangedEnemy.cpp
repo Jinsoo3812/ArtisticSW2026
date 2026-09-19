@@ -5,6 +5,7 @@
 #include "AIController.h"
 #include "BrainComponent.h"
 #include "Components/BaseHealthComponent.h"
+#include "Components/StatusComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -137,6 +138,11 @@ bool ADeckEnemy::ActivateFromPool(
 	DeckRandomStream.Initialize(RandomSeed);
 
 	RestoreForPoolActivation();
+	if (!IsBalanceReady())
+	{
+		DeactivateToPool();
+		return false;
+	}
 	if (!ApplyAuthoritativeDeckStart(AuthoritativeStartTransform))
 	{
 		DeactivateToPool();
@@ -210,6 +216,13 @@ void ADeckEnemy::DeactivateToPool()
 	{
 		BaseWeaponComponent->SuspendForOwnerPool();
 	}
+	if (UStatusComponent* Status = FindComponentByClass<UStatusComponent>()) Status->ClearStatuses();
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		ASC->RemoveActiveEffects(FGameplayEffectQuery());
+	}
+	ResetBalanceForReuse();
+	NextAttackTime = 0.;
 	StopDeckMovement();
 
 	bPoolActive = false;
@@ -424,6 +437,12 @@ void ADeckEnemy::RestoreForPoolActivation()
 	{
 		BaseHealth->ResetForReuse();
 	}
+	// Changing MaxHealth can clamp Health downward. Do not interpret a new pool
+	// configuration as combat damage or a death event.
+	if (GetHealthComponent()) GetHealthComponent()->UninitializeFromAbilitySystem();
+	const bool bAppliedBalance = ApplyBaseStatsForSpawn();
+	if (GetHealthComponent()) GetHealthComponent()->InitializeWithAbilitySystem(GetAbilitySystemComponent());
+	if (!bAppliedBalance) return;
 	if (USkeletalMeshComponent* CharacterMesh = GetMesh())
 	{
 		ResetLocalDeathRagdoll();

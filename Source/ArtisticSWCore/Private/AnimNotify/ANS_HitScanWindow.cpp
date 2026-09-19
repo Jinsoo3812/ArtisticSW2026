@@ -22,7 +22,7 @@ void UANS_HitScanWindow::NotifyBegin(
 {
 	// Do not call Super: this native state owns dispatch even when an existing
 	// Blueprint notify state is reparented to it. That prevents duplicate events.
-	UAN_SendGameplayEvent::SendGameplayEventToMeshOwner(MeshComp, Event_HandleScan_Start, TotalDuration);
+	UAN_SendGameplayEvent::SendGameplayEventToMeshOwner(MeshComp, Event_HandleScan_Start, TotalDuration, this);
 }
 
 void UANS_HitScanWindow::NotifyTick(
@@ -32,7 +32,7 @@ void UANS_HitScanWindow::NotifyTick(
 	const FAnimNotifyEventReference& EventReference)
 {
 	// See NotifyBegin regarding intentionally bypassing Blueprint Received events.
-	UAN_SendGameplayEvent::SendGameplayEventToMeshOwner(MeshComp, Event_HandleScan_Tick, FrameDeltaTime);
+	UAN_SendGameplayEvent::SendGameplayEventToMeshOwner(MeshComp, Event_HandleScan_Tick, FrameDeltaTime, this);
 }
 
 void UANS_HitScanWindow::NotifyEnd(
@@ -41,7 +41,7 @@ void UANS_HitScanWindow::NotifyEnd(
 	const FAnimNotifyEventReference& EventReference)
 {
 	// See NotifyBegin regarding intentionally bypassing Blueprint Received events.
-	UAN_SendGameplayEvent::SendGameplayEventToMeshOwner(MeshComp, Event_HandleScan_End);
+	UAN_SendGameplayEvent::SendGameplayEventToMeshOwner(MeshComp, Event_HandleScan_End, 0.f, this);
 }
 
 FString UANS_HitScanWindow::GetNotifyName_Implementation() const

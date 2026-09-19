@@ -37,27 +37,6 @@ struct FArrowImpactPresentationData
 };
 
 USTRUCT(BlueprintType)
-struct FArrowDamageEffect
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage")
-	TSubclassOf<UGameplayEffect> DamageEffectClass;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage", meta = (ClampMin = "0.0"))
-	float BaseDamage = 0.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage")
-	bool bScaleWithCharge = true;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage")
-	bool bCanCrit = true;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage", meta = (ClampMin = "1"))
-	int32 EffectLevel = 1;
-};
-
-USTRUCT(BlueprintType)
 struct FArrowStatusEffect
 {
 	GENERATED_BODY()
@@ -77,39 +56,15 @@ struct FArrowDamageData
 {
 	GENERATED_BODY()
 
-	/** Common direct-damage GE. The firing ability snapshots Strength into its spec. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage")
-	TSubclassOf<UGameplayEffect> DirectDamageEffectClass;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage", meta = (ClampMin = "0.0"))
 	float AttackCoefficient = 1.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage", meta = (ClampMin = "1"))
 	int32 DirectDamageEffectLevel = 1;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage", meta = (DeprecatedProperty, DeprecationMessage = "Use DirectDamageEffectClass and AttackCoefficient."))
-	TArray<FArrowDamageEffect> DamageEffects;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage")
-	FGameplayTag ElementType;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage")
-	FGameplayTagContainer DamageTags;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float CritChance = 0.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage", meta = (ClampMin = "1.0"))
-	float CritMultiplier = 1.5f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage", meta = (ClampMin = "0"))
-	int32 PierceCount = 0;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Status")
 	TArray<FArrowStatusEffect> StatusEffects;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage", meta = (DeprecatedProperty, DeprecationMessage = "Use StatusEffects instead."))
-	TArray<TSubclassOf<UGameplayEffect>> StatusEffectClasses;
 };
 
 UCLASS()
@@ -132,6 +87,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arrow")
 	void IgnoreActorForMovement(AActor* ActorToIgnore);
 
+	/** Tests the actual collision box/profile, honoring owner and weapon movement ignores. */
+	bool IsLaunchLocationBlocked() const;
+
 	/** Copies this projectile's authored mesh, materials, and relative transform to a presentation component. */
 	bool ApplyVisualTo(UStaticMeshComponent* TargetMesh) const;
 
@@ -145,16 +103,10 @@ public:
 	FVector GetCollisionHalfExtent() const { return CollisionHalfExtent; }
 
 	UFUNCTION(BlueprintCallable, Category = "Arrow")
-	void InitializeStrengthDamage(
+	bool InitializeStrengthDamage(
 		UAbilitySystemComponent* InSourceASC,
 		AActor* InInstigatorActor,
 		const FGameplayEffectSpecHandle& InDirectDamageSpec);
-
-	UFUNCTION(BlueprintCallable, Category = "Arrow", meta = (DeprecatedFunction, DeprecationMessage = "Use InitializeStrengthDamage with a launch-time Strength damage spec."))
-	void InitializeDamage(UAbilitySystemComponent* InSourceASC, AActor* InInstigatorActor, float InChargeDamageMultiplier);
-
-	UFUNCTION(BlueprintPure, Category = "Arrow|Damage")
-	TSubclassOf<UGameplayEffect> GetDirectDamageEffectClass() const;
 
 	UFUNCTION(BlueprintPure, Category = "Arrow|Damage")
 	float GetAttackCoefficient() const { return DamageData.AttackCoefficient; }
@@ -176,12 +128,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arrow|Debug")
 	bool IsTeamDamageFilteringEnabled() const { return bEnableTeamDamageFiltering; }
 
-	UFUNCTION(BlueprintCallable, Category = "Arrow", meta = (DeprecatedFunction, DeprecationMessage = "Use InitializeStrengthDamage."))
-	void SetDamageEffectSpecHandle(const FGameplayEffectSpecHandle& InDamageEffectSpecHandle);
-
-	UFUNCTION(BlueprintCallable, Category = "Arrow", meta = (DeprecatedFunction, DeprecationMessage = "Strength MVP uses one direct damage spec."))
-	void SetAdditionalDamageEffectSpecHandles(const TArray<FGameplayEffectSpecHandle>& InAdditionalDamageEffectSpecHandles);
-
 	UFUNCTION(NetMulticast, Unreliable, BlueprintCallable, Category = "Arrow",
 		meta = (DeprecatedFunction, DeprecationMessage = "Use the compact impact presentation pipeline."))
 	void Multicast_PlayImpactFX(const FHitResult& Hit);
@@ -201,7 +147,7 @@ protected:
 		UPrimitiveComponent* OtherComp,
 		const FHitResult& Hit) const;
 	void BuildStatusEffectSpecs();
-	void ApplyDamageToActor(AActor* TargetActor, const FHitResult& HitResult);
+	bool ApplyDamageToActor(AActor* TargetActor, const FHitResult& HitResult);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arrow")
 	void K2_OnImpactFX(const FHitResult& Hit);
@@ -215,10 +161,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage")
 	FArrowDamageData DamageData;
 
-	UPROPERTY(BlueprintReadWrite, meta = (ExposeOnSpawn = "true"), Category = "GAS")
-	TArray<FGameplayEffectSpecHandle> DamageEffectSpecHandles;
+	FGameplayEffectSpecHandle DirectDamageSpec;
 
-	UPROPERTY(BlueprintReadWrite, meta = (ExposeOnSpawn = "true"), Category = "GAS")
 	TArray<FGameplayEffectSpecHandle> StatusEffectSpecHandles;
 
 	UPROPERTY(Transient)
@@ -233,8 +177,6 @@ protected:
 	UPROPERTY(Transient)
 	TArray<TWeakObjectPtr<AActor>> MovementIgnoredActors;
 
-	/** Guarantees one direct/status application per target even for piercing arrows. */
-	TSet<TWeakObjectPtr<AActor>> AppliedActors;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Movement", meta = (ClampMin = "0.0"))
 	float FlightGravityScale = 0.0f;
