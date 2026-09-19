@@ -735,6 +735,16 @@ void ABasePlayer::PossessedBy(AController* NewController)
 
 void ABasePlayer::UnPossessed()
 {
+	// Interaction scanning belongs to the on-foot player pawn. When control moves
+	// to a ship or cannon, clear the last prompt before this pawn loses access to
+	// its player controller and stop the timer until PawnClientRestart resumes it.
+	if (ABasePlayerController* PlayerController = GetController<ABasePlayerController>())
+	{
+		PlayerController->HideInteractionPrompt();
+	}
+
+	GetWorldTimerManager().ClearTimer(InteractionScanTimerHandle);
+
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->ResetLocomotionActionState(TEXT("PlayerUnPossessed"));
@@ -1924,6 +1934,15 @@ bool ABasePlayer::PerformInteractTrace(TArray<FHitResult>& OutHitResults) const
 
 void ABasePlayer::PerformInteractionScan()
 {
+	// A replicated possession change can detach the local controller without
+	// calling this pawn's UnPossessed override on the client. Let the old pawn's
+	// scan timer shut itself down instead of polling throughout ship/cannon use.
+	if (!IsLocallyControlled())
+	{
+		GetWorldTimerManager().ClearTimer(InteractionScanTimerHandle);
+		return;
+	}
+
 	TArray<FHitResult> HitResults;
 	PerformInteractTrace(HitResults);
 
