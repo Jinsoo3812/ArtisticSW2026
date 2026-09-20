@@ -9,6 +9,10 @@ MPC_PATH = "/Game/Blueprints/Water/MPC_Water_Custom"
 MASK_PATH = "/Game/Blueprints/Water/Culling/VT_SW_ShipCabinMask"
 DATA_PATH = "/Game/Blueprints/Water/Culling/DA_SW_ShipCabinWaterCull"
 CUSTOM_TOKEN = "Texture3DSampleLevel(CabinMask"
+BLUEPRINT_PATHS = (
+    "/Game/Blueprints/Ship/Blueprints/BP_PlayerShip_Kelvin",
+    "/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_EnemyShip",
+)
 
 
 def prop(obj, name, default=None):
@@ -36,8 +40,10 @@ def main():
     if data.get_editor_property("mask_texture") != mask:
         raise RuntimeError("Cull Data Asset does not reference the baked Volume Texture")
     resolution = data.get_editor_property("resolution")
-    if (resolution.x, resolution.y, resolution.z) != (359, 141, 298):
+    if (resolution.x, resolution.y, resolution.z) != (387, 135, 284):
         raise RuntimeError("Unexpected baked resolution: {}".format(resolution))
+    if abs(data.get_editor_property("voxel_size_cm") - 10.0) > 0.01:
+        raise RuntimeError("Unexpected baked voxel size")
 
     scalar_names = {str(p.get_editor_property("parameter_name"))
                     for p in mpc.get_editor_property("scalar_parameters")}
@@ -94,6 +100,12 @@ def main():
             break
     if not connected:
         raise RuntimeError("Cull mask is not connected to final material attributes")
+
+    for path in BLUEPRINT_PATHS:
+        blueprint = unreal.load_asset(path)
+        if blueprint is None:
+            raise RuntimeError("Missing ship Blueprint: {}".format(path))
+        unreal.log("SW_CABIN_CULL_BLUEPRINT_LOAD=PASS path={}".format(path))
 
     unreal.MaterialEditingLibrary.recompile_material(material)
     unreal.log("SW_CABIN_CULL_VALIDATION=PASS")
