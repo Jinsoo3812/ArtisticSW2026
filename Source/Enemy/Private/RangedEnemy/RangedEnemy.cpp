@@ -238,10 +238,37 @@ bool ARangedEnemy::TraceLineOfSight(const AActor* Candidate, FHitResult* OutHit)
 		return false;
 	}
 
-	const FVector Start = ArrowSpawnTransform.GetLocation();
-	const FVector End = GetRangedAimLocation(Candidate);
+	return TraceLineOfSightFrom(
+		Candidate,
+		ArrowSpawnTransform.GetLocation(),
+		GetRangedAimLocation(Candidate),
+		false,
+		OutHit);
+}
+
+bool ARangedEnemy::TraceLineOfSightFrom(
+	const AActor* Candidate,
+	const FVector& Start,
+	const FVector& End,
+	const bool bDrawDebug,
+	FHitResult* OutHit) const
+{
+	if (!IsValidCombatTarget(Candidate) || !GetWorld()
+		|| Start.ContainsNaN() || End.ContainsNaN())
+	{
+		if (OutHit)
+		{
+			*OutHit = FHitResult();
+		}
+		return false;
+	}
+
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RangedEnemyAttackLOS), true, this);
 	QueryParams.AddIgnoredActor(this);
+	if (const AEnemyBow* Bow = GetEquippedBow())
+	{
+		QueryParams.AddIgnoredActor(Bow);
+	}
 	if (HostShip)
 	{
 		QueryParams.AddIgnoredActor(HostShip);
@@ -255,7 +282,7 @@ bool ARangedEnemy::TraceLineOfSight(const AActor* Candidate, FHitResult* OutHit)
 		*OutHit = Hit;
 	}
 
-	if (bDrawAttackLineOfSight)
+	if (bDrawDebug)
 	{
 		DrawDebugLine(GetWorld(), Start, End, bVisible ? FColor::Green : FColor::Red, false, 0.25f, 0, 2.0f);
 	}
@@ -482,18 +509,47 @@ FVector ARangedEnemy::GetRangedAimLocation(const AActor* TargetActor) const
 		: FVector::ZeroVector;
 }
 
+ERangedShotSnapshotResult ARangedEnemy::BuildRangedShotSnapshot(
+	const AActor* TargetActor,
+	FTransform& OutSpawnTransform,
+	FVector& OutAimLocation,
+	FHitResult* OutHit) const
+{
+	OutSpawnTransform = FTransform::Identity;
+	OutAimLocation = FVector::ZeroVector;
+	if (OutHit)
+	{
+		*OutHit = FHitResult();
+	}
+
+	FString RejectionReason;
+	if (!EvaluateAttackTarget(TargetActor, false, RejectionReason))
+	{
+		return ERangedShotSnapshotResult::InvalidTargetOrRange;
+	}
+	if (!GetRangedAttackOrigin(OutSpawnTransform))
+	{
+		return ERangedShotSnapshotResult::MissingAttackOrigin;
+	}
+
+	OutAimLocation = GetRangedAimLocation(TargetActor);
+	return TraceLineOfSightFrom(
+		TargetActor,
+		OutSpawnTransform.GetLocation(),
+		OutAimLocation,
+		bDrawAttackLineOfSight,
+		OutHit)
+		? ERangedShotSnapshotResult::Ready
+		: ERangedShotSnapshotResult::BlockedLineOfSight;
+}
+
 UAnimMontage* ARangedEnemy::GetRangedAttackMontage() const
 {
 	const UBaseWeaponComponent* EquippedWeaponComponent = GetWeaponComponent();
 	const FWeaponDefinition* WeaponDefinition = EquippedWeaponComponent
 		? EquippedWeaponComponent->GetCurrentWeaponDefinition()
 		: nullptr;
-	if (WeaponDefinition && WeaponDefinition->CombatData.AttackMontage)
-	{
-		return WeaponDefinition->CombatData.AttackMontage;
-	}
-
-	return AttackMontage;
+	return WeaponDefinition ? WeaponDefinition->CombatData.AttackMontage : nullptr;
 }
 
 float ARangedEnemy::GetRangedAttackMontagePlayRate() const

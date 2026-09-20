@@ -38,6 +38,15 @@ float ADeckEnemy::GetPreferredDeckCombatRange() const
 		: (GetMinAttackRange() + GetMaxAttackRange()) * 0.5f;
 }
 
+void ADeckEnemy::HandleRangedReleaseLineOfSightBlocked(AActor* TargetActor)
+{
+	if (HasAuthority() && DeckCombatRole == EDeckEnemyCombatRole::Ranged
+		&& DeckEnemyNavigationComponent)
+	{
+		DeckEnemyNavigationComponent->RequestReleaseLineOfSightReposition(TargetActor);
+	}
+}
+
 bool ADeckEnemy::CanMoveOnDeck() const
 {
 	return HasAuthority() && bPoolActive && !bDeathHandled && IsValid(GetDeckHostShip());
@@ -265,6 +274,10 @@ void ADeckEnemy::MarkGoalDeckWaypointReached()
 	PreviousDeckWaypointId = CurrentDeckWaypointId;
 	CurrentDeckWaypointId = GoalDeckWaypointId;
 	GoalDeckWaypointId = INDEX_NONE;
+	if (DeckEnemyNavigationComponent)
+	{
+		DeckEnemyNavigationComponent->CompleteReleaseLineOfSightReposition();
+	}
 	ForceNetUpdate();
 }
 
@@ -308,6 +321,10 @@ void ADeckEnemy::OnDeckMoveFailed()
 		GoalPointReservation.Reset();
 	}
 	GoalDeckWaypointId = INDEX_NONE;
+	if (DeckEnemyNavigationComponent)
+	{
+		DeckEnemyNavigationComponent->CompleteReleaseLineOfSightReposition();
+	}
 	ForceNetUpdate();
 }
 
