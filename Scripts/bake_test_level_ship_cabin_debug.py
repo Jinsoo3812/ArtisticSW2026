@@ -4,7 +4,7 @@ import unreal
 
 
 LEVEL = "/Game/Level/Mesh_Test"
-SHIP_LABEL = "SM_Ship_Visual"
+SHIP_LABEL = "SM_Ship_Culling"
 SEED_LABEL = "Point_Light_Culling"
 BARRIER_FOLDER = "Barrier"
 MPC_PATH = "/Game/Blueprints/Water/MPC_Water_Custom"
@@ -13,6 +13,7 @@ BLUEPRINT_PATHS = (
     "/Game/Blueprints/Ship/Blueprints/BP_PlayerShip_Kelvin",
     "/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_EnemyShip",
 )
+PREVIOUS_AUTHORING_ORIGIN = unreal.Vector(-6490.0, 9580.0, 14880.0)
 
 
 def set_tag(actor, tag, enabled):
@@ -82,6 +83,28 @@ def prepare_bake_actors():
         ]
         unreal.log_error("SW_CABIN_BARRIER_CANDIDATES {}".format(candidates))
         raise RuntimeError("No StaticMeshActors were found in the Barrier folder")
+
+    ship_location = ships[0].get_actor_location()
+    barrier_center = unreal.Vector(
+        sum(actor.get_actor_location().x for actor in barriers) / len(barriers),
+        sum(actor.get_actor_location().y for actor in barriers) / len(barriers),
+        sum(actor.get_actor_location().z for actor in barriers) / len(barriers),
+    )
+
+    def distance_squared(left, right):
+        return ((left.x - right.x) ** 2
+                + (left.y - right.y) ** 2
+                + (left.z - right.z) ** 2)
+
+    if (distance_squared(ship_location, PREVIOUS_AUTHORING_ORIGIN) > 1.0
+            and distance_squared(barrier_center, PREVIOUS_AUTHORING_ORIGIN)
+            < distance_squared(barrier_center, ship_location)):
+        offset = ship_location - PREVIOUS_AUTHORING_ORIGIN
+        for actor in barriers + seeds:
+            actor.set_actor_location(
+                actor.get_actor_location() + offset, sweep=False, teleport=False)
+        unreal.log_warning(
+            "SW_CABIN_AUTHORING_ACTORS_MOVED offset={}".format(offset))
 
     ship_component = ships[0].static_mesh_component
     mesh = ship_component.get_editor_property("static_mesh")
