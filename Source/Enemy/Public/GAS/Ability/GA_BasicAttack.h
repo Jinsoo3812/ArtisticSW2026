@@ -20,7 +20,8 @@ struct FEnemyBasicAttackExecutionData
 {
 	TObjectPtr<UAnimMontage> AttackMontage = nullptr;
 	float AttackMontagePlayRate = 1.0f;
-	TSubclassOf<UGameplayEffect> DamageEffectClass = nullptr;
+	float AttackCoefficient = 1.f;
+	bool bUseTimedHitWindow = false;
 	FGameplayTag ImpactGameplayCueTag;
 };
 
@@ -94,6 +95,12 @@ protected:
 		ABaseEnemy* EnemyOwner,
 		FEnemyBasicAttackExecutionData& OutData);
 	virtual bool PlayAttackMontage(const FEnemyBasicAttackExecutionData& AttackData);
+	FEnemyBasicAttackExecutionData CachedExecutionData;
+	bool bOpenedAttackWindow = false;
+	TSet<TWeakObjectPtr<const UObject>> OpenedWindowSources;
+	TWeakObjectPtr<const UObject> ActiveWindowSource;
+	uint8 PreviousAnimTickOption = 0;
+	bool bPoseRefreshAcquired = false;
 	void StartHitScan();
 	void EndHitScan();
 	void AddAttackStateTag();

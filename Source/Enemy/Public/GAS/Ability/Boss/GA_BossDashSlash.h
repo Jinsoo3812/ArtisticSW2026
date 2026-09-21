@@ -187,11 +187,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash", meta = (ClampMin = "1.0", Units = "cm"))
 	float DashHitRadius = 120.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash", meta = (ClampMin = "0.0"))
-	float Damage = 20.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash")
-	TSubclassOf<UGameplayEffect> DamageEffectClass;
+	UPROPERTY(EditDefaultsOnly, Category="Damage", meta=(ClampMin="0.001"))
+	float AttackCoefficient = 2.0f;
 
 	/** Reusable path presentation policy. GameplayEffect classes own cue tags and lifetime. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Dash|Presentation")
@@ -241,7 +238,6 @@ protected:
 	uint8 CachedCustomMovementMode = 0;
 	float CachedMaxWalkSpeed = 0.0f;
 	int32 NextPathInstanceId = 0;
-	TSet<TWeakObjectPtr<AActor>> HitActorsThisDash;
 	TEnumAsByte<ECollisionResponse> CachedPawnCollisionResponse = ECR_Block;
 	EDashSlashPhase Phase = EDashSlashPhase::Inactive;
 	bool bDashStarted = false;

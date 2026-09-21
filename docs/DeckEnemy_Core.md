@@ -237,9 +237,40 @@ Deck Combat의 기본 구조:
 
 ```text
 Root Selector
+├─ Release-LOS Reposition
 ├─ Attack
-└─ Reposition
+└─ Normal Reposition
 ```
+
+`Release-LOS Reposition`은 원거리 공격 Montage의 발사 Notify 시점에 LOS가
+막힌 경우에만 활성화되는 갑판형 원거리 적 전용 분기다.
+
+```text
+Sequence  [Has Deck Release LOS Reposition, TargetActor]
+├─ Select Deck Waypoint
+│    Selection Mode = ReleaseLineOfSightReposition
+└─ Move To Live Deck Waypoint
+```
+
+이 분기는 Attack보다 높은 우선순위에 둔다. Decorator의 `Observer Aborts`는
+`None`으로 둔다. 이동 목적지는 현재 Point에 직접 연결된 Combat Point 중에서
+선택하며, 직전에 지나온 Point는 제외한다. 후보 Point별 LOS 검사는 수행하지 않는다.
+
+후보 Point가 잠시 모두 점유된 상황에서도 공격 분기로 바로 내려가지 않게 하려면
+다음과 같이 짧은 재시도 대기를 둔다.
+
+```text
+Sequence  [Has Deck Release LOS Reposition]
+└─ Selector
+   ├─ Sequence
+   │  ├─ Select Deck Waypoint (ReleaseLineOfSightReposition)
+   │  └─ Move To Live Deck Waypoint
+   └─ Wait (0.2s)
+```
+
+이동은 목적지까지 강제되지 않는다. `Move To Live Deck Waypoint`가 이동 중 LOS
+회복을 확인하면 기존과 동일하게 이동을 끝내고 Root를 다시 평가하여 Attack으로
+전환한다. 목적지 도착, 이동 실패, Abort, 사망 또는 Pool 복귀 시 요청은 제거된다.
 
 ### Attack
 

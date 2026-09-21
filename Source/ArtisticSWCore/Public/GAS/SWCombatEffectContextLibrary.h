@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GAS/SWGameplayEffectContext.h"
 #include "GameplayEffectTypes.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "SWCombatEffectContextLibrary.generated.h"
@@ -38,6 +39,15 @@ public:
 		FVector& OutImpactDirection);
 
 	UFUNCTION(BlueprintCallable, Category = "GAS|Combat|Context")
+	static FGameplayEffectContextHandle SetDamageDeliveryType(
+		FGameplayEffectContextHandle ContextHandle,
+		ESWDamageDeliveryType DeliveryType);
+
+	UFUNCTION(BlueprintPure, Category = "GAS|Combat|Context")
+	static ESWDamageDeliveryType GetDamageDeliveryType(
+		const FGameplayEffectContextHandle& ContextHandle);
+
+	UFUNCTION(BlueprintCallable, Category = "GAS|Combat|Context")
 	static FGameplayEffectContextHandle SetPathCuePayload(
 		FGameplayEffectContextHandle ContextHandle,
 		const FSWPathCuePayload& PathPayload);
@@ -68,5 +78,6 @@ public:
 		AActor* EffectCauser,
 		AActor* TargetActor,
 		const FHitResult* HitResult = nullptr,
-		const FVector& ExplicitImpactDirection = FVector::ZeroVector);
+		const FVector& ExplicitImpactDirection = FVector::ZeroVector,
+		ESWDamageDeliveryType DeliveryType = ESWDamageDeliveryType::DirectHit);
 };

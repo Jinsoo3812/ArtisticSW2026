@@ -5,6 +5,7 @@
 #include "AIController.h"
 #include "BrainComponent.h"
 #include "Components/BaseHealthComponent.h"
+#include "Components/StatusComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -35,6 +36,15 @@ float ADeckEnemy::GetPreferredDeckCombatRange() const
 	return DeckCombatRole == EDeckEnemyCombatRole::Melee
 		? 0.0f
 		: (GetMinAttackRange() + GetMaxAttackRange()) * 0.5f;
+}
+
+void ADeckEnemy::HandleRangedReleaseLineOfSightBlocked(AActor* TargetActor)
+{
+	if (HasAuthority() && DeckCombatRole == EDeckEnemyCombatRole::Ranged
+		&& DeckEnemyNavigationComponent)
+	{
+		DeckEnemyNavigationComponent->RequestReleaseLineOfSightReposition(TargetActor);
+	}
 }
 
 bool ADeckEnemy::CanMoveOnDeck() const
@@ -137,6 +147,11 @@ bool ADeckEnemy::ActivateFromPool(
 	DeckRandomStream.Initialize(RandomSeed);
 
 	RestoreForPoolActivation();
+	if (!IsBalanceReady())
+	{
+		DeactivateToPool();
+		return false;
+	}
 	if (!ApplyAuthoritativeDeckStart(AuthoritativeStartTransform))
 	{
 		DeactivateToPool();
@@ -210,6 +225,13 @@ void ADeckEnemy::DeactivateToPool()
 	{
 		BaseWeaponComponent->SuspendForOwnerPool();
 	}
+	if (UStatusComponent* Status = FindComponentByClass<UStatusComponent>()) Status->ClearStatuses();
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		ASC->RemoveActiveEffects(FGameplayEffectQuery());
+	}
+	ResetBalanceForReuse();
+	NextAttackTime = 0.;
 	StopDeckMovement();
 
 	bPoolActive = false;
@@ -252,6 +274,10 @@ void ADeckEnemy::MarkGoalDeckWaypointReached()
 	PreviousDeckWaypointId = CurrentDeckWaypointId;
 	CurrentDeckWaypointId = GoalDeckWaypointId;
 	GoalDeckWaypointId = INDEX_NONE;
+	if (DeckEnemyNavigationComponent)
+	{
+		DeckEnemyNavigationComponent->CompleteReleaseLineOfSightReposition();
+	}
 	ForceNetUpdate();
 }
 
@@ -295,6 +321,10 @@ void ADeckEnemy::OnDeckMoveFailed()
 		GoalPointReservation.Reset();
 	}
 	GoalDeckWaypointId = INDEX_NONE;
+	if (DeckEnemyNavigationComponent)
+	{
+		DeckEnemyNavigationComponent->CompleteReleaseLineOfSightReposition();
+	}
 	ForceNetUpdate();
 }
 
@@ -424,6 +454,12 @@ void ADeckEnemy::RestoreForPoolActivation()
 	{
 		BaseHealth->ResetForReuse();
 	}
+	// Changing MaxHealth can clamp Health downward. Do not interpret a new pool
+	// configuration as combat damage or a death event.
+	if (GetHealthComponent()) GetHealthComponent()->UninitializeFromAbilitySystem();
+	const bool bAppliedBalance = ApplyBaseStatsForSpawn();
+	if (GetHealthComponent()) GetHealthComponent()->InitializeWithAbilitySystem(GetAbilitySystemComponent());
+	if (!bAppliedBalance) return;
 	if (USkeletalMeshComponent* CharacterMesh = GetMesh())
 	{
 		ResetLocalDeathRagdoll();

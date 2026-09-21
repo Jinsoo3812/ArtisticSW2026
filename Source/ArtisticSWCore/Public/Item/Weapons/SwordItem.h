@@ -47,13 +47,7 @@ public:
 	USceneComponent* GetTraceEndPoint() const { return TraceEndPoint; }
 
 	UFUNCTION(BlueprintPure, Category = "Sword|Damage")
-	TSubclassOf<UGameplayEffect> GetDamageEffectClass() const { return DamageEffectClass; }
-
-	UFUNCTION(BlueprintPure, Category = "Sword|Damage")
-	float GetAttackCoefficient() const { return AttackCoefficient; }
-
-	UFUNCTION(BlueprintPure, Category = "Sword|Damage", meta = (DeprecatedFunction, DeprecationMessage = "Strength attacks use UGASCombatLibrary::CalculateStrengthDamage."))
-	float CalculateDamage(float AttackPower) const;
+	float GetAttackCoefficient() const;
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sword|Trace")
@@ -64,6 +58,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Trace")
 	TArray<TEnumAsByte<EObjectTypeQuery>> TraceObjectTypes;
+
+	/** Adds animation-driven PhysicsAsset hurtboxes to this weapon's authored object query. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Trace")
+	bool bIncludeAnimatedCombatHurtboxes = true;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Trace", meta = (ClampMin = "0.1"))
 	float TraceRadius = 12.0f;
@@ -77,22 +75,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Trace")
 	bool bIgnoreSameTeam = true;
 
-	/** Optional override. The player ability supplies a native default when this is unset. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Damage")
-	TSubclassOf<UGameplayEffect> DamageEffectClass;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Damage", meta = (ClampMin = "0.0"))
 	float AttackCoefficient = 1.0f;
 
 	/** Applied after direct damage, once per target in an attack window. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Status")
 	TArray<TSubclassOf<UGameplayEffect>> StatusEffectClasses;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Damage", meta = (ClampMin = "0.0", DeprecatedProperty, DeprecationMessage = "Unused by Strength-based attacks."))
-	float BaseDamage = 10.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sword|Damage", meta = (ClampMin = "0.0", DeprecatedProperty, DeprecationMessage = "Use AttackCoefficient."))
-	float AttackPowerMultiplier = 1.0f;
 
 private:
 	void TraceSegment(const FVector& Start, const FVector& End);
@@ -106,7 +94,6 @@ private:
 
 	FGameplayEffectSpecHandle CachedDamageEffectSpecHandle;
 	TArray<FGameplayEffectSpecHandle> CachedStatusEffectSpecHandles;
-	TSet<TWeakObjectPtr<AActor>> HitActors;
 	FVector PreviousTraceStart = FVector::ZeroVector;
 	FVector PreviousTraceEnd = FVector::ZeroVector;
 	bool bHasPreviousTracePoints = false;

@@ -10,6 +10,14 @@ class AEnemyBow;
 class AShip;
 class UAnimMontage;
 
+enum class ERangedShotSnapshotResult : uint8
+{
+	Ready,
+	InvalidTargetOrRange,
+	MissingAttackOrigin,
+	BlockedLineOfSight
+};
+
 /**
  * Stationary ranged-enemy MVP that can fight independently on ground or use
  * an optional moving Ship as its movement/lifecycle host. Ship navigation and
@@ -71,6 +79,16 @@ public:
 	bool GetRangedAttackOrigin(FTransform& OutSpawnTransform) const;
 	FName GetRangedAttackSocketName() const { return RangedAttackSocketName; }
 	FVector GetRangedAimLocation(const AActor* TargetActor) const;
+	/**
+	 * Revalidates range and LOS at the release frame, then captures the exact
+	 * socket/target pair that must be reused by projectile spawning.
+	 */
+	ERangedShotSnapshotResult BuildRangedShotSnapshot(
+		const AActor* TargetActor,
+		FTransform& OutSpawnTransform,
+		FVector& OutAimLocation,
+		FHitResult* OutHit = nullptr) const;
+	virtual void HandleRangedReleaseLineOfSightBlocked(AActor* TargetActor) {}
 	void AcquireServerRangedAttackPoseRefresh();
 	void ReleaseServerRangedAttackPoseRefresh();
 
@@ -103,6 +121,12 @@ protected:
 	AShip* FindShipInActorHierarchy(AActor* Actor) const;
 	bool EvaluateAttackTarget(const AActor* Candidate, bool bRequireLineOfSight, FString& OutReason) const;
 	bool TraceLineOfSight(const AActor* Candidate, FHitResult* OutHit = nullptr) const;
+	bool TraceLineOfSightFrom(
+		const AActor* Candidate,
+		const FVector& Start,
+		const FVector& End,
+		bool bDrawDebug,
+		FHitResult* OutHit = nullptr) const;
 
 protected:
 	UPROPERTY(ReplicatedUsing = OnRep_HostShip, EditInstanceOnly, BlueprintReadOnly, Category = "Ranged Enemy|Ship")
@@ -141,13 +165,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat")
 	FName RangedAttackSocketName = TEXT("Arrow_socket");
 
-	/** Compatibility fallback. Prefer WeaponDefinition.CombatData.AttackMontage. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Animation")
-	TObjectPtr<UAnimMontage> AttackMontage = nullptr;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Animation")
 	FGameplayTag FireEventTag;
 
+	/** Draws only the release-frame LOS that is reused for the actual projectile spawn. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Debug")
 	bool bDrawAttackLineOfSight = false;
 

@@ -11,7 +11,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "GASDamageInstantGameplayEffect.h"
+#include "GASAttributeDamageGameplayEffect.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
 #include "GameplayCue/PathCombatPresentationDataAsset.h"
 #include "ShipAI/EnemyShip.h"
@@ -38,7 +38,6 @@ UGA_BossDashSlash::UGA_BossDashSlash()
 {
 	SetBossAbilityTags(GameplayAbility_Boss_DashSlash, Cooldown_Boss_DashSlash);
 	CooldownDuration = 5.0f;
-	DamageEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
 	ImpactGameplayCueTag = GameplayCue_Impact_Boss_DashSlash;
 }
 
@@ -71,7 +70,6 @@ void UGA_BossDashSlash::ActivateAbility(
 	bSlashFinished = false;
 	bDestinationReached = false;
 	bFinishing = false;
-	HitActorsThisDash.Reset();
 	CapturedDeckMesh.Reset();
 	CapturedDestinationPointId = INDEX_NONE;
 	CommittedPath = FSWPathCuePayload();
@@ -107,6 +105,9 @@ void UGA_BossDashSlash::ActivateAbility(
 		return;
 	}
 
+	const AShipBossEnemy* BalanceBoss = GetBossAvatar();
+	const float BalancedCoefficient = BalanceBoss ? BalanceBoss->GetBalancedBossAttackCoefficient(AttackCoefficient, true) : AttackCoefficient;
+	if (!PrepareStrengthAttack(BalancedCoefficient)) { FinishDash(true); return; }
 	MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
 		this,
 		TEXT("BossDashSlashMontage"),
@@ -182,7 +183,6 @@ void UGA_BossDashSlash::EndAbility(
 	RestoreMovementAfterAbility();
 	MontageTask = nullptr;
 	DashStartServerTime = 0.0;
-	HitActorsThisDash.Reset();
 	CapturedDeckMesh.Reset();
 	CapturedDestinationPointId = INDEX_NONE;
 	CommittedPath = FSWPathCuePayload();
@@ -208,7 +208,10 @@ void UGA_BossDashSlash::BeginWindupHold()
 		FinishDash(true);
 		return;
 	}
-	if (MontageConfig.WindupHoldDuration <= KINDA_SMALL_NUMBER)
+	const float LeadIn = GetSectionDurationSeconds(MontageConfig.WindupEnterSectionName);
+	const float HoldDuration = FMath::Max(0.f,
+		Boss->GetBalancedTelegraphDuration(LeadIn + MontageConfig.WindupHoldDuration) - LeadIn);
+	if (HoldDuration <= KINDA_SMALL_NUMBER)
 	{
 		ReleaseWindupAndBeginDash();
 		return;
@@ -218,7 +221,7 @@ void UGA_BossDashSlash::BeginWindupHold()
 		WindupHoldTimerHandle,
 		this,
 		&UGA_BossDashSlash::ReleaseWindupAndBeginDash,
-		MontageConfig.WindupHoldDuration,
+		HoldDuration,
 		false);
 }
 
@@ -278,7 +281,6 @@ void UGA_BossDashSlash::BeginDash()
 	Movement->SetBase(DeckMesh);
 	PreviousWorldLocation = StartWorld;
 	DashStartServerTime = Boss->GetWorld()->GetTimeSeconds();
-	HitActorsThisDash.Reset();
 	ActivateDashCollision();
 
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
@@ -419,16 +421,12 @@ void UGA_BossDashSlash::HandleDashOverlap(
 void UGA_BossDashSlash::TryApplyDashDamage(AActor* Target, const FHitResult& HitResult)
 {
 	AShipBossEnemy* Boss = GetBossAvatar();
-	if (!Boss || !Boss->HasAuthority() || !Boss->CanEngageActor(Target)
-		|| HitActorsThisDash.Contains(Target))
+	if (!Boss || !Boss->HasAuthority() || !Boss->CanEngageActor(Target))
 	{
 		return;
 	}
 
-	if (ApplyDamageToTarget(Target, DamageEffectClass, Damage, &HitResult))
-	{
-		HitActorsThisDash.Add(Target);
-	}
+	ApplyDamageToTarget(Target, &HitResult);
 }
 
 void UGA_BossDashSlash::HandleDestinationReached()

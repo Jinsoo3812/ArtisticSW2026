@@ -1,7 +1,8 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Weapon/BaseWeaponComponent.h"
+#include "Components/EquipmentStatComponent.h"
 #include "BaseEnemy.h"
 #include "Weapon/BaseWeapon.h"
 #include "Weapon/WeaponDataAsset.h"
@@ -138,12 +139,16 @@ void UBaseWeaponComponent::EquipCurrentWeapon()
 	{
 		return;
 	}
+	if (const auto* ASC = OwnerEnemy->GetAbilitySystemComponent(); ASC && ASC->HasMatchingGameplayTag(State_Attacking)) return;
 	// 이미 장작한 상태라면 return
 	if (WeaponState == EEnemyWeaponState::Equipped)
 	{
 		return;
 	}
 	// 무기를 장착하고 무기 상태를 바꾼다
+	const FWeaponDefinition* Definition = GetCurrentWeaponDefinition();
+	auto* Stats = UEquipmentStatComponent::GetOrCreate(OwnerEnemy);
+	if (!Definition || !Stats || !Stats->Equip(OwnerEnemy->GetAbilitySystemComponent(), CurrentWeapon, Definition->Stats.StrengthBonus)) return;
 	AttachWeaponToEquipSocket();
 	WeaponState = EEnemyWeaponState::Equipped;
 	// Weapon의 Ability를 부여
@@ -158,12 +163,18 @@ void UBaseWeaponComponent::UnequipCurrentWeapon()
 	{
 		return;
 	}
+	if (const auto* ASC = OwnerEnemy->GetAbilitySystemComponent(); ASC && ASC->HasMatchingGameplayTag(State_Attacking)) return;
 	// 이미 장작 해제된 상태라면
 	if (WeaponState == EEnemyWeaponState::Holstered)
 	{
 		return;
 	}
 	// Weapon에서 부여받은 Ability를 제거
+	if (auto* Stats = UEquipmentStatComponent::GetOrCreate(OwnerEnemy))
+	{
+		if (!Stats->Clear()) return;
+	}
+	CurrentWeapon->DeactivateWeaponActivity();
 	ClearWeaponAbilities();
 	// BackSocket으로 무기 이관
 	AttachWeaponToBack();
@@ -207,7 +218,11 @@ void UBaseWeaponComponent::RestoreFromOwnerPool()
 	SyncWeaponAttachment();
 	if (WeaponState == EEnemyWeaponState::Equipped)
 	{
-		GrantWeaponAbilities();
+		const FWeaponDefinition* Definition = GetCurrentWeaponDefinition();
+		auto* Stats = UEquipmentStatComponent::GetOrCreate(OwnerEnemy);
+		if (Definition && Stats && Stats->Equip(OwnerEnemy->GetAbilitySystemComponent(), CurrentWeapon, Definition->Stats.StrengthBonus))
+			GrantWeaponAbilities();
+		else WeaponState = EEnemyWeaponState::Holstered;
 	}
 }
 
@@ -319,6 +334,7 @@ void UBaseWeaponComponent::ApplyWeaponLifecyclePresentation()
 
 void UBaseWeaponComponent::StopWeaponGameplay()
 {
+	if (auto* Stats = UEquipmentStatComponent::GetOrCreate(GetOwner())) Stats->Clear();
 	if (CurrentWeapon)
 	{
 		CurrentWeapon->DeactivateWeaponActivity();

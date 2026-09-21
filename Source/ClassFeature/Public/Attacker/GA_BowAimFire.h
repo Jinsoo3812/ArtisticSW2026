@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GAS/Ability/PlayerCombatGameplayAbility.h"
+#include "GAS/Ability/WeaponGameplayAbility.h"
 #include "GA_BowAimFire.generated.h"
 
 class ABowItem;
@@ -15,7 +15,7 @@ struct FWeaponAnimationEntry;
  * Bow ability driven by right-click aim, left-click draw, and left-click release fire.
  */
 UCLASS()
-class CLASSFEATURE_API UGA_BowAimFire : public UPlayerCombatGameplayAbility
+class CLASSFEATURE_API UGA_BowAimFire : public UWeaponGameplayAbility
 {
 	GENERATED_BODY()
 
@@ -63,14 +63,13 @@ protected:
 	void JumpAimCycleToSection(FName SectionName);
 	void PlayDrawMontage();
 	void StopDrawMontage(float BlendOutTime);
-	void BeginRelease(const FGameplayEventData& ReleaseInputPayload);
+	void BeginRelease(const FGameplayEventData& ReleaseInput);
 	void FireArrowFromPendingRelease();
 	void FinishShot();
 	void ResetBowState();
 	void AcquireServerPoseRefresh();
 	void ReleaseServerPoseRefresh();
 	bool CacheBowFromAvatar();
-	bool TryGetAimTargetFromPayload(const FGameplayEventData& Payload, FVector& OutAimTarget) const;
 	void AddBowStateTags();
 	void RemoveBowStateTags();
 	void SetBowDrawTagState(bool bDrawing, bool bFullyDrawn, bool bReleasing);
@@ -135,10 +134,12 @@ protected:
 	TObjectPtr<UBowComponent> CachedBowComponent;
 
 	FTimerHandle ChargeTimerHandle;
-	/** Aim data captured from input release. Animation notifies only authorize fire timing. */
-	FVector PendingReleaseAimTarget = FVector::ZeroVector;
-	bool bHasPendingReleaseAimTarget = false;
+	/** Immutable for this release; independent of the animation-facing DrawAlpha. */
+	float PendingReleaseFireSpeed = 0.f;
+	FVector PendingAimTarget = FVector::ZeroVector;
+	FVector PendingViewDirection = FVector::ZeroVector;
 	float DrawStartTime = 0.0f;
+	float ServerReleaseDrawAlpha = 0.0f;
 	bool bIsDrawing = false;
 	bool bIsFullyDrawn = false;
 	bool bIsReleaseInProgress = false;

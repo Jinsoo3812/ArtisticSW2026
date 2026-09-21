@@ -49,7 +49,7 @@ public:
 	void SetMaxHealthValue(float MaxHealth);
 
 	UFUNCTION(BlueprintCallable, Category = "Status|Data")
-	void SetAttackPowerValue(float AttackPower);
+	void SetStrengthValue(float Strength);
 
 	UFUNCTION(BlueprintCallable, Category = "Status|Data")
 	void SetExperienceValues(float CurrentExperience, float RequiredExperience);
@@ -137,7 +137,7 @@ protected:
 	TWeakObjectPtr<ABasePlayer> CachedPlayer;
 	TWeakObjectPtr<UAbilitySystemComponent> BoundAbilitySystemComponent;
 	FDelegateHandle MaxHealthChangedDelegateHandle;
-	FDelegateHandle AttackPowerChangedDelegateHandle;
+	FDelegateHandle StrengthChangedDelegateHandle;
 	FDelegateHandle AttackSpeedChangedDelegateHandle;
 
 	void RefreshQuickSlots();
@@ -145,7 +145,7 @@ protected:
 	void BindPlayerAttributes();
 	void UnbindPlayerAttributes();
 	void HandleMaxHealthChanged(const FOnAttributeChangeData& Data);
-	void HandleAttackPowerChanged(const FOnAttributeChangeData& Data);
+	void HandleStrengthChanged(const FOnAttributeChangeData& Data);
 	void HandleAttackSpeedChanged(const FOnAttributeChangeData& Data);
 	void EnsurePlayerPreviewWidgets();
 	void SpawnPlayerPreview();

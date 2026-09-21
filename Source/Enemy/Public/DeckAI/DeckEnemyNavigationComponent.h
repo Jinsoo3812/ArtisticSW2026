@@ -7,6 +7,13 @@
 
 class ADeckEnemy;
 
+enum class EReleaseLineOfSightRepositionState : uint8
+{
+	None,
+	Pending,
+	Moving
+};
+
 /**
  * Per-enemy combat route state. It translates weapon/target constraints into graph
  * goals, owns the final combat-point claim, and asks the enemy to reserve one hop.
@@ -24,6 +31,10 @@ public:
 	bool HandlePointReached();
 	bool ReplanIfTargetMoved(AActor* TargetActor, bool bRequireLineOfSight = true);
 	void CancelCombatRoute();
+	void RequestReleaseLineOfSightReposition(AActor* TargetActor);
+	bool PrepareReleaseLineOfSightReposition(AActor* TargetActor);
+	bool HasReleaseLineOfSightReposition(const AActor* TargetActor = nullptr) const;
+	void CompleteReleaseLineOfSightReposition();
 
 	bool HasActiveRoute() const { return Route.IsValid(); }
 	bool IsAtCombatGoal() const;
@@ -51,6 +62,7 @@ private:
 		bool bRequireLineOfSight,
 		TMap<int32, float>& OutGoalSecondaryCosts,
 		FVector& OutTargetLocalLocation) const;
+	void CancelRouteState();
 	void ReleaseCombatClaim();
 
 	FDeckNavigationPath Route;
@@ -60,4 +72,7 @@ private:
 	FVector PlannedTargetLocalLocation = FVector::ZeroVector;
 	TWeakObjectPtr<AActor> PlannedTarget;
 	double NextAllowedReplanTime = 0.0;
+	EReleaseLineOfSightRepositionState ReleaseLineOfSightRepositionState =
+		EReleaseLineOfSightRepositionState::None;
+	TWeakObjectPtr<AActor> ReleaseLineOfSightRepositionTarget;
 };

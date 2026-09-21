@@ -42,6 +42,7 @@ public:
 	EDeckEnemyCombatRole GetDeckCombatRole() const { return DeckCombatRole; }
 
 	float GetPreferredDeckCombatRange() const;
+	virtual void HandleRangedReleaseLineOfSightBlocked(AActor* TargetActor) override;
 
 	UFUNCTION(BlueprintPure, Category = "Deck AI|Combat Navigation")
 	UDeckEnemyNavigationComponent* GetDeckEnemyNavigationComponent() const

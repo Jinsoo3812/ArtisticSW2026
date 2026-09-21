@@ -19,8 +19,20 @@ class ENEMY_API AShipBossEnemy : public ABaseEnemy, public IDeckWaypointMovement
 
 public:
 	AShipBossEnemy();
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Balance", meta = (RowType = "/Script/Enemy.EnemyEncounterBalanceRow"))
+	FDataTableRowHandle EncounterBalanceRow;
+	/** Exact ranged BP class already allocated by the host's SpawnPlan. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Balance")
+	TSubclassOf<ADeckEnemy> SummonedEnemyClass;
+	float GetBalancedBossAttackCoefficient(float Fallback, bool bMajorAttack) const;
+	float GetBalancedTelegraphDuration(float Fallback) const
+	{
+		return bUseEncounterBalance ? EncounterBalance.MajorAttackTelegraphSeconds : Fallback;
+	}
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	/** Boss corpses remain animated; even legacy Blueprint ragdoll calls must not enable physics. */
+	virtual void ApplyLocalDeathRagdoll() override;
 
 	/** InitialTarget may be null when a game mode possesses the sensed Player Ship directly. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Encounter")
@@ -96,9 +108,31 @@ public:
 	bool HasBossBasicAttackStartingAbility() const;
 
 protected:
+	friend class FEnemyBalanceSummonThresholdTest;
+	UFUNCTION()
+	void HandleBalanceHealthChanged(UBaseHealthComponent* Health, float OldHealth, float NewHealth, AActor* InstigatorActor);
+	bool SummonOneDeckEnemy(ADeckEnemy*& OutEnemy);
+	UPROPERTY(Transient) FEnemyEncounterBalanceRow EncounterBalance;
+	bool bUseEncounterBalance = false;
+	int32 PendingBalanceSummons = 0;
+	TSet<int32> ConsumedSummonThresholds;
+	friend class FBossStatusTriggersTest;
+	void HandleConfirmedDamage(float Damage, const FGameplayEffectContextHandle& Context, bool bPeriodic);
+	UFUNCTION()
+	void HandleStunHealthChanged(UBaseHealthComponent* Health, float OldHealth, float NewHealth, AActor* InstigatorActor);
+	UPROPERTY(EditDefaultsOnly, Category = "Boss|Status")
+	TSubclassOf<UGameplayEffect> HeadHitStunEffect;
+	UPROPERTY(EditDefaultsOnly, Category = "Boss|Status")
+	TSubclassOf<UGameplayEffect> HealthThresholdStunEffect;
+	UPROPERTY(EditDefaultsOnly, Category = "Boss|Status", meta = (ClampMin = "0", ClampMax = "1"))
+	float StunHealthThreshold = 0.5f;
+	UPROPERTY(EditDefaultsOnly, Category = "Boss|Status")
+	TArray<FName> StunHeadBones = { TEXT("head") };
+	bool bStunHealthThresholdConsumed = false;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void HandleDeath_Implementation() override;
+	virtual void HandleDeathFinishedPresentation() override;
 	virtual bool ShouldWaitForDeathAbility() const override { return true; }
 
 	UFUNCTION()
@@ -115,6 +149,8 @@ protected:
 	void ApplyHiddenPresentation();
 	bool IsExclusiveBossAIState(FGameplayTag StateTag) const;
 	void ReleaseSummonedDeckEnemies();
+	void ApplyDeathMovementState();
+	void AnchorDeathToDeck(const FTransform& DeathWorldTransform);
 
 	UPROPERTY(ReplicatedUsing = OnRep_HostShip, VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Ship")
 	TObjectPtr<AEnemyShip> HostShip = nullptr;

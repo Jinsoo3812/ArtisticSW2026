@@ -815,6 +815,11 @@ void ULocomotionAnimStateComponent::UpdateMaxWalkSpeed() const
 
 	const USwimmingComponent* SwimmingComponent = CachedBasePlayer->GetSwimmingComponent();
 	const bool bIsInShallowWater = SwimmingComponent && SwimmingComponent->IsInShallowWater();
+	if (bIsInShallowWater && bIsSprinting)
+	{
+		CachedBasePlayer->StopSprint();
+	}
+
 	const bool bCanSprint =
 		bIsSprinting &&
 		!bIsInShallowWater &&

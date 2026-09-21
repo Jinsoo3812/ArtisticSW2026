@@ -34,6 +34,9 @@ struct ENEMY_API FBossBasicAttackEntry
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack", meta = (ClampMin = "0.001"))
 	float AttackMontagePlayRate = 1.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Attack", meta=(ClampMin="0.001"))
+	float AttackCoefficient = 1.f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Selection", meta = (ClampMin = "0.0"))
 	float SelectionWeight = 1.0f;
 

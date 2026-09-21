@@ -25,7 +25,7 @@ BT_Subtree_RangedEnemy_Combat
         `-> Track Target fallback
                  |
                  v
-        GA_RangedEnemyAttack
+GA_RangedEnemyAttack
                  |
                  v
         Arrow_socket -> Projectile
@@ -178,33 +178,47 @@ Regardless of layout, the stable contract is:
 ```text
 Activate
 -> validate target / distance / LOS
--> play attack Montage
+-> play DA_Weapon attack Montage
 -> wait for Event.Montage.FireArrow
--> read current Arrow_socket transform
+-> revalidate target / distance / LOS at the release frame
+-> capture the current Arrow_socket and aim point once
 -> spawn and launch projectile
 -> end Ability
 ```
 
-The server revalidates attack conditions even if the BT already checked them.
+The BT and Ability activation checks are admission checks only. The release event
+builds a fresh shot snapshot, and the final LOS plus projectile spawn reuse that
+exact socket/aim pair instead of relying on an earlier trace.
 
 ### Fire timing
 
 Preferred path:
 
 ```text
-Attack Montage
+DA_Weapon Attack Montage
 -> Event.Montage.FireArrow
 -> Spawn Projectile
 ```
 
 The event is placed at the bow release frame.
 
-Fallback behavior:
+There is no timing fallback. A missing Montage, invalid fire tag, missing notify,
+or blocked release-frame LOS cancels the attack without spawning a projectile.
+This keeps the authored notify as the only firing clock and prevents montage-end
+shots from hiding an asset setup error.
 
-- no Montage -> fire immediately;
-- Montage exists but fire event is missing -> fire once when the Montage completes.
+The release snapshot returns a typed rejection result. Only
+`BlockedLineOfSight` creates a deck reposition request; invalid target/range,
+missing socket origin, interrupted Montage, and loadout failures do not. Ground
+ranged enemies have no deck-specific response. A deck reposition candidate is a
+directly connected combat-capable point, excludes the immediately previous point,
+and performs no candidate LOS traces. The normal move task may still stop early as
+soon as LOS to the target becomes valid again.
 
 A single ability activation must spawn at most one projectile even if callbacks/events are duplicated.
+
+The ranged-enemy Blueprint no longer owns an `AttackMontage` fallback property.
+The equipped Bow entry in `DA_Weapon` is the only runtime Montage source.
 
 ---
 
@@ -407,7 +421,7 @@ On a ship:
 
 - CharacterMovement/Based Movement keeps the enemy on the live deck;
 - the enemy is not manually hard-attached as a substitute for CharacterMovement;
-- LOS/projectile logic ignores the host ship where appropriate;
+- both release-frame LOS and projectile movement ignore the firing enemy's host ship;
 - shot origin is read from the **current** `Arrow_socket`, so ship translation/rotation is naturally reflected.
 
 The Ranged Enemy should still function when no HostShip exists.

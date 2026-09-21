@@ -338,11 +338,11 @@ void UStatusWindowWidget::SetMaxHealthValue(float MaxHealth)
 	}
 }
 
-void UStatusWindowWidget::SetAttackPowerValue(float AttackPower)
+void UStatusWindowWidget::SetStrengthValue(float Strength)
 {
 	if (AttackPowerText)
 	{
-		AttackPowerText->SetText(FText::AsNumber(AttackPower));
+		AttackPowerText->SetText(FText::AsNumber(Strength));
 	}
 }
 
@@ -432,17 +432,17 @@ void UStatusWindowWidget::BindPlayerAttributes()
 	MaxHealthChangedDelegateHandle = AbilitySystemComponent
 		->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetMaxHealthAttribute())
 		.AddUObject(this, &UStatusWindowWidget::HandleMaxHealthChanged);
-	AttackPowerChangedDelegateHandle = AbilitySystemComponent
-		->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetAttackPowerAttribute())
-		.AddUObject(this, &UStatusWindowWidget::HandleAttackPowerChanged);
+	StrengthChangedDelegateHandle = AbilitySystemComponent
+		->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetStrengthAttribute())
+		.AddUObject(this, &UStatusWindowWidget::HandleStrengthChanged);
 	AttackSpeedChangedDelegateHandle = AbilitySystemComponent
 		->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute())
 		.AddUObject(this, &UStatusWindowWidget::HandleAttackSpeedChanged);
 
 	SetMaxHealthValue(AbilitySystemComponent->GetNumericAttribute(
 		UBaseAttributeSet::GetMaxHealthAttribute()));
-	SetAttackPowerValue(AbilitySystemComponent->GetNumericAttribute(
-		UBaseAttributeSet::GetAttackPowerAttribute()));
+	SetStrengthValue(AbilitySystemComponent->GetNumericAttribute(
+		UBaseAttributeSet::GetStrengthAttribute()));
 	SetAttackSpeedValue(AbilitySystemComponent->GetNumericAttribute(
 		UBaseAttributeSet::GetAttackSpeedMultiplierAttribute()));
 }
@@ -457,11 +457,11 @@ void UStatusWindowWidget::UnbindPlayerAttributes()
 				->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetMaxHealthAttribute())
 				.Remove(MaxHealthChangedDelegateHandle);
 		}
-		if (AttackPowerChangedDelegateHandle.IsValid())
+		if (StrengthChangedDelegateHandle.IsValid())
 		{
 			BoundAbilitySystemComponent
-				->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetAttackPowerAttribute())
-				.Remove(AttackPowerChangedDelegateHandle);
+				->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetStrengthAttribute())
+				.Remove(StrengthChangedDelegateHandle);
 		}
 		if (AttackSpeedChangedDelegateHandle.IsValid())
 		{
@@ -472,7 +472,7 @@ void UStatusWindowWidget::UnbindPlayerAttributes()
 	}
 
 	MaxHealthChangedDelegateHandle.Reset();
-	AttackPowerChangedDelegateHandle.Reset();
+	StrengthChangedDelegateHandle.Reset();
 	AttackSpeedChangedDelegateHandle.Reset();
 	BoundAbilitySystemComponent.Reset();
 }
@@ -482,9 +482,9 @@ void UStatusWindowWidget::HandleMaxHealthChanged(const FOnAttributeChangeData& D
 	SetMaxHealthValue(Data.NewValue);
 }
 
-void UStatusWindowWidget::HandleAttackPowerChanged(const FOnAttributeChangeData& Data)
+void UStatusWindowWidget::HandleStrengthChanged(const FOnAttributeChangeData& Data)
 {
-	SetAttackPowerValue(Data.NewValue);
+	SetStrengthValue(Data.NewValue);
 }
 
 void UStatusWindowWidget::HandleAttackSpeedChanged(const FOnAttributeChangeData& Data)

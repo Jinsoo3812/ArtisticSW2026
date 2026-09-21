@@ -14,6 +14,15 @@ class GASCORE_API ABaseCharacter : public ACharacter, public IAbilitySystemInter
 	GENERATED_BODY()
 
 public:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS|Status")
+	TObjectPtr<class UStatusComponent> StatusComponent;
+	virtual bool IsMoveInputIgnored() const override;
+	virtual bool CanJumpInternal_Implementation() const override;
+
+	/** True after the mesh PhysicsAsset has been configured as the authoritative animated hit surface. */
+	bool UsesAnimatedCombatHurtbox() const;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Hurtbox")
+	TObjectPtr<class UCombatHurtboxComponent> CombatHurtboxComponent;
 	ABaseCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AbilitySystem")
@@ -24,6 +33,9 @@ public:
 	virtual bool IsEnemyCharacterForEffects() const { return false; }
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
+#endif
 
 	UFUNCTION(BlueprintCallable, Category = "Death")
 	virtual void ApplyLocalDeathRagdoll();
@@ -42,6 +54,7 @@ public:
 	float GetDeathRagdollUpwardImpulse() const { return DeathRagdollUpwardImpulse; }
 
 protected:
+	void InitializeAnimatedCombatHurtbox();
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AbilitySystem")
 	EGameplayEffectReplicationMode ASCReplicationMode = EGameplayEffectReplicationMode::Mixed;
 
@@ -74,6 +87,11 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Death|Ragdoll")
 	bool bLocalDeathRagdollApplied = false;
+
+
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FAnimatedCombatHurtboxPolicyTest;
+#endif
 
 	FTransform InitialMeshRelativeTransform = FTransform::Identity;
 	FName InitialMeshCollisionProfileName = NAME_None;

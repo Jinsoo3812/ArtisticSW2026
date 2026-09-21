@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
+#include "GameplayAbilitySpec.h"
+#include "GameplayEffectTypes.h"
 #include "PlayerEquipmentComponent.generated.h"
 
 class ABaseItem;
@@ -12,20 +14,9 @@ class UAnimMontage;
 class UAnimInstance;
 class UAnimSequenceBase;
 class UGameplayEffect;
+class UAbilitySystemComponent;
 class UWeaponAnimationDataAsset;
 struct FWeaponAnimationEntry;
-
-USTRUCT(BlueprintType)
-struct FWeaponAnimationDataMapping
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
-	FGameplayTag WeaponTag;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
-	TObjectPtr<UWeaponAnimationDataAsset> AnimationData;
-};
 
 UENUM(BlueprintType)
 enum class EEquipmentState : uint8
@@ -62,6 +53,7 @@ UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class CLASSFEATURE_API UPlayerEquipmentComponent : public UActorComponent
 {
 	GENERATED_BODY()
+	friend class FWeaponEquipmentLifecycleTest;
 
 public:
 	UPlayerEquipmentComponent();
@@ -79,6 +71,7 @@ public:
 	void UseEquippedItem(bool bDestroy = true);
 	void HandleEquipmentAttachNotify();
 	void OnRepOwnerEquippedItem();
+	void OnEquippedItemInitialized(ABaseItem* Item);
 
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	FGameplayTag GetEquippedItemTag() const;
@@ -139,15 +132,10 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_EquipmentState, Category = "Equipment")
 	EEquipmentState EquipmentState = EEquipmentState::None;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Animation")
-	TObjectPtr<UWeaponAnimationDataAsset> WeaponAnimationData;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Animation")
-	TArray<FWeaponAnimationDataMapping> WeaponAnimationDataByTag;
 
 	/** Common infinite GE used for an equipped item's Data.StrengthBonus. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Equipment|Strength")
@@ -168,6 +156,7 @@ protected:
 	/** Locally resolved presentation/spawn anchor; the actor relationship itself already replicates. */
 	UPROPERTY(Transient)
 	TWeakObjectPtr<ABowItem> BoundBowArrowAnchor;
+	TWeakObjectPtr<ABaseItem> PendingPresentationItem;
 
 	UFUNCTION()
 	void OnRep_EquipmentState();
@@ -183,12 +172,30 @@ protected:
 	FGameplayTag ResolveUseKeyTag(const ABaseItem* Item) const;
 	bool CanUseEquippedItemAbility(const ABaseItem* Item) const;
 	void CancelActiveWeaponAbilities() const;
-	void GrantEquippedItemAbility(ABaseItem* Item);
+	bool GrantEquippedItemAbility(ABaseItem* Item);
+	bool ValidateWeapon(ABaseItem* Item) const;
+	UFUNCTION()
+	void OnGrantedItemDestroyed(AActor* Item);
+	UFUNCTION()
+	void OnGrantedItemEndPlay(AActor* Item, EEndPlayReason::Type Reason);
+	void OnOwnerDead(FGameplayTag Tag, int32 Count);
+	void BindOwnerAbilitySystem();
+	struct FEquipmentGrant
+	{
+		TWeakObjectPtr<UAbilitySystemComponent> ASC;
+		TArray<FGameplayAbilitySpecHandle> Abilities;
+		TArray<FActiveGameplayEffectHandle> Effects;
+	};
+	TMap<TWeakObjectPtr<ABaseItem>, FEquipmentGrant> ItemGrants;
+	TWeakObjectPtr<UAbilitySystemComponent> DeathASC;
+	FDelegateHandle DeathDelegate;
 	void RemoveEquippedItemAbility(ABaseItem* Item);
 	bool AttachItem(ABaseItem* Item, EEquipmentAttachmentTarget Target);
 	bool CompleteItemAttachment(ABaseItem* Item, EEquipmentAttachmentTarget Target, bool bAttached);
 	void ClearBowArrowAnchor(ABowItem* ExpectedBow = nullptr);
-	void StoreCurrentEquippedItem();
+	bool StoreCurrentEquippedItem(bool bRemoveStats = true);
+	bool CanChangeEquipment() const;
+	double LastEquipmentRequestTime = -1.0;
 	void StartEquipItem(ABaseItem* Item, FGameplayTag SourceSlotTag);
 	void FinalizePendingEquip();
 	void CancelPendingEquip();

@@ -17,6 +17,7 @@
 
 UBaseDeathGameplayAbility::UBaseDeathGameplayAbility()
 {
+	bAllowDuringControlBlock = true;
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
 
@@ -56,16 +57,27 @@ void UBaseDeathGameplayAbility::ActivateAbility(
 
 	if (PlayDeathMontage())
 	{
-		const float PlayRate = FMath::Max(DeathMontagePlayRate, KINDA_SMALL_NUMBER);
-		const float CompletionTimeout = DeathMontage
-			? (DeathMontage->GetPlayLength() / PlayRate) + DeathCompletionGracePeriod
-			: DeathCompletionFallbackTimeout;
+		// ReadyForActivation can synchronously cancel/end a failed montage task.
+		if (bDeathFinished || !IsActive())
+		{
+			return;
+		}
+		const float PlayRate = FMath::Max(DeathMontagePlayRate * DeathMontage->RateScale, KINDA_SMALL_NUMBER);
+		const int32 StartSectionIndex = DeathMontage->GetSectionIndex(DeathMontageStartSection);
+		const float StartTime = StartSectionIndex != INDEX_NONE
+			? DeathMontage->GetAnimCompositeSection(StartSectionIndex).GetTime() : 0.0f;
+		const float Duration = (DeathMontage->GetPlayLength() - StartTime) / PlayRate;
+		// Non-blending, single-pass death montages intentionally never broadcast
+		// OnCompleted. Finish gameplay at their duration, leaving the pose held.
+		const bool bHoldsFinalPose = !DeathMontage->bEnableAutoBlendOut;
+		const float CompletionTimeout = Duration + (bHoldsFinalPose ? 0.0f : DeathCompletionGracePeriod);
 		if (UWorld* World = GetWorld())
 		{
 			World->GetTimerManager().SetTimer(
 				DeathCompletionTimerHandle,
 				this,
-				&UBaseDeathGameplayAbility::OnDeathCompletionTimeout,
+				bHoldsFinalPose ? &UBaseDeathGameplayAbility::OnDeathMontageCompleted
+					: &UBaseDeathGameplayAbility::OnDeathCompletionTimeout,
 				FMath::Max(CompletionTimeout, 0.1f),
 				false);
 		}

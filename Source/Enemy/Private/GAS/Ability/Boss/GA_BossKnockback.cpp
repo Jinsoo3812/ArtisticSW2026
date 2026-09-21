@@ -7,14 +7,13 @@
 #include "BaseGameplayTags.h"
 #include "BossAI/ShipBossEnemy.h"
 #include "GameFramework/Character.h"
-#include "GASDamageInstantGameplayEffect.h"
+#include "GASAttributeDamageGameplayEffect.h"
 #include "ShipAI/EnemyShip.h"
 
 UGA_BossKnockback::UGA_BossKnockback()
 {
 	SetBossAbilityTags(GameplayAbility_Boss_Knockback, Cooldown_Boss_Knockback);
 	CooldownDuration = 6.0f;
-	DamageEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
 	ImpactGameplayCueTag = GameplayCue_Impact_Boss_Knockback;
 }
 
@@ -35,6 +34,7 @@ void UGA_BossKnockback::ActivateAbility(
 		return;
 	}
 
+	if (!PrepareStrengthAttack(Boss->GetBalancedBossAttackCoefficient(AttackCoefficient, false))) { FinishKnockback(true); return; }
 	if (AttackMontage)
 	{
 		MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
@@ -81,7 +81,7 @@ void UGA_BossKnockback::ApplyImpact()
 		return;
 	}
 
-	ApplyDamageToTarget(Target, DamageEffectClass, Damage);
+	if (!ApplyDamageToTarget(Target)) { FinishKnockback(false); return; }
 	if (UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Target))
 	{
 		ApplyTimedStateTag(*TargetASC, State_CrowdControl_Knockback, KnockbackStateDuration);

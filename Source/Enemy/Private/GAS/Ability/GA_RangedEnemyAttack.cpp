@@ -6,8 +6,8 @@
 #include "BaseGameplayTags.h"
 #include "Item/Projectiles/ArrowProjectile.h"
 #include "GASCombatLibrary.h"
-#include "GASDamageInstantGameplayEffect.h"
 #include "RangedEnemy/RangedEnemy.h"
+#include "Ship.h"
 #include "Weapon/EnemyBow.h"
 
 UGA_RangedEnemyAttack::UGA_RangedEnemyAttack()
@@ -37,7 +37,7 @@ void UGA_RangedEnemyAttack::ActivateAbility(
 	bFinishingAttack = false;
 	bOwnsServerPoseRefresh = false;
 
-	if (!CachedEnemy)
+	if (!CachedEnemy || !CachedEnemy->IsBalanceAttackReady())
 	{
 		FinishAttack(true);
 		return;
@@ -63,29 +63,35 @@ void UGA_RangedEnemyAttack::ActivateAbility(
 	bOwnsServerPoseRefresh = true;
 	AddAttackStateTag();
 
+	UAnimMontage* AttackMontage = CachedEnemy->GetRangedAttackMontage();
 	const FGameplayTag FireEventTag = CachedEnemy->GetRangedFireEventTag();
-	if (CachedEnemy->GetRangedAttackMontage() && FireEventTag.IsValid())
+	if (!AttackMontage || !FireEventTag.IsValid())
 	{
-		FireProjectileEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
-			this,
-			FireEventTag,
-			nullptr,
-			false,
-			true);
-		if (FireProjectileEventTask)
-		{
-			FireProjectileEventTask->EventReceived.AddDynamic(this, &UGA_RangedEnemyAttack::OnFireProjectileEvent);
-			FireProjectileEventTask->ReadyForActivation();
-		}
-	}
-
-	if (PlayAttackMontage())
-	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("Ranged attack requires DA_Weapon AttackMontage and a valid FireEventTag. Enemy=%s Montage=%s Tag=%s"),
+			*GetNameSafe(CachedEnemy), *GetNameSafe(AttackMontage), *FireEventTag.ToString());
+		FinishAttack(true);
 		return;
 	}
 
-	FireProjectile();
-	FinishAttack(false);
+	FireProjectileEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+		this,
+		FireEventTag,
+		nullptr,
+		false,
+		true);
+	if (!FireProjectileEventTask)
+	{
+		FinishAttack(true);
+		return;
+	}
+	FireProjectileEventTask->EventReceived.AddDynamic(this, &UGA_RangedEnemyAttack::OnFireProjectileEvent);
+	FireProjectileEventTask->ReadyForActivation();
+
+	if (!PlayAttackMontage())
+	{
+		FinishAttack(true);
+	}
 }
 
 void UGA_RangedEnemyAttack::EndAbility(
@@ -113,26 +119,32 @@ void UGA_RangedEnemyAttack::EndAbility(
 
 void UGA_RangedEnemyAttack::OnFireProjectileEvent(FGameplayEventData Payload)
 {
-	FireProjectile();
+	if (bProjectileFired || bFinishingAttack)
+	{
+		return;
+	}
+
+	if (!FireProjectile())
+	{
+		FinishAttack(true);
+	}
 }
 
 void UGA_RangedEnemyAttack::OnAttackMontageCompleted()
 {
 	if (!bProjectileFired)
 	{
-		// A missing montage notify must not turn the enemy into a silent soft-lock.
-		// The editor guide still asks for a FireArrow event at the release frame.
-		FireProjectile();
+		UE_LOG(LogTemp, Warning,
+			TEXT("Ranged attack montage completed without FireArrow notify. Enemy=%s Montage=%s"),
+			*GetNameSafe(CachedEnemy),
+			*GetNameSafe(CachedEnemy ? CachedEnemy->GetRangedAttackMontage() : nullptr));
 	}
-	FinishAttack(false);
+	FinishAttack(!bProjectileFired);
 }
 
 void UGA_RangedEnemyAttack::OnAttackMontageBlendOut()
 {
-	if (!bFinishingAttack)
-	{
-		OnAttackMontageCompleted();
-	}
+	// BlendOut is the start of the tail. Keep the GA and BT task alive until OnCompleted.
 }
 
 void UGA_RangedEnemyAttack::OnAttackMontageInterrupted()
@@ -147,7 +159,7 @@ void UGA_RangedEnemyAttack::OnAttackMontageCancelled()
 
 bool UGA_RangedEnemyAttack::FireProjectile()
 {
-	if (!CachedEnemy)
+	if (!CachedEnemy || !CachedEnemy->HasAuthority() || !IsActive() || bFinishingAttack)
 	{
 		return false;
 	}
@@ -163,14 +175,8 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 	{
 		return false;
 	}
-	if (!CachedEnemy->CanAttackTarget(CachedTarget, true))
-	{
-		return false;
-	}
-
 	AEnemyBow* Bow = CachedEnemy->GetEquippedBow();
-	FTransform ArrowSpawnTransform;
-	if (!Bow || !CachedEnemy->GetRangedAttackOrigin(ArrowSpawnTransform))
+	if (!Bow)
 	{
 		return false;
 	}
@@ -191,8 +197,24 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 		return false;
 	}
 
+	// Capture one release-frame sample and reuse it for both the final LOS and spawn.
+	// Earlier BT/activation checks remain admission checks and never draw the fire debug line.
+	FTransform ArrowSpawnTransform;
+	FVector AimLocation;
+	const ERangedShotSnapshotResult SnapshotResult = CachedEnemy->BuildRangedShotSnapshot(
+		CachedTarget,
+		ArrowSpawnTransform,
+		AimLocation);
+	if (SnapshotResult != ERangedShotSnapshotResult::Ready)
+	{
+		if (SnapshotResult == ERangedShotSnapshotResult::BlockedLineOfSight)
+		{
+			CachedEnemy->HandleRangedReleaseLineOfSightBlocked(CachedTarget);
+		}
+		return false;
+	}
+
 	const FVector SpawnLocation = ArrowSpawnTransform.GetLocation();
-	const FVector AimLocation = CachedEnemy->GetRangedAimLocation(CachedTarget);
 	const FVector LaunchDirection = (AimLocation - SpawnLocation).GetSafeNormal();
 	if (LaunchDirection.IsNearlyZero())
 	{
@@ -211,31 +233,30 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 		return false;
 	}
 
+	Projectile->FinishSpawning(SpawnTransform);
 	Projectile->IgnoreActorForMovement(CachedEnemy);
 	Projectile->IgnoreActorForMovement(Bow);
-
-	TSubclassOf<UGameplayEffect> DamageEffectClass = Projectile->GetDirectDamageEffectClass();
-	if (!DamageEffectClass)
+	Projectile->IgnoreActorForMovement(CachedEnemy->GetHostShip());
+	if (Projectile->IsLaunchLocationBlocked())
 	{
-		DamageEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
+		Projectile->Destroy();
+		return false;
 	}
 
 	FStrengthDamageRequest DamageRequest;
 	DamageRequest.SourceASC = SourceASC;
-	DamageRequest.DamageEffectClass = DamageEffectClass;
+
 	DamageRequest.AttackCoefficient = Projectile->GetAttackCoefficient();
 	DamageRequest.ChargeMultiplier = 1.0f;
 	DamageRequest.InstigatorActor = CachedEnemy;
 	DamageRequest.EffectCauser = Projectile;
 	DamageRequest.EffectLevel = Projectile->GetDirectDamageEffectLevel();
-	Projectile->InitializeStrengthDamage(
-		SourceASC,
-		CachedEnemy,
-		UGASCombatLibrary::MakeStrengthDamageEffectSpec(DamageRequest));
+	const FGameplayEffectSpecHandle DamageSpec = UGASCombatLibrary::MakeStrengthDamageEffectSpec(DamageRequest);
+	if (!DamageSpec.IsValid()) { Projectile->Destroy(); return false; }
+	if (!Projectile->InitializeStrengthDamage(SourceASC, CachedEnemy, DamageSpec)) { Projectile->Destroy(); return false; }
 
 	Projectile->SetOwner(CachedEnemy);
 	Projectile->SetInstigator(CachedEnemy);
-	Projectile->FinishSpawning(SpawnTransform);
 	Projectile->LaunchArrow(LaunchDirection * Bow->GetProjectileSpeed());
 	bProjectileFired = true;
 	return true;
@@ -255,7 +276,7 @@ bool UGA_RangedEnemyAttack::PlayAttackMontage()
 		Montage,
 		CachedEnemy->GetRangedAttackMontagePlayRate(),
 		NAME_None,
-		true);
+		true, 1.f, 0.f, true);
 	if (!AttackMontageTask)
 	{
 		return false;
