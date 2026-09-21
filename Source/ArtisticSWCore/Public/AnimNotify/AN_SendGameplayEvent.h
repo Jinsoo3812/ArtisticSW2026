@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -25,7 +25,7 @@ public:
 	static bool SendGameplayEventToMeshOwner(
 		USkeletalMeshComponent* MeshComp,
 		FGameplayTag GameplayEventTag,
-		float EventMagnitude = 0.0f);
+		float EventMagnitude = 0.0f, const UObject* EventSource = nullptr);
 
 	// 노티파이가 실행될 때 호출되는 함수
 	virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;

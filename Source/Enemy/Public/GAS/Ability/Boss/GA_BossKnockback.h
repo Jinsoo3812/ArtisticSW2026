@@ -47,8 +47,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Knockback", meta = (ClampMin = "0.0", Units = "cm"))
 	float AttackRange = 260.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Knockback", meta = (ClampMin = "0.0"))
-	float Damage = 15.0f;
+	UPROPERTY(EditDefaultsOnly, Category="Damage", meta=(ClampMin="0.001"))
+	float AttackCoefficient = 1.5f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Knockback", meta = (ClampMin = "0.0", Units = "cm/s"))
 	float HorizontalLaunchSpeed = 800.0f;
@@ -58,9 +58,6 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Knockback", meta = (ClampMin = "0.0", Units = "s"))
 	float KnockbackStateDuration = 0.5f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Knockback")
-	TSubclassOf<UGameplayEffect> DamageEffectClass;
 
 	UPROPERTY()
 	TObjectPtr<AActor> CachedTarget = nullptr;

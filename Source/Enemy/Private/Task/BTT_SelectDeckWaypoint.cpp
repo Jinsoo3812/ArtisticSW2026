@@ -44,7 +44,8 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(
 	}
 
 	AActor* TargetActor = nullptr;
-	if (SelectionMode == EDeckWaypointSelectionMode::Combat)
+	if (SelectionMode == EDeckWaypointSelectionMode::Combat
+		|| SelectionMode == EDeckWaypointSelectionMode::ReleaseLineOfSightReposition)
 	{
 		if (UBlackboardComponent* Blackboard = OwnerComp.GetBlackboardComponent())
 		{
@@ -56,7 +57,11 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(
 		}
 
 		UDeckEnemyNavigationComponent* Navigation = Enemy->GetDeckEnemyNavigationComponent();
-		return Navigation && Navigation->PlanCombatRoute(TargetActor, true)
+		const bool bSelected = Navigation && (SelectionMode
+			== EDeckWaypointSelectionMode::ReleaseLineOfSightReposition
+			? Navigation->PrepareReleaseLineOfSightReposition(TargetActor)
+			: Navigation->PlanCombatRoute(TargetActor, true));
+		return bSelected
 			? EBTNodeResult::Succeeded
 			: EBTNodeResult::Failed;
 	}
@@ -106,9 +111,13 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(
 
 FString UBTT_SelectDeckWaypoint::GetStaticDescription() const
 {
-	return FString::Printf(
-		TEXT("%s"),
-		SelectionMode == EDeckWaypointSelectionMode::Combat
-			? TEXT("Plan and claim a multi-hop combat route")
-			: TEXT("Choose one linked patrol point"));
+	switch (SelectionMode)
+	{
+	case EDeckWaypointSelectionMode::Combat:
+		return TEXT("Plan and claim a multi-hop combat route");
+	case EDeckWaypointSelectionMode::ReleaseLineOfSightReposition:
+		return TEXT("Choose one linked combat point after a blocked release LOS");
+	default:
+		return TEXT("Choose one linked patrol point");
+	}
 }

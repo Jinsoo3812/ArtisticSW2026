@@ -75,6 +75,8 @@ void ATrap::OnTrapBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor*
 		USWCombatEffectContextLibrary::MakeCombatEffectContext(
 			InstigatorASC, GetInstigator(), this, OtherActor, bFromSweep, SweepResult,
 			OtherActor->GetActorLocation() - GetActorLocation());
+	USWCombatEffectContextLibrary::SetDamageDeliveryType(
+		ContextHandle, ESWDamageDeliveryType::Environment);
 	FGameplayEffectSpecHandle DamageEffectSpecHandle = InstigatorASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
 	
 	if (!DamageEffectSpecHandle.IsValid()) return;

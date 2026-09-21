@@ -2,16 +2,25 @@
 
 
 #include "BaseCharacter.h"
+#include "BaseGameplayTags.h"
+#include "Components/StatusComponent.h"
 
 #include "Components/BaseHealthComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "CollisionChannels.h"
+#include "Components/CombatHurtboxComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
 
 ABaseCharacter::ABaseCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	PrimaryActorTick.bCanEverTick = true;
+	StatusComponent = CreateDefaultSubobject<UStatusComponent>(TEXT("StatusComponent"));
+	CombatHurtboxComponent = CreateDefaultSubobject<UCombatHurtboxComponent>(TEXT("CombatHurtboxComponent"));
 
 	GetCapsuleComponent()->InitCapsuleSize(35.f, 90.f);
 
@@ -33,6 +42,7 @@ ABaseCharacter::ABaseCharacter(const FObjectInitializer& ObjectInitializer)
 void ABaseCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	InitializeAnimatedCombatHurtbox();
 
 	if (const USkeletalMeshComponent* MeshComponent = GetMesh())
 	{
@@ -40,6 +50,36 @@ void ABaseCharacter::BeginPlay()
 		InitialMeshCollisionProfileName = MeshComponent->GetCollisionProfileName();
 		InitialMeshCollisionEnabled = MeshComponent->GetCollisionEnabled();
 	}
+}
+
+void ABaseCharacter::InitializeAnimatedCombatHurtbox()
+{
+	CombatHurtboxComponent->InitializeHurtbox();
+}
+
+bool ABaseCharacter::UsesAnimatedCombatHurtbox() const
+{
+	return CombatHurtboxComponent->IsAnimatedHurtboxReady();
+}
+
+#if WITH_EDITOR
+EDataValidationResult ABaseCharacter::IsDataValid(FDataValidationContext& Context) const
+{
+	const EDataValidationResult ParentResult = Super::IsDataValid(Context);
+	const EDataValidationResult HurtboxResult = CombatHurtboxComponent->IsDataValid(Context);
+	return ParentResult == EDataValidationResult::Invalid ? ParentResult : HurtboxResult;
+}
+#endif
+
+bool ABaseCharacter::IsMoveInputIgnored() const
+{
+	return Super::IsMoveInputIgnored() || (AbilitySystemComponent &&
+		AbilitySystemComponent->HasMatchingGameplayTag(State_Control_MovementBlocked));
+}
+
+bool ABaseCharacter::CanJumpInternal_Implementation() const
+{
+	return !IsMoveInputIgnored() && Super::CanJumpInternal_Implementation();
 }
 
 void ABaseCharacter::Tick(float DeltaTime)

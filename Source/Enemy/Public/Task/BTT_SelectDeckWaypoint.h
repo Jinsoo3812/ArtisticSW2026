@@ -8,10 +8,11 @@ UENUM(BlueprintType)
 enum class EDeckWaypointSelectionMode : uint8
 {
 	Patrol,
-	Combat
+	Combat,
+	ReleaseLineOfSightReposition
 };
 
-/** Patrol selects one neighbor; Combat plans a deterministic multi-hop ship-local route. */
+/** Selects patrol, routed combat, or release-LOS recovery movement. */
 UCLASS()
 class ENEMY_API UBTT_SelectDeckWaypoint : public UBTTask_BlackboardBase
 {

@@ -9,7 +9,10 @@
 #include "BaseGameplayTags.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogHitReactionRootMotion, Log, All);
 
 UBaseHitReactionGameplayAbility::UBaseHitReactionGameplayAbility()
 {
@@ -113,7 +116,8 @@ bool UBaseHitReactionGameplayAbility::PlayHitReactionMontage(EBaseHitReactionDir
 		FMath::Max(HitReactionMontagePlayRate, KINDA_SMALL_NUMBER),
 		HitReactionMontageStartSection,
 		bStopHitReactionMontageWhenAbilityEnds,
-		0.0f);
+		/* AnimRootMotionTranslationScale */ 1.0f,
+		/* StartTimeSeconds */ 0.0f);
 
 	if (!HitReactionMontageTask)
 	{
@@ -124,6 +128,24 @@ bool UBaseHitReactionGameplayAbility::PlayHitReactionMontage(EBaseHitReactionDir
 	HitReactionMontageTask->OnInterrupted.AddDynamic(this, &UBaseHitReactionGameplayAbility::OnHitReactionMontageInterrupted);
 	HitReactionMontageTask->OnCancelled.AddDynamic(this, &UBaseHitReactionGameplayAbility::OnHitReactionMontageCancelled);
 	HitReactionMontageTask->ReadyForActivation();
+
+	// ServerInitiated tasks apply the translation scale on authority, but not
+	// on the autonomous proxy. Keep the authored scale at 1 on both machines.
+	// Enable with "Log LogHitReactionRootMotion Verbose" when comparing peers.
+	if (Character && AnimInstance)
+	{
+		const UCharacterMovementComponent* Movement = Character->GetCharacterMovement();
+		UE_LOG(LogHitReactionRootMotion, Verbose,
+			TEXT("Avatar=%s Role=%d NetMode=%d Active=%d Montage=%s Position=%.3f RootMotion=%d Mode=%d Scale=%.3f Location=%s MovementMode=%d CustomMode=%d Base=%s"),
+			*GetNameSafe(Character), static_cast<int32>(Character->GetLocalRole()),
+			static_cast<int32>(Character->GetNetMode()), IsActive(),
+			*GetNameSafe(HitReactionMontage), AnimInstance->Montage_GetPosition(HitReactionMontage),
+			HitReactionMontage->HasRootMotion(), static_cast<int32>(AnimInstance->RootMotionMode),
+			Character->GetAnimRootMotionTranslationScale(), *Character->GetActorLocation().ToCompactString(),
+			Movement ? static_cast<int32>(Movement->MovementMode) : -1,
+			Movement ? static_cast<int32>(Movement->CustomMovementMode) : -1,
+			*GetNameSafe(Character->GetMovementBase()));
+	}
 
 	return true;
 }

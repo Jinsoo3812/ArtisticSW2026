@@ -1,4 +1,19 @@
 #include "BaseGameplayTags.h"
+UE_DEFINE_GAMEPLAY_TAG(State_Status, "State.Status");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_Stun, "State.Status.Stun");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_Poison, "State.Status.Poison");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_Burn, "State.Status.Burn");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_Slow, "State.Status.Slow");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_WaterBomb, "State.Status.WaterBomb");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_Knockback, "State.Status.Knockback");
+UE_DEFINE_GAMEPLAY_TAG(State_Control_ActionsBlocked, "State.Control.ActionsBlocked");
+UE_DEFINE_GAMEPLAY_TAG(State_Control_MovementBlocked, "State.Control.MovementBlocked");
+UE_DEFINE_GAMEPLAY_TAG(Capability_Status_Receive, "Capability.Status.Receive");
+UE_DEFINE_GAMEPLAY_TAG(Immunity_Status, "Immunity.Status");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Status_Stun, "GameplayAbility.Status.Stun");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Status_Stun, "GameplayCue.Status.Stun");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Status_Poison_Tick, "GameplayCue.Status.Poison.Tick");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Status_Burn_Tick, "GameplayCue.Status.Burn.Tick");
 
 // State
 UE_DEFINE_GAMEPLAY_TAG(State_Attacking, "State.Attacking");
@@ -262,6 +277,7 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Category_Skill, "Item.Category.Skill");
 
 // Enemy
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Sword, "Item.EnemyWeapon.Sword");
+UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Knife, "Item.EnemyWeapon.Knife");
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Hand, "Item.EnemyWeapon.Hand");
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Bow, "Item.EnemyWeapon.Bow");
 

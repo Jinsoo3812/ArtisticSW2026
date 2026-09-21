@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "BaseAttributeSet.h"
@@ -28,7 +28,6 @@ void UBaseAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	// 모든 클라이언트에 Attribute를 복제하고, 예측/롤백 보정을 위해 항상 RepNotify를 호출합니다.
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, Health, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
-	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, AttackPower, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, Strength, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, MoveSpeed, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBaseAttributeSet, MoveSpeedMultiplier, COND_None, REPNOTIFY_Always);
@@ -76,17 +75,21 @@ bool UBaseAttributeSet::PreGameplayEffectExecute(FGameplayEffectModCallbackData&
 	}
 
 	const UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
-	if (!ASC || !ASC->HasMatchingGameplayTag(State_Invulnerable))
+	const FGameplayAttribute& Attribute = Data.EvaluatedData.Attribute;
+	if (Attribute == GetDamageAttribute())
 	{
-		return true;
+		if (!ASC || !ASC->IsOwnerActorAuthoritative() || ASC->HasMatchingGameplayTag(State_Invulnerable)
+			|| ASC->HasMatchingGameplayTag(State_Dead) || GetHealth() <= 0.f
+			|| !FMath::IsFinite(Data.EvaluatedData.Magnitude))
+		{
+			return false;
+		}
 	}
 
-	const FGameplayAttribute& Attribute = Data.EvaluatedData.Attribute;
-	const bool bDamageMeta = Attribute == GetDamageAttribute()
-		&& Data.EvaluatedData.Magnitude > 0.0f;
+	// Direct health damage must also respect master's invulnerability handling.
 	const bool bDirectHealthDamage = Attribute == GetHealthAttribute()
 		&& Data.EvaluatedData.Magnitude < 0.0f;
-	return !bDamageMeta && !bDirectHealthDamage;
+	return !bDirectHealthDamage || !ASC || !ASC->HasMatchingGameplayTag(State_Invulnerable);
 }
 
 void UBaseAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
@@ -108,7 +111,9 @@ void UBaseAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallba
 
 		if (LocalDamage > 0.0f)
 		{
+			const float AppliedDamage = FMath::Min(GetHealth(), LocalDamage);
 			SetHealth(FMath::Clamp(GetHealth() - LocalDamage, 0.0f, GetMaxHealth()));
+			OnDamageResolved.Broadcast(Data.EffectSpec.GetContext(), AppliedDamage);
 		}
 	}
 
@@ -135,31 +140,6 @@ void UBaseAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribute,
 		SetHealth(NewValue);
 	}
 
-	// 실행 중인 기본 공격에도 어떤 GE든 적용/해제 시점의 새 배율을 즉시 반영합니다.
-	if (Attribute == GetAttackSpeedMultiplierAttribute()
-		&& !FMath::IsNearlyEqual(OldValue, NewValue)
-		&& OldValue > KINDA_SMALL_NUMBER)
-	{
-		UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
-		if (ASC && ASC->IsOwnerActorAuthoritative())
-		{
-			UE_LOG(LogTemp, Log, TEXT("[AttackSpeed] Multiplier changed: owner=%s %.2f -> %.2f"),
-				*GetNameSafe(ASC->GetAvatarActor()), OldValue, NewValue);
-			const UGameplayAbility* AnimatingAbility = ASC->GetAnimatingAbility();
-			const FGameplayAbilityActorInfo* ActorInfo = AnimatingAbility
-				? AnimatingAbility->GetCurrentActorInfo()
-				: nullptr;
-			UAnimInstance* AnimInstance = ActorInfo ? ActorInfo->GetAnimInstance() : nullptr;
-			if (AnimatingAbility
-				&& AnimatingAbility->GetAssetTags().HasTagExact(GameplayAbility_BasicAttack)
-				&& ASC->GetCurrentMontage()
-				&& AnimInstance)
-			{
-				const float CurrentRate = AnimInstance->Montage_GetPlayRate(ASC->GetCurrentMontage());
-				ASC->CurrentMontageSetPlayRate(FMath::Max(0.01f, CurrentRate * (NewValue / OldValue)));
-			}
-		}
-	}
 }
 
 void UBaseAttributeSet::OnRep_Health(const FGameplayAttributeData& OldHealth)
@@ -170,11 +150,6 @@ void UBaseAttributeSet::OnRep_Health(const FGameplayAttributeData& OldHealth)
 void UBaseAttributeSet::OnRep_MaxHealth(const FGameplayAttributeData& OldMaxHealth)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UBaseAttributeSet, MaxHealth, OldMaxHealth);
-}
-
-void UBaseAttributeSet::OnRep_AttackPower(const FGameplayAttributeData& OldAttackPower)
-{
-	GAMEPLAYATTRIBUTE_REPNOTIFY(UBaseAttributeSet, AttackPower, OldAttackPower);
 }
 
 void UBaseAttributeSet::OnRep_Strength(const FGameplayAttributeData& OldStrength)

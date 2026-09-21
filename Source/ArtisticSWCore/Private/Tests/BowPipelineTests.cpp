@@ -11,6 +11,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/SkeletalMesh.h"
+#include "Equipment/WeaponDefinition.h"
 #include "Engine/SkeletalMeshSocket.h"
 #include "GameFramework/Character.h"
 #include "Item/Components/BowComponent.h"
@@ -45,6 +46,22 @@ bool FArrowCollisionProfileTest::RunTest(const FString& Parameters)
 		ArrowProfile.ResponseToChannels.GetResponse(ECC_WorldDynamic), ECR_Block);
 	TestEqual(TEXT("ArrowProjectile blocks ship query hulls"),
 		ArrowProfile.ResponseToChannels.GetResponse(ECC_ShipDamage), ECR_Block);
+	TestEqual(TEXT("ArrowProjectile blocks animated character hurtboxes"),
+		ArrowProfile.ResponseToChannels.GetResponse(ECC_CombatHurtbox), ECR_Block);
+
+	FCollisionResponseTemplate HurtboxProfile;
+	if (TestTrue(TEXT("CharacterHurtbox profile is registered"),
+		UCollisionProfile::Get()->GetProfileTemplate(TEXT("CharacterHurtbox"), HurtboxProfile)))
+	{
+		TestEqual(TEXT("CharacterHurtbox is query-only"),
+			HurtboxProfile.CollisionEnabled, ECollisionEnabled::QueryOnly);
+		TestEqual(TEXT("CharacterHurtbox uses its dedicated object channel"),
+			HurtboxProfile.ObjectType, ECC_CombatHurtbox);
+		TestEqual(TEXT("CharacterHurtbox blocks character arrows"),
+			HurtboxProfile.ResponseToChannels.GetResponse(ECC_Arrow), ECR_Block);
+		TestEqual(TEXT("CharacterHurtbox does not participate in Pawn movement collision"),
+			HurtboxProfile.ResponseToChannels.GetResponse(ECC_Pawn), ECR_Ignore);
+	}
 
 	for (const FName ShipProfileName : {FName(TEXT("PlayerShipDamage")), FName(TEXT("EnemyShipDamage"))})
 	{
@@ -108,27 +125,32 @@ bool FBowSocketAndPresentationAssetTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Player Bow resolves the character-owned Arrow_socket contract"),
 		NativeBowCDO->GetCharacterArrowSocketName(), FName(TEXT("Arrow_socket")));
 
-	const UClass* PlayerBlueprintClass = LoadObject<UClass>(
-		nullptr,
-		TEXT("/Game/Blueprints/Player/BP_Player.BP_Player_C"));
-	const ACharacter* PlayerBlueprintCDO = PlayerBlueprintClass
-		? PlayerBlueprintClass->GetDefaultObject<ACharacter>()
-		: nullptr;
-	if (TestNotNull(TEXT("BP_Player loads as ACharacter"), PlayerBlueprintCDO)
-		&& TestNotNull(TEXT("BP_Player has a character mesh"), PlayerBlueprintCDO->GetMesh()))
+	for (const TCHAR* PlayerPath : {
+		TEXT("/Game/Blueprints/Player/BP_Player_Woman.BP_Player_Woman_C"),
+		TEXT("/Game/Blueprints/Player/BP_Player_Man.BP_Player_Man_C")})
 	{
-		TestTrue(TEXT("BP_Player character skeleton contains Arrow_socket"),
-			PlayerBlueprintCDO->GetMesh()->DoesSocketExist(NativeBowCDO->GetCharacterArrowSocketName()));
-
-		const USkeletalMesh* CharacterMeshAsset = PlayerBlueprintCDO->GetMesh()->GetSkeletalMeshAsset();
-		const USkeleton* CharacterSkeleton = CharacterMeshAsset ? CharacterMeshAsset->GetSkeleton() : nullptr;
-		const USkeletalMeshSocket* ArrowSocket = CharacterSkeleton
-			? CharacterSkeleton->FindSocket(NativeBowCDO->GetCharacterArrowSocketName())
+		const UClass* PlayerBlueprintClass = LoadObject<UClass>(
+			nullptr,
+			PlayerPath);
+		const ACharacter* PlayerBlueprintCDO = PlayerBlueprintClass
+			? PlayerBlueprintClass->GetDefaultObject<ACharacter>()
 			: nullptr;
-		if (TestNotNull(TEXT("Character Arrow_socket is authored on the shared skeleton"), ArrowSocket))
+		if (TestNotNull(TEXT("Player variant loads as ACharacter"), PlayerBlueprintCDO)
+			&& TestNotNull(TEXT("Player variant has a character mesh"), PlayerBlueprintCDO->GetMesh()))
 		{
-			TestFalse(TEXT("Arrow_socket remains attached to an authored character bone"),
-				ArrowSocket->BoneName.IsNone());
+			TestTrue(TEXT("Player variant character skeleton contains Arrow_socket"),
+				PlayerBlueprintCDO->GetMesh()->DoesSocketExist(NativeBowCDO->GetCharacterArrowSocketName()));
+
+			const USkeletalMesh* CharacterMeshAsset = PlayerBlueprintCDO->GetMesh()->GetSkeletalMeshAsset();
+			const USkeleton* CharacterSkeleton = CharacterMeshAsset ? CharacterMeshAsset->GetSkeleton() : nullptr;
+			const USkeletalMeshSocket* ArrowSocket = CharacterSkeleton
+				? CharacterSkeleton->FindSocket(NativeBowCDO->GetCharacterArrowSocketName())
+				: nullptr;
+			if (TestNotNull(TEXT("Character Arrow_socket is authored on the shared skeleton"), ArrowSocket))
+			{
+				TestFalse(TEXT("Arrow_socket remains attached to an authored character bone"),
+					ArrowSocket->BoneName.IsNone());
+			}
 		}
 	}
 
@@ -213,8 +235,10 @@ bool FBowSocketAndPresentationAssetTest::RunTest(const FString& Parameters)
 			ItemData->FindItemDefinition(Item_Id_Weapon_Bow_ShortBow1);
 		if (TestNotNull(TEXT("ShortBow1 item definition exists"), ShortBowDefinition))
 		{
-			TestTrue(TEXT("ShortBow1 spawns BP_Arrow"),
-				ShortBowDefinition->SpawnClass.LoadSynchronous() == ArrowBlueprintClass);
+			const UEquippableWeaponDefinition* WeaponDefinition = ShortBowDefinition->WeaponDefinition.LoadSynchronous();
+			TestTrue(TEXT("ShortBow1 spawns BP_Arrow through its combat definition"),
+				WeaponDefinition && WeaponDefinition->CombatData
+					&& WeaponDefinition->CombatData->ProjectileClass.LoadSynchronous() == ArrowBlueprintClass);
 		}
 	}
 

@@ -12,6 +12,10 @@ class GASCORE_API UBaseGameplayAbility : public UGameplayAbility
 	GENERATED_BODY()
 
 public:
+	bool IsAllowedDuringControlBlock() const { return bAllowDuringControlBlock; }
+	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr,
+		FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 	UBaseGameplayAbility();
 
 	/** Whether an already active atomic action may outlive the Behavior Tree branch that started it. */
@@ -30,6 +34,8 @@ public:
 		bool bReplicateEndAbility, bool bWasCancelled) override;
 
 protected:
+	UPROPERTY(EditDefaultsOnly, Category = "Ability|Control")
+	bool bAllowDuringControlBlock = false;
 	/*
 	* TargetData에 포함된 모든 대상에게 GameplayEffect를 적용합니다.
 	* @param TargetData GE를 적용할 대상 정보입니다.
