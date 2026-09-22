@@ -11,6 +11,8 @@
 #include "Upgrade/ShipUpgradeTreeDataAsset.h"
 #include "Engine/DataTable.h"
 #include "Storage/StorageChest.h"
+#include "ItemSpawn/BossChestGuaranteedLootData.h"
+#include "BaseCharacter.h"
 
 namespace
 {
@@ -277,6 +279,7 @@ int32 AGlobalLootSpawnManager::InitializeDataDrivenChestsWithBalance(const UProg
 		if (IsValid(Point->SpawnConfiguredChest(nullptr, static_cast<int32>(PointSeed & 0x7fffffff))))
 		{
 			++SpawnedCount;
+			EnsureBossGuaranteedLoot(Point);
 		}
 		else
 		{
@@ -432,6 +435,7 @@ bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionB
 			Point->ApplyFixedChanceDrops(FixedDrops,
 				static_cast<int32>(HashCombine(Seed, 0xC32D91A7u) & 0x7fffffffu));
 		}
+		EnsureBossGuaranteedLoot(Point);
 	}
 	for (int32 ZoneIndex = 0; ZoneIndex < 4; ++ZoneIndex)
 	{
@@ -440,6 +444,23 @@ bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionB
 	}
 	bProgressionFinalized = true;
 	return true;
+}
+
+void AGlobalLootSpawnManager::EnsureBossGuaranteedLoot(AChestSpawnPoint* Point)
+{
+	if (!HasAuthority() || !IsValid(Point) || Point->GetSpawnMode() != EChestSpawnMode::Guarded
+		|| !Point->IsActivated()) return;
+	ABaseCharacter* Boss = Point->GetRegisteredBossGuard();
+	AStorageChest* Chest = Cast<AStorageChest>(Point->GetSpawnedActor());
+	if (!IsValid(Boss) || !IsValid(Chest) || Chest->HasBeenOpened()) return;
+	UBossChestGuaranteedLootData* Data = BossGuaranteedLootData.LoadSynchronous();
+	if (!Data)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Boss guaranteed loot data is not configured on %s"), *GetNameSafe(this));
+		return;
+	}
+	TArray<FStorageItemEntry> Items;
+	if (Data->FindItemsForExactClass(Boss->GetClass(), Items)) Chest->EnsureGuaranteedLoot(Items);
 }
 
 bool AGlobalLootSpawnManager::CalculateZoneDrops(EProgressionZone Zone, const FProgressionZoneTarget& Target,

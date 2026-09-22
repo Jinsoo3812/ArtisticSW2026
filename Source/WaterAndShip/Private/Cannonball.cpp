@@ -451,7 +451,8 @@ void ACannonball::HandleShipHit(AShip* HitShip)
 		// A ship impact damages the hull, but never its owned/attached crew through
 		// splash. This remains module-independent and also covers authored crew.
 		if (Target != HitShip
-			&& (Target->GetOwner() == HitShip || Target->IsAttachedTo(HitShip)))
+			&& (Target->GetOwner() == HitShip || Target->IsAttachedTo(HitShip)
+				|| HitShip->IsProtectedFromOwnHullCannonSplash(Target)))
 		{
 			continue;
 		}

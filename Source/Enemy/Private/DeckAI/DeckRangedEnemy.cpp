@@ -13,6 +13,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "ShipAI/EnemyShip.h"
+#include "ShipAI/EnemyShipWeakeningWorldSubsystem.h"
 #include "TimerManager.h"
 #include "UI/EnemyHealthBarComponent.h"
 #include "Weapon/BaseWeaponComponent.h"
@@ -180,6 +181,7 @@ bool ADeckEnemy::ActivateFromPool(
 	// movement base after controller initialization.
 	RestoreDeckMovementState();
 
+	InHostShip->NotifyCrewEnemyReactivated(this);
 	ForceNetUpdate();
 	return true;
 }
@@ -442,6 +444,13 @@ void ADeckEnemy::RestoreDeckMovementState()
 
 void ADeckEnemy::RestoreForPoolActivation()
 {
+	if (GetDeckHostShip() && GetWorld())
+	{
+		if (UEnemyShipWeakeningWorldSubsystem* Weakening = GetWorld()->GetSubsystem<UEnemyShipWeakeningWorldSubsystem>())
+		{
+			Weakening->BeforeMemberBaseStatsReset(this);
+		}
+	}
 	bDeathHandled = false;
 	bWaveRemoveNotified = false;
 	bHasDropped = false;
@@ -459,6 +468,13 @@ void ADeckEnemy::RestoreForPoolActivation()
 	if (GetHealthComponent()) GetHealthComponent()->UninitializeFromAbilitySystem();
 	const bool bAppliedBalance = ApplyBaseStatsForSpawn();
 	if (GetHealthComponent()) GetHealthComponent()->InitializeWithAbilitySystem(GetAbilitySystemComponent());
+	if (bAppliedBalance && GetWorld())
+	{
+		if (UEnemyShipWeakeningWorldSubsystem* Weakening = GetWorld()->GetSubsystem<UEnemyShipWeakeningWorldSubsystem>())
+		{
+			Weakening->AfterMemberBaseStatsReset(this);
+		}
+	}
 	if (!bAppliedBalance) return;
 	if (USkeletalMeshComponent* CharacterMesh = GetMesh())
 	{

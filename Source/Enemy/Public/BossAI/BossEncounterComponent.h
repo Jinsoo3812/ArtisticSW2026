@@ -4,6 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "Engine/EngineTypes.h"
 #include "Engine/DataTable.h"
+#include "StoryFacadeSubsystem.h"
 #include "BossEncounterComponent.generated.h"
 
 class AEnemyShip;
@@ -11,6 +12,7 @@ class AShip;
 class AShipBossEnemy;
 class AStorageChest;
 class UBaseHealthComponent;
+class AChestSpawnPoint;
 
 UENUM(BlueprintType)
 enum class EBossEncounterState : uint8
@@ -73,6 +75,7 @@ public:
 	/** Shared entry point for interaction, perception and future scripted triggers. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Encounter")
 	bool TryStartEncounter(AActor* TriggerActor);
+	void RefreshChestReservations() { UpdateBossReservation(); }
 
 	UPROPERTY(BlueprintAssignable, Category = "Boss|Encounter")
 	FOnBossEncounterStateChangedSignature OnEncounterStateChanged;
@@ -89,6 +92,10 @@ protected:
 
 	UFUNCTION()
 	void HandleHostShipDestroyed(AActor* DestroyedActor);
+	UFUNCTION()
+	void HandleStoryChanged();
+	UFUNCTION()
+	void HandleChestSpawned(AStorageChest* Chest);
 
 	UFUNCTION()
 	void OnRep_EncounterState(EBossEncounterState OldState);
@@ -100,6 +107,9 @@ protected:
 	void BindItemBox();
 	void UnbindItemBox();
 	void SetEncounterState(EBossEncounterState NewState);
+	bool IsCampaignGateOpen() const;
+	void UpdateBossReservation();
+	AChestSpawnPoint* ResolveTriggerChestPoint() const;
 
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Boss|Encounter")
 	TObjectPtr<AStorageChest> EnemyItemBox = nullptr;
@@ -108,6 +118,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter",
 		meta = (UseComponentPicker, AllowedClasses = "/Script/Engine.ChildActorComponent"))
 	FComponentReference EnemyItemBoxComponent;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
+	FComponentReference TriggerChestSpawnPointComponent;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
+	EStoryNode RequiredStoryNode = EStoryNode::ReconQuestAccepted;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
+	EStoryNode StopAfterStoryNode = EStoryNode::MiddleBoss1Defeated;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
 	bool bEncounterEnabled = false;
@@ -115,7 +131,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
 	EBossEncounterTrigger EncounterTrigger = EBossEncounterTrigger::ItemBoxInteraction;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Encounter")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
 	TSubclassOf<AShipBossEnemy> BossClass;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter", meta = (RowType = "/Script/Enemy.EnemyBaseStatsRow"))
 	FDataTableRowHandle BossStatsRow;
