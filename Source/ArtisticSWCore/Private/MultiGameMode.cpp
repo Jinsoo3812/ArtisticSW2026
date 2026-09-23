@@ -3,6 +3,7 @@
 
 #include "MultiGameMode.h"
 
+#include "Network/SWNetworkLog.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerStart.h"
 #include "GameFramework/PlayerController.h"
@@ -14,12 +15,139 @@
 #include "TimerManager.h"
 #include "Kismet/GameplayStatics.h"
 
+namespace
+{
+const TCHAR* GetNetModeName(const ENetMode NetMode)
+{
+    switch (NetMode)
+    {
+    case NM_Standalone:
+        return TEXT("Standalone");
+    case NM_DedicatedServer:
+        return TEXT("DedicatedServer");
+    case NM_ListenServer:
+        return TEXT("ListenServer");
+    case NM_Client:
+        return TEXT("Client");
+    default:
+        return TEXT("Unknown");
+    }
+}
+}
+
 AMultiGameMode::AMultiGameMode()
 {
     RequiredPlayerCount = 2;
     MaxPlayerCount = 2;
     bRequireAllPlayersReady = true;
     bAutoReadyOnPostLogin = false;
+}
+
+void AMultiGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
+{
+    Super::InitGame(MapName, Options, ErrorMessage);
+
+    UE_LOG(
+        LogSWConnection,
+        Display,
+        TEXT("InitGame Map=%s NetMode=%s RequiredPlayers=%d MaxPlayers=%d"),
+        *MapName,
+        GetNetModeName(GetNetMode()),
+        RequiredPlayerCount,
+        MaxPlayerCount
+    );
+}
+
+void AMultiGameMode::StartPlay()
+{
+    Super::StartPlay();
+
+    UE_LOG(
+        LogSWConnection,
+        Display,
+        TEXT("StartPlay World=%s NetMode=%s PlayerCount=%d"),
+        *GetNameSafe(GetWorld()),
+        GetNetModeName(GetNetMode()),
+        GetNumPlayers()
+    );
+}
+
+FString AMultiGameMode::InitNewPlayer(
+    APlayerController* NewPlayerController,
+    const FUniqueNetIdRepl& UniqueId,
+    const FString& Options,
+    const FString& Portal)
+{
+    if (!NewPlayerController)
+    {
+        return TEXT("InvalidPlayerController");
+    }
+
+    if (!AssignRoleToPlayer(NewPlayerController))
+    {
+        return TEXT("ServerIsFull");
+    }
+
+    UE_LOG(
+        LogSWConnection,
+        Display,
+        TEXT("InitNewPlayer Controller=%s PlayerIndex=%d"),
+        *GetNameSafe(NewPlayerController),
+        GetPlayerIndex(NewPlayerController)
+    );
+
+    const int32 AssignedPlayerIndex = GetPlayerIndex(NewPlayerController);
+    const FString InitError = Super::InitNewPlayer(NewPlayerController, UniqueId, Options, Portal);
+    if (InitError.IsEmpty())
+    {
+        return InitError;
+    }
+
+    PlayerRoles.Remove(NewPlayerController);
+    PlayerIndices.Remove(NewPlayerController);
+    ReadyPlayers.Remove(NewPlayerController);
+    UE_LOG(
+        LogSWConnection,
+        Warning,
+        TEXT("InitNewPlayer rolled back player slot. Controller=%s PlayerIndex=%d Reason=%s"),
+        *GetNameSafe(NewPlayerController),
+        AssignedPlayerIndex,
+        *InitError
+    );
+    return InitError;
+}
+
+void AMultiGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
+{
+    Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+
+    APawn* Pawn = NewPlayer ? NewPlayer->GetPawn() : nullptr;
+    const bool bPossessed = Pawn && Pawn->GetController() == NewPlayer;
+    if (Pawn)
+    {
+        UE_LOG(
+            LogSWConnection,
+            Display,
+            TEXT("HandleStartingNewPlayer Controller=%s PlayerIndex=%d PlayerState=%s Pawn=%s PawnClass=%s Possessed=%s"),
+            *GetNameSafe(NewPlayer),
+            GetPlayerIndex(NewPlayer),
+            *GetNameSafe(NewPlayer ? NewPlayer->PlayerState : nullptr),
+            *GetNameSafe(Pawn),
+            *GetNameSafe(Pawn->GetClass()),
+            bPossessed ? TEXT("true") : TEXT("false")
+        );
+    }
+    else
+    {
+        UE_LOG(
+            LogSWConnection,
+            Warning,
+            TEXT("HandleStartingNewPlayer Controller=%s PlayerIndex=%d PlayerState=%s Pawn=None PawnClass=None Possessed=false"),
+            *GetNameSafe(NewPlayer),
+            GetPlayerIndex(NewPlayer),
+            *GetNameSafe(NewPlayer ? NewPlayer->PlayerState : nullptr)
+        );
+    }
 }
 
 void AMultiGameMode::PostLogin(APlayerController* NewPlayer)
@@ -31,9 +159,18 @@ void AMultiGameMode::PostLogin(APlayerController* NewPlayer)
 
     // Super::PostLogin 내부에서 PawnClass / PlayerStart를 물어볼 수 있으므로
     // 역할 배정은 Super 호출 전에 끝내는 것이 안전하다.
-    AssignRoleToPlayer(NewPlayer);
+    const bool bRoleAssigned = AssignRoleToPlayer(NewPlayer);
+    if (!bRoleAssigned)
+    {
+        UE_LOG(
+            LogSWConnection,
+            Error,
+            TEXT("PostLogin failed to assign player slot. Controller=%s"),
+            *GetNameSafe(NewPlayer)
+        );
+    }
 
-    if (bAutoReadyOnPostLogin)
+    if (bRoleAssigned && bAutoReadyOnPostLogin)
     {
         ReadyPlayers.Add(NewPlayer);
     }
@@ -43,9 +180,23 @@ void AMultiGameMode::PostLogin(APlayerController* NewPlayer)
     const FName AssignedRole = GetPlayerRole(NewPlayer);
     const int32 PlayerIndex = GetPlayerIndex(NewPlayer);
 
-    OnPlayerRoleAssigned.Broadcast(NewPlayer, AssignedRole, PlayerIndex);
+    UE_LOG(
+        LogSWConnection,
+        Display,
+        TEXT("PostLogin Controller=%s PlayerIndex=%d PlayerState=%s Pawn=%s RegisteredPlayers=%d"),
+        *GetNameSafe(NewPlayer),
+        PlayerIndex,
+        *GetNameSafe(NewPlayer->PlayerState),
+        *GetNameSafe(NewPlayer->GetPawn()),
+        PlayerRoles.Num()
+    );
 
-    if (bAutoReadyOnPostLogin)
+    if (bRoleAssigned)
+    {
+        OnPlayerRoleAssigned.Broadcast(NewPlayer, AssignedRole, PlayerIndex);
+    }
+
+    if (bRoleAssigned && bAutoReadyOnPostLogin)
     {
         OnPlayerReadyChanged.Broadcast(NewPlayer, true);
     }
@@ -60,21 +211,36 @@ void AMultiGameMode::PreLogin(
     FString& ErrorMessage
 )
 {
+    UE_LOG(
+        LogSWConnection,
+        Display,
+        TEXT("PreLogin Begin PlayerCount=%d MaxPlayers=%d"),
+        GetNumPlayers(),
+        MaxPlayerCount
+    );
+
     Super::PreLogin(Options, Address, UniqueId, ErrorMessage);
 
     if (!ErrorMessage.IsEmpty())
     {
+        UE_LOG(LogSWConnection, Warning, TEXT("PreLogin Rejected Reason=%s"), *ErrorMessage);
         return;
     }
 
     if (MaxPlayerCount > 0 && GetNumPlayers() >= MaxPlayerCount)
     {
         ErrorMessage = TEXT("ServerIsFull");
+        UE_LOG(LogSWConnection, Warning, TEXT("PreLogin Rejected Reason=ServerIsFull"));
+        return;
     }
+
+    UE_LOG(LogSWConnection, Display, TEXT("PreLogin Accepted"));
 }
 
 void AMultiGameMode::Logout(AController* Exiting)
 {
+    const int32 ReleasedPlayerIndex = GetPlayerIndex(Exiting);
+
     if (Exiting)
     {
         PlayerRoles.Remove(Exiting);
@@ -97,6 +263,15 @@ void AMultiGameMode::Logout(AController* Exiting)
     }
 
     Super::Logout(Exiting);
+
+    UE_LOG(
+        LogSWConnection,
+        Display,
+        TEXT("Logout Controller=%s ReleasedPlayerIndex=%d RegisteredPlayers=%d"),
+        *GetNameSafe(Exiting),
+        ReleasedPlayerIndex,
+        PlayerRoles.Num()
+    );
 }
 
 UClass* AMultiGameMode::GetDefaultPawnClassForController_Implementation(AController* InController)
@@ -423,32 +598,74 @@ void AMultiGameMode::TryNotifyReadinessState()
 	}
 }
 
-void AMultiGameMode::AssignRoleToPlayer(AController* Controller)
+int32 AMultiGameMode::FindAvailablePlayerIndex() const
+{
+    if (MaxPlayerCount <= 0)
+    {
+        return INDEX_NONE;
+    }
+
+    for (int32 CandidateIndex = 0; CandidateIndex < MaxPlayerCount; ++CandidateIndex)
+    {
+        bool bAlreadyUsed = false;
+        for (const TPair<TObjectPtr<AController>, int32>& Pair : PlayerIndices)
+        {
+            if (Pair.Value == CandidateIndex)
+            {
+                bAlreadyUsed = true;
+                break;
+            }
+        }
+
+        if (!bAlreadyUsed)
+        {
+            return CandidateIndex;
+        }
+    }
+
+    return INDEX_NONE;
+}
+
+bool AMultiGameMode::AssignRoleToPlayer(AController* Controller)
 {
 	if (!Controller)
 	{
-		return;
+		return false;
 	}
 
-	if (PlayerRoles.Contains(Controller))
+	if (PlayerIndices.Contains(Controller))
 	{
-		return;
+		return true;
 	}
 
-	const int32 PlayerIndex = PlayerRoles.Num();
+	const int32 PlayerIndex = FindAvailablePlayerIndex();
+	if (PlayerIndex == INDEX_NONE)
+	{
+		UE_LOG(
+			LogSWConnection,
+			Warning,
+			TEXT("Player slot assignment failed. Controller=%s MaxPlayers=%d"),
+			*GetNameSafe(Controller),
+			MaxPlayerCount
+		);
+		return false;
+	}
+
 	const FName AssignedRole = GetRoleForPlayerIndex(PlayerIndex);
 
 	PlayerRoles.Add(Controller, AssignedRole);
 	PlayerIndices.Add(Controller, PlayerIndex);
 
 	UE_LOG(
-		LogTemp,
-		Log,
-		TEXT("[ASWMultiGameMode] Role assigned. Controller=%s Role=%s PlayerIndex=%d"),
+		LogSWConnection,
+		Display,
+		TEXT("Player slot assigned. Controller=%s Role=%s PlayerIndex=%d"),
 		*GetNameSafe(Controller),
 		*AssignedRole.ToString(),
 		PlayerIndex
 	);
+
+	return true;
 }
 
 APlayerStart* AMultiGameMode::FindPlayerStartByRole(FName RoleName) const

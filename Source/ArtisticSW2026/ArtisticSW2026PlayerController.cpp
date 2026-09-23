@@ -8,6 +8,59 @@
 #include "Blueprint/UserWidget.h"
 #include "ArtisticSW2026.h"
 #include "Widgets/Input/SVirtualJoystick.h"
+#include "Engine/GameInstance.h"
+#include "Network/SWConnectionSubsystem.h"
+#include "Network/SWNetworkLog.h"
+
+void AArtisticSW2026PlayerController::SWConnect(const FString& Address)
+{
+	if (!IsLocalPlayerController())
+	{
+		UE_LOG(LogSWConnection, Warning, TEXT("SWConnect ignored on a non-local player controller."));
+		return;
+	}
+	USWConnectionSubsystem* Subsystem = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWConnectionSubsystem>() : nullptr;
+	if (!Subsystem)
+	{
+		UE_LOG(LogSWConnection, Error, TEXT("SWConnect failed because the connection subsystem is unavailable."));
+		return;
+	}
+	Subsystem->ConnectDirect(Address);
+}
+
+void AArtisticSW2026PlayerController::SWDisconnect()
+{
+	if (!IsLocalPlayerController())
+	{
+		UE_LOG(LogSWConnection, Warning, TEXT("SWDisconnect ignored on a non-local player controller."));
+		return;
+	}
+	USWConnectionSubsystem* Subsystem = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWConnectionSubsystem>() : nullptr;
+	if (!Subsystem)
+	{
+		UE_LOG(LogSWConnection, Error, TEXT("SWDisconnect failed because the connection subsystem is unavailable."));
+		return;
+	}
+	Subsystem->DisconnectToDefaultMap();
+}
+
+void AArtisticSW2026PlayerController::SWConnectionStatus() const
+{
+	if (!IsLocalPlayerController())
+	{
+		UE_LOG(LogSWConnection, Warning, TEXT("SWConnectionStatus ignored on a non-local player controller."));
+		return;
+	}
+	const USWConnectionSubsystem* Subsystem = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWConnectionSubsystem>() : nullptr;
+	if (!Subsystem)
+	{
+		UE_LOG(LogSWConnection, Error, TEXT("SWConnectionStatus failed because the connection subsystem is unavailable."));
+		return;
+	}
+	const FSWConnectionFailure Failure = Subsystem->GetLastFailure();
+	UE_LOG(LogSWConnection, Display, TEXT("Connection status. State=%s AttemptId=%d FailureReason=%s FailureType=%s"),
+		*UEnum::GetValueAsString(Subsystem->GetConnectionState()), Subsystem->GetActiveAttemptId(), *UEnum::GetValueAsString(Failure.Reason), *Failure.EngineFailureType);
+}
 
 void AArtisticSW2026PlayerController::BeginPlay()
 {

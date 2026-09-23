@@ -113,12 +113,24 @@ public:
     bool bAutoReadyOnPostLogin = false;
 
 protected:
+    virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
+    virtual void StartPlay() override;
+
     virtual void PreLogin(
         const FString& Options,
         const FString& Address,
         const FUniqueNetIdRepl& UniqueId,
         FString& ErrorMessage
     ) override;
+
+    virtual FString InitNewPlayer(
+        APlayerController* NewPlayerController,
+        const FUniqueNetIdRepl& UniqueId,
+        const FString& Options,
+        const FString& Portal
+    ) override;
+
+    virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
     
     // 플레이어가 월드에 들어올 때 호출
     virtual void PostLogin(APlayerController* NewPlayer) override;
@@ -189,8 +201,11 @@ protected:
     /** PlayerIndex에 따라 역할을 결정한다. 0 = Attacker, 1 = Crafter */
     virtual FName GetRoleForPlayerIndex(int32 PlayerIndex) const;
 
+    /** 사용 중이지 않은 첫 번째 PlayerIndex를 반환한다. */
+    int32 FindAvailablePlayerIndex() const;
+
     /** Controller에게 역할을 배정한다. */
-    void AssignRoleToPlayer(AController* Controller);
+    bool AssignRoleToPlayer(AController* Controller);
 
     /** PlayerStartTag와 역할명이 일치하는 PlayerStart를 찾는다. */
     APlayerStart* FindPlayerStartByRole(FName RoleName) const;
