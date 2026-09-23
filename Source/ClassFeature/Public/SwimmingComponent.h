@@ -18,12 +18,44 @@ enum class ECustomMovementMode : uint8
 	CMOVE_Swimming = 1
 };
 
-/** Player-only vertical swimming state. Ships continue to use their own physics buoyancy. */
+/** Animation-facing compatibility state. Locomotion authority uses ESwimMovementState. */
 UENUM(BlueprintType)
 enum class ESwimDepthMode : uint8
 {
 	Surface,
 	Submerged
+};
+
+/** Player-only vertical swimming state. Ships continue to use their own physics buoyancy. */
+UENUM()
+enum class ESwimMovementState : uint8
+{
+	Surface,
+	DiveTransition,
+	Submerged,
+	SurfaceTransition
+};
+
+struct FSwimWaterSurfaceSample
+{
+	bool bIsValid = false;
+	float SurfaceZ = -BIG_NUMBER;
+	float SurfaceVelocityZ = 0.0f;
+	FVector SurfaceNormal = FVector::UpVector;
+	TWeakObjectPtr<UWaterBodyComponent> WaterBody;
+};
+
+struct FSwimPredictionState
+{
+	ESwimMovementState MovementState = ESwimMovementState::Surface;
+	float SurfaceTransitionElapsed = 0.0f;
+	float SurfaceTransitionStallElapsed = 0.0f;
+	float SurfaceTransitionEntryHoldElapsed = 0.0f;
+	float LastSurfaceTransitionProgressDepth = 0.0f;
+	bool bRawDiveInputHeld = false;
+	bool bRawAscendInputHeld = false;
+	bool bDiveInputSuppressedUntilRelease = false;
+	bool bAscendInputSuppressedUntilRelease = false;
 };
 
 /** Snapshot consumed by animation code. It is built on the game thread, then copied to the AnimInstance proxy. */
@@ -71,21 +103,26 @@ public:
 
 	/** Sets the requested vertical swim direction: -1 dives, +1 ascends. */
 	void SetVerticalSwimInput(float InVerticalInput);
+	void SetRawVerticalSwimInput(bool bDiveHeld, bool bAscendHeld);
 
 	/** Current vertical swim command captured by CMC saved moves. */
-	float GetVerticalSwimInput() const { return VerticalSwimInput; }
+	float GetVerticalSwimInput() const { return RawVerticalSwimInput; }
+	float GetEffectiveVerticalSwimInput() const;
 
 	/** Restores the movement sub-state associated with a replayed CMC saved move. */
-	void RestorePredictedDepthMode(ESwimDepthMode InDepthMode) { DepthMode = InDepthMode; }
+	FSwimPredictionState GetPredictionState() const;
+	void RestorePredictedSwimState(const FSwimPredictionState& InState);
 
 	/** True while Ctrl or Space owns movement and horizontal swim input must be ignored. */
 	bool HasVerticalSwimInput() const;
+	bool IsTransitionState() const;
 
 	/** True only for neutral underwater movement, where W follows camera pitch in 3D. */
 	bool ShouldUseCameraDirectedUnderwaterMovement() const;
 
 	UFUNCTION(BlueprintPure, Category = "Swimming")
 	bool IsCustomSwimming() const;
+	bool NeedsDeterministicWaveTime() const;
 
 	/** True while water has reached the feet, but the capsule is not submerged enough to swim. */
 	UFUNCTION(BlueprintPure, Category = "Swimming")
@@ -99,7 +136,10 @@ public:
 	bool IsUnderwater() const { return bIsUnderwater; }
 
 	UFUNCTION(BlueprintPure, Category = "Swimming")
-	ESwimDepthMode GetDepthMode() const { return DepthMode; }
+	ESwimMovementState GetMovementState() const { return MovementState; }
+
+	UFUNCTION(BlueprintPure, Category = "Swimming")
+	ESwimDepthMode GetDepthMode() const;
 
 	/** Builds the authoritative animation snapshot for the owning character. */
 	UFUNCTION(BlueprintPure, Category = "Swimming")
@@ -129,17 +169,20 @@ public:
 
 private:
 	// Helper to calculate the water height at a given location (queries overlapping water bodies)
-	bool GetWaterHeightAtLocation(
+	FSwimWaterSurfaceSample QueryWaterSurfaceSample(
 		const FVector& Location,
-		float& OutWaterHeight,
-		bool* bOutHadValidWaterBodyQuery = nullptr,
-		float WaveTimeOffsetSeconds = 0.0f) const;
-
-	/** Deterministic pose proxy derived only from CMC horizontal velocity. */
-	float GetSurfacePostureBlend() const;
-
-	/** Pontoon placement matching the upright idle and prone moving swim poses. */
-	FVector GetSurfacePontoonOffset() const;
+		TOptional<double> ExplicitServerTime = NullOpt) const;
+	double GetCurrentSynchronizedServerTime() const;
+	TOptional<double> ResolveMovementWaveServerTime() const;
+	void EnterSwimMovementState(
+		ESwimMovementState NewState,
+		float InitialDepth = 0.0f,
+		const TCHAR* TransitionReason = TEXT("Unspecified"));
+	void UpdateSwimState(float DeltaTime, const FSwimWaterSurfaceSample& Sample, bool bBlockingHit);
+	void ResetSwimMovementState();
+	void UpdateUnderwaterState(const FSwimWaterSurfaceSample& Sample);
+	static ESwimDepthMode ToAnimationDepthMode(ESwimMovementState InMovementState);
+	void RefreshEffectiveVerticalInput();
 
 	// Initialize overlapping water bodies on startup
 	void InitializeOverlaps();
@@ -218,18 +261,44 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface", meta = (ClampMin = "0.0", Units = "cm"))
 	float SurfaceTargetDepth = 50.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|State", meta = (ClampMin = "0.0", Units = "cm"))
+	float SubmergedDepthThreshold = 150.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|State", meta = (ClampMin = "0.0", Units = "cm"))
+	float SurfaceTransitionCompletionTolerance = 5.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|State", meta = (ClampMin = "0.0", Units = "s"))
+	float SurfaceTransitionEntryHoldTime = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|State", meta = (ClampMin = "0.01", Units = "s"))
+	float SurfaceTransitionMaxDuration = 5.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|State", meta = (ClampMin = "0.01", Units = "s"))
+	float SurfaceTransitionStallTimeout = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface", meta = (ClampMin = "0.01", Units = "Hz"))
+	float SurfaceFollowFrequencyHz = 2.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface", meta = (ClampMin = "0.0"))
+	float SurfaceFollowDampingRatio = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface", meta = (ClampMin = "0.0", Units = "cm/s^2"))
+	float MaxSurfaceFollowAcceleration = 4000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface", meta = (ClampMin = "0.0", Units = "cm/s"))
+	float MaxSurfaceFollowSpeed = 500.0f;
+
 	/** Pontoon offset while the surface-swim pose is upright and idle. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface|Posture")
-	FVector SurfaceIdlePontoonOffset = FVector(0.0f, 0.0f, 65.0f);
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Surface physics now uses SurfaceTargetDepth."))
+	FVector SurfaceIdlePontoonOffset_DEPRECATED = FVector(0.0f, 0.0f, 65.0f);
 
 	/** Pontoon offset while the surface-swim pose is prone and moving. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface|Posture")
-	FVector SurfaceMovingPontoonOffset = FVector::ZeroVector;
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Surface physics now uses SurfaceTargetDepth."))
+	FVector SurfaceMovingPontoonOffset_DEPRECATED = FVector::ZeroVector;
 
 	/** Horizontal speed at which the moving-pose pontoon offset is fully applied. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface|Posture",
-		meta = (ClampMin = "1.0", Units = "cm/s"))
-	float SurfaceMovingPoseSpeed = 200.0f;
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Surface physics no longer varies by posture speed."))
+	float SurfaceMovingPoseSpeed_DEPRECATED = 200.0f;
 
 	/** Fraction of the local wave's vertical velocity inherited by surface swimming drag. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Swimming|Surface",
@@ -283,7 +352,7 @@ private:
 	UPROPERTY(Transient)
 	float WaterQueryFailureElapsed = 0.0f;
 
-	float VerticalSwimInput = 0.0f;
+	float RawVerticalSwimInput = 0.0f;
 
 	UPROPERTY(Replicated)
 	bool bDiveInputHeld = false;
@@ -291,8 +360,18 @@ private:
 	UPROPERTY(Replicated)
 	bool bAscendInputHeld = false;
 
-	UPROPERTY(Transient)
-	ESwimDepthMode DepthMode = ESwimDepthMode::Surface;
+	UPROPERTY(Replicated)
+	ESwimMovementState MovementState = ESwimMovementState::Surface;
+
+	float SurfaceTransitionElapsed = 0.0f;
+	float SurfaceTransitionStallElapsed = 0.0f;
+	float SurfaceTransitionEntryHoldElapsed = 0.0f;
+	float LastSurfaceTransitionProgressDepth = 0.0f;
+	bool bRawDiveInputHeld = false;
+	bool bRawAscendInputHeld = false;
+	bool bDiveInputSuppressedUntilRelease = false;
+	bool bAscendInputSuppressedUntilRelease = false;
+	bool bLoggedInvalidStateTuning = false;
 
 	UPROPERTY(Transient)
 	bool bIsUnderwater = false;
@@ -300,6 +379,4 @@ private:
 	UPROPERTY(Transient)
 	bool bIsInShallowWater = false;
 
-	void UpdateDepthMode();
-	void UpdateUnderwaterState();
 };

@@ -36,11 +36,13 @@ class UDeckNavigationComponent;
 class UBossEncounterComponent;
 class ABaseEnemy;
 class ADeckEnemy;
+class AShipBossEnemy;
 class AEnemyShip;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FOnEnemyShipOwnedEnemiesDefeated,
 	AEnemyShip*, EnemyShip);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnEnemyShipCrewDefeated, AEnemyShip*, EnemyShip);
 
 /** Editor-time sampling controls for creating editable deck waypoint components from ShipDeckMesh. */
 USTRUCT(BlueprintType)
@@ -113,6 +115,7 @@ public:
 	virtual bool AllowsPlayerBoarding() const override { return false; }
 	virtual bool AllowsPlayerAnchorControl(AActor* Interactor = nullptr) const override;
 	virtual float GetCannonCooldownMultiplier() const override;
+	virtual bool IsProtectedFromOwnHullCannonSplash(const AActor* Candidate) const override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	/** Client-local, distance-selected cabin water culling shared with the player ship. */
@@ -161,6 +164,8 @@ public:
 	/** Future ship-movement unlock logic can subscribe here instead of polling. Authority only. */
 	UPROPERTY(BlueprintAssignable, Category = "Ship|Deck AI")
 	FOnEnemyShipOwnedEnemiesDefeated OnOwnedDeckEnemiesDefeated;
+	UPROPERTY(BlueprintAssignable, Category = "Ship|Crew")
+	FOnEnemyShipCrewDefeated OnCrewDefeated;
 
 	/** Internal owner notification from a deck enemy at authoritative death start. */
 	void NotifyOwnedDeckEnemyDefeated(ADeckEnemy* Enemy);
@@ -225,6 +230,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Ship|Crew")
 	void RegisterCrewEnemy(ABaseEnemy* CrewEnemy);
+	void NotifyCrewEnemyReactivated(ABaseEnemy* CrewEnemy);
+	bool RegisterBossEnemy(AShipBossEnemy* BossEnemy);
+	AShipBossEnemy* GetRegisteredBossEnemy() const { return RegisteredBoss; }
+	bool IsOwnedCannonSplashProtectedActor(const AActor* Candidate) const;
 	/** Pooled deck enemies guard the deck chest without being double-counted as manual crew. */
 	void RegisterDeckEnemyChestGuard(ABaseEnemy* CrewEnemy);
 
@@ -387,6 +396,8 @@ protected:
 
 	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Crew")
 	TArray<TObjectPtr<ABaseEnemy>> RegisteredCrewEnemies;
+	UPROPERTY(Transient)
+	TObjectPtr<AShipBossEnemy> RegisteredBoss;
 
 	UPROPERTY(ReplicatedUsing = OnRep_CrewDefeated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Crew")
 	bool bCrewDefeated = false;
@@ -399,5 +410,7 @@ protected:
 
 	/** Prevents an unconfigured or not-yet-deployed empty crew roster from being treated as defeated. */
 	bool bHasEverHadLivingCrew = false;
+	bool bEndingPlay = false;
+	bool bCaptureCannonTagAdded = false;
 	TArray<FGameplayAbilitySpecHandle> GrantedEnemyShipAbilityHandles;
 };

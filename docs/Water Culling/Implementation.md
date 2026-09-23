@@ -8,18 +8,18 @@
 
 ## 베이크 결과
 
-- 입력 표면: `SM_Ship` LOD0 실제 삼각형
-- 밀폐 보조물: `SW_CabinBarrier` 태그를 가진 Cube 5개
+- 입력 표면: `SM_Ship_Culling` LOD0 실제 삼각형
+- 밀폐 보조물: `Barrier` 폴더의 Cube 33개
 - Flood Fill 시드: `SW_CabinSeed` 태그를 가진 PointLight
 - 복셀 크기: 10 cm
 - 표면 차단 두께: 12 cm
 - 측면 팽창: 1복셀(10 cm)
 - 아래 방향 팽창: 2복셀(20 cm)
 - 위 방향 팽창: 없음
-- 해상도: 359 x 141 x 298
-- 내부 복셀: 302,683
+- 해상도: 387 x 136 x 260
+- 내부 복셀: 797,498
 - 외부 누수: 없음
-- 디버그 표시: `SW_CabinVolume_Debug`, 4,713개 병합 인스턴스
+- 디버그 표시: `SW_CabinVolume_Debug`, 4,445개 병합 인스턴스
 
 런타임 자산:
 

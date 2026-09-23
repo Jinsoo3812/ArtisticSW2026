@@ -307,7 +307,7 @@ bool AShipBossEnemy::CanMoveOnDeck() const
 bool AShipBossEnemy::CanSummonDeckEnemy() const
 {
 	if (bUseEncounterBalance && PendingBalanceSummons <= 0) return false;
-	if (!HasAuthority() || bDeathHandled || !IsValid(HostShip) || !CanEngageActor(GetBossCombatTarget()))
+	if (!HasAuthority() || bDeathHandled || !IsValid(HostShip) || HostShip->IsCrewDefeated() || !CanEngageActor(GetBossCombatTarget()))
 	{
 		return false;
 	}
