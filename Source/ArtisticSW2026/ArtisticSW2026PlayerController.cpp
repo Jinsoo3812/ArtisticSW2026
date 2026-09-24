@@ -10,6 +10,7 @@
 #include "Widgets/Input/SVirtualJoystick.h"
 #include "Engine/GameInstance.h"
 #include "Network/SWConnectionSubsystem.h"
+#include "Network/Lobby/SWRoomSubsystem.h"
 #include "Network/SWNetworkLog.h"
 
 void AArtisticSW2026PlayerController::SWConnect(const FString& Address)
@@ -41,7 +42,8 @@ void AArtisticSW2026PlayerController::SWDisconnect()
 		UE_LOG(LogSWConnection, Error, TEXT("SWDisconnect failed because the connection subsystem is unavailable."));
 		return;
 	}
-	Subsystem->DisconnectToDefaultMap();
+	if (USWRoomSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomSubsystem>()) Room->LeaveRoom();
+	else Subsystem->DisconnectToDefaultMap();
 }
 
 void AArtisticSW2026PlayerController::SWConnectionStatus() const

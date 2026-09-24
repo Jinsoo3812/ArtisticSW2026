@@ -244,4 +244,10 @@ protected:
 	bool IsReconnectTransformSafe(AController* Controller, const FTransform& Transform);
 	virtual void HandleAllPlayersDeathFinished();
 	virtual void CapturePlayerProgressForLevelRestart();
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	void CheckRoomOwner();
+	FGuid RoomRunId;
+	uint32 RoomOwnerPid = 0;
+	FString RoomReadyPath;
+	FTimerHandle RoomOwnerTimer;
 };

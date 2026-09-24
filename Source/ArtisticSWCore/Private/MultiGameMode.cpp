@@ -19,6 +19,15 @@
 #include "TimerManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "NavigationSystem.h"
+#include "SWRoomName.h"
+#include "HAL/PlatformFileManager.h"
+#include "HAL/PlatformProcess.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+#include "Misc/Paths.h"
+#include "Misc/FileHelper.h"
+#include "Engine/NetDriver.h"
+#include "IPAddress.h"
 
 namespace
 {
@@ -66,6 +75,33 @@ void AMultiGameMode::InitGame(const FString& MapName, const FString& Options, FS
 void AMultiGameMode::StartPlay()
 {
     Super::StartPlay();
+	FString RunIdText;
+	FString OwnerText;
+	if (GetNetMode() == NM_DedicatedServer && FParse::Value(FCommandLine::Get(), TEXT("SWRoomRunId="), RunIdText)
+		&& FParse::Value(FCommandLine::Get(), TEXT("SWRoomOwnerPid="), OwnerText)
+		&& FGuid::Parse(RunIdText, RoomRunId))
+	{
+		RoomOwnerPid = static_cast<uint32>(FCString::Strtoui64(*OwnerText, nullptr, 10));
+		UNetDriver* Driver = GetWorld() ? GetWorld()->GetNetDriver() : nullptr;
+		const TSharedPtr<const FInternetAddr> LocalAddress = Driver ? Driver->GetLocalAddr() : nullptr;
+		const int32 ListenPort = LocalAddress.IsValid() ? LocalAddress->GetPort() : 0;
+		if (RoomOwnerPid && ListenPort == 7777)
+		{
+			const FString Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("RoomHost"));
+			RoomReadyPath = FPaths::Combine(Directory, RoomRunId.ToString(EGuidFormats::DigitsWithHyphens) + TEXT(".ready"));
+			IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
+			if (Files.CreateDirectoryTree(*Directory))
+			{
+				const FString TempPath = RoomReadyPath + TEXT(".tmp");
+				const FString Contents = FString::Printf(TEXT("%s\n%u\n7777\n"), *RoomRunId.ToString(EGuidFormats::DigitsWithHyphens), FPlatformProcess::GetCurrentProcessId());
+				if (FFileHelper::SaveStringToFile(Contents, *TempPath) && Files.MoveFile(*RoomReadyPath, *TempPath))
+				{
+					UE_LOG(LogSWConnection, Display, TEXT("Side=Server RoomRunId=%s Phase=ServerReady Result=Success Port=7777"), *RoomRunId.ToString());
+					GetWorldTimerManager().SetTimer(RoomOwnerTimer, this, &AMultiGameMode::CheckRoomOwner, 5.0f, true);
+				}
+			}
+		}
+	}
 
     UE_LOG(
         LogSWConnection,
@@ -75,6 +111,23 @@ void AMultiGameMode::StartPlay()
         GetNetModeName(GetNetMode()),
         GetNumPlayers()
     );
+}
+
+void AMultiGameMode::CheckRoomOwner()
+{
+	if (RoomOwnerPid && (!FPlatformProcess::IsApplicationRunning(RoomOwnerPid)
+		|| (!RoomReadyPath.IsEmpty() && !FPlatformFileManager::Get().GetPlatformFile().FileExists(*RoomReadyPath))))
+	{
+		UE_LOG(LogSWConnection, Warning, TEXT("Side=Server RoomRunId=%s Phase=OwnerWatch Result=ShutdownRequested"), *RoomRunId.ToString());
+		FPlatformMisc::RequestExit(false);
+	}
+}
+
+void AMultiGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearTimer(RoomOwnerTimer);
+	if (!RoomReadyPath.IsEmpty()) FPlatformFileManager::Get().GetPlatformFile().DeleteFile(*RoomReadyPath);
+	Super::EndPlay(EndPlayReason);
 }
 
 FString AMultiGameMode::InitNewPlayer(
@@ -120,6 +173,14 @@ FString AMultiGameMode::InitNewPlayer(
     const FString InitError = Super::InitNewPlayer(NewPlayerController, UniqueId, Options, Portal);
     if (InitError.IsEmpty())
     {
+		FString ParsedName;
+		const FString NameHex = UGameplayStatics::ParseOption(Options, TEXT("SWNameHex"));
+		if (NewPlayerController->PlayerState)
+		{
+			if (!NameHex.IsEmpty() && !FSWRoomName::FromHex(NameHex, ParsedName))
+				UE_LOG(LogSWConnection, Warning, TEXT("Side=Server RoomRunId=%s Phase=DisplayName Result=Invalid"), *RoomRunId.ToString());
+			NewPlayerController->PlayerState->SetPlayerName(ParsedName.IsEmpty() ? TEXT("Player") : ParsedName);
+		}
         return InitError;
     }
 
@@ -248,7 +309,7 @@ void AMultiGameMode::PreLogin(
 
     if (!ErrorMessage.IsEmpty())
     {
-        UE_LOG(LogSWConnection, Warning, TEXT("PreLogin Rejected Reason=%s"), *ErrorMessage);
+        UE_LOG(LogSWConnection, Warning, TEXT("Side=Server RoomRunId=%s PreLogin Rejected Reason=%s"), *RoomRunId.ToString(), *ErrorMessage);
         return;
     }
 
@@ -256,7 +317,7 @@ void AMultiGameMode::PreLogin(
     if (!ParseReconnectToken(Options, ReconnectToken))
     {
         ErrorMessage = TEXT("InvalidReconnectToken");
-        UE_LOG(LogSWConnection, Warning, TEXT("PreLogin Rejected Reason=InvalidReconnectToken"));
+        UE_LOG(LogSWConnection, Warning, TEXT("Side=Server RoomRunId=%s PreLogin Rejected Reason=InvalidReconnectToken"), *RoomRunId.ToString());
         return;
     }
 
@@ -266,7 +327,7 @@ void AMultiGameMode::PreLogin(
     if (!Progress)
     {
         ErrorMessage = TEXT("ReconnectStateUnavailable");
-        UE_LOG(LogSWConnection, Warning, TEXT("PreLogin Rejected Reason=ReconnectStateUnavailable"));
+        UE_LOG(LogSWConnection, Warning, TEXT("Side=Server RoomRunId=%s PreLogin Rejected Reason=ReconnectStateUnavailable"), *RoomRunId.ToString());
         return;
     }
 
@@ -278,18 +339,18 @@ void AMultiGameMode::PreLogin(
     if (bKnownToken && ExistingRecord.bConnectionActive)
     {
         ErrorMessage = TEXT("DuplicateReconnectToken");
-        UE_LOG(LogSWConnection, Warning, TEXT("PreLogin Rejected Reason=DuplicateReconnectToken"));
+        UE_LOG(LogSWConnection, Warning, TEXT("Side=Server RoomRunId=%s PreLogin Rejected Reason=DuplicateReconnectToken"), *RoomRunId.ToString());
         return;
     }
 
     if (!bKnownToken && FindAvailablePlayerIndex() == INDEX_NONE)
     {
         ErrorMessage = TEXT("ServerIsFull");
-        UE_LOG(LogSWConnection, Warning, TEXT("PreLogin Rejected Reason=ServerIsFull"));
+        UE_LOG(LogSWConnection, Warning, TEXT("Side=Server RoomRunId=%s PreLogin Rejected Reason=ServerIsFull"), *RoomRunId.ToString());
         return;
     }
 
-    UE_LOG(LogSWConnection, Display, TEXT("PreLogin Accepted"));
+    UE_LOG(LogSWConnection, Display, TEXT("Side=Server RoomRunId=%s PreLogin Accepted"), *RoomRunId.ToString());
 }
 
 void AMultiGameMode::Logout(AController* Exiting)

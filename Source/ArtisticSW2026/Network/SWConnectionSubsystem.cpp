@@ -8,6 +8,8 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "Network/SWNetworkLog.h"
+#include "SWRoomName.h"
+#include "Kismet/GameplayStatics.h"
 #include "Styling/CoreStyle.h"
 #include "UObject/UObjectGlobals.h"
 #include "Widgets/Layout/SBorder.h"
@@ -150,8 +152,17 @@ bool USWConnectionSubsystem::ConnectDirect(const FString& Address)
 	URL.AddOption(*FString::Printf(
 		TEXT("ReconnectToken=%s"),
 		*ReconnectToken.ToString(EGuidFormats::DigitsWithHyphens)));
+	if (!PendingDisplayName.IsEmpty()) URL.AddOption(*FString::Printf(TEXT("SWNameHex=%s"), *FSWRoomName::ToHex(PendingDisplayName)));
 	PlayerController->ClientTravel(URL.ToString(), TRAVEL_Absolute);
 	return true;
+}
+
+bool USWConnectionSubsystem::ConnectDirectWithName(const FString& Address, const FString& DisplayName)
+{
+	FString Normalized;
+	if (!FSWRoomName::Normalize(DisplayName, Normalized)) return false;
+	PendingDisplayName = MoveTemp(Normalized);
+	return ConnectDirect(Address);
 }
 
 void USWConnectionSubsystem::DisconnectToDefaultMap()
@@ -167,7 +178,7 @@ void USWConnectionSubsystem::DisconnectToDefaultMap()
 	ShowLoadingPresentation();
 	bIntentionalDisconnect = true;
 	bConnectionAttemptActive = false;
-	GameInstance->ReturnToMainMenu();
+	UGameplayStatics::OpenLevel(GameInstance->GetWorld(), FName(TEXT("/Game/Level/ConnectionLobby")), true);
 }
 
 void USWConnectionSubsystem::ResetFailure()
@@ -252,7 +263,7 @@ void USWConnectionSubsystem::RecordFailure(ESWConnectionFailureReason Reason, co
 	StopReadinessCheck();
 	bConnectionAttemptActive = false;
 	bIntentionalDisconnect = false;
-	HideLoadingPresentation();
+	if (UWorld* CurrentWorld = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr; CurrentWorld && CurrentWorld->GetMapName().Contains(TEXT("ConnectionLobby"))) HideLoadingPresentation();
 	LastFailure.Reason = Reason;
 	LastFailure.EngineFailureType = EngineFailureType;
 	LastFailure.EngineMessage = EngineMessage;
@@ -265,6 +276,14 @@ void USWConnectionSubsystem::RecordFailure(ESWConnectionFailureReason Reason, co
 ESWConnectionFailureReason USWConnectionSubsystem::ClassifyNetworkFailure(ENetworkFailure::Type FailureType, const FString& ErrorString) const
 {
 	if (ErrorString.Contains(TEXT("ServerIsFull"))) return ESWConnectionFailureReason::ServerFull;
+	if (ErrorString.Contains(TEXT("VersionMismatch")) || ErrorString.Contains(TEXT("OutdatedClient")) || ErrorString.Contains(TEXT("OutdatedServer"))) return ESWConnectionFailureReason::VersionMismatch;
+	if (ErrorString.Contains(TEXT("Timeout"), ESearchCase::IgnoreCase)
+		|| ErrorString.Contains(TEXT("No response"), ESearchCase::IgnoreCase)) return ESWConnectionFailureReason::ConnectionTimeout;
+	if (FailureType == ENetworkFailure::PendingConnectionFailure
+		&& !ErrorString.Contains(TEXT("Rejected"), ESearchCase::IgnoreCase)
+		&& !ErrorString.Contains(TEXT("InvalidReconnectToken"))
+		&& !ErrorString.Contains(TEXT("DuplicateReconnectToken"))
+		&& !ErrorString.Contains(TEXT("ReconnectStateUnavailable"))) return ESWConnectionFailureReason::ConnectionTimeout;
 	switch (FailureType)
 	{
 	case ENetworkFailure::ConnectionTimeout: return ESWConnectionFailureReason::ConnectionTimeout;

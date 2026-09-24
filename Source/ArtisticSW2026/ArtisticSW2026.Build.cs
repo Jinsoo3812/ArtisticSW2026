@@ -23,7 +23,7 @@ public class ArtisticSW2026 : ModuleRules
             "GASCore"
         });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] { "HTTP" });
 
 		if (Target.Type != TargetType.Server)
 		{
