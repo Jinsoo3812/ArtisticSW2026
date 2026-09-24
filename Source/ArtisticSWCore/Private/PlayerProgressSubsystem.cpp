@@ -166,3 +166,13 @@ void UPlayerProgressSubsystem::PruneExpiredReconnectRecords(double CurrentTimeSe
 		}
 	}
 }
+
+void UPlayerProgressSubsystem::ClearSnapshotsForHostedReturn()
+{
+	PendingSnapshots.Reset();
+	for (TPair<FGuid, FSWReconnectRecord>& Pair : ReconnectRecords)
+	{
+		Pair.Value.Snapshot = FSWPlayerProgressSnapshot();
+		Pair.Value.bHasSnapshot = false;
+	}
+}

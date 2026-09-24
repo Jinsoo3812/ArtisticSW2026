@@ -18,13 +18,15 @@ protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 private:
-	enum class EPanel : uint8 { Home, Create, Join };
+	enum class EPanel : uint8 { Home, Create, ConfirmCreate, Continue, Join };
 	EPanel Panel = EPanel::Home;
 	TSharedPtr<SVerticalBox> Content;
 	TSharedPtr<SEditableTextBox> NameInput;
 	TSharedPtr<SEditableTextBox> CodeInput;
 	TSharedPtr<SEditableTextBox> PublicIPInput;
 	TSharedPtr<STextBlock> StatusText;
+	FString PendingCreateName;
+	FString PendingCreateIP;
 	void RebuildContent();
 	UFUNCTION() void HandleRoomChanged(ESWRoomState State, FText Message);
 };

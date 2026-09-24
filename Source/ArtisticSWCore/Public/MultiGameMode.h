@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
+#include "Containers/Ticker.h"
 #include "MultiGameMode.generated.h"
 
 
@@ -175,6 +176,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Game Rules")
 	void RequestGameOverAndLevelRestart();
+	void MarkHostedRoomWorldReady();
+	void RequestHostedRoomReturnTravel();
 
 	bool StoreReconnectSnapshotForController(AController* Controller, const FSWPlayerProgressSnapshot& Snapshot);
 	bool ConsumeReconnectSnapshotForController(AController* Controller, FSWPlayerProgressSnapshot& OutSnapshot);
@@ -246,8 +249,15 @@ protected:
 	virtual void CapturePlayerProgressForLevelRestart();
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	void CheckRoomOwner();
+	bool TickRoomOwner(float DeltaTime);
+	void UpdateHostedRoomPause();
+	bool IsHostedRoom() const;
+	bool IsHostController(AController* Controller) const;
 	FGuid RoomRunId;
 	uint32 RoomOwnerPid = 0;
 	FString RoomReadyPath;
-	FTimerHandle RoomOwnerTimer;
+	FTSTicker::FDelegateHandle RoomOwnerTickerHandle;
+	TSet<TObjectPtr<AController>> HostControllers;
+	UPROPERTY(Transient) TObjectPtr<class APlayerState> PauseSentinel;
+	bool bHostedWorldReady = false;
 };

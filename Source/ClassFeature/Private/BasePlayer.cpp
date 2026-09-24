@@ -54,6 +54,9 @@
 #include "Cannon.h"
 #include "SwimmingComponent.h"
 #include "Skills/PlayerSkillComponent.h"
+#include "Room/SWRoomSaveGame.h"
+#include "Room/ClassFeatureRoomProgressSubsystem.h"
+#include "Network/SWInputDiag.h"
 #include "Skills/Abilities/GA_GravityVortexThrow.h"
 #include "Skills/Abilities/GA_WaterBombCannonMode.h"
 #include "Skills/Abilities/GA_Bombardment.h"
@@ -395,6 +398,7 @@ void ABasePlayer::CaptureRespawnProgress()
 
 void ABasePlayer::CaptureReconnectProgress()
 {
+	if (InventoryComponent) InventoryComponent->ReturnCursorToOriginalSlot();
 	AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
 	AController* OwnerController = GetController();
 	if (!OwnerController && GetPlayerState()) OwnerController = GetPlayerState()->GetOwningController();
@@ -405,12 +409,80 @@ void ABasePlayer::CaptureReconnectProgress()
 	{
 		GameMode->StoreReconnectSnapshotForController(OwnerController, Snapshot);
 	}
+	if (UClassFeatureRoomProgressSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr)
+		Room->CapturePlayer(this);
+}
+
+void ABasePlayer::CaptureRoomProgress(FSWRoomPlayerProgress& OutProgress) const
+{
+	OutProgress = FSWRoomPlayerProgress();
+	if (InventoryComponent)
+	{
+		for (uint8 TabIndex = 0; TabIndex < 4; ++TabIndex)
+		{
+			const TArray<FInventorySlot>& Slots = InventoryComponent->GetSlots(static_cast<EInventoryTab>(TabIndex));
+			for (int32 SlotIndex = 0; SlotIndex < Slots.Num(); ++SlotIndex)
+			{
+				FSWInventorySlotSnapshot& Saved = OutProgress.InventorySlots.AddDefaulted_GetRef();
+				Saved.Tab = TabIndex;
+				Saved.SlotIndex = SlotIndex;
+				Saved.ItemTag = Slots[SlotIndex].ItemTag;
+				Saved.Count = Slots[SlotIndex].Count;
+			}
+		}
+	}
+	for (const FQuickSlotReference& Slot : QuickSlots) OutProgress.QuickSlotItemTags.Add(Slot.ItemTag);
+	if (const ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
+		if (const UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent()) OutProgress.UpgradeNodeIds = Upgrade->GetActiveNodeIds();
+	OutProgress.UpgradeNodeIds.Sort(FNameLexicalLess());
+	if (const UPlayerSkillComponent* Skills = GetPlayerSkillComponent())
+		for (const FGameplayTag& Tag : Skills->GetRegisteredSkillTags())
+		{
+			FSWRoomSkillProgress& State = OutProgress.Skills.AddDefaulted_GetRef();
+			State.SkillTag = Tag;
+			State.bUnlocked = Skills->IsSkillUnlocked(Tag);
+			State.bConditionsMet = Skills->IsSkillUnlockConditionMet(Tag);
+		}
+	OutProgress.Skills.Sort([](const FSWRoomSkillProgress& A, const FSWRoomSkillProgress& B)
+	{
+		return A.SkillTag.ToString() < B.SkillTag.ToString();
+	});
+}
+
+void ABasePlayer::RestoreRoomProgress(const FSWRoomPlayerProgress& Progress)
+{
+	if (!HasAuthority()) return;
+	if (InventoryComponent) InventoryComponent->RestoreProgressSnapshot(Progress.InventorySlots);
+	InitializeQuickSlots();
+	for (int32 Index = 0; Index < 5 && Index < Progress.QuickSlotItemTags.Num() && QuickSlots.IsValidIndex(Index); ++Index)
+	{
+		const FGameplayTag Tag = Progress.QuickSlotItemTags[Index];
+		QuickSlots[Index].ItemTag = InventoryComponent && Tag.IsValid() && InventoryComponent->GetItemCount(Tag) > 0 ? Tag : FGameplayTag();
+	}
+	OnQuickSlotsChanged.Broadcast();
+	if (ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
+		if (UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent()) Upgrade->RestoreActiveNodeIds(Progress.UpgradeNodeIds);
+	if (UPlayerSkillComponent* Skills = GetPlayerSkillComponent())
+		for (const FSWRoomSkillProgress& State : Progress.Skills)
+		{
+			Skills->SetSkillUnlocked(State.SkillTag, State.bUnlocked);
+			Skills->SetSkillUnlockConditionMet(State.SkillTag, State.bConditionsMet);
+		}
 }
 
 bool ABasePlayer::BuildProgressSnapshot(FSWPlayerProgressSnapshot& OutSnapshot) const
 {
 	OutSnapshot = FSWPlayerProgressSnapshot();
 	if (InventoryComponent) InventoryComponent->CaptureProgressSnapshot(OutSnapshot.InventorySlots);
+	for (const FQuickSlotReference& Slot : QuickSlots) OutSnapshot.QuickSlotItemTags.Add(Slot.ItemTag);
+	if (const UPlayerSkillComponent* Skills = GetPlayerSkillComponent())
+		for (const FGameplayTag& Tag : Skills->GetRegisteredSkillTags())
+		{
+			FSWSkillStateSnapshot& State = OutSnapshot.Skills.AddDefaulted_GetRef();
+			State.SkillTag = Tag;
+			State.bUnlocked = Skills->IsSkillUnlocked(Tag);
+			State.bConditionsMet = Skills->IsSkillUnlockConditionMet(Tag);
+		}
 	if (const ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
 	{
 		if (const UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent())
@@ -448,6 +520,19 @@ bool ABasePlayer::BuildProgressSnapshot(FSWPlayerProgressSnapshot& OutSnapshot) 
 void ABasePlayer::ApplyProgressSnapshot(const FSWPlayerProgressSnapshot& Snapshot)
 {
 	if (InventoryComponent) InventoryComponent->RestoreProgressSnapshot(Snapshot.InventorySlots);
+	InitializeQuickSlots();
+	for (int32 Index = 0; Index < 5 && Index < Snapshot.QuickSlotItemTags.Num() && QuickSlots.IsValidIndex(Index); ++Index)
+	{
+		const FGameplayTag Tag = Snapshot.QuickSlotItemTags[Index];
+		QuickSlots[Index].ItemTag = InventoryComponent && Tag.IsValid() && InventoryComponent->GetItemCount(Tag) > 0 ? Tag : FGameplayTag();
+	}
+	OnQuickSlotsChanged.Broadcast();
+	if (UPlayerSkillComponent* Skills = GetPlayerSkillComponent())
+		for (const FSWSkillStateSnapshot& State : Snapshot.Skills)
+		{
+			Skills->SetSkillUnlocked(State.SkillTag, State.bUnlocked);
+			Skills->SetSkillUnlockConditionMet(State.SkillTag, State.bConditionsMet);
+		}
 	if (ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
 	{
 		if (UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent())
@@ -851,6 +936,8 @@ void ABasePlayer::PossessedBy(AController* NewController)
 		}
 		else
 		{
+			if (UClassFeatureRoomProgressSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr)
+				Room->RestorePlayer(this);
 			RestoreRespawnProgress(NewController);
 		}
 
@@ -2120,6 +2207,7 @@ void ABasePlayer::Look(const FInputActionValue& Value)
 
 void ABasePlayer::DoMove(float Right, float Forward)
 {
+	if (IsLocallyControlled() && (!FMath::IsNearlyZero(Right) || !FMath::IsNearlyZero(Forward))) FSWInputDiag::RecordFirstMove(GetGameInstance());
 	const bool bVerticalSwimOverride = SwimmingComponent
 		&& SwimmingComponent->IsCustomSwimming()
 		&& (SwimmingComponent->HasVerticalSwimInput() || SwimmingComponent->IsTransitionState());
@@ -2243,6 +2331,7 @@ void ABasePlayer::StopMoveInput()
 
 void ABasePlayer::DoLook(float Yaw, float Pitch)
 {
+	if (IsLocallyControlled() && (!FMath::IsNearlyZero(Yaw) || !FMath::IsNearlyZero(Pitch))) FSWInputDiag::RecordFirstLook(GetGameInstance());
 	if (GetController() != nullptr)
 	{
 		float Multiplier = 1.0f;

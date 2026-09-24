@@ -123,6 +123,8 @@ public:
 	void CaptureRespawnProgress();
 	UFUNCTION()
 	void CaptureReconnectProgress();
+	void CaptureRoomProgress(struct FSWRoomPlayerProgress& OutProgress) const;
+	void RestoreRoomProgress(const struct FSWRoomPlayerProgress& Progress);
 	bool BuildProgressSnapshot(FSWPlayerProgressSnapshot& OutSnapshot) const;
 	void ApplyProgressSnapshot(const FSWPlayerProgressSnapshot& Snapshot);
 	protected:

@@ -87,7 +87,9 @@ bool FSWRoomCode::Decode(const FString& Code, FString& OutAddress, uint16& OutPo
 	int32 Bits = 0, ByteIndex = 0;
 	for (TCHAR Character : Raw)
 	{
-		const int32 Value = Character <= TEXT('Z') ? Character - TEXT('A') : Character - TEXT('2') + 26;
+		const int32 Value = Character >= TEXT('A') && Character <= TEXT('Z')
+			? Character - TEXT('A')
+			: Character - TEXT('2') + 26;
 		Buffer = (Buffer << 5) | Value;
 		Bits += 5;
 		if (Bits >= 8)

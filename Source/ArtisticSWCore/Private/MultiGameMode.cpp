@@ -12,6 +12,8 @@
 #include "GameFramework/PlayerStart.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
+#include "GameFramework/GameStateBase.h"
+#include "GameFramework/WorldSettings.h"
 #include "PlayerRespawnPointComponent.h"
 #include "PlayerRespawnPoint.h"
 #include "PlayerProgressSubsystem.h"
@@ -28,6 +30,9 @@
 #include "Misc/FileHelper.h"
 #include "Engine/NetDriver.h"
 #include "IPAddress.h"
+#include "Room/SWRoomProgressSubsystem.h"
+#include "Room/SWRoomSaveGame.h"
+#include "Containers/Ticker.h"
 
 namespace
 {
@@ -75,6 +80,16 @@ void AMultiGameMode::InitGame(const FString& MapName, const FString& Options, FS
 void AMultiGameMode::StartPlay()
 {
     Super::StartPlay();
+	if (IsHostedRoom())
+	{
+		UpdateHostedRoomPause();
+		if (USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>(); Room && Room->HasStartupError())
+		{
+			UE_LOG(LogSWConnection, Error, TEXT("Hosted room save failed validation during startup"));
+			FPlatformMisc::RequestExit(false);
+			return;
+		}
+	}
 	FString RunIdText;
 	FString OwnerText;
 	if (GetNetMode() == NM_DedicatedServer && FParse::Value(FCommandLine::Get(), TEXT("SWRoomRunId="), RunIdText)
@@ -91,15 +106,7 @@ void AMultiGameMode::StartPlay()
 			RoomReadyPath = FPaths::Combine(Directory, RoomRunId.ToString(EGuidFormats::DigitsWithHyphens) + TEXT(".ready"));
 			IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
 			if (Files.CreateDirectoryTree(*Directory))
-			{
-				const FString TempPath = RoomReadyPath + TEXT(".tmp");
-				const FString Contents = FString::Printf(TEXT("%s\n%u\n7777\n"), *RoomRunId.ToString(EGuidFormats::DigitsWithHyphens), FPlatformProcess::GetCurrentProcessId());
-				if (FFileHelper::SaveStringToFile(Contents, *TempPath) && Files.MoveFile(*RoomReadyPath, *TempPath))
-				{
-					UE_LOG(LogSWConnection, Display, TEXT("Side=Server RoomRunId=%s Phase=ServerReady Result=Success Port=7777"), *RoomRunId.ToString());
-					GetWorldTimerManager().SetTimer(RoomOwnerTimer, this, &AMultiGameMode::CheckRoomOwner, 5.0f, true);
-				}
-			}
+				RoomOwnerTickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &AMultiGameMode::TickRoomOwner), 0.5f);
 		}
 	}
 
@@ -113,10 +120,72 @@ void AMultiGameMode::StartPlay()
     );
 }
 
+bool AMultiGameMode::IsHostedRoom() const
+{
+	const USWRoomProgressSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+	return Room && Room->IsHostedRoom() && GetNetMode() == NM_DedicatedServer;
+}
+
+void AMultiGameMode::UpdateHostedRoomPause()
+{
+	if (!IsHostedRoom() || !GetWorld()) return;
+	AWorldSettings* Settings = GetWorld()->GetWorldSettings();
+	if (!Settings) return;
+	if (GetConnectedPlayerCount() == 0)
+	{
+		if (!PauseSentinel)
+		{
+			PauseSentinel = GetWorld()->SpawnActor<APlayerState>();
+			if (PauseSentinel)
+			{
+				PauseSentinel->SetReplicates(false);
+				if (AGameStateBase* State = GetGameState<AGameStateBase>()) State->RemovePlayerState(PauseSentinel);
+			}
+		}
+		if (PauseSentinel) Settings->SetPauserPlayerState(PauseSentinel);
+	}
+	else Settings->SetPauserPlayerState(nullptr);
+}
+
+void AMultiGameMode::MarkHostedRoomWorldReady()
+{
+	if (!IsHostedRoom() || bHostedWorldReady || RoomReadyPath.IsEmpty()) return;
+	const USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>();
+	if (!Room || Room->HasStartupError()) return;
+	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
+	const FString TempPath = RoomReadyPath + TEXT(".tmp");
+	const FString Contents = FString::Printf(TEXT("%s\n%u\n7777\n"), *RoomRunId.ToString(EGuidFormats::DigitsWithHyphens), FPlatformProcess::GetCurrentProcessId());
+	if (FFileHelper::SaveStringToFile(Contents, *TempPath) && Files.MoveFile(*RoomReadyPath, *TempPath))
+	{
+		bHostedWorldReady = true;
+		UE_LOG(LogSWConnection, Display, TEXT("Side=Server RoomRunId=%s Phase=ServerReady Result=Success Port=7777"), *RoomRunId.ToString());
+	}
+}
+
+void AMultiGameMode::RequestHostedRoomReturnTravel()
+{
+	if (!IsHostedRoom() || bLevelRestartRequested || !GetWorld()) return;
+	bLevelRestartRequested = true;
+	if (UPlayerProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>()) Progress->ClearSnapshotsForHostedReturn();
+	if (USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>()) Room->MarkReturnTravelPending();
+	if (!GetWorld()->ServerTravel(TEXT("?Restart"), false))
+	{
+		UE_LOG(LogSWConnection, Error, TEXT("Hosted room return travel failed"));
+		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+			if (APlayerController* Controller = It->Get()) Controller->ClientMessage(TEXT("귀환 실패"));
+	}
+}
+
+bool AMultiGameMode::TickRoomOwner(float DeltaTime)
+{
+	CheckRoomOwner();
+	return true;
+}
+
 void AMultiGameMode::CheckRoomOwner()
 {
 	if (RoomOwnerPid && (!FPlatformProcess::IsApplicationRunning(RoomOwnerPid)
-		|| (!RoomReadyPath.IsEmpty() && !FPlatformFileManager::Get().GetPlatformFile().FileExists(*RoomReadyPath))))
+		|| (bHostedWorldReady && !RoomReadyPath.IsEmpty() && !FPlatformFileManager::Get().GetPlatformFile().FileExists(*RoomReadyPath))))
 	{
 		UE_LOG(LogSWConnection, Warning, TEXT("Side=Server RoomRunId=%s Phase=OwnerWatch Result=ShutdownRequested"), *RoomRunId.ToString());
 		FPlatformMisc::RequestExit(false);
@@ -125,7 +194,7 @@ void AMultiGameMode::CheckRoomOwner()
 
 void AMultiGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	GetWorldTimerManager().ClearTimer(RoomOwnerTimer);
+	if (RoomOwnerTickerHandle.IsValid()) FTSTicker::GetCoreTicker().RemoveTicker(RoomOwnerTickerHandle);
 	if (!RoomReadyPath.IsEmpty()) FPlatformFileManager::Get().GetPlatformFile().DeleteFile(*RoomReadyPath);
 	Super::EndPlay(EndPlayReason);
 }
@@ -180,6 +249,15 @@ FString AMultiGameMode::InitNewPlayer(
 			if (!NameHex.IsEmpty() && !FSWRoomName::FromHex(NameHex, ParsedName))
 				UE_LOG(LogSWConnection, Warning, TEXT("Side=Server RoomRunId=%s Phase=DisplayName Result=Invalid"), *RoomRunId.ToString());
 			NewPlayerController->PlayerState->SetPlayerName(ParsedName.IsEmpty() ? TEXT("Player") : ParsedName);
+			if (IsHostedRoom())
+			{
+				USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>();
+				if (Room && Room->IsHostToken(ReconnectToken) && Room->GetMutableActiveRoom())
+				{
+					if (Room->GetMutableActiveRoom()->HostDisplayName.IsEmpty()) Room->GetMutableActiveRoom()->HostDisplayName = ParsedName;
+					NewPlayerController->PlayerState->SetPlayerName(Room->GetMutableActiveRoom()->HostDisplayName);
+				}
+			}
 		}
         return InitError;
     }
@@ -288,6 +366,7 @@ void AMultiGameMode::PostLogin(APlayerController* NewPlayer)
     }
 
     TryNotifyReadinessState();
+	UpdateHostedRoomPause();
 }
 
 void AMultiGameMode::PreLogin(
@@ -320,6 +399,32 @@ void AMultiGameMode::PreLogin(
         UE_LOG(LogSWConnection, Warning, TEXT("Side=Server RoomRunId=%s PreLogin Rejected Reason=InvalidReconnectToken"), *RoomRunId.ToString());
         return;
     }
+	if (IsHostedRoom())
+	{
+		USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>();
+		FString ValidatedName;
+		if (!FSWRoomName::FromHex(UGameplayStatics::ParseOption(Options, TEXT("SWNameHex")), ValidatedName))
+		{
+			ErrorMessage = TEXT("InvalidDisplayName");
+			return;
+		}
+		const FString HostKeyText = UGameplayStatics::ParseOption(Options, TEXT("SWHostKey"));
+		if (!HostKeyText.IsEmpty())
+		{
+			FGuid SuppliedKey;
+			if (!FGuid::Parse(HostKeyText, SuppliedKey) || SuppliedKey != Room->GetHostKey())
+			{
+				ErrorMessage = TEXT("InvalidHostKey");
+				return;
+			}
+			Room->RememberHostToken(ReconnectToken);
+		}
+		if (Room->IsHostToken(ReconnectToken))
+		{
+			for (const TPair<TObjectPtr<AController>, int32>& Pair : PlayerIndices)
+				if (Pair.Value == 0) { ErrorMessage = TEXT("HostSlotOccupied"); return; }
+		}
+	}
 
     UPlayerProgressSubsystem* Progress = GetGameInstance()
         ? GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>()
@@ -343,7 +448,8 @@ void AMultiGameMode::PreLogin(
         return;
     }
 
-    if (!bKnownToken && FindAvailablePlayerIndex() == INDEX_NONE)
+	const USWRoomProgressSubsystem* HostedRoom = IsHostedRoom() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+	if (!bKnownToken && !(HostedRoom && HostedRoom->IsHostToken(ReconnectToken)) && FindAvailablePlayerIndex() == INDEX_NONE)
     {
         ErrorMessage = TEXT("ServerIsFull");
         UE_LOG(LogSWConnection, Warning, TEXT("Side=Server RoomRunId=%s PreLogin Rejected Reason=ServerIsFull"), *RoomRunId.ToString());
@@ -356,6 +462,7 @@ void AMultiGameMode::PreLogin(
 void AMultiGameMode::Logout(AController* Exiting)
 {
     const int32 ReleasedPlayerIndex = GetPlayerIndex(Exiting);
+	const bool bWasHost = IsHostController(Exiting);
 	const FGuid ReconnectToken = Exiting && PlayerReconnectTokens.Contains(Exiting)
 		? PlayerReconnectTokens.FindChecked(Exiting)
 		: FGuid();
@@ -391,6 +498,7 @@ void AMultiGameMode::Logout(AController* Exiting)
         ReadyPlayers.Remove(Exiting);
 		PlayerIndices.Remove(Exiting);
 		PlayerReconnectTokens.Remove(Exiting);
+		HostControllers.Remove(Exiting);
 		FinishedDeadPlayers.Remove(Exiting);
 		if (FTimerHandle* Timer = RespawnTimers.Find(Exiting)) GetWorldTimerManager().ClearTimer(*Timer);
 		RespawnTimers.Remove(Exiting);
@@ -408,6 +516,8 @@ void AMultiGameMode::Logout(AController* Exiting)
     }
 
     Super::Logout(Exiting);
+	UpdateHostedRoomPause();
+	if (bWasHost && !bLevelRestartRequested) FPlatformMisc::RequestExit(false);
 
     UE_LOG(
         LogSWConnection,
@@ -450,9 +560,11 @@ UClass* AMultiGameMode::GetDefaultPawnClassForController_Implementation(AControl
 AActor* AMultiGameMode::ChoosePlayerStart_Implementation(AController* Player)
 {
     const int32 PlayerIndex = FMath::Max(0, GetPlayerIndex(Player));
+	const USWRoomProgressSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
 	if (const UGameInstance* GI = GetGameInstance())
 	{
-		if (const UPlayerProgressSubsystem* Progress = GI->GetSubsystem<UPlayerProgressSubsystem>(); Progress && Progress->HasSnapshot(PlayerIndex))
+		if (const UPlayerProgressSubsystem* Progress = GI->GetSubsystem<UPlayerProgressSubsystem>();
+			(Progress && Progress->HasSnapshot(PlayerIndex)) || (Room && Room->IsReturnTravelPending()))
 		{
 			APlayerRespawnPoint* Fallback = nullptr;
 			for (TActorIterator<APlayerRespawnPoint> It(GetWorld()); It; ++It)
@@ -896,7 +1008,7 @@ int32 AMultiGameMode::FindAvailablePlayerIndex()
         return INDEX_NONE;
     }
 
-    for (int32 CandidateIndex = 0; CandidateIndex < MaxPlayerCount; ++CandidateIndex)
+    for (int32 CandidateIndex = IsHostedRoom() ? 1 : 0; CandidateIndex < MaxPlayerCount; ++CandidateIndex)
     {
         bool bAlreadyUsed = false;
         for (const TPair<TObjectPtr<AController>, int32>& Pair : PlayerIndices)
@@ -922,6 +1034,11 @@ int32 AMultiGameMode::FindAvailablePlayerIndex()
     return INDEX_NONE;
 }
 
+bool AMultiGameMode::IsHostController(AController* Controller) const
+{
+	return HostControllers.Contains(Controller);
+}
+
 bool AMultiGameMode::AssignRoleToPlayer(AController* Controller, const FGuid* RequestedReconnectToken)
 {
 	if (!Controller)
@@ -935,11 +1052,14 @@ bool AMultiGameMode::AssignRoleToPlayer(AController* Controller, const FGuid* Re
 	}
 
 	int32 PlayerIndex = INDEX_NONE;
+	const USWRoomProgressSubsystem* HostedRoom = IsHostedRoom() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+	const bool bIsHost = HostedRoom && RequestedReconnectToken && HostedRoom->IsHostToken(*RequestedReconnectToken);
+	if (bIsHost) PlayerIndex = 0;
 	bool bExistingReconnectRecord = false;
 	UPlayerProgressSubsystem* Progress = GetGameInstance()
 		? GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>()
 		: nullptr;
-	if (RequestedReconnectToken && RequestedReconnectToken->IsValid() && Progress)
+	if (PlayerIndex == INDEX_NONE && RequestedReconnectToken && RequestedReconnectToken->IsValid() && Progress)
 	{
 		FSWReconnectRecord ExistingRecord;
 		bExistingReconnectRecord = Progress->FindReconnectRecord(
@@ -971,6 +1091,7 @@ bool AMultiGameMode::AssignRoleToPlayer(AController* Controller, const FGuid* Re
 
 	PlayerRoles.Add(Controller, AssignedRole);
 	PlayerIndices.Add(Controller, PlayerIndex);
+	if (bIsHost) HostControllers.Add(Controller);
 	if (RequestedReconnectToken && RequestedReconnectToken->IsValid())
 	{
 		if (!Progress || !Progress->ActivateReconnectRecord(
@@ -980,6 +1101,7 @@ bool AMultiGameMode::AssignRoleToPlayer(AController* Controller, const FGuid* Re
 		{
 			PlayerRoles.Remove(Controller);
 			PlayerIndices.Remove(Controller);
+			HostControllers.Remove(Controller);
 			return false;
 		}
 		PlayerReconnectTokens.Add(Controller, *RequestedReconnectToken);

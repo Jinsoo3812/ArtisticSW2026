@@ -6,6 +6,15 @@
 
 class AActor;
 
+USTRUCT()
+struct ARTISTICSWCORE_API FSWSkillStateSnapshot
+{
+	GENERATED_BODY()
+	UPROPERTY() FGameplayTag SkillTag;
+	UPROPERTY() bool bUnlocked = false;
+	UPROPERTY() bool bConditionsMet = false;
+};
+
 UENUM(BlueprintType)
 enum class ESWPlayerSlot : uint8
 {
@@ -42,6 +51,8 @@ struct ARTISTICSWCORE_API FSWPlayerProgressSnapshot
 
 	UPROPERTY()
 	TArray<FName> ActiveShipUpgradeNodeIds;
+	UPROPERTY() TArray<FGameplayTag> QuickSlotItemTags;
+	UPROPERTY() TArray<FSWSkillStateSnapshot> Skills;
 
 	UPROPERTY()
 	float CurrentHealth = 0.0f;

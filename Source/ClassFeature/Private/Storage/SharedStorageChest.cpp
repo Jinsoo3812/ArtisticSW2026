@@ -9,6 +9,17 @@
 #include "EngineUtils.h"
 #include "BasePlayerController.h"
 #include "BasePlayer.h"
+#include "Room/SWRoomProgressSubsystem.h"
+
+namespace
+{
+bool IsHostedStorage(const ASharedStorageChest* Chest)
+{
+	const UGameInstance* Instance = Chest && Chest->GetWorld() ? Chest->GetWorld()->GetGameInstance() : nullptr;
+	const USWRoomProgressSubsystem* Room = Instance ? Instance->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+	return Room && Room->IsHostedRoom();
+}
+}
 
 ASharedStorageChest::ASharedStorageChest()
 {
@@ -65,6 +76,11 @@ void ASharedStorageChest::BeginPlay()
 			SetLocked(true);
 			return;
 		}
+	}
+	if (IsHostedStorage(this))
+	{
+		bPersistenceReady = true;
+		return;
 	}
 	const FString Key = SaveNamespace + TEXT("_") + PersistentChestId.ToString();
 	SaveSlot = TEXT("SharedChest_") + FMD5::HashAnsiString(*Key);
@@ -134,6 +150,14 @@ bool ASharedStorageChest::SaveSynchronously()
 void ASharedStorageChest::EndPlay(const EEndPlayReason::Type Reason)
 {
 	StorageComponent->ReturnAllReservedCursors();
+	if (IsHostedStorage(this))
+	{
+		if (HasAuthority())
+			for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+				if (ABasePlayerController* PC = Cast<ABasePlayerController>(It->Get())) PC->CloseStorageFromServer(this);
+		Super::EndPlay(Reason);
+		return;
+	}
 	GetWorldTimerManager().ClearTimer(SaveTimer);
 	StorageComponent->OnStorageChanged.RemoveAll(this);
 	if (PendingSave.IsValid())

@@ -29,7 +29,7 @@ public:
 
 	UFUNCTION(BlueprintCallable)
 	bool ConnectDirect(const FString& Address);
-	bool ConnectDirectWithName(const FString& Address, const FString& DisplayName);
+	bool ConnectDirectWithName(const FString& Address, const FString& DisplayName, const FGuid& HostKey = FGuid());
 	UFUNCTION(BlueprintCallable)
 	void DisconnectToDefaultMap();
 	UFUNCTION(BlueprintCallable)
@@ -87,6 +87,7 @@ private:
 	bool bViewportIgnoredInputBeforeLoading = false;
 	FGuid ReconnectToken;
 	FString PendingDisplayName;
+	FGuid PendingHostKey;
 	FDelegateHandle NetworkFailureHandle;
 	FDelegateHandle TravelFailureHandle;
 	FDelegateHandle PreLoadMapHandle;

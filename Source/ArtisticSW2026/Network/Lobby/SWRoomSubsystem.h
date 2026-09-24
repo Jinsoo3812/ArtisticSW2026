@@ -29,6 +29,7 @@ public:
 	virtual TStatId GetStatId() const override;
 	virtual UWorld* GetTickableGameObjectWorld() const override;
 	UFUNCTION(BlueprintCallable) bool CreateRoom(const FString& DisplayName, const FString& OptionalPublicIPv4);
+	UFUNCTION(BlueprintCallable) bool ContinueRoom(const FString& DisplayName, const FString& OptionalPublicIPv4);
 	UFUNCTION(BlueprintCallable) bool JoinRoom(const FString& DisplayName, const FString& RoomCode);
 	UFUNCTION(BlueprintCallable) bool ConnectHostedRoom();
 	UFUNCTION(BlueprintCallable) void CancelPendingOperation();
@@ -38,6 +39,7 @@ public:
 	UFUNCTION(BlueprintPure) FText GetRoomMessage() const { return Message; }
 	UFUNCTION(BlueprintPure) bool NeedsManualPublicIP() const { return bNeedsManualPublicIP; }
 	UFUNCTION(BlueprintPure) bool CanHost() const;
+	UFUNCTION(BlueprintPure) bool HasSavedRoom() const;
 	UPROPERTY(BlueprintAssignable) FOnSWRoomChanged OnRoomChanged;
 private:
 	UFUNCTION() void HandleConnectionChanged(ESWConnectionState Previous, ESWConnectionState Current, int32 AttemptId);
@@ -45,6 +47,7 @@ private:
 	void SetState(ESWRoomState NewState, const FText& NewMessage);
 	void Fail(const FText& FailureMessage);
 	void StartServer(const FString& PublicAddress);
+	bool BeginHosting(const FString& Name, const FString& OptionalPublicIPv4, bool bContinue);
 	void StopServer();
 	void ReturnToLobby();
 	FString MarkerPath() const;
@@ -55,6 +58,9 @@ private:
 	ESWRoomState State = ESWRoomState::Idle;
 	uint64 OperationId = 0;
 	FGuid RoomRunId;
+	FGuid SavedRoomId;
+	FGuid HostKey;
+	bool bContinuingRoom = false;
 	FProcHandle ServerHandle;
 	uint32 ServerPid = 0;
 	bool bOwnsServer = false;

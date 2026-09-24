@@ -8,6 +8,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "Network/SWNetworkLog.h"
+#include "Network/SWInputDiag.h"
 #include "SWRoomName.h"
 #include "Kismet/GameplayStatics.h"
 #include "Styling/CoreStyle.h"
@@ -15,6 +16,7 @@
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
+#include "Framework/Application/SlateApplication.h"
 
 namespace
 {
@@ -144,6 +146,7 @@ bool USWConnectionSubsystem::ConnectDirect(const FString& Address)
 	LastFailure = FSWConnectionFailure();
 	AttemptSerial = AttemptSerial >= MAX_int32 ? 1 : AttemptSerial + 1;
 	ActiveAttemptId = AttemptSerial;
+	FSWInputDiag::BeginAttempt(GetGameInstance(), ActiveAttemptId, PendingHostKey.IsValid());
 	bConnectionAttemptActive = true;
 	bIntentionalDisconnect = false;
 	TransitionTo(ESWConnectionState::Connecting);
@@ -153,15 +156,17 @@ bool USWConnectionSubsystem::ConnectDirect(const FString& Address)
 		TEXT("ReconnectToken=%s"),
 		*ReconnectToken.ToString(EGuidFormats::DigitsWithHyphens)));
 	if (!PendingDisplayName.IsEmpty()) URL.AddOption(*FString::Printf(TEXT("SWNameHex=%s"), *FSWRoomName::ToHex(PendingDisplayName)));
+	if (PendingHostKey.IsValid()) URL.AddOption(*FString::Printf(TEXT("SWHostKey=%s"), *PendingHostKey.ToString(EGuidFormats::DigitsWithHyphens)));
 	PlayerController->ClientTravel(URL.ToString(), TRAVEL_Absolute);
 	return true;
 }
 
-bool USWConnectionSubsystem::ConnectDirectWithName(const FString& Address, const FString& DisplayName)
+bool USWConnectionSubsystem::ConnectDirectWithName(const FString& Address, const FString& DisplayName, const FGuid& HostKey)
 {
 	FString Normalized;
 	if (!FSWRoomName::Normalize(DisplayName, Normalized)) return false;
 	PendingDisplayName = MoveTemp(Normalized);
+	PendingHostKey = HostKey;
 	return ConnectDirect(Address);
 }
 
@@ -232,6 +237,7 @@ void USWConnectionSubsystem::HandlePreLoadMap(const FString& MapName)
 void USWConnectionSubsystem::HandlePostLoadMap(UWorld* LoadedWorld)
 {
 	if (!LoadedWorld || LoadedWorld->GetGameInstance() != GetGameInstance()) return;
+	FSWInputDiag::Record(GetGameInstance(), TEXT("MapLoaded"));
 	if (bIntentionalDisconnect)
 	{
 		StopReadinessCheck();
@@ -239,6 +245,7 @@ void USWConnectionSubsystem::HandlePostLoadMap(UWorld* LoadedWorld)
 		bConnectionAttemptActive = false;
 		TransitionTo(ESWConnectionState::Idle);
 		HideLoadingPresentation();
+		FSWInputDiag::Record(GetGameInstance(), TEXT("LobbyReturn"));
 		return;
 	}
 	if (bConnectionAttemptActive)
@@ -268,6 +275,7 @@ void USWConnectionSubsystem::RecordFailure(ESWConnectionFailureReason Reason, co
 	LastFailure.EngineFailureType = EngineFailureType;
 	LastFailure.EngineMessage = EngineMessage;
 	LastFailure.AttemptId = ActiveAttemptId;
+	FSWInputDiag::Record(GetGameInstance(), TEXT("Failure"));
 	TransitionTo(ESWConnectionState::Failed);
 	UE_LOG(LogSWConnection, Warning, TEXT("Connection failed. Reason=%s Type=%s AttemptId=%d"), *UEnum::GetValueAsString(Reason), *EngineFailureType, ActiveAttemptId);
 	OnConnectionFailed.Broadcast(LastFailure);
@@ -358,8 +366,27 @@ void USWConnectionSubsystem::CompleteReadiness()
 	const float CompletedElapsedSeconds = ReadinessElapsedSeconds;
 	StopReadinessCheck();
 	bConnectionAttemptActive = false;
+	FSWInputDiag::Record(GetGameInstance(), TEXT("Ready"));
 	TransitionTo(ESWConnectionState::Playing);
+	if (ConnectionState != ESWConnectionState::Playing) return;
 	HideLoadingPresentation();
+	FSWInputDiag::Record(GetGameInstance(), TEXT("LoadingRemoved"));
+	if (UGameInstance* Instance = GetGameInstance())
+	{
+		if (APlayerController* Controller = Instance->GetFirstLocalPlayerController())
+		{
+			FInputModeGameOnly InputMode;
+			Controller->SetInputMode(InputMode);
+			Controller->bShowMouseCursor = false;
+			if (UGameViewportClient* Viewport = GEngine ? GEngine->GameViewport : nullptr)
+			{
+				Viewport->SetIgnoreInput(false);
+				Viewport->SetMouseCaptureMode(EMouseCaptureMode::CapturePermanently_IncludingInitialMouseDown);
+			}
+			if (FSlateApplication::IsInitialized()) FSlateApplication::Get().SetAllUserFocusToGameViewport();
+		}
+	}
+	FSWInputDiag::Record(GetGameInstance(), TEXT("GameInputMode"));
 	UE_LOG(LogSWConnection, Display, TEXT("Readiness completed. AttemptId=%d Elapsed=%.2f"), ActiveAttemptId, CompletedElapsedSeconds);
 }
 

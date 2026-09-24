@@ -27,6 +27,7 @@ public:
 	bool ConsumeReconnectSnapshot(const FGuid& ReconnectToken, FSWPlayerProgressSnapshot& OutSnapshot);
 	bool PeekReconnectSnapshot(const FGuid& ReconnectToken, FSWPlayerProgressSnapshot& OutSnapshot) const;
 	void PruneExpiredReconnectRecords(double CurrentTimeSeconds);
+	void ClearSnapshotsForHostedReturn();
 
 private:
 	UPROPERTY(Transient)
