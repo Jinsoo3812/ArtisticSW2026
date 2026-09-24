@@ -20,6 +20,7 @@
 #include "InputCoreTypes.h"
 #include "BaseItem.h"
 #include "BaseGameplayTags.h"
+#include "BaseAttributeSet.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "SWCharacterMovementComponent.h"
@@ -388,15 +389,84 @@ void ABasePlayer::CaptureRespawnProgress()
 	const int32 PlayerIndex = GameMode->GetPlayerIndex(OwnerController);
 	if (PlayerIndex == INDEX_NONE) return;
 	FSWPlayerProgressSnapshot Snapshot;
-	if (InventoryComponent) InventoryComponent->CaptureProgressSnapshot(Snapshot.InventorySlots);
+	if (!BuildProgressSnapshot(Snapshot)) return;
+	Progress->StoreSnapshot(PlayerIndex, Snapshot);
+}
+
+void ABasePlayer::CaptureReconnectProgress()
+{
+	AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+	AController* OwnerController = GetController();
+	if (!OwnerController && GetPlayerState()) OwnerController = GetPlayerState()->GetOwningController();
+	if (!GameMode || !OwnerController) return;
+
+	FSWPlayerProgressSnapshot Snapshot;
+	if (BuildProgressSnapshot(Snapshot))
+	{
+		GameMode->StoreReconnectSnapshotForController(OwnerController, Snapshot);
+	}
+}
+
+bool ABasePlayer::BuildProgressSnapshot(FSWPlayerProgressSnapshot& OutSnapshot) const
+{
+	OutSnapshot = FSWPlayerProgressSnapshot();
+	if (InventoryComponent) InventoryComponent->CaptureProgressSnapshot(OutSnapshot.InventorySlots);
 	if (const ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
 	{
 		if (const UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent())
 		{
-			Snapshot.ActiveShipUpgradeNodeIds = Upgrade->GetActiveNodeIds();
+			OutSnapshot.ActiveShipUpgradeNodeIds = Upgrade->GetActiveNodeIds();
 		}
 	}
-	Progress->StoreSnapshot(PlayerIndex, Snapshot);
+	if (HealthComponent)
+	{
+		OutSnapshot.CurrentHealth = HealthComponent->GetHealth();
+		OutSnapshot.bHasCurrentHealth = true;
+		OutSnapshot.bWasDead = HealthComponent->IsDead();
+	}
+
+	if (!OutSnapshot.bWasDead && !GetActorLocation().ContainsNaN())
+	{
+		OutSnapshot.LastValidWorldTransform = GetActorTransform();
+		OutSnapshot.bHasLastValidWorldTransform = true;
+		if (const UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+		{
+			if (const UPrimitiveComponent* MovementBase = MovementComponent->GetMovementBase())
+			{
+				OutSnapshot.LastMovementHost = MovementBase->GetOwner();
+				if (OutSnapshot.LastMovementHost.IsValid())
+				{
+					OutSnapshot.LastMovementHostRelativeTransform = GetActorTransform().GetRelativeTransform(
+						OutSnapshot.LastMovementHost->GetActorTransform());
+				}
+			}
+		}
+	}
+	return true;
+}
+
+void ABasePlayer::ApplyProgressSnapshot(const FSWPlayerProgressSnapshot& Snapshot)
+{
+	if (InventoryComponent) InventoryComponent->RestoreProgressSnapshot(Snapshot.InventorySlots);
+	if (ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
+	{
+		if (UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent())
+		{
+			Upgrade->RestoreActiveNodeIds(Snapshot.ActiveShipUpgradeNodeIds);
+		}
+	}
+
+	if (Snapshot.bWasDead)
+	{
+		if (HealthComponent) HealthComponent->StartDeath();
+		return;
+	}
+	if (Snapshot.bHasCurrentHealth && CachedAbilitySystemComponent.IsValid() && HealthComponent)
+	{
+		CachedAbilitySystemComponent->SetNumericAttributeBase(
+			UBaseAttributeSet::GetHealthAttribute(),
+			FMath::Clamp(Snapshot.CurrentHealth, 0.0f, HealthComponent->GetMaxHealth()));
+	}
 }
 
 void ABasePlayer::RestoreRespawnProgress(AController* OwningController)
@@ -406,11 +476,7 @@ void ABasePlayer::RestoreRespawnProgress(AController* OwningController)
 	if (!GameMode || !Progress || !OwningController) return;
 	FSWPlayerProgressSnapshot Snapshot;
 	if (!Progress->ConsumeSnapshot(GameMode->GetPlayerIndex(OwningController), Snapshot)) return;
-	if (InventoryComponent) InventoryComponent->RestoreProgressSnapshot(Snapshot.InventorySlots);
-	if (ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
-	{
-		if (UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent()) Upgrade->RestoreActiveNodeIds(Snapshot.ActiveShipUpgradeNodeIds);
-	}
+	ApplyProgressSnapshot(Snapshot);
 }
 
 void ABasePlayer::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
@@ -777,7 +843,16 @@ void ABasePlayer::PossessedBy(AController* NewController)
 			HealthComponent->InitializeWithAbilitySystem(CachedAbilitySystemComponent.Get());
 			if (HealthComponent->IsDead()) HealthComponent->ResetForReuse();
 		}
-		RestoreRespawnProgress(NewController);
+		FSWPlayerProgressSnapshot ReconnectSnapshot;
+		if (AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+			GameMode && GameMode->ConsumeReconnectSnapshotForController(NewController, ReconnectSnapshot))
+		{
+			ApplyProgressSnapshot(ReconnectSnapshot);
+		}
+		else
+		{
+			RestoreRespawnProgress(NewController);
+		}
 
 		// Interact GA에 의해 발생한 Gameplay Event를 처리할 콜백 함수 등록
 		// 현재는 Event 별로 따로 바인딩하지만 더 좋은 방법이 있을까?

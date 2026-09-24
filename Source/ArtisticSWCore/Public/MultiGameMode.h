@@ -11,6 +11,7 @@ class AController;
 class APlayerController;
 class APlayerStart;
 class APawn;
+struct FSWPlayerProgressSnapshot;
 class UPlayerRespawnPointComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
@@ -175,8 +176,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Game Rules")
 	void RequestGameOverAndLevelRestart();
 
+	bool StoreReconnectSnapshotForController(AController* Controller, const FSWPlayerProgressSnapshot& Snapshot);
+	bool ConsumeReconnectSnapshotForController(AController* Controller, FSWPlayerProgressSnapshot& OutSnapshot);
+	virtual void RestartPlayer(AController* NewPlayer) override;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Respawn", meta=(ClampMin="0.0"))
 	float IndividualRespawnDelay = 5.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Multiplayer|Reconnect", meta=(ClampMin="0.0"))
+	float ReconnectReservationSeconds = 120.0f;
     
 protected:
     // ================================
@@ -202,10 +210,10 @@ protected:
     virtual FName GetRoleForPlayerIndex(int32 PlayerIndex) const;
 
     /** 사용 중이지 않은 첫 번째 PlayerIndex를 반환한다. */
-    int32 FindAvailablePlayerIndex() const;
+    int32 FindAvailablePlayerIndex();
 
     /** Controller에게 역할을 배정한다. */
-    bool AssignRoleToPlayer(AController* Controller);
+    bool AssignRoleToPlayer(AController* Controller, const FGuid* RequestedReconnectToken = nullptr);
 
     /** PlayerStartTag와 역할명이 일치하는 PlayerStart를 찾는다. */
     APlayerStart* FindPlayerStartByRole(FName RoleName) const;
@@ -218,6 +226,7 @@ protected:
     /** 각 Controller의 역할 */
     TMap<TObjectPtr<AController>, FName> PlayerRoles;
 	TMap<TObjectPtr<AController>, int32> PlayerIndices;
+	TMap<TObjectPtr<AController>, FGuid> PlayerReconnectTokens;
 	TSet<TObjectPtr<AController>> FinishedDeadPlayers;
 	TMap<TObjectPtr<AController>, FTimerHandle> RespawnTimers;
 
@@ -230,6 +239,9 @@ protected:
 
 	void TryRespawnPlayer(AController* Controller);
 	UPlayerRespawnPointComponent* FindShipRespawnPoint(int32 PlayerIndex) const;
+	bool ParseReconnectToken(const FString& Options, FGuid& OutReconnectToken) const;
+	bool ResolveReconnectSpawnTransform(AController* Controller, FTransform& OutTransform);
+	bool IsReconnectTransformSafe(AController* Controller, const FTransform& Transform);
 	virtual void HandleAllPlayersDeathFinished();
 	virtual void CapturePlayerProgressForLevelRestart();
 };

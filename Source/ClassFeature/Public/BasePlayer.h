@@ -38,6 +38,7 @@ class UPlayerDialogueComponent;
 class UPlayerAimComponent;
 class UShipRepairPointComponent;
 class UShipRepairProgressWidget;
+struct FSWPlayerProgressSnapshot;
 
 UENUM(BlueprintType)
 enum class EQuickSlotType : uint8
@@ -120,6 +121,10 @@ public:
 	public:
 	UFUNCTION(BlueprintCallable, Category = "Respawn")
 	void CaptureRespawnProgress();
+	UFUNCTION()
+	void CaptureReconnectProgress();
+	bool BuildProgressSnapshot(FSWPlayerProgressSnapshot& OutSnapshot) const;
+	void ApplyProgressSnapshot(const FSWPlayerProgressSnapshot& Snapshot);
 	protected:
 	void RestoreRespawnProgress(AController* OwningController);
 

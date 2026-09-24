@@ -58,8 +58,9 @@ void AArtisticSW2026PlayerController::SWConnectionStatus() const
 		return;
 	}
 	const FSWConnectionFailure Failure = Subsystem->GetLastFailure();
-	UE_LOG(LogSWConnection, Display, TEXT("Connection status. State=%s AttemptId=%d FailureReason=%s FailureType=%s"),
-		*UEnum::GetValueAsString(Subsystem->GetConnectionState()), Subsystem->GetActiveAttemptId(), *UEnum::GetValueAsString(Failure.Reason), *Failure.EngineFailureType);
+	UE_LOG(LogSWConnection, Display, TEXT("Connection status. State=%s AttemptId=%d FailureReason=%s FailureType=%s Readiness=%s"),
+		*UEnum::GetValueAsString(Subsystem->GetConnectionState()), Subsystem->GetActiveAttemptId(), *UEnum::GetValueAsString(Failure.Reason), *Failure.EngineFailureType,
+		*Subsystem->GetReadinessDebugStatus());
 }
 
 void AArtisticSW2026PlayerController::BeginPlay()

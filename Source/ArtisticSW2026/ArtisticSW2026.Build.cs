@@ -25,6 +25,11 @@ public class ArtisticSW2026 : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
+		if (Target.Type != TargetType.Server)
+		{
+			PrivateDependencyModuleNames.Add("SlateCore");
+		}
+
 		PublicIncludePaths.AddRange(new string[] {
 			"ArtisticSW2026",
 			"ArtisticSW2026/Variant_Platforming",

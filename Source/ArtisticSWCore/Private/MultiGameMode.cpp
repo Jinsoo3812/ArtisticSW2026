@@ -5,6 +5,10 @@
 
 #include "Network/SWNetworkLog.h"
 #include "EngineUtils.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerStart.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
@@ -14,6 +18,7 @@
 #include "RespawnHostInterface.h"
 #include "TimerManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "NavigationSystem.h"
 
 namespace
 {
@@ -83,7 +88,22 @@ FString AMultiGameMode::InitNewPlayer(
         return TEXT("InvalidPlayerController");
     }
 
-    if (!AssignRoleToPlayer(NewPlayerController))
+    FGuid ReconnectToken;
+    const bool bHasReconnectToken = ParseReconnectToken(Options, ReconnectToken);
+    if (!bHasReconnectToken && GetNetMode() != NM_Standalone)
+    {
+        return TEXT("InvalidReconnectToken");
+    }
+
+    UPlayerProgressSubsystem* Progress = GetGameInstance()
+        ? GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>()
+        : nullptr;
+    FSWReconnectRecord ExistingRecord;
+    const double CurrentTimeSeconds = FPlatformTime::Seconds();
+    const bool bExistingReconnectRecord = bHasReconnectToken && Progress
+        && Progress->FindReconnectRecord(ReconnectToken, CurrentTimeSeconds, ExistingRecord);
+
+    if (!AssignRoleToPlayer(NewPlayerController, bHasReconnectToken ? &ReconnectToken : nullptr))
     {
         return TEXT("ServerIsFull");
     }
@@ -105,7 +125,12 @@ FString AMultiGameMode::InitNewPlayer(
 
     PlayerRoles.Remove(NewPlayerController);
     PlayerIndices.Remove(NewPlayerController);
+    PlayerReconnectTokens.Remove(NewPlayerController);
     ReadyPlayers.Remove(NewPlayerController);
+    if (bHasReconnectToken && Progress)
+    {
+        Progress->CancelReconnectActivation(ReconnectToken, !bExistingReconnectRecord);
+    }
     UE_LOG(
         LogSWConnection,
         Warning,
@@ -227,7 +252,37 @@ void AMultiGameMode::PreLogin(
         return;
     }
 
-    if (MaxPlayerCount > 0 && GetNumPlayers() >= MaxPlayerCount)
+    FGuid ReconnectToken;
+    if (!ParseReconnectToken(Options, ReconnectToken))
+    {
+        ErrorMessage = TEXT("InvalidReconnectToken");
+        UE_LOG(LogSWConnection, Warning, TEXT("PreLogin Rejected Reason=InvalidReconnectToken"));
+        return;
+    }
+
+    UPlayerProgressSubsystem* Progress = GetGameInstance()
+        ? GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>()
+        : nullptr;
+    if (!Progress)
+    {
+        ErrorMessage = TEXT("ReconnectStateUnavailable");
+        UE_LOG(LogSWConnection, Warning, TEXT("PreLogin Rejected Reason=ReconnectStateUnavailable"));
+        return;
+    }
+
+    FSWReconnectRecord ExistingRecord;
+    const bool bKnownToken = Progress->FindReconnectRecord(
+        ReconnectToken,
+        FPlatformTime::Seconds(),
+        ExistingRecord);
+    if (bKnownToken && ExistingRecord.bConnectionActive)
+    {
+        ErrorMessage = TEXT("DuplicateReconnectToken");
+        UE_LOG(LogSWConnection, Warning, TEXT("PreLogin Rejected Reason=DuplicateReconnectToken"));
+        return;
+    }
+
+    if (!bKnownToken && FindAvailablePlayerIndex() == INDEX_NONE)
     {
         ErrorMessage = TEXT("ServerIsFull");
         UE_LOG(LogSWConnection, Warning, TEXT("PreLogin Rejected Reason=ServerIsFull"));
@@ -240,12 +295,41 @@ void AMultiGameMode::PreLogin(
 void AMultiGameMode::Logout(AController* Exiting)
 {
     const int32 ReleasedPlayerIndex = GetPlayerIndex(Exiting);
+	const FGuid ReconnectToken = Exiting && PlayerReconnectTokens.Contains(Exiting)
+		? PlayerReconnectTokens.FindChecked(Exiting)
+		: FGuid();
+	bool bSnapshotStored = false;
+	if (Exiting && ReconnectToken.IsValid())
+	{
+		if (APawn* ExitingPawn = Exiting->GetPawn())
+		{
+			if (UFunction* CaptureFunction = ExitingPawn->FindFunction(TEXT("CaptureReconnectProgress")))
+			{
+				ExitingPawn->ProcessEvent(CaptureFunction, nullptr);
+				bSnapshotStored = true;
+			}
+		}
+		if (!bSnapshotStored)
+		{
+			if (UPlayerProgressSubsystem* Progress = GetGameInstance()
+				? GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>()
+				: nullptr)
+			{
+				Progress->MarkReconnectDisconnected(
+					ReconnectToken,
+					ReleasedPlayerIndex,
+					FPlatformTime::Seconds(),
+					ReconnectReservationSeconds);
+			}
+		}
+	}
 
     if (Exiting)
     {
         PlayerRoles.Remove(Exiting);
         ReadyPlayers.Remove(Exiting);
 		PlayerIndices.Remove(Exiting);
+		PlayerReconnectTokens.Remove(Exiting);
 		FinishedDeadPlayers.Remove(Exiting);
 		if (FTimerHandle* Timer = RespawnTimers.Find(Exiting)) GetWorldTimerManager().ClearTimer(*Timer);
 		RespawnTimers.Remove(Exiting);
@@ -356,6 +440,152 @@ AActor* AMultiGameMode::ChoosePlayerStart_Implementation(AController* Player)
     }
 
     return Super::ChoosePlayerStart_Implementation(Player);
+}
+
+void AMultiGameMode::RestartPlayer(AController* NewPlayer)
+{
+	FTransform ReconnectTransform;
+	if (ResolveReconnectSpawnTransform(NewPlayer, ReconnectTransform))
+	{
+		RestartPlayerAtTransform(NewPlayer, ReconnectTransform);
+		return;
+	}
+
+	Super::RestartPlayer(NewPlayer);
+}
+
+bool AMultiGameMode::ResolveReconnectSpawnTransform(
+	AController* Controller,
+	FTransform& OutTransform)
+{
+	const FGuid* ReconnectToken = PlayerReconnectTokens.Find(Controller);
+	const UPlayerProgressSubsystem* Progress = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>()
+		: nullptr;
+	FSWPlayerProgressSnapshot Snapshot;
+	if (!ReconnectToken || !Progress || !Progress->PeekReconnectSnapshot(*ReconnectToken, Snapshot))
+	{
+		return false;
+	}
+
+	const int32 PlayerIndex = GetPlayerIndex(Controller);
+	APawn* TeammatePawn = nullptr;
+	AActor* TeammateMovementHost = nullptr;
+	for (const TPair<TObjectPtr<AController>, int32>& Pair : PlayerIndices)
+	{
+		if (Pair.Key == Controller || !Pair.Key)
+		{
+			continue;
+		}
+
+		TeammatePawn = Pair.Key->GetPawn();
+		const ACharacter* TeammateCharacter = Cast<ACharacter>(TeammatePawn);
+		const UPrimitiveComponent* MovementBase = TeammateCharacter && TeammateCharacter->GetCharacterMovement()
+			? TeammateCharacter->GetCharacterMovement()->GetMovementBase()
+			: nullptr;
+		TeammateMovementHost = MovementBase ? MovementBase->GetOwner() : nullptr;
+		if (TeammateMovementHost)
+		{
+			break;
+		}
+	}
+
+	if (TeammatePawn && TeammateMovementHost)
+	{
+		UPlayerRespawnPointComponent* BestPoint = nullptr;
+		double BestDistanceSquared = TNumericLimits<double>::Max();
+		for (TObjectIterator<UPlayerRespawnPointComponent> It; It; ++It)
+		{
+			UPlayerRespawnPointComponent* Point = *It;
+			if (!Point || Point->GetWorld() != GetWorld() || !Point->IsRegistered()
+				|| Point->GetOwner() != TeammateMovementHost
+				|| (Point->PlayerSlot != static_cast<ESWPlayerSlot>(PlayerIndex)
+					&& Point->PlayerSlot != ESWPlayerSlot::Any))
+			{
+				continue;
+			}
+
+			AActor* Host = Point->GetOwner();
+			if (!Host->GetClass()->ImplementsInterface(URespawnHostInterface::StaticClass())
+				|| !IRespawnHostInterface::Execute_IsAvailableForPlayerRespawn(Host)
+				|| !IsReconnectTransformSafe(Controller, Point->GetComponentTransform()))
+			{
+				continue;
+			}
+
+			const double DistanceSquared = FVector::DistSquared(
+				Point->GetComponentLocation(),
+				TeammatePawn->GetActorLocation());
+			if (DistanceSquared < BestDistanceSquared)
+			{
+				BestDistanceSquared = DistanceSquared;
+				BestPoint = Point;
+			}
+		}
+
+		if (BestPoint)
+		{
+			OutTransform = BestPoint->GetComponentTransform();
+			return true;
+		}
+	}
+
+	if (Snapshot.bHasLastValidWorldTransform)
+	{
+		FTransform CandidateTransform = Snapshot.LastValidWorldTransform;
+		if (UNavigationSystemV1* NavigationSystem = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()))
+		{
+			FNavLocation ProjectedLocation;
+			if (!NavigationSystem->ProjectPointToNavigation(
+				CandidateTransform.GetLocation(),
+				ProjectedLocation,
+				FVector(100.0f, 100.0f, 200.0f)))
+			{
+				return false;
+			}
+			CandidateTransform.SetLocation(ProjectedLocation.Location);
+		}
+		else
+		{
+			return false;
+		}
+
+		if (IsReconnectTransformSafe(Controller, CandidateTransform))
+		{
+			OutTransform = CandidateTransform;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool AMultiGameMode::IsReconnectTransformSafe(
+	AController* Controller,
+	const FTransform& Transform)
+{
+	UWorld* World = GetWorld();
+	const UClass* PawnClass = GetDefaultPawnClassForController(Controller);
+	const ACharacter* CharacterDefaultObject = PawnClass
+		? Cast<ACharacter>(PawnClass->GetDefaultObject())
+		: nullptr;
+	const UCapsuleComponent* Capsule = CharacterDefaultObject
+		? CharacterDefaultObject->GetCapsuleComponent()
+		: nullptr;
+	if (!World || !Capsule || Transform.GetLocation().ContainsNaN())
+	{
+		return false;
+	}
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(SWReconnectSpawn), false);
+	return !World->OverlapBlockingTestByChannel(
+		Transform.GetLocation(),
+		Transform.GetRotation(),
+		ECC_Pawn,
+		FCollisionShape::MakeCapsule(
+			Capsule->GetScaledCapsuleRadius(),
+			Capsule->GetScaledCapsuleHalfHeight()),
+		QueryParams);
 }
 
 void AMultiGameMode::SetPlayerReady(AController* Controller, bool bReady)
@@ -598,7 +828,7 @@ void AMultiGameMode::TryNotifyReadinessState()
 	}
 }
 
-int32 AMultiGameMode::FindAvailablePlayerIndex() const
+int32 AMultiGameMode::FindAvailablePlayerIndex()
 {
     if (MaxPlayerCount <= 0)
     {
@@ -617,7 +847,12 @@ int32 AMultiGameMode::FindAvailablePlayerIndex() const
             }
         }
 
-        if (!bAlreadyUsed)
+        UPlayerProgressSubsystem* Progress = GetGameInstance()
+            ? GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>()
+            : nullptr;
+        const bool bReserved = Progress
+            && Progress->IsPlayerIndexReserved(CandidateIndex, FPlatformTime::Seconds());
+        if (!bAlreadyUsed && !bReserved)
         {
             return CandidateIndex;
         }
@@ -626,7 +861,7 @@ int32 AMultiGameMode::FindAvailablePlayerIndex() const
     return INDEX_NONE;
 }
 
-bool AMultiGameMode::AssignRoleToPlayer(AController* Controller)
+bool AMultiGameMode::AssignRoleToPlayer(AController* Controller, const FGuid* RequestedReconnectToken)
 {
 	if (!Controller)
 	{
@@ -638,7 +873,27 @@ bool AMultiGameMode::AssignRoleToPlayer(AController* Controller)
 		return true;
 	}
 
-	const int32 PlayerIndex = FindAvailablePlayerIndex();
+	int32 PlayerIndex = INDEX_NONE;
+	bool bExistingReconnectRecord = false;
+	UPlayerProgressSubsystem* Progress = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>()
+		: nullptr;
+	if (RequestedReconnectToken && RequestedReconnectToken->IsValid() && Progress)
+	{
+		FSWReconnectRecord ExistingRecord;
+		bExistingReconnectRecord = Progress->FindReconnectRecord(
+			*RequestedReconnectToken,
+			FPlatformTime::Seconds(),
+			ExistingRecord);
+		if (bExistingReconnectRecord && !ExistingRecord.bConnectionActive)
+		{
+			PlayerIndex = ExistingRecord.PlayerIndex;
+		}
+	}
+	if (PlayerIndex == INDEX_NONE)
+	{
+		PlayerIndex = FindAvailablePlayerIndex();
+	}
 	if (PlayerIndex == INDEX_NONE)
 	{
 		UE_LOG(
@@ -655,6 +910,19 @@ bool AMultiGameMode::AssignRoleToPlayer(AController* Controller)
 
 	PlayerRoles.Add(Controller, AssignedRole);
 	PlayerIndices.Add(Controller, PlayerIndex);
+	if (RequestedReconnectToken && RequestedReconnectToken->IsValid())
+	{
+		if (!Progress || !Progress->ActivateReconnectRecord(
+			*RequestedReconnectToken,
+			PlayerIndex,
+			FPlatformTime::Seconds()))
+		{
+			PlayerRoles.Remove(Controller);
+			PlayerIndices.Remove(Controller);
+			return false;
+		}
+		PlayerReconnectTokens.Add(Controller, *RequestedReconnectToken);
+	}
 
 	UE_LOG(
 		LogSWConnection,
@@ -666,6 +934,42 @@ bool AMultiGameMode::AssignRoleToPlayer(AController* Controller)
 	);
 
 	return true;
+}
+
+bool AMultiGameMode::ParseReconnectToken(const FString& Options, FGuid& OutReconnectToken) const
+{
+	const FString TokenString = UGameplayStatics::ParseOption(Options, TEXT("ReconnectToken"));
+	return FGuid::Parse(TokenString, OutReconnectToken) && OutReconnectToken.IsValid();
+}
+
+bool AMultiGameMode::StoreReconnectSnapshotForController(
+	AController* Controller,
+	const FSWPlayerProgressSnapshot& Snapshot)
+{
+	const FGuid* ReconnectToken = PlayerReconnectTokens.Find(Controller);
+	const int32 PlayerIndex = GetPlayerIndex(Controller);
+	UPlayerProgressSubsystem* Progress = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>()
+		: nullptr;
+	return ReconnectToken && PlayerIndex != INDEX_NONE && Progress
+		&& Progress->StoreReconnectSnapshot(
+			*ReconnectToken,
+			PlayerIndex,
+			Snapshot,
+			FPlatformTime::Seconds(),
+			ReconnectReservationSeconds);
+}
+
+bool AMultiGameMode::ConsumeReconnectSnapshotForController(
+	AController* Controller,
+	FSWPlayerProgressSnapshot& OutSnapshot)
+{
+	const FGuid* ReconnectToken = PlayerReconnectTokens.Find(Controller);
+	UPlayerProgressSubsystem* Progress = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>()
+		: nullptr;
+	return ReconnectToken && Progress
+		&& Progress->ConsumeReconnectSnapshot(*ReconnectToken, OutSnapshot);
 }
 
 APlayerStart* AMultiGameMode::FindPlayerStartByRole(FName RoleName) const

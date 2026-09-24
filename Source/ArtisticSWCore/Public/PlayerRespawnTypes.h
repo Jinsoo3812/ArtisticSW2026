@@ -4,6 +4,8 @@
 #include "GameplayTagContainer.h"
 #include "PlayerRespawnTypes.generated.h"
 
+class AActor;
+
 UENUM(BlueprintType)
 enum class ESWPlayerSlot : uint8
 {
@@ -40,4 +42,47 @@ struct ARTISTICSWCORE_API FSWPlayerProgressSnapshot
 
 	UPROPERTY()
 	TArray<FName> ActiveShipUpgradeNodeIds;
+
+	UPROPERTY()
+	float CurrentHealth = 0.0f;
+
+	UPROPERTY()
+	bool bHasCurrentHealth = false;
+
+	UPROPERTY()
+	bool bWasDead = false;
+
+	UPROPERTY()
+	FTransform LastValidWorldTransform = FTransform::Identity;
+
+	UPROPERTY()
+	bool bHasLastValidWorldTransform = false;
+
+	UPROPERTY()
+	TWeakObjectPtr<AActor> LastMovementHost;
+
+	UPROPERTY()
+	FTransform LastMovementHostRelativeTransform = FTransform::Identity;
+};
+
+USTRUCT()
+struct ARTISTICSWCORE_API FSWReconnectRecord
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FGuid ReconnectToken;
+
+	UPROPERTY()
+	int32 PlayerIndex = INDEX_NONE;
+
+	UPROPERTY()
+	FSWPlayerProgressSnapshot Snapshot;
+
+	UPROPERTY()
+	bool bHasSnapshot = false;
+
+	double DisconnectTimeSeconds = 0.0;
+	double ExpirationTimeSeconds = 0.0;
+	bool bConnectionActive = false;
 };

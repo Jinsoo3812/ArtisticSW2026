@@ -13,7 +13,7 @@ UENUM(BlueprintType)
 enum class ESWConnectionFailureReason : uint8
 {
 	None, InvalidAddress, NoLocalPlayerController, ServerFull, ConnectionTimeout,
-	ConnectionLost, VersionMismatch, NetworkFailure, TravelFailure
+	ConnectionLost, VersionMismatch, NetworkFailure, TravelFailure, ReadinessTimeout
 };
 
 USTRUCT(BlueprintType)
