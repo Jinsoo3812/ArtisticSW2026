@@ -51,7 +51,6 @@ void USWConnectionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	PostLoadMapHandle = FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(this, &USWConnectionSubsystem::HandlePostLoadMap);
 	ConnectionState = ESWConnectionState::Idle;
 	LastFailure = FSWConnectionFailure();
-	ReconnectToken = FGuid::NewGuid();
 }
 
 void USWConnectionSubsystem::Deinitialize()
@@ -152,9 +151,6 @@ bool USWConnectionSubsystem::ConnectDirect(const FString& Address)
 	TransitionTo(ESWConnectionState::Connecting);
 	ShowLoadingPresentation();
 	UE_LOG(LogSWConnection, Display, TEXT("Direct connection started. AttemptId=%d Port=%d"), ActiveAttemptId, URL.Port);
-	URL.AddOption(*FString::Printf(
-		TEXT("ReconnectToken=%s"),
-		*ReconnectToken.ToString(EGuidFormats::DigitsWithHyphens)));
 	if (!PendingDisplayName.IsEmpty()) URL.AddOption(*FString::Printf(TEXT("SWNameHex=%s"), *FSWRoomName::ToHex(PendingDisplayName)));
 	if (PendingHostKey.IsValid()) URL.AddOption(*FString::Printf(TEXT("SWHostKey=%s"), *PendingHostKey.ToString(EGuidFormats::DigitsWithHyphens)));
 	PlayerController->ClientTravel(URL.ToString(), TRAVEL_Absolute);
@@ -288,10 +284,7 @@ ESWConnectionFailureReason USWConnectionSubsystem::ClassifyNetworkFailure(ENetwo
 	if (ErrorString.Contains(TEXT("Timeout"), ESearchCase::IgnoreCase)
 		|| ErrorString.Contains(TEXT("No response"), ESearchCase::IgnoreCase)) return ESWConnectionFailureReason::ConnectionTimeout;
 	if (FailureType == ENetworkFailure::PendingConnectionFailure
-		&& !ErrorString.Contains(TEXT("Rejected"), ESearchCase::IgnoreCase)
-		&& !ErrorString.Contains(TEXT("InvalidReconnectToken"))
-		&& !ErrorString.Contains(TEXT("DuplicateReconnectToken"))
-		&& !ErrorString.Contains(TEXT("ReconnectStateUnavailable"))) return ESWConnectionFailureReason::ConnectionTimeout;
+		&& !ErrorString.Contains(TEXT("Rejected"), ESearchCase::IgnoreCase)) return ESWConnectionFailureReason::ConnectionTimeout;
 	switch (FailureType)
 	{
 	case ENetworkFailure::ConnectionTimeout: return ESWConnectionFailureReason::ConnectionTimeout;

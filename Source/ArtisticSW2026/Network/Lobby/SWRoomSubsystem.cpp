@@ -353,10 +353,7 @@ void USWRoomSubsystem::HandleConnectionFailed(FSWConnectionFailure Failure)
 	else if (Failure.Reason == ESWConnectionFailureReason::VersionMismatch)
 		Text = FText::FromString(TEXT("서버에서 접속 거절: 버전 불일치"));
 	else if (Failure.Reason == ESWConnectionFailureReason::NetworkFailure
-		&& (Failure.EngineMessage.Contains(TEXT("InvalidReconnectToken"))
-			|| Failure.EngineMessage.Contains(TEXT("DuplicateReconnectToken"))
-			|| Failure.EngineMessage.Contains(TEXT("ReconnectStateUnavailable"))
-			|| Failure.EngineMessage.Contains(TEXT("Rejected"), ESearchCase::IgnoreCase)))
+		&& Failure.EngineMessage.Contains(TEXT("Rejected"), ESearchCase::IgnoreCase))
 		Text = FText::FromString(TEXT("서버에서 접속 거절"));
 	if (bOwnsServer) Text = FText::Format(FText::FromString(TEXT("방 생성 실패: {0}. NAT loopback과 UDP 7777 설정을 확인하세요.")), Text);
 	UE_LOG(LogSWConnection, Warning, TEXT("Side=%s OperationId=%llu AttemptId=%d Phase=Connection Result=Failed Reason=%s Type=%s"), bOwnsServer ? TEXT("HostClient") : TEXT("JoinClient"), OperationId, Failure.AttemptId, *UEnum::GetValueAsString(Failure.Reason), *Failure.EngineFailureType);

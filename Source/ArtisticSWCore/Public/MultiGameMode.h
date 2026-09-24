@@ -186,8 +186,6 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Respawn", meta=(ClampMin="0.0"))
 	float IndividualRespawnDelay = 5.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Multiplayer|Reconnect", meta=(ClampMin="0.0"))
-	float ReconnectReservationSeconds = 120.0f;
     
 protected:
     // ================================
@@ -216,7 +214,7 @@ protected:
     int32 FindAvailablePlayerIndex();
 
     /** Controller에게 역할을 배정한다. */
-    bool AssignRoleToPlayer(AController* Controller, const FGuid* RequestedReconnectToken = nullptr);
+    bool AssignRoleToPlayer(AController* Controller, bool bIsHost = false, const FString& PlayerKey = FString());
 
     /** PlayerStartTag와 역할명이 일치하는 PlayerStart를 찾는다. */
     APlayerStart* FindPlayerStartByRole(FName RoleName) const;
@@ -229,7 +227,7 @@ protected:
     /** 각 Controller의 역할 */
     TMap<TObjectPtr<AController>, FName> PlayerRoles;
 	TMap<TObjectPtr<AController>, int32> PlayerIndices;
-	TMap<TObjectPtr<AController>, FGuid> PlayerReconnectTokens;
+	TMap<TObjectPtr<AController>, FString> PlayerReconnectKeys;
 	TSet<TObjectPtr<AController>> FinishedDeadPlayers;
 	TMap<TObjectPtr<AController>, FTimerHandle> RespawnTimers;
 
@@ -242,7 +240,7 @@ protected:
 
 	void TryRespawnPlayer(AController* Controller);
 	UPlayerRespawnPointComponent* FindShipRespawnPoint(int32 PlayerIndex) const;
-	bool ParseReconnectToken(const FString& Options, FGuid& OutReconnectToken) const;
+	FString GetReconnectKey(AController* Controller) const;
 	bool ResolveReconnectSpawnTransform(AController* Controller, FTransform& OutTransform);
 	bool IsReconnectTransformSafe(AController* Controller, const FTransform& Transform);
 	virtual void HandleAllPlayersDeathFinished();

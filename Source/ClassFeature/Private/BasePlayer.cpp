@@ -497,7 +497,7 @@ bool ABasePlayer::BuildProgressSnapshot(FSWPlayerProgressSnapshot& OutSnapshot) 
 		OutSnapshot.bWasDead = HealthComponent->IsDead();
 	}
 
-	if (!OutSnapshot.bWasDead && !GetActorLocation().ContainsNaN())
+	if (!GetActorLocation().ContainsNaN())
 	{
 		OutSnapshot.LastValidWorldTransform = GetActorTransform();
 		OutSnapshot.bHasLastValidWorldTransform = true;

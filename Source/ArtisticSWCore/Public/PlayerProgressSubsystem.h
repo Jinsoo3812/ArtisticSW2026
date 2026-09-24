@@ -16,17 +16,10 @@ public:
 	bool ConsumeSnapshot(int32 PlayerIndex, FSWPlayerProgressSnapshot& OutSnapshot);
 	bool HasSnapshot(int32 PlayerIndex) const;
 
-	bool FindReconnectRecord(const FGuid& ReconnectToken, double CurrentTimeSeconds, FSWReconnectRecord& OutRecord);
-	bool IsPlayerIndexReserved(int32 PlayerIndex, double CurrentTimeSeconds);
-	bool ActivateReconnectRecord(const FGuid& ReconnectToken, int32 PlayerIndex, double CurrentTimeSeconds);
-	void CancelReconnectActivation(const FGuid& ReconnectToken, bool bRemoveNewRecord);
-	bool StoreReconnectSnapshot(const FGuid& ReconnectToken, int32 PlayerIndex,
-		const FSWPlayerProgressSnapshot& Snapshot, double CurrentTimeSeconds, double ReservationDurationSeconds);
-	void MarkReconnectDisconnected(const FGuid& ReconnectToken, int32 PlayerIndex,
-		double CurrentTimeSeconds, double ReservationDurationSeconds);
-	bool ConsumeReconnectSnapshot(const FGuid& ReconnectToken, FSWPlayerProgressSnapshot& OutSnapshot);
-	bool PeekReconnectSnapshot(const FGuid& ReconnectToken, FSWPlayerProgressSnapshot& OutSnapshot) const;
-	void PruneExpiredReconnectRecords(double CurrentTimeSeconds);
+	void StoreReconnectSnapshot(const FString& PlayerKey, const FSWPlayerProgressSnapshot& Snapshot);
+	bool ConsumeReconnectSnapshot(const FString& PlayerKey, FSWPlayerProgressSnapshot& OutSnapshot);
+	bool PeekReconnectSnapshot(const FString& PlayerKey, FSWPlayerProgressSnapshot& OutSnapshot) const;
+	void ClearReconnectSnapshots();
 	void ClearSnapshotsForHostedReturn();
 
 private:
@@ -34,5 +27,5 @@ private:
 	TMap<int32, FSWPlayerProgressSnapshot> PendingSnapshots;
 
 	UPROPERTY(Transient)
-	TMap<FGuid, FSWReconnectRecord> ReconnectRecords;
+	TMap<FString, FSWPlayerProgressSnapshot> ReconnectSnapshots;
 };

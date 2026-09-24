@@ -1,5 +1,4 @@
 #pragma once
-
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "PlayerRespawnTypes.generated.h"
@@ -74,26 +73,4 @@ struct ARTISTICSWCORE_API FSWPlayerProgressSnapshot
 
 	UPROPERTY()
 	FTransform LastMovementHostRelativeTransform = FTransform::Identity;
-};
-
-USTRUCT()
-struct ARTISTICSWCORE_API FSWReconnectRecord
-{
-	GENERATED_BODY()
-
-	UPROPERTY()
-	FGuid ReconnectToken;
-
-	UPROPERTY()
-	int32 PlayerIndex = INDEX_NONE;
-
-	UPROPERTY()
-	FSWPlayerProgressSnapshot Snapshot;
-
-	UPROPERTY()
-	bool bHasSnapshot = false;
-
-	double DisconnectTimeSeconds = 0.0;
-	double ExpirationTimeSeconds = 0.0;
-	bool bConnectionActive = false;
 };

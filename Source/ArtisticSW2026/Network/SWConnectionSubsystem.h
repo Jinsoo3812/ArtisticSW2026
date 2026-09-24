@@ -42,8 +42,6 @@ public:
 	int32 GetActiveAttemptId() const { return ActiveAttemptId; }
 	UFUNCTION(BlueprintPure)
 	FString GetReadinessDebugStatus() const;
-	UFUNCTION(BlueprintPure)
-	FGuid GetReconnectToken() const { return ReconnectToken; }
 
 	UPROPERTY(BlueprintAssignable)
 	FOnSWConnectionStateChanged OnConnectionStateChanged;
@@ -85,7 +83,6 @@ private:
 	TWeakObjectPtr<UGameViewportClient> LoadingViewport;
 	bool bLoadingPresentationVisible = false;
 	bool bViewportIgnoredInputBeforeLoading = false;
-	FGuid ReconnectToken;
 	FString PendingDisplayName;
 	FGuid PendingHostKey;
 	FDelegateHandle NetworkFailureHandle;
