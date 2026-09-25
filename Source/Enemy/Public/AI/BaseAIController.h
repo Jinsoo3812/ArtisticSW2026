@@ -23,6 +23,7 @@ class ENEMY_API ABaseAIController : public AAIController
 
 public:
 	ABaseAIController();
+	virtual void Tick(float DeltaSeconds) override;
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|AI")
 	EEnemyAIState GetEnemyState() const;
@@ -79,6 +80,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Targeting", meta = (ClampMin = "0.0"))
 	float TargetReacquireDelay = 0.25f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Territory", meta = (ClampMin = "0.05", Units = "s"))
+	float TerritoryCheckInterval = 0.25f;
+
 	/** Weak runtime cache shared by combat code and EQS contexts. */
 	UPROPERTY(Transient)
 	TWeakObjectPtr<AActor> CachedTargetActor;
@@ -130,4 +134,5 @@ private:
 	TWeakObjectPtr<UBaseHealthComponent> ObservedTargetHealthComponent;
 	TWeakObjectPtr<UBaseHealthComponent> PossessedEnemyHealthComponent;
 	FTimerHandle TargetReacquireTimerHandle;
+	float TerritoryCheckRemaining = 0.0f;
 };

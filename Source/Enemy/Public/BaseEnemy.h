@@ -8,6 +8,7 @@
 #include "BaseCharacter.h"
 #include "WaveSystem/Data/WaveSpawnTypes.h"
 #include "EnemyDropData.h"
+#include "EnemyBalanceData.h"
 #include "StoryFacadeSubsystem.h"
 
 #include "BaseEnemy.generated.h"
@@ -17,6 +18,7 @@ class UBaseDeathGameplayAbility;
 class UBaseWeaponComponent;
 class UBaseHealthComponent;
 class UEnemyBehaviorSet;
+class UEnemyTerritoryComponent;
 class UEnemyHealthBarComponent;
 class UEnemyWaypointMoveComponent;
 struct FOnAttributeChangeData;
@@ -36,6 +38,38 @@ class ENEMY_API ABaseEnemy : public ABaseCharacter
 
 public:
 	ABaseEnemy();
+
+	/** Empty selection preserves legacy defaults; an explicitly invalid selection fails initialization. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Balance",
+		meta = (RowType = "/Script/Enemy.EnemyBaseStatsRow"))
+	FDataTableRowHandle DefaultStatsRow;
+
+	/** Call before FinishSpawning, or while a deck enemy is inactive. Empty means use the BP default. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy|Balance")
+	bool ConfigureSpawnBalance(const FDataTableRowHandle& Row, float HealthMultiplier = 1.f, float SpeedMultiplier = 1.f);
+
+	/** Assign before FinishSpawning so ASC and drop initialization see the catalog tag. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy|Type")
+	bool ConfigureSpawnTypeTag(FGameplayTag InEnemyTypeTag);
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Balance")
+	bool IsBalanceReady() const { return bBalanceReady; }
+	float GetBalancedAttackInterval(float Fallback) const;
+	bool IsBalanceAttackReady() const;
+	bool HasBalancedMeleeAttackSlot() const;
+	void ResetBalanceForReuse();
+	bool ApplyBaseStatsForSpawn();
+
+protected:
+	UPROPERTY(Transient) FDataTableRowHandle SpawnStatsRow;
+	bool bBalanceReady = false;
+	bool bBalanceApplied = false;
+	float SpawnHealthMultiplier = 1.f;
+	float BalancedAttackInterval = 0.f;
+	int32 BalancedMeleeAttackerLimit = 0;
+	double BalanceAttackReadyTime = 0.;
+
+public:
 	virtual bool IsEnemyCharacterForEffects() const override { return true; }
 	
 	/**
@@ -121,6 +155,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBaseHealthComponent> HealthComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Territory")
+	TObjectPtr<UEnemyTerritoryComponent> TerritoryComponent;
 
 	// ================= Health Bar =================
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -233,6 +270,7 @@ public:
 	FORCEINLINE bool ShouldEquipWeaponOnSpawn() const { return bEquipWeaponOnSpawn; }
 	FORCEINLINE FGameplayTag GetDefaultWeaponTag() const { return DefaultWeaponTag; }
 	FORCEINLINE FGameplayTag GetEnemyTypeTag() const { return EnemyTypeTag; }
+	FORCEINLINE UEnemyTerritoryComponent* GetTerritoryComponent() const { return TerritoryComponent; }
 	FORCEINLINE TObjectPtr<UBaseWeaponComponent> GetWeaponComponent() const { check(WeaponComponent) return WeaponComponent; }
 	//FORCEINLINE TObjectPtr<UPathMovement> GetPathMovementComponent() const { check(PathMovement) return PathMovement;}
 	FORCEINLINE virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { check(AbilitySystemComponent) return AbilitySystemComponent; }

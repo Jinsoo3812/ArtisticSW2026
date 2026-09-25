@@ -83,6 +83,7 @@ bool UDeckEnemySpawnerComponent::ValidateAuthoredSpawnSlot(
 	}
 
 	OutSlot.EnemyClass = AuthoredSlot.EnemyClass;
+	OutSlot.StatsRow = AuthoredSlot.StatsRow;
 	OutSlot.SpawnPointId = PointId;
 	return true;
 }
@@ -270,11 +271,13 @@ void UDeckEnemySpawnerComponent::InitializePool()
 		}
 
 		PooledEnemy->PrepareForPool();
+		PooledEnemy->ConfigureSpawnBalance(Slot.StatsRow);
 		PooledEnemy->FinishSpawning(InitialTransform);
+		if (!IsValid(PooledEnemy)) continue;
 		PooledEnemy->SetHostShip(Host);
 		PooledEnemy->DeactivateToPool();
 		EnemyPool.Add(PooledEnemy);
-		Host->RegisterDeckEnemyChestGuard(PooledEnemy);
+		Host->RegisterCrewEnemy(PooledEnemy);
 	}
 }
 
@@ -294,6 +297,7 @@ void UDeckEnemySpawnerComponent::Shutdown()
 	{
 		if (IsValid(Enemy))
 		{
+			if (AEnemyShip* Host = GetHostShip()) Host->UnregisterCrewEnemy(Enemy);
 			ReleaseAllPointsFor(Enemy);
 			Enemy->Destroy();
 		}
@@ -328,7 +332,7 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(
 	AActor* InitialCombatTarget)
 {
 	AEnemyShip* Host = GetHostShip();
-	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled() || !IsEnabled()
+	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled() || Host->IsCrewDefeated() || !IsEnabled()
 		|| !IsValid(TriggeringPlayerShip)
 		|| (InitialCombatTarget && !IsValid(InitialCombatTarget)))
 	{
@@ -439,6 +443,12 @@ void UDeckEnemySpawnerComponent::DeployNextEnemy()
 	}
 
 	ADeckEnemy* ActivatedEnemy = nullptr;
+	if (!Enemy->ConfigureSpawnBalance(Slot.StatsRow))
+	{
+		ReleasePointReservation(Reservation);
+		HandleDeploymentFailure();
+		return;
+	}
 	if (!ActivateSpecificEnemyAtReservation(
 		*Enemy, Reservation, DeploymentInitialTarget.Get(), ActivatedEnemy))
 	{
@@ -1092,6 +1102,7 @@ bool UDeckEnemySpawnerComponent::ActivateEnemyAtPoint(
 	ADeckEnemy*& OutEnemy)
 {
 	OutEnemy = nullptr;
+	if (const AEnemyShip* Host = GetHostShip(); !Host || Host->IsCrewDefeated()) return false;
 	if (EnemyPool.IsEmpty())
 	{
 		InitializePool();
@@ -1112,15 +1123,23 @@ bool UDeckEnemySpawnerComponent::ActivateEnemyAtPoint(
 bool UDeckEnemySpawnerComponent::ActivateEnemyAtReservation(
 	FDeckPointReservation& Reservation,
 	AActor* InitialTarget,
-	ADeckEnemy*& OutEnemy)
+	ADeckEnemy*& OutEnemy,
+	TSubclassOf<ADeckEnemy> RequiredClass,
+	const FDataTableRowHandle& StatsRow)
 {
 	OutEnemy = nullptr;
+	if (const AEnemyShip* Host = GetHostShip(); !Host || Host->IsCrewDefeated()) return false;
 	if (EnemyPool.IsEmpty())
 	{
 		InitializePool();
 	}
-	ADeckEnemy* Enemy = FindInactiveEnemy(nullptr);
+	ADeckEnemy* Enemy = FindInactiveEnemy(RequiredClass);
 	if (!Enemy)
+	{
+		ReleasePointReservation(Reservation);
+		return false;
+	}
+	if (!Enemy->ConfigureSpawnBalance(StatsRow))
 	{
 		ReleasePointReservation(Reservation);
 		return false;
@@ -1136,7 +1155,7 @@ bool UDeckEnemySpawnerComponent::ActivateSpecificEnemyAtReservation(
 {
 	OutEnemy = nullptr;
 	AEnemyShip* Host = GetHostShip();
-	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled() || !Reservation.IsValid()
+	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled() || Host->IsCrewDefeated() || !Reservation.IsValid()
 		|| Enemy.IsPoolActive()
 		|| (InitialTarget && !Enemy.IsValidCombatTarget(InitialTarget)))
 	{

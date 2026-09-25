@@ -2,12 +2,14 @@
 
 
 #include "BasePlayer.h"
+#include "Combat/PlayerAimComponent.h"
+#include "WeaponInputAbilitySystemComponent.h"
+#include "GAS/Ability/WeaponGameplayAbility.h"
 #include "PlayerDialogueComponent.h"
 #include "BasePlayerState.h"
 #include "BasePlayerController.h"
 #include "Misc/Crc.h"
 #include "AbilitySystemComponent.h"
-#include "Abilities/GameplayAbilityTargetTypes.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "EnhancedInputComponent.h"
@@ -40,8 +42,6 @@
 #include "Crafting/CraftingComponent.h"
 #include "ItemSubSystem.h"
 #include "Equipment/PlayerEquipmentComponent.h"
-#include "Item/Components/BowComponent.h"
-#include "Item/Weapons/BowItem.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
@@ -134,6 +134,7 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 	SwimmingComponent = CreateDefaultSubobject<USwimmingComponent>(TEXT("SwimmingComponent"));
 	EquipmentComponent = CreateDefaultSubobject<UPlayerEquipmentComponent>(TEXT("EquipmentComponent"));
+	AimComponent = CreateDefaultSubobject<UPlayerAimComponent>(TEXT("AimComponent"));
 	GravityVortexAbilityClass = UGA_GravityVortexThrow::StaticClass();
 	WaterBombAbilityClass = UGA_WaterBombCannonMode::StaticClass();
 	BombardmentAbilityClass = UGA_Bombardment::StaticClass();
@@ -241,6 +242,12 @@ void ABasePlayer::BeginPlay()
 		CameraBoom->CameraLagMaxTimeStep = CameraRotationSmoothingMaxTimeStep;
 	}
 
+	if (FollowCamera && bEnableSprintVignette)
+	{
+		FollowCamera->PostProcessSettings.bOverride_VignetteIntensity = true;
+		FollowCamera->PostProcessSettings.VignetteIntensity = 0.0f;
+	}
+
 	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
 	{
 		CachedPlayerSkillComponent = SkillComponent;
@@ -341,6 +348,8 @@ void ABasePlayer::GiveStartingItemsForTest()
 
 void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ResetAutomaticSwimDiveInput();
+
 	if (InventoryComponent)
 	{
 		InventoryComponent->OnInventoryChanged.RemoveAll(this);
@@ -403,9 +412,39 @@ void ABasePlayer::RestoreRespawnProgress(AController* OwningController)
 	}
 }
 
+void ABasePlayer::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
+{
+	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
+
+	const bool bIsSwimming = (SwimmingComponent && SwimmingComponent->IsCustomSwimming()) ||
+		(GetCharacterMovement() && GetCharacterMovement()->IsSwimming());
+
+	if (bIsSwimming)
+	{
+		StopSprint();
+	}
+}
+
 void ABasePlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (bAutomaticSwimDiveHeld)
+	{
+		if (!SwimmingComponent || !SwimmingComponent->IsCustomSwimming())
+		{
+			ResetAutomaticSwimDiveInput();
+		}
+		else if (IsLocallyControlled())
+		{
+			AutomaticSwimDiveRemaining -= DeltaTime;
+			if (AutomaticSwimDiveRemaining <= 0.0f)
+			{
+				ResetAutomaticSwimDiveInput();
+				RefreshSwimmingVerticalInput();
+			}
+		}
+	}
 
 	// 후방 이동 시 질주(Sprint) 차단 (1안)
 	RefreshSprintFromInput();
@@ -476,6 +515,11 @@ void ABasePlayer::Tick(float DeltaTime)
 
 	float TargetArmLength = DefaultTargetArmLength;
 	FVector TargetSocketOffset = DefaultSocketOffset;
+	float TargetFOV = DefaultFOV;
+	float CurrentInterpSpeed = CameraInterpSpeed;
+	float TargetVignette = 0.0f;
+
+	const bool bIsSprinting = AnimStateComponent && AnimStateComponent->bIsSprinting;
 
 	if (CanPerformCombatAction())
 	{
@@ -483,17 +527,51 @@ void ABasePlayer::Tick(float DeltaTime)
 		{
 			TargetArmLength = SnipingTargetArmLength;
 			TargetSocketOffset = SnipingSocketOffset;
+			TargetFOV = SnipingFOV;
+			CurrentInterpSpeed = CameraInterpSpeed;
 		}
 		else if (bIsAiming)
 		{
 			TargetArmLength = AimingTargetArmLength;
 			TargetSocketOffset = AimingSocketOffset;
+			TargetFOV = DefaultFOV;
+			CurrentInterpSpeed = CameraInterpSpeed;
+		}
+		else if (bIsSprinting)
+		{
+			TargetArmLength = SprintTargetArmLength;
+			TargetFOV = SprintFOV;
+			TargetVignette = bEnableSprintVignette ? SprintVignetteIntensity : 0.0f;
+			CurrentInterpSpeed = SprintCameraInterpSpeed;
 		}
 	}
 	else
 	{
 		bIsAiming = false;
 		bIsSniping = false;
+
+		if (bIsSprinting)
+		{
+			TargetArmLength = SprintTargetArmLength;
+			TargetFOV = SprintFOV;
+			TargetVignette = bEnableSprintVignette ? SprintVignetteIntensity : 0.0f;
+			CurrentInterpSpeed = SprintCameraInterpSpeed;
+		}
+	}
+
+	// 조준/스나이핑 중이 아니고 질주도 아닐 때의 복귀 보간 속도 설정
+	if (!bIsSniping && !bIsAiming && !bIsSprinting)
+	{
+		// 질주 후 복귀(줌아웃 상태에서 복귀) 시에는 부드러운 SprintCameraInterpSpeed 사용,
+		// 조준 후 복귀(줌인 상태에서 복귀) 시에는 빠른 CameraInterpSpeed 사용
+		if (CameraBoom && CameraBoom->TargetArmLength > DefaultTargetArmLength)
+		{
+			CurrentInterpSpeed = SprintCameraInterpSpeed;
+		}
+		else
+		{
+			CurrentInterpSpeed = CameraInterpSpeed;
+		}
 	}
 
 	// Rotation ownership is selected by ApplyCombatRotationMode() above:
@@ -503,14 +581,45 @@ void ABasePlayer::Tick(float DeltaTime)
 
 	if (CameraBoom)
 	{
-		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
-		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CameraInterpSpeed);
+		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CurrentInterpSpeed);
+		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CurrentInterpSpeed);
+		if (IsLocallyControlled() && bEnableSwimmingCameraLocationSmoothing)
+		{
+			const bool bSwimming = SwimmingComponent && SwimmingComponent->IsCustomSwimming();
+			if (bSwimming)
+			{
+				bWasUsingSwimmingCameraLag = true;
+				SwimmingCameraLagExitElapsed = 0.0f;
+				CameraBoom->bEnableCameraLag = true;
+				CameraBoom->CameraLagSpeed = SwimmingCameraLagSpeed;
+				CameraBoom->CameraLagMaxDistance = SwimmingCameraLagMaxDistance;
+				CameraBoom->bUseCameraLagSubstepping = true;
+				CameraBoom->CameraLagMaxTimeStep = SwimmingCameraLagMaxTimeStep;
+			}
+			else if (bWasUsingSwimmingCameraLag)
+			{
+				SwimmingCameraLagExitElapsed += DeltaTime;
+				const float Alpha = FMath::Clamp(SwimmingCameraLagExitElapsed / 0.25f, 0.0f, 1.0f);
+				CameraBoom->CameraLagSpeed = FMath::Lerp(SwimmingCameraLagSpeed, 30.0f, Alpha);
+				if (Alpha >= 1.0f)
+				{
+					CameraBoom->bEnableCameraLag = false;
+					bWasUsingSwimmingCameraLag = false;
+				}
+			}
+		}
 	}
 
 	if (FollowCamera)
 	{
-		const float TargetFOV = bIsSniping ? SnipingFOV : DefaultFOV;
-		FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, TargetFOV, DeltaTime, CameraInterpSpeed));
+		FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, TargetFOV, DeltaTime, CurrentInterpSpeed));
+
+		if (bEnableSprintVignette)
+		{
+			FollowCamera->PostProcessSettings.bOverride_VignetteIntensity = true;
+			FollowCamera->PostProcessSettings.VignetteIntensity = FMath::FInterpTo(
+				FollowCamera->PostProcessSettings.VignetteIntensity, TargetVignette, DeltaTime, SprintCameraInterpSpeed);
+		}
 	}
 }
 
@@ -629,6 +738,7 @@ void ABasePlayer::PrepareForCannonControl()
 void ABasePlayer::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+	ResetAutomaticSwimDiveInput();
 
 	if (AnimStateComponent)
 	{
@@ -689,21 +799,19 @@ void ABasePlayer::PossessedBy(AController* NewController)
 				{
 				if (AbilityPair.Value)
 				{
-					UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Granting Ability: %s to Slot Tag: %s (InputID: %d)"),
+					UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Granting Ability: %s to Slot Tag: %s"),
 						*AbilityPair.Value->GetName(),
-						*AbilityPair.Key.ToString(),
-						GetInputIDFromTag(AbilityPair.Key));
+						*AbilityPair.Key.ToString());
 						GrantAbilityToSlot(AbilityPair.Key, AbilityPair.Value);
 					}
 				}
 				if (bEnableGravityVortexSkillInput && GravityVortexAbilityClass)
 				{
 					UE_LOG(LogTemp, Warning,
-						TEXT("[VortexPipeline][Grant] PlayerClass=%s AbilityClass=%s Slot=%s InputID=%d"),
+						TEXT("[VortexPipeline][Grant] PlayerClass=%s AbilityClass=%s Slot=%s"),
 						*GetPathNameSafe(GetClass()),
 						*GetPathNameSafe(GravityVortexAbilityClass.Get()),
-						*Key_Skill_GravityVortex.GetTag().ToString(),
-						GetInputIDFromTag(Key_Skill_GravityVortex));
+						*Key_Skill_GravityVortex.GetTag().ToString());
 					GrantAbilityToSlot(Key_Skill_GravityVortex, GravityVortexAbilityClass);
 				}
 				if (bEnableAreaSlowSkillInput && AreaSlowAbilityClass)
@@ -744,6 +852,8 @@ void ABasePlayer::UnPossessed()
 	}
 
 	GetWorldTimerManager().ClearTimer(InteractionScanTimerHandle);
+
+	ResetAutomaticSwimDiveInput();
 
 	if (AnimStateComponent)
 	{
@@ -891,6 +1001,7 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 					{
 						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::OnMouseInputPressed, Action.KeyTag);
 						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, this, &ABasePlayer::OnMouseInputReleased, Action.KeyTag);
+						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Canceled, this, &ABasePlayer::OnMouseInputReleased, Action.KeyTag);
 					}
 					else
 					{
@@ -939,12 +1050,6 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::LeftControl, IE_Released, this, &ABasePlayer::StopSwimDive);
 	PlayerInputComponent->BindKey(EKeys::RightControl, IE_Pressed, this, &ABasePlayer::StartSwimDive);
 	PlayerInputComponent->BindKey(EKeys::RightControl, IE_Released, this, &ABasePlayer::StopSwimDive);
-}
-
-int32 ABasePlayer::GetInputIDFromTag(const FGameplayTag& Tag) const
-{
-	if (!Tag.IsValid()) return INDEX_NONE;
-	return static_cast<int32>(FCrc::StrCrc32(*Tag.ToString()));
 }
 
 void ABasePlayer::InitializeQuickSlots()
@@ -1382,39 +1487,27 @@ void ABasePlayer::HandleInventoryContentsChanged()
 void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayAbility> AbilityClass)
 {
 	// 서버에서만 실행되며, 유효성 검사 수행
-	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass || !KeyTag.IsValid())
+	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass || !KeyTag.IsValid()
+		|| AbilityClass->IsChildOf(UWeaponGameplayAbility::StaticClass()))
 	{
 		return;
 	}
 
-	int32 TargetInputID = GetInputIDFromTag(KeyTag);
-	if (TargetInputID != INDEX_NONE)
+	for (const FGameplayAbilitySpec& Existing : CachedAbilitySystemComponent->GetActivatableAbilities())
 	{
-		// 이미 해당 InputID에 동일한 클래스의 어빌리티가 부여되어 있는지 확인
-		for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
-		{
-			if (Spec.InputID == TargetInputID && Spec.Ability && Spec.Ability->GetClass() == AbilityClass)
-			{
-				// 이미 동일한 어빌리티가 동일 슬롯에 존재하므로 중복 부여하지 않고 리턴
-				return;
-			}
-		}
+		if (Existing.SourceObject == this && Existing.GetDynamicSpecSourceTags().HasTagExact(KeyTag)
+			&& Existing.Ability && Existing.Ability->GetClass() == AbilityClass) return;
 	}
-
-	// 해당 슬롯에 다른 어빌리티가 있거나 없을 때만 제거 후 부여
 	RemoveAbilityFromSlot(KeyTag);
-
-	// 통합 맵에서 이 태그에 할당된 ID를 가져옴
-	int32 AssignedID = TargetInputID;
-
-	// GA Spec 생성 시 해당 ID 주입
-	FGameplayAbilitySpec Spec(AbilityClass, 1, AssignedID, this);
+	FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, this);
+	Spec.GetDynamicSpecSourceTags().AddTag(KeyTag);
 	CachedAbilitySystemComponent->GiveAbility(Spec);
 }
 
 void ABasePlayer::GrantDefaultAbility(TSubclassOf<UGameplayAbility> AbilityClass)
 {
-	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass)
+	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass
+		|| AbilityClass->IsChildOf(UWeaponGameplayAbility::StaticClass()))
 	{
 		return;
 	}
@@ -1438,15 +1531,12 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 		return;
 	}
 
-	int32 TargetInputID = GetInputIDFromTag(KeyTag);
-	if (TargetInputID == INDEX_NONE) return;
 
-	// GAS 내부의 부여된 어빌리티 목록을 순회하며 매핑된 InputID를 가진 어빌리티 수집 및 제거
+	// Character-owned slot grants only; equipment owns and removes its own handles.
 	TArray<FGameplayAbilitySpecHandle> HandlesToRemove;
 	for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent.Get()->GetActivatableAbilities())
 	{
-		// Spec.InputID가 우리가 제거하려는 ID와 일치한다면
-		if (Spec.InputID == TargetInputID)
+		if (Spec.SourceObject == this && Spec.GetDynamicSpecSourceTags().HasTagExact(KeyTag))
 		{
 			HandlesToRemove.Add(Spec.Handle);
 		}
@@ -1503,65 +1593,14 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 		return;
 	}
 
-	int32 InputID = GetInputIDFromTag(InputTag);
-	if (bLogInteraction)
-	{
-		int32 MatchingAbilityCount = 0;
-		for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
-		{
-			if (Spec.InputID == InputID)
-			{
-				++MatchingAbilityCount;
-				UE_LOG(LogStorageInteraction, Warning, TEXT("[Input] Bound ability=%s Active=%d"),
-					*GetNameSafe(Spec.Ability), Spec.IsActive());
-			}
-		}
-		UE_LOG(LogStorageInteraction, Warning, TEXT("[Input] Dispatch. InputID=%d MatchingAbilities=%d"),
-			InputID, MatchingAbilityCount);
-	}
-	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
-	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
-	// 	*InputTag.ToString(),
-	// 	InputID,
-	// 	IsLocallyControlled() ? TEXT("YES") : TEXT("NO"));
-
-	// 현재 부여된 모든 어빌리티 및 그 InputID 출력
-	const TArray<FGameplayAbilitySpec>& Specs = CachedAbilitySystemComponent->GetActivatableAbilities();
-	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] Activatable Abilities Count: %d"), 
-	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"), Specs.Num());
-	for (const FGameplayAbilitySpec& Spec : Specs)
-	{
-		// UE_LOG(LogTemp, Log, TEXT("  - Ability: %s, InputID: %d, Active: %s"), 
-		// 	Spec.Ability ? *Spec.Ability->GetName() : TEXT("None"),
-		// 	Spec.InputID,
-		// 	Spec.IsActive() ? TEXT("YES") : TEXT("NO"));
-	}
-
-	if (InputID != INDEX_NONE)
-	{
-		CachedAbilitySystemComponent->AbilityLocalInputPressed(InputID);
-	}
-	else if (bLogInteraction)
-	{
-		UE_LOG(LogStorageInteraction, Warning, TEXT("[Input] No ability dispatch: input tag has no InputID."));
-	}
+	if (auto* InputASC = Cast<UWeaponInputAbilitySystemComponent>(CachedAbilitySystemComponent.Get()))
+		InputASC->InputTagPressed(InputTag);
 }
 
 void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 {
-	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
-
-	int32 InputID = GetInputIDFromTag(InputTag);
-	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputReleased - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
-	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
-	// 	*InputTag.ToString(),
-	// 	InputID,
-	// 	IsLocallyControlled() ? TEXT("YES") : TEXT("NO"));
-
-	if (InputID != INDEX_NONE)
-	{
-		CachedAbilitySystemComponent->AbilityLocalInputReleased(InputID);
-	}
+	if (auto* InputASC = Cast<UWeaponInputAbilitySystemComponent>(CachedAbilitySystemComponent.Get()))
+		InputASC->InputTagReleased(InputTag);
 }
 
 void ABasePlayer::OnGravityVortexSkillPressed()
@@ -1622,12 +1661,11 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 	// Capture the state before AbilityLocalInputPressed can activate the bound
 	// ability. EventMagnitude 0 means activation click, 1 means active re-input.
 	bool bWasBoundAbilityActive = false;
-	const int32 InputID = GetInputIDFromTag(InputTag);
-	if (InputID != INDEX_NONE)
+	if (InputTag.IsValid())
 	{
 		for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
 		{
-			if (Spec.InputID == InputID && Spec.IsActive())
+			if (Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag) && Spec.IsActive())
 			{
 				bWasBoundAbilityActive = true;
 				break;
@@ -1681,53 +1719,18 @@ void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
 	FGameplayEventData EventData;
 	EventData.Instigator = this;
 	EventData.Target = nullptr;
-	if (ReleasedEventTag.MatchesTagExact(Key_Default_Mouse_LeftClick_Released))
-	{
-		AddMouseAimTargetData(EventData);
-	}
 
+	// The view snapshot and input use the same reliable event, so no separate aim RPC can race release.
+	if (ReleasedEventTag == Key_Default_Mouse_LeftClick_Released && AimComponent)
+	{
+		AimComponent->CaptureReleaseView(EventData);
+	}
 	CachedAbilitySystemComponent->HandleGameplayEvent(ReleasedEventTag, &EventData);
 
 	if (!HasAuthority())
 	{
 		ServerRPC_SendGameplayEvent(ReleasedEventTag, EventData);
 	}
-}
-
-void ABasePlayer::AddMouseAimTargetData(FGameplayEventData& EventData) const
-{
-	const ABowItem* Bow = Cast<ABowItem>(EquippedItem);
-	const UBowComponent* BowComponent = Bow ? Bow->GetBowComponent() : nullptr;
-	if (!BowComponent)
-	{
-		return;
-	}
-
-	const FVector ViewLocation = FollowCamera ? FollowCamera->GetComponentLocation() : GetActorLocation();
-	const FVector ViewForward = FollowCamera ? FollowCamera->GetForwardVector() : GetBaseAimRotation().Vector();
-
-	TArray<AActor*> ActorsToIgnore;
-	ActorsToIgnore.Add(const_cast<ABasePlayer*>(this));
-	if (EquippedItem)
-	{
-		ActorsToIgnore.Add(EquippedItem);
-	}
-
-	FBowAimResult AimResult;
-	if (!BowComponent->CalculateAim(ViewLocation, ViewForward, ActorsToIgnore, AimResult))
-	{
-		return;
-	}
-
-	FHitResult AimHit;
-	AimHit.TraceStart = AimResult.TraceStart;
-	AimHit.TraceEnd = AimResult.TraceEnd;
-	AimHit.Location = AimResult.AimTarget;
-	AimHit.ImpactPoint = AimResult.AimTarget;
-	AimHit.bBlockingHit = AimResult.bBlockingHit;
-
-	FGameplayAbilityTargetData_SingleTargetHit* TargetData = new FGameplayAbilityTargetData_SingleTargetHit(AimHit);
-	EventData.TargetData.Add(TargetData);
 }
 
 void ABasePlayer::HandleShipBoardEvent(const FGameplayEventData* Payload)
@@ -2006,7 +2009,7 @@ void ABasePlayer::DoMove(float Right, float Forward)
 {
 	const bool bVerticalSwimOverride = SwimmingComponent
 		&& SwimmingComponent->IsCustomSwimming()
-		&& SwimmingComponent->HasVerticalSwimInput();
+		&& (SwimmingComponent->HasVerticalSwimInput() || SwimmingComponent->IsTransitionState());
 	const FVector2D ClampedMoveInput = bVerticalSwimOverride
 		? FVector2D::ZeroVector
 		: FVector2D(Right, Forward).GetClampedToMaxSize(1.f);
@@ -2195,6 +2198,11 @@ void ABasePlayer::StartSwimDive()
 	}
 
 	bSwimDiveInputHeld = true;
+	if (SwimmingComponent->GetMovementState() == ESwimMovementState::Surface)
+	{
+		bAutomaticSwimDiveHeld = true;
+		AutomaticSwimDiveRemaining = FMath::Max(AutomaticSwimDiveHoldDuration, 0.0f);
+	}
 	bSwimAscendInputHeld = false;
 	RefreshSwimmingVerticalInput();
 }
@@ -2217,15 +2225,15 @@ void ABasePlayer::RefreshSwimmingVerticalInput()
 		return;
 	}
 
-	const float VerticalInput = (bSwimAscendInputHeld ? 1.0f : 0.0f)
-		- (bSwimDiveInputHeld ? 1.0f : 0.0f);
 	if (USWCharacterMovementComponent* SWMovement =
 		Cast<USWCharacterMovementComponent>(GetCharacterMovement()))
 	{
-		SWMovement->SetSwimmingVerticalInput(VerticalInput);
+		const bool bEffectiveDiveHeld = bSwimDiveInputHeld || bAutomaticSwimDiveHeld;
+		SWMovement->SetSwimmingVerticalInput(bEffectiveDiveHeld, bSwimAscendInputHeld);
 	}
-	if (SwimmingComponent->HasVerticalSwimInput())
+	if (SwimmingComponent->HasVerticalSwimInput() || SwimmingComponent->IsTransitionState())
 	{
+		GetCharacterMovement()->ConsumeInputVector();
 		if (AnimStateComponent)
 		{
 			AnimStateComponent->ClearMoveInput();
@@ -2240,6 +2248,12 @@ void ABasePlayer::RefreshSwimmingVerticalInput()
 		}
 	}
 
+}
+
+void ABasePlayer::ResetAutomaticSwimDiveInput()
+{
+	bAutomaticSwimDiveHeld = false;
+	AutomaticSwimDiveRemaining = 0.0f;
 }
 
 void ABasePlayer::StartSprint()
@@ -2274,6 +2288,14 @@ bool ABasePlayer::CanSprintFromInput() const
 		CachedAbilitySystemComponent.IsValid() &&
 		CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
 
+	const bool bInWater = (SwimmingComponent && (SwimmingComponent->IsCustomSwimming() || SwimmingComponent->IsInShallowWater())) ||
+		(GetCharacterMovement() && GetCharacterMovement()->IsSwimming());
+
+	if (bInWater)
+	{
+		return false;
+	}
+
 	return AnimStateComponent && !bBlockedByAbilityState
 		? AnimStateComponent->CachedMoveInput.Y > 0.15f
 		: false;
@@ -2286,7 +2308,11 @@ void ABasePlayer::RefreshSprintFromInput()
 		return;
 	}
 
+	const bool bInWater = (SwimmingComponent && (SwimmingComponent->IsCustomSwimming() || SwimmingComponent->IsInShallowWater())) ||
+		(GetCharacterMovement() && GetCharacterMovement()->IsSwimming());
+
 	const bool bShouldSprint =
+		!bInWater &&
 		bSprintInputHeld &&
 		CanSprintFromInput() &&
 		!bIsAttacking &&
@@ -2469,18 +2495,36 @@ void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
 		return;
 	}
 
+	const bool bIsInAir = AnimStateComponent &&
+		(AnimStateComponent->bIsInAir || AnimStateComponent->CurrentState == ELocomotionState::InAir);
+
 	const bool bIsMovingInStrafe =
 		(GetPendingMovementInputVector().SizeSquared() > 0.001f || GetVelocity().SizeSquared2D() > 100.0f);
 
-	if (bEnableCombatRotation && bIsMovingInStrafe)
+	if (bEnableCombatRotation && (bIsMovingInStrafe || bIsInAir))
 	{
 		const float TargetYaw = GetController() ? GetController()->GetControlRotation().Yaw : GetActorRotation().Yaw;
 		const float CurrentYaw = GetActorRotation().Yaw;
 		const float YawDelta = FMath::Abs(FRotator::NormalizeAxis(TargetYaw - CurrentYaw));
 
-		// If there is a noticeable angle difference (e.g. recovering from S/A/D roll into movement),
-		// smoothly rotate towards controller yaw rather than hard-snapping in a single frame.
-		if (YawDelta > 5.0f)
+		if (bIsInAir)
+		{
+			// 공중 체공 중에는 마우스 회전 시 캡슐이 굳지 않고 AirRotationCatchUpSpeed 속도로 카메라 방향을 부드럽게 추종
+			if (YawDelta > 0.5f)
+			{
+				bUseControllerRotationYaw = false;
+				const FRotator CurrentRot = GetActorRotation();
+				const FRotator TargetRot(0.0f, TargetYaw, 0.0f);
+				const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
+				const FRotator NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaSeconds, AirRotationCatchUpSpeed);
+				SetActorRotation(NewRot);
+			}
+			else
+			{
+				bUseControllerRotationYaw = true;
+			}
+		}
+		else if (YawDelta > 5.0f)
 		{
 			bUseControllerRotationYaw = false;
 			const FRotator CurrentRot = GetActorRotation();
@@ -2726,6 +2770,14 @@ bool ABasePlayer::CanSprintFromServerState() const
 	const bool bBlockedByAbilityState =
 		CachedAbilitySystemComponent.IsValid() &&
 		CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
+
+	const bool bInWater = (SwimmingComponent && (SwimmingComponent->IsCustomSwimming() || SwimmingComponent->IsInShallowWater())) ||
+		(GetCharacterMovement() && GetCharacterMovement()->IsSwimming());
+
+	if (bInWater)
+	{
+		return false;
+	}
 
 	return !bBlockedByAbilityState && !bIsAttacking && !bIsDodging && !bIsHitReacting;
 }

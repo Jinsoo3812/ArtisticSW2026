@@ -298,8 +298,81 @@ void AStorageChest::AddGuardCharacter(ABaseCharacter* NewGuard)
 	{
 		AliveGuardHealthComponents.Add(GuardHealth);
 		GuardHealth->OnDeathStarted.AddUniqueDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
-		SetLocked(true);
 	}
+	RecalculateGuardLock();
+}
+
+bool AStorageChest::IsBossGuardAlive() const
+{
+	return IsValid(BossGuardHealth) && !BossGuardHealth->IsDead();
+}
+
+void AStorageChest::RecalculateGuardLock()
+{
+	SetLocked(bGuardFailed || (bRequiresGuardClear
+		&& (!AliveGuardHealthComponents.IsEmpty() || IsBossGuardAlive() || bBossEncounterReserved)));
+}
+
+void AStorageChest::SetBossEncounterReserved(bool bReserved)
+{
+	if (!HasAuthorityOrIsTesting()) return;
+	bBossEncounterReserved = bReserved;
+	RecalculateGuardLock();
+}
+
+void AStorageChest::AddBossGuardCharacter(ABaseCharacter* Boss)
+{
+	if (!HasAuthorityOrIsTesting() || !IsValid(Boss)) return;
+	if (BossGuardHealth)
+	{
+		BossGuardHealth->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
+	}
+	BossGuardCharacter = Boss;
+	BossGuardHealth = Boss->FindComponentByClass<UBaseHealthComponent>();
+	if (IsBossGuardAlive())
+	{
+		BossGuardHealth->OnDeathStarted.AddUniqueDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
+	}
+	RecalculateGuardLock();
+}
+
+void AStorageChest::RemoveGuardCharacter(ABaseCharacter* Guard)
+{
+	if (!HasAuthorityOrIsTesting() || !Guard) return;
+	GuardCharacters.Remove(Guard);
+	if (UBaseHealthComponent* Health = Guard->FindComponentByClass<UBaseHealthComponent>())
+	{
+		Health->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
+		AliveGuardHealthComponents.Remove(Health);
+	}
+	RecalculateGuardLock();
+}
+
+void AStorageChest::EnsureGuaranteedLoot(const TArray<FStorageItemEntry>& GuaranteedItems)
+{
+	if (!HasAuthority() || bHasBeenOpened || !StorageComponent) return;
+	TMap<FGameplayTag, int32> ExistingCounts;
+	for (const FInventorySlot& Slot : StorageComponent->GetSlots())
+	{
+		if (!Slot.IsEmpty()) ExistingCounts.FindOrAdd(Slot.ItemTag) += Slot.Count;
+	}
+	TMap<FGameplayTag, int32> RequiredCounts;
+	for (const FStorageItemEntry& Entry : GuaranteedItems)
+	{
+		if (Entry.ItemTag.IsValid() && Entry.Count > 0) RequiredCounts.FindOrAdd(Entry.ItemTag) += Entry.Count;
+	}
+	TArray<FStorageItemEntry> Missing;
+	for (const TPair<FGameplayTag, int32>& Pair : RequiredCounts)
+	{
+		const int32 Difference = Pair.Value - ExistingCounts.FindRef(Pair.Key);
+		if (Difference > 0)
+		{
+			FStorageItemEntry& Entry = Missing.AddDefaulted_GetRef();
+			Entry.ItemTag = Pair.Key;
+			Entry.Count = Difference;
+		}
+	}
+	AppendFixedLoot(Missing);
 }
 
 void AStorageChest::SetLocked(bool bInLocked)
@@ -436,10 +509,8 @@ void AStorageChest::HandleTrackedHealthDeath(UBaseHealthComponent* HealthCompone
 	HealthComponent->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
 	AliveGuardHealthComponents.Remove(HealthComponent);
 
-	if (!bGuardFailed && AliveGuardHealthComponents.IsEmpty())
-	{
-		SetLocked(false);
-	}
+	if (HealthComponent == BossGuardHealth) BossGuardHealth = nullptr;
+	RecalculateGuardLock();
 }
 
 void AStorageChest::HandleOwningShipDestroyed(AActor* DestroyedActor)
@@ -706,15 +777,12 @@ void AStorageChest::InitializeGuardState()
 	}
 
 	ClearGuardBindings();
-	bGuardFailed = false;
 
 	if (!bRequiresGuardClear)
 	{
-		SetLocked(false);
+		RecalculateGuardLock();
 		return;
 	}
-
-	SetLocked(true);
 
 	int32 ValidConfiguredGuardCount = 0;
 	for (ABaseCharacter* GuardCharacter : GuardCharacters)
@@ -771,17 +839,8 @@ void AStorageChest::InitializeGuardState()
 		}
 	}
 
-	if (ValidConfiguredGuardCount == 0)
-	{
-		// 보호하는 적이 등록되지 않은 경우, 테스트 및 기본 열림을 위해 잠금을 해제한다.
-		SetLocked(false);
-		return;
-	}
-
-	if (AliveGuardHealthComponents.IsEmpty())
-	{
-		SetLocked(false);
-	}
+	if (IsValid(BossGuardCharacter)) AddBossGuardCharacter(BossGuardCharacter);
+	RecalculateGuardLock();
 }
 
 void AStorageChest::ClearGuardBindings()
@@ -794,6 +853,11 @@ void AStorageChest::ClearGuardBindings()
 		}
 	}
 	AliveGuardHealthComponents.Reset();
+	if (BossGuardHealth)
+	{
+		BossGuardHealth->OnDeathStarted.RemoveDynamic(this, &AStorageChest::HandleTrackedHealthDeath);
+		BossGuardHealth = nullptr;
+	}
 
 	if (OwningShipHealthComponent)
 	{

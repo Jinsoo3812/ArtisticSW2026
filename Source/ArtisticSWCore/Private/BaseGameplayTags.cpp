@@ -1,4 +1,19 @@
 #include "BaseGameplayTags.h"
+UE_DEFINE_GAMEPLAY_TAG(State_Status, "State.Status");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_Stun, "State.Status.Stun");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_Poison, "State.Status.Poison");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_Burn, "State.Status.Burn");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_Slow, "State.Status.Slow");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_WaterBomb, "State.Status.WaterBomb");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_Knockback, "State.Status.Knockback");
+UE_DEFINE_GAMEPLAY_TAG(State_Control_ActionsBlocked, "State.Control.ActionsBlocked");
+UE_DEFINE_GAMEPLAY_TAG(State_Control_MovementBlocked, "State.Control.MovementBlocked");
+UE_DEFINE_GAMEPLAY_TAG(Capability_Status_Receive, "Capability.Status.Receive");
+UE_DEFINE_GAMEPLAY_TAG(Immunity_Status, "Immunity.Status");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Status_Stun, "GameplayAbility.Status.Stun");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Status_Stun, "GameplayCue.Status.Stun");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Status_Poison_Tick, "GameplayCue.Status.Poison.Tick");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Status_Burn_Tick, "GameplayCue.Status.Burn.Tick");
 
 // State
 UE_DEFINE_GAMEPLAY_TAG(State_Attacking, "State.Attacking");
@@ -14,6 +29,9 @@ UE_DEFINE_GAMEPLAY_TAG(State_Bow_Drawing, "State.Bow.Drawing");
 UE_DEFINE_GAMEPLAY_TAG(State_Bow_FullyDrawn, "State.Bow.FullyDrawn");
 UE_DEFINE_GAMEPLAY_TAG(State_Bow_Releasing, "State.Bow.Releasing");
 UE_DEFINE_GAMEPLAY_TAG(State_Ship_CannonDisabled, "State.Ship.CannonDisabled");
+UE_DEFINE_GAMEPLAY_TAG(Data_Effect_ShipCrewStrengthMultiplier, "Data.Effect.ShipCrewStrengthMultiplier");
+UE_DEFINE_GAMEPLAY_TAG(Data_Effect_ShipCrewMoveSpeedMultiplier, "Data.Effect.ShipCrewMoveSpeedMultiplier");
+UE_DEFINE_GAMEPLAY_TAG(Data_Effect_ShipCrewAttackSpeedMultiplier, "Data.Effect.ShipCrewAttackSpeedMultiplier");
 UE_DEFINE_GAMEPLAY_TAG(State_Debuff_WaterBomb, "State.Debuff.WaterBomb");
 UE_DEFINE_GAMEPLAY_TAG(State_Debuff_TimeStopped, "State.Debuff.TimeStopped");
 UE_DEFINE_GAMEPLAY_TAG(State_Debuff_Slow, "State.Debuff.Slow");
@@ -262,6 +280,7 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Category_Skill, "Item.Category.Skill");
 
 // Enemy
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Sword, "Item.EnemyWeapon.Sword");
+UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Knife, "Item.EnemyWeapon.Knife");
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Hand, "Item.EnemyWeapon.Hand");
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Bow, "Item.EnemyWeapon.Bow");
 

@@ -12,6 +12,7 @@ class URandomChestGroup;
 class UShipUpgradeTreeDataAsset;
 class UItemData;
 class UDataTable;
+class UBossChestGuaranteedLootData;
 
 UCLASS()
 class CLASSFEATURE_API AGlobalLootSpawnManager : public AActor
@@ -36,6 +37,7 @@ public:
 	bool RebalanceSpawnedChests();
 	bool RebalanceSpawnedChestsWithData(const UProgressionBalanceData* Balance, const UItemData* Items,
 		const UDataTable* Recipes, const UShipUpgradeTreeDataAsset* Tree);
+	void EnsureBossGuaranteedLoot(AChestSpawnPoint* Point);
 
 	UFUNCTION(BlueprintPure, Category = "Chest|Progression")
 	int32 GetLastActiveChestCount(EProgressionZone Zone) const;
@@ -76,6 +78,8 @@ protected:
 	/** Supplies the actual per-node activation costs; no ship costs are authored in Progression. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Progression")
 	TSoftObjectPtr<UShipUpgradeTreeDataAsset> ShipUpgradeTree;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Boss")
+	TSoftObjectPtr<UBossChestGuaranteedLootData> BossGuaranteedLootData;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Budget")
 	TArray<FLootZoneBudgetEntry> ZoneBudgets;

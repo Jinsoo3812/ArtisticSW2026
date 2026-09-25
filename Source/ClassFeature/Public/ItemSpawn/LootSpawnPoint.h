@@ -14,6 +14,7 @@ class AShip;
 class AStorageChest;
 class AStoryConditionalSpawner;
 class UFixedChestDropData;
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChestSpawned, AStorageChest*, Chest);
 
 /** Authoring values shown under the Chest section when a chest spawn point is embedded in another actor. */
 USTRUCT(BlueprintType)
@@ -21,16 +22,16 @@ struct CLASSFEATURE_API FChestSpawnPointChestSettings
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (DeprecatedProperty))
 	bool bIsBossChest = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", DeprecatedProperty))
 	FGameplayTag RequiredBossTag;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", DeprecatedProperty))
 	FGameplayTag GuaranteedBossQuestItemTag;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", ClampMin = "1", UIMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", ClampMin = "1", UIMin = "1", DeprecatedProperty))
 	int32 GuaranteedBossQuestItemCount = 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Placement")
@@ -200,6 +201,12 @@ public:
 
 	/** Registers a ship crew member even when the crew spawned after the chest. */
 	void RegisterGuardCharacter(ABaseCharacter* GuardCharacter);
+	void UnregisterGuardCharacter(ABaseCharacter* GuardCharacter);
+	void RegisterBossGuard(ABaseCharacter* Boss);
+	void SetBossEncounterReserved(bool bReserved);
+	ABaseCharacter* GetRegisteredBossGuard() const { return BossGuard.Get(); }
+	UPROPERTY(BlueprintAssignable, Category = "Chest|Spawn")
+	FOnChestSpawned OnChestSpawned;
 
 	UFUNCTION(BlueprintPure, Category = "Chest|Spawn")
 	bool CanSpawnDataDrivenChest() const
@@ -242,19 +249,19 @@ public:
 	bool HasMatchingBossGuard() const;
 
 	/** 보스 상자 여부 (체크 시 특정 보스가 가드로 있을 때 확정 퀘스트 아이템 지급) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (DeprecatedProperty))
 	bool bIsBossChest = false;
 
 	/** 요구되는 보스 적의 태그 (예: Enemy.Type.Boss.Mid1, Enemy.Type.Boss.Mid2, Enemy.Type.Boss.Mid3) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", DeprecatedProperty))
 	FGameplayTag RequiredBossTag;
 
 	/** 가드 목록에 해당 보스가 존재할 때 반드시 100% 추가 드랍할 퀘스트 아이템 태그 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", DeprecatedProperty))
 	FGameplayTag GuaranteedBossQuestItemTag;
 
 	/** 확정 퀘스트 아이템 드랍 개수 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", ClampMin = "1", UIMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", ClampMin = "1", UIMin = "1", DeprecatedProperty))
 	int32 GuaranteedBossQuestItemCount = 1;
 
 	/** 조건부로 런타임에 보스를 소환하는 스토리 스포너 목록 (보스가 소환되면 상자의 가드로 동적 추가되고 잠김) */
@@ -267,8 +274,10 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AStorageChest> ActiveChestInstance = nullptr;
+	TWeakObjectPtr<ABaseCharacter> BossGuard;
+	bool bBossEncounterReserved = false;
 
-	UPROPERTY(Transient)
+	UPROPERTY(Transient, meta = (DeprecatedProperty))
 	bool bBossQuestItemInjected = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chest|Placement")

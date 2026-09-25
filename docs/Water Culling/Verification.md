@@ -1,6 +1,6 @@
 # Water Culling Verification
 
-검증일: 2026-08-25
+검증일: 2026-09-20
 
 ## 통과 항목
 
@@ -10,18 +10,20 @@
 
 ### 베이크 파이프라인
 
-- Grid: 359 x 141 x 298
-- Interior voxels: 302,683
-- Debug instances: 4,713
+- Grid: 387 x 136 x 260
+- Interior voxels: 797,498
+- Debug instances: 4,445
 - Exterior leak: false
 - Volume Texture 및 Data Asset 저장 성공
-- `SM_Ship` 태그: `SW_CabinShip`, `SW_CabinCullTarget`
+- `SM_Ship_Culling` 태그: `SW_CabinShip`
+- `Barrier` 폴더 Cube 33개 태그: `SW_CabinBarrier`
+- `PointLight_Culling` 태그: `SW_CabinSeed`
 
 ### 대상 배 컴포넌트
 
 - 태그 기반 World Subsystem 제거
 - `BP_PlayerShip_Kelvin`에 `SWCabinWaterCullComponent` 1개 저장
-- `Test_Level` 실제 액터 인스턴스에서 상속 컴포넌트 1개 확인
+- `Mesh_Test`의 새 컬링 입력과 런타임 Data Asset 연결 확인
 - `ArtisticSW2026Editor Win64 Development` 재빌드 성공
 
 ### 머티리얼/셰이더 파이프라인
@@ -33,7 +35,7 @@
 - Data Asset과 Volume Texture 참조 일치
 - MPC 필수 파라미터 존재
 - MPC 정적 Bounds와 베이크 Data Asset Bounds 일치
-- Custom 입력 9개 모두 연결
+- Custom 입력 10개 모두 연결
 - Bounds early-out 코드가 Volume Texture sample보다 앞에 존재
 - 최종 SetMaterialAttributes의 Opacity Mask에 Custom 결과 연결
 - 머티리얼 재컴파일 오류 없음
@@ -60,7 +62,7 @@
 
 실제 컬링 모양은 PIE에서 육안 확인한다.
 
-1. 에디터에 외부 변경된 `Test_Level`과 머티리얼을 다시 로드한다.
+1. 에디터에 외부 변경된 `Mesh_Test`와 머티리얼을 다시 로드한다.
 2. `SW_CabinVolume_Debug`는 숨긴다.
 3. PIE를 실행한다.
 4. 높은 파도가 선실 바닥보다 위로 통과하는 순간 내부를 관찰한다.
@@ -99,10 +101,11 @@
 - 비점유 복셀: `0`
 - 점유 복셀: `255` (GPU UNorm 샘플 `1.0`)
 - 재베이크: 성공
-- Grid: `359 x 141 x 298`
-- Interior voxels: `302,683`
-- Debug instances: `4,713`
+- Grid: `387 x 136 x 260`
+- Interior voxels: `797,498`
+- Debug instances: `4,445`
 - Exterior leak: `false`
-- PIE 선실 내부 물 컬링: 사용자 육안 검증 성공
+- 새 `SM_Ship_Culling` 볼륨의 에셋/머티리얼/게임플레이 자동화 테스트: 성공
+- 기존 파이프라인의 PIE 육안 검증은 성공했으며, 교체된 형상의 최종 경계는 PIE에서 다시 확인한다.
 
 최종적으로 컴포넌트, CPU→GPU 전달, Bounds, Volume Texture, 머티리얼 및 Opacity Mask 전 구간이 정상 작동하는 것으로 판정한다.

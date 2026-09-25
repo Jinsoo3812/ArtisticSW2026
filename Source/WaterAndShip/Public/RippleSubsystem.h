@@ -72,8 +72,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water Ripple|Parameters")
 	float MaxInitialAmplitude = 150.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Water Ripple|Parameters")
-	float MinVelocityThreshold = 100.0f;
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Water Ripple|Parameters",
+		meta = (ClampMin = "0.0", Units = "cm/s"))
+	float MinVelocityThreshold = 300.0f;
 
 private:
 	UPROPERTY(Transient)

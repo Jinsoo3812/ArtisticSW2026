@@ -1,0 +1,1 @@
+#include "ShipAI/EnemyShipWeakeningSettings.h"

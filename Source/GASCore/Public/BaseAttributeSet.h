@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -15,6 +15,8 @@
 	GAMEPLAYATTRIBUTE_VALUE_SETTER(PropertyName) \
 	GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
 
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnAttributeDamageResolved, const FGameplayEffectContextHandle&, float);
+
 UCLASS()
 class GASCORE_API UBaseAttributeSet : public UAttributeSet
 {
@@ -22,6 +24,7 @@ class GASCORE_API UBaseAttributeSet : public UAttributeSet
 
 public:
 	UBaseAttributeSet();
+	FOnAttributeDamageResolved OnDamageResolved;
 
 	// 네트워크로 복제할 Attribute와 RepNotify 방식을 등록합니다.
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -49,11 +52,6 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Attributes", ReplicatedUsing = OnRep_MaxHealth)
 	FGameplayAttributeData MaxHealth;
 	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, MaxHealth)
-
-	// 기본 공격력입니다. Damage GameplayEffect를 만들 때 기본 피해량으로 사용할 수 있습니다.
-	UPROPERTY(BlueprintReadOnly, Category = "Attributes", ReplicatedUsing = OnRep_AttackPower)
-	FGameplayAttributeData AttackPower;
-	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, AttackPower)
 
 	// Strength-based attacks snapshot this value when their damage spec is created.
 	UPROPERTY(BlueprintReadOnly, Category = "Attributes", ReplicatedUsing = OnRep_Strength)
@@ -100,10 +98,6 @@ protected:
 	// 서버에서 복제된 MaxHealth 변경을 클라이언트 ASC에 알립니다.
 	UFUNCTION()
 	virtual void OnRep_MaxHealth(const FGameplayAttributeData& OldMaxHealth);
-
-	// 서버에서 복제된 AttackPower 변경을 클라이언트 ASC에 알립니다.
-	UFUNCTION()
-	virtual void OnRep_AttackPower(const FGameplayAttributeData& OldAttackPower);
 
 	UFUNCTION()
 	virtual void OnRep_Strength(const FGameplayAttributeData& OldStrength);

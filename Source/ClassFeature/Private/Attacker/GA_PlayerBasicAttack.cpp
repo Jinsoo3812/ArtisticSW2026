@@ -1,4 +1,5 @@
 #include "Attacker/GA_PlayerBasicAttack.h"
+#include "Equipment/WeaponDefinition.h"
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
@@ -33,6 +34,7 @@ void UGA_PlayerBasicAttack::ActivateAbility(
 
 	bAttackFinished = false;
 	bHitScanActive = false;
+	LastOpenedComboIndex = MIN_int32;
 	bComboInputBuffered = false;
 	bServerCombatPoseRefreshAcquired = false;
 	CurrentComboIndex = INDEX_NONE;
@@ -191,7 +193,7 @@ bool UGA_PlayerBasicAttack::CacheAttackData()
 		return false;
 	}
 
-	CachedSword = Cast<ASwordItem>(Player->EquippedItem);
+	CachedSword = Cast<ASwordItem>(GetSourceWeapon());
 	UPlayerEquipmentComponent* EquipmentComponent = Player->GetEquipmentComponent();
 	UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
 	if (!CachedSword || !EquipmentComponent || !SourceASC)
@@ -206,23 +208,7 @@ bool UGA_PlayerBasicAttack::CacheAttackData()
 		return false;
 	}
 
-	TSubclassOf<UGameplayEffect> DamageEffectClass = CachedSword->GetDamageEffectClass();
-	if (!DamageEffectClass)
-	{
-		DamageEffectClass = UGASAttributeDamageGameplayEffect::StaticClass();
-	}
-
-	FStrengthDamageRequest DamageRequest;
-	DamageRequest.SourceASC = SourceASC;
-	DamageRequest.DamageEffectClass = DamageEffectClass;
-	DamageRequest.AttackCoefficient = CachedSword->GetAttackCoefficient();
-	DamageRequest.ChargeMultiplier = 1.0f;
-	DamageRequest.InstigatorActor = Player;
-	DamageRequest.EffectCauser = CachedSword;
-	DamageRequest.EffectLevel = GetAbilityLevel();
-	CachedDamageSpecHandle = UGASCombatLibrary::MakeStrengthDamageEffectSpec(DamageRequest);
-
-	return CachedDamageSpecHandle.IsValid();
+	return true;
 }
 
 bool UGA_PlayerBasicAttack::CacheComboSections(const TArray<FName>& ConfiguredSections)
@@ -427,12 +413,24 @@ void UGA_PlayerBasicAttack::OnComboInputEvent(FGameplayEventData Payload)
 
 void UGA_PlayerBasicAttack::StartHitScan()
 {
-	AActor* Avatar = GetAvatarActorFromActorInfo();
-	if (!Avatar || !Avatar->HasAuthority() || bHitScanActive || !CachedSword || !CachedDamageSpecHandle.IsValid())
-	{
-		return;
-	}
+	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+	if (!Player || !Player->HasAuthority() || !IsActive() || bAttackFinished || bHitScanActive
+		|| !IsValid(CachedSword) || Player->EquippedItem != CachedSword || LastOpenedComboIndex == CurrentComboIndex) return;
+	UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
+	if (!SourceASC || (CachedComboSections.IsValidIndex(CurrentComboIndex)
+		&& SourceASC->GetCurrentMontageSectionName() != CachedComboSections[CurrentComboIndex])) return;
+	FStrengthDamageRequest DamageRequest;
+	DamageRequest.SourceASC = SourceASC;
 
+	DamageRequest.AttackCoefficient = CachedSword->GetWeaponDefinition()->CombatData->AttackCoefficient;
+	DamageRequest.ChargeMultiplier = 1.0f;
+	DamageRequest.InstigatorActor = Player;
+	DamageRequest.EffectCauser = CachedSword;
+	DamageRequest.EffectLevel = GetAbilityLevel();
+	CachedDamageSpecHandle = UGASCombatLibrary::MakeStrengthDamageEffectSpec(DamageRequest);
+
+	if (!CachedDamageSpecHandle.IsValid()) { FinishAttack(true); return; }
+	LastOpenedComboIndex = CurrentComboIndex;
 	bHitScanActive = CachedSword->HitScanStart(CachedDamageSpecHandle);
 }
 

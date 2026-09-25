@@ -8,7 +8,12 @@ MASTER_PATH = "/Game/Blueprints/Water/M_Realistic_Water"
 MPC_PATH = "/Game/Blueprints/Water/MPC_Water_Custom"
 MASK_PATH = "/Game/Blueprints/Water/Culling/VT_SW_ShipCabinMask"
 DATA_PATH = "/Game/Blueprints/Water/Culling/DA_SW_ShipCabinWaterCull"
+LEVEL_PATH = "/Game/Level/Mesh_Test"
 CUSTOM_TOKEN = "Texture3DSampleLevel(CabinMask"
+BLUEPRINT_PATHS = (
+    "/Game/Blueprints/Ship/Blueprints/BP_PlayerShip_Kelvin",
+    "/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_EnemyShip",
+)
 
 
 def prop(obj, name, default=None):
@@ -23,6 +28,30 @@ def short_name(expression):
 
 
 def main():
+    unreal.EditorLoadingAndSavingUtils.load_map(LEVEL_PATH)
+    actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    actors = list(actor_subsystem.get_all_level_actors())
+
+    def has_tag(actor, tag):
+        return any(str(value) == tag for value in actor.get_editor_property("tags"))
+
+    ships = [actor for actor in actors if has_tag(actor, "SW_CabinShip")]
+    barriers = [actor for actor in actors if has_tag(actor, "SW_CabinBarrier")]
+    seeds = [actor for actor in actors if has_tag(actor, "SW_CabinSeed")]
+    debug_actors = [actor for actor in actors
+                    if actor.get_actor_label() == "SW_CabinVolume_Debug"]
+    if len(ships) != 1 or ships[0].get_actor_label() != "SM_Ship_Culling":
+        raise RuntimeError("Unexpected SW_CabinShip input: {}".format(
+            [actor.get_actor_label() for actor in ships]))
+    if len(barriers) != 33:
+        raise RuntimeError("Expected 33 SW_CabinBarrier actors, got {}".format(
+            len(barriers)))
+    if len(seeds) != 1 or seeds[0].get_actor_label() != "PointLight_Culling":
+        raise RuntimeError("Unexpected SW_CabinSeed input: {}".format(
+            [actor.get_actor_label() for actor in seeds]))
+    if len(debug_actors) != 1:
+        raise RuntimeError("Expected one SW_CabinVolume_Debug actor")
+
     material = unreal.load_asset(MASTER_PATH)
     mpc = unreal.load_asset(MPC_PATH)
     mask = unreal.load_asset(MASK_PATH)
@@ -36,9 +65,10 @@ def main():
     if data.get_editor_property("mask_texture") != mask:
         raise RuntimeError("Cull Data Asset does not reference the baked Volume Texture")
     resolution = data.get_editor_property("resolution")
-    if (resolution.x, resolution.y, resolution.z) != (359, 141, 298):
+    if (resolution.x, resolution.y, resolution.z) != (387, 136, 260):
         raise RuntimeError("Unexpected baked resolution: {}".format(resolution))
-
+    if abs(data.get_editor_property("voxel_size_cm") - 10.0) > 0.01:
+        raise RuntimeError("Unexpected baked voxel size")
     scalar_names = {str(p.get_editor_property("parameter_name"))
                     for p in mpc.get_editor_property("scalar_parameters")}
     vector_names = {str(p.get_editor_property("parameter_name"))
@@ -95,8 +125,16 @@ def main():
     if not connected:
         raise RuntimeError("Cull mask is not connected to final material attributes")
 
+    for path in BLUEPRINT_PATHS:
+        blueprint = unreal.load_asset(path)
+        if blueprint is None:
+            raise RuntimeError("Missing ship Blueprint: {}".format(path))
+        unreal.log("SW_CABIN_CULL_BLUEPRINT_LOAD=PASS path={}".format(path))
+
     unreal.MaterialEditingLibrary.recompile_material(material)
     unreal.log("SW_CABIN_CULL_VALIDATION=PASS")
+    unreal.log("SW_CABIN_CULL_INPUTS=PASS ship=SM_Ship_Culling barriers=33 "
+               "seed=PointLight_Culling")
     unreal.log("SW_CABIN_CULL_BLEND=MASKED")
     unreal.log("SW_CABIN_CULL_SHADING=SINGLE_LAYER_WATER")
     unreal.log("SW_CABIN_CULL_RESOLUTION={}x{}x{}".format(

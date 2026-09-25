@@ -37,10 +37,19 @@ public:
 	UStaticMeshComponent* GetChestMesh() const { return ChestMesh; }
 	USWBuoyancyComponent* GetSWBuoyancyComponent() const { return SWBuoyancyComponent; }
 	FText GetStorageName() const { return StorageName; }
+	UFUNCTION(BlueprintPure, Category = "Storage Chest|Lock")
 	bool IsLocked() const { return bLocked; }
 	bool RequiresGuardClear() const { return bRequiresGuardClear; }
 	bool HasGuardFailed() const { return bGuardFailed; }
+	UFUNCTION(BlueprintPure, Category = "Storage Chest|Guarding")
 	int32 GetAliveGuardCount() const { return AliveGuardHealthComponents.Num(); }
+	UFUNCTION(BlueprintPure, Category = "Storage Chest|Guarding")
+	bool HasBossGuard() const { return BossGuardCharacter != nullptr; }
+	UFUNCTION(BlueprintPure, Category = "Storage Chest|Guarding")
+	bool IsBossGuardAlive() const;
+	UFUNCTION(BlueprintPure, Category = "Storage Chest|Guarding")
+	bool IsBossEncounterReserved() const { return bBossEncounterReserved; }
+	bool HasBeenOpened() const { return bHasBeenOpened; }
 	bool IsPhysicsAndBuoyancyEnabled() const { return bEnablePhysicsAndBuoyancy; }
 	bool IsDistanceOptimizationEnabled() const { return bEnableDistanceOptimization; }
 	bool IsDistanceOptimizationDormant() const { return bDistanceOptimizationDormant; }
@@ -66,6 +75,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Storage Chest|Guarding")
 	void AddGuardCharacter(ABaseCharacter* NewGuard);
+	void RemoveGuardCharacter(ABaseCharacter* Guard);
+	void AddBossGuardCharacter(ABaseCharacter* Boss);
+	void SetBossEncounterReserved(bool bReserved);
+	void EnsureGuaranteedLoot(const TArray<FStorageItemEntry>& GuaranteedItems);
 
 	UFUNCTION()
 	void HandleTrackedHealthDeath(UBaseHealthComponent* HealthComponent);
@@ -156,6 +169,12 @@ protected:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<ABaseCharacter>> GuardCharacters;
+	UPROPERTY(Transient)
+	TObjectPtr<ABaseCharacter> BossGuardCharacter;
+	UPROPERTY(Transient)
+	bool bBossEncounterReserved = false;
+	UPROPERTY(Transient)
+	TObjectPtr<UBaseHealthComponent> BossGuardHealth;
 
 	/** Runtime owner for a guarded deck chest; null for island and ocean chests. */
 	UPROPERTY(Transient)
@@ -207,6 +226,7 @@ protected:
 	void OnRep_DistanceOptimizationDormant();
 
 	void InitializeGuardState();
+	void RecalculateGuardLock();
 	void ClearGuardBindings();
 	void ApplyPhysicsMode();
 	void RefreshDistanceOptimizationTimer();

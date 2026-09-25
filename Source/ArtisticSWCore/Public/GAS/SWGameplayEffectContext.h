@@ -4,6 +4,16 @@
 #include "GameplayEffectTypes.h"
 #include "SWGameplayEffectContext.generated.h"
 
+/** How health damage reached its target. Presentation code uses this instead of inferring from magnitude. */
+UENUM(BlueprintType)
+enum class ESWDamageDeliveryType : uint8
+{
+	Unspecified,
+	DirectHit,
+	StatusTick,
+	Environment
+};
+
 /**
  * Replicated, reference-frame-local path used by persistent path GameplayCues.
  * Keeping the endpoints local to a replicated actor makes gameplay and cosmetics
@@ -68,6 +78,9 @@ struct ARTISTICSWCORE_API FSWGameplayEffectContext : public FGameplayEffectConte
 	bool HasImpactDirection() const { return bHasImpactDirection; }
 	FVector GetImpactDirection() const { return FVector(ImpactDirection); }
 
+	void SetDamageDeliveryType(ESWDamageDeliveryType InType) { DamageDeliveryType = InType; }
+	ESWDamageDeliveryType GetDamageDeliveryType() const { return DamageDeliveryType; }
+
 	void SetPathCuePayload(const FSWPathCuePayload& InPayload);
 	void ClearPathCuePayload();
 	bool HasPathCuePayload() const { return bHasPathCuePayload; }
@@ -79,6 +92,9 @@ private:
 
 	UPROPERTY()
 	bool bHasImpactDirection = false;
+
+	UPROPERTY()
+	ESWDamageDeliveryType DamageDeliveryType = ESWDamageDeliveryType::Unspecified;
 
 	UPROPERTY()
 	FSWPathCuePayload PathCuePayload;

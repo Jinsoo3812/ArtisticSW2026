@@ -35,6 +35,7 @@ class USwimmingComponent;
 class UPlayerSkillComponent;
 class UAnimSequence;
 class UPlayerDialogueComponent;
+class UPlayerAimComponent;
 class UShipRepairPointComponent;
 class UShipRepairProgressWidget;
 
@@ -106,6 +107,7 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PostInitializeComponents() override;
+	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Locomotion|TurnInPlace")
 	void ApplyCombatTurnInPlaceRotation(float DeltaTime);
@@ -138,6 +140,7 @@ public:
 protected:
 	UPROPERTY()
 	TWeakObjectPtr<class UAbilitySystemComponent> CachedAbilitySystemComponent;
+	friend class FWeaponEquipmentLifecycleTest;
 
 	/** Retained while the controller temporarily possesses a ship or cannon. */
 	UPROPERTY()
@@ -227,7 +230,18 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Movement|Sprint")
 	bool bSprintInputHeld = false;
 
+	/** Raw physical Ctrl state; effective swim commands are owned by USwimmingComponent. */
 	bool bSwimDiveInputHeld = false;
+	/** Local synthetic Ctrl latch used to turn a surface tap into one continuous dive input. */
+	bool bAutomaticSwimDiveHeld = false;
+	/** Remaining local synthetic Ctrl hold time. This is never replicated or saved by CMC prediction. */
+	float AutomaticSwimDiveRemaining = 0.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Swimming|Input",
+		meta = (ClampMin = "0.0", Units = "s"))
+	float AutomaticSwimDiveHoldDuration = 1.5f;
+
+	/** Raw physical Space state; effective swim commands are owned by USwimmingComponent. */
 	bool bSwimAscendInputHeld = false;
 
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_LocomotionStateSnapshot, Category = "Animation|Movement|Network")
@@ -313,12 +327,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Rotation", meta = (ClampMin = "1.0"))
 	float BackwardStrafeRotationCatchUpSpeed = 8.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Rotation", meta = (ClampMin = "1.0"))
+	float AirRotationCatchUpSpeed = 10.0f;
+
 	void ApplyCombatRotationMode(bool bEnableCombatRotation);
 	void OnCombatIntroMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 
-	// 태그를 넣으면 고유 Hash 기반 ID를 반환하는 헬퍼
-	int32 GetInputIDFromTag(const FGameplayTag& Tag) const;
 
 protected:
 	// 서버에 의해 로컬에서 Controller가 조종하는 Pawn이 지정될 때 호출되는 함수.
@@ -365,6 +380,7 @@ protected:
 	void MoveStopped(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void RefreshSwimmingVerticalInput();
+	void ResetAutomaticSwimDiveInput();
 
 	// 기본 착지 이벤트 오버라이드
 	virtual void Landed(const FHitResult& Hit) override;
@@ -457,7 +473,6 @@ public:
 	// 마우스 입력에 대한 활용을 위해 따로 OnAbilityInput과 분리
 	void OnMouseInputPressed(FGameplayTag InputTag);
 	void OnMouseInputReleased(FGameplayTag InputTag);
-	void AddMouseAimTargetData(FGameplayEventData& EventData) const;
 
 	// 서버의 GA에게 GameplayEvent를 보내는 함수 (예: 마우스 입력에 반응하는 GA에게 신호 보내기)
 	UFUNCTION(Server, Reliable)
@@ -621,6 +636,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float DefaultTargetArmLength = 400.f;
 
+	// 질주 시 카메라 거리
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sprint")
+	float SprintTargetArmLength = 450.f;
+
 	// 조준 시 카메라 거리
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float AimingTargetArmLength = 150.f;
@@ -649,6 +668,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float DefaultFOV = 90.f;
 
+	// 질주 시 FOV
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sprint")
+	float SprintFOV = 96.f;
+
 	// 스나이핑 시 FOV (줄일수록 더 확대)
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float SnipingFOV = 30.f;
@@ -656,6 +679,18 @@ protected:
 	// 카메라 전환 보간 속도
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float CameraInterpSpeed = 10.f;
+
+	// 질주 시 카메라 보간 속도 (부드러운 전환)
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sprint")
+	float SprintCameraInterpSpeed = 4.5f;
+
+	// 질주 시 비네팅 효과 사용 여부
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sprint")
+	bool bEnableSprintVignette = true;
+
+	// 질주 시 비네팅 강도 (화면 외곽 집중감)
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Sprint")
+	float SprintVignetteIntensity = 0.25f;
 
 	/**
 	 * Smooth only the presented camera rotation. ControlRotation still receives the
@@ -671,6 +706,21 @@ protected:
 	/** Maximum integration step used by SpringArm rotation-lag substepping. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Rotation Smoothing", meta = (EditCondition = "bEnableCameraRotationSmoothing", ClampMin = "0.001", UIMin = "0.001", Units = "s"))
 	float CameraRotationSmoothingMaxTimeStep = 0.008333333f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Swimming")
+	bool bEnableSwimmingCameraLocationSmoothing = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Swimming", meta = (ClampMin = "0.0"))
+	float SwimmingCameraLagSpeed = 5.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Swimming", meta = (ClampMin = "0.0", Units = "cm"))
+	float SwimmingCameraLagMaxDistance = 75.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Swimming", meta = (ClampMin = "0.001", Units = "s"))
+	float SwimmingCameraLagMaxTimeStep = 0.008333333f;
+
+	float SwimmingCameraLagExitElapsed = 0.0f;
+	bool bWasUsingSwimmingCameraLag = false;
 
 	/* --- 인벤토리 ---*/
 protected:
@@ -745,6 +795,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UPlayerEquipmentComponent> EquipmentComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UPlayerAimComponent> AimComponent;
+
 public:
 	UFUNCTION()
 	void OnRep_QuickSlots();
@@ -770,4 +823,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	UPlayerEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Aim")
+	UPlayerAimComponent* GetAimComponent() const { return AimComponent; }
 };

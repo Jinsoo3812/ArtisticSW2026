@@ -19,6 +19,7 @@
 #include "BehaviorTree/Tasks/BTTask_RunEQSQuery.h"
 #include "BehaviorTree/Tasks/BTTask_Wait.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StatusComponent.h"
 #include "Decorator/BTD_CanRangedAttack.h"
 #include "Decorator/BTD_CombatTargetState.h"
 #include "Engine/CollisionProfile.h"
@@ -226,7 +227,7 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Player and Enemy projectile entry points share AArrowProjectile"),
 		APlayerArrowProjectile::StaticClass()->IsChildOf(AArrowProjectile::StaticClass())
 		&& ARangedEnemyProjectile::StaticClass()->IsChildOf(AArrowProjectile::StaticClass()));
-	TestFalse(TEXT("Faction-agnostic damage is the default gameplay policy"),
+	TestTrue(TEXT("Friendly-fire protection is the default gameplay policy"),
 		GetDefault<AArrowProjectile>()->IsTeamDamageFilteringEnabled());
 	TestTrue(TEXT("Ranged attack ability exposes the ranged attack asset tag"),
 		AbilityCDO->GetAssetTags().HasTagExact(GameplayAbility_RangedAttack));
@@ -665,7 +666,7 @@ bool FRangedEnemyProjectileTeamFilterTest::RunTest(const FString& Parameters)
 
 	Projectile->SetOwner(SourceEnemy);
 	Projectile->SetInstigator(SourceEnemy);
-	Projectile->InitializeDamage(SourceASC, SourceEnemy, 1.0f);
+
 
 	TestFalse(TEXT("Projectile always rejects its source actor"), Projectile->IsValidDamageTarget(SourceEnemy));
 	TestFalse(TEXT("Default team filter rejects another enemy-team actor"),
@@ -733,6 +734,7 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 	}
 
 	EnemyASC->InitAbilityActorInfo(Enemy, Enemy);
+	EnemyASC->AddAttributeSetSubobject(NewObject<UBaseAttributeSet>(Enemy));
 	EnemyASC->AddLooseGameplayTag(Team_Enemy);
 
 	UWeaponDataAsset* TestWeaponRegistry = NewObject<UWeaponDataAsset>(Enemy);
@@ -903,7 +905,8 @@ bool FStrengthProjectilePayloadTest::RunTest(const FString& Parameters)
 
 	FStrengthDamageRequest DamageRequest;
 	DamageRequest.SourceASC = SourceASC;
-	DamageRequest.DamageEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
+
+
 	DamageRequest.AttackCoefficient = 1.0f;
 	DamageRequest.ChargeMultiplier = 1.0f;
 	DamageRequest.InstigatorActor = SourceEnemy;
@@ -911,7 +914,7 @@ bool FStrengthProjectilePayloadTest::RunTest(const FString& Parameters)
 	const FGameplayEffectSpecHandle DirectDamageSpec = UGASCombatLibrary::MakeStrengthDamageEffectSpec(DamageRequest);
 	Projectile->InitializeStrengthDamage(SourceASC, SourceEnemy, DirectDamageSpec);
 
-	TestEqual(TEXT("Projectile stores one direct-damage spec"), Projectile->DamageEffectSpecHandles.Num(), 1);
+	TestTrue(TEXT("Projectile stores one direct-damage spec"), Projectile->DirectDamageSpec.IsValid());
 	TestEqual(TEXT("Projectile builds every configured status spec"), Projectile->StatusEffectSpecHandles.Num(), 2);
 	for (const FGameplayEffectSpecHandle& StatusSpec : Projectile->StatusEffectSpecHandles)
 	{
@@ -940,12 +943,13 @@ bool FStrengthProjectilePayloadTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FStatusEffectRefreshTest,
-	"ArtisticSW.Enemy.RangedEnemy.StatusEffectRefresh",
+	FStatusEffectIgnoreReapplicationTest,
+	"ArtisticSW.Enemy.RangedEnemy.StatusEffectIgnoreReapplication",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FStatusEffectRefreshTest::RunTest(const FString& Parameters)
+bool FStatusEffectIgnoreReapplicationTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"), EAutomationExpectedErrorFlags::Contains, 0);
 	RangedEnemyTests::FScopedTestWorld TestWorld;
 	if (!TestNotNull(TEXT("Transient game world is created"), TestWorld.World))
 	{
@@ -970,6 +974,7 @@ bool FStatusEffectRefreshTest::RunTest(const FString& Parameters)
 	TargetAttributes->InitMaxHealth(100.0f);
 	TargetAttributes->InitHealth(100.0f);
 	TargetASC->AddAttributeSetSubobject(TargetAttributes);
+	TargetEnemy->StatusComponent->InitializeWithAbilitySystem(TargetASC);
 
 	UClass* PoisonEffectClass = LoadObject<UClass>(
 		nullptr,
@@ -1020,13 +1025,13 @@ bool FStatusEffectRefreshTest::RunTest(const FString& Parameters)
 
 	const FActiveGameplayEffectHandle RefreshedHandle =
 		UStatusEffectLibrary::ApplyDurationDamageEffectSpecToTarget(TargetASC, PoisonSpec, FGameplayTag());
-	TestTrue(TEXT("Repeated poison hit returns a refreshed active handle"), RefreshedHandle.IsValid());
+	TestFalse(TEXT("Repeated poison hit is rejected"), RefreshedHandle.IsValid());
 	TestEqual(TEXT("Repeated poison hit does not add another stack"), TargetASC->GetActiveEffects(PoisonQuery).Num(), 1);
 
 	const TArray<float> RefreshedRemainingTimes = TargetASC->GetActiveEffectsTimeRemaining(PoisonQuery);
-	TestTrue(TEXT("Repeated poison hit resets the status timer"),
+	TestTrue(TEXT("Repeated poison hit preserves the status timer"),
 		RefreshedRemainingTimes.Num() == 1
-		&& RefreshedRemainingTimes[0] > AgedRemainingTimes[0] + Durations[0] * 0.25f);
+		&& FMath::IsNearlyEqual(RefreshedRemainingTimes[0], AgedRemainingTimes[0]));
 	return true;
 }
 

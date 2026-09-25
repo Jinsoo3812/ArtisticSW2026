@@ -38,6 +38,7 @@
 #include "ShipAI/EnemyShipNavigationComponent.h"
 #include "ShipAI/EnemyShipPatternRuntimeComponent.h"
 #include "ShipAI/EnemyShipSkillModuleData.h"
+#include "ShipAI/EnemyShipWeakeningWorldSubsystem.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckEnemySpawnerComponent.h"
 #include "DeckAI/DeckNavigationComponent.h"
@@ -744,25 +745,17 @@ void AEnemyShip::ApplyChestSpawnPointSettings()
 	DeckChestSettings.OwningShip = this;
 	if (DeckChestSettings.SpawnMode == EChestSpawnMode::Guarded)
 	{
+		DeckChestSettings.GuardCharacters.Reset();
 		for (ABaseEnemy* Crew : RegisteredCrewEnemies)
 		{
 			if (IsValid(Crew)) DeckChestSettings.GuardCharacters.AddUnique(Crew);
-		}
-		if (DeckEnemySpawnerComponent)
-		{
-			TArray<ADeckEnemy*> PooledEnemies;
-			DeckEnemySpawnerComponent->GetPooledEnemies(PooledEnemies);
-			for (ADeckEnemy* Crew : PooledEnemies)
-			{
-				DeckChestSettings.GuardCharacters.AddUnique(Crew);
-			}
 		}
 	}
 
 	TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
 	for (UChildActorComponent* ChildActorComponent : ChildActorComponents)
 	{
-		if (!ChildActorComponent || !ChildActorComponent->GetName().StartsWith(TEXT("ChestSpawnPoint")))
+		if (!ChildActorComponent)
 		{
 			continue;
 		}
@@ -770,11 +763,12 @@ void AEnemyShip::ApplyChestSpawnPointSettings()
 		UClass* ChildActorClass = ChildActorComponent->GetChildActorClass();
 		if (!ChildActorClass || !ChildActorClass->IsChildOf(AChestSpawnPoint::StaticClass()))
 		{
-			UE_LOG(LogEnemyShipChestSpawnPoint, Error,
-				TEXT("%s.%s must use AChestSpawnPoint (or a subclass), but its Child Actor Class is %s."),
-				*GetNameSafe(this),
-				*ChildActorComponent->GetName(),
-				*GetNameSafe(ChildActorClass));
+			if (ChildActorComponent->GetName().StartsWith(TEXT("ChestSpawnPoint")))
+			{
+				UE_LOG(LogEnemyShipChestSpawnPoint, Error,
+					TEXT("%s.%s must use AChestSpawnPoint (or a subclass), but its Child Actor Class is %s."),
+					*GetNameSafe(this), *ChildActorComponent->GetName(), *GetNameSafe(ChildActorClass));
+			}
 			continue;
 		}
 
@@ -784,6 +778,10 @@ void AEnemyShip::ApplyChestSpawnPointSettings()
 				DeckChestSettings,
 				ChestSpawnPointLootSettings);
 		}
+	}
+	if (BossEncounterComponent && HasAuthority() && HasActorBegunPlay())
+	{
+		BossEncounterComponent->RefreshChestReservations();
 	}
 }
 
@@ -808,6 +806,12 @@ void AEnemyShip::BeginPlay()
 	// HealthComponent를 Ship의 ASC에 바인딩 (BaseEnemy의 패턴과 동일)
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
 	{
+		// Join the crew's GAS team before spawning them so existing friendly-fire filters apply.
+		if (HasAuthority() && !ASC->HasMatchingGameplayTag(Team_Enemy))
+		{
+			ASC->AddLooseGameplayTag(Team_Enemy);
+		}
+
 		if (HealthComponent)
 		{
 			HealthComponent->OnDeathStarted.AddUniqueDynamic(this, &AEnemyShip::OnDeathStarted);
@@ -832,6 +836,10 @@ void AEnemyShip::BeginPlay()
 	// 군집 서브시스템에 등록
 	if (HasAuthority())
 	{
+		if (UEnemyShipWeakeningWorldSubsystem* Weakening = GetWorld()->GetSubsystem<UEnemyShipWeakeningWorldSubsystem>())
+		{
+			Weakening->RegisterShip(this);
+		}
 		InitializeDeckWaypoints();
 		InitializeDeckEnemyPool();
 
@@ -849,6 +857,16 @@ void AEnemyShip::BeginPlay()
 
 void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	bEndingPlay = true;
+	if (bCaptureCannonTagAdded)
+	{
+		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+		{
+			ASC->RemoveLooseGameplayTag(State_Ship_CannonDisabled);
+		}
+		bCaptureCannonTagAdded = false;
+	}
+	RegisteredBoss = nullptr;
 	for (ABaseEnemy* CrewEnemy : RegisteredCrewEnemies)
 	{
 		if (IsValid(CrewEnemy))
@@ -858,6 +876,10 @@ void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	if (HasAuthority())
 	{
+		if (UEnemyShipWeakeningWorldSubsystem* Weakening = GetWorld()->GetSubsystem<UEnemyShipWeakeningWorldSubsystem>())
+		{
+			Weakening->UnregisterShip(this);
+		}
 		DestroyDeckEnemyPool();
 
 		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
@@ -914,7 +936,7 @@ void AEnemyShip::DestroyDeckEnemyPool()
 
 void AEnemyShip::NotifyPlayerShipSighted(AShip* SensedPlayerShip)
 {
-	if (!HasAuthority() || bDeathHandled
+	if (!HasAuthority() || bDeathHandled || bCrewDefeated
 		|| !IsValid(SensedPlayerShip) || SensedPlayerShip == this
 		|| SensedPlayerShip->IsEnemyShipForEffects()
 		|| !SensedPlayerShip->ActorHasTag(TEXT("Player"))
@@ -1011,6 +1033,11 @@ bool AEnemyShip::ActivateDeckEnemyAtPoint(
 	AActor* InitialTarget,
 	ADeckEnemy*& OutEnemy)
 {
+	if (bCrewDefeated)
+	{
+		OutEnemy = nullptr;
+		return false;
+	}
 	return DeckEnemySpawnerComponent
 		&& DeckEnemySpawnerComponent->ActivateEnemyAtPoint(
 			SpawnPointId, InitialTarget, OutEnemy);
@@ -1021,7 +1048,7 @@ bool AEnemyShip::ActivateDeckEnemyAtReservation(
 	AActor* InitialTarget,
 	ADeckEnemy*& OutEnemy)
 {
-	if (!DeckEnemySpawnerComponent)
+	if (bCrewDefeated || !DeckEnemySpawnerComponent)
 	{
 		Reservation.Reset();
 		OutEnemy = nullptr;
@@ -1687,6 +1714,7 @@ void AEnemyShip::ResetAfterReturnToSpawn()
 	{
 		PatternRuntimeComponent->ResetRuntimeState();
 	}
+	bCrewDefeated = false;
 	if (DeckEnemySpawnerComponent)
 	{
 		DeckEnemySpawnerComponent->ResetForNewEncounter();
@@ -1698,8 +1726,16 @@ void AEnemyShip::ResetAfterReturnToSpawn()
 			Cannon->ResetAIFiringState();
 		}
 	}
-	bCrewDefeated = false;
+	if (bCaptureCannonTagAdded)
+	{
+		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+		{
+			ASC->RemoveLooseGameplayTag(State_Ship_CannonDisabled);
+		}
+		bCaptureCannonTagAdded = false;
+	}
 	bHasEverHadLivingCrew = HasLivingCrew();
+	EvaluateCrewControlState();
 	OnRep_CrewDefeated();
 	ForceNetUpdate();
 }
@@ -1882,7 +1918,7 @@ void AEnemyShip::ApplyDistanceOptimizationState()
 	}
 	DistanceDormancySuspendedCannons.Reset();
 
-	if (HasAuthority())
+	if (HasAuthority() && !bCrewDefeated)
 	{
 		if (NavigationComponent)
 		{
@@ -1909,6 +1945,15 @@ void AEnemyShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	EvaluateCrewControlState();
+	if (HasAuthority() && bCrewDefeated)
+	{
+		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+			ASC && !ASC->HasMatchingGameplayTag(State_Ship_CannonDisabled))
+		{
+			ASC->AddLooseGameplayTag(State_Ship_CannonDisabled);
+			bCaptureCannonTagAdded = true;
+		}
+	}
 
 	if (CVarShowEnemyShipAIDebug.GetValueOnGameThread() > 0)
 	{
@@ -2243,8 +2288,6 @@ float AEnemyShip::GetCannonCooldownMultiplier() const
 int32 AEnemyShip::GetLivingCrewCount() const
 {
 	int32 Count = 0;
-
-	// 1. Registered manual/external crew enemies
 	for (const TObjectPtr<ABaseEnemy>& Crew : RegisteredCrewEnemies)
 	{
 		if (IsValid(Crew))
@@ -2259,35 +2302,6 @@ int32 AEnemyShip::GetLivingCrewCount() const
 		}
 	}
 
-	// 2. DeckEnemySpawnerComponent-owned crew (active and not-yet-deployed pool members)
-	if (DeckEnemySpawnerComponent)
-	{
-		Count += DeckEnemySpawnerComponent->GetLivingPooledEnemyCount();
-	}
-
-	// 3. Boss Encounter Component
-	if (BossEncounterComponent && BossEncounterComponent->IsEncounterEnabled())
-	{
-		const EBossEncounterState State = BossEncounterComponent->GetEncounterState();
-		if (State == EBossEncounterState::Active || State == EBossEncounterState::Spawning || State == EBossEncounterState::Waiting)
-		{
-			if (const AShipBossEnemy* Boss = BossEncounterComponent->GetSpawnedBoss())
-			{
-				if (const UBaseHealthComponent* Health = Boss->GetHealthComponent())
-				{
-					if (!Health->IsDead())
-					{
-						++Count;
-					}
-				}
-			}
-			else
-			{
-				++Count;
-			}
-		}
-	}
-
 	return Count;
 }
 
@@ -2298,13 +2312,66 @@ bool AEnemyShip::HasLivingCrew() const
 
 void AEnemyShip::RegisterCrewEnemy(ABaseEnemy* CrewEnemy)
 {
-	if (IsValid(CrewEnemy))
+	if (!HasAuthority() || bCrewDefeated || !IsValid(CrewEnemy)
+		|| RegisteredCrewEnemies.Contains(CrewEnemy)) return;
+	if (const ADeckEnemy* DeckEnemy = Cast<ADeckEnemy>(CrewEnemy))
 	{
-		RegisteredCrewEnemies.AddUnique(CrewEnemy);
-		CrewEnemy->OnBaseEnemyDeathNotified.AddUniqueDynamic(this, &AEnemyShip::HandleCrewEnemyRemoved);
-		RegisterDeckEnemyChestGuard(CrewEnemy);
-		EvaluateCrewControlState();
+		if (DeckEnemy->GetDeckHostShip() != this)
+		{
+			UE_LOG(LogEnemyShipChestSpawnPoint, Error, TEXT("Crew %s belongs to another deck"), *GetNameSafe(CrewEnemy));
+			return;
+		}
 	}
+	else if (CrewEnemy->GetOwner() && CrewEnemy->GetOwner() != this)
+	{
+		UE_LOG(LogEnemyShipChestSpawnPoint, Error, TEXT("Crew %s has another owner"), *GetNameSafe(CrewEnemy));
+		return;
+	}
+	else if (!CrewEnemy->GetOwner()) CrewEnemy->SetOwner(this);
+	const UBaseHealthComponent* Health = CrewEnemy->GetHealthComponent();
+	if (!Health || Health->IsDead()) return;
+	RegisteredCrewEnemies.Add(CrewEnemy);
+	bHasEverHadLivingCrew = true;
+	if (UEnemyShipWeakeningWorldSubsystem* Weakening = GetWorld()->GetSubsystem<UEnemyShipWeakeningWorldSubsystem>())
+	{
+		Weakening->RegisterMember(this, CrewEnemy);
+	}
+	CrewEnemy->OnBaseEnemyDeathNotified.AddUniqueDynamic(this, &AEnemyShip::HandleCrewEnemyRemoved);
+	RegisterDeckEnemyChestGuard(CrewEnemy);
+	EvaluateCrewControlState();
+}
+
+void AEnemyShip::NotifyCrewEnemyReactivated(ABaseEnemy* CrewEnemy)
+{
+	if (!HasAuthority() || bCrewDefeated || !RegisteredCrewEnemies.Contains(CrewEnemy)) return;
+	RegisterDeckEnemyChestGuard(CrewEnemy);
+	EvaluateCrewControlState();
+}
+
+bool AEnemyShip::RegisterBossEnemy(AShipBossEnemy* BossEnemy)
+{
+	if (!HasAuthority() || !IsValid(BossEnemy) || BossEnemy->GetHostShip() != this
+		|| (IsValid(RegisteredBoss) && RegisteredBoss != BossEnemy)) return false;
+	RegisteredBoss = BossEnemy;
+	if (UEnemyShipWeakeningWorldSubsystem* Weakening = GetWorld()->GetSubsystem<UEnemyShipWeakeningWorldSubsystem>())
+	{
+		Weakening->RegisterMember(this, BossEnemy);
+	}
+	return true;
+}
+
+bool AEnemyShip::IsOwnedCannonSplashProtectedActor(const AActor* Candidate) const
+{
+	return Candidate && (Candidate == RegisteredBoss
+		|| RegisteredCrewEnemies.ContainsByPredicate([Candidate](const TObjectPtr<ABaseEnemy>& Crew)
+		{
+			return Crew.Get() == Candidate;
+		}));
+}
+
+bool AEnemyShip::IsProtectedFromOwnHullCannonSplash(const AActor* Candidate) const
+{
+	return IsOwnedCannonSplashProtectedActor(Candidate);
 }
 
 void AEnemyShip::RegisterDeckEnemyChestGuard(ABaseEnemy* CrewEnemy)
@@ -2313,7 +2380,7 @@ void AEnemyShip::RegisterDeckEnemyChestGuard(ABaseEnemy* CrewEnemy)
 	TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
 	for (UChildActorComponent* Component : ChildActorComponents)
 	{
-		if (Component && Component->GetName().StartsWith(TEXT("ChestSpawnPoint")))
+		if (Component)
 		{
 			if (AChestSpawnPoint* Point = Cast<AChestSpawnPoint>(Component->GetChildActor()))
 			{
@@ -2325,11 +2392,26 @@ void AEnemyShip::RegisterDeckEnemyChestGuard(ABaseEnemy* CrewEnemy)
 
 void AEnemyShip::UnregisterCrewEnemy(ABaseEnemy* CrewEnemy)
 {
-	if (CrewEnemy)
+	if (HasAuthority() && IsValid(CrewEnemy) && RegisteredCrewEnemies.Contains(CrewEnemy))
 	{
+		if (UEnemyShipWeakeningWorldSubsystem* Weakening = GetWorld()->GetSubsystem<UEnemyShipWeakeningWorldSubsystem>())
+		{
+			Weakening->UnregisterMember(this, CrewEnemy);
+		}
+		if (const UBaseHealthComponent* Health = CrewEnemy->GetHealthComponent(); Health && !Health->IsDead())
+		{
+			TInlineComponentArray<UChildActorComponent*> Components(this);
+			for (UChildActorComponent* Component : Components)
+			{
+				if (AChestSpawnPoint* Point = Component ? Cast<AChestSpawnPoint>(Component->GetChildActor()) : nullptr)
+				{
+					Point->UnregisterGuardCharacter(CrewEnemy);
+				}
+			}
+		}
 		CrewEnemy->OnBaseEnemyDeathNotified.RemoveDynamic(this, &AEnemyShip::HandleCrewEnemyRemoved);
 		RegisteredCrewEnemies.Remove(CrewEnemy);
-		EvaluateCrewControlState();
+		if (!bEndingPlay) EvaluateCrewControlState();
 	}
 }
 
@@ -2341,13 +2423,6 @@ void AEnemyShip::EvaluateCrewControlState()
 	}
 	if (HasLivingCrew())
 	{
-		bHasEverHadLivingCrew = true;
-		if (bCrewDefeated)
-		{
-			bCrewDefeated = false;
-			OnRep_CrewDefeated();
-			ForceNetUpdate();
-		}
 		return;
 	}
 	if (!bHasEverHadLivingCrew)
@@ -2361,12 +2436,21 @@ void AEnemyShip::EvaluateCrewControlState()
 
 	bCrewDefeated = true;
 	DisableEnemyShipAIForCapture();
+	OnCrewDefeated.Broadcast(this);
 	OnRep_CrewDefeated();
 	ForceNetUpdate();
 }
 
 void AEnemyShip::DisableEnemyShipAIForCapture()
 {
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		if (!bCaptureCannonTagAdded)
+		{
+			ASC->AddLooseGameplayTag(State_Ship_CannonDisabled);
+			bCaptureCannonTagAdded = true;
+		}
+	}
 	SetAIControlInput(0.0f, 0.0f);
 	if (DeckEnemySpawnerComponent)
 	{
@@ -2394,7 +2478,7 @@ void AEnemyShip::DisableEnemyShipAIForCapture()
 	{
 		if (IsValid(Cannon))
 		{
-			Cannon->SetAIAimRotation(0.0f, 0.0f);
+			Cannon->ResetAIFiringState();
 		}
 	}
 }
@@ -2406,7 +2490,7 @@ void AEnemyShip::OnRep_CrewDefeated()
 
 void AEnemyShip::HandleCrewEnemyRemoved(ABaseEnemy* Enemy, EWaveEnemyRemoveReason Reason)
 {
-	EvaluateCrewControlState();
+	if (Reason == EWaveEnemyRemoveReason::Death) EvaluateCrewControlState();
 }
 
 void AEnemyShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

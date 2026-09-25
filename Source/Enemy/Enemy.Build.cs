@@ -9,7 +9,6 @@ public class Enemy: ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
-            "DeveloperSettings",
             "UMG",
             "Niagara"
         });
@@ -17,6 +16,7 @@ public class Enemy: ModuleRules
         PublicDependencyModuleNames.AddRange(new string[] {
             // 헤더파일에서부터 사용할 모듈을 작성하는 곳
             "GameplayAbilities",
+            "DeveloperSettings",
             "GameplayTasks",
             "GameplayTags",
             "InputCore",
@@ -29,6 +29,8 @@ public class Enemy: ModuleRules
             "WaterAndShip",
             "Water",
             "AnimGraphRuntime",
+            "SmartObjectsModule",
+            "GameplayBehaviorSmartObjectsModule",
         });
 
         PublicIncludePaths.AddRange(new string[] {

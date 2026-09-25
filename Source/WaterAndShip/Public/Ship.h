@@ -757,6 +757,7 @@ public:
 	int32 GetMountedCannonCount() const { return MountedCannons.Num(); }
 
 	const TArray<TObjectPtr<ACannon>>& GetMountedCannons() const { return MountedCannons; }
+	virtual bool IsProtectedFromOwnHullCannonSplash(const AActor* Candidate) const { return false; }
 
 	/* Components */
 

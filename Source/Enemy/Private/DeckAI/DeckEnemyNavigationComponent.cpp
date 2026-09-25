@@ -165,6 +165,88 @@ bool UDeckEnemyNavigationComponent::PlanCombatRoute(
 	return false;
 }
 
+void UDeckEnemyNavigationComponent::RequestReleaseLineOfSightReposition(AActor* TargetActor)
+{
+	ADeckEnemy* Enemy = GetDeckEnemy();
+	if (!Enemy || !Enemy->HasAuthority() || !Enemy->IsPoolActive()
+		|| Enemy->GetDeckCombatRole() != EDeckEnemyCombatRole::Ranged
+		|| !Enemy->IsValidCombatTarget(TargetActor))
+	{
+		return;
+	}
+
+	ReleaseLineOfSightRepositionState = EReleaseLineOfSightRepositionState::Pending;
+	ReleaseLineOfSightRepositionTarget = TargetActor;
+}
+
+bool UDeckEnemyNavigationComponent::PrepareReleaseLineOfSightReposition(AActor* TargetActor)
+{
+	ADeckEnemy* Enemy = GetDeckEnemy();
+	AEnemyShip* Ship = Enemy ? Enemy->GetDeckHostShip() : nullptr;
+	if (!Enemy || !Enemy->HasAuthority() || !Enemy->IsPoolActive() || !Ship
+		|| ReleaseLineOfSightRepositionState == EReleaseLineOfSightRepositionState::None
+		|| ReleaseLineOfSightRepositionTarget.Get() != TargetActor
+		|| !Enemy->IsValidCombatTarget(TargetActor))
+	{
+		CompleteReleaseLineOfSightReposition();
+		return false;
+	}
+
+	if (ReleaseLineOfSightRepositionState == EReleaseLineOfSightRepositionState::Moving)
+	{
+		return Enemy->GetGoalDeckWaypointId() != INDEX_NONE;
+	}
+
+	CancelRouteState();
+	int32 CurrentPointId = Enemy->GetCurrentDeckWaypointId();
+	if (!Ship->GetDeckWaypoint(CurrentPointId))
+	{
+		CurrentPointId = Ship->FindNearestDeckWaypoint(Enemy->GetActorLocation());
+	}
+
+	TArray<int32> LinkedPointIds;
+	Ship->GetConnectedDeckWaypointIds(CurrentPointId, LinkedPointIds);
+	TArray<int32> Candidates;
+	for (const int32 PointId : LinkedPointIds)
+	{
+		const UDeckWaypointComponent* Waypoint = Ship->GetDeckWaypoint(PointId);
+		if (PointId != Enemy->GetPreviousDeckWaypointId()
+			&& Waypoint && Waypoint->CanUseInCombat()
+			&& Ship->IsDeckPointAvailable(PointId, Enemy))
+		{
+			Candidates.AddUnique(PointId);
+		}
+	}
+
+	while (!Candidates.IsEmpty())
+	{
+		const int32 CandidateIndex = Enemy->GetDeckRandomStream().RandRange(0, Candidates.Num() - 1);
+		const int32 SelectedPointId = Candidates[CandidateIndex];
+		if (Enemy->TrySetGoalDeckWaypointId(SelectedPointId))
+		{
+			ReleaseLineOfSightRepositionState = EReleaseLineOfSightRepositionState::Moving;
+			return true;
+		}
+		Candidates.RemoveAtSwap(CandidateIndex, 1, EAllowShrinking::No);
+	}
+
+	return false;
+}
+
+bool UDeckEnemyNavigationComponent::HasReleaseLineOfSightReposition(
+	const AActor* TargetActor) const
+{
+	return ReleaseLineOfSightRepositionState != EReleaseLineOfSightRepositionState::None
+		&& ReleaseLineOfSightRepositionTarget.IsValid()
+		&& (!TargetActor || ReleaseLineOfSightRepositionTarget.Get() == TargetActor);
+}
+
+void UDeckEnemyNavigationComponent::CompleteReleaseLineOfSightReposition()
+{
+	ReleaseLineOfSightRepositionState = EReleaseLineOfSightRepositionState::None;
+	ReleaseLineOfSightRepositionTarget.Reset();
+}
+
 bool UDeckEnemyNavigationComponent::PrepareNextHop()
 {
 	ADeckEnemy* Enemy = GetDeckEnemy();
@@ -266,7 +348,7 @@ void UDeckEnemyNavigationComponent::ReleaseCombatClaim()
 	ClaimedCombatPointId = INDEX_NONE;
 }
 
-void UDeckEnemyNavigationComponent::CancelCombatRoute()
+void UDeckEnemyNavigationComponent::CancelRouteState()
 {
 	ADeckEnemy* Enemy = GetDeckEnemy();
 	if (Enemy && Enemy->HasAuthority())
@@ -279,4 +361,10 @@ void UDeckEnemyNavigationComponent::CancelCombatRoute()
 	PlannedGraphRevision = INDEX_NONE;
 	PlannedTargetLocalLocation = FVector::ZeroVector;
 	PlannedTarget.Reset();
+}
+
+void UDeckEnemyNavigationComponent::CancelCombatRoute()
+{
+	CancelRouteState();
+	CompleteReleaseLineOfSightReposition();
 }

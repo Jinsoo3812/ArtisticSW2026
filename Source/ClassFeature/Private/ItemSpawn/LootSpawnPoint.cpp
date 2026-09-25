@@ -10,6 +10,8 @@
 #include "Ship.h"
 #include "Storage/StorageChest.h"
 #include "StoryConditionalSpawner.h"
+#include "ItemSpawn/GlobalLootSpawnManager.h"
+#include "EngineUtils.h"
 
 ALootSpawnPointBase::ALootSpawnPointBase()
 {
@@ -203,7 +205,7 @@ void AChestSpawnPoint::HandleGuardActorSpawned(AActor* InSpawnedActor)
 
 	RegisterGuardCharacter(GuardChar);
 
-	if (IsValid(ActiveChestInstance))
+	if (!OwningShip && IsValid(ActiveChestInstance))
 	{
 
 		if (bIsBossChest && !bBossQuestItemInjected && GuaranteedBossQuestItemTag.IsValid() && HasMatchingBossGuard())
@@ -297,7 +299,7 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 	SpawnedChest->ConfigureGuarding(SpawnMode == EChestSpawnMode::Guarded, Guards, EffectiveOwningShip);
 
 	// 보스 상자이고 요구되는 보스 가드가 확인되면 확정 퀘스트 아이템 추가
-	if (bIsBossChest && GuaranteedBossQuestItemTag.IsValid() && HasMatchingBossGuard())
+	if (!EffectiveOwningShip && bIsBossChest && GuaranteedBossQuestItemTag.IsValid() && HasMatchingBossGuard())
 	{
 		if (UStorageComponent* StorageComp = SpawnedChest->GetStorageComponent())
 		{
@@ -308,6 +310,8 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 		}
 	}
 
+	SpawnedChest->SetBossEncounterReserved(bBossEncounterReserved);
+	if (ABaseCharacter* Boss = BossGuard.Get()) SpawnedChest->AddBossGuardCharacter(Boss);
 	SpawnedChest->FinishSpawning(GetActorTransform());
 
 	if (SpawnMode == EChestSpawnMode::Guarded && IsValid(EffectiveOwningShip))
@@ -321,6 +325,7 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 	}
 
 	MarkActivated(SpawnedChest);
+	OnChestSpawned.Broadcast(SpawnedChest);
 	return SpawnedChest;
 }
 
@@ -463,11 +468,38 @@ void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
 void AChestSpawnPoint::RegisterGuardCharacter(ABaseCharacter* GuardCharacter)
 {
 	if (!HasAuthority() || !IsValid(GuardCharacter)) return;
-	if (!GuardCharacters.Contains(GuardCharacter))
+	GuardCharacters.AddUnique(GuardCharacter);
+	if (IsValid(ActiveChestInstance)) ActiveChestInstance->AddGuardCharacter(GuardCharacter);
+}
+
+void AChestSpawnPoint::UnregisterGuardCharacter(ABaseCharacter* GuardCharacter)
+{
+	if (!HasAuthority() || !GuardCharacter) return;
+	GuardCharacters.Remove(GuardCharacter);
+	if (IsValid(ActiveChestInstance)) ActiveChestInstance->RemoveGuardCharacter(GuardCharacter);
+}
+
+void AChestSpawnPoint::SetBossEncounterReserved(bool bReserved)
+{
+	if (!HasAuthority()) return;
+	bBossEncounterReserved = bReserved;
+	if (IsValid(ActiveChestInstance)) ActiveChestInstance->SetBossEncounterReserved(bReserved);
+}
+
+void AChestSpawnPoint::RegisterBossGuard(ABaseCharacter* Boss)
+{
+	if (!HasAuthority() || !IsValid(Boss)) return;
+	BossGuard = Boss;
+	if (IsValid(ActiveChestInstance)) ActiveChestInstance->AddBossGuardCharacter(Boss);
+	int32 ManagerCount = 0;
+	AGlobalLootSpawnManager* Manager = nullptr;
+	for (TActorIterator<AGlobalLootSpawnManager> It(GetWorld()); It; ++It)
 	{
-		GuardCharacters.Add(GuardCharacter);
-		if (IsValid(ActiveChestInstance)) ActiveChestInstance->AddGuardCharacter(GuardCharacter);
+		Manager = *It;
+		++ManagerCount;
 	}
+	if (ManagerCount == 1) Manager->EnsureBossGuaranteedLoot(this);
+	else UE_LOG(LogTemp, Error, TEXT("Boss loot requires exactly one manager; found %d"), ManagerCount);
 }
 
 void AChestSpawnPoint::ApplyFixedChanceDrops(const UFixedChestDropData* DropData, int32 Seed)
