@@ -843,6 +843,12 @@ void ABasePlayer::PossessedBy(AController* NewController)
 
 void ABasePlayer::UnPossessed()
 {
+	// Tap-to-select aiming must end when input ownership moves to a ship/cannon.
+	if (CachedAbilitySystemComponent.IsValid())
+	{
+		const FGameplayTagContainer OnFootSkillTags(GameplayAbility_Skill_GravityVortex);
+		CachedAbilitySystemComponent->CancelAbilities(&OnFootSkillTags);
+	}
 	// Interaction scanning belongs to the on-foot player pawn. When control moves
 	// to a ship or cannon, clear the last prompt before this pawn loses access to
 	// its player controller and stop the timer until PawnClientRestart resumes it.
@@ -914,9 +920,8 @@ void ABasePlayer::PawnClientRestart()
 			// DefaultIMC 등록
 			if(DefaultIMC)
 			{
-				// QuickSlotIMC may contain legacy item-key mappings. Keep the
-				// skill-bearing DefaultIMC above it so a quick slot cannot consume
-				// Keyboard 3 before IA_GravityVortex receives it.
+				// Preserve skill input priority for custom mapping contexts.
+				// The shipped mappings use E for skills and 1-5 for quick slots.
 				const int32 EffectiveDefaultPriority = ResolveDefaultMappingPriority(
 					DefaultIMCPriority,
 					QuickSlotIMCPriority,
@@ -1256,6 +1261,7 @@ void ABasePlayer::OnShipRepairInteractionReleased()
 
 void ABasePlayer::OnShipRepairInteractionPressed()
 {
+	if (HasSelectedQuickSlotConsumable()) return;
 	if (IsLocallyControlled())
 	{
 		bShipRepairInputHeld = true;
@@ -1314,9 +1320,22 @@ void ABasePlayer::ClientEndShipRepair_Implementation(UShipRepairPointComponent* 
 
 int32 ABasePlayer::GetPressedConsumableQuickSlotIndex() const
 {
-	return PressedConsumableQuickSlotIndices.IsEmpty()
-		? INDEX_NONE
-		: PressedConsumableQuickSlotIndices.Last();
+	return GetSelectedConsumableQuickSlotIndex();
+}
+
+bool ABasePlayer::HasSelectedQuickSlotConsumable() const
+{
+	if (!QuickSlots.IsValidIndex(SelectedConsumableQuickSlotIndex) || !InventoryComponent)
+	{
+		return false;
+	}
+	const FQuickSlotReference& Slot = QuickSlots[SelectedConsumableQuickSlotIndex];
+	const UItemSubsystem* Items = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
+	return Slot.SlotType == EQuickSlotType::Consumable && !Slot.IsEmpty()
+		&& !Slot.ItemTag.MatchesTag(Item_Tool)
+		&& !Slot.ItemTag.MatchesTag(Item_Id_Material_ShipMaterials)
+		&& InventoryComponent->GetMaterialCount(Slot.ItemTag) > 0
+		&& Items && Items->GetCategoryTag(Slot.ItemTag).MatchesTag(Item_Category_Consumable);
 }
 
 void ABasePlayer::BeginConsumableQuickSlotInput(const int32 QuickSlotIndex)
@@ -1332,41 +1351,52 @@ void ABasePlayer::BeginConsumableQuickSlotInput(const int32 QuickSlotIndex)
 		return;
 	}
 
-	PressedConsumableQuickSlotIndices.Remove(QuickSlotIndex);
-	PressedConsumableQuickSlotIndices.Add(QuickSlotIndex);
+	SelectedConsumableQuickSlotIndex = QuickSlotIndex;
 	OnConsumableQuickSlotInputChanged.Broadcast();
+	if (!HasAuthority())
+	{
+		ServerSelectConsumableQuickSlot(QuickSlotIndex);
+		return;
+	}
+
+	// Repair materials and tools must be held before their existing F interaction.
+	// Consumables are only selected here; F is the sole use request.
+	const FGameplayTag ItemTag = QuickSlots[QuickSlotIndex].ItemTag;
+	if (ItemTag.MatchesTag(Item_Tool) || ItemTag.MatchesTag(Item_Id_Material_ShipMaterials))
+	{
+		EquipInventoryItem(ItemTag);
+	}
 }
 
 void ABasePlayer::EndConsumableQuickSlotInput(const int32 QuickSlotIndex)
 {
-	if (PressedConsumableQuickSlotIndices.Remove(QuickSlotIndex) == 0)
-	{
-		return;
-	}
+	// Releasing 3/4/5 neither clears selection nor uses the item.
+}
 
-	OnConsumableQuickSlotInputChanged.Broadcast();
-	ActivateQuickSlot(QuickSlotIndex);
+void ABasePlayer::ServerSelectConsumableQuickSlot_Implementation(const int32 QuickSlotIndex)
+{
+	BeginConsumableQuickSlotInput(QuickSlotIndex);
 }
 
 void ABasePlayer::ResetConsumableQuickSlotInputs()
 {
-	if (!PressedConsumableQuickSlotIndices.IsEmpty())
+	if (SelectedConsumableQuickSlotIndex != INDEX_NONE)
 	{
-		PressedConsumableQuickSlotIndices.Empty();
+		SelectedConsumableQuickSlotIndex = INDEX_NONE;
 		OnConsumableQuickSlotInputChanged.Broadcast();
 	}
 }
 
 void ABasePlayer::ActivateQuickSlot(int32 QuickSlotIndex)
 {
+	if (!CanPerformCombatAction() || !QuickSlots.IsValidIndex(QuickSlotIndex)) return;
+	if (QuickSlots[QuickSlotIndex].SlotType == EQuickSlotType::Weapon)
+	{
+		ResetConsumableQuickSlotInputs();
+	}
 	if (!HasAuthority())
 	{
 		ServerActivateQuickSlot(QuickSlotIndex);
-		return;
-	}
-
-	if (!QuickSlots.IsValidIndex(QuickSlotIndex))
-	{
 		return;
 	}
 
@@ -1587,6 +1617,13 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 		return;
 	}
 
+	// A selected consumable owns F, including when an interactable is in reach.
+	if (bInteractionInput && HasSelectedQuickSlotConsumable())
+	{
+		ActivateQuickSlot(SelectedConsumableQuickSlotIndex);
+		return;
+	}
+
 	const bool bIsNonCombatInteraction = InputTag.MatchesTag(Key_Default_F);
 	if (!bIsNonCombatInteraction && !CanPerformCombatAction())
 	{
@@ -1607,6 +1644,13 @@ void ABasePlayer::OnGravityVortexSkillPressed()
 {
 	if (!bEnableGravityVortexSkillInput)
 	{
+		return;
+	}
+	if (CachedAbilitySystemComponent.IsValid()
+		&& CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex))
+	{
+		const FGameplayTagContainer SkillTags(GameplayAbility_Skill_GravityVortex);
+		CachedAbilitySystemComponent->CancelAbilities(&SkillTags);
 		return;
 	}
 	if (!CanPerformCombatAction())

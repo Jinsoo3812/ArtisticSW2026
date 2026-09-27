@@ -6,19 +6,19 @@ C++ 프로퍼티에 연결합니다.
 
 | 조종 상태 | Input Action | 값 형식 | 키 매핑 | C++ 프로퍼티 |
 | --- | --- | --- | --- | --- |
-| 플레이어/도보 | `IA_GravityVortex` | Digital | `3` | `GravityVortexSkillAction` |
-| 대포 | 기존 `IA_CannonWaterBomb` | Digital | `4` | `CannonWaterBombToggleAction` |
-| 배 | `IA_ShipBombardment` | Digital | `5` | `ShipBombardmentToggleAction` |
-| 배 | `IA_ShipBombardmentConfirm` | Digital | 마우스 왼쪽 | `ShipBombardmentConfirmAction` |
-| 배 | `IA_ShipBombardmentCancel` | Digital | 마우스 오른쪽, Escape | `ShipBombardmentCancelAction` |
+| 플레이어/도보 | `IA_GravityVortex` | Digital | `E` | `GravityVortexSkillAction` |
+| 대포 | 기존 `IA_CannonWaterBomb` | Digital | `E` | `CannonWaterBombToggleAction` |
+| 배 | `IA_Bombardment` | Digital | `E` | `ShipBombardmentToggleAction` |
+| 배 | `IA_ShipSkillConfirm` | Digital | 마우스 왼쪽 | `ShipBombardmentConfirmAction` |
+| 배 | `IA_ShipSkillCancel` | Digital | 마우스 오른쪽 | `ShipBombardmentCancelAction` |
 | 배 | `IA_ShipZoom` | Axis1D | Mouse Wheel Axis | `ShipZoomAction` |
 
 권장 Mapping Context 구성은 다음과 같습니다.
 
 - `IA_GravityVortex`는 `ABasePlayer`가 사용하는 도보 상태의 `DefaultIMC`에 넣습니다.
-- `Content/New/Cannon/CannonIMC`에는 `IA_CannonWaterBomb`가 이미 들어 있습니다.
+- `Content/Blueprints/Ship/Cannon/CannonIMC`에는 `IA_CannonWaterBomb`가 이미 들어 있습니다.
   `BP_Cannon`의 `CannonWaterBombToggleAction`에도 같은 IA를 할당해야 합니다.
-- 배 입력 네 개는 `Content/New/Ship/Input/IMC_Ship`에 넣은 뒤 배 Blueprint의
+- 배 입력 네 개는 `Content/Blueprints/Ship/Input/IMC_Ship`에 넣은 뒤 배 Blueprint의
   각 프로퍼티에 할당합니다.
 
 `IA_ShipZoom`은 휠 위쪽이 `+1`, 아래쪽이 `-1`이 되게 설정합니다. 코드에서
@@ -29,9 +29,19 @@ C++ 프로퍼티에 연결합니다.
 
 중력 소용돌이는 다음 순서로 사용합니다.
 
-1. `3`을 누르고 있는 동안 조준 모드를 유지하고 조준선을 표시합니다.
-2. `3`을 누른 상태에서 마우스 왼쪽 버튼을 누르면 발사합니다.
-3. 마우스 오른쪽 버튼을 누르거나 `3`을 떼면 조준 모드를 취소합니다.
+1. `E`를 한 번 누르면 조준 모드를 선택하고 조준선을 표시합니다. 키를 떼어도 유지됩니다.
+2. 마우스 왼쪽 버튼을 누르면 발사합니다.
+3. 사용 전 `E`를 다시 누르거나 마우스 오른쪽 버튼을 누르면 조준 모드를 취소합니다. 배의 포탄세례도 `E` 재입력으로 조준을 취소합니다.
+
+## 무기·아이템 퀵슬롯
+
+- `1`, `2`: 해당 무기를 선택하여 장착하고 아이템 슬롯 선택을 해제합니다.
+- `3`, `4`, `5`: 해당 아이템 슬롯을 선택합니다. 키를 떼어도 선택 표시를 유지하며 소비하지 않습니다.
+- `F`: 선택한 소비 아이템의 사용 입력을 보냅니다. 상호작용 대상이 있어도 이 입력이 우선입니다. 현재 `DA_ItemData`의 소비 아이템에는 `GrantedAbilityClass`가 등록되어 있지 않아 실제 효과와 아이템 소모는 발생하지 않습니다.
+- 수리 재료·도구는 슬롯 선택 시 장착하고 기존 F 상호작용을 사용합니다. 배 수리는 F를 누르고 유지합니다.
+- 도보에서는 해류발생기, 대포에서는 물폭탄, 배 조종에서는 포탄세례 패널을 가장 앞에 표시합니다.
+- 기존 WBP 패널 `GravityVortexSlotPanel`, `WaterBombSlotPanel`, `BombardmentSlotPanel`의 Canvas Z Order를 갱신합니다. 새 WBP 구성요소는 필요하지 않습니다.
+- 스킬을 선택하거나 조준 중일 때 해당 `GravityVortexSelectedOverlay`, `WaterBombSelectedOverlay`, `BombardmentSelectedOverlay`를 표시하고, 사용·취소·조종 상태 변경 시 숨깁니다.
 
 ## Default Input Config Data Asset의 용도
 

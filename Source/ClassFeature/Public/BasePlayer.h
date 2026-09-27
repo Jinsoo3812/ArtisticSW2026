@@ -515,6 +515,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "QuickSlot")
 	int32 GetPressedConsumableQuickSlotIndex() const;
 
+	/** Persistent selection; the legacy pressed-index accessor forwards here. */
+	UFUNCTION(BlueprintPure, Category = "QuickSlot")
+	int32 GetSelectedConsumableQuickSlotIndex() const { return SelectedConsumableQuickSlotIndex; }
+
+	bool HasSelectedQuickSlotConsumable() const;
+
 	void BeginConsumableQuickSlotInput(int32 QuickSlotIndex);
 	void EndConsumableQuickSlotInput(int32 QuickSlotIndex);
 
@@ -538,6 +544,9 @@ public:
 
 	UFUNCTION(Server, Reliable)
 	void ServerActivateQuickSlot(int32 QuickSlotIndex);
+
+	UFUNCTION(Server, Reliable)
+	void ServerSelectConsumableQuickSlot(int32 QuickSlotIndex);
 
 	// 특정 슬롯의 Item을 제거하고 부여된 GA를 회수
 	// ?뱀젙 ?щ’??Item???쒓굅?섍퀬 遺?щ맂 GA瑜??뚯닔
@@ -569,7 +578,7 @@ protected:
 	bool ConsumeInventoryItem(FGameplayTag ItemTag);
 	void HandleInventoryContentsChanged();
 
-	TArray<int32> PressedConsumableQuickSlotIndices;
+	int32 SelectedConsumableQuickSlotIndex = INDEX_NONE;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UShipRepairPointComponent> ActiveShipRepairPoint;

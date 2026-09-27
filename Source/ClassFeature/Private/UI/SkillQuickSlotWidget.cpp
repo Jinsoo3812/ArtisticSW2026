@@ -1,8 +1,12 @@
 #include "UI/SkillQuickSlotWidget.h"
 
 #include "BaseGameplayTags.h"
+#include "AbilitySystemComponent.h"
 #include "BasePlayer.h"
+#include "Cannon.h"
+#include "Ship.h"
 #include "Components/Border.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
 #include "Components/Widget.h"
 #include "Inventory/InventoryComponent.h"
@@ -59,6 +63,7 @@ void USkillQuickSlotWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 		}
 	}
 
+	BindSkillAbilitySystem();
 	RefreshSlots();
 }
 
@@ -69,6 +74,14 @@ void USkillQuickSlotWidget::HandleSkillChanged(const FGameplayTag)
 
 void USkillQuickSlotWidget::UnbindPlayer()
 {
+	if (UAbilitySystemComponent* ASC = BoundSkillAbilitySystem.Get())
+	{
+		ASC->RegisterGameplayTagEvent(GameplayAbility_Skill_GravityVortex,
+			EGameplayTagEventType::NewOrRemoved).Remove(GravityVortexTagChangedHandle);
+	}
+	BoundSkillAbilitySystem.Reset();
+	GravityVortexTagChangedHandle.Reset();
+
 	if (ABasePlayer* Player = CachedPlayer.Get())
 	{
 		if (UPlayerSkillComponent* SkillComponent = Player->GetPlayerSkillComponent())
@@ -84,11 +97,83 @@ void USkillQuickSlotWidget::UnbindPlayer()
 	CachedPlayer.Reset();
 }
 
+void USkillQuickSlotWidget::BindSkillAbilitySystem()
+{
+	UAbilitySystemComponent* ASC = CachedPlayer.IsValid()
+		? CachedPlayer->GetAbilitySystemComponent() : nullptr;
+	if (BoundSkillAbilitySystem.Get() == ASC)
+	{
+		return;
+	}
+	if (UAbilitySystemComponent* PreviousASC = BoundSkillAbilitySystem.Get())
+	{
+		PreviousASC->RegisterGameplayTagEvent(GameplayAbility_Skill_GravityVortex,
+			EGameplayTagEventType::NewOrRemoved).Remove(GravityVortexTagChangedHandle);
+	}
+	GravityVortexTagChangedHandle.Reset();
+	BoundSkillAbilitySystem = ASC;
+	if (ASC)
+	{
+		GravityVortexTagChangedHandle = ASC->RegisterGameplayTagEvent(
+			GameplayAbility_Skill_GravityVortex, EGameplayTagEventType::NewOrRemoved)
+			.AddUObject(this, &USkillQuickSlotWidget::HandleActiveSkillTagChanged);
+	}
+}
+
+void USkillQuickSlotWidget::HandleActiveSkillTagChanged(FGameplayTag, int32)
+{
+	APawn* ControlledPawn = GetOwningPlayerPawn();
+	RefreshEquippedState(ControlledPawn ? ControlledPawn : CachedPlayer.Get());
+}
+
 void USkillQuickSlotWidget::RefreshSlots()
 {
 	RefreshSkill(GameplayAbility_Skill_GravityVortex, GravityVortexIconImage, GravityVortexLockOverlay);
 	RefreshSkill(GameplayAbility_Skill_WaterBomb, WaterBombIconImage, WaterBombLockOverlay);
 	RefreshSkill(GameplayAbility_Skill_Bombardment, BombardmentIconImage, BombardmentLockOverlay);
+	RefreshEquippedState(GetOwningPlayerPawn());
+}
+
+void USkillQuickSlotWidget::RefreshEquippedState(APawn* ControlledPawn)
+{
+	FrontSkillTag = Cast<ACannon>(ControlledPawn) ? GameplayAbility_Skill_WaterBomb
+		: Cast<AShip>(ControlledPawn) ? GameplayAbility_Skill_Bombardment
+		: GameplayAbility_Skill_GravityVortex;
+
+	UWidget* Panels[] = { GravityVortexSlotPanel, WaterBombSlotPanel, BombardmentSlotPanel };
+	const FGameplayTag Tags[] =
+	{
+		GameplayAbility_Skill_GravityVortex, GameplayAbility_Skill_WaterBomb, GameplayAbility_Skill_Bombardment
+	};
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Panels); ++Index)
+	{
+		if (UCanvasPanelSlot* CanvasSlot = Panels[Index] ? Cast<UCanvasPanelSlot>(Panels[Index]->Slot) : nullptr)
+		{
+			CanvasSlot->SetZOrder(Tags[Index] == FrontSkillTag ? UE_ARRAY_COUNT(Panels) : Index);
+		}
+	}
+
+	const ABasePlayer* Player = CachedPlayer.Get();
+	const UAbilitySystemComponent* ASC = Player ? Player->GetAbilitySystemComponent() : nullptr;
+	if (GravityVortexSelectedOverlay)
+	{
+		const bool bSelected = ControlledPawn == Player && ASC
+			&& ASC->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex);
+		GravityVortexSelectedOverlay->SetVisibility(bSelected
+			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+	}
+	if (WaterBombSelectedOverlay)
+	{
+		const ACannon* Cannon = Cast<ACannon>(ControlledPawn);
+		WaterBombSelectedOverlay->SetVisibility(Cannon && Cannon->IsWaterBombMode()
+			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+	}
+	if (BombardmentSelectedOverlay)
+	{
+		const AShip* Ship = Cast<AShip>(ControlledPawn);
+		BombardmentSelectedOverlay->SetVisibility(Ship && Ship->IsBombardmentTargeting()
+			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+	}
 }
 
 void USkillQuickSlotWidget::RefreshSkill(
@@ -114,9 +199,9 @@ void USkillQuickSlotWidget::RefreshSkill(
 
 	if (LockOverlay)
 	{
-		const bool bUnlocked = SkillComponent && SkillComponent->IsSkillUnlocked(SkillTag);
+		const bool bCanUseSkill = Player && Player->CanUseSkill(SkillTag);
 		LockOverlay->SetBrushColor(LockedOverlayColor);
-		LockOverlay->SetVisibility(bUnlocked
+		LockOverlay->SetVisibility(bCanUseSkill
 			? ESlateVisibility::Hidden
 			: ESlateVisibility::HitTestInvisible);
 	}
