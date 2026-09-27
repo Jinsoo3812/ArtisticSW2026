@@ -1,17 +1,27 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "UI/BowCrosshairWidget.h"
+#include "UI/CrosshairWidget.h"
 
 #include "Rendering/DrawElements.h"
+#include "Brushes/SlateRoundedBoxBrush.h"
 
-UBowCrosshairWidget::UBowCrosshairWidget(const FObjectInitializer& ObjectInitializer)
+UCrosshairWidget::UCrosshairWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 }
 
+void UCrosshairWidget::SetWaterBombMode(bool bNewWaterBombMode)
+{
+	if (bWaterBombMode != bNewWaterBombMode)
+	{
+		bWaterBombMode = bNewWaterBombMode;
+		Invalidate(EInvalidateWidgetReason::Paint);
+	}
+}
+
 // 활 장착 확인하는 함수, 활이 장착되었으면, 십자선 그림
-void UBowCrosshairWidget::SetBowEquipped(bool bNewBowEquipped)
+void UCrosshairWidget::SetBowEquipped(bool bNewBowEquipped)
 {
 	if (bBowEquipped == bNewBowEquipped)
 	{
@@ -23,7 +33,7 @@ void UBowCrosshairWidget::SetBowEquipped(bool bNewBowEquipped)
 }
 
 // 조준 상태를 확인하는 함수
-void UBowCrosshairWidget::SetBowAiming(bool bNewAiming)
+void UCrosshairWidget::SetBowAiming(bool bNewAiming)
 {
 	if (bBowAiming == bNewAiming)
 	{
@@ -35,7 +45,7 @@ void UBowCrosshairWidget::SetBowAiming(bool bNewAiming)
 }
 
 // 차징 값을 저장
-void UBowCrosshairWidget::SetDrawAlpha(float NewDrawAlpha)
+void UCrosshairWidget::SetDrawAlpha(float NewDrawAlpha)
 {
 	const float ClampedDrawAlpha = FMath::Clamp(NewDrawAlpha, 0.0f, 1.0f);
 	if (FMath::IsNearlyEqual(DrawAlpha, ClampedDrawAlpha))
@@ -48,7 +58,7 @@ void UBowCrosshairWidget::SetDrawAlpha(float NewDrawAlpha)
 }
 
 // UI를 그리는 함수
-int32 UBowCrosshairWidget::NativePaint(
+int32 UCrosshairWidget::NativePaint(
 	const FPaintArgs& Args,
 	const FGeometry& AllottedGeometry,
 	const FSlateRect& MyCullingRect,
@@ -72,7 +82,7 @@ int32 UBowCrosshairWidget::NativePaint(
 	const FVector2D Center = LocalSize * 0.5f;
 	// 화면 크기에 따라 위젯의 Scale 조정
 	const float Scale = GetResponsiveScale(LocalSize);
-	
+
 	// 활이 장착되어 있을 때만 그림
 	if (bBowEquipped || bBowAiming)
 	{
@@ -93,7 +103,7 @@ int32 UBowCrosshairWidget::NativePaint(
 		for (const FVector2D& Direction : Directions)
 		{
 			TArray<FVector2D> Points;
-			Points.Add(Center + Direction * ScaledGap); // 각 선의 시작점 
+			Points.Add(Center + Direction * ScaledGap); // 각 선의 시작점
 			Points.Add(Center + Direction * (ScaledGap + ScaledLineLength)); // 각 선의 끝점
 
 			// 시작, 끝 점을 이어서 선을 만듦
@@ -109,10 +119,43 @@ int32 UBowCrosshairWidget::NativePaint(
 		}
 	}
 
-	return PaintedLayerId + 1;
+	if (bWaterBombMode)
+	{
+		const float DotSize = FMath::Max(0.0f, WaterCannonDotSize) * Scale;
+		if (DotSize > 0.0f)
+		{
+			const FSlateRoundedBoxBrush DotBrush(FLinearColor::White, DotSize * 0.5f, FVector2f(DotSize, DotSize));
+			FSlateDrawElement::MakeBox(
+				OutDrawElements, PaintedLayerId + 3,
+				AllottedGeometry.ToPaintGeometry(FVector2f(DotSize, DotSize),
+					FSlateLayoutTransform(FVector2f(Center - FVector2D(DotSize * 0.5f)))),
+				&DotBrush, ESlateDrawEffect::None, WaterCannonColor);
+		}
+
+		const float Thickness = FMath::Max(0.0f, WaterCannonRingThickness) * Scale;
+		const float Radius = FMath::Max(0.0f, WaterCannonRingDiameter * Scale - Thickness) * 0.5f;
+		if (Radius > 0.0f && Thickness > 0.0f)
+		{
+			constexpr int32 Segments = 64;
+			TArray<FVector2D> Points;
+			Points.Reserve(Segments + 1);
+			for (int32 Index = 0; Index < Segments; ++Index)
+			{
+				const float Angle = 2.0f * PI * Index / Segments;
+				Points.Add(Center + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Radius);
+			}
+			const FVector2D FirstPoint = Points[0];
+			Points.Add(FirstPoint);
+			FSlateDrawElement::MakeLines(OutDrawElements, PaintedLayerId + 3,
+				AllottedGeometry.ToPaintGeometry(), Points, ESlateDrawEffect::None,
+				WaterCannonColor, true, Thickness);
+		}
+	}
+
+	return PaintedLayerId + 3;
 }
 
-float UBowCrosshairWidget::GetResponsiveScale(const FVector2D& LocalSize) const
+float UCrosshairWidget::GetResponsiveScale(const FVector2D& LocalSize) const
 {
 	// 해상도에서 짧은 부분 저장
 	const float ShortSide = FMath::Min(LocalSize.X, LocalSize.Y);

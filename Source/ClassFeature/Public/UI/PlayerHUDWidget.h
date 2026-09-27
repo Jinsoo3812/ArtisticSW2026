@@ -20,7 +20,7 @@ class UCanvasPanel;
 class UInventoryCursorWidget;
 class UHealthBarWidget;
 class UBaseHealthComponent;
-class UBowCrosshairWidget;
+class UCrosshairWidget;
 class UBowComponent;
 class AStorageChest;
 class UStorageWindowWidget;
@@ -159,11 +159,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crosshair|Responsive", meta = (ClampMin = "0.01"))
 	float CrosshairMaxScale = 1.5f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow Crosshair")
-	TSubclassOf<UBowCrosshairWidget> BowCrosshairWidgetClass;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crosshair")
+	TSubclassOf<UCrosshairWidget> CrosshairWidgetClass;
 
 	UPROPERTY()
-	TObjectPtr<UBowCrosshairWidget> BowCrosshairWidget;
+	TObjectPtr<UCrosshairWidget> CrosshairWidget;
 
 	UPROPERTY()
 	TObjectPtr<UBowComponent> BoundBowComponent;
@@ -185,8 +185,8 @@ protected:
 	bool IsBeyondShipHealthHideDistance(const APawn* ControlledPawn, const AShip* Ship) const;
 	void HandleShipHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleShipMaxHealthChanged(const FOnAttributeChangeData& Data);
-	void CreateBowCrosshairWidget();
-	void RefreshBowCrosshairBinding();
+	void CreateCrosshairWidget();
+	void RefreshCrosshairBinding();
 	void BindBowComponent(UBowComponent* BowComponent);
 	void UnbindBowComponent();
 	float GetCrosshairResponsiveScale(const FVector2D& LocalSize) const;
