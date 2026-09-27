@@ -114,6 +114,12 @@ struct FReplicatedLocomotionState
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
     EReplicatedLocomotionEvent LastLocomotionEvent = EReplicatedLocomotionEvent::None;
 
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    bool bShouldTurnInPlace = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Network")
+    float DesiredFacingDeltaYaw = 0.f;
+
     bool operator==(const FReplicatedLocomotionState& Other) const
     {
         return bIsSprinting == Other.bIsSprinting &&
@@ -123,7 +129,9 @@ struct FReplicatedLocomotionState
                FMath::IsNearlyEqual(LandStartGroundSpeed, Other.LandStartGroundSpeed) &&
                FMath::IsNearlyEqual(LastFallSpeed, Other.LastFallSpeed) &&
                EventSequence == Other.EventSequence &&
-               LastLocomotionEvent == Other.LastLocomotionEvent;
+               LastLocomotionEvent == Other.LastLocomotionEvent &&
+               bShouldTurnInPlace == Other.bShouldTurnInPlace &&
+               FMath::IsNearlyEqual(DesiredFacingDeltaYaw, Other.DesiredFacingDeltaYaw, 1.0f);
     }
 
     bool operator!=(const FReplicatedLocomotionState& Other) const
@@ -219,6 +227,12 @@ public:
      * switches away from the Land Blend Stack.
      */
     bool ConsumeMotionMatchingReselectionRequest();
+
+    /** Start may hand off directly to moving MM when Sprint intent changes (e.g. shift pressed during run_start). */
+    void InterruptStartForGaitChange();
+
+    /** Resets transitional one-shot requests and timers when an action montage (attack, dodge, hit, interact) starts. */
+    void ResetLocomotionActionState(const TCHAR* Reason = TEXT("ActionInterrupted"));
 
 protected:
     void CacheOwner();

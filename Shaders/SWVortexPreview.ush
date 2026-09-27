@@ -1,0 +1,28 @@
+#ifndef SW_VORTEX_PREVIEW_USH
+#define SW_VORTEX_PREVIEW_USH
+
+float SW_ComputeVortexPreviewMask(
+    float3 WorldPosition,
+    float4 CenterRadius,
+    float Enabled,
+    float EdgeFeather)
+{
+    [branch]
+    if (Enabled < 0.5)
+    {
+        return 0.0;
+    }
+
+    const float Radius = max(CenterRadius.w, 1.0);
+    const float Feather = clamp(EdgeFeather, 0.0, Radius);
+    const float InnerRadius = max(Radius - Feather, 0.0);
+    const float DistanceSquared = dot(
+        WorldPosition.xy - CenterRadius.xy,
+        WorldPosition.xy - CenterRadius.xy);
+    return 1.0 - smoothstep(
+        InnerRadius * InnerRadius,
+        Radius * Radius,
+        DistanceSquared);
+}
+
+#endif

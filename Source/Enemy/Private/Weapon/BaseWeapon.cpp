@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Weapon/BaseWeapon.h"
@@ -7,7 +7,10 @@
 // Unreal Engine
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "GAS/CombatHitResolver.h"
 #include "Components/StaticMeshComponent.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
+#include "CollisionChannels.h"
 #include "GameplayEffect.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Net/UnrealNetwork.h"
@@ -40,6 +43,12 @@ ABaseWeapon::ABaseWeapon()
 	TraceObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECC_Pawn));
 }
 
+void ABaseWeapon::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	DeactivateWeaponActivity();
+	Super::EndPlay(EndPlayReason);
+}
+
 // GA로부터 HitScanEffectSpecHandle을 받아 HitScan을 시작하는 함수
 void ABaseWeapon::HitScanStart(const FGameplayEffectSpecHandle& HitScanEffectSpecHandle)
 {
@@ -53,9 +62,10 @@ void ABaseWeapon::HitScanStart(const FGameplayEffectSpecHandle& HitScanEffectSpe
 		return;
 	}
 
+	auto* Resolver = FindComponentByClass<UCombatHitResolver>();
+	if (bIsHitScanActive || !Resolver || !Resolver->OpenWindow(HitScanEffectSpecHandle)) return;
 	// HitScan 시작 전 변수 초기화
 	CachedEffectSpecHandle = HitScanEffectSpecHandle;
-	HitActors.Reset();
 	bIsHitScanActive = true;
 
 	// Timer를 설정해서 ProcessTrace함수를 HitScanInterval마다 부른다.
@@ -89,6 +99,11 @@ void ABaseWeapon::ProcessTrace()
 	// HitScanInterval마다 이 함수가 호출되면서 지속적으로 Trace가 이루어진다.
 	const FVector TraceStart = TraceStartPoint->GetComponentLocation();
 	const FVector TraceEnd = TraceEndPoint->GetComponentLocation();
+	TArray<TEnumAsByte<EObjectTypeQuery>> ActiveTraceObjectTypes = TraceObjectTypes;
+	if (bIncludeAnimatedCombatHurtboxes)
+	{
+		ActiveTraceObjectTypes.AddUnique(UEngineTypes::ConvertToObjectType(ECC_CombatHurtbox));
+	}
 
 	// 무시할 Actor들을 추가
 	TArray<AActor*> ActorsToIgnore;
@@ -104,37 +119,49 @@ void ABaseWeapon::ProcessTrace()
 		ActorsToIgnore.AddUnique(InstigatorActor);
 	}
 
-	// Trace를 보여주는 함수
-	TArray<FHitResult> HitResults;
-	UKismetSystemLibrary::SphereTraceMultiForObjects(
-		this,
-		TraceStart,
-		TraceEnd,
-		TraceRadius,
-		TraceObjectTypes,
-		bTraceComplex,
-		ActorsToIgnore,
-		bDrawDebugTrace ? EDrawDebugTrace::ForDuration : EDrawDebugTrace::None,
-		HitResults,
-		true
-	);
-
-	// HitResult를 HitScan에 넘겨주는 함수
-	for (const FHitResult& HitResult : HitResults)
+	const auto TraceSegment = [&](const FVector& Start, const FVector& End)
 	{
-		HitScan(HitResult);
+		TArray<FHitResult> HitResults;
+		UKismetSystemLibrary::SphereTraceMultiForObjects(this, Start, End, TraceRadius, ActiveTraceObjectTypes,
+			bTraceComplex, ActorsToIgnore, bDrawDebugTrace ? EDrawDebugTrace::ForDuration : EDrawDebugTrace::None,
+			HitResults, true);
+		for (const FHitResult& HitResult : HitResults)
+		{
+			if (!bIsHitScanActive) break;
+			HitScan(HitResult);
+		}
+	};
+	TraceSegment(TraceStart, TraceEnd);
+	if (bHasPreviousTrace && bIsHitScanActive)
+	{
+		TraceSegment(PreviousTraceStart, TraceStart);
+		TraceSegment(PreviousTraceEnd, TraceEnd);
+		TraceSegment((PreviousTraceStart + PreviousTraceEnd) * 0.5f, (TraceStart + TraceEnd) * 0.5f);
 	}
+	PreviousTraceStart = TraceStart;
+	PreviousTraceEnd = TraceEnd;
+	bHasPreviousTrace = bIsHitScanActive;
 }
 
 // HitScan함수가 종료되었을 때 호출되는 함수. GA에서 EndAbility이후에 호출하자.
 void ABaseWeapon::HitScanEnd()
 {
+	if (auto* Resolver = FindComponentByClass<UCombatHitResolver>()) Resolver->CloseWindow();
 	if (GetWorld())
 	{
 		GetWorldTimerManager().ClearTimer(HitScanTimerHandle);
 	}
 
 	ClearHitScanInternalState();
+}
+
+void ABaseWeapon::DeactivateWeaponActivity()
+{
+	HitScanEnd();
+	if (WeaponFeedbackComponent)
+	{
+		WeaponFeedbackComponent->ForceStopWeaponTrail(true);
+	}
 }
 
 
@@ -147,13 +174,6 @@ void ABaseWeapon::HitScan(const FHitResult& HitResult)
 		return;
 	}
 
-	// 이미 Hit 처리한 Actor라면 return
-	const TWeakObjectPtr<AActor> HitActorPtr(HitActor);
-	if (HitActors.Contains(HitActorPtr))
-	{
-		return;
-	}
-
 	// HitActor의 ASC, 없다면 return
 	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(HitActor);
 	if (!TargetASC)
@@ -161,7 +181,6 @@ void ABaseWeapon::HitScan(const FHitResult& HitResult)
 		return;
 	}
 
-	HitActors.Add(HitActorPtr);
 	ApplyEffectToTarget(HitActor, HitResult);
 }
 
@@ -179,26 +198,10 @@ void ABaseWeapon::ApplyEffectToTarget(AActor* TargetActor, const FHitResult& Hit
 		return;
 	}
 	
-	// UE_LOG(LogTemp, Log, TEXT("Applying effect to target: %s"), *TargetActor->GetName());
-	FGameplayEffectSpec TargetEffectSpec(*CachedEffectSpecHandle.Data.Get());
-	FGameplayEffectContextHandle EffectContext = TargetEffectSpec.GetContext();
+	if (!HasAuthority()) return;
+	if (auto* Resolver = FindComponentByClass<UCombatHitResolver>())
+		Resolver->ResolveHit(TargetASC, HitResult, true, bIncludeAnimatedCombatHurtboxes);
 
-	AActor* SourceActor = GetInstigator();
-	if (!SourceActor)
-	{
-		SourceActor = GetOwner();
-	}
-
-	if (SourceActor)
-	{
-		EffectContext.AddInstigator(SourceActor, const_cast<ABaseWeapon*>(this));
-	}
-
-	EffectContext.AddSourceObject(const_cast<ABaseWeapon*>(this));
-	EffectContext.AddHitResult(HitResult, true);
-	TargetEffectSpec.SetContext(EffectContext);
-
-	TargetASC->ApplyGameplayEffectSpecToSelf(TargetEffectSpec);
 }
 
 // HitScan시 무시해야할 대상
@@ -226,8 +229,8 @@ bool ABaseWeapon::ShouldIgnoreActor(const AActor* OtherActor) const
 void ABaseWeapon::ClearHitScanInternalState()
 {
 	bIsHitScanActive = false;
+	bHasPreviousTrace = false;
 	CachedEffectSpecHandle = FGameplayEffectSpecHandle();
-	HitActors.Reset();
 	HitScanTimerHandle.Invalidate();
 }
 

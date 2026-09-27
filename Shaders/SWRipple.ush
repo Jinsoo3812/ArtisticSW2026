@@ -58,3 +58,74 @@
     } \
     OUT_NORMAL = normalize(float3(-SW_R_dHdX * (NORMAL_STRENGTH), -SW_R_dHdY * (NORMAL_STRENGTH), 1.0)); \
 }
+
+// Compute-shader form: evaluates height and the analytic world-space gradient in one event scan.
+// Screen-space ddx/ddy are unavailable in a compute shader, so this differentiates the ripple
+// equation with respect to radial distance instead.
+#define SW_EVALUATE_RIPPLE_COMBINED_ANALYTIC(WORLD_XY, SERVER_TIME, RIPPLE_COUNT, RIPPLE_TEX, NORMAL_STRENGTH, FOAM_ENABLED, FOAM_STEEPNESS_MIN, FOAM_STEEPNESS_MAX, FOAM_CREST_SHARPNESS, FOAM_TEXEL_WORLD_SIZE, FOAM_INTENSITY, OUT_HEIGHT, OUT_NORMAL, OUT_FOAM) \
+{ \
+    const float2 SW_R_WorldPos = (WORLD_XY); \
+    const float SW_R_ServerTime = (SERVER_TIME); \
+    const int SW_R_Count = clamp((int)round(RIPPLE_COUNT), 0, SW_RIPPLE_CAPACITY); \
+    float SW_R_TotalHeight = 0.0; \
+    float2 SW_R_TotalGradient = float2(0.0, 0.0); \
+    float SW_R_TotalFoam = 0.0; \
+    [loop] \
+    for (int SW_R_Index = 0; SW_R_Index < SW_RIPPLE_CAPACITY; ++SW_R_Index) \
+    { \
+        if (SW_R_Index >= SW_R_Count) break; \
+        const float4 SW_R_Row1 = (RIPPLE_TEX).Load(int3(SW_R_Index, 0, 0)); \
+        const float4 SW_R_Row2 = (RIPPLE_TEX).Load(int3(SW_R_Index, 1, 0)); \
+        const float2 SW_R_Origin = SW_R_Row1.xy; \
+        const float SW_R_StartTime = SW_R_Row1.z; \
+        const float SW_R_InitialAmp = SW_R_Row1.w; \
+        const float SW_R_WaveSpeed = SW_R_Row2.x; \
+        const float SW_R_DecayRate = SW_R_Row2.y; \
+        const float SW_R_WaveLength = SW_R_Row2.z; \
+        const float SW_R_ExpireTime = SW_R_Row2.w; \
+        if (SW_R_InitialAmp <= 0.0 || SW_R_ServerTime >= SW_R_ExpireTime || SW_R_ServerTime < SW_R_StartTime || SW_R_WaveLength <= 1.0e-6) continue; \
+        const float SW_R_dt = SW_R_ServerTime - SW_R_StartTime; \
+        const float2 SW_R_Delta = SW_R_WorldPos - SW_R_Origin; \
+        const float SW_R_DistSq = dot(SW_R_Delta, SW_R_Delta); \
+        const float SW_R_d = sqrt(max(SW_R_DistSq, 1.0e-12)); \
+        const float SW_R_R = SW_R_WaveSpeed * SW_R_dt; \
+        const float SW_R_W = SW_R_WaveLength * 2.0; \
+        const float SW_R_SignedFrontDistance = SW_R_d - SW_R_R; \
+        const float SW_R_DistFromFront = abs(SW_R_SignedFrontDistance); \
+        if (SW_R_DistFromFront > SW_R_W) continue; \
+        const float SW_R_t = saturate(SW_R_DistFromFront / SW_R_W); \
+        const float SW_R_Envelope = 1.0 - SW_R_t * SW_R_t * (3.0 - 2.0 * SW_R_t); \
+        const float SW_R_Decay = exp(-SW_R_DecayRate * SW_R_dt); \
+        const float SW_R_Phase = SW_R_SignedFrontDistance / SW_R_WaveLength * 6.28318530718; \
+        const float SW_R_CosPhase = cos(SW_R_Phase); \
+        const float SW_R_SinPhase = sin(SW_R_Phase); \
+        const float SW_R_Amplitude = SW_R_InitialAmp * SW_R_Decay; \
+        const float SW_R_PhaseDerivative = 6.28318530718 / SW_R_WaveLength; \
+        SW_R_TotalHeight += SW_R_Amplitude * SW_R_CosPhase * SW_R_Envelope; \
+        if ((FOAM_ENABLED) > 0.5) \
+        { \
+            const float SW_R_RuntimeSteepness = SW_R_PhaseDerivative * SW_R_Amplitude; \
+            const float SW_R_FoamStrength = smoothstep((FOAM_STEEPNESS_MIN), (FOAM_STEEPNESS_MAX), SW_R_RuntimeSteepness); \
+            /* Band-limit the propagated crest to the world-grid footprint. */ \
+            const float SW_R_Sharpness = max((FOAM_CREST_SHARPNESS), 1.0); \
+            const float SW_R_BaseHalfWidth = acos(pow(0.5, 1.0 / SW_R_Sharpness)); \
+            const float SW_R_PhaseFootprint = SW_R_PhaseDerivative * max((FOAM_TEXEL_WORLD_SIZE), 0.0); \
+            const float SW_R_CrestHalfWidth = min(max(SW_R_BaseHalfWidth, SW_R_PhaseFootprint * 0.5), 3.14159265); \
+            const float SW_R_CrestFeather = max(SW_R_PhaseFootprint * 0.25, 0.05); \
+            const float SW_R_PhaseDistance = abs(atan2(SW_R_SinPhase, SW_R_CosPhase)); \
+            const float SW_R_CrestLocation = 1.0 - smoothstep( \
+                max(SW_R_CrestHalfWidth - SW_R_CrestFeather, 0.0), \
+                min(SW_R_CrestHalfWidth + SW_R_CrestFeather, 3.14159265), \
+                SW_R_PhaseDistance); \
+            const float SW_R_EventFoam = saturate(SW_R_CrestLocation * SW_R_Envelope * SW_R_FoamStrength * (FOAM_INTENSITY)); \
+            SW_R_TotalFoam = 1.0 - (1.0 - SW_R_TotalFoam) * (1.0 - SW_R_EventFoam); \
+        } \
+        const float SW_R_EnvelopeDerivativeMagnitude = 6.0 * SW_R_t * (1.0 - SW_R_t) / SW_R_W; \
+        const float SW_R_EnvelopeDerivative = -SW_R_EnvelopeDerivativeMagnitude * sign(SW_R_SignedFrontDistance); \
+        const float SW_R_dHdr = SW_R_Amplitude * (-SW_R_SinPhase * SW_R_PhaseDerivative * SW_R_Envelope + SW_R_CosPhase * SW_R_EnvelopeDerivative); \
+        SW_R_TotalGradient += SW_R_dHdr * (SW_R_Delta / SW_R_d); \
+    } \
+    OUT_HEIGHT = SW_R_TotalHeight; \
+    OUT_NORMAL = normalize(float3(-SW_R_TotalGradient.x * (NORMAL_STRENGTH), -SW_R_TotalGradient.y * (NORMAL_STRENGTH), 1.0)); \
+    OUT_FOAM = saturate(SW_R_TotalFoam); \
+}

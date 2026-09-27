@@ -3,10 +3,15 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "BaseCharacter.h"
+#include "AbilitySystemComponent.h"
 #include "Item/BaseItem.h"
 #include "ItemSpawn/ChestSpawnData.h"
+#include "Balance/FixedChestDropData.h"
 #include "Ship.h"
 #include "Storage/StorageChest.h"
+#include "StoryConditionalSpawner.h"
+#include "ItemSpawn/GlobalLootSpawnManager.h"
+#include "EngineUtils.h"
 
 ALootSpawnPointBase::ALootSpawnPointBase()
 {
@@ -117,7 +122,7 @@ void ALooseLootSpawnPoint::AlignItemBottomToGround(ABaseItem* Item) const
 		GroundHit,
 		TraceStart,
 		TraceEnd,
-		ECC_Visibility,
+		ECC_Pawn,
 		QueryParams
 	);
 
@@ -134,51 +139,124 @@ void ALooseLootSpawnPoint::AlignItemBottomToGround(ABaseItem* Item) const
 		ETeleportType::TeleportPhysics
 	);
 }
-
-AStorageChest* AChestSpawnPoint::SpawnChest(const TArray<FChestInitialLootRow>& LootRows, TSubclassOf<AStorageChest> FallbackChestClass, int32 Seed)
+void AChestSpawnPoint::BeginPlay()
 {
-	if (!HasAuthority() || !CanBeActivated() || IsDataDrivenChestPoint())
+	Super::BeginPlay();
+
+	if (HasAuthority())
 	{
-		return nullptr;
+		for (AStoryConditionalSpawner* Spawner : GuardSpawners)
+		{
+			if (IsValid(Spawner))
+			{
+				Spawner->OnActorSpawned.AddUniqueDynamic(this, &AChestSpawnPoint::HandleGuardActorSpawned);
+				if (AActor* AlreadySpawned = Spawner->GetSpawnedActor())
+				{
+					HandleGuardActorSpawned(AlreadySpawned);
+				}
+			}
+		}
+
+		// The global manager owns initial spawning and progression reward allocation.
+		// Child actors can BeginPlay before their owning ship applies authoring settings.
+	}
+}
+
+void AChestSpawnPoint::ApplyAuthoringSettings(
+	const FChestSpawnPointChestSettings& ChestSettings,
+	const FChestSpawnPointLootSettings& LootSettings)
+{
+	bIsBossChest = ChestSettings.bIsBossChest;
+	RequiredBossTag = ChestSettings.RequiredBossTag;
+	GuaranteedBossQuestItemTag = ChestSettings.GuaranteedBossQuestItemTag;
+	GuaranteedBossQuestItemCount = FMath::Max(1, ChestSettings.GuaranteedBossQuestItemCount);
+	Environment = ChestSettings.Environment;
+	bEnableDistanceOptimization = ChestSettings.bEnableDistanceOptimization;
+	SpawnMode = ChestSettings.SpawnMode;
+	ProgressionZone = ChestSettings.ProgressionZone;
+	ProgressionKind = ChestSettings.ProgressionKind;
+	ChestClassOverride = ChestSettings.ChestClassOverride;
+	RandomGroup = nullptr;
+	ChestDefinition = nullptr; // Retired authoring input; the manager supplies progression loot.
+	GuardCharacters = ChestSettings.GuardCharacters;
+	GuardSpawners = ChestSettings.GuardSpawners;
+	OwningShip = ChestSettings.OwningShip;
+
+	bEnabled = LootSettings.bEnabled;
+	PointWeight = FMath::Max(0.f, LootSettings.PointWeight);
+	bAlignChestBottomToGround = LootSettings.bAlignChestBottomToGround;
+	GroundClearance = FMath::Max(0.f, LootSettings.GroundClearance);
+	GroundTraceUpDistance = FMath::Max(0.f, LootSettings.GroundTraceUpDistance);
+	GroundTraceDownDistance = FMath::Max(0.f, LootSettings.GroundTraceDownDistance);
+}
+
+void AChestSpawnPoint::HandleGuardActorSpawned(AActor* InSpawnedActor)
+{
+	if (!HasAuthority() || !IsValid(InSpawnedActor))
+	{
+		return;
 	}
 
-	UWorld* World = GetWorld();
-	if (!World)
+	ABaseCharacter* GuardChar = Cast<ABaseCharacter>(InSpawnedActor);
+	if (!GuardChar)
 	{
-		return nullptr;
+		return;
 	}
 
-	TSubclassOf<AStorageChest> ChestClass = ChestClassOverride ? ChestClassOverride : FallbackChestClass;
-	if (!ChestClass)
+	RegisterGuardCharacter(GuardChar);
+
+	if (!OwningShip && IsValid(ActiveChestInstance))
 	{
-		return nullptr;
+
+		if (bIsBossChest && !bBossQuestItemInjected && GuaranteedBossQuestItemTag.IsValid() && HasMatchingBossGuard())
+		{
+			if (UStorageComponent* StorageComp = ActiveChestInstance->GetStorageComponent())
+			{
+				StorageComp->AddItem(GuaranteedBossQuestItemTag, FMath::Max(1, GuaranteedBossQuestItemCount));
+				bBossQuestItemInjected = true;
+				UE_LOG(LogTemp, Log, TEXT("AChestSpawnPoint: Dynamically added quest item [%s] to chest [%s] on boss spawn."),
+					*GuaranteedBossQuestItemTag.ToString(), *ActiveChestInstance->GetName());
+			}
+		}
+	}
+}
+
+bool AChestSpawnPoint::HasMatchingBossGuard() const
+{
+	if (!bIsBossChest || !RequiredBossTag.IsValid())
+	{
+		return false;
 	}
 
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = this;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-	AStorageChest* SpawnedChest = World->SpawnActor<AStorageChest>(
-		ChestClass,
-		GetActorTransform(),
-		SpawnParameters
-	);
-
-	if (!IsValid(SpawnedChest))
+	for (ABaseCharacter* GuardChar : GuardCharacters)
 	{
-		return nullptr;
+		if (!IsValid(GuardChar))
+		{
+			continue;
+		}
+
+		// 1. ASC 태그 검사
+		if (UAbilitySystemComponent* ASC = GuardChar->GetAbilitySystemComponent())
+		{
+			if (ASC->HasMatchingGameplayTag(RequiredBossTag))
+			{
+				return true;
+			}
+		}
+
+		// 2. Actor의 태그 검사
+		if (GuardChar->ActorHasTag(RequiredBossTag.GetTagName()) || GuardChar->ActorHasTag(FName(*RequiredBossTag.ToString())))
+		{
+			return true;
+		}
 	}
 
-	AlignChestBottomToGround(SpawnedChest);
-	SpawnedChest->ConfigureStorage(SlotCount, ColumnCount, BuildInitialItems(LootRows, Seed));
-	MarkActivated(SpawnedChest);
-
-	return SpawnedChest;
+	return false;
 }
 
 AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definition, int32 Seed)
 {
-	if (!HasAuthority() || !CanSpawnDataDrivenChest() || !IsValid(Definition) || !Definition->ChestClass)
+	if (!HasAuthority() || !CanSpawnDataDrivenChest())
 	{
 		return nullptr;
 	}
@@ -189,8 +267,11 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 		return nullptr;
 	}
 
+	TSubclassOf<AStorageChest> SpawnClass = ChestClassOverride;
+	if (!SpawnClass && IsValid(Definition)) SpawnClass = Definition->ChestClass;
+	if (!SpawnClass) SpawnClass = AStorageChest::StaticClass();
 	AStorageChest* SpawnedChest = World->SpawnActorDeferred<AStorageChest>(
-		Definition->ChestClass,
+		SpawnClass,
 		GetActorTransform(),
 		this,
 		nullptr,
@@ -200,8 +281,14 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 		return nullptr;
 	}
 
-	SpawnedChest->InitializeFromChestDefinition(Definition, Seed);
-	SpawnedChest->SetPhysicsAndBuoyancyEnabled(bEnablePhysicsAndBuoyancy);
+	ActiveChestInstance = SpawnedChest;
+	if (Definition) SpawnedChest->InitializeFromChestDefinition(Definition, Seed);
+	else SpawnedChest->ClearLegacyChestDefinition();
+	SpawnedChest->SetPhysicsAndBuoyancyEnabled(Environment == EChestEnvironment::Water);
+	SpawnedChest->SetDistanceOptimizationEnabled(
+		Environment == EChestEnvironment::Water && bEnableDistanceOptimization);
+
+	AShip* EffectiveOwningShip = OwningShip ? OwningShip.Get() : Cast<AShip>(GetAttachParentActor());
 
 	TArray<ABaseCharacter*> Guards;
 	Guards.Reserve(GuardCharacters.Num());
@@ -209,23 +296,58 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 	{
 		Guards.Add(Guard);
 	}
-	SpawnedChest->ConfigureGuarding(SpawnMode == EChestSpawnMode::Guarded, Guards, OwningShip);
-	SpawnedChest->FinishSpawning(GetActorTransform());
+	SpawnedChest->ConfigureGuarding(SpawnMode == EChestSpawnMode::Guarded, Guards, EffectiveOwningShip);
 
-	if (SpawnMode == EChestSpawnMode::Guarded && IsValid(OwningShip))
+	// 보스 상자이고 요구되는 보스 가드가 확인되면 확정 퀘스트 아이템 추가
+	if (!EffectiveOwningShip && bIsBossChest && GuaranteedBossQuestItemTag.IsValid() && HasMatchingBossGuard())
 	{
-		SpawnedChest->AttachToActor(OwningShip, FAttachmentTransformRules::KeepWorldTransform);
+		if (UStorageComponent* StorageComp = SpawnedChest->GetStorageComponent())
+		{
+			StorageComp->AddItem(GuaranteedBossQuestItemTag, FMath::Max(1, GuaranteedBossQuestItemCount));
+			bBossQuestItemInjected = true;
+			UE_LOG(LogTemp, Log, TEXT("AChestSpawnPoint::SpawnConfiguredChest - Added guaranteed quest item [%s] to chest [%s] guarded by boss."),
+				*GuaranteedBossQuestItemTag.ToString(), *SpawnedChest->GetName());
+		}
 	}
 
-	AlignChestBottomToGround(SpawnedChest);
+	SpawnedChest->SetBossEncounterReserved(bBossEncounterReserved);
+	if (ABaseCharacter* Boss = BossGuard.Get()) SpawnedChest->AddBossGuardCharacter(Boss);
+	SpawnedChest->FinishSpawning(GetActorTransform());
+
+	if (SpawnMode == EChestSpawnMode::Guarded && IsValid(EffectiveOwningShip))
+	{
+		SpawnedChest->AttachToActor(EffectiveOwningShip, FAttachmentTransformRules::KeepWorldTransform);
+	}
+
+	if (Environment != EChestEnvironment::Water)
+	{
+		AlignChestBottomToGround(SpawnedChest);
+	}
+
 	MarkActivated(SpawnedChest);
+	OnChestSpawned.Broadcast(SpawnedChest);
 	return SpawnedChest;
 }
 
-void AChestSpawnPoint::ConfigureRandomSpawn(URandomChestGroup* InRandomGroup, float InPointWeight)
+void AChestSpawnPoint::SetEnvironment(EChestEnvironment InEnvironment)
+{
+	Environment = InEnvironment;
+	if (Environment == EChestEnvironment::Water)
+	{
+		bAlignChestBottomToGround = false;
+	}
+	else
+	{
+		bAlignChestBottomToGround = true;
+	}
+}
+
+void AChestSpawnPoint::ConfigureRandomSpawn(EProgressionZone InZone, EProgressionChestKind InKind, float InPointWeight)
 {
 	SpawnMode = EChestSpawnMode::Random;
-	RandomGroup = InRandomGroup;
+	ProgressionZone = InZone;
+	ProgressionKind = InKind;
+	RandomGroup = nullptr;
 	ChestDefinition = nullptr;
 	GuardCharacters.Reset();
 	OwningShip = nullptr;
@@ -246,11 +368,15 @@ void AChestSpawnPoint::ConfigureGuardedSpawn(
 		GuardCharacters.Add(Guard);
 	}
 	OwningShip = InOwningShip;
+	if (OwningShip)
+	{
+		SetEnvironment(EChestEnvironment::ShipDeck);
+	}
 }
 
 void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
 {
-	if (!bAlignChestBottomToGround || !IsValid(Chest))
+	if (!bAlignChestBottomToGround || !IsValid(Chest) || Environment == EChestEnvironment::Water)
 	{
 		return;
 	}
@@ -270,13 +396,60 @@ void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
 	QueryParams.AddIgnoredActor(Chest);
 
 	FHitResult GroundHit;
-	const bool bFoundGround = GetWorld()->LineTraceSingleByChannel(
-		GroundHit,
-		TraceStart,
-		TraceEnd,
-		ECC_Visibility,
-		QueryParams
-	);
+	bool bFoundGround = false;
+
+	// 1. 배에 배치된 경우: 배의 ShipDeckMesh(CollisionProfile == ShipDeck)를 찾아 직접 Component 라인트레이스 수행
+	AShip* TargetShip = OwningShip ? OwningShip.Get() : Cast<AShip>(GetAttachParentActor());
+	if (TargetShip)
+	{
+		TArray<UStaticMeshComponent*> StaticMeshes;
+		TargetShip->GetComponents<UStaticMeshComponent>(StaticMeshes);
+		for (UStaticMeshComponent* MeshComp : StaticMeshes)
+		{
+			if (MeshComp && MeshComp->GetCollisionProfileName() == TEXT("ShipDeck"))
+			{
+				bFoundGround = MeshComp->LineTraceComponent(
+					GroundHit,
+					TraceStart,
+					TraceEnd,
+					QueryParams
+				);
+				break;
+			}
+		}
+	}
+
+	// 2. 일반 지상/육지인 경우: ECC_WorldStatic(Landscape/Mesh) -> ECC_Visibility -> ECC_Pawn 순으로 지형 검사
+	if (!bFoundGround)
+	{
+		bFoundGround = GetWorld()->LineTraceSingleByChannel(
+			GroundHit,
+			TraceStart,
+			TraceEnd,
+			ECC_WorldStatic,
+			QueryParams
+		);
+	}
+	if (!bFoundGround)
+	{
+		bFoundGround = GetWorld()->LineTraceSingleByChannel(
+			GroundHit,
+			TraceStart,
+			TraceEnd,
+			ECC_Visibility,
+			QueryParams
+		);
+	}
+	if (!bFoundGround)
+	{
+		bFoundGround = GetWorld()->LineTraceSingleByChannel(
+			GroundHit,
+			TraceStart,
+			TraceEnd,
+			ECC_Pawn,
+			QueryParams
+		);
+	}
 
 	const float GroundZ = bFoundGround ? GroundHit.ImpactPoint.Z : SpawnPointLocation.Z;
 
@@ -292,7 +465,63 @@ void AChestSpawnPoint::AlignChestBottomToGround(AStorageChest* Chest) const
 	);
 }
 
-TArray<FStorageItemEntry> AChestSpawnPoint::BuildInitialItems(const TArray<FChestInitialLootRow>& LootRows, int32 Seed) const
+void AChestSpawnPoint::RegisterGuardCharacter(ABaseCharacter* GuardCharacter)
 {
-	return UChestDefinition::RollItemsFromRows(LootRows, InitialItemRollCount, Seed);
+	if (!HasAuthority() || !IsValid(GuardCharacter)) return;
+	GuardCharacters.AddUnique(GuardCharacter);
+	if (IsValid(ActiveChestInstance)) ActiveChestInstance->AddGuardCharacter(GuardCharacter);
+}
+
+void AChestSpawnPoint::UnregisterGuardCharacter(ABaseCharacter* GuardCharacter)
+{
+	if (!HasAuthority() || !GuardCharacter) return;
+	GuardCharacters.Remove(GuardCharacter);
+	if (IsValid(ActiveChestInstance)) ActiveChestInstance->RemoveGuardCharacter(GuardCharacter);
+}
+
+void AChestSpawnPoint::SetBossEncounterReserved(bool bReserved)
+{
+	if (!HasAuthority()) return;
+	bBossEncounterReserved = bReserved;
+	if (IsValid(ActiveChestInstance)) ActiveChestInstance->SetBossEncounterReserved(bReserved);
+}
+
+void AChestSpawnPoint::RegisterBossGuard(ABaseCharacter* Boss)
+{
+	if (!HasAuthority() || !IsValid(Boss)) return;
+	BossGuard = Boss;
+	if (IsValid(ActiveChestInstance)) ActiveChestInstance->AddBossGuardCharacter(Boss);
+	int32 ManagerCount = 0;
+	AGlobalLootSpawnManager* Manager = nullptr;
+	for (TActorIterator<AGlobalLootSpawnManager> It(GetWorld()); It; ++It)
+	{
+		Manager = *It;
+		++ManagerCount;
+	}
+	if (ManagerCount == 1) Manager->EnsureBossGuaranteedLoot(this);
+	else UE_LOG(LogTemp, Error, TEXT("Boss loot requires exactly one manager; found %d"), ManagerCount);
+}
+
+void AChestSpawnPoint::ApplyFixedChanceDrops(const UFixedChestDropData* DropData, int32 Seed)
+{
+	AStorageChest* Chest = Cast<AStorageChest>(GetSpawnedActor());
+	if (!HasAuthority() || !IsValid(Chest) || !DropData) return;
+	FRandomStream Stream(Seed);
+	TArray<FStorageItemEntry> AddedItems;
+	for (const FFixedChestDropEntry& Entry : DropData->Drops)
+	{
+		const float Chance = Entry.GetChance(ProgressionZone);
+		if (!Entry.ItemTag.IsValid() || Entry.Quantity < 1 || Chance <= 0.f) continue;
+		const float Roll = Stream.FRand();
+		const bool bDropped = Roll < Chance;
+		UE_LOG(LogTemp, Log, TEXT("Fixed chest roll: point=%s zone=%d item=%s chance=%.4f roll=%.4f dropped=%d"),
+			*GetNameSafe(this), static_cast<int32>(ProgressionZone), *Entry.ItemTag.ToString(), Chance, Roll, bDropped ? 1 : 0);
+		if (bDropped)
+		{
+			FStorageItemEntry& Item = AddedItems.AddDefaulted_GetRef();
+			Item.ItemTag = Entry.ItemTag;
+			Item.Count = Entry.Quantity;
+		}
+	}
+	Chest->AppendFixedLoot(AddedItems);
 }

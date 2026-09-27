@@ -109,14 +109,13 @@ Recommended graph position:
 
 1. Use cached pose `Locomotion` as the base.
 2. Place one upper-body BlendSpace Player per weapon in the ABP.
-   - `0`: no weapon/default pose
-   - `1`: `BS_Bow_UpperBody`
-   - `2`: `BS_Sword_UpperBody`
-   - `3`: `BS_Spear_UpperBody`
+   - `0`: no weapon/default locomotion pose
+   - `1`: `BS_Bow` / `BS_Bow_UpperBody`
+   - `2`: `BS_Sword` / `BS_Sword_UpperBody`
 3. Feed `GetThreadSafeWeaponUpperBodySpeed()` into each weapon upper-body BlendSpace speed axis.
 4. Feed `GetThreadSafeWeaponUpperBodyDirection()` into each weapon upper-body BlendSpace direction axis.
    - With `bForceSprintWeaponUpperBodyDirectionForward = true`, sprint uses direction `0` so a forward-only sprint animation works cleanly.
-5. Feed `GetThreadSafeWeaponUpperBodyOverlayIndex()` into `Blend Poses by Int` to choose the active weapon BlendSpace.
+5. Feed `GetThreadSafeWeaponUpperBodyOverlayIndex()` into `Blend Poses by Int` to choose the active weapon BlendSpace. (When `UpperBodyOverlayIndex` is not explicitly set in the data asset, C++ auto-resolves Bow to `1`, Sword/Melee to `2`).
 6. Plug the normal locomotion pose into the weapon `Layered Blend Per Bone` `Base Pose`.
 7. Plug the selected weapon upper-body BlendSpace pose into `Blend Poses 0`.
 8. Send the weapon layered output into `Slot 'UpperBody'`.
@@ -302,6 +301,20 @@ These tags are useful for animation conditions, sprint blocking, debugging, and 
    - `OnAbilityInputPressed`
    - `OnMouseInputPressed`
    - input tag to GAS input routing
+
+## Action Montage & Interaction Locomotion State Cleanup
+
+To prevent stale `SelectedAnimation` one-shots (such as `Run_Start`, `Jog_Stop`, or `Land`) from lingering in the background State Controller and unexpectedly popping after attack/dodge/hit montages or vehicle/cannon interactions:
+
+1. **`ULocomotionAnimStateComponent::ResetLocomotionActionState(Reason)`**:
+   - Clears `bStartRequested`, `bStopRequested`, `bLandingRequested`, `bGroundMoveEpisodeActive`, and all fallback timers (`StartFallbackTimer`, `StopFallbackTimer`, `LandingFallbackTimer`, etc.).
+   - Forces state transition to clean `Idle` or `Locomotion`.
+2. **`UpdateMovementRequestState`**:
+   - Automatically executes `ResetLocomotionActionState` whenever a high-priority action montage is active (`bIsAttacking`, `bIsDodging`, `bIsHitReacting`, `bIsPlayingCombatIntro`) or movement is disabled (`MOVE_None`).
+3. **`UMotionMatchingAnimInstance::UpdateStateController`**:
+   - Bypasses one-shot transitions and forces `DesiredState` to `LocomotionLoop` (if moving) or `IdleLoop` (if stationary) while an action montage is active, clearing `StateControllerSelectedAnimation = nullptr`.
+4. **`ABasePlayer::PossessedBy` / `ABasePlayer::UnPossessed`**:
+   - Automatically executes `ResetLocomotionActionState` when possessing vehicles, cannons, or returning control to the player character.
 
 ## Verification
 

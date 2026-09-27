@@ -106,6 +106,7 @@ protected:
 	 * ASWMultiGameMode에서 모든 플레이어 Ready가 완료되었을 때 호출.
 	 */
 	virtual void HandleAllPlayersReady() override;
+	virtual void HandleAllPlayersDeathFinished() override;
 
 public:
 	// =========================================================

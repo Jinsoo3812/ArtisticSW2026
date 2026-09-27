@@ -35,6 +35,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Vortex Aim Line")
 	void SetTrajectory(const TArray<FVector>& WorldPoints);
 
+	/** Uses projectile velocities as Hermite tangents for an analytically smooth ballistic arc. */
+	void SetBallisticTrajectory(const TArray<FVector>& WorldPoints, const TArray<FVector>& WorldVelocities,
+		const TArray<float>& SampleTimes);
+
 	UFUNCTION(BlueprintCallable, Category = "Vortex Aim Line")
 	void ClearTrajectory();
 
@@ -79,6 +83,8 @@ public:
 	int32 MaxSegments = 20;
 
 private:
+	void SetTrajectoryInternal(const TArray<FVector>& WorldPoints, const TArray<FVector>* WorldVelocities,
+		const TArray<float>* SampleTimes);
 	USplineMeshComponent* GetOrCreateSegment(int32 SegmentIndex);
 	TEnumAsByte<ESplineMeshAxis::Type> ResolveForwardAxis() const;
 

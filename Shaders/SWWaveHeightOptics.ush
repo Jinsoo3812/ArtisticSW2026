@@ -1,0 +1,40 @@
+#ifndef SW_WAVE_HEIGHT_OPTICS_USH
+#define SW_WAVE_HEIGHT_OPTICS_USH
+
+float3 SW_InterpolateWaveHeightOptics(
+    float3 GerstnerWPO,
+    float3 GerstnerNormal,
+    float3 CameraVector,
+    float4 HeightRange,
+    float4 TroughScattering,
+    float4 CrestScattering,
+    float4 TroughAbsorption,
+    float4 CrestAbsorption,
+    float Enabled,
+    out float OutScatteringA,
+    out float3 OutAbsorptionRGB,
+    out float OutAbsorptionA)
+{
+    const float HeightMin = min(HeightRange.x, HeightRange.y - 1.0e-4);
+    const float HeightMax = max(HeightRange.y, HeightRange.x + 1.0e-4);
+    const float HeightAlpha = smoothstep(HeightMin, HeightMax, GerstnerWPO.z);
+    const float3 SurfaceNormal = normalize(GerstnerNormal);
+    const float3 ViewDirection = normalize(CameraVector);
+    const float GrazingAmount = 1.0 - abs(dot(SurfaceNormal, ViewDirection));
+    const float ViewAlpha = smoothstep(0.15, 0.85, GrazingAmount);
+    const float OpticalAlpha = (Enabled > 0.5)
+        ? HeightAlpha * ViewAlpha
+        : 0.0;
+
+    const float4 ScatteringRGBA = lerp(
+        TroughScattering, CrestScattering, OpticalAlpha);
+    const float4 AbsorptionRGBA = lerp(
+        TroughAbsorption, CrestAbsorption, OpticalAlpha);
+
+    OutScatteringA = max(ScatteringRGBA.a, 0.0);
+    OutAbsorptionRGB = max(AbsorptionRGBA.rgb, float3(1.0e-4, 1.0e-4, 1.0e-4));
+    OutAbsorptionA = max(AbsorptionRGBA.a, 1.0e-4);
+    return max(ScatteringRGBA.rgb, float3(0.0, 0.0, 0.0));
+}
+
+#endif

@@ -14,6 +14,11 @@ UGA_BossVanish::UGA_BossVanish()
 	CooldownDuration = 7.0f;
 }
 
+UGA_BossVanishV2::UGA_BossVanishV2()
+{
+	SetBossAbilityTags(GameplayAbility_Boss_VanishV2, Cooldown_Boss_VanishV2);
+}
+
 void UGA_BossVanish::ActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -67,6 +72,7 @@ void UGA_BossVanish::EndAbility(
 	MontageTask = nullptr;
 	PreparationTask = nullptr;
 	HiddenTask = nullptr;
+	RelocationSettleTask = nullptr;
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
@@ -74,20 +80,22 @@ void UGA_BossVanish::BeginHiddenPhase()
 {
 	AShipBossEnemy* Boss = GetBossAvatar();
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	if (!Boss || !ASC)
+	if (!Boss || !ASC || !Boss->BeginHiddenRelocation())
 	{
 		FinishVanish(true);
 		return;
 	}
 
-	HiddenStateHandle = ApplyTimedStateTag(*ASC, State_Boss_Hidden, HiddenDuration + 0.25f);
-	Boss->SetBossHidden(true);
+	HiddenStateHandle = ApplyTimedStateTag(
+		*ASC,
+		State_Boss_Hidden,
+		HiddenDuration + RelocationSettleTime + 0.25f);
 	HiddenTask = UAbilityTask_WaitDelay::WaitDelay(this, FMath::Max(0.01f, HiddenDuration));
-	HiddenTask->OnFinish.AddDynamic(this, &UGA_BossVanish::Reappear);
+	HiddenTask->OnFinish.AddDynamic(this, &UGA_BossVanish::RelocateHidden);
 	HiddenTask->ReadyForActivation();
 }
 
-void UGA_BossVanish::Reappear()
+void UGA_BossVanish::RelocateHidden()
 {
 	AShipBossEnemy* Boss = GetBossAvatar();
 	FTransform Destination;
@@ -107,18 +115,37 @@ void UGA_BossVanish::Reappear()
 	const FQuat FacingRotation = FacingDirection.IsNearlyZero()
 		? Destination.GetRotation()
 		: FRotationMatrix::MakeFromXZ(FacingDirection, DeckUp).ToQuat();
+	Destination.SetRotation(FacingRotation);
 
-	Boss->SetActorLocationAndRotation(
-		Destination.GetLocation(),
-		FacingRotation,
-		false,
-		nullptr,
-		ETeleportType::TeleportPhysics);
-	if (Boss->GetHostShip() && Boss->GetHostShip()->GetShipDeckMesh())
+	if (!Boss->RelocateWhileHidden(Destination))
 	{
-		Boss->SetBase(Boss->GetHostShip()->GetShipDeckMesh());
+		FinishVanish(true);
+		return;
 	}
 	Boss->MarkDestinationReached();
+
+	if (HiddenTask)
+	{
+		HiddenTask->EndTask();
+		HiddenTask = nullptr;
+	}
+	RelocationSettleTask = UAbilityTask_WaitDelay::WaitDelay(
+		this,
+		FMath::Max(0.01f, RelocationSettleTime));
+	RelocationSettleTask->OnFinish.AddDynamic(this, &UGA_BossVanish::RevealAtDestination);
+	RelocationSettleTask->ReadyForActivation();
+}
+
+void UGA_BossVanish::RevealAtDestination()
+{
+	AShipBossEnemy* Boss = GetBossAvatar();
+	if (!Boss || !Boss->IsHiddenRelocationActive())
+	{
+		FinishVanish(true);
+		return;
+	}
+
+	Boss->FinishHiddenRelocation();
 	ClearHiddenState();
 	FinishVanish(false);
 }
@@ -154,7 +181,14 @@ void UGA_BossVanish::ClearHiddenState()
 {
 	if (AShipBossEnemy* Boss = GetBossAvatar())
 	{
-		Boss->SetBossHidden(false);
+		if (Boss->IsHiddenRelocationActive())
+		{
+			Boss->FinishHiddenRelocation();
+		}
+		else
+		{
+			Boss->SetBossHidden(false);
+		}
 	}
 	if (HiddenStateHandle.IsValid())
 	{

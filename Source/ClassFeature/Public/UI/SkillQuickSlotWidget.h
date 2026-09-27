@@ -3,22 +3,19 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "GameplayTagContainer.h"
-#include "InputCoreTypes.h"
 #include "SkillQuickSlotWidget.generated.h"
 
 class ABasePlayer;
-class APawn;
-class UAbilitySystemComponent;
 class UBorder;
 class UImage;
-class UTextBlock;
-class UTexture2D;
+class UWidget;
 
 /**
- * A designer-placeable, always-visible skill slot.
+ * Designer-placeable container for every player skill quick slot.
  *
- * SkillTag and InputKey are instance-editable so the HUD Blueprint controls
- * slot order, placement, and displayed hotkey without changing C++.
+ * WBP_SkillQuickSlot owns the layout. Place the three *SlotPanel widgets as direct
+ * children of a Canvas Panel. Input ownership belongs to the active pawn mode;
+ * this widget only presents skill availability and cooldown state.
  */
 UCLASS(Blueprintable)
 class CLASSFEATURE_API USkillQuickSlotWidget : public UUserWidget
@@ -26,72 +23,91 @@ class CLASSFEATURE_API USkillQuickSlotWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	USkillQuickSlotWidget(const FObjectInitializer& ObjectInitializer);
-
 	void InitializeForPlayer(ABasePlayer* InPlayer);
 
 	UFUNCTION(BlueprintCallable, Category = "Skill Quick Slot")
-	void RefreshSlot();
+	void RefreshSlots();
 
-	/** Refreshes only the active/equipped border from the currently controlled pawn. */
-	void RefreshEquippedState(APawn* ControlledPawn);
+	/** Display-only API. It does not apply or enforce gameplay cooldowns. */
+	UFUNCTION(BlueprintCallable, Category = "Skill Quick Slot|Cooldown")
+	void SetSkillCooldown(FGameplayTag SkillTag, float RemainingSeconds, float DurationSeconds);
 
-	/** GameplayAbility.Skill.* represented by this designer-placed slot. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot",
-		meta = (ExposeOnSpawn = "true", DisplayName = "Skill Tag", Categories = "GameplayAbility.Skill"))
-	FGameplayTag SkillTag;
+	UFUNCTION(BlueprintPure, Category = "Skill Quick Slot")
+	FGameplayTag GetFrontSkillTag() const { return FrontSkillTag; }
 
-	/** Key label shown in this slot. Defaults to 3/4/5 from SkillTag when unset. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot",
-		meta = (ExposeOnSpawn = "true", DisplayName = "Input Key"))
-	FKey InputKey;
+	/** Kept for HUD compatibility; active-state borders are no longer part of this widget. */
+	void RefreshEquippedState(APawn* ControlledPawn) {}
 
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void SynchronizeProperties() override;
 
+	/** Semi-transparent cover placed above a locked skill's contents. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Style")
-	FLinearColor AvailableIconColor = FLinearColor::White;
+	FLinearColor LockedOverlayColor = FLinearColor(0.0f, 0.0f, 0.0f, 0.55f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Style")
-	FLinearColor UnavailableIconColor = FLinearColor(0.42f, 0.42f, 0.42f, 0.65f);
+	/** Scalar parameter read by the circular cooldown UI materials. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Cooldown")
+	FName CooldownPercentParameterName = TEXT("Percent");
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill Quick Slot|Style")
-	TObjectPtr<UTexture2D> StoryLockTexture;
 
-	/** Image component: SkillIconImage */
+	/** Panel component: GravityVortexSlotPanel (direct SkillSlotCanvas child). */
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> SkillIconImage;
+	TObjectPtr<UWidget> GravityVortexSlotPanel;
 
-	/** Border component: EmptyOverlayBorder */
+	/** Image component: GravityVortexIconImage. */
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UBorder> EmptyOverlayBorder;
+	TObjectPtr<UImage> GravityVortexIconImage;
 
-	/** Border component: EquippedBorder */
+	/** Image component: GravityVortexCooldownImage (circular UI material brush). */
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UBorder> EquippedBorder;
+	TObjectPtr<UImage> GravityVortexCooldownImage;
 
-	/** Image component: StoryLockImage */
+	/** Border component: GravityVortexLockOverlay. */
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> StoryLockImage;
+	TObjectPtr<UBorder> GravityVortexLockOverlay;
 
-	/** Text component: InputKeyText */
+	/** Panel component: WaterBombSlotPanel (direct SkillSlotCanvas child). */
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> InputKeyText;
+	TObjectPtr<UWidget> WaterBombSlotPanel;
 
-	/** Text component: UseCountText */
+	/** Image component: WaterBombIconImage. */
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> UseCountText;
+	TObjectPtr<UImage> WaterBombIconImage;
+
+	/** Image component: WaterBombCooldownImage (circular UI material brush). */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> WaterBombCooldownImage;
+
+	/** Border component: WaterBombLockOverlay. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> WaterBombLockOverlay;
+
+	/** Panel component: BombardmentSlotPanel (direct SkillSlotCanvas child). */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> BombardmentSlotPanel;
+
+	/** Image component: BombardmentIconImage. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> BombardmentIconImage;
+
+	/** Image component: BombardmentCooldownImage (circular UI material brush). */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> BombardmentCooldownImage;
+
+	/** Border component: BombardmentLockOverlay. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> BombardmentLockOverlay;
 
 private:
-	FKey ResolveDisplayKey() const;
-	void BindActiveSkillTag();
-	void UnbindActiveSkillTag();
-	void HandleActiveSkillTagChanged(const FGameplayTag ChangedTag, int32 NewCount);
+	UFUNCTION()
+	void HandleSkillChanged(FGameplayTag SkillTag);
+
+	void UnbindPlayer();
+	void RefreshSkill(FGameplayTag SkillTag, UImage* IconImage, UBorder* LockOverlay) const;
+	UImage* FindCooldownImage(FGameplayTag SkillTag) const;
 
 	TWeakObjectPtr<ABasePlayer> CachedPlayer;
-	TWeakObjectPtr<UAbilitySystemComponent> BoundAbilitySystemComponent;
-	FGameplayTag BoundActiveSkillTag;
-	FDelegateHandle ActiveSkillTagEventHandle;
+	FGameplayTag FrontSkillTag;
 };

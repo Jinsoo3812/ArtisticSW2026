@@ -9,12 +9,14 @@ public class Enemy: ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
-            "UMG"
+            "UMG",
+            "Niagara"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
             // 헤더파일에서부터 사용할 모듈을 작성하는 곳
             "GameplayAbilities",
+            "DeveloperSettings",
             "GameplayTasks",
             "GameplayTags",
             "InputCore",
@@ -22,10 +24,13 @@ public class Enemy: ModuleRules
             "NavigationSystem",
             "ArtisticSWCore",
             "ClassFeature",
+            "Story",
             "GASCore",
             "WaterAndShip",
             "Water",
             "AnimGraphRuntime",
+            "SmartObjectsModule",
+            "GameplayBehaviorSmartObjectsModule",
         });
 
         PublicIncludePaths.AddRange(new string[] {
@@ -42,10 +47,7 @@ public class Enemy: ModuleRules
         if (Target.bBuildEditor)
         {
             PrivateDependencyModuleNames.AddRange(new string[] {
-                "UnrealEd",
-                "PropertyEditor",
-                "Slate",
-                "SlateCore"
+                "UnrealEd"
             });
         }
     }

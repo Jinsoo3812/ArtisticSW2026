@@ -1,5 +1,21 @@
 #pragma once
 
+// Camera-distance visibility for the legacy emissive Gerstner foam path.
+// The last 10% of the authored range fades out to avoid a hard pop.
+float3 SW_ApplyLegacyGerstnerFoamDistanceCull(
+    float3 FoamColor,
+    float CameraDistance,
+    float CullDistance)
+{
+    const float SafeCullDistance = max(CullDistance, 1.0);
+    const float FadeDistance = max(SafeCullDistance * 0.1, 1.0);
+    const float DistanceFade = 1.0 - smoothstep(
+        SafeCullDistance - FadeDistance,
+        SafeCullDistance,
+        max(CameraDistance, 0.0));
+    return FoamColor * DistanceFade;
+}
+
 // 3-Way Animated Flux Deep Ocean Foam Evaluator (Optimized 3-Sample Packed)
 // Preserves full 3-Way 120-degree phase animation while slashing texture sampling from 6 to 3 per pixel!
 

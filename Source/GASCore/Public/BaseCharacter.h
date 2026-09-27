@@ -14,6 +14,15 @@ class GASCORE_API ABaseCharacter : public ACharacter, public IAbilitySystemInter
 	GENERATED_BODY()
 
 public:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS|Status")
+	TObjectPtr<class UStatusComponent> StatusComponent;
+	virtual bool IsMoveInputIgnored() const override;
+	virtual bool CanJumpInternal_Implementation() const override;
+
+	/** True after the mesh PhysicsAsset has been configured as the authoritative animated hit surface. */
+	bool UsesAnimatedCombatHurtbox() const;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Hurtbox")
+	TObjectPtr<class UCombatHurtboxComponent> CombatHurtboxComponent;
 	ABaseCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AbilitySystem")
@@ -24,11 +33,28 @@ public:
 	virtual bool IsEnemyCharacterForEffects() const { return false; }
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
+#endif
 
 	UFUNCTION(BlueprintCallable, Category = "Death")
 	virtual void ApplyLocalDeathRagdoll();
 
+	/** Restores the presentation state required before a pooled character is reused. */
+	UFUNCTION(BlueprintCallable, Category = "Death|Pooling")
+	virtual void ResetLocalDeathRagdoll();
+
+	UFUNCTION(BlueprintPure, Category = "Death|Ragdoll")
+	bool IsDeathRagdollImpulseEnabled() const { return bApplyDeathRagdollImpulse; }
+
+	UFUNCTION(BlueprintPure, Category = "Death|Ragdoll")
+	float GetDeathRagdollHorizontalImpulse() const { return DeathRagdollHorizontalImpulse; }
+
+	UFUNCTION(BlueprintPure, Category = "Death|Ragdoll")
+	float GetDeathRagdollUpwardImpulse() const { return DeathRagdollUpwardImpulse; }
+
 protected:
+	void InitializeAnimatedCombatHurtbox();
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AbilitySystem")
 	EGameplayEffectReplicationMode ASCReplicationMode = EGameplayEffectReplicationMode::Mixed;
 
@@ -44,12 +70,30 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll")
 	bool bApplyDeathRagdollImpulse = false;
 
+	/** Prevents fast corpse bodies from tunneling through thin deck collision. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll")
+	bool bUseDeathRagdollCCD = true;
+
+	/** Horizontal impulse magnitude applied in the lethal hit's replicated direction. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll", meta = (ClampMin = "0.0"))
-	float DeathRagdollBackwardImpulse = 20000.0f;
+	float DeathRagdollHorizontalImpulse = 20000.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll", meta = (ClampMin = "0.0"))
 	float DeathRagdollUpwardImpulse = 15000.0f;
 
+	/** Physics body used when the reported hit bone has no simulated body. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Death|Ragdoll")
+	FName DeathRagdollFallbackImpulseBone = TEXT("pelvis");
+
 	UPROPERTY(BlueprintReadOnly, Category = "Death|Ragdoll")
 	bool bLocalDeathRagdollApplied = false;
+
+
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FAnimatedCombatHurtboxPolicyTest;
+#endif
+
+	FTransform InitialMeshRelativeTransform = FTransform::Identity;
+	FName InitialMeshCollisionProfileName = NAME_None;
+	ECollisionEnabled::Type InitialMeshCollisionEnabled = ECollisionEnabled::NoCollision;
 };

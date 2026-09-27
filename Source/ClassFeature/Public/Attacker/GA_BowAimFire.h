@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "BaseGameplayAbility.h"
+#include "GAS/Ability/WeaponGameplayAbility.h"
 #include "GA_BowAimFire.generated.h"
 
 class ABowItem;
@@ -15,7 +15,7 @@ struct FWeaponAnimationEntry;
  * Bow ability driven by right-click aim, left-click draw, and left-click release fire.
  */
 UCLASS()
-class CLASSFEATURE_API UGA_BowAimFire : public UBaseGameplayAbility
+class CLASSFEATURE_API UGA_BowAimFire : public UWeaponGameplayAbility
 {
 	GENERATED_BODY()
 
@@ -49,6 +49,9 @@ protected:
 	void OnReleaseFireEvent(FGameplayEventData Payload);
 
 	UFUNCTION()
+	void OnNockArrowEvent(FGameplayEventData Payload);
+
+	UFUNCTION()
 	void OnReleaseMontageCompleted();
 
 	UFUNCTION()
@@ -60,12 +63,13 @@ protected:
 	void JumpAimCycleToSection(FName SectionName);
 	void PlayDrawMontage();
 	void StopDrawMontage(float BlendOutTime);
-	void BeginRelease(const FGameplayEventData& Payload);
-	void FireArrow(const FGameplayEventData& Payload);
+	void BeginRelease(const FGameplayEventData& ReleaseInput);
+	void FireArrowFromPendingRelease();
 	void FinishShot();
 	void ResetBowState();
+	void AcquireServerPoseRefresh();
+	void ReleaseServerPoseRefresh();
 	bool CacheBowFromAvatar();
-	bool TryGetAimTargetFromPayload(const FGameplayEventData& Payload, FVector& OutAimTarget) const;
 	void AddBowStateTags();
 	void RemoveBowStateTags();
 	void SetBowDrawTagState(bool bDrawing, bool bFullyDrawn, bool bReleasing);
@@ -130,10 +134,16 @@ protected:
 	TObjectPtr<UBowComponent> CachedBowComponent;
 
 	FTimerHandle ChargeTimerHandle;
-	FGameplayEventData ReleasePayload;
+	/** Immutable for this release; independent of the animation-facing DrawAlpha. */
+	float PendingReleaseFireSpeed = 0.f;
+	FVector PendingAimTarget = FVector::ZeroVector;
+	FVector PendingViewDirection = FVector::ZeroVector;
 	float DrawStartTime = 0.0f;
+	float ServerReleaseDrawAlpha = 0.0f;
 	bool bIsDrawing = false;
 	bool bIsFullyDrawn = false;
 	bool bIsReleaseInProgress = false;
 	bool bHasFiredCurrentShot = false;
+	bool bHasReceivedNockNotify = false;
+	bool bOwnsServerPoseRefresh = false;
 };

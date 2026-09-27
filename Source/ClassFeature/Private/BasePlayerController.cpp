@@ -3,10 +3,12 @@
 
 #include "BasePlayerController.h"
 #include "BasePlayer.h"
+#include "BasePlayerState.h"
 #include "UI/PlayerHUDWidget.h"
 #include "EnhancedInputSubsystems.h"
 #include "EnhancedInputComponent.h"
 #include "Engine/LocalPlayer.h"
+#include "EngineUtils.h"
 #include "InputMappingContext.h"
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
@@ -16,6 +18,8 @@
 #include "Attacker/AttackerComponent.h"
 #include "Inventory/InventoryComponent.h"
 #include "Storage/StorageChest.h"
+#include "Storage/StorageInteractionDiagnostics.h"
+#include "Storage/SharedStorageChest.h"
 #include "Storage/StorageComponent.h"
 #include "UI/StorageWindowWidget.h"
 #include "UI/FacilityHubWidget.h"
@@ -23,11 +27,16 @@
 #include "UI/StatusWindowWidget.h"
 #include "WaterSubsystem.h"
 #include "GameFramework/GameStateBase.h"
+#include "Upgrade/SharedShipUpgradeState.h"
+#include "Upgrade/ShipUpgradeComponent.h"
+#include "Upgrade/ShipUpgradeTreeDataAsset.h"
+#include "Ship.h"
 
 
 void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 {
-	if (!HasAuthority() || !IsValid(Cast<AFacilityHubActor>(ContextActor)))
+	AFacilityHubActor* FacilityHub = Cast<AFacilityHubActor>(ContextActor);
+	if (!HasAuthority() || !IsValid(FacilityHub) || !FacilityHub->TryAcquire(this))
 	{
 		/* UE_LOG(LogTemp, Warning,
 			TEXT("[FacilityHubFlow][SERVER] Open rejected. Controller=%s Authority=%s Context=%s ContextClass=%s"),
@@ -36,6 +45,81 @@ void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 			*GetNameSafe(ContextActor),
 			*GetNameSafe(ContextActor ? ContextActor->GetClass() : nullptr)); */
 		return;
+	}
+	ActiveFacilityHub = FacilityHub;
+
+	// The shared upgrade state is session infrastructure, so opening the server-
+	// authoritative facility must guarantee it exists. Ship BeginPlay remains an
+	// early registration path, but is no longer the single point of failure.
+	ASharedShipUpgradeState* SharedState = ASharedShipUpgradeState::Find(this);
+	if (!SharedState)
+	{
+		SharedState = GetWorld()->SpawnActor<ASharedShipUpgradeState>();
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Spawn State=%s"),
+			*GetNameSafe(this), *GetNameSafe(SharedState));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Reuse State=%s Ship=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(SharedState),
+			*GetNameSafe(SharedState->GetCurrentPlayerShip()));
+	}
+
+	// Preserve the designer-authored tree configured on BP_BasePlayerState. The
+	// shared component replicates that asset reference to both clients; its own
+	// hard-coded load is only a last-resort fallback for unconfigured test worlds.
+	if (SharedState)
+	{
+		UShipUpgradeComponent* SharedUpgrade = SharedState->GetUpgradeComponent();
+		const ABasePlayer* RequestingPlayer = Cast<ABasePlayer>(GetPawn());
+		const ABasePlayerState* RequestingState = GetPlayerState<ABasePlayerState>();
+		const UShipUpgradeComponent* ConfiguredUpgrade = RequestingState
+			? RequestingState->GetShipUpgradeComponent()
+			: nullptr;
+		if (SharedUpgrade && ConfiguredUpgrade && ConfiguredUpgrade->UpgradeTree)
+		{
+			SharedUpgrade->ConfigureForUseCase(
+				ConfiguredUpgrade->UpgradeTree,
+				SharedUpgrade->PreviewBaseStats,
+				false);
+			SharedState->ForceNetUpdate();
+			UE_LOG(LogTemp, Warning,
+				TEXT("[ShipUpgradePipeline][FacilityConfigureTree] State=%s Source=%s Tree=%s Nodes=%d"),
+				*GetNameSafe(SharedState),
+				*GetNameSafe(ConfiguredUpgrade),
+				*GetNameSafe(ConfiguredUpgrade->UpgradeTree.Get()),
+				ConfiguredUpgrade->UpgradeTree->Nodes.Num());
+		}
+		if (SharedUpgrade)
+		{
+			SharedUpgrade->SetIgnoreMaterialCostsForTesting(
+				RequestingPlayer && RequestingPlayer->IsIgnoringShipUpgradeMaterialCostsForTest());
+			SharedState->ForceNetUpdate();
+		}
+	}
+
+	if (SharedState && !IsValid(SharedState->GetCurrentPlayerShip()))
+	{
+		AShip* FoundPlayerShip = nullptr;
+		for (TActorIterator<AShip> It(GetWorld()); It; ++It)
+		{
+			AShip* Candidate = *It;
+			if (IsValid(Candidate) && Candidate->GetIsReplicated() && !Candidate->IsEnemyShipForEffects())
+			{
+				FoundPlayerShip = Candidate;
+				break;
+			}
+		}
+		if (FoundPlayerShip)
+		{
+			SharedState->RegisterPlayerShip(FoundPlayerShip);
+		}
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradePipeline][FacilityEnsureShip] State=%s FoundShip=%s"),
+			*GetNameSafe(SharedState), *GetNameSafe(FoundPlayerShip));
 	}
 
 	/* UE_LOG(LogTemp, Log,
@@ -58,6 +142,7 @@ void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* Context
 			TEXT("[FacilityHubFlow][CLIENT] FAILED: Invalid local controller or context.")); */
 		return;
 	}
+	ActiveFacilityHub = Cast<AFacilityHubActor>(ContextActor);
 
 	// Interacting with a facility while its hub is already open is a toggle:
 	// close the current hub and do not immediately construct a replacement.
@@ -110,6 +195,11 @@ void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* Context
 			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeFacilityHub);
 		}
 		ApplyInventoryInputMode(false);
+		if (ActiveFacilityHub)
+		{
+			ServerReleaseFacilityHub(ActiveFacilityHub);
+			ActiveFacilityHub = nullptr;
+		}
 		return;
 	}
 
@@ -128,6 +218,11 @@ void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* Context
 			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeFacilityHub);
 		}
 		ApplyInventoryInputMode(false);
+		if (ActiveFacilityHub)
+		{
+			ServerReleaseFacilityHub(ActiveFacilityHub);
+			ActiveFacilityHub = nullptr;
+		}
 		return;
 	}
 
@@ -154,6 +249,11 @@ void ABasePlayerController::CloseFacilityHub()
 		*GetNameSafe(FacilityHubWidget)); */
 	FacilityHubWidget->RemoveFromParent();
 	FacilityHubWidget = nullptr;
+	if (ActiveFacilityHub)
+	{
+		ServerReleaseFacilityHub(ActiveFacilityHub);
+		ActiveFacilityHub = nullptr;
+	}
 	if (PlayerHUDWidget)
 	{
 		PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeFacilityHub);
@@ -164,6 +264,67 @@ void ABasePlayerController::CloseFacilityHub()
 bool ABasePlayerController::IsFacilityHubOpen() const
 {
 	return FacilityHubWidget && FacilityHubWidget->IsInViewport();
+}
+
+void ABasePlayerController::ServerReleaseFacilityHub_Implementation(AFacilityHubActor* FacilityHub)
+{
+	if (IsValid(FacilityHub))
+	{
+		FacilityHub->Release(this);
+	}
+	if (ActiveFacilityHub == FacilityHub)
+	{
+		ActiveFacilityHub = nullptr;
+	}
+}
+
+void ABasePlayerController::ServerRequestActivateSharedShipUpgrade_Implementation(
+	ASharedShipUpgradeState* SharedState,
+	FName NodeId)
+{
+	UShipUpgradeComponent* SharedUpgrade = IsValid(SharedState)
+		&& SharedState == ASharedShipUpgradeState::Find(this)
+		&& IsValid(ActiveFacilityHub)
+		&& ActiveFacilityHub->IsOccupiedBy(this)
+		? SharedState->GetUpgradeComponent()
+		: nullptr;
+	ABasePlayer* RequestingPlayer = Cast<ABasePlayer>(GetPawn());
+	UInventoryComponent* Inventory = RequestingPlayer
+		? RequestingPlayer->GetInventoryComponent()
+		: nullptr;
+
+	EShipUpgradeActivationResult Result = EShipUpgradeActivationResult::NotAuthority;
+	if (SharedUpgrade && Inventory)
+	{
+		const bool bIgnoreCosts = RequestingPlayer->IsIgnoringShipUpgradeMaterialCostsForTest();
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradeTrace][SharedRequestOptions] Player=%s IgnoreMaterialCosts=%s"),
+			*GetNameSafe(RequestingPlayer),
+			bIgnoreCosts ? TEXT("true") : TEXT("false"));
+		Result = SharedUpgrade->ActivateNodeWithInventoryProvider(NodeId, Inventory, bIgnoreCosts);
+		SharedState->ForceNetUpdate();
+		if (AShip* Ship = SharedState->GetCurrentPlayerShip())
+		{
+			Ship->ForceNetUpdate();
+		}
+	}
+
+	const FText Message = SharedUpgrade
+		? SharedUpgrade->GetActivationMessage(NodeId, Result)
+		: NSLOCTEXT("ShipUpgrade", "SharedRequestRejected", "작업대 사용 권한 또는 공용 배 상태를 확인할 수 없습니다.");
+	ClientReceiveSharedShipUpgradeResult(SharedState, NodeId, Result, Message);
+}
+
+void ABasePlayerController::ClientReceiveSharedShipUpgradeResult_Implementation(
+	ASharedShipUpgradeState* SharedState,
+	FName NodeId,
+	EShipUpgradeActivationResult Result,
+	const FText& Message)
+{
+	if (IsValid(SharedState) && SharedState->GetUpgradeComponent())
+	{
+		SharedState->GetUpgradeComponent()->NotifyActivationResult(NodeId, Result, Message);
+	}
 }
 
 
@@ -209,6 +370,16 @@ void ABasePlayerController::BeginPlay()
 	}
 }
 
+void ABasePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (HasAuthority() && ActiveFacilityHub)
+	{
+		ActiveFacilityHub->Release(this);
+		ActiveFacilityHub = nullptr;
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
 void ABasePlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
@@ -227,7 +398,7 @@ void ABasePlayerController::SetupInputComponent()
 		}
 	}
 
-	InputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &ABasePlayerController::ToggleStatus);
+	InputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &ABasePlayerController::ToggleInventory);
 	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ABasePlayerController::HandleMenuEscape);
 }
 
@@ -241,19 +412,32 @@ void ABasePlayerController::OnUIInputPressed(FGameplayTag InputTag)
 
 	if (InputTag.MatchesTagExact(Key_UI_I))
 	{		
-		ToggleInventory();
+		ToggleStatus();
 	}
 }
 
 void ABasePlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
+	if (HasAuthority() && ActiveFacilityHub)
+	{
+		ActiveFacilityHub->Release(this);
+		ActiveFacilityHub = nullptr;
+	}
+	if (IsLocalController() && IsFacilityHubOpen())
+	{
+		CloseFacilityHub();
+	}
 	BindHUDToCurrentPlayer();
 }
 
 void ABasePlayerController::OnRep_Pawn()
 {
 	Super::OnRep_Pawn();
+	if (IsFacilityHubOpen())
+	{
+		CloseFacilityHub();
+	}
 	BindHUDToCurrentPlayer();
 }
 
@@ -367,30 +551,51 @@ void ABasePlayerController::HandleMenuEscape()
 
 void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
 {
-	if (!HasAuthority() || !StorageChest || StorageChest->IsLocked())
+	const bool bLogInteraction = IsStorageInteractionLoggingEnabled();
+	if (bLogInteraction)
 	{
+		UE_LOG(LogStorageInteraction, Warning,
+			TEXT("[StorageServer] Open request. Controller=%s Authority=%d Chest=%s Valid=%d Locked=%d Access=%d Active=%s"),
+			*GetNameSafe(this), HasAuthority(), *GetNameSafe(StorageChest), IsValid(StorageChest),
+			IsValid(StorageChest) && StorageChest->IsLocked(), CanAccessStorage(StorageChest), *GetNameSafe(ActiveStorageChest));
+	}
+	if (!HasAuthority() || !CanAccessStorage(StorageChest))
+	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageServer] Rejected: authority or access check failed."));
 		return;
 	}
 
 	// 이미 열려 있는 동일한 상자에는 중복 열기 요청을 보내지 않는다.
 	if (ActiveStorageChest == StorageChest)
 	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageServer] Same chest already active; toggling closed."));
 		CloseStorageFromServer(StorageChest);
 		return;
 	}
 
+	if (ABasePlayer* StoragePlayer = Cast<ABasePlayer>(GetPawn()))
+		if (UInventoryComponent* Inventory = StoragePlayer->GetInventoryComponent()) Inventory->ReturnCursorToOriginalSlot();
 	ActiveStorageChest = StorageChest;
 	StartStorageSearch(StorageChest);
+	if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageServer] Sending ClientOpenStorage. Chest=%s"), *GetNameSafe(StorageChest));
 	ClientOpenStorage(StorageChest);
 }
 
 void ABasePlayerController::CloseStorageFromServer(AStorageChest* StorageChest)
 {
+	if (IsStorageInteractionLoggingEnabled())
+	{
+		UE_LOG(LogStorageInteraction, Warning,
+			TEXT("[StorageServer] Close request. Controller=%s Chest=%s Active=%s Authority=%d"),
+			*GetNameSafe(this), *GetNameSafe(StorageChest), *GetNameSafe(ActiveStorageChest), HasAuthority());
+	}
 	if (!HasAuthority() || !StorageChest || ActiveStorageChest != StorageChest)
 	{
 		return;
 	}
 
+	if (ABasePlayer* StoragePlayer = Cast<ABasePlayer>(GetPawn()))
+		if (UInventoryComponent* Inventory = StoragePlayer->GetInventoryComponent()) Inventory->ReturnCursorToOriginalSlot();
 	ClientCloseStorage(StorageChest);
 	ActiveStorageChest = nullptr;
 	GetWorldTimerManager().ClearTimer(StorageSearchTimerHandle);
@@ -398,6 +603,12 @@ void ABasePlayerController::CloseStorageFromServer(AStorageChest* StorageChest)
 
 void ABasePlayerController::ClientOpenStorage_Implementation(AStorageChest* StorageChest)
 {
+	if (IsStorageInteractionLoggingEnabled())
+	{
+		UE_LOG(LogStorageInteraction, Warning,
+			TEXT("[StorageClient] Open RPC received. Chest=%s Valid=%d Locked=%d"),
+			*GetNameSafe(StorageChest), IsValid(StorageChest), IsValid(StorageChest) && StorageChest->IsLocked());
+	}
 	if (StorageChest && !StorageChest->IsLocked())
 	{
 		OpenStorage(StorageChest);
@@ -406,6 +617,11 @@ void ABasePlayerController::ClientOpenStorage_Implementation(AStorageChest* Stor
 
 void ABasePlayerController::ClientCloseStorage_Implementation(AStorageChest* StorageChest)
 {
+	if (IsStorageInteractionLoggingEnabled())
+	{
+		UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageClient] Close RPC received. Chest=%s Active=%s"),
+			*GetNameSafe(StorageChest), *GetNameSafe(ActiveStorageChest));
+	}
 	if (ActiveStorageChest == StorageChest)
 	{
 		CloseStorage(false);
@@ -439,7 +655,7 @@ void ABasePlayerController::ServerHandleStorageLeftClick_Implementation(AStorage
 	// 좌클릭 했을 때 상호작용
 	// 커서에 아이템이 붙어 있으면 인벤토리 -> storage
 	// 커서에 아이템이 없으면 storage -> 인벤토리
-	if (!StorageChest || StorageChest->IsLocked() || ActiveStorageChest != StorageChest)
+	if (!CanAccessStorage(StorageChest) || ActiveStorageChest != StorageChest)
 	{
 		return;
 	}
@@ -475,14 +691,14 @@ void ABasePlayerController::ServerHandleStorageLeftClick_Implementation(AStorage
 		return;
 	}
 
-	StorageComponent->TransferSlotToInventory(SlotIndex, InventoryComponent);
+	StorageComponent->PickUpSlotToCursor(SlotIndex, InventoryComponent);
 	StartStorageSearch(StorageChest);
 }
 
 void ABasePlayerController::ServerQuickMoveInventorySlotToStorage_Implementation(int32 SlotIndex)
 {
 	// 인벤토리 -> storage
-	if (!ActiveStorageChest || ActiveStorageChest->IsLocked())
+	if (!CanAccessStorage(ActiveStorageChest))
 	{
 		return;
 	}
@@ -513,7 +729,7 @@ void ABasePlayerController::ServerQuickMoveInventorySlotToStorage_Implementation
 void ABasePlayerController::ServerQuickMoveStorageSlotToInventory_Implementation(AStorageChest* StorageChest, int32 SlotIndex)
 {
 	//storage -> Inventory (우클릭)
-	if (!StorageChest || StorageChest->IsLocked() || ActiveStorageChest != StorageChest)
+	if (!CanAccessStorage(StorageChest) || ActiveStorageChest != StorageChest)
 	{
 		return;
 	}
@@ -536,7 +752,7 @@ void ABasePlayerController::ServerQuickMoveStorageSlotToInventory_Implementation
 		return;
 	}
 
-	InventoryComponent->ReturnCursorToOriginalSlot();
+	if (InventoryComponent->GetCursorItem().IsValid()) { InventoryComponent->ReturnCursorToOriginalSlot(); return; }
 	StorageComponent->TransferSlotToInventory(SlotIndex, InventoryComponent);
 	StartStorageSearch(StorageChest);
 }
@@ -557,6 +773,7 @@ bool ABasePlayerController::IsStorageSlotRevealed(AStorageChest* StorageChest, i
 		return false;
 	}
 
+	if (StorageChest->IsA<ASharedStorageChest>()) return StorageChest->GetStorageComponent()->GetSlots().IsValidIndex(SlotIndex);
 	const FStorageRevealState* RevealState = StorageRevealStates.Find(StorageChest);
 	return RevealState && SlotIndex < RevealState->RevealedSlotCount;
 }
@@ -574,9 +791,19 @@ bool ABasePlayerController::IsStorageSlotSearching(AStorageChest* StorageChest, 
 
 void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 {
-	// chest에 대한 storage UI열기
-	if (!IsLocalController() || !StorageChest || StorageChest->IsLocked() || !PlayerHUDWidget)
+	const bool bLogInteraction = IsStorageInteractionLoggingEnabled();
+	if (bLogInteraction)
 	{
+		UE_LOG(LogStorageInteraction, Warning,
+			TEXT("[StorageClient] OpenStorage. Local=%d Chest=%s Access=%d HUD=%s WidgetClass=%s Active=%s ExistingWidget=%s"),
+			IsLocalController(), *GetNameSafe(StorageChest), CanAccessStorage(StorageChest),
+			*GetNameSafe(PlayerHUDWidget), *GetNameSafe(StorageWindowWidgetClass.Get()),
+			*GetNameSafe(ActiveStorageChest), *GetNameSafe(StorageWindowWidget));
+	}
+	// chest에 대한 storage UI열기
+	if (!IsLocalController() || !CanAccessStorage(StorageChest) || !PlayerHUDWidget)
+	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageClient] Rejected: local controller, access, or HUD check failed."));
 		return;
 	}
 
@@ -588,6 +815,7 @@ void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 	// 동일한 상자 UI가 이미 열려 있으면 위젯과 입력 모드를 다시 생성하지 않는다.
 	if (ActiveStorageChest == StorageChest && StorageWindowWidget)
 	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageClient] Existing widget for same chest; skipped."));
 		return;
 	}
 
@@ -609,13 +837,19 @@ void ABasePlayerController::OpenStorage(AStorageChest* StorageChest)
 		StorageWindowWidgetClass);
 	if (!StorageWindowWidget)
 	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageClient] ShowStorageWindow returned null. HUD=%s"), *GetNameSafe(PlayerHUDWidget));
 		return;
 	}
+	if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[StorageClient] Storage widget opened. Widget=%s Visibility=%d"),
+		*GetNameSafe(StorageWindowWidget), static_cast<int32>(StorageWindowWidget->GetVisibility()));
+	UpdateInteractionMovementLock();
 }
 
 void ABasePlayerController::CloseStorage(bool bNotifyServer)
 {
 	AStorageChest* ClosingStorageChest = ActiveStorageChest;
+	if (ABasePlayer* StoragePlayer = Cast<ABasePlayer>(GetPawn()))
+		if (UInventoryComponent* Inventory = StoragePlayer->GetInventoryComponent()) Inventory->ServerHandleRightClickInventory();
 
 	if (StorageWindowWidget)
 	{
@@ -655,9 +889,26 @@ bool ABasePlayerController::IsStorageOpen() const
 	return StorageWindowWidget != nullptr && ActiveStorageChest != nullptr;
 }
 
+bool ABasePlayerController::CloseActiveInteractionWindow()
+{
+	if (!IsLocalController()) return false;
+	if (IsFacilityHubOpen())
+	{
+		CloseFacilityHub();
+		return true;
+	}
+	if (IsStorageOpen())
+	{
+		CloseStorage();
+		return true;
+	}
+	return false;
+}
+
 void ABasePlayerController::StartStorageSearch(AStorageChest* StorageChest)
 {
-	if (!HasAuthority() || !StorageChest || StorageChest->IsLocked())
+	if (StorageChest && StorageChest->IsA<ASharedStorageChest>()) return;
+	if (!HasAuthority() || !CanAccessStorage(StorageChest))
 	{
 		return;
 	}
@@ -702,7 +953,7 @@ void ABasePlayerController::StartStorageSearch(AStorageChest* StorageChest)
 
 void ABasePlayerController::RevealCurrentStorageSlot()
 {
-	if (!HasAuthority() || !ActiveStorageChest || ActiveStorageChest->IsLocked())
+	if (!HasAuthority() || !CanAccessStorage(ActiveStorageChest))
 	{
 		return;
 	}
@@ -804,6 +1055,8 @@ float ABasePlayerController::GetStorageSlotSearchTime(AStorageChest* StorageChes
 void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 {
 	bShowMouseCursor = bOpen;
+	// A chest and the facility hub are modal; keep F/game input available for closing.
+	UpdateInteractionMovementLock();
 
 	if (bOpen)
 	{
@@ -839,6 +1092,17 @@ void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 			SetIgnoreLookInput(false);
 			bInventoryInputModeApplied = false;
 		}
+	}
+}
+
+void ABasePlayerController::UpdateInteractionMovementLock()
+{
+	const bool bShouldLock = IsStorageOpen() || IsFacilityHubOpen();
+	if (bInteractionMovementLocked != bShouldLock)
+	{
+		// SetIgnoreMoveInput is counted, so only change the count when this UI's lock changes.
+		SetIgnoreMoveInput(bShouldLock);
+		bInteractionMovementLocked = bShouldLock;
 	}
 }
 
@@ -882,6 +1146,7 @@ void ABasePlayerController::SetStatusCharacterInputLocked(bool bLocked)
 void ABasePlayerController::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	if (HasAuthority() && ActiveStorageChest && !CanAccessStorage(ActiveStorageChest)) CloseStorageFromServer(ActiveStorageChest);
 
 	if (GetWorld())
 	{
@@ -896,4 +1161,49 @@ void ABasePlayerController::Tick(float DeltaTime)
 			}
 		}
 	}
+}
+
+bool ABasePlayerController::CanAccessStorage(AStorageChest* Chest) const
+{
+	if (!IsValid(Chest) || Chest->IsLocked()) return false;
+	const ASharedStorageChest* Shared = Cast<ASharedStorageChest>(Chest);
+	return !Shared || Shared->CanPlayerAccess(GetPawn());
+}
+
+void ABasePlayerController::ServerSharedStorageSlotAction_Implementation(AStorageChest* Chest, int32 Index,
+	FGameplayTag ExpectedTag, int32 ExpectedCount, int32 ExpectedCapacity, bool bQuickMove)
+{
+	if (!CanAccessStorage(Chest) || ActiveStorageChest != Chest || !Chest->IsA<ASharedStorageChest>()) return;
+	ABasePlayer* StoragePlayer = Cast<ABasePlayer>(GetPawn());
+	UInventoryComponent* Inventory = StoragePlayer ? StoragePlayer->GetInventoryComponent() : nullptr;
+	UStorageComponent* Storage = Chest->GetStorageComponent();
+	if (bQuickMove && Inventory && Inventory->GetCursorItem().IsValid())
+	{
+		Inventory->ReturnCursorToOriginalSlot();
+		return;
+	}
+	if (!Inventory || !Storage || ExpectedCapacity != Storage->GetSlotsPerTab() || !Storage->GetSlots().IsValidIndex(Index)) return;
+	const FInventorySlot& Slot = Storage->GetSlots()[Index];
+	// Reject stale views after another player modifies the same slot or capacity changes.
+	if (Slot.ItemTag != ExpectedTag || Slot.Count != ExpectedCount) return;
+	if (bQuickMove)
+	{
+		Storage->TransferSlotToInventory(Index, Inventory);
+	}
+	else if (Inventory->GetCursorItem().IsValid()) Inventory->TransferCursorToStorageSlot(Storage, Index);
+	else Storage->PickUpSlotToCursor(Index, Inventory);
+}
+
+void ABasePlayerController::ServerQuickMoveInventorySlotInTab_Implementation(EInventoryTab Tab, int32 Index,
+	FGameplayTag ExpectedTag, int32 ExpectedCount)
+{
+	if (!CanAccessStorage(ActiveStorageChest)) return;
+	ABasePlayer* StoragePlayer = Cast<ABasePlayer>(GetPawn());
+	UInventoryComponent* Inventory = StoragePlayer ? StoragePlayer->GetInventoryComponent() : nullptr;
+	if (!Inventory || static_cast<uint8>(Tab) > static_cast<uint8>(EInventoryTab::Weapon)) return;
+	const TArray<FInventorySlot>& Slots = Inventory->GetSlots(Tab);
+	if (!Slots.IsValidIndex(Index) || Slots[Index].ItemTag != ExpectedTag || Slots[Index].Count != ExpectedCount) return;
+	if (Inventory->GetCursorItem().IsValid()) { Inventory->ReturnCursorToOriginalSlot(); return; }
+	Inventory->TransferSlotToStorageInTab(Tab, Index, ActiveStorageChest->GetStorageComponent());
+	StartStorageSearch(ActiveStorageChest);
 }

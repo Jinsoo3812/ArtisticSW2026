@@ -51,6 +51,20 @@ bool FSWShipWakeM7GoldenTest::RunTest(const FString& Parameters)
 		}
 	}
 	TestTrue(TEXT("Golden contains signed wave data"), BestGolden > 0.1f);
+	float BestFoamMask = 0.0f;
+	float MaxFoamSymmetryError = 0.0f;
+	for (float U = 0.01f; U <= 0.99f; U += 0.01f)
+	{
+		for (float V = 0.0f; V <= 0.99f; V += 0.01f)
+		{
+			const float Positive = FSWKelvinWakeAtlas::Get().SampleFoamMaskNormalized(U, V);
+			const float Negative = FSWKelvinWakeAtlas::Get().SampleFoamMaskNormalized(U, -V);
+			BestFoamMask = FMath::Max(BestFoamMask, Positive);
+			MaxFoamSymmetryError = FMath::Max(MaxFoamSymmetryError, FMath::Abs(Positive - Negative));
+		}
+	}
+	TestTrue(TEXT("Kelvin Golden A contains Foam LocationMask"), BestFoamMask > 0.5f);
+	TestTrue(TEXT("Kelvin Foam LocationMask remains laterally symmetric"), MaxFoamSymmetryError < 0.002f);
 	const float Radius = BestQuery.Size();
 	const double ArrivalTime = Event.StartServerTime + Radius / Event.PropagationSpeedCmPerSecond;
 	const TArray<FSWShipWakeEvent> One { Event };

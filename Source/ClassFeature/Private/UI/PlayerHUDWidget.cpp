@@ -6,14 +6,16 @@
 #include "UI/InventoryPanelWidget.h"
 #include "BasePlayer.h"
 #include "Inventory/InventoryComponent.h"
-#include "Components/HorizontalBox.h"
 #include "Components/Border.h"
 #include "UI/InventoryCursorWidget.h"
 #include "UI/HealthBarWidget.h"
 #include "UI/BowCrosshairWidget.h"
 #include "UI/SkillQuickSlotWidget.h"
+#include "UI/WeaponQuickSlotWidget.h"
 #include "UI/StorageWindowWidget.h"
+#include "Storage/SharedStorageChest.h"
 #include "Storage/StorageChest.h"
+#include "Storage/StorageInteractionDiagnostics.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
@@ -26,7 +28,13 @@
 #include "Skills/PlayerSkillComponent.h"
 #include "Cannon.h"
 #include "Ship.h"
+#include "AbilitySystemComponent.h"
+#include "BaseAttributeSet.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "Components/StaticMeshComponent.h"
 
 #include "BaseGameplayTags.h"
 
@@ -94,6 +102,10 @@ void UPlayerHUDWidget::NativeConstruct()
 	{
 		StorageWindowWidget->SetVisibility(ESlateVisibility::Collapsed);
 	}
+	if (SharedStorageWindowWidget)
+	{
+		SharedStorageWindowWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
 
 	if (InventoryCursorWidgetClass && !InventoryCursorWidget)
 	{
@@ -117,6 +129,7 @@ void UPlayerHUDWidget::NativeConstruct()
 			this, &UPlayerHUDWidget::HandlePossessedPawnChanged);
 		BoundPossessionController = PlayerController;
 		BindSkillStateSource(PlayerController->GetPawn());
+		RefreshShipHealthContext(PlayerController->GetPawn());
 	}
 }
 
@@ -132,7 +145,6 @@ void UPlayerHUDWidget::NativeDestruct()
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
-		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
 		CachedPlayer->OnQuickSlotsChanged.RemoveAll(this);
 		if (UInventoryComponent* Inventory = CachedPlayer->GetInventoryComponent())
 		{
@@ -141,6 +153,7 @@ void UPlayerHUDWidget::NativeDestruct()
 	}
 
 	UnbindHealthComponent();
+	UnbindShipHealthSource();
 	UnbindBowComponent();
 	UnbindSkillComponent();
 	UnbindSkillStateSource();
@@ -159,6 +172,13 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
 	RefreshCursorItemWidget();
+
+	ShipPresenceCheckAccumulator += InDeltaTime;
+	if (ShipPresenceCheckAccumulator >= FMath::Max(0.01f, ShipPresenceCheckInterval))
+	{
+		ShipPresenceCheckAccumulator = 0.0f;
+		RefreshShipHealthContext(GetOwningPlayerPawn());
+	}
 }
 
 void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
@@ -166,7 +186,6 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);
-		CachedPlayer->OnItemSlotsChanged.RemoveAll(this);
 		CachedPlayer->OnQuickSlotsChanged.RemoveAll(this);
 
 		if (UInventoryComponent* OldInventory = CachedPlayer->GetInventoryComponent())
@@ -179,12 +198,15 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 	UnbindSkillComponent();
 
 	CachedPlayer = InPlayer;
+	if (WeaponQuickSlot)
+	{
+		WeaponQuickSlot->InitializeForPlayer(InPlayer);
+	}
 
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.AddUObject(this, &UPlayerHUDWidget::HandleAbilitySystemInitialized);
-		CachedPlayer->OnItemSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleItemSlotsChanged);
-		CachedPlayer->OnQuickSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleItemSlotsChanged);
+		CachedPlayer->OnQuickSlotsChanged.AddUObject(this, &UPlayerHUDWidget::HandleQuickSlotsChanged);
 
 		BindHealthComponent(CachedPlayer->GetHealthComponent());
 		BindSkillComponent(CachedPlayer->GetPlayerSkillComponent());
@@ -201,6 +223,8 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 		InventoryPanelWidget->InitializeForPlayer(CachedPlayer.Get());
 	}
 	RefreshHealth();
+	RefreshShipHealthContext(GetOwningPlayerPawn());
+	RefreshShipHealth();
 	RefreshBowCrosshairBinding();
 }
 
@@ -243,13 +267,37 @@ UStorageWindowWidget* UPlayerHUDWidget::ShowStorageWindow(
 {
 	if (!StorageChest)
 	{
+		if (IsStorageInteractionLoggingEnabled()) UE_LOG(LogStorageInteraction, Warning, TEXT("[HUD] Rejected: chest is null."));
 		return nullptr;
 	}
 
+	const bool bShared = StorageChest->IsA<ASharedStorageChest>();
+	if (bShared && SharedStorageWindowWidget)
+	{
+		HideStorageWindow();
+		SharedStorageWindowWidget->InitializeStorage(StorageChest, Player);
+		if (InventoryPanelWidget)
+		{
+			SharedStorageWindowWidget->UseInventoryPanel(InventoryPanelWidget->GetClass());
+		}
+		SharedStorageWindowWidget->SetVisibility(ESlateVisibility::Visible);
+		return SharedStorageWindowWidget;
+	}
+	if (bShared)
+	{
+		if (StorageWindowWidget)
+		{
+			SuspendedStorageWindow = StorageWindowWidget;
+			StorageWindowWidget->SetVisibility(ESlateVisibility::Collapsed);
+			StorageWindowWidget = nullptr;
+		}
+		StorageWindowClass = UStorageWindowWidget::StaticClass();
+	}
 	if (!StorageWindowWidget)
 	{
 		if (!RootCanvasPanel)
 		{
+			if (IsStorageInteractionLoggingEnabled()) UE_LOG(LogStorageInteraction, Warning, TEXT("[HUD] Rejected: RootCanvasPanel is null. HUD=%s"), *GetNameSafe(this));
 			return nullptr;
 		}
 
@@ -261,6 +309,7 @@ UStorageWindowWidget* UPlayerHUDWidget::ShowStorageWindow(
 		StorageWindowWidget = CreateWidget<UStorageWindowWidget>(GetOwningPlayer(), StorageWindowClass);
 		if (!StorageWindowWidget)
 		{
+			if (IsStorageInteractionLoggingEnabled()) UE_LOG(LogStorageInteraction, Warning, TEXT("[HUD] CreateWidget failed. Class=%s"), *GetNameSafe(StorageWindowClass.Get()));
 			return nullptr;
 		}
 
@@ -278,12 +327,18 @@ UStorageWindowWidget* UPlayerHUDWidget::ShowStorageWindow(
 	}
 
 	StorageWindowWidget->InitializeStorage(StorageChest, Player);
+	if (bShared && InventoryPanelWidget) StorageWindowWidget->UseInventoryPanel(InventoryPanelWidget->GetClass());
 	StorageWindowWidget->SetVisibility(ESlateVisibility::Visible);
 	return StorageWindowWidget;
 }
 
 void UPlayerHUDWidget::HideStorageWindow()
 {
+	if (SharedStorageWindowWidget)
+	{
+		SharedStorageWindowWidget->SetVisibility(ESlateVisibility::Collapsed);
+		SharedStorageWindowWidget->InitializeStorage(nullptr, nullptr);
+	}
 	if (!StorageWindowWidget)
 	{
 		return;
@@ -292,7 +347,8 @@ void UPlayerHUDWidget::HideStorageWindow()
 	if (bRuntimeStorageWindow)
 	{
 		StorageWindowWidget->RemoveFromParent();
-		StorageWindowWidget = nullptr;
+		StorageWindowWidget = SuspendedStorageWindow;
+		SuspendedStorageWindow = nullptr;
 		bRuntimeStorageWindow = false;
 		return;
 	}
@@ -311,7 +367,7 @@ void UPlayerHUDWidget::HandleInventoryChanged()
 	RefreshCursorItemWidget();
 }
 
-void UPlayerHUDWidget::HandleItemSlotsChanged()
+void UPlayerHUDWidget::HandleQuickSlotsChanged()
 {
 	RefreshQuickSlots();
 	RefreshBowCrosshairBinding();
@@ -424,6 +480,7 @@ void UPlayerHUDWidget::RefreshEquippedSkillBorders()
 void UPlayerHUDWidget::HandlePossessedPawnChanged(APawn*, APawn* NewPawn)
 {
 	BindSkillStateSource(NewPawn);
+	RefreshShipHealthContext(NewPawn);
 }
 
 void UPlayerHUDWidget::HandleSkillActiveStateChanged(bool)
@@ -478,10 +535,223 @@ void UPlayerHUDWidget::RefreshHealth()
 		return;
 	}
 
-	HealthBarWidget->SetHealthValues(
+	HealthBarWidget->SetPlayerHealthValues(
 		CachedHealthComponent->GetHealth(),
 		CachedHealthComponent->GetMaxHealth()
 	);
+}
+
+void UPlayerHUDWidget::RefreshShipHealthContext(APawn* ControlledPawn)
+{
+	if (!HealthBarWidget)
+	{
+		return;
+	}
+
+	if (AShip* ControlledShip = Cast<AShip>(ControlledPawn))
+	{
+		BindShipHealthSource(ControlledShip);
+		HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::ShipPrimaryWithPlayerSecondary);
+		return;
+	}
+
+	if (ACannon* ControlledCannon = Cast<ACannon>(ControlledPawn))
+	{
+		if (AShip* OwningShip = ControlledCannon->GetOwningShip())
+		{
+			BindShipHealthSource(OwningShip);
+			HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::PlayerPrimaryWithShipSecondary);
+			return;
+		}
+	}
+
+	bool bHasWalkableFloor = false;
+	if (AShip* FloorShip = ResolveShipFromFloor(ControlledPawn, bHasWalkableFloor))
+	{
+		BindShipHealthSource(FloorShip);
+		HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::PlayerPrimaryWithShipSecondary);
+		return;
+	}
+
+	AShip* LastShip = CachedShipHealthSource.Get();
+	if (!bHasWalkableFloor && IsValid(LastShip)
+		&& !IsBeyondShipHealthHideDistance(ControlledPawn, LastShip))
+	{
+		HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::PlayerPrimaryWithShipSecondary);
+		RefreshShipHealth();
+		return;
+	}
+
+	UnbindShipHealthSource();
+	HealthBarWidget->SetHealthBarDisplayMode(EHealthBarDisplayMode::PlayerOnly);
+}
+
+void UPlayerHUDWidget::BindShipHealthSource(AShip* Ship)
+{
+	if (CachedShipHealthSource.Get() == Ship)
+	{
+		RefreshShipHealth();
+		return;
+	}
+
+	UnbindShipHealthSource();
+	CachedShipHealthSource = Ship;
+
+	UAbilitySystemComponent* ShipAbilitySystem = Ship ? Ship->GetAbilitySystemComponent() : nullptr;
+	if (ShipAbilitySystem)
+	{
+		ShipHealthChangedDelegateHandle = ShipAbilitySystem
+			->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute())
+			.AddUObject(this, &UPlayerHUDWidget::HandleShipHealthChanged);
+		ShipMaxHealthChangedDelegateHandle = ShipAbilitySystem
+			->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetMaxHealthAttribute())
+			.AddUObject(this, &UPlayerHUDWidget::HandleShipMaxHealthChanged);
+	}
+
+	RefreshShipHealth();
+}
+
+void UPlayerHUDWidget::UnbindShipHealthSource()
+{
+	AShip* Ship = CachedShipHealthSource.Get();
+	UAbilitySystemComponent* ShipAbilitySystem = Ship ? Ship->GetAbilitySystemComponent() : nullptr;
+	if (ShipAbilitySystem)
+	{
+		if (ShipHealthChangedDelegateHandle.IsValid())
+		{
+			ShipAbilitySystem
+				->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute())
+				.Remove(ShipHealthChangedDelegateHandle);
+		}
+		if (ShipMaxHealthChangedDelegateHandle.IsValid())
+		{
+			ShipAbilitySystem
+				->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetMaxHealthAttribute())
+				.Remove(ShipMaxHealthChangedDelegateHandle);
+		}
+	}
+
+	ShipHealthChangedDelegateHandle.Reset();
+	ShipMaxHealthChangedDelegateHandle.Reset();
+	CachedShipHealthSource.Reset();
+}
+
+void UPlayerHUDWidget::RefreshShipHealth()
+{
+	if (!HealthBarWidget)
+	{
+		return;
+	}
+
+	AShip* Ship = CachedShipHealthSource.Get();
+	UAbilitySystemComponent* ShipAbilitySystem = Ship ? Ship->GetAbilitySystemComponent() : nullptr;
+	if (!ShipAbilitySystem)
+	{
+		HealthBarWidget->SetShipHealthValues(0.0f, 0.0f);
+		return;
+	}
+
+	HealthBarWidget->SetShipHealthValues(
+		ShipAbilitySystem->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()),
+		ShipAbilitySystem->GetNumericAttribute(UBaseAttributeSet::GetMaxHealthAttribute()));
+}
+
+AShip* UPlayerHUDWidget::ResolveShipFromFloor(APawn* ControlledPawn, bool& bOutHasWalkableFloor) const
+{
+	bOutHasWalkableFloor = false;
+	const ACharacter* Character = Cast<ACharacter>(ControlledPawn);
+	const UCharacterMovementComponent* Movement = Character ? Character->GetCharacterMovement() : nullptr;
+	if (!Movement)
+	{
+		return nullptr;
+	}
+
+	if (Movement->IsMovingOnGround())
+	{
+		if (UPrimitiveComponent* MovementBase = Movement->GetMovementBase())
+		{
+			bOutHasWalkableFloor = true;
+			if (AShip* Ship = ResolveShipFromComponent(MovementBase))
+			{
+				return Ship;
+			}
+		}
+
+		if (Movement->CurrentFloor.IsWalkableFloor())
+		{
+			bOutHasWalkableFloor = true;
+			return ResolveShipFromComponent(Movement->CurrentFloor.HitResult.GetComponent());
+		}
+	}
+
+	return nullptr;
+}
+
+AShip* UPlayerHUDWidget::ResolveShipFromComponent(const UPrimitiveComponent* Component) const
+{
+	AActor* Candidate = Component ? Component->GetOwner() : nullptr;
+	TSet<const AActor*> VisitedActors;
+	while (IsValid(Candidate) && !VisitedActors.Contains(Candidate))
+	{
+		VisitedActors.Add(Candidate);
+		if (AShip* Ship = Cast<AShip>(Candidate))
+		{
+			return Ship;
+		}
+		if (ACannon* Cannon = Cast<ACannon>(Candidate))
+		{
+			if (AShip* Ship = Cannon->GetOwningShip())
+			{
+				return Ship;
+			}
+		}
+
+		AActor* NextCandidate = Candidate->GetAttachParentActor();
+		if (!NextCandidate)
+		{
+			NextCandidate = Candidate->GetParentActor();
+		}
+		if (!NextCandidate)
+		{
+			NextCandidate = Candidate->GetOwner();
+		}
+		Candidate = NextCandidate;
+	}
+
+	return nullptr;
+}
+
+bool UPlayerHUDWidget::IsBeyondShipHealthHideDistance(const APawn* ControlledPawn, const AShip* Ship) const
+{
+	if (!IsValid(ControlledPawn) || !IsValid(Ship))
+	{
+		return true;
+	}
+
+	FBox ShipDeckBounds(ForceInit);
+	if (const UStaticMeshComponent* ShipDeckMesh = Ship->GetShipDeckMesh())
+	{
+		ShipDeckBounds = ShipDeckMesh->Bounds.GetBox();
+	}
+	if (!ShipDeckBounds.IsValid)
+	{
+		ShipDeckBounds = Ship->GetComponentsBoundingBox(true);
+	}
+
+	const float DistanceSquared = ShipDeckBounds.IsValid
+		? ShipDeckBounds.ComputeSquaredDistanceToPoint(ControlledPawn->GetActorLocation())
+		: FVector::DistSquared(ControlledPawn->GetActorLocation(), Ship->GetActorLocation());
+	return DistanceSquared > FMath::Square(FMath::Max(0.0f, ShipHealthWaterHideDistance));
+}
+
+void UPlayerHUDWidget::HandleShipHealthChanged(const FOnAttributeChangeData&)
+{
+	RefreshShipHealth();
+}
+
+void UPlayerHUDWidget::HandleShipMaxHealthChanged(const FOnAttributeChangeData&)
+{
+	RefreshShipHealth();
 }
 
 // BowCrossHair를 생성 (실제로 그리는 것은 BowCrossHairWidget.cpp에서 처리) 여기서는 그리는 준비 
@@ -596,74 +866,36 @@ float UPlayerHUDWidget::GetCrosshairResponsiveScale(const FVector2D& LocalSize) 
 
 void UPlayerHUDWidget::RefreshQuickSlots()
 {
-	constexpr int32 QuickSlotCount = 5;
-	TArray<UQuickSlotEntryWidget*> EditorPlacedEntries =
+	constexpr int32 FirstConsumableQuickSlotIndex = 2;
+	constexpr int32 ConsumableQuickSlotCount = 3;
+	UQuickSlotEntryWidget* ConsumableEntries[ConsumableQuickSlotCount] =
 	{
-		WeaponQuickSlot1, WeaponQuickSlot2, ConsumableQuickSlot3, ConsumableQuickSlot4, ConsumableQuickSlot5
+		ConsumableQuickSlot3, ConsumableQuickSlot4, ConsumableQuickSlot5
 	};
-	const bool bHasEditorPlacedEntries = EditorPlacedEntries.ContainsByPredicate([](const UQuickSlotEntryWidget* Entry)
+	const FGameplayTag FallbackSlotTags[ConsumableQuickSlotCount] =
 	{
-		return Entry != nullptr;
-	});
-
-	if (bHasEditorPlacedEntries)
-	{
-		QuickSlotEntries.Reset();
-		for (UQuickSlotEntryWidget* Entry : EditorPlacedEntries)
-		{
-			QuickSlotEntries.Add(Entry);
-		}
-	}
-	else if (QuickSlotBox && QuickSlotEntryClass &&
-		(QuickSlotEntries.Num() != QuickSlotCount || QuickSlotBox->GetChildrenCount() != QuickSlotCount))
-	{
-		QuickSlotBox->ClearChildren();
-		QuickSlotEntries.Reset();
-
-		for (int32 Index = 0; Index < QuickSlotCount; ++Index)
-		{
-			UQuickSlotEntryWidget* EntryWidget = CreateWidget<UQuickSlotEntryWidget>(this, QuickSlotEntryClass);
-			if (!EntryWidget)
-			{
-				continue;
-			}
-
-			EntryWidget->SetVisibility(ESlateVisibility::Visible);
-			QuickSlotBox->AddChild(EntryWidget);
-			QuickSlotEntries.Add(EntryWidget);
-		}
-	}
-	else if (!QuickSlotBox || !QuickSlotEntryClass)
-	{
-		return;
-	}
-
-	const FGameplayTag FallbackSlotTags[QuickSlotCount] =
-	{
-		Key_Item_1,
-		Key_Item_2,
 		Key_Item_3,
 		Key_Item_4,
 		Key_Item_5
 	};
 
-	for (int32 Index = 0; Index < QuickSlotEntries.Num(); ++Index)
+	for (int32 LocalIndex = 0; LocalIndex < ConsumableQuickSlotCount; ++LocalIndex)
 	{
-		UQuickSlotEntryWidget* EntryWidget = QuickSlotEntries[Index];
+		UQuickSlotEntryWidget* EntryWidget = ConsumableEntries[LocalIndex];
 		if (!EntryWidget)
 		{
 			continue;
 		}
+		const int32 QuickSlotIndex = FirstConsumableQuickSlotIndex + LocalIndex;
 
-		FGameplayTag SlotTag = FallbackSlotTags[Index];
+		FGameplayTag SlotTag = FallbackSlotTags[LocalIndex];
 		UTexture2D* Icon = nullptr;
-		FText ItemName = FText::GetEmpty();
 		bool bEquipped = false;
 		int32 Count = 0;
 
-		if (CachedPlayer.IsValid() && CachedPlayer->QuickSlots.IsValidIndex(Index))
+		if (CachedPlayer.IsValid() && CachedPlayer->QuickSlots.IsValidIndex(QuickSlotIndex))
 		{
-			const FQuickSlotReference& QuickSlot = CachedPlayer->QuickSlots[Index];
+			const FQuickSlotReference& QuickSlot = CachedPlayer->QuickSlots[QuickSlotIndex];
 			SlotTag = QuickSlot.KeyTag.IsValid() ? QuickSlot.KeyTag : SlotTag;
 
 			if (QuickSlot.ItemTag.IsValid())
@@ -671,7 +903,6 @@ void UPlayerHUDWidget::RefreshQuickSlots()
 				if (UInventoryComponent* Inventory = CachedPlayer->GetInventoryComponent())
 				{
 					Icon = Inventory->GetMaterialIcon(QuickSlot.ItemTag);
-					ItemName = Inventory->GetMaterialName(QuickSlot.ItemTag);
 					Count = Inventory->GetMaterialCount(QuickSlot.ItemTag);
 				}
 				bEquipped = IsValid(CachedPlayer->EquippedItem) && CachedPlayer->EquippedItem->ItemTag == QuickSlot.ItemTag;
@@ -679,8 +910,8 @@ void UPlayerHUDWidget::RefreshQuickSlots()
 		}
 
 		EntryWidget->SetVisibility(ESlateVisibility::Visible);
-		EntryWidget->ConfigureInteraction(Index, false);
-		EntryWidget->SetupFromData(SlotTag, ItemName, Icon, bEquipped, Count);
+		EntryWidget->ConfigureInteraction(QuickSlotIndex, false);
+		EntryWidget->SetupFromData(SlotTag, Icon, bEquipped, Count);
 	}
 }
 

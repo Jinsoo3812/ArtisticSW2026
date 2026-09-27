@@ -1,19 +1,33 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "InteractableComponent.h"
 #include "CollisionChannels.h"
+#include "DrawDebugHelpers.h"
 
 UInteractableComponent::UInteractableComponent()
 {
-	// 충돌체이므로 Tick은 필요 없음
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.TickInterval = 0.1f;
 
 	// 기본 반경 설정
 	InitSphereRadius(100.f);
 
 	// 오직 Interactable Trace Channel과만 Block 되는 프리셋
 	SetCollisionProfileName(TEXT("Interactable"));
+
+	ShapeColor = FColor::Cyan;
+}
+
+void UInteractableComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+#if ENABLE_DRAW_DEBUG
+	if (bDrawDebugInteractionRange && GetWorld())
+	{
+		DrawDebugSphere(GetWorld(), GetComponentLocation(), GetScaledSphereRadius(), 24,
+			FColor::Cyan, false, 0.12f);
+	}
+#endif
 }
 
 void UInteractableComponent::InitializeInteractable(const FText& InObjectName, const FText& InActionText)
@@ -27,6 +41,11 @@ FGameplayTag UInteractableComponent::GetInteractionTag() const
 	return InteractionTag;
 }
 
+const FInteractionUIInfo& UInteractableComponent::GetInteractionUIInfo() const
+{
+	return InteractUIInfo;
+}
+
 void UInteractableComponent::Interact(AActor* Interactor)
 {
 	if (Interactor)
@@ -34,4 +53,3 @@ void UInteractableComponent::Interact(AActor* Interactor)
 		OnInteracted.Broadcast(Interactor);
 	}
 }
-

@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -6,6 +6,7 @@
 #include "Engine/DataAsset.h"
 
 #include "BaseGameplayTags.h"
+#include "GAS/WeaponStatDefinition.h"
 
 #include "WeaponDataAsset.generated.h"
 
@@ -47,8 +48,8 @@ struct FWeaponCombatData
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	TSubclassOf<UGameplayEffect> DamageEffectClass = nullptr;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Damage", meta=(ClampMin="0.001"))
+	float AttackCoefficient = 1.f;
 
 	/** Executed on the damaged actor only after authoritative health loss is confirmed. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback", meta = (Categories = "GameplayCue.Impact"))
@@ -101,6 +102,9 @@ struct FWeaponDefinition
 	// 무기의 전투 스타일을 결정
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	FWeaponCombatData CombatData;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Strength")
+	FWeaponStatDefinition Stats;
 };
 
 

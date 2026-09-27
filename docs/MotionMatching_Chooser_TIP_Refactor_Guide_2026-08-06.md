@@ -437,3 +437,76 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
   ```text
   [AnimState] Presentation: %s | Requested: %s | State: %s | Asset: %s | LandMoving: %d | StopReq: %d | TIP: %d | Speed: %.1f
   ```
+
+---
+
+### 7.4 최신 패치 내역: BlendStack 동일 프레임 중복 BlendTo 경고 수정 및 연속 회전(TIP Replay) 보존
+
+* **수정일자**: 2026-08-22
+* **문제 현상**:
+  - `ABP_Player` 애님그래프에서 `Blend Stack` 노드의 `Animation Asset`, `Blend Time` 핀에 C++ Getter 함수가 직접 연결되어 있는 상태에서, 노드의 `업데이트 시(On Update)` 콜백인 `OnUpdate_StateMachineBlendStack`이 `Force Blend On Next Update`를 호출함.
+  - 새 애니메이션 에셋 전환(예: `Idle` ➔ `TIP`, `Start` ➔ `Stop`) 시 핀 자체 평가에 의한 `BlendTo`와 `Force Blend`에 의한 `BlendTo`가 동일 프레임에 2회 발생.
+  - 엔진에서 `LogBlendStack: Warning: FAnimNode_BlendStack_Standalone multiple BlendTo requests during the same frame: only the last request will be put on this BlendStack` 경고가 대량 출력됨.
+* **해결 방안 (`MotionMatchingAnimInstance.cpp`)**:
+  - `EvaluateStateControllerPlaybackHold`에서 직전 선택 에셋 `PreviousSelectedAnimation`을 캐싱.
+  - 에셋이 실제로 변경되는 일반 원샷 전환(`Previous != Current`)은 핀 자체 평가가 단독으로 `BlendTo`를 처리하도록 `ForceBlend`를 끔 (`0 Warnings`).
+  - **동일 에셋을 연속 재생하는 상황(`Previous == Current`, 예: 동일 방향 연속 제자리 회전 TIP Replay)**에서만 `bStateControllerForceBlendStackOnNextUpdate = true`를 펄스로 인가하여, 연속 턴 반응성을 100% 보존하면서 중복 호출 경고를 완전히 제거함.
+
+---
+
+### 7.5 최신 패치 내역: 공중 체공(Air Loop) 시간 역전 ensure 에러 수정 및 안정화
+
+* **수정일자**: 2026-08-22
+* **문제 현상**:
+  - `Player As Client` 환경 또는 공중 스폰 시 체공 시간이 3.33초를 초과할 때, 엔진에서 `Ensure condition failed: (CurrentPosition >= PreviousPosition) in Animation M_Neutral_Jump_Loop_Fall` 에러 발생.
+  - C++의 `StabilizeAirLoopBlendStackBeforeUpdate`가 누적 시간을 1주기 내로 강제 정규화(`RestoreBlendStackTopPlayer`)하면서, 이전 프레임 위치(9.47s)보다 작은 시간(3.33s)을 주입하여 엔진 무결성 검사를 위반함.
+* **해결 방안 (`MotionMatchingAnimInstance.cpp`)**:
+  - `StabilizeAirLoopBlendStackBeforeUpdate`에서 다중 스택 겹침 방지(`CollapseBlendStackToDominantPlayer`)는 그대로 유지.
+  - 루핑 시간 진행은 언리얼 엔진 자체 `FBlendStackAnimPlayer`의 네이티브 Looping Modulo 파이프라인에 일임하여 인위적인 시간 되감기 제거 ➔ `ensure` 에러 100% 제거 및 긴 체공/클라이언트 스폰 안정성 확보.
+
+---
+
+### 7.6 최신 패치 내역: 퀵슬롯/인벤토리 무기 장착 시 상체 오버레이(Weapon UpperBody Overlay) 태그 호환 및 디버깅 보강
+
+* **수정일자**: 2026-08-22
+* **문제 현상**:
+  - 인벤토리(Tab)에서 퀵슬롯을 통해 활(`Item.Id.Weapon.Bow.LongBow1`)을 장착했을 때, 손에는 활이 부착되지만 캐릭터 상체 애니메이션이 활 조준/대기 포즈(`BS_Bow`)로 오버라이딩되지 않고 일반 `Locomotion` 포즈로 유지됨.
+  - **원인**: 인벤토리는 신규 태그(`Item.Id.Weapon.*`)를 사용하고, 무기 데이터 에셋 및 C++는 구형 태그(`Item.Weapon.*`)를 조회하여 `MatchesTag` 검사 실패. `GetEquippedUpperBodyOverlayIndex()`가 `0`으로 반환되어 애님그래프의 `Blend Poses by int`에서 `Blend Pose 0 (Locomotion)`이 선택됨.
+* **해결 방안**:
+  1. **`WeaponAnimationDataAsset.cpp` & `PlayerEquipmentComponent.cpp`**:
+     - `Item.Id.Weapon.*`과 `Item.Weapon.*` 간의 접두어 차이를 자동 정규화하는 `DoesWeaponGameplayTagMatch` 유연 매칭 로직 적용.
+     - `GetEquippedUpperBodyOverlayIndex`: 활(Bow) 무기이고 `bUseUpperBodyOverlay`가 참일 때 에셋 인덱스가 0으로 미설정되어 있어도 자동으로 `Index 1 (BS_Bow)`로 안전하게 폴백되도록 보강.
+  2. **`MotionMatchingAnimInstance.cpp`**:
+     - `GetThreadSafeHasBowEquipped()`, `GetThreadSafeWeaponUpperBodyMode()`에서 `Item.Id.Weapon.Bow`와 `Item.Weapon.Bow`를 모두 인식하도록 매칭 확장.
+     - `a.StateControllerDebug 1` 콘솔 실행 시 실시간 상체 오버레이 HUD(`[WeaponOverlay]`)를 에메랄드 색상으로 함께 출력하여 실시간 상태 모니터링 지원.
+
+---
+
+### 7.7 최신 패치 내역: 활 발사(Release) 시 활시위(String IK / DrawAlpha) 즉시 원복 처리
+
+* **수정일자**: 2026-08-22
+* **문제 현상**:
+  - 활을 당긴(Full Draw) 상태에서 좌클릭을 떼어 발사했을 때, 화살 발사 및 릴리즈 몽타주(`Shooting_Arrow_Anim_Montage`)가 재생되는 동안에도 활시위(String)가 오른손에 계속 붙어 늘어나 있는 버그 발생.
+  - **원인**: `GA_BowAimFire::BeginRelease`에서 `SetDrawAlpha(1.0f)`를 유지한 채 릴리즈 몽타주가 완전히 끝날 때(`FinishShot`)까지 `DrawAlpha`를 0으로 리셋하지 않아 발생.
+* **해결 방안**:
+  1. **`GA_BowAimFire.cpp`**:
+     - `BeginRelease` 및 `FireArrow`, `OnReleaseFireEvent` 발생 시 즉시 `CachedBowComponent->SetDrawAlpha(0.0f)` 호출.
+  2. **`MotionMatchingAnimInstance.cpp`**:
+     - `State_Bow_Releasing` 태그 활성화 시 또는 `DrawAlpha <= 0`일 때 `bHasStringIKTarget = false`로 즉시 전환하여 활시위가 손에서 분리되고 본래 원위치로 복귀하도록 동기화.
+
+---
+
+### 7.8 최신 패치 내역: 조준(우클릭) 유지 중 연속 발사(좌클릭 반복) 지원
+
+* **수정일자**: 2026-08-22
+* **문제 현상**:
+  - 우클릭으로 조준(Aim) 상태를 유지한 채 첫 번째 화살을 발사한 후, 우클릭을 떼지 않고 좌클릭을 다시 눌렀을 때 다음 드로우/발사가 반응하지 않는 현상.
+  - **원인**: `GA_BowAimFire::ActivateAbility` 내의 좌클릭 이벤트 수신 태스크(`WaitLeftPressedTask`, `WaitLeftReleasedTask`, `WaitFireArrowTask`)의 `OnlyTriggerOnce` 인자가 `true`로 설정되어 첫 번째 발사 후 태스크가 소멸됨.
+* **해결 방안 (`GA_BowAimFire.cpp`)**:
+  1. `WaitGameplayEvent`의 `OnlyTriggerOnce`를 `false`로 변경하여 어빌리티가 활성화되어 있는 동안(우클릭 유지 중) 좌클릭 프레스/릴리즈/발사 이벤트를 연속으로 수신할 수 있도록 수정.
+  2. `OnLeftClickPressed`에서 이전 발사의 반동 릴리즈(`bIsReleaseInProgress`)가 진행 중이더라도 화살이 이미 발사된 상태(`bHasFiredCurrentShot`)라면 즉시 반동을 캔슬하고 다음 화살 드로우로 매끄럽게 연계되도록 응답성 개선.
+
+
+
+
+

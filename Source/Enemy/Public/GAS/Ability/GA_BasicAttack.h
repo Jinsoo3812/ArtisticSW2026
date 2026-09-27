@@ -15,6 +15,16 @@ class UAbilityTask_WaitGameplayEvent;
 class UAnimMontage;
 struct FWeaponDefinition;
 
+/** Snapshot consumed by one attack activation, independent of its authoring source. */
+struct FEnemyBasicAttackExecutionData
+{
+	TObjectPtr<UAnimMontage> AttackMontage = nullptr;
+	float AttackMontagePlayRate = 1.0f;
+	float AttackCoefficient = 1.f;
+	bool bUseTimedHitWindow = false;
+	FGameplayTag ImpactGameplayCueTag;
+};
+
 /** Internal duration GE carrying Cooldown.Enemy.BasicAttack. */
 UCLASS(NotBlueprintable)
 class ENEMY_API UEnemyBasicAttackCooldownEffect : public UGameplayEffect
@@ -75,8 +85,22 @@ protected:
 	void OnHitScanEndEvent(FGameplayEventData Payload);
 
 	void FinishAttack(bool bWasCancelled);
-	const FWeaponDefinition* CacheAttackData(ABaseEnemy* EnemyOwner);
-	bool PlayAttackMontage(const FWeaponDefinition& WeaponDefinition);
+	virtual bool PrepareAttack(ABaseEnemy* EnemyOwner);
+	virtual bool ResolveAttackExecutionData(
+		ABaseEnemy* EnemyOwner,
+		const FWeaponDefinition& WeaponDefinition,
+		FEnemyBasicAttackExecutionData& OutData) const;
+	virtual void OnAttackCommitted();
+	bool CacheAttackData(
+		ABaseEnemy* EnemyOwner,
+		FEnemyBasicAttackExecutionData& OutData);
+	virtual bool PlayAttackMontage(const FEnemyBasicAttackExecutionData& AttackData);
+	FEnemyBasicAttackExecutionData CachedExecutionData;
+	bool bOpenedAttackWindow = false;
+	TSet<TWeakObjectPtr<const UObject>> OpenedWindowSources;
+	TWeakObjectPtr<const UObject> ActiveWindowSource;
+	uint8 PreviousAnimTickOption = 0;
+	bool bPoseRefreshAcquired = false;
 	void StartHitScan();
 	void EndHitScan();
 	void AddAttackStateTag();

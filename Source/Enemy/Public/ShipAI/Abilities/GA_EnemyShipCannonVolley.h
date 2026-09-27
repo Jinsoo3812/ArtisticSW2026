@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "ShipAI/Abilities/EnemyShipGameplayAbility.h"
+#include "ShipAI/EnemyShipSkillModuleData.h"
 #include "GA_EnemyShipCannonVolley.generated.h"
 
 class ACannon;
@@ -30,15 +31,60 @@ public:
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		const FGameplayEventData* TriggerEventData) override;
 
-protected:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Cannon Volley", meta = (ClampMin = "1"))
-	int32 MaxCannonsPerVolley = 2;
+	static bool CalculateLaunchVelocity(
+		const FVector& Start,
+		const FVector& CurrentTargetPoint,
+		const FVector& TargetVelocity,
+		float GravityZ,
+		const struct FEnemyShipCannonAimProfile& AimProfile,
+		FVector& OutLaunchVelocity);
 
-	/** Chooses the exact fixed-speed ballistic solution closest to this angle. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Cannon Volley", meta = (ClampMin = "-89.0", ClampMax = "89.0", Units = "deg"))
-	float PreferredLaunchAngleDegrees = 20.0f;
+	static bool CalculateRangeAtElevation(
+		float ProjectileSpeed, float GravityMagnitude, float DeltaZ, float ElevationRadians,
+		float& OutRangeCm, float& OutFlightTime);
+	static bool CalculateLowArc(
+		float ProjectileSpeed, float GravityMagnitude, float HorizontalRangeCm, float DeltaZ,
+		float& OutElevationRadians, float& OutFlightTime);
+	static FVector SampleImpactEllipseOffset(
+		FRandomStream& RandomStream, const FVector& TargetForward2D, const FVector& TargetRight2D,
+		const FVector& DirectionFromTargetToAttacker2D,
+		const FEnemyShipCannonVolleySettings& Settings, bool& bOutFacingHalf);
+	static FVector ClampImpactPointToRange(
+		const FVector& ShotStart, const FVector& RequestedImpactPoint, float MaximumRangeCm,
+		bool& bOutWasClamped);
 
 private:
-	bool BuildShotDirection(const ACannon* Cannon, const AShip* Target, FVector& OutDirection) const;
+	struct FCannonTargetingDebugData
+	{
+		FVector Start = FVector::ZeroVector;
+		FVector CurrentTargetPoint = FVector::ZeroVector;
+		FVector TargetVelocity = FVector::ZeroVector;
+		FVector TargetForward = FVector::ForwardVector;
+		FVector TargetRight = FVector::RightVector;
+		FVector EllipseCenter = FVector::ZeroVector;
+		FVector RequestedImpactPoint = FVector::ZeroVector;
+		FVector ClampedImpactPoint = FVector::ZeroVector;
+		FEnemyShipCannonVolleySettings Settings;
+		float CurrentDistance = 0.0f;
+		float MaximumRange = 0.0f;
+		float EstimatedFlightTime = 0.0f;
+		float CalculatedElevation = 0.0f;
+		float FinalElevation = 0.0f;
+		bool bInsideRange = false;
+		bool bFacingHalf = false;
+		bool bRangeClamped = false;
+	};
+
+	static FEnemyShipCannonVolleySettings ResolveCannonVolleySettings(const AEnemyShip& Ship);
+	static void DrawCannonTargetingDebug(
+		const ACannon& Cannon, const AShip& Target, const AEnemyShip& Ship,
+		const FVector& Direction, float ProjectileSpeed, const FCannonTargetingDebugData& DebugData);
+	bool BuildShotSolution(
+		const ACannon* Cannon,
+		const AShip* Target,
+		const AEnemyShip* Ship,
+		FVector& OutDirection,
+		float& OutProjectileSpeed,
+		FCannonTargetingDebugData* OutDebugData) const;
 	bool IsValidPlayerTarget(const AShip* Candidate) const;
 };

@@ -2,17 +2,29 @@
 
 
 #include "Components/BaseHealthComponent.h"
+#include "Components/StatusComponent.h"
+#include "Components/CombatPresentationComponent.h"
+#include "Components/EquipmentStatComponent.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/BaseDeathGameplayAbility.h"
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
+#include "DrawDebugHelpers.h"
 #include "GameplayEffect.h"
 #include "GameplayEffectExtension.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
+#include "Effects/StatusGameplayEffect.h"
 #include "Net/UnrealNetwork.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBaseHealthFeedback, Log, All);
+
+static TAutoConsoleVariable<int32> CVarSWDebugDeathImpactDirection(
+	TEXT("sw.DeathRagdoll.DebugImpactDirection"),
+	0,
+	TEXT("Logs and draws the authoritative lethal-hit direction. 0=off, 1=on."),
+	ECVF_Cheat);
 
 UBaseHealthComponent::UBaseHealthComponent()
 {
@@ -24,7 +36,7 @@ void UBaseHealthComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	DOREPLIFETIME(UBaseHealthComponent, DeathState);
+	DOREPLIFETIME(UBaseHealthComponent, DeathPresentation);
 }
 
 void UBaseHealthComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -44,6 +56,20 @@ void UBaseHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent* 
 	UninitializeFromAbilitySystem();
 
 	AbilitySystemComponent = InAbilitySystemComponent;
+	if (GetOwner())
+		if (auto* Status = GetOwner()->FindComponentByClass<UStatusComponent>()) Status->InitializeWithAbilitySystem(InAbilitySystemComponent);
+	if (GetOwner() && GetOwner()->HasAuthority())
+	{
+		if (auto* Stats = GetOwner()->FindComponentByClass<UEquipmentStatComponent>())
+		{
+			if (!Stats->RebindAbilitySystem(InAbilitySystemComponent))
+			{
+				Stats->Clear();
+				UE_LOG(LogBaseHealthFeedback, Warning, TEXT("Equipment stats could not rebind to the replacement ASC on %s."), *GetNameSafe(GetOwner()));
+			}
+		}
+	}
+	if (auto* Presenter = UCombatPresentationComponent::GetOrCreate(GetOwner())) Presenter->Initialize(InAbilitySystemComponent);
 
 	HealthChangedDelegateHandle = AbilitySystemComponent
 		->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute())
@@ -72,6 +98,10 @@ void UBaseHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent* 
 
 void UBaseHealthComponent::UninitializeFromAbilitySystem()
 {
+	if (GetOwner())
+		if (auto* Status = GetOwner()->FindComponentByClass<UStatusComponent>()) Status->Uninitialize();
+	if (GetOwner())
+		if (auto* Presenter = GetOwner()->FindComponentByClass<UCombatPresentationComponent>()) Presenter->Uninitialize();
 	if (!AbilitySystemComponent)
 	{
 		return;
@@ -124,7 +154,8 @@ float UBaseHealthComponent::GetHealthNormalized() const
 void UBaseHealthComponent::StartDeath()
 {
 	AActor* Owner = GetOwningActor();
-	if (!Owner || !Owner->HasAuthority() || !AbilitySystemComponent || DeathState != EBaseDeathState::NotDead)
+	if (!Owner || !Owner->HasAuthority() || !AbilitySystemComponent
+		|| DeathPresentation.DeathState != EBaseDeathState::NotDead)
 	{
 		return;
 	}
@@ -136,22 +167,62 @@ void UBaseHealthComponent::StartDeath()
 		AbilitySystemComponent->AddLooseGameplayTag(State_Dead, 1, EGameplayTagReplicationState::TagOnly);
 	}
 
-	SendGameplayEventToOwner(GameplayAbility_Dead);
-
+	FGameplayAbilitySpecHandle DeathAbilityHandle;
 	for (const FGameplayAbilitySpec& AbilitySpec : AbilitySystemComponent->GetActivatableAbilities())
 	{
 		if (AbilitySpec.Ability && AbilitySpec.Ability->GetClass()->IsChildOf(UBaseDeathGameplayAbility::StaticClass()))
 		{
-			AbilitySystemComponent->TryActivateAbility(AbilitySpec.Handle);
+			DeathAbilityHandle = AbilitySpec.Handle;
 			break;
 		}
 	}
+
+	SendGameplayEventToOwner(GameplayAbility_Dead);
+
+	if (DeathPresentation.DeathState != EBaseDeathState::DeathStarted)
+	{
+		return;
+	}
+
+	// Gameplay events activate matching abilities first. Explicit activation is
+	// retained as a fallback for authored death abilities that lost their trigger.
+	if (DeathAbilityHandle.IsValid())
+	{
+		FGameplayAbilitySpec* DeathSpec = AbilitySystemComponent->FindAbilitySpecFromHandle(DeathAbilityHandle);
+		if (DeathSpec && !DeathSpec->IsActive())
+		{
+			AbilitySystemComponent->TryActivateAbility(DeathAbilityHandle);
+			DeathSpec = AbilitySystemComponent->FindAbilitySpecFromHandle(DeathAbilityHandle);
+		}
+
+		if (DeathPresentation.DeathState != EBaseDeathState::DeathStarted || (DeathSpec && DeathSpec->IsActive()))
+		{
+			return;
+		}
+
+		UE_LOG(LogTemp, Error,
+			TEXT("Death ability failed to activate; finishing death immediately. Owner=%s Ability=%s"),
+			*GetNameSafe(Owner),
+			DeathSpec && DeathSpec->Ability ? *GetNameSafe(DeathSpec->Ability) : TEXT("Invalid"));
+	}
+
+	// Characters without a death ability (all regular enemies) finish
+	// immediately. Their owner has already applied immediate ragdoll from the
+	// DeathStarted notification.
+	FinishDeath();
+}
+
+FVector UBaseHealthComponent::CalculateKnockbackDirectionAwayFromSource(
+	const FVector& VictimLocation,
+	const FVector& SourceLocation)
+{
+	return (VictimLocation - SourceLocation).GetSafeNormal2D();
 }
 
 void UBaseHealthComponent::FinishDeath()
 {
 	AActor* Owner = GetOwningActor();
-	if (!Owner || !Owner->HasAuthority() || DeathState != EBaseDeathState::DeathStarted)
+	if (!Owner || !Owner->HasAuthority() || DeathPresentation.DeathState != EBaseDeathState::DeathStarted)
 	{
 		return;
 	}
@@ -170,6 +241,7 @@ bool UBaseHealthComponent::ResetForReuse()
 	AbilitySystemComponent->CancelAllAbilities();
 	AbilitySystemComponent->SetLooseGameplayTagCount(State_Dead, 0);
 	ClearPendingDamageContext();
+	DeathPresentation.ImpactData = FDeathRagdollImpactData();
 	SetDeathState(EBaseDeathState::NotDead);
 	AbilitySystemComponent->SetNumericAttributeBase(
 		UBaseAttributeSet::GetHealthAttribute(),
@@ -182,11 +254,13 @@ void UBaseHealthComponent::HandleHealthChanged(const FOnAttributeChangeData& Dat
 	AActor* SourceActor = nullptr;
 	FGameplayEffectContextHandle EffectContextHandle;
 	FGameplayTag ImpactGameplayCueTag;
+	FGameplayTag StatusDamageCueTag;
 	if (Data.GEModData)
 	{
 		EffectContextHandle = Data.GEModData->EffectSpec.GetContext();
 		SourceActor = ResolveSourceActorFromContext(EffectContextHandle);
 		ImpactGameplayCueTag = ResolveImpactGameplayCueTag(Data.GEModData->EffectSpec);
+		StatusDamageCueTag = ResolveStatusDamageCueTag(Data.GEModData->EffectSpec);
 	}
 
 	if (!EffectContextHandle.IsValid() && bHasPendingDamageContext)
@@ -201,6 +275,13 @@ void UBaseHealthComponent::HandleHealthChanged(const FOnAttributeChangeData& Dat
 	if (!Data.GEModData && !ImpactGameplayCueTag.IsValid())
 	{
 		ImpactGameplayCueTag = PendingImpactGameplayCueTag;
+		StatusDamageCueTag = PendingStatusDamageCueTag;
+	}
+	ESWDamageDeliveryType DeliveryType = USWCombatEffectContextLibrary::GetDamageDeliveryType(EffectContextHandle);
+	// An authored impact cue is an explicit legacy declaration of a direct hit.
+	if (DeliveryType == ESWDamageDeliveryType::Unspecified && ImpactGameplayCueTag.IsValid())
+	{
+		DeliveryType = ESWDamageDeliveryType::DirectHit;
 	}
 
 	OnHealthChanged.Broadcast(this, Data.OldValue, Data.NewValue, SourceActor);
@@ -217,17 +298,30 @@ void UBaseHealthComponent::HandleHealthChanged(const FOnAttributeChangeData& Dat
 			Data.OldValue - Data.NewValue,
 			SourceActor,
 			EffectContextHandle,
-			ImpactGameplayCueTag);
+			DeliveryType,
+			ImpactGameplayCueTag,
+			StatusDamageCueTag);
 	}
 
-	if (Data.OldValue > Data.NewValue && Data.NewValue > 0.0f && DeathState == EBaseDeathState::NotDead)
+	if (Data.OldValue > Data.NewValue && Data.NewValue > 0.0f
+		&& DeathPresentation.DeathState == EBaseDeathState::NotDead)
 	{
-		SendGameplayEventToOwner(GameplayAbility_HitReaction, Data.OldValue - Data.NewValue, SourceActor, EffectContextHandle);
+		const bool bPeriodic = DeliveryType == ESWDamageDeliveryType::StatusTick
+			|| (Data.GEModData && Data.GEModData->EffectSpec.GetPeriod() > 0.f);
+		OnConfirmedDamage.Broadcast(Data.OldValue - Data.NewValue, EffectContextHandle, bPeriodic);
+		if (DeliveryType == ESWDamageDeliveryType::DirectHit)
+		{
+			SendGameplayEventToOwner(GameplayAbility_HitReaction, Data.OldValue - Data.NewValue, SourceActor, EffectContextHandle);
+		}
 		ClearPendingDamageContext();
 	}
 
 	if (Data.NewValue <= 0.0f)
 	{
+		if (DeathPresentation.DeathState == EBaseDeathState::NotDead)
+		{
+			CaptureLethalImpact(EffectContextHandle, SourceActor);
+		}
 		StartDeath();
 		ClearPendingDamageContext();
 	}
@@ -255,19 +349,26 @@ FGameplayTag UBaseHealthComponent::ResolveImpactGameplayCueTag(
 	return ResolvedTag;
 }
 
+FGameplayTag UBaseHealthComponent::ResolveStatusDamageCueTag(const FGameplayEffectSpec& EffectSpec) const
+{
+	const UStatusGameplayEffect* StatusEffect = Cast<UStatusGameplayEffect>(EffectSpec.Def);
+	return StatusEffect ? StatusEffect->GetPeriodicDamageCueTag() : FGameplayTag();
+}
+
 void UBaseHealthComponent::ExecuteConfirmedDamageGameplayCues(
 	float DamageAmount,
 	AActor* SourceActor,
 	const FGameplayEffectContextHandle& EffectContextHandle,
-	FGameplayTag ImpactGameplayCueTag) const
+	ESWDamageDeliveryType DeliveryType,
+	FGameplayTag ImpactGameplayCueTag,
+	FGameplayTag StatusDamageCueTag) const
 {
-	AActor* Owner = GetOwningActor();
-	if (!Owner || !Owner->HasAuthority() || !AbilitySystemComponent
-		|| DamageAmount <= 0.0f
-		|| (!DamageGameplayCueTag.IsValid() && !ImpactGameplayCueTag.IsValid()))
+	if (!ShouldExecuteConfirmedDamageGameplayCues(
+		DamageAmount, DeliveryType, ImpactGameplayCueTag, StatusDamageCueTag))
 	{
 		return;
 	}
+	AActor* Owner = GetOwningActor();
 
 	FGameplayCueParameters Parameters(EffectContextHandle);
 	Parameters.RawMagnitude = DamageAmount;
@@ -296,6 +397,11 @@ void UBaseHealthComponent::ExecuteConfirmedDamageGameplayCues(
 	}
 	Parameters.TargetAttachComponent = Owner->GetRootComponent();
 	Parameters.bReplicateLocationWhenUsingMinimalRepProxy = true;
+	if (DeliveryType == ESWDamageDeliveryType::StatusTick)
+	{
+		AbilitySystemComponent->ExecuteGameplayCue(StatusDamageCueTag, Parameters);
+		return;
+	}
 	if (DamageGameplayCueTag.IsValid())
 	{
 		AbilitySystemComponent->ExecuteGameplayCue(DamageGameplayCueTag, Parameters);
@@ -304,6 +410,20 @@ void UBaseHealthComponent::ExecuteConfirmedDamageGameplayCues(
 	{
 		AbilitySystemComponent->ExecuteGameplayCue(ImpactGameplayCueTag, Parameters);
 	}
+}
+
+bool UBaseHealthComponent::ShouldExecuteConfirmedDamageGameplayCues(
+	float DamageAmount,
+	ESWDamageDeliveryType DeliveryType,
+	FGameplayTag ImpactGameplayCueTag,
+	FGameplayTag StatusDamageCueTag) const
+{
+	const AActor* Owner = GetOwningActor();
+	return Owner && Owner->HasAuthority() && AbilitySystemComponent
+		&& DamageAmount > 0.0f
+		&& ((DeliveryType == ESWDamageDeliveryType::DirectHit
+				&& (DamageGameplayCueTag.IsValid() || ImpactGameplayCueTag.IsValid()))
+			|| (DeliveryType == ESWDamageDeliveryType::StatusTick && StatusDamageCueTag.IsValid()));
 }
 
 void UBaseHealthComponent::HandleMaxHealthChanged(const FOnAttributeChangeData& Data)
@@ -329,12 +449,13 @@ void UBaseHealthComponent::HandleDamageChanged(const FOnAttributeChangeData& Dat
 	PendingDamageEffectContextHandle = Data.GEModData->EffectSpec.GetContext();
 	PendingDamageSourceActor = ResolveSourceActorFromContext(PendingDamageEffectContextHandle);
 	PendingImpactGameplayCueTag = ResolveImpactGameplayCueTag(Data.GEModData->EffectSpec);
+	PendingStatusDamageCueTag = ResolveStatusDamageCueTag(Data.GEModData->EffectSpec);
 	bHasPendingDamageContext = PendingDamageEffectContextHandle.IsValid();
 }
 
 void UBaseHealthComponent::HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
-	if (NewCount > 0 && DeathState == EBaseDeathState::NotDead)
+	if (NewCount > 0 && DeathPresentation.DeathState == EBaseDeathState::NotDead)
 	{
 		SetDeathState(EBaseDeathState::DeathStarted);
 	}
@@ -364,19 +485,107 @@ void UBaseHealthComponent::ClearPendingDamageContext()
 {
 	PendingDamageEffectContextHandle = FGameplayEffectContextHandle();
 	PendingImpactGameplayCueTag = FGameplayTag();
+	PendingStatusDamageCueTag = FGameplayTag();
 	PendingDamageSourceActor.Reset();
 	bHasPendingDamageContext = false;
 }
 
+void UBaseHealthComponent::CaptureLethalImpact(
+	const FGameplayEffectContextHandle& EffectContextHandle,
+	AActor* SourceActor)
+{
+	DeathPresentation.ImpactData = BuildDeathRagdollImpactData(
+		GetOwningActor(), EffectContextHandle, SourceActor);
+
+	AActor* Owner = GetOwningActor();
+	if (CVarSWDebugDeathImpactDirection.GetValueOnGameThread() > 0
+		&& Owner && DeathPresentation.ImpactData.bHasDirection)
+	{
+		const FVector Direction =
+			FVector(DeathPresentation.ImpactData.KnockbackDirection).GetSafeNormal2D();
+		const FVector Start = DeathPresentation.ImpactData.bHasImpactPoint
+			? FVector(DeathPresentation.ImpactData.ImpactPoint)
+			: Owner->GetActorLocation();
+		UE_LOG(LogBaseHealthFeedback, Display,
+			TEXT("DeathImpact Owner=%s Source=%s Direction=%s Bone=%s"),
+			*GetNameSafe(Owner),
+			*GetNameSafe(SourceActor),
+			*Direction.ToCompactString(),
+			*DeathPresentation.ImpactData.HitBoneName.ToString());
+		DrawDebugDirectionalArrow(
+			Owner->GetWorld(), Start, Start + Direction * 250.0f,
+			40.0f, FColor::Magenta, false, 5.0f, 0, 3.0f);
+	}
+}
+
+FDeathRagdollImpactData UBaseHealthComponent::BuildDeathRagdollImpactData(
+	const AActor* VictimActor,
+	const FGameplayEffectContextHandle& EffectContextHandle,
+	const AActor* SourceActor)
+{
+	FDeathRagdollImpactData Result;
+	if (!VictimActor)
+	{
+		return Result;
+	}
+
+	const FHitResult* HitResult = EffectContextHandle.GetHitResult();
+	if (HitResult)
+	{
+		Result.bHasImpactPoint = true;
+		Result.ImpactPoint = HitResult->ImpactPoint;
+		Result.HitBoneName = HitResult->BoneName;
+	}
+
+	FVector KnockbackDirection = FVector::ZeroVector;
+	USWCombatEffectContextLibrary::GetImpactDirection(
+		EffectContextHandle, KnockbackDirection);
+
+	if (KnockbackDirection.IsNearlyZero())
+	{
+		// Legacy/environmental effects still use the same resolver, but new combat
+		// paths should normally arrive with the direction already serialized.
+		KnockbackDirection = USWCombatEffectContextLibrary::ResolveImpactDirection(
+			SourceActor,
+			EffectContextHandle.GetEffectCauser(),
+			VictimActor,
+			HitResult);
+	}
+
+	if (!KnockbackDirection.IsNearlyZero())
+	{
+		Result.bHasDirection = true;
+		Result.KnockbackDirection = KnockbackDirection;
+	}
+	return Result;
+}
+
 void UBaseHealthComponent::SetDeathState(EBaseDeathState NewDeathState)
 {
-	if (DeathState == NewDeathState)
+	if (DeathPresentation.DeathState == NewDeathState)
 	{
 		return;
 	}
 
-	const EBaseDeathState OldDeathState = DeathState;
-	DeathState = NewDeathState;
+	const EBaseDeathState OldDeathState = DeathPresentation.DeathState;
+	DeathPresentation.DeathState = NewDeathState;
+	BroadcastDeathStateTransition(OldDeathState);
+	if (AActor* Owner = GetOwningActor(); Owner && Owner->HasAuthority())
+	{
+		Owner->ForceNetUpdate();
+	}
+}
+
+void UBaseHealthComponent::BroadcastDeathStateTransition(EBaseDeathState OldDeathState)
+{
+	const EBaseDeathState NewDeathState = DeathPresentation.DeathState;
+	// StartDeath and FinishDeath may coalesce into one replicated update. Preserve
+	// the missing DeathStarted notification before broadcasting DeathFinished.
+	if (OldDeathState == EBaseDeathState::NotDead
+		&& NewDeathState == EBaseDeathState::DeathFinished)
+	{
+		OnDeathStarted.Broadcast(this);
+	}
 
 	if (NewDeathState == EBaseDeathState::DeathStarted)
 	{
@@ -386,8 +595,6 @@ void UBaseHealthComponent::SetDeathState(EBaseDeathState NewDeathState)
 	{
 		OnDeathFinished.Broadcast(this);
 	}
-
-	(void)OldDeathState;
 }
 
 void UBaseHealthComponent::SendGameplayEventToOwner(
@@ -418,19 +625,11 @@ AActor* UBaseHealthComponent::GetOwningActor() const
 	return GetOwner();
 }
 
-void UBaseHealthComponent::OnRep_DeathState(EBaseDeathState OldDeathState)
+void UBaseHealthComponent::OnRep_DeathPresentation(FReplicatedDeathPresentation OldPresentation)
 {
-	if (DeathState == OldDeathState)
+	if (DeathPresentation.DeathState == OldPresentation.DeathState)
 	{
 		return;
 	}
-
-	if (DeathState == EBaseDeathState::DeathStarted)
-	{
-		OnDeathStarted.Broadcast(this);
-	}
-	else if (DeathState == EBaseDeathState::DeathFinished)
-	{
-		OnDeathFinished.Broadcast(this);
-	}
+	BroadcastDeathStateTransition(OldPresentation.DeathState);
 }

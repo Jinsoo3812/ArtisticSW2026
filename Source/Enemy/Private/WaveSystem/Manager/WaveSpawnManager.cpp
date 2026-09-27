@@ -1009,14 +1009,10 @@ bool AWaveSpawnManager::SpawnOneEnemyFromGroup(int32 SpawnGroupIndex, const FSpa
 
     const FTransform SpawnTransform = Route->GetSpawnTransform(SpawnGroupDefinition.SpawnRadius);
 
-    FActorSpawnParameters SpawnParameters;
-    SpawnParameters.Owner = this;
-    SpawnParameters.SpawnCollisionHandlingOverride = SpawnCollisionHandlingMethod;
-
-    ABaseEnemy* SpawnedEnemy = World->SpawnActor<ABaseEnemy>(
+    ABaseEnemy* SpawnedEnemy = World->SpawnActorDeferred<ABaseEnemy>(
         SpawnGroupDefinition.EnemyClass,
         SpawnTransform,
-        SpawnParameters
+        this, nullptr, SpawnCollisionHandlingMethod
     );
 
     if (!IsValid(SpawnedEnemy))
@@ -1032,6 +1028,18 @@ bool AWaveSpawnManager::SpawnOneEnemyFromGroup(int32 SpawnGroupIndex, const FSpa
         return false;
     }
 
+    if (!SpawnedEnemy->ConfigureSpawnBalance(SpawnGroupDefinition.StatsRow,
+        SpawnGroupDefinition.HealthMultiplier, SpawnGroupDefinition.SpeedMultiplier))
+    {
+        SpawnedEnemy->Destroy();
+        return false;
+    }
+    SpawnedEnemy->FinishSpawning(SpawnTransform);
+    if (!IsValid(SpawnedEnemy) || !SpawnedEnemy->IsBalanceReady())
+    {
+        if (IsValid(SpawnedEnemy)) SpawnedEnemy->Destroy();
+        return false;
+    }
     SpawnedEnemy->SpawnDefaultController();
 
     const int32 EnemySeed = GenerateEnemyRouteSeed(CurrentWaveArrayIndex, SpawnGroupIndex, SpawnOrdinalInGroup);
@@ -1044,11 +1052,6 @@ bool AWaveSpawnManager::SpawnOneEnemyFromGroup(int32 SpawnGroupIndex, const FSpa
 
     BindEnemyDelegates(SpawnedEnemy, WaypointMoveComponent);
     
-    SpawnedEnemy->InitializeFromWaveSpawn(
-     SpawnGroupDefinition.HealthMultiplier,
-     SpawnGroupDefinition.SpeedMultiplier,
-     SpawnGroupDefinition.EnemyLevel
- );
 
     UE_LOG(
         LogWaveSpawnManager,

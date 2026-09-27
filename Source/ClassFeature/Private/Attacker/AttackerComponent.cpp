@@ -102,13 +102,9 @@ void UAttackerComponent::GrantAttackerAbilities()
 	// ASC에 Attacker 역할 태그 부여
 	if (UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent())
 	{
-		ASC->AddLooseGameplayTag(Class_Attacker);
+		ASC->SetLooseGameplayTagCount(Class_Attacker, 1);
 	}
 
-	for (const auto& SlotGAPair : AttackerAbilities)
-	{
-		Player->GrantAbilityToSlot(SlotGAPair.Key, SlotGAPair.Value);
-	}
 }
 
 void UAttackerComponent::RemoveAttackerAbilities()
@@ -122,8 +118,4 @@ void UAttackerComponent::RemoveAttackerAbilities()
 		ASC->RemoveLooseGameplayTag(Class_Attacker);
 	}
 
-	for (const auto& SlotGAPair : AttackerAbilities)
-	{
-		Player->RemoveAbilityFromSlot(SlotGAPair.Key);
-	}
 }

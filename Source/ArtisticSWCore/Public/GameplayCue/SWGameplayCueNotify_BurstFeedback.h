@@ -30,6 +30,7 @@ public:
 	USWGameplayCueNotify_BurstFeedback();
 
 	UNiagaraSystem* GetNiagaraSystem() const { return NiagaraSystem; }
+	TSubclassOf<UCameraShakeBase> GetCameraShakeClass() const { return CameraShakeClass; }
 	float GetCameraShakeScale() const { return CameraShakeScale; }
 	ESWGameplayCueCameraShakeRecipient GetCameraShakeRecipient() const { return CameraShakeRecipient; }
 

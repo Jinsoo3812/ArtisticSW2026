@@ -9,10 +9,12 @@ public class ClassFeature: ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
+            "NetCore",
             "GASCore",
             "InputCore",
             "EnhancedInput",
-            "ArtisticSWCore"
+            "ArtisticSWCore",
+            "Niagara"
         });
 
         PublicDependencyModuleNames.AddRange(new string[] {
@@ -36,7 +38,8 @@ public class ClassFeature: ModuleRules
             "MotionTrajectory",
             "WaterAndShip",
             "Water",
-            "NPCDialogue"
+            "NPCDialogue",
+            "Story"
         });
 
         PublicIncludePaths.AddRange(new string[] {

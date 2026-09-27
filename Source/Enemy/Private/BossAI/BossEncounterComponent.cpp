@@ -8,8 +8,11 @@
 #include "Engine/World.h"
 #include "Interactable/InteractableComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Ship.h"
 #include "ShipAI/EnemyShip.h"
 #include "Storage/StorageChest.h"
+#include "ItemSpawn/LootSpawnPoint.h"
+#include "Engine/GameInstance.h"
 
 UBossEncounterComponent::UBossEncounterComponent()
 {
@@ -24,6 +27,17 @@ void UBossEncounterComponent::BeginPlay()
 	{
 		return;
 	}
+	if (GetOwner() && GetOwner()->HasAuthority())
+	{
+		if (UGameInstance* GameInstance = GetWorld()->GetGameInstance())
+		{
+			if (UStoryFacadeSubsystem* Story = GameInstance->GetSubsystem<UStoryFacadeSubsystem>())
+			{
+				Story->OnStoryChanged.AddUniqueDynamic(this, &UBossEncounterComponent::HandleStoryChanged);
+			}
+		}
+		UpdateBossReservation();
+	}
 	if (AEnemyShip* HostShip = Cast<AEnemyShip>(GetOwner()))
 	{
 		HostShip->OnDestroyed.AddUniqueDynamic(this, &UBossEncounterComponent::HandleHostShipDestroyed);
@@ -33,17 +47,35 @@ void UBossEncounterComponent::BeginPlay()
 		EnemyItemBox = ResolveConfiguredEnemyItemBox();
 	}
 
-	BindItemBox();
-	if (GetOwner()->HasAuthority() && EnemyItemBox)
+	if (EncounterTrigger == EBossEncounterTrigger::ItemBoxInteraction)
 	{
-		EnemyItemBox->SetPhysicsAndBuoyancyEnabled(false);
-		EnemyItemBox->SetLocked(true);
+		if (AChestSpawnPoint* Point = ResolveTriggerChestPoint())
+		{
+			Point->OnChestSpawned.AddUniqueDynamic(this, &UBossEncounterComponent::HandleChestSpawned);
+			if (AStorageChest* Chest = Cast<AStorageChest>(Point->GetSpawnedActor())) HandleChestSpawned(Chest);
+		}
+		else if (GetOwner() && GetOwner()->HasAuthority())
+		{
+			UE_LOG(LogTemp, Error, TEXT("[BossEncounter] Missing trigger chest point on %s"), *GetNameSafe(GetOwner()));
+		}
+		BindItemBox();
 	}
 }
 
 void UBossEncounterComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	UnbindItemBox();
+	if (AChestSpawnPoint* Point = ResolveTriggerChestPoint())
+	{
+		Point->OnChestSpawned.RemoveDynamic(this, &UBossEncounterComponent::HandleChestSpawned);
+	}
+	if (UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+	{
+		if (UStoryFacadeSubsystem* Story = GameInstance->GetSubsystem<UStoryFacadeSubsystem>())
+		{
+			Story->OnStoryChanged.RemoveDynamic(this, &UBossEncounterComponent::HandleStoryChanged);
+		}
+	}
 	if (SpawnedBoss && SpawnedBoss->GetHealthComponent())
 	{
 		SpawnedBoss->GetHealthComponent()->OnDeathStarted.RemoveDynamic(
@@ -78,16 +110,15 @@ void UBossEncounterComponent::ConfigureEncounter(
 	EnemyItemBox = InEnemyItemBox ? InEnemyItemBox : ResolveConfiguredEnemyItemBox();
 	BossClass = InBossClass;
 	BossSpawnPointId = InBossSpawnPointId;
-	BindItemBox();
+	if (EncounterTrigger == EBossEncounterTrigger::ItemBoxInteraction)
+	{
+		BindItemBox();
+	}
 	if (AEnemyShip* HostShip = Cast<AEnemyShip>(GetOwner()))
 	{
 		HostShip->OnDestroyed.AddUniqueDynamic(this, &UBossEncounterComponent::HandleHostShipDestroyed);
 	}
-	if (EnemyItemBox)
-	{
-		EnemyItemBox->SetPhysicsAndBuoyancyEnabled(false);
-		EnemyItemBox->SetLocked(true);
-	}
+	UpdateBossReservation();
 }
 
 AStorageChest* UBossEncounterComponent::ResolveConfiguredEnemyItemBox() const
@@ -103,23 +134,51 @@ AStorageChest* UBossEncounterComponent::ResolveConfiguredEnemyItemBox() const
 
 void UBossEncounterComponent::HandleItemBoxInteracted(AActor* Interactor)
 {
-	if (!GetOwner() || !GetOwner()->HasAuthority()
-		|| EncounterState != EBossEncounterState::Waiting
-		|| !IsValid(Interactor))
+	if (EncounterTrigger != EBossEncounterTrigger::ItemBoxInteraction)
 	{
 		return;
+	}
+	TryStartEncounter(Interactor);
+}
+
+bool UBossEncounterComponent::NotifyPlayerShipSighted(AShip* SensedPlayerShip)
+{
+	if (EncounterTrigger != EBossEncounterTrigger::PlayerShipSight)
+	{
+		return false;
+	}
+	return TryStartEncounter(SensedPlayerShip);
+}
+
+bool UBossEncounterComponent::TryStartEncounter(AActor* TriggerActor)
+{
+	if (!bEncounterEnabled || !GetOwner() || !GetOwner()->HasAuthority()
+		|| EncounterState != EBossEncounterState::Waiting
+		|| !IsCampaignGateOpen()
+		|| (EncounterTrigger == EBossEncounterTrigger::ItemBoxInteraction && !ResolveTriggerChestPoint())
+		|| !IsValid(TriggerActor))
+	{
+		return false;
+	}
+	if (!ResolveEncounterTarget(TriggerActor))
+	{
+		// Some game modes possess the Player Ship directly and never populate
+		// RidingPlayer. Spawning the encounter must not depend on an initial
+		// character target; the boss perception controller can acquire one later.
+		UE_LOG(LogTemp, Log,
+			TEXT("[BossEncounter] Starting without an initial combat target. Trigger=%s"),
+			*GetNameSafe(TriggerActor));
 	}
 
 	// Change state before spawning so simultaneous interactions cannot create two bosses.
 	SetEncounterState(EBossEncounterState::Spawning);
-	if (!SpawnBossFor(Interactor))
+	if (!SpawnBossFor(TriggerActor))
 	{
 		SetEncounterState(EBossEncounterState::Failed);
-		if (EnemyItemBox)
-		{
-			EnemyItemBox->SetLocked(true);
-		}
+		UpdateBossReservation();
+		return false;
 	}
+	return true;
 }
 
 void UBossEncounterComponent::HandleBossDeathStarted(UBaseHealthComponent* HealthComponent)
@@ -129,6 +188,7 @@ void UBossEncounterComponent::HandleBossDeathStarted(UBaseHealthComponent* Healt
 		return;
 	}
 	SetEncounterState(EBossEncounterState::Defeated);
+	UpdateBossReservation();
 }
 
 void UBossEncounterComponent::HandleHostShipDestroyed(AActor* DestroyedActor)
@@ -156,8 +216,12 @@ bool UBossEncounterComponent::SpawnBossFor(AActor* Interactor)
 {
 	AEnemyShip* HostShip = Cast<AEnemyShip>(GetOwner());
 	UWorld* World = GetWorld();
-	if (!HostShip || !World || !BossClass || !EnemyItemBox)
+	AActor* CombatTarget = ResolveEncounterTarget(Interactor);
+	if (!HostShip || !World || !BossClass)
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[BossEncounter] Spawn rejected. Host=%s BossClass=%s Target=%s"),
+			*GetNameSafe(HostShip), *GetNameSafe(BossClass.Get()), *GetNameSafe(CombatTarget));
 		return false;
 	}
 
@@ -165,6 +229,9 @@ bool UBossEncounterComponent::SpawnBossFor(AActor* Interactor)
 	FTransform SpawnTransform;
 	if (!ResolveSpawnPoint(*HostShip, SpawnPointId, SpawnTransform))
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[BossEncounter] No valid boss spawn point. Ship=%s AuthoredPointId=%d"),
+			*GetNameSafe(HostShip), BossSpawnPointId);
 		return false;
 	}
 
@@ -176,27 +243,67 @@ bool UBossEncounterComponent::SpawnBossFor(AActor* Interactor)
 		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 	if (!Boss)
 	{
+		UE_LOG(LogTemp, Error, TEXT("[BossEncounter] Deferred boss spawn failed. Ship=%s"),
+			*GetNameSafe(HostShip));
 		return false;
 	}
 
-	Boss->FinishSpawning(SpawnTransform);
-	if (!Boss->InitializeBoss(HostShip, SpawnPointId, Interactor))
+	if (!Boss->ConfigureSpawnBalance(BossStatsRow))
 	{
+		Boss->Destroy();
+		return false;
+	}
+	Boss->FinishSpawning(SpawnTransform);
+	if (!IsValid(Boss)) return false;
+	if (!Boss->IsBalanceReady())
+	{
+		Boss->Destroy();
+		return false;
+	}
+	if (!Boss->InitializeBoss(HostShip, SpawnPointId, CombatTarget))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[BossEncounter] Boss initialization failed. Ship=%s PointId=%d Target=%s"),
+			*GetNameSafe(HostShip), SpawnPointId, *GetNameSafe(CombatTarget));
 		Boss->Destroy();
 		return false;
 	}
 
 	SpawnedBoss = Boss;
+	if (!HostShip->RegisterBossEnemy(Boss))
+	{
+		SpawnedBoss = nullptr;
+		Boss->Destroy();
+		return false;
+	}
+	TInlineComponentArray<UChildActorComponent*> ChestComponents(HostShip);
+	for (UChildActorComponent* Component : ChestComponents)
+	{
+		if (AChestSpawnPoint* Point = Component ? Cast<AChestSpawnPoint>(Component->GetChildActor()) : nullptr)
+		{
+			if (Point->GetSpawnMode() == EChestSpawnMode::Guarded) Point->RegisterBossGuard(Boss);
+		}
+	}
+	UE_LOG(LogTemp, Log,
+		TEXT("[BossEncounter] Boss spawned. Ship=%s Boss=%s PointId=%d InitialTarget=%s"),
+		*GetNameSafe(HostShip), *GetNameSafe(Boss), SpawnPointId, *GetNameSafe(CombatTarget));
 	if (UBaseHealthComponent* Health = Boss->GetHealthComponent())
 	{
 		Health->OnDeathStarted.AddUniqueDynamic(this, &UBossEncounterComponent::HandleBossDeathStarted);
 	}
 
-	TArray<ABaseCharacter*> Guards;
-	Guards.Add(Boss);
-	EnemyItemBox->ConfigureGuarding(true, Guards, HostShip);
 	SetEncounterState(EBossEncounterState::Active);
+	UpdateBossReservation();
 	return true;
+}
+
+AActor* UBossEncounterComponent::ResolveEncounterTarget(AActor* TriggerActor) const
+{
+	if (AShip* TriggerShip = Cast<AShip>(TriggerActor))
+	{
+		return TriggerShip->GetRidingPlayer();
+	}
+	return TriggerActor;
 }
 
 bool UBossEncounterComponent::ResolveSpawnPoint(
@@ -206,35 +313,15 @@ bool UBossEncounterComponent::ResolveSpawnPoint(
 {
 	OutPointId = BossSpawnPointId;
 	UDeckWaypointComponent* Point = HostShip.GetDeckWaypoint(OutPointId);
-	if (!Point)
-	{
-		TArray<int32> PointIds;
-		HostShip.GetDeckWaypointIds(PointIds, true);
-		for (const int32 PointId : PointIds)
-		{
-			UDeckWaypointComponent* Candidate = HostShip.GetDeckWaypoint(PointId);
-			if (Candidate && Candidate->CanSpawnEnemy())
-			{
-				OutPointId = PointId;
-				Point = Candidate;
-				break;
-			}
-		}
-		if (!Point && !PointIds.IsEmpty())
-		{
-			OutPointId = PointIds[0];
-			Point = HostShip.GetDeckWaypoint(OutPointId);
-		}
-	}
-
-	if (!Point)
+	if (!Point || !Point->CanUseInCombat())
 	{
 		return false;
 	}
 	const AShipBossEnemy* BossCDO = BossClass ? BossClass->GetDefaultObject<AShipBossEnemy>() : nullptr;
 	const UCapsuleComponent* Capsule = BossCDO ? BossCDO->GetCapsuleComponent() : nullptr;
 	const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0f;
-	return HostShip.ResolveDeckCharacterTransform(OutPointId, HalfHeight, OutTransform);
+	return HostShip.ResolveDeckCharacterTransform(OutPointId, HalfHeight, OutTransform)
+		|| HostShip.ResolveFixedDeckAnchorTransform(OutPointId, HalfHeight, OutTransform);
 }
 
 void UBossEncounterComponent::BindItemBox()
@@ -265,4 +352,61 @@ void UBossEncounterComponent::SetEncounterState(EBossEncounterState NewState)
 	EncounterState = NewState;
 	OnEncounterStateChanged.Broadcast(OldState, NewState);
 	GetOwner()->ForceNetUpdate();
+}
+
+AChestSpawnPoint* UBossEncounterComponent::ResolveTriggerChestPoint() const
+{
+	UChildActorComponent* Component = Cast<UChildActorComponent>(
+		TriggerChestSpawnPointComponent.GetComponent(GetOwner()));
+	return Component ? Cast<AChestSpawnPoint>(Component->GetChildActor()) : nullptr;
+}
+
+bool UBossEncounterComponent::IsCampaignGateOpen() const
+{
+	if (!bEncounterEnabled || !GetOwner() || !GetOwner()->HasAuthority()) return false;
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UStoryFacadeSubsystem* Story = GameInstance
+		? GameInstance->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
+	if (!Story)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[BossEncounter] Story subsystem missing on %s"), *GetNameSafe(GetOwner()));
+		return false;
+	}
+	return Story->IsStoryNodeReached(RequiredStoryNode)
+		&& !Story->IsStoryNodeReached(StopAfterStoryNode);
+}
+
+void UBossEncounterComponent::UpdateBossReservation()
+{
+	AEnemyShip* HostShip = Cast<AEnemyShip>(GetOwner());
+	if (!HostShip || !HostShip->HasAuthority()) return;
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UStoryFacadeSubsystem* Story = GameInstance
+		? GameInstance->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
+	const bool bStoppedWithoutBoss = Story && Story->IsStoryNodeReached(StopAfterStoryNode)
+		&& !IsValid(SpawnedBoss);
+	const bool bReserved = bEncounterEnabled && !bStoppedWithoutBoss
+		&& (EncounterState == EBossEncounterState::Waiting
+			|| EncounterState == EBossEncounterState::Spawning);
+	TInlineComponentArray<UChildActorComponent*> Components(HostShip);
+	for (UChildActorComponent* Component : Components)
+	{
+		if (AChestSpawnPoint* Point = Component ? Cast<AChestSpawnPoint>(Component->GetChildActor()) : nullptr)
+		{
+			if (Point->GetSpawnMode() == EChestSpawnMode::Guarded) Point->SetBossEncounterReserved(bReserved);
+		}
+	}
+}
+
+void UBossEncounterComponent::HandleStoryChanged()
+{
+	UpdateBossReservation();
+}
+
+void UBossEncounterComponent::HandleChestSpawned(AStorageChest* Chest)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !IsValid(Chest)) return;
+	UnbindItemBox();
+	EnemyItemBox = Chest;
+	BindItemBox();
 }

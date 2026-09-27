@@ -41,22 +41,36 @@ EBTNodeResult::Type UBTT_SelectBossDestinationPoint::ExecuteTask(
 
 	int32 PointId = INDEX_NONE;
 	if (!UBossDeckPointSelector::SelectDestinationPoint(
-		Boss->GetHostShip(), Boss, Target, SelectionPurpose, SelectionSettings, PointId))
+		Boss->GetHostShip(), Boss, Target, SelectionPurpose, DestinationRelation, SelectionSettings, PointId))
 	{
 		Blackboard->SetValueAsInt(GetSelectedBlackboardKey(), INDEX_NONE);
 		Boss->SetDestinationPointId(INDEX_NONE);
 		return EBTNodeResult::Failed;
 	}
 
+	if (!Boss->TrySetDestinationPointId(PointId))
+	{
+		Blackboard->SetValueAsInt(GetSelectedBlackboardKey(), INDEX_NONE);
+		return EBTNodeResult::Failed;
+	}
 	Blackboard->SetValueAsInt(GetSelectedBlackboardKey(), PointId);
-	Boss->SetDestinationPointId(PointId);
 	return EBTNodeResult::Succeeded;
 }
 
 FString UBTT_SelectBossDestinationPoint::GetStaticDescription() const
 {
+	const TCHAR* RelationDescription = SelectionPurpose == EBossDestinationPurpose::Dash
+		? TEXT("PathThroughTarget")
+		: (DestinationRelation == EBossDestinationRelation::BehindTarget
+			? TEXT("Behind")
+			: (DestinationRelation == EBossDestinationRelation::InFrontOfTarget
+				? TEXT("Front")
+				: TEXT("Any")));
 	return FString::Printf(
-		TEXT("Select moving-deck destination (%s) -> %s"),
-		SelectionPurpose == EBossDestinationPurpose::Dash ? TEXT("Dash") : TEXT("Vanish"),
+		TEXT("Select moving-deck destination (%s, %s) -> %s"),
+		SelectionPurpose == EBossDestinationPurpose::Dash
+			? TEXT("Dash")
+			: (SelectionPurpose == EBossDestinationPurpose::Walk ? TEXT("Walk") : TEXT("Vanish")),
+		RelationDescription,
 		*GetSelectedBlackboardKey().ToString());
 }

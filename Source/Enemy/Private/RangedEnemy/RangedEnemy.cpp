@@ -3,9 +3,11 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
+#include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "Components/BaseHealthComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -18,6 +20,13 @@
 
 ARangedEnemy::ARangedEnemy()
 {
+	bApplyDeathRagdollImpulse = true;
+	// Preserve the former RangedEnemyAIController defaults while moving the
+	// editor-facing source of truth onto each Enemy Blueprint.
+	PerceptionSettings.SightRadius = 3000.0f;
+	PerceptionSettings.LoseSightRadius = 3500.0f;
+	PerceptionSettings.PeripheralVisionDegrees = 80.0f;
+	PerceptionSettings.SightMaxAge = 2.0f;
 	AIControllerClass = ARangedEnemyAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	bUseControllerRotationYaw = true;
@@ -229,10 +238,37 @@ bool ARangedEnemy::TraceLineOfSight(const AActor* Candidate, FHitResult* OutHit)
 		return false;
 	}
 
-	const FVector Start = ArrowSpawnTransform.GetLocation();
-	const FVector End = GetRangedAimLocation(Candidate);
+	return TraceLineOfSightFrom(
+		Candidate,
+		ArrowSpawnTransform.GetLocation(),
+		GetRangedAimLocation(Candidate),
+		false,
+		OutHit);
+}
+
+bool ARangedEnemy::TraceLineOfSightFrom(
+	const AActor* Candidate,
+	const FVector& Start,
+	const FVector& End,
+	const bool bDrawDebug,
+	FHitResult* OutHit) const
+{
+	if (!IsValidCombatTarget(Candidate) || !GetWorld()
+		|| Start.ContainsNaN() || End.ContainsNaN())
+	{
+		if (OutHit)
+		{
+			*OutHit = FHitResult();
+		}
+		return false;
+	}
+
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RangedEnemyAttackLOS), true, this);
 	QueryParams.AddIgnoredActor(this);
+	if (const AEnemyBow* Bow = GetEquippedBow())
+	{
+		QueryParams.AddIgnoredActor(Bow);
+	}
 	if (HostShip)
 	{
 		QueryParams.AddIgnoredActor(HostShip);
@@ -246,7 +282,7 @@ bool ARangedEnemy::TraceLineOfSight(const AActor* Candidate, FHitResult* OutHit)
 		*OutHit = Hit;
 	}
 
-	if (bDrawAttackLineOfSight)
+	if (bDrawDebug)
 	{
 		DrawDebugLine(GetWorld(), Start, End, bVisible ? FColor::Green : FColor::Red, false, 0.25f, 0, 2.0f);
 	}
@@ -329,7 +365,7 @@ bool ARangedEnemy::TryStartRangedAttack(FGameplayAbilitySpecHandle AbilityHandle
 	}
 
 	const double CurrentTime = World->GetTimeSeconds();
-	if (CurrentTime < NextAttackTime)
+	if (CurrentTime < NextAttackTime || !IsBalanceAttackReady())
 	{
 		return false;
 	}
@@ -337,7 +373,7 @@ bool ARangedEnemy::TryStartRangedAttack(FGameplayAbilitySpecHandle AbilityHandle
 	const bool bActivated = ASC->TryActivateAbility(AbilityHandle, false);
 	if (bActivated)
 	{
-		NextAttackTime = CurrentTime + FMath::Max(0.0f, AttackCooldown);
+		NextAttackTime = CurrentTime + FMath::Max(0.0f, GetBalancedAttackInterval(AttackCooldown));
 	}
 	return bActivated;
 }
@@ -362,6 +398,18 @@ float ARangedEnemy::GetRemainingAttackCooldown() const
 	return static_cast<float>(FMath::Max(0.0, RemainingTime));
 }
 
+float ARangedEnemy::GetEffectiveAttackRange() const
+{
+	const UBaseWeaponComponent* EquippedWeaponComponent = GetWeaponComponent();
+	const float WeaponAttackRange = EquippedWeaponComponent
+		&& EquippedWeaponComponent->IsWeaponEquipped()
+		? EquippedWeaponComponent->GetCurrentAttackRange()
+		: 0.0f;
+	return WeaponAttackRange > KINDA_SMALL_NUMBER
+		? WeaponAttackRange
+		: FMath::Max(0.0f, MaxAttackRange);
+}
+
 bool ARangedEnemy::EvaluateAttackTarget(const AActor* Candidate, bool bRequireLineOfSight, FString& OutReason) const
 {
 	if (!EvaluateCombatTarget(Candidate, OutReason))
@@ -375,7 +423,7 @@ bool ARangedEnemy::EvaluateAttackTarget(const AActor* Candidate, bool bRequireLi
 		OutReason = TEXT("BelowMinAttackRange");
 		return false;
 	}
-	if (Distance > MaxAttackRange)
+	if (Distance > GetEffectiveAttackRange())
 	{
 		OutReason = TEXT("AboveMaxAttackRange");
 		return false;
@@ -401,8 +449,57 @@ AEnemyBow* ARangedEnemy::GetEquippedBow() const
 
 bool ARangedEnemy::GetRangedAttackOrigin(FTransform& OutSpawnTransform) const
 {
-	const AEnemyBow* Bow = GetEquippedBow();
-	return Bow && Bow->GetArrowSpawnTransform(OutSpawnTransform);
+	OutSpawnTransform = FTransform::Identity;
+	const USkeletalMeshComponent* CharacterMesh = GetMesh();
+	if (!CharacterMesh || RangedAttackSocketName.IsNone()
+		|| !CharacterMesh->DoesSocketExist(RangedAttackSocketName))
+	{
+		return false;
+	}
+
+	OutSpawnTransform = CharacterMesh->GetSocketTransform(RangedAttackSocketName, RTS_World);
+	return true;
+}
+
+void ARangedEnemy::AcquireServerRangedAttackPoseRefresh()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* CharacterMesh = GetMesh();
+	if (!CharacterMesh)
+	{
+		return;
+	}
+
+	if (ServerRangedAttackPoseRefreshRefCount == 0)
+	{
+		ServerRangedAttackOriginalAnimTickOption = CharacterMesh->VisibilityBasedAnimTickOption;
+		CharacterMesh->VisibilityBasedAnimTickOption =
+			EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	}
+
+	++ServerRangedAttackPoseRefreshRefCount;
+}
+
+void ARangedEnemy::ReleaseServerRangedAttackPoseRefresh()
+{
+	if (!HasAuthority() || ServerRangedAttackPoseRefreshRefCount <= 0)
+	{
+		return;
+	}
+
+	--ServerRangedAttackPoseRefreshRefCount;
+	if (ServerRangedAttackPoseRefreshRefCount == 0)
+	{
+		if (USkeletalMeshComponent* CharacterMesh = GetMesh())
+		{
+			CharacterMesh->VisibilityBasedAnimTickOption =
+				ServerRangedAttackOriginalAnimTickOption;
+		}
+	}
 }
 
 FVector ARangedEnemy::GetRangedAimLocation(const AActor* TargetActor) const
@@ -412,18 +509,47 @@ FVector ARangedEnemy::GetRangedAimLocation(const AActor* TargetActor) const
 		: FVector::ZeroVector;
 }
 
+ERangedShotSnapshotResult ARangedEnemy::BuildRangedShotSnapshot(
+	const AActor* TargetActor,
+	FTransform& OutSpawnTransform,
+	FVector& OutAimLocation,
+	FHitResult* OutHit) const
+{
+	OutSpawnTransform = FTransform::Identity;
+	OutAimLocation = FVector::ZeroVector;
+	if (OutHit)
+	{
+		*OutHit = FHitResult();
+	}
+
+	FString RejectionReason;
+	if (!EvaluateAttackTarget(TargetActor, false, RejectionReason))
+	{
+		return ERangedShotSnapshotResult::InvalidTargetOrRange;
+	}
+	if (!GetRangedAttackOrigin(OutSpawnTransform))
+	{
+		return ERangedShotSnapshotResult::MissingAttackOrigin;
+	}
+
+	OutAimLocation = GetRangedAimLocation(TargetActor);
+	return TraceLineOfSightFrom(
+		TargetActor,
+		OutSpawnTransform.GetLocation(),
+		OutAimLocation,
+		bDrawAttackLineOfSight,
+		OutHit)
+		? ERangedShotSnapshotResult::Ready
+		: ERangedShotSnapshotResult::BlockedLineOfSight;
+}
+
 UAnimMontage* ARangedEnemy::GetRangedAttackMontage() const
 {
 	const UBaseWeaponComponent* EquippedWeaponComponent = GetWeaponComponent();
 	const FWeaponDefinition* WeaponDefinition = EquippedWeaponComponent
 		? EquippedWeaponComponent->GetCurrentWeaponDefinition()
 		: nullptr;
-	if (WeaponDefinition && WeaponDefinition->CombatData.AttackMontage)
-	{
-		return WeaponDefinition->CombatData.AttackMontage;
-	}
-
-	return AttackMontage;
+	return WeaponDefinition ? WeaponDefinition->CombatData.AttackMontage : nullptr;
 }
 
 float ARangedEnemy::GetRangedAttackMontagePlayRate() const
@@ -432,14 +558,33 @@ float ARangedEnemy::GetRangedAttackMontagePlayRate() const
 	const FWeaponDefinition* WeaponDefinition = EquippedWeaponComponent
 		? EquippedWeaponComponent->GetCurrentWeaponDefinition()
 		: nullptr;
-	return WeaponDefinition
+	const float AuthoredPlayRate = WeaponDefinition
 		? FMath::Max(0.001f, WeaponDefinition->CombatData.AttackMontagePlayRate)
 		: 1.0f;
+	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	const float AttackSpeedMultiplier = ASC
+		? FMath::Clamp(
+			ASC->GetNumericAttribute(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute()),
+			0.1f,
+			3.0f)
+		: 1.0f;
+	return ResolveAttackMontagePlayRate(AuthoredPlayRate, AttackSpeedMultiplier);
+}
+
+float ARangedEnemy::ResolveAttackMontagePlayRate(
+	const float AuthoredPlayRate,
+	const float AttackSpeedMultiplier)
+{
+	return FMath::Max(
+		0.001f,
+		FMath::Max(0.001f, AuthoredPlayRate)
+			* FMath::Clamp(AttackSpeedMultiplier, 0.1f, 3.0f));
 }
 
 void ARangedEnemy::OnRep_HostShip()
 {
 	BindHostShipLifecycle();
+	HandleReplicatedHostShipChanged();
 }
 
 void ARangedEnemy::OnHostShipDestroyed(AActor* DestroyedActor)

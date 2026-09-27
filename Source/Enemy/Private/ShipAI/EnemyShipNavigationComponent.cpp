@@ -2,6 +2,7 @@
 
 #include "Ship.h"
 #include "ShipAI/EnemyShip.h"
+#include "ShipAI/EnemyShipAvoidanceSettings.h"
 #include "ShipAI/ShipSwarmSubsystem.h"
 #include "Net/UnrealNetwork.h"
 
@@ -18,7 +19,9 @@ void UEnemyShipNavigationComponent::GetLifetimeReplicatedProps(
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(UEnemyShipNavigationComponent, NavigationProfile);
 	DOREPLIFETIME(UEnemyShipNavigationComponent, TargetShip);
-	DOREPLIFETIME(UEnemyShipNavigationComponent, HomeActor);
+	DOREPLIFETIME(UEnemyShipNavigationComponent, SpawnHomeLocation);
+	DOREPLIFETIME(UEnemyShipNavigationComponent, SpawnHomeRotation);
+	DOREPLIFETIME(UEnemyShipNavigationComponent, bHasSpawnHomeLocation);
 	DOREPLIFETIME(UEnemyShipNavigationComponent, CurrentState);
 	DOREPLIFETIME(UEnemyShipNavigationComponent, bNavigationEnabled);
 }
@@ -27,6 +30,12 @@ void UEnemyShipNavigationComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	OwnerShip = Cast<AEnemyShip>(GetOwner());
+	if (OwnerShip.IsValid() && OwnerShip->HasAuthority())
+	{
+		SpawnHomeLocation = OwnerShip->GetActorLocation();
+		SpawnHomeRotation = OwnerShip->GetActorRotation();
+		bHasSpawnHomeLocation = true;
+	}
 	if (!OwnerShip.IsValid())
 	{
 		SetComponentTickEnabled(false);
@@ -39,7 +48,6 @@ void UEnemyShipNavigationComponent::EndPlay(const EEndPlayReason::Type EndPlayRe
 	StopOwnerShip();
 	OwnerShip.Reset();
 	TargetShip = nullptr;
-	HomeActor = nullptr;
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -68,21 +76,40 @@ void UEnemyShipNavigationComponent::TickComponent(
 	}
 
 	const ENavalCombatState PreviousState = CurrentState;
-	LastNavigationOutput = FEnemyShipNavigationModel::Evaluate(CurrentState, NavigationProfile, BuildContext());
-	ApplySquadAvoidance(LastNavigationOutput);
+	FEnemyShipNavigationContext Context = BuildContext();
+	if (Context.bHasTarget || CurrentState == ENavalCombatState::Return)
+	{
+		LostTargetElapsed = 0.0f;
+	}
+	else
+	{
+		LostTargetElapsed = FMath::Min(
+			LostTargetElapsed + DeltaTime,
+			NavigationProfile.LostTargetReturnDelay);
+	}
+	Context.bReturnRequested = !Context.bHasTarget
+		&& LostTargetElapsed >= NavigationProfile.LostTargetReturnDelay;
+	LastNavigationOutput = FEnemyShipNavigationModel::Evaluate(CurrentState, NavigationProfile, Context);
 	CurrentState = LastNavigationOutput.State;
 	if (PreviousState != CurrentState)
 	{
 		OnNavigationStateChanged.Broadcast(PreviousState, CurrentState);
 	}
-
-	if (Ship->IsUsingLegacyAICompatibility())
+	if (PreviousState == ENavalCombatState::Return && CurrentState == ENavalCombatState::Idle)
 	{
-		Ship->SetAITarget(TargetShip);
-		Ship->SetNavalCombatState(CurrentState);
-		Ship->SetMaxActiveCannons(NavigationProfile.MaxActiveCannons);
+		Ship->ResetAfterReturnToSpawn();
 	}
+
+	UpdateAvoidance(DeltaTime);
 	ApplyControl(LastNavigationOutput);
+}
+
+void UEnemyShipNavigationComponent::OnRep_CurrentState(ENavalCombatState PreviousState)
+{
+	if (PreviousState != CurrentState)
+	{
+		OnNavigationStateChanged.Broadcast(PreviousState, CurrentState);
+	}
 }
 
 void UEnemyShipNavigationComponent::SetNavigationEnabled(bool bEnabled)
@@ -90,6 +117,7 @@ void UEnemyShipNavigationComponent::SetNavigationEnabled(bool bEnabled)
 	bNavigationEnabled = bEnabled;
 	if (!bNavigationEnabled)
 	{
+		ResetAvoidance();
 		StopOwnerShip();
 	}
 }
@@ -100,16 +128,14 @@ void UEnemyShipNavigationComponent::SetNavigationProfile(const FEnemyShipNavigat
 	NavigationProfile.DetectionDistance = FMath::Max(0.0f, NavigationProfile.DetectionDistance);
 	NavigationProfile.IdealDistance = FMath::Max(1.0f, NavigationProfile.IdealDistance);
 	NavigationProfile.OrbitTolerance = FMath::Max(0.0f, NavigationProfile.OrbitTolerance);
-	NavigationProfile.DangerCloseDistance = FMath::Clamp(
-		NavigationProfile.DangerCloseDistance,
-		0.0f,
-		NavigationProfile.IdealDistance);
 	NavigationProfile.ReturnArrivalDistance = FMath::Max(0.0f, NavigationProfile.ReturnArrivalDistance);
-	NavigationProfile.ForwardInputScale = FMath::Max(0.0f, NavigationProfile.ForwardInputScale);
-	NavigationProfile.TurnInputScale = FMath::Max(0.0f, NavigationProfile.TurnInputScale);
-	NavigationProfile.MaxActiveCannons = FMath::Max(1, NavigationProfile.MaxActiveCannons);
-	NavigationProfile.AvoidanceDecisionInterval = FMath::Max(0.02f, NavigationProfile.AvoidanceDecisionInterval);
-	NavigationProfile.AvoidanceSafetyBuffer = FMath::Max(0.0f, NavigationProfile.AvoidanceSafetyBuffer);
+	NavigationProfile.ReturnTriggerDistance = FMath::Max(
+		NavigationProfile.ReturnArrivalDistance,
+		NavigationProfile.ReturnTriggerDistance);
+	NavigationProfile.ReturnPropulsionMultiplier = FMath::Max(
+		0.0f,
+		NavigationProfile.ReturnPropulsionMultiplier);
+	NavigationProfile.LostTargetReturnDelay = FMath::Max(0.0f, NavigationProfile.LostTargetReturnDelay);
 }
 
 void UEnemyShipNavigationComponent::SetTargetShip(AShip* InTargetShip)
@@ -122,9 +148,24 @@ void UEnemyShipNavigationComponent::SetTargetShip(AShip* InTargetShip)
 	TargetShip = InTargetShip;
 }
 
-void UEnemyShipNavigationComponent::SetHomeActor(AActor* InHomeActor)
+bool UEnemyShipNavigationComponent::GetResolvedHomeLocation(FVector& OutHomeLocation) const
 {
-	HomeActor = InHomeActor;
+	if (bHasSpawnHomeLocation)
+	{
+		OutHomeLocation = SpawnHomeLocation;
+		return true;
+	}
+	return false;
+}
+
+bool UEnemyShipNavigationComponent::GetSpawnHomeTransform(FTransform& OutTransform) const
+{
+	if (!bHasSpawnHomeLocation)
+	{
+		return false;
+	}
+	OutTransform = FTransform(SpawnHomeRotation, SpawnHomeLocation);
+	return true;
 }
 
 FEnemyShipNavigationOverrideHandle UEnemyShipNavigationComponent::AcquireOverride(
@@ -208,10 +249,11 @@ FEnemyShipNavigationContext UEnemyShipNavigationComponent::BuildContext() const
 		Context.bHasTarget = true;
 		Context.TargetLocation = Target->GetActorLocation();
 	}
-	if (const AActor* Home = HomeActor)
+	FVector ResolvedHomeLocation;
+	if (GetResolvedHomeLocation(ResolvedHomeLocation))
 	{
 		Context.bHasHome = true;
-		Context.HomeLocation = Home->GetActorLocation();
+		Context.HomeLocation = ResolvedHomeLocation;
 	}
 	return Context;
 }
@@ -247,135 +289,17 @@ const UEnemyShipNavigationComponent::FRuntimeOverride* UEnemyShipNavigationCompo
 	return Winner;
 }
 
-void UEnemyShipNavigationComponent::ApplySquadAvoidance(FEnemyShipNavigationOutput& InOutOutput)
-{
-	AEnemyShip* Ship = OwnerShip.Get();
-	UWorld* World = Ship ? Ship->GetWorld() : nullptr;
-	if (!World || InOutOutput.State == ENavalCombatState::Idle)
-	{
-		CachedAvoidanceHeading = InOutOutput.DesiredHeading;
-		return;
-	}
-
-	const double CurrentTime = World->GetTimeSeconds();
-	if (CurrentTime - LastAvoidanceDecisionTime >= NavigationProfile.AvoidanceDecisionInterval
-		|| CachedAvoidanceHeading.IsNearlyZero())
-	{
-		LastAvoidanceDecisionTime = CurrentTime;
-		constexpr int32 NumRays = 12;
-		static const FVector Rays[NumRays] = {
-			FVector(1.000000f, 0.000000f, 0.0f), FVector(0.866025f, 0.500000f, 0.0f),
-			FVector(0.500000f, 0.866025f, 0.0f), FVector(0.000000f, 1.000000f, 0.0f),
-			FVector(-0.500000f, 0.866025f, 0.0f), FVector(-0.866025f, 0.500000f, 0.0f),
-			FVector(-1.000000f, 0.000000f, 0.0f), FVector(-0.866025f, -0.500000f, 0.0f),
-			FVector(-0.500000f, -0.866025f, 0.0f), FVector(0.000000f, -1.000000f, 0.0f),
-			FVector(0.500000f, -0.866025f, 0.0f), FVector(0.866025f, -0.500000f, 0.0f)
-		};
-
-		float Interest[NumRays];
-		float Danger[NumRays];
-		FMemory::Memzero(Danger, sizeof(Danger));
-		for (int32 Index = 0; Index < NumRays; ++Index)
-		{
-			Interest[Index] = FMath::Max(0.0f, FVector::DotProduct(Rays[Index], InOutOutput.DesiredHeading));
-		}
-
-		if (UShipSwarmSubsystem* Swarm = World->GetSubsystem<UShipSwarmSubsystem>())
-		{
-			const float ShipSize = Ship->BuoyancyRoot
-				? Ship->BuoyancyRoot->Bounds.BoxExtent.GetMax()
-				: 500.0f;
-			for (AEnemyShip* Member : Swarm->GetSquadMembers(Ship->SquadID))
-			{
-				if (!IsValid(Member) || Member == Ship)
-				{
-					continue;
-				}
-				FVector ToMember = Member->GetActorLocation() - Ship->GetActorLocation();
-				ToMember.Z = 0.0f;
-				const float Distance = ToMember.Size();
-				const float MemberSize = Member->BuoyancyRoot
-					? Member->BuoyancyRoot->Bounds.BoxExtent.GetMax()
-					: 500.0f;
-				const float AvoidanceRadius = ShipSize + MemberSize + NavigationProfile.AvoidanceSafetyBuffer;
-				if (Distance <= 1.0f || Distance >= AvoidanceRadius)
-				{
-					continue;
-				}
-
-				const FVector Direction = ToMember / Distance;
-				const float DangerWeight = FMath::Square(1.0f - Distance / AvoidanceRadius);
-				for (int32 Index = 0; Index < NumRays; ++Index)
-				{
-					Danger[Index] = FMath::Max(
-						Danger[Index],
-						FMath::Max(0.0f, FVector::DotProduct(Rays[Index], Direction)) * DangerWeight);
-				}
-
-				// Preserve the previous head-on tie breaker: when two squad ships
-				// approach bow-to-bow, make the port-side rays less attractive so
-				// both ships consistently turn to starboard instead of oscillating.
-				FVector ShipForward = Ship->GetActorForwardVector();
-				ShipForward.Z = 0.0f;
-				ShipForward.Normalize();
-				if (FVector::DotProduct(ShipForward, Direction) > 0.866f)
-				{
-					FVector MemberForward = Member->GetActorForwardVector();
-					MemberForward.Z = 0.0f;
-					MemberForward.Normalize();
-					if (FVector::DotProduct(MemberForward, -Direction) > 0.707f)
-					{
-						FVector ShipRight = Ship->GetActorRightVector();
-						ShipRight.Z = 0.0f;
-						ShipRight.Normalize();
-						for (int32 Index = 0; Index < NumRays; ++Index)
-						{
-							if (FVector::DotProduct(Rays[Index], ShipRight) < -0.2f)
-							{
-								Danger[Index] = FMath::Max(Danger[Index], 0.35f * DangerWeight);
-							}
-						}
-					}
-				}
-			}
-		}
-
-		int32 BestIndex = 0;
-		float BestScore = Interest[0] - Danger[0];
-		for (int32 Index = 1; Index < NumRays; ++Index)
-		{
-			const float Score = Interest[Index] - Danger[Index];
-			if (Score > BestScore)
-			{
-				BestScore = Score;
-				BestIndex = Index;
-			}
-		}
-		CachedAvoidanceHeading = Rays[BestIndex];
-	}
-
-	InOutOutput.DesiredHeading = CachedAvoidanceHeading;
-	FVector ShipForward = Ship->GetActorForwardVector();
-	FVector ShipRight = Ship->GetActorRightVector();
-	ShipForward.Z = 0.0f;
-	ShipRight.Z = 0.0f;
-	ShipForward.Normalize();
-	ShipRight.Normalize();
-	const float HeadingDot = FVector::DotProduct(ShipForward, InOutOutput.DesiredHeading);
-	const float RightDot = FVector::DotProduct(ShipRight, InOutOutput.DesiredHeading);
-	InOutOutput.TurnInput = HeadingDot < 0.99f ? (RightDot > 0.0f ? 1.0f : -1.0f) : 0.0f;
-	InOutOutput.MoveInput = HeadingDot > 0.0f ? HeadingDot : 0.0f;
-	InOutOutput.MoveInput = FMath::Clamp(
-		InOutOutput.MoveInput * NavigationProfile.ForwardInputScale, -1.0f, 1.0f);
-	InOutOutput.TurnInput = FMath::Clamp(
-		InOutOutput.TurnInput * NavigationProfile.TurnInputScale, -1.0f, 1.0f);
-}
-
 void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutput& BaseOutput)
 {
 	AEnemyShip* Ship = OwnerShip.Get();
 	if (!Ship)
 	{
+		return;
+	}
+
+	if (Ship->IsAnchorDropped())
+	{
+		Ship->SetAIControlInput(0.0f, 0.0f);
 		return;
 	}
 
@@ -395,7 +319,87 @@ void UEnemyShipNavigationComponent::ApplyControl(const FEnemyShipNavigationOutpu
 		return;
 	}
 
-	Ship->SetAIControlInput(BaseOutput.MoveInput, BaseOutput.TurnInput);
+	if (bAvoidanceManeuverActive)
+	{
+		const UEnemyShipAvoidanceSettings* Settings = GetDefault<UEnemyShipAvoidanceSettings>();
+		// Ship traffic keeps the navigation turn; static obstacles provide a stable
+		// side-step turn. Reverse thrust supplies braking for both cases.
+		Ship->SetAIControlInput(
+			Settings->ReverseMoveInput,
+			bAvoidanceOverridesTurn ? AvoidanceTurnInput : BaseOutput.TurnInput);
+		return;
+	}
+
+	const float PropulsionMultiplier = BaseOutput.State == ENavalCombatState::Return
+		? NavigationProfile.ReturnPropulsionMultiplier
+		: 1.0f;
+	Ship->SetAIControlInput(BaseOutput.MoveInput, BaseOutput.TurnInput, PropulsionMultiplier);
+}
+
+void UEnemyShipNavigationComponent::UpdateAvoidance(float DeltaTime)
+{
+	AEnemyShip* Ship = OwnerShip.Get();
+	const bool bCombatNavigation = CurrentState == ENavalCombatState::Approach
+		|| CurrentState == ENavalCombatState::Orbit;
+	if (!Ship || !bCombatNavigation || HasActiveOverride() || !TargetShip)
+	{
+		ResetAvoidance();
+		return;
+	}
+
+	const UEnemyShipAvoidanceSettings* Settings = GetDefault<UEnemyShipAvoidanceSettings>();
+	AvoidanceMinimumTimeRemaining = FMath::Max(0.0f, AvoidanceMinimumTimeRemaining - DeltaTime);
+	AvoidanceEvaluationAccumulator += DeltaTime;
+	const float Interval = FMath::Max(0.05f, Settings->EvaluationInterval);
+	if (AvoidanceEvaluationAccumulator < Interval)
+	{
+		return;
+	}
+	const float EvaluationElapsed = AvoidanceEvaluationAccumulator;
+	AvoidanceEvaluationAccumulator = 0.0f;
+
+	FEnemyShipAvoidanceDecision Decision;
+	if (UWorld* World = GetWorld())
+	{
+		if (UShipSwarmSubsystem* Swarm = World->GetSubsystem<UShipSwarmSubsystem>())
+		{
+			Decision = Swarm->EvaluateAvoidance(Ship);
+		}
+	}
+
+	if (Decision.bShouldYield)
+	{
+		AvoidanceThreatActor = Decision.ThreatActor;
+		bAvoidanceOverridesTurn = Decision.bOverrideTurnInput;
+		AvoidanceTurnInput = Decision.TurnInput;
+		AvoidanceSafeElapsed = 0.0f;
+		if (!bAvoidanceManeuverActive)
+		{
+			bAvoidanceManeuverActive = true;
+			AvoidanceMinimumTimeRemaining = FMath::Max(0.0f, Settings->MinimumManeuverTime);
+		}
+		return;
+	}
+
+	if (bAvoidanceManeuverActive)
+	{
+		AvoidanceSafeElapsed += EvaluationElapsed;
+		if (AvoidanceMinimumTimeRemaining <= 0.0f
+			&& AvoidanceSafeElapsed >= FMath::Max(0.0f, Settings->ClearConfirmationTime))
+		{
+			ResetAvoidance();
+		}
+	}
+}
+
+void UEnemyShipNavigationComponent::ResetAvoidance()
+{
+	bAvoidanceManeuverActive = false;
+	bAvoidanceOverridesTurn = false;
+	AvoidanceTurnInput = 0.0f;
+	AvoidanceMinimumTimeRemaining = 0.0f;
+	AvoidanceSafeElapsed = 0.0f;
+	AvoidanceThreatActor.Reset();
 }
 
 void UEnemyShipNavigationComponent::StopOwnerShip()

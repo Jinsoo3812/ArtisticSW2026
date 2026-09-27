@@ -2,11 +2,14 @@
 
 
 #include "BasePlayer.h"
+#include "Combat/PlayerAimComponent.h"
+#include "WeaponInputAbilitySystemComponent.h"
+#include "GAS/Ability/WeaponGameplayAbility.h"
 #include "PlayerDialogueComponent.h"
 #include "BasePlayerState.h"
+#include "BasePlayerController.h"
 #include "Misc/Crc.h"
 #include "AbilitySystemComponent.h"
-#include "Abilities/GameplayAbilityTargetTypes.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "EnhancedInputComponent.h"
@@ -26,16 +29,20 @@
 #include "CollisionChannels.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Components/WidgetComponent.h"
-#include "InteractableComponent.h"
+#include "Repair/ShipRepairPointComponent.h"
+#include "UI/ShipRepairProgressWidget.h"
 #include "InteractUserWidget.h"
+#include "Storage/StorageInteractionDiagnostics.h"
+#include "DrawDebugHelpers.h"
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Animation/SWTrajectoryComponent.h"
 #include "Inventory/InventoryComponent.h"
+#include "MultiGameMode.h"
+#include "PlayerProgressSubsystem.h"
+#include "Upgrade/ShipUpgradeComponent.h"
 #include "Crafting/CraftingComponent.h"
 #include "ItemSubSystem.h"
 #include "Equipment/PlayerEquipmentComponent.h"
-#include "Item/Components/BowComponent.h"
-#include "Item/Weapons/BowItem.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
@@ -49,6 +56,7 @@
 #include "Skills/Abilities/GA_GravityVortexThrow.h"
 #include "Skills/Abilities/GA_WaterBombCannonMode.h"
 #include "Skills/Abilities/GA_Bombardment.h"
+#include "Skills/Abilities/GA_PlayerAreaSlow.h"
 #include "HAL/FileManager.h"
 #include "Misc/DateTime.h"
 #include "Misc/FileHelper.h"
@@ -74,15 +82,6 @@ namespace
 	}
 }
 
-/* --- FItemSlot ---*/
-
-FItemSlot::FItemSlot(const FGameplayTag& InTag, ABaseItem* InItem)
-	: KeyTag(InTag), Item(InItem) {}
-
-bool FItemSlot::operator==(const FGameplayTag& OtherTag) const { return KeyTag == OtherTag; }
-
-bool FItemSlot::operator==(const ABaseItem* OtherItem) const { return Item.Get() == OtherItem; }
-
 // 커스텀 어태치 규칙 생성: 위치(Snap), 회전(Snap), 스케일(KeepWorld)
 FAttachmentTransformRules CustomAttachRules(
 	EAttachmentRule::SnapToTarget,   // Location: 소켓 위치에 맞춤
@@ -92,6 +91,16 @@ FAttachmentTransformRules CustomAttachRules(
 );
 
 /* --- BasePlayer ---*/
+
+int32 ABasePlayer::ResolveDefaultMappingPriority(
+	int32 ConfiguredDefaultPriority,
+	int32 ConfiguredQuickSlotPriority,
+	bool bHasSkillInput)
+{
+	return bHasSkillInput
+		? FMath::Max(ConfiguredDefaultPriority, ConfiguredQuickSlotPriority + 1)
+		: ConfiguredDefaultPriority;
+}
 
 ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<USWCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -126,9 +135,11 @@ ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 	SwimmingComponent = CreateDefaultSubobject<USwimmingComponent>(TEXT("SwimmingComponent"));
 	EquipmentComponent = CreateDefaultSubobject<UPlayerEquipmentComponent>(TEXT("EquipmentComponent"));
+	AimComponent = CreateDefaultSubobject<UPlayerAimComponent>(TEXT("AimComponent"));
 	GravityVortexAbilityClass = UGA_GravityVortexThrow::StaticClass();
 	WaterBombAbilityClass = UGA_WaterBombCannonMode::StaticClass();
 	BombardmentAbilityClass = UGA_Bombardment::StaticClass();
+	AreaSlowAbilityClass = UGA_PlayerAreaSlow::StaticClass();
 
 	// 항상 등만 보이도록 설정 (Orient to Controller - 부드러운 회전으로 제자리 회전 유도)
 	bUseControllerRotationYaw = false;
@@ -172,7 +183,6 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	// 배열과 장착 아이템 포인터를 클라이언트로 복제
-	DOREPLIFETIME(ABasePlayer, ItemSlots);
 	DOREPLIFETIME(ABasePlayer, QuickSlots);
 	DOREPLIFETIME(ABasePlayer, EquippedItem);
 	DOREPLIFETIME(ABasePlayer, LocomotionStateSnapshot);
@@ -233,6 +243,12 @@ void ABasePlayer::BeginPlay()
 		CameraBoom->CameraLagMaxTimeStep = CameraRotationSmoothingMaxTimeStep;
 	}
 
+	if (FollowCamera && bEnableSprintVignette)
+	{
+		FollowCamera->PostProcessSettings.bOverride_VignetteIntensity = true;
+		FollowCamera->PostProcessSettings.VignetteIntensity = 0.0f;
+	}
+
 	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
 	{
 		CachedPlayerSkillComponent = SkillComponent;
@@ -248,20 +264,6 @@ void ABasePlayer::BeginPlay()
 		}
 	}
 
-	// ItemSlot 배열 초기화: TMap 등록 없이 구조체 배열에 순서대로 Add
-	if (ItemInputConfig)
-	{
-		ItemSlots.Empty();
-
-		for (const FKeyInputAction& Action : ItemInputConfig->KeyInputActions)
-		{
-			if (Action.KeyTag.IsValid() && Action.KeyTag.MatchesTag(Key_Item))
-			{
-				ItemSlots.Add(FItemSlot(Action.KeyTag));
-			}
-		}
-	}
-
 	InitializeQuickSlots();
 	if (InventoryComponent)
 	{
@@ -270,9 +272,9 @@ void ABasePlayer::BeginPlay()
 
 #if WITH_EDITOR
 	GiveStartingItemsForTest();
+	ApplyShipUpgradeTestFlags();
 #endif
 
-	OnItemSlotsChanged.Broadcast();
 	OnQuickSlotsChanged.Broadcast();
 }
 
@@ -347,6 +349,8 @@ void ABasePlayer::GiveStartingItemsForTest()
 
 void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ResetAutomaticSwimDiveInput();
+
 	if (InventoryComponent)
 	{
 		InventoryComponent->OnInventoryChanged.RemoveAll(this);
@@ -364,26 +368,89 @@ void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 {
 	ApplyLocalDeathRagdoll();
+	if (HasAuthority())
+	{
+		CaptureRespawnProgress();
+		if (AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr)
+		{
+			GameMode->NotifyPlayerDeathFinished(this);
+		}
+	}
+}
+
+void ABasePlayer::CaptureRespawnProgress()
+{
+	AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+	AController* OwnerController = GetController();
+	if (!OwnerController && GetPlayerState()) OwnerController = GetPlayerState()->GetOwningController();
+	UPlayerProgressSubsystem* Progress = GetGameInstance() ? GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>() : nullptr;
+	if (!GameMode || !Progress || !OwnerController) return;
+	const int32 PlayerIndex = GameMode->GetPlayerIndex(OwnerController);
+	if (PlayerIndex == INDEX_NONE) return;
+	FSWPlayerProgressSnapshot Snapshot;
+	if (InventoryComponent) InventoryComponent->CaptureProgressSnapshot(Snapshot.InventorySlots);
+	if (const ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
+	{
+		if (const UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent())
+		{
+			Snapshot.ActiveShipUpgradeNodeIds = Upgrade->GetActiveNodeIds();
+		}
+	}
+	Progress->StoreSnapshot(PlayerIndex, Snapshot);
+}
+
+void ABasePlayer::RestoreRespawnProgress(AController* OwningController)
+{
+	AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+	UPlayerProgressSubsystem* Progress = GetGameInstance() ? GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>() : nullptr;
+	if (!GameMode || !Progress || !OwningController) return;
+	FSWPlayerProgressSnapshot Snapshot;
+	if (!Progress->ConsumeSnapshot(GameMode->GetPlayerIndex(OwningController), Snapshot)) return;
+	if (InventoryComponent) InventoryComponent->RestoreProgressSnapshot(Snapshot.InventorySlots);
+	if (ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
+	{
+		if (UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent()) Upgrade->RestoreActiveNodeIds(Snapshot.ActiveShipUpgradeNodeIds);
+	}
+}
+
+void ABasePlayer::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
+{
+	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
+
+	const bool bIsSwimming = (SwimmingComponent && SwimmingComponent->IsCustomSwimming()) ||
+		(GetCharacterMovement() && GetCharacterMovement()->IsSwimming());
+
+	if (bIsSwimming)
+	{
+		StopSprint();
+	}
 }
 
 void ABasePlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	if (bAutomaticSwimDiveHeld)
+	{
+		if (!SwimmingComponent || !SwimmingComponent->IsCustomSwimming())
+		{
+			ResetAutomaticSwimDiveInput();
+		}
+		else if (IsLocallyControlled())
+		{
+			AutomaticSwimDiveRemaining -= DeltaTime;
+			if (AutomaticSwimDiveRemaining <= 0.0f)
+			{
+				ResetAutomaticSwimDiveInput();
+				RefreshSwimmingVerticalInput();
+			}
+		}
+	}
+
 	// 후방 이동 시 질주(Sprint) 차단 (1안)
 	RefreshSprintFromInput();
 
-	if (AnimStateComponent)
-	{
-		AnimStateComponent->UpdateAnimationState(DeltaTime);
-		ApplyCombatRotationMode(true);
-		ApplyCombatTurnInPlaceRotation(DeltaTime);
-	}
-	if (HasAuthority())
-	{
-		UpdateLocomotionStateSnapshot();
-	}
-
+	// Update ASC state tags FIRST so rotation and animation systems know current combat state
 	bool bIsSniping = false;
 	bool bIsAiming = false;
 	bool bIsThrowingOrAttacking = false;
@@ -393,20 +460,119 @@ void ABasePlayer::Tick(float DeltaTime)
 		bIsSniping = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Sniping);
 		bIsAiming = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Aiming);
 		bIsThrowingOrAttacking = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
+		bIsAttacking = bIsThrowingOrAttacking;
+		bIsHitReacting = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Damaged);
+
+		const bool bHasRollingTag = CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Rolling);
+		const bool bHasMoveInput = (AnimStateComponent && AnimStateComponent->bHasMoveInput) || (GetPendingMovementInputVector().SizeSquared() > 0.001f);
+		if (bHasRollingTag)
+		{
+			bIsDodging = true;
+		}
+		else if (bIsDodging)
+		{
+			// Maintain dodge state during recovery blend out until montage finishes,
+			// unless the player provides explicit move input or gets hit to take over control.
+			const UAnimInstance* AnimInst = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+			bIsDodging = (AnimInst && AnimInst->IsAnyMontagePlaying()) && !bHasMoveInput && !bIsHitReacting;
+		}
+		else
+		{
+			bIsDodging = false;
+		}
+	}
+
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->UpdateAnimationState(DeltaTime);
+		ApplyCombatRotationMode(true);
+		ApplyCombatTurnInPlaceRotation(DeltaTime);
+
+		if (!HasAuthority() && IsLocallyControlled())
+		{
+			const bool bIsTIPActive = AnimStateComponent->bShouldTurnInPlace;
+			if (bLastSentTurnInPlaceActive && !bIsTIPActive)
+			{
+				Server_SetTurnInPlace(false, 0.0f, GetActorRotation().Yaw);
+				bLastSentTurnInPlaceActive = false;
+				LastSentTurnInPlaceFacingDelta = 0.0f;
+				LastSentTurnInPlaceActorYaw = GetActorRotation().Yaw;
+			}
+		}
+	}
+	if (HasAuthority())
+	{
+		UpdateLocomotionStateSnapshot();
+	}
+	if (HasAuthority() && bIsHitReacting && ActiveShipRepairPoint)
+	{
+		ActiveShipRepairPoint->CancelRepair(this);
+	}
+	if (IsLocallyControlled() && ActiveShipRepairPoint && ShipRepairProgressWidget && LocalShipRepairDuration > 0.0f)
+	{
+		const float Elapsed = GetWorld()->GetTimeSeconds() - LocalShipRepairStartTime;
+		ShipRepairProgressWidget->SetRepairProgress(Elapsed / LocalShipRepairDuration);
 	}
 
 	float TargetArmLength = DefaultTargetArmLength;
 	FVector TargetSocketOffset = DefaultSocketOffset;
+	float TargetFOV = DefaultFOV;
+	float CurrentInterpSpeed = CameraInterpSpeed;
+	float TargetVignette = 0.0f;
 
-	if (bIsSniping)
+	const bool bIsSprinting = AnimStateComponent && AnimStateComponent->bIsSprinting;
+
+	if (CanPerformCombatAction())
 	{
-		TargetArmLength = SnipingTargetArmLength;
-		TargetSocketOffset = SnipingSocketOffset;
+		if (bIsSniping)
+		{
+			TargetArmLength = SnipingTargetArmLength;
+			TargetSocketOffset = SnipingSocketOffset;
+			TargetFOV = SnipingFOV;
+			CurrentInterpSpeed = CameraInterpSpeed;
+		}
+		else if (bIsAiming)
+		{
+			TargetArmLength = AimingTargetArmLength;
+			TargetSocketOffset = AimingSocketOffset;
+			TargetFOV = DefaultFOV;
+			CurrentInterpSpeed = CameraInterpSpeed;
+		}
+		else if (bIsSprinting)
+		{
+			TargetArmLength = SprintTargetArmLength;
+			TargetFOV = SprintFOV;
+			TargetVignette = bEnableSprintVignette ? SprintVignetteIntensity : 0.0f;
+			CurrentInterpSpeed = SprintCameraInterpSpeed;
+		}
 	}
-	else if (bIsAiming)
+	else
 	{
-		TargetArmLength = AimingTargetArmLength;
-		TargetSocketOffset = AimingSocketOffset;
+		bIsAiming = false;
+		bIsSniping = false;
+
+		if (bIsSprinting)
+		{
+			TargetArmLength = SprintTargetArmLength;
+			TargetFOV = SprintFOV;
+			TargetVignette = bEnableSprintVignette ? SprintVignetteIntensity : 0.0f;
+			CurrentInterpSpeed = SprintCameraInterpSpeed;
+		}
+	}
+
+	// 조준/스나이핑 중이 아니고 질주도 아닐 때의 복귀 보간 속도 설정
+	if (!bIsSniping && !bIsAiming && !bIsSprinting)
+	{
+		// 질주 후 복귀(줌아웃 상태에서 복귀) 시에는 부드러운 SprintCameraInterpSpeed 사용,
+		// 조준 후 복귀(줌인 상태에서 복귀) 시에는 빠른 CameraInterpSpeed 사용
+		if (CameraBoom && CameraBoom->TargetArmLength > DefaultTargetArmLength)
+		{
+			CurrentInterpSpeed = SprintCameraInterpSpeed;
+		}
+		else
+		{
+			CurrentInterpSpeed = CameraInterpSpeed;
+		}
 	}
 
 	// Rotation ownership is selected by ApplyCombatRotationMode() above:
@@ -416,14 +582,45 @@ void ABasePlayer::Tick(float DeltaTime)
 
 	if (CameraBoom)
 	{
-		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
-		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CameraInterpSpeed);
+		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CurrentInterpSpeed);
+		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CurrentInterpSpeed);
+		if (IsLocallyControlled() && bEnableSwimmingCameraLocationSmoothing)
+		{
+			const bool bSwimming = SwimmingComponent && SwimmingComponent->IsCustomSwimming();
+			if (bSwimming)
+			{
+				bWasUsingSwimmingCameraLag = true;
+				SwimmingCameraLagExitElapsed = 0.0f;
+				CameraBoom->bEnableCameraLag = true;
+				CameraBoom->CameraLagSpeed = SwimmingCameraLagSpeed;
+				CameraBoom->CameraLagMaxDistance = SwimmingCameraLagMaxDistance;
+				CameraBoom->bUseCameraLagSubstepping = true;
+				CameraBoom->CameraLagMaxTimeStep = SwimmingCameraLagMaxTimeStep;
+			}
+			else if (bWasUsingSwimmingCameraLag)
+			{
+				SwimmingCameraLagExitElapsed += DeltaTime;
+				const float Alpha = FMath::Clamp(SwimmingCameraLagExitElapsed / 0.25f, 0.0f, 1.0f);
+				CameraBoom->CameraLagSpeed = FMath::Lerp(SwimmingCameraLagSpeed, 30.0f, Alpha);
+				if (Alpha >= 1.0f)
+				{
+					CameraBoom->bEnableCameraLag = false;
+					bWasUsingSwimmingCameraLag = false;
+				}
+			}
+		}
 	}
 
 	if (FollowCamera)
 	{
-		const float TargetFOV = bIsSniping ? SnipingFOV : DefaultFOV;
-		FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, TargetFOV, DeltaTime, CameraInterpSpeed));
+		FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, TargetFOV, DeltaTime, CurrentInterpSpeed));
+
+		if (bEnableSprintVignette)
+		{
+			FollowCamera->PostProcessSettings.bOverride_VignetteIntensity = true;
+			FollowCamera->PostProcessSettings.VignetteIntensity = FMath::FInterpTo(
+				FollowCamera->PostProcessSettings.VignetteIntensity, TargetVignette, DeltaTime, SprintCameraInterpSpeed);
+		}
 	}
 }
 
@@ -456,6 +653,8 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 	NewSnapshot.LastFallSpeed = AnimStateComponent->LastFallSpeed;
 	NewSnapshot.EventSequence = LocomotionAnimEventSequence;
 	NewSnapshot.LastLocomotionEvent = LocomotionStateSnapshot.LastLocomotionEvent;
+	NewSnapshot.bShouldTurnInPlace = AnimStateComponent->bShouldTurnInPlace;
+	NewSnapshot.DesiredFacingDeltaYaw = AnimStateComponent->DesiredFacingDeltaYaw;
 
 	if (LocomotionStateSnapshot != NewSnapshot)
 	{
@@ -483,9 +682,69 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 	}
 }
 
+void ABasePlayer::ApplyShipUpgradeTestFlags()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	if (ABasePlayerState* BasePlayerState = GetPlayerState<ABasePlayerState>())
+	{
+		if (UShipUpgradeComponent* UpgradeComponent = BasePlayerState->GetShipUpgradeComponent())
+		{
+			UpgradeComponent->SetIgnoreMaterialCostsForTesting(
+				bIgnoreShipUpgradeMaterialCostsForTest);
+		}
+	}
+}
+
+bool ABasePlayer::IsIgnoringShipUpgradeMaterialCostsForTest() const
+{
+#if UE_BUILD_SHIPPING
+	return false;
+#else
+	return bIgnoreShipUpgradeMaterialCostsForTest;
+#endif
+}
+
+void ABasePlayer::PrepareForCannonControl()
+{
+	ConsumeMovementInputVector();
+	AuthoritativeMoveInput = FVector2D::ZeroVector;
+	bHasAuthoritativeMoveInput = true;
+	LastSentMoveInputToServer = FVector2D::ZeroVector;
+	bHasSentMoveInputToServer = true;
+	bSprintInputHeld = false;
+
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->StopMovementImmediately();
+		MovementComponent->Velocity = FVector::ZeroVector;
+	}
+
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->ClearMoveInput();
+		AnimStateComponent->SetSprinting(false);
+		AnimStateComponent->ForceStateTransition(ELocomotionState::Idle);
+	}
+
+	if (HasAuthority())
+	{
+		UpdateLocomotionStateSnapshot();
+		ForceNetUpdate();
+	}
+}
+
 void ABasePlayer::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+	ResetAutomaticSwimDiveInput();
+
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->ResetLocomotionActionState(TEXT("PlayerPossessedBy"));
+	}
 
 	if (UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent())
 	{
@@ -500,6 +759,9 @@ void ABasePlayer::PossessedBy(AController* NewController)
 	if (PS)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] PlayerState found: %s"), *PS->GetName());
+#if WITH_EDITOR
+		ApplyShipUpgradeTestFlags();
+#endif
 		// Owner는 PlayerState, Avatar는 이 Character 객체로 설정
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
 
@@ -513,7 +775,9 @@ void ABasePlayer::PossessedBy(AController* NewController)
 		if (HealthComponent)
 		{
 			HealthComponent->InitializeWithAbilitySystem(CachedAbilitySystemComponent.Get());
+			if (HealthComponent->IsDead()) HealthComponent->ResetForReuse();
 		}
+		RestoreRespawnProgress(NewController);
 
 		// Interact GA에 의해 발생한 Gameplay Event를 처리할 콜백 함수 등록
 		// 현재는 Event 별로 따로 바인딩하지만 더 좋은 방법이 있을까?
@@ -536,22 +800,24 @@ void ABasePlayer::PossessedBy(AController* NewController)
 				{
 				if (AbilityPair.Value)
 				{
-					UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Granting Ability: %s to Slot Tag: %s (InputID: %d)"),
+					UE_LOG(LogTemp, Log, TEXT("ABasePlayer::PossessedBy - [SERVER] Granting Ability: %s to Slot Tag: %s"),
 						*AbilityPair.Value->GetName(),
-						*AbilityPair.Key.ToString(),
-						GetInputIDFromTag(AbilityPair.Key));
+						*AbilityPair.Key.ToString());
 						GrantAbilityToSlot(AbilityPair.Key, AbilityPair.Value);
 					}
 				}
 				if (bEnableGravityVortexSkillInput && GravityVortexAbilityClass)
 				{
 					UE_LOG(LogTemp, Warning,
-						TEXT("[VortexPipeline][Grant] PlayerClass=%s AbilityClass=%s Slot=%s InputID=%d"),
+						TEXT("[VortexPipeline][Grant] PlayerClass=%s AbilityClass=%s Slot=%s"),
 						*GetPathNameSafe(GetClass()),
 						*GetPathNameSafe(GravityVortexAbilityClass.Get()),
-						*Key_Skill_GravityVortex.GetTag().ToString(),
-						GetInputIDFromTag(Key_Skill_GravityVortex));
+						*Key_Skill_GravityVortex.GetTag().ToString());
 					GrantAbilityToSlot(Key_Skill_GravityVortex, GravityVortexAbilityClass);
+				}
+				if (bEnableAreaSlowSkillInput && AreaSlowAbilityClass)
+				{
+					GrantAbilityToSlot(Key_Skill_AreaSlow, AreaSlowAbilityClass);
 				}
 				if (bGrantWaterBombAbility && WaterBombAbilityClass)
 				{
@@ -574,6 +840,18 @@ void ABasePlayer::PossessedBy(AController* NewController)
 
 	// ASC 초기화 완료 알림 방송
 	OnAbilitySystemInitialized.Broadcast();
+}
+
+void ABasePlayer::UnPossessed()
+{
+	ResetAutomaticSwimDiveInput();
+
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->ResetLocomotionActionState(TEXT("PlayerUnPossessed"));
+	}
+
+	Super::UnPossessed();
 }
 
 void ABasePlayer::OnRep_PlayerState()
@@ -627,20 +905,21 @@ void ABasePlayer::PawnClientRestart()
 			// DefaultIMC 등록
 			if(DefaultIMC)
 			{
-				// ItemIMC contains the legacy IA_Item_3 mapping. Keep the
-				// skill-bearing DefaultIMC above it so IA_Item_3 cannot consume
+				// QuickSlotIMC may contain legacy item-key mappings. Keep the
+				// skill-bearing DefaultIMC above it so a quick slot cannot consume
 				// Keyboard 3 before IA_GravityVortex receives it.
 				const int32 EffectiveDefaultPriority = ResolveDefaultMappingPriority(
 					DefaultIMCPriority,
-					ItemIMCPriority,
-					bEnableGravityVortexSkillInput && GravityVortexSkillAction);
+					QuickSlotIMCPriority,
+					(bEnableGravityVortexSkillInput && GravityVortexSkillAction)
+					|| (bEnableAreaSlowSkillInput && AreaSlowSkillAction));
 				Subsystem->AddMappingContext(DefaultIMC, EffectiveDefaultPriority);
 			}
 
-			// ItemIMC 등록
-			if (ItemIMC)
+			// On-foot quick slots are active only while this pawn is possessed.
+			if (QuickSlotIMC)
 			{
-				Subsystem->AddMappingContext(ItemIMC, ItemIMCPriority);
+				Subsystem->AddMappingContext(QuickSlotIMC, QuickSlotIMCPriority);
 			}
 		}
 
@@ -694,6 +973,12 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Completed, this, &ABasePlayer::OnGravityVortexSkillReleased);
 			EnhancedInputComponent->BindAction(GravityVortexSkillAction, ETriggerEvent::Canceled, this, &ABasePlayer::OnGravityVortexSkillReleased);
 		}
+		if (bEnableAreaSlowSkillInput && AreaSlowSkillAction)
+		{
+			EnhancedInputComponent->BindAction(AreaSlowSkillAction, ETriggerEvent::Started, this, &ABasePlayer::OnAreaSlowSkillPressed);
+			EnhancedInputComponent->BindAction(AreaSlowSkillAction, ETriggerEvent::Completed, this, &ABasePlayer::OnAreaSlowSkillReleased);
+			EnhancedInputComponent->BindAction(AreaSlowSkillAction, ETriggerEvent::Canceled, this, &ABasePlayer::OnAreaSlowSkillReleased);
+		}
 
 		// Default 입력 바인딩
 		if (DefaultInputConfig)
@@ -707,22 +992,46 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 					{
 						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::OnMouseInputPressed, Action.KeyTag);
 						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, this, &ABasePlayer::OnMouseInputReleased, Action.KeyTag);
+						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Canceled, this, &ABasePlayer::OnMouseInputReleased, Action.KeyTag);
 					}
 					else
 					{
 						// 일반 키보드 입력
+						if (Action.KeyTag.MatchesTagExact(Key_Default_F))
+						{
+							EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started,
+								this, &ABasePlayer::OnShipRepairInteractionPressed);
+						}
 						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Started, this, &ABasePlayer::OnAbilityInputPressed, Action.KeyTag);
 						EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed, this, &ABasePlayer::OnAbilityInputReleased, Action.KeyTag);
+						if (Action.KeyTag.MatchesTagExact(Key_Default_F))
+						{
+							EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Completed,
+								this, &ABasePlayer::OnShipRepairInteractionReleased);
+							EnhancedInputComponent->BindAction(Action.InputAction, ETriggerEvent::Canceled,
+								this, &ABasePlayer::OnShipRepairInteractionReleased);
+						}
 					}
 				}
 
 			}
 		}
 
-	}
+		const FGameplayTag QuickSlotTags[] = { Key_Item_1, Key_Item_2, Key_Item_3, Key_Item_4, Key_Item_5 };
+		for (int32 Index = 0; Index < QuickSlotActions.Num() && Index < UE_ARRAY_COUNT(QuickSlotTags); ++Index)
+		{
+			if (QuickSlotActions[Index])
+			{
+				EnhancedInputComponent->BindAction(QuickSlotActions[Index], ETriggerEvent::Started,
+					this, &ABasePlayer::OnQuickSlotInputPressed, QuickSlotTags[Index]);
+				EnhancedInputComponent->BindAction(QuickSlotActions[Index], ETriggerEvent::Completed,
+					this, &ABasePlayer::OnQuickSlotInputReleased, QuickSlotTags[Index]);
+				EnhancedInputComponent->BindAction(QuickSlotActions[Index], ETriggerEvent::Canceled,
+					this, &ABasePlayer::OnQuickSlotInputReleased, QuickSlotTags[Index]);
+			}
+		}
 
-	PlayerInputComponent->BindKey(EKeys::One, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot1);
-	PlayerInputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ABasePlayer::ActivateQuickSlot2);
+	}
 
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Pressed, this, &ABasePlayer::StartSprint);
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Released, this, &ABasePlayer::StopSprint);
@@ -732,22 +1041,6 @@ void ABasePlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindKey(EKeys::LeftControl, IE_Released, this, &ABasePlayer::StopSwimDive);
 	PlayerInputComponent->BindKey(EKeys::RightControl, IE_Pressed, this, &ABasePlayer::StartSwimDive);
 	PlayerInputComponent->BindKey(EKeys::RightControl, IE_Released, this, &ABasePlayer::StopSwimDive);
-}
-
-int32 ABasePlayer::GetInputIDFromTag(const FGameplayTag& Tag) const
-{
-	if (!Tag.IsValid()) return INDEX_NONE;
-	return static_cast<int32>(FCrc::StrCrc32(*Tag.ToString()));
-}
-
-int32 ABasePlayer::ResolveDefaultMappingPriority(
-	int32 ConfiguredDefaultPriority,
-	int32 ConfiguredItemPriority,
-	bool bHasSkillInput)
-{
-	return bHasSkillInput
-		? FMath::Max(ConfiguredDefaultPriority, ConfiguredItemPriority + 1)
-		: ConfiguredDefaultPriority;
 }
 
 void ABasePlayer::InitializeQuickSlots()
@@ -786,7 +1079,9 @@ bool ABasePlayer::CanQuickSlotAcceptItem(int32 QuickSlotIndex, FGameplayTag Item
 		|| ItemTag.MatchesTag(Item_Id_Weapon);
 	return QuickSlots[QuickSlotIndex].SlotType == EQuickSlotType::Weapon
 		? bIsWeapon
-		: CategoryTag.MatchesTag(Item_Category_Consumable);
+		: CategoryTag.MatchesTag(Item_Category_Consumable)
+			|| ItemTag.MatchesTag(Item_Tool)
+			|| ItemTag.MatchesTag(Item_Id_Material_ShipMaterials);
 }
 
 void ABasePlayer::AssignQuickSlotFromInventory(int32 QuickSlotIndex)
@@ -820,6 +1115,11 @@ void ABasePlayer::AssignQuickSlotFromInventory(int32 QuickSlotIndex)
 	QuickSlots[QuickSlotIndex].ItemTag = AssignedItemTag;
 	InventoryComponent->ReturnCursorToOriginalSlot();
 	OnQuickSlotsChanged.Broadcast();
+
+	if (QuickSlots[QuickSlotIndex].SlotType == EQuickSlotType::Weapon)
+	{
+		ActivateQuickSlot(QuickSlotIndex);
+	}
 }
 
 void ABasePlayer::ServerAssignQuickSlotFromInventory_Implementation(int32 QuickSlotIndex)
@@ -847,11 +1147,206 @@ void ABasePlayer::ServerClearQuickSlot_Implementation(int32 QuickSlotIndex)
 	ClearQuickSlot(QuickSlotIndex);
 }
 
-void ABasePlayer::ActivateQuickSlot1() { ActivateQuickSlot(0); }
-void ABasePlayer::ActivateQuickSlot2() { ActivateQuickSlot(1); }
-void ABasePlayer::ActivateQuickSlot3() { ActivateQuickSlot(2); }
-void ABasePlayer::ActivateQuickSlot4() { ActivateQuickSlot(3); }
-void ABasePlayer::ActivateQuickSlot5() { ActivateQuickSlot(4); }
+int32 ABasePlayer::FindQuickSlotIndex(const FGameplayTag SlotTag) const
+{
+	return QuickSlots.IndexOfByPredicate([SlotTag](const FQuickSlotReference& Slot)
+	{
+		return Slot.KeyTag.MatchesTagExact(SlotTag);
+	});
+}
+
+void ABasePlayer::OnQuickSlotInputPressed(const FGameplayTag SlotTag)
+{
+	const int32 QuickSlotIndex = FindQuickSlotIndex(SlotTag);
+	if (!QuickSlots.IsValidIndex(QuickSlotIndex))
+	{
+		return;
+	}
+
+	if (QuickSlots[QuickSlotIndex].SlotType == EQuickSlotType::Weapon)
+	{
+		ActivateQuickSlot(QuickSlotIndex);
+	}
+	else
+	{
+		BeginConsumableQuickSlotInput(QuickSlotIndex);
+	}
+}
+
+void ABasePlayer::OnQuickSlotInputReleased(const FGameplayTag SlotTag)
+{
+	const int32 QuickSlotIndex = FindQuickSlotIndex(SlotTag);
+	if (QuickSlots.IsValidIndex(QuickSlotIndex)
+		&& QuickSlots[QuickSlotIndex].SlotType == EQuickSlotType::Consumable)
+	{
+		EndConsumableQuickSlotInput(QuickSlotIndex);
+	}
+}
+
+bool ABasePlayer::GetEquippedShipRepairMaterial(FGameplayTag& OutItemTag) const
+{
+	OutItemTag = FGameplayTag();
+	if (!IsValid(EquippedItem)
+		|| !EquippedItem->ItemTag.MatchesTag(Item_Id_Material_ShipMaterials)
+		|| !InventoryComponent
+		|| InventoryComponent->GetMaterialCount(EquippedItem->ItemTag) <= 0)
+	{
+		return false;
+	}
+	OutItemTag = EquippedItem->ItemTag;
+	return true;
+}
+
+bool ABasePlayer::ConsumeShipRepairMaterial(const FGameplayTag ItemTag)
+{
+	if (!HasAuthority() || !InventoryComponent || !ItemTag.IsValid()
+		|| !IsValid(EquippedItem) || !EquippedItem->ItemTag.MatchesTagExact(ItemTag))
+	{
+		return false;
+	}
+	return InventoryComponent->RemoveItem(ItemTag, 1);
+}
+
+void ABasePlayer::BeginShipRepair(UShipRepairPointComponent* RepairPoint, const float Duration)
+{
+	if (!HasAuthority() || !RepairPoint)
+	{
+		return;
+	}
+	if (ActiveShipRepairPoint && ActiveShipRepairPoint != RepairPoint)
+	{
+		ActiveShipRepairPoint->CancelRepair(this);
+	}
+	ActiveShipRepairPoint = RepairPoint;
+	ClientBeginShipRepair(RepairPoint, Duration);
+}
+
+void ABasePlayer::EndShipRepair(UShipRepairPointComponent* RepairPoint, const bool bCompleted)
+{
+	if (!HasAuthority() || ActiveShipRepairPoint != RepairPoint)
+	{
+		return;
+	}
+	ActiveShipRepairPoint = nullptr;
+	ClientEndShipRepair(RepairPoint, bCompleted);
+}
+
+void ABasePlayer::OnShipRepairInteractionReleased()
+{
+	if (IsLocallyControlled())
+	{
+		bShipRepairInputHeld = false;
+		if (ShipRepairProgressWidget)
+		{
+			ShipRepairProgressWidget->RemoveFromParent();
+		}
+		ServerCancelShipRepair();
+		ServerSetShipRepairInputHeld(false);
+	}
+}
+
+void ABasePlayer::OnShipRepairInteractionPressed()
+{
+	if (IsLocallyControlled())
+	{
+		bShipRepairInputHeld = true;
+		ServerSetShipRepairInputHeld(true);
+	}
+}
+
+void ABasePlayer::ServerSetShipRepairInputHeld_Implementation(const bool bHeld)
+{
+	bShipRepairInputHeld = bHeld;
+	if (!bHeld && ActiveShipRepairPoint)
+	{
+		ActiveShipRepairPoint->CancelRepair(this);
+	}
+}
+
+void ABasePlayer::ServerCancelShipRepair_Implementation()
+{
+	if (ActiveShipRepairPoint)
+	{
+		ActiveShipRepairPoint->CancelRepair(this);
+	}
+}
+
+void ABasePlayer::ClientBeginShipRepair_Implementation(UShipRepairPointComponent* RepairPoint, const float Duration)
+{
+	ActiveShipRepairPoint = RepairPoint;
+	LocalShipRepairStartTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+	LocalShipRepairDuration = FMath::Max(Duration, KINDA_SMALL_NUMBER);
+	if (!ShipRepairProgressWidget)
+	{
+		ShipRepairProgressWidget = CreateWidget<UShipRepairProgressWidget>(GetController<APlayerController>());
+	}
+	if (ShipRepairProgressWidget && !ShipRepairProgressWidget->IsInViewport())
+	{
+		ShipRepairProgressWidget->SetAnchorsInViewport(FAnchors(0.5f, 0.72f));
+		ShipRepairProgressWidget->SetAlignmentInViewport(FVector2D(0.5f, 0.5f));
+		ShipRepairProgressWidget->AddToViewport(500);
+		ShipRepairProgressWidget->SetRepairProgress(0.0f);
+	}
+}
+
+void ABasePlayer::ClientEndShipRepair_Implementation(UShipRepairPointComponent* RepairPoint, const bool bCompleted)
+{
+	if (!ActiveShipRepairPoint || ActiveShipRepairPoint == RepairPoint)
+	{
+		ActiveShipRepairPoint = nullptr;
+		LocalShipRepairDuration = 0.0f;
+		if (ShipRepairProgressWidget)
+		{
+			ShipRepairProgressWidget->SetRepairProgress(bCompleted ? 1.0f : 0.0f);
+			ShipRepairProgressWidget->RemoveFromParent();
+		}
+	}
+}
+
+int32 ABasePlayer::GetPressedConsumableQuickSlotIndex() const
+{
+	return PressedConsumableQuickSlotIndices.IsEmpty()
+		? INDEX_NONE
+		: PressedConsumableQuickSlotIndices.Last();
+}
+
+void ABasePlayer::BeginConsumableQuickSlotInput(const int32 QuickSlotIndex)
+{
+	if (!CanPerformCombatAction())
+	{
+		return;
+	}
+
+	if (!QuickSlots.IsValidIndex(QuickSlotIndex)
+		|| QuickSlots[QuickSlotIndex].SlotType != EQuickSlotType::Consumable)
+	{
+		return;
+	}
+
+	PressedConsumableQuickSlotIndices.Remove(QuickSlotIndex);
+	PressedConsumableQuickSlotIndices.Add(QuickSlotIndex);
+	OnConsumableQuickSlotInputChanged.Broadcast();
+}
+
+void ABasePlayer::EndConsumableQuickSlotInput(const int32 QuickSlotIndex)
+{
+	if (PressedConsumableQuickSlotIndices.Remove(QuickSlotIndex) == 0)
+	{
+		return;
+	}
+
+	OnConsumableQuickSlotInputChanged.Broadcast();
+	ActivateQuickSlot(QuickSlotIndex);
+}
+
+void ABasePlayer::ResetConsumableQuickSlotInputs()
+{
+	if (!PressedConsumableQuickSlotIndices.IsEmpty())
+	{
+		PressedConsumableQuickSlotIndices.Empty();
+		OnConsumableQuickSlotInputChanged.Broadcast();
+	}
+}
 
 void ABasePlayer::ActivateQuickSlot(int32 QuickSlotIndex)
 {
@@ -882,7 +1377,11 @@ void ABasePlayer::ActivateQuickSlot(int32 QuickSlotIndex)
 
 	if (Slot.SlotType == EQuickSlotType::Weapon)
 	{
-		EquipInventoryWeapon(Slot.ItemTag);
+		EquipInventoryItem(Slot.ItemTag);
+	}
+	else if (Slot.ItemTag.MatchesTag(Item_Tool) || Slot.ItemTag.MatchesTag(Item_Id_Material_ShipMaterials))
+	{
+		EquipInventoryItem(Slot.ItemTag);
 	}
 	else
 	{
@@ -895,14 +1394,6 @@ void ABasePlayer::ServerActivateQuickSlot_Implementation(int32 QuickSlotIndex)
 	ActivateQuickSlot(QuickSlotIndex);
 }
 
-bool ABasePlayer::IsEquippedItemOwnedByLegacySlot() const
-{
-	return IsValid(EquippedItem) && ItemSlots.ContainsByPredicate([this](const FItemSlot& Slot)
-	{
-		return Slot.Item == EquippedItem;
-	});
-}
-
 void ABasePlayer::UnequipCurrentItem()
 {
 	if (EquipmentComponent)
@@ -911,9 +1402,9 @@ void ABasePlayer::UnequipCurrentItem()
 	}
 }
 
-bool ABasePlayer::EquipInventoryWeapon(FGameplayTag ItemTag)
+bool ABasePlayer::EquipInventoryItem(FGameplayTag ItemTag)
 {
-	return EquipmentComponent && EquipmentComponent->EquipInventoryWeapon(ItemTag);
+	return EquipmentComponent && EquipmentComponent->EquipInventoryItem(ItemTag);
 }
 
 bool ABasePlayer::ConsumeInventoryItem(FGameplayTag ItemTag)
@@ -969,7 +1460,7 @@ void ABasePlayer::HandleInventoryContentsChanged()
 		}
 	}
 
-	if (IsValid(EquippedItem) && !IsEquippedItemOwnedByLegacySlot())
+	if (IsValid(EquippedItem))
 	{
 		const bool bHeldByCursor = CursorItem.IsValid() && CursorItem.ItemTag == EquippedItem->ItemTag;
 		if (!bHeldByCursor && InventoryComponent->GetMaterialCount(EquippedItem->ItemTag) <= 0)
@@ -984,78 +1475,30 @@ void ABasePlayer::HandleInventoryContentsChanged()
 	}
 }
 
-bool ABasePlayer::TryPutItemInSlot(ABaseItem* Item)
-{
-	if (!IsValid(Item)) return false;
-
-	// 빈 ItemSlot Index 찾기
-	int32 EmptySlotIndex = ItemSlots.IndexOfByPredicate([](const FItemSlot& Slot)
-		{
-			return !IsValid(Slot.Item);
-		});
-
-	if (EmptySlotIndex != INDEX_NONE)
-	{
-		// 빈 슬롯에 저장
-		ItemSlots[EmptySlotIndex].Item = Item;
-
-		OnItemSlotsChanged.Broadcast();
-		
-		if (IsValid(EquippedItem))
-		{
-			// 이미 손에 무언가 들려있으면 새로 주운 아이템은 보이지 않게
-			Item->SetItemState(EItemState::InItemSlot);
-		}
-		else
-		{
-			// 손이 비어있으면 새로 주운 아이템 바로 장착
-			EquipItemFromSlot(ItemSlots[EmptySlotIndex].KeyTag);
-		}
-		return true; // 성공적으로 슬롯에 넣음
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::TryPutItemInSlot : ItemSlot is Full."));
-		return false; // 아이템 슬롯 꽉 참
-	}
-}
-
 void ABasePlayer::GrantAbilityToSlot(FGameplayTag KeyTag, TSubclassOf<UGameplayAbility> AbilityClass)
 {
 	// 서버에서만 실행되며, 유효성 검사 수행
-	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass || !KeyTag.IsValid())
+	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass || !KeyTag.IsValid()
+		|| AbilityClass->IsChildOf(UWeaponGameplayAbility::StaticClass()))
 	{
 		return;
 	}
 
-	int32 TargetInputID = GetInputIDFromTag(KeyTag);
-	if (TargetInputID != INDEX_NONE)
+	for (const FGameplayAbilitySpec& Existing : CachedAbilitySystemComponent->GetActivatableAbilities())
 	{
-		// 이미 해당 InputID에 동일한 클래스의 어빌리티가 부여되어 있는지 확인
-		for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
-		{
-			if (Spec.InputID == TargetInputID && Spec.Ability && Spec.Ability->GetClass() == AbilityClass)
-			{
-				// 이미 동일한 어빌리티가 동일 슬롯에 존재하므로 중복 부여하지 않고 리턴
-				return;
-			}
-		}
+		if (Existing.SourceObject == this && Existing.GetDynamicSpecSourceTags().HasTagExact(KeyTag)
+			&& Existing.Ability && Existing.Ability->GetClass() == AbilityClass) return;
 	}
-
-	// 해당 슬롯에 다른 어빌리티가 있거나 없을 때만 제거 후 부여
 	RemoveAbilityFromSlot(KeyTag);
-
-	// 통합 맵에서 이 태그에 할당된 ID를 가져옴
-	int32 AssignedID = TargetInputID;
-
-	// GA Spec 생성 시 해당 ID 주입
-	FGameplayAbilitySpec Spec(AbilityClass, 1, AssignedID, this);
+	FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, this);
+	Spec.GetDynamicSpecSourceTags().AddTag(KeyTag);
 	CachedAbilitySystemComponent->GiveAbility(Spec);
 }
 
 void ABasePlayer::GrantDefaultAbility(TSubclassOf<UGameplayAbility> AbilityClass)
 {
-	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass)
+	if (!HasAuthority() || !CachedAbilitySystemComponent.Get() || !AbilityClass
+		|| AbilityClass->IsChildOf(UWeaponGameplayAbility::StaticClass()))
 	{
 		return;
 	}
@@ -1079,15 +1522,12 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 		return;
 	}
 
-	int32 TargetInputID = GetInputIDFromTag(KeyTag);
-	if (TargetInputID == INDEX_NONE) return;
 
-	// GAS 내부의 부여된 어빌리티 목록을 순회하며 매핑된 InputID를 가진 어빌리티 수집 및 제거
+	// Character-owned slot grants only; equipment owns and removes its own handles.
 	TArray<FGameplayAbilitySpecHandle> HandlesToRemove;
 	for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent.Get()->GetActivatableAbilities())
 	{
-		// Spec.InputID가 우리가 제거하려는 ID와 일치한다면
-		if (Spec.InputID == TargetInputID)
+		if (Spec.SourceObject == this && Spec.GetDynamicSpecSourceTags().HasTagExact(KeyTag))
 		{
 			HandlesToRemove.Add(Spec.Handle);
 		}
@@ -1102,8 +1542,29 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 
 void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
+	const bool bInteractionInput = InputTag.MatchesTagExact(Key_Default_F);
+	const bool bLogInteraction = bInteractionInput && IsStorageInteractionLoggingEnabled();
+	if (bLogInteraction)
+	{
+		UE_LOG(LogStorageInteraction, Warning,
+			TEXT("[Input] F pressed. Player=%s Local=%d Authority=%d Controller=%s ASC=%s TagValid=%d Transitioning=%d"),
+			*GetNameSafe(this), IsLocallyControlled(), HasAuthority(), *GetNameSafe(GetController()),
+			*GetNameSafe(CachedAbilitySystemComponent.Get()), InputTag.IsValid(), IsEquipmentTransitioning());
+	}
+	if (bInteractionInput)
+	{
+		if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(GetController()))
+		{
+			if (PlayerController->CloseActiveInteractionWindow())
+			{
+				if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Input] Consumed by closing an existing interaction window."));
+				return;
+			}
+		}
+	}
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid())
 	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Input] Rejected: missing ASC or invalid input tag."));
 		// UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] Fails: CachedAbilitySystemComponent valid? %s, InputTag: %s"),
 		// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
 		// 	CachedAbilitySystemComponent.IsValid() ? TEXT("YES") : TEXT("NO"),
@@ -1113,54 +1574,33 @@ void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 
 	if (IsEquipmentTransitioning())
 	{
+		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Input] Rejected: equipment transition active."));
 		return;
 	}
 
-	int32 InputID = GetInputIDFromTag(InputTag);
-	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
-	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
-	// 	*InputTag.ToString(),
-	// 	InputID,
-	// 	IsLocallyControlled() ? TEXT("YES") : TEXT("NO"));
-
-	// 현재 부여된 모든 어빌리티 및 그 InputID 출력
-	const TArray<FGameplayAbilitySpec>& Specs = CachedAbilitySystemComponent->GetActivatableAbilities();
-	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputPressed - [%s] Activatable Abilities Count: %d"), 
-	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"), Specs.Num());
-	for (const FGameplayAbilitySpec& Spec : Specs)
+	const bool bIsNonCombatInteraction = InputTag.MatchesTag(Key_Default_F);
+	if (!bIsNonCombatInteraction && !CanPerformCombatAction())
 	{
-		// UE_LOG(LogTemp, Log, TEXT("  - Ability: %s, InputID: %d, Active: %s"), 
-		// 	Spec.Ability ? *Spec.Ability->GetName() : TEXT("None"),
-		// 	Spec.InputID,
-		// 	Spec.IsActive() ? TEXT("YES") : TEXT("NO"));
+		return;
 	}
 
-	if (InputID != INDEX_NONE)
-	{
-		CachedAbilitySystemComponent->AbilityLocalInputPressed(InputID);
-	}
+	if (auto* InputASC = Cast<UWeaponInputAbilitySystemComponent>(CachedAbilitySystemComponent.Get()))
+		InputASC->InputTagPressed(InputTag);
 }
 
 void ABasePlayer::OnAbilityInputReleased(FGameplayTag InputTag)
 {
-	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
-
-	int32 InputID = GetInputIDFromTag(InputTag);
-	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnAbilityInputReleased - [%s] KeyTag: %s, InputID: %d, LocallyControlled: %s"),
-	// 	HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
-	// 	*InputTag.ToString(),
-	// 	InputID,
-	// 	IsLocallyControlled() ? TEXT("YES") : TEXT("NO"));
-
-	if (InputID != INDEX_NONE)
-	{
-		CachedAbilitySystemComponent->AbilityLocalInputReleased(InputID);
-	}
+	if (auto* InputASC = Cast<UWeaponInputAbilitySystemComponent>(CachedAbilitySystemComponent.Get()))
+		InputASC->InputTagReleased(InputTag);
 }
 
 void ABasePlayer::OnGravityVortexSkillPressed()
 {
 	if (!bEnableGravityVortexSkillInput)
+	{
+		return;
+	}
+	if (!CanPerformCombatAction())
 	{
 		return;
 	}
@@ -1172,20 +1612,51 @@ void ABasePlayer::OnGravityVortexSkillReleased()
 	OnAbilityInputReleased(Key_Skill_GravityVortex);
 }
 
+void ABasePlayer::OnAreaSlowSkillPressed()
+{
+	if (!bEnableAreaSlowSkillInput)
+	{
+		return;
+	}
+	OnAbilityInputPressed(Key_Skill_AreaSlow);
+}
+
+void ABasePlayer::OnAreaSlowSkillReleased()
+{
+	OnAbilityInputReleased(Key_Skill_AreaSlow);
+}
+
 void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 {
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 	if (IsEquipmentTransitioning()) return;
+	if (!CanPerformCombatAction()) return;
+
+	// Area Slow uses GAS generic confirm/cancel events. These events carry the
+	// active ability spec handle and prediction key, so the server cannot miss a
+	// fast click that arrives while its predicted ability activation is being set up.
+	if (CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_AreaSlow))
+	{
+		if (InputTag.MatchesTagExact(Key_Default_Mouse_LeftClick))
+		{
+			CachedAbilitySystemComponent->LocalInputConfirm();
+			return;
+		}
+		if (InputTag.MatchesTagExact(Key_Default_Mouse_RightClick))
+		{
+			CachedAbilitySystemComponent->LocalInputCancel();
+			return;
+		}
+	}
 
 	// Capture the state before AbilityLocalInputPressed can activate the bound
 	// ability. EventMagnitude 0 means activation click, 1 means active re-input.
 	bool bWasBoundAbilityActive = false;
-	const int32 InputID = GetInputIDFromTag(InputTag);
-	if (InputID != INDEX_NONE)
+	if (InputTag.IsValid())
 	{
 		for (const FGameplayAbilitySpec& Spec : CachedAbilitySystemComponent->GetActivatableAbilities())
 		{
-			if (Spec.InputID == InputID && Spec.IsActive())
+			if (Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag) && Spec.IsActive())
 			{
 				bWasBoundAbilityActive = true;
 				break;
@@ -1194,11 +1665,11 @@ void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 	}
 
 	// 공통 GAS 입력 해제 처리
-	const bool bGravityVortexOwnsMouseClick =
+	const bool bAimingSkillOwnsMouseClick =
 		(InputTag.MatchesTagExact(Key_Default_Mouse_LeftClick)
 			|| InputTag.MatchesTagExact(Key_Default_Mouse_RightClick))
 		&& CachedAbilitySystemComponent->HasMatchingGameplayTag(GameplayAbility_Skill_GravityVortex);
-	if (!bGravityVortexOwnsMouseClick)
+	if (!bAimingSkillOwnsMouseClick)
 	{
 		OnAbilityInputPressed(InputTag);
 	}
@@ -1239,53 +1710,18 @@ void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
 	FGameplayEventData EventData;
 	EventData.Instigator = this;
 	EventData.Target = nullptr;
-	if (ReleasedEventTag.MatchesTagExact(Key_Default_Mouse_LeftClick_Released))
-	{
-		AddMouseAimTargetData(EventData);
-	}
 
+	// The view snapshot and input use the same reliable event, so no separate aim RPC can race release.
+	if (ReleasedEventTag == Key_Default_Mouse_LeftClick_Released && AimComponent)
+	{
+		AimComponent->CaptureReleaseView(EventData);
+	}
 	CachedAbilitySystemComponent->HandleGameplayEvent(ReleasedEventTag, &EventData);
 
 	if (!HasAuthority())
 	{
 		ServerRPC_SendGameplayEvent(ReleasedEventTag, EventData);
 	}
-}
-
-void ABasePlayer::AddMouseAimTargetData(FGameplayEventData& EventData) const
-{
-	const ABowItem* Bow = Cast<ABowItem>(EquippedItem);
-	const UBowComponent* BowComponent = Bow ? Bow->GetBowComponent() : nullptr;
-	if (!BowComponent)
-	{
-		return;
-	}
-
-	const FVector ViewLocation = FollowCamera ? FollowCamera->GetComponentLocation() : GetActorLocation();
-	const FVector ViewForward = FollowCamera ? FollowCamera->GetForwardVector() : GetBaseAimRotation().Vector();
-
-	TArray<AActor*> ActorsToIgnore;
-	ActorsToIgnore.Add(const_cast<ABasePlayer*>(this));
-	if (EquippedItem)
-	{
-		ActorsToIgnore.Add(EquippedItem);
-	}
-
-	FBowAimResult AimResult;
-	if (!BowComponent->CalculateAim(ViewLocation, ViewForward, ActorsToIgnore, AimResult))
-	{
-		return;
-	}
-
-	FHitResult AimHit;
-	AimHit.TraceStart = AimResult.TraceStart;
-	AimHit.TraceEnd = AimResult.TraceEnd;
-	AimHit.Location = AimResult.AimTarget;
-	AimHit.ImpactPoint = AimResult.AimTarget;
-	AimHit.bBlockingHit = AimResult.bBlockingHit;
-
-	FGameplayAbilityTargetData_SingleTargetHit* TargetData = new FGameplayAbilityTargetData_SingleTargetHit(AimHit);
-	EventData.TargetData.Add(TargetData);
 }
 
 void ABasePlayer::HandleShipBoardEvent(const FGameplayEventData* Payload)
@@ -1334,77 +1770,15 @@ void ABasePlayer::HandleCannonBoardEvent(const FGameplayEventData* Payload)
 
 void ABasePlayer::HandlePickUpEvent(const FGameplayEventData* Payload)
 {
-	if (Payload && Payload->Target)
+	if (!HasAuthority() || !Payload || !Payload->Target || !InventoryComponent)
 	{
-		if (ABaseItem* ItemToPickUp = const_cast<ABaseItem*>(Cast<ABaseItem>(Payload->Target)))
-		{
-			// 아이템 태그가 material 로 시작하면 인벤토리로
-			bool bShouldStoreInInventory = ItemToPickUp->ItemTag.MatchesTag(Item_Material);
-			if (UWorld* World = GetWorld())
-			{
-				if (UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>())
-				{
-					const FGameplayTag CategoryTag = ItemSubsystem->GetCategoryTag(ItemToPickUp->ItemTag);
-					bShouldStoreInInventory =
-						bShouldStoreInInventory ||
-						CategoryTag.MatchesTag(Item_Category_Clue) ||
-						CategoryTag.MatchesTag(Item_Category_Consumable) ||
-						CategoryTag.MatchesTag(Item_Category_Material) ||
-						CategoryTag.MatchesTag(Item_Category_Weapon);
-				}
-			}
+		return;
+	}
 
-			if (bShouldStoreInInventory)
-			{
-				if (InventoryComponent && InventoryComponent ->AddMaterial(ItemToPickUp->ItemTag, 1))
-				{
-					ItemToPickUp->Destroy();
-				}
-				return;
-			}
-
-			// 장착형 아이템 처리 로직 (서버에서만 생성/파괴 수행)
-			if (HasAuthority())
-			{
-				// 슬롯 여유 공간 확인 (불필요한 힙 메모리 할당 및 스폰 연산 방지)
-				if (HasEmptyItemSlot())
-				{
-					UWorld* World = GetWorld();
-					if (IsValid(World))
-					{
-						if (UItemSubsystem* ItemSubsystem = World->GetSubsystem<UItemSubsystem>())
-						{
-							// 기존 아이템의 데이터 캐싱 (상수화로 불변성 보장)
-							const FGameplayTag TargetItemTag = ItemToPickUp->ItemTag;
-							const FTransform SpawnTransform = ItemToPickUp->GetActorTransform();
-
-							// 서브시스템을 통해 새로운 아이템 스폰 (초기 상태를 InItemSlot으로 지정)
-							ABaseItem* NewSpawnedItem = ItemSubsystem->SpawnItem(TargetItemTag, SpawnTransform, EItemState::InItemSlot, this);
-
-							if (IsValid(NewSpawnedItem))
-							{
-								// 성공적으로 스폰되었다면 슬롯에 할당 시도
-								if (TryPutItemInSlot(NewSpawnedItem))
-								{
-									// 슬롯 등록까지 완료되었을 때만 기존 바닥의 아이템을 맵에서 제거
-									ItemToPickUp->Destroy();
-								}
-								else
-								{
-									// 동시성 문제 등으로 슬롯 등록이 실패했다면 고아(Orphan) 액터가 되지 않도록 롤백
-									NewSpawnedItem->Destroy();
-									UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::HandlePickUpEvent : Failed to put new item in slot. Spawn rolled back."));
-								}
-							}
-						}
-					}
-				}
-				else
-				{
-					UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::HandlePickUpEvent : Inventory is full. Cannot pick up %s"), *ItemToPickUp->GetName());
-				}
-			}
-		}
+	ABaseItem* ItemToPickUp = const_cast<ABaseItem*>(Cast<ABaseItem>(Payload->Target));
+	if (IsValid(ItemToPickUp) && InventoryComponent->AddItem(ItemToPickUp->ItemTag, 1) > 0)
+	{
+		ItemToPickUp->Destroy();
 	}
 }
 
@@ -1414,25 +1788,6 @@ void ABasePlayer::UseEquippedItem(bool bDestroy)
 	{
 		EquipmentComponent->UseEquippedItem(bDestroy);
 	}
-}
-
-void ABasePlayer::EquipItemFromSlot(FGameplayTag KeyTag)
-{
-	if (bEnableGravityVortexSkillInput && KeyTag.MatchesTagExact(Key_Item_3))
-	{
-		return;
-	}
-
-	if (EquipmentComponent)
-	{
-		EquipmentComponent->EquipItemFromSlot(KeyTag);
-	}
-}
-
-void ABasePlayer::Server_EquipItemFromSlot_Implementation(FGameplayTag KeyTag)
-{
-	// 서버가 다시 본래의 함수를 호출하여 권한(HasAuthority)을 통과시키고 실제 로직을 실행
-	EquipItemFromSlot(KeyTag);
 }
 
 EEquipmentState ABasePlayer::GetEquipmentState() const
@@ -1445,34 +1800,49 @@ bool ABasePlayer::IsEquipmentTransitioning() const
 	return EquipmentComponent && EquipmentComponent->IsEquipmentTransitioning();
 }
 
+bool ABasePlayer::CanPerformCombatAction() const
+{
+	if (SwimmingComponent && SwimmingComponent->IsCustomSwimming())
+	{
+		return false;
+	}
+
+	if (bIsDodging)
+	{
+		return false;
+	}
+
+	if (bIsHitReacting)
+	{
+		return false;
+	}
+
+	if (IsEquipmentTransitioning())
+	{
+		return false;
+	}
+
+	if (CachedAbilitySystemComponent.IsValid())
+	{
+		if (CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Swimming)
+			|| CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Rolling)
+			|| CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Damaged)
+			|| CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Dead)
+			|| CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Dialogue))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
 void ABasePlayer::HandleEquipmentAttachNotify()
 {
 	if (EquipmentComponent)
 	{
 		EquipmentComponent->HandleEquipmentAttachNotify();
 	}
-}
-
-void ABasePlayer::RemoveItemFromSlot(FGameplayTag KeyTag)
-{
-	// [서버]
-	if (!HasAuthority()) return;
-	int32 SlotIndex = ItemSlots.IndexOfByKey(KeyTag);
-	if (ItemSlots.IsValidIndex(SlotIndex) && IsValid(ItemSlots[SlotIndex].Item))
-	{
-		ItemSlots[SlotIndex].Item = nullptr;
-		RemoveAbilityFromSlot(KeyTag);
-		OnItemSlotsChanged.Broadcast();
-	}
-}
-
-bool ABasePlayer::HasEmptyItemSlot() const
-{
-	// 람다를 사용해 비어있는(Invalid한) 아이템 포인터가 하나라도 있는지 검사
-	return ItemSlots.ContainsByPredicate([](const FItemSlot& Slot)
-		{
-			return !IsValid(Slot.Item);
-		});
 }
 
 void ABasePlayer::ServerRPC_SendGameplayEvent_Implementation(FGameplayTag EventTag, FGameplayEventData Payload)
@@ -1488,7 +1858,7 @@ void ABasePlayer::OnRep_EquippedItem()
 		EquipmentComponent->OnRepOwnerEquippedItem();
 	}
 
-	OnItemSlotsChanged.Broadcast();
+	OnQuickSlotsChanged.Broadcast();
 }
 
 void ABasePlayer::StartInteractionScan()
@@ -1519,8 +1889,6 @@ bool ABasePlayer::PerformInteractTrace(TArray<FHitResult>& OutHitResults) const
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this); // 자기 자신 스캔 제외
 
-	TArray<FHitResult> HitResults;
-
 	bool bHit = GetWorld()->SweepMultiByChannel(
 		OutHitResults,
 		StartLoc,
@@ -1532,18 +1900,27 @@ bool ABasePlayer::PerformInteractTrace(TArray<FHitResult>& OutHitResults) const
 	);
 
 #if ENABLE_DRAW_DEBUG
-#if WITH_EDITOR
-	if (GIsEditor)
+	if (bDrawInteractionTrace && IsLocallyControlled())
 	{
-		FColor DrawColor = bHit ? FColor::Green : FColor::Red;
-		FVector TraceCenter = StartLoc + (EndLoc - StartLoc) * 0.5f;
-		float TraceHalfHeight = (EndLoc - StartLoc).Size() * 0.5f;
-		FQuat TraceRotation = FRotationMatrix::MakeFromZ(EndLoc - StartLoc).ToQuat();
-
-		// 타이머 주기에 맞춰 그려지도록 LifeTime을 짧게 설정 (예: 0.1초)
-		// DrawDebugCapsule(GetWorld(), TraceCenter, TraceHalfHeight, InteractTraceRadius, TraceRotation, DrawColor, false, 0.1f);
+		const bool bHitInteractable = OutHitResults.ContainsByPredicate([](const FHitResult& Hit)
+		{
+			return Cast<IInteractable>(Hit.GetComponent()) != nullptr;
+		});
+		const FColor DrawColor = bHitInteractable ? FColor::Green : FColor::Red;
+		const FVector TraceCenter = (StartLoc + EndLoc) * 0.5f;
+		const FVector TraceDelta = EndLoc - StartLoc;
+		const float DrawRadius = FMath::Max(0.0f, InteractTraceRadius);
+		const float DrawLifetime = FMath::Max(0.1f, InteractionScanInterval) + 0.02f;
+		if (TraceDelta.IsNearlyZero())
+		{
+			DrawDebugSphere(GetWorld(), StartLoc, DrawRadius, 16, DrawColor, false, DrawLifetime);
+		}
+		else
+		{
+			DrawDebugCapsule(GetWorld(), TraceCenter, TraceDelta.Size() * 0.5f + DrawRadius,
+				DrawRadius, FRotationMatrix::MakeFromZ(TraceDelta).ToQuat(), DrawColor, false, DrawLifetime);
+		}
 	}
-#endif
 #endif
 
 	return bHit;
@@ -1555,29 +1932,44 @@ void ABasePlayer::PerformInteractionScan()
 	PerformInteractTrace(HitResults);
 
 	TArray<UWidgetComponent*> CurrentHoveredWidgets;
+	TMap<UWidgetComponent*, FInteractionUIInfo> CurrentWidgetUIInfo;
 
 	// 현재 트레이스에 걸린 모든 위젯 수집
 	for (const FHitResult& Hit : HitResults)
 	{
-		if (AActor* HitActor = Hit.GetActor())
+		UPrimitiveComponent* HitComponent = Hit.GetComponent();
+		if (!HitComponent)
 		{
-			if (!HitActor->FindComponentByClass<UInteractableComponent>())
+			continue;
+		}
+
+		IInteractable* Interactable = Cast<IInteractable>(HitComponent);
+		if (!Interactable)
+		{
+			continue;
+		}
+
+		AActor* HitActor = Hit.GetActor();
+		if (!HitActor)
+		{
+			continue;
+		}
+
+		TArray<UWidgetComponent*> WidgetComponents;
+		HitActor->GetComponents<UWidgetComponent>(WidgetComponents);
+		for (UWidgetComponent* WidgetComp : WidgetComponents)
+		{
+			if (!WidgetComp)
 			{
 				continue;
 			}
 
-			TArray<UWidgetComponent*> WidgetComponents;
-			HitActor->GetComponents<UWidgetComponent>(WidgetComponents);
-			for (UWidgetComponent* WidgetComp : WidgetComponents)
+			if (Cast<UInteractUserWidget>(WidgetComp->GetUserWidgetObject()))
 			{
-				if (!WidgetComp)
+				CurrentHoveredWidgets.AddUnique(WidgetComp);
+				if (!CurrentWidgetUIInfo.Contains(WidgetComp))
 				{
-					continue;
-				}
-
-				if (Cast<UInteractUserWidget>(WidgetComp->GetUserWidgetObject()))
-				{
-					CurrentHoveredWidgets.AddUnique(WidgetComp);
+					CurrentWidgetUIInfo.Add(WidgetComp, Interactable->GetInteractionUIInfo());
 				}
 			}
 		}
@@ -1622,17 +2014,11 @@ void ABasePlayer::PerformInteractionScan()
 				Widget->SetHiddenInGame(false);
 				CachedHoveredWidgets.Add(Widget);
 
-				if (AActor* OwnerActor = Widget->GetOwner())
+				if (const FInteractionUIInfo* UIInfo = CurrentWidgetUIInfo.Find(Widget))
 				{
-					// InteractableComponent
-					if (UInteractableComponent* InteractComp = OwnerActor->FindComponentByClass<UInteractableComponent>())
+					if (UInteractUserWidget* InteractWidget = Cast<UInteractUserWidget>(Widget->GetUserWidgetObject()))
 					{
-						// InteractUserWidget으로 캐스팅
-						if (UInteractUserWidget* InteractWidget = Cast<UInteractUserWidget>(Widget->GetUserWidgetObject()))
-						{
-							// BP에서 구현된 UI 업데이트 함수 호출
-							InteractWidget->OnUpdateInteractUI(InteractComp->InteractUIInfo);
-						}
+						InteractWidget->OnUpdateInteractUI(*UIInfo);
 					}
 				}
 			}
@@ -1661,7 +2047,7 @@ void ABasePlayer::DoMove(float Right, float Forward)
 {
 	const bool bVerticalSwimOverride = SwimmingComponent
 		&& SwimmingComponent->IsCustomSwimming()
-		&& SwimmingComponent->HasVerticalSwimInput();
+		&& (SwimmingComponent->HasVerticalSwimInput() || SwimmingComponent->IsTransitionState());
 	const FVector2D ClampedMoveInput = bVerticalSwimOverride
 		? FVector2D::ZeroVector
 		: FVector2D(Right, Forward).GetClampedToMaxSize(1.f);
@@ -1749,7 +2135,6 @@ void ABasePlayer::InitializeSwimmingAnimLayers()
 
 void ABasePlayer::StopMoveInput()
 {
-	if(AnimStateComponent) AnimStateComponent->ClearMoveInput();
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->ClearMoveInput();
@@ -1851,6 +2236,11 @@ void ABasePlayer::StartSwimDive()
 	}
 
 	bSwimDiveInputHeld = true;
+	if (SwimmingComponent->GetMovementState() == ESwimMovementState::Surface)
+	{
+		bAutomaticSwimDiveHeld = true;
+		AutomaticSwimDiveRemaining = FMath::Max(AutomaticSwimDiveHoldDuration, 0.0f);
+	}
 	bSwimAscendInputHeld = false;
 	RefreshSwimmingVerticalInput();
 }
@@ -1873,15 +2263,15 @@ void ABasePlayer::RefreshSwimmingVerticalInput()
 		return;
 	}
 
-	const float VerticalInput = (bSwimAscendInputHeld ? 1.0f : 0.0f)
-		- (bSwimDiveInputHeld ? 1.0f : 0.0f);
 	if (USWCharacterMovementComponent* SWMovement =
 		Cast<USWCharacterMovementComponent>(GetCharacterMovement()))
 	{
-		SWMovement->SetSwimmingVerticalInput(VerticalInput);
+		const bool bEffectiveDiveHeld = bSwimDiveInputHeld || bAutomaticSwimDiveHeld;
+		SWMovement->SetSwimmingVerticalInput(bEffectiveDiveHeld, bSwimAscendInputHeld);
 	}
-	if (SwimmingComponent->HasVerticalSwimInput())
+	if (SwimmingComponent->HasVerticalSwimInput() || SwimmingComponent->IsTransitionState())
 	{
+		GetCharacterMovement()->ConsumeInputVector();
 		if (AnimStateComponent)
 		{
 			AnimStateComponent->ClearMoveInput();
@@ -1896,6 +2286,12 @@ void ABasePlayer::RefreshSwimmingVerticalInput()
 		}
 	}
 
+}
+
+void ABasePlayer::ResetAutomaticSwimDiveInput()
+{
+	bAutomaticSwimDiveHeld = false;
+	AutomaticSwimDiveRemaining = 0.0f;
 }
 
 void ABasePlayer::StartSprint()
@@ -1930,6 +2326,14 @@ bool ABasePlayer::CanSprintFromInput() const
 		CachedAbilitySystemComponent.IsValid() &&
 		CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
 
+	const bool bInWater = (SwimmingComponent && (SwimmingComponent->IsCustomSwimming() || SwimmingComponent->IsInShallowWater())) ||
+		(GetCharacterMovement() && GetCharacterMovement()->IsSwimming());
+
+	if (bInWater)
+	{
+		return false;
+	}
+
 	return AnimStateComponent && !bBlockedByAbilityState
 		? AnimStateComponent->CachedMoveInput.Y > 0.15f
 		: false;
@@ -1942,7 +2346,11 @@ void ABasePlayer::RefreshSprintFromInput()
 		return;
 	}
 
+	const bool bInWater = (SwimmingComponent && (SwimmingComponent->IsCustomSwimming() || SwimmingComponent->IsInShallowWater())) ||
+		(GetCharacterMovement() && GetCharacterMovement()->IsSwimming());
+
 	const bool bShouldSprint =
+		!bInWater &&
 		bSprintInputHeld &&
 		CanSprintFromInput() &&
 		!bIsAttacking &&
@@ -2073,6 +2481,26 @@ void ABasePlayer::Server_NotifyJumpStarted_Implementation()
 	LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::Jump;
 }
 
+void ABasePlayer::Server_SetTurnInPlace_Implementation(bool bInTurnInPlace, float InFacingDeltaYaw, float InTargetActorYaw)
+{
+	if (AnimStateComponent)
+	{
+		AnimStateComponent->bShouldTurnInPlace = bInTurnInPlace;
+		AnimStateComponent->DesiredFacingDeltaYaw = InFacingDeltaYaw;
+		AnimStateComponent->bTurnInPlacePhaseActive = bInTurnInPlace;
+		AnimStateComponent->bIsTurningInPlace = bInTurnInPlace;
+	}
+
+	// Apply the client's TIP rotation to the server's actor rotation so standard transform
+	// replication automatically broadcasts the updated facing rotation to all simulated proxies.
+	if (bInTurnInPlace || FMath::Abs(FRotator::NormalizeAxis(InTargetActorYaw - GetActorRotation().Yaw)) > 0.5f)
+	{
+		SetActorRotation(FRotator(0.0f, InTargetActorYaw, 0.0f));
+	}
+
+	UpdateLocomotionStateSnapshot();
+}
+
 void ABasePlayer::BroadcastFallOffStartedForRemoteClients()
 {
 	if (HasAuthority())
@@ -2080,11 +2508,6 @@ void ABasePlayer::BroadcastFallOffStartedForRemoteClients()
 		LocomotionStateSnapshot.EventSequence = NextLocomotionAnimEventSequence();
 		LocomotionStateSnapshot.LastLocomotionEvent = EReplicatedLocomotionEvent::FallOff;
 	}
-}
-
-void ABasePlayer::OnRep_ItemSlots()
-{
-	OnItemSlotsChanged.Broadcast();
 }
 
 void ABasePlayer::OnRep_QuickSlots()
@@ -2098,9 +2521,70 @@ void ABasePlayer::ApplyCombatRotationMode(bool bEnableCombatRotation)
 	// movement is present the controller owns capsule yaw; while stationary the
 	// selected Turn-In-Place root track owns it.  Do not leave a second CMC
 	// ControllerDesiredRotation path alive, as it races the root-yaw delta.
+	// When rolling/dodging, release controller yaw so character can face the roll direction.
+	if (bIsDodging)
+	{
+		bUseControllerRotationYaw = false;
+		if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+		{
+			MovementComponent->bOrientRotationToMovement = false;
+			MovementComponent->bUseControllerDesiredRotation = false;
+		}
+		return;
+	}
+
+	const bool bIsInAir = AnimStateComponent &&
+		(AnimStateComponent->bIsInAir || AnimStateComponent->CurrentState == ELocomotionState::InAir);
+
 	const bool bIsMovingInStrafe =
 		(GetPendingMovementInputVector().SizeSquared() > 0.001f || GetVelocity().SizeSquared2D() > 100.0f);
-	bUseControllerRotationYaw = bEnableCombatRotation && bIsMovingInStrafe;
+
+	if (bEnableCombatRotation && (bIsMovingInStrafe || bIsInAir))
+	{
+		const float TargetYaw = GetController() ? GetController()->GetControlRotation().Yaw : GetActorRotation().Yaw;
+		const float CurrentYaw = GetActorRotation().Yaw;
+		const float YawDelta = FMath::Abs(FRotator::NormalizeAxis(TargetYaw - CurrentYaw));
+
+		if (bIsInAir)
+		{
+			// 공중 체공 중에는 마우스 회전 시 캡슐이 굳지 않고 AirRotationCatchUpSpeed 속도로 카메라 방향을 부드럽게 추종
+			if (YawDelta > 0.5f)
+			{
+				bUseControllerRotationYaw = false;
+				const FRotator CurrentRot = GetActorRotation();
+				const FRotator TargetRot(0.0f, TargetYaw, 0.0f);
+				const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
+				const FRotator NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaSeconds, AirRotationCatchUpSpeed);
+				SetActorRotation(NewRot);
+			}
+			else
+			{
+				bUseControllerRotationYaw = true;
+			}
+		}
+		else if (YawDelta > 5.0f)
+		{
+			bUseControllerRotationYaw = false;
+			const FRotator CurrentRot = GetActorRotation();
+			const FRotator TargetRot(0.0f, TargetYaw, 0.0f);
+			const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
+
+			// S 키(후방 이동) 입력 중이거나 큰 회전(180도)일 때는 전용 회전 속도(BackwardStrafeRotationCatchUpSpeed) 사용
+			const bool bIsBackwardInput = (AnimStateComponent && AnimStateComponent->CachedMoveInput.Y < -0.1f) || (YawDelta > 110.0f);
+			const float ActiveCatchUpSpeed = bIsBackwardInput ? BackwardStrafeRotationCatchUpSpeed : StrafeRotationCatchUpSpeed;
+
+			const FRotator NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaSeconds, ActiveCatchUpSpeed);
+			SetActorRotation(NewRot);
+		}
+		else
+		{
+			bUseControllerRotationYaw = true;
+		}
+	}
+	else
+	{
+		bUseControllerRotationYaw = false;
+	}
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
@@ -2325,6 +2809,14 @@ bool ABasePlayer::CanSprintFromServerState() const
 		CachedAbilitySystemComponent.IsValid() &&
 		CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Attacking);
 
+	const bool bInWater = (SwimmingComponent && (SwimmingComponent->IsCustomSwimming() || SwimmingComponent->IsInShallowWater())) ||
+		(GetCharacterMovement() && GetCharacterMovement()->IsSwimming());
+
+	if (bInWater)
+	{
+		return false;
+	}
+
 	return !bBlockedByAbilityState && !bIsAttacking && !bIsDodging && !bIsHitReacting;
 }
 
@@ -2429,7 +2921,7 @@ bool ABasePlayer::UpdateGaspStyleTurnInPlaceRequest(float& OutDesiredYaw)
 
 void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
 {
-	if (!AnimStateComponent)
+	if (bIsDodging || !AnimStateComponent)
 	{
 		return;
 	}
@@ -2495,11 +2987,30 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
 
 	AnimStateComponent->TurnInPlaceRootYawDelta = ClampedDeltaYaw;
 	const float ActorYawBeforeApply = GetActorRotation().Yaw;
-	if (!FMath::IsNearlyZero(ClampedDeltaYaw))
+	const bool bCanApplyActorRotation = IsLocallyControlled() || HasAuthority();
+	if (bCanApplyActorRotation && !FMath::IsNearlyZero(ClampedDeltaYaw))
 	{
 		AddActorWorldRotation(FRotator(0.0f, ClampedDeltaYaw, 0.0f));
 	}
 	const float ActorYawAfterApply = GetActorRotation().Yaw;
+
+	if (!HasAuthority() && IsLocallyControlled())
+	{
+		const UWorld* World = GetWorld();
+		const double Now = World ? World->GetTimeSeconds() : 0.0;
+		const float CurrentActorYaw = GetActorRotation().Yaw;
+		const bool bYawChangedSignificantly = FMath::Abs(FRotator::NormalizeAxis(CurrentActorYaw - LastSentTurnInPlaceActorYaw)) >= 3.0f;
+		const bool bTimeElapsed = (Now - LastTurnInPlaceSendTime) >= 0.06;
+
+		if (!bLastSentTurnInPlaceActive || (bYawChangedSignificantly && bTimeElapsed))
+		{
+			Server_SetTurnInPlace(true, FacingDeltaYaw, CurrentActorYaw);
+			bLastSentTurnInPlaceActive = true;
+			LastSentTurnInPlaceFacingDelta = FacingDeltaYaw;
+			LastSentTurnInPlaceActorYaw = CurrentActorYaw;
+			LastTurnInPlaceSendTime = Now;
+		}
+	}
 
 	const float RemainingFacingDeltaYaw = GetDesiredFacingDeltaYaw();
 	// UpdateCombatTurnInPlaceRequest is the single authority for ending TIP,

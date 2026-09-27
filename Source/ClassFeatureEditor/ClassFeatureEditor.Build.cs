@@ -6,17 +6,30 @@ public class ClassFeatureEditor : ModuleRules
 	{
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
+			"AssetTools",
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"GameplayTags",
 			"UnrealEd",
+			"Kismet",
+			"Slate",
+			"SlateCore",
+			"UMG",
+			"UMGEditor",
 			"LevelEditor",
 			"AnimationBlueprintLibrary",
 			"AnimationModifiers",
+			"ArtisticSWCore",
 			"ClassFeature",
 			"GASCore",
 			"WaterAndShip",
-			"Water"
+			"Water",
+			"GeometryCore",
+			"MeshConversion",
+			"AssetRegistry",
+			"PropertyEditor",
+			"ImageCore"
 		});
 
 		PublicIncludePaths.AddRange(new string[]

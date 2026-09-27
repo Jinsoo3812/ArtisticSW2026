@@ -7,7 +7,7 @@
 #include "Engine/Texture2D.h"
 #include "BasePlayer.h"
 
-void UQuickSlotEntryWidget::SetupFromData(const FGameplayTag& InSlotTag, const FText& InItemName, UTexture2D* InIcon, bool bEquipped, int32 InCount)
+void UQuickSlotEntryWidget::SetupFromData(const FGameplayTag& InSlotTag, UTexture2D* InIcon, bool bEquipped, int32 InCount)
 {
 	// 퀵슬롯 칸 자체는 아이템 유무와 관계없이 항상 표시합니다.
 	SetVisibility(ESlateVisibility::Visible);
@@ -31,12 +31,6 @@ void UQuickSlotEntryWidget::SetupFromData(const FGameplayTag& InSlotTag, const F
 		{
 			SlotText->SetText(FText::FromString(SlotString));
 		}
-	}
-
-	if (ItemNameText)
-	{
-		ItemNameText->SetVisibility(ESlateVisibility::Visible);
-		ItemNameText->SetText(InItemName);
 	}
 
 	if (CountText)

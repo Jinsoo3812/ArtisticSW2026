@@ -11,6 +11,7 @@ class AController;
 class APlayerController;
 class APlayerStart;
 class APawn;
+class UPlayerRespawnPointComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
     FOnSWPlayerRoleAssigned,
@@ -27,6 +28,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSWRequiredPlayersJoined);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSWAllPlayersReady);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSWGameOverRequested);
 /**
  * 2인 멀티 플레이 기본 GameMode.
  *
@@ -62,21 +64,29 @@ public:
 
     UPROPERTY(BlueprintAssignable, Category = "Multiplayer|Events")
     FOnSWAllPlayersReady OnAllPlayersReady;
+
+	/** Future defeat-screen hook. Currently followed immediately by a level reload. */
+	UPROPERTY(BlueprintAssignable, Category = "Game Rules|Events")
+	FOnSWGameOverRequested OnGameOverRequested;
 	
 public:
-    // 블루프린트에서 Attacker와 Crafter 클래스를 할당할 수 있게
-    UPROPERTY(EditDefaultsOnly, Category = "Classes")
+    /** 두 플레이어 모두에게 공통으로 스폰할 표준 플레이어 폰 클래스 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Classes")
+    TSubclassOf<APawn> CommonPlayerPawnClass;
+
+    // ====================================================================
+    // [LEGACY / DEPRECATED] Attacker / Crafter 역할 분기는 더 이상 사용되지 않습니다.
+    // ====================================================================
+    UPROPERTY(EditDefaultsOnly, Category = "LEGACY|Roles", meta = (DeprecatedProperty, DeprecationMessage = "Use CommonPlayerPawnClass instead"))
     TSubclassOf<APawn> AttackerPawnClass;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Classes")
+    UPROPERTY(EditDefaultsOnly, Category = "LEGACY|Roles", meta = (DeprecatedProperty, DeprecationMessage = "Use CommonPlayerPawnClass instead"))
     TSubclassOf<APawn> CrafterPawnClass;
 
-    /** 첫 번째 플레이어 역할명. PlayerStartTag와도 매칭된다. */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Multiplayer|Roles")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "LEGACY|Roles", meta = (DeprecatedProperty))
     FName AttackerRoleName = TEXT("Attacker");
 
-    /** 두 번째 플레이어 역할명. PlayerStartTag와도 매칭된다. */
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Multiplayer|Roles")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "LEGACY|Roles", meta = (DeprecatedProperty))
     FName CrafterRoleName = TEXT("Crafter");
 
     /** 게임 시작에 필요한 플레이어 수 */
@@ -143,6 +153,18 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Multiplayer|State")
     bool AreAllPlayersReady() const;
+
+	UFUNCTION(BlueprintPure, Category="Respawn")
+	int32 GetPlayerIndex(AController* Controller) const;
+
+	UFUNCTION(BlueprintCallable, Category="Respawn")
+	void NotifyPlayerDeathFinished(APawn* DeadPawn);
+
+	UFUNCTION(BlueprintCallable, Category="Game Rules")
+	void RequestGameOverAndLevelRestart();
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Respawn", meta=(ClampMin="0.0"))
+	float IndividualRespawnDelay = 5.0f;
     
 protected:
     // ================================
@@ -180,10 +202,19 @@ protected:
 
     /** 각 Controller의 역할 */
     TMap<TObjectPtr<AController>, FName> PlayerRoles;
+	TMap<TObjectPtr<AController>, int32> PlayerIndices;
+	TSet<TObjectPtr<AController>> FinishedDeadPlayers;
+	TMap<TObjectPtr<AController>, FTimerHandle> RespawnTimers;
 
     /** Ready 상태인 Controller 목록 */
     TSet<TObjectPtr<AController>> ReadyPlayers;
 
     bool bRequiredPlayersJoinedNotified = false;
     bool bAllPlayersReadyNotified = false;
+	bool bLevelRestartRequested = false;
+
+	void TryRespawnPlayer(AController* Controller);
+	UPlayerRespawnPointComponent* FindShipRespawnPoint(int32 PlayerIndex) const;
+	virtual void HandleAllPlayersDeathFinished();
+	virtual void CapturePlayerProgressForLevelRestart();
 };

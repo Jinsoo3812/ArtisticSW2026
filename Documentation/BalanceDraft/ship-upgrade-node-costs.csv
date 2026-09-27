@@ -1,0 +1,5 @@
+TrackLevel,MaterialA,QuantityA,MaterialB,QuantityB,Note
+1,Item.Id.Material.ShipMaterials.WoodenPlank,6,,,draft per node; edit each actual node separately
+2,Item.Id.Material.ShipMaterials.WoodenPlank,4,Item.Id.Material.ShipMaterials.GoodWoodenPlank,5,draft per node
+3,Item.Id.Material.ShipMaterials.GoodWoodenPlank,5,Item.Id.Material.ShipMaterials.IronPlate,6,draft per node
+4,Item.Id.Material.ShipMaterials.IronPlate,6,Item.Id.Material.ShipMaterials.GoodIronPlate,8,draft per node

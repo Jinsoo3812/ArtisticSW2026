@@ -2,6 +2,7 @@
 
 
 #include "BasePlayerState.h"
+#include "WeaponInputAbilitySystemComponent.h"
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
 #include "Skills/PlayerSkillComponent.h"
@@ -14,7 +15,7 @@ ABasePlayerState::ABasePlayerState()
 	SetNetUpdateFrequency(BaseNetUpdateFrequency);
 
 	// Ability System Component ?앹꽦
-	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AbilitySystemComponent = CreateDefaultSubobject<UWeaponInputAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
 
 	// Mixed: 자신의 GE, Tags, Gameplay Cues 복제

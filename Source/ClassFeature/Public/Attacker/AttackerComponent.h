@@ -54,7 +54,4 @@ protected:
 	// 컴포넌트 제거 시 부여된 어빌리티를 회수합니다.
 	void RemoveAttackerAbilities();
 
-	// Attacker 전용 어빌리티와 고정 Slot Tag의 매핑 정보
-	UPROPERTY(EditDefaultsOnly, Category = "Attacker|Abilities")
-	TMap<FGameplayTag, TSubclassOf<UGameplayAbility>> AttackerAbilities;
 };

@@ -40,6 +40,7 @@ public:
 
 	void ConfigurePreview(float InSkillRadius);
 	void SetPreviewValid(bool bInValid);
+	void SetPreviewMeshVisible(bool bVisible);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bombardment|Preview")
 	TObjectPtr<USceneComponent> PreviewRoot;
@@ -139,6 +140,10 @@ public:
 	/** Optional override. Null reuses the normal cannonball class found on the controlled Player ship. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Projectile")
 	TSubclassOf<AActor> ProjectileClassOverride;
+
+	/** Multiplies the source Player Ship's current CannonDamage for every bombardment projectile. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Projectile", meta = (ClampMin = "0.0"))
+	float CannonDamageMultiplier = 0.3f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment|Volley", meta = (ClampMin = "1"))
 	int32 ProjectilesPerVolley = 6;

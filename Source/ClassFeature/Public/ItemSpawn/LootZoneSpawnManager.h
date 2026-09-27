@@ -5,11 +5,9 @@
 #include "LootSpawnTypes.h"
 #include "LootZoneSpawnManager.generated.h"
 
-class AChestSpawnPoint;
 class ABaseItem;
 class ALootSpawnPointBase;
 class ALooseLootSpawnPoint;
-class AStorageChest;
 class UDataTable;
 
 UCLASS()
@@ -44,24 +42,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Data")
 	TObjectPtr<UDataTable> ZoneLootItemTable = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Data")
-	TObjectPtr<UDataTable> ChestInitialLootTable = nullptr;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Spawn")
 	TSubclassOf<ABaseItem> DefaultLooseLootClass = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Spawn")
-	TSubclassOf<AStorageChest> DefaultChestClass = nullptr;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Spawn")
 	TArray<TObjectPtr<ALooseLootSpawnPoint>> LooseLootSpawnPoints;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot|Spawn")
-	TArray<TObjectPtr<AChestSpawnPoint>> ChestSpawnPoints;
 
 private:
 	TArray<FZoneLootItemRow> GetZoneLootRows() const;
-	TArray<FChestInitialLootRow> GetChestLootRows() const;
 	bool PickWeightedPoint(const TArray<ALootSpawnPointBase*>& Candidates, FRandomStream& RandomStream, ALootSpawnPointBase*& OutPoint) const;
 	bool PickWeightedLootRow(const TArray<FZoneLootItemRow>& Rows, FRandomStream& RandomStream, FZoneLootItemRow& OutRow) const;
 };

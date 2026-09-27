@@ -5,7 +5,6 @@
 #include "EngineUtils.h"
 #include "Item/BaseItem.h"
 #include "ItemSpawn/LootSpawnPoint.h"
-#include "Storage/StorageChest.h"
 
 ALootZoneSpawnManager::ALootZoneSpawnManager()
 {
@@ -29,14 +28,9 @@ bool ALootZoneSpawnManager::BuildSpawnPointList()
 	{
 		return !IsValid(Point);
 	});
-	ChestSpawnPoints.RemoveAll([](const TObjectPtr<AChestSpawnPoint>& Point)
-	{
-		return !IsValid(Point);
-	});
-
 	if (!bAutoDiscoverOwnedSpawnPoints)
 	{
-		return LooseLootSpawnPoints.Num() > 0 || ChestSpawnPoints.Num() > 0;
+		return LooseLootSpawnPoints.Num() > 0;
 	}
 
 	UWorld* World = GetWorld();
@@ -55,17 +49,7 @@ bool ALootZoneSpawnManager::BuildSpawnPointList()
 		}
 	}
 
-	for (TActorIterator<AChestSpawnPoint> It(World); It; ++It)
-	{
-		AChestSpawnPoint* Point = *It;
-		const bool bZoneIdMatches = !ZoneId.IsNone() && Point->GetZoneId() == ZoneId;
-		if (IsValid(Point) && (Point->GetOwner() == this || bZoneIdMatches))
-		{
-			ChestSpawnPoints.AddUnique(Point);
-		}
-	}
-
-	return LooseLootSpawnPoints.Num() > 0 || ChestSpawnPoints.Num() > 0;
+	return LooseLootSpawnPoints.Num() > 0;
 }
 
 int32 ALootZoneSpawnManager::ActivateAndSpawnByBudget(int32 Budget, int32 Seed)
@@ -75,14 +59,12 @@ int32 ALootZoneSpawnManager::ActivateAndSpawnByBudget(int32 Budget, int32 Seed)
 		return 0;
 	}
 
-	if (bAutoBuildSpawnPointListOnBeginPlay && LooseLootSpawnPoints.Num() == 0 && ChestSpawnPoints.Num() == 0)
+	if (bAutoBuildSpawnPointListOnBeginPlay && LooseLootSpawnPoints.Num() == 0)
 	{
 		BuildSpawnPointList();
 	}
 
 	const TArray<FZoneLootItemRow> ZoneLootRows = GetZoneLootRows();
-	const TArray<FChestInitialLootRow> ChestLootRows = GetChestLootRows();
-
 	TArray<ALootSpawnPointBase*> Candidates;
 	for (ALooseLootSpawnPoint* Point : LooseLootSpawnPoints)
 	{
@@ -91,14 +73,6 @@ int32 ALootZoneSpawnManager::ActivateAndSpawnByBudget(int32 Budget, int32 Seed)
 			Candidates.Add(Point);
 		}
 	}
-	for (AChestSpawnPoint* Point : ChestSpawnPoints)
-	{
-		if (IsValid(Point) && !Point->IsDataDrivenChestPoint() && Point->CanBeActivated())
-		{
-			Candidates.Add(Point);
-		}
-	}
-
 	FRandomStream RandomStream(Seed);
 	int32 ActivatedCount = 0;
 
@@ -119,11 +93,6 @@ int32 ALootZoneSpawnManager::ActivateAndSpawnByBudget(int32 Budget, int32 Seed)
 				bSpawned = IsValid(LoosePoint->SpawnLooseLoot(LootRow, DefaultLooseLootClass));
 			}
 		}
-		else if (AChestSpawnPoint* ChestPoint = Cast<AChestSpawnPoint>(SelectedPoint))
-		{
-			bSpawned = IsValid(ChestPoint->SpawnChest(ChestLootRows, DefaultChestClass, RandomStream.RandRange(1, MAX_int32)));
-		}
-
 		Candidates.Remove(SelectedPoint);
 		if (bSpawned)
 		{
@@ -144,13 +113,6 @@ void ALootZoneSpawnManager::ResetZone(bool bDestroySpawnedActors)
 		}
 	}
 
-	for (AChestSpawnPoint* Point : ChestSpawnPoints)
-	{
-		if (IsValid(Point))
-		{
-			Point->ResetSpawnPoint(bDestroySpawnedActors);
-		}
-	}
 }
 
 TArray<FZoneLootItemRow> ALootZoneSpawnManager::GetZoneLootRows() const
@@ -161,24 +123,6 @@ TArray<FZoneLootItemRow> ALootZoneSpawnManager::GetZoneLootRows() const
 		TArray<FZoneLootItemRow*> RowPtrs;
 		ZoneLootItemTable->GetAllRows(TEXT("ZoneLootItemTable"), RowPtrs);
 		for (const FZoneLootItemRow* RowPtr : RowPtrs)
-		{
-			if (RowPtr)
-			{
-				Rows.Add(*RowPtr);
-			}
-		}
-	}
-	return Rows;
-}
-
-TArray<FChestInitialLootRow> ALootZoneSpawnManager::GetChestLootRows() const
-{
-	TArray<FChestInitialLootRow> Rows;
-	if (ChestInitialLootTable)
-	{
-		TArray<FChestInitialLootRow*> RowPtrs;
-		ChestInitialLootTable->GetAllRows(TEXT("ChestInitialLootTable"), RowPtrs);
-		for (const FChestInitialLootRow* RowPtr : RowPtrs)
 		{
 			if (RowPtr)
 			{

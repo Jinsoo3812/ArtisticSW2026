@@ -4,6 +4,9 @@
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
+#include "Effects/SWNiagaraScaleLibrary.h"
 #include "Skills/GravityVortexField.h"
 #include "WaterSurfaceQueryLibrary.h"
 
@@ -31,14 +34,67 @@ AGravityVortexProjectile::AGravityVortexProjectile()
 	ProjectileMovement->ProjectileGravityScale = 1.0f;
 	ProjectileMovement->bRotationFollowsVelocity = true;
 	ProjectileMovement->bAutoActivate = false;
+	ProjectileMovement->bInterpMovement = true;
+	ProjectileMovement->bInterpRotation = true;
+	ProjectileMovement->InterpLocationTime = 0.05f;
+	ProjectileMovement->InterpRotationTime = 0.05f;
+	ProjectileMovement->InterpLocationMaxLagDistance = 2000.0f;
+	ProjectileMovement->InterpLocationSnapToTargetDistance = 10000.0f;
+	ProjectileMovement->SetInterpolatedComponent(VisualMesh);
+
+	ProjectileEffectComponent = CreateDefaultSubobject<UNiagaraComponent>(TEXT("ProjectileEffect"));
+	ProjectileEffectComponent->SetupAttachment(VisualMesh);
+	ProjectileEffectComponent->SetAutoActivate(false);
 
 	FieldClass = AGravityVortexField::StaticClass();
+}
+
+void AGravityVortexProjectile::PostNetReceiveLocationAndRotation()
+{
+	if (ProjectileMovement && ProjectileMovement->IsActive()
+		&& ProjectileMovement->bInterpMovement && ProjectileMovement->GetInterpolatedComponent())
+	{
+		const FRepMovement& Movement = GetReplicatedMovement();
+		ProjectileMovement->MoveInterpolationTarget(
+			FRepMovement::RebaseOntoLocalOrigin(Movement.Location, this), Movement.Rotation);
+		return;
+	}
+	Super::PostNetReceiveLocationAndRotation();
+}
+
+void AGravityVortexProjectile::PostNetReceiveVelocity(const FVector& NewVelocity)
+{
+	Super::PostNetReceiveVelocity(NewVelocity);
+	if (ProjectileMovement)
+	{
+		ProjectileMovement->Velocity = NewVelocity;
+		ProjectileMovement->UpdateComponentVelocity();
+		if (!ProjectileMovement->IsActive()) ProjectileMovement->Activate(true);
+	}
 }
 
 void AGravityVortexProjectile::BeginPlay()
 {
 	Super::BeginPlay();
 	PreviousLocation = GetActorLocation();
+	if (VisualMesh)
+	{
+		if (ProjectileMesh)
+		{
+			VisualMesh->SetStaticMesh(ProjectileMesh);
+		}
+		VisualMesh->SetRelativeScale3D(FVector(FMath::Max(0.001f, ProjectileMeshScale)));
+	}
+	if (ProjectileEffectComponent && ProjectileEffect && GetNetMode() != NM_DedicatedServer)
+	{
+		ProjectileEffectComponent->SetAsset(ProjectileEffect);
+		USWNiagaraScaleLibrary::ApplyEffectTuning(
+			ProjectileEffectComponent,
+			ProjectileEffectScale,
+			ProjectileEffectLifetimeScale,
+			ProjectileEffectPlaybackSpeed);
+		ProjectileEffectComponent->Activate(true);
+	}
 
 	if (HasAuthority())
 	{

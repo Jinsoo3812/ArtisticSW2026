@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "BaseEnemy.h"
@@ -12,19 +12,21 @@
 
 // Enemy Folder
 #include "AI/BaseAIController.h"
+#include "AI/EnemyTerritoryComponent.h"
 #include "GAS/EnemyAttributeSet.h"
+#include "EngineUtils.h"
 #include "WaveSystem/Route/EnemyWaypointMoveComponent.h"
 
 // Unreal
 #include "AbilitySystemComponent.h"
+#include "Abilities/BaseDeathGameplayAbility.h"
 #include "Blueprint/AIBlueprintHelperLibrary.h"
-#include "Components/WidgetComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/BaseHealthComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Perception/AISense_Damage.h"
-#include "UI/HealthBarWidget.h"
-#include "UObject/ConstructorHelpers.h"
+#include "UI/EnemyHealthBarComponent.h"
 
 ABaseEnemy::ABaseEnemy()
 {
@@ -40,6 +42,16 @@ ABaseEnemy::ABaseEnemy()
 	SetNetCullDistanceSquared(FMath::Square(15000.0f));
 	
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+
+	// Prevent player camera boom from clipping / zooming against enemies
+	if (UCapsuleComponent* CapsuleComp = GetCapsuleComponent())
+	{
+		CapsuleComp->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	}
+	if (USkeletalMeshComponent* MeshComp = GetMesh())
+	{
+		MeshComp->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	}
 	
 	// ASC
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
@@ -54,22 +66,14 @@ ABaseEnemy::ABaseEnemy()
 	WeaponComponent = CreateDefaultSubobject<UBaseWeaponComponent>(TEXT("WeaponComponent"));
 	WaypointMoveComponent = CreateDefaultSubobject<UEnemyWaypointMoveComponent>(TEXT("WaypointMoveComponent"));
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
-	// Confirmed damage feedback is a character-enemy policy, not a boss-only policy.
-	HealthComponent->SetDamageGameplayCueTag(GameplayCue_Boss_Hit);
+	TerritoryComponent = CreateDefaultSubobject<UEnemyTerritoryComponent>(TEXT("TerritoryComponent"));
+	// All regular enemy archetypes share this confirmed-damage cue. Specialized
+	// enemies must opt into a different cue in their own constructor.
+	HealthComponent->SetDamageGameplayCueTag(GameplayCue_Enemy_Hit);
 
 	// ================= Health Bar =================
-	HealthBarWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarWidgetComponent"));
-	HealthBarWidgetComponent->SetupAttachment(GetRootComponent());
-	HealthBarWidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
-	HealthBarWidgetComponent->SetDrawAtDesiredSize(false);
-	HealthBarWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-	static ConstructorHelpers::FClassFinder<UHealthBarWidget> HealthBarWidgetFinder(TEXT("/Game/Blueprints/02_UI/UI_HUD/WBP_HealthBarWidget"));
-	if (HealthBarWidgetFinder.Succeeded())
-	{
-		HealthBarWidgetClass = HealthBarWidgetFinder.Class;
-		HealthBarWidgetComponent->SetWidgetClass(HealthBarWidgetClass);
-	}
+	EnemyHealthBarComponent = CreateDefaultSubobject<UEnemyHealthBarComponent>(TEXT("EnemyHealthBarComponent"));
+	EnemyHealthBarComponent->SetupAttachment(GetRootComponent());
 	// ================= End of Health Bar =================
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
@@ -91,32 +95,67 @@ void ABaseEnemy::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (const UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		BaseMovementSpeed = FMath::Max(0.0f, MovementComponent->MaxWalkSpeed);
+	}
+
 	if (AbilitySystemComponent)
 	{
 		AbilitySystemComponent->InitAbilityActorInfo(this, this);
+		if (HasAuthority() && !ApplyBaseStatsForSpawn())
+		{
+			SetActorEnableCollision(false);
+			Destroy();
+			return;
+		}
+		BindMovementSpeedAttribute();
 		if (HasAuthority())
 		{
 			AbilitySystemComponent->AddLooseGameplayTag(Team_Enemy);
+			AbilitySystemComponent->AddLooseGameplayTag(Capability_Effect_MoveSpeedMultiplier);
+			AbilitySystemComponent->AddLooseGameplayTag(Capability_Effect_AttackSpeedMultiplier);
+			AbilitySystemComponent->AddLooseGameplayTags(EffectTargetTags);
+			if (EnemyTypeTag.IsValid())
+			{
+				AbilitySystemComponent->AddLooseGameplayTag(EnemyTypeTag);
+			}
 		}
 		if (HealthComponent)
 		{
 			HealthComponent->OnDeathStarted.AddUniqueDynamic(this, &ABaseEnemy::OnDeathStarted);
 			HealthComponent->OnDeathFinished.AddUniqueDynamic(this, &ABaseEnemy::OnDeathFinished);
 			HealthComponent->OnHealthChanged.AddUniqueDynamic(this, &ABaseEnemy::OnHealthChanged);
-			HealthComponent->OnMaxHealthChanged.AddUniqueDynamic(this, &ABaseEnemy::OnMaxHealthChanged);
 			HealthComponent->InitializeWithAbilitySystem(AbilitySystemComponent);
 		}
 	}
 
-	InitializeHealthBarWidget();
+	if (EnemyHealthBarComponent)
+	{
+		EnemyHealthBarComponent->ConfigurePresentation(HealthBarOffset, HealthBarDrawSize);
+		EnemyHealthBarComponent->SetVisibilitySourceComponent(GetMesh());
+	}
+	if (HasAuthority())
+	{
+		SetBaseMovementSpeed(BaseMovementSpeed);
+	}
 
-	// StartingAbilities 능력 등록
+	// StartingAbilities 능력 등록. Death GA는 사망 파이프라인에서 하나만
+	// 실행되어야 하므로 전용 설정으로 정규화합니다.
 	if (AbilitySystemComponent && HasAuthority())
 	{
-		if (StartingAbilities.Num() > 0)
+		TArray<TSubclassOf<UGameplayAbility>> AbilitiesToGrant = StartingAbilities;
+		AbilitiesToGrant.RemoveAll([this](const TSubclassOf<UGameplayAbility>& AbilityClass)
 		{
-			GrantAbilities(StartingAbilities);
+			return AbilityClass
+				&& AbilityClass->IsChildOf(UBaseDeathGameplayAbility::StaticClass())
+				&& AbilityClass.Get() != DeathAbilityClass.Get();
+		});
+		if (DeathAbilityClass)
+		{
+			AbilitiesToGrant.AddUnique(TSubclassOf<UGameplayAbility>(DeathAbilityClass.Get()));
 		}
+		GrantAbilities(AbilitiesToGrant);
 		// 무기 관리
 		if (WeaponComponent && DefaultWeaponTag.IsValid())
 		{
@@ -136,18 +175,30 @@ void ABaseEnemy::BeginPlay()
 
 void ABaseEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	UnbindMovementSpeedAttribute();
+
 	if (HealthComponent)
 	{
 		HealthComponent->OnDeathStarted.RemoveDynamic(this, &ABaseEnemy::OnDeathStarted);
 		HealthComponent->OnDeathFinished.RemoveDynamic(this, &ABaseEnemy::OnDeathFinished);
 		HealthComponent->OnHealthChanged.RemoveDynamic(this, &ABaseEnemy::OnHealthChanged);
-		HealthComponent->OnMaxHealthChanged.RemoveDynamic(this, &ABaseEnemy::OnMaxHealthChanged);
 		HealthComponent->UninitializeFromAbilitySystem();
 	}
 
-	GetWorldTimerManager().ClearTimer(HealthBarHideTimerHandle);
-
 	Super::EndPlay(EndPlayReason);
+}
+
+void ABaseEnemy::Destroyed()
+{
+	// Weapon actors are independently replicated. Actor ownership controls
+	// relevancy, not lifetime, so permanently removing an enemy must explicitly
+	// remove its loadout on the authority before the owner channel closes.
+	if (HasAuthority() && WeaponComponent)
+	{
+		WeaponComponent->DestroyCurrentWeapon();
+	}
+
+	Super::Destroyed();
 }
 
 TArray<FGameplayAbilitySpecHandle> ABaseEnemy::GrantAbilities(TArray<TSubclassOf<UGameplayAbility>> AbilitiesToGrant)
@@ -197,32 +248,51 @@ void ABaseEnemy::NotifyRemovedFromWaveOnce(EWaveEnemyRemoveReason Reason)
 
 void ABaseEnemy::HandleDeath_Implementation()
 {
+	// DeathStarted에서 실행되는 즉시 게임플레이 정리 훅입니다.
+}
+
+bool ABaseEnemy::ShouldWaitForDeathAbility() const
+{
+	return DeathAbilityClass != nullptr;
+}
+
+void ABaseEnemy::HandleDeathFinishedPresentation()
+{
 	ApplyLocalDeathRagdoll();
 }
 
 void ABaseEnemy::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 {
-	if (HealthBarWidgetComponent)
-	{
-		HealthBarWidgetComponent->SetVisibility(false);
-	}
-
 	if (!bDeathHandled)
 	{
 		bDeathHandled = true;
 
 		if (HasAuthority())
 		{
+			if (WeaponComponent)
+			{
+				WeaponComponent->DeactivateForOwnerDeath();
+			}
 			NotifyRemovedFromWaveOnce(EWaveEnemyRemoveReason::Death);
 			Drop();
 		}
 
 		HandleDeath();
+
+		// Regular enemies do not own a death GA. Their physical death presentation
+		// begins immediately, while montage-driven enemies (Boss) wait for
+		// UBaseHealthComponent::FinishDeath.
+		if (!ShouldWaitForDeathAbility())
+		{
+			ApplyLocalDeathRagdoll();
+		}
 	}
 }
 
 void ABaseEnemy::OnDeathFinished(UBaseHealthComponent* InHealthComponent)
 {
+	HandleDeathFinishedPresentation();
+
 	if (!HasAuthority() || !bDestroyAfterDeathFinished || IsActorBeingDestroyed())
 	{
 		return;
@@ -239,9 +309,6 @@ void ABaseEnemy::OnDeathFinished(UBaseHealthComponent* InHealthComponent)
 
 void ABaseEnemy::OnHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
 {
-	RefreshHealthBarWidget();
-	UpdateHealthBarVisibilityAfterHealthChanged(OldValue, NewValue);
-
 	// GAS attribute changes do not automatically create an AI Damage stimulus.
 	// Report only authoritative, real health loss and keep synthetic Player input out of production code.
 	if (HasAuthority() && OldValue > NewValue && IsValid(InstigatorActor) && InstigatorActor != this)
@@ -255,11 +322,6 @@ void ABaseEnemy::OnHealthChanged(UBaseHealthComponent* InHealthComponent, float 
 			DamageLocation,
 			DamageLocation);
 	}
-}
-
-void ABaseEnemy::OnMaxHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor)
-{
-	RefreshHealthBarWidget();
 }
 
 bool ABaseEnemy::CanEngageActor_Implementation(AActor* Candidate) const
@@ -278,63 +340,107 @@ bool ABaseEnemy::CanEngageActor_Implementation(AActor* Candidate) const
 	return true;
 }
 
-void ABaseEnemy::InitializeHealthBarWidget()
+void ABaseEnemy::BindMovementSpeedAttribute()
 {
-	if (!HealthBarWidgetComponent)
+	if (!AbilitySystemComponent)
 	{
 		return;
 	}
 
-	HealthBarWidgetComponent->SetRelativeLocation(HealthBarOffset);
-	HealthBarWidgetComponent->SetDrawSize(HealthBarDrawSize);
-
-	if (HealthBarWidgetClass)
+	if (!MoveSpeedBonusChangedDelegateHandle.IsValid())
 	{
-		HealthBarWidgetComponent->SetWidgetClass(HealthBarWidgetClass);
+		MoveSpeedBonusChangedDelegateHandle = AbilitySystemComponent
+			->GetGameplayAttributeValueChangeDelegate(UEnemyAttributeSet::GetMoveSpeedBonusAttribute())
+			.AddUObject(this, &ABaseEnemy::OnMovementSpeedModifierChanged);
 	}
-
-	HealthBarWidgetComponent->InitWidget();
-	RefreshHealthBarWidget();
-	HealthBarWidgetComponent->SetVisibility(HealthBarVisibilityPolicy == EEnemyHealthBarVisibilityPolicy::AlwaysVisible);
-}
-
-void ABaseEnemy::RefreshHealthBarWidget()
-{
-	if (!HealthComponent || !HealthBarWidgetComponent)
+	if (!MoveSpeedMultiplierChangedDelegateHandle.IsValid())
 	{
-		return;
-	}
-
-	if (UHealthBarWidget* HealthBarWidget = Cast<UHealthBarWidget>(HealthBarWidgetComponent->GetUserWidgetObject()))
-	{
-		HealthBarWidget->SetShowHealthText(false);
-		HealthBarWidget->SetHealthValues(HealthComponent->GetHealth(), HealthComponent->GetMaxHealth());
+		MoveSpeedMultiplierChangedDelegateHandle = AbilitySystemComponent
+			->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetMoveSpeedMultiplierAttribute())
+			.AddUObject(this, &ABaseEnemy::OnMovementSpeedModifierChanged);
 	}
 }
 
-void ABaseEnemy::UpdateHealthBarVisibilityAfterHealthChanged(float OldValue, float NewValue)
+void ABaseEnemy::UnbindMovementSpeedAttribute()
 {
-	if (!HealthBarWidgetComponent || HealthBarVisibilityPolicy != EEnemyHealthBarVisibilityPolicy::ShowOnDamage)
+	if (!AbilitySystemComponent)
 	{
 		return;
 	}
 
-	if (OldValue <= NewValue)
+	if (MoveSpeedBonusChangedDelegateHandle.IsValid())
 	{
-		return;
+		AbilitySystemComponent
+			->GetGameplayAttributeValueChangeDelegate(UEnemyAttributeSet::GetMoveSpeedBonusAttribute())
+			.Remove(MoveSpeedBonusChangedDelegateHandle);
+		MoveSpeedBonusChangedDelegateHandle.Reset();
 	}
-
-	HealthBarWidgetComponent->SetVisibility(true);
-	GetWorldTimerManager().ClearTimer(HealthBarHideTimerHandle);
-	GetWorldTimerManager().SetTimer(HealthBarHideTimerHandle, this, &ABaseEnemy::HideHealthBarForDamagePolicy, HealthBarVisibleDurationAfterDamage, false);
+	if (MoveSpeedMultiplierChangedDelegateHandle.IsValid())
+	{
+		AbilitySystemComponent
+			->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetMoveSpeedMultiplierAttribute())
+			.Remove(MoveSpeedMultiplierChangedDelegateHandle);
+		MoveSpeedMultiplierChangedDelegateHandle.Reset();
+	}
 }
 
-void ABaseEnemy::HideHealthBarForDamagePolicy()
+void ABaseEnemy::OnMovementSpeedModifierChanged(const FOnAttributeChangeData& ChangeData)
 {
-	if (HealthBarWidgetComponent && HealthBarVisibilityPolicy == EEnemyHealthBarVisibilityPolicy::ShowOnDamage)
+	// Enemy movement is server-authored. Replicated attributes still reach clients
+	// for UI/cues, but simulated proxies follow CharacterMovement replication.
+	if (HasAuthority())
 	{
-		HealthBarWidgetComponent->SetVisibility(false);
+		SetBaseMovementSpeed(BaseMovementSpeed);
 	}
+}
+
+void ABaseEnemy::SetBaseMovementSpeed(float NewBaseSpeed)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	BaseMovementSpeed = FMath::Max(0.0f, NewBaseSpeed);
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->MaxWalkSpeed = GetResolvedMovementSpeed();
+	}
+}
+
+float ABaseEnemy::GetResolvedMovementSpeed() const
+{
+	const float MoveSpeedBonus = AbilitySystemComponent
+		? AbilitySystemComponent->GetNumericAttribute(UEnemyAttributeSet::GetMoveSpeedBonusAttribute())
+		: 0.0f;
+	const float MoveSpeedMultiplier = AbilitySystemComponent
+		? AbilitySystemComponent->GetNumericAttribute(UBaseAttributeSet::GetMoveSpeedMultiplierAttribute())
+		: 1.0f;
+	return ResolveMovementSpeed(
+		BaseMovementSpeed,
+		SpawnMovementSpeedMultiplier,
+		MoveSpeedBonus,
+		MaximumResolvedMovementSpeed,
+		MoveSpeedMultiplier);
+}
+
+float ABaseEnemy::ResolveMovementSpeed(
+	float InBaseSpeed,
+	float InSpawnMultiplier,
+	float InMoveSpeedBonus,
+	float InMaximumSpeed,
+	float InMoveSpeedMultiplier)
+{
+	const float SafeBaseSpeed = FMath::Max(0.0f, InBaseSpeed);
+	if (SafeBaseSpeed <= KINDA_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+
+	const float BuffedSpeed = SafeBaseSpeed * FMath::Max(0.01f, InSpawnMultiplier)
+		+ FMath::Max(0.0f, InMoveSpeedBonus);
+	const float ResolvedSpeed = BuffedSpeed * FMath::Clamp(InMoveSpeedMultiplier, 0.1f, 3.0f);
+	return FMath::Clamp(ResolvedSpeed, 0.0f, FMath::Max(0.0f, InMaximumSpeed));
 }
 
 void ABaseEnemy::InitializeFromWaveSpawn(float HealthMultiplier, float SpeedMultiplier, int32 EnemyLevel)
@@ -344,13 +450,133 @@ void ABaseEnemy::InitializeFromWaveSpawn(float HealthMultiplier, float SpeedMult
 		return;
 	}
 
-	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	// Legacy BP callers may configure before BeginPlay. The wave manager now does so
+	// through ConfigureSpawnBalance before FinishSpawning. Never heal a live enemy here.
+	if (!bBalanceApplied)
 	{
-		Movement->MaxWalkSpeed *= FMath::Max(0.01f, SpeedMultiplier);
+		ConfigureSpawnBalance(SpawnStatsRow, HealthMultiplier, SpeedMultiplier);
+	}
+}
+
+bool ABaseEnemy::ConfigureSpawnBalance(const FDataTableRowHandle& Row, float HealthMultiplier, float SpeedMultiplier)
+{
+	if (!HasAuthority() || bBalanceApplied || !FMath::IsFinite(HealthMultiplier) || HealthMultiplier <= 0.f
+		|| !FMath::IsFinite(SpeedMultiplier) || SpeedMultiplier <= 0.f)
+	{
+		return false;
+	}
+	SpawnStatsRow = Row;
+	SpawnHealthMultiplier = HealthMultiplier;
+	SpawnMovementSpeedMultiplier = SpeedMultiplier;
+	return true;
+}
+
+bool ABaseEnemy::ConfigureSpawnTypeTag(FGameplayTag InEnemyTypeTag)
+{
+	if (!HasAuthority() || HasActorBegunPlay() || !InEnemyTypeTag.IsValid())
+	{
+		return false;
 	}
 
-	// 이후 AttributeSet 또는 GameplayEffect를 사용하여
-	// HealthMultiplier와 EnemyLevel을 실제 스탯에 반영
+	EnemyTypeTag = InEnemyTypeTag;
+	return true;
+}
+
+void ABaseEnemy::ResetBalanceForReuse()
+{
+	if (!HasAuthority()) return;
+	bBalanceApplied = false;
+	bBalanceReady = false;
+	SpawnStatsRow = FDataTableRowHandle();
+	SpawnHealthMultiplier = 1.f;
+	SpawnMovementSpeedMultiplier = 1.f;
+	BalancedAttackInterval = 0.f;
+	BalancedMeleeAttackerLimit = 0;
+	BalanceAttackReadyTime = 0.;
+}
+
+bool ABaseEnemy::ApplyBaseStatsForSpawn()
+{
+	if (!HasAuthority() || !AbilitySystemComponent || !BasicAttributes) return false;
+	if (bBalanceApplied) return bBalanceReady;
+	const FDataTableRowHandle& Selection = SpawnStatsRow.IsNull() ? DefaultStatsRow : SpawnStatsRow;
+	FEnemyBaseStatsRow Values;
+	FEnemyCombatBalanceRow Combat;
+	if (!Selection.IsNull())
+	{
+		const auto* Row = Selection.GetRow<FEnemyBaseStatsRow>(TEXT("Enemy spawn balance"));
+		if (!Row || !Row->IsValid())
+		{
+			UE_LOG(LogTemp, Error, TEXT("[EnemyBalance] Invalid stats: Enemy=%s Row=%s"), *GetName(), *Selection.RowName.ToString());
+			return false;
+		}
+		Values = *Row;
+		if (!Values.CombatSettings.IsNull())
+		{
+			const auto* CombatRow = Values.CombatSettings.GetRow<FEnemyCombatBalanceRow>(TEXT("Enemy combat balance"));
+			if (!CombatRow || !CombatRow->IsValid())
+			{
+				UE_LOG(LogTemp, Error, TEXT("[EnemyBalance] Invalid combat row for %s"), *GetName());
+				return false;
+			}
+			Combat = *CombatRow;
+		}
+	}
+	else
+	{
+		// Existing unconfigured enemies retain their authored defaults.
+		Values.MaxHealth = BasicAttributes->GetMaxHealth();
+		Values.Strength = AbilitySystemComponent->GetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute());
+		Values.MoveSpeedMultiplier = BasicAttributes->GetMoveSpeedMultiplier();
+		Values.AttackSpeedMultiplier = BasicAttributes->GetAttackSpeedMultiplier();
+	}
+	const float MaxHealth = Values.MaxHealth * SpawnHealthMultiplier;
+	if (!FMath::IsFinite(MaxHealth) || MaxHealth <= 0.f) return false;
+	AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute(), MaxHealth);
+	AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute(), Values.Strength);
+	AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMoveSpeedMultiplierAttribute(), Values.MoveSpeedMultiplier);
+	AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute(), Values.AttackSpeedMultiplier);
+	AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), MaxHealth);
+	BalancedAttackInterval = Combat.AttackInterval;
+	BalancedMeleeAttackerLimit = Combat.MaxSimultaneousMeleeAttackers;
+	BalanceAttackReadyTime = GetWorld()->GetTimeSeconds() + Combat.InitialAttackDelay;
+	bBalanceReady = bBalanceApplied = true;
+	SetBaseMovementSpeed(BaseMovementSpeed);
+	UE_LOG(LogTemp, Log, TEXT("[EnemyBalance] Enemy=%s Row=%s MaxHealth=%.2f StrengthBase=%.2f Interval=%.2f"),
+		*GetName(), *Selection.RowName.ToString(), MaxHealth, Values.Strength, BalancedAttackInterval);
+	return true;
+}
+
+float ABaseEnemy::GetBalancedAttackInterval(float Fallback) const
+{
+	return BalancedAttackInterval > 0.f ? BalancedAttackInterval : Fallback;
+}
+
+bool ABaseEnemy::IsBalanceAttackReady() const
+{
+	const bool bLegacyUnconfigured = DefaultStatsRow.IsNull() && SpawnStatsRow.IsNull();
+	return (bBalanceReady || bLegacyUnconfigured) && GetWorld() && GetWorld()->GetTimeSeconds() >= BalanceAttackReadyTime;
+}
+
+bool ABaseEnemy::HasBalancedMeleeAttackSlot() const
+{
+	if (BalancedMeleeAttackerLimit <= 0) return true;
+	const ABaseAIController* OwningController = Cast<ABaseAIController>(GetController());
+	const AActor* Target = OwningController ? OwningController->GetCombatTarget() : nullptr;
+	if (!Target) return false;
+	int32 Attackers = 0;
+	// Evaluated only at attack start on the server, never per tick. Each committed
+	// attack owns State.Attacking until its normal end or cancellation.
+	for (TActorIterator<ABaseEnemy> It(GetWorld()); It; ++It)
+	{
+		const ABaseEnemy* Other = *It;
+		const ABaseAIController* OtherController = Cast<ABaseAIController>(Other->GetController());
+		if (Other != this && Other->BalancedMeleeAttackerLimit > 0 && OtherController
+			&& OtherController->GetCombatTarget() == Target && Other->GetAbilitySystemComponent()
+			&& Other->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Attacking)
+			&& ++Attackers >= BalancedMeleeAttackerLimit) return false;
+	}
+	return true;
 }
 
 void ABaseEnemy::InitializeEnemyDropData()

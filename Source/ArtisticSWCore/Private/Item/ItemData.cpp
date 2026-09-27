@@ -39,3 +39,28 @@ bool UItemData::IsRarityAtLeast(FGameplayTag RarityTag, FGameplayTag MinimumRari
 
 	return RarityRank > 0 && MinimumRarityRank > 0 && RarityRank >= MinimumRarityRank;
 }
+TArray<FGameplayTag> UItemData::GetCraftingMaterialOptions(FGameplayTag ResultItemTag) const
+{
+	TArray<FGameplayTag> Options;
+	const FItemDefinition* Result = FindItemDefinition(ResultItemTag);
+	if (!Result) return Options;
+	const EItemProgressionKind MaterialKind = Result->ProgressionKind == EItemProgressionKind::Weapon
+		? EItemProgressionKind::WeaponMaterial : Result->ProgressionKind == EItemProgressionKind::Consumable
+		? EItemProgressionKind::ConsumableMaterial : EItemProgressionKind::None;
+	if (MaterialKind == EItemProgressionKind::None) return Options;
+	const EItemProgressionKind SpecialKind = MaterialKind == EItemProgressionKind::WeaponMaterial
+		? EItemProgressionKind::WeaponSpecialMaterial : EItemProgressionKind::ConsumableSpecialMaterial;
+	for (const TPair<FGameplayTag, FItemDefinition>& Pair : ItemDefinitions)
+	{
+		const bool bSpecial = Pair.Value.ProgressionKind == SpecialKind
+			|| Pair.Value.ProgressionKind == EItemProgressionKind::UniversalSpecialMaterial;
+		if (bSpecial || (Pair.Value.ProgressionKind == MaterialKind
+			&& Pair.Value.ProgressionTier <= Result->ProgressionTier
+			&& Pair.Value.ProgressionTier >= Result->ProgressionTier - 1))
+		{
+			Options.Add(Pair.Key);
+		}
+	}
+	Options.Sort([](const FGameplayTag& A, const FGameplayTag& B) { return A.ToString() < B.ToString(); });
+	return Options;
+}

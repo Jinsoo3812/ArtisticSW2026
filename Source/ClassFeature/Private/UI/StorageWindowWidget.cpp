@@ -2,6 +2,7 @@
 
 
 #include "UI/StorageWindowWidget.h"
+#include "UI/InventoryPanelWidget.h"
 #include "BasePlayer.h"
 #include "BasePlayerController.h"
 #include "Blueprint/WidgetTree.h"
@@ -16,6 +17,14 @@
 #include "Storage/StorageChest.h"
 #include "Storage/StorageComponent.h"
 #include "UI/StorageEntryWidget.h"
+
+TSharedRef<SWidget> UStorageWindowWidget::RebuildWidget()
+{
+	// The native window has no designer root. Create it before UUserWidget builds
+	// its Slate content; NativeConstruct runs after that content has been selected.
+	BuildWidgetTree();
+	return Super::RebuildWidget();
+}
 
 void UStorageWindowWidget::NativeConstruct()
 {
@@ -50,6 +59,10 @@ void UStorageWindowWidget::InitializeStorage(AStorageChest* InStorageChest, ABas
 
 	CachedStorageChest = InStorageChest;
 	CachedPlayer = InPlayer;
+	if (SharedInventoryPanel)
+	{
+		SharedInventoryPanel->InitializeForStorage(CachedPlayer, CachedStorageChest);
+	}
 
 	if (CachedStorageChest)
 	{
@@ -65,7 +78,7 @@ void UStorageWindowWidget::InitializeStorage(AStorageChest* InStorageChest, ABas
 
 void UStorageWindowWidget::BuildWidgetTree()
 {
-	if (StorageGridPanel || !WidgetTree)
+	if (!WidgetTree || WidgetTree->RootWidget)
 	{
 		return;
 	}
@@ -105,6 +118,11 @@ void UStorageWindowWidget::BuildWidgetTree()
 
 void UStorageWindowWidget::RefreshStorage()
 {
+	if (StorageTitleText)
+	{
+		StorageTitleText->SetText(CachedStorageChest ? CachedStorageChest->GetStorageName() : FText::GetEmpty());
+	}
+	if (SharedInventoryPanel) { SharedInventoryPanel->RefreshInventory(); return; }
 	BuildWidgetTree();
 
 	if (!StorageGridPanel)
@@ -188,4 +206,25 @@ void UStorageWindowWidget::RefreshStorage()
 void UStorageWindowWidget::HandleStorageChanged()
 {
 	RefreshStorage();
+}
+
+void UStorageWindowWidget::UseInventoryPanel(TSubclassOf<UInventoryPanelWidget> PanelClass)
+{
+	if (SharedInventoryPanel)
+	{
+		SharedInventoryPanel->InitializeForStorage(CachedPlayer, CachedStorageChest);
+		return;
+	}
+	if (!StoragePanel || !PanelClass) return;
+	SharedInventoryPanel = CreateWidget<UInventoryPanelWidget>(this, PanelClass);
+	if (!SharedInventoryPanel) return;
+	// Reuse the player's actual WBP class, including its tabs, entries and item details.
+	UVerticalBox* Layout = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SharedStorageLayout"));
+	StorageTitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SharedStorageTitle"));
+	StorageTitleText->SetText(CachedStorageChest->GetStorageName());
+	Layout->AddChildToVerticalBox(StorageTitleText);
+	Layout->AddChildToVerticalBox(SharedInventoryPanel);
+	StoragePanel->SetContent(Layout);
+	if (USizeBox* Size = Cast<USizeBox>(WidgetTree->RootWidget)) Size->ClearWidthOverride();
+	SharedInventoryPanel->InitializeForStorage(CachedPlayer, CachedStorageChest);
 }

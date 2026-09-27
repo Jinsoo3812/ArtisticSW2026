@@ -16,9 +16,6 @@ struct GASCORE_API FStrengthDamageRequest
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage")
 	TObjectPtr<UAbilitySystemComponent> SourceASC = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage")
-	TSubclassOf<UGameplayEffect> DamageEffectClass;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage", meta = (ClampMin = "0.0"))
 	float AttackCoefficient = 1.0f;
 

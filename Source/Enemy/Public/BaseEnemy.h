@@ -1,23 +1,27 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "AI/EnemyPerceptionSettings.h"
 #include "BaseCharacter.h"
 #include "WaveSystem/Data/WaveSpawnTypes.h"
 #include "EnemyDropData.h"
-#include "UI/EnemyHealthBarTypes.h"
+#include "EnemyBalanceData.h"
+#include "StoryFacadeSubsystem.h"
 
 #include "BaseEnemy.generated.h"
 
 class UAbilitySystemComponent;
+class UBaseDeathGameplayAbility;
 class UBaseWeaponComponent;
 class UBaseHealthComponent;
 class UEnemyBehaviorSet;
+class UEnemyTerritoryComponent;
+class UEnemyHealthBarComponent;
 class UEnemyWaypointMoveComponent;
-class UHealthBarWidget;
-class UWidgetComponent;
+struct FOnAttributeChangeData;
 
 class UGameplayAbility;
 class UBehaviorTree;
@@ -34,6 +38,38 @@ class ENEMY_API ABaseEnemy : public ABaseCharacter
 
 public:
 	ABaseEnemy();
+
+	/** Empty selection preserves legacy defaults; an explicitly invalid selection fails initialization. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Balance",
+		meta = (RowType = "/Script/Enemy.EnemyBaseStatsRow"))
+	FDataTableRowHandle DefaultStatsRow;
+
+	/** Call before FinishSpawning, or while a deck enemy is inactive. Empty means use the BP default. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy|Balance")
+	bool ConfigureSpawnBalance(const FDataTableRowHandle& Row, float HealthMultiplier = 1.f, float SpeedMultiplier = 1.f);
+
+	/** Assign before FinishSpawning so ASC and drop initialization see the catalog tag. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy|Type")
+	bool ConfigureSpawnTypeTag(FGameplayTag InEnemyTypeTag);
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Balance")
+	bool IsBalanceReady() const { return bBalanceReady; }
+	float GetBalancedAttackInterval(float Fallback) const;
+	bool IsBalanceAttackReady() const;
+	bool HasBalancedMeleeAttackSlot() const;
+	void ResetBalanceForReuse();
+	bool ApplyBaseStatsForSpawn();
+
+protected:
+	UPROPERTY(Transient) FDataTableRowHandle SpawnStatsRow;
+	bool bBalanceReady = false;
+	bool bBalanceApplied = false;
+	float SpawnHealthMultiplier = 1.f;
+	float BalancedAttackInterval = 0.f;
+	int32 BalancedMeleeAttackerLimit = 0;
+	double BalanceAttackReadyTime = 0.;
+
+public:
 	virtual bool IsEnemyCharacterForEffects() const override { return true; }
 	
 	/**
@@ -46,6 +82,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Wave")
 	void NotifyRemovedFromWaveOnce(EWaveEnemyRemoveReason Reason);
 
+	/** 적(보스) 사망 시 자동으로 완료할 스토리 노드 설정 (중간보스 1/2/3, 최종보스 등) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Story")
+	bool bCompleteStoryNodeOnDeath = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Story", meta = (EditCondition = "bCompleteStoryNodeOnDeath"))
+	EStoryNode CompletedStoryNodeOnDeath = EStoryNode::MiddleBoss1Defeated;
+
 protected:
 	// ------------------ GAS
 
@@ -56,6 +99,21 @@ protected:
 	// Blueprint에서 GrantAbility함수를 만들어서 사용했을 때, Server에서만 작동하는 문제가 있어서 C++에서 미리 선언해두는 방식으로 변경
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AbilitySystem")
 	TArray<TSubclassOf<UGameplayAbility>> StartingAbilities;
+
+	/**
+	 * Server-owned classification tags copied to the ASC at startup. Designers
+	 * can opt individual Enemy Blueprints into DataAsset-driven effects here.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AbilitySystem|Targeting")
+	FGameplayTagContainer EffectTargetTags;
+
+	/**
+	 * Optional death GA used by enemies that need a montage-driven death sequence.
+	 * Regular enemies leave this empty and enter ragdoll immediately. Boss enemies
+	 * opt in with their dedicated death ability.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death")
+	TSubclassOf<UBaseDeathGameplayAbility> DeathAbilityClass;
 
 	// ------------------ Enemy AI
 	
@@ -70,6 +128,10 @@ protected:
 	/** State별 Run Behavior Dynamic Subtree를 설정하는 데이터 자산입니다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI | Behavior Tree")
 	TObjectPtr<UEnemyBehaviorSet> BehaviorSet;
+
+	/** Applied by BaseAIController when this Enemy is possessed. Author per Enemy Blueprint. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|AI|Perception", meta = (ShowOnlyInnerProperties))
+	FEnemyPerceptionSettings PerceptionSettings;
 
 	/** If false, the default weapon is spawned on its back and equipped by combat behavior. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
@@ -94,24 +156,18 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBaseHealthComponent> HealthComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Territory")
+	TObjectPtr<UEnemyTerritoryComponent> TerritoryComponent;
+
 	// ================= Health Bar =================
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UWidgetComponent> HealthBarWidgetComponent;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
-	TSubclassOf<UHealthBarWidget> HealthBarWidgetClass;
+	TObjectPtr<UEnemyHealthBarComponent> EnemyHealthBarComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
 	FVector HealthBarOffset = FVector(0.0f, 0.0f, 120.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
 	FVector2D HealthBarDrawSize = FVector2D(180.0f, 24.0f);
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar")
-	EEnemyHealthBarVisibilityPolicy HealthBarVisibilityPolicy = EEnemyHealthBarVisibilityPolicy::AlwaysVisible;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|HealthBar", meta = (EditCondition = "HealthBarVisibilityPolicy == EEnemyHealthBarVisibilityPolicy::ShowOnDamage", ClampMin = "0.0"))
-	float HealthBarVisibleDurationAfterDamage = 2.0f;
 
 	// ================= End of Health Bar =================
 
@@ -122,6 +178,18 @@ protected:
 	// Death 중복 방지
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Damage")
 	bool bDeathHandled = false;
+
+	/** Base speed selected by the current locomotion mode before runtime modifiers. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Enemy|Movement")
+	float BaseMovementSpeed = 0.0f;
+
+	/** Wave/archetype scaling. Buffs remain additive after this multiplier. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Enemy|Movement")
+	float SpawnMovementSpeedMultiplier = 1.0f;
+
+	/** Safety cap for the resolved CharacterMovement MaxWalkSpeed. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Movement", meta = (ClampMin = "0.0", Units = "cm/s"))
+	float MaximumResolvedMovementSpeed = 2000.0f;
 
 	/** Death presentation이 끝난 뒤 서버가 시체 Actor를 유지하는 시간입니다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Death", meta = (ClampMin = "0.0"))
@@ -149,12 +217,20 @@ protected:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "AbilitySystem")
 	void ServerSendGameplayEventToSelf(FGameplayEventData EventData);*/
 	
-	// ASC Owner가 죽었을 때 호출되는 함수
+	// DeathStarted 시점의 즉시 게임플레이 정리 훅입니다. 일반 Enemy는 이후 즉시 Ragdoll,
+	// Death GA를 사용하는 Enemy는 DeathFinished에서 Ragdoll을 적용합니다.
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Damage")
 	void HandleDeath();
 
+	/** Whether this enemy delays ragdoll until its death GA calls FinishDeath. */
+	virtual bool ShouldWaitForDeathAbility() const;
+
+	/** Death GA가 FinishDeath를 호출한 뒤 각 머신에서 사망 표현을 마무리합니다. */
+	virtual void HandleDeathFinishedPresentation();
+
 protected:
 	virtual void BeginPlay() override;
+	virtual void Destroyed() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
 	// HealthComponent가 죽음을 감지했을 때 기존 Enemy 사망 처리를 실행합니다.
@@ -167,16 +243,13 @@ protected:
 	// ================= Health Bar =================
 	UFUNCTION()
 	void OnHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor);
-
-	UFUNCTION()
-	void OnMaxHealthChanged(UBaseHealthComponent* InHealthComponent, float OldValue, float NewValue, AActor* InstigatorActor);
-
-	void InitializeHealthBarWidget();
-	void RefreshHealthBarWidget();
-	void UpdateHealthBarVisibilityAfterHealthChanged(float OldValue, float NewValue);
-	void HideHealthBarForDamagePolicy();
-	FTimerHandle HealthBarHideTimerHandle;
 	// ================= End of Health Bar =================
+
+	void BindMovementSpeedAttribute();
+	void UnbindMovementSpeedAttribute();
+	void OnMovementSpeedModifierChanged(const FOnAttributeChangeData& ChangeData);
+	FDelegateHandle MoveSpeedBonusChangedDelegateHandle;
+	FDelegateHandle MoveSpeedMultiplierChangedDelegateHandle;
 
 	// FVector GetVelocity() const override;
 	
@@ -193,8 +266,11 @@ public:
 	FORCEINLINE TObjectPtr<ABaseAIController> GetAIController() const { check(AIController) return AIController; }
 	FORCEINLINE TObjectPtr<UBehaviorTree> GetBehaviorTree() const { return BehaviorTree; }
 	FORCEINLINE UEnemyBehaviorSet* GetBehaviorSet() const { return BehaviorSet; }
+	FORCEINLINE const FEnemyPerceptionSettings& GetPerceptionSettings() const { return PerceptionSettings; }
 	FORCEINLINE bool ShouldEquipWeaponOnSpawn() const { return bEquipWeaponOnSpawn; }
 	FORCEINLINE FGameplayTag GetDefaultWeaponTag() const { return DefaultWeaponTag; }
+	FORCEINLINE FGameplayTag GetEnemyTypeTag() const { return EnemyTypeTag; }
+	FORCEINLINE UEnemyTerritoryComponent* GetTerritoryComponent() const { return TerritoryComponent; }
 	FORCEINLINE TObjectPtr<UBaseWeaponComponent> GetWeaponComponent() const { check(WeaponComponent) return WeaponComponent; }
 	//FORCEINLINE TObjectPtr<UPathMovement> GetPathMovementComponent() const { check(PathMovement) return PathMovement;}
 	FORCEINLINE virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { check(AbilitySystemComponent) return AbilitySystemComponent; }
@@ -203,6 +279,28 @@ public:
 	FORCEINLINE EGameplayEffectReplicationMode GetASCReplicationMode() const { return ASCReplicationMode; }
 	FORCEINLINE float GetCorpseLifetimeAfterDeathFinished() const { return CorpseLifetimeAfterDeathFinished; }
 	FORCEINLINE bool ShouldDestroyAfterDeathFinished() const { return bDestroyAfterDeathFinished; }
+	FORCEINLINE TSubclassOf<UBaseDeathGameplayAbility> GetDeathAbilityClass() const { return DeathAbilityClass; }
+
+	/** Sets the locomotion-mode speed. Only authority may drive Enemy movement policy. */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Movement", BlueprintAuthorityOnly)
+	void SetBaseMovementSpeed(float NewBaseSpeed);
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Movement")
+	float GetBaseMovementSpeed() const { return BaseMovementSpeed; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Movement")
+	float GetSpawnMovementSpeedMultiplier() const { return SpawnMovementSpeedMultiplier; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Movement")
+	float GetResolvedMovementSpeed() const;
+
+	/** Pure resolver kept public for deterministic automation tests and balancing tools. */
+	static float ResolveMovementSpeed(
+		float InBaseSpeed,
+		float InSpawnMultiplier,
+		float InMoveSpeedBonus,
+		float InMaximumSpeed,
+		float InMoveSpeedMultiplier = 1.0f);
 
 	// Enemy소환 API
 	UFUNCTION(BlueprintCallable, Category = "Wave")
@@ -220,8 +318,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Drop")
 	TObjectPtr<UDataTable> EnemyDropDataTable;
 
-	// 적 종류를 구분하는 태그 -> 해당 태그로 데이터가 있는 Row 검색
-	UPROPERTY(EditDefaultsOnly, Category = "Drop")
+	// 적/보스 종류를 구분하는 태그 (예: Enemy.Type.Boss.Mid1, Enemy.Type.Boss.Mid2 등)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Type")
 	FGameplayTag EnemyTypeTag;
 
 	// 사망한 적의 위치에 생성할 시체 전용 Storage BP

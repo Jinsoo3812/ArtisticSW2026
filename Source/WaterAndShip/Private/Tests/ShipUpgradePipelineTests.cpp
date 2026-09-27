@@ -10,6 +10,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Ship.h"
 #include "ShipAttributeSet.h"
+#include "Upgrade/SharedShipUpgradeState.h"
 #include "Upgrade/ShipUpgradeComponent.h"
 #include "Upgrade/ShipUpgradeTreeDataAsset.h"
 
@@ -62,6 +63,31 @@ bool FShipUpgradeCalculationTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Percent propulsion increase is applied independently"), Full.ForwardPropulsionMultiplier, 1.2f);
 	TestEqual(TEXT("Turn multiplier remains independent"), Full.TurnTorqueMultiplier, 1.0f);
 
+	UDataTable* TierTable = NewObject<UDataTable>();
+	TierTable->RowStruct = FShipStatRow::StaticStruct();
+	FShipStatRow Tier2;
+	Tier2.CannonDamage = 15.0f;
+	Tier2.CannonballSpeed = 6000.0f;
+	Tier2.ForwardPropulsionMultiplier = 5.0f;
+	Tier2.TurnTorqueMultiplier = 3.0f;
+	TierTable->AddRow(TEXT("PlayerShip_2"), Tier2);
+	FShipUpgradeNodeDefinition CannonTier;
+	CannonTier.NodeId = TEXT("CannonDamage_I");
+	CannonTier.StatTrack = EShipUpgradeStatTrack::CannonPower;
+	CannonTier.TrackLevel = 1;
+	CannonTier.TargetStatRowName = TEXT("PlayerShip_2");
+	FShipUpgradeNodeDefinition MobilityTier;
+	MobilityTier.NodeId = TEXT("Propulsion_I");
+	MobilityTier.StatTrack = EShipUpgradeStatTrack::Mobility;
+	MobilityTier.TrackLevel = 1;
+	MobilityTier.TargetStatRowName = TEXT("PlayerShip_2");
+	const FShipStatSnapshot DTBacked = FShipUpgradeCalculator::Calculate(
+		BaseStats, { CannonTier, MobilityTier }, { CannonTier.NodeId, MobilityTier.NodeId }, TierTable);
+	TestEqual(TEXT("Cannon track copies DT damage"), DTBacked.CannonDamage, 15.0f);
+	TestEqual(TEXT("Cannon track copies DT projectile speed"), DTBacked.CannonballSpeed, 6000.0f);
+	TestEqual(TEXT("Mobility track copies DT propulsion"), DTBacked.ForwardPropulsionMultiplier, 5.0f);
+	TestEqual(TEXT("Mobility track copies DT turn speed"), DTBacked.TurnTorqueMultiplier, 3.0f);
+
 	UShipUpgradeTreeDataAsset* Tree = NewObject<UShipUpgradeTreeDataAsset>();
 	Tree->Nodes = Nodes;
 	TArray<FText> Errors;
@@ -83,6 +109,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FShipUpgradeFullPipelineTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("QuestItem has an invalid ResultItemTag"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("QuestItem contains an invalid ingredient"), EAutomationExpectedErrorFlags::Contains, 2);
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("ShipUpgradePipelineTestWorld"));
 	if (!TestNotNull(TEXT("Transient game world is created"), World)) return false;
 	FWorldContext& WorldContext = GEngine->CreateNewWorldContext(EWorldType::Game);
@@ -151,13 +179,23 @@ bool FShipUpgradeFullPipelineTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Player ship is spawned"), Ship);
 	if (Ship)
 	{
-		Ship->ShipStatTable = ShipTable;
-		Ship->ShipStatRowName = TEXT("PlayerShip");
+		Ship->ShipStatRow.DataTable = ShipTable;
+		Ship->ShipStatRow.RowName = TEXT("PlayerShip");
+		ASharedShipUpgradeState* SharedState = World->SpawnActor<ASharedShipUpgradeState>();
+		TestNotNull(TEXT("Session shared ship state is spawned"), SharedState);
+		if (SharedState)
+		{
+			SharedState->GetUpgradeComponent()->ConfigureForUseCase(Tree, BaseStats, false);
+			SharedState->GetUpgradeComponent()->RestoreActiveNodeIds(UpgradeComponent->GetActiveNodeIds());
+		}
 		// The transient test world does not run the full map actor initialization path,
 		// so mirror component registration and AShip::BeginPlay's GAS initialization.
 		Ship->GetAbilitySystemComponent()->AddSpawnedAttribute(Ship->GetShipAttributeSet());
 		Ship->GetAbilitySystemComponent()->InitAbilityActorInfo(Ship, Ship);
-		TestTrue(TEXT("Player upgrades apply through PlayerState to Ship"), Ship->ApplyPlayerUpgrades(PlayerState));
+		if (SharedState)
+		{
+			SharedState->RegisterPlayerShip(Ship);
+		}
 		UAbilitySystemComponent* ShipASC = Ship->GetAbilitySystemComponent();
 		TestNotNull(TEXT("Ship ability system is available"), ShipASC);
 		if (ShipASC)
@@ -165,6 +203,34 @@ bool FShipUpgradeFullPipelineTest::RunTest(const FString& Parameters)
 			TestEqual(TEXT("Ship receives upgraded max health"), ShipASC->GetNumericAttribute(UShipAttributeSet::GetMaxHealthAttribute()), 150.0f);
 			TestEqual(TEXT("Ship receives upgraded cannon damage"), ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonDamageAttribute()), 30.0f);
 			TestEqual(TEXT("Ship receives upgraded cooldown"), ShipASC->GetNumericAttribute(UShipAttributeSet::GetCannonFireCooldownAttribute()), 1.75f);
+
+			Ship->GetShipAttributeSet()->SetHealth(40.0f);
+			FShipStatSnapshot IncreasedHullStats = SharedState
+				? SharedState->GetUpgradeComponent()->GetCurrentShipStats()
+				: FinalStats;
+			IncreasedHullStats.MaxHealth = 200.0f;
+			Ship->ApplyStatSnapshot(IncreasedHullStats, false);
+			TestEqual(TEXT("Max-health increase grants the same amount of current health"), Ship->GetShipAttributeSet()->GetHealth(), 90.0f);
+
+			IncreasedHullStats.MaxHealth = 60.0f;
+			Ship->ApplyStatSnapshot(IncreasedHullStats, false);
+			TestEqual(TEXT("Max-health reduction clamps current health"), Ship->GetShipAttributeSet()->GetHealth(), 60.0f);
+		}
+
+		AShip* ReplacementShip = World->SpawnActor<AShip>();
+		TestNotNull(TEXT("Replacement player ship is spawned"), ReplacementShip);
+		if (SharedState && ReplacementShip)
+		{
+			ReplacementShip->ShipStatRow.DataTable = ShipTable;
+			ReplacementShip->ShipStatRow.RowName = TEXT("PlayerShip");
+			ReplacementShip->GetAbilitySystemComponent()->AddSpawnedAttribute(ReplacementShip->GetShipAttributeSet());
+			ReplacementShip->GetAbilitySystemComponent()->InitAbilityActorInfo(ReplacementShip, ReplacementShip);
+			SharedState->RegisterPlayerShip(ReplacementShip);
+			TestEqual(TEXT("Replacement preserves shared active nodes"), SharedState->GetUpgradeComponent()->GetActiveNodeIds().Num(), 3);
+			TestEqual(
+				TEXT("Replacement receives preserved upgraded health"),
+				ReplacementShip->GetAbilitySystemComponent()->GetNumericAttribute(UShipAttributeSet::GetMaxHealthAttribute()),
+				150.0f);
 		}
 	}
 

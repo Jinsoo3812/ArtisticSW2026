@@ -6,11 +6,13 @@
 #include "GA_EnemyShipCharge.generated.h"
 
 class AEnemyShip;
+class AEnemyShipChargeTelegraph;
 class AShip;
 class UGameplayEffect;
+class UNiagaraSystem;
 class UPrimitiveComponent;
 
-/** Turns toward the selected Player Ship, then charges and damages it on one Physics Root collision. */
+/** Tracks the Player while aiming, then charges a locked direction for the last resolved XY target distance. */
 UCLASS(Blueprintable)
 class ENEMY_API UGA_EnemyShipCharge : public UEnemyShipGameplayAbility
 {
@@ -18,6 +20,7 @@ class ENEMY_API UGA_EnemyShipCharge : public UEnemyShipGameplayAbility
 
 public:
 	UGA_EnemyShipCharge();
+	virtual void PostLoad() override;
 
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
@@ -31,6 +34,10 @@ public:
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		bool bReplicateEndAbility,
 		bool bWasCancelled) override;
+	virtual void ApplyCooldown(
+		const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayAbilityActivationInfo ActivationInfo) const override;
 
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Charge")
 	float GetChargePropulsionMultiplier() const { return ChargePropulsionMultiplier; }
@@ -38,13 +45,25 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Charge")
 	float GetChargeTurnMultiplier() const { return ChargeTurnMultiplier; }
 
+	/** True after the ship has reached or crossed the fixed charge endpoint. */
+	static bool HasReachedChargeEndpoint(
+		const FVector& Start,
+		const FVector& Direction,
+		float Distance,
+		const FVector& CurrentLocation,
+		float AcceptanceRadius);
+
 protected:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge", meta = (ClampMin = "0.05", Units = "s"))
-	float ChargeDurationSeconds = 3.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge", meta = (ClampMin = "0.0", Units = "cm"))
+	float ChargeEndpointAcceptanceRadius = 150.0f;
+
+	/** Emergency cleanup only; zero disables it. Normal completion is distance or Ship collision. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, AdvancedDisplay, Category = "Enemy Ship|Charge", meta = (ClampMin = "0.0", Units = "s"))
+	float ChargeFailsafeDurationSeconds = 0.0f;
 
 	/** The charge starts only after the horizontal bow-to-target angle is within this tolerance. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Aiming", meta = (ClampMin = "0.0", ClampMax = "180.0", Units = "deg"))
-	float AimAlignmentToleranceDegrees = 5.0f;
+	float AimAlignmentToleranceDegrees = 0.25f;
 
 	/** Starts the charge from the final facing if the ship cannot align in time. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Aiming", meta = (ClampMin = "0.1", Units = "s"))
@@ -67,11 +86,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float MaximumTurnInput = 1.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Damage", meta = (ClampMin = "0.0", Units = "cm/s"))
-	float MinimumDamageApproachSpeed = 100.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Damage", meta = (ClampMin = "0.0", Units = "m/s"))
+	float MinimumDamageApproachSpeed = 1.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Damage", meta = (ClampMin = "0.0"))
-	float DamagePerApproachSpeedUnit = 0.05f;
+	float MinimumCollisionDamage = 5.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Damage", meta = (ClampMin = "0.0", DisplayName = "Damage Per Additional Meter Per Second"))
+	float DamagePerApproachSpeedUnit = 5.0f;
 
 	/** Zero means uncapped. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Damage", meta = (ClampMin = "0.0"))
@@ -79,6 +101,31 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Damage")
 	TSubclassOf<UGameplayEffect> DamageGameplayEffectClass;
+
+	/** Niagara spawned at the impact point after this charge damages the Player Ship. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Impact")
+	TObjectPtr<UNiagaraSystem> PlayerShipImpactEffect;
+
+	/** Uniform world-space scale applied to PlayerShipImpactEffect. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Impact", meta = (ClampMin = "0.01"))
+	float PlayerShipImpactEffectScale = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Impact", meta = (ClampMin = "0.01"))
+	float PlayerShipImpactEffectLifetimeScale = 1.0f;
+
+	/** Niagara simulation speed. 0.5 plays at half speed and lasts roughly twice as long. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Impact", meta = (ClampMin = "0.01"))
+	float PlayerShipImpactEffectPlaybackSpeed = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Telegraph")
+	TSubclassOf<AEnemyShipChargeTelegraph> ChargeTelegraphClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Telegraph", meta = (ClampMin = "1.0", Units = "cm"))
+	float ChargeTelegraphWidth = 1000.0f;
+
+	/** Absolute world Z used by the warning strip. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Ship|Charge|Telegraph", meta = (Units = "cm"))
+	float ChargeTelegraphWorldZ = 20.0f;
 
 private:
 	UFUNCTION()
@@ -93,14 +140,22 @@ private:
 	void BeginCharge();
 	void FinishAimByTimeout();
 	void FinishChargeByTimeout();
+	void SpawnChargeTelegraph();
+	void UpdateChargeTelegraph();
+	void DestroyChargeTelegraph();
 	bool IsValidPlayerTarget(const AShip* Candidate) const;
 
 	TWeakObjectPtr<AEnemyShip> ActiveShip;
 	TWeakObjectPtr<AShip> ActiveTarget;
+	TWeakObjectPtr<AEnemyShipChargeTelegraph> ChargeTelegraphActor;
 	FEnemyShipNavigationOverrideHandle NavigationOverrideHandle;
 	FTimerHandle SteeringTimerHandle;
 	FTimerHandle AimTimeoutTimerHandle;
 	FTimerHandle DurationTimerHandle;
+	FVector ChargeStartLocation = FVector::ZeroVector;
+	FVector ChargeDirection = FVector::ForwardVector;
+	float ResolvedChargeDistance = 1.0f;
+	bool bApplyCooldownOnEnd = false;
 	bool bPreviousNotifyRigidBodyCollision = false;
 	bool bBoundPhysicsHit = false;
 	bool bAddedChargingTag = false;

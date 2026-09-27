@@ -14,11 +14,13 @@ class ARTISTICSWCORE_API UStatusEffectLibrary : public UBlueprintFunctionLibrary
 	GENERATED_BODY()
 
 public:
+	static FGameplayTag CanonicalStatusTag(FGameplayTag Tag);
+	static FGameplayTag ResolveStatusTag(const FGameplayEffectSpec& Spec);
+	static bool CanApplyStatus(UAbilitySystemComponent* TargetASC, const FGameplayEffectSpec& Spec, FGameplayTag StatusTag);
 	/**
 	 * Applies a duration/periodic status effect without stacking duplicate timers.
-	 * An active effect with the same GE class is always removed before reapplication,
-	 * which resets both duration and periodic timing. RefreshGrantedTag optionally
-	 * makes different GE classes mutually exclusive within the same status group.
+	 * Existing status timers are preserved; duplicate status identities are rejected.
+	 * RefreshGrantedTag is retained as a legacy status identity hint.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "GAS|Status")
 	static FActiveGameplayEffectHandle ApplyDurationDamageEffectSpecToTarget(

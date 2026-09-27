@@ -9,6 +9,8 @@
 #include "InventoryPanelWidget.generated.h"
 
 class ABasePlayer;
+class AStorageChest;
+class UStorageComponent;
 class UButton;
 class UImage;
 class UInventoryEntryWidget;
@@ -25,6 +27,7 @@ public:
 	virtual void NativeDestruct() override;
 
 	void InitializeForPlayer(ABasePlayer* InPlayer);
+	void InitializeForStorage(ABasePlayer* InPlayer, AStorageChest* InChest);
 	void RefreshInventory();
 	void ClearItemInfo();
 
@@ -69,6 +72,9 @@ protected:
 	FLinearColor InactiveTabColor = FLinearColor::White;
 
 	TWeakObjectPtr<ABasePlayer> CachedPlayer;
+	TWeakObjectPtr<AStorageChest> StorageChest;
+	TWeakObjectPtr<UStorageComponent> BoundStorage;
+	EInventoryTab StorageTab = EInventoryTab::Material;
 
 	void RefreshItemInfo(FGameplayTag ItemTag, int32 Count);
 	void BindInventoryComponent(UInventoryComponent* InventoryComponent);

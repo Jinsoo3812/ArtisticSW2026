@@ -16,11 +16,29 @@ public:
 	virtual EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
 	virtual void TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override;
 	virtual EBTNodeResult::Type AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
+	virtual uint16 GetInstanceMemorySize() const override;
+
+	float GetAcceptanceRadius() const { return AcceptanceRadius; }
+	float GetMaximumMoveTime() const { return MaximumMoveTime; }
+	float GetProgressTimeout() const { return ProgressTimeout; }
+	float GetMinimumProgressDistance() const { return MinimumProgressDistance; }
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI", meta = (ClampMin = "10.0", Units = "cm/s"))
 	float MoveSpeed = 250.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI", meta = (ClampMin = "10.0", Units = "cm"))
-	float AcceptanceRadius = 80.0f;
+	float AcceptanceRadius = 100.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI|Failure", meta = (ClampMin = "0.1", Units = "s"))
+	float MaximumMoveTime = 6.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI|Failure", meta = (ClampMin = "0.1", Units = "s"))
+	float ProgressTimeout = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI|Failure", meta = (ClampMin = "1.0", Units = "cm"))
+	float MinimumProgressDistance = 20.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI|Braking", meta = (ClampMin = "0.0", Units = "cm/s^2"))
+	float BrakingDeceleration = 1600.0f;
 };

@@ -3,13 +3,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Abilities/GameplayAbility.h"
+#include "GAS/Ability/PlayerCombatGameplayAbility.h"
 #include "GA_InstallTrap.generated.h"
 
 class AGhostMeshActor;
 
 UCLASS()
-class CLASSFEATURE_API UGA_InstallTrap : public UGameplayAbility
+class CLASSFEATURE_API UGA_InstallTrap : public UPlayerCombatGameplayAbility
 {
 	GENERATED_BODY()
 

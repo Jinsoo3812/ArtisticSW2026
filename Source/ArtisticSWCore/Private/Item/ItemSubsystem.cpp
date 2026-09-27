@@ -3,6 +3,7 @@
 
 #include "ItemSubsystem.h"
 #include "ItemData.h"
+#include "Equipment/WeaponDefinition.h"
 #include "Settings_Item.h"
 #include "BaseGameplayTags.h"
 #include "Engine/World.h"
@@ -118,7 +119,14 @@ ABaseItem* UItemSubsystem::SpawnItem(const FGameplayTag& ItemTag, const FTransfo
 		return nullptr;
 	}
 
-	UClass* SpawnClass = Def->SpawnClassByCrafting.LoadSynchronous();
+	const bool bWeapon = Def->ProgressionKind == EItemProgressionKind::Weapon || !Def->WeaponDefinition.IsNull();
+	const UEquippableWeaponDefinition* Weapon = Def->WeaponDefinition.LoadSynchronous();
+	UClass* SpawnClass = bWeapon ? (Weapon ? Weapon->ActorClass.LoadSynchronous() : nullptr) : Def->SpawnClassByCrafting.LoadSynchronous();
+	if (bWeapon && !SpawnClass)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Weapon %s has no valid WeaponDefinition/ActorClass"), *ItemTag.ToString());
+		return nullptr;
+	}
 	if (!SpawnClass)
 	{
 		SpawnClass = ABaseItem::StaticClass(); // Fallback
@@ -184,19 +192,29 @@ TSoftObjectPtr<UStaticMesh> UItemSubsystem::GetItemMesh(const FGameplayTag& Item
 
 TSoftClassPtr<UGameplayAbility> UItemSubsystem::GetGrantedAbilityClass(const FGameplayTag& ItemTag) const
 {
-	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->GrantedAbilityClass;
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag))
+		if (Def->WeaponDefinition.IsNull() && Def->ProgressionKind != EItemProgressionKind::Weapon) return Def->GrantedAbilityClass;
 	return nullptr;
 }
 
 TSoftClassPtr<ABaseItem> UItemSubsystem::GetSpawnClassByCrafting(const FGameplayTag& ItemTag) const
 {
-	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->SpawnClassByCrafting;
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag))
+	{
+		if (const UEquippableWeaponDefinition* Weapon = Def->WeaponDefinition.LoadSynchronous()) return Weapon->ActorClass;
+		if (Def->ProgressionKind != EItemProgressionKind::Weapon) return Def->SpawnClassByCrafting;
+	}
 	return nullptr;
 }
 
 TSoftClassPtr<AActor> UItemSubsystem::GetSpawnClass(const FGameplayTag& ItemTag) const
 {
-	if (const FItemDefinition* Def = GetItemDefinition(ItemTag)) return Def->SpawnClass;
+	if (const FItemDefinition* Def = GetItemDefinition(ItemTag))
+	{
+		if (const UEquippableWeaponDefinition* Weapon = Def->WeaponDefinition.LoadSynchronous())
+			return Weapon->CombatData ? Weapon->CombatData->ProjectileClass : TSoftClassPtr<AActor>();
+		if (Def->ProgressionKind != EItemProgressionKind::Weapon) return Def->SpawnClass;
+	}
 	return nullptr;
 }
 
@@ -315,6 +333,7 @@ void UItemSubsystem::GetCraftingRecipeIds(TArray<FName>& OutRecipeIds, bool bInc
 bool UItemSubsystem::ValidateCraftingRecipes(TArray<FString>& OutErrors) const
 {
 	OutErrors.Reset();
+	TMap<FGameplayTag, FName> SkillRecipeByResult;
 	for (const TPair<FName, FCraftingRecipeRow>& Pair : CachedCraftingRecipes)
 	{
 		const FName RecipeId = Pair.Key;
@@ -331,6 +350,25 @@ bool UItemSubsystem::ValidateCraftingRecipes(TArray<FString>& OutErrors) const
 		{
 			OutErrors.Add(FString::Printf(TEXT("%s has a non-positive ResultQuantity."), *RecipeId.ToString()));
 		}
+		if (Recipe.ResultItemTag.MatchesTag(Item_Id_Skill))
+		{
+			if (Recipe.ResultQuantity != 1)
+			{
+				OutErrors.Add(FString::Printf(TEXT("%s is a skill recipe and must produce exactly one result."), *RecipeId.ToString()));
+			}
+			if (const FName* ExistingRecipeId = SkillRecipeByResult.Find(Recipe.ResultItemTag))
+			{
+				OutErrors.Add(FString::Printf(
+					TEXT("%s and %s both produce skill result %s; skill results require exactly one recipe."),
+					*ExistingRecipeId->ToString(),
+					*RecipeId.ToString(),
+					*Recipe.ResultItemTag.ToString()));
+			}
+			else
+			{
+				SkillRecipeByResult.Add(Recipe.ResultItemTag, RecipeId);
+			}
+		}
 		if (Recipe.RequiredRecipeItemTag.IsValid() && !Recipe.RequiredRecipeItemTag.MatchesTag(Item_Id))
 		{
 			OutErrors.Add(FString::Printf(TEXT("%s has an invalid RequiredRecipeItemTag."), *RecipeId.ToString()));
@@ -338,6 +376,14 @@ bool UItemSubsystem::ValidateCraftingRecipes(TArray<FString>& OutErrors) const
 		if (Recipe.bConsumeRecipeItem && !Recipe.RequiredRecipeItemTag.IsValid())
 		{
 			OutErrors.Add(FString::Printf(TEXT("%s consumes a recipe item but does not specify one."), *RecipeId.ToString()));
+		}
+		if (Recipe.Ingredients.Num() > ArtisticCrafting::MaxIngredientSlots)
+		{
+			OutErrors.Add(FString::Printf(
+				TEXT("%s has %d ingredients; the crafting UI supports at most %d."),
+				*RecipeId.ToString(),
+				Recipe.Ingredients.Num(),
+				ArtisticCrafting::MaxIngredientSlots));
 		}
 
 		TSet<FGameplayTag> SeenIngredients;
@@ -369,4 +415,3 @@ void UItemSubsystem::ClearCraftingRecipesForTesting()
 	CachedCraftingRecipes.Reset();
 }
 #endif
-

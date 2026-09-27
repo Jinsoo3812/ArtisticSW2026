@@ -2,15 +2,25 @@
 
 
 #include "BaseCharacter.h"
+#include "BaseGameplayTags.h"
+#include "Components/StatusComponent.h"
 
+#include "Components/BaseHealthComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "CollisionChannels.h"
+#include "Components/CombatHurtboxComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
 
 ABaseCharacter::ABaseCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	PrimaryActorTick.bCanEverTick = true;
+	StatusComponent = CreateDefaultSubobject<UStatusComponent>(TEXT("StatusComponent"));
+	CombatHurtboxComponent = CreateDefaultSubobject<UCombatHurtboxComponent>(TEXT("CombatHurtboxComponent"));
 
 	GetCapsuleComponent()->InitCapsuleSize(35.f, 90.f);
 
@@ -32,6 +42,44 @@ ABaseCharacter::ABaseCharacter(const FObjectInitializer& ObjectInitializer)
 void ABaseCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	InitializeAnimatedCombatHurtbox();
+
+	if (const USkeletalMeshComponent* MeshComponent = GetMesh())
+	{
+		InitialMeshRelativeTransform = MeshComponent->GetRelativeTransform();
+		InitialMeshCollisionProfileName = MeshComponent->GetCollisionProfileName();
+		InitialMeshCollisionEnabled = MeshComponent->GetCollisionEnabled();
+	}
+}
+
+void ABaseCharacter::InitializeAnimatedCombatHurtbox()
+{
+	CombatHurtboxComponent->InitializeHurtbox();
+}
+
+bool ABaseCharacter::UsesAnimatedCombatHurtbox() const
+{
+	return CombatHurtboxComponent->IsAnimatedHurtboxReady();
+}
+
+#if WITH_EDITOR
+EDataValidationResult ABaseCharacter::IsDataValid(FDataValidationContext& Context) const
+{
+	const EDataValidationResult ParentResult = Super::IsDataValid(Context);
+	const EDataValidationResult HurtboxResult = CombatHurtboxComponent->IsDataValid(Context);
+	return ParentResult == EDataValidationResult::Invalid ? ParentResult : HurtboxResult;
+}
+#endif
+
+bool ABaseCharacter::IsMoveInputIgnored() const
+{
+	return Super::IsMoveInputIgnored() || (AbilitySystemComponent &&
+		AbilitySystemComponent->HasMatchingGameplayTag(State_Control_MovementBlocked));
+}
+
+bool ABaseCharacter::CanJumpInternal_Implementation() const
+{
+	return !IsMoveInputIgnored() && Super::CanJumpInternal_Implementation();
 }
 
 void ABaseCharacter::Tick(float DeltaTime)
@@ -81,16 +129,82 @@ void ABaseCharacter::ApplyLocalDeathRagdoll()
 		}
 	}
 
+	// Ragdoll changes the mesh from a Pawn presentation component into a
+	// PhysicsBody. This must match ShipDeck's PhysicsBody response on all peers.
+	MeshComponent->SetCollisionProfileName(TEXT("Ragdoll"));
 	MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	MeshComponent->SetCollisionObjectType(ECC_PhysicsBody);
+	MeshComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	MeshComponent->SetAllUseCCD(bUseDeathRagdollCCD);
 	MeshComponent->SetAllBodiesSimulatePhysics(true);
 	MeshComponent->SetSimulatePhysics(true);
 	MeshComponent->WakeAllRigidBodies();
 
 	if (bApplyDeathRagdollImpulse)
 	{
-		FVector Impulse = GetActorForwardVector() * -DeathRagdollBackwardImpulse;
-		Impulse.Z = DeathRagdollUpwardImpulse;
-		MeshComponent->AddImpulseAtLocation(Impulse, GetActorLocation());
-		MeshComponent->AddImpulseToAllBodiesBelow(Impulse, NAME_None, true, true);
+		FDeathRagdollImpactData ImpactData;
+		if (const UBaseHealthComponent* HealthComponent = FindComponentByClass<UBaseHealthComponent>())
+		{
+			ImpactData = HealthComponent->GetDeathRagdollImpactData();
+		}
+
+		// A death with no lethal-hit direction simply enters ragdoll. Do not fall
+		// back to the actor's facing direction; that was the legacy fixed knockback.
+		if (ImpactData.bHasDirection)
+		{
+			const FVector KnockbackDirection =
+				FVector(ImpactData.KnockbackDirection).GetSafeNormal2D();
+			const FVector Impulse =
+				KnockbackDirection * DeathRagdollHorizontalImpulse
+					+ FVector::UpVector * DeathRagdollUpwardImpulse;
+
+			// A trace can report a graphical bone that has no PhysicsAsset body.
+			// Sending that name to AddImpulseAtLocation silently drops the impulse,
+			// which made non-ranged enemy meshes appear to fall straight down.
+			FName ImpulseBone = ImpactData.HitBoneName;
+			if (ImpulseBone.IsNone() || !MeshComponent->GetBodyInstance(ImpulseBone))
+			{
+				ImpulseBone = DeathRagdollFallbackImpulseBone;
+			}
+			if (!ImpulseBone.IsNone() && !MeshComponent->GetBodyInstance(ImpulseBone))
+			{
+				ImpulseBone = NAME_None;
+			}
+
+			if (ImpactData.bHasImpactPoint && MeshComponent->GetBodyInstance(ImpulseBone))
+			{
+				MeshComponent->AddImpulseAtLocation(
+					Impulse, FVector(ImpactData.ImpactPoint), ImpulseBone);
+			}
+			else
+			{
+				MeshComponent->AddImpulse(Impulse, ImpulseBone, false);
+			}
+		}
 	}
+}
+
+void ABaseCharacter::ResetLocalDeathRagdoll()
+{
+	USkeletalMeshComponent* MeshComponent = GetMesh();
+	if (MeshComponent)
+	{
+		MeshComponent->SetPhysicsLinearVelocity(FVector::ZeroVector);
+		MeshComponent->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+		MeshComponent->SetSimulatePhysics(false);
+		MeshComponent->SetAllBodiesSimulatePhysics(false);
+		MeshComponent->SetPhysicsBlendWeight(0.0f);
+		if (!InitialMeshCollisionProfileName.IsNone())
+		{
+			MeshComponent->SetCollisionProfileName(InitialMeshCollisionProfileName);
+		}
+		MeshComponent->SetCollisionEnabled(InitialMeshCollisionEnabled);
+		MeshComponent->SetRelativeTransform(
+			InitialMeshRelativeTransform,
+			false,
+			nullptr,
+			ETeleportType::TeleportPhysics);
+	}
+
+	bLocalDeathRagdollApplied = false;
 }

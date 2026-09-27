@@ -39,47 +39,46 @@ FEnemyShipNavigationOutput FEnemyShipNavigationModel::Evaluate(
 
 	const bool bTargetInDetectionRange = Context.bHasTarget && TargetDistance <= FMath::Max(0.0f, Profile.DetectionDistance);
 	const float IdealDistance = FMath::Max(1.0f, Profile.IdealDistance);
-	const float DangerDistance = FMath::Clamp(Profile.DangerCloseDistance, 0.0f, IdealDistance);
+	const float ReturnTriggerDistance = FMath::Max(Profile.ReturnArrivalDistance, Profile.ReturnTriggerDistance);
 
-	if (Output.State == ENavalCombatState::Idle)
+	if (Output.State == ENavalCombatState::Return)
 	{
-		if (bTargetInDetectionRange)
-		{
-			Output.State = ENavalCombatState::Approach;
-		}
-		else if (Context.bHasHome && HomeDistance > Profile.ReturnArrivalDistance)
-		{
-			Output.State = ENavalCombatState::Return;
-		}
-	}
-	else if (Output.State == ENavalCombatState::Return)
-	{
-		if (bTargetInDetectionRange)
-		{
-			Output.State = ENavalCombatState::Approach;
-		}
-		else if (!Context.bHasHome || HomeDistance <= Profile.ReturnArrivalDistance)
+		// Return is latched. Detection and combat-range rules remain suspended until
+		// the ship reaches its Return Point (or the Return Point becomes invalid).
+		if (!Context.bHasHome || HomeDistance <= Profile.ReturnArrivalDistance)
 		{
 			Output.State = ENavalCombatState::Idle;
 		}
 	}
+	else if (Context.bHasHome
+		&& (HomeDistance > ReturnTriggerDistance
+			|| (Context.bReturnRequested && HomeDistance > Profile.ReturnArrivalDistance)))
+	{
+		// Home leash has priority over every combat/detection range rule.
+		Output.State = ENavalCombatState::Return;
+	}
+	else if (Output.State == ENavalCombatState::Idle)
+	{
+		if (bTargetInDetectionRange)
+		{
+			Output.State = ENavalCombatState::Approach;
+		}
+	}
 	else if (!bTargetInDetectionRange)
 	{
-		Output.State = Context.bHasHome ? ENavalCombatState::Return : ENavalCombatState::Idle;
+		Output.State = ENavalCombatState::Idle;
 	}
 	else if (Output.State == ENavalCombatState::Approach)
 	{
-		if (TargetDistance <= DangerDistance)
-		{
-			Output.State = ENavalCombatState::Retreat;
-		}
-		else if (TargetDistance <= IdealDistance)
+		if (TargetDistance <= IdealDistance)
 		{
 			Output.State = ENavalCombatState::Orbit;
 		}
 	}
-	else if (Output.State == ENavalCombatState::Retreat && TargetDistance >= IdealDistance)
+	else if (Output.State == ENavalCombatState::Retreat)
 	{
+		// Normalize legacy serialized/runtime state. Orbit's radial steering bias
+		// handles close-range separation without a dedicated straight retreat.
 		Output.State = ENavalCombatState::Orbit;
 	}
 	else if (Output.State == ENavalCombatState::Orbit)
@@ -87,10 +86,6 @@ FEnemyShipNavigationOutput FEnemyShipNavigationModel::Evaluate(
 		if (TargetDistance > IdealDistance + FMath::Max(0.0f, Profile.OrbitTolerance))
 		{
 			Output.State = ENavalCombatState::Approach;
-		}
-		else if (TargetDistance <= DangerDistance)
-		{
-			Output.State = ENavalCombatState::Retreat;
 		}
 	}
 
@@ -109,15 +104,16 @@ FEnemyShipNavigationOutput FEnemyShipNavigationModel::Evaluate(
 		break;
 	case ENavalCombatState::Orbit:
 		{
-			const FVector Tangent = Profile.bOrbitClockwise
-				? FVector(-ToTarget.Y, ToTarget.X, 0.0f)
-				: FVector(ToTarget.Y, -ToTarget.X, 0.0f);
+			// One fleet direction removes reciprocal head-on decisions and makes
+			// squad avoidance deterministic. ToTarget points inward, so this is
+			// the counterclockwise tangent around the target.
+			const FVector Tangent(ToTarget.Y, -ToTarget.X, 0.0f);
 			const float SteeringBias = FMath::Clamp((TargetDistance - IdealDistance) / IdealDistance, -0.4f, 0.4f);
 			Output.DesiredHeading = (Tangent + ToTarget * SteeringBias).GetSafeNormal();
 		}
 		break;
 	case ENavalCombatState::Retreat:
-		Output.DesiredHeading = -ToTarget;
+		// Output.State is normalized above; retained only for exhaustive enum handling.
 		break;
 	}
 
@@ -135,7 +131,7 @@ FEnemyShipNavigationOutput FEnemyShipNavigationModel::Evaluate(
 		Output.MoveInput = HeadingDot * SpeedFactor;
 	}
 
-	Output.MoveInput = FMath::Clamp(Output.MoveInput * FMath::Max(0.0f, Profile.ForwardInputScale), -1.0f, 1.0f);
-	Output.TurnInput = FMath::Clamp(Output.TurnInput * FMath::Max(0.0f, Profile.TurnInputScale), -1.0f, 1.0f);
+	Output.MoveInput = FMath::Clamp(Output.MoveInput, -1.0f, 1.0f);
+	Output.TurnInput = FMath::Clamp(Output.TurnInput, -1.0f, 1.0f);
 	return Output;
 }

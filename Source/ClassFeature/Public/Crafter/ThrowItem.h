@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "BaseGameplayAbility.h"
+#include "GAS/Ability/PlayerCombatGameplayAbility.h"
 #include "ThrowItem.generated.h"
 
 class ABaseProjectile;
@@ -12,12 +12,14 @@ class ABaseProjectile;
  * 
  */
 UCLASS(Config = Game)
-class CLASSFEATURE_API UThrowItem : public UBaseGameplayAbility
+class CLASSFEATURE_API UThrowItem : public UPlayerCombatGameplayAbility
 {
 	GENERATED_BODY()
 	
 	/* --- GA 가상함수 --- */
 public:
+	UThrowItem();
+
 	// GA의 시작 지점 함수
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,

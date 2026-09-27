@@ -9,6 +9,7 @@
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "BaseGameplayTags.h"
 #include "Engine/OverlapResult.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 
 AGrenadeProjectile::AGrenadeProjectile()
 {
@@ -107,7 +108,11 @@ void AGrenadeProjectile::Explode()
 				// Team_Enemy 태그를 들고 있는지 확인
 				if (TargetASC->HasMatchingGameplayTag(Team_Enemy) || true /*지금 당장은 적이 없으니 일단*/)
 				{
-					TargetASC->ApplyGameplayEffectSpecToSelf(*DamageEffectSpecHandle.Data.Get());
+					FGameplayEffectSpec TargetSpec(*DamageEffectSpecHandle.Data.Get());
+					USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
+						TargetSpec, GetInstigator(), this, TargetActor, nullptr,
+						TargetActor->GetActorLocation() - GetActorLocation());
+					TargetASC->ApplyGameplayEffectSpecToSelf(TargetSpec);
 					UE_LOG(LogTemp, Log, TEXT("AGrenadeProjectile: Applied damage to %s"), *TargetActor->GetName());
 				}
 			}

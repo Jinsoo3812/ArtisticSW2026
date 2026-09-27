@@ -91,6 +91,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Details", meta = (ClampMin = "100.0"))
 	float DetailsPopupMaxHeight = 420.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Details", meta = (ClampMin = "0.0"))
+	float DetailsTooltipHideDelay = 0.15f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship Upgrade|Graph", meta = (ClampMin = "0.1"))
 	float ZoomMin = 0.6f;
 
@@ -149,6 +152,7 @@ private:
 	void BindUpgradeComponent(UShipUpgradeComponent* InComponent);
 	void UnbindUpgradeComponent();
 	void HandleNodeSelected(FName NodeId);
+	void HandleNodeHoverChanged(FName NodeId, bool bIsHovered);
 	void HandleActivationRequested(FName NodeId);
 	void HandlePreviewRequested(const FShipUpgradeNodeView& View);
 	void RefreshSelectedNode();
@@ -160,7 +164,10 @@ private:
 	void SpawnPreviewStage();
 	void ApplyPreviewClass(TSoftClassPtr<AActor> PreviewClass);
 	void ApplyCurrentShipPreview();
-	void PositionDetailsNextToNode(FName NodeId);
+	void PositionDetailsNextToCursor();
+	void HandleDetailsTooltipHideTimer();
+	void HideDetailsTooltip();
+	void UpdateGraphViewportWidth();
 	void UpdateGraphExtent();
 	const FShipUpgradeNodeView* FindCachedView(FName NodeId) const;
 	bool IsPointerOverWidget(const UWidget* Widget, const FPointerEvent& MouseEvent) const;
@@ -191,10 +198,13 @@ private:
 	TSet<FName> PendingNodeIds;
 
 	FName SelectedNodeId;
+	FName HoveredNodeId;
 	TSoftClassPtr<AActor> ActiveShipVisualClass;
 	TSoftClassPtr<AActor> ActiveCannonVisualClass;
 	float Zoom = 1.0f;
 	int32 InitializationRetryCount = 0;
 	bool bDraggingPreview = false;
+	bool bTooltipAwaitingExit = false;
 	FTimerHandle InitializationRetryTimer;
+	FTimerHandle DetailsTooltipHideTimer;
 };

@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -15,6 +15,8 @@
 	GAMEPLAYATTRIBUTE_VALUE_SETTER(PropertyName) \
 	GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
 
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnAttributeDamageResolved, const FGameplayEffectContextHandle&, float);
+
 UCLASS()
 class GASCORE_API UBaseAttributeSet : public UAttributeSet
 {
@@ -22,12 +24,16 @@ class GASCORE_API UBaseAttributeSet : public UAttributeSet
 
 public:
 	UBaseAttributeSet();
+	FOnAttributeDamageResolved OnDamageResolved;
 
 	// 네트워크로 복제할 Attribute와 RepNotify 방식을 등록합니다.
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// Attribute 값이 바뀌기 직전에 호출됩니다. 주로 최대/최소값 보정에 사용합니다.
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
+
+	/** Applies shared state-based blocking, including every GAS damage path while State.Invulnerable is owned. */
+	virtual bool PreGameplayEffectExecute(struct FGameplayEffectModCallbackData& Data) override;
 
 	// GameplayEffect 실행이 끝난 뒤 호출됩니다. 피해/회복 같은 최종 보정을 처리합니다.
 	virtual void PostGameplayEffectExecute(const struct FGameplayEffectModCallbackData& Data) override;
@@ -47,11 +53,6 @@ public:
 	FGameplayAttributeData MaxHealth;
 	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, MaxHealth)
 
-	// 기본 공격력입니다. Damage GameplayEffect를 만들 때 기본 피해량으로 사용할 수 있습니다.
-	UPROPERTY(BlueprintReadOnly, Category = "Attributes", ReplicatedUsing = OnRep_AttackPower)
-	FGameplayAttributeData AttackPower;
-	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, AttackPower)
-
 	// Strength-based attacks snapshot this value when their damage spec is created.
 	UPROPERTY(BlueprintReadOnly, Category = "Attributes", ReplicatedUsing = OnRep_Strength)
 	FGameplayAttributeData Strength;
@@ -61,6 +62,11 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Attributes", ReplicatedUsing = OnRep_MoveSpeed)
 	FGameplayAttributeData MoveSpeed;
 	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, MoveSpeed)
+
+	/** Runtime status-effect multiplier applied after the movement owner's base-speed calculation. */
+	UPROPERTY(BlueprintReadOnly, Category = "Attributes|Movement", ReplicatedUsing = OnRep_MoveSpeedMultiplier)
+	FGameplayAttributeData MoveSpeedMultiplier;
+	ATTRIBUTE_ACCESSORS(UBaseAttributeSet, MoveSpeedMultiplier)
 
 	// 공격 애니메이션과 다음 공격까지의 회복 속도에 함께 곱해지는 배율입니다.
 	// 1.0은 정상 속도, 0.5는 공격 모션과 공격 주기가 모두 절반 속도입니다.
@@ -93,16 +99,15 @@ protected:
 	UFUNCTION()
 	virtual void OnRep_MaxHealth(const FGameplayAttributeData& OldMaxHealth);
 
-	// 서버에서 복제된 AttackPower 변경을 클라이언트 ASC에 알립니다.
-	UFUNCTION()
-	virtual void OnRep_AttackPower(const FGameplayAttributeData& OldAttackPower);
-
 	UFUNCTION()
 	virtual void OnRep_Strength(const FGameplayAttributeData& OldStrength);
 
 	// 서버에서 복제된 MoveSpeed 변경을 클라이언트 ASC에 알립니다.
 	UFUNCTION()
 	virtual void OnRep_MoveSpeed(const FGameplayAttributeData& OldMoveSpeed);
+
+	UFUNCTION()
+	virtual void OnRep_MoveSpeedMultiplier(const FGameplayAttributeData& OldMoveSpeedMultiplier);
 
 	UFUNCTION()
 	virtual void OnRep_AttackSpeedMultiplier(const FGameplayAttributeData& OldAttackSpeedMultiplier);

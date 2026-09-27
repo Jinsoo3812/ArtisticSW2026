@@ -51,17 +51,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation")
 	AShip* GetTargetShip() const { return TargetShip; }
 
-	UFUNCTION(BlueprintCallable, Category = "Enemy Ship|Navigation")
-	void SetHomeActor(AActor* InHomeActor);
-
-	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation")
-	AActor* GetHomeActor() const { return HomeActor; }
+	/** Resolves the ship's server-captured spawn location. */
+	bool GetResolvedHomeLocation(FVector& OutHomeLocation) const;
+	bool GetSpawnHomeTransform(FTransform& OutTransform) const;
 
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation")
 	ENavalCombatState GetCurrentState() const { return CurrentState; }
 
 	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation")
 	FEnemyShipNavigationOutput GetLastNavigationOutput() const { return LastNavigationOutput; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy Ship|Navigation|Avoidance")
+	bool IsAvoidanceManeuverActive() const { return bAvoidanceManeuverActive; }
 
 	FEnemyShipNavigationOverrideHandle AcquireOverride(
 		UObject* Requester,
@@ -85,6 +86,9 @@ protected:
 	FEnemyShipNavigationProfile NavigationProfile;
 
 private:
+	UFUNCTION()
+	void OnRep_CurrentState(ENavalCombatState PreviousState);
+
 	struct FRuntimeOverride
 	{
 		TWeakObjectPtr<UObject> Requester;
@@ -96,8 +100,9 @@ private:
 	FEnemyShipNavigationContext BuildContext() const;
 	void RemoveInvalidOverrides();
 	const FRuntimeOverride* FindWinningOverride() const;
-	void ApplySquadAvoidance(FEnemyShipNavigationOutput& InOutOutput);
 	void ApplyControl(const FEnemyShipNavigationOutput& BaseOutput);
+	void UpdateAvoidance(float DeltaTime);
+	void ResetAvoidance();
 	void StopOwnerShip();
 
 	TWeakObjectPtr<AEnemyShip> OwnerShip;
@@ -105,14 +110,24 @@ private:
 	TObjectPtr<AShip> TargetShip;
 
 	UPROPERTY(Replicated)
-	TObjectPtr<AActor> HomeActor;
+	FVector SpawnHomeLocation = FVector::ZeroVector;
+	UPROPERTY(Replicated)
+	FRotator SpawnHomeRotation = FRotator::ZeroRotator;
+	UPROPERTY(Replicated)
+	bool bHasSpawnHomeLocation = false;
 	TMap<FGuid, FRuntimeOverride> Overrides;
 	uint64 NextOverrideSequence = 1;
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_CurrentState)
 	ENavalCombatState CurrentState = ENavalCombatState::Idle;
 	FEnemyShipNavigationOutput LastNavigationOutput;
-	FVector CachedAvoidanceHeading = FVector::ZeroVector;
-	double LastAvoidanceDecisionTime = -1.0;
+	float LostTargetElapsed = 0.0f;
+	float AvoidanceEvaluationAccumulator = 0.0f;
+	float AvoidanceMinimumTimeRemaining = 0.0f;
+	float AvoidanceSafeElapsed = 0.0f;
+	bool bAvoidanceManeuverActive = false;
+	bool bAvoidanceOverridesTurn = false;
+	float AvoidanceTurnInput = 0.0f;
+	TWeakObjectPtr<AActor> AvoidanceThreatActor;
 	UPROPERTY(Replicated)
 	bool bNavigationEnabled = true;
 };

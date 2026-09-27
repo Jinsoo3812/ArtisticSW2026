@@ -2,15 +2,51 @@
 
 #include "Materials/MaterialExpression.h"
 #include "Materials/MaterialExpressionCustom.h"
+#include "Materials/MaterialExpressionCollectionParameter.h"
 #include "Materials/MaterialExpressionSetMaterialAttributes.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialFunction.h"
+#include "Materials/MaterialParameterCollection.h"
 #include "Editor.h"
 #include "Engine/Level.h"
 #include "Engine/World.h"
+#include "Engine/Blueprint.h"
+#include "Engine/SimpleConstructionScript.h"
+#include "Engine/SCS_Node.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "SWCabinWaterCullComponent.h"
 #include "SWPersistentFoamField.h"
+
+bool URealisticWaterMaterialPipelineLibrary::AddCabinWaterCullComponentToBlueprint(UBlueprint* Blueprint)
+{
+	if (!IsValid(Blueprint) || !IsValid(Blueprint->SimpleConstructionScript))
+	{
+		return false;
+	}
+
+	for (USCS_Node* Node : Blueprint->SimpleConstructionScript->GetAllNodes())
+	{
+		if (IsValid(Node) && Node->ComponentClass &&
+			Node->ComponentClass->IsChildOf(USWCabinWaterCullComponent::StaticClass()))
+		{
+			return true;
+		}
+	}
+
+	Blueprint->Modify();
+	USCS_Node* Node = Blueprint->SimpleConstructionScript->CreateNode(
+		USWCabinWaterCullComponent::StaticClass(), TEXT("CabinWaterCull"));
+	if (!IsValid(Node))
+	{
+		return false;
+	}
+	Blueprint->SimpleConstructionScript->AddNode(Node);
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+	Blueprint->MarkPackageDirty();
+	return true;
+}
 
 ASWPersistentFoamField* URealisticWaterMaterialPipelineLibrary::SpawnPersistentFoamFieldDirect(
 	FVector Location,
@@ -170,6 +206,221 @@ bool URealisticWaterMaterialPipelineLibrary::ConfigureFoamWaterAttributeOverride
 	const bool bEmissiveConnected = SetAttributes->ConnectInputAttribute(MP_EmissiveColor, EmissiveExpression);
 	SetAttributes->PostEditChange();
 	return bBaseColorConnected && bRoughnessConnected && bSpecularConnected && bEmissiveConnected;
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConfigureVortexPreviewAttributeOverride(
+	UMaterialExpressionSetMaterialAttributes* SetAttributes,
+	UMaterialExpression* BaseColorExpression,
+	UMaterialExpression* EmissiveExpression)
+{
+	if (!IsValid(SetAttributes) || !IsValid(BaseColorExpression) || !IsValid(EmissiveExpression))
+	{
+		return false;
+	}
+	SetAttributes->Modify();
+	const bool bBaseColorConnected = SetAttributes->ConnectInputAttribute(
+		MP_BaseColor, BaseColorExpression);
+	const bool bEmissiveConnected = SetAttributes->ConnectInputAttribute(
+		MP_EmissiveColor, EmissiveExpression);
+	SetAttributes->PostEditChange();
+	return bBaseColorConnected && bEmissiveConnected;
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConfigureGerstnerFoamAttributeOverride(
+	UMaterialExpressionSetMaterialAttributes* SetAttributes,
+	UMaterialExpression* FoamSurfaceExpression,
+	UMaterialExpression* EmissiveExpression)
+{
+	if (!IsValid(SetAttributes) || !IsValid(FoamSurfaceExpression) ||
+		!IsValid(EmissiveExpression))
+	{
+		return false;
+	}
+
+	SetAttributes->Modify();
+	const bool bBaseColorConnected = SetAttributes->ConnectInputAttribute(
+		MP_BaseColor, FoamSurfaceExpression, 0);
+	const bool bRoughnessConnected = SetAttributes->ConnectInputAttribute(
+		MP_Roughness, FoamSurfaceExpression, 2);
+	const bool bOpacityConnected = SetAttributes->ConnectInputAttribute(
+		MP_Opacity, FoamSurfaceExpression, 1);
+	const bool bEmissiveConnected = SetAttributes->ConnectInputAttribute(
+		MP_EmissiveColor, EmissiveExpression);
+	SetAttributes->PostEditChange();
+	return bBaseColorConnected && bRoughnessConnected &&
+		bOpacityConnected && bEmissiveConnected;
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConnectEmissiveAttribute(
+	UMaterialExpressionSetMaterialAttributes* SetAttributes,
+	UMaterialExpression* EmissiveExpression)
+{
+	if (!IsValid(SetAttributes) || !IsValid(EmissiveExpression))
+	{
+		return false;
+	}
+
+	SetAttributes->Modify();
+	const bool bConnected = SetAttributes->ConnectInputAttribute(
+		MP_EmissiveColor, EmissiveExpression);
+	SetAttributes->PostEditChange();
+	return bConnected;
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConnectOpacityMaskAttribute(
+	UMaterialExpressionSetMaterialAttributes* SetAttributes,
+	UMaterialExpression* OpacityMaskExpression)
+{
+	if (!IsValid(SetAttributes) || !IsValid(OpacityMaskExpression))
+	{
+		return false;
+	}
+	SetAttributes->Modify();
+	const bool bConnected = SetAttributes->ConnectInputAttribute(
+		MP_OpacityMask, OpacityMaskExpression);
+	SetAttributes->PostEditChange();
+	return bConnected;
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConfigureCabinWaterCullCollection(
+	UMaterialParameterCollection* Collection)
+{
+	if (!IsValid(Collection))
+	{
+		return false;
+	}
+	Collection->Modify();
+	auto AddScalar = [Collection](FName Name, float DefaultValue)
+	{
+		const bool bExists = Collection->ScalarParameters.ContainsByPredicate(
+			[Name](const FCollectionScalarParameter& Parameter)
+			{
+				return Parameter.ParameterName == Name;
+			});
+		if (!bExists)
+		{
+			FCollectionScalarParameter Parameter;
+			Parameter.ParameterName = Name;
+			Parameter.DefaultValue = DefaultValue;
+			Collection->ScalarParameters.Add(Parameter);
+		}
+	};
+	auto AddVector = [Collection](FName Name, const FLinearColor& DefaultValue)
+	{
+		const bool bExists = Collection->VectorParameters.ContainsByPredicate(
+			[Name](const FCollectionVectorParameter& Parameter)
+			{
+				return Parameter.ParameterName == Name;
+			});
+		if (!bExists)
+		{
+			FCollectionVectorParameter Parameter;
+			Parameter.ParameterName = Name;
+			Parameter.DefaultValue = DefaultValue;
+			Collection->VectorParameters.Add(Parameter);
+		}
+	};
+	AddScalar(TEXT("SW_CabinCullEnabled"), 0.0f);
+	AddScalar(TEXT("SW_CabinCullThreshold"), 0.35f);
+	AddScalar(TEXT("SW_CabinCullDebugView"), 0.0f);
+	AddVector(TEXT("SW_CabinCullInvRow0"), FLinearColor(1, 0, 0, 0));
+	AddVector(TEXT("SW_CabinCullInvRow1"), FLinearColor(0, 1, 0, 0));
+	AddVector(TEXT("SW_CabinCullInvRow2"), FLinearColor(0, 0, 1, 0));
+	AddVector(TEXT("SW_CabinCullLocalMin"), FLinearColor::Black);
+	AddVector(TEXT("SW_CabinCullLocalMax"), FLinearColor::Black);
+	Collection->PostEditChange();
+	Collection->MarkPackageDirty();
+	return true;
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConfigureVortexPreviewCollection(
+	UMaterialParameterCollection* Collection)
+{
+	if (!IsValid(Collection))
+	{
+		return false;
+	}
+	Collection->Modify();
+	auto AddScalar = [Collection](FName Name, float DefaultValue)
+	{
+		if (!Collection->ScalarParameters.ContainsByPredicate(
+			[Name](const FCollectionScalarParameter& Parameter) { return Parameter.ParameterName == Name; }))
+		{
+			FCollectionScalarParameter& Parameter = Collection->ScalarParameters.AddDefaulted_GetRef();
+			Parameter.ParameterName = Name;
+			Parameter.DefaultValue = DefaultValue;
+		}
+	};
+	auto AddVector = [Collection](FName Name, const FLinearColor& DefaultValue)
+	{
+		if (!Collection->VectorParameters.ContainsByPredicate(
+			[Name](const FCollectionVectorParameter& Parameter) { return Parameter.ParameterName == Name; }))
+		{
+			FCollectionVectorParameter& Parameter = Collection->VectorParameters.AddDefaulted_GetRef();
+			Parameter.ParameterName = Name;
+			Parameter.DefaultValue = DefaultValue;
+		}
+	};
+	AddScalar(TEXT("SW_VortexPreviewEnabled"), 0.0f);
+	AddVector(TEXT("SW_VortexPreviewCenterRadius"), FLinearColor::Transparent);
+	Collection->PostEditChange();
+	return true;
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConfigureCollectionParameterExpression(
+	UMaterialExpressionCollectionParameter* Expression,
+	UMaterialParameterCollection* Collection,
+	FName ParameterName)
+{
+	if (!IsValid(Expression) || !IsValid(Collection) || ParameterName.IsNone())
+	{
+		return false;
+	}
+	const FGuid ParameterId = Collection->GetParameterId(ParameterName);
+	if (!ParameterId.IsValid())
+	{
+		return false;
+	}
+	Expression->Modify();
+	Expression->Collection = Collection;
+	Expression->ParameterName = ParameterName;
+	Expression->ParameterId = ParameterId;
+	Expression->ExpressionGUID = FGuid::NewGuid();
+	Expression->PostEditChange();
+	return true;
+}
+
+bool URealisticWaterMaterialPipelineLibrary::SetCabinWaterCullBoundsDefaults(
+	UMaterialParameterCollection* Collection,
+	FVector LocalMin,
+	FVector LocalMax)
+{
+	if (!IsValid(Collection))
+	{
+		return false;
+	}
+	Collection->Modify();
+	bool bSetMin = false;
+	bool bSetMax = false;
+	for (FCollectionVectorParameter& Parameter : Collection->VectorParameters)
+	{
+		if (Parameter.ParameterName == TEXT("SW_CabinCullLocalMin"))
+		{
+			Parameter.DefaultValue = FLinearColor(LocalMin.X, LocalMin.Y, LocalMin.Z, 0.0f);
+			bSetMin = true;
+		}
+		else if (Parameter.ParameterName == TEXT("SW_CabinCullLocalMax"))
+		{
+			Parameter.DefaultValue = FLinearColor(LocalMax.X, LocalMax.Y, LocalMax.Z, 0.0f);
+			bSetMax = true;
+		}
+	}
+	if (bSetMin && bSetMax)
+	{
+		Collection->PostEditChange();
+		Collection->MarkPackageDirty();
+	}
+	return bSetMin && bSetMax;
 }
 
 int32 URealisticWaterMaterialPipelineLibrary::ConfigureLinearGrayscaleSampler(
@@ -354,6 +605,72 @@ bool URealisticWaterMaterialPipelineLibrary::ConfigureFloat3CustomExpressionWith
 	CustomExpression->IncludeFilePaths = IncludeFilePaths;
 	CustomExpression->PostEditChange();
 	return !CustomExpression->IncludeFilePaths.IsEmpty();
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConfigureWaveHeightOpticsCustomExpression(
+	UMaterialExpressionCustom* CustomExpression,
+	const TArray<FName>& InputNames,
+	const FString& Code,
+	const FString& Description,
+	const TArray<FString>& IncludeFilePaths)
+{
+	if (!ConfigureTypedCustomExpression(
+		CustomExpression, InputNames, Code, Description, CMOT_Float3))
+	{
+		return false;
+	}
+
+	CustomExpression->Modify();
+	CustomExpression->IncludeFilePaths = IncludeFilePaths;
+	CustomExpression->AdditionalOutputs.Reset(3);
+
+	FCustomOutput& ScatteringA = CustomExpression->AdditionalOutputs.AddDefaulted_GetRef();
+	ScatteringA.OutputName = TEXT("ScatteringA");
+	ScatteringA.OutputType = CMOT_Float1;
+
+	FCustomOutput& AbsorptionRGB = CustomExpression->AdditionalOutputs.AddDefaulted_GetRef();
+	AbsorptionRGB.OutputName = TEXT("AbsorptionRGB");
+	AbsorptionRGB.OutputType = CMOT_Float3;
+
+	FCustomOutput& AbsorptionA = CustomExpression->AdditionalOutputs.AddDefaulted_GetRef();
+	AbsorptionA.OutputName = TEXT("AbsorptionA");
+	AbsorptionA.OutputType = CMOT_Float1;
+
+	CustomExpression->RebuildOutputs();
+	CustomExpression->PostEditChange();
+	return CustomExpression->AdditionalOutputs.Num() == 3
+		&& !CustomExpression->IncludeFilePaths.IsEmpty();
+}
+
+bool URealisticWaterMaterialPipelineLibrary::ConfigureGerstnerFoamSurfaceCustomExpression(
+	UMaterialExpressionCustom* CustomExpression,
+	const TArray<FName>& InputNames,
+	const FString& Code,
+	const FString& Description,
+	const TArray<FString>& IncludeFilePaths)
+{
+	if (!ConfigureTypedCustomExpression(
+		CustomExpression, InputNames, Code, Description, CMOT_Float3))
+	{
+		return false;
+	}
+
+	CustomExpression->Modify();
+	CustomExpression->IncludeFilePaths = IncludeFilePaths;
+	CustomExpression->AdditionalOutputs.Reset(2);
+
+	FCustomOutput& FoamOpacity = CustomExpression->AdditionalOutputs.AddDefaulted_GetRef();
+	FoamOpacity.OutputName = TEXT("FoamOpacity");
+	FoamOpacity.OutputType = CMOT_Float1;
+
+	FCustomOutput& FoamRoughness = CustomExpression->AdditionalOutputs.AddDefaulted_GetRef();
+	FoamRoughness.OutputName = TEXT("FoamRoughness");
+	FoamRoughness.OutputType = CMOT_Float1;
+
+	CustomExpression->RebuildOutputs();
+	CustomExpression->PostEditChange();
+	return CustomExpression->AdditionalOutputs.Num() == 2
+		&& !CustomExpression->IncludeFilePaths.IsEmpty();
 }
 
 bool URealisticWaterMaterialPipelineLibrary::ConfigureFloat1CustomExpression(

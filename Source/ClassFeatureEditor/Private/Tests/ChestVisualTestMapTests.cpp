@@ -142,7 +142,7 @@ bool FBuildChestVisualTestMap::RunTest(const FString& Parameters)
 			FTransform(Anchor + FVector(Index * 350.0, 0.0, 0.0)),
 			SpawnParameters);
 		LabelActor(Point, *FString::Printf(TEXT("ChestTest_RandomLow_%d"), Index + 1));
-		Point->ConfigureRandomSpawn(LowGroup);
+		Point->ConfigureRandomSpawn(EProgressionZone::Mid1, EProgressionChestKind::IslandRandom);
 	}
 
 	for (int32 Index = 0; Index < 2; ++Index)
@@ -152,7 +152,7 @@ bool FBuildChestVisualTestMap::RunTest(const FString& Parameters)
 			FTransform(Anchor + FVector(Index * 350.0, 600.0, 0.0)),
 			SpawnParameters);
 		LabelActor(Point, *FString::Printf(TEXT("ChestTest_RandomHigh_%d"), Index + 1));
-		Point->ConfigureRandomSpawn(HighGroup);
+		Point->ConfigureRandomSpawn(EProgressionZone::Final, EProgressionChestKind::IslandRandom);
 	}
 
 	ABaseCharacter* IslandGuardA = Cast<ABaseCharacter>(World->SpawnActor<AActor>(

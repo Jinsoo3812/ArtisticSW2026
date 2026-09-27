@@ -3,12 +3,16 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Engine/EngineTypes.h"
+#include "Engine/DataTable.h"
+#include "StoryFacadeSubsystem.h"
 #include "BossEncounterComponent.generated.h"
 
 class AEnemyShip;
+class AShip;
 class AShipBossEnemy;
 class AStorageChest;
 class UBaseHealthComponent;
+class AChestSpawnPoint;
 
 UENUM(BlueprintType)
 enum class EBossEncounterState : uint8
@@ -20,12 +24,19 @@ enum class EBossEncounterState : uint8
 	Failed
 };
 
+UENUM(BlueprintType)
+enum class EBossEncounterTrigger : uint8
+{
+	ItemBoxInteraction,
+	PlayerShipSight
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FOnBossEncounterStateChangedSignature,
 	EBossEncounterState, OldState,
 	EBossEncounterState, NewState);
 
-/** Server-authoritative bridge from a locked EnemyItemBox interaction to one boss spawn. */
+/** Server-authoritative, idempotent bridge from an authored trigger to one boss spawn. */
 UCLASS(ClassGroup = (Enemy), meta = (BlueprintSpawnableComponent))
 class ENEMY_API UBossEncounterComponent : public UActorComponent
 {
@@ -46,6 +57,9 @@ public:
 	bool IsEncounterEnabled() const { return bEncounterEnabled; }
 
 	UFUNCTION(BlueprintPure, Category = "Boss|Encounter")
+	EBossEncounterTrigger GetEncounterTrigger() const { return EncounterTrigger; }
+
+	UFUNCTION(BlueprintPure, Category = "Boss|Encounter")
 	AStorageChest* GetEnemyItemBox() const { return EnemyItemBox; }
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Encounter")
@@ -53,6 +67,15 @@ public:
 		AStorageChest* InEnemyItemBox,
 		TSubclassOf<AShipBossEnemy> InBossClass,
 		int32 InBossSpawnPointId = -1);
+
+	/** Idempotent authority-only entry point used by ship perception. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Encounter")
+	bool NotifyPlayerShipSighted(AShip* SensedPlayerShip);
+
+	/** Shared entry point for interaction, perception and future scripted triggers. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Encounter")
+	bool TryStartEncounter(AActor* TriggerActor);
+	void RefreshChestReservations() { UpdateBossReservation(); }
 
 	UPROPERTY(BlueprintAssignable, Category = "Boss|Encounter")
 	FOnBossEncounterStateChangedSignature OnEncounterStateChanged;
@@ -69,16 +92,24 @@ protected:
 
 	UFUNCTION()
 	void HandleHostShipDestroyed(AActor* DestroyedActor);
+	UFUNCTION()
+	void HandleStoryChanged();
+	UFUNCTION()
+	void HandleChestSpawned(AStorageChest* Chest);
 
 	UFUNCTION()
 	void OnRep_EncounterState(EBossEncounterState OldState);
 
 	bool SpawnBossFor(AActor* Interactor);
+	AActor* ResolveEncounterTarget(AActor* TriggerActor) const;
 	bool ResolveSpawnPoint(AEnemyShip& HostShip, int32& OutPointId, FTransform& OutTransform) const;
 	AStorageChest* ResolveConfiguredEnemyItemBox() const;
 	void BindItemBox();
 	void UnbindItemBox();
 	void SetEncounterState(EBossEncounterState NewState);
+	bool IsCampaignGateOpen() const;
+	void UpdateBossReservation();
+	AChestSpawnPoint* ResolveTriggerChestPoint() const;
 
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Boss|Encounter")
 	TObjectPtr<AStorageChest> EnemyItemBox = nullptr;
@@ -87,14 +118,26 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter",
 		meta = (UseComponentPicker, AllowedClasses = "/Script/Engine.ChildActorComponent"))
 	FComponentReference EnemyItemBoxComponent;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
+	FComponentReference TriggerChestSpawnPointComponent;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
+	EStoryNode RequiredStoryNode = EStoryNode::ReconQuestAccepted;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
+	EStoryNode StopAfterStoryNode = EStoryNode::MiddleBoss1Defeated;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
 	bool bEncounterEnabled = false;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Encounter")
-	TSubclassOf<AShipBossEnemy> BossClass;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
+	EBossEncounterTrigger EncounterTrigger = EBossEncounterTrigger::ItemBoxInteraction;
 
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Boss|Encounter")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter")
+	TSubclassOf<AShipBossEnemy> BossClass;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter", meta = (RowType = "/Script/Enemy.EnemyBaseStatsRow"))
+	FDataTableRowHandle BossStatsRow;
+
+	/** Exact WaypointId registered on the owning EnemyShip. No alternate point is selected on failure. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Encounter", meta = (ClampMin = "0"))
 	int32 BossSpawnPointId = INDEX_NONE;
 
 	UPROPERTY(ReplicatedUsing = OnRep_EncounterState, VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Encounter")

@@ -35,9 +35,15 @@ void UDeckWaypointComponent::InitializeGeneratedWaypoint(
 	RefreshEditorVisualization();
 }
 
-void UDeckWaypointComponent::SetGeneratedLinks(const TArray<int32>& InLinkedWaypointIds)
+void UDeckWaypointComponent::SetWaypointIdForAuthoring(int32 InWaypointId)
+{
+	WaypointId = FMath::Max(0, InWaypointId);
+}
+
+void UDeckWaypointComponent::SetLinkedWaypointIdsForAuthoring(const TArray<int32>& InLinkedWaypointIds)
 {
 	LinkedWaypointIds = InLinkedWaypointIds;
+	LinkedWaypointIds.Remove(WaypointId);
 	LinkedWaypointIds.Sort();
 	LinkedWaypointIds.SetNum(Algo::Unique(LinkedWaypointIds));
 }

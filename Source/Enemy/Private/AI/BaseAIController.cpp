@@ -1,8 +1,10 @@
 #include "AI/BaseAIController.h"
 
 #include "AI/EnemyBehaviorSet.h"
+#include "AI/EnemyTerritoryComponent.h"
 #include "AISystem.h"
 #include "BaseEnemy.h"
+#include "RangedEnemy/RangedEnemy.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
@@ -31,13 +33,41 @@ ABaseAIController::ABaseAIController()
 	SetupPerceptionSystem();
 }
 
+void ABaseAIController::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	TerritoryCheckRemaining -= DeltaSeconds;
+	if (TerritoryCheckRemaining > 0.0f)
+	{
+		return;
+	}
+	TerritoryCheckRemaining = FMath::Max(0.05f, TerritoryCheckInterval);
+
+	const ABaseEnemy* Enemy = Cast<ABaseEnemy>(GetPawn());
+	const UEnemyTerritoryComponent* Territory = Enemy
+		? Enemy->GetTerritoryComponent()
+		: nullptr;
+	AActor* Target = GetCombatTarget();
+	if (Target && Territory && Territory->HasAssignedTerritory()
+		&& !Territory->IsInsideCombatArea(Target->GetActorLocation()))
+	{
+		ClearCombatTarget(true);
+		StopMovement();
+	}
+}
+
 void ABaseAIController::SetupPerceptionSystem()
 {
 	UAIPerceptionComponent* PerceptionComp =
 		CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("PerceptionComponent"));
-	// AI|Perception controller defaults are the single editor-facing source of truth.
-	// The component remains visible for inspection, but inherited Blueprints must not
-	// edit its generated sense configurations independently.
+	// The possessed Enemy Blueprint is the editor-facing source of truth. Keep the
+	// generated component read-only so settings cannot diverge in two places.
 	PerceptionComp->bEditableWhenInherited = false;
 	SetPerceptionComponent(*PerceptionComp);
 
@@ -45,7 +75,7 @@ void ABaseAIController::SetupPerceptionSystem()
 	HearingConfig = CreateDefaultSubobject<UAISenseConfig_Hearing>(TEXT("HearingConfig"));
 	DamageConfig = CreateDefaultSubobject<UAISenseConfig_Damage>(TEXT("DamageConfig"));
 
-	RefreshPerceptionConfiguration();
+	RefreshPerceptionConfiguration(FEnemyPerceptionSettings());
 
 	PerceptionComp->SetDominantSense(*SightConfig->GetSenseImplementation());
 	PerceptionComp->OnTargetPerceptionUpdated.AddDynamic(
@@ -53,7 +83,7 @@ void ABaseAIController::SetupPerceptionSystem()
 		&ABaseAIController::OnTargetPerceptionUpdated);
 }
 
-void ABaseAIController::RefreshPerceptionConfiguration()
+void ABaseAIController::RefreshPerceptionConfiguration(const FEnemyPerceptionSettings& Settings)
 {
 	UAIPerceptionComponent* PerceptionComp = GetPerceptionComponent();
 	if (!PerceptionComp || !SightConfig || !HearingConfig || !DamageConfig)
@@ -61,22 +91,22 @@ void ABaseAIController::RefreshPerceptionConfiguration()
 		return;
 	}
 
-	SightConfig->SightRadius = FMath::Max(0.0f, SightRadius);
-	SightConfig->LoseSightRadius = FMath::Max(SightConfig->SightRadius, LoseSightRadius);
-	SightConfig->SetMaxAge(FMath::Max(0.0f, SightMaxAge));
-	SightConfig->PeripheralVisionAngleDegrees = FMath::Clamp(PeripheralVisionDegrees, 0.0f, 180.0f);
-	SightConfig->AutoSuccessRangeFromLastSeenLocation = FMath::Max(0.0f, AutoSuccessRangeFromLastSeenLocation);
+	SightConfig->SightRadius = FMath::Max(0.0f, Settings.SightRadius);
+	SightConfig->LoseSightRadius = FMath::Max(SightConfig->SightRadius, Settings.LoseSightRadius);
+	SightConfig->SetMaxAge(FMath::Max(0.0f, Settings.SightMaxAge));
+	SightConfig->PeripheralVisionAngleDegrees = FMath::Clamp(Settings.PeripheralVisionDegrees, 0.0f, 180.0f);
+	SightConfig->AutoSuccessRangeFromLastSeenLocation = FMath::Max(0.0f, Settings.AutoSuccessRangeFromLastSeenLocation);
 	SightConfig->DetectionByAffiliation.bDetectEnemies = true;
 	SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
 	SightConfig->DetectionByAffiliation.bDetectFriendlies = true;
 
-	HearingConfig->HearingRange = FMath::Max(0.0f, HearingRange);
-	HearingConfig->SetMaxAge(FMath::Max(0.0f, HearingMaxAge));
+	HearingConfig->HearingRange = FMath::Max(0.0f, Settings.HearingRange);
+	HearingConfig->SetMaxAge(FMath::Max(0.0f, Settings.HearingMaxAge));
 	HearingConfig->DetectionByAffiliation.bDetectEnemies = true;
 	HearingConfig->DetectionByAffiliation.bDetectNeutrals = true;
 	HearingConfig->DetectionByAffiliation.bDetectFriendlies = true;
 
-	DamageConfig->SetMaxAge(FMath::Max(0.0f, DamageMaxAge));
+	DamageConfig->SetMaxAge(FMath::Max(0.0f, Settings.DamageMaxAge));
 
 	PerceptionComp->ConfigureSense(*SightConfig);
 	PerceptionComp->ConfigureSense(*HearingConfig);
@@ -87,13 +117,13 @@ void ABaseAIController::RefreshPerceptionConfiguration()
 void ABaseAIController::OnPossess(APawn* PossessedPawn)
 {
 	Super::OnPossess(PossessedPawn);
-	RefreshPerceptionConfiguration();
 
 	ABaseEnemy* PossessedEnemy = Cast<ABaseEnemy>(PossessedPawn);
 	if (!PossessedEnemy)
 	{
 		return;
 	}
+	RefreshPerceptionConfiguration(PossessedEnemy->GetPerceptionSettings());
 
 	BindPossessedEnemyDeath(PossessedEnemy);
 
@@ -181,6 +211,10 @@ bool ABaseAIController::SetCombatTarget(AActor* TargetActor)
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
 	CachedTargetActor = TargetActor;
 	BlackboardComponent->SetValueAsObject(TargetActorKeyName, TargetActor);
+	if (ARangedEnemy* RangedEnemy = Cast<ARangedEnemy>(GetPawn()))
+	{
+		RangedEnemy->SetCombatTarget(TargetActor);
+	}
 	BindPerceivedTargetDeath(TargetActor);
 	SetEnemyState(EEnemyAIState::Combat);
 	return true;
@@ -201,6 +235,10 @@ void ABaseAIController::ClearCombatTarget(bool bReturnToPassive)
 {
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
 	CachedTargetActor.Reset();
+	if (ARangedEnemy* RangedEnemy = Cast<ARangedEnemy>(GetPawn()))
+	{
+		RangedEnemy->ClearCombatTarget();
+	}
 
 	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
 	if (BlackboardComponent)
@@ -292,7 +330,12 @@ void ABaseAIController::OnTargetPerceptionUpdated(AActor* SensedActor, FAIStimul
 bool ABaseAIController::IsValidPerceptionTarget(const AActor* Candidate) const
 {
 	const ABaseEnemy* PossessedEnemy = Cast<ABaseEnemy>(GetPawn());
-	return PossessedEnemy && PossessedEnemy->CanEngageActor(const_cast<AActor*>(Candidate));
+	const UEnemyTerritoryComponent* Territory = PossessedEnemy
+		? PossessedEnemy->GetTerritoryComponent()
+		: nullptr;
+	return PossessedEnemy
+		&& PossessedEnemy->CanEngageActor(const_cast<AActor*>(Candidate))
+		&& (!Territory || Territory->IsInsideCombatArea(Candidate->GetActorLocation()));
 }
 
 void ABaseAIController::HandleSightStimulus(AActor* SensedActor, const FAIStimulus& Stimulus)
@@ -329,6 +372,15 @@ void ABaseAIController::HandleHearingStimulus(AActor* SensedActor, const FAIStim
 {
 	if (Stimulus.WasSuccessfullySensed())
 	{
+		const ABaseEnemy* Enemy = Cast<ABaseEnemy>(GetPawn());
+		const UEnemyTerritoryComponent* Territory = Enemy
+			? Enemy->GetTerritoryComponent()
+			: nullptr;
+		if (Territory && Territory->HasAssignedTerritory()
+			&& !Territory->IsInsideCombatArea(Stimulus.StimulusLocation))
+		{
+			return;
+		}
 		StartInvestigation(Stimulus.StimulusLocation);
 	}
 }
@@ -394,8 +446,17 @@ void ABaseAIController::InitializeBlackboardValues(APawn* PossessedPawn)
 
 	BlackboardComponent->ClearValue(TargetActorKeyName);
 	BlackboardComponent->ClearValue(PointOfInterestKeyName);
-	BlackboardComponent->SetValueAsVector(HomeLocationKeyName, PossessedPawn->GetActorLocation());
-	BlackboardComponent->SetValueAsFloat(PatrolRadiusKeyName, DefaultPatrolRadius);
+	const ABaseEnemy* PossessedEnemy = Cast<ABaseEnemy>(PossessedPawn);
+	const UEnemyTerritoryComponent* Territory = PossessedEnemy
+		? PossessedEnemy->GetTerritoryComponent()
+		: nullptr;
+	const bool bHasTerritory = Territory && Territory->HasAssignedTerritory();
+	BlackboardComponent->SetValueAsVector(
+		HomeLocationKeyName,
+		bHasTerritory ? Territory->GetHomeLocation() : PossessedPawn->GetActorLocation());
+	BlackboardComponent->SetValueAsFloat(
+		PatrolRadiusKeyName,
+		bHasTerritory ? Territory->GetPatrolRadius() : DefaultPatrolRadius);
 	SetEnemyState(EEnemyAIState::Passive);
 }
 

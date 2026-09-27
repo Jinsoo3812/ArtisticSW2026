@@ -5,7 +5,12 @@
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 #include "GameplayEffect.h"
+#include "GASAttributeDamageExecution.h"
+#include "GASAttributeDamageGameplayEffect.h"
+#include "Components/CombatHitResolverComponent.h"
+#include "Components/EquipmentStatComponent.h"
 
 float UGASCombatLibrary::CalculateStrengthDamage(float Strength, float AttackCoefficient, float ChargeMultiplier)
 {
@@ -17,41 +22,29 @@ float UGASCombatLibrary::CalculateStrengthDamage(float Strength, float AttackCoe
 
 FGameplayEffectSpecHandle UGASCombatLibrary::MakeStrengthDamageEffectSpec(const FStrengthDamageRequest& Request)
 {
-	if (!Request.SourceASC)
+	UAbilitySystemComponent* ASC = Request.SourceASC;
+	if (!ASC || !ASC->IsOwnerActorAuthoritative() || ASC->HasMatchingGameplayTag(State_Dead)
+		|| !ASC->HasAttributeSetForAttribute(UBaseAttributeSet::GetStrengthAttribute())
+		|| !FMath::IsFinite(Request.AttackCoefficient) || Request.AttackCoefficient <= 0.f
+		|| !FMath::IsFinite(Request.ChargeMultiplier) || Request.ChargeMultiplier <= 0.f
+		|| !IsValid(Request.EffectCauser) || !Request.EffectCauser->HasAuthority()) return FGameplayEffectSpecHandle();
+	if (const auto* Equipment = ASC->GetAvatarActor() ? ASC->GetAvatarActor()->FindComponentByClass<UEquipmentStatComponent>() : nullptr)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("MakeStrengthDamageEffectSpec: SourceASC is missing."));
-		return FGameplayEffectSpecHandle();
+		if (Equipment->IsTransitioning()) return FGameplayEffectSpecHandle();
 	}
-
-	if (!Request.DamageEffectClass)
+	const TSubclassOf<UGameplayEffect> EffectClass = UGASAttributeDamageGameplayEffect::StaticClass();
+	const float Strength = ASC->GetNumericAttribute(UBaseAttributeSet::GetStrengthAttribute());
+	if (!FMath::IsFinite(Strength)) return FGameplayEffectSpecHandle();
+	FGameplayEffectContextHandle Context = USWCombatEffectContextLibrary::MakeCombatEffectContext(
+		ASC, Request.InstigatorActor, Request.EffectCauser, nullptr, Request.bAddHitResult, Request.HitResult);
+	Context = USWCombatEffectContextLibrary::SetDamageDeliveryType(
+		Context, ESWDamageDeliveryType::DirectHit);
+	FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(EffectClass, FMath::Max(1, Request.EffectLevel), Context);
+	if (SpecHandle.IsValid())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("MakeStrengthDamageEffectSpec: DamageEffectClass is missing."));
-		return FGameplayEffectSpecHandle();
-	}
-
-	const float Strength = Request.SourceASC->GetNumericAttribute(UBaseAttributeSet::GetStrengthAttribute());
-	FGameplayEffectSpecHandle SpecHandle = MakeDamageEffectSpec(
-		Request.SourceASC,
-		Request.DamageEffectClass,
-		CalculateStrengthDamage(Strength, Request.AttackCoefficient, Request.ChargeMultiplier),
-		Request.InstigatorActor,
-		Request.EffectCauser,
-		Request.EffectLevel,
-		Request.bAddHitResult,
-		Request.HitResult);
-
-	if (!SpecHandle.IsValid() || !SpecHandle.Data.IsValid())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("MakeStrengthDamageEffectSpec: Damage spec is invalid."));
-	}
-	else
-	{
-		// Execution-based damage GEs consume these inputs. Data.Damage remains
-		// populated by MakeDamageEffectSpec for legacy modifier-based GEs.
-		SpecHandle.Data->SetSetByCallerMagnitude(
-			Data_AttackCoefficient, FMath::Max(0.0f, Request.AttackCoefficient));
-		SpecHandle.Data->SetSetByCallerMagnitude(
-			Data_ChargeMultiplier, FMath::Max(0.0f, Request.ChargeMultiplier));
+		SpecHandle.Data->SetSetByCallerMagnitude(Data_AttackCoefficient, Request.AttackCoefficient);
+		SpecHandle.Data->SetSetByCallerMagnitude(Data_ChargeMultiplier, Request.ChargeMultiplier);
+		UCombatHitResolverComponent::GetOrCreate(Request.EffectCauser);
 	}
 
 	return SpecHandle;
@@ -73,18 +66,16 @@ FGameplayEffectSpecHandle UGASCombatLibrary::MakeDamageEffectSpec(
 	}
 
 	// 누가 무엇으로 어디에 맞췄는지에 대한 정보 == ContextHandle
-	FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
-	ContextHandle.AddInstigator(InstigatorActor, EffectCauser);
-
-	if (EffectCauser)
-	{
-		ContextHandle.AddSourceObject(EffectCauser);
-	}
-
-	if (bAddHitResult)
-	{
-		ContextHandle.AddHitResult(HitResult, true);
-	}
+	FGameplayEffectContextHandle ContextHandle =
+		USWCombatEffectContextLibrary::MakeCombatEffectContext(
+			SourceASC,
+			InstigatorActor,
+			EffectCauser,
+			nullptr,
+			bAddHitResult,
+			HitResult);
+	ContextHandle = USWCombatEffectContextLibrary::SetDamageDeliveryType(
+		ContextHandle, ESWDamageDeliveryType::DirectHit);
 
 	// 적용할 GameplayEffect 정보
 	FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(
@@ -113,13 +104,9 @@ FGameplayEffectSpecHandle UGASCombatLibrary::MakeHealingEffectSpec(
 		return FGameplayEffectSpecHandle();
 	}
 
-	FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
-	ContextHandle.AddInstigator(InstigatorActor, EffectCauser);
-
-	if (EffectCauser)
-	{
-		ContextHandle.AddSourceObject(EffectCauser);
-	}
+	FGameplayEffectContextHandle ContextHandle =
+		USWCombatEffectContextLibrary::MakeCombatEffectContext(
+			SourceASC, InstigatorActor, EffectCauser);
 
 	FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(
 		HealingEffectClass,

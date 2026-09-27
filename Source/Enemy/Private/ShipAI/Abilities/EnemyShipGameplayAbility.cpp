@@ -1,6 +1,7 @@
 #include "ShipAI/Abilities/EnemyShipGameplayAbility.h"
 
 #include "AbilitySystemComponent.h"
+#include "ShipAI/EnemyShip.h"
 
 UEnemyShipAbilityCooldownEffect::UEnemyShipAbilityCooldownEffect()
 {
@@ -12,6 +13,16 @@ UEnemyShipGameplayAbility::UEnemyShipGameplayAbility()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
+}
+
+bool UEnemyShipGameplayAbility::CanActivateAbility(
+	const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags,
+	FGameplayTagContainer* OptionalRelevantTags) const
+{
+	if (!Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags)) return false;
+	const AEnemyShip* Ship = ActorInfo ? Cast<AEnemyShip>(ActorInfo->AvatarActor.Get()) : nullptr;
+	return !Ship || !Ship->IsCrewDefeated();
 }
 
 const FGameplayTagContainer* UEnemyShipGameplayAbility::GetCooldownTags() const

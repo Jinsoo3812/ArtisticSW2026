@@ -1,9 +1,25 @@
 #include "BaseGameplayTags.h"
+UE_DEFINE_GAMEPLAY_TAG(State_Status, "State.Status");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_Stun, "State.Status.Stun");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_Poison, "State.Status.Poison");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_Burn, "State.Status.Burn");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_Slow, "State.Status.Slow");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_WaterBomb, "State.Status.WaterBomb");
+UE_DEFINE_GAMEPLAY_TAG(State_Status_Knockback, "State.Status.Knockback");
+UE_DEFINE_GAMEPLAY_TAG(State_Control_ActionsBlocked, "State.Control.ActionsBlocked");
+UE_DEFINE_GAMEPLAY_TAG(State_Control_MovementBlocked, "State.Control.MovementBlocked");
+UE_DEFINE_GAMEPLAY_TAG(Capability_Status_Receive, "Capability.Status.Receive");
+UE_DEFINE_GAMEPLAY_TAG(Immunity_Status, "Immunity.Status");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Status_Stun, "GameplayAbility.Status.Stun");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Status_Stun, "GameplayCue.Status.Stun");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Status_Poison_Tick, "GameplayCue.Status.Poison.Tick");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Status_Burn_Tick, "GameplayCue.Status.Burn.Tick");
 
 // State
 UE_DEFINE_GAMEPLAY_TAG(State_Attacking, "State.Attacking");
 UE_DEFINE_GAMEPLAY_TAG(State_Dead, "State.Dead");
 UE_DEFINE_GAMEPLAY_TAG(State_Damaged, "State.Damaged");
+UE_DEFINE_GAMEPLAY_TAG(State_Invulnerable, "State.Invulnerable");
 UE_DEFINE_GAMEPLAY_TAG(State_Aiming, "State.Aiming");
 UE_DEFINE_GAMEPLAY_TAG(State_Sniping, "State.Sniping");
 UE_DEFINE_GAMEPLAY_TAG(State_Crafting, "State.Crafting");
@@ -13,8 +29,12 @@ UE_DEFINE_GAMEPLAY_TAG(State_Bow_Drawing, "State.Bow.Drawing");
 UE_DEFINE_GAMEPLAY_TAG(State_Bow_FullyDrawn, "State.Bow.FullyDrawn");
 UE_DEFINE_GAMEPLAY_TAG(State_Bow_Releasing, "State.Bow.Releasing");
 UE_DEFINE_GAMEPLAY_TAG(State_Ship_CannonDisabled, "State.Ship.CannonDisabled");
+UE_DEFINE_GAMEPLAY_TAG(Data_Effect_ShipCrewStrengthMultiplier, "Data.Effect.ShipCrewStrengthMultiplier");
+UE_DEFINE_GAMEPLAY_TAG(Data_Effect_ShipCrewMoveSpeedMultiplier, "Data.Effect.ShipCrewMoveSpeedMultiplier");
+UE_DEFINE_GAMEPLAY_TAG(Data_Effect_ShipCrewAttackSpeedMultiplier, "Data.Effect.ShipCrewAttackSpeedMultiplier");
 UE_DEFINE_GAMEPLAY_TAG(State_Debuff_WaterBomb, "State.Debuff.WaterBomb");
 UE_DEFINE_GAMEPLAY_TAG(State_Debuff_TimeStopped, "State.Debuff.TimeStopped");
+UE_DEFINE_GAMEPLAY_TAG(State_Debuff_Slow, "State.Debuff.Slow");
 UE_DEFINE_GAMEPLAY_TAG(AI_State_Boss_Intro, "AI.State.Boss.Intro");
 UE_DEFINE_GAMEPLAY_TAG(AI_State_Boss_Combat, "AI.State.Boss.Combat");
 UE_DEFINE_GAMEPLAY_TAG(AI_State_Boss_Dead, "AI.State.Boss.Dead");
@@ -22,6 +42,9 @@ UE_DEFINE_GAMEPLAY_TAG(State_Boss_Busy, "State.Boss.Busy");
 UE_DEFINE_GAMEPLAY_TAG(State_Boss_Hidden, "State.Boss.Hidden");
 UE_DEFINE_GAMEPLAY_TAG(State_Boss_Dashing, "State.Boss.Dashing");
 UE_DEFINE_GAMEPLAY_TAG(State_CrowdControl_Knockback, "State.CrowdControl.Knockback");
+UE_DEFINE_GAMEPLAY_TAG(State_Buff_MoveSpeed, "State.Buff.MoveSpeed");
+UE_DEFINE_GAMEPLAY_TAG(State_Rolling, "State.Rolling");
+UE_DEFINE_GAMEPLAY_TAG(State_Swimming, "State.Swimming");
 
 // Team
 UE_DEFINE_GAMEPLAY_TAG(Team_Player, "Team.Player");
@@ -40,6 +63,7 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Weapon_AimCycle, "GameplayAbility.Weapon.
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_GravityVortex, "GameplayAbility.Skill.GravityVortex");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_WaterBomb, "GameplayAbility.Skill.WaterBomb");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_Bombardment, "GameplayAbility.Skill.Bombardment");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Skill_AreaSlow, "GameplayAbility.Skill.AreaSlow");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_Charge, "GameplayAbility.EnemyShip.Charge");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_LaunchTorpedo, "GameplayAbility.EnemyShip.LaunchTorpedo");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_CannonVolley, "GameplayAbility.EnemyShip.CannonVolley");
@@ -47,10 +71,16 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_DeployObstacle, "GameplayAbilit
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_TimeStop, "GameplayAbility.EnemyShip.TimeStop");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_Knockback, "GameplayAbility.Boss.Knockback");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_Vanish, "GameplayAbility.Boss.Vanish");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_VanishV2, "GameplayAbility.Boss.VanishV2");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_DashSlash, "GameplayAbility.Boss.DashSlash");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_BasicAttack_Combo, "Cooldown.Boss.BasicAttack.Combo");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Enemy_Buff_MoveSpeed, "GameplayAbility.Enemy.Buff.MoveSpeed");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Player_Roll, "GameplayAbility.Player.Roll");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Enemy_BasicAttack, "Cooldown.Enemy.BasicAttack");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_Enemy_Buff_MoveSpeed, "Cooldown.Enemy.Buff.MoveSpeed");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_Knockback, "Cooldown.Boss.Knockback");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_Vanish, "Cooldown.Boss.Vanish");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_VanishV2, "Cooldown.Boss.VanishV2");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_DashSlash, "Cooldown.Boss.DashSlash");
 UE_DEFINE_GAMEPLAY_TAG(State_EnemyShip_Charging, "State.EnemyShip.Charging");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_Charge, "Cooldown.EnemyShip.Charge");
@@ -58,6 +88,7 @@ UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_LaunchTorpedo, "Cooldown.EnemyShip.Lau
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_DeployObstacle, "Cooldown.EnemyShip.DeployObstacle");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_TimeStop, "Cooldown.EnemyShip.TimeStop");
 // GameplayCue
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Enemy_Hit, "GameplayCue.Enemy.Hit");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Boss_Attack, "GameplayCue.Boss.Attack");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Boss_Hit, "GameplayCue.Boss.Hit");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact, "GameplayCue.Impact");
@@ -66,6 +97,10 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Weapon_Sword, "GameplayCue.Impact.Weap
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Weapon_Bow, "GameplayCue.Impact.Weapon.Bow");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Boss_DashSlash, "GameplayCue.Impact.Boss.DashSlash");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Boss_Knockback, "GameplayCue.Impact.Boss.Knockback");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Path_Boss_DashSlash_Telegraph, "GameplayCue.Path.Boss.DashSlash.Telegraph");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Path_Boss_DashSlash_Execution, "GameplayCue.Path.Boss.DashSlash.Execution");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Skill_AreaSlow_Activate, "GameplayCue.Skill.AreaSlow.Activate");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_State_Debuff_Slow, "GameplayCue.State.Debuff.Slow");
 // Event
 UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Changed, "Event.Ability.Changed");
 UE_DEFINE_GAMEPLAY_TAG(Event_HandleScan_Start, "Event.HandleScan.Start");
@@ -77,6 +112,10 @@ UE_DEFINE_GAMEPLAY_TAG(Event_Boss_Dash_SlashFinished, "Event.Boss.Dash.SlashFini
 UE_DEFINE_GAMEPLAY_TAG(Event_ActivateAbility_Equip, "Event.ActivateAbility.Equip");
 UE_DEFINE_GAMEPLAY_TAG(Event_Montage_ThrowGrenade, "Event.Montage.ThrowGrenade");
 UE_DEFINE_GAMEPLAY_TAG(Event_Montage_FireArrow, "Event.Montage.FireArrow");
+UE_DEFINE_GAMEPLAY_TAG(Event_Montage_NockArrow, "Event.Montage.NockArrow");
+UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Roll_Invulnerability_Begin, "Event.Ability.Roll.Invulnerability.Begin");
+UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Roll_Invulnerability_End, "Event.Ability.Roll.Invulnerability.End");
+UE_DEFINE_GAMEPLAY_TAG(Event_Ability_Roll_Recovery, "Event.Ability.Roll.Recovery");
 // Data
 UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");
 UE_DEFINE_GAMEPLAY_TAG(Data_Heal, "Data.Heal");
@@ -84,6 +123,8 @@ UE_DEFINE_GAMEPLAY_TAG(Data_AttackCoefficient, "Data.AttackCoefficient");
 UE_DEFINE_GAMEPLAY_TAG(Data_ChargeMultiplier, "Data.ChargeMultiplier");
 UE_DEFINE_GAMEPLAY_TAG(Data_StrengthBonus, "Data.StrengthBonus");
 UE_DEFINE_GAMEPLAY_TAG(Data_Effect_AttackSpeedMultiplier, "Data.Effect.AttackSpeedMultiplier");
+UE_DEFINE_GAMEPLAY_TAG(Data_Effect_MoveSpeedBonus, "Data.Effect.MoveSpeedBonus");
+UE_DEFINE_GAMEPLAY_TAG(Data_Effect_MoveSpeedMultiplier, "Data.Effect.MoveSpeedMultiplier");
 
 
 /* Keyboard Input */
@@ -94,6 +135,7 @@ UE_DEFINE_GAMEPLAY_TAG(Key_Item_1, "Key.Item.1");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_2, "Key.Item.2");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_3, "Key.Item.3");
 UE_DEFINE_GAMEPLAY_TAG(Key_Skill_GravityVortex, "Key.Skill.GravityVortex");
+UE_DEFINE_GAMEPLAY_TAG(Key_Skill_AreaSlow, "Key.Skill.AreaSlow");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_4, "Key.Item.4");
 UE_DEFINE_GAMEPLAY_TAG(Key_Item_5, "Key.Item.5");
 
@@ -155,6 +197,10 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialMaterial_LegendaryMaterial,
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe, "Item.Id.Material.WeaponSpecialRecipe");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_EpicRecipe, "Item.Id.Material.WeaponSpecialRecipe.EpicRecipe");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_LegendaryRecipe, "Item.Id.Material.WeaponSpecialRecipe.LegendaryRecipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_SwordA5Recipe, "Item.Id.Material.WeaponSpecialRecipe.SwordA5Recipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_SwordB5Recipe, "Item.Id.Material.WeaponSpecialRecipe.SwordB5Recipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_ShortBow5Recipe, "Item.Id.Material.WeaponSpecialRecipe.ShortBow5Recipe");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_WeaponSpecialRecipe_LongBow5Recipe, "Item.Id.Material.WeaponSpecialRecipe.LongBow5Recipe");
 
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_SkillMaterial, "Item.Id.Material.SkillMaterial");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Material_SkillMaterial_RareSkill, "Item.Id.Material.SkillMaterial.RareSkill");
@@ -168,10 +214,12 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal, "Item.Id.Consumables.Heal");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal_Medicine, "Item.Id.Consumables.Heal.Medicine");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal_Tangyak, "Item.Id.Consumables.Heal.Tangyak");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal_Elixir, "Item.Id.Consumables.Heal.Elixir");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Heal_Panacea, "Item.Id.Consumables.Heal.Panacea");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff, "Item.Id.Consumables.Buff");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff_Doraji, "Item.Id.Consumables.Buff.Doraji");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff_Chungshimhwan, "Item.Id.Consumables.Buff.Chungshimhwan");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff_Gongjindan, "Item.Id.Consumables.Buff.Gongjindan");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Consumables_Buff_RoyalGongjindan, "Item.Id.Consumables.Buff.RoyalGongjindan");
 
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon, "Item.Id.Weapon");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Weapon_Sword, "Item.Id.Weapon.Sword");
@@ -201,6 +249,12 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill, "Item.Id.Skill");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_GravityVortex, "Item.Id.Skill.GravityVortex");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_WaterBomb, "Item.Id.Skill.WaterBomb");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_Bombardment, "Item.Id.Skill.Bombardment");
+UE_DEFINE_GAMEPLAY_TAG(Item_Id_Skill_AreaSlow, "Item.Id.Skill.AreaSlow");
+
+UE_DEFINE_GAMEPLAY_TAG(Targetable_Skill_AreaSlow, "Targetable.Skill.AreaSlow");
+UE_DEFINE_GAMEPLAY_TAG(Capability_Effect_MoveSpeedMultiplier, "Capability.Effect.MoveSpeedMultiplier");
+UE_DEFINE_GAMEPLAY_TAG(Capability_Effect_AttackSpeedMultiplier, "Capability.Effect.AttackSpeedMultiplier");
+UE_DEFINE_GAMEPLAY_TAG(Immunity_Debuff_Slow, "Immunity.Debuff.Slow");
 
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Clue, "Item.Id.Clue");
 UE_DEFINE_GAMEPLAY_TAG(Item_Id_Clue_Clue1, "Item.Id.Clue.Clue1");
@@ -226,6 +280,7 @@ UE_DEFINE_GAMEPLAY_TAG(Item_Category_Skill, "Item.Category.Skill");
 
 // Enemy
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Sword, "Item.EnemyWeapon.Sword");
+UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Knife, "Item.EnemyWeapon.Knife");
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Hand, "Item.EnemyWeapon.Hand");
 UE_DEFINE_GAMEPLAY_TAG(Item_EnemyWeapon_Bow, "Item.EnemyWeapon.Bow");
 
@@ -246,6 +301,8 @@ UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_RightClick, "Key.Default.Mouse.RightCli
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_RightClick_Released, "Key.Default.Mouse.RightClick.Released");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_WheelUp, "Key.Default.Mouse.WheelUp");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Mouse_WheelDown, "Key.Default.Mouse.WheelDown");
+UE_DEFINE_GAMEPLAY_TAG(Key_Default_C, "Key.Default.C");
+UE_DEFINE_GAMEPLAY_TAG(Key_Default_V, "Key.Default.V");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_F, "Key.Default.F");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_ESC, "Key.Default.ESC");
 UE_DEFINE_GAMEPLAY_TAG(Key_Default_Space, "Key.Default.Space");
@@ -270,3 +327,22 @@ UE_DEFINE_GAMEPLAY_TAG(Interaction_Craft, "Interaction.Craft");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_ShipBoard, "Interaction.ShipBoard");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_CannonBoard, "Interaction.CannonBoard");
 UE_DEFINE_GAMEPLAY_TAG(Interaction_Dialogue, "Interaction.Dialogue");
+
+/* Enemy type */
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Human_Test0, "Enemy.Type.Human.Test0");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Human_Test1, "Enemy.Type.Human.Test1");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Ship_Test0, "Enemy.Type.Ship.Test0");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Ship_Test1, "Enemy.Type.Ship.Test1");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Ship_Test2, "Enemy.Type.Ship.Test2");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Boss_Mid1, "Enemy.Type.Boss.Mid1");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Boss_Mid2, "Enemy.Type.Boss.Mid2");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Boss_Mid3, "Enemy.Type.Boss.Mid3");
+UE_DEFINE_GAMEPLAY_TAG(Enemy_Type_Boss_Final, "Enemy.Type.Boss.Final");
+
+/* Quest Items */
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest, "Item.Quest");
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest_InvasionMap, "Item.Quest.InvasionMap");
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest_CipherBook, "Item.Quest.CipherBook");
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest_JapaneseCipher, "Item.Quest.JapaneseCipher");
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest_DecipheredCipher, "Item.Quest.DecipheredCipher");
+UE_DEFINE_GAMEPLAY_TAG(Item_Quest_AirRaidInfo, "Item.Quest.AirRaidInfo");

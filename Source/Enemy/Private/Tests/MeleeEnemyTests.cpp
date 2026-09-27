@@ -67,6 +67,14 @@ bool FMeleeEnemyMVPDefaultsTest::RunTest(const FString& Parameters)
 	{
 		TestEqual(TEXT("Move-to-weapon-range defaults to TargetActor"),
 			MoveTask->GetSelectedBlackboardKey(), FName(TEXT("TargetActor")));
+		TestTrue(TEXT("Move-to-weapon-range keeps an inset from the exact weapon boundary"),
+			MoveTask->GetAcceptanceRangeInset() > 0.0f);
+		TestEqual(TEXT("Acceptance remains inside a normal weapon range"),
+			UBTT_MoveToWeaponRange::ResolveAcceptanceRange(180.0f, 15.0f, 25.0f),
+			165.0f);
+		TestEqual(TEXT("A short weapon range is never exceeded by the minimum"),
+			UBTT_MoveToWeaponRange::ResolveAcceptanceRange(20.0f, 15.0f, 25.0f),
+			20.0f);
 	}
 	if (TestNotNull(TEXT("Target-distance decorator exists"), DistanceDecorator))
 	{

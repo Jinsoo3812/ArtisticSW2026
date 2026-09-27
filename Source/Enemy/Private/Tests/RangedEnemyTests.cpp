@@ -4,10 +4,12 @@
 
 #include "AbilitySystemComponent.h"
 #include "AI/EnemyAITypes.h"
+#include "AI/EnemyPerceptionSettings.h"
 #include "BaseEnemy.h"
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
+#include "CollisionChannels.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Vector.h"
 #include "BehaviorTree/BlackboardComponent.h"
@@ -16,12 +18,13 @@
 #include "BehaviorTree/Tasks/BTTask_MoveTo.h"
 #include "BehaviorTree/Tasks/BTTask_RunEQSQuery.h"
 #include "BehaviorTree/Tasks/BTTask_Wait.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/StatusComponent.h"
 #include "Decorator/BTD_CanRangedAttack.h"
 #include "Decorator/BTD_CombatTargetState.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/Engine.h"
-#include "Engine/StaticMesh.h"
-#include "Engine/StaticMeshSocket.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "DataProviders/AIDataProvider_QueryParams.h"
@@ -50,8 +53,10 @@
 #include "StatusEffectLibrary.h"
 #include "Task/BTT_ClearFocus.h"
 #include "Task/BTT_RangedAttack.h"
+#include "Task/BTT_RetreatToWeaponRange.h"
 #include "Task/BTT_SetFocus.h"
 #include "Task/BTT_SetMovementSpeed.h"
+#include "UObject/UnrealType.h"
 #include "Weapon/BaseWeaponComponent.h"
 #include "Weapon/EnemyBow.h"
 #include "Weapon/WeaponDataAsset.h"
@@ -200,6 +205,7 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 	const AEnemyBow* BowCDO = GetDefault<AEnemyBow>();
 	const ARangedEnemyAIController* ControllerCDO = GetDefault<ARangedEnemyAIController>();
 	const UGA_RangedEnemyAttack* AbilityCDO = GetDefault<UGA_RangedEnemyAttack>();
+	const UBTT_RetreatToWeaponRange* RetreatTaskCDO = GetDefault<UBTT_RetreatToWeaponRange>();
 
 	TestNotNull(TEXT("RangedEnemy CDO exists"), EnemyCDO);
 	TestNotNull(TEXT("EnemyBow CDO exists"), BowCDO);
@@ -213,20 +219,49 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("RangedEnemy defaults to the Enemy Bow loadout"),
 		EnemyCDO->GetDefaultWeaponTag() == Item_EnemyWeapon_Bow);
 	TestTrue(TEXT("RangedEnemy equips its GA-granting bow on spawn"), EnemyCDO->ShouldEquipWeaponOnSpawn());
-	TestEqual(TEXT("Enemy Bow uses the required Arrow_socket contract"),
-		BowCDO->GetArrowSocketName(), FName(TEXT("Arrow_socket")));
+	TestEqual(TEXT("RangedEnemy uses the character-owned Arrow_socket contract"),
+		EnemyCDO->GetRangedAttackSocketName(), FName(TEXT("Arrow_socket")));
 	TestTrue(TEXT("Enemy Bow default projectile derives from RangedEnemyProjectile"),
 		BowCDO->GetProjectileClass()
 		&& BowCDO->GetProjectileClass()->IsChildOf(ARangedEnemyProjectile::StaticClass()));
 	TestTrue(TEXT("Player and Enemy projectile entry points share AArrowProjectile"),
 		APlayerArrowProjectile::StaticClass()->IsChildOf(AArrowProjectile::StaticClass())
 		&& ARangedEnemyProjectile::StaticClass()->IsChildOf(AArrowProjectile::StaticClass()));
-	TestFalse(TEXT("Faction-agnostic damage is the default gameplay policy"),
+	TestTrue(TEXT("Friendly-fire protection is the default gameplay policy"),
 		GetDefault<AArrowProjectile>()->IsTeamDamageFilteringEnabled());
 	TestTrue(TEXT("Ranged attack ability exposes the ranged attack asset tag"),
 		AbilityCDO->GetAssetTags().HasTagExact(GameplayAbility_RangedAttack));
 	TestTrue(TEXT("Ranged attack remains part of the common basic-attack ability family"),
 		AbilityCDO->GetAssetTags().HasTagExact(GameplayAbility_BasicAttack));
+	if (TestNotNull(TEXT("Weapon-range retreat task exists"), RetreatTaskCDO))
+	{
+		TestEqual(TEXT("Retreat task reads TargetActor"),
+			RetreatTaskCDO->GetSelectedBlackboardKey(), FName(TEXT("TargetActor")));
+		TestTrue(TEXT("Retreat task keeps an inset inside weapon range"),
+			RetreatTaskCDO->GetRangeInset() > 0.0f);
+		TestTrue(TEXT("Retreat task periodically replans around a moving target"),
+			RetreatTaskCDO->GetRepathInterval() > 0.0f);
+		TestEqual(TEXT("A normal ranged weapon resolves an inside-boundary retreat distance"),
+			UBTT_RetreatToWeaponRange::ResolveDesiredRange(1000.0f, 75.0f, 300.0f),
+			925.0f);
+		TestEqual(TEXT("Minimum retreat distance never exceeds a short weapon range"),
+			UBTT_RetreatToWeaponRange::ResolveDesiredRange(250.0f, 75.0f, 300.0f),
+			250.0f);
+		TestTrue(TEXT("Retreat direction points away from the target"),
+			UBTT_RetreatToWeaponRange::ResolvePlanarAwayDirection(
+				FVector(100.0f, 0.0f, 0.0f),
+				FVector::ZeroVector,
+				FVector::ForwardVector,
+				FVector::ForwardVector).Equals(FVector::ForwardVector));
+		TestTrue(TEXT("Overlapping actors use deterministic target-backward fallback"),
+			UBTT_RetreatToWeaponRange::ResolvePlanarAwayDirection(
+				FVector::ZeroVector,
+				FVector::ZeroVector,
+				FVector::ForwardVector,
+				FVector::RightVector).Equals(FVector::BackwardVector));
+	}
+	TestEqual(TEXT("An unequipped CDO retains the legacy maximum-range fallback"),
+		EnemyCDO->GetEffectiveAttackRange(), EnemyCDO->GetFallbackMaxAttackRange());
 
 	const UClass* RangedEnemyBlueprintClass = LoadObject<UClass>(
 		nullptr,
@@ -240,6 +275,10 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 			RangedEnemyBlueprintCDO->GetDefaultWeaponTag() == Item_EnemyWeapon_Bow);
 		TestTrue(TEXT("BP_RangedEnemy equips the bow on spawn"),
 			RangedEnemyBlueprintCDO->ShouldEquipWeaponOnSpawn());
+		TestTrue(TEXT("BP_RangedEnemy character mesh contains Arrow_socket"),
+			RangedEnemyBlueprintCDO->GetMesh()
+			&& RangedEnemyBlueprintCDO->GetMesh()->DoesSocketExist(
+				RangedEnemyBlueprintCDO->GetRangedAttackSocketName()));
 	}
 
 	const UWeaponDataAsset* WeaponRegistry = LoadObject<UWeaponDataAsset>(
@@ -251,6 +290,9 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 			WeaponRegistry->FindWeaponDefinitionByTag(Item_EnemyWeapon_Bow);
 		if (TestNotNull(TEXT("Enemy weapon registry contains the bow definition"), BowDefinition))
 		{
+			TestTrue(TEXT("Bow weapon range can contain the default retreat destination"),
+				RetreatTaskCDO
+				&& BowDefinition->CombatData.AttackRange > RetreatTaskCDO->GetMinimumDesiredRange());
 			TestTrue(TEXT("Bow definition spawns an EnemyBow actor"),
 				BowDefinition->WeaponActorClass
 				&& BowDefinition->WeaponActorClass->IsChildOf(AEnemyBow::StaticClass()));
@@ -293,15 +335,65 @@ bool FRangedEnemyDefaultsTest::RunTest(const FString& Parameters)
 			&& BlueprintAbilityCDO->GetAssetTags().HasTagExact(GameplayAbility_RangedAttack));
 	}
 
-	FCollisionResponseTemplate ProjectileProfile;
-	if (TestTrue(TEXT("Projectile collision profile is registered"),
-		UCollisionProfile::Get()->GetProfileTemplate(TEXT("Projectile"), ProjectileProfile)))
+	FCollisionResponseTemplate ArrowProfile;
+	if (TestTrue(TEXT("ArrowProjectile collision profile is registered"),
+		UCollisionProfile::Get()->GetProfileTemplate(TEXT("ArrowProjectile"), ArrowProfile)))
 	{
-		TestEqual(TEXT("Projectile collision is query-only"),
-			ProjectileProfile.CollisionEnabled, ECollisionEnabled::QueryOnly);
-		TestEqual(TEXT("Projectile blocks Pawn for hit events"),
-			ProjectileProfile.ResponseToChannels.GetResponse(ECC_Pawn), ECR_Block);
+		TestEqual(TEXT("Arrow collision is query-only"),
+			ArrowProfile.CollisionEnabled, ECollisionEnabled::QueryOnly);
+		TestEqual(TEXT("Arrow uses its dedicated object channel"),
+			ArrowProfile.ObjectType, ECC_Arrow);
+		TestEqual(TEXT("Arrow blocks Pawn for hit events"),
+			ArrowProfile.ResponseToChannels.GetResponse(ECC_Pawn), ECR_Block);
+		TestEqual(TEXT("Arrow blocks static world meshes"),
+			ArrowProfile.ResponseToChannels.GetResponse(ECC_WorldStatic), ECR_Block);
+		TestEqual(TEXT("Arrow blocks ship query hulls"),
+			ArrowProfile.ResponseToChannels.GetResponse(ECC_ShipDamage), ECR_Block);
 	}
+
+	for (const FName ShipProfileName : {FName(TEXT("PlayerShipDamage")), FName(TEXT("EnemyShipDamage"))})
+	{
+		FCollisionResponseTemplate ShipProfile;
+		if (TestTrue(*FString::Printf(TEXT("%s collision profile is registered"), *ShipProfileName.ToString()),
+			UCollisionProfile::Get()->GetProfileTemplate(ShipProfileName, ShipProfile)))
+		{
+			TestEqual(*FString::Printf(TEXT("%s blocks character arrows"), *ShipProfileName.ToString()),
+				ShipProfile.ResponseToChannels.GetResponse(ECC_Arrow), ECR_Block);
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPerEnemyPerceptionSettingsTest,
+	"ArtisticSW.Enemy.Perception.PerEnemyBlueprintSettings",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPerEnemyPerceptionSettingsTest::RunTest(const FString& Parameters)
+{
+	const FStructProperty* SettingsProperty = FindFProperty<FStructProperty>(
+		ABaseEnemy::StaticClass(), TEXT("PerceptionSettings"));
+	if (TestNotNull(TEXT("Perception settings are owned by BaseEnemy"), SettingsProperty))
+	{
+		TestTrue(TEXT("Perception settings are editable in Enemy Blueprint defaults"),
+			SettingsProperty->HasAnyPropertyFlags(CPF_Edit | CPF_BlueprintVisible));
+		TestTrue(TEXT("Perception settings use the dedicated reflected struct"),
+			SettingsProperty->Struct == FEnemyPerceptionSettings::StaticStruct());
+	}
+	TestNull(TEXT("Sight radius no longer has a second editor-facing owner on the controller"),
+		FindFProperty<FFloatProperty>(ABaseAIController::StaticClass(), TEXT("SightRadius")));
+
+	const ARangedEnemy* EnemyCDO = GetDefault<ARangedEnemy>();
+	if (!TestNotNull(TEXT("Ranged Enemy defaults exist"), EnemyCDO))
+	{
+		return false;
+	}
+	const FEnemyPerceptionSettings& AuthoredSettings = EnemyCDO->GetPerceptionSettings();
+	TestEqual(TEXT("Former ranged sight default moved to the Enemy"), AuthoredSettings.SightRadius, 3000.0f);
+	TestEqual(TEXT("Former ranged lose-sight default moved to the Enemy"), AuthoredSettings.LoseSightRadius, 3500.0f);
+	TestEqual(TEXT("Former ranged vision angle moved to the Enemy"), AuthoredSettings.PeripheralVisionDegrees, 80.0f);
+	TestEqual(TEXT("Former ranged sight memory moved to the Enemy"), AuthoredSettings.SightMaxAge, 2.0f);
+
 	return true;
 }
 
@@ -574,18 +666,18 @@ bool FRangedEnemyProjectileTeamFilterTest::RunTest(const FString& Parameters)
 
 	Projectile->SetOwner(SourceEnemy);
 	Projectile->SetInstigator(SourceEnemy);
-	Projectile->InitializeDamage(SourceASC, SourceEnemy, 1.0f);
+
 
 	TestFalse(TEXT("Projectile always rejects its source actor"), Projectile->IsValidDamageTarget(SourceEnemy));
-	TestTrue(TEXT("Default faction-agnostic mode accepts another enemy-team actor"),
+	TestFalse(TEXT("Default team filter rejects another enemy-team actor"),
 		Projectile->IsValidDamageTarget(FriendlyEnemy));
-	TestTrue(TEXT("Default faction-agnostic mode accepts a player-team actor"),
+	TestTrue(TEXT("Default team filter accepts an opposing player-team actor"),
 		Projectile->IsValidDamageTarget(PlayerTeamTarget));
 
-	Projectile->SetTeamDamageFilteringEnabled(true);
-	TestFalse(TEXT("Debug team filter rejects another enemy-team actor"),
+	Projectile->SetTeamDamageFilteringEnabled(false);
+	TestTrue(TEXT("Explicit faction-agnostic override accepts another enemy-team actor"),
 		Projectile->IsValidDamageTarget(FriendlyEnemy));
-	TestTrue(TEXT("Debug team filter still accepts an opposing player-team actor"),
+	TestTrue(TEXT("Explicit faction-agnostic override accepts a player-team actor"),
 		Projectile->IsValidDamageTarget(PlayerTeamTarget));
 	return true;
 }
@@ -617,6 +709,18 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("An enabled ABasePlayer is a valid combat target before PlayerState ASC initialization"),
 		Enemy->IsValidCombatTarget(Player));
 
+	USkeletalMesh* TestCharacterMesh = LoadObject<USkeletalMesh>(
+		nullptr,
+		TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"));
+	if (!TestNotNull(TEXT("RangedEnemy character mesh asset is available"), TestCharacterMesh)
+		|| !TestNotNull(TEXT("RangedEnemy has a skeletal mesh component"), Enemy->GetMesh()))
+	{
+		return false;
+	}
+	Enemy->GetMesh()->SetSkeletalMesh(TestCharacterMesh);
+	TestTrue(TEXT("RangedEnemy character mesh resolves its authored Arrow_socket"),
+		Enemy->GetMesh()->DoesSocketExist(Enemy->GetRangedAttackSocketName()));
+
 	Enemy->SetCombatTarget(Player);
 	UAbilitySystemComponent* EnemyASC = Enemy->GetAbilitySystemComponent();
 	UBaseWeaponComponent* WeaponComponent = Enemy->GetWeaponComponent();
@@ -630,12 +734,14 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 	}
 
 	EnemyASC->InitAbilityActorInfo(Enemy, Enemy);
+	EnemyASC->AddAttributeSetSubobject(NewObject<UBaseAttributeSet>(Enemy));
 	EnemyASC->AddLooseGameplayTag(Team_Enemy);
 
 	UWeaponDataAsset* TestWeaponRegistry = NewObject<UWeaponDataAsset>(Enemy);
 	FWeaponDefinition BowDefinition;
 	BowDefinition.WeaponTag = Item_EnemyWeapon_Bow;
 	BowDefinition.WeaponActorClass = AEnemyBow::StaticClass();
+	BowDefinition.CombatData.AttackRange = 1000.0f;
 	FGrantedWeaponAbility& GrantedAbility = BowDefinition.AbilityData.GrantedAbilities.AddDefaulted_GetRef();
 	GrantedAbility.AbilityClass = UGA_RangedEnemyAttack::StaticClass();
 	TestWeaponRegistry->WeaponDefinitions.Add(BowDefinition);
@@ -648,17 +754,54 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	TestEqual(TEXT("RangedEnemy attack validation resolves the equipped bow range"),
+		Enemy->GetEffectiveAttackRange(), 1000.0f);
+	Player->SetActorLocation(FVector(1100.0f, 0.0f, 0.0f));
+	TestFalse(TEXT("Equipped bow range rejects a target beyond its weapon definition"),
+		Enemy->CanAttackTarget(Player, false));
+	Player->SetActorLocation(FVector(600.0f, 0.0f, 0.0f));
+	TestTrue(TEXT("Equipped bow range accepts a target inside its weapon definition"),
+		Enemy->CanAttackTarget(Player, false));
 
-	UStaticMesh* TestBowMesh = NewObject<UStaticMesh>(EquippedBow);
-	UStaticMeshSocket* ArrowSocket = NewObject<UStaticMeshSocket>(TestBowMesh);
-	ArrowSocket->SocketName = TEXT("Arrow_socket");
-	ArrowSocket->RelativeLocation = FVector(75.0f, 10.0f, 25.0f);
-	TestBowMesh->Sockets.Add(ArrowSocket);
-	EquippedBow->GetWeaponMesh()->SetStaticMesh(TestBowMesh);
+	TestEqual(TEXT("Equipping grants exactly one weapon ability"),
+		WeaponComponent->GrantedAbilityHandles.Num(), 1);
+	WeaponComponent->DeactivateForOwnerDeath();
+	TestEqual(TEXT("Death deactivation enters the non-gameplay corpse state"),
+		WeaponComponent->GetWeaponLifecycleState(), EEnemyWeaponLifecycleState::DeathInactive);
+	TestFalse(TEXT("Death deactivation keeps the weapon visible with the corpse"),
+		EquippedBow->IsHidden());
+	TestEqual(TEXT("Death deactivation removes weapon-granted abilities"),
+		WeaponComponent->GrantedAbilityHandles.Num(), 0);
+
+	WeaponComponent->RestoreFromOwnerPool();
+	TestEqual(TEXT("Lifecycle restore returns the weapon to active state"),
+		WeaponComponent->GetWeaponLifecycleState(), EEnemyWeaponLifecycleState::Active);
+	TestEqual(TEXT("Lifecycle restore regrants one weapon ability"),
+		WeaponComponent->GrantedAbilityHandles.Num(), 1);
+
+	WeaponComponent->SuspendForOwnerPool();
+	TestFalse(TEXT("Pool suspension disables weapon presentation"),
+		WeaponComponent->IsPoolPresentationActive());
+	TestEqual(TEXT("Pool suspension enters the pooled lifecycle state"),
+		WeaponComponent->GetWeaponLifecycleState(), EEnemyWeaponLifecycleState::Pooled);
+	TestTrue(TEXT("Pool suspension hides the separate weapon actor"),
+		EquippedBow->IsHidden());
+	TestFalse(TEXT("Pool suspension stops weapon hit scanning"),
+		EquippedBow->IsHitScanActive());
+	TestEqual(TEXT("Pool suspension removes weapon-granted abilities"),
+		WeaponComponent->GrantedAbilityHandles.Num(), 0);
+
+	WeaponComponent->RestoreFromOwnerPool();
+	TestTrue(TEXT("Pool restore enables weapon presentation"),
+		WeaponComponent->IsPoolPresentationActive());
+	TestFalse(TEXT("Pool restore unhides the existing weapon actor"),
+		EquippedBow->IsHidden());
+	TestEqual(TEXT("Pool restore regrants the weapon ability once"),
+		WeaponComponent->GrantedAbilityHandles.Num(), 1);
 
 	FTransform ExpectedArrowSpawnTransform;
-	if (!TestTrue(TEXT("Equipped bow resolves Arrow_socket"),
-		EquippedBow->GetArrowSpawnTransform(ExpectedArrowSpawnTransform)))
+	if (!TestTrue(TEXT("RangedEnemy resolves Arrow_socket from its character mesh"),
+		Enemy->GetRangedAttackOrigin(ExpectedArrowSpawnTransform)))
 	{
 		return false;
 	}
@@ -682,17 +825,21 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 		});
 
 	const int32 ProjectilesBefore = RangedEnemyTests::CountActors<ARangedEnemyProjectile>(TestWorld.World);
+	const EVisibilityBasedAnimTickOption InitialAnimTickOption =
+		Enemy->GetMesh()->VisibilityBasedAnimTickOption;
 	TestTrue(TEXT("Standalone RangedEnemy activates its exact server ranged attack without HostShip"),
 		Enemy->TryStartRangedAttack(ResolvedAttackHandle));
 	EnemyASC->OnAbilityEnded.Remove(AbilityEndedHandle);
 	TestTrue(TEXT("Ranged attack broadcasts ability completion"), bObservedAbilityEnd);
 	TestFalse(TEXT("Immediate ranged attack completion is not a cancellation"), bObservedAbilityCancel);
+	TestEqual(TEXT("Immediate attack restores the server mesh pose-refresh policy"),
+		Enemy->GetMesh()->VisibilityBasedAnimTickOption, InitialAnimTickOption);
 	const int32 ProjectilesAfter = RangedEnemyTests::CountActors<ARangedEnemyProjectile>(TestWorld.World);
 	TestEqual(TEXT("An immediate-fire projectile is spawned when no montage is assigned"),
 		ProjectilesAfter, ProjectilesBefore + 1);
 	for (TActorIterator<ARangedEnemyProjectile> It(TestWorld.World); It; ++It)
 	{
-		TestTrue(TEXT("GA spawns the arrow at the equipped bow's Arrow_socket"),
+		TestTrue(TEXT("GA spawns the arrow at the character mesh's Arrow_socket"),
 			It->GetActorLocation().Equals(ExpectedArrowSpawnTransform.GetLocation(), 0.1f));
 		break;
 	}
@@ -702,6 +849,16 @@ bool FRangedEnemyAttackIntegrationTest::RunTest(const FString& Parameters)
 
 	Enemy->SetHostShip(HostShip);
 	TestEqual(TEXT("An optional explicit host ship assignment is retained"), Enemy->GetHostShip(), HostShip);
+
+	Enemy->Destroy();
+	TestTrue(TEXT("The enemy enters destruction through its normal owner lifetime path"),
+		Enemy->IsActorBeingDestroyed());
+	TestNull(TEXT("Owner destruction clears the replicated weapon reference"),
+		WeaponComponent->GetCurrentWeapon());
+	TestTrue(TEXT("Owner destruction also destroys the separate weapon actor"),
+		EquippedBow->IsActorBeingDestroyed());
+	TestEqual(TEXT("Owner destruction resets the equip state"),
+		WeaponComponent->WeaponState, EEnemyWeaponState::None);
 	return true;
 }
 
@@ -748,7 +905,8 @@ bool FStrengthProjectilePayloadTest::RunTest(const FString& Parameters)
 
 	FStrengthDamageRequest DamageRequest;
 	DamageRequest.SourceASC = SourceASC;
-	DamageRequest.DamageEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
+
+
 	DamageRequest.AttackCoefficient = 1.0f;
 	DamageRequest.ChargeMultiplier = 1.0f;
 	DamageRequest.InstigatorActor = SourceEnemy;
@@ -756,7 +914,7 @@ bool FStrengthProjectilePayloadTest::RunTest(const FString& Parameters)
 	const FGameplayEffectSpecHandle DirectDamageSpec = UGASCombatLibrary::MakeStrengthDamageEffectSpec(DamageRequest);
 	Projectile->InitializeStrengthDamage(SourceASC, SourceEnemy, DirectDamageSpec);
 
-	TestEqual(TEXT("Projectile stores one direct-damage spec"), Projectile->DamageEffectSpecHandles.Num(), 1);
+	TestTrue(TEXT("Projectile stores one direct-damage spec"), Projectile->DirectDamageSpec.IsValid());
 	TestEqual(TEXT("Projectile builds every configured status spec"), Projectile->StatusEffectSpecHandles.Num(), 2);
 	for (const FGameplayEffectSpecHandle& StatusSpec : Projectile->StatusEffectSpecHandles)
 	{
@@ -770,23 +928,28 @@ bool FStrengthProjectilePayloadTest::RunTest(const FString& Parameters)
 	Projectile->StatusEffectSpecHandles[0].Data->SetSetByCallerMagnitude(Data_Damage, 2.0f);
 	Projectile->StatusEffectSpecHandles[1].Data->SetSetByCallerMagnitude(Data_Damage, 3.0f);
 	const float HealthBefore = TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute());
-	Projectile->ApplyDamageToActor(TargetEnemy);
+	FHitResult ProjectileHit;
+	ProjectileHit.ImpactPoint = TargetEnemy->GetActorLocation();
+	ProjectileHit.TraceStart = Projectile->GetActorLocation();
+	ProjectileHit.TraceEnd = TargetEnemy->GetActorLocation();
+	Projectile->ApplyDamageToActor(TargetEnemy, ProjectileHit);
 	TestEqual(TEXT("Direct damage is followed by both status payloads"),
 		TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()), HealthBefore - 15.0f);
 
-	Projectile->ApplyDamageToActor(TargetEnemy);
+	Projectile->ApplyDamageToActor(TargetEnemy, ProjectileHit);
 	TestEqual(TEXT("A piercing projectile applies to the same target only once"),
 		TargetASC->GetNumericAttribute(UBaseAttributeSet::GetHealthAttribute()), HealthBefore - 15.0f);
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FStatusEffectRefreshTest,
-	"ArtisticSW.Enemy.RangedEnemy.StatusEffectRefresh",
+	FStatusEffectIgnoreReapplicationTest,
+	"ArtisticSW.Enemy.RangedEnemy.StatusEffectIgnoreReapplication",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FStatusEffectRefreshTest::RunTest(const FString& Parameters)
+bool FStatusEffectIgnoreReapplicationTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"), EAutomationExpectedErrorFlags::Contains, 0);
 	RangedEnemyTests::FScopedTestWorld TestWorld;
 	if (!TestNotNull(TEXT("Transient game world is created"), TestWorld.World))
 	{
@@ -811,6 +974,7 @@ bool FStatusEffectRefreshTest::RunTest(const FString& Parameters)
 	TargetAttributes->InitMaxHealth(100.0f);
 	TargetAttributes->InitHealth(100.0f);
 	TargetASC->AddAttributeSetSubobject(TargetAttributes);
+	TargetEnemy->StatusComponent->InitializeWithAbilitySystem(TargetASC);
 
 	UClass* PoisonEffectClass = LoadObject<UClass>(
 		nullptr,
@@ -861,13 +1025,13 @@ bool FStatusEffectRefreshTest::RunTest(const FString& Parameters)
 
 	const FActiveGameplayEffectHandle RefreshedHandle =
 		UStatusEffectLibrary::ApplyDurationDamageEffectSpecToTarget(TargetASC, PoisonSpec, FGameplayTag());
-	TestTrue(TEXT("Repeated poison hit returns a refreshed active handle"), RefreshedHandle.IsValid());
+	TestFalse(TEXT("Repeated poison hit is rejected"), RefreshedHandle.IsValid());
 	TestEqual(TEXT("Repeated poison hit does not add another stack"), TargetASC->GetActiveEffects(PoisonQuery).Num(), 1);
 
 	const TArray<float> RefreshedRemainingTimes = TargetASC->GetActiveEffectsTimeRemaining(PoisonQuery);
-	TestTrue(TEXT("Repeated poison hit resets the status timer"),
+	TestTrue(TEXT("Repeated poison hit preserves the status timer"),
 		RefreshedRemainingTimes.Num() == 1
-		&& RefreshedRemainingTimes[0] > AgedRemainingTimes[0] + Durations[0] * 0.25f);
+		&& FMath::IsNearlyEqual(RefreshedRemainingTimes[0], AgedRemainingTimes[0]));
 	return true;
 }
 

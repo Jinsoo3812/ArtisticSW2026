@@ -6,6 +6,7 @@
 #include "Blueprint/UserWidget.h"
 #include "StorageWindowWidget.generated.h"
 
+class UInventoryPanelWidget;
 class ABasePlayer;
 class AStorageChest;
 class UBorder;
@@ -25,8 +26,11 @@ public:
 
 	void InitializeStorage(AStorageChest* InStorageChest, ABasePlayer* InPlayer);
 	void RefreshStorage();
+	void UseInventoryPanel(TSubclassOf<UInventoryPanelWidget> PanelClass);
 
 protected:
+	virtual TSharedRef<SWidget> RebuildWidget() override;
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> StoragePanel;
 
@@ -50,6 +54,10 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<ABasePlayer> CachedPlayer;
+
+	/** Place the existing inventory WBP with this name to author the shared window. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UInventoryPanelWidget> SharedInventoryPanel;
 
 	void BuildWidgetTree();
 	void HandleStorageChanged();

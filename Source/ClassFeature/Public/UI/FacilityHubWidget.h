@@ -2,13 +2,24 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/SkillUpgradeTypes.h"
 #include "FacilityHubWidget.generated.h"
 
 class AActor;
 class UCraftingComponent;
+class UCraftingMenuEntryWidget;
 class UCraftingPanelWidget;
 class UButton;
+class UPanelWidget;
+class USkillUpgradePanel;
+class USizeBox;
 class UWidgetSwitcher;
+struct FCraftingListEntry;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FOnSkillUpgradeSelected,
+	ESkillUpgradeSelection,
+	SelectedSkill);
 
 /**
  * The single top-level shell for every facility screen.
@@ -36,6 +47,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Facility Hub")
 	void ShowSkillUpgradeTab();
 
+	/** Selects a skill, keeps the submenu expanded, and opens the skill-upgrade content tab. */
+	UFUNCTION(BlueprintCallable, Category = "Facility Hub|Skill Upgrade")
+	void SelectSkillUpgrade(ESkillUpgradeSelection Skill);
+
+	UPROPERTY(BlueprintAssignable, Category = "Facility Hub|Skill Upgrade")
+	FOnSkillUpgradeSelected OnSkillUpgradeSelected;
+
 	/** Close the hub and restore game input through the owning player controller. */
 	UFUNCTION(BlueprintCallable, Category = "Facility Hub")
 	void RequestCloseFacilityHub();
@@ -49,6 +67,7 @@ public:
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Facility Hub", meta = (ExposeOnSpawn = "true"))
 	TObjectPtr<AActor> ContextActor;
@@ -59,6 +78,10 @@ protected:
 	/** Existing teammate panel. It may be placed in WBP or injected into tab 1 at runtime. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UCraftingPanelWidget> CraftingPanelWidget;
+
+	/** Place WBP_SkillUpgradePanel at content index 2 and name its instance SkillUpgradePanelWidget. */
+	UPROPERTY(BlueprintReadOnly, Category = "Facility Hub|Skill Upgrade", meta = (BindWidgetOptional))
+	TObjectPtr<USkillUpgradePanel> SkillUpgradePanelWidget;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Facility Hub|Crafting")
 	TSubclassOf<UCraftingPanelWidget> CraftingPanelWidgetClass;
@@ -75,6 +98,45 @@ protected:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Button_SkillUpgrade;
+
+	/** Runtime height animation host. Place the three skill buttons inside this SizeBox. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<USizeBox> SizeBox_SkillUpgradeMenu;
+
+	/** Generated directly below Button_ItemCrafting in WBP_WorkspaceScreen. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<USizeBox> SizeBox_CraftingMenu;
+
+	/** Receives tag hierarchy headings and recipe names from CraftingComponent. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UPanelWidget> VerticalBox_CraftingMenu;
+
+	/** WBP_CraftingMenuEntry. Uses the same designer-authored style as SkillUpgradeMenu. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Facility Hub|Crafting")
+	TSubclassOf<UCraftingMenuEntryWidget> CraftingMenuEntryClass;
+
+#if WITH_EDITOR
+public:
+	void SetCraftingMenuEntryClass(TSubclassOf<UCraftingMenuEntryWidget> InClass)
+	{
+		CraftingMenuEntryClass = InClass;
+	}
+	TSubclassOf<UCraftingMenuEntryWidget> GetCraftingMenuEntryClass() const
+	{
+		return CraftingMenuEntryClass;
+	}
+
+protected:
+#endif
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_GravityVortex;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_WaterBomb;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_Bombardment;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Button_Close;
@@ -98,8 +160,16 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Facility Hub|Navigation")
 	int32 SkillUpgradeTabIndex = 2;
 
+	/** Duration of both submenu expansion and collapse. Editable in WBP Class Defaults. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Facility Hub|Skill Upgrade", meta = (ClampMin = "0.01", UIMin = "0.05", UIMax = "1.0", Units = "s"))
+	float SkillSubmenuAnimationDuration = 0.25f;
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Facility Hub|Style")
 	void BP_OnFacilityTabChanged(int32 NewTabIndex);
+
+	/** Optional WBP extension point for reactions outside WBP_SkillUpgradePanel. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Facility Hub|Skill Upgrade", meta = (DisplayName = "On Skill Upgrade Selected"))
+	void BP_OnSkillUpgradeSelected(ESkillUpgradeSelection SelectedSkill);
 
 	/** Native extension point for specialized workspace shells. */
 	virtual void NativeOnFacilityTabChanged(int32 NewTabIndex);
@@ -120,12 +190,54 @@ private:
 	void BindNavigation();
 	void UnbindNavigation();
 	void CloseCraftingTabIfActive();
+	void ResolveSkillUpgradePanel();
+	void SetSkillSubmenuExpanded(bool bExpanded);
+	void RefreshSkillSubmenuExpandedHeight();
+	void SetCraftingSubmenuExpanded(bool bExpanded);
+	void RefreshCraftingSubmenuExpandedHeight();
+	void RefreshCraftingMenu();
+	void AddCraftingMenuCategory(const FString& CategoryPath, const FText& Label, int32 Depth);
+	void AddCraftingMenuRecipe(const FCraftingListEntry& Entry, int32 Depth);
 	void ShowTab(int32 TabIndex);
 	UWidgetSwitcher* GetTabSwitcher() const;
+
+	UFUNCTION()
+	void HandleGravityVortexClicked();
+
+	UFUNCTION()
+	void HandleWaterBombClicked();
+
+	UFUNCTION()
+	void HandleBombardmentClicked();
 
 	UFUNCTION()
 	void HandleCraftingScreenOpened(AActor* ApprovedContext);
 
 	UFUNCTION()
 	void HandleCraftingScreenClosed();
+
+	UFUNCTION()
+	void HandleCraftingDataChanged();
+
+	void HandleCraftingRecipeClicked(FName RecipeId);
+	void HandleCraftingCategoryClicked(FString CategoryPath);
+
+	bool bSkillSubmenuExpanded = false;
+	bool bSkillSubmenuAnimating = false;
+	float SkillSubmenuAnimationElapsed = 0.0f;
+	float SkillSubmenuAnimationStartHeight = 0.0f;
+	float SkillSubmenuAnimationTargetHeight = 0.0f;
+	float SkillSubmenuExpandedHeight = 0.0f;
+	bool bCraftingSubmenuExpanded = false;
+	bool bCraftingSubmenuAnimating = false;
+	float CraftingSubmenuAnimationElapsed = 0.0f;
+	float CraftingSubmenuAnimationStartHeight = 0.0f;
+	float CraftingSubmenuAnimationTargetHeight = 0.0f;
+	float CraftingSubmenuExpandedHeight = 0.0f;
+	FName PendingCraftingRecipeId;
+	bool bPendingSkillCraftingOpen = false;
+	TMap<int32, FString> ExpandedCraftingCategoryByDepth;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UCraftingMenuEntryWidget>> SpawnedCraftingMenuEntries;
 };

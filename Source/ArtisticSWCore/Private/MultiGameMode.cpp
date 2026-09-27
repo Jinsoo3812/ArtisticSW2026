@@ -6,6 +6,13 @@
 #include "EngineUtils.h"
 #include "GameFramework/PlayerStart.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
+#include "PlayerRespawnPointComponent.h"
+#include "PlayerRespawnPoint.h"
+#include "PlayerProgressSubsystem.h"
+#include "RespawnHostInterface.h"
+#include "TimerManager.h"
+#include "Kismet/GameplayStatics.h"
 
 AMultiGameMode::AMultiGameMode()
 {
@@ -34,7 +41,7 @@ void AMultiGameMode::PostLogin(APlayerController* NewPlayer)
     Super::PostLogin(NewPlayer);
 
     const FName AssignedRole = GetPlayerRole(NewPlayer);
-    const int32 PlayerIndex = PlayerRoles.Num() - 1;
+    const int32 PlayerIndex = GetPlayerIndex(NewPlayer);
 
     OnPlayerRoleAssigned.Broadcast(NewPlayer, AssignedRole, PlayerIndex);
 
@@ -72,6 +79,10 @@ void AMultiGameMode::Logout(AController* Exiting)
     {
         PlayerRoles.Remove(Exiting);
         ReadyPlayers.Remove(Exiting);
+		PlayerIndices.Remove(Exiting);
+		FinishedDeadPlayers.Remove(Exiting);
+		if (FTimerHandle* Timer = RespawnTimers.Find(Exiting)) GetWorldTimerManager().ClearTimer(*Timer);
+		RespawnTimers.Remove(Exiting);
     }
 
     // 플레이어가 나가면 다시 조건을 만족할 수 있도록 플래그를 갱신한다.
@@ -90,33 +101,82 @@ void AMultiGameMode::Logout(AController* Exiting)
 
 UClass* AMultiGameMode::GetDefaultPawnClassForController_Implementation(AController* InController)
 {
-    // 배정된 역할에 따라 다른 폰 클래스를 반환합니다.
-    const FName RoleName = GetPlayerRole(InController);
+    // 공통 표준 플레이어 폰 클래스가 지정되어 있으면 우선 반환합니다.
+    if (CommonPlayerPawnClass)
+    {
+        return CommonPlayerPawnClass;
+    }
 
+    // 기본 DefaultPawnClass가 지정되어 있으면 반환합니다.
+    if (DefaultPawnClass)
+    {
+        return DefaultPawnClass;
+    }
+
+    // [LEGACY 호환] 기존 세팅이 남아있는 경우의 폴백
+    const FName RoleName = GetPlayerRole(InController);
     if (RoleName == AttackerRoleName && AttackerPawnClass)
     {
         return AttackerPawnClass;
     }
-
     if (RoleName == CrafterRoleName && CrafterPawnClass)
     {
         return CrafterPawnClass;
     }
 
-	UE_LOG(LogTemp, Warning, TEXT("No role found for controller %s or corresponding pawn class not set."), *InController->GetName());
-    // 예외 상황일 경우 기본 폰 반환
     return Super::GetDefaultPawnClassForController_Implementation(InController);
 }
 
 AActor* AMultiGameMode::ChoosePlayerStart_Implementation(AController* Player)
 {
-    const FName RoleName = GetPlayerRole(Player);
+    const int32 PlayerIndex = FMath::Max(0, GetPlayerIndex(Player));
+	if (const UGameInstance* GI = GetGameInstance())
+	{
+		if (const UPlayerProgressSubsystem* Progress = GI->GetSubsystem<UPlayerProgressSubsystem>(); Progress && Progress->HasSnapshot(PlayerIndex))
+		{
+			APlayerRespawnPoint* Fallback = nullptr;
+			for (TActorIterator<APlayerRespawnPoint> It(GetWorld()); It; ++It)
+			{
+				if (It->PlayerSlot == static_cast<ESWPlayerSlot>(PlayerIndex)) return *It;
+				if (It->PlayerSlot == ESWPlayerSlot::Any) Fallback = *It;
+			}
+			if (Fallback) return Fallback;
+		}
+	}
 
+    // 2. Player_0, Player_1 등의 인덱스 태그를 가진 PlayerStart 우선 검색
+    const FName IndexTag = *FString::Printf(TEXT("Player_%d"), PlayerIndex);
+    if (APlayerStart* IndexStart = FindPlayerStartByRole(IndexTag))
+    {
+        return IndexStart;
+    }
+
+    // 3. 레거시 역할 태그 검색
+    const FName RoleName = GetPlayerRole(Player);
     if (!RoleName.IsNone())
     {
         if (APlayerStart* RoleStart = FindPlayerStartByRole(RoleName))
         {
             return RoleStart;
+        }
+    }
+
+    // 4. 레벨에 배치된 PlayerStart 목록 중 인덱스 기반 순차 배정
+    if (UWorld* World = GetWorld())
+    {
+        TArray<APlayerStart*> AllStarts;
+        for (TActorIterator<APlayerStart> It(World); It; ++It)
+        {
+            if (IsValid(*It))
+            {
+                AllStarts.Add(*It);
+            }
+        }
+
+        if (!AllStarts.IsEmpty())
+        {
+            const int32 TargetIdx = FMath::Clamp(PlayerIndex, 0, AllStarts.Num() - 1);
+            return AllStarts[TargetIdx];
         }
     }
 
@@ -228,6 +288,97 @@ bool AMultiGameMode::AreAllPlayersReady() const
 	return true;
 }
 
+int32 AMultiGameMode::GetPlayerIndex(AController* Controller) const
+{
+	if (const int32* Index = PlayerIndices.Find(Controller)) return *Index;
+	return INDEX_NONE;
+}
+
+void AMultiGameMode::NotifyPlayerDeathFinished(APawn* DeadPawn)
+{
+	if (!HasAuthority() || !DeadPawn) return;
+	AController* DeadController = DeadPawn->GetController();
+	if (!DeadController && DeadPawn->GetPlayerState()) DeadController = DeadPawn->GetPlayerState()->GetOwningController();
+	if (!DeadController || !PlayerIndices.Contains(DeadController) || FinishedDeadPlayers.Contains(DeadController)) return;
+
+	FinishedDeadPlayers.Add(DeadController);
+	DeadController->UnPossess();
+	DeadPawn->SetLifeSpan(FMath::Max(IndividualRespawnDelay + 2.0f, 10.0f));
+	if (FinishedDeadPlayers.Num() >= RequiredPlayerCount)
+	{
+		for (TPair<TObjectPtr<AController>, FTimerHandle>& Pair : RespawnTimers) GetWorldTimerManager().ClearTimer(Pair.Value);
+		RespawnTimers.Reset();
+		HandleAllPlayersDeathFinished();
+		return;
+	}
+
+	FTimerDelegate Delegate;
+	Delegate.BindUObject(this, &AMultiGameMode::TryRespawnPlayer, DeadController);
+	GetWorldTimerManager().SetTimer(RespawnTimers.FindOrAdd(DeadController), Delegate, IndividualRespawnDelay, false);
+}
+
+void AMultiGameMode::TryRespawnPlayer(AController* Controller)
+{
+	RespawnTimers.Remove(Controller);
+	if (!Controller || !FinishedDeadPlayers.Contains(Controller)) return;
+	UPlayerRespawnPointComponent* Point = FindShipRespawnPoint(GetPlayerIndex(Controller));
+	if (!Point) return;
+	FinishedDeadPlayers.Remove(Controller);
+	RestartPlayerAtTransform(Controller, Point->GetComponentTransform());
+}
+
+UPlayerRespawnPointComponent* AMultiGameMode::FindShipRespawnPoint(int32 PlayerIndex) const
+{
+	UWorld* World = GetWorld();
+	if (!World) return nullptr;
+	UPlayerRespawnPointComponent* Fallback = nullptr;
+	for (TObjectIterator<UPlayerRespawnPointComponent> It; It; ++It)
+	{
+		UPlayerRespawnPointComponent* Point = *It;
+		if (!Point || Point->GetWorld() != World || !Point->IsRegistered()) continue;
+		AActor* Host = Point->GetOwner();
+		if (!Host || !Host->GetClass()->ImplementsInterface(URespawnHostInterface::StaticClass())
+			|| !IRespawnHostInterface::Execute_IsAvailableForPlayerRespawn(Host)) continue;
+		if (Point->PlayerSlot == static_cast<ESWPlayerSlot>(PlayerIndex)) return Point;
+		if (Point->PlayerSlot == ESWPlayerSlot::Any) Fallback = Point;
+	}
+	return Fallback;
+}
+
+void AMultiGameMode::HandleAllPlayersDeathFinished()
+{
+	if (!HasAuthority()) return;
+	RequestGameOverAndLevelRestart();
+}
+
+void AMultiGameMode::RequestGameOverAndLevelRestart()
+{
+	if (!HasAuthority() || bLevelRestartRequested) return;
+	bLevelRestartRequested = true;
+	for (TPair<TObjectPtr<AController>, FTimerHandle>& Pair : RespawnTimers)
+	{
+		GetWorldTimerManager().ClearTimer(Pair.Value);
+	}
+	RespawnTimers.Reset();
+	CapturePlayerProgressForLevelRestart();
+	OnGameOverRequested.Broadcast();
+	if (UWorld* World = GetWorld())
+	{
+		World->ServerTravel(TEXT("?Restart"), false);
+	}
+}
+
+void AMultiGameMode::CapturePlayerProgressForLevelRestart()
+{
+	for (TActorIterator<APawn> It(GetWorld()); It; ++It)
+	{
+		if (UFunction* CaptureFunction = It->FindFunction(TEXT("CaptureRespawnProgress")))
+		{
+			It->ProcessEvent(CaptureFunction, nullptr);
+		}
+	}
+}
+
 void AMultiGameMode::HandleRequiredPlayersJoined()
 {
 	// 하위 GameMode에서 필요하면 override.
@@ -288,6 +439,7 @@ void AMultiGameMode::AssignRoleToPlayer(AController* Controller)
 	const FName AssignedRole = GetRoleForPlayerIndex(PlayerIndex);
 
 	PlayerRoles.Add(Controller, AssignedRole);
+	PlayerIndices.Add(Controller, PlayerIndex);
 
 	UE_LOG(
 		LogTemp,

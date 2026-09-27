@@ -33,7 +33,7 @@ namespace SwimmingNetworkQuantitative
 		double MaxPositionErrorCm = 0.0;
 		double MaxVerticalErrorCm = 0.0;
 		int32 MovementModeMismatchSamples = 0;
-		int32 DepthModeMismatchSamples = 0;
+		int32 MovementStateMismatchSamples = 0;
 		int32 UnderwaterMismatchSamples = 0;
 		int32 SwimAnimationStateMismatchSamples = 0;
 		int32 ServerSwimmingSamples = 0;
@@ -77,7 +77,7 @@ namespace SwimmingNetworkQuantitative
 			const USwimmingComponent* ClientSwim = ClientPawn->GetSwimmingComponent();
 			if (!ServerSwim || !ClientSwim)
 			{
-				++DepthModeMismatchSamples;
+				++MovementStateMismatchSamples;
 				++UnderwaterMismatchSamples;
 				++SwimAnimationStateMismatchSamples;
 			}
@@ -85,7 +85,7 @@ namespace SwimmingNetworkQuantitative
 			{
 				const FSwimmingAnimationState ServerAnimation = ServerSwim->GetAnimationState();
 				const FSwimmingAnimationState ClientAnimation = ClientSwim->GetAnimationState();
-				DepthModeMismatchSamples += ServerSwim->GetDepthMode() != ClientSwim->GetDepthMode();
+				MovementStateMismatchSamples += ServerSwim->GetMovementState() != ClientSwim->GetMovementState();
 				UnderwaterMismatchSamples += ServerSwim->IsUnderwater() != ClientSwim->IsUnderwater();
 				SwimAnimationStateMismatchSamples +=
 					ServerAnimation.bIsSwimming != ClientAnimation.bIsSwimming;
@@ -115,7 +115,7 @@ namespace SwimmingNetworkQuantitative
 		{
 			const double SafeSamples = FMath::Max(1, Samples);
 			UE_LOG(LogTemp, Display,
-				TEXT("[SWIM-NET-METRIC] Phase=%s Samples=%d Mean3Dcm=%.3f Max3Dcm=%.3f MeanZcm=%.3f MaxZcm=%.3f ServerDeltaZcm=%.3f ServerZRangeCm=%.3f MaxAbsServerVelZ=%.3f ServerSwimmingPct=%.2f ClientSwimmingPct=%.2f MoveModeMismatchPct=%.2f DepthModeMismatchPct=%.2f UnderwaterMismatchPct=%.2f DiveInputMismatchPct=%.2f AscendInputMismatchPct=%.2f SwimAnimStateMismatchPct=%.2f"),
+				TEXT("[SWIM-NET-METRIC] Phase=%s Samples=%d Mean3Dcm=%.3f Max3Dcm=%.3f MeanZcm=%.3f MaxZcm=%.3f ServerDeltaZcm=%.3f ServerZRangeCm=%.3f MaxAbsServerVelZ=%.3f ServerSwimmingPct=%.2f ClientSwimmingPct=%.2f MoveModeMismatchPct=%.2f MovementStateMismatchPct=%.2f UnderwaterMismatchPct=%.2f DiveInputMismatchPct=%.2f AscendInputMismatchPct=%.2f SwimAnimStateMismatchPct=%.2f"),
 				*Name,
 				Samples,
 				SumPositionErrorCm / SafeSamples,
@@ -128,7 +128,7 @@ namespace SwimmingNetworkQuantitative
 				100.0 * ServerSwimmingSamples / SafeSamples,
 				100.0 * ClientSwimmingSamples / SafeSamples,
 				100.0 * MovementModeMismatchSamples / SafeSamples,
-				100.0 * DepthModeMismatchSamples / SafeSamples,
+				100.0 * MovementStateMismatchSamples / SafeSamples,
 				100.0 * UnderwaterMismatchSamples / SafeSamples,
 				100.0 * DiveInputMismatchSamples / SafeSamples,
 				100.0 * AscendInputMismatchSamples / SafeSamples,

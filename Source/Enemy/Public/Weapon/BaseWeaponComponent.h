@@ -24,6 +24,15 @@ enum class EEnemyWeaponState : uint8
 	Equipped  UMETA(DisplayName = "Equipped")
 };
 
+/** Replicated owner-lifetime state for the separately spawned weapon actor. */
+UENUM(BlueprintType)
+enum class EEnemyWeaponLifecycleState : uint8
+{
+	Active        UMETA(DisplayName = "Active"),
+	DeathInactive UMETA(DisplayName = "Death Inactive"),
+	Pooled        UMETA(DisplayName = "Pooled")
+};
+
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class ENEMY_API UBaseWeaponComponent : public UActorComponent
@@ -39,6 +48,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// Weapon의 DA 초기에 무기를 Spawn
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
@@ -58,6 +68,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_WeaponState, Category = "Weapon")
 	EEnemyWeaponState WeaponState = EEnemyWeaponState::None;
 
+	/** One replicated state drives gameplay shutdown and presentation on every peer. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_WeaponLifecycleState, Category = "Weapon|Lifecycle")
+	EEnemyWeaponLifecycleState WeaponLifecycleState = EEnemyWeaponLifecycleState::Active;
+
 	// 무기로 인해 부여된 Ability Handle
 	UPROPERTY()
 	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
@@ -76,6 +90,9 @@ protected:
 	// 현재 무기의 상태 변경을 감지하는 RepNotify 함수
 	UFUNCTION()
 	void OnRep_WeaponState();
+
+	UFUNCTION()
+	void OnRep_WeaponLifecycleState();
 	
 	// ----------------- Attach 함수
 	// SocketName을 받아서 무기를 해당 Socket에 Attach하는 함수
@@ -87,6 +104,7 @@ protected:
 
 	// 무기 상태나 무기가 바뀌었을 때 RepNotify함수에서 호출
 	void SyncWeaponAttachment();
+	void ApplyWeaponLifecyclePresentation();
 
 	// ----------------- WeaponData 관리
 	const FWeaponDefinition* ResolveWeaponDefinition(FGameplayTag InTag) const;
@@ -111,8 +129,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Weapon")
 	void UnequipCurrentWeapon();
 
-	/*UFUNCTION(BlueprintCallable, Category = "Weapon")
-	void DestroyCurrentWeapon()*/
+	/** Stops attacks and granted abilities while keeping the weapon visible on the corpse. */
+	UFUNCTION(BlueprintCallable, Category = "Weapon|Lifecycle")
+	void DeactivateForOwnerDeath();
+
+	/** Stops weapon gameplay and hides the replicated weapon actor for owner pooling. */
+	UFUNCTION(BlueprintCallable, Category = "Weapon|Pooling")
+	void SuspendForOwnerPool();
+
+	/** Restores the existing weapon actor and its granted abilities after pooling. */
+	UFUNCTION(BlueprintCallable, Category = "Weapon|Pooling")
+	void RestoreFromOwnerPool();
+
+	/** Permanently destroys the server-owned replicated weapon and clears its loadout state. */
+	UFUNCTION(BlueprintCallable, Category = "Weapon|Lifecycle")
+	void DestroyCurrentWeapon();
 
 	// ------------------- Getter함수
 	// BlueprintPure 값만 꺼내오는 Getter함수들
@@ -128,6 +159,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Weapon")
 	bool IsWeaponEquipped() const { return WeaponState == EEnemyWeaponState::Equipped; }
 
+	UFUNCTION(BlueprintPure, Category = "Weapon|Lifecycle")
+	EEnemyWeaponLifecycleState GetWeaponLifecycleState() const { return WeaponLifecycleState; }
+
+	UFUNCTION(BlueprintPure, Category = "Weapon|Pooling")
+	bool IsPoolPresentationActive() const { return WeaponLifecycleState != EEnemyWeaponLifecycleState::Pooled; }
+
 	UFUNCTION(BlueprintPure, Category = "Weapon")
 	float GetCurrentAttackRange() const;
 
@@ -141,4 +178,6 @@ public:
 
 private:
 	void InitializeLoadoutInternal(FGameplayTag InWeaponTag, bool bEquipImmediately);
+	void StopWeaponGameplay();
+	void SetWeaponLifecycleState(EEnemyWeaponLifecycleState NewState);
 };

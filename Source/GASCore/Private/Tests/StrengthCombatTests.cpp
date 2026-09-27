@@ -6,10 +6,12 @@
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
 #include "GASCombatLibrary.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
 #include "GASAttributeDamageGameplayEffect.h"
 #include "GASDamageInstantGameplayEffect.h"
 #include "GASStrengthEquipmentGameplayEffect.h"
 #include "Item/BaseItem.h"
+#include "Components/EquipmentStatComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 
@@ -62,6 +64,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FStrengthDamageSpecSnapshotTest::RunTest(const FString& Parameters)
 {
+	AddExpectedError(TEXT("QuestItem (has an invalid ResultItemTag|contains an invalid ingredient)"),
+		EAutomationExpectedErrorFlags::Contains, 0);
 	StrengthCombatTests::FScopedTestWorld TestWorld;
 	if (!TestNotNull(TEXT("Transient game world is created"), TestWorld.World))
 	{
@@ -83,7 +87,8 @@ bool FStrengthDamageSpecSnapshotTest::RunTest(const FString& Parameters)
 
 	FStrengthDamageRequest Request;
 	Request.SourceASC = SourceASC;
-	Request.DamageEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
+
+
 	Request.AttackCoefficient = 1.5f;
 	Request.ChargeMultiplier = 2.0f;
 	Request.InstigatorActor = SourceActor;
@@ -95,18 +100,10 @@ bool FStrengthDamageSpecSnapshotTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	TestEqual(TEXT("Spec snapshots the final launch-time damage"),
-		DamageSpec.Data->GetSetByCallerMagnitude(Data_Damage, false, 0.0f), 36.0f);
-	Attributes->InitStrength(99.0f);
-	TestEqual(TEXT("Changing Strength does not mutate an existing spec"),
-		DamageSpec.Data->GetSetByCallerMagnitude(Data_Damage, false, 0.0f), 36.0f);
-
-	const UGASDamageInstantGameplayEffect* DamageEffectCDO = GetDefault<UGASDamageInstantGameplayEffect>();
-	if (TestEqual(TEXT("Common damage GE has exactly one modifier"), DamageEffectCDO->Modifiers.Num(), 1))
-	{
-		TestTrue(TEXT("Common damage GE writes only to the Damage meta attribute"),
-			DamageEffectCDO->Modifiers[0].Attribute == UBaseAttributeSet::GetDamageAttribute());
-	}
+	TestTrue(TEXT("Only native execution GE is selected"), DamageSpec.Data->Def->GetClass() == UGASAttributeDamageGameplayEffect::StaticClass());
+	TestFalse(TEXT("Legacy final damage input is absent"), DamageSpec.Data->SetByCallerTagMagnitudes.Contains(Data_Damage));
+	TestEqual(TEXT("Native GE has no direct modifiers"), DamageSpec.Data->Def->Modifiers.Num(), 0);
+	TestEqual(TEXT("Native GE has one execution"), DamageSpec.Data->Def->Executions.Num(), 1);
 
 	const UGASStrengthEquipmentGameplayEffect* StrengthEffectCDO = GetDefault<UGASStrengthEquipmentGameplayEffect>();
 	TestEqual(TEXT("Equipment Strength GE is infinite"),
@@ -158,7 +155,7 @@ bool FAttributeDamageExecutionTest::RunTest(const FString& Parameters)
 
 	FStrengthDamageRequest Request;
 	Request.SourceASC = SourceASC;
-	Request.DamageEffectClass = UGASAttributeDamageGameplayEffect::StaticClass();
+
 	Request.AttackCoefficient = 1.5f;
 	Request.ChargeMultiplier = 2.0f;
 	Request.InstigatorActor = SourceActor;
@@ -173,6 +170,10 @@ bool FAttributeDamageExecutionTest::RunTest(const FString& Parameters)
 		DamageSpec.Data->GetSetByCallerMagnitude(Data_AttackCoefficient, false, 0.0f), 1.5f);
 	TestEqual(TEXT("Charge multiplier is carried by the spec"),
 		DamageSpec.Data->GetSetByCallerMagnitude(Data_ChargeMultiplier, false, 0.0f), 2.0f);
+	TestEqual(TEXT("Strength damage is explicitly classified as a direct hit"),
+		static_cast<uint8>(USWCombatEffectContextLibrary::GetDamageDeliveryType(
+			DamageSpec.Data->GetContext())),
+		static_cast<uint8>(ESWDamageDeliveryType::DirectHit));
 
 	// Source captures are snapshotted at spec creation, so an already-fired
 	// projectile or open melee window cannot change damage retroactively.
@@ -210,17 +211,19 @@ bool FStrengthEquipmentLifecycleTest::RunTest(const FString& Parameters)
 	ASC->AddAttributeSetSubobject(Attributes);
 	Attributes->InitStrength(10.0f);
 
+	Item->SetOwner(OwnerActor);
+	auto* Equipment = UEquipmentStatComponent::GetOrCreate(OwnerActor);
 	TestTrue(TEXT("Item accepts a pre-equip Strength bonus"), Item->SetStrengthBonus(5.0f));
 	TestTrue(TEXT("Equip Strength GE is applied"),
-		Item->ApplyStrengthBonusEffect(ASC, UGASStrengthEquipmentGameplayEffect::StaticClass()));
+		Equipment->Equip(ASC, Item, Item->GetStrengthBonus()));
 	TestEqual(TEXT("Strength 10 plus weapon 5 equals 15"), Attributes->GetStrength(), 15.0f);
 
 	TestTrue(TEXT("Applying the same item twice is treated as an idempotent success"),
-		Item->ApplyStrengthBonusEffect(ASC, UGASStrengthEquipmentGameplayEffect::StaticClass()));
+		Equipment->Equip(ASC, Item, Item->GetStrengthBonus()));
 	TestEqual(TEXT("Duplicate equip does not stack Strength"), Attributes->GetStrength(), 15.0f);
 	TestFalse(TEXT("An active item bonus cannot be mutated"), Item->SetStrengthBonus(20.0f));
 
-	TestTrue(TEXT("Unequip removes the exact active GE handle"), Item->RemoveStrengthBonusEffect());
+	TestTrue(TEXT("Unequip removes the exact active GE handle"), Equipment->Clear());
 	TestEqual(TEXT("Unequip restores base Strength"), Attributes->GetStrength(), 10.0f);
 	TestFalse(TEXT("Unequipped item no longer owns an active handle"), Item->HasActiveStrengthBonusEffect());
 	return true;

@@ -12,23 +12,35 @@
 #include "Components/TextBlock.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "EngineUtils.h"
+#include "GameFramework/PlayerState.h"
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Ship.h"
+#include "Framework/Application/SlateApplication.h"
 #include "TimerManager.h"
 #include "UI/ShipUpgradeDetailsWidget.h"
 #include "UI/ShipUpgradeGraphWidget.h"
-#include "UI/ShipUpgradeNodeWidget.h"
 #include "UI/ShipUpgradePreviewStage.h"
 #include "Upgrade/ShipUpgradeBlueprintLibrary.h"
 #include "Upgrade/ShipUpgradeComponent.h"
 #include "Upgrade/ShipUpgradeTreeDataAsset.h"
+#include "Upgrade/SharedShipUpgradeState.h"
+#include "BasePlayerController.h"
 
 void UShipUpgradeScreenWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	UE_LOG(LogTemp, Warning,
+		TEXT("[ShipUpgradePipeline][UIConstruct] Screen=%s Player=%s World=%s NetMode=%d Graph=%s Details=%s GraphExtent=%s"),
+		*GetNameSafe(this),
+		*GetNameSafe(GetOwningPlayer()),
+		*GetNameSafe(GetWorld()),
+		GetWorld() ? static_cast<int32>(GetWorld()->GetNetMode()) : -1,
+		*GetNameSafe(GraphWidget),
+		*GetNameSafe(DetailsWidget),
+		*GetNameSafe(SizeBox_GraphExtent));
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[ShipUpgradeUI] Screen constructed. Screen=%s OwningPlayer=%s Graph=%s Details=%s GraphExtent=%s"),
 		*GetNameSafe(this),
@@ -46,7 +58,9 @@ void UShipUpgradeScreenWidget::NativeConstruct()
 	if (GraphWidget)
 	{
 		GraphWidget->OnNodeSelected().RemoveAll(this);
+		GraphWidget->OnNodeHoverChanged().RemoveAll(this);
 		GraphWidget->OnNodeSelected().AddUObject(this, &UShipUpgradeScreenWidget::HandleNodeSelected);
+		GraphWidget->OnNodeHoverChanged().AddUObject(this, &UShipUpgradeScreenWidget::HandleNodeHoverChanged);
 	}
 	if (DetailsWidget)
 	{
@@ -70,12 +84,14 @@ void UShipUpgradeScreenWidget::NativeDestruct()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(InitializationRetryTimer);
+		World->GetTimerManager().ClearTimer(DetailsTooltipHideTimer);
 	}
 	UnbindUpgradeComponent();
 
 	if (GraphWidget)
 	{
 		GraphWidget->OnNodeSelected().RemoveAll(this);
+		GraphWidget->OnNodeHoverChanged().RemoveAll(this);
 	}
 	if (DetailsWidget)
 	{
@@ -128,6 +144,10 @@ FReply UShipUpgradeScreenWidget::NativeOnMouseMove(
 		}
 		return FReply::Handled();
 	}
+	if (bTooltipAwaitingExit && DetailsPopupHost && !DetailsPopupHost->IsHovered())
+	{
+		HideDetailsTooltip();
+	}
 	return Super::NativeOnMouseMove(InGeometry, InMouseEvent);
 }
 
@@ -145,13 +165,23 @@ void UShipUpgradeScreenWidget::RefreshAll()
 {
 	if (!UpgradeComponent)
 	{
-		/* UE_LOG(LogTemp, Warning,
-			TEXT("[ShipUpgradeUI] RefreshAll skipped: UpgradeComponent is null. Screen=%s"),
-			*GetNameSafe(this)); */
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradePipeline][RefreshSkipped] Screen=%s Reason=NoComponent Graph=%s"),
+			*GetNameSafe(this), *GetNameSafe(GraphWidget));
 		return;
 	}
 
 	CachedNodeViews = UpgradeComponent->GetAllNodeViews();
+	UE_LOG(LogTemp, Warning,
+		TEXT("[ShipUpgradePipeline][RefreshAll] Screen=%s Component=%s Owner=%s Tree=%s TreeNodes=%d Views=%d ActiveNodes=%d Graph=%s"),
+		*GetNameSafe(this),
+		*GetNameSafe(UpgradeComponent),
+		*GetNameSafe(UpgradeComponent->GetOwner()),
+		*GetNameSafe(UpgradeComponent->UpgradeTree.Get()),
+		UpgradeComponent->UpgradeTree ? UpgradeComponent->UpgradeTree->Nodes.Num() : -1,
+		CachedNodeViews.Num(),
+		UpgradeComponent->GetActiveNodeIds().Num(),
+		*GetNameSafe(GraphWidget));
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[ShipUpgradeUI] Runtime data received. Component=%s Owner=%s UpgradeTree=%s NodeViews=%d"),
 		*GetNameSafe(UpgradeComponent),
@@ -160,6 +190,7 @@ void UShipUpgradeScreenWidget::RefreshAll()
 		CachedNodeViews.Num()); */
 	if (GraphWidget)
 	{
+		UpdateGraphViewportWidth();
 		GraphWidget->RebuildGraph(CachedNodeViews);
 		GraphWidget->SetSelectedNode(SelectedNodeId);
 		UpdateGraphExtent();
@@ -193,6 +224,14 @@ void UShipUpgradeScreenWidget::HandleActivationResult(
 	EShipUpgradeActivationResult Result,
 	FText Message)
 {
+	UE_LOG(LogTemp, Warning,
+		TEXT("[ShipUpgradeTrace][UIResult] Player=%s Node=%s Result=%d Message=%s Component=%s Owner=%s"),
+		*GetNameSafe(GetOwningPlayer()),
+		*NodeId.ToString(),
+		static_cast<int32>(Result),
+		*Message.ToString(),
+		*GetNameSafe(UpgradeComponent),
+		*GetNameSafe(UpgradeComponent ? UpgradeComponent->GetOwner() : nullptr));
 	PendingNodeIds.Remove(NodeId);
 	if (Text_ResultMessage)
 	{
@@ -213,15 +252,18 @@ void UShipUpgradeScreenWidget::HandleShipStatsChanged(FShipStatSnapshot NewStats
 
 void UShipUpgradeScreenWidget::TryInitialize()
 {
+	const int32 Attempt = InitializationRetryCount + 1;
 	if (UShipUpgradeComponent* FoundComponent =
 		UShipUpgradeBlueprintLibrary::GetLocalShipUpgradeComponent(this))
 	{
-		/* UE_LOG(LogTemp, Log,
-			TEXT("[ShipUpgradeUI] SUCCESS: Local ShipUpgradeComponent found. Attempt=%d Component=%s Owner=%s Tree=%s"),
-			InitializationRetryCount + 1,
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradePipeline][UIInitializeFound] Attempt=%d Component=%s Owner=%s Tree=%s Nodes=%d ActiveNodes=%d"),
+			Attempt,
 			*GetNameSafe(FoundComponent),
 			*GetNameSafe(FoundComponent->GetOwner()),
-			*GetNameSafe(FoundComponent->UpgradeTree.Get())); */
+			*GetNameSafe(FoundComponent->UpgradeTree.Get()),
+			FoundComponent->UpgradeTree ? FoundComponent->UpgradeTree->Nodes.Num() : -1,
+			FoundComponent->GetActiveNodeIds().Num());
 		BindUpgradeComponent(FoundComponent);
 		FoundComponent->RefreshUpgradeData();
 		RefreshAll();
@@ -229,11 +271,25 @@ void UShipUpgradeScreenWidget::TryInitialize()
 	}
 
 	++InitializationRetryCount;
+	if (InitializationRetryCount == 1 || InitializationRetryCount == 5
+		|| InitializationRetryCount == 10 || InitializationRetryCount == MaxInitializationRetries)
+	{
+		ASharedShipUpgradeState* SharedState = ASharedShipUpgradeState::Find(this);
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradePipeline][UIInitializeMissing] Attempt=%d/%d Player=%s PlayerState=%s SharedState=%s SharedComponent=%s SharedShip=%s"),
+			InitializationRetryCount,
+			MaxInitializationRetries,
+			*GetNameSafe(GetOwningPlayer()),
+			*GetNameSafe(GetOwningPlayer() ? GetOwningPlayer()->PlayerState.Get() : nullptr),
+			*GetNameSafe(SharedState),
+			*GetNameSafe(SharedState ? SharedState->GetUpgradeComponent() : nullptr),
+			*GetNameSafe(SharedState ? SharedState->GetCurrentPlayerShip() : nullptr));
+	}
 	if (InitializationRetryCount >= MaxInitializationRetries)
 	{
-		/* UE_LOG(LogTemp, Error,
-			TEXT("[ShipUpgradeUI] FAILED: Local ShipUpgradeComponent not found after %d attempts. Check GameMode PlayerStateClass."),
-			InitializationRetryCount); */
+		UE_LOG(LogTemp, Error,
+			TEXT("[ShipUpgradePipeline][UIInitializeFailed] Screen=%s Attempts=%d"),
+			*GetNameSafe(this), InitializationRetryCount);
 		BP_OnInitializationFailed();
 		return;
 	}
@@ -273,6 +329,14 @@ void UShipUpgradeScreenWidget::BindUpgradeComponent(UShipUpgradeComponent* InCom
 	UpgradeComponent->OnUpgradeDataChanged.AddDynamic(this, &UShipUpgradeScreenWidget::HandleUpgradeDataChanged);
 	UpgradeComponent->OnNodeActivationResult.AddDynamic(this, &UShipUpgradeScreenWidget::HandleActivationResult);
 	UpgradeComponent->OnShipStatsChanged.AddDynamic(this, &UShipUpgradeScreenWidget::HandleShipStatsChanged);
+	UE_LOG(LogTemp, Warning,
+		TEXT("[ShipUpgradePipeline][UIBound] Screen=%s Component=%s Owner=%s Tree=%s Graph=%s Details=%s"),
+		*GetNameSafe(this),
+		*GetNameSafe(UpgradeComponent),
+		*GetNameSafe(UpgradeComponent->GetOwner()),
+		*GetNameSafe(UpgradeComponent->UpgradeTree.Get()),
+		*GetNameSafe(GraphWidget),
+		*GetNameSafe(DetailsWidget));
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[ShipUpgradeUI] Component events bound. Component=%s Graph=%s Details=%s"),
 		*GetNameSafe(UpgradeComponent),
@@ -302,40 +366,84 @@ void UShipUpgradeScreenWidget::HandleNodeSelected(FName NodeId)
 	/* UE_LOG(LogTemp, Log,
 		TEXT("[ShipUpgradeUI] Node selected. NodeId=%s"),
 		*NodeId.ToString()); */
-	if (SelectedNodeId == NodeId)
-	{
-		SelectedNodeId = NAME_None;
-		if (GraphWidget)
-		{
-			GraphWidget->SetSelectedNode(NAME_None);
-		}
-		if (DetailsWidget)
-		{
-			DetailsWidget->ClearNode();
-		}
-		SetDetailsPopupVisible(false);
-		return;
-	}
-
 	SelectedNodeId = NodeId;
 	if (GraphWidget)
 	{
 		GraphWidget->SetSelectedNode(NodeId);
 	}
 	RefreshSelectedNode();
-	PositionDetailsNextToNode(NodeId);
+	PositionDetailsNextToCursor();
+}
+
+void UShipUpgradeScreenWidget::HandleNodeHoverChanged(FName NodeId, bool bIsHovered)
+{
+	if (bIsHovered)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(DetailsTooltipHideTimer);
+		}
+		bTooltipAwaitingExit = false;
+		HoveredNodeId = NodeId;
+		SelectedNodeId = NodeId;
+		RefreshSelectedNode();
+		PositionDetailsNextToCursor();
+		return;
+	}
+
+	if (HoveredNodeId != NodeId)
+	{
+		return;
+	}
+	HoveredNodeId = NAME_None;
+	if (UWorld* World = GetWorld())
+	{
+		if (DetailsTooltipHideDelay > KINDA_SMALL_NUMBER)
+		{
+			World->GetTimerManager().SetTimer(
+				DetailsTooltipHideTimer,
+				this,
+				&UShipUpgradeScreenWidget::HandleDetailsTooltipHideTimer,
+				DetailsTooltipHideDelay,
+				false);
+			return;
+		}
+	}
+	HandleDetailsTooltipHideTimer();
 }
 
 void UShipUpgradeScreenWidget::HandleActivationRequested(FName NodeId)
 {
 	if (!UpgradeComponent || PendingNodeIds.Contains(NodeId))
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[ShipUpgradeTrace][UIClickIgnored] Player=%s Node=%s Component=%s AlreadyPending=%s"),
+			*GetNameSafe(GetOwningPlayer()),
+			*NodeId.ToString(),
+			*GetNameSafe(UpgradeComponent),
+			PendingNodeIds.Contains(NodeId) ? TEXT("true") : TEXT("false"));
 		return;
 	}
+	UE_LOG(LogTemp, Warning,
+		TEXT("[ShipUpgradeTrace][UIClick] Player=%s Node=%s Component=%s Owner=%s OwnerAuthority=%s ActiveNodes=%d"),
+		*GetNameSafe(GetOwningPlayer()),
+		*NodeId.ToString(),
+		*GetNameSafe(UpgradeComponent),
+		*GetNameSafe(UpgradeComponent->GetOwner()),
+		UpgradeComponent->GetOwner() && UpgradeComponent->GetOwner()->HasAuthority() ? TEXT("true") : TEXT("false"),
+		UpgradeComponent->GetActiveNodeIds().Num());
 	PendingNodeIds.Add(NodeId);
 	if (DetailsWidget && SelectedNodeId == NodeId)
 	{
 		DetailsWidget->SetRequestPending(true);
+	}
+	if (ABasePlayerController* PlayerController = Cast<ABasePlayerController>(GetOwningPlayer()))
+	{
+		if (ASharedShipUpgradeState* SharedState = Cast<ASharedShipUpgradeState>(UpgradeComponent->GetOwner()))
+		{
+			PlayerController->ServerRequestActivateSharedShipUpgrade(SharedState, NodeId);
+			return;
+		}
 	}
 	UpgradeComponent->RequestActivateNode(NodeId);
 }
@@ -669,33 +777,26 @@ void UShipUpgradeScreenWidget::ApplyCurrentShipPreview()
 	}
 }
 
-void UShipUpgradeScreenWidget::PositionDetailsNextToNode(FName NodeId)
+void UShipUpgradeScreenWidget::PositionDetailsNextToCursor()
 {
-	if (!DetailsWidget || !DetailsPopupHost || !GraphWidget)
-	{
-		return;
-	}
-	UShipUpgradeNodeWidget* NodeWidget = GraphWidget->GetNodeWidget(NodeId);
-	if (!NodeWidget)
+	if (!DetailsWidget || !DetailsPopupHost)
 	{
 		return;
 	}
 
 	DetailsPopupHost->SetRenderTranslation(FVector2D::ZeroVector);
 	ForceLayoutPrepass();
+	const FVector2D CursorPosition = FSlateApplication::Get().GetCursorPos();
 	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(DetailsPopupHost->Slot))
 	{
 		if (UPanelWidget* PopupParent = DetailsPopupHost->GetParent())
 		{
 			const FGeometry& ParentGeometry = PopupParent->GetCachedGeometry();
-			const FGeometry& NodeGeometry = NodeWidget->GetCachedGeometry();
 			const FVector2D ParentSize = ParentGeometry.GetLocalSize();
-			if (!ParentSize.IsNearlyZero() && !NodeGeometry.GetLocalSize().IsNearlyZero())
+			if (!ParentSize.IsNearlyZero())
 			{
 				FVector2D TargetPosition =
-					ParentGeometry.AbsoluteToLocal(NodeGeometry.GetAbsolutePosition())
-					+ FVector2D(NodeGeometry.GetLocalSize().X, 0.0f)
-					+ DetailsNodeOffset;
+					ParentGeometry.AbsoluteToLocal(CursorPosition) + DetailsNodeOffset;
 				TargetPosition.X = FMath::Clamp(
 					TargetPosition.X,
 					0.0f,
@@ -711,19 +812,15 @@ void UShipUpgradeScreenWidget::PositionDetailsNextToNode(FName NodeId)
 	}
 
 	const FGeometry& ScreenGeometry = GetCachedGeometry();
-	const FGeometry& NodeGeometry = NodeWidget->GetCachedGeometry();
 	const FGeometry& DetailsGeometry = DetailsPopupHost->GetCachedGeometry();
-	if (ScreenGeometry.GetLocalSize().IsNearlyZero() || NodeGeometry.GetLocalSize().IsNearlyZero())
+	if (ScreenGeometry.GetLocalSize().IsNearlyZero())
 	{
 		return;
 	}
 
-	const FVector2D NodeLocalPosition =
-		ScreenGeometry.AbsoluteToLocal(NodeGeometry.GetAbsolutePosition());
 	const FVector2D CurrentDetailsLocalPosition =
 		ScreenGeometry.AbsoluteToLocal(DetailsGeometry.GetAbsolutePosition());
-	FVector2D TargetLocalPosition =
-		NodeLocalPosition + FVector2D(NodeGeometry.GetLocalSize().X, 0.0f) + DetailsNodeOffset;
+	FVector2D TargetLocalPosition = ScreenGeometry.AbsoluteToLocal(CursorPosition) + DetailsNodeOffset;
 
 	const FVector2D DetailsSize = DetailsGeometry.GetLocalSize();
 	const FVector2D ScreenSize = ScreenGeometry.GetLocalSize();
@@ -736,6 +833,62 @@ void UShipUpgradeScreenWidget::PositionDetailsNextToNode(FName NodeId)
 		0.0f,
 		FMath::Max(0.0f, ScreenSize.Y - DetailsSize.Y));
 	DetailsPopupHost->SetRenderTranslation(TargetLocalPosition - CurrentDetailsLocalPosition);
+}
+
+void UShipUpgradeScreenWidget::HandleDetailsTooltipHideTimer()
+{
+	if (!HoveredNodeId.IsNone())
+	{
+		return;
+	}
+	if (DetailsPopupHost && DetailsPopupHost->IsHovered())
+	{
+		bTooltipAwaitingExit = true;
+		return;
+	}
+	HideDetailsTooltip();
+}
+
+void UShipUpgradeScreenWidget::HideDetailsTooltip()
+{
+	bTooltipAwaitingExit = false;
+	HoveredNodeId = NAME_None;
+	SelectedNodeId = NAME_None;
+	if (GraphWidget)
+	{
+		GraphWidget->SetSelectedNode(NAME_None);
+	}
+	if (DetailsWidget)
+	{
+		DetailsWidget->ClearNode();
+	}
+	SetDetailsPopupVisible(false);
+}
+
+void UShipUpgradeScreenWidget::UpdateGraphViewportWidth()
+{
+	if (!GraphWidget || !WidgetTree)
+	{
+		return;
+	}
+
+	UWidget* GraphAreaBorder = WidgetTree->FindWidget(TEXT("GraphAreaBorder"));
+	if (!GraphAreaBorder)
+	{
+		return;
+	}
+
+	ForceLayoutPrepass();
+	float ViewportWidth = GraphAreaBorder->GetCachedGeometry().GetLocalSize().X;
+	if (ViewportWidth <= KINDA_SMALL_NUMBER)
+	{
+		if (const UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(GraphAreaBorder->Slot))
+		{
+			ViewportWidth = CanvasSlot->GetSize().X;
+		}
+	}
+
+	GraphWidget->SetLayoutViewportWidth(ViewportWidth);
 }
 
 void UShipUpgradeScreenWidget::UpdateGraphExtent()

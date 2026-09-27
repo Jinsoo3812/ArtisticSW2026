@@ -2,6 +2,8 @@
 
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
+#include "GASCombatLibrary.h"
+#include "AbilitySystemComponent.h"
 
 namespace AttributeDamageStatics
 {
@@ -37,20 +39,20 @@ void UGASAttributeDamageExecution::Execute_Implementation(
 	EvaluationParameters.TargetTags = Spec.CapturedTargetTags.GetAggregatedTags();
 
 	float Strength = 0.0f;
-	ExecutionParams.AttemptCalculateCapturedAttributeMagnitude(
+	if (!ExecutionParams.GetTargetAbilitySystemComponent() || !ExecutionParams.GetTargetAbilitySystemComponent()->IsOwnerActorAuthoritative()) return;
+	const bool bCaptured = ExecutionParams.AttemptCalculateCapturedAttributeMagnitude(
 		AttributeDamageStatics::Captures().StrengthDef,
 		EvaluationParameters,
 		Strength);
 
 	const float AttackCoefficient = Spec.GetSetByCallerMagnitude(
-		Data_AttackCoefficient, false, 1.0f);
+		Data_AttackCoefficient, false, 0.0f);
 	const float ChargeMultiplier = Spec.GetSetByCallerMagnitude(
-		Data_ChargeMultiplier, false, 1.0f);
-	const float FinalDamage = FMath::Max(
-		1.0f,
-		FMath::Max(0.0f, Strength)
-		* FMath::Max(0.0f, AttackCoefficient)
-		* FMath::Max(0.0f, ChargeMultiplier));
+		Data_ChargeMultiplier, false, 0.0f);
+	if (!bCaptured || !FMath::IsFinite(Strength) || !FMath::IsFinite(AttackCoefficient)
+		|| !FMath::IsFinite(ChargeMultiplier) || AttackCoefficient <= 0.f || ChargeMultiplier <= 0.f) return;
+	const float FinalDamage = UGASCombatLibrary::CalculateStrengthDamage(Strength, AttackCoefficient, ChargeMultiplier);
+	if (!FMath::IsFinite(FinalDamage)) return;
 
 	OutExecutionOutput.AddOutputModifier(FGameplayModifierEvaluatedData(
 		UBaseAttributeSet::GetDamageAttribute(),

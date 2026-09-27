@@ -1,13 +1,40 @@
 #include "Item/Projectiles/ArrowProjectile.h"
+#include "Components/CombatHurtboxComponent.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "GAS/CombatHitResolver.h"
 #include "BaseGameplayTags.h"
 #include "Components/BoxComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/SceneComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/World.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "GAS/SWCombatEffectContextLibrary.h"
+#include "Item/Projectiles/ArrowImpactVisual.h"
 #include "StatusEffectLibrary.h"
+
+namespace
+{
+	FString GetHitMeshPath(const UPrimitiveComponent* HitComponent)
+	{
+		if (const UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(HitComponent))
+		{
+			return GetPathNameSafe(StaticMeshComponent->GetStaticMesh());
+		}
+
+		if (const USkeletalMeshComponent* SkeletalMeshComponent = Cast<USkeletalMeshComponent>(HitComponent))
+		{
+			return GetPathNameSafe(SkeletalMeshComponent->GetSkeletalMeshAsset());
+		}
+
+		return TEXT("None");
+	}
+}
 
 AArrowProjectile::AArrowProjectile()
 {
@@ -17,8 +44,8 @@ AArrowProjectile::AArrowProjectile()
 
 	if (CollisionComp)
 	{
-		CollisionComp->SetBoxExtent(FVector(8.0f, 2.0f, 2.0f));
-		CollisionComp->SetCollisionProfileName(TEXT("Projectile"));
+		ApplyCollisionShape();
+		ApplyArrowCollisionProfile();
 		CollisionComp->SetNotifyRigidBodyCollision(true);
 		CollisionComp->OnComponentHit.AddDynamic(this, &AArrowProjectile::OnArrowHit);
 	}
@@ -35,9 +62,41 @@ AArrowProjectile::AArrowProjectile()
 	}
 }
 
+void AArrowProjectile::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	ApplyCollisionShape();
+	ApplyArrowCollisionProfile();
+}
+
+void AArrowProjectile::ApplyCollisionShape()
+{
+	if (!CollisionComp)
+	{
+		return;
+	}
+
+	// Collision 크기는 Box Extent만 사용하고 자식 Mesh에 전달되는 Root Scale은 제거한다.
+	CollisionComp->SetRelativeScale3D(FVector::OneVector);
+	CollisionComp->SetBoxExtent(CollisionHalfExtent.ComponentMax(FVector(0.1f)), false);
+}
+
+void AArrowProjectile::ApplyArrowCollisionProfile()
+{
+	if (!CollisionComp)
+	{
+		return;
+	}
+
+	// Reassert at construction/runtime so legacy Blueprint BodyInstance overrides
+	// cannot silently restore WorldStatic=Ignore or NoCollision.
+	CollisionComp->SetCollisionProfileName(TEXT("ArrowProjectile"), true);
+}
+
 void AArrowProjectile::BeginPlay()
 {
 	Super::BeginPlay();
+	ApplyArrowCollisionProfile();
 
 	if (APawn* InstigatorPawn = GetInstigator())
 	{
@@ -52,6 +111,7 @@ void AArrowProjectile::BeginPlay()
 
 void AArrowProjectile::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (auto* Resolver = FindComponentByClass<UCombatHitResolver>()) Resolver->CloseWindow();
 	if (CollisionComp)
 	{
 		for (const TWeakObjectPtr<AActor>& IgnoredActorPtr : MovementIgnoredActors)
@@ -59,16 +119,6 @@ void AArrowProjectile::EndPlay(const EEndPlayReason::Type EndPlayReason)
 			if (AActor* IgnoredActor = IgnoredActorPtr.Get())
 			{
 				CollisionComp->IgnoreActorWhenMoving(IgnoredActor, false);
-
-				TArray<UPrimitiveComponent*> PrimitiveComponents;
-				IgnoredActor->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
-				for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
-				{
-					if (PrimitiveComponent)
-					{
-						PrimitiveComponent->IgnoreActorWhenMoving(this, false);
-					}
-				}
 			}
 		}
 	}
@@ -80,12 +130,19 @@ void AArrowProjectile::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AArrowProjectile::LaunchArrow(const FVector& LaunchVelocity)
 {
-	if (ProjectileMovementComp)
-	{
-		ProjectileMovementComp->ProjectileGravityScale = FlightGravityScale;
-		ProjectileMovementComp->Velocity = LaunchVelocity;
-		ProjectileMovementComp->Activate();
-	}
+	if (!HasAuthority() || !DirectDamageSpec.IsValid() || LaunchVelocity.ContainsNaN()
+		|| LaunchVelocity.IsNearlyZero() || !ProjectileMovementComp || !CollisionComp) return;
+	bImpactHandled = false;
+	ApplyArrowCollisionProfile();
+	CollisionComp->SetSimulatePhysics(false);
+	ProjectileMovementComp->SetUpdatedComponent(CollisionComp);
+	ProjectileMovementComp->ProjectileGravityScale = FlightGravityScale;
+	ProjectileMovementComp->bSimulationEnabled = true;
+	ProjectileMovementComp->MaxSpeed = FMath::Max(ProjectileMovementComp->MaxSpeed, LaunchVelocity.Size());
+	ProjectileMovementComp->Velocity = LaunchVelocity;
+	ProjectileMovementComp->Activate(true);
+	ProjectileMovementComp->SetComponentTickEnabled(true);
+	ForceNetUpdate();
 }
 
 void AArrowProjectile::IgnoreActorForMovement(AActor* ActorToIgnore)
@@ -101,104 +158,81 @@ void AArrowProjectile::IgnoreActorForMovement(AActor* ActorToIgnore)
 	}
 
 	MovementIgnoredActors.AddUnique(ActorToIgnore);
-
-	TArray<UPrimitiveComponent*> PrimitiveComponents;
-	ActorToIgnore->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
-	for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
-	{
-		if (PrimitiveComponent)
-		{
-			PrimitiveComponent->IgnoreActorWhenMoving(this, true);
-		}
-	}
 }
 
-void AArrowProjectile::SetArrowMesh(UStaticMesh* InMesh)
+bool AArrowProjectile::IsLaunchLocationBlocked() const
 {
-	if (MeshComp && InMesh)
+	if (!GetWorld() || !CollisionComp) return true;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(ArrowLaunchOverlap), false, this);
+	for (const TWeakObjectPtr<AActor>& Actor : MovementIgnoredActors)
 	{
-		MeshComp->SetStaticMesh(InMesh);
+		if (Actor.IsValid()) Params.AddIgnoredActor(Actor.Get());
 	}
+	return GetWorld()->OverlapBlockingTestByProfile(CollisionComp->GetComponentLocation(),
+		CollisionComp->GetComponentQuat(), CollisionComp->GetCollisionProfileName(),
+		FCollisionShape::MakeBox(CollisionComp->GetScaledBoxExtent()), Params);
 }
 
-void AArrowProjectile::InitializeDamage(UAbilitySystemComponent* InSourceASC, AActor* InInstigatorActor, float InChargeDamageMultiplier)
+bool AArrowProjectile::ApplyVisualTo(UStaticMeshComponent* TargetMesh) const
 {
-	if (!HasAuthority())
+	if (!TargetMesh || !MeshComp || !MeshComp->GetStaticMesh())
 	{
-		return;
+		return false;
 	}
 
-	SourceASC = InSourceASC;
-	InstigatorActor = InInstigatorActor;
-	DamageEffectSpecHandles.Reset();
-	StatusEffectSpecHandles.Reset();
-	AppliedActors.Reset();
-	BuildStatusEffectSpecs();
+	TargetMesh->SetStaticMesh(MeshComp->GetStaticMesh());
+	TargetMesh->SetRelativeTransform(MeshComp->GetRelativeTransform());
+	TargetMesh->EmptyOverrideMaterials();
+	for (int32 MaterialIndex = 0; MaterialIndex < MeshComp->GetNumOverrideMaterials(); ++MaterialIndex)
+	{
+		TargetMesh->SetMaterial(MaterialIndex, MeshComp->GetMaterial(MaterialIndex));
+	}
+	return true;
 }
 
-void AArrowProjectile::InitializeStrengthDamage(
+UStaticMesh* AArrowProjectile::GetArrowVisualMesh() const
+{
+	return MeshComp ? MeshComp->GetStaticMesh() : nullptr;
+}
+
+FTransform AArrowProjectile::GetArrowVisualRelativeTransform() const
+{
+	return MeshComp ? MeshComp->GetRelativeTransform() : FTransform::Identity;
+}
+
+bool AArrowProjectile::InitializeStrengthDamage(
 	UAbilitySystemComponent* InSourceASC,
 	AActor* InInstigatorActor,
 	const FGameplayEffectSpecHandle& InDirectDamageSpec)
 {
 	if (!HasAuthority())
 	{
-		return;
+		return false;
 	}
 
 	SourceASC = InSourceASC;
 	InstigatorActor = InInstigatorActor;
-	DamageEffectSpecHandles.Reset();
+	DirectDamageSpec = FGameplayEffectSpecHandle();
 	StatusEffectSpecHandles.Reset();
 	StatusEffectRefreshGrantedTags.Reset();
-	AppliedActors.Reset();
 
 	if (!SourceASC)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("AArrowProjectile::InitializeStrengthDamage: SourceASC is missing."));
-		return;
+		return false;
 	}
 
 	if (!InDirectDamageSpec.IsValid() || !InDirectDamageSpec.Data.IsValid())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("AArrowProjectile::InitializeStrengthDamage: invalid Damage Spec."));
-		return;
+		return false;
 	}
 
-	DamageEffectSpecHandles.Add(InDirectDamageSpec);
+	auto* Resolver = FindComponentByClass<UCombatHitResolver>();
+	if (!Resolver || !Resolver->OpenWindow(InDirectDamageSpec)) return false;
+	DirectDamageSpec = InDirectDamageSpec;
 	BuildStatusEffectSpecs();
-}
-
-TSubclassOf<UGameplayEffect> AArrowProjectile::GetDirectDamageEffectClass() const
-{
-	if (DamageData.DirectDamageEffectClass)
-	{
-		return DamageData.DirectDamageEffectClass;
-	}
-
-	for (const FArrowDamageEffect& LegacyDamageEffect : DamageData.DamageEffects)
-	{
-		if (LegacyDamageEffect.DamageEffectClass)
-		{
-			return LegacyDamageEffect.DamageEffectClass;
-		}
-	}
-
-	return nullptr;
-}
-
-void AArrowProjectile::SetDamageEffectSpecHandle(const FGameplayEffectSpecHandle& InDamageEffectSpecHandle)
-{
-	DamageEffectSpecHandles.Reset();
-	if (InDamageEffectSpecHandle.IsValid())
-	{
-		DamageEffectSpecHandles.Add(InDamageEffectSpecHandle);
-	}
-}
-
-void AArrowProjectile::SetAdditionalDamageEffectSpecHandles(const TArray<FGameplayEffectSpecHandle>& InAdditionalDamageEffectSpecHandles)
-{
-	DamageEffectSpecHandles.Append(InAdditionalDamageEffectSpecHandles);
+	return true;
 }
 
 void AArrowProjectile::Multicast_PlayImpactFX_Implementation(const FHitResult& Hit)
@@ -206,23 +240,112 @@ void AArrowProjectile::Multicast_PlayImpactFX_Implementation(const FHitResult& H
 	K2_OnImpactFX(Hit);
 }
 
-void AArrowProjectile::OnArrowHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+void AArrowProjectile::Multicast_PlayImpactPresentation_Implementation(
+	const FArrowImpactPresentationData& ImpactData)
 {
-	if (!HasAuthority() || ShouldIgnoreHitActor(OtherActor))
+	FHitResult CosmeticHit;
+	CosmeticHit.ImpactPoint = ImpactData.ImpactLocation;
+	CosmeticHit.Location = ImpactData.ImpactLocation;
+	CosmeticHit.ImpactNormal = ImpactData.ImpactNormal;
+	CosmeticHit.Normal = ImpactData.ImpactNormal;
+	CosmeticHit.Component = Cast<UPrimitiveComponent>(ImpactData.AttachComponent.Get());
+	CosmeticHit.BoneName = ImpactData.BoneName;
+	K2_OnImpactFX(CosmeticHit);
+
+	if (GetNetMode() == NM_DedicatedServer || !GetWorld())
 	{
 		return;
 	}
 
-	if (CanApplyDamageToActor(OtherActor))
+	AArrowImpactVisual* ImpactVisual = GetWorld()->SpawnActor<AArrowImpactVisual>(
+		AArrowImpactVisual::StaticClass(),
+		FTransform::Identity);
+	if (ImpactVisual)
 	{
-		ApplyDamageToActor(OtherActor);
+		ImpactVisual->InitializeFromProjectile(
+			*this,
+			ImpactData,
+			ImpactEmbedDepth,
+			StuckArrowLifeSpan);
 	}
-	Multicast_PlayImpactFX(Hit);
+}
+
+void AArrowProjectile::OnArrowHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+{
+	if (!HasAuthority() || (bDestroyOnImpact && bImpactHandled))
+	{
+		return;
+	}
+
+	const bool bIgnoredHit = ShouldIgnoreHitActor(OtherActor);
+	UE_LOG(LogTemp, Display,
+		TEXT("[ArrowHit] Actor=%s Component=%s Mesh=%s Profile=%s ObjectType=%d Bone=%s Point=%s Ignored=%s"),
+		*GetNameSafe(OtherActor),
+		*GetNameSafe(OtherComp),
+		*GetHitMeshPath(OtherComp),
+		OtherComp ? *OtherComp->GetCollisionProfileName().ToString() : TEXT("None"),
+		OtherComp ? static_cast<int32>(OtherComp->GetCollisionObjectType()) : INDEX_NONE,
+		*Hit.BoneName.ToString(),
+		*Hit.ImpactPoint.ToCompactString(),
+		bIgnoredHit ? TEXT("true") : TEXT("false"));
+
+	if (bIgnoredHit || !UCombatHurtboxComponent::IsValidHitSurface(OtherActor, Hit))
+	{
+		return;
+	}
+	if (bDestroyOnImpact)
+	{
+		bImpactHandled = true;
+	}
+
+	const bool bDamageTarget = CanApplyDamageToActor(OtherActor);
+	const bool bConfirmed = bDamageTarget && ApplyDamageToActor(OtherActor, Hit);
+	if (!bDamageTarget || bConfirmed)
+	{
+		Multicast_PlayImpactPresentation(BuildImpactPresentationData(OtherComp, Hit));
+	}
 
 	if (bDestroyOnImpact)
 	{
+		if (ProjectileMovementComp)
+		{
+			ProjectileMovementComp->StopSimulating(Hit);
+		}
+		if (CollisionComp)
+		{
+			CollisionComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+		SetReplicateMovement(false);
 		Destroy();
 	}
+}
+
+FArrowImpactPresentationData AArrowProjectile::BuildImpactPresentationData(
+	UPrimitiveComponent* OtherComp,
+	const FHitResult& Hit) const
+{
+	FArrowImpactPresentationData Result;
+	Result.ImpactLocation = Hit.ImpactPoint;
+	Result.ImpactNormal = Hit.ImpactNormal.GetSafeNormal();
+	Result.IncomingDirection = GetVelocity().GetSafeNormal();
+	if (FVector(Result.IncomingDirection).IsNearlyZero())
+	{
+		Result.IncomingDirection = GetActorForwardVector().GetSafeNormal();
+	}
+	Result.BoneName = Hit.BoneName;
+
+	// Only stable components owned by replicated actors are safe RPC references.
+	// Static geometry needs no attachment; its world-space impact is sufficient.
+	if (OtherComp
+		&& OtherComp->Mobility != EComponentMobility::Static
+		&& OtherComp->IsNameStableForNetworking()
+		&& OtherComp->GetOwner()
+		&& OtherComp->GetOwner()->GetIsReplicated())
+	{
+		Result.AttachComponent = OtherComp;
+	}
+
+	return Result;
 }
 
 bool AArrowProjectile::ShouldIgnoreHitActor(const AActor* OtherActor) const
@@ -314,9 +437,9 @@ void AArrowProjectile::BuildStatusEffectSpecs()
 				continue;
 			}
 
-			FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
-			ContextHandle.AddInstigator(InstigatorActor.Get(), this);
-			ContextHandle.AddSourceObject(this);
+			FGameplayEffectContextHandle ContextHandle =
+				USWCombatEffectContextLibrary::MakeCombatEffectContext(
+					SourceASC, InstigatorActor.Get(), this);
 
 			FGameplayEffectSpecHandle StatusSpecHandle = SourceASC->MakeOutgoingSpec(
 				StatusEffect.StatusEffectClass,
@@ -330,70 +453,29 @@ void AArrowProjectile::BuildStatusEffectSpecs()
 			}
 		}
 
-		for (const TSubclassOf<UGameplayEffect>& StatusEffectClass : DamageData.StatusEffectClasses)
-		{
-			if (!StatusEffectClass)
-			{
-				continue;
-			}
 
-			FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
-			ContextHandle.AddInstigator(InstigatorActor.Get(), this);
-			ContextHandle.AddSourceObject(this);
-
-			FGameplayEffectSpecHandle StatusSpecHandle = SourceASC->MakeOutgoingSpec(
-				StatusEffectClass,
-				1.0f,
-				ContextHandle);
-
-			if (StatusSpecHandle.IsValid())
-			{
-				StatusEffectSpecHandles.Add(StatusSpecHandle);
-				StatusEffectRefreshGrantedTags.Add(FGameplayTag());
-			}
-		}
 	}
 }
 
-void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor)
+bool AArrowProjectile::ApplyDamageToActor(AActor* TargetActor, const FHitResult& HitResult)
 {
-	if (!TargetActor)
+	if (!HasAuthority() || !TargetActor)
 	{
-		return;
+		return false;
 	}
 
 	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor);
 	if (!TargetASC)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("AArrowProjectile::ApplyDamageToActor: TargetASC is missing for %s."), *GetNameSafe(TargetActor));
-		return;
+		return false;
 	}
 
-	const bool bHasValidDirectDamageSpec = DamageEffectSpecHandles.ContainsByPredicate(
-		[](const FGameplayEffectSpecHandle& SpecHandle)
-		{
-			return SpecHandle.IsValid() && SpecHandle.Data.IsValid();
-		});
-	if (!bHasValidDirectDamageSpec)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("AArrowProjectile::ApplyDamageToActor: invalid Damage Spec."));
-		return;
-	}
+	if (!DirectDamageSpec.IsValid()) return false;
 
-	const TWeakObjectPtr<AActor> TargetActorPtr(TargetActor);
-	if (AppliedActors.Contains(TargetActorPtr))
-	{
-		return;
-	}
-	AppliedActors.Add(TargetActorPtr);
-
-	for (const FGameplayEffectSpecHandle& DamageSpecHandle : DamageEffectSpecHandles)
-	{
-		if (DamageSpecHandle.IsValid() && DamageSpecHandle.Data.IsValid())
-		{
-			TargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpecHandle.Data.Get());
-		}
-	}
+	if (!HasAuthority()) return false;
+	auto* Resolver = FindComponentByClass<UCombatHitResolver>();
+	if (!Resolver || !Resolver->ResolveHit(TargetASC, HitResult, bEnableTeamDamageFiltering, true)) return false;
 
 	for (int32 StatusEffectIndex = 0; StatusEffectIndex < StatusEffectSpecHandles.Num(); ++StatusEffectIndex)
 	{
@@ -404,7 +486,18 @@ void AArrowProjectile::ApplyDamageToActor(AActor* TargetActor)
 				? StatusEffectRefreshGrantedTags[StatusEffectIndex]
 				: FGameplayTag();
 
-			UStatusEffectLibrary::ApplyDurationDamageEffectSpecToTarget(TargetASC, StatusSpecHandle, RefreshGrantedTag);
+			FGameplayEffectSpec TargetStatusSpec(*StatusSpecHandle.Data.Get());
+			USWCombatEffectContextLibrary::EnrichCombatEffectSpec(
+				TargetStatusSpec,
+				InstigatorActor.Get(),
+				this,
+				TargetActor,
+				&HitResult,
+				GetVelocity());
+			const FGameplayEffectSpecHandle TargetStatusSpecHandle(new FGameplayEffectSpec(TargetStatusSpec));
+			UStatusEffectLibrary::ApplyDurationDamageEffectSpecToTarget(
+				TargetASC, TargetStatusSpecHandle, RefreshGrantedTag);
 		}
 	}
+	return true;
 }

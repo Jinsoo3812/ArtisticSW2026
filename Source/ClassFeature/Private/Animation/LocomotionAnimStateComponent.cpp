@@ -581,6 +581,23 @@ void ULocomotionAnimStateComponent::UpdateMovementRequestState(float DeltaTime)
         bStartWasSprinting = false;
     }
 
+    const bool bActionMontageActive = CachedBasePlayer &&
+        (CachedBasePlayer->bIsAttacking || CachedBasePlayer->bIsDodging ||
+         CachedBasePlayer->bIsHitReacting || CachedBasePlayer->bIsPlayingCombatIntro);
+
+    if (bActionMontageActive)
+    {
+        ResetLocomotionActionState(TEXT("ActionMontageActive"));
+        bStartRequested = false;
+        bStopRequested = false;
+        bGroundMoveEpisodeActive = false;
+        bUseStartDatabase = false;
+        bUseSharpTurnDatabase = false;
+        bUseLoopDatabase = bHasMoveInput;
+        PreviousMoveInputForTurn = bHasMoveInput ? MovementInput : FVector2D::ZeroVector;
+        return;
+    }
+
     // Project_J distinguishes a normal turn redirect from a direct Pivot.
     // Artistic keeps 45/90 degree steering inside PSD_Run_Transition; only a
     // fast 180-ish reversal receives the authored Pivot one-shot.
@@ -660,6 +677,29 @@ void ULocomotionAnimStateComponent::UpdateTurnInPlacePhase(float DeltaTime)
     // while the State Controller restarts the selected clip when needed.
     const bool bLocallyOwnedRotation = CachedBasePlayer &&
         (CachedBasePlayer->IsLocallyControlled() || CachedBasePlayer->HasAuthority());
+
+    if (!bLocallyOwnedRotation)
+    {
+        // Simulated proxies consume the replicated TIP state from the authoritative snapshot
+        // and do not recalculate entry/continuation from a local Controller.
+        if (bTurnInPlacePhaseActive)
+        {
+            if (bStopRequested)
+            {
+                EmitStopDebug(TEXT("[SC_STOP_COMPONENT] Event=CancelledByTIP"));
+            }
+            bStopRequested = false;
+            bGroundMoveEpisodeActive = false;
+            bLandingRequested = false;
+            bIsLanding = false;
+            if (CurrentState == ELocomotionState::Stop || CurrentState == ELocomotionState::Landing)
+            {
+                ForceStateTransition(ELocomotionState::Idle);
+            }
+        }
+        return;
+    }
+
     const bool bHighPriorityAction = CachedBasePlayer &&
         (CachedBasePlayer->bIsAttacking || CachedBasePlayer->bIsDodging || CachedBasePlayer->bIsHitReacting);
     // Allow TIP when there is no move input (even if slowing down from Stop or recovering from Land)
@@ -706,6 +746,15 @@ void ULocomotionAnimStateComponent::UpdateTurnInPlacePhase(float DeltaTime)
         bGroundMoveEpisodeActive = false;
         bLandingRequested = false;
         bIsLanding = false;
+        if (CurrentState == ELocomotionState::Stop || CurrentState == ELocomotionState::Landing)
+        {
+            ForceStateTransition(ELocomotionState::Idle);
+        }
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().ClearTimer(StopFallbackTimerHandle);
+            World->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
+        }
     }
 
 }
@@ -766,6 +815,11 @@ void ULocomotionAnimStateComponent::UpdateMaxWalkSpeed() const
 
 	const USwimmingComponent* SwimmingComponent = CachedBasePlayer->GetSwimmingComponent();
 	const bool bIsInShallowWater = SwimmingComponent && SwimmingComponent->IsInShallowWater();
+	if (bIsInShallowWater && bIsSprinting)
+	{
+		CachedBasePlayer->StopSprint();
+	}
+
 	const bool bCanSprint =
 		bIsSprinting &&
 		!bIsInShallowWater &&
@@ -857,6 +911,10 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             {
                 ForceStateTransition(ELocomotionState::Stop);
             }
+            else if (bStartWasSprinting != bIsSprinting)
+            {
+                InterruptStartForGaitChange();
+            }
             break;
         }
         case ELocomotionState::Locomotion:
@@ -881,6 +939,10 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
             {
                 AlignActorYawToControlYawForStartIfNeeded();
                 ForceStateTransition(ELocomotionState::Start);
+            }
+            else if (bTurnInPlacePhaseActive)
+            {
+                ForceStateTransition(ELocomotionState::Idle);
             }
             break;
         }
@@ -947,12 +1009,12 @@ void ULocomotionAnimStateComponent::UpdateStateTransitions(float DeltaTime)
                 ForceStateTransition(ELocomotionState::InAir);
             }
             // Sprint Land is authored for the sprint gait captured at impact.
-            // If Sprint is released while movement input continues, retaining
-            // that root-motion clip is visually wrong. Hand straight to the
+            // If Sprint state changes (pressed or released) while movement input continues,
+            // retaining that root-motion clip is visually wrong. Hand straight to the
             // regular moving Motion Matching query; its Pose History redirect
             // makes the graph transition seamless instead of exposing a stale
             // hidden locomotion loop.
-            else if (bLandWasSprinting && !bIsSprinting && bHasMoveInput)
+            else if ((bLandWasSprinting != bIsSprinting) && bHasMoveInput)
             {
                 InterruptSprintLandingForSprintRelease();
             }
@@ -1401,6 +1463,10 @@ void ULocomotionAnimStateComponent::ApplyAuthoritativeSnapshot(const FReplicated
     MoveInput = CachedMoveInput;
     MoveInputSize = CachedMoveInput.Size();
     LandMoveDirection = Snapshot.LandMoveDirection;
+    bShouldTurnInPlace = Snapshot.bShouldTurnInPlace;
+    DesiredFacingDeltaYaw = Snapshot.DesiredFacingDeltaYaw;
+    bTurnInPlacePhaseActive = Snapshot.bShouldTurnInPlace;
+    bIsTurningInPlace = Snapshot.bShouldTurnInPlace;
 }
 
 void ULocomotionAnimStateComponent::HandleLanded(const FHitResult& Hit, float ImpactFallSpeed)
@@ -1938,6 +2004,75 @@ void ULocomotionAnimStateComponent::InterruptSprintLandingForSprintRelease()
     // first query must use Pose History and not continue the old hidden pose.
     bMotionMatchingReselectionRequested = true;
     ForceStateTransition(ELocomotionState::Locomotion);
+}
+
+void ULocomotionAnimStateComponent::InterruptStartForGaitChange()
+{
+    RecordStateControllerDebugEvent(FString::Printf(
+        TEXT("Start gait change -> MotionMatching Sprint=%d Time=%.3f Input=(%.2f,%.2f)"),
+        bIsSprinting ? 1 : 0,
+        MoveInputHeldTime,
+        CachedMoveInput.X,
+        CachedMoveInput.Y));
+
+    if (IsMotionMatchingCaptureEnabled())
+    {
+        const FString DebugLine = FString::Printf(
+            TEXT("[MMCAP_EVENT] InterruptStartForGaitChange Sprint=%d Input=(R=%.2f,F=%.2f) Ground=%.1f"),
+            bIsSprinting ? 1 : 0,
+            CachedMoveInput.X,
+            CachedMoveInput.Y,
+            GroundSpeed);
+        UE_LOG(LogTemp, Display, TEXT("%s"), *DebugLine);
+        AppendMotionMatchingCaptureLine(DebugLine);
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(StartFallbackTimerHandle);
+    }
+
+    bGroundStartFinished = true;
+    bPendingGroundStartFinish = false;
+    bStartRequested = false;
+    bUseStartDatabase = false;
+    bUseLoopDatabase = true;
+    bUseSharpTurnDatabase = false;
+    bStartWasSprinting = bIsSprinting;
+
+    // The direct Start was visible while the MM branch was hidden. Its
+    // first query must use Pose History and not continue the old hidden pose.
+    bMotionMatchingReselectionRequested = true;
+    ForceStateTransition(ELocomotionState::Locomotion);
+}
+
+void ULocomotionAnimStateComponent::ResetLocomotionActionState(const TCHAR* Reason)
+{
+    bStartRequested = false;
+    bPendingGroundStartFinish = false;
+    bGroundStartFinished = true;
+    bStopRequested = false;
+    bGroundMoveEpisodeActive = false;
+    bLandingRequested = false;
+    bIsLanding = false;
+    bIsJumping = false;
+    bIsFallOffStart = false;
+    bSharpTurnRequested = false;
+    bMotionMatchingReselectionRequested = false;
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(StartFallbackTimerHandle);
+        World->GetTimerManager().ClearTimer(StopFallbackTimerHandle);
+        World->GetTimerManager().ClearTimer(LandingFallbackTimerHandle);
+        World->GetTimerManager().ClearTimer(JumpStartTimerHandle);
+        World->GetTimerManager().ClearTimer(FallOffStartTimerHandle);
+    }
+
+    if (CurrentState == ELocomotionState::Start || CurrentState == ELocomotionState::Stop || CurrentState == ELocomotionState::Landing)
+    {
+        ForceStateTransition(bHasMoveInput ? ELocomotionState::Locomotion : ELocomotionState::Idle);
+    }
 }
 
 void ULocomotionAnimStateComponent::InterruptLandingForStop()

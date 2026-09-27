@@ -16,7 +16,7 @@ struct FPlayerSkillDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill", meta = (Categories = "GameplayAbility.Skill"))
 	FGameplayTag SkillTag;
 
-	/** Item.Id.Skill.* identity used by UI for the skill name/icon. */
+	/** Item.Id.Skill.* identity used by UI and as the permanent-unlock recipe result. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill", meta = (Categories = "Item.Id.Skill"))
 	FGameplayTag SkillItemTag;
 
@@ -39,14 +39,19 @@ struct FPlayerSkillState
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Skill")
 	bool bUnlocked = false;
+
+	/** Progression prerequisite met; crafting may be shown even before final unlock. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Skill")
+	bool bUnlockConditionMet = false;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPlayerSkillChanged, FGameplayTag, SkillTag);
 
 /**
- * Server-authoritative story unlock state and inventory-backed skill-use facade.
- * This component intentionally owns no separate charge count: the corresponding
- * material stack in UInventoryComponent is the single source of truth.
+ * Server-authoritative permanent unlock state and inventory-backed skill-use facade.
+ * Skill identity items never grant a temporary unlock. This component intentionally
+ * owns no separate charge count: the corresponding usage-material stack in
+ * UInventoryComponent is the single source of truth.
  */
 UCLASS(ClassGroup = (Player), meta = (BlueprintSpawnableComponent))
 class CLASSFEATURE_API UPlayerSkillComponent : public UActorComponent
@@ -63,6 +68,9 @@ public:
 	bool IsSkillUnlocked(FGameplayTag SkillTag) const;
 
 	UFUNCTION(BlueprintPure, Category = "Skill")
+	bool IsSkillUnlockConditionMet(FGameplayTag SkillTag) const;
+
+	UFUNCTION(BlueprintPure, Category = "Skill")
 	int32 GetSkillUseCount(FGameplayTag SkillTag) const;
 
 	UFUNCTION(BlueprintPure, Category = "Skill")
@@ -73,6 +81,7 @@ public:
 
 	bool CanUseSkillWithInventory(FGameplayTag SkillTag, const UInventoryComponent* Inventory) const;
 	bool TryConsumeSkillUseWithInventory(FGameplayTag SkillTag, UInventoryComponent* Inventory);
+	bool IsSkillUnlockedWithInventory(FGameplayTag SkillTag, const UInventoryComponent* Inventory) const;
 
 	/** Keeps HUD queries valid while the controller is possessing a ship or cannon. */
 	void RegisterInventorySource(UInventoryComponent* Inventory);
@@ -84,6 +93,10 @@ public:
 	/** Server-authoritative save/load and test API. */
 	UFUNCTION(BlueprintCallable, Category = "Skill")
 	bool SetSkillUnlocked(FGameplayTag SkillTag, bool bUnlocked);
+
+	/** Server-authoritative progression API. This opens crafting without granting the skill. */
+	UFUNCTION(BlueprintCallable, Category = "Skill")
+	bool SetSkillUnlockConditionMet(FGameplayTag SkillTag, bool bConditionMet);
 
 	UFUNCTION(BlueprintPure, Category = "Skill")
 	FGameplayTag GetSkillItemTag(FGameplayTag SkillTag) const;

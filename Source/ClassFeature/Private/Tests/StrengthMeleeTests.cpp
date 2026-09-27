@@ -101,7 +101,8 @@ bool FStrengthMeleePayloadTest::RunTest(const FString& Parameters)
 
 	FStrengthDamageRequest DamageRequest;
 	DamageRequest.SourceASC = SourceASC;
-	DamageRequest.DamageEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
+
+
 	DamageRequest.AttackCoefficient = 1.0f;
 	DamageRequest.InstigatorActor = SourceCharacter;
 	DamageRequest.EffectCauser = Sword;

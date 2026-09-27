@@ -11,9 +11,6 @@
 
 class UUserWidget;
 
-// 컴포넌트를 소유한 액터(Item, 작업대 등)에게 상호작용 이벤트가 발생했음을 알리기 위한 델리게이트
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInteractedSignature, AActor*, Interactor);
-
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class ARTISTICSWCORE_API UInteractableComponent : public USphereComponent, public IInteractable
 {
@@ -21,9 +18,11 @@ class ARTISTICSWCORE_API UInteractableComponent : public USphereComponent, publi
 
 public:
 	UInteractableComponent();
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	// IInteractable 구현
 	virtual FGameplayTag GetInteractionTag() const override;
+	virtual const FInteractionUIInfo& GetInteractionUIInfo() const override;
 	virtual void Interact(AActor* Interactor) override;
 
 public:
@@ -33,6 +32,10 @@ public:
 	// 컴포넌트마다 인스턴스별로 태그를 설정할 수 있도록 노출
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
 	FGameplayTag InteractionTag;
+
+	/** Draw this component's scaled collision sphere while playing. Disabled by default. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Debug")
+	bool bDrawDebugInteractionRange = false;
 
 	// Interact 발생 시 Owner Actor(또는 필요로 하는 외부)로 방송할 델리게이트
 	UPROPERTY(BlueprintAssignable, Category = "Interaction")

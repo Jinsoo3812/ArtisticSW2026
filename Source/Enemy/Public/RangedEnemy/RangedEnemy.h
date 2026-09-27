@@ -2,12 +2,21 @@
 
 #include "CoreMinimal.h"
 #include "BaseEnemy.h"
+#include "Components/SkinnedMeshComponent.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "RangedEnemy.generated.h"
 
 class AEnemyBow;
 class AShip;
 class UAnimMontage;
+
+enum class ERangedShotSnapshotResult : uint8
+{
+	Ready,
+	InvalidTargetOrRange,
+	MissingAttackOrigin,
+	BlockedLineOfSight
+};
 
 /**
  * Stationary ranged-enemy MVP that can fight independently on ground or use
@@ -66,15 +75,34 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ranged Enemy|Combat")
 	AEnemyBow* GetEquippedBow() const;
 
-	/** Resolves the equipped bow's arrow spawn socket in world space. */
+	/** Resolves the character mesh's authored arrow socket in world space. */
 	bool GetRangedAttackOrigin(FTransform& OutSpawnTransform) const;
+	FName GetRangedAttackSocketName() const { return RangedAttackSocketName; }
 	FVector GetRangedAimLocation(const AActor* TargetActor) const;
+	/**
+	 * Revalidates range and LOS at the release frame, then captures the exact
+	 * socket/target pair that must be reused by projectile spawning.
+	 */
+	ERangedShotSnapshotResult BuildRangedShotSnapshot(
+		const AActor* TargetActor,
+		FTransform& OutSpawnTransform,
+		FVector& OutAimLocation,
+		FHitResult* OutHit = nullptr) const;
+	virtual void HandleRangedReleaseLineOfSightBlocked(AActor* TargetActor) {}
+	void AcquireServerRangedAttackPoseRefresh();
+	void ReleaseServerRangedAttackPoseRefresh();
 
 	UAnimMontage* GetRangedAttackMontage() const;
 	float GetRangedAttackMontagePlayRate() const;
+	static float ResolveAttackMontagePlayRate(float AuthoredPlayRate, float AttackSpeedMultiplier);
 	FGameplayTag GetRangedFireEventTag() const { return FireEventTag; }
 	float GetMinAttackRange() const { return MinAttackRange; }
-	float GetMaxAttackRange() const { return MaxAttackRange; }
+	/** Current equipped-weapon range, with MaxAttackRange retained as a loadout fallback. */
+	UFUNCTION(BlueprintPure, Category = "Ranged Enemy|Combat")
+	float GetEffectiveAttackRange() const;
+
+	float GetMaxAttackRange() const { return GetEffectiveAttackRange(); }
+	float GetFallbackMaxAttackRange() const { return MaxAttackRange; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -82,6 +110,7 @@ protected:
 
 	UFUNCTION()
 	void OnRep_HostShip();
+	virtual void HandleReplicatedHostShipChanged() {}
 
 	UFUNCTION()
 	void OnHostShipDestroyed(AActor* DestroyedActor);
@@ -92,6 +121,12 @@ protected:
 	AShip* FindShipInActorHierarchy(AActor* Actor) const;
 	bool EvaluateAttackTarget(const AActor* Candidate, bool bRequireLineOfSight, FString& OutReason) const;
 	bool TraceLineOfSight(const AActor* Candidate, FHitResult* OutHit = nullptr) const;
+	bool TraceLineOfSightFrom(
+		const AActor* Candidate,
+		const FVector& Start,
+		const FVector& End,
+		bool bDrawDebug,
+		FHitResult* OutHit = nullptr) const;
 
 protected:
 	UPROPERTY(ReplicatedUsing = OnRep_HostShip, EditInstanceOnly, BlueprintReadOnly, Category = "Ranged Enemy|Ship")
@@ -116,6 +151,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat", meta = (ClampMin = "0.0"))
 	float MinAttackRange = 150.0f;
 
+	/** Compatibility fallback used only while no equipped weapon exposes a positive AttackRange. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat", meta = (ClampMin = "0.0"))
 	float MaxAttackRange = 2500.0f;
 
@@ -125,17 +161,21 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat")
 	float TargetAimHeightOffset = 60.0f;
 
-	/** Compatibility fallback. Prefer WeaponDefinition.CombatData.AttackMontage. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Animation")
-	TObjectPtr<UAnimMontage> AttackMontage = nullptr;
+	/** Socket authored on the ranged enemy's character skeleton, not on the bow mesh. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat")
+	FName RangedAttackSocketName = TEXT("Arrow_socket");
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Animation")
 	FGameplayTag FireEventTag;
 
+	/** Draws only the release-frame LOS that is reused for the actual projectile spawn. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Debug")
 	bool bDrawAttackLineOfSight = false;
 
 	FTimerHandle HostShipResolveTimerHandle;
 	int32 HostShipResolveAttemptCount = 0;
 	double NextAttackTime = 0.0;
+	EVisibilityBasedAnimTickOption ServerRangedAttackOriginalAnimTickOption =
+		EVisibilityBasedAnimTickOption::AlwaysTickPose;
+	int32 ServerRangedAttackPoseRefreshRefCount = 0;
 };

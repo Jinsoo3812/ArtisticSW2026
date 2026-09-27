@@ -21,16 +21,17 @@ enum class EStoryNode : uint8
 	ReconQuestAccepted UMETA(DisplayName = "정찰 퀘스트 수락"),
 	StoryClue1Acquired UMETA(DisplayName = "스토리 단서 1 획득"),
 	CipherBookAcquired UMETA(DisplayName = "일본군 암호 해독서 획득"),
-	MiddleBoss1Defeated UMETA(DisplayName = "중간보스 1 처치 및 명량 참공 지도 획득"),
+	MiddleBoss1Defeated UMETA(DisplayName = "중간보스 1 처치 및 명량 침공 지도 획득"),
 	SupplyPatrolQuestAccepted UMETA(DisplayName = "보급로 순찰 퀘스트 수락"),
 	CurrentGeneratorUnlocked UMETA(DisplayName = "해류 발생기 해금"),
 	MiddleBoss2Defeated UMETA(DisplayName = "중간보스 2 처치 및 일본군 암호 획득"),
+	DecipherQuestAccepted UMETA(DisplayName = "암호 해독 퀘스트 수락"),
 	SuppressJapaneseForcesQuestAccepted
-		UMETA(DisplayName = "해독된 암호 제작 및 일본군 저지 퀘스트 수락"),
-	StormUnlocked UMETA(DisplayName = "폭풍 해금"),
-	MiddleBoss3Defeated UMETA(DisplayName = "중간보스 3 처치 및 일본군 증원 정보 획득"),
+		UMETA(DisplayName = "해독된 암호 제작 및 원군 저지 퀘스트 수락"),
+	WaterBombUnlocked UMETA(DisplayName = "물폭탄 해금"),
+	MiddleBoss3Defeated UMETA(DisplayName = "중간보스 3 처치 및 일본군 공습 정보 획득"),
 	UldolmokBattleQuestAccepted UMETA(DisplayName = "울돌목 전투 퀘스트 수락"),
-	FlamethrowerUnlocked UMETA(DisplayName = "화염방사기 해금"),
+	BombardmentUnlocked UMETA(DisplayName = "포탄세례 해금"),
 	FinalBossDefeated UMETA(DisplayName = "최종 보스 처치"),
 	EndingDialogueCompleted UMETA(DisplayName = "엔딩 대화 완료")
 };

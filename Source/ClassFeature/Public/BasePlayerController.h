@@ -6,7 +6,9 @@
 #include "Components/SlateWrapperTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
+#include "Inventory/InventoryComponent.h"
 #include "TimerManager.h"
+#include "Upgrade/ShipUpgradeTypes.h"
 #include "ArtisticSW2026PlayerController.h"
 #include "BasePlayerController.generated.h"
 
@@ -22,6 +24,8 @@ class AStorageChest;
 class UStorageWindowWidget;
 class UFacilityHubWidget;
 class UStatusWindowWidget;
+class AFacilityHubActor;
+class ASharedShipUpgradeState;
 
 struct FStorageRevealState
 {
@@ -46,9 +50,23 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Facility Hub")
 	bool IsFacilityHubOpen() const;
 
+	UFUNCTION(Server, Reliable)
+	void ServerReleaseFacilityHub(AFacilityHubActor* FacilityHub);
+
+	UFUNCTION(Server, Reliable)
+	void ServerRequestActivateSharedShipUpgrade(ASharedShipUpgradeState* SharedState, FName NodeId);
+
+	UFUNCTION(Client, Reliable)
+	void ClientReceiveSharedShipUpgradeResult(
+		ASharedShipUpgradeState* SharedState,
+		FName NodeId,
+		EShipUpgradeActivationResult Result,
+		const FText& Message);
+
 	/*--- 초기화 ---*/
 	virtual void SetupInputComponent() override;
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaTime) override;
 
 	/*--- 네트워크 초기화 ---*/
@@ -103,7 +121,14 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerCloseStorage(AStorageChest* StorageChest);
 
+	UFUNCTION(Server, Reliable)
+	void ServerSharedStorageSlotAction(AStorageChest* Chest, int32 Index, FGameplayTag ExpectedTag, int32 ExpectedCount, int32 ExpectedCapacity, bool bQuickMove);
+	UFUNCTION(Server, Reliable)
+	void ServerQuickMoveInventorySlotInTab(EInventoryTab Tab, int32 Index, FGameplayTag ExpectedTag, int32 ExpectedCount);
+	bool CanAccessStorage(AStorageChest* Chest) const;
 	bool HasOpenStorage() const { return ActiveStorageChest != nullptr; }
+	/** Consume F while a chest or facility window is open, regardless of overlap. */
+	bool CloseActiveInteractionWindow();
 	bool IsStorageSlotRevealed(AStorageChest* StorageChest, int32 SlotIndex) const;
 	bool IsStorageSlotSearching(AStorageChest* StorageChest, int32 SlotIndex) const;
 
@@ -114,6 +139,9 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UFacilityHubWidget> FacilityHubWidget;
+
+	UPROPERTY()
+	TObjectPtr<AFacilityHubActor> ActiveFacilityHub;
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UPlayerHUDWidget> PlayerHUDWidgetClass;
@@ -133,6 +161,7 @@ protected:
 	bool bWasStatusPawnInputEnabled = true;
 	bool bStatusCharacterInputLocked = false;
 	bool bInventoryInputModeApplied = false;
+	bool bInteractionMovementLocked = false;
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UStorageWindowWidget> StorageWindowWidgetClass;
@@ -164,6 +193,7 @@ protected:
 	void BindHUDToCurrentPlayer();
 	void HandleMenuEscape();
 	void ApplyInventoryInputMode(bool bOpen);
+	void UpdateInteractionMovementLock();
 	void SetStatusCharacterInputLocked(bool bLocked);
 	void OpenStorage(AStorageChest* StorageChest);
 	void CloseStorage(bool bNotifyServer = true);

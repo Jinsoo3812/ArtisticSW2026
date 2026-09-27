@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -25,13 +25,16 @@ public:
 	static bool SendGameplayEventToMeshOwner(
 		USkeletalMeshComponent* MeshComp,
 		FGameplayTag GameplayEventTag,
-		float EventMagnitude = 0.0f);
+		float EventMagnitude = 0.0f, const UObject* EventSource = nullptr);
 
 	// 노티파이가 실행될 때 호출되는 함수
 	virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;
 
 	// 에디터 타임라인에서 태그 이름이 바로 보이도록 하는 편의성 함수
 	virtual FString GetNotifyName_Implementation() const override;
+
+	FGameplayTag GetEventTag() const { return EventTag; }
+	void SetEventTag(FGameplayTag NewEventTag) { EventTag = NewEventTag; }
 
 protected:
 	// 블루프린트(에디터)에서 할당할 이벤트 태그

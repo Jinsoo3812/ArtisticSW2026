@@ -21,7 +21,8 @@ UENUM(BlueprintType)
 enum class ECraftingOutputType : uint8
 {
 	Inventory,
-	ExternalReceiver
+	ExternalReceiver,
+	SkillUnlock
 };
 
 UENUM(BlueprintType)
@@ -35,6 +36,8 @@ enum class ECraftingFailureReason : uint8
 	OutOfRange,
 	InvalidQuantity,
 	MissingIngredients,
+	UnlockConditionNotMet,
+	AlreadyUnlocked,
 	OutputUnavailable,
 	OutputRejected,
 	DuplicateRequest,
@@ -54,6 +57,10 @@ struct CLASSFEATURE_API FCraftingListQuery
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting")
 	bool bIncludeDisabled = false;
+
+	/** Optional exact result filter. Skill crafting uses Item.Id.Skill.* here. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting", meta = (Categories = "Item.Id"))
+	FGameplayTag ResultItemTag;
 };
 
 USTRUCT(BlueprintType)
