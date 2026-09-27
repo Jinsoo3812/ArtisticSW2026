@@ -4,6 +4,7 @@
 #include "GameFramework/SaveGame.h"
 #include "GameplayTagContainer.h"
 #include "PlayerRespawnTypes.h"
+#include "Room/SWRoomSnapshotTypes.h"
 #include "SWRoomSaveGame.generated.h"
 
 USTRUCT()
@@ -23,6 +24,19 @@ struct ARTISTICSWCORE_API FSWRoomPlayerProgress
 	UPROPERTY(SaveGame) TArray<FGameplayTag> QuickSlotItemTags;
 	UPROPERTY(SaveGame) TArray<FName> UpgradeNodeIds;
 	UPROPERTY(SaveGame) TArray<FSWRoomSkillProgress> Skills;
+	UPROPERTY(SaveGame) bool bHasResumeTransform = false;
+	UPROPERTY(SaveGame) FTransform ResumeWorldTransform;
+	UPROPERTY(SaveGame) FTransform ShipRelativeTransform;
+	UPROPERTY(SaveGame) FGuid ShipStableId;
+	UPROPERTY(SaveGame) FRotator ControlRotation;
+	UPROPERTY(SaveGame) FName CameraMode;
+	UPROPERTY(SaveGame) float CameraZoom = 0.f;
+	UPROPERTY(SaveGame) bool bWasDead = false;
+	UPROPERTY(SaveGame) bool bWasSwimming = false;
+	UPROPERTY(SaveGame) bool bWasMounted = false;
+	UPROPERTY(SaveGame) FGuid MountedDeviceId;
+	UPROPERTY(SaveGame) float CurrentHealth = 0.f;
+	UPROPERTY(SaveGame) float MaximumHealth = 0.f;
 };
 
 USTRUCT()
@@ -76,7 +90,10 @@ class ARTISTICSWCORE_API USWRoomSaveGame : public USaveGame
 {
 	GENERATED_BODY()
 public:
-	UPROPERTY(SaveGame) int32 SaveVersion = 1;
+	UPROPERTY(SaveGame) int32 SaveVersion = 2;
+	UPROPERTY(SaveGame) ESWRoomSaveKind SaveKind = ESWRoomSaveKind::New;
+	UPROPERTY(SaveGame) uint64 CaptureSequence = 0;
+	UPROPERTY(SaveGame) FSWRoomWorldSnapshot WorldSnapshot;
 	UPROPERTY(SaveGame) FGuid RoomId;
 	UPROPERTY(SaveGame) FString HostDisplayName;
 	UPROPERTY(SaveGame) FSWRoomPlayerProgress HostProgress;
