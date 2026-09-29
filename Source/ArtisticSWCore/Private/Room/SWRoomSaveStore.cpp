@@ -72,6 +72,8 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 		if (!Record.StableId.IsValid() || Record.ClassPath.IsNull() || Record.LevelPartition.PackagePath.IsNull()
 			|| Record.LevelPartition.InstanceName.IsNone()
 			|| Record.WorldTransform.ContainsNaN()
+			|| Record.AttachParentId == Record.StableId
+			|| (Record.AttachParentId.IsValid() == Record.AttachParentComponentName.IsNone())
 			|| !ValidMotion(Record.MotionState)
 			|| (Record.Origin == ESWRoomSpawnOrigin::Runtime && (!Record.CreatorId.IsValid() || Record.CreatorSequence == 0))
 			|| Record.ContractVersion <= 0
@@ -94,6 +96,8 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 		if (!Record.StableId.IsValid() || Record.ClassPath.IsNull() || Record.LevelPartition.PackagePath.IsNull()
 			|| Record.LevelPartition.InstanceName.IsNone()
 			|| Record.WorldTransform.ContainsNaN()
+			|| Record.AttachParentId == Record.StableId
+			|| (Record.AttachParentId.IsValid() == Record.AttachParentComponentName.IsNone())
 			|| !ValidMotion(Record.MotionState)
 			|| ActorIds.Contains(Record.StableId)
 			|| (Record.Origin == ESWRoomSpawnOrigin::Runtime && (!Record.CreatorId.IsValid() || Record.CreatorSequence == 0))
@@ -159,6 +163,10 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 		|| !ValidateIssues(Room->SharedProgress.CaptureIssues)) return false;
 	for (const FSWRoomGuestProgress& Guest : Room->Guests)
 		if (!ValidateIssues(Guest.Progress.CaptureIssues)) return false;
+	for (const FSWRoomActorRecord& Record : Room->WorldSnapshot.Actors)
+		if (Record.AttachParentId.IsValid() && !ActorIds.Contains(Record.AttachParentId)) return false;
+	for (const FSWRoomActorRecord& Record : Room->WorldSnapshot.UnloadedActors)
+		if (Record.AttachParentId.IsValid() && !ActorIds.Contains(Record.AttachParentId)) return false;
 	for (const FSWRoomActorRecord& Record : Room->WorldSnapshot.Actors)
 		for (const FGuid& Id : Record.ReferenceIds) if (!ActorIds.Contains(Id)) return false;
 	for (const FSWRoomActorRecord& Record : Room->WorldSnapshot.UnloadedActors)

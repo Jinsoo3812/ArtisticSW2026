@@ -178,6 +178,9 @@ struct ARTISTICSWCORE_API FSWRoomActorRecord
 	UPROPERTY(SaveGame) FGuid CreatorId;
 	UPROPERTY(SaveGame) uint64 CreatorSequence = 0;
 	UPROPERTY(SaveGame) FTransform WorldTransform;
+	UPROPERTY(SaveGame) FGuid AttachParentId;
+	UPROPERTY(SaveGame) FName AttachParentComponentName;
+	UPROPERTY(SaveGame) FName AttachSocketName;
 	UPROPERTY(SaveGame) FSWRoomMotionState MotionState;
 	UPROPERTY(SaveGame) TArray<uint8> SaveGameBytes;
 	UPROPERTY(SaveGame) TArray<FSWRoomComponentRecord> Components;

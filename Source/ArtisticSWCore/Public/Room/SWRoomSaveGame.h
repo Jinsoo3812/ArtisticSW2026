@@ -104,7 +104,7 @@ class ARTISTICSWCORE_API USWRoomSaveGame : public USaveGame
 {
 	GENERATED_BODY()
 public:
-	static constexpr int32 CurrentVersion = 4;
+	static constexpr int32 CurrentVersion = 7;
 	static constexpr int32 CurrentContentContractVersion = 3;
 	UPROPERTY(SaveGame) int32 SaveVersion = CurrentVersion;
 	UPROPERTY(SaveGame) ESWRoomSaveKind SaveKind = ESWRoomSaveKind::New;

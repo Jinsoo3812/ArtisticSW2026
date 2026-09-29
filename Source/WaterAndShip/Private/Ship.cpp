@@ -3,6 +3,7 @@
 
 #include "Ship.h"
 #include "Room/SWRoomSnapshotComponent.h"
+#include "Network/SWNetworkLog.h"
 #include "Repair/ShipRepairPointComponent.h"
 #include "ShipAttributeSet.h"
 #include "AbilitySystemComponent.h"
@@ -1609,6 +1610,9 @@ void AShip::Disembark()
 	if (PC)
 	{
 		PC->Possess(PlayerToRestore);
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=ShipDisembark Result=Possessed Exit=%s PlayerLocation=%s Player=%s"),
+			HelmExitPoint ? *HelmExitPoint->GetComponentLocation().ToString() : TEXT("None"),
+			*PlayerToRestore->GetActorLocation().ToString(), *GetNameSafe(PlayerToRestore));
 	}
 
 	RidingPlayer = nullptr;

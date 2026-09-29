@@ -152,6 +152,7 @@ protected:
 	TArray<FSWRoomGameplayEffectState> PendingRoomEffects;
 	bool bHasPendingRoomEffects = false;
 	float PendingRoomHealth = 0.f;
+	bool bHasCompletedInitialPossession = false;
 	friend class FWeaponEquipmentLifecycleTest;
 
 	/** Retained while the controller temporarily possesses a ship or cannon. */

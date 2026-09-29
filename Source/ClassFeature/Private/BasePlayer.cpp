@@ -1045,12 +1045,18 @@ void ABasePlayer::PossessedBy(AController* NewController)
 			ApplyProgressSnapshot(ReconnectSnapshot);
 			UE_LOG(LogSWRoom, Display, TEXT("Flow=Reconnect Side=Server PlayerIndex=%d Result=MemorySnapshotApplied"), GameMode->GetPlayerIndex(NewController));
 		}
-		else
+		else if (!bHasCompletedInitialPossession)
 		{
 			if (UClassFeatureRoomProgressSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr)
 				Room->RestorePlayer(this);
 			RestoreRespawnProgress(NewController);
 		}
+		else
+		{
+			UE_LOG(LogSWRoom, Display, TEXT("Flow=PlayerRestore Result=Skipped Reason=ExistingPawnRepossessed Player=%s Location=%s"),
+				*GetPathName(), *GetActorLocation().ToString());
+		}
+		bHasCompletedInitialPossession = true;
 
 		// Interact GA에 의해 발생한 Gameplay Event를 처리할 콜백 함수 등록
 		// 현재는 Event 별로 따로 바인딩하지만 더 좋은 방법이 있을까?

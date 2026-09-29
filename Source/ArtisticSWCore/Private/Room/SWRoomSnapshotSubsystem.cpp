@@ -16,6 +16,7 @@
 #include "GameFramework/Info.h"
 #include "GameFramework/Pawn.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/SceneComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "UObject/UnrealType.h"
 #include "Serialization/ObjectAndNameAsStringProxyArchive.h"
@@ -37,6 +38,28 @@ bool IsExcluded(const AActor* Actor)
 bool IsLevelPlacedActor(const AActor* Actor)
 {
 	return Actor && Actor->HasAnyFlags(RF_WasLoaded);
+}
+
+bool ShouldTraceRoomPhysics(const AActor* Actor)
+{
+	if (!Actor) return false;
+	const FString ClassName = Actor->GetClass()->GetName();
+	return ClassName.Contains(TEXT("Chest")) || ClassName.Contains(TEXT("Ship"));
+}
+
+void TraceRoomPhysics(const TCHAR* Stage, const AActor* Actor, const FSWRoomActorRecord& Record)
+{
+	if (!ShouldTraceRoomPhysics(Actor)) return;
+	UPrimitiveComponent* Root = Cast<UPrimitiveComponent>(Actor->GetRootComponent());
+	UE_LOG(LogSWRoom, Display,
+		TEXT("Flow=RoomPhysics Stage=%s Id=%s Actor=%s Origin=%s Parent=%s Owner=%s Scale=%s SavedHasMotion=%d SavedSim=%d RootSim=%d SavedLinear=%s SavedAngular=%s CurrentLinear=%s CurrentAngular=%s"),
+		Stage, *Record.StableId.ToString(), *Actor->GetPathName(), *UEnum::GetValueAsString(Record.Origin),
+		*GetNameSafe(Actor->GetAttachParentActor()), *GetNameSafe(Actor->GetOwner()),
+		*Actor->GetActorScale3D().ToString(), Record.MotionState.bHasMotion ? 1 : 0,
+		Record.MotionState.bWasSimulatingPhysics ? 1 : 0, Root && Root->IsSimulatingPhysics() ? 1 : 0,
+		*Record.MotionState.LinearVelocity.ToString(), *Record.MotionState.AngularVelocityDegrees.ToString(),
+		*(Root ? Root->GetPhysicsLinearVelocity() : FVector::ZeroVector).ToString(),
+		*(Root ? Root->GetPhysicsAngularVelocityInDegrees() : FVector::ZeroVector).ToString());
 }
 
 bool SerializeValues(UObject* Object, TArray<uint8>& Bytes)
@@ -135,6 +158,10 @@ void AddMotionIssue(FSWRoomWorldSnapshot& Snapshot, const FSWRoomActorRecord& Re
 
 void RestoreMotion(AActor* Actor, UPrimitiveComponent* Primitive, const FSWRoomMotionState& Motion)
 {
+	if (Primitive && !Motion.bWasSimulatingPhysics && Primitive->IsSimulatingPhysics())
+	{
+		Primitive->SetSimulatePhysics(false);
+	}
 	if (!Motion.bHasMotion) return;
 	if (Motion.bWasSimulatingPhysics && Primitive)
 	{
@@ -524,7 +551,32 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 		Record.ContractVersion = Component->ContractVersion;
 		Record.bRequired = Component->bRequired;
 		Record.WorldTransform = Actor->GetActorTransform();
+		if (AActor* Parent = Actor->GetAttachParentActor())
+		{
+			const USWRoomSnapshotComponent* ParentId = Parent->FindComponentByClass<USWRoomSnapshotComponent>();
+			const USceneComponent* ParentComponent = Actor->GetRootComponent()
+				? Actor->GetRootComponent()->GetAttachParent() : nullptr;
+			const TWeakObjectPtr<AActor>* RegisteredParent = ParentId ? RegisteredActors.Find(ParentId->StableId) : nullptr;
+			if (RegisteredParent && RegisteredParent->Get() == Parent && ParentComponent
+				&& ParentComponent->GetOwner() == Parent)
+			{
+				Record.AttachParentId = ParentId->StableId;
+				Record.AttachParentComponentName = ParentComponent->GetFName();
+				Record.AttachSocketName = Actor->GetRootComponent()->GetAttachSocketName();
+			}
+			else
+			{
+				FSWRoomCaptureIssue& Issue = OutSnapshot.CaptureIssues.AddDefaulted_GetRef();
+				Issue.StableId = Record.StableId;
+				Issue.OwnerPath = Actor->GetPathName();
+				Issue.ClassPath = Record.ClassPath;
+				Issue.Domain = TEXT("Attachment");
+				Issue.FieldKey = TEXT("Parent");
+				Issue.Reason = FString::Printf(TEXT("Attached parent is not a registered room actor: %s"), *Parent->GetPathName());
+			}
+		}
 		Record.MotionState = CaptureMotion(Actor, Cast<UPrimitiveComponent>(Actor->GetRootComponent()));
+		TraceRoomPhysics(TEXT("Capture"), Actor, Record);
 		if (Record.MotionState.bHasMotion && (Record.MotionState.LinearVelocity.ContainsNaN()
 			|| Record.MotionState.AngularVelocityDegrees.ContainsNaN()))
 		{
@@ -662,6 +714,26 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 	}
 	for (const TPair<FGuid, FSWRoomActorRecord>& Pair : UnloadedRecords)
 		if (!RegisteredActors.Contains(Pair.Key)) OutSnapshot.UnloadedActors.Add(Pair.Value);
+	TSet<FGuid> CapturedActorIds;
+	for (const FSWRoomActorRecord& Record : OutSnapshot.Actors) CapturedActorIds.Add(Record.StableId);
+	for (const FSWRoomActorRecord& Record : OutSnapshot.UnloadedActors) CapturedActorIds.Add(Record.StableId);
+	auto RemoveMissingAttachment = [&](FSWRoomActorRecord& Record)
+	{
+		if (!Record.AttachParentId.IsValid() || CapturedActorIds.Contains(Record.AttachParentId)) return;
+		FSWRoomCaptureIssue& Issue = OutSnapshot.CaptureIssues.AddDefaulted_GetRef();
+		Issue.StableId = Record.StableId;
+		Issue.ClassPath = Record.ClassPath;
+		Issue.OwnerPath = Record.ClassPath.ToString();
+		Issue.Domain = TEXT("Attachment");
+		Issue.FieldKey = TEXT("Parent");
+		Issue.Reason = FString::Printf(TEXT("Attached parent is absent from the room snapshot: %s"),
+			*Record.AttachParentId.ToString());
+		Record.AttachParentId.Invalidate();
+		Record.AttachParentComponentName = NAME_None;
+		Record.AttachSocketName = NAME_None;
+	};
+	for (FSWRoomActorRecord& Record : OutSnapshot.Actors) RemoveMissingAttachment(Record);
+	for (FSWRoomActorRecord& Record : OutSnapshot.UnloadedActors) RemoveMissingAttachment(Record);
 	for (const FString& Package : CachedPartitions)
 	{
 		FSWRoomSystemRecord& System = OutSnapshot.Systems.AddDefaulted_GetRef();
@@ -709,6 +781,13 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 	TSet<FGuid> DiskIds;
 	auto ValidateDiskRecord = [&](const FSWRoomActorRecord& Record) -> bool
 	{
+		if (Record.AttachParentId == Record.StableId
+			|| Record.AttachParentId.IsValid() == Record.AttachParentComponentName.IsNone())
+		{
+			OutError = FString::Printf(TEXT("Invalid stored actor attachment: ID=%s ParentId=%s Component=%s"),
+				*Record.StableId.ToString(), *Record.AttachParentId.ToString(), *Record.AttachParentComponentName.ToString());
+			return false;
+		}
 		if (!Record.StableId.IsValid() || DiskIds.Contains(Record.StableId))
 		{
 			OutError = FString::Printf(TEXT("Duplicate or invalid stored actor ID: ID=%s Class=%s Partition=%s"),
@@ -819,6 +898,7 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 				Actor->Destroy();
 			}
 	}
+	TMap<FGuid, AActor*> RestoredActorsById;
 	for (const FSWRoomActorRecord& Record : Applied.Actors)
 	{
 		AActor* Actor = nullptr;
@@ -869,6 +949,8 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 		if (!Component || Component->StableId != Record.StableId || Component->ContractVersion != Record.ContractVersion
 			|| FSoftClassPath(Actor->GetClass()) != Record.ClassPath)
 		{ OutError = TEXT("Room actor contract mismatch"); return false; }
+		RegisteredActors.Add(Record.StableId, Actor);
+		RestoredActorsById.Add(Record.StableId, Actor);
 		DeserializeValues(Actor, Record.SaveGameBytes);
 		if (!Record.AdapterBytes.IsEmpty())
 		{
@@ -895,12 +977,14 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 			if (!Child) { OutError = TEXT("Room component missing"); return false; }
 			DeserializeValues(Child, ChildRecord.SaveGameBytes);
 		}
+		Actor->SetActorScale3D(Record.WorldTransform.GetScale3D());
 		if (!Actor->TeleportTo(Record.WorldTransform.GetLocation(), Record.WorldTransform.Rotator(), false, false))
 		{
 			UE_LOG(LogSWRoom, Warning, TEXT("Flow=WorldRestore ForcedTransform Id=%s Class=%s"), *Record.StableId.ToString(), *Record.ClassPath.ToString());
 			Actor->SetActorTransform(Record.WorldTransform, false, nullptr, ETeleportType::TeleportPhysics);
 		}
 		RestoreMotion(Actor, Cast<UPrimitiveComponent>(Actor->GetRootComponent()), Record.MotionState);
+		TraceRoomPhysics(TEXT("Restored"), Actor, Record);
 		for (const FSWRoomComponentRecord& ChildRecord : Record.Components)
 		{
 			if (!ChildRecord.MotionState.bHasMotion) continue;
@@ -917,6 +1001,46 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 				}
 			}
 		}
+	}
+	for (const FSWRoomActorRecord& Record : Applied.Actors)
+	{
+		AActor* const* ChildEntry = RestoredActorsById.Find(Record.StableId);
+		if (!ChildEntry) continue;
+		AActor* Child = *ChildEntry;
+		if (!Record.AttachParentId.IsValid())
+		{
+			if (Child->GetAttachParentActor()) Child->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+			continue;
+		}
+		AActor* Parent = nullptr;
+		if (AActor* const* RestoredParent = RestoredActorsById.Find(Record.AttachParentId)) Parent = *RestoredParent;
+		else if (const TWeakObjectPtr<AActor>* RegisteredParent = RegisteredActors.Find(Record.AttachParentId))
+			Parent = RegisteredParent->Get();
+		USceneComponent* ParentComponent = nullptr;
+		if (Parent)
+			for (UActorComponent* Candidate : Parent->GetComponents())
+				if (Candidate && Candidate->GetFName() == Record.AttachParentComponentName)
+				{
+					ParentComponent = Cast<USceneComponent>(Candidate);
+					break;
+				}
+		if (!ParentComponent || !Child->GetRootComponent())
+		{
+			OutError = FString::Printf(TEXT("Room attachment parent/component missing: Child=%s ParentId=%s Component=%s"),
+				*Record.StableId.ToString(), *Record.AttachParentId.ToString(), *Record.AttachParentComponentName.ToString());
+			return false;
+		}
+		if (Child->GetRootComponent()->GetAttachParent() != ParentComponent
+			|| Child->GetRootComponent()->GetAttachSocketName() != Record.AttachSocketName)
+			if (!Child->AttachToComponent(ParentComponent, FAttachmentTransformRules::KeepWorldTransform, Record.AttachSocketName))
+			{
+				OutError = FString::Printf(TEXT("Room actor attachment failed: Child=%s ParentId=%s Component=%s"),
+					*Record.StableId.ToString(), *Record.AttachParentId.ToString(), *Record.AttachParentComponentName.ToString());
+				return false;
+			}
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=RoomAttachment Result=Restored Child=%s Parent=%s Component=%s Socket=%s"),
+			*Record.StableId.ToString(), *Record.AttachParentId.ToString(), *Record.AttachParentComponentName.ToString(),
+			*Record.AttachSocketName.ToString());
 	}
 	if (!bPartitionRestore) DestroyedLevelActorIds.Reset();
 	for (const FGuid& Id : Applied.DestroyedLevelActorIds)
@@ -973,6 +1097,10 @@ bool USWRoomSnapshotSubsystem::CompareDeclared(const FSWRoomWorldSnapshot& Expec
 			|| Before.LevelPartition.InstanceId != After.LevelPartition.InstanceId)
 			OutDifferences.Add(Prefix + TEXT("identity/contract"));
 		if (!Before.WorldTransform.Equals(After.WorldTransform, 0.01f)) OutDifferences.Add(Prefix + TEXT("Transform"));
+		if (Before.AttachParentId != After.AttachParentId
+			|| Before.AttachParentComponentName != After.AttachParentComponentName
+			|| Before.AttachSocketName != After.AttachSocketName)
+			OutDifferences.Add(Prefix + TEXT("attachment"));
 		if (Before.MotionState.bHasMotion != After.MotionState.bHasMotion
 			|| Before.MotionState.bWasSimulatingPhysics != After.MotionState.bWasSimulatingPhysics
 			|| Before.MotionState.bWasProjectileMovementActive != After.MotionState.bWasProjectileMovementActive
@@ -1046,14 +1174,29 @@ bool USWRoomSnapshotSubsystem::CompareRestored(const FSWRoomWorldSnapshot& Expec
 			|| !Before.WorldTransform.GetScale3D().Equals(After->WorldTransform.GetScale3D(), 0.01f))
 			OutDifferences.Add(Prefix + TEXT(" Field=Transform Expected=") + Before.WorldTransform.ToString()
 				+ TEXT(" Actual=") + After->WorldTransform.ToString());
+		if (Before.AttachParentId != After->AttachParentId
+			|| Before.AttachParentComponentName != After->AttachParentComponentName
+			|| Before.AttachSocketName != After->AttachSocketName)
+			OutDifferences.Add(Prefix + TEXT(" Field=Attachment ExpectedParent=") + Before.AttachParentId.ToString()
+				+ TEXT(" ActualParent=") + After->AttachParentId.ToString()
+				+ TEXT(" ExpectedComponent=") + Before.AttachParentComponentName.ToString()
+				+ TEXT(" ActualComponent=") + After->AttachParentComponentName.ToString()
+				+ TEXT(" ExpectedSocket=") + Before.AttachSocketName.ToString()
+				+ TEXT(" ActualSocket=") + After->AttachSocketName.ToString());
 		auto CompareMotion = [&](const FSWRoomMotionState& A, const FSWRoomMotionState& B, const FString& Field)
 		{
 			if (A.bHasMotion != B.bHasMotion || A.bWasSimulatingPhysics != B.bWasSimulatingPhysics
 				|| A.bWasProjectileMovementActive != B.bWasProjectileMovementActive
 				|| !A.LinearVelocity.Equals(B.LinearVelocity, 1.f)
 				|| !A.AngularVelocityDegrees.Equals(B.AngularVelocityDegrees, 1.f))
-				OutDifferences.Add(Prefix + TEXT(" Field=") + Field + TEXT(" Expected=") + A.LinearVelocity.ToString()
-					+ TEXT(" Actual=") + B.LinearVelocity.ToString());
+				OutDifferences.Add(Prefix + TEXT(" Field=") + Field
+					+ FString::Printf(TEXT(" ExpectedHasMotion=%d ActualHasMotion=%d ExpectedSim=%d ActualSim=%d ExpectedProjectile=%d ActualProjectile=%d"),
+						A.bHasMotion ? 1 : 0, B.bHasMotion ? 1 : 0, A.bWasSimulatingPhysics ? 1 : 0,
+						B.bWasSimulatingPhysics ? 1 : 0, A.bWasProjectileMovementActive ? 1 : 0,
+						B.bWasProjectileMovementActive ? 1 : 0)
+					+ TEXT(" ExpectedLinear=") + A.LinearVelocity.ToString() + TEXT(" ActualLinear=") + B.LinearVelocity.ToString()
+					+ TEXT(" ExpectedAngular=") + A.AngularVelocityDegrees.ToString()
+					+ TEXT(" ActualAngular=") + B.AngularVelocityDegrees.ToString());
 		};
 		CompareMotion(Before.MotionState, After->MotionState, TEXT("Motion"));
 		if (Before.SaveGameBytes != After->SaveGameBytes)

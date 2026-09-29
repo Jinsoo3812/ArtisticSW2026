@@ -428,7 +428,7 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_CrewDefeated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Crew")
 	bool bCrewDefeated = false;
 
-	UPROPERTY(ReplicatedUsing = OnRep_DistanceOptimizationDormant, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Optimization")
+	UPROPERTY(SaveGame, ReplicatedUsing = OnRep_DistanceOptimizationDormant, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Optimization")
 	bool bDistanceOptimizationDormant = false;
 
 	TArray<TWeakObjectPtr<UActorComponent>> DistanceDormancySuspendedTickComponents;

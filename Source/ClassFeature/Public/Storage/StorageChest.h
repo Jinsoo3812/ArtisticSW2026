@@ -175,14 +175,14 @@ protected:
 	float PhysicsMassKg = 25.0f;
 
 	/** Only independent floating chests can sleep. Deck/attached chests are always excluded. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Chest|Optimization")
+	UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Storage Chest|Optimization")
 	bool bEnableDistanceOptimization = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Chest|Optimization",
 		meta = (EditCondition = "bEnableDistanceOptimization", ClampMin = "0.0", Units = "cm"))
 	float DistanceOptimizationRange = 100000.0f;
 
-	UPROPERTY(ReplicatedUsing = OnRep_DistanceOptimizationDormant, VisibleInstanceOnly, BlueprintReadOnly,
+	UPROPERTY(SaveGame, ReplicatedUsing = OnRep_DistanceOptimizationDormant, VisibleInstanceOnly, BlueprintReadOnly,
 		Category = "Storage Chest|Optimization")
 	bool bDistanceOptimizationDormant = false;
 

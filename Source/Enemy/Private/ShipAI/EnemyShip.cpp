@@ -138,6 +138,7 @@ bool AEnemyShip::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActor
 		RegisteredBoss = Cast<AShipBossEnemy>(*Found);
 	if (DeckEnemySpawnerComponent && !DeckEnemySpawnerComponent->FinalizeRoomState(RegisteredActors, OutError)) return false;
 	if (BossEncounterComponent && !BossEncounterComponent->FinalizeRoomState(RegisteredActors, OutError)) return false;
+	ApplyDistanceOptimizationState();
 	return true;
 }
 
