@@ -36,12 +36,18 @@ FString FSWRoomSaveStore::RoomPath()
 
 bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 {
+	auto Fail = [Room](const TCHAR* Reason)
+	{
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=SaveValidation Result=Failed RoomId=%s Sequence=%llu Reason=%s"),
+			Room ? *Room->RoomId.ToString() : TEXT("None"), Room ? Room->CaptureSequence : 0, Reason);
+		return false;
+	};
 	if (!ValidateHeader(Room) || !Room->bComplete || Room->MapPath.IsNull()
 		|| Room->CaptureSequence == 0 || Room->WorldSnapshot.CaptureSequence != Room->CaptureSequence
 		|| Room->WorldSnapshot.MapPath != Room->MapPath
 		|| Room->WorldSnapshot.Actors.Num() > MaxActorRecords
 		|| Room->WorldSnapshot.UnloadedActors.Num() > MaxActorRecords
-		|| Room->WorldSnapshot.Actors.Num() > MaxActorRecords - Room->WorldSnapshot.UnloadedActors.Num()) return false;
+		|| Room->WorldSnapshot.Actors.Num() > MaxActorRecords - Room->WorldSnapshot.UnloadedActors.Num()) return Fail(TEXT("HeaderCompletionMapSequenceOrActorCount"));
 	TSet<FGuid> ActorIds;
 	auto ValidMotion = [](const FSWRoomMotionState& Motion)
 	{
@@ -67,6 +73,35 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 		}
 		return true;
 	};
+	auto ActorFailure = [&ValidMotion, &ValidAdapter, &ActorIds](const FSWRoomActorRecord& Record)
+	{
+		TArray<FString> Reasons;
+		if (!Record.StableId.IsValid()) Reasons.Add(TEXT("InvalidStableId"));
+		if (Record.ClassPath.IsNull()) Reasons.Add(TEXT("MissingClass"));
+		if (Record.LevelPartition.PackagePath.IsNull()) Reasons.Add(TEXT("MissingPartitionPackage"));
+		if (Record.LevelPartition.InstanceName.IsNone()) Reasons.Add(TEXT("MissingPartitionInstance"));
+		if (Record.WorldTransform.ContainsNaN()) Reasons.Add(TEXT("NonFiniteTransform"));
+		if (Record.AttachParentId == Record.StableId) Reasons.Add(TEXT("SelfAttachment"));
+		if (Record.AttachParentId.IsValid() == Record.AttachParentComponentName.IsNone()) Reasons.Add(TEXT("AttachmentComponentMismatch"));
+		if (!ValidMotion(Record.MotionState)) Reasons.Add(TEXT("InvalidMotion"));
+		if (Record.Origin == ESWRoomSpawnOrigin::Runtime && (!Record.CreatorId.IsValid() || Record.CreatorSequence == 0)) Reasons.Add(TEXT("InvalidRuntimeCreator"));
+		if (Record.ContractVersion <= 0) Reasons.Add(TEXT("InvalidContractVersion"));
+		if (Record.SaveGameBytes.Num() > MaxRecordBytes) Reasons.Add(TEXT("ActorPayloadTooLarge"));
+		if (Record.AdapterBytes.Num() > MaxRecordBytes) Reasons.Add(TEXT("AdapterPayloadTooLarge"));
+		if (!ValidAdapter(Record)) Reasons.Add(TEXT("InvalidAdapterPayload"));
+		if (ActorIds.Contains(Record.StableId)) Reasons.Add(TEXT("DuplicateActorId"));
+		return FString::Join(Reasons, TEXT(","));
+	};
+	auto TraceActorFailure = [Room](const FSWRoomActorRecord& Record, const TCHAR* Scope, const FString& Reason)
+	{
+		UE_LOG(LogSWRoomSave, Error,
+			TEXT("Flow=ActorValidation Result=Failed RoomId=%s Sequence=%llu Scope=%s Id=%s Class=%s Partition=%s Origin=%s CreatorId=%s CreatorSequence=%llu Contract=%d SaveGameBytes=%d AdapterBytes=%d ParentId=%s ParentComponent=%s Reason=%s"),
+			*Room->RoomId.ToString(), Room->CaptureSequence, Scope, *Record.StableId.ToString(),
+			*Record.ClassPath.ToString(), *Record.LevelPartition.PackagePath.ToString(),
+			*UEnum::GetValueAsString(Record.Origin), *Record.CreatorId.ToString(), Record.CreatorSequence,
+			Record.ContractVersion, Record.SaveGameBytes.Num(), Record.AdapterBytes.Num(),
+			*Record.AttachParentId.ToString(), *Record.AttachParentComponentName.ToString(), *Reason);
+	};
 	for (const FSWRoomActorRecord& Record : Room->WorldSnapshot.Actors)
 	{
 		if (!Record.StableId.IsValid() || Record.ClassPath.IsNull() || Record.LevelPartition.PackagePath.IsNull()
@@ -79,7 +114,11 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 			|| Record.ContractVersion <= 0
 			|| Record.SaveGameBytes.Num() > MaxRecordBytes || Record.AdapterBytes.Num() > MaxRecordBytes
 			|| !ValidAdapter(Record)
-			|| ActorIds.Contains(Record.StableId)) return false;
+			|| ActorIds.Contains(Record.StableId))
+		{
+			TraceActorFailure(Record, TEXT("Loaded"), ActorFailure(Record));
+			return false;
+		}
 		ActorIds.Add(Record.StableId);
 		LoadedPackages.Add(Record.LevelPartition.PackagePath.ToString() + TEXT("|") + Record.LevelPartition.InstanceName.ToString());
 		TSet<FName> ComponentKeys;
@@ -87,7 +126,15 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 		{
 			if (Component.StableKey.IsNone() || Component.SaveGameBytes.Num() > MaxRecordBytes
 				|| Component.WorldTransform.ContainsNaN() || !ValidMotion(Component.MotionState)
-				|| ComponentKeys.Contains(Component.StableKey)) return false;
+				|| ComponentKeys.Contains(Component.StableKey))
+			{
+				UE_LOG(LogSWRoomSave, Error,
+					TEXT("Flow=ComponentValidation Result=Failed RoomId=%s Sequence=%llu Scope=Loaded ActorId=%s Key=%s Bytes=%d InvalidKey=%d NonFiniteTransform=%d InvalidMotion=%d DuplicateKey=%d"),
+					*Room->RoomId.ToString(), Room->CaptureSequence, *Record.StableId.ToString(),
+					*Component.StableKey.ToString(), Component.SaveGameBytes.Num(), Component.StableKey.IsNone(),
+					Component.WorldTransform.ContainsNaN(), !ValidMotion(Component.MotionState), ComponentKeys.Contains(Component.StableKey));
+				return false;
+			}
 			ComponentKeys.Add(Component.StableKey);
 		}
 	}
@@ -103,7 +150,11 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 			|| (Record.Origin == ESWRoomSpawnOrigin::Runtime && (!Record.CreatorId.IsValid() || Record.CreatorSequence == 0))
 			|| Record.ContractVersion <= 0
 			|| Record.SaveGameBytes.Num() > MaxRecordBytes || Record.AdapterBytes.Num() > MaxRecordBytes
-			|| !ValidAdapter(Record)) return false;
+			|| !ValidAdapter(Record))
+		{
+			TraceActorFailure(Record, TEXT("Unloaded"), ActorFailure(Record));
+			return false;
+		}
 		ActorIds.Add(Record.StableId);
 		UnloadedPackages.Add(Record.LevelPartition.PackagePath.ToString() + TEXT("|") + Record.LevelPartition.InstanceName.ToString());
 		TSet<FName> ComponentKeys;
@@ -111,66 +162,143 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 		{
 			if (Component.StableKey.IsNone() || Component.SaveGameBytes.Num() > MaxRecordBytes
 				|| Component.WorldTransform.ContainsNaN() || !ValidMotion(Component.MotionState)
-				|| ComponentKeys.Contains(Component.StableKey)) return false;
+				|| ComponentKeys.Contains(Component.StableKey))
+			{
+				UE_LOG(LogSWRoomSave, Error,
+					TEXT("Flow=ComponentValidation Result=Failed RoomId=%s Sequence=%llu Scope=Unloaded ActorId=%s Key=%s Bytes=%d InvalidKey=%d NonFiniteTransform=%d InvalidMotion=%d DuplicateKey=%d"),
+					*Room->RoomId.ToString(), Room->CaptureSequence, *Record.StableId.ToString(),
+					*Component.StableKey.ToString(), Component.SaveGameBytes.Num(), Component.StableKey.IsNone(),
+					Component.WorldTransform.ContainsNaN(), !ValidMotion(Component.MotionState), ComponentKeys.Contains(Component.StableKey));
+				return false;
+			}
 			ComponentKeys.Add(Component.StableKey);
 		}
 	}
 	for (const FString& Package : LoadedPackages)
-		if (UnloadedPackages.Contains(Package)) return false;
+		if (UnloadedPackages.Contains(Package))
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=PartitionValidation Result=Failed Package=%s Reason=LoadedAndUnloaded"), *Package);
+			return false;
+		}
 	TSet<FGuid> Tombstones;
 	for (const FGuid& Id : Room->WorldSnapshot.DestroyedLevelActorIds)
 	{
-		if (!Id.IsValid() || ActorIds.Contains(Id) || Tombstones.Contains(Id)) return false;
+		if (!Id.IsValid() || ActorIds.Contains(Id) || Tombstones.Contains(Id))
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=TombstoneValidation Result=Failed Id=%s Invalid=%d ConflictsWithActor=%d Duplicate=%d"),
+				*Id.ToString(), !Id.IsValid(), ActorIds.Contains(Id), Tombstones.Contains(Id));
+			return false;
+		}
 		Tombstones.Add(Id);
 	}
 	TSet<FGuid> PartitionTombstones;
 	for (const FSWRoomDestroyedActorPartition& Partition : Room->WorldSnapshot.DestroyedActorPartitions)
 	{
 		if (!Tombstones.Contains(Partition.StableId) || Partition.PackagePath.IsNull() || Partition.InstanceName.IsNone()
-			|| PartitionTombstones.Contains(Partition.StableId)) return false;
+			|| PartitionTombstones.Contains(Partition.StableId))
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=TombstoneValidation Result=Failed Id=%s Package=%s Instance=%s Reason=InvalidPartitionOrDuplicate"),
+				*Partition.StableId.ToString(), *Partition.PackagePath.ToString(), *Partition.InstanceName.ToString());
+			return false;
+		}
 		PartitionTombstones.Add(Partition.StableId);
 	}
 	TSet<FName> SystemKeys;
 	for (const FSWRoomSystemRecord& System : Room->WorldSnapshot.Systems)
 	{
 		if (System.StableKey.IsNone() || System.ContractVersion <= 0 || System.SaveGameBytes.Num() > MaxRecordBytes
-			|| SystemKeys.Contains(System.StableKey)) return false;
+			|| SystemKeys.Contains(System.StableKey))
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=SystemValidation Result=Failed Key=%s Contract=%d Bytes=%d Reason=InvalidKeyContractPayloadOrDuplicate"),
+				*System.StableKey.ToString(), System.ContractVersion, System.SaveGameBytes.Num());
+			return false;
+		}
 		SystemKeys.Add(System.StableKey);
 	}
-	for (const FGuid& Id : Room->WorldSnapshot.ReferenceIds) if (!ActorIds.Contains(Id)) return false;
+	for (const FGuid& Id : Room->WorldSnapshot.ReferenceIds)
+		if (!ActorIds.Contains(Id))
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=ReferenceValidation Result=Failed Id=%s Reason=TargetActorMissing"), *Id.ToString());
+			return false;
+		}
 	TSet<FString> IssueKeys;
 	auto ValidateIssues = [&IssueKeys](const TArray<FSWRoomCaptureIssue>& Issues)
 	{
-		if (Issues.Num() > MaxActorRecords) return false;
+		if (Issues.Num() > MaxActorRecords)
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=IssueValidation Result=Failed Count=%d Reason=TooManyIssues"), Issues.Num());
+			return false;
+		}
 		for (const FSWRoomCaptureIssue& Issue : Issues)
 		{
-			if (Issue.Domain.IsNone() || Issue.FieldKey.IsNone() || Issue.Reason.IsEmpty()) return false;
+			if (Issue.Domain.IsNone() || Issue.FieldKey.IsNone() || Issue.Reason.IsEmpty())
+			{
+				UE_LOG(LogSWRoomSave, Error, TEXT("Flow=IssueValidation Result=Failed Id=%s Domain=%s Field=%s Reason=IncompleteIssue"),
+					*Issue.StableId.ToString(), *Issue.Domain.ToString(), *Issue.FieldKey.ToString());
+				return false;
+			}
 			if (Issue.Scope == ESWRoomIssueScope::WorldActor
 				&& ((!Issue.StableId.IsValid() && Issue.OwnerPath.IsEmpty())
-					|| (Issue.ClassPath.IsNull() && Issue.Domain != TEXT("Partition")))) return false;
-			if (Issue.Scope == ESWRoomIssueScope::Player && Issue.PlayerKey.IsEmpty()) return false;
+					|| (Issue.ClassPath.IsNull() && Issue.Domain != TEXT("Partition"))))
+			{
+				UE_LOG(LogSWRoomSave, Error, TEXT("Flow=IssueValidation Result=Failed Id=%s Actor=%s Domain=%s Field=%s Reason=WorldIssueMissingIdentity"),
+					*Issue.StableId.ToString(), *Issue.OwnerPath, *Issue.Domain.ToString(), *Issue.FieldKey.ToString());
+				return false;
+			}
+			if (Issue.Scope == ESWRoomIssueScope::Player && Issue.PlayerKey.IsEmpty())
+			{
+				UE_LOG(LogSWRoomSave, Error, TEXT("Flow=IssueValidation Result=Failed Domain=%s Field=%s Reason=PlayerIssueMissingKey"),
+					*Issue.Domain.ToString(), *Issue.FieldKey.ToString());
+				return false;
+			}
 			const FString Owner = Issue.StableId.IsValid() ? Issue.StableId.ToString()
 				: !Issue.PlayerKey.IsEmpty() ? Issue.PlayerKey : Issue.OwnerPath;
 			const FString Key = FString::Printf(TEXT("%d|%s|%s|%s"), static_cast<int32>(Issue.Scope),
 				*Owner, *Issue.Domain.ToString(), *Issue.FieldKey.ToString());
-			if (IssueKeys.Contains(Key)) return false;
+			if (IssueKeys.Contains(Key))
+			{
+				UE_LOG(LogSWRoomSave, Error, TEXT("Flow=IssueValidation Result=Failed Key=%s Reason=DuplicateIssue"), *Key);
+				return false;
+			}
 			IssueKeys.Add(Key);
 		}
 		return true;
 	};
 	if (!ValidateIssues(Room->WorldSnapshot.CaptureIssues)
 		|| !ValidateIssues(Room->HostProgress.CaptureIssues)
-		|| !ValidateIssues(Room->SharedProgress.CaptureIssues)) return false;
+		|| !ValidateIssues(Room->SharedProgress.CaptureIssues)) return Fail(TEXT("InvalidWorldHostOrSharedIssue"));
 	for (const FSWRoomGuestProgress& Guest : Room->Guests)
-		if (!ValidateIssues(Guest.Progress.CaptureIssues)) return false;
+		if (!ValidateIssues(Guest.Progress.CaptureIssues)) return Fail(TEXT("InvalidGuestIssue"));
 	for (const FSWRoomActorRecord& Record : Room->WorldSnapshot.Actors)
-		if (Record.AttachParentId.IsValid() && !ActorIds.Contains(Record.AttachParentId)) return false;
+		if (Record.AttachParentId.IsValid() && !ActorIds.Contains(Record.AttachParentId))
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=AttachmentValidation Result=Failed ActorId=%s ParentId=%s Reason=ParentRecordMissing"),
+				*Record.StableId.ToString(), *Record.AttachParentId.ToString());
+			return false;
+		}
 	for (const FSWRoomActorRecord& Record : Room->WorldSnapshot.UnloadedActors)
-		if (Record.AttachParentId.IsValid() && !ActorIds.Contains(Record.AttachParentId)) return false;
+		if (Record.AttachParentId.IsValid() && !ActorIds.Contains(Record.AttachParentId))
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=AttachmentValidation Result=Failed ActorId=%s ParentId=%s Reason=ParentRecordMissing"),
+				*Record.StableId.ToString(), *Record.AttachParentId.ToString());
+			return false;
+		}
 	for (const FSWRoomActorRecord& Record : Room->WorldSnapshot.Actors)
-		for (const FGuid& Id : Record.ReferenceIds) if (!ActorIds.Contains(Id)) return false;
+		for (const FGuid& Id : Record.ReferenceIds)
+			if (!ActorIds.Contains(Id))
+			{
+				UE_LOG(LogSWRoomSave, Error, TEXT("Flow=ReferenceValidation Result=Failed ActorId=%s TargetId=%s Reason=TargetActorMissing"),
+					*Record.StableId.ToString(), *Id.ToString());
+				return false;
+			}
 	for (const FSWRoomActorRecord& Record : Room->WorldSnapshot.UnloadedActors)
-		for (const FGuid& Id : Record.ReferenceIds) if (!ActorIds.Contains(Id)) return false;
+		for (const FGuid& Id : Record.ReferenceIds)
+			if (!ActorIds.Contains(Id))
+			{
+				UE_LOG(LogSWRoomSave, Error, TEXT("Flow=ReferenceValidation Result=Failed ActorId=%s TargetId=%s Reason=TargetActorMissing"),
+					*Record.StableId.ToString(), *Id.ToString());
+				return false;
+			}
 	auto ValidPlayer = [](const FSWRoomPlayerProgress& Progress)
 	{
 		if (Progress.InventorySlots.Num() > MaxPlayerSlots || Progress.QuickSlotItemTags.Num() > 5
@@ -185,14 +313,29 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 			if (Slot.Tab > 3 || Slot.SlotIndex < 0 || Slot.SlotIndex >= 10000 || Slot.Count < 0) return false;
 		return true;
 	};
-	if (!ValidPlayer(Room->HostProgress)) return false;
+	if (!ValidPlayer(Room->HostProgress))
+	{
+		UE_LOG(LogSWRoomSave, Error,
+			TEXT("Flow=PlayerValidation Result=Failed Role=Host Key=%s Inventory=%d QuickSlots=%d Upgrades=%d Skills=%d Health=%g MaxHealth=%g Reason=InvalidCountStatOrSlot"),
+			*Room->HostDisplayName, Room->HostProgress.InventorySlots.Num(), Room->HostProgress.QuickSlotItemTags.Num(),
+			Room->HostProgress.UpgradeNodeIds.Num(), Room->HostProgress.Skills.Num(),
+			Room->HostProgress.CurrentHealth, Room->HostProgress.MaximumHealth);
+		return false;
+	}
 	FString Normalized;
 	TSet<FString> GuestNames;
 	for (const FSWRoomGuestProgress& Guest : Room->Guests)
 	{
 		if (!FSWRoomName::Normalize(Guest.DisplayName, Normalized) || Normalized != Guest.DisplayName
 			|| Guest.DisplayName == Room->HostDisplayName || GuestNames.Contains(Guest.DisplayName)
-			|| !ValidPlayer(Guest.Progress)) return false;
+			|| !ValidPlayer(Guest.Progress))
+		{
+			UE_LOG(LogSWRoomSave, Error,
+				TEXT("Flow=PlayerValidation Result=Failed Role=Guest Key=%s Normalized=%s Duplicate=%d Inventory=%d QuickSlots=%d Skills=%d Reason=InvalidNameCountStatOrSlot"),
+				*Guest.DisplayName, *Normalized, GuestNames.Contains(Guest.DisplayName),
+				Guest.Progress.InventorySlots.Num(), Guest.Progress.QuickSlotItemTags.Num(), Guest.Progress.Skills.Num());
+			return false;
+		}
 		GuestNames.Add(Guest.DisplayName);
 	}
 	TSet<FString> StorageKeys;
@@ -200,12 +343,33 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 	{
 		if (!Storage.ChestId.IsValid() || Storage.SaveNamespace.Len() > 128 || Storage.SlotsPerTab < 1
 			|| Storage.SlotsPerTab > 10000 || Storage.Slots.Num() != Storage.SlotsPerTab * 4
-			|| Storage.Slots.Num() > MaxStorageSlots) return false;
+			|| Storage.Slots.Num() > MaxStorageSlots)
+		{
+			UE_LOG(LogSWRoomSave, Error,
+				TEXT("Flow=StorageValidation Result=Failed ChestId=%s Namespace=%s SlotsPerTab=%d Slots=%d Reason=InvalidIdNamespaceOrSlotCount"),
+				*Storage.ChestId.ToString(), *Storage.SaveNamespace, Storage.SlotsPerTab, Storage.Slots.Num());
+			return false;
+		}
 		const FString Key = Storage.ChestId.ToString() + TEXT("|") + Storage.SaveNamespace;
-		if (StorageKeys.Contains(Key)) return false;
+		if (StorageKeys.Contains(Key))
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=StorageValidation Result=Failed Key=%s Reason=DuplicateStorageKey"), *Key);
+			return false;
+		}
 		StorageKeys.Add(Key);
-		for (const FSWRoomStorageSlot& Slot : Storage.Slots) if (Slot.Count < 0) return false;
+		for (int32 Index = 0; Index < Storage.Slots.Num(); ++Index)
+			if (Storage.Slots[Index].Count < 0)
+			{
+				UE_LOG(LogSWRoomSave, Error, TEXT("Flow=StorageValidation Result=Failed Key=%s Slot=%d Count=%d Reason=NegativeCount"),
+					*Key, Index, Storage.Slots[Index].Count);
+				return false;
+			}
 	}
+	UE_LOG(LogSWRoomSave, Display,
+		TEXT("Flow=SaveValidation Result=Success RoomId=%s Sequence=%llu Actors=%d Unloaded=%d Guests=%d SharedStorage=%d Issues=%d"),
+		*Room->RoomId.ToString(), Room->CaptureSequence, Room->WorldSnapshot.Actors.Num(),
+		Room->WorldSnapshot.UnloadedActors.Num(), Room->Guests.Num(), Room->SharedProgress.Storage.Num(),
+		Room->WorldSnapshot.CaptureIssues.Num() + Room->HostProgress.CaptureIssues.Num() + Room->SharedProgress.CaptureIssues.Num());
 	return true;
 }
 
@@ -213,9 +377,22 @@ bool FSWRoomSaveStore::ValidateHeader(const USWRoomSaveGame* Room)
 {
 	if (!Room || Room->SaveVersion != USWRoomSaveGame::CurrentVersion || !Room->RoomId.IsValid()
 		|| Room->Guests.Num() > MaxGuests
-		|| Room->ContentContractVersion != USWRoomSaveGame::CurrentContentContractVersion) return false;
+		|| Room->ContentContractVersion != USWRoomSaveGame::CurrentContentContractVersion)
+	{
+		UE_LOG(LogSWRoomSave, Error,
+			TEXT("Flow=HeaderValidation Result=Failed RoomId=%s Version=%d ExpectedVersion=%d Content=%d ExpectedContent=%d Guests=%d Reason=MissingRoomInvalidVersionContractOrGuestCount"),
+			Room ? *Room->RoomId.ToString() : TEXT("None"), Room ? Room->SaveVersion : -1,
+			USWRoomSaveGame::CurrentVersion, Room ? Room->ContentContractVersion : -1,
+			USWRoomSaveGame::CurrentContentContractVersion, Room ? Room->Guests.Num() : -1);
+		return false;
+	}
 	FString Normalized;
-	if (!FSWRoomName::Normalize(Room->HostDisplayName, Normalized) || Normalized != Room->HostDisplayName) return false;
+	if (!FSWRoomName::Normalize(Room->HostDisplayName, Normalized) || Normalized != Room->HostDisplayName)
+	{
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=HeaderValidation Result=Failed RoomId=%s Host=%s Normalized=%s Reason=InvalidHostName"),
+			*Room->RoomId.ToString(), *Room->HostDisplayName, *Normalized);
+		return false;
+	}
 	return true;
 }
 
@@ -269,10 +446,21 @@ bool FSWRoomSaveStore::HasLegacyRoomFile()
 
 bool FSWRoomSaveStore::WriteVerified(const USWRoomSaveGame* Room, const FString& Path, bool bHeaderOnly)
 {
-	if (!(bHeaderOnly ? ValidateHeader(Room) : Validate(Room))) return false;
+	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Phase=Begin RoomId=%s Sequence=%llu Path=%s HeaderOnly=%d"),
+		Room ? *Room->RoomId.ToString() : TEXT("None"), Room ? Room->CaptureSequence : 0, *Path, bHeaderOnly);
+	if (!(bHeaderOnly ? ValidateHeader(Room) : Validate(Room)))
+	{
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=FileWrite Result=Failed Phase=Validate Path=%s"), *Path);
+		return false;
+	}
 	TArray<uint8> Bytes;
 	if (!UGameplayStatics::SaveGameToMemory(const_cast<USWRoomSaveGame*>(Room), Bytes)
-		|| Bytes.IsEmpty() || Bytes.Num() > MaxRoomFileBytes - HeaderBytes) return false;
+		|| Bytes.IsEmpty() || Bytes.Num() > MaxRoomFileBytes - HeaderBytes)
+	{
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=FileWrite Result=Failed Phase=Serialize Path=%s Bytes=%d MaxBytes=%lld"),
+			*Path, Bytes.Num(), MaxRoomFileBytes - HeaderBytes);
+		return false;
+	}
 	const uint64 PayloadSize = Bytes.Num();
 	const uint32 Checksum = FCrc::MemCrc32(Bytes.GetData(), Bytes.Num());
 	TArray<uint8> FileBytes;
@@ -282,10 +470,29 @@ bool FSWRoomSaveStore::WriteVerified(const USWRoomSaveGame* Room, const FString&
 	FMemory::Memcpy(FileBytes.GetData() + sizeof(RoomMagic) + sizeof(PayloadSize), &Checksum, sizeof(Checksum));
 	FMemory::Memcpy(FileBytes.GetData() + HeaderBytes, Bytes.GetData(), Bytes.Num());
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
-	if (!Files.CreateDirectoryTree(*FPaths::GetPath(Path)) || !FFileHelper::SaveArrayToFile(FileBytes, *Path)) return false;
+	if (!Files.CreateDirectoryTree(*FPaths::GetPath(Path)) || !FFileHelper::SaveArrayToFile(FileBytes, *Path))
+	{
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=FileWrite Result=Failed Phase=DiskWrite Path=%s Bytes=%d"), *Path, FileBytes.Num());
+		return false;
+	}
+	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Phase=Written Path=%s Bytes=%d Checksum=%u"),
+		*Path, FileBytes.Num(), Checksum);
 	USWRoomSaveGame* Checked = LoadPath(GetTransientPackage(), Path, bHeaderOnly);
-	return Checked && Checked->RoomId == Room->RoomId && Checked->SaveVersion == Room->SaveVersion
+	const bool bVerified = Checked && Checked->RoomId == Room->RoomId && Checked->SaveVersion == Room->SaveVersion
 		&& Checked->CaptureSequence == Room->CaptureSequence && Checked->MapPath == Room->MapPath;
+	if (bVerified)
+	{
+		UE_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Result=Verified Phase=Readback RoomId=%s Sequence=%llu Path=%s"),
+			*Room->RoomId.ToString(), Room->CaptureSequence, *Path);
+	}
+	else
+	{
+		UE_LOG(LogSWRoomSave, Error,
+			TEXT("Flow=FileWrite Result=Failed Phase=Readback RoomId=%s Sequence=%llu Path=%s Loaded=%d LoadedRoomId=%s LoadedSequence=%llu"),
+			*Room->RoomId.ToString(), Room->CaptureSequence, *Path, Checked != nullptr,
+			Checked ? *Checked->RoomId.ToString() : TEXT("None"), Checked ? Checked->CaptureSequence : 0);
+	}
+	return bVerified;
 }
 
 bool FSWRoomSaveStore::WriteCurrentRoom(const USWRoomSaveGame* Room)
@@ -299,26 +506,49 @@ bool FSWRoomSaveStore::WriteCurrentRoomInternal(const USWRoomSaveGame* Room, boo
 	const FString Temp = SidecarPath(TEXT("CurrentRoom.v4.tmp"));
 	const FString Backup = SidecarPath(TEXT("CurrentRoom.v4.bak"));
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
+	UE_LOG(LogSWRoomSave, Display,
+		TEXT("Flow=FileTransaction Phase=Begin RoomId=%s Sequence=%llu Current=%s Temp=%s Backup=%s AllowInvalidCurrent=%d"),
+		Room ? *Room->RoomId.ToString() : TEXT("None"), Room ? Room->CaptureSequence : 0,
+		*Path, *Temp, *Backup, bAllowInvalidCurrent ? 1 : 0);
 	const bool bHasInvalidCurrent = Files.FileExists(*Path) && !LoadPath(GetTransientPackage(), Path);
 	if (bHasInvalidCurrent && !bAllowInvalidCurrent)
 	{
 		const USWRoomSaveGame* Recovery = LoadPath(GetTransientPackage(), Backup);
-		if (!Recovery || Recovery->RoomId != Room->RoomId) return false;
+		if (!Recovery || Recovery->RoomId != Room->RoomId)
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=FileTransaction Result=Failed Phase=Recovery Reason=InvalidCurrentWithoutMatchingBackup Current=%s Backup=%s"), *Path, *Backup);
+			return false;
+		}
 	}
 	if (bHasInvalidCurrent)
 	{
 		const FString CorruptPath = SidecarPath(*FString::Printf(TEXT("CurrentRoom.v4.corrupt.%lld.sav"), FDateTime::UtcNow().ToUnixTimestamp()));
-		if (!Files.CopyFile(*CorruptPath, *Path)) return false;
+		if (!Files.CopyFile(*CorruptPath, *Path))
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=FileTransaction Result=Failed Phase=PreserveInvalidCurrent Source=%s Destination=%s"), *Path, *CorruptPath);
+			return false;
+		}
+		UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=FileTransaction Phase=InvalidCurrentPreserved Source=%s Destination=%s"), *Path, *CorruptPath);
 	}
 	Files.DeleteFile(*Temp);
-	if (!WriteVerified(Room, Temp)) { Files.DeleteFile(*Temp); return false; }
+	if (!WriteVerified(Room, Temp))
+	{
+		Files.DeleteFile(*Temp);
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=FileTransaction Result=Failed Phase=TemporaryWrite Path=%s"), *Temp);
+		return false;
+	}
 	const bool bHadValidCurrent = LoadPath(GetTransientPackage(), Path) != nullptr;
 	const bool bHadValidBackup = LoadPath(GetTransientPackage(), Backup) != nullptr;
 	if (bHadValidCurrent)
 	{
 		Files.DeleteFile(*Backup);
 		if (!Files.CopyFile(*Backup, *Path) || !LoadPath(GetTransientPackage(), Backup))
-		{ Files.DeleteFile(*Temp); return false; }
+		{
+			Files.DeleteFile(*Temp);
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=FileTransaction Result=Failed Phase=BackupWrite Path=%s"), *Backup);
+			return false;
+		}
+		UE_LOG(LogSWRoomSave, Display, TEXT("Flow=FileTransaction Phase=BackupVerified Path=%s"), *Backup);
 	}
 	bool bReplaced = false;
 #if PLATFORM_WINDOWS
@@ -329,7 +559,12 @@ bool FSWRoomSaveStore::WriteCurrentRoomInternal(const USWRoomSaveGame* Room, boo
 	if (bReplaced)
 	{
 		USWRoomSaveGame* Checked = LoadPath(GetTransientPackage(), Path);
-		if (Checked && Checked->RoomId == Room->RoomId && Checked->CaptureSequence == Room->CaptureSequence) return true;
+		if (Checked && Checked->RoomId == Room->RoomId && Checked->CaptureSequence == Room->CaptureSequence)
+		{
+			UE_LOG(LogSWRoomSave, Display, TEXT("Flow=FileTransaction Result=Committed RoomId=%s Sequence=%llu Path=%s"),
+				*Room->RoomId.ToString(), Room->CaptureSequence, *Path);
+			return true;
+		}
 		if (bHadValidCurrent || bHadValidBackup)
 		{
 #if PLATFORM_WINDOWS
@@ -338,9 +573,12 @@ bool FSWRoomSaveStore::WriteCurrentRoomInternal(const USWRoomSaveGame* Room, boo
 			Files.CopyFile(*Path, *Backup);
 #endif
 		}
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=FileTransaction Result=Failed Phase=FinalReadback Path=%s RollbackAvailable=%d"),
+			*Path, bHadValidCurrent || bHadValidBackup);
 		return false;
 	}
 	Files.DeleteFile(*Temp);
+	UE_LOG(LogSWRoomSave, Error, TEXT("Flow=FileTransaction Result=Failed Phase=Replace Temp=%s Current=%s"), *Temp, *Path);
 	return false;
 }
 

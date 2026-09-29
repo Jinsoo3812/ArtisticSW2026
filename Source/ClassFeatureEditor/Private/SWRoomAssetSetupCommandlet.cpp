@@ -5,6 +5,7 @@
 #include "Room/SWRoomSnapshotSubsystem.h"
 #include "Room/SWRoomSaveGame.h"
 #include "Room/SWRoomSaveStore.h"
+#include "Network/SWNetworkLog.h"
 #include "UI/SWRoomMenuWidget.h"
 #include "KelvinShip.h"
 #include "PlayerRespawnPointComponent.h"
@@ -142,6 +143,51 @@ int32 USWRoomAssetSetupCommandlet::Main(const FString& Params)
 	if (MapPath.IsNull() || MapAsset.Contains(TEXT("ConnectionLobby"))) return 1;
 	UWorld* World = UEditorLoadingAndSavingUtils::LoadMap(MapPath.GetLongPackageName());
 	if (!World) { UE_LOG(LogTemp, Error, TEXT("SWRoom setup: cannot load %s"), *MapAsset); return 2; }
+	if (Params.Contains(TEXT("TraceSaveProbe")))
+	{
+		const FString Pending = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("SWRoom"), TEXT("CurrentRoom.v4.pending.sav"));
+		if (FPlatformFileManager::Get().GetPlatformFile().FileExists(*Pending))
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=SaveProbe Result=Rejected Reason=PendingRoomAlreadyExists Path=%s"), *Pending);
+			return 40;
+		}
+		USWRoomSnapshotSubsystem* Snapshot = World->GetSubsystem<USWRoomSnapshotSubsystem>();
+		FSWRoomWorldSnapshot Data;
+		FString Error;
+		if (!Snapshot || !Snapshot->Capture(Data, ESWRoomSaveKind::Manual, 1, Error))
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=SaveProbe Result=Failed Phase=WorldCapture HasSubsystem=%d Reason=%s"), Snapshot != nullptr, *Error);
+			return 41;
+		}
+		USWRoomSaveGame* Probe = NewObject<USWRoomSaveGame>(GetTransientPackage());
+		Probe->RoomId = FGuid::NewGuid();
+		Probe->ContentContractVersion = USWRoomSaveGame::CurrentContentContractVersion;
+		Probe->HostDisplayName = TEXT("SaveTraceProbe");
+		Probe->MapPath = Data.MapPath;
+		Probe->WorldSnapshot = MoveTemp(Data);
+		Probe->CaptureSequence = 1;
+		Probe->SavedAtUtc = FDateTime::UtcNow();
+		Probe->bComplete = true;
+		const bool bWritten = FSWRoomSaveStore::StageCompleteNewRoom(Probe);
+		USWRoomSaveGame* RoundTrip = bWritten ? FSWRoomSaveStore::LoadStagedNewRoom(GetTransientPackage()) : nullptr;
+		const bool bValid = RoundTrip && FSWRoomSaveStore::Validate(RoundTrip);
+		TArray<FString> Differences;
+		const bool bSame = bValid && USWRoomSnapshotSubsystem::CompareDeclared(Probe->WorldSnapshot, RoundTrip->WorldSnapshot, Differences);
+		if (bSame)
+		{
+			UE_LOG(LogSWRoomSave, Display, TEXT("Flow=SaveProbe Result=Success Phase=Readback Actors=%d Issues=%d"),
+				Probe->WorldSnapshot.Actors.Num(), Probe->WorldSnapshot.CaptureIssues.Num());
+		}
+		else
+		{
+			UE_LOG(LogSWRoomSave, Error,
+				TEXT("Flow=SaveProbe Result=Failed Phase=Readback Written=%d Valid=%d Same=%d Actors=%d Issues=%d Differences=%s"),
+				bWritten, bValid, bSame, Probe->WorldSnapshot.Actors.Num(),
+				Probe->WorldSnapshot.CaptureIssues.Num(), *FString::Join(Differences, TEXT(";")));
+		}
+		FSWRoomSaveStore::DiscardStagedNewRoom();
+		return bSame ? 0 : 42;
+	}
 	if (Params.Contains(TEXT("InspectCurrentRoom")))
 	{
 		const USWRoomSaveGame* Saved = FSWRoomSaveStore::LoadCurrentRoom(GetTransientPackage());

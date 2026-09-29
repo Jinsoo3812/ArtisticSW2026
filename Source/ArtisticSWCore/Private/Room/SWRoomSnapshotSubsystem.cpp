@@ -32,7 +32,8 @@ bool IsExcluded(const AActor* Actor)
 {
 	return !Actor || Actor->IsA<AController>() || Actor->IsA<APlayerState>()
 		|| Actor->IsA<AGameModeBase>() || Actor->IsA<AGameStateBase>() || Actor->IsA<AInfo>()
-		|| (Cast<APawn>(Actor) && Cast<APawn>(Actor)->IsPlayerControlled());
+		|| (Cast<APawn>(Actor) && Cast<APawn>(Actor)->IsPlayerControlled()
+			&& !Actor->FindComponentByClass<USWRoomSnapshotComponent>());
 }
 
 bool IsLevelPlacedActor(const AActor* Actor)
@@ -494,10 +495,13 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoomSaveKind Kind,
 	uint64 Sequence, FString& OutError, ESWRoomCaptureFailureKind* OutFailureKind)
 {
+	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=WorldCapture Phase=Begin Sequence=%llu Kind=%s World=%s"),
+		Sequence, *UEnum::GetValueAsString(Kind), *GetNameSafe(GetWorld()));
 	if (OutFailureKind) *OutFailureKind = ESWRoomCaptureFailureKind::None;
 	if (!GetWorld() || GetWorld()->GetNetMode() == NM_Client || bRestoring)
 	{
 		OutError = TEXT("Room world capture unavailable");
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=WorldCapture Result=Failed Sequence=%llu Phase=Precondition Reason=%s"), Sequence, *OutError);
 		if (OutFailureKind) *OutFailureKind = ESWRoomCaptureFailureKind::StateUnavailable;
 		return false;
 	}
@@ -505,6 +509,7 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 	{
 		if (bStructuralPartitionFailure) OutError = TEXT("Structural partition capture failure: ") + FString::JoinBy(FailedPartitions, TEXT(", "),
 			[](const TPair<FString, FString>& Pair) { return Pair.Key + TEXT("=") + Pair.Value; });
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=WorldCapture Result=Failed Sequence=%llu Phase=Audit Reason=%s"), Sequence, *OutError);
 		if (OutFailureKind) *OutFailureKind = ESWRoomCaptureFailureKind::Structural;
 		return false;
 	}
@@ -518,11 +523,19 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 		if (!Actor || Actor->IsActorBeingDestroyed())
 		{
 			OutError = TEXT("Registered actor disappeared during capture");
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=ActorCapture Result=Failed Sequence=%llu Id=%s Reason=%s"),
+				Sequence, *Pair.Key.ToString(), *OutError);
 			if (OutFailureKind) *OutFailureKind = ESWRoomCaptureFailureKind::StateUnavailable;
 			return false;
 		}
 		USWRoomSnapshotComponent* Component = Actor->FindComponentByClass<USWRoomSnapshotComponent>();
-		if (!Component) continue;
+		if (!Component)
+		{
+			UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=ActorCapture Result=Skipped Sequence=%llu Id=%s Actor=%s Reason=MissingSnapshotComponent"),
+				Sequence, *Pair.Key.ToString(), *Actor->GetPathName());
+			continue;
+		}
+		const int32 IssueStart = OutSnapshot.CaptureIssues.Num();
 		FSWRoomActorRecord& Record = OutSnapshot.Actors.AddDefaulted_GetRef();
 		Record.StableId = Pair.Key;
 		Record.ClassPath = FSoftClassPath(Actor->GetClass());
@@ -535,6 +548,8 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 			Issue.Domain = TEXT("WorldActor");
 			Issue.FieldKey = TEXT("IdentityOrTransform");
 			Issue.Reason = TEXT("Actor ID, class, or transform unavailable during capture");
+			UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=ActorCapture Result=Skipped Sequence=%llu Id=%s Actor=%s Class=%s Reason=%s"),
+				Sequence, *Record.StableId.ToString(), *Actor->GetPathName(), *Record.ClassPath.ToString(), *Issue.Reason);
 			OutSnapshot.Actors.Pop();
 			continue;
 		}
@@ -643,6 +658,12 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 					Record.AdapterType = NAME_None;
 					Record.AdapterVersion = 0;
 				}
+				else
+					for (const FSWRoomDomainPart& Part : Payload.Parts)
+						UE_LOG(LogSWRoomSave, Display,
+							TEXT("Flow=DomainCapture Result=Success Sequence=%llu ActorId=%s Actor=%s Domain=%d Version=%d Bytes=%d"),
+							Sequence, *Record.StableId.ToString(), *Actor->GetPathName(),
+							static_cast<int32>(Part.Domain), Part.Version, Part.Bytes.Num());
 			}
 		}
 		TSet<FName> Keys;
@@ -695,11 +716,27 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 					AddMotionIssue(OutSnapshot, Record, Key);
 				}
 			}
+			UE_LOG(LogSWRoomSave, Display,
+				TEXT("Flow=ComponentCapture Result=Recorded Sequence=%llu ActorId=%s Actor=%s Key=%s Component=%s Class=%s SaveGameBytes=%d Motion=%d Sim=%d"),
+				Sequence, *Record.StableId.ToString(), *Actor->GetPathName(), *Key.ToString(),
+				*Child->GetPathName(), *Child->GetClass()->GetPathName(), ChildRecord.SaveGameBytes.Num(),
+				ChildRecord.MotionState.bHasMotion ? 1 : 0, ChildRecord.MotionState.bWasSimulatingPhysics ? 1 : 0);
 		}
+		UE_LOG(LogSWRoomSave, Display,
+			TEXT("Flow=ActorCapture Result=%s Sequence=%llu Id=%s Actor=%s Class=%s Origin=%s Partition=%s Required=%d SaveGameBytes=%d AdapterBytes=%d Components=%d ParentId=%s ParentComponent=%s Socket=%s RootMotion=%d RootSim=%d Issues=%d"),
+			OutSnapshot.CaptureIssues.Num() == IssueStart ? TEXT("Success") : TEXT("Partial"), Sequence,
+			*Record.StableId.ToString(), *Actor->GetPathName(), *Record.ClassPath.ToString(),
+			*UEnum::GetValueAsString(Record.Origin), *Record.LevelPartition.PackagePath.ToString(),
+			Record.bRequired ? 1 : 0, Record.SaveGameBytes.Num(), Record.AdapterBytes.Num(), Record.Components.Num(),
+			*Record.AttachParentId.ToString(), *Record.AttachParentComponentName.ToString(), *Record.AttachSocketName.ToString(),
+			Record.MotionState.bHasMotion ? 1 : 0, Record.MotionState.bWasSimulatingPhysics ? 1 : 0,
+			OutSnapshot.CaptureIssues.Num() - IssueStart);
 	}
 	for (const TPair<FGuid, ESWRoomPersistenceClass>& Pair : DestroyedLevelActorIds)
 	{
 		OutSnapshot.DestroyedLevelActorIds.Add(Pair.Key);
+		UE_LOG(LogSWRoomSave, Display, TEXT("Flow=TombstoneCapture Result=Recorded Sequence=%llu Id=%s Persistence=%s"),
+			Sequence, *Pair.Key.ToString(), *UEnum::GetValueAsString(Pair.Value));
 		if (const FString* Package = DestroyedActorPartitions.Find(Pair.Key))
 		{
 			FSWRoomDestroyedActorPartition& Partition = OutSnapshot.DestroyedActorPartitions.AddDefaulted_GetRef();
@@ -713,7 +750,15 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 		}
 	}
 	for (const TPair<FGuid, FSWRoomActorRecord>& Pair : UnloadedRecords)
-		if (!RegisteredActors.Contains(Pair.Key)) OutSnapshot.UnloadedActors.Add(Pair.Value);
+		if (!RegisteredActors.Contains(Pair.Key))
+		{
+			OutSnapshot.UnloadedActors.Add(Pair.Value);
+			UE_LOG(LogSWRoomSave, Display,
+				TEXT("Flow=UnloadedActorCapture Result=Reused Sequence=%llu Id=%s Class=%s Partition=%s SaveGameBytes=%d AdapterBytes=%d Components=%d ParentId=%s"),
+				Sequence, *Pair.Key.ToString(), *Pair.Value.ClassPath.ToString(),
+				*Pair.Value.LevelPartition.PackagePath.ToString(), Pair.Value.SaveGameBytes.Num(),
+				Pair.Value.AdapterBytes.Num(), Pair.Value.Components.Num(), *Pair.Value.AttachParentId.ToString());
+		}
 	TSet<FGuid> CapturedActorIds;
 	for (const FSWRoomActorRecord& Record : OutSnapshot.Actors) CapturedActorIds.Add(Record.StableId);
 	for (const FSWRoomActorRecord& Record : OutSnapshot.UnloadedActors) CapturedActorIds.Add(Record.StableId);
@@ -767,6 +812,16 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 		if (IssueKeys.Contains(Key)) OutSnapshot.CaptureIssues.RemoveAt(Index);
 		else IssueKeys.Add(Key);
 	}
+	for (const FSWRoomCaptureIssue& Issue : OutSnapshot.CaptureIssues)
+		UE_LOG(LogSWRoomSave, Warning,
+			TEXT("Flow=CaptureIssue Sequence=%llu Scope=%d Id=%s Player=%s Actor=%s Class=%s Domain=%s Field=%s Reason=%s"),
+			Sequence, static_cast<int32>(Issue.Scope), *Issue.StableId.ToString(), *Issue.PlayerKey,
+			*Issue.OwnerPath, *Issue.ClassPath.ToString(), *Issue.Domain.ToString(), *Issue.FieldKey.ToString(), *Issue.Reason);
+	UE_LOG(LogSWRoomSave, Display,
+		TEXT("Flow=WorldCapture Result=%s Sequence=%llu Actors=%d Unloaded=%d Tombstones=%d Systems=%d Issues=%d Unsupported=%d"),
+		OutSnapshot.CaptureIssues.IsEmpty() ? TEXT("Success") : TEXT("Partial"), Sequence,
+		OutSnapshot.Actors.Num(), OutSnapshot.UnloadedActors.Num(), OutSnapshot.DestroyedLevelActorIds.Num(),
+		OutSnapshot.Systems.Num(), OutSnapshot.CaptureIssues.Num(), UnsupportedCandidates.Num());
 	return true;
 }
 

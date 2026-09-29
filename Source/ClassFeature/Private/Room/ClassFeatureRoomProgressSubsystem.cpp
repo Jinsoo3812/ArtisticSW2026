@@ -12,6 +12,7 @@
 #include "Network/SWNetworkLog.h"
 #include "Room/SWLevelEntryPoint.h"
 #include "KelvinShip.h"
+#include "Cannon.h"
 #include "WaterSurfaceQueryLibrary.h"
 #include "WaterBodyActor.h"
 #include "Components/PrimitiveComponent.h"
@@ -434,12 +435,21 @@ bool UClassFeatureRoomProgressSubsystem::CaptureSharedWorld(UWorld* World)
 {
 	USWRoomProgressSubsystem* Room = GetRoom(GetGameInstance());
 	USWRoomSaveGame* Save = Room ? Room->GetMutableActiveRoom() : nullptr;
-	if (!World || !Save) return false;
+	if (!World || !Save)
+	{
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=SharedCapture Result=Failed Phase=Precondition World=%d Room=%d"), World != nullptr, Save != nullptr);
+		return false;
+	}
 	FSWRoomSharedProgress& Shared = Save->SharedProgress;
 	if (UStorySubsystem* Story = GetGameInstance()->GetSubsystem<UStorySubsystem>())
 	{
 		UStorySaveGame* StoryData = Story->BuildRoomProgress();
-		if (!StoryData) return false;
+		if (!StoryData)
+		{
+			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=SharedCapture Result=Failed RoomId=%s Sequence=%llu Object=Story Reason=BuildRoomProgressReturnedNull"),
+				*Save->RoomId.ToString(), Save->CaptureSequence + 1);
+			return false;
+		}
 		Shared.StoryDefinitionId = StoryData->StoryDefinitionId;
 		Shared.Facts = StoryData->Facts;
 		Shared.Counters.Reset();
@@ -450,15 +460,40 @@ bool UClassFeatureRoomProgressSubsystem::CaptureSharedWorld(UWorld* World)
 			Value.Value = Counter.Value;
 		}
 		Shared.AppliedActionKeys = StoryData->AppliedActionKeys;
+		UE_LOG(LogSWRoomSave, Display,
+			TEXT("Flow=SharedCapture Result=Success RoomId=%s Sequence=%llu Object=Story Definition=%s Facts=%d Counters=%d Actions=%d"),
+			*Save->RoomId.ToString(), Save->CaptureSequence + 1, *Shared.StoryDefinitionId.ToString(),
+			Shared.Facts.Num(), Shared.Counters.Num(), Shared.AppliedActionKeys.Num());
 	}
+	else UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=SharedCapture Result=Skipped RoomId=%s Sequence=%llu Object=Story Reason=SubsystemUnavailable"),
+		*Save->RoomId.ToString(), Save->CaptureSequence + 1);
 	if (ASharedShipUpgradeState* Ship = ASharedShipUpgradeState::Find(World))
-		if (const UShipUpgradeComponent* Upgrade = Ship->GetUpgradeComponent()) Shared.ShipUpgradeNodeIds = Upgrade->GetActiveNodeIds();
+	{
+		if (const UShipUpgradeComponent* Upgrade = Ship->GetUpgradeComponent())
+		{
+			Shared.ShipUpgradeNodeIds = Upgrade->GetActiveNodeIds();
+			UE_LOG(LogSWRoomSave, Display, TEXT("Flow=SharedCapture Result=Success RoomId=%s Sequence=%llu Object=ShipUpgrade Actor=%s Nodes=%d"),
+				*Save->RoomId.ToString(), Save->CaptureSequence + 1, *Ship->GetPathName(), Shared.ShipUpgradeNodeIds.Num());
+		}
+		else UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=SharedCapture Result=Skipped RoomId=%s Sequence=%llu Object=ShipUpgrade Actor=%s Reason=MissingUpgradeComponent"),
+			*Save->RoomId.ToString(), Save->CaptureSequence + 1, *Ship->GetPathName());
+	}
+	else UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=SharedCapture Result=Skipped RoomId=%s Sequence=%llu Object=ShipUpgrade Reason=SharedStateActorUnavailable"),
+		*Save->RoomId.ToString(), Save->CaptureSequence + 1);
 	TSet<FString> Keys;
 	for (TActorIterator<ASharedStorageChest> It(World); It; ++It)
 	{
 		ASharedStorageChest* Chest = *It;
 		const FString Key = StorageKey(Chest->PersistentChestId, Chest->SaveNamespace);
-		if (!Chest->PersistentChestId.IsValid() || Keys.Contains(Key)) return false;
+		if (!Chest->PersistentChestId.IsValid() || Keys.Contains(Key))
+		{
+			UE_LOG(LogSWRoomSave, Error,
+				TEXT("Flow=SharedCapture Result=Failed RoomId=%s Sequence=%llu Object=Storage Actor=%s ChestId=%s Namespace=%s Reason=%s"),
+				*Save->RoomId.ToString(), Save->CaptureSequence + 1, *Chest->GetPathName(),
+				*Chest->PersistentChestId.ToString(), *Chest->SaveNamespace,
+				Chest->PersistentChestId.IsValid() ? TEXT("DuplicateStorageKey") : TEXT("InvalidChestId"));
+			return false;
+		}
 		Keys.Add(Key);
 		UStorageComponent* Storage = Chest->GetStorageComponent();
 		Storage->ReturnAllReservedCursors();
@@ -477,12 +512,23 @@ bool UClassFeatureRoomProgressSubsystem::CaptureSharedWorld(UWorld* World)
 			SavedSlot.ItemTag = Slot.ItemTag;
 			SavedSlot.Count = Slot.Count;
 		}
+		UE_LOG(LogSWRoomSave, Display,
+			TEXT("Flow=SharedCapture Result=Success RoomId=%s Sequence=%llu Object=Storage Actor=%s ChestId=%s Namespace=%s SlotsPerTab=%d Slots=%d"),
+			*Save->RoomId.ToString(), Save->CaptureSequence + 1, *Chest->GetPathName(),
+			*Entry->ChestId.ToString(), *Entry->SaveNamespace, Entry->SlotsPerTab, Entry->Slots.Num());
 	}
 	Shared.ShipUpgradeNodeIds.Sort(FNameLexicalLess());
 	Shared.Storage.Sort([](const FSWRoomStorageProgress& A, const FSWRoomStorageProgress& B)
 	{
 		return StorageKey(A.ChestId, A.SaveNamespace) < StorageKey(B.ChestId, B.SaveNamespace);
 	});
+	for (const FSWRoomCaptureIssue& Issue : Shared.CaptureIssues)
+		UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=SharedCaptureIssue RoomId=%s Sequence=%llu Domain=%s Field=%s Reason=%s"),
+			*Save->RoomId.ToString(), Save->CaptureSequence + 1,
+			*Issue.Domain.ToString(), *Issue.FieldKey.ToString(), *Issue.Reason);
+	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=SharedCapture Result=%s RoomId=%s Sequence=%llu Storage=%d Issues=%d"),
+		Shared.CaptureIssues.IsEmpty() ? TEXT("Success") : TEXT("Partial"),
+		*Save->RoomId.ToString(), Save->CaptureSequence + 1, Shared.Storage.Num(), Shared.CaptureIssues.Num());
 	return true;
 }
 
@@ -540,8 +586,18 @@ bool UClassFeatureRoomProgressSubsystem::TrySave(UWorld* World, ESWRoomSaveKind 
 	USWRoomSaveGame* Save = Room ? Room->GetMutableActiveRoom() : nullptr;
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=Save Kind=%s RoomId=%s Phase=Requested"), *UEnum::GetValueAsString(Kind),
 		Save ? *Save->RoomId.ToString() : TEXT("None"));
+	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=SaveAttempt Phase=Requested RoomId=%s Sequence=%llu Kind=%s World=%s"),
+		Save ? *Save->RoomId.ToString() : TEXT("None"), Save ? Save->CaptureSequence + 1 : 0,
+		*UEnum::GetValueAsString(Kind), *GetNameSafe(World));
 	if (!World || !Save || bSaving || World->GetNetMode() == NM_Client)
-	{ OutError = TEXT("Room save is unavailable"); UE_LOG(LogSWRoom, Error, TEXT("Flow=Save Kind=%s Result=Failed Reason=%s"), *UEnum::GetValueAsString(Kind), *OutError); return false; }
+	{
+		OutError = TEXT("Room save is unavailable");
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=SaveAttempt Result=Failed Phase=Precondition RoomId=%s Sequence=%llu World=%d Save=%d Busy=%d Client=%d Reason=%s"),
+			Save ? *Save->RoomId.ToString() : TEXT("None"), Save ? Save->CaptureSequence + 1 : 0,
+			World != nullptr, Save != nullptr, bSaving, World && World->GetNetMode() == NM_Client, *OutError);
+		UE_LOG(LogSWRoom, Error, TEXT("Flow=Save Kind=%s Result=Failed Reason=%s"), *UEnum::GetValueAsString(Kind), *OutError);
+		return false;
+	}
 	TGuardValue<bool> SavingGuard(bSaving, true);
 	LastCaptureIssueCount = 0;
 	for (TActorIterator<ABasePlayer> It(World); It; ++It)
@@ -549,12 +605,24 @@ bool UClassFeatureRoomProgressSubsystem::TrySave(UWorld* World, ESWRoomSaveKind 
 		if (UInventoryComponent* Inventory = It->GetInventoryComponent()) Inventory->ReturnCursorToOriginalSlot();
 		CapturePlayer(*It);
 	}
-	if (!CaptureSharedWorld(World)) { OutError = TEXT("Shared progress capture failed"); UE_LOG(LogSWRoom, Error, TEXT("Flow=Save Kind=%s Result=Failed Reason=%s"), *UEnum::GetValueAsString(Kind), *OutError); return false; }
+	if (!CaptureSharedWorld(World))
+	{
+		OutError = TEXT("Shared progress capture failed");
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=SaveAttempt Result=Failed Phase=SharedCapture RoomId=%s Sequence=%llu Reason=%s"),
+			*Save->RoomId.ToString(), Save->CaptureSequence + 1, *OutError);
+		UE_LOG(LogSWRoom, Error, TEXT("Flow=Save Kind=%s Result=Failed Reason=%s"), *UEnum::GetValueAsString(Kind), *OutError);
+		return false;
+	}
 	USWRoomSnapshotSubsystem* Snapshot = World->GetSubsystem<USWRoomSnapshotSubsystem>();
 	const uint64 Sequence = Save->CaptureSequence + 1;
 	FSWRoomWorldSnapshot WorldData;
 	if (!Snapshot || !Snapshot->Capture(WorldData, Kind, Sequence, OutError))
-	{ UE_LOG(LogSWRoom, Error, TEXT("Flow=Save Kind=%s Sequence=%llu Result=Failed Phase=WorldCapture Reason=%s"), *UEnum::GetValueAsString(Kind), Sequence, *OutError); return false; }
+	{
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=SaveAttempt Result=Failed Phase=WorldCapture RoomId=%s Sequence=%llu HasSubsystem=%d Reason=%s"),
+			*Save->RoomId.ToString(), Sequence, Snapshot != nullptr, *OutError);
+		UE_LOG(LogSWRoom, Error, TEXT("Flow=Save Kind=%s Sequence=%llu Result=Failed Phase=WorldCapture Reason=%s"), *UEnum::GetValueAsString(Kind), Sequence, *OutError);
+		return false;
+	}
 	TSet<FString> UniqueIssueKeys;
 	auto DeduplicateIssues = [&UniqueIssueKeys](TArray<FSWRoomCaptureIssue>& Issues)
 	{
@@ -574,6 +642,11 @@ bool UClassFeatureRoomProgressSubsystem::TrySave(UWorld* World, ESWRoomSaveKind 
 	DeduplicateIssues(Save->SharedProgress.CaptureIssues);
 	for (FSWRoomGuestProgress& Guest : Save->Guests) DeduplicateIssues(Guest.Progress.CaptureIssues);
 	LastCaptureIssueCount = UniqueIssueKeys.Num();
+	UE_LOG(LogSWRoomSave, Display,
+		TEXT("Flow=SaveAttempt Phase=Captured RoomId=%s Sequence=%llu Kind=%s Actors=%d Unloaded=%d Tombstones=%d Systems=%d Guests=%d Issues=%d Unsupported=%d"),
+		*Save->RoomId.ToString(), Sequence, *UEnum::GetValueAsString(Kind), WorldData.Actors.Num(),
+		WorldData.UnloadedActors.Num(), WorldData.DestroyedLevelActorIds.Num(), WorldData.Systems.Num(),
+		Save->Guests.Num(), LastCaptureIssueCount, Snapshot->GetUnsupportedCandidateCount());
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=Save Kind=%s Sequence=%llu Phase=Captured Actors=%d Tombstones=%d Unsupported=%d"),
 		*UEnum::GetValueAsString(Kind), Sequence, WorldData.Actors.Num(), WorldData.DestroyedLevelActorIds.Num(), Snapshot->GetUnsupportedCandidateCount());
 	if (Kind == ESWRoomSaveKind::Return)
@@ -600,7 +673,17 @@ bool UClassFeatureRoomProgressSubsystem::TrySave(UWorld* World, ESWRoomSaveKind 
 	Save->MapPath = WorldData.MapPath;
 	Save->WorldSnapshot = MoveTemp(WorldData);
 	Save->bComplete = true;
-	if (!Room->WriteCheckpoint()) { OutError = TEXT("Room file transaction failed"); UE_LOG(LogSWRoom, Error, TEXT("Flow=Save Kind=%s Sequence=%llu Result=Failed Phase=Commit"), *UEnum::GetValueAsString(Kind), Sequence); return false; }
+	if (!Room->WriteCheckpoint())
+	{
+		OutError = TEXT("Room file transaction failed");
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=SaveAttempt Result=Failed Phase=Commit RoomId=%s Sequence=%llu Kind=%s Reason=%s"),
+			*Save->RoomId.ToString(), Sequence, *UEnum::GetValueAsString(Kind), *OutError);
+		UE_LOG(LogSWRoom, Error, TEXT("Flow=Save Kind=%s Sequence=%llu Result=Failed Phase=Commit"), *UEnum::GetValueAsString(Kind), Sequence);
+		return false;
+	}
+	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=SaveAttempt Result=%s RoomId=%s Sequence=%llu Kind=%s Issues=%d"),
+		LastCaptureIssueCount ? TEXT("Partial") : TEXT("Committed"), *Save->RoomId.ToString(), Sequence,
+		*UEnum::GetValueAsString(Kind), LastCaptureIssueCount);
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=Save Kind=%s RoomId=%s Sequence=%llu Result=Success Missing=%d"),
 		*UEnum::GetValueAsString(Kind), *Save->RoomId.ToString(), Sequence, LastCaptureIssueCount);
 	if (Kind == ESWRoomSaveKind::Return) Room->ClearReturnTravelPending();
@@ -614,20 +697,64 @@ void UClassFeatureRoomProgressSubsystem::CapturePlayer(ABasePlayer* Player)
 	USWRoomProgressSubsystem* Room = GetRoom(GetGameInstance());
 	USWRoomSaveGame* Save = Room ? Room->GetMutableActiveRoom() : nullptr;
 	AMultiGameMode* Mode = Player && Player->GetWorld() ? Player->GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
-	if (!Save || !Mode) return;
+	if (!Save || !Mode)
+	{
+		UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=PlayerCapture Result=Skipped Player=%s Reason=MissingRoomOrGameMode"), *GetNameSafe(Player));
+		return;
+	}
 	AController* Controller = Player->GetController();
 	if (!Controller && Player->GetPlayerState()) Controller = Player->GetPlayerState()->GetOwningController();
-	if (!Controller) return;
-	if (Mode->GetPlayerIndex(Controller) == 0) Player->CaptureRoomProgress(Save->HostProgress);
-	else if (const APlayerState* State = Player->GetPlayerState())
+	if (!Controller)
+	{
+		if (const AShip* Ship = Cast<AShip>(Player->GetAttachParentActor()); Ship && Ship->GetRidingPlayer() == Player)
+			Controller = Ship->GetController();
+		else if (const ACannon* Cannon = Cast<ACannon>(Player->GetAttachParentActor()); Cannon && Cannon->GetRidingPlayer() == Player)
+			Controller = Cannon->GetController();
+	}
+	if (!Controller)
+	{
+		UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=PlayerCapture Result=Skipped RoomId=%s Sequence=%llu Player=%s Reason=MissingController"),
+			*Save->RoomId.ToString(), Save->CaptureSequence + 1, *Player->GetPathName());
+		return;
+	}
+	auto TracePlayer = [Save, Player](const TCHAR* Role, const FString& PlayerKey, const FSWRoomPlayerProgress& Progress)
+	{
+		UE_LOG(LogSWRoomSave, Display,
+			TEXT("Flow=PlayerCapture Result=%s RoomId=%s Sequence=%llu Role=%s Player=%s Key=%s InventorySlots=%d QuickSlots=%d Skills=%d Effects=%d Upgrades=%d Health=%g MaxHealth=%g Dead=%d Resume=%d Location=%s Movement=%d Issues=%d"),
+			Progress.CaptureIssues.IsEmpty() ? TEXT("Success") : TEXT("Partial"), *Save->RoomId.ToString(),
+			Save->CaptureSequence + 1, Role, *Player->GetPathName(), *PlayerKey,
+			Progress.InventorySlots.Num(), Progress.QuickSlotItemTags.Num(), Progress.Skills.Num(),
+			Progress.ActiveEffects.Num(), Progress.UpgradeNodeIds.Num(), Progress.CurrentHealth,
+			Progress.MaximumHealth, Progress.bWasDead ? 1 : 0, Progress.bHasResumeTransform ? 1 : 0,
+			*Progress.ResumeWorldTransform.GetLocation().ToString(), Progress.bHasMovement ? 1 : 0,
+			Progress.CaptureIssues.Num());
+		for (const FSWRoomCaptureIssue& Issue : Progress.CaptureIssues)
+			UE_LOG(LogSWRoomSave, Warning,
+				TEXT("Flow=PlayerCaptureIssue RoomId=%s Sequence=%llu Player=%s Key=%s Domain=%s Field=%s Reason=%s"),
+				*Save->RoomId.ToString(), Save->CaptureSequence + 1, *Player->GetPathName(), *PlayerKey,
+				*Issue.Domain.ToString(), *Issue.FieldKey.ToString(), *Issue.Reason);
+	};
+	const APlayerState* PlayerState = Player->GetPlayerState();
+	if (!PlayerState)
+		if (const APlayerController* PlayerController = Cast<APlayerController>(Controller)) PlayerState = PlayerController->PlayerState;
+	if (Mode->GetPlayerIndex(Controller) == 0)
+	{
+		Player->CaptureRoomProgress(Save->HostProgress);
+		TracePlayer(TEXT("Host"), Save->HostDisplayName, Save->HostProgress);
+	}
+	else if (const APlayerState* State = PlayerState)
 	{
 		const FString Name = State->GetPlayerName();
 		FSWRoomGuestProgress* Guest = Save->Guests.FindByPredicate([&Name](const FSWRoomGuestProgress& Entry) { return Entry.DisplayName == Name; });
 		if (!Guest) Guest = &Save->Guests.AddDefaulted_GetRef();
 		Guest->DisplayName = Name;
 		Player->CaptureRoomProgress(Guest->Progress);
+		TracePlayer(TEXT("Guest"), Name, Guest->Progress);
 		Save->Guests.Sort([](const FSWRoomGuestProgress& A, const FSWRoomGuestProgress& B) { return A.DisplayName < B.DisplayName; });
 	}
+	else
+		UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=PlayerCapture Result=Skipped RoomId=%s Sequence=%llu Player=%s Reason=MissingGuestPlayerState"),
+			*Save->RoomId.ToString(), Save->CaptureSequence + 1, *Player->GetPathName());
 }
 
 bool UClassFeatureRoomProgressSubsystem::TryReturn(UWorld* World, ABasePlayer* Requester)

@@ -422,6 +422,12 @@ void ABasePlayer::CaptureReconnectProgress()
 void ABasePlayer::CaptureRoomProgress(FSWRoomPlayerProgress& OutProgress) const
 {
 	OutProgress = FSWRoomPlayerProgress();
+	const APawn* ControlPawn = nullptr;
+	if (const AShip* Ship = Cast<AShip>(GetAttachParentActor()); Ship && Ship->GetRidingPlayer() == this) ControlPawn = Ship;
+	else if (const ACannon* Cannon = Cast<ACannon>(GetAttachParentActor()); Cannon && Cannon->GetRidingPlayer() == this) ControlPawn = Cannon;
+	const ABasePlayerState* RoomPlayerState = GetPlayerState<ABasePlayerState>();
+	if (!RoomPlayerState && ControlPawn) RoomPlayerState = ControlPawn->GetPlayerState<ABasePlayerState>();
+	const AController* RoomController = GetController() ? GetController() : ControlPawn ? ControlPawn->GetController() : nullptr;
 	if (InventoryComponent)
 	{
 		for (uint8 TabIndex = 0; TabIndex < 4; ++TabIndex)
@@ -439,8 +445,8 @@ void ABasePlayer::CaptureRoomProgress(FSWRoomPlayerProgress& OutProgress) const
 	}
 	for (const FQuickSlotReference& Slot : QuickSlots) OutProgress.QuickSlotItemTags.Add(Slot.ItemTag);
 	if (EquipmentComponent) OutProgress.EquippedItemTag = EquipmentComponent->GetEquippedItemTag();
-	if (const ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
-		if (const UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent()) OutProgress.UpgradeNodeIds = Upgrade->GetActiveNodeIds();
+	if (RoomPlayerState)
+		if (const UShipUpgradeComponent* Upgrade = RoomPlayerState->GetShipUpgradeComponent()) OutProgress.UpgradeNodeIds = Upgrade->GetActiveNodeIds();
 	OutProgress.UpgradeNodeIds.Sort(FNameLexicalLess());
 	if (const UPlayerSkillComponent* Skills = GetPlayerSkillComponent())
 		for (const FGameplayTag& Tag : Skills->GetRegisteredSkillTags())
@@ -469,14 +475,14 @@ void ABasePlayer::CaptureRoomProgress(FSWRoomPlayerProgress& OutProgress) const
 		{
 			FSWRoomCaptureIssue& Issue = OutProgress.CaptureIssues.AddDefaulted_GetRef();
 			Issue.Scope = ESWRoomIssueScope::Player;
-			Issue.PlayerKey = GetPlayerState() ? GetPlayerState()->GetPlayerName() : TEXT("UnknownPlayer");
+			Issue.PlayerKey = RoomPlayerState ? RoomPlayerState->GetPlayerName() : TEXT("UnknownPlayer");
 			Issue.ClassPath = FSoftClassPath(GetClass());
 			Issue.Domain = TEXT("Movement");
 			Issue.FieldKey = TEXT("WorldVelocity");
 			Issue.Reason = TEXT("Non-finite movement velocity");
 		}
 	}
-	OutProgress.ControlRotation = GetController() ? GetController()->GetControlRotation() : GetActorRotation();
+	OutProgress.ControlRotation = RoomController ? RoomController->GetControlRotation() : GetActorRotation();
 	OutProgress.CameraZoom = CameraBoom ? CameraBoom->TargetArmLength : 0.0f;
 	if (HealthComponent)
 	{
@@ -500,7 +506,7 @@ void ABasePlayer::CaptureRoomProgress(FSWRoomPlayerProgress& OutProgress) const
 		for (FSWRoomCaptureIssue& Issue : OutProgress.CaptureIssues)
 		{
 			Issue.Scope = ESWRoomIssueScope::Player;
-			Issue.PlayerKey = GetPlayerState() ? GetPlayerState()->GetPlayerName() : TEXT("UnknownPlayer");
+			Issue.PlayerKey = RoomPlayerState ? RoomPlayerState->GetPlayerName() : TEXT("UnknownPlayer");
 			Issue.ClassPath = FSoftClassPath(GetClass());
 		}
 	}

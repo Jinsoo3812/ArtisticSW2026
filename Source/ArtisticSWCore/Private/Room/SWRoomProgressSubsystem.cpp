@@ -52,12 +52,18 @@ bool USWRoomProgressSubsystem::WriteCheckpoint()
 {
 	if (!bHostedRoom || bStartupError || !ActiveRoom || bSaving || !ActiveRoom->bComplete)
 	{
+		UE_LOG(LogSWRoomSave, Error,
+			TEXT("Flow=Checkpoint Result=Rejected RoomId=%s Sequence=%llu Hosted=%d StartupError=%d HasRoom=%d Busy=%d Complete=%d"),
+			ActiveRoom ? *ActiveRoom->RoomId.ToString() : TEXT("None"), ActiveRoom ? ActiveRoom->CaptureSequence : 0,
+			bHostedRoom, bStartupError, ActiveRoom != nullptr, bSaving, ActiveRoom && ActiveRoom->bComplete);
 		UE_LOG(LogSWRoom, Warning, TEXT("Flow=Checkpoint Result=Rejected Hosted=%d StartupError=%d HasRoom=%d Busy=%d Complete=%d"),
 			bHostedRoom, bStartupError, ActiveRoom != nullptr, bSaving, ActiveRoom && ActiveRoom->bComplete);
 		return false;
 	}
 	TGuardValue<bool> SavingGuard(bSaving, true);
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=Checkpoint RoomId=%s Kind=%s Sequence=%llu Phase=WriteRequested NewPending=%d"),
+		*ActiveRoom->RoomId.ToString(), *UEnum::GetValueAsString(ActiveRoom->SaveKind), ActiveRoom->CaptureSequence, bNewRoomPending);
+	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=Checkpoint Phase=WriteRequested RoomId=%s Kind=%s Sequence=%llu NewPending=%d"),
 		*ActiveRoom->RoomId.ToString(), *UEnum::GetValueAsString(ActiveRoom->SaveKind), ActiveRoom->CaptureSequence, bNewRoomPending);
 	const bool bSuccess = bNewRoomPending
 		? (FSWRoomSaveStore::StageCompleteNewRoom(ActiveRoom) && FSWRoomSaveStore::CommitStagedNewRoom())
@@ -71,10 +77,14 @@ bool USWRoomProgressSubsystem::WriteCheckpoint()
 	{
 		UE_LOG(LogSWRoom, Display, TEXT("Flow=Checkpoint RoomId=%s Kind=%s Sequence=%llu Result=Committed"),
 			*ActiveRoom->RoomId.ToString(), *UEnum::GetValueAsString(ActiveRoom->SaveKind), ActiveRoom->CaptureSequence);
+		UE_LOG(LogSWRoomSave, Display, TEXT("Flow=Checkpoint Result=Committed RoomId=%s Kind=%s Sequence=%llu"),
+			*ActiveRoom->RoomId.ToString(), *UEnum::GetValueAsString(ActiveRoom->SaveKind), ActiveRoom->CaptureSequence);
 	}
 	else
 	{
 		UE_LOG(LogSWRoom, Error, TEXT("Flow=Checkpoint RoomId=%s Kind=%s Sequence=%llu Result=Failed"),
+			*ActiveRoom->RoomId.ToString(), *UEnum::GetValueAsString(ActiveRoom->SaveKind), ActiveRoom->CaptureSequence);
+		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=Checkpoint Result=Failed RoomId=%s Kind=%s Sequence=%llu Reason=FileTransactionFailed"),
 			*ActiveRoom->RoomId.ToString(), *UEnum::GetValueAsString(ActiveRoom->SaveKind), ActiveRoom->CaptureSequence);
 	}
 	return bSuccess;
