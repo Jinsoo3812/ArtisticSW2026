@@ -47,6 +47,9 @@ public:
 	void CloseRoomMenu();
 	UFUNCTION(Server, Reliable) void ServerRequestRoomSave(uint64 RequestId);
 	UFUNCTION(Client, Reliable) void ClientRoomSaveResult(uint64 RequestId, bool bSuccess, const FString& Message);
+	UFUNCTION(Client, Reliable) void ClientBeginRoomReturn();
+	UFUNCTION(Client, Reliable) void ClientCancelRoomReturn();
+	UFUNCTION(Server, Reliable) void ServerConfirmRoomReturnPresentation();
 	void OpenFacilityHubFromServer(AActor* ContextActor);
 
 	UFUNCTION(Client, Reliable)

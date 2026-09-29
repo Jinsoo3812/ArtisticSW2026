@@ -34,4 +34,10 @@ public:
 private:
 	FGuid CreatorId;
 	uint64 CreatorSequence = 0;
+#if WITH_EDITOR
+	void QueueEditorDuplicateId();
+	bool ApplyPendingEditorDuplicateId(float DeltaTime);
+	bool bPendingEditorDuplicateId = false;
+	int32 EditorDuplicateIdAttempts = 0;
+#endif
 };

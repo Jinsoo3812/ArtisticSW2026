@@ -180,7 +180,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Game Rules")
 	void RequestGameOverAndLevelRestart();
 	void MarkHostedRoomWorldReady();
-	void RequestHostedRoomReturnTravel();
+	bool RequestHostedRoomReturnTravel();
 
 	bool StoreReconnectSnapshotForController(AController* Controller, const FSWPlayerProgressSnapshot& Snapshot);
 	bool ConsumeReconnectSnapshotForController(AController* Controller, FSWPlayerProgressSnapshot& OutSnapshot);

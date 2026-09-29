@@ -1,6 +1,8 @@
 #include "Room/ClassFeatureRoomProgressSubsystem.h"
 
 #include "BasePlayer.h"
+#include "BasePlayerController.h"
+#include "Engine/GameInstance.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
@@ -27,6 +29,7 @@
 #include "Upgrade/SharedShipUpgradeState.h"
 #include "Upgrade/ShipUpgradeComponent.h"
 #include "Containers/Ticker.h"
+#include "TimerManager.h"
 
 namespace
 {
@@ -53,7 +56,13 @@ bool IsShipPartBlocked(UWorld* World, AKelvinShip* Ship, UPrimitiveComponent* Pa
 		if (Overlap.GetActor() && Overlap.GetActor()->IsA<AWaterBody>()) continue;
 		if (Overlap.bBlockingHit && Other && Other->GetCollisionObjectType() == ECC_WorldStatic)
 		{
-			UE_LOG(LogSWRoom, Warning, TEXT("Room ship static overlap with %s"), *GetNameSafe(Overlap.GetActor()));
+			const UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(Other);
+			UE_LOG(LogSWRoom, Warning,
+				TEXT("Flow=ShipPlacement Result=Blocked ShipPart=%s PartLocation=%s PartExtent=%s Obstacle=%s ObstacleComponent=%s Mesh=%s ObstacleLocation=%s ObstacleExtent=%s"),
+				*Part->GetPathName(), *Part->Bounds.Origin.ToCompactString(), *Part->Bounds.BoxExtent.ToCompactString(),
+				*Overlap.GetActor()->GetPathName(), *Other->GetPathName(),
+				*GetNameSafe(StaticMeshComponent ? StaticMeshComponent->GetStaticMesh() : nullptr),
+				*Other->Bounds.Origin.ToCompactString(), *Other->Bounds.BoxExtent.ToCompactString());
 			return true;
 		}
 	}
@@ -94,6 +103,8 @@ bool PlaceShipSafely(UWorld* World, AKelvinShip* Ship, ASWLevelEntryPoint* Entry
 			Candidate.SetLocation(Position);
 		}
 		Ship->SetActorTransform(Candidate, false, nullptr, ETeleportType::TeleportPhysics);
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=ShipPlacement Phase=Candidate Index=%d Entry=%s EntryLocation=%s ShipLocation=%s"),
+			Index, *Entry->GetPathName(), *Entry->GetActorLocation().ToCompactString(), *Ship->GetActorLocation().ToCompactString());
 		UPrimitiveComponent* Root = Cast<UPrimitiveComponent>(Ship->GetRootComponent());
 		if (!Root || (WaterZ != 0.0f && Root->GetComponentLocation().Z < WaterZ - Root->Bounds.BoxExtent.Z))
 		{ UE_LOG(LogSWRoom, Warning, TEXT("Room ship candidate %d: root below safe surface"), Index); continue; }
@@ -137,6 +148,8 @@ void UClassFeatureRoomProgressSubsystem::Initialize(FSubsystemCollectionBase& Co
 
 void UClassFeatureRoomProgressSubsystem::Deinitialize()
 {
+	if (UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr)
+		World->GetTimerManager().ClearTimer(ReturnPresentationTimeoutHandle);
 	FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(PostLoadHandle);
 	if (RestoreTickerHandle.IsValid()) FTSTicker::GetCoreTicker().RemoveTicker(RestoreTickerHandle);
 	Super::Deinitialize();
@@ -148,6 +161,8 @@ void UClassFeatureRoomProgressSubsystem::HandlePostLoadMap(UWorld* World)
 	PendingWorld = World;
 	RestoreDeadline = FPlatformTime::Seconds() + 10.0;
 	bReturning = false;
+	ReturnControllers.Reset();
+	PendingReturnControllers.Reset();
 	bWorldSnapshotRestored = false;
 	bReturnShipPlaced = false;
 	bShipSafetyFallbackUsed = false;
@@ -763,7 +778,12 @@ bool UClassFeatureRoomProgressSubsystem::TryReturn(UWorld* World, ABasePlayer* R
 	USWRoomProgressSubsystem* Room = GetRoom(GetGameInstance());
 	AMultiGameMode* Mode = World ? World->GetAuthGameMode<AMultiGameMode>() : nullptr;
 	if (!Room || !Mode || !Requester || bReturning)
-	{ UE_LOG(LogSWRoom, Warning, TEXT("Flow=Return Result=Rejected")); return false; }
+	{
+		UE_LOG(LogSWRoom, Warning,
+			TEXT("Flow=Return Result=Rejected World=%s HostedRoom=%d GameMode=%s Requester=%s AlreadyReturning=%d"),
+			*GetNameSafe(World), Room ? 1 : 0, *GetNameSafe(Mode), *GetNameSafe(Requester), bReturning ? 1 : 0);
+		return false;
+	}
 	for (TActorIterator<ABasePlayer> It(World); It; ++It)
 	{
 		if (UInventoryComponent* Inventory = It->GetInventoryComponent()) Inventory->ReturnCursorToOriginalSlot();
@@ -775,8 +795,74 @@ bool UClassFeatureRoomProgressSubsystem::TryReturn(UWorld* World, ABasePlayer* R
 		if (APlayerController* Controller = Cast<APlayerController>(Requester->GetController())) Controller->ClientMessage(TEXT("귀환 저장 실패"));
 		return false;
 	}
+	ReturnControllers.Reset();
+	PendingReturnControllers.Reset();
+	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+	{
+		ABasePlayerController* Controller = Cast<ABasePlayerController>(It->Get());
+		if (!Controller)
+		{
+			UE_LOG(LogSWRoom, Error, TEXT("Flow=Return Result=Failed Phase=Presentation Reason=UnexpectedController"));
+			ReturnControllers.Reset();
+			return false;
+		}
+		ReturnControllers.Add(Controller);
+		PendingReturnControllers.Add(Controller);
+	}
+	if (ReturnControllers.IsEmpty())
+	{
+		UE_LOG(LogSWRoom, Error, TEXT("Flow=Return Result=Failed Phase=Presentation Reason=NoControllers"));
+		return false;
+	}
 	bReturning = true;
-	UE_LOG(LogSWRoom, Display, TEXT("Flow=Return RoomId=%s Phase=TravelRequested DiskWrite=0"), *Room->GetActiveRoom()->RoomId.ToString());
-	Mode->RequestHostedRoomReturnTravel();
+	World->GetTimerManager().SetTimer(ReturnPresentationTimeoutHandle, this,
+		&UClassFeatureRoomProgressSubsystem::HandleReturnPresentationTimeout, 3.0f, false);
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=Return RoomId=%s Phase=PresentationRequested Clients=%d"),
+		*Room->GetActiveRoom()->RoomId.ToString(), ReturnControllers.Num());
+	for (const TWeakObjectPtr<ABasePlayerController>& Controller : ReturnControllers)
+		if (Controller.IsValid()) Controller->ClientBeginRoomReturn();
 	return true;
+}
+
+void UClassFeatureRoomProgressSubsystem::ConfirmReturnPresentation(ABasePlayerController* Controller)
+{
+	if (!bReturning || !Controller || !Controller->HasAuthority()) return;
+	const int32 Removed = PendingReturnControllers.RemoveAll(
+		[Controller](const TWeakObjectPtr<ABasePlayerController>& Pending) { return Pending.Get() == Controller; });
+	if (Removed == 0) return;
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=Return Phase=PresentationConfirmed Controller=%s Remaining=%d"),
+		*GetNameSafe(Controller), PendingReturnControllers.Num());
+	if (PendingReturnControllers.IsEmpty()) BeginReturnTravel();
+}
+
+void UClassFeatureRoomProgressSubsystem::BeginReturnTravel()
+{
+	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
+	if (!bReturning || !World) return;
+	World->GetTimerManager().ClearTimer(ReturnPresentationTimeoutHandle);
+	AMultiGameMode* Mode = World->GetAuthGameMode<AMultiGameMode>();
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=Return Phase=TravelRequested DiskWrite=0"));
+	if (Mode && Mode->RequestHostedRoomReturnTravel()) return;
+	UE_LOG(LogSWRoom, Error, TEXT("Flow=Return Result=Failed Phase=TravelRequested"));
+	CancelReturnPresentation();
+}
+
+void UClassFeatureRoomProgressSubsystem::HandleReturnPresentationTimeout()
+{
+	UE_LOG(LogSWRoom, Error, TEXT("Flow=Return Result=Failed Phase=PresentationTimeout Remaining=%d"),
+		PendingReturnControllers.Num());
+	for (const TWeakObjectPtr<ABasePlayerController>& Controller : ReturnControllers)
+		if (Controller.IsValid()) Controller->ClientMessage(TEXT("귀환 준비에 실패했습니다. 다시 시도해 주세요."));
+	CancelReturnPresentation();
+}
+
+void UClassFeatureRoomProgressSubsystem::CancelReturnPresentation()
+{
+	if (UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr)
+		World->GetTimerManager().ClearTimer(ReturnPresentationTimeoutHandle);
+	for (const TWeakObjectPtr<ABasePlayerController>& Controller : ReturnControllers)
+		if (Controller.IsValid()) Controller->ClientCancelRoomReturn();
+	ReturnControllers.Reset();
+	PendingReturnControllers.Reset();
+	bReturning = false;
 }

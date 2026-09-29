@@ -172,6 +172,7 @@ bool USWConnectionSubsystem::ConnectDirectWithName(const FString& Address, const
 void USWConnectionSubsystem::DisconnectToDefaultMap()
 {
 	if (ConnectionState == ESWConnectionState::Idle) return;
+	bRoomReturnPresentationActive = false;
 	UGameInstance* GameInstance = GetGameInstance();
 	if (!GameInstance || !GameInstance->GetWorld())
 	{
@@ -266,10 +267,12 @@ void USWConnectionSubsystem::TransitionTo(ESWConnectionState NewState)
 void USWConnectionSubsystem::RecordFailure(ESWConnectionFailureReason Reason, const FString& EngineFailureType, const FString& EngineMessage)
 {
 	if (ConnectionState == ESWConnectionState::Failed && LastFailure.Reason == Reason && LastFailure.EngineFailureType == EngineFailureType && LastFailure.EngineMessage == EngineMessage) return;
+	const bool bWasReturning = bRoomReturnPresentationActive;
+	bRoomReturnPresentationActive = false;
 	StopReadinessCheck();
 	bConnectionAttemptActive = false;
 	bIntentionalDisconnect = false;
-	if (UWorld* CurrentWorld = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr; CurrentWorld && CurrentWorld->GetMapName().Contains(TEXT("ConnectionLobby"))) HideLoadingPresentation();
+	if (UWorld* CurrentWorld = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr; bWasReturning || (CurrentWorld && CurrentWorld->GetMapName().Contains(TEXT("ConnectionLobby")))) HideLoadingPresentation();
 	LastFailure.Reason = Reason;
 	LastFailure.EngineFailureType = EngineFailureType;
 	LastFailure.EngineMessage = EngineMessage;
@@ -373,6 +376,7 @@ void USWConnectionSubsystem::CompleteReadiness()
 	StopReadinessCheck();
 	bConnectionAttemptActive = false;
 	FSWInputDiag::Record(GetGameInstance(), TEXT("Ready"));
+	bRoomReturnPresentationActive = false;
 	TransitionTo(ESWConnectionState::Playing);
 	if (ConnectionState != ESWConnectionState::Playing) return;
 	HideLoadingPresentation();
@@ -403,6 +407,31 @@ bool USWConnectionSubsystem::IsFailureRelevantToThisInstance(const UWorld* Failu
 	if ((ConnectionState == ESWConnectionState::Idle || ConnectionState == ESWConnectionState::Failed) && !bConnectionAttemptActive && !bIntentionalDisconnect) return false;
 	if (!FailureWorld) return bConnectionAttemptActive || bIntentionalDisconnect || ConnectionState == ESWConnectionState::Playing;
 	return FailureWorld->GetGameInstance() == GetGameInstance();
+}
+
+bool USWConnectionSubsystem::BeginRoomReturnPresentation()
+{
+	if (ConnectionState != ESWConnectionState::Playing || bIntentionalDisconnect) return false;
+	bRoomReturnPresentationActive = true;
+	bConnectionAttemptActive = true;
+	ShowLoadingPresentation();
+	if (!bLoadingPresentationVisible)
+	{
+		bRoomReturnPresentationActive = false;
+		bConnectionAttemptActive = false;
+		return false;
+	}
+	UE_LOG(LogSWConnection, Display, TEXT("Flow=Return Phase=PresentationShown"));
+	return true;
+}
+
+void USWConnectionSubsystem::CancelRoomReturnPresentation()
+{
+	if (!bRoomReturnPresentationActive) return;
+	bRoomReturnPresentationActive = false;
+	bConnectionAttemptActive = false;
+	HideLoadingPresentation();
+	UE_LOG(LogSWConnection, Warning, TEXT("Flow=Return Phase=PresentationCancelled"));
 }
 
 void USWConnectionSubsystem::ShowLoadingPresentation()
@@ -460,6 +489,11 @@ void USWConnectionSubsystem::HideLoadingPresentation()
 void USWConnectionSubsystem::UpdateLoadingPresentationText()
 {
 	if (!LoadingStatusText.IsValid()) return;
+	if (bRoomReturnPresentationActive)
+	{
+		LoadingStatusText->SetText(NSLOCTEXT("SWConnection", "Returning", "귀환 준비 중..."));
+		return;
+	}
 	FText StatusText;
 	switch (ConnectionState)
 	{

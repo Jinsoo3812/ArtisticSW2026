@@ -346,7 +346,7 @@ void USWShipWakeSubsystem::Tick(const float DeltaTime)
 		BindToWaterMaterials(ServerTime);
 	}
 
-	// 온스크린 디버그 메시지
+	/* 온스크린 디버그 메시지
 	if (CVarOnScreenDebug.GetValueOnGameThread() > 0 && GEngine && bIsRenderingClient)
 	{
 		const int32 StoredCount = GetEventCount();
@@ -367,7 +367,7 @@ void USWShipWakeSubsystem::Tick(const float DeltaTime)
 			ActiveCount, StoredCount, MaxCap, GridSizeCm * 0.01f);
 		GEngine->AddOnScreenDebugMessage(
 			184719, 0.0f, FColor::Cyan, DebugMsg, true, FVector2D(1.1f, 1.1f));
-	}
+	} */
 }
 
 TStatId USWShipWakeSubsystem::GetStatId() const

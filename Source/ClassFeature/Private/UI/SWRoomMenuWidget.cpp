@@ -1,8 +1,12 @@
 #include "UI/SWRoomMenuWidget.h"
 
 #include "BasePlayerController.h"
+#include "Network/Lobby/SWRoomSubsystem.h"
+#include "Engine/GameInstance.h"
+#include "HAL/PlatformApplicationMisc.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
+#include "Components/HorizontalBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -15,6 +19,25 @@ void USWRoomMenuWidget::NativeOnInitialized()
 	UTextBlock* Title = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Title"));
 	Title->SetText(FText::FromString(TEXT("방 메뉴")));
 	Layout->AddChildToVerticalBox(Title);
+	const USWRoomSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomSubsystem>() : nullptr;
+	const bool bInRoom = Room && Room->GetRoomState() == ESWRoomState::Playing;
+	RoomCode = bInRoom ? Room->GetRoomCode() : FString();
+	const FString PlayerName = bInRoom ? Room->GetDisplayName() : TEXT("정보 없음");
+	UTextBlock* NameText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("PlayerName"));
+	NameText->SetText(FText::FromString(FString::Printf(TEXT("내 이름: %s"), *PlayerName)));
+	Layout->AddChildToVerticalBox(NameText);
+	UHorizontalBox* CodeRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("RoomCodeRow"));
+	UTextBlock* CodeText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("RoomCode"));
+	CodeText->SetText(FText::FromString(FString::Printf(TEXT("방 코드: %s"), RoomCode.IsEmpty() ? TEXT("없음") : *RoomCode)));
+	CodeRow->AddChildToHorizontalBox(CodeText);
+	UButton* CopyButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("CopyRoomCodeButton"));
+	UTextBlock* CopyLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CopyRoomCodeLabel"));
+	CopyLabel->SetText(FText::FromString(TEXT("복사")));
+	CopyButton->AddChild(CopyLabel);
+	CopyButton->SetIsEnabled(!RoomCode.IsEmpty());
+	CopyButton->OnClicked.AddDynamic(this, &USWRoomMenuWidget::HandleCopyRoomCodeClicked);
+	CodeRow->AddChildToHorizontalBox(CopyButton);
+	Layout->AddChildToVerticalBox(CodeRow);
 	SaveButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("SaveButton"));
 	UTextBlock* SaveLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SaveLabel"));
 	SaveLabel->SetText(FText::FromString(TEXT("저장")));
@@ -64,4 +87,11 @@ void USWRoomMenuWidget::HandleSaveAndExitClicked()
 void USWRoomMenuWidget::HandleCloseClicked()
 {
 	if (ABasePlayerController* Controller = Cast<ABasePlayerController>(GetOwningPlayer())) Controller->CloseRoomMenu();
+}
+
+void USWRoomMenuWidget::HandleCopyRoomCodeClicked()
+{
+	if (RoomCode.IsEmpty()) return;
+	FPlatformApplicationMisc::ClipboardCopy(*RoomCode);
+	if (StatusText) StatusText->SetText(FText::FromString(TEXT("방 코드를 복사했습니다.")));
 }

@@ -42,6 +42,8 @@ public:
 	int32 GetActiveAttemptId() const { return ActiveAttemptId; }
 	UFUNCTION(BlueprintPure)
 	FString GetReadinessDebugStatus() const;
+	bool BeginRoomReturnPresentation();
+	void CancelRoomReturnPresentation();
 
 	UPROPERTY(BlueprintAssignable)
 	FOnSWConnectionStateChanged OnConnectionStateChanged;
@@ -83,6 +85,7 @@ private:
 	TWeakObjectPtr<UGameViewportClient> LoadingViewport;
 	bool bLoadingPresentationVisible = false;
 	bool bViewportIgnoredInputBeforeLoading = false;
+	bool bRoomReturnPresentationActive = false;
 	FString PendingDisplayName;
 	FGuid PendingHostKey;
 	FDelegateHandle NetworkFailureHandle;

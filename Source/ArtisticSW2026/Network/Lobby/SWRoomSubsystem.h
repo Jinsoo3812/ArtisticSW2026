@@ -36,6 +36,7 @@ public:
 	UFUNCTION(BlueprintCallable) void LeaveRoom();
 	UFUNCTION(BlueprintPure) ESWRoomState GetRoomState() const { return State; }
 	UFUNCTION(BlueprintPure) FString GetRoomCode() const { return DisplayCode; }
+	UFUNCTION(BlueprintPure) FString GetDisplayName() const { return DisplayName; }
 	UFUNCTION(BlueprintPure) FText GetRoomMessage() const { return Message; }
 	UFUNCTION(BlueprintPure) bool NeedsManualPublicIP() const { return bNeedsManualPublicIP; }
 	UFUNCTION(BlueprintPure) bool CanHost() const;

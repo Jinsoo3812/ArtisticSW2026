@@ -20,7 +20,9 @@ private:
 	UFUNCTION() void HandleSaveClicked();
 	UFUNCTION() void HandleSaveAndExitClicked();
 	UFUNCTION() void HandleCloseClicked();
+	UFUNCTION() void HandleCopyRoomCodeClicked();
 	UPROPERTY(Transient) TObjectPtr<UButton> SaveButton;
 	UPROPERTY(Transient) TObjectPtr<UButton> SaveAndExitButton;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> StatusText;
+	FString RoomCode;
 };

@@ -187,18 +187,22 @@ void AMultiGameMode::MarkHostedRoomWorldReady()
 	}
 }
 
-void AMultiGameMode::RequestHostedRoomReturnTravel()
+bool AMultiGameMode::RequestHostedRoomReturnTravel()
 {
-	if (!IsHostedRoom() || bLevelRestartRequested || !GetWorld()) return;
+	if (!IsHostedRoom() || bLevelRestartRequested || !GetWorld()) return false;
 	bLevelRestartRequested = true;
 	if (UPlayerProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>()) Progress->ClearSnapshotsForHostedReturn();
 	if (USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>()) Room->MarkReturnTravelPending();
 	if (!GetWorld()->ServerTravel(TEXT("?Restart"), false))
 	{
+		bLevelRestartRequested = false;
+		if (USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>()) Room->ClearReturnTravelPending();
 		UE_LOG(LogSWConnection, Error, TEXT("Hosted room return travel failed"));
 		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 			if (APlayerController* Controller = It->Get()) Controller->ClientMessage(TEXT("귀환 실패"));
+		return false;
 	}
+	return true;
 }
 
 bool AMultiGameMode::TickRoomOwner(float DeltaTime)

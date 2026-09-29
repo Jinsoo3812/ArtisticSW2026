@@ -287,10 +287,14 @@ bool USWRoomSubsystem::JoinRoom(const FString& Name, const FString& Code)
 		Fail(FText::FromString(TEXT("잘못된 코드")));
 		return false;
 	}
+	if (!FSWRoomCode::Encode(Address, Port, DisplayCode))
+	{
+		Fail(FText::FromString(TEXT("참가 코드를 표시할 수 없습니다.")));
+		return false;
+	}
 	++OperationId;
 	bOwnsServer = false;
 	bAwaitingHostJoin = false;
-	DisplayCode.Empty();
 	UE_LOG(LogSWConnection, Display, TEXT("Side=JoinClient OperationId=%llu Phase=CodeValidation Result=Success Port=%u"), OperationId, Port);
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=GuestJoin OperationId=%llu Phase=CodeValidated Port=%u"), OperationId, Port);
 	SetState(ESWRoomState::Connecting, FText::FromString(TEXT("서버 연결 중...")));

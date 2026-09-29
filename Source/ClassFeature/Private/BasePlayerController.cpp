@@ -30,6 +30,7 @@
 #include "Room/SWRoomProgressSubsystem.h"
 #include "Room/SWRoomSnapshotSubsystem.h"
 #include "Network/SWNetworkLog.h"
+#include "Network/SWConnectionSubsystem.h"
 #include "MultiGameMode.h"
 #include "InputAction.h"
 #include "WaterSubsystem.h"
@@ -42,6 +43,24 @@
 #include "Engine/GameViewportClient.h"
 #include "Network/Lobby/SWRoomSubsystem.h"
 #include "HAL/PlatformMisc.h"
+
+void ABasePlayerController::ClientBeginRoomReturn_Implementation()
+{
+	USWConnectionSubsystem* Connection = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWConnectionSubsystem>() : nullptr;
+	if (Connection && Connection->BeginRoomReturnPresentation()) ServerConfirmRoomReturnPresentation();
+}
+
+void ABasePlayerController::ClientCancelRoomReturn_Implementation()
+{
+	if (USWConnectionSubsystem* Connection = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWConnectionSubsystem>() : nullptr)
+		Connection->CancelRoomReturnPresentation();
+}
+
+void ABasePlayerController::ServerConfirmRoomReturnPresentation_Implementation()
+{
+	if (UClassFeatureRoomProgressSubsystem* Progress = GetGameInstance() ? GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr)
+		Progress->ConfirmReturnPresentation(this);
+}
 
 
 void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
