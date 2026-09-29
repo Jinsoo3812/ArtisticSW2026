@@ -160,6 +160,14 @@
 			"Enabled": true
 		},
 		{
+			"Name": "LevelSnapshots",
+			"Enabled": true
+		},
+		{
+			"Name": "PCG",
+			"Enabled": true
+		},
+		{
 			"Name": "SmartObjects",
 			"Enabled": true
 		},
