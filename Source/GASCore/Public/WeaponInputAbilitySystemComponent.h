@@ -1,11 +1,11 @@
 #pragma once
 #include "CoreMinimal.h"
-#include "AbilitySystemComponent.h"
+#include "SWRoomAbilitySystemComponent.h"
 #include "WeaponInputAbilitySystemComponent.generated.h"
 
 /** Exact tag input routing shared by weapon, skill and interaction specs. */
 UCLASS()
-class GASCORE_API UWeaponInputAbilitySystemComponent : public UAbilitySystemComponent
+class GASCORE_API UWeaponInputAbilitySystemComponent : public USWRoomAbilitySystemComponent
 {
 	GENERATED_BODY()
 public:

@@ -51,8 +51,95 @@
 #include "Net/UnrealNetwork.h"
 #include "UObject/UnrealType.h"
 #include "SWCabinWaterCullComponent.h"
+#include "Room/SWRoomSnapshotComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogEnemyShipChestSpawnPoint, Log, All);
+
+void AEnemyShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	AShip::CaptureRoomDomains(OutParts, OutIssues);
+	FSWRoomEnemyShipState State;
+	State.bDeathHandled = bDeathHandled;
+	State.bHasDropped = bHasDropped;
+	State.bCrewDefeated = bCrewDefeated;
+	State.bHasEverHadLivingCrew = bHasEverHadLivingCrew;
+	for (ABaseEnemy* Crew : RegisteredCrewEnemies)
+	{
+		if (!IsValid(Crew)) continue;
+		if (const USWRoomSnapshotComponent* Id = Crew->FindComponentByClass<USWRoomSnapshotComponent>(); Id && Id->StableId.IsValid())
+			State.CrewIds.AddUnique(Id->StableId);
+		else
+		{
+			FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+			Issue.Domain = TEXT("Enemy");
+			Issue.FieldKey = FName(*(TEXT("Crew:") + Crew->GetPathName()));
+			Issue.Reason = TEXT("Crew member has no stable ID");
+		}
+	}
+	if (RegisteredBoss)
+		if (const USWRoomSnapshotComponent* Id = RegisteredBoss->FindComponentByClass<USWRoomSnapshotComponent>())
+			State.BossId = Id->StableId;
+	if (DeckEnemySpawnerComponent) DeckEnemySpawnerComponent->CaptureRoomState(State.DeckSpawner, OutIssues);
+	if (BossEncounterComponent) BossEncounterComponent->CaptureRoomState(State.BossEncounter, OutIssues);
+	State.CrewIds.Sort();
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Enemy;
+	Part.Version = 2;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Enemy");
+		Issue.FieldKey = TEXT("EnemyShipState");
+		Issue.Reason = TEXT("Enemy ship serialization failed");
+	}
+}
+
+bool AEnemyShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	if (Part.Domain == ESWRoomDomain::Ship) return AShip::RestoreRoomDomain(Part, OutError);
+	FSWRoomEnemyShipState State;
+	if (Part.Domain != ESWRoomDomain::Enemy || Part.Version != 2 || !FSWRoomStructCodec::Read(Part.Bytes, State))
+	{
+		OutError = TEXT("Invalid enemy ship state");
+		return false;
+	}
+	if (DeckEnemySpawnerComponent && !DeckEnemySpawnerComponent->RestoreRoomState(State.DeckSpawner, OutError)) return false;
+	if (BossEncounterComponent && !BossEncounterComponent->RestoreRoomState(State.BossEncounter, OutError)) return false;
+	bDeathHandled = State.bDeathHandled;
+	bHasDropped = State.bHasDropped;
+	bCrewDefeated = State.bCrewDefeated;
+	bHasEverHadLivingCrew = State.bHasEverHadLivingCrew;
+	RegisteredCrewEnemies.Reset();
+	RegisteredBoss = nullptr;
+	PendingRoomState = MoveTemp(State);
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool AEnemyShip::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!AShip::FinalizeRoomRestore(RegisteredActors, OutError)) return false;
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	for (const FGuid& Id : PendingRoomState.CrewIds)
+	{
+		AActor* const* Found = RegisteredActors.Find(Id);
+		ABaseEnemy* Crew = Found ? Cast<ABaseEnemy>(*Found) : nullptr;
+		if (!Crew)
+		{
+			OutError = FString::Printf(TEXT("Enemy ship crew missing: %s"), *Id.ToString());
+			return false;
+		}
+		RegisteredCrewEnemies.Add(Crew);
+		Crew->OnBaseEnemyDeathNotified.AddUniqueDynamic(this, &AEnemyShip::HandleCrewEnemyRemoved);
+	}
+	if (AActor* const* Found = RegisteredActors.Find(PendingRoomState.BossId))
+		RegisteredBoss = Cast<AShipBossEnemy>(*Found);
+	if (DeckEnemySpawnerComponent && !DeckEnemySpawnerComponent->FinalizeRoomState(RegisteredActors, OutError)) return false;
+	if (BossEncounterComponent && !BossEncounterComponent->FinalizeRoomState(RegisteredActors, OutError)) return false;
+	return true;
+}
 
 #if WITH_EDITOR
 #include "Editor.h"

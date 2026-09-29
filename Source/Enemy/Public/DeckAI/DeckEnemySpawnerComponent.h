@@ -4,7 +4,52 @@
 #include "Components/ActorComponent.h"
 #include "Engine/DataTable.h"
 #include "DeckAI/DeckPointReservation.h"
+#include "Room/SWRoomSnapshotTypes.h"
 #include "DeckEnemySpawnerComponent.generated.h"
+
+USTRUCT()
+struct FSWRoomDeckPointState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) int32 PointId = INDEX_NONE;
+	UPROPERTY(SaveGame) FGuid OccupantId;
+	UPROPERTY(SaveGame) FGuid ReservedById;
+	UPROPERTY(SaveGame) FGuid CombatClaimedById;
+	UPROPERTY(SaveGame) uint32 ReservationSerial = 0;
+};
+
+USTRUCT()
+struct FSWRoomDeckDeploymentTicket
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) bool bValid = false;
+	UPROPERTY(SaveGame) FGuid PoolActorId;
+	UPROPERTY(SaveGame) int32 QueueIndex = INDEX_NONE;
+	UPROPERTY(SaveGame) FTransform WorldTransform;
+	UPROPERTY(SaveGame) float RemainingSeconds = 0.f;
+};
+
+USTRUCT()
+struct FSWRoomDeckSpawnerState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) int32 PlanCount = 0;
+	UPROPERTY(SaveGame) uint8 DeploymentState = 0;
+	UPROPERTY(SaveGame) bool bAllDeployedEnemiesDefeated = false;
+	UPROPERTY(SaveGame) bool bHasDeployedEnemy = false;
+	UPROPERTY(SaveGame) uint32 NextReservationSerial = 1;
+	UPROPERTY(SaveGame) int32 ActivationSerial = 0;
+	UPROPERTY(SaveGame) int32 DeploymentQueueIndex = 0;
+	UPROPERTY(SaveGame) int32 CurrentRetryCount = 0;
+	UPROPERTY(SaveGame) int32 DeploymentFailureCount = 0;
+	UPROPERTY(SaveGame) float SightDelayRemaining = 0.f;
+	UPROPERTY(SaveGame) float DeploymentTimerRemaining = 0.f;
+	UPROPERTY(SaveGame) FGuid TriggerShipId;
+	UPROPERTY(SaveGame) TArray<FGuid> EnemyPoolIds;
+	UPROPERTY(SaveGame) TArray<FGuid> AliveDeployedEnemyIds;
+	UPROPERTY(SaveGame) TArray<FSWRoomDeckPointState> Points;
+	UPROPERTY(SaveGame) FSWRoomDeckDeploymentTicket DeploymentTicket;
+};
 
 class ADeckEnemy;
 class AEnemyShip;
@@ -57,6 +102,9 @@ class ENEMY_API UDeckEnemySpawnerComponent : public UActorComponent
 
 public:
 	UDeckEnemySpawnerComponent();
+	void CaptureRoomState(FSWRoomDeckSpawnerState& OutState, TArray<FSWRoomCaptureIssue>& OutIssues) const;
+	bool RestoreRoomState(const FSWRoomDeckSpawnerState& State, FString& OutError);
+	bool FinalizeRoomState(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError);
 
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -189,7 +237,9 @@ private:
 		ADeckEnemy& Enemy,
 		FDeckPointReservation& Reservation,
 		AActor* InitialTarget,
-		ADeckEnemy*& OutEnemy);
+		ADeckEnemy*& OutEnemy,
+		const FTransform* ReservedTransform = nullptr);
+	bool CreateDeploymentTicket(float DelaySeconds);
 	bool ResolveEnemySpawnTransform(
 		const UDeckWaypointComponent* SpawnWaypoint,
 		const ADeckEnemy& Enemy,
@@ -231,4 +281,7 @@ private:
 
 	FTimerHandle SightDelayTimerHandle;
 	FTimerHandle DeploymentTimerHandle;
+	FSWRoomDeckSpawnerState PendingRoomState;
+	FSWRoomDeckDeploymentTicket DeploymentTicket;
+	bool bHasPendingRoomState = false;
 };

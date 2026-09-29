@@ -2,6 +2,149 @@
 
 
 #include "Ship.h"
+#include "Room/SWRoomSnapshotComponent.h"
+#include "Repair/ShipRepairPointComponent.h"
+#include "ShipAttributeSet.h"
+#include "AbilitySystemComponent.h"
+#include "BaseAttributeSet.h"
+#include "SWRoomAbilitySystemComponent.h"
+#include "TimerManager.h"
+
+void AShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	if (!AttributeSet)
+	{
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Ship");
+		Issue.FieldKey = TEXT("Attributes");
+		Issue.Reason = TEXT("Ship attribute set missing");
+		return;
+	}
+	FSWRoomShipState State;
+	State.Health = AttributeSet->GetHealth();
+	State.MaximumHealth = AttributeSet->GetMaxHealth();
+	State.bSinking = bIsSinking;
+	State.bAnchorDropped = bIsAnchorDropped;
+	State.AnchorOriginXY = AnchorOriginXY;
+	if (const USWRoomAbilitySystemComponent* RoomASC = Cast<USWRoomAbilitySystemComponent>(AbilitySystemComponent))
+		RoomASC->CaptureRoomEffects(State.ActiveEffects, OutIssues);
+	for (const UShipRepairPointComponent* Point : {RepairPoint1.Get(), RepairPoint2.Get(), RepairPoint3.Get()})
+	{
+		State.ActiveLeaks.Add(Point && Point->IsLeakActive());
+		if (Point && Point->IsBeingRepaired())
+		{
+			FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+			Issue.Domain = TEXT("Ship");
+			Issue.FieldKey = FName(*FString::Printf(TEXT("RepairProgress.%s"), *Point->GetName()));
+			Issue.Reason = TEXT("In-progress repair is not resumable");
+		}
+	}
+	if (GetWorld())
+	{
+		State.bSinkingTimerPending = GetWorldTimerManager().IsTimerActive(SinkingDestroyTimerHandle);
+		State.SinkingTimeRemaining = State.bSinkingTimerPending
+			? FMath::Max(0.f, GetWorldTimerManager().GetTimerRemaining(SinkingDestroyTimerHandle)) : 0.f;
+		State.bLeakTimerPending = GetWorldTimerManager().IsTimerActive(LeakDamageTimerHandle);
+		State.LeakNextTickRemaining = State.bLeakTimerPending
+			? FMath::Max(0.f, GetWorldTimerManager().GetTimerRemaining(LeakDamageTimerHandle)) : 0.f;
+	}
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Ship;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Ship");
+		Issue.FieldKey = TEXT("State");
+		Issue.Reason = TEXT("Ship adapter serialization failed");
+	}
+}
+
+bool AShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	if (Part.Domain != ESWRoomDomain::Ship || Part.Version != 1)
+	{
+		OutError = TEXT("Unsupported ship domain or version");
+		return false;
+	}
+	FSWRoomShipState State;
+	if (!FSWRoomStructCodec::Read(Part.Bytes, State) || !FMath::IsFinite(State.Health)
+		|| !FMath::IsFinite(State.MaximumHealth) || State.MaximumHealth <= 0.f
+		|| State.Health < 0.f || State.Health > State.MaximumHealth
+		|| State.AnchorOriginXY.ContainsNaN() || State.ActiveLeaks.Num() != 3
+		|| !FMath::IsFinite(State.SinkingTimeRemaining) || !FMath::IsFinite(State.LeakNextTickRemaining))
+	{
+		OutError = TEXT("Invalid ship state");
+		return false;
+	}
+	if (!AbilitySystemComponent || !AttributeSet)
+	{
+		OutError = TEXT("Ship attributes unavailable");
+		return false;
+	}
+	if (AbilitySystemComponent->GetSet<UBaseAttributeSet>())
+	{
+		AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute(), State.MaximumHealth);
+		AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), State.Health);
+	}
+	else
+	{
+		// Editor commandlet worlds can restore before BeginPlay registers the attribute set with GAS.
+		AttributeSet->InitMaxHealth(State.MaximumHealth);
+		AttributeSet->InitHealth(State.Health);
+	}
+	bIsSinking = State.bSinking;
+	bIsAnchorDropped = State.bAnchorDropped;
+	AnchorOriginXY = State.AnchorOriginXY;
+	OnRep_IsSinking();
+	OnRep_IsAnchorDropped();
+	int32 Index = 0;
+	for (UShipRepairPointComponent* Point : {RepairPoint1.Get(), RepairPoint2.Get(), RepairPoint3.Get()})
+	{
+		if (Point)
+		{
+			if (State.ActiveLeaks[Index]) Point->ActivateLeak();
+			else Point->DeactivateLeak();
+		}
+		++Index;
+	}
+	GetWorldTimerManager().ClearTimer(SinkingDestroyTimerHandle);
+	GetWorldTimerManager().ClearTimer(LeakDamageTimerHandle);
+	PendingRoomState = State;
+	bHasPendingRoomState = true;
+	ForceNetUpdate();
+	return true;
+}
+
+bool AShip::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	if (USWRoomAbilitySystemComponent* RoomASC = Cast<USWRoomAbilitySystemComponent>(AbilitySystemComponent))
+	{
+		if (!RoomASC->RestoreRoomEffects(PendingRoomState.ActiveEffects, OutError)) return false;
+		AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), PendingRoomState.Health);
+	}
+	if (PendingRoomState.bSinkingTimerPending)
+	{
+		if (PendingRoomState.SinkingTimeRemaining <= 0.f)
+			SinkingDestroyTimerHandle = GetWorldTimerManager().SetTimerForNextTick(this, &AShip::FinishSinking);
+		else
+			GetWorldTimerManager().SetTimer(SinkingDestroyTimerHandle, this, &AShip::FinishSinking,
+				PendingRoomState.SinkingTimeRemaining, false);
+	}
+	if (PendingRoomState.bLeakTimerPending)
+	{
+		const float Period = FMath::Max(LeakDamageInterval, 0.1f);
+		if (PendingRoomState.LeakNextTickRemaining <= 0.f)
+			GetWorldTimerManager().SetTimerForNextTick(this, &AShip::ApplyLeakDamageTick);
+		GetWorldTimerManager().SetTimer(LeakDamageTimerHandle, this, &AShip::ApplyLeakDamageTick,
+			Period, true, PendingRoomState.LeakNextTickRemaining <= 0.f ? Period : PendingRoomState.LeakNextTickRemaining);
+	}
+	PendingRoomState = FSWRoomShipState();
+	return true;
+}
 #include "HAL/IConsoleManager.h"
 #include "MultiGameMode.h"
 #include "Camera/CameraComponent.h"
@@ -117,6 +260,7 @@ namespace
 // Sets default values
 AShip::AShip()
 {
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
  	// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 	PlayerRamDamageGameplayEffectClass = UGASDamageInstantGameplayEffect::StaticClass();
@@ -281,7 +425,7 @@ AShip::AShip()
 	AddRepairRule(Item_Id_Material_ShipMaterials_GoodIronPlate, 50.0f);
 
 	// Ability System Component
-	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AbilitySystemComponent = CreateDefaultSubobject<USWRoomAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 

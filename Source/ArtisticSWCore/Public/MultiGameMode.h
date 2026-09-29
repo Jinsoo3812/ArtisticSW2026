@@ -14,6 +14,7 @@ class APlayerStart;
 class APawn;
 struct FSWPlayerProgressSnapshot;
 class UPlayerRespawnPointComponent;
+class ASWRoomReadyState;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
     FOnSWPlayerRoleAssigned,
@@ -48,6 +49,7 @@ class ARTISTICSWCORE_API AMultiGameMode : public AGameModeBase
 	GENERATED_BODY()
 
 public:
+	void SetHostedRoomWorldReady();
     AMultiGameMode();
 
 public:
@@ -115,6 +117,7 @@ public:
     bool bAutoReadyOnPostLogin = false;
 
 protected:
+	UPROPERTY(Transient) TObjectPtr<ASWRoomReadyState> RoomReadyState;
     virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
     virtual void StartPlay() override;
 

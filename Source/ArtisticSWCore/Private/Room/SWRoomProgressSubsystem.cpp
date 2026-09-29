@@ -2,6 +2,7 @@
 
 #include "Room/SWRoomSaveGame.h"
 #include "Room/SWRoomSaveStore.h"
+#include "Network/SWNetworkLog.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 
@@ -11,6 +12,7 @@ void USWRoomProgressSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	FString RunText, Mode, RoomText, HostText;
 	if (!IsRunningDedicatedServer() || !FParse::Value(FCommandLine::Get(), TEXT("SWRoomRunId="), RunText)) return;
 	bHostedRoom = true;
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=ServerStartup RunId=%s Phase=ReadArguments"), *RunText);
 	FGuid RunId, RoomId;
 	if (!FGuid::Parse(RunText, RunId) || !RunId.IsValid()
 		|| !FParse::Value(FCommandLine::Get(), TEXT("SWRoomMode="), Mode)
@@ -20,6 +22,7 @@ void USWRoomProgressSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		|| !FGuid::Parse(HostText, HostKey) || !HostKey.IsValid())
 	{
 		bStartupError = true;
+		UE_LOG(LogSWRoom, Error, TEXT("Flow=ServerStartup RunId=%s Result=Failed Reason=InvalidArguments"), *RunText);
 		return;
 	}
 	if (Mode == TEXT("Continue"))
@@ -29,13 +32,50 @@ void USWRoomProgressSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	}
 	else if (Mode == TEXT("New"))
 	{
-		ActiveRoom = NewObject<USWRoomSaveGame>(this);
-		ActiveRoom->RoomId = RoomId;
+		ActiveRoom = FSWRoomSaveStore::LoadStagedNewRoom(this);
+		bStartupError = !ActiveRoom || ActiveRoom->RoomId != RoomId || ActiveRoom->bComplete;
+		bNewRoomPending = !bStartupError;
 	}
 	else bStartupError = true;
+	if (bStartupError)
+	{
+		UE_LOG(LogSWRoom, Error, TEXT("Flow=ServerStartup RunId=%s RoomId=%s Mode=%s Result=Failed"), *RunText, *RoomText, *Mode);
+	}
+	else
+	{
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=ServerStartup RunId=%s RoomId=%s Mode=%s Result=Loaded Backup=%d Sequence=%llu"),
+			*RunText, *RoomText, *Mode, ActiveRoom->bRecoveredFromBackup ? 1 : 0, ActiveRoom->CaptureSequence);
+	}
 }
 
 bool USWRoomProgressSubsystem::WriteCheckpoint()
 {
-	return bHostedRoom && !bStartupError && ActiveRoom && FSWRoomSaveStore::WriteCurrentRoom(ActiveRoom);
+	if (!bHostedRoom || bStartupError || !ActiveRoom || bSaving || !ActiveRoom->bComplete)
+	{
+		UE_LOG(LogSWRoom, Warning, TEXT("Flow=Checkpoint Result=Rejected Hosted=%d StartupError=%d HasRoom=%d Busy=%d Complete=%d"),
+			bHostedRoom, bStartupError, ActiveRoom != nullptr, bSaving, ActiveRoom && ActiveRoom->bComplete);
+		return false;
+	}
+	TGuardValue<bool> SavingGuard(bSaving, true);
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=Checkpoint RoomId=%s Kind=%s Sequence=%llu Phase=WriteRequested NewPending=%d"),
+		*ActiveRoom->RoomId.ToString(), *UEnum::GetValueAsString(ActiveRoom->SaveKind), ActiveRoom->CaptureSequence, bNewRoomPending);
+	const bool bSuccess = bNewRoomPending
+		? (FSWRoomSaveStore::StageCompleteNewRoom(ActiveRoom) && FSWRoomSaveStore::CommitStagedNewRoom())
+		: FSWRoomSaveStore::WriteCurrentRoom(ActiveRoom);
+	if (bSuccess && bNewRoomPending)
+	{
+		bNewRoomPending = false;
+		bNewRoomCommitted = true;
+	}
+	if (bSuccess)
+	{
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=Checkpoint RoomId=%s Kind=%s Sequence=%llu Result=Committed"),
+			*ActiveRoom->RoomId.ToString(), *UEnum::GetValueAsString(ActiveRoom->SaveKind), ActiveRoom->CaptureSequence);
+	}
+	else
+	{
+		UE_LOG(LogSWRoom, Error, TEXT("Flow=Checkpoint RoomId=%s Kind=%s Sequence=%llu Result=Failed"),
+			*ActiveRoom->RoomId.ToString(), *UEnum::GetValueAsString(ActiveRoom->SaveKind), ActiveRoom->CaptureSequence);
+	}
+	return bSuccess;
 }

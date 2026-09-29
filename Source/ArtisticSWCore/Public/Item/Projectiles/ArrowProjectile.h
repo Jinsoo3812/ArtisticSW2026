@@ -4,7 +4,25 @@
 #include "GameplayTagContainer.h"
 #include "GameplayEffectTypes.h"
 #include "Item/BaseProjectile.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "ArrowProjectile.generated.h"
+
+USTRUCT()
+struct FSWRoomArrowState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) float FlightGravityScale = 0.f;
+	UPROPERTY(SaveGame) bool bImpactHandled = false;
+	UPROPERTY(SaveGame) bool bDestroyOnImpact = true;
+	UPROPERTY(SaveGame) bool bEnableTeamDamageFiltering = true;
+	UPROPERTY(SaveGame) FGuid SourceActorId;
+	UPROPERTY(SaveGame) FSoftClassPath SourceActorClass;
+	UPROPERTY(SaveGame) FSoftClassPath ResolverClass;
+	UPROPERTY(SaveGame) TArray<FGuid> IgnoredActorIds;
+	UPROPERTY(SaveGame) FSWRoomGameplayEffectState DirectDamageSpec;
+	UPROPERTY(SaveGame) TArray<FSWRoomGameplayEffectState> StatusEffectSpecs;
+	UPROPERTY(SaveGame) TArray<FGameplayTag> RefreshGrantedTags;
+};
 
 class UPrimitiveComponent;
 class USceneComponent;
@@ -68,7 +86,7 @@ struct FArrowDamageData
 };
 
 UCLASS()
-class ARTISTICSWCORE_API AArrowProjectile : public ABaseProjectile
+class ARTISTICSWCORE_API AArrowProjectile : public ABaseProjectile, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
@@ -76,6 +94,12 @@ class ARTISTICSWCORE_API AArrowProjectile : public ABaseProjectile
 
 public:
 	AArrowProjectile();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomArrowState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
@@ -200,4 +224,6 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Debug")
 	bool bEnableTeamDamageFiltering = true;
+	FSWRoomArrowState PendingRoomState;
+	bool bHasPendingRoomState = false;
 };

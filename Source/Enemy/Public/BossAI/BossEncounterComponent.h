@@ -5,7 +5,20 @@
 #include "Engine/EngineTypes.h"
 #include "Engine/DataTable.h"
 #include "StoryFacadeSubsystem.h"
+#include "Room/SWRoomSnapshotTypes.h"
 #include "BossEncounterComponent.generated.h"
+
+USTRUCT()
+struct FSWRoomBossEncounterState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) bool bEncounterEnabled = false;
+	UPROPERTY(SaveGame) uint8 EncounterState = 0;
+	UPROPERTY(SaveGame) int32 BossSpawnPointId = INDEX_NONE;
+	UPROPERTY(SaveGame) FSoftClassPath BossClass;
+	UPROPERTY(SaveGame) FGuid BossId;
+	UPROPERTY(SaveGame) FGuid ItemBoxId;
+};
 
 class AEnemyShip;
 class AShip;
@@ -44,6 +57,9 @@ class ENEMY_API UBossEncounterComponent : public UActorComponent
 
 public:
 	UBossEncounterComponent();
+	void CaptureRoomState(FSWRoomBossEncounterState& OutState, TArray<FSWRoomCaptureIssue>& OutIssues) const;
+	bool RestoreRoomState(const FSWRoomBossEncounterState& State, FString& OutError);
+	bool FinalizeRoomState(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError);
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -145,4 +161,6 @@ protected:
 
 	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Encounter")
 	TObjectPtr<AShipBossEnemy> SpawnedBoss = nullptr;
+	FSWRoomBossEncounterState PendingRoomState;
+	bool bHasPendingRoomState = false;
 };

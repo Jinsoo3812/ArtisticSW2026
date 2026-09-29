@@ -9,7 +9,23 @@
 #include "WaveSystem/Data/WaveSpawnTypes.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "ItemSpawn/LootSpawnPoint.h"
+#include "DeckAI/DeckEnemySpawnerComponent.h"
+#include "BossAI/BossEncounterComponent.h"
 #include "EnemyShip.generated.h"
+
+USTRUCT()
+struct FSWRoomEnemyShipState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) bool bDeathHandled = false;
+	UPROPERTY(SaveGame) bool bHasDropped = false;
+	UPROPERTY(SaveGame) bool bCrewDefeated = false;
+	UPROPERTY(SaveGame) bool bHasEverHadLivingCrew = false;
+	UPROPERTY(SaveGame) TArray<FGuid> CrewIds;
+	UPROPERTY(SaveGame) FGuid BossId;
+	UPROPERTY(SaveGame) FSWRoomDeckSpawnerState DeckSpawner;
+	UPROPERTY(SaveGame) FSWRoomBossEncounterState BossEncounter;
+};
 
 class ACannon;
 class AStorageChest;
@@ -109,6 +125,16 @@ class ENEMY_API AEnemyShip : public AShip
 
 public:
 	AEnemyShip();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{
+		return Expected.Domain == ESWRoomDomain::Ship
+			? AShip::CompareRoomDomain(Expected, Actual, TimeToleranceSeconds, OutFields)
+			: FSWRoomStructCodec::Compare<FSWRoomEnemyShipState>(Expected, Actual, TimeToleranceSeconds, OutFields);
+	}
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 	virtual bool IsEnemyShipForEffects() const override { return true; }
 	virtual bool AllowsPlayerHelmControl() const override { return !IsSinking() && !bDeathHandled && bCrewDefeated; }
 	virtual bool AllowsPlayerCannonControl() const override { return false; }
@@ -413,4 +439,6 @@ protected:
 	bool bEndingPlay = false;
 	bool bCaptureCannonTagAdded = false;
 	TArray<FGameplayAbilitySpecHandle> GrantedEnemyShipAbilityHandles;
+	FSWRoomEnemyShipState PendingRoomState;
+	bool bHasPendingRoomState = false;
 };

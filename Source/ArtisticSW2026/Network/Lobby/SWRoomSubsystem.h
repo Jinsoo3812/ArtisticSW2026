@@ -61,6 +61,7 @@ private:
 	FGuid SavedRoomId;
 	FGuid HostKey;
 	bool bContinuingRoom = false;
+	bool bUsingBackup = false;
 	FProcHandle ServerHandle;
 	uint32 ServerPid = 0;
 	bool bOwnsServer = false;

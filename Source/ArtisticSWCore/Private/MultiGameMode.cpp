@@ -32,6 +32,8 @@
 #include "IPAddress.h"
 #include "Room/SWRoomProgressSubsystem.h"
 #include "Room/SWRoomSaveGame.h"
+#include "Room/SWLevelEntryPoint.h"
+#include "Room/SWRoomReadyState.h"
 #include "Containers/Ticker.h"
 
 namespace
@@ -82,6 +84,19 @@ void AMultiGameMode::StartPlay()
     Super::StartPlay();
 	if (IsHostedRoom())
 	{
+		RoomReadyState = GetWorld()->SpawnActor<ASWRoomReadyState>();
+		if (RoomReadyState)
+			if (USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>())
+				RoomReadyState->RestoreGeneration = Room->AdvanceRestoreGeneration();
+		int32 EntryCounts[3] = {0, 0, 0};
+		for (TActorIterator<ASWLevelEntryPoint> It(GetWorld()); It; ++It)
+			++EntryCounts[static_cast<int32>(It->EntryRole)];
+		if (EntryCounts[0] != 1 || EntryCounts[1] != 1 || EntryCounts[2] != 1)
+		{
+			UE_LOG(LogSWConnection, Error, TEXT("Hosted room requires exactly one Host, Guest, and Ship entry point"));
+			FPlatformMisc::RequestExit(false);
+			return;
+		}
 		UpdateHostedRoomPause();
 		if (USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>(); Room && Room->HasStartupError())
 		{
@@ -96,6 +111,7 @@ void AMultiGameMode::StartPlay()
 		&& FParse::Value(FCommandLine::Get(), TEXT("SWRoomOwnerPid="), OwnerText)
 		&& FGuid::Parse(RunIdText, RoomRunId))
 	{
+		if (RoomReadyState) RoomReadyState->RoomRunId = RoomRunId;
 		RoomOwnerPid = static_cast<uint32>(FCString::Strtoui64(*OwnerText, nullptr, 10));
 		UNetDriver* Driver = GetWorld() ? GetWorld()->GetNetDriver() : nullptr;
 		const TSharedPtr<const FInternetAddr> LocalAddress = Driver ? Driver->GetLocalAddr() : nullptr;
@@ -118,6 +134,15 @@ void AMultiGameMode::StartPlay()
         GetNetModeName(GetNetMode()),
         GetNumPlayers()
     );
+}
+
+void AMultiGameMode::SetHostedRoomWorldReady()
+{
+	if (IsHostedRoom() && RoomReadyState)
+	{
+		RoomReadyState->bWorldReady = true;
+		RoomReadyState->ForceNetUpdate();
+	}
 }
 
 bool AMultiGameMode::IsHostedRoom() const
@@ -407,8 +432,20 @@ void AMultiGameMode::PreLogin(
 		}
 		if (bIsHost)
 		{
+			if (!Room || !Room->GetActiveRoom() || ValidatedName != Room->GetActiveRoom()->HostDisplayName)
+			{ ErrorMessage = TEXT("HostNameMismatch"); return; }
 			for (const TPair<TObjectPtr<AController>, int32>& Pair : PlayerIndices)
 				if (Pair.Value == 0) { ErrorMessage = TEXT("HostSlotOccupied"); return; }
+		}
+		else
+		{
+			if (!Room || !Room->GetActiveRoom() || Room->IsNewRoomPending())
+			{ ErrorMessage = TEXT("RoomNotReady"); return; }
+			if (ValidatedName == Room->GetActiveRoom()->HostDisplayName)
+			{ ErrorMessage = TEXT("HostNameReserved"); return; }
+			for (const TPair<TObjectPtr<AController>, int32>& Pair : PlayerIndices)
+				if (Pair.Key && Pair.Key->PlayerState && Pair.Key->PlayerState->GetPlayerName() == ValidatedName)
+				{ ErrorMessage = TEXT("NameAlreadyConnected"); return; }
 		}
 	}
 
@@ -425,6 +462,8 @@ void AMultiGameMode::PreLogin(
 void AMultiGameMode::Logout(AController* Exiting)
 {
     const int32 ReleasedPlayerIndex = GetPlayerIndex(Exiting);
+	if (IsHostedRoom()) UE_LOG(LogSWRoom, Display, TEXT("Flow=Disconnect Side=Server PlayerIndex=%d Host=%d Phase=Logout NoDiskWrite=1"),
+		ReleasedPlayerIndex, IsHostController(Exiting) ? 1 : 0);
 	const bool bWasHost = IsHostController(Exiting);
 	const FString ReconnectKey = GetReconnectKey(Exiting);
 	if (Exiting && !ReconnectKey.IsEmpty() && !bLevelRestartRequested)
@@ -506,6 +545,12 @@ UClass* AMultiGameMode::GetDefaultPawnClassForController_Implementation(AControl
 AActor* AMultiGameMode::ChoosePlayerStart_Implementation(AController* Player)
 {
     const int32 PlayerIndex = FMath::Max(0, GetPlayerIndex(Player));
+	if (IsHostedRoom())
+	{
+		const ESWLevelEntryRole Wanted = PlayerIndex == 0 ? ESWLevelEntryRole::Host : ESWLevelEntryRole::Guest;
+		for (TActorIterator<ASWLevelEntryPoint> It(GetWorld()); It; ++It)
+			if (It->EntryRole == Wanted) return *It;
+	}
 	const USWRoomProgressSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
 	if (const UGameInstance* GI = GetGameInstance())
 	{
@@ -888,7 +933,10 @@ void AMultiGameMode::HandleAllPlayersDeathFinished()
 void AMultiGameMode::RequestGameOverAndLevelRestart()
 {
 	if (!HasAuthority() || bLevelRestartRequested) return;
+	if (IsHostedRoom()) UE_LOG(LogSWRoom, Display, TEXT("Flow=GameOver Side=Server Phase=RestartRequested NoDiskWrite=1"));
 	bLevelRestartRequested = true;
+	if (IsHostedRoom())
+		if (USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>()) Room->MarkGameOverTravelPending();
 	for (TPair<TObjectPtr<AController>, FTimerHandle>& Pair : RespawnTimers)
 	{
 		GetWorldTimerManager().ClearTimer(Pair.Value);

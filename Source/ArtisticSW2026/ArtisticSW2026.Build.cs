@@ -12,6 +12,7 @@ public class ArtisticSW2026 : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"EngineSettings",
 			"InputCore",
 			"EnhancedInput",
 			"AIModule",

@@ -10,7 +10,25 @@
 #include "GerstnerWaterWaves.h"
 #include "Upgrade/ShipUpgradeTypes.h"
 #include "Repair/ShipRepairTypes.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "Ship.generated.h"
+
+USTRUCT()
+struct FSWRoomShipState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) float Health = 0.f;
+	UPROPERTY(SaveGame) float MaximumHealth = 0.f;
+	UPROPERTY(SaveGame) bool bSinking = false;
+	UPROPERTY(SaveGame) bool bAnchorDropped = false;
+	UPROPERTY(SaveGame) FVector2D AnchorOriginXY = FVector2D::ZeroVector;
+	UPROPERTY(SaveGame) TArray<bool> ActiveLeaks;
+	UPROPERTY(SaveGame) bool bSinkingTimerPending = false;
+	UPROPERTY(SaveGame) float SinkingTimeRemaining = 0.f;
+	UPROPERTY(SaveGame) bool bLeakTimerPending = false;
+	UPROPERTY(SaveGame) float LeakNextTickRemaining = 0.f;
+	UPROPERTY(SaveGame) TArray<FSWRoomGameplayEffectState> ActiveEffects;
+};
 
 class USWBuoyancyComponent;
 class UGameplayEffect;
@@ -505,13 +523,19 @@ struct FShipReplicatedState
 };
 
 UCLASS()
-class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, public IRespawnHostInterface
+class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, public IRespawnHostInterface, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this pawn's properties
 	AShip();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomShipState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 	virtual void PostLoad() override;
 
 	// IAbilitySystemInterface 구현
@@ -1101,6 +1125,8 @@ protected:
 	bool bHelmInvulnerabilityApplied = false;
 	FDelegateHandle ShipHealthChangedDelegateHandle;
 	FTimerHandle SinkingDestroyTimerHandle;
+	FSWRoomShipState PendingRoomState;
+	bool bHasPendingRoomState = false;
 	FTimerHandle LeakDamageTimerHandle;
 	bool bApplyingLeakDamage = false;
 

@@ -14,10 +14,12 @@
 #include "Misc/Paths.h"
 #include "Misc/FileHelper.h"
 #include "Kismet/GameplayStatics.h"
+#include "GameMapsSettings.h"
 
 namespace
 {
 constexpr uint16 RoomPort = 7777;
+constexpr float ServerStartTimeoutSeconds = 90.0f;
 const TCHAR* LobbyMap = TEXT("/Game/Level/ConnectionLobby");
 }
 
@@ -73,7 +75,7 @@ bool USWRoomSubsystem::CanHost() const
 
 bool USWRoomSubsystem::HasSavedRoom() const
 {
-	return FSWRoomSaveStore::HasValidCurrentRoom();
+	return FSWRoomSaveStore::HasValidCurrentRoom() || FSWRoomSaveStore::HasLegacyRoomFile();
 }
 
 void USWRoomSubsystem::SetState(ESWRoomState NewState, const FText& NewMessage)
@@ -86,6 +88,8 @@ void USWRoomSubsystem::SetState(ESWRoomState NewState, const FText& NewMessage)
 
 void USWRoomSubsystem::Fail(const FText& FailureMessage)
 {
+	UE_LOG(LogSWRoom, Error, TEXT("Flow=RoomSetup OperationId=%llu Mode=%s RoomId=%s Result=Failed Reason=%s"),
+		OperationId, bContinuingRoom ? TEXT("Continue") : TEXT("New"), *SavedRoomId.ToString(), *FailureMessage.ToString());
 	++OperationId;
 	if (PendingRequest.IsValid()) PendingRequest->CancelRequest();
 	PendingRequest.Reset();
@@ -108,15 +112,25 @@ bool USWRoomSubsystem::ContinueRoom(const FString& Name, const FString& Optional
 bool USWRoomSubsystem::BeginHosting(const FString& Name, const FString& OptionalPublicIPv4, bool bContinue)
 {
 	if (State != ESWRoomState::Idle && State != ESWRoomState::Failed) return false;
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=RoomSetup OperationId=%llu Mode=%s Phase=Requested"), OperationId + 1,
+		bContinue ? TEXT("Continue") : TEXT("New"));
 	bReturningToLobby = false;
 	if (!CanHost()) { Fail(FText::FromString(TEXT("이 구성에서는 방을 만들 수 없습니다."))); return false; }
 	bContinuingRoom = bContinue;
+	bUsingBackup = false;
 	if (bContinue)
 	{
 		USWRoomSaveGame* Saved = FSWRoomSaveStore::LoadCurrentRoom(this);
-		if (!Saved) { Fail(FText::FromString(TEXT("유효한 방 저장이 없습니다."))); return false; }
+		if (!Saved)
+		{
+			Fail(FText::FromString(FSWRoomSaveStore::HasLegacyRoomFile()
+				? TEXT("이전 방 저장 형식(v3)은 이 빌드에서 지원되지 않음")
+				: TEXT("유효한 방 저장이 없습니다.")));
+			return false;
+		}
 		SavedRoomId = Saved->RoomId;
 		DisplayName = Saved->HostDisplayName;
+		bUsingBackup = Saved->bRecoveredFromBackup;
 	}
 	else
 	{
@@ -125,10 +139,19 @@ bool USWRoomSubsystem::BeginHosting(const FString& Name, const FString& Optional
 		USWRoomSaveGame* Staged = NewObject<USWRoomSaveGame>(this);
 		Staged->RoomId = SavedRoomId;
 		Staged->HostDisplayName = DisplayName;
+		Staged->ContentContractVersion = USWRoomSaveGame::CurrentContentContractVersion;
+		Staged->MapPath = FSoftObjectPath(UGameMapsSettings::GetGameDefaultMap(EDefaultMapRequestType::Server));
+		if (Staged->MapPath.IsNull() || Staged->MapPath.ToString().Contains(TEXT("ConnectionLobby")))
+		{
+			Fail(FText::FromString(TEXT("서버 기본 맵이 유효하지 않습니다.")));
+			return false;
+		}
 		if (!FSWRoomSaveStore::StageNewRoom(Staged)) { Fail(FText::FromString(TEXT("새 방 저장 준비에 실패했습니다."))); return false; }
 	}
 	HostKey = FGuid::NewGuid();
 	++OperationId;
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=RoomSetup OperationId=%llu Mode=%s RoomId=%s Phase=SaveSelected Backup=%d"),
+		OperationId, bContinue ? TEXT("Continue") : TEXT("New"), *SavedRoomId.ToString(), bUsingBackup ? 1 : 0);
 	DisplayCode.Empty();
 	PublicAddress.Empty();
 	bAwaitingHostJoin = false;
@@ -190,7 +213,10 @@ void USWRoomSubsystem::StartServer(const FString& Address)
 	const FString Executable = FPlatformProcess::ExecutablePath();
 	const FString Project = FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
 	if (!Executable.EndsWith(TEXT("UnrealEditor.exe"), ESearchCase::IgnoreCase) || !Files.FileExists(*Project)) { Fail(FText::FromString(TEXT("Editor 서버 실행 환경을 찾을 수 없습니다."))); return; }
-	const FString Params = FString::Printf(TEXT("\"%s\" /Game/Level/Play_Test -server -unattended -NoSound -NullRHI -port=7777 -log -abslog=\"%s\" -SWRoomRunId=%s -SWRoomOwnerPid=%u -SWRoomMode=%s -SWRoomId=%s -SWRoomHostKey=%s"), *Project, *FPaths::Combine(LogDir, TEXT("Server.log")), *Run, FPlatformProcess::GetCurrentProcessId(), bContinuingRoom ? TEXT("Continue") : TEXT("New"), *SavedRoomId.ToString(EGuidFormats::DigitsWithHyphens), *HostKey.ToString(EGuidFormats::DigitsWithHyphens));
+	const USWRoomSaveGame* Saved = bContinuingRoom ? FSWRoomSaveStore::LoadCurrentRoom(this) : FSWRoomSaveStore::LoadStagedNewRoom(this);
+	if (!Saved || Saved->RoomId != SavedRoomId || Saved->MapPath.IsNull()) { Fail(FText::FromString(TEXT("방 맵을 확인할 수 없습니다."))); return; }
+	const FString MapName = Saved->MapPath.GetLongPackageName();
+	const FString Params = FString::Printf(TEXT("\"%s\" %s -server -unattended -NoSound -NullRHI -port=7777 -log -abslog=\"%s\" -SWRoomRunId=%s -SWRoomOwnerPid=%u -SWRoomMode=%s -SWRoomId=%s -SWRoomHostKey=%s"), *Project, *MapName, *FPaths::Combine(LogDir, TEXT("Server.log")), *Run, FPlatformProcess::GetCurrentProcessId(), bContinuingRoom ? TEXT("Continue") : TEXT("New"), *SavedRoomId.ToString(EGuidFormats::DigitsWithHyphens), *HostKey.ToString(EGuidFormats::DigitsWithHyphens));
 	ServerHandle = FPlatformProcess::CreateProc(*Executable, *Params, true, true, true, &ServerPid, 0, nullptr, nullptr);
 	if (!ServerHandle.IsValid()) { Fail(FText::FromString(TEXT("서버를 시작할 수 없습니다."))); return; }
 	bOwnsServer = true;
@@ -223,16 +249,19 @@ void USWRoomSubsystem::Tick(float DeltaTime)
 			if (!FSWRoomCode::Encode(PublicAddress, RoomPort, DisplayCode)) { Fail(FText::FromString(TEXT("참가 코드를 만들 수 없습니다."))); return; }
 			UE_LOG(LogSWConnection, Display, TEXT("Side=HostClient RoomRunId=%s OperationId=%llu Phase=ServerReady Result=Success ElapsedMs=%d Port=%d"), *RoomRunId.ToString(), OperationId, FMath::RoundToInt(ServerStartElapsed * 1000), RoomPort);
 			bAwaitingHostJoin = true;
-			SetState(ESWRoomState::StartingServer, FText::FromString(TEXT("방 준비 완료. 참가 코드를 복사한 뒤 서버 접속을 누르세요.")));
+			SetState(ESWRoomState::StartingServer, FText::FromString(bUsingBackup
+				? TEXT("복구본 사용. 방 준비 완료. 참가 코드를 복사한 뒤 서버 접속을 누르세요.")
+				: TEXT("방 준비 완료. 참가 코드를 복사한 뒤 서버 접속을 누르세요.")));
 			return;
 		}
 	}
-	if (ServerStartElapsed >= 30.0f) Fail(FText::FromString(TEXT("서버 준비 시간이 초과되었습니다.")));
+	if (ServerStartElapsed >= ServerStartTimeoutSeconds) Fail(FText::FromString(TEXT("서버 준비 시간이 초과되었습니다.")));
 }
 
 bool USWRoomSubsystem::ConnectHostedRoom()
 {
 	if (!bOwnsServer || !bAwaitingHostJoin || State != ESWRoomState::StartingServer) return false;
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=HostJoin OperationId=%llu RoomRunId=%s Phase=Requested"), OperationId, *RoomRunId.ToString());
 	bAwaitingHostJoin = false;
 	SetState(ESWRoomState::Connecting, FText::FromString(TEXT("서버 연결 중... UDP 7777 포트 전달과 NAT loopback을 확인하세요.")));
 	USWConnectionSubsystem* Connection = GetGameInstance()->GetSubsystem<USWConnectionSubsystem>();
@@ -247,6 +276,7 @@ bool USWRoomSubsystem::ConnectHostedRoom()
 bool USWRoomSubsystem::JoinRoom(const FString& Name, const FString& Code)
 {
 	if (State != ESWRoomState::Idle && State != ESWRoomState::Failed) return false;
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=GuestJoin OperationId=%llu Phase=Requested"), OperationId + 1);
 	bReturningToLobby = false;
 	if (!FSWRoomName::Normalize(Name, DisplayName)) { Fail(FText::FromString(TEXT("이름은 1~16자, UTF-8 48바이트 이하여야 합니다."))); return false; }
 	FString Address;
@@ -262,6 +292,7 @@ bool USWRoomSubsystem::JoinRoom(const FString& Name, const FString& Code)
 	bAwaitingHostJoin = false;
 	DisplayCode.Empty();
 	UE_LOG(LogSWConnection, Display, TEXT("Side=JoinClient OperationId=%llu Phase=CodeValidation Result=Success Port=%u"), OperationId, Port);
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=GuestJoin OperationId=%llu Phase=CodeValidated Port=%u"), OperationId, Port);
 	SetState(ESWRoomState::Connecting, FText::FromString(TEXT("서버 연결 중...")));
 	USWConnectionSubsystem* Connection = GetGameInstance()->GetSubsystem<USWConnectionSubsystem>();
 	if (!Connection || !Connection->ConnectDirectWithName(FString::Printf(TEXT("%s:%u"), *Address, Port), DisplayName))
@@ -305,6 +336,7 @@ void USWRoomSubsystem::CancelPendingOperation()
 
 void USWRoomSubsystem::LeaveRoom()
 {
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=LeaveRoom OperationId=%llu RoomRunId=%s Phase=Requested"), OperationId + 1, *RoomRunId.ToString());
 	++OperationId;
 	StopServer();
 	SetState(ESWRoomState::Idle, FText::GetEmpty());
@@ -333,12 +365,19 @@ void USWRoomSubsystem::HandleConnectionChanged(ESWConnectionState Previous, ESWC
 		UE_LOG(LogSWConnection, Display, TEXT("Side=%s OperationId=%llu AttemptId=%d Phase=Connection State=%s"), bOwnsServer ? TEXT("HostClient") : TEXT("JoinClient"), OperationId, AttemptId, *UEnum::GetValueAsString(Current));
 	if (Current == ESWConnectionState::Playing && State == ESWRoomState::Connecting)
 	{
-		if (bOwnsServer && !bContinuingRoom && !FSWRoomSaveStore::CommitStagedNewRoom())
+		if (bOwnsServer && !bContinuingRoom)
 		{
-			Fail(FText::FromString(TEXT("새 방 확정 저장에 실패했습니다.")));
-			return;
+			const USWRoomSaveGame* Saved = FSWRoomSaveStore::LoadCurrentRoom(this);
+			if (!Saved || Saved->RoomId != SavedRoomId || Saved->SaveKind != ESWRoomSaveKind::New)
+			{
+				Fail(FText::FromString(TEXT("새 방 확정 저장에 실패했습니다.")));
+				return;
+			}
 		}
 		SetState(ESWRoomState::Playing, FText::FromString(TEXT("플레이 중")));
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=%s OperationId=%llu RoomRunId=%s Result=Playing"),
+			bOwnsServer ? (bContinuingRoom ? TEXT("Continue") : TEXT("New")) : TEXT("GuestJoin"),
+			OperationId, *RoomRunId.ToString());
 	}
 }
 

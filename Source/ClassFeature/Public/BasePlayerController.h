@@ -10,6 +10,7 @@
 #include "TimerManager.h"
 #include "Upgrade/ShipUpgradeTypes.h"
 #include "ArtisticSW2026PlayerController.h"
+#include "Engine/GameViewportDelegates.h"
 #include "BasePlayerController.generated.h"
 
 /**
@@ -24,8 +25,10 @@ class AStorageChest;
 class UStorageWindowWidget;
 class UFacilityHubWidget;
 class UStatusWindowWidget;
+class USWRoomMenuWidget;
 class AFacilityHubActor;
 class ASharedShipUpgradeState;
+class UGameViewportClient;
 
 struct FStorageRevealState
 {
@@ -39,6 +42,11 @@ class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerContr
 	GENERATED_BODY()
 
 public:
+	void RequestRoomSave();
+	void RequestRoomSaveAndExit();
+	void CloseRoomMenu();
+	UFUNCTION(Server, Reliable) void ServerRequestRoomSave(uint64 RequestId);
+	UFUNCTION(Client, Reliable) void ClientRoomSaveResult(uint64 RequestId, bool bSuccess, const FString& Message);
 	void OpenFacilityHubFromServer(AActor* ContextActor);
 
 	UFUNCTION(Client, Reliable)
@@ -192,6 +200,21 @@ protected:
 
 	void BindHUDToCurrentPlayer();
 	void HandleMenuEscape();
+	UPROPERTY(Transient) TObjectPtr<UInputAction> RoomMenuAction;
+	UPROPERTY(Transient) TObjectPtr<USWRoomMenuWidget> RoomMenuWidget;
+	bool bRoomSavePending = false;
+	bool bExitAfterRoomSave = false;
+	uint64 NextRoomSaveRequestId = 0;
+	uint64 PendingRoomSaveRequestId = 0;
+	uint64 LastServerRoomSaveRequestId = 0;
+	bool bLastServerRoomSaveSuccess = false;
+	FString LastServerRoomSaveMessage;
+	FTimerHandle RoomSaveTimeoutHandle;
+	FOnWindowCloseRequested PreviousWindowCloseRequested;
+	TWeakObjectPtr<UGameViewportClient> BoundRoomViewport;
+	bool HandleRoomWindowCloseRequested();
+	void HandleRoomSaveTimeout();
+	bool bCursorVisibleBeforeRoomMenu = false;
 	void ApplyInventoryInputMode(bool bOpen);
 	void UpdateInteractionMovementLock();
 	void SetStatusCharacterInputLocked(bool bLocked);

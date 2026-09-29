@@ -30,8 +30,7 @@ bool UPlayerProgressSubsystem::ConsumeReconnectSnapshot(const FString& PlayerKey
 {
 	if (FSWPlayerProgressSnapshot* Found = ReconnectSnapshots.Find(PlayerKey))
 	{
-		OutSnapshot = MoveTemp(*Found);
-		ReconnectSnapshots.Remove(PlayerKey);
+		OutSnapshot = *Found;
 		return true;
 	}
 	return false;

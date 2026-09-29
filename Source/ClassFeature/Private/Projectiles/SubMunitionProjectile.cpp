@@ -8,12 +8,15 @@
 #include "TimerManager.h"
 #include "Math/UnrealMathUtility.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
+#include "Room/SWRoomSnapshotComponent.h"
+#include "GameplayEffect.h"
 
 ASubMunitionProjectile::ASubMunitionProjectile()
 {
 	PrimaryActorTick.bCanEverTick = false; // Tick에서 타이머 체크를 제거했으므로 false로 변경
 	bReplicates = true;
 	SetReplicateMovement(true);
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 
 	MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
 	RootComponent = MeshComp;
@@ -108,7 +111,9 @@ void ASubMunitionProjectile::OnHit(UPrimitiveComponent* HitComponent, AActor* Ot
 
 void ASubMunitionProjectile::ExplodeAndDestroy()
 {
-	if (!HasAuthority()) return;
+	if (!HasAuthority() || bExploded) return;
+	bExploded = true;
+	GetWorldTimerManager().ClearTimer(AutoExplodeTimerHandle);
 
 	TArray<FOverlapResult> OverlapResults;
 	FCollisionQueryParams QueryParams;
@@ -169,7 +174,6 @@ void ASubMunitionProjectile::TransitionToInstalled()
 	}
 
 	// 설치 후 일정 시간 뒤에 스스로 폭발하도록 타이머 설정
-	FTimerHandle AutoExplodeTimerHandle;
 	GetWorld()->GetTimerManager().SetTimer(AutoExplodeTimerHandle, this, &ASubMunitionProjectile::ExplodeAndDestroy, InstalledLifeSpan, false);
 
 	// 클라이언트에 상태 동기화
@@ -187,4 +191,106 @@ void ASubMunitionProjectile::Multicast_SetInstalled_Implementation()
 	}
 
 	// TODO: 설치 완료 상태를 나타내는 시각 효과 (예: 메시 머티리얼 변경, 이펙트 등)
+}
+
+void ASubMunitionProjectile::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	FSWRoomSubMunitionState State;
+	State.bInstalled = CurrentState == ESubMunitionState::Installed;
+	State.bExploded = bExploded;
+	State.bExplodeOnImpact = bExplodeOnImpact;
+	State.ExplosionRadius = ExplosionRadius;
+	State.MaxInstallSlopeAngle = MaxInstallSlopeAngle;
+	State.InstalledLifeSpan = InstalledLifeSpan;
+	State.AutoExplodeRemaining = GetWorld() && GetWorldTimerManager().IsTimerActive(AutoExplodeTimerHandle)
+		? FMath::Max(0.f, GetWorldTimerManager().GetTimerRemaining(AutoExplodeTimerHandle)) : 0.f;
+	if (DamageEffectSpecHandle.IsValid())
+	{
+		const FGameplayEffectSpec& Spec = *DamageEffectSpecHandle.Data.Get();
+		State.DamageEffectClass = FSoftClassPath(Spec.Def->GetClass());
+		State.DamageEffectLevel = Spec.GetLevel();
+		for (const TPair<FGameplayTag, float>& Entry : Spec.SetByCallerTagMagnitudes)
+		{
+			FSWRoomSetByCallerTagValue& Value = State.DamageTagMagnitudes.AddDefaulted_GetRef();
+			Value.Tag = Entry.Key;
+			Value.Value = Entry.Value;
+		}
+		for (const TPair<FName, float>& Entry : Spec.SetByCallerNameMagnitudes)
+		{
+			FSWRoomSetByCallerNameValue& Value = State.DamageNameMagnitudes.AddDefaulted_GetRef();
+			Value.Name = Entry.Key;
+			Value.Value = Entry.Value;
+		}
+	}
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Projectile;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Projectile");
+		Issue.FieldKey = TEXT("SubMunitionState");
+		Issue.Reason = TEXT("Submunition adapter serialization failed");
+	}
+}
+
+bool ASubMunitionProjectile::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	FSWRoomSubMunitionState State;
+	if (Part.Domain != ESWRoomDomain::Projectile || Part.Version != 1 || !FSWRoomStructCodec::Read(Part.Bytes, State)
+		|| !FMath::IsFinite(State.ExplosionRadius) || !FMath::IsFinite(State.MaxInstallSlopeAngle)
+		|| !FMath::IsFinite(State.InstalledLifeSpan) || !FMath::IsFinite(State.AutoExplodeRemaining)
+		|| State.AutoExplodeRemaining < 0.f || !FMath::IsFinite(State.DamageEffectLevel)
+		|| State.DamageEffectLevel <= 0.f)
+	{
+		OutError = TEXT("Invalid submunition state");
+		return false;
+	}
+	bExploded = State.bExploded;
+	bExplodeOnImpact = State.bExplodeOnImpact;
+	ExplosionRadius = State.ExplosionRadius;
+	MaxInstallSlopeAngle = State.MaxInstallSlopeAngle;
+	InstalledLifeSpan = State.InstalledLifeSpan;
+	GetWorldTimerManager().ClearTimer(AutoExplodeTimerHandle);
+	DamageEffectSpecHandle = FGameplayEffectSpecHandle();
+	if (!State.DamageEffectClass.IsNull())
+	{
+		UClass* EffectClass = State.DamageEffectClass.TryLoadClass<UGameplayEffect>();
+		if (!EffectClass)
+		{
+			OutError = FString::Printf(TEXT("Submunition effect class missing: %s"), *State.DamageEffectClass.ToString());
+			return false;
+		}
+		FGameplayEffectContextHandle Context(UAbilitySystemGlobals::Get().AllocGameplayEffectContext());
+		DamageEffectSpecHandle = FGameplayEffectSpecHandle(new FGameplayEffectSpec(EffectClass->GetDefaultObject<UGameplayEffect>(), Context, State.DamageEffectLevel));
+		for (const FSWRoomSetByCallerTagValue& Value : State.DamageTagMagnitudes)
+			DamageEffectSpecHandle.Data->SetSetByCallerMagnitude(Value.Tag, Value.Value);
+		for (const FSWRoomSetByCallerNameValue& Value : State.DamageNameMagnitudes)
+			DamageEffectSpecHandle.Data->SetSetByCallerMagnitude(Value.Name, Value.Value);
+	}
+	CurrentState = State.bInstalled ? ESubMunitionState::Installed : ESubMunitionState::Moving;
+	if (State.bInstalled && ProjectileMovement)
+	{
+		ProjectileMovement->StopMovementImmediately();
+		ProjectileMovement->Deactivate();
+	}
+	PendingRoomState = MoveTemp(State);
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool ASubMunitionProjectile::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	if (PendingRoomState.bInstalled && !bExploded)
+	{
+		if (PendingRoomState.AutoExplodeRemaining <= 0.f)
+			AutoExplodeTimerHandle = GetWorldTimerManager().SetTimerForNextTick(this, &ASubMunitionProjectile::ExplodeAndDestroy);
+		else
+			GetWorldTimerManager().SetTimer(AutoExplodeTimerHandle, this, &ASubMunitionProjectile::ExplodeAndDestroy,
+				PendingRoomState.AutoExplodeRemaining, false);
+	}
+	return true;
 }

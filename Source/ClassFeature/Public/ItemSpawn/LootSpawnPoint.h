@@ -6,7 +6,16 @@
 #include "ChestSpawnData.h"
 #include "LootSpawnTypes.h"
 #include "Storage/StorageComponent.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "LootSpawnPoint.generated.h"
+
+USTRUCT()
+struct FSWRoomLootPointState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) bool bActivated = false;
+	UPROPERTY(SaveGame) FGuid SpawnedActorId;
+};
 
 class ABaseItem;
 class ABaseCharacter;
@@ -105,12 +114,18 @@ struct CLASSFEATURE_API FChestSpawnPointLootSettings
 };
 
 UCLASS(Abstract)
-class CLASSFEATURE_API ALootSpawnPointBase : public AActor
+class CLASSFEATURE_API ALootSpawnPointBase : public AActor, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	ALootSpawnPointBase();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomLootPointState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Loot|Spawn")
 	virtual void ResetSpawnPoint(bool bDestroySpawnedActor);
@@ -144,6 +159,8 @@ protected:
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Loot|Spawn")
 	TObjectPtr<AActor> SpawnedActor = nullptr;
+	FSWRoomLootPointState PendingRoomState;
+	bool bHasPendingRoomState = false;
 };
 
 UCLASS()

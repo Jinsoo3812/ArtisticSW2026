@@ -2,9 +2,15 @@
 
 #include "SWShipWakeEmitterComponent.h"
 #include "PlayerRespawnPointComponent.h"
+#include "Room/SWRoomSnapshotComponent.h"
 
 AKelvinShip::AKelvinShip()
 {
+	if (USWRoomSnapshotComponent* Snapshot = Cast<USWRoomSnapshotComponent>(GetDefaultSubobjectByName(TEXT("RoomSnapshot"))))
+	{
+		Snapshot->PersistenceClass = ESWRoomPersistenceClass::ManualAndReturn;
+		Snapshot->bRequired = true;
+	}
 	ShipWakeEmitter = CreateDefaultSubobject<USWShipWakeEmitterComponent>(TEXT("ShipWakeEmitter"));
 	Player0RespawnPoint = CreateDefaultSubobject<UPlayerRespawnPointComponent>(TEXT("Player0RespawnPoint"));
 	Player0RespawnPoint->SetupAttachment(GetRootComponent());

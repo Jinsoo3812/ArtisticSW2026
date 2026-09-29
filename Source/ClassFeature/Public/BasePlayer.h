@@ -12,6 +12,7 @@
 #include "Skills/SkillUseProvider.h"
 #include "CannonRiderInterface.h"
 #include "ShipRepairUserInterface.h"
+#include "Room/SWRoomSnapshotTypes.h"
 #include "BasePlayer.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
@@ -125,6 +126,7 @@ public:
 	void CaptureReconnectProgress();
 	void CaptureRoomProgress(struct FSWRoomPlayerProgress& OutProgress) const;
 	void RestoreRoomProgress(const struct FSWRoomPlayerProgress& Progress);
+	bool FinalizeRoomProgressEffects(FString& OutError);
 	bool BuildProgressSnapshot(FSWPlayerProgressSnapshot& OutSnapshot) const;
 	void ApplyProgressSnapshot(const FSWPlayerProgressSnapshot& Snapshot);
 	protected:
@@ -147,6 +149,9 @@ public:
 protected:
 	UPROPERTY()
 	TWeakObjectPtr<class UAbilitySystemComponent> CachedAbilitySystemComponent;
+	TArray<FSWRoomGameplayEffectState> PendingRoomEffects;
+	bool bHasPendingRoomEffects = false;
+	float PendingRoomHealth = 0.f;
 	friend class FWeaponEquipmentLifecycleTest;
 
 	/** Retained while the controller temporarily possesses a ship or cannon. */

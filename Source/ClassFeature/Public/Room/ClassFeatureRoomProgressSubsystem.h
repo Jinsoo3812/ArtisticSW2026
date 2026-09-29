@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Containers/Ticker.h"
+#include "Room/SWRoomSnapshotTypes.h"
 #include "ClassFeatureRoomProgressSubsystem.generated.h"
 
 class ABasePlayer;
@@ -18,6 +19,8 @@ public:
 	bool CaptureSharedWorld(UWorld* World);
 	void RestorePlayer(ABasePlayer* Player);
 	void CapturePlayer(ABasePlayer* Player);
+	bool TrySave(UWorld* World, ESWRoomSaveKind Kind, FString& OutError);
+	int32 GetLastCaptureIssueCount() const { return LastCaptureIssueCount; }
 	bool TryReturn(UWorld* World, ABasePlayer* Requester);
 private:
 	UFUNCTION() void HandleGameOverRestart();
@@ -28,4 +31,10 @@ private:
 	TWeakObjectPtr<UWorld> PendingWorld;
 	double RestoreDeadline = 0.0;
 	bool bReturning = false;
+	bool bWorldSnapshotRestored = false;
+	bool bReturnShipPlaced = false;
+	bool bShipSafetyFallbackUsed = false;
+	double ShipSafetyCheckAt = 0.0;
+	bool bSaving = false;
+	int32 LastCaptureIssueCount = 0;
 };

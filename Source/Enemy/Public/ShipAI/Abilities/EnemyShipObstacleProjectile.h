@@ -2,7 +2,21 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "EnemyShipObstacleProjectile.generated.h"
+
+USTRUCT()
+struct FSWRoomObstacleProjectileState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FVector TargetPoint = FVector::ZeroVector;
+	UPROPERTY(SaveGame) FRotator RotationOffset = FRotator::ZeroRotator;
+	UPROPERTY(SaveGame) FSoftClassPath ObstacleClass;
+	UPROPERTY(SaveGame) float ArrivalRemaining = 0.f;
+	UPROPERTY(SaveGame) float RemainingLife = 0.f;
+	UPROPERTY(SaveGame) float GravityScale = 1.f;
+	UPROPERTY(SaveGame) bool bArrivalHandled = false;
+};
 
 class AEnemyShipObstacle;
 class USphereComponent;
@@ -12,12 +26,18 @@ class UNiagaraSystem;
 
 /** Collisionless ballistic carrier that converts into an obstacle at its authored air point. */
 UCLASS(Blueprintable)
-class ENEMY_API AEnemyShipObstacleProjectile : public AActor
+class ENEMY_API AEnemyShipObstacleProjectile : public AActor, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	AEnemyShipObstacleProjectile();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomObstacleProjectileState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 	virtual void PostNetReceiveLocationAndRotation() override;
 	virtual void PostNetReceiveVelocity(const FVector& NewVelocity) override;
 
@@ -69,4 +89,7 @@ private:
 	FRotator ObstacleSpawnRotationOffset = FRotator::ZeroRotator;
 	TSubclassOf<AEnemyShipObstacle> ObstacleClass;
 	FTimerHandle ArrivalTimerHandle;
+	bool bArrivalHandled = false;
+	FSWRoomObstacleProjectileState PendingRoomState;
+	bool bHasPendingRoomState = false;
 };

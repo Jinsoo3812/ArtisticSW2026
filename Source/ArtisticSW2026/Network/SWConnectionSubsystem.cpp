@@ -10,6 +10,8 @@
 #include "Network/SWNetworkLog.h"
 #include "Network/SWInputDiag.h"
 #include "SWRoomName.h"
+#include "Room/SWRoomReadyState.h"
+#include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
 #include "Styling/CoreStyle.h"
 #include "UObject/UObjectGlobals.h"
@@ -27,7 +29,8 @@ namespace
 	constexpr uint8 Possessed = 1 << 4;
 	constexpr uint8 PawnBegunPlay = 1 << 5;
 	constexpr uint8 Camera = 1 << 6;
-	constexpr uint8 AllReady = ClientWorld | LocalController | PlayerState | Pawn | Possessed | PawnBegunPlay | Camera;
+	constexpr uint8 RoomWorldReady = 1 << 7;
+	constexpr uint8 AllReady = ClientWorld | LocalController | PlayerState | Pawn | Possessed | PawnBegunPlay | Camera | RoomWorldReady;
 }
 
 bool USWConnectionSubsystem::ShouldCreateSubsystem(UObject* Outer) const
@@ -316,6 +319,12 @@ uint8 USWConnectionSubsystem::BuildReadinessMask() const
 	if (ControlledPawn->GetController() == Controller) Mask |= Possessed;
 	if (ControlledPawn->HasActorBegunPlay()) Mask |= PawnBegunPlay;
 	if (Controller->PlayerCameraManager && Controller->GetViewTarget()) Mask |= Camera;
+	if (PendingDisplayName.IsEmpty()) Mask |= RoomWorldReady;
+	else
+	{
+		for (TActorIterator<ASWRoomReadyState> It(World); It; ++It)
+			if (It->RestoreGeneration > 0 && It->bWorldReady && It->RoomRunId.IsValid()) { Mask |= RoomWorldReady; break; }
+	}
 	return Mask;
 }
 
@@ -357,6 +366,10 @@ void USWConnectionSubsystem::CompleteReadiness()
 {
 	if (!bReadinessCheckActive || BuildReadinessMask() != AllReady) return;
 	const float CompletedElapsedSeconds = ReadinessElapsedSeconds;
+	FGuid ReadyRoomRunId;
+	if (UWorld* World = ReadinessWorld.Get())
+		for (TActorIterator<ASWRoomReadyState> It(World); It; ++It)
+			if (It->bWorldReady) { ReadyRoomRunId = It->RoomRunId; break; }
 	StopReadinessCheck();
 	bConnectionAttemptActive = false;
 	FSWInputDiag::Record(GetGameInstance(), TEXT("Ready"));
@@ -381,6 +394,8 @@ void USWConnectionSubsystem::CompleteReadiness()
 	}
 	FSWInputDiag::Record(GetGameInstance(), TEXT("GameInputMode"));
 	UE_LOG(LogSWConnection, Display, TEXT("Readiness completed. AttemptId=%d Elapsed=%.2f"), ActiveAttemptId, CompletedElapsedSeconds);
+	UE_LOG(LogSWConnection, Display, TEXT("Flow=ClientReady AttemptId=%d RoomRunId=%s Elapsed=%.2f"),
+		ActiveAttemptId, *ReadyRoomRunId.ToString(), CompletedElapsedSeconds);
 }
 
 bool USWConnectionSubsystem::IsFailureRelevantToThisInstance(const UWorld* FailureWorld) const

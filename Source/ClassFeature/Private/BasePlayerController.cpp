@@ -25,12 +25,23 @@
 #include "UI/FacilityHubWidget.h"
 #include "Facility/FacilityHubActor.h"
 #include "UI/StatusWindowWidget.h"
+#include "UI/SWRoomMenuWidget.h"
+#include "Room/ClassFeatureRoomProgressSubsystem.h"
+#include "Room/SWRoomProgressSubsystem.h"
+#include "Room/SWRoomSnapshotSubsystem.h"
+#include "Network/SWNetworkLog.h"
+#include "MultiGameMode.h"
+#include "InputAction.h"
 #include "WaterSubsystem.h"
 #include "GameFramework/GameStateBase.h"
 #include "Upgrade/SharedShipUpgradeState.h"
 #include "Upgrade/ShipUpgradeComponent.h"
 #include "Upgrade/ShipUpgradeTreeDataAsset.h"
 #include "Ship.h"
+#include "Engine/GameInstance.h"
+#include "Engine/GameViewportClient.h"
+#include "Network/Lobby/SWRoomSubsystem.h"
+#include "HAL/PlatformMisc.h"
 
 
 void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
@@ -331,6 +342,15 @@ void ABasePlayerController::ClientReceiveSharedShipUpgradeResult_Implementation(
 void ABasePlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+	if (IsLocalController() && GetWorld() && GetWorld()->WorldType == EWorldType::Game)
+	{
+		if (UGameViewportClient* Viewport = GetGameInstance() ? GetGameInstance()->GetGameViewportClient() : nullptr)
+		{
+			BoundRoomViewport = Viewport;
+			PreviousWindowCloseRequested = Viewport->OnWindowCloseRequested();
+			Viewport->OnWindowCloseRequested().BindUObject(this, &ABasePlayerController::HandleRoomWindowCloseRequested);
+		}
+	}
 
 	// [클라/로컬]
 	if (IsLocalPlayerController())
@@ -372,6 +392,13 @@ void ABasePlayerController::BeginPlay()
 
 void ABasePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UGameViewportClient* Viewport = BoundRoomViewport.Get())
+	{
+		if (Viewport->OnWindowCloseRequested().IsBoundToObject(this))
+			Viewport->OnWindowCloseRequested() = PreviousWindowCloseRequested;
+	}
+	BoundRoomViewport.Reset();
+	if (GetWorld()) GetWorldTimerManager().ClearTimer(RoomSaveTimeoutHandle);
 	if (HasAuthority() && ActiveFacilityHub)
 	{
 		ActiveFacilityHub->Release(this);
@@ -386,6 +413,8 @@ void ABasePlayerController::SetupInputComponent()
 
 	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent))
 	{
+		RoomMenuAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_RoomMenu.IA_RoomMenu"));
+		if (RoomMenuAction) EnhancedInput->BindAction(RoomMenuAction, ETriggerEvent::Started, this, &ABasePlayerController::HandleMenuEscape);
 		if (UIInputConfig)
 		{
 			for (const FKeyInputAction& Action : UIInputConfig->KeyInputActions)
@@ -399,7 +428,6 @@ void ABasePlayerController::SetupInputComponent()
 	}
 
 	InputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &ABasePlayerController::ToggleInventory);
-	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ABasePlayerController::HandleMenuEscape);
 }
 
 void ABasePlayerController::OnUIInputPressed(FGameplayTag InputTag)
@@ -546,6 +574,125 @@ void ABasePlayerController::HandleMenuEscape()
 	if (IsFacilityHubOpen())
 	{
 		CloseFacilityHub();
+		return;
+	}
+	if (IsStorageOpen()) { CloseStorage(); return; }
+	if (StatusWindowWidget && StatusWindowWidget->IsStatusVisible()) { ToggleStatus(); return; }
+	if (PlayerHUDWidget && PlayerHUDWidget->IsInventoryVisible()) { ToggleInventory(); return; }
+	if (RoomMenuWidget) { CloseRoomMenu(); return; }
+	if (!IsLocalController()) return;
+	UClass* RoomMenuClass = LoadClass<USWRoomMenuWidget>(nullptr, TEXT("/Game/UI/Room/WBP_RoomMenu.WBP_RoomMenu_C"));
+	RoomMenuWidget = CreateWidget<USWRoomMenuWidget>(this, RoomMenuClass ? RoomMenuClass : USWRoomMenuWidget::StaticClass());
+	if (!RoomMenuWidget) return;
+	bCursorVisibleBeforeRoomMenu = bShowMouseCursor;
+	RoomMenuWidget->AddToViewport(50);
+	ApplyInventoryInputMode(true);
+}
+
+void ABasePlayerController::CloseRoomMenu()
+{
+	if (!RoomMenuWidget) return;
+	RoomMenuWidget->RemoveFromParent();
+	RoomMenuWidget = nullptr;
+	ApplyInventoryInputMode(false);
+	bShowMouseCursor = bCursorVisibleBeforeRoomMenu;
+}
+
+void ABasePlayerController::RequestRoomSave()
+{
+	if (!IsLocalController() || bRoomSavePending) return;
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=ManualSave Side=Client Phase=ButtonPressed"));
+	bRoomSavePending = true;
+	PendingRoomSaveRequestId = ++NextRoomSaveRequestId;
+	if (RoomMenuWidget) RoomMenuWidget->SetBusy(true);
+	GetWorldTimerManager().SetTimer(RoomSaveTimeoutHandle, this, &ABasePlayerController::HandleRoomSaveTimeout, 30.f, false);
+	ServerRequestRoomSave(PendingRoomSaveRequestId);
+}
+
+void ABasePlayerController::RequestRoomSaveAndExit()
+{
+	if (!IsLocalController()) return;
+	bExitAfterRoomSave = true;
+	if (!bRoomSavePending) RequestRoomSave();
+}
+
+bool ABasePlayerController::HandleRoomWindowCloseRequested()
+{
+	const USWRoomSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomSubsystem>() : nullptr;
+	if (Room && Room->GetRoomState() == ESWRoomState::Playing)
+	{
+		RequestRoomSaveAndExit();
+		return false;
+	}
+	return !PreviousWindowCloseRequested.IsBound() || PreviousWindowCloseRequested.Execute();
+}
+
+void ABasePlayerController::HandleRoomSaveTimeout()
+{
+	if (!bRoomSavePending) return;
+	UE_LOG(LogSWRoom, Error, TEXT("Flow=ManualSave Side=Client Result=Timeout RequestId=%llu"), PendingRoomSaveRequestId);
+	bRoomSavePending = false;
+	bExitAfterRoomSave = false;
+	const FString Message = TEXT("방 저장 응답이 30초 안에 오지 않아 종료를 취소했습니다.");
+	if (RoomMenuWidget) RoomMenuWidget->SetResult(Message);
+	else ClientMessage(Message);
+}
+
+void ABasePlayerController::ServerRequestRoomSave_Implementation(uint64 RequestId)
+{
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=ManualSave Side=Server Phase=RpcReceived RequestId=%llu"), RequestId);
+	if (RequestId == LastServerRoomSaveRequestId)
+	{
+		ClientRoomSaveResult(RequestId, bLastServerRoomSaveSuccess, LastServerRoomSaveMessage);
+		return;
+	}
+	LastServerRoomSaveRequestId = RequestId;
+	AMultiGameMode* Mode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+	USWRoomProgressSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+	UClassFeatureRoomProgressSubsystem* Progress = GetGameInstance() ? GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr;
+	if (!Mode || !Room || !Room->IsHostedRoom() || Room->IsNewRoomPending() || Room->IsReturnTravelPending()
+		|| !PlayerState || !Progress)
+	{
+		bLastServerRoomSaveSuccess = false;
+		LastServerRoomSaveMessage = TEXT("방 저장을 요청할 수 없습니다.");
+		UE_LOG(LogSWRoom, Warning, TEXT("Flow=ManualSave Side=Server Result=Rejected"));
+		ClientRoomSaveResult(RequestId, false, LastServerRoomSaveMessage);
+		return;
+	}
+	FString Error;
+	const bool bSaved = Progress->TrySave(GetWorld(), ESWRoomSaveKind::Manual, Error);
+	if (!bSaved)
+	{
+		bLastServerRoomSaveSuccess = false;
+		LastServerRoomSaveMessage = Error;
+		UE_LOG(LogSWRoom, Error, TEXT("Flow=ManualSave Side=Server Result=Failed Reason=%s"), *Error);
+		ClientRoomSaveResult(RequestId, false, Error);
+		return;
+	}
+	const USWRoomSnapshotSubsystem* Snapshot = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>();
+	const int32 Unsupported = Snapshot ? Snapshot->GetUnsupportedCandidateCount() : 0;
+	const int32 Missing = Progress->GetLastCaptureIssueCount();
+	bLastServerRoomSaveSuccess = true;
+	LastServerRoomSaveMessage = FString::Printf(TEXT("저장 완료 · 누락 %d건 · 지원 범위 밖 상태 %d건"), Missing, Unsupported);
+	ClientRoomSaveResult(RequestId, true, LastServerRoomSaveMessage);
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=ManualSave Side=Server Result=Success Unsupported=%d"), Unsupported);
+}
+
+void ABasePlayerController::ClientRoomSaveResult_Implementation(uint64 RequestId, bool bSuccess, const FString& Message)
+{
+	if (!bRoomSavePending || RequestId != PendingRoomSaveRequestId) return;
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=ManualSave Side=Client Result=%s RequestId=%llu Message=%s"), bSuccess ? TEXT("Success") : TEXT("Failed"), RequestId, *Message);
+	GetWorldTimerManager().ClearTimer(RoomSaveTimeoutHandle);
+	bRoomSavePending = false;
+	if (RoomMenuWidget) RoomMenuWidget->SetResult(Message);
+	else ClientMessage(Message);
+	if (!bSuccess) { bExitAfterRoomSave = false; return; }
+	if (bExitAfterRoomSave)
+	{
+		bExitAfterRoomSave = false;
+		if (USWRoomSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomSubsystem>() : nullptr)
+			Room->LeaveRoom();
+		FPlatformMisc::RequestExit(false);
 	}
 }
 

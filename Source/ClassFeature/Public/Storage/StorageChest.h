@@ -5,7 +5,36 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Storage/StorageComponent.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "StorageChest.generated.h"
+
+USTRUCT()
+struct FSWRoomChestSlot
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FGameplayTag ItemTag;
+	UPROPERTY(SaveGame) int32 Count = 0;
+};
+
+USTRUCT()
+struct FSWRoomChestState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) int32 SlotCount = 0;
+	UPROPERTY(SaveGame) int32 ColumnCount = 0;
+	UPROPERTY(SaveGame) TArray<FSWRoomChestSlot> Slots;
+	UPROPERTY(SaveGame) bool bSlotsFromSharedProgress = false;
+	UPROPERTY(SaveGame) bool bLocked = false;
+	UPROPERTY(SaveGame) bool bHasBeenOpened = false;
+	UPROPERTY(SaveGame) bool bGuardFailed = false;
+	UPROPERTY(SaveGame) bool bRequiresGuardClear = false;
+	UPROPERTY(SaveGame) bool bBossEncounterReserved = false;
+	UPROPERTY(SaveGame) bool bEnablePhysicsAndBuoyancy = false;
+	UPROPERTY(SaveGame) int32 LootSeed = 0;
+	UPROPERTY(SaveGame) FSoftObjectPath ChestDefinitionPath;
+	UPROPERTY(SaveGame) bool bEmptyDestroyTimerPending = false;
+	UPROPERTY(SaveGame) float EmptyDestroyRemaining = 0.f;
+};
 
 class UInteractableComponent;
 class USceneComponent;
@@ -19,12 +48,18 @@ class UItemData;
 struct FProgressionComputedDrop;
 
 UCLASS()
-class CLASSFEATURE_API AStorageChest : public AActor
+class CLASSFEATURE_API AStorageChest : public AActor, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	AStorageChest();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomChestState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void BeginPlay() override;
@@ -206,6 +241,8 @@ protected:
 	float EmptyDestroyDelay = 1.0f;
 
 	FTimerHandle EmptyDestroyTimerHandle;
+	FSWRoomChestState PendingRoomState;
+	bool bHasPendingRoomState = false;
 	FTimerHandle DistanceOptimizationTimerHandle;
 	float DistanceOptimizationStableTime = 0.0f;
 	bool bHasBeenOpened = false;

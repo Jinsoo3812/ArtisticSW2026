@@ -4,6 +4,7 @@
 #include "BasePlayer.h"
 #include "Combat/PlayerAimComponent.h"
 #include "WeaponInputAbilitySystemComponent.h"
+#include "SWRoomAbilitySystemComponent.h"
 #include "GAS/Ability/WeaponGameplayAbility.h"
 #include "PlayerDialogueComponent.h"
 #include "BasePlayerState.h"
@@ -57,6 +58,7 @@
 #include "Room/SWRoomSaveGame.h"
 #include "Room/ClassFeatureRoomProgressSubsystem.h"
 #include "Network/SWInputDiag.h"
+#include "Network/SWNetworkLog.h"
 #include "Skills/Abilities/GA_GravityVortexThrow.h"
 #include "Skills/Abilities/GA_WaterBombCannonMode.h"
 #include "Skills/Abilities/GA_Bombardment.h"
@@ -408,9 +410,13 @@ void ABasePlayer::CaptureReconnectProgress()
 	if (BuildProgressSnapshot(Snapshot))
 	{
 		GameMode->StoreReconnectSnapshotForController(OwnerController, Snapshot);
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=Reconnect Side=Server PlayerIndex=%d Phase=MemorySnapshotStored"), GameMode->GetPlayerIndex(OwnerController));
 	}
 	if (UClassFeatureRoomProgressSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr)
+	{
 		Room->CapturePlayer(this);
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=Reconnect Side=Server PlayerIndex=%d Phase=RoomProgressCaptured"), GameMode->GetPlayerIndex(OwnerController));
+	}
 }
 
 void ABasePlayer::CaptureRoomProgress(FSWRoomPlayerProgress& OutProgress) const
@@ -432,6 +438,7 @@ void ABasePlayer::CaptureRoomProgress(FSWRoomPlayerProgress& OutProgress) const
 		}
 	}
 	for (const FQuickSlotReference& Slot : QuickSlots) OutProgress.QuickSlotItemTags.Add(Slot.ItemTag);
+	if (EquipmentComponent) OutProgress.EquippedItemTag = EquipmentComponent->GetEquippedItemTag();
 	if (const ABasePlayerState* PS = GetPlayerState<ABasePlayerState>())
 		if (const UShipUpgradeComponent* Upgrade = PS->GetShipUpgradeComponent()) OutProgress.UpgradeNodeIds = Upgrade->GetActiveNodeIds();
 	OutProgress.UpgradeNodeIds.Sort(FNameLexicalLess());
@@ -447,12 +454,79 @@ void ABasePlayer::CaptureRoomProgress(FSWRoomPlayerProgress& OutProgress) const
 	{
 		return A.SkillTag.ToString() < B.SkillTag.ToString();
 	});
+	OutProgress.bHasResumeTransform = !GetActorLocation().ContainsNaN();
+	OutProgress.ResumeWorldTransform = GetActorTransform();
+	if (const UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		if (!Movement->Velocity.ContainsNaN())
+		{
+			OutProgress.bHasMovement = true;
+			OutProgress.WorldVelocity = Movement->Velocity;
+			OutProgress.MovementMode = static_cast<uint8>(Movement->MovementMode);
+			OutProgress.CustomMovementMode = Movement->CustomMovementMode;
+		}
+		else
+		{
+			FSWRoomCaptureIssue& Issue = OutProgress.CaptureIssues.AddDefaulted_GetRef();
+			Issue.Scope = ESWRoomIssueScope::Player;
+			Issue.PlayerKey = GetPlayerState() ? GetPlayerState()->GetPlayerName() : TEXT("UnknownPlayer");
+			Issue.ClassPath = FSoftClassPath(GetClass());
+			Issue.Domain = TEXT("Movement");
+			Issue.FieldKey = TEXT("WorldVelocity");
+			Issue.Reason = TEXT("Non-finite movement velocity");
+		}
+	}
+	OutProgress.ControlRotation = GetController() ? GetController()->GetControlRotation() : GetActorRotation();
+	OutProgress.CameraZoom = CameraBoom ? CameraBoom->TargetArmLength : 0.0f;
+	if (HealthComponent)
+	{
+		OutProgress.CurrentHealth = HealthComponent->GetHealth();
+		OutProgress.MaximumHealth = CachedAbilitySystemComponent.IsValid()
+			? CachedAbilitySystemComponent->GetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute())
+			: HealthComponent->GetMaxHealth();
+		OutProgress.bWasDead = HealthComponent->IsDead();
+	}
+	if (CachedAbilitySystemComponent.IsValid())
+	{
+		OutProgress.BaseStrength = CachedAbilitySystemComponent->GetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute());
+		OutProgress.BaseMoveSpeed = CachedAbilitySystemComponent->GetNumericAttributeBase(UBaseAttributeSet::GetMoveSpeedAttribute());
+		OutProgress.BaseMoveSpeedMultiplier = CachedAbilitySystemComponent->GetNumericAttributeBase(UBaseAttributeSet::GetMoveSpeedMultiplierAttribute());
+		OutProgress.BaseAttackSpeedMultiplier = CachedAbilitySystemComponent->GetNumericAttributeBase(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute());
+	}
+	if (const USWRoomAbilitySystemComponent* RoomASC = Cast<USWRoomAbilitySystemComponent>(CachedAbilitySystemComponent.Get()))
+	{
+		OutProgress.bEffectsCaptured = true;
+		RoomASC->CaptureRoomEffects(OutProgress.ActiveEffects, OutProgress.CaptureIssues);
+		for (FSWRoomCaptureIssue& Issue : OutProgress.CaptureIssues)
+		{
+			Issue.Scope = ESWRoomIssueScope::Player;
+			Issue.PlayerKey = GetPlayerState() ? GetPlayerState()->GetPlayerName() : TEXT("UnknownPlayer");
+			Issue.ClassPath = FSoftClassPath(GetClass());
+		}
+	}
 }
 
 void ABasePlayer::RestoreRoomProgress(const FSWRoomPlayerProgress& Progress)
 {
 	if (!HasAuthority()) return;
+	PendingRoomEffects = Progress.ActiveEffects;
+	bHasPendingRoomEffects = Progress.bEffectsCaptured;
+	PendingRoomHealth = Progress.CurrentHealth;
 	if (InventoryComponent) InventoryComponent->RestoreProgressSnapshot(Progress.InventorySlots);
+	if (CachedAbilitySystemComponent.IsValid())
+	{
+		CachedAbilitySystemComponent->CancelAllAbilities();
+		if (Progress.MaximumHealth > 0.f)
+			CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute(), Progress.MaximumHealth);
+		CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute(), Progress.BaseStrength);
+		if (Progress.BaseMoveSpeed > 0.f)
+			CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMoveSpeedAttribute(), Progress.BaseMoveSpeed);
+		CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMoveSpeedMultiplierAttribute(), Progress.BaseMoveSpeedMultiplier);
+		CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute(), Progress.BaseAttackSpeedMultiplier);
+	}
+	if (GetMesh() && GetMesh()->GetAnimInstance()) GetMesh()->GetAnimInstance()->StopAllMontages(0.f);
+	if (EquipmentComponent && !EquipmentComponent->RestoreRoomEquippedItem(Progress.EquippedItemTag))
+		UE_LOG(LogSWRoom, Warning, TEXT("Flow=PlayerRestore Result=Partial Domain=Equipment Tag=%s"), *Progress.EquippedItemTag.ToString());
 	InitializeQuickSlots();
 	for (int32 Index = 0; Index < 5 && Index < Progress.QuickSlotItemTags.Num() && QuickSlots.IsValidIndex(Index); ++Index)
 	{
@@ -468,6 +542,42 @@ void ABasePlayer::RestoreRoomProgress(const FSWRoomPlayerProgress& Progress)
 			Skills->SetSkillUnlocked(State.SkillTag, State.bUnlocked);
 			Skills->SetSkillUnlockConditionMet(State.SkillTag, State.bConditionsMet);
 		}
+	if (CachedAbilitySystemComponent.IsValid() && HealthComponent && Progress.MaximumHealth > 0.0f)
+		CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(),
+			Progress.bRestoreFullHealth ? HealthComponent->GetMaxHealth()
+				: FMath::Clamp(Progress.CurrentHealth, 0.0f, HealthComponent->GetMaxHealth()));
+	if (Progress.bWasDead && HealthComponent) HealthComponent->StartDeath();
+	if (Progress.bHasResumeTransform && GetWorld())
+	{
+		FVector Location = Progress.ResumeWorldTransform.GetLocation();
+		const FRotator Rotation = Progress.ResumeWorldTransform.Rotator();
+		if (!TeleportTo(Location, Rotation, false, false))
+		{
+			UE_LOG(LogSWRoom, Warning, TEXT("Flow=PlayerRestore ForcedTransform Player=%s"), *GetPathName());
+			SetActorTransform(Progress.ResumeWorldTransform, false, nullptr, ETeleportType::TeleportPhysics);
+		}
+	}
+	if (Progress.bHasMovement)
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			Movement->SetMovementMode(static_cast<EMovementMode>(Progress.MovementMode), Progress.CustomMovementMode);
+			Movement->Velocity = Progress.WorldVelocity;
+		}
+	if (GetController()) GetController()->SetControlRotation(Progress.ControlRotation);
+	if (CameraBoom && Progress.CameraZoom > 0.0f) CameraBoom->TargetArmLength = Progress.CameraZoom;
+}
+
+bool ABasePlayer::FinalizeRoomProgressEffects(FString& OutError)
+{
+	if (!bHasPendingRoomEffects) return true;
+	bHasPendingRoomEffects = false;
+	USWRoomAbilitySystemComponent* RoomASC = Cast<USWRoomAbilitySystemComponent>(CachedAbilitySystemComponent.Get());
+	if (!RoomASC || !RoomASC->RestoreRoomEffects(PendingRoomEffects, OutError)) return false;
+	PendingRoomEffects.Reset();
+	if (HealthComponent)
+		RoomASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(),
+			FMath::Clamp(PendingRoomHealth, 0.f, HealthComponent->GetMaxHealth()));
+	return true;
 }
 
 bool ABasePlayer::BuildProgressSnapshot(FSWPlayerProgressSnapshot& OutSnapshot) const
@@ -933,6 +1043,7 @@ void ABasePlayer::PossessedBy(AController* NewController)
 			GameMode && GameMode->ConsumeReconnectSnapshotForController(NewController, ReconnectSnapshot))
 		{
 			ApplyProgressSnapshot(ReconnectSnapshot);
+			UE_LOG(LogSWRoom, Display, TEXT("Flow=Reconnect Side=Server PlayerIndex=%d Result=MemorySnapshotApplied"), GameMode->GetPlayerIndex(NewController));
 		}
 		else
 		{
