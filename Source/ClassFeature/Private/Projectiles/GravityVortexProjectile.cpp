@@ -1,6 +1,7 @@
 #include "Projectiles/GravityVortexProjectile.h"
 
 #include "Components/SphereComponent.h"
+#include "Item/Projectiles/ProjectileLaunchInitialization.h"
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/ProjectileMovementComponent.h"
@@ -158,8 +159,8 @@ void AGravityVortexProjectile::LaunchProjectile(const FVector& LaunchVelocity)
 {
 	if (ProjectileMovement)
 	{
-		ProjectileMovement->Velocity = LaunchVelocity;
-		ProjectileMovement->MaxSpeed = FMath::Max(ProjectileMovement->MaxSpeed, LaunchVelocity.Size());
+		if (!ProjectileLaunchInitialization::ApplyWorldVelocity(ProjectileMovement, LaunchVelocity,
+			FMath::Max(ProjectileMovement->MaxSpeed, LaunchVelocity.Size()))) return;
 		ProjectileMovement->Activate(true);
 	}
 }

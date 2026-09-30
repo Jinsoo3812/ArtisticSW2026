@@ -6,6 +6,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckWaypointComponent.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
 #include "Engine/World.h"
 #include "Ship.h"
 #include "ShipAI/EnemyShip.h"
@@ -66,18 +67,22 @@ bool UDeckEnemySpawnerComponent::ValidateAuthoredSpawnSlot(
 		return false;
 	}
 
-	const bool bHasNavigationLink = !Waypoint->GetLinkedWaypointIds().IsEmpty();
-	if (!Waypoint->CanSpawnEnemy() || !Waypoint->CanUseInCombat() || !bHasNavigationLink)
+	const UDeckWalkAreaComponent* WalkArea = Host->GetDeckWalkAreaComponent();
+	FDeckWalkLocation FloorLocation;
+	const bool bHasWalkableStart = WalkArea && WalkArea->IsReady()
+		? WalkArea->ResolveWaypoint(*Waypoint, FloorLocation)
+		: !Host->RequiresDeckWalkArea() && !Waypoint->GetLinkedWaypointIds().IsEmpty();
+	if (!Waypoint->CanSpawnEnemy() || !Waypoint->CanUseInCombat() || !bHasWalkableStart)
 	{
 		if (bLogErrors)
 		{
 			UE_LOG(LogTemp, Error,
-				TEXT("[DeckEnemySpawner] Invalid explicit spawn point. Ship=%s Slot=%d Class=%s Point=%s PointId=%d CanSpawn=%s CanCombat=%s HasLink=%s"),
+				TEXT("[DeckEnemySpawner] Invalid explicit spawn point. Ship=%s Slot=%d Class=%s Point=%s PointId=%d CanSpawn=%s CanCombat=%s HasWalkableStart=%s"),
 				*GetNameSafe(Host), SlotIndex, *GetNameSafe(AuthoredSlot.EnemyClass.Get()),
 				*GetNameSafe(Waypoint), PointId,
 				Waypoint->CanSpawnEnemy() ? TEXT("true") : TEXT("false"),
 				Waypoint->CanUseInCombat() ? TEXT("true") : TEXT("false"),
-				bHasNavigationLink ? TEXT("true") : TEXT("false"));
+				bHasWalkableStart ? TEXT("true") : TEXT("false"));
 		}
 		return false;
 	}
@@ -613,6 +618,13 @@ UDeckWaypointComponent* UDeckEnemySpawnerComponent::GetWaypoint(int32 WaypointId
 FVector UDeckEnemySpawnerComponent::GetWaypointWorldLocation(int32 WaypointId) const
 {
 	const UDeckWaypointComponent* Waypoint = GetWaypoint(WaypointId);
+	const AEnemyShip* Host = GetHostShip();
+	const UDeckWalkAreaComponent* Area = Host ? Host->GetDeckWalkAreaComponent() : nullptr;
+	FDeckWalkLocation Floor;
+	if (Waypoint && Area && Area->IsReady() && Area->ResolveWaypoint(*Waypoint, Floor))
+	{
+		return Area->ToWorld(Floor.LocalFloor);
+	}
 	return Waypoint ? Waypoint->GetComponentLocation()
 		: (GetHostShip() ? GetHostShip()->GetActorLocation() : FVector::ZeroVector);
 }
@@ -662,6 +674,9 @@ int32 UDeckEnemySpawnerComponent::FindNearestWaypoint(
 	}
 	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
 	const FVector QueryLocal = DeckTransform.InverseTransformPosition(WorldLocation);
+	const UDeckWalkAreaComponent* Area = Host->GetDeckWalkAreaComponent();
+	const bool bUseWalkArea = Area && Area->IsReady();
+	if (Host->RequiresDeckWalkArea() && !bUseWalkArea) return INDEX_NONE;
 	int32 BestId = INDEX_NONE;
 	float BestDistanceSquared = TNumericLimits<float>::Max();
 	for (const TPair<int32, TObjectPtr<UDeckWaypointComponent>>& Pair : WaypointsById)
@@ -671,9 +686,12 @@ int32 UDeckEnemySpawnerComponent::FindNearestWaypoint(
 		{
 			continue;
 		}
-		const FVector PointLocal = DeckTransform.InverseTransformPosition(
-			Waypoint->GetComponentLocation());
-		const float DistanceSquared = FVector::DistSquared2D(QueryLocal, PointLocal);
+		FDeckWalkLocation Floor;
+		if (bUseWalkArea && !Area->ResolveWaypoint(*Waypoint, Floor)) continue;
+		const FVector PointLocal = bUseWalkArea ? Floor.LocalFloor
+			: DeckTransform.InverseTransformPosition(Waypoint->GetComponentLocation());
+		const float DistanceSquared = bUseWalkArea ? FVector::DistSquared(QueryLocal, PointLocal)
+			: FVector::DistSquared2D(QueryLocal, PointLocal);
 		if (DistanceSquared < BestDistanceSquared)
 		{
 			BestDistanceSquared = DistanceSquared;
@@ -691,10 +709,16 @@ bool UDeckEnemySpawnerComponent::ResolveFixedDeckAnchorTransform(
 	const AEnemyShip* Host = GetHostShip();
 	const UDeckWaypointComponent* Waypoint = GetWaypoint(WaypointId);
 	const UStaticMeshComponent* DeckMesh = Host ? Host->GetShipDeckMesh() : nullptr;
+	if (const UDeckWalkAreaComponent* WalkArea = Host ? Host->GetDeckWalkAreaComponent() : nullptr;
+		WalkArea && WalkArea->IsReady())
+	{
+		return false;
+	}
 	if (!Waypoint || !DeckMesh)
 	{
 		return false;
 	}
+	if (Host && Host->RequiresDeckWalkArea()) return false;
 
 	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
 	const FVector LocalAnchor = DeckTransform.InverseTransformPosition(Waypoint->GetComponentLocation());
@@ -724,6 +748,17 @@ bool UDeckEnemySpawnerComponent::ResolveDeckCharacterTransform(
 	if (!Waypoint || !DeckMesh || !World)
 	{
 		return false;
+	}
+	if (Host->RequiresDeckWalkArea()
+		&& (!Host->GetDeckWalkAreaComponent()
+			|| !Host->GetDeckWalkAreaComponent()->IsReady()))
+	{
+		return false;
+	}
+	if (const UDeckWalkAreaComponent* WalkArea = Host->GetDeckWalkAreaComponent();
+		WalkArea && WalkArea->IsReady())
+	{
+		return WalkArea->ResolveSpawnTransform(*Waypoint, CapsuleHalfHeight, OutTransform);
 	}
 
 	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
@@ -866,6 +901,9 @@ bool UDeckEnemySpawnerComponent::TryReserveEnemySpawnPoint(
 	}
 
 	PrunePointRuntimeState();
+	const UDeckWalkAreaComponent* Area = Host->GetDeckWalkAreaComponent();
+	const bool bUseWalkArea = Area && Area->IsReady();
+	if (Host->RequiresDeckWalkArea() && !bUseWalkArea) return false;
 	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
 	const FVector RequesterLocal = DeckTransform.InverseTransformPosition(Requester->GetActorLocation());
 	const AActor* Target = Request.Target.Get();
@@ -882,12 +920,15 @@ bool UDeckEnemySpawnerComponent::TryReserveEnemySpawnPoint(
 		TArray<int32> ConnectedIds;
 		GetConnectedWaypointIds(Waypoint->GetWaypointId(), ConnectedIds);
 		const int32 PointId = Waypoint->GetWaypointId();
-		if (ConnectedIds.IsEmpty() || PointId == Request.ExcludedPointId
+		FDeckWalkLocation Floor;
+		if ((bUseWalkArea ? !Area->ResolveWaypoint(*Waypoint, Floor) : ConnectedIds.IsEmpty())
+			|| PointId == Request.ExcludedPointId
 			|| !IsPointAvailable(PointId, Requester))
 		{
 			continue;
 		}
-		const FVector PointLocal = DeckTransform.InverseTransformPosition(Waypoint->GetComponentLocation());
+		const FVector PointLocal = bUseWalkArea ? Floor.LocalFloor
+			: DeckTransform.InverseTransformPosition(Waypoint->GetComponentLocation());
 		const float RequesterDistance = FVector::Dist2D(PointLocal, RequesterLocal);
 		const float TargetDistance = Target
 			? FVector::Dist2D(PointLocal, TargetLocal)

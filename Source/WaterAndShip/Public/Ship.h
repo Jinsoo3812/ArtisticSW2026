@@ -5,6 +5,7 @@
 #include "InputActionValue.h"
 #include "AbilitySystemInterface.h"
 #include "RespawnHostInterface.h"
+#include "Movement/MovementFrameVelocityProvider.h"
 #include "Engine/DataTable.h"
 #include "Physics/NetworkPhysicsComponent.h"
 #include "GerstnerWaterWaves.h"
@@ -505,13 +506,14 @@ struct FShipReplicatedState
 };
 
 UCLASS()
-class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, public IRespawnHostInterface
+class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, public IRespawnHostInterface, public IMovementFrameVelocityProvider
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this pawn's properties
 	AShip();
+	virtual bool TryGetMovementFrameVelocityAtPoint(const FVector& WorldPoint, FVector& OutVelocity) const override;
 	virtual void PostLoad() override;
 
 	// IAbilitySystemInterface 구현

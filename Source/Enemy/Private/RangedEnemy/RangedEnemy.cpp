@@ -8,6 +8,9 @@
 #include "BasePlayer.h"
 #include "Components/BaseHealthComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Item/Projectiles/ArrowCollisionQuery.h"
+#include "Item/Projectiles/ProjectileLaunchTypes.h"
+#include "Item/Projectiles/ArrowProjectile.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -263,20 +266,17 @@ bool ARangedEnemy::TraceLineOfSightFrom(
 		return false;
 	}
 
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RangedEnemyAttackLOS), true, this);
-	QueryParams.AddIgnoredActor(this);
-	if (const AEnemyBow* Bow = GetEquippedBow())
-	{
-		QueryParams.AddIgnoredActor(Bow);
-	}
-	if (HostShip)
-	{
-		QueryParams.AddIgnoredActor(HostShip);
-	}
-
+	const AEnemyBow* Bow = GetEquippedBow();
+	const AArrowProjectile* ArrowDefaults = Bow && Bow->GetProjectileClass()
+		? Bow->GetProjectileClass().GetDefaultObject() : GetDefault<AArrowProjectile>();
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RangedEnemyAttackLOS), false, this);
+	QueryParams.bFindInitialOverlaps = true;
+	if (Bow) QueryParams.AddIgnoredActor(Bow);
+	// Share the actual arrow's narrow obstacle policy. Every ship remains in this
+	// query; large character hit assistance never decides whether LOS is clear.
 	FHitResult Hit;
-	const bool bBlockingHit = GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, QueryParams);
-	const bool bVisible = !bBlockingHit || Hit.GetActor() == Candidate;
+	const bool bVisible = !ArrowCollisionQuery::SweepObstacles(GetWorld(), Start, End,
+		(End - Start).ToOrientationQuat(), ArrowDefaults->GetObstacleCollisionHalfExtent(), QueryParams, Hit);
 	if (OutHit)
 	{
 		*OutHit = Hit;
@@ -337,7 +337,7 @@ bool ARangedEnemy::TryStartRangedAttack(FGameplayAbilitySpecHandle AbilityHandle
 	}
 
 	FString AttackReason;
-	if (!EvaluateAttackTarget(CombatTarget, true, AttackReason))
+	if (!EvaluateAttackTarget(CombatTarget, false, AttackReason))
 	{
 		return false;
 	}
@@ -509,19 +509,13 @@ FVector ARangedEnemy::GetRangedAimLocation(const AActor* TargetActor) const
 		: FVector::ZeroVector;
 }
 
-ERangedShotSnapshotResult ARangedEnemy::BuildRangedShotSnapshot(
+ERangedShotSnapshotResult ARangedEnemy::CaptureRangedAim(
 	const AActor* TargetActor,
 	FTransform& OutSpawnTransform,
-	FVector& OutAimLocation,
-	FHitResult* OutHit) const
+	FVector& OutAimLocation) const
 {
 	OutSpawnTransform = FTransform::Identity;
 	OutAimLocation = FVector::ZeroVector;
-	if (OutHit)
-	{
-		*OutHit = FHitResult();
-	}
-
 	FString RejectionReason;
 	if (!EvaluateAttackTarget(TargetActor, false, RejectionReason))
 	{
@@ -533,14 +527,20 @@ ERangedShotSnapshotResult ARangedEnemy::BuildRangedShotSnapshot(
 	}
 
 	OutAimLocation = GetRangedAimLocation(TargetActor);
+	return ERangedShotSnapshotResult::Ready;
+}
+
+bool ARangedEnemy::HasClearRangedLaunch(const AActor* TargetActor, const FProjectileShotSnapshot& Shot) const
+{
+	const FVector Start = Shot.SpawnTransform.GetLocation();
+	// A launch-direction visibility check, not prediction of gravity or future ship motion.
+	const FVector End = Start + Shot.WorldVelocity.GetSafeNormal() * FVector::Distance(Start, Shot.Input.AimPoint);
 	return TraceLineOfSightFrom(
 		TargetActor,
-		OutSpawnTransform.GetLocation(),
-		OutAimLocation,
+		Start,
+		End,
 		bDrawAttackLineOfSight,
-		OutHit)
-		? ERangedShotSnapshotResult::Ready
-		: ERangedShotSnapshotResult::BlockedLineOfSight;
+		nullptr);
 }
 
 UAnimMontage* ARangedEnemy::GetRangedAttackMontage() const

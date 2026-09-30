@@ -1,5 +1,6 @@
 ﻿#include "Projectiles/GrenadeProjectile.h"
 #include "AbilitySystemComponent.h"
+#include "Item/Projectiles/ProjectileLaunchInitialization.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "GameFramework/Character.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -51,9 +52,9 @@ void AGrenadeProjectile::BeginPlay()
 void AGrenadeProjectile::LaunchProjectile(const FVector& LaunchVelocity)
 {
     // PMC에 발사 속도 적용
-    if (ProjectileMovement)
+    if (ProjectileMovement && ProjectileLaunchInitialization::ApplyWorldVelocity(
+        ProjectileMovement, LaunchVelocity, ProjectileMovement->MaxSpeed))
     {
-        ProjectileMovement->Velocity = LaunchVelocity;
         ProjectileMovement->Activate();
     }
 }

@@ -16,7 +16,7 @@ class ARTISTICSWCORE_API ABaseProjectile : public AActor
 	
 protected:	
 	// Sets default values for this actor's properties
-	ABaseProjectile();
+	ABaseProjectile(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	// 루트 콜리전 컴포넌트
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")

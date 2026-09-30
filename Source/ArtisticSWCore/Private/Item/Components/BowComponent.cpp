@@ -52,30 +52,6 @@ float UBowComponent::GetFireSpeed(float ReleaseDrawAlpha) const
 	return FMath::Lerp(MinFireSpeed, MaxFireSpeed, FMath::Clamp(ReleaseDrawAlpha, 0.f, 1.f));
 }
 
-bool UBowComponent::TryBuildArrowLaunch(float FireSpeed, const FVector& AimTarget, const FVector& ViewDirection,
-	FTransform& OutSpawnTransform, FVector& OutLaunchVelocity) const
-{
-	OutSpawnTransform = FTransform::Identity;
-	OutLaunchVelocity = FVector::ZeroVector;
-	const ABowItem* Bow = GetOwningBow();
-	if (!FMath::IsFinite(FireSpeed) || FireSpeed <= 0.f || !Bow
-		|| AimTarget.ContainsNaN() || ViewDirection.ContainsNaN() || ViewDirection.IsNearlyZero()
-		|| !Bow->TryGetArrowSpawnTransform(OutSpawnTransform) || OutSpawnTransform.ContainsNaN())
-	{
-		return false;
-	}
-
-	// Camera hits behind/too close to the socket must never turn the arrow backward.
-	const FVector Forward = ViewDirection.GetSafeNormal();
-	const FVector ToTarget = AimTarget - OutSpawnTransform.GetLocation();
-	const FVector LaunchDirection = FVector::DotProduct(ToTarget, Forward) > 10.f
-		? ToTarget.GetSafeNormal() : Forward;
-	OutLaunchVelocity = LaunchDirection * FireSpeed;
-	OutSpawnTransform.SetRotation(LaunchDirection.Rotation().Quaternion());
-	OutSpawnTransform.SetScale3D(FVector::OneVector);
-	return !OutLaunchVelocity.ContainsNaN() && !OutLaunchVelocity.IsNearlyZero();
-}
-
 void UBowComponent::SetArrowNocked(bool bNewArrowNocked)
 {
 	AActor* BowActor = GetOwner();

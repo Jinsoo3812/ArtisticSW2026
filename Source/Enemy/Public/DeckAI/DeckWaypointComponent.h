@@ -22,6 +22,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Deck AI|Waypoint")
 	int32 GetWaypointId() const { return WaypointId; }
 
+	UFUNCTION(BlueprintPure, Category = "Deck AI|Waypoint")
+	FName GetWalkSurfaceId() const { return WalkSurfaceId; }
+
 	const TArray<int32>& GetLinkedWaypointIds() const { return LinkedWaypointIds; }
 
 	UFUNCTION(BlueprintPure, Category = "Deck AI|Waypoint")
@@ -65,6 +68,10 @@ public:
 #endif
 
 protected:
+	/** Required for spawn/combat anchors on ships with multiple walk surfaces. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI|Waypoint")
+	FName WalkSurfaceId;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI|Waypoint", meta = (ClampMin = "0"))
 	int32 WaypointId = 0;
 

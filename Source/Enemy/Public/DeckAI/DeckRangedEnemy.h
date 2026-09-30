@@ -9,6 +9,7 @@
 
 class AEnemyShip;
 class UDeckEnemyNavigationComponent;
+class UDeckWalkRouteComponent;
 
 UENUM(BlueprintType)
 enum class EDeckEnemyCombatRole : uint8
@@ -49,6 +50,7 @@ public:
 	{
 		return DeckEnemyNavigationComponent;
 	}
+	UDeckWalkRouteComponent* GetDeckWalkRouteComponent() const { return DeckWalkRouteComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Deck AI|Waypoint")
 	int32 GetCurrentDeckWaypointId() const { return CurrentDeckWaypointId; }
@@ -62,6 +64,8 @@ public:
 	bool TrySetGoalDeckWaypointId(int32 NewGoalWaypointId);
 	void SetGoalDeckWaypointId(int32 NewGoalWaypointId) { TrySetGoalDeckWaypointId(NewGoalWaypointId); }
 	void MarkGoalDeckWaypointReached();
+	void BeginFreeDeckMovement();
+	void RefreshDeckPointFromPosition();
 	FRandomStream& GetDeckRandomStream() { return DeckRandomStream; }
 
 	virtual AEnemyShip* GetDeckHostShip() const override;
@@ -111,6 +115,9 @@ protected:
 	/** Server-only route and final combat-point claim; route details are intentionally not replicated. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck AI|Combat Navigation")
 	TObjectPtr<UDeckEnemyNavigationComponent> DeckEnemyNavigationComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck AI|Walk Area")
+	TObjectPtr<UDeckWalkRouteComponent> DeckWalkRouteComponent;
 
 private:
 	bool bStartPooled = false;

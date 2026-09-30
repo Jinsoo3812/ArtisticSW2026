@@ -33,6 +33,7 @@ enum class EEnemyShipOrbitDirectionOverride : uint8
 class UDeckWaypointComponent;
 class UDeckEnemySpawnerComponent;
 class UDeckNavigationComponent;
+class UDeckWalkAreaComponent;
 class UBossEncounterComponent;
 class ABaseEnemy;
 class ADeckEnemy;
@@ -147,6 +148,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Deck AI")
 	UDeckNavigationComponent* GetDeckNavigationComponent() const { return DeckNavigationComponent; }
+	UDeckWalkAreaComponent* GetDeckWalkAreaComponent() const { return DeckWalkAreaComponent; }
+	bool RequiresDeckWalkArea() const { return bRequireDeckWalkArea; }
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Death")
 	bool IsDeathHandled() const { return bDeathHandled; }
@@ -292,6 +295,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|Deck AI|Generation")
 	FDeckWaypointGenerationSettings DeckWaypointGenerationSettings;
 
+	/** Reject deck spawns if the authored walkable area cannot be built. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Deck AI|Walk Area")
+	bool bRequireDeckWalkArea = false;
+
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Ship|Deck AI|Generation")
 	FString LastDeckWaypointValidationSummary;
 	// ================= End legacy bridge =================
@@ -390,6 +397,10 @@ protected:
 	/** Owns the immutable ship-local waypoint graph; claims remain in the spawner transaction service. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UDeckNavigationComponent> DeckNavigationComponent;
+
+	/** Ship-local walkable area sampled from the authored deck and fence collision. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UDeckWalkAreaComponent> DeckWalkAreaComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Boss Encounter")
 	TObjectPtr<UBossEncounterComponent> BossEncounterComponent;

@@ -12,6 +12,7 @@ class UStaticMesh;
 class UStaticMeshComponent;
 class UAbilitySystemComponent;
 class UGameplayEffect;
+struct FCollisionQueryParams;
 
 /** Minimal transient data required to render an arrow impact on remote clients. */
 USTRUCT(BlueprintType)
@@ -75,20 +76,27 @@ class ARTISTICSWCORE_API AArrowProjectile : public ABaseProjectile
 	friend class FStrengthProjectilePayloadTest;
 
 public:
-	AArrowProjectile();
+	AArrowProjectile(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+	/** Consumes final WORLD velocity; no further carrier or direction correction. */
 	UFUNCTION(BlueprintCallable, Category = "Arrow")
 	void LaunchArrow(const FVector& LaunchVelocity);
+	bool LaunchShot(const struct FProjectileShotSnapshot& Shot);
+
+	float GetFlightGravityZ() const;
+	float GetFlightGravityScale() const { return FlightGravityScale; }
+	/** Enabled by sw.Projectile.DebugLaunch. Displays actual speed and both collision sizes. */
+	void DebugLaunch(const FVector& ShooterVelocity, const FVector& AimLocation) const;
+	FCollisionQueryParams MakeFlightQueryParams() const;
+	/** Called only by the movement component after the unified query resolves a contact. */
+	void HandleFlightImpact(const FHitResult& Hit);
 
 	UFUNCTION(BlueprintCallable, Category = "Arrow")
 	void IgnoreActorForMovement(AActor* ActorToIgnore);
-
-	/** Tests the actual collision box/profile, honoring owner and weapon movement ignores. */
-	bool IsLaunchLocationBlocked() const;
 
 	/** Copies this projectile's authored mesh, materials, and relative transform to a presentation component. */
 	bool ApplyVisualTo(UStaticMeshComponent* TargetMesh) const;
@@ -100,7 +108,10 @@ public:
 	FTransform GetArrowVisualRelativeTransform() const;
 
 	UFUNCTION(BlueprintPure, Category = "Arrow|Collision")
-	FVector GetCollisionHalfExtent() const { return CollisionHalfExtent; }
+	FVector GetCollisionHalfExtent() const { return CollisionHalfExtent.ComponentMax(FVector(0.1f)); }
+
+	UFUNCTION(BlueprintPure, Category = "Arrow|Collision")
+	FVector GetObstacleCollisionHalfExtent() const { return ObstacleCollisionHalfExtent.ComponentMax(FVector(0.1f)); }
 
 	UFUNCTION(BlueprintCallable, Category = "Arrow")
 	bool InitializeStrengthDamage(
@@ -136,9 +147,6 @@ public:
 	void Multicast_PlayImpactPresentation(const FArrowImpactPresentationData& ImpactData);
 
 protected:
-	UFUNCTION()
-	void OnArrowHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
-
 	virtual bool ShouldIgnoreHitActor(const AActor* OtherActor) const;
 	virtual bool CanApplyDamageToActor(const AActor* OtherActor) const;
 	void ApplyCollisionShape();
@@ -153,10 +161,19 @@ protected:
 	void K2_OnImpactFX(const FHitResult& Hit);
 
 protected:
-	/** Edit this instead of scaling BoxComp so the arrow mesh keeps its authored size. */
+	/** Serialized legacy name retained: existing large BoxComp settings remain character assistance only. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Collision",
-		meta = (ClampMin = "0.1", UIMin = "0.1"))
+		meta = (DisplayName = "Character Hit Half Extent", ClampMin = "0.1", UIMin = "0.1", Units = "cm"))
 	FVector CollisionHalfExtent = FVector(8.0f, 2.0f, 2.0f);
+
+	/** Small shape for EVERY ship, floor, railing and world obstruction. Independent of hit assistance. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Collision",
+		meta = (DisplayName = "Obstacle Hit Half Extent", ClampMin = "0.1", UIMin = "0.1", Units = "cm"))
+	FVector ObstacleCollisionHalfExtent = FVector(8.0f, 1.0f, 1.0f);
+
+	/** Authoring/visualization shape; movement sweeps it explicitly instead of generating duplicate hit events. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UBoxComponent> ObstacleCollisionComp;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Damage")
 	FArrowDamageData DamageData;

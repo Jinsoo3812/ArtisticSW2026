@@ -42,6 +42,7 @@
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckEnemySpawnerComponent.h"
 #include "DeckAI/DeckNavigationComponent.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "BossAI/BossEncounterComponent.h"
 #include "BossAI/ShipBossEnemy.h"
@@ -703,6 +704,7 @@ AEnemyShip::AEnemyShip()
 	BossEncounterComponent = CreateDefaultSubobject<UBossEncounterComponent>(TEXT("BossEncounterComponent"));
 	DeckEnemySpawnerComponent = CreateDefaultSubobject<UDeckEnemySpawnerComponent>(TEXT("DeckEnemySpawnerComponent"));
 	DeckNavigationComponent = CreateDefaultSubobject<UDeckNavigationComponent>(TEXT("DeckNavigationComponent"));
+	DeckWalkAreaComponent = CreateDefaultSubobject<UDeckWalkAreaComponent>(TEXT("DeckWalkAreaComponent"));
 	PrimaryActorTick.bCanEverTick = true;
 
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
@@ -841,6 +843,15 @@ void AEnemyShip::BeginPlay()
 			Weakening->RegisterShip(this);
 		}
 		InitializeDeckWaypoints();
+		if (bRequireDeckWalkArea && DeckWalkAreaComponent)
+		{
+			DeckWalkAreaComponent->Rebuild();
+			if (bRequireDeckWalkArea && !DeckWalkAreaComponent->IsReady())
+			{
+				UE_LOG(LogTemp, Error, TEXT("[DeckWalk] Required walk area is unavailable on %s"),
+					*GetName());
+			}
+		}
 		InitializeDeckEnemyPool();
 
 		if (NavigationComponent)

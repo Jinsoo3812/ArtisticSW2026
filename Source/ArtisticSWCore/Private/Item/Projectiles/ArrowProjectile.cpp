@@ -14,12 +14,23 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "GameFramework/Character.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
 #include "Item/Projectiles/ArrowImpactVisual.h"
 #include "StatusEffectLibrary.h"
+#include "DrawDebugHelpers.h"
+#include "HAL/IConsoleManager.h"
+#include "Movement/MovementFrameVelocity.h"
+#include "Movement/MovementFrameVelocityProvider.h"
+#include "Item/Projectiles/ArrowProjectileMovementComponent.h"
+#include "Item/Projectiles/ProjectileShotPreparation.h"
+#include "Item/Projectiles/ProjectileLaunchInitialization.h"
 
 namespace
 {
+	TAutoConsoleVariable<int32> CVarProjectileDebugLaunch(TEXT("sw.Projectile.DebugLaunch"), 0,
+		TEXT("Log shot policy/timing; shooter velocity (cyan), world launch (yellow), character box (green), obstacle box (orange)."), ECVF_Cheat);
+
 	FString GetHitMeshPath(const UPrimitiveComponent* HitComponent)
 	{
 		if (const UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(HitComponent))
@@ -36,25 +47,28 @@ namespace
 	}
 }
 
-AArrowProjectile::AArrowProjectile()
+AArrowProjectile::AArrowProjectile(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UArrowProjectileMovementComponent>(TEXT("ProjectileComp")))
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
 	SetReplicateMovement(true);
 
+	ObstacleCollisionComp = CreateDefaultSubobject<UBoxComponent>(TEXT("ObstacleCollisionComp"));
+	ObstacleCollisionComp->SetupAttachment(RootComponent);
+	ObstacleCollisionComp->SetCanEverAffectNavigation(false);
 	if (CollisionComp)
 	{
 		ApplyCollisionShape();
 		ApplyArrowCollisionProfile();
-		CollisionComp->SetNotifyRigidBodyCollision(true);
-		CollisionComp->OnComponentHit.AddDynamic(this, &AArrowProjectile::OnArrowHit);
+		CollisionComp->SetNotifyRigidBodyCollision(false);
 	}
 
 	if (ProjectileMovementComp)
 	{
 		ProjectileMovementComp->bAutoActivate = false;
 		ProjectileMovementComp->InitialSpeed = 0.0f;
-		ProjectileMovementComp->MaxSpeed = 6000.0f;
+		ProjectileMovementComp->MaxSpeed = 0.0f;
 		ProjectileMovementComp->ProjectileGravityScale = FlightGravityScale;
 		ProjectileMovementComp->bInitialVelocityInLocalSpace = false;
 		ProjectileMovementComp->bRotationFollowsVelocity = true;
@@ -78,7 +92,12 @@ void AArrowProjectile::ApplyCollisionShape()
 
 	// Collision 크기는 Box Extent만 사용하고 자식 Mesh에 전달되는 Root Scale은 제거한다.
 	CollisionComp->SetRelativeScale3D(FVector::OneVector);
-	CollisionComp->SetBoxExtent(CollisionHalfExtent.ComponentMax(FVector(0.1f)), false);
+	CollisionComp->SetBoxExtent(GetCollisionHalfExtent(), false);
+	if (ObstacleCollisionComp)
+	{
+		ObstacleCollisionComp->SetRelativeTransform(FTransform::Identity);
+		ObstacleCollisionComp->SetBoxExtent(GetObstacleCollisionHalfExtent(), false);
+	}
 }
 
 void AArrowProjectile::ApplyArrowCollisionProfile()
@@ -88,14 +107,23 @@ void AArrowProjectile::ApplyArrowCollisionProfile()
 		return;
 	}
 
-	// Reassert at construction/runtime so legacy Blueprint BodyInstance overrides
-	// cannot silently restore WorldStatic=Ignore or NoCollision.
+	// Both shapes are swept explicitly by ArrowCollisionQuery. No overlap/hit event
+	// path may race that result, and BoxComp must not block the world at its large size.
 	CollisionComp->SetCollisionProfileName(TEXT("ArrowProjectile"), true);
+	CollisionComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CollisionComp->SetGenerateOverlapEvents(false);
+	if (ObstacleCollisionComp)
+	{
+		ObstacleCollisionComp->SetCollisionProfileName(TEXT("ArrowObstacle"), true);
+		ObstacleCollisionComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		ObstacleCollisionComp->SetGenerateOverlapEvents(false);
+	}
 }
 
 void AArrowProjectile::BeginPlay()
 {
 	Super::BeginPlay();
+	ApplyCollisionShape();
 	ApplyArrowCollisionProfile();
 
 	if (APawn* InstigatorPawn = GetInstigator())
@@ -131,23 +159,85 @@ void AArrowProjectile::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AArrowProjectile::LaunchArrow(const FVector& LaunchVelocity)
 {
 	if (!HasAuthority() || !DirectDamageSpec.IsValid() || LaunchVelocity.ContainsNaN()
-		|| LaunchVelocity.IsNearlyZero() || !ProjectileMovementComp || !CollisionComp) return;
+		|| !FMath::IsFinite(GetFlightGravityZ()) || !ProjectileMovementComp || !CollisionComp) return;
 	bImpactHandled = false;
+	ApplyCollisionShape();
 	ApplyArrowCollisionProfile();
 	CollisionComp->SetSimulatePhysics(false);
 	ProjectileMovementComp->SetUpdatedComponent(CollisionComp);
 	ProjectileMovementComp->ProjectileGravityScale = FlightGravityScale;
 	ProjectileMovementComp->bSimulationEnabled = true;
-	ProjectileMovementComp->MaxSpeed = FMath::Max(ProjectileMovementComp->MaxSpeed, LaunchVelocity.Size());
-	ProjectileMovementComp->Velocity = LaunchVelocity;
+	// Enforce after Blueprint construction. Natural gravity may change speed in flight.
+	if (!ProjectileLaunchInitialization::ApplyWorldVelocity(ProjectileMovementComp, LaunchVelocity)) return;
+	ProjectileMovementComp->bIsHomingProjectile = false;
+	ProjectileMovementComp->bShouldBounce = false;
+	ProjectileMovementComp->bSweepCollision = true;
+	if (!LaunchVelocity.IsNearlyZero()) SetActorRotation(LaunchVelocity.Rotation());
 	ProjectileMovementComp->Activate(true);
 	ProjectileMovementComp->SetComponentTickEnabled(true);
+	if (auto* Movement = Cast<UArrowProjectileMovementComponent>(ProjectileMovementComp)) Movement->MarkLaunchFrame();
 	ForceNetUpdate();
+}
+
+bool AArrowProjectile::LaunchShot(const FProjectileShotSnapshot& Shot)
+{
+	if (!HasAuthority() || !GetWorld() || !Shot.Input.ShotId.IsValid() || !DirectDamageSpec.IsValid()
+		|| !ProjectileMovementComp || !CollisionComp || !FMath::IsFinite(Shot.Input.GravityZ)
+		|| Shot.WorldVelocity.ContainsNaN() || Shot.WorldVelocity.IsNearlyZero()) return false;
+	const double WorldGravity = GetWorld()->GetGravityZ();
+	if (FMath::IsNearlyZero(WorldGravity) && !FMath::IsNearlyZero(Shot.Input.GravityZ)) return false;
+	FlightGravityScale = FMath::IsNearlyZero(WorldGravity) ? 0.0f : Shot.Input.GravityZ / WorldGravity;
+	LaunchArrow(Shot.WorldVelocity);
+	ProjectileShotPreparation::DebugShot(GetInstigator(), Shot);
+	DebugLaunch(Shot.ShooterVelocity, Shot.Input.AimPoint);
+	return true;
+}
+
+float AArrowProjectile::GetFlightGravityZ() const
+{
+	return GetWorld() ? GetWorld()->GetGravityZ() * FlightGravityScale : 0.0f;
+}
+
+void AArrowProjectile::DebugLaunch(const FVector& ShooterVelocity, const FVector& AimLocation) const
+{
+	if (CVarProjectileDebugLaunch.GetValueOnGameThread() == 0 || !GetWorld() || !ProjectileMovementComp) return;
+	const FVector Origin = GetActorLocation();
+	const FVector WorldVelocity = ProjectileMovementComp->Velocity;
+	FName BoneName;
+	const USceneComponent* Carrier = MovementFrameVelocity::GetCarrier(GetInstigator(), BoneName);
+	UE_LOG(LogTemp, Display, TEXT("[ProjectileLaunch] Instigator=%s Carrier=%s Time=%.3f InitialSpeed=%.2f Shooter=%s World=%s GravityZ=%.2f"),
+		*GetNameSafe(GetInstigator()), *GetNameSafe(Carrier), GetWorld()->GetTimeSeconds(), WorldVelocity.Size(),
+		*ShooterVelocity.ToCompactString(), *WorldVelocity.ToCompactString(), GetFlightGravityZ());
+	DrawDebugLine(GetWorld(), Origin, Origin + ShooterVelocity * 0.15, FColor::Cyan, false, 3.0f, 0, 2.0f);
+	DrawDebugLine(GetWorld(), Origin, Origin + WorldVelocity * 0.15, FColor::Yellow, false, 3.0f, 0, 2.0f);
+	DrawDebugBox(GetWorld(), Origin, GetCollisionHalfExtent(), GetActorQuat(), FColor::Green, false, 3.0f);
+	DrawDebugBox(GetWorld(), Origin, GetObstacleCollisionHalfExtent(), GetActorQuat(), FColor::Orange, false, 3.0f);
+	DrawDebugPoint(GetWorld(), AimLocation, 12.0f, FColor::White, false, 3.0f);
+	const double Duration = 1.0;
+	FVector Previous = Origin;
+	for (int32 Index = 1; Index <= 30; ++Index)
+	{
+		const double Time = Duration * Index / 30.0;
+		const FVector Next = Origin + WorldVelocity * Time + FVector(0, 0, 0.5 * GetFlightGravityZ() * Time * Time);
+		DrawDebugLine(GetWorld(), Previous, Next, FColor::Magenta, false, 3.0f);
+		Previous = Next;
+	}
+}
+
+FCollisionQueryParams AArrowProjectile::MakeFlightQueryParams() const
+{
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(ArrowCollision), false, this);
+	Params.bFindInitialOverlaps = true;
+	for (const TWeakObjectPtr<AActor>& Actor : MovementIgnoredActors)
+	{
+		if (Actor.IsValid()) Params.AddIgnoredActor(Actor.Get());
+	}
+	return Params;
 }
 
 void AArrowProjectile::IgnoreActorForMovement(AActor* ActorToIgnore)
 {
-	if (!ActorToIgnore || ActorToIgnore == this)
+	if (!ActorToIgnore || ActorToIgnore == this || Cast<IMovementFrameVelocityProvider>(ActorToIgnore))
 	{
 		return;
 	}
@@ -158,19 +248,6 @@ void AArrowProjectile::IgnoreActorForMovement(AActor* ActorToIgnore)
 	}
 
 	MovementIgnoredActors.AddUnique(ActorToIgnore);
-}
-
-bool AArrowProjectile::IsLaunchLocationBlocked() const
-{
-	if (!GetWorld() || !CollisionComp) return true;
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(ArrowLaunchOverlap), false, this);
-	for (const TWeakObjectPtr<AActor>& Actor : MovementIgnoredActors)
-	{
-		if (Actor.IsValid()) Params.AddIgnoredActor(Actor.Get());
-	}
-	return GetWorld()->OverlapBlockingTestByProfile(CollisionComp->GetComponentLocation(),
-		CollisionComp->GetComponentQuat(), CollisionComp->GetCollisionProfileName(),
-		FCollisionShape::MakeBox(CollisionComp->GetScaledBoxExtent()), Params);
 }
 
 bool AArrowProjectile::ApplyVisualTo(UStaticMeshComponent* TargetMesh) const
@@ -270,13 +347,15 @@ void AArrowProjectile::Multicast_PlayImpactPresentation_Implementation(
 	}
 }
 
-void AArrowProjectile::OnArrowHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+void AArrowProjectile::HandleFlightImpact(const FHitResult& Hit)
 {
-	if (!HasAuthority() || (bDestroyOnImpact && bImpactHandled))
+	if (!HasAuthority() || bImpactHandled)
 	{
 		return;
 	}
 
+	AActor* OtherActor = Hit.GetActor();
+	UPrimitiveComponent* OtherComp = Hit.GetComponent();
 	const bool bIgnoredHit = ShouldIgnoreHitActor(OtherActor);
 	UE_LOG(LogTemp, Display,
 		TEXT("[ArrowHit] Actor=%s Component=%s Mesh=%s Profile=%s ObjectType=%d Bone=%s Point=%s Ignored=%s"),
@@ -293,14 +372,11 @@ void AArrowProjectile::OnArrowHit(UPrimitiveComponent* HitComponent, AActor* Oth
 	{
 		return;
 	}
-	if (bDestroyOnImpact)
-	{
-		bImpactHandled = true;
-	}
+	bImpactHandled = true;
 
 	const bool bDamageTarget = CanApplyDamageToActor(OtherActor);
 	const bool bConfirmed = bDamageTarget && ApplyDamageToActor(OtherActor, Hit);
-	if (!bDamageTarget || bConfirmed)
+	if (!bDamageTarget || bConfirmed || !Cast<ACharacter>(OtherActor))
 	{
 		Multicast_PlayImpactPresentation(BuildImpactPresentationData(OtherComp, Hit));
 	}
@@ -475,7 +551,8 @@ bool AArrowProjectile::ApplyDamageToActor(AActor* TargetActor, const FHitResult&
 
 	if (!HasAuthority()) return false;
 	auto* Resolver = FindComponentByClass<UCombatHitResolver>();
-	if (!Resolver || !Resolver->ResolveHit(TargetASC, HitResult, bEnableTeamDamageFiltering, true)) return false;
+	// The shared flight query already checks static and moving cover.
+	if (!Resolver || !Resolver->ResolveHit(TargetASC, HitResult, bEnableTeamDamageFiltering, true, false)) return false;
 
 	for (int32 StatusEffectIndex = 0; StatusEffectIndex < StatusEffectSpecHandles.Num(); ++StatusEffectIndex)
 	{

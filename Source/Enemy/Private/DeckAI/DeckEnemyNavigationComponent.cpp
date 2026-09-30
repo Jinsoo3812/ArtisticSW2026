@@ -5,6 +5,8 @@
 #include "DeckAI/DeckNavigationComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckWaypointComponent.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckWalkRouteComponent.h"
 #include "Engine/World.h"
 #include "ShipAI/EnemyShip.h"
 
@@ -82,14 +84,17 @@ bool UDeckEnemyNavigationComponent::HasCandidateLineOfSight(
 	const float EyeHeight = Enemy->GetCapsuleComponent()
 		? Enemy->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()
 		: 90.0f;
-	const FVector Start = Ship->GetDeckWaypointWorldLocation(PointId)
-		+ Ship->GetShipDeckMesh()->GetUpVector() * EyeHeight;
-	const FVector End = TargetActor.GetActorLocation() + FVector::UpVector * 60.0f;
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DeckCombatCandidateLOS), true, Enemy);
-	QueryParams.AddIgnoredActor(Ship);
-	FHitResult Hit;
-	return !World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, QueryParams)
-		|| Hit.GetActor() == &TargetActor;
+	FVector FloorWorld = Ship->GetDeckWaypointWorldLocation(PointId);
+	const UDeckWalkAreaComponent* Area = Ship->GetDeckWalkAreaComponent();
+	if (Area && Area->IsReady())
+	{
+		const UDeckWaypointComponent* Point = Ship->GetDeckWaypoint(PointId);
+		FDeckWalkLocation Floor;
+		if (!Point || !Area->ResolveWaypoint(*Point, Floor)) return false;
+		FloorWorld = Area->ToWorld(Floor.LocalFloor);
+	}
+	const FVector Start = FloorWorld + Ship->GetShipDeckMesh()->GetUpVector() * EyeHeight;
+	return Enemy->TraceLineOfSightFrom(&TargetActor, Start, Enemy->GetRangedAimLocation(&TargetActor));
 }
 
 bool UDeckEnemyNavigationComponent::PlanCombatRoute(
@@ -101,6 +106,14 @@ bool UDeckEnemyNavigationComponent::PlanCombatRoute(
 	UDeckNavigationComponent* Navigation = Ship ? Ship->GetDeckNavigationComponent() : nullptr;
 	if (!Enemy || !Enemy->HasAuthority() || !Enemy->IsPoolActive()
 		|| !Ship || !Navigation || !Enemy->IsValidCombatTarget(TargetActor))
+	{
+		CancelCombatRoute();
+		return false;
+	}
+	FDeckWalkLocation TargetFloor;
+	if (const UDeckWalkAreaComponent* WalkArea = Ship->GetDeckWalkAreaComponent();
+		WalkArea && WalkArea->IsReady()
+		&& !WalkArea->ResolveActorOnDeck(*TargetActor, TargetFloor))
 	{
 		CancelCombatRoute();
 		return false;
@@ -150,6 +163,24 @@ bool UDeckEnemyNavigationComponent::PlanCombatRoute(
 
 		if (Route.PointIds.Num() == 1)
 		{
+			if (const UDeckWalkAreaComponent* WalkArea = Ship->GetDeckWalkAreaComponent();
+				WalkArea && WalkArea->IsReady())
+			{
+				FDeckWalkLocation GoalFloor;
+				const UDeckWaypointComponent* GoalPoint = Ship->GetDeckWaypoint(Route.GoalPointId);
+				const FVector EnemyLocal = WalkArea->ToLocal(WalkArea->GetActorFeetWorld(*Enemy));
+				if (!GoalPoint || !WalkArea->ResolveWaypoint(*GoalPoint, GoalFloor)
+					|| (FVector::Dist(EnemyLocal, GoalFloor.LocalFloor) > 60.0f
+						&& (!Enemy->GetDeckWalkRouteComponent()
+							|| !Enemy->GetDeckWalkRouteComponent()->SetPointGoal(Route.GoalPointId, false))))
+				{
+					const int32 FailedGoalPointId = ClaimedCombatPointId;
+					ReleaseCombatClaim();
+					Route.Reset();
+					GoalSecondaryCosts.Remove(FailedGoalPointId);
+					continue;
+				}
+			}
 			return true;
 		}
 		if (PrepareNextHop())
@@ -205,7 +236,15 @@ bool UDeckEnemyNavigationComponent::PrepareReleaseLineOfSightReposition(AActor* 
 	}
 
 	TArray<int32> LinkedPointIds;
-	Ship->GetConnectedDeckWaypointIds(CurrentPointId, LinkedPointIds);
+	const UDeckWalkAreaComponent* WalkArea = Ship->GetDeckWalkAreaComponent();
+	if (WalkArea && WalkArea->IsReady())
+	{
+		Ship->GetDeckWaypointIds(LinkedPointIds, true);
+	}
+	else
+	{
+		Ship->GetConnectedDeckWaypointIds(CurrentPointId, LinkedPointIds);
+	}
 	TArray<int32> Candidates;
 	for (const int32 PointId : LinkedPointIds)
 	{
@@ -222,7 +261,11 @@ bool UDeckEnemyNavigationComponent::PrepareReleaseLineOfSightReposition(AActor* 
 	{
 		const int32 CandidateIndex = Enemy->GetDeckRandomStream().RandRange(0, Candidates.Num() - 1);
 		const int32 SelectedPointId = Candidates[CandidateIndex];
-		if (Enemy->TrySetGoalDeckWaypointId(SelectedPointId))
+		TArray<FDeckWalkLocation> LocalPath;
+		if ((!WalkArea || !WalkArea->IsReady()
+				|| WalkArea->FindPathToWaypoint(*Enemy,
+					*Ship->GetDeckWaypoint(SelectedPointId), LocalPath))
+			&& Enemy->TrySetGoalDeckWaypointId(SelectedPointId))
 		{
 			ReleaseLineOfSightRepositionState = EReleaseLineOfSightRepositionState::Moving;
 			return true;
@@ -321,6 +364,7 @@ bool UDeckEnemyNavigationComponent::ReplanIfTargetMoved(
 		: FVector::ZeroVector;
 	const bool bGraphChanged = Navigation->GetGraphRevision() != PlannedGraphRevision;
 	const bool bTargetChanged = TargetActor != PlannedTarget.Get()
+		|| FMath::Abs(CurrentTargetLocal.Z - PlannedTargetLocalLocation.Z) > 45.0f
 		|| FVector::Dist2D(CurrentTargetLocal, PlannedTargetLocalLocation)
 			>= FMath::Max(25.0f, TargetReplanDistance);
 	if (!bGraphChanged && !bTargetChanged)

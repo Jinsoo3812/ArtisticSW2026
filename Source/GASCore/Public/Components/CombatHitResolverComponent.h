@@ -13,7 +13,7 @@ public:
 	virtual bool OpenWindow(const FGameplayEffectSpecHandle& Spec) override;
 	virtual void CloseWindow() override;
 	virtual bool ResolveHit(UAbilitySystemComponent* TargetASC, const FHitResult& Hit,
-		bool bIgnoreSameTeam = true, bool bRequireAnimatedHurtbox = false) override;
+		bool bIgnoreSameTeam = true, bool bRequireAnimatedHurtbox = false, bool bCheckWorldStaticOcclusion = true) override;
 private:
 	FGameplayEffectSpecHandle ActiveSpec;
 	TWeakPtr<FGameplayEffectSpec> LastSpec;

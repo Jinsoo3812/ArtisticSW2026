@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "BaseGameplayAbility.h"
+#include "Item/Projectiles/ProjectileShotComponent.h"
 #include "GA_RangedEnemyAttack.generated.h"
 
 class ARangedEnemy;
@@ -47,6 +48,8 @@ protected:
 	void OnAttackMontageCancelled();
 
 	bool FireProjectile();
+	EProjectileShotCommit CommitProjectile();
+	void OnShotCommitted(bool bSucceeded);
 	bool PlayAttackMontage();
 	void FinishAttack(bool bWasCancelled);
 	void AddAttackStateTag();
@@ -67,4 +70,8 @@ protected:
 	bool bProjectileFired = false;
 	bool bFinishingAttack = false;
 	bool bOwnsServerPoseRefresh = false;
+	FGuid PendingShotId;
+	TWeakObjectPtr<UProjectileShotComponent> ShotComponent;
+	bool bShotQueued = false;
+	bool bMontageCompleted = false;
 };

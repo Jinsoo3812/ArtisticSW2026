@@ -3,6 +3,7 @@
 #include "BossAI/ShipBossEnemy.h"
 #include "Components/CapsuleComponent.h"
 #include "DeckAI/DeckWaypointComponent.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "ShipAI/EnemyShip.h"
@@ -58,6 +59,10 @@ bool UBossDeckPointSelector::SelectDestinationPoint(
 				CharacterTransform))
 			{
 				CandidateLocation = CharacterTransform.GetLocation();
+			}
+			else if (HostShip->RequiresDeckWalkArea())
+			{
+				continue;
 			}
 		}
 		const FVector BossToCandidateOnDeck = FVector::VectorPlaneProject(
@@ -152,7 +157,21 @@ bool UBossDeckPointSelector::SelectWalkDestinationPoint(
 	}
 
 	TArray<int32> CandidateIds;
-	HostShip.GetConnectedDeckWaypointIds(Boss->GetCurrentPointId(), CandidateIds);
+	const UDeckWalkAreaComponent* WalkArea = HostShip.GetDeckWalkAreaComponent();
+	const bool bUseWalkArea = WalkArea && WalkArea->IsReady();
+	FDeckWalkLocation TargetFloor;
+	if (bUseWalkArea && !WalkArea->ResolveActorOnDeck(TargetActor, TargetFloor))
+	{
+		return false;
+	}
+	if (bUseWalkArea)
+	{
+		HostShip.GetDeckWaypointIds(CandidateIds, true);
+	}
+	else
+	{
+		HostShip.GetConnectedDeckWaypointIds(Boss->GetCurrentPointId(), CandidateIds);
+	}
 	CandidateIds.RemoveAll([&HostShip, &BossActor](const int32 PointId)
 	{
 		const UDeckWaypointComponent* Waypoint = HostShip.GetDeckWaypoint(PointId);
@@ -170,7 +189,15 @@ bool UBossDeckPointSelector::SelectWalkDestinationPoint(
 	float BestRangeError = TNumericLimits<float>::Max();
 	for (const int32 CandidateId : CandidateIds)
 	{
+		if (CandidateId == Boss->GetCurrentPointId()) continue;
+		if (bUseWalkArea)
+		{
+			FDeckWalkLocation CandidateFloor;
+			if (!WalkArea->ResolveWaypoint(*HostShip.GetDeckWaypoint(CandidateId), CandidateFloor)
+				|| CandidateFloor.SurfaceId != TargetFloor.SurfaceId) continue;
+		}
 		FVector CandidateLocation = HostShip.GetDeckWaypointWorldLocation(CandidateId);
+		bool bResolvedOnDeck = false;
 		if (const ACharacter* BossCharacter = Cast<ACharacter>(&BossActor))
 		{
 			const UCapsuleComponent* Capsule = BossCharacter->GetCapsuleComponent();
@@ -181,8 +208,10 @@ bool UBossDeckPointSelector::SelectWalkDestinationPoint(
 				CharacterTransform))
 			{
 				CandidateLocation = CharacterTransform.GetLocation();
+				bResolvedOnDeck = true;
 			}
 		}
+		if (bUseWalkArea && !bResolvedOnDeck) continue;
 
 		if (Settings.bCheckDestinationOccupancy
 			&& !IsDestinationClear(HostShip, BossActor, CandidateLocation, &TargetActor))
@@ -193,9 +222,16 @@ bool UBossDeckPointSelector::SelectWalkDestinationPoint(
 		const float TargetDistance = FVector::VectorPlaneProject(
 			CandidateLocation - TargetActor.GetActorLocation(), DeckUp).Size();
 		const float RangeError = FMath::Abs(TargetDistance - FMath::Max(0.0f, Settings.IdealWalkRange));
-		if (RangeError < BestRangeError - KINDA_SMALL_NUMBER
-			|| (FMath::IsNearlyEqual(RangeError, BestRangeError) && CandidateId < OutPointId))
+		const bool bBetter = RangeError < BestRangeError - KINDA_SMALL_NUMBER
+			|| (FMath::IsNearlyEqual(RangeError, BestRangeError) && CandidateId < OutPointId);
+		if (bBetter)
 		{
+			if (bUseWalkArea)
+			{
+				TArray<FDeckWalkLocation> Path;
+				if (!WalkArea->FindPathToWaypoint(BossActor,
+					*HostShip.GetDeckWaypoint(CandidateId), Path)) continue;
+			}
 			BestRangeError = RangeError;
 			OutPointId = CandidateId;
 		}

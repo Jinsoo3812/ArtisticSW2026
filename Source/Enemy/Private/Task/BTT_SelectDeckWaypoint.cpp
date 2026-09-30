@@ -6,6 +6,8 @@
 #include "DeckAI/DeckEnemyNavigationComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckWaypointComponent.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckWalkRouteComponent.h"
 #include "ShipAI/EnemyShip.h"
 
 UBTT_SelectDeckWaypoint::UBTT_SelectDeckWaypoint()
@@ -37,8 +39,18 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(
 	}
 
 	TArray<int32> LinkedIds;
-	HostShip->GetConnectedDeckWaypointIds(CurrentId, LinkedIds);
-	if (LinkedIds.IsEmpty())
+	const UDeckWalkAreaComponent* WalkArea = HostShip->GetDeckWalkAreaComponent();
+	const bool bUseWalkArea = WalkArea && WalkArea->IsReady();
+	if (bUseWalkArea)
+	{
+		HostShip->GetDeckWaypointIds(LinkedIds, false);
+	}
+	else
+	{
+		HostShip->GetConnectedDeckWaypointIds(CurrentId, LinkedIds);
+	}
+	if (LinkedIds.IsEmpty() && !bUseWalkArea
+		&& SelectionMode == EDeckWaypointSelectionMode::Patrol)
 	{
 		return EBTNodeResult::Failed;
 	}
@@ -55,6 +67,28 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(
 		{
 			return EBTNodeResult::Failed;
 		}
+		FDeckWalkLocation TargetFloor;
+		if (bUseWalkArea && !WalkArea->ResolveActorOnDeck(*TargetActor, TargetFloor))
+		{
+			Enemy->ClearCombatTarget();
+			if (UDeckEnemyNavigationComponent* Navigation = Enemy->GetDeckEnemyNavigationComponent())
+			{
+				Navigation->CancelCombatRoute();
+			}
+			return EBTNodeResult::Failed;
+		}
+		if (bUseWalkArea && SelectionMode == EDeckWaypointSelectionMode::Combat
+			&& Enemy->GetDeckCombatRole() == EDeckEnemyCombatRole::Melee)
+		{
+			UDeckWalkRouteComponent* Route = Enemy->GetDeckWalkRouteComponent();
+			if (!Route || !Route->SetActorGoal(TargetActor)) return EBTNodeResult::Failed;
+			if (UDeckEnemyNavigationComponent* Navigation = Enemy->GetDeckEnemyNavigationComponent())
+			{
+				Navigation->CancelCombatRoute();
+			}
+			Enemy->BeginFreeDeckMovement();
+			return EBTNodeResult::Succeeded;
+		}
 
 		UDeckEnemyNavigationComponent* Navigation = Enemy->GetDeckEnemyNavigationComponent();
 		const bool bSelected = Navigation && (SelectionMode
@@ -69,6 +103,16 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(
 	{
 		Navigation->CancelCombatRoute();
 	}
+	if (bUseWalkArea && SelectionMode == EDeckWaypointSelectionMode::Patrol)
+	{
+		UDeckWalkRouteComponent* Route = Enemy->GetDeckWalkRouteComponent();
+		if (!Route || !Route->SetPatrolGoal(Enemy->GetDeckRandomStream()))
+		{
+			return EBTNodeResult::Failed;
+		}
+		Enemy->BeginFreeDeckMovement();
+		return EBTNodeResult::Succeeded;
+	}
 
 	TArray<int32> Candidates;
 	for (const int32 LinkedId : LinkedIds)
@@ -78,10 +122,7 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(
 			? Waypoint->CanUseInCombat()
 			: Waypoint->CanPatrol())
 			&& HostShip->IsDeckPointAvailable(LinkedId, Enemy);
-		if (bAllowed)
-		{
-			Candidates.AddUnique(LinkedId);
-		}
+		if (bAllowed && LinkedId != CurrentId) Candidates.AddUnique(LinkedId);
 	}
 
 	if (Candidates.IsEmpty())
@@ -118,6 +159,6 @@ FString UBTT_SelectDeckWaypoint::GetStaticDescription() const
 	case EDeckWaypointSelectionMode::ReleaseLineOfSightReposition:
 		return TEXT("Choose one linked combat point after a blocked release LOS");
 	default:
-		return TEXT("Choose one linked patrol point");
+		return TEXT("Choose a reachable deck patrol location");
 	}
 }

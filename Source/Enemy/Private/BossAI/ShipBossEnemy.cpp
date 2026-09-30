@@ -19,6 +19,9 @@
 #include "Components/SphereComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckEnemySpawnerComponent.h"
+#include "DeckAI/DeckWalkRouteComponent.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "BaseAttributeSet.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -26,8 +29,19 @@
 #include "ShipAI/EnemyShip.h"
 #include "Weapon/BaseWeaponComponent.h"
 
+namespace
+{
+	UPrimitiveComponent* ResolveBossDeckBase(const AShipBossEnemy& Boss, AEnemyShip* Ship)
+	{
+		if (!Ship) return nullptr;
+		const UDeckWalkAreaComponent* Area = Ship->GetDeckWalkAreaComponent();
+		return Area && Area->IsReady() ? Area->GetMovementBase(Boss) : Ship->GetShipDeckMesh();
+	}
+}
+
 AShipBossEnemy::AShipBossEnemy()
 {
+	DeckWalkRouteComponent = CreateDefaultSubobject<UDeckWalkRouteComponent>(TEXT("DeckWalkRouteComponent"));
 	CombatHurtboxComponent->Mode = ECombatHurtboxMode::AnimatedPhysicsAsset;
 	HeadHitStunEffect = UBossHeadHitStunEffect::StaticClass();
 	HealthThresholdStunEffect = UBossHealthThresholdStunEffect::StaticClass();
@@ -117,6 +131,7 @@ void AShipBossEnemy::BeginPlay()
 
 void AShipBossEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
 	GetHealthComponent()->OnConfirmedDamage.RemoveAll(this);
 	GetHealthComponent()->OnHealthChanged.RemoveDynamic(this, &AShipBossEnemy::HandleStunHealthChanged);
 	ReleaseSummonedDeckEnemies();
@@ -187,7 +202,7 @@ bool AShipBossEnemy::InitializeBoss(AEnemyShip* InHostShip, int32 InitialPointId
 	{
 		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 		{
-			Movement->SetBase(DeckMesh);
+			Movement->SetBase(ResolveBossDeckBase(*this, HostShip));
 		}
 	}
 	TransitionBossAIState(AI_State_Boss_Intro, AI_State_Boss_Combat);
@@ -504,7 +519,7 @@ bool AShipBossEnemy::RelocateWhileHidden(const FTransform& DestinationTransform)
 	{
 		if (UStaticMeshComponent* DeckMesh = HostShip->GetShipDeckMesh())
 		{
-			Movement->SetBase(DeckMesh);
+			Movement->SetBase(ResolveBossDeckBase(*this, HostShip));
 		}
 		Movement->StopMovementImmediately();
 	}
@@ -532,7 +547,7 @@ void AShipBossEnemy::FinishHiddenRelocation()
 		Movement->SetMovementMode(MOVE_Walking);
 		if (UStaticMeshComponent* DeckMesh = HostShip ? HostShip->GetShipDeckMesh() : nullptr)
 		{
-			Movement->SetBase(DeckMesh);
+			Movement->SetBase(ResolveBossDeckBase(*this, HostShip));
 		}
 	}
 
@@ -679,7 +694,7 @@ void AShipBossEnemy::OnRep_HostShip()
 		return;
 	}
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement();
-		Movement && HostShip && HostShip->GetShipDeckMesh())
+		Movement && HostShip && HostShip->GetShipDeckMesh() && !HostShip->RequiresDeckWalkArea())
 	{
 		Movement->SetBase(HostShip->GetShipDeckMesh());
 	}

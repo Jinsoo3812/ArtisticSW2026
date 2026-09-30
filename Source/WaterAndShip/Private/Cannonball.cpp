@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Cannonball.h"
+#include "Item/Projectiles/ProjectileLaunchInitialization.h"
 #include "Net/UnrealNetwork.h"
 #include "WaterSurfaceQueryLibrary.h"
 #include "CannonballImpactReceiver.h"
@@ -290,12 +291,9 @@ void ACannonball::InitializeProjectile(
 
 	if (ProjectileMovement)
 	{
-		ProjectileMovement->InitialSpeed = InSpeed;
-		ProjectileMovement->Velocity = GetActorForwardVector() * InSpeed + InInheritedVelocity;
-		ProjectileMovement->MaxSpeed = FMath::Max(
-			ProjectileMovement->Velocity.Size() * 2.0f,
-			5000.0f);
-		ProjectileMovement->UpdateComponentVelocity();
+		const FVector WorldVelocity = GetActorForwardVector() * InSpeed + InInheritedVelocity;
+		if (!ProjectileLaunchInitialization::ApplyWorldVelocity(ProjectileMovement, WorldVelocity,
+			FMath::Max(WorldVelocity.Size() * 2.0f, 5000.0f))) return;
 		// Never carry interpolation offset into the projectile's first visible frame.
 		ProjectileMovement->ResetInterpolation();
 	}

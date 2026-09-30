@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GAS/Ability/WeaponGameplayAbility.h"
+#include "Combat/PlayerAimComponent.h"
+#include "Item/Projectiles/ProjectileShotComponent.h"
 #include "GA_BowAimFire.generated.h"
 
 class ABowItem;
@@ -64,7 +66,11 @@ protected:
 	void PlayDrawMontage();
 	void StopDrawMontage(float BlendOutTime);
 	void BeginRelease(const FGameplayEventData& ReleaseInput);
-	void FireArrowFromPendingRelease();
+	void QueueReleaseShot();
+	EProjectileShotCommit CommitReleaseShot();
+	void OnShotCommitted(bool bSucceeded);
+	void CancelPendingShot();
+	bool IsAimPathObstructed() const;
 	void FinishShot();
 	void ResetBowState();
 	void AcquireServerPoseRefresh();
@@ -136,8 +142,12 @@ protected:
 	FTimerHandle ChargeTimerHandle;
 	/** Immutable for this release; independent of the animation-facing DrawAlpha. */
 	float PendingReleaseFireSpeed = 0.f;
-	FVector PendingAimTarget = FVector::ZeroVector;
-	FVector PendingViewDirection = FVector::ZeroVector;
+	FGuid PendingShotId;
+	TWeakObjectPtr<UProjectileShotComponent> ShotComponent;
+	bool bReleaseQueued = false;
+	bool bLocalShotPresented = false;
+	bool bReleaseMontageFinished = false;
+	bool bFinishingShot = false;
 	float DrawStartTime = 0.0f;
 	float ServerReleaseDrawAlpha = 0.0f;
 	bool bIsDrawing = false;

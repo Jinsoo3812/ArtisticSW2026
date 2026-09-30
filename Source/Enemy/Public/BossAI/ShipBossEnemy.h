@@ -10,6 +10,7 @@ class AEnemyShip;
 class ADeckEnemy;
 class UBossBasicAttackSet;
 class USphereComponent;
+class UDeckWalkRouteComponent;
 
 /** Server-authored boss pawn whose tactical positions live on a moving enemy ship. */
 UCLASS(Blueprintable)
@@ -46,6 +47,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Boss|Ship")
 	AEnemyShip* GetHostShip() const { return HostShip; }
+	UDeckWalkRouteComponent* GetDeckWalkRouteComponent() const { return DeckWalkRouteComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Boss|Point")
 	int32 GetCurrentPointId() const { return CurrentPointId; }
@@ -172,6 +174,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss|Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USphereComponent> DashDamageVolume = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss|Walk Area")
+	TObjectPtr<UDeckWalkRouteComponent> DeckWalkRouteComponent;
 
 	/** Visual/cadence variations for the one currently equipped weapon. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Combat")

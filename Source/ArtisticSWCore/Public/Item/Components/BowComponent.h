@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Item/Projectiles/ProjectileLaunchTypes.h"
 #include "BowComponent.generated.h"
 
 class ABowItem;
@@ -34,9 +35,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Bow")
 	float GetFireSpeed(float ReleaseDrawAlpha) const;
 
-	/** Converges from the current socket position onto the release aim point, without gravity compensation. */
-	bool TryBuildArrowLaunch(float FireSpeed, const FVector& AimTarget, const FVector& ViewDirection,
-		FTransform& OutSpawnTransform, FVector& OutLaunchVelocity) const;
+	const FProjectileLaunchProfile& GetLaunchProfile() const { return LaunchProfile; }
 
 	/** Predicted locally and replicated from the server to all relevant clients. */
 	UFUNCTION(BlueprintCallable, Category = "Bow")
@@ -71,6 +70,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Fire", meta = (ClampMin = "0.0"))
 	float MaxFireSpeed = 4500.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Fire")
+	FProjectileLaunchProfile LaunchProfile;
 
 	UPROPERTY(ReplicatedUsing = OnRep_IsAiming, BlueprintReadOnly, Category = "Bow")
 	bool bIsAiming = false;

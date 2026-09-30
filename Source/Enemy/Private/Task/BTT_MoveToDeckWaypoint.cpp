@@ -7,6 +7,8 @@
 #include "BossAI/BossDeckMovementUtils.h"
 #include "Components/StaticMeshComponent.h"
 #include "DeckAI/DeckEnemyNavigationComponent.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckWalkRouteComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckWaypointMovementInterface.h"
 #include "DeckAI/DeckWaypointComponent.h"
@@ -92,7 +94,10 @@ EBTNodeResult::Type UBTT_MoveToDeckWaypoint::ExecuteTask(
 	ACharacter* Character = ResolveMovingCharacter(OwnerComp);
 	ABaseEnemy* Enemy = Cast<ABaseEnemy>(Character);
 	ADeckEnemy* DeckEnemy = Cast<ADeckEnemy>(Character);
-	if (DeckEnemy && DeckEnemy->GetGoalDeckWaypointId() == INDEX_NONE)
+	UDeckWalkRouteComponent* WalkRoute = Character
+		? Character->FindComponentByClass<UDeckWalkRouteComponent>() : nullptr;
+	if (DeckEnemy && (!WalkRoute || !WalkRoute->HasGoal())
+		&& DeckEnemy->GetGoalDeckWaypointId() == INDEX_NONE)
 	{
 		if (UDeckEnemyNavigationComponent* Navigation = DeckEnemy->GetDeckEnemyNavigationComponent())
 		{
@@ -103,6 +108,45 @@ EBTNodeResult::Type UBTT_MoveToDeckWaypoint::ExecuteTask(
 	const UDeckWaypointComponent* Goal = HostShip && DeckMover
 		? HostShip->GetDeckWaypoint(DeckMover->GetGoalDeckPointId())
 		: nullptr;
+	UDeckWalkAreaComponent* WalkArea = HostShip ? HostShip->GetDeckWalkAreaComponent() : nullptr;
+	if (HostShip && HostShip->RequiresDeckWalkArea()
+		&& (!WalkArea || !WalkArea->IsReady()))
+	{
+		StopDeckMovement(OwnerComp, Character);
+		if (DeckMover) DeckMover->OnDeckMoveFailed();
+		return EBTNodeResult::Failed;
+	}
+	if (WalkArea && WalkArea->IsReady() && WalkRoute)
+	{
+		if (!DeckMover || !Character || !Enemy || !Enemy->HasAuthority()
+			|| !DeckMover->CanMoveOnDeck() || !HostShip->GetShipDeckMesh()
+			|| (!WalkRoute->HasGoal() && (!Goal
+				|| !WalkRoute->SetPointGoal(Goal->GetWaypointId()))))
+		{
+			StopDeckMovement(OwnerComp, Character);
+			WalkRoute->ClearGoal();
+			if (DeckMover) DeckMover->OnDeckMoveFailed();
+			ClearDestinationBlackboard(OwnerComp);
+			return EBTNodeResult::Failed;
+		}
+		FDeckWalkLocation CurrentFloor;
+		if (WalkArea->ResolveActorOnDeck(*Character, CurrentFloor))
+		{
+			Character->SetBase(WalkArea->GetMovementBase(*Character));
+		}
+		if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
+		{
+			Enemy->SetBaseMovementSpeed(MoveSpeed);
+			Movement->BrakingDecelerationWalking = BrakingDeceleration;
+			if (!Movement->IsMovingOnGround())
+			{
+				WalkRoute->ClearGoal();
+				DeckMover->OnDeckMoveFailed();
+				return EBTNodeResult::Failed;
+			}
+		}
+		return EBTNodeResult::InProgress;
+	}
 	if (!DeckMover || !Character || !Enemy || !Enemy->HasAuthority()
 		|| !DeckMover->CanMoveOnDeck() || !HostShip
 		|| !HostShip->GetShipDeckMesh() || !Goal)
@@ -152,6 +196,120 @@ void UBTT_MoveToDeckWaypoint::TickTask(
 	UDeckEnemyNavigationComponent* CombatNavigation = DeckEnemy
 		? DeckEnemy->GetDeckEnemyNavigationComponent()
 		: nullptr;
+	UDeckWalkRouteComponent* WalkRoute = Character
+		? Character->FindComponentByClass<UDeckWalkRouteComponent>() : nullptr;
+	if (WalkRoute && WalkRoute->HasGoal())
+	{
+		if (!DeckMover || !DeckMover->CanMoveOnDeck() || !HostShip)
+		{
+			StopDeckMovement(OwnerComp, Character);
+			WalkRoute->ClearGoal();
+			if (DeckMover) DeckMover->OnDeckMoveFailed();
+			ClearDestinationBlackboard(OwnerComp);
+			FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+			return;
+		}
+		if (DeckEnemy && DeckEnemy->GetCombatTarget())
+		{
+			const UDeckWalkAreaComponent* WalkArea = HostShip->GetDeckWalkAreaComponent();
+			FDeckWalkLocation TargetFloor;
+			if (WalkArea && WalkArea->IsReady()
+				&& !WalkArea->ResolveActorOnDeck(*DeckEnemy->GetCombatTarget(), TargetFloor))
+			{
+				StopDeckMovement(OwnerComp, Character);
+				WalkRoute->ClearGoal();
+				DeckMover->OnDeckMoveFailed();
+				if (CombatNavigation) CombatNavigation->CancelCombatRoute();
+				DeckEnemy->ClearCombatTarget();
+				DeckEnemy->RefreshDeckPointFromPosition();
+				ClearDestinationBlackboard(OwnerComp);
+				FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+				return;
+			}
+		}
+		if (DeckEnemy && DeckEnemy->CanAttackCurrentTarget(true))
+		{
+			StopDeckMovement(OwnerComp, Character);
+			WalkRoute->ClearGoal();
+			DeckMover->OnDeckMoveFailed();
+			if (CombatNavigation) CombatNavigation->CancelCombatRoute();
+			DeckEnemy->RefreshDeckPointFromPosition();
+			ClearDestinationBlackboard(OwnerComp);
+			FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
+			return;
+		}
+		if (CombatNavigation && CombatNavigation->HasActiveRoute()
+			&& CombatNavigation->ReplanIfTargetMoved(DeckEnemy->GetCombatTarget(), true))
+		{
+			const int32 NewGoalId = DeckEnemy->GetGoalDeckWaypointId();
+			if (NewGoalId == INDEX_NONE)
+			{
+				if (CombatNavigation->HasActiveRoute() && WalkRoute->HasGoal())
+				{
+					return;
+				}
+				StopDeckMovement(OwnerComp, Character);
+				WalkRoute->ClearGoal();
+				ClearDestinationBlackboard(OwnerComp);
+				FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
+				return;
+			}
+			const UDeckWaypointComponent* NewGoal = HostShip->GetDeckWaypoint(NewGoalId);
+			if (!NewGoal || !WalkRoute->SetPointGoal(NewGoalId))
+			{
+				StopDeckMovement(OwnerComp, Character);
+				WalkRoute->ClearGoal();
+				DeckMover->OnDeckMoveFailed();
+				CombatNavigation->CancelCombatRoute();
+				ClearDestinationBlackboard(OwnerComp);
+				FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+				return;
+			}
+		}
+		const EDeckWalkRouteTick Result = WalkRoute->TickRoute(DeltaSeconds,
+			AcceptanceRadius, ProgressTimeout, MaximumMoveTime, MoveSpeed);
+		if (Result == EDeckWalkRouteTick::Moving) return;
+		const int32 PointGoalId = WalkRoute->GetPointGoalId();
+		StopDeckMovement(OwnerComp, Character);
+		WalkRoute->ClearGoal();
+		if (Result == EDeckWalkRouteTick::Reached && PointGoalId == INDEX_NONE && DeckEnemy)
+		{
+			DeckEnemy->RefreshDeckPointFromPosition();
+		}
+		if (Result == EDeckWalkRouteTick::Reached && PointGoalId != INDEX_NONE)
+		{
+			DeckMover->OnDeckPointReached();
+			if (DeckMover->GetCurrentDeckPointId() != PointGoalId)
+			{
+				DeckMover->OnDeckMoveFailed();
+				if (CombatNavigation) CombatNavigation->CancelCombatRoute();
+				ClearDestinationBlackboard(OwnerComp);
+				FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+				return;
+			}
+			if (CombatNavigation && CombatNavigation->HasActiveRoute()
+				&& CombatNavigation->HandlePointReached())
+			{
+				const UDeckWaypointComponent* NextGoal = HostShip->GetDeckWaypoint(
+					DeckMover->GetGoalDeckPointId());
+				if (NextGoal && WalkRoute->SetPointGoal(NextGoal->GetWaypointId())) return;
+				DeckMover->OnDeckMoveFailed();
+				CombatNavigation->CancelCombatRoute();
+				ClearDestinationBlackboard(OwnerComp);
+				FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+				return;
+			}
+		}
+		if (Result == EDeckWalkRouteTick::Failed)
+		{
+			DeckMover->OnDeckMoveFailed();
+			if (CombatNavigation) CombatNavigation->CancelCombatRoute();
+		}
+		ClearDestinationBlackboard(OwnerComp);
+		FinishLatentTask(OwnerComp, Result == EDeckWalkRouteTick::Reached
+			? EBTNodeResult::Succeeded : EBTNodeResult::Failed);
+		return;
+	}
 	if (DeckEnemy && DeckEnemy->CanAttackCurrentTarget(true))
 	{
 		StopDeckMovement(OwnerComp, Character);
@@ -266,6 +424,11 @@ EBTNodeResult::Type UBTT_MoveToDeckWaypoint::AbortTask(
 {
 	ACharacter* Character = ResolveMovingCharacter(OwnerComp);
 	StopDeckMovement(OwnerComp, Character);
+	if (UDeckWalkRouteComponent* WalkRoute = Character
+		? Character->FindComponentByClass<UDeckWalkRouteComponent>() : nullptr)
+	{
+		WalkRoute->ClearGoal();
+	}
 	if (IDeckWaypointMovementInterface* DeckMover = ResolveDeckMover(OwnerComp))
 	{
 		DeckMover->OnDeckMoveFailed();

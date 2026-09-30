@@ -1711,10 +1711,10 @@ void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
 	EventData.Instigator = this;
 	EventData.Target = nullptr;
 
-	// The view snapshot and input use the same reliable event, so no separate aim RPC can race release.
+	// Authorize a shot ID with release input; sample its view at the later FireArrow notify.
 	if (ReleasedEventTag == Key_Default_Mouse_LeftClick_Released && AimComponent)
 	{
-		AimComponent->CaptureReleaseView(EventData);
+		AimComponent->CreateReleaseRequest(EventData);
 	}
 	CachedAbilitySystemComponent->HandleGameplayEvent(ReleasedEventTag, &EventData);
 

@@ -1,6 +1,7 @@
 #include "ShipAI/Abilities/EnemyShipObstacleProjectile.h"
 
 #include "Components/SphereComponent.h"
+#include "Item/Projectiles/ProjectileLaunchInitialization.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "NiagaraComponent.h"
@@ -86,10 +87,12 @@ void AEnemyShipObstacleProjectile::InitializeObstacleProjectile(
 	TargetPoint = InTargetPoint;
 	ObstacleClass = InObstacleClass;
 	ObstacleSpawnRotationOffset = InObstacleSpawnRotationOffset;
-	ProjectileMovement->InitialSpeed = InLaunchVelocity.Size();
-	ProjectileMovement->MaxSpeed = FMath::Max(InLaunchVelocity.Size() * 2.0f, 5000.0f);
-	ProjectileMovement->Velocity = InLaunchVelocity;
-	ProjectileMovement->UpdateComponentVelocity();
+	if (!ProjectileLaunchInitialization::ApplyWorldVelocity(ProjectileMovement, InLaunchVelocity,
+		FMath::Max(InLaunchVelocity.Size() * 2.0f, 5000.0f)))
+	{
+		Destroy();
+		return;
+	}
 	ProjectileMovement->ResetInterpolation();
 	GetWorldTimerManager().SetTimer(
 		ArrivalTimerHandle,
