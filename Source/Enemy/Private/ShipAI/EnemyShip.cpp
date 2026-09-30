@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "ShipAI/EnemyShip.h"
+#include "Room/SWRoomProgressSubsystem.h"
 #include "Cannon.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
@@ -67,7 +68,12 @@ void AEnemyShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<
 	State.bHasDropped = bHasDropped;
 	State.bCrewDefeated = bCrewDefeated;
 	State.bHasEverHadLivingCrew = bHasEverHadLivingCrew;
-	State.bStoryGateOpen = bStoryGateOpen;
+ State.bStoryGateOpen = bStoryGateOpen;
+ if (bDevelopmentStoryGateOpened)
+ {
+  const UStoryFacadeSubsystem* Story=GetGameInstance() ? GetGameInstance()->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
+  if (!Story || !Story->IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted)) State.bStoryGateOpen=false;
+ }
 	for (ABaseEnemy* Crew : RegisteredCrewEnemies)
 	{
 		if (!IsValid(Crew)) continue;
@@ -2022,7 +2028,7 @@ bool AEnemyShip::IsStoryGateDormant() const
 
 void AEnemyShip::HandleStoryGateChanged()
 {
-	if (!HasAuthority() || !IsFinalBossSquadShip() || bStoryGateOpen) return;
+	if (!HasAuthority() || !IsFinalBossSquadShip()) return;
 	UStoryFacadeSubsystem* Story = GetGameInstance()
 		? GetGameInstance()->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
 	if (!Story)
@@ -2036,10 +2042,15 @@ void AEnemyShip::HandleStoryGateChanged()
 	}
 	const bool bAccepted = Story->IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted);
 	const bool bDefeated = Story->IsStoryNodeReached(EStoryNode::FinalBossDefeated);
+ const USWRoomProgressSubsystem* Room=GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+ const bool bTest=Room && Room->IsDevelopmentFinalEncounterWorld(GetWorld());
+ const bool bTargetOpen=(bAccepted || bTest) && !bDefeated;
+ bDevelopmentStoryGateOpened=bTest && !bAccepted && !bDefeated;
+ if (bStoryGateOpen==bTargetOpen) return;
 	FSWFinalEncounterDiagnostics::Write(TEXT("FinalGate"), TEXT("StoryEvaluated"),
 		FString::Printf(TEXT("Ship=%s Accepted=%d Defeated=%d Open=%d"), *GetPathName(),
 			bAccepted, bDefeated, bStoryGateOpen));
-	if (bAccepted && !bDefeated) SetStoryGateOpen(true);
+ SetStoryGateOpen(bTargetOpen);
 }
 
 void AEnemyShip::SetStoryGateOpen(bool bOpen)
@@ -2297,6 +2308,12 @@ void AEnemyShip::ApplyEffectiveDormancyState()
 void AEnemyShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+ if (HasAuthority() && IsFinalBossSquadShip())
+ {
+  const USWRoomProgressSubsystem* Room=GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+  if (Room && Room->IsDevelopmentFinalEncounterWorld(GetWorld())) HandleStoryGateChanged();
+  else if (bDevelopmentStoryGateOpened) { SetStoryGateOpen(false); bDevelopmentStoryGateOpened=false; }
+ }
 	EvaluateCrewControlState();
 	if (HasAuthority() && bCrewDefeated)
 	{

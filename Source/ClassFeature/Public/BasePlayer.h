@@ -120,6 +120,9 @@ public:
 
 	UFUNCTION()
 	void HandleDeathFinished(UBaseHealthComponent* InHealthComponent);
+
+	virtual void ApplyLocalDeathRagdoll() override;
+	virtual bool ShouldDetachControllerForDeathRagdoll() const override { return false; }
 	public:
 	UFUNCTION(BlueprintCallable, Category = "Respawn")
 	void CaptureRespawnProgress();

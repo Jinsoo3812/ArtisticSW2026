@@ -444,6 +444,7 @@ protected:
 	bool bDistanceOptimizationDormant = false;
 	UPROPERTY(ReplicatedUsing = OnRep_StoryGateOpen, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Story")
 	bool bStoryGateOpen = false;
+ bool bDevelopmentStoryGateOpened = false;
 
 	TArray<TWeakObjectPtr<UActorComponent>> DistanceDormancySuspendedTickComponents;
 	TArray<TWeakObjectPtr<ACannon>> DistanceDormancySuspendedCannons;

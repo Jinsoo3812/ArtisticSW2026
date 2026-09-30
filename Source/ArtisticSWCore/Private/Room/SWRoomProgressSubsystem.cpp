@@ -1,4 +1,66 @@
 #include "Room/SWRoomProgressSubsystem.h"
+#include "Engine/World.h"
+
+namespace SWDevTestInput
+{
+FString Package(UWorld* World)
+{
+ return World ? UWorld::RemovePIEPrefix(World->GetOutermost()->GetName()) : FString();
+}
+bool Authority(UWorld* World) { return World && World->IsGameWorld() && World->GetNetMode() != NM_Client; }
+}
+bool USWRoomProgressSubsystem::IsDevelopmentTestSessionEnabled(UWorld* World) const
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+ return SWDevTestInput::Authority(World) && DevelopmentSessionWorld.Get() == World && bDevelopmentSessionEnabled;
+#else
+ return false;
+#endif
+}
+void USWRoomProgressSubsystem::SetDevelopmentTestSessionEnabled(UWorld* World, bool bEnabled)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+ if (SWDevTestInput::Authority(World)) { DevelopmentSessionWorld = World; bDevelopmentSessionEnabled = bEnabled; }
+#endif
+}
+void USWRoomProgressSubsystem::SetDevelopmentFinalDeparturePending(UWorld* World, bool bPending, bool bValidatedTransition)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+ if (!bPending) { bDevelopmentFinalDeparturePending = false; DevelopmentFinalTargetPackage.Reset(); return; }
+ if (SWDevTestInput::Authority(World) && (IsDevelopmentTestSessionEnabled(World) || bValidatedTransition)) { bDevelopmentFinalDeparturePending = true; DevelopmentFinalTargetPackage = SWDevTestInput::Package(World); }
+#endif
+}
+bool USWRoomProgressSubsystem::ConsumeDevelopmentFinalDeparturePending(UWorld* World)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+ const bool bPermit = bDevelopmentFinalDeparturePending && IsFinalDepartureTravelPending()
+  && SWDevTestInput::Authority(World) && World != DevelopmentSessionWorld.Get()
+  && DevelopmentFinalTargetPackage == SWDevTestInput::Package(World);
+ SetDevelopmentFinalDeparturePending(World, false);
+ DevelopmentEncounterWorld = bPermit ? World : nullptr;
+ SetDevelopmentTestSessionEnabled(World, false);
+ return bPermit;
+#else
+ return false;
+#endif
+}
+bool USWRoomProgressSubsystem::IsDevelopmentFinalEncounterWorld(UWorld* World) const
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+ return SWDevTestInput::Authority(World) && DevelopmentEncounterWorld.Get() == World;
+#else
+ return false;
+#endif
+}
+void USWRoomProgressSubsystem::ClearDevelopmentFinalEncounterWorld(UWorld* World)
+{
+ SetDevelopmentFinalDeparturePending(World, false); DevelopmentEncounterWorld.Reset();
+}
+void USWRoomProgressSubsystem::Deinitialize()
+{
+ DevelopmentSessionWorld.Reset(); DevelopmentEncounterWorld.Reset(); bDevelopmentSessionEnabled = false;
+ bDevelopmentFinalDeparturePending = false; DevelopmentFinalTargetPackage.Reset(); Super::Deinitialize();
+}
 
 #include "Room/SWRoomSaveGame.h"
 #include "Room/SWRoomSaveStore.h"

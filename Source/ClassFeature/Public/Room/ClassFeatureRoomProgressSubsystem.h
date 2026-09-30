@@ -16,6 +16,8 @@ class CLASSFEATURE_API UClassFeatureRoomProgressSubsystem : public UGameInstance
 {
 	GENERATED_BODY()
 public:
+ bool IsDevelopmentTransitionBusy() const { return bReturning || bSaving; }
+ bool TryDevelopmentFinalDeparture(UWorld* World, ABasePlayerController* Requester, FString& OutError);
 	bool TryGameOverRetry(UWorld* World, ABasePlayerController* Requester, uint64 RequestId, FString& OutError);
 	bool CaptureControllerProgress(ABasePlayerController* Controller, bool bUseFrozen, FString& OutError);
 	bool GetStoredControllerProgress(ABasePlayerController* Controller, FSWRoomPlayerProgress& OutProgress) const;
@@ -32,6 +34,8 @@ public:
 	bool TryFinalDeparture(UWorld* World, ABasePlayer* Requester);
 	void ConfirmReturnPresentation(ABasePlayerController* Controller);
 private:
+ bool TryFinalDepartureInternal(UWorld* World, ABasePlayer* Requester, ABasePlayerController* Controller, bool bDevelopmentTest, FString& OutError);
+ bool bDevelopmentFinalDeparture = false;
 	void BeginReturnTravel();
 	void HandleReturnPresentationTimeout();
 	void CancelReturnPresentation();

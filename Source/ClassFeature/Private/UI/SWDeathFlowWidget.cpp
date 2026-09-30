@@ -62,5 +62,6 @@ void USWDeathFlowWidget::UpdateFlow(bool bGameOver, bool bHost, bool bBusy, cons
 void USWDeathFlowWidget::FocusRetry() { RetryButton->SetUserFocus(GetOwningPlayer()); }
 void USWDeathFlowWidget::RetryClicked()
 {
+	UE_LOG(LogTemp, Display, TEXT("[SWLifeDiag] Event=RetryWidgetClicked Widget=%s Controller=%s"), *GetName(), *GetNameSafe(GetOwningPlayer()));
  if (ABasePlayerController* Controller = Cast<ABasePlayerController>(GetOwningPlayer())) Controller->RequestGameOverRetry();
 }

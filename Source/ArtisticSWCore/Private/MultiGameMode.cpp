@@ -968,11 +968,16 @@ void AMultiGameMode::RefreshSpectatorTargets()
 }
 void AMultiGameMode::NotifyPlayerDeathFinished(APawn* DeadPawn)
 {
+ UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=ModeDeathFinishedEntered Pawn=%s Authority=%d Session=%d"), *GetNameSafe(DeadPawn), HasAuthority(), static_cast<int32>(SessionLifePhase));
  if (!HasAuthority() || !DeadPawn || DeadPawn->GetWorld() != GetWorld()) return;
  AController* Controller = DeadPawn->GetController();
  if (!Controller && DeadPawn->GetPlayerState()) Controller = DeadPawn->GetPlayerState()->GetOwningController();
  if (!Controller || !PlayerIndices.Contains(Controller) || FinishedDeadPlayers.Contains(Controller)
-  || SessionLifePhase == ESWSessionLifePhase::GameOver || SessionLifePhase == ESWSessionLifePhase::ReturningAfterGameOver) return;
+  || SessionLifePhase == ESWSessionLifePhase::GameOver || SessionLifePhase == ESWSessionLifePhase::ReturningAfterGameOver)
+ {
+  UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=ModeDeathFinishedRejected Controller=%s Registered=%d AlreadyDead=%d Session=%d"), *GetNameSafe(Controller), PlayerIndices.Contains(Controller), FinishedDeadPlayers.Contains(Controller), static_cast<int32>(SessionLifePhase));
+  return;
+ }
  ISWRespawnControllerInterface* Flow = Cast<ISWRespawnControllerInterface>(Controller);
  const bool bCaptured = Flow && Flow->CaptureLatestLifeProgress(DeadPawn);
  FinishedDeadPlayers.Add(Controller);
@@ -982,6 +987,7 @@ void AMultiGameMode::NotifyPlayerDeathFinished(APawn* DeadPawn)
  State.RespawnEndServerTime = SessionLifePhase == ESWSessionLifePhase::Playing
   ? (GetGameState<AGameStateBase>() ? GetGameState<AGameStateBase>()->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds()) + FMath::Max(0.f, IndividualRespawnDelay) : 0;
  Controller->UnPossess();
+ UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=RespawnWaiting Controller=%s Slot=%d Captured=%d WaitingGeneration=%d EndServerTime=%.3f Delay=%.3f Session=%d"), *GetNameSafe(Controller), GetPlayerIndex(Controller), bCaptured, State.WaitingGeneration, State.RespawnEndServerTime, IndividualRespawnDelay, static_cast<int32>(SessionLifePhase));
  DeadPawn->SetLifeSpan(FMath::Max(IndividualRespawnDelay + 2.f, 10.f));
  if (!bCaptured) UE_LOG(LogSWRoom, Error, TEXT("RespawnProgressMissing Index=%d Generation=%d"), GetPlayerIndex(Controller), State.WaitingGeneration);
  if (SessionLifePhase == ESWSessionLifePhase::Playing && bCaptured)
@@ -994,10 +1000,12 @@ void AMultiGameMode::NotifyPlayerDeathFinished(APawn* DeadPawn)
 }
 void AMultiGameMode::TryRespawnPlayer(AController* Controller, int32 ExpectedGeneration)
 {
+ UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=RespawnTimerFired Controller=%s ExpectedGeneration=%d Session=%d Dead=%d"), *GetNameSafe(Controller), ExpectedGeneration, static_cast<int32>(SessionLifePhase), FinishedDeadPlayers.Contains(Controller));
  if (!IsValid(Controller) || !FinishedDeadPlayers.Contains(Controller) || SessionLifePhase != ESWSessionLifePhase::Playing
   || !DeathFlowStates.Contains(Controller) || DeathFlowStates.FindChecked(Controller).WaitingGeneration != ExpectedGeneration) return;
  ISWRespawnControllerInterface* Flow = Cast<ISWRespawnControllerInterface>(Controller);
  UPlayerRespawnPointComponent* Point = FindShipRespawnPoint(GetPlayerIndex(Controller));
+ UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=RespawnPrerequisites Controller=%s Slot=%d Point=%s Flow=%d PendingProgress=%d Ship=%s"), *GetNameSafe(Controller), GetPlayerIndex(Controller), *GetNameSafe(Point), Flow != nullptr, Flow && Flow->HasPendingLifeProgress(), *GetNameSafe(PlayerRespawnShip.Get()));
  bool bSuccess = false;
  if (Point && Flow && Flow->HasPendingLifeProgress())
  {
@@ -1019,6 +1027,7 @@ void AMultiGameMode::TryRespawnPlayer(AController* Controller, int32 ExpectedGen
   return;
  }
  FinishedDeadPlayers.Remove(Controller);
+ UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=RespawnSucceeded Controller=%s Pawn=%s Generation=%d"), *GetNameSafe(Controller), *GetNameSafe(Controller->GetPawn()), ExpectedGeneration);
  RespawnTimers.Remove(Controller);
  DeathFlowStates.FindOrAdd(Controller).Phase = ESWPersonalLifePhase::Alive;
  Flow->CaptureLatestLifeProgress(Controller->GetPawn());

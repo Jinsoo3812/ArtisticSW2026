@@ -579,6 +579,10 @@ void UBaseHealthComponent::SetDeathState(EBaseDeathState NewDeathState)
 void UBaseHealthComponent::BroadcastDeathStateTransition(EBaseDeathState OldDeathState)
 {
 	const EBaseDeathState NewDeathState = DeathPresentation.DeathState;
+	UE_LOG(LogTemp, Display, TEXT("[SWLifeDiag] Event=HealthDeathTransition Owner=%s NetMode=%d Role=%d Old=%d New=%d FinishedBound=%d"),
+		*GetNameSafe(GetOwningActor()), GetOwningActor() ? static_cast<int32>(GetOwningActor()->GetNetMode()) : -1,
+		GetOwningActor() ? static_cast<int32>(GetOwningActor()->GetLocalRole()) : -1,
+		static_cast<int32>(OldDeathState), static_cast<int32>(NewDeathState), OnDeathFinished.IsBound());
 	// StartDeath and FinishDeath may coalesce into one replicated update. Preserve
 	// the missing DeathStarted notification before broadcasting DeathFinished.
 	if (OldDeathState == EBaseDeathState::NotDead

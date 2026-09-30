@@ -51,6 +51,8 @@
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
 #include "Animation/MotionMatchingAnimInstance.h"
+#include "PhysicsEngine/PhysicsAsset.h"
+#include "PhysicsEngine/SkeletalBodySetup.h"
 #include "Components/BaseHealthComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Ship.h"
@@ -390,7 +392,8 @@ bool ABasePlayer::HandleFinalDepartureRequested(AActor* Requester)
 
 void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 {
-	ApplyLocalDeathRagdoll();
+	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerDeathFinished Player=%s Authority=%d Controller=%s PlayerState=%s Health=%s"),
+		*GetName(), HasAuthority(), *GetNameSafe(GetController()), *GetNameSafe(GetPlayerState()), *GetNameSafe(InHealthComponent));
 	if (HasAuthority())
 	{
 		if (ABasePlayerController* Flow = Cast<ABasePlayerController>(GetController())) Flow->CaptureLatestLifeProgress(this);
@@ -398,6 +401,38 @@ void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 		{
 			GameMode->NotifyPlayerDeathFinished(this);
 		}
+	}
+	// GameMode must capture/register the owning controller before unpossession.
+	// Presentation must never detach the player controller on either peer.
+	ApplyLocalDeathRagdoll();
+	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerRagdollAfterApply Player=%s NetMode=%d Simulating=%d AnyBodySimulating=%d Mesh=%s"),
+		*GetName(), static_cast<int32>(GetNetMode()), GetMesh() && GetMesh()->IsSimulatingPhysics(), GetMesh() && GetMesh()->IsAnySimulatingPhysics(), *GetNameSafe(GetMesh()));
+}
+
+void ABasePlayer::ApplyLocalDeathRagdoll()
+{
+	if (bLocalDeathRagdollApplied) return;
+	Super::ApplyLocalDeathRagdoll();
+	USkeletalMeshComponent* RagdollMesh = GetMesh();
+	if (!RagdollMesh) return;
+	// Blend every simulated body into the rendered pose, including bodies with
+	// an authored custom physics type. This is presentation local to each peer.
+	RagdollMesh->SetAllBodiesPhysicsBlendWeight(1.0f, false);
+	int32 SimulatedBodies = 0;
+	if (const UPhysicsAsset* RagdollAsset = RagdollMesh->GetPhysicsAsset())
+	{
+		for (const USkeletalBodySetup* BodySetup : RagdollAsset->SkeletalBodySetups)
+		{
+			if (BodySetup && RagdollMesh->IsSimulatingPhysics(BodySetup->BoneName)) ++SimulatedBodies;
+		}
+	}
+	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerRagdollBodies Player=%s NetMode=%d Asset=%s Bodies=%d Simulated=%d TransformMode=%d BlendPhysics=%d DedicatedPhysics=%d"),
+		*GetName(), static_cast<int32>(GetNetMode()), *GetNameSafe(RagdollMesh->GetPhysicsAsset()), RagdollMesh->Bodies.Num(), SimulatedBodies,
+		static_cast<int32>(RagdollMesh->PhysicsTransformUpdateMode), RagdollMesh->bBlendPhysics, RagdollMesh->bEnablePhysicsOnDedicatedServer);
+	if (GetNetMode() != NM_DedicatedServer && SimulatedBodies == 0)
+	{
+		UE_LOG(LogSWRoom, Warning, TEXT("[SWLifeDiag] Event=PlayerRagdollUnavailable Player=%s Asset=%s Bodies=%d"),
+			*GetName(), *GetNameSafe(RagdollMesh->GetPhysicsAsset()), RagdollMesh->Bodies.Num());
 	}
 }
 

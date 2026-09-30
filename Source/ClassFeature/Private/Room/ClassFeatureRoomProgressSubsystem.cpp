@@ -1,5 +1,6 @@
 #include "Room/ClassFeatureRoomProgressSubsystem.h"
 #include "PlayerRespawnPointComponent.h"
+#include "Room/SWRoomReadyState.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 #include "BasePlayer.h"
@@ -209,6 +210,7 @@ void UClassFeatureRoomProgressSubsystem::HandlePostLoadMap(UWorld* World)
 	if (!GetRoom(GetGameInstance()) || !World || World->GetGameInstance() != GetGameInstance()) return;
 	PendingWorld = World;
 	USWRoomProgressSubsystem* TransitionRoom = GetRoom(GetGameInstance());
+ if (World->GetNetMode()!=NM_Client) TransitionRoom->ConsumeDevelopmentFinalDeparturePending(World);
  RestoreDeadline = FPlatformTime::Seconds() + (TransitionRoom && (TransitionRoom->IsReturnTravelPending() || TransitionRoom->IsFinalDepartureTravelPending()) ? 30.0 : 10.0);
  FinalPlacedControllers.Reset(); bFinalDeparturePlayersPlaced = false; bTravelAccepted = false;
 	bReturning = false;
@@ -226,12 +228,18 @@ void UClassFeatureRoomProgressSubsystem::HandlePostLoadMap(UWorld* World)
 
 bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 {
+ // Clear temporary encounter permission on every unsuccessful restore exit.
+ struct FDevelopmentRestoreScope
+ {
+  USWRoomProgressSubsystem* Room; UWorld* World; bool bKeep = false;
+  ~FDevelopmentRestoreScope() { if (!bKeep && Room) Room->ClearDevelopmentFinalEncounterWorld(World); }
+ } DevelopmentScope{GetRoom(GetGameInstance()), PendingWorld.Get()};
 	UWorld* World = PendingWorld.Get();
 	if (!World || World->GetGameInstance() != GetGameInstance()) return false;
 	AMultiGameMode* Mode = World->GetAuthGameMode<AMultiGameMode>();
 	if (!Mode || !World->HasBegunPlay())
 	{
-		if (FPlatformTime::Seconds() < RestoreDeadline) return true;
+		if (FPlatformTime::Seconds() < RestoreDeadline) { DevelopmentScope.bKeep=true; return true; }
 		UE_LOG(LogSWRoom, Error, TEXT("Hosted room world did not become ready"));
 		FPlatformMisc::RequestExit(false);
 		return false;
@@ -276,7 +284,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 	{
 		if (!RestoreSharedWorld(World))
 		{
-			if (FPlatformTime::Seconds() < RestoreDeadline) return true;
+			if (FPlatformTime::Seconds() < RestoreDeadline) { DevelopmentScope.bKeep=true; return true; }
 			FSWFinalEncounterDiagnostics::Write(TEXT("FinalRestore"), TEXT("SharedRestoreFailed"),
 				FString::Printf(TEXT("AttemptId=%d"), ActiveFinalDepartureAttemptId));
 			return false;
@@ -323,11 +331,11 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 		UE_LOG(LogSWRoom, Display, TEXT("Flow=ShipPlacement Result=Placed Strategy=%s"), *Placement);
 		bReturnShipPlaced = true;
 		ShipSafetyCheckAt = FPlatformTime::Seconds() + 0.5;
-		return true;
+		DevelopmentScope.bKeep=true; return true;
 	}
 	if (bReturnShipPlaced)
 	{
-		if (FPlatformTime::Seconds() < ShipSafetyCheckAt) return true;
+		if (FPlatformTime::Seconds() < ShipSafetyCheckAt) { DevelopmentScope.bKeep=true; return true; }
 		AKelvinShip* Ship = nullptr;
 		AActor* ShipEntry = nullptr;
 		int32 MarkerCount = 0;
@@ -354,13 +362,13 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 			{ UE_LOG(LogSWRoom, Error, TEXT("Room ship fallback failed: %s"), *Reason); FPlatformMisc::RequestExit(false); return false; }
 			bShipSafetyFallbackUsed = true;
 			ShipSafetyCheckAt = FPlatformTime::Seconds() + 0.5;
-			return true;
+			DevelopmentScope.bKeep=true; return true;
 			}
 		}
 	}
 	if (!bFinalDepartureSharedRestored && !RestoreSharedWorld(World))
 	{
-		if (FPlatformTime::Seconds() < RestoreDeadline) return true;
+		if (FPlatformTime::Seconds() < RestoreDeadline) { DevelopmentScope.bKeep=true; return true; }
 		UE_LOG(LogSWRoom, Error, TEXT("Hosted room shared progress restore failed"));
 		FPlatformMisc::RequestExit(false);
 		return false;
@@ -369,7 +377,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
  {
   if (!AreTransitionParticipantsReady(World))
   {
-   if (FPlatformTime::Seconds() < RestoreDeadline) return true;
+   if (FPlatformTime::Seconds() < RestoreDeadline) { DevelopmentScope.bKeep=true; return true; }
    UE_LOG(LogSWRoom, Error, TEXT("World restore participant readiness timeout Generation=%d"), Room->GetRestoreGeneration());
    FPlatformMisc::RequestExit(false); return false;
   }
@@ -388,7 +396,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
    UPlayerRespawnPointComponent* Point = nullptr; int32 Count = 0;
    for (UPlayerRespawnPointComponent* Candidate : Points)
     if (Slot >= 0 && Slot <= 1 && Candidate->PlayerSlot == static_cast<ESWPlayerSlot>(Slot)) { Point = Candidate; ++Count; }
-   if (!Player || Player->GetController() != Controller || !Player->HasCompletedInitialPossession()) return true;
+   if (!Player || Player->GetController() != Controller || !Player->HasCompletedInitialPossession()) { DevelopmentScope.bKeep=true; return true; }
    if (Count != 1 || !Point || !Point->IsRegistered() || Point->GetOwner() != Ship || Point->GetComponentTransform().ContainsNaN()
     || !Player->TeleportTo(Point->GetComponentLocation(), Point->GetComponentRotation(), false, false))
    { UE_LOG(LogSWRoom, Error, TEXT("FinalPlayersPlacementFailed Slot=%d"), Slot); FPlatformMisc::RequestExit(false); return false; }
@@ -421,7 +429,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 		bool bHostPresent = false;
 		for (TActorIterator<ABasePlayer> It(World); It; ++It)
 			if (It->GetController() && Mode->GetPlayerIndex(It->GetController()) == 0) bHostPresent = true;
-		if (!bHostPresent) return true;
+		if (!bHostPresent) { DevelopmentScope.bKeep=true; return true; }
 		FString Error;
 		if (!TrySave(World, ESWRoomSaveKind::Return, Error))
 		{
@@ -436,12 +444,13 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 		bool bHostPresent = false;
 		for (TActorIterator<ABasePlayer> It(World); It; ++It)
 			if (It->GetController() && Mode->GetPlayerIndex(It->GetController()) == 0) bHostPresent = true;
-		if (!bHostPresent) return true;
+		if (!bHostPresent) { DevelopmentScope.bKeep=true; return true; }
 		FString Error;
 		if (!TrySave(World, ESWRoomSaveKind::Return, Error))
 		{
 			FSWFinalEncounterDiagnostics::Write(TEXT("FinalRestore"), TEXT("SaveFailed"), Error);
 			Room->ClearFinalDepartureTravelPending();
+   Room->ClearDevelopmentFinalEncounterWorld(World);
 			for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
 				if (APlayerController* Controller = It->Get())
 					Controller->ClientMessage(TEXT("울돌목 출항 저장에 실패했습니다. 다시 시도해 주세요."));
@@ -451,6 +460,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 			FSWFinalEncounterDiagnostics::Write(TEXT("FinalRestore"), TEXT("SaveSucceeded"),
 				FString::Printf(TEXT("Completed=%d"), Room->GetActiveRoom()->bFinalDepartureCompleted));
 		}
+  bDevelopmentFinalDeparture=false;
 	}
 	Room->ClearGameOverTravelPending();
 	Room->ClearGameOverRetryTravelPending(); bHasRetryRollback = false; RollbackHost = FSWRoomPlayerProgress(); RollbackGuests.Reset(); RollbackShared = FSWRoomSharedProgress(); Room->ExpectedTransitionPlayers.Reset();
@@ -521,6 +531,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 	Mode->OnGameOverRequested.AddDynamic(this, &UClassFeatureRoomProgressSubsystem::HandleGameOverRestart);
 	PendingWorld.Reset();
 	RestoreTickerHandle.Reset();
+ DevelopmentScope.bKeep=true;
 	return false;
 }
 
@@ -1001,6 +1012,37 @@ bool UClassFeatureRoomProgressSubsystem::TryReturn(UWorld* World, ABasePlayer* R
 
 bool UClassFeatureRoomProgressSubsystem::TryFinalDeparture(UWorld* World, ABasePlayer* Requester)
 {
+ FString Error;
+ return TryFinalDepartureInternal(World, Requester, Requester ? Cast<ABasePlayerController>(Requester->GetController()) : nullptr, false, Error);
+}
+
+bool UClassFeatureRoomProgressSubsystem::TryDevelopmentFinalDeparture(UWorld* World, ABasePlayerController* Requester, FString& OutError)
+{
+ OutError=TEXT("생존 상태에서 출항 테스트를 실행하세요");
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+ USWRoomProgressSubsystem* Room=GetRoom(GetGameInstance());
+ AMultiGameMode* Mode=World ? World->GetAuthGameMode<AMultiGameMode>() : nullptr;
+ ASWRoomReadyState* Ready=nullptr;
+ if (World) for (TActorIterator<ASWRoomReadyState> It(World);It;++It) { Ready=*It; break; }
+ if (!Requester || !Requester->HasAuthority() || !Requester->IsLifeCharacterAlive() || !Mode || !Room
+  || !Room->IsDevelopmentTestSessionEnabled(World) || !Mode->IsRoomHostController(Requester)
+  || Mode->GetSessionLifePhase()!=ESWSessionLifePhase::Playing || !Ready || !Ready->bWorldReady
+  || Ready->RestoreGeneration!=Room->GetRestoreGeneration() || IsDevelopmentTransitionBusy()
+  || Room->IsGameOverRetryTravelPending()) return false;
+ if (!Requester->CleanupLifeInteraction()) return false;
+ if (AShip* Ship=Cast<AShip>(Requester->GetPawn())) Ship->ForceDisembark();
+ if (ACannon* Cannon=Cast<ACannon>(Requester->GetPawn())) Cannon->ForceExit();
+ ABasePlayer* Character=Requester->GetLifeCharacter();
+ if (!Character || Character->GetController()!=Requester || !Requester->IsLifeCharacterAlive()) return false;
+ return TryFinalDepartureInternal(World,Character,Requester,true,OutError);
+#else
+ return false;
+#endif
+}
+
+bool UClassFeatureRoomProgressSubsystem::TryFinalDepartureInternal(UWorld* World, ABasePlayer* Requester, ABasePlayerController* Controller, bool bDevelopmentTest, FString& OutError)
+{
+ OutError=TEXT("최종 출항의 안전/진행 조건을 만족하지 않습니다");
 	USWRoomProgressSubsystem* Room = GetRoom(GetGameInstance());
 	AMultiGameMode* Mode = World ? World->GetAuthGameMode<AMultiGameMode>() : nullptr;
 	UStoryFacadeSubsystem* Story = GetGameInstance()
@@ -1019,11 +1061,14 @@ bool UClassFeatureRoomProgressSubsystem::TryFinalDeparture(UWorld* World, ABaseP
 	const bool bRetryAllowed = Room && Room->GetActiveRoom()
 		&& !Room->GetActiveRoom()->bFinalDepartureCompleted;
 	const bool bValid = Room && Mode && Story && Requester
-		&& Requester->HasAuthority() && Mode->CanMutateGameplay(Requester->GetController()) && bRequesterInWorld && bPrerequisite && bRetryAllowed && !Story->IsStoryNodeReached(EStoryNode::FinalBossDefeated)
+		&& Controller && Requester->HasAuthority() && Mode->CanMutateGameplay(Controller) && bRequesterInWorld
+  && Controller->GetLifeCharacter()==Requester && Requester->GetWorld()==World
+  && (bDevelopmentTest || bPrerequisite) && (bDevelopmentTest || bRetryAllowed) && !Story->IsStoryNodeReached(EStoryNode::FinalBossDefeated)
 		&& !bReturning && !Mode->IsLevelRestartRequested() && !Room->IsNewRoomPending()
 		&& !Room->IsReturnTravelPending() && !Room->IsFinalDepartureTravelPending()
 		&& !Room->IsGameOverTravelPending() && MarkerCount == 1 && PlayerShipCount == 1 && IsValid(PlayerShip)
-		&& (bAccepted || Story->CanCompleteStoryNode(EStoryNode::UldolmokBattleQuestAccepted));
+		&& (!bDevelopmentTest || Mode->GetPlayerRespawnShip()==PlayerShip)
+  && (bDevelopmentTest || bAccepted || Story->CanCompleteStoryNode(EStoryNode::UldolmokBattleQuestAccepted));
 	FSWFinalEncounterDiagnostics::Write(TEXT("FinalDeparture"), bValid ? TEXT("Requested") : TEXT("Rejected"),
 		FString::Printf(TEXT("Requester=%s Prerequisite=%d Accepted=%d RetryAllowed=%d Markers=%d Ship=%s TransitionActive=%d"),
 			*GetNameSafe(Requester), bPrerequisite, bAccepted, bRetryAllowed, MarkerCount,
@@ -1044,9 +1089,12 @@ bool UClassFeatureRoomProgressSubsystem::TryFinalDeparture(UWorld* World, ABaseP
 		ReturnControllers.Add(Controller);
 		PendingReturnControllers.Add(Controller);
 	}
-	if (ReturnControllers.IsEmpty()) return false;
+	if (ReturnControllers.IsEmpty() || (bDevelopmentTest && ReturnControllers.Num()!=2)) return false;
+ if (bDevelopmentTest) for (const TWeakObjectPtr<ABasePlayerController>& Participant:ReturnControllers)
+  if (!Participant.IsValid() || !CaptureControllerProgress(Participant.Get(),false,OutError)) return false;
 	RecordTransitionParticipants(World);
 	bReturning = true;
+ bDevelopmentFinalDeparture = bDevelopmentTest;
 	TransitionReason = ERoomTransitionReason::FinalDeparture;
 	ActiveFinalDepartureAttemptId = ++FinalDepartureAttemptSerial;
 	World->GetTimerManager().SetTimer(ReturnPresentationTimeoutHandle, this,
@@ -1075,6 +1123,7 @@ void UClassFeatureRoomProgressSubsystem::ConfirmReturnPresentation(ABasePlayerCo
 
 void UClassFeatureRoomProgressSubsystem::BeginReturnTravel()
 {
+	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=ReturnTravelEntered Returning=%d Reason=%d PendingAck=%d"), bReturning, static_cast<int32>(TransitionReason), PendingReturnControllers.Num());
 	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
 	if (!bReturning || !World) return;
 	World->GetTimerManager().ClearTimer(ReturnPresentationTimeoutHandle);
@@ -1085,8 +1134,9 @@ void UClassFeatureRoomProgressSubsystem::BeginReturnTravel()
 		UStoryFacadeSubsystem* Story = GetGameInstance()->GetSubsystem<UStoryFacadeSubsystem>();
 		const bool bAlreadyAccepted = Story
 			&& Story->IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted);
-		const bool bCompleted = Story && (bAlreadyAccepted
-			|| Story->CompleteStoryNode(EStoryNode::UldolmokBattleQuestAccepted));
+  const bool bSkip = bDevelopmentFinalDeparture && Story && !bAlreadyAccepted && !Story->CanCompleteStoryNode(EStoryNode::UldolmokBattleQuestAccepted);
+  const bool bCompleted = Story && (bAlreadyAccepted || bSkip || Story->CompleteStoryNode(EStoryNode::UldolmokBattleQuestAccepted));
+  if (bSkip) UE_LOG(LogSWRoom, Display, TEXT("StoryCommit=SkippedDevelopmentPrerequisite"));
 		FSWFinalEncounterDiagnostics::Write(TEXT("FinalDeparture"), TEXT("StoryCommit"),
 			FString::Printf(TEXT("AttemptId=%d Before=%d Result=%d"), ActiveFinalDepartureAttemptId,
 				bAlreadyAccepted, bCompleted));
@@ -1102,7 +1152,10 @@ void UClassFeatureRoomProgressSubsystem::BeginReturnTravel()
 			CapturePlayer(*It);
 			++PlayerCount;
 		}
-		const bool bCaptured = CaptureSharedWorld(World);
+  bool bPlayersCaptured=true;
+  if (bDevelopmentFinalDeparture) for (const TWeakObjectPtr<ABasePlayerController>& Participant:ReturnControllers)
+  { FString Error; bPlayersCaptured &= Participant.IsValid() && CaptureControllerProgress(Participant.Get(),false,Error); }
+		const bool bCaptured = bPlayersCaptured && CaptureSharedWorld(World);
 		FSWFinalEncounterDiagnostics::Write(TEXT("FinalDeparture"), TEXT("ProgressCaptured"),
 			FString::Printf(TEXT("AttemptId=%d Players=%d Shared=%d"), ActiveFinalDepartureAttemptId,
 				PlayerCount, bCaptured));
@@ -1111,6 +1164,7 @@ void UClassFeatureRoomProgressSubsystem::BeginReturnTravel()
 			CancelReturnPresentation();
 			return;
 		}
+  if (bDevelopmentFinalDeparture) GetRoom(GetGameInstance())->SetDevelopmentFinalDeparturePending(World,true,true);
 		const bool bFinalTravelAccepted = Mode->RequestHostedRoomFinalDepartureTravel();
 		FSWFinalEncounterDiagnostics::Write(TEXT("FinalDeparture"), TEXT("ServerTravel"),
 			FString::Printf(TEXT("AttemptId=%d Accepted=%d"), ActiveFinalDepartureAttemptId, bFinalTravelAccepted));
@@ -1125,6 +1179,7 @@ void UClassFeatureRoomProgressSubsystem::BeginReturnTravel()
 
 void UClassFeatureRoomProgressSubsystem::HandleReturnPresentationTimeout()
 {
+	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=ReturnLoadingAckTimeout Returning=%d Reason=%d PendingAck=%d"), bReturning, static_cast<int32>(TransitionReason), PendingReturnControllers.Num());
 	if (TransitionReason == ERoomTransitionReason::FinalDeparture)
 		FSWFinalEncounterDiagnostics::Write(TEXT("FinalDeparture"), TEXT("PresentationTimeout"),
 			FString::Printf(TEXT("AttemptId=%d Remaining=%d"), ActiveFinalDepartureAttemptId,
@@ -1140,6 +1195,9 @@ void UClassFeatureRoomProgressSubsystem::HandleReturnPresentationTimeout()
 
 void UClassFeatureRoomProgressSubsystem::CancelReturnPresentation()
 {
+	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=ReturnCancelled Reason=%d RetryRequest=%llu Message=%s"), static_cast<int32>(TransitionReason), RetryRequestId, *RetryCancelReason);
+ if (USWRoomProgressSubsystem* Room=GetRoom(GetGameInstance())) Room->ClearDevelopmentFinalEncounterWorld(GetGameInstance()->GetWorld());
+ bDevelopmentFinalDeparture=false;
 	const bool bRetry = TransitionReason == ERoomTransitionReason::GameOverRetry;
  if (bRetry)
  {
@@ -1274,6 +1332,7 @@ bool UClassFeatureRoomProgressSubsystem::ValidateRetryStorage(UWorld* World, FSt
 }
 bool UClassFeatureRoomProgressSubsystem::TryGameOverRetry(UWorld* World, ABasePlayerController* Requester, uint64 RequestId, FString& OutError)
 {
+ UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=RetrySubsystemEntered Controller=%s Request=%llu World=%s Returning=%d"), *GetNameSafe(Requester), RequestId, *GetNameSafe(World), bReturning);
  USWRoomProgressSubsystem* Room = GetRoom(GetGameInstance());
  USWRoomSaveGame* Save = Room ? Room->GetMutableActiveRoom() : nullptr;
  AMultiGameMode* Mode = World ? World->GetAuthGameMode<AMultiGameMode>() : nullptr;
@@ -1299,6 +1358,7 @@ bool UClassFeatureRoomProgressSubsystem::TryGameOverRetry(UWorld* World, ABasePl
   if (ABasePlayerController* Controller = Cast<ABasePlayerController>(It->Get()))
   { ReturnControllers.Add(Controller); PendingReturnControllers.Add(Controller); }
  RetryRequester = Requester; RetryRequestId = RequestId; RetryCancelReason.Reset();
+ UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=RetryCaptureSucceeded Controller=%s Request=%llu Participants=%d"), *GetNameSafe(Requester), RequestId, ReturnControllers.Num());
  TransitionReason = ERoomTransitionReason::GameOverRetry; bReturning = true; bTravelAccepted = false;
  RecordTransitionParticipants(World); Mode->SetGameOverRetryTransitionPending(true);
  World->GetTimerManager().SetTimer(ReturnPresentationTimeoutHandle, this, &UClassFeatureRoomProgressSubsystem::HandleReturnPresentationTimeout, 3.f, false);

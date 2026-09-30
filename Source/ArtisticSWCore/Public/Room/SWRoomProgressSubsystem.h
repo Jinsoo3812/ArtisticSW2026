@@ -20,7 +20,14 @@ class ARTISTICSWCORE_API USWRoomProgressSubsystem : public UGameInstanceSubsyste
 {
 	GENERATED_BODY()
 public:
-	void MarkGameOverRetryTravelPending() { bGameOverRetryTravelPending = true; }
+	bool IsDevelopmentTestSessionEnabled(UWorld* World) const;
+	void SetDevelopmentTestSessionEnabled(UWorld* World, bool bEnabled);
+	void SetDevelopmentFinalDeparturePending(UWorld* World, bool bPending, bool bValidatedTransition = false);
+	bool ConsumeDevelopmentFinalDeparturePending(UWorld* World);
+	bool IsDevelopmentFinalEncounterWorld(UWorld* World) const;
+	void ClearDevelopmentFinalEncounterWorld(UWorld* World);
+	virtual void Deinitialize() override;
+	void MarkGameOverRetryTravelPending() { ClearDevelopmentFinalEncounterWorld(nullptr); bGameOverRetryTravelPending = true; }
 	void ClearGameOverRetryTravelPending() { bGameOverRetryTravelPending = false; }
 	bool IsGameOverRetryTravelPending() const { return bGameOverRetryTravelPending; }
 	UPROPERTY(Transient) TArray<FSWExpectedTransitionPlayer> ExpectedTransitionPlayers;
@@ -35,16 +42,21 @@ public:
 	FGuid GetHostKey() const { return HostKey; }
 	int32 AdvanceRestoreGeneration() { return ++RestoreGeneration; }
 	int32 GetRestoreGeneration() const { return RestoreGeneration; }
-	void MarkReturnTravelPending() { bReturnTravelPending = true; }
+	void MarkReturnTravelPending() { ClearDevelopmentFinalEncounterWorld(nullptr); bReturnTravelPending = true; }
 	void ClearReturnTravelPending() { bReturnTravelPending = false; }
 	bool IsReturnTravelPending() const { return bReturnTravelPending; }
 	void MarkFinalDepartureTravelPending() { bFinalDepartureTravelPending = true; }
 	void ClearFinalDepartureTravelPending() { bFinalDepartureTravelPending = false; }
 	bool IsFinalDepartureTravelPending() const { return bFinalDepartureTravelPending; }
-	void MarkGameOverTravelPending() { bGameOverTravelPending = true; }
+	void MarkGameOverTravelPending() { ClearDevelopmentFinalEncounterWorld(nullptr); bGameOverTravelPending = true; }
 	void ClearGameOverTravelPending() { bGameOverTravelPending = false; }
 	bool IsGameOverTravelPending() const { return bGameOverTravelPending; }
 private:
+	TWeakObjectPtr<UWorld> DevelopmentSessionWorld;
+	TWeakObjectPtr<UWorld> DevelopmentEncounterWorld;
+	bool bDevelopmentSessionEnabled = false;
+	bool bDevelopmentFinalDeparturePending = false;
+	FString DevelopmentFinalTargetPackage;
 	UPROPERTY(Transient) TObjectPtr<USWRoomSaveGame> ActiveRoom;
 	FGuid HostKey;
 	bool bHostedRoom = false;

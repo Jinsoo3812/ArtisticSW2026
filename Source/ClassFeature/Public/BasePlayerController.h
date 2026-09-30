@@ -46,6 +46,10 @@ class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerContr
 	GENERATED_BODY()
 
 public:
+	ABasePlayerController();
+	bool IsDevelopmentTestInputBlockedByUI() const;
+	bool IsDevelopmentTestInputBlockedByServerUI() const;
+	UPROPERTY(VisibleAnywhere) TObjectPtr<class USWDevTestInputComponent> DevTestInput;
 	virtual bool CaptureLatestLifeProgress(APawn* SourcePawn) override;
 	virtual void SetDeathFlowState(const FSWDeathFlowState& State) override;
 	virtual bool HasPendingLifeProgress() const override { return bHasLatestLifeProgress; }
@@ -81,6 +85,9 @@ private:
 	UPROPERTY(Transient) TObjectPtr<class ACameraActor> DeathCamera;
 	ESWSessionLifePhase LocalSessionPhase = ESWSessionLifePhase::Playing;
 	bool bDeathInputLocked = false;
+	bool bDeathFlowInputModeApplied = false;
+	bool bDeathFlowGameOverInput = false;
+	bool bRetryFocusApplied = false;
 	bool bGameOverCharacterProtected = false;
 	bool bLifeCharacterCouldBeDamaged = true;
 	bool bLifeCharacterWasInvulnerable = false;
@@ -101,6 +108,7 @@ private:
 	double LastReceiveTime = -1;
 	double LastServerCameraTime = -1;
 	double LastSpectatorRefreshTime = -1;
+	double LastDeathFlowDiagnosticTime = -1;
 	uint64 NextRetryRequestId = 0;
 	uint64 PendingRetryRequestId = 0;
 	uint64 LastRetryRequestId = 0;

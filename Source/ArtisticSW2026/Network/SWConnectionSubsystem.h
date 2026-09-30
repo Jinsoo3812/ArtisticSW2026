@@ -19,6 +19,7 @@ class ARTISTICSW2026_API USWConnectionSubsystem : public UGameInstanceSubsystem,
 	GENERATED_BODY()
 
 public:
+	bool IsLoadingPresentationVisible() const { return bLoadingPresentationVisible; }
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
