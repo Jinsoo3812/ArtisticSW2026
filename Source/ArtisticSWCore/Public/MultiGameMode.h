@@ -200,8 +200,8 @@ public:
 	bool ConsumeReconnectSnapshotForController(AController* Controller, FSWPlayerProgressSnapshot& OutSnapshot);
 	virtual void RestartPlayer(AController* NewPlayer) override;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Respawn", meta=(ClampMin="0.0"))
-	float IndividualRespawnDelay = 5.0f;
+	/** One fixed duration for both personal respawn and corpse removal. */
+	static constexpr float IndividualRespawnDelay = 10.0f;
 
     
 protected:

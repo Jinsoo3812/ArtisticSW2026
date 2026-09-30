@@ -60,6 +60,12 @@ ABasePlayerController::ABasePlayerController()
 #include "Engine/GameViewportClient.h"
 #include "Network/Lobby/SWRoomSubsystem.h"
 #include "HAL/PlatformMisc.h"
+#include "HAL/IConsoleManager.h"
+
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+static TAutoConsoleVariable<int32> CVarSWShipMotionDiag(
+	TEXT("sw.ShipMotionDiag"), 0, TEXT("Report ship, rider and camera motion peaks. 0=off, 1=on."));
+#endif
 
 bool ABasePlayerController::IsDevelopmentTestInputBlockedByServerUI() const
 {
@@ -412,7 +418,7 @@ void ABasePlayerController::ClientReceiveSharedShipUpgradeResult_Implementation(
 
 void ABasePlayerController::BeginPlay()
 {
-	PrimaryActorTick.TickGroup = TG_PostUpdateWork;
+	PrimaryActorTick.TickGroup = TG_PrePhysics;
 	Super::BeginPlay();
 	if (IsLocalController() && GetWorld() && GetWorld()->WorldType == EWorldType::Game)
 	{
@@ -1382,6 +1388,7 @@ void ABasePlayerController::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	TickDeathFlow(DeltaTime);
+	TickShipMotionDiagnostics();
 	if (HasAuthority() && ActiveStorageChest && !CanAccessStorage(ActiveStorageChest)) CloseStorageFromServer(ActiveStorageChest);
 
 	if (GetWorld())
@@ -1397,6 +1404,93 @@ void ABasePlayerController::Tick(float DeltaTime)
 			}
 		}
 	}
+}
+
+void ABasePlayerController::TickShipMotionDiagnostics()
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (!GetWorld() || !CVarSWShipMotionDiag.GetValueOnGameThread() || (!HasAuthority() && !IsLocalController())) return;
+	ABasePlayer* Rider = GetLifeCharacter();
+	if (!Rider || !IsLifeCharacterAlive()) { ShipMotionDiagnostic = FSWShipMotionDiagnosticState(); return; }
+	AShip* ObservedShip = Cast<AShip>(GetPawn());
+	if (!ObservedShip)
+	{
+		for (AActor* Parent = Rider->GetAttachParentActor(); Parent; Parent = Parent->GetAttachParentActor())
+		{
+			if (AShip* ParentShip = Cast<AShip>(Parent)) { ObservedShip = ParentShip; break; }
+		}
+	}
+	UPrimitiveComponent* MovementBase = Rider->GetMovementBase();
+	if (!ObservedShip && MovementBase) ObservedShip = Cast<AShip>(MovementBase->GetOwner());
+	if (!ObservedShip)
+	{
+		// Keep the same reference ship during brief loss of deck contact.
+		for (TActorIterator<AShip> It(GetWorld()); It; ++It)
+		{
+			if (It->ActorHasTag(TEXT("Player")) && !It->ActorHasTag(TEXT("Enemy"))) { ObservedShip = *It; break; }
+		}
+	}
+	if (!ObservedShip) return;
+	const double Now = GetWorld()->GetTimeSeconds();
+	const FTransform ShipTransform = ObservedShip->GetActorTransform();
+	const FTransform RiderTransform = Rider->GetActorTransform();
+	const bool bCameraValid = IsLocalController() && PlayerCameraManager;
+	FTransform CameraTransform = FTransform::Identity;
+	if (bCameraValid)
+	{
+		const FMinimalViewInfo& POV = PlayerCameraManager->GetCameraCacheView();
+		CameraTransform = FTransform(POV.Rotation, POV.Location);
+	}
+	FTransform Current[6] = {
+		ShipTransform,
+		ObservedShip->ShipVisualMesh ? ObservedShip->ShipVisualMesh->GetComponentTransform().GetRelativeTransform(ShipTransform) : FTransform::Identity,
+		RiderTransform.GetRelativeTransform(ShipTransform),
+		Rider->GetMesh() ? Rider->GetMesh()->GetComponentTransform().GetRelativeTransform(RiderTransform) : FTransform::Identity,
+		bCameraValid ? CameraTransform.GetRelativeTransform(ShipTransform) : FTransform::Identity,
+		bCameraValid ? CameraTransform.GetRelativeTransform(RiderTransform) : FTransform::Identity
+	};
+	const FVector ShipVelocity = ObservedShip->BuoyancyRoot ? ObservedShip->BuoyancyRoot->GetPhysicsLinearVelocity() : ObservedShip->GetVelocity();
+	FSWShipMotionDiagnosticState& State = ShipMotionDiagnostic;
+	if (State.Ship.Get() != ObservedShip || State.Player.Get() != Rider || State.LastSampleTime < 0)
+	{
+		State = FSWShipMotionDiagnosticState(); State.Ship = ObservedShip; State.Player = Rider;
+		State.LastReportTime = Now;
+	}
+	else
+	{
+		const float SampleDt = static_cast<float>(Now - State.LastSampleTime);
+		State.PeakDeltaTime = FMath::Max(State.PeakDeltaTime, SampleDt);
+		State.PeakShipResidual = FMath::Max(State.PeakShipResidual,
+			(Current[0].GetLocation() - State.Previous[0].GetLocation() - State.PreviousVelocity * SampleDt).Size());
+		for (int32 Index = 0; Index < 6; ++Index)
+		{
+			State.PeakTranslation[Index] = FMath::Max(State.PeakTranslation[Index], FVector::Distance(Current[Index].GetLocation(), State.Previous[Index].GetLocation()));
+			State.PeakRotation[Index] = FMath::Max(State.PeakRotation[Index], FMath::RadiansToDegrees(Current[Index].GetRotation().AngularDistance(State.Previous[Index].GetRotation())));
+		}
+	}
+	for (int32 Index = 0; Index < 6; ++Index) State.Previous[Index] = Current[Index];
+	State.PreviousVelocity = ShipVelocity; State.LastSampleTime = Now; ++State.Samples;
+	if (Now - State.LastReportTime < 0.25) return;
+	const AGameStateBase* GameState = GetWorld()->GetGameState();
+	const UCharacterMovementComponent* Movement = Rider->GetCharacterMovement();
+	UE_LOG(LogSWRoom, Display, TEXT("[SWShipMotionDiag] Controller=%s Local=%d NetMode=%d Ship=%s ShipRole=%d Helm=%d Player=%s Pawn=%s Base=%s Attach=%s ServerTime=%.3f Samples=%d PeakDt=%.4f CameraValid=%d Speed=%.2f Accel=%s ShipVelocity=%s ShipResidual=%.3f"),
+		*GetName(), IsLocalController(), static_cast<int32>(GetNetMode()), *ObservedShip->GetName(), static_cast<int32>(ObservedShip->GetLocalRole()),
+		ObservedShip->GetRidingPlayer() == Rider, *Rider->GetName(), *GetNameSafe(GetPawn()), *GetNameSafe(MovementBase), *GetNameSafe(Rider->GetAttachParentActor()),
+		GameState ? GameState->GetServerWorldTimeSeconds() : Now, State.Samples, State.PeakDeltaTime, bCameraValid, Rider->GetVelocity().Size(),
+		Movement ? *Movement->GetCurrentAcceleration().ToString() : TEXT("None"), *ShipVelocity.ToString(), State.PeakShipResidual);
+	UE_LOG(LogSWRoom, Display, TEXT("[SWShipMotionDiag] Controller=%s ServerTime=%.3f ViewTarget=%s ControlRotation=%s MovementMode=%d"),
+		*GetName(), GameState ? GameState->GetServerWorldTimeSeconds() : Now, *GetNameSafe(GetViewTarget()), *GetControlRotation().ToString(), Movement ? static_cast<int32>(Movement->MovementMode) : -1);
+	static const TCHAR* Spaces[6] = { TEXT("ShipWorld"), TEXT("ShipVisualRelative"), TEXT("PlayerShipRelative"), TEXT("PlayerMeshRelative"), TEXT("CameraShipRelative"), TEXT("CameraPlayerRelative") };
+	for (int32 Index = 0; Index < 6; ++Index)
+	{
+		if (Index >= 4 && !bCameraValid) continue;
+		UE_LOG(LogSWRoom, Display, TEXT("[SWShipMotionDiag] Controller=%s ServerTime=%.3f Space=%s Location=%s Rotation=%s PeakStepCm=%.3f PeakStepDegrees=%.3f"),
+			*GetName(), GameState ? GameState->GetServerWorldTimeSeconds() : Now, Spaces[Index], *Current[Index].GetLocation().ToString(),
+			*Current[Index].Rotator().ToString(), State.PeakTranslation[Index], State.PeakRotation[Index]);
+		State.PeakTranslation[Index] = 0; State.PeakRotation[Index] = 0;
+	}
+	State.LastReportTime = Now; State.PeakDeltaTime = 0; State.PeakShipResidual = 0; State.Samples = 0;
+#endif
 }
 
 bool ABasePlayerController::CanAccessStorage(AStorageChest* Chest) const
@@ -1693,16 +1787,6 @@ void ABasePlayerController::TickDeathFlow(float DeltaTime)
  }
  if (!IsLocalController()) return;
 
- if (!bDeathInputLocked && IsLifeCharacterAlive() && PlayerCameraManager)
- { LastOwnAlivePOV = PlayerCameraManager->GetCameraCacheView(); bHasOwnPOV = true; }
- if (bCameraPublishing && IsLifeCharacterAlive() && PlayerCameraManager && Now - LastPublishTime >= .05)
- {
-  LastPublishTime = Now;
-  const FMinimalViewInfo& POV = PlayerCameraManager->GetCameraCacheView();
-  FSWObservedCameraFrame Frame; Frame.Location = POV.Location; Frame.Rotation = POV.Rotation; Frame.FOV = POV.FOV;
-  Frame.RestoreGeneration = PublishRestoreGeneration; Frame.ObservationGeneration = PublishObservationGeneration; Frame.Sequence = ++CameraSequence;
-  ServerPublishObservedCamera(Frame);
- }
  if (bDeathInputLocked || DeathFlowState.Phase == ESWPersonalLifePhase::WaitingForRespawn) ApplyLocalDeathFlow();
  if (DeathFlowWidget)
  {
@@ -1725,6 +1809,37 @@ void ABasePlayerController::TickDeathFlow(float DeltaTime)
   }
  }
 }
+void ABasePlayerController::UpdateCameraManager(float DeltaSeconds)
+{
+	Super::UpdateCameraManager(DeltaSeconds);
+	if (!IsLocalController() || !GetWorld() || !PlayerCameraManager || !IsLifeCharacterAlive())
+	{
+		return;
+	}
+
+	// Sample the current frame after movement and camera evaluation have completed.
+	const FMinimalViewInfo& POV = PlayerCameraManager->GetCameraCacheView();
+	if (!bDeathInputLocked)
+	{
+		LastOwnAlivePOV = POV;
+		bHasOwnPOV = true;
+	}
+
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (bCameraPublishing && Now - LastPublishTime >= .05)
+	{
+		LastPublishTime = Now;
+		FSWObservedCameraFrame Frame;
+		Frame.Location = POV.Location;
+		Frame.Rotation = POV.Rotation;
+		Frame.FOV = POV.FOV;
+		Frame.RestoreGeneration = PublishRestoreGeneration;
+		Frame.ObservationGeneration = PublishObservationGeneration;
+		Frame.Sequence = ++CameraSequence;
+		ServerPublishObservedCamera(Frame);
+	}
+}
+
 void ABasePlayerController::ClientSetCameraPublishEnabled_Implementation(bool bEnabled, int32 RestoreGeneration, int32 ObservationGeneration)
 {
  UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=CameraPublishEnabled Controller=%s Enabled=%d Restore=%d Observation=%d Alive=%d"), *GetName(), bEnabled, RestoreGeneration, ObservationGeneration, IsLifeCharacterAlive());

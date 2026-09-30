@@ -33,6 +33,23 @@ class USWRoomMenuWidget;
 class AFacilityHubActor;
 class ASharedShipUpgradeState;
 class UGameViewportClient;
+class AShip;
+
+/** Development diagnostics sampled per frame, reported as short interval peaks. */
+struct FSWShipMotionDiagnosticState
+{
+	TWeakObjectPtr<AShip> Ship;
+	TWeakObjectPtr<ABasePlayer> Player;
+	FTransform Previous[6];
+	float PeakTranslation[6] = {};
+	float PeakRotation[6] = {};
+	FVector PreviousVelocity = FVector::ZeroVector;
+	float PeakShipResidual = 0.0f;
+	float PeakDeltaTime = 0.0f;
+	double LastSampleTime = -1.0;
+	double LastReportTime = -1.0;
+	int32 Samples = 0;
+};
 
 struct FStorageRevealState
 {
@@ -47,6 +64,7 @@ class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerContr
 
 public:
 	ABasePlayerController();
+	virtual void UpdateCameraManager(float DeltaSeconds) override;
 	bool IsDevelopmentTestInputBlockedByUI() const;
 	bool IsDevelopmentTestInputBlockedByServerUI() const;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<class USWDevTestInputComponent> DevTestInput;
@@ -80,6 +98,8 @@ public:
 	TWeakObjectPtr<APawn> AppliedLifePawn;
 private:
 	void TickDeathFlow(float DeltaTime);
+	void TickShipMotionDiagnostics();
+	FSWShipMotionDiagnosticState ShipMotionDiagnostic;
 	void ApplyLocalDeathFlow();
 	UPROPERTY(Transient) TObjectPtr<class USWDeathFlowWidget> DeathFlowWidget;
 	UPROPERTY(Transient) TObjectPtr<class ACameraActor> DeathCamera;

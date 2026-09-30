@@ -445,6 +445,24 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 		for (TActorIterator<ABasePlayer> It(World); It; ++It)
 			if (It->GetController() && Mode->GetPlayerIndex(It->GetController()) == 0) bHostPresent = true;
 		if (!bHostPresent) { DevelopmentScope.bKeep=true; return true; }
+		// Refresh after restoration and player placement. Story-dormant actors
+		// cannot use their disabled Tick to open the gate.
+		int32 FinalShips = 0;
+		int32 DormantFinalShips = 0;
+		for (TActorIterator<AShip> It(World); It; ++It)
+		{
+			if (!It->IsFinalBossSquadForDeckContent()) continue;
+			It->RefreshStoryGateOwnedActors();
+			++FinalShips;
+			if (It->IsStoryGateDormantForDeckContent()) ++DormantFinalShips;
+		}
+		FSWFinalEncounterDiagnostics::Write(TEXT("FinalRestore"), TEXT("SquadActivation"),
+			FString::Printf(TEXT("Count=%d Dormant=%d"), FinalShips, DormantFinalShips));
+		if (FinalShips == 0 || DormantFinalShips != 0)
+		{
+			UE_LOG(LogSWRoom, Error, TEXT("Final squad activation failed Count=%d Dormant=%d"), FinalShips, DormantFinalShips);
+			return false;
+		}
 		FString Error;
 		if (!TrySave(World, ESWRoomSaveKind::Return, Error))
 		{
@@ -1134,9 +1152,9 @@ void UClassFeatureRoomProgressSubsystem::BeginReturnTravel()
 		UStoryFacadeSubsystem* Story = GetGameInstance()->GetSubsystem<UStoryFacadeSubsystem>();
 		const bool bAlreadyAccepted = Story
 			&& Story->IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted);
-  const bool bSkip = bDevelopmentFinalDeparture && Story && !bAlreadyAccepted && !Story->CanCompleteStoryNode(EStoryNode::UldolmokBattleQuestAccepted);
-  const bool bCompleted = Story && (bAlreadyAccepted || bSkip || Story->CompleteStoryNode(EStoryNode::UldolmokBattleQuestAccepted));
-  if (bSkip) UE_LOG(LogSWRoom, Display, TEXT("StoryCommit=SkippedDevelopmentPrerequisite"));
+  const bool bCompleted = Story && (bAlreadyAccepted || (bDevelopmentFinalDeparture
+   ? Story->ActivateDevelopmentFinalBattle() : Story->CompleteStoryNode(EStoryNode::UldolmokBattleQuestAccepted)));
+  if (bDevelopmentFinalDeparture) UE_LOG(LogSWRoom, Display, TEXT("StoryCommit=DevelopmentFinalBattle Accepted=%d"), Story && Story->IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted));
 		FSWFinalEncounterDiagnostics::Write(TEXT("FinalDeparture"), TEXT("StoryCommit"),
 			FString::Printf(TEXT("AttemptId=%d Before=%d Result=%d"), ActiveFinalDepartureAttemptId,
 				bAlreadyAccepted, bCompleted));

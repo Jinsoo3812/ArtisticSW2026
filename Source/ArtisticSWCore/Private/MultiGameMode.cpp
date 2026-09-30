@@ -985,16 +985,15 @@ void AMultiGameMode::NotifyPlayerDeathFinished(APawn* DeadPawn)
  State.Phase = ESWPersonalLifePhase::WaitingForRespawn;
  ++State.WaitingGeneration;
  State.RespawnEndServerTime = SessionLifePhase == ESWSessionLifePhase::Playing
-  ? (GetGameState<AGameStateBase>() ? GetGameState<AGameStateBase>()->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds()) + FMath::Max(0.f, IndividualRespawnDelay) : 0;
+  ? (GetGameState<AGameStateBase>() ? GetGameState<AGameStateBase>()->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds()) + IndividualRespawnDelay : 0;
  Controller->UnPossess();
  UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=RespawnWaiting Controller=%s Slot=%d Captured=%d WaitingGeneration=%d EndServerTime=%.3f Delay=%.3f Session=%d"), *GetNameSafe(Controller), GetPlayerIndex(Controller), bCaptured, State.WaitingGeneration, State.RespawnEndServerTime, IndividualRespawnDelay, static_cast<int32>(SessionLifePhase));
- DeadPawn->SetLifeSpan(FMath::Max(IndividualRespawnDelay + 2.f, 10.f));
+ DeadPawn->SetLifeSpan(IndividualRespawnDelay);
  if (!bCaptured) UE_LOG(LogSWRoom, Error, TEXT("RespawnProgressMissing Index=%d Generation=%d"), GetPlayerIndex(Controller), State.WaitingGeneration);
  if (SessionLifePhase == ESWSessionLifePhase::Playing && bCaptured)
  {
   FTimerDelegate Delegate = FTimerDelegate::CreateUObject(this, &AMultiGameMode::TryRespawnPlayer, Controller, State.WaitingGeneration);
-  if (IndividualRespawnDelay <= 0) RespawnTimers.Add(Controller, GetWorldTimerManager().SetTimerForNextTick(Delegate));
-  else GetWorldTimerManager().SetTimer(RespawnTimers.FindOrAdd(Controller), Delegate, IndividualRespawnDelay, false);
+  GetWorldTimerManager().SetTimer(RespawnTimers.FindOrAdd(Controller), Delegate, IndividualRespawnDelay, false);
  }
  RefreshSpectatorTargets();
 }

@@ -2126,6 +2126,12 @@ void AEnemyShip::ApplyStoryGatePresentation()
 void AEnemyShip::RefreshStoryGateOwnedActors()
 {
 	if (!IsFinalBossSquadShip()) return;
+	if (HasAuthority()) HandleStoryGateChanged();
+	// Reapply presentation after snapshot restoration even if the gate value
+	// already matched the campaign when its change event was broadcast.
+	ApplyEffectiveDormancyState();
+	ApplyStoryGatePresentation();
+	ApplyStoryGateToSpawnedChests();
 	RefreshMountedCannons();
 	for (ACannon* Cannon : MountedCannons)
 	{
