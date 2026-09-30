@@ -776,6 +776,9 @@ public:
 	/** Rebuilds the canonical runtime list from BP child actors and legacy attached cannon actors. */
 	UFUNCTION(BlueprintCallable, Category = "Ship|Cannons")
 	void RefreshMountedCannons();
+	virtual bool IsStoryGateDormantForDeckContent() const { return false; }
+	virtual bool IsFinalBossSquadForDeckContent() const { return false; }
+	virtual void RefreshStoryGateOwnedActors() {}
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Cannons")
 	int32 GetMountedCannonCount() const { return MountedCannons.Num(); }

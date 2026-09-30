@@ -12,6 +12,8 @@ class ARTISTICSWCORE_API UPlayerProgressSubsystem : public UGameInstanceSubsyste
 	GENERATED_BODY()
 
 public:
+	void ClearSnapshot(int32 PlayerIndex) { PendingSnapshots.Remove(PlayerIndex); }
+	void ClearReconnectSnapshot(const FString& PlayerKey) { ReconnectSnapshots.Remove(PlayerKey); }
 	void StoreSnapshot(int32 PlayerIndex, const FSWPlayerProgressSnapshot& Snapshot);
 	bool ConsumeSnapshot(int32 PlayerIndex, FSWPlayerProgressSnapshot& OutSnapshot);
 	bool HasSnapshot(int32 PlayerIndex) const;

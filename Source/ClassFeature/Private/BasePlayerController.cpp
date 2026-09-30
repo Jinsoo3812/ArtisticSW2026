@@ -2,6 +2,17 @@
 
 
 #include "BasePlayerController.h"
+#include "UI/SWDeathFlowWidget.h"
+#include "Room/SWRoomReadyState.h"
+#include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
+#include "Camera/PlayerCameraManager.h"
+#include "Components/BaseHealthComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "AbilitySystemComponent.h"
+#include "PlayerDialogueComponent.h"
+#include "Cannon.h"
+#include "Net/UnrealNetwork.h"
 #include "BasePlayer.h"
 #include "BasePlayerState.h"
 #include "UI/PlayerHUDWidget.h"
@@ -50,6 +61,14 @@ void ABasePlayerController::ClientBeginRoomReturn_Implementation()
 	if (Connection && Connection->BeginRoomReturnPresentation()) ServerConfirmRoomReturnPresentation();
 }
 
+void ABasePlayerController::ClientBeginFinalDeparture_Implementation(int32 AttemptId)
+{
+	USWConnectionSubsystem* Connection = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<USWConnectionSubsystem>() : nullptr;
+	if (Connection && Connection->BeginRoomFinalDeparturePresentation(AttemptId))
+		ServerConfirmRoomReturnPresentation();
+}
+
 void ABasePlayerController::ClientCancelRoomReturn_Implementation()
 {
 	if (USWConnectionSubsystem* Connection = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWConnectionSubsystem>() : nullptr)
@@ -65,6 +84,7 @@ void ABasePlayerController::ServerConfirmRoomReturnPresentation_Implementation()
 
 void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 {
+	if (!CanMutateGameplay()) return;
 	AFacilityHubActor* FacilityHub = Cast<AFacilityHubActor>(ContextActor);
 	if (!HasAuthority() || !IsValid(FacilityHub) || !FacilityHub->TryAcquire(this))
 	{
@@ -312,6 +332,7 @@ void ABasePlayerController::ServerRequestActivateSharedShipUpgrade_Implementatio
 	ASharedShipUpgradeState* SharedState,
 	FName NodeId)
 {
+	if (!CanMutateGameplay()) return;
 	UShipUpgradeComponent* SharedUpgrade = IsValid(SharedState)
 		&& SharedState == ASharedShipUpgradeState::Find(this)
 		&& IsValid(ActiveFacilityHub)
@@ -360,6 +381,7 @@ void ABasePlayerController::ClientReceiveSharedShipUpgradeResult_Implementation(
 
 void ABasePlayerController::BeginPlay()
 {
+	PrimaryActorTick.TickGroup = TG_PostUpdateWork;
 	Super::BeginPlay();
 	if (IsLocalController() && GetWorld() && GetWorld()->WorldType == EWorldType::Game)
 	{
@@ -423,7 +445,12 @@ void ABasePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		ActiveFacilityHub->Release(this);
 		ActiveFacilityHub = nullptr;
 	}
-	Super::EndPlay(EndPlayReason);
+	if (DeathFlowWidget) { DeathFlowWidget->RemoveFromParent(); DeathFlowWidget = nullptr; }
+ if (DeathCamera) { DeathCamera->Destroy(); DeathCamera = nullptr; }
+ if (bDeathInputLocked) { SetIgnoreMoveInput(false); SetIgnoreLookInput(false); bDeathInputLocked = false; }
+ bCameraPublishing = false; LifeCharacter.Reset();
+ if (HasAuthority()) if (UClassFeatureRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>()) Room->HandleTransitionLogout(this);
+ Super::EndPlay(EndPlayReason);
 }
 
 void ABasePlayerController::SetupInputComponent()
@@ -451,6 +478,7 @@ void ABasePlayerController::SetupInputComponent()
 
 void ABasePlayerController::OnUIInputPressed(FGameplayTag InputTag)
 {
+	if (!CanMutateGameplay()) return;
 	// [클라/로컬]
 	if (!IsLocalController() || !PlayerHUDWidget)
 	{
@@ -466,6 +494,7 @@ void ABasePlayerController::OnUIInputPressed(FGameplayTag InputTag)
 void ABasePlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
+	if (ABasePlayer* LifePawnCharacter = Cast<ABasePlayer>(InPawn)) LifeCharacter = LifePawnCharacter;
 	if (HasAuthority() && ActiveFacilityHub)
 	{
 		ActiveFacilityHub->Release(this);
@@ -511,6 +540,7 @@ void ABasePlayerController::BindHUDToCurrentPlayer()
 
 void ABasePlayerController::ToggleInventory()
 {
+	if (!CanMutateGameplay()) return;
 	if (!IsLocalController() || !PlayerHUDWidget)
 	{
 		return;
@@ -543,6 +573,7 @@ void ABasePlayerController::ToggleInventory()
 
 void ABasePlayerController::ToggleStatus()
 {
+	if (!CanMutateGameplay()) return;
 	if (!IsLocalController() || !StatusWindowWidget)
 	{
 		return;
@@ -590,6 +621,7 @@ void ABasePlayerController::ToggleStatus()
 
 void ABasePlayerController::HandleMenuEscape()
 {
+	if (!CanMutateGameplay()) return;
 	if (IsFacilityHubOpen())
 	{
 		CloseFacilityHub();
@@ -669,7 +701,8 @@ void ABasePlayerController::ServerRequestRoomSave_Implementation(uint64 RequestI
 	AMultiGameMode* Mode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
 	USWRoomProgressSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
 	UClassFeatureRoomProgressSubsystem* Progress = GetGameInstance() ? GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr;
-	if (!Mode || !Room || !Room->IsHostedRoom() || Room->IsNewRoomPending() || Room->IsReturnTravelPending()
+	if (!Mode || !Room || !Room->IsHostedRoom() || Room->IsNewRoomPending()
+		|| Room->IsReturnTravelPending() || Room->IsFinalDepartureTravelPending()
 		|| !PlayerState || !Progress)
 	{
 		bLastServerRoomSaveSuccess = false;
@@ -717,6 +750,7 @@ void ABasePlayerController::ClientRoomSaveResult_Implementation(uint64 RequestId
 
 void ABasePlayerController::OpenStorageFromServer(AStorageChest* StorageChest)
 {
+	if (!CanMutateGameplay()) return;
 	const bool bLogInteraction = IsStorageInteractionLoggingEnabled();
 	if (bLogInteraction)
 	{
@@ -818,6 +852,7 @@ void ABasePlayerController::ServerTransferStorageSlot_Implementation(AStorageChe
 
 void ABasePlayerController::ServerHandleStorageLeftClick_Implementation(AStorageChest* StorageChest, int32 SlotIndex)
 {
+	if (!CanMutateGameplay()) return;
 	// 좌클릭 했을 때 상호작용
 	// 커서에 아이템이 붙어 있으면 인벤토리 -> storage
 	// 커서에 아이템이 없으면 storage -> 인벤토리
@@ -863,6 +898,7 @@ void ABasePlayerController::ServerHandleStorageLeftClick_Implementation(AStorage
 
 void ABasePlayerController::ServerQuickMoveInventorySlotToStorage_Implementation(int32 SlotIndex)
 {
+	if (!CanMutateGameplay()) return;
 	// 인벤토리 -> storage
 	if (!CanAccessStorage(ActiveStorageChest))
 	{
@@ -894,6 +930,7 @@ void ABasePlayerController::ServerQuickMoveInventorySlotToStorage_Implementation
 
 void ABasePlayerController::ServerQuickMoveStorageSlotToInventory_Implementation(AStorageChest* StorageChest, int32 SlotIndex)
 {
+	if (!CanMutateGameplay()) return;
 	//storage -> Inventory (우클릭)
 	if (!CanAccessStorage(StorageChest) || ActiveStorageChest != StorageChest)
 	{
@@ -1312,6 +1349,7 @@ void ABasePlayerController::SetStatusCharacterInputLocked(bool bLocked)
 void ABasePlayerController::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	TickDeathFlow(DeltaTime);
 	if (HasAuthority() && ActiveStorageChest && !CanAccessStorage(ActiveStorageChest)) CloseStorageFromServer(ActiveStorageChest);
 
 	if (GetWorld())
@@ -1331,6 +1369,7 @@ void ABasePlayerController::Tick(float DeltaTime)
 
 bool ABasePlayerController::CanAccessStorage(AStorageChest* Chest) const
 {
+	if (!CanMutateGameplay()) return false;
 	if (!IsValid(Chest) || Chest->IsLocked()) return false;
 	const ASharedStorageChest* Shared = Cast<ASharedStorageChest>(Chest);
 	return !Shared || Shared->CanPlayerAccess(GetPawn());
@@ -1339,6 +1378,7 @@ bool ABasePlayerController::CanAccessStorage(AStorageChest* Chest) const
 void ABasePlayerController::ServerSharedStorageSlotAction_Implementation(AStorageChest* Chest, int32 Index,
 	FGameplayTag ExpectedTag, int32 ExpectedCount, int32 ExpectedCapacity, bool bQuickMove)
 {
+	if (!CanMutateGameplay()) return;
 	if (!CanAccessStorage(Chest) || ActiveStorageChest != Chest || !Chest->IsA<ASharedStorageChest>()) return;
 	ABasePlayer* StoragePlayer = Cast<ABasePlayer>(GetPawn());
 	UInventoryComponent* Inventory = StoragePlayer ? StoragePlayer->GetInventoryComponent() : nullptr;
@@ -1363,6 +1403,7 @@ void ABasePlayerController::ServerSharedStorageSlotAction_Implementation(AStorag
 void ABasePlayerController::ServerQuickMoveInventorySlotInTab_Implementation(EInventoryTab Tab, int32 Index,
 	FGameplayTag ExpectedTag, int32 ExpectedCount)
 {
+	if (!CanMutateGameplay()) return;
 	if (!CanAccessStorage(ActiveStorageChest)) return;
 	ABasePlayer* StoragePlayer = Cast<ABasePlayer>(GetPawn());
 	UInventoryComponent* Inventory = StoragePlayer ? StoragePlayer->GetInventoryComponent() : nullptr;
@@ -1372,4 +1413,313 @@ void ABasePlayerController::ServerQuickMoveInventorySlotInTab_Implementation(EIn
 	if (Inventory->GetCursorItem().IsValid()) { Inventory->ReturnCursorToOriginalSlot(); return; }
 	Inventory->TransferSlotToStorageInTab(Tab, Index, ActiveStorageChest->GetStorageComponent());
 	StartStorageSearch(ActiveStorageChest);
+}
+
+void ABasePlayerController::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+ Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+ DOREPLIFETIME_CONDITION(ABasePlayerController, DeathFlowState, COND_OwnerOnly);
+}
+ABasePlayer* ABasePlayerController::GetLifeCharacter() const
+{
+ if (ABasePlayer* LifePawnCharacter = Cast<ABasePlayer>(GetPawn())) return LifePawnCharacter;
+ if (LifeCharacter.IsValid() && LifeCharacter->GetWorld() == GetWorld()) return LifeCharacter.Get();
+ if (AShip* Ship = Cast<AShip>(GetPawn())) return Cast<ABasePlayer>(Ship->GetRidingPlayer());
+ if (ACannon* Cannon = Cast<ACannon>(GetPawn())) return Cast<ABasePlayer>(Cannon->GetRidingPlayer());
+ return nullptr;
+}
+bool ABasePlayerController::IsLifeCharacterAlive() const
+{
+ const ABasePlayer* LifePawnCharacter = GetLifeCharacter();
+ return LifePawnCharacter && LifePawnCharacter->GetWorld() == GetWorld() && LifePawnCharacter->GetHealthComponent()
+  && !LifePawnCharacter->GetHealthComponent()->IsDead() && DeathFlowState.Phase == ESWPersonalLifePhase::Alive
+  && LocalSessionPhase != ESWSessionLifePhase::GameOver && LocalSessionPhase != ESWSessionLifePhase::ReturningAfterGameOver;
+}
+bool ABasePlayerController::CanMutateGameplay() const
+{
+ const AMultiGameMode* Mode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+ if (Mode) return Mode->CanMutateGameplay(const_cast<ABasePlayerController*>(this));
+ return DeathFlowState.Phase == ESWPersonalLifePhase::Alive && LocalSessionPhase != ESWSessionLifePhase::GameOver
+  && LocalSessionPhase != ESWSessionLifePhase::ReturningAfterGameOver;
+}
+bool ABasePlayerController::CleanupLifeInteraction()
+{
+ if (ActiveStorageChest) CloseStorageFromServer(ActiveStorageChest);
+ if (ActiveFacilityHub) { ActiveFacilityHub->Release(this); ActiveFacilityHub = nullptr; }
+ ABasePlayer* LifePawnCharacter = GetLifeCharacter();
+ if (LifePawnCharacter)
+ {
+  if (UPlayerDialogueComponent* Dialogue = LifePawnCharacter->FindComponentByClass<UPlayerDialogueComponent>()) Dialogue->CancelDialogue();
+  if (UInventoryComponent* Inventory = LifePawnCharacter->GetInventoryComponent())
+  {
+   const FInventoryCursorItem Cursor = Inventory->GetCursorItem();
+   if (Cursor.IsValid() && IsValid(Cursor.OriginalStorage))
+    if (!Cursor.OriginalStorage->ReturnReservedCursor(Inventory)) return false;
+   Inventory->ReturnCursorToOriginalSlot();
+   if (Inventory->GetCursorItem().IsValid()) return false;
+  }
+ }
+ return true;
+}
+bool ABasePlayerController::CaptureLatestLifeProgress(APawn* SourcePawn)
+{
+ if (!HasAuthority()) return false;
+ if (bLifeProgressFrozen) return bHasLatestLifeProgress;
+ ABasePlayer* LifePawnCharacter = Cast<ABasePlayer>(SourcePawn);
+ if (!LifePawnCharacter) LifePawnCharacter = GetLifeCharacter();
+ if (!LifePawnCharacter) return bHasLatestLifeProgress;
+ LifeCharacter = LifePawnCharacter;
+ if (!CleanupLifeInteraction()) return false;
+ LifePawnCharacter->CaptureRoomProgress(LatestLifeProgress);
+ bHasLatestLifeProgress = true;
+ return true;
+}
+bool ABasePlayerController::GetLatestLifeProgress(FSWRoomPlayerProgress& OutProgress) const
+{
+ if (!bHasLatestLifeProgress) return false;
+ OutProgress = LatestLifeProgress; return true;
+}
+bool ABasePlayerController::ApplyPendingLifeProgress(APawn* NewPawn)
+{
+ bPendingLifeProgressApplied = false; AppliedLifePawn.Reset();
+ ABasePlayer* LifePawnCharacter = Cast<ABasePlayer>(NewPawn);
+ FString Error;
+ if (!HasAuthority() || !LifePawnCharacter || !bHasLatestLifeProgress || !LifePawnCharacter->RestoreProgressForNewLife(LatestLifeProgress, Error))
+ {
+  UE_LOG(LogSWRoom, Error, TEXT("RespawnSpawnFailed Controller=%s Reason=%s"), *GetName(), *Error); return false;
+ }
+ LifeCharacter = LifePawnCharacter; AppliedLifePawn = NewPawn; bPendingLifeProgressApplied = true;
+ return true;
+}
+bool ABasePlayerController::WasLastLifeProgressApplySuccessful(APawn* NewPawn) const
+{
+ const ABasePlayer* LifePawnCharacter = Cast<ABasePlayer>(NewPawn);
+ return bPendingLifeProgressApplied && IsValid(NewPawn) && AppliedLifePawn.Get() == NewPawn
+  && LifePawnCharacter && LifePawnCharacter->GetHealthComponent() && !LifePawnCharacter->GetHealthComponent()->IsDead();
+}
+void ABasePlayerController::FreezeLifeProgressForGameOver()
+{
+ if (!HasAuthority()) return;
+ if (!bLifeProgressFrozen && !bGameOverReconnect && !(DeathFlowState.Phase == ESWPersonalLifePhase::WaitingForRespawn && bHasLatestLifeProgress))
+ {
+  // Normal first defeat captures the live character, even without a previous value record.
+  if (!CaptureLatestLifeProgress(GetPawn())) { bHasLatestLifeProgress = false; UE_LOG(LogSWRoom, Error, TEXT("RetryCaptureFailed: game-over life record Controller=%s"), *GetName()); }
+ }
+ bLifeProgressFrozen = bHasLatestLifeProgress;
+ if (ABasePlayer* LifePawnCharacter = GetLifeCharacter())
+ {
+  if (!bGameOverCharacterProtected)
+  {
+   bLifeCharacterCouldBeDamaged = LifePawnCharacter->CanBeDamaged();
+   bLifeCharacterWasInvulnerable = LifePawnCharacter->GetAbilitySystemComponent() && LifePawnCharacter->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Invulnerable);
+   bGameOverCharacterProtected = true;
+  }
+  LifePawnCharacter->SetCanBeDamaged(false);
+  if (UAbilitySystemComponent* ASC = LifePawnCharacter->GetAbilitySystemComponent()) { ASC->CancelAllAbilities(); if (!ASC->HasMatchingGameplayTag(State_Invulnerable)) ASC->AddLooseGameplayTag(State_Invulnerable); }
+  if (UCharacterMovementComponent* Movement = LifePawnCharacter->GetCharacterMovement()) { Movement->StopMovementImmediately(); Movement->DisableMovement(); }
+ }
+}
+void ABasePlayerController::ReleaseFrozenLifeProgress()
+{
+ bLifeProgressFrozen = false;
+ if (bGameOverCharacterProtected)
+  if (ABasePlayer* LifePawnCharacter = GetLifeCharacter())
+  {
+   LifePawnCharacter->SetCanBeDamaged(bLifeCharacterCouldBeDamaged);
+   if (!bLifeCharacterWasInvulnerable) if (UAbilitySystemComponent* ASC = LifePawnCharacter->GetAbilitySystemComponent()) ASC->RemoveLooseGameplayTag(State_Invulnerable);
+  }
+ bGameOverCharacterProtected = false;
+}
+void ABasePlayerController::SetDeathFlowState(const FSWDeathFlowState& State)
+{
+ // Target and observation generation are maintained by the authoritative controller refresh.
+ FSWDeathFlowState Next = State;
+ Next.SpectatedPlayerState = DeathFlowState.SpectatedPlayerState;
+ Next.ObservationGeneration = DeathFlowState.ObservationGeneration;
+ DeathFlowState = Next;
+ ForceNetUpdate();
+ if (IsLocalController()) OnRep_DeathFlowState();
+}
+void ABasePlayerController::OnRep_DeathFlowState()
+{
+ if (LocalObservationGeneration != DeathFlowState.ObservationGeneration || LocalObservedPlayerState != DeathFlowState.SpectatedPlayerState)
+ {
+  LocalObservationGeneration = DeathFlowState.ObservationGeneration; LocalObservedPlayerState = DeathFlowState.SpectatedPlayerState;
+  bHasObservedPOV = false; LastObservedSequence = 0; LastReceiveTime = -1;
+ }
+ ApplyLocalDeathFlow();
+}
+void ABasePlayerController::ApplyLocalDeathFlow()
+{
+ if (!IsLocalController() || GetNetMode() == NM_DedicatedServer) return;
+ const bool bGameOver = LocalSessionPhase == ESWSessionLifePhase::GameOver || LocalSessionPhase == ESWSessionLifePhase::ReturningAfterGameOver;
+ const bool bWaiting = DeathFlowState.Phase == ESWPersonalLifePhase::WaitingForRespawn;
+ const bool bBlocked = bGameOver || bWaiting;
+ if (bBlocked && !bDeathInputLocked)
+ {
+  FrozenOwnDeathPOV = bHasOwnPOV ? LastOwnAlivePOV : FMinimalViewInfo();
+  if (!bHasOwnPOV && GetLifeCharacter())
+  { FrozenOwnDeathPOV.Location = GetLifeCharacter()->GetActorLocation() + FVector(0, 0, 160); FrozenOwnDeathPOV.Rotation = GetControlRotation(); }
+  bSavedAutoCamera = bAutoManageActiveCameraTarget; bAutoManageActiveCameraTarget = false;
+  CloseFacilityHub(); CloseStorage(); CloseRoomMenu();
+  if (StatusWindowWidget) StatusWindowWidget->SetVisibility(ESlateVisibility::Collapsed);
+  if (PlayerHUDWidget) PlayerHUDWidget->SetVisibility(ESlateVisibility::Collapsed);
+  SetIgnoreMoveInput(true); SetIgnoreLookInput(true); bDeathInputLocked = true;
+ }
+ if (bBlocked)
+ {
+  if (!DeathFlowWidget) { DeathFlowWidget = CreateWidget<USWDeathFlowWidget>(this, USWDeathFlowWidget::StaticClass()); DeathFlowWidget->AddToViewport(1000); }
+  if (bGameOver)
+  {
+   bShowMouseCursor = true;
+   FInputModeUIOnly Input; Input.SetWidgetToFocus(DeathFlowWidget->TakeWidget()); SetInputMode(Input);
+   if (DeathFlowState.bHostMayRetry && !PendingRetryRequestId) DeathFlowWidget->FocusRetry();
+  }
+  else
+  {
+   bShowMouseCursor = false; SetInputMode(FInputModeGameOnly());
+   if (!DeathCamera)
+   {
+    DeathCamera = GetWorld()->SpawnActor<ACameraActor>();
+    if (DeathCamera) { DeathCamera->SetReplicates(false); DeathCamera->SetActorEnableCollision(false); DeathCamera->SetActorTickEnabled(false); }
+   }
+   if (DeathCamera)
+   {
+    if (!DeathFlowState.SpectatedPlayerState || !bHasObservedPOV)
+    { DeathCamera->SetActorLocationAndRotation(FrozenOwnDeathPOV.Location, FrozenOwnDeathPOV.Rotation); DeathCamera->GetCameraComponent()->SetFieldOfView(FrozenOwnDeathPOV.FOV); }
+    SetViewTargetWithBlend(DeathCamera, 0);
+   }
+  }
+ }
+ else if (bDeathInputLocked && Cast<ABasePlayer>(GetPawn()) && PlayerState
+  && Cast<ABasePlayer>(GetPawn())->GetPlayerState() && Cast<ABasePlayer>(GetPawn())->GetAbilitySystemComponent())
+ {
+  SetIgnoreMoveInput(false); SetIgnoreLookInput(false); bDeathInputLocked = false;
+  bAutoManageActiveCameraTarget = bSavedAutoCamera; SetViewTargetWithBlend(GetPawn(), 0);
+  if (PlayerHUDWidget) PlayerHUDWidget->SetVisibility(ESlateVisibility::Visible);
+  SetInputMode(FInputModeGameOnly()); bShowMouseCursor = false;
+  if (DeathFlowWidget) { DeathFlowWidget->RemoveFromParent(); DeathFlowWidget = nullptr; }
+  bHasObservedPOV = false;
+ }
+}
+void ABasePlayerController::TickDeathFlow(float DeltaTime)
+{
+ if (!GetWorld()) return;
+ for (TActorIterator<ASWRoomReadyState> It(GetWorld()); It; ++It)
+ {
+  if (LocalSessionPhase != It->SessionLifePhase)
+  { LocalSessionPhase = It->SessionLifePhase; ApplyLocalDeathFlow(); }
+  break;
+ }
+ const double Now = GetWorld()->GetTimeSeconds();
+ if (HasAuthority() && Now - LastSpectatorRefreshTime >= .1)
+ {
+  LastSpectatorRefreshTime = Now;
+  ABasePlayerController* Target = nullptr;
+  if (DeathFlowState.Phase == ESWPersonalLifePhase::WaitingForRespawn && LocalSessionPhase != ESWSessionLifePhase::GameOver && LocalSessionPhase != ESWSessionLifePhase::ReturningAfterGameOver)
+   for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    if (ABasePlayerController* Other = Cast<ABasePlayerController>(It->Get()); Other && Other != this && Other->IsLifeCharacterAlive()) { Target = Other; break; }
+  APlayerState* TargetState = Target ? Target->PlayerState.Get() : nullptr;
+  if (TargetState != DeathFlowState.SpectatedPlayerState)
+  {
+   for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    if (ABasePlayerController* Other = Cast<ABasePlayerController>(It->Get()); Other && Other->PlayerState == DeathFlowState.SpectatedPlayerState)
+    { Other->bCameraPublishing = false; Other->ClientSetCameraPublishEnabled(false, DeathFlowState.RestoreGeneration, DeathFlowState.ObservationGeneration); }
+   DeathFlowState.SpectatedPlayerState = TargetState; ++DeathFlowState.ObservationGeneration; bHasObservedPOV = false;
+   ForceNetUpdate();
+   if (Target)
+   {
+    Target->bCameraPublishing = true; Target->PublishRestoreGeneration = DeathFlowState.RestoreGeneration;
+    Target->PublishObservationGeneration = DeathFlowState.ObservationGeneration; Target->LastAcceptedSequence = 0; Target->LastServerCameraTime = -1;
+    Target->ClientSetCameraPublishEnabled(true, DeathFlowState.RestoreGeneration, DeathFlowState.ObservationGeneration);
+   }
+   if (IsLocalController()) OnRep_DeathFlowState();
+  }
+  if (LocalSessionPhase == ESWSessionLifePhase::GameOver && !bLifeProgressFrozen && !bGameOverCharacterProtected) FreezeLifeProgressForGameOver();
+ }
+ if (!IsLocalController()) return;
+
+ if (!bDeathInputLocked && IsLifeCharacterAlive() && PlayerCameraManager)
+ { LastOwnAlivePOV = PlayerCameraManager->GetCameraCacheView(); bHasOwnPOV = true; }
+ if (bCameraPublishing && IsLifeCharacterAlive() && PlayerCameraManager && Now - LastPublishTime >= .05)
+ {
+  LastPublishTime = Now;
+  const FMinimalViewInfo& POV = PlayerCameraManager->GetCameraCacheView();
+  FSWObservedCameraFrame Frame; Frame.Location = POV.Location; Frame.Rotation = POV.Rotation; Frame.FOV = POV.FOV;
+  Frame.RestoreGeneration = PublishRestoreGeneration; Frame.ObservationGeneration = PublishObservationGeneration; Frame.Sequence = ++CameraSequence;
+  ServerPublishObservedCamera(Frame);
+ }
+ if (bDeathInputLocked || DeathFlowState.Phase == ESWPersonalLifePhase::WaitingForRespawn) ApplyLocalDeathFlow();
+ if (DeathFlowWidget)
+ {
+  FString Waiting;
+  if (LocalSessionPhase == ESWSessionLifePhase::ShipSinking) Waiting = TEXT("배가 침몰 중입니다");
+  else if (const AGameStateBase* State = GetWorld()->GetGameState())
+  {
+   const int32 Remaining = FMath::CeilToInt(FMath::Max(0., DeathFlowState.RespawnEndServerTime - State->GetServerWorldTimeSeconds()));
+   Waiting = Remaining > 0 ? FString::Printf(TEXT("부활까지 %d초"), Remaining) : TEXT("부활 위치를 준비 중입니다");
+  }
+  else Waiting = TEXT("부활 대기 중입니다");
+  if (DeathFlowState.SpectatedPlayerState && Now - LastReceiveTime > .5) Waiting += TEXT("\n동료 시점을 기다리는 중입니다");
+  DeathFlowWidget->UpdateFlow(LocalSessionPhase == ESWSessionLifePhase::GameOver || LocalSessionPhase == ESWSessionLifePhase::ReturningAfterGameOver,
+   DeathFlowState.bHostMayRetry || PendingRetryRequestId != 0, PendingRetryRequestId != 0, Waiting, RetryStatus);
+ }
+}
+void ABasePlayerController::ClientSetCameraPublishEnabled_Implementation(bool bEnabled, int32 RestoreGeneration, int32 ObservationGeneration)
+{
+ bCameraPublishing = bEnabled; PublishRestoreGeneration = RestoreGeneration; PublishObservationGeneration = ObservationGeneration;
+ CameraSequence = 0; LastPublishTime = -1;
+}
+void ABasePlayerController::ServerPublishObservedCamera_Implementation(const FSWObservedCameraFrame& Frame)
+{
+ const double Now = GetWorld()->GetTimeSeconds();
+ if (!bCameraPublishing || !IsLifeCharacterAlive() || Frame.RestoreGeneration != PublishRestoreGeneration
+  || Frame.ObservationGeneration != PublishObservationGeneration || Frame.Sequence <= LastAcceptedSequence
+  || Frame.Location.ContainsNaN() || Frame.Rotation.ContainsNaN() || !FMath::IsFinite(Frame.FOV) || Frame.FOV < 5 || Frame.FOV > 170
+  || Now - LastServerCameraTime < 1. / 30.) return;
+ LastAcceptedSequence = Frame.Sequence; LastServerCameraTime = Now;
+ FSWObservedCameraFrame Validated = Frame; Validated.SourcePlayerState = PlayerState;
+ for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+  if (ABasePlayerController* Observer = Cast<ABasePlayerController>(It->Get()); Observer
+   && Observer->DeathFlowState.Phase == ESWPersonalLifePhase::WaitingForRespawn
+   && Observer->DeathFlowState.SpectatedPlayerState == PlayerState
+   && Observer->DeathFlowState.ObservationGeneration == Frame.ObservationGeneration) Observer->ClientReceiveObservedCamera(Validated);
+}
+void ABasePlayerController::ClientReceiveObservedCamera_Implementation(const FSWObservedCameraFrame& Frame)
+{
+ if (Frame.Sequence <= LastObservedSequence || Frame.RestoreGeneration != DeathFlowState.RestoreGeneration || Frame.ObservationGeneration != DeathFlowState.ObservationGeneration
+  || Frame.SourcePlayerState != DeathFlowState.SpectatedPlayerState || DeathFlowState.Phase != ESWPersonalLifePhase::WaitingForRespawn) return;
+ ApplyLocalDeathFlow();
+ if (!DeathCamera) return;
+ DeathCamera->SetActorLocationAndRotation(Frame.Location, Frame.Rotation); DeathCamera->GetCameraComponent()->SetFieldOfView(Frame.FOV);
+ LastObservedSequence = Frame.Sequence; bHasObservedPOV = true; LastReceiveTime = GetWorld()->GetTimeSeconds();
+}
+void ABasePlayerController::RequestGameOverRetry()
+{
+ if (PendingRetryRequestId || !DeathFlowState.bHostMayRetry) return;
+ PendingRetryRequestId = ++NextRetryRequestId; RetryStatus = TEXT("다시 시작하는 중입니다");
+ ServerRequestGameOverRetry(DeathFlowState.RestoreGeneration, PendingRetryRequestId);
+}
+void ABasePlayerController::ServerRequestGameOverRetry_Implementation(int32 ExpectedRestoreGeneration, uint64 RequestId)
+{
+ if (RequestId == LastRetryRequestId && RequestId != 0) { ClientGameOverRetryResult(RequestId, bLastRetryAccepted, LastRetryMessage); return; }
+ AMultiGameMode* Mode = GetWorld()->GetAuthGameMode<AMultiGameMode>();
+ FString Error;
+ bool bAccepted = false;
+ if (!Mode || !Mode->IsRoomHostController(this)) Error = TEXT("RetryRejectedNotHost");
+ else if (!Mode->CanHostRequestGameOverRetry(this)) Error = TEXT("다시하기 요청 처리 중이거나 게임 오버가 아닙니다");
+ else if (ExpectedRestoreGeneration != DeathFlowState.RestoreGeneration) Error = TEXT("RetryRejectedWrongGeneration");
+ else if (UClassFeatureRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>()) bAccepted = Room->TryGameOverRetry(GetWorld(), this, RequestId, Error);
+ ReportGameOverRetryResult(RequestId, bAccepted, Error);
+}
+void ABasePlayerController::ClientGameOverRetryResult_Implementation(uint64 RequestId, bool bAccepted, const FString& Message)
+{
+ if (RequestId != PendingRetryRequestId) return;
+ if (!bAccepted) { PendingRetryRequestId = 0; RetryStatus = TEXT("다시 시작하지 못했습니다: ") + Message; }
+}
+
+void ABasePlayerController::ReportGameOverRetryResult(uint64 RequestId, bool bAccepted, const FString& Message)
+{
+ LastRetryRequestId = RequestId; bLastRetryAccepted = bAccepted; LastRetryMessage = Message;
+ ClientGameOverRetryResult(RequestId, bAccepted, Message);
 }

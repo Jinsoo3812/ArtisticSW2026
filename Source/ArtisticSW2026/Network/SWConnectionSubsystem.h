@@ -43,6 +43,7 @@ public:
 	UFUNCTION(BlueprintPure)
 	FString GetReadinessDebugStatus() const;
 	bool BeginRoomReturnPresentation();
+	bool BeginRoomFinalDeparturePresentation(int32 AttemptId);
 	void CancelRoomReturnPresentation();
 
 	UPROPERTY(BlueprintAssignable)
@@ -85,7 +86,9 @@ private:
 	TWeakObjectPtr<UGameViewportClient> LoadingViewport;
 	bool bLoadingPresentationVisible = false;
 	bool bViewportIgnoredInputBeforeLoading = false;
-	bool bRoomReturnPresentationActive = false;
+	enum class ERoomLoadingReason : uint8 { None, Return, FinalDeparture };
+	ERoomLoadingReason RoomLoadingReason = ERoomLoadingReason::None;
+	int32 FinalDepartureAttemptId = 0;
 	FString PendingDisplayName;
 	FGuid PendingHostKey;
 	FDelegateHandle NetworkFailureHandle;

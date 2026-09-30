@@ -2,6 +2,7 @@
 
 
 #include "Ship.h"
+#include "MultiGameMode.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Network/SWNetworkLog.h"
 #include "Repair/ShipRepairPointComponent.h"
@@ -96,6 +97,7 @@ bool AShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
 		AttributeSet->InitHealth(State.Health);
 	}
 	bIsSinking = State.bSinking;
+ if (bIsSinking) if (AMultiGameMode* Mode = GetWorld()->GetAuthGameMode<AMultiGameMode>()) Mode->NotifyPlayerShipSinking(this);
 	bIsAnchorDropped = State.bAnchorDropped;
 	AnchorOriginXY = State.AnchorOriginXY;
 	OnRep_IsSinking();
@@ -1809,7 +1811,7 @@ void AShip::StartSinking(float DestroyDelaySeconds)
 	{
 		if (AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr)
 		{
-			GameMode->RequestGameOverAndLevelRestart();
+			GameMode->NotifyPlayerShipSinking(this);
 		}
 	}
 	ForceNetUpdate();
@@ -1846,7 +1848,9 @@ void AShip::StartSinking(float DestroyDelaySeconds)
 
 void AShip::FinishSinking()
 {
-	Destroy();
+ AMultiGameMode* Mode = HasAuthority() && GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+ const bool bNotify = Mode && bIsSinking && Mode->GetPlayerRespawnShip() == this;
+ if (Destroy() && bNotify) Mode->NotifyPlayerShipRemovedBySinking(this);
 }
 
 void AShip::OnRep_IsSinking()

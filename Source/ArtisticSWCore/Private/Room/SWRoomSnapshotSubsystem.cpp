@@ -189,7 +189,8 @@ void USWRoomSnapshotSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	if (UGameInstance* GameInstance = InWorld.GetGameInstance())
 		if (const USWRoomProgressSubsystem* Room = GameInstance->GetSubsystem<USWRoomProgressSubsystem>())
 			bRestoring = Room->IsHostedRoom() && !Room->IsNewRoomPending()
-				&& !Room->IsReturnTravelPending() && !Room->IsGameOverTravelPending();
+				&& !Room->IsReturnTravelPending() && !Room->IsFinalDepartureTravelPending()
+				&& !Room->IsGameOverTravelPending();
 	SpawnHandle = InWorld.AddOnActorSpawnedHandler(FOnActorSpawned::FDelegate::CreateUObject(this, &USWRoomSnapshotSubsystem::HandleActorSpawned));
 	DestroyHandle = InWorld.AddOnActorDestroyedHandler(FOnActorDestroyed::FDelegate::CreateUObject(this, &USWRoomSnapshotSubsystem::HandleActorDestroyed));
 	PreLevelRemovedHandle = FWorldDelegates::PreLevelRemovedFromWorld.AddUObject(this, &USWRoomSnapshotSubsystem::HandlePreLevelRemoved);

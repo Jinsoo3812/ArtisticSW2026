@@ -259,6 +259,7 @@ void AStorageChest::BeginPlay()
 	}
 
 	ApplyLockPresentation();
+	ApplyStoryGatePresentation();
 }
 
 void AStorageChest::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -283,6 +284,7 @@ void AStorageChest::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 	DOREPLIFETIME(AStorageChest, bGuardFailed);
 	DOREPLIFETIME(AStorageChest, bEnablePhysicsAndBuoyancy);
 	DOREPLIFETIME(AStorageChest, bDistanceOptimizationDormant);
+	DOREPLIFETIME(AStorageChest, bStoryGateDormant);
 }
 
 void AStorageChest::ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems)
@@ -431,8 +433,41 @@ bool AStorageChest::IsBossGuardAlive() const
 
 void AStorageChest::RecalculateGuardLock()
 {
-	SetLocked(bGuardFailed || (bRequiresGuardClear
+	SetLocked(bStoryGateDormant || bGuardFailed || (bRequiresGuardClear
 		&& (!AliveGuardHealthComponents.IsEmpty() || IsBossGuardAlive() || bBossEncounterReserved)));
+}
+
+void AStorageChest::SetStoryGateDormant(bool bDormant)
+{
+	if (!HasAuthorityOrIsTesting()) return;
+	const bool bChanged = bStoryGateDormant != bDormant;
+	bStoryGateDormant = bDormant;
+	if (bChanged) RecalculateGuardLock();
+	ApplyStoryGatePresentation();
+	if (bChanged) ForceNetUpdate();
+}
+
+void AStorageChest::OnRep_StoryGateDormant()
+{
+	ApplyStoryGatePresentation();
+}
+
+void AStorageChest::ApplyStoryGatePresentation()
+{
+	if (bStoryGateDormant == bStoryGatePresentationApplied) return;
+	if (bStoryGateDormant)
+	{
+		bStoryGatePreviousHidden = IsHidden();
+		bStoryGatePreviousCollision = GetActorEnableCollision();
+		SetActorHiddenInGame(true);
+		SetActorEnableCollision(false);
+	}
+	else
+	{
+		SetActorHiddenInGame(bStoryGatePreviousHidden);
+		SetActorEnableCollision(bStoryGatePreviousCollision);
+	}
+	bStoryGatePresentationApplied = bStoryGateDormant;
 }
 
 void AStorageChest::SetBossEncounterReserved(bool bReserved)
@@ -499,6 +534,7 @@ void AStorageChest::EnsureGuaranteedLoot(const TArray<FStorageItemEntry>& Guaran
 
 void AStorageChest::SetLocked(bool bInLocked)
 {
+	bInLocked = bInLocked || bStoryGateDormant;
 	if (!HasAuthorityOrIsTesting() || bLocked == bInLocked)
 	{
 		return;
@@ -535,7 +571,7 @@ void AStorageChest::HandleInteracted(AActor* Interactor)
 			*GetNameSafe(this), *GetNameSafe(Interactor), HasAuthority(), bLocked,
 			*GetNameSafe(InteractableComponent));
 	}
-	if (!HasAuthority() || !Interactor || bLocked)
+	if (!HasAuthority() || !Interactor || bLocked || bStoryGateDormant)
 	{
 		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Chest] Rejected: no authority, no interactor, or locked."));
 		return;

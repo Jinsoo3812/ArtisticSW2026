@@ -45,4 +45,25 @@ public:
 
 	UPROPERTY(Config, EditAnywhere, Category = "Obstacle", meta = (ClampMin = "0", ClampMax = "32"))
 	int32 MaximumEvaluatedObstacles = 8;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Terrain", meta = (ClampMin = "0.0", Units = "deg"))
+	float TerrainProbeYaw = 45.0f;
+	UPROPERTY(Config, EditAnywhere, Category = "Terrain", meta = (ClampMin = "0.0", Units = "cm"))
+	float TerrainSideMargin = 400.0f;
+	UPROPERTY(Config, EditAnywhere, Category = "Terrain", meta = (ClampMin = "1.0", Units = "cm"))
+	float TerrainHalfHeight = 200.0f;
+	UPROPERTY(Config, EditAnywhere, Category = "Terrain", meta = (ClampMin = "1.0", Units = "cm"))
+	float TerrainMinimumProbeDistance = 1500.0f;
+	UPROPERTY(Config, EditAnywhere, Category = "Terrain", meta = (ClampMin = "0.0", Units = "s"))
+	float TerrainVelocityHorizon = 3.0f;
+	UPROPERTY(Config, EditAnywhere, Category = "Terrain", meta = (ClampMin = "0.0", Units = "cm"))
+	float TerrainSideTieDistance = 200.0f;
+	UPROPERTY(Config, EditAnywhere, Category = "Terrain", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float TerrainLimitedMoveInput = 0.35f;
+	UPROPERTY(Config, EditAnywhere, Category = "Terrain", meta = (ClampMin = "-1.0", ClampMax = "0.0"))
+	float TerrainOverlapReverseInput = -0.5f;
+	UPROPERTY(Config, EditAnywhere, Category = "Terrain", meta = (ClampMin = "0.0", Units = "s"))
+	float TerrainMinimumTurnTime = 1.5f;
+	UPROPERTY(Config, EditAnywhere, Category = "Terrain", meta = (ClampMin = "0.0", Units = "s"))
+	float TerrainClearConfirmationTime = 0.8f;
 };

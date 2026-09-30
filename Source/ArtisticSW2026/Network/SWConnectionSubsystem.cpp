@@ -172,7 +172,7 @@ bool USWConnectionSubsystem::ConnectDirectWithName(const FString& Address, const
 void USWConnectionSubsystem::DisconnectToDefaultMap()
 {
 	if (ConnectionState == ESWConnectionState::Idle) return;
-	bRoomReturnPresentationActive = false;
+	RoomLoadingReason = ERoomLoadingReason::None;
 	UGameInstance* GameInstance = GetGameInstance();
 	if (!GameInstance || !GameInstance->GetWorld())
 	{
@@ -267,8 +267,8 @@ void USWConnectionSubsystem::TransitionTo(ESWConnectionState NewState)
 void USWConnectionSubsystem::RecordFailure(ESWConnectionFailureReason Reason, const FString& EngineFailureType, const FString& EngineMessage)
 {
 	if (ConnectionState == ESWConnectionState::Failed && LastFailure.Reason == Reason && LastFailure.EngineFailureType == EngineFailureType && LastFailure.EngineMessage == EngineMessage) return;
-	const bool bWasReturning = bRoomReturnPresentationActive;
-	bRoomReturnPresentationActive = false;
+	const bool bWasReturning = RoomLoadingReason != ERoomLoadingReason::None;
+	RoomLoadingReason = ERoomLoadingReason::None;
 	StopReadinessCheck();
 	bConnectionAttemptActive = false;
 	bIntentionalDisconnect = false;
@@ -376,10 +376,13 @@ void USWConnectionSubsystem::CompleteReadiness()
 	StopReadinessCheck();
 	bConnectionAttemptActive = false;
 	FSWInputDiag::Record(GetGameInstance(), TEXT("Ready"));
-	bRoomReturnPresentationActive = false;
+	const bool bFinalDeparture = RoomLoadingReason == ERoomLoadingReason::FinalDeparture;
+	RoomLoadingReason = ERoomLoadingReason::None;
 	TransitionTo(ESWConnectionState::Playing);
 	if (ConnectionState != ESWConnectionState::Playing) return;
 	HideLoadingPresentation();
+	if (bFinalDeparture)
+		UE_LOG(LogSWConnection, Display, TEXT("Flow=FinalDeparture Phase=PresentationCleared AttemptId=%d"), FinalDepartureAttemptId);
 	FSWInputDiag::Record(GetGameInstance(), TEXT("LoadingRemoved"));
 	if (UGameInstance* Instance = GetGameInstance())
 	{
@@ -412,12 +415,12 @@ bool USWConnectionSubsystem::IsFailureRelevantToThisInstance(const UWorld* Failu
 bool USWConnectionSubsystem::BeginRoomReturnPresentation()
 {
 	if (ConnectionState != ESWConnectionState::Playing || bIntentionalDisconnect) return false;
-	bRoomReturnPresentationActive = true;
+	RoomLoadingReason = ERoomLoadingReason::Return;
 	bConnectionAttemptActive = true;
 	ShowLoadingPresentation();
 	if (!bLoadingPresentationVisible)
 	{
-		bRoomReturnPresentationActive = false;
+		RoomLoadingReason = ERoomLoadingReason::None;
 		bConnectionAttemptActive = false;
 		return false;
 	}
@@ -425,13 +428,33 @@ bool USWConnectionSubsystem::BeginRoomReturnPresentation()
 	return true;
 }
 
+bool USWConnectionSubsystem::BeginRoomFinalDeparturePresentation(int32 AttemptId)
+{
+	if (ConnectionState != ESWConnectionState::Playing || bIntentionalDisconnect) return false;
+	FinalDepartureAttemptId = AttemptId;
+	RoomLoadingReason = ERoomLoadingReason::FinalDeparture;
+	bConnectionAttemptActive = true;
+	ShowLoadingPresentation();
+	if (!bLoadingPresentationVisible)
+	{
+		RoomLoadingReason = ERoomLoadingReason::None;
+		bConnectionAttemptActive = false;
+		UE_LOG(LogSWConnection, Warning, TEXT("Flow=FinalDeparture Phase=PresentationFailed AttemptId=%d"), AttemptId);
+		return false;
+	}
+	UE_LOG(LogSWConnection, Display, TEXT("Flow=FinalDeparture Phase=PresentationShown AttemptId=%d"), AttemptId);
+	return true;
+}
+
 void USWConnectionSubsystem::CancelRoomReturnPresentation()
 {
-	if (!bRoomReturnPresentationActive) return;
-	bRoomReturnPresentationActive = false;
+	if (RoomLoadingReason == ERoomLoadingReason::None) return;
+	const bool bFinalDeparture = RoomLoadingReason == ERoomLoadingReason::FinalDeparture;
+	RoomLoadingReason = ERoomLoadingReason::None;
 	bConnectionAttemptActive = false;
 	HideLoadingPresentation();
-	UE_LOG(LogSWConnection, Warning, TEXT("Flow=Return Phase=PresentationCancelled"));
+	UE_LOG(LogSWConnection, Warning, TEXT("Flow=%s Phase=PresentationCancelled AttemptId=%d"),
+		bFinalDeparture ? TEXT("FinalDeparture") : TEXT("Return"), FinalDepartureAttemptId);
 }
 
 void USWConnectionSubsystem::ShowLoadingPresentation()
@@ -489,7 +512,12 @@ void USWConnectionSubsystem::HideLoadingPresentation()
 void USWConnectionSubsystem::UpdateLoadingPresentationText()
 {
 	if (!LoadingStatusText.IsValid()) return;
-	if (bRoomReturnPresentationActive)
+	if (RoomLoadingReason == ERoomLoadingReason::FinalDeparture)
+	{
+		LoadingStatusText->SetText(NSLOCTEXT("SWConnection", "FinalDeparture", "울돌목으로 출항 중..."));
+		return;
+	}
+	if (RoomLoadingReason == ERoomLoadingReason::Return)
 	{
 		LoadingStatusText->SetText(NSLOCTEXT("SWConnection", "Returning", "귀환 준비 중..."));
 		return;

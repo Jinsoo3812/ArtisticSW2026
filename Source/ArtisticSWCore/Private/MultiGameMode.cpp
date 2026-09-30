@@ -2,6 +2,7 @@
 
 
 #include "MultiGameMode.h"
+#include "Respawn/SWRespawnControllerInterface.h"
 
 #include "Network/SWNetworkLog.h"
 #include "EngineUtils.h"
@@ -187,22 +188,39 @@ void AMultiGameMode::MarkHostedRoomWorldReady()
 	}
 }
 
-bool AMultiGameMode::RequestHostedRoomReturnTravel()
+bool AMultiGameMode::RequestHostedRoomReturnTravel(bool bAfterGameOver)
 {
 	if (!IsHostedRoom() || bLevelRestartRequested || !GetWorld()) return false;
 	bLevelRestartRequested = true;
 	if (UPlayerProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>()) Progress->ClearSnapshotsForHostedReturn();
-	if (USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>()) Room->MarkReturnTravelPending();
+	if (USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>()) { Room->MarkReturnTravelPending(); if (bAfterGameOver) Room->MarkGameOverRetryTravelPending(); }
 	if (!GetWorld()->ServerTravel(TEXT("?Restart"), false))
 	{
 		bLevelRestartRequested = false;
-		if (USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>()) Room->ClearReturnTravelPending();
+		if (USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>()) { Room->ClearReturnTravelPending(); if (bAfterGameOver) Room->ClearGameOverRetryTravelPending(); }
 		UE_LOG(LogSWConnection, Error, TEXT("Hosted room return travel failed"));
 		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 			if (APlayerController* Controller = It->Get()) Controller->ClientMessage(TEXT("귀환 실패"));
 		return false;
 	}
 	return true;
+}
+
+bool AMultiGameMode::RequestHostedRoomFinalDepartureTravel()
+{
+	if (!IsHostedRoom() || bLevelRestartRequested || !GetWorld()) return false;
+	bLevelRestartRequested = true;
+	if (UPlayerProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>())
+		Progress->ClearSnapshotsForHostedReturn();
+	USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>();
+	if (Room) Room->MarkFinalDepartureTravelPending();
+	const bool bTravelAccepted = GetWorld()->ServerTravel(TEXT("?Restart"), false);
+	if (!bTravelAccepted)
+	{
+		bLevelRestartRequested = false;
+		if (Room) Room->ClearFinalDepartureTravelPending();
+	}
+	return bTravelAccepted;
 }
 
 bool AMultiGameMode::TickRoomOwner(float DeltaTime)
@@ -223,6 +241,8 @@ void AMultiGameMode::CheckRoomOwner()
 
 void AMultiGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	for (auto& Pair : RespawnTimers) GetWorldTimerManager().ClearTimer(Pair.Value);
+	RespawnTimers.Reset(); DeathFlowStates.Reset(); IndividualRespawnInProgress.Reset();
 	if (RoomOwnerTickerHandle.IsValid()) FTSTicker::GetCoreTicker().RemoveTicker(RoomOwnerTickerHandle);
 	if (!RoomReadyPath.IsEmpty()) FPlatformFileManager::Get().GetPlatformFile().DeleteFile(*RoomReadyPath);
 	Super::EndPlay(EndPlayReason);
@@ -388,6 +408,7 @@ void AMultiGameMode::PostLogin(APlayerController* NewPlayer)
 
     TryNotifyReadinessState();
 	UpdateHostedRoomPause();
+	PublishLifePhase();
 }
 
 void AMultiGameMode::PreLogin(
@@ -491,6 +512,7 @@ void AMultiGameMode::Logout(AController* Exiting)
 		FinishedDeadPlayers.Remove(Exiting);
 		if (FTimerHandle* Timer = RespawnTimers.Find(Exiting)) GetWorldTimerManager().ClearTimer(*Timer);
 		RespawnTimers.Remove(Exiting);
+		IndividualRespawnInProgress.Remove(Exiting); DeathFlowStates.Remove(Exiting); RespawnFailureLogTimes.Remove(Exiting);
     }
 
     // 플레이어가 나가면 다시 조건을 만족할 수 있도록 플래그를 갱신한다.
@@ -505,6 +527,7 @@ void AMultiGameMode::Logout(AController* Exiting)
     }
 
     Super::Logout(Exiting);
+	RefreshSpectatorTargets();
 	UpdateHostedRoomPause();
 	if (bWasHost && !bLevelRestartRequested) FPlatformMisc::RequestExit(false);
 
@@ -559,7 +582,8 @@ AActor* AMultiGameMode::ChoosePlayerStart_Implementation(AController* Player)
 	if (const UGameInstance* GI = GetGameInstance())
 	{
 		if (const UPlayerProgressSubsystem* Progress = GI->GetSubsystem<UPlayerProgressSubsystem>();
-			(Progress && Progress->HasSnapshot(PlayerIndex)) || (Room && Room->IsReturnTravelPending()))
+			(Progress && Progress->HasSnapshot(PlayerIndex))
+			|| (Room && (Room->IsReturnTravelPending() || Room->IsFinalDepartureTravelPending())))
 		{
 			APlayerRespawnPoint* Fallback = nullptr;
 			for (TActorIterator<APlayerRespawnPoint> It(GetWorld()); It; ++It)
@@ -875,87 +899,155 @@ int32 AMultiGameMode::GetPlayerIndex(AController* Controller) const
 	return INDEX_NONE;
 }
 
+void AMultiGameMode::PublishLifePhase()
+{
+ if (RoomReadyState) { RoomReadyState->SessionLifePhase = SessionLifePhase; RoomReadyState->ForceNetUpdate(); }
+ for (const auto& Pair : PlayerIndices)
+  if (ISWRespawnControllerInterface* Flow = Cast<ISWRespawnControllerInterface>(Pair.Key.Get()))
+  {
+   FSWDeathFlowState& State = DeathFlowStates.FindOrAdd(Pair.Key);
+   State.RestoreGeneration = RoomReadyState ? RoomReadyState->RestoreGeneration : 0;
+   State.bHostMayRetry = IsHostController(Pair.Key) && SessionLifePhase == ESWSessionLifePhase::GameOver;
+   Flow->SetDeathFlowState(State);
+  }
+}
+bool AMultiGameMode::RegisterPlayerRespawnShip(AActor* Ship)
+{
+ if (!HasAuthority() || !IsValid(Ship) || Ship->GetWorld() != GetWorld() || Ship->ActorHasTag(TEXT("Enemy"))
+  || !Ship->GetClass()->ImplementsInterface(URespawnHostInterface::StaticClass())) return false;
+ if (PlayerRespawnShip.Get() == Ship) return true;
+ if (PlayerRespawnShip.IsValid()) { UE_LOG(LogSWRoom, Error, TEXT("RespawnShipMissing: duplicate player ship %s"), *GetNameSafe(Ship)); return false; }
+ if (SessionLifePhase != ESWSessionLifePhase::Playing) return false;
+ if (bPlayerRespawnShipRegistered && (!RoomReadyState || RoomReadyState->bWorldReady)) return false;
+ PlayerRespawnShip = Ship; bPlayerRespawnShipRegistered = true;
+ return true;
+}
+bool AMultiGameMode::CanMutateGameplay(AController* Controller) const
+{
+ return Controller && SessionLifePhase != ESWSessionLifePhase::GameOver && SessionLifePhase != ESWSessionLifePhase::ReturningAfterGameOver
+  && !FinishedDeadPlayers.Contains(Controller) && !IndividualRespawnInProgress.Contains(Controller)
+  && (!IsHostedRoom() || (RoomReadyState && RoomReadyState->bWorldReady));
+}
+bool AMultiGameMode::CanHostRequestGameOverRetry(AController* Controller) const
+{
+ return HasAuthority() && IsHostController(Controller) && SessionLifePhase == ESWSessionLifePhase::GameOver && !bLevelRestartRequested;
+}
+void AMultiGameMode::SetGameOverRetryTransitionPending(bool bPending)
+{
+ if (!HasAuthority()) return;
+ if (bPending && SessionLifePhase == ESWSessionLifePhase::GameOver) SessionLifePhase = ESWSessionLifePhase::ReturningAfterGameOver;
+ else if (!bPending && SessionLifePhase == ESWSessionLifePhase::ReturningAfterGameOver) SessionLifePhase = ESWSessionLifePhase::GameOver;
+ PublishLifePhase();
+}
+void AMultiGameMode::NotifyPlayerShipSinking(AActor* Ship)
+{
+ if (!HasAuthority() || Ship != PlayerRespawnShip.Get() || SessionLifePhase != ESWSessionLifePhase::Playing || bLevelRestartRequested) return;
+ SessionLifePhase = ESWSessionLifePhase::ShipSinking;
+ for (auto& Pair : RespawnTimers) GetWorldTimerManager().ClearTimer(Pair.Value);
+ RespawnTimers.Reset();
+ for (auto& Pair : DeathFlowStates) Pair.Value.RespawnEndServerTime = 0;
+ UE_LOG(LogSWRoom, Display, TEXT("ShipSinkingStarted Ship=%s"), *GetNameSafe(Ship));
+ PublishLifePhase();
+}
+void AMultiGameMode::NotifyPlayerShipRemovedBySinking(AActor* Ship)
+{
+ // Weak Get() excludes pending-kill actors; retain identity with Get(true).
+ if (!HasAuthority() || !Ship || Ship != PlayerRespawnShip.Get(true) || Ship->GetWorld() != GetWorld()
+  || bLevelRestartRequested || GetWorld()->bIsTearingDown || SessionLifePhase != ESWSessionLifePhase::ShipSinking) return;
+ SessionLifePhase = ESWSessionLifePhase::GameOver;
+ for (const auto& Pair : PlayerIndices)
+  if (ISWRespawnControllerInterface* Flow = Cast<ISWRespawnControllerInterface>(Pair.Key.Get())) Flow->FreezeLifeProgressForGameOver();
+ PublishLifePhase();
+ UE_LOG(LogSWRoom, Display, TEXT("ShipRemovedGameOver Ship=%s"), *GetNameSafe(Ship));
+ OnGameOverRequested.Broadcast();
+}
+void AMultiGameMode::RefreshSpectatorTargets()
+{
+ // Controller owns camera publication and life-character checks; refreshing state also handles late joins.
+ PublishLifePhase();
+}
 void AMultiGameMode::NotifyPlayerDeathFinished(APawn* DeadPawn)
 {
-	if (!HasAuthority() || !DeadPawn) return;
-	AController* DeadController = DeadPawn->GetController();
-	if (!DeadController && DeadPawn->GetPlayerState()) DeadController = DeadPawn->GetPlayerState()->GetOwningController();
-	if (!DeadController || !PlayerIndices.Contains(DeadController) || FinishedDeadPlayers.Contains(DeadController)) return;
-
-	FinishedDeadPlayers.Add(DeadController);
-	if (UFunction* CaptureFunction = DeadPawn->FindFunction(TEXT("CaptureReconnectProgress")))
-		DeadPawn->ProcessEvent(CaptureFunction, nullptr);
-	DeadController->UnPossess();
-	DeadPawn->SetLifeSpan(FMath::Max(IndividualRespawnDelay + 2.0f, 10.0f));
-	if (FinishedDeadPlayers.Num() >= RequiredPlayerCount)
-	{
-		for (TPair<TObjectPtr<AController>, FTimerHandle>& Pair : RespawnTimers) GetWorldTimerManager().ClearTimer(Pair.Value);
-		RespawnTimers.Reset();
-		HandleAllPlayersDeathFinished();
-		return;
-	}
-
-	FTimerDelegate Delegate;
-	Delegate.BindUObject(this, &AMultiGameMode::TryRespawnPlayer, DeadController);
-	GetWorldTimerManager().SetTimer(RespawnTimers.FindOrAdd(DeadController), Delegate, IndividualRespawnDelay, false);
+ if (!HasAuthority() || !DeadPawn || DeadPawn->GetWorld() != GetWorld()) return;
+ AController* Controller = DeadPawn->GetController();
+ if (!Controller && DeadPawn->GetPlayerState()) Controller = DeadPawn->GetPlayerState()->GetOwningController();
+ if (!Controller || !PlayerIndices.Contains(Controller) || FinishedDeadPlayers.Contains(Controller)
+  || SessionLifePhase == ESWSessionLifePhase::GameOver || SessionLifePhase == ESWSessionLifePhase::ReturningAfterGameOver) return;
+ ISWRespawnControllerInterface* Flow = Cast<ISWRespawnControllerInterface>(Controller);
+ const bool bCaptured = Flow && Flow->CaptureLatestLifeProgress(DeadPawn);
+ FinishedDeadPlayers.Add(Controller);
+ FSWDeathFlowState& State = DeathFlowStates.FindOrAdd(Controller);
+ State.Phase = ESWPersonalLifePhase::WaitingForRespawn;
+ ++State.WaitingGeneration;
+ State.RespawnEndServerTime = SessionLifePhase == ESWSessionLifePhase::Playing
+  ? (GetGameState<AGameStateBase>() ? GetGameState<AGameStateBase>()->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds()) + FMath::Max(0.f, IndividualRespawnDelay) : 0;
+ Controller->UnPossess();
+ DeadPawn->SetLifeSpan(FMath::Max(IndividualRespawnDelay + 2.f, 10.f));
+ if (!bCaptured) UE_LOG(LogSWRoom, Error, TEXT("RespawnProgressMissing Index=%d Generation=%d"), GetPlayerIndex(Controller), State.WaitingGeneration);
+ if (SessionLifePhase == ESWSessionLifePhase::Playing && bCaptured)
+ {
+  FTimerDelegate Delegate = FTimerDelegate::CreateUObject(this, &AMultiGameMode::TryRespawnPlayer, Controller, State.WaitingGeneration);
+  if (IndividualRespawnDelay <= 0) RespawnTimers.Add(Controller, GetWorldTimerManager().SetTimerForNextTick(Delegate));
+  else GetWorldTimerManager().SetTimer(RespawnTimers.FindOrAdd(Controller), Delegate, IndividualRespawnDelay, false);
+ }
+ RefreshSpectatorTargets();
 }
-
-void AMultiGameMode::TryRespawnPlayer(AController* Controller)
+void AMultiGameMode::TryRespawnPlayer(AController* Controller, int32 ExpectedGeneration)
 {
-	RespawnTimers.Remove(Controller);
-	if (!Controller || !FinishedDeadPlayers.Contains(Controller)) return;
-	UPlayerRespawnPointComponent* Point = FindShipRespawnPoint(GetPlayerIndex(Controller));
-	if (!Point) return;
-	FinishedDeadPlayers.Remove(Controller);
-	RestartPlayerAtTransform(Controller, Point->GetComponentTransform());
+ if (!IsValid(Controller) || !FinishedDeadPlayers.Contains(Controller) || SessionLifePhase != ESWSessionLifePhase::Playing
+  || !DeathFlowStates.Contains(Controller) || DeathFlowStates.FindChecked(Controller).WaitingGeneration != ExpectedGeneration) return;
+ ISWRespawnControllerInterface* Flow = Cast<ISWRespawnControllerInterface>(Controller);
+ UPlayerRespawnPointComponent* Point = FindShipRespawnPoint(GetPlayerIndex(Controller));
+ bool bSuccess = false;
+ if (Point && Flow && Flow->HasPendingLifeProgress())
+ {
+  IndividualRespawnInProgress.Add(Controller);
+  RestartPlayerAtTransform(Controller, Point->GetComponentTransform());
+  bSuccess = Flow->WasLastLifeProgressApplySuccessful(Controller->GetPawn());
+  IndividualRespawnInProgress.Remove(Controller);
+ }
+ if (!bSuccess)
+ {
+  if (APawn* Partial = Controller->GetPawn()) { Controller->UnPossess(); Partial->Destroy(); }
+  double& LastLog = RespawnFailureLogTimes.FindOrAdd(Controller);
+  if (GetWorld()->GetTimeSeconds() - LastLog >= 1)
+  {
+   UE_LOG(LogSWRoom, Warning, TEXT("%s Index=%d Generation=%d"), Point ? TEXT("RespawnSpawnFailed") : TEXT("RespawnSlotMissing"), GetPlayerIndex(Controller), DeathFlowStates.FindOrAdd(Controller).WaitingGeneration);
+   LastLog = GetWorld()->GetTimeSeconds();
+  }
+  GetWorldTimerManager().SetTimer(RespawnTimers.FindOrAdd(Controller), FTimerDelegate::CreateUObject(this, &AMultiGameMode::TryRespawnPlayer, Controller, ExpectedGeneration), .5f, false);
+  return;
+ }
+ FinishedDeadPlayers.Remove(Controller);
+ RespawnTimers.Remove(Controller);
+ DeathFlowStates.FindOrAdd(Controller).Phase = ESWPersonalLifePhase::Alive;
+ Flow->CaptureLatestLifeProgress(Controller->GetPawn());
+ if (UPlayerProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>())
+ { Progress->ClearSnapshot(GetPlayerIndex(Controller)); Progress->ClearReconnectSnapshot(GetReconnectKey(Controller)); }
+ RefreshSpectatorTargets();
 }
-
 UPlayerRespawnPointComponent* AMultiGameMode::FindShipRespawnPoint(int32 PlayerIndex) const
 {
-	UWorld* World = GetWorld();
-	if (!World) return nullptr;
-	UPlayerRespawnPointComponent* Fallback = nullptr;
-	for (TObjectIterator<UPlayerRespawnPointComponent> It; It; ++It)
-	{
-		UPlayerRespawnPointComponent* Point = *It;
-		if (!Point || Point->GetWorld() != World || !Point->IsRegistered()) continue;
-		AActor* Host = Point->GetOwner();
-		if (!Host || !Host->GetClass()->ImplementsInterface(URespawnHostInterface::StaticClass())
-			|| !IRespawnHostInterface::Execute_IsAvailableForPlayerRespawn(Host)) continue;
-		if (Point->PlayerSlot == static_cast<ESWPlayerSlot>(PlayerIndex)) return Point;
-		if (Point->PlayerSlot == ESWPlayerSlot::Any) Fallback = Point;
-	}
-	return Fallback;
+ AActor* Ship = PlayerRespawnShip.Get();
+ if (!Ship || PlayerIndex < 0 || PlayerIndex > 1 || SessionLifePhase != ESWSessionLifePhase::Playing
+  || !IRespawnHostInterface::Execute_IsAvailableForPlayerRespawn(Ship)) return nullptr;
+ TArray<UPlayerRespawnPointComponent*> Points;
+ Ship->GetComponents(Points);
+ UPlayerRespawnPointComponent* Result = nullptr;
+ for (UPlayerRespawnPointComponent* Point : Points)
+  if (Point->PlayerSlot == static_cast<ESWPlayerSlot>(PlayerIndex) && Point->IsRegistered())
+  {
+   if (Result) { UE_LOG(LogSWRoom, Error, TEXT("RespawnSlotDuplicate Index=%d"), PlayerIndex); return nullptr; }
+   if (Point->GetComponentTransform().ContainsNaN()) return nullptr;
+   Result = Point;
+  }
+ return Result;
 }
-
-void AMultiGameMode::HandleAllPlayersDeathFinished()
-{
-	if (!HasAuthority()) return;
-	RequestGameOverAndLevelRestart();
-}
-
+void AMultiGameMode::HandleAllPlayersDeathFinished() {}
 void AMultiGameMode::RequestGameOverAndLevelRestart()
 {
-	if (!HasAuthority() || bLevelRestartRequested) return;
-	if (IsHostedRoom()) UE_LOG(LogSWRoom, Display, TEXT("Flow=GameOver Side=Server Phase=RestartRequested NoDiskWrite=1"));
-	bLevelRestartRequested = true;
-	if (IsHostedRoom())
-		if (USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>()) Room->MarkGameOverTravelPending();
-	for (TPair<TObjectPtr<AController>, FTimerHandle>& Pair : RespawnTimers)
-	{
-		GetWorldTimerManager().ClearTimer(Pair.Value);
-	}
-	RespawnTimers.Reset();
-	CapturePlayerProgressForLevelRestart();
-	OnGameOverRequested.Broadcast();
-	if (UPlayerProgressSubsystem* Progress = GetGameInstance() ? GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>() : nullptr)
-		Progress->ClearReconnectSnapshots();
-	if (UWorld* World = GetWorld())
-	{
-		World->ServerTravel(TEXT("?Restart"), false);
-	}
+ UE_LOG(LogSWRoom, Warning, TEXT("Legacy GameOver ignored: actual sinking removal notification required"));
 }
-
 void AMultiGameMode::CapturePlayerProgressForLevelRestart()
 {
 	for (TActorIterator<APawn> It(GetWorld()); It; ++It)

@@ -113,6 +113,7 @@ public:
 	UPROPERTY(SaveGame) int32 ContentContractVersion = 1;
 	UPROPERTY(SaveGame) FSoftObjectPath MapPath;
 	UPROPERTY(SaveGame) bool bComplete = false;
+	UPROPERTY(SaveGame) bool bFinalDepartureCompleted = false;
 	UPROPERTY(Transient) bool bRecoveredFromBackup = false;
 	UPROPERTY(SaveGame) FSWRoomWorldSnapshot WorldSnapshot;
 	UPROPERTY(SaveGame) FGuid RoomId;

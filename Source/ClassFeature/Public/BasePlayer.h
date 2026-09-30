@@ -108,6 +108,7 @@ public:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	bool HandleFinalDepartureRequested(AActor* Requester);
 	virtual void PostInitializeComponents() override;
 	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
 
@@ -153,6 +154,12 @@ protected:
 	bool bHasPendingRoomEffects = false;
 	float PendingRoomHealth = 0.f;
 	bool bHasCompletedInitialPossession = false;
+	public:
+	bool HasCompletedInitialPossession() const { return bHasCompletedInitialPossession && bInitialLifeRestoreSuccessful; }
+	bool bInitialLifeRestoreSuccessful = true;
+	bool RestoreProgressForNewLife(const FSWRoomPlayerProgress& Progress, FString& OutError);
+	bool CanMutateLifeGameplay() const;
+	protected:
 	friend class FWeaponEquipmentLifecycleTest;
 
 	/** Retained while the controller temporarily possesses a ship or cannon. */

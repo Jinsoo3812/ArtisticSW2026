@@ -15,6 +15,8 @@
 #include "BaseCharacter.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Room/SWRoomSnapshotSubsystem.h"
+#include "Network/SWFinalEncounterDiagnostics.h"
+#include "Ship.h"
 
 namespace
 {
@@ -456,6 +458,7 @@ bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionB
 		UE_LOG(LogTemp, Warning, TEXT("Fixed chest drop data is not configured; progression loot remains active."));
 	}
 	TArray<AChestSpawnPoint*> SpawnedPoints;
+	int32 FinalGuardedChestCount = 0;
 	int32 Counts[4] = {0, 0, 0, 0};
 	int32 CountsByKind[4][4] = {};
 	for (TActorIterator<AChestSpawnPoint> It(GetWorld()); It; ++It)
@@ -472,6 +475,9 @@ bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionB
 			return false;
 		}
 		SpawnedPoints.Add(Point);
+		if (Point->GetSpawnMode() == EChestSpawnMode::Guarded
+			&& Point->GetOwningShip() && Point->GetOwningShip()->IsFinalBossSquadForDeckContent())
+			++FinalGuardedChestCount;
 		++Counts[ZoneIndex];
 		const int32 KindIndex = static_cast<int32>(Point->GetProgressionKind());
 		if (KindIndex >= 0 && KindIndex < 4) ++CountsByKind[ZoneIndex][KindIndex];
@@ -519,6 +525,9 @@ bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionB
 		LastZoneDrops[ZoneIndex] = MoveTemp(DropsByZone[ZoneIndex]);
 	}
 	bProgressionFinalized = true;
+	FSWFinalEncounterDiagnostics::Write(TEXT("FinalLoot"), TEXT("ProbabilitiesFinalized"),
+		FString::Printf(TEXT("FinalGuardedChests=%d TotalSpawnedChests=%d"),
+			FinalGuardedChestCount, SpawnedPoints.Num()));
 	return true;
 }
 

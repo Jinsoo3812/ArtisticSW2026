@@ -2,6 +2,9 @@
 
 
 #include "Inventory/InventoryComponent.h"
+#include "BasePlayer.h"
+#include "BasePlayerController.h"
+#include "EngineUtils.h"
 #include "Net/UnrealNetwork.h"
 #include "ItemData.h"
 #include "ItemSubsystem.h"
@@ -735,6 +738,7 @@ void UInventoryComponent::HandleLeftClickSlot(int32 SlotIndex)
 
 void UInventoryComponent::HandleLeftClickSlotInTab(EInventoryTab Tab, int32 SlotIndex)
 {
+	if (const ABasePlayer* Player = Cast<ABasePlayer>(GetOwner()); Player && !Player->CanMutateLifeGameplay()) return;
     if (!GetOwner() || !GetOwner()->HasAuthority())
     {
         return;
@@ -861,6 +865,7 @@ void UInventoryComponent::HandleLeftClickSlotInTab(EInventoryTab Tab, int32 Slot
 
 void UInventoryComponent::HandleRightClickInventory()
 {
+	if (const ABasePlayer* Player = Cast<ABasePlayer>(GetOwner()); Player && !Player->CanMutateLifeGameplay()) return;
     if (!GetOwner() || !GetOwner()->HasAuthority())
     {
         return;
@@ -1032,17 +1037,23 @@ int32 UInventoryComponent::TransferCursorToStorageSlot(UStorageComponent* Target
 }
 
 void UInventoryComponent::ServerHandleRightClickInventory_Implementation()
-{
+{ if (ABasePlayer* Player = Cast<ABasePlayer>(GetOwner()))
+  for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+   if (ABasePlayerController* Flow = Cast<ABasePlayerController>(It->Get()); Flow && Flow->GetLifeCharacter() == Player && !Flow->CanMutateGameplay()) return;
     HandleRightClickInventory();
 }
 
 void UInventoryComponent::ServerHandleLeftClickSlot_Implementation(int32 SlotIndex)
-{
+{ if (ABasePlayer* Player = Cast<ABasePlayer>(GetOwner()))
+  for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+   if (ABasePlayerController* Flow = Cast<ABasePlayerController>(It->Get()); Flow && Flow->GetLifeCharacter() == Player && !Flow->CanMutateGameplay()) return;
     HandleLeftClickSlot(SlotIndex);
 }
 
 void UInventoryComponent::ServerHandleLeftClickSlotInTab_Implementation(EInventoryTab Tab, int32 SlotIndex)
-{
+{ if (ABasePlayer* Player = Cast<ABasePlayer>(GetOwner()))
+  for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+   if (ABasePlayerController* Flow = Cast<ABasePlayerController>(It->Get()); Flow && Flow->GetLifeCharacter() == Player && !Flow->CanMutateGameplay()) return;
     HandleLeftClickSlotInTab(Tab, SlotIndex);
 }
 

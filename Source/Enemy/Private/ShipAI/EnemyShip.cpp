@@ -52,8 +52,12 @@
 #include "UObject/UnrealType.h"
 #include "SWCabinWaterCullComponent.h"
 #include "Room/SWRoomSnapshotComponent.h"
+#include "StoryFacadeSubsystem.h"
+#include "Network/SWFinalEncounterDiagnostics.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogEnemyShipChestSpawnPoint, Log, All);
+static const FName FinalBossSquadId(TEXT("Final"));
+static const TCHAR* FinalBossShipArchetypePath = TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Elite/DA_ES_TimeStop.DA_ES_TimeStop");
 
 void AEnemyShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
 {
@@ -63,6 +67,7 @@ void AEnemyShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<
 	State.bHasDropped = bHasDropped;
 	State.bCrewDefeated = bCrewDefeated;
 	State.bHasEverHadLivingCrew = bHasEverHadLivingCrew;
+	State.bStoryGateOpen = bStoryGateOpen;
 	for (ABaseEnemy* Crew : RegisteredCrewEnemies)
 	{
 		if (!IsValid(Crew)) continue;
@@ -84,7 +89,7 @@ void AEnemyShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<
 	State.CrewIds.Sort();
 	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
 	Part.Domain = ESWRoomDomain::Enemy;
-	Part.Version = 2;
+	Part.Version = 3;
 	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
 	{
 		OutParts.Pop();
@@ -99,7 +104,8 @@ bool AEnemyShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutEr
 {
 	if (Part.Domain == ESWRoomDomain::Ship) return AShip::RestoreRoomDomain(Part, OutError);
 	FSWRoomEnemyShipState State;
-	if (Part.Domain != ESWRoomDomain::Enemy || Part.Version != 2 || !FSWRoomStructCodec::Read(Part.Bytes, State))
+	if (Part.Domain != ESWRoomDomain::Enemy || (Part.Version != 2 && Part.Version != 3)
+		|| !FSWRoomStructCodec::Read(Part.Bytes, State))
 	{
 		OutError = TEXT("Invalid enemy ship state");
 		return false;
@@ -110,6 +116,18 @@ bool AEnemyShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutEr
 	bHasDropped = State.bHasDropped;
 	bCrewDefeated = State.bCrewDefeated;
 	bHasEverHadLivingCrew = State.bHasEverHadLivingCrew;
+	if (IsFinalBossSquadShip())
+	{
+		if (Part.Version == 3) bStoryGateOpen = State.bStoryGateOpen;
+		else if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UStoryFacadeSubsystem* Story = GameInstance->GetSubsystem<UStoryFacadeSubsystem>())
+			{
+				bStoryGateOpen = Story->IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted)
+					&& !Story->IsStoryNodeReached(EStoryNode::FinalBossDefeated);
+			}
+		}
+	}
 	RegisteredCrewEnemies.Reset();
 	RegisteredBoss = nullptr;
 	PendingRoomState = MoveTemp(State);
@@ -138,7 +156,10 @@ bool AEnemyShip::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActor
 		RegisteredBoss = Cast<AShipBossEnemy>(*Found);
 	if (DeckEnemySpawnerComponent && !DeckEnemySpawnerComponent->FinalizeRoomState(RegisteredActors, OutError)) return false;
 	if (BossEncounterComponent && !BossEncounterComponent->FinalizeRoomState(RegisteredActors, OutError)) return false;
-	ApplyDistanceOptimizationState();
+	if (IsStoryGateDormant() && DeckEnemySpawnerComponent) DeckEnemySpawnerComponent->CancelDeployment();
+	ApplyEffectiveDormancyState();
+	ApplyStoryGatePresentation();
+	ApplyStoryGateToSpawnedChests();
 	return true;
 }
 
@@ -822,6 +843,7 @@ void AEnemyShip::OnConstruction(const FTransform& Transform)
 void AEnemyShip::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
+	if (IsFinalBossSquadShip()) ApplyStoryGatePresentation();
 	ApplyChestSpawnPointSettings();
 }
 
@@ -940,12 +962,83 @@ void AEnemyShip::BeginPlay()
 		{
 			SwarmSubsystem->RegisterShip(this);
 		}
+		if (IsFinalBossSquadShip())
+		{
+			static TWeakObjectPtr<UWorld> LastCountedFinalWorld;
+			if (LastCountedFinalWorld.Get() != GetWorld())
+			{
+				LastCountedFinalWorld = GetWorld();
+				int32 FinalCount = 0;
+				int32 OwnerCount = 0;
+				for (TActorIterator<AEnemyShip> It(GetWorld()); It; ++It)
+				{
+					if (!It->IsFinalBossSquadShip()) continue;
+					++FinalCount;
+					if (It->EnemyShipArchetype
+						&& It->EnemyShipArchetype->GetPathName() == FinalBossShipArchetypePath) ++OwnerCount;
+				}
+				FSWFinalEncounterDiagnostics::Write(TEXT("FinalSquad"), TEXT("LevelCensus"),
+					FString::Printf(TEXT("Count=%d BossShipCount=%d"), FinalCount, OwnerCount));
+			}
+			FSWFinalEncounterDiagnostics::Write(TEXT("FinalSquad"), TEXT("ShipFound"),
+				FString::Printf(TEXT("Ship=%s Label=%s Archetype=%s SquadID=%s GateOpen=%d"),
+					*GetPathName(), *GetActorNameOrLabel(), *GetPathNameSafe(EnemyShipArchetype.Get()),
+					*SquadID.ToString(), bStoryGateOpen));
+			TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
+			for (UChildActorComponent* Component : ChildActorComponents)
+			{
+				if (AChestSpawnPoint* Point = Cast<AChestSpawnPoint>(Component->GetChildActor()))
+				{
+					FSWFinalEncounterDiagnostics::Write(TEXT("FinalSquad"), TEXT("ChestOwnership"),
+						FString::Printf(TEXT("Ship=%s ParentOwnerMatches=%d Point=%s ChildOwnerMatches=%d"),
+							*GetPathName(), ChestSpawnPointChestSettings.OwningShip == this,
+							*Point->GetPathName(), Point->GetOwningShip() == this));
+					Point->OnChestSpawned.AddUniqueDynamic(this, &AEnemyShip::HandleStoryGatedChestSpawned);
+					if (AStorageChest* Chest = Cast<AStorageChest>(Point->GetSpawnedActor())) HandleStoryGatedChestSpawned(Chest);
+				}
+			}
+			if (UGameInstance* GameInstance = GetGameInstance())
+			{
+				if (UStoryFacadeSubsystem* Story = GameInstance->GetSubsystem<UStoryFacadeSubsystem>())
+				{
+					Story->OnStoryChanged.AddUniqueDynamic(this, &AEnemyShip::HandleStoryGateChanged);
+					HandleStoryGateChanged();
+				}
+				else if (!bStorySubsystemMissingLogged)
+				{
+					bStorySubsystemMissingLogged = true;
+					FSWFinalEncounterDiagnostics::Write(TEXT("FinalGate"), TEXT("StoryMissing"), GetPathName());
+				}
+			}
+		}
 	}
+	ApplyEffectiveDormancyState();
+	ApplyStoryGatePresentation();
+	ApplyStoryGateToSpawnedChests();
 }
 
 void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	bEndingPlay = true;
+	if (bStoryGateCannonTagAdded)
+	{
+		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent()) ASC->RemoveLooseGameplayTag(State_Ship_CannonDisabled);
+		bStoryGateCannonTagAdded = false;
+	}
+	if (IsFinalBossSquadShip())
+	{
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UStoryFacadeSubsystem* Story = GameInstance->GetSubsystem<UStoryFacadeSubsystem>())
+				Story->OnStoryChanged.RemoveDynamic(this, &AEnemyShip::HandleStoryGateChanged);
+		}
+		TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
+		for (UChildActorComponent* Component : ChildActorComponents)
+		{
+			if (AChestSpawnPoint* Point = Cast<AChestSpawnPoint>(Component->GetChildActor()))
+				Point->OnChestSpawned.RemoveDynamic(this, &AEnemyShip::HandleStoryGatedChestSpawned);
+		}
+	}
 	if (bCaptureCannonTagAdded)
 	{
 		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
@@ -1024,7 +1117,7 @@ void AEnemyShip::DestroyDeckEnemyPool()
 
 void AEnemyShip::NotifyPlayerShipSighted(AShip* SensedPlayerShip)
 {
-	if (!HasAuthority() || bDeathHandled || bCrewDefeated
+	if (!HasAuthority() || bDeathHandled || bCrewDefeated || IsStoryGateDormant()
 		|| !IsValid(SensedPlayerShip) || SensedPlayerShip == this
 		|| SensedPlayerShip->IsEnemyShipForEffects()
 		|| !SensedPlayerShip->ActorHasTag(TEXT("Player"))
@@ -1121,7 +1214,7 @@ bool AEnemyShip::ActivateDeckEnemyAtPoint(
 	AActor* InitialTarget,
 	ADeckEnemy*& OutEnemy)
 {
-	if (bCrewDefeated)
+	if (bCrewDefeated || IsStoryGateDormant())
 	{
 		OutEnemy = nullptr;
 		return false;
@@ -1136,7 +1229,7 @@ bool AEnemyShip::ActivateDeckEnemyAtReservation(
 	AActor* InitialTarget,
 	ADeckEnemy*& OutEnemy)
 {
-	if (bCrewDefeated || !DeckEnemySpawnerComponent)
+	if (bCrewDefeated || IsStoryGateDormant() || !DeckEnemySpawnerComponent)
 	{
 		Reservation.Reset();
 		OutEnemy = nullptr;
@@ -1854,7 +1947,7 @@ void AEnemyShip::ApplyNavigationCollisionPolicy(ENavalCombatState State)
 
 bool AEnemyShip::CanEnterDistanceOptimizationDormancy() const
 {
-	if (!bEnableDistanceOptimization || bDistanceOptimizationDormant
+	if (!bEnableDistanceOptimization || bDistanceOptimizationDormant || IsStoryGateDormant()
 		|| bDeathHandled || IsSinking() || bCrewDefeated || !NavigationComponent
 		|| NavigationComponent->GetCurrentState() != ENavalCombatState::Idle
 		|| NavigationComponent->GetTargetShip() != nullptr
@@ -1904,7 +1997,7 @@ void AEnemyShip::SetDistanceOptimizationDormant(bool bDormant)
 	}
 
 	bDistanceOptimizationDormant = bDormant;
-	ApplyDistanceOptimizationState();
+	ApplyEffectiveDormancyState();
 	ForceNetUpdate();
 	if (bDormant)
 	{
@@ -1914,13 +2007,178 @@ void AEnemyShip::SetDistanceOptimizationDormant(bool bDormant)
 
 void AEnemyShip::OnRep_DistanceOptimizationDormant()
 {
-	ApplyDistanceOptimizationState();
+	ApplyEffectiveDormancyState();
 }
 
-void AEnemyShip::ApplyDistanceOptimizationState()
+bool AEnemyShip::IsFinalBossSquadShip() const
 {
-	if (bDistanceOptimizationDormant)
+	return SquadID == FinalBossSquadId;
+}
+
+bool AEnemyShip::IsStoryGateDormant() const
+{
+	return IsFinalBossSquadShip() && !bStoryGateOpen;
+}
+
+void AEnemyShip::HandleStoryGateChanged()
+{
+	if (!HasAuthority() || !IsFinalBossSquadShip() || bStoryGateOpen) return;
+	UStoryFacadeSubsystem* Story = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
+	if (!Story)
 	{
+		if (!bStorySubsystemMissingLogged)
+		{
+			bStorySubsystemMissingLogged = true;
+			FSWFinalEncounterDiagnostics::Write(TEXT("FinalGate"), TEXT("StoryMissing"), GetPathName());
+		}
+		return;
+	}
+	const bool bAccepted = Story->IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted);
+	const bool bDefeated = Story->IsStoryNodeReached(EStoryNode::FinalBossDefeated);
+	FSWFinalEncounterDiagnostics::Write(TEXT("FinalGate"), TEXT("StoryEvaluated"),
+		FString::Printf(TEXT("Ship=%s Accepted=%d Defeated=%d Open=%d"), *GetPathName(),
+			bAccepted, bDefeated, bStoryGateOpen));
+	if (bAccepted && !bDefeated) SetStoryGateOpen(true);
+}
+
+void AEnemyShip::SetStoryGateOpen(bool bOpen)
+{
+	if (!HasAuthority() || !IsFinalBossSquadShip()) return;
+	const bool bChanged = bStoryGateOpen != bOpen;
+	if (bChanged && bOpen)
+	{
+		FlushNetDormancy();
+		SetNetDormancy(DORM_Awake);
+	}
+	bStoryGateOpen = bOpen;
+	if (!bOpen && DeckEnemySpawnerComponent) DeckEnemySpawnerComponent->CancelDeployment();
+	ApplyEffectiveDormancyState();
+	ApplyStoryGatePresentation();
+	ApplyStoryGateToSpawnedChests();
+	if (bChanged)
+	{
+		FSWFinalEncounterDiagnostics::Write(TEXT("FinalGate"), bOpen ? TEXT("Opened") : TEXT("Closed"), GetPathName());
+		if (bOpen)
+		{
+			bool bAllOpen = true;
+			for (TActorIterator<AEnemyShip> It(GetWorld()); It; ++It)
+				if (It->IsFinalBossSquadShip() && !It->bStoryGateOpen) bAllOpen = false;
+			static TWeakObjectPtr<UWorld> LastRecalculatedWorld;
+			if (bAllOpen && LastRecalculatedWorld.Get() != GetWorld())
+			{
+				LastRecalculatedWorld = GetWorld();
+				if (UShipSwarmSubsystem* Swarm = GetWorld()->GetSubsystem<UShipSwarmSubsystem>())
+					Swarm->RecalculateSquadOrbitDistances(FinalBossSquadId);
+			}
+		}
+		ForceNetUpdate();
+	}
+}
+
+void AEnemyShip::OnRep_StoryGateOpen()
+{
+	ApplyEffectiveDormancyState();
+	ApplyStoryGatePresentation();
+	ApplyStoryGateToSpawnedChests();
+}
+
+void AEnemyShip::ApplyStoryGatePresentation()
+{
+	if (!IsFinalBossSquadShip()) return;
+	RefreshMountedCannons();
+	SetActorHiddenInGame(IsStoryGateDormant());
+	for (ACannon* Cannon : MountedCannons)
+	{
+		if (IsValid(Cannon))
+		{
+			if (IsStoryGateDormant() && HasActorBegunPlay()) Cannon->ResetAIFiringState();
+			Cannon->SetActorHiddenInGame(IsStoryGateDormant());
+		}
+	}
+	if (!HasActorBegunPlay()) return;
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		if (IsStoryGateDormant() && !bStoryGateCannonTagAdded)
+		{
+			ASC->AddLooseGameplayTag(State_Ship_CannonDisabled);
+			bStoryGateCannonTagAdded = true;
+		}
+		else if (!IsStoryGateDormant() && bStoryGateCannonTagAdded)
+		{
+			ASC->RemoveLooseGameplayTag(State_Ship_CannonDisabled);
+			bStoryGateCannonTagAdded = false;
+		}
+	}
+}
+
+void AEnemyShip::RefreshStoryGateOwnedActors()
+{
+	if (!IsFinalBossSquadShip()) return;
+	RefreshMountedCannons();
+	for (ACannon* Cannon : MountedCannons)
+	{
+		if (!IsValid(Cannon)) continue;
+		if (bEffectiveDormancyApplied)
+		{
+			const bool bKnown = DormancyCannonStates.ContainsByPredicate(
+				[Cannon](const FCannonDormancyState& State) { return State.Cannon.Get() == Cannon; });
+			if (!bKnown)
+			{
+				FCannonDormancyState& State = DormancyCannonStates.AddDefaulted_GetRef();
+				State.Cannon = Cannon;
+				State.bCollisionEnabled = Cannon->GetActorEnableCollision();
+				State.bTickEnabled = Cannon->IsActorTickEnabled();
+				Cannon->SetActorEnableCollision(false);
+				Cannon->SetActorTickEnabled(false);
+			}
+		}
+		Cannon->SetActorHiddenInGame(IsStoryGateDormant());
+	}
+}
+
+void AEnemyShip::HandleStoryGatedChestSpawned(AStorageChest* Chest)
+{
+	if (!HasAuthority() || !IsFinalBossSquadShip() || !IsValid(Chest)) return;
+	const AChestSpawnPoint* Point = Cast<AChestSpawnPoint>(Chest->GetOwner());
+	if (Point && Point->GetSpawnMode() == EChestSpawnMode::Guarded && Chest->GetOwningShip() == this)
+	{
+		Chest->SetStoryGateDormant(IsStoryGateDormant());
+		FSWFinalEncounterDiagnostics::Write(TEXT("FinalSquad"), TEXT("RuntimeChestOwnership"),
+			FString::Printf(TEXT("Ship=%s Chest=%s Point=%s ChestOwnerMatches=%d Dormant=%d"),
+				*GetPathName(), *Chest->GetPathName(), *Point->GetPathName(),
+				Chest->GetOwningShip() == this, IsStoryGateDormant()));
+	}
+}
+
+void AEnemyShip::ApplyStoryGateToSpawnedChests()
+{
+	if (!IsFinalBossSquadShip() || !HasAuthority()) return;
+	TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
+	for (UChildActorComponent* Component : ChildActorComponents)
+	{
+		if (AChestSpawnPoint* Point = Cast<AChestSpawnPoint>(Component->GetChildActor()))
+		{
+			if (AStorageChest* Chest = Cast<AStorageChest>(Point->GetSpawnedActor()))
+				HandleStoryGatedChestSpawned(Chest);
+		}
+	}
+}
+
+void AEnemyShip::ApplyEffectiveDormancyState()
+{
+	const bool bShouldDormant = bDistanceOptimizationDormant || IsStoryGateDormant();
+	if (bShouldDormant == bEffectiveDormancyApplied) return;
+	if (IsFinalBossSquadShip())
+		FSWFinalEncounterDiagnostics::Write(TEXT("FinalGate"), bShouldDormant ? TEXT("Dormant") : TEXT("Active"),
+			FString::Printf(TEXT("Ship=%s StoryDormant=%d DistanceDormant=%d Authority=%d"),
+				*GetPathName(), IsStoryGateDormant(), bDistanceOptimizationDormant, HasAuthority()));
+	if (bShouldDormant)
+	{
+		bEffectiveDormancyApplied = true;
+		bDormancyShipCollisionEnabled = GetActorEnableCollision();
+		bDormancyShipTickEnabled = IsActorTickEnabled();
+		bDormancyShipPhysicsEnabled = IsShipRuntimePhysicsEnabled();
 		SetAIControlInput(0.0f, 0.0f);
 		if (HasAuthority())
 		{
@@ -1962,6 +2220,7 @@ void AEnemyShip::ApplyDistanceOptimizationState()
 		}
 
 		DistanceDormancySuspendedCannons.Reset();
+		DormancyCannonStates.Reset();
 		for (ACannon* Cannon : MountedCannons)
 		{
 			if (!IsValid(Cannon))
@@ -1969,6 +2228,10 @@ void AEnemyShip::ApplyDistanceOptimizationState()
 				continue;
 			}
 			Cannon->ResetAIFiringState();
+			FCannonDormancyState& State = DormancyCannonStates.AddDefaulted_GetRef();
+			State.Cannon = Cannon;
+			State.bCollisionEnabled = Cannon->GetActorEnableCollision();
+			State.bTickEnabled = Cannon->IsActorTickEnabled();
 			if (Cannon->IsActorTickEnabled())
 			{
 				DistanceDormancySuspendedCannons.Add(Cannon);
@@ -1983,9 +2246,10 @@ void AEnemyShip::ApplyDistanceOptimizationState()
 		return;
 	}
 
-	SetActorTickEnabled(true);
-	SetActorEnableCollision(true);
-	SetShipRuntimePhysicsEnabled(true);
+	bEffectiveDormancyApplied = false;
+	SetActorTickEnabled(bDormancyShipTickEnabled);
+	SetActorEnableCollision(bDormancyShipCollisionEnabled);
+	SetShipRuntimePhysicsEnabled(bDormancyShipPhysicsEnabled);
 	for (const TWeakObjectPtr<UActorComponent>& Component : DistanceDormancySuspendedTickComponents)
 	{
 		if (Component.IsValid())
@@ -1995,18 +2259,19 @@ void AEnemyShip::ApplyDistanceOptimizationState()
 	}
 	DistanceDormancySuspendedTickComponents.Reset();
 
-	for (const TWeakObjectPtr<ACannon>& Cannon : DistanceDormancySuspendedCannons)
+	for (const FCannonDormancyState& State : DormancyCannonStates)
 	{
-		if (Cannon.IsValid())
+		if (ACannon* Cannon = State.Cannon.Get())
 		{
-			Cannon->SetActorTickEnabled(true);
-			Cannon->SetActorEnableCollision(true);
+			Cannon->SetActorTickEnabled(State.bTickEnabled);
+			Cannon->SetActorEnableCollision(State.bCollisionEnabled);
 			Cannon->RefreshPlayerInteractionAvailability();
 		}
 	}
+	DormancyCannonStates.Reset();
 	DistanceDormancySuspendedCannons.Reset();
 
-	if (HasAuthority() && !bCrewDefeated)
+	if (HasAuthority() && !IsStoryGateDormant() && !bCrewDefeated && !bDeathHandled && !IsSinking())
 	{
 		if (NavigationComponent)
 		{
@@ -2233,6 +2498,22 @@ void AEnemyShip::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 void AEnemyShip::HandleShipDeath()
 {
 	if (!HasAuthority()) return;
+	if (IsFinalBossSquadShip() && EnemyShipArchetype
+		&& EnemyShipArchetype->GetPathName() == FinalBossShipArchetypePath)
+	{
+		UStoryFacadeSubsystem* Story = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
+		const bool bAccepted = Story && Story->IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted);
+		const bool bAlreadyDefeated = Story && Story->IsStoryNodeReached(EStoryNode::FinalBossDefeated);
+		bool bCompleted = false;
+		if (bAccepted && !bAlreadyDefeated)
+		{
+			bCompleted = Story->CompleteStoryNode(EStoryNode::FinalBossDefeated);
+		}
+		FSWFinalEncounterDiagnostics::Write(TEXT("FinalBossShip"), TEXT("Death"),
+			FString::Printf(TEXT("Ship=%s Accepted=%d AlreadyDefeated=%d CompleteResult=%d"),
+				*GetPathName(), bAccepted, bAlreadyDefeated, bCompleted));
+	}
 	if (DeckEnemySpawnerComponent)
 	{
 		DeckEnemySpawnerComponent->CancelDeployment();
@@ -2354,7 +2635,7 @@ void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotato
 
 bool AEnemyShip::AllowsPlayerAnchorControl(AActor* Interactor) const
 {
-	return !bDeathHandled && bCrewDefeated;
+	return !IsStoryGateDormant() && !bDeathHandled && bCrewDefeated;
 }
 
 float AEnemyShip::GetCannonCooldownMultiplier() const
@@ -2586,4 +2867,5 @@ void AEnemyShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifeti
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AEnemyShip, bCrewDefeated);
 	DOREPLIFETIME(AEnemyShip, bDistanceOptimizationDormant);
+	DOREPLIFETIME(AEnemyShip, bStoryGateOpen);
 }

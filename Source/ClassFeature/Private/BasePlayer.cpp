@@ -2,6 +2,8 @@
 
 
 #include "BasePlayer.h"
+#include "GASStrengthEquipmentGameplayEffect.h"
+#include "Components/CapsuleComponent.h"
 #include "Combat/PlayerAimComponent.h"
 #include "WeaponInputAbilitySystemComponent.h"
 #include "SWRoomAbilitySystemComponent.h"
@@ -56,6 +58,7 @@
 #include "SwimmingComponent.h"
 #include "Skills/PlayerSkillComponent.h"
 #include "Room/SWRoomSaveGame.h"
+#include "Room/SWRoomProgressSubsystem.h"
 #include "Room/ClassFeatureRoomProgressSubsystem.h"
 #include "Network/SWInputDiag.h"
 #include "Network/SWNetworkLog.h"
@@ -196,6 +199,7 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 
 bool ABasePlayer::CanUseSkill(const FGameplayTag& SkillTag) const
 {
+	if (!CanMutateLifeGameplay()) return false;
 	if (bBypassSkillRequirementsForTesting)
 	{
 		return GetPlayerSkillComponent()
@@ -208,6 +212,7 @@ bool ABasePlayer::CanUseSkill(const FGameplayTag& SkillTag) const
 
 bool ABasePlayer::TryConsumeSkillUse(const FGameplayTag& SkillTag)
 {
+	if (!CanMutateLifeGameplay()) return false;
 	UPlayerSkillComponent* SkillComponent = GetPlayerSkillComponent();
 	if (bBypassSkillRequirementsForTesting)
 	{
@@ -237,6 +242,8 @@ void ABasePlayer::PostInitializeComponents()
 void ABasePlayer::BeginPlay()
 {
 	Super::BeginPlay();
+	if (HasAuthority() && DialogueComponent)
+		DialogueComponent->OnFinalDepartureRequested.BindUObject(this, &ABasePlayer::HandleFinalDepartureRequested);
 	InitializeSwimmingAnimLayers();
 
 	// Apply presentation-only smoothing after Blueprint defaults are loaded.
@@ -355,6 +362,7 @@ void ABasePlayer::GiveStartingItemsForTest()
 
 void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (DialogueComponent) DialogueComponent->OnFinalDepartureRequested.Unbind();
 	ResetAutomaticSwimDiveInput();
 
 	if (InventoryComponent)
@@ -371,12 +379,21 @@ void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+bool ABasePlayer::HandleFinalDepartureRequested(AActor* Requester)
+{
+	if (!HasAuthority() || Requester != this || !GetGameInstance()) return false;
+	if (UClassFeatureRoomProgressSubsystem* Progress =
+		GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>())
+		return Progress->TryFinalDeparture(GetWorld(), this);
+	return false;
+}
+
 void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 {
 	ApplyLocalDeathRagdoll();
 	if (HasAuthority())
 	{
-		CaptureRespawnProgress();
+		if (ABasePlayerController* Flow = Cast<ABasePlayerController>(GetController())) Flow->CaptureLatestLifeProgress(this);
 		if (AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr)
 		{
 			GameMode->NotifyPlayerDeathFinished(this);
@@ -531,7 +548,8 @@ void ABasePlayer::RestoreRoomProgress(const FSWRoomPlayerProgress& Progress)
 		CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetAttackSpeedMultiplierAttribute(), Progress.BaseAttackSpeedMultiplier);
 	}
 	if (GetMesh() && GetMesh()->GetAnimInstance()) GetMesh()->GetAnimInstance()->StopAllMontages(0.f);
-	if (EquipmentComponent && !EquipmentComponent->RestoreRoomEquippedItem(Progress.EquippedItemTag))
+	bInitialLifeRestoreSuccessful = !EquipmentComponent || EquipmentComponent->RestoreRoomEquippedItem(Progress.EquippedItemTag);
+	if (!bInitialLifeRestoreSuccessful)
 		UE_LOG(LogSWRoom, Warning, TEXT("Flow=PlayerRestore Result=Partial Domain=Equipment Tag=%s"), *Progress.EquippedItemTag.ToString());
 	InitializeQuickSlots();
 	for (int32 Index = 0; Index < 5 && Index < Progress.QuickSlotItemTags.Num() && QuickSlots.IsValidIndex(Index); ++Index)
@@ -1044,26 +1062,6 @@ void ABasePlayer::PossessedBy(AController* NewController)
 			HealthComponent->InitializeWithAbilitySystem(CachedAbilitySystemComponent.Get());
 			if (HealthComponent->IsDead()) HealthComponent->ResetForReuse();
 		}
-		FSWPlayerProgressSnapshot ReconnectSnapshot;
-		if (AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
-			GameMode && GameMode->ConsumeReconnectSnapshotForController(NewController, ReconnectSnapshot))
-		{
-			ApplyProgressSnapshot(ReconnectSnapshot);
-			UE_LOG(LogSWRoom, Display, TEXT("Flow=Reconnect Side=Server PlayerIndex=%d Result=MemorySnapshotApplied"), GameMode->GetPlayerIndex(NewController));
-		}
-		else if (!bHasCompletedInitialPossession)
-		{
-			if (UClassFeatureRoomProgressSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr)
-				Room->RestorePlayer(this);
-			RestoreRespawnProgress(NewController);
-		}
-		else
-		{
-			UE_LOG(LogSWRoom, Display, TEXT("Flow=PlayerRestore Result=Skipped Reason=ExistingPawnRepossessed Player=%s Location=%s"),
-				*GetPathName(), *GetActorLocation().ToString());
-		}
-		bHasCompletedInitialPossession = true;
-
 		// Interact GA에 의해 발생한 Gameplay Event를 처리할 콜백 함수 등록
 		// 현재는 Event 별로 따로 바인딩하지만 더 좋은 방법이 있을까?
 		if(CachedAbilitySystemComponent.IsValid()) {
@@ -1123,7 +1121,38 @@ void ABasePlayer::PossessedBy(AController* NewController)
 		UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::PossessedBy - [SERVER] PlayerState is null!"));
 	}
 
-	// ASC 초기화 완료 알림 방송
+	AMultiGameMode* LifeMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+ ABasePlayerController* LifeOwner = Cast<ABasePlayerController>(NewController);
+ USWRoomProgressSubsystem* LifeRoom = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+ const bool bNewEntryLife = LifeRoom && (LifeRoom->IsReturnTravelPending() || LifeRoom->IsFinalDepartureTravelPending());
+ if (LifeMode && LifeMode->IsIndividualRespawnInProgress(NewController))
+ {
+  bInitialLifeRestoreSuccessful = LifeOwner && LifeOwner->ApplyPendingLifeProgress(this);
+ }
+ else if (LifeMode && (LifeMode->GetSessionLifePhase() == ESWSessionLifePhase::GameOver || LifeMode->GetSessionLifePhase() == ESWSessionLifePhase::ReturningAfterGameOver))
+ {
+  if (LifeOwner)
+  {
+   // This possession is a GameOver reconnect, not the normal sinking notification.
+   LifeOwner->bGameOverReconnect = true;
+   if (UClassFeatureRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>())
+    LifeOwner->bHasLatestLifeProgress = Room->GetStoredControllerProgress(LifeOwner, LifeOwner->LatestLifeProgress);
+   LifeOwner->bLifeProgressFrozen = LifeOwner->bHasLatestLifeProgress;
+   LifeOwner->FreezeLifeProgressForGameOver();
+  }
+ }
+ else if (!bHasCompletedInitialPossession)
+ {
+  FSWPlayerProgressSnapshot ReconnectSnapshot;
+  if (!bNewEntryLife && LifeMode && LifeMode->ConsumeReconnectSnapshotForController(NewController, ReconnectSnapshot)) ApplyProgressSnapshot(ReconnectSnapshot);
+  else
+  {
+   if (UClassFeatureRoomProgressSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr) Room->RestorePlayer(this);
+   if (!bNewEntryLife) RestoreRespawnProgress(NewController);
+  }
+ }
+ bHasCompletedInitialPossession = true;
+ // ASC 초기화 완료 알림 방송
 	OnAbilitySystemInitialized.Broadcast();
 }
 
@@ -1409,6 +1438,7 @@ void ABasePlayer::AssignQuickSlotFromInventory(int32 QuickSlotIndex)
 
 void ABasePlayer::ServerAssignQuickSlotFromInventory_Implementation(int32 QuickSlotIndex)
 {
+	if (!CanMutateLifeGameplay()) return;
 	AssignQuickSlotFromInventory(QuickSlotIndex);
 }
 
@@ -1429,6 +1459,7 @@ void ABasePlayer::ClearQuickSlot(int32 QuickSlotIndex)
 
 void ABasePlayer::ServerClearQuickSlot_Implementation(int32 QuickSlotIndex)
 {
+	if (!CanMutateLifeGameplay()) return;
 	ClearQuickSlot(QuickSlotIndex);
 }
 
@@ -1442,6 +1473,7 @@ int32 ABasePlayer::FindQuickSlotIndex(const FGameplayTag SlotTag) const
 
 void ABasePlayer::OnQuickSlotInputPressed(const FGameplayTag SlotTag)
 {
+	if (!CanMutateLifeGameplay()) return;
 	const int32 QuickSlotIndex = FindQuickSlotIndex(SlotTag);
 	if (!QuickSlots.IsValidIndex(QuickSlotIndex))
 	{
@@ -1532,6 +1564,7 @@ void ABasePlayer::OnShipRepairInteractionReleased()
 
 void ABasePlayer::OnShipRepairInteractionPressed()
 {
+	if (!CanMutateLifeGameplay()) return;
 	if (IsLocallyControlled())
 	{
 		bShipRepairInputHeld = true;
@@ -1541,6 +1574,7 @@ void ABasePlayer::OnShipRepairInteractionPressed()
 
 void ABasePlayer::ServerSetShipRepairInputHeld_Implementation(const bool bHeld)
 {
+	if (bHeld) if (!CanMutateLifeGameplay()) return;
 	bShipRepairInputHeld = bHeld;
 	if (!bHeld && ActiveShipRepairPoint)
 	{
@@ -1676,6 +1710,7 @@ void ABasePlayer::ActivateQuickSlot(int32 QuickSlotIndex)
 
 void ABasePlayer::ServerActivateQuickSlot_Implementation(int32 QuickSlotIndex)
 {
+	if (!CanMutateLifeGameplay()) return;
 	ActivateQuickSlot(QuickSlotIndex);
 }
 
@@ -1827,6 +1862,7 @@ void ABasePlayer::RemoveAbilityFromSlot(FGameplayTag KeyTag)
 
 void ABasePlayer::OnAbilityInputPressed(FGameplayTag InputTag)
 {
+	if (!CanMutateLifeGameplay()) return;
 	const bool bInteractionInput = InputTag.MatchesTagExact(Key_Default_F);
 	const bool bLogInteraction = bInteractionInput && IsStorageInteractionLoggingEnabled();
 	if (bLogInteraction)
@@ -1913,6 +1949,7 @@ void ABasePlayer::OnAreaSlowSkillReleased()
 
 void ABasePlayer::OnMouseInputPressed(FGameplayTag InputTag)
 {
+	if (!CanMutateLifeGameplay()) return;
 	if (!CachedAbilitySystemComponent.Get() || !InputTag.IsValid()) return;
 	if (IsEquipmentTransitioning()) return;
 	if (!CanPerformCombatAction()) return;
@@ -2011,6 +2048,7 @@ void ABasePlayer::OnMouseInputReleased(FGameplayTag InputTag)
 
 void ABasePlayer::HandleShipBoardEvent(const FGameplayEventData* Payload)
 {
+	if (!CanMutateLifeGameplay()) return;
 	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::HandleShipBoardEvent - [%s] Event received. Payload valid: %s, Target: %s"),
 		HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
 		Payload ? TEXT("YES") : TEXT("NO"),
@@ -2033,6 +2071,7 @@ void ABasePlayer::HandleShipBoardEvent(const FGameplayEventData* Payload)
 
 void ABasePlayer::HandleCannonBoardEvent(const FGameplayEventData* Payload)
 {
+	if (!CanMutateLifeGameplay()) return;
 	UE_LOG(LogTemp, Log, TEXT("ABasePlayer::HandleCannonBoardEvent - [%s] Event received. Payload valid: %s, Target: %s"),
 		HasAuthority() ? TEXT("SERVER") : TEXT("CLIENT"),
 		Payload ? TEXT("YES") : TEXT("NO"),
@@ -2055,6 +2094,7 @@ void ABasePlayer::HandleCannonBoardEvent(const FGameplayEventData* Payload)
 
 void ABasePlayer::HandlePickUpEvent(const FGameplayEventData* Payload)
 {
+	if (!CanMutateLifeGameplay()) return;
 	if (!HasAuthority() || !Payload || !Payload->Target || !InventoryComponent)
 	{
 		return;
@@ -2132,6 +2172,7 @@ void ABasePlayer::HandleEquipmentAttachNotify()
 
 void ABasePlayer::ServerRPC_SendGameplayEvent_Implementation(FGameplayTag EventTag, FGameplayEventData Payload)
 {
+	if (!CanMutateLifeGameplay()) return;
 	// 서버의 ASC에서 이벤트를 발생시켜 WaitGameplayEvent 태스크를 깨웁니다.
 	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, EventTag, Payload);
 }
@@ -2517,6 +2558,7 @@ void ABasePlayer::DoJumpEnd()
 
 void ABasePlayer::StartSwimDive()
 {
+	if (!CanMutateLifeGameplay()) return;
 	if (!SwimmingComponent || !SwimmingComponent->IsCustomSwimming())
 	{
 		return;
@@ -2583,6 +2625,7 @@ void ABasePlayer::ResetAutomaticSwimDiveInput()
 
 void ABasePlayer::StartSprint()
 {
+	if (!CanMutateLifeGameplay()) return;
 	bSprintInputHeld = true;
 	RefreshSprintFromInput();
 }
@@ -2663,6 +2706,7 @@ void ABasePlayer::RefreshSprintFromInput()
 
 void ABasePlayer::Server_SetSprinting_Implementation(bool bNewSprinting)
 {
+	if (bNewSprinting) if (!CanMutateLifeGameplay()) return;
 	const bool bServerAllowsSprinting = bNewSprinting && CanSprintFromServerState();
 	
 	if (AnimStateComponent)
@@ -2674,6 +2718,7 @@ void ABasePlayer::Server_SetSprinting_Implementation(bool bNewSprinting)
 
 void ABasePlayer::Server_SetMoveInput_Implementation(FVector2D NewMoveInput)
 {
+	if (!CanMutateLifeGameplay()) return;
 	const FVector2D ClampedMoveInput = NewMoveInput.GetClampedToMaxSize(1.f);
 	
 	AuthoritativeMoveInput = ClampedMoveInput;
@@ -2758,6 +2803,7 @@ void ABasePlayer::OnRep_LocomotionStateSnapshot(const FReplicatedLocomotionState
 
 void ABasePlayer::Server_NotifyJumpStarted_Implementation()
 {
+	if (!CanMutateLifeGameplay()) return;
 	if (AnimStateComponent)
 	{
 		AnimStateComponent->HandleJumpStarted();
@@ -3643,4 +3689,60 @@ void ABasePlayer::ApplyCombatTurnInPlaceRotation(float DeltaTime)
     }
 #endif
 #endif
+}
+
+bool ABasePlayer::RestoreProgressForNewLife(const FSWRoomPlayerProgress& Stored, FString& OutError)
+{
+ if (!HasAuthority() || !CachedAbilitySystemComponent.IsValid() || !HealthComponent || !InventoryComponent)
+ { OutError = TEXT("RespawnProgressMissing: life components unavailable"); return false; }
+ CachedAbilitySystemComponent->CancelAllAbilities();
+ if (USWRoomAbilitySystemComponent* RoomASC = Cast<USWRoomAbilitySystemComponent>(CachedAbilitySystemComponent.Get()))
+ {
+  if (!RoomASC->RestoreRoomEffects({}, OutError)) return false;
+ }
+ else
+ {
+  // The equipment restore below clears and rebuilds the old equipment effect.
+  for (const FActiveGameplayEffectHandle Handle : CachedAbilitySystemComponent->GetActiveEffects(FGameplayEffectQuery()))
+  {
+   const FActiveGameplayEffect* Effect = CachedAbilitySystemComponent->GetActiveGameplayEffect(Handle);
+   if (Effect && Effect->Spec.Def && !Effect->Spec.Def->IsA<UGASStrengthEquipmentGameplayEffect>())
+    if (!CachedAbilitySystemComponent->RemoveActiveGameplayEffect(Handle)) { OutError = TEXT("Combat effect removal failed"); return false; }
+  }
+ }
+ HealthComponent->ResetForReuse();
+ PendingRoomEffects.Reset(); bHasPendingRoomEffects = false; PendingRoomHealth = 0;
+ FSWRoomPlayerProgress Progress = Stored;
+ Progress.bWasDead = false; Progress.bRestoreFullHealth = true;
+ Progress.CurrentHealth = Progress.MaximumHealth;
+ Progress.bHasResumeTransform = false; Progress.ResumeWorldTransform = FTransform::Identity;
+ Progress.ShipRelativeTransform = FTransform::Identity; Progress.ShipStableId.Invalidate();
+ Progress.bWasMounted = false; Progress.MountedDeviceId.Invalidate(); Progress.bWasSwimming = false;
+ Progress.bHasMovement = false; Progress.WorldVelocity = FVector::ZeroVector;
+ Progress.MovementMode = MOVE_Walking; Progress.CustomMovementMode = 0;
+ Progress.bEffectsCaptured = false; Progress.ActiveEffects.Reset();
+ Progress.CameraMode = NAME_None; Progress.ControlRotation = FRotator(0, GetActorRotation().Yaw, 0);
+ RestoreRoomProgress(Progress);
+ if (!bInitialLifeRestoreSuccessful) { OutError = TEXT("RespawnSpawnFailed: equipment restoration"); return false; }
+ if (!FinalizeRoomProgressEffects(OutError)) return false;
+ HealthComponent->ResetForReuse();
+ CachedAbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), HealthComponent->GetMaxHealth());
+ GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+ if (GetMesh())
+ {
+  GetMesh()->SetSimulatePhysics(false);
+  GetMesh()->SetCollisionProfileName(TEXT("CharacterMesh"));
+ }
+ if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+ { Movement->StopMovementImmediately(); Movement->SetMovementMode(MOVE_Walking); }
+ return !HealthComponent->IsDead() && HealthComponent->GetHealth() > 0;
+}
+
+bool ABasePlayer::CanMutateLifeGameplay() const
+{
+ if (const ABasePlayerController* Flow = Cast<ABasePlayerController>(GetController())) return Flow->CanMutateGameplay();
+ if (GetWorld())
+  for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+   if (const ABasePlayerController* Flow = Cast<ABasePlayerController>(It->Get()); Flow && Flow->GetLifeCharacter() == this) return Flow->CanMutateGameplay();
+ return !HasAuthority();
 }

@@ -14,4 +14,5 @@ void ASWRoomReadyState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME(ASWRoomReadyState, RestoreGeneration);
 	DOREPLIFETIME(ASWRoomReadyState, bWorldReady);
 	DOREPLIFETIME(ASWRoomReadyState, RoomRunId);
+	DOREPLIFETIME(ASWRoomReadyState, SessionLifePhase);
 }

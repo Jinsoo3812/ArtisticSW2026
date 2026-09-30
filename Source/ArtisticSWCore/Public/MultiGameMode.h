@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
 #include "Containers/Ticker.h"
+#include "Respawn/SWRespawnFlowTypes.h"
 #include "MultiGameMode.generated.h"
 
 
@@ -49,6 +50,17 @@ class ARTISTICSWCORE_API AMultiGameMode : public AGameModeBase
 	GENERATED_BODY()
 
 public:
+	bool RegisterPlayerRespawnShip(AActor* Ship);
+	AActor* GetPlayerRespawnShip() const { return PlayerRespawnShip.Get(); }
+	void NotifyPlayerShipSinking(AActor* Ship);
+	void NotifyPlayerShipRemovedBySinking(AActor* Ship);
+	ESWSessionLifePhase GetSessionLifePhase() const { return SessionLifePhase; }
+	bool IsIndividualRespawnInProgress(AController* Controller) const { return IndividualRespawnInProgress.Contains(Controller); }
+	bool CanMutateGameplay(AController* Controller) const;
+	bool CanHostRequestGameOverRetry(AController* Controller) const;
+	bool IsRoomHostController(AController* Controller) const { return IsHostController(Controller); }
+	void SetGameOverRetryTransitionPending(bool bPending);
+	void RefreshSpectatorTargets();
 	void SetHostedRoomWorldReady();
     AMultiGameMode();
 
@@ -180,7 +192,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Game Rules")
 	void RequestGameOverAndLevelRestart();
 	void MarkHostedRoomWorldReady();
-	bool RequestHostedRoomReturnTravel();
+	bool RequestHostedRoomReturnTravel(bool bAfterGameOver = false);
+	bool RequestHostedRoomFinalDepartureTravel();
+	bool IsLevelRestartRequested() const { return bLevelRestartRequested; }
 
 	bool StoreReconnectSnapshotForController(AController* Controller, const FSWPlayerProgressSnapshot& Snapshot);
 	bool ConsumeReconnectSnapshotForController(AController* Controller, FSWPlayerProgressSnapshot& OutSnapshot);
@@ -233,6 +247,14 @@ protected:
 	TMap<TObjectPtr<AController>, FString> PlayerReconnectKeys;
 	TSet<TObjectPtr<AController>> FinishedDeadPlayers;
 	TMap<TObjectPtr<AController>, FTimerHandle> RespawnTimers;
+	UPROPERTY(Transient) TWeakObjectPtr<AActor> PlayerRespawnShip;
+	bool bPlayerRespawnShipRegistered = false;
+	ESWSessionLifePhase SessionLifePhase = ESWSessionLifePhase::Playing;
+	TSet<TObjectPtr<AController>> IndividualRespawnInProgress;
+	TMap<TObjectPtr<AController>, FSWDeathFlowState> DeathFlowStates;
+	TMap<TObjectPtr<AController>, double> RespawnFailureLogTimes;
+	FTimerHandle SpectatorRefreshTimer;
+	void PublishLifePhase();
 
     /** Ready 상태인 Controller 목록 */
     TSet<TObjectPtr<AController>> ReadyPlayers;
@@ -241,7 +263,7 @@ protected:
     bool bAllPlayersReadyNotified = false;
 	bool bLevelRestartRequested = false;
 
-	void TryRespawnPlayer(AController* Controller);
+	void TryRespawnPlayer(AController* Controller, int32 ExpectedGeneration);
 	UPlayerRespawnPointComponent* FindShipRespawnPoint(int32 PlayerIndex) const;
 	FString GetReconnectKey(AController* Controller) const;
 	bool ResolveReconnectSpawnTransform(AController* Controller, FTransform& OutTransform);

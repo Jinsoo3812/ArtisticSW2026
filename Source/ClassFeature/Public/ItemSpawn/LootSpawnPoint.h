@@ -31,16 +31,16 @@ struct CLASSFEATURE_API FChestSpawnPointChestSettings
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (DeprecatedProperty))
+	UPROPERTY(meta = (DeprecatedProperty))
 	bool bIsBossChest = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", DeprecatedProperty))
+	UPROPERTY(meta = (DeprecatedProperty))
 	FGameplayTag RequiredBossTag;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", DeprecatedProperty))
+	UPROPERTY(meta = (DeprecatedProperty))
 	FGameplayTag GuaranteedBossQuestItemTag;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", ClampMin = "1", UIMin = "1", DeprecatedProperty))
+	UPROPERTY(meta = (DeprecatedProperty))
 	int32 GuaranteedBossQuestItemCount = 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Placement")
@@ -234,6 +234,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Chest|Spawn")
 	EChestSpawnMode GetSpawnMode() const { return SpawnMode; }
+	AShip* GetOwningShip() const { return OwningShip; }
 
 	UFUNCTION(BlueprintPure, Category = "Chest|Progression")
 	EProgressionZone GetProgressionZone() const { return ProgressionZone; }
@@ -266,19 +267,19 @@ public:
 	bool HasMatchingBossGuard() const;
 
 	/** 보스 상자 여부 (체크 시 특정 보스가 가드로 있을 때 확정 퀘스트 아이템 지급) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (DeprecatedProperty))
+	UPROPERTY(meta = (DeprecatedProperty))
 	bool bIsBossChest = false;
 
 	/** 요구되는 보스 적의 태그 (예: Enemy.Type.Boss.Mid1, Enemy.Type.Boss.Mid2, Enemy.Type.Boss.Mid3) */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", DeprecatedProperty))
+	UPROPERTY(meta = (DeprecatedProperty))
 	FGameplayTag RequiredBossTag;
 
 	/** 가드 목록에 해당 보스가 존재할 때 반드시 100% 추가 드랍할 퀘스트 아이템 태그 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", DeprecatedProperty))
+	UPROPERTY(meta = (DeprecatedProperty))
 	FGameplayTag GuaranteedBossQuestItemTag;
 
 	/** 확정 퀘스트 아이템 드랍 개수 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest|Boss", meta = (EditCondition = "bIsBossChest", ClampMin = "1", UIMin = "1", DeprecatedProperty))
+	UPROPERTY(meta = (DeprecatedProperty))
 	int32 GuaranteedBossQuestItemCount = 1;
 
 	/** 조건부로 런타임에 보스를 소환하는 스토리 스포너 목록 (보스가 소환되면 상자의 가드로 동적 추가되고 잠김) */

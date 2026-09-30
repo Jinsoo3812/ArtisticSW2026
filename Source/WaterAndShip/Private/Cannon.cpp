@@ -96,6 +96,16 @@ void ACannon::BeginPlay()
 	VisualAimRotation = AimRotation;
 
 	RefreshPlayerInteractionAvailability();
+	if (AShip* Ship = GetOwningShip())
+	{
+		Ship->RefreshStoryGateOwnedActors();
+		if (Ship->IsStoryGateDormantForDeckContent())
+		{
+			SetActorHiddenInGame(true);
+			SetActorEnableCollision(false);
+			SetActorTickEnabled(false);
+		}
+	}
 }
 
 void ACannon::Tick(float DeltaTime)

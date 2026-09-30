@@ -22,3 +22,15 @@ AKelvinShip::AKelvinShip()
 	Player1RespawnPoint->PlayerSlot = ESWPlayerSlot::Player1;
 }
 
+
+#include "MultiGameMode.h"
+void AKelvinShip::BeginPlay()
+{
+ Super::BeginPlay();
+ if (HasAuthority() && !ActorHasTag(TEXT("Enemy")))
+  if (AMultiGameMode* Mode = GetWorld()->GetAuthGameMode<AMultiGameMode>())
+  {
+   Mode->RegisterPlayerRespawnShip(this);
+   if (bIsSinking) Mode->NotifyPlayerShipSinking(this);
+  }
+}

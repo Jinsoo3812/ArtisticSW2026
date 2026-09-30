@@ -1,4 +1,5 @@
 #include "Equipment/PlayerEquipmentComponent.h"
+#include "BasePlayerController.h"
 
 #include "Animation/AnimSequenceBase.h"
 
@@ -57,6 +58,7 @@ bool UPlayerEquipmentComponent::IsEquipmentTransitioning() const
 
 bool UPlayerEquipmentComponent::EquipInventoryItem(FGameplayTag ItemTag)
 {
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetOwner())) if (!Player->CanMutateLifeGameplay()) return false;
 	if (!PlayerOwner)
 	{
 		PlayerOwner = Cast<ABasePlayer>(GetOwner());
@@ -157,6 +159,7 @@ void UPlayerEquipmentComponent::UnequipCurrentItem()
 
 void UPlayerEquipmentComponent::UseEquippedItem(bool bDestroy)
 {
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetOwner())) if (!Player->CanMutateLifeGameplay()) return;
 	if (!PlayerOwner)
 	{
 		PlayerOwner = Cast<ABasePlayer>(GetOwner());

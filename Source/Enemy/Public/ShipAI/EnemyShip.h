@@ -21,6 +21,7 @@ struct FSWRoomEnemyShipState
 	UPROPERTY(SaveGame) bool bHasDropped = false;
 	UPROPERTY(SaveGame) bool bCrewDefeated = false;
 	UPROPERTY(SaveGame) bool bHasEverHadLivingCrew = false;
+	UPROPERTY(SaveGame) bool bStoryGateOpen = false;
 	UPROPERTY(SaveGame) TArray<FGuid> CrewIds;
 	UPROPERTY(SaveGame) FGuid BossId;
 	UPROPERTY(SaveGame) FSWRoomDeckSpawnerState DeckSpawner;
@@ -136,7 +137,10 @@ public:
 	}
 	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 	virtual bool IsEnemyShipForEffects() const override { return true; }
-	virtual bool AllowsPlayerHelmControl() const override { return !IsSinking() && !bDeathHandled && bCrewDefeated; }
+	virtual bool AllowsPlayerHelmControl() const override { return !IsStoryGateDormant() && !IsSinking() && !bDeathHandled && bCrewDefeated; }
+	virtual bool IsStoryGateDormantForDeckContent() const override { return IsStoryGateDormant(); }
+	virtual bool IsFinalBossSquadForDeckContent() const override { return IsFinalBossSquadShip(); }
+	virtual void RefreshStoryGateOwnedActors() override;
 	virtual bool AllowsPlayerCannonControl() const override { return false; }
 	virtual bool AllowsPlayerBoarding() const override { return false; }
 	virtual bool AllowsPlayerAnchorControl(AActor* Interactor = nullptr) const override;
@@ -285,6 +289,8 @@ public:
 	bool CanEnterDistanceOptimizationDormancy() const;
 	bool IsDistanceOptimizationDormant() const { return bDistanceOptimizationDormant; }
 	bool IsDistanceOptimizationEnabled() const { return bEnableDistanceOptimization; }
+	bool IsFinalBossSquadShip() const;
+	bool IsStoryGateDormant() const;
 	float GetDistanceOptimizationRange() const { return DistanceOptimizationRange; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI")
@@ -338,9 +344,15 @@ public:
 
 protected:
 	void ApplyChestSpawnPointSettings();
+	void SetStoryGateOpen(bool bOpen);
+	void ApplyEffectiveDormancyState();
+	void ApplyStoryGatePresentation();
+	void ApplyStoryGateToSpawnedChests();
+	UFUNCTION() void OnRep_StoryGateOpen();
+	UFUNCTION() void HandleStoryGateChanged();
+	UFUNCTION() void HandleStoryGatedChestSpawned(AStorageChest* Chest);
 	void EvaluateCrewControlState();
 	void DisableEnemyShipAIForCapture();
-	void ApplyDistanceOptimizationState();
 	void ApplyNavigationCollisionPolicy(ENavalCombatState State);
 
 	UFUNCTION()
@@ -430,14 +442,29 @@ protected:
 
 	UPROPERTY(SaveGame, ReplicatedUsing = OnRep_DistanceOptimizationDormant, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Optimization")
 	bool bDistanceOptimizationDormant = false;
+	UPROPERTY(ReplicatedUsing = OnRep_StoryGateOpen, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Story")
+	bool bStoryGateOpen = false;
 
 	TArray<TWeakObjectPtr<UActorComponent>> DistanceDormancySuspendedTickComponents;
 	TArray<TWeakObjectPtr<ACannon>> DistanceDormancySuspendedCannons;
+	struct FCannonDormancyState
+	{
+		TWeakObjectPtr<ACannon> Cannon;
+		bool bCollisionEnabled = false;
+		bool bTickEnabled = false;
+	};
+	TArray<FCannonDormancyState> DormancyCannonStates;
+	bool bEffectiveDormancyApplied = false;
+	bool bDormancyShipCollisionEnabled = false;
+	bool bDormancyShipTickEnabled = false;
+	bool bDormancyShipPhysicsEnabled = false;
 
 	/** Prevents an unconfigured or not-yet-deployed empty crew roster from being treated as defeated. */
 	bool bHasEverHadLivingCrew = false;
 	bool bEndingPlay = false;
 	bool bCaptureCannonTagAdded = false;
+	bool bStoryGateCannonTagAdded = false;
+	bool bStorySubsystemMissingLogged = false;
 	TArray<FGameplayAbilitySpecHandle> GrantedEnemyShipAbilityHandles;
 	FSWRoomEnemyShipState PendingRoomState;
 	bool bHasPendingRoomState = false;

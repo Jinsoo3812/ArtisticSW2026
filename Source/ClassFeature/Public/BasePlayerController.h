@@ -11,12 +11,16 @@
 #include "Upgrade/ShipUpgradeTypes.h"
 #include "ArtisticSW2026PlayerController.h"
 #include "Engine/GameViewportDelegates.h"
+#include "Respawn/SWRespawnControllerInterface.h"
+#include "Room/SWRoomSaveGame.h"
+#include "Camera/CameraTypes.h"
 #include "BasePlayerController.generated.h"
 
 /**
  * 
  */
 
+class ABasePlayer;
 class UInputMappingContext;
 class UPlayerHUDWidget;
 class UInputAction;
@@ -37,17 +41,81 @@ struct FStorageRevealState
 };
 
 UCLASS()
-class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerController
+class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerController, public ISWRespawnControllerInterface
 {
 	GENERATED_BODY()
 
 public:
+	virtual bool CaptureLatestLifeProgress(APawn* SourcePawn) override;
+	virtual void SetDeathFlowState(const FSWDeathFlowState& State) override;
+	virtual bool HasPendingLifeProgress() const override { return bHasLatestLifeProgress; }
+	virtual bool ApplyPendingLifeProgress(APawn* NewPawn) override;
+	virtual bool WasLastLifeProgressApplySuccessful(APawn* NewPawn) const override;
+	virtual void FreezeLifeProgressForGameOver() override;
+	virtual void ReleaseFrozenLifeProgress() override;
+	bool GetLatestLifeProgress(FSWRoomPlayerProgress& OutProgress) const;
+	ABasePlayer* GetLifeCharacter() const;
+	bool IsLifeCharacterAlive() const;
+	bool CanMutateGameplay() const;
+	bool CleanupLifeInteraction();
+	void RequestGameOverRetry();
+	UFUNCTION(Server, Reliable) void ServerRequestGameOverRetry(int32 ExpectedRestoreGeneration, uint64 RequestId);
+	UFUNCTION(Client, Reliable) void ClientGameOverRetryResult(uint64 RequestId, bool bAccepted, const FString& Message);
+	UFUNCTION(Client, Reliable) void ClientSetCameraPublishEnabled(bool bEnabled, int32 RestoreGeneration, int32 ObservationGeneration);
+	UFUNCTION(Server, Unreliable) void ServerPublishObservedCamera(const FSWObservedCameraFrame& Frame);
+	UFUNCTION(Client, Unreliable) void ClientReceiveObservedCamera(const FSWObservedCameraFrame& Frame);
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	UPROPERTY(ReplicatedUsing=OnRep_DeathFlowState) FSWDeathFlowState DeathFlowState;
+	UFUNCTION() void OnRep_DeathFlowState();
+	UPROPERTY(Transient) FSWRoomPlayerProgress LatestLifeProgress;
+	UPROPERTY(Transient) bool bHasLatestLifeProgress = false;
+	UPROPERTY(Transient) bool bLifeProgressFrozen = false;
+	UPROPERTY(Transient) bool bPendingLifeProgressApplied = false;
+	bool bGameOverReconnect = false;
+	TWeakObjectPtr<ABasePlayer> LifeCharacter;
+	TWeakObjectPtr<APawn> AppliedLifePawn;
+private:
+	void TickDeathFlow(float DeltaTime);
+	void ApplyLocalDeathFlow();
+	UPROPERTY(Transient) TObjectPtr<class USWDeathFlowWidget> DeathFlowWidget;
+	UPROPERTY(Transient) TObjectPtr<class ACameraActor> DeathCamera;
+	ESWSessionLifePhase LocalSessionPhase = ESWSessionLifePhase::Playing;
+	bool bDeathInputLocked = false;
+	bool bGameOverCharacterProtected = false;
+	bool bLifeCharacterCouldBeDamaged = true;
+	bool bLifeCharacterWasInvulnerable = false;
+	bool bSavedAutoCamera = true;
+	bool bCameraPublishing = false;
+	bool bHasOwnPOV = false;
+	bool bHasObservedPOV = false;
+	FMinimalViewInfo LastOwnAlivePOV;
+	FMinimalViewInfo FrozenOwnDeathPOV;
+	int32 PublishRestoreGeneration = 0;
+	int32 PublishObservationGeneration = 0;
+	uint32 CameraSequence = 0;
+	uint32 LastAcceptedSequence = 0;
+	uint32 LastObservedSequence = 0;
+	int32 LocalObservationGeneration = -1;
+	TWeakObjectPtr<APlayerState> LocalObservedPlayerState;
+	double LastPublishTime = -1;
+	double LastReceiveTime = -1;
+	double LastServerCameraTime = -1;
+	double LastSpectatorRefreshTime = -1;
+	uint64 NextRetryRequestId = 0;
+	uint64 PendingRetryRequestId = 0;
+	uint64 LastRetryRequestId = 0;
+	bool bLastRetryAccepted = false;
+	FString LastRetryMessage;
+	FString RetryStatus;
+public:
+	void ReportGameOverRetryResult(uint64 RequestId, bool bAccepted, const FString& Message);
 	void RequestRoomSave();
 	void RequestRoomSaveAndExit();
 	void CloseRoomMenu();
 	UFUNCTION(Server, Reliable) void ServerRequestRoomSave(uint64 RequestId);
 	UFUNCTION(Client, Reliable) void ClientRoomSaveResult(uint64 RequestId, bool bSuccess, const FString& Message);
 	UFUNCTION(Client, Reliable) void ClientBeginRoomReturn();
+	UFUNCTION(Client, Reliable) void ClientBeginFinalDeparture(int32 AttemptId);
 	UFUNCTION(Client, Reliable) void ClientCancelRoomReturn();
 	UFUNCTION(Server, Reliable) void ServerConfirmRoomReturnPresentation();
 	void OpenFacilityHubFromServer(AActor* ContextActor);

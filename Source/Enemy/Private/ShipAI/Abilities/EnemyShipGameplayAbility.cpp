@@ -22,7 +22,7 @@ bool UEnemyShipGameplayAbility::CanActivateAbility(
 {
 	if (!Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags)) return false;
 	const AEnemyShip* Ship = ActorInfo ? Cast<AEnemyShip>(ActorInfo->AvatarActor.Get()) : nullptr;
-	return !Ship || !Ship->IsCrewDefeated();
+	return !Ship || (!Ship->IsCrewDefeated() && !Ship->IsStoryGateDormant());
 }
 
 const FGameplayTagContainer* UEnemyShipGameplayAbility::GetCooldownTags() const

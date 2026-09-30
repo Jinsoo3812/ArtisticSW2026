@@ -216,6 +216,7 @@ bool UBossEncounterComponent::NotifyPlayerShipSighted(AShip* SensedPlayerShip)
 bool UBossEncounterComponent::TryStartEncounter(AActor* TriggerActor)
 {
 	if (!bEncounterEnabled || !GetOwner() || !GetOwner()->HasAuthority()
+		|| (Cast<AEnemyShip>(GetOwner()) && Cast<AEnemyShip>(GetOwner())->IsStoryGateDormant())
 		|| GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()
 		|| EncounterState != EBossEncounterState::Waiting
 		|| !IsCampaignGateOpen()

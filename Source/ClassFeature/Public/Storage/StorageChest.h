@@ -88,6 +88,8 @@ public:
 	bool IsPhysicsAndBuoyancyEnabled() const { return bEnablePhysicsAndBuoyancy; }
 	bool IsDistanceOptimizationEnabled() const { return bEnableDistanceOptimization; }
 	bool IsDistanceOptimizationDormant() const { return bDistanceOptimizationDormant; }
+	AShip* GetOwningShip() const { return OwningShip; }
+	void SetStoryGateDormant(bool bDormant);
 
 	UFUNCTION(BlueprintCallable, Category = "Storage")
 	void ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems);
@@ -217,6 +219,11 @@ protected:
 
 	UPROPERTY(ReplicatedUsing = OnRep_Locked, VisibleInstanceOnly, BlueprintReadOnly, Category = "Storage Chest|Lock")
 	bool bLocked = false;
+	UPROPERTY(ReplicatedUsing = OnRep_StoryGateDormant, VisibleInstanceOnly, BlueprintReadOnly, Category = "Storage Chest|Story")
+	bool bStoryGateDormant = false;
+	bool bStoryGatePresentationApplied = false;
+	bool bStoryGatePreviousHidden = false;
+	bool bStoryGatePreviousCollision = false;
 
 	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Storage Chest|Lock")
 	bool bGuardFailed = false;
@@ -261,6 +268,8 @@ protected:
 
 	UFUNCTION()
 	void OnRep_DistanceOptimizationDormant();
+	UFUNCTION() void OnRep_StoryGateDormant();
+	void ApplyStoryGatePresentation();
 
 	void InitializeGuardState();
 	void RecalculateGuardLock();

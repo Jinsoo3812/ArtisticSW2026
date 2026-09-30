@@ -378,6 +378,11 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 
 	SpawnedChest->SetBossEncounterReserved(bBossEncounterReserved);
 	if (ABaseCharacter* Boss = BossGuard.Get()) SpawnedChest->AddBossGuardCharacter(Boss);
+	if (SpawnMode == EChestSpawnMode::Guarded && Environment == EChestEnvironment::ShipDeck)
+	{
+		SpawnedChest->SetStoryGateDormant(EffectiveOwningShip
+			&& EffectiveOwningShip->IsStoryGateDormantForDeckContent());
+	}
 	SpawnedChest->FinishSpawning(GetActorTransform());
 
 	if (SpawnMode == EChestSpawnMode::Guarded && IsValid(EffectiveOwningShip))
