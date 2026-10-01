@@ -504,6 +504,13 @@ struct FCachedHistoryCollectorNodeInfo
     FStructProperty* TrajectoryProperty = nullptr;
 };
 
+struct FCachedJumpAirWarpingNodeInfo
+{
+    FStructProperty* NodeProperty = nullptr;
+    float OriginalInterpSpeed = 0.0f;
+    bool bOverrideApplied = false;
+};
+
 USTRUCT(BlueprintType)
 struct FMotionMatchingAnimInstanceProxy : public FAnimInstanceProxy
 {
@@ -523,11 +530,14 @@ public:
 
     TArray<FCachedMotionMatchingNodeInfo> CachedMMNodes;
     TArray<FCachedHistoryCollectorNodeInfo> CachedHistoryNodes;
+    TArray<FCachedJumpAirWarpingNodeInfo> CachedJumpAirWarpingNodes;
+    float JumpAirWarpingReleaseRemaining = 0.0f;
     bool bNodesCached = false;
     float DebugLogAccumulator = 0.f;
     float StrafeMotionMatchingDebugAccumulator = 0.f;
 
     void CacheNodes(UAnimInstance* InAnimInstance);
+    void ApplyJumpAirWarpingPolicy(UAnimInstance* InAnimInstance, float DeltaSeconds);
 };
 
 UCLASS(Blueprintable, BlueprintType)
@@ -536,6 +546,8 @@ class CLASSFEATURE_API UMotionMatchingAnimInstance : public UAnimInstance
     GENERATED_BODY()
 
     friend struct FMotionMatchingAnimInstanceProxy;
+    friend class FJumpAirChooserIntegrationTest;
+    friend class FJumpAirWarpingPolicyTest;
 
 public:
     UMotionMatchingAnimInstance();
@@ -991,6 +1003,18 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Turn In Place", meta = (ClampMin = "0.0", ClampMax = "0.5", Units = "s"))
     float StateControllerTurnInPlaceDefaultBlendTime = 0.2f;
 
+    /** Fraction of the actual player blend that must finish before another air clip can replace it. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Jump", meta = (ClampMin = "0.7", ClampMax = "1.0"))
+    float StateControllerJumpAirMinBlendProgress = 1.0f;
+
+    /** Ignore short-lived intermediate sectors during fast camera/input turns. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Jump", meta = (ClampMin = "0.0", ClampMax = "0.15", Units = "s"))
+    float StateControllerJumpAirDirectionConfirmationTime = 0.04f;
+
+    /** Minimum crossfade time for a 180-degree air clip change; authored longer blends are retained. */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Jump", meta = (ClampMin = "0.15", ClampMax = "0.4", Units = "s"))
+    float StateControllerJumpAirWideTurnBlendTime = 0.22f;
+
     /** Amount reserved at the end of a land one-shot before Motion Matching resumes. */
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StateController|Landing", meta = (ClampMin = "0.0", Units = "s"))
     float StateControllerLandCompletionLeadTime = 0.05f;
@@ -1296,7 +1320,10 @@ private:
     float PreviousAirControllerYaw = 0.f;
     bool bHasPreviousAirControllerYaw = false;
 
-    float LastJumpAirReselectElapsed = 0.0f;
+    float LastJumpAirBlendStartElapsed = -1.0f;
+    float LastJumpAirBlendDuration = 0.15f;
+    EMovementDirection JumpAirCandidateDirection = EMovementDirection::Forward;
+    float JumpAirCandidateStableTime = 0.0f;
+    bool bHasJumpAirDirectionCandidate = false;
     bool bIsJumpAirReselecting = false;
 };
-
