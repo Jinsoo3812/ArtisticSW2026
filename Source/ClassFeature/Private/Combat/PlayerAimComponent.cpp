@@ -1,14 +1,13 @@
 #include "Combat/PlayerAimComponent.h"
+#include "Combat/PlayerBowAimResolver.h"
 
 #include "Abilities/GameplayAbilityTypes.h"
-#include "CollisionChannels.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
-#include "Item/Projectiles/ArrowCollisionQuery.h"
 #include "Item/Projectiles/ProjectileShotPreparation.h"
 #include "SceneView.h"
 
@@ -162,7 +161,7 @@ void UPlayerAimComponent::ServerSubmitShotView_Implementation(const FPlayerShotV
 	AcceptView(View);
 }
 
-EPlayerShotAimResult UPlayerAimComponent::ResolveShotAim(const FGuid& ShotId, const AActor* Weapon,
+EPlayerShotAimResult UPlayerAimComponent::ResolveShotAim(const FGuid& ShotId, const AActor* Weapon, const FVector& Muzzle,
 	FVector& OutTarget, FVector& OutViewDirection, double& OutAimTime) const
 {
 	OutTarget = FVector::ZeroVector;
@@ -175,36 +174,24 @@ EPlayerShotAimResult UPlayerAimComponent::ResolveShotAim(const FGuid& ShotId, co
 	if (!GetWorld() || !FMath::IsFinite(Age) || Age > MaxShotViewAge || Age < -MaxFutureViewTime)
 		return EPlayerShotAimResult::Rejected;
 	OutAimTime = ShotView.SampleServerTime;
-	TraceView(ShotView, Weapon, OutTarget, OutViewDirection);
-	return EPlayerShotAimResult::Ready;
+	return TraceView(ShotView, Weapon, Muzzle, OutTarget, OutViewDirection)
+		? EPlayerShotAimResult::Ready : EPlayerShotAimResult::Rejected;
 }
 
-void UPlayerAimComponent::TraceView(const FPlayerShotView& View, const AActor* Weapon,
+bool UPlayerAimComponent::TraceView(const FPlayerShotView& View, const AActor* Weapon, const FVector& Muzzle,
 	FVector& OutTarget, FVector& OutViewDirection) const
 {
-	const FVector Origin = View.Origin;
-	OutViewDirection = FVector(View.Direction).GetSafeNormal();
-	OutTarget = Origin + OutViewDirection * TraceDistance;
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(PlayerCrosshairAim), false, GetOwner());
-	if (Weapon) Params.AddIgnoredActor(Weapon);
-	FHitResult AimHit;
-	if (GetWorld()->LineTraceSingleByChannel(AimHit, Origin, OutTarget, ECC_WeaponAim, Params))
-		OutTarget = AimHit.ImpactPoint;
-	// Ship query surfaces may ignore WeaponAim. Use the flight obstacle policy for a second
-	// camera ray, without changing global profiles or ignoring the shooter's ship.
-	FHitResult Obstacle;
-	if (ArrowCollisionQuery::TraceObstacles(GetWorld(), Origin, OutTarget, Params, Obstacle))
-		OutTarget = Obstacle.ImpactPoint;
+	return PlayerBowAimResolver::Resolve(GetWorld(), GetOwner(), Weapon, Muzzle,
+		View.Origin, View.Direction, TraceDistance, View.ShotId, OutTarget, OutViewDirection);
 }
 
-bool UPlayerAimComponent::ResolveCurrentAim(const AActor* Weapon, FVector& OutTarget,
+bool UPlayerAimComponent::ResolveCurrentAim(const AActor* Weapon, const FVector& Muzzle, FVector& OutTarget,
 	FVector& OutDirection, double& OutTime) const
 {
 	FPlayerShotView View;
 	if (!GetWorld() || !FMath::IsFinite(TraceDistance) || TraceDistance < 100.0f || !CaptureCurrentView(View)) return false;
 	OutTime = View.SampleServerTime;
-	TraceView(View, Weapon, OutTarget, OutDirection);
-	return true;
+	return TraceView(View, Weapon, Muzzle, OutTarget, OutDirection);
 }
 
 void UPlayerAimComponent::SetObstructionQuery(FPlayerAimObstructionQuery Query)

@@ -91,9 +91,9 @@ public:
 	float GetFlightGravityScale() const { return FlightGravityScale; }
 	/** Enabled by sw.Projectile.DebugLaunch. Displays actual speed and both collision sizes. */
 	void DebugLaunch(const FVector& ShooterVelocity, const FVector& AimLocation) const;
-	FCollisionQueryParams MakeFlightQueryParams() const;
+	virtual FCollisionQueryParams MakeFlightQueryParams() const;
 	/** Called only by the movement component after the unified query resolves a contact. */
-	void HandleFlightImpact(const FHitResult& Hit);
+	virtual void HandleFlightImpact(const FHitResult& Hit);
 
 	UFUNCTION(BlueprintCallable, Category = "Arrow")
 	void IgnoreActorForMovement(AActor* ActorToIgnore);

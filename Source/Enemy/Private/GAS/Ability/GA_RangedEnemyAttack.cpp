@@ -8,6 +8,8 @@
 #include "Item/Projectiles/ProjectileShotPreparation.h"
 #include "GASCombatLibrary.h"
 #include "RangedEnemy/RangedEnemy.h"
+#include "RangedEnemy/EnemyBowShotPreparation.h"
+#include "RangedEnemy/RangedEnemyProjectile.h"
 #include "Weapon/EnemyBow.h"
 
 UGA_RangedEnemyAttack::UGA_RangedEnemyAttack()
@@ -214,12 +216,14 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 	{
 		return false;
 	}
-	if (!ProjectileClass)
+	if (!ProjectileClass || !ProjectileClass->IsChildOf(ARangedEnemyProjectile::StaticClass()))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[EnemyBow] ProjectileClass must derive from RangedEnemyProjectile. Bow=%s Class=%s"),
+			*GetNameSafe(Bow), *GetNameSafe(ProjectileClass.Get()));
 		return false;
 	}
 
-	// Capture AI intent first; final launch clearance consumes the common solution below.
+	// Read current world-space socket and target after based movement, in the late commit.
 	FTransform ArrowSpawnTransform;
 	FVector AimLocation;
 	const ERangedShotSnapshotResult SnapshotResult = CachedEnemy->CaptureRangedAim(
@@ -238,10 +242,10 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 	Input.AimDirection = (AimLocation - ArrowSpawnTransform.GetLocation()).GetSafeNormal();
 	Input.AimServerTime = ProjectileShotPreparation::GetServerTime(World);
 	Input.Speed = Bow->GetProjectileSpeed();
-	Input.Profile = Bow->GetLaunchProfile();
-	Input.GravityZ = World->GetGravityZ() * ProjectileClass.GetDefaultObject()->GetFlightGravityScale();
+	Input.GravityZ = World->GetGravityZ() * EnemyBowShotPreparation::GetGravityScale(
+		ProjectileClass.GetDefaultObject()->GetFlightGravityScale());
 	FProjectileShotSnapshot Shot;
-	if (!ProjectileShotPreparation::Prepare(CachedEnemy, Input, Shot))
+	if (!EnemyBowShotPreparation::Prepare(CachedEnemy, CachedTarget, Input, Shot))
 	{
 		return false;
 	}
@@ -252,7 +256,7 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 	}
 
 	const FTransform& SpawnTransform = Shot.SpawnTransform;
-	AArrowProjectile* Projectile = World->SpawnActorDeferred<AArrowProjectile>(
+	ARangedEnemyProjectile* Projectile = World->SpawnActorDeferred<ARangedEnemyProjectile>(
 		ProjectileClass,
 		SpawnTransform,
 		CachedEnemy,
@@ -263,9 +267,9 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 		return false;
 	}
 
-	Projectile->FinishSpawning(SpawnTransform);
 	Projectile->IgnoreActorForMovement(CachedEnemy);
 	Projectile->IgnoreActorForMovement(Bow);
+	Projectile->FinishSpawning(SpawnTransform);
 
 	FStrengthDamageRequest DamageRequest;
 	DamageRequest.SourceASC = SourceASC;
@@ -281,7 +285,7 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 
 	Projectile->SetOwner(CachedEnemy);
 	Projectile->SetInstigator(CachedEnemy);
-	if (!Projectile->LaunchShot(Shot)) { Projectile->Destroy(); return false; }
+	if (!Projectile->LaunchEnemyShot(Shot, Bow)) { Projectile->Destroy(); return false; }
 	bProjectileFired = true;
 	return true;
 }

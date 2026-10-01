@@ -16,4 +16,15 @@ class ARTISTICSWCORE_API APlayerArrowProjectile : public AArrowProjectile
 
 public:
 	APlayerArrowProjectile();
+	virtual FCollisionQueryParams MakeFlightQueryParams() const override;
+	/** Called after Blueprint construction and damage initialization; uses the committed socket transform. */
+	bool LaunchPlayerShot(const FProjectileShotSnapshot& Shot, AActor* Weapon);
+	virtual void HandleFlightImpact(const FHitResult& Hit) override;
+	virtual void Tick(float DeltaSeconds) override;
+
+private:
+	FGuid PlayerShotId;
+	FVector LastDebugPosition = FVector::ZeroVector;
+	uint64 PlayerLaunchFrame = 0;
+	bool bFirstStepLogged = false;
 };

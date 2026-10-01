@@ -8,6 +8,8 @@
 #include "BasePlayer.h"
 #include "Components/BaseHealthComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "HAL/IConsoleManager.h"
 #include "Item/Projectiles/ArrowCollisionQuery.h"
 #include "Item/Projectiles/ProjectileLaunchTypes.h"
 #include "Item/Projectiles/ArrowProjectile.h"
@@ -505,7 +507,7 @@ void ARangedEnemy::ReleaseServerRangedAttackPoseRefresh()
 FVector ARangedEnemy::GetRangedAimLocation(const AActor* TargetActor) const
 {
 	return TargetActor
-		? TargetActor->GetActorLocation() + FVector(0.0f, 0.0f, TargetAimHeightOffset)
+		? TargetActor->GetActorLocation()
 		: FVector::ZeroVector;
 }
 
@@ -533,14 +535,30 @@ ERangedShotSnapshotResult ARangedEnemy::CaptureRangedAim(
 bool ARangedEnemy::HasClearRangedLaunch(const AActor* TargetActor, const FProjectileShotSnapshot& Shot) const
 {
 	const FVector Start = Shot.SpawnTransform.GetLocation();
-	// A launch-direction visibility check, not prediction of gravity or future ship motion.
-	const FVector End = Start + Shot.WorldVelocity.GetSafeNormal() * FVector::Distance(Start, Shot.Input.AimPoint);
-	return TraceLineOfSightFrom(
+	// Combat LOS uses current positions. A future intercept may lie outside today's deck;
+	// tracing to it through today's ship would incorrectly reject a valid compensated shot.
+	// Actual flight sweeps still own all collisions, including intervening rails and ceilings.
+	const FVector End = Shot.Input.AimPoint;
+	FHitResult Hit;
+	const bool bClear = TraceLineOfSightFrom(
 		TargetActor,
 		Start,
 		End,
 		bDrawAttackLineOfSight,
-		nullptr);
+		&Hit);
+	const IConsoleVariable* Debug = IConsoleManager::Get().FindConsoleVariable(TEXT("sw.Projectile.DebugLaunch"));
+	if (Debug && Debug->GetInt() != 0)
+	{
+		const UPrimitiveComponent* Component = Hit.GetComponent();
+		UE_LOG(LogTemp, Display, TEXT("[EnemyBowAim] Id=%s Shooter=%s Target=%s Muzzle=%s Aim=%s Clear=%d Blocker=%s Component=%s Profile=%s Time=%.6f StartPenetrating=%d"),
+			*Shot.Input.ShotId.ToString(), *GetName(), *GetNameSafe(TargetActor), *Start.ToString(),
+			*Shot.Input.AimPoint.ToString(), bClear, *GetNameSafe(Hit.GetActor()), *GetNameSafe(Component),
+			Component ? *Component->GetCollisionProfileName().ToString() : TEXT("None"), Hit.Time, Hit.bStartPenetrating);
+		DrawDebugLine(GetWorld(), Start, Shot.Input.AimPoint, FColor::White, false, 3.0f);
+		DrawDebugPoint(GetWorld(), Shot.Input.AimPoint, 12.0f, FColor::White, false, 3.0f);
+		if (!bClear && Hit.bBlockingHit) DrawDebugPoint(GetWorld(), Hit.ImpactPoint, 14.0f, FColor::Red, false, 3.0f);
+	}
+	return bClear;
 }
 
 UAnimMontage* ARangedEnemy::GetRangedAttackMontage() const

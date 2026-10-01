@@ -9,11 +9,12 @@
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "Combat/PlayerAimComponent.h"
+#include "Combat/PlayerBowShotPreparation.h"
+#include "Item/Projectiles/PlayerArrowProjectile.h"
 #include "Equipment/PlayerEquipmentComponent.h"
 #include "Equipment/WeaponAnimationDataAsset.h"
 #include "Item/Components/BowComponent.h"
 #include "Item/Projectiles/ArrowProjectile.h"
-#include "Item/Projectiles/ProjectileShotPreparation.h"
 #include "Item/Projectiles/ArrowCollisionQuery.h"
 #include "Item/Weapons/BowItem.h"
 #include "GASCombatLibrary.h"
@@ -512,17 +513,16 @@ bool UGA_BowAimFire::IsAimPathObstructed() const
 	if (!IsActive() || !Player || !IsValid(CachedBow) || !CachedBowComponent
 		|| !Player->GetAimComponent() || Player->EquippedItem != CachedBow) return false;
 	const UClass* SpawnClass = CachedBow->GetSpawnClass();
-	if (!SpawnClass || !SpawnClass->IsChildOf(AArrowProjectile::StaticClass())) return false;
+	if (!SpawnClass || !SpawnClass->IsChildOf(APlayerArrowProjectile::StaticClass())) return false;
 	const AArrowProjectile* Defaults = SpawnClass->GetDefaultObject<AArrowProjectile>();
 	FProjectileShotInput Input;
 	Input.ShotId = FGuid(0, 0, 0, 1); // Local preview only; never queued, sent or spawned.
 	Input.Speed = CachedBowComponent->GetFireSpeed(CachedBowComponent->GetDrawAlpha());
-	Input.Profile = CachedBowComponent->GetLaunchProfile();
-	Input.GravityZ = GetWorld()->GetGravityZ() * Defaults->GetFlightGravityScale();
+	Input.GravityZ = GetWorld()->GetGravityZ() * PlayerBowShotPreparation::GetGravityScale(Defaults->GetFlightGravityScale());
 	if (!CachedBow->TryGetArrowSpawnTransform(Input.MuzzleTransform)
-		|| !Player->GetAimComponent()->ResolveCurrentAim(CachedBow, Input.AimPoint, Input.AimDirection, Input.AimServerTime)) return false;
+		|| !Player->GetAimComponent()->ResolveCurrentAim(CachedBow, Input.MuzzleTransform.GetLocation(), Input.AimPoint, Input.AimDirection, Input.AimServerTime)) return false;
 	FProjectileShotSnapshot Shot;
-	if (!ProjectileShotPreparation::Prepare(Player, Input, Shot)) return false;
+	if (!PlayerBowShotPreparation::Prepare(Player, Input, Shot)) return false;
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(BowAimClearance), false, Player);
 	Params.bFindInitialOverlaps = true;
 	Params.AddIgnoredActor(CachedBow);
@@ -568,20 +568,19 @@ EProjectileShotCommit UGA_BowAimFire::CommitReleaseShot()
 
 	FProjectileShotInput Input;
 	Input.ShotId = PendingShotId;
-	const EPlayerShotAimResult AimResult = Aim->ResolveShotAim(PendingShotId, CachedBow,
+	UClass* SpawnClass = CachedBow->GetSpawnClass();
+	if (!SpawnClass || !SpawnClass->IsChildOf(APlayerArrowProjectile::StaticClass())
+		|| !CachedBow->TryGetArrowSpawnTransform(Input.MuzzleTransform)) return EProjectileShotCommit::Rejected;
+	const EPlayerShotAimResult AimResult = Aim->ResolveShotAim(PendingShotId, CachedBow, Input.MuzzleTransform.GetLocation(),
 		Input.AimPoint, Input.AimDirection, Input.AimServerTime);
 	if (AimResult == EPlayerShotAimResult::Pending) return EProjectileShotCommit::Pending;
 	if (AimResult != EPlayerShotAimResult::Ready) return EProjectileShotCommit::Rejected;
 
-	UClass* SpawnClass = CachedBow->GetSpawnClass();
-	if (!SpawnClass || !SpawnClass->IsChildOf(AArrowProjectile::StaticClass())
-		|| !CachedBow->TryGetArrowSpawnTransform(Input.MuzzleTransform)) return EProjectileShotCommit::Rejected;
 	const AArrowProjectile* Defaults = SpawnClass->GetDefaultObject<AArrowProjectile>();
 	Input.Speed = PendingReleaseFireSpeed;
-	Input.Profile = CachedBowComponent->GetLaunchProfile();
-	Input.GravityZ = GetWorld()->GetGravityZ() * Defaults->GetFlightGravityScale();
+	Input.GravityZ = GetWorld()->GetGravityZ() * PlayerBowShotPreparation::GetGravityScale(Defaults->GetFlightGravityScale());
 	FProjectileShotSnapshot Shot;
-	if (!ProjectileShotPreparation::Prepare(Player, Input, Shot)) return EProjectileShotCommit::Rejected;
+	if (!PlayerBowShotPreparation::Prepare(Player, Input, Shot)) return EProjectileShotCommit::Rejected;
 
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(BowReleaseClearance), false, Player);
 	Params.bFindInitialOverlaps = true;
@@ -598,12 +597,12 @@ EProjectileShotCommit UGA_BowAimFire::CommitReleaseShot()
 		return EProjectileShotCommit::Pending;
 	}
 
-	AArrowProjectile* Arrow = GetWorld()->SpawnActorDeferred<AArrowProjectile>(
+	APlayerArrowProjectile* Arrow = GetWorld()->SpawnActorDeferred<APlayerArrowProjectile>(
 		SpawnClass, Shot.SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 	if (!Arrow) return EProjectileShotCommit::Rejected;
-	Arrow->FinishSpawning(Shot.SpawnTransform);
 	Arrow->IgnoreActorForMovement(Player);
 	Arrow->IgnoreActorForMovement(CachedBow);
+	Arrow->FinishSpawning(Shot.SpawnTransform);
 
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 	const auto* Definition = CachedBow->GetWeaponDefinition();
@@ -627,7 +626,7 @@ EProjectileShotCommit UGA_BowAimFire::CommitReleaseShot()
 		Arrow->Destroy();
 		return EProjectileShotCommit::Rejected;
 	}
-	if (!Arrow->LaunchShot(Shot)) { Arrow->Destroy(); return EProjectileShotCommit::Rejected; }
+	if (!Arrow->LaunchPlayerShot(Shot, CachedBow)) { Arrow->Destroy(); return EProjectileShotCommit::Rejected; }
 	CachedBow->Multicast_PlayReleaseFX();
 	bHasFiredCurrentShot = true;
 	CachedBowComponent->SetDrawAlpha(0.0f);

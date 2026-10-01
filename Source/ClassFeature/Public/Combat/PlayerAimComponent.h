@@ -41,7 +41,7 @@ struct CLASSFEATURE_API FPlayerShotView
 enum class EPlayerShotAimResult : uint8 { Pending, Ready, Rejected };
 DECLARE_DELEGATE_RetVal(bool, FPlayerAimObstructionQuery);
 
-/** Camera intent/transport only. No boat rotation, weapon speed, damage or spawning. */
+/** Captures/transports camera intent and delegates target selection to PlayerBowAimResolver. */
 UCLASS(ClassGroup=(Combat), meta=(BlueprintSpawnableComponent))
 class CLASSFEATURE_API UPlayerAimComponent : public UActorComponent
 {
@@ -50,7 +50,7 @@ public:
 	UPlayerAimComponent();
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* TickFunction) override;
 	void SetObstructionQuery(FPlayerAimObstructionQuery Query);
-	bool ResolveCurrentAim(const AActor* Weapon, FVector& OutTarget, FVector& OutDirection, double& OutTime) const;
+	bool ResolveCurrentAim(const AActor* Weapon, const FVector& Muzzle, FVector& OutTarget, FVector& OutDirection, double& OutTime) const;
 	bool CreateReleaseRequest(FGameplayEventData& EventData) const;
 	bool BeginShot(const FGameplayEventData& EventData, FGuid& OutShotId);
 	void EndShot(const FGuid& ShotId);
@@ -58,7 +58,7 @@ public:
 	bool TryGetShotResolution(const FGuid& ShotId, bool& OutSucceeded) const;
 	/** Called by the late release phase on the owning player. Captures/sends at most once. */
 	bool CaptureShotView(const FGuid& ShotId);
-	EPlayerShotAimResult ResolveShotAim(const FGuid& ShotId, const AActor* Weapon,
+	EPlayerShotAimResult ResolveShotAim(const FGuid& ShotId, const AActor* Weapon, const FVector& Muzzle,
 		FVector& OutTarget, FVector& OutViewDirection, double& OutAimTime) const;
 	/** UI feedback for the last release; the collision resolver remains authoritative. */
 	void ReportShotObstruction(bool bBlocked);
@@ -73,7 +73,7 @@ protected:
 	bool ValidateView(const FPlayerShotView& View) const;
 	void AcceptView(const FPlayerShotView& View);
 	bool CaptureCurrentView(FPlayerShotView& OutView) const;
-	void TraceView(const FPlayerShotView& View, const AActor* Weapon, FVector& OutTarget, FVector& OutDirection) const;
+	bool TraceView(const FPlayerShotView& View, const AActor* Weapon, const FVector& Muzzle, FVector& OutTarget, FVector& OutDirection) const;
 
 	UPROPERTY(EditDefaultsOnly, Category="Aim|Validation", meta=(ClampMin="0.1"))
 	float MaxShotViewAge = 1.0f;

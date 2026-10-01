@@ -160,7 +160,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat", meta = (ClampMin = "0.0"))
 	float AttackCooldown = 2.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat")
+	/** Legacy serialized setting. Direct enemy shots now aim at the target actor location. */
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Enemy shots use the current target actor location."))
 	float TargetAimHeightOffset = 60.0f;
 
 	/** Socket authored on the ranged enemy's character skeleton, not on the bow mesh. */
