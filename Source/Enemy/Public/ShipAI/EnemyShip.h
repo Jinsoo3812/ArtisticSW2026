@@ -307,6 +307,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|AI|Data")
 	TObjectPtr<UEnemyShipArchetypeData> EnemyShipArchetype;
 
+	/** Override the archetype's normal cannon lead for this ship, including during PIE on the server. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI|Cannon Lead")
+	bool bOverrideCannonLeadSpeed = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI|Cannon Lead", meta = (EditCondition = "bOverrideCannonLeadSpeed", ClampMin = "0.0", Units = "cm/s"))
+	float CannonLeadSpeedOverride = 1000.0f;
+
 	/** Per-instance Chest settings forwarded to every ChestSpawnPoint Child Actor owned by this ship. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest", meta = (ShowOnlyInnerProperties))
 	FChestSpawnPointChestSettings ChestSpawnPointChestSettings;

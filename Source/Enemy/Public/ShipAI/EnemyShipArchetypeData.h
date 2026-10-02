@@ -47,6 +47,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
 	FEnemyShipCannonAimProfile CannonAimProfile;
 
+	/** Normal cannon lead along the target's movement direction. -1 uses actual target velocity; 0 disables lead. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Cannon Lead", meta = (ClampMin = "-1.0", Units = "cm/s"))
+	float CannonLeadSpeed = -1.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skills")
 	EEnemyShipSkillSelectionPolicy SelectionPolicy = EEnemyShipSkillSelectionPolicy::HighestPriority;
 
