@@ -2661,6 +2661,13 @@ bool AEnemyShip::AllowsPlayerAnchorControl(AActor* Interactor) const
 	return !IsStoryGateDormant() && !bDeathHandled && bCrewDefeated;
 }
 
+float AEnemyShip::GetIncomingDamageMultiplier() const
+{
+	return bCrewDefeated && FMath::IsFinite(CrewDefeatedDamageMultiplier)
+		? FMath::Max(1.0f, CrewDefeatedDamageMultiplier)
+		: 1.0f;
+}
+
 float AEnemyShip::GetCannonCooldownMultiplier() const
 {
 	if (!EnemyShipArchetype)

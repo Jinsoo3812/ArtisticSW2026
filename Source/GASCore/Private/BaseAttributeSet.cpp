@@ -8,6 +8,7 @@
 #include "Abilities/GameplayAbilityTypes.h"
 #include "Animation/AnimInstance.h"
 #include "BaseGameplayTags.h"
+#include "IncomingDamageMultiplierInterface.h"
 
 #include "Engine/Engine.h"
 
@@ -106,8 +107,20 @@ void UBaseAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallba
 	// 실제 체력 감소만 Health에 남기고 Damage 값은 다음 GE를 위해 비웁니다.
 	if (Data.EvaluatedData.Attribute == GetDamageAttribute())
 	{
-		const float LocalDamage = FMath::Max(0.0f, GetDamage());
+		float LocalDamage = FMath::Max(0.0f, GetDamage());
 		SetDamage(0.0f);
+		if (const UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent())
+		{
+			if (const IIncomingDamageMultiplierInterface* Target = Cast<IIncomingDamageMultiplierInterface>(ASC->GetAvatarActor()))
+			{
+				const float Multiplier = Target->GetIncomingDamageMultiplier();
+				if (FMath::IsFinite(Multiplier) && Multiplier >= 0.0f)
+				{
+					LocalDamage = static_cast<float>(FMath::Min(
+						static_cast<double>(LocalDamage) * Multiplier, static_cast<double>(MAX_flt)));
+				}
+			}
+		}
 
 		if (LocalDamage > 0.0f)
 		{

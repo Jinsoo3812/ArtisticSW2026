@@ -8,6 +8,7 @@
 #include "ShipAI/EnemyShipNavigationTypes.h"
 #include "WaveSystem/Data/WaveSpawnTypes.h"
 #include "GameplayAbilitySpecHandle.h"
+#include "IncomingDamageMultiplierInterface.h"
 #include "ItemSpawn/LootSpawnPoint.h"
 #include "DeckAI/DeckEnemySpawnerComponent.h"
 #include "BossAI/BossEncounterComponent.h"
@@ -112,7 +113,7 @@ struct ENEMY_API FDeckWaypointGenerationSettings
 };
 
 UCLASS(HideCategories = ("Ship|Stats"))
-class ENEMY_API AEnemyShip : public AShip
+class ENEMY_API AEnemyShip : public AShip, public IIncomingDamageMultiplierInterface
 {
 	GENERATED_BODY()
 
@@ -145,6 +146,7 @@ public:
 	virtual bool AllowsPlayerBoarding() const override { return false; }
 	virtual bool AllowsPlayerAnchorControl(AActor* Interactor = nullptr) const override;
 	virtual float GetCannonCooldownMultiplier() const override;
+	virtual float GetIncomingDamageMultiplier() const override;
 	virtual bool IsProtectedFromOwnHullCannonSplash(const AActor* Candidate) const override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -313,6 +315,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI|Cannon Lead", meta = (EditCondition = "bOverrideCannonLeadSpeed", ClampMin = "0.0", Units = "cm/s"))
 	float CannonLeadSpeedOverride = 1000.0f;
+
+	/** Multiplies damage received after all registered ordinary crew are defeated. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Crew", meta = (ClampMin = "1.0"))
+	float CrewDefeatedDamageMultiplier = 3.0f;
 
 	/** Per-instance Chest settings forwarded to every ChestSpawnPoint Child Actor owned by this ship. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest", meta = (ShowOnlyInnerProperties))
