@@ -47,6 +47,8 @@ AStorageChest::AStorageChest()
 	SWBuoyancyComponent = CreateDefaultSubobject<USWBuoyancyComponent>(TEXT("SWBuoyancyComponent"));
 	SWBuoyancyComponent->ExecutionMode = ESWBuoyancyExecutionMode::ServerAuthority;
 	SWBuoyancyComponent->ConfigureSinglePontoon(50.0f);
+	SWBuoyancyComponent->bMonitorChestLaunch = true;
+	SWBuoyancyComponent->bUsePhysicsStepBuoyancy = true;
 	// Preserve the Water plugin's near-surface coefficient while accelerating only
 	// the fully submerged recovery after a large fall.
 	SWBuoyancyComponent->ForceSettings.DeepWaterBuoyancyMultiplier = 3.0f;
@@ -778,6 +780,25 @@ void AStorageChest::OnRep_ReplicatedMovement()
 {
 	if (bEnablePhysicsAndBuoyancy)
 	{
+		const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+		const FVector IncomingLocation = GetReplicatedMovement().Location;
+		const FVector IncomingVelocity = GetReplicatedMovement().LinearVelocity;
+		const float TargetDeltaZ = bHasClientMovementTarget
+			? IncomingLocation.Z - ClientMovementTargetLocation.Z : 0.0f;
+		const float CorrectionZ = IncomingLocation.Z - GetActorLocation().Z;
+		if (bHasClientMovementTarget && Now >= NextClientLaunchDiagnosticTime
+			&& (TargetDeltaZ > 200.0f || CorrectionZ > ClientNetworkSnapDistance
+				|| (IncomingVelocity.Z > 400.0f && ClientMovementTargetVelocity.Z <= 400.0f)))
+		{
+			NextClientLaunchDiagnosticTime = Now + 10.0;
+			UE_LOG(LogTemp, Warning, TEXT("[CHEST-LAUNCH-NET] Actor=%s Class=%s Role=%d Time=%.3f UpdateGap=%.3f Current=%s PreviousTarget=%s Incoming=%s PreviousVelocity=%s IncomingVelocity=%s TargetDeltaZ=%.1f CorrectionZ=%.1f Dormant=%d MaxExtrapolation=%.3f SnapDistance=%.1f"),
+				*GetPathName(), *GetClass()->GetPathName(), static_cast<int32>(GetLocalRole()), Now,
+				Now - ClientMovementTargetReceiveTime, *GetActorLocation().ToString(),
+				*ClientMovementTargetLocation.ToString(), *IncomingLocation.ToString(),
+				*ClientMovementTargetVelocity.ToString(), *IncomingVelocity.ToString(),
+				TargetDeltaZ, CorrectionZ, bDistanceOptimizationDormant,
+				ClientMaxExtrapolationTime, ClientNetworkSnapDistance);
+		}
 		ClientMovementTargetLocation = GetReplicatedMovement().Location;
 		ClientMovementTargetRotation = GetReplicatedMovement().Rotation.Quaternion();
 		ClientMovementTargetVelocity = GetReplicatedMovement().LinearVelocity;
