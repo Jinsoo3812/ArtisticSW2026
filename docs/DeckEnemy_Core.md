@@ -1,6 +1,6 @@
 # Deck Enemy Core Architecture Guide
 
-> 다층 보행면을 사용하는 `BP_EnemyShip`의 최신 경로 구조와 설정/수동 검증은 [DeckWalk_MultiSurface.md](DeckWalk_MultiSurface.md)를 참고한다. 아래의 Waypoint 연결 그래프 설명은 기존 모드이며, 새 모드는 충돌에서 생성한 보행 그래프로 이동하고 Waypoint를 스폰/전투 앵커로 사용한다. Movement Base도 발밑 충돌 컴포넌트에 맞춰 선택한다.
+> 이 문서의 Waypoint 연결 그래프와 전투 포인트 설명은 과거 구현 기록이다. 현재 `BP_EnemyShip`의 이동·스폰 구조는 [보행면 구현 설명서](DeckWalk_Implementation.md), 설정과 수동 확인은 [에디터 안내](DeckWalk_Manual_Anchor_Editor_Setup.md)를 따른다.
 
 이 문서는 움직이는 EnemyShip 위에서 동작하는 `DeckEnemy`의 공통 구조를 빠르게 파악하기 위한 요약본이다.  
 세부 에디터 수치, Boss Encounter 연출, 디버깅 절차와 초기 MVP 기록은 제외하고 핵심 책임만 정리한다.
