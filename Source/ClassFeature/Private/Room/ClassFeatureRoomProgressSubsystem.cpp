@@ -223,6 +223,7 @@ void UClassFeatureRoomProgressSubsystem::HandlePostLoadMap(UWorld* World)
 	bWorldSnapshotRestored = false;
 	bFinalDepartureSharedRestored = false;
 	bReturnShipPlaced = false;
+	bReturnEntryReady = false;
 	bShipSafetyFallbackUsed = false;
 	ShipSafetyCheckAt = 0.0;
 	ShipPlacementRealTime = 0.0;
@@ -341,7 +342,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 		ShipSafetyCheckAt = FPlatformTime::Seconds() + 0.5;
 		DevelopmentScope.bKeep=true; return true;
 	}
-	if (bReturnShipPlaced)
+	if (bReturnShipPlaced && !bReturnEntryReady)
 	{
 		if (FPlatformTime::Seconds() < ShipSafetyCheckAt) { DevelopmentScope.bKeep=true; return true; }
 		AKelvinShip* Ship = nullptr;
@@ -390,10 +391,19 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 		FPlatformMisc::RequestExit(false);
 		return false;
 	}
+	bFinalDepartureSharedRestored = true;
+	if (Room->IsReturnTravelPending() && !Room->IsFinalDepartureTravelPending() && !bReturnEntryReady)
+	{
+		bReturnEntryReady = true;
+		Mode->SetHostedRoomWorldReady();
+		Mode->MarkHostedRoomWorldReady();
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=WorldRestore Phase=EntryReady Mode=Return ParticipantRestorePending=1"));
+	}
 	if (Room->IsReturnTravelPending() || Room->IsFinalDepartureTravelPending())
  {
   if (!AreTransitionParticipantsReady(World))
   {
+   if (bReturnEntryReady) { DevelopmentScope.bKeep=true; return true; }
    if (FPlatformTime::Seconds() < RestoreDeadline) { DevelopmentScope.bKeep=true; return true; }
    UE_LOG(LogSWRoom, Error, TEXT("World restore participant readiness timeout Generation=%d"), Room->GetRestoreGeneration());
    FPlatformMisc::RequestExit(false); return false;

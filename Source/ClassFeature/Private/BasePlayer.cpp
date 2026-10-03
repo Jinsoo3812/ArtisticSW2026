@@ -392,11 +392,11 @@ bool ABasePlayer::HandleFinalDepartureRequested(AActor* Requester)
 
 void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 {
+	if (InHealthComponent && InHealthComponent->IsLifeInitializing()) return;
 	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=PlayerDeathFinished Player=%s Authority=%d Controller=%s PlayerState=%s Health=%s"),
 		*GetName(), HasAuthority(), *GetNameSafe(GetController()), *GetNameSafe(GetPlayerState()), *GetNameSafe(InHealthComponent));
 	if (HasAuthority())
 	{
-		if (ABasePlayerController* Flow = Cast<ABasePlayerController>(GetController())) Flow->CaptureLatestLifeProgress(this);
 		if (AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr)
 		{
 			GameMode->NotifyPlayerDeathFinished(this);
@@ -1061,6 +1061,15 @@ void ABasePlayer::PrepareForCannonControl()
 
 void ABasePlayer::PossessedBy(AController* NewController)
 {
+	AMultiGameMode* LifeMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+	ABasePlayerController* LifeOwner = Cast<ABasePlayerController>(NewController);
+	const bool bIndividualLifeInitialization = LifeMode && LifeMode->IsIndividualRespawnInProgress(NewController);
+	if (bIndividualLifeInitialization)
+	{
+		if (HealthComponent) HealthComponent->BeginLifeInitialization();
+		if (ABasePlayer* PreviousLife = LifeOwner ? LifeOwner->LifeCharacter.Get() : nullptr)
+			if (PreviousLife != this && PreviousLife->GetHealthComponent()) PreviousLife->GetHealthComponent()->UninitializeFromAbilitySystem();
+	}
 	Super::PossessedBy(NewController);
 	ResetAutomaticSwimDiveInput();
 
@@ -1159,13 +1168,12 @@ void ABasePlayer::PossessedBy(AController* NewController)
 		UE_LOG(LogTemp, Warning, TEXT("ABasePlayer::PossessedBy - [SERVER] PlayerState is null!"));
 	}
 
-	AMultiGameMode* LifeMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
- ABasePlayerController* LifeOwner = Cast<ABasePlayerController>(NewController);
  USWRoomProgressSubsystem* LifeRoom = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
  const bool bNewEntryLife = LifeRoom && (LifeRoom->IsReturnTravelPending() || LifeRoom->IsFinalDepartureTravelPending());
  if (LifeMode && LifeMode->IsIndividualRespawnInProgress(NewController))
  {
   bInitialLifeRestoreSuccessful = LifeOwner && LifeOwner->ApplyPendingLifeProgress(this);
+  if (bInitialLifeRestoreSuccessful) bInitialLifeRestoreSuccessful = HealthComponent && HealthComponent->EndLifeInitialization();
  }
  else if (LifeMode && (LifeMode->GetSessionLifePhase() == ESWSessionLifePhase::GameOver || LifeMode->GetSessionLifePhase() == ESWSessionLifePhase::ReturningAfterGameOver))
  {

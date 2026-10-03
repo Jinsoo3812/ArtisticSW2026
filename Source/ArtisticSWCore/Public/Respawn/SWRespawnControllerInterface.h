@@ -11,6 +11,7 @@ class ARTISTICSWCORE_API ISWRespawnControllerInterface
  GENERATED_BODY()
 public:
  virtual bool CaptureLatestLifeProgress(APawn* SourcePawn) = 0;
+ virtual bool CanAcceptLifeDeath(APawn* SourcePawn) const = 0;
  virtual void SetDeathFlowState(const FSWDeathFlowState& State) = 0;
  virtual bool HasPendingLifeProgress() const = 0;
  virtual bool ApplyPendingLifeProgress(APawn* NewPawn) = 0;

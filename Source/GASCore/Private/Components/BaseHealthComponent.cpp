@@ -156,7 +156,7 @@ void UBaseHealthComponent::StartDeath()
 {
 	AActor* Owner = GetOwningActor();
 	if (!Owner || !Owner->HasAuthority() || !AbilitySystemComponent
-		|| bPreparingHealthDeath || DeathPresentation.DeathState != EBaseDeathState::NotDead)
+		|| bLifeInitializing || bPreparingHealthDeath || DeathPresentation.DeathState != EBaseDeathState::NotDead)
 	{
 		return;
 	}
@@ -231,12 +231,25 @@ FVector UBaseHealthComponent::CalculateKnockbackDirectionAwayFromSource(
 void UBaseHealthComponent::FinishDeath()
 {
 	AActor* Owner = GetOwningActor();
-	if (!Owner || !Owner->HasAuthority() || DeathPresentation.DeathState != EBaseDeathState::DeathStarted)
+	if (!Owner || !Owner->HasAuthority() || bLifeInitializing || DeathPresentation.DeathState != EBaseDeathState::DeathStarted)
 	{
 		return;
 	}
 
 	SetDeathState(EBaseDeathState::DeathFinished);
+}
+
+void UBaseHealthComponent::BeginLifeInitialization()
+{
+	if (GetOwner() && GetOwner()->HasAuthority()) bLifeInitializing = true;
+}
+
+bool UBaseHealthComponent::EndLifeInitialization()
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !AbilitySystemComponent
+		|| GetHealth() <= 0.f || IsDead() || AbilitySystemComponent->HasMatchingGameplayTag(State_Dead)) return false;
+	bLifeInitializing = false;
+	return true;
 }
 
 bool UBaseHealthComponent::ResetForReuse()
@@ -466,7 +479,7 @@ void UBaseHealthComponent::HandleDamageChanged(const FOnAttributeChangeData& Dat
 
 void UBaseHealthComponent::HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
-	if (NewCount > 0 && DeathPresentation.DeathState == EBaseDeathState::NotDead)
+	if (!bLifeInitializing && NewCount > 0 && DeathPresentation.DeathState == EBaseDeathState::NotDead)
 	{
 		SetDeathState(EBaseDeathState::DeathStarted);
 	}

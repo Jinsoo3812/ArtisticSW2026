@@ -973,14 +973,16 @@ void AMultiGameMode::NotifyPlayerDeathFinished(APawn* DeadPawn)
  AController* Controller = DeadPawn->GetController();
  if (!Controller && DeadPawn->GetPlayerState()) Controller = DeadPawn->GetPlayerState()->GetOwningController();
  if (!Controller || !PlayerIndices.Contains(Controller) || FinishedDeadPlayers.Contains(Controller)
+  || IsIndividualRespawnInProgress(Controller)
   || SessionLifePhase == ESWSessionLifePhase::GameOver || SessionLifePhase == ESWSessionLifePhase::ReturningAfterGameOver)
  {
   UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=ModeDeathFinishedRejected Controller=%s Registered=%d AlreadyDead=%d Session=%d"), *GetNameSafe(Controller), PlayerIndices.Contains(Controller), FinishedDeadPlayers.Contains(Controller), static_cast<int32>(SessionLifePhase));
   return;
  }
  ISWRespawnControllerInterface* Flow = Cast<ISWRespawnControllerInterface>(Controller);
- const bool bCaptured = Flow && Flow->CaptureLatestLifeProgress(DeadPawn);
+ if (!Flow || !Flow->CanAcceptLifeDeath(DeadPawn)) return;
  FinishedDeadPlayers.Add(Controller);
+ const bool bCaptured = Flow->CaptureLatestLifeProgress(DeadPawn);
  FSWDeathFlowState& State = DeathFlowStates.FindOrAdd(Controller);
  State.Phase = ESWPersonalLifePhase::WaitingForRespawn;
  ++State.WaitingGeneration;

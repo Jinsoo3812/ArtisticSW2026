@@ -57,6 +57,7 @@ private:
 	bool bWorldSnapshotRestored = false;
 	bool bFinalDepartureSharedRestored = false;
 	bool bReturnShipPlaced = false;
+	bool bReturnEntryReady = false;
 	bool bShipSafetyFallbackUsed = false;
 	double ShipSafetyCheckAt = 0.0;
 	double ShipPlacementRealTime = 0.0;
