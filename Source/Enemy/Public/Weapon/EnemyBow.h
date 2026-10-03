@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "Weapon/BaseWeapon.h"
+#include "Item/Projectiles/ProjectileLaunchTypes.h"
 
 #include "EnemyBow.generated.h"
 
@@ -30,6 +31,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Enemy Bow|Projectile")
 	float GetProjectileSpeed() const { return FMath::Max(0.0f, ProjectileSpeed); }
+	const FProjectileLaunchProfile& GetLaunchProfile() const { return LaunchProfile; }
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Bow|Projectile")
@@ -37,4 +39,8 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Bow|Projectile", meta = (ClampMin = "1.0", Units = "cm/s"))
 	float ProjectileSpeed = 2500.0f;
+
+	/** Legacy serialized profile; EnemyBowShotPreparation now always uses WorldAim. */
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Enemy bow shots always use WorldAim."))
+	FProjectileLaunchProfile LaunchProfile;
 };

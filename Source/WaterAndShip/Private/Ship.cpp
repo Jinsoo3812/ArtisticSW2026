@@ -211,6 +211,17 @@ bool AShip::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FS
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
 
+bool AShip::TryGetMovementFrameVelocityAtPoint(const FVector& WorldPoint, FVector& OutVelocity) const
+{
+	OutVelocity = FVector::ZeroVector;
+	if (!IsValid(BuoyancyRoot) || WorldPoint.ContainsNaN() || !BuoyancyRoot->IsSimulatingPhysics()) return false;
+	// Deck query proxies are not simulated. Always sample the actual Chaos body.
+	// A disabled/kinematic body has no reliable angular-velocity contract here.
+	// WorldAim does not need this sample; physical inheritance must not silently use zero.
+	OutVelocity = BuoyancyRoot->GetPhysicsLinearVelocityAtPoint(WorldPoint);
+	return !OutVelocity.ContainsNaN();
+}
+
 namespace
 {
 	void InvokeNoParameterFunction(UObject* Object, const FName FunctionName)

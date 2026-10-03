@@ -78,8 +78,9 @@ bool FArrowCollisionProfileTest::RunTest(const FString& Parameters)
 	if (TestNotNull(TEXT("Native arrow CDO exists"), ArrowCDO)
 		&& TestNotNull(TEXT("Native arrow owns collision"), ArrowCDO->GetCollisionComp()))
 	{
-		TestEqual(TEXT("Native arrow reasserts the immutable profile"),
-			ArrowCDO->GetCollisionComp()->GetCollisionProfileName(), FName(TEXT("ArrowProjectile")));
+		TestEqual(TEXT("Native arrow disables automatic collision in favor of explicit flight sweeps"),
+			ArrowCDO->GetCollisionComp()->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+		TestFalse(TEXT("Native arrow cannot generate duplicate overlap impacts"), ArrowCDO->GetCollisionComp()->GetGenerateOverlapEvents());
 		TestEqual(TEXT("Native arrow collision object is Arrow"),
 			ArrowCDO->GetCollisionComp()->GetCollisionObjectType(), ECC_Arrow);
 	}
@@ -101,8 +102,9 @@ bool FArrowCollisionProfileTest::RunTest(const FString& Parameters)
 		&& TestNotNull(TEXT("BP_Arrow CDO owns collision"), BlueprintArrowCDO->GetCollisionComp()))
 	{
 		BlueprintArrowCDO->OnConstruction(FTransform::Identity);
-		TestEqual(TEXT("BP_Arrow construction overrides legacy Blueprint collision settings"),
-			BlueprintArrowCDO->GetCollisionComp()->GetCollisionProfileName(), FName(TEXT("ArrowProjectile")));
+		TestEqual(TEXT("BP_Arrow construction disables automatic collision in favor of explicit flight sweeps"),
+			BlueprintArrowCDO->GetCollisionComp()->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+		TestFalse(TEXT("BP_Arrow cannot generate duplicate overlap impacts"), BlueprintArrowCDO->GetCollisionComp()->GetGenerateOverlapEvents());
 		TestEqual(TEXT("Constructed BP_Arrow blocks ship query hulls"),
 			BlueprintArrowCDO->GetCollisionComp()->GetCollisionResponseToChannel(ECC_ShipDamage), ECR_Block);
 	}

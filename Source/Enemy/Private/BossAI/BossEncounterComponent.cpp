@@ -5,6 +5,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/ChildActorComponent.h"
 #include "DeckAI/DeckWaypointComponent.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
 #include "Engine/World.h"
 #include "Interactable/InteractableComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -378,15 +379,25 @@ bool UBossEncounterComponent::ResolveSpawnPoint(
 {
 	OutPointId = BossSpawnPointId;
 	UDeckWaypointComponent* Point = HostShip.GetDeckWaypoint(OutPointId);
-	if (!Point || !Point->CanUseInCombat())
+	if (!Point)
 	{
+		UE_LOG(LogTemp, Error, TEXT("[BossEncounter] Ship=%s PointId=%d Reason=UnknownSpawnAnchor"),
+			*HostShip.GetName(), OutPointId);
 		return false;
 	}
 	const AShipBossEnemy* BossCDO = BossClass ? BossClass->GetDefaultObject<AShipBossEnemy>() : nullptr;
 	const UCapsuleComponent* Capsule = BossCDO ? BossCDO->GetCapsuleComponent() : nullptr;
 	const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0f;
-	return HostShip.ResolveDeckCharacterTransform(OutPointId, HalfHeight, OutTransform)
-		|| HostShip.ResolveFixedDeckAnchorTransform(OutPointId, HalfHeight, OutTransform);
+	const bool bResolved = HostShip.ResolveDeckCharacterTransform(OutPointId, HalfHeight, OutTransform);
+	if (!bResolved)
+	{
+		const UDeckWalkAreaComponent* Area = HostShip.GetDeckWalkAreaComponent();
+		UE_LOG(LogTemp, Error, TEXT("[BossEncounter] Ship=%s PointId=%d Surface=%s Reason=%s"),
+			*HostShip.GetName(), OutPointId, *Point->GetWalkSurfaceId().ToString(),
+			(!Area || !Area->IsReady())
+				? TEXT("WalkAreaNotReady") : TEXT("NoWalkableSpawnFloor"));
+	}
+	return bResolved;
 }
 
 void UBossEncounterComponent::BindItemBox()

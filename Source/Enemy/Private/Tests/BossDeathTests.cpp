@@ -44,7 +44,8 @@ namespace BossDeathTests
 		UDeckWaypointComponent* Point = NewObject<UDeckWaypointComponent>(Ship);
 		Ship->AddInstanceComponent(Point);
 		Point->SetupAttachment(Ship->GetShipDeckMesh());
-		Point->InitializeGeneratedWaypoint(701, 0, 0, true, true, true);
+		Point->SetWaypointIdForAuthoring(701);
+		FindFProperty<FBoolProperty>(Point->GetClass(), TEXT("bCanSpawn"))->SetPropertyValue_InContainer(Point, true);
 		Point->RegisterComponent();
 		Ship->GetDeckEnemySpawnerComponent()->InitializeWaypoints();
 		return Ship;

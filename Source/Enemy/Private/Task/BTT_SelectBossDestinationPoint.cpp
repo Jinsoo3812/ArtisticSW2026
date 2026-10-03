@@ -1,16 +1,16 @@
 #include "Task/BTT_SelectBossDestinationPoint.h"
 
 #include "AIController.h"
-#include "BehaviorTree/Blackboard/BlackboardKeyType_Int.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Vector.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BossAI/ShipBossEnemy.h"
 
 UBTT_SelectBossDestinationPoint::UBTT_SelectBossDestinationPoint()
 {
-	NodeName = TEXT("Select Boss Destination Point");
-	BlackboardKey.SelectedKeyName = TEXT("DestinationPointId");
-	BlackboardKey.AddIntFilter(
+	NodeName = TEXT("Select Boss Walk Area Destination");
+	BlackboardKey.SelectedKeyName = TEXT("DestinationLocation");
+	BlackboardKey.AddVectorFilter(
 		this,
 		GET_MEMBER_NAME_CHECKED(UBTT_SelectBossDestinationPoint, BlackboardKey));
 	TargetActorKey.SelectedKeyName = TEXT("TargetActor");
@@ -39,21 +39,21 @@ EBTNodeResult::Type UBTT_SelectBossDestinationPoint::ExecuteTask(
 		return EBTNodeResult::Failed;
 	}
 
-	int32 PointId = INDEX_NONE;
-	if (!UBossDeckPointSelector::SelectDestinationPoint(
-		Boss->GetHostShip(), Boss, Target, SelectionPurpose, DestinationRelation, SelectionSettings, PointId))
+	FDeckWalkLocation Location;
+	if (!UBossDeckPointSelector::SelectDestinationLocation(
+		Boss->GetHostShip(), Boss, Target, SelectionPurpose, DestinationRelation, SelectionSettings, Location))
 	{
-		Blackboard->SetValueAsInt(GetSelectedBlackboardKey(), INDEX_NONE);
-		Boss->SetDestinationPointId(INDEX_NONE);
+		Blackboard->ClearValue(GetSelectedBlackboardKey());
+		Boss->ClearDestination();
 		return EBTNodeResult::Failed;
 	}
 
-	if (!Boss->TrySetDestinationPointId(PointId))
+	if (!Boss->TrySetDestinationLocation(Location, SelectionPurpose == EBossDestinationPurpose::Walk))
 	{
-		Blackboard->SetValueAsInt(GetSelectedBlackboardKey(), INDEX_NONE);
+		Blackboard->ClearValue(GetSelectedBlackboardKey());
 		return EBTNodeResult::Failed;
 	}
-	Blackboard->SetValueAsInt(GetSelectedBlackboardKey(), PointId);
+	Blackboard->SetValueAsVector(GetSelectedBlackboardKey(), Location.LocalFloor);
 	return EBTNodeResult::Succeeded;
 }
 

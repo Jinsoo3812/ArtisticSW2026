@@ -13,6 +13,7 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Enum.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Int.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Vector.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "BehaviorTree/BTCompositeNode.h"
 #include "BehaviorTree/Tasks/BTTask_RunBehaviorDynamic.h"
@@ -392,12 +393,12 @@ bool FBossMVPDefaultsTest::RunTest(const FString& Parameters)
 		if (TestNotNull(TEXT("BB_RogueBoss loads"), BossBlackboard))
 		{
 			const FBlackboardEntry* TargetKey = BossMVPTests::FindBlackboardKey(BossBlackboard, TEXT("TargetActor"));
-			const FBlackboardEntry* DestinationKey = BossMVPTests::FindBlackboardKey(BossBlackboard, TEXT("DestinationPointId"));
+			const FBlackboardEntry* DestinationKey = BossMVPTests::FindBlackboardKey(BossBlackboard, TEXT("DestinationLocation"));
 			const FBlackboardEntry* StateKey = BossMVPTests::FindBlackboardKey(BossBlackboard, TEXT("State"));
 			TestTrue(TEXT("TargetActor is an Object Blackboard key"),
 				TargetKey && TargetKey->KeyType && TargetKey->KeyType->IsA<UBlackboardKeyType_Object>());
-			TestTrue(TEXT("DestinationPointId is an Int Blackboard key"),
-				DestinationKey && DestinationKey->KeyType && DestinationKey->KeyType->IsA<UBlackboardKeyType_Int>());
+			TestTrue(TEXT("DestinationLocation is a Vector Blackboard key"),
+				DestinationKey && DestinationKey->KeyType && DestinationKey->KeyType->IsA<UBlackboardKeyType_Vector>());
 			const UBlackboardKeyType_Enum* StateEnum = StateKey
 				? Cast<UBlackboardKeyType_Enum>(StateKey->KeyType)
 				: nullptr;
@@ -673,8 +674,7 @@ bool FBossBehaviorTreeStartTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("Runtime Blackboard matches BT_RogueBoss Blackboard"),
 			Blackboard->GetBlackboardAsset() == Boss->GetBehaviorTree()->BlackboardAsset);
-		TestEqual(TEXT("Runtime DestinationPointId starts invalid"),
-			Blackboard->GetValueAsInt(TEXT("DestinationPointId")), INDEX_NONE);
+		TestFalse(TEXT("Runtime destination starts unset"), Blackboard->IsVectorValueSet(TEXT("DestinationLocation")));
 	}
 	return true;
 }
@@ -848,7 +848,8 @@ bool FBossEncounterSightSpawnWithoutRidingPlayerTest::RunTest(const FString& Par
 	EnemyShip->AddInstanceComponent(SpawnPoint);
 	SpawnPoint->OnComponentCreated();
 	SpawnPoint->SetupAttachment(DeckMesh);
-	SpawnPoint->InitializeGeneratedWaypoint(702, 0, 0, true, true, true);
+	SpawnPoint->SetWaypointIdForAuthoring(702);
+	FindFProperty<FBoolProperty>(SpawnPoint->GetClass(), TEXT("bCanSpawn"))->SetPropertyValue_InContainer(SpawnPoint, true);
 	SpawnPoint->RegisterComponent();
 	SpawnPoint->SetRelativeLocation(FVector(150.0f, 0.0f, 10.0f));
 	EnemyShip->InitializeDeckWaypoints();
@@ -874,7 +875,7 @@ bool FBossEncounterSightSpawnWithoutRidingPlayerTest::RunTest(const FString& Par
 	TestNotNull(TEXT("Sight spawns the boss without an initial target"), Boss);
 	if (Boss)
 	{
-		TestEqual(TEXT("Boss still uses the exact configured point"), Boss->GetCurrentPointId(), 702);
+		TestEqual(TEXT("Boss still uses the exact configured point"), Boss->GetInitialSpawnPointId(), 702);
 		TestNull(TEXT("Boss waits for perception to acquire a character target"), Boss->GetBossCombatTarget());
 	}
 	return true;
@@ -918,7 +919,8 @@ bool FBossEncounterSightSpawnTest::RunTest(const FString& Parameters)
 	EnemyShip->AddInstanceComponent(SpawnPoint);
 	SpawnPoint->OnComponentCreated();
 	SpawnPoint->SetupAttachment(DeckMesh);
-	SpawnPoint->InitializeGeneratedWaypoint(701, 0, 0, true, true, true);
+	SpawnPoint->SetWaypointIdForAuthoring(701);
+	FindFProperty<FBoolProperty>(SpawnPoint->GetClass(), TEXT("bCanSpawn"))->SetPropertyValue_InContainer(SpawnPoint, true);
 	SpawnPoint->RegisterComponent();
 	SpawnPoint->SetRelativeLocation(FVector(150.0f, 0.0f, 10.0f));
 	EnemyShip->InitializeDeckWaypoints();
@@ -948,7 +950,7 @@ bool FBossEncounterSightSpawnTest::RunTest(const FString& Parameters)
 	if (FirstBoss)
 	{
 		TestEqual(TEXT("Boss occupies the explicitly selected deck point"),
-			FirstBoss->GetCurrentPointId(), 701);
+			FirstBoss->GetInitialSpawnPointId(), 701);
 	}
 
 	EnemyShip->NotifyPlayerShipSighted(PlayerShip);

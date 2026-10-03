@@ -1,5 +1,6 @@
 #include "Projectiles/SubMunitionProjectile.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "Item/Projectiles/ProjectileLaunchInitialization.h"
 #include "Components/StaticMeshComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "AbilitySystemComponent.h"
@@ -55,9 +56,9 @@ void ASubMunitionProjectile::Tick(float DeltaTime)
 
 void ASubMunitionProjectile::LaunchSubMunition(const FVector& LaunchVelocity)
 {
-	if (ProjectileMovement)
+	if (ProjectileMovement && ProjectileLaunchInitialization::ApplyWorldVelocity(
+		ProjectileMovement, LaunchVelocity, ProjectileMovement->MaxSpeed))
 	{
-		ProjectileMovement->Velocity = LaunchVelocity;
 		ProjectileMovement->Activate();
 	}
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DeckAI/DeckWalkTypes.h"
 #include "GAS/Ability/Boss/BossGameplayAbility.h"
 #include "GAS/SWGameplayEffectContext.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -231,7 +232,8 @@ protected:
 
 	FVector PreviousWorldLocation = FVector::ZeroVector;
 	TWeakObjectPtr<UStaticMeshComponent> CapturedDeckMesh;
-	int32 CapturedDestinationPointId = INDEX_NONE;
+	FDeckWalkLocation CapturedDestinationLocation;
+	FDeckWalkLocation CapturedStartLocation;
 	double DashStartServerTime = 0.0;
 	float DashTickInterval = 1.0f / 60.0f;
 	TEnumAsByte<EMovementMode> CachedMovementMode = MOVE_Walking;

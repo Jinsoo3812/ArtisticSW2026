@@ -10,6 +10,9 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "DeckAI/DeckEnemyNavigationComponent.h"
+#include "DeckAI/DeckWalkRouteComponent.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckWaypointComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "ShipAI/EnemyShip.h"
@@ -22,6 +25,7 @@ ADeckEnemy::ADeckEnemy()
 {
 	DeckEnemyNavigationComponent = CreateDefaultSubobject<UDeckEnemyNavigationComponent>(
 		TEXT("DeckEnemyNavigationComponent"));
+	DeckWalkRouteComponent = CreateDefaultSubobject<UDeckWalkRouteComponent>(TEXT("DeckWalkRouteComponent"));
 	bAutoResolveHostShip = false;
 	bDestroyWithHostShip = false;
 	bDestroyAfterDeathFinished = false;
@@ -93,7 +97,6 @@ void ADeckEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		{
 			Host->ReleaseAllDeckPointsFor(this);
 		}
-		GoalPointReservation.Reset();
 	}
 	Super::EndPlay(EndPlayReason);
 }
@@ -102,9 +105,7 @@ void ADeckEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifeti
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ADeckEnemy, bPoolActive);
-	DOREPLIFETIME(ADeckEnemy, CurrentDeckWaypointId);
-	DOREPLIFETIME(ADeckEnemy, PreviousDeckWaypointId);
-	DOREPLIFETIME(ADeckEnemy, GoalDeckWaypointId);
+	DOREPLIFETIME(ADeckEnemy, InitialSpawnPointId);
 }
 
 void ADeckEnemy::PrepareForPool()
@@ -130,10 +131,9 @@ bool ADeckEnemy::ActivateFromPool(
 	FTransform AuthoritativeStartTransform;
 	const bool bResolvedStart = ReservedTransform ? !ReservedTransform->ContainsNaN()
 		: InHostShip->ResolveDeckCharacterTransform(
-		InitialWaypointId, HalfHeight, AuthoritativeStartTransform)
-		|| InHostShip->ResolveFixedDeckAnchorTransform(
 			InitialWaypointId, HalfHeight, AuthoritativeStartTransform);
 	if (ReservedTransform) AuthoritativeStartTransform = *ReservedTransform;
+	
 	if (!bResolvedStart || AuthoritativeStartTransform.ContainsNaN())
 	{
 		return false;
@@ -145,9 +145,7 @@ bool ADeckEnemy::ActivateFromPool(
 
 	ResetLocalDeathRagdoll();
 	SetHostShip(InHostShip);
-	CurrentDeckWaypointId = InitialWaypointId;
-	PreviousDeckWaypointId = INDEX_NONE;
-	GoalDeckWaypointId = INDEX_NONE;
+	InitialSpawnPointId = InitialWaypointId;
 	DeckRandomStream.Initialize(RandomSeed);
 
 	RestoreForPoolActivation();
@@ -199,6 +197,7 @@ void ADeckEnemy::DeactivateToPool()
 	SetNetDormancy(DORM_Awake);
 	FlushNetDormancy();
 	GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
+	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
 	ClearCombatTarget();
 	if (DeckEnemyNavigationComponent)
 	{
@@ -206,12 +205,7 @@ void ADeckEnemy::DeactivateToPool()
 	}
 	if (AEnemyShip* Host = GetDeckHostShip())
 	{
-		Host->ReleaseDeckPointReservation(GoalPointReservation);
 		Host->ReleaseAllDeckPointsFor(this);
-	}
-	else
-	{
-		GoalPointReservation.Reset();
 	}
 
 	if (AAIController* OwningAIController = Cast<AAIController>(GetController()))
@@ -241,9 +235,7 @@ void ADeckEnemy::DeactivateToPool()
 
 	bPoolActive = false;
 	ClearAuthoritativeDeckBase();
-	CurrentDeckWaypointId = INDEX_NONE;
-	PreviousDeckWaypointId = INDEX_NONE;
-	GoalDeckWaypointId = INDEX_NONE;
+	InitialSpawnPointId = INDEX_NONE;
 	ApplyPoolPresentationState();
 	ForceNetUpdate();
 	SetNetDormancy(DORM_DormantAll);
@@ -261,80 +253,44 @@ void ADeckEnemy::ResetToFreshPoolState()
 	ForceNetUpdate();
 }
 
-void ADeckEnemy::MarkGoalDeckWaypointReached()
+void ADeckEnemy::BeginFreeDeckMovement()
 {
-	if (GoalDeckWaypointId == INDEX_NONE)
-	{
-		return;
-	}
-
-	AEnemyShip* Host = GetDeckHostShip();
-	if (!Host || !Host->CommitDeckPointReservation(GoalPointReservation, this))
-	{
-		OnDeckMoveFailed();
-		return;
-	}
-	GoalPointReservation.Reset();
-	Host->ReleaseDeckPointOccupancy(CurrentDeckWaypointId, this);
-	PreviousDeckWaypointId = CurrentDeckWaypointId;
-	CurrentDeckWaypointId = GoalDeckWaypointId;
-	GoalDeckWaypointId = INDEX_NONE;
-	if (DeckEnemyNavigationComponent)
-	{
-		DeckEnemyNavigationComponent->CompleteReleaseLineOfSightReposition();
-	}
-	ForceNetUpdate();
+	if (!HasAuthority()) return;
+	if (AEnemyShip* Host = GetDeckHostShip()) Host->ReleaseDeckPointOccupancy(InitialSpawnPointId, this);
 }
 
-bool ADeckEnemy::TrySetGoalDeckWaypointId(int32 NewGoalWaypointId)
+bool ADeckEnemy::EvaluateAttackTarget(const AActor* Candidate, bool bRequireLineOfSight, FString& OutReason) const
 {
-	AEnemyShip* Host = GetDeckHostShip();
-	if (!HasAuthority() || !Host || !bPoolActive)
+	const AEnemyShip* Ship = GetDeckHostShip();
+	const UDeckWalkAreaComponent* Area = Ship ? Ship->GetDeckWalkAreaComponent() : nullptr;
+	FDeckWalkLocation SelfFloor, TargetFloor;
+	if (!Area || !Area->ResolveActorOnDeck(*this, SelfFloor)
+		|| !Candidate || !Area->ResolveActorOnDeck(*Candidate, TargetFloor))
 	{
+		OutReason = TEXT("NoWalkableCombatFloor");
 		return false;
 	}
-	if (NewGoalWaypointId == GoalDeckWaypointId && GoalPointReservation.IsValid())
+	if (SelfFloor.SurfaceId != TargetFloor.SurfaceId)
 	{
-		return true;
-	}
-	Host->ReleaseDeckPointReservation(GoalPointReservation);
-	GoalDeckWaypointId = INDEX_NONE;
-	if (NewGoalWaypointId == INDEX_NONE)
-	{
-		ForceNetUpdate();
-		return true;
-	}
-	if (NewGoalWaypointId == CurrentDeckWaypointId
-		|| !Host->TryReserveDeckPoint(NewGoalWaypointId, this, GoalPointReservation))
-	{
-		ForceNetUpdate();
+		OutReason = TEXT("DifferentCombatSurface");
 		return false;
 	}
-	GoalDeckWaypointId = NewGoalWaypointId;
-	ForceNetUpdate();
-	return true;
+	return Super::EvaluateAttackTarget(Candidate, bRequireLineOfSight, OutReason);
+}
+
+void ADeckEnemy::OnDeckMoveReached()
+{
+	if (DeckEnemyNavigationComponent) DeckEnemyNavigationComponent->CompleteReleaseLineOfSightReposition();
 }
 
 void ADeckEnemy::OnDeckMoveFailed()
 {
-	if (AEnemyShip* Host = GetDeckHostShip())
-	{
-		Host->ReleaseDeckPointReservation(GoalPointReservation);
-	}
-	else
-	{
-		GoalPointReservation.Reset();
-	}
-	GoalDeckWaypointId = INDEX_NONE;
-	if (DeckEnemyNavigationComponent)
-	{
-		DeckEnemyNavigationComponent->CompleteReleaseLineOfSightReposition();
-	}
-	ForceNetUpdate();
+	if (DeckEnemyNavigationComponent) DeckEnemyNavigationComponent->CancelCombatRoute();
 }
 
 void ADeckEnemy::HandleDeath_Implementation()
 {
+	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
 	if (HasAuthority())
 	{
 		if (AEnemyShip* Host = GetDeckHostShip())
@@ -440,7 +396,10 @@ void ADeckEnemy::RestoreDeckMovementState()
 		Movement->bForceNextFloorCheck = true;
 		if (AEnemyShip* Host = GetDeckHostShip(); Host && Host->GetShipDeckMesh())
 		{
-			Movement->SetBase(Host->GetShipDeckMesh());
+			if (const UDeckWalkAreaComponent* Area = Host->GetDeckWalkAreaComponent(); Area && Area->IsReady())
+			{
+				Movement->SetBase(Area->GetMovementBase(*this));
+			}
 		}
 	}
 }
@@ -500,8 +459,8 @@ bool ADeckEnemy::ApplyAuthoritativeDeckStart(const FTransform& AuthoritativeTran
 	AEnemyShip* Host = GetDeckHostShip();
 	UStaticMeshComponent* DeckMesh = Host ? Host->GetShipDeckMesh() : nullptr;
 	if (!IsValid(Host) || !IsValid(DeckMesh)
-		|| CurrentDeckWaypointId == INDEX_NONE
-		|| !Host->GetDeckWaypoint(CurrentDeckWaypointId))
+		|| InitialSpawnPointId == INDEX_NONE
+		|| !Host->GetDeckWaypoint(InitialSpawnPointId))
 	{
 		return false;
 	}
@@ -516,7 +475,8 @@ bool ADeckEnemy::ApplyAuthoritativeDeckStart(const FTransform& AuthoritativeTran
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->SetMovementMode(MOVE_Walking);
-		Movement->SetBase(DeckMesh);
+		const UDeckWalkAreaComponent* Area = Host->GetDeckWalkAreaComponent();
+		Movement->SetBase(Area && Area->IsReady() ? Area->GetMovementBase(*this) : DeckMesh);
 		Movement->bForceNextFloorCheck = true;
 		// SetBase can defer parts of based-movement bookkeeping until the next
 		// movement update. The validated Host/Deck/Point contract is sufficient here.

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "DeckAI/DeckPointReservation.h"
 #include "DeckAI/DeckWaypointMovementInterface.h"
 #include "Engine/EngineTypes.h"
 #include "RangedEnemy/RangedEnemy.h"
@@ -9,6 +8,7 @@
 
 class AEnemyShip;
 class UDeckEnemyNavigationComponent;
+class UDeckWalkRouteComponent;
 
 UENUM(BlueprintType)
 enum class EDeckEnemyCombatRole : uint8
@@ -50,25 +50,15 @@ public:
 	{
 		return DeckEnemyNavigationComponent;
 	}
+	UDeckWalkRouteComponent* GetDeckWalkRouteComponent() const { return DeckWalkRouteComponent; }
 
-	UFUNCTION(BlueprintPure, Category = "Deck AI|Waypoint")
-	int32 GetCurrentDeckWaypointId() const { return CurrentDeckWaypointId; }
-
-	UFUNCTION(BlueprintPure, Category = "Deck AI|Waypoint")
-	int32 GetPreviousDeckWaypointId() const { return PreviousDeckWaypointId; }
-
-	UFUNCTION(BlueprintPure, Category = "Deck AI|Waypoint")
-	int32 GetGoalDeckWaypointId() const { return GoalDeckWaypointId; }
-
-	bool TrySetGoalDeckWaypointId(int32 NewGoalWaypointId);
-	void SetGoalDeckWaypointId(int32 NewGoalWaypointId) { TrySetGoalDeckWaypointId(NewGoalWaypointId); }
-	void MarkGoalDeckWaypointReached();
+	UFUNCTION(BlueprintPure, Category = "Deck AI|Spawn")
+	int32 GetInitialSpawnPointId() const { return InitialSpawnPointId; }
+	void BeginFreeDeckMovement();
 	FRandomStream& GetDeckRandomStream() { return DeckRandomStream; }
 
 	virtual AEnemyShip* GetDeckHostShip() const override;
-	virtual int32 GetCurrentDeckPointId() const override { return CurrentDeckWaypointId; }
-	virtual int32 GetGoalDeckPointId() const override { return GoalDeckWaypointId; }
-	virtual void OnDeckPointReached() override { MarkGoalDeckWaypointReached(); }
+	virtual void OnDeckMoveReached() override;
 	virtual void OnDeckMoveFailed() override;
 	virtual bool CanMoveOnDeck() const override;
 
@@ -77,6 +67,7 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void HandleDeath_Implementation() override;
 	virtual void HandleDeathFinishedPresentation() override;
+	virtual bool EvaluateAttackTarget(const AActor* Candidate, bool bRequireLineOfSight, FString& OutReason) const override;
 
 	UFUNCTION()
 	void OnRep_PoolActive();
@@ -100,18 +91,16 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deck AI|Pool", meta = (ClampMin = "0.0", Units = "s"))
 	float ReturnToPoolAfterDeathDelay = 1.5f;
 
-	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Deck AI|Waypoint")
-	int32 CurrentDeckWaypointId = INDEX_NONE;
-
-	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Deck AI|Waypoint")
-	int32 PreviousDeckWaypointId = INDEX_NONE;
-
-	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Deck AI|Waypoint")
-	int32 GoalDeckWaypointId = INDEX_NONE;
+	/** Spawn provenance only. Free movement never changes this ID. */
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Deck AI|Spawn")
+	int32 InitialSpawnPointId = INDEX_NONE;
 
 	/** Server-only route and final combat-point claim; route details are intentionally not replicated. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck AI|Combat Navigation")
 	TObjectPtr<UDeckEnemyNavigationComponent> DeckEnemyNavigationComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck AI|Walk Area")
+	TObjectPtr<UDeckWalkRouteComponent> DeckWalkRouteComponent;
 
 private:
 	bool bStartPooled = false;
@@ -119,7 +108,6 @@ private:
 	ECollisionEnabled::Type InitialCapsuleCollision = ECollisionEnabled::QueryAndPhysics;
 	ECollisionEnabled::Type InitialMeshCollision = ECollisionEnabled::QueryOnly;
 	FTimerHandle ReturnToPoolTimerHandle;
-	FDeckPointReservation GoalPointReservation;
 };
 
 /** Asset-compatible wrapper for existing BP_DeckRangedEnemy assets. */
