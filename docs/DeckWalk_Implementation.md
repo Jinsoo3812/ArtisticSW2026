@@ -21,17 +21,19 @@
 
 ## 저장된 함선 설정
 
-`BP_EnemyShip`의 `DeckMesh_Complex` 아래에 앵커 세 개가 남아 있다. **ID 0도 유효**하며 이전 높이 기준이던 ID 1은 삭제됐다.
+`BP_EnemyShip`의 `DeckMesh_Complex` 아래에 기본 앵커 다섯 개가 있다. **ID 0도 유효**하다. ID 1·11은 위치를 정하기 전까지 스폰을 끈 예비 앵커다.
 
 | 컴포넌트 | ID | 면 | 로컬 Z | 용도 |
 | --- | ---: | --- | ---: | --- |
 | `L_MeleeEnemySpawnPoint_1` | 0 | `LowerDeck` | 351 | 아래층 일반 적 스폰·높이 기준 |
-| `U_MeleeEnemySpawnPoint_1` | 2001 | `UpperDeck` | 678 | 위층 일반 적 스폰·높이 기준 |
-| `BossSpawnPoint` | 12345 | `UpperDeck` | 678 | 최초 보스 스폰 전용, `CanSpawn=false` |
+| `L_EnemySpawnPoint_1` | 1 | `LowerDeck` | 351 | 예비 앵커, `CanSpawn=false` |
+| `U_MeleeEnemySpawnPoint_1` | 10 | `UpperDeck` | 678 | 위층 일반 적 스폰·높이 기준 |
+| `U_EnemySpawnPoint_11` | 11 | `UpperDeck` | 678 | 예비 앵커, `CanSpawn=false` |
+| `BossSpawnPoint` | 12 | `UpperDeck` | 678 | 최초 보스 스폰 전용, `CanSpawn=false` |
 
-두 면은 `WaypointReference` 높이 모드를 사용한다. `LowerDeck`은 ID 0을 기준으로 아래 31 cm·위 29 cm인 **320–380**, `UpperDeck`은 ID 2001을 기준으로 아래 3 cm·위 7 cm인 **675–685**다. 삭제된 Seed ID는 모두 제거했고 두 면의 `SeedPointIds`는 비어 있다. 빈 Seed 배열은 최소 크기를 만족하는 모든 유효 연결 영역을 유지한다.
+두 면은 `WaypointReference` 높이 모드를 사용한다. `LowerDeck`은 ID 0을 기준으로 아래 31 cm·위 29 cm인 **320–380**, `UpperDeck`은 ID 10을 기준으로 아래 3 cm·위 7 cm인 **675–685**다. 두 면의 `SeedPointIds`는 비어 있다. 빈 Seed 배열은 최소 크기를 만족하는 모든 유효 연결 영역을 유지한다.
 
-일반 적 `SpawnPlan`에는 **아래층 `BP_DeckMeleeEnemy` 1명(ID 0), 위층 `T1_BP_DeckMeleeEnemy` 1명(ID 2001)**이 있다. 이전 원거리 슬롯은 사용자 결정으로 제거했다. 보스 최초 위치는 ID 12345를 계속 사용한다. Test_Level에서 보스가 설정된 함선의 클래스는 현재 `T2_BP_ShipBoss_Rogue`다. 다른 함선 인스턴스의 `BossClass=None`은 그대로 두었다.
+일반 적 `SpawnPlan`에는 **아래층 `BP_DeckMeleeEnemy` 1명(ID 0), 위층 `T1_BP_DeckMeleeEnemy` 1명(ID 10)**이 있다. 이전 원거리 슬롯은 사용자 결정으로 제거했다. 보스 최초 위치는 ID 12다. Test_Level에서 보스가 설정된 함선의 클래스는 현재 `T2_BP_ShipBoss_Rogue`다. 다른 함선 인스턴스의 `BossClass=None`은 그대로 두었다.
 
 ## 보행면 생성과 스폰 승인
 

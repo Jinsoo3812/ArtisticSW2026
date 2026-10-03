@@ -4,22 +4,26 @@
 
 ## 1. 앵커와 보행면 확인
 
-에디터를 다시 열고 `BP_EnemyShip`을 연다. `DeckMesh_Complex` 하위에 실제 저장된 컴포넌트는 다음 세 개다. 요청에 적힌 EnemySpawnPoint의 실제 저장 이름은 **MeleeEnemySpawnPoint**였다. 위치와 ID를 그대로 사용했다.
+에디터를 다시 열고 `BP_EnemyShip`을 연다. `DeckMesh_Complex` 하위의 기본 앵커 ID는 아래층 0·1, 위층 10·11·12다.
 
 | 컴포넌트 | ID | Walk Surface Id | Can Spawn | DeckMesh_Complex 로컬 Z |
 | --- | ---: | --- | --- | ---: |
 | L_MeleeEnemySpawnPoint_1 | 0 | LowerDeck | 켬 | 351 |
-| U_MeleeEnemySpawnPoint_1 | 2001 | UpperDeck | 켬 | 678 |
-| BossSpawnPoint | 12345 | UpperDeck | 끔 | 678 |
+| L_EnemySpawnPoint_1 | 1 | LowerDeck | 끔 | 351 |
+| U_MeleeEnemySpawnPoint_1 | 10 | UpperDeck | 켬 | 678 |
+| U_EnemySpawnPoint_11 | 11 | UpperDeck | 끔 | 678 |
+| BossSpawnPoint | 12 | UpperDeck | 끔 | 678 |
 
-기존 1번 컴포넌트는 이미 삭제되어 있다. ID 0도 유효한 수동 앵커다. 보스 전용 앵커는 Can Spawn을 끈 상태에서도 Boss Spawn Point Id로 사용할 수 있다.
+새 ID 1·11 앵커는 각각 기존 0·10 앵커 위치에서 시작한다. 별도 위치로 옮기고 바닥·캡슐 검증을 마친 뒤 일반 적 스폰에 쓸 때만 Can Spawn을 켠다. 보스 전용 ID 12는 Can Spawn을 끈 상태에서도 Boss Spawn Point Id로 사용할 수 있다.
+
+기존 `T1_BP_EnemyShip`~`T4_BP_EnemyShip`은 예전 대량 Waypoint 구성을 가진 별도 에셋이다. 이번 기본 ID 설정은 `BP_EnemyShip`과 `Test_Level`의 해당 배 인스턴스에 적용했다. 티어별 배를 만들 때는 갱신된 `BP_EnemyShip`을 복제한 뒤 각 티어 설정을 옮긴다.
 
 `DeckWalkAreaComponent → Surfaces`에서 확인한다.
 
 | 항목 | LowerDeck | UpperDeck |
 | --- | --- | --- |
 | Height Mode | Waypoint Reference | Waypoint Reference |
-| Height Reference Point Id | 0 | 2001 |
+| Height Reference Point Id | 0 | 10 |
 | Height Below Reference | 31 | 3 |
 | Height Above Reference | 29 | 7 |
 | 계산된 로컬 높이 범위 | 320–380 | 675–685 |
@@ -39,7 +43,7 @@ Floor Component Names와 Obstacle Component Names는 기존 `DeckMesh_Simple`, `
 | 슬롯 | Enemy Class | Stats Row | Spawn Point Id |
 | --- | --- | --- | ---: |
 | 0 | BP_DeckMeleeEnemy | DT_EnemyBaseStat / T1_Deck_Melee | 0 |
-| 1 | T1_BP_DeckMeleeEnemy | DT_EnemyBaseStat / T1_Deck_Melee | 2001 |
+| 1 | T1_BP_DeckMeleeEnemy | DT_EnemyBaseStat / T1_Deck_Melee | 10 |
 
 원거리 슬롯은 제거했다. `Compile → Save`한 뒤 Test_Level에서 함선을 선택해 `Validate Deck Waypoints`를 실행한다. 일반 적만 사용하는 함선에 Boss Class가 없다면 Boss Encounter의 Encounter Enabled를 끈 상태에서 검증한다.
 
@@ -51,7 +55,7 @@ Test_Level에서 **보스를 사용할 함선 인스턴스**를 선택하고 `Bo
 
 1. Encounter Enabled를 켠다.
 2. Boss Class에 원하는 보스 클래스를 지정한다. 현재 저장된 보스 함선은 `T2_BP_ShipBoss_Rogue`를 사용한다. T1을 시험하려면 `T1_BP_ShipBoss`로 바꾼다.
-3. Boss Spawn Point Id는 **12345**다.
+3. Boss Spawn Point Id는 **12**다.
 4. 현재 Encounter Trigger는 **Player Ship Sight**, Required Story Node는 **Story.GameStarted**, Stop After Story Node는 **Story.MiddleBoss1Defeated**다. 해당 스토리 상태에서 플레이어 함선을 인식시키면 최초 등장한다.
 5. 보스가 설정된 함선에서 Validate Deck Waypoints를 실행한 뒤 PIE로 최초 등장을 확인한다.
 
@@ -64,7 +68,7 @@ Test_Level에서 **보스를 사용할 함선 인스턴스**를 선택하고 `Bo
 1. 위층의 T1 근접 적은 살아 있도록 둔다.
 2. 아래층의 기본 근접 적을 처치하고 사망 연출·풀 복귀가 끝날 때까지 기다린다.
 3. 보스의 기존 소환 조건과 BT 흐름을 충족시킨다. T1 밸런스 사용 시 보스 체력 50% 이하 진입이 소환 요청 조건이다.
-4. 위층 근접 적이 순찰해 ID 2001 앵커를 비운 상태에서 확인한다. 현재 두 층은 보행 경로로 연결되지 않으므로 위층 보스의 소환 후보는 도달 가능한 위층 앵커다. 플레이어와 보스에 대한 기존 최소 거리 및 바닥·충돌 검증을 만족하면 비활성 기본 근접 적이 재사용되는지 확인한다.
+4. 위층 근접 적이 순찰해 ID 10 앵커를 비운 상태에서 확인한다. 현재 두 층은 보행 경로로 연결되지 않으므로 위층 보스의 소환 후보는 도달 가능한 위층 앵커다. 플레이어와 보스에 대한 기존 최소 거리 및 바닥·충돌 검증을 만족하면 비활성 기본 근접 적이 재사용되는지 확인한다.
 
 일반 적 둘이 모두 활성 상태라면 사용 가능한 기본 근접 적이 없다. T1 근접 적은 다른 정확한 클래스이므로 기본 근접 적을 대신하지 않는다. 현재 편성에서 한 번에 재사용 가능한 기본 근접 적은 최대 한 마리다. 기존의 함선 승무원 전멸 처리도 유지되므로 소환 확인 중 일반 적 둘을 모두 처치하지 않는다.
 
@@ -86,7 +90,7 @@ Test_Level에서 **보스를 사용할 함선 인스턴스**를 선택하고 `Bo
 
 `DeckWalkAreaComponent → Draw Debug Area`를 켜고 Debug Surface Filter를 LowerDeck 또는 UpperDeck으로 설정하면 층별로 볼 수 있다. 서버 Output Log에서 `[DeckWalk]`, `[DeckEnemySpawner]`, `[BossEncounter]`, `[DeckSpawnAnchorValidation]`을 검색한다.
 
-- `ReferencePoint=0`, `SamplingZ=[320,380]` 및 `ReferencePoint=2001`, `SamplingZ=[675,685]`, 각 `Nodes>0`, `Ready=1`이 정상 기준이다.
+- `ReferencePoint=0`, `SamplingZ=[320,380]` 및 `ReferencePoint=10`, `SamplingZ=[675,685]`, 각 `Nodes>0`, `Ready=1`이 정상 기준이다.
 - `WalkAreaNotReady`: 필수 보행면 생성 실패. 높이 기준 ID·면 이름·충돌 Mesh·프레임 Scale을 확인한다.
 - `NoWalkableSpawnFloor`: 앵커의 지정 면에 사용할 바닥이 없다. 위치·Walk Surface Id·캡슐 여유를 확인한다.
 - `SpawnCapsuleBlockedNow`: 다른 액터가 현재 생성 위치를 막고 있다.
