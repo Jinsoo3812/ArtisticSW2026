@@ -2,7 +2,18 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "GravityVortexField.generated.h"
+
+USTRUCT()
+struct FSWRoomGravityFieldState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FGuid SourceId;
+	UPROPERTY(SaveGame) float RemainingLife = 0.f;
+	UPROPERTY(SaveGame) float RefreshAccumulator = 0.f;
+	UPROPERTY(SaveGame) TArray<FGuid> AffectedShipIds;
+};
 
 class AShip;
 class UCurveFloat;
@@ -12,12 +23,18 @@ class UNiagaraSystem;
 
 /** Server-authoritative radial field. Clients only use the replicated actor for visuals/debug. */
 UCLASS(Blueprintable)
-class CLASSFEATURE_API AGravityVortexField : public AActor
+class CLASSFEATURE_API AGravityVortexField : public AActor, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	AGravityVortexField();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomGravityFieldState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -110,4 +127,6 @@ private:
 	FGuid SourceId;
 	TSet<TWeakObjectPtr<AShip>> AffectedShips;
 	float RefreshAccumulator = 0.0f;
+	FSWRoomGravityFieldState PendingRoomState;
+	bool bHasPendingRoomState = false;
 };

@@ -10,12 +10,17 @@
 #include "BaseGameplayTags.h"
 #include "Engine/OverlapResult.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
+#include "Room/SWRoomSnapshotComponent.h"
+#include "Room/SWRoomSnapshotSubsystem.h"
+#include "GameplayEffect.h"
+#include "TimerManager.h"
 
 AGrenadeProjectile::AGrenadeProjectile()
 {
     PrimaryActorTick.bCanEverTick = false;
     bReplicates = true;
     SetReplicateMovement(true);
+    CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 
     // 메시 컴포넌트 생성 및 루트 등록 
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
@@ -38,8 +43,8 @@ void AGrenadeProjectile::BeginPlay()
     // 서버에서만 폭발 타이머 작동
     if (HasAuthority())
     {
-        FTimerHandle ExplodeTimerHandle;
-        GetWorld()->GetTimerManager().SetTimer(ExplodeTimerHandle, this, &AGrenadeProjectile::Explode, ExplosionDelay, false);
+        if (!GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
+            GetWorld()->GetTimerManager().SetTimer(ExplodeTimerHandle, this, &AGrenadeProjectile::Explode, ExplosionDelay, false);
     }
 
 	if (APawn* InstigatorPawn = GetInstigator())
@@ -69,6 +74,9 @@ void AGrenadeProjectile::SetGrenadeMesh(UStaticMesh* InMesh)
 
 void AGrenadeProjectile::Explode()
 {
+	if (!HasAuthority() || bExploded) return;
+	bExploded = true;
+	GetWorldTimerManager().ClearTimer(ExplodeTimerHandle);
 	TArray<FOverlapResult> OverlapResults;
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this); // 난 폭발에 안 맞게
@@ -123,6 +131,98 @@ void AGrenadeProjectile::Explode()
 	Multicast_OnExploded();
 
 	Destroy();
+}
+
+void AGrenadeProjectile::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	FSWRoomGrenadeState State;
+	State.ExplosionDelay = ExplosionDelay;
+	State.ExplosionRadius = ExplosionRadius;
+	State.bExploded = bExploded;
+	State.RemainingTime = GetWorld() && GetWorldTimerManager().IsTimerActive(ExplodeTimerHandle)
+		? FMath::Max(0.f, GetWorldTimerManager().GetTimerRemaining(ExplodeTimerHandle)) : 0.f;
+	if (DamageEffectSpecHandle.IsValid())
+	{
+		const FGameplayEffectSpec& Spec = *DamageEffectSpecHandle.Data.Get();
+		State.DamageEffectClass = FSoftClassPath(Spec.Def->GetClass());
+		State.DamageEffectLevel = Spec.GetLevel();
+		for (const TPair<FGameplayTag, float>& Entry : Spec.SetByCallerTagMagnitudes)
+		{
+			FSWRoomSetByCallerTagValue& Value = State.DamageTagMagnitudes.AddDefaulted_GetRef();
+			Value.Tag = Entry.Key;
+			Value.Value = Entry.Value;
+		}
+		for (const TPair<FName, float>& Entry : Spec.SetByCallerNameMagnitudes)
+		{
+			FSWRoomSetByCallerNameValue& Value = State.DamageNameMagnitudes.AddDefaulted_GetRef();
+			Value.Name = Entry.Key;
+			Value.Value = Entry.Value;
+		}
+	}
+	CaptureGrenadeSubclassState(State);
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Projectile;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Projectile");
+		Issue.FieldKey = TEXT("GrenadeState");
+		Issue.Reason = TEXT("Grenade adapter serialization failed");
+	}
+}
+
+bool AGrenadeProjectile::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	FSWRoomGrenadeState State;
+	if (Part.Domain != ESWRoomDomain::Projectile || Part.Version != 1 || !FSWRoomStructCodec::Read(Part.Bytes, State)
+		|| !FMath::IsFinite(State.ExplosionDelay) || !FMath::IsFinite(State.ExplosionRadius)
+		|| !FMath::IsFinite(State.RemainingTime) || State.RemainingTime < 0.f
+		|| !FMath::IsFinite(State.DamageEffectLevel) || State.DamageEffectLevel <= 0.f)
+	{
+		OutError = TEXT("Invalid grenade state");
+		return false;
+	}
+	ExplosionDelay = State.ExplosionDelay;
+	ExplosionRadius = State.ExplosionRadius;
+	bExploded = State.bExploded;
+	GetWorldTimerManager().ClearTimer(ExplodeTimerHandle);
+	DamageEffectSpecHandle = FGameplayEffectSpecHandle();
+	if (!State.DamageEffectClass.IsNull())
+	{
+		UClass* EffectClass = State.DamageEffectClass.TryLoadClass<UGameplayEffect>();
+		if (!EffectClass)
+		{
+			OutError = FString::Printf(TEXT("Grenade effect class missing: %s"), *State.DamageEffectClass.ToString());
+			return false;
+		}
+		FGameplayEffectContextHandle Context(UAbilitySystemGlobals::Get().AllocGameplayEffectContext());
+		DamageEffectSpecHandle = FGameplayEffectSpecHandle(new FGameplayEffectSpec(EffectClass->GetDefaultObject<UGameplayEffect>(), Context, State.DamageEffectLevel));
+		for (const FSWRoomSetByCallerTagValue& Value : State.DamageTagMagnitudes)
+			DamageEffectSpecHandle.Data->SetSetByCallerMagnitude(Value.Tag, Value.Value);
+		for (const FSWRoomSetByCallerNameValue& Value : State.DamageNameMagnitudes)
+			DamageEffectSpecHandle.Data->SetSetByCallerMagnitude(Value.Name, Value.Value);
+	}
+	RestoreGrenadeSubclassState(State);
+	PendingRoomState = MoveTemp(State);
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool AGrenadeProjectile::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	if (!bExploded)
+	{
+		if (PendingRoomState.RemainingTime <= 0.f)
+			ExplodeTimerHandle = GetWorldTimerManager().SetTimerForNextTick(this, &AGrenadeProjectile::Explode);
+		else
+			GetWorldTimerManager().SetTimer(ExplodeTimerHandle, this, &AGrenadeProjectile::Explode,
+				PendingRoomState.RemainingTime, false);
+	}
+	return true;
 }
 
 void AGrenadeProjectile::Multicast_OnExploded_Implementation()

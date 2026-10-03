@@ -59,6 +59,7 @@ private:
 		FVector Start = FVector::ZeroVector;
 		FVector CurrentTargetPoint = FVector::ZeroVector;
 		FVector TargetVelocity = FVector::ZeroVector;
+		FVector LeadVelocity = FVector::ZeroVector;
 		FVector TargetForward = FVector::ForwardVector;
 		FVector TargetRight = FVector::RightVector;
 		FVector EllipseCenter = FVector::ZeroVector;

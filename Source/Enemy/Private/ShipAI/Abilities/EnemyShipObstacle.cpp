@@ -8,9 +8,12 @@
 #include "PhysicsEngine/BodyInstance.h"
 #include "TimerManager.h"
 #include "WaterBodyActor.h"
+#include "Room/SWRoomSnapshotComponent.h"
+#include "Room/SWRoomSnapshotSubsystem.h"
 
 AEnemyShipObstacle::AEnemyShipObstacle()
 {
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.TickGroup = TG_PostPhysics;
 	bReplicates = true;
@@ -64,7 +67,8 @@ void AEnemyShipObstacle::BeginPlay()
 	SWBuoyancyComponent->Deactivate();
 	SWBuoyancyComponent->SetComponentTickEnabled(false);
 	ApplyPhysicsState();
-	SetLifeSpan(FMath::Max(0.0f, MaximumLifetimeSeconds));
+	if (!GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
+		SetLifeSpan(FMath::Max(0.0f, MaximumLifetimeSeconds));
 	if (ObstacleMesh)
 	{
 		InitialObstacleMeshRelativeTransform = ObstacleMesh->GetRelativeTransform();
@@ -304,4 +308,76 @@ void AEnemyShipObstacle::EnableBuoyancy()
 			ObstacleCollision->GetMass());
 	}
 	ForceNetUpdate();
+}
+
+void AEnemyShipObstacle::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	FSWRoomObstacleState State;
+	State.bHasEnteredWater = bHasEnteredWater;
+	State.bBuoyancyEnabled = bBuoyancyEnabled;
+	State.CannonballHitCount = CannonballHitCount;
+	State.MaxCannonballHits = MaxCannonballHits;
+	State.RemainingLife = GetLifeSpan();
+	State.BuoyancyActivationRemaining = GetWorldTimerManager().IsTimerActive(BuoyancyActivationTimerHandle)
+		? FMath::Max(0.f, GetWorldTimerManager().GetTimerRemaining(BuoyancyActivationTimerHandle)) : 0.f;
+	for (const TWeakObjectPtr<AActor>& Cannonball : ProcessedCannonballs)
+	{
+		if (!Cannonball.IsValid()) continue;
+		if (const USWRoomSnapshotComponent* Id = Cannonball->FindComponentByClass<USWRoomSnapshotComponent>(); Id && Id->StableId.IsValid())
+			State.ProcessedCannonballIds.AddUnique(Id->StableId);
+	}
+	State.ProcessedCannonballIds.Sort();
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Area;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Area");
+		Issue.FieldKey = TEXT("ObstacleState");
+		Issue.Reason = TEXT("Obstacle serialization failed");
+	}
+}
+
+bool AEnemyShipObstacle::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	FSWRoomObstacleState State;
+	if (Part.Domain != ESWRoomDomain::Area || Part.Version != 1 || !FSWRoomStructCodec::Read(Part.Bytes, State)
+		|| State.CannonballHitCount < 0 || State.MaxCannonballHits <= 0 || State.CannonballHitCount >= State.MaxCannonballHits
+		|| !FMath::IsFinite(State.RemainingLife) || State.RemainingLife < 0.f
+		|| !FMath::IsFinite(State.BuoyancyActivationRemaining) || State.BuoyancyActivationRemaining < 0.f
+		|| (State.bBuoyancyEnabled && !State.bHasEnteredWater))
+	{
+		OutError = TEXT("Invalid obstacle state");
+		return false;
+	}
+	bHasEnteredWater = State.bHasEnteredWater;
+	bBuoyancyEnabled = State.bBuoyancyEnabled;
+	CannonballHitCount = State.CannonballHitCount;
+	MaxCannonballHits = State.MaxCannonballHits;
+	GetWorldTimerManager().ClearTimer(BuoyancyActivationTimerHandle);
+	ProcessedCannonballs.Reset();
+	if (bBuoyancyEnabled) EnableBuoyancy();
+	PendingRoomState = MoveTemp(State);
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool AEnemyShipObstacle::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	for (const FGuid& Id : PendingRoomState.ProcessedCannonballIds)
+		if (AActor* const* Found = RegisteredActors.Find(Id)) ProcessedCannonballs.Add(*Found);
+	if (bHasEnteredWater && !bBuoyancyEnabled)
+	{
+		if (PendingRoomState.BuoyancyActivationRemaining <= 0.f)
+			BuoyancyActivationTimerHandle = GetWorldTimerManager().SetTimerForNextTick(this, &AEnemyShipObstacle::EnableBuoyancy);
+		else
+			GetWorldTimerManager().SetTimer(BuoyancyActivationTimerHandle, this, &AEnemyShipObstacle::EnableBuoyancy,
+				PendingRoomState.BuoyancyActivationRemaining, false);
+	}
+	SetLifeSpan(FMath::Max(KINDA_SMALL_NUMBER, PendingRoomState.RemainingLife));
+	return true;
 }

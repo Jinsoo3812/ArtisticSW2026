@@ -11,6 +11,7 @@
 #include "Abilities/BaseDeathGameplayAbility.h"
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
+#include "MountedDamageUserInterface.h"
 #include "DrawDebugHelpers.h"
 #include "GameplayEffect.h"
 #include "GameplayEffectExtension.h"
@@ -155,11 +156,19 @@ void UBaseHealthComponent::StartDeath()
 {
 	AActor* Owner = GetOwningActor();
 	if (!Owner || !Owner->HasAuthority() || !AbilitySystemComponent
-		|| DeathPresentation.DeathState != EBaseDeathState::NotDead)
+		|| bLifeInitializing || bPreparingHealthDeath || DeathPresentation.DeathState != EBaseDeathState::NotDead)
 	{
 		return;
 	}
 
+	{
+		TGuardValue<bool> PreparingDeath(bPreparingHealthDeath, true);
+		if (IMountedDamageUserInterface* Mounted = Cast<IMountedDamageUserInterface>(Owner))
+		{
+			Mounted->PrepareForHealthDeath();
+		}
+	}
+	if (DeathPresentation.DeathState != EBaseDeathState::NotDead || !AbilitySystemComponent) return;
 	SetDeathState(EBaseDeathState::DeathStarted);
 
 	if (!AbilitySystemComponent->HasMatchingGameplayTag(State_Dead))
@@ -222,12 +231,25 @@ FVector UBaseHealthComponent::CalculateKnockbackDirectionAwayFromSource(
 void UBaseHealthComponent::FinishDeath()
 {
 	AActor* Owner = GetOwningActor();
-	if (!Owner || !Owner->HasAuthority() || DeathPresentation.DeathState != EBaseDeathState::DeathStarted)
+	if (!Owner || !Owner->HasAuthority() || bLifeInitializing || DeathPresentation.DeathState != EBaseDeathState::DeathStarted)
 	{
 		return;
 	}
 
 	SetDeathState(EBaseDeathState::DeathFinished);
+}
+
+void UBaseHealthComponent::BeginLifeInitialization()
+{
+	if (GetOwner() && GetOwner()->HasAuthority()) bLifeInitializing = true;
+}
+
+bool UBaseHealthComponent::EndLifeInitialization()
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !AbilitySystemComponent
+		|| GetHealth() <= 0.f || IsDead() || AbilitySystemComponent->HasMatchingGameplayTag(State_Dead)) return false;
+	bLifeInitializing = false;
+	return true;
 }
 
 bool UBaseHealthComponent::ResetForReuse()
@@ -292,7 +314,9 @@ void UBaseHealthComponent::HandleHealthChanged(const FOnAttributeChangeData& Dat
 		return;
 	}
 
-	if (Data.OldValue > Data.NewValue)
+	const IMountedDamageUserInterface* Mounted = Cast<IMountedDamageUserInterface>(Owner);
+	const bool bSuppressMountedReaction = Mounted && Mounted->IsMountedForDamage();
+	if (Data.OldValue > Data.NewValue && !bSuppressMountedReaction)
 	{
 		ExecuteConfirmedDamageGameplayCues(
 			Data.OldValue - Data.NewValue,
@@ -309,7 +333,7 @@ void UBaseHealthComponent::HandleHealthChanged(const FOnAttributeChangeData& Dat
 		const bool bPeriodic = DeliveryType == ESWDamageDeliveryType::StatusTick
 			|| (Data.GEModData && Data.GEModData->EffectSpec.GetPeriod() > 0.f);
 		OnConfirmedDamage.Broadcast(Data.OldValue - Data.NewValue, EffectContextHandle, bPeriodic);
-		if (DeliveryType == ESWDamageDeliveryType::DirectHit)
+		if (DeliveryType == ESWDamageDeliveryType::DirectHit && !bSuppressMountedReaction)
 		{
 			SendGameplayEventToOwner(GameplayAbility_HitReaction, Data.OldValue - Data.NewValue, SourceActor, EffectContextHandle);
 		}
@@ -455,7 +479,7 @@ void UBaseHealthComponent::HandleDamageChanged(const FOnAttributeChangeData& Dat
 
 void UBaseHealthComponent::HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
-	if (NewCount > 0 && DeathPresentation.DeathState == EBaseDeathState::NotDead)
+	if (!bLifeInitializing && NewCount > 0 && DeathPresentation.DeathState == EBaseDeathState::NotDead)
 	{
 		SetDeathState(EBaseDeathState::DeathStarted);
 	}
@@ -579,6 +603,10 @@ void UBaseHealthComponent::SetDeathState(EBaseDeathState NewDeathState)
 void UBaseHealthComponent::BroadcastDeathStateTransition(EBaseDeathState OldDeathState)
 {
 	const EBaseDeathState NewDeathState = DeathPresentation.DeathState;
+	UE_LOG(LogTemp, Display, TEXT("[SWLifeDiag] Event=HealthDeathTransition Owner=%s NetMode=%d Role=%d Old=%d New=%d FinishedBound=%d"),
+		*GetNameSafe(GetOwningActor()), GetOwningActor() ? static_cast<int32>(GetOwningActor()->GetNetMode()) : -1,
+		GetOwningActor() ? static_cast<int32>(GetOwningActor()->GetLocalRole()) : -1,
+		static_cast<int32>(OldDeathState), static_cast<int32>(NewDeathState), OnDeathFinished.IsBound());
 	// StartDeath and FinishDeath may coalesce into one replicated update. Preserve
 	// the missing DeathStarted notification before broadcasting DeathFinished.
 	if (OldDeathState == EBaseDeathState::NotDead

@@ -8,8 +8,26 @@
 #include "ShipAI/EnemyShipNavigationTypes.h"
 #include "WaveSystem/Data/WaveSpawnTypes.h"
 #include "GameplayAbilitySpecHandle.h"
+#include "IncomingDamageMultiplierInterface.h"
 #include "ItemSpawn/LootSpawnPoint.h"
+#include "DeckAI/DeckEnemySpawnerComponent.h"
+#include "BossAI/BossEncounterComponent.h"
 #include "EnemyShip.generated.h"
+
+USTRUCT()
+struct FSWRoomEnemyShipState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) bool bDeathHandled = false;
+	UPROPERTY(SaveGame) bool bHasDropped = false;
+	UPROPERTY(SaveGame) bool bCrewDefeated = false;
+	UPROPERTY(SaveGame) bool bHasEverHadLivingCrew = false;
+	UPROPERTY(SaveGame) bool bStoryGateOpen = false;
+	UPROPERTY(SaveGame) TArray<FGuid> CrewIds;
+	UPROPERTY(SaveGame) FGuid BossId;
+	UPROPERTY(SaveGame) FSWRoomDeckSpawnerState DeckSpawner;
+	UPROPERTY(SaveGame) FSWRoomBossEncounterState BossEncounter;
+};
 
 class ACannon;
 class AStorageChest;
@@ -95,7 +113,7 @@ struct ENEMY_API FDeckWaypointGenerationSettings
 };
 
 UCLASS(HideCategories = ("Ship|Stats"))
-class ENEMY_API AEnemyShip : public AShip
+class ENEMY_API AEnemyShip : public AShip, public IIncomingDamageMultiplierInterface
 {
 	GENERATED_BODY()
 
@@ -109,12 +127,26 @@ class ENEMY_API AEnemyShip : public AShip
 
 public:
 	AEnemyShip();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{
+		return Expected.Domain == ESWRoomDomain::Ship
+			? AShip::CompareRoomDomain(Expected, Actual, TimeToleranceSeconds, OutFields)
+			: FSWRoomStructCodec::Compare<FSWRoomEnemyShipState>(Expected, Actual, TimeToleranceSeconds, OutFields);
+	}
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 	virtual bool IsEnemyShipForEffects() const override { return true; }
-	virtual bool AllowsPlayerHelmControl() const override { return !IsSinking() && !bDeathHandled && bCrewDefeated; }
+	virtual bool AllowsPlayerHelmControl() const override { return !IsStoryGateDormant() && !IsSinking() && !bDeathHandled && bCrewDefeated; }
+	virtual bool IsStoryGateDormantForDeckContent() const override { return IsStoryGateDormant(); }
+	virtual bool IsFinalBossSquadForDeckContent() const override { return IsFinalBossSquadShip(); }
+	virtual void RefreshStoryGateOwnedActors() override;
 	virtual bool AllowsPlayerCannonControl() const override { return false; }
 	virtual bool AllowsPlayerBoarding() const override { return false; }
 	virtual bool AllowsPlayerAnchorControl(AActor* Interactor = nullptr) const override;
 	virtual float GetCannonCooldownMultiplier() const override;
+	virtual float GetIncomingDamageMultiplier() const override;
 	virtual bool IsProtectedFromOwnHullCannonSplash(const AActor* Candidate) const override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -259,6 +291,8 @@ public:
 	bool CanEnterDistanceOptimizationDormancy() const;
 	bool IsDistanceOptimizationDormant() const { return bDistanceOptimizationDormant; }
 	bool IsDistanceOptimizationEnabled() const { return bEnableDistanceOptimization; }
+	bool IsFinalBossSquadShip() const;
+	bool IsStoryGateDormant() const;
 	float GetDistanceOptimizationRange() const { return DistanceOptimizationRange; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI")
@@ -274,6 +308,17 @@ public:
 	/** May be overridden per placed instance so one BP_EnemyShip class can represent many archetypes. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ship|AI|Data")
 	TObjectPtr<UEnemyShipArchetypeData> EnemyShipArchetype;
+
+	/** Override the archetype's normal cannon lead for this ship, including during PIE on the server. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI|Cannon Lead")
+	bool bOverrideCannonLeadSpeed = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|AI|Cannon Lead", meta = (EditCondition = "bOverrideCannonLeadSpeed", ClampMin = "0.0", Units = "cm/s"))
+	float CannonLeadSpeedOverride = 1000.0f;
+
+	/** Multiplies damage received after all registered ordinary crew are defeated. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ship|Crew", meta = (ClampMin = "1.0"))
+	float CrewDefeatedDamageMultiplier = 3.0f;
 
 	/** Per-instance Chest settings forwarded to every ChestSpawnPoint Child Actor owned by this ship. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chest", meta = (ShowOnlyInnerProperties))
@@ -312,9 +357,15 @@ public:
 
 protected:
 	void ApplyChestSpawnPointSettings();
+	void SetStoryGateOpen(bool bOpen);
+	void ApplyEffectiveDormancyState();
+	void ApplyStoryGatePresentation();
+	void ApplyStoryGateToSpawnedChests();
+	UFUNCTION() void OnRep_StoryGateOpen();
+	UFUNCTION() void HandleStoryGateChanged();
+	UFUNCTION() void HandleStoryGatedChestSpawned(AStorageChest* Chest);
 	void EvaluateCrewControlState();
 	void DisableEnemyShipAIForCapture();
-	void ApplyDistanceOptimizationState();
 	void ApplyNavigationCollisionPolicy(ENavalCombatState State);
 
 	UFUNCTION()
@@ -402,15 +453,33 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_CrewDefeated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Crew")
 	bool bCrewDefeated = false;
 
-	UPROPERTY(ReplicatedUsing = OnRep_DistanceOptimizationDormant, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Optimization")
+	UPROPERTY(SaveGame, ReplicatedUsing = OnRep_DistanceOptimizationDormant, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Optimization")
 	bool bDistanceOptimizationDormant = false;
+	UPROPERTY(ReplicatedUsing = OnRep_StoryGateOpen, VisibleInstanceOnly, BlueprintReadOnly, Category = "Ship|Story")
+	bool bStoryGateOpen = false;
+ bool bDevelopmentStoryGateOpened = false;
 
 	TArray<TWeakObjectPtr<UActorComponent>> DistanceDormancySuspendedTickComponents;
 	TArray<TWeakObjectPtr<ACannon>> DistanceDormancySuspendedCannons;
+	struct FCannonDormancyState
+	{
+		TWeakObjectPtr<ACannon> Cannon;
+		bool bCollisionEnabled = false;
+		bool bTickEnabled = false;
+	};
+	TArray<FCannonDormancyState> DormancyCannonStates;
+	bool bEffectiveDormancyApplied = false;
+	bool bDormancyShipCollisionEnabled = false;
+	bool bDormancyShipTickEnabled = false;
+	bool bDormancyShipPhysicsEnabled = false;
 
 	/** Prevents an unconfigured or not-yet-deployed empty crew roster from being treated as defeated. */
 	bool bHasEverHadLivingCrew = false;
 	bool bEndingPlay = false;
 	bool bCaptureCannonTagAdded = false;
+	bool bStoryGateCannonTagAdded = false;
+	bool bStorySubsystemMissingLogged = false;
 	TArray<FGameplayAbilitySpecHandle> GrantedEnemyShipAbilityHandles;
+	FSWRoomEnemyShipState PendingRoomState;
+	bool bHasPendingRoomState = false;
 };

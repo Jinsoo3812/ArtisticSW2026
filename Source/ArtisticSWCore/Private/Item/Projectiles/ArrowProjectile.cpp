@@ -17,9 +17,57 @@
 #include "GAS/SWCombatEffectContextLibrary.h"
 #include "Item/Projectiles/ArrowImpactVisual.h"
 #include "StatusEffectLibrary.h"
+#include "Room/SWRoomSnapshotComponent.h"
+#include "GameplayEffect.h"
+#include "AbilitySystemGlobals.h"
 
 namespace
 {
+	FSWRoomGameplayEffectState CaptureArrowSpec(const FGameplayEffectSpecHandle& Handle)
+	{
+		FSWRoomGameplayEffectState State;
+		if (!Handle.IsValid() || !Handle.Data.IsValid() || !Handle.Data->Def) return State;
+		const FGameplayEffectSpec& Spec = *Handle.Data.Get();
+		State.EffectClass = FSoftClassPath(Spec.Def->GetClass());
+		State.Level = Spec.GetLevel();
+		if (const FGameplayTagContainer* Tags = Spec.CapturedSourceTags.GetAggregatedTags())
+			State.CapturedSourceTags = *Tags;
+		for (const TPair<FGameplayTag, float>& Entry : Spec.SetByCallerTagMagnitudes)
+		{
+			FSWRoomSetByCallerTagValue& Value = State.TagMagnitudes.AddDefaulted_GetRef();
+			Value.Tag = Entry.Key;
+			Value.Value = Entry.Value;
+		}
+		for (const TPair<FName, float>& Entry : Spec.SetByCallerNameMagnitudes)
+		{
+			FSWRoomSetByCallerNameValue& Value = State.NameMagnitudes.AddDefaulted_GetRef();
+			Value.Name = Entry.Key;
+			Value.Value = Entry.Value;
+		}
+		return State;
+	}
+
+	bool RestoreArrowSpec(const FSWRoomGameplayEffectState& State, AActor* Source, AArrowProjectile* Arrow,
+		FGameplayEffectSpecHandle& OutSpec, FString& OutError)
+	{
+		OutSpec = FGameplayEffectSpecHandle();
+		if (State.EffectClass.IsNull()) return true;
+		UClass* EffectClass = State.EffectClass.TryLoadClass<UGameplayEffect>();
+		if (!EffectClass || !FMath::IsFinite(State.Level) || State.Level <= 0.f)
+		{
+			OutError = FString::Printf(TEXT("Arrow effect invalid or missing: %s"), *State.EffectClass.ToString());
+			return false;
+		}
+		FGameplayEffectContextHandle Context(UAbilitySystemGlobals::Get().AllocGameplayEffectContext());
+		Context.AddInstigator(Source, Arrow);
+		OutSpec = FGameplayEffectSpecHandle(new FGameplayEffectSpec(EffectClass->GetDefaultObject<UGameplayEffect>(), Context, State.Level));
+		OutSpec.Data->CapturedSourceTags.GetSpecTags().AppendTags(State.CapturedSourceTags);
+		for (const FSWRoomSetByCallerTagValue& Value : State.TagMagnitudes)
+			OutSpec.Data->SetSetByCallerMagnitude(Value.Tag, Value.Value);
+		for (const FSWRoomSetByCallerNameValue& Value : State.NameMagnitudes)
+			OutSpec.Data->SetSetByCallerMagnitude(Value.Name, Value.Value);
+		return true;
+	}
 	FString GetHitMeshPath(const UPrimitiveComponent* HitComponent)
 	{
 		if (const UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(HitComponent))
@@ -38,6 +86,7 @@ namespace
 
 AArrowProjectile::AArrowProjectile()
 {
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
 	SetReplicateMovement(true);
@@ -60,6 +109,125 @@ AArrowProjectile::AArrowProjectile()
 		ProjectileMovementComp->bRotationFollowsVelocity = true;
 		ProjectileMovementComp->bShouldBounce = false;
 	}
+}
+
+void AArrowProjectile::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	FSWRoomArrowState State;
+	State.FlightGravityScale = ProjectileMovementComp ? ProjectileMovementComp->ProjectileGravityScale : FlightGravityScale;
+	State.bImpactHandled = bImpactHandled;
+	State.bDestroyOnImpact = bDestroyOnImpact;
+	State.bEnableTeamDamageFiltering = bEnableTeamDamageFiltering;
+	AActor* Source = InstigatorActor ? InstigatorActor.Get() : GetOwner();
+	if (Source)
+	{
+		State.SourceActorClass = FSoftClassPath(Source->GetClass());
+		if (const USWRoomSnapshotComponent* Id = Source->FindComponentByClass<USWRoomSnapshotComponent>())
+			State.SourceActorId = Id->StableId;
+	}
+	State.DirectDamageSpec = CaptureArrowSpec(DirectDamageSpec);
+	if (const UCombatHitResolver* Resolver = FindComponentByClass<UCombatHitResolver>())
+		State.ResolverClass = FSoftClassPath(Resolver->GetClass());
+	if (State.DirectDamageSpec.EffectClass.IsNull())
+	{
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Projectile");
+		Issue.FieldKey = TEXT("DirectDamageSpec");
+		Issue.Reason = TEXT("Arrow direct damage spec is unavailable");
+	}
+	for (const FGameplayEffectSpecHandle& Spec : StatusEffectSpecHandles)
+		State.StatusEffectSpecs.Add(CaptureArrowSpec(Spec));
+	State.RefreshGrantedTags = StatusEffectRefreshGrantedTags;
+	for (const TWeakObjectPtr<AActor>& Ignored : MovementIgnoredActors)
+	{
+		if (!Ignored.IsValid()) continue;
+		if (const USWRoomSnapshotComponent* Id = Ignored->FindComponentByClass<USWRoomSnapshotComponent>(); Id && Id->StableId.IsValid())
+			State.IgnoredActorIds.AddUnique(Id->StableId);
+		else
+		{
+			FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+			Issue.Domain = TEXT("Projectile");
+			Issue.FieldKey = FName(*(TEXT("IgnoredActor:") + Ignored->GetPathName()));
+			Issue.Reason = TEXT("Ignored actor has no stable ID");
+		}
+	}
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Projectile;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Projectile");
+		Issue.FieldKey = TEXT("ArrowState");
+		Issue.Reason = TEXT("Arrow state serialization failed");
+	}
+}
+
+bool AArrowProjectile::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	FSWRoomArrowState State;
+	if (Part.Domain != ESWRoomDomain::Projectile || Part.Version != 1 || !FSWRoomStructCodec::Read(Part.Bytes, State)
+		|| !FMath::IsFinite(State.FlightGravityScale) || State.FlightGravityScale < 0.f
+		|| State.StatusEffectSpecs.Num() != State.RefreshGrantedTags.Num())
+	{
+		OutError = TEXT("Invalid arrow state");
+		return false;
+	}
+	bImpactHandled = State.bImpactHandled;
+	bDestroyOnImpact = State.bDestroyOnImpact;
+	bEnableTeamDamageFiltering = State.bEnableTeamDamageFiltering;
+	FlightGravityScale = State.FlightGravityScale;
+	if (ProjectileMovementComp) ProjectileMovementComp->ProjectileGravityScale = FlightGravityScale;
+	PendingRoomState = MoveTemp(State);
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool AArrowProjectile::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	AActor* Source = nullptr;
+	if (AActor* const* Found = RegisteredActors.Find(PendingRoomState.SourceActorId)) Source = *Found;
+	InstigatorActor = Source;
+	SourceASC = Source ? UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Source) : nullptr;
+	if (Source)
+	{
+		SetOwner(Source);
+		SetInstigator(Cast<APawn>(Source));
+	}
+	for (const FGuid& Id : PendingRoomState.IgnoredActorIds)
+		if (AActor* const* Found = RegisteredActors.Find(Id)) IgnoreActorForMovement(*Found);
+	if (!RestoreArrowSpec(PendingRoomState.DirectDamageSpec, Source, this, DirectDamageSpec, OutError)) return false;
+	StatusEffectSpecHandles.Reset();
+	StatusEffectRefreshGrantedTags = PendingRoomState.RefreshGrantedTags;
+	for (const FSWRoomGameplayEffectState& Saved : PendingRoomState.StatusEffectSpecs)
+	{
+		FGameplayEffectSpecHandle Restored;
+		if (!RestoreArrowSpec(Saved, Source, this, Restored, OutError)) return false;
+		StatusEffectSpecHandles.Add(MoveTemp(Restored));
+	}
+	if (DirectDamageSpec.IsValid() && !bImpactHandled)
+	{
+		UCombatHitResolver* Resolver = FindComponentByClass<UCombatHitResolver>();
+		if (!Resolver && !PendingRoomState.ResolverClass.IsNull())
+		{
+			UClass* ResolverClass = PendingRoomState.ResolverClass.TryLoadClass<UCombatHitResolver>();
+			if (ResolverClass)
+			{
+				Resolver = NewObject<UCombatHitResolver>(this, ResolverClass);
+				AddInstanceComponent(Resolver);
+				Resolver->RegisterComponent();
+			}
+		}
+		if (!Resolver || !Resolver->OpenWindow(DirectDamageSpec))
+		{
+			OutError = TEXT("Arrow hit resolver did not reopen");
+			return false;
+		}
+	}
+	return true;
 }
 
 void AArrowProjectile::OnConstruction(const FTransform& Transform)

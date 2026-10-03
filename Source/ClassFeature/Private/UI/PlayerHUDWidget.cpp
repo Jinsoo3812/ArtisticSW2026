@@ -183,6 +183,7 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime
 
 void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 {
+	if (InPlayer && InPlayer->GetInventoryComponent()) InPlayer->GetInventoryComponent()->LogInventoryDiagnostic(TEXT("HUDBind"));
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);

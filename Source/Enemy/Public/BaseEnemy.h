@@ -10,8 +10,24 @@
 #include "EnemyDropData.h"
 #include "EnemyBalanceData.h"
 #include "StoryFacadeSubsystem.h"
+#include "Room/SWRoomStateAdapter.h"
 
 #include "BaseEnemy.generated.h"
+
+USTRUCT()
+struct FSWRoomEnemyState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) float Health = 0.f;
+	UPROPERTY(SaveGame) float MaximumHealth = 0.f;
+	UPROPERTY(SaveGame) bool bDeathHandled = false;
+	UPROPERTY(SaveGame) bool bHasDropped = false;
+	UPROPERTY(SaveGame) bool bWaveRemoveNotified = false;
+	UPROPERTY(SaveGame) float BaseMovementSpeed = 0.f;
+	UPROPERTY(SaveGame) float SpawnMovementSpeedMultiplier = 1.f;
+	UPROPERTY(SaveGame) float CorpseLifeRemaining = 0.f;
+	UPROPERTY(SaveGame) TArray<FSWRoomGameplayEffectState> ActiveEffects;
+};
 
 class UAbilitySystemComponent;
 class UBaseDeathGameplayAbility;
@@ -32,12 +48,18 @@ class UWeaponDataAsset;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBaseEnemyDeathNotifiedSignature, ABaseEnemy*, Enemy, EWaveEnemyRemoveReason, Reason);
 
 UCLASS()
-class ENEMY_API ABaseEnemy : public ABaseCharacter
+class ENEMY_API ABaseEnemy : public ABaseCharacter, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	ABaseEnemy();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomEnemyState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 	/** Empty selection preserves legacy defaults; an explicitly invalid selection fails initialization. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Balance",
@@ -64,6 +86,8 @@ protected:
 	UPROPERTY(Transient) FDataTableRowHandle SpawnStatsRow;
 	bool bBalanceReady = false;
 	bool bBalanceApplied = false;
+	FSWRoomEnemyState PendingRoomState;
+	bool bHasPendingRoomState = false;
 	float SpawnHealthMultiplier = 1.f;
 	float BalancedAttackInterval = 0.f;
 	int32 BalancedMeleeAttackerLimit = 0;

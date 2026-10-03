@@ -127,6 +127,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Health|Pooling")
 	bool ResetForReuse();
 
+	void BeginLifeInitialization();
+	bool EndLifeInitialization();
+	bool IsLifeInitializing() const { return bLifeInitializing; }
+
 	UPROPERTY(BlueprintAssignable, Category = "Health")
 	FBaseHealthAttributeChangedSignature OnHealthChanged;
 
@@ -140,6 +144,8 @@ public:
 	FBaseHealthDeathEventSignature OnDeathFinished;
 
 private:
+	bool bPreparingHealthDeath = false;
+	bool bLifeInitializing = false;
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FEnemyDamageGameplayCueAuthorityTest;
 	friend class FCombatEffectContextDeathDirectionTest;

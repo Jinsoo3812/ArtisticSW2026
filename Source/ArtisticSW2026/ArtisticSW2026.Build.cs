@@ -12,6 +12,7 @@ public class ArtisticSW2026 : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"EngineSettings",
 			"InputCore",
 			"EnhancedInput",
 			"AIModule",
@@ -23,7 +24,12 @@ public class ArtisticSW2026 : ModuleRules
             "GASCore"
         });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] { "HTTP" });
+
+		if (Target.Type != TargetType.Server)
+		{
+			PrivateDependencyModuleNames.Add("SlateCore");
+		}
 
 		PublicIncludePaths.AddRange(new string[] {
 			"ArtisticSW2026",

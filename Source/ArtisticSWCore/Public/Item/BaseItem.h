@@ -7,7 +7,16 @@
 #include "GameplayEffectTypes.h"
 #include "Interactable.h"
 #include "BaseGameplayTags.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "BaseItem.generated.h"
+
+USTRUCT()
+struct FSWRoomDroppedItemState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FGameplayTag ItemTag;
+	UPROPERTY(SaveGame) uint8 ItemState = 0;
+};
 
 class UStaticMeshComponent;
 class USphereComponent;
@@ -34,12 +43,17 @@ enum class EItemState : uint8
 };
 
 UCLASS()
-class ARTISTICSWCORE_API ABaseItem : public AActor
+class ARTISTICSWCORE_API ABaseItem : public AActor, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	ABaseItem();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomDroppedItemState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaTime) override;

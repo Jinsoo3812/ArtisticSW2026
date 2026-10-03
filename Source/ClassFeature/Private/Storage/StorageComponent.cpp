@@ -566,3 +566,17 @@ TArray<FInventorySlot> UStorageComponent::GetPersistentSlots() const
 		if (Snapshot.IsValidIndex(Pair.Value.SlotIndex)) Snapshot[Pair.Value.SlotIndex] = Pair.Value.Item;
 	return Snapshot;
 }
+
+bool UStorageComponent::RestoreRoomSlots(int32 InSlotCount, int32 InColumnCount, const TArray<FInventorySlot>& InSlots)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || SlotsPerTab > 0 || !CursorReservations.IsEmpty()
+		|| InSlotCount < 1 || InColumnCount < 1 || InSlots.Num() != InSlotCount) return false;
+	for (const FInventorySlot& Slot : InSlots)
+		if (Slot.Count < 0 || (Slot.Count > 0 && !Slot.ItemTag.IsValid())) return false;
+	SlotCount = InSlotCount;
+	ColumnCount = InColumnCount;
+	StorageSlots = InSlots;
+	bConfiguredAtRuntime = true;
+	BroadcastStorageChanged();
+	return true;
+}

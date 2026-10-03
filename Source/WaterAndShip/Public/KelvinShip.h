@@ -15,6 +15,7 @@ class WATERANDSHIP_API AKelvinShip : public AShip
 
 public:
 	AKelvinShip();
+	virtual void BeginPlay() override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship Wake")
 	TObjectPtr<USWShipWakeEmitterComponent> ShipWakeEmitter;

@@ -20,6 +20,14 @@ enum class ENPCDialogueFailureReason : uint8
 	StoryCommitFailed
 };
 
+UENUM(BlueprintType)
+enum class ENPCDialogueReplyEndAction : uint8
+{
+	CommitRuleOutcome = 0,
+	CloseWithoutOutcome,
+	BeginFinalDeparture
+};
+
 USTRUCT(BlueprintType)
 struct NPCDIALOGUE_API FNPCDialogueReply
 {
@@ -35,6 +43,8 @@ struct NPCDIALOGUE_API FNPCDialogueReply
 	/** Target line in the same rule. None commits the rule outcome and closes the dialogue. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dialogue")
 	FName NextLineId = NAME_None;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dialogue")
+	ENPCDialogueReplyEndAction EndAction = ENPCDialogueReplyEndAction::CommitRuleOutcome;
 };
 
 USTRUCT(BlueprintType)
@@ -71,6 +81,8 @@ struct NPCDIALOGUE_API FNPCDialogueRule
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dialogue|Conditions")
 	TArray<EStoryNode> BlockedStoryNodes;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dialogue|Conditions")
+	bool bRequireFinalDepartureNotCompleted = false;
 
 	/** Checked but not removed. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dialogue|Conditions")

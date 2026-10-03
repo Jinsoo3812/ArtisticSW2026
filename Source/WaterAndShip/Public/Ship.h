@@ -10,7 +10,25 @@
 #include "GerstnerWaterWaves.h"
 #include "Upgrade/ShipUpgradeTypes.h"
 #include "Repair/ShipRepairTypes.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "Ship.generated.h"
+
+USTRUCT()
+struct FSWRoomShipState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) float Health = 0.f;
+	UPROPERTY(SaveGame) float MaximumHealth = 0.f;
+	UPROPERTY(SaveGame) bool bSinking = false;
+	UPROPERTY(SaveGame) bool bAnchorDropped = false;
+	UPROPERTY(SaveGame) FVector2D AnchorOriginXY = FVector2D::ZeroVector;
+	UPROPERTY(SaveGame) TArray<bool> ActiveLeaks;
+	UPROPERTY(SaveGame) bool bSinkingTimerPending = false;
+	UPROPERTY(SaveGame) float SinkingTimeRemaining = 0.f;
+	UPROPERTY(SaveGame) bool bLeakTimerPending = false;
+	UPROPERTY(SaveGame) float LeakNextTickRemaining = 0.f;
+	UPROPERTY(SaveGame) TArray<FSWRoomGameplayEffectState> ActiveEffects;
+};
 
 class USWBuoyancyComponent;
 class UGameplayEffect;
@@ -505,13 +523,19 @@ struct FShipReplicatedState
 };
 
 UCLASS()
-class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, public IRespawnHostInterface
+class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, public IRespawnHostInterface, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this pawn's properties
 	AShip();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomShipState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 	virtual void PostLoad() override;
 
 	// IAbilitySystemInterface 구현
@@ -752,6 +776,9 @@ public:
 	/** Rebuilds the canonical runtime list from BP child actors and legacy attached cannon actors. */
 	UFUNCTION(BlueprintCallable, Category = "Ship|Cannons")
 	void RefreshMountedCannons();
+	virtual bool IsStoryGateDormantForDeckContent() const { return false; }
+	virtual bool IsFinalBossSquadForDeckContent() const { return false; }
+	virtual void RefreshStoryGateOwnedActors() {}
 
 	UFUNCTION(BlueprintPure, Category = "Ship|Cannons")
 	int32 GetMountedCannonCount() const { return MountedCannons.Num(); }
@@ -1064,7 +1091,6 @@ protected:
 	void Disembark();
 	void UpdateHelmInteractionAvailability();
 	bool FindHelmStandingLocation(ACharacter* Character, FVector& OutStandingLocation) const;
-	void SetHelmRiderInvulnerable(bool bEnabled);
 	void HandleShipHealthChanged(const struct FOnAttributeChangeData& Data);
 	void TryActivateRepairPointAfterHit(float NewHealth);
 	void ApplyLeakDamageTick();
@@ -1098,9 +1124,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Sinking", meta = (ClampMin = "0.0", Units = "s"))
 	float PlayerShipDestroyAfterSinkingDelay = 5.0f;
 
-	bool bHelmInvulnerabilityApplied = false;
 	FDelegateHandle ShipHealthChangedDelegateHandle;
 	FTimerHandle SinkingDestroyTimerHandle;
+	FSWRoomShipState PendingRoomState;
+	bool bHasPendingRoomState = false;
 	FTimerHandle LeakDamageTimerHandle;
 	bool bApplyingLeakDamage = false;
 

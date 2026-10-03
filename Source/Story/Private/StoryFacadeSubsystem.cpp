@@ -2,6 +2,7 @@
 
 #include "NativeGameplayTags.h"
 #include "StorySubsystem.h"
+#include "Engine/World.h"
 
 namespace StoryFacadeTags
 {
@@ -95,6 +96,20 @@ bool UStoryFacadeSubsystem::CanCompleteStoryNode(EStoryNode Node) const
 	const FGameplayTag NodeTag = GetInternalTag(Node);
 	return Story && NodeTag.IsValid()
 		&& (IsStoryNodeReached(Node) || ArePrerequisitesReached(Node));
+}
+
+bool UStoryFacadeSubsystem::ActivateDevelopmentFinalBattle()
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	UWorld* World = GetWorld();
+	UStorySubsystem* Story = ResolveStory();
+	if (!World || !World->IsGameWorld() || World->GetNetMode() == NM_Client || !Story
+		|| IsStoryNodeReached(EStoryNode::FinalBossDefeated)) return false;
+	return IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted)
+		|| Story->AddFact(GetInternalTag(EStoryNode::UldolmokBattleQuestAccepted));
+#else
+	return false;
+#endif
 }
 
 bool UStoryFacadeSubsystem::SaveCampaign(const FString& SlotName)
