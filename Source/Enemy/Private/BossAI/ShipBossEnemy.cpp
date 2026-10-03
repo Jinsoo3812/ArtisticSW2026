@@ -743,9 +743,19 @@ void AShipBossEnemy::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TAr
 	if (HostShip)
 		if (const USWRoomSnapshotComponent* Id = HostShip->FindComponentByClass<USWRoomSnapshotComponent>())
 			State.HostShipId = Id->StableId;
-	State.CurrentPointId = CurrentPointId;
-	State.PreviousPointId = PreviousPointId;
-	State.DestinationPointId = DestinationPointId;
+	State.InitialSpawnPointId = InitialSpawnPointId;
+	const UDeckWalkAreaComponent* Area = HostShip ? HostShip->GetDeckWalkAreaComponent() : nullptr;
+	if (Area && Area->IsLocationValid(PreviousLocation))
+	{
+		State.PreviousSurfaceId = PreviousLocation.SurfaceId;
+		State.PreviousLocalFloor = PreviousLocation.LocalFloor;
+	}
+	if (HasDestination())
+	{
+		State.DestinationSurfaceId = DestinationLocation.SurfaceId;
+		State.DestinationLocalFloor = DestinationLocation.LocalFloor;
+		State.bWalkingToDestination = DeckWalkRouteComponent && DeckWalkRouteComponent->HasGoal();
+	}
 	State.bStunHealthThresholdConsumed = bStunHealthThresholdConsumed;
 	State.PendingBalanceSummons = PendingBalanceSummons;
 	for (int32 Threshold : ConsumedSummonThresholds) State.ConsumedSummonThresholds.Add(Threshold);
@@ -764,7 +774,7 @@ void AShipBossEnemy::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TAr
 	State.SummonedEnemyIds.Sort();
 	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
 	Part.Domain = ESWRoomDomain::Boss;
-	Part.Version = 1;
+	Part.Version = 2;
 	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
 	{
 		OutParts.Pop();
@@ -778,17 +788,25 @@ void AShipBossEnemy::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TAr
 bool AShipBossEnemy::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
 {
 	if (Part.Domain == ESWRoomDomain::Enemy) return ABaseEnemy::RestoreRoomDomain(Part, OutError);
+	if (Part.Domain != ESWRoomDomain::Boss || Part.Version != 2)
+	{
+		OutError = TEXT("Unsupported ship boss state version; recapture the checkpoint with DeckWalk state");
+		return false;
+	}
 	FSWRoomShipBossState State;
-	if (Part.Domain != ESWRoomDomain::Boss || Part.Version != 1 || !FSWRoomStructCodec::Read(Part.Bytes, State)
+	if (!FSWRoomStructCodec::Read(Part.Bytes, State)
+		|| State.InitialSpawnPointId < INDEX_NONE || State.PreviousLocalFloor.ContainsNaN()
+		|| State.DestinationLocalFloor.ContainsNaN()
+		|| (State.bWalkingToDestination && State.DestinationSurfaceId.IsNone())
 		|| State.PendingBalanceSummons < 0 || !FMath::IsFinite(State.SummonCooldownRemaining)
 		|| State.SummonCooldownRemaining < 0.f)
 	{
 		OutError = TEXT("Invalid ship boss state");
 		return false;
 	}
-	CurrentPointId = State.CurrentPointId;
-	PreviousPointId = State.PreviousPointId;
-	DestinationPointId = State.DestinationPointId;
+	ClearDestination();
+	InitialSpawnPointId = State.InitialSpawnPointId;
+	PreviousLocation = FDeckWalkLocation();
 	bStunHealthThresholdConsumed = State.bStunHealthThresholdConsumed;
 	PendingBalanceSummons = State.PendingBalanceSummons;
 	ConsumedSummonThresholds.Reset();
@@ -806,10 +824,38 @@ bool AShipBossEnemy::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredA
 	if (!ABaseEnemy::FinalizeRoomRestore(RegisteredActors, OutError)) return false;
 	if (!bHasPendingRoomState) return true;
 	bHasPendingRoomState = false;
+	UnbindHostShip();
+	HostShip = nullptr;
 	if (AActor* const* Found = RegisteredActors.Find(PendingRoomState.HostShipId))
 	{
 		HostShip = Cast<AEnemyShip>(*Found);
-		OnRep_HostShip();
+	}
+	if (PendingRoomState.HostShipId.IsValid() && !HostShip)
+	{
+		OutError = TEXT("Ship boss host ship missing");
+		return false;
+	}
+	OnRep_HostShip();
+	UDeckWalkAreaComponent* Area = HostShip ? HostShip->GetDeckWalkAreaComponent() : nullptr;
+	if (!PendingRoomState.DestinationSurfaceId.IsNone())
+	{
+		FDeckWalkLocation RestoredDestination;
+		if (!Area || !Area->ResolveLocalFloor(PendingRoomState.DestinationLocalFloor,
+			PendingRoomState.DestinationSurfaceId, RestoredDestination)
+			|| !TrySetDestinationLocation(RestoredDestination, PendingRoomState.bWalkingToDestination))
+		{
+			OutError = TEXT("Ship boss DeckWalk destination cannot be restored");
+			return false;
+		}
+	}
+	// TrySetDestinationLocation samples the current floor; restore the saved history instead.
+	PreviousLocation = FDeckWalkLocation();
+	if (!PendingRoomState.PreviousSurfaceId.IsNone()
+		&& (!Area || !Area->ResolveLocalFloor(PendingRoomState.PreviousLocalFloor,
+			PendingRoomState.PreviousSurfaceId, PreviousLocation)))
+	{
+		OutError = TEXT("Ship boss previous DeckWalk location cannot be restored");
+		return false;
 	}
 	NextSummonAllowedTime = GetWorld()->GetTimeSeconds() + PendingRoomState.SummonCooldownRemaining;
 	SummonedDeckEnemies.Reset();

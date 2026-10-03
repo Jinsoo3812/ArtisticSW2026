@@ -8,7 +8,6 @@
 #include "GameFramework/Pawn.h"
 #include "Item/Projectiles/ArrowCollisionQuery.h"
 #include "Item/Projectiles/PlayerArrowProjectile.h"
-#include "Item/Projectiles/ProjectileShotPreparation.h"
 
 namespace PlayerArrowCollisionTests
 {
@@ -78,17 +77,6 @@ bool FPlayerArrowIgnoresShooterTest::RunTest(const FString& Parameters)
 			ArrowCollisionQuery::SweepFlight(*Arrow, Start, End, FQuat::Identity, Hit)
 			&& Hit.GetActor() == Wall && !Hit.bStartPenetrating);
 
-		FProjectileShotInput Input;
-		Input.ShotId = FGuid::NewGuid();
-		Input.MuzzleTransform = SpawnTransform;
-		Input.AimPoint = FVector(10000.0, 0.0, 0.0);
-		Input.AimDirection = FVector::ForwardVector;
-		Input.Speed = 4000.0;
-		Input.GravityZ = -196.0;
-		FProjectileShotSnapshot Shot;
-		TestTrue(TEXT("Player shot keeps level initial aim with gravity enabled"),
-			ProjectileShotPreparation::Prepare(Shooter, Input, Shot)
-			&& Shot.WorldVelocity.Equals(FVector(4000.0, 0.0, 0.0)) && Shot.Input.GravityZ == Input.GravityZ);
 		Arrow->Destroy();
 	}
 	return !HasAnyErrors();

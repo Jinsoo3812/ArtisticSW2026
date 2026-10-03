@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "ProjectileLaunchTypes.generated.h"
 
-/** The meaning of authored speed is a weapon rule, never inferred from standing on a ship. */
+/** Fixed by the weapon's shot preparation. Player bows always use PhysicalInheritance. */
 UENUM(BlueprintType)
 enum class EProjectileVelocityPolicy : uint8
 {
@@ -39,6 +39,9 @@ struct ARTISTICSWCORE_API FProjectileShotSnapshot
 	FProjectileShotInput Input;
 	FTransform SpawnTransform = FTransform::Identity;
 	FVector WorldVelocity = FVector::ZeroVector;
+	/** Added at commit only. Player bows inherit the ship's socket point velocity, excluding locomotion. */
+	FVector InheritedVelocity = FVector::ZeroVector;
+	/** Enemy diagnostic sample; never implicitly added by spawning or flight. */
 	FVector ShooterVelocity = FVector::ZeroVector;
 	FName CarrierName;
 	double CommitServerTime = 0.0;

@@ -11,9 +11,13 @@ struct FSWRoomShipBossState
 {
 	GENERATED_BODY()
 	UPROPERTY(SaveGame) FGuid HostShipId;
-	UPROPERTY(SaveGame) int32 CurrentPointId = INDEX_NONE;
-	UPROPERTY(SaveGame) int32 PreviousPointId = INDEX_NONE;
-	UPROPERTY(SaveGame) int32 DestinationPointId = INDEX_NONE;
+	UPROPERTY(SaveGame) int32 InitialSpawnPointId = INDEX_NONE;
+	// Persist surface/local coordinates; graph node indices and revisions are transient.
+	UPROPERTY(SaveGame) FName PreviousSurfaceId;
+	UPROPERTY(SaveGame) FVector PreviousLocalFloor = FVector::ZeroVector;
+	UPROPERTY(SaveGame) FName DestinationSurfaceId;
+	UPROPERTY(SaveGame) FVector DestinationLocalFloor = FVector::ZeroVector;
+	UPROPERTY(SaveGame) bool bWalkingToDestination = false;
 	UPROPERTY(SaveGame) FGameplayTag BossAIState;
 	UPROPERTY(SaveGame) bool bStunHealthThresholdConsumed = false;
 	UPROPERTY(SaveGame) int32 PendingBalanceSummons = 0;

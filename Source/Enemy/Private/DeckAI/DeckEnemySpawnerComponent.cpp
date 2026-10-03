@@ -64,7 +64,6 @@ void UDeckEnemySpawnerComponent::CaptureRoomState(FSWRoomDeckSpawnerState& OutSt
 		Point.PointId = Pair.Key;
 		Point.OccupantId = GetId(Pair.Value.Occupant.Get());
 		Point.ReservedById = GetId(Pair.Value.ReservedBy.Get());
-		Point.CombatClaimedById = GetId(Pair.Value.CombatClaimedBy.Get());
 		Point.ReservationSerial = Pair.Value.ReservationSerial;
 	}
 	OutState.EnemyPoolIds.Sort();
@@ -157,7 +156,6 @@ bool UDeckEnemySpawnerComponent::FinalizeRoomState(const TMap<FGuid, AActor*>& R
 		FDeckPointRuntimeState& Point = PointRuntimeStates.FindOrAdd(Saved.PointId);
 		Point.Occupant = Find(Saved.OccupantId);
 		Point.ReservedBy = Find(Saved.ReservedById);
-		Point.CombatClaimedBy = Find(Saved.CombatClaimedById);
 		Point.ReservationSerial = Saved.ReservationSerial;
 	}
 	DeploymentTriggerShip = Cast<AShip>(Find(PendingRoomState.TriggerShipId));

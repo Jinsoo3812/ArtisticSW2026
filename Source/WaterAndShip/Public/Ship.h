@@ -524,8 +524,7 @@ struct FShipReplicatedState
 };
 
 UCLASS()
-class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, public IRespawnHostInterface, public IMovementFrameVelocityProvider
-class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, public IRespawnHostInterface, public ISWRoomStateAdapter
+class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, public IRespawnHostInterface, public IMovementFrameVelocityProvider, public ISWRoomStateAdapter
 
 {
 	GENERATED_BODY()

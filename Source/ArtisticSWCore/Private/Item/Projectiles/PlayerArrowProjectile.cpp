@@ -39,7 +39,7 @@ FCollisionQueryParams APlayerArrowProjectile::MakeFlightQueryParams() const
 bool APlayerArrowProjectile::LaunchPlayerShot(const FProjectileShotSnapshot& Shot, AActor* Weapon)
 {
 	if (!HasAuthority() || !ProjectileMovementComp || !CollisionComp || !DirectDamageSpec.IsValid()
-		|| Shot.SpawnTransform.ContainsNaN() || Shot.WorldVelocity.ContainsNaN() || Shot.WorldVelocity.IsNearlyZero()) return false;
+		|| Shot.SpawnTransform.ContainsNaN() || Shot.WorldVelocity.ContainsNaN()) return false;
 	IgnoreActorForMovement(GetInstigator());
 	IgnoreActorForMovement(GetOwner());
 	IgnoreActorForMovement(Weapon);
@@ -66,14 +66,16 @@ bool APlayerArrowProjectile::LaunchPlayerShot(const FProjectileShotSnapshot& Sho
 	SetActorTickEnabled(IsPlayerBowDebugEnabled());
 	if (IsPlayerBowDebugEnabled())
 	{
-		const FVector ToAim = (Shot.Input.AimPoint - GetActorLocation()).GetSafeNormal();
-		const double Angle = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(
-			FVector::DotProduct(ToAim, ProjectileMovementComp->Velocity.GetSafeNormal()), -1.0, 1.0)));
-		UE_LOG(LogTemp, Display, TEXT("[PlayerBowLaunch] Id=%s Arrow=%s Shooter=%s Weapon=%s Muzzle=%s Root=%s ConstructionOffset=%.4f OriginError=%.4f AimAngle=%.4f Gravity=%.3f"),
+		const FVector ExpectedDirection = Shot.WorldVelocity.GetSafeNormal();
+		const double Angle = Shot.WorldVelocity.IsNearlyZero() ? 0.0 : FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(
+			FVector::DotProduct(ExpectedDirection, ProjectileMovementComp->Velocity.GetSafeNormal()), -1.0, 1.0)));
+		UE_LOG(LogTemp, Display, TEXT("[PlayerBowLaunch] Id=%s Arrow=%s Shooter=%s Weapon=%s Muzzle=%s Root=%s ConstructionOffset=%.4f OriginError=%.4f LaunchAngle=%.4f VelocityError=%.4f FireSpeed=%.2f InheritedV=%s Gravity=%.3f"),
 			*PlayerShotId.ToString(), *GetName(), *GetNameSafe(GetInstigator()), *GetNameSafe(Weapon),
 			*Shot.Input.MuzzleTransform.GetLocation().ToString(), *GetActorLocation().ToString(),
 			FVector::Distance(ConstructedLocation, Shot.SpawnTransform.GetLocation()),
-			FVector::Distance(GetActorLocation(), Shot.Input.MuzzleTransform.GetLocation()), Angle, Shot.Input.GravityZ);
+			FVector::Distance(GetActorLocation(), Shot.Input.MuzzleTransform.GetLocation()), Angle,
+			FVector::Distance(ProjectileMovementComp->Velocity, Shot.WorldVelocity), Shot.Input.Speed,
+			*Shot.InheritedVelocity.ToString(), Shot.Input.GravityZ);
 	}
 	return true;
 }

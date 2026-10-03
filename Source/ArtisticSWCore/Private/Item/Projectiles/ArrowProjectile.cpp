@@ -18,18 +18,10 @@
 #include "GAS/SWCombatEffectContextLibrary.h"
 #include "Item/Projectiles/ArrowImpactVisual.h"
 #include "StatusEffectLibrary.h"
-#include "DrawDebugHelpers.h"
-#include "HAL/IConsoleManager.h"
-#include "Movement/MovementFrameVelocity.h"
 #include "Movement/MovementFrameVelocityProvider.h"
 #include "Item/Projectiles/ArrowProjectileMovementComponent.h"
 #include "Item/Projectiles/ProjectileShotPreparation.h"
 #include "Item/Projectiles/ProjectileLaunchInitialization.h"
-
-namespace
-{
-	TAutoConsoleVariable<int32> CVarProjectileDebugLaunch(TEXT("sw.Projectile.DebugLaunch"), 0,
-		TEXT("Log shot policy/timing; shooter velocity (cyan), world launch (yellow), character box (green), obstacle box (orange)."), ECVF_Cheat);
 
 #include "Room/SWRoomSnapshotComponent.h"
 #include "GameplayEffect.h"
@@ -355,45 +347,18 @@ bool AArrowProjectile::LaunchShot(const FProjectileShotSnapshot& Shot)
 {
 	if (!HasAuthority() || !GetWorld() || !Shot.Input.ShotId.IsValid() || !DirectDamageSpec.IsValid()
 		|| !ProjectileMovementComp || !CollisionComp || !FMath::IsFinite(Shot.Input.GravityZ)
-		|| Shot.WorldVelocity.ContainsNaN() || Shot.WorldVelocity.IsNearlyZero()) return false;
+		|| Shot.WorldVelocity.ContainsNaN()) return false;
 	const double WorldGravity = GetWorld()->GetGravityZ();
 	if (FMath::IsNearlyZero(WorldGravity) && !FMath::IsNearlyZero(Shot.Input.GravityZ)) return false;
 	FlightGravityScale = FMath::IsNearlyZero(WorldGravity) ? 0.0f : Shot.Input.GravityZ / WorldGravity;
 	LaunchArrow(Shot.WorldVelocity);
-	ProjectileShotPreparation::DebugShot(GetInstigator(), Shot);
-	DebugLaunch(Shot.ShooterVelocity, Shot.Input.AimPoint);
+	ProjectileShotPreparation::DebugShot(*this, Shot);
 	return true;
 }
 
 float AArrowProjectile::GetFlightGravityZ() const
 {
 	return GetWorld() ? GetWorld()->GetGravityZ() * FlightGravityScale : 0.0f;
-}
-
-void AArrowProjectile::DebugLaunch(const FVector& ShooterVelocity, const FVector& AimLocation) const
-{
-	if (CVarProjectileDebugLaunch.GetValueOnGameThread() == 0 || !GetWorld() || !ProjectileMovementComp) return;
-	const FVector Origin = GetActorLocation();
-	const FVector WorldVelocity = ProjectileMovementComp->Velocity;
-	FName BoneName;
-	const USceneComponent* Carrier = MovementFrameVelocity::GetCarrier(GetInstigator(), BoneName);
-	UE_LOG(LogTemp, Display, TEXT("[ProjectileLaunch] Instigator=%s Carrier=%s Time=%.3f InitialSpeed=%.2f Shooter=%s World=%s GravityZ=%.2f"),
-		*GetNameSafe(GetInstigator()), *GetNameSafe(Carrier), GetWorld()->GetTimeSeconds(), WorldVelocity.Size(),
-		*ShooterVelocity.ToCompactString(), *WorldVelocity.ToCompactString(), GetFlightGravityZ());
-	DrawDebugLine(GetWorld(), Origin, Origin + ShooterVelocity * 0.15, FColor::Cyan, false, 3.0f, 0, 2.0f);
-	DrawDebugLine(GetWorld(), Origin, Origin + WorldVelocity * 0.15, FColor::Yellow, false, 3.0f, 0, 2.0f);
-	DrawDebugBox(GetWorld(), Origin, GetCollisionHalfExtent(), GetActorQuat(), FColor::Green, false, 3.0f);
-	DrawDebugBox(GetWorld(), Origin, GetObstacleCollisionHalfExtent(), GetActorQuat(), FColor::Orange, false, 3.0f);
-	DrawDebugPoint(GetWorld(), AimLocation, 12.0f, FColor::White, false, 3.0f);
-	const double Duration = 1.0;
-	FVector Previous = Origin;
-	for (int32 Index = 1; Index <= 30; ++Index)
-	{
-		const double Time = Duration * Index / 30.0;
-		const FVector Next = Origin + WorldVelocity * Time + FVector(0, 0, 0.5 * GetFlightGravityZ() * Time * Time);
-		DrawDebugLine(GetWorld(), Previous, Next, FColor::Magenta, false, 3.0f);
-		Previous = Next;
-	}
 }
 
 FCollisionQueryParams AArrowProjectile::MakeFlightQueryParams() const

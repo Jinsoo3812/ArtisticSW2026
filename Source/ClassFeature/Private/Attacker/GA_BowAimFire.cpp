@@ -580,7 +580,11 @@ EProjectileShotCommit UGA_BowAimFire::CommitReleaseShot()
 	Input.Speed = PendingReleaseFireSpeed;
 	Input.GravityZ = GetWorld()->GetGravityZ() * PlayerBowShotPreparation::GetGravityScale(Defaults->GetFlightGravityScale());
 	FProjectileShotSnapshot Shot;
-	if (!PlayerBowShotPreparation::Prepare(Player, Input, Shot)) return EProjectileShotCommit::Rejected;
+	if (!PlayerBowShotPreparation::Prepare(Player, Input, Shot))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PlayerBowShot] Invalid launch input or unavailable supported ship motion Id=%s"), *PendingShotId.ToString());
+		return EProjectileShotCommit::Rejected;
+	}
 
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(BowReleaseClearance), false, Player);
 	Params.bFindInitialOverlaps = true;

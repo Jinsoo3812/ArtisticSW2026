@@ -129,12 +129,8 @@ bool ADeckEnemy::ActivateFromPool(
 	const UCapsuleComponent* Capsule = GetCapsuleComponent();
 	const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0f;
 	FTransform AuthoritativeStartTransform;
-	const bool bResolvedStart = InHostShip->ResolveDeckCharacterTransform(
-		InitialWaypointId, HalfHeight, AuthoritativeStartTransform);
 	const bool bResolvedStart = ReservedTransform ? !ReservedTransform->ContainsNaN()
 		: InHostShip->ResolveDeckCharacterTransform(
-		InitialWaypointId, HalfHeight, AuthoritativeStartTransform)
-		|| InHostShip->ResolveFixedDeckAnchorTransform(
 			InitialWaypointId, HalfHeight, AuthoritativeStartTransform);
 	if (ReservedTransform) AuthoritativeStartTransform = *ReservedTransform;
 	

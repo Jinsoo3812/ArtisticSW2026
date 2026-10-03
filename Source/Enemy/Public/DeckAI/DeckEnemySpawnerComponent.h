@@ -14,7 +14,6 @@ struct FSWRoomDeckPointState
 	UPROPERTY(SaveGame) int32 PointId = INDEX_NONE;
 	UPROPERTY(SaveGame) FGuid OccupantId;
 	UPROPERTY(SaveGame) FGuid ReservedById;
-	UPROPERTY(SaveGame) FGuid CombatClaimedById;
 	UPROPERTY(SaveGame) uint32 ReservationSerial = 0;
 };
 
