@@ -127,7 +127,7 @@ protected:
 	void UnbindHostShipLifecycle();
 	void RetryResolveHostShip();
 	AShip* FindShipInActorHierarchy(AActor* Actor) const;
-	bool EvaluateAttackTarget(const AActor* Candidate, bool bRequireLineOfSight, FString& OutReason) const;
+	virtual bool EvaluateAttackTarget(const AActor* Candidate, bool bRequireLineOfSight, FString& OutReason) const;
 	bool TraceLineOfSight(const AActor* Candidate, FHitResult* OutHit = nullptr) const;
 
 protected:

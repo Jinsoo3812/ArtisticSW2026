@@ -6,7 +6,7 @@
 
 class AEnemyShip;
 
-/** Minimal native contract for characters that move between live ship-deck waypoints. */
+/** Native movement lifecycle shared by deck enemies and bosses. */
 UINTERFACE(MinimalAPI)
 class UDeckWaypointMovementInterface : public UInterface
 {
@@ -19,9 +19,7 @@ class ENEMY_API IDeckWaypointMovementInterface
 
 public:
 	virtual AEnemyShip* GetDeckHostShip() const = 0;
-	virtual int32 GetCurrentDeckPointId() const = 0;
-	virtual int32 GetGoalDeckPointId() const = 0;
-	virtual void OnDeckPointReached() = 0;
+	virtual void OnDeckMoveReached() = 0;
 	virtual void OnDeckMoveFailed() = 0;
 	virtual bool CanMoveOnDeck() const = 0;
 };

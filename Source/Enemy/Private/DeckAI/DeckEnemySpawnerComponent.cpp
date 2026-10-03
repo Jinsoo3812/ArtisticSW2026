@@ -70,19 +70,18 @@ bool UDeckEnemySpawnerComponent::ValidateAuthoredSpawnSlot(
 	const UDeckWalkAreaComponent* WalkArea = Host->GetDeckWalkAreaComponent();
 	FDeckWalkLocation FloorLocation;
 	const bool bHasWalkableStart = WalkArea && WalkArea->IsReady()
-		? WalkArea->ResolveWaypoint(*Waypoint, FloorLocation)
-		: !Host->RequiresDeckWalkArea() && !Waypoint->GetLinkedWaypointIds().IsEmpty();
-	if (!Waypoint->CanSpawnEnemy() || !Waypoint->CanUseInCombat() || !bHasWalkableStart)
+		&& WalkArea->ResolveWaypoint(*Waypoint, FloorLocation);
+	if (!Waypoint->CanSpawnEnemy() || !bHasWalkableStart)
 	{
 		if (bLogErrors)
 		{
 			UE_LOG(LogTemp, Error,
-				TEXT("[DeckEnemySpawner] Invalid explicit spawn point. Ship=%s Slot=%d Class=%s Point=%s PointId=%d CanSpawn=%s CanCombat=%s HasWalkableStart=%s"),
+				TEXT("[DeckEnemySpawner] Invalid explicit spawn anchor. Ship=%s Slot=%d Class=%s Point=%s PointId=%d Surface=%s Reason=%s"),
 				*GetNameSafe(Host), SlotIndex, *GetNameSafe(AuthoredSlot.EnemyClass.Get()),
-				*GetNameSafe(Waypoint), PointId,
-				Waypoint->CanSpawnEnemy() ? TEXT("true") : TEXT("false"),
-				Waypoint->CanUseInCombat() ? TEXT("true") : TEXT("false"),
-				bHasWalkableStart ? TEXT("true") : TEXT("false"));
+				*GetNameSafe(Waypoint), PointId, *Waypoint->GetWalkSurfaceId().ToString(),
+				!Waypoint->CanSpawnEnemy() ? TEXT("SpawnDisabled")
+					: (!WalkArea || !WalkArea->IsReady())
+						? TEXT("WalkAreaNotReady") : TEXT("NoWalkableSpawnFloor"));
 		}
 		return false;
 	}
@@ -202,18 +201,6 @@ void UDeckEnemySpawnerComponent::InitializeWaypoints()
 		return Left.GetWaypointId() < Right.GetWaypointId();
 	});
 
-	for (const TPair<int32, TObjectPtr<UDeckWaypointComponent>>& Pair : WaypointsById)
-	{
-		for (const int32 LinkedId : Pair.Value->GetLinkedWaypointIds())
-		{
-			if (!WaypointsById.Contains(LinkedId))
-			{
-				UE_LOG(LogTemp, Error,
-					TEXT("[DeckEnemySpawner] Invalid waypoint link. Ship=%s WaypointId=%d LinkedId=%d"),
-					*GetNameSafe(Host), Pair.Key, LinkedId);
-			}
-		}
-	}
 }
 
 void UDeckEnemySpawnerComponent::InitializePool()
@@ -629,170 +616,12 @@ FVector UDeckEnemySpawnerComponent::GetWaypointWorldLocation(int32 WaypointId) c
 		: (GetHostShip() ? GetHostShip()->GetActorLocation() : FVector::ZeroVector);
 }
 
-void UDeckEnemySpawnerComponent::GetWaypointIds(
-	TArray<int32>& OutWaypointIds,
-	bool bRequireCombatPoint) const
-{
-	OutWaypointIds.Reset();
-	for (const TPair<int32, TObjectPtr<UDeckWaypointComponent>>& Pair : WaypointsById)
-	{
-		const UDeckWaypointComponent* Waypoint = Pair.Value;
-		if (IsValid(Waypoint) && (!bRequireCombatPoint || Waypoint->CanUseInCombat()))
-		{
-			OutWaypointIds.Add(Pair.Key);
-		}
-	}
-	OutWaypointIds.Sort();
-}
-
-void UDeckEnemySpawnerComponent::GetConnectedWaypointIds(
-	int32 WaypointId,
-	TArray<int32>& OutWaypointIds) const
-{
-	OutWaypointIds.Reset();
-	if (const UDeckWaypointComponent* Waypoint = GetWaypoint(WaypointId))
-	{
-		for (const int32 LinkedId : Waypoint->GetLinkedWaypointIds())
-		{
-			if (WaypointsById.Contains(LinkedId))
-			{
-				OutWaypointIds.Add(LinkedId);
-			}
-		}
-	}
-}
-
-int32 UDeckEnemySpawnerComponent::FindNearestWaypoint(
-	const FVector& WorldLocation,
-	bool bRequirePatrolPoint) const
+bool UDeckEnemySpawnerComponent::ResolveDeckCharacterTransform(int32 PointId, float CapsuleHalfHeight, FTransform& OutTransform) const
 {
 	const AEnemyShip* Host = GetHostShip();
-	const UStaticMeshComponent* DeckMesh = Host ? Host->GetShipDeckMesh() : nullptr;
-	if (!DeckMesh)
-	{
-		return INDEX_NONE;
-	}
-	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
-	const FVector QueryLocal = DeckTransform.InverseTransformPosition(WorldLocation);
-	const UDeckWalkAreaComponent* Area = Host->GetDeckWalkAreaComponent();
-	const bool bUseWalkArea = Area && Area->IsReady();
-	if (Host->RequiresDeckWalkArea() && !bUseWalkArea) return INDEX_NONE;
-	int32 BestId = INDEX_NONE;
-	float BestDistanceSquared = TNumericLimits<float>::Max();
-	for (const TPair<int32, TObjectPtr<UDeckWaypointComponent>>& Pair : WaypointsById)
-	{
-		const UDeckWaypointComponent* Waypoint = Pair.Value;
-		if (!IsValid(Waypoint) || (bRequirePatrolPoint && !Waypoint->CanPatrol()))
-		{
-			continue;
-		}
-		FDeckWalkLocation Floor;
-		if (bUseWalkArea && !Area->ResolveWaypoint(*Waypoint, Floor)) continue;
-		const FVector PointLocal = bUseWalkArea ? Floor.LocalFloor
-			: DeckTransform.InverseTransformPosition(Waypoint->GetComponentLocation());
-		const float DistanceSquared = bUseWalkArea ? FVector::DistSquared(QueryLocal, PointLocal)
-			: FVector::DistSquared2D(QueryLocal, PointLocal);
-		if (DistanceSquared < BestDistanceSquared)
-		{
-			BestDistanceSquared = DistanceSquared;
-			BestId = Pair.Key;
-		}
-	}
-	return BestId;
-}
-
-bool UDeckEnemySpawnerComponent::ResolveFixedDeckAnchorTransform(
-	int32 WaypointId,
-	float CapsuleHalfHeight,
-	FTransform& OutTransform) const
-{
-	const AEnemyShip* Host = GetHostShip();
-	const UDeckWaypointComponent* Waypoint = GetWaypoint(WaypointId);
-	const UStaticMeshComponent* DeckMesh = Host ? Host->GetShipDeckMesh() : nullptr;
-	if (const UDeckWalkAreaComponent* WalkArea = Host ? Host->GetDeckWalkAreaComponent() : nullptr;
-		WalkArea && WalkArea->IsReady())
-	{
-		return false;
-	}
-	if (!Waypoint || !DeckMesh)
-	{
-		return false;
-	}
-	if (Host && Host->RequiresDeckWalkArea()) return false;
-
-	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
-	const FVector LocalAnchor = DeckTransform.InverseTransformPosition(Waypoint->GetComponentLocation());
-	const FVector LocalForward = DeckTransform.InverseTransformVectorNoScale(Waypoint->GetForwardVector());
-	const FVector DeckUp = DeckMesh->GetUpVector().GetSafeNormal();
-	FVector Forward = FVector::VectorPlaneProject(
-		DeckTransform.TransformVectorNoScale(LocalForward), DeckUp).GetSafeNormal();
-	if (Forward.IsNearlyZero())
-	{
-		Forward = DeckMesh->GetForwardVector();
-	}
-	const FVector CharacterLocation = DeckTransform.TransformPosition(LocalAnchor)
-		+ DeckUp * (FMath::Max(0.0f, CapsuleHalfHeight) + 2.0f);
-	OutTransform = FTransform(FRotationMatrix::MakeFromXZ(Forward, DeckUp).ToQuat(), CharacterLocation);
-	return !OutTransform.ContainsNaN();
-}
-
-bool UDeckEnemySpawnerComponent::ResolveDeckCharacterTransform(
-	int32 WaypointId,
-	float CapsuleHalfHeight,
-	FTransform& OutTransform) const
-{
-	const AEnemyShip* Host = GetHostShip();
-	const UDeckWaypointComponent* Waypoint = GetWaypoint(WaypointId);
-	UStaticMeshComponent* DeckMesh = Host ? Host->GetShipDeckMesh() : nullptr;
-	UWorld* World = GetWorld();
-	if (!Waypoint || !DeckMesh || !World)
-	{
-		return false;
-	}
-	if (Host->RequiresDeckWalkArea()
-		&& (!Host->GetDeckWalkAreaComponent()
-			|| !Host->GetDeckWalkAreaComponent()->IsReady()))
-	{
-		return false;
-	}
-	if (const UDeckWalkAreaComponent* WalkArea = Host->GetDeckWalkAreaComponent();
-		WalkArea && WalkArea->IsReady())
-	{
-		return WalkArea->ResolveSpawnTransform(*Waypoint, CapsuleHalfHeight, OutTransform);
-	}
-
-	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
-	const FVector LocalAnchor = DeckTransform.InverseTransformPosition(Waypoint->GetComponentLocation());
-	const FVector AnchorLocation = DeckTransform.TransformPosition(LocalAnchor);
-	const FVector DeckUp = DeckMesh->GetUpVector().GetSafeNormal();
-	const FVector TraceStart = AnchorLocation + DeckUp * 150.0f;
-	const FVector TraceEnd = AnchorLocation - DeckUp * 250.0f;
-	FCollisionObjectQueryParams ObjectQuery;
-	ObjectQuery.AddObjectTypesToQuery(ECC_WorldDynamic);
-	ObjectQuery.AddObjectTypesToQuery(ECC_WorldStatic);
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DeckCharacterTransform), false);
-	TArray<FHitResult> Hits;
-	World->LineTraceMultiByObjectType(Hits, TraceStart, TraceEnd, ObjectQuery, QueryParams);
-	const FHitResult* DeckHit = Hits.FindByPredicate([DeckMesh](const FHitResult& Hit)
-	{
-		return Hit.GetComponent() == DeckMesh;
-	});
-	if (!DeckHit)
-	{
-		return false;
-	}
-
-	const FVector LocalForward = DeckTransform.InverseTransformVectorNoScale(Waypoint->GetForwardVector());
-	FVector Forward = FVector::VectorPlaneProject(
-		DeckTransform.TransformVectorNoScale(LocalForward), DeckUp).GetSafeNormal();
-	if (Forward.IsNearlyZero())
-	{
-		Forward = DeckMesh->GetForwardVector();
-	}
-	const FVector CharacterLocation = DeckHit->ImpactPoint
-		+ DeckUp * (FMath::Max(0.0f, CapsuleHalfHeight) + 2.0f);
-	OutTransform = FTransform(FRotationMatrix::MakeFromXZ(Forward, DeckUp).ToQuat(), CharacterLocation);
-	return !OutTransform.ContainsNaN();
+	const UDeckWaypointComponent* Point = GetWaypoint(PointId);
+	const UDeckWalkAreaComponent* Area = Host ? Host->GetDeckWalkAreaComponent() : nullptr;
+	return Point && Area && Area->IsReady() && Area->ResolveSpawnTransform(*Point, CapsuleHalfHeight, OutTransform);
 }
 
 bool UDeckEnemySpawnerComponent::ResolveEnemySpawnTransform(
@@ -806,8 +635,7 @@ bool UDeckEnemySpawnerComponent::ResolveEnemySpawnTransform(
 	}
 	const UCapsuleComponent* Capsule = Enemy.GetCapsuleComponent();
 	const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0f;
-	return ResolveDeckCharacterTransform(SpawnWaypoint->GetWaypointId(), HalfHeight, OutTransform)
-		|| ResolveFixedDeckAnchorTransform(SpawnWaypoint->GetWaypointId(), HalfHeight, OutTransform);
+	return ResolveDeckCharacterTransform(SpawnWaypoint->GetWaypointId(), HalfHeight, OutTransform);
 }
 
 bool UDeckEnemySpawnerComponent::IsPointAvailable(int32 WaypointId, const AActor* Requester) const
@@ -836,12 +664,7 @@ void UDeckEnemySpawnerComponent::PrunePointRuntimeState()
 			State.ReservedBy.Reset();
 			State.ReservationSerial = 0;
 		}
-		if (!State.CombatClaimedBy.IsValid())
-		{
-			State.CombatClaimedBy.Reset();
-		}
-		if (!State.Occupant.IsValid() && !State.ReservedBy.IsValid()
-			&& !State.CombatClaimedBy.IsValid())
+		if (!State.Occupant.IsValid() && !State.ReservedBy.IsValid())
 		{
 			It.RemoveCurrent();
 		}
@@ -903,7 +726,12 @@ bool UDeckEnemySpawnerComponent::TryReserveEnemySpawnPoint(
 	PrunePointRuntimeState();
 	const UDeckWalkAreaComponent* Area = Host->GetDeckWalkAreaComponent();
 	const bool bUseWalkArea = Area && Area->IsReady();
-	if (Host->RequiresDeckWalkArea() && !bUseWalkArea) return false;
+	if (!bUseWalkArea)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[DeckEnemySpawner] Ship=%s Requester=%s Reason=WalkAreaNotReady"),
+			*GetNameSafe(Host), *GetNameSafe(Requester));
+		return false;
+	}
 	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
 	const FVector RequesterLocal = DeckTransform.InverseTransformPosition(Requester->GetActorLocation());
 	const AActor* Target = Request.Target.Get();
@@ -913,22 +741,22 @@ bool UDeckEnemySpawnerComponent::TryReserveEnemySpawnPoint(
 	TArray<int32> Candidates;
 	for (const UDeckWaypointComponent* Waypoint : SpawnWaypoints)
 	{
-		if (!Waypoint || !Waypoint->CanUseInCombat())
+		if (!Waypoint)
 		{
 			continue;
 		}
-		TArray<int32> ConnectedIds;
-		GetConnectedWaypointIds(Waypoint->GetWaypointId(), ConnectedIds);
 		const int32 PointId = Waypoint->GetWaypointId();
 		FDeckWalkLocation Floor;
-		if ((bUseWalkArea ? !Area->ResolveWaypoint(*Waypoint, Floor) : ConnectedIds.IsEmpty())
+		if (!Area->ResolveWaypoint(*Waypoint, Floor)
 			|| PointId == Request.ExcludedPointId
 			|| !IsPointAvailable(PointId, Requester))
 		{
 			continue;
 		}
-		const FVector PointLocal = bUseWalkArea ? Floor.LocalFloor
-			: DeckTransform.InverseTransformPosition(Waypoint->GetComponentLocation());
+		FDeckWalkLocation RequesterFloor;
+		TArray<FDeckWalkLocation> Path;
+		if (!Area->ResolveActorOnDeck(*Requester, RequesterFloor) || !Area->FindPath(RequesterFloor, Floor, Path)) continue;
+		const FVector PointLocal = Floor.LocalFloor;
 		const float RequesterDistance = FVector::Dist2D(PointLocal, RequesterLocal);
 		const float TargetDistance = Target
 			? FVector::Dist2D(PointLocal, TargetLocal)
@@ -1007,7 +835,7 @@ void UDeckEnemySpawnerComponent::ReleasePointReservation(FDeckPointReservation& 
 		{
 			State->ReservedBy.Reset();
 			State->ReservationSerial = 0;
-			if (!State->Occupant.IsValid() && !State->CombatClaimedBy.IsValid())
+			if (!State->Occupant.IsValid())
 			{
 				PointRuntimeStates.Remove(Reservation.PointId);
 			}
@@ -1050,56 +878,7 @@ void UDeckEnemySpawnerComponent::ReleasePointOccupancy(int32 WaypointId, AActor*
 		State && State->Occupant.Get() == Occupant)
 	{
 		State->Occupant.Reset();
-		if (!State->ReservedBy.IsValid() && !State->CombatClaimedBy.IsValid())
-		{
-			PointRuntimeStates.Remove(WaypointId);
-		}
-	}
-}
-
-bool UDeckEnemySpawnerComponent::IsCombatPointClaimAvailable(
-	int32 WaypointId,
-	const AActor* Requester) const
-{
-	const AEnemyShip* Host = GetHostShip();
-	if (!Host || !Host->HasAuthority() || !GetWaypoint(WaypointId))
-	{
-		return false;
-	}
-	const FDeckPointRuntimeState* State = PointRuntimeStates.Find(WaypointId);
-	return !State || !State->CombatClaimedBy.IsValid()
-		|| State->CombatClaimedBy.Get() == Requester;
-}
-
-bool UDeckEnemySpawnerComponent::TryClaimCombatPoint(int32 WaypointId, AActor* Requester)
-{
-	AEnemyShip* Host = GetHostShip();
-	if (!Host || !Host->HasAuthority() || !IsValid(Requester) || !GetWaypoint(WaypointId))
-	{
-		return false;
-	}
-	PrunePointRuntimeState();
-	FDeckPointRuntimeState& State = PointRuntimeStates.FindOrAdd(WaypointId);
-	if (State.CombatClaimedBy.IsValid() && State.CombatClaimedBy.Get() != Requester)
-	{
-		return false;
-	}
-	State.CombatClaimedBy = Requester;
-	return true;
-}
-
-void UDeckEnemySpawnerComponent::ReleaseCombatPointClaim(int32 WaypointId, AActor* Requester)
-{
-	AEnemyShip* Host = GetHostShip();
-	if (!Host || !Host->HasAuthority() || WaypointId == INDEX_NONE || !Requester)
-	{
-		return;
-	}
-	if (FDeckPointRuntimeState* State = PointRuntimeStates.Find(WaypointId);
-		State && State->CombatClaimedBy.Get() == Requester)
-	{
-		State->CombatClaimedBy.Reset();
-		if (!State->Occupant.IsValid() && !State->ReservedBy.IsValid())
+		if (!State->ReservedBy.IsValid())
 		{
 			PointRuntimeStates.Remove(WaypointId);
 		}
@@ -1125,12 +904,7 @@ void UDeckEnemySpawnerComponent::ReleaseAllPointsFor(AActor* Actor)
 			State.ReservedBy.Reset();
 			State.ReservationSerial = 0;
 		}
-		if (State.CombatClaimedBy.Get() == Actor)
-		{
-			State.CombatClaimedBy.Reset();
-		}
-		if (!State.Occupant.IsValid() && !State.ReservedBy.IsValid()
-			&& !State.CombatClaimedBy.IsValid())
+		if (!State.Occupant.IsValid() && !State.ReservedBy.IsValid())
 		{
 			It.RemoveCurrent();
 		}
@@ -1205,8 +979,10 @@ bool UDeckEnemySpawnerComponent::ActivateSpecificEnemyAtReservation(
 	}
 
 	UDeckWaypointComponent* SpawnWaypoint = GetWaypoint(Reservation.PointId);
-	if (!SpawnWaypoint || !SpawnWaypoint->CanSpawnEnemy() || !SpawnWaypoint->CanUseInCombat())
+	if (!SpawnWaypoint || !SpawnWaypoint->CanSpawnEnemy())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[DeckEnemySpawner] Ship=%s PointId=%d Reason=MissingOrDisabledSpawnAnchor"),
+			*GetNameSafe(Host), Reservation.PointId);
 		ReleasePointReservation(Reservation);
 		return false;
 	}
@@ -1214,6 +990,12 @@ bool UDeckEnemySpawnerComponent::ActivateSpecificEnemyAtReservation(
 	FTransform SpawnTransform;
 	if (!ResolveEnemySpawnTransform(SpawnWaypoint, Enemy, SpawnTransform) || !GetWorld())
 	{
+		const UDeckWalkAreaComponent* Area = Host->GetDeckWalkAreaComponent();
+		UE_LOG(LogTemp, Warning,
+			TEXT("[DeckEnemySpawner] Ship=%s PointId=%d Surface=%s Enemy=%s Reason=%s"),
+			*GetNameSafe(Host), Reservation.PointId, *SpawnWaypoint->GetWalkSurfaceId().ToString(),
+			*Enemy.GetName(), (!Area || !Area->IsReady())
+				? TEXT("WalkAreaNotReady") : TEXT("SpawnTransformUnresolved"));
 		ReleasePointReservation(Reservation);
 		return false;
 	}

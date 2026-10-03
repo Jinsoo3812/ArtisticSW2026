@@ -1,7 +1,6 @@
 #include "DeckAI/DeckWalkRouteComponent.h"
 
 #include "DeckAI/DeckWalkAreaComponent.h"
-#include "DeckAI/DeckWaypointComponent.h"
 #include "DeckAI/DeckWaypointMovementInterface.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/Character.h"
@@ -21,7 +20,7 @@ UDeckWalkAreaComponent* UDeckWalkRouteComponent::GetArea() const
 }
 void UDeckWalkRouteComponent::ClearGoal()
 {
-	bHasGoal = false; PointGoalId = INDEX_NONE;
+	bHasGoal = false;
 	TargetActor.Reset(); bTrackTarget = false;
 	LocalPath.Reset(); LocalGoal = FDeckWalkLocation(); PathCursor = 0;
 	ElapsedTime = TimeSinceProgress = EstimatedMoveTime = 0.0f;
@@ -50,16 +49,10 @@ bool UDeckWalkRouteComponent::Replan(const FDeckWalkLocation& Goal)
 	AcceptPath(MoveTemp(Path));
 	return true;
 }
-bool UDeckWalkRouteComponent::SetPointGoal(int32 PointId, bool bCommitPoint)
+bool UDeckWalkRouteComponent::SetLocationGoal(const FDeckWalkLocation& Goal)
 {
 	ClearGoal();
-	UDeckWalkAreaComponent* Area = GetArea();
-	const AEnemyShip* Ship = Area ? Cast<AEnemyShip>(Area->GetOwner()) : nullptr;
-	const UDeckWaypointComponent* Point = Ship ? Ship->GetDeckWaypoint(PointId) : nullptr;
-	FDeckWalkLocation Goal;
-	if (!Point || !Area->ResolveWaypoint(*Point, Goal) || !Replan(Goal)) return false;
-	PointGoalId = bCommitPoint ? PointId : INDEX_NONE;
-	return true;
+	return Replan(Goal);
 }
 bool UDeckWalkRouteComponent::SetActorGoal(AActor* MovingTarget)
 {
@@ -80,7 +73,7 @@ bool UDeckWalkRouteComponent::SetPatrolGoal(FRandomStream& Random)
 	return true;
 }
 EDeckWalkRouteTick UDeckWalkRouteComponent::TickRoute(float DeltaSeconds,
-	float AcceptanceRadius, float ProgressTimeout, float MaximumMoveTime, float MoveSpeed)
+	float AcceptanceRadius, float ProgressTimeout, float MaximumMoveTime, float MoveSpeed, float MinimumProgressDistance)
 {
 	ACharacter* Character = Cast<ACharacter>(GetOwner());
 	UDeckWalkAreaComponent* Area = GetArea();
@@ -114,7 +107,7 @@ EDeckWalkRouteTick UDeckWalkRouteComponent::TickRoute(float DeltaSeconds,
 	if (FMath::Abs(Delta.Z) > 65.0f) return EDeckWalkRouteTick::Failed;
 	const float Distance = Delta.Size();
 	ElapsedTime += DeltaSeconds; TimeSinceProgress += DeltaSeconds;
-	if (Distance < ProgressDistance - 10.0f) { ProgressDistance = Distance; TimeSinceProgress = 0.0f; }
+	if (Distance < ProgressDistance - FMath::Max(1.0f, MinimumProgressDistance)) { ProgressDistance = Distance; TimeSinceProgress = 0.0f; }
 	const float Limit = FMath::Max(MaximumMoveTime, EstimatedMoveTime / FMath::Max(10.0f, MoveSpeed) + 4.0f);
 	if (ElapsedTime > Limit || TimeSinceProgress > ProgressTimeout) return EDeckWalkRouteTick::Failed;
 	const AEnemyShip* Ship = Cast<AEnemyShip>(Area->GetOwner());

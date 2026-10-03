@@ -8,6 +8,7 @@
 class UStaticMeshComponent;
 class UPrimitiveComponent;
 class UDeckWaypointComponent;
+class ACharacter;
 struct FDeckWalkRuntime;
 struct FDeckWalkRuntimeDeleter
 {
@@ -19,6 +20,13 @@ UCLASS(ClassGroup = (Enemy), meta = (BlueprintSpawnableComponent))
 class ENEMY_API UDeckWalkAreaComponent : public UActorComponent
 {
 	GENERATED_BODY()
+#if WITH_EDITOR
+	friend class FDeckSpawnAnchorValidator;
+#endif
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FDeckEnemySpawnerCompositionTest;
+	friend class FDeckFixedAnchorLifecycleTest;
+#endif
 public:
 	UDeckWalkAreaComponent();
 	virtual ~UDeckWalkAreaComponent() override;
@@ -40,12 +48,19 @@ public:
 
 	bool ResolveWaypoint(const UDeckWaypointComponent& Point, FDeckWalkLocation& Out) const;
 	bool ResolveActorOnDeck(const AActor& Actor, FDeckWalkLocation& Out) const;
+	bool ResolveLocalFloor(const FVector& LocalFloor, FName SurfaceId, FDeckWalkLocation& Out) const;
 	bool ResolveSpawnTransform(const UDeckWaypointComponent& Point, float CapsuleHalfHeight, FTransform& OutTransform) const;
 	bool FindPath(const FDeckWalkLocation& Start, const FDeckWalkLocation& Goal,
 		TArray<FDeckWalkLocation>& OutPath, bool bCrossSurfaces = true) const;
-	bool FindPathToWaypoint(const AActor& Actor, const UDeckWaypointComponent& Point, TArray<FDeckWalkLocation>& OutPath) const;
 	bool PickPatrolPath(const AActor& Actor, FRandomStream& Random, TArray<FDeckWalkLocation>& OutPath) const;
 	bool IsLocationValid(const FDeckWalkLocation& Location) const;
+	void GetReachableLocations(const FDeckWalkLocation& Start, TArray<FDeckWalkLocation>& Out, bool bCrossSurfaces = true) const;
+	bool ResolveLocationTransform(const FDeckWalkLocation& Location, const ACharacter& Character, FTransform& Out) const;
+	bool IsLocationAvailable(const FDeckWalkLocation& Location, const ACharacter& Requester) const;
+	bool TryClaimLocation(const FDeckWalkLocation& Location, ACharacter& Requester);
+	void ReleaseLocationClaim(const AActor* Requester);
+	bool IsSupportedSegment(const FDeckWalkLocation& Start, const FDeckWalkLocation& End) const;
+	bool IsSupportedSegment(const FDeckWalkLocation& Start, const FVector& LocalEnd) const;
 	UPrimitiveComponent* GetFloorComponent(const FDeckWalkLocation& Location) const;
 	UPrimitiveComponent* GetMovementBase(const AActor& Actor) const;
 	bool TraceDeckObstacle(const FVector& WorldStart, const FVector& WorldEnd, FHitResult& OutHit) const;
@@ -90,14 +105,13 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Ship|Deck Walk|Debug")
 	FName DebugSurfaceFilter;
 
-	// Serialized compatibility for ships with no explicit Surfaces yet.
-	UPROPERTY(EditDefaultsOnly, Category = "Ship|Deck Walk|Legacy")
-	float MinimumFloorZ = 200.0f;
-	UPROPERTY(EditDefaultsOnly, Category = "Ship|Deck Walk|Legacy")
-	float MaximumFloorZ = 900.0f;
-	UPROPERTY(EditDefaultsOnly, Category = "Ship|Deck Walk|Legacy")
-	TArray<int32> WalkRegionSeedPointIds;
 	TUniquePtr<FDeckWalkRuntime, FDeckWalkRuntimeDeleter> Runtime;
 	int32 Revision = 0;
 	bool bReady = false;
+	struct FLocationClaim
+	{
+		FDeckWalkLocation Location;
+		float Radius = 0.0f;
+	};
+	TMap<TWeakObjectPtr<AActor>, FLocationClaim> LocationClaims;
 };

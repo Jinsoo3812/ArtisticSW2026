@@ -23,14 +23,15 @@ class ENEMY_API UDeckWalkRouteComponent : public UActorComponent
 public:
 	UDeckWalkRouteComponent();
 
-	bool SetPointGoal(int32 PointId, bool bCommitPoint = true);
+	bool SetLocationGoal(const FDeckWalkLocation& Goal);
 	bool SetActorGoal(AActor* MovingTarget);
 	bool SetPatrolGoal(FRandomStream& Random);
 	void ClearGoal();
 	bool HasGoal() const { return bHasGoal; }
-	int32 GetPointGoalId() const { return PointGoalId; }
+	const FDeckWalkLocation& GetGoal() const { return LocalGoal; }
+	bool IsTrackingActor() const { return bTrackTarget; }
 	EDeckWalkRouteTick TickRoute(float DeltaSeconds, float AcceptanceRadius,
-		float ProgressTimeout, float MaximumMoveTime, float MoveSpeed);
+		float ProgressTimeout, float MaximumMoveTime, float MoveSpeed, float MinimumProgressDistance);
 
 private:
 	UDeckWalkAreaComponent* GetArea() const;
@@ -41,7 +42,6 @@ private:
 	FDeckWalkLocation LocalGoal;
 	TWeakObjectPtr<AActor> TargetActor;
 	int32 PathCursor = 0;
-	int32 PointGoalId = INDEX_NONE;
 	float ElapsedTime = 0.0f;
 	float TimeSinceProgress = 0.0f;
 	float ProgressDistance = TNumericLimits<float>::Max();

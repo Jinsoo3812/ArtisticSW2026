@@ -4,6 +4,7 @@
 #include "DeckAI/DeckWalkHeightResolver.h"
 #include "DeckAI/DeckWalkSurfaceSampler.h"
 #include "DeckAI/DeckWaypointComponent.h"
+#include "DeckAI/DeckEnemySpawnerComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
@@ -60,14 +61,10 @@ bool UDeckWalkAreaComponent::ResolveSources()
 	Runtime->Surfaces = Surfaces;
 	if (Runtime->Surfaces.IsEmpty())
 	{
-		FDeckWalkSurfaceSettings Legacy;
-		Legacy.SurfaceId = TEXT("Deck");
-		Legacy.FloorComponentNames = { GetFrame()->GetFName() };
-		Legacy.MinimumFloorZ = MinimumFloorZ;
-		Legacy.MaximumFloorZ = MaximumFloorZ;
-		Legacy.SeedPointIds = WalkRegionSeedPointIds;
-		Runtime->Surfaces.Add(Legacy);
+		UE_LOG(LogTemp, Error, TEXT("[DeckWalk] Ship=%s Reason=MissingSurfaces"), *GetNameSafe(Ship));
+		return false;
 	}
+
 	TArray<UPrimitiveComponent*> Components;
 	Ship->GetComponents<UPrimitiveComponent>(Components);
 	TSet<FName> Ids;
@@ -75,7 +72,13 @@ bool UDeckWalkAreaComponent::ResolveSources()
 	{
 		const auto& Surface = Runtime->Surfaces[Index];
 		if (Surface.SurfaceId.IsNone() || Ids.Contains(Surface.SurfaceId)
-			|| Surface.FloorComponentNames.IsEmpty()) return false;
+			|| Surface.FloorComponentNames.IsEmpty())
+		{
+			UE_LOG(LogTemp, Error, TEXT("[DeckWalk] Ship=%s Surface=%s Reason=%s"),
+				*Ship->GetName(), *Surface.SurfaceId.ToString(), Surface.FloorComponentNames.IsEmpty()
+					? TEXT("MissingFloorSources") : TEXT("MissingOrDuplicateSurfaceId"));
+			return false;
+		}
 		Ids.Add(Surface.SurfaceId);
 		FDeckWalkHeightBand HeightBand;
 		FString HeightError;
@@ -115,12 +118,22 @@ bool UDeckWalkAreaComponent::ResolveSources()
 	{
 		UPrimitiveComponent* Found = nullptr;
 		for (auto* Component : Components) if (Component->GetFName() == Name) { Found = Component; break; }
-		if (!Found || !Found->IsQueryCollisionEnabled()) return false;
+		if (!Found || !Found->IsQueryCollisionEnabled())
+		{
+			UE_LOG(LogTemp, Error, TEXT("[DeckWalk] Ship=%s Component=%s Reason=MissingOrQueryDisabledObstacle"),
+				*Ship->GetName(), *Name.ToString());
+			return false;
+		}
 		Runtime->Obstacles.AddUnique(Found);
 	}
 	for (const auto& Link : WalkingConnections)
 	{
-		if (!Ids.Contains(Link.FromSurface) || !Ids.Contains(Link.ToSurface) || Link.FromSurface == Link.ToSurface) return false;
+		if (!Ids.Contains(Link.FromSurface) || !Ids.Contains(Link.ToSurface) || Link.FromSurface == Link.ToSurface)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[DeckWalk] Ship=%s From=%s To=%s Reason=InvalidWalkingConnection"),
+				*Ship->GetName(), *Link.FromSurface.ToString(), *Link.ToSurface.ToString());
+			return false;
+		}
 	}
 	return true;
 }
@@ -129,7 +142,16 @@ void UDeckWalkAreaComponent::Rebuild()
 {
 	// Check before touching the snapshot or revision, including direct C++ calls on a client.
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+#if WITH_EDITOR
+	// Editor actors do not run EnemyShip::BeginPlay's registration step.
+	if (GetWorld() && !GetWorld()->IsGameWorld())
+	{
+		if (AEnemyShip* Ship = Cast<AEnemyShip>(GetOwner()); Ship && Ship->GetDeckEnemySpawnerComponent())
+			Ship->GetDeckEnemySpawnerComponent()->InitializeWaypoints();
+	}
+#endif
 	bReady = false;
+	LocationClaims.Reset();
 	++Revision;
 	Runtime.Reset(new FDeckWalkRuntime());
 	if (!ResolveSources())
@@ -235,7 +257,110 @@ FDeckWalkLocation UDeckWalkAreaComponent::MakeLocation(int32 Node) const
 bool UDeckWalkAreaComponent::IsLocationValid(const FDeckWalkLocation& Location) const
 {
 	return bReady && Runtime && Location.Revision == Revision
-		&& Runtime->Graph.Nodes.IsValidIndex(Location.NodeIndex) && Runtime->Graph.Nodes[Location.NodeIndex].bEnabled;
+		&& Runtime->Graph.Nodes.IsValidIndex(Location.NodeIndex) && Runtime->Graph.Nodes[Location.NodeIndex].bEnabled
+		&& Runtime->Surfaces[Runtime->Graph.Nodes[Location.NodeIndex].Surface].SurfaceId == Location.SurfaceId
+		&& Runtime->Graph.Nodes[Location.NodeIndex].Floor.Equals(Location.LocalFloor, 0.1f);
+}
+
+void UDeckWalkAreaComponent::GetReachableLocations(const FDeckWalkLocation& Start,
+	TArray<FDeckWalkLocation>& Out, bool bCrossSurfaces) const
+{
+	Out.Reset();
+	if (!IsLocationValid(Start)) return;
+	TSet<int32> Visited;
+	TArray<int32> Queue = { Start.NodeIndex };
+	Visited.Add(Start.NodeIndex);
+	for (int32 Cursor = 0; Cursor < Queue.Num(); ++Cursor)
+	{
+		const int32 Index = Queue[Cursor];
+		Out.Add(MakeLocation(Index));
+		for (int32 Neighbor : Runtime->Graph.Nodes[Index].Neighbors)
+		{
+			const auto& Node = Runtime->Graph.Nodes[Neighbor];
+			if (!Node.bEnabled || Visited.Contains(Neighbor)
+				|| (!bCrossSurfaces && Node.Surface != Runtime->Graph.Nodes[Start.NodeIndex].Surface)) continue;
+			Visited.Add(Neighbor);
+			Queue.Add(Neighbor);
+		}
+	}
+}
+
+bool UDeckWalkAreaComponent::ResolveLocationTransform(const FDeckWalkLocation& Location,
+	const ACharacter& Character, FTransform& Out) const
+{
+	const UCapsuleComponent* Capsule = Character.GetCapsuleComponent();
+	if (!IsLocationValid(Location) || !GetFrame() || !Capsule
+		|| Capsule->GetScaledCapsuleRadius() > ClearanceRadius
+		|| Capsule->GetScaledCapsuleHalfHeight() > ClearanceHalfHeight) return false;
+	const FVector Up = GetFrame()->GetUpVector();
+	FVector Forward = FVector::VectorPlaneProject(Character.GetActorForwardVector(), Up).GetSafeNormal();
+	if (Forward.IsNearlyZero()) Forward = GetFrame()->GetForwardVector();
+	Out = FTransform(FRotationMatrix::MakeFromXZ(Forward, Up).ToQuat(),
+		ToWorld(Location.LocalFloor) + Up * (Capsule->GetScaledCapsuleHalfHeight() + 2.0f));
+	return !Out.ContainsNaN();
+}
+
+bool UDeckWalkAreaComponent::IsLocationAvailable(const FDeckWalkLocation& Location,
+	const ACharacter& Requester) const
+{
+	FTransform Transform;
+	if (!GetWorld() || !ResolveLocationTransform(Location, Requester, Transform)) return false;
+	const UCapsuleComponent* Capsule = Requester.GetCapsuleComponent();
+	for (const auto& Pair : LocationClaims)
+	{
+		if (!Pair.Key.IsValid() || Pair.Key.Get() == &Requester || !IsLocationValid(Pair.Value.Location)) continue;
+		if (FMath::Abs(Pair.Value.Location.LocalFloor.Z - Location.LocalFloor.Z) <= MaximumStepHeight
+			&& FVector::Dist2D(Pair.Value.Location.LocalFloor, Location.LocalFloor)
+				< Pair.Value.Radius + Capsule->GetScaledCapsuleRadius()) return false;
+	}
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(DeckWalkDestination), false, &Requester);
+	return !GetWorld()->OverlapBlockingTestByChannel(Transform.GetLocation(), Transform.GetRotation(),
+		ECC_Pawn, FCollisionShape::MakeCapsule(Capsule->GetScaledCapsuleRadius(),
+			Capsule->GetScaledCapsuleHalfHeight()), Params);
+}
+
+bool UDeckWalkAreaComponent::TryClaimLocation(const FDeckWalkLocation& Location, ACharacter& Requester)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !Requester.HasAuthority()
+		|| !IsLocationAvailable(Location, Requester)) return false;
+	for (auto It = LocationClaims.CreateIterator(); It; ++It)
+		if (!It.Key().IsValid() || !IsLocationValid(It.Value().Location)) It.RemoveCurrent();
+	FLocationClaim Claim;
+	Claim.Location = Location;
+	Claim.Radius = Requester.GetCapsuleComponent()->GetScaledCapsuleRadius();
+	LocationClaims.Add(&Requester, Claim);
+	return true;
+}
+
+void UDeckWalkAreaComponent::ReleaseLocationClaim(const AActor* Requester)
+{
+	if (GetOwner() && GetOwner()->HasAuthority() && Requester)
+		LocationClaims.Remove(const_cast<AActor*>(Requester));
+}
+
+bool UDeckWalkAreaComponent::IsSupportedSegment(const FDeckWalkLocation& Start,
+	const FDeckWalkLocation& End) const
+{
+	if (!IsLocationValid(Start) || !IsLocationValid(End) || Start.SurfaceId != End.SurfaceId) return false;
+	return IsSupportedSegment(Start, End.LocalFloor);
+}
+bool UDeckWalkAreaComponent::IsSupportedSegment(const FDeckWalkLocation& Start, const FVector& LocalEnd) const
+{
+	if (!IsLocationValid(Start) || LocalEnd.ContainsNaN()) return false;
+	const FDeckWalkSurfaceSampler Sampler(GetFrame()->GetComponentTransform(), Runtime->Settings,
+		Runtime->Sources, Runtime->Obstacles);
+	const int32 Surface = Runtime->Graph.Nodes[Start.NodeIndex].Surface;
+	const int32 Steps = FMath::Max(1, FMath::CeilToInt(FVector::Dist2D(Start.LocalFloor, LocalEnd) / (CellSize * 0.5f)));
+	FVector Previous = Start.LocalFloor;
+	for (int32 I = 0; I <= Steps; ++I)
+	{
+		const FVector Query = FMath::Lerp(Start.LocalFloor, LocalEnd, float(I) / Steps);
+		FVector Floor;
+		if (!Sampler.TraceNear(Query, Surface, MaximumStepHeight, MaximumStepHeight, Floor)
+			|| FMath::Abs(Floor.Z - Previous.Z) > MaximumStepHeight || !Sampler.HasClearance(Floor)) return false;
+		Previous = Floor;
+	}
+	return true;
 }
 bool UDeckWalkAreaComponent::ResolveWaypoint(const UDeckWaypointComponent& Point, FDeckWalkLocation& Out) const
 {
@@ -267,6 +392,14 @@ FVector UDeckWalkAreaComponent::GetActorFeetWorld(const AActor& Actor) const
 	const ACharacter* Character = Cast<ACharacter>(&Actor);
 	const UCapsuleComponent* Capsule = Character ? Character->GetCapsuleComponent() : nullptr;
 	return Capsule ? Capsule->GetComponentLocation() - Capsule->GetUpVector() * Capsule->GetScaledCapsuleHalfHeight() : Actor.GetActorLocation();
+}
+bool UDeckWalkAreaComponent::ResolveLocalFloor(const FVector& LocalFloor, FName SurfaceId, FDeckWalkLocation& Out) const
+{
+	Out = FDeckWalkLocation();
+	int32 Node = INDEX_NONE;
+	if (!bReady || !FindNearestNode(LocalFloor, SurfaceId, CellSize, MaximumStepHeight, Node)) return false;
+	Out = MakeLocation(Node);
+	return true;
 }
 bool UDeckWalkAreaComponent::ResolveActorOnDeck(const AActor& Actor, FDeckWalkLocation& Out) const
 {
@@ -329,13 +462,6 @@ bool UDeckWalkAreaComponent::FindPath(const FDeckWalkLocation& Start, const FDec
 		|| !Runtime->Graph.FindPath(Start.NodeIndex, Goal.NodeIndex, bCrossSurfaces, Nodes)) return false;
 	for (int32 Node : Nodes) OutPath.Add(MakeLocation(Node));
 	return true;
-}
-bool UDeckWalkAreaComponent::FindPathToWaypoint(const AActor& Actor, const UDeckWaypointComponent& Point,
-	TArray<FDeckWalkLocation>& OutPath) const
-{
-	OutPath.Reset();
-	FDeckWalkLocation Start, Goal;
-	return ResolveActorOnDeck(Actor, Start) && ResolveWaypoint(Point, Goal) && FindPath(Start, Goal, OutPath);
 }
 bool UDeckWalkAreaComponent::PickPatrolPath(const AActor& Actor, FRandomStream& Random,
 	TArray<FDeckWalkLocation>& OutPath) const

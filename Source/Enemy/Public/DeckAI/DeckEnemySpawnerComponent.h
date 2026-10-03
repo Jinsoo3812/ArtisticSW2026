@@ -51,6 +51,10 @@ class ENEMY_API UDeckEnemySpawnerComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
+#if WITH_EDITOR
+	friend class FDeckSpawnAnchorValidator;
+#endif
+
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FDeckEnemySpawnerCompositionTest;
 #endif
@@ -92,14 +96,7 @@ public:
 
 	UDeckWaypointComponent* GetWaypoint(int32 WaypointId) const;
 	FVector GetWaypointWorldLocation(int32 WaypointId) const;
-	void GetWaypointIds(TArray<int32>& OutWaypointIds, bool bRequireCombatPoint = false) const;
-	void GetConnectedWaypointIds(int32 WaypointId, TArray<int32>& OutWaypointIds) const;
-	int32 FindNearestWaypoint(const FVector& WorldLocation, bool bRequirePatrolPoint = true) const;
 
-	bool ResolveFixedDeckAnchorTransform(
-		int32 WaypointId,
-		float CapsuleHalfHeight,
-		FTransform& OutTransform) const;
 	bool ResolveDeckCharacterTransform(
 		int32 WaypointId,
 		float CapsuleHalfHeight,
@@ -114,9 +111,6 @@ public:
 	void ReleasePointReservation(FDeckPointReservation& Reservation);
 	bool TryOccupyPoint(int32 WaypointId, AActor* Occupant);
 	void ReleasePointOccupancy(int32 WaypointId, AActor* Occupant);
-	bool IsCombatPointClaimAvailable(int32 WaypointId, const AActor* Requester = nullptr) const;
-	bool TryClaimCombatPoint(int32 WaypointId, AActor* Requester);
-	void ReleaseCombatPointClaim(int32 WaypointId, AActor* Requester);
 	void ReleaseAllPointsFor(AActor* Actor);
 
 	bool ActivateEnemyAtPoint(
@@ -170,7 +164,6 @@ private:
 	{
 		TWeakObjectPtr<AActor> Occupant;
 		TWeakObjectPtr<AActor> ReservedBy;
-		TWeakObjectPtr<AActor> CombatClaimedBy;
 		uint32 ReservationSerial = 0;
 	};
 

@@ -57,10 +57,16 @@ struct ENEMY_API FDeckWalkSurfaceConnection
 };
 
 /** Query handle. A rebuild invalidates all previous handles. */
+USTRUCT(BlueprintType)
 struct ENEMY_API FDeckWalkLocation
 {
+	GENERATED_BODY()
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck Walk")
 	int32 NodeIndex = INDEX_NONE;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck Walk")
 	int32 Revision = INDEX_NONE;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck Walk")
 	FName SurfaceId;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck Walk")
 	FVector LocalFloor = FVector::ZeroVector;
 };

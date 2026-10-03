@@ -3,12 +3,10 @@
 #include "AIController.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
-#include "DeckAI/DeckWaypointComponent.h"
-#include "ShipAI/EnemyShip.h"
 
 UBTT_WaitAtDeckWaypoint::UBTT_WaitAtDeckWaypoint()
 {
-	NodeName = TEXT("Wait At Deck Waypoint");
+	NodeName = TEXT("Wait After Deck Patrol");
 	bNotifyTick = true;
 }
 
@@ -23,17 +21,14 @@ EBTNodeResult::Type UBTT_WaitAtDeckWaypoint::ExecuteTask(
 {
 	AAIController* Controller = OwnerComp.GetAIOwner();
 	ADeckEnemy* Enemy = Controller ? Cast<ADeckEnemy>(Controller->GetPawn()) : nullptr;
-	AEnemyShip* HostShip = Enemy ? Cast<AEnemyShip>(Enemy->GetHostShip()) : nullptr;
-	const UDeckWaypointComponent* Waypoint = HostShip && Enemy
-		? HostShip->GetDeckWaypoint(Enemy->GetCurrentDeckWaypointId())
-		: nullptr;
-	if (!Enemy || !Enemy->IsPoolActive() || !Waypoint)
+	if (!Enemy || !Enemy->CanMoveOnDeck())
 	{
 		return EBTNodeResult::Failed;
 	}
 
 	FWaitAtDeckWaypointMemory* Memory = reinterpret_cast<FWaitAtDeckWaypointMemory*>(NodeMemory);
-	Memory->RemainingTime = Waypoint->GetRandomWaitTime(Enemy->GetDeckRandomStream());
+	const float Minimum = FMath::Max(0.0f, MinWaitTime);
+	Memory->RemainingTime = Enemy->GetDeckRandomStream().FRandRange(Minimum, FMath::Max(Minimum, MaxWaitTime));
 	return Memory->RemainingTime <= KINDA_SMALL_NUMBER
 		? EBTNodeResult::Succeeded
 		: EBTNodeResult::InProgress;
