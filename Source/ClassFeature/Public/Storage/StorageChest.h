@@ -240,7 +240,6 @@ protected:
 	FQuat ClientMovementTargetRotation = FQuat::Identity;
 	FVector ClientMovementTargetVelocity = FVector::ZeroVector;
 	float ClientMovementTargetReceiveTime = 0.0f;
-	double NextClientLaunchDiagnosticTime = 0.0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Storage Chest|Lifecycle")
 	bool bDestroyWhenEmpty = true;
