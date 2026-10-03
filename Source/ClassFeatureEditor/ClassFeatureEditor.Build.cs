@@ -17,6 +17,8 @@ public class ClassFeatureEditor : ModuleRules
 			"GameplayTags",
 			"UnrealEd",
 			"Kismet",
+			"BlueprintGraph",
+			"KismetCompiler",
 			"Slate",
 			"SlateCore",
 			"UMG",
