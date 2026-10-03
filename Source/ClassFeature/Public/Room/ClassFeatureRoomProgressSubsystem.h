@@ -59,6 +59,9 @@ private:
 	bool bReturnShipPlaced = false;
 	bool bShipSafetyFallbackUsed = false;
 	double ShipSafetyCheckAt = 0.0;
+	double ShipPlacementRealTime = 0.0;
+	double ShipPlacementWorldTime = 0.0;
+	double LastShipSafetyDiagnosticWorldTime = -1.0;
 	bool bSaving = false;
 	int32 LastCaptureIssueCount = 0;
 	void RecordTransitionParticipants(UWorld* World);

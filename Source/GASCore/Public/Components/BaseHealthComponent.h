@@ -140,6 +140,7 @@ public:
 	FBaseHealthDeathEventSignature OnDeathFinished;
 
 private:
+	bool bPreparingHealthDeath = false;
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FEnemyDamageGameplayCueAuthorityTest;
 	friend class FCombatEffectContextDeathDirectionTest;

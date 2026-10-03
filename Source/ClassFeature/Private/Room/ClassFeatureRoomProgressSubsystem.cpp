@@ -124,6 +124,9 @@ bool PlaceShipSafely(UWorld* World, AKelvinShip* Ship, AActor* Entry, bool bUseE
 		Ship->SetActorTransform(Candidate, false, nullptr, ETeleportType::TeleportPhysics);
 		UE_LOG(LogSWRoom, Display, TEXT("Flow=ShipPlacement Phase=Candidate Index=%d Entry=%s EntryLocation=%s ShipLocation=%s"),
 			Index, *Entry->GetPathName(), *Entry->GetActorLocation().ToCompactString(), *Ship->GetActorLocation().ToCompactString());
+		UE_LOG(LogSWRoom, Display, TEXT("Flow=ShipPlacement Phase=CandidatePhysics Index=%d WorldTime=%.3f WaterZ=%.3f Actor=%s Root=%s Entry=%s"),
+			Index, World->GetTimeSeconds(), WaterZ, *Ship->GetActorTransform().ToString(),
+			Ship->GetRootComponent() ? *Ship->GetRootComponent()->GetComponentTransform().ToString() : TEXT("None"), *Entry->GetActorTransform().ToString());
 		UPrimitiveComponent* Root = Cast<UPrimitiveComponent>(Ship->GetRootComponent());
 		if (!Root || (WaterZ != 0.0f && Root->GetComponentLocation().Z < WaterZ - Root->Bounds.BoxExtent.Z))
 		{ UE_LOG(LogSWRoom, Warning, TEXT("Room ship candidate %d: root below safe surface"), Index); continue; }
@@ -222,6 +225,9 @@ void UClassFeatureRoomProgressSubsystem::HandlePostLoadMap(UWorld* World)
 	bReturnShipPlaced = false;
 	bShipSafetyFallbackUsed = false;
 	ShipSafetyCheckAt = 0.0;
+	ShipPlacementRealTime = 0.0;
+	ShipPlacementWorldTime = 0.0;
+	LastShipSafetyDiagnosticWorldTime = -1.0;
 	if (RestoreTickerHandle.IsValid()) FTSTicker::GetCoreTicker().RemoveTicker(RestoreTickerHandle);
 	RestoreTickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &UClassFeatureRoomProgressSubsystem::TickRestore), 0.0f);
 }
@@ -330,6 +336,8 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 		UE_LOG(LogSWRoom, Display, TEXT("Room ship placement: %s"), *Placement);
 		UE_LOG(LogSWRoom, Display, TEXT("Flow=ShipPlacement Result=Placed Strategy=%s"), *Placement);
 		bReturnShipPlaced = true;
+		ShipPlacementRealTime = FPlatformTime::Seconds();
+		ShipPlacementWorldTime = World->GetTimeSeconds();
 		ShipSafetyCheckAt = FPlatformTime::Seconds() + 0.5;
 		DevelopmentScope.bKeep=true; return true;
 	}
@@ -346,7 +354,16 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
   if (Ship->IsSinking()) Mode->NotifyPlayerShipSinking(Ship);
 		ShipEntry = ResolveShipEntry(World, Room->IsFinalDepartureTravelPending(), MarkerCount);
 		if (!Ship || !ShipEntry) return false;
-		if (HasPostPlacementBlock(World, Ship))
+		const bool bPostPlacementBlocked = HasPostPlacementBlock(World, Ship);
+		if (bPostPlacementBlocked || LastShipSafetyDiagnosticWorldTime < 0.0 || World->GetTimeSeconds() - LastShipSafetyDiagnosticWorldTime >= 1.0)
+		{
+			LastShipSafetyDiagnosticWorldTime = World->GetTimeSeconds();
+			UE_LOG(LogSWRoom, Display, TEXT("Flow=ShipPlacement Phase=PostPhysicsCheck New=%d Return=%d GameOver=%d Blocked=%d RealElapsed=%.3f WorldElapsed=%.3f TickDelta=%.3f ParticipantsReady=%d Actor=%s Root=%s"),
+				Room->IsNewRoomPending(), Room->IsReturnTravelPending(), Room->IsGameOverTravelPending(), bPostPlacementBlocked,
+				FPlatformTime::Seconds() - ShipPlacementRealTime, World->GetTimeSeconds() - ShipPlacementWorldTime, DeltaTime,
+				AreTransitionParticipantsReady(World), *Ship->GetActorTransform().ToString(), *Ship->GetRootComponent()->GetComponentTransform().ToString());
+		}
+		if (bPostPlacementBlocked)
 		{
 			if (!Room->IsNewRoomPending() && !Room->IsReturnTravelPending()
 				&& !Room->IsFinalDepartureTravelPending() && !Room->IsGameOverTravelPending())
@@ -752,13 +769,20 @@ void UClassFeatureRoomProgressSubsystem::RestorePlayer(ABasePlayer* Player)
   }
   else Player->RestoreRoomProgress(Progress);
 	};
-	if (Mode->GetPlayerIndex(Player->GetController()) == 0) ApplyProgress(Save->HostProgress);
+	if (Mode->GetPlayerIndex(Player->GetController()) == 0)
+	{
+		if (Room->IsNewRoomPending() && Save->HostProgress.InventorySlots.IsEmpty()) Player->FinalizeStartingInventory(true);
+		else { ApplyProgress(Save->HostProgress); Player->FinalizeStartingInventory(false); }
+	}
 	else if (const APlayerState* State = Player->GetPlayerState())
 	{
 		const FString Name = State->GetPlayerName();
 		if (const FSWRoomGuestProgress* Guest = Save->Guests.FindByPredicate([&Name](const FSWRoomGuestProgress& Entry) { return Entry.DisplayName == Name; }))
+		{
 			ApplyProgress(Guest->Progress);
-		else ApplyProgress(FSWRoomPlayerProgress());
+			Player->FinalizeStartingInventory(false);
+		}
+		else Player->FinalizeStartingInventory(true);
 	}
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=PlayerRestore RoomId=%s PlayerIndex=%d Result=Applied Return=%d"),
 		*Save->RoomId.ToString(), Mode->GetPlayerIndex(Player->GetController()), Room->IsReturnTravelPending());

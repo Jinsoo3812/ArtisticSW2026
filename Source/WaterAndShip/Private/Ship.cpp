@@ -2,6 +2,7 @@
 
 
 #include "Ship.h"
+#include "MountedDamageUserInterface.h"
 #include "MultiGameMode.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Network/SWNetworkLog.h"
@@ -1421,7 +1422,7 @@ void AShip::Board(APawn* PlayerPawn)
 	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Board initiated by player pawn %s. Ship location: %s, Player location: %s"), *PlayerPawn->GetName(), *GetActorLocation().ToString(), *PlayerPawn->GetActorLocation().ToString());
 
 	RidingPlayer = PlayerPawn;
-	SetHelmRiderInvulnerable(true);
+	if (IMountedDamageUserInterface* Rider = Cast<IMountedDamageUserInterface>(RidingPlayer)) Rider->SetMountedDamageMode(true);
 	UpdateHelmInteractionAvailability();
 
 	// The interaction can transfer possession before Enhanced Input emits its
@@ -1444,7 +1445,7 @@ void AShip::Board(APawn* PlayerPawn)
 		: RidingPlayer->GetActorRotation();
 
 	// Disable player collision
-	RidingPlayer->SetActorEnableCollision(false);
+	RidingPlayer->SetActorEnableCollision(true);
 	RidingPlayer->SetActorHiddenInGame(false);
 
 	if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
@@ -1608,7 +1609,7 @@ void AShip::Disembark()
 	UE_LOG(LogTemp, Log, TEXT("AShip: [SERVER] Disembark - Player bReplicateMovement after enable: %s"), PlayerToRestore->IsReplicatingMovement() ? TEXT("True") : TEXT("False"));
 
 	// Return possession to player character
-	SetHelmRiderInvulnerable(false);
+	if (IMountedDamageUserInterface* Rider = Cast<IMountedDamageUserInterface>(PlayerToRestore)) Rider->SetMountedDamageMode(false);
 	if (PC)
 	{
 		PC->Possess(PlayerToRestore);
@@ -1624,26 +1625,6 @@ void AShip::Disembark()
 void AShip::ForceDisembark()
 {
 	Disembark();
-}
-
-void AShip::SetHelmRiderInvulnerable(bool bEnabled)
-{
-	if (!HasAuthority() || bHelmInvulnerabilityApplied == bEnabled)
-	{
-		return;
-	}
-	if (UAbilitySystemComponent* ASC = GetRidingPlayerAbilitySystem())
-	{
-		if (bEnabled)
-		{
-			ASC->AddLooseGameplayTag(State_Invulnerable);
-		}
-		else
-		{
-			ASC->RemoveLooseGameplayTag(State_Invulnerable);
-		}
-		bHelmInvulnerabilityApplied = bEnabled;
-	}
 }
 
 void AShip::HandleShipHealthChanged(const FOnAttributeChangeData& Data)
@@ -2734,7 +2715,7 @@ void AShip::OnRep_RidingPlayer(APawn* OldRidingPlayer)
 	if (RidingPlayer)
 	{
 		// UE_LOG(LogTemp, Log, TEXT("AShip: [CLIENT] OnRep_RidingPlayer - Disabling current passenger collision and movement."));
-		RidingPlayer->SetActorEnableCollision(false);
+		RidingPlayer->SetActorEnableCollision(true);
 		if (ACharacter* Char = Cast<ACharacter>(RidingPlayer))
 		{
 			Char->GetCharacterMovement()->DisableMovement();

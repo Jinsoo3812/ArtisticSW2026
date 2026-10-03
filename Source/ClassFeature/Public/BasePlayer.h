@@ -12,6 +12,7 @@
 #include "Skills/SkillUseProvider.h"
 #include "CannonRiderInterface.h"
 #include "ShipRepairUserInterface.h"
+#include "MountedDamageUserInterface.h"
 #include "Room/SWRoomSnapshotTypes.h"
 #include "BasePlayer.generated.h"
 
@@ -85,12 +86,23 @@ struct FStartingInventoryItemForTest
  * 
  */
 UCLASS(Config = Game)
-class CLASSFEATURE_API ABasePlayer : public ABaseCharacter, public ISkillUseProvider, public ICannonRiderInterface, public IShipRepairUserInterface
+class CLASSFEATURE_API ABasePlayer : public ABaseCharacter, public ISkillUseProvider, public ICannonRiderInterface, public IShipRepairUserInterface, public IMountedDamageUserInterface
 {
 	GENERATED_BODY()
 	friend class ULocomotionAnimStateComponent;
 
 public:
+	virtual void SetMountedDamageMode(bool bEnabled) override;
+	virtual bool IsMountedForDamage() const override { return bMountedDamageMode; }
+	virtual void PrepareForHealthDeath() override;
+	UFUNCTION() void OnRep_MountedDamageMode();
+	UPROPERTY(ReplicatedUsing=OnRep_MountedDamageMode) bool bMountedDamageMode = false;
+	bool bMountedCollisionSaved = false;
+	ECollisionEnabled::Type SavedMountedCapsuleCollision = ECollisionEnabled::QueryAndPhysics;
+	ECollisionEnabled::Type SavedMountedMeshCollision = ECollisionEnabled::QueryOnly;
+	bool bInventoryProgressRestored = false;
+	bool bStartingInventoryDecisionMade = false;
+	void FinalizeStartingInventory(bool bFreshInventory);
 	/** Keeps skill input mappings above quick-slot mappings that may share keys. */
 	static int32 ResolveDefaultMappingPriority(
 		int32 ConfiguredDefaultPriority,

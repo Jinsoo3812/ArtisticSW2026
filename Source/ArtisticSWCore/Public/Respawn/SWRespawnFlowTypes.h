@@ -25,6 +25,7 @@ struct ARTISTICSWCORE_API FSWObservedCameraFrame
  UPROPERTY() FVector Location = FVector::ZeroVector;
  UPROPERTY() FRotator Rotation = FRotator::ZeroRotator;
  UPROPERTY() float FOV = 90;
+ UPROPERTY() double SampleServerTime = 0;
  UPROPERTY() int32 RestoreGeneration = 0;
  UPROPERTY() int32 ObservationGeneration = 0;
  UPROPERTY() uint32 Sequence = 0;

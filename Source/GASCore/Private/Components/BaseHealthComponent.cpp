@@ -11,6 +11,7 @@
 #include "Abilities/BaseDeathGameplayAbility.h"
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
+#include "MountedDamageUserInterface.h"
 #include "DrawDebugHelpers.h"
 #include "GameplayEffect.h"
 #include "GameplayEffectExtension.h"
@@ -155,11 +156,19 @@ void UBaseHealthComponent::StartDeath()
 {
 	AActor* Owner = GetOwningActor();
 	if (!Owner || !Owner->HasAuthority() || !AbilitySystemComponent
-		|| DeathPresentation.DeathState != EBaseDeathState::NotDead)
+		|| bPreparingHealthDeath || DeathPresentation.DeathState != EBaseDeathState::NotDead)
 	{
 		return;
 	}
 
+	{
+		TGuardValue<bool> PreparingDeath(bPreparingHealthDeath, true);
+		if (IMountedDamageUserInterface* Mounted = Cast<IMountedDamageUserInterface>(Owner))
+		{
+			Mounted->PrepareForHealthDeath();
+		}
+	}
+	if (DeathPresentation.DeathState != EBaseDeathState::NotDead || !AbilitySystemComponent) return;
 	SetDeathState(EBaseDeathState::DeathStarted);
 
 	if (!AbilitySystemComponent->HasMatchingGameplayTag(State_Dead))
@@ -292,7 +301,9 @@ void UBaseHealthComponent::HandleHealthChanged(const FOnAttributeChangeData& Dat
 		return;
 	}
 
-	if (Data.OldValue > Data.NewValue)
+	const IMountedDamageUserInterface* Mounted = Cast<IMountedDamageUserInterface>(Owner);
+	const bool bSuppressMountedReaction = Mounted && Mounted->IsMountedForDamage();
+	if (Data.OldValue > Data.NewValue && !bSuppressMountedReaction)
 	{
 		ExecuteConfirmedDamageGameplayCues(
 			Data.OldValue - Data.NewValue,
@@ -309,7 +320,7 @@ void UBaseHealthComponent::HandleHealthChanged(const FOnAttributeChangeData& Dat
 		const bool bPeriodic = DeliveryType == ESWDamageDeliveryType::StatusTick
 			|| (Data.GEModData && Data.GEModData->EffectSpec.GetPeriod() > 0.f);
 		OnConfirmedDamage.Broadcast(Data.OldValue - Data.NewValue, EffectContextHandle, bPeriodic);
-		if (DeliveryType == ESWDamageDeliveryType::DirectHit)
+		if (DeliveryType == ESWDamageDeliveryType::DirectHit && !bSuppressMountedReaction)
 		{
 			SendGameplayEventToOwner(GameplayAbility_HitReaction, Data.OldValue - Data.NewValue, SourceActor, EffectContextHandle);
 		}

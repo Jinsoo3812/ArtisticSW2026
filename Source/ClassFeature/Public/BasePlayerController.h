@@ -101,6 +101,9 @@ private:
 	void TickShipMotionDiagnostics();
 	FSWShipMotionDiagnosticState ShipMotionDiagnostic;
 	void ApplyLocalDeathFlow();
+	void UpdateObservedCamera();
+	UPROPERTY(Transient) TArray<FSWObservedCameraFrame> ObservedCameraFrames;
+	int32 LocalObservedRestoreGeneration = -1;
 	UPROPERTY(Transient) TObjectPtr<class USWDeathFlowWidget> DeathFlowWidget;
 	UPROPERTY(Transient) TObjectPtr<class ACameraActor> DeathCamera;
 	ESWSessionLifePhase LocalSessionPhase = ESWSessionLifePhase::Playing;

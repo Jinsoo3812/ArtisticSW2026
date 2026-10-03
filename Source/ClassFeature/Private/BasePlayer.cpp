@@ -197,6 +197,7 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	DOREPLIFETIME(ABasePlayer, QuickSlots);
 	DOREPLIFETIME(ABasePlayer, EquippedItem);
 	DOREPLIFETIME(ABasePlayer, LocomotionStateSnapshot);
+	DOREPLIFETIME(ABasePlayer, bMountedDamageMode);
 }
 
 bool ABasePlayer::CanUseSkill(const FGameplayTag& SkillTag) const
@@ -286,7 +287,6 @@ void ABasePlayer::BeginPlay()
 	}
 
 #if WITH_EDITOR
-	GiveStartingItemsForTest();
 	ApplyShipUpgradeTestFlags();
 #endif
 
@@ -473,6 +473,7 @@ void ABasePlayer::CaptureReconnectProgress()
 
 void ABasePlayer::CaptureRoomProgress(FSWRoomPlayerProgress& OutProgress) const
 {
+	if (InventoryComponent) InventoryComponent->LogInventoryDiagnostic(TEXT("RoomProgressCapture"), true);
 	OutProgress = FSWRoomPlayerProgress();
 	const APawn* ControlPawn = nullptr;
 	if (const AShip* Ship = Cast<AShip>(GetAttachParentActor()); Ship && Ship->GetRidingPlayer() == this) ControlPawn = Ship;
@@ -567,6 +568,7 @@ void ABasePlayer::CaptureRoomProgress(FSWRoomPlayerProgress& OutProgress) const
 void ABasePlayer::RestoreRoomProgress(const FSWRoomPlayerProgress& Progress)
 {
 	if (!HasAuthority()) return;
+	bInventoryProgressRestored = true;
 	PendingRoomEffects = Progress.ActiveEffects;
 	bHasPendingRoomEffects = Progress.bEffectsCaptured;
 	PendingRoomHealth = Progress.CurrentHealth;
@@ -688,6 +690,7 @@ bool ABasePlayer::BuildProgressSnapshot(FSWPlayerProgressSnapshot& OutSnapshot) 
 
 void ABasePlayer::ApplyProgressSnapshot(const FSWPlayerProgressSnapshot& Snapshot)
 {
+	bInventoryProgressRestored = true;
 	if (InventoryComponent) InventoryComponent->RestoreProgressSnapshot(Snapshot.InventorySlots);
 	InitializeQuickSlots();
 	for (int32 Index = 0; Index < 5 && Index < Snapshot.QuickSlotItemTags.Num() && QuickSlots.IsValidIndex(Index); ++Index)
@@ -1187,6 +1190,11 @@ void ABasePlayer::PossessedBy(AController* NewController)
   }
  }
  bHasCompletedInitialPossession = true;
+ if (!bStartingInventoryDecisionMade)
+ {
+  const bool bFreshInventory = !bInventoryProgressRestored && (!LifeRoom || !LifeRoom->IsHostedRoom() || LifeRoom->IsNewRoomPending());
+  FinalizeStartingInventory(bFreshInventory);
+ }
  // ASC 초기화 완료 알림 방송
 	OnAbilitySystemInitialized.Broadcast();
 }
@@ -3780,4 +3788,61 @@ bool ABasePlayer::CanMutateLifeGameplay() const
   for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
    if (const ABasePlayerController* Flow = Cast<ABasePlayerController>(It->Get()); Flow && Flow->GetLifeCharacter() == this) return Flow->CanMutateGameplay();
  return !HasAuthority();
+}
+
+void ABasePlayer::SetMountedDamageMode(bool bEnabled)
+{
+ if (!HasAuthority() || bMountedDamageMode == bEnabled) return;
+ bMountedDamageMode = bEnabled;
+ if (bEnabled && CachedAbilitySystemComponent.IsValid())
+ {
+  FGameplayTagContainer HitReactionTags(GameplayAbility_HitReaction);
+  CachedAbilitySystemComponent->CancelAbilities(&HitReactionTags);
+ }
+ OnRep_MountedDamageMode();
+ ForceNetUpdate();
+}
+
+void ABasePlayer::FinalizeStartingInventory(bool bFreshInventory)
+{
+ if (!HasAuthority() || bStartingInventoryDecisionMade) return;
+ bStartingInventoryDecisionMade = true;
+ UE_LOG(LogSWRoom, Display, TEXT("[SWInventoryDiag] Event=StartingItemsDecision Player=%s Restored=%d Fresh=%d"), *GetName(), bInventoryProgressRestored, bFreshInventory);
+ if (InventoryComponent) InventoryComponent->LogInventoryDiagnostic(TEXT("StartingItemsBefore"), true);
+#if WITH_EDITOR
+ if (bFreshInventory) GiveStartingItemsForTest();
+#endif
+ if (InventoryComponent) InventoryComponent->LogInventoryDiagnostic(TEXT("StartingItemsAfter"), true);
+}
+
+void ABasePlayer::OnRep_MountedDamageMode()
+{
+ if (bMountedDamageMode)
+ {
+  if (!bMountedCollisionSaved)
+  {
+   SavedMountedCapsuleCollision = GetCapsuleComponent()->GetCollisionEnabled();
+   SavedMountedMeshCollision = GetMesh()->GetCollisionEnabled();
+   bMountedCollisionSaved = true;
+  }
+  SetActorEnableCollision(true);
+  GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+  GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+ }
+ else if (bMountedCollisionSaved)
+ {
+  GetCapsuleComponent()->SetCollisionEnabled(SavedMountedCapsuleCollision);
+  GetMesh()->SetCollisionEnabled(SavedMountedMeshCollision);
+  bMountedCollisionSaved = false;
+ }
+}
+
+void ABasePlayer::PrepareForHealthDeath()
+{
+ if (!HasAuthority() || !bMountedDamageMode) return;
+ UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=MountedLethalExitBegin Player=%s Parent=%s Health=%.3f"), *GetName(), *GetNameSafe(GetAttachParentActor()), HealthComponent ? HealthComponent->GetHealth() : 0.f);
+ if (ACannon* Cannon = Cast<ACannon>(GetAttachParentActor()); Cannon && Cannon->GetRidingPlayer() == this) Cannon->ForceExit();
+ else if (AShip* Ship = Cast<AShip>(GetAttachParentActor()); Ship && Ship->GetRidingPlayer() == this) Ship->ForceDisembark();
+ SetMountedDamageMode(false);
+ UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=MountedLethalExitComplete Player=%s Controller=%s Parent=%s"), *GetName(), *GetNameSafe(GetController()), *GetNameSafe(GetAttachParentActor()));
 }

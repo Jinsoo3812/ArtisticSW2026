@@ -1091,7 +1091,6 @@ protected:
 	void Disembark();
 	void UpdateHelmInteractionAvailability();
 	bool FindHelmStandingLocation(ACharacter* Character, FVector& OutStandingLocation) const;
-	void SetHelmRiderInvulnerable(bool bEnabled);
 	void HandleShipHealthChanged(const struct FOnAttributeChangeData& Data);
 	void TryActivateRepairPointAfterHit(float NewHealth);
 	void ApplyLeakDamageTick();
@@ -1125,7 +1124,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ship|Sinking", meta = (ClampMin = "0.0", Units = "s"))
 	float PlayerShipDestroyAfterSinkingDelay = 5.0f;
 
-	bool bHelmInvulnerabilityApplied = false;
 	FDelegateHandle ShipHealthChangedDelegateHandle;
 	FTimerHandle SinkingDestroyTimerHandle;
 	FSWRoomShipState PendingRoomState;

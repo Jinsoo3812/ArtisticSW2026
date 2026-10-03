@@ -1597,6 +1597,7 @@ bool ABasePlayerController::CaptureLatestLifeProgress(APawn* SourcePawn)
  LifeCharacter = LifePawnCharacter;
  if (!CleanupLifeInteraction()) return false;
  LifePawnCharacter->CaptureRoomProgress(LatestLifeProgress);
+ if (UInventoryComponent* Inventory = LifePawnCharacter->GetInventoryComponent()) Inventory->LogSnapshotDiagnostic(TEXT("LifeProgressCaptured"), LatestLifeProgress.InventorySlots);
  bHasLatestLifeProgress = true;
  return true;
 }
@@ -1670,8 +1671,10 @@ void ABasePlayerController::SetDeathFlowState(const FSWDeathFlowState& State)
 void ABasePlayerController::OnRep_DeathFlowState()
 {
  UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=DeathFlowReplicated Controller=%s Authority=%d Local=%d Phase=%d Session=%d RestoreGeneration=%d WaitingGeneration=%d EndTime=%.3f Target=%s Observation=%d HostMayRetry=%d Pawn=%s"), *GetName(), HasAuthority(), IsLocalController(), static_cast<int32>(DeathFlowState.Phase), static_cast<int32>(LocalSessionPhase), DeathFlowState.RestoreGeneration, DeathFlowState.WaitingGeneration, DeathFlowState.RespawnEndServerTime, *GetNameSafe(DeathFlowState.SpectatedPlayerState), DeathFlowState.ObservationGeneration, DeathFlowState.bHostMayRetry, *GetNameSafe(GetPawn()));
- if (LocalObservationGeneration != DeathFlowState.ObservationGeneration || LocalObservedPlayerState != DeathFlowState.SpectatedPlayerState)
+ if (LocalObservedRestoreGeneration != DeathFlowState.RestoreGeneration || LocalObservationGeneration != DeathFlowState.ObservationGeneration || LocalObservedPlayerState != DeathFlowState.SpectatedPlayerState)
  {
+  LocalObservedRestoreGeneration = DeathFlowState.RestoreGeneration;
+  ObservedCameraFrames.Reset();
   LocalObservationGeneration = DeathFlowState.ObservationGeneration; LocalObservedPlayerState = DeathFlowState.SpectatedPlayerState;
   bHasObservedPOV = false; LastObservedSequence = 0; LastReceiveTime = -1;
  }
@@ -1741,6 +1744,7 @@ void ABasePlayerController::ApplyLocalDeathFlow()
   SetInputMode(FInputModeGameOnly()); bShowMouseCursor = false;
   if (DeathFlowWidget) { DeathFlowWidget->RemoveFromParent(); DeathFlowWidget = nullptr; }
   bHasObservedPOV = false;
+  ObservedCameraFrames.Reset();
  }
 }
 void ABasePlayerController::TickDeathFlow(float DeltaTime)
@@ -1811,6 +1815,7 @@ void ABasePlayerController::TickDeathFlow(float DeltaTime)
 }
 void ABasePlayerController::UpdateCameraManager(float DeltaSeconds)
 {
+	UpdateObservedCamera();
 	Super::UpdateCameraManager(DeltaSeconds);
 	if (!IsLocalController() || !GetWorld() || !PlayerCameraManager || !IsLifeCharacterAlive())
 	{
@@ -1826,13 +1831,14 @@ void ABasePlayerController::UpdateCameraManager(float DeltaSeconds)
 	}
 
 	const double Now = GetWorld()->GetTimeSeconds();
-	if (bCameraPublishing && Now - LastPublishTime >= .05)
+	if (bCameraPublishing && Now - LastPublishTime >= 1. / 30.)
 	{
 		LastPublishTime = Now;
 		FSWObservedCameraFrame Frame;
 		Frame.Location = POV.Location;
 		Frame.Rotation = POV.Rotation;
 		Frame.FOV = POV.FOV;
+		Frame.SampleServerTime = GetWorld()->GetGameState() ? GetWorld()->GetGameState()->GetServerWorldTimeSeconds() : Now;
 		Frame.RestoreGeneration = PublishRestoreGeneration;
 		Frame.ObservationGeneration = PublishObservationGeneration;
 		Frame.Sequence = ++CameraSequence;
@@ -1852,7 +1858,8 @@ void ABasePlayerController::ServerPublishObservedCamera_Implementation(const FSW
  if (!bCameraPublishing || !IsLifeCharacterAlive() || Frame.RestoreGeneration != PublishRestoreGeneration
   || Frame.ObservationGeneration != PublishObservationGeneration || Frame.Sequence <= LastAcceptedSequence
   || Frame.Location.ContainsNaN() || Frame.Rotation.ContainsNaN() || !FMath::IsFinite(Frame.FOV) || Frame.FOV < 5 || Frame.FOV > 170
-  || Now - LastServerCameraTime < 1. / 30.) return;
+  || !FMath::IsFinite(Frame.SampleServerTime) || Frame.SampleServerTime < Now - 2. || Frame.SampleServerTime > Now + .5
+  || Now - LastServerCameraTime < 1. / 60.) return;
  LastAcceptedSequence = Frame.Sequence; LastServerCameraTime = Now;
  if (Frame.Sequence == 1) UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=CameraFirstServerFrame Controller=%s Restore=%d Observation=%d Location=%s"), *GetName(), Frame.RestoreGeneration, Frame.ObservationGeneration, *FVector(Frame.Location).ToString());
  FSWObservedCameraFrame Validated = Frame; Validated.SourcePlayerState = PlayerState;
@@ -1868,9 +1875,40 @@ void ABasePlayerController::ClientReceiveObservedCamera_Implementation(const FSW
   || Frame.SourcePlayerState != DeathFlowState.SpectatedPlayerState || DeathFlowState.Phase != ESWPersonalLifePhase::WaitingForRespawn) return;
  ApplyLocalDeathFlow();
  if (!DeathCamera) return;
+ if (!ObservedCameraFrames.IsEmpty())
+ {
+  const FSWObservedCameraFrame& Previous = ObservedCameraFrames.Last();
+  if (Frame.SampleServerTime <= Previous.SampleServerTime) return;
+  if (FVector::DistSquared(Frame.Location, Previous.Location) > FMath::Square(2000.f))
+  {
+   ObservedCameraFrames.Reset();
+   UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=ObservedCameraCut Controller=%s Sequence=%u"), *GetName(), Frame.Sequence);
+  }
+ }
  if (!bHasObservedPOV) UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=CameraFirstObserverFrame Controller=%s Source=%s Sequence=%u Location=%s FOV=%.3f"), *GetName(), *GetNameSafe(Frame.SourcePlayerState), Frame.Sequence, *FVector(Frame.Location).ToString(), Frame.FOV);
- DeathCamera->SetActorLocationAndRotation(Frame.Location, Frame.Rotation); DeathCamera->GetCameraComponent()->SetFieldOfView(Frame.FOV);
+ if (ObservedCameraFrames.IsEmpty())
+ {
+  DeathCamera->SetActorLocationAndRotation(Frame.Location, Frame.Rotation);
+  DeathCamera->GetCameraComponent()->SetFieldOfView(Frame.FOV);
+ }
+ ObservedCameraFrames.Add(Frame);
+ if (ObservedCameraFrames.Num() > 16) ObservedCameraFrames.RemoveAt(0, ObservedCameraFrames.Num() - 16);
  LastObservedSequence = Frame.Sequence; bHasObservedPOV = true; LastReceiveTime = GetWorld()->GetTimeSeconds();
+}
+
+void ABasePlayerController::UpdateObservedCamera()
+{
+ if (!IsLocalController() || !GetWorld() || !DeathCamera || ObservedCameraFrames.IsEmpty()
+  || DeathFlowState.Phase != ESWPersonalLifePhase::WaitingForRespawn) return;
+ const double ServerTime = GetWorld()->GetGameState() ? GetWorld()->GetGameState()->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
+ const double RenderTime = ServerTime - .1;
+ while (ObservedCameraFrames.Num() > 2 && ObservedCameraFrames[1].SampleServerTime <= RenderTime) ObservedCameraFrames.RemoveAt(0);
+ const FSWObservedCameraFrame& A = ObservedCameraFrames[0];
+ const FSWObservedCameraFrame& B = ObservedCameraFrames.Num() > 1 ? ObservedCameraFrames[1] : A;
+ const double Interval = B.SampleServerTime - A.SampleServerTime;
+ const float Alpha = Interval > 0. ? FMath::Clamp(static_cast<float>((RenderTime - A.SampleServerTime) / Interval), 0.f, 1.f) : 0.f;
+ DeathCamera->SetActorLocationAndRotation(FMath::Lerp(FVector(A.Location), FVector(B.Location), Alpha), FQuat::Slerp(A.Rotation.Quaternion(), B.Rotation.Quaternion(), Alpha));
+ DeathCamera->GetCameraComponent()->SetFieldOfView(FMath::Lerp(A.FOV, B.FOV, Alpha));
 }
 void ABasePlayerController::RequestGameOverRetry()
 {

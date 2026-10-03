@@ -23,6 +23,9 @@ class CLASSFEATURE_API UGA_PlayerHitReaction : public UBaseHitReactionGameplayAb
 	GENERATED_BODY()
 
 protected:
+	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr,
+		const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 	virtual void OnHitReactionActivated(
 		const FGameplayEventData& TriggerEventData,
 		float DamageAmount,

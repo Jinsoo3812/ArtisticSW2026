@@ -11,6 +11,40 @@
 #include "Engine/Engine.h"
 #include "Storage/StorageComponent.h"
 #include "BaseGameplayTags.h"
+#include "Misc/Crc.h"
+#include "Room/SWRoomProgressSubsystem.h"
+#include "MultiGameMode.h"
+#include "Network/SWNetworkLog.h"
+
+void UInventoryComponent::LogSnapshotDiagnostic(const TCHAR* Event, const TArray<FSWInventorySlotSnapshot>& Slots, bool bDetailed) const
+{
+ TArray<FSWInventorySlotSnapshot> Sorted = Slots;
+ Sorted.Sort([](const FSWInventorySlotSnapshot& A, const FSWInventorySlotSnapshot& B)
+ { return A.Tab == B.Tab ? A.SlotIndex < B.SlotIndex : A.Tab < B.Tab; });
+ FString Contents;
+ int32 Occupied = 0; int64 Total = 0;
+ for (const FSWInventorySlotSnapshot& Slot : Sorted)
+ {
+  if (!Slot.ItemTag.IsValid() || Slot.Count <= 0) continue;
+  ++Occupied; Total += Slot.Count;
+  Contents += FString::Printf(TEXT("%u:%d:%s:%d;"), Slot.Tab, Slot.SlotIndex, *Slot.ItemTag.ToString(), Slot.Count);
+  if (bDetailed) UE_LOG(LogSWRoom, Display, TEXT("[SWInventoryDiag] Event=%s Owner=%s Authority=%d Tab=%u Slot=%d Item=%s Count=%d"), Event, *GetNameSafe(GetOwner()), GetOwner() && GetOwner()->HasAuthority(), Slot.Tab, Slot.SlotIndex, *Slot.ItemTag.ToString(), Slot.Count);
+ }
+ const USWRoomProgressSubsystem* Room = GetWorld() && GetWorld()->GetGameInstance() ? GetWorld()->GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+ const ABasePlayer* Player = Cast<ABasePlayer>(GetOwner());
+ const AController* Controller = Player ? Player->GetController() : nullptr;
+ const AMultiGameMode* Mode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+ UE_LOG(LogSWRoom, Display, TEXT("[SWInventoryDiag] Event=%s Owner=%s Authority=%d Controller=%s PlayerSlot=%d Restore=%d Occupied=%d Total=%lld Hash=%08X Slots=%d Cursor=%s CursorCount=%d"),
+  Event, *GetNameSafe(GetOwner()), GetOwner() && GetOwner()->HasAuthority(), *GetNameSafe(Controller), Mode && Controller ? Mode->GetPlayerIndex(const_cast<AController*>(Controller)) : INDEX_NONE,
+  Room ? Room->GetRestoreGeneration() : 0, Occupied, Total, FCrc::StrCrc32(*Contents), Sorted.Num(), *CursorItem.ItemTag.ToString(), CursorItem.Count);
+}
+
+void UInventoryComponent::LogInventoryDiagnostic(const TCHAR* Event, bool bDetailed) const
+{
+ TArray<FSWInventorySlotSnapshot> Slots;
+ CaptureProgressSnapshot(Slots);
+ LogSnapshotDiagnostic(Event, Slots, bDetailed);
+}
 
 namespace
 {
@@ -148,6 +182,7 @@ void UInventoryComponent::OnRep_InventoryContents()
         InventorySlots = Page->Slots;
     }
     OnInventoryChanged.Broadcast();
+    if (GetOwner() && !GetOwner()->HasAuthority()) LogInventoryDiagnostic(TEXT("ClientInventoryReplicated"));
 }
 
 void UInventoryComponent::InitializeInventoryPages()
@@ -236,6 +271,8 @@ void UInventoryComponent::CaptureProgressSnapshot(TArray<FSWInventorySlotSnapsho
 void UInventoryComponent::RestoreProgressSnapshot(const TArray<FSWInventorySlotSnapshot>& InSlots)
 {
 	if (GetOwner() && !GetOwner()->HasAuthority()) return;
+	LogSnapshotDiagnostic(TEXT("RestoreExpected"), InSlots);
+	LogInventoryDiagnostic(TEXT("RestoreBefore"), true);
 	InitializeInventoryPages();
 	for (FInventoryTabPage& Page : InventoryPages)
 	{
@@ -245,11 +282,16 @@ void UInventoryComponent::RestoreProgressSnapshot(const TArray<FSWInventorySlotS
 	for (const FSWInventorySlotSnapshot& Saved : InSlots)
 	{
 		FInventoryTabPage* Page = FindMutablePage(static_cast<EInventoryTab>(Saved.Tab));
-		if (!Page || !Page->Slots.IsValidIndex(Saved.SlotIndex) || !Saved.ItemTag.IsValid() || Saved.Count <= 0) continue;
+		if (!Page || !Page->Slots.IsValidIndex(Saved.SlotIndex) || !Saved.ItemTag.IsValid() || Saved.Count <= 0)
+		{
+			if (Saved.ItemTag.IsValid() || Saved.Count != 0) UE_LOG(LogSWRoom, Error, TEXT("[SWInventoryDiag] Event=RestoreSkipped Owner=%s Tab=%u Slot=%d Item=%s Count=%d"), *GetNameSafe(GetOwner()), Saved.Tab, Saved.SlotIndex, *Saved.ItemTag.ToString(), Saved.Count);
+			continue;
+		}
 		Page->Slots[Saved.SlotIndex].ItemTag = Saved.ItemTag;
 		Page->Slots[Saved.SlotIndex].Count = Saved.Count;
 	}
 	OnRep_InventoryContents();
+	LogInventoryDiagnostic(TEXT("RestoreAfter"), true);
 }
 
 int32 UInventoryComponent::GetSlotCount(EInventoryTab Tab) const
