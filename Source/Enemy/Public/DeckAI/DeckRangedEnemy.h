@@ -28,7 +28,8 @@ public:
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	void PrepareForPool();
-	bool ActivateFromPool(AEnemyShip* InHostShip, int32 InitialWaypointId, int32 RandomSeed);
+	bool ActivateFromPool(AEnemyShip* InHostShip, int32 InitialWaypointId, int32 RandomSeed,
+		const FTransform* ReservedTransform = nullptr);
 	void DeactivateToPool();
 	void ResetToFreshPoolState();
 

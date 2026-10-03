@@ -17,6 +17,16 @@ UCLASS(abstract)
 class ARTISTICSW2026_API AArtisticSW2026PlayerController : public APlayerController
 {
 	GENERATED_BODY()
+
+public:
+	UFUNCTION(Exec)
+	void SWConnect(const FString& Address);
+
+	UFUNCTION(Exec)
+	void SWDisconnect();
+
+	UFUNCTION(Exec)
+	void SWConnectionStatus() const;
 	
 protected:
 

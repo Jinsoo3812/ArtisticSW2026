@@ -2,7 +2,21 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "EnemyShipTimeStopProjectile.generated.h"
+
+USTRUCT()
+struct FSWRoomTimeStopProjectileState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FGuid SourceShipId;
+	UPROPERTY(SaveGame) FSoftClassPath FieldClass;
+	UPROPERTY(SaveGame) float EffectRadius = 0.f;
+	UPROPERTY(SaveGame) float EffectDurationSeconds = 0.f;
+	UPROPERTY(SaveGame) float RemainingLife = 0.f;
+	UPROPERTY(SaveGame) float GravityScale = 0.f;
+	UPROPERTY(SaveGame) bool bImpactHandled = false;
+};
 
 class AEnemyShipTimeStopField;
 class AEnemyShip;
@@ -15,12 +29,18 @@ class UStaticMeshComponent;
 
 /** Independent straight-line skill projectile; intentionally does not derive from ACannonball. */
 UCLASS(Blueprintable)
-class ENEMY_API AEnemyShipTimeStopProjectile : public AActor
+class ENEMY_API AEnemyShipTimeStopProjectile : public AActor, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	AEnemyShipTimeStopProjectile();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomTimeStopProjectileState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 	void InitializeTimeStopProjectile(
 		AEnemyShip* InSourceShip,
@@ -95,4 +115,6 @@ private:
 	float EffectRadius = 1500.0f;
 	float EffectDurationSeconds = 3.0f;
 	bool bImpactHandled = false;
+	FSWRoomTimeStopProjectileState PendingRoomState;
+	bool bHasPendingRoomState = false;
 };

@@ -102,6 +102,8 @@ private:
 	const FRuntimeOverride* FindWinningOverride() const;
 	void ApplyControl(const FEnemyShipNavigationOutput& BaseOutput);
 	void UpdateAvoidance(float DeltaTime);
+	void UpdateTerrainAvoidance(float DeltaTime);
+	void ResetTerrainAvoidance();
 	void ResetAvoidance();
 	void StopOwnerShip();
 
@@ -128,6 +130,19 @@ private:
 	bool bAvoidanceOverridesTurn = false;
 	float AvoidanceTurnInput = 0.0f;
 	TWeakObjectPtr<AActor> AvoidanceThreatActor;
+	TArray<TWeakObjectPtr<AActor>> WaterBodies;
+	bool bTerrainAvoidanceActive = false;
+	bool bTerrainBothSidesBlocked = false;
+	bool bTerrainOverlapping = false;
+	bool bTerrainOverlapReverseExhausted = false;
+	float TerrainMoveInput = 0.0f;
+	float TerrainTurnInput = 0.0f;
+	float TerrainTurnMinimumRemaining = 0.0f;
+	float TerrainClearElapsed = 0.0f;
+	float TerrainOverlapReverseRemaining = 0.0f;
+	float TerrainEvaluationAccumulator = 0.0f;
+	int32 TerrainSelectedSide = 0;
+	TWeakObjectPtr<AActor> TerrainThreatActor;
 	UPROPERTY(Replicated)
 	bool bNavigationEnabled = true;
 };

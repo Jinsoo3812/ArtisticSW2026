@@ -12,9 +12,11 @@
 #include "Ship.h"
 #include "ShipAI/Abilities/EnemyShipTimeStopField.h"
 #include "ShipAI/EnemyShip.h"
+#include "Room/SWRoomSnapshotComponent.h"
 
 AEnemyShipTimeStopProjectile::AEnemyShipTimeStopProjectile()
 {
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
 	bAlwaysRelevant = true;
@@ -168,4 +170,77 @@ void AEnemyShipTimeStopProjectile::MulticastSpawnExplosionEffect_Implementation(
 			GetWorld(), Effect, Location, Rotation, UniformScale,
 			LifetimeScale, PlaybackSpeed, true);
 	}
+}
+
+void AEnemyShipTimeStopProjectile::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	FSWRoomTimeStopProjectileState State;
+	if (SourceShip)
+		if (const USWRoomSnapshotComponent* Id = SourceShip->FindComponentByClass<USWRoomSnapshotComponent>())
+			State.SourceShipId = Id->StableId;
+	State.FieldClass = FieldClass ? FSoftClassPath(FieldClass.Get()) : FSoftClassPath();
+	State.EffectRadius = EffectRadius;
+	State.EffectDurationSeconds = EffectDurationSeconds;
+	State.RemainingLife = GetLifeSpan();
+	State.GravityScale = ProjectileMovement ? ProjectileMovement->ProjectileGravityScale : 0.f;
+	State.bImpactHandled = bImpactHandled;
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Projectile;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Projectile");
+		Issue.FieldKey = TEXT("TimeStopProjectile");
+		Issue.Reason = TEXT("Time-stop projectile serialization failed");
+	}
+}
+
+bool AEnemyShipTimeStopProjectile::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	FSWRoomTimeStopProjectileState State;
+	if (Part.Domain != ESWRoomDomain::Projectile || Part.Version != 1 || !FSWRoomStructCodec::Read(Part.Bytes, State)
+		|| !FMath::IsFinite(State.EffectRadius) || State.EffectRadius <= 0.f
+		|| !FMath::IsFinite(State.EffectDurationSeconds) || State.EffectDurationSeconds <= 0.f
+		|| !FMath::IsFinite(State.RemainingLife) || State.RemainingLife < 0.f
+		|| !FMath::IsFinite(State.GravityScale))
+	{
+		OutError = TEXT("Invalid time-stop projectile state");
+		return false;
+	}
+	if (!State.FieldClass.IsNull())
+	{
+		FieldClass = State.FieldClass.TryLoadClass<AEnemyShipTimeStopField>();
+		if (!FieldClass)
+		{
+			OutError = TEXT("Time-stop field class missing");
+			return false;
+		}
+	}
+	EffectRadius = State.EffectRadius;
+	EffectDurationSeconds = State.EffectDurationSeconds;
+	bImpactHandled = State.bImpactHandled;
+	if (ProjectileMovement) ProjectileMovement->ProjectileGravityScale = State.GravityScale;
+	PendingRoomState = State;
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool AEnemyShipTimeStopProjectile::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	SourceShip = nullptr;
+	if (AActor* const* Found = RegisteredActors.Find(PendingRoomState.SourceShipId)) SourceShip = Cast<AEnemyShip>(*Found);
+	if (Collision)
+	{
+		Collision->SetCollisionObjectType(ECC_GameTraceChannel3);
+		Collision->SetCollisionResponseToAllChannels(ECR_Ignore);
+		Collision->SetCollisionResponseToChannel(ECC_ShipDamage, ECR_Block);
+		if (SourceShip) Collision->IgnoreActorWhenMoving(SourceShip, true);
+		Collision->SetCollisionEnabled(bImpactHandled ? ECollisionEnabled::NoCollision : ECollisionEnabled::QueryOnly);
+	}
+	SetLifeSpan(FMath::Max(KINDA_SMALL_NUMBER, PendingRoomState.RemainingLife));
+	return true;
 }

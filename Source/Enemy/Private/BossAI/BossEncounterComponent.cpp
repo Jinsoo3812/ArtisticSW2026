@@ -14,11 +14,74 @@
 #include "Storage/StorageChest.h"
 #include "ItemSpawn/LootSpawnPoint.h"
 #include "Engine/GameInstance.h"
+#include "Room/SWRoomSnapshotComponent.h"
+#include "Room/SWRoomSnapshotSubsystem.h"
 
 UBossEncounterComponent::UBossEncounterComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
+}
+
+void UBossEncounterComponent::CaptureRoomState(FSWRoomBossEncounterState& OutState, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	OutState.bEncounterEnabled = bEncounterEnabled;
+	OutState.EncounterState = static_cast<uint8>(EncounterState);
+	OutState.BossSpawnPointId = BossSpawnPointId;
+	OutState.BossClass = BossClass ? FSoftClassPath(BossClass.Get()) : FSoftClassPath();
+	if (const USWRoomSnapshotComponent* Id = SpawnedBoss ? SpawnedBoss->FindComponentByClass<USWRoomSnapshotComponent>() : nullptr)
+		OutState.BossId = Id->StableId;
+	if (const USWRoomSnapshotComponent* Id = EnemyItemBox ? EnemyItemBox->FindComponentByClass<USWRoomSnapshotComponent>() : nullptr)
+		OutState.ItemBoxId = Id->StableId;
+	if (SpawnedBoss && !OutState.BossId.IsValid())
+	{
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Spawner");
+		Issue.FieldKey = TEXT("BossId");
+		Issue.Reason = TEXT("Boss encounter actor has no stable ID");
+	}
+}
+
+bool UBossEncounterComponent::RestoreRoomState(const FSWRoomBossEncounterState& State, FString& OutError)
+{
+	if (State.EncounterState > static_cast<uint8>(EBossEncounterState::Failed)
+		|| State.BossClass != (BossClass ? FSoftClassPath(BossClass.Get()) : FSoftClassPath())
+		|| State.BossSpawnPointId != BossSpawnPointId)
+	{
+		OutError = TEXT("Boss encounter definition changed or state invalid");
+		return false;
+	}
+	bEncounterEnabled = State.bEncounterEnabled;
+	EncounterState = static_cast<EBossEncounterState>(State.EncounterState);
+	SpawnedBoss = nullptr;
+	PendingRoomState = State;
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool UBossEncounterComponent::FinalizeRoomState(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	if (PendingRoomState.BossId.IsValid())
+	{
+		AActor* const* Found = RegisteredActors.Find(PendingRoomState.BossId);
+		SpawnedBoss = Found ? Cast<AShipBossEnemy>(*Found) : nullptr;
+		if (!SpawnedBoss)
+		{
+			OutError = FString::Printf(TEXT("Boss encounter actor missing: %s"), *PendingRoomState.BossId.ToString());
+			return false;
+		}
+		if (SpawnedBoss->GetHealthComponent())
+			SpawnedBoss->GetHealthComponent()->OnDeathStarted.AddUniqueDynamic(this, &UBossEncounterComponent::HandleBossDeathStarted);
+	}
+	if (PendingRoomState.ItemBoxId.IsValid())
+	{
+		AActor* const* Found = RegisteredActors.Find(PendingRoomState.ItemBoxId);
+		EnemyItemBox = Found ? Cast<AStorageChest>(*Found) : nullptr;
+	}
+	UpdateBossReservation();
+	return true;
 }
 
 void UBossEncounterComponent::BeginPlay()
@@ -154,6 +217,8 @@ bool UBossEncounterComponent::NotifyPlayerShipSighted(AShip* SensedPlayerShip)
 bool UBossEncounterComponent::TryStartEncounter(AActor* TriggerActor)
 {
 	if (!bEncounterEnabled || !GetOwner() || !GetOwner()->HasAuthority()
+		|| (Cast<AEnemyShip>(GetOwner()) && Cast<AEnemyShip>(GetOwner())->IsStoryGateDormant())
+		|| GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()
 		|| EncounterState != EBossEncounterState::Waiting
 		|| !IsCampaignGateOpen()
 		|| (EncounterTrigger == EBossEncounterTrigger::ItemBoxInteraction && !ResolveTriggerChestPoint())

@@ -24,7 +24,7 @@ float USWRippleWaterWaves::GetMaxWaveHeight() const
 	return MaxHeight + 100.0f;
 }
 
-float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, float InWaterDepth, float InTime, FVector& OutNormal) const
+float USWRippleWaterWaves::ResolveQueryTime(float InTime) const
 {
 	float SyncTime = InTime;
 	UWorld* World = GetWorld();
@@ -41,6 +41,13 @@ float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, fl
 			}
 		}
 	}
+	return SyncTime;
+}
+
+float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, float InWaterDepth, float InTime, FVector& OutNormal) const
+{
+	const float SyncTime = ResolveQueryTime(InTime);
+	UWorld* World = GetWorld();
 
 	float Height = 0.0f;
 	if (BaseWavesAsset)
@@ -82,19 +89,8 @@ float USWRippleWaterWaves::GetWaveHeightAtPosition(const FVector& InPosition, fl
 
 float USWRippleWaterWaves::GetSimpleWaveHeightAtPosition(const FVector& InPosition, float InWaterDepth, float InTime) const
 {
-	float SyncTime = InTime;
+	const float SyncTime = ResolveQueryTime(InTime);
 	UWorld* World = GetWorld();
-	if (World)
-	{
-		float TimeSeconds = World->GetTimeSeconds();
-		if (FMath::IsNearlyEqual(InTime, TimeSeconds, 0.001f))
-		{
-			if (AGameStateBase* GameState = World->GetGameState())
-			{
-				SyncTime = GameState->GetServerWorldTimeSeconds();
-			}
-		}
-	}
 
 	float Height = 0.0f;
 	if (BaseWavesAsset)

@@ -40,6 +40,9 @@ void AClusterGrenadeProjectile::OnProjectileHit(UPrimitiveComponent* HitComponen
 
 void AClusterGrenadeProjectile::Explode()
 {
+	if (!HasAuthority() || bExploded) return;
+	bExploded = true;
+	GetWorldTimerManager().ClearTimer(ExplodeTimerHandle);
 	if (HasAuthority())
 	{
 		Split();
@@ -49,6 +52,22 @@ void AClusterGrenadeProjectile::Explode()
 	// Multicast_OnExploded();
 
 	Destroy();
+}
+
+void AClusterGrenadeProjectile::CaptureGrenadeSubclassState(FSWRoomGrenadeState& State) const
+{
+	State.SubMunitionClass = SubMunitionClass ? FSoftClassPath(SubMunitionClass.Get()) : FSoftClassPath();
+	State.SubMunitionCount = SubMunitionCount;
+	State.SpreadAngle = SpreadAngle;
+	State.SubMunitionLaunchSpeed = SubMunitionLaunchSpeed;
+}
+
+void AClusterGrenadeProjectile::RestoreGrenadeSubclassState(const FSWRoomGrenadeState& State)
+{
+	SubMunitionClass = State.SubMunitionClass.IsNull() ? nullptr : State.SubMunitionClass.TryLoadClass<ASubMunitionProjectile>();
+	SubMunitionCount = State.SubMunitionCount;
+	SpreadAngle = State.SpreadAngle;
+	SubMunitionLaunchSpeed = State.SubMunitionLaunchSpeed;
 }
 
 void AClusterGrenadeProjectile::Split()

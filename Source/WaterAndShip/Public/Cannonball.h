@@ -4,7 +4,30 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "Cannonball.generated.h"
+
+USTRUCT()
+struct FSWRoomCannonballState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FGuid LaunchingShipId;
+	UPROPERTY(SaveGame) bool bEnemyTeam = false;
+	UPROPERTY(SaveGame) float DamageAmount = 0.f;
+	UPROPERTY(SaveGame) FSoftClassPath DamageEffectClass;
+	UPROPERTY(SaveGame) bool bHasHitWater = false;
+	UPROPERTY(SaveGame) bool bHasProcessedShipHit = false;
+	UPROPERTY(SaveGame) bool bHasProcessedBlockingImpact = false;
+	UPROPERTY(SaveGame) bool bHasDesignatedImpact = false;
+	UPROPERTY(SaveGame) FVector DesignatedImpactLocation = FVector::ZeroVector;
+	UPROPERTY(SaveGame) float DesignatedImpactTolerance = 75.f;
+	UPROPERTY(SaveGame) float GravityScale = 1.f;
+	UPROPERTY(SaveGame) bool bWaterTimerPending = false;
+	UPROPERTY(SaveGame) float WaterTimerRemaining = 0.f;
+	UPROPERTY(SaveGame) bool bIsWaterBomb = false;
+	UPROPERTY(SaveGame) float WaterBombDuration = 0.f;
+	UPROPERTY(SaveGame) float WaterBombAttackSpeedMultiplier = 1.f;
+};
 
 class USphereComponent;
 class UStaticMeshComponent;
@@ -15,13 +38,19 @@ class UGameplayEffect;
 class UNiagaraSystem;
 
 UCLASS()
-class WATERANDSHIP_API ACannonball : public AActor
+class WATERANDSHIP_API ACannonball : public AActor, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 	friend class URippleSubsystem;
 	
 public:	
 	ACannonball();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomCannonballState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
@@ -181,6 +210,10 @@ private:
 	FVector PreviousProjectileLocation = FVector::ZeroVector;
 	float DesignatedImpactTolerance = 75.0f;
 	FTimerHandle WaterHitTimerHandle;
+	FSWRoomCannonballState PendingRoomState;
+	bool bHasPendingRoomState = false;
+	bool bHasSavedTeam = false;
+	bool bSavedEnemyTeam = false;
 	FVector PreviousWaterProbeLocation = FVector::ZeroVector;
 	float PreviousWaterProbeSurfaceZ = 0.0f;
 	bool bHasPreviousWaterProbe = false;

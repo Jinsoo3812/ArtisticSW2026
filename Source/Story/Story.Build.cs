@@ -10,7 +10,8 @@ public class Story : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"GameplayTags",
-			"NetCore"
+			"NetCore",
+			"ArtisticSWCore"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]

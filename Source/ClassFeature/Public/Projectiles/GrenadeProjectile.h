@@ -3,17 +3,42 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "GameplayEffectTypes.h" 
+#include "Room/SWRoomStateAdapter.h"
 #include "GrenadeProjectile.generated.h"
+
+USTRUCT()
+struct FSWRoomGrenadeState
+{
+    GENERATED_BODY()
+    UPROPERTY(SaveGame) float ExplosionDelay = 0.f;
+    UPROPERTY(SaveGame) float ExplosionRadius = 0.f;
+    UPROPERTY(SaveGame) float RemainingTime = 0.f;
+    UPROPERTY(SaveGame) bool bExploded = false;
+    UPROPERTY(SaveGame) FSoftClassPath DamageEffectClass;
+    UPROPERTY(SaveGame) float DamageEffectLevel = 1.f;
+    UPROPERTY(SaveGame) TArray<FSWRoomSetByCallerTagValue> DamageTagMagnitudes;
+    UPROPERTY(SaveGame) TArray<FSWRoomSetByCallerNameValue> DamageNameMagnitudes;
+    UPROPERTY(SaveGame) FSoftClassPath SubMunitionClass;
+    UPROPERTY(SaveGame) int32 SubMunitionCount = 0;
+    UPROPERTY(SaveGame) float SpreadAngle = 0.f;
+    UPROPERTY(SaveGame) float SubMunitionLaunchSpeed = 0.f;
+};
 
 class UProjectileMovementComponent;
 
 UCLASS()
-class CLASSFEATURE_API AGrenadeProjectile : public AActor
+class CLASSFEATURE_API AGrenadeProjectile : public AActor, public ISWRoomStateAdapter
 {
     GENERATED_BODY()
 
 public:
     AGrenadeProjectile();
+    virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+    virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+    virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+        float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+    { return FSWRoomStructCodec::Compare<FSWRoomGrenadeState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+    virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 protected:
     virtual void BeginPlay() override;
@@ -52,4 +77,11 @@ public:
 
     // 동적으로 스태틱 메시를 교체하는 함수
     void SetGrenadeMesh(UStaticMesh* InMesh);
+protected:
+    virtual void CaptureGrenadeSubclassState(FSWRoomGrenadeState& State) const {}
+    virtual void RestoreGrenadeSubclassState(const FSWRoomGrenadeState& State) {}
+    FTimerHandle ExplodeTimerHandle;
+    bool bExploded = false;
+    FSWRoomGrenadeState PendingRoomState;
+    bool bHasPendingRoomState = false;
 };

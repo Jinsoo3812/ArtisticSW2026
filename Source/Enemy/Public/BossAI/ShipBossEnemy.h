@@ -6,6 +6,22 @@
 #include "DeckAI/DeckWaypointMovementInterface.h"
 #include "ShipBossEnemy.generated.h"
 
+USTRUCT()
+struct FSWRoomShipBossState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FGuid HostShipId;
+	UPROPERTY(SaveGame) int32 CurrentPointId = INDEX_NONE;
+	UPROPERTY(SaveGame) int32 PreviousPointId = INDEX_NONE;
+	UPROPERTY(SaveGame) int32 DestinationPointId = INDEX_NONE;
+	UPROPERTY(SaveGame) FGameplayTag BossAIState;
+	UPROPERTY(SaveGame) bool bStunHealthThresholdConsumed = false;
+	UPROPERTY(SaveGame) int32 PendingBalanceSummons = 0;
+	UPROPERTY(SaveGame) TArray<int32> ConsumedSummonThresholds;
+	UPROPERTY(SaveGame) float SummonCooldownRemaining = 0.f;
+	UPROPERTY(SaveGame) TArray<FGuid> SummonedEnemyIds;
+};
+
 class AEnemyShip;
 class ADeckEnemy;
 class UBossBasicAttackSet;
@@ -20,6 +36,16 @@ class ENEMY_API AShipBossEnemy : public ABaseEnemy, public IDeckWaypointMovement
 
 public:
 	AShipBossEnemy();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{
+		return Expected.Domain == ESWRoomDomain::Enemy
+			? ABaseEnemy::CompareRoomDomain(Expected, Actual, TimeToleranceSeconds, OutFields)
+			: FSWRoomStructCodec::Compare<FSWRoomShipBossState>(Expected, Actual, TimeToleranceSeconds, OutFields);
+	}
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Balance", meta = (RowType = "/Script/Enemy.EnemyEncounterBalanceRow"))
 	FDataTableRowHandle EncounterBalanceRow;
 	/** Exact ranged BP class already allocated by the host's SpawnPlan. */
@@ -191,4 +217,6 @@ protected:
 
 	ECollisionEnabled::Type InitialCapsuleCollision = ECollisionEnabled::QueryAndPhysics;
 	bool bHiddenRelocationActive = false;
+	FSWRoomShipBossState PendingRoomState;
+	bool bHasPendingRoomState = false;
 };

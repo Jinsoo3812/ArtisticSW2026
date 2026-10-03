@@ -65,6 +65,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Story")
 	bool CompleteStoryNode(EStoryNode Node);
 
+	/** Development departure commits the real final quest without fabricating earlier completions. */
+	bool ActivateDevelopmentFinalBattle();
+
 	/** True from completion onward, including after save/load and replication. */
 	UFUNCTION(BlueprintPure, Category = "Story")
 	bool IsStoryNodeReached(EStoryNode Node) const;

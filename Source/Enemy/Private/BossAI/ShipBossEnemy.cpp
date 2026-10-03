@@ -1,4 +1,5 @@
 #include "BossAI/ShipBossEnemy.h"
+#include "Room/SWRoomSnapshotComponent.h"
 #include "Components/StatusComponent.h"
 #include "Components/CombatHurtboxComponent.h"
 #include "GAS/Ability/Boss/BossStunEffects.h"
@@ -733,4 +734,94 @@ bool AShipBossEnemy::IsExclusiveBossAIState(FGameplayTag StateTag) const
 	return StateTag == AI_State_Boss_Intro
 		|| StateTag == AI_State_Boss_Combat
 		|| StateTag == AI_State_Boss_Dead;
+}
+
+void AShipBossEnemy::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	ABaseEnemy::CaptureRoomDomains(OutParts, OutIssues);
+	FSWRoomShipBossState State;
+	if (HostShip)
+		if (const USWRoomSnapshotComponent* Id = HostShip->FindComponentByClass<USWRoomSnapshotComponent>())
+			State.HostShipId = Id->StableId;
+	State.CurrentPointId = CurrentPointId;
+	State.PreviousPointId = PreviousPointId;
+	State.DestinationPointId = DestinationPointId;
+	State.bStunHealthThresholdConsumed = bStunHealthThresholdConsumed;
+	State.PendingBalanceSummons = PendingBalanceSummons;
+	for (int32 Threshold : ConsumedSummonThresholds) State.ConsumedSummonThresholds.Add(Threshold);
+	State.ConsumedSummonThresholds.Sort();
+	State.SummonCooldownRemaining = GetWorld() ? FMath::Max(0.0, NextSummonAllowedTime - GetWorld()->GetTimeSeconds()) : 0.f;
+	if (const UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		if (ASC->HasMatchingGameplayTag(AI_State_Boss_Dead)) State.BossAIState = AI_State_Boss_Dead;
+		else if (ASC->HasMatchingGameplayTag(AI_State_Boss_Combat)) State.BossAIState = AI_State_Boss_Combat;
+		else if (ASC->HasMatchingGameplayTag(AI_State_Boss_Intro)) State.BossAIState = AI_State_Boss_Intro;
+	}
+	for (const TWeakObjectPtr<ADeckEnemy>& Enemy : SummonedDeckEnemies)
+		if (Enemy.IsValid())
+			if (const USWRoomSnapshotComponent* Id = Enemy->FindComponentByClass<USWRoomSnapshotComponent>(); Id && Id->StableId.IsValid())
+				State.SummonedEnemyIds.AddUnique(Id->StableId);
+	State.SummonedEnemyIds.Sort();
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Boss;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Boss");
+		Issue.FieldKey = TEXT("ShipBossState");
+		Issue.Reason = TEXT("Ship boss state serialization failed");
+	}
+}
+
+bool AShipBossEnemy::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	if (Part.Domain == ESWRoomDomain::Enemy) return ABaseEnemy::RestoreRoomDomain(Part, OutError);
+	FSWRoomShipBossState State;
+	if (Part.Domain != ESWRoomDomain::Boss || Part.Version != 1 || !FSWRoomStructCodec::Read(Part.Bytes, State)
+		|| State.PendingBalanceSummons < 0 || !FMath::IsFinite(State.SummonCooldownRemaining)
+		|| State.SummonCooldownRemaining < 0.f)
+	{
+		OutError = TEXT("Invalid ship boss state");
+		return false;
+	}
+	CurrentPointId = State.CurrentPointId;
+	PreviousPointId = State.PreviousPointId;
+	DestinationPointId = State.DestinationPointId;
+	bStunHealthThresholdConsumed = State.bStunHealthThresholdConsumed;
+	PendingBalanceSummons = State.PendingBalanceSummons;
+	ConsumedSummonThresholds.Reset();
+	for (int32 Threshold : State.ConsumedSummonThresholds) ConsumedSummonThresholds.Add(Threshold);
+	bHiddenRelocationActive = false;
+	bBossHidden = false;
+	ApplyHiddenPresentation();
+	PendingRoomState = MoveTemp(State);
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool AShipBossEnemy::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!ABaseEnemy::FinalizeRoomRestore(RegisteredActors, OutError)) return false;
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	if (AActor* const* Found = RegisteredActors.Find(PendingRoomState.HostShipId))
+	{
+		HostShip = Cast<AEnemyShip>(*Found);
+		OnRep_HostShip();
+	}
+	NextSummonAllowedTime = GetWorld()->GetTimeSeconds() + PendingRoomState.SummonCooldownRemaining;
+	SummonedDeckEnemies.Reset();
+	for (const FGuid& Id : PendingRoomState.SummonedEnemyIds)
+		if (AActor* const* Found = RegisteredActors.Find(Id))
+			if (ADeckEnemy* Enemy = Cast<ADeckEnemy>(*Found)) SummonedDeckEnemies.Add(Enemy);
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		ASC->RemoveLooseGameplayTag(AI_State_Boss_Intro);
+		ASC->RemoveLooseGameplayTag(AI_State_Boss_Combat);
+		ASC->RemoveLooseGameplayTag(AI_State_Boss_Dead);
+		if (PendingRoomState.BossAIState.IsValid()) ASC->AddLooseGameplayTag(PendingRoomState.BossAIState);
+	}
+	return true;
 }

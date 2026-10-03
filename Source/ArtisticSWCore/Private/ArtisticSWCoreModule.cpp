@@ -1,3 +1,35 @@
 ﻿#include "Modules/ModuleManager.h"
 	 
-IMPLEMENT_MODULE(FDefaultModuleImpl, ArtisticSWCore);
+#include "Network/SWNetworkLog.h"
+#include "Misc/OutputDeviceRedirector.h"
+
+class FArtisticSWCoreModule final : public IModuleInterface
+{
+public:
+	virtual void StartupModule() override
+	{
+		ConnectionLog = MakeUnique<FSWConnectionFileOutputDevice>();
+		if (GLog && ConnectionLog->IsOpen()) GLog->AddOutputDevice(ConnectionLog.Get());
+		RoomFlowLog = MakeUnique<FSWConnectionFileOutputDevice>(true);
+		if (GLog && RoomFlowLog->IsOpen()) GLog->AddOutputDevice(RoomFlowLog.Get());
+		SaveTraceLog = MakeUnique<FSWConnectionFileOutputDevice>(false, true);
+		if (GLog && SaveTraceLog->IsOpen()) GLog->AddOutputDevice(SaveTraceLog.Get());
+	}
+
+	virtual void ShutdownModule() override
+	{
+		if (GLog && ConnectionLog) GLog->RemoveOutputDevice(ConnectionLog.Get());
+		if (GLog && RoomFlowLog) GLog->RemoveOutputDevice(RoomFlowLog.Get());
+		if (GLog && SaveTraceLog) GLog->RemoveOutputDevice(SaveTraceLog.Get());
+		ConnectionLog.Reset();
+		RoomFlowLog.Reset();
+		SaveTraceLog.Reset();
+	}
+
+private:
+	TUniquePtr<FSWConnectionFileOutputDevice> ConnectionLog;
+	TUniquePtr<FSWConnectionFileOutputDevice> RoomFlowLog;
+	TUniquePtr<FSWConnectionFileOutputDevice> SaveTraceLog;
+};
+
+IMPLEMENT_MODULE(FArtisticSWCoreModule, ArtisticSWCore);

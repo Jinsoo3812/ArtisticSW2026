@@ -4,6 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
+#include "Containers/Ticker.h"
+#include "Respawn/SWRespawnFlowTypes.h"
 #include "MultiGameMode.generated.h"
 
 
@@ -11,7 +13,9 @@ class AController;
 class APlayerController;
 class APlayerStart;
 class APawn;
+struct FSWPlayerProgressSnapshot;
 class UPlayerRespawnPointComponent;
+class ASWRoomReadyState;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
     FOnSWPlayerRoleAssigned,
@@ -46,6 +50,18 @@ class ARTISTICSWCORE_API AMultiGameMode : public AGameModeBase
 	GENERATED_BODY()
 
 public:
+	bool RegisterPlayerRespawnShip(AActor* Ship);
+	AActor* GetPlayerRespawnShip() const { return PlayerRespawnShip.Get(); }
+	void NotifyPlayerShipSinking(AActor* Ship);
+	void NotifyPlayerShipRemovedBySinking(AActor* Ship);
+	ESWSessionLifePhase GetSessionLifePhase() const { return SessionLifePhase; }
+	bool IsIndividualRespawnInProgress(AController* Controller) const { return IndividualRespawnInProgress.Contains(Controller); }
+	bool CanMutateGameplay(AController* Controller) const;
+	bool CanHostRequestGameOverRetry(AController* Controller) const;
+	bool IsRoomHostController(AController* Controller) const { return IsHostController(Controller); }
+	void SetGameOverRetryTransitionPending(bool bPending);
+	void RefreshSpectatorTargets();
+	void SetHostedRoomWorldReady();
     AMultiGameMode();
 
 public:
@@ -113,12 +129,25 @@ public:
     bool bAutoReadyOnPostLogin = false;
 
 protected:
+	UPROPERTY(Transient) TObjectPtr<ASWRoomReadyState> RoomReadyState;
+    virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
+    virtual void StartPlay() override;
+
     virtual void PreLogin(
         const FString& Options,
         const FString& Address,
         const FUniqueNetIdRepl& UniqueId,
         FString& ErrorMessage
     ) override;
+
+    virtual FString InitNewPlayer(
+        APlayerController* NewPlayerController,
+        const FUniqueNetIdRepl& UniqueId,
+        const FString& Options,
+        const FString& Portal
+    ) override;
+
+    virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
     
     // 플레이어가 월드에 들어올 때 호출
     virtual void PostLogin(APlayerController* NewPlayer) override;
@@ -162,9 +191,18 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Game Rules")
 	void RequestGameOverAndLevelRestart();
+	void MarkHostedRoomWorldReady();
+	bool RequestHostedRoomReturnTravel(bool bAfterGameOver = false);
+	bool RequestHostedRoomFinalDepartureTravel();
+	bool IsLevelRestartRequested() const { return bLevelRestartRequested; }
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Respawn", meta=(ClampMin="0.0"))
-	float IndividualRespawnDelay = 5.0f;
+	bool StoreReconnectSnapshotForController(AController* Controller, const FSWPlayerProgressSnapshot& Snapshot);
+	bool ConsumeReconnectSnapshotForController(AController* Controller, FSWPlayerProgressSnapshot& OutSnapshot);
+	virtual void RestartPlayer(AController* NewPlayer) override;
+
+	/** One fixed duration for both personal respawn and corpse removal. */
+	static constexpr float IndividualRespawnDelay = 10.0f;
+
     
 protected:
     // ================================
@@ -189,8 +227,11 @@ protected:
     /** PlayerIndex에 따라 역할을 결정한다. 0 = Attacker, 1 = Crafter */
     virtual FName GetRoleForPlayerIndex(int32 PlayerIndex) const;
 
+    /** 사용 중이지 않은 첫 번째 PlayerIndex를 반환한다. */
+    int32 FindAvailablePlayerIndex();
+
     /** Controller에게 역할을 배정한다. */
-    void AssignRoleToPlayer(AController* Controller);
+    bool AssignRoleToPlayer(AController* Controller, bool bIsHost = false, const FString& PlayerKey = FString());
 
     /** PlayerStartTag와 역할명이 일치하는 PlayerStart를 찾는다. */
     APlayerStart* FindPlayerStartByRole(FName RoleName) const;
@@ -203,8 +244,17 @@ protected:
     /** 각 Controller의 역할 */
     TMap<TObjectPtr<AController>, FName> PlayerRoles;
 	TMap<TObjectPtr<AController>, int32> PlayerIndices;
+	TMap<TObjectPtr<AController>, FString> PlayerReconnectKeys;
 	TSet<TObjectPtr<AController>> FinishedDeadPlayers;
 	TMap<TObjectPtr<AController>, FTimerHandle> RespawnTimers;
+	UPROPERTY(Transient) TWeakObjectPtr<AActor> PlayerRespawnShip;
+	bool bPlayerRespawnShipRegistered = false;
+	ESWSessionLifePhase SessionLifePhase = ESWSessionLifePhase::Playing;
+	TSet<TObjectPtr<AController>> IndividualRespawnInProgress;
+	TMap<TObjectPtr<AController>, FSWDeathFlowState> DeathFlowStates;
+	TMap<TObjectPtr<AController>, double> RespawnFailureLogTimes;
+	FTimerHandle SpectatorRefreshTimer;
+	void PublishLifePhase();
 
     /** Ready 상태인 Controller 목록 */
     TSet<TObjectPtr<AController>> ReadyPlayers;
@@ -213,8 +263,24 @@ protected:
     bool bAllPlayersReadyNotified = false;
 	bool bLevelRestartRequested = false;
 
-	void TryRespawnPlayer(AController* Controller);
+	void TryRespawnPlayer(AController* Controller, int32 ExpectedGeneration);
 	UPlayerRespawnPointComponent* FindShipRespawnPoint(int32 PlayerIndex) const;
+	FString GetReconnectKey(AController* Controller) const;
+	bool ResolveReconnectSpawnTransform(AController* Controller, FTransform& OutTransform);
+	bool IsReconnectTransformSafe(AController* Controller, const FTransform& Transform);
 	virtual void HandleAllPlayersDeathFinished();
 	virtual void CapturePlayerProgressForLevelRestart();
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	void CheckRoomOwner();
+	bool TickRoomOwner(float DeltaTime);
+	void UpdateHostedRoomPause();
+	bool IsHostedRoom() const;
+	bool IsHostController(AController* Controller) const;
+	FGuid RoomRunId;
+	uint32 RoomOwnerPid = 0;
+	FString RoomReadyPath;
+	FTSTicker::FDelegateHandle RoomOwnerTickerHandle;
+	TSet<TObjectPtr<AController>> HostControllers;
+	UPROPERTY(Transient) TObjectPtr<class APlayerState> PauseSentinel;
+	bool bHostedWorldReady = false;
 };

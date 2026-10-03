@@ -117,7 +117,8 @@ void ADeckEnemy::PrepareForPool()
 bool ADeckEnemy::ActivateFromPool(
 	AEnemyShip* InHostShip,
 	int32 InitialWaypointId,
-	int32 RandomSeed)
+	int32 RandomSeed,
+	const FTransform* ReservedTransform)
 {
 	if (!HasAuthority() || bPoolActive || !IsValid(InHostShip)
 		|| !InHostShip->GetShipDeckMesh()
@@ -130,6 +131,13 @@ bool ADeckEnemy::ActivateFromPool(
 	FTransform AuthoritativeStartTransform;
 	const bool bResolvedStart = InHostShip->ResolveDeckCharacterTransform(
 		InitialWaypointId, HalfHeight, AuthoritativeStartTransform);
+	const bool bResolvedStart = ReservedTransform ? !ReservedTransform->ContainsNaN()
+		: InHostShip->ResolveDeckCharacterTransform(
+		InitialWaypointId, HalfHeight, AuthoritativeStartTransform)
+		|| InHostShip->ResolveFixedDeckAnchorTransform(
+			InitialWaypointId, HalfHeight, AuthoritativeStartTransform);
+	if (ReservedTransform) AuthoritativeStartTransform = *ReservedTransform;
+	
 	if (!bResolvedStart || AuthoritativeStartTransform.ContainsNaN())
 	{
 		return false;

@@ -1,4 +1,5 @@
 #include "Equipment/PlayerEquipmentComponent.h"
+#include "BasePlayerController.h"
 
 #include "Animation/AnimSequenceBase.h"
 
@@ -57,6 +58,7 @@ bool UPlayerEquipmentComponent::IsEquipmentTransitioning() const
 
 bool UPlayerEquipmentComponent::EquipInventoryItem(FGameplayTag ItemTag)
 {
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetOwner())) if (!Player->CanMutateLifeGameplay()) return false;
 	if (!PlayerOwner)
 	{
 		PlayerOwner = Cast<ABasePlayer>(GetOwner());
@@ -101,6 +103,43 @@ bool UPlayerEquipmentComponent::EquipInventoryItem(FGameplayTag ItemTag)
 	return true;
 }
 
+bool UPlayerEquipmentComponent::RestoreRoomEquippedItem(FGameplayTag ItemTag)
+{
+	if (!PlayerOwner) PlayerOwner = Cast<ABasePlayer>(GetOwner());
+	if (!PlayerOwner || !PlayerOwner->HasAuthority()) return false;
+	if (IsEquipmentTransitioning()) CancelPendingEquip();
+	if (!StoreCurrentEquippedItem()) return false;
+	if (UEquipmentStatComponent* ExistingStats = PlayerOwner->FindComponentByClass<UEquipmentStatComponent>())
+		if (!ExistingStats->Clear()) return false;
+	EquipmentState = EEquipmentState::None;
+	if (!ItemTag.IsValid()) return true;
+	UInventoryComponent* Inventory = PlayerOwner->GetInventoryComponent();
+	UItemSubsystem* Items = GetWorld() ? GetWorld()->GetSubsystem<UItemSubsystem>() : nullptr;
+	if (!Inventory || Inventory->GetMaterialCount(ItemTag) <= 0 || !Items) return false;
+	ABaseItem* Item = Items->SpawnItem(ItemTag, PlayerOwner->GetActorTransform(),
+		EItemState::InItemSlot, PlayerOwner);
+	if (!IsValid(Item) || !ValidateWeapon(Item)) return false;
+	Item->SetItemState(EItemState::Equipped);
+	if (!AttachItem(Item, EEquipmentAttachmentTarget::Equipped)
+		|| !GrantEquippedItemAbility(Item))
+	{
+		Item->Destroy();
+		return false;
+	}
+	UEquipmentStatComponent* Stats = UEquipmentStatComponent::GetOrCreate(PlayerOwner);
+	if (!Stats || !Stats->Equip(PlayerOwner->GetAbilitySystemComponent(), Item,
+		Item->GetStrengthBonus(), StrengthEquipmentEffectClass))
+	{
+		RemoveEquippedItemAbility(Item);
+		Item->Destroy();
+		return false;
+	}
+	PlayerOwner->EquippedItem = Item;
+	EquipmentState = EEquipmentState::Equipped;
+	PlayerOwner->OnQuickSlotsChanged.Broadcast();
+	return true;
+}
+
 void UPlayerEquipmentComponent::UnequipCurrentItem()
 {
 	if (!PlayerOwner)
@@ -120,6 +159,7 @@ void UPlayerEquipmentComponent::UnequipCurrentItem()
 
 void UPlayerEquipmentComponent::UseEquippedItem(bool bDestroy)
 {
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetOwner())) if (!Player->CanMutateLifeGameplay()) return;
 	if (!PlayerOwner)
 	{
 		PlayerOwner = Cast<ABasePlayer>(GetOwner());

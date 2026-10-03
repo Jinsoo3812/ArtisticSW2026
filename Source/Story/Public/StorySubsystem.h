@@ -8,6 +8,7 @@
 class AStoryStateReplicator;
 class UStoryActionReceiverComponent;
 class UStoryDefinition;
+class UStorySaveGame;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnStoryProgressChanged, int32, Revision);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnStoryStateActivated, FGameplayTag, StateTag);
@@ -77,6 +78,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Story|Persistence")
 	bool LoadProgressFromSlot(const FString& SlotName);
+	UStorySaveGame* BuildRoomProgress() const;
+	bool ApplyRoomProgress(const UStorySaveGame* Progress);
 
 	UFUNCTION(BlueprintPure, Category = "Story")
 	FStoryProgressSnapshot GetProgressSnapshot() const;

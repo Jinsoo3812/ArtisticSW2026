@@ -7,6 +7,15 @@
 #include "BasePlayer.h"
 #include "SWCharacterMovementComponent.h"
 
+bool UGA_PlayerHitReaction::CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags,
+	const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
+{
+	const ABasePlayer* Player = ActorInfo ? Cast<ABasePlayer>(ActorInfo->AvatarActor.Get()) : nullptr;
+	return (!Player || !Player->IsMountedForDamage())
+		&& Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
+}
+
 void UGA_PlayerHitReaction::OnHitReactionActivated(
 	const FGameplayEventData& TriggerEventData,
 	float DamageAmount,
