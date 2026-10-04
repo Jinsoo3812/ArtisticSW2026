@@ -24,6 +24,7 @@ public:
 	UDeckWalkRouteComponent();
 
 	bool SetLocationGoal(const FDeckWalkLocation& Goal);
+	bool SetLocationGoalInDistanceBand(const FDeckWalkLocation& Goal, const FVector& Center, float Distance, float Tolerance);
 	bool SetActorGoal(AActor* MovingTarget);
 	bool SetPatrolGoal(FRandomStream& Random);
 	void ClearGoal();

@@ -46,6 +46,11 @@ bool UDeckWalkRouteComponent::Replan(const FDeckWalkLocation& Goal)
 	TArray<FDeckWalkLocation> Path;
 	if (!Area || !GetOwner()->HasAuthority() || !Area->ResolveActorOnDeck(*GetOwner(), Start)
 		|| !Area->FindPath(Start, Goal, Path) || Path.IsEmpty()) return false;
+	if (!Path.Last().LocalFloor.Equals(Goal.LocalFloor, 1.0f))
+	{
+		if (!Area->IsSupportedSegment(Path.Last(), Goal)) return false;
+		Path.Add(Goal);
+	}
 	AcceptPath(MoveTemp(Path));
 	return true;
 }
@@ -61,6 +66,24 @@ bool UDeckWalkRouteComponent::SetActorGoal(AActor* MovingTarget)
 	FDeckWalkLocation Goal;
 	if (!MovingTarget || !Area || !Area->ResolveActorOnDeck(*MovingTarget, Goal) || !Replan(Goal)) return false;
 	TargetActor = MovingTarget; bTrackTarget = true;
+	return true;
+}
+
+bool UDeckWalkRouteComponent::SetLocationGoalInDistanceBand(const FDeckWalkLocation& Goal,
+	const FVector& Center, float Distance, float Tolerance)
+{
+	ClearGoal();
+	const UDeckWalkAreaComponent* Area = GetArea();
+	FDeckWalkLocation Start;
+	TArray<FDeckWalkLocation> Path;
+	if (!GetOwner()->HasAuthority() || !Area || !Area->ResolveActorOnDeck(*GetOwner(), Start)
+		|| !Area->FindPathInDistanceBand(Start, Goal, Center, Distance, Tolerance, Path) || Path.IsEmpty()) return false;
+	if (!Path.Last().LocalFloor.Equals(Goal.LocalFloor, 1.0f))
+	{
+		if (!Area->IsSupportedSegment(Path.Last(), Goal)) return false;
+		Path.Add(Goal);
+	}
+	AcceptPath(MoveTemp(Path));
 	return true;
 }
 bool UDeckWalkRouteComponent::SetPatrolGoal(FRandomStream& Random)

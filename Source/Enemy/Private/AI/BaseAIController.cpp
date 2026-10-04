@@ -1,6 +1,10 @@
 #include "AI/BaseAIController.h"
 
 #include "AI/EnemyBehaviorSet.h"
+#include "AI/EnemyAlarmComponent.h"
+#include "DeckAI/DeckEnemyCombatComponent.h"
+#include "DeckAI/DeckEnemyNavigationComponent.h"
+#include "DeckAI/DeckRangedEnemy.h"
 #include "AI/EnemyTerritoryComponent.h"
 #include "AISystem.h"
 #include "BaseEnemy.h"
@@ -42,12 +46,22 @@ void ABaseAIController::Tick(float DeltaSeconds)
 		return;
 	}
 
+	ResolveDeferredDeckDecision();
+	if (ShouldDeferDeckDecision() && !IsValidPerceptionTarget(GetCombatTarget())) DeferDeckTargetReevaluation();
 	TerritoryCheckRemaining -= DeltaSeconds;
 	if (TerritoryCheckRemaining > 0.0f)
 	{
 		return;
 	}
 	TerritoryCheckRemaining = FMath::Max(0.05f, TerritoryCheckInterval);
+	if (GetEnemyState() == EEnemyAIState::Investigating)
+	{
+		if (const UEnemyAlarmComponent* Alarm = GetPawn() ? GetPawn()->FindComponentByClass<UEnemyAlarmComponent>() : nullptr)
+		{
+			FVector Point;
+			if (Alarm->GetInvestigationWorld(Point)) GetBlackboardComponent()->SetValueAsVector(PointOfInterestKeyName, Point);
+		}
+	}
 
 	const ABaseEnemy* Enemy = Cast<ABaseEnemy>(GetPawn());
 	const UEnemyTerritoryComponent* Territory = Enemy
@@ -57,8 +71,8 @@ void ABaseAIController::Tick(float DeltaSeconds)
 	if (Target && Territory && Territory->HasAssignedTerritory()
 		&& !Territory->IsInsideCombatArea(Target->GetActorLocation()))
 	{
-		ClearCombatTarget(true);
-		StopMovement();
+		if (ShouldDeferDeckDecision()) DeferDeckTargetReevaluation();
+		else { ClearCombatTarget(true); StopMovement(); }
 	}
 }
 
@@ -155,6 +169,12 @@ void ABaseAIController::OnPossess(APawn* PossessedPawn)
 
 void ABaseAIController::OnUnPossess()
 {
+	DiscardDeferredDeckDecision();
+	if (APawn* ControlledEnemy = GetPawn())
+	{
+		if (UEnemyAlarmComponent* Alarm = ControlledEnemy->FindComponentByClass<UEnemyAlarmComponent>()) Alarm->ResetForReuse();
+		if (UDeckEnemyCombatComponent* Combat = ControlledEnemy->FindComponentByClass<UDeckEnemyCombatComponent>()) Combat->ResetCombat();
+	}
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
 	CachedTargetActor.Reset();
 	UnbindPerceivedTargetDeath();
@@ -164,6 +184,7 @@ void ABaseAIController::OnUnPossess()
 
 void ABaseAIController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	DiscardDeferredDeckDecision();
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
 	CachedTargetActor.Reset();
 	UnbindPerceivedTargetDeath();
@@ -190,6 +211,28 @@ bool ABaseAIController::SetEnemyState(EEnemyAIState NewState)
 		return false;
 	}
 
+	const EEnemyAIState OldState = GetEnemyState();
+	if (NewState == EEnemyAIState::Frozen || NewState == EEnemyAIState::Dead)
+	{
+		DiscardDeferredDeckDecision();
+		if (ADeckEnemy* Deck = Cast<ADeckEnemy>(GetPawn())) Deck->GetDeckCombatComponent()->CancelCommittedAttack();
+	}
+	else if (ShouldDeferDeckDecision() && NewState != OldState)
+	{
+		DiscardDeferredDeckDecision();
+		DeferredDeckDecision = EDeferredDeckDecision::SetState; DeferredDeckState = NewState;
+		return true;
+	}
+	if (APawn* ControlledEnemy = GetPawn())
+	{
+		if (UEnemyAlarmComponent* Alarm = ControlledEnemy->FindComponentByClass<UEnemyAlarmComponent>())
+			Alarm->SetCombatActive(NewState == EEnemyAIState::Combat);
+		if (ADeckEnemy* Deck = Cast<ADeckEnemy>(ControlledEnemy); Deck && OldState == EEnemyAIState::Combat && NewState != OldState)
+		{
+			Deck->GetDeckCombatComponent()->ResetCombat();
+			Deck->GetDeckEnemyNavigationComponent()->CancelCombatRoute();
+		}
+	}
 	BlackboardComponent->SetValueAsEnum(StateKeyName, static_cast<uint8>(NewState));
 	if (NewState != EEnemyAIState::Combat)
 	{
@@ -209,6 +252,21 @@ bool ABaseAIController::SetCombatTarget(AActor* TargetActor)
 	}
 
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
+	if (ShouldDeferDeckDecision())
+	{
+		if (CachedTargetActor != TargetActor)
+		{
+			DiscardDeferredDeckDecision();
+			DeferredDeckDecision = EDeferredDeckDecision::SetTarget; DeferredDeckTarget = TargetActor;
+		}
+		return true;
+	}
+	DiscardDeferredDeckDecision();
+	if (ADeckEnemy* Deck = Cast<ADeckEnemy>(GetPawn()); Deck && CachedTargetActor != TargetActor)
+	{
+		Deck->GetDeckCombatComponent()->ClearRecovery();
+		Deck->GetDeckEnemyNavigationComponent()->CancelCombatRoute();
+	}
 	CachedTargetActor = TargetActor;
 	BlackboardComponent->SetValueAsObject(TargetActorKeyName, TargetActor);
 	if (ARangedEnemy* RangedEnemy = Cast<ARangedEnemy>(GetPawn()))
@@ -233,6 +291,13 @@ void ABaseAIController::SetEQSPreviewTarget(AActor* TargetActor)
 
 void ABaseAIController::ClearCombatTarget(bool bReturnToPassive)
 {
+	if (ShouldDeferDeckDecision())
+	{
+		DiscardDeferredDeckDecision();
+		DeferredDeckDecision = EDeferredDeckDecision::ClearTarget; bDeferredReturnToPassive = bReturnToPassive;
+		return;
+	}
+	DiscardDeferredDeckDecision();
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
 	CachedTargetActor.Reset();
 	if (ARangedEnemy* RangedEnemy = Cast<ARangedEnemy>(GetPawn()))
@@ -263,6 +328,18 @@ bool ABaseAIController::StartInvestigation(const FVector& PointOfInterest)
 	}
 
 	const EEnemyAIState CurrentState = GetEnemyState();
+	// Only an explicit departure from Combat may be followed by a deferred investigation.
+	// Ordinary hearing during an attack must keep the existing Combat rejection below.
+	if (ShouldDeferDeckDecision()
+		&& ((DeferredDeckDecision == EDeferredDeckDecision::ClearTarget && bDeferredReturnToPassive)
+			|| (DeferredDeckDecision == EDeferredDeckDecision::SetState && DeferredDeckState == EEnemyAIState::Passive)))
+	{
+		DiscardDeferredDeckDecision();
+		DeferredDeckDecision = EDeferredDeckDecision::Investigate; DeferredDeckInvestigation = PointOfInterest;
+		if (UEnemyAlarmComponent* Alarm = GetPawn()->FindComponentByClass<UEnemyAlarmComponent>())
+			Alarm->CaptureInvestigationWorld(PointOfInterest);
+		return true;
+	}
 	if (CurrentState == EEnemyAIState::Combat
 		|| CurrentState == EEnemyAIState::Frozen
 		|| CurrentState == EEnemyAIState::Dead)
@@ -271,7 +348,62 @@ bool ABaseAIController::StartInvestigation(const FVector& PointOfInterest)
 	}
 
 	BlackboardComponent->SetValueAsVector(PointOfInterestKeyName, PointOfInterest);
+	if (UEnemyAlarmComponent* Alarm = GetPawn() ? GetPawn()->FindComponentByClass<UEnemyAlarmComponent>() : nullptr)
+		Alarm->CaptureInvestigationWorld(PointOfInterest);
 	return SetEnemyState(EEnemyAIState::Investigating);
+}
+
+bool ABaseAIController::ShouldDeferDeckDecision() const
+{
+	const ADeckEnemy* Deck = Cast<ADeckEnemy>(GetPawn());
+	return HasAuthority() && Deck && Deck->GetDeckCombatComponent()->HasCommittedAttack()
+		&& GetEnemyState() == EEnemyAIState::Combat;
+}
+
+void ABaseAIController::DiscardDeferredDeckDecision()
+{
+	DeferredDeckDecision = EDeferredDeckDecision::None; DeferredDeckTarget.Reset();
+	DeferredDeckState = EEnemyAIState::Passive; DeferredDeckInvestigation = FVector::ZeroVector;
+	bDeferredReturnToPassive = true;
+}
+
+void ABaseAIController::DeferDeckTargetReevaluation()
+{
+	// An explicit request wins over incidental perception changes during the same montage.
+	if (DeferredDeckDecision == EDeferredDeckDecision::None || DeferredDeckDecision == EDeferredDeckDecision::ReevaluateTarget)
+		DeferredDeckDecision = EDeferredDeckDecision::ReevaluateTarget;
+}
+
+void ABaseAIController::ResolveDeferredDeckDecision()
+{
+	if (!HasDeferredDeckDecision() || ShouldDeferDeckDecision()) return;
+	const ADeckEnemy* Deck = Cast<ADeckEnemy>(GetPawn());
+	if (!Deck || !Deck->CanMoveOnDeck() || GetEnemyState() == EEnemyAIState::Frozen || GetEnemyState() == EEnemyAIState::Dead)
+	{
+		DiscardDeferredDeckDecision(); return;
+	}
+	const EDeferredDeckDecision Decision = DeferredDeckDecision;
+	AActor* Target = DeferredDeckTarget.Get();
+	const EEnemyAIState State = DeferredDeckState;
+	FVector Point = DeferredDeckInvestigation;
+	const bool bReturnToPassive = bDeferredReturnToPassive;
+	if (Decision == EDeferredDeckDecision::Investigate)
+		if (const UEnemyAlarmComponent* Alarm = GetPawn()->FindComponentByClass<UEnemyAlarmComponent>())
+			Alarm->GetInvestigationWorld(Point);
+	DiscardDeferredDeckDecision();
+	if (Decision == EDeferredDeckDecision::SetState) { SetEnemyState(State); return; }
+	if (Decision == EDeferredDeckDecision::Investigate)
+	{
+		ClearCombatTarget(true); StartInvestigation(Point); return;
+	}
+	if (Decision == EDeferredDeckDecision::ClearTarget) { ClearCombatTarget(bReturnToPassive); return; }
+	if (Decision == EDeferredDeckDecision::SetTarget && SetCombatTarget(Target)) return;
+	// Perception may have changed repeatedly during the attack. Preserve a re-seen current target.
+	AActor* Current = GetCombatTarget();
+	if (IsValidPerceptionTarget(Current) && GetPerceptionComponent()
+		&& GetPerceptionComponent()->HasActiveStimulus(*Current, UAISense::GetSenseID<UAISense_Sight>())) return;
+	if (AActor* Replacement = SelectBestPerceivedTarget()) SetCombatTarget(Replacement);
+	else ClearCombatTarget(true);
 }
 
 bool ABaseAIController::RefreshBehaviorRouting()
@@ -342,6 +474,11 @@ void ABaseAIController::HandleSightStimulus(AActor* SensedActor, const FAIStimul
 {
 	if (Stimulus.WasSuccessfullySensed())
 	{
+		if (ShouldDeferDeckDecision())
+		{
+			if (SensedActor == GetCombatTarget() || !IsValidPerceptionTarget(GetCombatTarget())) DeferDeckTargetReevaluation();
+			return;
+		}
 		// Keep a valid current target stable. With two players, perception update
 		// ordering must not make the enemy switch targets every time either player
 		// produces a new sight stimulus.
@@ -358,6 +495,7 @@ void ABaseAIController::HandleSightStimulus(AActor* SensedActor, const FAIStimul
 		return;
 	}
 
+	if (ShouldDeferDeckDecision()) { DeferDeckTargetReevaluation(); return; }
 	if (AActor* ReplacementTarget = SelectBestPerceivedTarget())
 	{
 		SetCombatTarget(ReplacementTarget);
@@ -372,16 +510,26 @@ void ABaseAIController::HandleHearingStimulus(AActor* SensedActor, const FAIStim
 {
 	if (Stimulus.WasSuccessfullySensed())
 	{
+		// Combat already owns a target; hearing must not replace an explicit deferred departure.
+		if (GetEnemyState() == EEnemyAIState::Combat) return;
+		FVector Investigation = Stimulus.StimulusLocation;
+		if (UEnemyAlarmComponent::IsAlarmTag(Stimulus.Tag))
+		{
+			if (GetEnemyState() == EEnemyAIState::Combat || GetEnemyState() == EEnemyAIState::Frozen || GetEnemyState() == EEnemyAIState::Dead) return;
+			UEnemyAlarmComponent* Receiver = GetPawn() ? GetPawn()->FindComponentByClass<UEnemyAlarmComponent>() : nullptr;
+			const UEnemyAlarmComponent* Sender = SensedActor ? SensedActor->FindComponentByClass<UEnemyAlarmComponent>() : nullptr;
+			if (!Receiver || !Sender || !Receiver->Receive(*Sender, Stimulus, Investigation)) return;
+		}
 		const ABaseEnemy* Enemy = Cast<ABaseEnemy>(GetPawn());
 		const UEnemyTerritoryComponent* Territory = Enemy
 			? Enemy->GetTerritoryComponent()
 			: nullptr;
 		if (Territory && Territory->HasAssignedTerritory()
-			&& !Territory->IsInsideCombatArea(Stimulus.StimulusLocation))
+			&& !Territory->IsInsideCombatArea(Investigation))
 		{
 			return;
 		}
-		StartInvestigation(Stimulus.StimulusLocation);
+		StartInvestigation(Investigation);
 	}
 }
 
@@ -409,6 +557,7 @@ void ABaseAIController::OnPerceivedTargetDeathStarted(UBaseHealthComponent* Heal
 		BlackboardComponent->SetValueAsVector(PointOfInterestKeyName, DeadTarget->GetActorLocation());
 	}
 
+	if (ShouldDeferDeckDecision()) { DeferDeckTargetReevaluation(); return; }
 	ClearCombatTarget(false);
 	ClearFocus(EAIFocusPriority::Gameplay);
 
@@ -422,6 +571,7 @@ void ABaseAIController::OnPerceivedTargetDeathStarted(UBaseHealthComponent* Heal
 
 void ABaseAIController::OnPossessedEnemyDeathStarted(UBaseHealthComponent* HealthComponent)
 {
+	DiscardDeferredDeckDecision();
 	GetWorldTimerManager().ClearTimer(TargetReacquireTimerHandle);
 	ClearCombatTarget(false);
 
@@ -436,6 +586,7 @@ void ABaseAIController::OnPossessedEnemyDeathStarted(UBaseHealthComponent* Healt
 
 void ABaseAIController::InitializeBlackboardValues(APawn* PossessedPawn)
 {
+	DiscardDeferredDeckDecision();
 	CachedTargetActor.Reset();
 
 	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();

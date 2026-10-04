@@ -1,6 +1,9 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Decorator/BTD_IsValidCombatTarget.h"
+#include "AIController.h"
+#include "DeckAI/DeckRangedEnemy.h"
+#include "DeckAI/DeckEnemyCombatComponent.h"
 
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Components/BaseHealthComponent.h"
@@ -16,6 +19,8 @@ UBTD_IsValidCombatTarget::UBTD_IsValidCombatTarget()
 
 bool UBTD_IsValidCombatTarget::CalculateRawConditionValue(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) const
 {
+	const ADeckEnemy* Deck = OwnerComp.GetAIOwner() ? Cast<ADeckEnemy>(OwnerComp.GetAIOwner()->GetPawn()) : nullptr;
+	if (Deck && Deck->GetDeckCombatComponent()->HasCommittedAttack()) return true;
 	UBlackboardComponent* BlackboardComponent = OwnerComp.GetBlackboardComponent();
 	if (!BlackboardComponent)
 	{

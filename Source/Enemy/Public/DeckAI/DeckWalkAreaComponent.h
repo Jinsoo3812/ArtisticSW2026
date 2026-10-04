@@ -49,9 +49,13 @@ public:
 	bool ResolveWaypoint(const UDeckWaypointComponent& Point, FDeckWalkLocation& Out) const;
 	bool ResolveActorOnDeck(const AActor& Actor, FDeckWalkLocation& Out) const;
 	bool ResolveLocalFloor(const FVector& LocalFloor, FName SurfaceId, FDeckWalkLocation& Out) const;
+	/** Keeps the requested XY after validating floor, clearance and its connection to the graph. */
+	bool ResolvePreciseLocalFloor(const FVector& LocalFloor, FName SurfaceId, FDeckWalkLocation& Out) const;
 	bool ResolveSpawnTransform(const UDeckWaypointComponent& Point, float CapsuleHalfHeight, FTransform& OutTransform) const;
 	bool FindPath(const FDeckWalkLocation& Start, const FDeckWalkLocation& Goal,
 		TArray<FDeckWalkLocation>& OutPath, bool bCrossSurfaces = true) const;
+	bool FindPathInDistanceBand(const FDeckWalkLocation& Start, const FDeckWalkLocation& Goal,
+		const FVector& Center, float Distance, float Tolerance, TArray<FDeckWalkLocation>& OutPath) const;
 	bool PickPatrolPath(const AActor& Actor, FRandomStream& Random, TArray<FDeckWalkLocation>& OutPath) const;
 	bool IsLocationValid(const FDeckWalkLocation& Location) const;
 	void GetReachableLocations(const FDeckWalkLocation& Start, TArray<FDeckWalkLocation>& Out, bool bCrossSurfaces = true) const;
@@ -94,6 +98,9 @@ private:
 	float ClearanceHalfHeight = 100.0f;
 	UPROPERTY(EditDefaultsOnly, Category = "Ship|Deck Walk|Clearance", meta = (ClampMin = "1.0", Units = "cm"))
 	float MaximumStepHeight = 45.0f;
+	/** Height of the spawned character's actor origin above the resolved deck floor. */
+	UPROPERTY(EditAnywhere, Category = "Ship|Deck Walk|Spawn", meta = (ClampMin = "0.0", Units = "cm"))
+	float SpawnHeightOffset = 90.0f;
 	UPROPERTY(EditDefaultsOnly, Category = "Ship|Deck Walk|Sampling", meta = (ClampMin = "1"))
 	int32 MinimumRegionCells = 6;
 	UPROPERTY(EditDefaultsOnly, Category = "Ship|Deck Walk|Sampling", meta = (ClampMin = "1.0", Units = "cm"))

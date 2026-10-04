@@ -16,6 +16,7 @@
 // Enemy Folder
 #include "AI/BaseAIController.h"
 #include "AI/EnemyTerritoryComponent.h"
+#include "AI/EnemyAlarmComponent.h"
 #include "GAS/EnemyAttributeSet.h"
 #include "EngineUtils.h"
 #include "WaveSystem/Route/EnemyWaypointMoveComponent.h"
@@ -157,6 +158,7 @@ ABaseEnemy::ABaseEnemy()
 	WaypointMoveComponent = CreateDefaultSubobject<UEnemyWaypointMoveComponent>(TEXT("WaypointMoveComponent"));
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 	TerritoryComponent = CreateDefaultSubobject<UEnemyTerritoryComponent>(TEXT("TerritoryComponent"));
+	AlarmComponent = CreateDefaultSubobject<UEnemyAlarmComponent>(TEXT("AlarmComponent"));
 	// All regular enemy archetypes share this confirmed-damage cue. Specialized
 	// enemies must opt into a different cue in their own constructor.
 	HealthComponent->SetDamageGameplayCueTag(GameplayCue_Enemy_Hit);

@@ -2,12 +2,15 @@
 
 #include "AbilitySystemComponent.h"
 #include "AIController.h"
+#include "AI/BaseAIController.h"
 #include "BaseEnemy.h"
 #include "BaseGameplayTags.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Weapon/BaseWeaponComponent.h"
+#include "DeckAI/DeckRangedEnemy.h"
+#include "DeckAI/DeckEnemyCombatComponent.h"
 
 UBTD_IsMeleeAttackReady::UBTD_IsMeleeAttackReady()
 {
@@ -30,6 +33,8 @@ bool UBTD_IsMeleeAttackReady::CalculateRawConditionValue(
 {
 	const AAIController* AIController = OwnerComp.GetAIOwner();
 	const ABaseEnemy* Enemy = AIController ? Cast<ABaseEnemy>(AIController->GetPawn()) : nullptr;
+	if (const ADeckEnemy* Deck = Cast<ADeckEnemy>(Enemy); Deck && Deck->GetDeckCombatComponent()->HasCommittedAttack()) return true;
+	if (const ABaseAIController* AI = Cast<ABaseAIController>(AIController); AI && AI->HasDeferredDeckDecision()) return false;
 	const UBaseWeaponComponent* WeaponComponent = Enemy ? Enemy->GetWeaponComponent() : nullptr;
 	const UAbilitySystemComponent* AbilitySystem = Enemy ? Enemy->GetAbilitySystemComponent() : nullptr;
 	const UBlackboardComponent* BlackboardComponent = OwnerComp.GetBlackboardComponent();

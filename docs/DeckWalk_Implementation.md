@@ -39,13 +39,21 @@
 
 서버는 앵커를 등록한 뒤 보행면을 생성하고 풀을 준비한다. 생성기는 `DeckMesh_Complex`의 단위 Scale 좌표계에서 Floor Component의 충돌을 XY 격자로 샘플링한다. 면별 높이 범위, 경사, 캡슐 여유, 실제 바닥 지지와 인접 통로를 검사한다. `WalkingConnections`를 설정해도 통로의 물리적 지지가 없으면 층 사이를 연결하지 않는다. `Rebuild`는 Revision을 올리므로 이전 위치 핸들과 경로는 다시 사용할 수 없다.
 
-`FDeckWalkLocation`은 `NodeIndex`, `SurfaceId`, `LocalFloor`, `Revision`을 가진다. `ResolveWaypoint`는 스폰 앵커를 지정 면의 실제 바닥으로 투영하고, `ResolveSpawnTransform`은 바닥에서 배의 Up 방향으로 캐릭터 캡슐 반높이와 2 cm를 더해 생성 위치를 구한다. 캐릭터의 현재 층은 앵커 ID가 아니라 `ResolveActorOnDeck`의 실제 발밑으로 판정한다.
+`FDeckWalkLocation`은 `NodeIndex`, `SurfaceId`, `LocalFloor`, `Revision`을 가진다. `ResolveWaypoint`는 스폰 앵커를 지정 면의 실제 바닥으로 투영하고, `ResolveSpawnTransform`은 바닥에서 배의 Up 방향으로 `DeckWalkAreaComponent`의 `Spawn Height Offset`(기본 90 cm)을 더해 생성 위치를 구한다. 캡슐 반높이는 이 오프셋에 자동으로 더하지 않는다. 캐릭터의 현재 층은 앵커 ID가 아니라 `ResolveActorOnDeck`의 실제 발밑으로 판정한다.
+
+### 배 생성 후 갑판 적 배치 지연
+
+`BP_EnemyShip` 또는 배 인스턴스의 `DeckEnemySpawnerComponent`를 선택하고 **Deck Enemy Spawner > Timing > Spawn Start Delay**를 조정한다. 기본값은 **3초**, `0`은 추가 대기 없음이다. 배의 BeginPlay부터 시간을 세며, 플레이어 발견 등 기존 배치 조건도 충족되어야 적이 나타난다. 실제 첫 배치는 `배 BeginPlay + Spawn Start Delay`와 `플레이어 발견 + Sight Activation Delay` 중 늦은 시점이다. 이후 적 사이 간격은 기존 `Activation Interval`을 따른다.
+
+비활성 풀은 기존처럼 미리 준비하지만 대기 중에는 표시·충돌·이동이 비활성화되어 있다. 대기 시간이 지나 활성화할 때 해당 스폰 앵커를 현재 배의 위치와 회전에 맞춰 다시 계산한다. 반복 감지는 대기 시간을 연장하지 않으며, 취소·배 파괴 때 기존 배치 타이머가 정리된다. 스냅샷에는 남은 대기 시간을 저장한다. 이 설정은 갑판 적 생성기의 배치에 적용하며, 별도 `BossEncounterComponent`의 최초 보스 생성 시간은 변경하지 않는다.
+
+직전 추가했던 스폰 전 위쪽 충돌 보정과 자체 선체 겹침 차단은 제거했다. 고정 대기 시간은 물리 진동 종료를 판정하지 않으므로 T4에서 배가 안정되는 시간에 맞춰 값을 조정해야 한다.
 
 보행면 생성, 앵커 투영 또는 필요한 캡슐·충돌 검사가 실패하면 일반 적과 보스의 생성·활성화를 차단하고 서버 로그에 이유를 남긴다. `SpawnPlan`은 각 슬롯의 정확한 앵커 ID를 사용하며 다른 ID로 바꾸지 않는다. 보스 소환 후보도 기존 일반 적 스폰 앵커 중 보스 위치에서 도달 가능한 지점으로 제한한다. 기존 풀·스폰 예약·재시도 계약은 유지한다.
 
 ## 순찰과 일반 전투
 
-`UDeckWalkRouteComponent`가 `SetPatrolGoal`, `SetActorGoal`, `SetLocationGoal`, `TickRoute`로 경로를 관리한다. 순찰은 현재 연결 영역의 보행 노드를 고르고, 근접 적은 대상의 실제 바닥을 추적한다. 원거리 전투는 도달 가능한 보행 노드의 사거리·선호 거리·실제 시야·캡슐 여유·경로 비용을 평가한다. 시야가 막힌 사격 위치를 옮길 때도 보행면 후보를 사용한다.
+`UDeckWalkRouteComponent`가 순찰·고정 목적지·거리 띠 경로와 실제 이동을 관리한다. 일반 갑판 Melee/Ranged의 Combat은 Player–Enemy 선을 기준으로 Task의 `TargetDistance`에 맞는 지점을 선택하고, 쿨타임 중에는 Player를 바라보며 좌우로 이동한다. 정확한 지원 바닥 끝점을 경로에 추가하며, 불가능하면 Task에서 설정한 투영 허용 오차 안의 후보를 사용한다. 경보 위치와 LOS 복구 위치는 배 로컬 스냅샷으로 조사한다. 전투 BT, Task 설정과 쿨타임 정책은 [Combat 구현 및 설정](DeckEnemy_Combat_BT_Design_2026-10-04.md)을 따른다.
 
 `UDeckWalkAreaComponent`는 서버에서 최종 전투 위치를 캡슐 크기에 따라 예약하고, 이동 취소·사망·풀 복귀 때 해제한다. 일반 갑판 적의 공격 판정은 자신과 대상의 발밑 보행면을 찾고 같은 Surface인지 확인한 다음 기존 거리와 시야 조건을 적용한다. 실제 이동 입력은 매 순간 함선 로컬 방향을 월드 방향으로 바꾸어 CharacterMovement에 전달하고, Movement Base는 현재 발밑 충돌 컴포넌트를 따른다.
 

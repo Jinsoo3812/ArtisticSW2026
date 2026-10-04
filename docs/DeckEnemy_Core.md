@@ -1,6 +1,6 @@
 # Deck Enemy Core Architecture Guide
 
-> 이 문서의 Waypoint 연결 그래프와 전투 포인트 설명은 과거 구현 기록이다. 현재 `BP_EnemyShip`의 이동·스폰 구조는 [보행면 구현 설명서](DeckWalk_Implementation.md), 설정과 수동 확인은 [에디터 안내](DeckWalk_Manual_Anchor_Editor_Setup.md)를 따른다.
+> 이 문서의 Waypoint 연결 그래프와 전투 포인트 설명은 과거 구현 기록이다. 현재 `BP_EnemyShip`의 이동·스폰 구조는 [보행면 구현 설명서](DeckWalk_Implementation.md), 설정과 수동 확인은 [에디터 안내](DeckWalk_Manual_Anchor_Editor_Setup.md)를 따른다. 일반 갑판 Melee/Ranged의 최신 전투·경보·거리 이동 BT는 [Combat 구현 및 설정](DeckEnemy_Combat_BT_Design_2026-10-04.md)을 따른다.
 
 이 문서는 움직이는 EnemyShip 위에서 동작하는 `DeckEnemy`의 공통 구조를 빠르게 파악하기 위한 요약본이다.  
 세부 에디터 수치, Boss Encounter 연출, 디버깅 절차와 초기 MVP 기록은 제외하고 핵심 책임만 정리한다.

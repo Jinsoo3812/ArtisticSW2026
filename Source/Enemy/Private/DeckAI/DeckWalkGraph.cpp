@@ -46,7 +46,7 @@ int32 FDeckWalkGraph::LabelRegions(bool bCrossSurfaces)
 }
 
 bool FDeckWalkGraph::FindPath(int32 Start, int32 Goal, bool bCrossSurfaces,
-	TArray<int32>& OutPath) const
+	TArray<int32>& OutPath, const TArray<uint8>* AllowedNodes) const
 {
 	OutPath.Reset();
 	if (!Nodes.IsValidIndex(Start) || !Nodes.IsValidIndex(Goal)
@@ -76,6 +76,7 @@ bool FDeckWalkGraph::FindPath(int32 Start, int32 Goal, bool bCrossSurfaces,
 		for (const int32 Next : Nodes[Current].Neighbors)
 		{
 			if (Closed[Next] || !Nodes[Next].bEnabled
+				|| (AllowedNodes && (!AllowedNodes->IsValidIndex(Next) || !(*AllowedNodes)[Next]))
 				|| (!bCrossSurfaces && Nodes[Next].Surface != Nodes[Current].Surface)) continue;
 			const float NewCost = Cost[Current] + FVector::Dist(Nodes[Current].Floor, Nodes[Next].Floor);
 			if (NewCost >= Cost[Next]) continue;

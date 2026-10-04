@@ -61,6 +61,9 @@ USTRUCT(BlueprintType)
 struct ENEMY_API FDeckWalkLocation
 {
 	GENERATED_BODY()
+	/** Exact supported endpoint connected to NodeIndex, rather than the sampled node center. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck Walk")
+	bool bPreciseFloor = false;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck Walk")
 	int32 NodeIndex = INDEX_NONE;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck Walk")

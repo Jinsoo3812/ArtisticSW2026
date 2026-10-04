@@ -20,6 +20,18 @@ UDeckEnemySpawnerComponent::UDeckEnemySpawnerComponent()
 	SetIsReplicatedByDefault(false);
 }
 
+void UDeckEnemySpawnerComponent::BeginPlay()
+{
+	SpawnStartReadyTime = GetWorld()->GetTimeSeconds() + FMath::Max(0.f, SpawnStartDelay);
+	Super::BeginPlay();
+}
+
+float UDeckEnemySpawnerComponent::GetRemainingSpawnStartDelay() const
+{
+	return GetWorld() ? static_cast<float>(FMath::Max(0.0,
+		SpawnStartReadyTime - GetWorld()->GetTimeSeconds())) : 0.f;
+}
+
 void UDeckEnemySpawnerComponent::CaptureRoomState(FSWRoomDeckSpawnerState& OutState, TArray<FSWRoomCaptureIssue>& OutIssues) const
 {
 	OutState.PlanCount = SpawnPlan.Num();
@@ -30,6 +42,7 @@ void UDeckEnemySpawnerComponent::CaptureRoomState(FSWRoomDeckSpawnerState& OutSt
 	OutState.ActivationSerial = ActivationSerial;
 	OutState.DeploymentQueueIndex = DeploymentQueueIndex;
 	OutState.CurrentRetryCount = CurrentRetryCount;
+	OutState.SpawnStartDelayRemaining = GetRemainingSpawnStartDelay();
 	OutState.DeploymentFailureCount = DeploymentFailureCount;
 	if (GetWorld())
 	{
@@ -90,6 +103,7 @@ bool UDeckEnemySpawnerComponent::RestoreRoomState(const FSWRoomDeckSpawnerState&
 		|| State.NextReservationSerial == 0 || State.ActivationSerial < 0 || State.DeploymentQueueIndex < 0
 		|| State.CurrentRetryCount < 0 || State.DeploymentFailureCount < 0
 		|| !FMath::IsFinite(State.SightDelayRemaining) || State.SightDelayRemaining < 0.f
+		|| !FMath::IsFinite(State.SpawnStartDelayRemaining) || State.SpawnStartDelayRemaining < 0.f
 		|| !FMath::IsFinite(State.DeploymentTimerRemaining) || State.DeploymentTimerRemaining < 0.f)
 	{
 		OutError = TEXT("Invalid deck deployment state or changed plan");
@@ -106,6 +120,7 @@ bool UDeckEnemySpawnerComponent::RestoreRoomState(const FSWRoomDeckSpawnerState&
 	}
 	GetWorld()->GetTimerManager().ClearTimer(SightDelayTimerHandle);
 	GetWorld()->GetTimerManager().ClearTimer(DeploymentTimerHandle);
+	SpawnStartReadyTime = GetWorld()->GetTimeSeconds() + State.SpawnStartDelayRemaining;
 	EnemyPool.Reset();
 	AliveDeployedEnemies.Reset();
 	PointRuntimeStates.Reset();
@@ -533,9 +548,12 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(
 	CurrentRetryCount = 0;
 	DeploymentFailureCount = 0;
 	DeploymentState = EDeckEnemyDeploymentState::Preparing;
-	CreateDeploymentTicket(FMath::Max(0.f, SightActivationDelay));
+	// Wait for both ship settling and the normal sight reaction time. Repeated
+	// sight notifications cannot restart this timer while Preparing.
+	const float DeploymentDelay = FMath::Max(FMath::Max(0.f, SightActivationDelay), GetRemainingSpawnStartDelay());
+	CreateDeploymentTicket(DeploymentDelay);
 
-	if (SightActivationDelay <= 0.0f)
+	if (DeploymentDelay <= 0.0f)
 	{
 		BeginDeployment();
 	}
@@ -545,7 +563,7 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(
 			SightDelayTimerHandle,
 			this,
 			&UDeckEnemySpawnerComponent::BeginDeployment,
-			SightActivationDelay,
+			DeploymentDelay,
 			false);
 	}
 	return true;
@@ -624,6 +642,13 @@ void UDeckEnemySpawnerComponent::DeployNextEnemy()
 				? Candidate->FindComponentByClass<USWRoomSnapshotComponent>() : nullptr;
 				Id && Id->StableId == DeploymentTicket.PoolActorId) { Enemy = Candidate; break; }
 	if (!Enemy)
+	{
+		HandleDeploymentFailure();
+		return;
+	}
+	// Tickets identify the enemy and point, but the ship can move while the
+	// timer runs. Resolve the live deck transform immediately before activation.
+	if (!ResolveEnemySpawnTransform(GetWaypoint(Slot.SpawnPointId), *Enemy, DeploymentTicket.WorldTransform))
 	{
 		HandleDeploymentFailure();
 		return;
@@ -1182,7 +1207,7 @@ bool UDeckEnemySpawnerComponent::ActivateSpecificEnemyAtReservation(
 	OutEnemy = nullptr;
 	AEnemyShip* Host = GetHostShip();
 	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled() || Host->IsCrewDefeated() || Host->IsStoryGateDormant() || !Reservation.IsValid()
-		|| Enemy.IsPoolActive()
+		|| Enemy.IsPoolActive() || GetRemainingSpawnStartDelay() > 0.f
 		|| (InitialTarget && !Enemy.IsValidCombatTarget(InitialTarget)))
 	{
 		ReleasePointReservation(Reservation);

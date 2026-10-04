@@ -259,7 +259,11 @@ bool UDeckWalkAreaComponent::IsLocationValid(const FDeckWalkLocation& Location) 
 	return bReady && Runtime && Location.Revision == Revision
 		&& Runtime->Graph.Nodes.IsValidIndex(Location.NodeIndex) && Runtime->Graph.Nodes[Location.NodeIndex].bEnabled
 		&& Runtime->Surfaces[Runtime->Graph.Nodes[Location.NodeIndex].Surface].SurfaceId == Location.SurfaceId
-		&& Runtime->Graph.Nodes[Location.NodeIndex].Floor.Equals(Location.LocalFloor, 0.1f);
+		&& (Location.bPreciseFloor
+			? !Location.LocalFloor.ContainsNaN()
+				&& FVector::Dist2D(Runtime->Graph.Nodes[Location.NodeIndex].Floor, Location.LocalFloor) <= CellSize
+				&& FMath::Abs(Runtime->Graph.Nodes[Location.NodeIndex].Floor.Z - Location.LocalFloor.Z) <= MaximumStepHeight
+			: Runtime->Graph.Nodes[Location.NodeIndex].Floor.Equals(Location.LocalFloor, 0.1f));
 }
 
 void UDeckWalkAreaComponent::GetReachableLocations(const FDeckWalkLocation& Start,
@@ -440,6 +444,18 @@ bool UDeckWalkAreaComponent::ResolveActorOnDeck(const AActor& Actor, FDeckWalkLo
 	return Out.NodeIndex != INDEX_NONE;
 }
 
+bool UDeckWalkAreaComponent::ResolvePreciseLocalFloor(const FVector& LocalFloor, FName SurfaceId, FDeckWalkLocation& Out) const
+{
+	if (LocalFloor.ContainsNaN() || !ResolveLocalFloor(LocalFloor, SurfaceId, Out)) return false;
+	const FDeckWalkSurfaceSampler Sampler(GetFrame()->GetComponentTransform(), Runtime->Settings, Runtime->Sources, Runtime->Obstacles);
+	FVector Floor;
+	if (!Sampler.TraceNear(LocalFloor, Runtime->Graph.Nodes[Out.NodeIndex].Surface, MaximumStepHeight, MaximumStepHeight, Floor)
+		|| !Sampler.HasClearance(Floor) || !IsSupportedSegment(Out, Floor)) { Out = FDeckWalkLocation(); return false; }
+	Out.LocalFloor = Floor;
+	Out.bPreciseFloor = true;
+	return true;
+}
+
 bool UDeckWalkAreaComponent::ResolveSpawnTransform(const UDeckWaypointComponent& Point,
 	float CapsuleHalfHeight, FTransform& OutTransform) const
 {
@@ -449,7 +465,7 @@ bool UDeckWalkAreaComponent::ResolveSpawnTransform(const UDeckWaypointComponent&
 	FVector Forward = FVector::VectorPlaneProject(Point.GetForwardVector(), Up).GetSafeNormal();
 	if (Forward.IsNearlyZero()) Forward = GetFrame()->GetForwardVector();
 	OutTransform = FTransform(FRotationMatrix::MakeFromXZ(Forward, Up).ToQuat(),
-		ToWorld(Location.LocalFloor) + Up * (CapsuleHalfHeight + 2.0f));
+		ToWorld(Location.LocalFloor) + Up * SpawnHeightOffset);
 	return !OutTransform.ContainsNaN();
 }
 
@@ -485,6 +501,26 @@ bool UDeckWalkAreaComponent::PickPatrolPath(const AActor& Actor, FRandomStream& 
 		Candidates.RemoveAtSwap(Choice, 1, EAllowShrinking::No);
 	}
 	return false;
+}
+
+bool UDeckWalkAreaComponent::FindPathInDistanceBand(const FDeckWalkLocation& Start, const FDeckWalkLocation& Goal,
+	const FVector& Center, float Distance, float Tolerance, TArray<FDeckWalkLocation>& OutPath) const
+{
+	OutPath.Reset();
+	if (!IsLocationValid(Start) || !IsLocationValid(Goal) || Start.SurfaceId != Goal.SurfaceId
+		|| Center.ContainsNaN() || !FMath::IsFinite(Distance) || !FMath::IsFinite(Tolerance)) return false;
+	TArray<uint8> Allowed;
+	Allowed.SetNumZeroed(Runtime->Graph.Nodes.Num());
+	for (int32 I = 0; I < Allowed.Num(); ++I)
+	{
+		const FDeckWalkNode& Node = Runtime->Graph.Nodes[I];
+		Allowed[I] = Node.Surface == Runtime->Graph.Nodes[Start.NodeIndex].Surface
+			&& FMath::Abs(FVector::Dist2D(Node.Floor, Center) - Distance) <= FMath::Max(30.0f, Tolerance);
+	}
+	TArray<int32> Nodes;
+	if (!Allowed[Goal.NodeIndex] || !Runtime->Graph.FindPath(Start.NodeIndex, Goal.NodeIndex, false, Nodes, &Allowed)) return false;
+	for (int32 Node : Nodes) OutPath.Add(MakeLocation(Node));
+	return true;
 }
 
 UPrimitiveComponent* UDeckWalkAreaComponent::GetFloorComponent(const FDeckWalkLocation& Location) const

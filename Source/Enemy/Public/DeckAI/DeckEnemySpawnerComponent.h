@@ -42,6 +42,7 @@ struct FSWRoomDeckSpawnerState
 	UPROPERTY(SaveGame) int32 CurrentRetryCount = 0;
 	UPROPERTY(SaveGame) int32 DeploymentFailureCount = 0;
 	UPROPERTY(SaveGame) float SightDelayRemaining = 0.f;
+	UPROPERTY(SaveGame) float SpawnStartDelayRemaining = 0.f;
 	UPROPERTY(SaveGame) float DeploymentTimerRemaining = 0.f;
 	UPROPERTY(SaveGame) FGuid TriggerShipId;
 	UPROPERTY(SaveGame) TArray<FGuid> EnemyPoolIds;
@@ -172,6 +173,8 @@ public:
 		const FDataTableRowHandle& StatsRow = FDataTableRowHandle());
 
 protected:
+	virtual void BeginPlay() override;
+
 	/** Enables the authored SpawnPlan. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck Enemy Spawner")
 	bool bEnableSpawning = false;
@@ -183,6 +186,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck Enemy Spawner",
 		meta = (TitleProperty = "EnemyClass"))
 	TArray<FDeckEnemySpawnSlot> SpawnPlan;
+
+	/** Earliest deployment time after the owning ship begins play. Zero disables this delay. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck Enemy Spawner|Timing", meta = (ClampMin = "0.0", Units = "s"))
+	float SpawnStartDelay = 3.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck Enemy Spawner|Timing", meta = (ClampMin = "0.0", Units = "s"))
 	float SightActivationDelay = 0.25f;
@@ -237,6 +244,7 @@ private:
 		const ADeckEnemy& Enemy,
 		FTransform& OutTransform) const;
 	void PrunePointRuntimeState();
+	float GetRemainingSpawnStartDelay() const;
 	void BeginDeployment();
 	void DeployNextEnemy();
 	void HandleDeploymentFailure();
@@ -272,6 +280,7 @@ private:
 	bool bHasDeployedEnemy = false;
 
 	FTimerHandle SightDelayTimerHandle;
+	double SpawnStartReadyTime = 0.0;
 	FTimerHandle DeploymentTimerHandle;
 	FSWRoomDeckSpawnerState PendingRoomState;
 	FSWRoomDeckDeploymentTicket DeploymentTicket;

@@ -454,6 +454,15 @@ bool FDeckEnemySpawnerCompositionTest::RunTest(const FString& Parameters)
 		Spawner->ResolveDeckCharacterTransform(101, ProbeHalfHeight, FirstAnchor));
 	const FVector FirstAnchorLocal = DeckMesh->GetComponentTransform().InverseTransformPosition(
 		FirstAnchor.GetLocation());
+	Area->SpawnHeightOffset = 70.0f;
+	FTransform LowerAnchor;
+	TestTrue(TEXT("Spawn height can be adjusted independently of capsule height"),
+		Spawner->ResolveDeckCharacterTransform(101, ProbeHalfHeight, LowerAnchor));
+	TestTrue(TEXT("Configured spawn height moves the actor origin by 20 cm"),
+		FMath::IsNearlyEqual(
+			FVector::DotProduct(LowerAnchor.GetLocation() - FirstAnchor.GetLocation(), DeckMesh->GetUpVector()),
+			-20.0f, 0.1f));
+	Area->SpawnHeightOffset = 90.0f;
 
 	Ship->SetActorLocationAndRotation(
 		FVector(1400.0f, -900.0f, 320.0f),

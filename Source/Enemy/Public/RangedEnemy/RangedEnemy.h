@@ -94,7 +94,7 @@ public:
 	ERangedShotSnapshotResult CaptureRangedAim(
 		const AActor* TargetActor,
 		FTransform& OutSpawnTransform,
-		FVector& OutAimLocation) const;
+		FVector& OutAimLocation, bool bRequireAttackRange = true) const;
 	bool HasClearRangedLaunch(const AActor* TargetActor, const FProjectileShotSnapshot& Shot) const;
 	virtual void HandleRangedReleaseLineOfSightBlocked(AActor* TargetActor) {}
 	void AcquireServerRangedAttackPoseRefresh();

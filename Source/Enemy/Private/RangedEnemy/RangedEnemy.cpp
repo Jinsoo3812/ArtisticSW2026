@@ -514,12 +514,13 @@ FVector ARangedEnemy::GetRangedAimLocation(const AActor* TargetActor) const
 ERangedShotSnapshotResult ARangedEnemy::CaptureRangedAim(
 	const AActor* TargetActor,
 	FTransform& OutSpawnTransform,
-	FVector& OutAimLocation) const
+	FVector& OutAimLocation, bool bRequireAttackRange) const
 {
 	OutSpawnTransform = FTransform::Identity;
 	OutAimLocation = FVector::ZeroVector;
 	FString RejectionReason;
-	if (!EvaluateAttackTarget(TargetActor, false, RejectionReason))
+	if (!(bRequireAttackRange ? EvaluateAttackTarget(TargetActor, false, RejectionReason)
+		: EvaluateCombatTarget(TargetActor, RejectionReason)))
 	{
 		return ERangedShotSnapshotResult::InvalidTargetOrRange;
 	}

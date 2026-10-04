@@ -9,6 +9,7 @@
 class AEnemyShip;
 class UDeckEnemyNavigationComponent;
 class UDeckWalkRouteComponent;
+class UDeckEnemyCombatComponent;
 
 UENUM(BlueprintType)
 enum class EDeckEnemyCombatRole : uint8
@@ -42,15 +43,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Deck AI|Combat")
 	EDeckEnemyCombatRole GetDeckCombatRole() const { return DeckCombatRole; }
 
-	float GetPreferredDeckCombatRange() const;
-	virtual void HandleRangedReleaseLineOfSightBlocked(AActor* TargetActor) override;
-
 	UFUNCTION(BlueprintPure, Category = "Deck AI|Combat Navigation")
 	UDeckEnemyNavigationComponent* GetDeckEnemyNavigationComponent() const
 	{
 		return DeckEnemyNavigationComponent;
 	}
 	UDeckWalkRouteComponent* GetDeckWalkRouteComponent() const { return DeckWalkRouteComponent; }
+	UDeckEnemyCombatComponent* GetDeckCombatComponent() const { return DeckCombatComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Deck AI|Spawn")
 	int32 GetInitialSpawnPointId() const { return InitialSpawnPointId; }
@@ -101,6 +100,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck AI|Walk Area")
 	TObjectPtr<UDeckWalkRouteComponent> DeckWalkRouteComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck AI|Combat")
+	TObjectPtr<UDeckEnemyCombatComponent> DeckCombatComponent;
 
 private:
 	bool bStartPooled = false;

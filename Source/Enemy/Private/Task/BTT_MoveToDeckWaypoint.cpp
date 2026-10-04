@@ -1,8 +1,8 @@
 #include "Task/BTT_MoveToDeckWaypoint.h"
-
-#include "AIController.h"
+#include "AI/BaseAIController.h"
 #include "BaseEnemy.h"
 #include "BehaviorTree/BlackboardComponent.h"
+#include "DeckAI/DeckEnemyCombatComponent.h"
 #include "DeckAI/DeckEnemyNavigationComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
@@ -13,45 +13,44 @@
 
 namespace
 {
-	void StopMovement(UBehaviorTreeComponent& OwnerComp, ACharacter* Character)
+	void StopDeckMove(UBehaviorTreeComponent& OwnerComp, ABaseEnemy* Enemy, bool bReached)
 	{
-		if (AAIController* Controller = OwnerComp.GetAIOwner()) Controller->StopMovement();
-		if (Character && Character->GetCharacterMovement()) Character->GetCharacterMovement()->StopMovementImmediately();
+		if (AAIController* AI = OwnerComp.GetAIOwner()) AI->StopMovement();
+		if (Enemy && Enemy->GetCharacterMovement()) Enemy->GetCharacterMovement()->StopMovementImmediately();
+		if (IDeckWaypointMovementInterface* Mover = Cast<IDeckWaypointMovementInterface>(Enemy))
+		{
+			if (bReached) Mover->OnDeckMoveReached(); else Mover->OnDeckMoveFailed();
+		}
+		if (UDeckWalkRouteComponent* Route = Enemy ? Enemy->FindComponentByClass<UDeckWalkRouteComponent>() : nullptr) Route->ClearGoal();
+		if (UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent(); BB && BB->GetKeyID(TEXT("DestinationLocation")) != FBlackboard::InvalidKey)
+			BB->ClearValue(TEXT("DestinationLocation"));
 	}
-	void ClearDestinationKey(UBehaviorTreeComponent& OwnerComp)
+	bool AttackReady(UBehaviorTreeComponent& OwnerComp, ADeckEnemy* Enemy)
 	{
-		if (UBlackboardComponent* Blackboard = OwnerComp.GetBlackboardComponent();
-			Blackboard && Blackboard->GetKeyID(TEXT("DestinationLocation")) != FBlackboard::InvalidKey)
-			Blackboard->ClearValue(TEXT("DestinationLocation"));
+		const ABaseAIController* AI = Cast<ABaseAIController>(OwnerComp.GetAIOwner());
+		return AI && AI->GetEnemyState() == EEnemyAIState::Combat && Enemy && Enemy->GetDeckCombatComponent()
+			&& Enemy->GetDeckCombatComponent()->EvaluateAttack(AI->GetCombatTarget()) == EDeckAttackOutcome::Ready;
 	}
 }
 UBTT_MoveToDeckWaypoint::UBTT_MoveToDeckWaypoint() { NodeName = TEXT("Move On Deck Walk Area"); bNotifyTick = true; }
 uint16 UBTT_MoveToDeckWaypoint::GetInstanceMemorySize() const { return 0; }
 EBTNodeResult::Type UBTT_MoveToDeckWaypoint::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
-	AAIController* Controller = OwnerComp.GetAIOwner();
-	ABaseEnemy* Enemy = Controller ? Cast<ABaseEnemy>(Controller->GetPawn()) : nullptr;
+	AAIController* AI = OwnerComp.GetAIOwner();
+	ABaseEnemy* Enemy = AI ? Cast<ABaseEnemy>(AI->GetPawn()) : nullptr;
 	IDeckWaypointMovementInterface* Mover = Cast<IDeckWaypointMovementInterface>(Enemy);
 	AEnemyShip* Ship = Mover ? Mover->GetDeckHostShip() : nullptr;
 	UDeckWalkAreaComponent* Area = Ship ? Ship->GetDeckWalkAreaComponent() : nullptr;
 	UDeckWalkRouteComponent* Route = Enemy ? Enemy->FindComponentByClass<UDeckWalkRouteComponent>() : nullptr;
-	ADeckEnemy* DeckEnemy = Cast<ADeckEnemy>(Enemy);
-	if (DeckEnemy && DeckEnemy->CanAttackCurrentTarget(true))
+	if (bStopWhenAttackReady && AttackReady(OwnerComp, Cast<ADeckEnemy>(Enemy)))
 	{
-		StopMovement(OwnerComp, Enemy);
-		if (DeckEnemy->GetDeckEnemyNavigationComponent()) DeckEnemy->GetDeckEnemyNavigationComponent()->CancelCombatRoute();
-		if (Route) Route->ClearGoal();
-		ClearDestinationKey(OwnerComp);
+		StopDeckMove(OwnerComp, Enemy, true);
 		return EBTNodeResult::Succeeded;
 	}
 	if (!Mover || !Mover->CanMoveOnDeck() || !Area || !Area->IsReady() || !Route || !Route->HasGoal()
 		|| !Enemy->GetCharacterMovement() || !Enemy->GetCharacterMovement()->IsMovingOnGround())
 	{
-		StopMovement(OwnerComp, Enemy);
-		if (Route) Route->ClearGoal();
-		if (Mover) Mover->OnDeckMoveFailed();
-		ClearDestinationKey(OwnerComp);
-		return EBTNodeResult::Failed;
+		StopDeckMove(OwnerComp, Enemy, false); return EBTNodeResult::Failed;
 	}
 	Enemy->SetBase(Area->GetMovementBase(*Enemy));
 	Enemy->SetBaseMovementSpeed(MoveSpeed);
@@ -60,50 +59,23 @@ EBTNodeResult::Type UBTT_MoveToDeckWaypoint::ExecuteTask(UBehaviorTreeComponent&
 }
 void UBTT_MoveToDeckWaypoint::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
 {
-	AAIController* Controller = OwnerComp.GetAIOwner();
-	ABaseEnemy* Enemy = Controller ? Cast<ABaseEnemy>(Controller->GetPawn()) : nullptr;
+	ABaseEnemy* Enemy = OwnerComp.GetAIOwner() ? Cast<ABaseEnemy>(OwnerComp.GetAIOwner()->GetPawn()) : nullptr;
 	IDeckWaypointMovementInterface* Mover = Cast<IDeckWaypointMovementInterface>(Enemy);
-	AEnemyShip* Ship = Mover ? Mover->GetDeckHostShip() : nullptr;
-	UDeckWalkAreaComponent* Area = Ship ? Ship->GetDeckWalkAreaComponent() : nullptr;
+	ADeckEnemy* Deck = Cast<ADeckEnemy>(Enemy);
 	UDeckWalkRouteComponent* Route = Enemy ? Enemy->FindComponentByClass<UDeckWalkRouteComponent>() : nullptr;
-	ADeckEnemy* DeckEnemy = Cast<ADeckEnemy>(Enemy);
-	UDeckEnemyNavigationComponent* Navigation = DeckEnemy ? DeckEnemy->GetDeckEnemyNavigationComponent() : nullptr;
-	const bool bCombatGoal = (Route && Route->IsTrackingActor())
-		|| (Navigation && (Navigation->HasActiveRoute() || Navigation->HasReleaseLineOfSightReposition()));
-	bool bAttackReady = false;
-	if (DeckEnemy && DeckEnemy->GetCombatTarget())
-	{
-		FDeckWalkLocation TargetFloor;
-		if (!Area || !Area->ResolveActorOnDeck(*DeckEnemy->GetCombatTarget(), TargetFloor))
-		{
-			DeckEnemy->ClearCombatTarget();
-			if (bCombatGoal && Navigation) Navigation->CancelCombatRoute();
-		}
-		else bAttackReady = DeckEnemy->CanAttackCurrentTarget(true);
-	}
-	if (Navigation && !bAttackReady) Navigation->ReplanIfTargetMoved(DeckEnemy->GetCombatTarget(), true);
-	const EDeckWalkRouteTick Result = bAttackReady ? EDeckWalkRouteTick::Reached
+	const bool bReady = bStopWhenAttackReady && AttackReady(OwnerComp, Deck);
+	if (Deck && !bReady) Deck->GetDeckEnemyNavigationComponent()->ReplanIfTargetMoved(Deck->GetCombatTarget());
+	const EDeckWalkRouteTick Result = bReady ? EDeckWalkRouteTick::Reached
 		: (Mover && Mover->CanMoveOnDeck() && Route ? Route->TickRoute(DeltaSeconds, AcceptanceRadius,
 			ProgressTimeout, MaximumMoveTime, MoveSpeed, MinimumProgressDistance) : EDeckWalkRouteTick::Failed);
 	if (Result == EDeckWalkRouteTick::Moving) return;
-	StopMovement(OwnerComp, Enemy);
-	if (Result == EDeckWalkRouteTick::Reached && Mover) Mover->OnDeckMoveReached();
-	else if (Mover) Mover->OnDeckMoveFailed();
-	if (Route) Route->ClearGoal();
-	if (bAttackReady && Navigation) Navigation->CancelCombatRoute();
-	ClearDestinationKey(OwnerComp);
+	if (Deck && Deck->GetDeckCombatComponent()->HasRecovery()
+		&& Deck->GetDeckCombatComponent()->HasAttackPosition(Deck->GetCombatTarget())) Deck->GetDeckCombatComponent()->ClearRecovery();
+	StopDeckMove(OwnerComp, Enemy, Result == EDeckWalkRouteTick::Reached);
 	FinishLatentTask(OwnerComp, Result == EDeckWalkRouteTick::Reached ? EBTNodeResult::Succeeded : EBTNodeResult::Failed);
 }
 EBTNodeResult::Type UBTT_MoveToDeckWaypoint::AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
-	AAIController* Controller = OwnerComp.GetAIOwner();
-	ACharacter* Character = Controller ? Cast<ACharacter>(Controller->GetPawn()) : nullptr;
-	StopMovement(OwnerComp, Character);
-	if (Character)
-	{
-		if (UDeckWalkRouteComponent* Route = Character->FindComponentByClass<UDeckWalkRouteComponent>()) Route->ClearGoal();
-		if (IDeckWaypointMovementInterface* Mover = Cast<IDeckWaypointMovementInterface>(Character)) Mover->OnDeckMoveFailed();
-	}
-	ClearDestinationKey(OwnerComp);
+	StopDeckMove(OwnerComp, OwnerComp.GetAIOwner() ? Cast<ABaseEnemy>(OwnerComp.GetAIOwner()->GetPawn()) : nullptr, false);
 	return EBTNodeResult::Aborted;
 }

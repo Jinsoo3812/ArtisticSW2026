@@ -1,4 +1,7 @@
 #include "Decorator/BTD_CombatTargetState.h"
+#include "AIController.h"
+#include "DeckAI/DeckRangedEnemy.h"
+#include "DeckAI/DeckEnemyCombatComponent.h"
 
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "BehaviorTree/BlackboardComponent.h"
@@ -18,6 +21,8 @@ bool UBTD_CombatTargetState::CalculateRawConditionValue(
 	UBehaviorTreeComponent& OwnerComp,
 	uint8* NodeMemory) const
 {
+	const ADeckEnemy* Deck = OwnerComp.GetAIOwner() ? Cast<ADeckEnemy>(OwnerComp.GetAIOwner()->GetPawn()) : nullptr;
+	if (Deck && Deck->GetDeckCombatComponent()->HasCommittedAttack()) return Query == ECombatTargetStateQuery::IsSet;
 	const UBlackboardComponent* BlackboardComponent = OwnerComp.GetBlackboardComponent();
 	const AActor* TargetActor = BlackboardComponent
 		? Cast<AActor>(BlackboardComponent->GetValueAsObject(GetSelectedBlackboardKey()))

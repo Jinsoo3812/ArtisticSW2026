@@ -10,6 +10,8 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "DeckAI/DeckEnemyNavigationComponent.h"
+#include "DeckAI/DeckEnemyCombatComponent.h"
+#include "AI/EnemyAlarmComponent.h"
 #include "DeckAI/DeckWalkRouteComponent.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
 #include "DeckAI/DeckWaypointComponent.h"
@@ -26,6 +28,7 @@ ADeckEnemy::ADeckEnemy()
 	DeckEnemyNavigationComponent = CreateDefaultSubobject<UDeckEnemyNavigationComponent>(
 		TEXT("DeckEnemyNavigationComponent"));
 	DeckWalkRouteComponent = CreateDefaultSubobject<UDeckWalkRouteComponent>(TEXT("DeckWalkRouteComponent"));
+	DeckCombatComponent = CreateDefaultSubobject<UDeckEnemyCombatComponent>(TEXT("DeckCombatComponent"));
 	bAutoResolveHostShip = false;
 	bDestroyWithHostShip = false;
 	bDestroyAfterDeathFinished = false;
@@ -33,22 +36,6 @@ ADeckEnemy::ADeckEnemy()
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->bBaseOnAttachmentRoot = true;
-	}
-}
-
-float ADeckEnemy::GetPreferredDeckCombatRange() const
-{
-	return DeckCombatRole == EDeckEnemyCombatRole::Melee
-		? 0.0f
-		: (GetMinAttackRange() + GetMaxAttackRange()) * 0.5f;
-}
-
-void ADeckEnemy::HandleRangedReleaseLineOfSightBlocked(AActor* TargetActor)
-{
-	if (HasAuthority() && DeckCombatRole == EDeckEnemyCombatRole::Ranged
-		&& DeckEnemyNavigationComponent)
-	{
-		DeckEnemyNavigationComponent->RequestReleaseLineOfSightReposition(TargetActor);
 	}
 }
 
@@ -198,6 +185,8 @@ void ADeckEnemy::DeactivateToPool()
 	FlushNetDormancy();
 	GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
 	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
+	if (DeckCombatComponent) DeckCombatComponent->ResetCombat();
+	if (AlarmComponent) AlarmComponent->ResetForReuse();
 	ClearCombatTarget();
 	if (DeckEnemyNavigationComponent)
 	{
@@ -261,6 +250,7 @@ void ADeckEnemy::BeginFreeDeckMovement()
 
 bool ADeckEnemy::EvaluateAttackTarget(const AActor* Candidate, bool bRequireLineOfSight, FString& OutReason) const
 {
+	if (!EvaluateCombatTarget(Candidate, OutReason)) return false;
 	const AEnemyShip* Ship = GetDeckHostShip();
 	const UDeckWalkAreaComponent* Area = Ship ? Ship->GetDeckWalkAreaComponent() : nullptr;
 	FDeckWalkLocation SelfFloor, TargetFloor;
@@ -275,12 +265,26 @@ bool ADeckEnemy::EvaluateAttackTarget(const AActor* Candidate, bool bRequireLine
 		OutReason = TEXT("DifferentCombatSurface");
 		return false;
 	}
+	if (DeckCombatRole == EDeckEnemyCombatRole::Melee)
+	{
+		const UBaseWeaponComponent* Weapon = GetWeaponComponent();
+		const float Range = Weapon && Weapon->IsWeaponEquipped() ? Weapon->GetCurrentAttackRange() : 0.0f;
+		if (Range <= 0.0f || FVector::Distance(GetActorLocation(), Candidate->GetActorLocation()) > Range)
+		{
+			OutReason = TEXT("AboveMeleeWeaponRange"); return false;
+		}
+		if (bRequireLineOfSight && !DeckCombatComponent->HasClearAttackLine(const_cast<AActor*>(Candidate)))
+		{
+			OutReason = TEXT("LineOfSightBlocked"); return false;
+		}
+		OutReason = TEXT("Ready"); return true;
+	}
 	return Super::EvaluateAttackTarget(Candidate, bRequireLineOfSight, OutReason);
 }
 
 void ADeckEnemy::OnDeckMoveReached()
 {
-	if (DeckEnemyNavigationComponent) DeckEnemyNavigationComponent->CompleteReleaseLineOfSightReposition();
+	if (DeckEnemyNavigationComponent) DeckEnemyNavigationComponent->CancelCombatRoute();
 }
 
 void ADeckEnemy::OnDeckMoveFailed()
@@ -290,6 +294,8 @@ void ADeckEnemy::OnDeckMoveFailed()
 
 void ADeckEnemy::HandleDeath_Implementation()
 {
+	if (DeckCombatComponent) DeckCombatComponent->ResetCombat();
+	if (AlarmComponent) AlarmComponent->ResetForReuse();
 	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
 	if (HasAuthority())
 	{

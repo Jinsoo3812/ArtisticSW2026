@@ -1,10 +1,13 @@
 #include "Decorator/BTD_CanRangedAttack.h"
 
 #include "AIController.h"
+#include "AI/BaseAIController.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "RangedEnemy/RangedEnemy.h"
+#include "DeckAI/DeckRangedEnemy.h"
+#include "DeckAI/DeckEnemyCombatComponent.h"
 
 UBTD_CanRangedAttack::UBTD_CanRangedAttack()
 {
@@ -20,6 +23,8 @@ bool UBTD_CanRangedAttack::CalculateRawConditionValue(UBehaviorTreeComponent& Ow
 {
 	const AAIController* AIController = OwnerComp.GetAIOwner();
 	const ARangedEnemy* Enemy = AIController ? Cast<ARangedEnemy>(AIController->GetPawn()) : nullptr;
+	if (const ADeckEnemy* Deck = Cast<ADeckEnemy>(Enemy); Deck && Deck->GetDeckCombatComponent()->HasCommittedAttack()) return true;
+	if (const ABaseAIController* AI = Cast<ABaseAIController>(AIController); AI && AI->HasDeferredDeckDecision()) return false;
 	const UBlackboardComponent* BlackboardComponent = OwnerComp.GetBlackboardComponent();
 	const AActor* TargetActor = BlackboardComponent
 		? Cast<AActor>(BlackboardComponent->GetValueAsObject(GetSelectedBlackboardKey()))

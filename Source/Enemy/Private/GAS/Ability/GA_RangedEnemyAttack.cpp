@@ -3,11 +3,14 @@
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "AbilitySystemComponent.h"
+#include "AI/BaseAIController.h"
 #include "BaseGameplayTags.h"
 #include "Item/Projectiles/ArrowProjectile.h"
 #include "Item/Projectiles/ProjectileShotPreparation.h"
 #include "GASCombatLibrary.h"
 #include "RangedEnemy/RangedEnemy.h"
+#include "DeckAI/DeckEnemyCombatComponent.h"
+#include "DeckAI/DeckRangedEnemy.h"
 #include "RangedEnemy/EnemyBowShotPreparation.h"
 #include "RangedEnemy/RangedEnemyProjectile.h"
 #include "Weapon/EnemyBow.h"
@@ -25,6 +28,16 @@ UGA_RangedEnemyAttack::UGA_RangedEnemyAttack()
 	ActivationBlockedTags.AddTag(State_Damaged);
 }
 
+bool UGA_RangedEnemyAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags,
+	const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
+{
+	const ADeckEnemy* Deck = ActorInfo ? Cast<ADeckEnemy>(ActorInfo->AvatarActor.Get()) : nullptr;
+	const ABaseAIController* AI = Deck ? Cast<ABaseAIController>(Deck->GetController()) : nullptr;
+	if (Deck && (Deck->GetDeckCombatComponent()->HasCommittedAttack() || (AI && AI->HasDeferredDeckDecision()))) return false;
+	return Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
+}
+
 void UGA_RangedEnemyAttack::ActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -35,7 +48,14 @@ void UGA_RangedEnemyAttack::ActivateAbility(
 
 	CachedEnemy = Cast<ARangedEnemy>(GetAvatarActorFromActorInfo());
 	CachedTarget = CachedEnemy ? CachedEnemy->GetCombatTarget() : nullptr;
+	DeckCombat.Reset(); DeckAttackAttempt = 0;
+	if (ADeckEnemy* Deck = Cast<ADeckEnemy>(CachedEnemy))
+	{
+		DeckCombat = Deck->GetDeckCombatComponent();
+		DeckAttackAttempt = DeckCombat->BeginAttack(CachedTarget);
+	}
 	bProjectileFired = false;
+	bFireEventReceived = false;
 	bFinishingAttack = false;
 	bOwnsServerPoseRefresh = false;
 	bShotQueued = false;
@@ -44,6 +64,7 @@ void UGA_RangedEnemyAttack::ActivateAbility(
 
 	if (!CachedEnemy || !CachedEnemy->IsBalanceAttackReady())
 	{
+		if (DeckCombat.IsValid()) DeckCombat->RecordFailure(DeckAttackAttempt, EDeckAttackOutcome::Cooldown);
 		FinishAttack(true);
 		return;
 	}
@@ -55,6 +76,8 @@ void UGA_RangedEnemyAttack::ActivateAbility(
 	}
 	if (!CachedEnemy->CanAttackCurrentTarget(false))
 	{
+		if (DeckCombat.IsValid()) DeckCombat->RecordFailure(DeckAttackAttempt,
+			CachedEnemy->IsValidCombatTarget(CachedTarget) ? EDeckAttackOutcome::OutOfRange : EDeckAttackOutcome::TargetInvalid);
 		FinishAttack(true);
 		return;
 	}
@@ -66,18 +89,20 @@ void UGA_RangedEnemyAttack::ActivateAbility(
 
 	CachedEnemy->AcquireServerRangedAttackPoseRefresh();
 	bOwnsServerPoseRefresh = true;
-	AddAttackStateTag();
 
 	UAnimMontage* AttackMontage = CachedEnemy->GetRangedAttackMontage();
 	const FGameplayTag FireEventTag = CachedEnemy->GetRangedFireEventTag();
 	if (!AttackMontage || !FireEventTag.IsValid())
 	{
+		if (DeckCombat.IsValid()) DeckCombat->RecordFailure(DeckAttackAttempt, EDeckAttackOutcome::InvalidSetup);
 		UE_LOG(LogTemp, Warning,
 			TEXT("Ranged attack requires DA_Weapon AttackMontage and a valid FireEventTag. Enemy=%s Montage=%s Tag=%s"),
 			*GetNameSafe(CachedEnemy), *GetNameSafe(AttackMontage), *FireEventTag.ToString());
 		FinishAttack(true);
 		return;
 	}
+	if (DeckCombat.IsValid()) DeckCombat->CommitAttack(DeckAttackAttempt, Handle, AttackMontage);
+	AddAttackStateTag();
 
 	FireProjectileEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
 		this,
@@ -110,6 +135,8 @@ void UGA_RangedEnemyAttack::EndAbility(
 	PendingShotId.Invalidate();
 	bShotQueued = false;
 	bFinishingAttack = true;
+	if (DeckCombat.IsValid()) DeckCombat->EndAttack(DeckAttackAttempt, bWasCancelled);
+	DeckCombat.Reset(); DeckAttackAttempt = 0;
 	RemoveAttackStateTag();
 	if (bOwnsServerPoseRefresh && CachedEnemy)
 	{
@@ -128,17 +155,29 @@ void UGA_RangedEnemyAttack::EndAbility(
 
 void UGA_RangedEnemyAttack::OnFireProjectileEvent(FGameplayEventData Payload)
 {
-	if (bProjectileFired || bFinishingAttack || bShotQueued || !IsActive())
+	if (bProjectileFired || bFinishingAttack || bShotQueued || !IsActive() || (DeckCombat.IsValid() && bFireEventReceived))
 	{
 		return;
 	}
+	bFireEventReceived = true;
 
 	ShotComponent = UProjectileShotComponent::FindOrAdd(CachedEnemy);
-	if (!ShotComponent.IsValid()) { FinishAttack(true); return; }
+	if (!ShotComponent.IsValid()) { HandleShotFailure(); return; }
 	bShotQueued = ShotComponent->Queue(this, PendingShotId,
 		FProjectileShotCommitDelegate::CreateUObject(this, &UGA_RangedEnemyAttack::CommitProjectile),
 		FProjectileShotFinishedDelegate::CreateUObject(this, &UGA_RangedEnemyAttack::OnShotCommitted));
-	if (!bShotQueued) FinishAttack(true);
+	if (!bShotQueued) HandleShotFailure();
+}
+
+void UGA_RangedEnemyAttack::HandleShotFailure()
+{
+	if (DeckCombat.IsValid())
+	{
+		if (DeckCombat->GetLastOutcome() == EDeckAttackOutcome::Ready)
+			DeckCombat->RecordFailure(DeckAttackAttempt, EDeckAttackOutcome::InvalidSetup);
+		if (bMontageCompleted) FinishAttack(false);
+	}
+	else FinishAttack(true);
 }
 
 EProjectileShotCommit UGA_RangedEnemyAttack::CommitProjectile()
@@ -149,21 +188,27 @@ EProjectileShotCommit UGA_RangedEnemyAttack::CommitProjectile()
 void UGA_RangedEnemyAttack::OnShotCommitted(bool bSucceeded)
 {
 	bShotQueued = false;
-	if (!bSucceeded || bMontageCompleted) FinishAttack(!bSucceeded);
+	if (DeckCombat.IsValid())
+	{
+		if (!bSucceeded) HandleShotFailure();
+		else if (bMontageCompleted) FinishAttack(false);
+	}
+	else if (!bSucceeded || bMontageCompleted) FinishAttack(!bSucceeded);
 }
 
 void UGA_RangedEnemyAttack::OnAttackMontageCompleted()
 {
 	bMontageCompleted = true;
 	if (bShotQueued) return;
-	if (!bProjectileFired)
+	if (!bProjectileFired && !bFireEventReceived)
 	{
+		if (DeckCombat.IsValid()) DeckCombat->RecordFailure(DeckAttackAttempt, EDeckAttackOutcome::InvalidSetup);
 		UE_LOG(LogTemp, Warning,
 			TEXT("Ranged attack montage completed without FireArrow notify. Enemy=%s Montage=%s"),
 			*GetNameSafe(CachedEnemy),
 			*GetNameSafe(CachedEnemy ? CachedEnemy->GetRangedAttackMontage() : nullptr));
 	}
-	FinishAttack(!bProjectileFired);
+	FinishAttack(DeckCombat.IsValid() ? false : !bProjectileFired);
 }
 
 void UGA_RangedEnemyAttack::OnAttackMontageBlendOut()
@@ -183,6 +228,7 @@ void UGA_RangedEnemyAttack::OnAttackMontageCancelled()
 
 bool UGA_RangedEnemyAttack::FireProjectile()
 {
+	if (DeckCombat.IsValid() && !DeckCombat->IsCurrentAttack(DeckAttackAttempt)) return false;
 	if (!CachedEnemy || !CachedEnemy->HasAuthority() || !IsActive() || bFinishingAttack)
 	{
 		return false;
@@ -193,10 +239,12 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 	}
 	if (!CachedTarget)
 	{
+		if (DeckCombat.IsValid()) DeckCombat->RecordFailure(DeckAttackAttempt, EDeckAttackOutcome::TargetInvalid);
 		return false;
 	}
 	if (CachedEnemy->GetCombatTarget() != CachedTarget)
 	{
+		if (DeckCombat.IsValid()) DeckCombat->RecordFailure(DeckAttackAttempt, EDeckAttackOutcome::TargetInvalid);
 		return false;
 	}
 	AEnemyBow* Bow = CachedEnemy->GetEquippedBow();
@@ -229,9 +277,11 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 	const ERangedShotSnapshotResult SnapshotResult = CachedEnemy->CaptureRangedAim(
 		CachedTarget,
 		ArrowSpawnTransform,
-		AimLocation);
+		AimLocation, !DeckCombat.IsValid());
 	if (SnapshotResult != ERangedShotSnapshotResult::Ready)
 	{
+		if (DeckCombat.IsValid()) DeckCombat->RecordFailure(DeckAttackAttempt,
+			SnapshotResult == ERangedShotSnapshotResult::MissingAttackOrigin ? EDeckAttackOutcome::InvalidSetup : EDeckAttackOutcome::TargetInvalid);
 		return false;
 	}
 
@@ -251,7 +301,8 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 	}
 	if (!CachedEnemy->HasClearRangedLaunch(CachedTarget, Shot))
 	{
-		CachedEnemy->HandleRangedReleaseLineOfSightBlocked(CachedTarget);
+		if (DeckCombat.IsValid()) DeckCombat->RecordBlockedLOS(DeckAttackAttempt, CachedTarget);
+		else CachedEnemy->HandleRangedReleaseLineOfSightBlocked(CachedTarget);
 		return false;
 	}
 
@@ -287,6 +338,7 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 	Projectile->SetInstigator(CachedEnemy);
 	if (!Projectile->LaunchEnemyShot(Shot, Bow)) { Projectile->Destroy(); return false; }
 	bProjectileFired = true;
+	if (DeckCombat.IsValid()) DeckCombat->RecordExecuted(DeckAttackAttempt);
 	return true;
 }
 

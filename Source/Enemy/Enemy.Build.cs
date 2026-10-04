@@ -47,7 +47,9 @@ public class Enemy: ModuleRules
         if (Target.bBuildEditor)
         {
             PrivateDependencyModuleNames.AddRange(new string[] {
-                "UnrealEd"
+                "UnrealEd",
+                "BehaviorTreeEditor",
+                "AIGraph"
             });
         }
     }
