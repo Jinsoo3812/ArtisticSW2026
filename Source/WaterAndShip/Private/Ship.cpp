@@ -2,6 +2,7 @@
 
 
 #include "Ship.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "HAL/IConsoleManager.h"
 #include "MultiGameMode.h"
 #include "Camera/CameraComponent.h"
@@ -538,6 +539,7 @@ void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 // Called every frame
 void AShip::Tick(float DeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Ship_Tick);
 	Super::Tick(DeltaTime);
 
 	static const auto CVarShipBalanceDiagnostics = IConsoleManager::Get().RegisterConsoleVariable(

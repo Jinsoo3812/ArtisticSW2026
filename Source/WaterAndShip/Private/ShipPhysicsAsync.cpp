@@ -1,4 +1,5 @@
 #include "ShipPhysicsAsync.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "ShipRollStabilization.h"
 #include "Chaos/PhysicsObjectInternalInterface.h"
 #include "PBDRigidsSolver.h"
@@ -228,6 +229,7 @@ void FShipPhysicsAsync::ApplyState_Internal(const FNetStatePhysicsShip& State)
 
 void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Ship_AsyncPhysics);
 	bool bIsResimming = false;
 
 	if (Chaos::FPhysicsSolverBase* CurrentSolver = GetSolver())

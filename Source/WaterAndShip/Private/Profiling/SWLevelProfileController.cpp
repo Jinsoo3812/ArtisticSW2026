@@ -40,8 +40,10 @@ void ASWLevelProfileController::BeginPlay()
 	bScreenshot = FParse::Param(CommandLine, TEXT("SWProfileScreenshot"));
 	FParse::Value(CommandLine, TEXT("SWProfileScreenshotName="), ScreenshotName);
 	bFixedWaterCamera = FParse::Param(CommandLine, TEXT("SWProfileFixedWaterCamera"));
+	bUseSavedEditorCamera = FParse::Param(CommandLine, TEXT("SWProfileSavedEditorCamera"));
 	FParse::Value(CommandLine, TEXT("SWProfileFixedCameraZOffset="), FixedCameraZOffset);
 	FParse::Value(CommandLine, TEXT("SWProfileFixedCameraPitch="), FixedCameraPitch);
+	FParse::Value(CommandLine, TEXT("SWProfileFixedCameraYawOffset="), FixedCameraYawOffset);
 	bInjectRipple = FParse::Param(CommandLine, TEXT("SWProfileInjectRipple"));
 	FParse::Value(CommandLine, TEXT("SWProfileRippleLead="), RippleLeadSeconds);
 	FParse::Value(CommandLine, TEXT("SWProfileRippleDistance="), RippleForwardDistance);
@@ -217,8 +219,17 @@ void ASWLevelProfileController::ApplyProfileScenario()
 			FVector ViewLocation;
 			FRotator ViewRotation;
 			PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
+#if WITH_EDITORONLY_DATA
+			// ELevelViewportType::LVT_Perspective is index 3; avoid a runtime UnrealEd dependency.
+			if (bUseSavedEditorCamera && World->EditorViews.IsValidIndex(3))
+			{
+				ViewLocation = World->EditorViews[3].CamPosition;
+				ViewRotation = World->EditorViews[3].CamRotation;
+			}
+#endif
 			ViewLocation.Z += FixedCameraZOffset;
 			ViewRotation.Pitch = FixedCameraPitch;
+			ViewRotation.Yaw += FixedCameraYawOffset;
 			ViewRotation.Roll = 0.0f;
 
 			FActorSpawnParameters CameraSpawnParameters;

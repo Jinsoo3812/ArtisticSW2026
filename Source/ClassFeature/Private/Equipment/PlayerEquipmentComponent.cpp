@@ -3,6 +3,7 @@
 #include "Animation/AnimSequenceBase.h"
 
 #include "AbilitySystemComponent.h"
+#include "GASGameplayEffectCompatibility.h"
 #include "Equipment/WeaponDefinition.h"
 #include "GAS/Ability/WeaponGameplayAbility.h"
 #include "BaseGameplayTags.h"
@@ -554,7 +555,7 @@ bool UPlayerEquipmentComponent::ValidateWeapon(ABaseItem* Item) const
 	{
 		if (!Effect || Effect->IsChildOf(UGASStrengthEquipmentGameplayEffect::StaticClass())
 			|| Effect->GetDefaultObject<UGameplayEffect>()->DurationPolicy != EGameplayEffectDurationType::Infinite
-			|| Effect->GetDefaultObject<UGameplayEffect>()->StackingType != EGameplayEffectStackingType::None)
+			|| GASGameplayEffectCompatibility::GetStackingType(*Effect->GetDefaultObject<UGameplayEffect>()) != EGameplayEffectStackingType::None)
 			return false;
 		for (const FGameplayModifierInfo& Modifier : Effect->GetDefaultObject<UGameplayEffect>()->Modifiers)
 			if (Modifier.Attribute == UBaseAttributeSet::GetStrengthAttribute()) return false;

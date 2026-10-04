@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "ShipAI/EnemyShip.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "Cannon.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
@@ -1943,6 +1944,7 @@ void AEnemyShip::ApplyDistanceOptimizationState()
 
 void AEnemyShip::Tick(float DeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(SW_EnemyShip_Tick);
 	Super::Tick(DeltaTime);
 	EvaluateCrewControlState();
 	if (HasAuthority() && bCrewDefeated)
