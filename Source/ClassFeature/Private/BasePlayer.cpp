@@ -634,6 +634,7 @@ void ABasePlayer::UpdateLocomotionStateSnapshot()
 
 	FReplicatedLocomotionState NewSnapshot;
 	NewSnapshot.bIsSprinting = AnimStateComponent->bIsSprinting;
+	NewSnapshot.bLastGroundMoveWasSprinting = AnimStateComponent->bLastGroundMoveWasSprinting;
 	if (HasAuthority() && bHasAuthoritativeMoveInput)
 	{
 		NewSnapshot.MoveInput = AuthoritativeMoveInput.GetClampedToMaxSize(1.f);

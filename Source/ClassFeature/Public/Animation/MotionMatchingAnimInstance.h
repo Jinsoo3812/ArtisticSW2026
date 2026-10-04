@@ -557,6 +557,7 @@ class CLASSFEATURE_API UMotionMatchingAnimInstance : public UAnimInstance
 
     friend struct FMotionMatchingAnimInstanceProxy;
     friend class FJumpAirChooserIntegrationTest;
+    friend class FStopGaitIntegrationTest;
     friend class FJumpAirWarpingPolicyTest;
 
 public:

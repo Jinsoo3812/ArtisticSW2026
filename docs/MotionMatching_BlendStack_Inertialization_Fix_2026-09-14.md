@@ -2,6 +2,8 @@
 
 ## 개요
 
+2026-10-04 후속 수정: [Sprint Stop의 정지 직전 Gait 보존](MotionMatching_Sprint_Stop_Gait_Fix_2026-10-04.md). 입력 해제로 실제 Sprint가 종료된 뒤에도 Stop은 직전 지상 Gait로 선택하고 재생 동안 유지한다. 이 수정은 공통 C++ 부모에 적용되며 남녀 ABP의 추가 노드 변경은 필요하지 않다.
+
 본 문서는 `ArtisticSW2026` 프로젝트의 플레이어 애니메이션(`ABP_Player_Woman`, `ABP_Player_Man`) 및 `UMotionMatchingAnimInstance` C++ 코드에서 발생했던 주요 이슈 4가지의 원인 분석과 해결 내역, 아키텍처 개선 사항을 기록한 문서이다.
 
 ---

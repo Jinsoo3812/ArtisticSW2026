@@ -4259,8 +4259,22 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         // Direction changes retain the takeoff gait and leading foot.
         if (!bIsJumpAirReselecting)
         {
-            StateControllerGait = bHasStateControllerLandGaitLock ? StateControllerLandGaitLock :
-                (CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsSprinting ? EGaitIntent::Sprint : EGaitIntent::Run);
+            if (DesiredState == EStateControllerPresentationState::TransitionToStop)
+            {
+                // The input layer already stopped sprinting. Select from the
+                // gait captured for this Stop, including a Land -> Stop handoff.
+                const bool bStopSprint = CachedLocomotionStateComponent &&
+                    (CachedLocomotionStateComponent->bStopRequested
+                        ? CachedLocomotionStateComponent->bStopWasSprinting
+                        : CachedLocomotionStateComponent->bLastGroundMoveWasSprinting);
+                StateControllerGait = bStopSprint
+                    ? EGaitIntent::Sprint : EGaitIntent::Run;
+            }
+            else
+            {
+                StateControllerGait = bHasStateControllerLandGaitLock ? StateControllerLandGaitLock :
+                    (CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsSprinting ? EGaitIntent::Sprint : EGaitIntent::Run);
+            }
         }
         bStateControllerSelectedSprintStart =
             DesiredState == EStateControllerPresentationState::TransitionToStart &&
@@ -4839,8 +4853,9 @@ void UMotionMatchingAnimInstance::EvaluateStateControllerPlaybackHold(EStateCont
         StateControllerPreviousMovementDirection = MovementDirectionLastFrame;
     }
     bStateControllerIsPivoting = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bSharpTurnRequested;
-    // Keep chooser gait fixed for this jump, even when Shift is released.
-    if (StateControllerPlaybackHoldState != EStateControllerPresentationState::TransitionToJump)
+    // One-shot gait belongs to the selected Jump/Stop, not live Shift input.
+    if (StateControllerPlaybackHoldState != EStateControllerPresentationState::TransitionToJump &&
+        StateControllerPlaybackHoldState != EStateControllerPresentationState::TransitionToStop)
     {
         StateControllerGait = bHasStateControllerLandGaitLock ? StateControllerLandGaitLock :
             (CachedLocomotionStateComponent && CachedLocomotionStateComponent->bIsSprinting
