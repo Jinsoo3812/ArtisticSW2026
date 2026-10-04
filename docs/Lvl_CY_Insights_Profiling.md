@@ -2,6 +2,23 @@
 
 UE 5.7 기준. 계측은 기존 AI·물리·Tick 동작을 바꾸지 않는다. Shipping에서는 캡처 명령과 자동 캡처를 사용하지 않는다.
 
+## 적용한 최적화와 유지할 설정
+
+| 대상 | 적용값 / 변경 범위 |
+|---|---|
+| `Lvl_CY` Landscape | Nanite 활성화 및 데이터 빌드·저장, 컴포넌트 32개 검증 |
+| `M_Landscape` | Nanite 사용 플래그 활성화 |
+| `LandscapeGrassType01`의 풀·꽃 품종 | Cast Dynamic Shadow 끄기, Cast Contact Shadow 켜기 |
+| 위 품종의 WPO Disable Distance | 3000cm(30m). 원거리 바람 변형을 제한하며 메시를 숨기는 거리는 아님 |
+| 맵 Directional Light의 Contact Shadow | 월드 공간 길이 20cm, Casting Intensity 0.75, Non-Casting Intensity 0 |
+| 프로젝트 그림자 설정 | `grass.DisableDynamicShadows=0`, `r.ContactShadows=1`, `r.Shadow.Virtual.NonNanite.IncludeInCoarsePages=0` |
+
+전역 풀 그림자를 끄는 대신 Grass Type별로 동적 그림자 맵 생성을 줄였다. Contact Shadow는 화면 공간 기반이므로 화면 밖 물체나 긴 노을 그림자를 완전히 대신하지 못한다. 근접 풀·꽃의 접촉감과 카메라 이동 시 품질을 확인한다. 비 Nanite coarse page 제외 설정은 안개·반투명 표면의 그림자도 확인해야 한다.
+
+풀 밀도, 기존 LOD와 컬링 거리는 유지했다. 풀의 Start/End Cull Distance는 15000/20000cm, 꽃은 10000/10000cm다. PCG 그래프와 PCG 메시·머티리얼은 수정하지 않았다. Landscape Nanite 활성화는 이 식물 메시의 Nanite 활성화와 별개다.
+
+에디터 화면에서 Shadow Depths가 약 7ms에서 0.3~0.6ms로 줄어든 표본이 관찰됐다. 다만 카메라·시간·뷰포트 조건이 모두 통제된 비교가 아니므로 출시 성능 개선율이나 FPS 두 배 향상의 근거로 사용하지 않는다. 다음 검증은 동일 카메라·해상도·품질에서 **시간 고정 / 실제 주야간 진행**을 각각 측정하고, 최소 사양 GPU의 Development 패키지에서 반복한다. 날씨 Blueprint는 원래 자동 시간 진행 연결로 복원한 상태다.
+
 ## 에디터에서 캡처
 
 1. `Lvl_CY`를 열고 PIE를 실행한다. 노을 시간을 고정하고, 같은 위치·카메라·해상도를 사용한다. 셰이더 컴파일과 지형/풀 스트리밍이 끝난 뒤 측정한다.
