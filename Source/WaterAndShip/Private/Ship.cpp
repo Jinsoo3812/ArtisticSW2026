@@ -151,6 +151,7 @@ AShip::AShip()
 	ShipDamageMesh->SetupAttachment(BuoyancyRoot);
 	ShipDamageMesh->SetCollisionProfileName(TEXT("PlayerShipDamage"));
 	ShipDamageMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
+	ShipDamageMesh->SetCollisionResponseToChannel(ECC_FootPlacement, ECR_Ignore);
 	ShipDamageMesh->SetGenerateOverlapEvents(false);
 	ShipDamageMesh->SetVisibility(false, false);
 	ShipDamageMesh->SetHiddenInGame(true, false);
@@ -169,6 +170,7 @@ AShip::AShip()
 		DeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
 		DeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
 		DeckMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
+		DeckMesh->SetCollisionResponseToChannel(ECC_FootPlacement, ECR_Block);
 		DeckMesh->SetGenerateOverlapEvents(false);
 		DeckMesh->SetVisibility(false, false);
 		DeckMesh->SetHiddenInGame(true, false);
@@ -334,6 +336,7 @@ void AShip::BeginPlay()
 		DeckMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
 		DeckMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
 		DeckMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
+		DeckMesh->SetCollisionResponseToChannel(ECC_FootPlacement, ECR_Block);
 	}
 	if (ShipDamageMesh)
 	{
@@ -341,6 +344,17 @@ void AShip::BeginPlay()
 		// must hit this query-only hull instead, including legacy Blueprint CDOs.
 		ShipDamageMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 		ShipDamageMesh->SetCollisionResponseToChannel(ECC_Arrow, ECR_Block);
+		ShipDamageMesh->SetCollisionResponseToChannel(ECC_FootPlacement, ECR_Ignore);
+	}
+	// Interaction volumes are query helpers, never surfaces for foot IK. Reassert
+	// this on existing BP component templates as well as the updated profile.
+	TInlineComponentArray<UPrimitiveComponent*> ShipPrimitives(this);
+	for (UPrimitiveComponent* Primitive : ShipPrimitives)
+	{
+		if (Primitive->GetCollisionProfileName() == TEXT("Interactable"))
+		{
+			Primitive->SetCollisionResponseToChannel(ECC_FootPlacement, ECR_Ignore);
+		}
 	}
 	bBuoyancyQueryDiagnostics = FParse::Param(
 		FCommandLine::Get(), TEXT("BuoyancyQueryDiagnostics"));

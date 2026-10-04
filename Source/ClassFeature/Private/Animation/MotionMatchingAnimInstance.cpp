@@ -6,6 +6,7 @@
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Animation/SWTrajectoryComponent.h"
 #include "SwimmingComponent.h"
+#include "Ship.h"
 #include "BaseGameplayTags.h"
 #include "CharacterTrajectoryComponent.h"
 #include "ChooserFunctionLibrary.h"
@@ -2057,11 +2058,57 @@ void UMotionMatchingAnimInstance::NativeInitializeAnimation()
     // Cache the nodes in the proxy on the game thread
     FMotionMatchingAnimInstanceProxy& MyProxy = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>();
     MyProxy.CacheNodes(this);
+    UpdateFootPlacementSettings();
 }
 
 bool UMotionMatchingAnimInstance::IsDedicatedServerAnimationContext() const
 {
     return GetWorld() && GetWorld()->GetNetMode() == NM_DedicatedServer;
+}
+
+void UMotionMatchingAnimInstance::UpdateFootPlacementSettings()
+{
+    check(IsInGameThread());
+    FAnimThreadSafeData& Data = GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    const bool bUseStopSettings = CachedLocomotionStateComponent && CachedLocomotionStateComponent->bStopRequested;
+    Data.FootPlacementPlantSettings = bUseStopSettings ? FootPlacementPlantSettingsStops : FootPlacementPlantSettingsDefault;
+    Data.FootPlacementInterpolationSettings = bUseStopSettings ? FootPlacementInterpolationSettingsStops : FootPlacementInterpolationSettingsDefault;
+    Data.bIsOnShip = false;
+
+    if (!IsValid(CachedBasePlayer))
+    {
+        return;
+    }
+
+    // Walking characters use CMC's base; helm/cannon riders have movement
+    // disabled and use replicated attachments instead. Neither path needs a
+    // collision query, controller ownership, nor another replicated flag.
+    const auto IsAttachedToShip = [](const AActor* Actor)
+    {
+        for (const AActor* Parent = Actor; Parent; Parent = Parent->GetAttachParentActor())
+        {
+            if (Parent->IsA<AShip>())
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    Data.bIsOnShip = IsAttachedToShip(CachedBasePlayer->GetAttachParentActor());
+    const UCharacterMovementComponent* Movement = CachedBasePlayer->GetCharacterMovement();
+    if (!Data.bIsOnShip && Movement && Movement->IsMovingOnGround())
+    {
+        const UPrimitiveComponent* Base = CachedBasePlayer->GetMovementBase();
+        Data.bIsOnShip = Base && IsAttachedToShip(Base->GetOwner());
+    }
+
+    if (Data.bIsOnShip)
+    {
+        // Keep ground tracing, slope alignment, pelvis solving and all authored
+        // tuning. Only release the plant constraint that fights ship motion.
+        Data.FootPlacementPlantSettings.LockType = EFootPlacementLockType::Unlocked;
+    }
 }
 
 float UMotionMatchingAnimInstance::CalculateAimOffsetAlpha(const FAnimThreadSafeData& ThreadSafeData) const
@@ -2127,6 +2174,9 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     {
         return;
     }
+
+    // Also update on distant proxies and linked layers when MM is throttled.
+    UpdateFootPlacementSettings();
 
     // 트랙젝토리 틱을 수동으로 구동 (매 프레임 위치/회전 보간 등 물리 계산 진행)
     if (CachedTrajectoryComponent)
@@ -2491,6 +2541,11 @@ void UMotionMatchingAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     // Movement Data
     const FAnimThreadSafeData& PreviousThreadSafeData =
         GetProxyOnGameThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
+    // These settings were resolved before the MM throttle above. Preserve them
+    // when rebuilding the full payload, or its default LockType re-locks feet.
+    ThreadSafeData.bIsOnShip = PreviousThreadSafeData.bIsOnShip;
+    ThreadSafeData.FootPlacementPlantSettings = PreviousThreadSafeData.FootPlacementPlantSettings;
+    ThreadSafeData.FootPlacementInterpolationSettings = PreviousThreadSafeData.FootPlacementInterpolationSettings;
     ThreadSafeData.MovementData.Velocity = CachedLocomotionStateComponent->Velocity;
     ThreadSafeData.MovementData.VelocityLocal = CachedBasePlayer->GetActorTransform().InverseTransformVectorNoScale(CachedLocomotionStateComponent->Velocity);
     ThreadSafeData.MovementData.LastNonZeroVelocity = PreviousThreadSafeData.MovementData.LastNonZeroVelocity;
@@ -3449,14 +3504,12 @@ float UMotionMatchingAnimInstance::GetThreadSafeSwimDirection() const
 
 FFootPlacementPlantSettings UMotionMatchingAnimInstance::Get_FootPlacementPlantSettings() const
 {
-    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
-    return ThreadSafeData.GroundData.bStopRequested ? FootPlacementPlantSettingsStops : FootPlacementPlantSettingsDefault;
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.FootPlacementPlantSettings;
 }
 
 FFootPlacementInterpolationSettings UMotionMatchingAnimInstance::Get_FootPlacementInterpolationSettings() const
 {
-    const FAnimThreadSafeData& ThreadSafeData = GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData;
-    return ThreadSafeData.GroundData.bStopRequested ? FootPlacementInterpolationSettingsStops : FootPlacementInterpolationSettingsDefault;
+    return GetProxyOnAnyThread<FMotionMatchingAnimInstanceProxy>().ThreadSafeData.FootPlacementInterpolationSettings;
 }
 
 float UMotionMatchingAnimInstance::GetThreadSafeFootPlacementAlpha() const

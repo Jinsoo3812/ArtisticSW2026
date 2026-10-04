@@ -444,6 +444,16 @@ struct FAnimThreadSafeData
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     float FootPlacementAlpha = 1.0f;
 
+    /** Presentation-only ship context, sampled on the game thread from base/attachment. */
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Foot Placement")
+    bool bIsOnShip = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Foot Placement")
+    FFootPlacementPlantSettings FootPlacementPlantSettings;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Locomotion|Foot Placement")
+    FFootPlacementInterpolationSettings FootPlacementInterpolationSettings;
+
     UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
     float LegIKAlpha = 1.0f;
 };
@@ -917,6 +927,9 @@ protected:
     bool bHasLinkedSwimAnimationState = false;
 
     bool IsDedicatedServerAnimationContext() const;
+    /** Snapshot resolved settings before any motion-matching update throttling. */
+    void UpdateFootPlacementSettings();
+    friend class FShipFootPlacementSettingsTest;
     float CalculateAimOffsetAlpha(const FAnimThreadSafeData& ThreadSafeData) const;
 
 protected:
