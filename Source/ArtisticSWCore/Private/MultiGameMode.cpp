@@ -22,6 +22,13 @@ AMultiGameMode::AMultiGameMode()
     bAutoReadyOnPostLogin = false;
 }
 
+void AMultiGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ClearRespawnTimers();
+	PendingPlayerRespawns.Reset();
+	Super::EndPlay(EndPlayReason);
+}
+
 void AMultiGameMode::PostLogin(APlayerController* NewPlayer)
 {
     if (!NewPlayer)
@@ -80,9 +87,7 @@ void AMultiGameMode::Logout(AController* Exiting)
         PlayerRoles.Remove(Exiting);
         ReadyPlayers.Remove(Exiting);
 		PlayerIndices.Remove(Exiting);
-		FinishedDeadPlayers.Remove(Exiting);
-		if (FTimerHandle* Timer = RespawnTimers.Find(Exiting)) GetWorldTimerManager().ClearTimer(*Timer);
-		RespawnTimers.Remove(Exiting);
+		CancelPlayerRespawn(Exiting, true);
     }
 
     // 플레이어가 나가면 다시 조건을 만족할 수 있도록 플래그를 갱신한다.
@@ -296,35 +301,115 @@ int32 AMultiGameMode::GetPlayerIndex(AController* Controller) const
 
 void AMultiGameMode::NotifyPlayerDeathFinished(APawn* DeadPawn)
 {
-	if (!HasAuthority() || !DeadPawn) return;
+	if (!HasAuthority() || !IsValid(DeadPawn) || bLevelRestartRequested) return;
 	AController* DeadController = DeadPawn->GetController();
 	if (!DeadController && DeadPawn->GetPlayerState()) DeadController = DeadPawn->GetPlayerState()->GetOwningController();
-	if (!DeadController || !PlayerIndices.Contains(DeadController) || FinishedDeadPlayers.Contains(DeadController)) return;
-
-	FinishedDeadPlayers.Add(DeadController);
-	DeadController->UnPossess();
-	DeadPawn->SetLifeSpan(FMath::Max(IndividualRespawnDelay + 2.0f, 10.0f));
-	if (FinishedDeadPlayers.Num() >= RequiredPlayerCount)
+	if (!IsValid(DeadController) || !PlayerIndices.Contains(DeadController) || PendingPlayerRespawns.Contains(DeadController))
 	{
-		for (TPair<TObjectPtr<AController>, FTimerHandle>& Pair : RespawnTimers) GetWorldTimerManager().ClearTimer(Pair.Value);
-		RespawnTimers.Reset();
-		HandleAllPlayersDeathFinished();
+		UE_LOG(LogTemp, Log, TEXT("[PlayerDeath] RegistrationSkipped Pawn=%s Controller=%s Registered=%d AlreadyFinished=%d"),
+			*GetNameSafe(DeadPawn), *GetNameSafe(DeadController), PlayerIndices.Contains(DeadController) ? 1 : 0,
+			PendingPlayerRespawns.Contains(DeadController) ? 1 : 0);
 		return;
 	}
 
-	FTimerDelegate Delegate;
-	Delegate.BindUObject(this, &AMultiGameMode::TryRespawnPlayer, DeadController);
-	GetWorldTimerManager().SetTimer(RespawnTimers.FindOrAdd(DeadController), Delegate, IndividualRespawnDelay, false);
+	FPendingPlayerRespawn& Pending = PendingPlayerRespawns.Add(DeadController);
+	Pending.Corpse = DeadPawn;
+	Pending.DeathFinishedTime = GetWorld()->GetTimeSeconds();
+	// A missing spawn point must not erase the body the waiting player is watching.
+	DeadPawn->SetLifeSpan(0.0f);
+	DeadController->UnPossess();
+	UE_LOG(LogTemp, Log, TEXT("[PlayerDeath] Registered Pawn=%s Controller=%s Corpse=ProtectedUntilRespawn MinimumLifetime=%.2f RespawnDelay=%.2f DeadPlayers=%d RequiredPlayers=%d"),
+		*GetNameSafe(DeadPawn), *GetNameSafe(DeadController), MinimumCorpseLifetime, IndividualRespawnDelay,
+		PendingPlayerRespawns.Num(), RequiredPlayerCount);
+	if (PendingPlayerRespawns.Num() >= RequiredPlayerCount)
+	{
+		ClearRespawnTimers();
+		HandleAllPlayersDeathFinished();
+		return;
+	}
+	SchedulePlayerRespawn(DeadController, IndividualRespawnDelay);
+}
+
+void AMultiGameMode::SchedulePlayerRespawn(AController* Controller, float Delay)
+{
+	FPendingPlayerRespawn* Pending = PendingPlayerRespawns.Find(Controller);
+	if (!Pending || !IsValid(Controller) || bLevelRestartRequested || !GetWorld() || GetWorld()->bIsTearingDown) return;
+	GetWorldTimerManager().ClearTimer(Pending->Timer);
+	const TWeakObjectPtr<AController> WeakController = Controller;
+	FTimerDelegate Delegate = FTimerDelegate::CreateWeakLambda(this, [this, WeakController]()
+	{
+		if (AController* LiveController = WeakController.Get()) TryRespawnPlayer(LiveController);
+		else CancelPlayerRespawn(WeakController, true);
+	});
+	// SetTimer with a zero rate clears the timer instead of attempting respawn.
+	if (Delay <= 0.0f) Pending->Timer = GetWorldTimerManager().SetTimerForNextTick(Delegate);
+	else GetWorldTimerManager().SetTimer(Pending->Timer, Delegate, Delay, false);
 }
 
 void AMultiGameMode::TryRespawnPlayer(AController* Controller)
 {
-	RespawnTimers.Remove(Controller);
-	if (!Controller || !FinishedDeadPlayers.Contains(Controller)) return;
+	FPendingPlayerRespawn* Pending = PendingPlayerRespawns.Find(Controller);
+	if (!HasAuthority() || !Pending || bLevelRestartRequested) return;
+	if (!IsValid(Controller) || !PlayerIndices.Contains(Controller))
+	{
+		CancelPlayerRespawn(Controller, true);
+		return;
+	}
+	if (IsValid(Controller->GetPawn()) && Controller->GetPawn() != Pending->Corpse.Get())
+	{
+		CompletePlayerRespawn(Controller);
+		return;
+	}
 	UPlayerRespawnPointComponent* Point = FindShipRespawnPoint(GetPlayerIndex(Controller));
-	if (!Point) return;
-	FinishedDeadPlayers.Remove(Controller);
-	RestartPlayerAtTransform(Controller, Point->GetComponentTransform());
+	if (Point) RestartPlayerAtTransform(Controller, Point->GetComponentTransform());
+	// Possession and Blueprint spawn hooks may change the pending record.
+	Pending = PendingPlayerRespawns.Find(Controller);
+	if (!Pending) return;
+	if (IsValid(Controller->GetPawn()) && Controller->GetPawn() != Pending->Corpse.Get())
+	{
+		CompletePlayerRespawn(Controller);
+		return;
+	}
+	if (!Pending->bLoggedWaiting)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[PlayerDeath] RespawnWaiting Controller=%s Reason=%s RetryInterval=%.2f Corpse=%s"),
+			*GetNameSafe(Controller), Point ? TEXT("SpawnFailed") : TEXT("NoAvailableShipPoint"),
+			RespawnRetryInterval, *GetNameSafe(Pending->Corpse.Get()));
+		Pending->bLoggedWaiting = true;
+	}
+	SchedulePlayerRespawn(Controller, FMath::Max(RespawnRetryInterval, 0.1f));
+}
+
+void AMultiGameMode::CompletePlayerRespawn(AController* Controller)
+{
+	FPendingPlayerRespawn* Pending = PendingPlayerRespawns.Find(Controller);
+	if (!Pending) return;
+	GetWorldTimerManager().ClearTimer(Pending->Timer);
+	if (APawn* Corpse = Pending->Corpse.Get())
+	{
+		const float Elapsed = static_cast<float>(FMath::Max(0.0, GetWorld()->GetTimeSeconds() - Pending->DeathFinishedTime));
+		const float CleanupDelay = FMath::Max(0.1f, FMath::Max(MinimumCorpseLifetime - Elapsed, CorpseLifetimeAfterRespawn));
+		Corpse->SetLifeSpan(CleanupDelay);
+		UE_LOG(LogTemp, Log, TEXT("[PlayerDeath] RespawnCompleted Controller=%s NewPawn=%s Corpse=%s CleanupIn=%.2f"),
+			*GetNameSafe(Controller), *GetNameSafe(Controller->GetPawn()), *GetNameSafe(Corpse), CleanupDelay);
+	}
+	PendingPlayerRespawns.Remove(Controller);
+}
+
+void AMultiGameMode::CancelPlayerRespawn(TWeakObjectPtr<AController> Controller, bool bDestroyCorpse)
+{
+	FPendingPlayerRespawn Pending;
+	if (!PendingPlayerRespawns.RemoveAndCopyValue(Controller, Pending)) return;
+	GetWorldTimerManager().ClearTimer(Pending.Timer);
+	if (bDestroyCorpse)
+	{
+		if (APawn* Corpse = Pending.Corpse.Get()) Corpse->Destroy();
+	}
+}
+
+void AMultiGameMode::ClearRespawnTimers()
+{
+	for (auto& Pair : PendingPlayerRespawns) GetWorldTimerManager().ClearTimer(Pair.Value.Timer);
 }
 
 UPlayerRespawnPointComponent* AMultiGameMode::FindShipRespawnPoint(int32 PlayerIndex) const
@@ -355,11 +440,8 @@ void AMultiGameMode::RequestGameOverAndLevelRestart()
 {
 	if (!HasAuthority() || bLevelRestartRequested) return;
 	bLevelRestartRequested = true;
-	for (TPair<TObjectPtr<AController>, FTimerHandle>& Pair : RespawnTimers)
-	{
-		GetWorldTimerManager().ClearTimer(Pair.Value);
-	}
-	RespawnTimers.Reset();
+	UE_LOG(LogTemp, Log, TEXT("[PlayerDeath] LevelRestart World=%s"), *GetNameSafe(GetWorld()));
+	ClearRespawnTimers();
 	CapturePlayerProgressForLevelRestart();
 	OnGameOverRequested.Broadcast();
 	if (UWorld* World = GetWorld())

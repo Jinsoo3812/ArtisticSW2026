@@ -26,11 +26,24 @@ class UFacilityHubWidget;
 class UStatusWindowWidget;
 class AFacilityHubActor;
 class ASharedShipUpgradeState;
+class ABasePlayer;
 
 struct FStorageRevealState
 {
 	int32 RevealedSlotCount = 0;
 	int32 SearchingSlotIndex = INDEX_NONE;
+};
+
+UENUM()
+enum class EDevelopmentDeathTestResult : uint8
+{
+	Started,
+	Disabled,
+	NotAuthority,
+	InvalidWorld,
+	InvalidPawn,
+	AlreadyDead,
+	NotReady
 };
 
 UCLASS()
@@ -39,6 +52,17 @@ class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerContr
 	GENERATED_BODY()
 
 public:
+	/** Development console entry; sends only the pawn currently owned by this controller. */
+	void RequestDevelopmentSuicide();
+	/** Server-side policy shared by the RPC and development automation. Inert in Shipping/Test. */
+	EDevelopmentDeathTestResult TryStartDevelopmentDeath(APawn* ExpectedPawn);
+
+	UFUNCTION(Server, Reliable)
+	void ServerRequestDevelopmentSuicide(APawn* ExpectedPawn);
+
+	UFUNCTION(Client, Reliable)
+	void ClientDevelopmentDeathTestResult(EDevelopmentDeathTestResult Result);
+
 	void OpenFacilityHubFromServer(AActor* ContextActor);
 
 	UFUNCTION(Client, Reliable)
@@ -68,13 +92,26 @@ public:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaTime) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	ABasePlayer* GetDeathViewTarget() const { return DeathViewTarget; }
 
 	/*--- 네트워크 초기화 ---*/
 	virtual void OnPossess(APawn* InPawn) override;
+	virtual void OnUnPossess() override;
 	virtual void OnRep_Pawn() override;
 	
 	/*--- UI Input ---*/
 protected:
+	/** Owner-controller replication keeps the death view stable across Pawn/health replication order. */
+	UPROPERTY(ReplicatedUsing=OnRep_DeathViewTarget)
+	TObjectPtr<ABasePlayer> DeathViewTarget;
+
+	UFUNCTION()
+	void OnRep_DeathViewTarget(ABasePlayer* PreviousTarget);
+
+	void SetDeathViewTarget(ABasePlayer* NewTarget);
+	void RefreshDeathViewTarget();
+
 	UPROPERTY(EditAnywhere, Category = "Input")
 	TArray<UInputMappingContext*> UIIMC;
 

@@ -11,6 +11,7 @@
 #include "Misc/Crc.h"
 #include "AbilitySystemComponent.h"
 #include "Camera/CameraComponent.h"
+#include "Camera/PlayerDeathCameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -49,6 +50,8 @@
 #include "Animation/MotionMatchingAnimInstance.h"
 #include "Components/BaseHealthComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "PhysicsEngine/PhysicsAsset.h"
 #include "Ship.h"
 #include "Cannon.h"
 #include "SwimmingComponent.h"
@@ -105,6 +108,9 @@ int32 ABasePlayer::ResolveDefaultMappingPriority(
 ABasePlayer::ABasePlayer(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<USWCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
+	bDetachControllerOnDeathRagdoll = false;
+	DeathCameraComponent = CreateDefaultSubobject<UPlayerDeathCameraComponent>(TEXT("DeathCameraComponent"));
+
 	// 카메라 붐(SpringArm) 생성 및 설정
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
@@ -349,6 +355,11 @@ void ABasePlayer::GiveStartingItemsForTest()
 
 void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (HealthComponent && HealthComponent->IsDead())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[PlayerDeath] EndPlay Pawn=%s Reason=%d NetMode=%d"),
+			*GetNameSafe(this), static_cast<int32>(EndPlayReason), static_cast<int32>(GetNetMode()));
+	}
 	ResetAutomaticSwimDiveInput();
 
 	if (InventoryComponent)
@@ -365,12 +376,46 @@ void ABasePlayer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+void ABasePlayer::ApplyLocalDeathRagdoll()
+{
+	Super::ApplyLocalDeathRagdoll();
+	if (bLocalDeathRagdollApplied && DeathCameraComponent)
+	{
+		DeathCameraComponent->StartFollowing(CameraBoom, GetMesh());
+	}
+}
+
+void ABasePlayer::ResetLocalDeathRagdoll()
+{
+	if (DeathCameraComponent) DeathCameraComponent->StopFollowing();
+	Super::ResetLocalDeathRagdoll();
+}
+
 void ABasePlayer::HandleDeathFinished(UBaseHealthComponent* InHealthComponent)
 {
+	UE_LOG(LogTemp, Log, TEXT("[PlayerDeath] DeathFinished Pawn=%s Controller=%s PlayerState=%s NetMode=%d"),
+		*GetNameSafe(this), *GetNameSafe(GetController()), *GetNameSafe(GetPlayerState()), static_cast<int32>(GetNetMode()));
 	ApplyLocalDeathRagdoll();
+	UE_LOG(LogTemp, Log, TEXT("[PlayerDeath] Ragdoll Pawn=%s PhysicsAsset=%s Simulating=%d Hidden=%d LifeSpan=%.2f"),
+		*GetNameSafe(this), *GetNameSafe(GetMesh() ? GetMesh()->GetPhysicsAsset() : nullptr),
+		GetMesh() && GetMesh()->IsSimulatingPhysics() ? 1 : 0, IsHidden() ? 1 : 0, GetLifeSpan());
 	if (HasAuthority())
 	{
 		CaptureRespawnProgress();
+	}
+	// The corpse outlives possession. Retire its subscriptions before a new avatar
+	// binds the persistent PlayerState ASC, including status/presentation delegates.
+	if (UAbilitySystemComponent* ASC = CachedAbilitySystemComponent.Get())
+	{
+		const FGameplayTag InteractionTags[] = {Interaction_PickUp, Interaction_ShipBoard, Interaction_CannonBoard};
+		for (const FGameplayTag& Tag : InteractionTags)
+		{
+			if (auto* Callback = ASC->GenericGameplayEventCallbacks.Find(Tag)) Callback->RemoveAll(this);
+		}
+	}
+	if (HealthComponent) HealthComponent->UninitializeFromAbilitySystem();
+	if (HasAuthority())
+	{
 		if (AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr)
 		{
 			GameMode->NotifyPlayerDeathFinished(this);
@@ -773,10 +818,16 @@ void ABasePlayer::PossessedBy(AController* NewController)
 		{
 			CachedAbilitySystemComponent->AddLooseGameplayTag(Team_Player);
 		}
-		if (HealthComponent)
+		if (HealthComponent && CachedAbilitySystemComponent.IsValid())
 		{
-			HealthComponent->InitializeWithAbilitySystem(CachedAbilitySystemComponent.Get());
-			if (HealthComponent->IsDead()) HealthComponent->ResetForReuse();
+			// A newly spawned avatar shares the dead player's zero-health ASC.
+			// Bind first, then restore life before any death montage/ragdoll can start.
+			HealthComponent->InitializeWithAbilitySystem(CachedAbilitySystemComponent.Get(), false);
+			if (HealthComponent->IsDead() || HealthComponent->GetHealth() <= 0.0f
+				|| CachedAbilitySystemComponent->HasMatchingGameplayTag(State_Dead))
+			{
+				HealthComponent->ResetForReuse();
+			}
 		}
 		RestoreRespawnProgress(NewController);
 
@@ -858,6 +909,11 @@ void ABasePlayer::UnPossessed()
 void ABasePlayer::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
+	// Late replication of an old corpse must not reclaim the new avatar's ASC.
+	if (HealthComponent && HealthComponent->GetDeathState() == EBaseDeathState::DeathFinished)
+	{
+		return;
+	}
 
 	// UE_LOG(LogTemp, Log, TEXT("ABasePlayer::OnRep_PlayerState - [CLIENT] Start."));
 

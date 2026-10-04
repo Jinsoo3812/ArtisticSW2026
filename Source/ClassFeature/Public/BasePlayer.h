@@ -36,6 +36,7 @@ class UPlayerSkillComponent;
 class UAnimSequence;
 class UPlayerDialogueComponent;
 class UPlayerAimComponent;
+class UPlayerDeathCameraComponent;
 class UShipRepairPointComponent;
 class UShipRepairProgressWidget;
 
@@ -106,6 +107,8 @@ public:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void ApplyLocalDeathRagdoll() override;
+	virtual void ResetLocalDeathRagdoll() override;
 	virtual void PostInitializeComponents() override;
 	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
 
@@ -121,6 +124,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Respawn")
 	void CaptureRespawnProgress();
 	protected:
+	// Presentation must not clear Controller/PlayerState before GameMode registers death.
+	virtual bool ShouldDetachControllerOnDeathRagdoll() const override { return false; }
 	void RestoreRespawnProgress(AController* OwningController);
 
 	/* --- GAS 초기화 ---*/
@@ -628,7 +633,11 @@ protected:
 public:
 	FORCEINLINE USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	FORCEINLINE UCameraComponent* GetFollowCamera() const { return FollowCamera; }
+	UPlayerDeathCameraComponent* GetDeathCameraComponent() const { return DeathCameraComponent; }
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<UPlayerDeathCameraComponent> DeathCameraComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USpringArmComponent> CameraBoom;
 

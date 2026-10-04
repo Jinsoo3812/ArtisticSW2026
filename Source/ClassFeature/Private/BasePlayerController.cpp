@@ -4,6 +4,7 @@
 #include "BasePlayerController.h"
 #include "BasePlayer.h"
 #include "BasePlayerState.h"
+#include "Components/BaseHealthComponent.h"
 #include "UI/PlayerHUDWidget.h"
 #include "EnhancedInputSubsystems.h"
 #include "EnhancedInputComponent.h"
@@ -31,6 +32,64 @@
 #include "Upgrade/ShipUpgradeComponent.h"
 #include "Upgrade/ShipUpgradeTreeDataAsset.h"
 #include "Ship.h"
+#include "Net/UnrealNetwork.h"
+
+void ABasePlayerController::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ABasePlayerController, DeathViewTarget);
+}
+
+void ABasePlayerController::SetDeathViewTarget(ABasePlayer* NewTarget)
+{
+	if (DeathViewTarget == NewTarget) return;
+	ABasePlayer* PreviousTarget = DeathViewTarget;
+	DeathViewTarget = NewTarget;
+	OnRep_DeathViewTarget(PreviousTarget);
+	if (HasAuthority()) ForceNetUpdate();
+}
+
+void ABasePlayerController::OnRep_DeathViewTarget(ABasePlayer* PreviousTarget)
+{
+	if (!DeathViewTarget && GetViewTarget() == PreviousTarget)
+	{
+		AutoManageActiveCameraTarget(GetPawn() ? static_cast<AActor*>(GetPawn()) : this);
+	}
+	RefreshDeathViewTarget();
+}
+
+void ABasePlayerController::RefreshDeathViewTarget()
+{
+	if (!DeathViewTarget) return;
+	if (!IsValid(DeathViewTarget))
+	{
+		if (GetViewTarget() == DeathViewTarget) SetViewTarget(GetPawn() ? static_cast<AActor*>(GetPawn()) : this);
+		if (HasAuthority()) SetDeathViewTarget(nullptr);
+		return;
+	}
+	// A replacement Pawn can arrive before the replicated target is cleared.
+	if (GetPawn() && GetPawn() != DeathViewTarget) return;
+	if (GetViewTarget() != DeathViewTarget) SetViewTarget(DeathViewTarget);
+}
+
+void ABasePlayerController::OnUnPossess()
+{
+	ABasePlayer* DeadPlayer = Cast<ABasePlayer>(GetPawn());
+	const bool bKeepDeathView = DeadPlayer && DeadPlayer->GetHealthComponent()
+		&& DeadPlayer->GetHealthComponent()->GetDeathState() == EBaseDeathState::DeathFinished;
+
+	Super::OnUnPossess();
+
+	// The engine switches to the controller camera on UnPossess. Keep the corpse
+	// visible until a replacement pawn is possessed and normal camera management resumes.
+	if (bKeepDeathView && IsValid(DeadPlayer))
+	{
+		SetDeathViewTarget(DeadPlayer);
+		// PlayerCameraManager sends ClientSetViewTarget when the server changes this target.
+		UE_LOG(LogTemp, Log, TEXT("[PlayerDeath] WaitingCamera Controller=%s Corpse=%s NetMode=%d"),
+			*GetNameSafe(this), *GetNameSafe(DeadPlayer), static_cast<int32>(GetNetMode()));
+	}
+}
 
 
 void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
@@ -372,6 +431,7 @@ void ABasePlayerController::BeginPlay()
 
 void ABasePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	SetDeathViewTarget(nullptr);
 	if (HasAuthority() && ActiveFacilityHub)
 	{
 		ActiveFacilityHub->Release(this);
@@ -419,6 +479,7 @@ void ABasePlayerController::OnUIInputPressed(FGameplayTag InputTag)
 void ABasePlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
+	if (GetPawn() == InPawn && InPawn) SetDeathViewTarget(nullptr);
 	if (HasAuthority() && ActiveFacilityHub)
 	{
 		ActiveFacilityHub->Release(this);
@@ -434,6 +495,7 @@ void ABasePlayerController::OnPossess(APawn* InPawn)
 void ABasePlayerController::OnRep_Pawn()
 {
 	Super::OnRep_Pawn();
+	RefreshDeathViewTarget();
 	if (IsFacilityHubOpen())
 	{
 		CloseFacilityHub();
@@ -1146,6 +1208,7 @@ void ABasePlayerController::SetStatusCharacterInputLocked(bool bLocked)
 void ABasePlayerController::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	if (IsLocalController() || HasAuthority()) RefreshDeathViewTarget();
 	if (HasAuthority() && ActiveStorageChest && !CanAccessStorage(ActiveStorageChest)) CloseStorageFromServer(ActiveStorageChest);
 
 	if (GetWorld())

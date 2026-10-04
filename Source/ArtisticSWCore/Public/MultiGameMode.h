@@ -13,6 +13,15 @@ class APlayerStart;
 class APawn;
 class UPlayerRespawnPointComponent;
 
+/** One bounded waiting record per connected player; corpse cleanup starts after successful respawn. */
+struct FPendingPlayerRespawn
+{
+	TWeakObjectPtr<APawn> Corpse;
+	double DeathFinishedTime = 0.0;
+	FTimerHandle Timer;
+	bool bLoggedWaiting = false;
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
     FOnSWPlayerRoleAssigned,
     AController*, Controller,
@@ -47,6 +56,7 @@ class ARTISTICSWCORE_API AMultiGameMode : public AGameModeBase
 
 public:
     AMultiGameMode();
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 public:
     // ================================
@@ -165,6 +175,17 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Respawn", meta=(ClampMin="0.0"))
 	float IndividualRespawnDelay = 5.0f;
+
+	/** Minimum time since death completion before a successfully replaced corpse may disappear. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Respawn|Corpse", meta=(ClampMin="0.1"))
+	float MinimumCorpseLifetime = 30.0f;
+
+	/** Keeps the old body visible briefly even after a long respawn wait. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Respawn|Corpse", meta=(ClampMin="0.1"))
+	float CorpseLifetimeAfterRespawn = 5.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Respawn", meta=(ClampMin="0.1"))
+	float RespawnRetryInterval = 1.0f;
     
 protected:
     // ================================
@@ -203,8 +224,7 @@ protected:
     /** 각 Controller의 역할 */
     TMap<TObjectPtr<AController>, FName> PlayerRoles;
 	TMap<TObjectPtr<AController>, int32> PlayerIndices;
-	TSet<TObjectPtr<AController>> FinishedDeadPlayers;
-	TMap<TObjectPtr<AController>, FTimerHandle> RespawnTimers;
+	TMap<TWeakObjectPtr<AController>, FPendingPlayerRespawn> PendingPlayerRespawns;
 
     /** Ready 상태인 Controller 목록 */
     TSet<TObjectPtr<AController>> ReadyPlayers;
@@ -214,7 +234,14 @@ protected:
 	bool bLevelRestartRequested = false;
 
 	void TryRespawnPlayer(AController* Controller);
+	void SchedulePlayerRespawn(AController* Controller, float Delay);
+	void CompletePlayerRespawn(AController* Controller);
+	void CancelPlayerRespawn(TWeakObjectPtr<AController> Controller, bool bDestroyCorpse);
+	void ClearRespawnTimers();
 	UPlayerRespawnPointComponent* FindShipRespawnPoint(int32 PlayerIndex) const;
 	virtual void HandleAllPlayersDeathFinished();
 	virtual void CapturePlayerProgressForLevelRestart();
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FPlayerCorpseLifecycleTest;
+#endif
 };
