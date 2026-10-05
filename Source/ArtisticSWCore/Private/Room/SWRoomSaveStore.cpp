@@ -1,8 +1,10 @@
 #include "Room/SWRoomSaveStore.h"
+#include "Room/SWRoomRuntimePaths.h"
 
 #include "Room/SWRoomSaveGame.h"
 #include "Room/SWRoomStateAdapter.h"
 #include "Network/SWNetworkLog.h"
+#include "Network/SWRoomLoadDiagnostics.h"
 #include "SWRoomName.h"
 #include "HAL/PlatformFileManager.h"
 #include "Kismet/GameplayStatics.h"
@@ -25,13 +27,14 @@ constexpr uint32 RoomMagic = 0x33525753;
 constexpr int32 HeaderBytes = sizeof(uint32) + sizeof(uint64) + sizeof(uint32);
 FString SidecarPath(const TCHAR* Name)
 {
-	return FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("SWRoom"), Name);
+	const FString Directory = FSWRoomRuntimePaths::GetSaveDirectory();
+	return Directory.IsEmpty() ? FString() : FPaths::Combine(Directory, Name);
 }
 }
 
 FString FSWRoomSaveStore::RoomPath()
 {
-	return FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("SWRoom"), TEXT("CurrentRoom.v4.sav"));
+	return SidecarPath(TEXT("CurrentRoom.v4.sav"));
 }
 
 bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
@@ -365,7 +368,7 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 				return false;
 			}
 	}
-	UE_LOG(LogSWRoomSave, Display,
+	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display,
 		TEXT("Flow=SaveValidation Result=Success RoomId=%s Sequence=%llu Actors=%d Unloaded=%d Guests=%d SharedStorage=%d Issues=%d"),
 		*Room->RoomId.ToString(), Room->CaptureSequence, Room->WorldSnapshot.Actors.Num(),
 		Room->WorldSnapshot.UnloadedActors.Num(), Room->Guests.Num(), Room->SharedProgress.Storage.Num(),
@@ -398,10 +401,16 @@ bool FSWRoomSaveStore::ValidateHeader(const USWRoomSaveGame* Room)
 
 USWRoomSaveGame* FSWRoomSaveStore::LoadPath(UObject* Outer, const FString& Path, bool bHeaderOnly)
 {
+	if (Path.IsEmpty()) return nullptr;
+	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("SaveStore.LoadPath"));
 	TArray<uint8> Bytes;
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
 	const int64 Size = Files.FileSize(*Path);
-	if (Size <= 0 || Size > MaxRoomFileBytes || !FFileHelper::LoadFileToArray(Bytes, *Path)) return nullptr;
+	if (Size <= 0 || Size > MaxRoomFileBytes) return nullptr;
+	{
+		SWRoomLoadDiagnostics::FScopedPhase ReadScope(TEXT("SaveStore.DiskRead"));
+		if (!FFileHelper::LoadFileToArray(Bytes, *Path)) return nullptr;
+	}
 	if (Bytes.Num() < HeaderBytes) return nullptr;
 	uint32 Magic = 0;
 	uint64 PayloadSize = 0;
@@ -413,14 +422,22 @@ USWRoomSaveGame* FSWRoomSaveStore::LoadPath(UObject* Outer, const FString& Path,
 		|| FCrc::MemCrc32(Bytes.GetData() + HeaderBytes, static_cast<int32>(PayloadSize)) != Checksum) return nullptr;
 	TArray<uint8> Payload;
 	Payload.Append(Bytes.GetData() + HeaderBytes, static_cast<int32>(PayloadSize));
-	USWRoomSaveGame* Room = Cast<USWRoomSaveGame>(UGameplayStatics::LoadGameFromMemory(Payload));
-	if (!(bHeaderOnly ? ValidateHeader(Room) : Validate(Room))) return nullptr;
+	USWRoomSaveGame* Room;
+	{
+		SWRoomLoadDiagnostics::FScopedPhase DeserializeScope(TEXT("SaveStore.Deserialize"));
+		Room = Cast<USWRoomSaveGame>(UGameplayStatics::LoadGameFromMemory(Payload));
+	}
+	{
+		SWRoomLoadDiagnostics::FScopedPhase ValidateScope(TEXT("SaveStore.ValidateReadback"));
+		if (!(bHeaderOnly ? ValidateHeader(Room) : Validate(Room))) return nullptr;
+	}
 	if (Outer && Room) Room->Rename(nullptr, Outer);
 	return Room;
 }
 
 USWRoomSaveGame* FSWRoomSaveStore::LoadCurrentRoom(UObject* Outer)
 {
+	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return nullptr;
 	const FString Path = RoomPath();
 	if (USWRoomSaveGame* Room = LoadPath(Outer, Path)) return Room;
 	USWRoomSaveGame* Backup = LoadPath(Outer, SidecarPath(TEXT("CurrentRoom.v4.bak")));
@@ -440,13 +457,16 @@ bool FSWRoomSaveStore::HasValidCurrentRoom()
 
 bool FSWRoomSaveStore::HasLegacyRoomFile()
 {
+	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return false;
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
 	return !Files.FileExists(*RoomPath()) && Files.FileExists(*SidecarPath(TEXT("CurrentRoom.sav")));
 }
 
 bool FSWRoomSaveStore::WriteVerified(const USWRoomSaveGame* Room, const FString& Path, bool bHeaderOnly)
 {
-	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Phase=Begin RoomId=%s Sequence=%llu Path=%s HeaderOnly=%d"),
+	if (Path.IsEmpty()) return false;
+	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("SaveStore.WriteVerified"));
+	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Phase=Begin RoomId=%s Sequence=%llu Path=%s HeaderOnly=%d"),
 		Room ? *Room->RoomId.ToString() : TEXT("None"), Room ? Room->CaptureSequence : 0, *Path, bHeaderOnly);
 	if (!(bHeaderOnly ? ValidateHeader(Room) : Validate(Room)))
 	{
@@ -454,7 +474,12 @@ bool FSWRoomSaveStore::WriteVerified(const USWRoomSaveGame* Room, const FString&
 		return false;
 	}
 	TArray<uint8> Bytes;
-	if (!UGameplayStatics::SaveGameToMemory(const_cast<USWRoomSaveGame*>(Room), Bytes)
+	bool bSerialized;
+	{
+		SWRoomLoadDiagnostics::FScopedPhase SerializeScope(TEXT("SaveStore.Serialize"));
+		bSerialized = UGameplayStatics::SaveGameToMemory(const_cast<USWRoomSaveGame*>(Room), Bytes);
+	}
+	if (!bSerialized
 		|| Bytes.IsEmpty() || Bytes.Num() > MaxRoomFileBytes - HeaderBytes)
 	{
 		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=FileWrite Result=Failed Phase=Serialize Path=%s Bytes=%d MaxBytes=%lld"),
@@ -470,19 +495,22 @@ bool FSWRoomSaveStore::WriteVerified(const USWRoomSaveGame* Room, const FString&
 	FMemory::Memcpy(FileBytes.GetData() + sizeof(RoomMagic) + sizeof(PayloadSize), &Checksum, sizeof(Checksum));
 	FMemory::Memcpy(FileBytes.GetData() + HeaderBytes, Bytes.GetData(), Bytes.Num());
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
+	{
+	SWRoomLoadDiagnostics::FScopedPhase DiskWriteScope(TEXT("SaveStore.DiskWrite"));
 	if (!Files.CreateDirectoryTree(*FPaths::GetPath(Path)) || !FFileHelper::SaveArrayToFile(FileBytes, *Path))
 	{
 		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=FileWrite Result=Failed Phase=DiskWrite Path=%s Bytes=%d"), *Path, FileBytes.Num());
 		return false;
 	}
-	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Phase=Written Path=%s Bytes=%d Checksum=%u"),
+	}
+	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Phase=Written Path=%s Bytes=%d Checksum=%u"),
 		*Path, FileBytes.Num(), Checksum);
 	USWRoomSaveGame* Checked = LoadPath(GetTransientPackage(), Path, bHeaderOnly);
 	const bool bVerified = Checked && Checked->RoomId == Room->RoomId && Checked->SaveVersion == Room->SaveVersion
 		&& Checked->CaptureSequence == Room->CaptureSequence && Checked->MapPath == Room->MapPath;
 	if (bVerified)
 	{
-		UE_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Result=Verified Phase=Readback RoomId=%s Sequence=%llu Path=%s"),
+		SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=FileWrite Result=Verified Phase=Readback RoomId=%s Sequence=%llu Path=%s"),
 			*Room->RoomId.ToString(), Room->CaptureSequence, *Path);
 	}
 	else
@@ -502,11 +530,13 @@ bool FSWRoomSaveStore::WriteCurrentRoom(const USWRoomSaveGame* Room)
 
 bool FSWRoomSaveStore::WriteCurrentRoomInternal(const USWRoomSaveGame* Room, bool bAllowInvalidCurrent)
 {
+	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return false;
+	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("SaveStore.Transaction"));
 	const FString Path = RoomPath();
 	const FString Temp = SidecarPath(TEXT("CurrentRoom.v4.tmp"));
 	const FString Backup = SidecarPath(TEXT("CurrentRoom.v4.bak"));
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
-	UE_LOG(LogSWRoomSave, Display,
+	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display,
 		TEXT("Flow=FileTransaction Phase=Begin RoomId=%s Sequence=%llu Current=%s Temp=%s Backup=%s AllowInvalidCurrent=%d"),
 		Room ? *Room->RoomId.ToString() : TEXT("None"), Room ? Room->CaptureSequence : 0,
 		*Path, *Temp, *Backup, bAllowInvalidCurrent ? 1 : 0);
@@ -548,7 +578,7 @@ bool FSWRoomSaveStore::WriteCurrentRoomInternal(const USWRoomSaveGame* Room, boo
 			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=FileTransaction Result=Failed Phase=BackupWrite Path=%s"), *Backup);
 			return false;
 		}
-		UE_LOG(LogSWRoomSave, Display, TEXT("Flow=FileTransaction Phase=BackupVerified Path=%s"), *Backup);
+		SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=FileTransaction Phase=BackupVerified Path=%s"), *Backup);
 	}
 	bool bReplaced = false;
 #if PLATFORM_WINDOWS
@@ -561,7 +591,7 @@ bool FSWRoomSaveStore::WriteCurrentRoomInternal(const USWRoomSaveGame* Room, boo
 		USWRoomSaveGame* Checked = LoadPath(GetTransientPackage(), Path);
 		if (Checked && Checked->RoomId == Room->RoomId && Checked->CaptureSequence == Room->CaptureSequence)
 		{
-			UE_LOG(LogSWRoomSave, Display, TEXT("Flow=FileTransaction Result=Committed RoomId=%s Sequence=%llu Path=%s"),
+			SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=FileTransaction Result=Committed RoomId=%s Sequence=%llu Path=%s"),
 				*Room->RoomId.ToString(), Room->CaptureSequence, *Path);
 			return true;
 		}
@@ -584,6 +614,7 @@ bool FSWRoomSaveStore::WriteCurrentRoomInternal(const USWRoomSaveGame* Room, boo
 
 bool FSWRoomSaveStore::StageNewRoom(const USWRoomSaveGame* Room)
 {
+	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return false;
 	const FString Path = SidecarPath(TEXT("CurrentRoom.v4.pending.sav"));
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
 	Files.DeleteFile(*Path);
@@ -592,16 +623,19 @@ bool FSWRoomSaveStore::StageNewRoom(const USWRoomSaveGame* Room)
 
 bool FSWRoomSaveStore::StageCompleteNewRoom(const USWRoomSaveGame* Room)
 {
+	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return false;
 	return WriteVerified(Room, SidecarPath(TEXT("CurrentRoom.v4.pending.sav")));
 }
 
 USWRoomSaveGame* FSWRoomSaveStore::LoadStagedNewRoom(UObject* Outer)
 {
+	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return nullptr;
 	return LoadPath(Outer, SidecarPath(TEXT("CurrentRoom.v4.pending.sav")), true);
 }
 
 bool FSWRoomSaveStore::CommitStagedNewRoom()
 {
+	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return false;
 	USWRoomSaveGame* Pending = LoadPath(GetTransientPackage(), SidecarPath(TEXT("CurrentRoom.v4.pending.sav")));
 	if (!Pending || Pending->SaveKind != ESWRoomSaveKind::New || !WriteCurrentRoomInternal(Pending, true)) return false;
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
@@ -611,5 +645,6 @@ bool FSWRoomSaveStore::CommitStagedNewRoom()
 
 void FSWRoomSaveStore::DiscardStagedNewRoom()
 {
+	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return;
 	FPlatformFileManager::Get().GetPlatformFile().DeleteFile(*SidecarPath(TEXT("CurrentRoom.v4.pending.sav")));
 }

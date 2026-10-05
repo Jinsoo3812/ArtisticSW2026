@@ -2,7 +2,9 @@
 
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimMontage.h"
+#if WITH_EDITOR
 #include "Misc/DataValidation.h"
+#endif
 
 const FBossBasicAttackEntry* UBossBasicAttackSet::FindAttack(const FName AttackId) const
 {
@@ -61,6 +63,7 @@ const FBossBasicAttackEntry* UBossBasicAttackSet::SelectAttack(
 	return EligibleAttacks.Last();
 }
 
+#if WITH_EDITOR
 EDataValidationResult UBossBasicAttackSet::IsDataValid(FDataValidationContext& Context) const
 {
 	EDataValidationResult Result = Super::IsDataValid(Context);
@@ -104,3 +107,4 @@ EDataValidationResult UBossBasicAttackSet::IsDataValid(FDataValidationContext& C
 	}
 	return Result;
 }
+#endif

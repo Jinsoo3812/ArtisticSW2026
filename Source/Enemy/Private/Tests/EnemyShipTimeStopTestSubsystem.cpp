@@ -89,7 +89,7 @@ void UEnemyShipTimeStopTestSubsystem::TryStartServerProbe()
 
 	UClass* FieldClass = StaticLoadClass(
 		AEnemyShipTimeStopField::StaticClass(), nullptr,
-		TEXT("/Game/New/Enemy_Ship/Blueprints/BP_ES_TimeStopField.BP_ES_TimeStopField_C"));
+		TEXT("/Game/Blueprints/Ship/Enemy_Ship/Blueprints/BP_ES_TimeStopField.BP_ES_TimeStopField_C"));
 	if (!FieldClass)
 	{
 		FieldClass = AEnemyShipTimeStopField::StaticClass();

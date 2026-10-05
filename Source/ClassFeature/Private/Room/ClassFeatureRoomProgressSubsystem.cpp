@@ -15,6 +15,7 @@
 #include "Room/SWRoomSnapshotSubsystem.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Network/SWNetworkLog.h"
+#include "Network/SWRoomLoadDiagnostics.h"
 #include "Room/SWLevelEntryPoint.h"
 #include "Room/SWFinalEncounterShipEntryPoint.h"
 #include "StoryFacadeSubsystem.h"
@@ -235,6 +236,7 @@ void UClassFeatureRoomProgressSubsystem::HandlePostLoadMap(UWorld* World)
 
 bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE_CONDITIONAL(SWRoom_TickRestore, SWRoomLoadDiagnostics::IsEnabled());
  // Clear temporary encounter permission on every unsuccessful restore exit.
  struct FDevelopmentRestoreScope
  {
@@ -254,6 +256,22 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 	USWRoomProgressSubsystem* Room = GetRoom(GetGameInstance());
 	if (!Room || !Room->GetActiveRoom()) return false;
 	const bool bTransitionRestore = Room->IsReturnTravelPending() || Room->IsFinalDepartureTravelPending();
+	if (SWRoomLoadDiagnostics::IsEnabled() && FPlatformTime::Seconds() - DiagnosticLastRestoreLogAt >= 1.0)
+	{
+		DiagnosticLastRestoreLogAt = FPlatformTime::Seconds();
+		UE_LOG(LogTemp, Display, TEXT("[SWLoadDiag] Real=%.6f Phase=Restore.WaitState Snapshot=%d ShipPlaced=%d SafetyRemainingMs=%.1f EntryReady=%d SharedRestored=%d ParticipantsReady=%d Expected=%d"),
+			DiagnosticLastRestoreLogAt, bWorldSnapshotRestored, bReturnShipPlaced,
+			FMath::Max(0.0, ShipSafetyCheckAt - DiagnosticLastRestoreLogAt) * 1000.0,
+			bReturnEntryReady, bFinalDepartureSharedRestored, AreTransitionParticipantsReady(World), Room->ExpectedTransitionPlayers.Num());
+		for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+		{
+			ABasePlayerController* Controller = Cast<ABasePlayerController>(It->Get());
+			ABasePlayer* Player = Controller ? Controller->GetLifeCharacter() : nullptr;
+			UE_LOG(LogTemp, Display, TEXT("[SWLoadDiag] Real=%.6f Phase=Restore.Participant Slot=%d Player=%d Possessed=%d InitialPossession=%d PlayerState=%d"),
+				DiagnosticLastRestoreLogAt, Mode->GetPlayerIndex(Controller), Player != nullptr,
+				Player && Player->GetController() == Controller, Player && Player->HasCompletedInitialPossession(), Controller && Controller->PlayerState);
+		}
+	}
 	if (!bWorldSnapshotRestored)
 		UE_LOG(LogSWRoom, Display, TEXT("Flow=WorldRestore RoomId=%s Mode=%s Phase=Begin"),
 			*Room->GetActiveRoom()->RoomId.ToString(), Room->IsNewRoomPending() ? TEXT("New")
@@ -522,7 +540,7 @@ bool UClassFeatureRoomProgressSubsystem::TickRestore(float DeltaTime)
 				|| !Snapshot->CompareRestored(Room->GetActiveRoom()->WorldSnapshot, Observed, Differences))
 			{
 				for (const FString& Difference : Differences)
-					UE_LOG(LogSWRoom, Error, TEXT("Flow=RestoreAudit %s"), *Difference);
+					SW_ROOM_DETAIL_LOG(LogSWRoom, Error, TEXT("Flow=RestoreAudit %s"), *Difference);
 				UE_LOG(LogSWRoom, Error, TEXT("Flow=RestoreAudit Result=Failed Reason=%s Differences=%d"), *AuditError, Differences.Num());
 				return false;
 			}
@@ -598,12 +616,13 @@ void UClassFeatureRoomProgressSubsystem::HandleGameOverRestart()
 
 bool UClassFeatureRoomProgressSubsystem::RestoreSharedWorld(UWorld* World)
 {
+	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("Room.RestoreShared"));
 	USWRoomProgressSubsystem* Room = GetRoom(GetGameInstance());
 	const USWRoomSaveGame* Save = Room ? Room->GetActiveRoom() : nullptr;
 	if (!World || !Save) return false;
 	const FSWRoomSharedProgress& Shared = Save->SharedProgress;
 	for (const FSWRoomCaptureIssue& Issue : Shared.CaptureIssues)
-		UE_LOG(LogSWRoom, Warning, TEXT("Flow=SharedRestore Result=Partial Domain=%s Field=%s Reason=%s"),
+		SW_ROOM_DETAIL_LOG(LogSWRoom, Warning, TEXT("Flow=SharedRestore Result=Partial Domain=%s Field=%s Reason=%s"),
 			*Issue.Domain.ToString(), *Issue.FieldKey.ToString(), *Issue.Reason);
 	ASharedShipUpgradeState* Ship = ASharedShipUpgradeState::Find(World);
 	if (!Ship && !Shared.ShipUpgradeNodeIds.IsEmpty() && FPlatformTime::Seconds() < RestoreDeadline) return false;
@@ -651,6 +670,7 @@ bool UClassFeatureRoomProgressSubsystem::RestoreSharedWorld(UWorld* World)
 
 bool UClassFeatureRoomProgressSubsystem::CaptureSharedWorld(UWorld* World)
 {
+	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("Room.CaptureShared"));
 	USWRoomProgressSubsystem* Room = GetRoom(GetGameInstance());
 	USWRoomSaveGame* Save = Room ? Room->GetMutableActiveRoom() : nullptr;
 	if (!World || !Save)
@@ -678,7 +698,7 @@ bool UClassFeatureRoomProgressSubsystem::CaptureSharedWorld(UWorld* World)
 			Value.Value = Counter.Value;
 		}
 		Shared.AppliedActionKeys = StoryData->AppliedActionKeys;
-		UE_LOG(LogSWRoomSave, Display,
+		SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display,
 			TEXT("Flow=SharedCapture Result=Success RoomId=%s Sequence=%llu Object=Story Definition=%s Facts=%d Counters=%d Actions=%d"),
 			*Save->RoomId.ToString(), Save->CaptureSequence + 1, *Shared.StoryDefinitionId.ToString(),
 			Shared.Facts.Num(), Shared.Counters.Num(), Shared.AppliedActionKeys.Num());
@@ -690,7 +710,7 @@ bool UClassFeatureRoomProgressSubsystem::CaptureSharedWorld(UWorld* World)
 		if (const UShipUpgradeComponent* Upgrade = Ship->GetUpgradeComponent())
 		{
 			Shared.ShipUpgradeNodeIds = Upgrade->GetActiveNodeIds();
-			UE_LOG(LogSWRoomSave, Display, TEXT("Flow=SharedCapture Result=Success RoomId=%s Sequence=%llu Object=ShipUpgrade Actor=%s Nodes=%d"),
+			SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=SharedCapture Result=Success RoomId=%s Sequence=%llu Object=ShipUpgrade Actor=%s Nodes=%d"),
 				*Save->RoomId.ToString(), Save->CaptureSequence + 1, *Ship->GetPathName(), Shared.ShipUpgradeNodeIds.Num());
 		}
 		else UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=SharedCapture Result=Skipped RoomId=%s Sequence=%llu Object=ShipUpgrade Actor=%s Reason=MissingUpgradeComponent"),
@@ -730,7 +750,7 @@ bool UClassFeatureRoomProgressSubsystem::CaptureSharedWorld(UWorld* World)
 			SavedSlot.ItemTag = Slot.ItemTag;
 			SavedSlot.Count = Slot.Count;
 		}
-		UE_LOG(LogSWRoomSave, Display,
+		SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display,
 			TEXT("Flow=SharedCapture Result=Success RoomId=%s Sequence=%llu Object=Storage Actor=%s ChestId=%s Namespace=%s SlotsPerTab=%d Slots=%d"),
 			*Save->RoomId.ToString(), Save->CaptureSequence + 1, *Chest->GetPathName(),
 			*Entry->ChestId.ToString(), *Entry->SaveNamespace, Entry->SlotsPerTab, Entry->Slots.Num());
@@ -741,10 +761,10 @@ bool UClassFeatureRoomProgressSubsystem::CaptureSharedWorld(UWorld* World)
 		return StorageKey(A.ChestId, A.SaveNamespace) < StorageKey(B.ChestId, B.SaveNamespace);
 	});
 	for (const FSWRoomCaptureIssue& Issue : Shared.CaptureIssues)
-		UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=SharedCaptureIssue RoomId=%s Sequence=%llu Domain=%s Field=%s Reason=%s"),
+		SW_ROOM_DETAIL_LOG(LogSWRoomSave, Warning, TEXT("Flow=SharedCaptureIssue RoomId=%s Sequence=%llu Domain=%s Field=%s Reason=%s"),
 			*Save->RoomId.ToString(), Save->CaptureSequence + 1,
 			*Issue.Domain.ToString(), *Issue.FieldKey.ToString(), *Issue.Reason);
-	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=SharedCapture Result=%s RoomId=%s Sequence=%llu Storage=%d Issues=%d"),
+	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=SharedCapture Result=%s RoomId=%s Sequence=%llu Storage=%d Issues=%d"),
 		Shared.CaptureIssues.IsEmpty() ? TEXT("Success") : TEXT("Partial"),
 		*Save->RoomId.ToString(), Save->CaptureSequence + 1, Shared.Storage.Num(), Shared.CaptureIssues.Num());
 	return true;
@@ -752,6 +772,7 @@ bool UClassFeatureRoomProgressSubsystem::CaptureSharedWorld(UWorld* World)
 
 void UClassFeatureRoomProgressSubsystem::RestorePlayer(ABasePlayer* Player)
 {
+	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("Room.RestorePlayer"));
 	USWRoomProgressSubsystem* Room = GetRoom(GetGameInstance());
 	const USWRoomSaveGame* Save = Room ? Room->GetActiveRoom() : nullptr;
 	AMultiGameMode* Mode = Player && Player->GetWorld() ? Player->GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
@@ -759,7 +780,7 @@ void UClassFeatureRoomProgressSubsystem::RestorePlayer(ABasePlayer* Player)
 	auto ApplyProgress = [Player, Room](const FSWRoomPlayerProgress& Stored)
 	{
 		for (const FSWRoomCaptureIssue& Issue : Stored.CaptureIssues)
-			UE_LOG(LogSWRoom, Warning, TEXT("Flow=PlayerRestore Result=Partial Player=%s Domain=%s Field=%s Reason=%s"),
+			SW_ROOM_DETAIL_LOG(LogSWRoom, Warning, TEXT("Flow=PlayerRestore Result=Partial Player=%s Domain=%s Field=%s Reason=%s"),
 				*Issue.PlayerKey, *Issue.Domain.ToString(), *Issue.FieldKey.ToString(), *Issue.Reason);
 		FSWRoomPlayerProgress Progress = Stored;
 		if (Room->IsReturnTravelPending() || Room->IsFinalDepartureTravelPending())
@@ -811,11 +832,12 @@ void UClassFeatureRoomProgressSubsystem::RestorePlayer(ABasePlayer* Player)
 
 bool UClassFeatureRoomProgressSubsystem::TrySave(UWorld* World, ESWRoomSaveKind Kind, FString& OutError)
 {
+	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("Room.TrySave"));
 	USWRoomProgressSubsystem* Room = GetRoom(GetGameInstance());
 	USWRoomSaveGame* Save = Room ? Room->GetMutableActiveRoom() : nullptr;
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=Save Kind=%s RoomId=%s Phase=Requested"), *UEnum::GetValueAsString(Kind),
 		Save ? *Save->RoomId.ToString() : TEXT("None"));
-	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=SaveAttempt Phase=Requested RoomId=%s Sequence=%llu Kind=%s World=%s"),
+	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=SaveAttempt Phase=Requested RoomId=%s Sequence=%llu Kind=%s World=%s"),
 		Save ? *Save->RoomId.ToString() : TEXT("None"), Save ? Save->CaptureSequence + 1 : 0,
 		*UEnum::GetValueAsString(Kind), *GetNameSafe(World));
 	if (!World || !Save || bSaving || World->GetNetMode() == NM_Client)
@@ -875,7 +897,10 @@ bool UClassFeatureRoomProgressSubsystem::TrySave(UWorld* World, ESWRoomSaveKind 
 	DeduplicateIssues(Save->SharedProgress.CaptureIssues);
 	for (FSWRoomGuestProgress& Guest : Save->Guests) DeduplicateIssues(Guest.Progress.CaptureIssues);
 	LastCaptureIssueCount = UniqueIssueKeys.Num();
-	UE_LOG(LogSWRoomSave, Display,
+	if (LastCaptureIssueCount > 0)
+		UE_LOG(LogSWRoom, Warning, TEXT("Flow=SaveCaptureIssues RoomId=%s Sequence=%llu Count=%d DetailedLog=%d"),
+			*Save->RoomId.ToString(), Sequence, LastCaptureIssueCount, SWRoomLogging::IsDetailedEnabled());
+	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display,
 		TEXT("Flow=SaveAttempt Phase=Captured RoomId=%s Sequence=%llu Kind=%s Actors=%d Unloaded=%d Tombstones=%d Systems=%d Guests=%d Issues=%d Unsupported=%d"),
 		*Save->RoomId.ToString(), Sequence, *UEnum::GetValueAsString(Kind), WorldData.Actors.Num(),
 		WorldData.UnloadedActors.Num(), WorldData.DestroyedLevelActorIds.Num(), WorldData.Systems.Num(),
@@ -937,7 +962,9 @@ bool UClassFeatureRoomProgressSubsystem::TrySave(UWorld* World, ESWRoomSaveKind 
 }
 
 void UClassFeatureRoomProgressSubsystem::CapturePlayer(ABasePlayer* Player)
-{ if (AMultiGameMode* LifeMode = Player && Player->GetWorld() ? Player->GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+{
+ SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("Room.CapturePlayer"));
+ if (AMultiGameMode* LifeMode = Player && Player->GetWorld() ? Player->GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
   LifeMode && (LifeMode->GetSessionLifePhase() == ESWSessionLifePhase::GameOver || LifeMode->GetSessionLifePhase() == ESWSessionLifePhase::ReturningAfterGameOver))
  {
   for (FConstPlayerControllerIterator It = Player->GetWorld()->GetPlayerControllerIterator(); It; ++It)
@@ -970,7 +997,7 @@ void UClassFeatureRoomProgressSubsystem::CapturePlayer(ABasePlayer* Player)
 	}
 	auto TracePlayer = [Save, Player](const TCHAR* Role, const FString& PlayerKey, const FSWRoomPlayerProgress& Progress)
 	{
-		UE_LOG(LogSWRoomSave, Display,
+		SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display,
 			TEXT("Flow=PlayerCapture Result=%s RoomId=%s Sequence=%llu Role=%s Player=%s Key=%s InventorySlots=%d QuickSlots=%d Skills=%d Effects=%d Upgrades=%d Health=%g MaxHealth=%g Dead=%d Resume=%d Location=%s Movement=%d Issues=%d"),
 			Progress.CaptureIssues.IsEmpty() ? TEXT("Success") : TEXT("Partial"), *Save->RoomId.ToString(),
 			Save->CaptureSequence + 1, Role, *Player->GetPathName(), *PlayerKey,
@@ -980,7 +1007,7 @@ void UClassFeatureRoomProgressSubsystem::CapturePlayer(ABasePlayer* Player)
 			*Progress.ResumeWorldTransform.GetLocation().ToString(), Progress.bHasMovement ? 1 : 0,
 			Progress.CaptureIssues.Num());
 		for (const FSWRoomCaptureIssue& Issue : Progress.CaptureIssues)
-			UE_LOG(LogSWRoomSave, Warning,
+			SW_ROOM_DETAIL_LOG(LogSWRoomSave, Warning,
 				TEXT("Flow=PlayerCaptureIssue RoomId=%s Sequence=%llu Player=%s Key=%s Domain=%s Field=%s Reason=%s"),
 				*Save->RoomId.ToString(), Save->CaptureSequence + 1, *Player->GetPathName(), *PlayerKey,
 				*Issue.Domain.ToString(), *Issue.FieldKey.ToString(), *Issue.Reason);
@@ -1010,6 +1037,7 @@ void UClassFeatureRoomProgressSubsystem::CapturePlayer(ABasePlayer* Player)
 
 bool UClassFeatureRoomProgressSubsystem::TryReturn(UWorld* World, ABasePlayer* Requester)
 {
+	SWRoomLoadDiagnostics::Mark(TEXT("Return.Requested"));
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=Return Phase=Requested"));
 	USWRoomProgressSubsystem* Room = GetRoom(GetGameInstance());
 	AMultiGameMode* Mode = World ? World->GetAuthGameMode<AMultiGameMode>() : nullptr;
@@ -1175,6 +1203,7 @@ void UClassFeatureRoomProgressSubsystem::ConfirmReturnPresentation(ABasePlayerCo
 
 void UClassFeatureRoomProgressSubsystem::BeginReturnTravel()
 {
+	SWRoomLoadDiagnostics::Mark(TEXT("Return.LastPresentationAck"));
 	UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=ReturnTravelEntered Returning=%d Reason=%d PendingAck=%d"), bReturning, static_cast<int32>(TransitionReason), PendingReturnControllers.Num());
 	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
 	if (!bReturning || !World) return;
@@ -1310,7 +1339,7 @@ bool UClassFeatureRoomProgressSubsystem::CaptureControllerProgress(ABasePlayerCo
   if (!Guest) Guest = &Save->Guests.AddDefaulted_GetRef();
   Guest->DisplayName = Name; Guest->Progress = Progress;
  }
- UE_LOG(LogSWRoomSave, Display, TEXT("Flow=ControllerCapture Sequence=%llu Slot=%d Frozen=%d InventorySlots=%d"), Save->CaptureSequence + 1, Mode->GetPlayerIndex(Controller), bUseFrozen, Progress.InventorySlots.Num());
+ SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=ControllerCapture Sequence=%llu Slot=%d Frozen=%d InventorySlots=%d"), Save->CaptureSequence + 1, Mode->GetPlayerIndex(Controller), bUseFrozen, Progress.InventorySlots.Num());
  return true;
 }
 void UClassFeatureRoomProgressSubsystem::RecordTransitionParticipants(UWorld* World)
@@ -1363,7 +1392,7 @@ bool UClassFeatureRoomProgressSubsystem::ValidateRetryStorage(UWorld* World, FSt
   { OutError = TEXT("RetryStorageNotEmpty: capacity mismatch"); return false; }
   for (const FInventorySlot& Slot : Storage->GetPersistentSlots()) if (Slot.ItemTag.IsValid() || Slot.Count != 0)
   { OutError = TEXT("RetryStorageNotEmpty"); return false; }
-  UE_LOG(LogSWRoomSave, Display, TEXT("Flow=RetryStorageValidate Chest=%s Capacity=%d Slots=%d Sequence=%llu"), *Chest->PersistentChestId.ToString(), Storage->GetSlotsPerTab(), Storage->GetPersistentSlots().Num(), Save->CaptureSequence + 1);
+  SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=RetryStorageValidate Chest=%s Capacity=%d Slots=%d Sequence=%llu"), *Chest->PersistentChestId.ToString(), Storage->GetSlotsPerTab(), Storage->GetPersistentSlots().Num(), Save->CaptureSequence + 1);
  }
  for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
  {
@@ -1384,6 +1413,7 @@ bool UClassFeatureRoomProgressSubsystem::ValidateRetryStorage(UWorld* World, FSt
 }
 bool UClassFeatureRoomProgressSubsystem::TryGameOverRetry(UWorld* World, ABasePlayerController* Requester, uint64 RequestId, FString& OutError)
 {
+	SWRoomLoadDiagnostics::Mark(TEXT("GameOverRetry.Requested"));
  UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=RetrySubsystemEntered Controller=%s Request=%llu World=%s Returning=%d"), *GetNameSafe(Requester), RequestId, *GetNameSafe(World), bReturning);
  USWRoomProgressSubsystem* Room = GetRoom(GetGameInstance());
  USWRoomSaveGame* Save = Room ? Room->GetMutableActiveRoom() : nullptr;

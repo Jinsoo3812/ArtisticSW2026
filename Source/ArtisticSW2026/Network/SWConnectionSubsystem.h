@@ -73,6 +73,7 @@ private:
 	FSWConnectionFailure LastFailure;
 	int32 AttemptSerial = 0;
 	int32 ActiveAttemptId = 0;
+	double DiagnosticConnectStartedAt = 0.0;
 	bool bConnectionAttemptActive = false;
 	bool bIntentionalDisconnect = false;
 	TWeakObjectPtr<UWorld> ReadinessWorld;
