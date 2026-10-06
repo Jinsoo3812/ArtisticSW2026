@@ -49,15 +49,22 @@ AEnemyShip* ADeckEnemy::GetDeckHostShip() const
 	return Cast<AEnemyShip>(GetHostShip());
 }
 
-void ADeckEnemy::BeginPlay()
+void ADeckEnemy::PostInitializeComponents()
 {
+	Super::PostInitializeComponents();
+
+	// Initial replication can apply the inactive pool state before BeginPlay.
+	// Cache authored collision before that state disables the components.
 	InitialCapsuleCollision = GetCapsuleComponent()
 		? GetCapsuleComponent()->GetCollisionEnabled()
 		: ECollisionEnabled::QueryAndPhysics;
 	InitialMeshCollision = GetMesh()
 		? GetMesh()->GetCollisionEnabled()
 		: ECollisionEnabled::QueryOnly;
+}
 
+void ADeckEnemy::BeginPlay()
+{
 	Super::BeginPlay();
 
 	if (HasAuthority() && bStartPooled)
@@ -66,8 +73,15 @@ void ADeckEnemy::BeginPlay()
 	}
 	else
 	{
-		RestoreDeckMovementState();
 		ApplyPoolPresentationState();
+		if (bPoolActive)
+		{
+			RestoreDeckMovementState();
+		}
+		else
+		{
+			StopDeckMovement();
+		}
 	}
 }
 
@@ -341,11 +355,15 @@ void ADeckEnemy::OnRep_PoolActive()
 	{
 		ResetLocalDeathRagdoll();
 	}
-	if (!bPoolActive)
+	ApplyPoolPresentationState();
+	if (bPoolActive)
+	{
+		RestoreDeckMovementState();
+	}
+	else
 	{
 		StopDeckMovement();
 	}
-	ApplyPoolPresentationState();
 }
 
 void ADeckEnemy::ReturnToPoolAfterDeath()

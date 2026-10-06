@@ -62,6 +62,7 @@ public:
 	virtual bool CanMoveOnDeck() const override;
 
 protected:
+	virtual void PostInitializeComponents() override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void HandleDeath_Implementation() override;
