@@ -60,15 +60,15 @@ void AShipBossAIController::OnPossess(APawn* PossessedPawn)
 		return;
 	}
 
-	static const FName DestinationPointKeyName(TEXT("DestinationPointId"));
+	static const FName DestinationPointKeyName(TEXT("DestinationLocation"));
 	if (BlackboardComponent->GetKeyID(DestinationPointKeyName) != FBlackboard::InvalidKey)
 	{
-		BlackboardComponent->SetValueAsInt(DestinationPointKeyName, INDEX_NONE);
+		BlackboardComponent->ClearValue(DestinationPointKeyName);
 	}
 	else
 	{
 		UE_LOG(LogShipBossAI, Error,
-			TEXT("Boss Blackboard is missing required Int key DestinationPointId. Blackboard=%s"),
+			TEXT("Boss Blackboard is missing required Vector key DestinationLocation. Blackboard=%s"),
 			*GetNameSafe(BehaviorTree->BlackboardAsset));
 	}
 

@@ -11,6 +11,8 @@ class WATERANDSHIP_API USWRippleWaterWaves : public UWaterWaves
 
 public:
 	USWRippleWaterWaves();
+	/** Same time mapping used by both full and simple wave queries; also exposed for diagnostics. */
+	float ResolveQueryTime(float InTime) const;
 
 	// UWaterWavesBase interface overrides
 	virtual float GetMaxWaveHeight() const override;

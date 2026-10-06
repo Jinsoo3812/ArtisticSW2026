@@ -4,7 +4,18 @@
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "WaveSystem/Data/WaveSpawnTypes.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "GroundEnemySpawner.generated.h"
+
+USTRUCT()
+struct FSWRoomGroundSpawnerState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FSoftObjectPath CatalogPath;
+	UPROPERTY(SaveGame) int32 EntryCount = 0;
+	UPROPERTY(SaveGame) bool bConfiguredSpawnCommitted = false;
+	UPROPERTY(SaveGame) TArray<FGuid> TrackedEnemyIds;
+};
 
 class ABaseEnemy;
 class UEnemySpawnCatalog;
@@ -43,12 +54,18 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
  * BeginPlay, and leaves all behavior decisions to the spawned enemy's AI.
  */
 UCLASS(Blueprintable)
-class ENEMY_API AGroundEnemySpawner : public AActor
+class ENEMY_API AGroundEnemySpawner : public AActor, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	AGroundEnemySpawner();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomGroundSpawnerState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Enemy Spawn")
 	int32 SpawnConfiguredEnemies();
@@ -107,4 +124,7 @@ private:
 	void HandleTrackedEnemyDestroyed(AActor* DestroyedActor);
 
 	TSet<TWeakObjectPtr<ABaseEnemy>> TrackedEnemies;
+	bool bConfiguredSpawnCommitted = false;
+	FSWRoomGroundSpawnerState PendingRoomState;
+	bool bHasPendingRoomState = false;
 };

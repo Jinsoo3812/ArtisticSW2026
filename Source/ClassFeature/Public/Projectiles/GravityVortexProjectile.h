@@ -2,7 +2,20 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "GravityVortexProjectile.generated.h"
+
+USTRUCT()
+struct FSWRoomGravityProjectileState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FVector PreviousLocation = FVector::ZeroVector;
+	UPROPERTY(SaveGame) bool bActivated = false;
+	UPROPERTY(SaveGame) bool bIncludeWaveHeight = true;
+	UPROPERTY(SaveGame) float RemainingLife = 0.f;
+	UPROPERTY(SaveGame) float GravityScale = 1.f;
+	UPROPERTY(SaveGame) FSoftClassPath FieldClass;
+};
 
 class AGravityVortexField;
 class UProjectileMovementComponent;
@@ -14,12 +27,18 @@ class UNiagaraSystem;
 
 /** A non-blocking projectile that activates only when it crosses a queried water surface. */
 UCLASS(Blueprintable)
-class CLASSFEATURE_API AGravityVortexProjectile : public AActor
+class CLASSFEATURE_API AGravityVortexProjectile : public AActor, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	AGravityVortexProjectile();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomGravityProjectileState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void PostNetReceiveLocationAndRotation() override;
@@ -80,4 +99,6 @@ private:
 
 	FVector PreviousLocation = FVector::ZeroVector;
 	bool bActivated = false;
+	FSWRoomGravityProjectileState PendingRoomState;
+	bool bHasPendingRoomState = false;
 };

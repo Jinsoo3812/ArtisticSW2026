@@ -2,17 +2,21 @@
 
 
 #include "BaseEnemy.h"
+#include "Room/SWRoomSnapshotComponent.h"
 #include "Weapon/BaseWeapon.h"
 #include "Weapon/WeaponDataAsset.h"
 #include "Weapon/BaseWeaponComponent.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
+#include "BaseAttributeSet.h"
+#include "SWRoomAbilitySystemComponent.h"
 
 #include "Storage/StorageChest.h"
 
 // Enemy Folder
 #include "AI/BaseAIController.h"
 #include "AI/EnemyTerritoryComponent.h"
+#include "AI/EnemyAlarmComponent.h"
 #include "GAS/EnemyAttributeSet.h"
 #include "EngineUtils.h"
 #include "WaveSystem/Route/EnemyWaypointMoveComponent.h"
@@ -28,8 +32,95 @@
 #include "Perception/AISense_Damage.h"
 #include "UI/EnemyHealthBarComponent.h"
 
+void ABaseEnemy::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	if (!HealthComponent)
+	{
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Enemy");
+		Issue.FieldKey = TEXT("Health");
+		Issue.Reason = TEXT("Enemy health component missing");
+		return;
+	}
+	FSWRoomEnemyState State;
+	State.Health = HealthComponent->GetHealth();
+	State.MaximumHealth = HealthComponent->GetMaxHealth();
+	State.bDeathHandled = bDeathHandled;
+	State.bHasDropped = bHasDropped;
+	State.bWaveRemoveNotified = bWaveRemoveNotified;
+	State.BaseMovementSpeed = BaseMovementSpeed;
+	State.SpawnMovementSpeedMultiplier = SpawnMovementSpeedMultiplier;
+	State.CorpseLifeRemaining = GetLifeSpan();
+	if (const USWRoomAbilitySystemComponent* RoomASC = Cast<USWRoomAbilitySystemComponent>(AbilitySystemComponent))
+		RoomASC->CaptureRoomEffects(State.ActiveEffects, OutIssues);
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Enemy;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Enemy");
+		Issue.FieldKey = TEXT("State");
+		Issue.Reason = TEXT("Enemy adapter serialization failed");
+	}
+}
+
+bool ABaseEnemy::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	if (Part.Domain != ESWRoomDomain::Enemy || Part.Version != 1)
+	{
+		OutError = TEXT("Unsupported enemy domain or version");
+		return false;
+	}
+	FSWRoomEnemyState State;
+	if (!FSWRoomStructCodec::Read(Part.Bytes, State) || !FMath::IsFinite(State.Health)
+		|| !FMath::IsFinite(State.MaximumHealth) || State.MaximumHealth <= 0.f
+		|| State.Health < 0.f || State.Health > State.MaximumHealth
+		|| !FMath::IsFinite(State.BaseMovementSpeed) || !FMath::IsFinite(State.SpawnMovementSpeedMultiplier)
+		|| State.SpawnMovementSpeedMultiplier < 0.f || !FMath::IsFinite(State.CorpseLifeRemaining))
+	{
+		OutError = TEXT("Invalid enemy state");
+		return false;
+	}
+	if (!AbilitySystemComponent || !HealthComponent)
+	{
+		OutError = TEXT("Enemy attributes unavailable");
+		return false;
+	}
+	bDeathHandled = State.bDeathHandled;
+	bHasDropped = State.bHasDropped;
+	bWaveRemoveNotified = State.bWaveRemoveNotified;
+	SpawnMovementSpeedMultiplier = State.SpawnMovementSpeedMultiplier;
+	SetBaseMovementSpeed(State.BaseMovementSpeed);
+	AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute(), State.MaximumHealth);
+	AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), State.Health);
+	if (State.bDeathHandled)
+	{
+		HandleDeathFinishedPresentation();
+		SetLifeSpan(FMath::Max(State.CorpseLifeRemaining, KINDA_SMALL_NUMBER));
+	}
+	PendingRoomState = MoveTemp(State);
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool ABaseEnemy::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	if (USWRoomAbilitySystemComponent* RoomASC = Cast<USWRoomAbilitySystemComponent>(AbilitySystemComponent))
+	{
+		if (!RoomASC->RestoreRoomEffects(PendingRoomState.ActiveEffects, OutError)) return false;
+		AbilitySystemComponent->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), PendingRoomState.Health);
+	}
+	PendingRoomState = FSWRoomEnemyState();
+	return true;
+}
+
 ABaseEnemy::ABaseEnemy()
 {
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 	PrimaryActorTick.bCanEverTick = true;
 	
 	bReplicates = true;
@@ -54,7 +145,7 @@ ABaseEnemy::ABaseEnemy()
 	}
 	
 	// ASC
-	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AbilitySystemComponent = CreateDefaultSubobject<USWRoomAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
 	ASCReplicationMode = EGameplayEffectReplicationMode::Minimal;
 	AbilitySystemComponent->SetReplicationMode(ASCReplicationMode);
@@ -67,6 +158,7 @@ ABaseEnemy::ABaseEnemy()
 	WaypointMoveComponent = CreateDefaultSubobject<UEnemyWaypointMoveComponent>(TEXT("WaypointMoveComponent"));
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
 	TerritoryComponent = CreateDefaultSubobject<UEnemyTerritoryComponent>(TEXT("TerritoryComponent"));
+	AlarmComponent = CreateDefaultSubobject<UEnemyAlarmComponent>(TEXT("AlarmComponent"));
 	// All regular enemy archetypes share this confirmed-damage cue. Specialized
 	// enemies must opt into a different cue in their own constructor.
 	HealthComponent->SetDamageGameplayCueTag(GameplayCue_Enemy_Hit);

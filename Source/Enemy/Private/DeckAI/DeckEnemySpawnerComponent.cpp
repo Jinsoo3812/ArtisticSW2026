@@ -6,15 +6,197 @@
 #include "Components/StaticMeshComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckWaypointComponent.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
 #include "Engine/World.h"
 #include "Ship.h"
 #include "ShipAI/EnemyShip.h"
 #include "TimerManager.h"
+#include "Room/SWRoomSnapshotComponent.h"
+#include "Room/SWRoomSnapshotSubsystem.h"
 
 UDeckEnemySpawnerComponent::UDeckEnemySpawnerComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(false);
+}
+
+void UDeckEnemySpawnerComponent::BeginPlay()
+{
+	SpawnStartReadyTime = GetWorld()->GetTimeSeconds() + FMath::Max(0.f, SpawnStartDelay);
+	Super::BeginPlay();
+}
+
+float UDeckEnemySpawnerComponent::GetRemainingSpawnStartDelay() const
+{
+	return GetWorld() ? static_cast<float>(FMath::Max(0.0,
+		SpawnStartReadyTime - GetWorld()->GetTimeSeconds())) : 0.f;
+}
+
+void UDeckEnemySpawnerComponent::CaptureRoomState(FSWRoomDeckSpawnerState& OutState, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	OutState.PlanCount = SpawnPlan.Num();
+	OutState.DeploymentState = static_cast<uint8>(DeploymentState);
+	OutState.bAllDeployedEnemiesDefeated = bAllDeployedEnemiesDefeated;
+	OutState.bHasDeployedEnemy = bHasDeployedEnemy;
+	OutState.NextReservationSerial = NextReservationSerial;
+	OutState.ActivationSerial = ActivationSerial;
+	OutState.DeploymentQueueIndex = DeploymentQueueIndex;
+	OutState.CurrentRetryCount = CurrentRetryCount;
+	OutState.SpawnStartDelayRemaining = GetRemainingSpawnStartDelay();
+	OutState.DeploymentFailureCount = DeploymentFailureCount;
+	if (GetWorld())
+	{
+		OutState.SightDelayRemaining = FMath::Max(0.f, GetWorld()->GetTimerManager().GetTimerRemaining(SightDelayTimerHandle));
+		OutState.DeploymentTimerRemaining = FMath::Max(0.f, GetWorld()->GetTimerManager().GetTimerRemaining(DeploymentTimerHandle));
+	}
+	auto GetId = [](const AActor* Actor) -> FGuid
+	{
+		if (const USWRoomSnapshotComponent* Id = Actor ? Actor->FindComponentByClass<USWRoomSnapshotComponent>() : nullptr)
+			return Id->StableId;
+		return FGuid();
+	};
+	OutState.TriggerShipId = GetId(DeploymentTriggerShip.Get());
+	for (ADeckEnemy* Enemy : EnemyPool)
+		if (IsValid(Enemy))
+		{
+			const FGuid Id = GetId(Enemy);
+			if (Id.IsValid()) OutState.EnemyPoolIds.Add(Id);
+			else
+			{
+				FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+				Issue.Domain = TEXT("Spawner");
+				Issue.FieldKey = FName(*(TEXT("PoolEnemy:") + Enemy->GetPathName()));
+				Issue.Reason = TEXT("Deck pool enemy lacks stable ID");
+			}
+		}
+	for (const TWeakObjectPtr<ADeckEnemy>& Enemy : AliveDeployedEnemies)
+		if (Enemy.IsValid() && GetId(Enemy.Get()).IsValid()) OutState.AliveDeployedEnemyIds.Add(GetId(Enemy.Get()));
+	for (const TPair<int32, FDeckPointRuntimeState>& Pair : PointRuntimeStates)
+	{
+		FSWRoomDeckPointState& Point = OutState.Points.AddDefaulted_GetRef();
+		Point.PointId = Pair.Key;
+		Point.OccupantId = GetId(Pair.Value.Occupant.Get());
+		Point.ReservedById = GetId(Pair.Value.ReservedBy.Get());
+		Point.ReservationSerial = Pair.Value.ReservationSerial;
+	}
+	OutState.EnemyPoolIds.Sort();
+	OutState.AliveDeployedEnemyIds.Sort();
+	OutState.Points.Sort([](const FSWRoomDeckPointState& A, const FSWRoomDeckPointState& B) { return A.PointId < B.PointId; });
+	if (DeploymentState == EDeckEnemyDeploymentState::Preparing || DeploymentState == EDeckEnemyDeploymentState::Deploying)
+	{
+		OutState.DeploymentTicket = DeploymentTicket;
+		OutState.DeploymentTicket.RemainingSeconds = DeploymentState == EDeckEnemyDeploymentState::Preparing
+			? OutState.SightDelayRemaining : OutState.DeploymentTimerRemaining;
+		if (!DeploymentTicket.bValid)
+		{
+			FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+			Issue.Domain = TEXT("Spawner");
+			Issue.FieldKey = TEXT("DeckDeploymentTicket");
+			Issue.Reason = TEXT("Pending deck deployment has no reserved transform");
+		}
+	}
+}
+
+bool UDeckEnemySpawnerComponent::RestoreRoomState(const FSWRoomDeckSpawnerState& State, FString& OutError)
+{
+	if (State.PlanCount != SpawnPlan.Num() || State.DeploymentState > static_cast<uint8>(EDeckEnemyDeploymentState::Failed)
+		|| State.NextReservationSerial == 0 || State.ActivationSerial < 0 || State.DeploymentQueueIndex < 0
+		|| State.CurrentRetryCount < 0 || State.DeploymentFailureCount < 0
+		|| !FMath::IsFinite(State.SightDelayRemaining) || State.SightDelayRemaining < 0.f
+		|| !FMath::IsFinite(State.SpawnStartDelayRemaining) || State.SpawnStartDelayRemaining < 0.f
+		|| !FMath::IsFinite(State.DeploymentTimerRemaining) || State.DeploymentTimerRemaining < 0.f)
+	{
+		OutError = TEXT("Invalid deck deployment state or changed plan");
+		return false;
+	}
+	if (State.DeploymentTicket.bValid && (!State.DeploymentTicket.PoolActorId.IsValid()
+		|| State.DeploymentTicket.QueueIndex != State.DeploymentQueueIndex
+		|| State.DeploymentTicket.WorldTransform.ContainsNaN()
+		|| !FMath::IsFinite(State.DeploymentTicket.RemainingSeconds)
+		|| State.DeploymentTicket.RemainingSeconds < 0.f))
+	{
+		OutError = TEXT("Invalid deck deployment ticket");
+		return false;
+	}
+	GetWorld()->GetTimerManager().ClearTimer(SightDelayTimerHandle);
+	GetWorld()->GetTimerManager().ClearTimer(DeploymentTimerHandle);
+	SpawnStartReadyTime = GetWorld()->GetTimeSeconds() + State.SpawnStartDelayRemaining;
+	EnemyPool.Reset();
+	AliveDeployedEnemies.Reset();
+	PointRuntimeStates.Reset();
+	DeploymentQueue.Reset();
+	DeploymentState = static_cast<EDeckEnemyDeploymentState>(State.DeploymentState);
+	bAllDeployedEnemiesDefeated = State.bAllDeployedEnemiesDefeated;
+	bHasDeployedEnemy = State.bHasDeployedEnemy;
+	NextReservationSerial = State.NextReservationSerial;
+	ActivationSerial = State.ActivationSerial;
+	DeploymentQueueIndex = State.DeploymentQueueIndex;
+	CurrentRetryCount = State.CurrentRetryCount;
+	DeploymentFailureCount = State.DeploymentFailureCount;
+	DeploymentTicket = State.DeploymentTicket;
+	if ((DeploymentState == EDeckEnemyDeploymentState::Preparing || DeploymentState == EDeckEnemyDeploymentState::Deploying)
+		&& !BuildDeploymentPlan(DeploymentQueue, false))
+	{
+		OutError = TEXT("Deck deployment plan cannot be reconstructed");
+		return false;
+	}
+	PendingRoomState = State;
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool UDeckEnemySpawnerComponent::FinalizeRoomState(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	auto Find = [&RegisteredActors](const FGuid& Id) -> AActor*
+	{
+		AActor* const* Found = RegisteredActors.Find(Id);
+		return Found ? *Found : nullptr;
+	};
+	for (const FGuid& Id : PendingRoomState.EnemyPoolIds)
+	{
+		ADeckEnemy* Enemy = Cast<ADeckEnemy>(Find(Id));
+		if (!Enemy)
+		{
+			OutError = FString::Printf(TEXT("Deck pool enemy missing: %s"), *Id.ToString());
+			return false;
+		}
+		EnemyPool.Add(Enemy);
+	}
+	for (const FGuid& Id : PendingRoomState.AliveDeployedEnemyIds)
+		if (ADeckEnemy* Enemy = Cast<ADeckEnemy>(Find(Id))) AliveDeployedEnemies.Add(Enemy);
+	for (const FSWRoomDeckPointState& Saved : PendingRoomState.Points)
+	{
+		FDeckPointRuntimeState& Point = PointRuntimeStates.FindOrAdd(Saved.PointId);
+		Point.Occupant = Find(Saved.OccupantId);
+		Point.ReservedBy = Find(Saved.ReservedById);
+		Point.ReservationSerial = Saved.ReservationSerial;
+	}
+	DeploymentTriggerShip = Cast<AShip>(Find(PendingRoomState.TriggerShipId));
+	if (DeploymentTicket.bValid && (!Cast<ADeckEnemy>(Find(DeploymentTicket.PoolActorId))
+		|| DeploymentTicket.QueueIndex != DeploymentQueueIndex))
+	{
+		OutError = TEXT("Deck deployment ticket actor or queue index missing");
+		return false;
+	}
+	if (DeploymentState == EDeckEnemyDeploymentState::Preparing)
+	{
+		if (PendingRoomState.SightDelayRemaining <= 0.f)
+			SightDelayTimerHandle = GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UDeckEnemySpawnerComponent::BeginDeployment);
+		else
+			GetWorld()->GetTimerManager().SetTimer(SightDelayTimerHandle, this, &UDeckEnemySpawnerComponent::BeginDeployment,
+				PendingRoomState.SightDelayRemaining, false);
+	}
+	else if (DeploymentState == EDeckEnemyDeploymentState::Deploying)
+	{
+		if (PendingRoomState.DeploymentTimerRemaining <= 0.f)
+			DeploymentTimerHandle = GetWorld()->GetTimerManager().SetTimerForNextTick(this, &UDeckEnemySpawnerComponent::DeployNextEnemy);
+		else
+			GetWorld()->GetTimerManager().SetTimer(DeploymentTimerHandle, this, &UDeckEnemySpawnerComponent::DeployNextEnemy,
+				PendingRoomState.DeploymentTimerRemaining, false);
+	}
+	return true;
 }
 
 void UDeckEnemySpawnerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -66,18 +248,21 @@ bool UDeckEnemySpawnerComponent::ValidateAuthoredSpawnSlot(
 		return false;
 	}
 
-	const bool bHasNavigationLink = !Waypoint->GetLinkedWaypointIds().IsEmpty();
-	if (!Waypoint->CanSpawnEnemy() || !Waypoint->CanUseInCombat() || !bHasNavigationLink)
+	const UDeckWalkAreaComponent* WalkArea = Host->GetDeckWalkAreaComponent();
+	FDeckWalkLocation FloorLocation;
+	const bool bHasWalkableStart = WalkArea && WalkArea->IsReady()
+		&& WalkArea->ResolveWaypoint(*Waypoint, FloorLocation);
+	if (!Waypoint->CanSpawnEnemy() || !bHasWalkableStart)
 	{
 		if (bLogErrors)
 		{
 			UE_LOG(LogTemp, Error,
-				TEXT("[DeckEnemySpawner] Invalid explicit spawn point. Ship=%s Slot=%d Class=%s Point=%s PointId=%d CanSpawn=%s CanCombat=%s HasLink=%s"),
+				TEXT("[DeckEnemySpawner] Invalid explicit spawn anchor. Ship=%s Slot=%d Class=%s Point=%s PointId=%d Surface=%s Reason=%s"),
 				*GetNameSafe(Host), SlotIndex, *GetNameSafe(AuthoredSlot.EnemyClass.Get()),
-				*GetNameSafe(Waypoint), PointId,
-				Waypoint->CanSpawnEnemy() ? TEXT("true") : TEXT("false"),
-				Waypoint->CanUseInCombat() ? TEXT("true") : TEXT("false"),
-				bHasNavigationLink ? TEXT("true") : TEXT("false"));
+				*GetNameSafe(Waypoint), PointId, *Waypoint->GetWalkSurfaceId().ToString(),
+				!Waypoint->CanSpawnEnemy() ? TEXT("SpawnDisabled")
+					: (!WalkArea || !WalkArea->IsReady())
+						? TEXT("WalkAreaNotReady") : TEXT("NoWalkableSpawnFloor"));
 		}
 		return false;
 	}
@@ -197,24 +382,13 @@ void UDeckEnemySpawnerComponent::InitializeWaypoints()
 		return Left.GetWaypointId() < Right.GetWaypointId();
 	});
 
-	for (const TPair<int32, TObjectPtr<UDeckWaypointComponent>>& Pair : WaypointsById)
-	{
-		for (const int32 LinkedId : Pair.Value->GetLinkedWaypointIds())
-		{
-			if (!WaypointsById.Contains(LinkedId))
-			{
-				UE_LOG(LogTemp, Error,
-					TEXT("[DeckEnemySpawner] Invalid waypoint link. Ship=%s WaypointId=%d LinkedId=%d"),
-					*GetNameSafe(Host), Pair.Key, LinkedId);
-			}
-		}
-	}
 }
 
 void UDeckEnemySpawnerComponent::InitializePool()
 {
 	AEnemyShip* Host = GetHostShip();
-	if (!Host || !Host->HasAuthority() || !IsEnabled() || !EnemyPool.IsEmpty())
+	if (!Host || !Host->HasAuthority() || !IsEnabled() || !EnemyPool.IsEmpty()
+		|| GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
 	{
 		return;
 	}
@@ -312,6 +486,7 @@ void UDeckEnemySpawnerComponent::Shutdown()
 
 void UDeckEnemySpawnerComponent::CancelDeployment()
 {
+	DeploymentTicket = FSWRoomDeckDeploymentTicket();
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(SightDelayTimerHandle);
@@ -332,7 +507,8 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(
 	AActor* InitialCombatTarget)
 {
 	AEnemyShip* Host = GetHostShip();
-	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled() || Host->IsCrewDefeated() || !IsEnabled()
+	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled() || Host->IsCrewDefeated() || Host->IsStoryGateDormant() || !IsEnabled()
+		|| GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()
 		|| !IsValid(TriggeringPlayerShip)
 		|| (InitialCombatTarget && !IsValid(InitialCombatTarget)))
 	{
@@ -372,8 +548,12 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(
 	CurrentRetryCount = 0;
 	DeploymentFailureCount = 0;
 	DeploymentState = EDeckEnemyDeploymentState::Preparing;
+	// Wait for both ship settling and the normal sight reaction time. Repeated
+	// sight notifications cannot restart this timer while Preparing.
+	const float DeploymentDelay = FMath::Max(FMath::Max(0.f, SightActivationDelay), GetRemainingSpawnStartDelay());
+	CreateDeploymentTicket(DeploymentDelay);
 
-	if (SightActivationDelay <= 0.0f)
+	if (DeploymentDelay <= 0.0f)
 	{
 		BeginDeployment();
 	}
@@ -383,7 +563,7 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(
 			SightDelayTimerHandle,
 			this,
 			&UDeckEnemySpawnerComponent::BeginDeployment,
-			SightActivationDelay,
+			DeploymentDelay,
 			false);
 	}
 	return true;
@@ -392,14 +572,35 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(
 void UDeckEnemySpawnerComponent::BeginDeployment()
 {
 	AEnemyShip* Host = GetHostShip();
-	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled()
+	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled() || Host->IsStoryGateDormant()
 		|| DeploymentQueue.IsEmpty() || EnemyPool.IsEmpty())
 	{
+		if (Host && Host->IsStoryGateDormant()) CancelDeployment();
 		DeploymentState = EDeckEnemyDeploymentState::Failed;
 		return;
 	}
 	DeploymentState = EDeckEnemyDeploymentState::Deploying;
 	DeployNextEnemy();
+}
+
+bool UDeckEnemySpawnerComponent::CreateDeploymentTicket(float DelaySeconds)
+{
+	if (DeploymentTicket.bValid && DeploymentTicket.QueueIndex == DeploymentQueueIndex) return true;
+	DeploymentTicket = FSWRoomDeckDeploymentTicket();
+	if (!DeploymentQueue.IsValidIndex(DeploymentQueueIndex)) return false;
+	const FDeckEnemyDeploymentSlot& Slot = DeploymentQueue[DeploymentQueueIndex];
+	ADeckEnemy* Enemy = FindInactiveEnemy(Slot.EnemyClass);
+	UDeckWaypointComponent* Waypoint = GetWaypoint(Slot.SpawnPointId);
+	FTransform Transform;
+	if (!Enemy || !Waypoint || !ResolveEnemySpawnTransform(Waypoint, *Enemy, Transform)) return false;
+	const USWRoomSnapshotComponent* Snapshot = Enemy->FindComponentByClass<USWRoomSnapshotComponent>();
+	if (!Snapshot || !Snapshot->StableId.IsValid()) return false;
+	DeploymentTicket.bValid = true;
+	DeploymentTicket.PoolActorId = Snapshot->StableId;
+	DeploymentTicket.QueueIndex = DeploymentQueueIndex;
+	DeploymentTicket.WorldTransform = Transform;
+	DeploymentTicket.RemainingSeconds = DelaySeconds;
+	return true;
 }
 
 ADeckEnemy* UDeckEnemySpawnerComponent::FindInactiveEnemy(
@@ -420,7 +621,12 @@ void UDeckEnemySpawnerComponent::DeployNextEnemy()
 {
 	GetWorld()->GetTimerManager().ClearTimer(DeploymentTimerHandle);
 	AEnemyShip* Host = GetHostShip();
-	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled()
+	if (Host && Host->IsStoryGateDormant())
+	{
+		CancelDeployment();
+		return;
+	}
+	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled() || Host->IsStoryGateDormant()
 		|| !DeploymentQueue.IsValidIndex(DeploymentQueueIndex))
 	{
 		FinishDeployment();
@@ -428,8 +634,21 @@ void UDeckEnemySpawnerComponent::DeployNextEnemy()
 	}
 
 	const FDeckEnemyDeploymentSlot& Slot = DeploymentQueue[DeploymentQueueIndex];
-	ADeckEnemy* Enemy = FindInactiveEnemy(Slot.EnemyClass);
+	if (!DeploymentTicket.bValid) CreateDeploymentTicket(0.f);
+	ADeckEnemy* Enemy = nullptr;
+	if (DeploymentTicket.bValid)
+		for (ADeckEnemy* Candidate : EnemyPool)
+			if (const USWRoomSnapshotComponent* Id = IsValid(Candidate)
+				? Candidate->FindComponentByClass<USWRoomSnapshotComponent>() : nullptr;
+				Id && Id->StableId == DeploymentTicket.PoolActorId) { Enemy = Candidate; break; }
 	if (!Enemy)
+	{
+		HandleDeploymentFailure();
+		return;
+	}
+	// Tickets identify the enemy and point, but the ship can move while the
+	// timer runs. Resolve the live deck transform immediately before activation.
+	if (!ResolveEnemySpawnTransform(GetWaypoint(Slot.SpawnPointId), *Enemy, DeploymentTicket.WorldTransform))
 	{
 		HandleDeploymentFailure();
 		return;
@@ -450,7 +669,8 @@ void UDeckEnemySpawnerComponent::DeployNextEnemy()
 		return;
 	}
 	if (!ActivateSpecificEnemyAtReservation(
-		*Enemy, Reservation, DeploymentInitialTarget.Get(), ActivatedEnemy))
+		*Enemy, Reservation, DeploymentInitialTarget.Get(), ActivatedEnemy,
+		DeploymentTicket.bValid ? &DeploymentTicket.WorldTransform : nullptr))
 	{
 		ReleasePointReservation(Reservation);
 		HandleDeploymentFailure();
@@ -458,6 +678,7 @@ void UDeckEnemySpawnerComponent::DeployNextEnemy()
 	}
 
 	++DeploymentQueueIndex;
+	DeploymentTicket = FSWRoomDeckDeploymentTicket();
 	CurrentRetryCount = 0;
 	if (!DeploymentQueue.IsValidIndex(DeploymentQueueIndex))
 	{
@@ -465,6 +686,7 @@ void UDeckEnemySpawnerComponent::DeployNextEnemy()
 		return;
 	}
 
+	CreateDeploymentTicket(FMath::Max(0.05f, ActivationInterval));
 	GetWorld()->GetTimerManager().SetTimer(
 		DeploymentTimerHandle,
 		this,
@@ -478,6 +700,7 @@ void UDeckEnemySpawnerComponent::HandleDeploymentFailure()
 	++CurrentRetryCount;
 	if (CurrentRetryCount <= FMath::Max(0, MaxSpawnRetries))
 	{
+		CreateDeploymentTicket(FMath::Max(0.05f, SpawnRetryInterval));
 		GetWorld()->GetTimerManager().SetTimer(
 			DeploymentTimerHandle,
 			this,
@@ -498,6 +721,7 @@ void UDeckEnemySpawnerComponent::HandleDeploymentFailure()
 			: INDEX_NONE);
 	++DeploymentFailureCount;
 	++DeploymentQueueIndex;
+	DeploymentTicket = FSWRoomDeckDeploymentTicket();
 	CurrentRetryCount = 0;
 	if (!DeploymentQueue.IsValidIndex(DeploymentQueueIndex))
 	{
@@ -505,6 +729,7 @@ void UDeckEnemySpawnerComponent::HandleDeploymentFailure()
 		return;
 	}
 
+	CreateDeploymentTicket(FMath::Max(0.05f, ActivationInterval));
 	GetWorld()->GetTimerManager().SetTimer(
 		DeploymentTimerHandle,
 		this,
@@ -515,6 +740,7 @@ void UDeckEnemySpawnerComponent::HandleDeploymentFailure()
 
 void UDeckEnemySpawnerComponent::FinishDeployment()
 {
+	DeploymentTicket = FSWRoomDeckDeploymentTicket();
 	const int32 SuccessfulCount = DeploymentQueueIndex - DeploymentFailureCount;
 	if (SuccessfulCount <= 0)
 	{
@@ -544,6 +770,7 @@ int32 UDeckEnemySpawnerComponent::GetAliveDeployedEnemyCount() const
 void UDeckEnemySpawnerComponent::ResetForNewEncounter()
 {
 	CancelDeployment();
+	DeploymentTicket = FSWRoomDeckDeploymentTicket();
 	for (ADeckEnemy* Enemy : EnemyPool)
 	{
 		if (IsValid(Enemy))
@@ -613,151 +840,23 @@ UDeckWaypointComponent* UDeckEnemySpawnerComponent::GetWaypoint(int32 WaypointId
 FVector UDeckEnemySpawnerComponent::GetWaypointWorldLocation(int32 WaypointId) const
 {
 	const UDeckWaypointComponent* Waypoint = GetWaypoint(WaypointId);
+	const AEnemyShip* Host = GetHostShip();
+	const UDeckWalkAreaComponent* Area = Host ? Host->GetDeckWalkAreaComponent() : nullptr;
+	FDeckWalkLocation Floor;
+	if (Waypoint && Area && Area->IsReady() && Area->ResolveWaypoint(*Waypoint, Floor))
+	{
+		return Area->ToWorld(Floor.LocalFloor);
+	}
 	return Waypoint ? Waypoint->GetComponentLocation()
 		: (GetHostShip() ? GetHostShip()->GetActorLocation() : FVector::ZeroVector);
 }
 
-void UDeckEnemySpawnerComponent::GetWaypointIds(
-	TArray<int32>& OutWaypointIds,
-	bool bRequireCombatPoint) const
-{
-	OutWaypointIds.Reset();
-	for (const TPair<int32, TObjectPtr<UDeckWaypointComponent>>& Pair : WaypointsById)
-	{
-		const UDeckWaypointComponent* Waypoint = Pair.Value;
-		if (IsValid(Waypoint) && (!bRequireCombatPoint || Waypoint->CanUseInCombat()))
-		{
-			OutWaypointIds.Add(Pair.Key);
-		}
-	}
-	OutWaypointIds.Sort();
-}
-
-void UDeckEnemySpawnerComponent::GetConnectedWaypointIds(
-	int32 WaypointId,
-	TArray<int32>& OutWaypointIds) const
-{
-	OutWaypointIds.Reset();
-	if (const UDeckWaypointComponent* Waypoint = GetWaypoint(WaypointId))
-	{
-		for (const int32 LinkedId : Waypoint->GetLinkedWaypointIds())
-		{
-			if (WaypointsById.Contains(LinkedId))
-			{
-				OutWaypointIds.Add(LinkedId);
-			}
-		}
-	}
-}
-
-int32 UDeckEnemySpawnerComponent::FindNearestWaypoint(
-	const FVector& WorldLocation,
-	bool bRequirePatrolPoint) const
+bool UDeckEnemySpawnerComponent::ResolveDeckCharacterTransform(int32 PointId, float CapsuleHalfHeight, FTransform& OutTransform) const
 {
 	const AEnemyShip* Host = GetHostShip();
-	const UStaticMeshComponent* DeckMesh = Host ? Host->GetShipDeckMesh() : nullptr;
-	if (!DeckMesh)
-	{
-		return INDEX_NONE;
-	}
-	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
-	const FVector QueryLocal = DeckTransform.InverseTransformPosition(WorldLocation);
-	int32 BestId = INDEX_NONE;
-	float BestDistanceSquared = TNumericLimits<float>::Max();
-	for (const TPair<int32, TObjectPtr<UDeckWaypointComponent>>& Pair : WaypointsById)
-	{
-		const UDeckWaypointComponent* Waypoint = Pair.Value;
-		if (!IsValid(Waypoint) || (bRequirePatrolPoint && !Waypoint->CanPatrol()))
-		{
-			continue;
-		}
-		const FVector PointLocal = DeckTransform.InverseTransformPosition(
-			Waypoint->GetComponentLocation());
-		const float DistanceSquared = FVector::DistSquared2D(QueryLocal, PointLocal);
-		if (DistanceSquared < BestDistanceSquared)
-		{
-			BestDistanceSquared = DistanceSquared;
-			BestId = Pair.Key;
-		}
-	}
-	return BestId;
-}
-
-bool UDeckEnemySpawnerComponent::ResolveFixedDeckAnchorTransform(
-	int32 WaypointId,
-	float CapsuleHalfHeight,
-	FTransform& OutTransform) const
-{
-	const AEnemyShip* Host = GetHostShip();
-	const UDeckWaypointComponent* Waypoint = GetWaypoint(WaypointId);
-	const UStaticMeshComponent* DeckMesh = Host ? Host->GetShipDeckMesh() : nullptr;
-	if (!Waypoint || !DeckMesh)
-	{
-		return false;
-	}
-
-	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
-	const FVector LocalAnchor = DeckTransform.InverseTransformPosition(Waypoint->GetComponentLocation());
-	const FVector LocalForward = DeckTransform.InverseTransformVectorNoScale(Waypoint->GetForwardVector());
-	const FVector DeckUp = DeckMesh->GetUpVector().GetSafeNormal();
-	FVector Forward = FVector::VectorPlaneProject(
-		DeckTransform.TransformVectorNoScale(LocalForward), DeckUp).GetSafeNormal();
-	if (Forward.IsNearlyZero())
-	{
-		Forward = DeckMesh->GetForwardVector();
-	}
-	const FVector CharacterLocation = DeckTransform.TransformPosition(LocalAnchor)
-		+ DeckUp * (FMath::Max(0.0f, CapsuleHalfHeight) + 2.0f);
-	OutTransform = FTransform(FRotationMatrix::MakeFromXZ(Forward, DeckUp).ToQuat(), CharacterLocation);
-	return !OutTransform.ContainsNaN();
-}
-
-bool UDeckEnemySpawnerComponent::ResolveDeckCharacterTransform(
-	int32 WaypointId,
-	float CapsuleHalfHeight,
-	FTransform& OutTransform) const
-{
-	const AEnemyShip* Host = GetHostShip();
-	const UDeckWaypointComponent* Waypoint = GetWaypoint(WaypointId);
-	UStaticMeshComponent* DeckMesh = Host ? Host->GetShipDeckMesh() : nullptr;
-	UWorld* World = GetWorld();
-	if (!Waypoint || !DeckMesh || !World)
-	{
-		return false;
-	}
-
-	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
-	const FVector LocalAnchor = DeckTransform.InverseTransformPosition(Waypoint->GetComponentLocation());
-	const FVector AnchorLocation = DeckTransform.TransformPosition(LocalAnchor);
-	const FVector DeckUp = DeckMesh->GetUpVector().GetSafeNormal();
-	const FVector TraceStart = AnchorLocation + DeckUp * 150.0f;
-	const FVector TraceEnd = AnchorLocation - DeckUp * 250.0f;
-	FCollisionObjectQueryParams ObjectQuery;
-	ObjectQuery.AddObjectTypesToQuery(ECC_WorldDynamic);
-	ObjectQuery.AddObjectTypesToQuery(ECC_WorldStatic);
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DeckCharacterTransform), false);
-	TArray<FHitResult> Hits;
-	World->LineTraceMultiByObjectType(Hits, TraceStart, TraceEnd, ObjectQuery, QueryParams);
-	const FHitResult* DeckHit = Hits.FindByPredicate([DeckMesh](const FHitResult& Hit)
-	{
-		return Hit.GetComponent() == DeckMesh;
-	});
-	if (!DeckHit)
-	{
-		return false;
-	}
-
-	const FVector LocalForward = DeckTransform.InverseTransformVectorNoScale(Waypoint->GetForwardVector());
-	FVector Forward = FVector::VectorPlaneProject(
-		DeckTransform.TransformVectorNoScale(LocalForward), DeckUp).GetSafeNormal();
-	if (Forward.IsNearlyZero())
-	{
-		Forward = DeckMesh->GetForwardVector();
-	}
-	const FVector CharacterLocation = DeckHit->ImpactPoint
-		+ DeckUp * (FMath::Max(0.0f, CapsuleHalfHeight) + 2.0f);
-	OutTransform = FTransform(FRotationMatrix::MakeFromXZ(Forward, DeckUp).ToQuat(), CharacterLocation);
-	return !OutTransform.ContainsNaN();
+	const UDeckWaypointComponent* Point = GetWaypoint(PointId);
+	const UDeckWalkAreaComponent* Area = Host ? Host->GetDeckWalkAreaComponent() : nullptr;
+	return Point && Area && Area->IsReady() && Area->ResolveSpawnTransform(*Point, CapsuleHalfHeight, OutTransform);
 }
 
 bool UDeckEnemySpawnerComponent::ResolveEnemySpawnTransform(
@@ -771,8 +870,7 @@ bool UDeckEnemySpawnerComponent::ResolveEnemySpawnTransform(
 	}
 	const UCapsuleComponent* Capsule = Enemy.GetCapsuleComponent();
 	const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0f;
-	return ResolveDeckCharacterTransform(SpawnWaypoint->GetWaypointId(), HalfHeight, OutTransform)
-		|| ResolveFixedDeckAnchorTransform(SpawnWaypoint->GetWaypointId(), HalfHeight, OutTransform);
+	return ResolveDeckCharacterTransform(SpawnWaypoint->GetWaypointId(), HalfHeight, OutTransform);
 }
 
 bool UDeckEnemySpawnerComponent::IsPointAvailable(int32 WaypointId, const AActor* Requester) const
@@ -801,12 +899,7 @@ void UDeckEnemySpawnerComponent::PrunePointRuntimeState()
 			State.ReservedBy.Reset();
 			State.ReservationSerial = 0;
 		}
-		if (!State.CombatClaimedBy.IsValid())
-		{
-			State.CombatClaimedBy.Reset();
-		}
-		if (!State.Occupant.IsValid() && !State.ReservedBy.IsValid()
-			&& !State.CombatClaimedBy.IsValid())
+		if (!State.Occupant.IsValid() && !State.ReservedBy.IsValid())
 		{
 			It.RemoveCurrent();
 		}
@@ -866,6 +959,14 @@ bool UDeckEnemySpawnerComponent::TryReserveEnemySpawnPoint(
 	}
 
 	PrunePointRuntimeState();
+	const UDeckWalkAreaComponent* Area = Host->GetDeckWalkAreaComponent();
+	const bool bUseWalkArea = Area && Area->IsReady();
+	if (!bUseWalkArea)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[DeckEnemySpawner] Ship=%s Requester=%s Reason=WalkAreaNotReady"),
+			*GetNameSafe(Host), *GetNameSafe(Requester));
+		return false;
+	}
 	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
 	const FVector RequesterLocal = DeckTransform.InverseTransformPosition(Requester->GetActorLocation());
 	const AActor* Target = Request.Target.Get();
@@ -875,19 +976,22 @@ bool UDeckEnemySpawnerComponent::TryReserveEnemySpawnPoint(
 	TArray<int32> Candidates;
 	for (const UDeckWaypointComponent* Waypoint : SpawnWaypoints)
 	{
-		if (!Waypoint || !Waypoint->CanUseInCombat())
+		if (!Waypoint)
 		{
 			continue;
 		}
-		TArray<int32> ConnectedIds;
-		GetConnectedWaypointIds(Waypoint->GetWaypointId(), ConnectedIds);
 		const int32 PointId = Waypoint->GetWaypointId();
-		if (ConnectedIds.IsEmpty() || PointId == Request.ExcludedPointId
+		FDeckWalkLocation Floor;
+		if (!Area->ResolveWaypoint(*Waypoint, Floor)
+			|| PointId == Request.ExcludedPointId
 			|| !IsPointAvailable(PointId, Requester))
 		{
 			continue;
 		}
-		const FVector PointLocal = DeckTransform.InverseTransformPosition(Waypoint->GetComponentLocation());
+		FDeckWalkLocation RequesterFloor;
+		TArray<FDeckWalkLocation> Path;
+		if (!Area->ResolveActorOnDeck(*Requester, RequesterFloor) || !Area->FindPath(RequesterFloor, Floor, Path)) continue;
+		const FVector PointLocal = Floor.LocalFloor;
 		const float RequesterDistance = FVector::Dist2D(PointLocal, RequesterLocal);
 		const float TargetDistance = Target
 			? FVector::Dist2D(PointLocal, TargetLocal)
@@ -966,7 +1070,7 @@ void UDeckEnemySpawnerComponent::ReleasePointReservation(FDeckPointReservation& 
 		{
 			State->ReservedBy.Reset();
 			State->ReservationSerial = 0;
-			if (!State->Occupant.IsValid() && !State->CombatClaimedBy.IsValid())
+			if (!State->Occupant.IsValid())
 			{
 				PointRuntimeStates.Remove(Reservation.PointId);
 			}
@@ -1009,56 +1113,7 @@ void UDeckEnemySpawnerComponent::ReleasePointOccupancy(int32 WaypointId, AActor*
 		State && State->Occupant.Get() == Occupant)
 	{
 		State->Occupant.Reset();
-		if (!State->ReservedBy.IsValid() && !State->CombatClaimedBy.IsValid())
-		{
-			PointRuntimeStates.Remove(WaypointId);
-		}
-	}
-}
-
-bool UDeckEnemySpawnerComponent::IsCombatPointClaimAvailable(
-	int32 WaypointId,
-	const AActor* Requester) const
-{
-	const AEnemyShip* Host = GetHostShip();
-	if (!Host || !Host->HasAuthority() || !GetWaypoint(WaypointId))
-	{
-		return false;
-	}
-	const FDeckPointRuntimeState* State = PointRuntimeStates.Find(WaypointId);
-	return !State || !State->CombatClaimedBy.IsValid()
-		|| State->CombatClaimedBy.Get() == Requester;
-}
-
-bool UDeckEnemySpawnerComponent::TryClaimCombatPoint(int32 WaypointId, AActor* Requester)
-{
-	AEnemyShip* Host = GetHostShip();
-	if (!Host || !Host->HasAuthority() || !IsValid(Requester) || !GetWaypoint(WaypointId))
-	{
-		return false;
-	}
-	PrunePointRuntimeState();
-	FDeckPointRuntimeState& State = PointRuntimeStates.FindOrAdd(WaypointId);
-	if (State.CombatClaimedBy.IsValid() && State.CombatClaimedBy.Get() != Requester)
-	{
-		return false;
-	}
-	State.CombatClaimedBy = Requester;
-	return true;
-}
-
-void UDeckEnemySpawnerComponent::ReleaseCombatPointClaim(int32 WaypointId, AActor* Requester)
-{
-	AEnemyShip* Host = GetHostShip();
-	if (!Host || !Host->HasAuthority() || WaypointId == INDEX_NONE || !Requester)
-	{
-		return;
-	}
-	if (FDeckPointRuntimeState* State = PointRuntimeStates.Find(WaypointId);
-		State && State->CombatClaimedBy.Get() == Requester)
-	{
-		State->CombatClaimedBy.Reset();
-		if (!State->Occupant.IsValid() && !State->ReservedBy.IsValid())
+		if (!State->ReservedBy.IsValid())
 		{
 			PointRuntimeStates.Remove(WaypointId);
 		}
@@ -1084,12 +1139,7 @@ void UDeckEnemySpawnerComponent::ReleaseAllPointsFor(AActor* Actor)
 			State.ReservedBy.Reset();
 			State.ReservationSerial = 0;
 		}
-		if (State.CombatClaimedBy.Get() == Actor)
-		{
-			State.CombatClaimedBy.Reset();
-		}
-		if (!State.Occupant.IsValid() && !State.ReservedBy.IsValid()
-			&& !State.CombatClaimedBy.IsValid())
+		if (!State.Occupant.IsValid() && !State.ReservedBy.IsValid())
 		{
 			It.RemoveCurrent();
 		}
@@ -1102,7 +1152,7 @@ bool UDeckEnemySpawnerComponent::ActivateEnemyAtPoint(
 	ADeckEnemy*& OutEnemy)
 {
 	OutEnemy = nullptr;
-	if (const AEnemyShip* Host = GetHostShip(); !Host || Host->IsCrewDefeated()) return false;
+	if (const AEnemyShip* Host = GetHostShip(); !Host || Host->IsCrewDefeated() || Host->IsStoryGateDormant()) return false;
 	if (EnemyPool.IsEmpty())
 	{
 		InitializePool();
@@ -1128,7 +1178,7 @@ bool UDeckEnemySpawnerComponent::ActivateEnemyAtReservation(
 	const FDataTableRowHandle& StatsRow)
 {
 	OutEnemy = nullptr;
-	if (const AEnemyShip* Host = GetHostShip(); !Host || Host->IsCrewDefeated()) return false;
+	if (const AEnemyShip* Host = GetHostShip(); !Host || Host->IsCrewDefeated() || Host->IsStoryGateDormant()) return false;
 	if (EnemyPool.IsEmpty())
 	{
 		InitializePool();
@@ -1151,12 +1201,13 @@ bool UDeckEnemySpawnerComponent::ActivateSpecificEnemyAtReservation(
 	ADeckEnemy& Enemy,
 	FDeckPointReservation& Reservation,
 	AActor* InitialTarget,
-	ADeckEnemy*& OutEnemy)
+	ADeckEnemy*& OutEnemy,
+	const FTransform* ReservedTransform)
 {
 	OutEnemy = nullptr;
 	AEnemyShip* Host = GetHostShip();
-	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled() || Host->IsCrewDefeated() || !Reservation.IsValid()
-		|| Enemy.IsPoolActive()
+	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled() || Host->IsCrewDefeated() || Host->IsStoryGateDormant() || !Reservation.IsValid()
+		|| Enemy.IsPoolActive() || GetRemainingSpawnStartDelay() > 0.f
 		|| (InitialTarget && !Enemy.IsValidCombatTarget(InitialTarget)))
 	{
 		ReleasePointReservation(Reservation);
@@ -1164,18 +1215,27 @@ bool UDeckEnemySpawnerComponent::ActivateSpecificEnemyAtReservation(
 	}
 
 	UDeckWaypointComponent* SpawnWaypoint = GetWaypoint(Reservation.PointId);
-	if (!SpawnWaypoint || !SpawnWaypoint->CanSpawnEnemy() || !SpawnWaypoint->CanUseInCombat())
+	if (!SpawnWaypoint || !SpawnWaypoint->CanSpawnEnemy())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[DeckEnemySpawner] Ship=%s PointId=%d Reason=MissingOrDisabledSpawnAnchor"),
+			*GetNameSafe(Host), Reservation.PointId);
 		ReleasePointReservation(Reservation);
 		return false;
 	}
 
 	FTransform SpawnTransform;
-	if (!ResolveEnemySpawnTransform(SpawnWaypoint, Enemy, SpawnTransform) || !GetWorld())
+	if ((!ReservedTransform && !ResolveEnemySpawnTransform(SpawnWaypoint, Enemy, SpawnTransform)) || !GetWorld())
 	{
+		const UDeckWalkAreaComponent* Area = Host->GetDeckWalkAreaComponent();
+		UE_LOG(LogTemp, Warning,
+			TEXT("[DeckEnemySpawner] Ship=%s PointId=%d Surface=%s Enemy=%s Reason=%s"),
+			*GetNameSafe(Host), Reservation.PointId, *SpawnWaypoint->GetWalkSurfaceId().ToString(),
+			*Enemy.GetName(), (!Area || !Area->IsReady())
+				? TEXT("WalkAreaNotReady") : TEXT("SpawnTransformUnresolved"));
 		ReleasePointReservation(Reservation);
 		return false;
 	}
+	if (ReservedTransform) SpawnTransform = *ReservedTransform;
 
 	const UCapsuleComponent* Capsule = Enemy.GetCapsuleComponent();
 	const float Radius = Capsule ? Capsule->GetScaledCapsuleRadius() : 42.0f;
@@ -1196,7 +1256,7 @@ bool UDeckEnemySpawnerComponent::ActivateSpecificEnemyAtReservation(
 	const int32 Seed = static_cast<int32>(HashCombine(
 		static_cast<uint32>(RandomSeed),
 		HashCombine(GetTypeHash(Host->GetFName()), static_cast<uint32>(ActivationSerial++))));
-	if (!Enemy.ActivateFromPool(Host, Reservation.PointId, Seed))
+	if (!Enemy.ActivateFromPool(Host, Reservation.PointId, Seed, ReservedTransform))
 	{
 		ReleasePointReservation(Reservation);
 		return false;

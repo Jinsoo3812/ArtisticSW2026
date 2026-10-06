@@ -1,6 +1,7 @@
 #include "ShipAI/Abilities/EnemyShipObstacleProjectile.h"
 
 #include "Components/SphereComponent.h"
+#include "Item/Projectiles/ProjectileLaunchInitialization.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "NiagaraComponent.h"
@@ -9,9 +10,11 @@
 #include "ShipAI/Abilities/EnemyShipObstacle.h"
 #include "TimerManager.h"
 #include "Effects/SWNiagaraScaleLibrary.h"
+#include "Room/SWRoomSnapshotComponent.h"
 
 AEnemyShipObstacleProjectile::AEnemyShipObstacleProjectile()
 {
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
 	SetReplicateMovement(true);
@@ -86,10 +89,12 @@ void AEnemyShipObstacleProjectile::InitializeObstacleProjectile(
 	TargetPoint = InTargetPoint;
 	ObstacleClass = InObstacleClass;
 	ObstacleSpawnRotationOffset = InObstacleSpawnRotationOffset;
-	ProjectileMovement->InitialSpeed = InLaunchVelocity.Size();
-	ProjectileMovement->MaxSpeed = FMath::Max(InLaunchVelocity.Size() * 2.0f, 5000.0f);
-	ProjectileMovement->Velocity = InLaunchVelocity;
-	ProjectileMovement->UpdateComponentVelocity();
+	if (!ProjectileLaunchInitialization::ApplyWorldVelocity(ProjectileMovement, InLaunchVelocity,
+		FMath::Max(InLaunchVelocity.Size() * 2.0f, 5000.0f)))
+	{
+		Destroy();
+		return;
+	}
 	ProjectileMovement->ResetInterpolation();
 	GetWorldTimerManager().SetTimer(
 		ArrivalTimerHandle,
@@ -102,6 +107,8 @@ void AEnemyShipObstacleProjectile::InitializeObstacleProjectile(
 
 void AEnemyShipObstacleProjectile::ReachTargetAndSpawnObstacle()
 {
+	if (bArrivalHandled) return;
+	bArrivalHandled = true;
 	if (!HasAuthority() || !GetWorld() || !ObstacleClass)
 	{
 		Destroy();
@@ -129,6 +136,74 @@ void AEnemyShipObstacleProjectile::ReachTargetAndSpawnObstacle()
 			FMath::Max(0.01f, ObstacleSpawnEffectPlaybackSpeed));
 	}
 	Destroy();
+}
+
+void AEnemyShipObstacleProjectile::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	FSWRoomObstacleProjectileState State;
+	State.TargetPoint = TargetPoint;
+	State.RotationOffset = ObstacleSpawnRotationOffset;
+	State.ObstacleClass = ObstacleClass ? FSoftClassPath(ObstacleClass.Get()) : FSoftClassPath();
+	State.ArrivalRemaining = GetWorldTimerManager().IsTimerActive(ArrivalTimerHandle)
+		? FMath::Max(0.f, GetWorldTimerManager().GetTimerRemaining(ArrivalTimerHandle)) : 0.f;
+	State.RemainingLife = GetLifeSpan();
+	State.GravityScale = ProjectileMovement ? ProjectileMovement->ProjectileGravityScale : 1.f;
+	State.bArrivalHandled = bArrivalHandled;
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Projectile;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Projectile");
+		Issue.FieldKey = TEXT("ObstacleCarrier");
+		Issue.Reason = TEXT("Obstacle carrier serialization failed");
+	}
+}
+
+bool AEnemyShipObstacleProjectile::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	FSWRoomObstacleProjectileState State;
+	if (Part.Domain != ESWRoomDomain::Projectile || Part.Version != 1 || !FSWRoomStructCodec::Read(Part.Bytes, State)
+		|| State.TargetPoint.ContainsNaN() || State.RotationOffset.ContainsNaN()
+		|| !FMath::IsFinite(State.ArrivalRemaining) || State.ArrivalRemaining < 0.f
+		|| !FMath::IsFinite(State.RemainingLife) || State.RemainingLife < 0.f
+		|| !FMath::IsFinite(State.GravityScale))
+	{
+		OutError = TEXT("Invalid obstacle carrier state");
+		return false;
+	}
+	ObstacleClass = State.ObstacleClass.IsNull() ? nullptr : State.ObstacleClass.TryLoadClass<AEnemyShipObstacle>();
+	if (!State.ObstacleClass.IsNull() && !ObstacleClass)
+	{
+		OutError = TEXT("Obstacle class missing");
+		return false;
+	}
+	TargetPoint = State.TargetPoint;
+	ObstacleSpawnRotationOffset = State.RotationOffset;
+	bArrivalHandled = State.bArrivalHandled;
+	if (ProjectileMovement) ProjectileMovement->ProjectileGravityScale = State.GravityScale;
+	GetWorldTimerManager().ClearTimer(ArrivalTimerHandle);
+	PendingRoomState = State;
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool AEnemyShipObstacleProjectile::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	if (!bArrivalHandled)
+	{
+		if (PendingRoomState.ArrivalRemaining <= 0.f)
+			ArrivalTimerHandle = GetWorldTimerManager().SetTimerForNextTick(this, &AEnemyShipObstacleProjectile::ReachTargetAndSpawnObstacle);
+		else
+			GetWorldTimerManager().SetTimer(ArrivalTimerHandle, this, &AEnemyShipObstacleProjectile::ReachTargetAndSpawnObstacle,
+				PendingRoomState.ArrivalRemaining, false);
+	}
+	SetLifeSpan(FMath::Max(KINDA_SMALL_NUMBER, PendingRoomState.RemainingLife));
+	return true;
 }
 
 void AEnemyShipObstacleProjectile::MulticastSpawnObstacleEffect_Implementation(

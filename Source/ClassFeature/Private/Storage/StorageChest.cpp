@@ -21,9 +21,11 @@
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
+#include "Room/SWRoomSnapshotComponent.h"
 
 AStorageChest::AStorageChest()
 {
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.TickGroup = TG_PostPhysics;
 	bReplicates = true;
@@ -46,6 +48,8 @@ AStorageChest::AStorageChest()
 	SWBuoyancyComponent = CreateDefaultSubobject<USWBuoyancyComponent>(TEXT("SWBuoyancyComponent"));
 	SWBuoyancyComponent->ExecutionMode = ESWBuoyancyExecutionMode::ServerAuthority;
 	SWBuoyancyComponent->ConfigureSinglePontoon(50.0f);
+	SWBuoyancyComponent->bMonitorChestLaunch = true;
+	SWBuoyancyComponent->bUsePhysicsStepBuoyancy = true;
 	// Preserve the Water plugin's near-surface coefficient while accelerating only
 	// the fully submerged recovery after a large fall.
 	SWBuoyancyComponent->ForceSettings.DeepWaterBuoyancyMultiplier = 3.0f;
@@ -55,6 +59,128 @@ AStorageChest::AStorageChest()
 	InteractableComponent->InteractableIdTag = Interactable_Id_StorageChest;
 
 	StorageComponent = CreateDefaultSubobject<UStorageComponent>(TEXT("StorageComponent"));
+}
+
+void AStorageChest::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	if (!StorageComponent) return;
+	FSWRoomChestState State;
+	State.bSlotsFromSharedProgress = StorageComponent->UsesInventoryTabs();
+	if (!State.bSlotsFromSharedProgress)
+	{
+		State.SlotCount = StorageComponent->GetSlotCount();
+		State.ColumnCount = StorageComponent->GetStorageColumns();
+		for (const FInventorySlot& Slot : StorageComponent->GetPersistentSlots())
+		{
+			FSWRoomChestSlot& Saved = State.Slots.AddDefaulted_GetRef();
+			Saved.ItemTag = Slot.ItemTag;
+			Saved.Count = Slot.Count;
+		}
+	}
+	State.bLocked = bLocked;
+	State.bHasBeenOpened = bHasBeenOpened;
+	State.bGuardFailed = bGuardFailed;
+	State.bRequiresGuardClear = bRequiresGuardClear;
+	State.bBossEncounterReserved = bBossEncounterReserved;
+	State.bEnablePhysicsAndBuoyancy = bEnablePhysicsAndBuoyancy;
+	State.LootSeed = LootSeed;
+	State.ChestDefinitionPath = ChestDefinition ? FSoftObjectPath(ChestDefinition) : FSoftObjectPath();
+	if (GetWorld())
+	{
+		State.bEmptyDestroyTimerPending = GetWorldTimerManager().IsTimerActive(EmptyDestroyTimerHandle);
+		if (State.bEmptyDestroyTimerPending)
+			State.EmptyDestroyRemaining = FMath::Max(0.f, GetWorldTimerManager().GetTimerRemaining(EmptyDestroyTimerHandle));
+	}
+	if (!State.bSlotsFromSharedProgress && (State.SlotCount < 1 || State.ColumnCount < 1
+		|| State.Slots.Num() != State.SlotCount))
+	{
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Chest");
+		Issue.FieldKey = TEXT("SlotState");
+		Issue.Reason = TEXT("Chest storage slots are unavailable at capture time");
+		return;
+	}
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Chest;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Chest");
+		Issue.FieldKey = TEXT("State");
+		Issue.Reason = TEXT("Chest adapter serialization failed");
+	}
+}
+
+bool AStorageChest::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	if (Part.Domain != ESWRoomDomain::Chest || Part.Version != 1)
+	{
+		OutError = TEXT("Unsupported chest domain or version");
+		return false;
+	}
+	FSWRoomChestState State;
+	if (!FSWRoomStructCodec::Read(Part.Bytes, State) || !StorageComponent
+		|| State.bSlotsFromSharedProgress != StorageComponent->UsesInventoryTabs()
+		|| (!State.bSlotsFromSharedProgress && (State.SlotCount < 1 || State.SlotCount > 10000
+			|| State.ColumnCount < 1 || State.Slots.Num() != State.SlotCount))
+		|| (State.bSlotsFromSharedProgress && (!State.Slots.IsEmpty() || State.SlotCount != 0))
+		|| State.EmptyDestroyRemaining < 0.f)
+	{
+		OutError = TEXT("Invalid chest state");
+		return false;
+	}
+	TArray<FInventorySlot> Slots;
+	for (const FSWRoomChestSlot& Saved : State.Slots)
+	{
+		if (Saved.Count < 0 || (Saved.Count > 0 && !Saved.ItemTag.IsValid()))
+		{
+			OutError = TEXT("Invalid chest slot");
+			return false;
+		}
+		FInventorySlot& Slot = Slots.AddDefaulted_GetRef();
+		Slot.ItemTag = Saved.ItemTag;
+		Slot.Count = Saved.Count;
+	}
+	if (!State.bSlotsFromSharedProgress && !StorageComponent->RestoreRoomSlots(State.SlotCount, State.ColumnCount, Slots))
+	{
+		OutError = TEXT("Chest storage restore failed");
+		return false;
+	}
+	GetWorldTimerManager().ClearTimer(EmptyDestroyTimerHandle);
+	ChestDefinition = State.ChestDefinitionPath.IsNull() ? nullptr : Cast<UChestDefinition>(State.ChestDefinitionPath.TryLoad());
+	if (!State.ChestDefinitionPath.IsNull() && !ChestDefinition)
+	{
+		OutError = FString::Printf(TEXT("Chest definition missing: %s"), *State.ChestDefinitionPath.ToString());
+		return false;
+	}
+	LootSeed = State.LootSeed;
+	bHasBeenOpened = State.bHasBeenOpened;
+	bGuardFailed = State.bGuardFailed;
+	bRequiresGuardClear = State.bRequiresGuardClear;
+	bBossEncounterReserved = State.bBossEncounterReserved;
+	SetLocked(State.bLocked);
+	SetPhysicsAndBuoyancyEnabled(State.bEnablePhysicsAndBuoyancy);
+	PendingRoomState = State;
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool AStorageChest::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	if (PendingRoomState.bEmptyDestroyTimerPending)
+	{
+		if (PendingRoomState.EmptyDestroyRemaining <= 0.f)
+			EmptyDestroyTimerHandle = GetWorldTimerManager().SetTimerForNextTick(this, &AStorageChest::HandleEmptyDestroyTimeout);
+		else
+			GetWorldTimerManager().SetTimer(EmptyDestroyTimerHandle, this, &AStorageChest::HandleEmptyDestroyTimeout,
+				PendingRoomState.EmptyDestroyRemaining, false);
+	}
+	PendingRoomState = FSWRoomChestState();
+	return true;
 }
 
 void AStorageChest::Tick(float DeltaSeconds)
@@ -137,6 +263,7 @@ void AStorageChest::BeginPlay()
 	}
 
 	ApplyLockPresentation();
+	ApplyStoryGatePresentation();
 }
 
 void AStorageChest::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -161,6 +288,7 @@ void AStorageChest::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 	DOREPLIFETIME(AStorageChest, bGuardFailed);
 	DOREPLIFETIME(AStorageChest, bEnablePhysicsAndBuoyancy);
 	DOREPLIFETIME(AStorageChest, bDistanceOptimizationDormant);
+	DOREPLIFETIME(AStorageChest, bStoryGateDormant);
 }
 
 void AStorageChest::ConfigureStorage(int32 InSlotCount, int32 InColumnCount, const TArray<FStorageItemEntry>& InItems)
@@ -309,8 +437,41 @@ bool AStorageChest::IsBossGuardAlive() const
 
 void AStorageChest::RecalculateGuardLock()
 {
-	SetLocked(bGuardFailed || (bRequiresGuardClear
+	SetLocked(bStoryGateDormant || bGuardFailed || (bRequiresGuardClear
 		&& (!AliveGuardHealthComponents.IsEmpty() || IsBossGuardAlive() || bBossEncounterReserved)));
+}
+
+void AStorageChest::SetStoryGateDormant(bool bDormant)
+{
+	if (!HasAuthorityOrIsTesting()) return;
+	const bool bChanged = bStoryGateDormant != bDormant;
+	bStoryGateDormant = bDormant;
+	if (bChanged) RecalculateGuardLock();
+	ApplyStoryGatePresentation();
+	if (bChanged) ForceNetUpdate();
+}
+
+void AStorageChest::OnRep_StoryGateDormant()
+{
+	ApplyStoryGatePresentation();
+}
+
+void AStorageChest::ApplyStoryGatePresentation()
+{
+	if (bStoryGateDormant == bStoryGatePresentationApplied) return;
+	if (bStoryGateDormant)
+	{
+		bStoryGatePreviousHidden = IsHidden();
+		bStoryGatePreviousCollision = GetActorEnableCollision();
+		SetActorHiddenInGame(true);
+		SetActorEnableCollision(false);
+	}
+	else
+	{
+		SetActorHiddenInGame(bStoryGatePreviousHidden);
+		SetActorEnableCollision(bStoryGatePreviousCollision);
+	}
+	bStoryGatePresentationApplied = bStoryGateDormant;
 }
 
 void AStorageChest::SetBossEncounterReserved(bool bReserved)
@@ -377,6 +538,7 @@ void AStorageChest::EnsureGuaranteedLoot(const TArray<FStorageItemEntry>& Guaran
 
 void AStorageChest::SetLocked(bool bInLocked)
 {
+	bInLocked = bInLocked || bStoryGateDormant;
 	if (!HasAuthorityOrIsTesting() || bLocked == bInLocked)
 	{
 		return;
@@ -413,7 +575,7 @@ void AStorageChest::HandleInteracted(AActor* Interactor)
 			*GetNameSafe(this), *GetNameSafe(Interactor), HasAuthority(), bLocked,
 			*GetNameSafe(InteractableComponent));
 	}
-	if (!HasAuthority() || !Interactor || bLocked)
+	if (!HasAuthority() || !Interactor || bLocked || bStoryGateDormant)
 	{
 		if (bLogInteraction) UE_LOG(LogStorageInteraction, Warning, TEXT("[Chest] Rejected: no authority, no interactor, or locked."));
 		return;

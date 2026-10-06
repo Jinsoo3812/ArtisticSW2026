@@ -4,7 +4,37 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/SWGamePhaseTypes.h"
 #include "WaveSystem/Data/WaveSpawnTypes.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "WaveSpawnManager.generated.h"
+
+USTRUCT()
+struct FSWRoomWaveGroupState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) int32 RemainingCount = 0;
+	UPROPERTY(SaveGame) int32 SpawnedCount = 0;
+	UPROPERTY(SaveGame) bool bFinished = false;
+	UPROPERTY(SaveGame) EWaveSpawnGroupState State = EWaveSpawnGroupState::Waiting;
+	UPROPERTY(SaveGame) bool bTimerPending = false;
+	UPROPERTY(SaveGame) float TimerRemaining = 0.f;
+	UPROPERTY(SaveGame) TArray<FSWRoomPendingSpawnTicket> PendingTickets;
+};
+
+USTRUCT()
+struct FSWRoomWaveState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FSoftObjectPath WaveDataPath;
+	UPROPERTY(SaveGame) int32 WaveArrayIndex = INDEX_NONE;
+	UPROPERTY(SaveGame) int32 DisplayWaveNumber = INDEX_NONE;
+	UPROPERTY(SaveGame) int32 AliveEnemyCount = 0;
+	UPROPERTY(SaveGame) int32 SpawnSerialCounter = 0;
+	UPROPERTY(SaveGame) bool bWaveActive = false;
+	UPROPERTY(SaveGame) bool bPreWaveTimerPending = false;
+	UPROPERTY(SaveGame) float PreWaveRemaining = 0.f;
+	UPROPERTY(SaveGame) TArray<FSWRoomWaveGroupState> Groups;
+	UPROPERTY(SaveGame) TArray<FGuid> ActiveEnemyIds;
+};
 
 class ABaseEnemy;
 class ASpawnRoute;
@@ -40,12 +70,18 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnWaveSpawnManagerRouteMoveFaile
  * - 다음 Wave 시작 승인
  */
 UCLASS()
-class ENEMY_API AWaveSpawnManager : public AActor
+class ENEMY_API AWaveSpawnManager : public AActor, public ISWRoomStateAdapter
 {
     GENERATED_BODY()
 
 public:
     AWaveSpawnManager();
+    virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+    virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+    virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+        float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+    { return FSWRoomStructCodec::Compare<FSWRoomWaveState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+    virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 protected:
     virtual void BeginPlay() override;
@@ -162,6 +198,8 @@ private:
     FTimerHandle PreWaveDelayTimerHandle;
 
     int32 SpawnSerialCounter = 0;
+    FSWRoomWaveState PendingRoomState;
+    bool bHasPendingRoomState = false;
 
 public:
     // -------------------- Public API
@@ -247,7 +285,9 @@ private:
 
     // -------------------- Enemy spawn / removal
 
-    bool SpawnOneEnemyFromGroup(int32 SpawnGroupIndex, const FSpawnGroupDefinition& SpawnGroupDefinition, int32 SpawnOrdinalInGroup);
+    bool PrepareSpawnTickets(int32 SpawnGroupIndex, float DelaySeconds);
+    bool SpawnOneEnemyFromGroup(int32 SpawnGroupIndex, const FSpawnGroupDefinition& SpawnGroupDefinition,
+        const FSWRoomPendingSpawnTicket& Ticket);
     int32 GenerateEnemyRouteSeed(int32 WaveArrayIndex, int32 SpawnGroupIndex, int32 SpawnOrdinalInGroup);
     UEnemyWaypointMoveComponent* ResolveWaypointMoveComponent(ABaseEnemy* Enemy) const;
     void BindEnemyDelegates(ABaseEnemy* Enemy, UEnemyWaypointMoveComponent* WaypointMoveComponent);

@@ -2,14 +2,35 @@
 
 #include "CoreMinimal.h"
 #include "BaseEnemy.h"
-#include "DeckAI/DeckPointReservation.h"
+#include "DeckAI/DeckWalkTypes.h"
 #include "DeckAI/DeckWaypointMovementInterface.h"
 #include "ShipBossEnemy.generated.h"
+
+USTRUCT()
+struct FSWRoomShipBossState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FGuid HostShipId;
+	UPROPERTY(SaveGame) int32 InitialSpawnPointId = INDEX_NONE;
+	// Persist surface/local coordinates; graph node indices and revisions are transient.
+	UPROPERTY(SaveGame) FName PreviousSurfaceId;
+	UPROPERTY(SaveGame) FVector PreviousLocalFloor = FVector::ZeroVector;
+	UPROPERTY(SaveGame) FName DestinationSurfaceId;
+	UPROPERTY(SaveGame) FVector DestinationLocalFloor = FVector::ZeroVector;
+	UPROPERTY(SaveGame) bool bWalkingToDestination = false;
+	UPROPERTY(SaveGame) FGameplayTag BossAIState;
+	UPROPERTY(SaveGame) bool bStunHealthThresholdConsumed = false;
+	UPROPERTY(SaveGame) int32 PendingBalanceSummons = 0;
+	UPROPERTY(SaveGame) TArray<int32> ConsumedSummonThresholds;
+	UPROPERTY(SaveGame) float SummonCooldownRemaining = 0.f;
+	UPROPERTY(SaveGame) TArray<FGuid> SummonedEnemyIds;
+};
 
 class AEnemyShip;
 class ADeckEnemy;
 class UBossBasicAttackSet;
 class USphereComponent;
+class UDeckWalkRouteComponent;
 
 /** Server-authored boss pawn whose tactical positions live on a moving enemy ship. */
 UCLASS(Blueprintable)
@@ -19,6 +40,16 @@ class ENEMY_API AShipBossEnemy : public ABaseEnemy, public IDeckWaypointMovement
 
 public:
 	AShipBossEnemy();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{
+		return Expected.Domain == ESWRoomDomain::Enemy
+			? ABaseEnemy::CompareRoomDomain(Expected, Actual, TimeToleranceSeconds, OutFields)
+			: FSWRoomStructCodec::Compare<FSWRoomShipBossState>(Expected, Actual, TimeToleranceSeconds, OutFields);
+	}
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Balance", meta = (RowType = "/Script/Enemy.EnemyEncounterBalanceRow"))
 	FDataTableRowHandle EncounterBalanceRow;
 	/** Exact ranged BP class already allocated by the host's SpawnPlan. */
@@ -46,32 +77,26 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Boss|Ship")
 	AEnemyShip* GetHostShip() const { return HostShip; }
+	UDeckWalkRouteComponent* GetDeckWalkRouteComponent() const { return DeckWalkRouteComponent; }
 
-	UFUNCTION(BlueprintPure, Category = "Boss|Point")
-	int32 GetCurrentPointId() const { return CurrentPointId; }
-
-	UFUNCTION(BlueprintPure, Category = "Boss|Point")
-	int32 GetPreviousPointId() const { return PreviousPointId; }
-
-	UFUNCTION(BlueprintPure, Category = "Boss|Point")
-	int32 GetDestinationPointId() const { return DestinationPointId; }
-
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Point")
-	void SetDestinationPointId(int32 NewPointId);
-
-	bool TrySetDestinationPointId(int32 NewPointId);
+	UFUNCTION(BlueprintPure, Category = "Boss|Spawn")
+	int32 GetInitialSpawnPointId() const { return InitialSpawnPointId; }
+	UFUNCTION(BlueprintPure, Category = "Boss|Walk Area")
+	FDeckWalkLocation GetDestinationLocation() const { return DestinationLocation; }
+	bool HasDestination() const;
+	bool TrySetDestinationLocation(const FDeckWalkLocation& Location, bool bWalking);
+	void ClearDestination();
+	const FDeckWalkLocation& GetPreviousLocation() const { return PreviousLocation; }
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|Point")
 	void MarkDestinationReached();
 
 	virtual AEnemyShip* GetDeckHostShip() const override { return HostShip; }
-	virtual int32 GetCurrentDeckPointId() const override { return CurrentPointId; }
-	virtual int32 GetGoalDeckPointId() const override { return DestinationPointId; }
-	virtual void OnDeckPointReached() override { MarkDestinationReached(); }
+	virtual void OnDeckMoveReached() override { MarkDestinationReached(); }
 	virtual void OnDeckMoveFailed() override;
 	virtual bool CanMoveOnDeck() const override;
 
-	bool ResolvePointTransform(int32 PointId, FTransform& OutTransform) const;
+	bool ResolveDestinationTransform(FTransform& OutTransform) const;
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Boss|State")
 	bool TransitionBossAIState(FGameplayTag ExpectedState, FGameplayTag NewState);
@@ -155,14 +180,11 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_HostShip, VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Ship")
 	TObjectPtr<AEnemyShip> HostShip = nullptr;
 
-	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Point")
-	int32 CurrentPointId = INDEX_NONE;
-
-	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Point")
-	int32 PreviousPointId = INDEX_NONE;
-
-	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Point")
-	int32 DestinationPointId = INDEX_NONE;
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Spawn")
+	int32 InitialSpawnPointId = INDEX_NONE;
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|Walk Area")
+	FDeckWalkLocation DestinationLocation;
+	FDeckWalkLocation PreviousLocation;
 
 	UPROPERTY(ReplicatedUsing = OnRep_BossHidden, VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss|State")
 	bool bBossHidden = false;
@@ -172,6 +194,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss|Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USphereComponent> DashDamageVolume = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss|Walk Area")
+	TObjectPtr<UDeckWalkRouteComponent> DeckWalkRouteComponent;
 
 	/** Visual/cadence variations for the one currently equipped weapon. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Combat")
@@ -193,8 +218,9 @@ protected:
 	TArray<TWeakObjectPtr<ADeckEnemy>> SummonedDeckEnemies;
 
 	double NextSummonAllowedTime = 0.0;
-	FDeckPointReservation DestinationReservation;
 
 	ECollisionEnabled::Type InitialCapsuleCollision = ECollisionEnabled::QueryAndPhysics;
 	bool bHiddenRelocationActive = false;
+	FSWRoomShipBossState PendingRoomState;
+	bool bHasPendingRoomState = false;
 };

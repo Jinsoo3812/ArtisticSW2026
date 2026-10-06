@@ -34,10 +34,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Bow")
 	float GetFireSpeed(float ReleaseDrawAlpha) const;
 
-	/** Converges from the current socket position onto the release aim point, without gravity compensation. */
-	bool TryBuildArrowLaunch(float FireSpeed, const FVector& AimTarget, const FVector& ViewDirection,
-		FTransform& OutSpawnTransform, FVector& OutLaunchVelocity) const;
-
 	/** Predicted locally and replicated from the server to all relevant clients. */
 	UFUNCTION(BlueprintCallable, Category = "Bow")
 	void SetArrowNocked(bool bNewArrowNocked);

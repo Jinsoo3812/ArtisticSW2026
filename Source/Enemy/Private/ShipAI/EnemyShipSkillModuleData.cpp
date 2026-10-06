@@ -2,7 +2,9 @@
 
 #include "Abilities/GameplayAbility.h"
 #include "BaseGameplayTags.h"
+#if WITH_EDITOR
 #include "Misc/DataValidation.h"
+#endif
 
 FGameplayTag UEnemyShipSkillModuleData::GetAbilityTag() const
 {
@@ -25,6 +27,7 @@ FGameplayTag UEnemyShipSkillModuleData::GetAbilityTag() const
 	return FGameplayTag();
 }
 
+#if WITH_EDITOR
 EDataValidationResult UEnemyShipSkillModuleData::IsDataValid(FDataValidationContext& Context) const
 {
 	EDataValidationResult Result = Super::IsDataValid(Context);
@@ -72,3 +75,4 @@ EDataValidationResult UEnemyShipSkillModuleData::IsDataValid(FDataValidationCont
 	}
 	return Result;
 }
+#endif

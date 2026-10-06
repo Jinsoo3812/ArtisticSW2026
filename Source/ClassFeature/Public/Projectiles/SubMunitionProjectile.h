@@ -3,7 +3,25 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "GameplayEffectTypes.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "SubMunitionProjectile.generated.h"
+
+USTRUCT()
+struct FSWRoomSubMunitionState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) bool bInstalled = false;
+	UPROPERTY(SaveGame) bool bExploded = false;
+	UPROPERTY(SaveGame) bool bExplodeOnImpact = false;
+	UPROPERTY(SaveGame) float ExplosionRadius = 0.f;
+	UPROPERTY(SaveGame) float MaxInstallSlopeAngle = 0.f;
+	UPROPERTY(SaveGame) float InstalledLifeSpan = 0.f;
+	UPROPERTY(SaveGame) float AutoExplodeRemaining = 0.f;
+	UPROPERTY(SaveGame) FSoftClassPath DamageEffectClass;
+	UPROPERTY(SaveGame) float DamageEffectLevel = 1.f;
+	UPROPERTY(SaveGame) TArray<FSWRoomSetByCallerTagValue> DamageTagMagnitudes;
+	UPROPERTY(SaveGame) TArray<FSWRoomSetByCallerNameValue> DamageNameMagnitudes;
+};
 
 class UProjectileMovementComponent;
 class UStaticMeshComponent;
@@ -16,12 +34,18 @@ enum class ESubMunitionState : uint8
 };
 
 UCLASS()
-class CLASSFEATURE_API ASubMunitionProjectile : public AActor
+class CLASSFEATURE_API ASubMunitionProjectile : public AActor, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	ASubMunitionProjectile();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomSubMunitionState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 protected:
 	virtual void BeginPlay() override;
@@ -76,4 +100,8 @@ protected:
 	// 설치 상태 이후 일정 시간이 지나면 자폭할 수명(TTL)
 	UPROPERTY(EditDefaultsOnly, Category = "Cluster|Trap", meta = (EditCondition = "!bExplodeOnImpact"))
 	float InstalledLifeSpan = 10.0f;
+	FTimerHandle AutoExplodeTimerHandle;
+	bool bExploded = false;
+	FSWRoomSubMunitionState PendingRoomState;
+	bool bHasPendingRoomState = false;
 };

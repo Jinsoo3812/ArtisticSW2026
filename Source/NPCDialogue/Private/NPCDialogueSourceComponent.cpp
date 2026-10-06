@@ -6,6 +6,9 @@
 #include "Engine/World.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
+#include "Room/SWRoomProgressSubsystem.h"
+#include "Room/SWRoomSaveGame.h"
+#include "Engine/GameInstance.h"
 
 UNPCDialogueSourceComponent::UNPCDialogueSourceComponent()
 {
@@ -95,6 +98,14 @@ bool UNPCDialogueSourceComponent::IsRuleAvailable(
 	{
 		return false;
 	}
+	if (Rule.bRequireFinalDepartureNotCompleted)
+	{
+		const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+		const USWRoomProgressSubsystem* Room = GameInstance
+			? GameInstance->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+		if (!Room || !Room->IsHostedRoom() || !Room->GetActiveRoom()
+			|| Room->GetActiveRoom()->bFinalDepartureCompleted) return false;
+	}
 	for (const EStoryNode Node : Rule.RequiredStoryNodes)
 	{
 		if (!Story->IsStoryNodeReached(Node))
@@ -103,7 +114,10 @@ bool UNPCDialogueSourceComponent::IsRuleAvailable(
 		}
 	}
 	for (const EStoryNode Node : Rule.BlockedStoryNodes)
-	{
+ {
+  if (Node == EStoryNode::UldolmokBattleQuestAccepted && Rule.bRequireFinalDepartureNotCompleted
+   && Story->IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted)
+   && Story->IsStoryNodeReached(EStoryNode::MiddleBoss3Defeated) && !Story->IsStoryNodeReached(EStoryNode::FinalBossDefeated)) continue;
 		if (Story->IsStoryNodeReached(Node))
 		{
 			return false;

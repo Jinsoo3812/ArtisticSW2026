@@ -2,7 +2,30 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "EnemyShipTimeStopField.generated.h"
+
+USTRUCT()
+struct FSWRoomTimeStopTargetState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FGuid ActorId;
+	UPROPERTY(SaveGame) int32 PlayerIndex = INDEX_NONE;
+	UPROPERTY(SaveGame) FTransform Anchor = FTransform::Identity;
+	UPROPERTY(SaveGame) uint8 TargetType = 0;
+};
+
+USTRUCT()
+struct FSWRoomTimeStopFieldState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FGuid FreezeSourceId;
+	UPROPERTY(SaveGame) float EffectRadius = 0.f;
+	UPROPERTY(SaveGame) float EffectDurationSeconds = 0.f;
+	UPROPERTY(SaveGame) float ExpirationRemaining = 0.f;
+	UPROPERTY(SaveGame) bool bReleased = false;
+	UPROPERTY(SaveGame) TArray<FSWRoomTimeStopTargetState> Targets;
+};
 
 class ABasePlayer;
 class APlayerController;
@@ -34,12 +57,18 @@ struct FEnemyShipTimeStopTarget
 
 /** Replicated area effect that freezes ships through external world constraints and players through local input/movement suppression. */
 UCLASS(Blueprintable)
-class ENEMY_API AEnemyShipTimeStopField : public AActor
+class ENEMY_API AEnemyShipTimeStopField : public AActor, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	AEnemyShipTimeStopField();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomTimeStopFieldState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -110,4 +139,6 @@ private:
 	TMap<TWeakObjectPtr<ABasePlayer>, FPlayerRuntimeState> PlayerRuntimeStates;
 	FTimerHandle ExpirationTimerHandle;
 	bool bReleased = false;
+	FSWRoomTimeStopFieldState PendingRoomState;
+	bool bHasPendingRoomState = false;
 };

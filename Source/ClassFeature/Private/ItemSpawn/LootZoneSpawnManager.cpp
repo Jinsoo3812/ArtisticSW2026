@@ -10,6 +10,7 @@ ALootZoneSpawnManager::ALootZoneSpawnManager()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = false;
+	Tags.Add(TEXT("RoomDerived"));
 }
 
 void ALootZoneSpawnManager::BeginPlay()

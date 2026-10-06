@@ -11,6 +11,14 @@
 #include "ShipAI/EnemyShipSkillModuleData.h"
 #include "HAL/IConsoleManager.h"
 
+namespace
+{
+	TAutoConsoleVariable<float> CVarShipBalanceDebugHeightOffset(
+		TEXT("sw.ShipBalanceDebugHeightOffset"), 500.0f,
+		TEXT("Vertical offset in cm for enemy cannon balance debug shapes; does not affect targeting."),
+		ECVF_Default);
+}
+
 UGA_EnemyShipCannonVolley::UGA_EnemyShipCannonVolley()
 {
 	SetNativeAbilityTag(GameplayAbility_EnemyShip_CannonVolley);
@@ -157,6 +165,16 @@ bool UGA_EnemyShipCannonVolley::BuildShotSolution(
 	}
 
 	const FEnemyShipCannonVolleySettings Settings = ResolveCannonVolleySettings(*Ship);
+	const float LeadSpeed = Ship->bOverrideCannonLeadSpeed
+		? FMath::Max(0.0f, Ship->CannonLeadSpeedOverride)
+		: Ship->EnemyShipArchetype->CannonLeadSpeed;
+	FVector LeadVelocity = TargetVelocity;
+	if (FMath::IsFinite(LeadSpeed) && LeadSpeed >= 0.0f)
+	{
+		LeadVelocity = TargetVelocity.SizeSquared2D() > 1.0f
+			? TargetVelocity.GetSafeNormal2D() * LeadSpeed
+			: FVector::ZeroVector;
+	}
 	float MaximumRange = 0.0f;
 	float MaximumRangeFlightTime = 0.0f;
 	if (!CalculateRangeAtElevation(ProjectileSpeed, GravityMagnitude,
@@ -178,7 +196,7 @@ bool UGA_EnemyShipCannonVolley::BuildShotSolution(
 			FVector LastValidCenter = CurrentTargetPoint;
 			for (int32 Iteration = 0; Iteration < 3; ++Iteration)
 			{
-				FVector CandidateCenter = CurrentTargetPoint + TargetVelocity * EstimatedFlightTime;
+				FVector CandidateCenter = CurrentTargetPoint + LeadVelocity * EstimatedFlightTime;
 				CandidateCenter.Z = CurrentTargetPoint.Z;
 				float CandidateElevation = 0.0f;
 				float CandidateFlightTime = 0.0f;
@@ -244,6 +262,7 @@ bool UGA_EnemyShipCannonVolley::BuildShotSolution(
 		OutDebugData->Start = Start;
 		OutDebugData->CurrentTargetPoint = CurrentTargetPoint;
 		OutDebugData->TargetVelocity = TargetVelocity;
+		OutDebugData->LeadVelocity = LeadVelocity;
 		OutDebugData->TargetForward = TargetForward;
 		OutDebugData->TargetRight = TargetRight;
 		OutDebugData->EllipseCenter = EllipseCenter;
@@ -275,10 +294,11 @@ void UGA_EnemyShipCannonVolley::DrawCannonTargetingDebug(
 	}
 
 	UE_LOG(LogTemp, Display,
-		TEXT("[ENEMY-CANNON-TARGETING] Enemy=%s Cannon=%s EnemyRow=%s PlayerRow=%s Distance=%.1f MaximumRange=%.1f Branch=%s FlightTime=%.3f PlayerVelocityXY=%s EllipseCenter=%s Half=%s Requested=%s FinalTarget=%s RangeClamped=%s CalculatedElevation=%.2f FinalElevation=%.2f LaunchSpeed=%.1f Direction=%s"),
+		TEXT("[ENEMY-CANNON-TARGETING] Enemy=%s Cannon=%s EnemyRow=%s PlayerRow=%s Distance=%.1f MaximumRange=%.1f Branch=%s FlightTime=%.3f PlayerVelocityXY=%s LeadSpeed=%.1f LeadVelocityXY=%s EllipseCenter=%s Half=%s Requested=%s FinalTarget=%s RangeClamped=%s CalculatedElevation=%.2f FinalElevation=%.2f LaunchSpeed=%.1f Direction=%s"),
 		*GetNameSafe(&Ship), *GetNameSafe(&Cannon), *Ship.GetShipStatRowName().ToString(), *Target.GetShipStatRowName().ToString(),
 		DebugData.CurrentDistance, DebugData.MaximumRange, DebugData.bInsideRange ? TEXT("Inside") : TEXT("Outside"),
-		DebugData.EstimatedFlightTime, *DebugData.TargetVelocity.ToCompactString(), *DebugData.EllipseCenter.ToCompactString(),
+		DebugData.EstimatedFlightTime, *DebugData.TargetVelocity.ToCompactString(),
+		DebugData.LeadVelocity.Size2D(), *DebugData.LeadVelocity.ToCompactString(), *DebugData.EllipseCenter.ToCompactString(),
 		DebugData.bFacingHalf ? TEXT("Facing") : TEXT("Opposite"), *DebugData.RequestedImpactPoint.ToCompactString(),
 		*DebugData.ClampedImpactPoint.ToCompactString(), DebugData.bRangeClamped ? TEXT("true") : TEXT("false"),
 		FMath::RadiansToDegrees(DebugData.CalculatedElevation), FMath::RadiansToDegrees(DebugData.FinalElevation),
@@ -286,12 +306,14 @@ void UGA_EnemyShipCannonVolley::DrawCannonTargetingDebug(
 
 	constexpr float DebugDuration = 8.0f;
 	constexpr int32 EllipseSegments = 48;
-	FVector PreviousEllipsePoint = DebugData.EllipseCenter
+	const FVector DebugOffset(0.0f, 0.0f, CVarShipBalanceDebugHeightOffset.GetValueOnGameThread());
+	const FVector DebugEllipseCenter = DebugData.EllipseCenter + DebugOffset;
+	FVector PreviousEllipsePoint = DebugEllipseCenter
 		+ DebugData.TargetForward * DebugData.Settings.ImpactEllipseSemiMajorAxisCm;
 	for (int32 SegmentIndex = 1; SegmentIndex <= EllipseSegments; ++SegmentIndex)
 	{
 		const float Angle = 2.0f * PI * static_cast<float>(SegmentIndex) / EllipseSegments;
-		const FVector EllipsePoint = DebugData.EllipseCenter
+		const FVector EllipsePoint = DebugEllipseCenter
 			+ DebugData.TargetForward * (DebugData.Settings.ImpactEllipseSemiMajorAxisCm * FMath::Cos(Angle))
 			+ DebugData.TargetRight * (DebugData.Settings.ImpactEllipseSemiMinorAxisCm * FMath::Sin(Angle));
 		DrawDebugLine(World, PreviousEllipsePoint, EllipsePoint,
@@ -299,10 +321,10 @@ void UGA_EnemyShipCannonVolley::DrawCannonTargetingDebug(
 			false, DebugDuration, 0, 5.0f);
 		PreviousEllipsePoint = EllipsePoint;
 	}
-	DrawDebugSphere(World, DebugData.EllipseCenter, 55.0f, 12, FColor::White, false, DebugDuration, 0, 4.0f);
-	DrawDebugSphere(World, DebugData.RequestedImpactPoint, 70.0f, 12, FColor::Orange, false, DebugDuration, 0, 5.0f);
-	DrawDebugSphere(World, DebugData.ClampedImpactPoint, 90.0f, 16, FColor::Green, false, DebugDuration, 0, 7.0f);
-	DrawDebugDirectionalArrow(World, DebugData.Start, DebugData.ClampedImpactPoint, 180.0f,
+	DrawDebugSphere(World, DebugEllipseCenter, 55.0f, 12, FColor::White, false, DebugDuration, 0, 4.0f);
+	DrawDebugSphere(World, DebugData.RequestedImpactPoint + DebugOffset, 70.0f, 12, FColor::Orange, false, DebugDuration, 0, 5.0f);
+	DrawDebugSphere(World, DebugData.ClampedImpactPoint + DebugOffset, 90.0f, 16, FColor::Green, false, DebugDuration, 0, 7.0f);
+	DrawDebugDirectionalArrow(World, DebugData.Start + DebugOffset, DebugData.ClampedImpactPoint + DebugOffset, 180.0f,
 		FColor::Green, false, DebugDuration, 0, 4.0f);
 }
 

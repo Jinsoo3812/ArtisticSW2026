@@ -3,7 +3,21 @@
 #include "CoreMinimal.h"
 #include "CannonballImpactReceiver.h"
 #include "GameFramework/Actor.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "EnemyShipObstacle.generated.h"
+
+USTRUCT()
+struct FSWRoomObstacleState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) bool bHasEnteredWater = false;
+	UPROPERTY(SaveGame) bool bBuoyancyEnabled = false;
+	UPROPERTY(SaveGame) int32 CannonballHitCount = 0;
+	UPROPERTY(SaveGame) int32 MaxCannonballHits = 0;
+	UPROPERTY(SaveGame) float RemainingLife = 0.f;
+	UPROPERTY(SaveGame) float BuoyancyActivationRemaining = 0.f;
+	UPROPERTY(SaveGame) TArray<FGuid> ProcessedCannonballIds;
+};
 
 class UBoxComponent;
 class USphereComponent;
@@ -12,12 +26,18 @@ class USWBuoyancyComponent;
 
 /** Server-authoritative floating shield that blocks Player ships and cannonballs only. */
 UCLASS(Blueprintable)
-class ENEMY_API AEnemyShipObstacle : public AActor, public ICannonballImpactReceiver
+class ENEMY_API AEnemyShipObstacle : public AActor, public ICannonballImpactReceiver, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	AEnemyShipObstacle();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomObstacleState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
+	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
 
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -128,4 +148,6 @@ private:
 	FQuat ClientVisualRotation = FQuat::Identity;
 	bool bClientVisualInitialized = false;
 	FTimerHandle BuoyancyActivationTimerHandle;
+	FSWRoomObstacleState PendingRoomState;
+	bool bHasPendingRoomState = false;
 };

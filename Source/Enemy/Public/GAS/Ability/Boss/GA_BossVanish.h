@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DeckAI/DeckWalkTypes.h"
 #include "GAS/Ability/Boss/BossGameplayAbility.h"
 #include "GA_BossVanish.generated.h"
 
@@ -74,6 +75,7 @@ protected:
 	TObjectPtr<UAbilityTask_WaitDelay> RelocationSettleTask = nullptr;
 
 	FActiveGameplayEffectHandle HiddenStateHandle;
+	FDeckWalkLocation CapturedDestination;
 };
 
 /** Front-placement Vanish variant. Destination relation remains authored by the BT selector. */

@@ -1,4 +1,5 @@
 #include "BossAI/ShipBossEnemy.h"
+#include "Room/SWRoomSnapshotComponent.h"
 #include "Components/StatusComponent.h"
 #include "Components/CombatHurtboxComponent.h"
 #include "GAS/Ability/Boss/BossStunEffects.h"
@@ -19,6 +20,9 @@
 #include "Components/SphereComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckEnemySpawnerComponent.h"
+#include "DeckAI/DeckWalkRouteComponent.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "BaseAttributeSet.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -26,8 +30,19 @@
 #include "ShipAI/EnemyShip.h"
 #include "Weapon/BaseWeaponComponent.h"
 
+namespace
+{
+	UPrimitiveComponent* ResolveBossDeckBase(const AShipBossEnemy& Boss, AEnemyShip* Ship)
+	{
+		if (!Ship) return nullptr;
+		const UDeckWalkAreaComponent* Area = Ship->GetDeckWalkAreaComponent();
+		return Area && Area->IsReady() ? Area->GetMovementBase(Boss) : nullptr;
+	}
+}
+
 AShipBossEnemy::AShipBossEnemy()
 {
+	DeckWalkRouteComponent = CreateDefaultSubobject<UDeckWalkRouteComponent>(TEXT("DeckWalkRouteComponent"));
 	CombatHurtboxComponent->Mode = ECombatHurtboxMode::AnimatedPhysicsAsset;
 	HeadHitStunEffect = UBossHeadHitStunEffect::StaticClass();
 	HealthThresholdStunEffect = UBossHealthThresholdStunEffect::StaticClass();
@@ -117,6 +132,7 @@ void AShipBossEnemy::BeginPlay()
 
 void AShipBossEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
 	GetHealthComponent()->OnConfirmedDamage.RemoveAll(this);
 	GetHealthComponent()->OnHealthChanged.RemoveDynamic(this, &AShipBossEnemy::HandleStunHealthChanged);
 	ReleaseSummonedDeckEnemies();
@@ -124,7 +140,7 @@ void AShipBossEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		HostShip->ReleaseAllDeckPointsFor(this);
 	}
-	DestinationReservation.Reset();
+	ClearDestination();
 	UnbindHostShip();
 	Super::EndPlay(EndPlayReason);
 }
@@ -157,9 +173,8 @@ void AShipBossEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AShipBossEnemy, HostShip);
-	DOREPLIFETIME(AShipBossEnemy, CurrentPointId);
-	DOREPLIFETIME(AShipBossEnemy, PreviousPointId);
-	DOREPLIFETIME(AShipBossEnemy, DestinationPointId);
+	DOREPLIFETIME(AShipBossEnemy, InitialSpawnPointId);
+	DOREPLIFETIME(AShipBossEnemy, DestinationLocation);
 	DOREPLIFETIME(AShipBossEnemy, bBossHidden);
 }
 
@@ -177,9 +192,9 @@ bool AShipBossEnemy::InitializeBoss(AEnemyShip* InHostShip, int32 InitialPointId
 
 	UnbindHostShip();
 	HostShip = InHostShip;
-	CurrentPointId = InitialPointId;
-	PreviousPointId = INDEX_NONE;
-	DestinationPointId = INDEX_NONE;
+	InitialSpawnPointId = InitialPointId;
+	DestinationLocation = FDeckWalkLocation();
+	PreviousLocation = FDeckWalkLocation();
 	BindHostShip();
 	SetBossCombatTarget(InitialTarget);
 
@@ -187,7 +202,7 @@ bool AShipBossEnemy::InitializeBoss(AEnemyShip* InHostShip, int32 InitialPointId
 	{
 		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 		{
-			Movement->SetBase(DeckMesh);
+			Movement->SetBase(ResolveBossDeckBase(*this, HostShip));
 		}
 	}
 	TransitionBossAIState(AI_State_Boss_Intro, AI_State_Boss_Combat);
@@ -228,76 +243,46 @@ AActor* AShipBossEnemy::GetBossCombatTarget() const
 	return IsValid(BossCombatTarget) ? BossCombatTarget.Get() : nullptr;
 }
 
+bool AShipBossEnemy::HasDestination() const
+{
+	const UDeckWalkAreaComponent* Area = HostShip ? HostShip->GetDeckWalkAreaComponent() : nullptr;
+	return Area && Area->IsLocationValid(DestinationLocation);
+}
+
 void AShipBossEnemy::MarkDestinationReached()
 {
-	if (!HasAuthority() || DestinationPointId == INDEX_NONE)
-	{
-		return;
-	}
-	if (!HostShip || !HostShip->CommitDeckPointReservation(DestinationReservation, this))
-	{
-		OnDeckMoveFailed();
-		return;
-	}
-	DestinationReservation.Reset();
-	HostShip->ReleaseDeckPointOccupancy(CurrentPointId, this);
-	PreviousPointId = CurrentPointId;
-	CurrentPointId = DestinationPointId;
-	DestinationPointId = INDEX_NONE;
-	ForceNetUpdate();
+	if (!HasAuthority() || !HasDestination()) { OnDeckMoveFailed(); return; }
+	ClearDestination();
 }
 
-void AShipBossEnemy::SetDestinationPointId(int32 NewPointId)
+bool AShipBossEnemy::TrySetDestinationLocation(const FDeckWalkLocation& Location, bool bWalking)
 {
-	TrySetDestinationPointId(NewPointId);
-}
-
-bool AShipBossEnemy::TrySetDestinationPointId(int32 NewPointId)
-{
-	if (!HasAuthority() || !HostShip)
+	if (!HasAuthority() || !HostShip) return false;
+	ClearDestination();
+	UDeckWalkAreaComponent* Area = HostShip->GetDeckWalkAreaComponent();
+	if (!Area || !Area->TryClaimLocation(Location, *this)) return false;
+	Area->ResolveActorOnDeck(*this, PreviousLocation);
+	if (bWalking && (!DeckWalkRouteComponent || !DeckWalkRouteComponent->SetLocationGoal(Location)))
 	{
+		Area->ReleaseLocationClaim(this);
 		return false;
 	}
-	if (NewPointId == DestinationPointId && DestinationReservation.IsValid())
-	{
-		return true;
-	}
-	HostShip->ReleaseDeckPointReservation(DestinationReservation);
-	DestinationPointId = INDEX_NONE;
-	if (NewPointId == INDEX_NONE)
-	{
-		ForceNetUpdate();
-		return true;
-	}
-	if (NewPointId == CurrentPointId
-		|| !HostShip->TryReserveDeckPoint(NewPointId, this, DestinationReservation))
-	{
-		ForceNetUpdate();
-		return false;
-	}
-	DestinationPointId = NewPointId;
+	HostShip->ReleaseDeckPointOccupancy(InitialSpawnPointId, this);
+	DestinationLocation = Location;
 	ForceNetUpdate();
 	return true;
 }
 
-void AShipBossEnemy::OnDeckMoveFailed()
+void AShipBossEnemy::ClearDestination()
 {
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	if (HostShip)
-	{
-		HostShip->ReleaseDeckPointReservation(DestinationReservation);
-	}
-	else
-	{
-		DestinationReservation.Reset();
-	}
-	DestinationPointId = INDEX_NONE;
+	if (!HasAuthority()) return;
+	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
+	if (HostShip && HostShip->GetDeckWalkAreaComponent()) HostShip->GetDeckWalkAreaComponent()->ReleaseLocationClaim(this);
+	DestinationLocation = FDeckWalkLocation();
 	ForceNetUpdate();
 }
+
+void AShipBossEnemy::OnDeckMoveFailed() { ClearDestination(); }
 
 bool AShipBossEnemy::CanMoveOnDeck() const
 {
@@ -351,10 +336,9 @@ bool AShipBossEnemy::SummonOneDeckEnemy(ADeckEnemy*& OutEnemy)
 	FDeckEnemySpawnRequest Request;
 	Request.Requester = this;
 	Request.Target = Target;
-	Request.ExcludedPointId = CurrentPointId;
+	Request.ExcludedPointId = InitialSpawnPointId;
 	Request.MinimumDistanceFromRequester = MinimumSummonDistanceFromBoss;
 	Request.MinimumDistanceFromTarget = MinimumSummonDistanceFromTarget;
-	HostShip->GetConnectedDeckWaypointIds(CurrentPointId, Request.PreferredPointIds);
 
 	FDeckPointReservation Reservation;
 	if (!HostShip->TryReserveDeckEnemySpawnPoint(Request, Reservation)
@@ -415,16 +399,11 @@ float AShipBossEnemy::GetBalancedBossAttackCoefficient(float Fallback, bool bMaj
 	return BaseStrength > 0.f ? TargetDamage / BaseStrength : Fallback;
 }
 
-bool AShipBossEnemy::ResolvePointTransform(int32 PointId, FTransform& OutTransform) const
+bool AShipBossEnemy::ResolveDestinationTransform(FTransform& OutTransform) const
 {
-	const UCapsuleComponent* Capsule = GetCapsuleComponent();
-	const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0f;
-	if (!HostShip || !HostShip->ResolveDeckCharacterTransform(PointId, HalfHeight, OutTransform))
-	{
-		OutTransform = FTransform::Identity;
-		return false;
-	}
-	return true;
+	const UDeckWalkAreaComponent* Area = HostShip ? HostShip->GetDeckWalkAreaComponent() : nullptr;
+	return Area && Area->IsLocationAvailable(DestinationLocation, *this)
+		&& Area->ResolveLocationTransform(DestinationLocation, *this, OutTransform);
 }
 
 bool AShipBossEnemy::TransitionBossAIState(FGameplayTag ExpectedState, FGameplayTag NewState)
@@ -504,7 +483,7 @@ bool AShipBossEnemy::RelocateWhileHidden(const FTransform& DestinationTransform)
 	{
 		if (UStaticMeshComponent* DeckMesh = HostShip->GetShipDeckMesh())
 		{
-			Movement->SetBase(DeckMesh);
+			Movement->SetBase(ResolveBossDeckBase(*this, HostShip));
 		}
 		Movement->StopMovementImmediately();
 	}
@@ -532,7 +511,7 @@ void AShipBossEnemy::FinishHiddenRelocation()
 		Movement->SetMovementMode(MOVE_Walking);
 		if (UStaticMeshComponent* DeckMesh = HostShip ? HostShip->GetShipDeckMesh() : nullptr)
 		{
-			Movement->SetBase(DeckMesh);
+			Movement->SetBase(ResolveBossDeckBase(*this, HostShip));
 		}
 	}
 
@@ -561,7 +540,7 @@ void AShipBossEnemy::HandleDeath_Implementation()
 		{
 			HostShip->ReleaseAllDeckPointsFor(this);
 		}
-		DestinationReservation.Reset();
+		ClearDestination();
 		ReleaseSummonedDeckEnemies();
 		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
 		{
@@ -678,11 +657,7 @@ void AShipBossEnemy::OnRep_HostShip()
 		ApplyDeathMovementState();
 		return;
 	}
-	if (UCharacterMovementComponent* Movement = GetCharacterMovement();
-		Movement && HostShip && HostShip->GetShipDeckMesh())
-	{
-		Movement->SetBase(HostShip->GetShipDeckMesh());
-	}
+
 }
 
 void AShipBossEnemy::OnRep_BossHidden()
@@ -694,7 +669,7 @@ void AShipBossEnemy::HandleHostShipDestroyed(AActor* DestroyedActor)
 {
 	if (HasAuthority() && DestroyedActor == HostShip && !IsActorBeingDestroyed())
 	{
-		DestinationReservation.Reset();
+		ClearDestination();
 		Destroy();
 	}
 }
@@ -759,4 +734,140 @@ bool AShipBossEnemy::IsExclusiveBossAIState(FGameplayTag StateTag) const
 	return StateTag == AI_State_Boss_Intro
 		|| StateTag == AI_State_Boss_Combat
 		|| StateTag == AI_State_Boss_Dead;
+}
+
+void AShipBossEnemy::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	ABaseEnemy::CaptureRoomDomains(OutParts, OutIssues);
+	FSWRoomShipBossState State;
+	if (HostShip)
+		if (const USWRoomSnapshotComponent* Id = HostShip->FindComponentByClass<USWRoomSnapshotComponent>())
+			State.HostShipId = Id->StableId;
+	State.InitialSpawnPointId = InitialSpawnPointId;
+	const UDeckWalkAreaComponent* Area = HostShip ? HostShip->GetDeckWalkAreaComponent() : nullptr;
+	if (Area && Area->IsLocationValid(PreviousLocation))
+	{
+		State.PreviousSurfaceId = PreviousLocation.SurfaceId;
+		State.PreviousLocalFloor = PreviousLocation.LocalFloor;
+	}
+	if (HasDestination())
+	{
+		State.DestinationSurfaceId = DestinationLocation.SurfaceId;
+		State.DestinationLocalFloor = DestinationLocation.LocalFloor;
+		State.bWalkingToDestination = DeckWalkRouteComponent && DeckWalkRouteComponent->HasGoal();
+	}
+	State.bStunHealthThresholdConsumed = bStunHealthThresholdConsumed;
+	State.PendingBalanceSummons = PendingBalanceSummons;
+	for (int32 Threshold : ConsumedSummonThresholds) State.ConsumedSummonThresholds.Add(Threshold);
+	State.ConsumedSummonThresholds.Sort();
+	State.SummonCooldownRemaining = GetWorld() ? FMath::Max(0.0, NextSummonAllowedTime - GetWorld()->GetTimeSeconds()) : 0.f;
+	if (const UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		if (ASC->HasMatchingGameplayTag(AI_State_Boss_Dead)) State.BossAIState = AI_State_Boss_Dead;
+		else if (ASC->HasMatchingGameplayTag(AI_State_Boss_Combat)) State.BossAIState = AI_State_Boss_Combat;
+		else if (ASC->HasMatchingGameplayTag(AI_State_Boss_Intro)) State.BossAIState = AI_State_Boss_Intro;
+	}
+	for (const TWeakObjectPtr<ADeckEnemy>& Enemy : SummonedDeckEnemies)
+		if (Enemy.IsValid())
+			if (const USWRoomSnapshotComponent* Id = Enemy->FindComponentByClass<USWRoomSnapshotComponent>(); Id && Id->StableId.IsValid())
+				State.SummonedEnemyIds.AddUnique(Id->StableId);
+	State.SummonedEnemyIds.Sort();
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Boss;
+	Part.Version = 2;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Boss");
+		Issue.FieldKey = TEXT("ShipBossState");
+		Issue.Reason = TEXT("Ship boss state serialization failed");
+	}
+}
+
+bool AShipBossEnemy::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	if (Part.Domain == ESWRoomDomain::Enemy) return ABaseEnemy::RestoreRoomDomain(Part, OutError);
+	if (Part.Domain != ESWRoomDomain::Boss || Part.Version != 2)
+	{
+		OutError = TEXT("Unsupported ship boss state version; recapture the checkpoint with DeckWalk state");
+		return false;
+	}
+	FSWRoomShipBossState State;
+	if (!FSWRoomStructCodec::Read(Part.Bytes, State)
+		|| State.InitialSpawnPointId < INDEX_NONE || State.PreviousLocalFloor.ContainsNaN()
+		|| State.DestinationLocalFloor.ContainsNaN()
+		|| (State.bWalkingToDestination && State.DestinationSurfaceId.IsNone())
+		|| State.PendingBalanceSummons < 0 || !FMath::IsFinite(State.SummonCooldownRemaining)
+		|| State.SummonCooldownRemaining < 0.f)
+	{
+		OutError = TEXT("Invalid ship boss state");
+		return false;
+	}
+	ClearDestination();
+	InitialSpawnPointId = State.InitialSpawnPointId;
+	PreviousLocation = FDeckWalkLocation();
+	bStunHealthThresholdConsumed = State.bStunHealthThresholdConsumed;
+	PendingBalanceSummons = State.PendingBalanceSummons;
+	ConsumedSummonThresholds.Reset();
+	for (int32 Threshold : State.ConsumedSummonThresholds) ConsumedSummonThresholds.Add(Threshold);
+	bHiddenRelocationActive = false;
+	bBossHidden = false;
+	ApplyHiddenPresentation();
+	PendingRoomState = MoveTemp(State);
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool AShipBossEnemy::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!ABaseEnemy::FinalizeRoomRestore(RegisteredActors, OutError)) return false;
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	UnbindHostShip();
+	HostShip = nullptr;
+	if (AActor* const* Found = RegisteredActors.Find(PendingRoomState.HostShipId))
+	{
+		HostShip = Cast<AEnemyShip>(*Found);
+	}
+	if (PendingRoomState.HostShipId.IsValid() && !HostShip)
+	{
+		OutError = TEXT("Ship boss host ship missing");
+		return false;
+	}
+	OnRep_HostShip();
+	UDeckWalkAreaComponent* Area = HostShip ? HostShip->GetDeckWalkAreaComponent() : nullptr;
+	if (!PendingRoomState.DestinationSurfaceId.IsNone())
+	{
+		FDeckWalkLocation RestoredDestination;
+		if (!Area || !Area->ResolveLocalFloor(PendingRoomState.DestinationLocalFloor,
+			PendingRoomState.DestinationSurfaceId, RestoredDestination)
+			|| !TrySetDestinationLocation(RestoredDestination, PendingRoomState.bWalkingToDestination))
+		{
+			OutError = TEXT("Ship boss DeckWalk destination cannot be restored");
+			return false;
+		}
+	}
+	// TrySetDestinationLocation samples the current floor; restore the saved history instead.
+	PreviousLocation = FDeckWalkLocation();
+	if (!PendingRoomState.PreviousSurfaceId.IsNone()
+		&& (!Area || !Area->ResolveLocalFloor(PendingRoomState.PreviousLocalFloor,
+			PendingRoomState.PreviousSurfaceId, PreviousLocation)))
+	{
+		OutError = TEXT("Ship boss previous DeckWalk location cannot be restored");
+		return false;
+	}
+	NextSummonAllowedTime = GetWorld()->GetTimeSeconds() + PendingRoomState.SummonCooldownRemaining;
+	SummonedDeckEnemies.Reset();
+	for (const FGuid& Id : PendingRoomState.SummonedEnemyIds)
+		if (AActor* const* Found = RegisteredActors.Find(Id))
+			if (ADeckEnemy* Enemy = Cast<ADeckEnemy>(*Found)) SummonedDeckEnemies.Add(Enemy);
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		ASC->RemoveLooseGameplayTag(AI_State_Boss_Intro);
+		ASC->RemoveLooseGameplayTag(AI_State_Boss_Combat);
+		ASC->RemoveLooseGameplayTag(AI_State_Boss_Dead);
+		if (PendingRoomState.BossAIState.IsValid()) ASC->AddLooseGameplayTag(PendingRoomState.BossAIState);
+	}
+	return true;
 }

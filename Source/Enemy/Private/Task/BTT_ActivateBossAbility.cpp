@@ -4,7 +4,7 @@
 #include "Abilities/GameplayAbility.h"
 #include "BaseGameplayAbility.h"
 #include "BaseGameplayTags.h"
-#include "BehaviorTree/Blackboard/BlackboardKeyType_Int.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Vector.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BossAI/ShipBossEnemy.h"
@@ -16,8 +16,8 @@
 UBTT_ActivateBossAbility::UBTT_ActivateBossAbility()
 {
 	NodeName = TEXT("Activate Boss Ability");
-	DestinationPointKey.SelectedKeyName = TEXT("DestinationPointId");
-	DestinationPointKey.AddIntFilter(
+	DestinationPointKey.SelectedKeyName = TEXT("DestinationLocation");
+	DestinationPointKey.AddVectorFilter(
 		this,
 		GET_MEMBER_NAME_CHECKED(UBTT_ActivateBossAbility, DestinationPointKey));
 }
@@ -85,7 +85,7 @@ bool UBTT_ActivateBossAbility::ValidateActivationContext(
 	const UAbilitySystemComponent& AbilitySystem) const
 {
 	const AShipBossEnemy* Boss = Cast<AShipBossEnemy>(&Pawn);
-	return Boss && (!bRequirePreselectedDestination || Boss->GetDestinationPointId() != INDEX_NONE);
+	return Boss && (!bRequirePreselectedDestination || Boss->HasDestination());
 }
 
 bool UBTT_ActivateBossAbility::ShouldCancelAbilityOnAbort(
@@ -135,11 +135,11 @@ void UBTT_ActivateBossAbility::ResetDestinationState()
 	if (UBlackboardComponent* Blackboard = OwnerComp->GetBlackboardComponent();
 		Blackboard && Blackboard->GetKeyID(DestinationPointKey.SelectedKeyName) != FBlackboard::InvalidKey)
 	{
-		Blackboard->SetValueAsInt(DestinationPointKey.SelectedKeyName, INDEX_NONE);
+		Blackboard->ClearValue(DestinationPointKey.SelectedKeyName);
 	}
 
 	if (AShipBossEnemy* Boss = Cast<AShipBossEnemy>(GetCachedPawn()))
 	{
-		Boss->SetDestinationPointId(INDEX_NONE);
+		Boss->ClearDestination();
 	}
 }

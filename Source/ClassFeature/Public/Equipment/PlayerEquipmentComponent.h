@@ -67,6 +67,7 @@ public:
 	bool IsEquipmentTransitioning() const;
 
 	bool EquipInventoryItem(FGameplayTag ItemTag);
+	bool RestoreRoomEquippedItem(FGameplayTag ItemTag);
 	void UnequipCurrentItem();
 	void UseEquippedItem(bool bDestroy = true);
 	void HandleEquipmentAttachNotify();

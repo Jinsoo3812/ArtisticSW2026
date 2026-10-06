@@ -9,6 +9,7 @@ public class ClassFeature: ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
+			"ApplicationCore",
             "NetCore",
             "GASCore",
             "InputCore",

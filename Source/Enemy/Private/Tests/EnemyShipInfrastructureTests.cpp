@@ -16,6 +16,8 @@
 #include "ShipAI/EnemyShipSkillModuleData.h"
 #include "ShipAI/ShipSwarmSubsystem.h"
 #include "BaseGameplayTags.h"
+#include "GASDamageInstantGameplayEffect.h"
+#include "GameplayEffect.h"
 #include "ShipAI/NavalAIController.h"
 #include "ShipAI/Abilities/GA_EnemyShipCharge.h"
 #include "ShipAI/Abilities/EnemyShipObstacle.h"
@@ -546,6 +548,55 @@ bool FEnemyShipCrewGatedAnchorTest::RunTest(const FString& Parameters)
 	Ship->HandleAnchorInteracted(nullptr);
 	TestTrue(TEXT("Anchor drops after crew eliminated"), Ship->IsAnchorDropped());
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEnemyShipCrewDefeatedDamageTest,
+	"ArtisticSW.Enemy.Ship.CrewDefeatedIncomingDamage",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyShipCrewDefeatedDamageTest::RunTest(const FString& Parameters)
+{
+	AddExpectedError(TEXT("QuestItem"), EAutomationExpectedErrorFlags::Contains, 3);
+	EnemyShipInfrastructureTests::FTestWorld TestWorld;
+	AEnemyShip* Ship = TestWorld.World->SpawnActor<AEnemyShip>();
+	ARangedEnemy* Crew = TestWorld.World->SpawnActor<ARangedEnemy>();
+	if (!TestNotNull(TEXT("Ship exists"), Ship) || !TestNotNull(TEXT("Crew exists"), Crew)) return false;
+	Ship->BuoyancyRoot->SetSimulatePhysics(false);
+	UAbilitySystemComponent* ASC = Ship->GetAbilitySystemComponent();
+	if (!TestNotNull(TEXT("Ship ASC exists"), ASC)) return false;
+	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetMaxHealthAttribute(), 100.0f);
+	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), 100.0f);
+	Ship->RegisterCrewEnemy(Crew);
+	const auto ApplyDamage = [ASC]()
+	{
+		FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(
+			UGASDamageInstantGameplayEffect::StaticClass(), 1.0f, ASC->MakeEffectContext());
+		Spec.Data->SetSetByCallerMagnitude(Data_Damage, 10.0f);
+		ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+	};
+	ApplyDamage();
+	TestEqual(TEXT("Living crew leaves damage unchanged"), Ship->GetShipAttributeSet()->GetHealth(), 90.0f);
+	Ship->UnregisterCrewEnemy(Crew);
+	TestTrue(TEXT("Last crew removal enters defeated state"), Ship->IsCrewDefeated());
+	ApplyDamage();
+	TestEqual(TEXT("Default defeated multiplier triples damage"), Ship->GetShipAttributeSet()->GetHealth(), 60.0f);
+	Ship->CrewDefeatedDamageMultiplier = 5.0f;
+	ApplyDamage();
+	TestEqual(TEXT("Authored multiplier is read at impact time"), Ship->GetShipAttributeSet()->GetHealth(), 10.0f);
+
+	UGameplayEffect* Healing = NewObject<UGameplayEffect>();
+	Healing->DurationPolicy = EGameplayEffectDurationType::Instant;
+	FGameplayModifierInfo& Modifier = Healing->Modifiers.AddDefaulted_GetRef();
+	Modifier.Attribute = UBaseAttributeSet::GetHealingAttribute();
+	Modifier.ModifierOp = EGameplayModOp::Additive;
+	Modifier.ModifierMagnitude = FScalableFloat(5.0f);
+	ASC->ApplyGameplayEffectToSelf(Healing, 1.0f, ASC->MakeEffectContext());
+	TestEqual(TEXT("Healing is not multiplied"), Ship->GetShipAttributeSet()->GetHealth(), 15.0f);
+	ASC->AddLooseGameplayTag(State_Invulnerable);
+	ApplyDamage();
+	TestEqual(TEXT("Invulnerability still blocks amplified damage"), Ship->GetShipAttributeSet()->GetHealth(), 15.0f);
 	return true;
 }
 

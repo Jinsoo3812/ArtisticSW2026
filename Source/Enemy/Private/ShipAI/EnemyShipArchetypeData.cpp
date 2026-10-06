@@ -1,6 +1,8 @@
 #include "ShipAI/EnemyShipArchetypeData.h"
 
+#if WITH_EDITOR
 #include "Misc/DataValidation.h"
+#endif
 #include "Ship.h"
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipSkillModuleData.h"
@@ -35,6 +37,7 @@ bool UEnemyShipArchetypeData::ApplyToShip(AEnemyShip* Ship)
 	return Ship->ConfigureEnemyShipArchetype(this);
 }
 
+#if WITH_EDITOR
 EDataValidationResult UEnemyShipArchetypeData::IsDataValid(FDataValidationContext& Context) const
 {
 	EDataValidationResult Result = Super::IsDataValid(Context);
@@ -49,6 +52,11 @@ EDataValidationResult UEnemyShipArchetypeData::IsDataValid(FDataValidationContex
 		Result = EDataValidationResult::Invalid;
 	}
 
+	if (!FMath::IsFinite(CannonLeadSpeed) || CannonLeadSpeed < -1.0f)
+	{
+		Context.AddError(FText::FromString(TEXT("CannonLeadSpeed must be finite and at least -1 (-1 uses actual target velocity).")));
+		Result = EDataValidationResult::Invalid;
+	}
 	if (ZeroHealthCannonCooldownMultiplier < 1.0f)
 	{
 		Context.AddError(FText::FromString(TEXT("ZeroHealthCannonCooldownMultiplier must be at least 1.")));
@@ -92,3 +100,4 @@ EDataValidationResult UEnemyShipArchetypeData::IsDataValid(FDataValidationContex
 
 	return Result;
 }
+#endif

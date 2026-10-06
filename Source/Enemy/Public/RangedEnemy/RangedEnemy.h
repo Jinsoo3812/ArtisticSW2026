@@ -9,13 +9,13 @@
 class AEnemyBow;
 class AShip;
 class UAnimMontage;
+struct FProjectileShotSnapshot;
 
 enum class ERangedShotSnapshotResult : uint8
 {
 	Ready,
 	InvalidTargetOrRange,
-	MissingAttackOrigin,
-	BlockedLineOfSight
+	MissingAttackOrigin
 };
 
 /**
@@ -59,6 +59,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ranged Enemy|Combat")
 	bool HasLineOfSightTo(const AActor* Candidate) const;
 
+	/** Shared narrow arrow obstacle query, also used for prospective deck firing positions. */
+	bool TraceLineOfSightFrom(
+		const AActor* Candidate,
+		const FVector& Start,
+		const FVector& End,
+		bool bDrawDebug = false,
+		FHitResult* OutHit = nullptr) const;
+
 	UFUNCTION(BlueprintPure, Category = "Ranged Enemy|Combat")
 	bool CanAttackCurrentTarget(bool bRequireLineOfSight = true) const;
 
@@ -80,14 +88,14 @@ public:
 	FName GetRangedAttackSocketName() const { return RangedAttackSocketName; }
 	FVector GetRangedAimLocation(const AActor* TargetActor) const;
 	/**
-	 * Revalidates range and LOS at the release frame, then captures the exact
-	 * socket/target pair that must be reused by projectile spawning.
+	 * Revalidates the target/range and captures the release-frame socket and aim point.
+	 * Launch clearance is checked separately after the common velocity policy is solved.
 	 */
-	ERangedShotSnapshotResult BuildRangedShotSnapshot(
+	ERangedShotSnapshotResult CaptureRangedAim(
 		const AActor* TargetActor,
 		FTransform& OutSpawnTransform,
-		FVector& OutAimLocation,
-		FHitResult* OutHit = nullptr) const;
+		FVector& OutAimLocation, bool bRequireAttackRange = true) const;
+	bool HasClearRangedLaunch(const AActor* TargetActor, const FProjectileShotSnapshot& Shot) const;
 	virtual void HandleRangedReleaseLineOfSightBlocked(AActor* TargetActor) {}
 	void AcquireServerRangedAttackPoseRefresh();
 	void ReleaseServerRangedAttackPoseRefresh();
@@ -119,14 +127,8 @@ protected:
 	void UnbindHostShipLifecycle();
 	void RetryResolveHostShip();
 	AShip* FindShipInActorHierarchy(AActor* Actor) const;
-	bool EvaluateAttackTarget(const AActor* Candidate, bool bRequireLineOfSight, FString& OutReason) const;
+	virtual bool EvaluateAttackTarget(const AActor* Candidate, bool bRequireLineOfSight, FString& OutReason) const;
 	bool TraceLineOfSight(const AActor* Candidate, FHitResult* OutHit = nullptr) const;
-	bool TraceLineOfSightFrom(
-		const AActor* Candidate,
-		const FVector& Start,
-		const FVector& End,
-		bool bDrawDebug,
-		FHitResult* OutHit = nullptr) const;
 
 protected:
 	UPROPERTY(ReplicatedUsing = OnRep_HostShip, EditInstanceOnly, BlueprintReadOnly, Category = "Ranged Enemy|Ship")
@@ -158,7 +160,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat", meta = (ClampMin = "0.0"))
 	float AttackCooldown = 2.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ranged Enemy|Combat")
+	/** Legacy serialized setting. Direct enemy shots now aim at the target actor location. */
+	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Enemy shots use the current target actor location."))
 	float TargetAimHeightOffset = 60.0f;
 
 	/** Socket authored on the ranged enemy's character skeleton, not on the bow mesh. */

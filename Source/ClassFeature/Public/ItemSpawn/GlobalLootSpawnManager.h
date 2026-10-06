@@ -4,7 +4,35 @@
 #include "GameFramework/Actor.h"
 #include "LootSpawnTypes.h"
 #include "Balance/ProgressionBalanceData.h"
+#include "Room/SWRoomStateAdapter.h"
 #include "GlobalLootSpawnManager.generated.h"
+
+USTRUCT()
+struct FSWRoomLootDropState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) FGameplayTag ItemTag;
+	UPROPERTY(SaveGame) float Chance = 0.f;
+	UPROPERTY(SaveGame) int32 MinCount = 1;
+	UPROPERTY(SaveGame) int32 MaxCount = 1;
+};
+
+USTRUCT()
+struct FSWRoomLootZoneState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) int32 ActiveChestCount = 0;
+	UPROPERTY(SaveGame) TArray<FSWRoomLootDropState> Drops;
+};
+
+USTRUCT()
+struct FSWRoomGlobalLootState
+{
+	GENERATED_BODY()
+	UPROPERTY(SaveGame) int32 SpawnSeed = 0;
+	UPROPERTY(SaveGame) bool bProgressionFinalized = false;
+	UPROPERTY(SaveGame) TArray<FSWRoomLootZoneState> Zones;
+};
 
 class ALootZoneSpawnManager;
 class AChestSpawnPoint;
@@ -15,12 +43,17 @@ class UDataTable;
 class UBossChestGuaranteedLootData;
 
 UCLASS()
-class CLASSFEATURE_API AGlobalLootSpawnManager : public AActor
+class CLASSFEATURE_API AGlobalLootSpawnManager : public AActor, public ISWRoomStateAdapter
 {
 	GENERATED_BODY()
 
 public:
 	AGlobalLootSpawnManager();
+	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
+	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
+	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
+		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
+	{ return FSWRoomStructCodec::Compare<FSWRoomGlobalLootState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
 
 	UFUNCTION(BlueprintCallable, Category = "Loot|Spawn")
 	bool BuildZoneManagerList();

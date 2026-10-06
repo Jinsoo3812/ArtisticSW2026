@@ -22,7 +22,7 @@ public:
 	const FBossDestinationSelectionSettings& GetSelectionSettings() const { return SelectionSettings; }
 
 protected:
-	/** Output integer key. World positions are intentionally not cached on a moving ship. */
+	/** Combat target; destination output uses BlackboardKey's ship-local vector. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Point")
 	FBlackboardKeySelector TargetActorKey;
 

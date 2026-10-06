@@ -1,6 +1,8 @@
 ﻿#include "WaveSystem/Manager/WaveSpawnManager.h"
 
 #include "BaseEnemy.h"
+#include "Room/SWRoomSnapshotComponent.h"
+#include "Room/SWRoomSnapshotSubsystem.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -14,8 +16,172 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogWaveSpawnManager, Log, All);
 
+void AWaveSpawnManager::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	FSWRoomWaveState State;
+	State.WaveDataPath = WaveData ? FSoftObjectPath(WaveData) : FSoftObjectPath();
+	State.WaveArrayIndex = CurrentWaveArrayIndex;
+	State.DisplayWaveNumber = CurrentDisplayWaveNumber;
+	State.AliveEnemyCount = AliveEnemyCount;
+	State.SpawnSerialCounter = SpawnSerialCounter;
+	State.bWaveActive = bWaveActive;
+	if (GetWorld())
+	{
+		State.bPreWaveTimerPending = GetWorldTimerManager().IsTimerActive(PreWaveDelayTimerHandle);
+		if (State.bPreWaveTimerPending)
+			State.PreWaveRemaining = FMath::Max(0.f, GetWorldTimerManager().GetTimerRemaining(PreWaveDelayTimerHandle));
+	}
+	for (const FSpawnGroupRuntime& Group : RuntimeGroups)
+	{
+		FSWRoomWaveGroupState& Saved = State.Groups.AddDefaulted_GetRef();
+		Saved.RemainingCount = Group.RemainingCount;
+		Saved.SpawnedCount = Group.SpawnedCount;
+		Saved.bFinished = Group.bFinished;
+		Saved.State = Group.State;
+		Saved.PendingTickets = Group.PendingTickets;
+		if (GetWorld())
+		{
+			Saved.bTimerPending = GetWorldTimerManager().IsTimerActive(Group.TimerHandle);
+			if (Saved.bTimerPending)
+				Saved.TimerRemaining = FMath::Max(0.f, GetWorldTimerManager().GetTimerRemaining(Group.TimerHandle));
+			for (FSWRoomPendingSpawnTicket& Ticket : Saved.PendingTickets)
+				Ticket.RemainingSeconds = Saved.TimerRemaining;
+		}
+	}
+	for (const TWeakObjectPtr<ABaseEnemy>& EnemyPtr : ActiveEnemies)
+	{
+		const ABaseEnemy* Enemy = EnemyPtr.Get();
+		const USWRoomSnapshotComponent* Id = Enemy ? Enemy->FindComponentByClass<USWRoomSnapshotComponent>() : nullptr;
+		if (Id && Id->StableId.IsValid()) State.ActiveEnemyIds.Add(Id->StableId);
+		else
+		{
+			FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+			Issue.Domain = TEXT("Spawner");
+			Issue.FieldKey = FName(*(TEXT("ActiveEnemy:") + GetPathNameSafe(Enemy)));
+			Issue.Reason = FString::Printf(TEXT("Active enemy has no stable ID: %s"), *GetNameSafe(Enemy));
+		}
+	}
+	State.ActiveEnemyIds.Sort([](const FGuid& A, const FGuid& B) { return A.ToString() < B.ToString(); });
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Spawner;
+	Part.Version = 2;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Spawner");
+		Issue.FieldKey = TEXT("WaveState");
+		Issue.Reason = TEXT("Wave adapter serialization failed");
+	}
+}
+
+bool AWaveSpawnManager::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	if (Part.Domain != ESWRoomDomain::Spawner || Part.Version != 2)
+	{
+		OutError = FString::Printf(TEXT("Unsupported wave domain/version: Class=%s Domain=%d Version=%d Expected=2"),
+			*GetClass()->GetPathName(), static_cast<int32>(Part.Domain), Part.Version);
+		return false;
+	}
+	FSWRoomWaveState State;
+	if (!FSWRoomStructCodec::Read(Part.Bytes, State) || State.AliveEnemyCount < 0
+		|| State.SpawnSerialCounter < 0 || State.Groups.Num() > 100000
+		|| !FMath::IsFinite(State.PreWaveRemaining) || State.PreWaveRemaining < 0.f)
+	{
+		OutError = TEXT("Invalid wave state");
+		return false;
+	}
+	for (const FSWRoomWaveGroupState& Group : State.Groups)
+		if (Group.RemainingCount < 0 || Group.SpawnedCount < 0
+			|| !FMath::IsFinite(Group.TimerRemaining) || Group.TimerRemaining < 0.f)
+		{
+			OutError = TEXT("Invalid wave group state");
+			return false;
+		}
+	for (int32 GroupIndex = 0; GroupIndex < State.Groups.Num(); ++GroupIndex)
+		for (const FSWRoomPendingSpawnTicket& Ticket : State.Groups[GroupIndex].PendingTickets)
+			if (Ticket.GroupIndex != GroupIndex || Ticket.Ordinal < State.Groups[GroupIndex].SpawnedCount
+				|| Ticket.EnemyClass.IsNull() || !Ticket.ReservedId.IsValid()
+				|| Ticket.WorldTransform.ContainsNaN() || !FMath::IsFinite(Ticket.RemainingSeconds)
+				|| Ticket.RemainingSeconds < 0.f)
+			{
+				OutError = FString::Printf(TEXT("Invalid wave spawn ticket Class=%s Group=%d Ordinal=%d"),
+					*GetClass()->GetPathName(), GroupIndex, Ticket.Ordinal);
+				return false;
+			}
+	if (State.WaveDataPath != (WaveData ? FSoftObjectPath(WaveData) : FSoftObjectPath())
+		|| (State.WaveArrayIndex != INDEX_NONE && (!WaveData || !WaveData->IsValidWaveIndex(State.WaveArrayIndex)))
+		|| (State.WaveArrayIndex != INDEX_NONE
+			&& State.Groups.Num() != WaveData->GetWaveDefinitionChecked(State.WaveArrayIndex).SpawnGroups.Num()))
+	{
+		UE_LOG(LogWaveSpawnManager, Warning, TEXT("Room wave definition changed; using new-level defaults Manager=%s"), *GetPathName());
+		return true;
+	}
+	ClearAllSpawnTimers();
+	CurrentWaveArrayIndex = State.WaveArrayIndex;
+	CurrentDisplayWaveNumber = State.DisplayWaveNumber;
+	AliveEnemyCount = State.AliveEnemyCount;
+	SpawnSerialCounter = State.SpawnSerialCounter;
+	bWaveActive = State.bWaveActive;
+	CurrentWaveDefinition = State.WaveArrayIndex == INDEX_NONE ? FWaveDefinition()
+		: WaveData->GetWaveDefinitionChecked(State.WaveArrayIndex);
+	RuntimeGroups.SetNum(State.Groups.Num());
+	for (int32 Index = 0; Index < State.Groups.Num(); ++Index)
+	{
+		FSpawnGroupRuntime& Group = RuntimeGroups[Index];
+		const FSWRoomWaveGroupState& Saved = State.Groups[Index];
+		Group.RemainingCount = Saved.RemainingCount;
+		Group.SpawnedCount = Saved.SpawnedCount;
+		Group.bFinished = Saved.bFinished;
+		Group.State = Saved.State;
+		Group.PendingTickets = Saved.PendingTickets;
+		Group.TimerHandle.Invalidate();
+	}
+	PendingRoomState = MoveTemp(State);
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool AWaveSpawnManager::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	if (bAutoBuildRouteMapOnBeginPlay) BuildRouteMap();
+	if (bBindToWaveGameMode) BindToWaveGameMode();
+	ActiveEnemies.Reset();
+	RemovedEnemies.Reset();
+	for (const FGuid& Id : PendingRoomState.ActiveEnemyIds)
+		if (AActor* const* Found = RegisteredActors.Find(Id))
+			if (ABaseEnemy* Enemy = Cast<ABaseEnemy>(*Found))
+			{
+				ActiveEnemies.Add(Enemy);
+				BindEnemyDelegates(Enemy, ResolveWaypointMoveComponent(Enemy));
+			}
+	if (PendingRoomState.bPreWaveTimerPending)
+	{
+		const float Delay = FMath::Max(PendingRoomState.PreWaveRemaining, KINDA_SMALL_NUMBER);
+		GetWorldTimerManager().SetTimer(PreWaveDelayTimerHandle, this, &AWaveSpawnManager::BeginWaveSpawning, Delay, false);
+	}
+	for (int32 Index = 0; Index < PendingRoomState.Groups.Num(); ++Index)
+	{
+		const FSWRoomWaveGroupState& Saved = PendingRoomState.Groups[Index];
+		if (!Saved.bTimerPending || !RuntimeGroups.IsValidIndex(Index)) continue;
+		FTimerDelegate Callback;
+		if (Saved.State == EWaveSpawnGroupState::Waiting)
+			Callback.BindUObject(this, &AWaveSpawnManager::BeginSpawnGroup, Index);
+		else if (Saved.State == EWaveSpawnGroupState::Spawning)
+			Callback.BindUObject(this, &AWaveSpawnManager::SpawnBurstForGroup, Index);
+		else continue;
+		GetWorldTimerManager().SetTimer(RuntimeGroups[Index].TimerHandle, Callback,
+			FMath::Max(Saved.TimerRemaining, KINDA_SMALL_NUMBER), false);
+	}
+	PendingRoomState = FSWRoomWaveState();
+	return true;
+}
+
 AWaveSpawnManager::AWaveSpawnManager()
 {
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
     PrimaryActorTick.bCanEverTick = false;
     bReplicates = false;
 }
@@ -28,6 +194,8 @@ void AWaveSpawnManager::BeginPlay()
     {
         return;
     }
+	if (const USWRoomSnapshotSubsystem* Snapshot = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>();
+		Snapshot && Snapshot->IsRestoringSnapshot()) return;
 
     if (bAutoBuildRouteMapOnBeginPlay)
     {
@@ -192,6 +360,8 @@ bool AWaveSpawnManager::StartWaveByArrayIndex(int32 WaveArrayIndex)
     {
         return false;
     }
+	if (const USWRoomSnapshotSubsystem* Snapshot = GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>();
+		Snapshot && Snapshot->IsRestoringSnapshot()) return false;
 
     if (!WaveData)
     {
@@ -765,7 +935,33 @@ void AWaveSpawnManager::BeginSpawnGroup(int32 SpawnGroupIndex)
         RuntimeGroup.RemainingCount
     );
 
+    PrepareSpawnTickets(SpawnGroupIndex, 0.f);
     SpawnBurstForGroup(SpawnGroupIndex);
+}
+
+bool AWaveSpawnManager::PrepareSpawnTickets(int32 SpawnGroupIndex, float DelaySeconds)
+{
+	if (!RuntimeGroups.IsValidIndex(SpawnGroupIndex)
+		|| !CurrentWaveDefinition.SpawnGroups.IsValidIndex(SpawnGroupIndex)) return false;
+	FSpawnGroupRuntime& Group = RuntimeGroups[SpawnGroupIndex];
+	if (!Group.PendingTickets.IsEmpty()) return true;
+	const FSpawnGroupDefinition& Definition = CurrentWaveDefinition.SpawnGroups[SpawnGroupIndex];
+	ASpawnRoute* Route = FindRouteById(Definition.RouteId);
+	if (!IsValid(Route) || !Definition.EnemyClass) return false;
+	const int32 Count = FMath::Min(Group.RemainingCount, FMath::Max(1, Definition.BurstCount));
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		FSWRoomPendingSpawnTicket& Ticket = Group.PendingTickets.AddDefaulted_GetRef();
+		Ticket.GroupIndex = SpawnGroupIndex;
+		Ticket.Ordinal = Group.SpawnedCount + Index;
+		Ticket.EnemyClass = FSoftClassPath(Definition.EnemyClass.Get());
+		Ticket.StatsTable = FSoftObjectPath(Definition.StatsRow.DataTable);
+		Ticket.StatsRow = Definition.StatsRow.RowName;
+		Ticket.WorldTransform = Route->GetSpawnTransform(Definition.SpawnRadius);
+		Ticket.ReservedId = FGuid::NewGuid();
+		Ticket.RemainingSeconds = DelaySeconds;
+	}
+	return true;
 }
 
 void AWaveSpawnManager::SpawnBurstForGroup(int32 SpawnGroupIndex)
@@ -785,28 +981,33 @@ void AWaveSpawnManager::SpawnBurstForGroup(int32 SpawnGroupIndex)
     }
 
     const bool bSpawnAllImmediately = GroupDefinition.SpawnInterval <= 0.0f;
+	bool bRetryUnconsumed = false;
 
     do
     {
+		if (!PrepareSpawnTickets(SpawnGroupIndex, 0.f)) break;
         const int32 BurstCount = FMath::Max(1, GroupDefinition.BurstCount);
         int32 SpawnedThisBurst = 0;
 
         while (RuntimeGroup.RemainingCount > 0 && SpawnedThisBurst < BurstCount)
         {
-            const int32 SpawnOrdinalInGroup = RuntimeGroup.SpawnedCount;
+			if (RuntimeGroup.PendingTickets.IsEmpty()) break;
+			const FSWRoomPendingSpawnTicket Ticket = RuntimeGroup.PendingTickets[0];
             const bool bSpawned = SpawnOneEnemyFromGroup(
                 SpawnGroupIndex,
                 GroupDefinition,
-                SpawnOrdinalInGroup
+                Ticket
             );
 
             if (bSpawned || bConsumeSpawnCountOnSpawnFailure)
             {
                 --RuntimeGroup.RemainingCount;
                 ++RuntimeGroup.SpawnedCount;
+				RuntimeGroup.PendingTickets.RemoveAt(0);
             }
             else
             {
+				bRetryUnconsumed = true;
                 UE_LOG(
                     LogWaveSpawnManager,
                     Warning,
@@ -821,7 +1022,7 @@ void AWaveSpawnManager::SpawnBurstForGroup(int32 SpawnGroupIndex)
             ++SpawnedThisBurst;
         }
 
-        if (!bSpawnAllImmediately)
+        if (!bSpawnAllImmediately || bRetryUnconsumed)
         {
             break;
         }
@@ -836,10 +1037,12 @@ void AWaveSpawnManager::SpawnBurstForGroup(int32 SpawnGroupIndex)
 
     FTimerDelegate TimerDelegate;
     TimerDelegate.BindUObject(this, &AWaveSpawnManager::SpawnBurstForGroup, SpawnGroupIndex);
+	const float NextDelay = bSpawnAllImmediately ? 0.05f : GroupDefinition.SpawnInterval;
+	PrepareSpawnTickets(SpawnGroupIndex, NextDelay);
     GetWorldTimerManager().SetTimer(
         RuntimeGroup.TimerHandle,
         TimerDelegate,
-        GroupDefinition.SpawnInterval,
+        NextDelay,
         false
     );
 }
@@ -979,7 +1182,8 @@ float AWaveSpawnManager::GetWaveTimeLimitForCurrentWave() const
     return FMath::Max(0.f, CurrentWaveDefinition.WaveTimeLimit);
 }
 
-bool AWaveSpawnManager::SpawnOneEnemyFromGroup(int32 SpawnGroupIndex, const FSpawnGroupDefinition& SpawnGroupDefinition, int32 SpawnOrdinalInGroup)
+bool AWaveSpawnManager::SpawnOneEnemyFromGroup(int32 SpawnGroupIndex, const FSpawnGroupDefinition& SpawnGroupDefinition,
+	const FSWRoomPendingSpawnTicket& Ticket)
 {
     UWorld* World = GetWorld();
     if (!World)
@@ -1007,10 +1211,12 @@ bool AWaveSpawnManager::SpawnOneEnemyFromGroup(int32 SpawnGroupIndex, const FSpa
         return false;
     }
 
-    const FTransform SpawnTransform = Route->GetSpawnTransform(SpawnGroupDefinition.SpawnRadius);
+    const FTransform SpawnTransform = Ticket.WorldTransform;
+	UClass* SavedEnemyClass = Ticket.EnemyClass.TryLoadClass<ABaseEnemy>();
+	if (!SavedEnemyClass || !Ticket.ReservedId.IsValid()) return false;
 
     ABaseEnemy* SpawnedEnemy = World->SpawnActorDeferred<ABaseEnemy>(
-        SpawnGroupDefinition.EnemyClass,
+        SavedEnemyClass,
         SpawnTransform,
         this, nullptr, SpawnCollisionHandlingMethod
     );
@@ -1028,12 +1234,22 @@ bool AWaveSpawnManager::SpawnOneEnemyFromGroup(int32 SpawnGroupIndex, const FSpa
         return false;
     }
 
-    if (!SpawnedEnemy->ConfigureSpawnBalance(SpawnGroupDefinition.StatsRow,
+	FDataTableRowHandle SavedStatsRow;
+	SavedStatsRow.DataTable = Cast<UDataTable>(Ticket.StatsTable.TryLoad());
+	SavedStatsRow.RowName = Ticket.StatsRow;
+    if (!SpawnedEnemy->ConfigureSpawnBalance(SavedStatsRow,
         SpawnGroupDefinition.HealthMultiplier, SpawnGroupDefinition.SpeedMultiplier))
     {
         SpawnedEnemy->Destroy();
         return false;
     }
+	if (USWRoomSnapshotComponent* Snapshot = SpawnedEnemy->FindComponentByClass<USWRoomSnapshotComponent>())
+	{
+		const FGuid PreviousId = Snapshot->StableId;
+		Snapshot->SetRuntimeId(Ticket.ReservedId);
+		if (USWRoomSnapshotSubsystem* Subsystem = World->GetSubsystem<USWRoomSnapshotSubsystem>())
+			Subsystem->UpdateRegisteredActorId(SpawnedEnemy, PreviousId, Ticket.ReservedId);
+	}
     SpawnedEnemy->FinishSpawning(SpawnTransform);
     if (!IsValid(SpawnedEnemy) || !SpawnedEnemy->IsBalanceReady())
     {
@@ -1042,7 +1258,7 @@ bool AWaveSpawnManager::SpawnOneEnemyFromGroup(int32 SpawnGroupIndex, const FSpa
     }
     SpawnedEnemy->SpawnDefaultController();
 
-    const int32 EnemySeed = GenerateEnemyRouteSeed(CurrentWaveArrayIndex, SpawnGroupIndex, SpawnOrdinalInGroup);
+    const int32 EnemySeed = GenerateEnemyRouteSeed(CurrentWaveArrayIndex, SpawnGroupIndex, Ticket.Ordinal);
     UEnemyWaypointMoveComponent* WaypointMoveComponent = ResolveWaypointMoveComponent(SpawnedEnemy);
 
     const TWeakObjectPtr<ABaseEnemy> EnemyKey(SpawnedEnemy);

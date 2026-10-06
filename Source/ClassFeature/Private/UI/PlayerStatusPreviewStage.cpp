@@ -28,10 +28,29 @@ namespace
 		{
 			return false;
 		}
-		if (TargetSkeleton == AnimationSkeleton || TargetSkeleton->IsCompatibleForEditor(AnimationSkeleton))
+		if (TargetSkeleton == AnimationSkeleton)
 		{
 			return true;
 		}
+#if WITH_EDITORONLY_DATA
+		if (TargetSkeleton->IsCompatibleForEditor(AnimationSkeleton))
+		{
+			return true;
+		}
+#else
+		// Both skeletons are loaded, so their cooked compatibility lists replace the editor registry query.
+		const FSoftObjectPath TargetPath(TargetSkeleton);
+		const FSoftObjectPath AnimationPath(AnimationSkeleton);
+		for (const TSoftObjectPtr<USkeleton>& Compatible : TargetSkeleton->GetCompatibleSkeletons())
+		{
+			if (Compatible.ToSoftObjectPath() == AnimationPath) return true;
+		}
+		for (const TSoftObjectPtr<USkeleton>& Compatible : AnimationSkeleton->GetCompatibleSkeletons())
+		{
+			if (Compatible.ToSoftObjectPath() == TargetPath) return true;
+		}
+#endif
+		// Cooked builds validate the bone hierarchy below without editor asset-registry APIs.
 
 		const FReferenceSkeleton& TargetReference = TargetSkeleton->GetReferenceSkeleton();
 		const FReferenceSkeleton& AnimationReference = AnimationSkeleton->GetReferenceSkeleton();

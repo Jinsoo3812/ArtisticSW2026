@@ -41,7 +41,7 @@ void AArrowImpactVisual::InitializeFromProjectile(
 
 	const float CenterBehindImpact = FMath::Max(
 		0.0f,
-		SourceProjectile.GetCollisionHalfExtent().X - FMath::Max(0.0f, EmbedDepth));
+		SourceProjectile.GetObstacleCollisionHalfExtent().X - FMath::Max(0.0f, EmbedDepth));
 	const FVector VisualLocation = FVector(ImpactData.ImpactLocation) - IncomingDirection * CenterBehindImpact;
 	SetActorLocationAndRotation(VisualLocation, IncomingDirection.Rotation(), false, nullptr, ETeleportType::TeleportPhysics);
 

@@ -41,7 +41,7 @@ void UCombatHitResolverComponent::CloseWindow()
 }
 
 bool UCombatHitResolverComponent::ResolveHit(UAbilitySystemComponent* TargetASC, const FHitResult& Hit,
-	bool bIgnoreSameTeam, bool bRequireAnimatedHurtbox)
+	bool bIgnoreSameTeam, bool bRequireAnimatedHurtbox, bool bCheckWorldStaticOcclusion)
 {
 	if (!GetOwner()->HasAuthority() || !ActiveSpec.IsValid() || !TargetASC
 		|| (Hit.GetActor() && Hit.GetActor() != TargetASC->GetAvatarActor())
@@ -61,14 +61,17 @@ bool UCombatHitResolverComponent::ResolveHit(UAbilitySystemComponent* TargetASC,
 	AActor* TargetActor = TargetASC->GetAvatarActor();
 	if (!IsValid(TargetActor) || Hit.ImpactPoint.ContainsNaN() || Hit.TraceStart.ContainsNaN()) return false;
 	if (bRequireAnimatedHurtbox && !UCombatHurtboxComponent::IsValidHitSurface(TargetActor, Hit)) return false;
-	FCollisionQueryParams Query(SCENE_QUERY_STAT(CombatDamageOcclusion), false, GetOwner());
-	Query.AddIgnoredActor(TargetActor);
-	if (IsValid(SourceActor)) Query.AddIgnoredActor(SourceActor);
-	FHitResult Obstruction;
-	const FVector TraceStart = Hit.GetActor() ? FVector(Hit.TraceStart) : GetOwner()->GetActorLocation();
-	const FVector TraceEnd = Hit.GetActor() ? FVector(Hit.ImpactPoint) : TargetActor->GetActorLocation();
-	if (GetWorld() && GetWorld()->LineTraceSingleByObjectType(Obstruction, TraceStart, TraceEnd,
-		FCollisionObjectQueryParams(ECC_WorldStatic), Query)) return false;
+	if (bCheckWorldStaticOcclusion)
+	{
+		FCollisionQueryParams Query(SCENE_QUERY_STAT(CombatDamageOcclusion), false, GetOwner());
+		Query.AddIgnoredActor(TargetActor);
+		if (IsValid(SourceActor)) Query.AddIgnoredActor(SourceActor);
+		FHitResult Obstruction;
+		const FVector TraceStart = Hit.GetActor() ? FVector(Hit.TraceStart) : GetOwner()->GetActorLocation();
+		const FVector TraceEnd = Hit.GetActor() ? FVector(Hit.ImpactPoint) : TargetActor->GetActorLocation();
+		if (GetWorld() && GetWorld()->LineTraceSingleByObjectType(Obstruction, TraceStart, TraceEnd,
+			FCollisionObjectQueryParams(ECC_WorldStatic), Query)) return false;
+	}
 	HitTargets.Add(TargetASC); // reserve before callbacks
 	FGameplayEffectSpec TargetSpec(*ActiveSpec.Data.Get());
 	USWCombatEffectContextLibrary::EnrichCombatEffectSpec(TargetSpec, SourceActor, GetOwner(),

@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "ShipAI/EnemyShip.h"
+#include "Room/SWRoomProgressSubsystem.h"
 #include "Cannon.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
@@ -41,7 +42,7 @@
 #include "ShipAI/EnemyShipWeakeningWorldSubsystem.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckEnemySpawnerComponent.h"
-#include "DeckAI/DeckNavigationComponent.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "BossAI/BossEncounterComponent.h"
 #include "BossAI/ShipBossEnemy.h"
@@ -51,18 +52,123 @@
 #include "Net/UnrealNetwork.h"
 #include "UObject/UnrealType.h"
 #include "SWCabinWaterCullComponent.h"
+#include "DeckAI/DeckSpawnAnchorValidator.h"
+#include "Room/SWRoomSnapshotComponent.h"
+#include "StoryFacadeSubsystem.h"
+#include "Network/SWFinalEncounterDiagnostics.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogEnemyShipChestSpawnPoint, Log, All);
+static const FName FinalBossSquadId(TEXT("Final"));
+static const TCHAR* FinalBossShipArchetypePath = TEXT("/Game/Blueprints/Ship/Enemy_Ship/Data/Archetype/Elite/DA_ES_TimeStop.DA_ES_TimeStop");
 
-#if WITH_EDITOR
-#include "Editor.h"
-#include "Engine/Blueprint.h"
-#include "Engine/SCS_Node.h"
-#include "Engine/SimpleConstructionScript.h"
-#include "Kismet2/BlueprintEditorUtils.h"
-#include "Kismet2/KismetEditorUtilities.h"
-#include "ScopedTransaction.h"
-#endif
+void AEnemyShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	AShip::CaptureRoomDomains(OutParts, OutIssues);
+	FSWRoomEnemyShipState State;
+	State.bDeathHandled = bDeathHandled;
+	State.bHasDropped = bHasDropped;
+	State.bCrewDefeated = bCrewDefeated;
+	State.bHasEverHadLivingCrew = bHasEverHadLivingCrew;
+ State.bStoryGateOpen = bStoryGateOpen;
+ if (bDevelopmentStoryGateOpened)
+ {
+  const UStoryFacadeSubsystem* Story=GetGameInstance() ? GetGameInstance()->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
+  if (!Story || !Story->IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted)) State.bStoryGateOpen=false;
+ }
+	for (ABaseEnemy* Crew : RegisteredCrewEnemies)
+	{
+		if (!IsValid(Crew)) continue;
+		if (const USWRoomSnapshotComponent* Id = Crew->FindComponentByClass<USWRoomSnapshotComponent>(); Id && Id->StableId.IsValid())
+			State.CrewIds.AddUnique(Id->StableId);
+		else
+		{
+			FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+			Issue.Domain = TEXT("Enemy");
+			Issue.FieldKey = FName(*(TEXT("Crew:") + Crew->GetPathName()));
+			Issue.Reason = TEXT("Crew member has no stable ID");
+		}
+	}
+	if (RegisteredBoss)
+		if (const USWRoomSnapshotComponent* Id = RegisteredBoss->FindComponentByClass<USWRoomSnapshotComponent>())
+			State.BossId = Id->StableId;
+	if (DeckEnemySpawnerComponent) DeckEnemySpawnerComponent->CaptureRoomState(State.DeckSpawner, OutIssues);
+	if (BossEncounterComponent) BossEncounterComponent->CaptureRoomState(State.BossEncounter, OutIssues);
+	State.CrewIds.Sort();
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Enemy;
+	Part.Version = 3;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Enemy");
+		Issue.FieldKey = TEXT("EnemyShipState");
+		Issue.Reason = TEXT("Enemy ship serialization failed");
+	}
+}
+
+bool AEnemyShip::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	if (Part.Domain == ESWRoomDomain::Ship) return AShip::RestoreRoomDomain(Part, OutError);
+	FSWRoomEnemyShipState State;
+	if (Part.Domain != ESWRoomDomain::Enemy || (Part.Version != 2 && Part.Version != 3)
+		|| !FSWRoomStructCodec::Read(Part.Bytes, State))
+	{
+		OutError = TEXT("Invalid enemy ship state");
+		return false;
+	}
+	if (DeckEnemySpawnerComponent && !DeckEnemySpawnerComponent->RestoreRoomState(State.DeckSpawner, OutError)) return false;
+	if (BossEncounterComponent && !BossEncounterComponent->RestoreRoomState(State.BossEncounter, OutError)) return false;
+	bDeathHandled = State.bDeathHandled;
+	bHasDropped = State.bHasDropped;
+	bCrewDefeated = State.bCrewDefeated;
+	bHasEverHadLivingCrew = State.bHasEverHadLivingCrew;
+	if (IsFinalBossSquadShip())
+	{
+		if (Part.Version == 3) bStoryGateOpen = State.bStoryGateOpen;
+		else if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UStoryFacadeSubsystem* Story = GameInstance->GetSubsystem<UStoryFacadeSubsystem>())
+			{
+				bStoryGateOpen = Story->IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted)
+					&& !Story->IsStoryNodeReached(EStoryNode::FinalBossDefeated);
+			}
+		}
+	}
+	RegisteredCrewEnemies.Reset();
+	RegisteredBoss = nullptr;
+	PendingRoomState = MoveTemp(State);
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool AEnemyShip::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!AShip::FinalizeRoomRestore(RegisteredActors, OutError)) return false;
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	for (const FGuid& Id : PendingRoomState.CrewIds)
+	{
+		AActor* const* Found = RegisteredActors.Find(Id);
+		ABaseEnemy* Crew = Found ? Cast<ABaseEnemy>(*Found) : nullptr;
+		if (!Crew)
+		{
+			OutError = FString::Printf(TEXT("Enemy ship crew missing: %s"), *Id.ToString());
+			return false;
+		}
+		RegisteredCrewEnemies.Add(Crew);
+		Crew->OnBaseEnemyDeathNotified.AddUniqueDynamic(this, &AEnemyShip::HandleCrewEnemyRemoved);
+	}
+	if (AActor* const* Found = RegisteredActors.Find(PendingRoomState.BossId))
+		RegisteredBoss = Cast<AShipBossEnemy>(*Found);
+	if (DeckEnemySpawnerComponent && !DeckEnemySpawnerComponent->FinalizeRoomState(RegisteredActors, OutError)) return false;
+	if (BossEncounterComponent && !BossEncounterComponent->FinalizeRoomState(RegisteredActors, OutError)) return false;
+	if (IsStoryGateDormant() && DeckEnemySpawnerComponent) DeckEnemySpawnerComponent->CancelDeployment();
+	ApplyEffectiveDormancyState();
+	ApplyStoryGatePresentation();
+	ApplyStoryGateToSpawnedChests();
+	return true;
+}
 
 namespace
 {
@@ -77,632 +183,13 @@ namespace
 		200.0f,
 		TEXT("Vertical offset in cm for p.ShowEnemyShipAIDebug range lines."),
 		ECVF_Cheat);
-
-#if WITH_EDITOR
-	struct FGeneratedDeckSample
-	{
-		int32 GridX = INDEX_NONE;
-		int32 GridY = INDEX_NONE;
-		FVector LocalPosition = FVector::ZeroVector;
-	};
-
-	struct FGeneratedDeckSampleSet
-	{
-		FBox LocalBounds = FBox(EForceInit::ForceInit);
-		int32 GridCountX = 0;
-		int32 GridCountY = 0;
-		TArray<FGeneratedDeckSample> Samples;
-	};
-
-	int64 MakeDeckGridKey(int32 GridX, int32 GridY)
-	{
-		return (static_cast<int64>(GridX) << 32) | static_cast<uint32>(GridY);
-	}
-
-	bool TraceDeckSurface(
-		UStaticMeshComponent& DeckMesh,
-		const FBox& LocalBounds,
-		float LocalX,
-		float LocalY,
-		const FDeckWaypointGenerationSettings& Settings,
-		FVector& OutLocalPosition)
-	{
-		const FVector ComponentScale = DeckMesh.GetComponentScale().GetAbs();
-		const float LocalTraceMargin = Settings.TraceMargin / FMath::Max(ComponentScale.Z, UE_SMALL_NUMBER);
-		const FTransform DeckTransform = DeckMesh.GetComponentTransform();
-		const FVector TraceStart = DeckTransform.TransformPosition(
-			FVector(LocalX, LocalY, LocalBounds.Max.Z + LocalTraceMargin));
-		const FVector TraceEnd = DeckTransform.TransformPosition(
-			FVector(LocalX, LocalY, LocalBounds.Min.Z - LocalTraceMargin));
-
-		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(GenerateDeckWaypoint), true);
-		QueryParams.bReturnPhysicalMaterial = false;
-		FHitResult Hit;
-		if (!DeckMesh.LineTraceComponent(Hit, TraceStart, TraceEnd, QueryParams))
-		{
-			return false;
-		}
-
-		const FVector DeckUp = DeckMesh.GetUpVector().GetSafeNormal();
-		const float MinimumWalkableDot = FMath::Cos(FMath::DegreesToRadians(
-			FMath::Clamp(Settings.MaximumWalkableSlope, 0.0f, 89.0f)));
-		if (FVector::DotProduct(Hit.ImpactNormal.GetSafeNormal(), DeckUp) < MinimumWalkableDot)
-		{
-			return false;
-		}
-
-		OutLocalPosition = DeckTransform.InverseTransformPosition(Hit.ImpactPoint);
-		return true;
-	}
-
-	bool IsDeckSampleSupported(
-		UStaticMeshComponent& DeckMesh,
-		const FBox& LocalBounds,
-		float LocalX,
-		float LocalY,
-		const FDeckWaypointGenerationSettings& Settings,
-		FVector& OutLocalPosition)
-	{
-		if (!TraceDeckSurface(DeckMesh, LocalBounds, LocalX, LocalY, Settings, OutLocalPosition))
-		{
-			return false;
-		}
-
-		const float Clearance = FMath::Max(0.0f, Settings.EdgeClearance);
-		if (Clearance <= UE_SMALL_NUMBER)
-		{
-			return true;
-		}
-
-		const FVector ComponentScale = DeckMesh.GetComponentScale().GetAbs();
-		const FTransform DeckTransform = DeckMesh.GetComponentTransform();
-		const FVector CenterWorld = DeckTransform.TransformPosition(OutLocalPosition);
-		const FVector DeckUp = DeckMesh.GetUpVector().GetSafeNormal();
-		constexpr int32 ClearanceSampleCount = 8;
-		for (int32 SampleIndex = 0; SampleIndex < ClearanceSampleCount; ++SampleIndex)
-		{
-			const float Angle = 2.0f * UE_PI * static_cast<float>(SampleIndex)
-				/ static_cast<float>(ClearanceSampleCount);
-			const float OffsetX = FMath::Cos(Angle) * Clearance / FMath::Max(ComponentScale.X, UE_SMALL_NUMBER);
-			const float OffsetY = FMath::Sin(Angle) * Clearance / FMath::Max(ComponentScale.Y, UE_SMALL_NUMBER);
-			FVector SupportLocal;
-			if (!TraceDeckSurface(
-				DeckMesh, LocalBounds, LocalX + OffsetX, LocalY + OffsetY, Settings, SupportLocal))
-			{
-				return false;
-			}
-
-			const FVector SupportWorld = DeckTransform.TransformPosition(SupportLocal);
-			const float HeightDelta = FMath::Abs(FVector::DotProduct(SupportWorld - CenterWorld, DeckUp));
-			if (HeightDelta > FMath::Max(0.0f, Settings.MaximumStepHeight))
-			{
-				return false;
-			}
-		}
-		return true;
-	}
-
-	FVector GetDeckLocalWaypointLocation(
-		const UDeckWaypointComponent& Waypoint,
-		const UStaticMeshComponent& DeckMesh)
-	{
-		if (Waypoint.IsRegistered() && DeckMesh.IsRegistered())
-		{
-			return DeckMesh.GetComponentTransform().InverseTransformPosition(
-				Waypoint.GetComponentLocation());
-		}
-		return Waypoint.GetRelativeLocation();
-	}
-
-	bool IsDeckConnectionSupported(
-		UStaticMeshComponent& DeckMesh,
-		const FBox& LocalBounds,
-		const FVector& Start,
-		const FVector& End,
-		const FDeckWaypointGenerationSettings& Settings)
-	{
-		FDeckWaypointGenerationSettings LinkSettings = Settings;
-		LinkSettings.EdgeClearance = 0.0f;
-		const FTransform DeckTransform = DeckMesh.GetComponentTransform();
-		const float Distance = FVector::Dist2D(
-			DeckTransform.TransformPosition(Start),
-			DeckTransform.TransformPosition(End));
-		const int32 SegmentCount = FMath::Max(
-			1,
-			FMath::CeilToInt(Distance / FMath::Max(10.0f, Settings.AutomaticLinkSampleSpacing)));
-		FVector PreviousSupportWorld = DeckTransform.TransformPosition(Start);
-		const FVector DeckUp = DeckMesh.GetUpVector().GetSafeNormal();
-		for (int32 SegmentIndex = 0; SegmentIndex <= SegmentCount; ++SegmentIndex)
-		{
-			const float Alpha = static_cast<float>(SegmentIndex) / static_cast<float>(SegmentCount);
-			const FVector Desired = FMath::Lerp(Start, End, Alpha);
-			FVector Support;
-			if (!IsDeckSampleSupported(
-				DeckMesh, LocalBounds, Desired.X, Desired.Y, LinkSettings, Support))
-			{
-				return false;
-			}
-			const FVector SupportWorld = DeckTransform.TransformPosition(Support);
-			if (SegmentIndex > 0
-				&& FMath::Abs(FVector::DotProduct(SupportWorld - PreviousSupportWorld, DeckUp))
-					> FMath::Max(0.0f, Settings.MaximumStepHeight))
-			{
-				return false;
-			}
-			PreviousSupportWorld = SupportWorld;
-		}
-		return true;
-	}
-
-	int32 AssignDeckWaypointIds(
-		TArray<UDeckWaypointComponent*>& Waypoints,
-		const FDeckWaypointGenerationSettings& Settings)
-	{
-		Waypoints.Sort([](const UDeckWaypointComponent& Left, const UDeckWaypointComponent& Right)
-		{
-			return Left.GetName() < Right.GetName();
-		});
-
-		const int32 GeneratedBase = FMath::Max(2, Settings.GeneratedWaypointIdBase);
-		const int32 ManualBase = FMath::Clamp(Settings.ManualWaypointIdBase, 1, GeneratedBase - 1);
-		int32 NextManualId = ManualBase;
-		int32 NextGeneratedId = GeneratedBase;
-		TSet<int32> UsedIds;
-		int32 ChangedCount = 0;
-
-		for (UDeckWaypointComponent* Waypoint : Waypoints)
-		{
-			if (!IsValid(Waypoint))
-			{
-				continue;
-			}
-			const int32 CurrentId = Waypoint->GetWaypointId();
-			const bool bGenerated = Waypoint->WasGeneratedFromDeckMesh();
-			const bool bInExpectedRange = bGenerated
-				? CurrentId >= GeneratedBase
-				: CurrentId >= ManualBase && CurrentId < GeneratedBase;
-			if (bInExpectedRange && !UsedIds.Contains(CurrentId))
-			{
-				UsedIds.Add(CurrentId);
-				continue;
-			}
-
-			int32& CandidateId = bGenerated ? NextGeneratedId : NextManualId;
-			const int32 MaximumId = bGenerated ? MAX_int32 : GeneratedBase - 1;
-			while (CandidateId < MaximumId && UsedIds.Contains(CandidateId))
-			{
-				++CandidateId;
-			}
-			if (UsedIds.Contains(CandidateId))
-			{
-				continue;
-			}
-			Waypoint->Modify();
-			Waypoint->SetWaypointIdForAuthoring(CandidateId);
-			UsedIds.Add(CandidateId);
-			++CandidateId;
-			++ChangedCount;
-		}
-		return ChangedCount;
-	}
-
-	int32 RebuildDeckWaypointLinks(
-		TArray<UDeckWaypointComponent*>& Waypoints,
-		UStaticMeshComponent& DeckMesh,
-		const FDeckWaypointGenerationSettings& Settings)
-	{
-		const UStaticMesh* DeckAsset = DeckMesh.GetStaticMesh();
-		if (!DeckAsset)
-		{
-			return 0;
-		}
-
-		TMap<int32, UDeckWaypointComponent*> WaypointById;
-		TMap<UDeckWaypointComponent*, TArray<int32>> LinksByWaypoint;
-		for (UDeckWaypointComponent* Waypoint : Waypoints)
-		{
-			if (!IsValid(Waypoint))
-			{
-				continue;
-			}
-			WaypointById.FindOrAdd(Waypoint->GetWaypointId(), Waypoint);
-			TArray<int32>& Links = LinksByWaypoint.FindOrAdd(Waypoint);
-			if (!Waypoint->AllowsAutomaticLinks())
-			{
-				for (const int32 LinkedId : Waypoint->GetLinkedWaypointIds())
-				{
-					if (LinkedId != Waypoint->GetWaypointId())
-					{
-						Links.AddUnique(LinkedId);
-					}
-				}
-			}
-		}
-
-		for (const TPair<UDeckWaypointComponent*, TArray<int32>>& Pair : LinksByWaypoint)
-		{
-			if (Pair.Key->AllowsAutomaticLinks())
-			{
-				continue;
-			}
-			for (const int32 LinkedId : Pair.Value)
-			{
-				if (UDeckWaypointComponent* const* Linked = WaypointById.Find(LinkedId))
-				{
-					LinksByWaypoint.FindOrAdd(*Linked).AddUnique(Pair.Key->GetWaypointId());
-				}
-			}
-		}
-
-		const FBox LocalBounds = DeckAsset->GetBoundingBox();
-		int32 LinkCount = 0;
-		for (int32 FirstIndex = 0; FirstIndex < Waypoints.Num(); ++FirstIndex)
-		{
-			UDeckWaypointComponent* First = Waypoints[FirstIndex];
-			if (!IsValid(First) || !First->AllowsAutomaticLinks())
-			{
-				continue;
-			}
-			const FVector FirstLocation = GetDeckLocalWaypointLocation(*First, DeckMesh);
-			const float FirstRadius = First->GetAutomaticLinkDistanceOverride() > 0.0f
-				? First->GetAutomaticLinkDistanceOverride()
-				: Settings.AutomaticLinkDistance;
-			for (int32 SecondIndex = FirstIndex + 1; SecondIndex < Waypoints.Num(); ++SecondIndex)
-			{
-				UDeckWaypointComponent* Second = Waypoints[SecondIndex];
-				if (!IsValid(Second) || !Second->AllowsAutomaticLinks())
-				{
-					continue;
-				}
-				const FVector SecondLocation = GetDeckLocalWaypointLocation(*Second, DeckMesh);
-				const float SecondRadius = Second->GetAutomaticLinkDistanceOverride() > 0.0f
-					? Second->GetAutomaticLinkDistanceOverride()
-					: Settings.AutomaticLinkDistance;
-				if (FVector::Dist2D(
-						DeckMesh.GetComponentTransform().TransformPosition(FirstLocation),
-						DeckMesh.GetComponentTransform().TransformPosition(SecondLocation))
-						> FMath::Min(FirstRadius, SecondRadius)
-					|| !IsDeckConnectionSupported(
-						DeckMesh, LocalBounds, FirstLocation, SecondLocation, Settings))
-				{
-					continue;
-				}
-				LinksByWaypoint.FindOrAdd(First).AddUnique(Second->GetWaypointId());
-				LinksByWaypoint.FindOrAdd(Second).AddUnique(First->GetWaypointId());
-				++LinkCount;
-			}
-		}
-
-		for (TPair<UDeckWaypointComponent*, TArray<int32>>& Pair : LinksByWaypoint)
-		{
-			Pair.Key->Modify();
-			Pair.Key->SetLinkedWaypointIdsForAuthoring(Pair.Value);
-		}
-		return LinkCount;
-	}
-
-	bool IsPlacedEditorActor(const AActor& Actor)
-	{
-		const UWorld* World = Actor.GetWorld();
-		return !Actor.HasAnyFlags(RF_ClassDefaultObject)
-			&& World
-			&& World->WorldType == EWorldType::Editor;
-	}
-
-	bool IsBlueprintAssetAuthoringContext(const AActor& Actor)
-	{
-		const UWorld* World = Actor.GetWorld();
-		return Actor.HasAnyFlags(RF_ClassDefaultObject)
-			|| (World && World->WorldType == EWorldType::EditorPreview);
-	}
-
-	UBlueprint* GetActorBlueprint(const AActor& Actor)
-	{
-		return Cast<UBlueprint>(Actor.GetClass()->ClassGeneratedBy);
-	}
-
-	bool BuildGeneratedDeckSamples(AEnemyShip& Ship, FGeneratedDeckSampleSet& OutSampleSet)
-	{
-		UStaticMeshComponent* DeckMesh = Ship.GetShipDeckMesh();
-		if (!DeckMesh || !DeckMesh->GetStaticMesh() || !DeckMesh->IsRegistered())
-		{
-			return false;
-		}
-
-		OutSampleSet = FGeneratedDeckSampleSet();
-		OutSampleSet.LocalBounds = DeckMesh->GetStaticMesh()->GetBoundingBox();
-		const FVector ComponentScale = DeckMesh->GetComponentScale().GetAbs();
-		const FDeckWaypointGenerationSettings& Settings = Ship.DeckWaypointGenerationSettings;
-		const float Spacing = FMath::Max(25.0f, Settings.GridSpacing);
-		const float LocalSpacingX = Spacing / FMath::Max(ComponentScale.X, UE_SMALL_NUMBER);
-		const float LocalSpacingY = Spacing / FMath::Max(ComponentScale.Y, UE_SMALL_NUMBER);
-		OutSampleSet.GridCountX = FMath::Max(
-			1, FMath::CeilToInt(OutSampleSet.LocalBounds.GetSize().X / LocalSpacingX));
-		OutSampleSet.GridCountY = FMath::Max(
-			1, FMath::CeilToInt(OutSampleSet.LocalBounds.GetSize().Y / LocalSpacingY));
-
-		for (int32 GridY = 0; GridY < OutSampleSet.GridCountY; ++GridY)
-		{
-			const float LocalY = FMath::Lerp(
-				OutSampleSet.LocalBounds.Min.Y,
-				OutSampleSet.LocalBounds.Max.Y,
-				(static_cast<float>(GridY) + 0.5f) / static_cast<float>(OutSampleSet.GridCountY));
-			for (int32 GridX = 0; GridX < OutSampleSet.GridCountX; ++GridX)
-			{
-				const float LocalX = FMath::Lerp(
-					OutSampleSet.LocalBounds.Min.X,
-					OutSampleSet.LocalBounds.Max.X,
-					(static_cast<float>(GridX) + 0.5f) / static_cast<float>(OutSampleSet.GridCountX));
-				FVector LocalPosition;
-				if (!IsDeckSampleSupported(
-					*DeckMesh, OutSampleSet.LocalBounds, LocalX, LocalY, Settings, LocalPosition))
-				{
-					continue;
-				}
-
-				FGeneratedDeckSample& Sample = OutSampleSet.Samples.AddDefaulted_GetRef();
-				Sample.GridX = GridX;
-				Sample.GridY = GridY;
-				Sample.LocalPosition = LocalPosition;
-			}
-		}
-		return true;
-	}
-
-	AEnemyShip* ResolveDeckSamplingActor(
-		AEnemyShip& Context,
-		bool& bOutTemporaryActor,
-		bool bForceTemporaryActor = false)
-	{
-		bOutTemporaryActor = false;
-		if (!bForceTemporaryActor
-			&& Context.GetShipDeckMesh()
-			&& Context.GetShipDeckMesh()->IsRegistered())
-		{
-			return &Context;
-		}
-		if (!GEditor)
-		{
-			return nullptr;
-		}
-
-		UWorld* EditorWorld = GEditor->GetEditorWorldContext().World();
-		if (!EditorWorld)
-		{
-			return nullptr;
-		}
-
-		FActorSpawnParameters SpawnParameters;
-		SpawnParameters.ObjectFlags |= RF_Transient;
-		SpawnParameters.bTemporaryEditorActor = true;
-		SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		AEnemyShip* SamplingActor = EditorWorld->SpawnActor<AEnemyShip>(
-			Context.GetClass(), FTransform::Identity, SpawnParameters);
-		if (SamplingActor)
-		{
-			SamplingActor->DeckWaypointGenerationSettings = Context.DeckWaypointGenerationSettings;
-			bOutTemporaryActor = true;
-		}
-		return SamplingActor;
-	}
-
-	void GetBlueprintWaypointTemplates(
-		USimpleConstructionScript& SCS,
-		TArray<UDeckWaypointComponent*>& OutWaypoints)
-	{
-		OutWaypoints.Reset();
-		for (USCS_Node* Node : SCS.GetAllNodes())
-		{
-			if (UDeckWaypointComponent* Waypoint = Node
-				? Cast<UDeckWaypointComponent>(Node->ComponentTemplate)
-				: nullptr)
-			{
-				OutWaypoints.Add(Waypoint);
-			}
-		}
-	}
-
-	bool GenerateDeckWaypointsInBlueprintAsset(AEnemyShip& Context, FString& OutSummary)
-	{
-		UBlueprint* Blueprint = GetActorBlueprint(Context);
-		USimpleConstructionScript* SCS = Blueprint ? Blueprint->SimpleConstructionScript : nullptr;
-		AEnemyShip* BlueprintCDO = Blueprint && Blueprint->GeneratedClass
-			? Cast<AEnemyShip>(Blueprint->GeneratedClass->GetDefaultObject())
-			: nullptr;
-		if (!Blueprint || !SCS || !BlueprintCDO || !BlueprintCDO->GetShipDeckMesh())
-		{
-			OutSummary = TEXT("Blueprint Asset generation requires an EnemyShip Blueprint with ShipDeckMesh.");
-			return false;
-		}
-
-		bool bTemporarySamplingActor = false;
-		AEnemyShip* SamplingActor = ResolveDeckSamplingActor(Context, bTemporarySamplingActor);
-		FGeneratedDeckSampleSet SampleSet;
-		if (!SamplingActor || !BuildGeneratedDeckSamples(*SamplingActor, SampleSet))
-		{
-			if (bTemporarySamplingActor && IsValid(SamplingActor))
-			{
-				SamplingActor->Destroy();
-			}
-			OutSummary = TEXT("Could not sample the Blueprint ShipDeckMesh. Check its Static Mesh and query collision.");
-			return false;
-		}
-
-		const FScopedTransaction Transaction(NSLOCTEXT(
-			"DeckWaypointGenerator", "GenerateBlueprintWaypoints", "Generate Deck Waypoints In Blueprint"));
-		Blueprint->Modify();
-		SCS->Modify();
-
-		TMap<int64, USCS_Node*> ExistingGeneratedByGrid;
-		TArray<USCS_Node*> ExistingGeneratedNodes;
-		TSet<int32> UsedWaypointIds;
-		for (USCS_Node* Node : SCS->GetAllNodes())
-		{
-			UDeckWaypointComponent* WaypointTemplate = Node
-				? Cast<UDeckWaypointComponent>(Node->ComponentTemplate)
-				: nullptr;
-			if (!WaypointTemplate)
-			{
-				continue;
-			}
-			UsedWaypointIds.Add(WaypointTemplate->GetWaypointId());
-			if (WaypointTemplate->WasGeneratedFromDeckMesh())
-			{
-				ExistingGeneratedNodes.Add(Node);
-				const int64 GridKey = MakeDeckGridKey(
-					WaypointTemplate->GetGeneratedGridX(), WaypointTemplate->GetGeneratedGridY());
-				ExistingGeneratedByGrid.FindOrAdd(GridKey, Node);
-			}
-		}
-		TArray<UDeckWaypointComponent*> RuntimeWaypoints;
-		SamplingActor->GetComponents<UDeckWaypointComponent>(RuntimeWaypoints);
-		for (const UDeckWaypointComponent* Waypoint : RuntimeWaypoints)
-		{
-			if (IsValid(Waypoint))
-			{
-				UsedWaypointIds.Add(Waypoint->GetWaypointId());
-			}
-		}
-
-		TSet<USCS_Node*> RetainedNodes;
-		int32 CreatedCount = 0;
-		int32 UpdatedCount = 0;
-		for (const FGeneratedDeckSample& Sample : SampleSet.Samples)
-		{
-			const int64 GridKey = MakeDeckGridKey(Sample.GridX, Sample.GridY);
-			USCS_Node* Node = ExistingGeneratedByGrid.FindRef(GridKey);
-			UDeckWaypointComponent* WaypointTemplate = Node
-				? Cast<UDeckWaypointComponent>(Node->ComponentTemplate)
-				: nullptr;
-			if (WaypointTemplate)
-			{
-				Node->Modify();
-				WaypointTemplate->Modify();
-				if (!WaypointTemplate->IsGeneratedLocationLocked())
-				{
-					WaypointTemplate->SetRelativeLocation(Sample.LocalPosition);
-				}
-				WaypointTemplate->InitializeGeneratedWaypoint(
-					WaypointTemplate->GetWaypointId(), Sample.GridX, Sample.GridY,
-					WaypointTemplate->CanSpawnEnemy(), WaypointTemplate->CanPatrol(),
-					WaypointTemplate->CanUseInCombat());
-				++UpdatedCount;
-			}
-			else
-			{
-				int32 WaypointId = Context.DeckWaypointGenerationSettings.GeneratedWaypointIdBase
-					+ Sample.GridY * SampleSet.GridCountX + Sample.GridX;
-				while (UsedWaypointIds.Contains(WaypointId) && WaypointId < MAX_int32)
-				{
-					++WaypointId;
-				}
-				if (WaypointId == MAX_int32 && UsedWaypointIds.Contains(WaypointId))
-				{
-					continue;
-				}
-
-				const FName VariableName(*FString::Printf(TEXT("GeneratedDeckWaypoint_%d"), WaypointId));
-				Node = SCS->CreateNode(UDeckWaypointComponent::StaticClass(), VariableName);
-				WaypointTemplate = Node ? Cast<UDeckWaypointComponent>(Node->ComponentTemplate) : nullptr;
-				if (!Node || !WaypointTemplate)
-				{
-					continue;
-				}
-				WaypointTemplate->SetRelativeLocation(Sample.LocalPosition);
-				WaypointTemplate->InitializeGeneratedWaypoint(
-					WaypointId, Sample.GridX, Sample.GridY,
-					Context.DeckWaypointGenerationSettings.bNewPointsCanSpawn,
-					Context.DeckWaypointGenerationSettings.bNewPointsCanPatrol,
-					Context.DeckWaypointGenerationSettings.bNewPointsCanUseInCombat);
-				SCS->AddNode(Node);
-				Node->SetParent(BlueprintCDO->GetShipDeckMesh());
-				UsedWaypointIds.Add(WaypointId);
-				++CreatedCount;
-			}
-
-			RetainedNodes.Add(Node);
-		}
-
-		int32 RemovedCount = 0;
-		for (USCS_Node* Node : ExistingGeneratedNodes)
-		{
-			UDeckWaypointComponent* WaypointTemplate = Node
-				? Cast<UDeckWaypointComponent>(Node->ComponentTemplate)
-				: nullptr;
-			if (!WaypointTemplate || RetainedNodes.Contains(Node)
-				|| WaypointTemplate->IsGeneratedLocationLocked())
-			{
-				continue;
-			}
-			SCS->RemoveNode(Node);
-			++RemovedCount;
-		}
-
-		TArray<UDeckWaypointComponent*> AllWaypointTemplates;
-		GetBlueprintWaypointTemplates(*SCS, AllWaypointTemplates);
-		AssignDeckWaypointIds(AllWaypointTemplates, Context.DeckWaypointGenerationSettings);
-		RebuildDeckWaypointLinks(
-			AllWaypointTemplates,
-			*SamplingActor->GetShipDeckMesh(),
-			Context.DeckWaypointGenerationSettings);
-
-		if (bTemporarySamplingActor && IsValid(SamplingActor))
-		{
-			SamplingActor->Destroy();
-		}
-		OutSummary = FString::Printf(
-			TEXT("Blueprint generated %d deck points: %d new, %d updated, %d removed."),
-			SampleSet.Samples.Num(), CreatedCount, UpdatedCount, RemovedCount);
-		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
-		FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipGarbageCollection);
-		return true;
-	}
-
-	bool ClearDeckWaypointsInBlueprintAsset(AEnemyShip& Context, FString& OutSummary)
-	{
-		UBlueprint* Blueprint = GetActorBlueprint(Context);
-		USimpleConstructionScript* SCS = Blueprint ? Blueprint->SimpleConstructionScript : nullptr;
-		if (!Blueprint || !SCS)
-		{
-			OutSummary = TEXT("Blueprint Asset clear requires an EnemyShip Blueprint.");
-			return false;
-		}
-
-		const FScopedTransaction Transaction(NSLOCTEXT(
-			"DeckWaypointGenerator", "ClearBlueprintWaypoints", "Clear Generated Deck Waypoints In Blueprint"));
-		Blueprint->Modify();
-		SCS->Modify();
-		TArray<USCS_Node*> NodesToRemove;
-		for (USCS_Node* Node : SCS->GetAllNodes())
-		{
-			const UDeckWaypointComponent* WaypointTemplate = Node
-				? Cast<UDeckWaypointComponent>(Node->ComponentTemplate)
-				: nullptr;
-			if (WaypointTemplate && WaypointTemplate->WasGeneratedFromDeckMesh())
-			{
-				NodesToRemove.Add(Node);
-			}
-		}
-		for (USCS_Node* Node : NodesToRemove)
-		{
-			SCS->RemoveNode(Node);
-		}
-
-		OutSummary = FString::Printf(
-			TEXT("Removed %d mesh-generated points from the Blueprint. Manual points were preserved."),
-			NodesToRemove.Num());
-		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
-		FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipGarbageCollection);
-		return true;
-	}
-#endif
 }
 
 AEnemyShip::AEnemyShip()
 {
 	BossEncounterComponent = CreateDefaultSubobject<UBossEncounterComponent>(TEXT("BossEncounterComponent"));
 	DeckEnemySpawnerComponent = CreateDefaultSubobject<UDeckEnemySpawnerComponent>(TEXT("DeckEnemySpawnerComponent"));
-	DeckNavigationComponent = CreateDefaultSubobject<UDeckNavigationComponent>(TEXT("DeckNavigationComponent"));
+	DeckWalkAreaComponent = CreateDefaultSubobject<UDeckWalkAreaComponent>(TEXT("DeckWalkAreaComponent"));
 	PrimaryActorTick.bCanEverTick = true;
 
 	HealthComponent = CreateDefaultSubobject<UBaseHealthComponent>(TEXT("HealthComponent"));
@@ -734,6 +221,7 @@ void AEnemyShip::OnConstruction(const FTransform& Transform)
 void AEnemyShip::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
+	if (IsFinalBossSquadShip()) ApplyStoryGatePresentation();
 	ApplyChestSpawnPointSettings();
 }
 
@@ -841,7 +329,16 @@ void AEnemyShip::BeginPlay()
 			Weakening->RegisterShip(this);
 		}
 		InitializeDeckWaypoints();
-		InitializeDeckEnemyPool();
+		if (DeckWalkAreaComponent)
+		{
+			DeckWalkAreaComponent->Rebuild();
+			if (!DeckWalkAreaComponent->IsReady())
+			{
+				UE_LOG(LogTemp, Error, TEXT("[DeckWalk] Required walk area is unavailable on %s"),
+					*GetName());
+			}
+		}
+		if (DeckWalkAreaComponent && DeckWalkAreaComponent->IsReady()) InitializeDeckEnemyPool();
 
 		if (NavigationComponent)
 		{
@@ -852,12 +349,83 @@ void AEnemyShip::BeginPlay()
 		{
 			SwarmSubsystem->RegisterShip(this);
 		}
+		if (IsFinalBossSquadShip())
+		{
+			static TWeakObjectPtr<UWorld> LastCountedFinalWorld;
+			if (LastCountedFinalWorld.Get() != GetWorld())
+			{
+				LastCountedFinalWorld = GetWorld();
+				int32 FinalCount = 0;
+				int32 OwnerCount = 0;
+				for (TActorIterator<AEnemyShip> It(GetWorld()); It; ++It)
+				{
+					if (!It->IsFinalBossSquadShip()) continue;
+					++FinalCount;
+					if (It->EnemyShipArchetype
+						&& It->EnemyShipArchetype->GetPathName() == FinalBossShipArchetypePath) ++OwnerCount;
+				}
+				FSWFinalEncounterDiagnostics::Write(TEXT("FinalSquad"), TEXT("LevelCensus"),
+					FString::Printf(TEXT("Count=%d BossShipCount=%d"), FinalCount, OwnerCount));
+			}
+			FSWFinalEncounterDiagnostics::Write(TEXT("FinalSquad"), TEXT("ShipFound"),
+				FString::Printf(TEXT("Ship=%s Label=%s Archetype=%s SquadID=%s GateOpen=%d"),
+					*GetPathName(), *GetActorNameOrLabel(), *GetPathNameSafe(EnemyShipArchetype.Get()),
+					*SquadID.ToString(), bStoryGateOpen));
+			TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
+			for (UChildActorComponent* Component : ChildActorComponents)
+			{
+				if (AChestSpawnPoint* Point = Cast<AChestSpawnPoint>(Component->GetChildActor()))
+				{
+					FSWFinalEncounterDiagnostics::Write(TEXT("FinalSquad"), TEXT("ChestOwnership"),
+						FString::Printf(TEXT("Ship=%s ParentOwnerMatches=%d Point=%s ChildOwnerMatches=%d"),
+							*GetPathName(), ChestSpawnPointChestSettings.OwningShip == this,
+							*Point->GetPathName(), Point->GetOwningShip() == this));
+					Point->OnChestSpawned.AddUniqueDynamic(this, &AEnemyShip::HandleStoryGatedChestSpawned);
+					if (AStorageChest* Chest = Cast<AStorageChest>(Point->GetSpawnedActor())) HandleStoryGatedChestSpawned(Chest);
+				}
+			}
+			if (UGameInstance* GameInstance = GetGameInstance())
+			{
+				if (UStoryFacadeSubsystem* Story = GameInstance->GetSubsystem<UStoryFacadeSubsystem>())
+				{
+					Story->OnStoryChanged.AddUniqueDynamic(this, &AEnemyShip::HandleStoryGateChanged);
+					HandleStoryGateChanged();
+				}
+				else if (!bStorySubsystemMissingLogged)
+				{
+					bStorySubsystemMissingLogged = true;
+					FSWFinalEncounterDiagnostics::Write(TEXT("FinalGate"), TEXT("StoryMissing"), GetPathName());
+				}
+			}
+		}
 	}
+	ApplyEffectiveDormancyState();
+	ApplyStoryGatePresentation();
+	ApplyStoryGateToSpawnedChests();
 }
 
 void AEnemyShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	bEndingPlay = true;
+	if (bStoryGateCannonTagAdded)
+	{
+		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent()) ASC->RemoveLooseGameplayTag(State_Ship_CannonDisabled);
+		bStoryGateCannonTagAdded = false;
+	}
+	if (IsFinalBossSquadShip())
+	{
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UStoryFacadeSubsystem* Story = GameInstance->GetSubsystem<UStoryFacadeSubsystem>())
+				Story->OnStoryChanged.RemoveDynamic(this, &AEnemyShip::HandleStoryGateChanged);
+		}
+		TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
+		for (UChildActorComponent* Component : ChildActorComponents)
+		{
+			if (AChestSpawnPoint* Point = Cast<AChestSpawnPoint>(Component->GetChildActor()))
+				Point->OnChestSpawned.RemoveDynamic(this, &AEnemyShip::HandleStoryGatedChestSpawned);
+		}
+	}
 	if (bCaptureCannonTagAdded)
 	{
 		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
@@ -912,10 +480,6 @@ void AEnemyShip::InitializeDeckWaypoints()
 	{
 		DeckEnemySpawnerComponent->InitializeWaypoints();
 	}
-	if (DeckNavigationComponent)
-	{
-		DeckNavigationComponent->RebuildGraph();
-	}
 }
 
 void AEnemyShip::InitializeDeckEnemyPool()
@@ -936,7 +500,7 @@ void AEnemyShip::DestroyDeckEnemyPool()
 
 void AEnemyShip::NotifyPlayerShipSighted(AShip* SensedPlayerShip)
 {
-	if (!HasAuthority() || bDeathHandled || bCrewDefeated
+	if (!HasAuthority() || bDeathHandled || bCrewDefeated || IsStoryGateDormant()
 		|| !IsValid(SensedPlayerShip) || SensedPlayerShip == this
 		|| SensedPlayerShip->IsEnemyShipForEffects()
 		|| !SensedPlayerShip->ActorHasTag(TEXT("Player"))
@@ -1033,7 +597,7 @@ bool AEnemyShip::ActivateDeckEnemyAtPoint(
 	AActor* InitialTarget,
 	ADeckEnemy*& OutEnemy)
 {
-	if (bCrewDefeated)
+	if (bCrewDefeated || IsStoryGateDormant())
 	{
 		OutEnemy = nullptr;
 		return false;
@@ -1048,7 +612,7 @@ bool AEnemyShip::ActivateDeckEnemyAtReservation(
 	AActor* InitialTarget,
 	ADeckEnemy*& OutEnemy)
 {
-	if (bCrewDefeated || !DeckEnemySpawnerComponent)
+	if (bCrewDefeated || IsStoryGateDormant() || !DeckEnemySpawnerComponent)
 	{
 		Reservation.Reset();
 		OutEnemy = nullptr;
@@ -1058,375 +622,12 @@ bool AEnemyShip::ActivateDeckEnemyAtReservation(
 		Reservation, InitialTarget, OutEnemy);
 }
 
-void AEnemyShip::GenerateDeckWaypointsFromDeckMesh()
-{
-#if WITH_EDITOR
-	if (IsBlueprintAssetAuthoringContext(*this))
-	{
-		const FString BlueprintClassName = GetNameSafe(GetClass());
-		FString GenerationSummary;
-		const bool bGenerated = GenerateDeckWaypointsInBlueprintAsset(*this, GenerationSummary);
-		if (bGenerated)
-		{
-			UE_LOG(LogTemp, Display, TEXT("[DeckWaypointGenerator] %s BlueprintClass=%s"),
-				*GenerationSummary, *BlueprintClassName);
-		}
-		else
-		{
-			UE_LOG(LogTemp, Error, TEXT("[DeckWaypointGenerator] %s BlueprintClass=%s"),
-				*GenerationSummary, *BlueprintClassName);
-		}
-		return;
-	}
-	if (!IsPlacedEditorActor(*this))
-	{
-		LastDeckWaypointValidationSummary = TEXT("Generation requires a placed EnemyShip actor in an editor level.");
-		UE_LOG(LogTemp, Error, TEXT("[DeckWaypointGenerator] %s Ship=%s"),
-			*LastDeckWaypointValidationSummary, *GetName());
-		return;
-	}
-	if (!ShipDeckMesh || !ShipDeckMesh->GetStaticMesh())
-	{
-		LastDeckWaypointValidationSummary = TEXT("ShipDeckMesh has no Static Mesh asset.");
-		UE_LOG(LogTemp, Error, TEXT("[DeckWaypointGenerator] %s Ship=%s"),
-			*LastDeckWaypointValidationSummary, *GetName());
-		return;
-	}
-
-	Modify();
-	FGeneratedDeckSampleSet SampleSet;
-	if (!BuildGeneratedDeckSamples(*this, SampleSet))
-	{
-		LastDeckWaypointValidationSummary =
-			TEXT("Could not sample ShipDeckMesh. Check its Static Mesh, registration, and query collision.");
-		UE_LOG(LogTemp, Error, TEXT("[DeckWaypointGenerator] %s Ship=%s"),
-			*LastDeckWaypointValidationSummary, *GetName());
-		return;
-	}
-	const FBox& LocalBounds = SampleSet.LocalBounds;
-	const int32 GridCountX = SampleSet.GridCountX;
-
-	TArray<UDeckWaypointComponent*> AllWaypoints;
-	GetComponents<UDeckWaypointComponent>(AllWaypoints);
-	TMap<int64, UDeckWaypointComponent*> ExistingGeneratedByGrid;
-	TSet<int32> UsedWaypointIds;
-	for (UDeckWaypointComponent* Waypoint : AllWaypoints)
-	{
-		if (!IsValid(Waypoint))
-		{
-			continue;
-		}
-		UsedWaypointIds.Add(Waypoint->GetWaypointId());
-		if (Waypoint->WasGeneratedFromDeckMesh())
-		{
-			const int64 GridKey = MakeDeckGridKey(
-				Waypoint->GetGeneratedGridX(), Waypoint->GetGeneratedGridY());
-			if (!ExistingGeneratedByGrid.Contains(GridKey))
-			{
-				ExistingGeneratedByGrid.Add(GridKey, Waypoint);
-			}
-		}
-	}
-
-	TSet<UDeckWaypointComponent*> RetainedWaypoints;
-	int32 CreatedCount = 0;
-	int32 UpdatedCount = 0;
-	for (const FGeneratedDeckSample& Sample : SampleSet.Samples)
-	{
-		const int64 GridKey = MakeDeckGridKey(Sample.GridX, Sample.GridY);
-		UDeckWaypointComponent* Waypoint = ExistingGeneratedByGrid.FindRef(GridKey);
-		if (Waypoint)
-		{
-			Waypoint->Modify();
-			if (!Waypoint->IsGeneratedLocationLocked())
-			{
-				Waypoint->AttachToComponent(ShipDeckMesh, FAttachmentTransformRules::KeepRelativeTransform);
-				Waypoint->SetRelativeLocation(Sample.LocalPosition);
-			}
-			Waypoint->InitializeGeneratedWaypoint(
-				Waypoint->GetWaypointId(), Sample.GridX, Sample.GridY,
-				Waypoint->CanSpawnEnemy(), Waypoint->CanPatrol(), Waypoint->CanUseInCombat());
-			++UpdatedCount;
-		}
-		else
-		{
-			int32 WaypointId = DeckWaypointGenerationSettings.GeneratedWaypointIdBase
-				+ Sample.GridY * GridCountX + Sample.GridX;
-			while (UsedWaypointIds.Contains(WaypointId) && WaypointId < MAX_int32)
-			{
-				++WaypointId;
-			}
-			if (WaypointId == MAX_int32 && UsedWaypointIds.Contains(WaypointId))
-			{
-				UE_LOG(LogTemp, Error,
-					TEXT("[DeckWaypointGenerator] No free WaypointId remains. Ship=%s"), *GetName());
-				continue;
-			}
-
-			const FName ComponentName = MakeUniqueObjectName(
-				this,
-				UDeckWaypointComponent::StaticClass(),
-				FName(*FString::Printf(TEXT("GeneratedDeckWaypoint_%d"), WaypointId)));
-			Waypoint = NewObject<UDeckWaypointComponent>(
-				this, UDeckWaypointComponent::StaticClass(), ComponentName, RF_Transactional);
-			if (!Waypoint)
-			{
-				continue;
-			}
-
-			AddInstanceComponent(Waypoint);
-			Waypoint->OnComponentCreated();
-			Waypoint->SetupAttachment(ShipDeckMesh);
-			Waypoint->SetRelativeLocation(Sample.LocalPosition);
-			Waypoint->InitializeGeneratedWaypoint(
-				WaypointId, Sample.GridX, Sample.GridY,
-				DeckWaypointGenerationSettings.bNewPointsCanSpawn,
-				DeckWaypointGenerationSettings.bNewPointsCanPatrol,
-				DeckWaypointGenerationSettings.bNewPointsCanUseInCombat);
-			Waypoint->RegisterComponent();
-			UsedWaypointIds.Add(WaypointId);
-			++CreatedCount;
-		}
-
-		RetainedWaypoints.Add(Waypoint);
-	}
-
-	int32 RemovedCount = 0;
-	for (UDeckWaypointComponent* Waypoint : AllWaypoints)
-	{
-		if (!IsValid(Waypoint) || !Waypoint->WasGeneratedFromDeckMesh()
-			|| RetainedWaypoints.Contains(Waypoint) || Waypoint->IsGeneratedLocationLocked())
-		{
-			continue;
-		}
-		Waypoint->Modify();
-		Waypoint->DestroyComponent();
-		++RemovedCount;
-	}
-
-	TArray<UDeckWaypointComponent*> ConfiguredWaypoints;
-	GetComponents<UDeckWaypointComponent>(ConfiguredWaypoints);
-	AssignDeckWaypointIds(ConfiguredWaypoints, DeckWaypointGenerationSettings);
-	RebuildDeckWaypointLinks(ConfiguredWaypoints, *ShipDeckMesh, DeckWaypointGenerationSettings);
-
-	MarkPackageDirty();
-	LastDeckWaypointValidationSummary = FString::Printf(
-		TEXT("Generated %d deck points: %d new, %d updated, %d removed. Existing usage flags were preserved."),
-		SampleSet.Samples.Num(), CreatedCount, UpdatedCount, RemovedCount);
-	UE_LOG(LogTemp, Display, TEXT("[DeckWaypointGenerator] %s Ship=%s"),
-		*LastDeckWaypointValidationSummary, *GetName());
-	ValidateDeckWaypoints();
-#else
-	LastDeckWaypointValidationSummary = TEXT("Deck waypoint generation is editor-only.");
-#endif
-}
-
-void AEnemyShip::ClearGeneratedDeckWaypoints()
-{
-#if WITH_EDITOR
-	if (IsBlueprintAssetAuthoringContext(*this))
-	{
-		const FString BlueprintClassName = GetNameSafe(GetClass());
-		FString ClearSummary;
-		const bool bCleared = ClearDeckWaypointsInBlueprintAsset(*this, ClearSummary);
-		if (bCleared)
-		{
-			UE_LOG(LogTemp, Display, TEXT("[DeckWaypointGenerator] %s BlueprintClass=%s"),
-				*ClearSummary, *BlueprintClassName);
-		}
-		else
-		{
-			UE_LOG(LogTemp, Error, TEXT("[DeckWaypointGenerator] %s BlueprintClass=%s"),
-				*ClearSummary, *BlueprintClassName);
-		}
-		return;
-	}
-	if (!IsPlacedEditorActor(*this))
-	{
-		LastDeckWaypointValidationSummary = TEXT("Clear requires a placed EnemyShip actor in an editor level.");
-		return;
-	}
-
-	Modify();
-	TArray<UDeckWaypointComponent*> Waypoints;
-	GetComponents<UDeckWaypointComponent>(Waypoints);
-	int32 RemovedCount = 0;
-	for (UDeckWaypointComponent* Waypoint : Waypoints)
-	{
-		if (IsValid(Waypoint) && Waypoint->WasGeneratedFromDeckMesh())
-		{
-			Waypoint->Modify();
-			Waypoint->DestroyComponent();
-			++RemovedCount;
-		}
-	}
-	MarkPackageDirty();
-	LastDeckWaypointValidationSummary = FString::Printf(
-		TEXT("Removed %d mesh-generated deck points. Manual points were preserved."), RemovedCount);
-	UE_LOG(LogTemp, Display, TEXT("[DeckWaypointGenerator] %s Ship=%s"),
-		*LastDeckWaypointValidationSummary, *GetName());
-#else
-	LastDeckWaypointValidationSummary = TEXT("Deck waypoint generation is editor-only.");
-#endif
-}
-
 void AEnemyShip::ValidateDeckWaypoints()
 {
 #if WITH_EDITOR
-	if (IsBlueprintAssetAuthoringContext(*this))
-	{
-		bool bTemporaryValidationActor = false;
-		AEnemyShip* ValidationActor = ResolveDeckSamplingActor(
-			*this, bTemporaryValidationActor, true);
-		if (!ValidationActor)
-		{
-			UE_LOG(LogTemp, Error,
-				TEXT("[DeckWaypointGenerator] Could not create a temporary Blueprint validation actor. Class=%s"),
-				*GetNameSafe(GetClass()));
-			return;
-		}
-		ValidationActor->ValidateDeckWaypoints();
-		if (bTemporaryValidationActor && IsValid(ValidationActor))
-		{
-			ValidationActor->Destroy();
-		}
-		return;
-	}
-	if (!ShipDeckMesh || !ShipDeckMesh->GetStaticMesh())
-	{
-		LastDeckWaypointValidationSummary = TEXT("Validation failed: ShipDeckMesh has no Static Mesh asset.");
-		UE_LOG(LogTemp, Error, TEXT("[DeckWaypointGenerator] %s Ship=%s"),
-			*LastDeckWaypointValidationSummary, *GetName());
-		return;
-	}
-
-	TArray<UDeckWaypointComponent*> Waypoints;
-	GetComponents<UDeckWaypointComponent>(Waypoints);
-	TMap<int32, UDeckWaypointComponent*> WaypointById;
-	int32 ErrorCount = 0;
-	int32 CombatCount = 0;
-	int32 ExcludedCount = 0;
-	for (UDeckWaypointComponent* Waypoint : Waypoints)
-	{
-		if (!IsValid(Waypoint))
-		{
-			continue;
-		}
-		Waypoint->RefreshEditorVisualization();
-		if (WaypointById.Contains(Waypoint->GetWaypointId()))
-		{
-			++ErrorCount;
-			UE_LOG(LogTemp, Error,
-				TEXT("[DeckWaypointGenerator] Duplicate WaypointId=%d Ship=%s Component=%s"),
-				Waypoint->GetWaypointId(), *GetName(), *GetNameSafe(Waypoint));
-		}
-		else
-		{
-			WaypointById.Add(Waypoint->GetWaypointId(), Waypoint);
-		}
-		if (!Waypoint->IsAttachedTo(ShipDeckMesh))
-		{
-			++ErrorCount;
-			UE_LOG(LogTemp, Error,
-				TEXT("[DeckWaypointGenerator] Point is not attached below ShipDeckMesh. Ship=%s Component=%s"),
-				*GetName(), *GetNameSafe(Waypoint));
-		}
-		CombatCount += Waypoint->CanUseInCombat() ? 1 : 0;
-		ExcludedCount += (!Waypoint->CanUseInCombat() && !Waypoint->CanPatrol()) ? 1 : 0;
-	}
-
-	const FBox LocalBounds = ShipDeckMesh->GetStaticMesh()->GetBoundingBox();
-	for (UDeckWaypointComponent* Waypoint : Waypoints)
-	{
-		if (!IsValid(Waypoint))
-		{
-			continue;
-		}
-		int32 ValidLinkedCount = 0;
-		for (const int32 LinkedId : Waypoint->GetLinkedWaypointIds())
-		{
-			if (LinkedId == Waypoint->GetWaypointId())
-			{
-				++ErrorCount;
-				UE_LOG(LogTemp, Error,
-					TEXT("[DeckWaypointGenerator] Self link. Ship=%s WaypointId=%d"),
-					*GetName(), Waypoint->GetWaypointId());
-				continue;
-			}
-			UDeckWaypointComponent* const* LinkedWaypoint = WaypointById.Find(LinkedId);
-			if (!LinkedWaypoint)
-			{
-				++ErrorCount;
-				UE_LOG(LogTemp, Error,
-					TEXT("[DeckWaypointGenerator] Invalid link. Ship=%s WaypointId=%d LinkedId=%d"),
-					*GetName(), Waypoint->GetWaypointId(), LinkedId);
-				continue;
-			}
-			++ValidLinkedCount;
-			if (!(*LinkedWaypoint)->GetLinkedWaypointIds().Contains(Waypoint->GetWaypointId()))
-			{
-				++ErrorCount;
-				UE_LOG(LogTemp, Error,
-					TEXT("[DeckWaypointGenerator] One-way link. Ship=%s WaypointId=%d LinkedId=%d"),
-					*GetName(), Waypoint->GetWaypointId(), LinkedId);
-			}
-		}
-		if ((Waypoint->CanPatrol() || Waypoint->CanUseInCombat()) && ValidLinkedCount == 0)
-		{
-			++ErrorCount;
-			UE_LOG(LogTemp, Error,
-				TEXT("[DeckWaypointGenerator] Usable point is isolated. Ship=%s WaypointId=%d"),
-				*GetName(), Waypoint->GetWaypointId());
-		}
-		if (Waypoint->CanSpawnEnemy()
-			&& (!Waypoint->CanUseInCombat() || ValidLinkedCount == 0))
-		{
-			++ErrorCount;
-			UE_LOG(LogTemp, Error,
-				TEXT("[DeckWaypointGenerator] Spawn point requires Combat usage and at least one valid link. Ship=%s WaypointId=%d"),
-				*GetName(), Waypoint->GetWaypointId());
-		}
-
-		if (Waypoint->WasGeneratedFromDeckMesh())
-		{
-			const FVector LocalLocation = Waypoint->GetRelativeLocation();
-			FVector SupportedLocation;
-			const bool bSupported = IsDeckSampleSupported(
-				*ShipDeckMesh, LocalBounds, LocalLocation.X, LocalLocation.Y,
-				DeckWaypointGenerationSettings, SupportedLocation);
-			float SurfaceDistance = TNumericLimits<float>::Max();
-			if (bSupported)
-			{
-				const FTransform DeckTransform = ShipDeckMesh->GetComponentTransform();
-				SurfaceDistance = FVector::Distance(
-					DeckTransform.TransformPosition(LocalLocation),
-					DeckTransform.TransformPosition(SupportedLocation));
-			}
-			if (!bSupported || SurfaceDistance > FMath::Max(10.0f, DeckWaypointGenerationSettings.MaximumStepHeight))
-			{
-				++ErrorCount;
-				UE_LOG(LogTemp, Error,
-					TEXT("[DeckWaypointGenerator] Generated point is no longer safely supported by the deck. Ship=%s WaypointId=%d"),
-					*GetName(), Waypoint->GetWaypointId());
-			}
-		}
-	}
-
-	LastDeckWaypointValidationSummary = FString::Printf(
-		TEXT("Validated %d points: %d combat, %d explicitly excluded, %d errors."),
-		WaypointById.Num(), CombatCount, ExcludedCount, ErrorCount);
-	if (ErrorCount == 0)
-	{
-		UE_LOG(LogTemp, Display, TEXT("[DeckWaypointGenerator] %s Ship=%s"),
-			*LastDeckWaypointValidationSummary, *GetName());
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("[DeckWaypointGenerator] %s Ship=%s"),
-			*LastDeckWaypointValidationSummary, *GetName());
-	}
+	LastDeckWaypointValidationSummary = FDeckSpawnAnchorValidator::Validate(*this).ToSummary();
 #else
-	LastDeckWaypointValidationSummary = TEXT("Deck waypoint validation is editor-only.");
+	LastDeckWaypointValidationSummary = TEXT("Deck spawn anchor validation is editor-only.");
 #endif
 }
 
@@ -1444,16 +645,6 @@ FVector AEnemyShip::GetDeckWaypointWorldLocation(int32 WaypointId) const
 		: GetActorLocation();
 }
 
-bool AEnemyShip::ResolveFixedDeckAnchorTransform(
-	int32 WaypointId,
-	float CapsuleHalfHeight,
-	FTransform& OutTransform) const
-{
-	return DeckEnemySpawnerComponent
-		&& DeckEnemySpawnerComponent->ResolveFixedDeckAnchorTransform(
-			WaypointId, CapsuleHalfHeight, OutTransform);
-}
-
 bool AEnemyShip::ResolveDeckCharacterTransform(
 	int32 WaypointId,
 	float CapsuleHalfHeight,
@@ -1462,34 +653,6 @@ bool AEnemyShip::ResolveDeckCharacterTransform(
 	return DeckEnemySpawnerComponent
 		&& DeckEnemySpawnerComponent->ResolveDeckCharacterTransform(
 			WaypointId, CapsuleHalfHeight, OutTransform);
-}
-
-void AEnemyShip::GetDeckWaypointIds(
-	TArray<int32>& OutWaypointIds,
-	bool bRequireCombatPoint) const
-{
-	if (DeckEnemySpawnerComponent)
-	{
-		DeckEnemySpawnerComponent->GetWaypointIds(OutWaypointIds, bRequireCombatPoint);
-	}
-	else
-	{
-		OutWaypointIds.Reset();
-	}
-}
-
-void AEnemyShip::GetConnectedDeckWaypointIds(
-	int32 WaypointId,
-	TArray<int32>& OutWaypointIds) const
-{
-	if (DeckEnemySpawnerComponent)
-	{
-		DeckEnemySpawnerComponent->GetConnectedWaypointIds(WaypointId, OutWaypointIds);
-	}
-	else
-	{
-		OutWaypointIds.Reset();
-	}
 }
 
 bool AEnemyShip::IsDeckPointAvailable(int32 WaypointId, const AActor* Requester) const
@@ -1559,43 +722,13 @@ void AEnemyShip::ReleaseDeckPointOccupancy(int32 WaypointId, AActor* Occupant)
 	}
 }
 
-bool AEnemyShip::IsDeckCombatPointClaimAvailable(
-	int32 WaypointId,
-	const AActor* Requester) const
-{
-	return DeckEnemySpawnerComponent
-		&& DeckEnemySpawnerComponent->IsCombatPointClaimAvailable(WaypointId, Requester);
-}
-
-bool AEnemyShip::TryClaimDeckCombatPoint(int32 WaypointId, AActor* Requester)
-{
-	return DeckEnemySpawnerComponent
-		&& DeckEnemySpawnerComponent->TryClaimCombatPoint(WaypointId, Requester);
-}
-
-void AEnemyShip::ReleaseDeckCombatPointClaim(int32 WaypointId, AActor* Requester)
-{
-	if (DeckEnemySpawnerComponent)
-	{
-		DeckEnemySpawnerComponent->ReleaseCombatPointClaim(WaypointId, Requester);
-	}
-}
-
 void AEnemyShip::ReleaseAllDeckPointsFor(AActor* Actor)
 {
+	if (DeckWalkAreaComponent) DeckWalkAreaComponent->ReleaseLocationClaim(Actor);
 	if (DeckEnemySpawnerComponent)
 	{
 		DeckEnemySpawnerComponent->ReleaseAllPointsFor(Actor);
 	}
-}
-
-int32 AEnemyShip::FindNearestDeckWaypoint(
-	const FVector& WorldLocation,
-	bool bRequirePatrolPoint) const
-{
-	return DeckEnemySpawnerComponent
-		? DeckEnemySpawnerComponent->FindNearestWaypoint(WorldLocation, bRequirePatrolPoint)
-		: INDEX_NONE;
 }
 
 bool AEnemyShip::GrantEnemyShipAbilityClasses(
@@ -1766,7 +899,7 @@ void AEnemyShip::ApplyNavigationCollisionPolicy(ENavalCombatState State)
 
 bool AEnemyShip::CanEnterDistanceOptimizationDormancy() const
 {
-	if (!bEnableDistanceOptimization || bDistanceOptimizationDormant
+	if (!bEnableDistanceOptimization || bDistanceOptimizationDormant || IsStoryGateDormant()
 		|| bDeathHandled || IsSinking() || bCrewDefeated || !NavigationComponent
 		|| NavigationComponent->GetCurrentState() != ENavalCombatState::Idle
 		|| NavigationComponent->GetTargetShip() != nullptr
@@ -1816,7 +949,7 @@ void AEnemyShip::SetDistanceOptimizationDormant(bool bDormant)
 	}
 
 	bDistanceOptimizationDormant = bDormant;
-	ApplyDistanceOptimizationState();
+	ApplyEffectiveDormancyState();
 	ForceNetUpdate();
 	if (bDormant)
 	{
@@ -1826,13 +959,189 @@ void AEnemyShip::SetDistanceOptimizationDormant(bool bDormant)
 
 void AEnemyShip::OnRep_DistanceOptimizationDormant()
 {
-	ApplyDistanceOptimizationState();
+	ApplyEffectiveDormancyState();
 }
 
-void AEnemyShip::ApplyDistanceOptimizationState()
+bool AEnemyShip::IsFinalBossSquadShip() const
 {
-	if (bDistanceOptimizationDormant)
+	return SquadID == FinalBossSquadId;
+}
+
+bool AEnemyShip::IsStoryGateDormant() const
+{
+	return IsFinalBossSquadShip() && !bStoryGateOpen;
+}
+
+void AEnemyShip::HandleStoryGateChanged()
+{
+	if (!HasAuthority() || !IsFinalBossSquadShip()) return;
+	UStoryFacadeSubsystem* Story = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
+	if (!Story)
 	{
+		if (!bStorySubsystemMissingLogged)
+		{
+			bStorySubsystemMissingLogged = true;
+			FSWFinalEncounterDiagnostics::Write(TEXT("FinalGate"), TEXT("StoryMissing"), GetPathName());
+		}
+		return;
+	}
+	const bool bAccepted = Story->IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted);
+	const bool bDefeated = Story->IsStoryNodeReached(EStoryNode::FinalBossDefeated);
+ const USWRoomProgressSubsystem* Room=GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+ const bool bTest=Room && Room->IsDevelopmentFinalEncounterWorld(GetWorld());
+ const bool bTargetOpen=(bAccepted || bTest) && !bDefeated;
+ bDevelopmentStoryGateOpened=bTest && !bAccepted && !bDefeated;
+ if (bStoryGateOpen==bTargetOpen) return;
+	FSWFinalEncounterDiagnostics::Write(TEXT("FinalGate"), TEXT("StoryEvaluated"),
+		FString::Printf(TEXT("Ship=%s Accepted=%d Defeated=%d Open=%d"), *GetPathName(),
+			bAccepted, bDefeated, bStoryGateOpen));
+ SetStoryGateOpen(bTargetOpen);
+}
+
+void AEnemyShip::SetStoryGateOpen(bool bOpen)
+{
+	if (!HasAuthority() || !IsFinalBossSquadShip()) return;
+	const bool bChanged = bStoryGateOpen != bOpen;
+	if (bChanged && bOpen)
+	{
+		FlushNetDormancy();
+		SetNetDormancy(DORM_Awake);
+	}
+	bStoryGateOpen = bOpen;
+	if (!bOpen && DeckEnemySpawnerComponent) DeckEnemySpawnerComponent->CancelDeployment();
+	ApplyEffectiveDormancyState();
+	ApplyStoryGatePresentation();
+	ApplyStoryGateToSpawnedChests();
+	if (bChanged)
+	{
+		FSWFinalEncounterDiagnostics::Write(TEXT("FinalGate"), bOpen ? TEXT("Opened") : TEXT("Closed"), GetPathName());
+		if (bOpen)
+		{
+			bool bAllOpen = true;
+			for (TActorIterator<AEnemyShip> It(GetWorld()); It; ++It)
+				if (It->IsFinalBossSquadShip() && !It->bStoryGateOpen) bAllOpen = false;
+			static TWeakObjectPtr<UWorld> LastRecalculatedWorld;
+			if (bAllOpen && LastRecalculatedWorld.Get() != GetWorld())
+			{
+				LastRecalculatedWorld = GetWorld();
+				if (UShipSwarmSubsystem* Swarm = GetWorld()->GetSubsystem<UShipSwarmSubsystem>())
+					Swarm->RecalculateSquadOrbitDistances(FinalBossSquadId);
+			}
+		}
+		ForceNetUpdate();
+	}
+}
+
+void AEnemyShip::OnRep_StoryGateOpen()
+{
+	ApplyEffectiveDormancyState();
+	ApplyStoryGatePresentation();
+	ApplyStoryGateToSpawnedChests();
+}
+
+void AEnemyShip::ApplyStoryGatePresentation()
+{
+	if (!IsFinalBossSquadShip()) return;
+	RefreshMountedCannons();
+	SetActorHiddenInGame(IsStoryGateDormant());
+	for (ACannon* Cannon : MountedCannons)
+	{
+		if (IsValid(Cannon))
+		{
+			if (IsStoryGateDormant() && HasActorBegunPlay()) Cannon->ResetAIFiringState();
+			Cannon->SetActorHiddenInGame(IsStoryGateDormant());
+		}
+	}
+	if (!HasActorBegunPlay()) return;
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		if (IsStoryGateDormant() && !bStoryGateCannonTagAdded)
+		{
+			ASC->AddLooseGameplayTag(State_Ship_CannonDisabled);
+			bStoryGateCannonTagAdded = true;
+		}
+		else if (!IsStoryGateDormant() && bStoryGateCannonTagAdded)
+		{
+			ASC->RemoveLooseGameplayTag(State_Ship_CannonDisabled);
+			bStoryGateCannonTagAdded = false;
+		}
+	}
+}
+
+void AEnemyShip::RefreshStoryGateOwnedActors()
+{
+	if (!IsFinalBossSquadShip()) return;
+	if (HasAuthority()) HandleStoryGateChanged();
+	// Reapply presentation after snapshot restoration even if the gate value
+	// already matched the campaign when its change event was broadcast.
+	ApplyEffectiveDormancyState();
+	ApplyStoryGatePresentation();
+	ApplyStoryGateToSpawnedChests();
+	RefreshMountedCannons();
+	for (ACannon* Cannon : MountedCannons)
+	{
+		if (!IsValid(Cannon)) continue;
+		if (bEffectiveDormancyApplied)
+		{
+			const bool bKnown = DormancyCannonStates.ContainsByPredicate(
+				[Cannon](const FCannonDormancyState& State) { return State.Cannon.Get() == Cannon; });
+			if (!bKnown)
+			{
+				FCannonDormancyState& State = DormancyCannonStates.AddDefaulted_GetRef();
+				State.Cannon = Cannon;
+				State.bCollisionEnabled = Cannon->GetActorEnableCollision();
+				State.bTickEnabled = Cannon->IsActorTickEnabled();
+				Cannon->SetActorEnableCollision(false);
+				Cannon->SetActorTickEnabled(false);
+			}
+		}
+		Cannon->SetActorHiddenInGame(IsStoryGateDormant());
+	}
+}
+
+void AEnemyShip::HandleStoryGatedChestSpawned(AStorageChest* Chest)
+{
+	if (!HasAuthority() || !IsFinalBossSquadShip() || !IsValid(Chest)) return;
+	const AChestSpawnPoint* Point = Cast<AChestSpawnPoint>(Chest->GetOwner());
+	if (Point && Point->GetSpawnMode() == EChestSpawnMode::Guarded && Chest->GetOwningShip() == this)
+	{
+		Chest->SetStoryGateDormant(IsStoryGateDormant());
+		FSWFinalEncounterDiagnostics::Write(TEXT("FinalSquad"), TEXT("RuntimeChestOwnership"),
+			FString::Printf(TEXT("Ship=%s Chest=%s Point=%s ChestOwnerMatches=%d Dormant=%d"),
+				*GetPathName(), *Chest->GetPathName(), *Point->GetPathName(),
+				Chest->GetOwningShip() == this, IsStoryGateDormant()));
+	}
+}
+
+void AEnemyShip::ApplyStoryGateToSpawnedChests()
+{
+	if (!IsFinalBossSquadShip() || !HasAuthority()) return;
+	TInlineComponentArray<UChildActorComponent*> ChildActorComponents(this);
+	for (UChildActorComponent* Component : ChildActorComponents)
+	{
+		if (AChestSpawnPoint* Point = Cast<AChestSpawnPoint>(Component->GetChildActor()))
+		{
+			if (AStorageChest* Chest = Cast<AStorageChest>(Point->GetSpawnedActor()))
+				HandleStoryGatedChestSpawned(Chest);
+		}
+	}
+}
+
+void AEnemyShip::ApplyEffectiveDormancyState()
+{
+	const bool bShouldDormant = bDistanceOptimizationDormant || IsStoryGateDormant();
+	if (bShouldDormant == bEffectiveDormancyApplied) return;
+	if (IsFinalBossSquadShip())
+		FSWFinalEncounterDiagnostics::Write(TEXT("FinalGate"), bShouldDormant ? TEXT("Dormant") : TEXT("Active"),
+			FString::Printf(TEXT("Ship=%s StoryDormant=%d DistanceDormant=%d Authority=%d"),
+				*GetPathName(), IsStoryGateDormant(), bDistanceOptimizationDormant, HasAuthority()));
+	if (bShouldDormant)
+	{
+		bEffectiveDormancyApplied = true;
+		bDormancyShipCollisionEnabled = GetActorEnableCollision();
+		bDormancyShipTickEnabled = IsActorTickEnabled();
+		bDormancyShipPhysicsEnabled = IsShipRuntimePhysicsEnabled();
 		SetAIControlInput(0.0f, 0.0f);
 		if (HasAuthority())
 		{
@@ -1874,6 +1183,7 @@ void AEnemyShip::ApplyDistanceOptimizationState()
 		}
 
 		DistanceDormancySuspendedCannons.Reset();
+		DormancyCannonStates.Reset();
 		for (ACannon* Cannon : MountedCannons)
 		{
 			if (!IsValid(Cannon))
@@ -1881,6 +1191,10 @@ void AEnemyShip::ApplyDistanceOptimizationState()
 				continue;
 			}
 			Cannon->ResetAIFiringState();
+			FCannonDormancyState& State = DormancyCannonStates.AddDefaulted_GetRef();
+			State.Cannon = Cannon;
+			State.bCollisionEnabled = Cannon->GetActorEnableCollision();
+			State.bTickEnabled = Cannon->IsActorTickEnabled();
 			if (Cannon->IsActorTickEnabled())
 			{
 				DistanceDormancySuspendedCannons.Add(Cannon);
@@ -1895,9 +1209,10 @@ void AEnemyShip::ApplyDistanceOptimizationState()
 		return;
 	}
 
-	SetActorTickEnabled(true);
-	SetActorEnableCollision(true);
-	SetShipRuntimePhysicsEnabled(true);
+	bEffectiveDormancyApplied = false;
+	SetActorTickEnabled(bDormancyShipTickEnabled);
+	SetActorEnableCollision(bDormancyShipCollisionEnabled);
+	SetShipRuntimePhysicsEnabled(bDormancyShipPhysicsEnabled);
 	for (const TWeakObjectPtr<UActorComponent>& Component : DistanceDormancySuspendedTickComponents)
 	{
 		if (Component.IsValid())
@@ -1907,18 +1222,19 @@ void AEnemyShip::ApplyDistanceOptimizationState()
 	}
 	DistanceDormancySuspendedTickComponents.Reset();
 
-	for (const TWeakObjectPtr<ACannon>& Cannon : DistanceDormancySuspendedCannons)
+	for (const FCannonDormancyState& State : DormancyCannonStates)
 	{
-		if (Cannon.IsValid())
+		if (ACannon* Cannon = State.Cannon.Get())
 		{
-			Cannon->SetActorTickEnabled(true);
-			Cannon->SetActorEnableCollision(true);
+			Cannon->SetActorTickEnabled(State.bTickEnabled);
+			Cannon->SetActorEnableCollision(State.bCollisionEnabled);
 			Cannon->RefreshPlayerInteractionAvailability();
 		}
 	}
+	DormancyCannonStates.Reset();
 	DistanceDormancySuspendedCannons.Reset();
 
-	if (HasAuthority() && !bCrewDefeated)
+	if (HasAuthority() && !IsStoryGateDormant() && !bCrewDefeated && !bDeathHandled && !IsSinking())
 	{
 		if (NavigationComponent)
 		{
@@ -1944,6 +1260,12 @@ void AEnemyShip::ApplyDistanceOptimizationState()
 void AEnemyShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+ if (HasAuthority() && IsFinalBossSquadShip())
+ {
+  const USWRoomProgressSubsystem* Room=GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+  if (Room && Room->IsDevelopmentFinalEncounterWorld(GetWorld())) HandleStoryGateChanged();
+  else if (bDevelopmentStoryGateOpened) { SetStoryGateOpen(false); bDevelopmentStoryGateOpened=false; }
+ }
 	EvaluateCrewControlState();
 	if (HasAuthority() && bCrewDefeated)
 	{
@@ -2145,6 +1467,22 @@ void AEnemyShip::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 void AEnemyShip::HandleShipDeath()
 {
 	if (!HasAuthority()) return;
+	if (IsFinalBossSquadShip() && EnemyShipArchetype
+		&& EnemyShipArchetype->GetPathName() == FinalBossShipArchetypePath)
+	{
+		UStoryFacadeSubsystem* Story = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UStoryFacadeSubsystem>() : nullptr;
+		const bool bAccepted = Story && Story->IsStoryNodeReached(EStoryNode::UldolmokBattleQuestAccepted);
+		const bool bAlreadyDefeated = Story && Story->IsStoryNodeReached(EStoryNode::FinalBossDefeated);
+		bool bCompleted = false;
+		if (bAccepted && !bAlreadyDefeated)
+		{
+			bCompleted = Story->CompleteStoryNode(EStoryNode::FinalBossDefeated);
+		}
+		FSWFinalEncounterDiagnostics::Write(TEXT("FinalBossShip"), TEXT("Death"),
+			FString::Printf(TEXT("Ship=%s Accepted=%d AlreadyDefeated=%d CompleteResult=%d"),
+				*GetPathName(), bAccepted, bAlreadyDefeated, bCompleted));
+	}
 	if (DeckEnemySpawnerComponent)
 	{
 		DeckEnemySpawnerComponent->CancelDeployment();
@@ -2266,7 +1604,14 @@ void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotato
 
 bool AEnemyShip::AllowsPlayerAnchorControl(AActor* Interactor) const
 {
-	return !bDeathHandled && bCrewDefeated;
+	return !IsStoryGateDormant() && !bDeathHandled && bCrewDefeated;
+}
+
+float AEnemyShip::GetIncomingDamageMultiplier() const
+{
+	return bCrewDefeated && FMath::IsFinite(CrewDefeatedDamageMultiplier)
+		? FMath::Max(1.0f, CrewDefeatedDamageMultiplier)
+		: 1.0f;
 }
 
 float AEnemyShip::GetCannonCooldownMultiplier() const
@@ -2498,4 +1843,5 @@ void AEnemyShip::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifeti
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AEnemyShip, bCrewDefeated);
 	DOREPLIFETIME(AEnemyShip, bDistanceOptimizationDormant);
+	DOREPLIFETIME(AEnemyShip, bStoryGateOpen);
 }

@@ -226,6 +226,7 @@ void UPlayerHUDWidget::InitializeForPlayer(ABasePlayer* InPlayer)
 {
 	HideInteractionPrompt();
 
+	if (InPlayer && InPlayer->GetInventoryComponent()) InPlayer->GetInventoryComponent()->LogInventoryDiagnostic(TEXT("HUDBind"));
 	if (CachedPlayer.IsValid())
 	{
 		CachedPlayer->OnAbilitySystemInitialized.RemoveAll(this);

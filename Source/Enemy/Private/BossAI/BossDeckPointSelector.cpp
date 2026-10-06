@@ -2,206 +2,69 @@
 
 #include "BossAI/ShipBossEnemy.h"
 #include "Components/CapsuleComponent.h"
-#include "DeckAI/DeckWaypointComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "ShipAI/EnemyShip.h"
 
-bool UBossDeckPointSelector::SelectDestinationPoint(
-	AEnemyShip* HostShip,
-	AActor* BossActor,
-	AActor* TargetActor,
-	EBossDestinationPurpose Purpose,
-	EBossDestinationRelation Relation,
-	const FBossDestinationSelectionSettings& Settings,
-	int32& OutPointId)
+bool UBossDeckPointSelector::SelectDestinationLocation(
+	AEnemyShip* Ship, AActor* BossActor, AActor* Target, EBossDestinationPurpose Purpose,
+	EBossDestinationRelation Relation, const FBossDestinationSelectionSettings& Settings, FDeckWalkLocation& Out)
 {
-	OutPointId = INDEX_NONE;
-	if (!IsValid(HostShip) || !IsValid(BossActor) || !IsValid(TargetActor))
+	Out = FDeckWalkLocation();
+	AShipBossEnemy* Boss = Cast<AShipBossEnemy>(BossActor);
+	UDeckWalkAreaComponent* Area = Ship ? Ship->GetDeckWalkAreaComponent() : nullptr;
+	FDeckWalkLocation Start, TargetFloor;
+	if (!Ship || !Boss || !Boss->HasAuthority() || !IsValid(Target) || !Area
+		|| !Area->ResolveActorOnDeck(*Boss, Start) || !Area->ResolveActorOnDeck(*Target, TargetFloor)) return false;
+	TArray<FDeckWalkLocation> Candidates;
+	Area->GetReachableLocations(Start, Candidates, Purpose == EBossDestinationPurpose::Walk);
+	const FVector Up = Ship->GetDeckMeshComplex()->GetUpVector();
+	float BestPrimary = TNumericLimits<float>::Max();
+	float BestSecondary = TNumericLimits<float>::Max();
+	for (const auto& Candidate : Candidates)
 	{
-		return false;
-	}
-	if (Purpose == EBossDestinationPurpose::Walk)
-	{
-		return SelectWalkDestinationPoint(
-			*HostShip, *BossActor, *TargetActor, Settings, OutPointId);
-	}
-
-	const FVector DeckUp = HostShip->GetShipDeckMesh()
-		? HostShip->GetShipDeckMesh()->GetUpVector().GetSafeNormal()
-		: FVector::UpVector;
-	const FVector BossLocation = BossActor->GetActorLocation();
-	const FVector TargetLocation = TargetActor->GetActorLocation();
-
-	TArray<int32> CandidateIds;
-	HostShip->GetDeckWaypointIds(CandidateIds, true);
-
-	float BestPathTargetDistanceSquared = TNumericLimits<float>::Max();
-	float BestPreferredDistanceError = TNumericLimits<float>::Max();
-	float BestTargetDistanceSquared = TNumericLimits<float>::Max();
-	for (const int32 CandidateId : CandidateIds)
-	{
-		const UDeckWaypointComponent* Waypoint = HostShip->GetDeckWaypoint(CandidateId);
-		if (!IsValid(Waypoint) || !HostShip->IsDeckPointAvailable(CandidateId, BossActor))
+		if (Purpose != EBossDestinationPurpose::Vanish && Candidate.SurfaceId != TargetFloor.SurfaceId) continue;
+		FTransform Transform;
+		if (!Area->ResolveLocationTransform(Candidate, *Boss, Transform)) continue;
+		const FVector Position = Transform.GetLocation();
+		const float Travel = FVector::Dist2D(Candidate.LocalFloor, Start.LocalFloor);
+		const float MinimumTravel = Purpose == EBossDestinationPurpose::Dash
+			? FMath::Max(Settings.MinimumTravelDistance, Settings.MinimumDashTravelDistance) : Settings.MinimumTravelDistance;
+		if ((Purpose == EBossDestinationPurpose::Walk ? Candidate.NodeIndex == Start.NodeIndex : Travel < MinimumTravel)
+			|| !Area->IsLocationAvailable(Candidate, *Boss)) continue;
+		if (Purpose == EBossDestinationPurpose::Vanish && Relation != EBossDestinationRelation::Any
+			&& !(Relation == EBossDestinationRelation::BehindTarget
+				? IsPointBehindTarget(Target->GetActorLocation(), Target->GetActorForwardVector(), Position, Up, Settings.MaximumRearDot)
+				: IsPointInFrontOfTarget(Target->GetActorLocation(), Target->GetActorForwardVector(), Position, Up, Settings.MinimumFrontDot))) continue;
+		float Primary = 0.0f, Secondary = 0.0f;
+		if (Purpose == EBossDestinationPurpose::Dash)
 		{
-			continue;
+			if (!Area->IsSupportedSegment(Start, Candidate) || !IsDashSegmentClear(*Ship, *Boss, *Target, Position, Settings)) continue;
+			const FVector Closest = FMath::ClosestPointOnSegment(Target->GetActorLocation(), Boss->GetActorLocation(), Position);
+			Primary = FVector::VectorPlaneProject(Target->GetActorLocation() - Closest, Up).SizeSquared();
+			Secondary = Settings.PreferredDashTravelDistance > 0.0f
+				? FMath::Abs(Travel - Settings.PreferredDashTravelDistance) : FVector::DistSquared(Position, Target->GetActorLocation());
 		}
-
-		FVector CandidateLocation = Waypoint->GetComponentLocation();
-		if (const ACharacter* BossCharacter = Cast<ACharacter>(BossActor))
+		else if (Purpose == EBossDestinationPurpose::Walk)
 		{
-			const UCapsuleComponent* Capsule = BossCharacter->GetCapsuleComponent();
-			FTransform CharacterTransform;
-			if (HostShip->ResolveDeckCharacterTransform(
-				CandidateId,
-				Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0f,
-				CharacterTransform))
-			{
-				CandidateLocation = CharacterTransform.GetLocation();
-			}
+			const auto& Previous = Boss->GetPreviousLocation();
+			if (Area->IsLocationValid(Previous) && Previous.NodeIndex == Candidate.NodeIndex) continue;
+			Primary = FMath::Abs(FVector::Dist2D(Candidate.LocalFloor, TargetFloor.LocalFloor) - Settings.IdealWalkRange);
+			TArray<FDeckWalkLocation> Path;
+			if (!Area->FindPath(Start, Candidate, Path)) continue;
+			for (int32 I = 1; I < Path.Num(); ++I) Secondary += FVector::Dist(Path[I - 1].LocalFloor, Path[I].LocalFloor);
 		}
-		const FVector BossToCandidateOnDeck = FVector::VectorPlaneProject(
-			CandidateLocation - BossLocation,
-			DeckUp);
-		const float TravelDistance = BossToCandidateOnDeck.Size();
-		const float MinimumTravelDistance = Purpose == EBossDestinationPurpose::Dash
-			? FMath::Max(Settings.MinimumTravelDistance, Settings.MinimumDashTravelDistance)
-			: Settings.MinimumTravelDistance;
-		if (TravelDistance < FMath::Max(0.0f, MinimumTravelDistance))
+		else Primary = FVector::DistSquared(Position, Target->GetActorLocation());
+		if (Primary < BestPrimary - KINDA_SMALL_NUMBER || (FMath::IsNearlyEqual(Primary, BestPrimary)
+			&& (Secondary < BestSecondary - KINDA_SMALL_NUMBER || (FMath::IsNearlyEqual(Secondary, BestSecondary)
+				&& (Out.NodeIndex == INDEX_NONE || Candidate.NodeIndex < Out.NodeIndex)))))
 		{
-			continue;
-		}
-
-		const bool bMatchesTargetRelation = Purpose == EBossDestinationPurpose::Dash
-			|| Relation == EBossDestinationRelation::Any
-			|| (Relation == EBossDestinationRelation::BehindTarget
-			? IsPointBehindTarget(
-				TargetLocation,
-				TargetActor->GetActorForwardVector(),
-				CandidateLocation,
-				DeckUp,
-				Settings.MaximumRearDot)
-			: IsPointInFrontOfTarget(
-				TargetLocation,
-				TargetActor->GetActorForwardVector(),
-				CandidateLocation,
-				DeckUp,
-				Settings.MinimumFrontDot));
-		if (!bMatchesTargetRelation)
-		{
-			continue;
-		}
-
-		if (Settings.bCheckDestinationOccupancy
-			&& !IsDestinationClear(*HostShip, *BossActor, CandidateLocation, TargetActor))
-		{
-			continue;
-		}
-
-		if (Purpose == EBossDestinationPurpose::Dash
-			&& !IsDashSegmentClear(*HostShip, *BossActor, *TargetActor, CandidateLocation, Settings))
-		{
-			continue;
-		}
-
-		const FVector ClosestPathPoint = FMath::ClosestPointOnSegment(
-			TargetLocation, BossLocation, CandidateLocation);
-		const float PathTargetDistanceSquared = Purpose == EBossDestinationPurpose::Dash
-			? FVector::VectorPlaneProject(TargetLocation - ClosestPathPoint, DeckUp).SizeSquared()
-			: 0.0f;
-		const float PreferredDistanceError = Purpose == EBossDestinationPurpose::Dash
-			&& Settings.PreferredDashTravelDistance > 0.0f
-			? FMath::Abs(TravelDistance - Settings.PreferredDashTravelDistance)
-			: 0.0f;
-		const float TargetDistanceSquared = FVector::DistSquared(TargetLocation, CandidateLocation);
-		const bool bBetterPath = PathTargetDistanceSquared < BestPathTargetDistanceSquared - 1.0f;
-		const bool bPathTie = FMath::IsNearlyEqual(
-			PathTargetDistanceSquared, BestPathTargetDistanceSquared, 1.0f);
-		const bool bBetterPreferredDistance = bPathTie
-			&& PreferredDistanceError < BestPreferredDistanceError - KINDA_SMALL_NUMBER;
-		const bool bPreferredTie = bPathTie
-			&& FMath::IsNearlyEqual(PreferredDistanceError, BestPreferredDistanceError);
-		const bool bBetterTargetDistance = bPreferredTie
-			&& TargetDistanceSquared < BestTargetDistanceSquared - 1.0f;
-		const bool bDeterministicIdTie = bPreferredTie
-			&& FMath::IsNearlyEqual(TargetDistanceSquared, BestTargetDistanceSquared, 1.0f)
-			&& (OutPointId == INDEX_NONE || CandidateId < OutPointId);
-		if (bBetterPath || bBetterPreferredDistance || bBetterTargetDistance || bDeterministicIdTie)
-		{
-			BestPathTargetDistanceSquared = PathTargetDistanceSquared;
-			BestPreferredDistanceError = PreferredDistanceError;
-			BestTargetDistanceSquared = TargetDistanceSquared;
-			OutPointId = CandidateId;
+			BestPrimary = Primary; BestSecondary = Secondary; Out = Candidate;
 		}
 	}
-
-	return OutPointId != INDEX_NONE;
-}
-
-bool UBossDeckPointSelector::SelectWalkDestinationPoint(
-	AEnemyShip& HostShip,
-	AActor& BossActor,
-	AActor& TargetActor,
-	const FBossDestinationSelectionSettings& Settings,
-	int32& OutPointId)
-{
-	const AShipBossEnemy* Boss = Cast<AShipBossEnemy>(&BossActor);
-	if (!Boss || !HostShip.GetDeckWaypoint(Boss->GetCurrentPointId()))
-	{
-		return false;
-	}
-
-	TArray<int32> CandidateIds;
-	HostShip.GetConnectedDeckWaypointIds(Boss->GetCurrentPointId(), CandidateIds);
-	CandidateIds.RemoveAll([&HostShip, &BossActor](const int32 PointId)
-	{
-		const UDeckWaypointComponent* Waypoint = HostShip.GetDeckWaypoint(PointId);
-		return !Waypoint || !Waypoint->CanUseInCombat()
-			|| !HostShip.IsDeckPointAvailable(PointId, &BossActor);
-	});
-	if (CandidateIds.Num() > 1)
-	{
-		CandidateIds.Remove(Boss->GetPreviousPointId());
-	}
-
-	const FVector DeckUp = HostShip.GetShipDeckMesh()
-		? HostShip.GetShipDeckMesh()->GetUpVector().GetSafeNormal()
-		: FVector::UpVector;
-	float BestRangeError = TNumericLimits<float>::Max();
-	for (const int32 CandidateId : CandidateIds)
-	{
-		FVector CandidateLocation = HostShip.GetDeckWaypointWorldLocation(CandidateId);
-		if (const ACharacter* BossCharacter = Cast<ACharacter>(&BossActor))
-		{
-			const UCapsuleComponent* Capsule = BossCharacter->GetCapsuleComponent();
-			FTransform CharacterTransform;
-			if (HostShip.ResolveDeckCharacterTransform(
-				CandidateId,
-				Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.0f,
-				CharacterTransform))
-			{
-				CandidateLocation = CharacterTransform.GetLocation();
-			}
-		}
-
-		if (Settings.bCheckDestinationOccupancy
-			&& !IsDestinationClear(HostShip, BossActor, CandidateLocation, &TargetActor))
-		{
-			continue;
-		}
-
-		const float TargetDistance = FVector::VectorPlaneProject(
-			CandidateLocation - TargetActor.GetActorLocation(), DeckUp).Size();
-		const float RangeError = FMath::Abs(TargetDistance - FMath::Max(0.0f, Settings.IdealWalkRange));
-		if (RangeError < BestRangeError - KINDA_SMALL_NUMBER
-			|| (FMath::IsNearlyEqual(RangeError, BestRangeError) && CandidateId < OutPointId))
-		{
-			BestRangeError = RangeError;
-			OutPointId = CandidateId;
-		}
-	}
-
-	return OutPointId != INDEX_NONE;
+	return Area->IsLocationValid(Out);
 }
 
 bool UBossDeckPointSelector::IsPointBehindTarget(
@@ -262,40 +125,6 @@ bool UBossDeckPointSelector::DoesSegmentPassTarget(
 		<= FMath::Square(FMath::Max(1.0f, CorridorRadius));
 }
 
-bool UBossDeckPointSelector::IsDestinationClear(
-	const AEnemyShip& HostShip,
-	const AActor& BossActor,
-	const FVector& Destination,
-	const AActor* TargetActor)
-{
-	const UWorld* World = HostShip.GetWorld();
-	if (!World)
-	{
-		return false;
-	}
-
-	float Radius = 42.0f;
-	float HalfHeight = 88.0f;
-	if (const ACharacter* Character = Cast<ACharacter>(&BossActor))
-	{
-		if (const UCapsuleComponent* Capsule = Character->GetCapsuleComponent())
-		{
-			Radius = Capsule->GetScaledCapsuleRadius();
-			HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
-		}
-	}
-
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(BossDestinationClearance), false, &BossActor);
-	QueryParams.AddIgnoredActor(&BossActor);
-	// Do not ignore the target: teleporting into the player is an invalid destination.
-	return !World->OverlapBlockingTestByChannel(
-		Destination,
-		FQuat::Identity,
-		ECC_Pawn,
-		FCollisionShape::MakeCapsule(Radius, HalfHeight),
-		QueryParams);
-}
-
 bool UBossDeckPointSelector::IsDashSegmentClear(
 	const AEnemyShip& HostShip,
 	const AActor& BossActor,
@@ -335,5 +164,8 @@ bool UBossDeckPointSelector::IsDashSegmentClear(
 	QueryParams.AddIgnoredActor(&BossActor);
 	QueryParams.AddIgnoredActor(&TargetActor);
 	FHitResult Hit;
-	return !World->LineTraceSingleByChannel(Hit, Start, Destination, ECC_Visibility, QueryParams);
+	const ACharacter* Character = Cast<ACharacter>(&BossActor);
+	const UCapsuleComponent* Capsule = Character ? Character->GetCapsuleComponent() : nullptr;
+	return Capsule && !World->SweepSingleByChannel(Hit, Start, Destination, BossActor.GetActorQuat(), ECC_Pawn,
+		FCollisionShape::MakeCapsule(Capsule->GetScaledCapsuleRadius(), Capsule->GetScaledCapsuleHalfHeight()), QueryParams);
 }

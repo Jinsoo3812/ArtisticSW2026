@@ -12,9 +12,12 @@
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Room/SWRoomSnapshotComponent.h"
+#include "Room/SWRoomSnapshotSubsystem.h"
 
 AGravityVortexField::AGravityVortexField()
 {
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 	PrimaryActorTick.bCanEverTick = true;
 	bReplicates = true;
 	bAlwaysRelevant = true;
@@ -47,7 +50,7 @@ void AGravityVortexField::BeginPlay()
 		FieldEffectComponent->Activate(true);
 	}
 
-	if (HasAuthority())
+	if (HasAuthority() && !GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
 	{
 		SourceId = FGuid::NewGuid();
 		ActivationServerTime = GetSynchronizedServerTime();
@@ -61,7 +64,7 @@ void AGravityVortexField::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	if (HasAuthority())
+	if (HasAuthority() && !GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
 	{
 		RefreshAccumulator += DeltaSeconds;
 		if (RefreshAccumulator >= FMath::Max(0.01f, TargetRefreshInterval))
@@ -227,4 +230,76 @@ void AGravityVortexField::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(AGravityVortexField, ActivationServerTime);
 	DOREPLIFETIME(AGravityVortexField, ExpireServerTime);
+}
+
+void AGravityVortexField::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	FSWRoomGravityFieldState State;
+	State.SourceId = SourceId;
+	State.RemainingLife = GetLifeSpan();
+	State.RefreshAccumulator = RefreshAccumulator;
+	for (const TWeakObjectPtr<AShip>& Ship : AffectedShips)
+	{
+		if (!Ship.IsValid()) continue;
+		if (const USWRoomSnapshotComponent* Id = Ship->FindComponentByClass<USWRoomSnapshotComponent>(); Id && Id->StableId.IsValid())
+			State.AffectedShipIds.AddUnique(Id->StableId);
+		else
+		{
+			FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+			Issue.Domain = TEXT("Area");
+			Issue.FieldKey = FName(*(TEXT("AffectedShip:") + Ship->GetPathName()));
+			Issue.Reason = TEXT("Affected ship has no stable ID");
+		}
+	}
+	State.AffectedShipIds.Sort();
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Area;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Area");
+		Issue.FieldKey = TEXT("GravityFieldState");
+		Issue.Reason = TEXT("Gravity vortex field serialization failed");
+	}
+}
+
+bool AGravityVortexField::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	FSWRoomGravityFieldState State;
+	if (Part.Domain != ESWRoomDomain::Area || Part.Version != 1 || !FSWRoomStructCodec::Read(Part.Bytes, State)
+		|| !State.SourceId.IsValid() || !FMath::IsFinite(State.RemainingLife) || State.RemainingLife < 0.f
+		|| !FMath::IsFinite(State.RefreshAccumulator) || State.RefreshAccumulator < 0.f)
+	{
+		OutError = TEXT("Invalid gravity vortex field state");
+		return false;
+	}
+	SourceId = State.SourceId;
+	RefreshAccumulator = State.RefreshAccumulator;
+	AffectedShips.Reset();
+	PendingRoomState = MoveTemp(State);
+	bHasPendingRoomState = true;
+	return true;
+}
+
+bool AGravityVortexField::FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError)
+{
+	if (!bHasPendingRoomState) return true;
+	bHasPendingRoomState = false;
+	const float Remaining = FMath::Max(KINDA_SMALL_NUMBER, PendingRoomState.RemainingLife);
+	ActivationServerTime = GetSynchronizedServerTime() - FMath::Max(0.f, Duration - Remaining);
+	ExpireServerTime = GetSynchronizedServerTime() + Remaining;
+	SetLifeSpan(Remaining);
+	for (const FGuid& Id : PendingRoomState.AffectedShipIds)
+	{
+		AActor* const* Found = RegisteredActors.Find(Id);
+		AShip* Ship = Found ? Cast<AShip>(*Found) : nullptr;
+		if (!Ship) continue;
+		AffectedShips.Add(Ship);
+		Ship->SetExternalAccelerationSource(SourceId, CalculateAcceleration(Ship));
+		if (bSuppressEnemyPropulsion) Ship->AddPropulsionSuppression(SourceId);
+	}
+	RefreshTargets();
+	return true;
 }

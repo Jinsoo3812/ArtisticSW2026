@@ -13,6 +13,10 @@
 #include "Storage/StorageChest.h"
 #include "ItemSpawn/BossChestGuaranteedLootData.h"
 #include "BaseCharacter.h"
+#include "Room/SWRoomSnapshotComponent.h"
+#include "Room/SWRoomSnapshotSubsystem.h"
+#include "Network/SWFinalEncounterDiagnostics.h"
+#include "Ship.h"
 
 namespace
 {
@@ -123,15 +127,89 @@ namespace
 
 AGlobalLootSpawnManager::AGlobalLootSpawnManager()
 {
+	CreateDefaultSubobject<USWRoomSnapshotComponent>(TEXT("RoomSnapshot"));
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = false;
+}
+
+void AGlobalLootSpawnManager::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
+{
+	FSWRoomGlobalLootState State;
+	State.SpawnSeed = SpawnSeed;
+	State.bProgressionFinalized = bProgressionFinalized;
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		FSWRoomLootZoneState& Zone = State.Zones.AddDefaulted_GetRef();
+		Zone.ActiveChestCount = LastActiveChestCounts[Index];
+		for (const FProgressionComputedDrop& Drop : LastZoneDrops[Index])
+		{
+			FSWRoomLootDropState& Saved = Zone.Drops.AddDefaulted_GetRef();
+			Saved.ItemTag = Drop.ItemTag;
+			Saved.Chance = Drop.Chance;
+			Saved.MinCount = Drop.MinCount;
+			Saved.MaxCount = Drop.MaxCount;
+		}
+	}
+	FSWRoomDomainPart& Part = OutParts.AddDefaulted_GetRef();
+	Part.Domain = ESWRoomDomain::Spawner;
+	Part.Version = 1;
+	if (!FSWRoomStructCodec::Write(State, Part.Bytes))
+	{
+		OutParts.Pop();
+		FSWRoomCaptureIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.Domain = TEXT("Spawner");
+		Issue.FieldKey = TEXT("GlobalLootState");
+		Issue.Reason = TEXT("Global loot state serialization failed");
+	}
+}
+
+bool AGlobalLootSpawnManager::RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError)
+{
+	FSWRoomGlobalLootState State;
+	if (Part.Domain != ESWRoomDomain::Spawner || Part.Version != 1 || !FSWRoomStructCodec::Read(Part.Bytes, State)
+		|| State.Zones.Num() != 4)
+	{
+		OutError = TEXT("Invalid global loot state");
+		return false;
+	}
+	for (const FSWRoomLootZoneState& Zone : State.Zones)
+	{
+		if (Zone.ActiveChestCount < 0)
+		{
+			OutError = TEXT("Invalid global loot count");
+			return false;
+		}
+		for (const FSWRoomLootDropState& Drop : Zone.Drops)
+			if (!Drop.ItemTag.IsValid() || !FMath::IsFinite(Drop.Chance) || Drop.Chance < 0.f
+				|| Drop.MinCount < 0 || Drop.MaxCount < Drop.MinCount)
+			{
+				OutError = TEXT("Invalid global loot drop");
+				return false;
+			}
+	}
+	SpawnSeed = State.SpawnSeed;
+	bProgressionFinalized = State.bProgressionFinalized;
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		LastActiveChestCounts[Index] = State.Zones[Index].ActiveChestCount;
+		LastZoneDrops[Index].Reset();
+		for (const FSWRoomLootDropState& Saved : State.Zones[Index].Drops)
+		{
+			FProgressionComputedDrop& Drop = LastZoneDrops[Index].AddDefaulted_GetRef();
+			Drop.ItemTag = Saved.ItemTag;
+			Drop.Chance = Saved.Chance;
+			Drop.MinCount = Saved.MinCount;
+			Drop.MaxCount = Saved.MaxCount;
+		}
+	}
+	return true;
 }
 
 void AGlobalLootSpawnManager::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (HasAuthority())
+	if (HasAuthority() && !GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
 	{
 		if (bUseRandomSeed)
 		{
@@ -197,7 +275,7 @@ bool AGlobalLootSpawnManager::BuildZoneManagerList()
 
 int32 AGlobalLootSpawnManager::InitializeLevelLoot()
 {
-	if (!HasAuthority())
+	if (!HasAuthority() || GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
 	{
 		return 0;
 	}
@@ -380,6 +458,7 @@ bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionB
 		UE_LOG(LogTemp, Warning, TEXT("Fixed chest drop data is not configured; progression loot remains active."));
 	}
 	TArray<AChestSpawnPoint*> SpawnedPoints;
+	int32 FinalGuardedChestCount = 0;
 	int32 Counts[4] = {0, 0, 0, 0};
 	int32 CountsByKind[4][4] = {};
 	for (TActorIterator<AChestSpawnPoint> It(GetWorld()); It; ++It)
@@ -396,6 +475,9 @@ bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionB
 			return false;
 		}
 		SpawnedPoints.Add(Point);
+		if (Point->GetSpawnMode() == EChestSpawnMode::Guarded
+			&& Point->GetOwningShip() && Point->GetOwningShip()->IsFinalBossSquadForDeckContent())
+			++FinalGuardedChestCount;
 		++Counts[ZoneIndex];
 		const int32 KindIndex = static_cast<int32>(Point->GetProgressionKind());
 		if (KindIndex >= 0 && KindIndex < 4) ++CountsByKind[ZoneIndex][KindIndex];
@@ -443,6 +525,9 @@ bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionB
 		LastZoneDrops[ZoneIndex] = MoveTemp(DropsByZone[ZoneIndex]);
 	}
 	bProgressionFinalized = true;
+	FSWFinalEncounterDiagnostics::Write(TEXT("FinalLoot"), TEXT("ProbabilitiesFinalized"),
+		FString::Printf(TEXT("FinalGuardedChests=%d TotalSpawnedChests=%d"),
+			FinalGuardedChestCount, SpawnedPoints.Num()));
 	return true;
 }
 
