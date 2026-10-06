@@ -1,4 +1,6 @@
 #include "UI/StatusWindowWidget.h"
+#include "Room/SWVoyageSpawnLibrary.h"
+#include "Room/SWVoyageResetSubsystem.h"
 
 #include "BaseItem.h"
 #include "BasePlayer.h"
@@ -592,22 +594,24 @@ void UStatusWindowWidget::EnsurePlayerPreviewWidgets()
 
 void UStatusWindowWidget::SpawnPlayerPreview()
 {
-	if (PlayerPreviewStage || !GetWorld() || !CachedPlayer.IsValid())
+	if (IsValid(PlayerPreviewStage) || !GetWorld() || !CachedPlayer.IsValid())
 	{
-		if (PlayerPreviewStage)
+		if (IsValid(PlayerPreviewStage))
 		{
 			PlayerPreviewStage->SetPreviewEnabled(true);
 		}
 		return;
 	}
 
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = GetOwningPlayer();
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	PlayerPreviewStage = GetWorld()->SpawnActor<APlayerStatusPreviewStage>(
-		APlayerStatusPreviewStage::StaticClass(),
-		FTransform::Identity,
-		SpawnParameters);
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	const int32 Generation = Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetGeneration() : 0;
+	FString Error;
+	if (Voyage && Voyage->IsActiveVoyageSession()
+		&& !Voyage->RegisterLocalPresentationCleanupOwner(this, Generation, PlayerPreviewCleanupId, Error)) return;
+	PlayerPreviewStage = Cast<APlayerStatusPreviewStage>(USWVoyageSpawnLibrary::BeginVoyageLocalPresentationSpawn(
+		this, APlayerStatusPreviewStage::StaticClass(), FTransform::Identity, GetOwningPlayer(), nullptr,
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn, Generation, PlayerPreviewCleanupId));
+	if (PlayerPreviewStage && !USWVoyageSpawnLibrary::FinishVoyageActorSpawn(PlayerPreviewStage, FTransform::Identity)) PlayerPreviewStage = nullptr;
 	if (!PlayerPreviewStage)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[StatusPreview] Preview stage failed to spawn"));
@@ -640,6 +644,9 @@ void UStatusWindowWidget::SpawnPlayerPreview()
 
 void UStatusWindowWidget::DestroyPlayerPreview()
 {
+	if (USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr)
+		Voyage->UnregisterLocalPresentationCleanupOwner(PlayerPreviewCleanupId);
+	PlayerPreviewCleanupId.Invalidate();
 	if (IsValid(PlayerPreviewStage))
 	{
 		PlayerPreviewStage->Destroy();

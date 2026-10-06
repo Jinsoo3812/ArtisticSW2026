@@ -41,6 +41,7 @@
 #include "Animation/LocomotionAnimStateComponent.h"
 #include "Animation/SWTrajectoryComponent.h"
 #include "Inventory/InventoryComponent.h"
+#include "Room/SWVoyageResetSubsystem.h"
 #include "MultiGameMode.h"
 #include "PlayerProgressSubsystem.h"
 #include "Upgrade/ShipUpgradeComponent.h"
@@ -198,6 +199,17 @@ void ABasePlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	DOREPLIFETIME(ABasePlayer, EquippedItem);
 	DOREPLIFETIME(ABasePlayer, LocomotionStateSnapshot);
 	DOREPLIFETIME(ABasePlayer, bMountedDamageMode);
+	DOREPLIFETIME(ABasePlayer, VoyageLifeReadyGeneration);
+}
+
+bool ABasePlayer::IsVoyageClientLifeReady(int32 Generation) const
+{
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	return Generation > 0 && VoyageLifeReadyGeneration == Generation && Voyage && Voyage->IsCurrentGeneration(Generation)
+		&& Voyage->GetActorGeneration(this) == Generation && HasActorBegunPlay() && GetController() && GetPlayerState()
+		&& ASC && ASC->GetAvatarActor() == this && ASC->GetOwnerActor() == GetPlayerState()
+		&& InventoryComponent && InventoryComponent->IsRegistered() && HealthComponent && HealthComponent->IsRegistered();
 }
 
 bool ABasePlayer::CanUseSkill(const FGameplayTag& SkillTag) const
@@ -452,6 +464,8 @@ void ABasePlayer::CaptureRespawnProgress()
 
 void ABasePlayer::CaptureReconnectProgress()
 {
+	if (const UClassFeatureRoomProgressSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>() : nullptr;
+		Room && Room->IsInPlaceVoyageBusy()) return;
 	if (InventoryComponent) InventoryComponent->ReturnCursorToOriginalSlot();
 	AMultiGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
 	AController* OwnerController = GetController();
@@ -1064,6 +1078,15 @@ void ABasePlayer::PossessedBy(AController* NewController)
 	AMultiGameMode* LifeMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
 	ABasePlayerController* LifeOwner = Cast<ABasePlayerController>(NewController);
 	const bool bIndividualLifeInitialization = LifeMode && LifeMode->IsIndividualRespawnInProgress(NewController);
+	const bool bVoyageLife = LifeMode && LifeMode->IsVoyageResetInProgress();
+	if (bVoyageLife)
+	{
+		if (bVoyageInitialPossessionStarted) { Super::PossessedBy(NewController); return; }
+		VoyageLifeReadyGeneration = 0;
+		bVoyageInitialPossessionStarted = true;
+		LifeInitializationState = InitialPossessionState = ESWLifeRestoreStepState::Pending;
+		InitialLifeFailure.Reset(); bHasCompletedInitialPossession = false; bInitialLifeRestoreSuccessful = false;
+	}
 	if (bIndividualLifeInitialization)
 	{
 		if (HealthComponent) HealthComponent->BeginLifeInitialization();
@@ -1170,7 +1193,32 @@ void ABasePlayer::PossessedBy(AController* NewController)
 
  USWRoomProgressSubsystem* LifeRoom = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
  const bool bNewEntryLife = LifeRoom && (LifeRoom->IsReturnTravelPending() || LifeRoom->IsFinalDepartureTravelPending());
- if (LifeMode && LifeMode->IsIndividualRespawnInProgress(NewController))
+ if (bVoyageLife)
+ {
+  bInitialLifeRestoreSuccessful = LifeOwner && LifeOwner->ApplyPendingLifeProgress(this);
+  if (!bInitialLifeRestoreSuccessful)
+  {
+   InitialPossessionState = ESWLifeRestoreStepState::Failed;
+   const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+   InitialLifeFailure = LifeOwner && Voyage ? LifeOwner->GetLifeRestoreStatus(this,
+    Voyage->GetGeneration()).Error : TEXT("VoyageLifeOwnerOrGenerationMissing");
+   if (InitialLifeFailure.IsEmpty()) InitialLifeFailure = TEXT("VoyageLifeApplyFailed");
+   return;
+  }
+  if (!HealthComponent || !HealthComponent->EndLifeInitialization())
+  {
+   LifeInitializationState = InitialPossessionState = ESWLifeRestoreStepState::Failed;
+   InitialLifeFailure = HealthComponent ? TEXT("VoyageLifeInitializationFailed") : TEXT("VoyageLifeHealthComponentMissing");
+   bInitialLifeRestoreSuccessful = false; return;
+  }
+  LifeInitializationState = ESWLifeRestoreStepState::Succeeded;
+  if (!GetPlayerState<ABasePlayerState>() || !CachedAbilitySystemComponent.IsValid() || !InventoryComponent)
+  {
+   InitialPossessionState = ESWLifeRestoreStepState::Failed;
+   InitialLifeFailure = TEXT("VoyageLifePossessionDependenciesMissing"); bInitialLifeRestoreSuccessful = false; return;
+  }
+ }
+ else if (LifeMode && LifeMode->IsIndividualRespawnInProgress(NewController))
  {
   bInitialLifeRestoreSuccessful = LifeOwner && LifeOwner->ApplyPendingLifeProgress(this);
   if (bInitialLifeRestoreSuccessful) bInitialLifeRestoreSuccessful = HealthComponent && HealthComponent->EndLifeInitialization();
@@ -1197,13 +1245,28 @@ void ABasePlayer::PossessedBy(AController* NewController)
    if (!bNewEntryLife) RestoreRespawnProgress(NewController);
   }
  }
- bHasCompletedInitialPossession = true;
+ if (!bVoyageLife) bHasCompletedInitialPossession = true;
  if (!bStartingInventoryDecisionMade)
  {
   const bool bFreshInventory = !bInventoryProgressRestored && (!LifeRoom || !LifeRoom->IsHostedRoom() || LifeRoom->IsNewRoomPending());
-  FinalizeStartingInventory(bFreshInventory);
+  FinalizeStartingInventory(bVoyageLife ? (LifeOwner && LifeOwner->IsFreshVoyageAdmission()) : bFreshInventory);
+ }
+ if (bVoyageLife)
+ {
+  if (!bStartingInventoryDecisionMade)
+  {
+   InitialPossessionState = ESWLifeRestoreStepState::Failed;
+   InitialLifeFailure = TEXT("VoyageLifeInventoryDecisionIncomplete"); bInitialLifeRestoreSuccessful = false; return;
+  }
+  InitialPossessionState = ESWLifeRestoreStepState::Succeeded; bHasCompletedInitialPossession = true;
  }
  // ASC 초기화 완료 알림 방송
+	if (HasAuthority() && HasCompletedInitialPossession())
+	{
+		const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+		VoyageLifeReadyGeneration = Voyage ? Voyage->GetGeneration() : 0;
+		ForceNetUpdate();
+	}
 	OnAbilitySystemInitialized.Broadcast();
 }
 

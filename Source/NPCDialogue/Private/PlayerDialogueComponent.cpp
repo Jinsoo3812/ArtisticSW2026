@@ -1,4 +1,6 @@
 #include "PlayerDialogueComponent.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
@@ -52,6 +54,9 @@ void UPlayerDialogueComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		EndServerDialogue();
 	}
 	CloseClientPresentation();
+	if (USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr)
+		Voyage->UnregisterLocalPresentationCleanupOwner(DialogueCameraCleanupId);
+	DialogueCameraCleanupId.Invalidate();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -603,8 +608,15 @@ void UPlayerDialogueComponent::StartClientCamera()
 	}
 
 	PreviousViewTarget = PC->GetViewTarget();
-	DialogueCameraActor = GetWorld()->SpawnActor<ACameraActor>(
-		ACameraActor::StaticClass(), Source->GetDialogueCameraTransform());
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	const int32 Generation = Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(GetOwner()) : 0;
+	FString Error;
+	if (Voyage && Voyage->IsActiveVoyageSession()
+		&& !Voyage->RegisterLocalPresentationCleanupOwner(this, Generation, DialogueCameraCleanupId, Error)) return;
+	const FTransform SpawnTransform = Source->GetDialogueCameraTransform();
+	DialogueCameraActor = Cast<ACameraActor>(USWVoyageSpawnLibrary::BeginVoyageLocalPresentationSpawn(
+		this, ACameraActor::StaticClass(), SpawnTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::Undefined,
+		Generation, DialogueCameraCleanupId));
 	if (!DialogueCameraActor)
 	{
 		return;
@@ -618,6 +630,11 @@ void UPlayerDialogueComponent::StartClientCamera()
 		DialogueCameraActor->AttachToComponent(CameraAnchor, FAttachmentTransformRules::KeepWorldTransform);
 	}
 	DialogueCameraActor->GetCameraComponent()->SetFieldOfView(Data->CameraFieldOfView);
+	if (!USWVoyageSpawnLibrary::FinishVoyageActorSpawn(DialogueCameraActor, DialogueCameraActor->GetActorTransform()))
+	{
+		DialogueCameraActor = nullptr;
+		return;
+	}
 	PC->SetViewTargetWithBlend(DialogueCameraActor, Data->CameraBlendInTime, VTBlend_Cubic);
 }
 
@@ -642,7 +659,7 @@ void UPlayerDialogueComponent::StopClientCamera()
 		AActor* RestoreTarget = PreviousViewTarget.IsValid() ? PreviousViewTarget.Get() : GetOwner();
 		PC->SetViewTargetWithBlend(RestoreTarget, BlendOutTime, VTBlend_Cubic);
 	}
-	if (DialogueCameraActor)
+	if (IsValid(DialogueCameraActor))
 	{
 		DialogueCameraActor->SetLifeSpan(FMath::Max(BlendOutTime, 0.01f) + 0.05f);
 		DialogueCameraActor = nullptr;

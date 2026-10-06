@@ -1,4 +1,6 @@
 #include "Skills/Abilities/GA_PlayerAreaSlow.h"
+#include "Room/SWVoyageSpawnLibrary.h"
+#include "Room/SWVoyageResetSubsystem.h"
 
 #include "Abilities/Tasks/AbilityTask_WaitConfirmCancel.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
@@ -218,24 +220,27 @@ void UGA_PlayerAreaSlow::SpawnLocalTargetingPreview()
 		PreviewClass = AAreaSlowTargetingDecal::StaticClass();
 	}
 
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = Player;
-	SpawnParameters.Instigator = Player;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	LocalTargetingPreview = GetWorld()->SpawnActor<AAreaSlowTargetingDecal>(
-		PreviewClass,
-		Player->GetActorLocation(),
-		Player->GetActorRotation(),
-		SpawnParameters);
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	const int32 Generation = Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(Player) : 0;
+	FString Error;
+	if (Voyage && Voyage->IsActiveVoyageSession()
+		&& !Voyage->RegisterLocalPresentationCleanupOwner(this, Generation, PresentationCleanupId, Error)) return;
+	const FTransform SpawnTransform = Player->GetActorTransform();
+	LocalTargetingPreview = Cast<AAreaSlowTargetingDecal>(USWVoyageSpawnLibrary::BeginVoyageLocalPresentationSpawn(
+		this, PreviewClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn, Generation, PresentationCleanupId));
 	if (LocalTargetingPreview)
 	{
 		LocalTargetingPreview->SetReplicates(false);
 		LocalTargetingPreview->ConfigurePreview(Player, SkillData);
+		if (!USWVoyageSpawnLibrary::FinishVoyageActorSpawn(LocalTargetingPreview, SpawnTransform)) LocalTargetingPreview = nullptr;
 	}
 }
 
 void UGA_PlayerAreaSlow::DestroyLocalTargetingPreview()
 {
+	if (USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr)
+		Voyage->UnregisterLocalPresentationCleanupOwner(PresentationCleanupId);
+	PresentationCleanupId.Invalidate();
 	if (IsValid(LocalTargetingPreview))
 	{
 		LocalTargetingPreview->Destroy();
@@ -359,15 +364,11 @@ void UGA_PlayerAreaSlow::SpawnConfirmedDecalOnServer(const FAreaSlowRange& Range
 		VisualClass = AAreaSlowConfirmedDecal::StaticClass();
 	}
 
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = Player;
-	SpawnParameters.Instigator = Player;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AAreaSlowConfirmedDecal* ConfirmedVisual = GetWorld()->SpawnActor<AAreaSlowConfirmedDecal>(
-		VisualClass,
-		Range.Center,
-		Range.Rotation,
-		SpawnParameters);
+	const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	const FTransform SpawnTransform(Range.Rotation, Range.Center);
+	AAreaSlowConfirmedDecal* ConfirmedVisual = Cast<AAreaSlowConfirmedDecal>(USWVoyageSpawnLibrary::BeginVoyageActorSpawn(
+		this, VisualClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+		ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(Player) : 0));
 	if (ConfirmedVisual)
 	{
 		ConfirmedVisual->InitializeConfirmedVisual(
@@ -375,5 +376,6 @@ void UGA_PlayerAreaSlow::SpawnConfirmedDecalOnServer(const FAreaSlowRange& Range
 			SkillData->DecalProjectionDepth,
 			SkillData->ConfirmedDecalMaterial,
 			SkillData->ConfirmedDecalDuration);
+		USWVoyageSpawnLibrary::FinishVoyageActorSpawn(ConfirmedVisual, SpawnTransform);
 	}
 }

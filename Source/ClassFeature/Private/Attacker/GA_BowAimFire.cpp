@@ -1,5 +1,7 @@
 #include "Attacker/GA_BowAimFire.h"
 #include "Equipment/WeaponDefinition.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
@@ -532,19 +534,25 @@ void UGA_BowAimFire::FireArrowFromPendingRelease()
 		return;
 	}
 
-	AArrowProjectile* Arrow = GetWorld()->SpawnActorDeferred<AArrowProjectile>(
+	const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	AArrowProjectile* Arrow = FSWVoyageSpawn::SpawnDeferred<AArrowProjectile>(GetWorld(),
 		SpawnClass,
 		SpawnTransform,
 		Player,
 		Player,
-		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn, ESWVoyageActorLifetime::Voyage,
+		Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(Player) : 0);
 
 	if (!Arrow)
 	{
 		return;
 	}
 
-	Arrow->FinishSpawning(SpawnTransform);
+	if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Arrow, SpawnTransform) != Arrow)
+	{
+		if (IsValid(Arrow)) Arrow->Destroy();
+		return;
+	}
 	Arrow->IgnoreActorForMovement(Player);
 	Arrow->IgnoreActorForMovement(CachedBow);
 	if (Arrow->IsLaunchLocationBlocked())

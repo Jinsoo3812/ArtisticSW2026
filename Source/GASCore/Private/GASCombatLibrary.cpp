@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GASCombatLibrary.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
@@ -22,6 +23,7 @@ float UGASCombatLibrary::CalculateStrengthDamage(float Strength, float AttackCoe
 
 FGameplayEffectSpecHandle UGASCombatLibrary::MakeStrengthDamageEffectSpec(const FStrengthDamageRequest& Request)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(Request.EffectCauser)) return FGameplayEffectSpecHandle();
 	UAbilitySystemComponent* ASC = Request.SourceASC;
 	if (!ASC || !ASC->IsOwnerActorAuthoritative() || ASC->HasMatchingGameplayTag(State_Dead)
 		|| !ASC->HasAttributeSetForAttribute(UBaseAttributeSet::GetStrengthAttribute())
@@ -60,6 +62,8 @@ FGameplayEffectSpecHandle UGASCombatLibrary::MakeDamageEffectSpec(
 	bool bAddHitResult,
 	const FHitResult& HitResult)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(EffectCauser)
+		|| USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(SourceASC ? SourceASC->GetAvatarActor() : nullptr)) return FGameplayEffectSpecHandle();
 	if (!SourceASC || !DamageEffectClass)
 	{
 		return FGameplayEffectSpecHandle();

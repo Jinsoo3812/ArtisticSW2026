@@ -1,4 +1,6 @@
 #include "ShipAI/Abilities/GA_EnemyShipDeployObstacle.h"
+#include "Room/SWVoyageSpawnLibrary.h"
+#include "Room/SWVoyageResetSubsystem.h"
 
 #include "BaseGameplayTags.h"
 #include "Cannon.h"
@@ -153,15 +155,12 @@ void UGA_EnemyShipDeployObstacle::ActivateAbility(
 	const FRotator AimRotation = LocalLaunchDirection.Rotation();
 	Cannon->SetAIAimRotation(AimRotation.Pitch, AimRotation.Yaw);
 
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = Ship;
-	SpawnParameters.Instigator = Ship;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AEnemyShipObstacleProjectile* Projectile = Ship->GetWorld()->SpawnActor<AEnemyShipObstacleProjectile>(
-		ObstacleProjectileClass,
-		MuzzleTransform.GetLocation(),
-		LaunchVelocity.Rotation(),
-		SpawnParameters);
+	const FTransform SpawnTransform(LaunchVelocity.Rotation(), MuzzleTransform.GetLocation());
+	const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	AEnemyShipObstacleProjectile* Projectile = Cast<AEnemyShipObstacleProjectile>(USWVoyageSpawnLibrary::BeginVoyageActorSpawn(
+		Ship, ObstacleProjectileClass, SpawnTransform, Ship, Ship, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+		ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession()
+			? USWVoyageSpawnLibrary::GetActorVoyageGeneration(Ship) : 0));
 	if (!Projectile)
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -174,6 +173,11 @@ void UGA_EnemyShipDeployObstacle::ActivateAbility(
 		TravelSeconds,
 		ObstacleClass,
 		ObstacleSpawnRotationOffset);
+	if (!USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Projectile, SpawnTransform))
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }
 

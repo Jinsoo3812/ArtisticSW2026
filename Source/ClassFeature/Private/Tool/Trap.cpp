@@ -1,4 +1,5 @@
 #include "Trap.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "Components/StaticMeshComponent.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
@@ -51,6 +52,8 @@ void ATrap::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ATrap::OnTrapBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)
+		|| USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(OtherActor)) return;
 	// 자신과의 충돌이거나 스펙이 없으면 무시
 	if (!OtherActor || OtherActor == this || !DamageEffectClass) return;
 

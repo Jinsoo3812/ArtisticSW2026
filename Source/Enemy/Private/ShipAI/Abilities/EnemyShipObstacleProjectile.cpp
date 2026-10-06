@@ -1,4 +1,6 @@
 #include "ShipAI/Abilities/EnemyShipObstacleProjectile.h"
+#include "Room/SWVoyageSpawnLibrary.h"
+#include "Room/SWVoyageResetSubsystem.h"
 
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -104,6 +106,7 @@ void AEnemyShipObstacleProjectile::InitializeObstacleProjectile(
 
 void AEnemyShipObstacleProjectile::ReachTargetAndSpawnObstacle()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	if (bArrivalHandled) return;
 	bArrivalHandled = true;
 	if (!HasAuthority() || !GetWorld() || !ObstacleClass)
@@ -113,15 +116,17 @@ void AEnemyShipObstacleProjectile::ReachTargetAndSpawnObstacle()
 	}
 
 	SetActorLocation(TargetPoint, false, nullptr, ETeleportType::TeleportPhysics);
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = GetOwner();
-	SpawnParameters.Instigator = GetInstigator();
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	GetWorld()->SpawnActor<AEnemyShipObstacle>(
-		ObstacleClass,
-		TargetPoint,
-		ObstacleSpawnRotationOffset,
-		SpawnParameters);
+	const FTransform SpawnTransform(ObstacleSpawnRotationOffset, TargetPoint);
+	const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	AEnemyShipObstacle* Obstacle = Cast<AEnemyShipObstacle>(USWVoyageSpawnLibrary::BeginVoyageActorSpawn(
+		this, ObstacleClass, SpawnTransform, GetOwner(), GetInstigator(), ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+		ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession()
+			? USWVoyageSpawnLibrary::GetActorVoyageGeneration(this) : 0));
+	if (!Obstacle || !USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Obstacle, SpawnTransform))
+	{
+		Destroy();
+		return;
+	}
 	if (ObstacleSpawnEffect)
 	{
 		MulticastSpawnObstacleEffect(

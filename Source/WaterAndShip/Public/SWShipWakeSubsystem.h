@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "SWShipWakeTypes.h"
+#include "Room/SWVoyageResetParticipant.h"
+#include "RenderCommandFence.h"
 #include "SWShipWakeSubsystem.generated.h"
 
 class ASWShipWakeReplicator;
@@ -12,11 +14,18 @@ class UTextureRenderTarget2D;
 
 /** M7 Ripple-style immutable event store and CPU/GPU bridge with Compute Shader baking. */
 UCLASS()
-class WATERANDSHIP_API USWShipWakeSubsystem : public UTickableWorldSubsystem
+class WATERANDSHIP_API USWShipWakeSubsystem : public UTickableWorldSubsystem, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
 public:
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::ResetParticipant; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
+	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	void AcceptCurrentVoyageGeneration();
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
@@ -52,6 +61,10 @@ public:
 	static int32 GetMaxCapacity();
 
 private:
+	TArray<FSWShipWakeEvent> FutureEvents;
+	int32 AcceptedGeneration = INDEX_NONE;
+	int32 ClearedRenderGeneration = INDEX_NONE;
+	FRenderCommandFence VoyageRenderFence;
 	void AddOrUpdateCapped(const FSWShipWakeEvent& Event);
 	void RemoveExpiredEvents(double ServerTime);
 	void UpdateEventTexture();

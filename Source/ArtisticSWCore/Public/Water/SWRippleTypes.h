@@ -10,6 +10,8 @@ struct ARTISTICSWCORE_API FSWRippleEvent
 
 	UPROPERTY(BlueprintReadOnly, Category = "Water Ripple")
 	int32 EventId = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Water Ripple")
+	int32 Generation = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Water Ripple")
 	FVector2D Origin = FVector2D::ZeroVector;

@@ -1,4 +1,5 @@
 #include "WaterBombCannonball.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
@@ -179,6 +180,8 @@ bool AWaterBombCannonball::ApplyTimedEffect(
 	const FGameplayTag& GrantedTag,
 	TOptional<float> SetByCallerAttackSpeedMultiplier) const
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(const_cast<AWaterBombCannonball*>(this))
+		|| USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(TargetASC ? TargetASC->GetAvatarActor() : nullptr)) return false;
 	if (!TargetASC || !EffectClass || !GrantedTag.IsValid())
 	{
 		return false;

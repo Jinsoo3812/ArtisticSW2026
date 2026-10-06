@@ -4,6 +4,7 @@
 #include "NiagaraFunctionLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "Ship.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "ShipRepairUserInterface.h"
 
 UShipRepairPointComponent::UShipRepairPointComponent()
@@ -54,6 +55,7 @@ void UShipRepairPointComponent::DeactivateLeak()
 
 void UShipRepairPointComponent::HandleInteracted(AActor* Interactor)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(GetOwner())) return;
 	if (!GetOwner() || !GetOwner()->HasAuthority() || !bLeakActive || RepairingActor.IsValid() || !Interactor)
 	{
 		return;
@@ -80,6 +82,7 @@ void UShipRepairPointComponent::HandleInteracted(AActor* Interactor)
 
 void UShipRepairPointComponent::ValidateRepair()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(GetOwner())) return;
 	AActor* Interactor = RepairingActor.Get();
 	IShipRepairUserInterface* RepairUser = Cast<IShipRepairUserInterface>(Interactor);
 	FGameplayTag CurrentMaterial;
@@ -97,6 +100,7 @@ void UShipRepairPointComponent::ValidateRepair()
 
 void UShipRepairPointComponent::CompleteRepair()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(GetOwner())) return;
 	AActor* Interactor = RepairingActor.Get();
 	IShipRepairUserInterface* RepairUser = Cast<IShipRepairUserInterface>(Interactor);
 	AShip* Ship = Cast<AShip>(GetOwner());
@@ -138,6 +142,15 @@ void UShipRepairPointComponent::ClearRepair(bool bCompleted)
 void UShipRepairPointComponent::OnRep_LeakActive()
 {
 	UpdateVisualState();
+}
+
+void UShipRepairPointComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ClearRepair(false);
+	OnInteracted.RemoveDynamic(this, &UShipRepairPointComponent::HandleInteracted);
+	if (IsValid(ActiveLeakComponent)) ActiveLeakComponent->DeactivateImmediate();
+	ActiveLeakComponent = nullptr;
+	Super::EndPlay(EndPlayReason);
 }
 
 void UShipRepairPointComponent::UpdateVisualState()

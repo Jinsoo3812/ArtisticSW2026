@@ -1,4 +1,6 @@
 #include "UI/PlayerStatusPreviewStage.h"
+#include "Room/SWVoyageSpawnLibrary.h"
+#include "Room/SWVoyageResetSubsystem.h"
 
 #include "Animation/AnimSequenceBase.h"
 #include "Animation/Skeleton.h"
@@ -395,20 +397,35 @@ ABaseItem* APlayerStatusPreviewStage::EnsurePreviewWeaponActor()
 		SpawnClass = ABaseItem::StaticClass();
 	}
 
-	PreviewWeaponActor = World->SpawnActorDeferred<ABaseItem>(
-		SpawnClass,
-		GetActorTransform(),
-		this,
-		nullptr,
-		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	const USWVoyageResetSubsystem* Voyage = World->GetSubsystem<USWVoyageResetSubsystem>();
+	FGuid CleanupId;
+	if (Voyage && Voyage->IsActiveVoyageSession() && !Voyage->GetActorPresentationCleanupId(this, CleanupId)) return nullptr;
+	const int32 Generation = Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(this) : 0;
+	if (Voyage && !Voyage->CanSpawnVoyageActor(ESWVoyageActorLifetime::LocalPresentation, Generation, CleanupId)) return nullptr;
+	FActorSpawnParameters Parameters;
+	Parameters.Owner = this;
+	Parameters.bDeferConstruction = true;
+	Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	Parameters.OverrideLevel = World->PersistentLevel;
+	PreviewWeaponActor = World->SpawnActor<ABaseItem>(SpawnClass, GetActorTransform(), Parameters);
 	if (!PreviewWeaponActor)
 	{
 		return nullptr;
 	}
 
 	PreviewWeaponActor->ItemTag = PreviewWeaponTag;
-	PreviewWeaponActor->FinishSpawning(GetActorTransform());
 	PreviewWeaponActor->SetReplicates(false);
+	FString Error;
+	if (!FSWVoyageSpawn::RegisterDeferredActorSpawn(PreviewWeaponActor, ESWVoyageActorLifetime::LocalPresentation, Generation, CleanupId, Error))
+	{
+		DestroyPreviewWeaponActor();
+		return nullptr;
+	}
+	if (!USWVoyageSpawnLibrary::FinishVoyageActorSpawn(PreviewWeaponActor, GetActorTransform()))
+	{
+		PreviewWeaponActor = nullptr;
+		return nullptr;
+	}
 	PreviewWeaponActor->SetItemState(EItemState::Equipped);
 	return PreviewWeaponActor;
 }

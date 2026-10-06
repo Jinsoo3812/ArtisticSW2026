@@ -130,6 +130,7 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<ACameraActor> DialogueCameraActor = nullptr;
+	FGuid DialogueCameraCleanupId;
 
 	TWeakObjectPtr<AActor> PreviousViewTarget;
 	int32 ClientSessionId = 0;

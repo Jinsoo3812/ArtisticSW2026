@@ -9,6 +9,7 @@
 #include "Water/SWBuoyancyTypes.h"
 #include "SWShipWakeTypes.h"
 #include "Ship.h"
+#include "Room/SWVoyageResetTypes.h"
 
 struct FAsyncInputShip : public Chaos::FSimCallbackInput
 {
@@ -143,7 +144,7 @@ class FShipPhysicsAsync : public Chaos::TSimCallbackObject<FAsyncInputShip, FAsy
 	, public TNetworkPhysicsInputState_Internal<FNetInputShip, FNetStatePhysicsShip>
 {
 public:
-	FShipPhysicsAsync();
+	explicit FShipPhysicsAsync(TSharedPtr<FSWVoyageAsyncGuard, ESPMode::ThreadSafe> InVoyageGuard = nullptr);
 	virtual ~FShipPhysicsAsync() override;
 
 	// TSimCallbackObject 인터페이스 구현
@@ -162,6 +163,7 @@ public:
 	void SetPhysicsObject(Chaos::FConstPhysicsObjectHandle InObject) { PhysicsObject = InObject; }
 
 private:
+	const TSharedPtr<FSWVoyageAsyncGuard, ESPMode::ThreadSafe> VoyageGuard;
 	// 물리 스레드 내부에서 계산할 실시간 파고 쿼리 함수 (순수 수학 연산, 100% 스레드 세이프)
 	float GetWaveHeightAtPosition_Internal(const FVector& Position, float Time, const TArray<FGerstnerWave>& Waves, float Gravity) const;
 

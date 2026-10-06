@@ -2,6 +2,8 @@
 
 
 #include "Weapon/BaseWeaponComponent.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "Components/EquipmentStatComponent.h"
 #include "BaseEnemy.h"
 #include "Weapon/BaseWeapon.h"
@@ -93,18 +95,11 @@ void UBaseWeaponComponent::InitializeLoadoutInternal(FGameplayTag InWeaponTag, b
 	}
 
 	// 생성할 무기의 정보
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.Owner = OwnerEnemy;
-	SpawnParams.Instigator = OwnerEnemy;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	// CurrentWeapon에 무기 소환
-	CurrentWeapon = OwnerEnemy->GetWorld()->SpawnActor<ABaseWeapon>(
-		WeaponDef->WeaponActorClass,
-		OwnerEnemy->GetActorLocation(),
-		OwnerEnemy->GetActorRotation(),
-		SpawnParams
-	);
+	const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	const FTransform Transform(OwnerEnemy->GetActorRotation(), OwnerEnemy->GetActorLocation());
+	CurrentWeapon = FSWVoyageSpawn::SpawnDeferred<ABaseWeapon>(GetWorld(), WeaponDef->WeaponActorClass,
+		Transform, OwnerEnemy, OwnerEnemy, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+		ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(OwnerEnemy) : 0);
 	if (!CurrentWeapon)
 	{
 		return;
@@ -112,6 +107,12 @@ void UBaseWeaponComponent::InitializeLoadoutInternal(FGameplayTag InWeaponTag, b
 	// CurrentWeapon 변수의 Owner와 WeaponData를 Set해주기
 	CurrentWeaponTag = InWeaponTag;
 	CurrentWeapon->SetOwner(OwnerEnemy);
+	if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(CurrentWeapon, Transform) != CurrentWeapon)
+	{
+		if (IsValid(CurrentWeapon)) CurrentWeapon->Destroy();
+		CurrentWeapon = nullptr;
+		return;
+	}
 	// 무기의 초기 상태 지정
 	WeaponState = EEnemyWeaponState::Holstered;
 	if (bEquipImmediately)

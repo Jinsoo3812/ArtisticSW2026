@@ -1,4 +1,5 @@
 #include "Projectiles/SubMunitionProjectile.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "AbilitySystemGlobals.h"
@@ -111,6 +112,7 @@ void ASubMunitionProjectile::OnHit(UPrimitiveComponent* HitComponent, AActor* Ot
 
 void ASubMunitionProjectile::ExplodeAndDestroy()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	if (!HasAuthority() || bExploded) return;
 	bExploded = true;
 	GetWorldTimerManager().ClearTimer(AutoExplodeTimerHandle);

@@ -105,7 +105,8 @@ namespace
 	}
 }
 
-FShipPhysicsAsync::FShipPhysicsAsync()
+FShipPhysicsAsync::FShipPhysicsAsync(TSharedPtr<FSWVoyageAsyncGuard, ESPMode::ThreadSafe> InVoyageGuard)
+	: VoyageGuard(MoveTemp(InVoyageGuard))
 {
 	// Preserve the previous PT cache defaults until the first non-resim GT input
 	// supplies the component-owned force settings.
@@ -228,6 +229,7 @@ void FShipPhysicsAsync::ApplyState_Internal(const FNetStatePhysicsShip& State)
 
 void FShipPhysicsAsync::ProcessInputs_Internal(int32 PhysicsStep)
 {
+	if (VoyageGuard && (VoyageGuard->bCancelled.Load() || VoyageGuard->bGameplayBlocked.Load())) return;
 	bool bIsResimming = false;
 
 	if (Chaos::FPhysicsSolverBase* CurrentSolver = GetSolver())

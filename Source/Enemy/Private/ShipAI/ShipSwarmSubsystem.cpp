@@ -10,6 +10,70 @@
 #include "EngineUtils.h"
 #include "Ship.h"
 #include "ShipAttributeSet.h"
+#include "Room/SWVoyageResetSubsystem.h"
+
+ESWVoyagePolicy UShipSwarmSubsystem::GetVoyagePolicy_Implementation() const { return ESWVoyagePolicy::ResetParticipant; }
+FName UShipSwarmSubsystem::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<UShipSwarmSubsystem*>(this)) : NAME_None;
+}
+ESWVoyageStepResult UShipSwarmSubsystem::PrepareVoyageReset_Implementation(const FSWVoyageResetContext&, FString& OutError)
+{
+	OutError.Reset();
+	FTimerManager& Timers = GetWorld()->GetTimerManager();
+	if (Timers.IsTimerActive(DistanceOptimizationTimerHandle))
+	{
+		Timers.PauseTimer(DistanceOptimizationTimerHandle);
+		bPausedDistanceTimerForVoyage = true;
+	}
+	return ESWVoyageStepResult::Succeeded;
+}
+ESWVoyageStepResult UShipSwarmSubsystem::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext&, FString& OutError)
+{
+	OutError.Reset();
+	GetWorld()->GetTimerManager().ClearTimer(DistanceOptimizationTimerHandle);
+	bPausedDistanceTimerForVoyage = false;
+	SquadMap.Reset();
+	return ESWVoyageStepResult::Succeeded;
+}
+ESWVoyageStepResult UShipSwarmSubsystem::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	OutError.Reset();
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation))
+	{ OutError = TEXT("VoyageSwarmGenerationInvalid"); return ESWVoyageStepResult::Failed; }
+	for (TActorIterator<AEnemyShip> It(GetWorld()); It; ++It)
+	{
+		if (!It->IsActorInitialized()) return ESWVoyageStepResult::Pending;
+		if (Voyage->GetActorGeneration(*It) != Context.Generation)
+		{ OutError = TEXT("VoyageSwarmShipGenerationInvalid:") + It->GetPathName(); return ESWVoyageStepResult::Failed; }
+		RegisterShip(*It);
+	}
+	return ESWVoyageStepResult::Succeeded;
+}
+ESWVoyageStepResult UShipSwarmSubsystem::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	OutError.Reset();
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation))
+	{ OutError = TEXT("VoyageSwarmGenerationInvalid"); return ESWVoyageStepResult::Failed; }
+	for (const auto& Pair : SquadMap)
+		for (const TWeakObjectPtr<AEnemyShip>& Ship : Pair.Value)
+			if (!Ship.IsValid() || Voyage->GetActorGeneration(Ship.Get()) != Context.Generation)
+			{ OutError = TEXT("VoyageSwarmStaleShip"); return ESWVoyageStepResult::Failed; }
+	return ESWVoyageStepResult::Succeeded;
+}
+void UShipSwarmSubsystem::ResumeVoyage_Implementation(const FSWVoyageResetContext&)
+{
+	bPausedDistanceTimerForVoyage = false;
+	StartDistanceOptimizationTimer();
+}
+void UShipSwarmSubsystem::CancelVoyagePreparation_Implementation(const FSWVoyageResetContext&)
+{
+	if (bPausedDistanceTimerForVoyage) GetWorld()->GetTimerManager().UnPauseTimer(DistanceOptimizationTimerHandle);
+	bPausedDistanceTimerForVoyage = false;
+}
 
 namespace EnemyShipAvoidance
 {
@@ -168,6 +232,13 @@ namespace EnemyShipAvoidance
 void UShipSwarmSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
+	USWVoyageResetSubsystem* Voyage = InWorld.GetSubsystem<USWVoyageResetSubsystem>();
+	if (!Voyage || !Voyage->IsGameplayBlocked()) StartDistanceOptimizationTimer();
+}
+
+void UShipSwarmSubsystem::StartDistanceOptimizationTimer()
+{
+	UWorld& InWorld = *GetWorld();
 	if (InWorld.GetNetMode() != NM_Client)
 	{
 		InWorld.GetTimerManager().SetTimer(
@@ -197,6 +268,7 @@ void UShipSwarmSubsystem::EvaluateDistanceOptimization()
 	{
 		return;
 	}
+	if (USWVoyageResetSubsystem* Voyage = World->GetSubsystem<USWVoyageResetSubsystem>(); Voyage && Voyage->IsGameplayBlocked()) return;
 
 	TArray<FVector> PlayerShipLocations;
 	for (TActorIterator<AShip> It(World); It; ++It)

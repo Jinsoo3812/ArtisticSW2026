@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "TimerManager.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "ShipSwarmSubsystem.generated.h"
 
 class AEnemyShip;
@@ -25,13 +26,21 @@ struct ENEMY_API FEnemyShipAvoidanceDecision
  * 적 배들의 군집(Squad) 관리 및 빠른 접근을 담당하는 월드 서브시스템
  */
 UCLASS()
-class ENEMY_API UShipSwarmSubsystem : public UWorldSubsystem
+class ENEMY_API UShipSwarmSubsystem : public UWorldSubsystem, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
 public:
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 	virtual void Deinitialize() override;
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override;
+	virtual FName GetVoyageParticipantId_Implementation() const override;
+	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual void ResumeVoyage_Implementation(const FSWVoyageResetContext& Context) override;
+	virtual void CancelVoyagePreparation_Implementation(const FSWVoyageResetContext& Context) override;
 
 	// 배가 월드에 스폰될 때 호출하여 등록
 	UFUNCTION(BlueprintCallable, Category = "Ship|Swarm")
@@ -53,6 +62,8 @@ public:
 
 private:
 	void EvaluateDistanceOptimization();
+	void StartDistanceOptimizationTimer();
+	bool bPausedDistanceTimerForVoyage = false;
 
 	// 군집 ID별로 배들의 약참조 목록을 보관 (댕글링 포인터 방지)
 	TMap<FName, TArray<TWeakObjectPtr<AEnemyShip>>> SquadMap;

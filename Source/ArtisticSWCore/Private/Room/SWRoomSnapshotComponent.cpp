@@ -1,5 +1,7 @@
 #include "Room/SWRoomSnapshotComponent.h"
 #include "GameFramework/Actor.h"
+#include "Components/ChildActorComponent.h"
+#include "Misc/SecureHash.h"
 #if WITH_EDITOR
 #include "Containers/Ticker.h"
 #include "Engine/World.h"
@@ -9,6 +11,64 @@
 namespace
 {
 const FString IdTagPrefix = TEXT("SWRoomStableId=");
+#if WITH_EDITOR
+int32 EditorVoyageMigrationDepth = 0;
+#endif
+
+const UChildActorComponent* FindAuthoredParentComponent(const AActor* Actor)
+{
+	const AActor* Parent = Actor ? Actor->GetParentActor() : nullptr;
+	if (!Parent) return nullptr;
+	TInlineComponentArray<UChildActorComponent*> Components(Parent);
+	for (const UChildActorComponent* Component : Components)
+	{
+		if (Component && Component->GetChildActor() == Actor) return Component;
+	}
+	return nullptr;
+}
+
+bool IsAuthored(const AActor* Actor, TSet<const AActor*>& Visited)
+{
+	if (!Actor || Visited.Contains(Actor)) return false;
+	Visited.Add(Actor);
+	if (const UChildActorComponent* ParentComponent = FindAuthoredParentComponent(Actor))
+		return IsAuthored(ParentComponent->GetOwner(), Visited);
+	return Actor->HasAnyFlags(RF_WasLoaded);
+}
+
+bool ResolveAuthoredId(const AActor* Actor, TSet<const AActor*>& Visited, FGuid& OutId)
+{
+	if (!Actor || Visited.Contains(Actor)) return false;
+	Visited.Add(Actor);
+	if (const UChildActorComponent* ParentComponent = FindAuthoredParentComponent(Actor))
+	{
+		FGuid ParentId;
+		if (!ResolveAuthoredId(ParentComponent->GetOwner(), Visited, ParentId)) return false;
+		const FString Key = ParentId.ToString(EGuidFormats::Digits) + TEXT("|") + ParentComponent->GetName();
+		const FTCHARToUTF8 Bytes(*Key);
+		FMD5 Md5;
+		Md5.Update(reinterpret_cast<const uint8*>(Bytes.Get()), Bytes.Length());
+		uint8 Digest[16];
+		Md5.Final(Digest);
+		uint32 Words[4];
+		for (int32 Index = 0; Index < 4; ++Index)
+		{
+			const uint8* Word = Digest + Index * 4;
+			Words[Index] = (uint32(Word[0]) << 24) | (uint32(Word[1]) << 16) | (uint32(Word[2]) << 8) | uint32(Word[3]);
+		}
+		OutId = FGuid(Words[0], Words[1], Words[2], Words[3]);
+		return OutId.IsValid() && OutId != ParentId;
+	}
+	int32 Count = 0;
+	for (FName Tag : Actor->Tags)
+	{
+		const FString Value = Tag.ToString();
+		if (!Value.StartsWith(IdTagPrefix)) continue;
+		++Count;
+		if (!FGuid::Parse(Value.RightChop(IdTagPrefix.Len()), OutId)) return false;
+	}
+	return Count == 1 && OutId.IsValid();
+}
 }
 
 USWRoomSnapshotComponent::USWRoomSnapshotComponent()
@@ -21,17 +81,17 @@ bool USWRoomSnapshotComponent::RefreshLevelInstanceId()
 	const AActor* Owner = GetOwner();
 	if (!Owner) return false;
 	FGuid FoundId;
-	int32 Count = 0;
-	for (const FName& Tag : Owner->Tags)
-	{
-		const FString Value = Tag.ToString();
-		if (!Value.StartsWith(IdTagPrefix)) continue;
-		++Count;
-		if (!FGuid::Parse(Value.RightChop(IdTagPrefix.Len()), FoundId)) return false;
-	}
-	if (Count != 1 || !FoundId.IsValid()) return false;
+	TSet<const AActor*> Visited;
+	if (!ResolveAuthoredId(Owner, Visited, FoundId)) return false;
 	StableId = FoundId;
+	if (FindAuthoredParentComponent(Owner)) SetLevelInstanceId(FoundId);
 	return true;
+}
+
+bool USWRoomSnapshotComponent::IsAuthoredRoomActor(const AActor* Actor)
+{
+	TSet<const AActor*> Visited;
+	return IsAuthored(Actor, Visited);
 }
 
 void USWRoomSnapshotComponent::SetLevelInstanceId(const FGuid& Id)
@@ -46,10 +106,68 @@ void USWRoomSnapshotComponent::SetLevelInstanceId(const FGuid& Id)
 void USWRoomSnapshotComponent::OnRegister()
 {
 	Super::OnRegister();
-	if (GetOwner() && GetOwner()->HasAnyFlags(RF_WasLoaded)) RefreshLevelInstanceId();
+	ReleaseAuthoredChildBinding();
+	if (IsAuthoredRoomActor(GetOwner())) RefreshLevelInstanceId();
+	// The parent component's ChildActor pointer is assigned after SpawnActor
+	// returns. Its override parent is already available during registration.
+	if (UChildActorComponent* Parent = GetOwner() ? GetOwner()->GetParentComponent() : nullptr)
+	{
+		AuthoredParentComponent = Parent;
+		ChildActorCreatedHandle = Parent->OnChildActorCreated().AddUObject(this, &USWRoomSnapshotComponent::HandleAuthoredChildCreated);
+	}
+}
+
+void USWRoomSnapshotComponent::OnUnregister()
+{
+	ReleaseAuthoredChildBinding();
+	Super::OnUnregister();
+}
+
+void USWRoomSnapshotComponent::ReleaseAuthoredChildBinding()
+{
+	if (UChildActorComponent* Parent = AuthoredParentComponent.Get())
+		Parent->OnChildActorCreated().Remove(ChildActorCreatedHandle);
+	ChildActorCreatedHandle.Reset();
+	AuthoredParentComponent.Reset();
+}
+
+void USWRoomSnapshotComponent::HandleAuthoredChildCreated(AActor* ChildActor)
+{
+	// FinishSpawning applies cached component instance data after OnRegister.
+	// Refresh once construction is complete so that cached template IDs cannot
+	// replace the existing authored parent/component identity contract.
+	if (ChildActor == GetOwner() && IsAuthoredRoomActor(ChildActor)) RefreshLevelInstanceId();
+}
+
+void USWRoomSnapshotComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ReleaseAuthoredChildBinding();
+#if WITH_EDITOR
+	FTSTicker::GetCoreTicker().RemoveTicker(EditorDuplicateIdTicker);
+	EditorDuplicateIdTicker.Reset(); bPendingEditorDuplicateId = false;
+#endif
+	Super::EndPlay(EndPlayReason);
 }
 
 #if WITH_EDITOR
+void USWRoomSnapshotComponent::BeginEditorVoyageMigration()
+{
+	check(IsInGameThread());
+	++EditorVoyageMigrationDepth;
+	for (TObjectIterator<USWRoomSnapshotComponent> It; It; ++It)
+	{
+		It->bPendingEditorDuplicateId = false;
+		FTSTicker::GetCoreTicker().RemoveTicker(It->EditorDuplicateIdTicker);
+		It->EditorDuplicateIdTicker.Reset();
+	}
+}
+
+void USWRoomSnapshotComponent::EndEditorVoyageMigration()
+{
+	check(IsInGameThread() && EditorVoyageMigrationDepth > 0);
+	--EditorVoyageMigrationDepth;
+}
+
 void USWRoomSnapshotComponent::OnComponentCreated()
 {
 	Super::OnComponentCreated();
@@ -71,11 +189,11 @@ void USWRoomSnapshotComponent::PostDuplicate(EDuplicateMode::Type DuplicateMode)
 
 void USWRoomSnapshotComponent::QueueEditorDuplicateId()
 {
-	if (IsTemplate() || bPendingEditorDuplicateId) return;
+	if (EditorVoyageMigrationDepth > 0 || IsTemplate() || bPendingEditorDuplicateId) return;
 	bPendingEditorDuplicateId = true;
 	EditorDuplicateIdAttempts = 0;
 	const TWeakObjectPtr<USWRoomSnapshotComponent> WeakThis(this);
-	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakThis](float DeltaTime)
+	EditorDuplicateIdTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([WeakThis](float DeltaTime)
 	{
 		return WeakThis.IsValid() ? WeakThis->ApplyPendingEditorDuplicateId(DeltaTime) : false;
 	}));
@@ -84,6 +202,7 @@ void USWRoomSnapshotComponent::QueueEditorDuplicateId()
 bool USWRoomSnapshotComponent::ApplyPendingEditorDuplicateId(float DeltaTime)
 {
 	(void)DeltaTime;
+	if (EditorVoyageMigrationDepth > 0 || !bPendingEditorDuplicateId) return false;
 	AActor* Owner = GetOwner();
 	UWorld* World = Owner ? Owner->GetWorld() : nullptr;
 	if (!Owner || !World || !Owner->GetLevel())

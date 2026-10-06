@@ -16,6 +16,7 @@ public:
  virtual bool HasPendingLifeProgress() const = 0;
  virtual bool ApplyPendingLifeProgress(APawn* NewPawn) = 0;
  virtual bool WasLastLifeProgressApplySuccessful(APawn* NewPawn) const = 0;
+ virtual FSWLifeRestoreStatus GetLifeRestoreStatus(APawn* NewPawn, int32 ExpectedGeneration) const = 0;
  virtual void FreezeLifeProgressForGameOver() = 0;
  virtual void ReleaseFrozenLifeProgress() = 0;
 };

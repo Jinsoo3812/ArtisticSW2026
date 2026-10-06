@@ -2,7 +2,9 @@
 
 
 #include "BasePlayerController.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "Development/TestInput/SWDevTestInputComponent.h"
+#include "Room/SWVoyageResetSubsystem.h"
 
 ABasePlayerController::ABasePlayerController()
 {
@@ -141,7 +143,12 @@ void ABasePlayerController::OpenFacilityHubFromServer(AActor* ContextActor)
 	ASharedShipUpgradeState* SharedState = ASharedShipUpgradeState::Find(this);
 	if (!SharedState)
 	{
-		SharedState = GetWorld()->SpawnActor<ASharedShipUpgradeState>();
+		const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+		SharedState = FSWVoyageSpawn::SpawnDeferred<ASharedShipUpgradeState>(GetWorld(), ASharedShipUpgradeState::StaticClass(),
+			FTransform::Identity, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+			ESWVoyageActorLifetime::SharedService, Voyage ? Voyage->GetGeneration() : 0);
+		if (SharedState && USWVoyageSpawnLibrary::FinishVoyageActorSpawn(SharedState, FTransform::Identity) != SharedState)
+			SharedState = nullptr;
 		UE_LOG(LogTemp, Warning,
 			TEXT("[ShipUpgradePipeline][FacilityEnsureState] Controller=%s Action=Spawn State=%s"),
 			*GetNameSafe(this), *GetNameSafe(SharedState));
@@ -413,6 +420,7 @@ void ABasePlayerController::BeginPlay()
 {
 	PrimaryActorTick.TickGroup = TG_PrePhysics;
 	Super::BeginPlay();
+	BeginVoyageBindings();
 	if (IsLocalController() && GetWorld() && GetWorld()->WorldType == EWorldType::Game)
 	{
 		if (UGameViewportClient* Viewport = GetGameInstance() ? GetGameInstance()->GetGameViewportClient() : nullptr)
@@ -463,6 +471,7 @@ void ABasePlayerController::BeginPlay()
 
 void ABasePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	EndVoyageBindings();
 	if (UGameViewportClient* Viewport = BoundRoomViewport.Get())
 	{
 		if (Viewport->OnWindowCloseRequested().IsBoundToObject(this))
@@ -475,11 +484,9 @@ void ABasePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		ActiveFacilityHub->Release(this);
 		ActiveFacilityHub = nullptr;
 	}
-	if (DeathFlowWidget) { DeathFlowWidget->RemoveFromParent(); DeathFlowWidget = nullptr; }
- if (DeathCamera) { DeathCamera->Destroy(); DeathCamera = nullptr; }
- if (bDeathInputLocked) { SetIgnoreMoveInput(false); SetIgnoreLookInput(false); bDeathInputLocked = false; }
- bCameraPublishing = false; LifeCharacter.Reset();
- ResetObservedCameraBuffer();
+	ClearVoyageLocalPresentation(0);
+	PreparedVoyageLifeGeneration = -1; LifeApplyAttemptPawn.Reset(); LifeApplyError.Reset();
+	LifeApplyState = ESWLifeRestoreStepState::Pending;
  if (HasAuthority()) if (UClassFeatureRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>()) Room->HandleTransitionLogout(this);
  Super::EndPlay(EndPlayReason);
 }
@@ -1557,6 +1564,8 @@ bool ABasePlayerController::IsLifeCharacterAlive() const
 }
 bool ABasePlayerController::CanMutateGameplay() const
 {
+	if (const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+		Voyage && Voyage->IsGameplayBlocked()) return false;
  const AMultiGameMode* Mode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
  if (Mode) return Mode->CanMutateGameplay(const_cast<ABasePlayerController*>(this));
  return DeathFlowState.Phase == ESWPersonalLifePhase::Alive && LocalSessionPhase != ESWSessionLifePhase::GameOver
@@ -1589,6 +1598,85 @@ bool ABasePlayerController::CanAcceptLifeDeath(APawn* SourcePawn) const
   && !Health->IsLifeInitializing() && Health->GetDeathState() == EBaseDeathState::DeathFinished;
 }
 
+bool ABasePlayerController::PrepareVoyageLife(const FSWRoomPlayerProgress& Progress, int32 Generation, FString& OutError)
+{
+	OutError.Reset();
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	AMultiGameMode* Mode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+	const USWRoomProgressSubsystem* Room = GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+	// Commit prepares old lives before Core enters Unload. Room is the sole
+	// generation issuer; Core still holds the previous generation at this point.
+	const bool bCommittedNextGeneration = Voyage && Room && Voyage->IsActiveVoyageSession() && Voyage->IsGameplayBlocked()
+		&& Voyage->GetGeneration() < MAX_int32 && Generation == Voyage->GetGeneration() + 1
+		&& Room->GetRestoreGeneration() == Generation;
+	if (!HasAuthority() || !Mode || !Mode->IsVoyageResetInProgress() || Mode->GetVoyageResetGeneration() != Generation
+		|| !Voyage || (!Voyage->IsCurrentGeneration(Generation) && !bCommittedNextGeneration))
+	{ OutError = TEXT("VoyageLifePreparationInvalidGeneration"); return false; }
+	if (!CleanupLifeInteraction()) { OutError = TEXT("VoyageLifeInteractionCleanupFailed"); return false; }
+	ABasePlayer* OldLife = GetLifeCharacter();
+	ReleaseFrozenLifeProgress();
+	if (OldLife)
+	{
+		if (ACannon* Cannon = Cast<ACannon>(OldLife->GetAttachParentActor()); Cannon && Cannon->GetRidingPlayer() == OldLife) Cannon->ForceExit();
+		else if (AShip* Ship = Cast<AShip>(OldLife->GetAttachParentActor()); Ship && Ship->GetRidingPlayer() == OldLife) Ship->ForceDisembark();
+	}
+	UnPossess(); ClearVoyageLocalPresentation(Generation);
+	if (OldLife && !OldLife->Destroy())
+	{ OutError = TEXT("VoyageOldLifeDestroyFailed"); return false; }
+	LatestLifeProgress = Progress; bHasLatestLifeProgress = true; bLifeProgressFrozen = false;
+	bFreshVoyageAdmission = false;
+	bPendingLifeProgressApplied = false; bGameOverReconnect = false; AppliedLifePawn.Reset();
+	PreparedVoyageLifeGeneration = Generation; LifeApplyAttemptPawn.Reset();
+	LifeApplyState = ESWLifeRestoreStepState::Pending; LifeApplyError.Reset();
+	return true;
+}
+
+bool ABasePlayerController::PrepareFreshVoyageAdmission(int32 Generation, FString& OutError)
+{
+	const AMultiGameMode* Mode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (!HasAuthority() || !Mode || !Mode->IsVoyageResetInProgress() || Mode->GetPlayerIndex(this) != 1
+		|| !Voyage || !Voyage->IsCurrentGeneration(Generation) || GetPawn() || GetLifeCharacter() || bHasLatestLifeProgress)
+	{
+		OutError = TEXT("VoyageFreshAdmissionPrerequisitesInvalid");
+		return false;
+	}
+	if (bFreshVoyageAdmission)
+		return PreparedVoyageLifeGeneration == Generation;
+	bFreshVoyageAdmission = true; PreparedVoyageLifeGeneration = Generation;
+	bPendingLifeProgressApplied = false; AppliedLifePawn.Reset(); LifeApplyAttemptPawn.Reset();
+	LifeApplyState = ESWLifeRestoreStepState::Pending; LifeApplyError.Reset();
+	return true;
+}
+
+void ABasePlayerController::ClearVoyageLocalPresentation(int32 Generation)
+{
+	if (Generation > 0 && ClearedVoyagePresentationGeneration == Generation) return;
+	if (GetWorld()) GetWorldTimerManager().ClearTimer(StorageSearchTimerHandle);
+	StorageRevealStates.Reset();
+	if (HasAuthority() && ActiveFacilityHub) { ActiveFacilityHub->Release(this); ActiveFacilityHub = nullptr; }
+	CloseFacilityHub(); CloseStorage(false); CloseRoomMenu();
+	if (StatusWindowWidget) { StatusWindowWidget->SetStatusVisible(false); StatusWindowWidget->InitializeForPlayer(nullptr); }
+	SetStatusCharacterInputLocked(false);
+	if (PlayerHUDWidget) { PlayerHUDWidget->SetInventoryVisible(false); PlayerHUDWidget->ClearVoyageBinding(); }
+	ApplyInventoryInputMode(false);
+	if (DeathFlowWidget) { DeathFlowWidget->RemoveFromParent(); DeathFlowWidget = nullptr; }
+	if (DeathCamera) { DeathCamera->Destroy(); DeathCamera = nullptr; }
+	if (USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr)
+		Voyage->UnregisterLocalPresentationCleanupOwner(DeathCameraCleanupId);
+	DeathCameraCleanupId.Invalidate();
+	if (bDeathInputLocked)
+	{
+		SetIgnoreMoveInput(false); SetIgnoreLookInput(false); bDeathInputLocked = false;
+		bAutoManageActiveCameraTarget = bSavedAutoCamera;
+	}
+	bDeathFlowInputModeApplied = false; bDeathFlowGameOverInput = false; bRetryFocusApplied = false;
+	bCameraPublishing = false; LifeCharacter.Reset(); AppliedLifePawn.Reset(); LocalObservedPlayerState.Reset();
+	LocalObservationGeneration = -1; LocalObservedRestoreGeneration = -1; bHasOwnPOV = false;
+	ResetObservedCameraBuffer();
+	ClearedVoyagePresentationGeneration = Generation;
+}
+
 bool ABasePlayerController::CaptureLatestLifeProgress(APawn* SourcePawn)
 {
  if (!HasAuthority()) return false;
@@ -1616,15 +1704,40 @@ bool ABasePlayerController::GetLatestLifeProgress(FSWRoomPlayerProgress& OutProg
 }
 bool ABasePlayerController::ApplyPendingLifeProgress(APawn* NewPawn)
 {
+ check(IsInGameThread());
+ const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+ const AMultiGameMode* LifeMode = GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
+ const bool bVoyageApply = LifeMode && LifeMode->IsVoyageResetInProgress() && PreparedVoyageLifeGeneration > 0
+  && Voyage && Voyage->IsCurrentGeneration(PreparedVoyageLifeGeneration);
+ if (bApplyingLifeProgress) return false;
+ if (bVoyageApply && LifeApplyAttemptPawn.Get() == NewPawn && LifeApplyState != ESWLifeRestoreStepState::Pending)
+  return LifeApplyState == ESWLifeRestoreStepState::Succeeded;
+ if (bVoyageApply) { LifeApplyAttemptPawn = NewPawn; LifeApplyState = ESWLifeRestoreStepState::Pending; LifeApplyError.Reset(); }
+ const auto FailApply = [&](const FString& Reason)
+ {
+  if (bVoyageApply) { LifeApplyState = ESWLifeRestoreStepState::Failed; LifeApplyError = Reason; }
+  UE_LOG(LogSWRoom, Error, TEXT("RespawnSpawnFailed Controller=%s Reason=%s"), *GetName(), *Reason);
+  return false;
+ };
  bPendingLifeProgressApplied = false; AppliedLifePawn.Reset();
  ABasePlayer* LifePawnCharacter = Cast<ABasePlayer>(NewPawn);
  const FSWRoomPlayerProgress RestoreInput = LatestLifeProgress;
  TGuardValue<bool> ApplyingProgress(bApplyingLifeProgress, true);
  FString Error;
- if (!HasAuthority() || !LifePawnCharacter || !bHasLatestLifeProgress || !LifePawnCharacter->RestoreProgressForNewLife(RestoreInput, Error))
+ if (!HasAuthority()) return FailApply(TEXT("VoyageLifeApplyAuthorityMissing"));
+ if (!IsValid(LifePawnCharacter)) return FailApply(TEXT("VoyageLifeApplyPawnInvalid"));
+ if (bVoyageApply && bFreshVoyageAdmission && !bHasLatestLifeProgress)
  {
-  UE_LOG(LogSWRoom, Error, TEXT("RespawnSpawnFailed Controller=%s Reason=%s"), *GetName(), *Error); return false;
+  if (LifePawnCharacter->GetController() != this || !LifePawnCharacter->GetInventoryComponent())
+   return FailApply(TEXT("VoyageFreshAdmissionPawnContractInvalid"));
+  LifeCharacter = LifePawnCharacter; AppliedLifePawn = NewPawn; bPendingLifeProgressApplied = true;
+  LifeApplyState = ESWLifeRestoreStepState::Succeeded; LifeApplyError.Reset();
+  return true;
  }
+ if (!bHasLatestLifeProgress) return FailApply(TEXT("VoyageLifeApplyTargetMissing"));
+ if (!LifePawnCharacter->RestoreProgressForNewLife(RestoreInput, Error))
+  return FailApply(Error.IsEmpty() ? TEXT("VoyageLifeApplyFailed") : Error);
+ if (!LifePawnCharacter->GetInventoryComponent()) return FailApply(TEXT("VoyageLifeInventoryMissing"));
  TArray<FSWInventorySlotSnapshot> Expected = RestoreInput.InventorySlots;
  Expected.RemoveAll([](const FSWInventorySlotSnapshot& Slot) { return !Slot.ItemTag.IsValid() || Slot.Count <= 0; });
  TArray<FSWInventorySlotSnapshot> Actual;
@@ -1641,10 +1754,52 @@ bool ABasePlayerController::ApplyPendingLifeProgress(APawn* NewPawn)
  if (!bMatches)
  {
   UE_LOG(LogSWRoom, Error, TEXT("RespawnSpawnFailed Controller=%s Reason=InventorySnapshotMismatch Expected=%d Actual=%d"), *GetName(), Expected.Num(), Actual.Num());
-  return false;
+  return FailApply(TEXT("VoyageLifeInventorySnapshotMismatch"));
  }
  LifeCharacter = LifePawnCharacter; AppliedLifePawn = NewPawn; bPendingLifeProgressApplied = true;
+ if (bVoyageApply) { LifeApplyState = ESWLifeRestoreStepState::Succeeded; LifeApplyError.Reset(); }
  return true;
+}
+
+FSWLifeRestoreStatus ABasePlayerController::GetLifeRestoreStatus(APawn* NewPawn, int32 ExpectedGeneration) const
+{
+ check(IsInGameThread());
+ FSWLifeRestoreStatus Status;
+ const auto Invalid = [&Status](const TCHAR* Error)
+ {
+  Status.bContractValid = false;
+  Status.Apply = Status.LifeInitialization = Status.InitialPossession = ESWLifeRestoreStepState::Failed;
+  Status.Error = Error;
+  return Status;
+ };
+ const ABasePlayer* LifePawnCharacter = Cast<ABasePlayer>(NewPawn);
+ const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+ ESWVoyageActorLifetime Lifetime;
+ if (!HasAuthority() || !IsValid(LifePawnCharacter) || LifePawnCharacter->IsActorBeingDestroyed() || LifePawnCharacter->GetWorld() != GetWorld()
+  || !Voyage || ExpectedGeneration <= 0 || PreparedVoyageLifeGeneration != ExpectedGeneration
+  || !Voyage->IsCurrentGeneration(ExpectedGeneration) || !Voyage->GetActorLifetime(LifePawnCharacter, Lifetime)
+  || Lifetime != ESWVoyageActorLifetime::PlayerLife || Voyage->GetActorGeneration(LifePawnCharacter) != ExpectedGeneration
+  || (LifePawnCharacter->GetController() && LifePawnCharacter->GetController() != this)
+  || (LifeApplyAttemptPawn.IsValid() && LifeApplyAttemptPawn.Get() != LifePawnCharacter))
+  return Invalid(TEXT("VoyageLifeStatusContractInvalid"));
+ if (LifeApplyAttemptPawn.Get() == LifePawnCharacter) Status.Apply = LifeApplyState;
+ Status.LifeInitialization = LifePawnCharacter->GetLifeInitializationState();
+ Status.InitialPossession = LifePawnCharacter->GetInitialPossessionState();
+ if (Status.Apply == ESWLifeRestoreStepState::Failed)
+  Status.Error = LifeApplyError.IsEmpty() ? TEXT("VoyageLifeApplyFailed") : LifeApplyError;
+ else if (Status.LifeInitialization == ESWLifeRestoreStepState::Failed || Status.InitialPossession == ESWLifeRestoreStepState::Failed)
+  Status.Error = LifePawnCharacter->GetInitialLifeFailure().IsEmpty() ? TEXT("VoyageLifePossessionFailed") : LifePawnCharacter->GetInitialLifeFailure();
+ if (Status.Apply == ESWLifeRestoreStepState::Succeeded && Status.LifeInitialization == ESWLifeRestoreStepState::Succeeded
+  && Status.InitialPossession == ESWLifeRestoreStepState::Succeeded)
+ {
+  const UBaseHealthComponent* Health = LifePawnCharacter->GetHealthComponent();
+  if (!Health || Health->IsDead() || Health->GetHealth() <= 0.f || Health->IsLifeInitializing()
+   || !LifePawnCharacter->HasCompletedInitialPossession() || LifePawnCharacter->GetController() != this)
+   return Invalid(TEXT("VoyageLifeStatusCompletionInvariantFailed"));
+ }
+ if (!LifePawnCharacter->GetController() && Status.InitialPossession != ESWLifeRestoreStepState::Succeeded)
+  Status.InitialPossession = ESWLifeRestoreStepState::Pending;
+ return Status;
 }
 bool ABasePlayerController::WasLastLifeProgressApplySuccessful(APawn* NewPawn) const
 {
@@ -1752,8 +1907,21 @@ void ABasePlayerController::ApplyLocalDeathFlow()
    }
    if (!DeathCamera)
    {
-    DeathCamera = GetWorld()->SpawnActor<ACameraActor>();
-    if (DeathCamera) { DeathCamera->SetReplicates(false); DeathCamera->SetActorEnableCollision(false); DeathCamera->SetActorTickEnabled(false); }
+    USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+    FString Error;
+    if (!Voyage || !Voyage->IsActiveVoyageSession()
+        || Voyage->RegisterLocalPresentationCleanupOwner(this, Voyage->GetGeneration(), DeathCameraCleanupId, Error))
+    {
+     DeathCamera = Cast<ACameraActor>(USWVoyageSpawnLibrary::BeginVoyageLocalPresentationSpawn(this,
+         ACameraActor::StaticClass(), FTransform::Identity, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::Undefined,
+         Voyage ? Voyage->GetGeneration() : 0, DeathCameraCleanupId));
+     if (DeathCamera)
+     {
+      DeathCamera->SetReplicates(false); DeathCamera->SetActorEnableCollision(false); DeathCamera->SetActorTickEnabled(false);
+      if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(DeathCamera, FTransform::Identity) != DeathCamera)
+      { if (IsValid(DeathCamera)) DeathCamera->Destroy(); DeathCamera = nullptr; }
+     }
+    }
    }
    if (DeathCamera)
    {

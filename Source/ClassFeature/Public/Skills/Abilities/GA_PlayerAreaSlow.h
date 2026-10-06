@@ -64,4 +64,5 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAreaSlowTargetingDecal> LocalTargetingPreview;
+	FGuid PresentationCleanupId;
 };

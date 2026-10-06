@@ -3,6 +3,8 @@
 #include "Components/SceneComponent.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Room/SWRoomSnapshotSubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "TimerManager.h"
 
 AStoryConditionalSpawner::AStoryConditionalSpawner()
@@ -31,11 +33,14 @@ void AStoryConditionalSpawner::BeginPlay()
 				&AStoryConditionalSpawner::HandleStoryChanged);
 		}
 	}
-	if (!GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()) RefreshFromStory();
+	if (!USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)
+		&& !GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()) RefreshFromStory();
 }
 
 void AStoryConditionalSpawner::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearTimer(DeferredStoryRefreshTimer);
+	ClearSpawnedActorBinding();
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (UStoryFacadeSubsystem* Story =
@@ -51,6 +56,8 @@ void AStoryConditionalSpawner::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AStoryConditionalSpawner::RefreshFromStory()
 {
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (Voyage && Voyage->IsGameplayBlocked() && !Voyage->IsPreparationSpawnAllowed()) return;
 	if (!HasAuthority() || GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
 	{
 		return;
@@ -62,6 +69,7 @@ void AStoryConditionalSpawner::RefreshFromStory()
 		: nullptr;
 	if (!Story)
 	{
+		bVoyageSpawnFailed = true;
 		return;
 	}
 
@@ -75,18 +83,24 @@ void AStoryConditionalSpawner::RefreshFromStory()
 		UClass* ActorClass = SpawnedActorClass.LoadSynchronous();
 		if (!ActorClass)
 		{
+			bVoyageSpawnFailed = true;
 			return;
 		}
 
-		FActorSpawnParameters Params;
-		Params.Owner = this;
-		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-		AActor* NewActor = GetWorld()->SpawnActor<AActor>(ActorClass, GetActorTransform(), Params);
-		if (NewActor)
+		const FTransform Transform = GetActorTransform();
+		AActor* NewActor = FSWVoyageSpawn::SpawnDeferred<AActor>(GetWorld(), ActorClass, Transform, this, nullptr,
+			ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn, ESWVoyageActorLifetime::Voyage,
+			Voyage ? Voyage->GetGeneration() : 0);
+		if (NewActor && USWVoyageSpawnLibrary::FinishVoyageActorSpawn(NewActor, Transform) == NewActor && IsValid(NewActor))
 		{
 			SpawnedActor = NewActor;
 			NewActor->OnDestroyed.AddUniqueDynamic(this, &AStoryConditionalSpawner::HandleSpawnedActorDestroyed);
 			OnActorSpawned.Broadcast(NewActor);
+		}
+		else
+		{
+			bVoyageSpawnFailed = true;
+			if (IsValid(NewActor)) NewActor->Destroy();
 		}
 	}
 	else if (!bShouldExist && !bStoppedByCompletion && SpawnedActor.IsValid())
@@ -105,6 +119,7 @@ void AStoryConditionalSpawner::HandleStoryChanged()
 
 void AStoryConditionalSpawner::HandleSpawnedActorDestroyed(AActor* DestroyedActor)
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 	if (SpawnedActor.Get() == DestroyedActor)
 	{
 		SpawnedActor.Reset();
@@ -153,7 +168,7 @@ bool AStoryConditionalSpawner::RestoreRoomDomain(const FSWRoomDomainPart& Part, 
 		return false;
 	}
 	bSpawnOutcomeConsumed = State.bSpawnOutcomeConsumed;
-	SpawnedActor.Reset();
+	ClearSpawnedActorBinding();
 	PendingRoomState = State;
 	bHasPendingRoomState = true;
 	return true;
@@ -174,6 +189,98 @@ bool AStoryConditionalSpawner::FinalizeRoomRestore(const TMap<FGuid, AActor*>& R
 		SpawnedActor = *Found;
 		(*Found)->OnDestroyed.AddUniqueDynamic(this, &AStoryConditionalSpawner::HandleSpawnedActorDestroyed);
 	}
-	GetWorldTimerManager().SetTimerForNextTick(this, &AStoryConditionalSpawner::RefreshFromStory);
+	// Continue restores the recorded spawn outcome; it must not evaluate a new draw.
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (!Voyage || !Voyage->IsActiveVoyageSession())
+	{
+		const int32 ExpectedGeneration = Voyage ? Voyage->GetGeneration() : 0;
+		DeferredStoryRefreshTimer = GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this, ExpectedGeneration]()
+		{
+			USWVoyageResetSubsystem* Current = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+			if (Current && !Current->IsCurrentGeneration(ExpectedGeneration)) return;
+			RefreshFromStory();
+		}));
+	}
 	return true;
+}
+
+void AStoryConditionalSpawner::ClearSpawnedActorBinding()
+{
+	if (AActor* Actor = SpawnedActor.Get())
+		Actor->OnDestroyed.RemoveDynamic(this, &AStoryConditionalSpawner::HandleSpawnedActorDestroyed);
+	SpawnedActor.Reset();
+}
+
+FName AStoryConditionalSpawner::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<AStoryConditionalSpawner*>(this)) : NAME_None;
+}
+
+ESWVoyageStepResult AStoryConditionalSpawner::PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (!bDeferredStoryRefreshPaused && GetWorldTimerManager().IsTimerActive(DeferredStoryRefreshTimer))
+	{
+		GetWorldTimerManager().PauseTimer(DeferredStoryRefreshTimer);
+		bDeferredStoryRefreshPaused = true;
+	}
+	return ESWVoyageStepResult::Succeeded;
+}
+
+void AStoryConditionalSpawner::CancelVoyagePreparation_Implementation(const FSWVoyageResetContext& Context)
+{
+	if (bDeferredStoryRefreshPaused)
+	{
+		GetWorldTimerManager().UnPauseTimer(DeferredStoryRefreshTimer);
+		bDeferredStoryRefreshPaused = false;
+	}
+}
+
+ESWVoyageStepResult AStoryConditionalSpawner::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	GetWorldTimerManager().ClearTimer(DeferredStoryRefreshTimer);
+	bDeferredStoryRefreshPaused = false;
+	ClearSpawnedActorBinding();
+	bSpawnOutcomeConsumed = false;
+	bHasPendingRoomState = false;
+	PendingRoomState = FSWRoomStorySpawnerState();
+	bVoyageSpawnFailed = false;
+	RestoredVoyageGeneration = INDEX_NONE;
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult AStoryConditionalSpawner::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation))
+	{
+		OutError = TEXT("StorySpawnerGenerationMismatch");
+		return ESWVoyageStepResult::Failed;
+	}
+	if (!Context.bAuthority || Context.bContinue) return ESWVoyageStepResult::Succeeded;
+	if (RestoredVoyageGeneration != Context.Generation)
+	{
+		if (GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()
+			|| (Voyage->IsGameplayBlocked() && !Voyage->IsPreparationSpawnAllowed())) return ESWVoyageStepResult::Pending;
+		RestoredVoyageGeneration = Context.Generation;
+		RefreshFromStory();
+	}
+	if (bVoyageSpawnFailed) OutError = TEXT("StorySpawnerRequiredStoryOrSpawnFailed");
+	return bVoyageSpawnFailed ? ESWVoyageStepResult::Failed : ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult AStoryConditionalSpawner::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation) || bVoyageSpawnFailed)
+	{
+		OutError = bVoyageSpawnFailed ? TEXT("StorySpawnerRequiredStoryOrSpawnFailed") : TEXT("StorySpawnerGenerationMismatch");
+		return ESWVoyageStepResult::Failed;
+	}
+	if (SpawnedActor.IsValid() && !USWVoyageSpawnLibrary::IsActorFromCurrentVoyage(SpawnedActor.Get()))
+	{
+		OutError = TEXT("StorySpawnerSpawnedActorGenerationMismatch");
+		return ESWVoyageStepResult::Failed;
+	}
+	return ESWVoyageStepResult::Succeeded;
 }

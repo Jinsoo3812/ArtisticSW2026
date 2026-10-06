@@ -8,6 +8,8 @@
 #include "Spawning/EnemySpawnCatalog.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Room/SWRoomSnapshotSubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogGroundEnemySpawner, Log, All);
 
@@ -26,14 +28,126 @@ void AGroundEnemySpawner::BeginPlay()
 	Super::BeginPlay();
 
 	if (HasAuthority() && bAutoSpawnOnBeginPlay
+		&& !USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)
 		&& !GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
 	{
 		SpawnConfiguredEnemies();
 	}
 }
 
+void AGroundEnemySpawner::ClearTrackedEnemyBindings()
+{
+	for (const TWeakObjectPtr<ABaseEnemy>& WeakEnemy : TrackedEnemies)
+		if (ABaseEnemy* Enemy = WeakEnemy.Get())
+		{
+			Enemy->OnBaseEnemyDeathNotified.RemoveDynamic(this, &AGroundEnemySpawner::HandleTrackedEnemyRemoved);
+			Enemy->OnDestroyed.RemoveDynamic(this, &AGroundEnemySpawner::HandleTrackedEnemyDestroyed);
+		}
+	TrackedEnemies.Reset();
+}
+
+void AGroundEnemySpawner::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearTimer(DeferredRoomSpawnTimer);
+	ClearTrackedEnemyBindings();
+	Super::EndPlay(EndPlayReason);
+}
+
+FName AGroundEnemySpawner::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<AGroundEnemySpawner*>(this)) : NAME_None;
+}
+
+ESWVoyageStepResult AGroundEnemySpawner::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	GetWorldTimerManager().ClearTimer(DeferredRoomSpawnTimer);
+	bDeferredRoomSpawnPaused = false;
+	ClearTrackedEnemyBindings();
+	bConfiguredSpawnCommitted = false;
+	bConfiguredSpawnFailed = false;
+	bHasPendingRoomState = false;
+	PendingRoomState = FSWRoomGroundSpawnerState();
+	RestoredVoyageGeneration = INDEX_NONE;
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult AGroundEnemySpawner::PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (!bDeferredRoomSpawnPaused && GetWorldTimerManager().IsTimerActive(DeferredRoomSpawnTimer))
+	{
+		GetWorldTimerManager().PauseTimer(DeferredRoomSpawnTimer);
+		bDeferredRoomSpawnPaused = true;
+	}
+	return ESWVoyageStepResult::Succeeded;
+}
+
+void AGroundEnemySpawner::CancelVoyagePreparation_Implementation(const FSWVoyageResetContext& Context)
+{
+	if (bDeferredRoomSpawnPaused)
+	{
+		GetWorldTimerManager().UnPauseTimer(DeferredRoomSpawnTimer);
+		bDeferredRoomSpawnPaused = false;
+	}
+}
+
+ESWVoyageStepResult AGroundEnemySpawner::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation))
+	{
+		OutError = TEXT("GroundSpawnerGenerationMismatch");
+		return ESWVoyageStepResult::Failed;
+	}
+	if (!Context.bAuthority || Context.bContinue || !bAutoSpawnOnBeginPlay)
+		return ESWVoyageStepResult::Succeeded;
+	if (RestoredVoyageGeneration == Context.Generation)
+	{
+		if (bConfiguredSpawnFailed) OutError = TEXT("GroundSpawnerConfiguredSpawnFailed");
+		return bConfiguredSpawnFailed ? ESWVoyageStepResult::Failed : ESWVoyageStepResult::Succeeded;
+	}
+	if (!ValidateConfiguration())
+	{
+		OutError = TEXT("GroundSpawnerConfigurationInvalid");
+		return ESWVoyageStepResult::Failed;
+	}
+	UNavigationSystemV1* Navigation = UNavigationSystemV1::GetCurrent(GetWorld());
+	if (!Navigation || !Navigation->GetDefaultNavDataInstance() || UNavigationSystemV1::IsNavigationBeingBuiltOrLocked(this))
+		return ESWVoyageStepResult::Pending;
+	if (GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
+		return ESWVoyageStepResult::Pending;
+	if (Voyage->IsGameplayBlocked() && !Voyage->IsPreparationSpawnAllowed())
+		return ESWVoyageStepResult::Pending;
+	RestoredVoyageGeneration = Context.Generation;
+	SpawnConfiguredEnemies();
+	if (bConfiguredSpawnFailed) OutError = TEXT("GroundSpawnerConfiguredSpawnFailed");
+	return bConfiguredSpawnFailed ? ESWVoyageStepResult::Failed : ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult AGroundEnemySpawner::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation) || bConfiguredSpawnFailed)
+	{
+		OutError = bConfiguredSpawnFailed ? TEXT("GroundSpawnerConfiguredSpawnFailed") : TEXT("GroundSpawnerGenerationMismatch");
+		return ESWVoyageStepResult::Failed;
+	}
+	for (const TWeakObjectPtr<ABaseEnemy>& Enemy : TrackedEnemies)
+	{
+		if (!Enemy.IsValid() || !USWVoyageSpawnLibrary::IsActorFromCurrentVoyage(Enemy.Get()))
+		{
+			OutError = TEXT("GroundSpawnerTrackedEnemyInvalid");
+			return ESWVoyageStepResult::Failed;
+		}
+		if (!Enemy->IsBalanceReady()) return ESWVoyageStepResult::Pending;
+	}
+	return ESWVoyageStepResult::Succeeded;
+}
+
 int32 AGroundEnemySpawner::SpawnConfiguredEnemies()
 {
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (Voyage && Voyage->IsGameplayBlocked() && !Voyage->IsPreparationSpawnAllowed()) return 0;
 	if (!HasAuthority() || GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()
 		|| !ValidateConfiguration())
 	{
@@ -41,6 +155,7 @@ int32 AGroundEnemySpawner::SpawnConfiguredEnemies()
 	}
 
 	int32 SpawnedCount = 0;
+	bConfiguredSpawnFailed = false;
 	bConfiguredSpawnCommitted = true;
 	for (const FGroundEnemySpawnEntry& Request : SpawnEntries)
 	{
@@ -120,6 +235,7 @@ bool AGroundEnemySpawner::SpawnOneEnemy(
 	FEnemySpawnCatalogEntry Definition;
 	if (!SpawnCatalog || !SpawnCatalog->FindDefinition(Request.EnemyTypeTag, Definition))
 	{
+		bConfiguredSpawnFailed = true;
 		return false;
 	}
 
@@ -133,15 +249,17 @@ bool AGroundEnemySpawner::SpawnOneEnemy(
 	}
 
 	UWorld* World = GetWorld();
-	ABaseEnemy* Enemy = World ? World->SpawnActorDeferred<ABaseEnemy>(
-		Definition.EnemyClass,
+	USWVoyageResetSubsystem* Voyage = World ? World->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	ABaseEnemy* Enemy = World ? FSWVoyageSpawn::SpawnDeferred<ABaseEnemy>(World,
+		Definition.EnemyClass.Get(),
 		SpawnTransform,
 		this,
 		nullptr,
-		SpawnCollisionPolicy) : nullptr;
+		SpawnCollisionPolicy, ESWVoyageActorLifetime::Voyage, Voyage ? Voyage->GetGeneration() : 0) : nullptr;
 
 	if (!Enemy)
 	{
+		bConfiguredSpawnFailed = true;
 		return false;
 	}
 
@@ -151,6 +269,7 @@ bool AGroundEnemySpawner::SpawnOneEnemy(
 			Request.HealthMultiplier,
 			Request.SpeedMultiplier))
 	{
+		bConfiguredSpawnFailed = true;
 		Enemy->Destroy();
 		return false;
 	}
@@ -160,9 +279,10 @@ bool AGroundEnemySpawner::SpawnOneEnemy(
 		Territory->InitializeTerritory(GetActorLocation(), PatrolRadius, CombatRadius);
 	}
 
-	Enemy->FinishSpawning(SpawnTransform);
-	if (!IsValid(Enemy) || !Enemy->IsBalanceReady())
+	AActor* FinishedEnemy = USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Enemy, SpawnTransform);
+	if (FinishedEnemy != Enemy || !IsValid(Enemy) || !Enemy->IsBalanceReady())
 	{
+		bConfiguredSpawnFailed = true;
 		if (IsValid(Enemy))
 		{
 			Enemy->Destroy();
@@ -222,6 +342,7 @@ void AGroundEnemySpawner::HandleTrackedEnemyRemoved(
 	ABaseEnemy* Enemy,
 	EWaveEnemyRemoveReason Reason)
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 	if (!Enemy || TrackedEnemies.Remove(Enemy) == 0)
 	{
 		return;
@@ -229,17 +350,21 @@ void AGroundEnemySpawner::HandleTrackedEnemyRemoved(
 
 	Enemy->OnBaseEnemyDeathNotified.RemoveDynamic(
 		this, &AGroundEnemySpawner::HandleTrackedEnemyRemoved);
+	Enemy->OnDestroyed.RemoveDynamic(this, &AGroundEnemySpawner::HandleTrackedEnemyDestroyed);
 	OnEnemyRemoved.Broadcast(Enemy);
 }
 
 void AGroundEnemySpawner::HandleTrackedEnemyDestroyed(AActor* DestroyedActor)
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 	ABaseEnemy* Enemy = Cast<ABaseEnemy>(DestroyedActor);
 	if (!Enemy || TrackedEnemies.Remove(Enemy) == 0)
 	{
 		return;
 	}
 
+	Enemy->OnBaseEnemyDeathNotified.RemoveDynamic(this, &AGroundEnemySpawner::HandleTrackedEnemyRemoved);
+	Enemy->OnDestroyed.RemoveDynamic(this, &AGroundEnemySpawner::HandleTrackedEnemyDestroyed);
 	OnEnemyRemoved.Broadcast(Enemy);
 }
 
@@ -290,13 +415,13 @@ bool AGroundEnemySpawner::RestoreRoomDomain(const FSWRoomDomainPart& Part, FStri
 			TEXT("Flow=RoomRestore Result=Partial Spawner=%s Domain=Spawner Field=Definition Reason=ChangedCatalogOrEntries"),
 			*GetPathName());
 		bConfiguredSpawnCommitted = !State.TrackedEnemyIds.IsEmpty();
-		TrackedEnemies.Reset();
+		ClearTrackedEnemyBindings();
 		PendingRoomState = MoveTemp(State);
 		bHasPendingRoomState = true;
 		return true;
 	}
 	bConfiguredSpawnCommitted = State.bConfiguredSpawnCommitted;
-	TrackedEnemies.Reset();
+	ClearTrackedEnemyBindings();
 	PendingRoomState = MoveTemp(State);
 	bHasPendingRoomState = true;
 	return true;
@@ -319,10 +444,17 @@ bool AGroundEnemySpawner::FinalizeRoomRestore(const TMap<FGuid, AActor*>& Regist
 		Enemy->OnBaseEnemyDeathNotified.AddUniqueDynamic(this, &AGroundEnemySpawner::HandleTrackedEnemyRemoved);
 		Enemy->OnDestroyed.AddUniqueDynamic(this, &AGroundEnemySpawner::HandleTrackedEnemyDestroyed);
 	}
-	if (!bConfiguredSpawnCommitted && bAutoSpawnOnBeginPlay && GetWorld())
-		GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+	if (!bConfiguredSpawnCommitted && bAutoSpawnOnBeginPlay && GetWorld()
+		&& !USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this))
+	{
+		USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+		const int32 ExpectedGeneration = Voyage ? Voyage->GetGeneration() : 0;
+		DeferredRoomSpawnTimer = GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this, ExpectedGeneration]()
 		{
+			USWVoyageResetSubsystem* CurrentVoyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+			if (CurrentVoyage && !CurrentVoyage->IsCurrentGeneration(ExpectedGeneration)) return;
 			SpawnConfiguredEnemies();
 		}));
+	}
 	return true;
 }

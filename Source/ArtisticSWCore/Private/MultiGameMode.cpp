@@ -38,6 +38,8 @@
 #include "Room/SWRoomReadyState.h"
 #include "Network/SWRoomLoadDiagnostics.h"
 #include "Containers/Ticker.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 namespace
 {
@@ -85,13 +87,32 @@ void AMultiGameMode::InitGame(const FString& MapName, const FString& Options, FS
 void AMultiGameMode::StartPlay()
 {
 	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("GameMode.StartPlay"));
+	if (IsHostedRoom())
+	{
+		USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>();
+		USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+		FString Error;
+		if (!Room || Room->GetRestoreGeneration() == MAX_int32 || !Voyage
+			|| !Voyage->BeginBootstrapPreparation(Room->AdvanceRestoreGeneration(), Error))
+		{
+			UE_LOG(LogSWConnection, Error, TEXT("Hosted voyage bootstrap preparation failed: %s"), *Error);
+			FPlatformMisc::RequestExit(false); return;
+		}
+		bVoyageBootstrapPending = true;
+		UpdateHostedRoomPause();
+	}
     Super::StartPlay();
 	if (IsHostedRoom())
 	{
-		RoomReadyState = GetWorld()->SpawnActor<ASWRoomReadyState>();
+		const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+		RoomReadyState = FSWVoyageSpawn::SpawnDeferred<ASWRoomReadyState>(GetWorld(), ASWRoomReadyState::StaticClass(),
+			FTransform::Identity, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+			ESWVoyageActorLifetime::SharedService, Voyage ? Voyage->GetGeneration() : 0);
+		if (RoomReadyState && USWVoyageSpawnLibrary::FinishVoyageActorSpawn(RoomReadyState, FTransform::Identity) != RoomReadyState)
+			RoomReadyState = nullptr;
 		if (RoomReadyState)
 			if (USWRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>())
-				RoomReadyState->RestoreGeneration = Room->AdvanceRestoreGeneration();
+				RoomReadyState->RestoreGeneration = Room->GetRestoreGeneration();
 		int32 EntryCounts[3] = {0, 0, 0};
 		for (TActorIterator<ASWLevelEntryPoint> It(GetWorld()); It; ++It)
 			++EntryCounts[static_cast<int32>(It->EntryRole)];
@@ -147,10 +168,19 @@ void AMultiGameMode::StartPlay()
 
 void AMultiGameMode::SetHostedRoomWorldReady()
 {
+	bVoyageBootstrapPending = false;
 	if (IsHostedRoom() && RoomReadyState)
 	{
 		RoomReadyState->bWorldReady = true;
 		RoomReadyState->ForceNetUpdate();
+	}
+	UpdateHostedRoomPause();
+	if (!bVoyageResetInProgress)
+	{
+		const TArray<TWeakObjectPtr<APlayerController>> Waiting = PendingVoyageControllers.Array();
+		PendingVoyageControllers.Reset();
+		for (const TWeakObjectPtr<APlayerController>& Controller : Waiting)
+			if (Controller.IsValid() && !Controller->GetPawn()) HandleStartingNewPlayer_Implementation(Controller.Get());
 	}
 }
 
@@ -165,7 +195,7 @@ void AMultiGameMode::UpdateHostedRoomPause()
 	if (!IsHostedRoom() || !GetWorld()) return;
 	AWorldSettings* Settings = GetWorld()->GetWorldSettings();
 	if (!Settings) return;
-	if (GetConnectedPlayerCount() == 0)
+	if (GetConnectedPlayerCount() == 0 || bVoyageResetInProgress || bVoyageBootstrapPending)
 	{
 		if (!PauseSentinel)
 		{
@@ -335,6 +365,7 @@ FString AMultiGameMode::InitNewPlayer(
 
 void AMultiGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
 {
+	if (bVoyageResetInProgress || bVoyageBootstrapPending) { if (NewPlayer) PendingVoyageControllers.Add(NewPlayer); return; }
     Super::HandleStartingNewPlayer_Implementation(NewPlayer);
 
     APawn* Pawn = NewPlayer ? NewPlayer->GetPawn() : nullptr;
@@ -497,6 +528,7 @@ void AMultiGameMode::PreLogin(
 
 void AMultiGameMode::Logout(AController* Exiting)
 {
+	if (APlayerController* Controller = Cast<APlayerController>(Exiting)) PendingVoyageControllers.Remove(Controller);
     const int32 ReleasedPlayerIndex = GetPlayerIndex(Exiting);
 	if (IsHostedRoom()) UE_LOG(LogSWRoom, Display, TEXT("Flow=Disconnect Side=Server PlayerIndex=%d Host=%d Phase=Logout NoDiskWrite=1"),
 		ReleasedPlayerIndex, IsHostController(Exiting) ? 1 : 0);
@@ -655,6 +687,106 @@ void AMultiGameMode::RestartPlayer(AController* NewPlayer)
 	}
 
 	Super::RestartPlayer(NewPlayer);
+}
+
+APawn* AMultiGameMode::SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer, const FTransform& SpawnTransform)
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	if (!Voyage) return Super::SpawnDefaultPawnAtTransform_Implementation(NewPlayer, SpawnTransform);
+	APawn* Pawn = FSWVoyageSpawn::SpawnDeferred<APawn>(GetWorld(), GetDefaultPawnClassForController(NewPlayer), SpawnTransform, nullptr,
+		GetInstigator(), ESpawnActorCollisionHandlingMethod::Undefined, ESWVoyageActorLifetime::PlayerLife, Voyage->GetGeneration());
+	if (Pawn)
+	{
+		Pawn->SetFlags(RF_Transient);
+		Pawn = Cast<APawn>(USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Pawn, SpawnTransform));
+	}
+	return Pawn;
+}
+
+bool AMultiGameMode::BeginVoyageReset(int32 Generation, bool bRetry, FString& OutError)
+{
+	OutError.Reset();
+	if (!HasAuthority() || !IsHostedRoom() || bVoyageResetInProgress || Generation <= 0 || !RoomReadyState)
+	{ OutError = TEXT("VoyageGameModePreparationInvalid"); return false; }
+	VoyageOriginalSessionPhase = SessionLifePhase; bVoyageOriginalWorldReady = RoomReadyState->bWorldReady;
+	VoyageOriginalPauser = GetWorld()->GetWorldSettings()->GetPauserPlayerState();
+	VoyageResetGeneration = Generation; bVoyageResetInProgress = true; bVoyageDestructiveStarted = false;
+	RoomReadyState->bWorldReady = false; RoomReadyState->ForceNetUpdate();
+	if (bRetry) SessionLifePhase = ESWSessionLifePhase::ReturningAfterGameOver;
+	UpdateHostedRoomPause(); PublishLifePhase();
+	return true;
+}
+
+void AMultiGameMode::ResetVoyageRuntimeState(int32 Generation)
+{
+	if (!bVoyageResetInProgress || Generation != VoyageResetGeneration || bVoyageDestructiveStarted) return;
+	bVoyageDestructiveStarted = true;
+	for (auto& Timer : RespawnTimers) GetWorldTimerManager().ClearTimer(Timer.Value);
+	GetWorldTimerManager().ClearTimer(SpectatorRefreshTimer);
+	RespawnTimers.Reset(); FinishedDeadPlayers.Reset(); IndividualRespawnInProgress.Reset(); DeathFlowStates.Reset(); RespawnFailureLogTimes.Reset();
+	PlayerRespawnShip.Reset(); bPlayerRespawnShipRegistered = false;
+}
+
+void AMultiGameMode::CancelVoyageResetPreparation()
+{
+	if (!bVoyageResetInProgress || bVoyageDestructiveStarted) return;
+	SessionLifePhase = VoyageOriginalSessionPhase;
+	if (RoomReadyState) { RoomReadyState->bWorldReady = bVoyageOriginalWorldReady; RoomReadyState->ForceNetUpdate(); }
+	bVoyageResetInProgress = false; VoyageResetGeneration = 0;
+	UpdateHostedRoomPause();
+	if (GetConnectedPlayerCount() > 0) GetWorld()->GetWorldSettings()->SetPauserPlayerState(VoyageOriginalPauser.Get());
+	VoyageOriginalPauser.Reset(); PublishLifePhase();
+	for (const TWeakObjectPtr<APlayerController>& Controller : PendingVoyageControllers)
+		if (Controller.IsValid()) HandleStartingNewPlayer_Implementation(Controller.Get());
+	PendingVoyageControllers.Reset();
+}
+
+void AMultiGameMode::CompleteVoyageReset(int32 Generation)
+{
+	if (!bVoyageResetInProgress || Generation != VoyageResetGeneration) return;
+	if (RoomReadyState) RoomReadyState->RestoreGeneration = Generation;
+	SessionLifePhase = ESWSessionLifePhase::Playing;
+	for (const auto& Player : PlayerIndices)
+	{
+		FSWDeathFlowState& State = DeathFlowStates.FindOrAdd(Player.Key);
+		State.Phase = ESWPersonalLifePhase::Alive; State.RestoreGeneration = Generation;
+	}
+	bVoyageResetInProgress = false; bVoyageDestructiveStarted = false; VoyageOriginalPauser.Reset();
+	SetHostedRoomWorldReady();
+	PublishLifePhase(); RefreshSpectatorTargets();
+}
+
+bool AMultiGameMode::SpawnVoyagePlayer(AController* Controller, const FTransform& Transform, FString& OutError)
+{
+	OutError.Reset();
+	ISWRespawnControllerInterface* Flow = Cast<ISWRespawnControllerInterface>(Controller);
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	if (!bVoyageResetInProgress || !IsValid(Controller) || !PlayerIndices.Contains(Controller) || !Flow || !Flow->HasPendingLifeProgress()
+		|| !Voyage || !Voyage->IsCurrentGeneration(VoyageResetGeneration) || Transform.ContainsNaN())
+	{ OutError = TEXT("VoyagePlayerSpawnPrerequisitesMissing"); return false; }
+	APawn* Pawn = Controller->GetPawn();
+	if (!IsValid(Pawn))
+	{
+		const bool bPreviousAllowance = Voyage->IsPreparationSpawnAllowed();
+		const bool bPreviousRespawn = IndividualRespawnInProgress.Contains(Controller);
+		Voyage->SetPreparationSpawnAllowed(true); IndividualRespawnInProgress.Add(Controller);
+		RestartPlayerAtTransform(Controller, Transform);
+		if (!bPreviousRespawn) IndividualRespawnInProgress.Remove(Controller);
+		Voyage->SetPreparationSpawnAllowed(bPreviousAllowance);
+		Pawn = Controller->GetPawn();
+	}
+	if (!IsValid(Pawn)) return false;
+	const FSWLifeRestoreStatus Status = Flow->GetLifeRestoreStatus(Pawn, VoyageResetGeneration);
+	if (!Status.bContractValid)
+	{ OutError = Status.Error.IsEmpty() ? TEXT("VoyageLifeStatusContractInvalid") : Status.Error; return false; }
+	if (Status.Apply == ESWLifeRestoreStepState::Failed) return false;
+	if (Status.LifeInitialization == ESWLifeRestoreStepState::Failed || Status.InitialPossession == ESWLifeRestoreStepState::Failed)
+	{ OutError = Status.Error.IsEmpty() ? TEXT("VoyageLifeInitializationOrPossessionFailed") : Status.Error; return false; }
+	if (Status.Apply != ESWLifeRestoreStepState::Succeeded || Status.LifeInitialization != ESWLifeRestoreStepState::Succeeded
+		|| Status.InitialPossession != ESWLifeRestoreStepState::Succeeded || !Pawn->HasActorBegunPlay()) return false;
+	if (Pawn->GetController() != Controller) { OutError = TEXT("VoyageLifePossessionInvariantFailed"); return false; }
+	if (APlayerController* PlayerController = Cast<APlayerController>(Controller)) PendingVoyageControllers.Remove(PlayerController);
+	return true;
 }
 
 bool AMultiGameMode::ResolveReconnectSpawnTransform(
@@ -928,20 +1060,20 @@ bool AMultiGameMode::RegisterPlayerRespawnShip(AActor* Ship)
   || !Ship->GetClass()->ImplementsInterface(URespawnHostInterface::StaticClass())) return false;
  if (PlayerRespawnShip.Get() == Ship) return true;
  if (PlayerRespawnShip.IsValid()) { UE_LOG(LogSWRoom, Error, TEXT("RespawnShipMissing: duplicate player ship %s"), *GetNameSafe(Ship)); return false; }
- if (SessionLifePhase != ESWSessionLifePhase::Playing) return false;
+	if (SessionLifePhase != ESWSessionLifePhase::Playing && !bVoyageResetInProgress) return false;
  if (bPlayerRespawnShipRegistered && (!RoomReadyState || RoomReadyState->bWorldReady)) return false;
  PlayerRespawnShip = Ship; bPlayerRespawnShipRegistered = true;
  return true;
 }
 bool AMultiGameMode::CanMutateGameplay(AController* Controller) const
 {
- return Controller && SessionLifePhase != ESWSessionLifePhase::GameOver && SessionLifePhase != ESWSessionLifePhase::ReturningAfterGameOver
+ return !bVoyageResetInProgress && Controller && SessionLifePhase != ESWSessionLifePhase::GameOver && SessionLifePhase != ESWSessionLifePhase::ReturningAfterGameOver
   && !FinishedDeadPlayers.Contains(Controller) && !IndividualRespawnInProgress.Contains(Controller)
   && (!IsHostedRoom() || (RoomReadyState && RoomReadyState->bWorldReady));
 }
 bool AMultiGameMode::CanHostRequestGameOverRetry(AController* Controller) const
 {
- return HasAuthority() && IsHostController(Controller) && SessionLifePhase == ESWSessionLifePhase::GameOver && !bLevelRestartRequested;
+ return HasAuthority() && !bVoyageResetInProgress && IsHostController(Controller) && SessionLifePhase == ESWSessionLifePhase::GameOver && !bLevelRestartRequested;
 }
 void AMultiGameMode::SetGameOverRetryTransitionPending(bool bPending)
 {
@@ -952,6 +1084,7 @@ void AMultiGameMode::SetGameOverRetryTransitionPending(bool bPending)
 }
 void AMultiGameMode::NotifyPlayerShipSinking(AActor* Ship)
 {
+	if (bVoyageResetInProgress) return;
  if (!HasAuthority() || Ship != PlayerRespawnShip.Get() || SessionLifePhase != ESWSessionLifePhase::Playing || bLevelRestartRequested) return;
  SessionLifePhase = ESWSessionLifePhase::ShipSinking;
  for (auto& Pair : RespawnTimers) GetWorldTimerManager().ClearTimer(Pair.Value);
@@ -962,6 +1095,7 @@ void AMultiGameMode::NotifyPlayerShipSinking(AActor* Ship)
 }
 void AMultiGameMode::NotifyPlayerShipRemovedBySinking(AActor* Ship)
 {
+	if (bVoyageResetInProgress) return;
  // Weak Get() excludes pending-kill actors; retain identity with Get(true).
  if (!HasAuthority() || !Ship || Ship != PlayerRespawnShip.Get(true) || Ship->GetWorld() != GetWorld()
   || bLevelRestartRequested || GetWorld()->bIsTearingDown || SessionLifePhase != ESWSessionLifePhase::ShipSinking) return;
@@ -979,6 +1113,7 @@ void AMultiGameMode::RefreshSpectatorTargets()
 }
 void AMultiGameMode::NotifyPlayerDeathFinished(APawn* DeadPawn)
 {
+	if (bVoyageResetInProgress) return;
  UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=ModeDeathFinishedEntered Pawn=%s Authority=%d Session=%d"), *GetNameSafe(DeadPawn), HasAuthority(), static_cast<int32>(SessionLifePhase));
  if (!HasAuthority() || !DeadPawn || DeadPawn->GetWorld() != GetWorld()) return;
  AController* Controller = DeadPawn->GetController();
@@ -1012,6 +1147,7 @@ void AMultiGameMode::NotifyPlayerDeathFinished(APawn* DeadPawn)
 }
 void AMultiGameMode::TryRespawnPlayer(AController* Controller, int32 ExpectedGeneration)
 {
+	if (bVoyageResetInProgress) return;
  UE_LOG(LogSWRoom, Display, TEXT("[SWLifeDiag] Event=RespawnTimerFired Controller=%s ExpectedGeneration=%d Session=%d Dead=%d"), *GetNameSafe(Controller), ExpectedGeneration, static_cast<int32>(SessionLifePhase), FinishedDeadPlayers.Contains(Controller));
  if (!IsValid(Controller) || !FinishedDeadPlayers.Contains(Controller) || SessionLifePhase != ESWSessionLifePhase::Playing
   || !DeathFlowStates.Contains(Controller) || DeathFlowStates.FindChecked(Controller).WaitingGeneration != ExpectedGeneration) return;

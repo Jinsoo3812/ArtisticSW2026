@@ -6,6 +6,7 @@
 #include "BaseItem.h"
 #include "ItemData.h"
 #include "Crafting/CraftingRecipeTypes.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "ItemSubsystem.generated.h"
 
 class UItemData;
@@ -16,7 +17,7 @@ struct FItemDefinition;
 * BaseItem을 소환 및 관리하는 Subsystem
 */
 UCLASS()
-class ARTISTICSWCORE_API UItemSubsystem : public UWorldSubsystem
+class ARTISTICSWCORE_API UItemSubsystem : public UWorldSubsystem, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
@@ -24,6 +25,8 @@ public:
 	// Subsystem 초기화 및 해제
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override;
+	virtual FName GetVoyageParticipantId_Implementation() const override;
 
 	/**
 	 * [서버]아이템을 지연 스폰(Deferred Spawn) 방식으로 생성

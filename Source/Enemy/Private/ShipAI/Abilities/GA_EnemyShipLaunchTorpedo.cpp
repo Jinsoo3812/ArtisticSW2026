@@ -1,4 +1,6 @@
 #include "ShipAI/Abilities/GA_EnemyShipLaunchTorpedo.h"
+#include "Room/SWVoyageSpawnLibrary.h"
+#include "Room/SWVoyageResetSubsystem.h"
 
 #include "BaseGameplayTags.h"
 #include "Cannon.h"
@@ -118,6 +120,7 @@ void UGA_EnemyShipLaunchTorpedo::EndAbility(
 
 void UGA_EnemyShipLaunchTorpedo::LaunchNextTorpedo()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(ActiveShip.Get())) return;
 	if (!FireSingleTorpedo())
 	{
 		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
@@ -170,15 +173,12 @@ bool UGA_EnemyShipLaunchTorpedo::FireSingleTorpedo()
 	const FRotator AimRotation = LocalLaunchDirection.Rotation();
 	Cannon->SetAIAimRotation(AimRotation.Pitch, AimRotation.Yaw);
 
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = Ship;
-	SpawnParameters.Instigator = Ship;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AEnemyShipTorpedo* Torpedo = Ship->GetWorld()->SpawnActor<AEnemyShipTorpedo>(
-		TorpedoClass,
-		MuzzleTransform.GetLocation(),
-		LaunchDirection.Rotation(),
-		SpawnParameters);
+	const FTransform SpawnTransform(LaunchDirection.Rotation(), MuzzleTransform.GetLocation());
+	const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	AEnemyShipTorpedo* Torpedo = Cast<AEnemyShipTorpedo>(USWVoyageSpawnLibrary::BeginVoyageActorSpawn(
+		Ship, TorpedoClass, SpawnTransform, Ship, Ship, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+		ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession()
+			? USWVoyageSpawnLibrary::GetActorVoyageGeneration(Ship) : 0));
 	if (!Torpedo)
 	{
 		return false;
@@ -193,7 +193,7 @@ bool UGA_EnemyShipLaunchTorpedo::FireSingleTorpedo()
 		FiringStats.ProjectileSpeed,
 		FMath::Max(0.1f, MaximumFlightSeconds));
 
-	return true;
+	return USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Torpedo, SpawnTransform) != nullptr;
 }
 
 ACannon* UGA_EnemyShipLaunchTorpedo::SelectClosestCannon(

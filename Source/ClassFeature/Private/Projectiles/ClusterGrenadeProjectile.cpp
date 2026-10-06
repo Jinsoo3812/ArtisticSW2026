@@ -1,5 +1,7 @@
 #include "Projectiles/ClusterGrenadeProjectile.h"
 #include "Projectiles/SubMunitionProjectile.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Math/UnrealMathUtility.h"
@@ -92,13 +94,19 @@ void AClusterGrenadeProjectile::Split()
 		FTransform SpawnTransform(RandDir.Rotation(), CurrentLoc);
 		
 		// Deferred Spawn을 통해 변수(데미지스펙) 전달 후 생성 완료
-		ASubMunitionProjectile* SubMunition = GetWorld()->SpawnActorDeferred<ASubMunitionProjectile>(
-			SubMunitionClass, SpawnTransform, GetOwner(), GetInstigator(), ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+		ASubMunitionProjectile* SubMunition = FSWVoyageSpawn::SpawnDeferred<ASubMunitionProjectile>(GetWorld(),
+			SubMunitionClass, SpawnTransform, GetOwner(), GetInstigator(), ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+			ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(this) : 0);
 
 		if (SubMunition)
 		{
 			SubMunition->DamageEffectSpecHandle = DamageEffectSpecHandle;
-			SubMunition->FinishSpawning(SpawnTransform);
+			if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(SubMunition, SpawnTransform) != SubMunition)
+			{
+				if (IsValid(SubMunition)) SubMunition->Destroy();
+				continue;
+			}
 			SubMunition->LaunchSubMunition(LaunchVel);
 			SpawnedSubMunitions.Add(SubMunition);
 		}

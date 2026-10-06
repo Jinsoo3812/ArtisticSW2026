@@ -7,6 +7,16 @@
 #include "Settings_Item.h"
 #include "BaseGameplayTags.h"
 #include "Engine/World.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
+
+ESWVoyagePolicy UItemSubsystem::GetVoyagePolicy_Implementation() const { return ESWVoyagePolicy::Preserve; }
+FName UItemSubsystem::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<UItemSubsystem*>(this)) : NAME_None;
+}
+
 
 void UItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -133,12 +143,14 @@ ABaseItem* UItemSubsystem::SpawnItem(const FGameplayTag& ItemTag, const FTransfo
 	}
 
 	// [지연 스폰 시작] - BeginPlay가 호출되기 전에 액터를 메모리에만 올림
-	ABaseItem* SpawnedItem = World->SpawnActorDeferred<ABaseItem>(
+	USWVoyageResetSubsystem* Voyage = World->GetSubsystem<USWVoyageResetSubsystem>();
+	ABaseItem* SpawnedItem = FSWVoyageSpawn::SpawnDeferred<ABaseItem>(World,
 		SpawnClass,
 		SpawnTransform,
 		Instigator,
 		Instigator ? Cast<APawn>(Instigator) : nullptr,
-		ESpawnActorCollisionHandlingMethod::AlwaysSpawn
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+		ESWVoyageActorLifetime::Voyage, Voyage ? Voyage->GetGeneration() : 0
 	);
 
 	// 스폰에 성공한 후 BaseItem 초기화
@@ -147,7 +159,8 @@ ABaseItem* UItemSubsystem::SpawnItem(const FGameplayTag& ItemTag, const FTransfo
 		SpawnedItem->ItemTag = ItemTag;
 
 		// BaseItem의 BeginPlay 호출
-		SpawnedItem->FinishSpawning(SpawnTransform);
+		SpawnedItem = Cast<ABaseItem>(USWVoyageSpawnLibrary::FinishVoyageActorSpawn(SpawnedItem, SpawnTransform));
+		if (!SpawnedItem) return nullptr;
 
 		// 상태 변경 (초기화)
 		SpawnedItem->SetItemState(InitialState);

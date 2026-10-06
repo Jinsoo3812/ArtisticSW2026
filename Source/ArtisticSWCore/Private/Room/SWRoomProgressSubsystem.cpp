@@ -1,4 +1,5 @@
 #include "Room/SWRoomProgressSubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
 #include "Room/SWRoomRuntimePaths.h"
 #include "Engine/World.h"
 
@@ -49,6 +50,19 @@ bool USWRoomProgressSubsystem::IsDevelopmentFinalEncounterWorld(UWorld* World) c
 {
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
  return SWDevTestInput::Authority(World) && DevelopmentEncounterWorld.Get() == World;
+#else
+ return false;
+#endif
+}
+bool USWRoomProgressSubsystem::CommitDevelopmentFinalDepartureInPlace(UWorld* World)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+ if (!bDevelopmentFinalDeparturePending || !IsDevelopmentTestSessionEnabled(World) || !SWDevTestInput::Authority(World)
+  || DevelopmentFinalTargetPackage != SWDevTestInput::Package(World) || IsFinalDepartureTravelPending()) return false;
+ SetDevelopmentFinalDeparturePending(World, false);
+ DevelopmentEncounterWorld = World;
+ SetDevelopmentTestSessionEnabled(World, false);
+ return true;
 #else
  return false;
 #endif
@@ -116,7 +130,17 @@ void USWRoomProgressSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		UE_LOG(LogSWRoom, Display, TEXT("Flow=ServerStartup RunId=%s RoomId=%s Mode=%s Result=Loaded Backup=%d Sequence=%llu"),
 			*RunText, *RoomText, *Mode, ActiveRoom->bRecoveredFromBackup ? 1 : 0, ActiveRoom->CaptureSequence);
 	}
+
 }
+
+ESWVoyagePolicy USWRoomProgressSubsystem::GetVoyagePolicy_Implementation() const { return ESWVoyagePolicy::Preserve; }
+FName USWRoomProgressSubsystem::GetVoyageParticipantId_Implementation() const
+{
+	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
+	USWVoyageResetSubsystem* Voyage = World ? World->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<USWRoomProgressSubsystem*>(this)) : NAME_None;
+}
+
 
 bool USWRoomProgressSubsystem::WriteCheckpoint()
 {

@@ -1,4 +1,12 @@
 #include "Network/Lobby/SWRoomSubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Engine/World.h"
+
+FName USWRoomSubsystem::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<USWRoomSubsystem*>(this)) : NAME_None;
+}
 
 #include "Network/Lobby/SWRoomCode.h"
 #include "Network/SWConnectionSubsystem.h"
@@ -191,7 +199,7 @@ bool USWRoomSubsystem::BeginHosting(const FString& Name, const FString& Optional
 		if (!Saved)
 		{
 			Fail(FText::FromString(FSWRoomSaveStore::HasLegacyRoomFile()
-				? TEXT("이전 방 저장 형식(v3)은 이 빌드에서 지원되지 않음")
+				? TEXT("레벨 구조 변경 전의 저장입니다. 새로운 방을 만들어 주세요.")
 				: TEXT("유효한 방 저장이 없습니다.")));
 			return false;
 		}

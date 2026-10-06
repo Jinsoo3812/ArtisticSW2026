@@ -105,12 +105,12 @@ class ARTISTICSWCORE_API USWRoomSaveGame : public USaveGame
 	GENERATED_BODY()
 public:
 	static constexpr int32 CurrentVersion = 7;
-	static constexpr int32 CurrentContentContractVersion = 3;
+	static constexpr int32 CurrentContentContractVersion = 4;
 	UPROPERTY(SaveGame) int32 SaveVersion = CurrentVersion;
 	UPROPERTY(SaveGame) ESWRoomSaveKind SaveKind = ESWRoomSaveKind::New;
 	UPROPERTY(SaveGame) uint64 CaptureSequence = 0;
 	UPROPERTY(SaveGame) FDateTime SavedAtUtc;
-	UPROPERTY(SaveGame) int32 ContentContractVersion = 1;
+	UPROPERTY(SaveGame) int32 ContentContractVersion = CurrentContentContractVersion;
 	UPROPERTY(SaveGame) FSoftObjectPath MapPath;
 	UPROPERTY(SaveGame) bool bComplete = false;
 	UPROPERTY(SaveGame) bool bFinalDepartureCompleted = false;

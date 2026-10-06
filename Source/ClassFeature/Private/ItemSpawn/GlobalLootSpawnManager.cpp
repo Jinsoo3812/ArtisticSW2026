@@ -17,6 +17,8 @@
 #include "Room/SWRoomSnapshotSubsystem.h"
 #include "Network/SWFinalEncounterDiagnostics.h"
 #include "Ship.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 namespace
 {
@@ -209,7 +211,8 @@ void AGlobalLootSpawnManager::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (HasAuthority() && !GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
+	if (HasAuthority() && !USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)
+		&& !GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
 	{
 		if (bUseRandomSeed)
 		{
@@ -218,13 +221,22 @@ void AGlobalLootSpawnManager::BeginPlay()
 
 	if (bInitializeOnBeginPlay)
 	{
-		GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this,
-			[this]()
+		const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+		const int32 ExpectedGeneration = Voyage ? Voyage->GetGeneration() : 0;
+		InitialLootTimer = GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this,
+			[this, ExpectedGeneration]()
 			{
+				const USWVoyageResetSubsystem* Current = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+				if (Current && !Current->IsCurrentGeneration(ExpectedGeneration)) return;
 				// Ship child actors receive their settings during ship BeginPlay.
 				InitializeLevelLoot();
-				GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this,
-					[this]() { RebalanceSpawnedChests(); }));
+				RebalanceTimer = GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this,
+					[this, ExpectedGeneration]()
+					{
+						const USWVoyageResetSubsystem* Current = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+						if (Current && !Current->IsCurrentGeneration(ExpectedGeneration)) return;
+						RebalanceSpawnedChests();
+					}));
 			}));
 	}
 	}
@@ -273,8 +285,96 @@ bool AGlobalLootSpawnManager::BuildZoneManagerList()
 	return ZoneBudgets.Num() > 0;
 }
 
+void AGlobalLootSpawnManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearTimer(InitialLootTimer);
+	GetWorldTimerManager().ClearTimer(RebalanceTimer);
+	Super::EndPlay(EndPlayReason);
+}
+
+FName AGlobalLootSpawnManager::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<AGlobalLootSpawnManager*>(this)) : NAME_None;
+}
+
+ESWVoyageStepResult AGlobalLootSpawnManager::PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (!bInitialLootTimerPaused && GetWorldTimerManager().IsTimerActive(InitialLootTimer))
+	{
+		GetWorldTimerManager().PauseTimer(InitialLootTimer);
+		bInitialLootTimerPaused = true;
+	}
+	if (!bRebalanceTimerPaused && GetWorldTimerManager().IsTimerActive(RebalanceTimer))
+	{
+		GetWorldTimerManager().PauseTimer(RebalanceTimer);
+		bRebalanceTimerPaused = true;
+	}
+	return ESWVoyageStepResult::Succeeded;
+}
+
+void AGlobalLootSpawnManager::CancelVoyagePreparation_Implementation(const FSWVoyageResetContext& Context)
+{
+	if (bInitialLootTimerPaused) GetWorldTimerManager().UnPauseTimer(InitialLootTimer);
+	if (bRebalanceTimerPaused) GetWorldTimerManager().UnPauseTimer(RebalanceTimer);
+	bInitialLootTimerPaused = false;
+	bRebalanceTimerPaused = false;
+}
+
+ESWVoyageStepResult AGlobalLootSpawnManager::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	GetWorldTimerManager().ClearTimer(InitialLootTimer);
+	GetWorldTimerManager().ClearTimer(RebalanceTimer);
+	bInitialLootTimerPaused = false;
+	bRebalanceTimerPaused = false;
+	bVoyageInitializationFailed = false;
+	bProgressionFinalized = false;
+	RestoredVoyageGeneration = INDEX_NONE;
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		LastActiveChestCounts[Index] = 0;
+		LastZoneDrops[Index].Reset();
+	}
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult AGlobalLootSpawnManager::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation))
+	{
+		OutError = TEXT("GlobalLootGenerationMismatch");
+		return ESWVoyageStepResult::Failed;
+	}
+	if (!Context.bAuthority || Context.bContinue || !bInitializeOnBeginPlay) return ESWVoyageStepResult::Succeeded;
+	if (RestoredVoyageGeneration != Context.Generation)
+	{
+		if (GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()
+			|| (Voyage->IsGameplayBlocked() && !Voyage->IsPreparationSpawnAllowed())) return ESWVoyageStepResult::Pending;
+		RestoredVoyageGeneration = Context.Generation;
+		if (bUseRandomSeed) SpawnSeed = FMath::Rand();
+		InitializeLevelLoot();
+		if (!bProgressionFinalized && !RebalanceSpawnedChests()) bVoyageInitializationFailed = true;
+	}
+	if (bVoyageInitializationFailed) OutError = TEXT("GlobalLootInitializationFailed");
+	return bVoyageInitializationFailed ? ESWVoyageStepResult::Failed : ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult AGlobalLootSpawnManager::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation) || bVoyageInitializationFailed)
+	{
+		OutError = bVoyageInitializationFailed ? TEXT("GlobalLootInitializationFailed") : TEXT("GlobalLootGenerationMismatch");
+		return ESWVoyageStepResult::Failed;
+	}
+	return ESWVoyageStepResult::Succeeded;
+}
+
 int32 AGlobalLootSpawnManager::InitializeLevelLoot()
 {
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (Voyage && Voyage->IsGameplayBlocked() && !Voyage->IsPreparationSpawnAllowed()) return 0;
 	if (!HasAuthority() || GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
 	{
 		return 0;
@@ -300,6 +400,7 @@ int32 AGlobalLootSpawnManager::InitializeLevelLoot()
 
 		const uint32 ZoneSeed = HashCombine(static_cast<uint32>(SpawnSeed), static_cast<uint32>(++ZoneIndex));
 		ActivatedCount += ZoneManager->ActivateAndSpawnByBudget(Pair.Value, static_cast<int32>(ZoneSeed & 0x7fffffff));
+		bVoyageInitializationFailed |= ZoneManager->DidLastBudgetSpawnFail();
 	}
 
 	return ActivatedCount;
@@ -312,6 +413,8 @@ int32 AGlobalLootSpawnManager::InitializeDataDrivenChests()
 
 int32 AGlobalLootSpawnManager::InitializeDataDrivenChestsWithBalance(const UProgressionBalanceData* Balance)
 {
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (Voyage && Voyage->IsGameplayBlocked() && !Voyage->IsPreparationSpawnAllowed()) return 0;
 	if (!HasAuthority() || !GetWorld())
 	{
 		return 0;
@@ -345,6 +448,7 @@ int32 AGlobalLootSpawnManager::InitializeDataDrivenChestsWithBalance(const UProg
 			}
 			else
 			{
+				bVoyageInitializationFailed = true;
 				UE_LOG(LogTemp, Error, TEXT("Random chest point must use OceanRandom or IslandRandom. Point=%s"), *GetNameSafe(Point));
 			}
 		}
@@ -361,12 +465,14 @@ int32 AGlobalLootSpawnManager::InitializeDataDrivenChestsWithBalance(const UProg
 		}
 		else
 		{
+			bVoyageInitializationFailed = true;
 			UE_LOG(LogTemp, Error, TEXT("Failed to spawn guarded chest. Point=%s"), *GetNameSafe(Point));
 		}
 	}
 
 	if (!Balance && (OceanPointsByZone.Num() > 0 || IslandPointsByZone.Num() > 0))
 	{
+		bVoyageInitializationFailed = true;
 		UE_LOG(LogTemp, Error, TEXT("Random chest activation requires ProgressionBalanceData."));
 	}
 	for (int32 ZoneIndex = 0; Balance && ZoneIndex < 4; ++ZoneIndex)
@@ -398,6 +504,7 @@ int32 AGlobalLootSpawnManager::InitializeDataDrivenChestsWithBalance(const UProg
 					++GroupSpawned;
 					++SpawnedCount;
 				}
+				else bVoyageInitializationFailed = true;
 			}
 			UE_LOG(LogTemp, Log, TEXT("Random chests: Zone=%d Kind=%d Requested=%d Placed=%d Spawned=%d"),
 				ZoneIndex, static_cast<int32>(Kind), RequestedCount, PlacedPoints ? PlacedPoints->Num() : 0, GroupSpawned);
@@ -444,6 +551,8 @@ bool AGlobalLootSpawnManager::GetSunkChestDrops(EProgressionZone Zone, TArray<FP
 bool AGlobalLootSpawnManager::RebalanceSpawnedChestsWithData(const UProgressionBalanceData* Balance,
 	const UItemData* Items, const UDataTable* Recipes, const UShipUpgradeTreeDataAsset* Tree)
 {
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (Voyage && Voyage->IsGameplayBlocked() && !Voyage->IsPreparationSpawnAllowed()) return false;
 	if (!HasAuthority() || !GetWorld() || bProgressionFinalized) return false;
 	if (!Balance || !Items || !Recipes)
 	{

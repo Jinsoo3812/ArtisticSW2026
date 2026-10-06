@@ -2,6 +2,8 @@
 
 #include "GA_InstallTrap.h"
 #include "BasePlayer.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "BaseItem.h"
 #include "GhostMeshActor.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
@@ -37,10 +39,21 @@ void UGA_InstallTrap::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		if (GhostActorClass)
 		{
 			UE_LOG(LogTemp, Log, TEXT("UGA_InstallTrap::ActivateAbility : Spawning Ghost Actor for local preview."));	
-			FActorSpawnParameters SpawnParams;
-			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-			SpawnedGhostActor = GetWorld()->SpawnActor<AGhostMeshActor>(GhostActorClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+			USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+			FString Error;
+			if (Voyage && Voyage->IsActiveVoyageSession()
+				&& !Voyage->RegisterLocalPresentationCleanupOwner(this, Voyage->GetGeneration(), PresentationCleanupId, Error))
+			{
+				EndAbility(Handle, ActorInfo, ActivationInfo, true, true); return;
+			}
+			SpawnedGhostActor = Cast<AGhostMeshActor>(USWVoyageSpawnLibrary::BeginVoyageLocalPresentationSpawn(this,
+				GhostActorClass, FTransform::Identity, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+				Voyage ? Voyage->GetGeneration() : 0, PresentationCleanupId));
+			if (SpawnedGhostActor && USWVoyageSpawnLibrary::FinishVoyageActorSpawn(SpawnedGhostActor, FTransform::Identity) != SpawnedGhostActor)
+			{
+				if (IsValid(SpawnedGhostActor)) SpawnedGhostActor->Destroy();
+				SpawnedGhostActor = nullptr;
+			}
 		}
 		else UE_LOG(LogTemp, Warning, TEXT("UGA_InstallTrap::ActivateAbility : GhostActorClass is not set!"));
 
@@ -70,6 +83,9 @@ void UGA_InstallTrap::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	bool bReplicateEndAbility, bool bWasCancelled)
 {
+	if (USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr)
+		Voyage->UnregisterLocalPresentationCleanupOwner(PresentationCleanupId);
+	PresentationCleanupId.Invalidate();
 	GetWorld()->GetTimerManager().ClearTimer(TargetTimerHandle);
 
 	if (SpawnedGhostActor)
@@ -83,6 +99,7 @@ void UGA_InstallTrap::EndAbility(const FGameplayAbilitySpecHandle Handle,
 
 void UGA_InstallTrap::UpdateInstallTarget()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(GetAvatarActorFromActorInfo())) return;
 	FVector HitLocation;
 	FRotator HitRotation;
 
@@ -176,8 +193,10 @@ void UGA_InstallTrap::OnInputReleased(float TimeHeld)
 				// GE Spec Handle 생성은 Trap 내부에서 수행하도록 클래스만 전달
 
 				// 2. 지연 스폰 (Deferred Spawn)으로 트랩 생성
-				ATrap* TrapActor = GetWorld()->SpawnActorDeferred<ATrap>(
-					SpawnClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+				const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+				ATrap* TrapActor = FSWVoyageSpawn::SpawnDeferred<ATrap>(GetWorld(),
+					SpawnClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+					ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(Player) : 0);
 
 				if (TrapActor)
 				{
@@ -187,7 +206,11 @@ void UGA_InstallTrap::OnInputReleased(float TimeHeld)
 					TrapActor->SetOwner(Player);
 
 					// 4. 스폰 완료 (이때 TrapActor의 BeginPlay가 호출됨)
-					TrapActor->FinishSpawning(SpawnTransform);
+					if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(TrapActor, SpawnTransform) != TrapActor)
+					{
+						if (IsValid(TrapActor)) TrapActor->Destroy();
+						return;
+					}
 
 					// 설치 성공 시 아이템 소비 및 어빌리티 종료
 					Player->UseEquippedItem(true);

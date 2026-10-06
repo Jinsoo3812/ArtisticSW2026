@@ -11,6 +11,7 @@
 #include "Upgrade/ShipUpgradeTypes.h"
 #include "Repair/ShipRepairTypes.h"
 #include "Room/SWRoomStateAdapter.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "Ship.generated.h"
 
 USTRUCT()
@@ -523,13 +524,23 @@ struct FShipReplicatedState
 };
 
 UCLASS()
-class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, public IRespawnHostInterface, public ISWRoomStateAdapter
+class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, public IRespawnHostInterface, public ISWRoomStateAdapter, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this pawn's properties
 	AShip();
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::ResetParticipant; }
+	virtual ESWVoyageRestoreStage GetVoyageRestoreStage_Implementation() const override { return ESWVoyageRestoreStage::AuthoredActors; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
+	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual void ResumeVoyage_Implementation(const FSWVoyageResetContext& Context) override;
+	virtual void CancelVoyagePreparation_Implementation(const FSWVoyageResetContext& Context) override;
+	bool IsVoyagePhysicsReady(int32 Generation) const;
 	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
 	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
 	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
@@ -1268,6 +1279,11 @@ private:
 
 	friend class FShipPhysicsAsync;
 	FShipPhysicsAsync* ShipPhysicsAsync = nullptr;
+	bool bVoyagePhysicsCallbackConnected = false;
+	bool bVoyagePhysicsHistoryCreated = false;
+	bool bVoyageSinkingTimerPaused = false;
+	bool bVoyageLeakTimerPaused = false;
+	FGuid BombardmentPresentationCleanupId;
 	bool bShipRuntimePhysicsEnabled = true;
 	bool bBuoyancyQueryDiagnostics = false;
 	double NextBuoyancyQueryDiagnosticTime = 0.0;

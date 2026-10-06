@@ -34,7 +34,7 @@ FString SidecarPath(const TCHAR* Name)
 
 FString FSWRoomSaveStore::RoomPath()
 {
-	return SidecarPath(TEXT("CurrentRoom.v4.sav"));
+	return SidecarPath(TEXT("CurrentRoom.v5.sav"));
 }
 
 bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
@@ -79,6 +79,15 @@ bool FSWRoomSaveStore::Validate(const USWRoomSaveGame* Room)
 	auto ActorFailure = [&ValidMotion, &ValidAdapter, &ActorIds](const FSWRoomActorRecord& Record)
 	{
 		TArray<FString> Reasons;
+		if (Record.Origin == ESWRoomSpawnOrigin::Runtime)
+		{
+			if (!Record.bHasRuntimeLifetime) Reasons.Add(TEXT("MissingRuntimeLifetime"));
+			if (Record.RuntimeLifetime != ESWVoyageActorLifetime::Voyage
+				&& Record.RuntimeLifetime != ESWVoyageActorLifetime::PlayerLife
+				&& Record.RuntimeLifetime != ESWVoyageActorLifetime::SharedService) Reasons.Add(TEXT("InvalidRuntimeLifetime"));
+		}
+		else if (Record.Origin != ESWRoomSpawnOrigin::LevelPlaced || Record.bHasRuntimeLifetime
+			|| Record.RuntimeLifetime != ESWVoyageActorLifetime::Environment) Reasons.Add(TEXT("InvalidOriginLifetimeContract"));
 		if (!Record.StableId.IsValid()) Reasons.Add(TEXT("InvalidStableId"));
 		if (Record.ClassPath.IsNull()) Reasons.Add(TEXT("MissingClass"));
 		if (Record.LevelPartition.PackagePath.IsNull()) Reasons.Add(TEXT("MissingPartitionPackage"));
@@ -440,7 +449,7 @@ USWRoomSaveGame* FSWRoomSaveStore::LoadCurrentRoom(UObject* Outer)
 	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return nullptr;
 	const FString Path = RoomPath();
 	if (USWRoomSaveGame* Room = LoadPath(Outer, Path)) return Room;
-	USWRoomSaveGame* Backup = LoadPath(Outer, SidecarPath(TEXT("CurrentRoom.v4.bak")));
+	USWRoomSaveGame* Backup = LoadPath(Outer, SidecarPath(TEXT("CurrentRoom.v5.bak")));
 	if (Backup)
 	{
 		Backup->bRecoveredFromBackup = true;
@@ -459,7 +468,7 @@ bool FSWRoomSaveStore::HasLegacyRoomFile()
 {
 	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return false;
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
-	return !Files.FileExists(*RoomPath()) && Files.FileExists(*SidecarPath(TEXT("CurrentRoom.sav")));
+	return !Files.FileExists(*RoomPath()) && (Files.FileExists(*SidecarPath(TEXT("CurrentRoom.v4.sav"))) || Files.FileExists(*SidecarPath(TEXT("CurrentRoom.v4.bak"))) || Files.FileExists(*SidecarPath(TEXT("CurrentRoom.sav"))));
 }
 
 bool FSWRoomSaveStore::WriteVerified(const USWRoomSaveGame* Room, const FString& Path, bool bHeaderOnly)
@@ -533,8 +542,8 @@ bool FSWRoomSaveStore::WriteCurrentRoomInternal(const USWRoomSaveGame* Room, boo
 	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return false;
 	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("SaveStore.Transaction"));
 	const FString Path = RoomPath();
-	const FString Temp = SidecarPath(TEXT("CurrentRoom.v4.tmp"));
-	const FString Backup = SidecarPath(TEXT("CurrentRoom.v4.bak"));
+	const FString Temp = SidecarPath(TEXT("CurrentRoom.v5.tmp"));
+	const FString Backup = SidecarPath(TEXT("CurrentRoom.v5.bak"));
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
 	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display,
 		TEXT("Flow=FileTransaction Phase=Begin RoomId=%s Sequence=%llu Current=%s Temp=%s Backup=%s AllowInvalidCurrent=%d"),
@@ -552,7 +561,7 @@ bool FSWRoomSaveStore::WriteCurrentRoomInternal(const USWRoomSaveGame* Room, boo
 	}
 	if (bHasInvalidCurrent)
 	{
-		const FString CorruptPath = SidecarPath(*FString::Printf(TEXT("CurrentRoom.v4.corrupt.%lld.sav"), FDateTime::UtcNow().ToUnixTimestamp()));
+		const FString CorruptPath = SidecarPath(*FString::Printf(TEXT("CurrentRoom.v5.corrupt.%lld.sav"), FDateTime::UtcNow().ToUnixTimestamp()));
 		if (!Files.CopyFile(*CorruptPath, *Path))
 		{
 			UE_LOG(LogSWRoomSave, Error, TEXT("Flow=FileTransaction Result=Failed Phase=PreserveInvalidCurrent Source=%s Destination=%s"), *Path, *CorruptPath);
@@ -615,7 +624,7 @@ bool FSWRoomSaveStore::WriteCurrentRoomInternal(const USWRoomSaveGame* Room, boo
 bool FSWRoomSaveStore::StageNewRoom(const USWRoomSaveGame* Room)
 {
 	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return false;
-	const FString Path = SidecarPath(TEXT("CurrentRoom.v4.pending.sav"));
+	const FString Path = SidecarPath(TEXT("CurrentRoom.v5.pending.sav"));
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
 	Files.DeleteFile(*Path);
 	return Room && !Room->bComplete && WriteVerified(Room, Path, true);
@@ -624,27 +633,27 @@ bool FSWRoomSaveStore::StageNewRoom(const USWRoomSaveGame* Room)
 bool FSWRoomSaveStore::StageCompleteNewRoom(const USWRoomSaveGame* Room)
 {
 	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return false;
-	return WriteVerified(Room, SidecarPath(TEXT("CurrentRoom.v4.pending.sav")));
+	return WriteVerified(Room, SidecarPath(TEXT("CurrentRoom.v5.pending.sav")));
 }
 
 USWRoomSaveGame* FSWRoomSaveStore::LoadStagedNewRoom(UObject* Outer)
 {
 	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return nullptr;
-	return LoadPath(Outer, SidecarPath(TEXT("CurrentRoom.v4.pending.sav")), true);
+	return LoadPath(Outer, SidecarPath(TEXT("CurrentRoom.v5.pending.sav")), true);
 }
 
 bool FSWRoomSaveStore::CommitStagedNewRoom()
 {
 	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return false;
-	USWRoomSaveGame* Pending = LoadPath(GetTransientPackage(), SidecarPath(TEXT("CurrentRoom.v4.pending.sav")));
+	USWRoomSaveGame* Pending = LoadPath(GetTransientPackage(), SidecarPath(TEXT("CurrentRoom.v5.pending.sav")));
 	if (!Pending || Pending->SaveKind != ESWRoomSaveKind::New || !WriteCurrentRoomInternal(Pending, true)) return false;
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
-	Files.DeleteFile(*SidecarPath(TEXT("CurrentRoom.v4.pending.sav")));
+	Files.DeleteFile(*SidecarPath(TEXT("CurrentRoom.v5.pending.sav")));
 	return true;
 }
 
 void FSWRoomSaveStore::DiscardStagedNewRoom()
 {
 	if (FSWRoomRuntimePaths::GetSaveDirectory().IsEmpty()) return;
-	FPlatformFileManager::Get().GetPlatformFile().DeleteFile(*SidecarPath(TEXT("CurrentRoom.v4.pending.sav")));
+	FPlatformFileManager::Get().GetPlatformFile().DeleteFile(*SidecarPath(TEXT("CurrentRoom.v5.pending.sav")));
 }

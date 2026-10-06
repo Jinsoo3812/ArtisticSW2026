@@ -265,6 +265,7 @@ public:
 	void NotifyCrewEnemyReactivated(ABaseEnemy* CrewEnemy);
 	bool RegisterBossEnemy(AShipBossEnemy* BossEnemy);
 	AShipBossEnemy* GetRegisteredBossEnemy() const { return RegisteredBoss; }
+	void RebindVoyageWeakeningMembers();
 	bool IsOwnedCannonSplashProtectedActor(const AActor* Candidate) const;
 	/** Pooled deck enemies guard the deck chest without being double-counted as manual crew. */
 	void RegisterDeckEnemyChestGuard(ABaseEnemy* CrewEnemy);

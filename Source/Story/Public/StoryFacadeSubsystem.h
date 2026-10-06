@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "Subsystems/GameInstanceSubsystem.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "StoryFacadeSubsystem.generated.h"
 
 class UStorySubsystem;
@@ -45,11 +46,13 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnStoryFacadeChanged);
  * their content with IsStoryNodeReached. Gameplay Tags remain private.
  */
 UCLASS()
-class STORY_API UStoryFacadeSubsystem : public UGameInstanceSubsystem
+class STORY_API UStoryFacadeSubsystem : public UGameInstanceSubsystem, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
 public:
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::Preserve; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 

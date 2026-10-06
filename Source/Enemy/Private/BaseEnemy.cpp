@@ -2,6 +2,8 @@
 
 
 #include "BaseEnemy.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Weapon/BaseWeapon.h"
 #include "Weapon/WeaponDataAsset.h"
@@ -699,6 +701,7 @@ void ABaseEnemy::InitializeEnemyDropData()
 
 void ABaseEnemy::Drop()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	if (!HasAuthority() || bHasDropped)
 	{
 		return;
@@ -748,15 +751,10 @@ void ABaseEnemy::Drop()
 	}
 
 	const FTransform SpawnTransform(GetActorRotation(), GetActorLocation());
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = this;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-	AStorageChest* SpawnedStorage = World->SpawnActor<AStorageChest>(
-		EnemyCorpseStorageClass,
-		SpawnTransform,
-		SpawnParameters
-	);
+	const USWVoyageResetSubsystem* Voyage = World->GetSubsystem<USWVoyageResetSubsystem>();
+	AStorageChest* SpawnedStorage = FSWVoyageSpawn::SpawnDeferred<AStorageChest>(World, EnemyCorpseStorageClass,
+		SpawnTransform, this, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn,
+		ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(this) : 0);
 
 	if (SpawnedStorage)
 	{
@@ -779,5 +777,7 @@ void ABaseEnemy::Drop()
 
 		const int32 SlotCount = FMath::Max(EnemyCorpseStorageSlotCount, RequiredSlotCount);
 		SpawnedStorage->ConfigureStorage(SlotCount, EnemyCorpseStorageColumnCount, StorageItems);
+		if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(SpawnedStorage, SpawnTransform) != SpawnedStorage)
+			if (IsValid(SpawnedStorage)) SpawnedStorage->Destroy();
 	}
 }

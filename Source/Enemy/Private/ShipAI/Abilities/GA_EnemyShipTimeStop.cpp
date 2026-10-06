@@ -1,4 +1,6 @@
 #include "ShipAI/Abilities/GA_EnemyShipTimeStop.h"
+#include "Room/SWVoyageSpawnLibrary.h"
+#include "Room/SWVoyageResetSubsystem.h"
 
 #include "BaseGameplayTags.h"
 #include "Cannon.h"
@@ -69,12 +71,11 @@ void UGA_EnemyShipTimeStop::ActivateAbility(
 	}
 	FixedLineEnd = ResolveFixedLineEnd(FixedLineStart, Target, AimLineMaximumDistance);
 
-	FActorSpawnParameters LineParams;
-	LineParams.Owner = Ship;
-	LineParams.Instigator = Ship;
-	LineParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AimLineActor = Ship->GetWorld()->SpawnActor<AEnemyShipTimeStopAimLine>(
-		AimLineClass, FixedLineStart, FixedLaunchDirection.Rotation(), LineParams);
+	const FTransform LineTransform(FixedLaunchDirection.Rotation(), FixedLineStart);
+	const USWVoyageResetSubsystem* Voyage = Ship->GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	AimLineActor = Cast<AEnemyShipTimeStopAimLine>(USWVoyageSpawnLibrary::BeginVoyageActorSpawn(
+		Ship, AimLineClass, LineTransform, Ship, Ship, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+		ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(Ship) : 0));
 	if (!AimLineActor.IsValid())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -85,6 +86,11 @@ void UGA_EnemyShipTimeStop::ActivateAbility(
 		Target,
 		AimLineMaximumDistance,
 		AimLineTraceIntervalSeconds);
+	if (!USWVoyageSpawnLibrary::FinishVoyageActorSpawn(AimLineActor.Get(), LineTransform))
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
 	UpdateChargeAiming();
 	if (!IsActive())
 	{
@@ -163,6 +169,7 @@ FVector UGA_EnemyShipTimeStop::ResolveFixedLineEnd(
 
 void UGA_EnemyShipTimeStop::ConfirmAimAndBeginCharge()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(ActiveShip.Get())) return;
 	AEnemyShip* Ship = ActiveShip.Get();
 	ACannon* Cannon = SelectedCannon.Get();
 	AShip* Target = ActiveTarget.Get();
@@ -220,6 +227,7 @@ void UGA_EnemyShipTimeStop::ConfirmAimAndBeginCharge()
 void UGA_EnemyShipTimeStop::FireInstantHit()
 {
 	AEnemyShip* Ship = ActiveShip.Get();
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(Ship)) return;
 	ACannon* Cannon = SelectedCannon.Get();
 	AShip* Target = ActiveTarget.Get();
 	AEnemyShipTimeStopAimLine* Line = AimLineActor.Get();
@@ -252,17 +260,18 @@ void UGA_EnemyShipTimeStop::FireInstantHit()
 
 	if (bHitPlayer && FieldClass && Ship->GetWorld())
 	{
-		FActorSpawnParameters Params;
-		Params.Owner = Ship;
-		Params.Instigator = Ship;
-		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		if (AEnemyShipTimeStopField* Field = Ship->GetWorld()->SpawnActor<AEnemyShipTimeStopField>(
-			FieldClass,
-			ShotEnd,
-			FRotator::ZeroRotator,
-			Params))
+		const FTransform SpawnTransform(FRotator::ZeroRotator, ShotEnd);
+		const USWVoyageResetSubsystem* Voyage = Ship->GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+		if (AEnemyShipTimeStopField* Field = Cast<AEnemyShipTimeStopField>(USWVoyageSpawnLibrary::BeginVoyageActorSpawn(
+			Ship, FieldClass, SpawnTransform, Ship, Ship, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+			ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(Ship) : 0)))
 		{
 			Field->InitializeTimeStop(EffectRadius, TimeStopDurationSeconds);
+			if (!USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Field, SpawnTransform))
+			{
+				EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
+				return;
+			}
 		}
 	}
 	Line->PlayInstantHitEffects(
@@ -289,6 +298,7 @@ void UGA_EnemyShipTimeStop::FireInstantHit()
 
 void UGA_EnemyShipTimeStop::UpdateChargeAiming()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(ActiveShip.Get())) return;
 	AEnemyShip* Ship = ActiveShip.Get();
 	ACannon* Cannon = SelectedCannon.Get();
 	AShip* Target = ActiveTarget.Get();

@@ -1,6 +1,8 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Cannon.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "CannonRiderInterface.h"
 #include "MountedDamageUserInterface.h"
 #include "Components/StaticMeshComponent.h"
@@ -793,12 +795,11 @@ void ACannon::SpawnCannonball(
 
 	AShip* OwningShip = GetOwningShip();
 
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.Owner = OwningShip ? Cast<AActor>(OwningShip) : Cast<AActor>(this);
-	SpawnParams.Instigator = RidingPlayer; // The player who controls the cannon (might be null for AI)
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	AActor* SpawnedProjectile = GetWorld()->SpawnActor<AActor>(SelectedProjectileClass, MuzzleLocation, LaunchRotation, SpawnParams);
+	const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	const FTransform ProjectileTransform(LaunchRotation, MuzzleLocation);
+	AActor* SpawnedProjectile = FSWVoyageSpawn::SpawnDeferred<AActor>(GetWorld(), SelectedProjectileClass, ProjectileTransform,
+		OwningShip ? Cast<AActor>(OwningShip) : Cast<AActor>(this), RidingPlayer, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+		ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(this) : 0);
 	if (SpawnedProjectile)
 	{
 		if (ACannonball* Projectile = Cast<ACannonball>(SpawnedProjectile))
@@ -810,6 +811,11 @@ void ACannon::SpawnCannonball(
 					ActiveWaterBombAttackSpeedMultiplier);
 			}
 			Projectile->InitializeProjectile(OwningShip, Damage, Speed, InheritedVelocity);
+		}
+		if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(SpawnedProjectile, ProjectileTransform) != SpawnedProjectile)
+		{
+			if (IsValid(SpawnedProjectile)) SpawnedProjectile->Destroy();
+			return;
 		}
 
 		if (bWaterBombMode)

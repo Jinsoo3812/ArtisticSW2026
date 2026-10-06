@@ -1,4 +1,6 @@
 #include "Bombardment.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 #include "BaseCharacter.h"
 #include "Cannonball.h"
@@ -32,6 +34,7 @@ ABombardmentPreview::ABombardmentPreview()
 void ABombardmentPreview::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 
 	HighlightRefreshAccumulator += DeltaSeconds;
 	if (HighlightRefreshAccumulator >= FMath::Max(0.02f, HighlightRefreshInterval))
@@ -266,6 +269,7 @@ void ABombardment::InitializeBombardment(
 void ABombardment::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	if (!HasAuthority() || !bStarted)
 	{
 		return;
@@ -439,6 +443,7 @@ void ABombardment::BuildSchedule()
 
 void ABombardment::FireShot(const FScheduledShot& Shot)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	if (!IsValid(SourceShip) || !ResolvedProjectileClass || !GetWorld())
 	{
 		return;
@@ -463,20 +468,18 @@ void ABombardment::FireShot(const FScheduledShot& Shot)
 		return;
 	}
 
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.Owner = SourceShip;
-	SpawnParams.Instigator = SkillInstigator;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AActor* SpawnedActor = GetWorld()->SpawnActor<AActor>(
-		ResolvedProjectileClass,
-		SpawnLocation,
-		LaunchVelocity.Rotation(),
-		SpawnParams);
+	const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	const FTransform Transform(LaunchVelocity.Rotation(), SpawnLocation);
+	AActor* SpawnedActor = FSWVoyageSpawn::SpawnDeferred<AActor>(GetWorld(), ResolvedProjectileClass, Transform,
+		SourceShip, SkillInstigator, ESpawnActorCollisionHandlingMethod::AlwaysSpawn, ESWVoyageActorLifetime::Voyage,
+		Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(this) : 0);
 	if (ACannonball* Cannonball = Cast<ACannonball>(SpawnedActor))
 	{
 		Cannonball->InitializeProjectile(SourceShip, ProjectileDamage, ProjectileSpeed);
 		Cannonball->SetDesignatedImpactLocation(ImpactLocation);
 	}
+	if (SpawnedActor && USWVoyageSpawnLibrary::FinishVoyageActorSpawn(SpawnedActor, Transform) != SpawnedActor)
+		if (IsValid(SpawnedActor)) SpawnedActor->Destroy();
 
 #if !UE_SERVER
 	if (bDrawDebug)

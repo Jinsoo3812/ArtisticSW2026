@@ -1,4 +1,5 @@
 #include "Storage/SharedStorageChest.h"
+#include "Room/ClassFeatureRoomProgressSubsystem.h"
 #include "Storage/SharedStorageSaveGame.h"
 #include "Async/Async.h"
 #include "Components/StaticMeshComponent.h"
@@ -152,6 +153,9 @@ void ASharedStorageChest::EndPlay(const EEndPlayReason::Type Reason)
 	StorageComponent->ReturnAllReservedCursors();
 	if (IsHostedStorage(this))
 	{
+		if (Reason == EEndPlayReason::Destroyed && HasAuthority() && GetWorld() && !GetWorld()->bIsTearingDown)
+			if (UClassFeatureRoomProgressSubsystem* Room = GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>(); Room && !Room->IsInPlaceVoyageBusy())
+				if (!Room->CaptureSharedWorld(GetWorld())) UE_LOG(LogTemp, Error, TEXT("Shared storage permanent capture failed before removal: %s"), *GetPathName());
 		if (HasAuthority())
 			for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 				if (ABasePlayerController* PC = Cast<ABasePlayerController>(It->Get())) PC->CloseStorageFromServer(this);

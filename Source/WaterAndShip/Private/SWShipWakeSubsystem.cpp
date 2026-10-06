@@ -1,4 +1,7 @@
 #include "SWShipWakeSubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
+#include "Kismet/KismetRenderingLibrary.h"
 
 #include "Engine/Engine.h"
 #include "Engine/Texture2D.h"
@@ -210,8 +213,19 @@ void USWShipWakeSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		Params.Name = TEXT("SWShipWakeReplicator");
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 		Params.ObjectFlags |= RF_Transient;
-		InWorld.SpawnActor<ASWShipWakeReplicator>(
+		Params.OverrideLevel = InWorld.PersistentLevel;
+		Params.bDeferConstruction = true;
+		ASWShipWakeReplicator* Created = InWorld.SpawnActor<ASWShipWakeReplicator>(
 			ASWShipWakeReplicator::StaticClass(), FTransform::Identity, Params);
+		const USWVoyageResetSubsystem* Voyage = InWorld.GetSubsystem<USWVoyageResetSubsystem>();
+		FString Error;
+		if (Created && (!FSWVoyageSpawn::RegisterDeferredActorSpawn(Created, ESWVoyageActorLifetime::SharedService,
+			Voyage ? Voyage->GetGeneration() : 0, FGuid(), Error)
+			|| USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Created, FTransform::Identity) != Created))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Wake replicator creation failed: %s"), *Error);
+			if (IsValid(Created)) Created->Destroy();
+		}
 	}
 	RefreshWaterMaterials();
 }
@@ -258,9 +272,12 @@ void USWShipWakeSubsystem::DispatchWakeComputeShader(const double ServerTime)
 	const int32 Res = RenderTargetResolution;
 	const bool bFoamEnabled = bKelvinFoamEnabled;
 
+	USWVoyageResetSubsystem* RenderVoyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	const TSharedPtr<FSWVoyageAsyncGuard, ESPMode::ThreadSafe> RenderGuard = RenderVoyage ? RenderVoyage->GetAsyncGuard() : nullptr;
 	ENQUEUE_RENDER_COMMAND(DispatchSWShipWakeCS)(
-		[RTResource, FoamRTResource, EventRes, GoldenRes, GridCenterFloat, GridSizeFloat, ServerTimeFloat, Count, Res, bFoamEnabled](FRHICommandListImmediate& RHICmdList)
+		[RenderGuard, RTResource, FoamRTResource, EventRes, GoldenRes, GridCenterFloat, GridSizeFloat, ServerTimeFloat, Count, Res, bFoamEnabled](FRHICommandListImmediate& RHICmdList)
 		{
+			if (RenderGuard && RenderGuard->bCancelled.Load()) return;
 			FRHITexture* OutputTextureRHI = RTResource->GetTexture2DRHI();
 			FRHITexture* FoamOutputTextureRHI = FoamRTResource->GetTexture2DRHI();
 			if (!OutputTextureRHI || !FoamOutputTextureRHI) return;
@@ -312,6 +329,8 @@ void USWShipWakeSubsystem::DispatchWakeComputeShader(const double ServerTime)
 
 void USWShipWakeSubsystem::Tick(const float DeltaTime)
 {
+	AcceptCurrentVoyageGeneration();
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 	const double ServerTime = GetServerTime();
 	RemoveExpiredEvents(ServerTime);
 
@@ -377,7 +396,11 @@ TStatId USWShipWakeSubsystem::GetStatId() const
 
 bool USWShipWakeSubsystem::SubmitAuthoritativeEvent(const FSWShipWakeEvent& EventTemplate)
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this) || !GetWorld() || GetWorld()->GetNetMode() == NM_Client) return false;
+	AcceptCurrentVoyageGeneration();
 	FSWShipWakeEvent Event = EventTemplate;
+	if (Event.Generation != 0 && Event.Generation != AcceptedGeneration) return false;
+	Event.Generation = AcceptedGeneration;
 	if (Replicator.IsValid() && Replicator->HasAuthority())
 	{
 		return Replicator->AddServerEvent(Event);
@@ -388,7 +411,11 @@ bool USWShipWakeSubsystem::SubmitAuthoritativeEvent(const FSWShipWakeEvent& Even
 
 bool USWShipWakeSubsystem::SubmitPredictedEvent(const FSWShipWakeEvent& EventTemplate)
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return false;
+	AcceptCurrentVoyageGeneration();
 	FSWShipWakeEvent Event = EventTemplate;
+	if (Event.Generation != 0 && Event.Generation != AcceptedGeneration) return false;
+	Event.Generation = AcceptedGeneration;
 	Event.EventId = NextPredictedEventId--;
 	if (NextPredictedEventId > -1)
 	{
@@ -400,12 +427,95 @@ bool USWShipWakeSubsystem::SubmitPredictedEvent(const FSWShipWakeEvent& EventTem
 
 void USWShipWakeSubsystem::AddOrUpdateReplicatedEvent(const FSWShipWakeEvent& Event)
 {
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	const int32 Generation = Voyage ? Voyage->GetGeneration() : 0;
+	if (Event.Generation < Generation) return;
+	if (Event.Generation > Generation)
+	{
+		const int32 ExistingIndex = FutureEvents.IndexOfByPredicate([&Event](const FSWShipWakeEvent& Other)
+			{ return Other.Generation == Event.Generation && Other.EventId == Event.EventId; });
+		if (ExistingIndex != INDEX_NONE) FutureEvents[ExistingIndex] = Event;
+		else
+		{
+			if (FutureEvents.Num() >= GetMaxCapacity()) FutureEvents.RemoveAt(0, 1, EAllowShrinking::No);
+			FutureEvents.Add(Event);
+		}
+		return;
+	}
+	AcceptCurrentVoyageGeneration();
 	AddOrUpdateCapped(Event);
 }
 
 void USWShipWakeSubsystem::RegisterReplicator(ASWShipWakeReplicator* InReplicator)
 {
 	Replicator = InReplicator;
+}
+
+void USWShipWakeSubsystem::AcceptCurrentVoyageGeneration()
+{
+	check(IsInGameThread());
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	const int32 Generation = Voyage ? Voyage->GetGeneration() : 0;
+	if (AcceptedGeneration == Generation) return;
+	AcceptedGeneration = Generation;
+	{
+		FWriteScopeLock Lock(EventsLock);
+		Events.Reset();
+	}
+	++Revision; UploadedRevision = MAX_uint32; LastUploadedCount = 0; NextPredictedEventId = -1;
+	bHasLockedProbe = false; MaterialRefreshAccumulator = 0.0f;
+	if (Replicator.IsValid() && Replicator->HasAuthority()) Replicator->ResetForVoyage(Generation);
+	TArray<FSWShipWakeEvent> Pending = MoveTemp(FutureEvents);
+	for (const FSWShipWakeEvent& Event : Pending)
+	{
+		if (Event.Generation == Generation) AddOrUpdateCapped(Event);
+		else if (Event.Generation > Generation) FutureEvents.Add(Event);
+	}
+}
+
+FName USWShipWakeSubsystem::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<USWShipWakeSubsystem*>(this)) : NAME_None;
+}
+
+ESWVoyageStepResult USWShipWakeSubsystem::PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult USWShipWakeSubsystem::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	AcceptCurrentVoyageGeneration();
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult USWShipWakeSubsystem::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	AcceptCurrentVoyageGeneration();
+	if (GetWorld()->GetNetMode() != NM_DedicatedServer && FApp::CanEverRender() && ClearedRenderGeneration != Context.Generation)
+	{
+		if (!EventTexture || !EventTexture->GetResource() || !WakeRenderTarget || !WakeFoamSourceRenderTarget)
+			return ESWVoyageStepResult::Pending;
+		UpdateEventTexture();
+		UKismetRenderingLibrary::ClearRenderTarget2D(this, WakeRenderTarget, WakeRenderTarget->ClearColor);
+		UKismetRenderingLibrary::ClearRenderTarget2D(this, WakeFoamSourceRenderTarget, FLinearColor::Black);
+		VoyageRenderFence.BeginFence(); ClearedRenderGeneration = Context.Generation;
+	}
+	return IsVoyageReady_Implementation(Context, OutError);
+}
+
+ESWVoyageStepResult USWShipWakeSubsystem::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (AcceptedGeneration != Context.Generation)
+	{
+		OutError = TEXT("WakeStateGenerationMismatch");
+		return ESWVoyageStepResult::Failed;
+	}
+	if (!Replicator.IsValid()) return ESWVoyageStepResult::Pending;
+	if (GetWorld()->GetNetMode() == NM_DedicatedServer || !FApp::CanEverRender()) return ESWVoyageStepResult::Succeeded;
+	return ClearedRenderGeneration == Context.Generation && VoyageRenderFence.IsFenceComplete()
+		? ESWVoyageStepResult::Succeeded : ESWVoyageStepResult::Pending;
 }
 
 void USWShipWakeSubsystem::AddOrUpdateCapped(const FSWShipWakeEvent& Event)
@@ -548,9 +658,12 @@ void USWShipWakeSubsystem::UpdateEventTexture()
 	const int32 UploadCount = FMath::Clamp(Count, 1, MaxWakeCapacity);
 	if (FTexture2DResource* Resource = static_cast<FTexture2DResource*>(EventTexture->GetResource()))
 	{
+		USWVoyageResetSubsystem* RenderVoyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+		const TSharedPtr<FSWVoyageAsyncGuard, ESPMode::ThreadSafe> RenderGuard = RenderVoyage ? RenderVoyage->GetAsyncGuard() : nullptr;
 		ENQUEUE_RENDER_COMMAND(UpdateSWShipWakeM7Events)(
-			[Resource, Data = MoveTemp(Pixels), UploadCount](FRHICommandListImmediate& RHICmdList)
+			[RenderGuard, Resource, Data = MoveTemp(Pixels), UploadCount](FRHICommandListImmediate& RHICmdList)
 			{
+				if (RenderGuard && RenderGuard->bCancelled.Load()) return;
 				const FUpdateTextureRegion2D Region(0, 0, 0, 0, UploadCount, 4);
 				RHICmdList.UpdateTexture2D(Resource->GetTexture2DRHI(), 0, Region,
 					MaxWakeCapacity * sizeof(FLinearColor), reinterpret_cast<const uint8*>(Data.GetData()));

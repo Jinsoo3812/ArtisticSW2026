@@ -17,6 +17,7 @@ class WATERANDSHIP_API UShipRepairPointComponent : public UInteractableComponent
 public:
 	UShipRepairPointComponent();
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	UFUNCTION(BlueprintPure, Category="Ship|Repair")

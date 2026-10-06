@@ -1,6 +1,7 @@
 ﻿#include "Modules/ModuleManager.h"
 	 
 #include "Network/SWNetworkLog.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "Network/SWRoomLoadDiagnostics.h"
 #include "Engine/World.h"
 #include "HAL/PlatformProcess.h"
@@ -49,6 +50,7 @@ public:
 
 	virtual void ShutdownModule() override
 	{
+		FSWVoyageSpawn::ShutdownSpawnTracking();
 		FTSTicker::GetCoreTicker().RemoveTicker(LogDrainHandle);
 		FCoreUObjectDelegates::PreLoadMap.Remove(PreLoadHandle);
 		FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(PostLoadHandle);

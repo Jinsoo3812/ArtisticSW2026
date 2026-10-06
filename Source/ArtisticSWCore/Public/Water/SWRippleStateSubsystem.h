@@ -3,16 +3,24 @@
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Water/SWRippleTypes.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "SWRippleStateSubsystem.generated.h"
 
 class ASWRippleReplicator;
 
 UCLASS()
-class ARTISTICSWCORE_API USWRippleStateSubsystem : public UTickableWorldSubsystem
+class ARTISTICSWCORE_API USWRippleStateSubsystem : public UTickableWorldSubsystem, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
 public:
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::ResetParticipant; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
+	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	void AcceptCurrentVoyageGeneration();
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
@@ -46,6 +54,8 @@ public:
 	float PhysicsHistoryRetentionSeconds = 2.0f;
 
 private:
+	TArray<FSWRippleEvent> FutureEvents;
+	int32 AcceptedGeneration = INDEX_NONE;
 	double GetEstimatedServerTime() const;
 
 	mutable FRWLock EventsLock;

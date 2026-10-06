@@ -1,4 +1,11 @@
 #include "Profiling/EnemyNetworkProfileSubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
+
+FName UEnemyNetworkProfileSubsystem::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<UEnemyNetworkProfileSubsystem*>(this)) : NAME_None;
+}
 
 #include "BaseEnemy.h"
 #include "EngineUtils.h"

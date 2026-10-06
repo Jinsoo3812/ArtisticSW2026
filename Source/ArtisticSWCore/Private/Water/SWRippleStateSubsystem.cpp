@@ -8,6 +8,8 @@
 #include "Water/SWRippleProfile.h"
 #include "Water/SWRippleReplicator.h"
 #include "Water/SWRippleSettings.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 namespace
 {
@@ -34,12 +36,25 @@ void USWRippleStateSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		SpawnParameters.Name = TEXT("SWRippleReplicator");
 		SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 		SpawnParameters.ObjectFlags |= RF_Transient;
-		InWorld.SpawnActor<ASWRippleReplicator>(ASWRippleReplicator::StaticClass(), FTransform::Identity, SpawnParameters);
+		SpawnParameters.OverrideLevel = InWorld.PersistentLevel;
+		SpawnParameters.bDeferConstruction = true;
+		ASWRippleReplicator* Created = InWorld.SpawnActor<ASWRippleReplicator>(ASWRippleReplicator::StaticClass(), FTransform::Identity, SpawnParameters);
+		const USWVoyageResetSubsystem* Voyage = InWorld.GetSubsystem<USWVoyageResetSubsystem>();
+		FString Error;
+		if (Created && (!FSWVoyageSpawn::RegisterDeferredActorSpawn(Created, ESWVoyageActorLifetime::SharedService,
+			Voyage ? Voyage->GetGeneration() : 0, FGuid(), Error)
+			|| USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Created, FTransform::Identity) != Created))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Ripple replicator creation failed: %s"), *Error);
+			if (IsValid(Created)) Created->Destroy();
+		}
 	}
 }
 
 void USWRippleStateSubsystem::Tick(float DeltaTime)
 {
+	AcceptCurrentVoyageGeneration();
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Ripple_StateTick);
 	const double PruneBefore = GetServerTime() - static_cast<double>(PhysicsHistoryRetentionSeconds);
 	bool bRemoved = false;
@@ -69,6 +84,61 @@ TStatId USWRippleStateSubsystem::GetStatId() const
 	RETURN_QUICK_DECLARE_CYCLE_STAT(USWRippleStateSubsystem, STATGROUP_Tickables);
 }
 
+void USWRippleStateSubsystem::AcceptCurrentVoyageGeneration()
+{
+	check(IsInGameThread());
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	const int32 Generation = Voyage ? Voyage->GetGeneration() : 0;
+	if (AcceptedGeneration == Generation) return;
+	AcceptedGeneration = Generation;
+	{
+		FWriteScopeLock Lock(EventsLock);
+		Events.Reset();
+	}
+	++Revision; NextPredictedEventId = -1;
+	ClientRenderClock = FSWRippleClientRenderClock();
+	if (Replicator.IsValid() && Replicator->HasAuthority()) Replicator->ResetForVoyage(Generation);
+	TArray<FSWRippleEvent> Pending = MoveTemp(FutureEvents);
+	for (const FSWRippleEvent& Event : Pending)
+	{
+		if (Event.Generation == Generation) AddOrUpdateReplicatedEvent(Event);
+		else if (Event.Generation > Generation) FutureEvents.Add(Event);
+	}
+}
+
+FName USWRippleStateSubsystem::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<USWRippleStateSubsystem*>(this)) : NAME_None;
+}
+
+ESWVoyageStepResult USWRippleStateSubsystem::PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult USWRippleStateSubsystem::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	AcceptCurrentVoyageGeneration();
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult USWRippleStateSubsystem::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	AcceptCurrentVoyageGeneration();
+	return IsVoyageReady_Implementation(Context, OutError);
+}
+
+ESWVoyageStepResult USWRippleStateSubsystem::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (AcceptedGeneration != Context.Generation)
+	{
+		OutError = TEXT("RippleStateGenerationMismatch");
+		return ESWVoyageStepResult::Failed;
+	}
+	return Replicator.IsValid() ? ESWVoyageStepResult::Succeeded : ESWVoyageStepResult::Pending;
+}
+
 bool USWRippleStateSubsystem::SubmitAuthoritativeRipple(
 	const FVector2D& Origin,
 	float InitialAmplitude,
@@ -76,6 +146,7 @@ bool USWRippleStateSubsystem::SubmitAuthoritativeRipple(
 	float DecayRate,
 	float WaveLength)
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return false;
 	UWorld* World = GetWorld();
 	if (!World || World->GetNetMode() == NM_Client)
 	{
@@ -94,6 +165,8 @@ bool USWRippleStateSubsystem::SubmitPredictedRipple(
 	float DecayRate,
 	float WaveLength)
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return false;
+	AcceptCurrentVoyageGeneration();
 	UWorld* World = GetWorld();
 	if (!World || World->GetNetMode() != NM_Client
 		|| InitialAmplitude <= 0.0f || WaveLength <= UE_SMALL_NUMBER)
@@ -103,6 +176,7 @@ bool USWRippleStateSubsystem::SubmitPredictedRipple(
 
 	FSWRippleEvent PredictedEvent;
 	PredictedEvent.EventId = NextPredictedEventId--;
+	PredictedEvent.Generation = AcceptedGeneration == INDEX_NONE ? 0 : AcceptedGeneration;
 	PredictedEvent.Origin = Origin;
 	PredictedEvent.StartServerTime = GetServerTime();
 	PredictedEvent.InitialAmplitude = InitialAmplitude;
@@ -146,6 +220,23 @@ bool USWRippleStateSubsystem::SubmitPredictedRipple(
 
 void USWRippleStateSubsystem::AddOrUpdateReplicatedEvent(const FSWRippleEvent& Event)
 {
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	const int32 Generation = Voyage ? Voyage->GetGeneration() : 0;
+	if (Event.Generation < Generation) return;
+	if (Event.Generation > Generation)
+	{
+		const int32 ExistingIndex = FutureEvents.IndexOfByPredicate([&Event](const FSWRippleEvent& Other)
+			{ return Other.Generation == Event.Generation && Other.EventId == Event.EventId; });
+		if (ExistingIndex != INDEX_NONE) FutureEvents[ExistingIndex] = Event;
+		else
+		{
+			const int32 Capacity = GetDefault<USWRippleSettings>()->GetMaxRippleCount();
+			if (FutureEvents.Num() >= Capacity) FutureEvents.RemoveAt(0, 1, EAllowShrinking::No);
+			FutureEvents.Add(Event);
+		}
+		return;
+	}
+	AcceptCurrentVoyageGeneration();
 	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Ripple_AddOrUpdateEvent);
 	UWorld* World = GetWorld();
 	if (World && World->GetNetMode() == NM_Client)

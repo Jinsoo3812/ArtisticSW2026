@@ -5,6 +5,7 @@
 #include "Engine/DataTable.h"
 #include "DeckAI/DeckPointReservation.h"
 #include "Room/SWRoomSnapshotTypes.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "DeckEnemySpawnerComponent.generated.h"
 
 USTRUCT()
@@ -92,7 +93,7 @@ enum class EDeckEnemyDeploymentState : uint8
  * movement-base state, pool activity, and the committed IDs carried by each enemy.
  */
 UCLASS(ClassGroup = (Enemy), meta = (BlueprintSpawnableComponent))
-class ENEMY_API UDeckEnemySpawnerComponent : public UActorComponent
+class ENEMY_API UDeckEnemySpawnerComponent : public UActorComponent, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
@@ -102,6 +103,14 @@ class ENEMY_API UDeckEnemySpawnerComponent : public UActorComponent
 
 public:
 	UDeckEnemySpawnerComponent();
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::ResetParticipant; }
+	virtual ESWVoyageRestoreStage GetVoyageRestoreStage_Implementation() const override { return ESWVoyageRestoreStage::InitialSpawners; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
+	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual void CancelVoyagePreparation_Implementation(const FSWVoyageResetContext& Context) override;
 	void CaptureRoomState(FSWRoomDeckSpawnerState& OutState, TArray<FSWRoomCaptureIssue>& OutIssues) const;
 	bool RestoreRoomState(const FSWRoomDeckSpawnerState& State, FString& OutError);
 	bool FinalizeRoomState(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError);
@@ -284,4 +293,8 @@ private:
 	FSWRoomDeckSpawnerState PendingRoomState;
 	FSWRoomDeckDeploymentTicket DeploymentTicket;
 	bool bHasPendingRoomState = false;
+	bool bSightTimerPaused = false;
+	bool bDeploymentTimerPaused = false;
+	bool bVoyagePoolFailed = false;
+	int32 RestoredVoyageGeneration = INDEX_NONE;
 };

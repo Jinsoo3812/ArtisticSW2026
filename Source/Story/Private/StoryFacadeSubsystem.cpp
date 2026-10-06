@@ -1,4 +1,12 @@
 #include "StoryFacadeSubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Engine/World.h"
+
+FName UStoryFacadeSubsystem::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<UStoryFacadeSubsystem*>(this)) : NAME_None;
+}
 
 #include "NativeGameplayTags.h"
 #include "StorySubsystem.h"

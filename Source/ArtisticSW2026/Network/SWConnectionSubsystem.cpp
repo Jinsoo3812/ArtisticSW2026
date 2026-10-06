@@ -1,4 +1,12 @@
 #include "Network/SWConnectionSubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Engine/World.h"
+
+FName USWConnectionSubsystem::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<USWConnectionSubsystem*>(this)) : NAME_None;
+}
 
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
@@ -83,6 +91,11 @@ void USWConnectionSubsystem::Deinitialize()
 
 void USWConnectionSubsystem::Tick(float DeltaTime)
 {
+	if (bInPlaceVoyageActive)
+	{
+		if (CanCompleteInPlaceVoyagePresentation()) CompleteReadiness();
+		return;
+	}
 	ReadinessElapsedSeconds += FMath::Max(DeltaTime, 0.0f);
 	const uint8 ReadinessMask = BuildReadinessMask();
 	if (ReadinessMask != LastLoggedReadinessMask)
@@ -108,7 +121,7 @@ void USWConnectionSubsystem::Tick(float DeltaTime)
 
 bool USWConnectionSubsystem::IsTickable() const
 {
-	return bReadinessCheckActive && !IsTemplate();
+	return (bReadinessCheckActive || bInPlaceVoyageActive) && !IsTemplate();
 }
 
 TStatId USWConnectionSubsystem::GetStatId() const
@@ -181,6 +194,8 @@ bool USWConnectionSubsystem::ConnectDirectWithName(const FString& Address, const
 void USWConnectionSubsystem::DisconnectToDefaultMap()
 {
 	if (ConnectionState == ESWConnectionState::Idle) return;
+	bInPlaceVoyageActive = bInPlaceVoyageFinishReceived = bInPlaceVoyageFailed = false;
+	InPlaceVoyageAttemptId = 0; InPlaceVoyageGeneration = 0; InPlaceVoyageMessage.Reset();
 	RoomLoadingReason = ERoomLoadingReason::None;
 	UGameInstance* GameInstance = GetGameInstance();
 	if (!GameInstance || !GameInstance->GetWorld())
@@ -277,6 +292,8 @@ void USWConnectionSubsystem::RecordFailure(ESWConnectionFailureReason Reason, co
 {
 	if (ConnectionState == ESWConnectionState::Failed && LastFailure.Reason == Reason && LastFailure.EngineFailureType == EngineFailureType && LastFailure.EngineMessage == EngineMessage) return;
 	const bool bWasReturning = RoomLoadingReason != ERoomLoadingReason::None;
+	bInPlaceVoyageActive = bInPlaceVoyageFinishReceived = bInPlaceVoyageFailed = false;
+	InPlaceVoyageAttemptId = 0; InPlaceVoyageGeneration = 0; InPlaceVoyageMessage.Reset();
 	RoomLoadingReason = ERoomLoadingReason::None;
 	StopReadinessCheck();
 	bConnectionAttemptActive = false;
@@ -376,7 +393,13 @@ void USWConnectionSubsystem::StopReadinessCheck()
 
 void USWConnectionSubsystem::CompleteReadiness()
 {
+	if (bInPlaceVoyageActive && !CanCompleteInPlaceVoyagePresentation()) return;
 	if (!bReadinessCheckActive || BuildReadinessMask() != AllReady) return;
+	const bool bCompletedVoyage = bInPlaceVoyageActive;
+	const FString CompletedVoyageMessage = InPlaceVoyageMessage;
+	bInPlaceVoyageActive = false;
+	bInPlaceVoyageFinishReceived = false;
+	bInPlaceVoyageFailed = false;
 	const float CompletedElapsedSeconds = ReadinessElapsedSeconds;
 	if (SWRoomLoadDiagnostics::IsEnabled())
 	{
@@ -405,6 +428,7 @@ void USWConnectionSubsystem::CompleteReadiness()
 	{
 		if (APlayerController* Controller = Instance->GetFirstLocalPlayerController())
 		{
+			if (bCompletedVoyage && !CompletedVoyageMessage.IsEmpty()) Controller->ClientMessage(CompletedVoyageMessage);
 			FInputModeGameOnly InputMode;
 			Controller->SetInputMode(InputMode);
 			Controller->bShowMouseCursor = false;
@@ -431,7 +455,7 @@ bool USWConnectionSubsystem::IsFailureRelevantToThisInstance(const UWorld* Failu
 
 bool USWConnectionSubsystem::BeginRoomReturnPresentation()
 {
-	if (ConnectionState != ESWConnectionState::Playing || bIntentionalDisconnect) return false;
+	if (bInPlaceVoyageActive || ConnectionState != ESWConnectionState::Playing || bIntentionalDisconnect) return false;
 	RoomLoadingReason = ERoomLoadingReason::Return;
 	DiagnosticConnectStartedAt = SWRoomLoadDiagnostics::IsEnabled() ? FPlatformTime::Seconds() : 0.0;
 	SWRoomLoadDiagnostics::Mark(TEXT("Client.ReturnPresentation"));
@@ -446,6 +470,72 @@ bool USWConnectionSubsystem::BeginRoomReturnPresentation()
 	}
 	UE_LOG(LogSWConnection, Display, TEXT("Flow=Return Phase=PresentationShown"));
 	return true;
+}
+
+bool USWConnectionSubsystem::BeginInPlaceVoyagePresentation(const FSWVoyageReplicatedState& State)
+{
+	if (bIntentionalDisconnect || State.AttemptId <= 0 || State.Generation <= 0
+		|| State.AttemptId < InPlaceVoyageAttemptId || State.Generation < InPlaceVoyageGeneration) return false;
+	if (State.Phase == ESWVoyagePhase::RecoveryTravel)
+	{
+		// The existing map-load readiness flow owns the one recovery travel.
+		InPlaceVoyageAttemptId = State.AttemptId; InPlaceVoyageGeneration = State.Generation;
+		bInPlaceVoyageActive = bInPlaceVoyageFinishReceived = bInPlaceVoyageFailed = false;
+		bConnectionAttemptActive = true; StopReadinessCheck(); ShowLoadingPresentation();
+		return bLoadingPresentationVisible;
+	}
+	if (State.AttemptId == InPlaceVoyageAttemptId && State.Generation == InPlaceVoyageGeneration)
+		return bInPlaceVoyageActive && bLoadingPresentationVisible;
+	if (State.AttemptId == InPlaceVoyageAttemptId && !State.bBootstrap) return false;
+	InPlaceVoyageAttemptId = State.AttemptId; InPlaceVoyageGeneration = State.Generation;
+	bInPlaceVoyageActive = true; bInPlaceVoyageFinishReceived = false; bInPlaceVoyageFailed = false;
+	bInPlaceVoyageSaveSucceeded = true; InPlaceVoyageMessage.Reset();
+	RoomLoadingReason = State.Reason == ESWVoyageReason::FinalDeparture ? ERoomLoadingReason::FinalDeparture : ERoomLoadingReason::Return;
+	bConnectionAttemptActive = true;
+	ReadinessWorld = GetWorld(); bReadinessCheckActive = true;
+	ReadinessElapsedSeconds = 0.f; ConsecutiveReadyTicks = 0;
+	ShowLoadingPresentation();
+	return bLoadingPresentationVisible;
+}
+
+bool USWConnectionSubsystem::CanCompleteInPlaceVoyagePresentation() const
+{
+	if (!bInPlaceVoyageActive || !bInPlaceVoyageFinishReceived || bInPlaceVoyageFailed || !ReadinessWorld.IsValid()
+		|| ReadinessWorld.Get() != GetWorld() || BuildReadinessMask() != AllReady) return false;
+	for (TActorIterator<ASWRoomReadyState> It(ReadinessWorld.Get()); It; ++It)
+		if (It->bWorldReady && It->RestoreGeneration == InPlaceVoyageGeneration
+			&& It->VoyageState.AttemptId == InPlaceVoyageAttemptId && It->VoyageState.Generation == InPlaceVoyageGeneration
+			&& (It->VoyageState.Phase == ESWVoyagePhase::Release || It->VoyageState.Phase == ESWVoyagePhase::Idle)) return true;
+	return false;
+}
+
+void USWConnectionSubsystem::CompleteInPlaceVoyagePresentation(int64 AttemptId, int32 Generation, bool bSaveSucceeded, const FString& Message)
+{
+	if (!bInPlaceVoyageActive || AttemptId != InPlaceVoyageAttemptId || Generation != InPlaceVoyageGeneration) return;
+	bInPlaceVoyageFinishReceived = true; bInPlaceVoyageSaveSucceeded = bSaveSucceeded;
+	InPlaceVoyageMessage = Message.Left(512);
+	if (!bSaveSucceeded && InPlaceVoyageMessage.IsEmpty())
+		InPlaceVoyageMessage = TEXT("새 항해는 준비되었지만 저장에 실패했습니다. 수동 저장을 다시 시도하세요.");
+	if (CanCompleteInPlaceVoyagePresentation()) CompleteReadiness();
+}
+
+void USWConnectionSubsystem::CancelInPlaceVoyagePresentation(int64 AttemptId, int32 Generation)
+{
+	if (!bInPlaceVoyageActive || AttemptId != InPlaceVoyageAttemptId || Generation != InPlaceVoyageGeneration) return;
+	bInPlaceVoyageActive = false; bInPlaceVoyageFinishReceived = false; bInPlaceVoyageFailed = false;
+	StopReadinessCheck();
+	CancelRoomReturnPresentation();
+}
+
+void USWConnectionSubsystem::SetVoyageFailure(int64 AttemptId, int32 Generation, const FString& Error)
+{
+	if (!bInPlaceVoyageActive || AttemptId != InPlaceVoyageAttemptId || Generation != InPlaceVoyageGeneration) return;
+	bInPlaceVoyageFailed = true; bInPlaceVoyageFinishReceived = false;
+	InPlaceVoyageMessage = Error.Left(512);
+	ShowLoadingPresentation();
+	if (LoadingStatusText.IsValid()) LoadingStatusText->SetText(FText::FromString(InPlaceVoyageMessage));
+	// Keep viewport input ownership while the controller's native failure UI is visible.
+	if (LoadingOverlayWidget.IsValid()) LoadingOverlayWidget->SetVisibility(EVisibility::Collapsed);
 }
 
 bool USWConnectionSubsystem::BeginRoomFinalDeparturePresentation(int32 AttemptId)
@@ -468,6 +558,7 @@ bool USWConnectionSubsystem::BeginRoomFinalDeparturePresentation(int32 AttemptId
 
 void USWConnectionSubsystem::CancelRoomReturnPresentation()
 {
+	if (bInPlaceVoyageActive) return;
 	if (RoomLoadingReason == ERoomLoadingReason::None) return;
 	const bool bFinalDeparture = RoomLoadingReason == ERoomLoadingReason::FinalDeparture;
 	RoomLoadingReason = ERoomLoadingReason::None;
@@ -482,6 +573,7 @@ void USWConnectionSubsystem::ShowLoadingPresentation()
 	if (IsRunningDedicatedServer() || IsRunningCommandlet()) return;
 	if (bLoadingPresentationVisible)
 	{
+		if (LoadingOverlayWidget.IsValid()) LoadingOverlayWidget->SetVisibility(EVisibility::Visible);
 		if (UGameViewportClient* Viewport = LoadingViewport.Get()) Viewport->SetIgnoreInput(true);
 		UpdateLoadingPresentationText();
 		return;

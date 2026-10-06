@@ -1,4 +1,5 @@
 #include "ShipAI/Abilities/EnemyShipObstacle.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 #include "Buoyancy/SWBuoyancyComponent.h"
 #include "Components/BoxComponent.h"
@@ -81,6 +82,7 @@ void AEnemyShipObstacle::BeginPlay()
 void AEnemyShipObstacle::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	if (HasAuthority())
 	{
 		return;
@@ -195,7 +197,7 @@ void AEnemyShipObstacle::OnObstacleOverlap(
 	bool bFromSweep,
 	const FHitResult& SweepResult)
 {
-	if (!HasAuthority() || bHasEnteredWater || !OtherActor)
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this) || !HasAuthority() || bHasEnteredWater || !OtherActor)
 	{
 		return;
 	}

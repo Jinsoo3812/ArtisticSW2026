@@ -256,6 +256,12 @@ void UPlayerHUDWidget::SetInventoryVisible(bool bVisible)
 	}
 }
 
+void UPlayerHUDWidget::ClearVoyageBinding()
+{
+	InitializeForPlayer(nullptr);
+	UnbindHealthComponent(); UnbindShipHealthSource(); UnbindBowComponent(); UnbindSkillComponent(); UnbindSkillStateSource();
+}
+
 bool UPlayerHUDWidget::IsInventoryVisible() const
 {
 	return InventoryPanel && InventoryPanel->GetVisibility() != ESlateVisibility::Collapsed;

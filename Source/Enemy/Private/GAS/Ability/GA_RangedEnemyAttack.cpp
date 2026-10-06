@@ -1,6 +1,8 @@
 #include "GAS/Ability/GA_RangedEnemyAttack.h"
 
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
@@ -222,18 +224,24 @@ bool UGA_RangedEnemyAttack::FireProjectile()
 	}
 
 	const FTransform SpawnTransform(LaunchDirection.Rotation(), SpawnLocation);
-	AArrowProjectile* Projectile = World->SpawnActorDeferred<AArrowProjectile>(
+	const USWVoyageResetSubsystem* Voyage = World->GetSubsystem<USWVoyageResetSubsystem>();
+	AArrowProjectile* Projectile = FSWVoyageSpawn::SpawnDeferred<AArrowProjectile>(World,
 		ProjectileClass,
 		SpawnTransform,
 		CachedEnemy,
 		CachedEnemy,
-		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn, ESWVoyageActorLifetime::Voyage,
+		Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(CachedEnemy) : 0);
 	if (!Projectile)
 	{
 		return false;
 	}
 
-	Projectile->FinishSpawning(SpawnTransform);
+	if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Projectile, SpawnTransform) != Projectile)
+	{
+		if (IsValid(Projectile)) Projectile->Destroy();
+		return false;
+	}
 	Projectile->IgnoreActorForMovement(CachedEnemy);
 	Projectile->IgnoreActorForMovement(Bow);
 	Projectile->IgnoreActorForMovement(CachedEnemy->GetHostShip());

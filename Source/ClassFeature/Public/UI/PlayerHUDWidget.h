@@ -43,6 +43,7 @@ public:
 	virtual void NativeDestruct() override;
 
 	void InitializeForPlayer(ABasePlayer* InPlayer);
+	void ClearVoyageBinding();
 
 	void SetInventoryVisible(bool bVisible);
 	bool IsInventoryVisible() const;

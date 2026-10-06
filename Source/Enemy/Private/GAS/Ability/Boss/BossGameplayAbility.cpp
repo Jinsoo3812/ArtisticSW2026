@@ -1,4 +1,5 @@
 #include "GAS/Ability/Boss/BossGameplayAbility.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
@@ -141,6 +142,8 @@ FActiveGameplayEffectHandle UBossGameplayAbility::ApplyTimedStateTag(
 {
 	UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
 	AShipBossEnemy* Boss = GetBossAvatar();
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(Boss)
+		|| USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(TargetASC.GetAvatarActor())) return FActiveGameplayEffectHandle();
 	if (!SourceASC || !Boss || !StateTag.IsValid() || Duration <= 0.0f)
 	{
 		return FActiveGameplayEffectHandle();

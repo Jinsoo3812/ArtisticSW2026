@@ -1,4 +1,6 @@
 #include "SWNetworkWeatherActor.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 #include "Components/TimelineComponent.h"
 #include "Curves/CurveFloat.h"
@@ -215,7 +217,7 @@ namespace
 	}
 	bool ValidateWindow(const FSWWeatherPlaybackWindow& W)
 	{
-		if (!W.Epoch || W.Segments.IsEmpty() || W.Segments.Num() > 256 || !FMath::IsFinite(W.PublishedServerTime)
+		if (W.Generation < 0 || !W.Epoch || W.Segments.IsEmpty() || W.Segments.Num() > 256 || !FMath::IsFinite(W.PublishedServerTime)
 			|| !FMath::IsFinite(W.EpochPlaybackStartServerTime) || W.PlaybackDelaySeconds != 2.) return false;
 		const FSWWeatherPlaybackSegment* Previous = nullptr;
 		for (const auto& S : W.Segments)
@@ -305,7 +307,7 @@ namespace
 		}
 		void Window(FSWWeatherPlaybackWindow& W)
 		{
-			Number(W.Epoch); Number(W.PublishedServerTime); Number(W.EpochPlaybackStartServerTime); Number(W.PlaybackDelaySeconds);
+			Number(W.Generation); Number(W.Epoch); Number(W.PublishedServerTime); Number(W.EpochPlaybackStartServerTime); Number(W.PlaybackDelaySeconds);
 			Array(W.Segments, 256, [this](auto& S) { Segment(S); });
 		}
 	};
@@ -514,7 +516,7 @@ bool FSWWeatherPlaybackWindow::PreparePayload()
 
 bool FSWWeatherPlaybackWindow::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
 {
-	uint8 Version = 1;
+	uint8 Version = 2;
 	uint32 Raw = Ar.IsSaving() ? RawPayloadBytes : 0, Compressed = Ar.IsSaving() ? CompressedPayload.Num() : 0;
 	auto HeaderNumber = [&Ar](auto& Value)
 	{
@@ -525,7 +527,7 @@ bool FSWWeatherPlaybackWindow::NetSerialize(FArchive& Ar, UPackageMap* Map, bool
 	};
 	HeaderNumber(Version); HeaderNumber(Raw); HeaderNumber(Compressed);
 	bOutSuccess = false;
-	if (Ar.IsError() || Version != 1 || Raw > MaxRawBytes || Compressed > MaxCompressedBytes || ((Raw == 0) != (Compressed == 0))) { Ar.SetError(); return true; }
+	if (Ar.IsError() || Version != 2 || Raw > MaxRawBytes || Compressed > MaxCompressedBytes || ((Raw == 0) != (Compressed == 0))) { Ar.SetError(); return true; }
 	if (!Raw) { if (Ar.IsLoading()) *this = FSWWeatherPlaybackWindow(); bOutSuccess = true; return true; }
 	if (Ar.IsSaving()) { Ar.Serialize(CompressedPayload.GetData(), Compressed); bOutSuccess = !Ar.IsError(); return true; }
 	TArray<uint8> Payload; Payload.SetNumUninitialized(Compressed); Ar.Serialize(Payload.GetData(), Compressed);
@@ -709,6 +711,14 @@ void ASWNetworkWeatherActor::BeginPlay()
 	}
 	if (HasAuthority())
 	{
+		InitialVoyageHour = static_cast<int32>(ReadNumber(TEXT("Init Hour")));
+		InitialVoyageMinute = static_cast<int32>(ReadNumber(TEXT("Init Minute")));
+		InitialVoyageWeather = static_cast<uint8>(ReadNumber(TEXT("InitWeather")));
+		InitialVoyageWind.bInitialized = true; InitialVoyageWind.Speed = ReadNumber(TEXT("WindSpeed"));
+		if (FStructProperty* P = FindFProperty<FStructProperty>(GetClass(), TEXT("WindDir")))
+			InitialVoyageWind.From = InitialVoyageWind.To = *P->ContainerPtrToValuePtr<FVector>(this);
+		bHasInitialVoyageSettings = true;
+		if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 		WriteNumber(TEXT("WeatherChangeCycle"), FMath::Max(1., ReadNumber(TEXT("WeatherChangeCycle"))));
 		if (!Invoke(TEXT("WeatherRaffleSetting"))) { FailGeneration(TEXT("WeatherRaffleSetting")); return; }
 		SetNetworkWeatherTime(static_cast<int32>(ReadNumber(TEXT("Init Hour"))), static_cast<int32>(ReadNumber(TEXT("Init Minute"))), static_cast<uint8>(ReadNumber(TEXT("InitWeather"))));
@@ -739,6 +749,7 @@ void ASWNetworkWeatherActor::EndPlay(const EEndPlayReason::Type Reason)
 
 void ASWNetworkWeatherActor::SetNetworkWeatherTime(int32 Hour, int32 Minute, uint8 Weather)
 {
+	if (!bInitializingVoyageWeather && USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 	if (!HasAuthority() || !bAdapterReady) return;
 	if (PlannerState.Epoch == MAX_uint32) { LogOnce(PlannerState.Epoch, PlannerState.Sequence, TEXT("GenerationFailure.EpochOverflow")); return; }
 	const uint32 Epoch = PlannerState.Epoch + 1;
@@ -914,6 +925,8 @@ void ASWNetworkWeatherActor::PublishPlaybackWindow(double Now)
 		&& ServerHistory[0].StartServerTime + ServerHistory[0].SecondsPerHour < Now - 122.
 		&& !(AppliedEpoch == ServerHistory[0].Epoch && AppliedSequence == ServerHistory[0].Sequence)) ServerHistory.RemoveAt(0);
 	FSWWeatherPlaybackWindow Candidate; Candidate.Epoch = PlannerState.Epoch; Candidate.PublishedServerTime = Now;
+	const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	Candidate.Generation = Voyage ? Voyage->GetGeneration() : 0;
 	Candidate.EpochPlaybackStartServerTime = ServerEpochStartTime; Candidate.Segments = ServerHistory;
 	while (!Candidate.PreparePayload())
 	{
@@ -941,6 +954,16 @@ void ASWNetworkWeatherActor::OnRep_PlaybackWindow()
 
 void ASWNetworkWeatherActor::MergePlaybackWindow(const FSWWeatherPlaybackWindow& Window)
 {
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	const int32 Generation = Voyage ? Voyage->GetGeneration() : 0;
+	if (Window.Generation < Generation) return;
+	if (Window.Generation > Generation)
+	{
+		if (Window.Generation > FutureVoyageWindow.Generation
+			|| (Window.Generation == FutureVoyageWindow.Generation && Window.PublishedServerTime >= FutureVoyageWindow.PublishedServerTime))
+			FutureVoyageWindow = Window;
+		return;
+	}
 	if (Window.Segments.IsEmpty() || Window.Epoch < ReceivedEpoch || (Window.Epoch == ReceivedEpoch && Window.PublishedServerTime < ReceivedPublishedTime)) return;
 	if (!ValidateWindow(Window)) { LogOnce(Window.Epoch, 0, TEXT("ReceivedWindowInvalid")); return; }
 	TArray<FSWWeatherPlaybackSegment> Incoming = Window.Segments;
@@ -1030,8 +1053,11 @@ void ASWNetworkWeatherActor::PrepareSegments()
 			bWaiting = true;
 			if (AssetLoadHandles.Contains(Path)) continue;
 			const TWeakObjectPtr<ASWNetworkWeatherActor> WeakThis(this);
-			TSharedPtr<FStreamableHandle> Handle = UAssetManager::GetStreamableManager().RequestAsyncLoad(FSoftObjectPath(Path), FStreamableDelegate::CreateLambda([WeakThis, Path]()
+			USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+			const TSharedPtr<FSWVoyageAsyncGuard, ESPMode::ThreadSafe> Guard = Voyage ? Voyage->GetAsyncGuard() : nullptr;
+			TSharedPtr<FStreamableHandle> Handle = UAssetManager::GetStreamableManager().RequestAsyncLoad(FSoftObjectPath(Path), FStreamableDelegate::CreateLambda([WeakThis, Path, Guard]()
 			{
+				if (Guard && Guard->bCancelled.Load()) return;
 				if (ASWNetworkWeatherActor* Actor = WeakThis.Get()) Actor->CompletedAssetLoads.Add(Path);
 			}));
 			if (Handle) AssetLoadHandles.Add(Path, Handle);
@@ -1063,10 +1089,11 @@ bool ASWNetworkWeatherActor::TryStartPlayback(double Now, bool bEpochReset)
 	if (!bEpochReset)
 	{
 		const double LocalTime = GetWorld()->GetTimeSeconds();
-		if (LocalTime >= NextClockSampleTime)
+		const double SampleTime = FPlatformTime::Seconds();
+		if (SampleTime >= NextClockSampleTime)
 		{
-			ClockSamples.Emplace(LocalTime, Now - LocalTime); NextClockSampleTime = LocalTime + 0.1;
-			while (ClockSamples.Num() > 1 && ClockSamples[1].Key <= LocalTime - 2.) ClockSamples.RemoveAt(0);
+			ClockSamples.Emplace(SampleTime, Now - LocalTime); NextClockSampleTime = SampleTime + 0.1;
+			while (ClockSamples.Num() > 1 && ClockSamples[1].Key <= SampleTime - 2.) ClockSamples.RemoveAt(0);
 		}
 		bool bStable = ClockSamples.Num() > 1 && ClockSamples.Last().Key - ClockSamples[0].Key >= 2.;
 		double Min = DBL_MAX, Max = -DBL_MAX;
@@ -1504,6 +1531,8 @@ void ASWNetworkWeatherActor::PruneReadyAssets()
 void ASWNetworkWeatherActor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
+	const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
 	const double LocalTime = GetWorld()->GetTimeSeconds();
 	LocalElapsed = FMath::Max(0., LocalTime - LastLocalWorldTime);
 	if (LocalTime < LastLocalWorldTime) { LogWeatherDiagnostics(TEXT("LocalClockReset"), GetServerTime()); ClockSamples.Reset(); ClockSampleStartTime = LocalTime; NextClockSampleTime = LocalTime; }
@@ -1550,11 +1579,123 @@ void ASWNetworkWeatherActor::Tick(float DeltaSeconds)
 	AdvanceWind(Now);
 	if (GetNetMode() != NM_DedicatedServer)
 	{
-		if (WindState.bInitialized) if (auto* Parameters = GetWorld()->GetParameterCollectionInstance(SkyParameters))
+		if (WindState.bInitialized && (!Voyage || !Voyage->IsActiveVoyageSession() || WindState.Generation == Voyage->GetGeneration())) if (auto* Parameters = GetWorld()->GetParameterCollectionInstance(SkyParameters))
 		{
 			const FVector Offset = ResolveWindOffset(Now); Parameters->SetVectorParameterValue(TEXT("WindOffset"), FLinearColor(Offset.X, Offset.Y, Offset.Z, 1.f));
 		}
 		SampleWeatherDiagnostics(Now, LastPresentedAlpha);
 	}
 	PruneReadyAssets();
+}
+
+FName ASWNetworkWeatherActor::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<ASWNetworkWeatherActor*>(this)) : NAME_None;
+}
+
+ESWVoyageStepResult ASWNetworkWeatherActor::PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (!bAdapterReady)
+	{
+		OutError = TEXT("WeatherAdapterInvalid");
+		return ESWVoyageStepResult::Failed;
+	}
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult ASWNetworkWeatherActor::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	for (auto& Pair : AssetLoadHandles) if (Pair.Value) Pair.Value->CancelHandle();
+	AssetLoadHandles.Reset(); CompletedAssetLoads.Reset(); FailedAssetPaths.Reset(); SegmentReadiness.Reset(); ClockSamples.Reset();
+	PlaybackBuffer.Reset(); PendingEpochBuffer.Reset(); ServerHistory.Reset();
+	ActiveWeatherState = {}; RecoveryTarget = {}; RecoveryNext = {}; PlaybackWindow = {};
+	RecoverySourceFrame = {}; RecoveryTargetFrame = {}; LastVisualFrame = {};
+	AppliedEpoch = AppliedSequence = ReceivedEpoch = 0; ReceivedPublishedTime = EpochPlaybackStartServerTime = 0.;
+	PlaybackServerTime = LocalElapsed = PlaybackStep = RecoveryElapsed = LastPresentedAlpha = 0.; PlaybackRate = 1.;
+	LastLocalWorldTime = GetWorld()->GetTimeSeconds(); NextClockSampleTime = 0.;
+	bGenerationFailed = bInitialWindowPublished = bHasVisualFrame = false;
+	RestoredVoyageGeneration = INDEX_NONE;
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult ASWNetworkWeatherActor::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation) || !bAdapterReady)
+	{
+		OutError = TEXT("WeatherAdapterOrVoyageGenerationInvalid");
+		return ESWVoyageStepResult::Failed;
+	}
+	if (RestoredVoyageGeneration != Context.Generation)
+	{
+		if (!Context.bAuthority)
+		{
+			const FSWWeatherPlaybackWindow ReceivedWindow = PlaybackWindow;
+			ResetVoyageTransientState_Implementation(Context, OutError);
+			if (ReceivedWindow.Generation == Context.Generation) PlaybackWindow = ReceivedWindow;
+		}
+		// Continue retains the pre-existing cold-load weather policy: authored
+		// initial settings, without extending the room snapshot format.
+		if (Context.bAuthority && (!Context.bContinue || (Context.bBootstrap && ServerHistory.IsEmpty())))
+		{
+			if (!bHasInitialVoyageSettings || PlannerState.Epoch == MAX_uint32)
+			{
+				OutError = TEXT("WeatherInitialSettingsOrEpochInvalid");
+				return ESWVoyageStepResult::Failed;
+			}
+			const uint32 PreviousEpoch = PlannerState.Epoch;
+			TGuardValue<bool> InitializeScope(bInitializingVoyageWeather, true);
+			WriteNumber(TEXT("WeatherChangeCycle"), FMath::Max(1., ReadNumber(TEXT("WeatherChangeCycle"))));
+			if (!Invoke(TEXT("WeatherRaffleSetting")))
+			{
+				OutError = TEXT("WeatherRaffleSettingFailed");
+				return ESWVoyageStepResult::Failed;
+			}
+			SetNetworkWeatherTime(InitialVoyageHour, InitialVoyageMinute, InitialVoyageWeather);
+			if (PlannerState.Epoch != PreviousEpoch + 1 || bGenerationFailed)
+			{
+				OutError = TEXT("WeatherInitialPublicationFailed");
+				return ESWVoyageStepResult::Failed;
+			}
+			WindState = InitialVoyageWind; WindState.Generation = Context.Generation;
+			WindState.StartServerTime = GetServerTime(); NextWindServerTime = WindState.StartServerTime;
+			ForceNetUpdate();
+		}
+		RestoredVoyageGeneration = Context.Generation;
+	}
+	if (FutureVoyageWindow.Generation == Context.Generation && !FutureVoyageWindow.Segments.IsEmpty())
+	{
+		MergePlaybackWindow(FutureVoyageWindow); FutureVoyageWindow = {};
+	}
+	if (!PlaybackWindow.Segments.IsEmpty()) MergePlaybackWindow(PlaybackWindow);
+	if (GetNetMode() != NM_DedicatedServer)
+	{
+		PrepareSegments();
+		if (!AppliedEpoch) TryStartPlayback(GetServerTime(), false);
+		if (AppliedEpoch)
+		{
+			EvaluatePresentedWeather(); bHasVisualFrame = CaptureVisualFrame(LastVisualFrame);
+		}
+	}
+	return IsVoyageReady_Implementation(Context, OutError);
+}
+
+ESWVoyageStepResult ASWNetworkWeatherActor::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (bGenerationFailed || !bAdapterReady)
+	{
+		OutError = TEXT("WeatherGenerationOrAdapterFailed");
+		return ESWVoyageStepResult::Failed;
+	}
+	for (const auto& Pair : SegmentReadiness)
+		if (Pair.Value == ESWWeatherSegmentReadiness::Invalid)
+		{
+			OutError = TEXT("WeatherRequiredSegmentInvalid");
+			return ESWVoyageStepResult::Failed;
+		}
+	if (Context.bAuthority && (!bInitialWindowPublished || PlaybackWindow.Generation != Context.Generation)) return ESWVoyageStepResult::Pending;
+	if (!WindState.bInitialized || WindState.Generation != Context.Generation) return ESWVoyageStepResult::Pending;
+	if (GetNetMode() == NM_DedicatedServer || !FApp::CanEverRender()) return ESWVoyageStepResult::Succeeded;
+	return AppliedEpoch != 0 && bHasVisualFrame ? ESWVoyageStepResult::Succeeded : ESWVoyageStepResult::Pending;
 }

@@ -2,6 +2,7 @@
 
 
 #include "Components/BaseHealthComponent.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "Components/StatusComponent.h"
 #include "Components/CombatPresentationComponent.h"
 #include "Components/EquipmentStatComponent.h"
@@ -154,6 +155,7 @@ float UBaseHealthComponent::GetHealthNormalized() const
 
 void UBaseHealthComponent::StartDeath()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(GetOwningActor())) return;
 	AActor* Owner = GetOwningActor();
 	if (!Owner || !Owner->HasAuthority() || !AbilitySystemComponent
 		|| bLifeInitializing || bPreparingHealthDeath || DeathPresentation.DeathState != EBaseDeathState::NotDead)
@@ -230,6 +232,7 @@ FVector UBaseHealthComponent::CalculateKnockbackDirectionAwayFromSource(
 
 void UBaseHealthComponent::FinishDeath()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(GetOwningActor())) return;
 	AActor* Owner = GetOwningActor();
 	if (!Owner || !Owner->HasAuthority() || bLifeInitializing || DeathPresentation.DeathState != EBaseDeathState::DeathStarted)
 	{

@@ -12,6 +12,8 @@
 #include "TimerManager.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Room/SWRoomSnapshotSubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 UDeckEnemySpawnerComponent::UDeckEnemySpawnerComponent()
 {
@@ -381,6 +383,8 @@ void UDeckEnemySpawnerComponent::InitializeWaypoints()
 
 void UDeckEnemySpawnerComponent::InitializePool()
 {
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (Voyage && Voyage->IsGameplayBlocked() && !Voyage->IsPreparationSpawnAllowed()) return;
 	AEnemyShip* Host = GetHostShip();
 	if (!Host || !Host->HasAuthority() || !IsEnabled() || !EnemyPool.IsEmpty()
 		|| GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot())
@@ -389,6 +393,7 @@ void UDeckEnemySpawnerComponent::InitializePool()
 	}
 	if (SpawnWaypoints.IsEmpty())
 	{
+		bVoyagePoolFailed = true;
 		UE_LOG(LogTemp, Warning,
 			TEXT("[DeckEnemySpawner] No spawn waypoint exists. Ship=%s"), *GetNameSafe(Host));
 		return;
@@ -397,6 +402,7 @@ void UDeckEnemySpawnerComponent::InitializePool()
 	TArray<FDeckEnemyDeploymentSlot> ResolvedPlan;
 	if (!BuildDeploymentPlan(ResolvedPlan, true))
 	{
+		bVoyagePoolFailed = true;
 		UE_LOG(LogTemp, Warning,
 			TEXT("[DeckEnemySpawner] Spawn plan could not be resolved. Ship=%s"), *GetNameSafe(Host));
 		return;
@@ -419,20 +425,23 @@ void UDeckEnemySpawnerComponent::InitializePool()
 		if (!InitialWaypoint || !EnemyCDO
 			|| !ResolveEnemySpawnTransform(InitialWaypoint, *EnemyCDO, InitialTransform))
 		{
+			bVoyagePoolFailed = true;
 			UE_LOG(LogTemp, Warning,
 				TEXT("[DeckEnemySpawner] No valid initial transform. Ship=%s Class=%s Slot=%d PointId=%d"),
 				*GetNameSafe(Host), *GetNameSafe(Slot.EnemyClass.Get()), SlotIndex, Slot.SpawnPointId);
 			continue;
 		}
 
-		ADeckEnemy* PooledEnemy = World->SpawnActorDeferred<ADeckEnemy>(
+		ADeckEnemy* PooledEnemy = FSWVoyageSpawn::SpawnDeferred<ADeckEnemy>(World,
 			Slot.EnemyClass,
 			InitialTransform,
 			Host,
 			nullptr,
-			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn, ESWVoyageActorLifetime::Voyage,
+			Voyage ? Voyage->GetGeneration() : 0);
 		if (!PooledEnemy)
 		{
+			bVoyagePoolFailed = true;
 			UE_LOG(LogTemp, Error,
 				TEXT("[DeckEnemySpawner] Failed to allocate pool actor. Ship=%s Class=%s Slot=%d"),
 				*GetNameSafe(Host), *GetNameSafe(Slot.EnemyClass.Get()), SlotIndex);
@@ -440,14 +449,99 @@ void UDeckEnemySpawnerComponent::InitializePool()
 		}
 
 		PooledEnemy->PrepareForPool();
-		PooledEnemy->ConfigureSpawnBalance(Slot.StatsRow);
-		PooledEnemy->FinishSpawning(InitialTransform);
-		if (!IsValid(PooledEnemy)) continue;
+		const bool bBalanceConfigured = PooledEnemy->ConfigureSpawnBalance(Slot.StatsRow);
+		const bool bHostedVoyage = Voyage && Voyage->IsActiveVoyageSession();
+		if ((bHostedVoyage && !bBalanceConfigured)
+			|| USWVoyageSpawnLibrary::FinishVoyageActorSpawn(PooledEnemy, InitialTransform) != PooledEnemy
+			|| !IsValid(PooledEnemy) || (bHostedVoyage && !PooledEnemy->IsBalanceReady()))
+		{
+			bVoyagePoolFailed = true;
+			if (IsValid(PooledEnemy)) PooledEnemy->Destroy();
+			continue;
+		}
 		PooledEnemy->SetHostShip(Host);
 		PooledEnemy->DeactivateToPool();
 		EnemyPool.Add(PooledEnemy);
 		Host->RegisterCrewEnemy(PooledEnemy);
 	}
+}
+
+FName UDeckEnemySpawnerComponent::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<UDeckEnemySpawnerComponent*>(this)) : NAME_None;
+}
+
+ESWVoyageStepResult UDeckEnemySpawnerComponent::PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	FTimerManager& Timers = GetWorld()->GetTimerManager();
+	if (!bSightTimerPaused && Timers.IsTimerActive(SightDelayTimerHandle))
+	{
+		Timers.PauseTimer(SightDelayTimerHandle);
+		bSightTimerPaused = true;
+	}
+	if (!bDeploymentTimerPaused && Timers.IsTimerActive(DeploymentTimerHandle))
+	{
+		Timers.PauseTimer(DeploymentTimerHandle);
+		bDeploymentTimerPaused = true;
+	}
+	return ESWVoyageStepResult::Succeeded;
+}
+
+void UDeckEnemySpawnerComponent::CancelVoyagePreparation_Implementation(const FSWVoyageResetContext& Context)
+{
+	if (bSightTimerPaused) GetWorld()->GetTimerManager().UnPauseTimer(SightDelayTimerHandle);
+	if (bDeploymentTimerPaused) GetWorld()->GetTimerManager().UnPauseTimer(DeploymentTimerHandle);
+	bSightTimerPaused = false;
+	bDeploymentTimerPaused = false;
+}
+
+ESWVoyageStepResult UDeckEnemySpawnerComponent::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	Shutdown();
+	WaypointsById.Reset(); SpawnWaypoints.Reset();
+	bHasPendingRoomState = false;
+	bSightTimerPaused = false; bDeploymentTimerPaused = false;
+	bVoyagePoolFailed = false; RestoredVoyageGeneration = INDEX_NONE;
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult UDeckEnemySpawnerComponent::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation) || !GetHostShip())
+	{
+		OutError = TEXT("DeckSpawnerHostOrGenerationInvalid");
+		return ESWVoyageStepResult::Failed;
+	}
+	if (!Context.bAuthority || Context.bContinue || !IsEnabled()) return ESWVoyageStepResult::Succeeded;
+	if (RestoredVoyageGeneration != Context.Generation)
+	{
+		if (GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()
+			|| (Voyage->IsGameplayBlocked() && !Voyage->IsPreparationSpawnAllowed())) return ESWVoyageStepResult::Pending;
+		RestoredVoyageGeneration = Context.Generation;
+		InitializeWaypoints(); InitializePool();
+	}
+	return IsVoyageReady_Implementation(Context, OutError);
+}
+
+ESWVoyageStepResult UDeckEnemySpawnerComponent::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (bVoyagePoolFailed)
+	{
+		OutError = TEXT("DeckSpawnerPoolInitializationFailed");
+		return ESWVoyageStepResult::Failed;
+	}
+	for (ADeckEnemy* Enemy : EnemyPool)
+	{
+		if (!IsValid(Enemy) || !USWVoyageSpawnLibrary::IsActorFromCurrentVoyage(Enemy))
+		{
+			OutError = TEXT("DeckSpawnerPoolGenerationInvalid");
+			return ESWVoyageStepResult::Failed;
+		}
+		if (!Enemy->IsBalanceReady()) return ESWVoyageStepResult::Pending;
+	}
+	return ESWVoyageStepResult::Succeeded;
 }
 
 void UDeckEnemySpawnerComponent::GetPooledEnemies(TArray<ADeckEnemy*>& OutEnemies) const
@@ -501,6 +595,7 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(
 	AShip* TriggeringPlayerShip,
 	AActor* InitialCombatTarget)
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return false;
 	AEnemyShip* Host = GetHostShip();
 	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled() || Host->IsCrewDefeated() || Host->IsStoryGateDormant() || !IsEnabled()
 		|| GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()
@@ -563,6 +658,7 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(
 
 void UDeckEnemySpawnerComponent::BeginDeployment()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(GetOwner())) return;
 	AEnemyShip* Host = GetHostShip();
 	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled() || Host->IsStoryGateDormant()
 		|| DeploymentQueue.IsEmpty() || EnemyPool.IsEmpty())
@@ -611,6 +707,7 @@ ADeckEnemy* UDeckEnemySpawnerComponent::FindInactiveEnemy(
 
 void UDeckEnemySpawnerComponent::DeployNextEnemy()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(GetOwner())) return;
 	GetWorld()->GetTimerManager().ClearTimer(DeploymentTimerHandle);
 	AEnemyShip* Host = GetHostShip();
 	if (Host && Host->IsStoryGateDormant())
@@ -789,6 +886,7 @@ int32 UDeckEnemySpawnerComponent::GetLivingPooledEnemyCount() const
 
 void UDeckEnemySpawnerComponent::NotifyEnemyDefeated(ADeckEnemy* Enemy)
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 	AEnemyShip* Host = GetHostShip();
 	if (!Host || !Host->HasAuthority() || !IsValid(Enemy) || !EnemyPool.Contains(Enemy))
 	{
@@ -1314,6 +1412,7 @@ bool UDeckEnemySpawnerComponent::ActivateEnemyAtPoint(
 	ADeckEnemy*& OutEnemy)
 {
 	OutEnemy = nullptr;
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return false;
 	if (const AEnemyShip* Host = GetHostShip(); !Host || Host->IsCrewDefeated() || Host->IsStoryGateDormant()) return false;
 	if (EnemyPool.IsEmpty())
 	{
@@ -1340,6 +1439,7 @@ bool UDeckEnemySpawnerComponent::ActivateEnemyAtReservation(
 	const FDataTableRowHandle& StatsRow)
 {
 	OutEnemy = nullptr;
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return false;
 	if (const AEnemyShip* Host = GetHostShip(); !Host || Host->IsCrewDefeated() || Host->IsStoryGateDormant()) return false;
 	if (EnemyPool.IsEmpty())
 	{

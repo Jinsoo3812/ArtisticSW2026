@@ -1,4 +1,6 @@
 #include "UI/ShipUpgradeScreenWidget.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanelSlot.h"
@@ -98,6 +100,9 @@ void UShipUpgradeScreenWidget::NativeDestruct()
 		DetailsWidget->OnActivationRequested().RemoveAll(this);
 		DetailsWidget->OnPreviewRequested().RemoveAll(this);
 	}
+	if (USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr)
+		Voyage->UnregisterLocalPresentationCleanupOwner(PreviewCleanupId);
+	PreviewCleanupId.Invalidate();
 	if (IsValid(PreviewStage))
 	{
 		PreviewStage->Destroy();
@@ -695,18 +700,20 @@ void UShipUpgradeScreenWidget::SetDetailsPopupVisible(bool bVisible)
 
 void UShipUpgradeScreenWidget::SpawnPreviewStage()
 {
-	if (PreviewStage || !PreviewStageClass || !GetWorld())
+	if (IsValid(PreviewStage) || !PreviewStageClass || !GetWorld())
 	{
 		return;
 	}
 
-	FActorSpawnParameters Parameters;
-	Parameters.Owner = GetOwningPlayer();
-	Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	PreviewStage = GetWorld()->SpawnActor<AShipUpgradePreviewStage>(
-		PreviewStageClass,
-		PreviewStageSpawnTransform,
-		Parameters);
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	const int32 Generation = Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetGeneration() : 0;
+	FString Error;
+	if (Voyage && Voyage->IsActiveVoyageSession()
+		&& !Voyage->RegisterLocalPresentationCleanupOwner(this, Generation, PreviewCleanupId, Error)) return;
+	PreviewStage = Cast<AShipUpgradePreviewStage>(USWVoyageSpawnLibrary::BeginVoyageLocalPresentationSpawn(
+		this, PreviewStageClass, PreviewStageSpawnTransform, GetOwningPlayer(), nullptr,
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn, Generation, PreviewCleanupId));
+	if (PreviewStage && !USWVoyageSpawnLibrary::FinishVoyageActorSpawn(PreviewStage, PreviewStageSpawnTransform)) PreviewStage = nullptr;
 
 	if (PreviewStage && Image_ShipModelOverlay)
 	{

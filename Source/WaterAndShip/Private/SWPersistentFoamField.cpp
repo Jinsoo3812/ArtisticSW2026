@@ -1,4 +1,6 @@
 #include "SWPersistentFoamField.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/Texture2D.h"
@@ -335,6 +337,7 @@ FVector2D ASWPersistentFoamField::ResolveDesiredCenter() const
 void ASWPersistentFoamField::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 
 	if (!bInitialized && !InitializeFoamField())
 	{
@@ -502,4 +505,48 @@ void ASWPersistentFoamField::ResetFoamState()
 	}
 	bLatestStateIsA = true;
 	PushStateToWaterMaterial(FoamStateA);
+}
+
+FName ASWPersistentFoamField::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<ASWPersistentFoamField*>(this)) : NAME_None;
+}
+
+ESWVoyageStepResult ASWPersistentFoamField::PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult ASWPersistentFoamField::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	SourceUpdateElapsedSeconds = 0.0f;
+	bInitialStateStatisticsLogged = false; InitialStateStatisticsElapsedSeconds = 0.0f;
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult ASWPersistentFoamField::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (GetWorld()->GetNetMode() == NM_DedicatedServer || !FApp::CanEverRender()) return ESWVoyageStepResult::Succeeded;
+	if (ClearedVoyageGeneration != Context.Generation)
+	{
+		ResolveTargetWaterBody();
+		if (!IsValid(TargetWaterBody) || !IsValid(FoamStateUpdateMaterial) || Resolution < 128 || FieldWorldSizeCm <= 0.0f)
+		{
+			OutError = TEXT("PersistentFoamRequiredConfigurationInvalid");
+			return ESWVoyageStepResult::Failed;
+		}
+		if (!InitializeFoamField() || !CpuWaveField || !CpuWaveField->GetResource()) return ESWVoyageStepResult::Pending;
+		CurrentCenter = ResolveDesiredCenter(); PreviousCenter = CurrentCenter; CpuWaveFieldCenter = CurrentCenter;
+		if (!UpdateCpuWaveField()) return ESWVoyageStepResult::Pending;
+		ResetFoamState(); VoyageRenderFence.BeginFence(); ClearedVoyageGeneration = Context.Generation;
+	}
+	return IsVoyageReady_Implementation(Context, OutError);
+}
+
+ESWVoyageStepResult ASWPersistentFoamField::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (GetWorld()->GetNetMode() == NM_DedicatedServer || !FApp::CanEverRender()) return ESWVoyageStepResult::Succeeded;
+	return ClearedVoyageGeneration == Context.Generation && VoyageRenderFence.IsFenceComplete()
+		? ESWVoyageStepResult::Succeeded : ESWVoyageStepResult::Pending;
 }

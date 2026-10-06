@@ -14,6 +14,8 @@
 #include "Respawn/SWRespawnControllerInterface.h"
 #include "Room/SWRoomSaveGame.h"
 #include "Camera/CameraTypes.h"
+#include "Room/SWVoyageResetTypes.h"
+#include "Containers/Ticker.h"
 #include "BasePlayerController.generated.h"
 
 /**
@@ -34,6 +36,8 @@ class AFacilityHubActor;
 class ASharedShipUpgradeState;
 class UGameViewportClient;
 class AShip;
+class ASWRoomReadyState;
+class USWVoyageFailureWidget;
 
 /** Development diagnostics sampled per frame, reported as short interval peaks. */
 struct FSWShipMotionDiagnosticState
@@ -63,6 +67,17 @@ class CLASSFEATURE_API ABasePlayerController : public AArtisticSW2026PlayerContr
 	GENERATED_BODY()
 
 public:
+	UFUNCTION(Client, Reliable) void ClientBeginVoyage(const FSWVoyageReplicatedState& State);
+	UFUNCTION(Client, Reliable) void ClientSetVoyagePhase(const FSWVoyageReplicatedState& State);
+	UFUNCTION(Client, Reliable) void ClientSetVoyagePlacement(int64 AttemptId, int32 Generation, APawn* NewPawn, AShip* NewShip, FTransform Target);
+	UFUNCTION(Client, Reliable) void ClientFinishVoyage(int64 AttemptId, int32 Generation, bool bSaveSucceeded, const FString& Message);
+	UFUNCTION(Client, Reliable) void ClientCancelVoyage(int64 AttemptId, int32 Generation);
+	UFUNCTION(Client, Reliable) void ClientVoyageFailure(int64 AttemptId, int32 Generation, bool bHost, const FString& Error);
+	UFUNCTION(Server, Reliable) void ServerConfirmVoyageStage(int64 AttemptId, int32 Generation, ESWVoyageAck Ack);
+	UFUNCTION(Server, Reliable) void ServerReportVoyageFailure(int64 AttemptId, int32 Generation, const FString& Error);
+	UFUNCTION(Server, Reliable) void ServerRetryVoyageFailure(int64 AttemptId, int32 Generation);
+	void BeginVoyageBindings();
+	void EndVoyageBindings();
 	ABasePlayerController();
 	virtual void UpdateCameraManager(float DeltaSeconds) override;
 	bool IsDevelopmentTestInputBlockedByUI() const;
@@ -71,9 +86,10 @@ public:
 	virtual bool CaptureLatestLifeProgress(APawn* SourcePawn) override;
 	virtual bool CanAcceptLifeDeath(APawn* SourcePawn) const override;
 	virtual void SetDeathFlowState(const FSWDeathFlowState& State) override;
-	virtual bool HasPendingLifeProgress() const override { return bHasLatestLifeProgress; }
+	virtual bool HasPendingLifeProgress() const override { return bHasLatestLifeProgress || bFreshVoyageAdmission; }
 	virtual bool ApplyPendingLifeProgress(APawn* NewPawn) override;
 	virtual bool WasLastLifeProgressApplySuccessful(APawn* NewPawn) const override;
+	virtual FSWLifeRestoreStatus GetLifeRestoreStatus(APawn* NewPawn, int32 ExpectedGeneration) const override;
 	virtual void FreezeLifeProgressForGameOver() override;
 	virtual void ReleaseFrozenLifeProgress() override;
 	bool GetLatestLifeProgress(FSWRoomPlayerProgress& OutProgress) const;
@@ -81,6 +97,10 @@ public:
 	bool IsLifeCharacterAlive() const;
 	bool CanMutateGameplay() const;
 	bool CleanupLifeInteraction();
+	bool PrepareVoyageLife(const FSWRoomPlayerProgress& Progress, int32 Generation, FString& OutError);
+	bool PrepareFreshVoyageAdmission(int32 Generation, FString& OutError);
+	bool IsFreshVoyageAdmission() const { return bFreshVoyageAdmission; }
+	void ClearVoyageLocalPresentation(int32 Generation);
 	void RequestGameOverRetry();
 	UFUNCTION(Server, Reliable) void ServerRequestGameOverRetry(int32 ExpectedRestoreGeneration, uint64 RequestId);
 	UFUNCTION(Client, Reliable) void ClientGameOverRetryResult(uint64 RequestId, bool bAccepted, const FString& Message);
@@ -98,7 +118,33 @@ public:
 	TWeakObjectPtr<ABasePlayer> LifeCharacter;
 	TWeakObjectPtr<APawn> AppliedLifePawn;
 private:
+	UPROPERTY(Transient) TObjectPtr<USWVoyageFailureWidget> VoyageFailureWidget;
+	UPROPERTY(Transient) FSWVoyageReplicatedState LocalVoyageState;
+	TWeakObjectPtr<ASWRoomReadyState> BoundVoyageReady;
+	FDelegateHandle VoyageReadyHandle;
+	FTSTicker::FDelegateHandle VoyageTickerHandle;
+	TWeakObjectPtr<APawn> VoyagePlacementPawn;
+	TWeakObjectPtr<AShip> VoyagePlacementShip;
+	FTransform VoyagePlacementTarget = FTransform::Identity;
+	ESWVoyagePhase LocalVoyagePhase = ESWVoyagePhase::Idle;
+	TSet<ESWVoyageAck> LocalVoyageAcks;
+	bool bVoyagePlacementReceived = false;
+	bool bVoyageFinishReceived = false;
+	bool bVoyageFinishSaveSucceeded = false;
+	bool bVoyageLocalFailed = false;
+	FString VoyageFinishMessage;
+	bool TickLocalVoyage(float DeltaSeconds);
+	void HandleVoyageReplicatedState(const FSWVoyageReplicatedState& State);
+	void RemoveVoyageFailureWidget();
+	void RetryLocalVoyageFailure();
+	void LeaveLocalVoyageFailure();
+	int32 ClearedVoyagePresentationGeneration = -1;
 	bool bApplyingLifeProgress = false;
+	int32 PreparedVoyageLifeGeneration = -1;
+	bool bFreshVoyageAdmission = false;
+	TWeakObjectPtr<APawn> LifeApplyAttemptPawn;
+	ESWLifeRestoreStepState LifeApplyState = ESWLifeRestoreStepState::Pending;
+	FString LifeApplyError;
 	void TickDeathFlow(float DeltaTime);
 	void TickShipMotionDiagnostics();
 	FSWShipMotionDiagnosticState ShipMotionDiagnostic;
@@ -134,6 +180,7 @@ private:
 	int32 LocalObservedRestoreGeneration = -1;
 	UPROPERTY(Transient) TObjectPtr<class USWDeathFlowWidget> DeathFlowWidget;
 	UPROPERTY(Transient) TObjectPtr<class ACameraActor> DeathCamera;
+	FGuid DeathCameraCleanupId;
 	ESWSessionLifePhase LocalSessionPhase = ESWSessionLifePhase::Playing;
 	bool bDeathInputLocked = false;
 	bool bDeathFlowInputModeApplied = false;

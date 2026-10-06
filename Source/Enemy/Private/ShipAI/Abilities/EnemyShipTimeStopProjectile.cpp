@@ -1,4 +1,6 @@
 #include "ShipAI/Abilities/EnemyShipTimeStopProjectile.h"
+#include "Room/SWVoyageSpawnLibrary.h"
+#include "Room/SWVoyageResetSubsystem.h"
 
 #include "CollisionChannels.h"
 #include "Components/SphereComponent.h"
@@ -110,7 +112,7 @@ void AEnemyShipTimeStopProjectile::OnProjectileHit(
 	FVector NormalImpulse,
 	const FHitResult& Hit)
 {
-	if (bImpactHandled || !HasAuthority())
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this) || bImpactHandled || !HasAuthority())
 	{
 		return;
 	}
@@ -141,14 +143,14 @@ void AEnemyShipTimeStopProjectile::OnProjectileHit(
 
 	if (FieldClass && GetWorld())
 	{
-		FActorSpawnParameters Params;
-		Params.Owner = SourceShip;
-		Params.Instigator = SourceShip;
-		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		if (AEnemyShipTimeStopField* Field = GetWorld()->SpawnActor<AEnemyShipTimeStopField>(
-			FieldClass, ImpactLocation, FRotator::ZeroRotator, Params))
+		const FTransform SpawnTransform(FRotator::ZeroRotator, ImpactLocation);
+		const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+		if (AEnemyShipTimeStopField* Field = Cast<AEnemyShipTimeStopField>(USWVoyageSpawnLibrary::BeginVoyageActorSpawn(
+			this, FieldClass, SpawnTransform, SourceShip, SourceShip, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+			ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(this) : 0)))
 		{
 			Field->InitializeTimeStop(EffectRadius, EffectDurationSeconds);
+			USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Field, SpawnTransform);
 		}
 	}
 	Destroy();

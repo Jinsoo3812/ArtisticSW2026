@@ -5,6 +5,7 @@
 #include "GameFramework/SWGamePhaseTypes.h"
 #include "WaveSystem/Data/WaveSpawnTypes.h"
 #include "Room/SWRoomStateAdapter.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "WaveSpawnManager.generated.h"
 
 USTRUCT()
@@ -70,12 +71,21 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnWaveSpawnManagerRouteMoveFaile
  * - 다음 Wave 시작 승인
  */
 UCLASS()
-class ENEMY_API AWaveSpawnManager : public AActor, public ISWRoomStateAdapter
+class ENEMY_API AWaveSpawnManager : public AActor, public ISWRoomStateAdapter, public ISWVoyageResetParticipant
 {
     GENERATED_BODY()
 
 public:
     AWaveSpawnManager();
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::ResetParticipant; }
+	virtual ESWVoyageRestoreStage GetVoyageRestoreStage_Implementation() const override { return ESWVoyageRestoreStage::InitialSpawners; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
+	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual void CancelVoyagePreparation_Implementation(const FSWVoyageResetContext& Context) override;
+	virtual void ResumeVoyage_Implementation(const FSWVoyageResetContext& Context) override;
     virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
     virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
     virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
@@ -192,6 +202,9 @@ protected:
     FWaveDefinition CurrentWaveDefinition;
 
 private:
+	TArray<FTimerHandle> PausedVoyageTimers;
+	int32 RestoredVoyageGeneration = INDEX_NONE;
+	int32 ResumedVoyageGeneration = INDEX_NONE;
     TSet<TWeakObjectPtr<ABaseEnemy>> ActiveEnemies;
     TSet<TWeakObjectPtr<ABaseEnemy>> RemovedEnemies;
 

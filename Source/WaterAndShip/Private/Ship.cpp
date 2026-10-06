@@ -12,6 +12,8 @@
 #include "BaseAttributeSet.h"
 #include "SWRoomAbilitySystemComponent.h"
 #include "TimerManager.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 void AShip::CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const
 {
@@ -511,7 +513,12 @@ void AShip::BeginPlay()
 		SharedUpgradeState = ASharedShipUpgradeState::Find(this);
 		if (!SharedUpgradeState)
 		{
-			SharedUpgradeState = GetWorld()->SpawnActor<ASharedShipUpgradeState>();
+			const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+			SharedUpgradeState = FSWVoyageSpawn::SpawnDeferred<ASharedShipUpgradeState>(GetWorld(), ASharedShipUpgradeState::StaticClass(),
+				FTransform::Identity, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+				ESWVoyageActorLifetime::SharedService, Voyage ? Voyage->GetGeneration() : 0);
+			if (SharedUpgradeState && USWVoyageSpawnLibrary::FinishVoyageActorSpawn(SharedUpgradeState, FTransform::Identity) != SharedUpgradeState)
+				SharedUpgradeState = nullptr;
 		}
 		if (SharedUpgradeState)
 		{
@@ -556,7 +563,9 @@ void AShip::BeginPlay()
 			{
 				if (Chaos::FPhysicsSolver* Solver = PhysScene->GetSolver())
 				{
-					ShipPhysicsAsync = Solver->CreateAndRegisterSimCallbackObject_External<FShipPhysicsAsync>();
+					USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+					ShipPhysicsAsync = Solver->CreateAndRegisterSimCallbackObject_External<FShipPhysicsAsync>(
+						Voyage ? Voyage->GetAsyncGuard() : TSharedPtr<FSWVoyageAsyncGuard, ESPMode::ThreadSafe>());
 					if (ShipPhysicsAsync)
 					{
 						if (BuoyancyRoot)
@@ -564,6 +573,8 @@ void AShip::BeginPlay()
 							ShipPhysicsAsync->SetPhysicsObject(BuoyancyRoot->GetPhysicsObjectByName(NAME_None));
 						}
 						NetworkPhysicsComponent->CreateDataHistory(ShipPhysicsAsync);
+						bVoyagePhysicsHistoryCreated = true;
+						bVoyagePhysicsCallbackConnected = BuoyancyRoot && BuoyancyRoot->GetPhysicsObjectByName(NAME_None);
 						NetworkPhysicsComponent->SetCompareStateToTriggerRewind(true, true);
 						/* Network Physics initialization diagnostic log disabled after validation.
 						UE_LOG(LogTemp, Warning, TEXT("[GT] AShip::BeginPlay - SUCCESSFULLY registered ShipPhysicsAsync and bound to NetworkPhysicsComponent! (Simulated Proxy Rollback Enabled)"));
@@ -642,6 +653,8 @@ void AShip::BeginPlay()
 
 void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearTimer(SinkingDestroyTimerHandle);
+	GetWorldTimerManager().ClearTimer(LeakDamageTimerHandle);
 	if (HasAuthority() && SharedUpgradeState)
 	{
 		SharedUpgradeState->UnregisterPlayerShip(this);
@@ -679,6 +692,8 @@ void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		}
 		ShipPhysicsAsync = nullptr;
 	}
+	bVoyagePhysicsCallbackConnected = false;
+	bVoyagePhysicsHistoryCreated = false;
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -687,6 +702,7 @@ void AShip::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 
 	static const auto CVarShipBalanceDiagnostics = IConsoleManager::Get().RegisterConsoleVariable(
 		TEXT("sw.ShipBalanceDiagnostics"),
@@ -1097,6 +1113,7 @@ void AShip::SetShipRuntimePhysicsEnabled(bool bEnabled)
 		if (ShipPhysicsAsync)
 		{
 			ShipPhysicsAsync->SetPhysicsObject(nullptr);
+			bVoyagePhysicsCallbackConnected = false;
 		}
 		BuoyancyRoot->SetSimulatePhysics(false);
 		return;
@@ -1106,6 +1123,7 @@ void AShip::SetShipRuntimePhysicsEnabled(bool bEnabled)
 	if (ShipPhysicsAsync)
 	{
 		ShipPhysicsAsync->SetPhysicsObject(BuoyancyRoot->GetPhysicsObjectByName(NAME_None));
+		bVoyagePhysicsCallbackConnected = BuoyancyRoot->GetPhysicsObjectByName(NAME_None) != nullptr;
 	}
 	BuoyancyRoot->WakeAllRigidBodies();
 }
@@ -1629,6 +1647,7 @@ void AShip::ForceDisembark()
 
 void AShip::HandleShipHealthChanged(const FOnAttributeChangeData& Data)
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 	if (HasAuthority() && !bApplyingLeakDamage && Data.NewValue < Data.OldValue && Data.NewValue > 0.0f)
 	{
 		TryActivateRepairPointAfterHit(Data.NewValue);
@@ -1702,6 +1721,7 @@ void AShip::TryActivateRepairPointAfterHit(const float NewHealth)
 
 void AShip::ApplyLeakDamageTick()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	if (!HasAuthority() || bIsSinking || !AbilitySystemComponent || !LeakDamageGameplayEffectClass)
 	{
 		return;
@@ -1774,6 +1794,7 @@ void AShip::ForceExitAllControlModes()
 
 void AShip::StartSinking(float DestroyDelaySeconds)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	if (!HasAuthority() || bIsSinking)
 	{
 		return;
@@ -1829,6 +1850,7 @@ void AShip::StartSinking(float DestroyDelaySeconds)
 
 void AShip::FinishSinking()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
  AMultiGameMode* Mode = HasAuthority() && GetWorld() ? GetWorld()->GetAuthGameMode<AMultiGameMode>() : nullptr;
  const bool bNotify = Mode && bIsSinking && Mode->GetPlayerRespawnShip() == this;
  if (Destroy() && bNotify) Mode->NotifyPlayerShipRemovedBySinking(this);
@@ -2189,24 +2211,32 @@ void AShip::BeginLocalBombardmentTargeting()
 
 	if (BombardmentDefaults->PreviewClass && GetWorld())
 	{
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.Owner = this;
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		BombardmentPreviewActor = GetWorld()->SpawnActor<ABombardmentPreview>(
-			BombardmentDefaults->PreviewClass,
-			GetActorLocation(),
-			FRotator::ZeroRotator,
-			SpawnParams);
+		USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+		FString Error;
+		if (Voyage && Voyage->IsActiveVoyageSession() && !Voyage->RegisterLocalPresentationCleanupOwner(this,
+			Voyage->GetGeneration(), BombardmentPresentationCleanupId, Error)) return;
+		const FTransform Transform(FRotator::ZeroRotator, GetActorLocation());
+		BombardmentPreviewActor = Cast<ABombardmentPreview>(USWVoyageSpawnLibrary::BeginVoyageLocalPresentationSpawn(this,
+			BombardmentDefaults->PreviewClass, Transform, this, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+			Voyage ? Voyage->GetGeneration() : 0, BombardmentPresentationCleanupId));
 		if (BombardmentPreviewActor)
 		{
 			BombardmentPreviewActor->ConfigurePreview(BombardmentDefaults->SkillRadius);
 			BombardmentPreviewActor->SetPreviewMeshVisible(false);
+			if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(BombardmentPreviewActor, Transform) != BombardmentPreviewActor)
+			{
+				if (IsValid(BombardmentPreviewActor)) BombardmentPreviewActor->Destroy();
+				BombardmentPreviewActor = nullptr;
+			}
 		}
 	}
 }
 
 void AShip::EndLocalBombardmentTargeting()
 {
+	if (USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr)
+		Voyage->UnregisterLocalPresentationCleanupOwner(BombardmentPresentationCleanupId);
+	BombardmentPresentationCleanupId.Invalidate();
 	if (BombardmentPreviewActor)
 	{
 		BombardmentPreviewActor->Destroy();
@@ -2545,19 +2575,20 @@ void AShip::SpawnBombardmentAuthoritative(const FVector& TargetLocation)
 	}
 	Damage *= BombardmentDefaults ? FMath::Max(0.0f, BombardmentDefaults->CannonDamageMultiplier) : 0.3f;
 
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.Owner = this;
-	SpawnParams.Instigator = RidingPlayer;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	ABombardment* Bombardment = GetWorld()->SpawnActor<ABombardment>(
-		ActiveBombardmentClass,
-		TargetLocation,
-		FRotator::ZeroRotator,
-		SpawnParams);
+	const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	const FTransform Transform(FRotator::ZeroRotator, TargetLocation);
+	ABombardment* Bombardment = FSWVoyageSpawn::SpawnDeferred<ABombardment>(GetWorld(), ActiveBombardmentClass,
+		Transform, this, RidingPlayer, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+		ESWVoyageActorLifetime::Voyage, Voyage ? Voyage->GetGeneration() : 0);
 	if (Bombardment)
 	{
 		Bombardment->InitializeBombardment(
 			this, RidingPlayer, TargetLocation, ProjectileClass, Damage, Speed);
+		if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Bombardment, Transform) != Bombardment)
+		{
+			if (IsValid(Bombardment)) Bombardment->Destroy();
+			return;
+		}
 		UE_LOG(LogTemp, Log,
 			TEXT("[Bombardment] Started at %s Radius=%.1f Damage=%.1f Speed=%.1f"),
 			*TargetLocation.ToString(), Bombardment->SkillRadius, Damage, Speed);
@@ -3285,4 +3316,98 @@ void AShip::UpdateAnchorInteractionUI()
 
 		AnchorInteractable->InitializeInteractable(ObjectName, ActionText);
 	}
+}
+
+FName AShip::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<AShip*>(this)) : NAME_None;
+}
+
+ESWVoyageStepResult AShip::PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (!bVoyageSinkingTimerPaused && GetWorldTimerManager().IsTimerActive(SinkingDestroyTimerHandle))
+	{
+		GetWorldTimerManager().PauseTimer(SinkingDestroyTimerHandle);
+		bVoyageSinkingTimerPaused = true;
+	}
+	if (!bVoyageLeakTimerPaused && GetWorldTimerManager().IsTimerActive(LeakDamageTimerHandle))
+	{
+		GetWorldTimerManager().PauseTimer(LeakDamageTimerHandle);
+		bVoyageLeakTimerPaused = true;
+	}
+	return ESWVoyageStepResult::Succeeded;
+}
+
+void AShip::CancelVoyagePreparation_Implementation(const FSWVoyageResetContext& Context)
+{
+	if (bVoyageSinkingTimerPaused) GetWorldTimerManager().UnPauseTimer(SinkingDestroyTimerHandle);
+	if (bVoyageLeakTimerPaused) GetWorldTimerManager().UnPauseTimer(LeakDamageTimerHandle);
+	bVoyageSinkingTimerPaused = false;
+	bVoyageLeakTimerPaused = false;
+}
+
+ESWVoyageStepResult AShip::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	GetWorldTimerManager().ClearTimer(SinkingDestroyTimerHandle);
+	GetWorldTimerManager().ClearTimer(LeakDamageTimerHandle);
+	bVoyageSinkingTimerPaused = false;
+	bVoyageLeakTimerPaused = false;
+	if (HasAuthority())
+	{
+		CancelBombardmentAbilityAuthoritative();
+		ForceExitAllControlModes();
+	}
+	EndLocalBombardmentTargeting();
+	for (UShipRepairPointComponent* Point : {RepairPoint1.Get(), RepairPoint2.Get(), RepairPoint3.Get()})
+		if (Point) Point->CancelRepair();
+	return ESWVoyageStepResult::Succeeded;
+}
+
+bool AShip::IsVoyagePhysicsReady(int32 Generation) const
+{
+	check(IsInGameThread());
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (!Voyage || !Voyage->IsCurrentGeneration(Generation) || Voyage->GetActorGeneration(this) != Generation
+		|| !HasActorBegunPlay() || !BuoyancyRoot || !BuoyancyRoot->IsRegistered()
+		|| !BuoyancyRoot->BodyInstance.IsValidBodyInstance()) return false;
+	if (UPhysicsSettings::Get()->PhysicsPrediction.bEnablePhysicsPrediction
+		&& (!NetworkPhysicsComponent || !NetworkPhysicsComponent->IsRegistered() || !ShipPhysicsAsync
+			|| !bVoyagePhysicsHistoryCreated || (bShipRuntimePhysicsEnabled && !bVoyagePhysicsCallbackConnected))) return false;
+	TInlineComponentArray<UChildActorComponent*> ChildComponents(this);
+	for (const UChildActorComponent* Child : ChildComponents)
+	{
+		if (!Child || !Child->GetChildActorClass()) continue;
+		const AActor* Actor = Child->GetChildActor();
+		if (!Child->IsRegistered() || !IsValid(Actor) || !Actor->HasActorBegunPlay() || Actor->GetParentActor() != this
+			|| Voyage->GetActorGeneration(Actor) != Generation) return false;
+	}
+	return true;
+}
+
+ESWVoyageStepResult AShip::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation)
+		|| Voyage->GetActorGeneration(this) != Context.Generation)
+	{
+		OutError = TEXT("ShipVoyageGenerationMismatch");
+		return ESWVoyageStepResult::Failed;
+	}
+	if (!AbilitySystemComponent || !AttributeSet || !BuoyancyRoot)
+	{
+		OutError = TEXT("ShipVoyageRequiredComponentMissing");
+		return ESWVoyageStepResult::Failed;
+	}
+	return IsVoyagePhysicsReady(Context.Generation) ? ESWVoyageStepResult::Succeeded : ESWVoyageStepResult::Pending;
+}
+
+ESWVoyageStepResult AShip::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	return RestoreVoyageState_Implementation(Context, OutError);
+}
+
+void AShip::ResumeVoyage_Implementation(const FSWVoyageResetContext& Context)
+{
+	CancelVoyagePreparation_Implementation(Context);
 }

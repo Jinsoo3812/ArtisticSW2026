@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/EngineBaseTypes.h"
 #include "Subsystems/GameInstanceSubsystem.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "Tickable.h"
 #include "SWConnectionTypes.h"
 #include "SWConnectionSubsystem.generated.h"
@@ -14,17 +15,20 @@ class UGameViewportClient;
 class UWorld;
 
 UCLASS()
-class ARTISTICSW2026_API USWConnectionSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
+class ARTISTICSW2026_API USWConnectionSubsystem : public UGameInstanceSubsystem, public FTickableGameObject, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
 public:
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::Preserve; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
 	bool IsLoadingPresentationVisible() const { return bLoadingPresentationVisible; }
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 	virtual void Tick(float DeltaTime) override;
 	virtual bool IsTickable() const override;
+	virtual bool IsTickableWhenPaused() const override { return bInPlaceVoyageActive; }
 	virtual TStatId GetStatId() const override;
 	virtual UWorld* GetTickableGameObjectWorld() const override;
 
@@ -46,6 +50,10 @@ public:
 	bool BeginRoomReturnPresentation();
 	bool BeginRoomFinalDeparturePresentation(int32 AttemptId);
 	void CancelRoomReturnPresentation();
+	bool BeginInPlaceVoyagePresentation(const FSWVoyageReplicatedState& State);
+	void CompleteInPlaceVoyagePresentation(int64 AttemptId, int32 Generation, bool bSaveSucceeded, const FString& Message);
+	void CancelInPlaceVoyagePresentation(int64 AttemptId, int32 Generation);
+	void SetVoyageFailure(int64 AttemptId, int32 Generation, const FString& Error);
 
 	UPROPERTY(BlueprintAssignable)
 	FOnSWConnectionStateChanged OnConnectionStateChanged;
@@ -68,6 +76,14 @@ private:
 	void ShowLoadingPresentation();
 	void HideLoadingPresentation();
 	void UpdateLoadingPresentationText();
+	bool CanCompleteInPlaceVoyagePresentation() const;
+	int64 InPlaceVoyageAttemptId = 0;
+	int32 InPlaceVoyageGeneration = 0;
+	bool bInPlaceVoyageActive = false;
+	bool bInPlaceVoyageFinishReceived = false;
+	bool bInPlaceVoyageFailed = false;
+	bool bInPlaceVoyageSaveSucceeded = true;
+	FString InPlaceVoyageMessage;
 
 	ESWConnectionState ConnectionState = ESWConnectionState::Idle;
 	FSWConnectionFailure LastFailure;

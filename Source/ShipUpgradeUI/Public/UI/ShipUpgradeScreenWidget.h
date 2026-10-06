@@ -181,6 +181,7 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AShipUpgradePreviewStage> PreviewStage;
+	FGuid PreviewCleanupId;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UImage> Image_ShipModelOverlay;

@@ -5,6 +5,7 @@
 #include "GameplayTagContainer.h"
 #include "WaveSystem/Data/WaveSpawnTypes.h"
 #include "Room/SWRoomStateAdapter.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "GroundEnemySpawner.generated.h"
 
 USTRUCT()
@@ -54,12 +55,20 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
  * BeginPlay, and leaves all behavior decisions to the spawned enemy's AI.
  */
 UCLASS(Blueprintable)
-class ENEMY_API AGroundEnemySpawner : public AActor, public ISWRoomStateAdapter
+class ENEMY_API AGroundEnemySpawner : public AActor, public ISWRoomStateAdapter, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
 public:
 	AGroundEnemySpawner();
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::ResetParticipant; }
+	virtual ESWVoyageRestoreStage GetVoyageRestoreStage_Implementation() const override { return ESWVoyageRestoreStage::InitialSpawners; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
+	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual void CancelVoyagePreparation_Implementation(const FSWVoyageResetContext& Context) override;
+	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
 	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
 	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
 	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
@@ -84,6 +93,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy Spawn")
 	TObjectPtr<USceneComponent> Root;
@@ -116,6 +126,7 @@ protected:
 private:
 	bool SpawnOneEnemy(const FGroundEnemySpawnEntry& Request, ABaseEnemy*& OutEnemy);
 	bool FindSpawnTransform(TSubclassOf<ABaseEnemy> EnemyClass, FTransform& OutTransform) const;
+	void ClearTrackedEnemyBindings();
 
 	UFUNCTION()
 	void HandleTrackedEnemyRemoved(ABaseEnemy* Enemy, EWaveEnemyRemoveReason Reason);
@@ -127,4 +138,8 @@ private:
 	bool bConfiguredSpawnCommitted = false;
 	FSWRoomGroundSpawnerState PendingRoomState;
 	bool bHasPendingRoomState = false;
+	bool bConfiguredSpawnFailed = false;
+	int32 RestoredVoyageGeneration = INDEX_NONE;
+	FTimerHandle DeferredRoomSpawnTimer;
+	bool bDeferredRoomSpawnPaused = false;
 };

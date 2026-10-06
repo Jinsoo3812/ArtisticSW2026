@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "StoryFacadeSubsystem.h"
 #include "Room/SWRoomStateAdapter.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "StoryConditionalSpawner.generated.h"
 
 USTRUCT()
@@ -25,12 +26,20 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnStoryConditionalActorSpawned, AAc
  * StopAfterStoryNode = MiddleBoss2Defeated
  */
 UCLASS()
-class STORY_API AStoryConditionalSpawner : public AActor, public ISWRoomStateAdapter
+class STORY_API AStoryConditionalSpawner : public AActor, public ISWRoomStateAdapter, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
 public:
 	AStoryConditionalSpawner();
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::ResetParticipant; }
+	virtual ESWVoyageRestoreStage GetVoyageRestoreStage_Implementation() const override { return ESWVoyageRestoreStage::InitialSpawners; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
+	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual void CancelVoyagePreparation_Implementation(const FSWVoyageResetContext& Context) override;
 	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
 	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
 	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
@@ -79,4 +88,9 @@ private:
 	bool bSpawnOutcomeConsumed = false;
 	FSWRoomStorySpawnerState PendingRoomState;
 	bool bHasPendingRoomState = false;
+	void ClearSpawnedActorBinding();
+	FTimerHandle DeferredStoryRefreshTimer;
+	bool bDeferredStoryRefreshPaused = false;
+	bool bVoyageSpawnFailed = false;
+	int32 RestoredVoyageGeneration = INDEX_NONE;
 };

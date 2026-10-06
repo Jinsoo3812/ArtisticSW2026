@@ -119,6 +119,7 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<APlayerStatusPreviewStage> PlayerPreviewStage;
+	FGuid PlayerPreviewCleanupId;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> PlayerPreviewMaterialInstance;

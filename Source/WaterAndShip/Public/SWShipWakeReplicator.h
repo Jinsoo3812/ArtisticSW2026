@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Net/Serialization/FastArraySerializer.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "SWShipWakeTypes.h"
 #include "SWShipWakeReplicator.generated.h"
 
@@ -38,7 +39,7 @@ template<> struct TStructOpsTypeTraits<FSWReplicatedShipWakeArray>
 };
 
 UCLASS(NotPlaceable, Transient)
-class WATERANDSHIP_API ASWShipWakeReplicator : public AActor
+class WATERANDSHIP_API ASWShipWakeReplicator : public AActor, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
@@ -49,8 +50,16 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	bool AddServerEvent(const FSWShipWakeEvent& EventTemplate);
 	void ApplyReplicatedEvent(const FSWShipWakeEvent& Event) const;
+	void ResetForVoyage(int32 Generation);
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::ResetParticipant; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
+	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
 
 private:
+	UPROPERTY(Replicated) int32 VoyageGeneration = 0;
 	void RemoveExpired(double ServerTime);
 	UPROPERTY(Replicated) FSWReplicatedShipWakeArray ReplicatedEvents;
 	int32 NextEventId = 1;

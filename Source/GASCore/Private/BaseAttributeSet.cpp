@@ -2,6 +2,7 @@
 
 
 #include "BaseAttributeSet.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "GameplayEffectExtension.h"
 #include "Abilities/GameplayAbility.h"
@@ -90,6 +91,9 @@ bool UBaseAttributeSet::PreGameplayEffectExecute(FGameplayEffectModCallbackData&
 	// Direct health damage must also respect master's invulnerability handling.
 	const bool bDirectHealthDamage = Attribute == GetHealthAttribute()
 		&& Data.EvaluatedData.Magnitude < 0.0f;
+	if ((bDirectHealthDamage || Attribute == GetDamageAttribute())
+		&& (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(ASC ? ASC->GetAvatarActor() : nullptr)
+			|| USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(Data.EffectSpec.GetContext().GetEffectCauser()))) return false;
 	return !bDirectHealthDamage || !ASC || !ASC->HasMatchingGameplayTag(State_Invulnerable);
 }
 

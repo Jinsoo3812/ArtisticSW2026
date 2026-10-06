@@ -1,7 +1,11 @@
 #include "StorySubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
+#include "StoryActionReceiverComponent.h"
 
 #include "Kismet/GameplayStatics.h"
-#include "StoryActionReceiverComponent.h"
 #include "StoryDefinition.h"
 #include "StorySaveGame.h"
 #include "StorySettings.h"
@@ -10,6 +14,52 @@
 #include "Misc/Parse.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogStory, Log, All);
+
+ESWVoyagePolicy UStorySubsystem::GetVoyagePolicy_Implementation() const { return ESWVoyagePolicy::ResetParticipant; }
+FName UStorySubsystem::GetVoyageParticipantId_Implementation() const
+{
+	UWorld* World = GetGameInstance()->GetWorld();
+	USWVoyageResetSubsystem* Voyage = World ? World->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<UStorySubsystem*>(this)) : NAME_None;
+}
+ESWVoyageStepResult UStorySubsystem::PrepareVoyageReset_Implementation(const FSWVoyageResetContext&, FString& OutError)
+{
+	OutError.Reset(); bVoyageActionsDeferred = true;
+	return bDispatchingActions || bEvaluatingRules ? ESWVoyageStepResult::Pending : ESWVoyageStepResult::Succeeded;
+}
+ESWVoyageStepResult UStorySubsystem::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext&, FString& OutError)
+{
+	OutError.Reset(); ActionReceivers.Reset();
+	return ESWVoyageStepResult::Succeeded;
+}
+ESWVoyageStepResult UStorySubsystem::RestoreVoyageState_Implementation(const FSWVoyageResetContext&, FString& OutError)
+{
+	OutError.Reset();
+	UWorld* World = GetGameInstance()->GetWorld();
+	if (!World) { OutError = TEXT("VoyageStoryWorldMissing"); return ESWVoyageStepResult::Failed; }
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		TInlineComponentArray<UStoryActionReceiverComponent*> Receivers(*It);
+		for (UStoryActionReceiverComponent* Receiver : Receivers)
+			if (IsValid(Receiver) && Receiver->HasBegunPlay()) RegisterActionReceiver(Receiver);
+	}
+	return ESWVoyageStepResult::Succeeded;
+}
+ESWVoyageStepResult UStorySubsystem::IsVoyageReady_Implementation(const FSWVoyageResetContext&, FString& OutError)
+{
+	OutError.Reset();
+	return bDispatchingActions || bEvaluatingRules ? ESWVoyageStepResult::Pending : ESWVoyageStepResult::Succeeded;
+}
+void UStorySubsystem::ResumeVoyage_Implementation(const FSWVoyageResetContext&)
+{
+	bVoyageActionsDeferred = false;
+	TryExecutePendingActions();
+}
+void UStorySubsystem::CancelVoyagePreparation_Implementation(const FSWVoyageResetContext&)
+{
+	bVoyageActionsDeferred = false;
+	TryExecutePendingActions();
+}
 
 void UStorySubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -491,7 +541,7 @@ void UStorySubsystem::RebuildPendingActions()
 
 void UStorySubsystem::TryExecutePendingActions()
 {
-	if (!HasStoryAuthority() || bDispatchingActions)
+	if (!HasStoryAuthority() || bDispatchingActions || bVoyageActionsDeferred)
 	{
 		return;
 	}

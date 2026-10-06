@@ -5,6 +5,8 @@
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Kismet/GameplayStatics.h"
@@ -128,18 +130,23 @@ void UGA_GravityVortexThrow::EndAbility(
 	{
 		K2_OnAimTrajectoryCleared();
 	}
-	if (AimLineActor)
+	if (USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr)
+		Voyage->UnregisterLocalPresentationCleanupOwner(PresentationCleanupId);
+	PresentationCleanupId.Invalidate();
+	if (IsValid(AimLineActor))
 	{
 		AimLineActor->ClearTrajectory();
 		AimLineActor->Destroy();
 		AimLineActor = nullptr;
 	}
 	ClearWaterPreview();
-	if (RangePreviewActor)
+	AimLineActor = nullptr;
+	if (IsValid(RangePreviewActor))
 	{
 		RangePreviewActor->Destroy();
 		RangePreviewActor = nullptr;
 	}
+	RangePreviewActor = nullptr;
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
 		ASC->RemoveLooseGameplayTag(State_Aiming);
@@ -203,6 +210,7 @@ void UGA_GravityVortexThrow::DrawAimTrajectory()
 	FVector SpawnLocation;
 	FVector LaunchVelocity;
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(Player)) return;
 	if (!Player || !Player->IsLocallyControlled() || !GetLaunchData(SpawnLocation, LaunchVelocity))
 	{
 		return;
@@ -272,16 +280,15 @@ void UGA_GravityVortexThrow::DrawAimTrajectory()
 		}
 		else if (!IsValid(AimLineActor))
 		{
-			FActorSpawnParameters SpawnParameters;
-			SpawnParameters.Owner = Player;
-			SpawnParameters.Instigator = Player;
-			SpawnParameters.SpawnCollisionHandlingOverride =
-				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			AimLineActor = GetWorld()->SpawnActor<AVortexAimLine>(
-				AimLineClass,
-				Player->GetActorLocation(),
-				FRotator::ZeroRotator,
-				SpawnParameters);
+			USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+			const int32 Generation = Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(Player) : 0;
+			FString Error;
+			if (Voyage && Voyage->IsActiveVoyageSession() && !PresentationCleanupId.IsValid()
+				&& !Voyage->RegisterLocalPresentationCleanupOwner(this, Generation, PresentationCleanupId, Error)) return;
+			const FTransform SpawnTransform(FRotator::ZeroRotator, Player->GetActorLocation());
+			AimLineActor = Cast<AVortexAimLine>(USWVoyageSpawnLibrary::BeginVoyageLocalPresentationSpawn(this,
+				AimLineClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn, Generation, PresentationCleanupId));
+			if (AimLineActor && !USWVoyageSpawnLibrary::FinishVoyageActorSpawn(AimLineActor, SpawnTransform)) AimLineActor = nullptr;
 			UE_LOG(LogTemp, Warning,
 				TEXT("[VortexPipeline][AimLine] Spawn class=%s result=%s mesh=%s material=%s."),
 				*GetPathNameSafe(AimLineClass.Get()),
@@ -319,15 +326,19 @@ void UGA_GravityVortexThrow::DrawAimTrajectory()
 			{
 			if (!IsValid(RangePreviewActor))
 			{
-				FActorSpawnParameters PreviewSpawnParams;
-				PreviewSpawnParams.Owner = Player;
-				PreviewSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-				RangePreviewActor = GetWorld()->SpawnActor<ABombardmentPreview>(
-					RangePreviewClass, ImpactLocation, FRotator::ZeroRotator, PreviewSpawnParams);
+				USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+				const int32 Generation = Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(Player) : 0;
+				FString Error;
+				if (Voyage && Voyage->IsActiveVoyageSession() && !PresentationCleanupId.IsValid()
+					&& !Voyage->RegisterLocalPresentationCleanupOwner(this, Generation, PresentationCleanupId, Error)) return;
+				const FTransform SpawnTransform(FRotator::ZeroRotator, ImpactLocation);
+				RangePreviewActor = Cast<ABombardmentPreview>(USWVoyageSpawnLibrary::BeginVoyageLocalPresentationSpawn(this,
+					RangePreviewClass, SpawnTransform, Player, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn, Generation, PresentationCleanupId));
 				if (RangePreviewActor)
 				{
 					RangePreviewActor->ConfigurePreview(PullRadius);
 					RangePreviewActor->SetPreviewMeshVisible(false);
+					if (!USWVoyageSpawnLibrary::FinishVoyageActorSpawn(RangePreviewActor, SpawnTransform)) RangePreviewActor = nullptr;
 				}
 			}
 			if (RangePreviewActor)
@@ -537,8 +548,10 @@ void UGA_GravityVortexThrow::SpawnProjectileOnServer()
 	}
 
 	const FTransform SpawnTransform(LaunchVelocity.Rotation(), SpawnLocation);
-	AGravityVortexProjectile* Projectile = GetWorld()->SpawnActorDeferred<AGravityVortexProjectile>(
-		ProjectileClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	AGravityVortexProjectile* Projectile = FSWVoyageSpawn::SpawnDeferred<AGravityVortexProjectile>(GetWorld(),
+		ProjectileClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+		ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(Player) : 0);
 	if (Projectile)
 	{
 		UE_LOG(LogTemp, Warning,
@@ -547,7 +560,11 @@ void UGA_GravityVortexThrow::SpawnProjectileOnServer()
 			*GetPathNameSafe(ProjectileClass.Get()),
 			*SpawnLocation.ToCompactString(),
 			*LaunchVelocity.ToCompactString());
-		Projectile->FinishSpawning(SpawnTransform);
+		if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Projectile, SpawnTransform) != Projectile)
+		{
+			if (IsValid(Projectile)) Projectile->Destroy();
+			return;
+		}
 		Projectile->LaunchProjectile(LaunchVelocity);
 	}
 }

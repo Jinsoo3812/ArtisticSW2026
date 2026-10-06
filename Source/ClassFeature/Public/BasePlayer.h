@@ -14,6 +14,7 @@
 #include "ShipRepairUserInterface.h"
 #include "MountedDamageUserInterface.h"
 #include "Room/SWRoomSnapshotTypes.h"
+#include "Respawn/SWRespawnFlowTypes.h"
 #include "BasePlayer.generated.h"
 
 DECLARE_MULTICAST_DELEGATE(FOnAbilitySystemInitializedDelegate);
@@ -171,11 +172,20 @@ protected:
 	bool bHasCompletedInitialPossession = false;
 	public:
 	bool HasCompletedInitialPossession() const { return bHasCompletedInitialPossession && bInitialLifeRestoreSuccessful; }
+	bool IsVoyageClientLifeReady(int32 Generation) const;
+	UPROPERTY(Replicated) int32 VoyageLifeReadyGeneration = 0;
+	ESWLifeRestoreStepState GetLifeInitializationState() const { return LifeInitializationState; }
+	ESWLifeRestoreStepState GetInitialPossessionState() const { return InitialPossessionState; }
+	const FString& GetInitialLifeFailure() const { return InitialLifeFailure; }
 	bool bInitialLifeRestoreSuccessful = true;
 	bool RestoreProgressForNewLife(const FSWRoomPlayerProgress& Progress, FString& OutError);
 	bool CanMutateLifeGameplay() const;
 	protected:
 	friend class FWeaponEquipmentLifecycleTest;
+	ESWLifeRestoreStepState LifeInitializationState = ESWLifeRestoreStepState::Pending;
+	ESWLifeRestoreStepState InitialPossessionState = ESWLifeRestoreStepState::Pending;
+	FString InitialLifeFailure;
+	bool bVoyageInitialPossessionStarted = false;
 
 	/** Retained while the controller temporarily possesses a ship or cannon. */
 	UPROPERTY()

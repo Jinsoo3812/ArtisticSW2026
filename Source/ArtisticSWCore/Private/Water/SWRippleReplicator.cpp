@@ -8,6 +8,8 @@
 #include "Water/SWRippleProfile.h"
 #include "Water/SWRippleSettings.h"
 #include "Water/SWRippleStateSubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 namespace
 {
@@ -99,6 +101,7 @@ void ASWRippleReplicator::BeginPlay()
 void ASWRippleReplicator::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 	if (HasAuthority())
 	{
 		const USWRippleStateSubsystem* StateSubsystem = GetWorld()
@@ -112,6 +115,7 @@ void ASWRippleReplicator::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ASWRippleReplicator, ReplicatedRipples);
+	DOREPLIFETIME(ASWRippleReplicator, VoyageGeneration);
 }
 
 bool ASWRippleReplicator::AddServerRipple(
@@ -121,6 +125,9 @@ bool ASWRippleReplicator::AddServerRipple(
 	float DecayRate,
 	float WaveLength)
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return false;
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	ResetForVoyage(Voyage ? Voyage->GetGeneration() : 0);
 	TRACE_CPUPROFILER_EVENT_SCOPE(SW_Ripple_AddServerRipple);
 	if (!HasAuthority() || InitialAmplitude <= 0.0f || WaveLength <= UE_SMALL_NUMBER)
 	{
@@ -162,6 +169,7 @@ bool ASWRippleReplicator::AddServerRipple(
 
 	FSWReplicatedRippleItem& NewItem = ReplicatedRipples.Items.AddDefaulted_GetRef();
 	NewItem.Event.EventId = NextEventId++;
+	NewItem.Event.Generation = VoyageGeneration;
 	NewItem.Event.Origin = Origin;
 	NewItem.Event.StartServerTime = ServerTime;
 	NewItem.Event.InitialAmplitude = InitialAmplitude;
@@ -221,4 +229,47 @@ void ASWRippleReplicator::RemoveExpiredActiveEvents(double ServerTime)
 		ReplicatedRipples.MarkArrayDirty();
 		ForceNetUpdate();
 	}
+}
+
+void ASWRippleReplicator::ResetForVoyage(int32 Generation)
+{
+	if (!HasAuthority() || Generation < VoyageGeneration || Generation == VoyageGeneration) return;
+	VoyageGeneration = Generation;
+	ReplicatedRipples.Items.Reset(); ReplicatedRipples.MarkArrayDirty();
+	NextEventId = 1; ForceNetUpdate();
+}
+
+FName ASWRippleReplicator::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<ASWRippleReplicator*>(this)) : NAME_None;
+}
+
+ESWVoyageStepResult ASWRippleReplicator::PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult ASWRippleReplicator::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	// Authority clears at restore, after the generation is committed. Clients
+	// retain FastArray state so replication arrival order cannot lose new events.
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult ASWRippleReplicator::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (Context.bAuthority) ResetForVoyage(Context.Generation);
+	return IsVoyageReady_Implementation(Context, OutError);
+}
+
+ESWVoyageStepResult ASWRippleReplicator::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation))
+	{
+		OutError = TEXT("ReplicatorVoyageGenerationInvalid");
+		return ESWVoyageStepResult::Failed;
+	}
+	return VoyageGeneration == Context.Generation ? ESWVoyageStepResult::Succeeded : ESWVoyageStepResult::Pending;
 }

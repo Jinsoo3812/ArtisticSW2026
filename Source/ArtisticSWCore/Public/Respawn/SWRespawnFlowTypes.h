@@ -2,6 +2,15 @@
 #include "CoreMinimal.h"
 #include "SWRespawnFlowTypes.generated.h"
 class APlayerState;
+enum class ESWLifeRestoreStepState : uint8 { Pending, Failed, Succeeded };
+struct ARTISTICSWCORE_API FSWLifeRestoreStatus
+{
+ bool bContractValid = true;
+ ESWLifeRestoreStepState Apply = ESWLifeRestoreStepState::Pending;
+ ESWLifeRestoreStepState LifeInitialization = ESWLifeRestoreStepState::Pending;
+ ESWLifeRestoreStepState InitialPossession = ESWLifeRestoreStepState::Pending;
+ FString Error;
+};
 UENUM()
 enum class ESWSessionLifePhase : uint8 { Playing, ShipSinking, GameOver, ReturningAfterGameOver };
 UENUM()

@@ -1,4 +1,6 @@
 #include "SWShipWakeReplicator.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 #include "Engine/World.h"
 #include "Net/UnrealNetwork.h"
@@ -53,6 +55,7 @@ void ASWShipWakeReplicator::BeginPlay()
 void ASWShipWakeReplicator::Tick(const float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 	if (HasAuthority())
 	{
 		const USWShipWakeSubsystem* State = GetWorld()
@@ -66,10 +69,16 @@ void ASWShipWakeReplicator::GetLifetimeReplicatedProps(
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ASWShipWakeReplicator, ReplicatedEvents);
+	DOREPLIFETIME(ASWShipWakeReplicator, VoyageGeneration);
 }
 
 bool ASWShipWakeReplicator::AddServerEvent(const FSWShipWakeEvent& EventTemplate)
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return false;
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	const int32 Generation = Voyage ? Voyage->GetGeneration() : 0;
+	if (EventTemplate.Generation != 0 && EventTemplate.Generation != Generation) return false;
+	ResetForVoyage(Generation);
 	if (!HasAuthority() || EventTemplate.InitialAmplitudeCm <= 0.0f)
 	{
 		return false;
@@ -94,6 +103,7 @@ bool ASWShipWakeReplicator::AddServerEvent(const FSWShipWakeEvent& EventTemplate
 	FSWReplicatedShipWakeItem& Item = ReplicatedEvents.Items.AddDefaulted_GetRef();
 	Item.Event = EventTemplate;
 	Item.Event.EventId = NextEventId++;
+	Item.Event.Generation = VoyageGeneration;
 	ReplicatedEvents.MarkItemDirty(Item);
 	State->AddOrUpdateReplicatedEvent(Item.Event);
 	ForceNetUpdate();
@@ -124,4 +134,47 @@ void ASWShipWakeReplicator::RemoveExpired(const double ServerTime)
 		ReplicatedEvents.MarkArrayDirty();
 		ForceNetUpdate();
 	}
+}
+
+void ASWShipWakeReplicator::ResetForVoyage(int32 Generation)
+{
+	if (!HasAuthority() || Generation <= VoyageGeneration) return;
+	VoyageGeneration = Generation;
+	ReplicatedEvents.Items.Reset(); ReplicatedEvents.MarkArrayDirty();
+	NextEventId = 1; ForceNetUpdate();
+}
+
+FName ASWShipWakeReplicator::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<ASWShipWakeReplicator*>(this)) : NAME_None;
+}
+
+ESWVoyageStepResult ASWShipWakeReplicator::PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult ASWShipWakeReplicator::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	// Authority clears at restore, after the generation is committed. Clients
+	// retain FastArray state so replication arrival order cannot lose new events.
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult ASWShipWakeReplicator::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (Context.bAuthority) ResetForVoyage(Context.Generation);
+	return IsVoyageReady_Implementation(Context, OutError);
+}
+
+ESWVoyageStepResult ASWShipWakeReplicator::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation))
+	{
+		OutError = TEXT("ReplicatorVoyageGenerationInvalid");
+		return ESWVoyageStepResult::Failed;
+	}
+	return VoyageGeneration == Context.Generation ? ESWVoyageStepResult::Succeeded : ESWVoyageStepResult::Pending;
 }

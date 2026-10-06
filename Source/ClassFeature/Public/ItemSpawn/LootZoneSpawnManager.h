@@ -23,6 +23,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Loot|Spawn")
 	int32 ActivateAndSpawnByBudget(int32 Budget, int32 Seed);
+	bool DidLastBudgetSpawnFail() const { return bLastBudgetSpawnFailed; }
 
 	UFUNCTION(BlueprintCallable, Category = "Loot|Spawn")
 	void ResetZone(bool bDestroySpawnedActors);
@@ -49,6 +50,7 @@ protected:
 	TArray<TObjectPtr<ALooseLootSpawnPoint>> LooseLootSpawnPoints;
 
 private:
+	bool bLastBudgetSpawnFailed = false;
 	TArray<FZoneLootItemRow> GetZoneLootRows() const;
 	bool PickWeightedPoint(const TArray<ALootSpawnPointBase*>& Candidates, FRandomStream& RandomStream, ALootSpawnPointBase*& OutPoint) const;
 	bool PickWeightedLootRow(const TArray<FZoneLootItemRow>& Rows, FRandomStream& RandomStream, FZoneLootItemRow& OutRow) const;

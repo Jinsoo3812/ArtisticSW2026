@@ -15,6 +15,14 @@
 #include "Materials/MaterialParameterCollectionInstance.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "UObject/UnrealType.h"
+#include "Room/SWVoyageResetSubsystem.h"
+
+ESWVoyagePolicy USWBuoyancyDebugSubsystem::GetVoyagePolicy_Implementation() const { return ESWVoyagePolicy::Preserve; }
+FName USWBuoyancyDebugSubsystem::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<USWBuoyancyDebugSubsystem*>(this)) : NAME_None;
+}
 
 namespace
 {
@@ -83,6 +91,8 @@ void USWBuoyancyDebugSubsystem::Tick(float DeltaTime)
 {
 #if !UE_SERVER
 	UWorld* World = GetWorld();
+	if (USWVoyageResetSubsystem* Voyage = World ? World->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+		Voyage && Voyage->IsGameplayBlocked()) return;
 	const IConsoleVariable* DebugCVar = IConsoleManager::Get().FindConsoleVariable(
 		TEXT("p.ShowShipNetworkBuoyancyDebug"));
 	if (!World || IsRunningDedicatedServer() || !DebugCVar || DebugCVar->GetInt() <= 0)

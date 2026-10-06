@@ -1,4 +1,6 @@
 #include "UI/ShipUpgradePreviewStage.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 #include "Components/SceneCaptureComponent2D.h"
 #include "Components/SceneComponent.h"
@@ -94,10 +96,13 @@ void AShipUpgradePreviewStage::SetPreviewActorSoftClass(TSoftClassPtr<AActor> In
 
 	const FSoftObjectPath RequestedPath = PendingActorClassPath;
 	TWeakObjectPtr<AShipUpgradePreviewStage> WeakThis(this);
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	const TSharedPtr<FSWVoyageAsyncGuard, ESPMode::ThreadSafe> Guard = Voyage ? Voyage->GetAsyncGuard() : nullptr;
 	ActorClassLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
 		RequestedPath,
-		FStreamableDelegate::CreateLambda([WeakThis, RequestedPath]()
+		FStreamableDelegate::CreateLambda([WeakThis, RequestedPath, Guard]()
 		{
+			if (Guard && (Guard->bCancelled.Load() || Guard->bGameplayBlocked.Load())) return;
 			AShipUpgradePreviewStage* Stage = WeakThis.Get();
 			if (!Stage || Stage->PendingActorClassPath != RequestedPath)
 			{
@@ -123,6 +128,13 @@ void AShipUpgradePreviewStage::SetPreviewActorClass(TSubclassOf<AActor> InActorC
 	FActorSpawnParameters SpawnParameters;
 	SpawnParameters.Owner = this;
 	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParameters.bDeferConstruction = true;
+	SpawnParameters.OverrideLevel = GetWorld()->PersistentLevel;
+	const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	const int32 Generation = Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(this) : 0;
+	FGuid CleanupId;
+	if (Voyage && Voyage->IsActiveVoyageSession() && !Voyage->GetActorPresentationCleanupId(this, CleanupId)) return;
+	if (Voyage && !Voyage->CanSpawnVoyageActor(ESWVoyageActorLifetime::LocalPresentation, Generation, CleanupId)) return;
 
 	SpawnedPreviewActor = GetWorld()->SpawnActor<AActor>(
 		InActorClass,
@@ -130,8 +142,16 @@ void AShipUpgradePreviewStage::SetPreviewActorClass(TSubclassOf<AActor> InActorC
 		SpawnParameters);
 	if (SpawnedPreviewActor)
 	{
+		SpawnedPreviewActor->SetReplicates(false);
 		SpawnedPreviewActor->SetActorEnableCollision(false);
 		SpawnedPreviewActor->SetActorTickEnabled(false);
+		FString Error;
+		if (!FSWVoyageSpawn::RegisterDeferredActorSpawn(SpawnedPreviewActor, ESWVoyageActorLifetime::LocalPresentation, Generation, CleanupId, Error)
+			|| !USWVoyageSpawnLibrary::FinishVoyageActorSpawn(SpawnedPreviewActor, PreviewAnchor->GetComponentTransform()))
+		{
+			ClearPreviewActor();
+			return;
+		}
 		SpawnedPreviewActor->AttachToComponent(
 			PreviewAnchor,
 			FAttachmentTransformRules::SnapToTargetNotIncludingScale);

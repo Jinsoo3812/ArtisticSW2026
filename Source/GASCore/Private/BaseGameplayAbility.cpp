@@ -2,6 +2,7 @@
 
 
 #include "BaseGameplayAbility.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
 #include "GAS/SWCombatEffectContextLibrary.h"
@@ -10,6 +11,7 @@ bool UBaseGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle H
 	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags,
 	const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
 {
+	if (ActorInfo && USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(ActorInfo->AvatarActor.Get())) return false;
 	if (!bAllowDuringControlBlock && ActorInfo && ActorInfo->AbilitySystemComponent.IsValid()
 		&& ActorInfo->AbilitySystemComponent->HasMatchingGameplayTag(State_Control_ActionsBlocked)) return false;
 	return Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
@@ -55,6 +57,7 @@ TArray<FActiveGameplayEffectHandle> UBaseGameplayAbility::ApplyEffectToTargetDat
 	TSubclassOf<class UGameplayEffect> EffectClass, int32 EffectLevel)
 {
 	TArray<FActiveGameplayEffectHandle> AppliedEffects;
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(GetAvatarActorFromActorInfo())) return AppliedEffects;
 
 	if (!EffectClass || TargetData.Data.Num() == 0)
 	{
@@ -100,6 +103,7 @@ TArray<FActiveGameplayEffectHandle> UBaseGameplayAbility::ApplyEffectToTargetDat
 
 FActiveGameplayEffectHandle UBaseGameplayAbility::ApplyEffectToOwner(TSubclassOf<class UGameplayEffect> EffectClass, int32 EffectLevel)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(GetAvatarActorFromActorInfo())) return FActiveGameplayEffectHandle();
 	if (!EffectClass)
 	{
 		return FActiveGameplayEffectHandle();

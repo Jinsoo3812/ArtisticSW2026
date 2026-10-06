@@ -15,6 +15,8 @@
 #include "Engine/GameInstance.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Room/SWRoomSnapshotSubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 UBossEncounterComponent::UBossEncounterComponent()
 {
@@ -99,7 +101,7 @@ void UBossEncounterComponent::BeginPlay()
 				Story->OnStoryChanged.AddUniqueDynamic(this, &UBossEncounterComponent::HandleStoryChanged);
 			}
 		}
-		UpdateBossReservation();
+		if (!USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) UpdateBossReservation();
 	}
 	if (AEnemyShip* HostShip = Cast<AEnemyShip>(GetOwner()))
 	{
@@ -215,6 +217,7 @@ bool UBossEncounterComponent::NotifyPlayerShipSighted(AShip* SensedPlayerShip)
 
 bool UBossEncounterComponent::TryStartEncounter(AActor* TriggerActor)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(GetOwner())) return false;
 	if (!bEncounterEnabled || !GetOwner() || !GetOwner()->HasAuthority()
 		|| (Cast<AEnemyShip>(GetOwner()) && Cast<AEnemyShip>(GetOwner())->IsStoryGateDormant())
 		|| GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()
@@ -248,6 +251,7 @@ bool UBossEncounterComponent::TryStartEncounter(AActor* TriggerActor)
 
 void UBossEncounterComponent::HandleBossDeathStarted(UBaseHealthComponent* HealthComponent)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(GetOwner())) return;
 	if (!GetOwner() || !GetOwner()->HasAuthority() || EncounterState != EBossEncounterState::Active)
 	{
 		return;
@@ -258,6 +262,7 @@ void UBossEncounterComponent::HandleBossDeathStarted(UBaseHealthComponent* Healt
 
 void UBossEncounterComponent::HandleHostShipDestroyed(AActor* DestroyedActor)
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 	if (!GetOwner() || !GetOwner()->HasAuthority() || DestroyedActor != GetOwner())
 	{
 		return;
@@ -300,12 +305,14 @@ bool UBossEncounterComponent::SpawnBossFor(AActor* Interactor)
 		return false;
 	}
 
-	AShipBossEnemy* Boss = World->SpawnActorDeferred<AShipBossEnemy>(
+	const USWVoyageResetSubsystem* Voyage = World->GetSubsystem<USWVoyageResetSubsystem>();
+	AShipBossEnemy* Boss = FSWVoyageSpawn::SpawnDeferred<AShipBossEnemy>(World,
 		BossClass,
 		SpawnTransform,
 		HostShip,
 		nullptr,
-		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn, ESWVoyageActorLifetime::Voyage,
+		Voyage ? Voyage->GetGeneration() : 0);
 	if (!Boss)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[BossEncounter] Deferred boss spawn failed. Ship=%s"),
@@ -318,8 +325,11 @@ bool UBossEncounterComponent::SpawnBossFor(AActor* Interactor)
 		Boss->Destroy();
 		return false;
 	}
-	Boss->FinishSpawning(SpawnTransform);
-	if (!IsValid(Boss)) return false;
+	if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Boss, SpawnTransform) != Boss || !IsValid(Boss))
+	{
+		if (IsValid(Boss)) Boss->Destroy();
+		return false;
+	}
 	if (!Boss->IsBalanceReady())
 	{
 		Boss->Destroy();
@@ -465,6 +475,7 @@ void UBossEncounterComponent::UpdateBossReservation()
 
 void UBossEncounterComponent::HandleStoryChanged()
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 	UpdateBossReservation();
 }
 
@@ -474,4 +485,66 @@ void UBossEncounterComponent::HandleChestSpawned(AStorageChest* Chest)
 	UnbindItemBox();
 	EnemyItemBox = Chest;
 	BindItemBox();
+}
+
+FName UBossEncounterComponent::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<UBossEncounterComponent*>(this)) : NAME_None;
+}
+
+ESWVoyageStepResult UBossEncounterComponent::PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	return EncounterState == EBossEncounterState::Spawning ? ESWVoyageStepResult::Pending : ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult UBossEncounterComponent::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	UnbindItemBox();
+	if (IsValid(SpawnedBoss) && SpawnedBoss->GetHealthComponent())
+		SpawnedBoss->GetHealthComponent()->OnDeathStarted.RemoveDynamic(this, &UBossEncounterComponent::HandleBossDeathStarted);
+	SpawnedBoss = nullptr; EnemyItemBox = nullptr;
+	bHasPendingRoomState = false; PendingRoomState = FSWRoomBossEncounterState();
+	RestoredVoyageGeneration = INDEX_NONE;
+	EncounterState = EBossEncounterState::Waiting;
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult UBossEncounterComponent::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	AEnemyShip* Host = Cast<AEnemyShip>(GetOwner());
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation) || !Host)
+	{
+		OutError = TEXT("BossEncounterHostOrGenerationInvalid");
+		return ESWVoyageStepResult::Failed;
+	}
+	if (!Context.bAuthority || !bEncounterEnabled) return ESWVoyageStepResult::Succeeded;
+	if (RestoredVoyageGeneration != Context.Generation)
+	{
+		if (!Context.bContinue && IsCampaignGateOpen())
+		{
+			int32 PointId = INDEX_NONE; FTransform Transform;
+			if (!BossClass || !BossStatsRow.DataTable || !ResolveSpawnPoint(*Host, PointId, Transform)
+				|| (EncounterTrigger == EBossEncounterTrigger::ItemBoxInteraction && !ResolveTriggerChestPoint()))
+			{
+				OutError = TEXT("BossEncounterRequiredConfigurationInvalid");
+				return ESWVoyageStepResult::Failed;
+			}
+		}
+		RestoredVoyageGeneration = Context.Generation;
+		if (!EnemyItemBox) EnemyItemBox = ResolveConfiguredEnemyItemBox();
+		BindItemBox(); UpdateBossReservation();
+	}
+	return IsVoyageReady_Implementation(Context, OutError);
+}
+
+ESWVoyageStepResult UBossEncounterComponent::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (IsValid(SpawnedBoss) && !USWVoyageSpawnLibrary::IsActorFromCurrentVoyage(SpawnedBoss))
+	{
+		OutError = TEXT("BossEncounterActorGenerationMismatch");
+		return ESWVoyageStepResult::Failed;
+	}
+	return EncounterState == EBossEncounterState::Spawning ? ESWVoyageStepResult::Pending : ESWVoyageStepResult::Succeeded;
 }

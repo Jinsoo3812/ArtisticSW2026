@@ -1,6 +1,8 @@
 #include "Projectiles/GravityVortexProjectile.h"
 
 #include "Components/SphereComponent.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/ProjectileMovementComponent.h"
@@ -247,17 +249,21 @@ void AGravityVortexProjectile::ActivateAtWaterSurface(const FVector& SurfaceLoca
 	}
 	if (EffectiveFieldClass)
 	{
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.Owner = GetOwner();
-		SpawnParams.Instigator = GetInstigator();
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		if (AGravityVortexField* Field = GetWorld()->SpawnActor<AGravityVortexField>(
-			EffectiveFieldClass, SurfaceLocation, FRotator::ZeroRotator, SpawnParams))
+		const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+		const FTransform Transform(FRotator::ZeroRotator, SurfaceLocation);
+		if (AGravityVortexField* Field = FSWVoyageSpawn::SpawnDeferred<AGravityVortexField>(GetWorld(),
+			EffectiveFieldClass, Transform, GetOwner(), GetInstigator(), ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+			ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(this) : 0))
 		{
 			// A Blueprint child may have serialized an older replication default.
 			Field->SetReplicates(true);
 			Field->bAlwaysRelevant = true;
 			Field->SetActorTickEnabled(true);
+			if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Field, Transform) != Field)
+			{
+				if (IsValid(Field)) Field->Destroy();
+				Destroy(); return;
+			}
 			Field->ForceNetUpdate();
 		}
 	}

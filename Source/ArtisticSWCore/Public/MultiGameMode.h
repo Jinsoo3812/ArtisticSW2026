@@ -50,6 +50,13 @@ class ARTISTICSWCORE_API AMultiGameMode : public AGameModeBase
 	GENERATED_BODY()
 
 public:
+	bool BeginVoyageReset(int32 Generation, bool bRetry, FString& OutError);
+	void ResetVoyageRuntimeState(int32 Generation);
+	void CancelVoyageResetPreparation();
+	void CompleteVoyageReset(int32 Generation);
+	bool IsVoyageResetInProgress() const { return bVoyageResetInProgress; }
+	int32 GetVoyageResetGeneration() const { return VoyageResetGeneration; }
+	bool SpawnVoyagePlayer(AController* Controller, const FTransform& Transform, FString& OutError);
 	bool RegisterPlayerRespawnShip(AActor* Ship);
 	AActor* GetPlayerRespawnShip() const { return PlayerRespawnShip.Get(); }
 	void NotifyPlayerShipSinking(AActor* Ship);
@@ -129,6 +136,7 @@ public:
     bool bAutoReadyOnPostLogin = false;
 
 protected:
+	virtual APawn* SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer, const FTransform& SpawnTransform) override;
 	UPROPERTY(Transient) TObjectPtr<ASWRoomReadyState> RoomReadyState;
     virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
     virtual void StartPlay() override;
@@ -201,7 +209,7 @@ public:
 	virtual void RestartPlayer(AController* NewPlayer) override;
 
 	/** One fixed duration for both personal respawn and corpse removal. */
-	static constexpr float IndividualRespawnDelay = 10.0f;
+	static constexpr float IndividualRespawnDelay = 5.0f;
 
     
 protected:
@@ -283,4 +291,12 @@ protected:
 	TSet<TObjectPtr<AController>> HostControllers;
 	UPROPERTY(Transient) TObjectPtr<class APlayerState> PauseSentinel;
 	bool bHostedWorldReady = false;
+	bool bVoyageResetInProgress = false;
+	bool bVoyageDestructiveStarted = false;
+	bool bVoyageBootstrapPending = false;
+	int32 VoyageResetGeneration = 0;
+	bool bVoyageOriginalWorldReady = false;
+	ESWSessionLifePhase VoyageOriginalSessionPhase = ESWSessionLifePhase::Playing;
+	TWeakObjectPtr<APlayerState> VoyageOriginalPauser;
+	TSet<TWeakObjectPtr<APlayerController>> PendingVoyageControllers;
 };

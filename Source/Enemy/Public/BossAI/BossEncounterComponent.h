@@ -6,6 +6,7 @@
 #include "Engine/DataTable.h"
 #include "StoryFacadeSubsystem.h"
 #include "Room/SWRoomSnapshotTypes.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "BossEncounterComponent.generated.h"
 
 USTRUCT()
@@ -51,12 +52,19 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 
 /** Server-authoritative, idempotent bridge from an authored trigger to one boss spawn. */
 UCLASS(ClassGroup = (Enemy), meta = (BlueprintSpawnableComponent))
-class ENEMY_API UBossEncounterComponent : public UActorComponent
+class ENEMY_API UBossEncounterComponent : public UActorComponent, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
 public:
 	UBossEncounterComponent();
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::ResetParticipant; }
+	virtual ESWVoyageRestoreStage GetVoyageRestoreStage_Implementation() const override { return ESWVoyageRestoreStage::InitialSpawners; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
+	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
 	void CaptureRoomState(FSWRoomBossEncounterState& OutState, TArray<FSWRoomCaptureIssue>& OutIssues) const;
 	bool RestoreRoomState(const FSWRoomBossEncounterState& State, FString& OutError);
 	bool FinalizeRoomState(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError);
@@ -163,4 +171,5 @@ protected:
 	TObjectPtr<AShipBossEnemy> SpawnedBoss = nullptr;
 	FSWRoomBossEncounterState PendingRoomState;
 	bool bHasPendingRoomState = false;
+	int32 RestoredVoyageGeneration = INDEX_NONE;
 };

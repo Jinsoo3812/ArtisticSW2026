@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Upgrade/ShipUpgradeTypes.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "SharedShipUpgradeState.generated.h"
 
 class AShip;
@@ -14,12 +15,20 @@ class UShipUpgradeComponent;
  * persisted when the game process exits.
  */
 UCLASS()
-class WATERANDSHIP_API ASharedShipUpgradeState : public AActor
+class WATERANDSHIP_API ASharedShipUpgradeState : public AActor, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
 public:
 	ASharedShipUpgradeState();
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::ResetParticipant; }
+	virtual ESWVoyageRestoreStage GetVoyageRestoreStage_Implementation() const override { return ESWVoyageRestoreStage::SharedState; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
+	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	virtual void BeginPlay() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;

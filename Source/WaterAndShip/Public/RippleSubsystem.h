@@ -5,6 +5,8 @@
 #include "Tickable.h"
 #include "Engine/Texture2D.h"
 #include "Engine/TextureRenderTarget2D.h"
+#include "Room/SWVoyageResetParticipant.h"
+#include "RenderCommandFence.h"
 #include "RippleSubsystem.generated.h"
 
 /**
@@ -12,12 +14,18 @@
  * Authoritative ripple state/query math lives in USWRippleStateSubsystem.
  */
 UCLASS(BlueprintType, Blueprintable, Config=Game, DefaultConfig)
-class WATERANDSHIP_API URippleSubsystem : public UWorldSubsystem, public FTickableGameObject
+class WATERANDSHIP_API URippleSubsystem : public UWorldSubsystem, public FTickableGameObject, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
 public:
 	URippleSubsystem();
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::ResetParticipant; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
+	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
 
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
@@ -77,6 +85,8 @@ public:
 	float MinVelocityThreshold = 300.0f;
 
 private:
+	int32 ClearedVoyageGeneration = INDEX_NONE;
+	FRenderCommandFence VoyageRenderFence;
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture2D> RippleTexture;
 

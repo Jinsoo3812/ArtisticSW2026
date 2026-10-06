@@ -14,6 +14,8 @@
 #include "EngineUtils.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Room/SWRoomSnapshotSubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 ALootSpawnPointBase::ALootSpawnPointBase()
 {
@@ -38,7 +40,9 @@ void ALootSpawnPointBase::ResetSpawnPoint(bool bDestroySpawnedActor)
 
 bool ALootSpawnPointBase::CanBeActivated() const
 {
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
 	return bEnabled && !bActivated && PointWeight > 0.f
+		&& (!Voyage || !Voyage->IsGameplayBlocked() || Voyage->IsPreparationSpawnAllowed())
 		&& (!GetWorld() || !GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot());
 }
 
@@ -137,16 +141,14 @@ ABaseItem* ALooseLootSpawnPoint::SpawnLooseLoot(const FZoneLootItemRow& LootRow,
 		return nullptr;
 	}
 
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = this;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-	ABaseItem* SpawnedItem = World->SpawnActorDeferred<ABaseItem>(
+	const USWVoyageResetSubsystem* Voyage = World->GetSubsystem<USWVoyageResetSubsystem>();
+	ABaseItem* SpawnedItem = FSWVoyageSpawn::SpawnDeferred<ABaseItem>(World,
 		ItemClass,
 		GetActorTransform(),
 		this,
 		nullptr,
-		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn
+		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn,
+		ESWVoyageActorLifetime::Voyage, Voyage ? Voyage->GetGeneration() : 0
 	);
 
 	if (!IsValid(SpawnedItem))
@@ -155,7 +157,11 @@ ABaseItem* ALooseLootSpawnPoint::SpawnLooseLoot(const FZoneLootItemRow& LootRow,
 	}
 
 	SpawnedItem->ItemTag = LootRow.ItemTag;
-	SpawnedItem->FinishSpawning(GetActorTransform());
+	if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(SpawnedItem, GetActorTransform()) != SpawnedItem || !IsValid(SpawnedItem))
+	{
+		if (IsValid(SpawnedItem)) SpawnedItem->Destroy();
+		return nullptr;
+	}
 	AlignItemBottomToGround(SpawnedItem);
 	MarkActivated(SpawnedItem);
 
@@ -336,12 +342,14 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 	TSubclassOf<AStorageChest> SpawnClass = ChestClassOverride;
 	if (!SpawnClass && IsValid(Definition)) SpawnClass = Definition->ChestClass;
 	if (!SpawnClass) SpawnClass = AStorageChest::StaticClass();
-	AStorageChest* SpawnedChest = World->SpawnActorDeferred<AStorageChest>(
+	const USWVoyageResetSubsystem* Voyage = World->GetSubsystem<USWVoyageResetSubsystem>();
+	AStorageChest* SpawnedChest = FSWVoyageSpawn::SpawnDeferred<AStorageChest>(World,
 		SpawnClass,
 		GetActorTransform(),
 		this,
 		nullptr,
-		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn,
+		ESWVoyageActorLifetime::Voyage, Voyage ? Voyage->GetGeneration() : 0);
 	if (!IsValid(SpawnedChest))
 	{
 		return nullptr;
@@ -383,7 +391,12 @@ AStorageChest* AChestSpawnPoint::SpawnConfiguredChest(UChestDefinition* Definiti
 		SpawnedChest->SetStoryGateDormant(EffectiveOwningShip
 			&& EffectiveOwningShip->IsStoryGateDormantForDeckContent());
 	}
-	SpawnedChest->FinishSpawning(GetActorTransform());
+	if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(SpawnedChest, GetActorTransform()) != SpawnedChest || !IsValid(SpawnedChest))
+	{
+		ActiveChestInstance = nullptr;
+		if (IsValid(SpawnedChest)) SpawnedChest->Destroy();
+		return nullptr;
+	}
 
 	if (SpawnMode == EChestSpawnMode::Guarded && IsValid(EffectiveOwningShip))
 	{

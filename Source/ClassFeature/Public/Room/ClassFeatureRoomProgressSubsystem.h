@@ -6,17 +6,30 @@
 #include "TimerManager.h"
 #include "Room/SWRoomSnapshotTypes.h"
 #include "Room/SWRoomSaveGame.h"
+#include "Room/SWVoyageResetTypes.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "ClassFeatureRoomProgressSubsystem.generated.h"
 
 class ABasePlayer;
 class ABasePlayerController;
+class UClassFeatureVoyageTransition;
 
 UCLASS()
-class CLASSFEATURE_API UClassFeatureRoomProgressSubsystem : public UGameInstanceSubsystem
+class CLASSFEATURE_API UClassFeatureRoomProgressSubsystem : public UGameInstanceSubsystem, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 public:
- bool IsDevelopmentTransitionBusy() const { return bReturning || bSaving; }
+ virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::Preserve; }
+ virtual FName GetVoyageParticipantId_Implementation() const override;
+ bool StartVoyageTransition(UWorld* World, ESWVoyageReason Reason, bool bDevelopment, FString& OutError);
+ ESWVoyageStepResult PollInPlaceRestore(FString& OutError);
+ void HandleVoyageStageAck(ABasePlayerController* Controller, int64 AttemptId, int32 Generation, ESWVoyageAck Ack);
+ void HandleVoyageParticipantLogin(ABasePlayerController* Controller);
+ void HandleVoyageParticipantLogout(ABasePlayerController* Controller);
+ bool RetryVoyageFailure(ABasePlayerController* Controller, int64 AttemptId, int32 Generation);
+ bool IsInPlaceVoyageBusy() const;
+ void ReportVoyageFailure(ABasePlayerController* Controller, int64 AttemptId, int32 Generation, const FString& Error);
+ bool IsDevelopmentTransitionBusy() const { return bSaving || IsInPlaceVoyageBusy(); }
  bool TryDevelopmentFinalDeparture(UWorld* World, ABasePlayerController* Requester, FString& OutError);
 	bool TryGameOverRetry(UWorld* World, ABasePlayerController* Requester, uint64 RequestId, FString& OutError);
 	bool CaptureControllerProgress(ABasePlayerController* Controller, bool bUseFrozen, FString& OutError);
@@ -25,6 +38,8 @@ public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 	bool RestoreSharedWorld(UWorld* World);
+	bool RestoreStoryProgress(UWorld* World, const FSWRoomSharedProgress& Target, FString& OutError);
+	ESWVoyageStepResult RestoreSharedActors(UWorld* World, const FSWRoomSharedProgress& Target, FString& OutError);
 	bool CaptureSharedWorld(UWorld* World);
 	void RestorePlayer(ABasePlayer* Player);
 	void CapturePlayer(ABasePlayer* Player);
@@ -34,50 +49,22 @@ public:
 	bool TryFinalDeparture(UWorld* World, ABasePlayer* Requester);
 	void ConfirmReturnPresentation(ABasePlayerController* Controller);
 private:
+ friend class UClassFeatureVoyageTransition;
+ UPROPERTY(Transient) TObjectPtr<UClassFeatureVoyageTransition> VoyageTransition;
+ bool PlaceVoyageShip(UWorld* World, bool bFinal, bool bContinue, FString& OutError);
+	static void NormalizePlayerForVoyage(FSWRoomPlayerProgress& Progress);
+	TWeakObjectPtr<UWorld> SharedRestoreWorld;
+	int32 SharedRestoreGeneration = -1;
+	bool bVoyageSharedUpgradeRestored = false;
+	TMap<FString, TWeakObjectPtr<AActor>> RestoredSharedChests;
  bool TryFinalDepartureInternal(UWorld* World, ABasePlayer* Requester, ABasePlayerController* Controller, bool bDevelopmentTest, FString& OutError);
- bool bDevelopmentFinalDeparture = false;
-	void BeginReturnTravel();
-	void HandleReturnPresentationTimeout();
-	void CancelReturnPresentation();
-	UFUNCTION() void HandleGameOverRestart();
-	void HandlePostLoadMap(UWorld* World);
-	bool TickRestore(float DeltaTime);
-	FDelegateHandle PostLoadHandle;
-	FTSTicker::FDelegateHandle RestoreTickerHandle;
-	TWeakObjectPtr<UWorld> PendingWorld;
-	double RestoreDeadline = 0.0;
-	double DiagnosticLastRestoreLogAt = 0.0;
-	bool bReturning = false;
-	enum class ERoomTransitionReason : uint8 { Return, FinalDeparture, GameOverRetry };
-	ERoomTransitionReason TransitionReason = ERoomTransitionReason::Return;
-	int32 FinalDepartureAttemptSerial = 0;
-	int32 ActiveFinalDepartureAttemptId = 0;
-	TArray<TWeakObjectPtr<ABasePlayerController>> ReturnControllers;
-	TArray<TWeakObjectPtr<ABasePlayerController>> PendingReturnControllers;
-	FTimerHandle ReturnPresentationTimeoutHandle;
-	bool bWorldSnapshotRestored = false;
-	bool bFinalDepartureSharedRestored = false;
-	bool bReturnShipPlaced = false;
-	bool bReturnEntryReady = false;
-	bool bShipSafetyFallbackUsed = false;
-	double ShipSafetyCheckAt = 0.0;
-	double ShipPlacementRealTime = 0.0;
-	double ShipPlacementWorldTime = 0.0;
-	double LastShipSafetyDiagnosticWorldTime = -1.0;
+ UFUNCTION() void HandleGameOverRestart();
+ void HandlePostLoadMap(UWorld* World);
+ FDelegateHandle PostLoadHandle;
 	bool bSaving = false;
 	int32 LastCaptureIssueCount = 0;
-	void RecordTransitionParticipants(UWorld* World);
-	bool AreTransitionParticipantsReady(UWorld* World) const;
-	bool ValidateRetryStorage(UWorld* World, FString& OutError) const;
-	UPROPERTY(Transient) FSWRoomPlayerProgress RollbackHost;
-	UPROPERTY(Transient) TArray<FSWRoomGuestProgress> RollbackGuests;
-	UPROPERTY(Transient) FSWRoomSharedProgress RollbackShared;
-	UPROPERTY(Transient) bool bRollbackFinalDepartureCompleted = false;
-	UPROPERTY(Transient) bool bHasRetryRollback = false;
 	TWeakObjectPtr<ABasePlayerController> RetryRequester;
 	uint64 RetryRequestId = 0;
-	FString RetryCancelReason;
-	TSet<TWeakObjectPtr<ABasePlayerController>> FinalPlacedControllers;
-	bool bFinalDeparturePlayersPlaced = false;
-	bool bTravelAccepted = false;
+	bool ValidateRetryStorage(UWorld* World, FString& OutError) const;
+
 };

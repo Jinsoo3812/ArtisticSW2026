@@ -1,6 +1,8 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "ShipAI/EnemyShip.h"
+#include "Room/SWVoyageSpawnLibrary.h"
+#include "Room/SWVoyageResetSubsystem.h"
 #include "Room/SWRoomProgressSubsystem.h"
 #include "Cannon.h"
 #include "AbilitySystemComponent.h"
@@ -957,7 +959,7 @@ void AEnemyShip::BeginPlay()
 			Weakening->RegisterShip(this);
 		}
 		InitializeDeckWaypoints();
-		InitializeDeckEnemyPool();
+		if (!USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) InitializeDeckEnemyPool();
 
 		if (NavigationComponent)
 		{
@@ -2314,6 +2316,7 @@ void AEnemyShip::ApplyEffectiveDormancyState()
 void AEnemyShip::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
  if (HasAuthority() && IsFinalBossSquadShip())
  {
   const USWRoomProgressSubsystem* Room=GetGameInstance() ? GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
@@ -2511,6 +2514,7 @@ void AEnemyShip::DrawEnemyShipAIDebug() const
 
 void AEnemyShip::OnDeathStarted(UBaseHealthComponent* InHealthComponent)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	if (!bDeathHandled)
 	{
 		bDeathHandled = true;
@@ -2588,6 +2592,7 @@ void AEnemyShip::HandleShipDeath()
 
 void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotator& DeathRotation)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	if (!HasAuthority() || bHasDropped)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("AEnemyShip::DropAtDeathLocation - Drop skipped. Ship=%s HasAuthority=%d bHasDropped=%d"),
@@ -2611,19 +2616,25 @@ void AEnemyShip::DropAtDeathLocation(const FVector& DeathLocation, const FRotato
 
 	TSubclassOf<AStorageChest> ChestClass = ChestSpawnPointChestSettings.ChestClassOverride;
 	if (!ChestClass) ChestClass = AStorageChest::StaticClass();
-	AStorageChest* SpawnedStorage = World->SpawnActorDeferred<AStorageChest>(
+	const USWVoyageResetSubsystem* Voyage = World->GetSubsystem<USWVoyageResetSubsystem>();
+	AStorageChest* SpawnedStorage = FSWVoyageSpawn::SpawnDeferred<AStorageChest>(World,
 		ChestClass,
 		SpawnTransform,
 		nullptr,
 		nullptr,
-		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn, ESWVoyageActorLifetime::Voyage,
+		Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(this) : 0);
 
 	if (SpawnedStorage)
 	{
 		const int32 DropSeed = FMath::RandRange(1, MAX_int32);
 		SpawnedStorage->ClearLegacyChestDefinition();
 		SpawnedStorage->SetPhysicsAndBuoyancyEnabled(true);
-		SpawnedStorage->FinishSpawning(SpawnTransform);
+		if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(SpawnedStorage, SpawnTransform) != SpawnedStorage)
+		{
+			if (IsValid(SpawnedStorage)) SpawnedStorage->Destroy();
+			return;
+		}
 		TArray<FProgressionComputedDrop> SunkDrops;
 		bool bHasProgressionDrops = false;
 		for (TActorIterator<AGlobalLootSpawnManager> It(World); It; ++It)
@@ -2707,6 +2718,18 @@ int32 AEnemyShip::GetLivingCrewCount() const
 bool AEnemyShip::HasLivingCrew() const
 {
 	return GetLivingCrewCount() > 0;
+}
+
+void AEnemyShip::RebindVoyageWeakeningMembers()
+{
+	if (!HasAuthority()) return;
+	if (UEnemyShipWeakeningWorldSubsystem* Weakening = GetWorld()->GetSubsystem<UEnemyShipWeakeningWorldSubsystem>())
+	{
+		Weakening->RegisterShip(this);
+		for (ABaseEnemy* Crew : RegisteredCrewEnemies)
+			if (IsValid(Crew)) Weakening->RegisterMember(this, Crew);
+		if (IsValid(RegisteredBoss)) Weakening->RegisterMember(this, RegisteredBoss);
+	}
 }
 
 void AEnemyShip::RegisterCrewEnemy(ABaseEnemy* CrewEnemy)

@@ -1,5 +1,7 @@
 #include "Attacker/GA_ThrowClusterGrenade.h"
 #include "AbilitySystemComponent.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "BaseItem.h"
 #include "BasePlayer.h"
 #include "Kismet/GameplayStatics.h"
@@ -195,10 +197,12 @@ void UGA_ThrowClusterGrenade::OnThrowEventReceived(FGameplayEventData Payload) {
           ASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
     }
 
+    const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
     AGrenadeProjectile *Grenade =
-        GetWorld()->SpawnActorDeferred<AGrenadeProjectile>(
+        FSWVoyageSpawn::SpawnDeferred<AGrenadeProjectile>(GetWorld(),
             SpawnClass, SpawnTransform, Player, Player,
-            ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+            ESpawnActorCollisionHandlingMethod::AlwaysSpawn, ESWVoyageActorLifetime::Voyage,
+            Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(Player) : 0);
 
     if (Grenade) {
       // Set SubMunition Class via Selected Tag and Consume from Inventory
@@ -235,7 +239,11 @@ void UGA_ThrowClusterGrenade::OnThrowEventReceived(FGameplayEventData Payload) {
       // ExplosionDelay에 주입
       Grenade->ExplosionDelay = PredictedSplitTime;
 
-      Grenade->FinishSpawning(SpawnTransform);
+      if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Grenade, SpawnTransform) != Grenade)
+      {
+          if (IsValid(Grenade)) Grenade->Destroy();
+          return;
+      }
       Grenade->LaunchProjectile(LaunchVelocity);
     }
 

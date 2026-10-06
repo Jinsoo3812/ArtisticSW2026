@@ -1,4 +1,5 @@
 #include "ShipAI/Abilities/EnemyShipTimeStopField.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
@@ -50,6 +51,7 @@ void AEnemyShipTimeStopField::InitializeTimeStop(float InRadius, float InDuratio
 void AEnemyShipTimeStopField::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	if (bReleased || (HasAuthority() && GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()))
 	{
 		return;
@@ -260,6 +262,7 @@ void AEnemyShipTimeStopField::GatherAffectedTargets()
 
 void AEnemyShipTimeStopField::ApplyAllTargets()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	for (const FEnemyShipTimeStopTarget& Target : AffectedTargets)
 	{
 		if (!IsValid(Target.Actor))

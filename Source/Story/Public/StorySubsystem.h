@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "StoryTypes.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "StorySubsystem.generated.h"
 
 class AStoryStateReplicator;
@@ -26,13 +27,21 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
  * authoritative and mirrors one snapshot to every client through a replicator.
  */
 UCLASS()
-class STORY_API UStorySubsystem : public UGameInstanceSubsystem
+class STORY_API UStorySubsystem : public UGameInstanceSubsystem, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override;
+	virtual FName GetVoyageParticipantId_Implementation() const override;
+	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual void ResumeVoyage_Implementation(const FSWVoyageResetContext& Context) override;
+	virtual void CancelVoyagePreparation_Implementation(const FSWVoyageResetContext& Context) override;
 
 	/** Called once by the server world subsystem after network mode is known. */
 	void InitializeConfiguredProgress();
@@ -138,4 +147,5 @@ private:
 	bool bEvaluatingRules = false;
 	bool bDispatchingActions = false;
 	bool bStartupProgressInitialized = false;
+	bool bVoyageActionsDeferred = false;
 };

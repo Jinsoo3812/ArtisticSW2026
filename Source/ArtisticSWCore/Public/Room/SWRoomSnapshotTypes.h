@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "UObject/SoftObjectPath.h"
 #include "GameplayTagContainer.h"
+#include "Room/SWVoyageResetTypes.h"
 #include "SWRoomSnapshotTypes.generated.h"
 
 UENUM()
@@ -172,6 +173,8 @@ struct ARTISTICSWCORE_API FSWRoomActorRecord
 	UPROPERTY(SaveGame) FSoftClassPath ClassPath;
 	UPROPERTY(SaveGame) FSWRoomLevelPartition LevelPartition;
 	UPROPERTY(SaveGame) ESWRoomSpawnOrigin Origin = ESWRoomSpawnOrigin::LevelPlaced;
+	UPROPERTY(SaveGame) bool bHasRuntimeLifetime = false;
+	UPROPERTY(SaveGame) ESWVoyageActorLifetime RuntimeLifetime = ESWVoyageActorLifetime::Environment;
 	UPROPERTY(SaveGame) ESWRoomPersistenceClass PersistenceClass = ESWRoomPersistenceClass::ManualOnly;
 	UPROPERTY(SaveGame) int32 ContractVersion = 1;
 	UPROPERTY(SaveGame) bool bRequired = false;

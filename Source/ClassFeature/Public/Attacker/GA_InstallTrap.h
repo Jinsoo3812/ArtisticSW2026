@@ -59,6 +59,7 @@ protected:
 	TObjectPtr<AGhostMeshActor> SpawnedGhostActor;
 
 	FTimerHandle TargetTimerHandle;
+	FGuid PresentationCleanupId;
 
 	// 최후에 확인된 설치 가능 여부 및 위치 캐싱
 	bool bIsCurrentPositionValid;

@@ -1,4 +1,7 @@
 #include "RippleSubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
+#include "Kismet/KismetRenderingLibrary.h"
 #include "Cannonball.h"
 
 #include "Components/PrimitiveComponent.h"
@@ -165,9 +168,12 @@ void URippleSubsystem::DispatchRippleComputeShader(const double ServerTime)
 	const int32 Resolution = RippleRenderTargetResolution;
 	const bool bFoamEnabled = bRippleFoamEnabled;
 
+	USWVoyageResetSubsystem* RenderVoyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	const TSharedPtr<FSWVoyageAsyncGuard, ESPMode::ThreadSafe> RenderGuard = RenderVoyage ? RenderVoyage->GetAsyncGuard() : nullptr;
 	ENQUEUE_RENDER_COMMAND(DispatchSWRippleCS)(
-		[RenderTargetResource, FoamTargetResource, RippleTextureResource, GridCenter, GridSize, ShaderTime, RippleCount, Resolution, bFoamEnabled](FRHICommandListImmediate& RHICmdList)
+		[RenderGuard, RenderTargetResource, FoamTargetResource, RippleTextureResource, GridCenter, GridSize, ShaderTime, RippleCount, Resolution, bFoamEnabled](FRHICommandListImmediate& RHICmdList)
 		{
+			if (RenderGuard && RenderGuard->bCancelled.Load()) return;
 			FRHITexture* OutputTexture = RenderTargetResource->GetTexture2DRHI();
 			FRHITexture* FoamOutputTexture = FoamTargetResource->GetTexture2DRHI();
 			FRHITexture* EventTexture = RippleTextureResource->GetTexture2DRHI();
@@ -332,6 +338,7 @@ void URippleSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 
 void URippleSubsystem::OnWaterBodyActorOverlap(AActor* OverlappedActor, AActor* OtherActor)
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 	UWorld* World = GetWorld();
 	if (!World || World->GetNetMode() == NM_Client || !OtherActor || OtherActor == OverlappedActor)
 	{
@@ -359,6 +366,7 @@ TStatId URippleSubsystem::GetStatId() const
 
 void URippleSubsystem::Tick(float DeltaTime)
 {
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 	if (!GetWorld())
 	{
 		return;
@@ -591,9 +599,12 @@ void URippleSubsystem::UpdateTexture()
 	if (TextureResource)
 	{
 		FSWRippleProfile::RecordTextureUpload(PixelData.Num() * sizeof(FLinearColor));
+		USWVoyageResetSubsystem* RenderVoyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+		const TSharedPtr<FSWVoyageAsyncGuard, ESPMode::ThreadSafe> RenderGuard = RenderVoyage ? RenderVoyage->GetAsyncGuard() : nullptr;
 		ENQUEUE_RENDER_COMMAND(UpdateAuthenticatedRippleTexture)(
-			[TextureResource, DataCopy = MoveTemp(PixelData), TextureWidth = RippleCapacity](FRHICommandListImmediate& RHICmdList)
+			[RenderGuard, TextureResource, DataCopy = MoveTemp(PixelData), TextureWidth = RippleCapacity](FRHICommandListImmediate& RHICmdList)
 			{
+				if (RenderGuard && RenderGuard->bCancelled.Load()) return;
 				TRACE_CPUPROFILER_EVENT_SCOPE(SW_Ripple_RenderThreadTextureUpload);
 				const FUpdateTextureRegion2D Region(0, 0, 0, 0, TextureWidth, 2);
 				RHICmdList.UpdateTexture2D(
@@ -692,4 +703,46 @@ void URippleSubsystem::TickDiagnostics()
 			StateSubsystem ? StateSubsystem->GetRevision() : 0,
 			GetServerTime());
 	}
+}
+
+FName URippleSubsystem::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<URippleSubsystem*>(this)) : NAME_None;
+}
+
+ESWVoyageStepResult URippleSubsystem::PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult URippleSubsystem::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	bHasUploadedStateRevision = false; LastUploadedStateRevision = 0; LastUploadedRippleCount = 0;
+	NextTextureTransitionServerTime = TNumericLimits<double>::Max();
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult URippleSubsystem::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (GetWorld()->GetNetMode() == NM_DedicatedServer || !FApp::CanEverRender()) return ESWVoyageStepResult::Succeeded;
+	if (ClearedVoyageGeneration != Context.Generation)
+	{
+		if (!RippleTexture || !RippleTexture->GetResource() || !RippleRenderTarget || !RippleFoamSourceRenderTarget)
+			return ESWVoyageStepResult::Pending;
+		if (USWRippleStateSubsystem* State = GetWorld()->GetSubsystem<USWRippleStateSubsystem>()) State->AcceptCurrentVoyageGeneration();
+		else { OutError = TEXT("RippleStateMissing"); return ESWVoyageStepResult::Failed; }
+		bHasUploadedStateRevision = false; UpdateTexture();
+		UKismetRenderingLibrary::ClearRenderTarget2D(this, RippleRenderTarget, RippleRenderTarget->ClearColor);
+		UKismetRenderingLibrary::ClearRenderTarget2D(this, RippleFoamSourceRenderTarget, FLinearColor::Black);
+		VoyageRenderFence.BeginFence(); ClearedVoyageGeneration = Context.Generation;
+	}
+	return IsVoyageReady_Implementation(Context, OutError);
+}
+
+ESWVoyageStepResult URippleSubsystem::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (GetWorld()->GetNetMode() == NM_DedicatedServer || !FApp::CanEverRender()) return ESWVoyageStepResult::Succeeded;
+	return ClearedVoyageGeneration == Context.Generation && VoyageRenderFence.IsFenceComplete()
+		? ESWVoyageStepResult::Succeeded : ESWVoyageStepResult::Pending;
 }

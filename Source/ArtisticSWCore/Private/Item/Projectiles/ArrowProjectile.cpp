@@ -1,5 +1,7 @@
 #include "Item/Projectiles/ArrowProjectile.h"
 #include "Components/CombatHurtboxComponent.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
@@ -425,9 +427,13 @@ void AArrowProjectile::Multicast_PlayImpactPresentation_Implementation(
 		return;
 	}
 
-	AArrowImpactVisual* ImpactVisual = GetWorld()->SpawnActor<AArrowImpactVisual>(
-		AArrowImpactVisual::StaticClass(),
-		FTransform::Identity);
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	FGuid CleanupId; FString Error;
+	if (Voyage && Voyage->IsActiveVoyageSession() && !Voyage->RegisterLocalPresentationCleanupOwner(GetWorld(),
+		Voyage->GetGeneration(), CleanupId, Error)) return;
+	AArrowImpactVisual* ImpactVisual = Cast<AArrowImpactVisual>(USWVoyageSpawnLibrary::BeginVoyageLocalPresentationSpawn(this,
+		AArrowImpactVisual::StaticClass(), FTransform::Identity, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+		Voyage ? Voyage->GetGeneration() : 0, CleanupId));
 	if (ImpactVisual)
 	{
 		ImpactVisual->InitializeFromProjectile(
@@ -435,11 +441,14 @@ void AArrowProjectile::Multicast_PlayImpactPresentation_Implementation(
 			ImpactData,
 			ImpactEmbedDepth,
 			StuckArrowLifeSpan);
+		if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(ImpactVisual, ImpactVisual->GetActorTransform()) != ImpactVisual)
+			if (IsValid(ImpactVisual)) ImpactVisual->Destroy();
 	}
 }
 
 void AArrowProjectile::OnArrowHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	if (!HasAuthority() || (bDestroyOnImpact && bImpactHandled))
 	{
 		return;

@@ -1,6 +1,9 @@
 #include "Room/SWRoomSnapshotSubsystem.h"
 
 #include "Room/SWRoomSnapshotComponent.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
+#include "Engine/LevelStreaming.h"
 #include "Room/SWRoomProgressSubsystem.h"
 #include "Room/SWRoomStateAdapter.h"
 #include "Network/SWNetworkLog.h"
@@ -39,7 +42,7 @@ bool IsExcluded(const AActor* Actor)
 
 bool IsLevelPlacedActor(const AActor* Actor)
 {
-	return Actor && Actor->HasAnyFlags(RF_WasLoaded);
+	return USWRoomSnapshotComponent::IsAuthoredRoomActor(Actor);
 }
 
 bool ShouldTraceRoomPhysics(const AActor* Actor)
@@ -215,6 +218,7 @@ void USWRoomSnapshotSubsystem::Deinitialize()
 	PromotedUnloadedIds.Reset();
 	CachedPartitions.Reset();
 	FailedPartitions.Reset();
+	StructuralFailedPartitions.Reset();
 	FailedInstancePartitions.Reset();
 	bStructuralPartitionFailure = false;
 	DestroyedActorPartitions.Reset();
@@ -277,6 +281,7 @@ void USWRoomSnapshotSubsystem::HandleActorDestroyed(AActor* Actor)
 	const USWRoomSnapshotComponent* Component = Actor->FindComponentByClass<USWRoomSnapshotComponent>();
 	if (!Component || !Component->StableId.IsValid()) return;
 	RegisteredActors.Remove(Component->StableId);
+	if (bDiscardingVoyage && (DiscardActorIds.Contains(Component->StableId) || GetPartitionKey(Actor->GetLevel()) == DiscardPartition)) return;
 	if (IsLevelPlacedActor(Actor) && !UnloadedRecords.Contains(Component->StableId))
 	{
 		DestroyedLevelActorIds.Add(Component->StableId, Component->PersistenceClass);
@@ -288,6 +293,7 @@ void USWRoomSnapshotSubsystem::HandlePreLevelRemoved(ULevel* Level, UWorld* Worl
 {
 	if (!Level || World != GetWorld() || World->GetNetMode() == NM_Client || bRestoring || World->bIsTearingDown) return;
 	const FString Package = GetPartitionKey(Level);
+	if (bDiscardingVoyage && Package == DiscardPartition) return;
 	FSWRoomWorldSnapshot Captured;
 	FString Error;
 	ESWRoomCaptureFailureKind FailureKind = ESWRoomCaptureFailureKind::None;
@@ -297,11 +303,15 @@ void USWRoomSnapshotSubsystem::HandlePreLevelRemoved(ULevel* Level, UWorld* Worl
 			if (GetPartitionKey(It.Value().LevelPartition) == Package) It.RemoveCurrent();
 		CachedPartitions.Remove(Package);
 		FailedPartitions.Add(Package, Error);
-		bStructuralPartitionFailure |= FailureKind == ESWRoomCaptureFailureKind::Structural;
+		if (FailureKind == ESWRoomCaptureFailureKind::Structural) StructuralFailedPartitions.Add(Package);
+		else StructuralFailedPartitions.Remove(Package);
+		bStructuralPartitionFailure = !StructuralFailedPartitions.IsEmpty();
 		UE_LOG(LogSWRoom, Error, TEXT("Flow=PartitionUnload Result=CaptureFailed Partition=%s Reason=%s"), *Package, *Error);
 		return;
 	}
 	FailedPartitions.Remove(Package);
+	StructuralFailedPartitions.Remove(Package);
+	bStructuralPartitionFailure = !StructuralFailedPartitions.IsEmpty();
 	for (auto It = UnloadedRecords.CreateIterator(); It; ++It)
 		if (GetPartitionKey(It.Value().LevelPartition) == Package) It.RemoveCurrent();
 	CachedPartitions.Add(Package);
@@ -317,6 +327,7 @@ void USWRoomSnapshotSubsystem::HandlePreLevelRemoved(ULevel* Level, UWorld* Worl
 
 void USWRoomSnapshotSubsystem::HandleLevelBeginMakingVisible(UWorld* World, const ULevelStreaming* Streaming, ULevel* Level)
 {
+	if (bDiscardingVoyage && Level && GetPartitionKey(Level) == DiscardPartition) return;
 	if (World == GetWorld() && Level && CachedPartitions.Contains(GetPartitionKey(Level)))
 		bRestoring = true;
 }
@@ -325,6 +336,7 @@ void USWRoomSnapshotSubsystem::HandleLevelAdded(ULevel* Level, UWorld* World)
 {
 	if (!Level || World != GetWorld() || World->GetNetMode() == NM_Client) return;
 	const FString CurrentKey = GetPartitionKey(Level);
+	if (bDiscardingVoyage && CurrentKey == DiscardPartition) return;
 	if (!CachedPartitions.Contains(CurrentKey))
 	{
 		const FString Prefix = Level->GetOutermost()->GetName() + TEXT("|");
@@ -333,6 +345,8 @@ void USWRoomSnapshotSubsystem::HandleLevelAdded(ULevel* Level, UWorld* World)
 				&& GetPartitionKey(Loaded).StartsWith(Prefix))
 			{
 				bStructuralPartitionFailure = true;
+				StructuralFailedPartitions.Add(CurrentKey);
+				FailedPartitions.Add(CurrentKey, TEXT("Duplicate package instance"));
 				UE_LOG(LogSWRoom, Error, TEXT("Flow=PartitionReload Result=DuplicatePackageInstance Package=%s Existing=%s Current=%s"),
 					*Level->GetOutermost()->GetName(), *GetPartitionKey(Loaded), *CurrentKey);
 				return;
@@ -500,6 +514,174 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 	return true;
 }
 
+bool USWRoomSnapshotSubsystem::BeginVoyageDiscard(ULevel* GameplayLevel, int32 Generation, FString& OutError)
+{
+	check(IsInGameThread()); OutError.Reset();
+	if (bDiscardingVoyage)
+	{
+		if (DiscardGeneration == Generation) return true;
+		OutError = TEXT("VoyageDiscardGenerationMismatch"); return false;
+	}
+	if (!GameplayLevel || GameplayLevel->GetWorld() != GetWorld() || Generation <= 0 || bRestoring)
+	{ OutError = TEXT("VoyageDiscardInvalidState"); return false; }
+	DiscardGeneration = Generation; DiscardPartition = GetPartitionKey(GameplayLevel); DiscardLevel = GameplayLevel;
+	DiscardActorIds.Reset(); DiscardActors.Reset(); DiscardActorPaths.Reset(); bDiscardingVoyage = true;
+	for (AActor* Actor : GameplayLevel->Actors)
+		if (IsValid(Actor)) DiscardActorPaths.Add(Actor->GetPathName());
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	for (auto It = RegisteredActors.CreateIterator(); It; ++It)
+	{
+		AActor* Actor = It.Value().Get();
+		ESWVoyageActorLifetime Lifetime = ESWVoyageActorLifetime::Environment;
+		const bool bVoyageRuntime = Voyage && Voyage->GetActorLifetime(Actor, Lifetime) && Lifetime == ESWVoyageActorLifetime::Voyage;
+		if ((Actor && Actor->GetLevel() == GameplayLevel) || bVoyageRuntime)
+		{
+			DiscardActorIds.Add(It.Key()); DiscardActors.Add(Actor);
+			if (Actor) DiscardActorPaths.Add(Actor->GetPathName());
+			It.RemoveCurrent();
+		}
+	}
+	for (auto It = UnloadedRecords.CreateIterator(); It; ++It)
+		if (GetPartitionKey(It.Value().LevelPartition) == DiscardPartition || DiscardActorIds.Contains(It.Key()))
+		{ DiscardActorIds.Add(It.Key()); It.RemoveCurrent(); }
+	for (auto It = DestroyedActorPartitions.CreateIterator(); It; ++It)
+		if (It.Value() == DiscardPartition || DiscardActorIds.Contains(It.Key()))
+		{ DiscardActorIds.Add(It.Key()); It.RemoveCurrent(); }
+	for (FGuid Id : DiscardActorIds) { PromotedUnloadedIds.Remove(Id); DestroyedLevelActorIds.Remove(Id); }
+	CachedPartitions.Remove(DiscardPartition); FailedPartitions.Remove(DiscardPartition); FailedInstancePartitions.Remove(DiscardPartition);
+	StructuralFailedPartitions.Remove(DiscardPartition);
+	bStructuralPartitionFailure = !StructuralFailedPartitions.IsEmpty();
+	const auto IsTargetIssue = [this](const FSWRoomCaptureIssue& Issue)
+	{
+		if (DiscardActorIds.Contains(Issue.StableId) || Issue.OwnerPath == DiscardPartition) return true;
+		for (const FString& ActorPath : DiscardActorPaths)
+			if (Issue.OwnerPath == ActorPath || Issue.OwnerPath.StartsWith(ActorPath + TEXT("."), ESearchCase::CaseSensitive)) return true;
+		return false;
+	};
+	RegistrationIssues.RemoveAll(IsTargetIssue); RestoreIssues.RemoveAll(IsTargetIssue);
+	return true;
+}
+
+bool USWRoomSnapshotSubsystem::EndVoyageDiscard(int32 Generation, FString& OutError)
+{
+	check(IsInGameThread()); OutError.Reset();
+	if (!bDiscardingVoyage || DiscardGeneration != Generation) { OutError = TEXT("VoyageDiscardGenerationMismatch"); return false; }
+	if (DiscardLevel.IsValid()) { OutError = TEXT("VoyageDiscardOldLevelRetained"); return false; }
+	for (const TWeakObjectPtr<AActor>& Actor : DiscardActors)
+		if (Actor.IsValid()) { OutError = TEXT("VoyageDiscardOldActorRetained:") + Actor->GetPathName(); return false; }
+	if (!ValidateRegistration(OutError)) return false;
+	bDiscardingVoyage = false; DiscardGeneration = 0; DiscardPartition.Reset(); DiscardActorIds.Reset(); DiscardActors.Reset(); DiscardActorPaths.Reset(); DiscardLevel.Reset();
+	return true;
+}
+
+ESWVoyagePolicy USWRoomSnapshotSubsystem::GetVoyagePolicy_Implementation() const
+{
+	return ESWVoyagePolicy::ResetParticipant;
+}
+
+ESWVoyageRestoreStage USWRoomSnapshotSubsystem::GetVoyageRestoreStage_Implementation() const
+{
+	return ESWVoyageRestoreStage::Readiness;
+}
+
+FName USWRoomSnapshotSubsystem::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<USWRoomSnapshotSubsystem*>(this)) : NAME_None;
+}
+
+TArray<FName> USWRoomSnapshotSubsystem::GetVoyageAfterParticipants_Implementation() const
+{
+	return {};
+}
+
+ESWVoyageStepResult USWRoomSnapshotSubsystem::PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	check(IsInGameThread());
+	OutError.Reset();
+	if (Context.Generation <= 0 || !GetWorld() || Context.Generation < PreparedVoyageGeneration)
+	{
+		OutError = TEXT("VoyageSnapshotPrepareGenerationInvalid");
+		return ESWVoyageStepResult::Failed;
+	}
+	if (!ValidateRegistration(OutError))
+	{
+		if (OutError.IsEmpty()) OutError = TEXT("VoyageSnapshotRegistrationInvalid");
+		return ESWVoyageStepResult::Failed;
+	}
+	PreparedVoyageGeneration = Context.Generation;
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult USWRoomSnapshotSubsystem::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	check(IsInGameThread());
+	OutError.Reset();
+	if (!bDiscardingVoyage || DiscardGeneration != Context.Generation || PreparedVoyageGeneration != Context.Generation)
+	{
+		OutError = TEXT("VoyageSnapshotDiscardNotStarted");
+		return ESWVoyageStepResult::Failed;
+	}
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult USWRoomSnapshotSubsystem::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	check(IsInGameThread());
+	OutError.Reset();
+	if (PreparedVoyageGeneration != Context.Generation || (bDiscardingVoyage && DiscardGeneration != Context.Generation))
+	{
+		OutError = TEXT("VoyageSnapshotRestoreGenerationInvalid");
+		return ESWVoyageStepResult::Failed;
+	}
+	if (!ValidateRegistration(OutError))
+	{
+		if (OutError.IsEmpty()) OutError = TEXT("VoyageSnapshotRestoreRegistrationInvalid");
+		return ESWVoyageStepResult::Failed;
+	}
+	RestoredVoyageGeneration = Context.Generation;
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult USWRoomSnapshotSubsystem::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	check(IsInGameThread());
+	OutError.Reset();
+	if (PreparedVoyageGeneration != Context.Generation || RestoredVoyageGeneration != Context.Generation
+		|| (bDiscardingVoyage && DiscardGeneration != Context.Generation))
+	{
+		OutError = TEXT("VoyageSnapshotReadyGenerationInvalid");
+		return ESWVoyageStepResult::Failed;
+	}
+	if (DiscardLevel.IsValid()) return ESWVoyageStepResult::Pending;
+	for (const TWeakObjectPtr<AActor>& Actor : DiscardActors)
+		if (Actor.IsValid()) return ESWVoyageStepResult::Pending;
+	if (!ValidateRegistration(OutError))
+	{
+		if (OutError.IsEmpty()) OutError = TEXT("VoyageSnapshotReadyRegistrationInvalid");
+		return ESWVoyageStepResult::Failed;
+	}
+	return ESWVoyageStepResult::Succeeded;
+}
+
+void USWRoomSnapshotSubsystem::ResumeVoyage_Implementation(const FSWVoyageResetContext& Context)
+{
+	if (PreparedVoyageGeneration == Context.Generation)
+	{
+		PreparedVoyageGeneration = -1;
+		RestoredVoyageGeneration = -1;
+	}
+}
+
+void USWRoomSnapshotSubsystem::CancelVoyagePreparation_Implementation(const FSWVoyageResetContext& Context)
+{
+	if (PreparedVoyageGeneration == Context.Generation && (!bDiscardingVoyage || DiscardGeneration != Context.Generation))
+	{
+		PreparedVoyageGeneration = -1;
+		RestoredVoyageGeneration = -1;
+	}
+}
+
 bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoomSaveKind Kind,
 	uint64 Sequence, FString& OutError, ESWRoomCaptureFailureKind* OutFailureKind)
 {
@@ -507,7 +689,7 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=WorldCapture Phase=Begin Sequence=%llu Kind=%s World=%s"),
 		Sequence, *UEnum::GetValueAsString(Kind), *GetNameSafe(GetWorld()));
 	if (OutFailureKind) *OutFailureKind = ESWRoomCaptureFailureKind::None;
-	if (!GetWorld() || GetWorld()->GetNetMode() == NM_Client || bRestoring)
+	if (!GetWorld() || GetWorld()->GetNetMode() == NM_Client || bRestoring || bDiscardingVoyage)
 	{
 		OutError = TEXT("Room world capture unavailable");
 		UE_LOG(LogSWRoomSave, Error, TEXT("Flow=WorldCapture Result=Failed Sequence=%llu Phase=Precondition Reason=%s"), Sequence, *OutError);
@@ -571,6 +753,35 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 		Record.Origin = IsLevelPlacedActor(Actor) ? ESWRoomSpawnOrigin::LevelPlaced : ESWRoomSpawnOrigin::Runtime;
 		if (Record.Origin == ESWRoomSpawnOrigin::Runtime)
 		{
+			USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+			const TCHAR* LifetimeTags[] = { TEXT("SWVoyage.Environment"), TEXT("SWVoyage.Anchor"), TEXT("SWVoyage.Voyage"),
+				TEXT("SWVoyage.SharedService"), TEXT("SWVoyage.PlayerLife"), TEXT("SWVoyage.LocalPresentation") };
+			int32 Declared = INDEX_NONE;
+			bool bAmbiguous = false;
+			for (int32 Index = 0; Index < UE_ARRAY_COUNT(LifetimeTags); ++Index)
+				if (Actor->ActorHasTag(LifetimeTags[Index]))
+				{ bAmbiguous |= Declared != INDEX_NONE; Declared = Index; }
+			ESWVoyageActorLifetime Lifetime = ESWVoyageActorLifetime::Environment;
+			bool bRegistered = Voyage && Voyage->GetActorLifetime(Actor, Lifetime);
+			const auto IsStoredLifetime = [](ESWVoyageActorLifetime Value)
+			{ return Value == ESWVoyageActorLifetime::Voyage || Value == ESWVoyageActorLifetime::PlayerLife || Value == ESWVoyageActorLifetime::SharedService; };
+			if (!bRegistered && Voyage && !Voyage->IsActiveVoyageSession() && Voyage->GetGeneration() == 0
+				&& Declared != INDEX_NONE && !bAmbiguous && IsStoredLifetime(static_cast<ESWVoyageActorLifetime>(Declared)))
+			{
+				Lifetime = static_cast<ESWVoyageActorLifetime>(Declared);
+				bRegistered = Voyage->RegisterActor(Actor, Lifetime, 0, OutError) && Voyage->GetActorLifetime(Actor, Lifetime);
+			}
+			if (!bRegistered || !IsStoredLifetime(Lifetime) || bAmbiguous
+				|| (Declared != INDEX_NONE && Lifetime != static_cast<ESWVoyageActorLifetime>(Declared))
+				|| Voyage->GetActorGeneration(Actor) != Voyage->GetGeneration()
+				|| (Voyage->IsActiveVoyageSession() ? Voyage->GetGeneration() <= 0 : Voyage->GetGeneration() != 0))
+			{
+				OutError = TEXT("RuntimeLifetimeCaptureContractInvalid:") + Record.StableId.ToString();
+				if (OutFailureKind) *OutFailureKind = ESWRoomCaptureFailureKind::Structural;
+				UE_LOG(LogSWRoomSave, Error, TEXT("Flow=WorldCapture Result=Failed Reason=%s"), *OutError);
+				return false;
+			}
+			Record.bHasRuntimeLifetime = true; Record.RuntimeLifetime = Lifetime;
 			Record.CreatorId = Component->GetCreatorId();
 			Record.CreatorSequence = Component->GetCreatorSequence();
 		}
@@ -773,6 +984,20 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 				Pair.Value.AdapterBytes.Num(), Pair.Value.Components.Num(), *Pair.Value.AttachParentId.ToString());
 		}
 	TSet<FGuid> CapturedActorIds;
+	for (const FSWRoomActorRecord& Record : OutSnapshot.UnloadedActors)
+	{
+		const bool bRuntime = Record.Origin == ESWRoomSpawnOrigin::Runtime && Record.bHasRuntimeLifetime
+			&& (Record.RuntimeLifetime == ESWVoyageActorLifetime::Voyage || Record.RuntimeLifetime == ESWVoyageActorLifetime::PlayerLife
+				|| Record.RuntimeLifetime == ESWVoyageActorLifetime::SharedService);
+		const bool bAuthored = Record.Origin == ESWRoomSpawnOrigin::LevelPlaced && !Record.bHasRuntimeLifetime
+			&& Record.RuntimeLifetime == ESWVoyageActorLifetime::Environment;
+		if (!bRuntime && !bAuthored)
+		{
+			OutError = TEXT("UnloadedRuntimeLifetimeContractInvalid:") + Record.StableId.ToString();
+			if (OutFailureKind) *OutFailureKind = ESWRoomCaptureFailureKind::Structural;
+			return false;
+		}
+	}
 	for (const FSWRoomActorRecord& Record : OutSnapshot.Actors) CapturedActorIds.Add(Record.StableId);
 	for (const FSWRoomActorRecord& Record : OutSnapshot.UnloadedActors) CapturedActorIds.Add(Record.StableId);
 	auto RemoveMissingAttachment = [&](FSWRoomActorRecord& Record)
@@ -856,6 +1081,13 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 	TSet<FGuid> DiskIds;
 	auto ValidateDiskRecord = [&](const FSWRoomActorRecord& Record) -> bool
 	{
+		const bool bStoredRuntime = Record.Origin == ESWRoomSpawnOrigin::Runtime && Record.bHasRuntimeLifetime
+			&& (Record.RuntimeLifetime == ESWVoyageActorLifetime::Voyage || Record.RuntimeLifetime == ESWVoyageActorLifetime::PlayerLife
+				|| Record.RuntimeLifetime == ESWVoyageActorLifetime::SharedService);
+		const bool bStoredAuthored = Record.Origin == ESWRoomSpawnOrigin::LevelPlaced && !Record.bHasRuntimeLifetime
+			&& Record.RuntimeLifetime == ESWVoyageActorLifetime::Environment;
+		if (!bStoredRuntime && !bStoredAuthored)
+		{ OutError = TEXT("InvalidOriginLifetimeContract:") + Record.StableId.ToString(); return false; }
 		if (Record.AttachParentId == Record.StableId
 			|| Record.AttachParentId.IsValid() == Record.AttachParentComponentName.IsNone())
 		{
@@ -981,6 +1213,14 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 	{
 		AActor* Actor = nullptr;
 		if (TWeakObjectPtr<AActor>* Found = RegisteredActors.Find(Record.StableId)) Actor = Found->Get();
+		USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+		if (Actor && Record.Origin == ESWRoomSpawnOrigin::Runtime)
+		{
+			ESWVoyageActorLifetime Lifetime;
+			if (!Voyage || Actor->GetWorld() != GetWorld() || !Voyage->GetActorLifetime(Actor, Lifetime)
+				|| Lifetime != Record.RuntimeLifetime || Voyage->GetActorGeneration(Actor) != Voyage->GetGeneration())
+			{ OutError = TEXT("ExistingRuntimeLifetimeContractInvalid:") + Record.StableId.ToString(); return false; }
+		}
 		if (!Actor && Record.Origin == ESWRoomSpawnOrigin::Runtime)
 		{
 			UClass* Class = Record.ClassPath.TryLoadClass<AActor>();
@@ -991,17 +1231,30 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 			for (ULevel* CandidateLevel : GetWorld()->GetLevels())
 				if (CandidateLevel && GetPartitionKey(CandidateLevel) == GetPartitionKey(Record.LevelPartition))
 				{
+					if (SpawnInfo.OverrideLevel)
+					{ OutError = TEXT("RuntimeSnapshotPartitionAmbiguous:") + Record.StableId.ToString(); return false; }
 					SpawnInfo.OverrideLevel = CandidateLevel;
-					break;
 				}
-			Actor = GetWorld()->SpawnActor<AActor>(Class, Record.WorldTransform, SpawnInfo);
+			const bool bGameplayPartition = Voyage && (!Voyage->IsActiveVoyageSession() || Record.RuntimeLifetime != ESWVoyageActorLifetime::Voyage
+				|| (Voyage->GetGameplayStreamingLevel() && Voyage->GetGameplayStreamingLevel()->GetLoadedLevel() == SpawnInfo.OverrideLevel));
+			if (SpawnInfo.OverrideLevel && bGameplayPartition && Voyage->CanSpawnVoyageActor(Record.RuntimeLifetime, Voyage->GetGeneration(), FGuid()))
+				Actor = GetWorld()->SpawnActor<AActor>(Class, Record.WorldTransform, SpawnInfo);
+			if (Actor)
+			{
+				FString RegistrationError;
+				if (!FSWVoyageSpawn::RegisterDeferredActorSpawn(Actor, Record.RuntimeLifetime, Voyage->GetGeneration(), FGuid(), RegistrationError))
+				{
+					UE_LOG(LogSWRoom, Error, TEXT("Runtime snapshot deferred registration failed: %s"), *RegistrationError);
+					Actor->Destroy(); Actor = nullptr;
+				}
+			}
 			if (Actor)
 			{
 				USWRoomSnapshotComponent* Component = Actor->FindComponentByClass<USWRoomSnapshotComponent>();
 				if (Component) Component->SetRuntimeId(Record.StableId);
 				if (Component) Component->SetRuntimeOrigin(Record.CreatorId, Record.CreatorSequence);
 				NextCreatorSequence = FMath::Max(NextCreatorSequence, Record.CreatorSequence);
-				Actor->FinishSpawning(Record.WorldTransform);
+				Actor = USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Actor, Record.WorldTransform);
 			}
 		}
 		if (!Actor)
@@ -1169,6 +1422,7 @@ bool USWRoomSnapshotSubsystem::CompareDeclared(const FSWRoomWorldSnapshot& Expec
 		const FString Prefix = Before.StableId.ToString() + TEXT(": ");
 		if (Before.ClassPath != After.ClassPath || Before.ContractVersion != After.ContractVersion
 			|| Before.Origin != After.Origin || Before.PersistenceClass != After.PersistenceClass
+			|| Before.bHasRuntimeLifetime != After.bHasRuntimeLifetime || Before.RuntimeLifetime != After.RuntimeLifetime
 			|| Before.CreatorId != After.CreatorId || Before.CreatorSequence != After.CreatorSequence
 			|| Before.LevelPartition.PackagePath != After.LevelPartition.PackagePath
 			|| Before.LevelPartition.InstanceName != After.LevelPartition.InstanceName
@@ -1213,6 +1467,15 @@ bool USWRoomSnapshotSubsystem::CompareDeclared(const FSWRoomWorldSnapshot& Expec
 	if (Expected.DestroyedActorPartitions.Num() != Actual.DestroyedActorPartitions.Num())
 		OutDifferences.Add(TEXT("Destroyed actor partition count"));
 	if (Expected.UnloadedActors.Num() != Actual.UnloadedActors.Num()) OutDifferences.Add(TEXT("Unloaded actor count"));
+	TMap<FGuid, const FSWRoomActorRecord*> ActualUnloaded;
+	for (const FSWRoomActorRecord& Record : Actual.UnloadedActors) ActualUnloaded.Add(Record.StableId, &Record);
+	for (const FSWRoomActorRecord& Before : Expected.UnloadedActors)
+	{
+		const FSWRoomActorRecord* const* Found = ActualUnloaded.Find(Before.StableId);
+		if (!Found || Before.Origin != (*Found)->Origin || Before.bHasRuntimeLifetime != (*Found)->bHasRuntimeLifetime
+			|| Before.RuntimeLifetime != (*Found)->RuntimeLifetime)
+			OutDifferences.Add(TEXT("Unloaded runtime lifetime mismatch: ") + Before.StableId.ToString());
+	}
 	if (Expected.Systems.Num() != Actual.Systems.Num()) OutDifferences.Add(TEXT("System count"));
 	if (Expected.ReferenceIds != Actual.ReferenceIds) OutDifferences.Add(TEXT("World references"));
 	return OutDifferences.IsEmpty();
@@ -1247,6 +1510,8 @@ bool USWRoomSnapshotSubsystem::CompareRestored(const FSWRoomWorldSnapshot& Expec
 		if (Before.ClassPath != After->ClassPath || Before.ContractVersion != After->ContractVersion)
 			OutDifferences.Add(Prefix + TEXT(" Field=ClassOrContract Expected=") + Before.ClassPath.ToString()
 				+ TEXT(" Actual=") + After->ClassPath.ToString());
+		if (Before.Origin != After->Origin || Before.bHasRuntimeLifetime != After->bHasRuntimeLifetime
+			|| Before.RuntimeLifetime != After->RuntimeLifetime) OutDifferences.Add(Prefix + TEXT(" Field=RuntimeLifetime"));
 		if (!Before.WorldTransform.GetLocation().Equals(After->WorldTransform.GetLocation(), 1.f)
 			|| !Before.WorldTransform.GetRotation().Equals(After->WorldTransform.GetRotation(), FMath::DegreesToRadians(0.1f))
 			|| !Before.WorldTransform.GetScale3D().Equals(After->WorldTransform.GetScale3D(), 0.01f))

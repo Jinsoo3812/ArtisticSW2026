@@ -19,6 +19,7 @@ struct WATERANDSHIP_API FSWShipWakeEvent
 	GENERATED_BODY()
 
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") int32 EventId = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") int32 Generation = 0;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") FVector2D Origin = FVector2D::ZeroVector;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") FVector2D EndOrigin = FVector2D::ZeroVector;
 	UPROPERTY(BlueprintReadOnly, Category = "Ship Wake") FVector2D Forward = FVector2D(1.0, 0.0);

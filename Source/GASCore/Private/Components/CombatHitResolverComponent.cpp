@@ -1,4 +1,5 @@
 #include "Components/CombatHitResolverComponent.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
@@ -24,6 +25,7 @@ UCombatHitResolverComponent* UCombatHitResolverComponent::GetOrCreate(AActor* Ca
 
 bool UCombatHitResolverComponent::OpenWindow(const FGameplayEffectSpecHandle& Spec)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(GetOwner())) return false;
 	if (!GetOwner()->HasAuthority() || !Spec.IsValid() || !Spec.Data.IsValid()
 		|| Spec.Data->GetContext().GetEffectCauser() != GetOwner()) return false;
 	if (LastSpec.Pin() == Spec.Data) return ActiveSpec.Data == Spec.Data;
@@ -43,6 +45,8 @@ void UCombatHitResolverComponent::CloseWindow()
 bool UCombatHitResolverComponent::ResolveHit(UAbilitySystemComponent* TargetASC, const FHitResult& Hit,
 	bool bIgnoreSameTeam, bool bRequireAnimatedHurtbox)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(GetOwner())
+		|| USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(TargetASC ? TargetASC->GetAvatarActor() : nullptr)) return false;
 	if (!GetOwner()->HasAuthority() || !ActiveSpec.IsValid() || !TargetASC
 		|| (Hit.GetActor() && Hit.GetActor() != TargetASC->GetAvatarActor())
 		|| !TargetASC->IsOwnerActorAuthoritative() || HitTargets.Contains(TargetASC)

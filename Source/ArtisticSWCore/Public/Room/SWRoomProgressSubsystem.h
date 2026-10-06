@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "Room/SWRoomSaveGame.h"
 #include "SWRoomProgressSubsystem.generated.h"
 
@@ -16,7 +17,7 @@ struct FSWExpectedTransitionPlayer
 };
 
 UCLASS()
-class ARTISTICSWCORE_API USWRoomProgressSubsystem : public UGameInstanceSubsystem
+class ARTISTICSWCORE_API USWRoomProgressSubsystem : public UGameInstanceSubsystem, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 public:
@@ -24,6 +25,7 @@ public:
 	void SetDevelopmentTestSessionEnabled(UWorld* World, bool bEnabled);
 	void SetDevelopmentFinalDeparturePending(UWorld* World, bool bPending, bool bValidatedTransition = false);
 	bool ConsumeDevelopmentFinalDeparturePending(UWorld* World);
+	bool CommitDevelopmentFinalDepartureInPlace(UWorld* World);
 	bool IsDevelopmentFinalEncounterWorld(UWorld* World) const;
 	void ClearDevelopmentFinalEncounterWorld(UWorld* World);
 	virtual void Deinitialize() override;
@@ -32,6 +34,8 @@ public:
 	bool IsGameOverRetryTravelPending() const { return bGameOverRetryTravelPending; }
 	UPROPERTY(Transient) TArray<FSWExpectedTransitionPlayer> ExpectedTransitionPlayers;
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override;
+	virtual FName GetVoyageParticipantId_Implementation() const override;
 	bool IsHostedRoom() const { return bHostedRoom; }
 	const USWRoomSaveGame* GetActiveRoom() const { return ActiveRoom; }
 	USWRoomSaveGame* GetMutableActiveRoom() { return ActiveRoom; }

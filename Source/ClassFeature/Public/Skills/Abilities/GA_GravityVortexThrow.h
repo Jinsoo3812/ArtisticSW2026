@@ -145,6 +145,7 @@ private:
 	mutable bool bLoggedLaunchResolution = false;
 	bool bLoggedAimLineResolution = false;
 	FTimerHandle TrajectoryTimerHandle;
+	FGuid PresentationCleanupId;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AVortexAimLine> AimLineActor;

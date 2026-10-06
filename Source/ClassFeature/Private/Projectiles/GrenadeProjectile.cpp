@@ -1,4 +1,5 @@
-﻿#include "Projectiles/GrenadeProjectile.h"
+#include "Projectiles/GrenadeProjectile.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "GameFramework/Character.h"
@@ -74,6 +75,7 @@ void AGrenadeProjectile::SetGrenadeMesh(UStaticMesh* InMesh)
 
 void AGrenadeProjectile::Explode()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	if (!HasAuthority() || bExploded) return;
 	bExploded = true;
 	GetWorldTimerManager().ClearTimer(ExplodeTimerHandle);

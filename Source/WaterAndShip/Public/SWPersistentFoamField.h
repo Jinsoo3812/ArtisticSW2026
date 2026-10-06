@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Room/SWVoyageResetParticipant.h"
+#include "RenderCommandFence.h"
 #include "SWPersistentFoamField.generated.h"
 
 class AWaterBody;
@@ -19,9 +21,15 @@ class UTextureRenderTarget2D;
  * visual system and intentionally has no gameplay or replication authority.
  */
 UCLASS(BlueprintType)
-class WATERANDSHIP_API ASWPersistentFoamField : public AActor
+class WATERANDSHIP_API ASWPersistentFoamField : public AActor, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::ResetParticipant; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
+	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
 
 public:
 	ASWPersistentFoamField();
@@ -105,6 +113,8 @@ protected:
 	TObjectPtr<UTextureRenderTarget2D> FoamStateB;
 
 private:
+	int32 ClearedVoyageGeneration = INDEX_NONE;
+	FRenderCommandFence VoyageRenderFence;
 	bool InitializeFoamField();
 	void ResolveTargetWaterBody();
 	void PushStateToWaterMaterial(UTextureRenderTarget2D* State);

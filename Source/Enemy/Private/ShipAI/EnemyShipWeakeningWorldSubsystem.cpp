@@ -9,6 +9,64 @@
 #include "Components/BaseHealthComponent.h"
 #include "AbilitySystemComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
+#include "Room/SWVoyageResetSubsystem.h"
+
+ESWVoyagePolicy UEnemyShipWeakeningWorldSubsystem::GetVoyagePolicy_Implementation() const { return ESWVoyagePolicy::ResetParticipant; }
+FName UEnemyShipWeakeningWorldSubsystem::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<UEnemyShipWeakeningWorldSubsystem*>(this)) : NAME_None;
+}
+ESWVoyageStepResult UEnemyShipWeakeningWorldSubsystem::PrepareVoyageReset_Implementation(const FSWVoyageResetContext&, FString& OutError)
+{
+	OutError.Reset(); bVoyageEventsDeferred = true;
+	return ESWVoyageStepResult::Succeeded;
+}
+ESWVoyageStepResult UEnemyShipWeakeningWorldSubsystem::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext&, FString& OutError)
+{
+	OutError.Reset(); ClearWorldBindings();
+	return ESWVoyageStepResult::Succeeded;
+}
+ESWVoyageStepResult UEnemyShipWeakeningWorldSubsystem::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	OutError.Reset();
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation))
+	{ OutError = TEXT("VoyageWeakeningGenerationInvalid"); return ESWVoyageStepResult::Failed; }
+	if (IsServerWorld())
+		for (TActorIterator<AEnemyShip> It(GetWorld()); It; ++It)
+		{
+			if (!It->IsActorInitialized()) return ESWVoyageStepResult::Pending;
+			if (Voyage->GetActorGeneration(*It) != Context.Generation)
+			{ OutError = TEXT("VoyageWeakeningShipGenerationInvalid:") + It->GetPathName(); return ESWVoyageStepResult::Failed; }
+			It->RebindVoyageWeakeningMembers();
+		}
+	return ESWVoyageStepResult::Succeeded;
+}
+ESWVoyageStepResult UEnemyShipWeakeningWorldSubsystem::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	OutError.Reset();
+	USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation))
+	{ OutError = TEXT("VoyageWeakeningGenerationInvalid"); return ESWVoyageStepResult::Failed; }
+	for (const auto& Pair : ShipHealth)
+		if (!Pair.Key.IsValid() || Voyage->GetActorGeneration(Pair.Key.Get()) != Context.Generation)
+		{ OutError = TEXT("VoyageWeakeningStaleShip"); return ESWVoyageStepResult::Failed; }
+	for (const auto& Pair : MemberOwners)
+		if (!Pair.Key.IsValid() || !Pair.Value.IsValid()
+			|| Voyage->GetActorGeneration(Pair.Key.Get()) != Context.Generation || !ShipHealth.Contains(Pair.Value))
+		{ OutError = TEXT("VoyageWeakeningStaleMember"); return ESWVoyageStepResult::Failed; }
+	return ESWVoyageStepResult::Succeeded;
+}
+void UEnemyShipWeakeningWorldSubsystem::ResumeVoyage_Implementation(const FSWVoyageResetContext&)
+{
+	bVoyageEventsDeferred = false;
+}
+void UEnemyShipWeakeningWorldSubsystem::CancelVoyagePreparation_Implementation(const FSWVoyageResetContext&)
+{
+	bVoyageEventsDeferred = false;
+}
 
 bool UEnemyShipWeakeningWorldSubsystem::IsServerWorld() const
 {
@@ -136,6 +194,7 @@ void UEnemyShipWeakeningWorldSubsystem::RefreshShip(AEnemyShip* Ship)
 void UEnemyShipWeakeningWorldSubsystem::HandleShipHealthChanged(
 	UBaseHealthComponent* Health, float OldValue, float NewValue, AActor* InstigatorActor)
 {
+	if (bVoyageEventsDeferred) return;
 	for (const auto& Pair : ShipHealth)
 	{
 		if (Pair.Value.Get() == Health && Pair.Key.IsValid()) RefreshShip(Pair.Key.Get());
@@ -144,6 +203,7 @@ void UEnemyShipWeakeningWorldSubsystem::HandleShipHealthChanged(
 
 void UEnemyShipWeakeningWorldSubsystem::HandleMemberDeath(UBaseHealthComponent* Health)
 {
+	if (bVoyageEventsDeferred) return;
 	for (const auto& Pair : MemberOwners)
 	{
 		if (ABaseEnemy* Member = Pair.Key.Get(); Member && Member->GetHealthComponent() == Health)
@@ -155,6 +215,13 @@ void UEnemyShipWeakeningWorldSubsystem::HandleMemberDeath(UBaseHealthComponent* 
 }
 
 void UEnemyShipWeakeningWorldSubsystem::Deinitialize()
+{
+	bVoyageEventsDeferred = true;
+	ClearWorldBindings();
+	Super::Deinitialize();
+}
+
+void UEnemyShipWeakeningWorldSubsystem::ClearWorldBindings()
 {
 	for (const auto& Pair : MemberOwners)
 	{
@@ -176,5 +243,5 @@ void UEnemyShipWeakeningWorldSubsystem::Deinitialize()
 		}
 	}
 	ShipHealth.Empty();
-	Super::Deinitialize();
+	MemberEffects.Empty();
 }

@@ -1,4 +1,6 @@
 #include "ShipAI/Abilities/GA_EnemyShipCharge.h"
+#include "Room/SWVoyageSpawnLibrary.h"
+#include "Room/SWVoyageResetSubsystem.h"
 
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
@@ -169,6 +171,8 @@ void UGA_EnemyShipCharge::HandlePhysicsRootHit(
 {
 	AEnemyShip* Ship = ActiveShip.Get();
 	AShip* HitShip = Cast<AShip>(OtherActor);
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(Ship)
+		|| USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(HitShip)) return;
 	if (bCollisionConsumed || !bChargeStarted || !Ship || !HitShip || HitShip == Ship)
 	{
 		return;
@@ -240,6 +244,7 @@ void UGA_EnemyShipCharge::HandlePhysicsRootHit(
 
 void UGA_EnemyShipCharge::UpdateChargeSteering()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(ActiveShip.Get())) return;
 	AEnemyShip* Ship = ActiveShip.Get();
 	AShip* Target = ActiveTarget.Get();
 	UEnemyShipNavigationComponent* Navigation = Ship ? Ship->GetNavigationComponent() : nullptr;
@@ -307,6 +312,7 @@ void UGA_EnemyShipCharge::UpdateChargeSteering()
 
 void UGA_EnemyShipCharge::BeginCharge()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(ActiveShip.Get())) return;
 	AEnemyShip* Ship = ActiveShip.Get();
 	if (bChargeStarted || !Ship || !Ship->BuoyancyRoot)
 	{
@@ -387,11 +393,11 @@ void UGA_EnemyShipCharge::SpawnChargeTelegraph()
 	{
 		return;
 	}
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = Ship;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AEnemyShipChargeTelegraph* Telegraph = Ship->GetWorld()->SpawnActor<AEnemyShipChargeTelegraph>(
-		ChargeTelegraphClass, Ship->GetActorTransform(), SpawnParameters);
+	const FTransform SpawnTransform = Ship->GetActorTransform();
+	const USWVoyageResetSubsystem* Voyage = Ship->GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	AEnemyShipChargeTelegraph* Telegraph = Cast<AEnemyShipChargeTelegraph>(USWVoyageSpawnLibrary::BeginVoyageActorSpawn(
+		Ship, ChargeTelegraphClass, SpawnTransform, Ship, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+		ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(Ship) : 0));
 	if (Telegraph)
 	{
 		ChargeTelegraphActor = Telegraph;
@@ -401,11 +407,13 @@ void UGA_EnemyShipCharge::SpawnChargeTelegraph()
 			ResolvedChargeDistance,
 			ChargeTelegraphWidth,
 			ChargeTelegraphWorldZ);
+		if (!USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Telegraph, SpawnTransform)) ChargeTelegraphActor.Reset();
 	}
 }
 
 void UGA_EnemyShipCharge::UpdateChargeTelegraph()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(ActiveShip.Get())) return;
 	AEnemyShip* Ship = ActiveShip.Get();
 	if (Ship)
 	{

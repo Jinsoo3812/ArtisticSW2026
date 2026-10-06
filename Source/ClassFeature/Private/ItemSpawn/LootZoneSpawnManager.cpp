@@ -5,6 +5,7 @@
 #include "EngineUtils.h"
 #include "Item/BaseItem.h"
 #include "ItemSpawn/LootSpawnPoint.h"
+#include "Room/SWVoyageResetSubsystem.h"
 
 ALootZoneSpawnManager::ALootZoneSpawnManager()
 {
@@ -55,6 +56,9 @@ bool ALootZoneSpawnManager::BuildSpawnPointList()
 
 int32 ALootZoneSpawnManager::ActivateAndSpawnByBudget(int32 Budget, int32 Seed)
 {
+	bLastBudgetSpawnFailed = false;
+	const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (Voyage && Voyage->IsGameplayBlocked() && !Voyage->IsPreparationSpawnAllowed()) return 0;
 	if (!HasAuthority() || Budget <= 0)
 	{
 		return 0;
@@ -92,6 +96,7 @@ int32 ALootZoneSpawnManager::ActivateAndSpawnByBudget(int32 Budget, int32 Seed)
 			if (PickWeightedLootRow(ZoneLootRows, RandomStream, LootRow))
 			{
 				bSpawned = IsValid(LoosePoint->SpawnLooseLoot(LootRow, DefaultLooseLootClass));
+				if (!bSpawned) bLastBudgetSpawnFailed = true;
 			}
 		}
 		Candidates.Remove(SelectedPoint);

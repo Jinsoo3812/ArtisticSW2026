@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Tickable.h"
 #include "Network/SWConnectionTypes.h"
@@ -17,10 +18,12 @@ enum class ESWRoomState : uint8
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSWRoomChanged, ESWRoomState, State, FText, Message);
 
 UCLASS()
-class ARTISTICSW2026_API USWRoomSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
+class ARTISTICSW2026_API USWRoomSubsystem : public UGameInstanceSubsystem, public FTickableGameObject, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 public:
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::Preserve; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;

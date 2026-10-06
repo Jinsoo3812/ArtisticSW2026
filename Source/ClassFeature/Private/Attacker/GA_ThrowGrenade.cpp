@@ -2,6 +2,8 @@
 
 #include "GA_ThrowGrenade.h"
 #include "BasePlayer.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "BaseItem.h"
 #include "Projectiles/GrenadeProjectile.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
@@ -165,8 +167,10 @@ void UGA_ThrowGrenade::OnThrowEventReceived(FGameplayEventData Payload)
 			DamageSpecHandle = ASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, ContextHandle);
 		}
 
-		AGrenadeProjectile* Grenade = GetWorld()->SpawnActorDeferred<AGrenadeProjectile>(
-			SpawnClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+		AGrenadeProjectile* Grenade = FSWVoyageSpawn::SpawnDeferred<AGrenadeProjectile>(GetWorld(),
+			SpawnClass, SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
+			ESWVoyageActorLifetime::Voyage, Voyage && Voyage->IsActiveVoyageSession() ? Voyage->GetActorGeneration(Player) : 0);
 
 		if (Grenade)
 		{
@@ -174,7 +178,11 @@ void UGA_ThrowGrenade::OnThrowEventReceived(FGameplayEventData Payload)
 			Grenade->SetOwner(Player);
 			Grenade->DamageEffectSpecHandle = DamageSpecHandle;
 			Grenade->SetGrenadeMesh(ItemMesh);
-			Grenade->FinishSpawning(SpawnTransform);
+			if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(Grenade, SpawnTransform) != Grenade)
+			{
+				if (IsValid(Grenade)) Grenade->Destroy();
+				return;
+			}
 			Grenade->LaunchProjectile(LaunchVelocity);
 		}
 

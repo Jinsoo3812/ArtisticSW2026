@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "SWNetworkWeatherActor.generated.h"
 
 class UMaterialInstanceDynamic;
@@ -96,6 +97,7 @@ USTRUCT()
 struct FSWWeatherPlaybackWindow
 {
 	GENERATED_BODY()
+	UPROPERTY() int32 Generation = 0;
 	UPROPERTY() uint32 Epoch = 0;
 	UPROPERTY() double PublishedServerTime = 0.;
 	UPROPERTY() double EpochPlaybackStartServerTime = 0.;
@@ -135,6 +137,7 @@ USTRUCT()
 struct FSWWeatherWindState
 {
 	GENERATED_BODY()
+	UPROPERTY() int32 Generation = 0;
 	UPROPERTY() bool bInitialized = false;
 	UPROPERTY() double StartServerTime = 0.;
 	UPROPERTY() double Duration = 1.;
@@ -146,11 +149,17 @@ struct FSWWeatherWindState
 
 /** Native clock/authority adapter for the copied StylizedWeather Blueprint. */
 UCLASS(Blueprintable)
-class WATERANDSHIP_API ASWNetworkWeatherActor : public AActor
+class WATERANDSHIP_API ASWNetworkWeatherActor : public AActor, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 public:
 	ASWNetworkWeatherActor();
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::ResetParticipant; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
+	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
+	virtual ESWVoyageStepResult IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
 	UPROPERTY(EditDefaultsOnly, Category = "Weather|Network")
 	TObjectPtr<UCurveFloat> SunVisibilityCurve;
 	virtual void Tick(float DeltaSeconds) override;
@@ -170,6 +179,14 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	UPROPERTY(Transient) FSWWeatherPlaybackWindow FutureVoyageWindow;
+	int32 RestoredVoyageGeneration = INDEX_NONE;
+	int32 InitialVoyageHour = 0;
+	int32 InitialVoyageMinute = 0;
+	uint8 InitialVoyageWeather = 0;
+	FSWWeatherWindState InitialVoyageWind;
+	bool bHasInitialVoyageSettings = false;
+	bool bInitializingVoyageWeather = false;
 	UPROPERTY(ReplicatedUsing = OnRep_PlaybackWindow) FSWWeatherPlaybackWindow PlaybackWindow;
 	UPROPERTY(Transient) TArray<FSWWeatherPlaybackSegment> PlaybackBuffer;
 	UPROPERTY(Transient) TArray<FSWWeatherPlaybackSegment> PendingEpochBuffer;

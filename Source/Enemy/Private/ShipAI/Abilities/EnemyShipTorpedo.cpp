@@ -1,4 +1,5 @@
 #include "ShipAI/Abilities/EnemyShipTorpedo.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 
 #include "AbilitySystemComponent.h"
 #include "BaseAttributeSet.h"
@@ -208,6 +209,7 @@ void AEnemyShipTorpedo::LogVisualDiagnostics(const TCHAR* Phase) const
 void AEnemyShipTorpedo::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	if (bExplosionConsumed || IsActorBeingDestroyed())
 	{
 		return;
@@ -325,6 +327,7 @@ void AEnemyShipTorpedo::InitializeTorpedo(
 
 void AEnemyShipTorpedo::HandleShipImpact(AShip* HitShip, const FHitResult& Hit)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
 	const FVector ImpactPoint = Hit.bBlockingHit
 		? FVector(Hit.ImpactPoint)
 		: GetActorLocation();

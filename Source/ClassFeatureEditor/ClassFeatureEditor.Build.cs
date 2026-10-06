@@ -4,9 +4,16 @@ public class ClassFeatureEditor : ModuleRules
 {
 	public ClassFeatureEditor(ReadOnlyTargetRules Target) : base(Target)
 	{
+		if (Target.Platform == UnrealTargetPlatform.Win64)
+		{
+			PublicSystemLibraries.Add("bcrypt.lib");
+		}
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"AssetTools",
+			"Projects",
+			"TypedElementFramework",
+			"TypedElementRuntime",
 			"Core",
 			"CoreUObject",
 			"Engine",

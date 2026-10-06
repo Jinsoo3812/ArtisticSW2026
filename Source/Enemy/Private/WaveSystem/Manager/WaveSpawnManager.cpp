@@ -1,6 +1,8 @@
 ﻿#include "WaveSystem/Manager/WaveSpawnManager.h"
 
 #include "BaseEnemy.h"
+#include "Room/SWVoyageResetSubsystem.h"
+#include "Room/SWVoyageSpawnLibrary.h"
 #include "Room/SWRoomSnapshotComponent.h"
 #include "Room/SWRoomSnapshotSubsystem.h"
 #include "Engine/World.h"
@@ -189,6 +191,7 @@ AWaveSpawnManager::AWaveSpawnManager()
 void AWaveSpawnManager::BeginPlay()
 {
     Super::BeginPlay();
+	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return;
 
     if (!HasAuthority())
     {
@@ -356,6 +359,7 @@ bool AWaveSpawnManager::ValidateManagerSetup() const
 
 bool AWaveSpawnManager::StartWaveByArrayIndex(int32 WaveArrayIndex)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return false;
     if (!HasAuthority())
     {
         return false;
@@ -847,6 +851,7 @@ void AWaveSpawnManager::ReportWaveStopped(int32 WaveArrayIndex, int32 DisplayWav
 
 void AWaveSpawnManager::BeginWaveSpawning()
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
     if (!bWaveActive)
     {
         return;
@@ -912,6 +917,7 @@ void AWaveSpawnManager::BeginWaveSpawning()
 
 void AWaveSpawnManager::BeginSpawnGroup(int32 SpawnGroupIndex)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
     if (!bWaveActive || !RuntimeGroups.IsValidIndex(SpawnGroupIndex) || !CurrentWaveDefinition.SpawnGroups.IsValidIndex(SpawnGroupIndex))
     {
         return;
@@ -966,6 +972,7 @@ bool AWaveSpawnManager::PrepareSpawnTickets(int32 SpawnGroupIndex, float DelaySe
 
 void AWaveSpawnManager::SpawnBurstForGroup(int32 SpawnGroupIndex)
 {
+	if (USWVoyageSpawnLibrary::IsActorVoyageGameplayBlocked(this)) return;
     if (!bWaveActive || !RuntimeGroups.IsValidIndex(SpawnGroupIndex))
     {
         return;
@@ -1215,10 +1222,11 @@ bool AWaveSpawnManager::SpawnOneEnemyFromGroup(int32 SpawnGroupIndex, const FSpa
 	UClass* SavedEnemyClass = Ticket.EnemyClass.TryLoadClass<ABaseEnemy>();
 	if (!SavedEnemyClass || !Ticket.ReservedId.IsValid()) return false;
 
-    ABaseEnemy* SpawnedEnemy = World->SpawnActorDeferred<ABaseEnemy>(
+	const USWVoyageResetSubsystem* Voyage = World->GetSubsystem<USWVoyageResetSubsystem>();
+    ABaseEnemy* SpawnedEnemy = FSWVoyageSpawn::SpawnDeferred<ABaseEnemy>(World,
         SavedEnemyClass,
         SpawnTransform,
-        this, nullptr, SpawnCollisionHandlingMethod
+        this, nullptr, SpawnCollisionHandlingMethod, ESWVoyageActorLifetime::Voyage, Voyage ? Voyage->GetGeneration() : 0
     );
 
     if (!IsValid(SpawnedEnemy))
@@ -1250,8 +1258,8 @@ bool AWaveSpawnManager::SpawnOneEnemyFromGroup(int32 SpawnGroupIndex, const FSpa
 		if (USWRoomSnapshotSubsystem* Subsystem = World->GetSubsystem<USWRoomSnapshotSubsystem>())
 			Subsystem->UpdateRegisteredActorId(SpawnedEnemy, PreviousId, Ticket.ReservedId);
 	}
-    SpawnedEnemy->FinishSpawning(SpawnTransform);
-    if (!IsValid(SpawnedEnemy) || !SpawnedEnemy->IsBalanceReady())
+    if (USWVoyageSpawnLibrary::FinishVoyageActorSpawn(SpawnedEnemy, SpawnTransform) != SpawnedEnemy
+		|| !IsValid(SpawnedEnemy) || !SpawnedEnemy->IsBalanceReady())
     {
         if (IsValid(SpawnedEnemy)) SpawnedEnemy->Destroy();
         return false;
@@ -1447,4 +1455,77 @@ void AWaveSpawnManager::HandleTrackedEnemyDestroyed(AActor* DestroyedActor)
 
     UE_LOG(LogWaveSpawnManager, Warning, TEXT("[WaveSpawnManager] Tracked enemy destroyed without explicit wave removal. Enemy=%s"), *GetNameSafe(Enemy));
     NotifyEnemyRemovedFromWave(Enemy, EWaveEnemyRemoveReason::Despawn);
+}
+
+FName AWaveSpawnManager::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<AWaveSpawnManager*>(this)) : NAME_None;
+}
+
+ESWVoyageStepResult AWaveSpawnManager::PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	auto Pause = [this](FTimerHandle Handle)
+	{
+		if (!PausedVoyageTimers.Contains(Handle) && GetWorldTimerManager().IsTimerActive(Handle))
+		{
+			GetWorldTimerManager().PauseTimer(Handle); PausedVoyageTimers.Add(Handle);
+		}
+	};
+	Pause(PreWaveDelayTimerHandle);
+	for (const FSpawnGroupRuntime& Group : RuntimeGroups) Pause(Group.TimerHandle);
+	return ESWVoyageStepResult::Succeeded;
+}
+
+void AWaveSpawnManager::CancelVoyagePreparation_Implementation(const FSWVoyageResetContext& Context)
+{
+	for (FTimerHandle Handle : PausedVoyageTimers) GetWorldTimerManager().UnPauseTimer(Handle);
+	PausedVoyageTimers.Reset();
+}
+
+ESWVoyageStepResult AWaveSpawnManager::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	UnbindFromWaveGameMode(); StopActiveWave(EWaveEndReason::TimeExpired, true, false); ClearAllSpawnTimers();
+	RouteMap.Reset(); RuntimeGroups.Reset(); ActiveEnemies.Reset(); RemovedEnemies.Reset();
+	PausedVoyageTimers.Reset(); RestoredVoyageGeneration = ResumedVoyageGeneration = INDEX_NONE;
+	return ESWVoyageStepResult::Succeeded;
+}
+
+ESWVoyageStepResult AWaveSpawnManager::RestoreVoyageState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	if (!Context.bAuthority) return ESWVoyageStepResult::Succeeded;
+	const USWVoyageResetSubsystem* Voyage = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
+	if (!Voyage || !Voyage->IsCurrentGeneration(Context.Generation))
+	{
+		OutError = TEXT("WaveSpawnerGenerationMismatch"); return ESWVoyageStepResult::Failed;
+	}
+	if (RestoredVoyageGeneration != Context.Generation)
+	{
+		if (bAutoBuildRouteMapOnBeginPlay) BuildRouteMap();
+		if (bValidateOnBeginPlay && !ValidateManagerSetup())
+		{
+			OutError = TEXT("WaveSpawnerRequiredConfigurationInvalid"); return ESWVoyageStepResult::Failed;
+		}
+		RestoredVoyageGeneration = Context.Generation;
+	}
+	return IsVoyageReady_Implementation(Context, OutError);
+}
+
+ESWVoyageStepResult AWaveSpawnManager::IsVoyageReady_Implementation(const FSWVoyageResetContext& Context, FString& OutError)
+{
+	for (const TWeakObjectPtr<ABaseEnemy>& Enemy : ActiveEnemies)
+		if (!Enemy.IsValid() || !USWVoyageSpawnLibrary::IsActorFromCurrentVoyage(Enemy.Get()))
+		{
+			OutError = TEXT("WaveSpawnerActiveEnemyGenerationInvalid"); return ESWVoyageStepResult::Failed;
+		}
+	return ESWVoyageStepResult::Succeeded;
+}
+
+void AWaveSpawnManager::ResumeVoyage_Implementation(const FSWVoyageResetContext& Context)
+{
+	CancelVoyagePreparation_Implementation(Context);
+	if (!Context.bAuthority || ResumedVoyageGeneration == Context.Generation) return;
+	ResumedVoyageGeneration = Context.Generation;
+	if (bBindToWaveGameMode) BindToWaveGameMode();
+	if (!Context.bContinue) ReportWaveDataReady();
 }
