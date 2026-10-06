@@ -55,6 +55,10 @@ class ENEMY_API UBossEncounterComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
+#if WITH_EDITOR
+	friend class FDeckSpawnAnchorValidator;
+#endif
+
 public:
 	UBossEncounterComponent();
 	void CaptureRoomState(FSWRoomBossEncounterState& OutState, TArray<FSWRoomCaptureIssue>& OutIssues) const;

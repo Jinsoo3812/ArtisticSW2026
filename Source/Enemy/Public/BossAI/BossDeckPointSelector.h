@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DeckAI/DeckWalkTypes.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "BossDeckPointSelector.generated.h"
 
@@ -62,8 +63,6 @@ struct ENEMY_API FBossDestinationSelectionSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point", meta = (ClampMin = "0.0", Units = "cm"))
 	float IdealWalkRange = 500.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point")
-	bool bCheckDestinationOccupancy = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boss|Point")
 	bool bCheckDashObstacles = true;
@@ -75,16 +74,16 @@ class ENEMY_API UBossDeckPointSelector : public UBlueprintFunctionLibrary
 	GENERATED_BODY()
 
 public:
-	/** Selects an ID, never a world-space snapshot, so the point follows its moving ship. */
+	/** Selects a validated ship-local location; manual anchors are only used for spawning. */
 	UFUNCTION(BlueprintCallable, Category = "Boss|Point", meta = (AutoCreateRefTerm = "Settings"))
-	static bool SelectDestinationPoint(
+	static bool SelectDestinationLocation(
 		AEnemyShip* HostShip,
 		AActor* BossActor,
 		AActor* TargetActor,
 		EBossDestinationPurpose Purpose,
 		EBossDestinationRelation Relation,
 		const FBossDestinationSelectionSettings& Settings,
-		int32& OutPointId);
+		FDeckWalkLocation& OutLocation);
 
 	UFUNCTION(BlueprintPure, Category = "Boss|Point")
 	static bool IsPointBehindTarget(
@@ -110,19 +109,6 @@ public:
 		float CorridorRadius);
 
 private:
-	static bool SelectWalkDestinationPoint(
-		AEnemyShip& HostShip,
-		AActor& BossActor,
-		AActor& TargetActor,
-		const FBossDestinationSelectionSettings& Settings,
-		int32& OutPointId);
-
-	static bool IsDestinationClear(
-		const AEnemyShip& HostShip,
-		const AActor& BossActor,
-		const FVector& Destination,
-		const AActor* TargetActor);
-
 	static bool IsDashSegmentClear(
 		const AEnemyShip& HostShip,
 		const AActor& BossActor,

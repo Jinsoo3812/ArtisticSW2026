@@ -26,6 +26,7 @@ void UGA_BossVanish::ActivateAbility(
 	const FGameplayEventData* TriggerEventData)
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+	CapturedDestination = GetBossAvatar() ? GetBossAvatar()->GetDestinationLocation() : FDeckWalkLocation();
 	if (!ValidatePreselectedDestination() || !CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
 		FinishVanish(true);
@@ -65,7 +66,7 @@ void UGA_BossVanish::EndAbility(
 	{
 		if (AShipBossEnemy* Boss = GetBossAvatar())
 		{
-			Boss->SetDestinationPointId(INDEX_NONE);
+			Boss->ClearDestination();
 		}
 	}
 	ClearHiddenState();
@@ -99,7 +100,9 @@ void UGA_BossVanish::RelocateHidden()
 {
 	AShipBossEnemy* Boss = GetBossAvatar();
 	FTransform Destination;
-	if (!Boss || !Boss->ResolvePointTransform(Boss->GetDestinationPointId(), Destination))
+	if (!Boss || Boss->GetDestinationLocation().NodeIndex != CapturedDestination.NodeIndex
+		|| Boss->GetDestinationLocation().Revision != CapturedDestination.Revision
+		|| !Boss->ResolveDestinationTransform(Destination))
 	{
 		FinishVanish(true);
 		return;
@@ -161,8 +164,8 @@ bool UGA_BossVanish::ValidatePreselectedDestination() const
 	AActor* Target = GetBossTarget();
 	FTransform Destination;
 	if (!Boss || !Boss->CanEngageActor(Target) || !Boss->GetHostShip()
-		|| Boss->GetDestinationPointId() == INDEX_NONE
-		|| !Boss->ResolvePointTransform(Boss->GetDestinationPointId(), Destination))
+		|| !Boss->HasDestination()
+		|| !Boss->ResolveDestinationTransform(Destination))
 	{
 		return false;
 	}

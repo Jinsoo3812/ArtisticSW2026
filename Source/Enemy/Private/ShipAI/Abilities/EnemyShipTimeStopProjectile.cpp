@@ -1,6 +1,7 @@
 #include "ShipAI/Abilities/EnemyShipTimeStopProjectile.h"
 
 #include "CollisionChannels.h"
+#include "Item/Projectiles/ProjectileLaunchInitialization.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Effects/SWNiagaraScaleLibrary.h"
@@ -96,10 +97,11 @@ void AEnemyShipTimeStopProjectile::InitializeTimeStopProjectile(
 	}
 	Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 
-	ProjectileMovement->InitialSpeed = ResolvedSpeed;
-	ProjectileMovement->MaxSpeed = ResolvedSpeed;
-	ProjectileMovement->Velocity = Direction * ResolvedSpeed;
-	ProjectileMovement->UpdateComponentVelocity();
+	if (!ProjectileLaunchInitialization::ApplyWorldVelocity(ProjectileMovement, Direction * ResolvedSpeed, ResolvedSpeed))
+	{
+		Destroy();
+		return;
+	}
 	SetLifeSpan(FMath::Max(0.05f, InLifetimeSeconds));
 }
 

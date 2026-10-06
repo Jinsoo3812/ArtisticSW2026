@@ -35,6 +35,7 @@ class UBaseWeaponComponent;
 class UBaseHealthComponent;
 class UEnemyBehaviorSet;
 class UEnemyTerritoryComponent;
+class UEnemyAlarmComponent;
 class UEnemyHealthBarComponent;
 class UEnemyWaypointMoveComponent;
 struct FOnAttributeChangeData;
@@ -183,6 +184,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Territory")
 	TObjectPtr<UEnemyTerritoryComponent> TerritoryComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|AI")
+	TObjectPtr<UEnemyAlarmComponent> AlarmComponent;
+
 	// ================= Health Bar =================
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UEnemyHealthBarComponent> EnemyHealthBarComponent;
@@ -296,7 +300,6 @@ public:
 	FORCEINLINE FGameplayTag GetEnemyTypeTag() const { return EnemyTypeTag; }
 	FORCEINLINE UEnemyTerritoryComponent* GetTerritoryComponent() const { return TerritoryComponent; }
 	FORCEINLINE TObjectPtr<UBaseWeaponComponent> GetWeaponComponent() const { check(WeaponComponent) return WeaponComponent; }
-	//FORCEINLINE TObjectPtr<UPathMovement> GetPathMovementComponent() const { check(PathMovement) return PathMovement;}
 	FORCEINLINE virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { check(AbilitySystemComponent) return AbilitySystemComponent; }
 	FORCEINLINE UEnemyWaypointMoveComponent* GetWaypointMoveComponent() const {return WaypointMoveComponent;}
 	FORCEINLINE UBaseHealthComponent* GetHealthComponent() const { return HealthComponent; }

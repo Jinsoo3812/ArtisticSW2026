@@ -1,6 +1,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
+#include "UObject/UnrealType.h"
 
 #include "Components/SceneComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -8,8 +9,7 @@
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckEnemyNavigationComponent.h"
 #include "DeckAI/DeckEnemySpawnerComponent.h"
-#include "DeckAI/DeckNavigationComponent.h"
-#include "DeckAI/DeckNavigationTypes.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
 #include "DeckAI/DeckWaypointComponent.h"
 #include "DeckAI/DeckWaypointMovementInterface.h"
 #include "BehaviorTree/BehaviorTree.h"
@@ -17,8 +17,6 @@
 #include "Engine/Engine.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
-#include "Engine/SCS_Node.h"
-#include "Engine/SimpleConstructionScript.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -28,9 +26,6 @@
 #include "Task/BTT_SelectDeckWaypoint.h"
 #include "Task/BTT_WaitAtDeckWaypoint.h"
 
-#if WITH_EDITOR
-#include "Kismet2/KismetEditorUtilities.h"
-#endif
 
 namespace
 {
@@ -67,8 +62,8 @@ bool FDeckEnemyMVPDefaultsTest::RunTest(const FString& Parameters)
 	const UDeckEnemySpawnerComponent* SpawnerCDO = EnemyShipCDO
 		? EnemyShipCDO->GetDeckEnemySpawnerComponent()
 		: nullptr;
-	const UDeckNavigationComponent* NavigationCDO = EnemyShipCDO
-		? EnemyShipCDO->GetDeckNavigationComponent()
+	const UDeckWalkAreaComponent* NavigationCDO = EnemyShipCDO
+		? EnemyShipCDO->GetDeckWalkAreaComponent()
 		: nullptr;
 	const UBlueprint* DeckEnemyBlueprint = LoadObject<UBlueprint>(
 		nullptr,
@@ -80,7 +75,6 @@ bool FDeckEnemyMVPDefaultsTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Deck waypoint component exists"), WaypointCDO);
 	TestFalse(TEXT("Waypoint has no independent tick"), WaypointCDO->PrimaryComponentTick.bCanEverTick);
 	TestFalse(TEXT("Waypoint has no independent replication"), WaypointCDO->GetIsReplicated());
-	TestTrue(TEXT("Waypoint is patrol-enabled by default"), WaypointCDO->CanPatrol());
 	TestNotNull(TEXT("Pooled deck enemy class exists"), EnemyCDO);
 	TestNotNull(TEXT("EnemyShip owns one deck enemy spawner component"), SpawnerCDO);
 	TestNotNull(TEXT("EnemyShip owns one deck graph navigation component"), NavigationCDO);
@@ -113,8 +107,8 @@ bool FDeckEnemyMVPDefaultsTest::RunTest(const FString& Parameters)
 		MoveTaskCDO->GetInstanceMemorySize() > 0);
 	TestNotNull(TEXT("Waypoint selection task exists"), SelectTaskCDO);
 	TestNotNull(TEXT("Waypoint wait task exists"), WaitTaskCDO);
-	TestFalse(TEXT("New generated points do not become spawn points by default"),
-		EnemyShipCDO->DeckWaypointGenerationSettings.bNewPointsCanSpawn);
+	TestFalse(TEXT("Manual anchors do not become spawn points by default"),
+		WaypointCDO->CanSpawnEnemy());
 	return true;
 }
 
@@ -143,45 +137,6 @@ bool FDeckWaypointFollowsParentTransformTest::RunTest(const FString& Parameters)
 	const FVector MovedExpected = Deck->GetComponentTransform().TransformPosition(Waypoint->GetRelativeLocation());
 	TestTrue(TEXT("Waypoint follows translation, yaw, pitch, and roll without its own tick"),
 		Waypoint->GetComponentLocation().Equals(MovedExpected, 0.1f));
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FDeckGraphPathfinderTest,
-	"ArtisticSW.Enemy.DeckMVP.CombatGraphChoosesReachableLowestCostGoal",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FDeckGraphPathfinderTest::RunTest(const FString& Parameters)
-{
-	TMap<int32, FDeckNavigationNode> Nodes;
-	auto AddNode = [&Nodes](int32 Id, const FVector& Location, TArray<int32> Links)
-	{
-		FDeckNavigationNode& Node = Nodes.Add(Id);
-		Node.PointId = Id;
-		Node.LocalLocation = Location;
-		Node.LinkedPointIds = MoveTemp(Links);
-	};
-	AddNode(1, FVector(0.0f, 0.0f, 0.0f), { 2, 4 });
-	AddNode(2, FVector(100.0f, 0.0f, 0.0f), { 1, 3 });
-	AddNode(3, FVector(200.0f, 0.0f, 0.0f), { 2 });
-	AddNode(4, FVector(0.0f, 50.0f, 0.0f), { 1 });
-
-	TMap<int32, float> Goals;
-	Goals.Add(3, 0.0f);
-	Goals.Add(4, 100.0f);
-	FDeckNavigationPath Path;
-	TestTrue(TEXT("A reachable combat goal is found"),
-		FDeckGraphPathfinder::FindLowestCostPathToAny(Nodes, 1, Goals, {}, Path));
-	TestEqual(TEXT("Travel cost wins before preferred-range score"), Path.GoalPointId, 4);
-	TestTrue(TEXT("Shortest route contains start and one hop"),
-		Path.PointIds == TArray<int32>({ 1, 4 }));
-
-	TSet<int32> BlockedPoints = { 4 };
-	TestTrue(TEXT("The graph routes around an unavailable goal"),
-		FDeckGraphPathfinder::FindLowestCostPathToAny(Nodes, 1, Goals, BlockedPoints, Path));
-	TestEqual(TEXT("Blocked short goal falls back to the reachable multi-hop goal"), Path.GoalPointId, 3);
-	TestTrue(TEXT("Fallback route preserves every linked hop"),
-		Path.PointIds == TArray<int32>({ 1, 2, 3 }));
 	return true;
 }
 
@@ -263,21 +218,39 @@ bool FDeckFixedAnchorLifecycleTest::RunTest(const FString& Parameters)
 	}
 	Ship->BuoyancyRoot->SetSimulatePhysics(false);
 	UStaticMeshComponent* DeckMesh = Ship->GetShipDeckMesh();
-	DeckMesh->SetStaticMesh(CubeMesh);
-	DeckMesh->SetRelativeScale3D(FVector(10.0f, 10.0f, 0.1f));
-	DeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	DeckMesh->SetCollisionResponseToAllChannels(ECR_Block);
+	// Keep the navigation frame at unit scale; scale the physical floor separately.
+	DeckMesh->SetRelativeScale3D(FVector::OneVector);
+	DeckMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	UStaticMeshComponent* Floor = NewObject<UStaticMeshComponent>(Ship, TEXT("TestFloor"));
+	Ship->AddInstanceComponent(Floor);
+	Floor->SetupAttachment(DeckMesh);
+	Floor->SetStaticMesh(CubeMesh);
+	Floor->SetRelativeScale3D(FVector(10.0f, 10.0f, 0.1f));
+	Floor->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Floor->SetCollisionResponseToAllChannels(ECR_Block);
+	Floor->RegisterComponent();
 	DeckMesh->UpdateComponentToWorld();
-	DeckMesh->RecreatePhysicsState();
+	Floor->RecreatePhysicsState();
 
 	UDeckWaypointComponent* Point = NewObject<UDeckWaypointComponent>(Ship);
 	Ship->AddInstanceComponent(Point);
 	Point->OnComponentCreated();
 	Point->SetupAttachment(DeckMesh);
-	Point->InitializeGeneratedWaypoint(101, 0, 0, true, true, true);
+	Point->SetWaypointIdForAuthoring(101);
+	FindFProperty<FBoolProperty>(Point->GetClass(), TEXT("bCanSpawn"))->SetPropertyValue_InContainer(Point, true);
 	Point->RegisterComponent();
 	Point->SetRelativeLocation(FVector(100.0f, 50.0f, 10.0f));
 	Ship->InitializeDeckWaypoints();
+	UDeckWalkAreaComponent* Area = Ship->GetDeckWalkAreaComponent();
+	FDeckWalkSurfaceSettings Surface;
+	Surface.SurfaceId = TEXT("TestDeck");
+	Surface.FloorComponentNames = { TEXT("TestFloor") };
+	Surface.bTraceComplex = false;
+	Surface.MinimumFloorZ = 0.0f;
+	Surface.MaximumFloorZ = 20.0f;
+	Area->Surfaces = { Surface };
+	Area->ObstacleComponentNames = { TEXT("TestFloor") };
+	Area->Rebuild();
 
 	Enemy->PrepareForPool();
 	Enemy->FinishSpawning(FTransform::Identity);
@@ -350,7 +323,8 @@ bool FDeckPointReservationLifecycleTest::RunTest(const FString& Parameters)
 		Ship->AddInstanceComponent(Point);
 		Point->OnComponentCreated();
 		Point->SetupAttachment(Ship->GetShipDeckMesh());
-		Point->InitializeGeneratedWaypoint(PointId, PointId, 0, true, true, true);
+		Point->SetWaypointIdForAuthoring(PointId);
+		FindFProperty<FBoolProperty>(Point->GetClass(), TEXT("bCanSpawn"))->SetPropertyValue_InContainer(Point, true);
 		Point->RegisterComponent();
 		return Point;
 	};
@@ -395,16 +369,6 @@ bool FDeckPointReservationLifecycleTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Actor cleanup releases every occupied and reserved point"),
 		Ship->IsDeckPointAvailable(102, SecondActor));
 
-	TestTrue(TEXT("First enemy atomically claims a final combat point"),
-		Ship->TryClaimDeckCombatPoint(102, FirstActor));
-	TestFalse(TEXT("A second enemy cannot race for the same final combat point"),
-		Ship->TryClaimDeckCombatPoint(102, SecondActor));
-	TestTrue(TEXT("A combat claim does not block next-hop traversal reservations"),
-		Ship->TryReserveDeckPoint(102, SecondActor, RacingReservation));
-	Ship->ReleaseDeckPointReservation(RacingReservation);
-	Ship->ReleaseAllDeckPointsFor(FirstActor);
-	TestTrue(TEXT("Owner cleanup releases its final combat point claim"),
-		Ship->TryClaimDeckCombatPoint(102, SecondActor));
 
 	CleanupWorld();
 	return true;
@@ -445,44 +409,70 @@ bool FDeckEnemySpawnerCompositionTest::RunTest(const FString& Parameters)
 
 	Ship->BuoyancyRoot->SetSimulatePhysics(false);
 	UStaticMeshComponent* DeckMesh = Ship->GetShipDeckMesh();
-	DeckMesh->SetStaticMesh(CubeMesh);
-	DeckMesh->SetRelativeScale3D(FVector(10.0f, 10.0f, 0.1f));
-	DeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	DeckMesh->SetCollisionResponseToAllChannels(ECR_Block);
+	DeckMesh->SetRelativeScale3D(FVector::OneVector);
+	DeckMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	UStaticMeshComponent* Floor = NewObject<UStaticMeshComponent>(Ship, TEXT("TestFloor"));
+	Ship->AddInstanceComponent(Floor);
+	Floor->SetupAttachment(DeckMesh);
+	Floor->SetStaticMesh(CubeMesh);
+	Floor->SetRelativeScale3D(FVector(10.0f, 10.0f, 0.1f));
+	Floor->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Floor->SetCollisionResponseToAllChannels(ECR_Block);
+	Floor->RegisterComponent();
 	DeckMesh->UpdateComponentToWorld();
-	DeckMesh->RecreatePhysicsState();
+	Floor->RecreatePhysicsState();
 
-	auto AddPoint = [Ship, DeckMesh](int32 PointId, const FVector& RelativeLocation, int32 LinkedId)
+	auto AddPoint = [Ship, DeckMesh](int32 PointId, const FVector& RelativeLocation)
 	{
 		UDeckWaypointComponent* Point = NewObject<UDeckWaypointComponent>(Ship);
 		Ship->AddInstanceComponent(Point);
 		Point->OnComponentCreated();
 		Point->SetupAttachment(DeckMesh);
-		Point->InitializeGeneratedWaypoint(PointId, PointId, 0, true, true, true);
-		Point->SetLinkedWaypointIdsForAuthoring({ LinkedId });
+		Point->SetWaypointIdForAuthoring(PointId);
+		FindFProperty<FBoolProperty>(Point->GetClass(), TEXT("bCanSpawn"))->SetPropertyValue_InContainer(Point, true);
 		Point->RegisterComponent();
 		Point->SetRelativeLocation(RelativeLocation);
 		return Point;
 	};
-	UDeckWaypointComponent* FirstPoint = AddPoint(101, FVector(-150.0f, 0.0f, 10.0f), 102);
-	AddPoint(102, FVector(150.0f, 0.0f, 10.0f), 101);
+	UDeckWaypointComponent* FirstPoint = AddPoint(101, FVector(-150.0f, 0.0f, 10.0f));
+	AddPoint(102, FVector(150.0f, 0.0f, 10.0f));
 	Spawner->InitializeWaypoints();
+	UDeckWalkAreaComponent* Area = Ship->GetDeckWalkAreaComponent();
+	FDeckWalkSurfaceSettings Surface;
+	Surface.SurfaceId = TEXT("TestDeck");
+	Surface.FloorComponentNames = { TEXT("TestFloor") };
+	Surface.bTraceComplex = false;
+	Surface.MinimumFloorZ = 0.0f;
+	Surface.MaximumFloorZ = 20.0f;
+	Area->Surfaces = { Surface };
+	Area->ObstacleComponentNames = { TEXT("TestFloor") };
+	Area->Rebuild();
 
 	constexpr float ProbeHalfHeight = 88.0f;
 	FTransform FirstAnchor;
 	TestTrue(TEXT("Spawner resolves an authored point before the ship moves"),
-		Spawner->ResolveFixedDeckAnchorTransform(101, ProbeHalfHeight, FirstAnchor));
+		Spawner->ResolveDeckCharacterTransform(101, ProbeHalfHeight, FirstAnchor));
 	const FVector FirstAnchorLocal = DeckMesh->GetComponentTransform().InverseTransformPosition(
 		FirstAnchor.GetLocation());
+	Area->SpawnHeightOffset = 70.0f;
+	FTransform LowerAnchor;
+	TestTrue(TEXT("Spawn height can be adjusted independently of capsule height"),
+		Spawner->ResolveDeckCharacterTransform(101, ProbeHalfHeight, LowerAnchor));
+	TestTrue(TEXT("Configured spawn height moves the actor origin by 20 cm"),
+		FMath::IsNearlyEqual(
+			FVector::DotProduct(LowerAnchor.GetLocation() - FirstAnchor.GetLocation(), DeckMesh->GetUpVector()),
+			-20.0f, 0.1f));
+	Area->SpawnHeightOffset = 90.0f;
 
 	Ship->SetActorLocationAndRotation(
 		FVector(1400.0f, -900.0f, 320.0f),
 		FRotator(9.0f, 127.0f, -6.0f));
 	DeckMesh->UpdateComponentToWorld();
+	Floor->UpdateComponentToWorld();
 	FirstPoint->UpdateComponentToWorld();
 	FTransform MovedAnchor;
 	TestTrue(TEXT("Spawner resolves the same point after ship translation and rotation"),
-		Spawner->ResolveFixedDeckAnchorTransform(101, ProbeHalfHeight, MovedAnchor));
+		Spawner->ResolveDeckCharacterTransform(101, ProbeHalfHeight, MovedAnchor));
 	const FVector MovedAnchorLocal = DeckMesh->GetComponentTransform().InverseTransformPosition(
 		MovedAnchor.GetLocation());
 	TestTrue(TEXT("Spawn anchor remains stable in ship-local space"),
@@ -560,178 +550,5 @@ bool FDeckEnemySpawnerCompositionTest::RunTest(const FString& Parameters)
 	CleanupWorld();
 	return true;
 }
-
-#if WITH_EDITOR
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FDeckWaypointMeshGenerationAuthoringTest,
-	"ArtisticSW.Enemy.DeckMVP.MeshGenerationPreservesAuthoring",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FDeckWaypointMeshGenerationAuthoringTest::RunTest(const FString& Parameters)
-{
-	UWorld* World = UWorld::CreateWorld(EWorldType::Editor, false, TEXT("DeckWaypointGenerationTestWorld"));
-	if (!TestNotNull(TEXT("Transient editor world is created"), World))
-	{
-		return false;
-	}
-	FWorldContext& WorldContext = GEngine->CreateNewWorldContext(EWorldType::Editor);
-	WorldContext.SetCurrentWorld(World);
-	auto CleanupWorld = [World]()
-	{
-		World->DestroyWorld(false);
-		GEngine->DestroyWorldContext(World);
-	};
-
-	AEnemyShip* Ship = World->SpawnActor<AEnemyShip>();
-	UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (!TestNotNull(TEXT("Enemy ship is spawned"), Ship)
-		|| !TestNotNull(TEXT("Engine cube mesh is available"), CubeMesh))
-	{
-		CleanupWorld();
-		return false;
-	}
-
-	Ship->BuoyancyRoot->SetSimulatePhysics(false);
-	UStaticMeshComponent* DeckMesh = Ship->GetShipDeckMesh();
-	DeckMesh->SetStaticMesh(CubeMesh);
-	DeckMesh->SetRelativeScale3D(FVector(10.0f, 10.0f, 0.1f));
-	DeckMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	DeckMesh->SetCollisionResponseToAllChannels(ECR_Block);
-	DeckMesh->UpdateComponentToWorld();
-	DeckMesh->RecreatePhysicsState();
-	Ship->DeckWaypointGenerationSettings.GridSpacing = 250.0f;
-	Ship->DeckWaypointGenerationSettings.EdgeClearance = 60.0f;
-	Ship->GenerateDeckWaypointsFromDeckMesh();
-
-	TArray<UDeckWaypointComponent*> Waypoints;
-	Ship->GetComponents<UDeckWaypointComponent>(Waypoints);
-	UDeckWaypointComponent* FirstGenerated = nullptr;
-	for (UDeckWaypointComponent* Waypoint : Waypoints)
-	{
-		if (IsValid(Waypoint) && Waypoint->WasGeneratedFromDeckMesh())
-		{
-			FirstGenerated = Waypoint;
-			break;
-		}
-	}
-	if (!TestNotNull(TEXT("Mesh sampling creates at least one editable generated component"), FirstGenerated))
-	{
-		CleanupWorld();
-		return false;
-	}
-	TestFalse(TEXT("A newly generated point has Can Spawn disabled"), FirstGenerated->CanSpawnEnemy());
-
-	const int32 PreservedId = FirstGenerated->GetWaypointId();
-	const int32 PreservedGridX = FirstGenerated->GetGeneratedGridX();
-	const int32 PreservedGridY = FirstGenerated->GetGeneratedGridY();
-	FirstGenerated->InitializeGeneratedWaypoint(
-		PreservedId, PreservedGridX, PreservedGridY, false, false, false);
-	Ship->GenerateDeckWaypointsFromDeckMesh();
-	TestFalse(TEXT("Regeneration preserves a designer's combat exclusion"), FirstGenerated->CanUseInCombat());
-	TestFalse(TEXT("Regeneration preserves a designer's patrol exclusion"), FirstGenerated->CanPatrol());
-	TestFalse(TEXT("Regeneration preserves a designer's spawn exclusion"), FirstGenerated->CanSpawnEnemy());
-	TestEqual(TEXT("An excluded point is visualized in red"), FirstGenerated->ShapeColor, FColor(220, 45, 45));
-
-	UDeckWaypointComponent* ManualWaypoint = NewObject<UDeckWaypointComponent>(Ship);
-	Ship->AddInstanceComponent(ManualWaypoint);
-	ManualWaypoint->OnComponentCreated();
-	ManualWaypoint->SetupAttachment(DeckMesh);
-	ManualWaypoint->RegisterComponent();
-	Ship->ClearGeneratedDeckWaypoints();
-	TestTrue(TEXT("Clearing generated points preserves manual waypoint components"), IsValid(ManualWaypoint));
-
-	Waypoints.Reset();
-	Ship->GetComponents<UDeckWaypointComponent>(Waypoints);
-	const bool bHasGeneratedPoint = Waypoints.ContainsByPredicate([](const UDeckWaypointComponent* Waypoint)
-	{
-		return IsValid(Waypoint) && Waypoint->WasGeneratedFromDeckMesh();
-	});
-	TestFalse(TEXT("Clear removes all mesh-generated waypoint components"), bHasGeneratedPoint);
-	CleanupWorld();
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FDeckWaypointBlueprintAssetGenerationTest,
-	"ArtisticSW.Enemy.DeckMVP.BlueprintAssetGeneration",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FDeckWaypointBlueprintAssetGenerationTest::RunTest(const FString& Parameters)
-{
-	UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
-		AEnemyShip::StaticClass(),
-		GetTransientPackage(),
-		TEXT("BP_DeckWaypointGenerationTest"),
-		BPTYPE_Normal,
-		UBlueprint::StaticClass(),
-		UBlueprintGeneratedClass::StaticClass(),
-		TEXT("DeckWaypointBlueprintAssetGenerationTest"));
-	if (!TestNotNull(TEXT("Transient EnemyShip Blueprint is created"), Blueprint))
-	{
-		return false;
-	}
-	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipGarbageCollection);
-
-	AEnemyShip* BlueprintCDO = Blueprint->GeneratedClass
-		? Cast<AEnemyShip>(Blueprint->GeneratedClass->GetDefaultObject())
-		: nullptr;
-	UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (!TestNotNull(TEXT("Transient Blueprint CDO exists"), BlueprintCDO)
-		|| !TestNotNull(TEXT("Engine cube mesh is available for Blueprint generation"), CubeMesh))
-	{
-		return false;
-	}
-
-	BlueprintCDO->GetShipDeckMesh()->SetStaticMesh(CubeMesh);
-	BlueprintCDO->GetShipDeckMesh()->SetRelativeScale3D(FVector(10.0f, 10.0f, 0.1f));
-	BlueprintCDO->GetShipDeckMesh()->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	BlueprintCDO->GetShipDeckMesh()->SetCollisionResponseToAllChannels(ECR_Block);
-	BlueprintCDO->DeckWaypointGenerationSettings.GridSpacing = 250.0f;
-	BlueprintCDO->DeckWaypointGenerationSettings.EdgeClearance = 60.0f;
-	BlueprintCDO->GenerateDeckWaypointsFromDeckMesh();
-
-	int32 GeneratedNodeCount = 0;
-	bool bAllGeneratedSpawnFlagsAreFalse = true;
-	bool bAllGeneratedNodesUseNativeDeckParent = true;
-	for (USCS_Node* Node : Blueprint->SimpleConstructionScript->GetAllNodes())
-	{
-		const UDeckWaypointComponent* WaypointTemplate = Node
-			? Cast<UDeckWaypointComponent>(Node->ComponentTemplate)
-			: nullptr;
-		if (!WaypointTemplate || !WaypointTemplate->WasGeneratedFromDeckMesh())
-		{
-			continue;
-		}
-		++GeneratedNodeCount;
-		bAllGeneratedSpawnFlagsAreFalse &= !WaypointTemplate->CanSpawnEnemy();
-		bAllGeneratedNodesUseNativeDeckParent &= Node->bIsParentComponentNative
-			&& Node->ParentComponentOrVariableName == FName(TEXT("ShipDeckMesh"));
-	}
-	TestTrue(TEXT("Generation from the Blueprint CDO writes waypoint nodes into the Blueprint SCS"),
-		GeneratedNodeCount > 0);
-	TestTrue(TEXT("Blueprint-generated waypoint templates default Can Spawn to false"),
-		bAllGeneratedSpawnFlagsAreFalse);
-	TestTrue(TEXT("Blueprint-generated waypoint nodes attach to native ShipDeckMesh"),
-		bAllGeneratedNodesUseNativeDeckParent);
-
-	BlueprintCDO = Blueprint->GeneratedClass
-		? Cast<AEnemyShip>(Blueprint->GeneratedClass->GetDefaultObject())
-		: nullptr;
-	if (TestNotNull(TEXT("Blueprint CDO remains available after generation compile"), BlueprintCDO))
-	{
-		BlueprintCDO->ClearGeneratedDeckWaypoints();
-	}
-	const bool bGeneratedNodeRemains = Blueprint->SimpleConstructionScript->GetAllNodes().ContainsByPredicate(
-		[](const USCS_Node* Node)
-		{
-			const UDeckWaypointComponent* WaypointTemplate = Node
-				? Cast<UDeckWaypointComponent>(Node->ComponentTemplate)
-				: nullptr;
-			return WaypointTemplate && WaypointTemplate->WasGeneratedFromDeckMesh();
-		});
-	TestFalse(TEXT("Blueprint Asset clear removes generated SCS nodes"), bGeneratedNodeRemains);
-	return true;
-}
-#endif
 
 #endif

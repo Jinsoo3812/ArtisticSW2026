@@ -7,7 +7,8 @@
 #include "Components/StaticMeshComponent.h"
 
 // Sets default values
-ABaseProjectile::ABaseProjectile()
+ABaseProjectile::ABaseProjectile(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
 {
 	// 투척물 자체의 Tick은 필요 없으므로 최적화를 위해 끕니다.
 	PrimaryActorTick.bCanEverTick = false;

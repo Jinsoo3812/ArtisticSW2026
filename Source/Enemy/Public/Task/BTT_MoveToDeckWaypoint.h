@@ -4,7 +4,7 @@
 #include "BehaviorTree/BTTaskNode.h"
 #include "BTT_MoveToDeckWaypoint.generated.h"
 
-/** Follows the waypoint's live ship-relative transform instead of a cached world-space goal. */
+/** Drives the server-owned walk-area route in the moving ship's local frame. */
 UCLASS()
 class ENEMY_API UBTT_MoveToDeckWaypoint : public UBTTaskNode
 {
@@ -24,11 +24,13 @@ public:
 	float GetMinimumProgressDistance() const { return MinimumProgressDistance; }
 
 protected:
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI|Combat")
+	bool bStopWhenAttackReady = true;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI", meta = (ClampMin = "10.0", Units = "cm/s"))
 	float MoveSpeed = 250.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI", meta = (ClampMin = "10.0", Units = "cm"))
-	float AcceptanceRadius = 100.0f;
+	float AcceptanceRadius = 30.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI|Failure", meta = (ClampMin = "0.1", Units = "s"))
 	float MaximumMoveTime = 6.0f;

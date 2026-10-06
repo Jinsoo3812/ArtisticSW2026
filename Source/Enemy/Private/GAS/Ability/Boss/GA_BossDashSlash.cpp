@@ -6,6 +6,7 @@
 #include "Animation/AnimMontage.h"
 #include "BaseGameplayTags.h"
 #include "BossAI/ShipBossEnemy.h"
+#include "DeckAI/DeckWalkAreaComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -71,7 +72,8 @@ void UGA_BossDashSlash::ActivateAbility(
 	bDestinationReached = false;
 	bFinishing = false;
 	CapturedDeckMesh.Reset();
-	CapturedDestinationPointId = INDEX_NONE;
+	CapturedDestinationLocation = FDeckWalkLocation();
+	CapturedStartLocation = FDeckWalkLocation();
 	CommittedPath = FSWPathCuePayload();
 	TelegraphEffectHandle.Invalidate();
 	bMovementLocked = false;
@@ -174,7 +176,7 @@ void UGA_BossDashSlash::EndAbility(
 		ClearRuntimeTimers();
 		if (bWasCancelled)
 		{
-			Boss->SetDestinationPointId(INDEX_NONE);
+			Boss->ClearDestination();
 		}
 	}
 	DeactivateDashCollision();
@@ -184,7 +186,8 @@ void UGA_BossDashSlash::EndAbility(
 	MontageTask = nullptr;
 	DashStartServerTime = 0.0;
 	CapturedDeckMesh.Reset();
-	CapturedDestinationPointId = INDEX_NONE;
+	CapturedDestinationLocation = FDeckWalkLocation();
+	CapturedStartLocation = FDeckWalkLocation();
 	CommittedPath = FSWPathCuePayload();
 	PreviousWorldLocation = FVector::ZeroVector;
 	Phase = EDashSlashPhase::Inactive;
@@ -260,8 +263,16 @@ void UGA_BossDashSlash::BeginDash()
 	FVector StartWorld;
 	FVector EndWorld;
 	FVector SurfaceNormal;
-	if (!Boss || !Movement || !DeckMesh || CapturedDestinationPointId == INDEX_NONE
+	if (!Boss || !Movement || !DeckMesh || CapturedDestinationLocation.NodeIndex == INDEX_NONE
 		|| !ResolveCommittedPathWorld(StartWorld, EndWorld, SurfaceNormal))
+	{
+		FinishDash(true);
+		return;
+	}
+
+	const UDeckWalkAreaComponent* Area = Boss->GetHostShip()->GetDeckWalkAreaComponent();
+	if (!Area || !Area->IsSupportedSegment(CapturedStartLocation, CapturedDestinationLocation)
+		|| FVector::Dist(Boss->GetActorLocation(), StartWorld) > 50.0f)
 	{
 		FinishDash(true);
 		return;
@@ -278,7 +289,8 @@ void UGA_BossDashSlash::BeginDash()
 		: FRotationMatrix::MakeFromXZ(PathDirection, SurfaceNormal).ToQuat();
 	Boss->SetActorLocationAndRotation(
 		StartWorld, StartRotation, false, nullptr, ETeleportType::TeleportPhysics);
-	Movement->SetBase(DeckMesh);
+	if (AEnemyShip* Ship = Boss->GetHostShip(); Ship && Ship->GetDeckWalkAreaComponent())
+		Movement->SetBase(Ship->GetDeckWalkAreaComponent()->GetMovementBase(*Boss));
 	PreviousWorldLocation = StartWorld;
 	DashStartServerTime = Boss->GetWorld()->GetTimeSeconds();
 	ActivateDashCollision();
@@ -439,13 +451,11 @@ void UGA_BossDashSlash::HandleDestinationReached()
 
 	AShipBossEnemy* Boss = GetBossAvatar();
 	UStaticMeshComponent* DeckMesh = CapturedDeckMesh.Get();
-	if (!Boss || !DeckMesh
-		|| Boss->GetDestinationPointId() != CapturedDestinationPointId)
+	if (!Boss || !DeckMesh || !Boss->HasDestination()
+		|| Boss->GetDestinationLocation().NodeIndex != CapturedDestinationLocation.NodeIndex
+		|| Boss->GetDestinationLocation().Revision != CapturedDestinationLocation.Revision)
 	{
-		UE_LOG(LogBossDashSlash, Warning,
-			TEXT("DashSlash lost its captured destination before arrival. Boss=%s CapturedPoint=%d CurrentPoint=%d"),
-			*GetNameSafe(Boss), CapturedDestinationPointId,
-			Boss ? Boss->GetDestinationPointId() : INDEX_NONE);
+		UE_LOG(LogBossDashSlash, Warning, TEXT("DashSlash lost its captured walk-area destination. Boss=%s"), *GetNameSafe(Boss));
 		FinishDash(true);
 		return;
 	}
@@ -453,7 +463,8 @@ void UGA_BossDashSlash::HandleDestinationReached()
 	Boss->GetWorldTimerManager().ClearTimer(DashTimerHandle);
 	if (UCharacterMovementComponent* Movement = Boss->GetCharacterMovement())
 	{
-		Movement->SetBase(DeckMesh);
+		if (AEnemyShip* Ship = Boss->GetHostShip(); Ship && Ship->GetDeckWalkAreaComponent())
+		Movement->SetBase(Ship->GetDeckWalkAreaComponent()->GetMovementBase(*Boss));
 	}
 	Boss->MarkDestinationReached();
 	DeactivateDashCollision();
@@ -709,10 +720,12 @@ bool UGA_BossDashSlash::CapturePreselectedDestination()
 	AEnemyShip* HostShip = Boss ? Boss->GetHostShip() : nullptr;
 	UStaticMeshComponent* DeckMesh = HostShip ? HostShip->GetShipDeckMesh() : nullptr;
 	FTransform Destination;
-	const int32 DestinationPointId = Boss ? Boss->GetDestinationPointId() : INDEX_NONE;
+	const UDeckWalkAreaComponent* Area = HostShip ? HostShip->GetDeckWalkAreaComponent() : nullptr;
+	const FDeckWalkLocation Goal = Boss ? Boss->GetDestinationLocation() : FDeckWalkLocation();
+	FDeckWalkLocation Start;
 	if (!Boss || !Boss->HasAuthority() || !Boss->CanEngageActor(Target) || !DeckMesh
-		|| DestinationPointId == INDEX_NONE
-		|| !Boss->ResolvePointTransform(DestinationPointId, Destination))
+		|| !Area || !Area->ResolveActorOnDeck(*Boss, Start) || !Area->IsSupportedSegment(Start, Goal)
+		|| !Boss->ResolveDestinationTransform(Destination))
 	{
 		return false;
 	}
@@ -726,7 +739,8 @@ bool UGA_BossDashSlash::CapturePreselectedDestination()
 	}
 
 	CapturedDeckMesh = DeckMesh;
-	CapturedDestinationPointId = DestinationPointId;
+	CapturedDestinationLocation = Goal;
+	CapturedStartLocation = Start;
 	CommittedPath.ReferenceActor = HostShip;
 	CommittedPath.StartLocal = ReferenceTransform.InverseTransformPosition(Boss->GetActorLocation());
 	CommittedPath.EndLocal = ReferenceTransform.InverseTransformPosition(Destination.GetLocation());
@@ -851,7 +865,8 @@ bool UGA_BossDashSlash::LockMovementToCommittedStart()
 		? Boss->GetActorQuat()
 		: FRotationMatrix::MakeFromXZ(Direction, SurfaceNormal).ToQuat();
 	Boss->SetActorRotation(Rotation, ETeleportType::TeleportPhysics);
-	Movement->SetBase(DeckMesh);
+	if (AEnemyShip* Ship = Boss->GetHostShip(); Ship && Ship->GetDeckWalkAreaComponent())
+		Movement->SetBase(Ship->GetDeckWalkAreaComponent()->GetMovementBase(*Boss));
 	Boss->ForceNetUpdate();
 	return true;
 }
@@ -891,7 +906,11 @@ bool UGA_BossDashSlash::ResolveCommittedPathWorld(
 	FVector& OutSurfaceNormal) const
 {
 	AActor* ReferenceActor = CommittedPath.ReferenceActor.Get();
-	if (!CommittedPath.IsValid() || !IsValid(ReferenceActor))
+	const AShipBossEnemy* Boss = GetBossAvatar();
+	const AEnemyShip* Ship = Boss ? Boss->GetHostShip() : nullptr;
+	const UDeckWalkAreaComponent* Area = Ship ? Ship->GetDeckWalkAreaComponent() : nullptr;
+	if (!CommittedPath.IsValid() || !IsValid(ReferenceActor) || !Area
+		|| !Area->IsLocationValid(CapturedStartLocation) || !Area->IsLocationValid(CapturedDestinationLocation))
 	{
 		return false;
 	}
