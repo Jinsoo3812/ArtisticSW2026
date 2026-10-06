@@ -58,5 +58,7 @@ public:
 	TArray<TObjectPtr<UEnemyShipSkillModuleData>> SkillModules;
 
 	bool ApplyToShip(AEnemyShip* Ship);
-	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
+#endif
 };

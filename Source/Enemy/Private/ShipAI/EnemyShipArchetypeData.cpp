@@ -1,6 +1,8 @@
 #include "ShipAI/EnemyShipArchetypeData.h"
 
+#if WITH_EDITOR
 #include "Misc/DataValidation.h"
+#endif
 #include "Ship.h"
 #include "ShipAI/EnemyShip.h"
 #include "ShipAI/EnemyShipSkillModuleData.h"
@@ -35,6 +37,7 @@ bool UEnemyShipArchetypeData::ApplyToShip(AEnemyShip* Ship)
 	return Ship->ConfigureEnemyShipArchetype(this);
 }
 
+#if WITH_EDITOR
 EDataValidationResult UEnemyShipArchetypeData::IsDataValid(FDataValidationContext& Context) const
 {
 	EDataValidationResult Result = Super::IsDataValid(Context);
@@ -97,3 +100,4 @@ EDataValidationResult UEnemyShipArchetypeData::IsDataValid(FDataValidationContex
 
 	return Result;
 }
+#endif

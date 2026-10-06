@@ -266,17 +266,10 @@ void ABasePlayerController::ClientOpenFacilityHub_Implementation(AActor* Context
 			nullptr,
 			TEXT("/Game/Blueprints/02_UI/UI_WorkTable/WBP_WorkspaceScreen.WBP_WorkspaceScreen_C"));
 	}
-	if (!WidgetClass)
-	{
-		WidgetClass = LoadClass<UFacilityHubWidget>(
-			nullptr,
-			TEXT("/Game/Blueprints/02_UI/UI_FacilityHub/WBP_FacilityHub.WBP_FacilityHub_C"));
-	}
 
 	if (!WidgetClass)
 	{
-		/* UE_LOG(LogTemp, Error,
-			TEXT("[FacilityHubFlow][CLIENT] FAILED: Neither WBP_WorkspaceScreen nor WBP_FacilityHub could be loaded.")); */
+		UE_LOG(LogTemp, Error, TEXT("[FacilityHubFlow][CLIENT] WBP_WorkspaceScreen could not be loaded."));
 		if (PlayerHUDWidget)
 		{
 			PlayerHUDWidget->SetVisibility(PlayerHUDVisibilityBeforeFacilityHub);
