@@ -1,73 +1,58 @@
 #if WITH_DEV_AUTOMATION_TESTS
-
 #include "Misc/AutomationTest.h"
-#include "Misc/ScopeExit.h"
-#include "BasePlayer.h"
-#include "BasePlayerController.h"
-#include "Camera/PlayerDeathCameraComponent.h"
-#include "Components/SkeletalMeshComponent.h"
-#include "Engine/Engine.h"
-#include "Engine/SkeletalMesh.h"
-#include "Engine/World.h"
-#include "GameFramework/SpringArmComponent.h"
-#include "PhysicsEngine/BodyInstance.h"
-#include "Settings_Item.h"
+#include "PlayerLifeTestWorld.h"
+#include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
 #include "UObject/UnrealType.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPlayerDeathCameraTest,
-	"ArtisticSW.Player.Death.CameraFollowsPhysics",
+	"ArtisticSW.Player.Death.CameraFallback",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FPlayerDeathCameraTest::RunTest(const FString& Parameters)
 {
-	TGuardValue<TSoftObjectPtr<UDataTable>> CraftingTableGuard(GetMutableDefault<USettings_Item>()->CraftingRecipeDataTable, {});
-	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("PlayerDeathCameraTest"));
-	if (!TestNotNull(TEXT("Camera test world"), World)) return false;
-	GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
-	ON_SCOPE_EXIT { World->DestroyWorld(false); GEngine->DestroyWorldContext(World); };
-	World->InitializeActorsForPlay(FURL());
-	ABasePlayer* Player = World->SpawnActor<ABasePlayer>();
-	USkeletalMesh* Mesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/jiwon/Characters/SKM_Player_Woman.SKM_Player_Woman"));
-	if (!TestNotNull(TEXT("Player"), Player) || !TestNotNull(TEXT("Mesh"), Mesh)) return false;
-	Player->GetMesh()->SetSkeletalMesh(Mesh);
-	USpringArmComponent* Boom = Player->GetCameraBoom();
-	UPlayerDeathCameraComponent* Camera = Player->GetDeathCameraComponent();
-	if (!TestNotNull(TEXT("Death camera component"), Camera)) return false;
-	const FTransform InitialRelativeTransform = Boom->GetRelativeTransform();
-	const ETickingGroup InitialTickGroup = Boom->PrimaryComponentTick.TickGroup;
-	const FVector CapsuleLocation = Player->GetActorLocation();
-	const FQuat CameraRotation = Boom->GetComponentQuat();
-	Player->ApplyLocalDeathRagdoll();
-	TestTrue(TEXT("Ragdoll starts camera following"), Camera->IsFollowing());
-	TestTrue(TEXT("SpringArm solves after physics"), Boom->PrimaryComponentTick.TickGroup == TG_PostPhysics);
-	FBodyInstance* Pelvis = Player->GetMesh()->GetBodyInstance(TEXT("pelvis"));
-	if (!TestNotNull(TEXT("Actual pelvis physics body"), Pelvis) || !Pelvis->IsValidBodyInstance()) return false;
-	Camera->FollowInterpSpeed = 0.0f;
-	FTransform BodyTransform = Pelvis->GetUnrealWorldTransform();
-	BodyTransform.AddToTranslation(FVector(250.0f, -120.0f, -80.0f));
-	BodyTransform.SetRotation(FQuat(FVector::ForwardVector, PI * 0.5f));
-	Pelvis->SetBodyTransform(BodyTransform, ETeleportType::TeleportPhysics);
-	Camera->TickComponent(1.0f / 60.0f, LEVELTICK_All, nullptr);
-	TestTrue(TEXT("Pivot follows solved pelvis, independent of animation refresh"),
-		Boom->GetComponentLocation().Equals(BodyTransform.GetLocation() + Camera->FocusOffset, 0.01f));
-	TestTrue(TEXT("Camera tracking does not move the gameplay capsule"), Player->GetActorLocation().Equals(CapsuleLocation));
-	TestTrue(TEXT("Body roll does not roll the camera"), Boom->GetComponentQuat().Equals(CameraRotation, 0.001f));
-	Player->ApplyLocalDeathRagdoll(); // Repeated presentation must not overwrite the reset transform.
-	Camera->FocusBone = TEXT("MissingFocusBone");
-	Camera->TickComponent(1.0f / 60.0f, LEVELTICK_All, nullptr);
-	TestTrue(TEXT("Missing focus bone has a finite mesh fallback"),
-		Boom->GetComponentLocation().Equals(Player->GetMesh()->GetComponentLocation() + Camera->FocusOffset, 0.01f));
-	Player->ResetLocalDeathRagdoll();
-	TestFalse(TEXT("Reuse stops death tracking"), Camera->IsFollowing());
-	TestFalse(TEXT("Reuse disables presentation tick"), Camera->IsComponentTickEnabled());
-	TestTrue(TEXT("Reuse restores original camera transform"), Boom->GetRelativeTransform().Equals(InitialRelativeTransform));
-	TestTrue(TEXT("Reuse restores SpringArm tick group"), Boom->PrimaryComponentTick.TickGroup == InitialTickGroup);
-	const FProperty* Target = FindFProperty<FProperty>(ABasePlayerController::StaticClass(), TEXT("DeathViewTarget"));
-	if (TestNotNull(TEXT("Controller death view state"), Target))
-	{
-		TestTrue(TEXT("Death view survives replication ordering"), Target->HasAllPropertyFlags(CPF_Net | CPF_RepNotify));
-	}
+	PlayerLifeTests::FWorld Fixture;
+	const PlayerLifeTests::FLife Life = Fixture.SpawnLife();
+	if (!Life.Controller || !Life.Player) return false;
+	ABasePlayerController* Controller = Life.Controller;
+	Controller->SetAsLocalPlayerController();
+	Controller->LastOwnAlivePOV.Location = FVector(200, 300, 400);
+	Controller->LastOwnAlivePOV.Rotation = FRotator(-20, 35, 0);
+	Controller->LastOwnAlivePOV.FOV = 85;
+	Controller->bHasOwnPOV = true;
+	const FMinimalViewInfo AlivePOV = Controller->LastOwnAlivePOV;
+	const bool SavedAutoCamera = Controller->bAutoManageActiveCameraTarget;
+	Controller->UnPossess();
+	FSWDeathFlowState Waiting;
+	Waiting.Phase = ESWPersonalLifePhase::WaitingForRespawn;
+	Waiting.WaitingGeneration = 1;
+	Controller->SetDeathFlowState(Waiting);
+	if (!TestNotNull(TEXT("Independent spectator fallback camera"), Controller->DeathCamera.Get())) return false;
+	ACameraActor* Camera = Controller->DeathCamera;
+	TestEqual(TEXT("Waiting view targets independent camera"), Controller->GetViewTarget(), static_cast<AActor*>(Camera));
+	TestTrue(TEXT("Fallback captures last living location"), Camera->GetActorLocation().Equals(AlivePOV.Location));
+	TestEqual(TEXT("Fallback preserves field of view"), Camera->GetCameraComponent()->FieldOfView, AlivePOV.FOV);
+	TestTrue(TEXT("Waiting blocks move and look input"), Controller->IsMoveInputIgnored() && Controller->IsLookInputIgnored());
+	Life.Player->SetActorLocation(FVector(900, 0, -500));
+	Controller->LastOwnAlivePOV.Location = FVector(999, 999, 999);
+	Controller->OnRep_DeathFlowState();
+	TestTrue(TEXT("Repeated waiting state cannot recapture corpse movement"), Camera->GetActorLocation().Equals(AlivePOV.Location));
+	Life.Player->Destroy();
+	Controller->ApplyLocalDeathFlow();
+	TestEqual(TEXT("Corpse expiry does not invalidate spectator camera"), Controller->GetViewTarget(), static_cast<AActor*>(Camera));
+	ABasePlayer* Replacement = Fixture.SpawnPlayer();
+	if (!Replacement) return false;
+	Controller->Possess(Replacement);
+	FSWDeathFlowState Alive = Waiting;
+	Alive.Phase = ESWPersonalLifePhase::Alive;
+	Controller->SetDeathFlowState(Alive);
+	TestEqual(TEXT("Restored life returns camera to replacement"), Controller->GetViewTarget(), static_cast<AActor*>(Replacement));
+	TestFalse(TEXT("Move input unlocks without duplicate counters"), Controller->IsMoveInputIgnored());
+	TestFalse(TEXT("Look input unlocks without duplicate counters"), Controller->IsLookInputIgnored());
+	TestEqual(TEXT("Original engine camera management restored"), Controller->bAutoManageActiveCameraTarget, SavedAutoCamera);
+	const FProperty* State = FindFProperty<FProperty>(ABasePlayerController::StaticClass(), TEXT("DeathFlowState"));
+	if (TestNotNull(TEXT("Unified replicated life state"), State))
+		TestTrue(TEXT("Life state handles replication ordering"), State->HasAllPropertyFlags(CPF_Net | CPF_RepNotify));
 	return !HasAnyErrors();
 }
-
 #endif

@@ -1,127 +1,92 @@
-#if WITH_DEV_AUTOMATION_TESTS && !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-
+#if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
-#include "Misc/ScopeExit.h"
-#include "AbilitySystemComponent.h"
+#include "PlayerLifeTestWorld.h"
 #include "BaseAttributeSet.h"
 #include "BaseGameplayTags.h"
-#include "BasePlayer.h"
-#include "BasePlayerController.h"
-#include "BasePlayerState.h"
-#include "Components/BaseHealthComponent.h"
-#include "Components/SkeletalMeshComponent.h"
-#include "Engine/Engine.h"
-#include "Engine/SkeletalMesh.h"
-#include "Engine/World.h"
+#include "Development/TestInput/SWDevTestInputComponent.h"
 #include "HAL/IConsoleManager.h"
-#include "Settings_Item.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPlayerDeathDevelopmentTest,
-	"ArtisticSW.Player.Death.DevelopmentCommand",
+	"ArtisticSW.Player.Death.LifeOwnership",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FPlayerDeathDevelopmentTest::RunTest(const FString& Parameters)
 {
-	IConsoleVariable* Session = IConsoleManager::Get().FindConsoleVariable(TEXT("sw.DevTest.Session"));
-	if (!TestNotNull(TEXT("Development session switch registered"), Session)) return false;
-	TestNotNull(TEXT("Suicide command registered"), IConsoleManager::Get().FindConsoleObject(TEXT("sw.DevTest.Suicide")));
-	const int32 PreviousSession = Session->GetInt();
-	ON_SCOPE_EXIT { Session->Set(PreviousSession, ECVF_SetByCode); };
+	PlayerLifeTests::FWorld Fixture;
+	const PlayerLifeTests::FLife Life = Fixture.SpawnLife();
+	if (!TestNotNull(TEXT("Mode"), Fixture.Mode) || !Life.Controller || !Life.State || !Life.Player) return false;
+	Fixture.Mode->PlayerIndices.Add(Life.Controller, 0);
+	UAbilitySystemComponent* ASC = Life.State->GetAbilitySystemComponent();
+	UBaseHealthComponent* OldHealth = Life.Player->GetHealthComponent();
+	USWDevTestInputComponent* Input = Life.Controller->DevTestInput;
+	const int32 OriginalGeneration = Life.Controller->DeathFlowState.WaitingGeneration;
+	FSWInventorySlotSnapshot Seed;
+	Seed.Tab = static_cast<uint8>(EInventoryTab::Material);
+	Seed.SlotIndex = 3;
+	Seed.ItemTag = Item_Id_Material_WeaponMaterial_Wood;
+	Seed.Count = 7;
+	Life.Player->GetInventoryComponent()->RestoreProgressSnapshot({Seed});
+	Input->ServerExecuteTest(ESWDevTestAction::KillSelf, 0, 1, Life.Player, OriginalGeneration);
+	TestEqual(TEXT("Server rejects development death without an enabled room session"), Life.Player->GetHealthComponent()->GetHealth(), 100.0f);
+	TestTrue(TEXT("Current life request matches"), Input->MatchesCurrentLife(Life.Player, OriginalGeneration));
+	TestFalse(TEXT("Null life request rejected"), Input->MatchesCurrentLife(nullptr, OriginalGeneration));
+	ABasePlayer* Replacement = Fixture.SpawnPlayer();
+	if (!TestNotNull(TEXT("Replacement"), Replacement)) return false;
+	TestFalse(TEXT("Another pawn cannot be selected for suicide"), Input->MatchesCurrentLife(Replacement, OriginalGeneration));
+	const float Strength = ASC->GetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute());
+	ASC->SetNumericAttributeBase(UBaseAttributeSet::GetHealthAttribute(), 0.0f);
+	TestTrue(TEXT("Existing death pipeline completes"), OldHealth->GetDeathState() == EBaseDeathState::DeathFinished);
+	TestTrue(TEXT("Death tag remains on persistent ASC until new life"), ASC->HasMatchingGameplayTag(State_Dead));
+	TestNull(TEXT("GameMode releases possession after capture"), Life.Controller->GetPawn());
+	TestFalse(TEXT("Corpse no longer subscribes to shared health"),
+		ASC->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute()).IsBoundToObject(OldHealth));
+	const FGameplayTag InteractionTags[] = {Interaction_PickUp, Interaction_ShipBoard, Interaction_CannonBoard};
+	for (const FGameplayTag& Tag : InteractionTags)
+		if (const auto* Callback = ASC->GenericGameplayEventCallbacks.Find(Tag))
+			TestFalse(TEXT("Corpse interaction callback retired"), Callback->IsBoundToObject(Life.Player));
+	TestFalse(TEXT("A request queued before death is rejected by life generation"),
+		Input->MatchesCurrentLife(Life.Player, OriginalGeneration));
 
-	TGuardValue<TSoftObjectPtr<UDataTable>> CraftingTableGuard(GetMutableDefault<USettings_Item>()->CraftingRecipeDataTable, {});
-	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, TEXT("PlayerDeathDevelopmentTest"));
-	if (!TestNotNull(TEXT("Transient game world"), World)) return false;
-	GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
-	ON_SCOPE_EXIT { World->DestroyWorld(false); GEngine->DestroyWorldContext(World); };
-	// Initialize actors so native dynamic death callbacks execute and the
-	// controller creates its real camera manager, while leaving BeginPlay deferred.
-	World->InitializeActorsForPlay(FURL());
-	FActorSpawnParameters Spawn;
-	Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	ABasePlayerController* Controller = World->SpawnActor<ABasePlayerController>(Spawn);
-	ABasePlayerState* State = World->SpawnActor<ABasePlayerState>(Spawn);
-	ABasePlayer* Player = World->SpawnActor<ABasePlayer>(Spawn);
-	ABasePlayer* OtherPlayer = World->SpawnActor<ABasePlayer>(Spawn);
-	if (!Controller || !State || !Player || !OtherPlayer) return false;
-	// This transient world does not run BeginPlay; explicitly register the
-	// PlayerState attribute subobject as the real game initialization does.
-	UAbilitySystemComponent* ASC = State->GetAbilitySystemComponent();
-	ASC->AddAttributeSetSubobject(State->GetAttributeSet());
-	Controller->PlayerState = State;
-	Controller->Possess(Player);
-	UBaseHealthComponent* Health = Player->GetHealthComponent();
-	if (!TestNotNull(TEXT("Possession initializes the persistent ASC"), ASC)
-		|| !TestNotNull(TEXT("Player health"), Health)) return false;
-	USkeletalMesh* Mesh = LoadObject<USkeletalMesh>(nullptr,
-		TEXT("/Game/jiwon/Characters/SKM_Player_Woman.SKM_Player_Woman"));
-	if (!TestNotNull(TEXT("Woman mesh loads with its assigned PhysicsAsset"), Mesh)) return false;
-	Player->GetMesh()->SetSkeletalMesh(Mesh);
-	// Bind the same gameplay handler as BeginPlay without starting unrelated world systems.
-	Health->OnDeathFinished.AddUniqueDynamic(Player, &ABasePlayer::HandleDeathFinished);
-
-	Session->Set(0, ECVF_SetByCode);
-	TestTrue(TEXT("Server opt-in is required"),
-		Controller->TryStartDevelopmentDeath(Player) == EDevelopmentDeathTestResult::Disabled);
-	TestEqual(TEXT("Disabled request preserves health"), Health->GetHealth(), 100.0f);
-	Session->Set(1, ECVF_SetByCode);
-	TestTrue(TEXT("Cannot kill a different player's pawn"),
-		Controller->TryStartDevelopmentDeath(OtherPlayer) == EDevelopmentDeathTestResult::InvalidPawn);
-	TestTrue(TEXT("Null/stale pawn is rejected"),
-		Controller->TryStartDevelopmentDeath(nullptr) == EDevelopmentDeathTestResult::InvalidPawn);
-	Controller->SetRole(ROLE_SimulatedProxy);
-	TestTrue(TEXT("Client cannot execute server policy locally"),
-		Controller->TryStartDevelopmentDeath(Player) == EDevelopmentDeathTestResult::NotAuthority);
-	Controller->SetRole(ROLE_Authority);
-	World->WorldType = EWorldType::Editor;
-	TestTrue(TEXT("Editor world is rejected"),
-		Controller->TryStartDevelopmentDeath(Player) == EDevelopmentDeathTestResult::InvalidWorld);
-	World->WorldType = EWorldType::Game;
-
-	TestTrue(TEXT("Own living pawn enters existing death pipeline"),
-		Controller->TryStartDevelopmentDeath(Player) == EDevelopmentDeathTestResult::Started);
-	TestEqual(TEXT("Suicide sets actual health to zero"), Health->GetHealth(), 0.0f);
-	TestTrue(TEXT("Existing health component finishes death without a montage"),
-		Health->GetDeathState() == EBaseDeathState::DeathFinished);
-	TestTrue(TEXT("Persistent ASC receives the existing death tag"), ASC->HasMatchingGameplayTag(State_Dead));
-	TestFalse(TEXT("Suicide does not invent a lethal-hit direction"), Health->GetDeathRagdollImpactData().bHasDirection);
-	TestTrue(TEXT("Death completion enables actual mesh physics"), Player->GetMesh()->IsSimulatingPhysics());
-	TestFalse(TEXT("Corpse retires persistent ASC health subscriptions"),
-		ASC->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute()).IsBoundToObject(Health));
-	if (const auto* Callback = ASC->GenericGameplayEventCallbacks.Find(Interaction_PickUp))
+	// Exercise individual-respawn possession with the real captured snapshot.
+	Fixture.Mode->IndividualRespawnInProgress.Add(Life.Controller);
+	Life.Controller->Possess(Replacement);
+	Fixture.Mode->IndividualRespawnInProgress.Remove(Life.Controller);
+	TestTrue(TEXT("New life applies the captured progress successfully"), Life.Controller->WasLastLifeProgressApplySuccessful(Replacement));
+	TestTrue(TEXT("New life leaves initialization with positive health"),
+		!Replacement->GetHealthComponent()->IsLifeInitializing() && !Replacement->GetHealthComponent()->IsDead()
+		&& Replacement->GetHealthComponent()->GetHealth() > 0);
+	TestFalse(TEXT("New life clears persistent dead tag"), ASC->HasMatchingGameplayTag(State_Dead));
+	TestEqual(TEXT("Respawn preserves strength"), ASC->GetNumericAttributeBase(UBaseAttributeSet::GetStrengthAttribute()), Strength);
+	TestEqual(TEXT("Respawn restores a nonempty inventory"), Replacement->GetInventoryComponent()->GetItemCount(Seed.ItemTag), Seed.Count);
+	TestEqual(TEXT("Respawn preserves original material slot"), Replacement->GetInventoryComponent()->GetSlots(EInventoryTab::Material)[Seed.SlotIndex].Count, Seed.Count);
+	Life.Player->SetPlayerState(Life.State);
+	Life.Player->OnRep_PlayerState();
+	TestEqual(TEXT("Late corpse PlayerState cannot reclaim the ASC"), ASC->GetAvatarActor(), static_cast<AActor*>(Replacement));
+	TestFalse(TEXT("Late corpse PlayerState cannot bind the retired health component"),
+		ASC->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute()).IsBoundToObject(OldHealth));
+	TestTrue(TEXT("Replacement health remains subscribed"),
+		ASC->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute()).IsBoundToObject(Replacement->GetHealthComponent()));
+	for (const FGameplayTag& Tag : InteractionTags)
 	{
-		TestFalse(TEXT("Corpse retires pickup event subscriptions"), Callback->IsBoundToObject(Player));
+		const auto* Callback = ASC->GenericGameplayEventCallbacks.Find(Tag);
+		TestTrue(TEXT("Late corpse update preserves replacement interaction binding"), Callback && Callback->IsBoundToObject(Replacement));
 	}
-	TestEqual(TEXT("Ragdoll preserves the controller until GameMode registration"), Player->GetController(), static_cast<AController*>(Controller));
-	TestEqual(TEXT("Ragdoll preserves PlayerState for progress capture"), Player->GetPlayerState(), static_cast<APlayerState*>(State));
-	Player->ApplyLocalDeathRagdoll();
-	TestEqual(TEXT("Repeated ragdoll does not release ownership"), Player->GetController(), static_cast<AController*>(Controller));
-	TestTrue(TEXT("Repeated death request is idempotent"),
-		Controller->TryStartDevelopmentDeath(Player) == EDevelopmentDeathTestResult::AlreadyDead);
-
-	// Replace the pawn while retaining PlayerState/ASC, as the respawn system does.
-	Controller->UnPossess();
-	TestEqual(TEXT("Death unpossession retains the corpse camera"), Controller->GetViewTarget(), static_cast<AActor*>(Player));
-	TestEqual(TEXT("Controller records the replicated death view"), Controller->GetDeathViewTarget(), Player);
-	TestFalse(TEXT("Unpossession does not destroy the corpse"), Player->IsActorBeingDestroyed());
-	Controller->Possess(OtherPlayer);
-	TestEqual(TEXT("Respawn returns the camera to the new pawn"), Controller->GetViewTarget(), static_cast<AActor*>(OtherPlayer));
-	TestNull(TEXT("New possession clears the death view state"), Controller->GetDeathViewTarget());
-	TestTrue(TEXT("New avatar binds the persistent health stream"),
-		ASC->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute()).IsBoundToObject(OtherPlayer->GetHealthComponent()));
-	Player->SetPlayerState(State);
-	Player->OnRep_PlayerState(); // Delayed corpse replication after the replacement is active.
-	TestEqual(TEXT("Late corpse PlayerState cannot reclaim the ASC avatar"), ASC->GetAvatarActor(), static_cast<AActor*>(OtherPlayer));
-	TestFalse(TEXT("Late corpse PlayerState cannot rebind old health"),
-		ASC->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute()).IsBoundToObject(Health));
-	TestFalse(TEXT("New possession clears the persistent dead tag"), ASC->HasMatchingGameplayTag(State_Dead));
-	TestTrue(TEXT("New pawn stays alive instead of dying during ASC initialization"),
-		OtherPlayer->GetHealthComponent()->GetDeathState() == EBaseDeathState::NotDead);
-	TestTrue(TEXT("Queued old request cannot kill the replacement pawn"),
-		Controller->TryStartDevelopmentDeath(Player) == EDevelopmentDeathTestResult::InvalidPawn);
-	TestEqual(TEXT("Replacement pawn health is unchanged"), OtherPlayer->GetHealthComponent()->GetHealth(), 100.0f);
-	TestTrue(TEXT("Command works again for the newly possessed pawn"),
-		Controller->TryStartDevelopmentDeath(OtherPlayer) == EDevelopmentDeathTestResult::Started);
+	Life.Player->HandleDeathFinished(OldHealth);
+	TestTrue(TEXT("Duplicate corpse death leaves the replacement possessed"), Life.Controller->GetPawn() == Replacement);
+	TestFalse(TEXT("Old-pawn request cannot target replacement"),
+		Input->MatchesCurrentLife(Life.Player, Life.Controller->DeathFlowState.WaitingGeneration));
+	TestTrue(TEXT("New-pawn request uses the new life"),
+		Input->MatchesCurrentLife(Replacement, Life.Controller->DeathFlowState.WaitingGeneration));
+	Life.Player->Destroy();
+	TestEqual(TEXT("Corpse destruction leaves the living ASC avatar intact"), ASC->GetAvatarActor(), static_cast<AActor*>(Replacement));
+	TestTrue(TEXT("Corpse destruction preserves new health binding"),
+		ASC->GetGameplayAttributeValueChangeDelegate(UBaseAttributeSet::GetHealthAttribute()).IsBoundToObject(Replacement->GetHealthComponent()));
+	TestEqual(TEXT("Corpse destruction cannot remove restored inventory"), Replacement->GetInventoryComponent()->GetItemCount(Seed.ItemTag), Seed.Count);
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	TestNotNull(TEXT("Existing development session command"), IConsoleManager::Get().FindConsoleObject(TEXT("SW.DevTest.Session")));
+	TestNull(TEXT("Legacy global session variable removed"), IConsoleManager::Get().FindConsoleVariable(TEXT("SW.DevTest.Session")));
+	TestNotNull(TEXT("Suicide alias registered"), IConsoleManager::Get().FindConsoleObject(TEXT("sw.DevTest.Suicide")));
+#endif
 	return !HasAnyErrors();
 }
-
 #endif
