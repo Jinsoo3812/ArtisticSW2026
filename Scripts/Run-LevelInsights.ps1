@@ -11,12 +11,17 @@ param(
     [int]$Width = 1632,
     [int]$Height = 980,
     [switch]$Offscreen,
-    [switch]$Standalone
+    [switch]$Standalone,
+    [ValidateSet('Current', 'MaskedDepth', 'MaskedBaseVelocity')][string]$RenderProfile = 'Current',
+    [string]$CameraMetadata,
+    [switch]$ControlledComparison,
+    [ValidateRange(0, 23)][int]$ComparisonHour = 18
 )
 $ErrorActionPreference = 'Stop'
 $running = Get-Process UnrealEditor, UnrealEditor-Cmd, UnrealBuildTool, dotnet, MSBuild, ShaderCompileWorker, LiveCodingConsole -ErrorAction SilentlyContinue
 if ($running) { throw ('Wait for these processes to finish or close the editor: ' + ($running.Name -join ', ')) }
 $projectRoot = Split-Path $PSScriptRoot -Parent
+if ($ControlledComparison -and $Standalone) { throw 'Controlled comparisons use PIE to preserve uncooked Landscape Nanite.' }
 $editorName = if ($Standalone) { 'UnrealEditor-Cmd.exe' } else { 'UnrealEditor.exe' }
 $editor = Join-Path $EngineRoot ('Engine\Binaries\Win64\' + $editorName)
 $project = Join-Path $projectRoot 'ArtisticSW2026.uproject'
@@ -39,6 +44,39 @@ $arguments = @(
     ('-ExecCmds="Landscape.RenderNanite ' + $naniteValue + '"'),
     ('-abslog="' + "$output\${safeLabel}_${stamp}.log" + '"')
 )
+$arguments += "-SWRenderProfile=$RenderProfile"
+if ($RenderProfile -ne 'Current') {
+    $renderOverrides = [ordered]@{
+        'r.EarlyZPass' = 2
+        'r.EarlyZPassOnlyMaterialMasking' = 1
+        'r.VelocityOutputPass' = $(if ($RenderProfile -eq 'MaskedBaseVelocity') { 1 } else { 0 })
+    }
+    foreach ($entry in $renderOverrides.GetEnumerator()) {
+        # Startup-only shader settings: never use ExecCmds for these.
+        $arguments += "-ini:Engine:[/Script/Engine.RendererSettings]:$($entry.Key)=$($entry.Value)"
+    }
+}
+if ($CameraMetadata) {
+    $cameraSource = Get-Content -LiteralPath $CameraMetadata -Raw | ConvertFrom-Json
+    $location = $cameraSource.camera_start.location_cm
+    $rotation = $cameraSource.camera_start.rotation_degrees
+    if ($location -notmatch '^X=([-\d.]+) Y=([-\d.]+) Z=([-\d.]+)$') { throw 'Invalid camera location metadata.' }
+    $arguments += "-SWProfileCameraX=$($Matches[1])", "-SWProfileCameraY=$($Matches[2])", "-SWProfileCameraZ=$($Matches[3])"
+    if ($rotation -notmatch '^P=([-\d.]+) Y=([-\d.]+) R=([-\d.]+)$') { throw 'Invalid camera rotation metadata.' }
+    $absolutePitch = $Matches[1]
+    $absoluteYaw = ([double]::Parse($Matches[2], [Globalization.CultureInfo]::InvariantCulture) + $YawOffset).ToString([Globalization.CultureInfo]::InvariantCulture)
+    $arguments += "-SWProfileCameraYaw=$absoluteYaw"
+    # Remove the default pitch so command-line parsing cannot select it first.
+    $arguments = @($arguments | Where-Object { $_ -notmatch '^-[Ss][Ww]ProfileFixedCameraPitch=' }) + "-SWProfileFixedCameraPitch=$absolutePitch"
+}
+if ($ControlledComparison) {
+    $arguments += '-SWControlledComparison', "-SWComparisonHour=$ComparisonHour"
+    $playOverrides = [ordered]@{ PlayNetMode = 'PIE_Standalone'; RunUnderOneProcess = 'True'; PlayNumberOfClients = 1;
+        bLaunchSeparateServer = 'False'; NewWindowWidth = $Width; NewWindowHeight = $Height }
+    foreach ($entry in $playOverrides.GetEnumerator()) {
+        $arguments += "-ini:EditorPerProjectUserSettings:[/Script/UnrealEd.LevelEditorPlaySettings]:$($entry.Key)=$($entry.Value)"
+    }
+}
 if ($Standalone) { $arguments += '-game' }
 else {
     $arguments += '-EnablePlugins=PythonScriptPlugin,EditorScriptingUtilities'
@@ -65,3 +103,17 @@ if ($LandscapeNanite -eq 'On') {
     }
 }
 Write-Host "Trace, settings JSON, screenshot and log: $output"
+if ($RenderProfile -ne 'Current') {
+    foreach ($entry in $renderOverrides.GetEnumerator()) {
+        if ([string]$metadata.cvars.($entry.Key) -ne [string]$entry.Value) { throw "Startup setting did not apply: $($entry.Key)" }
+    }
+}
+if ($ControlledComparison) {
+    if ($metadata.net_mode -ne 0) { throw 'Controlled capture did not use standalone PIE.' }
+    # EditorRequestBeginPlay embeds PIE in the active viewport. ResX/ResY set the
+    # editor window, not its content area: report actual dimensions for A/B checks.
+    Write-Host "Actual embedded PIE viewport: $($metadata.viewport_width)x$($metadata.viewport_height)"
+    if (($metadata.camera_start | ConvertTo-Json -Compress) -ne ($metadata.camera_end | ConvertTo-Json -Compress)) { throw 'Camera moved during comparison.' }
+    if (($metadata.render_state_start | ConvertTo-Json -Depth 5 -Compress) -ne ($metadata.render_state_end | ConvertTo-Json -Depth 5 -Compress)) { throw 'Directional light changed during comparison.' }
+    if ($metadata.shader_jobs_start -gt 0 -or $metadata.shader_jobs_end -gt 0) { throw 'Shaders were still compiling during comparison.' }
+}

@@ -1,6 +1,8 @@
 #include "Profiling/SWInsightsCaptureSubsystem.h"
 
 #include "Dom/JsonObject.h"
+#include "Components/DirectionalLightComponent.h"
+#include "ShaderCompiler.h"
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
@@ -40,6 +42,25 @@ namespace SWInsights
 			Result->SetStringField(TEXT("location_cm"), Location.ToString());
 			Result->SetStringField(TEXT("rotation_degrees"), Rotation.ToString());
 		}
+		return Result;
+	}
+	static TSharedRef<FJsonObject> RenderState(UWorld* World)
+	{
+		TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
+		TArray<TSharedPtr<FJsonValue>> Lights;
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			TInlineComponentArray<UDirectionalLightComponent*> Components(*It);
+			for (const UDirectionalLightComponent* Light : Components)
+			{
+				TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+				Entry->SetStringField(TEXT("component"), Light->GetPathName());
+				Entry->SetStringField(TEXT("rotation_degrees"), Light->GetComponentRotation().ToString());
+				Entry->SetNumberField(TEXT("intensity"), Light->Intensity);
+				Lights.Add(MakeShared<FJsonValueObject>(Entry));
+			}
+		}
+		Result->SetArrayField(TEXT("directional_lights"), Lights);
 		return Result;
 	}
 
@@ -99,6 +120,25 @@ void USWInsightsCaptureSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	FParse::Value(FCommandLine::Get(), TEXT("SWInsightsSeconds="), Seconds);
 	FParse::Value(FCommandLine::Get(), TEXT("SWInsightsWarmup="), Warmup);
 	bAutoQuit = InWorld.WorldType == EWorldType::Game && FParse::Param(FCommandLine::Get(), TEXT("SWInsightsAutoQuit"));
+	if (FParse::Param(FCommandLine::Get(), TEXT("SWControlledComparison")))
+	{
+		const double ReadyWarmup = FMath::IsFinite(Warmup) ? FMath::Clamp(Warmup, 0.0f, 300.0f) : 10.0f;
+		ScheduledCapture = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateWeakLambda(this,
+			[this, Label, Seconds, ReadyWarmup, ReadySince = FPlatformTime::Seconds()](float) mutable
+			{
+				const double Now = FPlatformTime::Seconds();
+				if (GShaderCompilingManager && GShaderCompilingManager->IsCompiling())
+				{
+					ReadySince = Now;
+					return true;
+				}
+				if (Now - ReadySince < ReadyWarmup) { return true; }
+				ScheduledCapture.Reset();
+				StartCapture(Label, Seconds);
+				return false;
+			}), 1.0f);
+		return;
+	}
 	ScheduledCapture = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateWeakLambda(this,
 		[this, Label, Seconds](float)
 		{
@@ -145,11 +185,21 @@ bool USWInsightsCaptureSubsystem::StartCapture(const FString& Label, float Secon
 	Metadata->SetStringField(TEXT("channels"), SWInsights::Channels);
 	Metadata->SetNumberField(TEXT("requested_seconds"), Seconds);
 	Metadata->SetObjectField(TEXT("camera_start"), SWInsights::Camera(GetWorld()));
+	Metadata->SetObjectField(TEXT("render_state_start"), SWInsights::RenderState(GetWorld()));
+	Metadata->SetNumberField(TEXT("shader_jobs_start"), GShaderCompilingManager ? GShaderCompilingManager->GetNumRemainingJobs() : 0);
+	FString RenderProfile;
+	if (FParse::Value(FCommandLine::Get(), TEXT("SWRenderProfile="), RenderProfile))
+	{
+		Metadata->SetStringField(TEXT("render_profile"), RenderProfile);
+	}
 	TSharedRef<FJsonObject> CVars = MakeShared<FJsonObject>();
 	for (const TCHAR* Name : {TEXT("r.Nanite"), TEXT("Landscape.RenderNanite"), TEXT("r.ScreenPercentage"),
 		TEXT("r.VSync"), TEXT("t.MaxFPS"), TEXT("r.RayTracing.ResidentGeometryMemoryPoolSizeInMB"),
 		TEXT("r.ViewDistanceScale"), TEXT("grass.DensityScale"), TEXT("foliage.DensityScale"),
 		TEXT("grass.DisableDynamicShadows"), TEXT("r.ContactShadows"),
+		TEXT("r.EarlyZPass"), TEXT("r.EarlyZPassMovable"), TEXT("r.EarlyZPassOnlyMaterialMasking"),
+		TEXT("r.VelocityOutputPass"), TEXT("r.Velocity.EnableVertexDeformation"),
+		TEXT("ShowFlag.InstancedGrass"), TEXT("ShowFlag.InstancedFoliage"), TEXT("ShowFlag.InstancedStaticMeshes"),
 		TEXT("r.Shadow.Virtual.Enable"), TEXT("r.Shadow.Virtual.NonNanite.IncludeInCoarsePages"),
 		TEXT("p.ShowCabinSwimCullDebug"), TEXT("sw.ShipWake.OnScreenDebug")})
 	{
@@ -255,6 +305,8 @@ void USWInsightsCaptureSubsystem::StopCapture()
 	Metadata->SetBoolField(TEXT("stopped_own_trace"), bOwned);
 	Metadata->SetNumberField(TEXT("elapsed_wall_seconds"), FPlatformTime::Seconds() - CaptureStartSeconds);
 	Metadata->SetObjectField(TEXT("camera_end"), SWInsights::Camera(GetWorld()));
+	Metadata->SetObjectField(TEXT("render_state_end"), SWInsights::RenderState(GetWorld()));
+	Metadata->SetNumberField(TEXT("shader_jobs_end"), GShaderCompilingManager ? GShaderCompilingManager->GetNumRemainingJobs() : 0);
 	WriteMetadata();
 	UE_LOG(LogSWInsights, Display, TEXT("Capture finished: %s"), *TracePath);
 }

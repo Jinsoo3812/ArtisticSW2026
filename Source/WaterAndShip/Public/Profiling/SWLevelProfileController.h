@@ -36,6 +36,7 @@ private:
 	FString ScreenshotName;
 	bool bFixedWaterCamera = false;
 	bool bUseSavedEditorCamera = false;
+	bool bControlledComparison = false;
 	float FixedCameraZOffset = 400.0f;
 	float FixedCameraPitch = -18.0f;
 	float FixedCameraYawOffset = 0.0f;

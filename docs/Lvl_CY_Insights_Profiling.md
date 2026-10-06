@@ -96,4 +96,96 @@ Enable Nanite 체크만으로는 저장된 Nanite 메시가 완성되지 않을 
 - 커밋 전 날씨 Blueprint의 재생 속도를 0배로 만드는 테스트 연결을 발견해 원래 연결로 복원했다. 기존 `Sunset_Mountain_TimeRunning` 파일은 시간 진행이 실제로 활성화됐다는 검증 자료로 사용하지 않는다. 카메라 이동·해상도 변경·두 화면 렌더링도 포함되어 있으므로 동일 조건 개선율을 계산하지 않는다.
 - 커밋 직전 직접 UBT 재빌드 성공(C++ 경고·오류 없음). 보완한 자동 실행 도구로 약 5초 PIE 캡처가 정상 종료됐고, 고정 카메라·RT 예산 512·Nanite 컴포넌트 32개/최신 상태와 추가 품질 배율 메타데이터 저장을 확인했다. 현재 로컬 품질 배율은 View Distance / Grass Density / Foliage Density 모두 0.8이다.
 
+## 2026-10-06 리터치 이후 재적용
+
+- 현재 리터치 맵과 설정 파일을 `Saved/Optimization/RetouchRestore/<GUID>`에 백업했다. 이전 최적화 맵으로 교체하지 않고 현재 날씨 액터의 Directional Light에 Contact Shadow 월드 공간 20cm, Casting Intensity 0.75, Non-Casting Intensity 0을 재적용했다.
+- 빠진 `grass.DisableDynamicShadows=0`, `r.ContactShadows=1`, `r.Shadow.Virtual.NonNanite.IncludeInCoarsePages=0`을 복원했다. RT 예산 512MiB는 유지했다.
+- 새 에디터 프로세스에서 맵을 재로드하여 조명 설정과 실제 콘솔 변수 값을 확인했다. 풀·꽃 에셋의 동적 그림자 끄기, Contact Shadow 켜기, WPO 30m 제한 및 기존 컬링 거리는 유지돼 있어 다시 수정하지 않았다.
+- 그림자 재적용 직후 Landscape Nanite는 비활성 상태이며 컴포넌트는 0개였다. 이후 사용자가 Enable Nanite → Build Data → 맵 저장을 진행했고, 아래 23:29 캡처에서 최신 컴포넌트 32개를 확인했다. 위 2026-10-04의 32개 기록은 리터치 이전 검증 결과다.
+- 이번 검증은 저장된 설정의 확인이며, 리터치 이후 성능 개선율을 측정한 결과는 아니다. Nanite 재적용 뒤 같은 조건으로 캡처한다.
+
+## 2026-10-06 Retouch_Mountain 캡처 분석
+
+- 23:29 캡처의 Nanite 컴포넌트 32개가 활성화·최신 상태이며, 복원한 공통 그림자 설정과 RT 예산 512MiB도 적용됐다. PIE Client, viewport 1836×1152, Screen Percentage 67, View Distance / Grass Density / Foliage Density는 모두 1이다.
+- Unreal Insights CSV에서 앞뒤 약 2초를 제외한 중앙 1279개 graphics 프레임을 분석했다. 평균 BasePass 3.54ms, Velocity 2.28ms, ShadowDepths 2.03ms, SingleLayerWater 0.075ms다. GPU 타임라인 구간을 계산한 값이며 Compute 큐의 Wait와 합산하지 않는다.
+- BasePass 내부 ParallelDraw는 3.32ms, Velocity 내부 ParallelDraw는 2.25ms다. ShadowDepths 내부 비 Nanite Batched 구간은 1.25ms, Nanite DrawGeometry는 0.59ms다. Nanite::BasePass 머티리얼 구간은 0.15ms이며 BasePass에 포함되므로 별도로 더하지 않는다.
+- 중앙 구간 대부분(1277/1279 프레임)에서 SceneRender는 한 번이며, 지속적인 두 화면 렌더링이 주요 원인이라는 증거는 없다. 남은 두 프레임은 GPU 이벤트의 프레임 경계 배정 및 일시 추가 렌더링을 구분하지 않았다.
+- 캡처 중 카메라가 약 2m 이동하고 yaw가 약 29도 바뀌었다. 이전 산 캡처보다 viewport 픽셀 수도 약 32% 많고, 최근 자동 검증의 품질 배율 0.8과도 다르다. 따라서 이전 결과와 개선율을 직접 계산하지 않는다.
+- 현재 큰 비용은 일반 메시 드로우 경로에 있으나, 이 트레이스의 ParallelDraw에는 개별 메시·머티리얼 이름이 없어 특정 식물 에셋을 원인으로 확정하지 않는다. 다음에는 같은 카메라·시간에서 정상 표시와 `ShowFlag.InstancedGrass 0`의 임시 비교를 통해 Landscape 자동 풀 비용을 분리한다. 측정 뒤 `ShowFlag.InstancedGrass 1`로 복원하며 PCG/머티리얼 에셋은 수정하지 않는다.
+
+## 2026-10-06 Landscape 자동 풀 표시 A/B
+
+23:42 GrassOn / 23:43 GrassOff 캡처는 카메라 시작·종료 위치와 회전이 모두 같고, PIE Client / 1836×1152 / Screen Percentage 67 / 품질 배율 1 / Nanite 최신 컴포넌트 32개도 일치한다. 앞뒤 약 2초를 제외한 중앙 구간은 각각 473/479 graphics 프레임이며, 두 캡처 모두 프레임마다 SceneRender가 한 번이다.
+
+| 중앙 구간 평균 | GrassOn | GrassOff |
+|---|---:|---:|
+| BasePass | 3.48ms | 1.03ms |
+| Velocity | 2.04ms | 0.19ms |
+| ShadowDepths | 2.01ms | 2.61ms |
+| SceneRender | 11.50ms | 8.59ms |
+| GPU 프레임 시작 간격 | 12.74ms | 12.56ms |
+
+사용자가 시행한 `ShowFlag.InstancedGrass` 비교에서 BasePass는 약 70%, Velocity는 약 91% 감소했다. Landscape 자동 풀 표시가 이 두 패스 비용의 주요 원인이라는 근거다. 이는 메시를 숨긴 진단 결과이며, 풀을 유지하는 최적화가 같은 개선폭을 달성한다는 뜻은 아니다. PCG를 원인으로 확정하는 결과도 아니다.
+
+그림자는 반대로 늘었으므로 이 A/B를 그림자 비용 개선의 근거로 사용하지 않는다. 날씨·태양 각도와 ShowFlag 적용값은 현재 JSON에 기록되지 않으며, 풀 숨김으로 드러난 표면과 VSM 페이지 요청 변화도 함께 고려해야 한다.
+
+SceneRender 구간은 약 2.91ms 줄었지만 프레임 간격은 거의 같다. GameThread의 World Tick Time은 앱 프레임당 약 8.19/8.48ms, Slate Tick은 약 2.12/2.03ms이며, World Tick 호출은 앱 프레임당 약 세 번이다. PIE의 여러 월드와 CPU·에디터 비용이 전체 FPS를 제한하는 후보이므로 GPU 패스 개선을 그대로 FPS 개선으로 환산하지 않는다. 다음 풀 최적화 후보는 밀도 변경 대신 WPO 적용 거리와 머티리얼/마스크 렌더링 경로의 별도 A/B이며, 실제 FPS 검증은 동일 조건의 독립 Development 클라이언트에서 수행한다.
+
 엔진 참고: [Unreal Insights](https://dev.epicgames.com/documentation/en-us/unreal-engine/trace-in-unreal-engine-5), [Landscape Nanite](https://dev.epicgames.com/documentation/unreal-engine/using-nanite-with-landscapes-in-unreal-engine?lang=en-US).
+
+## 풀 렌더링 경로의 통제 비교
+
+`Run-LevelInsights.ps1 -ControlledComparison`은 별도 에디터의 Standalone PIE 월드 하나를 사용한다. 백그라운드 에디터 뷰포트의 Realtime을 끄고, 날씨 액터의 `1 Hour Seconds=0` 및 `Init Hour=18`, `Init Minute=0`을 그 프로세스에서만 설정한다. 새 네트워크 날씨 코드의 Frozen 재생 경로를 사용하므로 Blueprint 타임라인 속도만 0으로 만드는 방법과 구분한다. `-ComparisonHour 12`로 낮을 비교할 수 있다. 에셋/맵/사용자의 에디터 설정을 저장하지 않는다.
+
+`-CameraMetadata <이전 캡처 JSON>`은 이전 시점을 정확히 재사용한다. `-YawOffset 180`은 해당 시점에서 반대 방향을 본다. 플레이어·AI·스트리밍 위치는 이동시키지 않으므로 렌더링 경로 비교용이며, 전체 게임 성능 비교에는 실제 플레이어 위치도 맞춘다. 임베디드 PIE의 실제 콘텐츠 크기는 Width/Height와 다를 수 있다. **JSON의 실제 viewport 크기가 같은 캡처끼리만 비교한다.**
+
+| RenderProfile | EarlyZPass | OnlyMaterialMasking | VelocityOutputPass |
+|---|---:|---:|---:|
+| Current | 프로젝트 현재값 | 프로젝트 현재값 | 프로젝트 현재값 |
+| MaskedDepth | 2 | 1 | 0 (깊이 패스) |
+| MaskedBaseVelocity | 2 | 1 | 1 (BasePass) |
+
+후보는 시작 시 `-ini:Engine`으로만 적용하며 프로젝트 파일을 덮어쓰지 않는다. 이 설정들은 셰이더 순열/출력 구조에 영향을 주므로 PIE 콘솔에서 런타임 변경으로 비교하지 않는다. 최초 실행은 엔진·프로젝트 셰이더 재컴파일 때문에 수 분 이상 걸릴 수 있다. 컴파일을 중단하거나 겹쳐 실행하지 않는다. 통제 캡처는 셰이더 컴파일이 끝난 뒤 지정한 Warmup 시간 동안 준비하고, JSON에 시작/종료 `shader_jobs`를 남긴다.
+
+```powershell
+$camera = 'Saved/Profiling/Insights/<재사용할 캡처>.json'
+./Scripts/Run-LevelInsights.ps1 -Label DepthBaseline -RenderProfile Current -ControlledComparison -CameraMetadata $camera -Warmup 60 -Seconds 10 -Offscreen
+./Scripts/Run-LevelInsights.ps1 -Label DepthCandidate -RenderProfile MaskedDepth -ControlledComparison -CameraMetadata $camera -Warmup 60 -Seconds 10 -Offscreen
+# 각 완료 JSON을 지정해 CSV로 내보낸다.
+./Scripts/Export-LevelInsights.ps1 -Metadata 'Saved/Profiling/Insights/<기준 완료 캡처>.json' -OutputDirectory Saved/Profiling/Insights/RenderingAB/Current
+./Scripts/Export-LevelInsights.ps1 -Metadata 'Saved/Profiling/Insights/<후보 완료 캡처>.json' -OutputDirectory Saved/Profiling/Insights/RenderingAB/Candidate
+python Scripts/Analyze-LevelRendering.py Saved/Profiling/Insights/RenderingAB/Current
+python Scripts/Analyze-LevelRendering.py Saved/Profiling/Insights/RenderingAB/Candidate
+python Scripts/Compare-LevelRendering.py Saved/Profiling/Insights/RenderingAB/Current Saved/Profiling/Insights/RenderingAB/Candidate
+```
+
+분석은 앞뒤 2초를 제외하고 GPU graphics 타임라인을 계산한다. BasePass/Velocity뿐 아니라 PrePass와 SceneRender 평균·p95를 확인해 비용 이동을 개선으로 오해하지 않는다. 중첩 scope와 Compute 큐의 Wait를 합산하지 않는다. 비교 도구는 카메라, 태양 회전/강도, 실제 해상도, Nanite 상태, 후보 이외 CVar가 다르면 실패한다. 지속적인 복수 SceneRender도 거부하며, 프레임 경계 귀속으로 생기는 1% 이하 일시 표본은 허용한다. 기록된 태양 상태가 같더라도 구름·바람·AI의 모든 상태를 고정한 것은 아니므로, 작은 차이는 동일 Warmup으로 재측정한다.
+
+이 경로는 풀 밀도·컬링·LOD·WPO 속도 정보 및 PCG/공유 메시·머티리얼 에셋을 유지한다. 후보 채택 전 저장된 PNG에서 잎 경계·지형·그림자를 확인하고, 플레이 중 카메라 이동과 바람에서 TSR 잔상/깜빡임을 확인한다. 프로젝트 공통 렌더러 변경은 다른 맵 및 최소 사양 Development 패키지에서도 검증한다.
+
+## 2026-10-07 적용 결과
+
+프로젝트 RendererSettings에 `r.EarlyZPass=2`, `r.EarlyZPassOnlyMaterialMasking=True`, `r.VelocityOutputPass=0`을 적용했다. 마스크의 투명도 판정을 깊이 단계에서 처리해 BasePass의 중복 작업을 줄이는 엔진 경로다. 속도 출력은 기존 깊이 패스를 유지한다. 풀을 숨기거나 속도 출력을 끄지 않으며, PCG/풀/공유 메시·머티리얼 에셋과 밀도·컬링·LOD·WPO 거리는 이번 변경에서 수정하지 않았다. 에디터 재시작 및 셰이더 컴파일 완료가 필요하다.
+
+검증 환경: UE 5.7.4, RX 9070 XT, DX12, 별도 에디터 Standalone PIE, 실제 viewport 1527×982, Screen Percentage 67, 거리·밀도 배율 1, Landscape Nanite 최신 컴포넌트 32개. 각 10초 캡처의 중앙 약 6초를 사용했다. 산 비교는 동일 카메라와 18:00 고정 태양, 60초 Warmup이며 바다 비교는 반대 방향 카메라와 12:00 고정 태양, 20초 Warmup이다. 산과 바다 행끼리 개선율을 계산하지 않는다.
+
+| 중앙 평균 (ms) | 산 기준 | 산 MaskedDepth | 바다 기준 | 바다 MaskedDepth |
+|---|---:|---:|---:|---:|
+| PrePass | 0.304 | 0.305 | 0.017 | 0.017 |
+| BasePass | 3.569 | 2.933 | 0.461 | 0.448 |
+| Velocity | 2.001 | 2.013 | 0.070 | 0.069 |
+| ShadowDepths | 0.301 | 0.317 | 0.334 | 0.331 |
+| SceneRender | 9.431 | 9.303 | 5.353 | 5.345 |
+| SceneRender p95 | 12.979 | 12.947 | 7.210 | 7.237 |
+
+산 BasePass는 약 18% 감소했지만 SceneRender는 약 1.4% 감소했다. 초기 후보에서 SceneRender 약 6% 감소도 관측됐으나 기준/후보 Warmup이 20/60초로 달랐고 구름·바람·AI까지 동일하지 않으므로 6%를 확정 개선율로 사용하지 않는다. 바다 방향의 전체 구간 차이는 사실상 없었다. GPU 패스 변화만으로 전체 FPS 상승을 주장하지 않는다.
+
+`MaskedBaseVelocity` 후보는 별도 Velocity 구간을 없앴으나 PrePass 2.326ms, BasePass 3.398ms, SceneRender 9.852ms였다. 동일 60초 Warmup 기준보다 SceneRender 약 4.5% 높아 채택하지 않았다. 특정 패스가 0ms가 되는 것만으로 최적화를 판단하지 않는다.
+
+원본 완료 캡처는 `Saved/Profiling/Insights/`의 `RenderBaselineStable_20261007_002337`, `RenderMaskedDepthStable_20261007_002550`, `RenderMaskedBaseVelocity_20261007_002106`, `RenderSeaBaseline_20261007_002753`, `RenderSeaMaskedDepth_20261007_003001` 접두사 JSON/utrace다. CSV와 분석 JSON은 `Saved/Profiling/Insights/RenderComparison/`에 있다. 반복 측정은 시작/종료 shader_jobs=0 및 카메라·태양 고정을 확인했다. 저장된 산/바다 PNG에서 잎 형태·지형·물에 뚜렷한 품질 저하는 관찰되지 않았다. 정지 이미지 비교가 이동 중 TSR 잔상 검증을 대체하지는 않는다.
+
+직접 UBT Editor Development 빌드는 성공했다. 기존 `ChestLaunchPhysicsDiagnostic.h`의 Chaos GetRead 호출 경고 C4686은 남아 있으며, 이번 렌더링 계측 코드에서 새로운 컴파일 오류는 없었다. 기존 런타임 에셋/태그/DeckWalk 오류도 이번 변경의 해결 범위가 아니다.
+
+프로젝트 기본값 반영 뒤 후보 INI override 없이 `RenderAppliedDay_20261007_003246`을 새 에디터에서 캡처했다. 실제 CVar 2/1/0, 시작/종료 shader_jobs=0, Nanite 최신 상태 및 정상 종료를 확인했다. 낮 시간 산 방향 PNG에서도 풀의 잎 경계와 지형을 확인했다. 측정용 날씨 변경은 맵에 저장되지 않았으며, 실행 전후 `Lvl_CY.umap` SHA-256은 동일했다.
+
+커밋 전 원격을 갱신해 최신 디자이너 리터치가 PR #110의 `7b4d63e8` 맵임을 확인했다. 해당 LFS 원본과 현재 맵을 별도로 로드해 액터 765개의 이름·클래스·배치·스케일·bounds·Static Mesh 참조, Landscape 머티리얼·컴포넌트 구성을 비교했다. 감사용 복사 경로 때문에 달라진 WaterInfoMesh의 맵 내부 참조 접두사를 제외하면 비교 항목이 동일했다. 현재 맵은 이 리터치 배치를 유지하며 그림자 설정과 Nanite 데이터가 반영된 파생 파일이다. 원본과 바이너리가 동일하다는 의미나 지형의 모든 높이 샘플을 직접 비교했다는 의미는 아니다. 보고서는 `Saved/Optimization/DesignerMapComparison_20261007.json`에 있다.

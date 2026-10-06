@@ -24,6 +24,11 @@ output = Path(unreal.Paths.project_saved_dir()) / "Profiling" / "Insights"
 started = time.monotonic()
 last_poll = 0.0
 handle = None
+controlled = '-SWControlledComparison' in command_line
+hour_match = re.search(r'SWComparisonHour=(\d+)', command_line)
+comparison_hour = int(hour_match.group(1)) if hour_match else 18
+if controlled:
+    timeout_seconds += 1800  # Startup shader permutations can take several minutes.
 
 
 def finish(message):
@@ -61,7 +66,21 @@ try:
         world = unreal.EditorLoadingAndSavingUtils.load_map(map_path)
     if not world:
         raise RuntimeError("Could not load " + map_path)
+    if controlled:
+        unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).editor_set_viewport_realtime(False)
+        # The native network weather actor reads these at BeginPlay. A zero hour
+        # duration selects its supported Frozen state; pausing BP timelines alone
+        # does not stop native playback. This dedicated editor never saves assets.
+        weather = [actor for actor in unreal.GameplayStatics.get_all_actors_of_class(world, unreal.Actor)
+                   if 'BP_StylizedWeather' in actor.get_class().get_name()]
+        if len(weather) != 1:
+            raise RuntimeError('Controlled comparison requires exactly one weather actor')
+        weather[0].set_editor_property('1 Hour Seconds', 0.0)
+        weather[0].set_editor_property('Init Hour', comparison_hour)
+        weather[0].set_editor_property('Init Minute', 0)
+        unreal.log(f'SW_COMPARISON_WEATHER_FROZEN: {comparison_hour}:00, native zero-duration playback')
     handle = unreal.register_slate_post_tick_callback(poll)
+    started = time.monotonic()
     unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).editor_request_begin_play()
 except Exception:
     unreal.EditorPythonScripting.set_keep_python_script_alive(False)
