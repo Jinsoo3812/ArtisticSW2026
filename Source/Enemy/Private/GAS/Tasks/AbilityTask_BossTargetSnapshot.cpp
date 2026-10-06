@@ -6,6 +6,7 @@
 #include "BossAI/ShipBossEnemy.h"
 #include "Components/StaticMeshComponent.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckCombatTargetResolverComponent.h"
 #include "ShipAI/EnemyShip.h"
 #include "TimerManager.h"
 
@@ -46,21 +47,23 @@ void UAbilityTask_BossTargetSnapshot::SamplePose()
 	const UStaticMeshComponent* Frame = IsValid(Ship) ? Ship->GetDeckMeshComplex() : nullptr;
 	AActor* Actor = Target.Get();
 	if (!Area || !Frame || !IsValid(Actor)) return;
-	FDeckWalkLocation Floor;
-	const bool bOnDeck = Area->ResolveActorOnDeck(*Actor, Floor);
-	FVector Local = Area->ToLocal(Area->GetActorFeetWorld(*Actor));
-	if (bOnDeck) Local.Z = Floor.LocalFloor.Z;
-	else if (Snapshot.bValid) Local.Z = Snapshot.LocalFloor.Z;
-	else return;
-	// Keep precise XY rather than the nearest sampled graph node. Jumping retains the deck height.
-	FDeckWalkLocation Precise;
-	const FName Surface = bOnDeck ? Floor.SurfaceId : Snapshot.SurfaceId;
-	if (Area->ResolvePreciseLocalFloor(Local, Surface, Precise)) Local = Precise.LocalFloor;
-	Snapshot.LocalFloor = Local;
-	Snapshot.SurfaceId = Surface;
+	FDeckTargetAnchor Anchor;
+	if (UDeckCombatTargetResolverComponent::ResolveFor(Boss.Get(), Actor, Anchor))
+	{
+		Snapshot.LocalFloor = Anchor.LocalCenter;
+		Snapshot.SurfaceId = Anchor.SurfaceId;
+	}
+	else if (Snapshot.bValid && (Actor->IsActorBeingDestroyed()
+		|| (TargetASC.IsValid() && TargetASC->HasMatchingGameplayTag(State_Dead))))
+	{
+		// Freeze the death pose using the established surface; dead actors cannot be acquired as targets.
+		const FVector Feet = Area->ToLocal(Area->GetActorFeetWorld(*Actor));
+		Snapshot.LocalFloor.X = Feet.X; Snapshot.LocalFloor.Y = Feet.Y;
+	}
+	else { Snapshot.bValid = false; return; }
 	Snapshot.LocalForward = FVector::VectorPlaneProject(
 		Frame->GetComponentTransform().InverseTransformVectorNoScale(Actor->GetActorForwardVector()), FVector::UpVector).GetSafeNormal();
-	Snapshot.bValid = !Snapshot.LocalForward.IsNearlyZero() && !Local.ContainsNaN();
+	Snapshot.bValid = !Snapshot.LocalForward.IsNearlyZero() && !Snapshot.LocalFloor.ContainsNaN();
 }
 
 void UAbilityTask_BossTargetSnapshot::Refresh()

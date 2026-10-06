@@ -1,6 +1,7 @@
 #include "DeckAI/DeckWalkRouteComponent.h"
 
 #include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckCombatTargetResolverComponent.h"
 #include "DeckAI/DeckWaypointMovementInterface.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/Character.h"
@@ -56,23 +57,40 @@ bool UDeckWalkRouteComponent::Replan(const FDeckWalkLocation& Goal)
 }
 bool UDeckWalkRouteComponent::SetLocationGoal(const FDeckWalkLocation& Goal)
 {
-	ClearGoal();
-	return Replan(Goal);
+	if (!Replan(Goal)) return false;
+	TargetActor.Reset(); bTrackTarget = false;
+	return true;
 }
 bool UDeckWalkRouteComponent::SetActorGoal(AActor* MovingTarget)
 {
-	ClearGoal();
-	UDeckWalkAreaComponent* Area = GetArea();
-	FDeckWalkLocation Goal;
-	if (!MovingTarget || !Area || !Area->ResolveActorOnDeck(*MovingTarget, Goal) || !Replan(Goal)) return false;
+	if (!PlanActorGoal(MovingTarget)) return false;
 	TargetActor = MovingTarget; bTrackTarget = true;
+	NextActorReplanTime = GetWorld()->GetTimeSeconds() + 0.35;
 	return true;
+}
+
+bool UDeckWalkRouteComponent::PlanActorGoal(AActor* Target)
+{
+	const UDeckWalkAreaComponent* Area = GetArea();
+	FDeckTargetAnchor Anchor; FDeckWalkLocation Start;
+	if (!Area || !Area->ResolveActorOnDeck(*GetOwner(), Start)
+		|| !UDeckCombatTargetResolverComponent::ResolveFor(GetOwner(), Target, Anchor)) return false;
+	TArray<FDeckWalkLocation> Candidates; Area->GetReachableLocations(Start, Candidates);
+	Candidates.Sort([&](const FDeckWalkLocation& A, const FDeckWalkLocation& B)
+	{ return FVector::DistSquared2D(A.LocalFloor, Anchor.LocalCenter) < FVector::DistSquared2D(B.LocalFloor, Anchor.LocalCenter); });
+	for (const auto& Candidate : Candidates)
+	{
+		const ACharacter* Character = Cast<ACharacter>(GetOwner());
+		if (Character && Candidate.SurfaceId == Anchor.SurfaceId
+			&& FVector::Dist2D(Candidate.LocalFloor, Anchor.LocalCenter) <= 350.f
+			&& Area->IsLocationAvailable(Candidate, *Character) && Replan(Candidate)) return true;
+	}
+	return false;
 }
 
 bool UDeckWalkRouteComponent::SetLocationGoalInDistanceBand(const FDeckWalkLocation& Goal,
 	const FVector& Center, float Distance, float Tolerance)
 {
-	ClearGoal();
 	const UDeckWalkAreaComponent* Area = GetArea();
 	FDeckWalkLocation Start;
 	TArray<FDeckWalkLocation> Path;
@@ -84,6 +102,7 @@ bool UDeckWalkRouteComponent::SetLocationGoalInDistanceBand(const FDeckWalkLocat
 		Path.Add(Goal);
 	}
 	AcceptPath(MoveTemp(Path));
+	TargetActor.Reset(); bTrackTarget = false;
 	return true;
 }
 bool UDeckWalkRouteComponent::SetPatrolGoal(FRandomStream& Random)
@@ -106,13 +125,16 @@ EDeckWalkRouteTick UDeckWalkRouteComponent::TickRoute(float DeltaSeconds,
 		|| !Character->GetCharacterMovement() || !Character->GetCharacterMovement()->IsMovingOnGround()) return EDeckWalkRouteTick::Failed;
 	if (bTrackTarget)
 	{
-		FDeckWalkLocation Target;
-		if (!TargetActor.IsValid() || !Area->ResolveActorOnDeck(*TargetActor, Target)) return EDeckWalkRouteTick::Failed;
-		// Vertical/surface changes must replan even when XY has not changed.
-		if ((Target.SurfaceId != LocalGoal.SurfaceId
-			|| FMath::Abs(Target.LocalFloor.Z - LocalGoal.LocalFloor.Z) > 45.0f
-			|| FVector::Dist2D(Target.LocalFloor, LocalGoal.LocalFloor) > 150.0f)
-			&& !Replan(Target)) return EDeckWalkRouteTick::Failed;
+		if (!TargetActor.IsValid()) return EDeckWalkRouteTick::Failed;
+		if (GetWorld()->GetTimeSeconds() >= NextActorReplanTime)
+		{
+			NextActorReplanTime = GetWorld()->GetTimeSeconds() + 0.35;
+			FDeckTargetAnchor Target;
+			if (UDeckCombatTargetResolverComponent::ResolveFor(GetOwner(), TargetActor.Get(), Target)
+				&& (Target.SurfaceId != LocalGoal.SurfaceId
+					|| FVector::Dist2D(Target.LocalCenter, LocalGoal.LocalFloor) > 150.f))
+				PlanActorGoal(TargetActor.Get()); // A failed replacement leaves the safe route intact.
+		}
 	}
 	if (LocalPath.IsEmpty()) return EDeckWalkRouteTick::Failed;
 	const FVector Feet = Area->ToLocal(Area->GetActorFeetWorld(*Character));

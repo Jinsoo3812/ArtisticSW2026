@@ -36,8 +36,9 @@ bool UBTT_MoveAroundDeckTarget::PlanNextSegment()
 	{
 		SegmentRemaining = 1.5f; return true;
 	}
-	EnemyPointSelectionFailure::Log(this, Enemy.Get(), TEXT("No suitable point for moving around the deck target."));
-	return false;
+	// Holding position is a valid cooldown activity when the rail leaves no safe lateral route.
+	SegmentRemaining = 0.3f;
+	return Enemy->IsValidCombatTarget(Target.Get());
 }
 void UBTT_MoveAroundDeckTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
 {
@@ -56,7 +57,11 @@ void UBTT_MoveAroundDeckTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint
 	SegmentRemaining -= DeltaSeconds;
 	if (!Route->HasGoal())
 	{
-		if (!PlanNextSegment()) { Cleanup(); FinishLatentTask(OwnerComp, EBTNodeResult::Failed); }
+		if (SegmentRemaining <= 0.f)
+		{
+			Direction *= -1.f;
+			if (!PlanNextSegment()) { Cleanup(); FinishLatentTask(OwnerComp, EBTNodeResult::Failed); }
+		}
 		return;
 	}
 	Enemy->GetDeckEnemyNavigationComponent()->ReplanIfTargetMoved(Target.Get());
@@ -69,8 +74,13 @@ void UBTT_MoveAroundDeckTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint
 	if (Result != EDeckWalkRouteTick::Moving || SegmentRemaining <= 0.0f)
 	{
 		Enemy->GetCharacterMovement()->StopMovementImmediately();
-		Enemy->GetDeckEnemyNavigationComponent()->CancelCombatRoute();
 		Direction *= -1.0f;
+		if (Result == EDeckWalkRouteTick::Reached)
+		{
+			Enemy->GetDeckEnemyNavigationComponent()->CancelCombatRoute();
+			SegmentRemaining = 0.3f;
+			return;
+		}
 		if (!PlanNextSegment()) { Cleanup(); FinishLatentTask(OwnerComp, EBTNodeResult::Failed); }
 	}
 }

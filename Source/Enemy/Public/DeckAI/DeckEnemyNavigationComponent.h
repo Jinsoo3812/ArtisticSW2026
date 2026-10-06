@@ -28,6 +28,8 @@ protected:
 	float TargetReplanDistance = 100.0f;
 	UPROPERTY(EditDefaultsOnly, Category = "Deck AI|Navigation", meta = (ClampMin = "0.05", Units = "s"))
 	float MinimumReplanInterval = 0.35f;
+	UPROPERTY(EditDefaultsOnly, Category = "Deck AI|Navigation", meta = (ClampMin = "0", Units = "cm"))
+	float SupportedTargetGoalTolerance = 350.f;
 
 private:
 	ADeckEnemy* GetDeckEnemy() const;

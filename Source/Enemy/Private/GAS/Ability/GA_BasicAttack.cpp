@@ -14,6 +14,7 @@
 #include "BaseGameplayTags.h"
 #include "BaseAttributeSet.h"
 #include "BossAI/ShipBossEnemy.h"
+#include "BossAI/BossAttackPositionLibrary.h"
 #include "DeckAI/DeckEnemyCombatComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -97,6 +98,12 @@ void UGA_BasicAttack::ActivateAbility(
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
 	ABaseEnemy* EnemyOwner = Cast<ABaseEnemy>(GetAvatarActorFromActorInfo());
+	if (const AShipBossEnemy* Boss = Cast<AShipBossEnemy>(EnemyOwner);
+		Boss && GetAssetTags().HasTagExact(GameplayAbility_BasicAttack)
+		&& !UBossAttackPositionLibrary::CanMeleeAttackFromCurrentPosition(Boss, Boss->GetBossCombatTarget(), 0.f))
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true); return;
+	}
 	DeckCombat.Reset(); DeckAttackAttempt = 0;
 	if (ADeckEnemy* Deck = Cast<ADeckEnemy>(EnemyOwner))
 	{

@@ -8,10 +8,14 @@
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BossAI/ShipBossEnemy.h"
+#include "DeckAI/DeckWalkRouteComponent.h"
+#include "DeckAI/DeckCombatTargetResolverComponent.h"
+#include "AI/BaseAIController.h"
 
 UBTT_SelectBossDestinationPoint::UBTT_SelectBossDestinationPoint()
 {
 	NodeName = TEXT("Select Boss Walk Area Destination");
+	bNotifyTick = true;
 	BlackboardKey.SelectedKeyName = TEXT("DestinationLocation");
 	BlackboardKey.AddVectorFilter(
 		this,
@@ -50,21 +54,40 @@ EBTNodeResult::Type UBTT_SelectBossDestinationPoint::ExecuteTask(
 	if (!UBossDeckPointSelector::SelectDestinationLocation(
 		Boss->GetHostShip(), Boss, Target, SelectionPurpose, DestinationRelation, SelectionSettings, Location))
 	{
-		EnemyPointSelectionFailure::Log(this, Boss, TEXT("No suitable boss destination for the requested purpose/relation."));
-		Blackboard->ClearValue(GetSelectedBlackboardKey());
-		Boss->ClearDestination();
-		return EBTNodeResult::Failed;
+		const auto* Resolver = Boss->FindComponentByClass<UDeckCombatTargetResolverComponent>();
+		if (Resolver && Resolver->HasExpiredEvidence(Target))
+		{
+			Boss->ClearDestination(); Blackboard->ClearValue(GetSelectedBlackboardKey());
+			Boss->SetBossCombatTarget(nullptr);
+			if (auto* AI = Cast<ABaseAIController>(Controller)) AI->ClearCombatTarget(true);
+			return EBTNodeResult::Failed;
+		}
+		if (SelectionPurpose == EBossDestinationPurpose::Walk && Boss->HasDestination()
+			&& Boss->GetDeckWalkRouteComponent()->HasGoal())
+		{
+			Blackboard->SetValueAsVector(GetSelectedBlackboardKey(), Boss->GetDestinationLocation().LocalFloor);
+			return EBTNodeResult::Succeeded;
+		}
+		if (!Boss->HasDestination()) { Blackboard->ClearValue(GetSelectedBlackboardKey()); Boss->ClearDestination(); }
+		*reinterpret_cast<float*>(NodeMemory) = 0.f;
+		return EBTNodeResult::InProgress;
 	}
 
 	if (!Boss->TrySetDestinationLocation(Location, SelectionPurpose == EBossDestinationPurpose::Walk))
 	{
 		EnemyPointSelectionFailure::Log(this, Boss, TEXT("Selected boss destination was rejected."));
-		Blackboard->ClearValue(GetSelectedBlackboardKey());
-		Boss->ClearDestination();
+		if (!Boss->HasDestination()) { Blackboard->ClearValue(GetSelectedBlackboardKey()); Boss->ClearDestination(); }
 		return EBTNodeResult::Failed;
 	}
 	Blackboard->SetValueAsVector(GetSelectedBlackboardKey(), Location.LocalFloor);
+	if (SelectionPurpose == EBossDestinationPurpose::Walk) Boss->TrackWalkingTarget(Target, SelectionSettings);
 	return EBTNodeResult::Succeeded;
+}
+
+void UBTT_SelectBossDestinationPoint::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
+{
+	float& Waiting = *reinterpret_cast<float*>(NodeMemory); Waiting += DeltaSeconds;
+	if (Waiting >= 0.3f) FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
 }
 
 FString UBTT_SelectBossDestinationPoint::GetStaticDescription() const

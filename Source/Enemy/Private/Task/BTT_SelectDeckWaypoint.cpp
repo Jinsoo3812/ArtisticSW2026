@@ -1,6 +1,8 @@
 #include "Task/BTT_SelectDeckWaypoint.h"
 
 #include "AIController.h"
+#include "AI/BaseAIController.h"
+#include "DeckAI/DeckCombatTargetResolverComponent.h"
 #include "AI/PointSelectionFailure.h"
 #include "AI/EnemyAlarmComponent.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
@@ -15,6 +17,7 @@
 UBTT_SelectDeckWaypoint::UBTT_SelectDeckWaypoint()
 {
 	NodeName = TEXT("Select Deck Walk Goal");
+	bNotifyTick = true;
 	BlackboardKey.SelectedKeyName = TEXT("TargetActor");
 	BlackboardKey.AddObjectFilter(this, GET_MEMBER_NAME_CHECKED(UBTT_SelectDeckWaypoint, BlackboardKey), AActor::StaticClass());
 }
@@ -54,12 +57,36 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(UBehaviorTreeComponent&
 		return Navigation->PlanInvestigationRoute(Point) ? EBTNodeResult::Succeeded : FailPointSelection(TEXT("No reachable investigation point."));
 	}
 	AActor* Target = Blackboard ? Cast<AActor>(Blackboard->GetValueAsObject(GetSelectedBlackboardKey())) : nullptr;
-	FDeckWalkLocation TargetFloor;
-	if (!Enemy->IsValidCombatTarget(Target) || !Area->ResolveActorOnDeck(*Target, TargetFloor))
+	if (!Enemy->IsValidCombatTarget(Target))
 	{
 		Navigation->CancelCombatRoute();
-		Enemy->ClearCombatTarget();
-		return FailPointSelection(TEXT("Cannot resolve the target's deck point."));
+		if (auto* AI = Cast<ABaseAIController>(Controller)) AI->ClearCombatTarget(true);
+		return EBTNodeResult::Failed;
+	}
+	const auto HoldOrKeepRoute = [&]()
+	{
+		if (Navigation->HasActiveRoute() && Route->HasGoal() && Area->IsLocationValid(Route->GetGoal()))
+			return EBTNodeResult::Succeeded;
+		*reinterpret_cast<float*>(NodeMemory) = 0.f;
+		return EBTNodeResult::InProgress;
+	};
+	FDeckTargetAnchor TargetFloor;
+	if (!UDeckCombatTargetResolverComponent::ResolveFor(Enemy, Target, TargetFloor))
+	{
+		const auto* Resolver = Enemy->FindComponentByClass<UDeckCombatTargetResolverComponent>();
+		if (Resolver && Resolver->HasExpiredEvidence(Target))
+		{
+			if (auto* AI = Cast<ABaseAIController>(Controller))
+			{
+				const bool bHaveSnapshot = Navigation->HasActiveRoute() && Route->HasGoal() && Area->IsLocationValid(Route->GetGoal());
+				const FVector Point = bHaveSnapshot ? Area->ToWorld(Route->GetGoal().LocalFloor) : Enemy->GetActorLocation();
+				AI->ClearCombatTarget(true);
+				Navigation->CancelCombatRoute();
+				if (bHaveSnapshot) AI->StartInvestigation(Point);
+			}
+			return EBTNodeResult::Failed;
+		}
+		return HoldOrKeepRoute();
 	}
 	if (SelectionMode == EDeckWaypointSelectionMode::Combat)
 	{
@@ -67,12 +94,18 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(UBehaviorTreeComponent&
 		if (Combat->EvaluateAttack(Target, false) == EDeckAttackOutcome::BlockedLOS)
 		{
 			if (!Combat->HasStoredRecovery()) Combat->RecordBlockedLOS(Combat->BeginAttack(Target), Target);
-			return Navigation->PlanRecoveryRoute(Target) ? EBTNodeResult::Succeeded : FailPointSelection(TEXT("No reachable line-of-sight recovery point."));
+			return Navigation->PlanRecoveryRoute(Target) ? EBTNodeResult::Succeeded : HoldOrKeepRoute();
 		}
 	}
 	const bool bSelected = SelectionMode == EDeckWaypointSelectionMode::ReleaseLineOfSightReposition
 		? Navigation->PlanRecoveryRoute(Target) : Navigation->PlanTargetDistanceRoute(Target, TargetDistance, ProjectionTolerance);
-	return bSelected ? EBTNodeResult::Succeeded : FailPointSelection(TEXT("No suitable combat reposition point."));
+	return bSelected ? EBTNodeResult::Succeeded : HoldOrKeepRoute();
+}
+void UBTT_SelectDeckWaypoint::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
+{
+	float& Waiting = *reinterpret_cast<float*>(NodeMemory); Waiting += DeltaSeconds;
+	// A bounded observation avoids an immediate failure loop without removing the live target.
+	if (Waiting >= 0.3f) FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
 }
 FString UBTT_SelectDeckWaypoint::GetStaticDescription() const
 {

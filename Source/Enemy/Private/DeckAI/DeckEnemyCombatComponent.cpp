@@ -11,6 +11,7 @@
 #include "BaseGameplayTags.h"
 #include "DeckAI/DeckRangedEnemy.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckCombatTargetResolverComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "ShipAI/EnemyShip.h"
 #include "Weapon/BaseWeapon.h"
@@ -86,8 +87,10 @@ EDeckAttackOutcome UDeckEnemyCombatComponent::EvaluateAttack(AActor* Target, boo
 	if (ASC->HasMatchingGameplayTag(State_Attacking) || ASC->HasMatchingGameplayTag(State_Damaged)) return EDeckAttackOutcome::Interrupted;
 	if (bCheckCooldown && IsCoolingDown()) return EDeckAttackOutcome::Cooldown;
 	const UDeckWalkAreaComponent* Area = Enemy->GetDeckHostShip()->GetDeckWalkAreaComponent();
-	FDeckWalkLocation Self, Other;
-	if (!Area || !Area->ResolveActorOnDeck(*Enemy, Self) || !Area->ResolveActorOnDeck(*Target, Other)
+	FDeckWalkLocation Self;
+	FDeckTargetAnchor Other;
+	if (!Area || !Area->ResolveActorOnDeck(*Enemy, Self)
+		|| !UDeckCombatTargetResolverComponent::ResolveFor(Enemy, Target, Other) || !Other.HasCurrentEvidence()
 		|| Self.SurfaceId != Other.SurfaceId) return EDeckAttackOutcome::OutOfRange;
 	const float Distance = FVector::Distance(Enemy->GetActorLocation(), Target->GetActorLocation());
 	const float Min = Enemy->GetDeckCombatRole() == EDeckEnemyCombatRole::Melee ? 0.0f : Enemy->GetMinAttackRange();
@@ -177,9 +180,11 @@ void UDeckEnemyCombatComponent::RecordBlockedLOS(uint32 Attempt, AActor* Target)
 	LastOutcome = EDeckAttackOutcome::BlockedLOS;
 	RecoveryShip = Enemy->GetDeckHostShip();
 	const UDeckWalkAreaComponent* Area = RecoveryShip.IsValid() ? RecoveryShip->GetDeckWalkAreaComponent() : nullptr;
-	if (!Area || !IsValid(Target) || !Area->ResolveActorOnDeck(*Target, RecoveryFloor)) { ClearRecovery(); return; }
-	// Store actual feet, not the quantized graph node, and never follow hidden target motion.
-	RecoveryFloor.LocalFloor = Area->ToLocal(Area->GetActorFeetWorld(*Target));
+	FDeckTargetAnchor Anchor;
+	if (!Area || !UDeckCombatTargetResolverComponent::ResolveFor(Enemy, Target, Anchor)) { ClearRecovery(); return; }
+	// A fixed tracking snapshot is not a movement handle; navigation resolves a safe fresh endpoint.
+	RecoveryFloor = FDeckWalkLocation(); RecoveryFloor.SurfaceId = Anchor.SurfaceId;
+	RecoveryFloor.LocalFloor = Anchor.LocalCenter;
 	RecoveryTarget = Target;
 	RecoveryTime = GetWorld()->GetTimeSeconds();
 }

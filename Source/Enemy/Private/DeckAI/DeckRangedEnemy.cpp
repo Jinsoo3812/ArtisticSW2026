@@ -11,6 +11,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "DeckAI/DeckEnemyNavigationComponent.h"
 #include "DeckAI/DeckEnemyCombatComponent.h"
+#include "DeckAI/DeckCombatTargetResolverComponent.h"
 #include "AI/EnemyAlarmComponent.h"
 #include "DeckAI/DeckWalkRouteComponent.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
@@ -29,6 +30,7 @@ ADeckEnemy::ADeckEnemy()
 		TEXT("DeckEnemyNavigationComponent"));
 	DeckWalkRouteComponent = CreateDefaultSubobject<UDeckWalkRouteComponent>(TEXT("DeckWalkRouteComponent"));
 	DeckCombatComponent = CreateDefaultSubobject<UDeckEnemyCombatComponent>(TEXT("DeckCombatComponent"));
+	DeckTargetResolver = CreateDefaultSubobject<UDeckCombatTargetResolverComponent>(TEXT("DeckTargetResolver"));
 	bAutoResolveHostShip = false;
 	bDestroyWithHostShip = false;
 	bDestroyAfterDeathFinished = false;
@@ -87,6 +89,7 @@ void ADeckEnemy::BeginPlay()
 
 void ADeckEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (DeckTargetResolver) DeckTargetResolver->Reset();
 	GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
 	if (HasAuthority())
 	{
@@ -200,6 +203,7 @@ void ADeckEnemy::DeactivateToPool()
 	GetWorldTimerManager().ClearTimer(ReturnToPoolTimerHandle);
 	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
 	if (DeckCombatComponent) DeckCombatComponent->ResetCombat();
+	if (DeckTargetResolver) DeckTargetResolver->Reset();
 	if (AlarmComponent) AlarmComponent->ResetForReuse();
 	ClearCombatTarget();
 	if (DeckEnemyNavigationComponent)
@@ -267,9 +271,11 @@ bool ADeckEnemy::EvaluateAttackTarget(const AActor* Candidate, bool bRequireLine
 	if (!EvaluateCombatTarget(Candidate, OutReason)) return false;
 	const AEnemyShip* Ship = GetDeckHostShip();
 	const UDeckWalkAreaComponent* Area = Ship ? Ship->GetDeckWalkAreaComponent() : nullptr;
-	FDeckWalkLocation SelfFloor, TargetFloor;
+	FDeckWalkLocation SelfFloor;
+	FDeckTargetAnchor TargetFloor;
 	if (!Area || !Area->ResolveActorOnDeck(*this, SelfFloor)
-		|| !Candidate || !Area->ResolveActorOnDeck(*Candidate, TargetFloor))
+		|| !UDeckCombatTargetResolverComponent::ResolveFor(this, const_cast<AActor*>(Candidate), TargetFloor)
+		|| !TargetFloor.HasCurrentEvidence())
 	{
 		OutReason = TEXT("NoWalkableCombatFloor");
 		return false;
@@ -308,6 +314,7 @@ void ADeckEnemy::OnDeckMoveFailed()
 
 void ADeckEnemy::HandleDeath_Implementation()
 {
+	if (DeckTargetResolver) DeckTargetResolver->Reset();
 	if (DeckCombatComponent) DeckCombatComponent->ResetCombat();
 	if (AlarmComponent) AlarmComponent->ResetForReuse();
 	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();

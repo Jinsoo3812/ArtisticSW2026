@@ -4,6 +4,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckCombatTargetResolverComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GAS/Tasks/BossTargetSnapshotTypes.h"
@@ -91,9 +92,11 @@ bool UBossDeckPointSelector::SelectDestinationLocation(
 	Out = FDeckWalkLocation();
 	AShipBossEnemy* Boss = Cast<AShipBossEnemy>(BossActor);
 	UDeckWalkAreaComponent* Area = Ship ? Ship->GetDeckWalkAreaComponent() : nullptr;
-	FDeckWalkLocation Start, TargetFloor;
+	FDeckWalkLocation Start;
+	FDeckTargetAnchor TargetFloor;
 	if (!Ship || !Boss || !Boss->HasAuthority() || !IsValid(Target) || !Area
-		|| !Area->ResolveActorOnDeck(*Boss, Start) || !Area->ResolveActorOnDeck(*Target, TargetFloor)) return false;
+		|| !Area->ResolveActorOnDeck(*Boss, Start)
+		|| !UDeckCombatTargetResolverComponent::ResolveFor(Boss, Target, TargetFloor)) return false;
 	TArray<FDeckWalkLocation> Candidates;
 	Area->GetReachableLocations(Start, Candidates, Purpose == EBossDestinationPurpose::Walk);
 	const FVector Up = Ship->GetDeckMeshComplex()->GetUpVector();
@@ -108,7 +111,9 @@ bool UBossDeckPointSelector::SelectDestinationLocation(
 		const float Travel = FVector::Dist2D(Candidate.LocalFloor, Start.LocalFloor);
 		const float MinimumTravel = Purpose == EBossDestinationPurpose::Dash
 			? FMath::Max(Settings.MinimumTravelDistance, Settings.MinimumDashTravelDistance) : Settings.MinimumTravelDistance;
-		if ((Purpose == EBossDestinationPurpose::Walk ? Candidate.NodeIndex == Start.NodeIndex : Travel < MinimumTravel)
+		if ((Purpose == EBossDestinationPurpose::Walk
+			? Candidate.NodeIndex == Start.NodeIndex && TargetFloor.Source == EDeckTargetAnchorSource::DeckFloor
+			: Travel < MinimumTravel)
 			|| !Area->IsLocationAvailable(Candidate, *Boss)) continue;
 		if (Purpose == EBossDestinationPurpose::Vanish && Relation != EBossDestinationRelation::Any
 			&& !(Relation == EBossDestinationRelation::BehindTarget
@@ -126,8 +131,9 @@ bool UBossDeckPointSelector::SelectDestinationLocation(
 		else if (Purpose == EBossDestinationPurpose::Walk)
 		{
 			const auto& Previous = Boss->GetPreviousLocation();
-			if (Area->IsLocationValid(Previous) && Previous.NodeIndex == Candidate.NodeIndex) continue;
-			Primary = FMath::Abs(FVector::Dist2D(Candidate.LocalFloor, TargetFloor.LocalFloor) - Settings.IdealWalkRange);
+			if (TargetFloor.Source == EDeckTargetAnchorSource::DeckFloor
+				&& Area->IsLocationValid(Previous) && Previous.NodeIndex == Candidate.NodeIndex) continue;
+			Primary = FMath::Abs(FVector::Dist2D(Candidate.LocalFloor, TargetFloor.LocalCenter) - Settings.IdealWalkRange);
 			TArray<FDeckWalkLocation> Path;
 			if (!Area->FindPath(Start, Candidate, Path)) continue;
 			for (int32 I = 1; I < Path.Num(); ++I) Secondary += FVector::Dist(Path[I - 1].LocalFloor, Path[I].LocalFloor);

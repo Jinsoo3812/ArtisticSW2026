@@ -22,6 +22,7 @@
 #include "DeckAI/DeckEnemySpawnerComponent.h"
 #include "DeckAI/DeckWalkRouteComponent.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckCombatTargetResolverComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "BaseAttributeSet.h"
 #include "DeckAI/DeckWaypointComponent.h"
@@ -43,6 +44,7 @@ namespace
 AShipBossEnemy::AShipBossEnemy()
 {
 	DeckWalkRouteComponent = CreateDefaultSubobject<UDeckWalkRouteComponent>(TEXT("DeckWalkRouteComponent"));
+	DeckTargetResolver = CreateDefaultSubobject<UDeckCombatTargetResolverComponent>(TEXT("DeckTargetResolver"));
 	CombatHurtboxComponent->Mode = ECombatHurtboxMode::AnimatedPhysicsAsset;
 	HeadHitStunEffect = UBossHeadHitStunEffect::StaticClass();
 	HealthThresholdStunEffect = UBossHealthThresholdStunEffect::StaticClass();
@@ -132,6 +134,7 @@ void AShipBossEnemy::BeginPlay()
 
 void AShipBossEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (DeckTargetResolver) DeckTargetResolver->Reset();
 	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
 	GetHealthComponent()->OnConfirmedDamage.RemoveAll(this);
 	GetHealthComponent()->OnHealthChanged.RemoveDynamic(this, &AShipBossEnemy::HandleStunHealthChanged);
@@ -192,6 +195,7 @@ bool AShipBossEnemy::InitializeBoss(AEnemyShip* InHostShip, int32 InitialPointId
 
 	UnbindHostShip();
 	HostShip = InHostShip;
+	DeckTargetResolver->Reset();
 	InitialSpawnPointId = InitialPointId;
 	DestinationLocation = FDeckWalkLocation();
 	PreviousLocation = FDeckWalkLocation();
@@ -218,6 +222,7 @@ void AShipBossEnemy::SetBossCombatTarget(AActor* NewTarget)
 	}
 
 	BossCombatTarget = CanEngageActor(NewTarget) ? NewTarget : nullptr;
+	DeckTargetResolver->Reset();
 	if (ABaseAIController* BossController = Cast<ABaseAIController>(GetController()))
 	{
 		if (BossCombatTarget)
@@ -258,15 +263,16 @@ void AShipBossEnemy::MarkDestinationReached()
 bool AShipBossEnemy::TrySetDestinationLocation(const FDeckWalkLocation& Location, bool bWalking)
 {
 	if (!HasAuthority() || !HostShip) return false;
-	ClearDestination();
 	UDeckWalkAreaComponent* Area = HostShip->GetDeckWalkAreaComponent();
 	if (!Area || !Area->TryClaimLocation(Location, *this)) return false;
-	Area->ResolveActorOnDeck(*this, PreviousLocation);
 	if (bWalking && (!DeckWalkRouteComponent || !DeckWalkRouteComponent->SetLocationGoal(Location)))
 	{
-		Area->ReleaseLocationClaim(this);
+		Area->RestoreLocationClaim(DestinationLocation, *this);
 		return false;
 	}
+	if (!bWalking && DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
+	if (!bWalking) WalkingTarget.Reset();
+	Area->ResolveActorOnDeck(*this, PreviousLocation);
 	HostShip->ReleaseDeckPointOccupancy(InitialSpawnPointId, this);
 	DestinationLocation = Location;
 	ForceNetUpdate();
@@ -276,10 +282,36 @@ bool AShipBossEnemy::TrySetDestinationLocation(const FDeckWalkLocation& Location
 void AShipBossEnemy::ClearDestination()
 {
 	if (!HasAuthority()) return;
+	WalkingTarget.Reset();
 	if (DeckWalkRouteComponent) DeckWalkRouteComponent->ClearGoal();
 	if (HostShip && HostShip->GetDeckWalkAreaComponent()) HostShip->GetDeckWalkAreaComponent()->ReleaseLocationClaim(this);
 	DestinationLocation = FDeckWalkLocation();
 	ForceNetUpdate();
+}
+
+void AShipBossEnemy::TrackWalkingTarget(AActor* Target, const FBossDestinationSelectionSettings& Settings)
+{
+	if (!HasAuthority()) return;
+	WalkingTarget = Target; WalkingSettings = Settings;
+	FDeckTargetAnchor Anchor;
+	if (DeckTargetResolver->Resolve(Target, Anchor))
+	{ PlannedWalkingCenter = Anchor.LocalCenter; PlannedWalkingSurface = Anchor.SurfaceId; }
+	NextWalkingReplanTime = GetWorld()->GetTimeSeconds() + 0.35;
+}
+
+void AShipBossEnemy::ReplanWalkingTarget()
+{
+	if (!WalkingTarget.IsValid() || !HasDestination() || !DeckWalkRouteComponent->HasGoal()
+		|| WalkingTarget.Get() != GetBossCombatTarget() || GetWorld()->GetTimeSeconds() < NextWalkingReplanTime
+		|| (GetAbilitySystemComponent() && GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Boss_Busy))) return;
+	NextWalkingReplanTime = GetWorld()->GetTimeSeconds() + 0.35;
+	FDeckTargetAnchor Anchor;
+	if (!DeckTargetResolver->Resolve(WalkingTarget.Get(), Anchor)) return;
+	if (Anchor.SurfaceId == PlannedWalkingSurface && FVector::Dist2D(Anchor.LocalCenter, PlannedWalkingCenter) < 100.f) return;
+	FDeckWalkLocation NewGoal;
+	if (UBossDeckPointSelector::SelectDestinationLocation(HostShip, this, WalkingTarget.Get(), EBossDestinationPurpose::Walk,
+		EBossDestinationRelation::Any, WalkingSettings, NewGoal) && TrySetDestinationLocation(NewGoal, true))
+	{ PlannedWalkingCenter = Anchor.LocalCenter; PlannedWalkingSurface = Anchor.SurfaceId; }
 }
 
 void AShipBossEnemy::OnDeckMoveFailed() { ClearDestination(); }
@@ -522,6 +554,7 @@ void AShipBossEnemy::FinishHiddenRelocation()
 
 void AShipBossEnemy::HandleDeath_Implementation()
 {
+	if (DeckTargetResolver) DeckTargetResolver->Reset();
 	// Capture before ability/BT cleanup. A dash may be between authored points;
 	// neither its destination nor its last occupied point is the death location.
 	const FTransform DeathWorldTransform = GetActorTransform();
@@ -667,6 +700,7 @@ void AShipBossEnemy::OnRep_BossHidden()
 
 void AShipBossEnemy::HandleHostShipDestroyed(AActor* DestroyedActor)
 {
+	if (DeckTargetResolver) DeckTargetResolver->Reset();
 	if (HasAuthority() && DestroyedActor == HostShip && !IsActorBeingDestroyed())
 	{
 		ClearDestination();

@@ -2,6 +2,7 @@
 #include "AI/BaseAIController.h"
 #include "AI/PointSelectionFailure.h"
 #include "BaseEnemy.h"
+#include "BossAI/ShipBossEnemy.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "DeckAI/DeckEnemyCombatComponent.h"
 #include "DeckAI/DeckEnemyNavigationComponent.h"
@@ -68,6 +69,13 @@ void UBTT_MoveToDeckWaypoint::TickTask(UBehaviorTreeComponent& OwnerComp, uint8*
 	UDeckWalkRouteComponent* Route = Enemy ? Enemy->FindComponentByClass<UDeckWalkRouteComponent>() : nullptr;
 	const bool bReady = bStopWhenAttackReady && AttackReady(OwnerComp, Deck);
 	if (Deck && !bReady) Deck->GetDeckEnemyNavigationComponent()->ReplanIfTargetMoved(Deck->GetCombatTarget());
+	if (AShipBossEnemy* Boss = Cast<AShipBossEnemy>(Enemy))
+	{
+		Boss->ReplanWalkingTarget();
+		if (UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent(); BB && Boss->HasDestination()
+			&& BB->GetKeyID(TEXT("DestinationLocation")) != FBlackboard::InvalidKey)
+			BB->SetValueAsVector(TEXT("DestinationLocation"), Boss->GetDestinationLocation().LocalFloor);
+	}
 	const EDeckWalkRouteTick Result = bReady ? EDeckWalkRouteTick::Reached
 		: (Mover && Mover->CanMoveOnDeck() && Route ? Route->TickRoute(DeltaSeconds, AcceptanceRadius,
 			ProgressTimeout, MaximumMoveTime, MoveSpeed, MinimumProgressDistance) : EDeckWalkRouteTick::Failed);

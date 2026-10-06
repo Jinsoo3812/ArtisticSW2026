@@ -8,6 +8,7 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BossAI/ShipBossEnemy.h"
 #include "DeckAI/DeckWalkAreaComponent.h"
+#include "DeckAI/DeckCombatTargetResolverComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "ShipAI/EnemyShip.h"
@@ -46,13 +47,15 @@ EBTNodeResult::Type UBTT_BossStrafe::ExecuteTask(
 		Target = Boss->GetBossCombatTarget();
 	}
 	UDeckWalkAreaComponent* Area = HostShip ? HostShip->GetDeckWalkAreaComponent() : nullptr;
-	FDeckWalkLocation Start, TargetFloor;
+	FDeckWalkLocation Start;
+	FDeckTargetAnchor TargetFloor;
 	if (!Boss || !Boss->HasAuthority() || !HostShip || !DeckMesh || !Movement || !Area
 		|| !Boss->CanEngageActor(Target))
 	{
 		return EBTNodeResult::Failed;
 	}
-	if (!Area->ResolveActorOnDeck(*Boss, Start) || !Area->ResolveActorOnDeck(*Target, TargetFloor)
+	if (!Area->ResolveActorOnDeck(*Boss, Start)
+		|| !UDeckCombatTargetResolverComponent::ResolveFor(Boss, Target, TargetFloor)
 		|| TargetFloor.SurfaceId != Start.SurfaceId)
 	{
 		EnemyPointSelectionFailure::Log(this, Boss, TEXT("Cannot resolve strafe start/target points on the same deck surface."));
@@ -61,7 +64,7 @@ EBTNodeResult::Type UBTT_BossStrafe::ExecuteTask(
 
 	const FTransform DeckTransform = DeckMesh->GetComponentTransform();
 	const FVector BossLocal = DeckTransform.InverseTransformPosition(Boss->GetActorLocation());
-	const FVector TargetLocal = DeckTransform.InverseTransformPosition(Target->GetActorLocation());
+	const FVector TargetLocal = DeckTransform.InverseTransformPosition(Area->ToWorld(TargetFloor.LocalCenter));
 	const FVector FallbackLocalForward = DeckTransform.InverseTransformVectorNoScale(
 		Boss->GetActorForwardVector());
 	const bool bMoveLeft = bRandomizeDirection ? FMath::RandBool() : bMoveLeftByDefault;
@@ -100,16 +103,21 @@ void UBTT_BossStrafe::TickTask(
 		return;
 	}
 	const UDeckWalkAreaComponent* Area = HostShip->GetDeckWalkAreaComponent();
-	const FVector LookAhead = Area ? Area->ToLocal(Area->GetActorFeetWorld(*Boss))
+	FVector LookAhead = Area ? Area->ToLocal(Area->GetActorFeetWorld(*Boss))
 		+ CachedLocalMoveDirection * FMath::Max(75.0f, MoveSpeed * DeltaSeconds) : FVector::ZeroVector;
 	FDeckWalkLocation Current, Next;
-	if (!Area || !Area->ResolveActorOnDeck(*Boss, Current)
-		|| !Area->ResolveLocalFloor(LookAhead, Current.SurfaceId, Next)
-		|| !Area->IsSupportedSegment(Current, LookAhead) || !Area->IsLocationAvailable(Next, *Boss))
+	const auto Supported = [&]()
 	{
-		EnemyPointSelectionFailure::Log(this, Boss, TEXT("No supported and available strafe point."));
-		FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
-		return;
+		return Area && Area->ResolveActorOnDeck(*Boss, Current)
+			&& Area->ResolveLocalFloor(LookAhead, Current.SurfaceId, Next)
+			&& Area->IsSupportedSegment(Current, LookAhead) && Area->IsLocationAvailable(Next, *Boss);
+	};
+	if (!Supported())
+	{
+		CachedLocalMoveDirection *= -1.f;
+		LookAhead = Area ? Area->ToLocal(Area->GetActorFeetWorld(*Boss))
+			+ CachedLocalMoveDirection * FMath::Max(75.f, MoveSpeed * DeltaSeconds) : FVector::ZeroVector;
+		if (!Supported()) { FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded); return; }
 	}
 	Boss->SetBase(Area->GetMovementBase(*Boss));
 

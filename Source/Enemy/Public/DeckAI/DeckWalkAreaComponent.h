@@ -48,6 +48,11 @@ public:
 
 	bool ResolveWaypoint(const UDeckWaypointComponent& Point, FDeckWalkLocation& Out) const;
 	bool ResolveActorOnDeck(const AActor& Actor, FDeckWalkLocation& Out) const;
+	int32 GetRevision() const { return Revision; }
+	bool IsTrackingSupport(const UPrimitiveComponent* Component) const;
+	/** Returns tracking geometry, not a walk handle; clearance is checked at the selected movement goal. */
+	bool ResolveTrackingProjection(const FVector& LocalSupport, FName PreferredSurface, float XYTolerance,
+		float MaximumHeight, FVector& OutCenter, FName& OutSurface, FName& OutReason) const;
 	bool ResolveLocalFloor(const FVector& LocalFloor, FName SurfaceId, FDeckWalkLocation& Out) const;
 	/** Keeps the requested XY after validating floor, clearance and its connection to the graph. */
 	bool ResolvePreciseLocalFloor(const FVector& LocalFloor, FName SurfaceId, FDeckWalkLocation& Out) const;
@@ -62,6 +67,8 @@ public:
 	bool ResolveLocationTransform(const FDeckWalkLocation& Location, const ACharacter& Character, FTransform& Out) const;
 	bool IsLocationAvailable(const FDeckWalkLocation& Location, const ACharacter& Requester) const;
 	bool TryClaimLocation(const FDeckWalkLocation& Location, ACharacter& Requester);
+	/** Restores a still-valid previous claim if route replacement fails. */
+	void RestoreLocationClaim(const FDeckWalkLocation& Previous, ACharacter& Requester);
 	void ReleaseLocationClaim(const AActor* Requester);
 	bool IsSupportedSegment(const FDeckWalkLocation& Start, const FDeckWalkLocation& End) const;
 	bool IsSupportedSegment(const FDeckWalkLocation& Start, const FVector& LocalEnd) const;
@@ -88,6 +95,8 @@ private:
 	TArray<FDeckWalkSurfaceConnection> WalkingConnections;
 	UPROPERTY(EditDefaultsOnly, Category = "Ship|Deck Walk|Surfaces")
 	bool bPatrolAcrossSurfaces = false;
+	UPROPERTY(EditDefaultsOnly, Category = "Ship|Deck Walk|Tracking", meta = (TitleProperty = "SurfaceId"))
+	TArray<FDeckTrackingSupportRegion> TrackingSupportRegions;
 	UPROPERTY(EditDefaultsOnly, Category = "Ship|Deck Walk|Sampling", meta = (ClampMin = "30.0", Units = "cm"))
 	float CellSize = 75.0f;
 	UPROPERTY(EditDefaultsOnly, Category = "Ship|Deck Walk|Sampling", meta = (ClampMin = "0.0", ClampMax = "60.0"))

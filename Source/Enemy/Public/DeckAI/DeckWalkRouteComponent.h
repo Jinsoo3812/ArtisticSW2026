@@ -37,6 +37,7 @@ public:
 private:
 	UDeckWalkAreaComponent* GetArea() const;
 	bool Replan(const FDeckWalkLocation& Goal);
+	bool PlanActorGoal(AActor* Target);
 	void AcceptPath(TArray<FDeckWalkLocation>&& Path);
 
 	TArray<FDeckWalkLocation> LocalPath;
@@ -49,4 +50,5 @@ private:
 	float EstimatedMoveTime = 0.0f;
 	bool bHasGoal = false;
 	bool bTrackTarget = false;
+	double NextActorReplanTime = 0.;
 };

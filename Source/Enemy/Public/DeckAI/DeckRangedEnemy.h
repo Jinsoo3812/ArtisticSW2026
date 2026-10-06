@@ -10,6 +10,7 @@ class AEnemyShip;
 class UDeckEnemyNavigationComponent;
 class UDeckWalkRouteComponent;
 class UDeckEnemyCombatComponent;
+class UDeckCombatTargetResolverComponent;
 
 UENUM(BlueprintType)
 enum class EDeckEnemyCombatRole : uint8
@@ -104,6 +105,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck AI|Combat")
 	TObjectPtr<UDeckEnemyCombatComponent> DeckCombatComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Deck AI|Tracking")
+	TObjectPtr<UDeckCombatTargetResolverComponent> DeckTargetResolver;
 
 private:
 	bool bStartPooled = false;
