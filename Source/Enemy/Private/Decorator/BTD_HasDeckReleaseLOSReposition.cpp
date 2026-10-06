@@ -4,12 +4,12 @@
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "BehaviorTree/BlackboardComponent.h"
-#include "DeckAI/DeckEnemyNavigationComponent.h"
+#include "DeckAI/DeckEnemyCombatComponent.h"
 #include "DeckAI/DeckRangedEnemy.h"
 
 UBTD_HasDeckReleaseLOSReposition::UBTD_HasDeckReleaseLOSReposition()
 {
-	NodeName = TEXT("Has Deck Release LOS Reposition");
+	NodeName = TEXT("Has Deck LOS Recovery");
 	BlackboardKey.SelectedKeyName = TEXT("TargetActor");
 	BlackboardKey.AddObjectFilter(
 		this,
@@ -24,12 +24,12 @@ bool UBTD_HasDeckReleaseLOSReposition::CalculateRawConditionValue(
 	const AAIController* Controller = OwnerComp.GetAIOwner();
 	const ADeckEnemy* Enemy = Controller ? Cast<ADeckEnemy>(Controller->GetPawn()) : nullptr;
 	const UBlackboardComponent* Blackboard = OwnerComp.GetBlackboardComponent();
-	const AActor* TargetActor = Blackboard
+	AActor* TargetActor = Blackboard
 		? Cast<AActor>(Blackboard->GetValueAsObject(GetSelectedBlackboardKey()))
 		: nullptr;
-	const UDeckEnemyNavigationComponent* Navigation = Enemy
-		? Enemy->GetDeckEnemyNavigationComponent()
+	const UDeckEnemyCombatComponent* Combat = Enemy
+		? Enemy->GetDeckCombatComponent()
 		: nullptr;
 
-	return Navigation && Navigation->HasReleaseLineOfSightReposition(TargetActor);
+	return Combat && Combat->HasRecovery(TargetActor);
 }

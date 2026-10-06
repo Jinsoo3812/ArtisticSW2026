@@ -5,6 +5,7 @@
 #include "InputActionValue.h"
 #include "AbilitySystemInterface.h"
 #include "RespawnHostInterface.h"
+#include "Movement/MovementFrameVelocityProvider.h"
 #include "Engine/DataTable.h"
 #include "Physics/NetworkPhysicsComponent.h"
 #include "GerstnerWaterWaves.h"
@@ -523,19 +524,22 @@ struct FShipReplicatedState
 };
 
 UCLASS()
-class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, public IRespawnHostInterface, public ISWRoomStateAdapter
+class WATERANDSHIP_API AShip : public APawn, public IAbilitySystemInterface, public IRespawnHostInterface, public IMovementFrameVelocityProvider, public ISWRoomStateAdapter
+
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this pawn's properties
 	AShip();
+	virtual bool TryGetMovementFrameVelocityAtPoint(const FVector& WorldPoint, FVector& OutVelocity) const override;
 	virtual void CaptureRoomDomains(TArray<FSWRoomDomainPart>& OutParts, TArray<FSWRoomCaptureIssue>& OutIssues) const override;
 	virtual bool RestoreRoomDomain(const FSWRoomDomainPart& Part, FString& OutError) override;
 	virtual bool CompareRoomDomain(const FSWRoomDomainPart& Expected, const FSWRoomDomainPart& Actual,
 		float TimeToleranceSeconds, TArray<FString>& OutFields) const override
 	{ return FSWRoomStructCodec::Compare<FSWRoomShipState>(Expected, Actual, TimeToleranceSeconds, OutFields); }
 	virtual bool FinalizeRoomRestore(const TMap<FGuid, AActor*>& RegisteredActors, FString& OutError) override;
+
 	virtual void PostLoad() override;
 
 	// IAbilitySystemInterface 구현

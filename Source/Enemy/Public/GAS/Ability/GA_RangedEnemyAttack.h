@@ -2,11 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "BaseGameplayAbility.h"
+#include "Item/Projectiles/ProjectileShotComponent.h"
 #include "GA_RangedEnemyAttack.generated.h"
 
 class ARangedEnemy;
 class UAbilityTask_PlayMontageAndWait;
 class UAbilityTask_WaitGameplayEvent;
+class UDeckEnemyCombatComponent;
 
 /** Server-only projectile attack used by ARangedEnemy. */
 UCLASS()
@@ -16,6 +18,9 @@ class ENEMY_API UGA_RangedEnemyAttack : public UBaseGameplayAbility
 
 public:
 	UGA_RangedEnemyAttack();
+	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr,
+		const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
@@ -47,6 +52,9 @@ protected:
 	void OnAttackMontageCancelled();
 
 	bool FireProjectile();
+	EProjectileShotCommit CommitProjectile();
+	void OnShotCommitted(bool bSucceeded);
+	void HandleShotFailure();
 	bool PlayAttackMontage();
 	void FinishAttack(bool bWasCancelled);
 	void AddAttackStateTag();
@@ -65,6 +73,13 @@ protected:
 	TObjectPtr<UAbilityTask_WaitGameplayEvent> FireProjectileEventTask = nullptr;
 
 	bool bProjectileFired = false;
+	bool bFireEventReceived = false;
 	bool bFinishingAttack = false;
 	bool bOwnsServerPoseRefresh = false;
+	FGuid PendingShotId;
+	TWeakObjectPtr<UProjectileShotComponent> ShotComponent;
+	bool bShotQueued = false;
+	bool bMontageCompleted = false;
+	TWeakObjectPtr<UDeckEnemyCombatComponent> DeckCombat;
+	uint32 DeckAttackAttempt = 0;
 };

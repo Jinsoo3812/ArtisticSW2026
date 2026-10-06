@@ -15,7 +15,8 @@ class ARTISTICSWCORE_API UCombatHitResolver : public UActorComponent
 public:
 	virtual bool OpenWindow(const FGameplayEffectSpecHandle& Spec) PURE_VIRTUAL(UCombatHitResolver::OpenWindow, return false;);
 	virtual void CloseWindow() PURE_VIRTUAL(UCombatHitResolver::CloseWindow, );
+	/** Disable the fallback ray only when the collision producer has already validated cover. */
 	virtual bool ResolveHit(UAbilitySystemComponent* TargetASC, const FHitResult& Hit,
-		bool bIgnoreSameTeam = true, bool bRequireAnimatedHurtbox = false)
+		bool bIgnoreSameTeam = true, bool bRequireAnimatedHurtbox = false, bool bCheckWorldStaticOcclusion = true)
 		PURE_VIRTUAL(UCombatHitResolver::ResolveHit, return false;);
 };

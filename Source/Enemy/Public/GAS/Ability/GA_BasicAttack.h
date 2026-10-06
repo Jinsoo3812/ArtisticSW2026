@@ -13,6 +13,7 @@ class ABaseWeapon;
 class UAbilityTask_PlayMontageAndWait;
 class UAbilityTask_WaitGameplayEvent;
 class UAnimMontage;
+class UDeckEnemyCombatComponent;
 struct FWeaponDefinition;
 
 /** Snapshot consumed by one attack activation, independent of its authoring source. */
@@ -42,6 +43,9 @@ class ENEMY_API UGA_BasicAttack : public UBaseGameplayAbility
 
 public:
 	UGA_BasicAttack();
+	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags = nullptr,
+		const FGameplayTagContainer* TargetTags = nullptr, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 
 	virtual const FGameplayTagContainer* GetCooldownTags() const override;
 	virtual void ApplyCooldown(
@@ -132,6 +136,8 @@ protected:
 	float AttackCooldownDuration = 2.0f;
 
 private:
+	TWeakObjectPtr<UDeckEnemyCombatComponent> DeckCombat;
+	uint32 DeckAttackAttempt = 0;
 	UPROPERTY()
 	FGameplayTagContainer NativeCooldownTags;
 };

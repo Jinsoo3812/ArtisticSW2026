@@ -9,7 +9,8 @@ enum class EDeckWaypointSelectionMode : uint8
 {
 	Patrol,
 	Combat,
-	ReleaseLineOfSightReposition
+	ReleaseLineOfSightReposition,
+	Investigation
 };
 
 /** Selects patrol, routed combat, or release-LOS recovery movement. */
@@ -28,4 +29,10 @@ public:
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI")
 	EDeckWaypointSelectionMode SelectionMode = EDeckWaypointSelectionMode::Patrol;
+	/** Player + normalize(Enemy - Player) * distance; values larger than current separation retreat. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI|Target Distance", meta = (ClampMin = "0.0", Units = "cm"))
+	float TargetDistance = 500.0f;
+	/** Maximum displacement from the ideal point if obstacles or reservations prevent exact placement. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck AI|Target Distance", meta = (ClampMin = "0.0", Units = "cm"))
+	float ProjectionTolerance = 150.0f;
 };

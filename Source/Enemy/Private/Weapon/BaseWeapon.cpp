@@ -2,6 +2,8 @@
 
 
 #include "Weapon/BaseWeapon.h"
+#include "DeckAI/DeckEnemyCombatComponent.h"
+#include "DeckAI/DeckRangedEnemy.h"
 #include "WeaponFeedback/WeaponFeedbackComponent.h"
 
 // Unreal Engine
@@ -173,6 +175,7 @@ void ABaseWeapon::HitScan(const FHitResult& HitResult)
 	{
 		return;
 	}
+	if (const ADeckEnemy* Deck = Cast<ADeckEnemy>(GetOwner()); Deck && !Deck->GetDeckCombatComponent()->HasClearAttackLine(HitActor)) return;
 
 	// HitActor의 ASC, 없다면 return
 	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(HitActor);

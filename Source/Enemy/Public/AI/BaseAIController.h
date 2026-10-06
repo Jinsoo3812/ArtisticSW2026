@@ -54,6 +54,9 @@ public:
 
 	/** Reapply the possessed enemy's dynamic subtrees after pooled brain logic resumes. */
 	bool RefreshBehaviorRouting();
+	/** Deferred intent is server-only and is applied after the current Deck attack ends. */
+	bool HasDeferredDeckDecision() const { return DeferredDeckDecision != EDeferredDeckDecision::None; }
+	void DiscardDeferredDeckDecision();
 
 protected:
 	// 주로 Player 인식한 공격 대상
@@ -118,6 +121,10 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	enum class EDeferredDeckDecision : uint8 { None, ReevaluateTarget, SetTarget, ClearTarget, SetState, Investigate };
+	bool ShouldDeferDeckDecision() const;
+	void DeferDeckTargetReevaluation();
+	void ResolveDeferredDeckDecision();
 	// Initializes read-only runtime components. Per-enemy values live on the Pawn BP.
 	void SetupPerceptionSystem();
 	void RefreshPerceptionConfiguration(const FEnemyPerceptionSettings& Settings);
@@ -135,4 +142,9 @@ private:
 	TWeakObjectPtr<UBaseHealthComponent> PossessedEnemyHealthComponent;
 	FTimerHandle TargetReacquireTimerHandle;
 	float TerritoryCheckRemaining = 0.0f;
+	EDeferredDeckDecision DeferredDeckDecision = EDeferredDeckDecision::None;
+	TWeakObjectPtr<AActor> DeferredDeckTarget;
+	EEnemyAIState DeferredDeckState = EEnemyAIState::Passive;
+	FVector DeferredDeckInvestigation = FVector::ZeroVector;
+	bool bDeferredReturnToPassive = true;
 };

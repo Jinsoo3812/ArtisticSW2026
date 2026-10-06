@@ -16,4 +16,15 @@ class ARTISTICSWCORE_API APlayerArrowProjectile : public AArrowProjectile
 
 public:
 	APlayerArrowProjectile();
+	virtual FCollisionQueryParams MakeFlightQueryParams() const override;
+	/** Detaches after Blueprint construction and applies the committed world velocity without resampling the ship. */
+	bool LaunchPlayerShot(const FProjectileShotSnapshot& Shot, AActor* Weapon);
+	virtual void HandleFlightImpact(const FHitResult& Hit) override;
+	virtual void Tick(float DeltaSeconds) override;
+
+private:
+	FGuid PlayerShotId;
+	FVector LastDebugPosition = FVector::ZeroVector;
+	uint64 PlayerLaunchFrame = 0;
+	bool bFirstStepLogged = false;
 };

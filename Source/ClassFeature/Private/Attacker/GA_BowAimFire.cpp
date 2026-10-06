@@ -9,10 +9,13 @@
 #include "BaseGameplayTags.h"
 #include "BasePlayer.h"
 #include "Combat/PlayerAimComponent.h"
+#include "Combat/PlayerBowShotPreparation.h"
+#include "Item/Projectiles/PlayerArrowProjectile.h"
 #include "Equipment/PlayerEquipmentComponent.h"
 #include "Equipment/WeaponAnimationDataAsset.h"
 #include "Item/Components/BowComponent.h"
 #include "Item/Projectiles/ArrowProjectile.h"
+#include "Item/Projectiles/ArrowCollisionQuery.h"
 #include "Item/Weapons/BowItem.h"
 #include "GASCombatLibrary.h"
 
@@ -55,6 +58,11 @@ void UGA_BowAimFire::ActivateAbility(
 	CachedBowComponent->SetAiming(true);
 	CachedBowComponent->SetDrawAlpha(0.0f);
 	CachedBowComponent->SetArrowNocked(false);
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
+	{
+		if (Player->IsLocallyControlled() && Player->GetAimComponent())
+			Player->GetAimComponent()->SetObstructionQuery(FPlayerAimObstructionQuery::CreateUObject(this, &UGA_BowAimFire::IsAimPathObstructed));
+	}
 
 	UAbilityTask_WaitInputRelease* WaitRightReleaseTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this, true);
 	if (WaitRightReleaseTask)
@@ -99,6 +107,8 @@ void UGA_BowAimFire::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
+		if (Player->GetAimComponent()) Player->GetAimComponent()->SetObstructionQuery(FPlayerAimObstructionQuery());
 	ResetBowState();
 
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
@@ -353,10 +363,10 @@ void UGA_BowAimFire::BeginRelease(const FGameplayEventData& ReleaseInput)
 	}
 
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
-	const UPlayerAimComponent* Aim = Player ? Player->GetAimComponent() : nullptr;
-	if (!Aim || !Aim->ResolveReleaseAim(ReleaseInput, CachedBow, PendingAimTarget, PendingViewDirection))
+	UPlayerAimComponent* Aim = Player ? Player->GetAimComponent() : nullptr;
+	if (!Aim || !Aim->BeginShot(ReleaseInput, PendingShotId))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Bow release rejected: missing or invalid screen-center view ray."));
+		UE_LOG(LogTemp, Warning, TEXT("Bow release rejected: missing or duplicate shot ID."));
 		FinishShot();
 		return;
 	}
@@ -373,11 +383,16 @@ void UGA_BowAimFire::BeginRelease(const FGameplayEventData& ReleaseInput)
 			return;
 		}
 	}
+	else
+	{
+		PendingReleaseFireSpeed = CachedBowComponent->GetFireSpeed(CachedBowComponent->GetDrawAlpha());
+	}
 
 	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
 	bIsDrawing = false;
 	bIsFullyDrawn = true;
 	bIsReleaseInProgress = true;
+	bReleaseMontageFinished = false;
 	SetBowDrawTagState(false, true, true);
 
 	if (!bRequireReleaseNotifyToFire)
@@ -390,7 +405,7 @@ void UGA_BowAimFire::BeginRelease(const FGameplayEventData& ReleaseInput)
 		JumpAimCycleToSection(GetBowAnimationEntry()->AimCycleReleaseSectionName);
 		if (!bRequireReleaseNotifyToFire)
 		{
-			FireArrowFromPendingRelease();
+			QueueReleaseShot();
 		}
 		return;
 	}
@@ -416,14 +431,14 @@ void UGA_BowAimFire::BeginRelease(const FGameplayEventData& ReleaseInput)
 
 			if (!bRequireReleaseNotifyToFire)
 			{
-				FireArrowFromPendingRelease();
+				QueueReleaseShot();
 			}
 			return;
 		}
 	}
 
-	FireArrowFromPendingRelease();
-	FinishShot();
+	bReleaseMontageFinished = true;
+	QueueReleaseShot();
 }
 
 void UGA_BowAimFire::OnReleaseFireEvent(FGameplayEventData /*TimingPayload*/)
@@ -439,8 +454,8 @@ void UGA_BowAimFire::OnReleaseFireEvent(FGameplayEventData /*TimingPayload*/)
 		CachedBowComponent->SetArrowNocked(false);
 	}
 
-	// Read the socket at fire time; speed was captured before resetting presentation.
-	FireArrowFromPendingRelease();
+	// Late commit reads the camera and socket after physics/based movement have completed.
+	QueueReleaseShot();
 }
 
 void UGA_BowAimFire::OnNockArrowEvent(FGameplayEventData Payload)
@@ -462,7 +477,8 @@ void UGA_BowAimFire::OnReleaseMontageCompleted()
 		return;
 	}
 
-	FinishShot();
+	bReleaseMontageFinished = true;
+	if (!bReleaseQueued) FinishShot();
 }
 
 void UGA_BowAimFire::OnReleaseMontageInterrupted()
@@ -479,7 +495,7 @@ void UGA_BowAimFire::OnAimCycleMontageCompleted()
 {
 	if (IsActive())
 	{
-		FinishShot();
+		OnReleaseMontageCompleted();
 	}
 }
 
@@ -491,106 +507,171 @@ void UGA_BowAimFire::OnAimCycleMontageInterrupted()
 	}
 }
 
-void UGA_BowAimFire::FireArrowFromPendingRelease()
+bool UGA_BowAimFire::IsAimPathObstructed() const
+{
+	const ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
+	if (!IsActive() || !Player || !IsValid(CachedBow) || !CachedBowComponent
+		|| !Player->GetAimComponent() || Player->EquippedItem != CachedBow) return false;
+	const UClass* SpawnClass = CachedBow->GetSpawnClass();
+	if (!SpawnClass || !SpawnClass->IsChildOf(APlayerArrowProjectile::StaticClass())) return false;
+	const AArrowProjectile* Defaults = SpawnClass->GetDefaultObject<AArrowProjectile>();
+	FProjectileShotInput Input;
+	Input.ShotId = FGuid(0, 0, 0, 1); // Local preview only; never queued, sent or spawned.
+	Input.Speed = CachedBowComponent->GetFireSpeed(CachedBowComponent->GetDrawAlpha());
+	Input.GravityZ = GetWorld()->GetGravityZ() * PlayerBowShotPreparation::GetGravityScale(Defaults->GetFlightGravityScale());
+	if (!CachedBow->TryGetArrowSpawnTransform(Input.MuzzleTransform)
+		|| !Player->GetAimComponent()->ResolveCurrentAim(CachedBow, Input.MuzzleTransform.GetLocation(), Input.AimPoint, Input.AimDirection, Input.AimServerTime)) return false;
+	FProjectileShotSnapshot Shot;
+	if (!PlayerBowShotPreparation::Prepare(Player, Input, Shot)) return false;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(BowAimClearance), false, Player);
+	Params.bFindInitialOverlaps = true;
+	Params.AddIgnoredActor(CachedBow);
+	FHitResult Hit;
+	return ArrowCollisionQuery::IsAimObstructed(GetWorld(), Shot, Defaults->GetObstacleCollisionHalfExtent(), Params, Hit);
+}
+
+void UGA_BowAimFire::QueueReleaseShot()
+{
+	if (!IsActive() || !bIsReleaseInProgress || bHasFiredCurrentShot || bReleaseQueued || !PendingShotId.IsValid()) return;
+	ShotComponent = UProjectileShotComponent::FindOrAdd(GetAvatarActorFromActorInfo());
+	if (!ShotComponent.IsValid()) { FinishShot(); return; }
+	bReleaseQueued = ShotComponent->Queue(this, PendingShotId,
+		FProjectileShotCommitDelegate::CreateUObject(this, &UGA_BowAimFire::CommitReleaseShot),
+		FProjectileShotFinishedDelegate::CreateUObject(this, &UGA_BowAimFire::OnShotCommitted),
+		GetAvatarActorFromActorInfo()->HasAuthority() ? 1.0f : 2.0f);
+	if (!bReleaseQueued) FinishShot();
+}
+
+EProjectileShotCommit UGA_BowAimFire::CommitReleaseShot()
 {
 	ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo());
-	if (bHasFiredCurrentShot || !bIsReleaseInProgress || !bIsFullyDrawn
+	if (!IsActive() || bHasFiredCurrentShot || !bIsReleaseInProgress || !bIsFullyDrawn
 		|| !Player || !IsValid(CachedBow) || !CachedBowComponent
-		|| Player->EquippedItem != CachedBow || GetSourceWeapon() != CachedBow)
-	{
-		return;
-	}
+		|| Player->EquippedItem != CachedBow || GetSourceWeapon() != CachedBow) return EProjectileShotCommit::Rejected;
 	if (!bHasReceivedNockNotify)
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("UGA_BowAimFire::FireArrowFromPendingRelease: Event.Montage.NockArrow was not received; shot rejected."));
-		return;
+		UE_LOG(LogTemp, Warning, TEXT("[ProjectileShot] Missing NockArrow notify Id=%s"), *PendingShotId.ToString());
+		return EProjectileShotCommit::Rejected;
 	}
-	// Presentation is predicted on the owning client and repeated authoritatively on the server.
-	// Only the server continues into projectile creation.
+
+	UPlayerAimComponent* Aim = Player->GetAimComponent();
+	if (!Aim) return EProjectileShotCommit::Rejected;
+	if (Player->IsLocallyControlled() && !Aim->CaptureShotView(PendingShotId))
+		return EProjectileShotCommit::Rejected;
+	if (!Player->HasAuthority() && bLocalShotPresented)
+	{
+		bool bSucceeded = false;
+		if (!Aim->TryGetShotResolution(PendingShotId, bSucceeded)) return EProjectileShotCommit::Pending;
+		bHasFiredCurrentShot = bSucceeded;
+		return bSucceeded ? EProjectileShotCommit::Succeeded : EProjectileShotCommit::Rejected;
+	}
+
+	FProjectileShotInput Input;
+	Input.ShotId = PendingShotId;
+	UClass* SpawnClass = CachedBow->GetSpawnClass();
+	if (!SpawnClass || !SpawnClass->IsChildOf(APlayerArrowProjectile::StaticClass())
+		|| !CachedBow->TryGetArrowSpawnTransform(Input.MuzzleTransform)) return EProjectileShotCommit::Rejected;
+	const EPlayerShotAimResult AimResult = Aim->ResolveShotAim(PendingShotId, CachedBow, Input.MuzzleTransform.GetLocation(),
+		Input.AimPoint, Input.AimDirection, Input.AimServerTime);
+	if (AimResult == EPlayerShotAimResult::Pending) return EProjectileShotCommit::Pending;
+	if (AimResult != EPlayerShotAimResult::Ready) return EProjectileShotCommit::Rejected;
+
+	const AArrowProjectile* Defaults = SpawnClass->GetDefaultObject<AArrowProjectile>();
+	Input.Speed = PendingReleaseFireSpeed;
+	Input.GravityZ = GetWorld()->GetGravityZ() * PlayerBowShotPreparation::GetGravityScale(Defaults->GetFlightGravityScale());
+	FProjectileShotSnapshot Shot;
+	if (!PlayerBowShotPreparation::Prepare(Player, Input, Shot))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PlayerBowShot] Invalid launch input or unavailable supported ship motion Id=%s"), *PendingShotId.ToString());
+		return EProjectileShotCommit::Rejected;
+	}
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(BowReleaseClearance), false, Player);
+	Params.bFindInitialOverlaps = true;
+	Params.AddIgnoredActor(CachedBow);
+	FHitResult Obstacle;
+	const bool bObstructed = ArrowCollisionQuery::IsAimObstructed(GetWorld(), Shot,
+		Defaults->GetObstacleCollisionHalfExtent(), Params, Obstacle);
+	Aim->ReportShotObstruction(bObstructed);
+	// Feedback does not deal damage or skip world collisions. The first flight sweep owns impact.
 	CachedBowComponent->SetArrowNocked(false);
 	if (!Player->HasAuthority())
 	{
-		bHasFiredCurrentShot = true;
-		return;
+		bLocalShotPresented = true;
+		return EProjectileShotCommit::Pending;
 	}
 
-	UClass* SpawnClass = CachedBow->GetSpawnClass();
-	if (!SpawnClass || !SpawnClass->IsChildOf(AArrowProjectile::StaticClass()))
-	{
-		UE_LOG(LogTemp, Warning, TEXT("UGA_BowAimFire::FireArrowFromPendingRelease: Bow SpawnClass must derive from AArrowProjectile."));
-		return;
-	}
-
-	FTransform SpawnTransform;
-	FVector LaunchVelocity;
-	if (!CachedBowComponent->TryBuildArrowLaunch(PendingReleaseFireSpeed, PendingAimTarget, PendingViewDirection, SpawnTransform, LaunchVelocity))
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("UGA_BowAimFire::FireArrowFromPendingRelease: Invalid socket launch for bow %s (socket %s)."),
-			*GetNameSafe(CachedBow), *CachedBow->GetCharacterArrowSocketName().ToString());
-		return;
-	}
-
-	AArrowProjectile* Arrow = GetWorld()->SpawnActorDeferred<AArrowProjectile>(
-		SpawnClass,
-		SpawnTransform,
-		Player,
-		Player,
-		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
-
-	if (!Arrow)
-	{
-		return;
-	}
-
-	Arrow->FinishSpawning(SpawnTransform);
+	APlayerArrowProjectile* Arrow = GetWorld()->SpawnActorDeferred<APlayerArrowProjectile>(
+		SpawnClass, Shot.SpawnTransform, Player, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!Arrow) return EProjectileShotCommit::Rejected;
 	Arrow->IgnoreActorForMovement(Player);
 	Arrow->IgnoreActorForMovement(CachedBow);
-	if (Arrow->IsLaunchLocationBlocked())
+	Arrow->FinishSpawning(Shot.SpawnTransform);
+
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	const auto* Definition = CachedBow->GetWeaponDefinition();
+	if (!ASC || !Definition || !Definition->CombatData
+		|| !FMath::IsFinite(MinChargeDamageMultiplier) || !FMath::IsFinite(MaxChargeDamageMultiplier)
+		|| MinChargeDamageMultiplier <= 0.f || MaxChargeDamageMultiplier < MinChargeDamageMultiplier)
 	{
-		// Consume this release without shifting the projectile through nearby geometry.
 		Arrow->Destroy();
-		bHasFiredCurrentShot = true;
-		return;
+		return EProjectileShotCommit::Rejected;
 	}
-
-	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	FStrengthDamageRequest DamageRequest;
+	DamageRequest.SourceASC = ASC;
+	DamageRequest.AttackCoefficient = Definition->CombatData->AttackCoefficient;
+	DamageRequest.ChargeMultiplier = FMath::Lerp(MinChargeDamageMultiplier, MaxChargeDamageMultiplier, ServerReleaseDrawAlpha);
+	DamageRequest.InstigatorActor = Player;
+	DamageRequest.EffectCauser = Arrow;
+	DamageRequest.EffectLevel = Arrow->GetDirectDamageEffectLevel();
+	const FGameplayEffectSpecHandle DamageSpec = UGASCombatLibrary::MakeStrengthDamageEffectSpec(DamageRequest);
+	if (!DamageSpec.IsValid() || !Arrow->InitializeStrengthDamage(ASC, Player, DamageSpec))
 	{
-		const float DrawAlpha = ServerReleaseDrawAlpha;
-		if (!FMath::IsFinite(MinChargeDamageMultiplier) || !FMath::IsFinite(MaxChargeDamageMultiplier)
-			|| MinChargeDamageMultiplier <= 0.f || MaxChargeDamageMultiplier < MinChargeDamageMultiplier) { Arrow->Destroy(); return; }
-		const float ChargeDamageMultiplier = FMath::Lerp(MinChargeDamageMultiplier, MaxChargeDamageMultiplier, DrawAlpha);
-
-		FStrengthDamageRequest DamageRequest;
-		DamageRequest.SourceASC = ASC;
-
-		DamageRequest.AttackCoefficient = CachedBow->GetWeaponDefinition()->CombatData->AttackCoefficient;
-		DamageRequest.ChargeMultiplier = ChargeDamageMultiplier;
-		DamageRequest.InstigatorActor = Player;
-		DamageRequest.EffectCauser = Arrow;
-		DamageRequest.EffectLevel = Arrow->GetDirectDamageEffectLevel();
-		const FGameplayEffectSpecHandle DamageSpec = UGASCombatLibrary::MakeStrengthDamageEffectSpec(DamageRequest);
-		if (!DamageSpec.IsValid()) { Arrow->Destroy(); return; }
-		if (!Arrow->InitializeStrengthDamage(ASC, Player, DamageSpec)) { Arrow->Destroy(); return; }
+		Arrow->Destroy();
+		return EProjectileShotCommit::Rejected;
 	}
-
-	else { Arrow->Destroy(); return; }
-
-	Arrow->SetOwner(Player);
-	Arrow->SetInstigator(Player);
-	Arrow->LaunchArrow(LaunchVelocity);
+	if (!Arrow->LaunchPlayerShot(Shot, CachedBow)) { Arrow->Destroy(); return EProjectileShotCommit::Rejected; }
 	CachedBow->Multicast_PlayReleaseFX();
 	bHasFiredCurrentShot = true;
-	if (CachedBowComponent)
-	{
-		CachedBowComponent->SetDrawAlpha(0.0f);
-		CachedBowComponent->SetArrowNocked(false);
-	}
+	CachedBowComponent->SetDrawAlpha(0.0f);
+	return EProjectileShotCommit::Succeeded;
 }
 
+void UGA_BowAimFire::OnShotCommitted(bool bSucceeded)
+{
+	bReleaseQueued = false;
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
+	{
+		if (UPlayerAimComponent* Aim = Player->GetAimComponent())
+		{
+			Aim->CompleteShot(PendingShotId, bSucceeded);
+			Aim->EndShot(PendingShotId);
+		}
+	}
+	if (!bSucceeded || bReleaseMontageFinished) FinishShot();
+}
+
+void UGA_BowAimFire::CancelPendingShot()
+{
+	if (ShotComponent.IsValid()) ShotComponent->Cancel(PendingShotId);
+	if (ABasePlayer* Player = Cast<ABasePlayer>(GetAvatarActorFromActorInfo()))
+	{
+		if (UPlayerAimComponent* Aim = Player->GetAimComponent())
+		{
+			Aim->CompleteShot(PendingShotId, false);
+			Aim->EndShot(PendingShotId);
+		}
+	}
+	PendingShotId.Invalidate();
+	bReleaseQueued = false;
+	bLocalShotPresented = false;
+	bReleaseMontageFinished = false;
+}
 void UGA_BowAimFire::FinishShot()
 {
+	if (bFinishingShot) return;
+	TGuardValue<bool> FinishingGuard(bFinishingShot, true);
+	CancelPendingShot();
 	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
 	StopDrawMontage(DrawMontageBlendOutTime);
 	if (const FWeaponAnimationEntry* Entry = GetBowAnimationEntry())
@@ -604,8 +685,7 @@ void UGA_BowAimFire::FinishShot()
 	bHasFiredCurrentShot = false;
 	bHasReceivedNockNotify = false;
 	PendingReleaseFireSpeed = 0.f;
-	PendingAimTarget = FVector::ZeroVector;
-	PendingViewDirection = FVector::ZeroVector;
+	PendingShotId.Invalidate();
 	ServerReleaseDrawAlpha = 0.f;
 
 	if (CachedBowComponent)
@@ -624,6 +704,9 @@ void UGA_BowAimFire::FinishShot()
 
 void UGA_BowAimFire::ResetBowState()
 {
+	if (bFinishingShot) return;
+	TGuardValue<bool> FinishingGuard(bFinishingShot, true);
+	CancelPendingShot();
 	GetWorld()->GetTimerManager().ClearTimer(ChargeTimerHandle);
 	StopDrawMontage(DrawMontageBlendOutTime);
 	if (const FWeaponAnimationEntry* Entry = GetBowAnimationEntry())
@@ -636,8 +719,7 @@ void UGA_BowAimFire::ResetBowState()
 	bHasFiredCurrentShot = false;
 	bHasReceivedNockNotify = false;
 	PendingReleaseFireSpeed = 0.f;
-	PendingAimTarget = FVector::ZeroVector;
-	PendingViewDirection = FVector::ZeroVector;
+	PendingShotId.Invalidate();
 	ServerReleaseDrawAlpha = 0.f;
 
 	if (CachedBowComponent)

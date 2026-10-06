@@ -14,7 +14,6 @@ struct FSWRoomDeckPointState
 	UPROPERTY(SaveGame) int32 PointId = INDEX_NONE;
 	UPROPERTY(SaveGame) FGuid OccupantId;
 	UPROPERTY(SaveGame) FGuid ReservedById;
-	UPROPERTY(SaveGame) FGuid CombatClaimedById;
 	UPROPERTY(SaveGame) uint32 ReservationSerial = 0;
 };
 
@@ -43,6 +42,7 @@ struct FSWRoomDeckSpawnerState
 	UPROPERTY(SaveGame) int32 CurrentRetryCount = 0;
 	UPROPERTY(SaveGame) int32 DeploymentFailureCount = 0;
 	UPROPERTY(SaveGame) float SightDelayRemaining = 0.f;
+	UPROPERTY(SaveGame) float SpawnStartDelayRemaining = 0.f;
 	UPROPERTY(SaveGame) float DeploymentTimerRemaining = 0.f;
 	UPROPERTY(SaveGame) FGuid TriggerShipId;
 	UPROPERTY(SaveGame) TArray<FGuid> EnemyPoolIds;
@@ -96,6 +96,10 @@ class ENEMY_API UDeckEnemySpawnerComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
+#if WITH_EDITOR
+	friend class FDeckSpawnAnchorValidator;
+#endif
+
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FDeckEnemySpawnerCompositionTest;
 #endif
@@ -140,14 +144,7 @@ public:
 
 	UDeckWaypointComponent* GetWaypoint(int32 WaypointId) const;
 	FVector GetWaypointWorldLocation(int32 WaypointId) const;
-	void GetWaypointIds(TArray<int32>& OutWaypointIds, bool bRequireCombatPoint = false) const;
-	void GetConnectedWaypointIds(int32 WaypointId, TArray<int32>& OutWaypointIds) const;
-	int32 FindNearestWaypoint(const FVector& WorldLocation, bool bRequirePatrolPoint = true) const;
 
-	bool ResolveFixedDeckAnchorTransform(
-		int32 WaypointId,
-		float CapsuleHalfHeight,
-		FTransform& OutTransform) const;
 	bool ResolveDeckCharacterTransform(
 		int32 WaypointId,
 		float CapsuleHalfHeight,
@@ -162,9 +159,6 @@ public:
 	void ReleasePointReservation(FDeckPointReservation& Reservation);
 	bool TryOccupyPoint(int32 WaypointId, AActor* Occupant);
 	void ReleasePointOccupancy(int32 WaypointId, AActor* Occupant);
-	bool IsCombatPointClaimAvailable(int32 WaypointId, const AActor* Requester = nullptr) const;
-	bool TryClaimCombatPoint(int32 WaypointId, AActor* Requester);
-	void ReleaseCombatPointClaim(int32 WaypointId, AActor* Requester);
 	void ReleaseAllPointsFor(AActor* Actor);
 
 	bool ActivateEnemyAtPoint(
@@ -179,6 +173,8 @@ public:
 		const FDataTableRowHandle& StatsRow = FDataTableRowHandle());
 
 protected:
+	virtual void BeginPlay() override;
+
 	/** Enables the authored SpawnPlan. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck Enemy Spawner")
 	bool bEnableSpawning = false;
@@ -190,6 +186,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck Enemy Spawner",
 		meta = (TitleProperty = "EnemyClass"))
 	TArray<FDeckEnemySpawnSlot> SpawnPlan;
+
+	/** Earliest deployment time after the owning ship begins play. Zero disables this delay. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Deck Enemy Spawner|Timing", meta = (ClampMin = "0.0", Units = "s"))
+	float SpawnStartDelay = 3.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deck Enemy Spawner|Timing", meta = (ClampMin = "0.0", Units = "s"))
 	float SightActivationDelay = 0.25f;
@@ -218,7 +218,6 @@ private:
 	{
 		TWeakObjectPtr<AActor> Occupant;
 		TWeakObjectPtr<AActor> ReservedBy;
-		TWeakObjectPtr<AActor> CombatClaimedBy;
 		uint32 ReservationSerial = 0;
 	};
 
@@ -245,6 +244,7 @@ private:
 		const ADeckEnemy& Enemy,
 		FTransform& OutTransform) const;
 	void PrunePointRuntimeState();
+	float GetRemainingSpawnStartDelay() const;
 	void BeginDeployment();
 	void DeployNextEnemy();
 	void HandleDeploymentFailure();
@@ -280,6 +280,7 @@ private:
 	bool bHasDeployedEnemy = false;
 
 	FTimerHandle SightDelayTimerHandle;
+	double SpawnStartReadyTime = 0.0;
 	FTimerHandle DeploymentTimerHandle;
 	FSWRoomDeckSpawnerState PendingRoomState;
 	FSWRoomDeckDeploymentTicket DeploymentTicket;
