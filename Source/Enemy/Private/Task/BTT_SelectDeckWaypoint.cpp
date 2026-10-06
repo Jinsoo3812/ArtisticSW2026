@@ -1,6 +1,7 @@
 #include "Task/BTT_SelectDeckWaypoint.h"
 
 #include "AIController.h"
+#include "AI/PointSelectionFailure.h"
 #include "AI/EnemyAlarmComponent.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "BehaviorTree/BlackboardComponent.h"
@@ -25,11 +26,18 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(UBehaviorTreeComponent&
 	UDeckWalkAreaComponent* Area = Ship ? Ship->GetDeckWalkAreaComponent() : nullptr;
 	UDeckEnemyNavigationComponent* Navigation = Enemy ? Enemy->GetDeckEnemyNavigationComponent() : nullptr;
 	UDeckWalkRouteComponent* Route = Enemy ? Enemy->GetDeckWalkRouteComponent() : nullptr;
+	const auto FailPointSelection = [this, Enemy, Navigation, Route](const TCHAR* Reason)
+	{
+		EnemyPointSelectionFailure::Log(this, Enemy, Reason);
+		if (Navigation) Navigation->CancelCombatRoute();
+		if (Route) Route->ClearGoal();
+		return EBTNodeResult::Failed;
+	};
 	if (!Enemy || !Enemy->CanMoveOnDeck() || !Area || !Area->IsReady() || !Navigation || !Route) return EBTNodeResult::Failed;
 	if (SelectionMode == EDeckWaypointSelectionMode::Patrol)
 	{
 		Navigation->CancelCombatRoute();
-		if (!Route->SetPatrolGoal(Enemy->GetDeckRandomStream())) return EBTNodeResult::Failed;
+		if (!Route->SetPatrolGoal(Enemy->GetDeckRandomStream())) return FailPointSelection(TEXT("No reachable deck patrol point."));
 		Enemy->BeginFreeDeckMovement();
 		return EBTNodeResult::Succeeded;
 	}
@@ -40,10 +48,10 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(UBehaviorTreeComponent&
 		const UEnemyAlarmComponent* Alarm = Enemy->FindComponentByClass<UEnemyAlarmComponent>();
 		if (!Alarm || !Alarm->GetInvestigationWorld(Point))
 		{
-			if (!Blackboard || !Blackboard->IsVectorValueSet(TEXT("PointOfInterest"))) return EBTNodeResult::Failed;
+			if (!Blackboard || !Blackboard->IsVectorValueSet(TEXT("PointOfInterest"))) return FailPointSelection(TEXT("No investigation point."));
 			Point = Blackboard->GetValueAsVector(TEXT("PointOfInterest"));
 		}
-		return Navigation->PlanInvestigationRoute(Point) ? EBTNodeResult::Succeeded : EBTNodeResult::Failed;
+		return Navigation->PlanInvestigationRoute(Point) ? EBTNodeResult::Succeeded : FailPointSelection(TEXT("No reachable investigation point."));
 	}
 	AActor* Target = Blackboard ? Cast<AActor>(Blackboard->GetValueAsObject(GetSelectedBlackboardKey())) : nullptr;
 	FDeckWalkLocation TargetFloor;
@@ -51,7 +59,7 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(UBehaviorTreeComponent&
 	{
 		Navigation->CancelCombatRoute();
 		Enemy->ClearCombatTarget();
-		return EBTNodeResult::Failed;
+		return FailPointSelection(TEXT("Cannot resolve the target's deck point."));
 	}
 	if (SelectionMode == EDeckWaypointSelectionMode::Combat)
 	{
@@ -59,12 +67,12 @@ EBTNodeResult::Type UBTT_SelectDeckWaypoint::ExecuteTask(UBehaviorTreeComponent&
 		if (Combat->EvaluateAttack(Target, false) == EDeckAttackOutcome::BlockedLOS)
 		{
 			if (!Combat->HasStoredRecovery()) Combat->RecordBlockedLOS(Combat->BeginAttack(Target), Target);
-			return Navigation->PlanRecoveryRoute(Target) ? EBTNodeResult::Succeeded : EBTNodeResult::Failed;
+			return Navigation->PlanRecoveryRoute(Target) ? EBTNodeResult::Succeeded : FailPointSelection(TEXT("No reachable line-of-sight recovery point."));
 		}
 	}
 	const bool bSelected = SelectionMode == EDeckWaypointSelectionMode::ReleaseLineOfSightReposition
 		? Navigation->PlanRecoveryRoute(Target) : Navigation->PlanTargetDistanceRoute(Target, TargetDistance, ProjectionTolerance);
-	return bSelected ? EBTNodeResult::Succeeded : EBTNodeResult::Failed;
+	return bSelected ? EBTNodeResult::Succeeded : FailPointSelection(TEXT("No suitable combat reposition point."));
 }
 FString UBTT_SelectDeckWaypoint::GetStaticDescription() const
 {

@@ -1,5 +1,6 @@
 #include "Task/BTT_MoveToDeckWaypoint.h"
 #include "AI/BaseAIController.h"
+#include "AI/PointSelectionFailure.h"
 #include "BaseEnemy.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "DeckAI/DeckEnemyCombatComponent.h"
@@ -50,6 +51,8 @@ EBTNodeResult::Type UBTT_MoveToDeckWaypoint::ExecuteTask(UBehaviorTreeComponent&
 	if (!Mover || !Mover->CanMoveOnDeck() || !Area || !Area->IsReady() || !Route || !Route->HasGoal()
 		|| !Enemy->GetCharacterMovement() || !Enemy->GetCharacterMovement()->IsMovingOnGround())
 	{
+		if (Route && !Route->HasGoal())
+			EnemyPointSelectionFailure::Log(this, Enemy, TEXT("Deck move has no valid selected destination point."));
 		StopDeckMove(OwnerComp, Enemy, false); return EBTNodeResult::Failed;
 	}
 	Enemy->SetBase(Area->GetMovementBase(*Enemy));
@@ -69,6 +72,8 @@ void UBTT_MoveToDeckWaypoint::TickTask(UBehaviorTreeComponent& OwnerComp, uint8*
 		: (Mover && Mover->CanMoveOnDeck() && Route ? Route->TickRoute(DeltaSeconds, AcceptanceRadius,
 			ProgressTimeout, MaximumMoveTime, MoveSpeed, MinimumProgressDistance) : EDeckWalkRouteTick::Failed);
 	if (Result == EDeckWalkRouteTick::Moving) return;
+	if (Result == EDeckWalkRouteTick::Failed)
+		EnemyPointSelectionFailure::Log(this, Enemy, TEXT("Deck destination/path could not be retained or replanned."));
 	if (Deck && Deck->GetDeckCombatComponent()->HasRecovery()
 		&& Deck->GetDeckCombatComponent()->HasAttackPosition(Deck->GetCombatTarget())) Deck->GetDeckCombatComponent()->ClearRecovery();
 	StopDeckMove(OwnerComp, Enemy, Result == EDeckWalkRouteTick::Reached);

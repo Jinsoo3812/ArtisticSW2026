@@ -327,6 +327,7 @@ void UGA_BasicAttack::OnAttackMontageCancelled()
 
 void UGA_BasicAttack::OnHitScanStartEvent(FGameplayEventData Payload)
 {
+	if (!IsHitScanAllowed()) return;
 	if (CachedExecutionData.bUseTimedHitWindow) return;
 	if (Payload.OptionalObject)
 	{
@@ -347,7 +348,7 @@ void UGA_BasicAttack::OnHitScanEndEvent(FGameplayEventData Payload)
 
 void UGA_BasicAttack::StartHitScan()
 {
-	if (!IsActive() || bAttackFinished || bHitScanActive || bOpenedAttackWindow || !IsValid(CachedWeapon)) return;
+	if (!IsActive() || !IsHitScanAllowed() || bAttackFinished || bHitScanActive || bOpenedAttackWindow || !IsValid(CachedWeapon)) return;
 	if (ADeckEnemy* Deck = Cast<ADeckEnemy>(GetAvatarActorFromActorInfo()))
 	{
 		if (!DeckCombat.IsValid() || !DeckCombat->IsCurrentAttack(DeckAttackAttempt))

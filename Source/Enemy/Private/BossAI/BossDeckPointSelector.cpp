@@ -6,7 +6,83 @@
 #include "DeckAI/DeckWalkAreaComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
+#include "GAS/Tasks/BossTargetSnapshotTypes.h"
 #include "ShipAI/EnemyShip.h"
+
+bool UBossDeckPointSelector::SelectDashBeyondSnapshot(AShipBossEnemy& Boss,
+	const FDeckWalkLocation& Start, const FBossTargetSnapshot& Target, float DistanceBeyondPlayer,
+	const FBossDestinationSelectionSettings& Settings, AActor* IgnoredTarget, FDeckWalkLocation& Out)
+{
+	Out = FDeckWalkLocation();
+	AEnemyShip* Ship = Boss.GetHostShip();
+	const UDeckWalkAreaComponent* Area = IsValid(Ship) ? Ship->GetDeckWalkAreaComponent() : nullptr;
+	const UStaticMeshComponent* Frame = IsValid(Ship) ? Ship->GetDeckMeshComplex() : nullptr;
+	if (!Boss.HasAuthority() || !Area || !Frame || !Target.bValid || !Area->IsLocationValid(Start)
+		|| Start.SurfaceId != Target.SurfaceId || !FMath::IsFinite(DistanceBeyondPlayer) || DistanceBeyondPlayer <= 0.f) return false;
+	const FVector Up = Frame->GetUpVector().GetSafeNormal();
+	const FVector TargetWorld = Area->ToWorld(Target.LocalFloor);
+	const FVector StartFloorWorld = Area->ToWorld(Start.LocalFloor);
+	const FVector Direction = FVector::VectorPlaneProject(TargetWorld - StartFloorWorld, Up).GetSafeNormal();
+	if (Direction.IsNearlyZero()) return false;
+	const FVector Desired = TargetWorld + Direction * DistanceBeyondPlayer;
+	FDeckWalkLocation Goal;
+	if (!Area->ResolvePreciseLocalFloor(Area->ToLocal(Desired), Target.SurfaceId, Goal)
+		|| !Area->IsLocationAvailable(Goal, Boss) || !Area->IsSupportedSegment(Start, Goal)) return false;
+	FTransform StartTransform, EndTransform;
+	if (!Area->ResolveLocationTransform(Start, Boss, StartTransform) || !Area->ResolveLocationTransform(Goal, Boss, EndTransform)) return false;
+	const float Travel = FVector::VectorPlaneProject(EndTransform.GetLocation() - StartTransform.GetLocation(), Up).Size();
+	if (Travel < FMath::Max(Settings.MinimumTravelDistance, Settings.MinimumDashTravelDistance)
+		|| Travel > Settings.MaximumDashDistance) return false;
+	// Preserve the requested distance and line after floor resolution; no nearest-node fallback.
+	if (FVector::VectorPlaneProject(Area->ToWorld(Goal.LocalFloor) - Desired, Up).Size() > 1.f) return false;
+	if (Settings.bCheckDashObstacles)
+	{
+		const UCapsuleComponent* Capsule = Boss.GetCapsuleComponent();
+		const UWorld* World = Boss.GetWorld();
+		if (!Capsule || !World) return false;
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(BossSnapshotDashObstacle), true, &Boss);
+		if (IsValid(IgnoredTarget)) Params.AddIgnoredActor(IgnoredTarget);
+		FHitResult Hit;
+		if (World->SweepSingleByChannel(Hit, StartTransform.GetLocation(), EndTransform.GetLocation(),
+			Boss.GetActorQuat(), ECC_Pawn, FCollisionShape::MakeCapsule(
+				Capsule->GetScaledCapsuleRadius(), Capsule->GetScaledCapsuleHalfHeight()), Params)) return false;
+	}
+	Out = Goal;
+	return true;
+}
+
+bool UBossDeckPointSelector::SelectChainRelocation(AShipBossEnemy& Boss, const FBossTargetSnapshot& Target,
+	float DistanceBeyondPlayer, const FBossDestinationSelectionSettings& Settings,
+	AActor* IgnoredTarget, FDeckWalkLocation& Out)
+{
+	Out = FDeckWalkLocation();
+	AEnemyShip* Ship = Boss.GetHostShip();
+	const UDeckWalkAreaComponent* Area = IsValid(Ship) ? Ship->GetDeckWalkAreaComponent() : nullptr;
+	const UStaticMeshComponent* Frame = IsValid(Ship) ? Ship->GetDeckMeshComplex() : nullptr;
+	FDeckWalkLocation Current;
+	if (!Boss.HasAuthority() || !Area || !Frame || !Target.bValid || !Area->ResolveActorOnDeck(Boss, Current)) return false;
+	const FVector TargetWorld = Area->ToWorld(Target.LocalFloor);
+	const FVector Forward = Frame->GetComponentTransform().TransformVectorNoScale(Target.LocalForward).GetSafeNormal();
+	TArray<FDeckWalkLocation> Candidates;
+	Area->GetReachableLocations(Current, Candidates, false);
+	float Best = TNumericLimits<float>::Max();
+	for (const auto& Candidate : Candidates)
+	{
+		if (Candidate.SurfaceId != Target.SurfaceId || !Area->IsLocationAvailable(Candidate, Boss)) continue;
+		const FVector Position = Area->ToWorld(Candidate.LocalFloor);
+		if (FVector::VectorPlaneProject(Position - Boss.GetActorLocation(), Frame->GetUpVector()).Size() < Settings.MinimumTravelDistance
+			|| !IsPointBehindTarget(TargetWorld, Forward, Position, Frame->GetUpVector(), Settings.MaximumRearDot)) continue;
+		FDeckWalkLocation DashGoal;
+		if (!SelectDashBeyondSnapshot(Boss, Candidate, Target, DistanceBeyondPlayer, Settings, IgnoredTarget, DashGoal)) continue;
+		const float Score = FVector::DistSquared(Position, TargetWorld);
+		if (Score < Best || (FMath::IsNearlyEqual(Score, Best) && (Out.NodeIndex == INDEX_NONE || Candidate.NodeIndex < Out.NodeIndex)))
+		{
+			Best = Score;
+			Out = Candidate;
+		}
+	}
+	return Area->IsLocationValid(Out);
+}
 
 bool UBossDeckPointSelector::SelectDestinationLocation(
 	AEnemyShip* Ship, AActor* BossActor, AActor* Target, EBossDestinationPurpose Purpose,

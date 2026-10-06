@@ -1,5 +1,6 @@
 #include "Task/BTT_MoveAroundDeckTarget.h"
 #include "AIController.h"
+#include "AI/PointSelectionFailure.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "DeckAI/DeckEnemyCombatComponent.h"
 #include "DeckAI/DeckEnemyNavigationComponent.h"
@@ -16,7 +17,7 @@ UBTT_MoveAroundDeckTarget::UBTT_MoveAroundDeckTarget()
 }
 EBTNodeResult::Type UBTT_MoveAroundDeckTarget::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
-	Cleanup(); Elapsed = RetryRemaining = SegmentRemaining = 0.0f;
+	Cleanup(); Elapsed = SegmentRemaining = 0.0f;
 	Enemy = OwnerComp.GetAIOwner() ? Cast<ADeckEnemy>(OwnerComp.GetAIOwner()->GetPawn()) : nullptr;
 	Target = OwnerComp.GetBlackboardComponent() ? Cast<AActor>(OwnerComp.GetBlackboardComponent()->GetValueAsObject(GetSelectedBlackboardKey())) : nullptr;
 	if (!Enemy.IsValid() || !Enemy->CanMoveOnDeck() || !Enemy->IsValidCombatTarget(Target.Get())) { Cleanup(); return EBTNodeResult::Failed; }
@@ -24,7 +25,7 @@ EBTNodeResult::Type UBTT_MoveAroundDeckTarget::ExecuteTask(UBehaviorTreeComponen
 	Direction = Enemy->GetDeckRandomStream().RandRange(0, 1) == 0 ? -1.0f : 1.0f;
 	Enemy->SetBaseMovementSpeed(MoveSpeed);
 	Enemy->GetDeckCombatComponent()->AcquireFocus(); bOwnsFocus = true;
-	PlanNextSegment();
+	if (!PlanNextSegment()) { Cleanup(); return EBTNodeResult::Failed; }
 	return EBTNodeResult::InProgress;
 }
 bool UBTT_MoveAroundDeckTarget::PlanNextSegment()
@@ -35,8 +36,7 @@ bool UBTT_MoveAroundDeckTarget::PlanNextSegment()
 	{
 		SegmentRemaining = 1.5f; return true;
 	}
-	Direction *= -1.0f;
-	RetryRemaining = 0.3f;
+	EnemyPointSelectionFailure::Log(this, Enemy.Get(), TEXT("No suitable point for moving around the deck target."));
 	return false;
 }
 void UBTT_MoveAroundDeckTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
@@ -52,18 +52,26 @@ void UBTT_MoveAroundDeckTarget::TickTask(UBehaviorTreeComponent& OwnerComp, uint
 	{
 		Cleanup(); FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded); return;
 	}
-	RetryRemaining -= DeltaSeconds;
-	if (RetryRemaining > 0.0f) return;
 	UDeckWalkRouteComponent* Route = Enemy->GetDeckWalkRouteComponent();
 	SegmentRemaining -= DeltaSeconds;
-	if (!Route->HasGoal()) { PlanNextSegment(); return; }
+	if (!Route->HasGoal())
+	{
+		if (!PlanNextSegment()) { Cleanup(); FinishLatentTask(OwnerComp, EBTNodeResult::Failed); }
+		return;
+	}
 	Enemy->GetDeckEnemyNavigationComponent()->ReplanIfTargetMoved(Target.Get());
 	const EDeckWalkRouteTick Result = Route->TickRoute(DeltaSeconds, 30.0f, 1.0f, MaximumDuration, MoveSpeed, 10.0f);
+	if (Result == EDeckWalkRouteTick::Failed)
+	{
+		EnemyPointSelectionFailure::Log(this, Enemy.Get(), TEXT("Deck strafe route is no longer usable."));
+		Cleanup(); FinishLatentTask(OwnerComp, EBTNodeResult::Failed); return;
+	}
 	if (Result != EDeckWalkRouteTick::Moving || SegmentRemaining <= 0.0f)
 	{
 		Enemy->GetCharacterMovement()->StopMovementImmediately();
 		Enemy->GetDeckEnemyNavigationComponent()->CancelCombatRoute();
-		Direction *= -1.0f; PlanNextSegment();
+		Direction *= -1.0f;
+		if (!PlanNextSegment()) { Cleanup(); FinishLatentTask(OwnerComp, EBTNodeResult::Failed); }
 	}
 }
 void UBTT_MoveAroundDeckTarget::Cleanup()

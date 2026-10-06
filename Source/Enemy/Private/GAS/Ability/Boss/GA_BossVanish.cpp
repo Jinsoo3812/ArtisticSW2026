@@ -1,204 +1,207 @@
 #include "GAS/Ability/Boss/GA_BossVanish.h"
 
-#include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
-#include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "AbilitySystemComponent.h"
+#include "AIController.h"
+#include "AI/PointSelectionFailure.h"
+#include "AI/EnemyTerritoryComponent.h"
 #include "BaseGameplayTags.h"
+#include "BossAI/BossAttackPositionLibrary.h"
+#include "BossAI/BossVanishFeedback.h"
 #include "BossAI/ShipBossEnemy.h"
-#include "Components/StaticMeshComponent.h"
+#include "GAS/Ability/Boss/BossGameplayAbility.h"
+#include "GAS/Tasks/AbilityTask_BossVanishRelocation.h"
 #include "ShipAI/EnemyShip.h"
+#include "TimerManager.h"
+
+namespace
+{
+	// Release only our own focus slot, leaving the AI/BT's normal focus intact.
+	constexpr EAIFocusPriority::Type VanishFocusPriority = EAIFocusPriority::LastFocusPriority + 1;
+}
 
 UGA_BossVanish::UGA_BossVanish()
 {
-	SetBossAbilityTags(GameplayAbility_Boss_Vanish, Cooldown_Boss_Vanish);
-	CooldownDuration = 7.0f;
+	SetVanishTags(GameplayAbility_Boss_Vanish, Cooldown_Boss_Vanish);
+	ActivationBlockedTags.AddTag(State_Attacking);
+	DepartureGameplayCueTag = GameplayCue_Boss_Vanish_Departure;
+	ArrivalGameplayCueTag = GameplayCue_Boss_Vanish_Arrival;
 }
 
 UGA_BossVanishV2::UGA_BossVanishV2()
 {
-	SetBossAbilityTags(GameplayAbility_Boss_VanishV2, Cooldown_Boss_VanishV2);
+	SetVanishTags(GameplayAbility_Boss_VanishV2, Cooldown_Boss_VanishV2);
 }
 
-void UGA_BossVanish::ActivateAbility(
-	const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo,
-	const FGameplayAbilityActivationInfo ActivationInfo,
+void UGA_BossVanish::SetVanishTags(FGameplayTag AbilityTag, FGameplayTag InCooldownTag)
+{
+	FGameplayTagContainer Tags(AbilityTag);
+	Tags.AddTag(GameplayAbility_InterruptibleByHit);
+	SetAssetTags(Tags);
+	CooldownTag = InCooldownTag;
+	VanishCooldownTags.Reset();
+	VanishCooldownTags.AddTag(CooldownTag);
+}
+
+const FGameplayTagContainer* UGA_BossVanish::GetCooldownTags() const
+{
+	return &VanishCooldownTags;
+}
+
+void UGA_BossVanish::ApplyCooldown(const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const
+{
+	// CommitAbility still checks cooldown/cost, but applying cooldown is deferred to EndAbility.
+}
+
+void UGA_BossVanish::ApplyVanishCooldown(const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo) const
+{
+	if (UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
+		UBossGameplayAbility::ApplyTaggedCooldown(*ASC, this, VanishCooldownTags, CooldownDuration, GetAbilityLevel(Handle, ActorInfo));
+}
+
+AShipBossEnemy* UGA_BossVanish::GetBossAvatar() const
+{
+	return Cast<AShipBossEnemy>(GetAvatarActorFromActorInfo());
+}
+
+void UGA_BossVanish::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
+	bAttackMontageStarted = false;
+	bConsumedVanish = false;
+	AShipBossEnemy* Boss = ActorInfo ? Cast<AShipBossEnemy>(ActorInfo->AvatarActor.Get()) : nullptr;
+	VanishTarget = Boss ? Boss->GetBossCombatTarget() : nullptr;
+	if (Boss && Boss->HasAuthority() && VanishTarget.IsValid())
+	{
+		FocusController = Cast<AAIController>(Boss->GetController());
+		if (FocusController.IsValid()) FocusController->SetFocus(VanishTarget.Get(), VanishFocusPriority);
+	}
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
-	CapturedDestination = GetBossAvatar() ? GetBossAvatar()->GetDestinationLocation() : FDeckWalkLocation();
-	if (!ValidatePreselectedDestination() || !CommitAbility(Handle, ActorInfo, ActivationInfo))
-	{
-		FinishVanish(true);
-		return;
-	}
-
-	if (PreparationMontage)
-	{
-		MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-			this, TEXT("BossVanishPreparation"), PreparationMontage);
-		if (MontageTask)
-		{
-			MontageTask->OnInterrupted.AddDynamic(this, &UGA_BossVanish::HandleMontageInterrupted);
-			MontageTask->OnCancelled.AddDynamic(this, &UGA_BossVanish::HandleMontageInterrupted);
-			MontageTask->ReadyForActivation();
-		}
-	}
-
-	if (PreparationDelay <= 0.0f)
-	{
-		BeginHiddenPhase();
-		return;
-	}
-	PreparationTask = UAbilityTask_WaitDelay::WaitDelay(this, PreparationDelay);
-	PreparationTask->OnFinish.AddDynamic(this, &UGA_BossVanish::BeginHiddenPhase);
-	PreparationTask->ReadyForActivation();
+	if (IsActive() && GetWorld())
+		GetWorld()->GetTimerManager().SetTimer(TargetValidationTimer, this, &ThisClass::ValidateLockedTarget, 0.1f, true);
 }
 
-void UGA_BossVanish::EndAbility(
-	const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo,
-	const FGameplayAbilityActivationInfo ActivationInfo,
-	bool bReplicateEndAbility,
-	bool bWasCancelled)
+bool UGA_BossVanish::PlayAttackMontage(const FEnemyBasicAttackExecutionData& AttackData)
 {
-	if (bWasCancelled)
-	{
-		if (AShipBossEnemy* Boss = GetBossAvatar())
-		{
-			Boss->ClearDestination();
-		}
-	}
-	ClearHiddenState();
-	MontageTask = nullptr;
-	PreparationTask = nullptr;
-	HiddenTask = nullptr;
-	RelocationSettleTask = nullptr;
-	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
-}
-
-void UGA_BossVanish::BeginHiddenPhase()
-{
-	AShipBossEnemy* Boss = GetBossAvatar();
-	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	if (!Boss || !ASC || !Boss->BeginHiddenRelocation())
-	{
-		FinishVanish(true);
-		return;
-	}
-
-	HiddenStateHandle = ApplyTimedStateTag(
-		*ASC,
-		State_Boss_Hidden,
-		HiddenDuration + RelocationSettleTime + 0.25f);
-	HiddenTask = UAbilityTask_WaitDelay::WaitDelay(this, FMath::Max(0.01f, HiddenDuration));
-	HiddenTask->OnFinish.AddDynamic(this, &UGA_BossVanish::RelocateHidden);
-	HiddenTask->ReadyForActivation();
-}
-
-void UGA_BossVanish::RelocateHidden()
-{
-	AShipBossEnemy* Boss = GetBossAvatar();
-	FTransform Destination;
-	if (!Boss || Boss->GetDestinationLocation().NodeIndex != CapturedDestination.NodeIndex
-		|| Boss->GetDestinationLocation().Revision != CapturedDestination.Revision
-		|| !Boss->ResolveDestinationTransform(Destination))
-	{
-		FinishVanish(true);
-		return;
-	}
-
-	FVector FacingDirection = GetBossTarget()
-		? GetBossTarget()->GetActorLocation() - Destination.GetLocation()
-		: Destination.GetRotation().GetForwardVector();
-	const FVector DeckUp = Boss->GetHostShip() && Boss->GetHostShip()->GetShipDeckMesh()
-		? Boss->GetHostShip()->GetShipDeckMesh()->GetUpVector().GetSafeNormal()
-		: FVector::UpVector;
-	FacingDirection = FVector::VectorPlaneProject(FacingDirection, DeckUp).GetSafeNormal();
-	const FQuat FacingRotation = FacingDirection.IsNearlyZero()
-		? Destination.GetRotation()
-		: FRotationMatrix::MakeFromXZ(FacingDirection, DeckUp).ToQuat();
-	Destination.SetRotation(FacingRotation);
-
-	if (!Boss->RelocateWhileHidden(Destination))
-	{
-		FinishVanish(true);
-		return;
-	}
-	Boss->MarkDestinationReached();
-
-	if (HiddenTask)
-	{
-		HiddenTask->EndTask();
-		HiddenTask = nullptr;
-	}
-	RelocationSettleTask = UAbilityTask_WaitDelay::WaitDelay(
-		this,
-		FMath::Max(0.01f, RelocationSettleTime));
-	RelocationSettleTask->OnFinish.AddDynamic(this, &UGA_BossVanish::RevealAtDestination);
-	RelocationSettleTask->ReadyForActivation();
-}
-
-void UGA_BossVanish::RevealAtDestination()
-{
-	AShipBossEnemy* Boss = GetBossAvatar();
-	if (!Boss || !Boss->IsHiddenRelocationActive())
-	{
-		FinishVanish(true);
-		return;
-	}
-
-	Boss->FinishHiddenRelocation();
-	ClearHiddenState();
-	FinishVanish(false);
-}
-
-void UGA_BossVanish::HandleMontageInterrupted()
-{
-	FinishVanish(true);
-}
-
-bool UGA_BossVanish::ValidatePreselectedDestination() const
-{
-	const AShipBossEnemy* Boss = GetBossAvatar();
-	AActor* Target = GetBossTarget();
-	FTransform Destination;
-	if (!Boss || !Boss->CanEngageActor(Target) || !Boss->GetHostShip()
-		|| !Boss->HasDestination()
-		|| !Boss->ResolveDestinationTransform(Destination))
-	{
-		return false;
-	}
+	// Attack data was cached and committed once. Keep the same busy state through relocation.
+	if (!StartPreparedRelocation()) FinishAttack(true);
 	return true;
 }
 
-void UGA_BossVanish::FinishVanish(bool bWasCancelled)
+bool UGA_BossVanish::StartPreparedRelocation()
 {
-	if (IsActive())
+	AShipBossEnemy* Boss = GetBossAvatar();
+	FTransform Destination;
+	if (!IsActive() || !Boss) return false;
+	if (!IsVanishTargetValid()) { bConsumedVanish = true; return false; }
+	if (!Boss->HasDestination() || !Boss->ResolveDestinationTransform(Destination))
 	{
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, bWasCancelled);
+		EnemyPointSelectionFailure::Log(this, Boss, TEXT("No valid preselected Vanish relocation point."));
+		return false;
 	}
+	RelocationTask = UAbilityTask_BossVanishRelocation::Relocate(
+		this, Boss, GetVanishTarget(), PreparationMontage, PreparationDelay, HiddenDuration, RelocationSettleTime);
+	if (!RelocationTask) return false;
+	RelocationTask->OnRevealed.AddDynamic(this, &ThisClass::OnRelocationRevealed);
+	RelocationTask->OnFailed.AddDynamic(this, &ThisClass::OnRelocationFailed);
+	RelocationTask->OnDeparture.AddDynamic(this, &ThisClass::OnVanishDeparture);
+	RelocationTask->OnArrival.AddDynamic(this, &ThisClass::OnVanishArrival);
+	RelocationTask->ReadyForActivation();
+	return true;
 }
 
-void UGA_BossVanish::ClearHiddenState()
+void UGA_BossVanish::OnRelocationRevealed()
 {
-	if (AShipBossEnemy* Boss = GetBossAvatar())
+	bConsumedVanish = true;
+	RelocationTask = nullptr;
+	if (IsActive()) HandleRevealedAtDestination();
+}
+
+void UGA_BossVanish::OnRelocationFailed()
+{
+	if (RelocationTask) bConsumedVanish |= RelocationTask->HasStartedHiding();
+	if (!IsVanishTargetValid()) bConsumedVanish = true;
+	if (IsActive()) FinishAttack(true);
+}
+
+bool UGA_BossVanish::IsVanishTargetValid() const
+{
+	const AShipBossEnemy* Boss = GetBossAvatar();
+	AActor* Target = GetVanishTarget();
+	if (!Boss || !IsValid(Target) || Target->IsActorBeingDestroyed() || !IsValid(Boss->GetHostShip())
+		|| !Boss->CanEngageActor(Target)) return false;
+	const UEnemyTerritoryComponent* Territory = Boss->GetTerritoryComponent();
+	if (Territory && Territory->HasAssignedTerritory() && !Territory->IsInsideCombatArea(Target->GetActorLocation())) return false;
+	// Being airborne is not target loss. Deck/surface availability remains the
+	// destination selector and attack-position query's responsibility.
+	return true;
+}
+
+void UGA_BossVanish::ValidateLockedTarget()
+{
+	if (!IsActive() || IsVanishTargetValid()) return;
+	// Losing the locked player consumes the attempt even during preparation. Never retarget.
+	bConsumedVanish = true;
+	FinishAttack(true);
+}
+
+void UGA_BossVanish::OnVanishDeparture(FVector Location)
+{
+	if (IsActive()) BossVanishFeedback::ExecuteAtLocation(GetBossAvatar(), DepartureGameplayCueTag, Location);
+}
+
+void UGA_BossVanish::OnVanishArrival(FVector Location)
+{
+	if (IsActive()) BossVanishFeedback::ExecuteAtLocation(GetBossAvatar(), ArrivalGameplayCueTag, Location);
+}
+
+bool UGA_BossVanish::CanAttackFromCurrentPosition() const
+{
+	const AShipBossEnemy* Boss = GetBossAvatar();
+	return IsVanishTargetValid()
+		&& UBossAttackPositionLibrary::CanMeleeAttackFromCurrentPosition(Boss, GetVanishTarget(), GetAttackRangeInset());
+}
+
+void UGA_BossVanish::HandleRevealedAtDestination()
+{
+	if (CanAttackFromCurrentPosition()) StartAttackAtDestination();
+	else FinishAttack(true);
+}
+
+void UGA_BossVanish::StartAttackAtDestination()
+{
+	bAttackMontageStarted = true;
+	if (!Super::PlayAttackMontage(CachedExecutionData)) FinishAttack(true);
+}
+
+void UGA_BossVanish::EndAbility(const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
+	bool bReplicateEndAbility, bool bWasCancelled)
+{
+	if (!IsActive()) return;
+	if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(TargetValidationTimer);
+	if (FocusController.IsValid()) FocusController->ClearFocus(VanishFocusPriority);
+	FocusController.Reset();
+	if (RelocationTask)
 	{
-		if (Boss->IsHiddenRelocationActive())
-		{
-			Boss->FinishHiddenRelocation();
-		}
-		else
-		{
-			Boss->SetBossHidden(false);
-		}
+		bConsumedVanish |= RelocationTask->HasStartedHiding();
+		RelocationTask->EndTask();
+		RelocationTask = nullptr;
 	}
-	if (HiddenStateHandle.IsValid())
+	// Normal completion is the attack's OnCompleted. Interrupted/exhausted consumed
+	// attempts also start cooldown here, preventing immediate failed-relocation spam.
+	if (bConsumedVanish)
 	{
-		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
-		{
-			ASC->RemoveActiveGameplayEffect(HiddenStateHandle);
-		}
-		HiddenStateHandle.Invalidate();
+		bConsumedVanish = false;
+		ApplyVanishCooldown(Handle, ActorInfo);
 	}
+	// Preserve the ordinary attack and variation cooldowns for the one actual swing.
+	// They are never consumed by an intermediate relocation.
+	if (bAttackMontageStarted) UGA_BossBasicAttack::ApplyCooldown(Handle, ActorInfo, ActivationInfo);
+	if (AShipBossEnemy* Boss = GetBossAvatar()) Boss->ClearDestination();
+	bAttackMontageStarted = false;
+	VanishTarget.Reset();
+	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }

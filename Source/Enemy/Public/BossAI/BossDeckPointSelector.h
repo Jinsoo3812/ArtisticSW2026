@@ -6,6 +6,8 @@
 #include "BossDeckPointSelector.generated.h"
 
 class AEnemyShip;
+class AShipBossEnemy;
+struct FBossTargetSnapshot;
 
 UENUM(BlueprintType)
 enum class EBossDestinationPurpose : uint8
@@ -74,6 +76,14 @@ class ENEMY_API UBossDeckPointSelector : public UBlueprintFunctionLibrary
 	GENERATED_BODY()
 
 public:
+	/** Exact player-beyond endpoint; start may be a proposed relocation location. */
+	static bool SelectDashBeyondSnapshot(AShipBossEnemy& Boss, const FDeckWalkLocation& Start,
+		const FBossTargetSnapshot& Target, float DistanceBeyondPlayer,
+		const FBossDestinationSelectionSettings& Settings, AActor* IgnoredTarget, FDeckWalkLocation& Out);
+	/** Rear-facing relocation candidates must also support this step's future dash. */
+	static bool SelectChainRelocation(AShipBossEnemy& Boss, const FBossTargetSnapshot& Target,
+		float DistanceBeyondPlayer, const FBossDestinationSelectionSettings& Settings,
+		AActor* IgnoredTarget, FDeckWalkLocation& Out);
 	/** Selects a validated ship-local location; manual anchors are only used for spawning. */
 	UFUNCTION(BlueprintCallable, Category = "Boss|Point", meta = (AutoCreateRefTerm = "Settings"))
 	static bool SelectDestinationLocation(

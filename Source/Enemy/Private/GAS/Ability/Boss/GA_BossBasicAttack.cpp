@@ -71,6 +71,8 @@ bool UGA_BossBasicAttack::PlayAttackMontage(const FEnemyBasicAttackExecutionData
 	{
 		return false;
 	}
+	// A montage start can synchronously cancel/end the ability (e.g. invalid AnimInstance).
+	if (!IsActive()) return false;
 
 	const AShipBossEnemy* Boss = Cast<AShipBossEnemy>(GetAvatarActorFromActorInfo());
 	const UBossBasicAttackSet* AttackSet = Boss ? Boss->GetBasicAttackSet() : nullptr;

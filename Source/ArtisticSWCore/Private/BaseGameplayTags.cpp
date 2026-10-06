@@ -72,7 +72,9 @@ UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_EnemyShip_TimeStop, "GameplayAbility.Enem
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_Knockback, "GameplayAbility.Boss.Knockback");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_Vanish, "GameplayAbility.Boss.Vanish");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_VanishV2, "GameplayAbility.Boss.VanishV2");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_ChainVanish, "GameplayAbility.Boss.ChainVanish");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_DashSlash, "GameplayAbility.Boss.DashSlash");
+UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Boss_ChainSlashDash, "GameplayAbility.Boss.ChainSlashDash");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_BasicAttack_Combo, "Cooldown.Boss.BasicAttack.Combo");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Enemy_Buff_MoveSpeed, "GameplayAbility.Enemy.Buff.MoveSpeed");
 UE_DEFINE_GAMEPLAY_TAG(GameplayAbility_Player_Roll, "GameplayAbility.Player.Roll");
@@ -81,7 +83,9 @@ UE_DEFINE_GAMEPLAY_TAG(Cooldown_Enemy_Buff_MoveSpeed, "Cooldown.Enemy.Buff.MoveS
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_Knockback, "Cooldown.Boss.Knockback");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_Vanish, "Cooldown.Boss.Vanish");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_VanishV2, "Cooldown.Boss.VanishV2");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_ChainVanish, "Cooldown.Boss.ChainVanish");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_DashSlash, "Cooldown.Boss.DashSlash");
+UE_DEFINE_GAMEPLAY_TAG(Cooldown_Boss_ChainSlashDash, "Cooldown.Boss.ChainSlashDash");
 UE_DEFINE_GAMEPLAY_TAG(State_EnemyShip_Charging, "State.EnemyShip.Charging");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_Charge, "Cooldown.EnemyShip.Charge");
 UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_LaunchTorpedo, "Cooldown.EnemyShip.LaunchTorpedo");
@@ -91,6 +95,9 @@ UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyShip_TimeStop, "Cooldown.EnemyShip.TimeStop
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Enemy_Hit, "GameplayCue.Enemy.Hit");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Boss_Attack, "GameplayCue.Boss.Attack");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Boss_Hit, "GameplayCue.Boss.Hit");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Boss_Vanish_Departure, "GameplayCue.Boss.Vanish.Departure");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Boss_Vanish_Arrival, "GameplayCue.Boss.Vanish.Arrival");
+UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Boss_Samurai_Charging, "GameplayCue.Boss.Samurai.Charging");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact, "GameplayCue.Impact");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Weapon_Hand, "GameplayCue.Impact.Weapon.Hand");
 UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Weapon_Sword, "GameplayCue.Impact.Weapon.Sword");

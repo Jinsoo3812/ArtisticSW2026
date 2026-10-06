@@ -1,6 +1,9 @@
 #include "Task/BTT_BossStrafe.h"
 
 #include "AIController.h"
+#include "AI/PointSelectionFailure.h"
+#include "AbilitySystemComponent.h"
+#include "BaseGameplayTags.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BossAI/ShipBossEnemy.h"
@@ -29,6 +32,8 @@ EBTNodeResult::Type UBTT_BossStrafe::ExecuteTask(
 	ResetRuntimeState();
 	AAIController* Controller = OwnerComp.GetAIOwner();
 	AShipBossEnemy* Boss = Controller ? Cast<AShipBossEnemy>(Controller->GetPawn()) : nullptr;
+	if (Boss && Boss->GetAbilitySystemComponent()
+		&& Boss->GetAbilitySystemComponent()->HasMatchingGameplayTag(State_Boss_Busy)) return EBTNodeResult::Failed;
 	AEnemyShip* HostShip = Boss ? Boss->GetHostShip() : nullptr;
 	UStaticMeshComponent* DeckMesh = HostShip ? HostShip->GetShipDeckMesh() : nullptr;
 	UCharacterMovementComponent* Movement = Boss ? Boss->GetCharacterMovement() : nullptr;
@@ -43,9 +48,14 @@ EBTNodeResult::Type UBTT_BossStrafe::ExecuteTask(
 	UDeckWalkAreaComponent* Area = HostShip ? HostShip->GetDeckWalkAreaComponent() : nullptr;
 	FDeckWalkLocation Start, TargetFloor;
 	if (!Boss || !Boss->HasAuthority() || !HostShip || !DeckMesh || !Movement || !Area
-		|| !Boss->CanEngageActor(Target) || !Area->ResolveActorOnDeck(*Boss, Start)
-		|| !Area->ResolveActorOnDeck(*Target, TargetFloor) || TargetFloor.SurfaceId != Start.SurfaceId)
+		|| !Boss->CanEngageActor(Target))
 	{
+		return EBTNodeResult::Failed;
+	}
+	if (!Area->ResolveActorOnDeck(*Boss, Start) || !Area->ResolveActorOnDeck(*Target, TargetFloor)
+		|| TargetFloor.SurfaceId != Start.SurfaceId)
+	{
+		EnemyPointSelectionFailure::Log(this, Boss, TEXT("Cannot resolve strafe start/target points on the same deck surface."));
 		return EBTNodeResult::Failed;
 	}
 
@@ -97,6 +107,7 @@ void UBTT_BossStrafe::TickTask(
 		|| !Area->ResolveLocalFloor(LookAhead, Current.SurfaceId, Next)
 		|| !Area->IsSupportedSegment(Current, LookAhead) || !Area->IsLocationAvailable(Next, *Boss))
 	{
+		EnemyPointSelectionFailure::Log(this, Boss, TEXT("No supported and available strafe point."));
 		FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
 		return;
 	}
