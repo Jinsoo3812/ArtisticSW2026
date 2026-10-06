@@ -15,6 +15,8 @@ ESWVoyageStepResult UPlayerProgressSubsystem::PrepareVoyageReset_Implementation(
 	OutError.Reset();
 	if (Context.Generation <= 0 || Context.Generation < HostedVoyageResetGeneration)
 	{ OutError = TEXT("VoyagePlayerProgressGenerationInvalid"); return ESWVoyageStepResult::Failed; }
+	// Bootstrap has no Unload; hosted admission restores durable room records, not travel caches.
+	if (Context.bBootstrap) return ResetVoyageTransientState_Implementation(Context, OutError);
 	return ESWVoyageStepResult::Succeeded;
 }
 ESWVoyageStepResult UPlayerProgressSubsystem::ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError)

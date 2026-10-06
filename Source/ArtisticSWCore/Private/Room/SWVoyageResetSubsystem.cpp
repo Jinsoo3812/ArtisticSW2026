@@ -354,7 +354,16 @@ bool USWVoyageResetSubsystem::CanSpawnVoyageActor(ESWVoyageActorLifetime Lifetim
 {
 	check(IsInGameThread());
 	if (Lifetime != ESWVoyageActorLifetime::LocalPresentation && PresentationCleanupId.IsValid()) return false;
-	if (!bActive) return ExpectedGeneration == 0;
+	if (!bActive)
+	{
+		if (ActorGeneration == 0) return ExpectedGeneration == 0;
+		const USWRoomProgressSubsystem* Room = GetWorld()->GetGameInstance()
+			? GetWorld()->GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+		// Shared singletons are created by WorldSubsystems before GameMode issues the reserved bootstrap generation.
+		return Lifetime == ESWVoyageActorLifetime::SharedService && GetWorld()->GetNetMode() != NM_Client
+			&& Room && Room->IsHostedRoom() && Room->GetRestoreGeneration() < MAX_int32
+			&& ExpectedGeneration == ActorGeneration && ExpectedGeneration == Room->GetRestoreGeneration() + 1;
+	}
 	if (ExpectedGeneration != ActorGeneration) return false;
 	if (Lifetime == ESWVoyageActorLifetime::LocalPresentation)
 	{
@@ -452,6 +461,9 @@ void USWVoyageResetSubsystem::HandlePostGarbageCollect() { ++ObservedGcSerial; }
 void USWVoyageResetSubsystem::HandleActorSpawned(AActor* Actor)
 {
 	if (!Actor || Actor == LocalPauseSentinel || Actors.Contains(Actor) || !Profile) return;
+	// Match AuditWorldActors: framework actors are owned by the engine, not gameplay factories.
+	if (Actor->IsA<AWorldSettings>() || Actor->IsA<AController>() || Actor->IsA<APlayerState>()
+		|| Actor->IsA<AGameModeBase>() || Actor->IsA<AGameStateBase>() || Actor->IsA<ABrush>()) return;
 	const int32 Found = ResolveVoyageLifetimeTag(Actor);
 	if (Found == -2) { RegistrationFailure = TEXT("VoyageActorLifetimeAmbiguous:") + Actor->GetPathName(); return; }
 	if (Found != INDEX_NONE)
@@ -673,6 +685,8 @@ ESWVoyageStepResult USWVoyageResetSubsystem::PollLocalPhase(FString& OutError)
 	{
 		ULevel* Level = GameplayStreaming->GetLoadedLevel();
 		if (!Level || !GameplayStreaming->IsLevelVisible() || !Level->bIsVisible) return ESWVoyageStepResult::Pending;
+		for (AActor* Actor : Level->Actors)
+			if (IsValid(Actor) && !Actor->IsActorBeingDestroyed() && !Actor->HasActorBegunPlay()) return ESWVoyageStepResult::Pending;
 		if (!AuditWorldActors(OutError)) return ESWVoyageStepResult::Failed;
 	}
 	if (Context.Phase == ESWVoyagePhase::Restore)

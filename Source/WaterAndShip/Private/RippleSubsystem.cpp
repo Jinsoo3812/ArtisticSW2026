@@ -1,6 +1,9 @@
 #include "RippleSubsystem.h"
 #include "Room/SWVoyageResetSubsystem.h"
 #include "Room/SWVoyageSpawnLibrary.h"
+#include "Room/SWRoomProgressSubsystem.h"
+#include "Room/SWVoyageResetAnchor.h"
+#include "Engine/GameInstance.h"
 #include "Kismet/KismetRenderingLibrary.h"
 #include "Cannonball.h"
 
@@ -67,6 +70,19 @@ IMPLEMENT_GLOBAL_SHADER(FSWRippleCS, "/Project/Shaders/SWRippleCS.usf", "MainCS"
 
 namespace
 {
+	bool IsRippleProfilingRequested(const UWorld* World)
+	{
+		return World && FSWRippleProfile::IsEnabled() && World->GetMapName().Contains(TEXT("KKH_Profile_Ripple"));
+	}
+
+	bool IsLevelProfilingRequested(const UWorld* World)
+	{
+		if (!World || !FParse::Param(FCommandLine::Get(), TEXT("SWProfileLevel"))) return false;
+		FString TargetMap(TEXT("Test_Level"));
+		FParse::Value(FCommandLine::Get(), TEXT("SWProfileLevelMap="), TargetMap);
+		return World->GetMapName().Contains(TargetMap);
+	}
+
 	TAutoConsoleVariable<int32> CVarRippleResolution(
 		TEXT("sw.Ripple.Resolution"), 512,
 		TEXT("Compute-baked ripple render target resolution (256, 512, 1024)."), ECVF_Default);
@@ -285,7 +301,17 @@ void URippleSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 
 	// The profile map remains a clean copy of KKH_Test. The deterministic driver is
 	// transiently spawned only when the explicit profiling command-line flag is set.
-	if (FSWRippleProfile::IsEnabled() && InWorld.GetMapName().Contains(TEXT("KKH_Profile_Ripple")))
+	const USWRoomProgressSubsystem* Room = InWorld.GetGameInstance() ? InWorld.GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+	const USWVoyageResetSubsystem* Voyage = InWorld.GetSubsystem<USWVoyageResetSubsystem>();
+	bool bHostedVoyage = (Room && Room->IsHostedRoom()) || (Voyage && Voyage->IsActiveVoyageSession());
+	if (!bHostedVoyage && InWorld.GetNetMode() == NM_Client)
+		for (TActorIterator<ASWVoyageResetAnchor> It(&InWorld); It; ++It) { bHostedVoyage = true; break; }
+	if (bHostedVoyage && (IsRippleProfilingRequested(&InWorld) || IsLevelProfilingRequested(&InWorld)))
+	{
+		UE_LOG(LogTemp, Error, TEXT("VoyageResetUnsupportedInDiagnosticSession: Ripple/Level profiling Map=%s"), *InWorld.GetMapName());
+		return;
+	}
+	if (IsRippleProfilingRequested(&InWorld))
 	{
 		bool bAlreadySpawned = false;
 		for (TActorIterator<ASWRippleProfileController> It(&InWorld); It; ++It)
@@ -318,21 +344,16 @@ void URippleSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		}
 	}
 
-	if (FParse::Param(FCommandLine::Get(), TEXT("SWProfileLevel")))
+	if (IsLevelProfilingRequested(&InWorld))
 	{
-		FString TargetMap(TEXT("Test_Level"));
-		FParse::Value(FCommandLine::Get(), TEXT("SWProfileLevelMap="), TargetMap);
-		if (InWorld.GetMapName().Contains(TargetMap))
-		{
-			FActorSpawnParameters SpawnParameters;
-			SpawnParameters.Name = TEXT("SW_Level_Profile_Controller");
-			SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			SpawnParameters.ObjectFlags |= RF_Transient;
-			InWorld.SpawnActor<ASWLevelProfileController>(
-				ASWLevelProfileController::StaticClass(),
-				FTransform::Identity,
-				SpawnParameters);
-		}
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.Name = TEXT("SW_Level_Profile_Controller");
+		SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		SpawnParameters.ObjectFlags |= RF_Transient;
+		InWorld.SpawnActor<ASWLevelProfileController>(
+			ASWLevelProfileController::StaticClass(),
+			FTransform::Identity,
+			SpawnParameters);
 	}
 }
 
@@ -703,6 +724,12 @@ void URippleSubsystem::TickDiagnostics()
 			StateSubsystem ? StateSubsystem->GetRevision() : 0,
 			GetServerTime());
 	}
+}
+
+ESWVoyagePolicy URippleSubsystem::GetVoyagePolicy_Implementation() const
+{
+	return IsRippleProfilingRequested(GetWorld()) || IsLevelProfilingRequested(GetWorld())
+		? ESWVoyagePolicy::Unsupported : ESWVoyagePolicy::ResetParticipant;
 }
 
 FName URippleSubsystem::GetVoyageParticipantId_Implementation() const

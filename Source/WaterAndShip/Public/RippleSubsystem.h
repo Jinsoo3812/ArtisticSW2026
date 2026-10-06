@@ -20,7 +20,7 @@ class WATERANDSHIP_API URippleSubsystem : public UWorldSubsystem, public FTickab
 
 public:
 	URippleSubsystem();
-	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::ResetParticipant; }
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override;
 	virtual FName GetVoyageParticipantId_Implementation() const override;
 	virtual ESWVoyageStepResult PrepareVoyageReset_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;
 	virtual ESWVoyageStepResult ResetVoyageTransientState_Implementation(const FSWVoyageResetContext& Context, FString& OutError) override;

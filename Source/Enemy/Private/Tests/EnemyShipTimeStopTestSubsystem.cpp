@@ -1,4 +1,5 @@
 #include "Tests/EnemyShipTimeStopTestSubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
 
 #include "AbilitySystemComponent.h"
 #include "BaseGameplayTags.h"
@@ -11,6 +12,12 @@
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
 #include "Ship.h"
 #include "ShipAI/Abilities/EnemyShipTimeStopField.h"
+
+FName UEnemyShipTimeStopTestSubsystem::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<UEnemyShipTimeStopTestSubsystem*>(this)) : NAME_None;
+}
 
 bool UEnemyShipTimeStopTestSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {

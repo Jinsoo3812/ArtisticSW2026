@@ -18,12 +18,14 @@ public:
  USWDevTestInputComponent();
  void SetLocalInputDesired(bool bDesired);
  void RequestSessionEnabled(bool bEnabled);
+ void RequestVoyageProbe(const FString& Command, const FString& Phase, float Seconds);
  void BindInput(UInputComponent* Input);
  void RefreshLocalState();
  bool IsEffectiveEnabled() const { return bEffective; }
  virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out) const override;
  UFUNCTION(Server, Reliable) void ServerSetSessionEnabled(bool bEnabled);
  UFUNCTION(Server, Reliable) void ServerExecuteTest(ESWDevTestAction Action, int32 ExpectedRestoreGeneration, uint64 RequestId);
+ UFUNCTION(Server, Reliable) void ServerVoyageProbe(const FString& Command, const FString& Phase, float Seconds, int64 ExpectedAttempt, int32 ExpectedGeneration, uint64 RequestId);
  UFUNCTION(Client, Reliable) void ClientTestResult(uint64 RequestId, bool bAccepted, const FString& Message);
 protected:
  virtual void BeginPlay() override;

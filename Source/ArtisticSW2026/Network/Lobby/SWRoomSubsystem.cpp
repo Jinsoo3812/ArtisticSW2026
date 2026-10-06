@@ -307,7 +307,7 @@ void USWRoomSubsystem::StartServer(const FString& Address)
 		DiagnosticParams += FString::Printf(TEXT(" -trace=cpu,loadtime,file,bookmark,frame -statnamedevents -tracefile=\"%s\""), *FPaths::Combine(LogDir, TEXT("Server.utrace")));
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 	const TCHAR* DiagnosticSwitches[] = { TEXT("EnemyNetProfile"), TEXT("EnemyShipTorpedoBuoyancyTest"),
-		TEXT("EnemyShipObstacleBuoyancyTest"), TEXT("EnemyShipTimeStopTest") };
+		TEXT("EnemyShipObstacleBuoyancyTest"), TEXT("EnemyShipTimeStopTest"), TEXT("SWVoyageTestFixture") };
 	for (const TCHAR* Switch : DiagnosticSwitches)
 		if (FParse::Param(FCommandLine::Get(), Switch)) DiagnosticParams += FString::Printf(TEXT(" -%s"), Switch);
 	if (FParse::Param(FCommandLine::Get(), TEXT("EnemyNetProfile")))

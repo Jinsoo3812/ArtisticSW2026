@@ -1,5 +1,7 @@
 #include "Room/ClassFeatureVoyageTransition.h"
 #include "Room/ClassFeatureRoomProgressSubsystem.h"
+#include "Network/SWRoomLoadDiagnostics.h"
+#include "Development/Voyage/SWVoyageTestFixtureSubsystem.h"
 #include "Room/SWVoyageResetSubsystem.h"
 #include "Room/SWVoyageResetAnchor.h"
 #include "Room/SWVoyageResetProfile.h"
@@ -21,6 +23,8 @@
 #include "EngineUtils.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LevelStreaming.h"
+#include "Engine/Level.h"
+#include "HAL/PlatformProcess.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -31,6 +35,9 @@ UClassFeatureRoomProgressSubsystem* UClassFeatureVoyageTransition::Owner() const
 
 void UClassFeatureVoyageTransition::Shutdown()
 {
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	ClearDevelopmentProbe();
+#endif
 	if (TickerHandle.IsValid()) FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
 	TickerHandle.Reset(); Participants.Reset(); ActiveWorld.Reset(); Profile = nullptr;
 }
@@ -46,6 +53,10 @@ bool UClassFeatureVoyageTransition::InitializeAttempt(UWorld* World, bool bBoots
 	Context.AttemptId = ++AttemptSerial;
 	Context.Generation = Room->GetRestoreGeneration() + (bBootstrap ? 0 : 1);
 	Context.bAuthority = true; Context.bBootstrap = bBootstrap;
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (bBootstrap || DevelopmentProbeWorld.Get() != World || DevelopmentProbeAttempt != Context.AttemptId
+		|| DevelopmentProbeGeneration != Context.Generation) ClearDevelopmentProbe();
+#endif
 	if (!Core->ConfigureFromAnchor(OutError) || !Core->ValidateVoyageContracts(OutError)) return false;
 	int32 EntryCounts[3] = {0, 0, 0};
 	for (TActorIterator<ASWLevelEntryPoint> It(World); It; ++It)
@@ -186,8 +197,22 @@ void UClassFeatureVoyageTransition::Publish()
 
 bool UClassFeatureVoyageTransition::Enter(ESWVoyagePhase Phase, FString& OutError)
 {
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (Phase == ESWVoyagePhase::Idle || Phase == ESWVoyagePhase::Failed || Phase == ESWVoyagePhase::RecoveryTravel) ClearDevelopmentProbe();
+#endif
 	UWorld* World = ActiveWorld.Get();
 	USWVoyageResetSubsystem* Core = World ? World->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	if (SWRoomLoadDiagnostics::IsEnabled())
+	{
+		ULevelStreaming* Streaming = Core ? Core->GetGameplayStreamingLevel() : nullptr;
+		UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Server Event=Phase Real=%.6f PID=%u Attempt=%lld Generation=%d From=%s To=%s Reason=%d Bootstrap=%d Continue=%d WorldId=%u PersistentId=%u StreamingId=%u GameplayId=%u Participants=%d"),
+			FPlatformTime::Seconds(), FPlatformProcess::GetCurrentProcessId(), Context.AttemptId, Context.Generation,
+			*StaticEnum<ESWVoyagePhase>()->GetNameStringByValue(static_cast<int64>(Context.Phase)),
+			*StaticEnum<ESWVoyagePhase>()->GetNameStringByValue(static_cast<int64>(Phase)), static_cast<int32>(Context.Reason), Context.bBootstrap, Context.bContinue,
+			World ? World->GetUniqueID() : 0, World && World->PersistentLevel ? World->PersistentLevel->GetUniqueID() : 0,
+			Streaming ? Streaming->GetUniqueID() : 0, Streaming && Streaming->GetLoadedLevel() ? Streaming->GetLoadedLevel()->GetUniqueID() : 0, Participants.Num());
+		NextDiagnosticAt = 0.0;
+	}
 	Context.Phase = Phase;
 	if (!Core || !Core->BeginLocalPhase(Context, OutError))
 	{ if (Phase == ESWVoyagePhase::Failed) Publish(); return false; }
@@ -237,12 +262,19 @@ void UClassFeatureVoyageTransition::ReceiveAck(ABasePlayerController* Controller
 			if (!Participant.bPlaced || !Core || !Pawn || Controller->GetPawn() != Pawn || Pawn->GetController() != Controller
 				|| Core->GetActorGeneration(Pawn) != Context.Generation) return;
 		}
+		if (SWRoomLoadDiagnostics::IsEnabled() && !Participant.Acks.Contains(Ack))
+			UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Server Event=AckAccepted Real=%.6f Attempt=%lld Generation=%d Controller=%s Ack=%s Phase=%s"),
+				FPlatformTime::Seconds(), AttemptId, Generation, *GetNameSafe(Controller),
+				*StaticEnum<ESWVoyageAck>()->GetNameStringByValue(static_cast<int64>(Ack)),
+				*StaticEnum<ESWVoyagePhase>()->GetNameStringByValue(static_cast<int64>(Context.Phase)));
 		Participant.Acks.Add(Ack);
 	}
 }
 
 void UClassFeatureVoyageTransition::HandleLogout(ABasePlayerController* Controller)
 {
+	if (SWRoomLoadDiagnostics::IsEnabled() && Participants.ContainsByPredicate([Controller](const FParticipant& P) { return P.Controller.Get() == Controller; }))
+		UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Server Event=Logout Attempt=%lld Generation=%d Controller=%s"), Context.AttemptId, Context.Generation, *GetNameSafe(Controller));
 	Participants.RemoveAll([Controller](const FParticipant& P) { return P.Controller.Get() == Controller; });
 }
 
@@ -294,6 +326,10 @@ void UClassFeatureVoyageTransition::HandleLogin(ABasePlayerController* Controlle
 	FParticipant& Participant = Participants.AddDefaulted_GetRef(); Participant.Controller = Controller;
 	Participant.bLateJoin = Context.Phase > ESWVoyagePhase::Presentation;
 	Participant.bFresh = !Owner()->GetStoredControllerProgress(Controller, Participant.Progress);
+	if (SWRoomLoadDiagnostics::IsEnabled())
+		UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Server Event=Admission Attempt=%lld Generation=%d Controller=%s Fresh=%d LateJoin=%d Phase=%s"),
+			Context.AttemptId, Context.Generation, *GetNameSafe(Controller), Participant.bFresh, Participant.bLateJoin,
+			*StaticEnum<ESWVoyagePhase>()->GetNameStringByValue(static_cast<int64>(Context.Phase)));
 	// Late admission catches up locally, but does not re-open completed server barriers.
 	Controller->ClientBeginVoyage(GetReplicatedState());
 }
@@ -390,6 +426,11 @@ ESWVoyageStepResult UClassFeatureVoyageTransition::PollPlayers(FString& OutError
 				StoreTargets();
 			}
 			Participant.bPlaced = true;
+			if (SWRoomLoadDiagnostics::IsEnabled())
+				UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Server Event=PlayerPlaced Real=%.6f Attempt=%lld Generation=%d Controller=%s Slot=%d Pawn=%s PawnId=%u Ship=%s Target=%s Fresh=%d"),
+					FPlatformTime::Seconds(), Context.AttemptId, Context.Generation, *GetNameSafe(Controller), Mode->GetPlayerIndex(Controller),
+					*GetNameSafe(Participant.Pawn.Get()), Participant.Pawn.IsValid() ? Participant.Pawn->GetUniqueID() : 0,
+					*GetNameSafe(Mode->GetPlayerRespawnShip()), *Participant.Target.ToString(), Participant.bFresh);
 		}
 		else if (!Participant.Acks.Contains(ESWVoyageAck::Ready) && FPlatformTime::Seconds() >= Participant.NextPlacementAt)
 		{
@@ -451,6 +492,10 @@ ESWVoyageStepResult UClassFeatureVoyageTransition::PollRestore(FString& OutError
 	const ESWVoyageStepResult Result = Core->PollRestoreStage(OutError);
 	Core->SetPreparationSpawnAllowed(false);
 	if (Result != ESWVoyageStepResult::Succeeded) return Result;
+	if (SWRoomLoadDiagnostics::IsEnabled())
+		UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Server Event=RestoreStageComplete Real=%.6f Attempt=%lld Generation=%d Stage=%s"),
+			FPlatformTime::Seconds(), Context.AttemptId, Context.Generation,
+			*StaticEnum<ESWVoyageRestoreStage>()->GetNameStringByValue(static_cast<int64>(Context.RestoreStage)));
 	if (Context.RestoreStage != ESWVoyageRestoreStage::Readiness)
 	{
 		Context.RestoreStage = static_cast<ESWVoyageRestoreStage>(static_cast<uint8>(Context.RestoreStage) + 1);
@@ -471,6 +516,23 @@ bool UClassFeatureVoyageTransition::Tick(float DeltaSeconds)
 	USWRoomProgressSubsystem* Room = World->GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>();
 	FString Error;
 	if (!Core || !Mode || !Room) { Fail(TEXT("VoyageOwnerLost")); return true; }
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (PollDevelopmentProbe()) return true;
+#endif
+	if (SWRoomLoadDiagnostics::IsEnabled() && FPlatformTime::Seconds() >= NextDiagnosticAt)
+	{
+		NextDiagnosticAt = FPlatformTime::Seconds() + 2.0;
+		ULevelStreaming* Streaming = Core->GetGameplayStreamingLevel();
+		UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Server Event=Wait Real=%.6f Attempt=%lld Generation=%d Phase=%s Stage=%s CoreGeneration=%d Loaded=%d Visible=%d PhaseRemaining=%.2f TotalRemaining=%.2f"),
+			FPlatformTime::Seconds(), Context.AttemptId, Context.Generation,
+			*StaticEnum<ESWVoyagePhase>()->GetNameStringByValue(static_cast<int64>(Context.Phase)),
+			*StaticEnum<ESWVoyageRestoreStage>()->GetNameStringByValue(static_cast<int64>(Context.RestoreStage)), Core->GetGeneration(),
+			Streaming && Streaming->GetLoadedLevel() != nullptr, Streaming && Streaming->IsLevelVisible(), Deadline - FPlatformTime::Seconds(), TotalDeadline - FPlatformTime::Seconds());
+		for (const FParticipant& Participant : Participants)
+			UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Server Event=ParticipantWait Attempt=%lld Controller=%s Prepared=%d Placed=%d Pawn=%s Fresh=%d LateJoin=%d PresentationAck=%d UnloadedAck=%d LoadedAck=%d ReadyAck=%d"),
+				Context.AttemptId, *GetNameSafe(Participant.Controller.Get()), Participant.bPrepared, Participant.bPlaced, *GetNameSafe(Participant.Pawn.Get()), Participant.bFresh, Participant.bLateJoin,
+				Participant.Acks.Contains(ESWVoyageAck::Presentation), Participant.Acks.Contains(ESWVoyageAck::Unloaded), Participant.Acks.Contains(ESWVoyageAck::Loaded), Participant.Acks.Contains(ESWVoyageAck::Ready));
+	}
 	if (FPlatformTime::Seconds() > TotalDeadline || FPlatformTime::Seconds() > Deadline)
 	{ Fail(TEXT("VoyagePhaseTimeout")); return true; }
 	ESWVoyageStepResult Result = ESWVoyageStepResult::Succeeded;
@@ -515,6 +577,19 @@ bool UClassFeatureVoyageTransition::Tick(float DeltaSeconds)
 		break;
 	case ESWVoyagePhase::Load:
 		Result = Core->PollLocalPhase(Error);
+		if (Result == ESWVoyageStepResult::Succeeded && Context.bBootstrap)
+		{
+			if (!Owner()->RestoreStoryProgress(World, TargetShared, Error) || !Enter(ESWVoyagePhase::Restore, Error))
+			{ Fail(Error); return true; }
+			USWRoomSnapshotSubsystem* Snapshot = World->GetSubsystem<USWRoomSnapshotSubsystem>();
+			if (!Snapshot) { Fail(TEXT("VoyageBootstrapSnapshotMissing")); return true; }
+			if (Context.bContinue) for (TActorIterator<AKelvinShip> It(World); It; ++It) It->SetShipRuntimePhysicsEnabled(false);
+			Core->SetPreparationSpawnAllowed(true);
+			const bool bSnapshotOK = Context.bContinue ? Snapshot->Restore(Room->GetActiveRoom()->WorldSnapshot, Error, false) : Snapshot->ValidateRegistration(Error);
+			Core->SetPreparationSpawnAllowed(false);
+			if (!bSnapshotOK) Fail(Error);
+			return true;
+		}
 		if (Result == ESWVoyageStepResult::Succeeded && HaveAck(ESWVoyageAck::Loaded)) Next = ESWVoyagePhase::Restore;
 		break;
 	case ESWVoyagePhase::Restore:
@@ -535,8 +610,22 @@ bool UClassFeatureVoyageTransition::Tick(float DeltaSeconds)
 		const bool bFinal = Context.Reason == ESWVoyageReason::FinalDeparture;
 		if (Context.Reason == ESWVoyageReason::GameOverRetry && !Owner()->ValidateRetryStorage(World, Error)) { Fail(Error); return true; }
 		if (bFinal) Room->GetMutableActiveRoom()->bFinalDepartureCompleted = true;
-		{ TGuardValue<bool> SavingScope(bSavingResult, true); bSaveSucceeded = Owner()->TrySave(World, ESWRoomSaveKind::Return, Error); }
+		{
+			TGuardValue<bool> SavingScope(bSavingResult, true);
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+			if (IsDevelopmentProbeAttempt() && bDevelopmentFailSave)
+			{
+				bDevelopmentFailSave = false; bSaveSucceeded = false; Error = TEXT("VoyageDevelopmentResultSaveFailure");
+				UE_LOG(LogTemp, Display, TEXT("[SWVoyageProbe] Event=FailSave Attempt=%lld Generation=%d DiskWrite=0"), Context.AttemptId, Context.Generation);
+			}
+			else
+#endif
+			bSaveSucceeded = Owner()->TrySave(World, ESWRoomSaveKind::Return, Error);
+		}
 		if (!bSaveSucceeded && bFinal) Room->GetMutableActiveRoom()->bFinalDepartureCompleted = false;
+		if (SWRoomLoadDiagnostics::IsEnabled())
+			UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Server Event=ResultSave Real=%.6f Attempt=%lld Generation=%d Success=%d Sequence=%llu FinalCompleted=%d Error=%s"),
+				FPlatformTime::Seconds(), Context.AttemptId, Context.Generation, bSaveSucceeded, Room->GetActiveRoom()->CaptureSequence, Room->GetActiveRoom()->bFinalDepartureCompleted, *Error.Left(512));
 		FailureMessage = bSaveSucceeded ? FString() : TEXT("항해 전환은 완료됐지만 저장에 실패했습니다. 수동 저장을 다시 시도하세요. 서버 종료 시 이전 저장으로 돌아갈 수 있습니다.");
 		Next = ESWVoyagePhase::Release; break;
 	}
@@ -564,6 +653,9 @@ bool UClassFeatureVoyageTransition::Tick(float DeltaSeconds)
 
 void UClassFeatureVoyageTransition::Fail(const FString& Error)
 {
+	UE_LOG(LogTemp, Error, TEXT("[SWVoyageDiag] Version=20261006 Side=Server Event=Failure Real=%.6f Attempt=%lld Generation=%d Phase=%s Committed=%d Bootstrap=%d RecoveryUsed=%d Error=%s"),
+		FPlatformTime::Seconds(), Context.AttemptId, Context.Generation,
+		*StaticEnum<ESWVoyagePhase>()->GetNameStringByValue(static_cast<int64>(Context.Phase)), bCommitted, Context.bBootstrap, bRecoveryUsed, *Error.Left(512));
 	FailureMessage = Error.Left(512);
 	UWorld* World = ActiveWorld.Get(); if (!World) return;
 	USWRoomProgressSubsystem* Room = World->GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>();
@@ -609,6 +701,9 @@ bool UClassFeatureVoyageTransition::Recover()
 	if (!Enter(ESWVoyagePhase::RecoveryTravel, Error)) { bRecoveryPending = false; return false; }
 	const bool bAccepted = Context.Reason == ESWVoyageReason::FinalDeparture ? Mode->RequestHostedRoomFinalDepartureTravel()
 		: Mode->RequestHostedRoomReturnTravel(Context.Reason == ESWVoyageReason::GameOverRetry);
+	if (SWRoomLoadDiagnostics::IsEnabled())
+		UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Server Event=RecoveryTravel Real=%.6f Attempt=%lld Generation=%d Accepted=%d Reason=%d"),
+			FPlatformTime::Seconds(), Context.AttemptId, Context.Generation, bAccepted, static_cast<int32>(Context.Reason));
 	if (!bAccepted) bRecoveryPending = false;
 	if (bAccepted && bRecoveryContinue)
 	{
@@ -647,16 +742,146 @@ bool UClassFeatureVoyageTransition::BeginBootstrap(UWorld* World, FString& OutEr
 	{ OutError = TEXT("VoyageDevelopmentRecoveryPermissionInvalid"); return false; }
 	Context.bContinue = bRecovery ? bRecoveryContinue : !Room->IsNewRoomPending() && !Room->IsGameOverTravelPending();
 	bRecoveryPending = false; bCommitted = true;
-	if (!Owner()->RestoreStoryProgress(World, TargetShared, OutError)) return false;
 	USWRoomSnapshotSubsystem* Snapshot = World->GetSubsystem<USWRoomSnapshotSubsystem>();
 	USWVoyageResetSubsystem* Core = World->GetSubsystem<USWVoyageResetSubsystem>();
 	if (!Snapshot || !Core) { OutError = TEXT("VoyageBootstrapSubsystemMissing"); return false; }
-	if (!Enter(ESWVoyagePhase::Restore, OutError)) return false;
-	if (Context.bContinue) for (TActorIterator<AKelvinShip> It(World); It; ++It) It->SetShipRuntimePhysicsEnabled(false);
-	Core->SetPreparationSpawnAllowed(true);
-	const bool bSnapshotOK = Context.bContinue ? Snapshot->Restore(Room->GetActiveRoom()->WorldSnapshot, OutError, false) : Snapshot->ValidateRegistration(OutError);
-	Core->SetPreparationSpawnAllowed(false);
-	if (!bSnapshotOK) return false;
+	if (!Enter(ESWVoyagePhase::Load, OutError)) return false;
 	if (TickerHandle.IsValid()) FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
 	TickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &UClassFeatureVoyageTransition::Tick)); return true;
 }
+
+bool UClassFeatureVoyageTransition::ExecuteDevelopmentProbe(ABasePlayerController* Requester, const FString& Command, const FString& Phase, float Seconds, int64 ExpectedAttempt, int32 ExpectedGeneration, FString& OutError)
+{
+	OutError = TEXT("항해 시험 권한 또는 상태 오류");
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (Command != TEXT("Hold") && (!Phase.IsEmpty() || Seconds != 0.f)) return false;
+	UWorld* World = Requester ? Requester->GetWorld() : nullptr;
+	AMultiGameMode* Mode = World ? World->GetAuthGameMode<AMultiGameMode>() : nullptr;
+	USWRoomProgressSubsystem* Room = World && World->GetGameInstance() ? World->GetGameInstance()->GetSubsystem<USWRoomProgressSubsystem>() : nullptr;
+	if (!Requester || !Requester->HasAuthority() || !World || !World->IsGameWorld() || World->GetNetMode() == NM_Client
+		|| !Mode || !Mode->IsRoomHostController(Requester) || !Room || !Room->IsHostedRoom() || !Room->GetActiveRoom()
+		|| !Room->IsDevelopmentTestSessionEnabled(World) || World != ActiveWorld.Get()
+		|| ExpectedAttempt != Context.AttemptId || ExpectedGeneration != Context.Generation) return false;
+	const bool bIdle = Context.Phase == ESWVoyagePhase::Idle;
+	if (!bIdle && (Context.bBootstrap || !Matches(Requester, ExpectedAttempt, ExpectedGeneration))) return false;
+	if (Command == TEXT("Clear")) { ClearDevelopmentProbe(); OutError = TEXT("항해 시험 예약 해제"); return true; }
+	if (Command == TEXT("Release"))
+	{
+		if (!IsDevelopmentProbeAttempt() || DevelopmentHoldPhase == ESWVoyagePhase::Idle) return false;
+		if (DevelopmentHoldStartedAt >= 0.0)
+		{
+			const double Now = FMath::Min(FPlatformTime::Seconds(), DevelopmentHoldStartedAt + DevelopmentHoldSeconds);
+			const double Elapsed = FMath::Max(0.0, Now - DevelopmentHoldLastAt);
+			Deadline += Elapsed; TotalDeadline += Elapsed;
+			UE_LOG(LogTemp, Display, TEXT("[SWVoyageProbe] Event=HoldEnd Attempt=%lld Generation=%d Held=%.3f Released=1"), Context.AttemptId, Context.Generation, Now - DevelopmentHoldStartedAt);
+		}
+		DevelopmentHoldPhase = ESWVoyagePhase::Idle; DevelopmentHoldSeconds = 0.0;
+		DevelopmentHoldStartedAt = DevelopmentHoldLastAt = -1.0;
+		OutError = TEXT("항해 시험 대기 해제"); return true;
+	}
+	if (bIdle)
+	{
+		ASWRoomReadyState* Ready = nullptr;
+		for (TActorIterator<ASWRoomReadyState> It(World); It; ++It) { Ready = *It; break; }
+		if (!Ready || !Ready->bWorldReady || Ready->RestoreGeneration != Room->GetRestoreGeneration()
+			|| Mode->IsLevelRestartRequested() || Mode->GetSessionLifePhase() != ESWSessionLifePhase::Playing
+			|| Room->IsNewRoomPending() || Room->IsReturnTravelPending() || Room->IsFinalDepartureTravelPending()
+			|| Room->IsGameOverTravelPending() || Room->IsGameOverRetryTravelPending()) return false;
+	}
+	if (Command == TEXT("FixtureSeed") || Command == TEXT("FixtureObserve"))
+	{
+		USWVoyageTestFixtureSubsystem* Fixture = World->GetSubsystem<USWVoyageTestFixtureSubsystem>();
+		if (!bIdle || !Fixture) { OutError = TEXT("Isolated Development fixture is not enabled"); return false; }
+		return Command == TEXT("FixtureSeed") ? Fixture->Seed(Requester, OutError) : Fixture->Observe(Requester, OutError);
+	}
+	if (Command == TEXT("Return"))
+	{
+		ABasePlayer* Player = Requester->GetLifeCharacter();
+		if (!bIdle || Requester->IsDevelopmentTestInputBlockedByServerUI() || !Requester->IsLifeCharacterAlive()
+			|| !Player || Player->GetController() != Requester || !Mode->CanMutateGameplay(Requester)) return false;
+		const bool bAccepted = Owner()->TryReturn(World, Player);
+		if (bAccepted) OutError = TEXT("일반 귀환 경로 실행");
+		return bAccepted;
+	}
+	ESWVoyagePhase HoldPhase = ESWVoyagePhase::Idle;
+	if (Command == TEXT("Hold"))
+	{
+		if (!FMath::IsFinite(Seconds) || Seconds < 1.f || Seconds > 60.f || DevelopmentHoldStartedAt >= 0.0) return false;
+		const ESWVoyagePhase AllowedPhases[] = { ESWVoyagePhase::Presentation, ESWVoyagePhase::Quiesce, ESWVoyagePhase::Unload,
+			ESWVoyagePhase::Purge, ESWVoyagePhase::Load, ESWVoyagePhase::Restore, ESWVoyagePhase::ClientReady, ESWVoyagePhase::Save, ESWVoyagePhase::Release };
+		for (ESWVoyagePhase Candidate : AllowedPhases)
+			if (Phase == StaticEnum<ESWVoyagePhase>()->GetNameStringByValue(static_cast<int64>(Candidate))) HoldPhase = Candidate;
+		if (HoldPhase == ESWVoyagePhase::Idle || (!bIdle && HoldPhase < Context.Phase)) return false;
+	}
+	else if (Command != TEXT("FailPre") && Command != TEXT("FailPost") && Command != TEXT("FailSave")) return false;
+	if ((!bIdle && ((Command == TEXT("FailPre") && bCommitted) || (Command == TEXT("FailPost") && Context.Phase > ESWVoyagePhase::Restore)
+		|| (Command == TEXT("FailSave") && Context.Phase > ESWVoyagePhase::Save)))
+		|| (bIdle && (AttemptSerial == MAX_int64 || Room->GetRestoreGeneration() == MAX_int32))) return false;
+	const int64 TargetAttempt = bIdle ? AttemptSerial + 1 : Context.AttemptId;
+	const int32 TargetGeneration = bIdle ? Room->GetRestoreGeneration() + 1 : Context.Generation;
+	if (DevelopmentProbeWorld.Get() != World || DevelopmentProbeAttempt != TargetAttempt || DevelopmentProbeGeneration != TargetGeneration) ClearDevelopmentProbe();
+	DevelopmentProbeWorld = World; DevelopmentProbeAttempt = TargetAttempt; DevelopmentProbeGeneration = TargetGeneration;
+	if (Command == TEXT("Hold")) { DevelopmentHoldPhase = HoldPhase; DevelopmentHoldSeconds = Seconds; }
+	else if (Command == TEXT("FailPre")) bDevelopmentFailPre = true;
+	else if (Command == TEXT("FailPost")) bDevelopmentFailPost = true;
+	else bDevelopmentFailSave = true;
+	UE_LOG(LogTemp, Display, TEXT("[SWVoyageProbe] Event=Armed Command=%s Attempt=%lld Generation=%d Phase=%s Seconds=%.3f"),
+		*Command, TargetAttempt, TargetGeneration, *Phase, Seconds);
+	OutError = TEXT("항해 시험 명령 예약"); return true;
+#else
+	return false;
+#endif
+}
+
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+bool UClassFeatureVoyageTransition::IsDevelopmentProbeAttempt() const
+{
+	return !Context.bBootstrap && DevelopmentProbeWorld.Get() == ActiveWorld.Get()
+		&& DevelopmentProbeAttempt == Context.AttemptId && DevelopmentProbeGeneration == Context.Generation;
+}
+
+void UClassFeatureVoyageTransition::ClearDevelopmentProbe()
+{
+	if (DevelopmentHoldStartedAt >= 0.0)
+	{
+		const double Now = FMath::Min(FPlatformTime::Seconds(), DevelopmentHoldStartedAt + DevelopmentHoldSeconds);
+		const double Elapsed = FMath::Max(0.0, Now - DevelopmentHoldLastAt);
+		Deadline += Elapsed; TotalDeadline += Elapsed;
+		UE_LOG(LogTemp, Display, TEXT("[SWVoyageProbe] Event=HoldEnd Attempt=%lld Generation=%d Held=%.3f Cleared=1"), DevelopmentProbeAttempt, DevelopmentProbeGeneration, Now - DevelopmentHoldStartedAt);
+	}
+	DevelopmentProbeWorld.Reset(); DevelopmentProbeAttempt = 0; DevelopmentProbeGeneration = 0;
+	DevelopmentHoldPhase = ESWVoyagePhase::Idle; DevelopmentHoldSeconds = 0.0;
+	DevelopmentHoldStartedAt = DevelopmentHoldLastAt = -1.0;
+	bDevelopmentFailPre = bDevelopmentFailPost = bDevelopmentFailSave = false;
+}
+
+bool UClassFeatureVoyageTransition::PollDevelopmentProbe()
+{
+	if (!IsDevelopmentProbeAttempt()) return false;
+	if (Context.Phase == DevelopmentHoldPhase)
+	{
+		const double Now = FPlatformTime::Seconds();
+		if (DevelopmentHoldStartedAt < 0.0)
+		{
+			DevelopmentHoldStartedAt = DevelopmentHoldLastAt = Now;
+			UE_LOG(LogTemp, Display, TEXT("[SWVoyageProbe] Event=HoldStart Attempt=%lld Generation=%d Phase=%s Seconds=%.3f"),
+				Context.AttemptId, Context.Generation, *StaticEnum<ESWVoyagePhase>()->GetNameStringByValue(static_cast<int64>(Context.Phase)), DevelopmentHoldSeconds);
+		}
+		const double HeldUntil = FMath::Min(Now, DevelopmentHoldStartedAt + DevelopmentHoldSeconds);
+		const double Elapsed = FMath::Max(0.0, HeldUntil - DevelopmentHoldLastAt);
+		Deadline += Elapsed; TotalDeadline += Elapsed; DevelopmentHoldLastAt = HeldUntil;
+		if (Now < DevelopmentHoldStartedAt + DevelopmentHoldSeconds) return true;
+		UE_LOG(LogTemp, Display, TEXT("[SWVoyageProbe] Event=HoldEnd Attempt=%lld Generation=%d Held=%.3f Released=0"), Context.AttemptId, Context.Generation, HeldUntil - DevelopmentHoldStartedAt);
+		DevelopmentHoldPhase = ESWVoyagePhase::Idle; DevelopmentHoldSeconds = 0.0; DevelopmentHoldStartedAt = DevelopmentHoldLastAt = -1.0;
+	}
+	if ((bDevelopmentFailPre && Context.Phase == ESWVoyagePhase::Quiesce && !bCommitted)
+		|| (bDevelopmentFailPost && Context.Phase == ESWVoyagePhase::Restore && bCommitted))
+	{
+		const bool bPre = !bCommitted;
+		ClearDevelopmentProbe();
+		Fail(bPre ? TEXT("VoyageDevelopmentPreCommitFailure") : TEXT("VoyageDevelopmentPostCommitFailure"));
+		return true;
+	}
+	return false;
+}
+#endif

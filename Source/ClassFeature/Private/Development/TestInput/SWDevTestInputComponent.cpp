@@ -23,6 +23,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Engine/GameViewportClient.h"
 #include "UnrealClient.h"
+#include "String/LexFromString.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogSWDevTestInput, Log, All);
 namespace SWDevTestInput
@@ -64,6 +65,24 @@ void Console(const TArray<FString>& Args, UWorld* World, bool bSession)
 }
 FAutoConsoleCommandWithWorldAndArgs Session(TEXT("SW.DevTest.Session"), TEXT("Host server test permission 0|1"), FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args,UWorld* World){ Console(Args,World,true); }));
 FAutoConsoleCommandWithWorldAndArgs Input(TEXT("SW.DevTest.Input"), TEXT("Local test input 0|1"), FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args,UWorld* World){ Console(Args,World,false); }));
+FAutoConsoleCommandWithWorldAndArgs Voyage(TEXT("SW.DevTest.Voyage"), TEXT("Return | Hold <phase> <seconds 1..60> | Release | FailPre | FailPost | FailSave | Clear | FixtureSeed | FixtureObserve"),
+ FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+ {
+  if (!World || !World->IsGameWorld() || Args.IsEmpty()) return;
+  const bool bHold = Args[0] == TEXT("Hold");
+  float Seconds = 0.f;
+  if ((bHold && (Args.Num() != 3 || !LexTryParseString(Seconds, *Args[2]) || !FMath::IsFinite(Seconds) || Seconds < 1.f || Seconds > 60.f))
+   || (!bHold && (Args.Num() != 1 || (Args[0] != TEXT("Return") && Args[0] != TEXT("Release") && Args[0] != TEXT("FailPre")
+    && Args[0] != TEXT("FailPost") && Args[0] != TEXT("FailSave") && Args[0] != TEXT("Clear")
+    && Args[0] != TEXT("FixtureSeed") && Args[0] != TEXT("FixtureObserve")))))
+  { UE_LOG(LogSWDevTestInput, Warning, TEXT("Invalid SW.DevTest.Voyage arguments")); return; }
+  ABasePlayerController* Target = nullptr;
+  int32 Count = 0;
+  for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+   if (ABasePlayerController* PC = Cast<ABasePlayerController>(It->Get()); PC && PC->IsLocalPlayerController()) { Target = PC; ++Count; }
+  if (Count != 1 || !Target->DevTestInput) { UE_LOG(LogSWDevTestInput, Warning, TEXT("Voyage probe requires exactly one local controller")); return; }
+  Target->DevTestInput->RequestVoyageProbe(Args[0], bHold ? Args[1] : FString(), Seconds);
+ }));
 #endif
 }
 USWDevTestInputComponent::USWDevTestInputComponent()
@@ -198,11 +217,45 @@ void USWDevTestInputComponent::SetLocalInputDesired(bool bDesired)
  if (bDesired && !bServerSessionEnabled) if (APlayerController* PC=Cast<APlayerController>(GetOwner())) PC->ClientMessage(TEXT("서버 테스트 허용이 꺼져 있습니다"));
 }
 void USWDevTestInputComponent::RequestSessionEnabled(bool bEnabled) { if (SWDevTestInput::Allowed()) ServerSetSessionEnabled(bEnabled); }
+void USWDevTestInputComponent::RequestVoyageProbe(const FString& Command, const FString& Phase, float Seconds)
+{
+ if (!SWDevTestInput::Allowed()) return;
+ ResetWorld();
+ ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner());
+ ASWRoomReadyState* Barrier = PC ? SWDevTestInput::Ready(GetWorld()) : nullptr;
+ if (!PC || !PC->IsLocalPlayerController() || !Barrier || PendingRequestId || NextRequestId == MAX_uint64) return;
+ PendingRequestId = ++NextRequestId; PendingAt = FPlatformTime::Seconds();
+ ServerVoyageProbe(Command, Phase, Seconds, Barrier->VoyageState.AttemptId, Barrier->VoyageState.Generation, PendingRequestId);
+}
+void USWDevTestInputComponent::ServerVoyageProbe_Implementation(const FString& Command, const FString& Phase, float Seconds, int64 ExpectedAttempt, int32 ExpectedGeneration, uint64 RequestId)
+{
+ if (!SWDevTestInput::Allowed()) { ClientTestResult(RequestId, false, TEXT("개발 빌드에서만 사용 가능합니다")); return; }
+ ResetWorld();
+ ABasePlayerController* PC = Cast<ABasePlayerController>(GetOwner());
+ if (!PC || !PC->HasAuthority()) return;
+ if (RequestId && RequestId == LastRequestId) { ClientTestResult(RequestId, bLastAccepted, LastMessage); return; }
+ if (!RequestId || RequestId < LastRequestId || Command.Len() > 16 || Phase.Len() > 16)
+ { ClientTestResult(RequestId, false, TEXT("잘못된 항해 시험 요청")); return; }
+ const double Now = FPlatformTime::Seconds();
+ const bool bRateLimited = LastRequestAt >= 0 && Now - LastRequestAt < 0.25; LastRequestAt = Now;
+ FString Message;
+ UClassFeatureRoomProgressSubsystem* Progress = GetWorld()->GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>();
+ const bool bAccepted = !bRateLimited && Progress && Progress->ExecuteDevelopmentVoyageProbe(PC, Command, Phase, Seconds, ExpectedAttempt, ExpectedGeneration, Message);
+ if (Message.IsEmpty()) Message = bAccepted ? TEXT("항해 시험 명령 적용") : TEXT("항해 시험 요청 거부");
+ LastRequestId = RequestId; bLastAccepted = bAccepted; LastMessage = Message;
+ UE_LOG(LogSWDevTestInput, Display, TEXT("VoyageProbe=%s Request=%llu Attempt=%lld Generation=%d Accepted=%d Reason=%s"),
+  *Command, RequestId, ExpectedAttempt, ExpectedGeneration, bAccepted, *Message);
+ ClientTestResult(RequestId, bAccepted, Message);
+}
 void USWDevTestInputComponent::ServerSetSessionEnabled_Implementation(bool bEnabled)
 {
  if (!SWDevTestInput::Allowed()) return;
  ABasePlayerController* PC=Cast<ABasePlayerController>(GetOwner()); AMultiGameMode* Mode=GetWorld()->GetAuthGameMode<AMultiGameMode>(); USWRoomProgressSubsystem* State=SWDevTestInput::Room(GetWorld());
  if (!PC || !PC->HasAuthority() || !Mode || !State || !Mode->IsRoomHostController(PC) || (bEnabled && !SWDevTestInput::SafeWorld(GetWorld()))) { ClientTestResult(0,false,TEXT("호스트 권한 또는 준비 상태를 확인하세요")); return; }
+ if (!bEnabled)
+  if (UClassFeatureRoomProgressSubsystem* Progress = GetWorld()->GetGameInstance()->GetSubsystem<UClassFeatureRoomProgressSubsystem>())
+   if (ASWRoomReadyState* Barrier = SWDevTestInput::Ready(GetWorld()))
+   { FString Error; Progress->ExecuteDevelopmentVoyageProbe(PC, TEXT("Clear"), FString(), 0.f, Barrier->VoyageState.AttemptId, Barrier->VoyageState.Generation, Error); }
  State->SetDevelopmentTestSessionEnabled(GetWorld(),bEnabled);
  for (FConstPlayerControllerIterator It=GetWorld()->GetPlayerControllerIterator(); It; ++It) if (ABasePlayerController* Target=Cast<ABasePlayerController>(It->Get()))
  { Target->DevTestInput->bServerSessionEnabled=bEnabled; Target->DevTestInput->ServerRestoreGeneration=State->GetRestoreGeneration(); Target->DevTestInput->RefreshLocalState(); Target->ForceNetUpdate(); }

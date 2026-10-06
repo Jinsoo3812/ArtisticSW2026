@@ -4,6 +4,9 @@
 #include "Room/SWVoyageResetSubsystem.h"
 #include "Room/SWVoyageSpawnLibrary.h"
 #include "Engine/LevelStreaming.h"
+#include "Engine/BlueprintGeneratedClass.h"
+#include "Engine/SCS_Node.h"
+#include "Engine/SimpleConstructionScript.h"
 #include "Room/SWRoomProgressSubsystem.h"
 #include "Room/SWRoomStateAdapter.h"
 #include "Network/SWNetworkLog.h"
@@ -111,20 +114,50 @@ FString GetPartitionKey(const FSWRoomDestroyedActorPartition& Partition)
 FName GetRoomComponentKey(const UActorComponent* Component)
 {
 	if (!Component) return NAME_None;
-	if (Component->CreationMethod == EComponentCreationMethod::Native)
-		return Component->GetFName();
 	const FString Prefix = TEXT("SWRoomComponentId=");
 	FName Found = NAME_None;
+	int32 ExplicitKeyCount = 0;
 	for (const FName& Tag : Component->ComponentTags)
 	{
 		const FString Value = Tag.ToString();
 		if (!Value.StartsWith(Prefix)) continue;
-		if (!Found.IsNone()) return NAME_None;
+		if (++ExplicitKeyCount != 1) return NAME_None;
 		const FString Suffix = Value.RightChop(Prefix.Len());
 		if (Suffix.IsEmpty()) return NAME_None;
 		Found = FName(*Suffix);
+		if (Found.IsNone()) return NAME_None;
 	}
-	return Found;
+	if (ExplicitKeyCount != 0) return Found;
+	if (Component->CreationMethod == EComponentCreationMethod::Native)
+		return Component->GetFName();
+	if (Component->CreationMethod != EComponentCreationMethod::SimpleConstructionScript)
+		return NAME_None;
+
+	const AActor* Owner = Component->GetOwner();
+	UBlueprintGeneratedClass* OwnerClass = Owner ? Cast<UBlueprintGeneratedClass>(Owner->GetClass()) : nullptr;
+	if (!OwnerClass || Component->GetOuter() != Owner) return NAME_None;
+	const UActorComponent* Archetype = Cast<UActorComponent>(Component->GetArchetype());
+	const UBlueprintGeneratedClass* TemplateClass = Archetype ? Archetype->GetTypedOuter<UBlueprintGeneratedClass>() : nullptr;
+	if (!Archetype || !Archetype->HasAnyFlags(RF_ArchetypeObject) || Archetype->GetClass() != Component->GetClass()
+		|| !TemplateClass || !OwnerClass->IsChildOf(TemplateClass)) return NAME_None;
+
+	// SCS instances use the authored variable name, including in the cooked fast
+	// instancing path. Accept it only when a unique node in the owner's class
+	// lineage resolves to this exact component archetype; runtime names alone
+	// never constitute a room identity.
+	int32 MatchingNodes = 0;
+	for (UClass* Class = OwnerClass; Class; Class = Class->GetSuperClass())
+	{
+		const UBlueprintGeneratedClass* BlueprintClass = Cast<UBlueprintGeneratedClass>(Class);
+		if (!BlueprintClass || !BlueprintClass->SimpleConstructionScript) continue;
+		for (const USCS_Node* Node : BlueprintClass->SimpleConstructionScript->GetAllNodes())
+		{
+			if (!Node || Node->GetVariableName().IsNone() || Node->GetVariableName() != Component->GetFName()) continue;
+			if (++MatchingNodes != 1 || Node->GetActualComponentTemplate(OwnerClass) != Archetype) return NAME_None;
+			Found = Node->GetVariableName();
+		}
+	}
+	return MatchingNodes == 1 ? Found : NAME_None;
 }
 
 FSWRoomMotionState CaptureMotion(const AActor* Actor, UPrimitiveComponent* Primitive)
@@ -280,8 +313,17 @@ void USWRoomSnapshotSubsystem::HandleActorDestroyed(AActor* Actor)
 	if (bRestoring || !Actor || !GetWorld() || GetWorld()->bIsTearingDown) return;
 	const USWRoomSnapshotComponent* Component = Actor->FindComponentByClass<USWRoomSnapshotComponent>();
 	if (!Component || !Component->StableId.IsValid()) return;
-	RegisteredActors.Remove(Component->StableId);
+	if (const TWeakObjectPtr<AActor>* Registered = RegisteredActors.Find(Component->StableId); Registered && Registered->Get() == Actor)
+		RegisteredActors.Remove(Component->StableId);
 	if (bDiscardingVoyage && (DiscardActorIds.Contains(Component->StableId) || GetPartitionKey(Actor->GetLevel()) == DiscardPartition)) return;
+	// Construction can replace authored ChildActors before their first BeginPlay.
+	// These temporary instances are not gameplay deaths of the final authored actor.
+	if (!Actor->HasActorBegunPlay())
+	{
+		SW_ROOM_DETAIL_LOG(LogSWRoom, Display, TEXT("Flow=ConstructionReplacement Actor=%s StableId=%s Tombstone=Skipped"),
+			*Actor->GetPathName(), *Component->StableId.ToString());
+		return;
+	}
 	if (IsLevelPlacedActor(Actor) && !UnloadedRecords.Contains(Component->StableId))
 	{
 		DestroyedLevelActorIds.Add(Component->StableId, Component->PersistenceClass);
@@ -455,7 +497,8 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 		if (!Component->StableId.IsValid() || Seen.Contains(Component->StableId)
 			|| (DestroyedLevelActorIds.Contains(Component->StableId) && !bRestoring))
 		{
-			OutError = FString::Printf(TEXT("Invalid or duplicate room actor ID: %s"), *Actor->GetPathName());
+			OutError = FString::Printf(TEXT("Invalid or duplicate room actor ID: %s Id=%s Valid=%d Duplicate=%d Tombstone=%d"),
+				*Actor->GetPathName(), *Component->StableId.ToString(), Component->StableId.IsValid(), Seen.Contains(Component->StableId), DestroyedLevelActorIds.Contains(Component->StableId));
 			return false;
 		}
 		Seen.Add(Component->StableId);
@@ -471,17 +514,22 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 			const bool bEngineField = OwnerPackage.StartsWith(TEXT("/Script/Engine"));
 			const bool bShipPersisted = OwnerType == TEXT("Ship")
 				&& (FieldName == TEXT("bIsSinking") || FieldName == TEXT("bIsAnchorDropped") || FieldName == TEXT("AnchorOriginXY"));
-			const bool bEnemyShipPersisted = OwnerType == TEXT("EnemyShip") && FieldName == TEXT("bCrewDefeated");
+			const bool bEnemyShipPersisted = OwnerType == TEXT("EnemyShip")
+				&& (FieldName == TEXT("bCrewDefeated") || FieldName == TEXT("bStoryGateOpen"));
+			const bool bChestPersisted = OwnerType == TEXT("StorageChest")
+				&& (FieldName == TEXT("bLocked") || FieldName == TEXT("bGuardFailed")
+					|| FieldName == TEXT("bEnablePhysicsAndBuoyancy"));
 			const bool bTransient = OwnerType == TEXT("Ship")
 				&& (FieldName == TEXT("RidingPlayer") || FieldName == TEXT("bBombardmentTargeting")
 					|| FieldName == TEXT("ActiveBombardmentClass") || FieldName == TEXT("ReplicatedState")
 					|| FieldName == TEXT("ServerPhysicsTimeOrigin") || FieldName == TEXT("ServerPhysicsStepSeconds")
 					|| FieldName == TEXT("CurrentAIPropulsionScale") || FieldName == TEXT("CurrentAITurnScale"));
-			const bool bDerived = bEngineField || (OwnerType == TEXT("EnemyShip") && FieldName == TEXT("bDistanceOptimizationDormant"));
-			const bool bPersisted = bSerialized || bShipPersisted || bEnemyShipPersisted;
+			const bool bDerived = bEngineField || (OwnerType == TEXT("EnemyShip") && FieldName == TEXT("bDistanceOptimizationDormant"))
+				|| (OwnerType == TEXT("StorageChest") && FieldName == TEXT("bStoryGateDormant"));
+			const bool bPersisted = bSerialized || bShipPersisted || bEnemyShipPersisted || bChestPersisted;
 			const TCHAR* Disposition = bPersisted ? TEXT("Persisted") : bTransient ? TEXT("Transient")
 				: bDerived ? TEXT("Derived") : TEXT("Unclassified");
-			const TCHAR* Reason = bSerialized ? TEXT("SaveGame field") : bShipPersisted || bEnemyShipPersisted
+			const TCHAR* Reason = bSerialized ? TEXT("SaveGame field") : bShipPersisted || bEnemyShipPersisted || bChestPersisted
 				? TEXT("Explicit room adapter field") : bTransient ? TEXT("Explicit restart policy")
 				: bDerived ? TEXT("Engine or derived field") : TEXT("Project replicated field lacks explicit room disposition");
 			if (bDetailedLog) AuditRows.Add(FString::Printf(TEXT("%s | %s | Component= | Field=%s | Reason=%s | Disposition=%s"),

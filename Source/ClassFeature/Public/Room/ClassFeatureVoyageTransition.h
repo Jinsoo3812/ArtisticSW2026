@@ -32,7 +32,23 @@ public:
 	const FSWVoyageResetContext& GetContext() const { return Context; }
 	FSWVoyageReplicatedState GetReplicatedState() const;
 	void Shutdown();
+	bool ExecuteDevelopmentProbe(ABasePlayerController* Requester, const FString& Command, const FString& Phase, float Seconds, int64 ExpectedAttempt, int32 ExpectedGeneration, FString& OutError);
 private:
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	TWeakObjectPtr<UWorld> DevelopmentProbeWorld;
+	int64 DevelopmentProbeAttempt = 0;
+	int32 DevelopmentProbeGeneration = 0;
+	ESWVoyagePhase DevelopmentHoldPhase = ESWVoyagePhase::Idle;
+	double DevelopmentHoldSeconds = 0.0;
+	double DevelopmentHoldStartedAt = -1.0;
+	double DevelopmentHoldLastAt = -1.0;
+	bool bDevelopmentFailPre = false;
+	bool bDevelopmentFailPost = false;
+	bool bDevelopmentFailSave = false;
+	void ClearDevelopmentProbe();
+	bool PollDevelopmentProbe();
+	bool IsDevelopmentProbeAttempt() const;
+#endif
 	struct FParticipant
 	{
 		TWeakObjectPtr<ABasePlayerController> Controller;
@@ -61,6 +77,7 @@ private:
 	int64 AttemptSerial = 0;
 	double Deadline = 0.0;
 	double TotalDeadline = 0.0;
+	double NextDiagnosticAt = 0.0;
 	bool bCommitted = false;
 	bool bDevelopmentDeparture = false;
 	bool bStoryCommitAttempted = false;

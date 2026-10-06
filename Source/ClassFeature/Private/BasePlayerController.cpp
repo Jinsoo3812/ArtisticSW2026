@@ -45,6 +45,7 @@ ABasePlayerController::ABasePlayerController()
 #include "Facility/FacilityHubActor.h"
 #include "UI/StatusWindowWidget.h"
 #include "UI/SWRoomMenuWidget.h"
+#include "Network/SWRoomLoadDiagnostics.h"
 #include "Room/ClassFeatureRoomProgressSubsystem.h"
 #include "Room/SWRoomProgressSubsystem.h"
 #include "Room/SWRoomSnapshotSubsystem.h"
@@ -499,6 +500,11 @@ void ABasePlayerController::SetupInputComponent()
 	{
 		RoomMenuAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_RoomMenu.IA_RoomMenu"));
 		if (RoomMenuAction) EnhancedInput->BindAction(RoomMenuAction, ETriggerEvent::Started, this, &ABasePlayerController::HandleMenuEscape);
+		if (SWRoomLoadDiagnostics::IsEnabled())
+		{
+			UE_LOG(LogTemp, Display, TEXT("[SWRoomInputDiag] Event=MenuBound Controller=%s Component=%s Action=%s"),
+				*GetPathName(), *GetPathNameSafe(EnhancedInput), *GetPathNameSafe(RoomMenuAction));
+		}
 		if (UIInputConfig)
 		{
 			for (const FKeyInputAction& Action : UIInputConfig->KeyInputActions)
@@ -660,6 +666,13 @@ void ABasePlayerController::ToggleStatus()
 
 void ABasePlayerController::HandleMenuEscape()
 {
+	if (SWRoomLoadDiagnostics::IsEnabled())
+	{
+		const USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+		UE_LOG(LogTemp, Display, TEXT("[SWRoomInputDiag] Event=MenuPressed CanMutate=%d Local=%d Blocked=%d Generation=%d LifePhase=%d SessionPhase=%d"),
+			CanMutateGameplay(), IsLocalController(), Voyage && Voyage->IsGameplayBlocked(), Voyage ? Voyage->GetGeneration() : 0,
+			static_cast<int32>(DeathFlowState.Phase), static_cast<int32>(LocalSessionPhase));
+	}
 	if (!CanMutateGameplay()) return;
 	if (IsFacilityHubOpen())
 	{
@@ -673,6 +686,10 @@ void ABasePlayerController::HandleMenuEscape()
 	if (!IsLocalController()) return;
 	UClass* RoomMenuClass = LoadClass<USWRoomMenuWidget>(nullptr, TEXT("/Game/UI/Room/WBP_RoomMenu.WBP_RoomMenu_C"));
 	RoomMenuWidget = CreateWidget<USWRoomMenuWidget>(this, RoomMenuClass ? RoomMenuClass : USWRoomMenuWidget::StaticClass());
+	if (SWRoomLoadDiagnostics::IsEnabled())
+	{
+		UE_LOG(LogTemp, Display, TEXT("[SWRoomInputDiag] Event=MenuCreated Widget=%s"), *GetPathNameSafe(RoomMenuWidget));
+	}
 	if (!RoomMenuWidget) return;
 	bCursorVisibleBeforeRoomMenu = bShowMouseCursor;
 	RoomMenuWidget->AddToViewport(50);
@@ -1296,6 +1313,8 @@ float ABasePlayerController::GetStorageSlotSearchTime(AStorageChest* StorageChes
 
 void ABasePlayerController::ApplyInventoryInputMode(bool bOpen)
 {
+	// Remote controller teardown on a dedicated server has no Slate application.
+	if (!IsLocalController() || GetNetMode() == NM_DedicatedServer) return;
 	bShowMouseCursor = bOpen;
 	// A chest and the facility hub are modal; keep F/game input available for closing.
 	UpdateInteractionMovementLock();

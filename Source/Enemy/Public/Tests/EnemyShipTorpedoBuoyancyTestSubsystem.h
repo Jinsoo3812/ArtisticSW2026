@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "EnemyShipTorpedoBuoyancyTestSubsystem.generated.h"
 
 class AEnemyShip;
@@ -12,11 +13,13 @@ class AEnemyShipTorpedo;
  * It is never created unless -EnemyShipTorpedoBuoyancyTest is present.
  */
 UCLASS()
-class ENEMY_API UEnemyShipTorpedoBuoyancyTestSubsystem : public UTickableWorldSubsystem
+class ENEMY_API UEnemyShipTorpedoBuoyancyTestSubsystem : public UTickableWorldSubsystem, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
 public:
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::Unsupported; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 	virtual void Tick(float DeltaTime) override;

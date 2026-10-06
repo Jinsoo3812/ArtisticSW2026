@@ -391,6 +391,8 @@ void UDeckEnemySpawnerComponent::InitializePool()
 	{
 		return;
 	}
+	// An empty authored plan has no crew to prepare; it is not a defeated crew.
+	if (SpawnPlan.IsEmpty()) return;
 	if (SpawnWaypoints.IsEmpty())
 	{
 		bVoyagePoolFailed = true;
@@ -598,6 +600,7 @@ bool UDeckEnemySpawnerComponent::RequestDeployment(
 	if (USWVoyageSpawnLibrary::IsVoyageGameplayBlocked(this)) return false;
 	AEnemyShip* Host = GetHostShip();
 	if (!Host || !Host->HasAuthority() || Host->IsDeathHandled() || Host->IsCrewDefeated() || Host->IsStoryGateDormant() || !IsEnabled()
+		|| SpawnPlan.IsEmpty()
 		|| GetWorld()->GetSubsystem<USWRoomSnapshotSubsystem>()->IsRestoringSnapshot()
 		|| !IsValid(TriggeringPlayerShip)
 		|| (InitialCombatTarget && !IsValid(InitialCombatTarget)))

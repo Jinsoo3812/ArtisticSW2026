@@ -31,6 +31,7 @@ public:
  void ReportVoyageFailure(ABasePlayerController* Controller, int64 AttemptId, int32 Generation, const FString& Error);
  bool IsDevelopmentTransitionBusy() const { return bSaving || IsInPlaceVoyageBusy(); }
  bool TryDevelopmentFinalDeparture(UWorld* World, ABasePlayerController* Requester, FString& OutError);
+ bool ExecuteDevelopmentVoyageProbe(ABasePlayerController* Requester, const FString& Command, const FString& Phase, float Seconds, int64 ExpectedAttempt, int32 ExpectedGeneration, FString& OutError);
 	bool TryGameOverRetry(UWorld* World, ABasePlayerController* Requester, uint64 RequestId, FString& OutError);
 	bool CaptureControllerProgress(ABasePlayerController* Controller, bool bUseFrozen, FString& OutError);
 	bool GetStoredControllerProgress(ABasePlayerController* Controller, FSWRoomPlayerProgress& OutProgress) const;

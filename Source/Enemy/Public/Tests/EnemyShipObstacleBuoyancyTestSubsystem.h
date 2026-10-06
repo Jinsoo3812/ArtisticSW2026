@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "Room/SWVoyageResetParticipant.h"
 #include "Tickable.h"
 #include "EnemyShipObstacleBuoyancyTestSubsystem.generated.h"
 
@@ -9,11 +10,13 @@ class AEnemyShipObstacle;
 
 /** Command-line-only Test_Level regression probe for obstacle water entry and buoyancy. */
 UCLASS()
-class ENEMY_API UEnemyShipObstacleBuoyancyTestSubsystem : public UTickableWorldSubsystem
+class ENEMY_API UEnemyShipObstacleBuoyancyTestSubsystem : public UTickableWorldSubsystem, public ISWVoyageResetParticipant
 {
 	GENERATED_BODY()
 
 public:
+	virtual ESWVoyagePolicy GetVoyagePolicy_Implementation() const override { return ESWVoyagePolicy::Unsupported; }
+	virtual FName GetVoyageParticipantId_Implementation() const override;
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 	virtual void Tick(float DeltaTime) override;

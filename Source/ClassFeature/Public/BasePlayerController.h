@@ -123,6 +123,7 @@ private:
 	TWeakObjectPtr<ASWRoomReadyState> BoundVoyageReady;
 	FDelegateHandle VoyageReadyHandle;
 	FTSTicker::FDelegateHandle VoyageTickerHandle;
+	double NextVoyageDiagnosticAt = 0.0;
 	TWeakObjectPtr<APawn> VoyagePlacementPawn;
 	TWeakObjectPtr<AShip> VoyagePlacementShip;
 	FTransform VoyagePlacementTarget = FTransform::Identity;

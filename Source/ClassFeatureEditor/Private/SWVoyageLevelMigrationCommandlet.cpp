@@ -11,6 +11,13 @@
 #include "GameFramework/WorldSettings.h"
 #include "Components/ChildActorComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "WaterBodyActor.h"
+#include "WaterBodyComponent.h"
+#include "Components/MeshComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialParameters.h"
+#include "SWNetworkWeatherActor.h"
+#include "UObject/Package.h"
 #include "FileHelpers.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "UObject/SavePackage.h"
@@ -320,6 +327,19 @@ bool ValidateIds(UWorld* World, bool bRequireIds, FString& Error)
 	return true;
 }
 
+FName WeatherMaterialBinding(const UObject* Object)
+{
+	const UMaterialInstanceDynamic* Mid = Cast<UMaterialInstanceDynamic>(Object);
+	const ASWNetworkWeatherActor* Weather = Mid ? Mid->GetTypedOuter<ASWNetworkWeatherActor>() : nullptr;
+	if (!Weather) return NAME_None;
+	// These three reflected bindings are the existing weather adapter contract.
+	// The first matching binding is canonical; shared bindings retain aliasing.
+	for (FName Name : { FName(TEXT("CloudMaterial")), FName(TEXT("SphereMaterial")), FName(TEXT("CurrentDynamicParam")) })
+		if (const FObjectPropertyBase* Property = FindFProperty<FObjectPropertyBase>(Weather->GetClass(), Name);
+			Property && Property->GetObjectPropertyValue_InContainer(Weather) == Object) return Name;
+	return NAME_None;
+}
+
 FString ObjectKey(const UObject* Object, const FLogicalActorKeys& LogicalActorKeys)
 {
 	const AActor* Actor = Cast<AActor>(Object);
@@ -337,6 +357,8 @@ FString ObjectKey(const UObject* Object, const FLogicalActorKeys& LogicalActorKe
 		const FString* LogicalKey = LogicalActorKeys.Find(TWeakObjectPtr<AActor>(const_cast<AActor*>(Actor)));
 		ActorKey = LogicalKey ? *LogicalKey : Actor->GetPathName();
 	}
+	const FName WeatherBinding = WeatherMaterialBinding(Object);
+	if (!WeatherBinding.IsNone()) return ActorKey + TEXT("/WeatherMID/") + WeatherBinding.ToString();
 	return Object == Actor ? ActorKey : ActorKey + TEXT("/") + Object->GetPathName(Actor);
 }
 
@@ -357,9 +379,161 @@ bool CollectChildActorsRecursive(AActor* Parent, TSet<TWeakObjectPtr<AActor>>& O
 	return true;
 }
 
-void CaptureProperties(UObject* Object, const FPathAliases& Paths, const FLogicalActorKeys& LogicalActorKeys, TMap<FString, FString>& Out)
+bool CaptureGeneratedWeatherMIDParameters(UMaterialInstanceDynamic* Mid, FProperty* Property, FString& Value, FString& Error)
 {
-	if (!Object || Object->IsTemplate()) return;
+	struct FParameterArrayContract { const TCHAR* Name; UScriptStruct* Struct; EMaterialParameterType Type; };
+	const FParameterArrayContract Contracts[] = {
+		{ TEXT("ScalarParameterValues"), FScalarParameterValue::StaticStruct(), EMaterialParameterType::Scalar },
+		{ TEXT("VectorParameterValues"), FVectorParameterValue::StaticStruct(), EMaterialParameterType::Vector },
+		{ TEXT("DoubleVectorParameterValues"), FDoubleVectorParameterValue::StaticStruct(), EMaterialParameterType::DoubleVector },
+		{ TEXT("TextureParameterValues"), FTextureParameterValue::StaticStruct(), EMaterialParameterType::Texture },
+		{ TEXT("TextureCollectionParameterValues"), FTextureCollectionParameterValue::StaticStruct(), EMaterialParameterType::TextureCollection },
+		{ TEXT("ParameterCollectionParameterValues"), FParameterCollectionParameterValue::StaticStruct(), EMaterialParameterType::ParameterCollection },
+		{ TEXT("RuntimeVirtualTextureParameterValues"), FRuntimeVirtualTextureParameterValue::StaticStruct(), EMaterialParameterType::RuntimeVirtualTexture },
+		{ TEXT("SparseVolumeTextureParameterValues"), FSparseVolumeTextureParameterValue::StaticStruct(), EMaterialParameterType::SparseVolumeTexture },
+		{ TEXT("FontParameterValues"), FFontParameterValue::StaticStruct(), EMaterialParameterType::Font }
+	};
+	const FParameterArrayContract* Contract = nullptr;
+	for (const auto& Candidate : Contracts) if (Property->GetFName() == Candidate.Name) { Contract = &Candidate; break; }
+	if (!Contract) { Property->ExportText_InContainer(0, Value, Mid, nullptr, Mid, PPF_None); return true; }
+	FArrayProperty* Array = CastField<FArrayProperty>(Property);
+	FStructProperty* Element = Array ? CastField<FStructProperty>(Array->Inner) : nullptr;
+	FStructProperty* InfoProperty = Element ? FindFProperty<FStructProperty>(Element->Struct, TEXT("ParameterInfo")) : nullptr;
+	FStructProperty* GuidProperty = Element ? FindFProperty<FStructProperty>(Element->Struct, TEXT("ExpressionGUID")) : nullptr;
+	if (!Element || Element->Struct != Contract->Struct || !InfoProperty || InfoProperty->Struct != FMaterialParameterInfo::StaticStruct()
+		|| !GuidProperty || GuidProperty->Struct != TBaseStructure<FGuid>::Get() || !IsValid(Mid->Parent))
+	{ Error = TEXT("WeatherMIDParameterSchemaInvalid:") + Property->GetName(); return false; }
+	TArray<FMaterialParameterInfo> Known;
+	TArray<FGuid> ParentExpressionIds;
+	Mid->Parent->GetAllParameterInfoOfType(Contract->Type, Known, ParentExpressionIds);
+	TSet<FString> Identities;
+	TArray<TPair<FString, FString>> Entries;
+	FScriptArrayHelper Helper(Array, Array->ContainerPtrToValuePtr<void>(Mid));
+	for (int32 Index = 0; Index < Helper.Num(); ++Index)
+	{
+		void* Address = Helper.GetRawPtr(Index);
+		const FMaterialParameterInfo& Info = *InfoProperty->ContainerPtrToValuePtr<FMaterialParameterInfo>(Address);
+		FString Identity;
+		InfoProperty->ExportText_InContainer(0, Identity, Address, nullptr, Mid, PPF_None);
+		if (Info.Name.IsNone() || !Known.Contains(Info) || Identities.Contains(Identity))
+		{ Error = TEXT("WeatherMIDParameterUnknownOrDuplicate:") + Property->GetName() + TEXT("|") + Identity; return false; }
+		Identities.Add(Identity);
+		FString Fields;
+		for (TFieldIterator<FProperty> It(Element->Struct); It; ++It)
+		{
+			// Runtime MID lookup uses full ParameterInfo; setters invalidate this
+			// editor expression-renaming/cache identity when creating overrides.
+			if (*It == GuidProperty) continue;
+			FString FieldValue;
+			It->ExportText_InContainer(0, FieldValue, Address, nullptr, Mid, PPF_None);
+			Fields += It->GetName() + TEXT("=") + FieldValue + TEXT(";");
+		}
+		Entries.Emplace(Identity, MoveTemp(Fields));
+	}
+	Entries.Sort([](const auto& Left, const auto& Right) { return Left.Key < Right.Key; });
+	for (const auto& Entry : Entries) Value += TEXT("(") + Entry.Value + TEXT(")");
+	return true;
+}
+
+bool CaptureProperties(UObject* Object, const FPathAliases& Paths, const FLogicalActorKeys& LogicalActorKeys, TMap<FString, FString>& Out,
+	FString& Error, const FString& OverrideObjectKey = FString())
+{
+	if (!Object || Object->IsTemplate()) return true;
+	FString MidPath, MidKey;
+	TArray<TPair<FString, FString>> WeatherAliases;
+	ASWNetworkWeatherActor* Weather = Cast<ASWNetworkWeatherActor>(Object);
+	if (!Weather) Weather = Object->GetTypedOuter<ASWNetworkWeatherActor>();
+	if (Weather)
+	{
+		TSet<UMaterialInstanceDynamic*> Captured;
+		for (FName Name : { FName(TEXT("CloudMaterial")), FName(TEXT("SphereMaterial")), FName(TEXT("CurrentDynamicParam")) })
+		{
+			const FObjectPropertyBase* Property = FindFProperty<FObjectPropertyBase>(Weather->GetClass(), Name);
+			UObject* Bound = Property ? Property->GetObjectPropertyValue_InContainer(Weather) : nullptr;
+			UMaterialInstanceDynamic* Mid = Cast<UMaterialInstanceDynamic>(Bound);
+			const UMeshComponent* MaterialMesh = Mid ? Cast<UMeshComponent>(Mid->GetOuter()) : nullptr;
+			const bool bBindingOwnerValid = Mid && (Name == TEXT("CurrentDynamicParam") ? Mid->GetOuter() == Weather
+				: MaterialMesh && MaterialMesh->GetOwner() == Weather && MaterialMesh->GetMaterial(0) == Mid);
+			if (!Property || (Bound && (!Mid || !bBindingOwnerValid || !IsValid(Mid->Parent)
+				|| !Mid->Parent->IsAsset() || Mid->Parent->IsA<UMaterialInstanceDynamic>())))
+			{
+				Error = TEXT("WeatherMIDBindingContractInvalid:") + ObjectKey(Weather, LogicalActorKeys) + TEXT("|") + Name.ToString();
+				return false;
+			}
+			if (!Mid) continue;
+			const FString Key = ObjectKey(Mid, LogicalActorKeys);
+			WeatherAliases.Emplace(Mid->GetClass()->GetPathName() + TEXT("'") + Mid->GetPathName() + TEXT("'"),
+				TEXT("WeatherMID'") + Key + TEXT("'"));
+			if (Object != Weather || Captured.Contains(Mid)) continue;
+			Captured.Add(Mid);
+			Out.Add(Key + TEXT("|Class"), Mid->GetClass()->GetPathName());
+			if (!CaptureProperties(Mid, Paths, LogicalActorKeys, Out, Error, Key)) return false;
+			TArray<FName> TextureNames;
+			Mid->RenamedTextures.GetKeys(TextureNames);
+			TextureNames.Sort(FNameLexicalLess());
+			FString RenamedTextures;
+			for (FName TextureName : TextureNames)
+			{
+				RenamedTextures += TextureName.ToString() + TEXT("=");
+				for (FName Renamed : Mid->RenamedTextures.FindChecked(TextureName)) RenamedTextures += Renamed.ToString() + TEXT(";");
+				RenamedTextures += TEXT("\n");
+			}
+			Out.Add(Key + TEXT("|RenamedTextures"), RenamedTextures);
+		}
+	}
+	// The Water plugin keeps this generated mesh class private. Its reflected
+	// identity and the public body's mesh accessors constrain this exception.
+	if (UMeshComponent* InfoMesh = Cast<UMeshComponent>(Object);
+		InfoMesh && Object->GetClass()->GetPathName() == TEXT("/Script/Water.WaterBodyInfoMeshComponent"))
+	{
+		AWaterBody* Water = Cast<AWaterBody>(InfoMesh->GetOwner());
+		UWaterBodyComponent* Body = Water ? Water->GetWaterBodyComponent() : nullptr;
+		UMaterialInstanceDynamic* Mid = Cast<UMaterialInstanceDynamic>(InfoMesh->GetMaterial(0));
+		if (Mid)
+		{
+			const FObjectPropertyBase* MidProperty = Body ? FindFProperty<FObjectPropertyBase>(Body->GetClass(), TEXT("WaterInfoMID")) : nullptr;
+			const FObjectPropertyBase* ParentProperty = Body ? FindFProperty<FObjectPropertyBase>(Body->GetClass(), TEXT("WaterInfoMaterial")) : nullptr;
+			UMeshComponent* MainMesh = nullptr;
+			UMeshComponent* DilatedMesh = nullptr;
+			if (Body)
+			{
+				TInlineComponentArray<UMeshComponent*> Meshes(Water);
+				for (UMeshComponent* Mesh : Meshes)
+				{
+					if (static_cast<const void*>(Mesh) == static_cast<const void*>(Body->GetWaterInfoMeshComponent())) MainMesh = Mesh;
+					if (static_cast<const void*>(Mesh) == static_cast<const void*>(Body->GetDilatedWaterInfoMeshComponent())) DilatedMesh = Mesh;
+				}
+			}
+			if (!Body || !MidProperty || !ParentProperty || !IsValid(Mid->Parent)
+				|| MidProperty->GetObjectPropertyValue_InContainer(Body) != Mid
+				|| ParentProperty->GetObjectPropertyValue_InContainer(Body) != Mid->Parent
+				|| (InfoMesh != MainMesh && InfoMesh != DilatedMesh)
+				|| (MainMesh && MainMesh->GetMaterial(0) != Mid) || (DilatedMesh && DilatedMesh->GetMaterial(0) != Mid)
+				|| !Mid->HasAnyFlags(RF_Transient) || Mid->GetOutermost() != GetTransientPackage())
+			{
+				Error = TEXT("WaterInfoMIDContractInvalid:") + ObjectKey(Object, LogicalActorKeys);
+				return false;
+			}
+			// Replace the complete exported reference, never a name prefix that
+			// could also match a different transient material in another slot.
+			MidPath = Mid->GetClass()->GetPathName() + TEXT("'") + Mid->GetPathName() + TEXT("'");
+			MidKey = ObjectKey(Water, LogicalActorKeys) + TEXT("/WaterInfoMID");
+			Out.Add(MidKey + TEXT("|Class"), Mid->GetClass()->GetPathName());
+			if (!CaptureProperties(Mid, Paths, LogicalActorKeys, Out, Error, MidKey)) return false;
+			TArray<FName> TextureNames;
+			Mid->RenamedTextures.GetKeys(TextureNames);
+			TextureNames.Sort(FNameLexicalLess());
+			FString RenamedTextures;
+			for (FName TextureName : TextureNames)
+			{
+				RenamedTextures += TextureName.ToString() + TEXT("=");
+				for (FName Renamed : Mid->RenamedTextures.FindChecked(TextureName)) RenamedTextures += Renamed.ToString() + TEXT(";");
+				RenamedTextures += TEXT("\n");
+			}
+			Out.Add(MidKey + TEXT("|RenamedTextures"), RenamedTextures);
+			Out.Add(ObjectKey(Object, LogicalActorKeys) + TEXT("|WaterInfoMIDIdentity"), MidKey);
+		}
+	}
 	for (TFieldIterator<FProperty> It(Object->GetClass()); It; ++It)
 	{
 		FProperty* Property = *It;
@@ -367,13 +541,22 @@ void CaptureProperties(UObject* Object, const FPathAliases& Paths, const FLogica
 		const FName Name = Property->GetFName();
 		if (Name == TEXT("Tags") || Name == TEXT("StableId")) continue;
 		FString Value;
-		Property->ExportText_InContainer(0, Value, Object, nullptr, Object, PPF_None);
+		if (UMaterialInstanceDynamic* GeneratedMid = Cast<UMaterialInstanceDynamic>(Object);
+			GeneratedMid && !OverrideObjectKey.IsEmpty() && !WeatherMaterialBinding(GeneratedMid).IsNone())
+		{
+			if (!CaptureGeneratedWeatherMIDParameters(GeneratedMid, Property, Value, Error)) return false;
+		}
+		else Property->ExportText_InContainer(0, Value, Object, nullptr, Object, PPF_None);
+		for (const auto& Alias : WeatherAliases) Value.ReplaceInline(*Alias.Key, *Alias.Value, ESearchCase::CaseSensitive);
+		if (!MidPath.IsEmpty() && Name == TEXT("OverrideMaterials"))
+			Value.ReplaceInline(*MidPath, *(TEXT("WaterInfoMID'") + MidKey + TEXT("'")), ESearchCase::CaseSensitive);
 		// Both loaded assets and verified backup worlds have absolute object
 		// paths. Values without a slash cannot contain any WorldPaths alias.
 		if (Value.Contains(TEXT("/"), ESearchCase::CaseSensitive))
 			for (const auto& Path : Paths) Value.ReplaceInline(*Path.Key, *Path.Value, ESearchCase::CaseSensitive);
-		Out.Add(ObjectKey(Object, LogicalActorKeys) + TEXT("|") + Property->GetName(), Value);
+		Out.Add((OverrideObjectKey.IsEmpty() ? ObjectKey(Object, LogicalActorKeys) : OverrideObjectKey) + TEXT("|") + Property->GetName(), Value);
 	}
+	return true;
 }
 
 void AddSoftReferenceState(const FSoftObjectPath& SoftPath, UObject* WorldContext, const FLogicalActorKeys& LogicalActorKeys,
@@ -627,7 +810,7 @@ bool CompareSoftReferenceMaps(FSoftReferenceMap Before, FSoftReferenceMap After,
 	return true;
 }
 
-void CaptureActor(AActor* Actor, const FPathAliases& Paths, const FLogicalActorKeys& LogicalActorKeys, FActorBefore& Out)
+bool CaptureActor(AActor* Actor, const FPathAliases& Paths, const FLogicalActorKeys& LogicalActorKeys, FActorBefore& Out, FString& Error)
 {
 	Out.Transform = Actor->GetActorTransform(); Out.Class = Actor->GetClass()->GetPathName(); Out.Tags = Actor->Tags;
 	Out.SpawnCollisionHandling = Actor->SpawnCollisionHandlingMethod;
@@ -643,7 +826,7 @@ void CaptureActor(AActor* Actor, const FPathAliases& Paths, const FLogicalActorK
 		if (Out.ParentKey.IsEmpty()) Out.ParentKey = TEXT("<invalid-parent>");
 	}
 	if (USWRoomSnapshotComponent* Snapshot = Actor->FindComponentByClass<USWRoomSnapshotComponent>()) Out.StableId = Snapshot->StableId;
-	CaptureProperties(Actor, Paths, LogicalActorKeys, Out.Properties);
+	if (!CaptureProperties(Actor, Paths, LogicalActorKeys, Out.Properties, Error)) return false;
 	TInlineComponentArray<UActorComponent*> Components(Actor);
 	for (UActorComponent* Component : Components)
 		if (Component && !Component->IsEditorOnly())
@@ -651,7 +834,7 @@ void CaptureActor(AActor* Actor, const FPathAliases& Paths, const FLogicalActorK
 			const FString ComponentKey = ObjectKey(Component, LogicalActorKeys);
 			if (Out.ComponentClasses.Contains(ComponentKey)) Out.ComponentClasses[ComponentKey] = TEXT("<duplicate-component-key>");
 			else Out.ComponentClasses.Add(ComponentKey, Component->GetClass()->GetPathName());
-			CaptureProperties(Component, Paths, LogicalActorKeys, Out.Properties);
+			if (!CaptureProperties(Component, Paths, LogicalActorKeys, Out.Properties, Error)) return false;
 			if (const UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Component))
 			{
 				Out.ComponentCollisionModes.Add(ComponentKey, Primitive->BodyInstance.GetCollisionEnabled(false));
@@ -668,6 +851,7 @@ void CaptureActor(AActor* Actor, const FPathAliases& Paths, const FLogicalActorK
 					FString::FromInt(static_cast<int32>(Primitive->BodyInstance.GetCollisionEnabled(false))));
 			}
 		}
+	return true;
 }
 
 FPathAliases WorldPaths(UWorld* World, const FLogicalActorKeys& LogicalActorKeys)
@@ -948,7 +1132,7 @@ int32 USWVoyageLevelMigrationCommandlet::Main(const FString& Params)
 		for (TActorIterator<AActor> It(World); It; ++It)
 		{
 			if (IsHelper(*It) || *It == Anchor) continue;
-			CaptureActor(*It, ReloadPaths, ReloadKeys, ReloadActors.Add(ObjectKey(*It, ReloadKeys)));
+			if (!CaptureActor(*It, ReloadPaths, ReloadKeys, ReloadActors.Add(ObjectKey(*It, ReloadKeys)), Error)) return Finish(1, Error);
 			CaptureSoftReferences(*It, ReloadKeys, ReloadSoftReferences);
 			if (!ProcessHardReferences(*It, ReloadKeys, ReloadHardReferences, nullptr, Error, Report)) return Finish(1, Error);
 			TInlineComponentArray<UActorComponent*> Components(*It);
@@ -975,7 +1159,7 @@ int32 USWVoyageLevelMigrationCommandlet::Main(const FString& Params)
 			if (IsHelper(*It)) continue;
 			const FString Key = ObjectKey(*It, OriginalKeys);
 			FActorBefore Original;
-			CaptureActor(*It, OriginalPaths, OriginalKeys, Original);
+			if (!CaptureActor(*It, OriginalPaths, OriginalKeys, Original, Error)) return Finish(1, Error);
 			const FActorBefore* Reloaded = ReloadActors.Find(Key);
 			if (!Reloaded || Original.Class != Reloaded->Class || !Original.Transform.Equals(Reloaded->Transform)
 				|| Original.ParentKey != Reloaded->ParentKey || !Original.ComponentClasses.OrderIndependentCompareEqual(Reloaded->ComponentClasses)
@@ -1050,7 +1234,7 @@ int32 USWVoyageLevelMigrationCommandlet::Main(const FString& Params)
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		if (IsHelper(*It)) continue;
-		CaptureActor(*It, OriginalPaths, SourceLogicalKeys, Before.Add(ObjectKey(*It, SourceLogicalKeys)));
+		if (!CaptureActor(*It, OriginalPaths, SourceLogicalKeys, Before.Add(ObjectKey(*It, SourceLogicalKeys)), Error)) return Finish(1, Error);
 		CaptureSoftReferences(*It, SourceLogicalKeys, BeforeSoftReferences);
 		if (!ProcessHardReferences(*It, SourceLogicalKeys, BeforeWorldReferences, nullptr, Error, Report, &BeforeActorSubobjects)) return Finish(1, Error);
 		TInlineComponentArray<UActorComponent*> Components(*It);
@@ -1063,7 +1247,7 @@ int32 USWVoyageLevelMigrationCommandlet::Main(const FString& Params)
 	}
 	FScopedMigrationIdentityTags MigrationIdentityScope;
 	for (auto& Pair : BeforeActorSubobjects)
-		CaptureProperties(Pair.Value.Object.Get(), OriginalPaths, SourceLogicalKeys, Pair.Value.Properties);
+		if (!CaptureProperties(Pair.Value.Object.Get(), OriginalPaths, SourceLogicalKeys, Pair.Value.Properties, Error)) return Finish(1, Error);
 	MigrationIdentityScope.World = World;
 	TMap<FGuid, FString> MigrationSourceKeys;
 	for (AActor* Root : Roots)
@@ -1216,7 +1400,7 @@ int32 USWVoyageLevelMigrationCommandlet::Main(const FString& Params)
 		if (!IsValid(Preserved) || WorldReferenceKey(Preserved, DestinationLogicalKeys) != Pair.Key)
 			return Finish(1, TEXT("MigrationReferencedSubobjectCopyFailed:") + Pair.Key);
 		TMap<FString, FString> PreservedProperties;
-		CaptureProperties(Preserved, NewPaths, DestinationLogicalKeys, PreservedProperties);
+		if (!CaptureProperties(Preserved, NewPaths, DestinationLogicalKeys, PreservedProperties, Error)) return Finish(1, Error);
 		if (!Pair.Value.Properties.OrderIndependentCompareEqual(PreservedProperties))
 		{
 			for (const auto& Property : Pair.Value.Properties)
@@ -1274,7 +1458,7 @@ int32 USWVoyageLevelMigrationCommandlet::Main(const FString& Params)
 					return Finish(1, TEXT("PrimitiveCollisionPreservationFailed:") + ComponentKey);
 			}
 		}
-		FActorBefore After; CaptureActor(*It, NewPaths, DestinationLogicalKeys, After);
+		FActorBefore After; if (!CaptureActor(*It, NewPaths, DestinationLogicalKeys, After, Error)) return Finish(1, Error);
 		CaptureSoftReferences(*It, DestinationLogicalKeys, AfterSoftReferences);
 		TInlineComponentArray<UActorComponent*> Components(*It);
 		for (UActorComponent* Component : Components)

@@ -1,5 +1,6 @@
 #include "BasePlayerController.h"
 #include "BasePlayer.h"
+#include "Network/SWRoomLoadDiagnostics.h"
 #include "Ship.h"
 #include "Room/ClassFeatureRoomProgressSubsystem.h"
 #include "Room/SWVoyageResetSubsystem.h"
@@ -11,6 +12,8 @@
 #include "EngineUtils.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LevelStreaming.h"
+#include "Engine/Level.h"
+#include "HAL/PlatformProcess.h"
 #include "MultiGameMode.h"
 
 void ABasePlayerController::BeginVoyageBindings()
@@ -37,15 +40,37 @@ void ABasePlayerController::HandleVoyageReplicatedState(const FSWVoyageReplicate
 	if (Core->GetGeneration() == 0 && Ready && Ready->bWorldReady && (State.Phase == ESWVoyagePhase::Idle || State.Phase == ESWVoyagePhase::Release))
 	{
 		FString Error;
-		if (!HasAuthority() && !Core->AdoptInitialClientGeneration(State, Ready->RoomRunId, Error))
-			UE_LOG(LogTemp, Error, TEXT("VoyageInitialGeneration: %s"), *Error);
+		if (!HasAuthority())
+		{
+			if (!Core->AdoptInitialClientGeneration(State, Ready->RoomRunId, Error))
+			{
+				UE_LOG(LogTemp, Error, TEXT("VoyageInitialGeneration: %s"), *Error);
+			}
+			else if (SWRoomLoadDiagnostics::IsEnabled())
+			{
+				UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Client Event=InitialGenerationAdopted Real=%.6f PID=%u Attempt=%lld Generation=%d WorldId=%u PersistentId=%u Bootstrap=%d"),
+					FPlatformTime::Seconds(), FPlatformProcess::GetCurrentProcessId(), State.AttemptId, State.Generation, GetWorld()->GetUniqueID(),
+					GetWorld()->PersistentLevel ? GetWorld()->PersistentLevel->GetUniqueID() : 0, State.bBootstrap);
+			}
+		}
 		return;
 	}
 	// Healthy bootstrap belongs to map readiness; initial Idle/Release + ready adopts the generation.
-	if (State.bBootstrap && (State.Phase == ESWVoyagePhase::Restore
+	if (State.bBootstrap && (State.Phase == ESWVoyagePhase::Load
+		|| State.Phase == ESWVoyagePhase::Restore
 		|| State.Phase == ESWVoyagePhase::ClientReady
 		|| State.Phase == ESWVoyagePhase::Release
-		|| State.Phase == ESWVoyagePhase::Idle)) return;
+		|| State.Phase == ESWVoyagePhase::Idle))
+	{
+		if (SWRoomLoadDiagnostics::IsEnabled() && Core->GetGeneration() == 0 && FPlatformTime::Seconds() >= NextVoyageDiagnosticAt)
+		{
+			NextVoyageDiagnosticAt = FPlatformTime::Seconds() + 2.0;
+			UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Client Event=BootstrapWait Real=%.6f Attempt=%lld Generation=%d Phase=%s WorldReady=%d RunIdValid=%d"),
+				FPlatformTime::Seconds(), State.AttemptId, State.Generation,
+				*StaticEnum<ESWVoyagePhase>()->GetNameStringByValue(static_cast<int64>(State.Phase)), Ready && Ready->bWorldReady, Ready && Ready->RoomRunId.IsValid());
+		}
+		return;
+	}
 	if (State.AttemptId < LocalVoyageState.AttemptId || State.Generation < LocalVoyageState.Generation) return;
 	if (State.Phase == ESWVoyagePhase::Idle && State.AttemptId == LocalVoyageState.AttemptId && LocalVoyagePhase < ESWVoyagePhase::Unload)
 	{ ClientCancelVoyage_Implementation(State.AttemptId, State.Generation); return; }
@@ -64,7 +89,8 @@ void ABasePlayerController::ClientSetVoyagePhase_Implementation(const FSWVoyageR
 	if (!IsLocalController() || State.AttemptId <= 0 || State.Generation <= 0
 		|| State.AttemptId < LocalVoyageState.AttemptId || State.Generation < LocalVoyageState.Generation) return;
 	// Healthy bootstrap belongs to map readiness; initial Idle/Release + ready adopts the generation.
-	if (State.bBootstrap && (State.Phase == ESWVoyagePhase::Restore
+	if (State.bBootstrap && (State.Phase == ESWVoyagePhase::Load
+		|| State.Phase == ESWVoyagePhase::Restore
 		|| State.Phase == ESWVoyagePhase::ClientReady
 		|| State.Phase == ESWVoyagePhase::Release
 		|| State.Phase == ESWVoyagePhase::Idle)) return;
@@ -75,6 +101,13 @@ void ABasePlayerController::ClientSetVoyagePhase_Implementation(const FSWVoyageR
 		LocalVoyagePhase = ESWVoyagePhase::Idle; LocalVoyageAcks.Reset();
 		bVoyagePlacementReceived = false; VoyagePlacementPawn.Reset(); VoyagePlacementShip.Reset();
 		bVoyageFinishReceived = false; bVoyageLocalFailed = false; RemoveVoyageFailureWidget();
+	}
+	if (SWRoomLoadDiagnostics::IsEnabled() && (State.AttemptId != LocalVoyageState.AttemptId || State.Generation != LocalVoyageState.Generation || State.Phase != LocalVoyageState.Phase))
+	{
+		UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Client Event=ServerPhase Real=%.6f PID=%u Attempt=%lld Generation=%d Phase=%s Bootstrap=%d Continue=%d"),
+			FPlatformTime::Seconds(), FPlatformProcess::GetCurrentProcessId(), State.AttemptId, State.Generation,
+			*StaticEnum<ESWVoyagePhase>()->GetNameStringByValue(static_cast<int64>(State.Phase)), State.bBootstrap, State.bContinue);
+		NextVoyageDiagnosticAt = 0.0;
 	}
 	LocalVoyageState = State;
 	if (USWConnectionSubsystem* Connection = GetGameInstance()->GetSubsystem<USWConnectionSubsystem>())
@@ -91,12 +124,18 @@ void ABasePlayerController::ClientSetVoyagePhase_Implementation(const FSWVoyageR
 void ABasePlayerController::ClientSetVoyagePlacement_Implementation(int64 AttemptId, int32 Generation, APawn* NewPawn, AShip* Ship, FTransform Target)
 {
 	if (AttemptId != LocalVoyageState.AttemptId || Generation != LocalVoyageState.Generation || Target.ContainsNaN()) return;
+	if (SWRoomLoadDiagnostics::IsEnabled() && (!bVoyagePlacementReceived || VoyagePlacementPawn.Get() != NewPawn || VoyagePlacementShip.Get() != Ship))
+		UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Client Event=PlacementReceived Real=%.6f Attempt=%lld Generation=%d Pawn=%s Ship=%s Target=%s"),
+			FPlatformTime::Seconds(), AttemptId, Generation, *GetNameSafe(NewPawn), *GetNameSafe(Ship), *Target.ToString());
 	VoyagePlacementPawn = NewPawn; VoyagePlacementShip = Ship; VoyagePlacementTarget = Target; bVoyagePlacementReceived = true;
 }
 
 void ABasePlayerController::ClientFinishVoyage_Implementation(int64 AttemptId, int32 Generation, bool bSaveSucceeded, const FString& Message)
 {
 	if (AttemptId != LocalVoyageState.AttemptId || Generation != LocalVoyageState.Generation) return;
+	if (SWRoomLoadDiagnostics::IsEnabled() && !bVoyageFinishReceived)
+		UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Client Event=FinishReceived Real=%.6f Attempt=%lld Generation=%d SaveSucceeded=%d Message=%s"),
+			FPlatformTime::Seconds(), AttemptId, Generation, bSaveSucceeded, *Message.Left(512));
 	bVoyageFinishReceived = true; bVoyageFinishSaveSucceeded = bSaveSucceeded; VoyageFinishMessage = Message;
 	if (LocalVoyageState.Reason == ESWVoyageReason::GameOverRetry) PendingRetryRequestId = 0;
 }
@@ -104,6 +143,8 @@ void ABasePlayerController::ClientFinishVoyage_Implementation(int64 AttemptId, i
 void ABasePlayerController::ClientCancelVoyage_Implementation(int64 AttemptId, int32 Generation)
 {
 	if (AttemptId != LocalVoyageState.AttemptId || Generation != LocalVoyageState.Generation) return;
+	if (SWRoomLoadDiagnostics::IsEnabled())
+		UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Client Event=Cancelled Real=%.6f Attempt=%lld Generation=%d"), FPlatformTime::Seconds(), AttemptId, Generation);
 	if (LocalVoyageState.Reason == ESWVoyageReason::GameOverRetry)
 	{ PendingRetryRequestId = 0; RetryStatus = TEXT("다시 시작 준비가 취소되었습니다. 다시 시도하세요."); }
 	USWVoyageResetSubsystem* Core = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>();
@@ -124,6 +165,7 @@ void ABasePlayerController::RemoveVoyageFailureWidget()
 void ABasePlayerController::ClientVoyageFailure_Implementation(int64 AttemptId, int32 Generation, bool bHost, const FString& Error)
 {
 	if (AttemptId != LocalVoyageState.AttemptId || Generation != LocalVoyageState.Generation || !IsLocalController()) return;
+	UE_LOG(LogTemp, Error, TEXT("[SWVoyageDiag] Version=20261006 Side=Client Event=FailureUI Real=%.6f Attempt=%lld Generation=%d Host=%d Error=%s"), FPlatformTime::Seconds(), AttemptId, Generation, bHost, *Error.Left(512));
 	bVoyageLocalFailed = true;
 	if (!HasAuthority()) if (USWVoyageResetSubsystem* Core = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>())
 	{
@@ -181,9 +223,35 @@ bool ABasePlayerController::TickLocalVoyage(float DeltaSeconds)
 	if (LocalVoyageState.Phase == ESWVoyagePhase::Idle || bVoyageLocalFailed || LocalVoyageState.Phase == ESWVoyagePhase::RecoveryTravel) return true;
 	USWVoyageResetSubsystem* Core = GetWorld()->GetSubsystem<USWVoyageResetSubsystem>(); if (!Core) return true;
 	FString Error;
+	if (SWRoomLoadDiagnostics::IsEnabled() && FPlatformTime::Seconds() >= NextVoyageDiagnosticAt)
+	{
+		NextVoyageDiagnosticAt = FPlatformTime::Seconds() + 2.0;
+		APawn* DiagnosticPawn = VoyagePlacementPawn.Get();
+		AShip* DiagnosticShip = VoyagePlacementShip.Get();
+		ABasePlayer* DiagnosticPlayer = Cast<ABasePlayer>(DiagnosticPawn);
+		const ASWRoomReadyState* DiagnosticReady = BoundVoyageReady.Get();
+		ULevelStreaming* DiagnosticStreaming = Core->GetGameplayStreamingLevel();
+		UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Client Event=Wait Real=%.6f Attempt=%lld Generation=%d ServerPhase=%s LocalPhase=%s CoreGeneration=%d Loaded=%d Visible=%d Placement=%d Pawn=%s Ship=%s Possessed=%d PawnGeneration=%d ShipGeneration=%d LifeReady=%d PhysicsReady=%d Distance=%.1f YawError=%.1f Finish=%d WorldReady=%d ReadyGeneration=%d"),
+			FPlatformTime::Seconds(), LocalVoyageState.AttemptId, LocalVoyageState.Generation,
+			*StaticEnum<ESWVoyagePhase>()->GetNameStringByValue(static_cast<int64>(LocalVoyageState.Phase)),
+			*StaticEnum<ESWVoyagePhase>()->GetNameStringByValue(static_cast<int64>(LocalVoyagePhase)), Core->GetGeneration(),
+			DiagnosticStreaming && DiagnosticStreaming->GetLoadedLevel() != nullptr, DiagnosticStreaming && DiagnosticStreaming->IsLevelVisible(), bVoyagePlacementReceived,
+			*GetNameSafe(DiagnosticPawn), *GetNameSafe(DiagnosticShip), DiagnosticPawn && GetPawn() == DiagnosticPawn && DiagnosticPawn->GetController() == this,
+			Core->GetActorGeneration(DiagnosticPawn), Core->GetActorGeneration(DiagnosticShip),
+			DiagnosticPlayer && DiagnosticPlayer->IsVoyageClientLifeReady(LocalVoyageState.Generation), DiagnosticShip && DiagnosticShip->IsVoyagePhysicsReady(LocalVoyageState.Generation),
+			DiagnosticPawn ? FVector::Dist(DiagnosticPawn->GetActorLocation(), VoyagePlacementTarget.GetLocation()) : -1.0,
+			DiagnosticPawn ? FMath::Abs(FMath::FindDeltaAngleDegrees(DiagnosticPawn->GetActorRotation().Yaw, VoyagePlacementTarget.Rotator().Yaw)) : -1.0,
+			bVoyageFinishReceived, DiagnosticReady && DiagnosticReady->bWorldReady, DiagnosticReady ? DiagnosticReady->RestoreGeneration : 0);
+	}
 	auto Ack = [this](ESWVoyageAck Stage)
 	{
-		if (!LocalVoyageAcks.Contains(Stage)) { LocalVoyageAcks.Add(Stage); ServerConfirmVoyageStage(LocalVoyageState.AttemptId, LocalVoyageState.Generation, Stage); }
+		if (!LocalVoyageAcks.Contains(Stage))
+		{
+			if (SWRoomLoadDiagnostics::IsEnabled())
+				UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Client Event=AckSent Real=%.6f Attempt=%lld Generation=%d Ack=%s"), FPlatformTime::Seconds(), LocalVoyageState.AttemptId, LocalVoyageState.Generation,
+					*StaticEnum<ESWVoyageAck>()->GetNameStringByValue(static_cast<int64>(Stage)));
+			LocalVoyageAcks.Add(Stage); ServerConfirmVoyageStage(LocalVoyageState.AttemptId, LocalVoyageState.Generation, Stage);
+		}
 	};
 	auto Begin = [this, Core, &Error](ESWVoyagePhase Phase)
 	{
@@ -191,6 +259,14 @@ bool ABasePlayerController::TickLocalVoyage(float DeltaSeconds)
 		Context.Reason = LocalVoyageState.Reason; Context.Phase = Phase; Context.GameplayPackage = LocalVoyageState.GameplayPackage;
 		Context.bBootstrap = LocalVoyageState.bBootstrap; Context.bContinue = LocalVoyageState.bContinue;
 		if (!HasAuthority() && !Core->BeginLocalPhase(Context, Error)) return false;
+		if (SWRoomLoadDiagnostics::IsEnabled())
+		{
+			ULevelStreaming* Streaming = Core->GetGameplayStreamingLevel();
+			UE_LOG(LogTemp, Display, TEXT("[SWVoyageDiag] Version=20261006 Side=Client Event=LocalPhase Real=%.6f Attempt=%lld Generation=%d Phase=%s WorldId=%u PersistentId=%u StreamingId=%u GameplayId=%u"),
+				FPlatformTime::Seconds(), LocalVoyageState.AttemptId, LocalVoyageState.Generation,
+				*StaticEnum<ESWVoyagePhase>()->GetNameStringByValue(static_cast<int64>(Phase)), GetWorld()->GetUniqueID(), GetWorld()->PersistentLevel ? GetWorld()->PersistentLevel->GetUniqueID() : 0,
+				Streaming ? Streaming->GetUniqueID() : 0, Streaming && Streaming->GetLoadedLevel() ? Streaming->GetLoadedLevel()->GetUniqueID() : 0);
+		}
 		LocalVoyagePhase = Phase; return true;
 	};
 	if (LocalVoyagePhase == ESWVoyagePhase::Idle)
@@ -273,5 +349,8 @@ bool ABasePlayerController::TickLocalVoyage(float DeltaSeconds)
 	}
 	return true;
 Failed:
+	UE_LOG(LogTemp, Error, TEXT("[SWVoyageDiag] Version=20261006 Side=Client Event=LocalFailure Real=%.6f Attempt=%lld Generation=%d LocalPhase=%s Error=%s"),
+		FPlatformTime::Seconds(), LocalVoyageState.AttemptId, LocalVoyageState.Generation,
+		*StaticEnum<ESWVoyagePhase>()->GetNameStringByValue(static_cast<int64>(LocalVoyagePhase)), *Error.Left(512));
 	bVoyageLocalFailed = true; ServerReportVoyageFailure(LocalVoyageState.AttemptId, LocalVoyageState.Generation, Error.Left(512)); return true;
 }

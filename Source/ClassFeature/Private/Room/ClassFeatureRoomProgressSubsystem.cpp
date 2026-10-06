@@ -740,6 +740,14 @@ bool UClassFeatureRoomProgressSubsystem::TryReturn(UWorld* World, ABasePlayer* R
  return bStarted;
 }
 
+bool UClassFeatureRoomProgressSubsystem::ExecuteDevelopmentVoyageProbe(ABasePlayerController* Requester, const FString& Command, const FString& Phase, float Seconds, int64 ExpectedAttempt, int32 ExpectedGeneration, FString& OutError)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+ if (VoyageTransition) return VoyageTransition->ExecuteDevelopmentProbe(Requester, Command, Phase, Seconds, ExpectedAttempt, ExpectedGeneration, OutError);
+#endif
+ OutError = TEXT("항해 시험 driver를 사용할 수 없습니다"); return false;
+}
+
 bool UClassFeatureRoomProgressSubsystem::TryFinalDeparture(UWorld* World, ABasePlayer* Requester)
 {
  FString Error;

@@ -1,4 +1,5 @@
 #include "Tests/EnemyShipTorpedoBuoyancyTestSubsystem.h"
+#include "Room/SWVoyageResetSubsystem.h"
 
 #include "EngineUtils.h"
 #include "Misc/CommandLine.h"
@@ -8,6 +9,12 @@
 #include "WaterBodyActor.h"
 #include "WaterBodyComponent.h"
 #include "WaterBodyTypes.h"
+
+FName UEnemyShipTorpedoBuoyancyTestSubsystem::GetVoyageParticipantId_Implementation() const
+{
+	USWVoyageResetSubsystem* Voyage = GetWorld() ? GetWorld()->GetSubsystem<USWVoyageResetSubsystem>() : nullptr;
+	return Voyage ? Voyage->ResolveParticipantId(const_cast<UEnemyShipTorpedoBuoyancyTestSubsystem*>(this)) : NAME_None;
+}
 
 bool UEnemyShipTorpedoBuoyancyTestSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
