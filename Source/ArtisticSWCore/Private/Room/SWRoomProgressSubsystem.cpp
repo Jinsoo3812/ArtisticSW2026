@@ -1,4 +1,5 @@
 #include "Room/SWRoomProgressSubsystem.h"
+#include "Room/SWRoomRuntimePaths.h"
 #include "Engine/World.h"
 
 namespace SWDevTestInput
@@ -74,7 +75,14 @@ void USWRoomProgressSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	FString RunText, Mode, RoomText, HostText;
 	if (!IsRunningDedicatedServer() || !FParse::Value(FCommandLine::Get(), TEXT("SWRoomRunId="), RunText)) return;
 	bHostedRoom = true;
-	UE_LOG(LogSWRoom, Display, TEXT("Flow=ServerStartup RunId=%s Phase=ReadArguments"), *RunText);
+	FString Root, RootError;
+	if (!FSWRoomRuntimePaths::TryResolveRoot(Root, RootError))
+	{
+		bStartupError = true;
+		UE_LOG(LogSWRoom, Error, TEXT("%s"), *RootError);
+		return;
+	}
+	UE_LOG(LogSWRoom, Display, TEXT("Flow=ServerStartup RunId=%s Phase=ReadArguments Root=%s"), *RunText, *Root);
 	FGuid RunId, RoomId;
 	if (!FGuid::Parse(RunText, RunId) || !RunId.IsValid()
 		|| !FParse::Value(FCommandLine::Get(), TEXT("SWRoomMode="), Mode)
@@ -125,7 +133,7 @@ bool USWRoomProgressSubsystem::WriteCheckpoint()
 	TGuardValue<bool> SavingGuard(bSaving, true);
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=Checkpoint RoomId=%s Kind=%s Sequence=%llu Phase=WriteRequested NewPending=%d"),
 		*ActiveRoom->RoomId.ToString(), *UEnum::GetValueAsString(ActiveRoom->SaveKind), ActiveRoom->CaptureSequence, bNewRoomPending);
-	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=Checkpoint Phase=WriteRequested RoomId=%s Kind=%s Sequence=%llu NewPending=%d"),
+	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=Checkpoint Phase=WriteRequested RoomId=%s Kind=%s Sequence=%llu NewPending=%d"),
 		*ActiveRoom->RoomId.ToString(), *UEnum::GetValueAsString(ActiveRoom->SaveKind), ActiveRoom->CaptureSequence, bNewRoomPending);
 	const bool bSuccess = bNewRoomPending
 		? (FSWRoomSaveStore::StageCompleteNewRoom(ActiveRoom) && FSWRoomSaveStore::CommitStagedNewRoom())
@@ -139,7 +147,7 @@ bool USWRoomProgressSubsystem::WriteCheckpoint()
 	{
 		UE_LOG(LogSWRoom, Display, TEXT("Flow=Checkpoint RoomId=%s Kind=%s Sequence=%llu Result=Committed"),
 			*ActiveRoom->RoomId.ToString(), *UEnum::GetValueAsString(ActiveRoom->SaveKind), ActiveRoom->CaptureSequence);
-		UE_LOG(LogSWRoomSave, Display, TEXT("Flow=Checkpoint Result=Committed RoomId=%s Kind=%s Sequence=%llu"),
+		SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=Checkpoint Result=Committed RoomId=%s Kind=%s Sequence=%llu"),
 			*ActiveRoom->RoomId.ToString(), *UEnum::GetValueAsString(ActiveRoom->SaveKind), ActiveRoom->CaptureSequence);
 	}
 	else

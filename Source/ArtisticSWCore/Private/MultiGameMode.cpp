@@ -2,6 +2,7 @@
 
 
 #include "MultiGameMode.h"
+#include "Room/SWRoomRuntimePaths.h"
 #include "Respawn/SWRespawnControllerInterface.h"
 
 #include "Network/SWNetworkLog.h"
@@ -35,6 +36,7 @@
 #include "Room/SWRoomSaveGame.h"
 #include "Room/SWLevelEntryPoint.h"
 #include "Room/SWRoomReadyState.h"
+#include "Network/SWRoomLoadDiagnostics.h"
 #include "Containers/Ticker.h"
 
 namespace
@@ -82,6 +84,7 @@ void AMultiGameMode::InitGame(const FString& MapName, const FString& Options, FS
 
 void AMultiGameMode::StartPlay()
 {
+	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("GameMode.StartPlay"));
     Super::StartPlay();
 	if (IsHostedRoom())
 	{
@@ -119,7 +122,12 @@ void AMultiGameMode::StartPlay()
 		const int32 ListenPort = LocalAddress.IsValid() ? LocalAddress->GetPort() : 0;
 		if (RoomOwnerPid && ListenPort == 7777)
 		{
-			const FString Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("RoomHost"));
+			const FString Directory = FSWRoomRuntimePaths::GetHostDirectory();
+			if (Directory.IsEmpty())
+			{
+				UE_LOG(LogSWConnection, Error, TEXT("Hosted room marker directory is invalid"));
+				return;
+			}
 			RoomReadyPath = FPaths::Combine(Directory, RoomRunId.ToString(EGuidFormats::DigitsWithHyphens) + TEXT(".ready"));
 			IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
 			if (Files.CreateDirectoryTree(*Directory))
@@ -190,6 +198,9 @@ void AMultiGameMode::MarkHostedRoomWorldReady()
 
 bool AMultiGameMode::RequestHostedRoomReturnTravel(bool bAfterGameOver)
 {
+	if (SWRoomLoadDiagnostics::IsEnabled())
+		UE_LOG(LogTemp, Display, TEXT("[SWLoadDiag] Real=%.6f Phase=ServerTravel.Requested SeamlessFlag=%d ServerTravelPause=%.3f AfterGameOver=%d"),
+			FPlatformTime::Seconds(), bUseSeamlessTravel, GetWorld() && GetWorld()->GetNetDriver() ? GetWorld()->GetNetDriver()->ServerTravelPause : -1.0f, bAfterGameOver);
 	if (!IsHostedRoom() || bLevelRestartRequested || !GetWorld()) return false;
 	bLevelRestartRequested = true;
 	if (UPlayerProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UPlayerProgressSubsystem>()) Progress->ClearSnapshotsForHostedReturn();

@@ -4,6 +4,7 @@
 #include "Room/SWRoomProgressSubsystem.h"
 #include "Room/SWRoomStateAdapter.h"
 #include "Network/SWNetworkLog.h"
+#include "Network/SWRoomLoadDiagnostics.h"
 #include "EngineUtils.h"
 #include "Engine/Level.h"
 #include "Engine/LevelStreaming.h"
@@ -50,9 +51,9 @@ bool ShouldTraceRoomPhysics(const AActor* Actor)
 
 void TraceRoomPhysics(const TCHAR* Stage, const AActor* Actor, const FSWRoomActorRecord& Record)
 {
-	if (!ShouldTraceRoomPhysics(Actor)) return;
+	if (!SWRoomLogging::IsDetailedEnabled() || !ShouldTraceRoomPhysics(Actor)) return;
 	UPrimitiveComponent* Root = Cast<UPrimitiveComponent>(Actor->GetRootComponent());
-	UE_LOG(LogSWRoom, Display,
+	SW_ROOM_DETAIL_LOG(LogSWRoom, Display,
 		TEXT("Flow=RoomPhysics Stage=%s Id=%s Actor=%s Origin=%s Parent=%s Owner=%s Scale=%s SavedHasMotion=%d SavedSim=%d RootSim=%d SavedLinear=%s SavedAngular=%s CurrentLinear=%s CurrentAngular=%s"),
 		Stage, *Record.StableId.ToString(), *Actor->GetPathName(), *UEnum::GetValueAsString(Record.Origin),
 		*GetNameSafe(Actor->GetAttachParentActor()), *GetNameSafe(Actor->GetOwner()),
@@ -153,7 +154,7 @@ void AddMotionIssue(FSWRoomWorldSnapshot& Snapshot, const FSWRoomActorRecord& Re
 	Issue.Domain = TEXT("Motion");
 	Issue.FieldKey = FieldKey;
 	Issue.Reason = TEXT("Non-finite linear or angular velocity");
-	UE_LOG(LogSWRoom, Warning, TEXT("Flow=WorldCapture Result=Partial Id=%s Class=%s Domain=Motion Field=%s Reason=%s"),
+	SW_ROOM_DETAIL_LOG(LogSWRoom, Warning, TEXT("Flow=WorldCapture Result=Partial Id=%s Class=%s Domain=Motion Field=%s Reason=%s"),
 		*Issue.StableId.ToString(), *Issue.ClassPath.ToString(), *Issue.FieldKey.ToString(), *Issue.Reason);
 }
 
@@ -225,6 +226,7 @@ void USWRoomSnapshotSubsystem::Deinitialize()
 
 bool USWRoomSnapshotSubsystem::CompleteRestore(FString& OutError)
 {
+	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("Snapshot.CompleteRestore"));
 	TMap<FGuid, AActor*> ActorsById;
 	for (const TPair<FGuid, TWeakObjectPtr<AActor>>& Pair : RegisteredActors)
 		if (AActor* Actor = Pair.Value.Get()) ActorsById.Add(Pair.Key, Actor);
@@ -376,8 +378,10 @@ void USWRoomSnapshotSubsystem::HandleLevelAdded(ULevel* Level, UWorld* World)
 
 bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 {
+	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("Snapshot.Audit"));
 	UnsupportedCandidates.Reset();
 	AuditRows.Reset();
+	const bool bDetailedLog = SWRoomLogging::IsDetailedEnabled();
 	RegistrationIssues.Reset();
 	RegisteredActors.Reset();
 	TSet<FGuid> Seen;
@@ -390,7 +394,7 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 		{
 			if (Actor->ActorHasTag(TEXT("RoomDerived")))
 			{
-				AuditRows.Add(Actor->GetPathName() + TEXT(" | ") + Actor->GetClass()->GetPathName()
+				if (bDetailedLog) AuditRows.Add(Actor->GetPathName() + TEXT(" | ") + Actor->GetClass()->GetPathName()
 					+ TEXT(" | Component= | Field=Actor | Reason=State owned by registered child spawn points | Disposition=Derived"));
 				continue;
 			}
@@ -406,7 +410,7 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 			{
 				const FString CandidateKey = Actor->GetPathName() + TEXT(" | ") + Actor->GetClass()->GetPathName();
 				UnsupportedCandidates.Add(CandidateKey);
-				AuditRows.Add(CandidateKey + TEXT(" | Component= | Field=Actor | Reason=Persistent gameplay candidate has no room contract | Disposition=Unclassified"));
+				if (bDetailedLog) AuditRows.Add(CandidateKey + TEXT(" | Component= | Field=Actor | Reason=Persistent gameplay candidate has no room contract | Disposition=Unclassified"));
 				FSWRoomCaptureIssue& Issue = RegistrationIssues.AddDefaulted_GetRef();
 				Issue.OwnerPath = Actor->GetPathName();
 				Issue.ClassPath = FSoftClassPath(Actor->GetClass());
@@ -418,7 +422,7 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 		}
 		if (Component->PersistenceClass == ESWRoomPersistenceClass::Transient)
 		{
-			AuditRows.Add(Actor->GetPathName() + TEXT(" | ") + Actor->GetClass()->GetPathName()
+			if (bDetailedLog) AuditRows.Add(Actor->GetPathName() + TEXT(" | ") + Actor->GetClass()->GetPathName()
 				+ TEXT(" | Component= | Field=Actor | Reason=Explicit transient room policy | Disposition=Transient"));
 			continue;
 		}
@@ -430,7 +434,7 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 			Issue.Domain = TEXT("Identity");
 			Issue.FieldKey = TEXT("StableId");
 			Issue.Reason = TEXT("Level actor has no persisted SWRoomStableId tag");
-			UE_LOG(LogSWRoom, Warning, TEXT("Flow=Audit Result=Partial Actor=%s Class=%s Field=StableId Reason=MissingPersistedTag"),
+			SW_ROOM_DETAIL_LOG(LogSWRoom, Warning, TEXT("Flow=Audit Result=Partial Actor=%s Class=%s Field=StableId Reason=MissingPersistedTag"),
 				*Issue.OwnerPath, *Issue.ClassPath.ToString());
 			continue;
 		}
@@ -466,7 +470,7 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 			const TCHAR* Reason = bSerialized ? TEXT("SaveGame field") : bShipPersisted || bEnemyShipPersisted
 				? TEXT("Explicit room adapter field") : bTransient ? TEXT("Explicit restart policy")
 				: bDerived ? TEXT("Engine or derived field") : TEXT("Project replicated field lacks explicit room disposition");
-			AuditRows.Add(FString::Printf(TEXT("%s | %s | Component= | Field=%s | Reason=%s | Disposition=%s"),
+			if (bDetailedLog) AuditRows.Add(FString::Printf(TEXT("%s | %s | Component= | Field=%s | Reason=%s | Disposition=%s"),
 				*Component->StableId.ToString(), *Actor->GetClass()->GetPathName(), *Property->GetName(), Reason, Disposition));
 			if (!bPersisted && !bTransient && !bDerived)
 			{
@@ -483,20 +487,24 @@ bool USWRoomSnapshotSubsystem::Audit(FString& OutError)
 			}
 		}
 	}
-	if (!AuditRows.IsEmpty())
+	if (SWRoomLogging::IsDetailedEnabled() && !AuditRows.IsEmpty())
 	{
 		const FString AuditPath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Logs"), TEXT("SWRoom"), TEXT("UnsupportedCandidates.txt"));
 		FFileHelper::SaveStringToFile(FString::Join(AuditRows, TEXT("\n")), *AuditPath);
 		UE_LOG(LogSWRoom, Warning, TEXT("Flow=Audit Result=Classified Candidates=%d Unclassified=%d FullList=%s"),
 			AuditRows.Num(), UnsupportedCandidates.Num(), *AuditPath);
 	}
+	if (!RegistrationIssues.IsEmpty())
+		UE_LOG(LogSWRoom, Warning, TEXT("Flow=Audit Result=Partial Issues=%d Unsupported=%d DetailedLog=%d"),
+			RegistrationIssues.Num(), UnsupportedCandidates.Num(), SWRoomLogging::IsDetailedEnabled());
 	return true;
 }
 
 bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoomSaveKind Kind,
 	uint64 Sequence, FString& OutError, ESWRoomCaptureFailureKind* OutFailureKind)
 {
-	UE_LOG(LogSWRoomSave, Display, TEXT("Flow=WorldCapture Phase=Begin Sequence=%llu Kind=%s World=%s"),
+	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("Snapshot.Capture"));
+	SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=WorldCapture Phase=Begin Sequence=%llu Kind=%s World=%s"),
 		Sequence, *UEnum::GetValueAsString(Kind), *GetNameSafe(GetWorld()));
 	if (OutFailureKind) *OutFailureKind = ESWRoomCaptureFailureKind::None;
 	if (!GetWorld() || GetWorld()->GetNetMode() == NM_Client || bRestoring)
@@ -518,9 +526,12 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 	OutSnapshot.MapPath = GetMapPath(GetWorld());
 	OutSnapshot.CaptureSequence = Sequence;
 	OutSnapshot.CaptureIssues = RegistrationIssues;
+	{
+	SWRoomLoadDiagnostics::FScopedPhase ActorLoopScope(TEXT("Snapshot.ActorLoop"));
 	for (const TPair<FGuid, TWeakObjectPtr<AActor>>& Pair : RegisteredActors)
 	{
 		AActor* Actor = Pair.Value.Get();
+		TRACE_CPUPROFILER_EVENT_SCOPE_TEXT_CONDITIONAL(SWRoomLoadDiagnostics::IsEnabled() && Actor ? *Actor->GetClass()->GetPathName() : TEXT("SnapshotActor"), SWRoomLoadDiagnostics::IsEnabled());
 		if (!Actor || Actor->IsActorBeingDestroyed())
 		{
 			OutError = TEXT("Registered actor disappeared during capture");
@@ -549,7 +560,7 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 			Issue.Domain = TEXT("WorldActor");
 			Issue.FieldKey = TEXT("IdentityOrTransform");
 			Issue.Reason = TEXT("Actor ID, class, or transform unavailable during capture");
-			UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=ActorCapture Result=Skipped Sequence=%llu Id=%s Actor=%s Class=%s Reason=%s"),
+			SW_ROOM_DETAIL_LOG(LogSWRoomSave, Warning, TEXT("Flow=ActorCapture Result=Skipped Sequence=%llu Id=%s Actor=%s Class=%s Reason=%s"),
 				Sequence, *Record.StableId.ToString(), *Actor->GetPathName(), *Record.ClassPath.ToString(), *Issue.Reason);
 			OutSnapshot.Actors.Pop();
 			continue;
@@ -661,7 +672,7 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 				}
 				else
 					for (const FSWRoomDomainPart& Part : Payload.Parts)
-						UE_LOG(LogSWRoomSave, Display,
+						SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display,
 							TEXT("Flow=DomainCapture Result=Success Sequence=%llu ActorId=%s Actor=%s Domain=%d Version=%d Bytes=%d"),
 							Sequence, *Record.StableId.ToString(), *Actor->GetPathName(),
 							static_cast<int32>(Part.Domain), Part.Version, Part.Bytes.Num());
@@ -717,13 +728,13 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 					AddMotionIssue(OutSnapshot, Record, Key);
 				}
 			}
-			UE_LOG(LogSWRoomSave, Display,
+			SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display,
 				TEXT("Flow=ComponentCapture Result=Recorded Sequence=%llu ActorId=%s Actor=%s Key=%s Component=%s Class=%s SaveGameBytes=%d Motion=%d Sim=%d"),
 				Sequence, *Record.StableId.ToString(), *Actor->GetPathName(), *Key.ToString(),
 				*Child->GetPathName(), *Child->GetClass()->GetPathName(), ChildRecord.SaveGameBytes.Num(),
 				ChildRecord.MotionState.bHasMotion ? 1 : 0, ChildRecord.MotionState.bWasSimulatingPhysics ? 1 : 0);
 		}
-		UE_LOG(LogSWRoomSave, Display,
+		SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display,
 			TEXT("Flow=ActorCapture Result=%s Sequence=%llu Id=%s Actor=%s Class=%s Origin=%s Partition=%s Required=%d SaveGameBytes=%d AdapterBytes=%d Components=%d ParentId=%s ParentComponent=%s Socket=%s RootMotion=%d RootSim=%d Issues=%d"),
 			OutSnapshot.CaptureIssues.Num() == IssueStart ? TEXT("Success") : TEXT("Partial"), Sequence,
 			*Record.StableId.ToString(), *Actor->GetPathName(), *Record.ClassPath.ToString(),
@@ -733,10 +744,11 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 			Record.MotionState.bHasMotion ? 1 : 0, Record.MotionState.bWasSimulatingPhysics ? 1 : 0,
 			OutSnapshot.CaptureIssues.Num() - IssueStart);
 	}
+	}
 	for (const TPair<FGuid, ESWRoomPersistenceClass>& Pair : DestroyedLevelActorIds)
 	{
 		OutSnapshot.DestroyedLevelActorIds.Add(Pair.Key);
-		UE_LOG(LogSWRoomSave, Display, TEXT("Flow=TombstoneCapture Result=Recorded Sequence=%llu Id=%s Persistence=%s"),
+		SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display, TEXT("Flow=TombstoneCapture Result=Recorded Sequence=%llu Id=%s Persistence=%s"),
 			Sequence, *Pair.Key.ToString(), *UEnum::GetValueAsString(Pair.Value));
 		if (const FString* Package = DestroyedActorPartitions.Find(Pair.Key))
 		{
@@ -754,7 +766,7 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 		if (!RegisteredActors.Contains(Pair.Key))
 		{
 			OutSnapshot.UnloadedActors.Add(Pair.Value);
-			UE_LOG(LogSWRoomSave, Display,
+			SW_ROOM_DETAIL_LOG(LogSWRoomSave, Display,
 				TEXT("Flow=UnloadedActorCapture Result=Reused Sequence=%llu Id=%s Class=%s Partition=%s SaveGameBytes=%d AdapterBytes=%d Components=%d ParentId=%s"),
 				Sequence, *Pair.Key.ToString(), *Pair.Value.ClassPath.ToString(),
 				*Pair.Value.LevelPartition.PackagePath.ToString(), Pair.Value.SaveGameBytes.Num(),
@@ -813,21 +825,28 @@ bool USWRoomSnapshotSubsystem::Capture(FSWRoomWorldSnapshot& OutSnapshot, ESWRoo
 		if (IssueKeys.Contains(Key)) OutSnapshot.CaptureIssues.RemoveAt(Index);
 		else IssueKeys.Add(Key);
 	}
+	{
+	SWRoomLoadDiagnostics::FScopedPhase IssueLogScope(TEXT("Snapshot.IssueLogging"));
 	for (const FSWRoomCaptureIssue& Issue : OutSnapshot.CaptureIssues)
-		UE_LOG(LogSWRoomSave, Warning,
+		SW_ROOM_DETAIL_LOG(LogSWRoomSave, Warning,
 			TEXT("Flow=CaptureIssue Sequence=%llu Scope=%d Id=%s Player=%s Actor=%s Class=%s Domain=%s Field=%s Reason=%s"),
 			Sequence, static_cast<int32>(Issue.Scope), *Issue.StableId.ToString(), *Issue.PlayerKey,
 			*Issue.OwnerPath, *Issue.ClassPath.ToString(), *Issue.Domain.ToString(), *Issue.FieldKey.ToString(), *Issue.Reason);
+	}
 	UE_LOG(LogSWRoomSave, Display,
 		TEXT("Flow=WorldCapture Result=%s Sequence=%llu Actors=%d Unloaded=%d Tombstones=%d Systems=%d Issues=%d Unsupported=%d"),
 		OutSnapshot.CaptureIssues.IsEmpty() ? TEXT("Success") : TEXT("Partial"), Sequence,
 		OutSnapshot.Actors.Num(), OutSnapshot.UnloadedActors.Num(), OutSnapshot.DestroyedLevelActorIds.Num(),
 		OutSnapshot.Systems.Num(), OutSnapshot.CaptureIssues.Num(), UnsupportedCandidates.Num());
+	if (!OutSnapshot.CaptureIssues.IsEmpty())
+		UE_LOG(LogSWRoomSave, Warning, TEXT("Flow=CaptureIssues Sequence=%llu Count=%d DetailedLog=%d"),
+			Sequence, OutSnapshot.CaptureIssues.Num(), SWRoomLogging::IsDetailedEnabled());
 	return true;
 }
 
 bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FString& OutError, bool bPartitionRestore)
 {
+	SWRoomLoadDiagnostics::FScopedPhase DiagnosticScope(TEXT("Snapshot.Restore"));
 	if (!GetWorld() || GetWorld()->GetNetMode() == NM_Client || Snapshot.MapPath != GetMapPath(GetWorld()) || !Audit(OutError))
 	{
 		if (OutError.IsEmpty()) OutError = TEXT("Room map mismatch");
@@ -934,8 +953,11 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 			}
 		}
 	}
+	if (!Snapshot.CaptureIssues.IsEmpty())
+		UE_LOG(LogSWRoom, Warning, TEXT("Flow=WorldRestore Result=Partial SavedIssues=%d DetailedLog=%d"),
+			Snapshot.CaptureIssues.Num(), SWRoomLogging::IsDetailedEnabled());
 	for (const FSWRoomCaptureIssue& Issue : Snapshot.CaptureIssues)
-		UE_LOG(LogSWRoom, Warning, TEXT("Flow=WorldRestore Result=Partial Id=%s Actor=%s Class=%s Domain=%s Field=%s Reason=%s"),
+		SW_ROOM_DETAIL_LOG(LogSWRoom, Warning, TEXT("Flow=WorldRestore Result=Partial Id=%s Actor=%s Class=%s Domain=%s Field=%s Reason=%s"),
 			*Issue.StableId.ToString(), *Issue.OwnerPath, *Issue.ClassPath.ToString(), *Issue.Domain.ToString(),
 			*Issue.FieldKey.ToString(), *Issue.Reason);
 	TSet<FGuid> SavedIds;
@@ -1094,7 +1116,7 @@ bool USWRoomSnapshotSubsystem::Restore(const FSWRoomWorldSnapshot& Snapshot, FSt
 					*Record.StableId.ToString(), *Record.AttachParentId.ToString(), *Record.AttachParentComponentName.ToString());
 				return false;
 			}
-		UE_LOG(LogSWRoom, Display, TEXT("Flow=RoomAttachment Result=Restored Child=%s Parent=%s Component=%s Socket=%s"),
+		SW_ROOM_DETAIL_LOG(LogSWRoom, Display, TEXT("Flow=RoomAttachment Result=Restored Child=%s Parent=%s Component=%s Socket=%s"),
 			*Record.StableId.ToString(), *Record.AttachParentId.ToString(), *Record.AttachParentComponentName.ToString(),
 			*Record.AttachSocketName.ToString());
 	}

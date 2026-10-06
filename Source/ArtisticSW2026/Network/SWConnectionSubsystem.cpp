@@ -8,6 +8,9 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "Network/SWNetworkLog.h"
+#include "Network/SWRoomLoadDiagnostics.h"
+#include "HAL/PlatformTime.h"
+#include "ProfilingDebugging/MiscTrace.h"
 #include "Network/SWInputDiag.h"
 #include "SWRoomName.h"
 #include "Room/SWRoomReadyState.h"
@@ -84,6 +87,9 @@ void USWConnectionSubsystem::Tick(float DeltaTime)
 	const uint8 ReadinessMask = BuildReadinessMask();
 	if (ReadinessMask != LastLoggedReadinessMask)
 	{
+		if (SWRoomLoadDiagnostics::IsEnabled())
+			UE_LOG(LogTemp, Display, TEXT("[SWLoadDiag] Real=%.6f Phase=Client.Readiness Attempt=%d Mask=0x%02X RoomWorldReady=%d Debug=%s"),
+				FPlatformTime::Seconds(), ActiveAttemptId, ReadinessMask, (ReadinessMask & RoomWorldReady) != 0, *GetReadinessDebugStatus());
 		UE_LOG(LogSWConnection, Display, TEXT("Readiness changed. AttemptId=%d Mask=0x%02X Elapsed=%.2f"), ActiveAttemptId, ReadinessMask, ReadinessElapsedSeconds);
 		LastLoggedReadinessMask = ReadinessMask;
 	}
@@ -148,6 +154,9 @@ bool USWConnectionSubsystem::ConnectDirect(const FString& Address)
 	LastFailure = FSWConnectionFailure();
 	AttemptSerial = AttemptSerial >= MAX_int32 ? 1 : AttemptSerial + 1;
 	ActiveAttemptId = AttemptSerial;
+	DiagnosticConnectStartedAt = SWRoomLoadDiagnostics::IsEnabled() ? FPlatformTime::Seconds() : 0.0;
+	SWRoomLoadDiagnostics::Mark(TEXT("Client.ConnectRequested"));
+	if (SWRoomLoadDiagnostics::IsEnabled()) TRACE_BEGIN_REGION(TEXT("SW.ClientConnect"));
 	FSWInputDiag::BeginAttempt(GetGameInstance(), ActiveAttemptId, PendingHostKey.IsValid());
 	bConnectionAttemptActive = true;
 	bIntentionalDisconnect = false;
@@ -369,6 +378,14 @@ void USWConnectionSubsystem::CompleteReadiness()
 {
 	if (!bReadinessCheckActive || BuildReadinessMask() != AllReady) return;
 	const float CompletedElapsedSeconds = ReadinessElapsedSeconds;
+	if (SWRoomLoadDiagnostics::IsEnabled())
+	{
+		TRACE_END_REGION(RoomLoadingReason == ERoomLoadingReason::Return ? TEXT("SW.ClientReturn") : TEXT("SW.ClientConnect"));
+		SWRoomLoadDiagnostics::MarkMemory(TEXT("Client.Playing"));
+	}
+	if (SWRoomLoadDiagnostics::IsEnabled())
+		UE_LOG(LogTemp, Display, TEXT("[SWLoadDiag] Real=%.6f Phase=Client.Playing Attempt=%d TotalMs=%.3f"),
+			FPlatformTime::Seconds(), ActiveAttemptId, DiagnosticConnectStartedAt > 0.0 ? (FPlatformTime::Seconds() - DiagnosticConnectStartedAt) * 1000.0 : -1.0);
 	FGuid ReadyRoomRunId;
 	if (UWorld* World = ReadinessWorld.Get())
 		for (TActorIterator<ASWRoomReadyState> It(World); It; ++It)
@@ -416,6 +433,9 @@ bool USWConnectionSubsystem::BeginRoomReturnPresentation()
 {
 	if (ConnectionState != ESWConnectionState::Playing || bIntentionalDisconnect) return false;
 	RoomLoadingReason = ERoomLoadingReason::Return;
+	DiagnosticConnectStartedAt = SWRoomLoadDiagnostics::IsEnabled() ? FPlatformTime::Seconds() : 0.0;
+	SWRoomLoadDiagnostics::Mark(TEXT("Client.ReturnPresentation"));
+	if (SWRoomLoadDiagnostics::IsEnabled()) TRACE_BEGIN_REGION(TEXT("SW.ClientReturn"));
 	bConnectionAttemptActive = true;
 	ShowLoadingPresentation();
 	if (!bLoadingPresentationVisible)

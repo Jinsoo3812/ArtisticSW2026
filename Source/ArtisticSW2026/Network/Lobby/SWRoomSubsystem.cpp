@@ -3,9 +3,15 @@
 #include "Network/Lobby/SWRoomCode.h"
 #include "Network/SWConnectionSubsystem.h"
 #include "Network/SWNetworkLog.h"
+#include "Network/SWRoomLoadDiagnostics.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "SWRoomName.h"
 #include "Room/SWRoomSaveGame.h"
 #include "Room/SWRoomSaveStore.h"
+#include "Room/SWRoomRuntimePaths.h"
+#include "Misc/ConfigCacheIni.h"
+#include "Misc/PackageName.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "HttpModule.h"
@@ -21,6 +27,57 @@ namespace
 constexpr uint16 RoomPort = 7777;
 constexpr float ServerStartTimeoutSeconds = 90.0f;
 const TCHAR* LobbyMap = TEXT("/Game/Level/ConnectionLobby");
+
+bool NormalizeLocalFilePath(FString& Path)
+{
+	Path.TrimStartAndEndInline();
+	if (Path.Len() < 3 || !FChar::IsAlpha(Path[0]) || Path[1] != ':'
+		|| (Path[2] != '/' && Path[2] != '\\') || FPaths::IsRelative(Path)
+		|| Path.Contains(TEXT("\"")) || Path.Contains(TEXT("\r")) || Path.Contains(TEXT("\n"))) return false;
+	FPaths::NormalizeFilename(Path);
+	return FPaths::CollapseRelativeDirectories(Path);
+}
+
+bool ResolveLocalEditorServer(FString& OutExecutable, FString& OutProject, FString& OutError)
+{
+	OutExecutable.Reset();
+	OutProject.Reset();
+	OutError.Reset();
+#if PLATFORM_WINDOWS
+	auto Resolve = [](const TCHAR* Argument, const TCHAR* Key, FString& OutPath)
+	{
+		const bool bParsed = FParse::Value(FCommandLine::Get(), Argument, OutPath);
+		if (bParsed || FString(FCommandLine::Get()).Contains(FString(TEXT("-")) + Argument, ESearchCase::IgnoreCase)) return;
+		if (GConfig) GConfig->GetString(TEXT("SWLocalEditorServer"), Key, OutPath, GGameIni);
+#if WITH_EDITOR
+		if (OutPath.TrimStartAndEnd().IsEmpty())
+			OutPath = FCString::Stricmp(Key, TEXT("EditorExecutable")) == 0
+				? FString(FPlatformProcess::ExecutablePath()) : FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
+#endif
+	};
+	Resolve(TEXT("SWRoomEditorExe="), TEXT("EditorExecutable"), OutExecutable);
+	Resolve(TEXT("SWRoomProject="), TEXT("ProjectFile"), OutProject);
+	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
+	if (!NormalizeLocalFilePath(OutExecutable)
+		|| !FPaths::GetCleanFilename(OutExecutable).Equals(TEXT("UnrealEditor.exe"), ESearchCase::IgnoreCase)
+		|| !Files.FileExists(*OutExecutable))
+	{
+		OutError = TEXT("UnrealEditor.exe 경로를 확인하세요. SWRoomEditorExe 또는 SWLocalEditorServer.EditorExecutable 설정이 필요합니다.");
+		return false;
+	}
+	if (!NormalizeLocalFilePath(OutProject)
+		|| !FPaths::GetExtension(OutProject).Equals(TEXT("uproject"), ESearchCase::IgnoreCase)
+		|| !Files.FileExists(*OutProject))
+	{
+		OutError = TEXT("원본 .uproject 경로를 확인하세요. SWRoomProject 또는 SWLocalEditorServer.ProjectFile 설정이 필요합니다.");
+		return false;
+	}
+	return true;
+#else
+	OutError = TEXT("로컬 에디터 서버 실행은 Windows에서만 지원됩니다.");
+	return false;
+#endif
+}
 }
 
 bool USWRoomSubsystem::ShouldCreateSubsystem(UObject* Outer) const
@@ -66,11 +123,8 @@ UWorld* USWRoomSubsystem::GetTickableGameObjectWorld() const
 
 bool USWRoomSubsystem::CanHost() const
 {
-#if PLATFORM_WINDOWS && WITH_EDITOR
-	return true;
-#else
-	return false;
-#endif
+	FString Executable, Project, Root, Error;
+	return ResolveLocalEditorServer(Executable, Project, Error) && FSWRoomRuntimePaths::TryResolveRoot(Root, Error);
 }
 
 bool USWRoomSubsystem::HasSavedRoom() const
@@ -111,11 +165,24 @@ bool USWRoomSubsystem::ContinueRoom(const FString& Name, const FString& Optional
 
 bool USWRoomSubsystem::BeginHosting(const FString& Name, const FString& OptionalPublicIPv4, bool bContinue)
 {
+	SWRoomLoadDiagnostics::Mark(TEXT("Host.Requested"));
 	if (State != ESWRoomState::Idle && State != ESWRoomState::Failed) return false;
 	UE_LOG(LogSWRoom, Display, TEXT("Flow=RoomSetup OperationId=%llu Mode=%s Phase=Requested"), OperationId + 1,
 		bContinue ? TEXT("Continue") : TEXT("New"));
 	bReturningToLobby = false;
-	if (!CanHost()) { Fail(FText::FromString(TEXT("이 구성에서는 방을 만들 수 없습니다."))); return false; }
+	FString Executable, Project, Root, Error;
+	if (!ResolveLocalEditorServer(Executable, Project, Error) || !FSWRoomRuntimePaths::TryResolveRoot(Root, Error))
+	{
+		Fail(FText::FromString(Error));
+		return false;
+	}
+	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
+	if (!Files.CreateDirectoryTree(*FSWRoomRuntimePaths::GetSaveDirectory())
+		|| !Files.CreateDirectoryTree(*FSWRoomRuntimePaths::GetHostDirectory()))
+	{
+		Fail(FText::FromString(TEXT("방 저장 폴더를 만들 수 없습니다.")));
+		return false;
+	}
 	bContinuingRoom = bContinue;
 	bUsingBackup = false;
 	if (bContinue)
@@ -196,35 +263,72 @@ bool USWRoomSubsystem::BeginHosting(const FString& Name, const FString& Optional
 
 FString USWRoomSubsystem::MarkerPath() const
 {
-	return FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("RoomHost"), RoomRunId.ToString(EGuidFormats::DigitsWithHyphens) + TEXT(".ready"));
+	const FString Directory = FSWRoomRuntimePaths::GetHostDirectory();
+	return Directory.IsEmpty() ? FString() : FPaths::Combine(Directory, RoomRunId.ToString(EGuidFormats::DigitsWithHyphens) + TEXT(".ready"));
 }
 
 void USWRoomSubsystem::StartServer(const FString& Address)
 {
-#if PLATFORM_WINDOWS && WITH_EDITOR
+	SWRoomLoadDiagnostics::Mark(TEXT("Host.PublicIPResolved"));
+#if PLATFORM_WINDOWS
+	FString Executable, Project, Root, Error;
+	if (!ResolveLocalEditorServer(Executable, Project, Error) || !FSWRoomRuntimePaths::TryResolveRoot(Root, Error))
+	{
+		Fail(FText::FromString(Error));
+		return;
+	}
 	PublicAddress = Address;
 	RoomRunId = FGuid::NewGuid();
 	const FString Run = RoomRunId.ToString(EGuidFormats::DigitsWithHyphens);
 	IPlatformFile& Files = FPlatformFileManager::Get().GetPlatformFile();
-	const FString LogDir = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Logs"), TEXT("SWRoom"), Run);
-	const FString MarkerDir = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("RoomHost"));
+	const FString LogDir = FPaths::Combine(Root, TEXT("Logs"), TEXT("SWRoom"), Run);
+	const FString MarkerDir = FSWRoomRuntimePaths::GetHostDirectory();
 	if (!Files.CreateDirectoryTree(*LogDir) || !Files.CreateDirectoryTree(*MarkerDir)) { Fail(FText::FromString(TEXT("서버 로그 폴더를 만들 수 없습니다."))); return; }
 	Files.DeleteFile(*MarkerPath());
-	const FString Executable = FPlatformProcess::ExecutablePath();
-	const FString Project = FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
-	if (!Executable.EndsWith(TEXT("UnrealEditor.exe"), ESearchCase::IgnoreCase) || !Files.FileExists(*Project)) { Fail(FText::FromString(TEXT("Editor 서버 실행 환경을 찾을 수 없습니다."))); return; }
 	const USWRoomSaveGame* Saved = bContinuingRoom ? FSWRoomSaveStore::LoadCurrentRoom(this) : FSWRoomSaveStore::LoadStagedNewRoom(this);
 	if (!Saved || Saved->RoomId != SavedRoomId || Saved->MapPath.IsNull()) { Fail(FText::FromString(TEXT("방 맵을 확인할 수 없습니다."))); return; }
 	const FString MapName = Saved->MapPath.GetLongPackageName();
+	bool bInvalidMap = !FPackageName::IsValidLongPackageName(MapName) || MapName.Contains(TEXT("\""));
+	for (TCHAR Character : MapName) bInvalidMap |= FChar::IsWhitespace(Character);
+	if (bInvalidMap) { Fail(FText::FromString(TEXT("방 맵 경로가 올바르지 않습니다."))); return; }
 	const FString Params = FString::Printf(TEXT("\"%s\" %s -server -unattended -NoSound -NullRHI -port=7777 -log -abslog=\"%s\" -SWRoomRunId=%s -SWRoomOwnerPid=%u -SWRoomMode=%s -SWRoomId=%s -SWRoomHostKey=%s"), *Project, *MapName, *FPaths::Combine(LogDir, TEXT("Server.log")), *Run, FPlatformProcess::GetCurrentProcessId(), bContinuingRoom ? TEXT("Continue") : TEXT("New"), *SavedRoomId.ToString(EGuidFormats::DigitsWithHyphens), *HostKey.ToString(EGuidFormats::DigitsWithHyphens));
-	ServerHandle = FPlatformProcess::CreateProc(*Executable, *Params, true, true, true, &ServerPid, 0, nullptr, nullptr);
+	FString DiagnosticParams = SWRoomLoadDiagnostics::IsEnabled() ? Params + TEXT(" -SWRoomLoadDiag") : Params;
+	DiagnosticParams += FString::Printf(TEXT(" -SWRoomRoot=\"%s\""), *Root);
+	if (SWRoomLogging::IsDetailedEnabled()) DiagnosticParams += TEXT(" -SWRoomDetailedLog");
+	if (SWRoomLoadDiagnostics::IsEnabled() && FParse::Param(FCommandLine::Get(), TEXT("SWRoomLoadTrace")))
+		DiagnosticParams += FString::Printf(TEXT(" -trace=cpu,loadtime,file,bookmark,frame -statnamedevents -tracefile=\"%s\""), *FPaths::Combine(LogDir, TEXT("Server.utrace")));
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	const TCHAR* DiagnosticSwitches[] = { TEXT("EnemyNetProfile"), TEXT("EnemyShipTorpedoBuoyancyTest"),
+		TEXT("EnemyShipObstacleBuoyancyTest"), TEXT("EnemyShipTimeStopTest") };
+	for (const TCHAR* Switch : DiagnosticSwitches)
+		if (FParse::Param(FCommandLine::Get(), Switch)) DiagnosticParams += FString::Printf(TEXT(" -%s"), Switch);
+	if (FParse::Param(FCommandLine::Get(), TEXT("EnemyNetProfile")))
+	{
+		int32 Count, Seed;
+		float SpawnDelay;
+		FString Mode;
+		if (FParse::Value(FCommandLine::Get(), TEXT("EnemyNetProfileCount="), Count))
+			DiagnosticParams += FString::Printf(TEXT(" -EnemyNetProfileCount=%d"), FMath::Clamp(Count, 0, 128));
+		if (FParse::Value(FCommandLine::Get(), TEXT("EnemyNetProfileSeed="), Seed))
+			DiagnosticParams += FString::Printf(TEXT(" -EnemyNetProfileSeed=%d"), Seed);
+		if (FParse::Value(FCommandLine::Get(), TEXT("EnemyNetProfileSpawnDelay="), SpawnDelay) && FMath::IsFinite(SpawnDelay))
+			DiagnosticParams += FString::Printf(TEXT(" -EnemyNetProfileSpawnDelay=%.3f"), FMath::Clamp(SpawnDelay, 0.0f, 60.0f));
+		if (FParse::Value(FCommandLine::Get(), TEXT("EnemyNetProfileMode="), Mode))
+		{
+			if (Mode.Equals(TEXT("Idle"), ESearchCase::IgnoreCase)) DiagnosticParams += TEXT(" -EnemyNetProfileMode=Idle");
+			else if (Mode.Equals(TEXT("Combat"), ESearchCase::IgnoreCase)) DiagnosticParams += TEXT(" -EnemyNetProfileMode=Combat");
+		}
+	}
+#endif
+	SWRoomLoadDiagnostics::Mark(TEXT("Host.CreateProc"));
+	ServerHandle = FPlatformProcess::CreateProc(*Executable, *DiagnosticParams, true, true, true, &ServerPid, 0, nullptr, nullptr);
 	if (!ServerHandle.IsValid()) { Fail(FText::FromString(TEXT("서버를 시작할 수 없습니다."))); return; }
 	bOwnsServer = true;
 	ServerStartElapsed = 0;
 	SetState(ESWRoomState::StartingServer, FText::FromString(TEXT("서버 준비 중...")));
-	UE_LOG(LogSWConnection, Display, TEXT("Side=HostClient RoomRunId=%s OperationId=%llu Phase=ServerStart Result=Started Pid=%u Port=%d"), *Run, OperationId, ServerPid, RoomPort);
+	UE_LOG(LogSWConnection, Display, TEXT("Side=HostClient RoomRunId=%s OperationId=%llu Phase=ServerStart Result=Started Pid=%u Port=%d Root=%s"), *Run, OperationId, ServerPid, RoomPort, *Root);
 #else
-	Fail(FText::FromString(TEXT("이 구성에서는 방을 만들 수 없습니다.")));
+	Fail(FText::FromString(TEXT("로컬 에디터 서버 실행은 Windows에서만 지원됩니다.")));
 #endif
 }
 
@@ -249,6 +353,7 @@ void USWRoomSubsystem::Tick(float DeltaTime)
 			if (!FSWRoomCode::Encode(PublicAddress, RoomPort, DisplayCode)) { Fail(FText::FromString(TEXT("참가 코드를 만들 수 없습니다."))); return; }
 			UE_LOG(LogSWConnection, Display, TEXT("Side=HostClient RoomRunId=%s OperationId=%llu Phase=ServerReady Result=Success ElapsedMs=%d Port=%d"), *RoomRunId.ToString(), OperationId, FMath::RoundToInt(ServerStartElapsed * 1000), RoomPort);
 			bAwaitingHostJoin = true;
+			SWRoomLoadDiagnostics::Mark(TEXT("Host.ReadyMarkerReceived"));
 			SetState(ESWRoomState::StartingServer, FText::FromString(bUsingBackup
 				? TEXT("복구본 사용. 방 준비 완료. 참가 코드를 복사한 뒤 서버 접속을 누르세요.")
 				: TEXT("방 준비 완료. 참가 코드를 복사한 뒤 서버 접속을 누르세요.")));
